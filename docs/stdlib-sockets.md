@@ -7,6 +7,17 @@ the only new native boundary is [the explicit Linux syscall binding](stdlib-linu
 Verified execution is x86_64 Linux. This is not a DNS resolver, TLS session,
 HTTP client/server or a claim of user GPU execution.
 
+The separate [Unix stream and socket-pair increment](stdlib-unix-streams.md)
+specifies local AF_UNIX byte-stream owners with borrowed pathname/abstract
+addresses. Source is frozen; pair admission, direct contracts, named-address
+peers, effect/fault gates and the real request application pass. Three selected
+IP tests and one real TCP-application test also pass separately. This finite
+native Linux x86_64 increment is accepted. The separate guide records a
+confirmed narrow generic Result-chain compiler boundary and its executable
+typed-local control.
+It does not extend the IP address enum or classify Unix streams as TCP.
+The existing IP API and its historical receipts below retain their scope.
+
 ## Creation and ownership
 
 `create(Family::{Ipv4,Ipv6}, Kind::{Tcp,Udp}, nonblocking)` returns
@@ -91,6 +102,16 @@ UDP uses separate whole-message operations:
   Lengths above 65,535 or malformed endpoint metadata return `InvalidCount`.
   A datagram may already have been consumed when validation fails; caller
   output remains unchanged until the complete reply has been validated.
+- `send_to_until(view,address,deadline)` and `receive_from_until(view,deadline)`
+  do the same before an absolute `Deadline`. EAGAIN and EINTR wait for
+  readiness against that deadline, and expiry returns `Host(110)` (ETIMEDOUT),
+  as `connect_until` does. A receive waits first, so an expired deadline
+  returns `Host(110)` without consuming a datagram. Use a nonblocking socket:
+  on a blocking one, a datagram discarded after a readiness report (for
+  example on a checksum error) could leave the call blocked.
+  [Resolver contracts](stdlib-resolver-config.md#evidence) check timeouts on
+  nonblocking and blocking sockets, a zero-length datagram and an expired
+  deadline.
 
 The cap is a common non-jumbogram IPv4/IPv6 policy. Smaller path MTUs, socket
 buffers and other network errors remain real host results. No fragmentation,
@@ -128,6 +149,17 @@ blocks. Preserve sufficient stack space; the API supplies no stack exhaustion
 recovery. Low-level operations do not retry host errors implicitly.
 
 ## Executable evidence
+
+The five groups below are the earlier IP socket acceptance. They do not
+establish the new Unix surface. Three selected current IP regressions pass
+against the shared stream-engine refactor in 10.93s, separately:
+TCP/UDP ownership/options/half-close/traits, full IPv4/IPv6 datagrams and
+repeated-readiness deadline controls. Internet connect-EAGAIN and malformed
+accept were filtered; those receipts below remain historical. The
+[Unix-stream guide](stdlib-unix-streams.md#application-and-verification-status)
+records the exact current scope and log. One selected real TCP-application
+test also passes in 8.86s: six IPv4/IPv6 exchanges at lengths 0, 257 and
+1,048,576, with three other application tests filtered.
 
 `tests/stdlib_socket_execution.rs` has five passing native groups:
 

@@ -1,5 +1,6 @@
 // TOML 1.1.0 owned documents. See docs/extended-toml.md.
 module ext::toml;
+import alloc::io;
 import alloc::string;
 import alloc::vec;
 import core::result;
@@ -11,6 +12,7 @@ import core::f64;
 import core::float_decimal;
 import core::calendar;
 import core::mem;
+import core::io;
 
 pub type NodeId = i32;
 pub enum Kind { Table, Array, String, Integer, Float, Boolean, OffsetDateTime, LocalDateTime, LocalDate, LocalTime }
@@ -407,74 +409,355 @@ pub fn parse_text(input: core::text::Text, options: Options) -> core::result::Re
 }
 pub fn parse(input: alloc::string::String, options: Options) -> core::result::Result<Document,Error> { return parse_text(input.as_text(),options); }
 
-struct Encoder { output: alloc::string::String, count: i32, maximum: i32, work: u64, measuring: bool, failure: Error }
-impl Encoder {
-    fn pay(&self, amount: u64) -> bool { if (amount > self.work) { self.failure = error(ErrorKind::WorkLimit,-1); return false; } self.work -= amount; return true; }
-    fn push(&self, scalar: u32) -> bool {
-        let width: i32 = core::utf8::encoded_len_or(scalar,0) as i32; if (width > self.maximum-self.count) { self.failure = error(ErrorKind::OutputLimit,-1); return false; }
-        if (!self.pay(width as u64)) { return false; } if (!self.measuring && core::result::is_err(self.output.try_push_scalar(scalar))) { self.failure = error(ErrorKind::AllocationFailed,-1); return false; } self.count += width; return true;
-    }
-    fn raw(&self, text: alloc::string::String) -> bool {
-        if (text.byte_len() > self.maximum-self.count) { self.failure = error(ErrorKind::OutputLimit,-1); return false; }
-        if (!self.pay(text.byte_len() as u64)) { return false; } if (!self.measuring && core::result::is_err(self.output.try_append(text))) { self.failure = error(ErrorKind::AllocationFailed,-1); return false; } self.count += text.byte_len(); return true;
-    }
-    fn quoted(&self, text: alloc::string::String) -> bool {
-        if (!self.push(34)) { return false; } let offset: i32 = 0;
-        while (offset < text.byte_len()) { let scalar: u32 = core::option::unwrap(text.scalar_at_byte(offset)); let width: i32 = core::utf8::encoded_len_or(scalar,0) as i32;
-            if (scalar == 34 || scalar == 92) { if (!self.push(92) || !self.push(scalar)) { return false; } }
-            else { if (scalar < 32 || scalar == 127) { if (!self.push(92) || !self.push(117) || !self.push(48) || !self.push(48) || !self.push(hex_digit(scalar/16)) || !self.push(hex_digit(scalar%16))) { return false; } } else { if (!self.push(scalar)) { return false; } } } offset += width;
-        } return self.push(34);
-    }
-    fn temporal(&self, text: alloc::string::String) -> bool {
-        let b: [u8] = text.as_bytes(); let length: i32 = text.byte_len(); let at: i32 = 0; let time: i32 = 0;
-        if (length >= 10 && b[4] == 45) { while (at < 10) { if (!self.push(b[at] as u32)) { return false; } at += 1; } if (at == length) { return true; } if (!self.push(84)) { return false; } at += 1; time = 11; }
-        while (at < time+5) { if (!self.push(b[at] as u32)) { return false; } at += 1; }
-        if (at < length && b[at] == 58) { let end: i32 = at+3; while (at < end) { if (!self.push(b[at] as u32)) { return false; } at += 1; } }
-        else { if (!self.push(58) || !self.push(48) || !self.push(48)) { return false; } }
-        if (at < length && b[at] == 46) { at += 1; let first: i32 = at; while (at < length && digit(b[at])) { if (!self.pay(1)) { return false; } at += 1; } let end: i32 = at; while (end > first && b[end-1] == 48) { if (!self.pay(1)) { return false; } end -= 1; }
-            if (end > first) { if (!self.push(46)) { return false; } let i: i32 = first; while (i < end) { if (!self.push(b[i] as u32)) { return false; } i += 1; } }
+// Parent/first/next links provide the traversal stack. A byte or escape is
+// advanced once; temporal fraction bounds are retained across short reads.
+const ENCODE_NODE: i32 = 0;
+const ENCODE_KEY: i32 = 1;
+const ENCODE_EQUALS: i32 = 2;
+const ENCODE_VALUE: i32 = 3;
+const ENCODE_TEXT: i32 = 4;
+const ENCODE_RAW: i32 = 5;
+const ENCODE_BOOLEAN: i32 = 6;
+const ENCODE_CHILDREN: i32 = 7;
+const ENCODE_AFTER: i32 = 8;
+const ENCODE_DATE: i32 = 9;
+const ENCODE_TIME: i32 = 10;
+const ENCODE_SECONDS: i32 = 11;
+const ENCODE_INSERT_SECONDS: i32 = 12;
+const ENCODE_FRACTION: i32 = 13;
+const ENCODE_FRACTION_BYTES: i32 = 14;
+const ENCODE_ZONE: i32 = 15;
+
+struct EncodingMachine {
+    document: &Document, current: NodeId, phase: i32, offset: i32,
+    escaped: u8, escape_offset: i32, escape_length: i32,
+    time_start: i32, temporal_end: i32, zone_start: i32, inserted: i32,
+    count: i32, maximum: i32, work: u64, failed: bool, failure: Error,
+}
+fn encoding_machine(document: &Document) -> EncodingMachine {
+    return EncodingMachine {
+        document: document, current: document.node(0).first, phase: ENCODE_NODE, offset: 0,
+        escaped: 0, escape_offset: 0, escape_length: 0,
+        time_start: 0, temporal_end: 0, zone_start: 0, inserted: 0,
+        count: 0, maximum: document.options.max_output_bytes, work: document.options.max_work,
+        failed: false, failure: error(ErrorKind::Bounds,-1),
+    };
+}
+fn encoding_hex(value: u8) -> u8 { if (value < 10) { return 48+value; } return 87+value; }
+fn encoding_close(kind: Kind) -> u8 { if (tag(kind) == 0) { return 125; } return 93; }
+fn encoding_boolean(flag: bool, offset: i32) -> u8 {
+    if (flag) { let word: [u8;4] = [116,114,117,101]; return word[offset]; }
+    let word: [u8;5] = [102,97,108,115,101]; return word[offset];
+}
+impl EncodingMachine {
+    fn pay(&self, amount: u64) -> bool {
+        if (amount > self.work) {
+            self.failed = true; self.failure = error(ErrorKind::WorkLimit,-1); return false;
         }
-        if (length-at == 6 && b[at] == 43 && b[at+1] == 48 && b[at+2] == 48 && b[at+4] == 48 && b[at+5] == 48) { return self.push(90); }
-        while (at < length) { let scalar: u32 = b[at] as u32; if (scalar == 122) { scalar = 90; } if (!self.push(scalar)) { return false; } at += 1; } return true;
+        self.work -= amount; return true;
     }
-    fn value(&self, n: Node) -> bool {
-        let k: i32 = tag(n.kind); if (k == 0) { return self.push(123); } if (k == 1) { return self.push(91); } if (k == 2) { return self.quoted(n.text); }
-        if (k >= 6) { return self.temporal(n.text); }
-        if (k != 5) { return self.raw(n.text); }
-        if (n.flag) { return self.push(116) && self.push(114) && self.push(117) && self.push(101); } return self.push(102) && self.push(97) && self.push(108) && self.push(115) && self.push(101);
+    fn emit(&self, byte: u8) -> core::option::Option<u8> {
+        if (self.count == self.maximum) {
+            self.failed = true; self.failure = error(ErrorKind::OutputLimit,-1); return core::option::None();
+        }
+        if (!self.pay(1)) { return core::option::None(); }
+        self.count += 1; return core::option::Some(byte);
     }
-    fn close(&self, n: Node) -> bool { if (tag(n.kind) == 0) { return self.push(125); } return self.push(93); }
-    fn run(&self, document: Document) -> bool {
-        if (document.nodes.is_empty()) { self.failure = error(ErrorKind::Bounds,-1); return false; } let current: NodeId = document.node(0).first;
-        while (current >= 0) {
-            if (!self.pay(1)) { return false; } let n: Node = document.node(current); let p: Node = document.node(n.parent);
-            if (tag(p.kind) == 0 && (!self.quoted(n.key) || !self.push(61))) { return false; }
-            if (!self.value(n)) { return false; }
-            if (tag(n.kind) < 2) { if (n.first >= 0) { current = n.first; continue; } if (!self.close(n)) { return false; } }
-            while (true) {
-                if (n.parent == 0) { if (!self.push(10)) { return false; } current = n.next; break; }
-                if (n.next >= 0) { if (!self.push(44)) { return false; } current = n.next; break; }
-                n = document.node(n.parent); if (!self.close(n)) { return false; }
+    // Only valid, immutable Documents enter this machine. Shallow Node/String
+    // descriptors are borrowed observations and never acquire cleanup authority.
+    fn pull(&self) -> core::option::Option<u8> {
+        if (self.failed) { return core::option::None(); }
+        while (self.current >= 0) {
+            let node: Node = self.document.node(self.current);
+            if (self.phase == ENCODE_NODE) {
+                if (!self.pay(1)) { return core::option::None(); }
+                self.phase = ENCODE_VALUE;
+                let parent: Node = self.document.node(node.parent);
+                if (tag(parent.kind) == 0) {
+                    self.phase = ENCODE_KEY; self.offset = 0;
+                    self.escape_offset = 0; self.escape_length = 0;
+                    return self.emit(34);
+                }
+                continue;
             }
-        } return true;
+            if (self.phase == ENCODE_KEY || self.phase == ENCODE_TEXT) {
+                if (self.escape_offset < self.escape_length) {
+                    let byte: u8 = self.escaped;
+                    if (self.escape_length == 6) {
+                        byte = 48;
+                        if (self.escape_offset == 1) { byte = 117; }
+                        if (self.escape_offset == 4) { byte = encoding_hex(self.escaped/16); }
+                        if (self.escape_offset == 5) { byte = encoding_hex(self.escaped%16); }
+                    }
+                    self.escape_offset += 1; return self.emit(byte);
+                }
+                let text: core::text::Text = node.text.as_text();
+                if (self.phase == ENCODE_KEY) { text = node.key.as_text(); }
+                if (self.offset == text.length) {
+                    if (self.phase == ENCODE_KEY) { self.phase = ENCODE_EQUALS; }
+                    else { self.phase = ENCODE_AFTER; }
+                    return self.emit(34);
+                }
+                let byte: u8 = text.bytes[text.start+self.offset]; self.offset += 1;
+                if (byte == 34 || byte == 92 || byte < 32 || byte == 127) {
+                    self.escaped = byte; self.escape_offset = 1; self.escape_length = 2;
+                    if (byte < 32 || byte == 127) { self.escape_length = 6; }
+                    return self.emit(92);
+                }
+                // UTF-8 continuation bytes cannot equal ASCII escape bytes.
+                return self.emit(byte);
+            }
+            if (self.phase == ENCODE_EQUALS) {
+                self.phase = ENCODE_VALUE; return self.emit(61);
+            }
+            if (self.phase == ENCODE_VALUE) {
+                let kind: i32 = tag(node.kind); self.offset = 0;
+                if (kind < 2) {
+                    self.phase = ENCODE_CHILDREN;
+                    if (kind == 0) { return self.emit(123); } return self.emit(91);
+                }
+                if (kind == 2) {
+                    self.phase = ENCODE_TEXT; self.escape_offset = 0; self.escape_length = 0;
+                    return self.emit(34);
+                }
+                if (kind == 3 || kind == 4) { self.phase = ENCODE_RAW; continue; }
+                if (kind == 5) { self.phase = ENCODE_BOOLEAN; continue; }
+                let text: core::text::Text = node.text.as_text();
+                self.time_start = 0; self.phase = ENCODE_TIME;
+                if (text.length >= 10 && text.bytes[text.start+4] == 45) {
+                    self.time_start = 11; self.phase = ENCODE_DATE;
+                }
+                continue;
+            }
+            if (self.phase == ENCODE_RAW) {
+                let text: core::text::Text = node.text.as_text();
+                let byte: u8 = text.bytes[text.start+self.offset]; self.offset += 1;
+                if (self.offset == text.length) { self.phase = ENCODE_AFTER; }
+                return self.emit(byte);
+            }
+            if (self.phase == ENCODE_BOOLEAN) {
+                let byte: u8 = encoding_boolean(node.flag,self.offset); self.offset += 1;
+                let length: i32 = 5; if (node.flag) { length = 4; }
+                if (self.offset == length) { self.phase = ENCODE_AFTER; }
+                return self.emit(byte);
+            }
+            if (self.phase == ENCODE_DATE) {
+                let text: core::text::Text = node.text.as_text();
+                if (self.offset < 10) {
+                    let byte: u8 = text.bytes[text.start+self.offset]; self.offset += 1;
+                    return self.emit(byte);
+                }
+                if (text.length == 10) { self.phase = ENCODE_AFTER; continue; }
+                self.offset = 11; self.phase = ENCODE_TIME; return self.emit(84);
+            }
+            if (self.phase == ENCODE_TIME) {
+                let text: core::text::Text = node.text.as_text();
+                if (self.offset < self.time_start+5) {
+                    let byte: u8 = text.bytes[text.start+self.offset]; self.offset += 1;
+                    return self.emit(byte);
+                }
+                if (self.offset < text.length && text.bytes[text.start+self.offset] == 58) {
+                    self.temporal_end = self.offset+3; self.phase = ENCODE_SECONDS;
+                } else { self.inserted = 0; self.phase = ENCODE_INSERT_SECONDS; }
+                continue;
+            }
+            if (self.phase == ENCODE_SECONDS) {
+                if (self.offset < self.temporal_end) {
+                    let text: core::text::Text = node.text.as_text();
+                    let byte: u8 = text.bytes[text.start+self.offset]; self.offset += 1;
+                    return self.emit(byte);
+                }
+                self.phase = ENCODE_FRACTION; continue;
+            }
+            if (self.phase == ENCODE_INSERT_SECONDS) {
+                if (self.inserted < 3) {
+                    let byte: u8 = 48; if (self.inserted == 0) { byte = 58; }
+                    self.inserted += 1; return self.emit(byte);
+                }
+                self.phase = ENCODE_FRACTION; continue;
+            }
+            if (self.phase == ENCODE_FRACTION) {
+                let text: core::text::Text = node.text.as_text();
+                if (self.offset < text.length && text.bytes[text.start+self.offset] == 46) {
+                    let first: i32 = self.offset+1; let end: i32 = first;
+                    while (end < text.length && digit(text.bytes[text.start+end])) {
+                        if (!self.pay(1)) { return core::option::None(); } end += 1;
+                    }
+                    self.zone_start = end;
+                    while (end > first && text.bytes[text.start+end-1] == 48) {
+                        if (!self.pay(1)) { return core::option::None(); } end -= 1;
+                    }
+                    self.offset = first; self.temporal_end = end;
+                    if (end > first) { self.phase = ENCODE_FRACTION_BYTES; return self.emit(46); }
+                    self.offset = self.zone_start;
+                }
+                self.phase = ENCODE_ZONE; continue;
+            }
+            if (self.phase == ENCODE_FRACTION_BYTES) {
+                if (self.offset < self.temporal_end) {
+                    let text: core::text::Text = node.text.as_text();
+                    let byte: u8 = text.bytes[text.start+self.offset]; self.offset += 1;
+                    return self.emit(byte);
+                }
+                self.offset = self.zone_start; self.phase = ENCODE_ZONE; continue;
+            }
+            if (self.phase == ENCODE_ZONE) {
+                let text: core::text::Text = node.text.as_text();
+                if (text.length-self.offset == 6 && text.bytes[text.start+self.offset] == 43
+                    && text.bytes[text.start+self.offset+1] == 48 && text.bytes[text.start+self.offset+2] == 48
+                    && text.bytes[text.start+self.offset+4] == 48 && text.bytes[text.start+self.offset+5] == 48) {
+                    self.phase = ENCODE_AFTER; return self.emit(90);
+                }
+                if (self.offset < text.length) {
+                    let byte: u8 = text.bytes[text.start+self.offset]; self.offset += 1;
+                    if (byte == 122) { byte = 90; } return self.emit(byte);
+                }
+                self.phase = ENCODE_AFTER; continue;
+            }
+            if (self.phase == ENCODE_CHILDREN) {
+                if (node.first >= 0) { self.current = node.first; self.phase = ENCODE_NODE; continue; }
+                self.phase = ENCODE_AFTER; return self.emit(encoding_close(node.kind));
+            }
+            // Root members end in LF. Nested siblings use commas; a completed
+            // final child emits one parent close per pull without recursion.
+            if (node.parent == 0) {
+                self.current = node.next; self.phase = ENCODE_NODE; return self.emit(10);
+            }
+            if (node.next >= 0) {
+                self.current = node.next; self.phase = ENCODE_NODE; return self.emit(44);
+            }
+            self.current = node.parent; self.phase = ENCODE_AFTER;
+            return self.emit(encoding_close(self.document.node(self.current).kind));
+        }
+        return core::option::None();
     }
 }
-fn hex_digit(v: u32) -> u32 { if (v < 10) { return 48+v; } return 87+v; }
-pub fn measure(document: Document) -> core::result::Result<i32,Error> {
-    let encoder: Encoder = Encoder { output: alloc::string::new(), count: 0, maximum: document.options.max_output_bytes, work: document.options.max_work, measuring: true, failure: error(ErrorKind::AllocationFailed,-1) };
-    if (!encoder.run(document)) { return core::result::Err(encoder.failure); } return core::result::Ok(encoder.count);
+
+struct EncodingPlan { length: u64, work: u64 }
+fn encoding_preflight(document: &Document) -> core::result::Result<EncodingPlan,Error> {
+    if (document.nodes.is_empty()) { return core::result::Err(error(ErrorKind::Bounds,-1)); }
+    let machine: EncodingMachine = encoding_machine(document);
+    while (true) {
+        let byte: core::option::Option<u8> = machine.pull();
+        if (core::option::is_none(byte)) { break; }
+    }
+    if (machine.failed) { return core::result::Err(machine.failure); }
+    return core::result::Ok(EncodingPlan {
+        length: machine.count as u64, work: document.options.max_work-machine.work,
+    });
 }
+fn encoding_replay(document: &Document, plan: EncodingPlan) -> core::result::Result<Encoding,Error> {
+    // The measured pass already admitted plan.work. Subtraction avoids 2W
+    // overflow while reserving the complete deterministic replay before reads.
+    if (plan.work > document.options.max_work-plan.work) {
+        return core::result::Err(error(ErrorKind::WorkLimit,-1));
+    }
+    return core::result::Ok(Encoding { machine: encoding_machine(document), remaining_bytes: plan.length });
+}
+
+// Copies fork all cursor state and share one immutable live Document. Keep the
+// actual owner object, options, nodes, keys and text stable until every copy
+// ends. No cursor owns storage, retains destinations or has cleanup authority.
+pub struct Encoding { machine: EncodingMachine, remaining_bytes: u64 }
+pub impl Document {
+    pub fn encoded_len(&self) -> core::result::Result<u64,Error> {
+        let plan: core::result::Result<EncodingPlan,Error> = encoding_preflight(self);
+        if (core::result::is_err(plan)) { return core::result::Err(core::result::unwrap_err(plan)); }
+        let measured: EncodingPlan = core::result::unwrap(plan); return core::result::Ok(measured.length);
+    }
+    pub fn encoding(&self) -> core::result::Result<Encoding,Error> {
+        let plan: core::result::Result<EncodingPlan,Error> = encoding_preflight(self);
+        if (core::result::is_err(plan)) { return core::result::Err(core::result::unwrap_err(plan)); }
+        return encoding_replay(self,core::result::unwrap(plan));
+    }
+}
+pub impl Encoding {
+    pub fn borrow(&self) -> &Encoding { return self; }
+    pub fn remaining(&self) -> u64 { return self.remaining_bytes; }
+}
+pub impl core::io::Read for Encoding {
+    // Destination must be backed and disjoint from all Document/cursor storage.
+    // Only logical range checks are supplied, not forged-tree/backing validation.
+    pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> {
+        if (!core::io::valid_range(offset,count)) { return core::result::Err(core::io::Error::InvalidInput); }
+        if (count == 0) { return core::result::Ok(0); }
+        let wanted: i32 = count;
+        if (self.remaining_bytes < count as u64) { wanted = self.remaining_bytes as i32; }
+        let completed: i32 = 0;
+        while (completed < wanted) {
+            // Preflight reserved the entire replay. Immutable backing makes it
+            // infallible, including across UTF-8 bytes and partial escapes.
+            let byte: core::option::Option<u8> = self.machine.pull();
+            destination[offset+completed] = core::option::unwrap(byte);
+            completed += 1; self.remaining_bytes -= 1;
+        }
+        return core::result::Ok(completed);
+    }
+}
+fn encoding_collection_error(cause: alloc::io::ReadError) -> Error {
+    let kind: ErrorKind = match (cause) {
+        alloc::io::ReadError::InvalidLimits -> ErrorKind::InvalidOptions,
+        alloc::io::ReadError::CallLimit -> ErrorKind::OutputLimit,
+        alloc::io::ReadError::ByteLimit -> ErrorKind::OutputLimit,
+        alloc::io::ReadError::Io(detail) -> match (detail) {
+            core::io::Error::AllocationFailed -> ErrorKind::AllocationFailed,
+            core::io::Error::LimitExceeded -> ErrorKind::OutputLimit,
+            _ -> ErrorKind::Bounds
+        },
+        alloc::io::ReadError::Storage(detail) -> match (detail) {
+            alloc::vec::Error::AllocationFailed -> ErrorKind::AllocationFailed,
+            alloc::vec::Error::CapacityOverflow -> ErrorKind::OutputLimit,
+            _ -> ErrorKind::Bounds
+        },
+        alloc::io::ReadError::Text(detail) -> match (detail) {
+            alloc::string::Error::AllocationFailed -> ErrorKind::AllocationFailed,
+            alloc::string::Error::CapacityOverflow -> ErrorKind::OutputLimit,
+            alloc::string::Error::OutputLimit -> ErrorKind::OutputLimit,
+            alloc::string::Error::InvalidUtf8(at) -> ErrorKind::InvalidUtf8,
+            alloc::string::Error::InvalidScalar -> ErrorKind::InvalidUtf8,
+            _ -> ErrorKind::Bounds
+        }
+    };
+    return error(kind,-1);
+}
+
+// The collector adopts its byte Vec as the result String. Only result storage
+// can allocate; the admitted reader itself retains no output-sized owner.
 pub fn encode(document: Document) -> core::result::Result<alloc::string::String,Error> {
-    let encoder: Encoder = Encoder { output: alloc::string::new(), count: 0, maximum: document.options.max_output_bytes, work: document.options.max_work, measuring: false, failure: error(ErrorKind::AllocationFailed,-1) };
-    if (!encoder.run(document)) { encoder.output.destroy(); return core::result::Err(encoder.failure); } return core::result::Ok(encoder.output);
+    let prepared: core::result::Result<Encoding,Error> = document.encoding();
+    if (core::result::is_err(prepared)) { return core::result::Err(core::result::unwrap_err(prepared)); }
+    let cursor: Encoding = core::result::unwrap(prepared);
+    let length: u64 = cursor.remaining();
+    // Exact positive fills need ceil(length/1024) reads, then one EOF probe.
+    // The admitted i32 output cap bounds both this sum and the byte cast.
+    let limits: alloc::io::ReadLimits = alloc::io::ReadLimits {
+        max_bytes: length as i32, max_calls: (length+1023)/1024+1,
+    };
+    let collected: core::result::Result<alloc::string::String,alloc::io::ReadFailure> = alloc::io::read_to_string<Encoding>(cursor.borrow(),limits);
+    if (core::result::is_err(collected)) {
+        let failure: alloc::io::ReadFailure = core::result::unwrap_err(collected);
+        let cause: Error = encoding_collection_error(failure.cause);
+        failure.destroy();
+        return core::result::Err(cause);
+    }
+    return core::result::Ok(core::result::unwrap(collected));
 }
-// Every error precedes the first write, including allocation failure.
+
+// Validate and reserve both traversals before the first write. This path has
+// no temporary output allocation; every returned error leaves output intact.
 pub fn encode_into(document: Document, output: core::slice::View<u8>) -> core::result::Result<i32,Error> {
-    if (output.start < 0 || output.length < 0 || output.start > 2147483647-output.length) { return core::result::Err(error(ErrorKind::Bounds,-1)); }
-    let probe: Encoder = Encoder { output: alloc::string::new(), count: 0, maximum: document.options.max_output_bytes, work: document.options.max_work, measuring: true, failure: error(ErrorKind::AllocationFailed,-1) };
-    if (!probe.run(document)) { return core::result::Err(probe.failure); } let size: i32 = probe.count;
-    if (size > output.length) { return core::result::Err(error(ErrorKind::OutputLimit,-1)); }
-    let spent: u64 = document.options.max_work-probe.work;
-    if (spent > probe.work || (size as u64) > probe.work-spent) { return core::result::Err(error(ErrorKind::WorkLimit,-1)); }
-    let made: core::result::Result<alloc::string::String,Error> = encode(document); if (core::result::is_err(made)) { return core::result::Err(core::result::unwrap_err(made)); } let text: alloc::string::String = core::result::unwrap(made); let bytes: [u8] = text.as_bytes(); let i: i32 = 0; while (i < size) { output.values[output.start+i] = bytes[i]; i += 1; } text.destroy(); return core::result::Ok(size);
+    if (!core::io::valid_range(output.start,output.length)) {
+        return core::result::Err(error(ErrorKind::Bounds,-1));
+    }
+    let checked: core::result::Result<EncodingPlan,Error> = encoding_preflight(document.borrow());
+    if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+    let plan: EncodingPlan = core::result::unwrap(checked);
+    if (plan.length > output.length as u64) { return core::result::Err(error(ErrorKind::OutputLimit,-1)); }
+    let prepared: core::result::Result<Encoding,Error> = encoding_replay(document.borrow(),plan);
+    if (core::result::is_err(prepared)) { return core::result::Err(core::result::unwrap_err(prepared)); }
+    let cursor: Encoding = core::result::unwrap(prepared);
+    // Metadata and capacity admit this whole read. Stable source backing and
+    // complete replay reservation make it infallible, including an empty body.
+    let written: i32 = core::result::unwrap(cursor.read(output.values,output.start,plan.length as i32));
+    return core::result::Ok(written);
 }

@@ -34,6 +34,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import run_cache  # noqa: E402
@@ -54,7 +55,8 @@ class Native(so.Native):
     def __init__(self):
         super().__init__()
         # Room for an image of many tests.
-        self.code = mmap.mmap(-1, 1 << 26, prot=mmap.PROT_READ | mmap.PROT_WRITE | mmap.PROT_EXEC)
+        self.code = mmap.mmap(-1, 1 << 26, flags=mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS,
+                              prot=mmap.PROT_READ | mmap.PROT_WRITE | mmap.PROT_EXEC)
         self.base = ctypes.addressof(ctypes.c_char.from_buffer(self.code))
 
 
@@ -243,6 +245,7 @@ def main():
             parsed[base] = so.parse_checked(args.laniusc, base, files_dir)
         return parsed[base]
 
+    began = time.time()
     so.build_run_all()
     dep_bases = []
     for dep in deps:
@@ -269,12 +272,15 @@ def main():
 
     # The front end and compileSource on the module, once (the compiled
     # runAll), and the extracted definitions on each test (Lean).
-    run = subprocess.run([so.RUN_ALL, os.path.join(workdir, 'manifest.txt')], capture_output=True, text=True)
+    parse_s = time.time() - began
+    run = run_cache.run_all(os.path.join(workdir, 'manifest.txt'))
+    run_all_s = time.time() - began - parse_s
     status = run.stdout.strip().split(' ', 1)[1] if run.returncode == 0 and ' ' in run.stdout.strip() else None
     lean_path = os.path.join(workdir, 'self_compile.lean')
     expected = '\n'.join(f'#eval IO.println ("t{k} " ++ ({lean_text(t)}))' for k, t in enumerate(tests))
     open(lean_path, 'w').write('import Lanius.Mini.FrontLex\nopen Lanius.Mini\n\n' + expected + '\n')
     lean = run_cache.run_lean(lean_path, memory='8G')
+    lean_s = time.time() - began - parse_s - run_all_s
     if lean.returncode != 0:
         raise SystemExit('lean failed:\n' + lean.stdout[-4000:] + lean.stderr[-4000:])
     want = {}
@@ -290,9 +296,13 @@ def main():
     print(f'the verified compiler: {len(image)} image bytes, {len(entries)} functions')
     native = Native()
     programs = [dict(test=k, part=part) for k in range(len(tests)) for part in (0, 1)]
+    calls = so.NativeCalls(workdir)
     for j, p in enumerate(programs):
         native.load(entries[j:], image, 0)
-        p['self'] = so.native_call(native, [], [])[0]
+        calls.submit(j, native, [], [])
+    done = calls.results()
+    for j, p in enumerate(programs):
+        p['self'] = done[j][0]
 
     # laniusc: the same module, with a main that writes each entry's result.
     harness = text.replace('module app::main;\n', 'module app::main;\nimport std::io_byte;\n', 1)
@@ -302,14 +312,17 @@ def main():
     # root, laniusc rejects some of its generic instances (LNC0017).
     exe = os.path.join(workdir, 'harness')
     open(exe + '.lani', 'w').write(harness)
-    if os.path.exists(exe):
-        os.remove(exe)
-    build = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
-                            so.HEAVY, '-t', '20', args.laniusc, '--stdlib-root', 'stdlib', '--source-root', 'formal/lani',
-                            '-o', exe, exe + '.lani'], capture_output=True, text=True)
-    if build.returncode != 0 or not os.path.exists(exe):
+    exe, build = run_cache.laniusc_build(
+        ['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
+         so.HEAVY, '-t', '20', args.laniusc, '--stdlib-root', 'stdlib', '--source-root', 'formal/lani',
+         '-o', exe, exe + '.lani'], args.laniusc, exe + '.lani', exe, ['formal/lani', 'stdlib'])
+    if build is not None:
         raise SystemExit('laniusc rejects the harness:\n' + build.stdout[-2000:] + build.stderr[-2000:])
+    built = time.time()
     data = subprocess.run([exe], capture_output=True, timeout=600).stdout
+    print(f'time: parse {parse_s:.0f} s, runAll {run_all_s:.0f} s, lean {lean_s:.0f} s, '
+          f'native and laniusc build {built - began - parse_s - run_all_s - lean_s:.0f} s, '
+          f'laniusc run {time.time() - built:.0f} s', file=sys.stderr)
     results = [[so.oracle.i32(int.from_bytes(data[4 * j:4 * j + 4], 'little')) if 4 * j + 4 <= len(data)
                 else 'missing'] for j in range(len(programs))]
 

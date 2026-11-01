@@ -1,0 +1,51 @@
+module app::main;
+import alloc::vec;
+import core::result;
+import fixture::support;
+fn extract(source:&alloc::vec::Vec<fixture::support::Entry>,kind:i32) -> core::result::Result<alloc::vec::Vec<fixture::support::Entry>,alloc::vec::Error> {
+    if(kind==1) { return source.try_split_off(7); }
+    return source.try_extract_range(4,13);
+}
+fn cycle(kind:i32,fail:bool) {
+    let empty:ptr = 0; let pointers:[ptr;34] = [empty;34]; fixture::support::mark(65);
+    let first_count:i32 = 17; let first_capacity:i32 = 23; if(kind==0) { first_count=3; first_capacity=3; }
+    let source=fixture::support::owner(0,first_count,first_capacity,pointers);
+    let donor:alloc::vec::Vec<fixture::support::Entry> = alloc::vec::new();
+    if(kind==0) { donor=fixture::support::owner(3,14,21,pointers); }
+    fixture::support::mark(83); let old=source.storage; let donor_old=donor.storage; let donor_cap=donor.capacity(); let donor_count=donor.len();
+    let old_view=source.as_view(); let donor_view=donor.as_view();
+    fixture::support::mark(80); fixture::support::check(source.borrow(),0,17,0,pointers); if(kind==0) { fixture::support::check(donor.borrow(),3,14,0,pointers); }
+    assert(source.try_extract_range(-1,1).is_err()); fixture::support::mark(112);
+    let result:alloc::vec::Vec<fixture::support::Entry> = alloc::vec::new();
+    if(kind==0) {
+        fixture::support::mark(67); let appended=source.try_append(donor.borrow()); fixture::support::mark(70);
+        if(fail) {
+            assert(appended.is_err() && match(appended.unwrap_err()) { alloc::vec::Error::AllocationFailed->true,_ ->false });
+            fixture::support::mark(80); assert(source.storage==old && source.len()==first_count && source.capacity()==first_capacity && donor.storage==donor_old && donor.len()==donor_count && donor.capacity()==donor_cap);
+            fixture::support::check_view(old_view,0,17,0,pointers); fixture::support::check_view(donor_view,3,14,0,pointers); fixture::support::mark(112);
+            fixture::support::mark(67); appended=source.try_append(donor.borrow()); fixture::support::mark(70);
+        }
+        assert(appended.unwrap()==17 && donor.len()==0 && donor.storage==donor_old && donor.capacity()==donor_cap);
+    } else {
+        fixture::support::mark(67); let extracted=extract(source.borrow(),kind); fixture::support::mark(70);
+        if(fail) {
+            assert(extracted.is_err() && match(extracted.unwrap_err()) { alloc::vec::Error::AllocationFailed->true,_ ->false });
+            fixture::support::mark(80); assert(source.storage==old && source.len()==17 && source.capacity()==23);
+            fixture::support::check_view(old_view,0,17,0,pointers); fixture::support::mark(112);
+            fixture::support::mark(67); extracted=extract(source.borrow(),kind); fixture::support::mark(70);
+        }
+        result=extracted.unwrap(); assert(source.storage==old && source.capacity()==23);
+    }
+    fixture::support::mark(80);
+    if(kind==0) { assert(source.len()==17); fixture::support::check(source.borrow(),0,17,0,pointers); }
+    else { if(kind==1) { assert(source.len()==7 && result.len()==10); fixture::support::check(source.borrow(),0,7,0,pointers); fixture::support::check(result.borrow(),7,10,0,pointers); }
+        else { assert(source.len()==8 && result.len()==9); fixture::support::check(source.borrow(),0,4,9,pointers); fixture::support::check(result.borrow(),4,9,0,pointers); } }
+    fixture::support::mark(112); fixture::support::mark(82); donor.destroy();
+    fixture::support::mark(80); if(kind==0) { fixture::support::check(source.borrow(),0,17,0,pointers); }
+    else { if(kind==1) { fixture::support::check(source.borrow(),0,7,0,pointers); fixture::support::check(result.borrow(),7,10,0,pointers); }
+        else { fixture::support::check(source.borrow(),0,4,9,pointers); fixture::support::check(result.borrow(),4,9,0,pointers); } } fixture::support::mark(112);
+    fixture::support::header(kind,source.capacity(),donor_cap,result.capacity()); fixture::support::publish_entries(source.borrow()); fixture::support::publish_entries(result.borrow());
+    fixture::support::destroy_entries(source.borrow()); fixture::support::destroy_entries(result.borrow()); fixture::support::mark(69);
+}
+fn main() -> i32 { let mode=fixture::support::mode(); assert(mode>=0 && mode<=3); let kind:i32 = 0;
+    while(kind<3) { cycle(kind,mode==kind+1); kind+=1; } fixture::support::mark(68); return 0; }

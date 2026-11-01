@@ -1,0 +1,231 @@
+// Run two commands concurrently and tee both children's stdout and stderr to
+// one timestamped TSV stream, multiplexed on one epoll loop with pidfds for
+// exits and a timerfd that kills both children on timeout.
+module app::main;
+import alloc::allocator;
+import core::decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import core::time;
+import std::args;
+import std::command;
+import std::event;
+import std::file;
+import std::host_clocks;
+import std::signal;
+import std::stream;
+import std::timer;
+
+const SCRATCH: i32 = 4096;
+const GRACE_MS: u64 = 100;
+struct Options { first: i32, split: i32, timeout: u64, line: i32, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+// status[i]: exit code, 128+signal once reaped, or -1 while unreaped.
+struct State { start: core::time::Instant, open: i32, unreaped: i32, timed_out: bool, grace_over: bool, failed: i32, storage: ptr, size: i32 }
+impl State { fn borrow(&self) -> &State { return self; } }
+fn bytes(value: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),n); return core::slice::view(raw,n).unwrap(); }
+fn text(value: str, n: i32) -> core::text::Text { let raw = bytes(value,n); return core::text::from_utf8_unchecked(raw.values,raw.start,raw.length); }
+fn equal(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool { if (a.length != b.length) { return false; } let i: i32 = 0; while (i < a.length) { if (a.values[a.start+i] != b.values[b.start+i]) { return false; } i += 1; } return true; }
+fn number(value: core::slice::View<u8>, maximum: u64) -> core::option::Option<u64> {
+    if (value.length < 1 || value.length > 20) { return core::option::None(); } let index: i32 = 0;
+    while (index < value.length) { let byte: u8 = value.values[value.start+index]; if (byte < 48 || byte > 57) { return core::option::None(); } index += 1; }
+    let parsed: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(value.values,value.start,value.length);
+    if (parsed.is_err() || parsed.unwrap() > maximum) { return core::option::None(); } return core::option::Some(parsed.unwrap());
+}
+// [--timeout-ms N] [--max-line N] -- PROGRAM1 [ARG...] ::: PROGRAM2 [ARG...]
+fn parse(args: std::args::Arguments, options: &Options) -> bool {
+    let index: i32 = 0; let seen: u32 = 0;
+    while (index < args.len()) {
+        let value = args.get(index).unwrap();
+        if (equal(value,bytes("--",2))) { index += 1; break; }
+        let id: i32 = 0;
+        if (equal(value,bytes("--timeout-ms",12))) { id = 1; } if (equal(value,bytes("--max-line",10))) { id = 2; } if (equal(value,bytes("--help",6))) { id = 3; }
+        if (id == 0) { return false; } let bit: u32 = (1 as u32) << id; if ((seen & bit) != 0) { return false; } seen |= bit;
+        if (id == 3) { options.help = true; index += 1; continue; }
+        if (index+1 >= args.len()) { return false; }
+        if (id == 1) { let parsed = number(args.get(index+1).unwrap(),86400000); if (parsed.is_none()) { return false; } options.timeout = parsed.unwrap(); }
+        if (id == 2) { let parsed = number(args.get(index+1).unwrap(),65536); if (parsed.is_none() || parsed.unwrap() == 0) { return false; } options.line = parsed.unwrap() as i32; }
+        index += 2;
+    }
+    if (options.help) { return args.len() == 1; }
+    options.first = index; options.split = -1;
+    while (index < args.len()) { if (equal(args.get(index).unwrap(),bytes(":::",3))) { if (options.split >= 0) { return false; } options.split = index; } index += 1; }
+    return options.split > options.first && options.split + 1 < args.len();
+}
+fn publish(raw: [u8], start: i32, count: i32, error: bool) -> bool {
+    let sink = std::stream::stdout(); if (error) { sink = std::stream::stderr(); }
+    return core::io::write_all(sink.borrow(),raw,start,count).is_ok();
+}
+fn complain(reason: str, n: i32, errno: i32) {
+    let raw: [u8;160] = [0;160]; let out = core::fmt::buffer(raw,0,160).unwrap();
+    out.write_text(text("tee-children: ",14)); out.write_text(text(reason,n)); out.write_text(text(" errno=",7)); out.write_signed(errno as i64,core::fmt::decimal()); out.write_text(text("\n",1));
+    publish(raw,0,out.finish().unwrap(),true);
+}
+fn fail(state: &State, reason: str, n: i32, errno: i32) { if (state.failed == 0) { complain(reason,n,errno); state.failed = 125; } }
+fn event_errno(error: std::event::Error) -> i32 { return match (error) { std::event::Error::Host(code) -> code, _ -> 0 }; }
+fn timer_errno(error: std::timer::Error) -> i32 { return match (error) { std::timer::Error::Host(code) -> code, _ -> 0 }; }
+fn io_errno(error: core::io::Error) -> i32 { return match (error) { core::io::Error::Host(code) -> code, core::io::Error::Interrupted -> 4, _ -> 0 }; }
+fn elapsed(state: &State) -> u64 {
+    let read = std::host_clocks::instant(std::host_clocks::Clock::Monotonic); if (read.is_err()) { return 0; }
+    let total = read.unwrap().saturating_duration_since(state.start).as_nanos(); if (total.is_err()) { return 0; } return total.unwrap();
+}
+// elapsed_ns TAB child TAB stream TAB kind TAB data NEWLINE
+fn row(state: &State, child: i32, stream: str, s: i32, kind: str, k: i32, data: [u8], start: i32, count: i32) {
+    if (state.failed != 0) { return; }
+    let raw: [u8;96] = [0;96]; let out = core::fmt::buffer(raw,0,96).unwrap();
+    out.write_unsigned(elapsed(state),core::fmt::decimal()); out.write_text(text("\t",1)); out.write_signed(child as i64,core::fmt::decimal()); out.write_text(text("\t",1));
+    out.write_text(text(stream,s)); out.write_text(text("\t",1)); out.write_text(text(kind,k)); out.write_text(text("\t",1));
+    let line: [u8;1] = [10];
+    if (!publish(raw,0,out.finish().unwrap(),false) || !publish(data,start,count,false) || !publish(line,0,1,false)) { fail(state,"write failed",12,0); }
+}
+fn status_row(state: &State, child: i32, kind: str, k: i32, value: i32) {
+    let digits: [u8;12] = [0;12]; let out = core::fmt::buffer(digits,0,12).unwrap(); out.write_signed(value as i64,core::fmt::decimal());
+    row(state,child,"status",6,kind,k,digits,0,out.finish().unwrap());
+}
+fn stream_row(state: &State, token: i32, kind: str, k: i32, data: [u8], start: i32, count: i32) {
+    if (token % 2 == 0) { row(state,token/2+1,"out",3,kind,k,data,start,count); } else { row(state,token/2+1,"err",3,kind,k,data,start,count); }
+}
+fn buffers(state: &State) -> [u8] { return core::mem::typed_slice_from_raw_parts(state.storage,state.size); }
+// Append one chunk to the stream's line buffer, emitting complete lines and
+// splitting lines longer than the limit.
+fn absorb(state: &State, token: i32, chunk: [u8], count: i32, lengths: [i32], limit: i32) {
+    let all: [u8] = buffers(state); let base: i32 = SCRATCH + token * limit; let index: i32 = 0;
+    while (index < count) {
+        let byte: u8 = chunk[index];
+        if (byte == 10) { stream_row(state,token,"line",4,all,base,lengths[token]); lengths[token] = 0; }
+        else {
+            if (lengths[token] == limit) { stream_row(state,token,"split",5,all,base,limit); lengths[token] = 0; }
+            all[base+lengths[token]] = byte; lengths[token] += 1;
+        }
+        index += 1;
+    }
+}
+fn finish_stream(state: &State, ev: &std::event::Loop, token: i32, file: &std::file::File, fds: [i32], lengths: [i32], limit: i32) {
+    if (fds[token] < 0) { return; }
+    if (lengths[token] > 0) { stream_row(state,token,"partial",7,buffers(state),SCRATCH+token*limit,lengths[token]); lengths[token] = 0; }
+    let removed = ev.remove(fds[token]); if (removed.is_err()) { fail(state,"deregister failed",17,event_errno(removed.unwrap_err())); }
+    let closed = file.close(); if (closed.is_err()) { fail(state,"close failed",12,io_errno(closed.unwrap_err())); }
+    fds[token] = -1; state.open -= 1;
+}
+fn drain(state: &State, ev: &std::event::Loop, token: i32, file: &std::file::File, fds: [i32], lengths: [i32], limit: i32) {
+    if (fds[token] < 0) { return; }
+    let read = file.read(buffers(state),0,SCRATCH);
+    if (read.is_err()) { if (io_errno(read.unwrap_err()) == 4) { return; } fail(state,"read failed",11,io_errno(read.unwrap_err())); finish_stream(state,ev,token,file,fds,lengths,limit); return; }
+    if (read.unwrap() == 0) { finish_stream(state,ev,token,file,fds,lengths,limit); return; }
+    absorb(state,token,buffers(state),read.unwrap(),lengths,limit);
+}
+fn reap(state: &State, ev: &std::event::Loop, child: &std::command::Child, pidfd: &std::event::Pidfd, number: i32, codes: [i32]) {
+    if (!pidfd.is_open()) { return; }
+    let removed = ev.remove(pidfd.raw_fd()); if (removed.is_err()) { fail(state,"deregister failed",17,event_errno(removed.unwrap_err())); }
+    pidfd.close(); state.unreaped -= 1;
+    let waited = child.wait(); if (waited.is_err()) { fail(state,"wait failed",11,waited.unwrap_err().errno); codes[number-1] = 125; return; }
+    let status: std::command::ExitStatus = waited.unwrap();
+    if (status.code.is_some()) { codes[number-1] = status.code.unwrap(); status_row(state,number,"exited",6,status.code.unwrap()); }
+    else { codes[number-1] = 128 + status.signal.unwrap_or(0); status_row(state,number,"signaled",8,status.signal.unwrap_or(0)); }
+}
+fn expire(state: &State, ev: &std::event::Loop, timer: &std::timer::Timer, timeout: u64, first: &std::event::Pidfd, second: &std::event::Pidfd) -> bool {
+    let counted = timer.try_wait(); if (counted.is_err()) { fail(state,"timer read failed",17,timer_errno(counted.unwrap_err())); return false; }
+    if (counted.unwrap().is_none()) { return false; }
+    if (!state.timed_out) {
+        state.timed_out = true;
+        let digits: [u8;24] = [0;24]; let out = core::fmt::buffer(digits,0,24).unwrap(); out.write_unsigned(timeout,core::fmt::decimal());
+        row(state,0,"status",6,"timeout",7,digits,0,out.finish().unwrap());
+        if (first.is_open()) { first.send_signal(9); } if (second.is_open()) { second.send_signal(9); }
+        // Descendants may keep the pipes open; give them a short grace.
+        let armed = timer.arm_after(core::time::from_millis(GRACE_MS),core::time::zero()); if (armed.is_err()) { fail(state,"timer arm failed",16,timer_errno(armed.unwrap_err())); }
+        return false;
+    }
+    state.grace_over = true; return true;
+}
+fn spawn(args: std::args::Arguments, first: i32, end: i32, environment: core::slice::View<core::slice::View<u8>>, codes: [i32], number: i32) -> core::option::Option<std::command::Child> {
+    let all = args.as_view(); let tail: core::slice::View<core::slice::View<u8>> = core::slice::View { values: all.values, start: all.start+first, length: end-first };
+    let request = std::command::request(args.get(first).unwrap(),tail,environment); request.search = std::command::Search::EnvironmentPath;
+    request.stdin = std::command::Stdio::Null; request.stdout = std::command::Stdio::Pipe; request.stderr = std::command::Stdio::Pipe;
+    let spawned = std::command::spawn(request);
+    if (spawned.is_err()) { complain("spawn failed",12,spawned.unwrap_err().errno); codes[2] = 125; return core::option::None(); }
+    return match (spawned.unwrap()) {
+        std::command::Spawn::Child(child) -> core::option::Some(child),
+        std::command::Spawn::Unknown(value) -> unknown(value,codes),
+        std::command::Spawn::Failed(value) -> rejected(value,codes,number)
+    };
+}
+fn unknown(value: std::command::UnknownStart, codes: [i32]) -> core::option::Option<std::command::Child> {
+    let child: std::command::Child = value.child; child.cancel_and_wait(); complain("startup unknown",15,value.failure.errno); codes[2] = 125; return core::option::None();
+}
+fn rejected(value: std::command::FailedStart, codes: [i32], number: i32) -> core::option::Option<std::command::Child> {
+    let errno: i32 = value.failure.errno; complain("cannot execute",14,errno); codes[2] = 126; if (errno == 2 || errno == 20) { codes[2] = 127; }
+    return core::option::None();
+}
+fn multiplex(state: &State, options: Options, one: &std::command::Child, two: &std::command::Child, codes: [i32]) {
+    let files: [std::file::File;4] = [one.take_stdout().unwrap(),one.take_stderr().unwrap(),two.take_stdout().unwrap(),two.take_stderr().unwrap()];
+    let fds: [i32;4] = [-1;4]; let lengths: [i32;4] = [0;4]; let index: i32 = 0;
+    let made = std::event::create(); if (made.is_err()) { fail(state,"epoll failed",12,event_errno(made.unwrap_err())); one.cancel_and_wait(); two.cancel_and_wait(); return; }
+    let ev = made.unwrap();
+    while (index < 4) { fds[index] = files[index].raw_handle().unwrap(); if (ev.add(fds[index],std::event::readable(),index as u64).is_err()) { fail(state,"register failed",15,0); } index += 1; }
+    state.open = 4;
+    let first = std::event::pidfd_open(one.id().unwrap()).unwrap(); let second = std::event::pidfd_open(two.id().unwrap()).unwrap(); state.unreaped = 2;
+    ev.add(first.raw_fd(),std::event::readable(),4); ev.add(second.raw_fd(),std::event::readable(),5);
+    let timer = std::timer::create(std::host_clocks::Clock::Monotonic,std::timer::Mode::Nonblocking).unwrap();
+    if (options.timeout > 0) { ev.add(timer.raw_fd().unwrap(),std::event::readable(),6); timer.arm_after(core::time::from_millis(options.timeout),core::time::zero()); }
+    let storage: [std::event::Event;8] = [std::event::empty_event();8]; let events = core::slice::view(storage,8).unwrap();
+    while ((state.open > 0 || state.unreaped > 0) && state.failed == 0) {
+        let ready = ev.wait(events,-1);
+        if (ready.is_err()) { if (event_errno(ready.unwrap_err()) == 4) { continue; } fail(state,"wait failed",11,event_errno(ready.unwrap_err())); break; }
+        let at: i32 = 0;
+        while (at < ready.unwrap()) {
+            let token: i32 = storage[at].token as i32;
+            if (token < 4) { drain(state,ev.borrow(),token,files[token].borrow(),fds,lengths,options.line); }
+            if (token == 4) { reap(state,ev.borrow(),one,first.borrow(),1,codes); }
+            if (token == 5) { reap(state,ev.borrow(),two,second.borrow(),2,codes); }
+            if (token == 6 && expire(state,ev.borrow(),timer.borrow(),options.timeout,first.borrow(),second.borrow())) {
+                let stream: i32 = 0; while (stream < 4) { finish_stream(state,ev.borrow(),stream,files[stream].borrow(),fds,lengths,options.line); stream += 1; }
+                ev.remove(timer.raw_fd().unwrap());
+            }
+            at += 1;
+        }
+    }
+    // Error paths: kill and reap whatever remains, then release every owner.
+    if (first.is_open()) { first.send_signal(9); reap(state,ev.borrow(),one,first.borrow(),1,codes); }
+    if (second.is_open()) { second.send_signal(9); reap(state,ev.borrow(),two,second.borrow(),2,codes); }
+    index = 0; while (index < 4) { finish_stream(state,ev.borrow(),index,files[index].borrow(),fds,lengths,options.line); index += 1; }
+    timer.close(); ev.force_close();
+}
+fn run(args: std::args::Arguments, options: Options) -> i32 {
+    let size: i32 = SCRATCH + 4 * options.line; let storage: ptr = alloc::allocator::alloc(size as usize,8);
+    if (storage == 0) { complain("allocation failed",17,12); return 125; }
+    let state = State { start: core::time::instant(core::time::zero()), open: 0, unreaped: 0, timed_out: false, grace_over: false, failed: 0, storage: storage, size: size };
+    let codes: [i32;3] = [-1,-1,0];
+    let begun = std::host_clocks::instant(std::host_clocks::Clock::Monotonic);
+    let captured = std::command::snapshot_environment(std::command::default_limits());
+    if (begun.is_err() || captured.is_err()) { alloc::allocator::dealloc(storage,size as usize,8); complain("setup failed",12,0); return 125; }
+    state.start = begun.unwrap(); let environment = captured.unwrap();
+    let one = spawn(args,options.first,options.split,environment.as_view(),codes,1);
+    if (one.is_none()) { environment.destroy(); alloc::allocator::dealloc(storage,size as usize,8); return codes[2]; }
+    let two = spawn(args,options.split+1,args.len(),environment.as_view(),codes,2); environment.destroy();
+    if (two.is_none()) { let child = one.unwrap(); child.cancel_and_wait(); alloc::allocator::dealloc(storage,size as usize,8); return codes[2]; }
+    let first_child = one.unwrap(); let second_child = two.unwrap();
+    multiplex(state.borrow(),options,first_child.borrow(),second_child.borrow(),codes);
+    alloc::allocator::dealloc(storage,size as usize,8);
+    if (state.failed != 0) { return state.failed; }
+    if (state.timed_out) { return 124; }
+    if (codes[0] != 0) { return codes[0]; } return codes[1];
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 125; }
+    let captured = std::args::snapshot(1,4096,1048576);
+    if (captured.is_err()) { complain("argument snapshot failed",24,0); return 125; }
+    let args = captured.unwrap(); let options = Options { first: 0, split: -1, timeout: 0, line: 4096, help: false }; let result: i32 = 125;
+    if (!parse(args,options.borrow())) { complain("invalid arguments; see --help",29,0); }
+    else {
+        if (options.help) {
+            let usage: str = "Usage: tee-children [--timeout-ms N] [--max-line N] -- PROGRAM1 [ARG...] ::: PROGRAM2 [ARG...]\n";
+            result = 0; if (!publish(core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(usage),95),0,95,false)) { result = 125; }
+        } else { result = run(args,options); }
+    }
+    args.destroy(); return result;
+}

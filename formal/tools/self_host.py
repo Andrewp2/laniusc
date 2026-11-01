@@ -186,17 +186,22 @@ def parse_image(status):
     """compileSource's (entries, image) from runAll's status line, or None when rejected."""
     if not status.startswith('image'):
         return None
-    entries_s, image_s = re.match(r'image \[(.*?)\] \[(.*?)\]$', status).groups()
-    entries = [int(x) for x in entries_s.split(',')] if entries_s else []
-    image = [int(x) for x in image_s.split(',')] if image_s else []
+    # (by position, not a regular expression: the self image's line is 50 MB)
+    if not (status.startswith('image [') and status.endswith(']')):
+        raise ValueError(f'bad image line: {status[:80]}')
+    mid = status.index('] [', 7)
+    entries_s, image_s = status[7:mid], status[mid + 3:-1]
+    entries = list(map(int, entries_s.split(','))) if entries_s else []
+    image = list(bytes(map(int, image_s.split(',')))) if image_s else []
     return entries, image
 
 
 def pack(image):
     """The image's bytes four to a word, little-endian, the last word padded
     with zeros (`pack_rounds` in compiler.lani), as signed words."""
+    import struct
     padded = bytes(image) + bytes(-len(image) % 4)
-    return [int.from_bytes(padded[i:i + 4], 'little', signed=True) for i in range(0, len(padded), 4)]
+    return list(struct.unpack(f'<{len(padded) // 4}i', padded))
 
 
 def unpack(words, count):
@@ -268,6 +273,10 @@ class Native:
     def run(self, words, room, timeout):
         """The driver's output words, None when it rejects, or 'trap (SIG...)'
         or 'timeout'; and the child's peak resident memory in KiB."""
+        return self.finish(self.start(words, room, timeout))
+
+    def start(self, words, room, timeout):
+        """Fork the child of run; finish waits for it."""
         r, w = os.pipe()
         pid = os.fork()
         if pid == 0:
@@ -292,6 +301,10 @@ class Native:
                 view = view[os.write(w, view):]
             os._exit(0)
         os.close(w)
+        return pid, r
+
+    def finish(self, child):
+        pid, r = child
         chunks = []
         while True:
             chunk = os.read(r, 1 << 20)
@@ -323,16 +336,29 @@ def native_batch(batch, heap_log2, stack_log2, room, timeout):
     image = open(os.path.join(batch, 'self.image'), 'rb').read()
     entries = [int(x) for x in open(os.path.join(batch, 'self.entries')).read().split()]
     native = Native(entries, image, 1 << heap_log2, 1 << stack_log2, batch)
-    k = 0
-    while os.path.exists(os.path.join(batch, f'in{k}.words')):
-        began = time.time()
-        got, rss = native.run(read_words(os.path.join(batch, f'in{k}.words')), room, timeout)
+    count = 0
+    while os.path.exists(os.path.join(batch, f'in{count}.words')):
+        count += 1
+    # A few children at once (each has its own heap and stack files), each
+    # finished in order.
+    width = 1 if count == 1 else 3
+    live = []
+
+    def finish():
+        k, began, child = live.pop(0)
+        got, rss = native.finish(child)
         with open(os.path.join(batch, f'out{k}'), 'wb') as f:
             status = 'words' if isinstance(got, list) else 'rejected' if got is None else got
             f.write(f'{status} {time.time() - began:.1f} {rss}\n'.encode())
             if isinstance(got, list):
                 f.write(b''.join((x & 0xffffffff).to_bytes(4, 'little') for x in got))
-        k += 1
+
+    for k in range(count):
+        if len(live) == width:
+            finish()
+        live.append((k, time.time(), native.start(read_words(os.path.join(batch, f'in{k}.words')), room, timeout)))
+    while live:
+        finish()
 
 
 def read_out(path):
@@ -441,8 +467,8 @@ def main():
     open(manifest_path, 'w').write('\n'.join(manifest) + '\n')
     print(f'time: parse {time.time() - began:.0f} s', file=sys.stderr, flush=True)
     began = time.time()
-    lean = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=10G', '-p', 'MemorySwapMax=0',
-                           so.RUN_ALL, manifest_path], capture_output=True, text=True)
+    lean = run_cache.run_all(manifest_path, ['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p',
+                                             'MemoryMax=10G', '-p', 'MemorySwapMax=0'])
     print(f'time: runAll {time.time() - began:.0f} s', file=sys.stderr, flush=True)
     began = time.time()
     if lean.returncode != 0:
@@ -467,14 +493,14 @@ def main():
     exe = os.path.join(workdir, 'laniusc_driver')
     text = DRIVER.replace('import mini::selfhost;\n', 'import mini::selfhost;\n' + imports, 1) + LANIUSC_MAIN
     open(exe + '.lani', 'w').write(text)
-    if os.path.exists(exe):
-        os.remove(exe)
-    build = None if not cases else subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=8G', '-p', 'MemorySwapMax=0',
-                            so.HEAVY, '-t', '30', args.laniusc, '--stdlib-root', 'stdlib', '--source-root',
-                            source_root, '-o', exe, exe + '.lani'],
-                           capture_output=True, text=True)
-    if build is not None and (build.returncode != 0 or not os.path.exists(exe)):
-        raise SystemExit('laniusc does not build the driver:\n' + build.stdout[-2000:] + build.stderr[-2000:])
+    if cases:
+        # (cached by the laniusc binary and the sources the build reads)
+        exe, build = run_cache.laniusc_build(
+            ['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryMax=8G', '-p', 'MemorySwapMax=0',
+             so.HEAVY, '-t', '30', args.laniusc, '--stdlib-root', 'stdlib', '--source-root', source_root, '-o', exe,
+             exe + '.lani'], args.laniusc, exe + '.lani', exe, [source_root, 'stdlib'])
+        if build is not None:
+            raise SystemExit('laniusc does not build the driver:\n' + build.stdout[-2000:] + build.stderr[-2000:])
     print(f'time: laniusc build {time.time() - began:.0f} s', file=sys.stderr, flush=True)
     began = time.time()
 
@@ -489,13 +515,36 @@ def main():
     runnable = list(range(len(tests)))
     for k, t in enumerate(tests):
         words_file(os.path.join(batch, f'in{k}.words'), layout(t['bases']))
-    subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', f'MemoryMax={args.memory_max}',
+    subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', f'MemoryMax={args.memory_max}',
                     '-p', 'MemorySwapMax=0', sys.executable, '-I', os.path.abspath(__file__), batch,
                     '--native-batch', '--heap-log2', str(args.heap_log2), '--stack-log2', str(args.stack_log2),
                     '--timeout', str(args.timeout)], check=True)
     selfs = {k: read_out(os.path.join(batch, f'out{j}')) for j, k in enumerate(runnable)}
     print(f'time: self-built runs {time.time() - began:.0f} s', file=sys.stderr, flush=True)
     began = time.time()
+
+    # laniusc's build on each case: native processes, several at a time.
+    import concurrent.futures
+    stdins = {}
+    for k, t in enumerate(tests):
+        if not t.get('fixpoint'):
+            words = read_words(os.path.join(batch, f'in{runnable.index(k)}.words'))
+            stdins[k] = b''.join((x & 0xffffffff).to_bytes(4, 'little') for x in [len(words), room] + words)
+    exe_digest = run_cache.file_digest(exe)
+
+    def laniusc_on(data):
+        # (a run of the same binary on the same input is stored; a timeout is not)
+        k = run_cache.key('laniusc-driver-run', exe_digest, data)
+        hit = run_cache.load('run', k)
+        if hit is not None:
+            return hit['got']
+        got = run_laniusc(exe, data, args.timeout, None, None)
+        if got != 'timeout':
+            run_cache.store('run', k, dict(got=got))
+        return got
+
+    with concurrent.futures.ThreadPoolExecutor(max(1, min(8, (os.cpu_count() or 2) // 2))) as pool:
+        laniusc_got = dict(zip(stdins, pool.map(laniusc_on, stdins.values())))
 
     problems, agree, notes = [], 0, []
     for k, t in enumerate(tests):
@@ -518,9 +567,7 @@ def main():
                                 + ('' if not (isinstance(want, list) and isinstance(got_self, list)) or want == got_self
                                    else ' (self differs from Lean)'))
             continue
-        words = read_words(os.path.join(batch, f'in{runnable.index(k)}.words'))
-        stdin = b''.join((x & 0xffffffff).to_bytes(4, 'little') for x in [len(words), room] + words)
-        got_laniusc = run_laniusc(exe, stdin, args.timeout, None, None)
+        got_laniusc = laniusc_got[k]
         if got_self == want and got_laniusc == want:
             agree += 1
         else:
@@ -543,7 +590,7 @@ def run_laniusc(exe, stdin, timeout, memory_max, stack):
     argv = [exe]
     preexec = None
     if memory_max is not None:
-        argv = ['systemd-run', '--user', '--scope', '-q', '-p', f'MemoryMax={memory_max}', '-p', 'MemorySwapMax=0',
+        argv = ['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', f'MemoryMax={memory_max}', '-p', 'MemorySwapMax=0',
                 exe]
 
         def preexec():

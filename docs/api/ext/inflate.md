@@ -8,11 +8,14 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
+The resumable raw decoder preserves bit/block/tree/match state across input/output chunks using borrowed ring history and 707 i32 workspace entries. Construction/reset and per-call metadata admission precede backing effects; metadata Bounds is recoverable, codec/final-input errors are sticky, and Done/error replays return 0/0 with valid views. final_input is a call-local promise: after NeedOutput reoffer the exact unread suffix with the same true promise. Output and consumed-input counts are per call; no input/output view is retained. Whole-buffer facades use the same engine with complete output as history and local tables, retaining allocation-free OutputTooSmall behavior. Manual disjoint backing/lifetimes and extra-tail preservation are explicit. All seven new raw/container library tests pass on native Linux x86_64 CPU output: four direct tests with no intervening host effects, one independent model covering 1925 cases plus 311 reset passes across four forms/eight layouts, and two resource tests. All five existing raw tests also pass individually on the current shared engine. The earlier tiny admission overlaps the final direct run; historical raw receipts retain their source scope. Other targets, device execution, enforced lifetimes and proofs remain separate.
+
 ## Contract and evidence guides
 
 - [extended-inflate](../../extended-inflate.md)
+- [extended-streaming-inflate](../../extended-streaming-inflate.md)
 
-Declaration counts: enum: 1; field: 5; function: 2; struct: 2; variant: 8.
+Declaration counts: enum: 2; field: 34; function: 4; impl: 1; method: 5; struct: 4; variant: 11.
 
 ## Declared imports
 
@@ -153,20 +156,374 @@ read: i32
 written: i32
 ```
 
+### enum: Status
+
+[Source line 11](../../../extended/ext/inflate.lani#L11)
+
+```lanius
+pub enum Status
+```
+
+#### variant: NeedInput
+
+[Source line 11](../../../extended/ext/inflate.lani#L11)
+
+```lanius
+NeedInput
+```
+
+#### variant: NeedOutput
+
+[Source line 11](../../../extended/ext/inflate.lani#L11)
+
+```lanius
+NeedOutput
+```
+
+#### variant: Done
+
+[Source line 11](../../../extended/ext/inflate.lani#L11)
+
+```lanius
+Done
+```
+
+### struct: Step
+
+[Source line 12](../../../extended/ext/inflate.lani#L12)
+
+```lanius
+pub struct Step
+```
+
+#### field: read
+
+[Source line 12](../../../extended/ext/inflate.lani#L12)
+
+```lanius
+read: i32
+```
+
+#### field: written
+
+[Source line 12](../../../extended/ext/inflate.lani#L12)
+
+```lanius
+written: i32
+```
+
+#### field: status
+
+[Source line 12](../../../extended/ext/inflate.lani#L12)
+
+```lanius
+status: Status
+```
+
+### struct: Decoder
+
+[Source line 45](../../../extended/ext/inflate.lani#L45)
+
+```lanius
+pub struct Decoder
+```
+
+#### field: history
+
+[Source line 46](../../../extended/ext/inflate.lani#L46)
+
+```lanius
+history: core::slice::View<u8>
+```
+
+#### field: workspace
+
+[Source line 46](../../../extended/ext/inflate.lani#L46)
+
+```lanius
+workspace: core::slice::View<i32>
+```
+
+#### field: max_distance
+
+[Source line 47](../../../extended/ext/inflate.lani#L47)
+
+```lanius
+max_distance: i32
+```
+
+#### field: ring
+
+[Source line 47](../../../extended/ext/inflate.lani#L47)
+
+```lanius
+ring: bool
+```
+
+#### field: history_head
+
+[Source line 47](../../../extended/ext/inflate.lani#L47)
+
+```lanius
+history_head: i32
+```
+
+#### field: history_filled
+
+[Source line 47](../../../extended/ext/inflate.lani#L47)
+
+```lanius
+history_filled: i32
+```
+
+#### field: phase
+
+[Source line 48](../../../extended/ext/inflate.lani#L48)
+
+```lanius
+phase: i32
+```
+
+#### field: failure
+
+[Source line 48](../../../extended/ext/inflate.lani#L48)
+
+```lanius
+failure: Error
+```
+
+#### field: buffer
+
+[Source line 48](../../../extended/ext/inflate.lani#L48)
+
+```lanius
+buffer: i32
+```
+
+#### field: available
+
+[Source line 48](../../../extended/ext/inflate.lani#L48)
+
+```lanius
+available: i32
+```
+
+#### field: final_block
+
+[Source line 49](../../../extended/ext/inflate.lani#L49)
+
+```lanius
+final_block: i32
+```
+
+#### field: kind
+
+[Source line 49](../../../extended/ext/inflate.lani#L49)
+
+```lanius
+kind: i32
+```
+
+#### field: remaining
+
+[Source line 49](../../../extended/ext/inflate.lani#L49)
+
+```lanius
+remaining: i32
+```
+
+#### field: distance
+
+[Source line 49](../../../extended/ext/inflate.lani#L49)
+
+```lanius
+distance: i32
+```
+
+#### field: literal_count
+
+[Source line 50](../../../extended/ext/inflate.lani#L50)
+
+```lanius
+literal_count: i32
+```
+
+#### field: distance_count
+
+[Source line 50](../../../extended/ext/inflate.lani#L50)
+
+```lanius
+distance_count: i32
+```
+
+#### field: code_count
+
+[Source line 50](../../../extended/ext/inflate.lani#L50)
+
+```lanius
+code_count: i32
+```
+
+#### field: index
+
+[Source line 50](../../../extended/ext/inflate.lani#L50)
+
+```lanius
+index: i32
+```
+
+#### field: literal_maximum
+
+[Source line 51](../../../extended/ext/inflate.lani#L51)
+
+```lanius
+literal_maximum: i32
+```
+
+#### field: distance_maximum
+
+[Source line 51](../../../extended/ext/inflate.lani#L51)
+
+```lanius
+distance_maximum: i32
+```
+
+#### field: code_maximum
+
+[Source line 51](../../../extended/ext/inflate.lani#L51)
+
+```lanius
+code_maximum: i32
+```
+
+#### field: symbol
+
+[Source line 52](../../../extended/ext/inflate.lani#L52)
+
+```lanius
+symbol: i32
+```
+
+#### field: code
+
+[Source line 52](../../../extended/ext/inflate.lani#L52)
+
+```lanius
+code: i32
+```
+
+#### field: first
+
+[Source line 52](../../../extended/ext/inflate.lani#L52)
+
+```lanius
+first: i32
+```
+
+#### field: offset
+
+[Source line 52](../../../extended/ext/inflate.lani#L52)
+
+```lanius
+offset: i32
+```
+
+#### field: size
+
+[Source line 52](../../../extended/ext/inflate.lani#L52)
+
+```lanius
+size: i32
+```
+
 ## Free functions and extern declarations
+
+### function: workspace_len
+
+[Source line 16](../../../extended/ext/inflate.lani#L16)
+
+```lanius
+pub fn workspace_len() -> i32
+```
+
+Returns 707 i32 entries for persistent raw code-length/count/symbol tables. No backing effects or allocation.
+
+### function: decoder
+
+[Source line 82](../../../extended/ext/inflate.lani#L82)
+
+```lanius
+pub fn decoder(history: core::slice::View<u8>, workspace: core::slice::View<i32>, max_distance: i32) -> core::result::Result<Decoder,Error>
+```
+
+Validates full history/workspace metadata, power-of-two 256..32768 window and capacities before storing borrows. No allocation or initialization of unused backing. Streaming step/reset retain no input/output views and never acquire cleanup authority.
 
 ### function: decode_into
 
-[Source line 68](../../../extended/ext/inflate.lani#L68)
+[Source line 353](../../../extended/ext/inflate.lani#L353)
 
 ```lanius
 pub fn decode_into(input: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<Progress,Failure>
 ```
 
+Allocation-free whole-buffer facade over the same raw engine with 32768 maximum distance, complete output as history and 707 local i32 table entries. Returns diagnostic prefix counts; NeedOutput maps to OutputTooSmall.
+
 ### function: decode_into_window
 
-[Source line 71](../../../extended/ext/inflate.lani#L71)
+[Source line 356](../../../extended/ext/inflate.lani#L356)
 
 ```lanius
 pub fn decode_into_window(input: core::slice::View<u8>, output: core::slice::View<u8>, max_distance: i32) -> core::result::Result<Progress,Failure>
+```
+
+Same whole-buffer shared engine with admitted power-of-two 256..32768 history window. Metadata/window Bounds precedes reads; final input exhaustion maps to UnexpectedEof. No separate 32 KiB ring allocation or retained resumable owner.
+
+## Implementation blocks and public methods
+
+### impl at line 331
+
+[Source line 331](../../../extended/ext/inflate.lani#L331)
+
+```lanius
+pub impl Decoder
+```
+
+#### method: borrow
+
+[Source line 332](../../../extended/ext/inflate.lani#L332)
+
+```lanius
+pub fn borrow(&self) -> &Decoder
+```
+
+#### method: step
+
+[Source line 333](../../../extended/ext/inflate.lani#L333)
+
+```lanius
+pub fn step(&self, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<Step,Failure>
+```
+
+#### method: is_done
+
+[Source line 336](../../../extended/ext/inflate.lani#L336)
+
+```lanius
+pub fn is_done(&self) -> bool
+```
+
+#### method: is_failed
+
+[Source line 337](../../../extended/ext/inflate.lani#L337)
+
+```lanius
+pub fn is_failed(&self) -> bool
+```
+
+#### method: reset
+
+[Source line 340](../../../extended/ext/inflate.lani#L340)
+
+```lanius
+pub fn reset(&self, max_distance: i32) -> core::result::Result<bool,Error>
 ```

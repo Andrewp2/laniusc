@@ -1,0 +1,214 @@
+// Real shallow owners survive completed and failed budgeted permutations.
+module app::main;
+import alloc::string;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::random;
+import core::result;
+import core::slice;
+import std::io;
+
+struct Script { words:[u64], errors:[i32], length:i32, calls:i32 }
+impl Script { fn borrow(&self) -> &Script { return self; } }
+pub impl core::random::Source64 for Script {
+    pub fn draw(&self) -> core::result::Result<u64,core::random::Error> {
+        assert(self.calls<self.length); let index:i32=self.calls; self.calls+=1;
+        if(self.errors[index]!=0) { return core::result::Err(core::random::Error::Host(self.errors[index])); }
+        return core::result::Ok(self.words[index]);
+    }
+}
+struct Context { pointers:[ptr], capacities:[i32], mutations:[i32] }
+impl Context { fn borrow(&self) -> &Context { return self; } }
+struct Leaf { text:alloc::string::String, numbers:alloc::vec::Vec<u64>, serial:u64 }
+struct Pair<T> { first:T, second:T, seal:[u64;3] }
+struct Record<T> { id:i32, payload:T, context:&Context }
+struct Unit {}
+fn mark(value:i32) { let byte:[i32;1]=[value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn leaf(id:i32,side:i32,context:&Context) -> Leaf {
+    let bytes:[u8;6]=[78,(65+id) as u8,0,194,162,(48+side) as u8];
+    let text:alloc::string::String=alloc::string::from_utf8(bytes,6).unwrap();
+    let numbers:alloc::vec::Vec<u64> =alloc::vec::with_capacity<u64>(3).unwrap();
+    numbers.try_push(9223372036854775808+(id as u64)).unwrap();
+    numbers.try_push(18446744073709551615-(side as u64)).unwrap();
+    numbers.try_push(281479271743489*(id as u64)+(side as u64)).unwrap();
+    let at:i32=4*id+2*side;
+    context.pointers[at]=text.bytes.storage; context.pointers[at+1]=numbers.storage;
+    context.capacities[at]=text.bytes.capacity(); context.capacities[at+1]=numbers.capacity();
+    return Leaf { text:text,numbers:numbers,serial:(1000+2*id+side) as u64 };
+}
+fn check_leaf(value:Leaf,id:i32,side:i32,context:&Context) {
+    let at:i32=4*id+2*side;
+    assert(value.serial==(1000+2*id+side) as u64 && value.text.byte_len()==6);
+    assert(value.text.bytes.storage==context.pointers[at] && value.text.bytes.capacity()==context.capacities[at]);
+    assert(value.text.byte_at(0).unwrap()==78 && value.text.byte_at(1).unwrap()==(65+id) as u8 && value.text.byte_at(2).unwrap()==0);
+    assert(value.text.byte_at(3).unwrap()==194 && value.text.byte_at(4).unwrap()==162 && value.text.byte_at(5).unwrap()==(48+side) as u8);
+    assert(value.numbers.storage==context.pointers[at+1] && value.numbers.capacity()==context.capacities[at+1] && value.numbers.len()==3);
+    let first:u64=9223372036854775808+(id as u64);
+    if(side==0) { first+=100*(context.mutations[id] as u64); }
+    assert(value.numbers.at(0)==first && value.numbers.at(1)==18446744073709551615-(side as u64));
+    assert(value.numbers.at(2)==281479271743489*(id as u64)+(side as u64));
+}
+fn check(value:Record<Pair<Leaf>>) {
+    assert(value.id>=0 && value.id<10);
+    assert(value.payload.seal[0]==9223372036854775808+(value.id as u64));
+    assert(value.payload.seal[1]==18446744073709551615-(value.id as u64) && value.payload.seal[2]==281479271743489);
+    check_leaf(value.payload.first,value.id,0,value.context); check_leaf(value.payload.second,value.id,1,value.context);
+}
+fn permutation(values:&alloc::vec::Vec<Record<Pair<Leaf>>>) {
+    assert(values.len()==10 && values.at(0).id==0 && values.at(9).id==9);
+    let seen:[i32;10]=[0;10]; let index:i32=0;
+    while(index<10) { let value:Record<Pair<Leaf>> =values.at(index); check(value); assert(seen[value.id]==0); seen[value.id]=1; index+=1; }
+    index=0; while(index<10) { assert(seen[index]==1); index+=1; }
+}
+fn limit(error:core::random::Error) -> bool { return match(error) { core::random::Error::DrawLimit->true,_ ->false }; }
+fn host(error:core::random::Error) -> bool { return match(error) { core::random::Error::Host(code)->code==-90210,_ ->false }; }
+fn failed(result:core::result::Result<i32,core::random::Failure>,completed:i32,source_error:bool) {
+    assert(result.is_err()); let failure:core::random::Failure=result.unwrap_err(); assert(failure.completed==completed);
+    if(source_error) { assert(host(failure.cause)); } else { assert(limit(failure.cause)); }
+}
+fn exhausted<T>(result:core::result::Result<core::option::Option<T>,core::random::Error>) {
+    assert(result.is_err()); let error:core::random::Error=result.unwrap_err(); assert(limit(error));
+}
+fn report(phase:i32,values:&alloc::vec::Vec<Record<Pair<Leaf>>>,calls:i32,remaining:i32,completed:i32,chosen:i32,intermediate:i32) {
+    let words:[i32;16]=[0;16]; words[0]=phase; words[1]=calls; words[2]=remaining; words[3]=completed; words[4]=chosen; words[5]=intermediate;
+    let index:i32=0; while(index<10) { words[6+index]=values.at(index).id; index+=1; }
+    assert(std::io::write_stdout(core::mem::i32_array_data_ptr(words),64)==64);
+}
+fn partial(values:&alloc::vec::Vec<Record<Pair<Leaf>>>) {
+    let words:[u64;2]=[1,0]; let errors:[i32;2]=[0,0]; let source:Script=Script { words:words,errors:errors,length:2,calls:0 };
+    let budget:core::random::DrawBudget=core::random::draw_budget(2);
+    let first:core::random::Budgeted<Script> =core::random::budgeted<Script>(source.borrow(),budget.borrow());
+    let second:core::random::Budgeted<Script> =core::random::budgeted<Script>(source.borrow(),budget.borrow());
+    let view:core::slice::View<Record<Pair<Leaf>>> =values.as_view().subview(1,9).unwrap();
+    mark(80);
+    failed(core::random::shuffle<core::random::Budgeted<Script>,Record<Pair<Leaf>>>(first.borrow(),view),1,false);
+    exhausted<Record<Pair<Leaf>>>(core::random::choose<core::random::Budgeted<Script>,Record<Pair<Leaf>>>(second.borrow(),view));
+    assert(source.calls==2 && budget.remaining()==0); permutation(values); mark(112);
+    report(1,values,source.calls,0,1,0,0);
+}
+fn complete(values:&alloc::vec::Vec<Record<Pair<Leaf>>>) {
+    let words:[u64;7]=[18446744073709551615;7]; let errors:[i32;7]=[0;7]; let source:Script=Script { words:words,errors:errors,length:7,calls:0 };
+    let budget:core::random::DrawBudget=core::random::draw_budget(7);
+    let adapter:core::random::Budgeted<Script> =core::random::budgeted<Script>(source.borrow(),budget.borrow());
+    let view:core::slice::View<Record<Pair<Leaf>>> =values.as_view().subview(1,9).unwrap();
+    mark(80);
+    assert(core::random::shuffle<core::random::Budgeted<Script>,Record<Pair<Leaf>>>(adapter.borrow(),view).unwrap()==7);
+    exhausted<Record<Pair<Leaf>>>(core::random::choose<core::random::Budgeted<Script>,Record<Pair<Leaf>>>(adapter.borrow(),view));
+    assert(source.calls==7 && budget.remaining()==0); permutation(values); mark(112);
+    report(2,values,source.calls,0,7,0,0);
+}
+fn error_then_choose(values:&alloc::vec::Vec<Record<Pair<Leaf>>>) {
+    let words:[u64;4]=[6,0,0,9]; let errors:[i32;4]=[0,0,-90210,0]; let source:Script=Script { words:words,errors:errors,length:4,calls:0 };
+    let budget:core::random::DrawBudget=core::random::draw_budget(4);
+    let adapter:core::random::Budgeted<Script> =core::random::budgeted<Script>(source.borrow(),budget.borrow());
+    let view:core::slice::View<Record<Pair<Leaf>>> =values.as_view().subview(1,9).unwrap();
+    mark(80);
+    failed(core::random::shuffle<core::random::Budgeted<Script>,Record<Pair<Leaf>>>(adapter.borrow(),view),1,true);
+    assert(source.calls==3 && budget.remaining()==1); permutation(values);
+    let selected:core::result::Result<core::option::Option<Record<Pair<Leaf>>>,core::random::Error> =core::random::choose<core::random::Budgeted<Script>,Record<Pair<Leaf>>>(adapter.borrow(),view);
+    let option:core::option::Option<Record<Pair<Leaf>>> =selected.unwrap(); let chosen:Record<Pair<Leaf>> =option.unwrap(); check(chosen);
+    assert(chosen.id==values.at(2).id && chosen.id==7);
+    // The copied record owns nothing new. Its existing Vec storage aliases
+    // the original owner's payload; modify bytes without changing metadata.
+    chosen.context.mutations[chosen.id]+=1;
+    let numbers:[u64]=chosen.payload.first.numbers.as_slice(); numbers[0]+=100;
+    assert(values.at(2).payload.first.numbers.at(0)==numbers[0]);
+    assert(source.calls==4 && budget.remaining()==0); permutation(values); mark(112);
+    report(3,values,source.calls,0,1,chosen.id,1);
+}
+fn no_draw(values:&alloc::vec::Vec<Record<Pair<Leaf>>>) {
+    let words:[u64;1]=[0]; let errors:[i32;1]=[0]; let source:Script=Script { words:words,errors:errors,length:0,calls:0 };
+    let budget:core::random::DrawBudget=core::random::draw_budget(0);
+    let adapter:core::random::Budgeted<Script> =core::random::budgeted<Script>(source.borrow(),budget.borrow());
+    let empty:core::slice::View<Record<Pair<Leaf>>> =values.as_view().subview(2,2).unwrap();
+    let single:core::slice::View<Record<Pair<Leaf>>> =values.as_view().subview(2,3).unwrap();
+    mark(80);
+    assert(core::random::shuffle<core::random::Budgeted<Script>,Record<Pair<Leaf>>>(adapter.borrow(),empty).unwrap()==0);
+    assert(core::random::shuffle<core::random::Budgeted<Script>,Record<Pair<Leaf>>>(adapter.borrow(),single).unwrap()==0);
+    let absent:core::result::Result<core::option::Option<Record<Pair<Leaf>>>,core::random::Error> =core::random::choose<core::random::Budgeted<Script>,Record<Pair<Leaf>>>(adapter.borrow(),empty);
+    let present:core::result::Result<core::option::Option<Record<Pair<Leaf>>>,core::random::Error> =core::random::choose<core::random::Budgeted<Script>,Record<Pair<Leaf>>>(adapter.borrow(),single);
+    assert(absent.unwrap().is_none()); let item:core::option::Option<Record<Pair<Leaf>>> =present.unwrap(); check(item.unwrap());
+    assert(source.calls==0 && budget.remaining()==0); permutation(values); mark(112);
+}
+fn units() {
+    let values:[Unit;5]=[Unit {};5]; assert(core::mem::slice_stride(values)==0);
+    let view:core::slice::View<Unit> =core::slice::view_range<Unit>(values,1,3).unwrap();
+    let words:[u64;2]=[3,1]; let errors:[i32;2]=[0,0]; let source:Script=Script { words:words,errors:errors,length:2,calls:0 };
+    let budget:core::random::DrawBudget=core::random::draw_budget(2);
+    let adapter:core::random::Budgeted<Script> =core::random::budgeted<Script>(source.borrow(),budget.borrow());
+    mark(80);
+    assert(core::random::shuffle<core::random::Budgeted<Script>,Unit>(adapter.borrow(),view).unwrap()==2);
+    exhausted<Unit>(core::random::choose<core::random::Budgeted<Script>,Unit>(adapter.borrow(),view));
+    let single:core::result::Result<core::option::Option<Unit>,core::random::Error> =core::random::choose<core::random::Budgeted<Script>,Unit>(adapter.borrow(),view.subview(0,1).unwrap());
+    assert(single.unwrap().is_some() && source.calls==2 && budget.remaining()==0); mark(112);
+}
+fn reset(bytes:[u8]) { let index:i32=0; while(index<16) { bytes[index]=211; index+=1; } }
+fn prefix(bytes:[u8],first:i32,second:i32,count:i32) {
+    let index:i32=0;
+    while(index<16) {
+        let expected:i32=211;
+        if(index>=2 && index<2+count) { expected=first+index-2; if(index>=7 && second>=0) { expected=second+index-7; } }
+        assert(bytes[index]==expected as u8); index+=1;
+    }
+}
+fn error_prefix(bytes:[u8]) {
+    let literal:[u8;8]=[136,153,170,187,204,221,238,255]; let index:i32=0;
+    while(index<16) {
+        let expected:u8=211; if(index>=2 && index<10) { expected=literal[index-2]; }
+        assert(bytes[index]==expected); index+=1;
+    }
+}
+fn fills(bytes:[u8],phase:i32) {
+    let one:[u64;1]=[506097522914230528]; let zero:[i32;1]=[0];
+    let partial_source:Script=Script { words:one,errors:zero,length:1,calls:0 };
+    let partial_budget:core::random::DrawBudget=core::random::draw_budget(1);
+    let partial_adapter:core::random::Budgeted<Script> =core::random::budgeted<Script>(partial_source.borrow(),partial_budget.borrow());
+    let success_words:[u64;2]=[9765639646188044672,10344361028892658056]; let success_errors:[i32;2]=[0,0];
+    let success_source:Script=Script { words:success_words,errors:success_errors,length:2,calls:0 };
+    let success_budget:core::random::DrawBudget=core::random::draw_budget(2);
+    let success_adapter:core::random::Budgeted<Script> =core::random::budgeted<Script>(success_source.borrow(),success_budget.borrow());
+    let error_words:[u64;3]=[18441921395520346504,0,0]; let error_codes:[i32;3]=[0,-90210,0];
+    let error_source:Script=Script { words:error_words,errors:error_codes,length:3,calls:0 };
+    let error_budget:core::random::DrawBudget=core::random::draw_budget(3);
+    let error_adapter:core::random::Budgeted<Script> =core::random::budgeted<Script>(error_source.borrow(),error_budget.borrow());
+    mark(80); reset(bytes);
+    failed(core::random::fill<core::random::Budgeted<Script>>(partial_adapter.borrow(),bytes,2,10),8,false);
+    assert(partial_source.calls==1 && partial_budget.remaining()==0); prefix(bytes,0,-1,8);
+    assert(core::random::fill<core::random::Budgeted<Script>>(partial_adapter.borrow(),bytes,2147483647,0).unwrap()==0 && partial_source.calls==1);
+    reset(bytes);
+    assert(core::random::fill<core::random::Budgeted<Script>>(success_adapter.borrow(),bytes,2,5).unwrap()==5);
+    assert(success_source.calls==1 && success_budget.remaining()==1);
+    assert(core::random::fill<core::random::Budgeted<Script>>(success_adapter.borrow(),bytes,7,5).unwrap()==5);
+    assert(success_source.calls==2 && success_budget.remaining()==0); prefix(bytes,128,136,10);
+    reset(bytes);
+    failed(core::random::fill<core::random::Budgeted<Script>>(error_adapter.borrow(),bytes,2,10),8,true);
+    assert(error_source.calls==2 && error_budget.remaining()==1); error_prefix(bytes);
+    let rejected:core::result::Result<u64,core::random::Error> =core::random::below<core::random::Budgeted<Script>>(error_adapter.borrow(),3);
+    assert(rejected.is_err()); let cause:core::random::Error=rejected.unwrap_err(); assert(limit(cause));
+    assert(error_source.calls==3 && error_budget.remaining()==0); error_prefix(bytes); mark(112);
+    let output:[i32;20]=[0;20]; output[0]=phase; output[1]=error_source.calls; output[2]=0; output[3]=8;
+    let index:i32=0; while(index<16) { output[4+index]=bytes[index] as i32; index+=1; }
+    assert(std::io::write_stdout(core::mem::i32_array_data_ptr(output),80)==80);
+}
+fn retire(value:Leaf) { value.text.destroy(); value.numbers.destroy(); }
+fn main() -> i32 {
+    let nowhere:ptr=0; let pointers:[ptr;40]=[nowhere;40]; let capacities:[i32;40]=[0;40]; let mutations:[i32;10]=[0;10];
+    let context:Context=Context { pointers:pointers,capacities:capacities,mutations:mutations };
+    let values:alloc::vec::Vec<Record<Pair<Leaf>>> =alloc::vec::with_capacity<Record<Pair<Leaf>>>(10).unwrap();
+    let index:i32=0;
+    while(index<10) {
+        let payload:Pair<Leaf> =Pair { first:leaf(index,0,context.borrow()),second:leaf(index,1,context.borrow()),seal:[9223372036854775808+(index as u64),18446744073709551615-(index as u64),281479271743489] };
+        values.try_push(Record { id:index,payload:payload,context:context.borrow() }).unwrap(); index+=1;
+    }
+    assert(core::mem::slice_stride(values.as_slice())<0);
+    index=0; while(index<40) { let other:i32=index+1; while(other<40) { assert(pointers[index]!=pointers[other]); other+=1; } index+=1; }
+    permutation(values.borrow()); partial(values.borrow()); complete(values.borrow()); error_then_choose(values.borrow()); no_draw(values.borrow()); units();
+    let native:[u8;16]=[211;16]; assert(core::mem::slice_stride(native)<0); fills(native,6);
+    let storage:[i32;5]=[0;5]; let base:ptr=core::mem::i32_array_data_ptr(storage);
+    let all:[u8]=core::mem::typed_slice_from_raw_parts<u8>(base,20); index=0; while(index<20) { all[index]=211; index+=1; }
+    let packed:[u8]=core::mem::typed_slice_from_raw_parts<u8>(base+1,16); assert(core::mem::slice_stride(packed)==1); fills(packed,7);
+    assert(all[0]==211 && all[17]==211 && all[18]==211 && all[19]==211); permutation(values.borrow());
+    while(true) { let next:core::option::Option<Record<Pair<Leaf>>> =values.pop(); if(next.is_none()) { break; } let value:Record<Pair<Leaf>> =next.unwrap(); check(value); retire(value.payload.first); retire(value.payload.second); }
+    values.destroy(); mark(68); return 0;
+}

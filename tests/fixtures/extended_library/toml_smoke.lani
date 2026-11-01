@@ -20,7 +20,7 @@ fn main() -> i32 {
     assert(!core::option::unwrap(temporal.offset).known);
     assert(temporal.fraction.byte_len() == 0);
     let output: alloc::string::String = core::result::unwrap(ext::toml::encode(document));
-    assert(core::result::unwrap(ext::toml::measure(document)) == output.byte_len());
+    assert(core::result::unwrap(document.encoded_len()) == output.byte_len() as u64);
     let round: ext::toml::Document = core::result::unwrap(ext::toml::parse(output,ext::toml::default_options()));
     assert(round.node_count() == document.node_count());
     round.destroy(); output.destroy(); document.destroy(); return 0;

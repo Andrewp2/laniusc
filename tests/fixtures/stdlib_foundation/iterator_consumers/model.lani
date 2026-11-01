@@ -1,6 +1,7 @@
 // Five u64 words per command: op, length, target, polarity, initial.
 // Observe the result and exact effects, pull once, then fold the remaining source.
 module app::main;
+import core::function;
 import core::io;
 import core::iter;
 import core::option;
@@ -23,7 +24,7 @@ pub impl core::iter::Iterator<i32> for Probe {
 }
 struct Select { target: i32, polarity: bool, calls: i32, log: &Log }
 impl Select { fn borrow(&self) -> &Select { return self; } }
-pub impl core::iter::Mapper<i32, bool> for Select {
+pub impl core::function::Mapper<i32, bool> for Select {
     pub fn apply(&self, value: i32) -> bool {
         let log: &Log = self.log; log.add(2); self.calls += 1;
         return (value == self.target) == self.polarity;
@@ -31,7 +32,7 @@ pub impl core::iter::Mapper<i32, bool> for Select {
 }
 struct Convert { target: i32, polarity: bool, calls: i32, log: &Log }
 impl Convert { fn borrow(&self) -> &Convert { return self; } }
-pub impl core::iter::Mapper<i32, core::option::Option<i64>> for Convert {
+pub impl core::function::Mapper<i32, core::option::Option<i64>> for Convert {
     pub fn apply(&self, value: i32) -> core::option::Option<i64> {
         let log: &Log = self.log; log.add(2); self.calls += 1;
         if ((value == self.target) == self.polarity) { return core::option::Some((value as i64) * 3 + 17); }

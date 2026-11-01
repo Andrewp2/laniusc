@@ -20,6 +20,10 @@ StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_token;
 StructuredBuffer<uint> name_id_by_token;
 StructuredBuffer<uint> language_intrinsic_tag_by_name_id;
+StructuredBuffer<uint> compact_path_count;
+StructuredBuffer<HirPath> compact_paths;
+StructuredBuffer<uint> resolved_value_decl;
+StructuredBuffer<uint> resolved_value_status;
 
 RWStructuredBuffer<uint> call_intrinsic_tag;
 RWStructuredBuffer<uint> call_return_type;
@@ -35,6 +39,7 @@ static const uint HIR_NAME_EXPR = 22u;
 static const uint HIR_PATH_EXPR = 33u;
 
 static const uint LANGUAGE_SYMBOL_COUNT = 79u;
+static const uint PATH_RESOLVE_STATUS_OK = 0u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -101,6 +106,24 @@ uint path_leaf_token_for_callee(uint callee_node)
     return valid_token(token) ? token : INVALID;
 }
 
+// Language intrinsics form an implicit prelude: a declaration that module
+// path resolution found for the callee (local, imported or qualified)
+// shadows the intrinsic of the same name, so the call resolves as an
+// ordinary function call.
+bool callee_path_resolves_to_declaration(uint call_node)
+{
+    uint callee_node = compact_hir_payload[call_node].a;
+    uint path_node = path_node_for_callee(callee_node);
+    if (!valid_node(path_node))
+        return false;
+    uint path_i = path_id_by_owner_hir[path_node];
+    uint path_count = min(compact_path_count[0u], gParams.n_hir_nodes);
+    if (path_i >= path_count || compact_paths[path_i].owner != path_node)
+        return false;
+    return resolved_value_status[path_i] == PATH_RESOLVE_STATUS_OK &&
+           resolved_value_decl[path_i] < gParams.n_tokens;
+}
+
 uint call_callee_token(uint call_node)
 {
     uint callee_node = compact_hir_payload[call_node].a;
@@ -141,6 +164,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     uint intrinsic_tag = intrinsic_tag_for_name_id(name_id);
     if (intrinsic_tag == INTRINSIC_NONE)
+        return;
+    if (callee_path_resolves_to_declaration(i))
         return;
 
     call_intrinsic_tag[callee_token] = intrinsic_tag;

@@ -1,0 +1,140 @@
+// Memory/effect witnesses, separate from the main endian value/model corpus.
+module app::main;
+import alloc::vec;
+import core::endian;
+import core::f32;
+import core::f64;
+import core::mem;
+import core::result;
+import std::io;
+struct Range { length:i32, offset:i32 }
+struct Floats { first:f32, second:f64 }
+enum Transit<T> { Payload(T) }
+fn transfer<T>(value:T) -> T { return value; }
+fn mark(value:i32) { let byte:[i32;1]=[value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn untouched(bytes:[u8],physical:i32) { let i:i32=0; while(i<physical) { assert(bytes[i]==211); i+=1; } }
+fn bad_range(kind:i32,width:i32) -> Range {
+    if(kind==0) { return Range { length:-1,offset:0 }; }
+    if(kind==1) { return Range { length:32,offset:-1 }; }
+    if(kind==2) { return Range { length:32,offset:2147483647 }; }
+    if(kind==3) { return Range { length:32,offset:31 }; }
+    if(kind==4) { return Range { length:width-1,offset:0 }; }
+    if(kind==5) { return Range { length:0,offset:0 }; }
+    return Range { length:2147483647,offset:2147483647 };
+}
+fn reject_u64(bytes:[u8],kind:i32,physical:i32) {
+    let r:Range=bad_range(kind,8); let fallback:u64=18364758544493064720;
+    assert(core::endian::read_u64_be_or(bytes,r.length,r.offset,fallback)==fallback);
+    assert(core::endian::read_u64_le_or(bytes,r.length,r.offset,fallback)==fallback);
+    assert(!core::endian::write_u64_be(bytes,r.length,r.offset,fallback)); untouched(bytes,physical);
+    assert(!core::endian::write_u64_le(bytes,r.length,r.offset,fallback)); untouched(bytes,physical);
+}
+fn reject_i16(bytes:[u8],kind:i32,physical:i32) {
+    let r:Range=bad_range(kind,2); let fallback:i16=-32767;
+    assert(core::endian::read_i16_be_or(bytes,r.length,r.offset,fallback)==fallback);
+    assert(core::endian::read_i16_le_or(bytes,r.length,r.offset,fallback)==fallback);
+    assert(!core::endian::write_i16_be(bytes,r.length,r.offset,fallback)); untouched(bytes,physical);
+    assert(!core::endian::write_i16_le(bytes,r.length,r.offset,fallback)); untouched(bytes,physical);
+}
+fn reject_i32(bytes:[u8],kind:i32,physical:i32) {
+    let r:Range=bad_range(kind,4); let fallback:i32=-2147483647;
+    assert(core::endian::read_i32_be_or(bytes,r.length,r.offset,fallback)==fallback);
+    assert(core::endian::read_i32_le_or(bytes,r.length,r.offset,fallback)==fallback);
+    assert(!core::endian::write_i32_be(bytes,r.length,r.offset,fallback)); untouched(bytes,physical);
+    assert(!core::endian::write_i32_le(bytes,r.length,r.offset,fallback)); untouched(bytes,physical);
+}
+fn reject_i64(bytes:[u8],kind:i32,physical:i32) {
+    let r:Range=bad_range(kind,8); let fallback:i64=-9223372036854775807;
+    assert(core::endian::read_i64_be_or(bytes,r.length,r.offset,fallback)==fallback);
+    assert(core::endian::read_i64_le_or(bytes,r.length,r.offset,fallback)==fallback);
+    assert(!core::endian::write_i64_be(bytes,r.length,r.offset,fallback)); untouched(bytes,physical);
+    assert(!core::endian::write_i64_le(bytes,r.length,r.offset,fallback)); untouched(bytes,physical);
+}
+fn reject_f32(bytes:[u8],kind:i32,physical:i32) {
+    let r:Range=bad_range(kind,4); let fallback:f32=core::f32::from_bits(2139095331);
+    assert(core::f32::to_bits(core::endian::read_f32_be_or(bytes,r.length,r.offset,fallback))==2139095331);
+    assert(core::f32::to_bits(core::endian::read_f32_le_or(bytes,r.length,r.offset,fallback))==2139095331);
+    assert(!core::endian::write_f32_be(bytes,r.length,r.offset,fallback)); untouched(bytes,physical);
+    assert(!core::endian::write_f32_le(bytes,r.length,r.offset,fallback)); untouched(bytes,physical);
+}
+fn reject_f64(bytes:[u8],kind:i32,physical:i32) {
+    let r:Range=bad_range(kind,8); let fallback:f64=core::f64::from_bits(18442240474082182230);
+    assert(core::f64::to_bits(core::endian::read_f64_be_or(bytes,r.length,r.offset,fallback))==18442240474082182230);
+    assert(core::f64::to_bits(core::endian::read_f64_le_or(bytes,r.length,r.offset,fallback))==18442240474082182230);
+    assert(!core::endian::write_f64_be(bytes,r.length,r.offset,fallback)); untouched(bytes,physical);
+    assert(!core::endian::write_f64_le(bytes,r.length,r.offset,fallback)); untouched(bytes,physical);
+}
+fn rejected(bytes:[u8],physical:i32) {
+    let kind:i32=0; while(kind<7) {
+        reject_u64(bytes,kind,physical);
+        reject_i16(bytes,kind,physical);
+        reject_i32(bytes,kind,physical);
+        reject_i64(bytes,kind,physical);
+        reject_f32(bytes,kind,physical);
+        reject_f64(bytes,kind,physical);
+        kind+=1;
+    }
+}
+fn accepted(bytes:[u8],little:bool) {
+    let i:i32=0; while(i<64) { bytes[i]=211; i+=1; }
+    if(!little) {
+        assert(core::endian::write_u64_be(bytes,9,1,18364758544493064720));
+        assert(core::endian::write_i16_be(bytes,11,9,-32767));
+        assert(core::endian::write_i32_be(bytes,15,11,-2147483647));
+        assert(core::endian::write_i64_be(bytes,23,15,-9223372036854775807));
+        assert(core::endian::write_f32_be(bytes,27,23,core::f32::from_bits(2139095331)));
+        assert(core::endian::write_f64_be(bytes,35,27,core::f64::from_bits(18442240474082182230)));
+        assert(core::endian::read_u64_be_or(bytes,9,1,0)==18364758544493064720);
+        assert(core::endian::read_i16_be_or(bytes,11,9,0)==-32767);
+        assert(core::endian::read_i32_be_or(bytes,15,11,0)==-2147483647);
+        assert(core::endian::read_i64_be_or(bytes,23,15,0)==-9223372036854775807);
+        assert(core::f32::to_bits(core::endian::read_f32_be_or(bytes,27,23,0.0))==2139095331);
+        assert(core::f64::to_bits(core::endian::read_f64_be_or(bytes,35,27,0.0))==18442240474082182230);
+        let carried:Transit<Floats> =Transit::Payload(transfer<Floats>(Floats { first:core::endian::read_f32_be_or(bytes,27,23,0.0),second:core::endian::read_f64_be_or(bytes,35,27,0.0) }));
+        let floats:Floats=match(carried) { Transit::Payload(value)->value };
+        assert(core::f32::to_bits(floats.first)==2139095331 && core::f64::to_bits(floats.second)==18442240474082182230);
+        assert(core::endian::write_f32_be(bytes,43,39,transfer<f32>(floats.first)));
+        assert(core::endian::write_f64_be(bytes,51,43,transfer<f64>(floats.second)));
+    } else {
+        assert(core::endian::write_u64_le(bytes,9,1,18364758544493064720));
+        assert(core::endian::write_i16_le(bytes,11,9,-32767));
+        assert(core::endian::write_i32_le(bytes,15,11,-2147483647));
+        assert(core::endian::write_i64_le(bytes,23,15,-9223372036854775807));
+        assert(core::endian::write_f32_le(bytes,27,23,core::f32::from_bits(2139095331)));
+        assert(core::endian::write_f64_le(bytes,35,27,core::f64::from_bits(18442240474082182230)));
+        assert(core::endian::read_u64_le_or(bytes,9,1,0)==18364758544493064720);
+        assert(core::endian::read_i16_le_or(bytes,11,9,0)==-32767);
+        assert(core::endian::read_i32_le_or(bytes,15,11,0)==-2147483647);
+        assert(core::endian::read_i64_le_or(bytes,23,15,0)==-9223372036854775807);
+        assert(core::f32::to_bits(core::endian::read_f32_le_or(bytes,27,23,0.0))==2139095331);
+        assert(core::f64::to_bits(core::endian::read_f64_le_or(bytes,35,27,0.0))==18442240474082182230);
+        let carried:Transit<Floats> =Transit::Payload(transfer<Floats>(Floats { first:core::endian::read_f32_le_or(bytes,27,23,0.0),second:core::endian::read_f64_le_or(bytes,35,27,0.0) }));
+        let floats:Floats=match(carried) { Transit::Payload(value)->value };
+        assert(core::f32::to_bits(floats.first)==2139095331 && core::f64::to_bits(floats.second)==18442240474082182230);
+        assert(core::endian::write_f32_le(bytes,43,39,transfer<f32>(floats.first)));
+        assert(core::endian::write_f64_le(bytes,51,43,transfer<f64>(floats.second)));
+    }
+    let expected_be:[u8;34]=[254,220,186,152,118,84,50,16,128,1,128,0,0,1,128,0,0,0,0,0,0,1,127,128,1,35,255,240,0,0,0,0,4,86];
+    let expected_le:[u8;34]=[16,50,84,118,152,186,220,254,1,128,1,0,0,128,1,0,0,0,0,0,0,128,35,1,128,127,86,4,0,0,0,0,240,255];
+    i=0; while(i<64) {
+        if(i>=1 && i<35) { let expected:u8=expected_be[i-1]; if(little) { expected=expected_le[i-1]; } assert(bytes[i]==expected); }
+        else { if(i>=39 && i<43) { assert(bytes[i]==bytes[i-16]); }
+        else { if(i>=43 && i<51) { assert(bytes[i]==bytes[i-16]); }
+        else { assert(bytes[i]==211); } } }
+        i+=1;
+    }
+}
+fn exercise(bytes:[u8]) { rejected(bytes,64); accepted(bytes,false); accepted(bytes,true); }
+fn main() -> i32 {
+    let owner:alloc::vec::Vec<u8> =alloc::vec::with_capacity<u8>(64).unwrap();
+    let i:i32=0; while(i<64) { owner.try_push(211).unwrap(); i+=1; }
+    let nowhere:ptr=0; let absent:[u8]=core::mem::typed_slice_from_raw_parts<u8>(nowhere,0);
+    mark(80); rejected(absent,0); exercise(owner.as_slice()); mark(112);
+    let native:[u8;64]=[211;64]; assert(core::mem::slice_stride(native)<0);
+    mark(80); exercise(native); mark(112);
+    let words:[i32;20]=[0;20]; let base:ptr=core::mem::i32_array_data_ptr(words);
+    let unaligned:[u8]=core::mem::typed_slice_from_raw_parts<u8>(base+1,64);
+    assert(core::mem::slice_stride(unaligned)==1); i=0; while(i<64) { unaligned[i]=211; i+=1; }
+    mark(80); exercise(unaligned); mark(112);
+    owner.destroy(); owner.destroy(); assert(owner.len()==0 && owner.capacity()==0); mark(68); return 0;
+}

@@ -1,0 +1,91 @@
+module app::main;
+import alloc::string;
+import core::io;
+import core::mem;
+import core::result;
+import ext::json;
+
+fn text(bytes:[u8],length:i32) -> alloc::string::String { return alloc::string::from_utf8(bytes,length).unwrap(); }
+fn document(limit:i32) -> ext::json::Document {
+    let options:ext::json::Options=ext::json::default_options(); options.max_output_bytes=limit;
+    let doc:ext::json::Document=ext::json::with_options(options).unwrap();
+    let root:i32=doc.add_object(ext::json::At::Root).unwrap();
+    let key_bytes:[u8;1]=[107]; let key:alloc::string::String=text(key_bytes,1);
+    let content:[u8;16]=[0,8,9,10,12,13,31,34,92,47,195,169,240,159,152,128];
+    let value:alloc::string::String=text(content,16); doc.add_string(ext::json::At::Member(root,key),value).unwrap(); value.destroy();
+    let number_bytes:[u8;10]=[49,46,50,51,48,48,69,43,48,53];
+    let number:alloc::string::String=text(number_bytes,10); doc.add_number(ext::json::At::Member(root,key),number).unwrap(); number.destroy(); key.destroy();
+    let array_key_bytes:[u8;5]=[105,116,101,109,115]; let array_key:alloc::string::String=text(array_key_bytes,5);
+    let array:i32=doc.add_array(ext::json::At::Member(root,array_key)).unwrap(); array_key.destroy();
+    doc.add_null(ext::json::At::Element(array)).unwrap(); doc.add_bool(ext::json::At::Element(array),true).unwrap();
+    doc.add_bool(ext::json::At::Element(array),false).unwrap(); doc.add_array(ext::json::At::Element(array)).unwrap();
+    doc.add_object(ext::json::At::Element(array)).unwrap(); return doc;
+}
+fn generic_read<R>(reader:&R,destination:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error>
+    where R:core::io::Read { return reader.read(destination,offset,count); }
+fn unchanged(bytes:[u8]) { let index:i32=0; while(index<256) { assert(bytes[index]==173); index+=1; } }
+fn fill(bytes:[u8]) { let index:i32=0; while(index<256) { bytes[index]=173; index+=1; } }
+fn invalid(reader:&ext::json::Encoding,destination:[u8],offset:i32,count:i32) {
+    fill(destination); let before:u64=reader.remaining();
+    let result:core::result::Result<i32,core::io::Error> = generic_read<ext::json::Encoding>(reader,destination,offset,count);
+    assert(result.is_err()); let error:core::io::Error=result.unwrap_err();
+    let correct:bool=match(error) { core::io::Error::InvalidInput -> true, _ -> false };
+    assert(correct && reader.remaining()==before); unchanged(destination);
+}
+fn read_piece(reader:&ext::json::Encoding,destination:[u8],expected:[u8],length:i32,position:i32,count:i32) -> i32 {
+    fill(destination); let wanted:i32=count; if(wanted>length-position) { wanted=length-position; }
+    let result:core::result::Result<i32,core::io::Error> = generic_read<ext::json::Encoding>(reader,destination,3,count);
+    assert(result.unwrap()==wanted && reader.remaining()==(length-position-wanted) as u64);
+    let index:i32=0;
+    while(index<256) { if(index>=3 && index<3+wanted) { assert(destination[index]==expected[position+index-3]); } else { assert(destination[index]==173); } index+=1; }
+    return wanted;
+}
+fn expected_error(error:ext::json::Error,kind:i32) {
+    let actual:i32=match(error.kind) { ext::json::ErrorKind::NoRoot -> 1, ext::json::ErrorKind::OutputLimit -> 2, _ -> 0 };
+    assert(actual==kind && error.offset == -1);
+}
+fn main() -> i32 {
+    let expected:[u8;108]=[123,34,107,34,58,34,92,117,48,48,48,48,92,117,48,48,48,56,92,117,48,48,48,57,92,117,48,48,48,97,92,117,48,48,48,99,92,117,48,48,48,100,92,117,48,48,49,102,92,34,92,92,47,195,169,240,159,152,128,34,44,34,107,34,58,49,46,50,51,48,48,69,43,48,53,44,34,105,116,101,109,115,34,58,91,110,117,108,108,44,116,114,117,101,44,102,97,108,115,101,44,91,93,44,123,125,93,125];
+    let length:i32=108;
+    let doc:ext::json::Document=document(length); assert(doc.node_count()==9);
+    assert(doc.encoded_len().unwrap()==length as u64);
+    let encoded:alloc::string::String=ext::json::encode(doc).unwrap(); assert(encoded.byte_len()==length);
+    let index:i32=0; while(index<length) { assert(encoded.byte_at(index).unwrap()==expected[index]); index+=1; } encoded.destroy();
+    let native:[u8;256]=[0;256]; let packed:[i32;64]=[0;64]; let layout:i32=0;
+    while(layout<2) {
+        let destination:[u8]=native; if(layout==1) { destination=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(packed),256); }
+        let cut:i32=0;
+        while(cut<=length) {
+            let first:ext::json::Encoding=doc.encoding().unwrap(); assert(first.remaining()==length as u64);
+            invalid(first.borrow(),destination,-1,0); invalid(first.borrow(),destination,0,-1); invalid(first.borrow(),destination,2147483647,1);
+            fill(destination); assert(first.read(destination,2147483647,0).unwrap()==0); unchanged(destination); assert(first.remaining()==length as u64);
+            assert(read_piece(first.borrow(),destination,expected,length,0,cut)==cut);
+            let fork:ext::json::Encoding=first; let position:i32=cut;
+            while(position<length) { position+=read_piece(first.borrow(),destination,expected,length,position,1); }
+            position=cut; while(position<length) { position+=read_piece(fork.borrow(),destination,expected,length,position,7); }
+            assert(read_piece(first.borrow(),destination,expected,length,length,3)==0);
+            invalid(first.borrow(),destination,-1,2); assert(read_piece(first.borrow(),destination,expected,length,length,0)==0);
+            assert(read_piece(fork.borrow(),destination,expected,length,length,1)==0); cut+=1;
+        }
+        layout+=1;
+    }
+    let head:ext::json::Encoding=doc.encoding().unwrap(); let tail:ext::json::Encoding=doc.encoding().unwrap();
+    assert(read_piece(tail.borrow(),native,expected,length,0,7)==7);
+    let taken:core::io::Take<ext::json::Encoding> = core::io::take<ext::json::Encoding>(head.borrow(),7);
+    let joined:core::io::Chain<core::io::Take<ext::json::Encoding>,ext::json::Encoding> = core::io::chain<core::io::Take<ext::json::Encoding>,ext::json::Encoding>(taken.borrow(),tail.borrow());
+    fill(native); assert(core::io::read_exact<core::io::Chain<core::io::Take<ext::json::Encoding>,ext::json::Encoding>>(joined.borrow(),native,3,length).unwrap()==length);
+    index=0; while(index<length) { assert(native[3+index]==expected[index]); index+=1; }
+    assert(head.remaining()==(length-7) as u64 && tail.remaining()==0);
+    assert(joined.read(native,0,1).unwrap()==0);
+    let source:ext::json::Encoding=doc.encoding().unwrap(); let output:[u8;256]=[173;256];
+    let writer:core::io::SliceWriter=core::io::slice_writer(output,length).unwrap(); let scratch:[u8;11]=[0;11];
+    assert(core::io::copy<ext::json::Encoding,core::io::SliceWriter>(source.borrow(),writer.borrow(),scratch,11).unwrap()==length as u64);
+    index=0; while(index<256) { if(index<length) { assert(output[index]==expected[index]); } else { assert(output[index]==173); } index+=1; }
+    assert(source.remaining()==0 && doc.node_count()==9 && doc.encoded_len().unwrap()==length as u64); doc.destroy();
+    let small:ext::json::Document=document(length-1);
+    expected_error(small.encoded_len().unwrap_err(),2); expected_error(small.encoding().unwrap_err(),2); expected_error(ext::json::encode(small).unwrap_err(),2); assert(small.node_count()==9); small.destroy();
+    let options:ext::json::Options=ext::json::default_options(); options.max_output_bytes=0;
+    let empty:ext::json::Document=ext::json::with_options(options).unwrap();
+    expected_error(empty.encoded_len().unwrap_err(),1); expected_error(empty.encoding().unwrap_err(),1); expected_error(ext::json::encode(empty).unwrap_err(),1); empty.destroy();
+    return 0;
+}

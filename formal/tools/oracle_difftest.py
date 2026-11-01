@@ -1989,10 +1989,11 @@ def main():
         lani_path = os.path.join(args.workdir, 'programs.lani')
         exe_path = os.path.join(args.workdir, 'programs')
         open(lani_path, 'w').write(lani_file(programs[start:start + args.chunk], calls[start:start + args.chunk]))
-        build = subprocess.run(['systemd-run', '--user', '--scope', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
-                                'target/claude-work/bin/heavy', '-t', '20', args.laniusc, '--stdlib-root', 'stdlib',
-                                '-o', exe_path, lani_path], capture_output=True, text=True)
-        if build.returncode != 0:
+        exe_path, build = run_cache.laniusc_build(
+            ['systemd-run', '--user', '--scope', '--slice=lean.slice', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
+             'target/claude-work/bin/heavy', '-t', '20', args.laniusc, '--stdlib-root', 'stdlib',
+             '-o', exe_path, lani_path], args.laniusc, lani_path, exe_path, ['stdlib'])
+        if build is not None:
             raise SystemExit('laniusc failed:\n' + build.stdout[-4000:] + build.stderr[-4000:])
         run = subprocess.run([exe_path], capture_output=True)
         if run.returncode != 0:

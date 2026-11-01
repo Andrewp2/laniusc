@@ -1,0 +1,3 @@
+module app::main;
+import fixture::flat_bound;
+fn main() -> i32 { return 0; }

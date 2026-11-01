@@ -432,7 +432,7 @@ The [full library roadmap](library-roadmap.md) remains incomplete.
 
 **Preceding numeric/text checkpoint (2026-10-23):** the `codex/stdlib` branch adds
 [lawful comparison contracts](stdlib-comparison.md),
-[unsigned](extended-big-uint.md) and [signed](extended-big-int.md) arbitrary
+[unsigned](stdlib-big-uint.md) and [signed](stdlib-big-int.md) arbitrary
 precision arithmetic, [Unicode 17 properties and scalar mappings](stdlib-unicode.md),
 [all four normalization forms](extended-unicode-normalize.md) and
 [default extended grapheme clusters](extended-unicode-graphemes.md).
@@ -724,10 +724,12 @@ require further compiler work.
 | `core::wide_u64_bits` all 12 public two-word bit functions | Executable on x86_64 | The imported runtime fixture calls every function and checks zero, one, high bit, maximum, and mixed byte patterns; zero and one counts; rotations at word and width boundaries and for all counts 0 through 127; bit reversal and byte swap; all eight byte positions in both orders; and caller fallbacks for invalid positions. It uses `WideU64` rather than native `u64`. |
 | `core::wide_i64_bits` all 12 public signed two-word bit functions | Executable on x86_64 | The imported runtime fixture calls every function on zero, one, negative one, the signed minimum, and a mixed negative pattern. It checks counts, sign-bit rotations and reversal, byte swapping, bit and byte fallbacks, and rotation round trips for all counts 0 through 127. The signed-bit-report program reads full-width decimal input and prints the population count and unsigned reversal for ordinary, extreme, malformed, and overflowing inputs. The functions operate on `WideI64` bit patterns and do not use native `i64` operations. |
 | `core::bitset` all 14 public caller-backed bitset functions | Executable on x86_64 for `[u32]` backing | Runtime fixtures check word counts, bit access and mutation, fill, counts, any/all, first/last set bit, equality, union, and intersection. They cover logical lengths 0 through 65, word boundaries, aliases, invalid lengths and indices, preserved padding and unused words, and a physical backing overclaim that traps. A source scan requires a runtime call for every public function. |
-| `core::base64` all 4 public caller-backed encoding functions | Executable on x86_64 for `[u8]` backing | Runtime fixtures check exact size calculation, standard padded Base64 encoding and strict decoding, empty input, all 256 values as the final byte of one-, two-, and three-byte round trips, one- and two-byte padding, same-buffer encode/decode, rejected malformed input and insufficient capacity without output changes, and overstated physical views that trap. A source scan requires a runtime call for every public function. |
-| `core::endian` all 12 public caller-backed byte-order functions | Executable on x86_64 for `[u8]` backing | Runtime fixtures check big- and little-endian 16-, 32-, and two-word 64-bit reads and writes, high-bit values, zero, maximum values, invalid logical bounds without writes, and physical backing overclaims that trap. The 16- and 32-bit matrix covers all 256 high-byte values across offsets 0 through 4. The packet-header sample combines byte-order reads with unsigned arithmetic and checks its printed result. A source scan requires a runtime call for every public function. |
-| `core::varint` and `core::varint_wide_u64`, all 12 public functions and five status constants | Executable on x86_64 for caller-backed `[u8]` views | Runtime fixtures call every function, check canonical unsigned LEB128 at 32 and two-word 64 bits, round-trip all 256 first-byte values and wide boundary values, distinguish invalid bounds, truncation, overflow, and nonminimal encodings, reject short write capacity without changing storage, and confirm native traps on physical backing overclaims. The frame-sum program uses both codecs and full-width decimal output. No native `u64` behavior is claimed. |
-| `core::varint_i32` and `core::varint_wide_i64`, all 12 public functions | Executable on x86_64 for caller-backed `[u8]` views | Runtime fixtures call every ZigZag transform, length, write, read, and value accessor. They check `i32` and two-word signed extrema, negative and positive boundaries, all signed values from -128 through 127, no-write capacity rejection, read error fallbacks, and a signed frame program that prints a full-width negative sum. Reads reuse the corresponding unsigned result statuses and next offsets. No native `i64` behavior is claimed. |
+| `core::base64` four checked View/Profile functions | Accepted on the finite native Linux x86_64 profile | Explicit standard/URL-safe and padded/unpadded profiles return Result counts or structural/indexed errors. Full metadata and capacity/wire preflight preserve backing on recoverable error. Five new library tests, including the 48,995-case model and guarded/physical boundaries, pass; three selected migrated WebSocket tests and 194 CLI cases pass separately. The [current guide](stdlib-base64.md) separates these receipts from the historical sentinel scope below. |
+| Historical `core::base64` four sentinel/fallback functions | Earlier x86_64 source/API freeze | Runtime fixtures check exact size calculation, standard padded Base64 encoding and strict decoding, empty input, all 256 values as the final byte of one-, two-, and three-byte round trips, one- and two-byte padding, same-buffer encode/decode, rejected malformed input and insufficient capacity without output changes, and overstated physical views that trap. A source scan requires a runtime call for every public function. |
+| `core::endian` 36 public functions: historical twelve plus 24 native numeric additions | All 36 execute on x86_64; historical/current receipts have separate scopes | Historical twelve-function fixtures check big- and little-endian 16-, 32-, and two-word 64-bit reads and writes, high-bit values, zero, maximum values, invalid logical bounds without writes, and physical backing overclaims that trap. The 16- and 32-bit matrix covers all 256 high-byte values across offsets 0 through 4. The packet-header sample combines byte-order reads with unsigned arithmetic and checks its printed result. The historical call inventory covers those twelve functions. The new u64/signed/IEEE-float family passes two direct native tests in 8.33s (58 literal vectors plus four physical-overclaim traps); selected old-family and UTF-16 regressions have separate current receipts. The independent 16,032-case model and two memory/scale tests also pass (672 rejected accesses and 32,768 records); the record application passes four groups/96 cases. The current 36-function call inventory is static bookkeeping, separate from native receipts. See [native numeric byte order](stdlib-native-endian.md). |
+| `core::varint`, sixteen native u32/u64/i32/i64 free functions | Accepted on the finite native Linux x86_64 profile | View-relative Result/Decoded reads, atomic-capacity writes, concrete ZigZag transforms and explicit Bounds/BufferTooSmall/Truncated/Overflow/NonCanonical errors replace status/fallback accessors. Five library tests cover direct contracts, a 61,144-case independent model and guarded/physical boundaries; both migrated frame sums and the 150-case CLI pass separately. Current receipts are separate from the historical rows below; see [checked native varints](stdlib-varint.md). |
+| Historical unsigned codecs: old `core::varint` and retired `core::varint_wide_u64`, all 12 public functions and five status constants | Retired status/two-word API; historical x86_64 evidence | Runtime fixtures call every function, check canonical unsigned LEB128 at 32 and two-word 64 bits, round-trip all 256 first-byte values and wide boundary values, distinguish invalid bounds, truncation, overflow, and nonminimal encodings, reject short write capacity without changing storage, and confirm native traps on physical backing overclaims. At that source freeze, the frame-sum program used both codecs and full-width decimal output. No native `u64` behavior is claimed. |
+| Historical signed codecs: retired `core::varint_i32` and `core::varint_wide_i64`, all 12 public functions | Retired status/two-word API; historical x86_64 evidence | Runtime fixtures call every ZigZag transform, length, write, read, and value accessor. They check `i32` and two-word signed extrema, negative and positive boundaries, all signed values from -128 through 127, no-write capacity rejection, read error fallbacks, and a signed frame program that prints a full-width negative sum. Reads reuse the corresponding unsigned result statuses and next offsets. No native `i64` behavior is claimed. |
 | `core::bool` all 10 public functions | Executable on x86_64 | Focused runtime fixture checks both truth values, conversion, and both selection branches. |
 | `core::char` all 19 public functions | Executable on x86_64 | Focused runtime fixture checks ASCII classes, all 26 case pairs, case-insensitive comparison, control and printable boundaries, and unchanged non-ASCII values. Checked `from_u32` (returning `Option<char>`) and `from_u32_or` accept exactly the Unicode scalar values and reject surrogates and values above U+10FFFF; `is_scalar_value` tests that range. |
 | `core::utf8` all 25 public codec and backed-view functions | Executable on x86_64 | Native fixtures check ASCII and multibyte encoding/decoding, checked scalar append, scalar counts and lookup, first and last scalar and sequence search, byte/scalar boundary mapping, equality, prefix and suffix matching, lexicographic comparison, empty and truncated views, out-of-byte-range integer codes, malformed sequences, surrogate exclusion, and Unicode maximum. Direct caller-backed `[u8]` helpers validate and count scalars, map scalar and byte boundaries, and read scalars by index across one- through four-byte sequences. They reject malformed input and negative lengths, and native indexing traps on a physical length overclaim. The older general view functions use caller-backed `[i32]` byte codes and do not access string storage. |
@@ -758,7 +760,7 @@ require further compiler work.
 | `core::mem` value-helper metadata and source wrappers | Executable on x86_64 Linux | The current memory fixture checks runtime-free value helpers and pointer/layout operations. Eleven public source helpers remain; the obsolete unavailable raw-memory service metadata was removed. See [remaining API audit](library-remaining-api-audit.md). |
 | `core::hash` twelve public free functions and two FNV-1a constants | Executable on x86_64 | The runtime fixture checks stable 32-bit bit-pattern hashes for six integer widths, both Boolean values, and ASCII and Unicode characters. The i32, u32, bool, and char functions call local `Hash<T>` implementations; narrow integers widen explicitly. `hash_wide_u64` and `hash_wide_i64` apply FNV-1a to eight little-endian bytes of the two-word representation and check zero, high-bit, maximum, and signed boundary values against exact outputs. The byte extraction masks each shifted word before narrowing it. The fixture also checks both constants, a one-byte step, known byte-sequence hashes, empty input, binary bytes, and a negative-length fallback. A separate native fixture confirms that overstating the physical byte view traps. The stdin fingerprint sample combines hashing with byte input and hexadecimal output. Direct imported `Hash<T>` calls remain outside the claim. |
 | `core::crc32` all 3 public functions and 3 constants | Executable on x86_64 for caller-backed `[u8]` views | The native fixtures check CRC-32/ISO-HDLC on `123456789`, empty input, a one-byte prefix, binary bytes, and every byte value through the streaming interface. Negative logical lengths return the fallback without reading storage; an overstated physical view traps. A source scan requires a runtime call for every public function. |
-| `core::option` generic `Option<T>`, all 12 public functions and 9 methods; `core::result` generic `Result<T, E>`, all 10 public functions and 10 methods | Executable on x86_64 | `tests/fixtures/stdlib_foundation/core_option_result.lani` runs every function and method through one generic checker per enum for every integer width, bool, char, f32, ptr, both wide integers and a user record; `tests/stdlib_foundation_execution.rs` checks that it calls each one. `contains` and `contains_err` use `core::cmp::PartialEq`; `unwrap` and `unwrap_err` panic on the other variant. Replaces the 22 per-type option and result modules. See [the Option guide](stdlib-option.md) and [the Result guide](stdlib-result.md). |
+| `core::option` generic `Option<T>`, 14 public free functions and 12 source-defined methods (including the imported Result transpose extension); `core::result` generic `Result<T, E>`, 11 public free functions and 11 source-defined methods | Executable on the documented native Linux x86_64 profile | The historical `core_option_result.lani` generic checker covers the earlier surface across integer widths, bool, char, f32, ptr, both wide integers and a user record. The [eager composition guide](stdlib-outcome-composition.md) owns new cross-type selection, nested flatten and both transposes: all five new library tests and four optional-sum groups/98 cases pass, with three selected old regressions and CPU surface inventory separate. The source inventory is separate from runtime receipts. `contains` and `contains_err` use `core::cmp::PartialEq`; `unwrap` and `unwrap_err` panic on the other variant. Replaces the 22 per-type option and result modules. See [the Option guide](stdlib-option.md) and [the Result guide](stdlib-result.md). |
 | `core::vec` generic `Vec<T, const N: usize>`, 28 public free functions and `borrow` | Executable on x86_64 Linux for tested primitive, record, array, slice, nested variant and zero-size payloads | [Borrowed mutation](stdlib-fixed-capacity.md) reports Full/Bounds errors and returns removed/replaced elements. Inline copies are independent while nested resources remain shallow. Views/cursors, lawful Eq lookup and Ord sorting/search execute. Symbolic T/N user helpers forward borrowed owners through the canonical free APIs. The former unchanged-owner failure API is removed and its three consumers migrated; method lookup with symbolic N remains a separate compiler dependency. |
 | `core::set` generic `Set<T, const N: usize>`, 17 public free functions and `borrow` | Executable on x86_64 Linux for wide integers, user Eq records and tested nested payloads | [Insertion-ordered inline sets](stdlib-fixed-capacity.md) compare full lawful `core::cmp::Eq<T>` values, including different wide values whose old u32 projections collided. Duplicate and Full insertion outcomes are distinct; removal returns the stored representative. Cross-capacity predicates, cursors, independent inline copies and explicit resource ownership execute. The projected `Key` contract is removed. |
 | `core::pair` generic `Pair<A, B>`, all 5 public functions | Executable on x86_64 for i32 and char fields | Construction, both accessors, `swap`, and `zip` of two Options, including a None side. Pairs are stored in a `core::vec::Vec` in the consumer fixture. |
@@ -769,7 +771,7 @@ require further compiler work.
 | `core::u16` all 25 public functions and 4 constants | Executable on x86_64 | The imported module fixture calls every function and reads every constant. It checks ordinary and high-bit values, wrapping and saturating overflow, checked arithmetic through `Option<u16>`, reversed bounds, zero divisors, power-of-two overflow, and invalid or overflowing alignment. |
 | `core::u32` all 25 public functions and 4 constants | Executable on x86_64 | The imported module fixture checks every function, unsigned high-bit and maximum values, checked and wrapping arithmetic, alignment failures, and power-of-two overflow. Checked results use concrete `Option<u32>`. |
 | `core::ordering` all 20 public functions and `Ordering` variants | Executable on x86_64 | `tests/stdlib_ordering.rs` and `tests/stdlib_ordering_wide.rs` execute every function and direct qualified and unqualified `Less`, `Equal`, and `Greater` values through the real stdlib root. The imported unit-pattern fixture now executes matches for all three variants through annotated and inferred locals, a typed parameter, and a direct imported function result; negative fixtures reject unrelated enums, scalar scrutinees, unrelated call results, and payload bindings on unit variants. They cover predicates, reverse, then, all six scalar integer widths, Boolean false-before-true order, Unicode scalar order, unsigned high-bit comparison, and full-width signed and unsigned ordering through the two-word `WideI64` and `WideU64` types. `tests/stdlib_char_high_bit_execution.rs` also compares the unsigned character high bit and maximum through ordering, comparison, range, and slice helpers. `compare_f32_or` checks finite values, signed zero, infinities, and caller-supplied fallbacks for NaN. The former per-type `compare_i64` facade was removed; native integer comparisons now execute through the lawful comparison traits and native integer guides (refreshed dependency 11). |
-| `core::result` all twenty source-defined public functions and methods | Executable on x86_64 for the documented instances | The actual module imports with unsupported payload templates deferred. Generic free and receiver unwrap_or/unwrap_err_or/or/and execute for nine tested scalar T/E pairs, including f32, char, and strings in either or both positions. Every pair of two success and two error values is exercised for both receiver combinators, preserving both inputs. Predicates, membership, and concrete matches also execute for independently sized caller-local records, strings, and borrowed i32 slices. Runtime fixtures check concrete returns, descriptor aliasing, and bounds traps. Wrong success and error argument types are rejected independently. See [the Result guide](stdlib-result.md). |
+| Historical `core::result` twenty-entry execution scope; [current composition surface](stdlib-outcome-composition.md) is separate | Executable on x86_64 for the documented instances | The actual module imports with unsupported payload templates deferred. Generic free and receiver unwrap_or/unwrap_err_or/or/and execute for nine tested scalar T/E pairs, including f32, char, and strings in either or both positions. Every pair of two success and two error values is exercised for both receiver combinators, preserving both inputs. Predicates, membership, and concrete matches also execute for independently sized caller-local records, strings, and borrowed i32 slices. Runtime fixtures check concrete returns, descriptor aliasing, and bounds traps. Wrong success and error argument types are rejected independently. See [the Result guide](stdlib-result.md). |
 | Generic payload bodies with compound, local, recursive, or durable-only specialization environments | Contract-only for native execution | Imported scalar free bodies and receiver bodies execute as documented above. Unsupported environments still require compiler support. Uninstantiated bodies retain their checked declarations and publish no native definition; a used unresolved template fails explicitly with `LNC0017`. The former by-value Option::replace ignored its input and was removed. Dependencies 1, 92, and 93 distinguish supported specialization from the remaining gaps. |
 | Native `core::{i64,u64,isize,usize}` | Executable on x86_64 Linux | [Native integer contracts](stdlib-native-integers.md) cover checked/wrapping/saturating arithmetic, division/remainder, bit operations, conversions and explicit strict preconditions. Two independent models each check 84,100 cases, with 54 native trap cases. Pointer-sized modules explicitly describe the verified 64-bit target. |
 | `core::cmp` lawful `Eq<T>` and `Ord<T>` plus explicit `PartialEq<T>` and `PartialOrd<T>` implementations for integer widths, `bool`, `char` and lawful stdlib comparison types; native `f32`/`f64` implement only partial IEEE comparisons; `core::float_order` provides total float keys | Executable on x86_64 | [Comparison contracts](stdlib-comparison.md) describe the laws, float key policy and compiler limits. Native pair tests cover 17,568 float pairs, generic partial membership and total keys in vectors, tree/hash maps and sets. `tests/fixtures/stdlib_foundation/core_cmp_free.lani` checks total and partial relations of each lawful primitive impl through one generic function bounded by `Eq<T>` and `Ord<T>`, with each type's extremes. The former per-type free functions (`core::cmp::lt_i32` and the rest) were removed; call `T::lt(a, b)` through a bound, or `i32::lt(a, b)` directly. |
@@ -1020,46 +1022,44 @@ have been [removed after consumer migration](stdlib-legacy-collections.md).
   `sample_programs/bitset_prime_sieve.lani` uses this storage and
   `core::number_i32` to count and sum primes through 100; its executable test
   checks the printed results, 25 and 1060.
-- `core::base64` uses the standard `A-Z`, `a-z`, `0-9`, `+`, `/` alphabet with
-  required `=` padding. It rejects whitespace, misplaced padding, and nonzero
-  unused bits. `encoded_len_or` returns the caller's fallback if the input
-  length is negative or the encoded size exceeds `i32::MAX`; `decoded_len_or`
-  validates the complete view before returning its size. `encode_into` and
-  `decode_into` return `-1` for invalid logical lengths, malformed input, or
-  insufficient declared output capacity, leaving output untouched in those
-  cases. Both allow input and output to be the same byte array. A length or
-  capacity that overstates physical backing can trap on native indexing.
-- `core::endian` reads and writes two-, four-, and eight-byte unsigned fields at a
+- `core::base64` now uses checked View operations and explicit standard/URL-safe,
+  padded/unpadded profiles. Result distinguishes invalid metadata, length overflow,
+  wire shape, indexed byte/padding/unused-bit errors and required output capacity.
+  Decode validates the complete wire before capacity/stores; all recoverable
+  errors preserve the backing. Same-selected-base/same-stride aliases remain
+  supported, with physical backing and other overlap left to the caller.
+  The [current guide](stdlib-base64.md) records five accepted library gates,
+  three selected consumer tests and the 194-case real program. The older table
+  row above retains sentinel-API scope.
+- `core::endian` reads and writes two-, four-, and eight-byte numeric fields at a
   caller-supplied offset in a logical byte view. Big-endian order places the
   most significant byte first; little-endian order places it last. A negative
   length or offset, or a field that exceeds the logical length, returns the
   supplied read fallback or `false` before touching storage. A logically valid
   field beyond physical backing traps on native indexing. Writes preserve
-  every byte outside the field. Eight-byte functions take and return
-  `core::wide_u64::WideU64`, avoiding the incomplete native `u64` path.
+  every byte outside the field. The explicit `wide_u64` family takes and
+  returns `core::wide_u64::WideU64`; native u64 arithmetic already executes.
+  The [native numeric increment](stdlib-native-endian.md) adds its byte-order
+  API alongside signed and IEEE float fields. That increment brings the
+  module from twelve to 36 functions; all 24 additions have direct native
+  contract/model/memory acceptance, and the record application passes four
+  groups/96 cases. Static call inventory remains separate from runtime evidence.
+  The earlier packet-header receipt remains scoped to the original family.
   `sample_programs/packet_header_sum.lani`
   parses a mixed-endian packet header, sums its payload, and prints `67`.
-- `core::varint` and `core::varint_wide_u64` encode canonical unsigned LEB128
-  into caller-owned bytes and decode one value from a caller-supplied offset.
-  Zero uses one byte; the maxima use five and ten bytes. The write functions
-  return the next offset or `-1` for invalid logical bounds or insufficient
-  space, and reject those cases before writing. Read results expose `OK`,
-  `INVALID_BOUNDS`, `TRUNCATED`, `OVERFLOW`, and `NON_CANONICAL`; failed value
-  and next-offset accessors return the caller's fallback. A terminated
-  encoding with a zero final group after an earlier group is noncanonical.
-  Physical backing overclaims trap when an element is accessed. The wide
-  result stores flat scalar words to avoid dependency 56. The codecs are
-  portable Lanius source, but executable target evidence is x86_64 only.
-  `sample_programs/varint_frame_sum.lani` writes a small frame, decodes it,
-  and prints `4294967606`.
-- `core::varint_i32` and `core::varint_wide_i64` map signed values to unsigned
-  LEB128 with ZigZag encoding: `0 -> 0`, `-1 -> 1`, `1 -> 2`, and the signed
-  minimum to the corresponding unsigned maximum. The unsigned readers supply
-  the status and next offset. The signed `value_*_or` accessors decode only a
-  successful result and otherwise return the caller's fallback. Signed writes
-  inherit the unsigned no-write logical rejection and physical-backing trap
-  behavior. `sample_programs/varint_signed_frame_sum.lani` decodes three
-  signed readings and prints `-4294967321`.
+- `core::varint` now encodes native u32/u64 and ZigZag i32/i64 in one
+  [checked module](stdlib-varint.md). Its sixteen free functions accept
+  View<u8>/relative offsets and return typed Result/Decoded or explicit Error;
+  the signed/two-word codec modules retire without aliases. Writers preflight
+  the complete encoded capacity before any store. Readers admit at most five/
+  ten bytes, check final-byte overflow before canonicality and publish no
+  partial value/next on error. Offset==length is admitted, giving Truncated
+  or BufferTooSmall after metadata checks. Native admission and both migrated
+  frame examples pass, along with the independent wire model, guarded physical
+  boundaries and real CLI. The two examples still print `4294967606` and
+  `-4294967321`.
+  Earlier status/fallback/two-word evidence above remains historical; unrelated
+  wide arithmetic and its compiler-state snapshots are retained.
 - `core::bool` converts any nonzero i32 to true. Its selector functions return
   the chosen branch value. `core::char` tests ASCII classes; its case-insensitive
   equality and case conversion fold ASCII letters only. `is_ascii_control`
@@ -1244,13 +1244,23 @@ have been [removed after consumer migration](stdlib-legacy-collections.md).
   overclaiming the physical backing can trap. Reversal may share backing.
 - `core::option::Option<T>` and `core::result::Result<T, E>` are the only
   optional and result types; the per-type modules (`option_i32`,
-  `result_u8`, `option_wide_u64` and the rest) are gone. Every operation
-  takes its value by value and exists as a free function and as a method.
+  `result_u8`, `option_wide_u64` and the rest) are gone. Operations take values
+  by value and preserve caller copies. Option has 14 free functions and 12
+  source-defined methods, including the Result-of-Option transpose extension;
+  Result has 11 free functions and 11 source-defined methods. `ok` and `err`
+  remain free functions. Type-changing Option `and<T,U>` and Result
+  `and<T,E,U>`/`or<T,E,F>` select eagerly evaluated shallow inputs; Result
+  `and` retains the error type and `or` retains the success type. Both enums
+  have specialized nested flatten methods, and both transpose directions
+  preserve absence, success and error separately without allocation or cleanup.
   `contains` and `contains_err` need `core::cmp::PartialEq` on the compared payload,
   which `core::cmp` implements for every integer width, bool, char, f32
   (IEEE equality), ptr and the wide integers. `unwrap` and `unwrap_err` panic
   on the other variant; the `*_or` forms never panic. `core::option` imports
-  `core::result` for `ok_or`, `ok` and `err`. See
+  `core::result` for `ok_or`, `ok`, `err` and both transpose functions/methods;
+  Result does not import Option. Import `core::option` for the imported Result
+  transpose extension. Selected and discarded owners retain manual cleanup.
+  See [eager composition](stdlib-outcome-composition.md),
   [the Option guide](stdlib-option.md) and [the Result guide](stdlib-result.md).
 - `core::i8`, `core::i16`, `core::i32`,
   `core::u8`, `core::u16`, and `core::u32` return `core::option::Option` of
@@ -2037,8 +2047,9 @@ Run `cargo test --test stdlib_signed_radix_report_program` for a bounded
 signed binary input program that reports three representations.
 Run `cargo test --test stdlib_bitset_execution` for the caller-backed bitset,
 including the word-boundary matrix and native bounds trap.
-Run `cargo test --test stdlib_base64_execution` for strict caller-backed
-Base64 encoding and decoding, all byte values, and native bounds trapping.
+The [checked Base64 guide](stdlib-base64.md) separates current direct, model,
+physical-boundary, migrated-consumer and binary-CLI evidence. Historical
+standard-padded sentinel receipts do not establish the new checked profiles.
 Run `cargo test --test stdlib_crc32_execution` for streaming and caller-backed
 CRC-32/ISO-HDLC, known vectors, all byte values, and native bounds trapping.
 Run `cargo test --test stdlib_wide_u64_execution` for all two-word 64-bit
@@ -2052,10 +2063,10 @@ arithmetic, differential native comparisons, and the checked-factorial
 program.
 Run `cargo test --test stdlib_endian_execution` for caller-backed endian
 fields, a packet-header sample, and native bounds trapping.
-Run `cargo test --test stdlib_varint_execution` for caller-backed canonical
-varints at both widths, the frame-sum program, and native bounds trapping.
-Run `cargo test --test stdlib_varint_signed_execution` for signed ZigZag
-round trips, both signed extrema, and the signed frame-sum program.
+The [varint guide's focused targets](stdlib-varint.md#focused-targets) separate
+direct, model, physical-boundary, migrated-frame and CLI execution. Frame
+examples use `stdlib_varint_frames_execution`; the old signed/status/two-word
+fixtures and `stdlib_varint_signed_execution` driver have been removed.
 Run `cargo test --test stdlib_cmp_execution` for local trait method dispatch,
 imported `core::cmp` free calls, and `core::hash::hash_i32` through its local
 trait implementation.
@@ -2884,11 +2895,11 @@ also fixes the imported struct-return relocation path described below.
     trailing field differs from its initializer. Four flat scalar fields in
     the same shape execute correctly in a separate local check. Compile with
     `laniusc --stdlib-root tests/fixtures/stdlib_foundation/repro_imported_nested_return_root --emit x86_64 -o /tmp/repro_nested tests/fixtures/stdlib_foundation/repro_imported_nested_return.lani`
-    and run `/tmp/repro_nested` to reproduce the exit status. The wide
-    varint decoder uses three flat scalar fields and encodes its successful
-    next offset in a private negative state; this gives executable status,
-    value, and next-offset accessors without relying on the broken nested
-    return layout.
+    and run `/tmp/repro_nested` to reproduce the recorded exit status. At
+    that historical source freeze, the now-retired two-word varint decoder
+    used three flat scalar fields and a private negative success state. The
+    current native Result/Decoded codec does not use that representation;
+    this increment makes no new execution or repair claim for this reproducer.
 57. **Narrow integer trait implementation keys collide with 32-bit keys.**
     `laniusc check tests/fixtures/stdlib_foundation/repro_cmp_signed_width_trait_impls.lani`
     reports `LNC0021` on `impl Marker<i32> for i32` after an `i8` impl.

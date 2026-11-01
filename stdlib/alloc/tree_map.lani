@@ -1,11 +1,15 @@
 // Ordered map with AVL balancing and reusable indexed node storage.
 // Copies borrow nested resources; keep one active owner of the allocation.
 module alloc::tree_map;
+import core::function;
 import alloc::allocator;
 import core::cmp;
 import core::iter;
 import core::mem;
 import core::option;
+import core::ordering;
+import core::pair;
+import core::range;
 import core::result;
 import core::slice;
 
@@ -20,6 +24,17 @@ pub struct Cursor<K, V> { storage: ptr, reserved: i32, front: i32, back: i32 }
 // One active owner of a valid current tree and every unconsumed pair.
 pub struct IntoIter<K, V> { owner: TreeMap<K, V> }
 const ALIGN: usize = 8;
+
+// Preserve the original same-key point lookup's query-first comparison order.
+struct NaturalKey<K> {}
+impl<K> NaturalKey<K> { fn borrow(&self) -> &NaturalKey<K> { return self; } }
+pub impl<K> core::ordering::Comparator<K,K> for NaturalKey<K> where K:core::cmp::Ord<K> {
+    pub fn compare(&self, stored:K, query:K) -> core::ordering::Ordering {
+        if (K::lt(query,stored)) { return core::ordering::Greater; }
+        if (K::lt(stored,query)) { return core::ordering::Less; }
+        return core::ordering::Equal;
+    }
+}
 
 pub fn new<K, V>() -> TreeMap<K, V> {
     let empty: ptr = 0;
@@ -36,6 +51,13 @@ fn capacity_limit<K, V>() -> i32 {
 }
 fn height<K, V>(nodes: [Node<K, V>], index: i32) -> i32 {
     if (index < 0) { return 0; } let node: Node<K, V> = nodes[index]; return node.height;
+}
+fn bound_value<T>(bound: core::range::Bound<T>) -> core::option::Option<T> {
+    return match (bound) {
+        core::range::Bound::Included(value) -> core::option::Some(value),
+        core::range::Bound::Excluded(value) -> core::option::Some(value),
+        core::range::Bound::Unbounded -> core::option::None(),
+    };
 }
 fn endpoint<K, V>(nodes: [Node<K, V>], root: i32, last: bool) -> i32 {
     let index: i32 = root;
@@ -116,22 +138,79 @@ pub impl<K, V> TreeMap<K, V> {
     }
     fn nodes(&self) -> [Node<K, V>] { return core::mem::typed_slice_from_storage(self.storage, self.reserved); }
     fn find(&self, key: K) -> i32 where K: core::cmp::Ord<K> {
+        let policy:NaturalKey<K> = NaturalKey {};
+        return self.find_by<K,NaturalKey<K>>(key,policy.borrow());
+    }
+    fn find_by<Q,P>(&self, query:Q, policy:&P) -> i32 where P:core::ordering::Comparator<K,Q> {
         let nodes: [Node<K, V>] = self.nodes(); let index: i32 = self.root;
         while (index >= 0) {
             let node: Node<K, V> = nodes[index];
-            if (K::lt(key, node.item.key)) { index = node.left; }
-            else { if (K::lt(node.item.key, key)) { index = node.right; } else { return index; } }
+            let stored:K = node.item.key;
+            let order:core::ordering::Ordering = policy.compare(stored,query);
+            if (core::ordering::is_greater(order)) { index = node.left; }
+            else { if (core::ordering::is_less(order)) { index = node.right; } else { return index; } }
         }
         return -1;
     }
     pub fn contains_key(&self, key: K) -> bool where K: core::cmp::Ord<K> { return self.find(key) >= 0; }
     pub fn get_entry(&self, key: K) -> core::option::Option<Entry<K, V>> where K: core::cmp::Ord<K> {
-        let index: i32 = self.find(key); if (index < 0) { return core::option::None(); }
+        return self.entry_at(self.find(key));
+    }
+    fn entry_at(&self, index:i32) -> core::option::Option<Entry<K,V>> {
+        if (index < 0) { return core::option::None(); }
         let nodes: [Node<K, V>] = self.nodes(); let node: Node<K, V> = nodes[index]; return core::option::Some(node.item);
     }
     pub fn get(&self, key: K) -> core::option::Option<V> where K: core::cmp::Ord<K> {
         let found: core::option::Option<Entry<K, V>> = self.get_entry(key);
         let result: core::option::Option<V> = match (found) { Some(item) -> core::option::Some(item.value), None -> core::option::None() }; return result;
+    }
+    // Missing keys never call update. A present value is lent exclusively to
+    // the mapper, which returns its latest valid descriptor in Pair.first,
+    // even when Pair.second is a Result error. No rollback or Destroy occurs.
+    // End previous value borrows/cursors first. The callback must not access
+    // this map through any alias or change key ordering through shared backing.
+    // The query key remains caller-owned; only the stored value is replaced.
+    pub fn update_value<M, R>(&self, key: K, update: &M) -> core::option::Option<R>
+        where K: core::cmp::Ord<K>, M: core::function::Mapper<V, core::pair::Pair<V, R>> {
+        let index: i32 = self.find(key);
+        return self.update_at<M,R>(index,update);
+    }
+    fn update_at<M,R>(&self, index:i32, update:&M) -> core::option::Option<R>
+        where M:core::function::Mapper<V,core::pair::Pair<V,R>> {
+        if (index < 0) { return core::option::None(); }
+        let nodes: [Node<K, V>] = self.nodes();
+        let node: Node<K, V> = nodes[index];
+        let item: Entry<K, V> = node.item;
+        let updated: core::pair::Pair<V, R> = update.apply(item.value);
+        node.item = Entry { key: item.key, value: updated.first };
+        nodes[index] = node;
+        return core::option::Some(updated.second);
+    }
+    // Policies partition the stored order as Less, optional Equal, Greater;
+    // each query identifies at most one key identity. Operands are call-scoped
+    // observations: no mutation, retirement, reentry or descriptor escape.
+    // Keep query backing live and stable through any subsequent value update.
+    pub fn contains_key_by<Q,P>(&self, query:Q, policy:&P) -> bool
+        where P:core::ordering::Comparator<K,Q> {
+        return self.find_by<Q,P>(query,policy) >= 0;
+    }
+    pub fn get_entry_by<Q,P>(&self, query:Q, policy:&P) -> core::option::Option<Entry<K,V>>
+        where P:core::ordering::Comparator<K,Q> {
+        return self.entry_at(self.find_by<Q,P>(query,policy));
+    }
+    pub fn get_by<Q,P>(&self, query:Q, policy:&P) -> core::option::Option<V>
+        where P:core::ordering::Comparator<K,Q> {
+        let found:core::option::Option<Entry<K,V>> = self.get_entry_by<Q,P>(query,policy);
+        return match (found) { Some(item) -> core::option::Some(item.value), None -> core::option::None() };
+    }
+    pub fn update_value_by<Q,P,M,R>(&self, query:Q, policy:&P, update:&M) -> core::option::Option<R>
+        where P:core::ordering::Comparator<K,Q>, M:core::function::Mapper<V,core::pair::Pair<V,R>> {
+        let index:i32 = self.find_by<Q,P>(query,policy);
+        return self.update_at<M,R>(index,update);
+    }
+    pub fn remove_by<Q,P>(&self, query:Q, policy:&P) -> core::option::Option<Entry<K,V>>
+        where P:core::ordering::Comparator<K,Q> {
+        return self.remove_at(self.find_by<Q,P>(query,policy));
     }
     pub fn first(&self) -> core::option::Option<Entry<K, V>> {
         let nodes: [Node<K, V>] = self.nodes(); let index: i32 = endpoint(nodes, self.root, false);
@@ -175,6 +254,159 @@ pub impl<K, V> TreeMap<K, V> {
             } else { front = -1; }
         }
         return core::result::Ok(Cursor { storage: self.storage, reserved: self.reserved, front: front, back: back });
+    }
+    // Ordered navigation. Modes: 0 first stored >= query, 1 first stored >
+    // query, 2 last stored <= query, 3 last stored < query. One policy call per
+    // visited node, stored key first; the policy must order the stored keys as
+    // Less*, Equal*, Greater* (an Equal run may hold several keys).
+    fn navigate_by<Q,P>(&self, query:Q, policy:&P, mode:i32) -> i32 where P:core::ordering::Comparator<K,Q> {
+        let nodes: [Node<K, V>] = self.nodes(); let index: i32 = self.root; let candidate: i32 = -1;
+        while (index >= 0) {
+            let node: Node<K, V> = nodes[index];
+            let stored: K = node.item.key;
+            let order: core::ordering::Ordering = policy.compare(stored, query);
+            let accept: bool = core::ordering::is_less(order);
+            if (mode == 0) { accept = !core::ordering::is_less(order); }
+            if (mode == 1) { accept = core::ordering::is_greater(order); }
+            if (mode == 2) { accept = !core::ordering::is_greater(order); }
+            if (mode < 2) {
+                if (accept) { candidate = index; index = node.left; } else { index = node.right; }
+            } else {
+                if (accept) { candidate = index; index = node.right; } else { index = node.left; }
+            }
+        }
+        return candidate;
+    }
+    fn navigate(&self, key:K, mode:i32) -> i32 where K: core::cmp::Ord<K> {
+        let policy:NaturalKey<K> = NaturalKey {};
+        return self.navigate_by<K,NaturalKey<K>>(key,policy.borrow(),mode);
+    }
+    // Greatest entry whose key is at most, or strictly less than, the key.
+    pub fn last_at_most(&self, key: K) -> core::option::Option<Entry<K, V>> where K: core::cmp::Ord<K> { return self.entry_at(self.navigate(key, 2)); }
+    pub fn last_below(&self, key: K) -> core::option::Option<Entry<K, V>> where K: core::cmp::Ord<K> { return self.entry_at(self.navigate(key, 3)); }
+    // Heterogeneous navigation through Comparator<K,Q>; see range_bounds_by.
+    pub fn lower_bound_by<Q,P>(&self, query:Q, policy:&P) -> core::option::Option<Entry<K,V>>
+        where P:core::ordering::Comparator<K,Q> { return self.entry_at(self.navigate_by<Q,P>(query,policy,0)); }
+    pub fn upper_bound_by<Q,P>(&self, query:Q, policy:&P) -> core::option::Option<Entry<K,V>>
+        where P:core::ordering::Comparator<K,Q> { return self.entry_at(self.navigate_by<Q,P>(query,policy,1)); }
+    pub fn last_at_most_by<Q,P>(&self, query:Q, policy:&P) -> core::option::Option<Entry<K,V>>
+        where P:core::ordering::Comparator<K,Q> { return self.entry_at(self.navigate_by<Q,P>(query,policy,2)); }
+    pub fn last_below_by<Q,P>(&self, query:Q, policy:&P) -> core::option::Option<Entry<K,V>>
+        where P:core::ordering::Comparator<K,Q> { return self.entry_at(self.navigate_by<Q,P>(query,policy,3)); }
+    fn front_of<Q,P>(&self, lower:core::range::Bound<Q>, policy:&P) -> i32 where P:core::ordering::Comparator<K,Q> {
+        return match (lower) {
+            core::range::Bound::Included(query) -> self.navigate_by<Q,P>(query,policy,0),
+            core::range::Bound::Excluded(query) -> self.navigate_by<Q,P>(query,policy,1),
+            core::range::Bound::Unbounded -> endpoint(self.nodes(), self.root, false),
+        };
+    }
+    // Back end for a found front: -1 when the front key already lies above the
+    // upper bound (one policy call), else the upper descent's last entry.
+    fn back_after<Q,P>(&self, front:i32, query:Q, policy:&P, mode:i32) -> i32 where P:core::ordering::Comparator<K,Q> {
+        let nodes: [Node<K, V>] = self.nodes(); let node: Node<K, V> = nodes[front];
+        let stored: K = node.item.key;
+        let order: core::ordering::Ordering = policy.compare(stored, query);
+        let inside: bool = core::ordering::is_less(order);
+        if (mode == 2) { inside = !core::ordering::is_greater(order); }
+        if (!inside) { return -1; }
+        return self.navigate_by<Q,P>(query,policy,mode);
+    }
+    fn back_of<Q,P>(&self, front:i32, upper:core::range::Bound<Q>, policy:&P) -> i32 where P:core::ordering::Comparator<K,Q> {
+        if (front < 0) { return -1; }
+        return match (upper) {
+            core::range::Bound::Included(query) -> self.back_after<Q,P>(front,query,policy,2),
+            core::range::Bound::Excluded(query) -> self.back_after<Q,P>(front,query,policy,3),
+            core::range::Bound::Unbounded -> endpoint(self.nodes(), self.root, true),
+        };
+    }
+    // Cursor over stored keys inside both bounds. Calls: the lower descent
+    // (none when Unbounded); then, only if it found an entry and upper is
+    // bounded, one check of that entry against upper and, if it passes, the
+    // upper descent. Bounds that admit no common key give an empty cursor;
+    // reversed heterogeneous bounds are not detected separately.
+    pub fn range_bounds_by<Q,P>(&self, lower:core::range::Bound<Q>, upper:core::range::Bound<Q>, policy:&P) -> Cursor<K,V>
+        where P:core::ordering::Comparator<K,Q> {
+        let front: i32 = self.front_of<Q,P>(lower,policy);
+        let back: i32 = self.back_of<Q,P>(front,upper,policy);
+        if (back < 0) { front = -1; }
+        return Cursor { storage: self.storage, reserved: self.reserved, front: front, back: back };
+    }
+    // Same-key bounds. InvalidRange when both bounds hold values and upper is
+    // strictly less than lower; equal values with any exclusion are empty.
+    pub fn range_bounds(&self, lower:core::range::Bound<K>, upper:core::range::Bound<K>) -> core::result::Result<Cursor<K,V>, Error> where K: core::cmp::Ord<K> {
+        let low: core::option::Option<K> = bound_value<K>(lower);
+        let high: core::option::Option<K> = bound_value<K>(upper);
+        if (low.is_some() && high.is_some()) {
+            if (K::lt(high.unwrap(), low.unwrap())) { return core::result::Err(Error::InvalidRange); }
+        }
+        let policy:NaturalKey<K> = NaturalKey {};
+        return core::result::Ok(self.range_bounds_by<K,NaturalKey<K>>(lower,upper,policy.borrow()));
+    }
+    // Range removal and extraction. A span is a range cursor's front/back.
+    fn span_count(&self, span: Cursor<K, V>) -> i32 {
+        let walk: Cursor<K, V> = span; let count: i32 = 0;
+        while (walk.next().is_some()) { count += 1; }
+        return count;
+    }
+    // Remove from the back of the span towards its front. Removing an entry
+    // can move only its in-order successor's item, which lies above the span,
+    // so each precomputed predecessor index stays valid.
+    fn remove_span(&self, span: Cursor<K, V>, count: i32) {
+        let current: i32 = span.back; let left: i32 = count;
+        while (left > 0) {
+            let previous: i32 = -1;
+            if (left > 1) { previous = adjacent(self.nodes(), current, true); }
+            self.remove_at(current); current = previous; left -= 1;
+        }
+    }
+    // Move every span entry, in order, into a new exact-capacity owner.
+    // Allocation precedes any change; Err leaves this map untouched.
+    fn extract_span(&self, span: Cursor<K, V>) -> core::result::Result<TreeMap<K, V>, Error> {
+        let count: i32 = self.span_count(span);
+        let moved: TreeMap<K, V> = new();
+        if (count == 0) { return core::result::Ok(moved); }
+        let reserved: core::result::Result<i32, Error> = moved.try_reserve(count);
+        if (reserved.is_err()) { return core::result::Err(reserved.unwrap_err()); }
+        let target: [Node<K, V>] = moved.nodes(); let walk: Cursor<K, V> = span; let index: i32 = 0;
+        while (index < count) {
+            let item: Entry<K, V> = walk.next().unwrap();
+            target[index] = Node { item: item, left: -1, right: -1, parent: -1, height: 1, next_free: -1 }; index += 1;
+        }
+        moved.length = count; moved.link_sorted();
+        self.remove_span(span, count);
+        return core::result::Ok(moved);
+    }
+    // Remove every entry inside both bounds and return how many. Like clear,
+    // removed keys and values are discarded shallowly with no destructor; use
+    // try_extract_range when they own nested resources. Capacity is retained
+    // and nothing allocates. Policy calls are exactly those of range_bounds_by.
+    pub fn remove_range_by<Q,P>(&self, lower:core::range::Bound<Q>, upper:core::range::Bound<Q>, policy:&P) -> i32
+        where P:core::ordering::Comparator<K,Q> {
+        let span: Cursor<K, V> = self.range_bounds_by<Q,P>(lower,upper,policy);
+        let count: i32 = self.span_count(span); self.remove_span(span, count); return count;
+    }
+    pub fn remove_range(&self, lower:core::range::Bound<K>, upper:core::range::Bound<K>) -> core::result::Result<i32, Error> where K: core::cmp::Ord<K> {
+        let span: core::result::Result<Cursor<K, V>, Error> = self.range_bounds(lower,upper);
+        if (span.is_err()) { return core::result::Err(span.unwrap_err()); }
+        let count: i32 = self.span_count(span.unwrap()); self.remove_span(span.unwrap(), count); return core::result::Ok(count);
+    }
+    // Transfer every entry inside both bounds, with its cleanup authority, to
+    // a new owner of exactly that capacity (no allocation when empty). Err
+    // (AllocationFailed, CapacityOverflow, or InvalidRange for reversed
+    // same-key bounds) leaves this map, its capacity and cursors unchanged.
+    pub fn try_extract_range_by<Q,P>(&self, lower:core::range::Bound<Q>, upper:core::range::Bound<Q>, policy:&P) -> core::result::Result<TreeMap<K, V>, Error>
+        where P:core::ordering::Comparator<K,Q> {
+        return self.extract_span(self.range_bounds_by<Q,P>(lower,upper,policy));
+    }
+    pub fn try_extract_range(&self, lower:core::range::Bound<K>, upper:core::range::Bound<K>) -> core::result::Result<TreeMap<K, V>, Error> where K: core::cmp::Ord<K> {
+        let span: core::result::Result<Cursor<K, V>, Error> = self.range_bounds(lower,upper);
+        if (span.is_err()) { return core::result::Err(span.unwrap_err()); }
+        return self.extract_span(span.unwrap());
+    }
+    // Keys at least `at` move to the returned owner; smaller keys stay.
+    pub fn try_split_off(&self, at: K) -> core::result::Result<TreeMap<K, V>, Error> where K: core::cmp::Ord<K> {
+        let rest: core::range::Bound<K> = core::range::Bound::Unbounded;
+        return self.try_extract_range(core::range::Bound::Included(at), rest);
     }
     pub fn try_reserve(&self, additional: i32) -> core::result::Result<i32, Error> {
         if (additional < 0) { return core::result::Err(Error::InvalidCapacity); }
@@ -357,14 +589,6 @@ pub impl<K,V> core::iter::TryReplaceSink<Entry<K,V>,Error> for TreeMap<K,V>
 pub impl<K, V> Cursor<K, V> {
     pub fn borrow(&self) -> &Cursor<K, V> { return self; }
     pub fn is_empty(&self) -> bool { return self.front < 0; }
-    pub fn next_back(&self) -> core::option::Option<Entry<K, V>> {
-        if (self.back < 0) { return core::option::None(); }
-        let nodes: [Node<K, V>] = core::mem::typed_slice_from_storage(self.storage, self.reserved);
-        let node: Node<K, V> = nodes[self.back];
-        if (self.front == self.back) { self.front = -1; self.back = -1; }
-        else { self.back = adjacent(nodes, self.back, true); }
-        return core::option::Some(node.item);
-    }
 }
 
 pub impl<K, V> core::iter::Iterator<Entry<K, V>> for Cursor<K, V> {
@@ -378,16 +602,22 @@ pub impl<K, V> core::iter::Iterator<Entry<K, V>> for Cursor<K, V> {
     }
 }
 
+pub impl<K, V> core::iter::DoubleEndedIterator<Entry<K, V>> for Cursor<K, V> {
+    pub fn next_back(&self) -> core::option::Option<Entry<K, V>> {
+        if (self.back < 0) { return core::option::None(); }
+        let nodes: [Node<K, V>] = core::mem::typed_slice_from_storage(self.storage, self.reserved);
+        let node: Node<K, V> = nodes[self.back];
+        if (self.front == self.back) { self.front = -1; self.back = -1; }
+        else { self.back = adjacent(nodes, self.back, true); }
+        return core::option::Some(node.item);
+    }
+}
+
 pub impl<K, V> IntoIter<K, V> {
     pub fn borrow(&self) -> &IntoIter<K, V> { return self; }
     pub fn remaining(&self) -> i32 { return self.owner.len(); }
     pub fn capacity(&self) -> i32 { return self.owner.capacity(); }
     pub fn is_empty(&self) -> bool { return self.owner.is_empty(); }
-    // Endpoint removal preserves the canonical AVL tree and transfers a pair
-    // without comparison, cloning, release or allocation. O(log n) per pop.
-    pub fn next_back(&self) -> core::option::Option<Entry<K, V>> {
-        return self.owner.pop_last();
-    }
     // Exhaustion retains backing. Rejecting finish preserves the exact owner;
     // successful finish frees backing and disarms it, repeatably.
     pub fn try_finish(&self) -> core::option::Option<IntoIterError> {
@@ -403,6 +633,16 @@ pub impl<K, V> core::iter::Iterator<Entry<K, V>> for IntoIter<K, V> {
     pub fn next(&self) -> core::option::Option<Entry<K, V>> {
         return self.owner.pop_first();
     }
+}
+
+pub impl<K, V> core::iter::DoubleEndedIterator<Entry<K, V>> for IntoIter<K, V> {
+    // Endpoint removal preserves the canonical AVL tree and transfers a pair
+    // without comparison, cloning, release or allocation. O(log n) per pop.
+    pub fn next_back(&self) -> core::option::Option<Entry<K, V>> { return self.owner.pop_last(); }
+}
+
+pub impl<K, V> core::iter::ExactSizeIterator<Entry<K, V>> for IntoIter<K, V> {
+    pub fn remaining_count(&self) -> u64 { return self.remaining() as u64; }
 }
 
 // Internal set-storage boundary. One typed facade owns each state; temporary
@@ -466,6 +706,25 @@ pub fn key_remove<T>(owner: &KeyStorage, key: T) -> core::option::Option<T> wher
     if (core::option::is_none(result)) { return core::option::None(); }
     let entry: Entry<T, KeyUnit> = core::option::unwrap(result); return core::option::Some(entry.key);
 }
+pub fn key_contains_by<T,Q,P>(owner:&KeyStorage, query:Q, policy:&P) -> bool
+    where P:core::ordering::Comparator<T,Q> {
+    let map:TreeMap<T,KeyUnit> = key_view<T>(owner); return map.contains_key_by<Q,P>(query,policy);
+}
+pub fn key_get_by<T,Q,P>(owner:&KeyStorage, query:Q, policy:&P) -> core::option::Option<T>
+    where P:core::ordering::Comparator<T,Q> {
+    let map:TreeMap<T,KeyUnit> = key_view<T>(owner);
+    let found:core::option::Option<Entry<T,KeyUnit>> = map.get_entry_by<Q,P>(query,policy);
+    if (core::option::is_none(found)) { return core::option::None(); }
+    let item:Entry<T,KeyUnit> = core::option::unwrap(found); return core::option::Some(item.key);
+}
+pub fn key_remove_by<T,Q,P>(owner:&KeyStorage, query:Q, policy:&P) -> core::option::Option<T>
+    where P:core::ordering::Comparator<T,Q> {
+    let map:TreeMap<T,KeyUnit> = key_view<T>(owner);
+    let found:core::option::Option<Entry<T,KeyUnit>> = map.remove_by<Q,P>(query,policy);
+    key_update<T>(owner,map);
+    if (core::option::is_none(found)) { return core::option::None(); }
+    let item:Entry<T,KeyUnit> = core::option::unwrap(found); return core::option::Some(item.key);
+}
 pub fn key_reserve<T>(owner: &KeyStorage, additional: i32) -> core::result::Result<i32, Error> {
     let map: TreeMap<T, KeyUnit> = key_view<T>(owner);
     let result: core::result::Result<i32, Error> = map.try_reserve(additional);
@@ -522,4 +781,53 @@ pub fn key_next_back<T>(cursor: &KeyCursor) -> core::option::Option<T> {
     cursor.storage = view.storage; cursor.reserved = view.reserved; cursor.front = view.front; cursor.back = view.back;
     if (core::option::is_none(result)) { return core::option::None(); }
     let entry: Entry<T, KeyUnit> = core::option::unwrap(result); return core::option::Some(entry.key);
+}
+// Navigation bridges for TreeSet. Modes as in TreeMap.navigate_by:
+// 0 first >= query, 1 first >, 2 last <=, 3 last <.
+fn key_entry<T>(found: core::option::Option<Entry<T, KeyUnit>>) -> core::option::Option<T> {
+    if (core::option::is_none(found)) { return core::option::None(); }
+    let entry: Entry<T, KeyUnit> = core::option::unwrap(found); return core::option::Some(entry.key);
+}
+pub fn key_navigate<T>(owner: &KeyStorage, key: T, mode: i32) -> core::option::Option<T> where T: core::cmp::Ord<T> {
+    assert(mode >= 0 && mode <= 3);
+    let map: TreeMap<T, KeyUnit> = key_view<T>(owner); return key_entry<T>(map.entry_at(map.navigate(key, mode)));
+}
+pub fn key_navigate_by<T,Q,P>(owner: &KeyStorage, query: Q, policy: &P, mode: i32) -> core::option::Option<T>
+    where P: core::ordering::Comparator<T,Q> {
+    assert(mode >= 0 && mode <= 3);
+    let map: TreeMap<T, KeyUnit> = key_view<T>(owner); return key_entry<T>(map.entry_at(map.navigate_by<Q,P>(query, policy, mode)));
+}
+pub fn key_range_bounds<T>(owner: &KeyStorage, lower: core::range::Bound<T>, upper: core::range::Bound<T>) -> core::result::Result<KeyCursor, Error> where T: core::cmp::Ord<T> {
+    let map: TreeMap<T, KeyUnit> = key_view<T>(owner);
+    let result: core::result::Result<Cursor<T, KeyUnit>, Error> = map.range_bounds(lower, upper);
+    if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); }
+    let cursor: Cursor<T, KeyUnit> = core::result::unwrap(result); return core::result::Ok(key_cursor<T>(cursor));
+}
+pub fn key_range_bounds_by<T,Q,P>(owner: &KeyStorage, lower: core::range::Bound<Q>, upper: core::range::Bound<Q>, policy: &P) -> KeyCursor
+    where P: core::ordering::Comparator<T,Q> {
+    let map: TreeMap<T, KeyUnit> = key_view<T>(owner);
+    return key_cursor<T>(map.range_bounds_by<Q,P>(lower, upper, policy));
+}
+// Range removal/extraction bridges for TreeSet.
+fn key_moved<T>(result: core::result::Result<TreeMap<T, KeyUnit>, Error>) -> core::result::Result<KeyStorage, Error> {
+    if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); }
+    let state: KeyStorage = key_storage<T>(); key_update<T>(state.borrow(), core::result::unwrap(result)); return core::result::Ok(state);
+}
+pub fn key_remove_range<T>(owner: &KeyStorage, lower: core::range::Bound<T>, upper: core::range::Bound<T>) -> core::result::Result<i32, Error> where T: core::cmp::Ord<T> {
+    let map: TreeMap<T, KeyUnit> = key_view<T>(owner);
+    let result: core::result::Result<i32, Error> = map.remove_range(lower, upper); key_update<T>(owner, map); return result;
+}
+pub fn key_remove_range_by<T,Q,P>(owner: &KeyStorage, lower: core::range::Bound<Q>, upper: core::range::Bound<Q>, policy: &P) -> i32
+    where P: core::ordering::Comparator<T,Q> {
+    let map: TreeMap<T, KeyUnit> = key_view<T>(owner);
+    let count: i32 = map.remove_range_by<Q,P>(lower, upper, policy); key_update<T>(owner, map); return count;
+}
+pub fn key_extract_range<T>(owner: &KeyStorage, lower: core::range::Bound<T>, upper: core::range::Bound<T>) -> core::result::Result<KeyStorage, Error> where T: core::cmp::Ord<T> {
+    let map: TreeMap<T, KeyUnit> = key_view<T>(owner);
+    let result: core::result::Result<TreeMap<T, KeyUnit>, Error> = map.try_extract_range(lower, upper); key_update<T>(owner, map); return key_moved<T>(result);
+}
+pub fn key_extract_range_by<T,Q,P>(owner: &KeyStorage, lower: core::range::Bound<Q>, upper: core::range::Bound<Q>, policy: &P) -> core::result::Result<KeyStorage, Error>
+    where P: core::ordering::Comparator<T,Q> {
+    let map: TreeMap<T, KeyUnit> = key_view<T>(owner);
+    let result: core::result::Result<TreeMap<T, KeyUnit>, Error> = map.try_extract_range_by<Q,P>(lower, upper, policy); key_update<T>(owner, map); return key_moved<T>(result);
 }

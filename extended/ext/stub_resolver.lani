@@ -1,0 +1,256 @@
+// A DNS stub resolver over std::resolver_config: hosts first, then A/AAAA
+// queries through ext::dns_client (transaction-ID and question validation,
+// UDP with TCP fallback on truncation) across the search list and
+// nameservers. See docs/extended-stub-resolver.md.
+module ext::stub_resolver;
+import alloc::vec;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import ext::dns;
+import ext::dns_client;
+import std::clock;
+import std::resolver_config;
+
+pub enum Family { Any, Ipv4, Ipv6 }
+pub enum Source { None, Numeric, Hosts, Dns }
+// Found: addresses are set. NoSuchName: every candidate was NXDOMAIN.
+// NoData: some candidate exists without records of the requested family.
+// Failed: no candidate was answered by any server.
+pub enum Status { Found, NoSuchName, NoData, Failed }
+// One query to one server. Rcode(n) covers SERVFAIL, REFUSED and others.
+pub enum Outcome { Records(i32), NoData, NoSuchName, Rcode(i32), Transport(ext::dns_client::Cause) }
+pub struct Exchange { candidate: i32, server: core::net::SocketAddr, qtype: i32, tcp: bool, outcome: Outcome, discarded: i32 }
+// port 0 keeps each nameserver's port (53). timeout_ms and attempts 0 use the
+// configuration's values. hosts false skips the hosts content.
+pub struct Options { family: Family, port: u16, hosts: bool, timeout_ms: i32, attempts: i32, max_exchanges: i32 }
+pub enum Error { InvalidName, InvalidOptions, AllocationFailed, Clock(std::clock::Error) }
+// name: the candidate that answered (no trailing dot); canonical: the end of
+// its CNAME chain. ttl: the smallest TTL among the records used.
+pub struct Answer { status: Status, source: Source, addresses: alloc::vec::Vec<core::net::IpAddr>, ttl: u32, name: alloc::vec::Vec<u8>, canonical: alloc::vec::Vec<u8>, candidates: alloc::vec::Vec<u8>, spans: alloc::vec::Vec<i32>, exchanges: alloc::vec::Vec<Exchange> }
+pub const MAX_CNAME: i32 = 16;
+
+pub fn default_options() -> Options { return Options { family: Family::Any, port: 0, hosts: true, timeout_ms: 0, attempts: 0, max_exchanges: 64 }; }
+fn at(view: core::slice::View<u8>, index: i32) -> u8 { return view.values[view.start + index]; }
+fn part(view: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> { return core::slice::View { values: view.values, start: view.start + start, length: end - start }; }
+fn valid_text(name: core::slice::View<u8>) -> bool {
+    if (name.start < 0 || name.length < 1 || name.length > 253 || name.start > 2147483647 - name.length) { return false; }
+    let label: i32 = 0; let i: i32 = 0;
+    while (i < name.length) {
+        let c: u8 = at(name,i);
+        if (c == 46) { if (label == 0) { return false; } label = 0; }
+        else { if (c <= 32 || c >= 127) { return false; } label += 1; if (label > 63) { return false; } }
+        i += 1;
+    }
+    return label > 0;
+}
+// Dotted text (validated) to an uncompressed wire name, or false when the
+// result would exceed 255 bytes.
+fn to_wire(text: core::slice::View<u8>, out: &alloc::vec::Vec<u8>) -> bool {
+    out.clear(); if (text.length + 2 > 255) { return false; }
+    if (out.try_push(0 as u8).is_err()) { return false; } let mark: i32 = 0; let i: i32 = 0;
+    while (i < text.length) {
+        let c: u8 = at(text,i);
+        if (c == 46) { out.set(mark,(out.len()-mark-1) as u8); mark = out.len(); if (out.try_push(0 as u8).is_err()) { return false; } }
+        else { if (out.try_push(c).is_err()) { return false; } }
+        i += 1;
+    }
+    out.set(mark,(out.len()-mark-1) as u8); return out.try_push(0 as u8).is_ok();
+}
+fn name_text(name: ext::dns::Name, out: &alloc::vec::Vec<u8>) -> bool {
+    out.clear(); let cursor: ext::dns::Labels = name.labels(); let first: bool = true;
+    while (true) {
+        let next = cursor.next(); if (next.is_none()) { break; }
+        if (!first && out.try_push(46 as u8).is_err()) { return false; } first = false;
+        if (out.try_extend(next.unwrap()).is_err()) { return false; }
+    }
+    return true;
+}
+fn add_candidate(answer: &Answer, base: core::slice::View<u8>, suffix: core::slice::View<u8>) -> bool {
+    let start: i32 = answer.candidates.len();
+    if (answer.candidates.try_extend(base).is_err()) { return false; }
+    if (suffix.length > 0) { if (answer.candidates.try_push(46 as u8).is_err() || answer.candidates.try_extend(suffix).is_err()) { return false; } }
+    return answer.spans.try_push(start).is_ok() && answer.spans.try_push(answer.candidates.len() - start).is_ok();
+}
+fn new_answer() -> Answer {
+    return Answer { status: Status::NoSuchName, source: Source::None, addresses: alloc::vec::new(), ttl: 0, name: alloc::vec::new(), canonical: alloc::vec::new(), candidates: alloc::vec::new(), spans: alloc::vec::new(), exchanges: alloc::vec::new() };
+}
+pub impl Answer {
+    pub fn borrow(&self) -> &Answer { return self; }
+    pub fn candidate_count(&self) -> i32 { return self.spans.len() / 2; }
+    // The index-th name tried, in order.
+    pub fn candidate(&self, index: i32) -> core::slice::View<u8> {
+        let all = self.candidates.as_view(); if (index < 0 || index >= self.candidate_count()) { return part(all,0,0); }
+        let start: i32 = self.spans.at(2*index); return part(all,start,start+self.spans.at(2*index+1));
+    }
+    pub fn destroy(&self) { self.addresses.destroy(); self.name.destroy(); self.canonical.destroy(); self.candidates.destroy(); self.spans.destroy(); self.exchanges.destroy(); }
+}
+fn with_port(server: core::net::SocketAddr, port: u16) -> core::net::SocketAddr {
+    if (port == 0) { return server; }
+    return match (server) {
+        core::net::SocketAddr::V4(v) -> core::net::SocketAddr::V4(core::net::SocketAddrV4 { address: v.address, port: port }),
+        core::net::SocketAddr::V6(v) -> core::net::SocketAddr::V6(core::net::SocketAddrV6 { address: v.address, port: port, scope: v.scope })
+    };
+}
+fn address_of(record: ext::dns::Record) -> core::option::Option<core::net::IpAddr> {
+    return match (ext::dns::data(record)) {
+        ext::dns::Data::A(raw) -> v4(raw), ext::dns::Data::Aaaa(raw) -> v6(raw), _ -> core::option::None()
+    };
+}
+fn v4(raw: core::slice::View<u8>) -> core::option::Option<core::net::IpAddr> { let made = core::net::ipv4_from_octets(raw); if (made.is_err()) { return core::option::None(); } return core::option::Some(core::net::IpAddr::V4(made.unwrap())); }
+fn v6(raw: core::slice::View<u8>) -> core::option::Option<core::net::IpAddr> { let made = core::net::ipv6_from_octets(raw); if (made.is_err()) { return core::option::None(); } return core::option::Some(core::net::IpAddr::V6(made.unwrap())); }
+fn target_of(record: ext::dns::Record) -> core::option::Option<ext::dns::Name> {
+    if (record.rrtype != 5) { return core::option::None(); }
+    return match (ext::dns::data(record)) { ext::dns::Data::Domain(name) -> core::option::Some(name), _ -> core::option::None() };
+}
+// Follow the CNAME chain from the question name inside the answer section,
+// then collect class-IN records of qtype owned by its end.
+fn interpret(message: ext::dns::Message, qtype: i32, answer: &Answer, ttl: &Ttl) -> core::result::Result<i32, Error> {
+    let questions = message.questions(); let question = questions.next(); if (question.is_none()) { return core::result::Ok(0); }
+    let current: ext::dns::Name = question.unwrap().name; let hops: i32 = 0; let moved: bool = true;
+    while (moved && hops < MAX_CNAME) {
+        moved = false; let records = message.records(1); let next = records.next();
+        while (next.is_some() && !moved) {
+            let r: ext::dns::Record = next.unwrap();
+            if (r.rrclass == 1 && ext::dns::equal_dns(r.name,current)) { let target = target_of(r); if (target.is_some()) { current = target.unwrap(); ttl.take(r.ttl); moved = true; hops += 1; } }
+            next = records.next();
+        }
+    }
+    let found: i32 = 0; let records = message.records(1); let next = records.next();
+    while (next.is_some()) {
+        let r: ext::dns::Record = next.unwrap();
+        if (r.rrclass == 1 && r.rrtype == qtype && ext::dns::equal_dns(r.name,current)) {
+            let address = address_of(r);
+            if (address.is_some()) { if (answer.addresses.try_push(address.unwrap()).is_err()) { return core::result::Err(Error::AllocationFailed); } ttl.take(r.ttl); found += 1; }
+        }
+        next = records.next();
+    }
+    if (found > 0 && !name_text(current,answer.canonical.borrow())) { return core::result::Err(Error::AllocationFailed); }
+    return core::result::Ok(found);
+}
+struct Ttl { value: u32, set: bool }
+impl Ttl { fn borrow(&self) -> &Ttl { return self; } fn take(&self, value: u32) { if (!self.set || value < self.value) { self.value = value; self.set = true; } } }
+// A failed exchange used TCP when it failed in a TCP-only stage or cause, or
+// when every query is TCP (use-vc).
+fn over_tcp(failure: ext::dns_client::Failure, use_vc: bool) -> bool {
+    if (use_vc) { return true; }
+    let stage: bool = match (failure.stage) { ext::dns_client::Stage::ReceivePrefix -> true, ext::dns_client::Stage::ReceiveBody -> true, _ -> false };
+    let cause: bool = match (failure.cause) { ext::dns_client::Cause::Correlation -> true, ext::dns_client::Cause::FrameLength(n) -> true, ext::dns_client::Cause::UnexpectedEof(n) -> true, ext::dns_client::Cause::Truncated -> true, _ -> false };
+    return stage || cause;
+}
+fn now() -> core::result::Result<core::time::Instant, Error> { let read = std::clock::monotonic_now(); if (read.is_err()) { return core::result::Err(Error::Clock(read.unwrap_err())); } return core::result::Ok(read.unwrap()); }
+// 0 definitive (Records/NoData), 1 NXDOMAIN, 2 every server failed.
+fn query(answer: &Answer, ttl: &Ttl, candidate: i32, wire: core::slice::View<u8>, qtype: i32, config: &std::resolver_config::Config, options: Options, timeout: i32, attempts: i32, deadline: core::time::Deadline, rotation: i32) -> core::result::Result<i32, Error> {
+    let client: ext::dns_client::Options = ext::dns_client::default_options(); client.attempts = 1; client.retry_ms = timeout;
+    if (config.use_vc) { client.mode = ext::dns_client::Mode::TcpOnly; }
+    if (!config.edns0) { client.udp_payload = 0; }
+    let count: i32 = config.server_count(); let round: i32 = 0;
+    while (round < attempts) {
+        let index: i32 = 0;
+        while (index < count) {
+            if (answer.exchanges.len() >= options.max_exchanges) { return core::result::Ok(2); }
+            let started = now(); if (started.is_err()) { return core::result::Err(started.unwrap_err()); }
+            if (deadline.is_expired(started.unwrap())) { return core::result::Ok(2); }
+            let limit = started.unwrap().checked_add(core::time::from_millis((2 * timeout) as u64));
+            let window: core::time::Deadline = deadline; if (limit.is_ok() && limit.unwrap().compare(deadline.instant) < 0) { window = core::time::deadline_at(limit.unwrap()); }
+            let server: core::net::SocketAddr = with_port(config.server((index + rotation) % count).unwrap(),options.port);
+            let question = ext::dns_client::question(wire,qtype);
+            let result = ext::dns_client::query_until(server,question,client,window);
+            let exchange = Exchange { candidate: candidate, server: server, qtype: qtype, tcp: false, outcome: Outcome::NoData, discarded: 0 };
+            let verdict: i32 = 3;
+            if (result.is_err()) { let failure = result.unwrap_err(); exchange.outcome = Outcome::Transport(failure.cause); exchange.discarded = failure.stats.discarded; exchange.tcp = over_tcp(failure, config.use_vc); }
+            else {
+                let response = result.unwrap(); exchange.discarded = response.stats.discarded;
+                exchange.tcp = match (response.transport) { ext::dns_client::Transport::Tcp -> true, _ -> false };
+                let rcode: i32 = response.message().rcode();
+                if (rcode == 0) {
+                    let got = interpret(response.message(),qtype,answer,ttl); if (got.is_err()) { response.destroy(); return core::result::Err(got.unwrap_err()); }
+                    if (got.unwrap() > 0) { exchange.outcome = Outcome::Records(got.unwrap()); } verdict = 0;
+                } else { if (rcode == 3) { exchange.outcome = Outcome::NoSuchName; verdict = 1; } else { exchange.outcome = Outcome::Rcode(rcode); } }
+                response.destroy();
+            }
+            if (answer.exchanges.try_push(exchange).is_err()) { return core::result::Err(Error::AllocationFailed); }
+            if (verdict < 3) { return core::result::Ok(verdict); }
+            index += 1;
+        }
+        round += 1;
+    }
+    return core::result::Ok(2);
+}
+fn same_ip(a: core::net::IpAddr, b: core::net::IpAddr) -> bool {
+    let left: [u8;16] = [0;16]; let right: [u8;16] = [0;16];
+    if (a.version() != b.version()) { return false; }
+    let n = a.write_octets(core::slice::view(left,16).unwrap()); let m = b.write_octets(core::slice::view(right,16).unwrap());
+    if (n.is_err() || m.is_err()) { return false; } let i: i32 = 0; while (i < 16) { if (left[i] != right[i]) { return false; } i += 1; } return true;
+}
+fn has(addresses: &alloc::vec::Vec<core::net::IpAddr>, value: core::net::IpAddr) -> bool { let i: i32 = 0; while (i < addresses.len()) { if (same_ip(addresses.at(i),value)) { return true; } i += 1; } return false; }
+fn wants(family: Family, version: i32) -> bool { return match (family) { Family::Any -> true, Family::Ipv4 -> version == 4, Family::Ipv6 -> version == 6 }; }
+fn hosts_family(family: Family) -> std::resolver_config::Family { return match (family) { Family::Any -> std::resolver_config::Family::Any, Family::Ipv4 -> std::resolver_config::Family::Ipv4, Family::Ipv6 -> std::resolver_config::Family::Ipv6 }; }
+// Resolve name to addresses before deadline. A numeric address answers
+// directly; then hosts (unless options.hosts is false); then DNS. A name
+// with a trailing dot is absolute. Otherwise, with at least ndots dots the
+// name is tried as given before the search list, and with fewer after it.
+// For Family::Any, A is asked before AAAA; NXDOMAIN on A skips AAAA.
+pub fn lookup(name: core::slice::View<u8>, config: &std::resolver_config::Config, hosts: core::slice::View<u8>, options: Options, deadline: core::time::Deadline) -> core::result::Result<Answer, Error> {
+    if (options.timeout_ms < 0 || options.timeout_ms > 60000 || options.attempts < 0 || options.attempts > 8 || options.max_exchanges < 1 || config.server_count() < 1) { return core::result::Err(Error::InvalidOptions); }
+    let absolute: bool = name.length > 1 && at(name,name.length-1) == 46;
+    let base = name; if (absolute) { base = part(name,0,name.length-1); }
+    if (!valid_text(base)) { return core::result::Err(Error::InvalidName); }
+    let answer: Answer = new_answer();
+    if (answer.name.try_extend(base).is_err()) { answer.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let numeric = core::net::parse_ip(base);
+    if (numeric.is_ok()) {
+        if (!wants(options.family,numeric.unwrap().version())) { answer.status = Status::NoData; answer.source = Source::Numeric; return core::result::Ok(answer); }
+        if (answer.addresses.try_push(numeric.unwrap()).is_err() || answer.canonical.try_extend(base).is_err()) { answer.destroy(); return core::result::Err(Error::AllocationFailed); }
+        answer.status = Status::Found; answer.source = Source::Numeric; return core::result::Ok(answer);
+    }
+    if (options.hosts) {
+        let entries: [std::resolver_config::HostEntry;16] = [std::resolver_config::HostEntry { address: core::net::IpAddr::V4(core::net::ipv4(0,0,0,0)), canonical: part(base,0,0), line: 0 };16];
+        let matched = std::resolver_config::hosts_lookup(hosts,base,hosts_family(options.family),core::slice::view(entries,16).unwrap());
+        if (matched.is_ok() && matched.unwrap() > 0) {
+            let n: i32 = matched.unwrap(); if (n > 16) { n = 16; } let i: i32 = 0;
+            while (i < n) { if (!has(answer.addresses.borrow(),entries[i].address) && answer.addresses.try_push(entries[i].address).is_err()) { answer.destroy(); return core::result::Err(Error::AllocationFailed); } i += 1; }
+            if (answer.canonical.try_extend(entries[0].canonical).is_err()) { answer.destroy(); return core::result::Err(Error::AllocationFailed); }
+            answer.status = Status::Found; answer.source = Source::Hosts; return core::result::Ok(answer);
+        }
+    }
+    let dots: i32 = 0; let i: i32 = 0; while (i < base.length) { if (at(base,i) == 46) { dots += 1; } i += 1; }
+    let empty = part(base,0,0); let ok: bool = true;
+    if (absolute || dots >= config.ndots) { ok = add_candidate(answer.borrow(),base,empty); }
+    if (!absolute) { let s: i32 = 0; while (s < config.search_count() && ok) { ok = add_candidate(answer.borrow(),base,config.search(s)); s += 1; } }
+    if (!absolute && dots < config.ndots && ok) { ok = add_candidate(answer.borrow(),base,empty); }
+    if (!ok) { answer.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let timeout: i32 = options.timeout_ms; if (timeout == 0) { timeout = config.timeout_ms; }
+    let attempts: i32 = options.attempts; if (attempts == 0) { attempts = config.attempts; }
+    let first_type: i32 = 1; let second_type: i32 = 28;
+    let only_one: bool = match (options.family) { Family::Any -> config.no_aaaa, _ -> true };
+    let v6_only: bool = match (options.family) { Family::Ipv6 -> true, _ -> false }; if (v6_only) { first_type = 28; }
+    let wire: alloc::vec::Vec<u8> = alloc::vec::new(); let ttl = Ttl { value: 0, set: false };
+    let nodata: bool = false; let failed: bool = false; let candidate: i32 = 0; let rotation: i32 = 0;
+    while (candidate < answer.candidate_count()) {
+        let text = answer.candidate(candidate);
+        if (text.length > 253 || !to_wire(text,wire.borrow())) { candidate += 1; continue; }
+        let first = query(answer.borrow(),ttl.borrow(),candidate,wire.as_view(),first_type,config,options,timeout,attempts,deadline,rotation);
+        if (config.rotate) { rotation += 1; }
+        if (first.is_err()) { wire.destroy(); answer.destroy(); return core::result::Err(first.unwrap_err()); }
+        let verdict: i32 = first.unwrap();
+        if (verdict == 0 && !only_one) {
+            let second = query(answer.borrow(),ttl.borrow(),candidate,wire.as_view(),second_type,config,options,timeout,attempts,deadline,rotation);
+            if (config.rotate) { rotation += 1; }
+            if (second.is_err()) { wire.destroy(); answer.destroy(); return core::result::Err(second.unwrap_err()); }
+        }
+        if (verdict == 2) { failed = true; }
+        if (!answer.addresses.is_empty()) {
+            answer.name.clear(); if (answer.name.try_extend(text).is_err()) { wire.destroy(); answer.destroy(); return core::result::Err(Error::AllocationFailed); }
+            answer.ttl = ttl.value; wire.destroy(); answer.status = Status::Found; answer.source = Source::Dns; return core::result::Ok(answer);
+        }
+        if (verdict == 0) { nodata = true; }
+        candidate += 1;
+    }
+    wire.destroy();
+    if (nodata) { answer.status = Status::NoData; answer.source = Source::Dns; return core::result::Ok(answer); }
+    if (failed) { answer.status = Status::Failed; answer.source = Source::Dns; return core::result::Ok(answer); }
+    answer.status = Status::NoSuchName; answer.source = Source::Dns; return core::result::Ok(answer);
+}

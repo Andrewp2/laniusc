@@ -1,0 +1,235 @@
+// Independent canonical CSR owners. Copies alias one cleanup authority.
+// See docs/library-sparse-plan.md for finite arithmetic and work admission.
+module ext::sparse_matrix;
+import alloc::vec;
+import core::cmp;
+import core::f64;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::sparse;
+
+pub struct Matrix {
+    offsets: alloc::vec::Vec<i32>, columns: alloc::vec::Vec<i32>,
+    values: alloc::vec::Vec<f64>, rows: i32, cols: i32
+}
+struct Indexed { row: i32, column: i32, ordinal: i32, value: f64 }
+fn error(kind: ext::sparse::ErrorKind, row: i32, entry: i32) -> ext::sparse::Error {
+    return ext::sparse::Error { kind: kind, row: row, entry: entry };
+}
+fn valid<T>(values: core::slice::View<T>) -> bool {
+    return values.start >= 0 && values.length >= 0 && values.start <= 2147483647-values.length;
+}
+fn admitted(rows: i32, cols: i32, entries: i32, limits: ext::sparse::Limits)
+    -> core::result::Result<bool,ext::sparse::Error> {
+    if (limits.max_dimension < 0 || limits.max_entries < 0) {
+        return core::result::Err(error(ext::sparse::ErrorKind::InvalidLimits,-1,-1));
+    }
+    if (rows < 0 || cols < 0) { return core::result::Err(error(ext::sparse::ErrorKind::Shape,-1,-1)); }
+    // The row-offset Vec stores rows+1 i32 values. The other fixed ceiling
+    // comes from the f64 values Vec; columns require no tighter entry cap.
+    if (rows > limits.max_dimension || cols > limits.max_dimension || rows >= 536870911) {
+        return core::result::Err(error(ext::sparse::ErrorKind::DimensionLimit,-1,-1));
+    }
+    if (entries < 0) { return core::result::Err(error(ext::sparse::ErrorKind::Bounds,-1,-1)); }
+    if (entries > limits.max_entries || entries > 268435455) {
+        return core::result::Err(error(ext::sparse::ErrorKind::EntryLimit,-1,-1));
+    }
+    return core::result::Ok(true);
+}
+fn work(amount: u64, limits: ext::sparse::Limits) -> core::result::Result<bool,ext::sparse::Error> {
+    if (amount > limits.max_work) { return core::result::Err(error(ext::sparse::ErrorKind::WorkLimit,-1,-1)); }
+    return core::result::Ok(true);
+}
+// Descriptor-only checks precede owner capacity/work admission. The shared
+// validator remains the authority for every offset, column and value read.
+fn csr_admitted(input: ext::sparse::CsrView, transposed: bool, limits: ext::sparse::Limits)
+    -> core::result::Result<i32,ext::sparse::Error> {
+    if (limits.max_dimension < 0 || limits.max_entries < 0) {
+        return core::result::Err(error(ext::sparse::ErrorKind::InvalidLimits,-1,-1));
+    }
+    if (input.rows < 0 || input.cols < 0 || input.rows == 2147483647) {
+        return core::result::Err(error(ext::sparse::ErrorKind::Shape,-1,-1));
+    }
+    if (!valid(input.offsets) || !valid(input.columns) || !valid(input.values)) {
+        return core::result::Err(error(ext::sparse::ErrorKind::Bounds,-1,-1));
+    }
+    if (input.offsets.len() != input.rows+1 || input.columns.len() != input.values.len()) {
+        return core::result::Err(error(ext::sparse::ErrorKind::Shape,-1,-1));
+    }
+    if (transposed) { admitted(input.cols,input.rows,input.values.len(),limits)?; }
+    else { admitted(input.rows,input.cols,input.values.len(),limits)?; }
+    return core::result::Ok(input.values.len());
+}
+fn allocation_error(cause: alloc::vec::Error, capacity: ext::sparse::ErrorKind) -> ext::sparse::Error {
+    let kind: ext::sparse::ErrorKind = match(cause) {
+        alloc::vec::Error::AllocationFailed -> ext::sparse::ErrorKind::AllocationFailed,
+        alloc::vec::Error::CapacityOverflow -> capacity,
+        alloc::vec::Error::InvalidCapacity -> capacity,
+        alloc::vec::Error::Bounds -> ext::sparse::ErrorKind::Bounds
+    };
+    return error(kind,-1,-1);
+}
+fn empty(rows: i32, cols: i32) -> Matrix {
+    return Matrix { offsets: alloc::vec::new(), columns: alloc::vec::new(),
+        values: alloc::vec::new(), rows: rows, cols: cols };
+}
+// Caller has admitted all dimensions, capacities, input and phase work.
+fn allocated(rows: i32, cols: i32, entries: i32) -> core::result::Result<Matrix,ext::sparse::Error> {
+    let out: Matrix = empty(rows,cols);
+    let offsets: core::result::Result<alloc::vec::Vec<i32>,alloc::vec::Error> = alloc::vec::with_capacity<i32>(rows+1);
+    if (offsets.is_err()) { return core::result::Err(allocation_error(offsets.unwrap_err(),ext::sparse::ErrorKind::DimensionLimit)); }
+    out.offsets = offsets.unwrap();
+    let columns: core::result::Result<alloc::vec::Vec<i32>,alloc::vec::Error> = alloc::vec::with_capacity<i32>(entries);
+    if (columns.is_err()) {
+        out.destroy(); return core::result::Err(allocation_error(columns.unwrap_err(),ext::sparse::ErrorKind::EntryLimit));
+    }
+    out.columns = columns.unwrap();
+    let values: core::result::Result<alloc::vec::Vec<f64>,alloc::vec::Error> = alloc::vec::with_capacity<f64>(entries);
+    if (values.is_err()) {
+        out.destroy(); return core::result::Err(allocation_error(values.unwrap_err(),ext::sparse::ErrorKind::EntryLimit));
+    }
+    out.values = values.unwrap(); return core::result::Ok(out);
+}
+
+pub impl Matrix {
+    pub fn borrow(&self) -> &Matrix { return self; }
+    // Valid CSR while this owner is active and maintained through these APIs.
+    // Every previously returned view expires on destruction or owner transfer.
+    pub fn view(&self) -> ext::sparse::CsrView {
+        return ext::sparse::CsrView { rows: self.rows, cols: self.cols,
+            offsets: self.offsets.as_view(), columns: self.columns.as_view(), values: self.values.as_view() };
+    }
+    pub fn nnz(&self) -> i32 { return self.values.len(); }
+    pub fn destroy(&self) {
+        self.offsets.destroy(); self.columns.destroy(); self.values.destroy(); self.rows = 0; self.cols = 0;
+    }
+    pub fn try_clone(&self, limits: ext::sparse::Limits) -> core::result::Result<Matrix,ext::sparse::Error> {
+        return from_csr(self.view(),limits);
+    }
+}
+
+// Work = rows+1. Even 0x0 owns the required single zero row offset.
+pub fn zeros(rows: i32, cols: i32, limits: ext::sparse::Limits) -> core::result::Result<Matrix,ext::sparse::Error> {
+    admitted(rows,cols,0,limits)?; work((rows as u64)+1,limits)?;
+    let out: Matrix = allocated(rows,cols,0)?;
+    out.offsets.try_resize(rows+1,0).unwrap(); return core::result::Ok(out);
+}
+// Work = validation(rows+1+nnz) + copies(rows+1+2*nnz).
+pub fn from_csr(input: ext::sparse::CsrView, limits: ext::sparse::Limits)
+    -> core::result::Result<Matrix,ext::sparse::Error> {
+    let entries: i32 = csr_admitted(input,false,limits)?;
+    work(2*((input.rows as u64)+1)+3*(entries as u64),limits)?;
+    ext::sparse::validate(input,limits)?;
+    let out: Matrix = allocated(input.rows,input.cols,entries)?;
+    let index: i32 = 0;
+    while (index <= input.rows) { out.offsets.try_push(input.offsets.get(index).unwrap()).unwrap(); index += 1; }
+    index = 0;
+    while (index < entries) {
+        out.columns.try_push(input.columns.get(index).unwrap()).unwrap();
+        out.values.try_push(input.values.get(index).unwrap()).unwrap(); index += 1;
+    }
+    return core::result::Ok(out);
+}
+
+fn less(left: Indexed, right: Indexed) -> bool {
+    if (left.row != right.row) { return left.row < right.row; }
+    if (left.column != right.column) { return left.column < right.column; }
+    return left.ordinal < right.ordinal;
+}
+pub impl core::cmp::Ord<Indexed> for Indexed {
+    pub fn lt(left: Indexed, right: Indexed) -> bool { return less(left,right); }
+    pub fn le(left: Indexed, right: Indexed) -> bool { return !less(right,left); }
+    pub fn gt(left: Indexed, right: Indexed) -> bool { return less(right,left); }
+    pub fn ge(left: Indexed, right: Indexed) -> bool { return !less(left,right); }
+}
+fn sort_work(entries: i32) -> u64 {
+    let power: u64 = 1; let logarithm: u64 = 0;
+    while (power < (entries as u64)) { power *= 2; logarithm += 1; }
+    return (entries as u64)*(1+logarithm);
+}
+// Work = rows+1 + 5*input_entries + input_entries*(1+ceil_log2(max(n,1))).
+// Fixed signed-32 dimensions/counts bound this u64 estimate well below 2^64.
+pub fn from_triplets(rows: i32, cols: i32, input: core::slice::View<ext::sparse::Triplet>, limits: ext::sparse::Limits)
+    -> core::result::Result<Matrix,ext::sparse::Error> {
+    if (!valid(input)) { return core::result::Err(error(ext::sparse::ErrorKind::Bounds,-1,-1)); }
+    admitted(rows,cols,input.len(),limits)?;
+    let maximum: i32 = (2147483647/core::mem::size_of<Indexed>()) as i32;
+    if (input.len() > maximum) { return core::result::Err(error(ext::sparse::ErrorKind::EntryLimit,-1,-1)); }
+    work((rows as u64)+1+5*(input.len() as u64)+sort_work(input.len()),limits)?;
+    let index: i32 = 0;
+    while (index < input.len()) {
+        let item: ext::sparse::Triplet = input.get(index).unwrap();
+        if (item.row < 0 || item.row >= rows) { return core::result::Err(error(ext::sparse::ErrorKind::Bounds,item.row,index)); }
+        if (item.column < 0 || item.column >= cols) { return core::result::Err(error(ext::sparse::ErrorKind::Column,item.row,index)); }
+        if (!core::f64::is_finite(item.value)) { return core::result::Err(error(ext::sparse::ErrorKind::NonFinite,item.row,index)); }
+        index += 1;
+    }
+    let reserved: core::result::Result<alloc::vec::Vec<Indexed>,alloc::vec::Error> = alloc::vec::with_capacity<Indexed>(input.len());
+    if (reserved.is_err()) { return core::result::Err(allocation_error(reserved.unwrap_err(),ext::sparse::ErrorKind::EntryLimit)); }
+    let staged: alloc::vec::Vec<Indexed> = reserved.unwrap(); index = 0;
+    while (index < input.len()) {
+        let item: ext::sparse::Triplet = input.get(index).unwrap();
+        staged.try_push(Indexed { row: item.row, column: item.column, ordinal: index, value: item.value }).unwrap(); index += 1;
+    }
+    core::slice::sort(staged.as_slice(),staged.len());
+    let read: i32 = 0; let kept: i32 = 0;
+    while (read < staged.len()) {
+        let first: Indexed = staged.at(read); let value: f64 = first.value; let end: i32 = read+1;
+        while (end < staged.len()) {
+            let item: Indexed = staged.at(end);
+            if (item.row != first.row || item.column != first.column) { break; }
+            value += item.value;
+            if (!core::f64::is_finite(value)) {
+                staged.destroy(); return core::result::Err(error(ext::sparse::ErrorKind::NumericalFailure,item.row,item.ordinal));
+            }
+            end += 1;
+        }
+        if (value != 0.0) { first.value = value; staged.set(kept,first).unwrap(); kept += 1; }
+        read = end;
+    }
+    staged.truncate(kept).unwrap();
+    let created: core::result::Result<Matrix,ext::sparse::Error> = allocated(rows,cols,kept);
+    if (created.is_err()) { staged.destroy(); return created; }
+    let out: Matrix = created.unwrap(); out.offsets.try_push(0).unwrap();
+    let row: i32 = 0; index = 0;
+    while (row < rows) {
+        while (index < kept) {
+            let item: Indexed = staged.at(index); if (item.row != row) { break; }
+            out.columns.try_push(item.column).unwrap(); out.values.try_push(item.value).unwrap(); index += 1;
+        }
+        out.offsets.try_push(out.values.len()).unwrap(); row += 1;
+    }
+    staged.destroy(); return core::result::Ok(out);
+}
+
+// Work = 2*(input.rows+1) + 3*(input.cols+1) + 5*nnz.
+// Count/prefix/scatter is linear. Offsets serve as scatter cursors, then a
+// reverse shift restores the canonical offsets without another allocation.
+pub fn transpose(input: ext::sparse::CsrView, limits: ext::sparse::Limits)
+    -> core::result::Result<Matrix,ext::sparse::Error> {
+    let entries: i32 = csr_admitted(input,true,limits)?;
+    work(2*((input.rows as u64)+1)+3*((input.cols as u64)+1)+5*(entries as u64),limits)?;
+    ext::sparse::validate(input,limits)?;
+    let out: Matrix = allocated(input.cols,input.rows,entries)?;
+    out.offsets.try_resize(input.cols+1,0).unwrap();
+    out.columns.try_resize(entries,0).unwrap(); out.values.try_resize(entries,0.0).unwrap();
+    let offsets: [i32] = out.offsets.as_slice(); let columns: [i32] = out.columns.as_slice();
+    let values: [f64] = out.values.as_slice(); let index: i32 = 0;
+    while (index < entries) { let column: i32 = input.columns.get(index).unwrap(); offsets[column+1] += 1; index += 1; }
+    let row: i32 = 0;
+    while (row < input.cols) { offsets[row+1] += offsets[row]; row += 1; }
+    row = 0;
+    while (row < input.rows) {
+        index = input.offsets.get(row).unwrap(); let end: i32 = input.offsets.get(row+1).unwrap();
+        while (index < end) {
+            let column: i32 = input.columns.get(index).unwrap(); let target: i32 = offsets[column];
+            columns[target] = row; values[target] = input.values.get(index).unwrap(); offsets[column] += 1; index += 1;
+        }
+        row += 1;
+    }
+    row = input.cols;
+    while (row > 0) { offsets[row] = offsets[row-1]; row -= 1; }
+    offsets[0] = 0; return core::result::Ok(out);
+}

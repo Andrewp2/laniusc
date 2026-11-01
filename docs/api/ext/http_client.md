@@ -8,7 +8,7 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-Prepared canonically validates and copies request backing without sockets. into_protocol transfers it to the transport-free Protocol; begin supplies the plain socket driver. Protocol centralizes framing, encoding, decoding, confirmed progress, limits and Response transfer. Trailing selects default Discard or explicit Reject for already-received surplus; neither waits for future bytes. Plain steps never poll and offer at most 1024 bytes per active network leaf. Current direct Protocol execution passes one state/ownership group in 7.94 seconds with 247 explicitly balanced successful mappings and zero network calls, not 247 allocation-denial tests. The refactored synchronous client passes all six groups/188 cases in 27.70 seconds; direct Exchange passes five groups/83 cases through separate 7.93- and 9.90-second receipts with unchanged production source. Historical 480432e8 receipts remain separate. TLS stays in its adapter and OpenSSL; other targets remain unverified.
+Prepared canonically validates and copies request backing without sockets. into_protocol transfers it to the transport-free Protocol; begin supplies the plain socket driver. Protocol centralizes framing, encoding, decoding, confirmed progress, limits and Response transfer. Trailing selects default Discard or explicit Reject for already-received surplus; neither waits for future bytes. Plain steps never poll and offer at most 1024 bytes per active network leaf. Current direct Protocol execution passes one state/ownership group in 7.94 seconds with 247 explicitly balanced successful mappings and zero network calls, not 247 allocation-denial tests. The refactored synchronous client passes all six groups/188 cases in 27.70 seconds; direct Exchange passes five groups/83 cases through separate 7.93- and 9.90-second receipts with unchanged production source. Historical 480432e8 receipts remain separate. TLS stays in its adapter and OpenSSL; other targets remain unverified. The separate URL guide documents consume-on-every-result selected-socket adoption and Exchange.run; its current finite adoption/URL receipts are distinct from the historical numeric-driver counts above.
 
 ## Contract and evidence guides
 
@@ -19,6 +19,7 @@ Prepared canonically validates and copies request backing without sockets. into_
 - [extended-https-client](../../extended-https-client.md)
 - [extended-https-batch](../../extended-https-batch.md)
 - [extended-http-protocol-testing](../../extended-http-protocol-testing.md)
+- [extended-url-client](../../extended-url-client.md)
 
 Declaration counts: enum: 5; field: 62; function: 4; impl: 5; method: 45; struct: 10; variant: 38.
 

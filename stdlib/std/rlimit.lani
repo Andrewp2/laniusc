@@ -1,0 +1,60 @@
+// Linux x86_64 resource limits through prlimit64, which covers getrlimit,
+// setrlimit and prlimit for this or another process. Typed resources;
+// soft <= hard checked before the call. No allocation.
+// See docs/stdlib-rlimit.md.
+module std::rlimit;
+import core::mem;
+import core::result;
+import core::slice;
+import std::linux;
+
+pub enum Resource { CpuSeconds, FileSize, Data, Stack, Core, ResidentSet, Processes, OpenFiles, LockedMemory, AddressSpace, Locks, PendingSignals, MessageQueueBytes, Nice, RealtimePriority, RealtimeMicros }
+// Host(errno): EPERM (1) raising a hard limit without CAP_SYS_RESOURCE or
+// for another user's process, ESRCH (3) no such process, EINVAL (22) for
+// example OpenFiles above /proc/sys/fs/nr_open. InvalidLimit: soft > hard.
+pub enum Error { Host(i32), Bounds, InvalidLimit, InvalidResult }
+// RLIM_INFINITY is all ones; unlimited() names it.
+pub struct Limit { soft: u64, hard: u64 }
+pub fn unlimited() -> u64 { let all: i64 = -1; return all as u64; }
+pub fn limit(soft: u64, hard: u64) -> Limit { return Limit { soft: soft, hard: hard }; }
+pub impl Limit {
+    pub fn borrow(&self) -> &Limit { return self; }
+    pub fn soft_unlimited(&self) -> bool { return self.soft == unlimited(); }
+    pub fn hard_unlimited(&self) -> bool { return self.hard == unlimited(); }
+    // Same hard limit, new soft limit.
+    pub fn with_soft(&self, soft: u64) -> Limit { return Limit { soft: soft, hard: self.hard }; }
+}
+// The RLIMIT_* number.
+pub fn number(resource: Resource) -> i32 {
+    return match (resource) {
+        Resource::CpuSeconds -> 0, Resource::FileSize -> 1, Resource::Data -> 2, Resource::Stack -> 3, Resource::Core -> 4,
+        Resource::ResidentSet -> 5, Resource::Processes -> 6, Resource::OpenFiles -> 7, Resource::LockedMemory -> 8,
+        Resource::AddressSpace -> 9, Resource::Locks -> 10, Resource::PendingSignals -> 11, Resource::MessageQueueBytes -> 12,
+        Resource::Nice -> 13, Resource::RealtimePriority -> 14, Resource::RealtimeMicros -> 15
+    };
+}
+fn store(words: [i32], at: i32, value: u64) { words[at] = ((value & 4294967295) as u32) as i32; words[at+1] = ((value >> 32) as u32) as i32; }
+fn load(words: [i32], at: i32) -> u64 { let high: u64 = (words[at+1] as u32) as u64; let low: u64 = (words[at] as u32) as u64; return (high << 32) | low; }
+// prlimit64(pid, resource, new or NULL, old). pid 0 is the caller.
+fn prlimit(pid: i32, resource: Resource, replace: bool, value: Limit) -> core::result::Result<Limit, Error> {
+    if (replace && value.soft > value.hard) { return core::result::Err(Error::InvalidLimit); }
+    let words: [i32;8] = [0;8]; store(words,0,value.soft); store(words,2,value.hard);
+    let empty: ptr = 0; let base: ptr = core::mem::i32_array_data_ptr(words); let new_limit: ptr = base; if (!replace) { new_limit = empty; }
+    let arguments: [std::linux::Argument;4] = [std::linux::Argument::Word(pid as i64),std::linux::Argument::Word(number(resource) as i64),std::linux::Argument::Address(new_limit),std::linux::Argument::Address(base+16)];
+    let done: core::result::Result<i64, std::linux::Error> = std::linux::call(302,core::slice::view(arguments,4).unwrap());
+    if (done.is_err()) { return core::result::Err(match (done.unwrap_err()) { std::linux::Error::System(code) -> Error::Host(code), _ -> Error::InvalidResult }); }
+    if (done.unwrap() != 0) { return core::result::Err(Error::InvalidResult); }
+    return core::result::Ok(Limit { soft: load(words,4), hard: load(words,6) });
+}
+// getrlimit for the calling process.
+pub fn get(resource: Resource) -> core::result::Result<Limit, Error> { return prlimit(0,resource,false,limit(0,0)); }
+// setrlimit for the calling process; returns the previous limit. Limits are
+// inherited by children across fork and exec.
+pub fn set(resource: Resource, value: Limit) -> core::result::Result<Limit, Error> { return prlimit(0,resource,true,value); }
+// prlimit on another process (pid >= 1), for example an unreaped child.
+pub fn get_for(pid: i32, resource: Resource) -> core::result::Result<Limit, Error> {
+    if (pid < 1) { return core::result::Err(Error::Bounds); } return prlimit(pid,resource,false,limit(0,0));
+}
+pub fn set_for(pid: i32, resource: Resource, value: Limit) -> core::result::Result<Limit, Error> {
+    if (pid < 1) { return core::result::Err(Error::Bounds); } return prlimit(pid,resource,true,value);
+}

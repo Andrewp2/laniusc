@@ -1,6 +1,7 @@
 // Real ordinary adapters: plain optional/result items, nonzero signed strides,
 // wide records, zero-sized items and bounded consumer composition.
 module app::main;
+import core::function;
 import core::clone_values;
 import core::iter;
 import core::mem;
@@ -18,7 +19,7 @@ pub impl<J> core::iter::InnerRetirement<J,core::clone_values::Infallible> for Bo
 }
 struct AsOnce<T> { calls: i32 }
 impl<T> AsOnce<T> { fn borrow(&self) -> &AsOnce<T> { return self; } }
-pub impl<T> core::iter::Mapper<T,core::iter::Once<T>> for AsOnce<T> {
+pub impl<T> core::function::Mapper<T,core::iter::Once<T>> for AsOnce<T> {
     pub fn apply(&self, item: T) -> core::iter::Once<T> { self.calls += 1; return core::iter::once<T>(item); }
 }
 type Nested = core::option::Option<core::result::Result<[u64;2],u64>>;
@@ -105,7 +106,7 @@ fn zero_sized() {
 }
 struct Running { total: i64, calls: i32 }
 impl Running { fn borrow(&self) -> &Running { return self; } }
-pub impl core::iter::Mapper<i64,core::option::Option<i64>> for Running {
+pub impl core::function::Mapper<i64,core::option::Option<i64>> for Running {
     pub fn apply(&self, value: i64) -> core::option::Option<i64> { self.total += value; self.calls += 1; return core::option::Some(self.total); }
 }
 fn first_two<I>(source: &I) where I: core::iter::Iterator<i64> {
@@ -117,7 +118,7 @@ fn first_two<I>(source: &I) where I: core::iter::Iterator<i64> {
 }
 struct Views { calls: i32 }
 impl Views { fn borrow(&self) -> &Views { return self; } }
-pub impl core::iter::Mapper<core::slice::View<i64>,core::slice::Iter<i64>> for Views {
+pub impl core::function::Mapper<core::slice::View<i64>,core::slice::Iter<i64>> for Views {
     pub fn apply(&self, view: core::slice::View<i64>) -> core::slice::Iter<i64> { self.calls += 1; return view.iter(); }
 }
 type Integers = core::slice::Iter<i64>;

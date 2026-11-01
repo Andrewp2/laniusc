@@ -1,0 +1,61 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::path;
+import core::result;
+import core::slice;
+import core::time;
+import std::io;
+import std::socket;
+fn mark(value:i32) { let byte:[i32;1]=[value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn invalid(error:core::io::Error) -> bool { return match(error) { core::io::Error::InvalidInput->true,_ ->false }; }
+fn bad_fd(error:core::io::Error) -> bool { return match(error) { core::io::Error::Host(n)->n==9,_ ->false }; }
+fn rejected(stream:&std::socket::UnixStream,view:core::slice::View<u8>) {
+    let deadline:core::time::Deadline=core::time::deadline_at(core::time::instant(core::time::zero()));
+    assert(invalid(stream.send(view).unwrap_err()) && invalid(stream.receive(view).unwrap_err()));
+    assert(invalid(stream.send_until(view,deadline).unwrap_err()) && invalid(stream.receive_until(view,deadline).unwrap_err()));
+    let path:core::path::Path=core::path::Path { bytes:view };
+    assert(invalid(stream.bind(std::socket::UnixAddress::Pathname(path)).unwrap_err()));
+    assert(invalid(stream.connect(std::socket::UnixAddress::Pathname(path)).unwrap_err()));
+    assert(invalid(stream.bind(std::socket::UnixAddress::Abstract(view)).unwrap_err()));
+    assert(invalid(stream.connect(std::socket::UnixAddress::Abstract(view)).unwrap_err()));
+}
+fn main() -> i32 {
+    let stream:std::socket::UnixStream=std::socket::unix_stream(true).unwrap();
+    let nowhere:ptr=0; let absent:[u8]=core::mem::typed_slice_from_raw_parts<u8>(nowhere,0);
+    let guard:[u8;8]=[211;8];
+    mark(80);
+    rejected(stream.borrow(),core::slice::View { values:absent,start:-1,length:1 });
+    rejected(stream.borrow(),core::slice::View { values:absent,start:0,length:-1 });
+    rejected(stream.borrow(),core::slice::View { values:absent,start:2147483647,length:1 });
+    rejected(stream.borrow(),core::slice::View { values:guard,start:-1,length:1 });
+    rejected(stream.borrow(),core::slice::View { values:guard,start:0,length:-1 });
+    rejected(stream.borrow(),core::slice::View { values:guard,start:2147483647,length:1 });
+    let long:core::slice::View<u8> =core::slice::View { values:absent,start:0,length:108 };
+    let long_path:core::path::Path=core::path::Path { bytes:long };
+    assert(invalid(stream.bind(std::socket::UnixAddress::Pathname(long_path)).unwrap_err()));
+    assert(invalid(stream.connect(std::socket::UnixAddress::Pathname(long_path)).unwrap_err()));
+    assert(invalid(stream.bind(std::socket::UnixAddress::Abstract(long)).unwrap_err()));
+    assert(invalid(stream.connect(std::socket::UnixAddress::Abstract(long)).unwrap_err()));
+    let empty:core::slice::View<u8> =core::slice::View { values:absent,start:0,length:0 };
+    let empty_path:core::path::Path=core::path::Path { bytes:empty };
+    assert(invalid(stream.bind(std::socket::UnixAddress::Pathname(empty_path)).unwrap_err()));
+    assert(invalid(stream.connect(std::socket::UnixAddress::Pathname(empty_path)).unwrap_err()));
+    let borrowed:[u8;5]=[99,97,98,99,90];
+    let path:core::path::Path=core::path::from_bytes_range(borrowed,1,3).unwrap(); borrowed[2]=0;
+    assert(invalid(stream.bind(std::socket::UnixAddress::Pathname(path)).unwrap_err()));
+    assert(invalid(stream.connect(std::socket::UnixAddress::Pathname(path)).unwrap_err()));
+    assert(borrowed[0]==99 && borrowed[1]==97 && borrowed[2]==0 && borrowed[3]==99 && borrowed[4]==90);
+    assert(stream.send(empty).unwrap()==0 && stream.receive(empty).unwrap()==0);
+    let deadline:core::time::Deadline=core::time::deadline_at(core::time::instant(core::time::zero()));
+    assert(stream.send_until(empty,deadline).unwrap()==0 && stream.receive_until(empty,deadline).unwrap()==0);
+    assert(invalid(stream.read(absent,-1,1).unwrap_err()) && invalid(stream.write(absent,2147483647,1).unwrap_err()));
+    assert(invalid(stream.listen(-1).unwrap_err()) && invalid(stream.wait_ms(true,false,-2).unwrap_err()));
+    assert(invalid(std::socket::unix_from_owned_handle(-1).unwrap_err())); assert(stream.flush().unwrap()==0);
+    let i:i32=0; while(i<8) { assert(guard[i]==211); i+=1; }
+    mark(112); stream.close().unwrap(); stream.close().unwrap();
+    assert(!stream.is_open() && stream.raw_handle().is_none() && stream.take_handle().is_none());
+    assert(bad_fd(stream.send(empty).unwrap_err()) && bad_fd(stream.receive(empty).unwrap_err()));
+    assert(bad_fd(stream.try_clone().unwrap_err()) && bad_fd(stream.flush().unwrap_err()));
+    mark(68); return 0;
+}

@@ -1,0 +1,234 @@
+// Run one command and restart it when it crashes, with exponential backoff.
+// SIGTERM and SIGINT are received through a signalfd and forwarded to the
+// child; a child that outlives the grace period is killed. One epoll loop
+// watches the signalfd, the child's pidfd and a timerfd.
+module app::main;
+import core::decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import core::time;
+import std::args;
+import std::command;
+import std::event;
+import std::host_clocks;
+import std::rlimit;
+import std::signal;
+import std::stream;
+import std::timer;
+
+const SIGNALS: u64 = 1;
+const EXITED: u64 = 2;
+const TIMER: u64 = 3;
+struct Options { first: i32, restarts: u64, backoff: u64, max_backoff: u64, grace: u64, stable: u64, files: u64, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+// stopping: the forwarded signal, or 0. status: last child status as an
+// exit code (128+signal for signals). result >= 0 ends the loop.
+struct State { start: core::time::Instant, attempt: i32, crashes: u64, stopping: i32, killed: bool, running: bool, started: core::time::Instant, status: i32, result: i32 }
+impl State { fn borrow(&self) -> &State { return self; } }
+fn bytes(value: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),n); return core::slice::view(raw,n).unwrap(); }
+fn text(value: str, n: i32) -> core::text::Text { let raw = bytes(value,n); return core::text::from_utf8_unchecked(raw.values,raw.start,raw.length); }
+fn equal(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool { if (a.length != b.length) { return false; } let i: i32 = 0; while (i < a.length) { if (a.values[a.start+i] != b.values[b.start+i]) { return false; } i += 1; } return true; }
+fn number(value: core::slice::View<u8>, maximum: u64) -> core::option::Option<u64> {
+    if (value.length < 1 || value.length > 20) { return core::option::None(); } let index: i32 = 0;
+    while (index < value.length) { let byte: u8 = value.values[value.start+index]; if (byte < 48 || byte > 57) { return core::option::None(); } index += 1; }
+    let parsed: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(value.values,value.start,value.length);
+    if (parsed.is_err() || parsed.unwrap() > maximum) { return core::option::None(); } return core::option::Some(parsed.unwrap());
+}
+fn option_id(value: core::slice::View<u8>) -> i32 {
+    if (equal(value,bytes("--max-restarts",14))) { return 1; } if (equal(value,bytes("--backoff-ms",12))) { return 2; }
+    if (equal(value,bytes("--max-backoff-ms",16))) { return 3; } if (equal(value,bytes("--grace-ms",10))) { return 4; }
+    if (equal(value,bytes("--stable-ms",11))) { return 5; } if (equal(value,bytes("--max-open-files",16))) { return 6; }
+    if (equal(value,bytes("--help",6))) { return 7; } return 0;
+}
+fn parse(args: std::args::Arguments, options: &Options) -> bool {
+    let index: i32 = 0; let seen: u32 = 0;
+    while (index < args.len()) {
+        let value = args.get(index).unwrap();
+        if (equal(value,bytes("--",2))) { index += 1; break; }
+        let id: i32 = option_id(value); if (id == 0) { return false; }
+        let bit: u32 = (1 as u32) << id; if ((seen & bit) != 0) { return false; } seen |= bit;
+        if (id == 7) { options.help = true; index += 1; continue; }
+        if (index+1 >= args.len()) { return false; }
+        let maximum: u64 = 3600000; if (id == 1) { maximum = 1000; } if (id == 5) { maximum = 86400000; } if (id == 6) { maximum = 1048576; }
+        let parsed = number(args.get(index+1).unwrap(),maximum); if (parsed.is_none()) { return false; }
+        let n: u64 = parsed.unwrap(); if (id >= 2 && id != 5 && n == 0) { return false; } if (id == 6 && n < 16) { return false; }
+        if (id == 1) { options.restarts = n; } if (id == 2) { options.backoff = n; } if (id == 3) { options.max_backoff = n; }
+        if (id == 4) { options.grace = n; } if (id == 5) { options.stable = n; } if (id == 6) { options.files = n; }
+        index += 2;
+    }
+    if (options.help) { return args.len() == 1; }
+    options.first = index; return index < args.len() && options.max_backoff >= options.backoff;
+}
+fn publish(raw: [u8], count: i32) -> bool { let sink = std::stream::stderr(); return core::io::write_all(sink.borrow(),raw,0,count).is_ok(); }
+fn complain(reason: str, n: i32, errno: i32) {
+    let raw: [u8;160] = [0;160]; let out = core::fmt::buffer(raw,0,160).unwrap();
+    out.write_text(text("supervise: ",11)); out.write_text(text(reason,n)); out.write_text(text(" errno=",7)); out.write_signed(errno as i64,core::fmt::decimal()); out.write_text(text("\n",1));
+    publish(raw,out.finish().unwrap());
+}
+fn fail(state: &State, reason: str, n: i32, errno: i32) { if (state.result < 0) { complain(reason,n,errno); state.result = 125; } }
+fn event_errno(error: std::event::Error) -> i32 { return match (error) { std::event::Error::Host(code) -> code, _ -> 0 }; }
+fn signal_errno(error: std::signal::Error) -> i32 { return match (error) { std::signal::Error::Host(code) -> code, _ -> 0 }; }
+fn timer_errno(error: std::timer::Error) -> i32 { return match (error) { std::timer::Error::Host(code) -> code, _ -> 0 }; }
+fn limit_errno(error: std::rlimit::Error) -> i32 { return match (error) { std::rlimit::Error::Host(code) -> code, std::rlimit::Error::InvalidLimit -> 22, _ -> 0 }; }
+fn now() -> core::time::Instant {
+    let read = std::host_clocks::instant(std::host_clocks::Clock::Monotonic); if (read.is_err()) { return core::time::instant(core::time::zero()); } return read.unwrap();
+}
+fn since(from: core::time::Instant) -> u64 { let total = now().saturating_duration_since(from).as_nanos(); if (total.is_err()) { return 0; } return total.unwrap(); }
+// supervise TAB elapsed_ns TAB event TAB a [TAB b] NEWLINE on stderr.
+fn log(state: &State, event: str, n: i32, a: i64, b: str, m: i32, c: i64) {
+    let raw: [u8;128] = [0;128]; let out = core::fmt::buffer(raw,0,128).unwrap();
+    out.write_text(text("supervise\t",10)); out.write_unsigned(since(state.start),core::fmt::decimal()); out.write_text(text("\t",1));
+    out.write_text(text(event,n)); out.write_text(text("\t",1)); out.write_signed(a,core::fmt::decimal());
+    if (m > 0) { out.write_text(text("\t",1)); out.write_text(text(b,m)); }
+    if (c >= 0) { out.write_text(text("\t",1)); out.write_signed(c,core::fmt::decimal()); }
+    out.write_text(text("\n",1)); publish(raw,out.finish().unwrap());
+}
+fn spawn(args: std::args::Arguments, first: i32, environment: core::slice::View<core::slice::View<u8>>, state: &State) -> core::option::Option<std::command::Child> {
+    let all = args.as_view(); let tail: core::slice::View<core::slice::View<u8>> = core::slice::View { values: all.values, start: all.start+first, length: args.len()-first };
+    let request = std::command::request(args.get(first).unwrap(),tail,environment); request.search = std::command::Search::EnvironmentPath;
+    // A new group: terminal signals reach the child only through forwarding.
+    request.group = std::command::Group::New;
+    let spawned = std::command::spawn(request);
+    if (spawned.is_err()) { fail(state,"spawn failed",12,spawned.unwrap_err().errno); return core::option::None(); }
+    return match (spawned.unwrap()) {
+        std::command::Spawn::Child(child) -> core::option::Some(child),
+        std::command::Spawn::Unknown(value) -> unknown(value,state),
+        std::command::Spawn::Failed(value) -> rejected(value,state)
+    };
+}
+fn unknown(value: std::command::UnknownStart, state: &State) -> core::option::Option<std::command::Child> {
+    let child: std::command::Child = value.child; child.cancel_and_wait(); fail(state,"startup unknown",15,value.failure.errno); return core::option::None();
+}
+fn rejected(value: std::command::FailedStart, state: &State) -> core::option::Option<std::command::Child> {
+    let errno: i32 = value.failure.errno; complain("cannot execute",14,errno); state.result = 126; if (errno == 2 || errno == 20) { state.result = 127; }
+    return core::option::None();
+}
+fn delay(options: Options, crashes: u64) -> u64 {
+    let value: u64 = options.backoff; let step: u64 = 1;
+    while (step < crashes && value < options.max_backoff) { value = value * 2; step += 1; }
+    if (value > options.max_backoff) { value = options.max_backoff; } return value;
+}
+fn arm(state: &State, timer: &std::timer::Timer, milliseconds: u64) {
+    let armed = timer.arm_after(core::time::from_millis(milliseconds),core::time::zero()); if (armed.is_err()) { fail(state,"timer arm failed",16,timer_errno(armed.unwrap_err())); }
+}
+fn disarm(state: &State, timer: &std::timer::Timer) { let done = timer.disarm(); if (done.is_err()) { fail(state,"timer disarm failed",19,timer_errno(done.unwrap_err())); } }
+// Open and watch the child's pidfd; on failure the child is killed and reaped.
+fn watch(state: &State, ev: &std::event::Loop, child: &std::command::Child) -> core::option::Option<std::event::Pidfd> {
+    let opened = std::event::pidfd_open(child.id().unwrap());
+    if (opened.is_err()) { fail(state,"pidfd failed",12,event_errno(opened.unwrap_err())); child.cancel_and_wait(); return core::option::None(); }
+    let pidfd: std::event::Pidfd = opened.unwrap();
+    let added = ev.add(pidfd.raw_fd(),std::event::readable(),EXITED);
+    if (added.is_err()) { fail(state,"register failed",15,event_errno(added.unwrap_err())); pidfd.close(); child.cancel_and_wait(); return core::option::None(); }
+    state.attempt += 1; state.running = true; state.started = now(); log(state,"start",5,state.attempt as i64,"",0,child.id().unwrap() as i64);
+    return core::option::Some(pidfd);
+}
+fn reaped(state: &State, ev: &std::event::Loop, child: &std::command::Child, pidfd: &std::event::Pidfd, timer: &std::timer::Timer, options: Options) {
+    let removed = ev.remove(pidfd.raw_fd()); if (removed.is_err()) { fail(state,"deregister failed",17,event_errno(removed.unwrap_err())); }
+    pidfd.close(); state.running = false;
+    let waited = child.wait(); if (waited.is_err()) { fail(state,"wait failed",11,waited.unwrap_err().errno); return; }
+    let status: std::command::ExitStatus = waited.unwrap();
+    if (status.code.is_some()) { state.status = status.code.unwrap(); log(state,"exit",4,state.attempt as i64,"exited",6,status.code.unwrap() as i64); }
+    else { state.status = 128 + status.signal.unwrap_or(0); log(state,"exit",4,state.attempt as i64,"signaled",8,status.signal.unwrap_or(0) as i64); }
+    if (state.stopping != 0) { disarm(state,timer); state.result = state.status; return; }
+    if (state.status == 0) { state.result = 0; return; }
+    // A run that lasted stable-ms resets the crash count and the backoff.
+    if (since(state.started) >= options.stable * 1000000) { state.crashes = 0; }
+    state.crashes += 1;
+    if (state.crashes > options.restarts) { log(state,"giveup",6,options.restarts as i64,"",0,-1); state.result = state.status; return; }
+    let wait: u64 = delay(options,state.crashes); log(state,"backoff",7,state.attempt as i64,"",0,wait as i64); arm(state,timer,wait);
+}
+fn signalled(state: &State, handled: &std::signal::Handled, pidfd: &std::event::Pidfd, timer: &std::timer::Timer, options: Options) {
+    let next = handled.try_read();
+    while (state.result < 0) {
+        if (next.is_err()) { fail(state,"signal read failed",18,signal_errno(next.unwrap_err())); return; }
+        if (next.unwrap().is_none()) { return; }
+        let signal: i32 = next.unwrap().unwrap().signal;
+        if (!state.running) { log(state,"stop",4,signal as i64,"",0,-1); disarm(state,timer); state.result = 128 + signal; return; }
+        if (state.stopping == 0) {
+            state.stopping = signal; log(state,"forward",7,signal as i64,"",0,-1);
+            let sent = pidfd.send_signal(signal); if (sent.is_err() && event_errno(sent.unwrap_err()) != 3) { fail(state,"forward failed",14,event_errno(sent.unwrap_err())); }
+            arm(state,timer,options.grace);
+        } else { if (!state.killed) { kill(state,pidfd,timer); } }
+        next = handled.try_read();
+    }
+}
+fn kill(state: &State, pidfd: &std::event::Pidfd, timer: &std::timer::Timer) {
+    state.killed = true; log(state,"kill",4,9,"",0,-1); disarm(state,timer);
+    let sent = pidfd.send_signal(9); if (sent.is_err() && event_errno(sent.unwrap_err()) != 3) { fail(state,"kill failed",11,event_errno(sent.unwrap_err())); }
+}
+fn supervise(args: std::args::Arguments, options: Options, environment: core::slice::View<core::slice::View<u8>>, state: &State) {
+    let handled_result = std::signal::handle(std::signal::of(std::signal::Signal::Terminate).with(std::signal::Signal::Interrupt));
+    if (handled_result.is_err()) { fail(state,"signal setup failed",19,signal_errno(handled_result.unwrap_err())); return; }
+    let handled = handled_result.unwrap();
+    let made = std::event::create(); if (made.is_err()) { fail(state,"epoll failed",12,event_errno(made.unwrap_err())); handled.restore(); return; }
+    let ev = made.unwrap();
+    let timer_result = std::timer::create(std::host_clocks::Clock::Monotonic,std::timer::Mode::Nonblocking);
+    if (timer_result.is_err()) { fail(state,"timer failed",12,timer_errno(timer_result.unwrap_err())); ev.close(); handled.restore(); return; }
+    let timer = timer_result.unwrap();
+    if (ev.add(handled.raw_fd(),std::event::readable(),SIGNALS).is_err() || ev.add(timer.raw_fd().unwrap(),std::event::readable(),TIMER).is_err()) { fail(state,"register failed",15,0); }
+    let child_value = spawn(args,options.first,environment,state);
+    let watched: core::option::Option<std::event::Pidfd> = core::option::None();
+    if (child_value.is_some()) { watched = watch(state,ev.borrow(),child_value.unwrap().borrow()); }
+    if (watched.is_none()) { ev.remove(timer.raw_fd().unwrap()); timer.close(); ev.remove(handled.raw_fd()); handled.restore(); ev.close(); return; }
+    let child: std::command::Child = child_value.unwrap(); let pidfd: std::event::Pidfd = watched.unwrap();
+    let storage: [std::event::Event;4] = [std::event::empty_event();4]; let events = core::slice::view(storage,4).unwrap();
+    while (state.result < 0) {
+        let ready = ev.wait(events,-1);
+        if (ready.is_err()) { if (event_errno(ready.unwrap_err()) == 4) { continue; } fail(state,"wait failed",11,event_errno(ready.unwrap_err())); break; }
+        let at: i32 = 0;
+        while (at < ready.unwrap() && state.result < 0) {
+            let token: u64 = storage[at].token;
+            if (token == SIGNALS) { signalled(state,handled.borrow(),pidfd.borrow(),timer.borrow(),options); }
+            if (token == EXITED && state.running) { reaped(state,ev.borrow(),child.borrow(),pidfd.borrow(),timer.borrow(),options); }
+            if (token == TIMER) {
+                let counted = timer.try_wait();
+                if (counted.is_err()) { fail(state,"timer read failed",17,timer_errno(counted.unwrap_err())); }
+                else { if (counted.unwrap().is_some()) {
+                    if (state.running) { if (!state.killed) { kill(state,pidfd.borrow(),timer.borrow()); } }
+                    else {
+                        let next = spawn(args,options.first,environment,state);
+                        if (next.is_some()) { child = next.unwrap(); let opened = watch(state,ev.borrow(),child.borrow()); if (opened.is_some()) { pidfd = opened.unwrap(); } }
+                    }
+                } }
+            }
+            at += 1;
+        }
+    }
+    // Failure paths: kill and reap a running child before releasing owners.
+    if (state.running) { pidfd.send_signal(9); child.wait(); }
+    if (pidfd.is_open()) { ev.remove(pidfd.raw_fd()); pidfd.close(); }
+    ev.remove(timer.raw_fd().unwrap()); timer.close(); ev.remove(handled.raw_fd());
+    let drained = handled.try_read(); while (drained.is_ok() && drained.unwrap().is_some()) { drained = handled.try_read(); }
+    handled.restore(); ev.close();
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 125; }
+    let captured = std::args::snapshot(1,4096,1048576);
+    if (captured.is_err()) { complain("argument snapshot failed",24,0); return 125; }
+    let args = captured.unwrap();
+    let options = Options { first: 0, restarts: 5, backoff: 100, max_backoff: 10000, grace: 5000, stable: 10000, files: 0, help: false };
+    let result: i32 = 125;
+    if (!parse(args,options.borrow())) { complain("invalid arguments; see --help",29,0); args.destroy(); return 125; }
+    if (options.help) {
+        let usage: str = "Usage: supervise [--max-restarts N] [--backoff-ms N] [--max-backoff-ms N] [--grace-ms N] [--stable-ms N] [--max-open-files N] -- PROGRAM [ARG...]\n";
+        let sink = std::stream::stdout(); result = 0;
+        if (core::io::write_all(sink.borrow(),core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(usage),146),0,146).is_err()) { result = 125; }
+        args.destroy(); return result;
+    }
+    if (options.files > 0) {
+        let current = std::rlimit::get(std::rlimit::Resource::OpenFiles);
+        let changed = current; if (current.is_ok()) { changed = std::rlimit::set(std::rlimit::Resource::OpenFiles,current.unwrap().with_soft(options.files)); }
+        if (changed.is_err()) { complain("open-file limit failed",22,limit_errno(changed.unwrap_err())); args.destroy(); return 125; }
+    }
+    let captured_environment = std::command::snapshot_environment(std::command::default_limits());
+    if (captured_environment.is_err()) { complain("environment snapshot failed",27,0); args.destroy(); return 125; }
+    let environment = captured_environment.unwrap();
+    let state = State { start: now(), attempt: 0, crashes: 0, stopping: 0, killed: false, running: false, started: now(), status: 0, result: -1 };
+    supervise(args,options,environment.as_view(),state.borrow());
+    environment.destroy(); args.destroy(); return state.result;
+}

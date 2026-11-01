@@ -5,6 +5,7 @@ import core::io;
 import core::mem;
 import core::result;
 import std::fs;
+import alloc::io;
 
 pub struct Descriptor { handle: i32 }
 
@@ -21,6 +22,36 @@ pub fn copy<R, W>(reader: &R, writer: &W) -> core::result::Result<u64, core::io:
     let pointer: ptr = core::mem::i32_array_data_ptr(storage);
     let scratch: [u8] = core::mem::typed_slice_from_raw_parts(pointer, 1024);
     return core::io::copy(reader, writer, scratch, 1024);
+}
+
+// Read until end of input straight into the buffer's storage: one host read
+// per call of up to the buffer's free capacity (at least 64 KiB), with no
+// staging copy. Returns the bytes appended. Hitting the buffer limit before
+// end of input reports LimitExceeded; bytes already read stay in the buffer.
+pub fn read_to_end(reader: &Descriptor, output: &alloc::io::Buffer) -> core::result::Result<u64, core::io::Error> {
+    let total: u64 = 0;
+    while (true) {
+        let room: i32 = output.capacity() - output.len();
+        if (room < 65536) { room = 65536; }
+        if (room > output.limit() - output.len()) { room = output.limit() - output.len(); }
+        if (room == 0) {
+            // Probe one byte to tell a full buffer from end of input.
+            let probe: [i32; 1] = [0; 1];
+            let got: i32 = std::fs::read(reader.handle, core::mem::i32_array_data_ptr(probe), 1);
+            if (got == 0) { return core::result::Ok(total); }
+            if (got < 0) { if (got == -4) { continue; } return core::result::Err(host_error(got)); }
+            return core::result::Err(core::io::Error::LimitExceeded);
+        }
+        let window: core::result::Result<ptr, core::io::Error> = output.reserve_raw(room);
+        if (core::result::is_err(window)) { return core::result::Err(core::result::unwrap_err(window)); }
+        let received: i32 = std::fs::read(reader.handle, core::result::unwrap(window), room as usize);
+        if (received == 0) { return core::result::Ok(total); }
+        if (received < 0) { if (received == -4) { continue; } return core::result::Err(host_error(received)); }
+        if (received > room) { return core::result::Err(core::io::Error::InvalidCount); }
+        let committed: core::result::Result<i32, core::io::Error> = output.commit_raw(received);
+        total += received as u64;
+    }
+    return core::result::Ok(total);
 }
 
 pub impl Descriptor {

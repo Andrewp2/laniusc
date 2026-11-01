@@ -1,7 +1,8 @@
-// Declaration seed for comparison ordering.
+// Ordering values and allocation-free borrowed comparison contexts.
 
 module core::ordering;
 
+import core::cmp;
 import core::wide_u64;
 import core::wide_i64;
 
@@ -9,6 +10,26 @@ pub enum Ordering {
     Less,
     Equal,
     Greater,
+}
+
+// Compare shallow operands. Sorting requires a consistent total order;
+// heterogeneous lookup requires Less/Equal/Greater classes in that order.
+// Keep operands, source and ordering policy live and unchanged during a call.
+// Instrumentation may record calls, but must not retire operands or reenter.
+pub trait Comparator<L,R> {
+    pub fn compare(&self,left:L,right:R) -> Ordering;
+}
+
+pub struct Natural<T> {}
+pub impl<T> Natural<T> {
+    pub fn borrow(&self) -> &Natural<T> { return self; }
+}
+pub impl<T> Comparator<T,T> for Natural<T> where T:core::cmp::Ord<T> {
+    pub fn compare(&self,left:T,right:T) -> Ordering {
+        if(T::lt(left,right)) { return Less; }
+        if(T::lt(right,left)) { return Greater; }
+        return Equal;
+    }
 }
 
 pub fn compare_i32(left: i32, right: i32) -> Ordering {

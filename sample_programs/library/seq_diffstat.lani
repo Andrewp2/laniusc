@@ -1,0 +1,102 @@
+// git diff --stat style summary of a unified diff (git, diff -u or diff -ru output).
+// usage: seq-diffstat [-p N] [--stat=W[,N[,C]]] [PATCH]   (stdin without PATCH)
+// -p N drops N leading path components (default: 1 for "diff --git" sections,
+// 0 otherwise). Exit 0 on success, 2 on usage, malformed, binary or I/O failure.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import ext::diffstat;
+import std::args;
+import std::file;
+import std::stream;
+
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), count);
+    return core::result::unwrap(core::slice::view(bytes, count));
+}
+fn same(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.len() != right.len()) { return false; }
+    let i: i32 = 0; while (i < left.len()) { if (left.values[left.start+i] != right.values[right.start+i]) { return false; } i += 1; } return true;
+}
+fn starts(arg: core::slice::View<u8>, prefix: core::slice::View<u8>) -> bool { return arg.len() >= prefix.len() && same(core::result::unwrap(core::slice::view_range(arg.values, arg.start, prefix.len())), prefix); }
+fn complain(text: str, count: i32) -> i32 {
+    let sink: std::stream::Descriptor = std::stream::stderr(); let v: core::slice::View<u8> = literal(text, count);
+    let written: core::result::Result<i32, core::io::Failure> = core::io::write_all(sink.borrow(), v.values, v.start, v.len()); return 2;
+}
+fn read_file(name: core::slice::View<u8>, output: &alloc::io::Buffer) -> bool {
+    let checked: core::result::Result<core::path::Path, core::path::Error> = core::path::from_view(name);
+    if (core::result::is_err(checked)) { return false; }
+    let opened: core::result::Result<std::file::File, core::io::Error> = std::file::open(core::result::unwrap(checked), std::file::OpenMode::Read);
+    if (core::result::is_err(opened)) { return false; }
+    let file: std::file::File = core::result::unwrap(opened);
+    let copied: core::result::Result<u64, core::io::Error> = file.read_to_end(output);
+    let closed: core::result::Result<i32, core::io::Error> = file.close();
+    return core::result::is_ok(copied) && core::result::is_ok(closed);
+}
+fn number(v: core::slice::View<u8>, from: i32, to: i32) -> i32 {
+    let parsed: core::result::Result<u64, core::decimal::ParseError> = core::decimal::parse_u64_range(v.values, v.start + from, to - from);
+    if (core::result::is_err(parsed) || core::result::unwrap(parsed) > 100000 as u64) { return -1; } return core::result::unwrap(parsed) as i32;
+}
+fn stat_values(v: core::slice::View<u8>, from: i32, stat: &ext::diffstat::StatOptions) -> bool {
+    let field: i32 = 0; let i: i32 = from;
+    while (i <= v.len()) {
+        let j: i32 = i; while (j < v.len() && v.values[v.start+j] != 44) { j += 1; }
+        let n: i32 = number(v, i, j); if (n < 0 || field > 2) { return false; }
+        if (field == 0) { stat.width = n; } if (field == 1) { stat.name_width = n; } if (field == 2) { stat.count = n; }
+        field += 1; i = j + 1;
+    }
+    return true;
+}
+fn run(input: &alloc::io::Buffer, strip: i32, stat: ext::diffstat::StatOptions) -> i32 {
+    let text: core::slice::View<u8> = core::result::unwrap(core::slice::view(input.as_bytes(), input.len()));
+    let parsed: core::result::Result<ext::diffstat::Stats, ext::diffstat::Error> = ext::diffstat::parse_patch(text, strip, 1000000);
+    if (core::result::is_err(parsed)) {
+        return match (core::result::unwrap_err(parsed)) {
+            ext::diffstat::Error::Unsupported -> complain("seq-diffstat: binary patches are not supported\n", 47),
+            ext::diffstat::Error::FileLimit -> complain("seq-diffstat: too many files\n", 29),
+            ext::diffstat::Error::AllocationFailed -> complain("seq-diffstat: allocation failed\n", 32),
+            ext::diffstat::Error::OutputLimit -> complain("seq-diffstat: output limit\n", 27),
+            ext::diffstat::Error::InvalidInput -> complain("seq-diffstat: malformed patch\n", 30)
+        };
+    }
+    let stats: ext::diffstat::Stats = core::result::unwrap(parsed);
+    let written: core::result::Result<alloc::vec::Vec<u8>, ext::diffstat::Error> = ext::diffstat::write_stat(stats.borrow(), stat);
+    stats.destroy();
+    if (core::result::is_err(written)) { return complain("seq-diffstat: cannot encode\n", 28); }
+    let bytes: alloc::vec::Vec<u8> = core::result::unwrap(written); let status: i32 = 0;
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    if (core::result::is_err(core::io::write_all(sink.borrow(), bytes.as_slice(), 0, bytes.len()))) { status = 2; }
+    bytes.destroy(); return status;
+}
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1, 32, 16384);
+    if (core::result::is_err(captured)) { return complain("seq-diffstat: bad arguments\n", 28); }
+    let arguments: std::args::Arguments = core::result::unwrap(captured);
+    let strip: i32 = -1; let stat: ext::diffstat::StatOptions = ext::diffstat::default_stat_options();
+    let name: core::slice::View<u8> = literal("", 0); let named: bool = false; let ok: bool = true; let i: i32 = 0;
+    while (i < arguments.len() && ok) {
+        let arg: core::slice::View<u8> = core::option::unwrap(arguments.get(i));
+        if (same(arg, literal("-p", 2)) && i + 1 < arguments.len()) { i += 1; let v: core::slice::View<u8> = core::option::unwrap(arguments.get(i)); strip = number(v, 0, v.len()); ok = strip >= 0; }
+        else { if (same(arg, literal("--stat", 6))) { }
+        else { if (starts(arg, literal("--stat=", 7))) { ok = stat_values(arg, 7, stat.borrow()); }
+        else { if (!named) { name = arg; named = true; } else { ok = false; } } } }
+        i += 1;
+    }
+    let status: i32 = 2;
+    if (!ok) { status = complain("usage: seq-diffstat [-p N] [--stat=W[,N[,C]]] [PATCH]\n", 54); }
+    else {
+        let input: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(268435456)); let read: bool = false;
+        if (named) { read = read_file(name, input.borrow()); }
+        else { let source: std::stream::Descriptor = std::stream::stdin(); read = core::result::is_ok(std::stream::read_to_end(source.borrow(), input.borrow())); }
+        if (!read) { status = complain("seq-diffstat: cannot read input\n", 32); } else { status = run(input.borrow(), strip, stat); }
+        input.destroy();
+    }
+    arguments.destroy(); return status;
+}

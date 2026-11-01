@@ -1,0 +1,16 @@
+module app::main;
+import alloc::tree_map;
+import alloc::tree_set;
+import core::option;
+import core::ordering;
+import core::range;
+struct Key { value:i32 }
+struct Query { value:i32 }
+struct Policy {}
+impl Policy { fn borrow(&self) -> &Policy { return self; } }
+// Navigation needs Comparator<K,Q> even when the map is empty.
+fn main() -> i32 {
+    let map:alloc::tree_map::TreeMap<Key,i32> =alloc::tree_map::new<Key,i32>(); let query:Query=Query { value:3 }; let policy:Policy=Policy {};
+    let rejected_navigation_bound = map.last_below_by<Query,Policy>(query,policy.borrow());
+    return 0;
+}

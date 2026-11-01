@@ -89,8 +89,17 @@ The work budget starts afresh for each regex search; it is not a total process
 instruction count. Input scanning, UTF-8 validation, and native I/O are outside
 that budget. The line limit bounds input storage per record. The process may
 consume an unlimited number of records, retaining one geometrically growing
-buffer and one compiled regex. Provider scratch is created and released for each
-search. Spare line capacity and regex scratch mean these limits do not specify a
+buffer and one compiled regex. An assertion-free pattern also gets one
+capture-free [lazy DFA](extended-regex.md#capture-free-dfa-matching), which
+answers each record exactly as the VM would. VM scratch is created and released
+only for a search the DFA cannot decide, or for patterns with assertions. On a
+915,606-byte, 25,000-line corpus, `-c` searches for `zzz`, `abs`, `max\(`,
+`(min|max)\([^)]*,`, `9{3,}` and `[0-9]+ *\*\* *[0-9]+` dropped from
+3.0–3.8 s to 0.15–0.23 s each, with identical counts and `-n` output. The
+assertion pattern `^ *1` still takes about 3 s on the VM. These are wall times
+on a loaded laptop. A failed DFA cache allocation is an allocation failure
+(status 4, `stage=pattern`); only a pattern with assertions uses the VM
+instead. Spare line capacity and regex scratch mean these limits do not specify a
 total memory limit. The input is read in 1024-byte chunks; a UTF-8 sequence may
 cross a read boundary safely because validation happens after record assembly.
 
@@ -143,6 +152,33 @@ an I/O error and interruption. Each observed stdout write is tested with an I/O
 error, interruption, zero progress, and a short/faked byte transfer. The suite
 also checks `/dev/full` and a failed diagnostic write. It requires `python3` and
 `strace`.
+
+`tests/fixtures/extended/text_grep_faults/driver.py` runs the same matrix
+without ptrace. `faultinj.c` in that directory uses seccomp user notification
+to count `mmap`, `munmap`, `read` and `write` calls and to fail the N-th one.
+At exit it compares `/proc/PID/maps` with the map at the first trapped call, so
+an unreleased mapping is a failure. The driver runs the matrix for two
+patterns on `aaé\r\nnope\néa` with `-n`:
+
+| Pattern | Path | mmap = munmap | Allocation failures (status 4) | Read faults | Stdout write faults |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `^(?:a\|é)+$` | VM | 39 | 39/39 | 2 × EIO, EINTR | 5 × EIO, 0, EINTR, short |
+| `(?:a\|é)+` | lazy DFA | 23 | 23/23 | 2 × EIO, EINTR | 5 × EIO, 0, EINTR, short |
+
+All 114 runs, including `/dev/full` and the failed diagnostic, give the
+documented status, diagnostic and stdout prefix, and leave the map unchanged.
+The DFA path maps fewer regions because it never creates per-record VM
+scratch. Before the fix above, failures 8 through 21 of the DFA pattern were
+silently absorbed: the search fell back to the VM and exited 0. Log:
+`target/claude-work/s3/text-grep-faults-receipt.log`.
+
+```sh
+W=target/claude-work/s3
+cc -O2 -o "$W/faultinj" tests/fixtures/extended/text_grep_faults/faultinj.c
+target/claude-work/bin/lcc -o "$W/text_grep" --stdlib-root stdlib \
+  --source-root extended sample_programs/library/text_grep.lani
+python3 -I tests/fixtures/extended/text_grep_faults/driver.py "$W/faultinj" "$W/text_grep"
+```
 
 A large workload reuses one compiled expression across 12000 records. One local
 run on 2026-10-23 processed 436000 input bytes and emitted 168000 selected bytes

@@ -1,0 +1,90 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::result;
+import ext::graph;
+import ext::graph_algorithms;
+import std::io;
+
+fn mark(value:i32) { let byte:[i32;1]=[value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn source_offset(node:i32) -> i32 { let values:[i32;9]=[0,1,3,5,8,10,11,12,13]; return values[node]; }
+fn source_target(edge:i32) -> i32 { let values:[i32;13]=[3,2,5,4,6,0,1,5,1,6,6,7,6]; return values[edge]; }
+fn expected_component(node:i32) -> i32 { let values:[i32;8]=[0,1,1,0,1,2,3,3]; return values[node]; }
+fn check_input(offsets:&alloc::vec::Vec<i32>,targets:&alloc::vec::Vec<i32>,empty:bool,offset_storage:ptr,target_storage:ptr) {
+    assert(offsets.storage==offset_storage && targets.storage==target_storage);
+    let nodes:i32=8; let edges:i32=13; if(empty) { nodes=0; edges=0; }
+    assert(offsets.len()==nodes+1 && offsets.capacity()==nodes+1 && targets.len()==edges && targets.capacity()==edges);
+    let index:i32=0; while(index<=nodes) { assert(offsets.at(index)==source_offset(index)); index+=1; }
+    index=0; while(index<edges) { assert(targets.at(index)==source_target(index)); index+=1; }
+}
+fn allocation(cause:ext::graph::Error) {
+    assert(cause.node==-1 && cause.edge==-1);
+    let valid:bool=match(cause.kind) { ext::graph::ErrorKind::AllocationFailed->true,_ ->false }; assert(valid);
+}
+fn closed(cause:ext::graph::Error) {
+    assert(cause.node==-1 && cause.edge==-1);
+    let valid:bool=match(cause.kind) { ext::graph::ErrorKind::Closed->true,_ ->false }; assert(valid);
+}
+fn main() -> i32 {
+    let header:[i32;1]=[0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(header),1)==1);
+    let mode:i32=header[0]&15; let fail:bool=(header[0]&16)!=0; assert(mode>=0 && mode<=3);
+    let empty:bool=mode>=2; let nodes:i32=8; let edges:i32=13; let components:i32=4;
+    if(empty) { nodes=0; edges=0; components=0; }
+    let offsets:alloc::vec::Vec<i32> =alloc::vec::with_capacity<i32>(nodes+1).unwrap();
+    let targets:alloc::vec::Vec<i32> =alloc::vec::with_capacity<i32>(edges).unwrap();
+    let offset_storage:ptr=offsets.storage; let target_storage:ptr=targets.storage;
+    mark(80); let index:i32=0; while(index<=nodes) { offsets.try_push(source_offset(index)).unwrap(); index+=1; }
+    index=0; while(index<edges) { targets.try_push(source_target(index)).unwrap(); index+=1; } mark(112);
+    let input:ext::graph::View=ext::graph::View { nodes:nodes,offsets:offsets.as_view(),targets:targets.as_view() };
+    let limits:ext::graph::Limits=ext::graph::default_limits();
+    let output:[i32;24]=[mode,0,nodes,components,0,(core::mem::size_of<ext::graph::Edge>() as i32),0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+    if(fail) { output[1]=1; }
+    let length:i32=6+nodes;
+    if(mode%2==0) {
+        mark(67); let result:core::result::Result<ext::graph_algorithms::StrongComponents,ext::graph::Error> =ext::graph_algorithms::strong_components(input,limits); mark(70);
+        if(fail) {
+            assert(result.is_err()); allocation(result.unwrap_err()); mark(80);
+            check_input(offsets.borrow(),targets.borrow(),empty,offset_storage,target_storage); mark(112);
+            mark(67); result=ext::graph_algorithms::strong_components(input,limits); mark(70);
+        }
+        let owner:ext::graph_algorithms::StrongComponents=result.unwrap();
+        mark(80); check_input(offsets.borrow(),targets.borrow(),empty,offset_storage,target_storage); mark(112);
+        targets.destroy(); offsets.destroy();
+        mark(80); assert(owner.is_open() && owner.node_count()==nodes && owner.component_count()==components);
+        index=0; while(index<nodes) {
+            let actual:i32=owner.component(index).unwrap(); assert(actual==expected_component(index)); output[6+index]=actual;
+            let other:i32=0; while(other<nodes) { assert(owner.same_component(index,other).unwrap()==(expected_component(index)==expected_component(other))); other+=1; }
+            index+=1;
+        } mark(112);
+        assert(owner.destroy()); mark(80);
+        assert(!owner.destroy() && !owner.is_open() && owner.node_count()==0 && owner.component_count()==0);
+        closed(owner.component(-1).unwrap_err()); closed(owner.same_component(-1,-1).unwrap_err()); mark(112);
+    } else {
+        mark(67); let result:core::result::Result<ext::graph_algorithms::Condensation,ext::graph::Error> =ext::graph_algorithms::condensation(input,limits); mark(70);
+        if(fail) {
+            assert(result.is_err()); allocation(result.unwrap_err()); mark(80);
+            check_input(offsets.borrow(),targets.borrow(),empty,offset_storage,target_storage); mark(112);
+            mark(67); result=ext::graph_algorithms::condensation(input,limits); mark(70);
+        }
+        let owner:ext::graph_algorithms::Condensation=result.unwrap();
+        mark(80); check_input(offsets.borrow(),targets.borrow(),empty,offset_storage,target_storage); mark(112);
+        targets.destroy(); offsets.destroy();
+        mark(80); assert(owner.is_open() && owner.node_count()==nodes && owner.component_count()==components);
+        index=0; while(index<nodes) {
+            let actual:i32=owner.component(index).unwrap(); assert(actual==expected_component(index)); output[6+index]=actual;
+            let other:i32=0; while(other<nodes) { assert(owner.same_component(index,other).unwrap()==(expected_component(index)==expected_component(other))); other+=1; }
+            index+=1;
+        }
+        let dag:ext::graph::View=owner.view().unwrap(); let count:i32=5; if(empty) { count=0; }
+        assert(dag.nodes==components && dag.offsets.length==components+1 && dag.targets.length==count);
+        output[4]=count; let expected_offsets:[i32;5]=[0,2,4,5,5]; let expected_targets:[i32;5]=[1,2,2,3,3];
+        index=0; while(index<=components) { let value:i32=dag.offsets.get(index).unwrap(); assert(value==expected_offsets[index]); output[length]=value; length+=1; index+=1; }
+        index=0; while(index<count) { let value:i32=dag.targets.get(index).unwrap(); assert(value==expected_targets[index]); output[length]=value; length+=1; index+=1; }
+        assert(ext::graph::validate(dag,limits).unwrap()==count); mark(112);
+        assert(owner.destroy()); mark(80);
+        assert(!owner.destroy() && !owner.is_open() && owner.node_count()==0 && owner.component_count()==0 && owner.view().is_none());
+        closed(owner.component(-1).unwrap_err()); closed(owner.same_component(-1,-1).unwrap_err()); mark(112);
+    }
+    assert(std::io::write_stdout(core::mem::i32_array_data_ptr(output),(length*4) as usize)==length*4);
+    mark(68); return 0;
+}

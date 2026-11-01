@@ -1,0 +1,160 @@
+// Reverse fixed-width binary records through buffered logical seek positions.
+module app::main;
+import alloc::buffered;
+import alloc::io;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::path;
+import core::result;
+import core::result::Result;
+import core::slice;
+import core::slice::View;
+import std::args;
+import std::file;
+import std::file_ops;
+import std::signal;
+import std::stream;
+
+// One borrowed File owns the cursor. No copies acquire cleanup authority.
+struct Source { inner:&std::file::File, reads:i32 }
+impl Source { fn borrow(&self) -> &Source { return self; } }
+pub impl core::io::Read for Source {
+    pub fn read(&self, destination:[u8], offset:i32, count:i32) -> Result<i32,core::io::Error> {
+        if (!core::io::valid_range(offset,count)) { return core::result::Err(core::io::Error::InvalidInput); }
+        if (count == 0) { return core::result::Ok(0); }
+        if (self.reads == 8192) { return core::result::Err(core::io::Error::LimitExceeded); }
+        self.reads += 1; return self.inner.read(destination,offset,count);
+    }
+}
+pub impl core::io::Seek for Source {
+    pub fn seek(&self, from:core::io::SeekFrom) -> Result<u64,core::io::Error> {
+        // Import std::file_ops to select File's portable Seek implementation.
+        return self.inner.seek(from);
+    }
+}
+fn literal(value:str, count:i32) -> View<u8> {
+    let raw:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return core::slice::view(raw,count).unwrap();
+}
+fn equals(value:View<u8>, expected:View<u8>) -> bool {
+    if (value.length != expected.length) { return false; }
+    let index:i32 = 0;
+    while(index < value.length) {
+        if (value.values[value.start+index] != expected.values[expected.start+index]) { return false; }
+        index += 1;
+    }
+    return true;
+}
+fn write(bytes:View<u8>, handle:i32, maximum:i32) -> bool {
+    let sink = std::stream::from_handle(handle); let completed:i32 = 0; let calls:i32 = 0;
+    while(completed < bytes.length) {
+        if (calls == maximum) { return false; } calls += 1;
+        let sent:Result<i32,core::io::Error> = sink.write(bytes.values,bytes.start+completed,bytes.length-completed);
+        if (sent.is_err()) { if (core::io::is_interrupted(sent.unwrap_err())) { continue; } return false; }
+        let count:i32 = sent.unwrap();
+        if ((count <= 0) || (count > bytes.length-completed)) { return false; }
+        completed += count;
+    }
+    return true;
+}
+fn report(status:i32) -> i32 { write(literal("reverse_records: operation failed\n",34),2,8); return status; }
+fn io_status(error:core::io::Error) -> i32 {
+    return match(error) {
+        core::io::Error::AllocationFailed -> 4,
+        core::io::Error::LimitExceeded -> 2,
+        core::io::Error::InvalidInput -> 6,
+        core::io::Error::InvalidCount -> 6,
+        _ -> 3
+    };
+}
+fn collect_records(reader:&alloc::buffered::Reader<Source>, width:i32, output:&alloc::io::Buffer) -> i32 {
+    let ended:Result<u64,core::io::Error> = reader.seek(core::io::SeekFrom::End(0));
+    if (ended.is_err()) { return io_status(ended.unwrap_err()); }
+    let length:u64 = ended.unwrap();
+    if ((length > 1048576) || (length%(width as u64) != 0)) { return 2; }
+    let records:u64 = length/(width as u64); if (records > 4096) { return 2; }
+    if (records == 0) { return 0; }
+    let reserved:Result<i32,core::io::Error> = output.try_reserve(length as i32);
+    if (reserved.is_err()) { return io_status(reserved.unwrap_err()); }
+    if (reserved.unwrap() < (length as i32)) { return 6; }
+    let position:u64 = length-(width as u64);
+    let moved:Result<u64,core::io::Error> = reader.seek(core::io::SeekFrom::Start(position));
+    if (moved.is_err()) { return io_status(moved.unwrap_err()); }
+    if (moved.unwrap() != position) { return 6; }
+    let record:[u8;4096] = [0;4096]; let index:u64 = 0;
+    while(index < records) {
+        let completed:i32 = 0;
+        while(completed < width) {
+            let received:Result<i32,core::io::Error> = reader.read(record,completed,width-completed);
+            if (received.is_err()) {
+                let error:core::io::Error = received.unwrap_err();
+                if (core::io::is_interrupted(error)) { continue; }
+                return io_status(error);
+            }
+            let count:i32 = received.unwrap();
+            if (count == 0) { return 3; }
+            if ((count < 0) || (count > width-completed)) { return 6; }
+            completed += count;
+        }
+        let saved:Result<i32,core::io::Error> = output.write(record,0,width);
+        if (saved.is_err()) { return io_status(saved.unwrap_err()); }
+        if (saved.unwrap() != width) { return 6; }
+        index += 1;
+        if (index < records) {
+            // Logical position is one record beyond its start, even when the
+            // inner File has read ahead. Buffered Current reconciles unread.
+            position -= (width as u64);
+            let shifted:Result<u64,core::io::Error> = reader.seek(core::io::SeekFrom::Current(-2*(width as i64)));
+            if (shifted.is_err()) { return io_status(shifted.unwrap_err()); }
+            if (shifted.unwrap() != position) { return 6; }
+        }
+    }
+    if ((output.len() as u64) != length) { return 6; }
+    return 0;
+}
+fn collect_file(file:&std::file::File, width:i32, output:&alloc::io::Buffer) -> i32 {
+    let source = Source { inner:file,reads:0 };
+    let made:Result<alloc::buffered::Reader<Source>,core::io::Error> = alloc::buffered::reader<Source>(source.borrow(),4096);
+    if (made.is_err()) { return io_status(made.unwrap_err()); } let reader = made.unwrap();
+    let status:i32 = collect_records(reader.borrow(),width,output);
+    reader.discard(); return status;
+}
+fn run(path:core::path::Path, width:i32) -> i32 {
+    let created:Result<alloc::io::Buffer,core::io::Error> = alloc::io::with_limit(1048576);
+    if (created.is_err()) { return 6; } let output = created.unwrap();
+    // Existing read-only/CLOEXEC open policy, with no create/truncate/append.
+    let opened:Result<std::file::File,core::io::Error> = std::file_ops::open(path,std::file_ops::options());
+    if (opened.is_err()) { output.destroy(); return io_status(opened.unwrap_err()); } let file = opened.unwrap();
+    let status:i32 = collect_file(file.borrow(),width,output.borrow());
+    let closed:Result<i32,core::io::Error> = file.close();
+    if (status == 0) {
+        if (closed.is_err()) { status = 3; }
+        else { if (closed.unwrap() != 0) { status = 6; } }
+    }
+    if ((status == 0) && !write(core::slice::view(output.as_bytes(),output.len()).unwrap(),1,8192)) { status = 5; }
+    output.destroy(); return status;
+}
+fn arguments(values:View<View<u8>>) -> i32 {
+    if (values.length == 1) {
+        let first:View<u8> = values.values[values.start];
+        if (equals(first,literal("--help",6)) || equals(first,literal("-h",2))) {
+            let help = literal("Usage: reverse_records PATH WIDTH\nReverse the order of fixed-width binary file records without changing bytes within a record.\nWIDTH is ASCII decimal 1..4096; leading zeros are allowed. No stdin is read.\nRequire a seekable file of at most 1048576 bytes, divisible by WIDTH, with at most 4096 records.\nUse buffered End/Start/negative Current seeks; stage the complete result and close before stdout.\nLimits: 8192 file-read and output attempts; seeks are not retried. Sole --help or -h shows help.\n",496);
+            if (!write(help,1,64)) { return report(5); } return 0;
+        }
+    }
+    if (values.length != 2) { return report(2); }
+    let path_bytes:View<u8> = values.values[values.start]; let number:View<u8> = values.values[values.start+1];
+    if ((path_bytes.length == 0) || (path_bytes.length > 4095) || (number.length > 64)) { return report(2); }
+    let path:Result<core::path::Path,core::path::Error> = core::path::from_view(path_bytes);
+    let parsed:Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(number.values,number.start,number.length);
+    if (path.is_err() || parsed.is_err()) { return report(2); }
+    let width:u64 = parsed.unwrap(); if ((width < 1) || (width > 4096)) { return report(2); }
+    let status:i32 = run(path.unwrap(),width as i32); if (status != 0) { return report(status); } return 0;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let captured = std::args::snapshot(1,2,4160);
+    if (captured.is_err()) { return report(match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 }); }
+    let values = captured.unwrap(); let status:i32 = arguments(values.as_view()); values.destroy(); return status;
+}

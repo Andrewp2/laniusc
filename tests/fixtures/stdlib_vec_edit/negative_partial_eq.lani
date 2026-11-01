@@ -1,0 +1,14 @@
+module app::main;
+import alloc::vec;
+import core::clone;
+import core::cmp;
+import core::iter;
+import core::pair;
+import core::result;
+struct Plain { value:i32 }
+pub impl core::clone::Destroy<Plain> for Plain { pub fn destroy_value(value:Plain) {} }
+fn main() -> i32 {
+    let rejected_edit_bound:alloc::vec::Vec<Plain> =alloc::vec::new<Plain>();
+    rejected_edit_bound.dedup_destroy();
+    return 0;
+}

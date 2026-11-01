@@ -1,0 +1,316 @@
+// Fixed-memory compression with confirmed EOF and explicit atomic publication.
+module app::main;
+import alloc::vec;
+import alloc::vec::Vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::option::Option;
+import core::path;
+import core::result;
+import core::result::Result;
+import core::slice;
+import core::slice::View;
+import ext::cli;
+import ext::compression;
+import ext::deflate;
+import std::args;
+import std::atomic_file;
+import std::entropy;
+import std::file;
+import std::file_ops;
+import std::signal;
+import std::stream;
+import std::temp_file;
+
+struct Target { parent:core::path::Path, leaf:core::path::Path }
+struct Options { format:ext::compression::Format, format_set:bool, help:bool, input:Option<core::path::Path>, target:Option<Target> }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Outcome {
+    code:i32, phase:i32, visibility:std::atomic_file::Visibility,
+    file_synced:bool, directory_synced:bool, cleanup_failed:bool, retained:bool,
+    recovery_length:i32
+}
+struct Buffers { input:Vec<u8>, output:Vec<u8>, block:Vec<u8>, pending:Vec<u8>, scratch:Vec<i32> }
+impl Buffers {
+    fn borrow(&self) -> &Buffers { return self; }
+    fn destroy(&self) { self.input.destroy(); self.output.destroy(); self.block.destroy(); self.pending.destroy(); self.scratch.destroy(); }
+}
+struct Report { bytes:[u8], length:i32, failed:bool }
+impl Report {
+    fn borrow(&self) -> &Report { return self; }
+    fn text(&self, value:View<u8>) {
+        if(self.failed) { return; }
+        if(value.length>9000-self.length) { self.failed=true; return; }
+        let index:i32=0; while(index<value.length) {
+            self.bytes[self.length]=value.values[value.start+index]; self.length+=1; index+=1;
+        }
+    }
+    fn flag(&self, value:bool) { if(value) { self.text(literal("1",1)); } else { self.text(literal("0",1)); } }
+    fn hex(&self, value:View<u8>) {
+        let digits=literal("0123456789abcdef",16); let index:i32=0;
+        while(index<value.length && !self.failed) {
+            let byte:u8=value.values[value.start+index];
+            self.text(View { values:digits.values,start:(byte/16) as i32,length:1 });
+            self.text(View { values:digits.values,start:(byte%16) as i32,length:1 }); index+=1;
+        }
+    }
+}
+fn literal(value:str, count:i32) -> View<u8> {
+    return View { values:core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),start:0,length:count };
+}
+fn same(left:View<u8>, right:View<u8>) -> bool {
+    if(left.length!=right.length) { return false; } let index:i32=0;
+    while(index<left.length) { if(left.values[left.start+index]!=right.values[right.start+index]) { return false; } index+=1; }
+    return true;
+}
+fn ordinary(code:i32, phase:i32) -> Outcome {
+    return Outcome { code:code,phase:phase,visibility:std::atomic_file::Visibility::NotPublished,
+        file_synced:false,directory_synced:false,cleanup_failed:false,retained:false,recovery_length:0 };
+}
+fn cleanup_error(value:Outcome, phase:i32) -> Outcome {
+    value.cleanup_failed=true; if(value.code==0) { value.code=8; value.phase=phase; } return value;
+}
+fn close_input(file:&std::file::File, value:Outcome) -> Outcome {
+    if(file.close().is_err()) {
+        value.cleanup_failed=true; if(value.code==0) { value.code=3; value.phase=11; }
+    }
+    return value;
+}
+fn phase_name(phase:i32) -> View<u8> {
+    return match(phase) {
+        0->literal("arguments",9),1->literal("input-open",10),2->literal("input-metadata",14),
+        3->literal("parent-open",11),4->literal("workspace",9),5->literal("encoder",7),
+        6->literal("temporary-create",16),7->literal("parent-close",12),8->literal("input-read",10),
+        9->literal("encode",6),10->literal("write",5),11->literal("input-close",11),
+        12->literal("commit",6),13->literal("cleanup",7),_ ->literal("help",4)
+    };
+}
+fn render(value:Outcome, parent:View<u8>, recovery:View<u8>, output:[u8]) -> i32 {
+    let report=Report { bytes:output,length:0,failed:false };
+    report.text(literal("compress_file: code=",20));
+    let digit:[u8;1]=[(value.code as u8)+48]; report.text(View { values:digit,start:0,length:1 });
+    report.text(literal(" phase=",7)); report.text(phase_name(value.phase));
+    report.text(literal(" visibility=",12));
+    report.text(match(value.visibility) {
+        std::atomic_file::Visibility::NotPublished->literal("not-published",13),
+        std::atomic_file::Visibility::Published->literal("published",9),
+        std::atomic_file::Visibility::Unconfirmed->literal("unconfirmed",11)
+    });
+    report.text(literal(" file_synced=",13)); report.flag(value.file_synced);
+    report.text(literal(" directory_synced=",18)); report.flag(value.directory_synced);
+    report.text(literal(" cleanup_failed=",16)); report.flag(value.cleanup_failed);
+    report.text(literal(" retained=",10)); report.flag(value.retained);
+    report.text(literal(" recovery_parent_hex=",21));
+    if(value.recovery_length>0) { report.hex(parent); } else { report.text(literal("-",1)); }
+    report.text(literal(" recovery_name_hex=",19));
+    if(value.recovery_length>0) { report.hex(View { values:recovery.values,start:recovery.start,length:value.recovery_length }); }
+    else { report.text(literal("-",1)); }
+    report.text(literal("\n",1)); if(report.failed) { return 0; } return report.length;
+}
+fn write(value:View<u8>, handle:i32, maximum:i32) -> bool {
+    let sink=std::stream::from_handle(handle); let offset:i32=0; let calls:i32=0;
+    while(offset<value.length) {
+        if(calls==maximum) { return false; } calls+=1;
+        let sent=sink.write(value.values,value.start+offset,value.length-offset);
+        if(sent.is_err()) { if(!core::io::is_interrupted(sent.unwrap_err())) { return false; } }
+        else { let count=sent.unwrap(); if(count<=0 || count>value.length-offset) { return false; } offset+=count; }
+    }
+    return true;
+}
+
+fn target(path:core::path::Path) -> Result<Target,i32> {
+    let bytes=path.as_bytes(); let slash:i32=-1; let index:i32=0;
+    while(index<bytes.length) { if(bytes.values[bytes.start+index]==47) { slash=index; } index+=1; }
+    let leaf=View { values:bytes.values,start:bytes.start+slash+1,length:bytes.length-slash-1 };
+    if(leaf.length==0 || leaf.length>255 || same(leaf,literal(".",1)) || same(leaf,literal("..",2))) { return core::result::Err(2); }
+    let parent=core::path::from_view(literal(".",1)).unwrap();
+    if(slash>=0) { let count:i32=slash; if(count==0) { count=1; }
+        parent=core::path::from_view(View { values:bytes.values,start:bytes.start,length:count }).unwrap(); }
+    return core::result::Ok(Target { parent:parent,leaf:core::path::from_view(leaf).unwrap() });
+}
+fn option(options:&Options, found:ext::cli::Occurrence) -> i32 {
+    if(found.id==1) { if(options.help) { return 2; } options.help=true; return 0; }
+    if(found.id!=2 || options.format_set || found.value.is_none()) { return 2; }
+    let value=found.value.unwrap().bytes;
+    if(same(value,literal("raw",3))) { options.format=ext::compression::Format::RawDeflate; }
+    else { if(same(value,literal("zlib",4))) { options.format=ext::compression::Format::Zlib; }
+        else { if(same(value,literal("gzip",4))) { options.format=ext::compression::Format::Gzip; } else { return 2; } } }
+    options.format_set=true; return 0;
+}
+fn operand(options:&Options, found:ext::cli::Argument) -> i32 {
+    if(options.target.is_some() || found.bytes.length<1 || found.bytes.length>4095) { return 2; }
+    let checked=core::path::from_view(found.bytes); if(checked.is_err()) { return 2; }
+    if(options.input.is_none()) { options.input=core::option::Some(checked.unwrap()); }
+    else { let names=target(checked.unwrap()); if(names.is_err()) { return 2; } options.target=core::option::Some(names.unwrap()); }
+    return 0;
+}
+fn arguments(values:View<View<u8>>) -> Result<Options,i32> {
+    let specs:[ext::cli::Spec;2]=[
+        ext::cli::Spec { id:1,long:literal("help",4),short:104,arity:ext::cli::Arity::Flag },
+        ext::cli::Spec { id:2,long:literal("format",6),short:102,arity:ext::cli::Arity::Required }
+    ];
+    let made=ext::cli::parser(values,core::slice::view(specs,2).unwrap(),ext::cli::Ordering::Intermixed);
+    if(made.is_err()) { return core::result::Err(2); } let parser=made.unwrap();
+    let options=Options { format:ext::compression::Format::RawDeflate,format_set:false,help:false,input:core::option::None(),target:core::option::None() };
+    while(true) {
+        let found=parser.next(); if(found.is_err()) { return core::result::Err(2); }
+        let next=found.unwrap(); if(next.is_none()) { break; }
+        let status:i32=match(next.unwrap()) {
+            ext::cli::Event::Option(value)->option(options.borrow(),value),
+            ext::cli::Event::Operand(value)->operand(options.borrow(),value)
+        };
+        if(status!=0) { return core::result::Err(status); }
+    }
+    if(!options.help && (!options.format_set || options.target.is_none())) { return core::result::Err(2); }
+    return core::result::Ok(options);
+}
+
+fn buffers() -> Result<Buffers,i32> {
+    let value=Buffers { input:alloc::vec::new(),output:alloc::vec::new(),block:alloc::vec::new(),pending:alloc::vec::new(),scratch:alloc::vec::new() };
+    if(value.input.try_resize(4096,0).is_err()) { value.destroy(); return core::result::Err(4); }
+    if(value.output.try_resize(4096,0).is_err()) { value.destroy(); return core::result::Err(4); }
+    if(value.block.try_resize(32768,0).is_err()) { value.destroy(); return core::result::Err(4); }
+    if(value.pending.try_resize(32773,0).is_err()) { value.destroy(); return core::result::Err(4); }
+    if(value.scratch.try_resize(32768,0).is_err()) { value.destroy(); return core::result::Err(4); }
+    return core::result::Ok(value);
+}
+fn temporary_code(error:std::temp_file::Error) -> i32 {
+    return match(error) {
+        std::temp_file::Error::AllocationFailed->4,
+        std::temp_file::Error::InvalidLimits->2,std::temp_file::Error::InvalidName->2,std::temp_file::Error::NameLimit->2,
+        std::temp_file::Error::Entropy(failure)->match(failure.cause) { std::entropy::Error::CallLimit->2,_ ->5 },
+        _ ->5
+    };
+}
+fn atomic_failure(failure:std::atomic_file::Failure, phase:i32) -> Outcome {
+    let code:i32=match(failure.cause) {
+        std::atomic_file::Error::AllocationFailed->4,
+        std::atomic_file::Error::InvalidOptions->2,std::atomic_file::Error::InvalidDestination->2,
+        std::atomic_file::Error::Bounds->2,std::atomic_file::Error::ByteLimit->2,
+        std::atomic_file::Error::WriteLimit->2,std::atomic_file::Error::DirectorySyncLimit->2,
+        std::atomic_file::Error::Temporary(detail)->temporary_code(detail.cause),
+        std::atomic_file::Error::Ownership(detail)->temporary_code(detail),_ ->5
+    };
+    let renamed:bool=match(failure.stage) { std::atomic_file::Stage::Rename->true,_ ->false };
+    let exists:bool=match(failure.cause) { std::atomic_file::Error::Io(detail)->match(detail) { core::io::Error::Host(value)->value==17,_ ->false },_ ->false };
+    if(renamed && exists) { code=2; }
+    let cleanup:bool=match(failure.stage) { std::atomic_file::Stage::Cleanup->true,std::atomic_file::Stage::Disarm->true,_ ->false };
+    if(cleanup) { code=8; }
+    let receipt=failure.receipt;
+    if(match(receipt.visibility) { std::atomic_file::Visibility::Published->true,_ ->false } && !receipt.directory_synced) { code=6; }
+    if(match(receipt.visibility) { std::atomic_file::Visibility::Unconfirmed->true,_ ->false }) { code=7; }
+    let value=ordinary(code,phase); value.visibility=receipt.visibility;
+    value.file_synced=receipt.file_synced; value.directory_synced=receipt.directory_synced; return value;
+}
+fn cleanup_failed(value:std::temp_file::Cleanup) -> bool {
+    return value.file_close_error.is_some() || value.remove_error.is_some() || value.directory_close_error.is_some();
+}
+fn release(owner:&std::atomic_file::AtomicFile, value:Outcome, recovery:View<u8>) -> Outcome {
+    let before=owner.receipt();
+    let published:bool=match(before.visibility) { std::atomic_file::Visibility::Published->true,_ ->false };
+    if(published && !before.directory_synced && before.directory_open) {
+        let retried=owner.retry_directory_sync(); if(retried.is_err() && value.code==0) { value=atomic_failure(retried.unwrap_err(),12); }
+    }
+    let cleaned=owner.cleanup(); let receipt=owner.receipt();
+    if(cleaned.is_err() || cleanup_failed(receipt.cleanup)) { value=cleanup_error(value,13); }
+    if(receipt.temporary_owned) {
+        let name=owner.temporary_name(); assert(name.length==37);
+        let index:i32=0; while(index<name.length) { recovery.values[recovery.start+index]=name.values[name.start+index]; index+=1; }
+        let kept=owner.keep(); assert(kept.is_ok()); value.recovery_length=name.length;
+        let retired=owner.cleanup(); receipt=owner.receipt();
+        if(retired.is_err() || cleanup_failed(receipt.cleanup)) { value=cleanup_error(value,13); }
+    }
+    value.visibility=receipt.visibility; value.file_synced=receipt.file_synced; value.directory_synced=receipt.directory_synced;
+    value.retained=receipt.retained; if(receipt.retained) { value=cleanup_error(value,13); }
+    return value;
+}
+
+fn encode(input:&std::file::File, encoder:&ext::compression::Encoder, owner:&std::atomic_file::AtomicFile, storage:&Buffers) -> Outcome {
+    let received:i32=0; let offset:i32=0; let length:i32=0; let reads:i32=0; let steps:i32=0;
+    let eof:bool=false; let needs_input:bool=true;
+    while(true) {
+        if(needs_input && !eof) {
+            if(offset!=length) { return ordinary(2,9); }
+            if(reads==131072) { return ordinary(2,8); }
+            let remaining:i32=67108864-received; let count:i32=remaining;
+            if(count>4096) { count=4096; } if(count==0) { count=1; }
+            reads+=1; let got=input.read(storage.input.as_slice(),0,count);
+            if(got.is_err()) { if(core::io::is_interrupted(got.unwrap_err())) { continue; } return ordinary(3,8); }
+            let amount=got.unwrap(); if(amount<0 || amount>count) { return ordinary(3,8); }
+            if(remaining==0 && amount>0) { return ordinary(2,8); }
+            length=amount; offset=0; received+=amount; if(amount==0) { eof=true; }
+        }
+        if(steps==262144) { return ordinary(2,9); } steps+=1;
+        let offered=View { values:storage.input.as_slice(),start:offset,length:length-offset };
+        let result=encoder.step(offered,storage.output.as_view(),eof);
+        if(result.is_err()) { return ordinary(2,9); }
+        let progress=result.unwrap();
+        if(progress.read<0 || progress.read>length-offset || progress.written<0 || progress.written>4096) { return ordinary(2,9); }
+        offset+=progress.read;
+        if(progress.written>0) {
+            let written=owner.write_all(View { values:storage.output.as_slice(),start:0,length:progress.written });
+            if(written.is_err()) { return atomic_failure(written.unwrap_err(),10); }
+            if(written.unwrap()!=(progress.written as u64)) { return ordinary(5,10); }
+        }
+        let done:bool=match(progress.status) { ext::deflate::Status::Done->true,_ ->false };
+        if(done) {
+            if(!eof || offset!=length || !encoder.is_done() || encoder.total_read()!=(received as u64) || encoder.total_written()!=owner.receipt().stats.bytes) { return ordinary(2,9); }
+            return ordinary(0,9);
+        }
+        needs_input=match(progress.status) { ext::deflate::Status::NeedInput->true,_ ->false };
+        if(needs_input && (eof || offset!=length)) { return ordinary(2,9); }
+        if(!needs_input && progress.read==0 && progress.written==0) { return ordinary(2,9); }
+    }
+    return ordinary(2,9);
+}
+fn execute(options:&Options, storage:&Buffers, recovery:View<u8>) -> Outcome {
+    let limits=ext::compression::EncodeLimits { max_input:67108864,max_output:68157440 };
+    let initialized=ext::compression::encoder(storage.block.as_view(),storage.pending.as_view(),storage.scratch.as_view(),options.format,limits);
+    if(initialized.is_err()) { return ordinary(2,5); } let encoder=initialized.unwrap();
+    let input_options=std::file_ops::options(); input_options.no_follow=true; input_options.nonblocking=true;
+    let opened=std::file_ops::open(options.input.unwrap(),input_options);
+    if(opened.is_err()) { return ordinary(3,1); } let input=opened.unwrap();
+    let metadata=std::file_ops::empty_metadata(); let queried=std::file_ops::metadata_file_into(input.borrow(),metadata.borrow());
+    if(queried.is_err() || !metadata.has(1) || !match(std::file_ops::kind(metadata.mode)) { std::file_ops::Kind::Regular->true,_ ->false }) { return close_input(input.borrow(),ordinary(3,2)); }
+    let names=options.target.unwrap(); let parent_options=std::file_ops::options();
+    parent_options.directory=true; parent_options.no_follow=true; parent_options.nonblocking=true;
+    let opened_parent=std::file_ops::open(names.parent,parent_options);
+    if(opened_parent.is_err()) { return close_input(input.borrow(),ordinary(3,3)); } let parent=opened_parent.unwrap();
+    let atomic_options=std::atomic_file::default_options(); atomic_options.policy=std::file_ops::RenamePolicy::NoReplace;
+    atomic_options.max_bytes=68157440; atomic_options.write_calls=131072; atomic_options.directory_sync_calls=2;
+    atomic_options.temporary.name_attempts=32; atomic_options.temporary.entropy_calls=128;
+    let owner=std::atomic_file::empty(); let created=owner.create_in(parent.borrow(),names.leaf,atomic_options);
+    let value=ordinary(0,6); if(created.is_err()) { value=atomic_failure(created.unwrap_err(),6); }
+    if(parent.close().is_err()) { value=cleanup_error(value,7); }
+    if(value.code==0) { value=encode(input.borrow(),encoder.borrow(),owner.borrow(),storage); }
+    value=close_input(input.borrow(),value);
+    if(value.code==0) { let committed=owner.commit(); if(committed.is_err()) { value=atomic_failure(committed.unwrap_err(),12); } }
+    return release(owner.borrow(),value,recovery);
+}
+fn run(options:&Options, recovery:View<u8>) -> Outcome {
+    let allocated=buffers(); if(allocated.is_err()) { return ordinary(allocated.unwrap_err(),4); }
+    let storage=allocated.unwrap(); let value=execute(options,storage.borrow(),recovery); storage.destroy(); return value;
+}
+fn help() -> bool { return write(literal("Usage: compress_file --format raw|zlib|gzip [--] INPUT OUTPUT\nEncode a regular no-follow input into a new file. Existing output is never replaced.\nShort options: -f FORMAT, -h. --help validates supplied arguments and opens no files.\nDuplicate options, unknown formats and extra operands are errors.\nPaths use 1..4095 raw bytes; the output leaf uses 1..255 bytes and cannot be '.' or '..'.\nAn output path cannot end in /. The output parent must already be a directory.\nLimits: 64 MiB input, 65 MiB compressed output, 131072 read attempts.\nFixed buffers: 4096 input bytes, 4096 output bytes, 32768 block bytes,\n32773 pending bytes and 32768 i32 scratch entries.\nEncoder calls are capped at 262144 and temporary-file write attempts at 131072.\nEncoding completion, actual EOF and input close precede publication.\nPublication uses NoReplace in a cooperative local filesystem namespace.\nPublished or unconfirmed failures are reported without promising rollback.\nCleanup may keep a recovery file; its parent and name are reported as hexadecimal bytes.\nInterrupted work spends attempts; blocking I/O has no wall-clock timeout.\nSuccessful execution writes no stdout or stderr. Help writes stdout.\n",1188),1,64); }
+fn main() -> i32 {
+    if(std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let diagnostic:[u8;9000]=[0;9000]; let recovered:[u8;37]=[0;37]; let recovery=View { values:recovered,start:0,length:37 };
+    let captured=std::args::snapshot(1,16,8192);
+    if(captured.is_err()) {
+        let code:i32=match(captured.unwrap_err()) { std::args::Error::AllocationFailed->4,std::args::Error::HostRead(index)->3,_ ->2 };
+        let count=render(ordinary(code,0),literal("",0),recovery,diagnostic); write(View { values:diagnostic,start:0,length:count },2,64); return code;
+    }
+    let owner=captured.unwrap(); let parsed=arguments(owner.as_view()); let value=ordinary(0,0); let parent=literal("",0);
+    if(parsed.is_err()) { value=ordinary(parsed.unwrap_err(),0); }
+    else {
+        let options=parsed.unwrap();
+        if(options.help) {
+            owner.destroy(); if(help()) { return 0; }
+            let count=render(ordinary(5,14),literal("",0),recovery,diagnostic); write(View { values:diagnostic,start:0,length:count },2,64); return 5;
+        }
+        parent=options.target.unwrap().parent.as_bytes(); value=run(options.borrow(),recovery);
+    }
+    let count:i32=0; if(value.code!=0) { count=render(value,parent,recovery,diagnostic); }
+    owner.destroy(); if(value.code!=0) { write(View { values:diagnostic,start:0,length:count },2,64); } return value.code;
+}

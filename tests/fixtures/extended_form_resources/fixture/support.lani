@@ -1,0 +1,113 @@
+module fixture::support;
+import alloc::vec;
+import core::io;
+import core::iter;
+import core::mem;
+import core::slice;
+import ext::form;
+import ext::form_owned;
+import std::io;
+
+pub fn mark(value:i32) { let byte:[i32;1] = [value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+pub fn mode() -> i32 { let byte:[i32;1] = [0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(byte),1)==1); return byte[0]&255; }
+pub fn raw_byte(pair:i32,offset:i32) -> u8 {
+    let pattern:[u8;14] = [107,65,61,43,37,48,48,37,70,70,37,81,48,38];
+    if(offset==1) { return (65+pair%26) as u8; }
+    if(offset==12) { return (48+pair%10) as u8; }
+    return pattern[offset];
+}
+pub fn data_byte(pair:i32,offset:i32) -> u8 {
+    let pattern:[u8;8] = [107,65,32,0,255,37,81,48];
+    if(offset==1) { return (65+pair%26) as u8; }
+    if(offset==7) { return (48+pair%10) as u8; }
+    return pattern[offset];
+}
+pub fn wire_len(count:i32) -> i32 { if(count==0) { return 0; } return count*16-1; }
+pub fn wire_byte(base:i32,index:i32) -> u8 {
+    let pair:i32 = base+index/16; let offset:i32 = index%16;
+    let pattern:[u8;16] = [107,65,61,43,37,48,48,37,70,70,37,50,53,81,48,38];
+    if(offset==1) { return (65+pair%26) as u8; }
+    if(offset==14) { return (48+pair%10) as u8; }
+    return pattern[offset];
+}
+pub fn input(count:i32) -> alloc::vec::Vec<u8> {
+    let result:alloc::vec::Vec<u8> = alloc::vec::with_capacity<u8>(count*14+7).unwrap();
+    let index:i32 = 0;
+    while(index<count*14+7) {
+        let byte:u8 = 193; if(index>=3 && index<count*14+3) { byte=raw_byte((index-3)/14,(index-3)%14); }
+        result.try_push(byte).unwrap(); index+=1;
+    }
+    return result;
+}
+pub fn input_view(owner:&alloc::vec::Vec<u8>,count:i32) -> core::slice::View<u8> { return owner.as_view().subview(3,count*14+3).unwrap(); }
+pub fn decoded(count:i32,base:i32) -> alloc::vec::Vec<u8> {
+    let result:alloc::vec::Vec<u8> = alloc::vec::with_capacity<u8>(count*8+7).unwrap();
+    let index:i32 = 0;
+    while(index<count*8+7) {
+        let byte:u8 = 197; if(index>=3 && index<count*8+3) { byte=data_byte(base+(index-3)/8,(index-3)%8); }
+        result.try_push(byte).unwrap(); index+=1;
+    }
+    return result;
+}
+pub fn scratch() -> alloc::vec::Vec<u8> {
+    let result:alloc::vec::Vec<u8> = alloc::vec::with_capacity<u8>(4105).unwrap();
+    let index:i32 = 0; while(index<4105) { result.try_push(199).unwrap(); index+=1; } return result;
+}
+pub fn check_input(owner:&alloc::vec::Vec<u8>,count:i32) {
+    assert(owner.len()==count*14+7 && owner.capacity()==count*14+7);
+    let index:i32 = 0; while(index<owner.len()) {
+        let expected:u8 = 193; if(index>=3 && index<count*14+3) { expected=raw_byte((index-3)/14,(index-3)%14); }
+        assert(owner.at(index)==expected); index+=1;
+    }
+}
+pub fn check_decoded(owner:&alloc::vec::Vec<u8>,count:i32,base:i32) {
+    assert(owner.len()==count*8+7 && owner.capacity()==count*8+7);
+    let index:i32 = 0; while(index<owner.len()) {
+        let expected:u8 = 197; if(index>=3 && index<count*8+3) { expected=data_byte(base+(index-3)/8,(index-3)%8); }
+        assert(owner.at(index)==expected); index+=1;
+    }
+}
+pub fn check_scratch(owner:&alloc::vec::Vec<u8>) {
+    assert(owner.len()==4105 && owner.capacity()==4105);
+    let index:i32 = 0; while(index<4105) { if(index<5 || index>=4098) { assert(owner.at(index)==199); } index+=1; }
+}
+pub fn check_pair(pair:ext::form::Pair,index:i32) {
+    assert(pair.name.length==2 && pair.value.length==6);
+    let offset:i32 = 0; while(offset<2) { assert(pair.name.get(offset).unwrap()==data_byte(index,offset)); offset+=1; }
+    offset=0; while(offset<6) { assert(pair.value.get(offset).unwrap()==data_byte(index,offset+2)); offset+=1; }
+}
+pub fn check_form(owner:&ext::form_owned::Form,count:i32,base:i32) {
+    assert(owner.len()==count && owner.byte_len()==count*8);
+    assert(owner.pair(-1).is_none() && owner.pair(count).is_none());
+    let cursor=owner.pairs(); assert(cursor.remaining_count()==(count as u64));
+    let index:i32 = 0; while(index<count) {
+        check_pair(owner.pair(index).unwrap(),base+index); check_pair(cursor.next().unwrap(),base+index);
+        assert(cursor.remaining_count()==((count-index-1) as u64));
+        let span:ext::form::PairSpan = owner.spans.at(index);
+        assert(span.name_start==index*8 && span.name_length==2 && span.value_length==6);
+        let offset:i32 = 0; while(offset<8) { assert(owner.bytes.at(index*8+offset)==data_byte(base+index,offset)); offset+=1; }
+        index+=1;
+    }
+    assert(cursor.next().is_none() && cursor.next().is_none());
+}
+pub fn publish(pointer:ptr,count:i32) {
+    let offset:i32 = 0; let calls:i32 = 0; while(offset<count) {
+        assert(calls<1024); calls+=1; let used:i32 = std::io::write_stdout(pointer+(offset as usize),(count-offset) as usize);
+        assert(used>0 && used<=count-offset); offset+=used;
+    }
+}
+// The local cursor retires before the caller may mutate or destroy its source.
+pub fn stream(source:ext::form::PairSource,scratch:&alloc::vec::Vec<u8>,count:i32,base:i32) {
+    mark(80); let cursor:ext::form::Encoding = ext::form::encoding(source,wire_len(count) as u64).unwrap(); mark(112);
+    let offset:i32 = 0; let calls:i32 = 0;
+    while(offset<wire_len(count)) {
+        mark(80); assert(calls<1024); calls+=1;
+        let used:i32 = cursor.read(scratch.as_slice(),5,4093).unwrap();
+        let expected:i32 = wire_len(count)-offset; if(expected>4093) { expected=4093; }
+        assert(used==expected && cursor.remaining()==((wire_len(count)-offset-used) as u64));
+        let index:i32 = 0; while(index<used) { assert(scratch.at(5+index)==wire_byte(base,offset+index)); index+=1; }
+        check_scratch(scratch); mark(112); publish(scratch.storage+5,used); offset+=used;
+    }
+    mark(80); assert(cursor.read(scratch.as_slice(),5,4093).unwrap()==0 && cursor.read(scratch.as_slice(),5,1).unwrap()==0);
+    assert(cursor.remaining()==0); check_scratch(scratch); mark(112);
+}

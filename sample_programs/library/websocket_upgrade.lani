@@ -1,0 +1,145 @@
+// Offline RFC 6455 server handshake: bounded stdin to one staged HTTP 101.
+// The caller supplies any origin, authentication and resource policy.
+module app::main;
+import alloc::vec;
+import alloc::vec::Vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::option::Option;
+import core::slice::View;
+import core::slice::view;
+import ext::cli;
+import ext::http;
+import ext::openssl_websocket;
+import ext::websocket;
+import std::args;
+import std::signal;
+import std::stream;
+
+fn literal(value:str, count:i32) -> View<u8> {
+    let bytes:[u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return view(bytes,count).unwrap();
+}
+fn write(bytes:View<u8>, handle:i32, maximum_calls:i32) -> bool {
+    let sink = std::stream::from_handle(handle);
+    let completed:i32 = 0; let calls:i32 = 0;
+    while (completed < bytes.length) {
+        if (calls == maximum_calls) { return false; } calls += 1;
+        let sent = sink.write(bytes.values,bytes.start+completed,bytes.length-completed);
+        if (sent.is_err()) { if (core::io::is_interrupted(sent.unwrap_err())) { continue; } return false; }
+        let count = sent.unwrap();
+        if (count <= 0 || count > bytes.length-completed) { return false; }
+        completed += count;
+    }
+    return true;
+}
+fn report(status:i32) -> i32 {
+    let message = literal("websocket-upgrade: invalid arguments or handshake\n",50);
+    if (status == 3) { message = literal("websocket-upgrade: input or OpenSSL operation failed\n",53); }
+    if (status == 4) { message = literal("websocket-upgrade: allocation failed\n",37); }
+    if (status == 5) { message = literal("websocket-upgrade: output failed\n",33); }
+    // Diagnostic failure does not erase the primary failure class.
+    write(message,2,8); return status;
+}
+fn wire_status(error:ext::websocket::Error) -> i32 {
+    return match (error) { ext::websocket::Error::AllocationFailed -> 4, _ -> 2 };
+}
+fn limits() -> ext::websocket::Limits {
+    let value = ext::websocket::default_limits();
+    value.http.head_bytes = 16384; value.http.line_bytes = 4096;
+    value.http.headers = 64; value.protocols = 32;
+    return value;
+}
+// Borrow stdin. Do not close it; charge every read attempt, including EINTR.
+// EOF is required, and a byte beyond the input cap is rejected before append.
+fn read_request(output:&Vec<u8>) -> i32 {
+    if (output.try_reserve(16384).is_err()) { return 4; }
+    let source = std::stream::stdin();
+    let scratch:[u8;1024] = [0;1024]; let calls:i32 = 0;
+    while (true) {
+        if (calls == 128) { return 3; } calls += 1;
+        let remaining:i32 = 16384-output.len();
+        let count:i32 = remaining;
+        if (count > 1024) { count = 1024; }
+        if (count == 0) { count = 1; }
+        let received = source.read(scratch,0,count);
+        if (received.is_err()) {
+            if (core::io::is_interrupted(received.unwrap_err())) { continue; } return 3;
+        }
+        let got = received.unwrap();
+        if (got < 0 || got > count) { return 3; }
+        if (got == 0) { return 0; }
+        if (got > remaining) { return 2; }
+        if (output.try_extend(view(scratch,got).unwrap()).is_err()) { return 4; }
+    }
+    return 3;
+}
+fn respond(input:View<u8>, protocol:Option<View<u8>>) -> i32 {
+    let checked = ext::websocket::validate_request(input,limits());
+    if (checked.is_err()) { return wire_status(checked.unwrap_err()); }
+    let request = checked.unwrap();
+    // This tool has no transport owner to receive unread WebSocket frames.
+    if (request.head.raw.length != input.length) { return 2; }
+    if (protocol.is_some() && !ext::websocket::offers(request,protocol.unwrap())) { return 2; }
+    let accept:[u8;28] = [0;28];
+    let accepted = ext::openssl_websocket::accept_into(request.key,view(accept,28).unwrap());
+    if (accepted.is_err() || accepted.unwrap() != 28) { return 3; }
+    let fields:Vec<ext::http::Field> = alloc::vec::new();
+    let encoded = ext::websocket::encode_response(request,fields.as_view(),view(accept,28).unwrap(),protocol,limits());
+    fields.destroy();
+    if (encoded.is_err()) { return wire_status(encoded.unwrap_err()); }
+    let response:Vec<u8> = encoded.unwrap();
+    // All request checks and encoding succeed before the first stdout write.
+    let published = write(response.as_view(),1,64);
+    response.destroy(); if (!published) { return 5; } return 0;
+}
+fn arguments(values:View<View<u8>>) -> i32 {
+    let specs:[ext::cli::Spec;2] = [
+        ext::cli::Spec { id:1, long:literal("help",4), short:104, arity:ext::cli::Arity::Flag },
+        ext::cli::Spec { id:2, long:literal("protocol",8), short:0, arity:ext::cli::Arity::Required }
+    ];
+    let made = ext::cli::parser(values,view(specs,2).unwrap(),ext::cli::Ordering::Intermixed);
+    if (made.is_err()) { return report(2); }
+    let parser = made.unwrap(); let help:bool = false;
+    let protocol:Option<View<u8>> = core::option::None();
+    while (true) {
+        let parsed = parser.next();
+        if (parsed.is_err()) { return report(2); }
+        let next = parsed.unwrap(); if (next.is_none()) { break; }
+        let found:Option<ext::cli::Occurrence> = match (next.unwrap()) {
+            ext::cli::Event::Operand(argument) -> core::option::None(),
+            ext::cli::Event::Option(item) -> core::option::Some(item)
+        };
+        if (found.is_none()) { return report(2); }
+        let item = found.unwrap();
+        if (item.id == 1) { help = true; }
+        else {
+            let value = item.value.unwrap().bytes;
+            if (protocol.is_some() || value.length == 0 || value.length > 256) { return report(2); }
+            protocol = core::option::Some(value);
+        }
+    }
+    if (help) {
+        let text = literal("Usage: websocket-upgrade [--protocol TOKEN] [--help]\nRead one HTTP upgrade request from stdin through EOF; write its HTTP 101 response.\nThe selected protocol must be offered exactly; no option declines all protocols.\nLimits: 16384 input/head bytes, 4096 line bytes, 64 headers, 32 offered protocols.\n",300);
+        if (!write(text,1,64)) { return report(5); } return 0;
+    }
+    let input:Vec<u8> = alloc::vec::new();
+    let status:i32 = read_request(input.borrow());
+    if (status == 0) { status = respond(input.as_view(),protocol); }
+    input.destroy(); if (status != 0) { return report(status); } return 0;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let captured = std::args::snapshot(1,8,8192);
+    if (captured.is_err()) {
+        let status:i32 = match (captured.unwrap_err()) {
+            std::args::Error::AllocationFailed -> 4,
+            std::args::Error::HostRead(host) -> 3,
+            _ -> 2
+        };
+        return report(status);
+    }
+    let values:std::args::Arguments = captured.unwrap();
+    let status = arguments(values.as_view()); values.destroy(); return status;
+}

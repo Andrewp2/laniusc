@@ -1,0 +1,8 @@
+module app::main;
+import core::iter;
+import core::ordering;
+fn main() -> i32 {
+    let left:core::iter::Once<f64> =core::iter::once<f64>(1.0); let right:core::iter::Once<f64> =core::iter::once<f64>(1.0);
+    let rejected:core::ordering::Ordering=core::iter::cmp<core::iter::Once<f64>,core::iter::Once<f64>,f64>(left.borrow(),right.borrow()); // rejected_sequence_bound
+    return 0;
+}

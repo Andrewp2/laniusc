@@ -1,0 +1,205 @@
+module app::main;
+import core::clone_values;
+import core::iter;
+import core::option;
+import core::result;
+import core::slice;
+
+struct FoldLog { events:[i64], length:i32 }
+impl FoldLog {
+    fn borrow(&self) -> &FoldLog { return self; }
+    fn add(&self,event:i64) { assert(self.length<64); self.events[self.length]=event; self.length+=1; }
+    fn check(&self,expected:[i64],length:i32) { assert(self.length==length); let index:i32=0; while (index<length) { assert(self.events[index]==expected[index]); index+=1; } }
+}
+struct FoldProbe { values:[i32], front:i32, back:i32, forward:i32, backward:i32, queries:i32, log:&FoldLog }
+fn fold_probe(values:[i32],length:i32,log:&FoldLog) -> FoldProbe { return FoldProbe { values:values,front:0,back:length,forward:0,backward:0,queries:0,log:log }; }
+impl FoldProbe { fn borrow(&self) -> &FoldProbe { return self; } }
+pub impl core::iter::Iterator<i32> for FoldProbe {
+    pub fn next(&self) -> core::option::Option<i32> {
+        self.forward+=1; let log:&FoldLog=self.log;
+        if (self.front==self.back) { log.add(-100); return core::option::None(); }
+        let value:i32=self.values[self.front]; self.front+=1; log.add(100+(value as i64)); return core::option::Some(value);
+    }
+}
+pub impl core::iter::DoubleEndedIterator<i32> for FoldProbe {
+    pub fn next_back(&self) -> core::option::Option<i32> {
+        self.backward+=1; let log:&FoldLog=self.log;
+        if (self.front==self.back) { log.add(-200); return core::option::None(); }
+        self.back-=1; let value:i32=self.values[self.back]; log.add(200+(value as i64)); return core::option::Some(value);
+    }
+}
+pub impl core::iter::ExactSizeIterator<i32> for FoldProbe { pub fn remaining_count(&self) -> u64 { self.queries+=1; return (self.back-self.front) as u64; } }
+pub type FoldPayload=core::option::Option<core::result::Result<[i64;2],u64>>;
+pub struct Fault { stamp:u64, prior:i64, item:i32, context:FoldPayload }
+fn fold_fault(prior:i64,item:i32) -> Fault {
+    let words:[i64;2]=[-9223372036854775808,4294967297]; let context:core::result::Result<[i64;2],u64> =core::result::Ok(words);
+    return Fault { stamp:18446744073709551615,prior:prior,item:item,context:core::option::Some(context) };
+}
+fn fold_check_fault(error:Fault,prior:i64,item:i32) {
+    let words:[i64;2]=error.context.unwrap().unwrap(); assert(error.stamp==18446744073709551615 && error.prior==prior && error.item==item && words[0]==-9223372036854775808 && words[1]==4294967297);
+}
+struct Digits { calls:i32, log:&FoldLog }
+impl Digits { fn borrow(&self) -> &Digits { return self; } }
+pub impl core::iter::Folder<i64,i32> for Digits {
+    pub fn apply(&self,accumulator:i64,value:i32) -> i64 { self.calls+=1; let log:&FoldLog=self.log; log.add(1000+(value as i64)); return accumulator*10+(value as i64); }
+}
+struct TryDigits { calls:i32, fail:i32, log:&FoldLog }
+impl TryDigits { fn borrow(&self) -> &TryDigits { return self; } }
+pub impl core::iter::TryFolder<i64,i32,Fault> for TryDigits {
+    pub fn try_apply(&self,accumulator:i64,value:i32) -> core::result::Result<i64,Fault> {
+        self.calls+=1; let log:&FoldLog=self.log; log.add(1000+(value as i64));
+        if (value==self.fail) { return core::result::Err(fold_fault(accumulator,value)); }
+        return core::result::Ok(accumulator*10+(value as i64));
+    }
+}
+struct ReduceDigits { calls:i32, log:&FoldLog }
+impl ReduceDigits { fn borrow(&self) -> &ReduceDigits { return self; } }
+pub impl core::iter::Folder<i32,i32> for ReduceDigits {
+    pub fn apply(&self,accumulator:i32,value:i32) -> i32 { self.calls+=1; let log:&FoldLog=self.log; log.add(1000+(value as i64)); return accumulator*10+value; }
+}
+struct TryReduceDigits { calls:i32, fail:i32, log:&FoldLog }
+impl TryReduceDigits { fn borrow(&self) -> &TryReduceDigits { return self; } }
+pub impl core::iter::TryFolder<i32,i32,Fault> for TryReduceDigits {
+    pub fn try_apply(&self,accumulator:i32,value:i32) -> core::result::Result<i32,Fault> {
+        self.calls+=1; let log:&FoldLog=self.log; log.add(1000+(value as i64));
+        if (value==self.fail) { return core::result::Err(fold_fault(accumulator as i64,value)); }
+        return core::result::Ok(accumulator*10+value);
+    }
+}
+fn reductions_seed_from_the_first_item() {
+    let events:[i64;64]=[0;64]; let log:FoldLog=FoldLog { events:events,length:0 }; let values:[i32;3]=[1,2,3];
+    let source:FoldProbe=fold_probe(values,0,log.borrow()); let folder:ReduceDigits=ReduceDigits { calls:0,log:log.borrow() };
+    assert(core::iter::reduce<FoldProbe,ReduceDigits,i32>(source.borrow(),folder.borrow()).is_none() && folder.calls==0 && source.forward==1 && source.queries==0);
+    log.length=0; source=fold_probe(values,1,log.borrow());
+    assert(core::iter::reduce<FoldProbe,ReduceDigits,i32>(source.borrow(),folder.borrow()).unwrap()==1 && folder.calls==0 && source.forward==2);
+    let singleton_events:[i64;2]=[101,-100]; log.check(singleton_events,2);
+    log.length=0; source=fold_probe(values,3,log.borrow());
+    assert(core::iter::reduce<FoldProbe,ReduceDigits,i32>(source.borrow(),folder.borrow()).unwrap()==123 && folder.calls==2 && source.forward==4 && source.backward==0 && source.queries==0);
+    let expected:[i64;6]=[101,102,1002,103,1003,-100]; log.check(expected,6);
+    let fallible:TryReduceDigits=TryReduceDigits { calls:0,fail:-1,log:log.borrow() };
+    log.length=0; source=fold_probe(values,0,log.borrow()); assert(core::iter::try_reduce<FoldProbe,TryReduceDigits,i32,Fault>(source.borrow(),fallible.borrow()).unwrap().is_none() && fallible.calls==0);
+    log.length=0; source=fold_probe(values,1,log.borrow()); assert(core::iter::try_reduce<FoldProbe,TryReduceDigits,i32,Fault>(source.borrow(),fallible.borrow()).unwrap().unwrap()==1 && fallible.calls==0);
+    log.length=0; source=fold_probe(values,3,log.borrow()); assert(core::iter::try_reduce<FoldProbe,TryReduceDigits,i32,Fault>(source.borrow(),fallible.borrow()).unwrap().unwrap()==123 && fallible.calls==2); log.check(expected,6);
+    log.length=0; source=fold_probe(values,3,log.borrow()); fallible.calls=0; fallible.fail=2;
+    fold_check_fault(core::iter::try_reduce<FoldProbe,TryReduceDigits,i32,Fault>(source.borrow(),fallible.borrow()).unwrap_err(),1,2);
+    assert(source.forward==2 && source.front==2 && fallible.calls==1 && source.queries==0);
+    let failure_events:[i64;3]=[101,102,1002]; log.check(failure_events,3); assert(source.next().unwrap()==3);
+}
+fn reverse_folds_keep_accumulator_first_and_resume() {
+    let events:[i64;64]=[0;64]; let log:FoldLog=FoldLog { events:events,length:0 }; let values:[i32;4]=[1,2,3,4];
+    let source:FoldProbe=fold_probe(values,4,log.borrow()); let folder:Digits=Digits { calls:0,log:log.borrow() };
+    assert(core::iter::rfold<FoldProbe,Digits,i32,i64>(source.borrow(),9,folder.borrow())==94321 && folder.calls==4 && source.forward==0 && source.backward==5 && source.queries==0);
+    let expected:[i64;9]=[204,1004,203,1003,202,1002,201,1001,-200]; log.check(expected,9);
+    log.length=0; source=fold_probe(values,4,log.borrow()); let fallible:TryDigits=TryDigits { calls:0,fail:-1,log:log.borrow() };
+    assert(core::iter::try_rfold<FoldProbe,TryDigits,i32,i64,Fault>(source.borrow(),9,fallible.borrow()).unwrap()==94321 && fallible.calls==4); log.check(expected,9);
+    log.length=0; source=fold_probe(values,4,log.borrow()); fallible.calls=0; fallible.fail=2;
+    fold_check_fault(core::iter::try_rfold<FoldProbe,TryDigits,i32,i64,Fault>(source.borrow(),9,fallible.borrow()).unwrap_err(),943,2);
+    assert(source.backward==3 && source.forward==0 && fallible.calls==3 && source.queries==0 && source.next().unwrap()==1);
+    log.length=0; source=fold_probe(values,4,log.borrow());
+    assert(source.next().unwrap()==1 && source.next_back().unwrap()==4);
+    assert(core::iter::rfold<FoldProbe,Digits,i32,i64>(source.borrow(),9,folder.borrow())==932 && source.front==source.back && source.queries==0);
+}
+fn fold_bounded_call(mode:i32,source:&FoldProbe,folder:&Digits,fallible:&TryDigits,initial:i64,limit:u64) -> core::iter::FoldProgress<i64> {
+    if (mode==0) { return core::iter::fold_up_to<FoldProbe,Digits,i32,i64>(source,initial,folder,limit); }
+    if (mode==1) { return core::iter::try_fold_up_to<FoldProbe,TryDigits,i32,i64,Fault>(source,initial,fallible,limit).unwrap(); }
+    if (mode==2) { return core::iter::rfold_up_to<FoldProbe,Digits,i32,i64>(source,initial,folder,limit); }
+    return core::iter::try_rfold_up_to<FoldProbe,TryDigits,i32,i64,Fault>(source,initial,fallible,limit).unwrap();
+}
+fn all_bounded_directions_obey_exact_pull_quotas() {
+    let events:[i64;64]=[0;64]; let log:FoldLog=FoldLog { events:events,length:0 }; let values:[i32;3]=[1,2,3]; let mode:i32=0;
+    while (mode<4) {
+        let quota:i32=0; while (quota<4) {
+            log.length=0; let source:FoldProbe=fold_probe(values,3,log.borrow()); let folder:Digits=Digits { calls:0,log:log.borrow() }; let fallible:TryDigits=TryDigits { calls:0,fail:-1,log:log.borrow() };
+            let limit:u64=0; if (quota==1) { limit=3; } if (quota==2) { limit=4; } if (quota==3) { limit=18446744073709551615; }
+            let progress:core::iter::FoldProgress<i64> =fold_bounded_call(mode,source.borrow(),folder.borrow(),fallible.borrow(),9,limit);
+            assert(source.queries==0);
+            if (quota==0) { assert(progress.accumulator==9 && progress.folded==0 && !progress.exhausted && source.forward==0 && source.backward==0 && folder.calls==0 && fallible.calls==0 && log.length==0); }
+            else {
+                let order:i64=9123; if (mode>=2) { order=9321; }
+                assert(progress.accumulator==order && progress.folded==3 && progress.exhausted==(quota>=2) && folder.calls+fallible.calls==3);
+                let pulls:i32=3; if (quota>=2) { pulls=4; } assert(source.forward+source.backward==pulls);
+                let event_count:i32=6; if (quota>=2) { event_count=7; }
+                if (mode<2) { assert(source.backward==0); let expected:[i64;7]=[101,1001,102,1002,103,1003,-100]; log.check(expected,event_count); }
+                else { assert(source.forward==0); let expected:[i64;7]=[203,1003,202,1002,201,1001,-200]; log.check(expected,event_count); }
+                if (quota==1) {
+                    let no_probe:core::iter::FoldProgress<i64> =fold_bounded_call(mode,source.borrow(),folder.borrow(),fallible.borrow(),progress.accumulator,0);
+                    assert(no_probe.folded==0 && !no_probe.exhausted && source.forward+source.backward==3);
+                    let finish:core::iter::FoldProgress<i64> =fold_bounded_call(mode,source.borrow(),folder.borrow(),fallible.borrow(),progress.accumulator,1);
+                    assert(finish.folded==0 && finish.exhausted && finish.accumulator==order && source.forward+source.backward==4 && source.queries==0);
+                }
+            }
+            quota+=1;
+        }
+        mode+=1;
+    }
+}
+fn bounded_errors_count_only_prior_ok_and_consume_failure() {
+    let events:[i64;64]=[0;64]; let log:FoldLog=FoldLog { events:events,length:0 }; let values:[i32;4]=[1,2,3,4];
+    let source:FoldProbe=fold_probe(values,4,log.borrow()); let folder:TryDigits=TryDigits { calls:0,fail:3,log:log.borrow() };
+    let failed:core::iter::FoldFailure<Fault> =core::iter::try_fold_up_to<FoldProbe,TryDigits,i32,i64,Fault>(source.borrow(),9,folder.borrow(),3).unwrap_err();
+    assert(failed.folded==2 && folder.calls==3 && source.forward==3 && source.backward==0 && source.queries==0); fold_check_fault(failed.error,912,3);
+    let expected:[i64;6]=[101,1001,102,1002,103,1003]; log.check(expected,6);
+    folder.fail=-1; let resumed:core::iter::FoldProgress<i64> =core::iter::try_fold_up_to<FoldProbe,TryDigits,i32,i64,Fault>(source.borrow(),0,folder.borrow(),2).unwrap();
+    assert(resumed.folded==1 && resumed.exhausted && resumed.accumulator==4 && source.forward==5 && folder.calls==4);
+    log.length=0; source=fold_probe(values,4,log.borrow()); folder.calls=0; folder.fail=2;
+    let reverse_failed:core::iter::FoldFailure<Fault> =core::iter::try_rfold_up_to<FoldProbe,TryDigits,i32,i64,Fault>(source.borrow(),9,folder.borrow(),18446744073709551615).unwrap_err();
+    assert(reverse_failed.folded==2 && folder.calls==3 && source.backward==3 && source.forward==0 && source.queries==0); fold_check_fault(reverse_failed.error,943,2);
+    assert(source.next().unwrap()==1 && source.front==source.back);
+    folder.fail=-1; let empty:core::iter::FoldProgress<i64> =core::iter::try_rfold_up_to<FoldProbe,TryDigits,i32,i64,Fault>(source.borrow(),7,folder.borrow(),1).unwrap(); assert(empty.folded==0 && empty.exhausted && empty.accumulator==7 && folder.calls==3);
+    log.length=0; source=fold_probe(values,4,log.borrow()); let first:Digits=Digits { calls:0,log:log.borrow() };
+    let prefix:core::iter::FoldProgress<i64> =core::iter::fold_up_to<FoldProbe,Digits,i32,i64>(source.borrow(),9,first.borrow(),1);
+    let suffix:core::iter::FoldProgress<i64> =core::iter::rfold_up_to<FoldProbe,Digits,i32,i64>(source.borrow(),prefix.accumulator,first.borrow(),1);
+    assert(prefix.folded==1 && suffix.folded==1 && suffix.accumulator==914 && source.next().unwrap()==2 && source.next_back().unwrap()==3 && source.queries==0);
+}
+
+pub struct FoldToken { value:i32, wide:u64, payload:FoldPayload }
+pub struct FoldAcc<T> { seen:u64, order:i64, last:core::option::Option<T> }
+pub enum GenericFoldError<A,T> { Stopped(A,T,u64,FoldPayload) }
+fn fold_token(value:i32) -> FoldToken {
+    let payload:FoldPayload=core::option::None();
+    if (value==2) { let words:[i64;2]=[-9223372036854775808,4294967297]; let detail:core::result::Result<[i64;2],u64> =core::result::Ok(words); payload=core::option::Some(detail); }
+    if (value==3) { let detail:core::result::Result<[i64;2],u64> =core::result::Err(18446744073709551615); payload=core::option::Some(detail); }
+    return FoldToken { value:value,wide:18446744073709551615-(value as u64),payload:payload };
+}
+struct GenericDigits { calls:i32, fail:i32 }
+impl GenericDigits { fn borrow(&self) -> &GenericDigits { return self; } }
+pub impl core::iter::Folder<FoldAcc<FoldToken>,FoldToken> for GenericDigits {
+    pub fn apply(&self,accumulator:FoldAcc<FoldToken>,value:FoldToken) -> FoldAcc<FoldToken> { self.calls+=1; return FoldAcc { seen:accumulator.seen+1,order:accumulator.order*10+(value.value as i64),last:core::option::Some(value) }; }
+}
+pub impl core::iter::TryFolder<FoldAcc<FoldToken>,FoldToken,GenericFoldError<FoldAcc<FoldToken>,FoldToken>> for GenericDigits {
+    pub fn try_apply(&self,accumulator:FoldAcc<FoldToken>,value:FoldToken) -> core::result::Result<FoldAcc<FoldToken>,GenericFoldError<FoldAcc<FoldToken>,FoldToken>> {
+        self.calls+=1;
+        if (value.value==self.fail) { return core::result::Err(GenericFoldError::Stopped(accumulator,value,18446744073709551615,value.payload)); }
+        return core::result::Ok(FoldAcc { seen:accumulator.seen+1,order:accumulator.order*10+(value.value as i64),last:core::option::Some(value) });
+    }
+}
+fn fold_generic_error(accumulator:FoldAcc<FoldToken>,value:FoldToken,stamp:u64,payload:FoldPayload) -> bool {
+    let words:[i64;2]=payload.unwrap().unwrap();
+    return accumulator.seen==1 && accumulator.order==93 && accumulator.last.unwrap().value==3 && value.value==2 && value.wide==18446744073709551613 && stamp==18446744073709551615 && words[0]==-9223372036854775808 && words[1]==4294967297;
+}
+struct InfallibleDigits { calls:i32 }
+impl InfallibleDigits { fn borrow(&self) -> &InfallibleDigits { return self; } }
+pub impl core::iter::TryFolder<i64,i32,core::clone_values::Infallible> for InfallibleDigits {
+    pub fn try_apply(&self,accumulator:i64,value:i32) -> core::result::Result<i64,core::clone_values::Infallible> {
+        self.calls+=1; return core::result::Ok(accumulator*10+(value as i64));
+    }
+}
+fn compound_nested_items_accumulators_and_errors_execute() {
+    let values:[FoldToken;3]=[fold_token(1),fold_token(2),fold_token(3)]; let source:core::slice::Iter<FoldToken> =core::iter::from_slice<FoldToken>(values,3).unwrap();
+    let initial:FoldAcc<FoldToken> =FoldAcc { seen:0,order:9,last:core::option::Some(values[2]) }; let folder:GenericDigits=GenericDigits { calls:0,fail:2 };
+    let zero:core::iter::FoldProgress<FoldAcc<FoldToken>> =core::iter::fold_up_to<core::slice::Iter<FoldToken>,GenericDigits,FoldToken,FoldAcc<FoldToken>>(source.borrow(),initial,folder.borrow(),0);
+    assert(zero.folded==0 && !zero.exhausted && zero.accumulator.seen==0 && zero.accumulator.last.unwrap().payload.unwrap().unwrap_err()==18446744073709551615 && folder.calls==0 && source.remaining()==3);
+    let folded:FoldAcc<FoldToken> =core::iter::rfold<core::slice::Iter<FoldToken>,GenericDigits,FoldToken,FoldAcc<FoldToken>>(source.borrow(),initial,folder.borrow());
+    assert(folded.seen==3 && folded.order==9321 && folded.last.unwrap().value==1 && folded.last.unwrap().payload.is_none());
+    let again:core::slice::Iter<FoldToken> =core::iter::from_slice<FoldToken>(values,3).unwrap();
+    let failed:core::iter::FoldFailure<GenericFoldError<FoldAcc<FoldToken>,FoldToken>> =core::iter::try_rfold_up_to<core::slice::Iter<FoldToken>,GenericDigits,FoldToken,FoldAcc<FoldToken>,GenericFoldError<FoldAcc<FoldToken>,FoldToken>>(again.borrow(),initial,folder.borrow(),3).unwrap_err();
+    assert(failed.folded==1 && match(failed.error) { GenericFoldError::Stopped(accumulator,value,stamp,payload) -> fold_generic_error(accumulator,value,stamp,payload) });
+    assert(again.next().unwrap().value==1 && again.next().is_none() && values[1].wide==18446744073709551613 && values[2].payload.unwrap().unwrap_err()==18446744073709551615);
+    let only:core::iter::Once<i32> =core::iter::once<i32>(7); let infallible:InfallibleDigits=InfallibleDigits { calls:0 };
+    let uninhabited_error:core::iter::FoldProgress<i64> =core::iter::try_rfold_up_to<core::iter::Once<i32>,InfallibleDigits,i32,i64,core::clone_values::Infallible>(only.borrow(),9,infallible.borrow(),18446744073709551615).unwrap();
+    assert(uninhabited_error.accumulator==97 && uninhabited_error.folded==1 && uninhabited_error.exhausted && infallible.calls==1);
+}
+fn main() -> i32 {
+    reductions_seed_from_the_first_item(); reverse_folds_keep_accumulator_first_and_resume(); all_bounded_directions_obey_exact_pull_quotas();
+    bounded_errors_count_only_prior_ok_and_consume_failure(); compound_nested_items_accumulators_and_errors_execute(); return 0;
+}

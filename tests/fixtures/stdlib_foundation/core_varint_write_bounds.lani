@@ -1,8 +1,0 @@
-module app::main;
-import core::varint;
-
-fn main() -> i32 {
-    let zero: u8 = 0;
-    let bytes: [u8; 1] = [zero];
-    return core::varint::write_u32(bytes, 2, 0, 128);
-}

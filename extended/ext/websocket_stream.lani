@@ -1,0 +1,302 @@
+// Borrowed, bounded transport adapter for the portable WebSocket wire engine.
+// The caller owns the inner transport and supplies every client masking key.
+module ext::websocket_stream;
+import alloc::vec;
+import core::io;
+import core::option;
+import core::result;
+import core::slice;
+import ext::websocket;
+
+pub struct Limits {
+    wire: ext::websocket::Limits,
+    buffer_bytes: i32,
+    io_calls: u64,
+    read_bytes: u64,
+    written_bytes: u64
+}
+pub struct Stats {
+    io_calls: u64,
+    read_bytes: u64,
+    accepted_bytes: u64,
+    frames_received: u64,
+    frames_sent: u64
+}
+pub enum Cause {
+    Bounds, InvalidLimits, Inactive, PendingWrite, BufferLimit, ReadLimit,
+    WriteLimit, IoLimit, Io(core::io::Error), Wire(ext::websocket::Error),
+    AllocationFailed, UnexpectedEof
+}
+pub struct Failure { cause: Cause, stats: Stats, completed: i32 }
+// Copies alias one active memory owner. Keep the same exclusive borrowed
+// transport alive until this owner has been destroyed; never fork ownership.
+pub struct Stream<T> {
+    inner: &T,
+    wire: ext::websocket::Connection,
+    role: ext::websocket::Role,
+    limits: Limits,
+    progress: Stats,
+    input: alloc::vec::Vec<u8>,
+    input_start: i32,
+    output: alloc::vec::Vec<u8>,
+    output_start: i32,
+    flush_pending: bool,
+    queued_close: bool,
+    flushed_close: bool,
+    active: bool,
+    fault: core::option::Option<Failure>
+}
+
+pub fn default_limits() -> Limits {
+    return Limits {
+        wire: ext::websocket::default_limits(), buffer_bytes: 16777230,
+        io_calls: 65536, read_bytes: 67108864, written_bytes: 67108864
+    };
+}
+fn empty_stats() -> Stats {
+    return Stats { io_calls: 0, read_bytes: 0, accepted_bytes: 0,
+        frames_received: 0, frames_sent: 0 };
+}
+fn initial_failure(cause: Cause) -> Failure {
+    return Failure { cause: cause, stats: empty_stats(), completed: 0 };
+}
+fn valid(view: core::slice::View<u8>) -> bool {
+    return view.start >= 0 && view.length >= 0 && view.start <= 2147483647-view.length;
+}
+fn is_client(role: ext::websocket::Role) -> bool {
+    return match(role) { ext::websocket::Role::Client -> true, ext::websocket::Role::Server -> false };
+}
+fn would_block(error: core::io::Error) -> bool {
+    return match(error) { core::io::Error::WouldBlock -> true, _ -> false };
+}
+
+// Construction requires no I/O trait. It calls no transport method and copies
+// prefetched bytes before publishing an owner. Prefetch does not count as a
+// read performed by this layer.
+pub fn new<T>(inner: &T, role: ext::websocket::Role,
+    prefetched: core::slice::View<u8>, limits: Limits)
+    -> core::result::Result<Stream<T>,Failure> {
+    if (!valid(prefetched)) { return core::result::Err(initial_failure(Cause::Bounds)); }
+    if (limits.buffer_bytes < 14 || limits.buffer_bytes > 67108864) {
+        return core::result::Err(initial_failure(Cause::InvalidLimits));
+    }
+    let made: core::result::Result<ext::websocket::Connection,ext::websocket::Error> = ext::websocket::connection(role,limits.wire);
+    if (made.is_err()) { return core::result::Err(initial_failure(Cause::InvalidLimits)); }
+    let wire: ext::websocket::Connection = made.unwrap();
+    if (prefetched.len() > limits.buffer_bytes) {
+        wire.destroy(); return core::result::Err(initial_failure(Cause::BufferLimit));
+    }
+    let allocated: core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> = alloc::vec::with_capacity(prefetched.len());
+    if (allocated.is_err()) {
+        wire.destroy(); return core::result::Err(initial_failure(Cause::AllocationFailed));
+    }
+    let input: alloc::vec::Vec<u8> = allocated.unwrap();
+    let index: i32 = 0;
+    while (index < prefetched.len()) {
+        core::result::unwrap(input.try_push(core::option::unwrap(prefetched.get(index))));
+        index += 1;
+    }
+    return core::result::Ok(Stream {
+        inner: inner, wire: wire, role: role, limits: limits,
+        progress: empty_stats(), input: input, input_start: 0,
+        output: alloc::vec::new(), output_start: 0, flush_pending: false,
+        queued_close: false, flushed_close: false, active: true,
+        fault: core::option::None()
+    });
+}
+
+pub impl<T> Stream<T> {
+    pub fn borrow(&self) -> &Stream<T> { return self; }
+    pub fn stats(&self) -> Stats { return self.progress; }
+    pub fn is_active(&self) -> bool { return self.active; }
+    pub fn is_failed(&self) -> bool {
+        return self.fault.is_some() || (self.active && self.wire.is_failed());
+    }
+    pub fn close_received(&self) -> bool { return self.wire.close_received(); }
+    // Encoding alone does not establish that a local Close left this layer.
+    pub fn close_sent(&self) -> bool { return self.flushed_close; }
+    pub fn is_closed(&self) -> bool { return self.wire.close_received() && self.flushed_close; }
+    pub fn pending(&self) -> core::slice::View<u8> {
+        return core::slice::View { values: self.output.as_slice(),
+            start: self.output_start, length: self.output.len()-self.output_start };
+    }
+    fn failure(&self, cause: Cause, completed: i32) -> Failure {
+        return Failure { cause: cause, stats: self.progress, completed: completed };
+    }
+    fn stop(&self, cause: Cause, completed: i32) -> Failure {
+        let failed: Failure = self.failure(cause,completed);
+        self.fault = core::option::Some(failed);
+        return failed;
+    }
+    fn check(&self) -> core::result::Result<bool,Failure> {
+        if (!self.active) { return core::result::Err(self.failure(Cause::Inactive,0)); }
+        if (self.fault.is_some()) { return core::result::Err(self.fault.unwrap()); }
+        return core::result::Ok(true);
+    }
+    fn call(&self, completed: i32) -> core::result::Result<bool,Failure> {
+        if (self.progress.io_calls == self.limits.io_calls) {
+            return core::result::Err(self.stop(Cause::IoLimit,completed));
+        }
+        self.progress.io_calls += 1;
+        return core::result::Ok(true);
+    }
+    fn unread(&self) -> core::slice::View<u8> {
+        return core::slice::View { values: self.input.as_slice(),
+            start: self.input_start, length: self.input.len()-self.input_start };
+    }
+    fn compact(&self) {
+        if (self.input_start == 0) { return; }
+        let remaining: i32 = self.input.len()-self.input_start;
+        let bytes: [u8] = self.input.as_slice(); let index: i32 = 0;
+        while (index < remaining) { bytes[index] = bytes[self.input_start+index]; index += 1; }
+        core::result::unwrap(self.input.truncate(remaining)); self.input_start = 0;
+    }
+    fn reserve_input(&self, additional: i32) -> bool {
+        let required: i32 = self.input.len()+additional;
+        if (required <= self.input.capacity()) { return true; }
+        let capacity: i32 = self.limits.buffer_bytes;
+        if (self.input.capacity() <= self.limits.buffer_bytes/2) { capacity = self.input.capacity()*2; }
+        if (capacity < 1024) { capacity = 1024; }
+        if (capacity > self.limits.buffer_bytes) { capacity = self.limits.buffer_bytes; }
+        if (capacity < required) { capacity = required; }
+        return self.input.try_reserve(capacity-self.input.len()).is_ok();
+    }
+
+    // One frame is returned per call; a nonfinal data frame returns Pending.
+    // Only WouldBlock yields None. No call here flushes output or closes inner.
+    pub fn receive(&self) -> core::result::Result<core::option::Option<ext::websocket::Step>,Failure>
+        where T: core::io::Read {
+        let checked = self.check(); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+        let completed: i32 = 0;
+        let scratch: [u8;1024] = [0;1024];
+        while (true) {
+            let parsed: core::result::Result<ext::websocket::Step,ext::websocket::Error> = self.wire.receive(self.unread());
+            if (parsed.is_ok()) {
+                let step: ext::websocket::Step = parsed.unwrap();
+                self.input_start += step.consumed;
+                self.progress.frames_received += 1;
+                return core::result::Ok(core::option::Some(step));
+            }
+            let error: ext::websocket::Error = parsed.unwrap_err();
+            let incomplete: bool = match(error) { ext::websocket::Error::Incomplete(at) -> true, _ -> false };
+            if (!incomplete) { return core::result::Err(self.failure(Cause::Wire(error),completed)); }
+            self.compact();
+            if (self.input.len() == self.limits.buffer_bytes) {
+                return core::result::Err(self.stop(Cause::BufferLimit,completed));
+            }
+            if (self.progress.read_bytes == self.limits.read_bytes) {
+                return core::result::Err(self.stop(Cause::ReadLimit,completed));
+            }
+            let amount: i32 = self.limits.buffer_bytes-self.input.len();
+            if (amount > 1024) { amount = 1024; }
+            let remaining: u64 = self.limits.read_bytes-self.progress.read_bytes;
+            if ((amount as u64) > remaining) { amount = remaining as i32; }
+            if (self.progress.io_calls == self.limits.io_calls) {
+                return core::result::Err(self.stop(Cause::IoLimit,completed));
+            }
+            // Reserve every destination byte before allowing read to consume.
+            if (!self.reserve_input(amount)) {
+                return core::result::Err(self.failure(Cause::AllocationFailed,completed));
+            }
+            let charged = self.call(completed); if (charged.is_err()) { return core::result::Err(charged.unwrap_err()); }
+            let inner: &T = self.inner;
+            let received: core::result::Result<i32,core::io::Error> = inner.read(scratch,0,amount);
+            if (received.is_err()) {
+                let cause: core::io::Error = received.unwrap_err();
+                if (core::io::is_interrupted(cause)) { continue; }
+                if (would_block(cause)) { return core::result::Ok(core::option::None()); }
+                return core::result::Err(self.stop(Cause::Io(cause),completed));
+            }
+            let count: i32 = received.unwrap();
+            if (count < 0 || count > amount) {
+                return core::result::Err(self.stop(Cause::Io(core::io::Error::InvalidCount),completed));
+            }
+            if (count == 0) {
+                if (self.input.len() != 0) { return core::result::Err(self.stop(Cause::UnexpectedEof,completed)); }
+                let finished: core::result::Result<i32,ext::websocket::Error> = self.wire.finish_receive();
+                if (finished.is_err()) { return core::result::Err(self.stop(Cause::Wire(finished.unwrap_err()),completed)); }
+                return core::result::Err(self.failure(Cause::Wire(ext::websocket::Error::Closed),completed));
+            }
+            let index: i32 = 0;
+            while (index < count) { core::result::unwrap(self.input.try_push(scratch[index])); index += 1; }
+            self.progress.read_bytes += count as u64; completed += count;
+        }
+        return core::result::Err(self.failure(Cause::Inactive,completed));
+    }
+
+    // Queue exactly one owned frame, without touching inner. Local errors and
+    // wire send errors do not poison this adapter; wire.send is failure atomic.
+    pub fn send(&self, fin: bool, opcode: i32, payload: core::slice::View<u8>, mask: [u8;4])
+        -> core::result::Result<i32,Failure> {
+        let checked = self.check(); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+        if (self.flush_pending) { return core::result::Err(self.failure(Cause::PendingWrite,0)); }
+        if (!valid(payload)) { return core::result::Err(self.failure(Cause::Bounds,0)); }
+        let header: i32 = 2;
+        if (payload.len() >= 126) { header = 4; }
+        if (payload.len() >= 65536) { header = 10; }
+        if (is_client(self.role)) { header += 4; }
+        if (payload.len() > 2147483647-header) { return core::result::Err(self.failure(Cause::WriteLimit,0)); }
+        let length: i32 = payload.len()+header;
+        if ((length as u64) > self.limits.written_bytes-self.progress.accepted_bytes) {
+            return core::result::Err(self.failure(Cause::WriteLimit,0));
+        }
+        let encoded: core::result::Result<alloc::vec::Vec<u8>,ext::websocket::Error> = self.wire.send(fin,opcode,payload,mask);
+        if (encoded.is_err()) { return core::result::Err(self.failure(Cause::Wire(encoded.unwrap_err()),0)); }
+        self.output = encoded.unwrap(); self.output_start = 0;
+        self.flush_pending = true; self.queued_close = opcode == 8;
+        return core::result::Ok(length);
+    }
+
+    // True means the frame and inner buffering are drained. False means
+    // WouldBlock, retaining exactly the unaccepted suffix and flush phase.
+    pub fn flush(&self) -> core::result::Result<bool,Failure> where T: core::io::Write {
+        let checked = self.check(); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+        if (!self.flush_pending) { return core::result::Ok(true); }
+        let inner: &T = self.inner;
+        while (self.output_start < self.output.len()) {
+            let charged = self.call(self.output_start); if (charged.is_err()) { return core::result::Err(charged.unwrap_err()); }
+            let remaining: i32 = self.output.len()-self.output_start;
+            let sent: core::result::Result<i32,core::io::Error> = inner.write(self.output.as_slice(),self.output_start,remaining);
+            if (sent.is_err()) {
+                let cause: core::io::Error = sent.unwrap_err();
+                if (core::io::is_interrupted(cause)) { continue; }
+                if (would_block(cause)) { return core::result::Ok(false); }
+                return core::result::Err(self.stop(Cause::Io(cause),self.output_start));
+            }
+            let count: i32 = sent.unwrap();
+            if (count < 0 || count > remaining) {
+                return core::result::Err(self.stop(Cause::Io(core::io::Error::InvalidCount),self.output_start));
+            }
+            if (count == 0) { return core::result::Err(self.stop(Cause::Io(core::io::Error::WriteZero),self.output_start)); }
+            self.output_start += count; self.progress.accepted_bytes += count as u64;
+        }
+        while (true) {
+            let charged = self.call(self.output_start); if (charged.is_err()) { return core::result::Err(charged.unwrap_err()); }
+            let flushed: core::result::Result<i32,core::io::Error> = inner.flush();
+            if (flushed.is_err()) {
+                let cause: core::io::Error = flushed.unwrap_err();
+                if (core::io::is_interrupted(cause)) { continue; }
+                if (would_block(cause)) { return core::result::Ok(false); }
+                return core::result::Err(self.stop(Cause::Io(cause),self.output_start));
+            }
+            if (flushed.unwrap() != 0) {
+                return core::result::Err(self.stop(Cause::Io(core::io::Error::InvalidCount),self.output_start));
+            }
+            self.progress.frames_sent += 1;
+            if (self.queued_close) { self.flushed_close = true; }
+            self.output.destroy(); self.output_start = 0;
+            self.flush_pending = false; self.queued_close = false;
+            return core::result::Ok(true);
+        }
+        return core::result::Ok(false);
+    }
+
+    // Memory only: discard unread input and unsent output, never flush/close.
+    pub fn destroy(&self) -> bool {
+        if (!self.active) { return false; }
+        self.input.destroy(); self.output.destroy(); self.wire.destroy();
+        self.input_start = 0; self.output_start = 0;
+        self.flush_pending = false; self.queued_close = false; self.active = false;
+        return true;
+    }
+}

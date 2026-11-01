@@ -1,0 +1,87 @@
+// Manufactured 65,536-square SPD system: diag4/offdiag-1, x=ones.
+// Its spectrum lies in [2,6], while the implicit dense shape has 2^32 cells.
+module app::main;
+import alloc::vec;
+import core::f64;
+import core::option;
+import core::result;
+import ext::sparse;
+import ext::sparse_cg;
+import ext::sparse_matrix;
+import ext::statistics;
+
+fn rhs(row: i32, count: i32) -> f64 {
+    if (row == 0 || row == count-1) { return 3.0; } return 2.0;
+}
+fn tridiagonal(count: i32, limits: ext::sparse::Limits) -> ext::sparse_matrix::Matrix {
+    let offsets: alloc::vec::Vec<i32> = alloc::vec::with_capacity<i32>(count+1).unwrap();
+    let columns: alloc::vec::Vec<i32> = alloc::vec::with_capacity<i32>(3*count-2).unwrap();
+    let values: alloc::vec::Vec<f64> = alloc::vec::with_capacity<f64>(3*count-2).unwrap();
+    offsets.try_push(0).unwrap(); let row: i32 = 0;
+    while (row < count) {
+        if (row > 0) { columns.try_push(row-1).unwrap(); values.try_push(-1.0).unwrap(); }
+        columns.try_push(row).unwrap(); values.try_push(4.0).unwrap();
+        if (row+1 < count) { columns.try_push(row+1).unwrap(); values.try_push(-1.0).unwrap(); }
+        offsets.try_push(values.len()).unwrap(); row += 1;
+    }
+    let source: ext::sparse::CsrView = ext::sparse::view(count,count,offsets.as_view(),columns.as_view(),values.as_view(),limits).unwrap();
+    let out: ext::sparse_matrix::Matrix = ext::sparse_matrix::from_csr(source,limits).unwrap();
+    offsets.destroy(); columns.destroy(); values.destroy(); return out;
+}
+fn input_unchanged(source: ext::sparse::CsrView, b: &alloc::vec::Vec<f64>, initial: &alloc::vec::Vec<f64>, count: i32) {
+    let row: i32 = 0; let entry: i32 = 0;
+    while (row < count) {
+        assert(b.at(row) == rhs(row,count) && core::f64::to_bits(initial.at(row)) == 0);
+        assert(source.offsets.get(row).unwrap() == entry);
+        if (row > 0) {
+            assert(source.columns.get(entry).unwrap() == row-1 && source.values.get(entry).unwrap() == -1.0); entry += 1;
+        }
+        assert(source.columns.get(entry).unwrap() == row && source.values.get(entry).unwrap() == 4.0); entry += 1;
+        if (row+1 < count) {
+            assert(source.columns.get(entry).unwrap() == row+1 && source.values.get(entry).unwrap() == -1.0); entry += 1;
+        }
+        assert(source.offsets.get(row+1).unwrap() == entry); row += 1;
+    }
+    assert(entry == 3*count-2);
+}
+fn main() -> i32 {
+    let count: i32 = 65536; let limits: ext::sparse::Limits = ext::sparse::default_limits();
+    let options: ext::sparse_cg::Options = ext::sparse_cg::default_options(); options.max_iterations = 20; options.rtol = 1e-10;
+    assert(options.atol == 0.0 && match(options.preconditioner) { ext::sparse_cg::Preconditioner::Jacobi -> true, _ -> false });
+    let n: u64 = count as u64; let entries: u64 = (3*count-2) as u64;
+    let setup: u64 = 20*(n+1)+6*entries+(entries+n)*17;
+    let step: u64 = 40*(n+1)+8*entries;
+    assert(setup == 6946790 && step == 4194328 && setup+20*step == 90833350 && setup+20*step <= limits.max_work);
+    let a: ext::sparse_matrix::Matrix = tridiagonal(count,limits);
+    let b: alloc::vec::Vec<f64> = alloc::vec::with_capacity<f64>(count).unwrap();
+    let initial: alloc::vec::Vec<f64> = alloc::vec::with_capacity<f64>(count).unwrap(); initial.try_resize(count,0.0).unwrap();
+    let row: i32 = 0; while (row < count) { b.try_push(rhs(row,count)).unwrap(); row += 1; }
+    let solution: ext::sparse_cg::Solution = ext::sparse_cg::solve(a.view(),b.as_view(),initial.as_view(),options,limits).unwrap();
+    assert(match(solution.stop) { ext::sparse_cg::Stop::Converged -> true, _ -> false });
+    assert(solution.iterations > 0 && solution.iterations <= 20 && solution.x.len() == count);
+    assert(core::f64::is_finite(solution.residual_norm) && solution.residual_norm >= 0.0);
+    assert(core::f64::is_finite(solution.rhs_norm) && solution.rhs_norm > 0.0 && solution.residual_norm/solution.rhs_norm <= options.rtol);
+    input_unchanged(a.view(),b.borrow(),initial.borrow(),count);
+    // All original system/vector backing ends here. Only Solution owns x.
+    a.destroy(); b.destroy(); initial.destroy();
+    assert(a.rows == 0 && a.cols == 0 && a.nnz() == 0 && b.len() == 0 && initial.len() == 0);
+    let norm: ext::statistics::ScaledNorm = ext::statistics::scaled_norm();
+    let maximum_error: f64 = 0.0; row = 0;
+    while (row < count) {
+        let value: f64 = solution.x.at(row); assert(core::f64::is_finite(value));
+        maximum_error = core::f64::max(maximum_error,core::f64::abs(value-1.0));
+        // Independent fixed-band evaluation, without CSR or the solver's
+        // recursively updated residual or sparse matvec implementation.
+        let residual: f64 = rhs(row,count)-4.0*value;
+        if (row > 0) { residual += solution.x.at(row-1); }
+        if (row+1 < count) { residual += solution.x.at(row+1); }
+        norm.push(residual).unwrap(); row += 1;
+    }
+    let true_residual: f64 = norm.value().unwrap();
+    let exact_rhs_norm: f64 = core::f64::sqrt((4*count+10) as f64);
+    assert(maximum_error < 1e-8 && true_residual/exact_rhs_norm <= options.rtol);
+    // The two finite row-expression orders can differ in their low bits.
+    assert(core::f64::abs(true_residual-solution.residual_norm) <= 1e-12);
+    assert(core::f64::abs(exact_rhs_norm-solution.rhs_norm) <= 2e-9);
+    solution.destroy(); assert(solution.x.len() == 0); return 0;
+}

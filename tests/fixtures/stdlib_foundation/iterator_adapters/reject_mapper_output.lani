@@ -1,9 +1,10 @@
 module app::main;
+import core::function;
 import core::iter;
 import core::range;
 struct Convert {}
 impl Convert { fn borrow(&self) -> &Convert { return self; } }
-pub impl core::iter::Mapper<i32, bool> for Convert {
+pub impl core::function::Mapper<i32, bool> for Convert {
     pub fn apply(&self, value: i32) -> bool { return value == 0; }
 }
 fn main() -> i32 {

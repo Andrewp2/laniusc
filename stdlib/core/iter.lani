@@ -12,6 +12,7 @@
 module core::iter;
 import core::clone_values;
 import core::cmp;
+import core::function::Mapper;
 import core::option;
 import core::ordering;
 import core::pair;
@@ -24,11 +25,20 @@ pub trait Iterator<T> {
     pub fn next(&self) -> core::option::Option<T>;
 }
 
-// A source-defined callback, with ordinary shallow input/output values. The
-// caller keeps the mapper and any borrowed mutable context alive. Output
-// cleanup authority remains with the application; no Destroy is implied.
-pub trait Mapper<T, U> {
-    pub fn apply(&self, value: T) -> U;
+// Implement alongside Iterator<T>. Front and back consume the same remaining
+// sequence without crossing. None from either end permanently exhausts both.
+// Generic users name BOTH bounds explicitly; no implicit supertrait is used.
+pub trait DoubleEndedIterator<T> {
+    pub fn next_back(&self) -> core::option::Option<T>;
+}
+
+// Exact successful yields remaining before fused None, in the valid current
+// cursor state. Implement beside Iterator<T>; generic users name both bounds.
+// Query only metadata/upstream counts: no pulls, callbacks, item reads, cleanup,
+// allocation or host calls. This safe behavioral contract grants no permission
+// for unchecked access. External mutation can change the count between calls.
+pub trait ExactSizeIterator<T> {
+    pub fn remaining_count(&self) -> u64;
 }
 
 // Retirement transfers one exhausted inner by value. None consumes all its
@@ -40,7 +50,7 @@ pub trait InnerRetirement<J,E> {
     pub fn try_retire(&self, inner: J) -> core::option::Option<RetireFailure<J,E>>;
 }
 
-// Left-fold callbacks receive the accumulator first. Replaced accumulators
+// Fold callbacks receive the accumulator first. Replaced accumulators
 // and consumed items are shallow values; keep their cleanup authority outside
 // the fold when a callback omits them from its returned value.
 pub trait Folder<A, T> {
@@ -51,12 +61,6 @@ pub trait Folder<A, T> {
 // The error need not contain the old accumulator; no Destroy is implicit.
 pub trait TryFolder<A, T, E> {
     pub fn try_apply(&self, accumulator: A, value: T) -> core::result::Result<A, E>;
-}
-
-// Compare shallow values under a consistent total ordering. Reductions pass
-// the current winner first and the next source item second.
-pub trait Comparator<T> {
-    pub fn compare(&self, left: T, right: T) -> core::ordering::Ordering;
 }
 
 // A fallible destination for one shallow item. None accepts the item; Some
@@ -98,6 +102,9 @@ pub struct TransferError<T, E> { accepted: u64, rejected: T, error: E }
 pub struct Empty<T> {}
 pub struct Once<T> { value: T, done: bool }
 pub struct Repeat<T> { value: T }
+// Borrow the actual cursor; no ownership transfer, cache or eager source pull.
+// One done flag fuses both directions, including for a faulty unfused source.
+pub struct Rev<I,T> { source: &I, done: bool }
 pub enum PeekableError { Cached }
 // cached Some(None) for an optional item is distinct from an absent cache.
 // Keep one active ownership-bearing handle; copies grant no cleanup authority.
@@ -106,7 +113,7 @@ pub enum StepError { Zero }
 pub struct StepBy<I, T> { source: &I, skip: u64, first: bool, done: bool }
 pub struct RangeI32 { position: i64, end: i64 }
 pub struct Take<I, T> { source: &I, remaining: u64, done: bool }
-pub struct Chain<A, B, T> { left: &A, right: &B, in_right: bool, done: bool }
+pub struct Chain<A, B, T> { left: &A, right: &B, left_done: bool, right_done: bool, done: bool }
 pub struct Map<I, M, T, U> { source: &I, mapper: &M, done: bool }
 // Scan callbacks hold their own state. None stops, unlike FilterMap's skip.
 // Keep source/mapper/state alive and do not reenter from a source or callback.
@@ -145,6 +152,14 @@ pub fn once<T>(value: T) -> Once<T> { return Once { value: value, done: false };
 // transferred memory owner cannot be repeated safely unless the application
 // keeps a separate cleanup authority and treats yielded handles as aliases.
 pub fn repeat<T>(value: T) -> Repeat<T> { return Repeat { value: value }; }
+
+// Reverse the remaining sequence. Keep source and its backing alive, and end
+// use of this adapter before recovering/freeing its source. Item cleanup stays
+// with the caller; abandoning Rev neither drains nor destroys anything.
+pub fn rev<I,T>(source: &I) -> Rev<I,T>
+    where I: Iterator<T>, I: DoubleEndedIterator<T> {
+    return Rev { source: source, done: false };
+}
 
 // Lazy construction: no source call and no allocation. The source object and
 // its backing must outlive this adapter and all borrowed observations.
@@ -203,7 +218,7 @@ pub fn take<I, T>(source: &I, count: u64) -> Take<I, T> where I: Iterator<T> {
 
 pub fn chain<A, B, T>(left: &A, right: &B) -> Chain<A, B, T>
     where A: Iterator<T>, B: Iterator<T> {
-    return Chain { left: left, right: right, in_right: false, done: false };
+    return Chain { left: left, right: right, left_done: false, right_done: false, done: false };
 }
 
 pub fn map<I, M, T, U>(source: &I, mapper: &M) -> Map<I, M, T, U>
@@ -403,7 +418,7 @@ pub fn max<I,T>(source: &I) -> core::option::Option<T> where I: Iterator<T>, T: 
 // Comparison callbacks borrow their shallow arguments; they must preserve the
 // values needed by later calls/result. Source/callback work can be unbounded.
 pub fn min_by<I,C,T>(source: &I, comparator: &C) -> core::option::Option<T>
-    where I: Iterator<T>, C: Comparator<T> {
+    where I: Iterator<T>, C: core::ordering::Comparator<T,T> {
     let first: core::option::Option<T> = source.next();
     if (first.is_none()) { return first; }
     let winner: T = first.unwrap();
@@ -420,7 +435,7 @@ pub fn min_by<I,C,T>(source: &I, comparator: &C) -> core::option::Option<T>
 }
 
 pub fn max_by<I,C,T>(source: &I, comparator: &C) -> core::option::Option<T>
-    where I: Iterator<T>, C: Comparator<T> {
+    where I: Iterator<T>, C: core::ordering::Comparator<T,T> {
     let first: core::option::Option<T> = source.next();
     if (first.is_none()) { return first; }
     let winner: T = first.unwrap();
@@ -434,6 +449,147 @@ pub fn max_by<I,C,T>(source: &I, comparator: &C) -> core::option::Option<T>
         if (replace) { winner = value; }
     }
     return core::option::Some(winner);
+}
+
+// Private call-scoped natural policies reuse the custom sequence engines.
+// Operands are shallow observations, never another cleanup authority.
+struct SequenceEquality<T> {}
+impl<T> SequenceEquality<T> {
+    fn borrow(&self) -> &SequenceEquality<T> { return self; }
+}
+pub impl<T> Mapper<core::pair::Pair<T,T>,bool> for SequenceEquality<T>
+    where T: core::cmp::PartialEq<T> {
+    pub fn apply(&self, values: core::pair::Pair<T,T>) -> bool {
+        return T::partial_eq(values.first,values.second);
+    }
+}
+struct SequencePartialComparison<T> {}
+impl<T> SequencePartialComparison<T> {
+    fn borrow(&self) -> &SequencePartialComparison<T> { return self; }
+}
+pub impl<T> Mapper<core::pair::Pair<T,T>,core::cmp::PartialOrdering> for SequencePartialComparison<T>
+    where T: core::cmp::PartialOrd<T> {
+    pub fn apply(&self, values: core::pair::Pair<T,T>) -> core::cmp::PartialOrdering {
+        let ordering: core::cmp::PartialOrdering = T::partial_cmp(values.first,values.second);
+        return ordering;
+    }
+}
+struct SequenceSorted<T> {}
+impl<T> SequenceSorted<T> {
+    fn borrow(&self) -> &SequenceSorted<T> { return self; }
+}
+pub impl<T> Mapper<core::pair::Pair<T,T>,bool> for SequenceSorted<T>
+    where T: core::cmp::PartialOrd<T> {
+    pub fn apply(&self, values: core::pair::Pair<T,T>) -> bool {
+        return T::partial_le(values.first,values.second);
+    }
+}
+
+pub fn eq<A,B,T>(left: &A, right: &B) -> bool
+    where A: Iterator<T>, B: Iterator<T>, T: core::cmp::PartialEq<T> {
+    let predicate: SequenceEquality<T> = SequenceEquality {};
+    return eq_by<A,B,SequenceEquality<T>,T,T>(left,right,predicate.borrow());
+}
+
+// Every round pulls left then right, including after left None. Call the
+// predicate only for two Some values and stop at its first false or a length
+// mismatch. The longer prefix's unmatched item has already been consumed.
+// Shared upstream cursors observe that pull order; pointer identity and exact
+// counts do not imply equality. No Clone/Destroy or source retirement occurs.
+pub fn eq_by<A,B,P,T,U>(left: &A, right: &B, predicate: &P) -> bool
+    where A: Iterator<T>, B: Iterator<U>, P: Mapper<core::pair::Pair<T,U>,bool> {
+    while (true) {
+        let first: core::option::Option<T> = left.next();
+        let second: core::option::Option<U> = right.next();
+        if (first.is_none()) { return second.is_none(); }
+        if (second.is_none()) { return false; }
+        let first_value: T = core::option::unwrap<T>(first);
+        let second_value: U = core::option::unwrap<U>(second);
+        let values: core::pair::Pair<T,U> = core::pair::Pair { first: first_value, second: second_value };
+        if (!predicate.apply(values)) { return false; }
+    }
+    return true;
+}
+
+pub fn cmp<A,B,T>(left: &A, right: &B) -> core::ordering::Ordering
+    where A: Iterator<T>, B: Iterator<T>, T: core::cmp::Ord<T> {
+    let comparator: core::ordering::Natural<T> = core::ordering::Natural {};
+    return cmp_by<A,B,core::ordering::Natural<T>,T,T>(left,right,comparator.borrow());
+}
+
+// First non-Equal pair wins; shorter equal prefixes are Less regardless of
+// the element policy. Both pulls happen before any EOF decision or callback.
+pub fn cmp_by<A,B,C,T,U>(left: &A, right: &B, comparator: &C) -> core::ordering::Ordering
+    where A: Iterator<T>, B: Iterator<U>, C: core::ordering::Comparator<T,U> {
+    while (true) {
+        let first: core::option::Option<T> = left.next();
+        let second: core::option::Option<U> = right.next();
+        if (first.is_none()) {
+            if (second.is_none()) { return core::ordering::Ordering::Equal; }
+            return core::ordering::Ordering::Less;
+        }
+        if (second.is_none()) { return core::ordering::Ordering::Greater; }
+        let first_value: T = core::option::unwrap<T>(first);
+        let second_value: U = core::option::unwrap<U>(second);
+        let ordering: core::ordering::Ordering = comparator.compare(first_value,second_value);
+        if (!core::ordering::is_equal(ordering)) { return ordering; }
+    }
+    return core::ordering::Ordering::Equal;
+}
+
+pub fn partial_cmp<A,B,T>(left: &A, right: &B) -> core::cmp::PartialOrdering
+    where A: Iterator<T>, B: Iterator<T>, T: core::cmp::PartialOrd<T> {
+    let comparator: SequencePartialComparison<T> = SequencePartialComparison {};
+    return partial_cmp_by<A,B,SequencePartialComparison<T>,T,T>(left,right,comparator.borrow());
+}
+
+// Unordered is decisive, not Equal or an absent result. The callback receives
+// one Pair in actual left/right pull order and is never called on absent data.
+pub fn partial_cmp_by<A,B,P,T,U>(left: &A, right: &B, comparator: &P) -> core::cmp::PartialOrdering
+    where A: Iterator<T>, B: Iterator<U>, P: Mapper<core::pair::Pair<T,U>,core::cmp::PartialOrdering> {
+    while (true) {
+        let first: core::option::Option<T> = left.next();
+        let second: core::option::Option<U> = right.next();
+        if (first.is_none()) {
+            if (second.is_none()) { return core::cmp::PartialOrdering::Equal; }
+            return core::cmp::PartialOrdering::Less;
+        }
+        if (second.is_none()) { return core::cmp::PartialOrdering::Greater; }
+        let first_value: T = core::option::unwrap<T>(first);
+        let second_value: U = core::option::unwrap<U>(second);
+        let values: core::pair::Pair<T,U> = core::pair::Pair { first: first_value, second: second_value };
+        let ordering: core::cmp::PartialOrdering = comparator.apply(values);
+        let equal: bool = match (ordering) { core::cmp::PartialOrdering::Equal -> true, _ -> false };
+        if (!equal) { return ordering; }
+    }
+    return core::cmp::PartialOrdering::Equal;
+}
+
+pub fn is_sorted<I,T>(source: &I) -> bool
+    where I: Iterator<T>, T: core::cmp::PartialOrd<T> {
+    let predicate: SequenceSorted<T> = SequenceSorted {};
+    return is_sorted_by<I,SequenceSorted<T>,T>(source,predicate.borrow());
+}
+
+// Empty/singleton sources are true. Each later item is compared once with
+// the retained previous item, returning at the first false without another
+// pull. The predicate must preserve both operands for their later adjacent
+// use; in particular, the retained shallow item must survive the next pull.
+// Discarded owners need external cleanup authority, including the bad pair.
+pub fn is_sorted_by<I,P,T>(source: &I, predicate: &P) -> bool
+    where I: Iterator<T>, P: Mapper<core::pair::Pair<T,T>,bool> {
+    let first: core::option::Option<T> = source.next();
+    if (first.is_none()) { return true; }
+    let previous: T = first.unwrap();
+    while (true) {
+        let item: core::option::Option<T> = source.next();
+        if (item.is_none()) { return true; }
+        let current: T = item.unwrap();
+        let values: core::pair::Pair<T,T> = core::pair::Pair { first: previous, second: current };
+        if (!predicate.apply(values)) { return false; }
+        previous = current;
+    }
+    return true;
 }
 
 // Empty identities are false for any and true for all. A decisive predicate
@@ -597,6 +753,20 @@ pub impl<T> Iterator<T> for core::slice::Iter<T> {
     }
 }
 
+// Retain the descriptor/stride and shared front/back bounds. Keeping the
+// canonical method here avoids a core::slice -> core::iter import cycle.
+pub impl<T> DoubleEndedIterator<T> for core::slice::Iter<T> {
+    pub fn next_back(&self) -> core::option::Option<T> {
+        if (self.front == self.back) { return core::option::None(); }
+        self.back -= 1;
+        return core::option::Some(self.values[self.back]);
+    }
+}
+
+pub impl<T> ExactSizeIterator<T> for core::slice::Iter<T> {
+    pub fn remaining_count(&self) -> u64 { return (self.back-self.front) as u64; }
+}
+
 pub impl<T> Iterator<core::slice::View<T>> for core::slice::Chunks<T> {
     pub fn next(&self) -> core::option::Option<core::slice::View<T>> {
         if (self.position == self.end) { return core::option::None(); }
@@ -607,11 +777,94 @@ pub impl<T> Iterator<core::slice::View<T>> for core::slice::Chunks<T> {
     }
 }
 
+pub impl<T> ExactSizeIterator<core::slice::View<T>> for core::slice::Chunks<T> {
+    pub fn remaining_count(&self) -> u64 {
+        let count: i32 = self.end-self.position;
+        let result: u64 = (count/self.width) as u64;
+        if (count%self.width != 0) { result += 1; }
+        return result;
+    }
+}
+
 pub impl<T> Iterator<core::slice::View<T>> for core::slice::Windows<T> {
     pub fn next(&self) -> core::option::Option<core::slice::View<T>> {
         if (self.end - self.position < self.width) { return core::option::None(); }
         let result: core::slice::View<T> = core::slice::View { values: self.values, start: self.position, length: self.width };
         self.position += 1; return core::option::Some(result);
+    }
+}
+
+pub impl<T> ExactSizeIterator<core::slice::View<T>> for core::slice::Windows<T> {
+    pub fn remaining_count(&self) -> u64 {
+        let count: i32 = self.end-self.position;
+        if (count < self.width) { return 0; }
+        return ((count-self.width) as u64)+1;
+    }
+}
+
+// Scan through the first separator only. Callbacks may update their own
+// context, but must preserve operands/backing and must not mutate backing or
+// reenter/modify the cursor during a pull. Between-pull edits are observed.
+fn slice_split_boundary<T,P>(values: [T], start: i32, end: i32, predicate: &P) -> i32
+    where P: Mapper<T,bool> {
+    let index: i32 = start;
+    while (index < end) {
+        let value: T = values[index];
+        if (predicate.apply(value)) { return index; }
+        index += 1;
+    }
+    return end;
+}
+
+// Each scanned element is classified once, in increasing index order. The
+// done flag distinguishes a pending final empty segment from fused exhaustion.
+// Views retain absolute offsets and the original native descriptor/stride.
+pub impl<T,P> Iterator<core::slice::View<T>> for core::slice::Split<T,P>
+    where P: Mapper<T,bool> {
+    pub fn next(&self) -> core::option::Option<core::slice::View<T>> {
+        if (self.done) { return core::option::None(); }
+        let start: i32 = self.position;
+        let boundary: i32 = slice_split_boundary<T,P>(self.values,start,self.end,self.predicate);
+        let result: core::slice::View<T> = core::slice::View { values: self.values, start: start, length: boundary - start };
+        if (boundary < self.end) { self.position = boundary + 1; }
+        else { self.position = self.end; self.done = true; }
+        return core::option::Some(result);
+    }
+}
+
+pub impl<T,P> Iterator<core::slice::View<T>> for core::slice::SplitInclusive<T,P>
+    where P: Mapper<T,bool> {
+    pub fn next(&self) -> core::option::Option<core::slice::View<T>> {
+        if (self.position == self.end) { return core::option::None(); }
+        let start: i32 = self.position;
+        let boundary: i32 = slice_split_boundary<T,P>(self.values,start,self.end,self.predicate);
+        if (boundary < self.end) { boundary += 1; }
+        self.position = boundary;
+        let result: core::slice::View<T> = core::slice::View { values: self.values, start: start, length: boundary - start };
+        return core::option::Some(result);
+    }
+}
+
+// Each adjacent pair is classified once in original left/right order. A false
+// boundary pair is not repeated on the next pull. Read both operands afresh:
+// no T survives a pull, so later alias writes affect later comparisons.
+pub impl<T,P> Iterator<core::slice::View<T>> for core::slice::ChunkBy<T,P>
+    where P: Mapper<core::pair::Pair<T,T>,bool> {
+    pub fn next(&self) -> core::option::Option<core::slice::View<T>> {
+        if (self.position == self.end) { return core::option::None(); }
+        let start: i32 = self.position;
+        let index: i32 = start + 1;
+        let predicate: &P = self.predicate;
+        while (index < self.end) {
+            let left: T = self.values[index - 1];
+            let right: T = self.values[index];
+            let pair: core::pair::Pair<T,T> = core::pair::Pair { first: left, second: right };
+            if (!predicate.apply(pair)) { break; }
+            index += 1;
+        }
+        self.position = index;
+        let result: core::slice::View<T> = core::slice::View { values: self.values, start: start, length: index - start };
+        return core::option::Some(result);
     }
 }
 
@@ -660,8 +913,30 @@ pub impl<I,T> Iterator<T> for Peekable<I,T> where I: Iterator<T> {
     }
 }
 
+pub impl<I,T> ExactSizeIterator<T> for Peekable<I,T>
+    where I: Iterator<T>, I: ExactSizeIterator<T> {
+    pub fn remaining_count(&self) -> u64 {
+        if (self.done) { return 0; }
+        let source: &I = self.source;
+        let count: u64 = source.remaining_count();
+        if (!self.cached.is_some()) { return count; }
+        // A conforming source cannot leave MAX items after yielding its cache.
+        // Trap an unrepresentable claimed length instead of wrapping to zero.
+        if (count == 18446744073709551615) { core::panic::panic(); }
+        return count+1;
+    }
+}
+
 pub impl<T> Iterator<T> for Empty<T> {
     pub fn next(&self) -> core::option::Option<T> { return core::option::None(); }
+}
+
+pub impl<T> DoubleEndedIterator<T> for Empty<T> {
+    pub fn next_back(&self) -> core::option::Option<T> { return core::option::None(); }
+}
+
+pub impl<T> ExactSizeIterator<T> for Empty<T> {
+    pub fn remaining_count(&self) -> u64 { return 0; }
 }
 
 pub impl<T> Once<T> {
@@ -673,6 +948,55 @@ pub impl<T> Iterator<T> for Once<T> {
         if (self.done) { return core::option::None(); }
         self.done = true;
         return core::option::Some(self.value);
+    }
+}
+
+pub impl<T> DoubleEndedIterator<T> for Once<T> {
+    pub fn next_back(&self) -> core::option::Option<T> {
+        if (self.done) { return core::option::None(); }
+        self.done = true;
+        return core::option::Some(self.value);
+    }
+}
+
+pub impl<T> ExactSizeIterator<T> for Once<T> {
+    pub fn remaining_count(&self) -> u64 {
+        if (self.done) { return 0; }
+        return 1;
+    }
+}
+
+pub impl<I,T> Rev<I,T> {
+    pub fn borrow(&self) -> &Rev<I,T> { return self; }
+}
+
+pub impl<I,T> Iterator<T> for Rev<I,T>
+    where I: Iterator<T>, I: DoubleEndedIterator<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        if (self.done) { return core::option::None(); }
+        let source: &I = self.source;
+        let item: core::option::Option<T> = source.next_back();
+        if (item.is_none()) { self.done = true; }
+        return item;
+    }
+}
+
+pub impl<I,T> DoubleEndedIterator<T> for Rev<I,T>
+    where I: Iterator<T>, I: DoubleEndedIterator<T> {
+    pub fn next_back(&self) -> core::option::Option<T> {
+        if (self.done) { return core::option::None(); }
+        let source: &I = self.source;
+        let item: core::option::Option<T> = source.next();
+        if (item.is_none()) { self.done = true; }
+        return item;
+    }
+}
+
+pub impl<I,T> ExactSizeIterator<T> for Rev<I,T>
+    where I: Iterator<T>, I: DoubleEndedIterator<T>, I: ExactSizeIterator<T> {
+    pub fn remaining_count(&self) -> u64 {
+        if (self.done) { return 0; }
+        let source: &I = self.source; return source.remaining_count();
     }
 }
 
@@ -706,6 +1030,20 @@ pub impl<I, T> Iterator<T> for StepBy<I, T> where I: Iterator<T> {
     }
 }
 
+pub impl<I,T> ExactSizeIterator<T> for StepBy<I,T>
+    where I: Iterator<T>, I: ExactSizeIterator<T> {
+    pub fn remaining_count(&self) -> u64 {
+        if (self.done) { return 0; }
+        let source: &I = self.source; let count: u64 = source.remaining_count();
+        // Construction establishes skip <= MAX-1. Before the first pull,
+        // select positions 0, step, ...; afterward skip precedes every yield.
+        let step: u64 = self.skip+1;
+        let result: u64 = count/step;
+        if (self.first && count%step != 0) { result += 1; }
+        return result;
+    }
+}
+
 pub impl RangeI32 {
     pub fn borrow(&self) -> &RangeI32 { return self; }
     pub fn remaining(&self) -> u64 { return (self.end - self.position) as u64; }
@@ -728,6 +1066,19 @@ pub impl Iterator<i32> for RangeI32 {
     }
 }
 
+pub impl DoubleEndedIterator<i32> for RangeI32 {
+    pub fn next_back(&self) -> core::option::Option<i32> {
+        if (self.position == self.end) { return core::option::None(); }
+        // end may be MAX + 1; subtract while widened before narrowing.
+        self.end -= 1;
+        return core::option::Some(self.end as i32);
+    }
+}
+
+pub impl ExactSizeIterator<i32> for RangeI32 {
+    pub fn remaining_count(&self) -> u64 { return (self.end-self.position) as u64; }
+}
+
 pub impl<I, T> Take<I, T> {
     pub fn borrow(&self) -> &Take<I, T> { return self; }
     // This is a quota, not an exact upper-source cardinality.
@@ -745,6 +1096,19 @@ pub impl<I, T> Iterator<T> for Take<I, T> where I: Iterator<T> {
     }
 }
 
+pub impl<I,T> ExactSizeIterator<T> for Take<I,T>
+    where I: Iterator<T>, I: ExactSizeIterator<T> {
+    pub fn remaining_count(&self) -> u64 {
+        if (self.done || self.remaining == 0) { return 0; }
+        let source: &I = self.source; let count: u64 = source.remaining_count();
+        if (count < self.remaining) { return count; }
+        return self.remaining;
+    }
+}
+
+// Chain has no exact-size implementation: two valid u64 counts may sum beyond
+// u64. Zip also has none: its sources may legally share upstream progress, so
+// min(left_count,right_count) need not equal the number of future pairs.
 pub impl<A, B, T> Chain<A, B, T> {
     pub fn borrow(&self) -> &Chain<A, B, T> { return self; }
 }
@@ -753,15 +1117,34 @@ pub impl<A, B, T> Iterator<T> for Chain<A, B, T>
     where A: Iterator<T>, B: Iterator<T> {
     pub fn next(&self) -> core::option::Option<T> {
         if (self.done) { return core::option::None(); }
-        if (!self.in_right) {
+        if (!self.left_done) {
             let left: &A = self.left;
             let item: core::option::Option<T> = left.next();
             if (core::option::is_some(item)) { return item; }
-            self.in_right = true;
+            self.left_done = true;
         }
+        if (self.right_done) { self.done = true; return core::option::None(); }
         let right: &B = self.right;
         let item: core::option::Option<T> = right.next();
-        if (core::option::is_none(item)) { self.done = true; }
+        if (core::option::is_none(item)) { self.right_done = true; self.done = true; }
+        return item;
+    }
+}
+
+pub impl<A,B,T> DoubleEndedIterator<T> for Chain<A,B,T>
+    where A: Iterator<T>, A: DoubleEndedIterator<T>, B: Iterator<T>, B: DoubleEndedIterator<T> {
+    pub fn next_back(&self) -> core::option::Option<T> {
+        if (self.done) { return core::option::None(); }
+        if (!self.right_done) {
+            let right: &B = self.right;
+            let item: core::option::Option<T> = right.next_back();
+            if (item.is_some()) { return item; }
+            self.right_done = true;
+        }
+        if (self.left_done) { self.done = true; return core::option::None(); }
+        let left: &A = self.left;
+        let item: core::option::Option<T> = left.next_back();
+        if (item.is_none()) { self.left_done = true; self.done = true; }
         return item;
     }
 }
@@ -781,6 +1164,29 @@ pub impl<I, M, T, U> Iterator<U> for Map<I, M, T, U>
         let mapper: &M = self.mapper;
         let mapped: U = mapper.apply(value);
         return core::option::Some(mapped);
+    }
+}
+
+pub impl<I,M,T,U> DoubleEndedIterator<U> for Map<I,M,T,U>
+    where I: Iterator<T>, I: DoubleEndedIterator<T>, M: Mapper<T,U> {
+    pub fn next_back(&self) -> core::option::Option<U> {
+        if (self.done) { return core::option::None(); }
+        let source: &I = self.source;
+        let item: core::option::Option<T> = source.next_back();
+        if (item.is_none()) { self.done = true; return core::option::None(); }
+        let mapper: &M = self.mapper;
+        let mapped: U = mapper.apply(item.unwrap());
+        return core::option::Some(mapped);
+    }
+}
+
+// Stateful mapper output/logging is allowed. During apply, a mapper must not
+// independently advance, retire or mutate any upstream traversal state.
+pub impl<I,M,T,U> ExactSizeIterator<U> for Map<I,M,T,U>
+    where I: Iterator<T>, I: ExactSizeIterator<T>, M: Mapper<T,U> {
+    pub fn remaining_count(&self) -> u64 {
+        if (self.done) { return 0; }
+        let source: &I = self.source; return source.remaining_count();
     }
 }
 
@@ -1060,6 +1466,23 @@ pub impl<I, M, T, U> FilterMap<I, M, T, U> {
     pub fn borrow(&self) -> &FilterMap<I, M, T, U> { return self; }
 }
 
+// Predicates observe values in actual pull order. Rejected owners still need
+// application cleanup, exactly as in forward Filter; no Destroy is implied.
+pub impl<I,P,T> DoubleEndedIterator<T> for Filter<I,P,T>
+    where I: Iterator<T>, I: DoubleEndedIterator<T>, P: Mapper<T,bool> {
+    pub fn next_back(&self) -> core::option::Option<T> {
+        if (self.done) { return core::option::None(); }
+        let source: &I = self.source;
+        let predicate: &P = self.predicate;
+        while (true) {
+            let item: core::option::Option<T> = source.next_back();
+            if (item.is_none()) { self.done = true; return item; }
+            if (predicate.apply(item.unwrap())) { return item; }
+        }
+        return core::option::None();
+    }
+}
+
 pub impl<I, M, T, U> Iterator<U> for FilterMap<I, M, T, U>
     where I: Iterator<T>, M: Mapper<T, core::option::Option<U>> {
     pub fn next(&self) -> core::option::Option<U> {
@@ -1072,6 +1495,22 @@ pub impl<I, M, T, U> Iterator<U> for FilterMap<I, M, T, U>
             let value: T = core::option::unwrap(item);
             let mapped: core::option::Option<U> = mapper.apply(value);
             if (core::option::is_some(mapped)) { return mapped; }
+        }
+        return core::option::None();
+    }
+}
+
+pub impl<I,M,T,U> DoubleEndedIterator<U> for FilterMap<I,M,T,U>
+    where I: Iterator<T>, I: DoubleEndedIterator<T>, M: Mapper<T,core::option::Option<U>> {
+    pub fn next_back(&self) -> core::option::Option<U> {
+        if (self.done) { return core::option::None(); }
+        let source: &I = self.source;
+        let mapper: &M = self.mapper;
+        while (true) {
+            let item: core::option::Option<T> = source.next_back();
+            if (item.is_none()) { self.done = true; return core::option::None(); }
+            let mapped: core::option::Option<U> = mapper.apply(item.unwrap());
+            if (mapped.is_some()) { return mapped; }
         }
         return core::option::None();
     }
@@ -1093,6 +1532,16 @@ pub impl<I, T> Iterator<T> for Skip<I, T> where I: Iterator<T> {
         let item: core::option::Option<T> = source.next();
         if (core::option::is_none(item)) { self.done = true; }
         return item;
+    }
+}
+
+pub impl<I,T> ExactSizeIterator<T> for Skip<I,T>
+    where I: Iterator<T>, I: ExactSizeIterator<T> {
+    pub fn remaining_count(&self) -> u64 {
+        if (self.done) { return 0; }
+        let source: &I = self.source; let count: u64 = source.remaining_count();
+        if (count <= self.remaining) { return 0; }
+        return count-self.remaining;
     }
 }
 
@@ -1135,4 +1584,111 @@ pub impl<I, P, T> Iterator<T> for SkipWhile<I, P, T>
         }
         return core::option::None();
     }
+}
+
+// A bounded fold's actual callback-success count, relative to this call.
+// exhausted means a real None was observed; quota completion does not probe.
+pub struct FoldProgress<A> { accumulator:A, folded:u64, exhausted:bool }
+// The failing item is already consumed. The callback's error carries any
+// updated owner/item recovery state; no older accumulator alias is returned.
+pub struct FoldFailure<E> { folded:u64, error:E }
+
+// Seed the accumulator with the first item, without a synthetic identity or
+// a callback for that item. Empty and singleton sources need no folder call.
+pub fn reduce<I,F,T>(source:&I,folder:&F) -> core::option::Option<T>
+    where I:Iterator<T>, F:Folder<T,T> {
+    let first:core::option::Option<T> =source.next();
+    if(first.is_none()) { return first; }
+    return core::option::Some(fold<I,F,T,T>(source,first.unwrap(),folder));
+}
+pub fn try_reduce<I,F,T,E>(source:&I,folder:&F) -> core::result::Result<core::option::Option<T>,E>
+    where I:Iterator<T>, F:TryFolder<T,T,E> {
+    let first:core::option::Option<T> =source.next();
+    if(first.is_none()) { return core::result::Ok(first); }
+    let folded:core::result::Result<T,E> =try_fold<I,F,T,T,E>(source,first.unwrap(),folder);
+    if(folded.is_err()) { return core::result::Err(folded.unwrap_err()); }
+    return core::result::Ok(core::option::Some(folded.unwrap()));
+}
+
+// Consume only the back end, retaining callback order (accumulator,item).
+// No associativity, commutativity, implicit clone or destruction is assumed.
+pub fn rfold<I,F,T,A>(source:&I,initial:A,folder:&F) -> A
+    where I:Iterator<T>, I:DoubleEndedIterator<T>, F:Folder<A,T> {
+    let accumulator:A=initial;
+    while(true) {
+        let item:core::option::Option<T> =source.next_back();
+        if(item.is_none()) { return accumulator; }
+        accumulator=folder.apply(accumulator,item.unwrap());
+    }
+    return accumulator;
+}
+pub fn try_rfold<I,F,T,A,E>(source:&I,initial:A,folder:&F) -> core::result::Result<A,E>
+    where I:Iterator<T>, I:DoubleEndedIterator<T>, F:TryFolder<A,T,E> {
+    let accumulator:A=initial;
+    while(true) {
+        let item:core::option::Option<T> =source.next_back();
+        if(item.is_none()) { return core::result::Ok(accumulator); }
+        let step:core::result::Result<A,E> =folder.try_apply(accumulator,item.unwrap());
+        if(step.is_err()) { return step; }
+        accumulator=step.unwrap();
+    }
+    return core::result::Ok(accumulator);
+}
+
+// At most limit direct front pulls. Zero leaves both borrowed objects alone.
+// Increment only after callback success while folded<limit, including MAX.
+pub fn fold_up_to<I,F,T,A>(source:&I,initial:A,folder:&F,limit:u64) -> FoldProgress<A>
+    where I:Iterator<T>, F:Folder<A,T> {
+    let accumulator:A=initial; let folded:u64=0;
+    while(folded<limit) {
+        let item:core::option::Option<T> =source.next();
+        if(item.is_none()) { return FoldProgress { accumulator:accumulator,folded:folded,exhausted:true }; }
+        accumulator=folder.apply(accumulator,item.unwrap()); folded+=1;
+    }
+    return FoldProgress { accumulator:accumulator,folded:folded,exhausted:false };
+}
+pub fn try_fold_up_to<I,F,T,A,E>(source:&I,initial:A,folder:&F,limit:u64)
+    -> core::result::Result<FoldProgress<A>,FoldFailure<E>>
+    where I:Iterator<T>, F:TryFolder<A,T,E> {
+    let accumulator:A=initial; let folded:u64=0;
+    while(folded<limit) {
+        let item:core::option::Option<T> =source.next();
+        if(item.is_none()) { return core::result::Ok(FoldProgress { accumulator:accumulator,folded:folded,exhausted:true }); }
+        let step:core::result::Result<A,E> =folder.try_apply(accumulator,item.unwrap());
+        if(step.is_err()) {
+            let error:E=step.unwrap_err();
+            return core::result::Err(FoldFailure { folded:folded,error:error });
+        }
+        accumulator=step.unwrap(); folded+=1;
+    }
+    return core::result::Ok(FoldProgress { accumulator:accumulator,folded:folded,exhausted:false });
+}
+
+// Same progress/error rules, selecting only next_back. Front and back share
+// the source's current remainder; either direction may resume between calls.
+pub fn rfold_up_to<I,F,T,A>(source:&I,initial:A,folder:&F,limit:u64) -> FoldProgress<A>
+    where I:Iterator<T>, I:DoubleEndedIterator<T>, F:Folder<A,T> {
+    let accumulator:A=initial; let folded:u64=0;
+    while(folded<limit) {
+        let item:core::option::Option<T> =source.next_back();
+        if(item.is_none()) { return FoldProgress { accumulator:accumulator,folded:folded,exhausted:true }; }
+        accumulator=folder.apply(accumulator,item.unwrap()); folded+=1;
+    }
+    return FoldProgress { accumulator:accumulator,folded:folded,exhausted:false };
+}
+pub fn try_rfold_up_to<I,F,T,A,E>(source:&I,initial:A,folder:&F,limit:u64)
+    -> core::result::Result<FoldProgress<A>,FoldFailure<E>>
+    where I:Iterator<T>, I:DoubleEndedIterator<T>, F:TryFolder<A,T,E> {
+    let accumulator:A=initial; let folded:u64=0;
+    while(folded<limit) {
+        let item:core::option::Option<T> =source.next_back();
+        if(item.is_none()) { return core::result::Ok(FoldProgress { accumulator:accumulator,folded:folded,exhausted:true }); }
+        let step:core::result::Result<A,E> =folder.try_apply(accumulator,item.unwrap());
+        if(step.is_err()) {
+            let error:E=step.unwrap_err();
+            return core::result::Err(FoldFailure { folded:folded,error:error });
+        }
+        accumulator=step.unwrap(); folded+=1;
+    }
+    return core::result::Ok(FoldProgress { accumulator:accumulator,folded:folded,exhausted:false });
 }

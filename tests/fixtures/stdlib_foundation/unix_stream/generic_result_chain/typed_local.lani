@@ -1,0 +1,20 @@
+// Positive control: keep the same generic Write call and observe its effect.
+module app::main;
+import core::io;
+import core::result;
+struct Sink { observed:i32 }
+impl Sink { fn borrow(&self) -> &Sink { return self; } }
+pub impl core::io::Write for Sink {
+    pub fn write(&self,source:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(count==1); self.observed+=source[offset] as i32; return core::result::Ok(1);
+    }
+    pub fn flush(&self) -> core::result::Result<i32,core::io::Error> { return core::result::Ok(0); }
+}
+fn transfer<W>(sink:&W,bytes:[u8]) -> i32 where W:core::io::Write {
+    let result:core::result::Result<i32,core::io::Error> =sink.write(bytes,0,1);
+    return result.unwrap();
+}
+fn main() -> i32 {
+    let sink:Sink=Sink { observed:0 }; let bytes:[u8;1]=[7];
+    assert(transfer<Sink>(sink.borrow(),bytes)==1 && sink.observed==7); return 0;
+}

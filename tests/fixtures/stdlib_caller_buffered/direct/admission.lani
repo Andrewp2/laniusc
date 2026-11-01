@@ -1,0 +1,26 @@
+module app::main;
+import core::buffered;
+import alloc::buffered;
+import core::io;
+import core::result;
+import core::slice;
+fn read_one<R>(reader:&R,bytes:[u8]) -> i32 where R:core::io::Read { return reader.read(bytes,1,1).unwrap(); }
+fn position<S>(stream:&S) -> u64 where S:core::io::Seek { return stream.seek(core::io::SeekFrom::Current(0)).unwrap(); }
+fn main() -> i32 {
+    let data:[u8;5]=[11,22,33,44,55]; let target:[u8;6]=[99;6]; let scratch:[u8;5]=[77;5]; let write_scratch:[u8;5]=[88;5]; let destination:[u8;3]=[66;3];
+    let input:core::io::SliceReader=core::io::slice_reader(data,5).unwrap(); let output:core::io::SliceWriter=core::io::slice_writer(target,6).unwrap();
+    let read_view:core::slice::View<u8> =core::slice::view_range<u8>(scratch,1,3).unwrap(); let write_view:core::slice::View<u8> =core::slice::view_range<u8>(write_scratch,1,3).unwrap();
+    let made_reader:core::result::Result<core::buffered::Reader<core::io::SliceReader>,core::io::Error> =core::buffered::reader(input.borrow(),read_view); let reader=made_reader.unwrap();
+    assert(reader.capacity()==3 && reader.is_active() && !reader.is_faulted()); assert(reader.fill_buf().unwrap().get(0).unwrap()==11 && input.position()==3); assert(reader.consume(1).unwrap()==1);
+    let parts=reader.take_parts().unwrap(); assert(!reader.is_active() && reader.capacity()==0 && parts.bytes().start==2 && parts.bytes().length==2 && parts.bytes().get(0).unwrap()==22);
+    let restored=core::buffered::reader_from_parts(parts.borrow()).unwrap(); assert(parts.bytes().length==0 && restored.capacity()==3 && restored.buffered().get(1).unwrap()==33); assert(position(restored.borrow())==1 && restored.buffered().length==0);
+    assert(read_one(restored.borrow(),destination)==1 && destination[1]==22 && destination[0]==66 && destination[2]==66); assert(restored.discard()==2 && parts.discard()==0);
+    let made_writer:core::result::Result<core::buffered::Writer<core::io::SliceWriter>,core::io::Error> =core::buffered::writer(output.borrow(),write_view); let writer=made_writer.unwrap(); assert(writer.write(data,0,3).unwrap()==3 && output.position()==0);
+    let pending=writer.take_parts().unwrap(); assert(!writer.is_active() && pending.bytes().start==1 && pending.bytes().length==3); let rebuilt=core::buffered::writer_from_parts(pending.borrow()).unwrap(); assert(pending.bytes().length==0 && rebuilt.pending().get(2).unwrap()==33);
+    assert(rebuilt.seek(core::io::SeekFrom::Start(1)).unwrap()==1 && target[0]==11 && target[1]==22 && target[2]==33); assert(rebuilt.write(data,3,2).unwrap()==2 && rebuilt.finish().unwrap()==0 && !rebuilt.is_active()); assert(target[0]==11 && target[1]==44 && target[2]==55 && target[3]==99 && target[4]==99 && target[5]==99);
+    assert(scratch[0]==77 && scratch[4]==77 && write_scratch[0]==88 && write_scratch[4]==88);
+    // The owning facades delegate transitions and transfer one actual buffer each.
+    input.seek(core::io::SeekFrom::Start(0)).unwrap(); let owned_reader=alloc::buffered::reader(input.borrow(),2).unwrap(); assert(owned_reader.fill_buf().unwrap().length==2 && owned_reader.consume(1).unwrap()==1); let owned_parts=owned_reader.take_parts().unwrap(); let owned_restored=alloc::buffered::reader_from_parts(owned_parts.borrow()).unwrap(); assert(owned_parts.bytes().length==0 && owned_restored.buffered().get(0).unwrap()==22); assert(owned_restored.discard()==1 && owned_parts.discard()==0);
+    output.seek(core::io::SeekFrom::Start(3)).unwrap(); let owned_writer=alloc::buffered::writer(output.borrow(),2).unwrap(); assert(owned_writer.write(data,0,2).unwrap()==2); let owned_pending=owned_writer.take_parts().unwrap(); let owned_rebuilt=alloc::buffered::writer_from_parts(owned_pending.borrow()).unwrap(); assert(owned_pending.bytes().length==0 && owned_rebuilt.finish().unwrap()==0 && owned_pending.discard()==0); assert(target[3]==11 && target[4]==22 && target[5]==99);
+    assert(data[0]==11 && data[1]==22 && data[2]==33 && data[3]==44 && data[4]==55); return 0;
+}

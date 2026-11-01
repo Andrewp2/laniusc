@@ -1,0 +1,9 @@
+// Control: one public trait method supplies the same ordinary call syntax.
+module app::main;
+pub trait Back<T> { pub fn next_back(&self) -> T; }
+struct Cursor { value: i32 }
+impl Cursor { fn borrow(&self) -> &Cursor { return self; } }
+pub impl Back<i32> for Cursor {
+    pub fn next_back(&self) -> i32 { return self.value; }
+}
+fn main() -> i32 { let cursor: Cursor = Cursor { value: 7 }; return cursor.next_back() - 7; }

@@ -18,9 +18,9 @@ Declaration counts: enum: 2; field: 2; function: 58; struct: 1; variant: 7.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::result::Result](result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L12) · [source](../../../stdlib/core/decimal.lani#L4)
-- [core::result::Ok](result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L13) · [source](../../../stdlib/core/decimal.lani#L5)
-- [core::result::Err](result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L14) · [source](../../../stdlib/core/decimal.lani#L6)
+- [core::result::Result](result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../stdlib/core/decimal.lani#L4)
+- [core::result::Ok](result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../stdlib/core/decimal.lani#L5)
+- [core::result::Err](result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../stdlib/core/decimal.lani#L6)
 
 ## Types, fields and variants
 

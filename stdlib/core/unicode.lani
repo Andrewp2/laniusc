@@ -65,9 +65,11 @@ pub fn is_scalar(value: u32) -> bool {
 }
 fn packed(value: u32) -> u32 {
     if (!is_code_point(value)) { return 41943070; }
-    let index: i32 = core::unicode_properties_data::find(value);
-    return core::unicode_properties_data::read(index, 6, 7);
+    return core::unicode_properties_data::packed(value);
 }
+// Generated presence bits: 26 simple mapping record, 27 C+F fold record,
+// 28 Turkic fold record. A clear bit means the point search cannot match.
+fn present(value: u32, bit: u32) -> bool { return ((packed(value) >> bit) & 1) != 0; }
 // Code point queries include surrogates (category Cs) and unassigned values
 // (Cn). Above U+10FFFF: GC_INVALID, ccc=0, flags=0, decimal_digit=10.
 pub fn properties(value: u32) -> Properties {
@@ -101,6 +103,7 @@ pub struct SimpleMappings { lowercase: u32, uppercase: u32, titlecase: u32, case
 pub fn simple_mappings(value: u32) -> core::result::Result<SimpleMappings, Error> {
     if (!is_scalar(value)) { return core::result::Err(Error::InvalidScalar); }
     let mapped: SimpleMappings = SimpleMappings { lowercase: value, uppercase: value, titlecase: value, case_fold: value };
+    if (!present(value, 26)) { return core::result::Ok(mapped); }
     let index: i32 = core::unicode_case_data::find(value);
     if (index < 0) { return core::result::Ok(mapped); }
     mapped.lowercase = core::unicode_case_data::read(index, 6, 6);
@@ -117,7 +120,7 @@ pub struct CaseFolding { length: u32, first: u32, second: u32, third: u32 }
 pub fn case_folding(value: u32, turkic: bool) -> core::result::Result<CaseFolding, Error> {
     if (!is_scalar(value)) { return core::result::Err(Error::InvalidScalar); }
     let folded: CaseFolding = CaseFolding { length: 0, first: 0, second: 0, third: 0 };
-    if (turkic) {
+    if (turkic && present(value, 28)) {
         let found: i32 = core::unicode_turkic_data::find(value);
         if (found >= 0) {
             folded.length = core::unicode_turkic_data::read(found, 6, 1);
@@ -127,6 +130,7 @@ pub fn case_folding(value: u32, turkic: bool) -> core::result::Result<CaseFoldin
             return core::result::Ok(folded);
         }
     }
+    if (!present(value, 27)) { folded.length = 1; folded.first = value; return core::result::Ok(folded); }
     let found: i32 = core::unicode_fold_data::find(value);
     if (found < 0) { folded.length = 1; folded.first = value; return core::result::Ok(folded); }
     folded.length = core::unicode_fold_data::read(found, 6, 1);
@@ -138,6 +142,7 @@ pub fn case_folding(value: u32, turkic: bool) -> core::result::Result<CaseFoldin
 
 fn simple_mapping(value: u32, offset: i32) -> core::result::Result<u32, Error> {
     if (!is_scalar(value)) { return core::result::Err(Error::InvalidScalar); }
+    if (!present(value, 26)) { return core::result::Ok(value); }
     let index: i32 = core::unicode_case_data::find(value);
     if (index < 0) { return core::result::Ok(value); }
     return core::result::Ok(core::unicode_case_data::read(index, offset, 6));

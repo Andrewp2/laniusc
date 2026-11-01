@@ -1,0 +1,90 @@
+module app::main;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::graph;
+import ext::graph_algorithms;
+
+fn kind(value:ext::graph::ErrorKind) -> i32 {
+    return match(value) {
+        ext::graph::ErrorKind::InvalidLimits -> 1, ext::graph::ErrorKind::Bounds -> 2,
+        ext::graph::ErrorKind::NodeLimit -> 3, ext::graph::ErrorKind::EdgeLimit -> 4,
+        ext::graph::ErrorKind::WorkLimit -> 5, ext::graph::ErrorKind::Offset -> 6,
+        ext::graph::ErrorKind::Source -> 7, ext::graph::ErrorKind::Target -> 8,
+        ext::graph::ErrorKind::Order -> 9, ext::graph::ErrorKind::AllocationFailed -> 10,
+        ext::graph::ErrorKind::Cycle -> 11, ext::graph::ErrorKind::Closed -> 12
+    };
+}
+fn failed<T>(value:core::result::Result<T,ext::graph::Error>,expected:i32,node:i32,edge:i32) {
+    assert(value.is_err()); let error:ext::graph::Error=value.unwrap_err(); assert(kind(error.kind)==expected && error.node==node && error.edge==edge);
+}
+fn limits(work:u64) -> ext::graph::Limits { return ext::graph::Limits { max_nodes:2147483647,max_edges:2147483647,max_work:work }; }
+fn ints(values:[i32],start:i32,length:i32) -> core::slice::View<i32> { return core::slice::View { values:values,start:start,length:length }; }
+fn shape(nodes:i32,offsets:core::slice::View<i32>,targets:core::slice::View<i32>) -> ext::graph::View { return ext::graph::View { nodes:nodes,offsets:offsets,targets:targets }; }
+fn both(value:ext::graph::View,selected:ext::graph::Limits,expected:i32,node:i32,edge:i32) {
+    failed(ext::graph_algorithms::strong_components(value,selected),expected,node,edge);
+    failed(ext::graph_algorithms::condensation(value,selected),expected,node,edge);
+}
+fn unread_metadata_and_validation_budget() {
+    let nowhere:ptr=0; let unread:[i32]=core::mem::typed_slice_from_raw_parts<i32>(nowhere,0);
+    let empty:core::slice::View<i32> =ints(unread,0,0); let poisoned:ext::graph::View=shape(3,ints(unread,0,4),ints(unread,0,3));
+    both(shape(-1,empty,empty),ext::graph::Limits { max_nodes:-1,max_edges:0,max_work:0 },1,-1,-1);
+    both(poisoned,ext::graph::Limits { max_nodes:0,max_edges:-1,max_work:0 },1,-1,-1);
+    both(shape(-1,empty,empty),limits(0),2,-1,-1);
+    both(shape(3,ints(unread,-1,4),empty),limits(0),2,-1,-1);
+    both(shape(3,ints(unread,0,-1),empty),limits(0),2,-1,-1);
+    both(shape(3,ints(unread,2147483647,1),empty),limits(0),2,-1,-1);
+    both(shape(3,ints(unread,0,4),ints(unread,-1,0)),limits(0),2,-1,-1);
+    both(shape(3,ints(unread,0,4),ints(unread,1,2147483647)),limits(0),2,-1,-1);
+    both(shape(536870911,empty,empty),limits(0),3,-1,-1);
+    both(shape(536870911,ints(unread,-1,0),empty),limits(0),2,-1,-1);
+    both(shape(1,empty,ints(unread,0,268435456)),limits(0),4,-1,-1);
+    both(shape(3,ints(unread,0,3),empty),limits(0),2,-1,-1);
+    both(poisoned,ext::graph::Limits { max_nodes:2,max_edges:3,max_work:18446744073709551615 },3,-1,-1);
+    both(poisoned,ext::graph::Limits { max_nodes:3,max_edges:2,max_work:18446744073709551615 },4,-1,-1);
+    both(poisoned,limits(6),5,-1,-1);
+    let largest:ext::graph::View=shape(536870910,ints(unread,0,536870911),ints(unread,0,268435455));
+    both(largest,limits(805306365),5,-1,-1);
+}
+fn all_offsets_before_any_target_and_body_work() {
+    let nowhere:ptr=0; let unread:[i32]=core::mem::typed_slice_from_raw_parts<i32>(nowhere,0);
+    let targets:core::slice::View<i32> =ints(unread,0,3);
+    let first:[i32;4]=[1,2,3,3]; let backwards:[i32;4]=[0,2,1,3]; let negative:[i32;4]=[0,-1,0,3];
+    let excessive:[i32;4]=[0,4,4,4]; let last:[i32;4]=[0,1,2,2];
+    both(shape(3,ints(first,0,4),targets),limits(7),6,0,-1);
+    both(shape(3,ints(backwards,0,4),targets),limits(7),6,1,-1);
+    both(shape(3,ints(negative,0,4),targets),limits(7),6,0,-1);
+    both(shape(3,ints(excessive,0,4),targets),limits(7),6,0,-1);
+    both(shape(3,ints(last,0,4),targets),limits(7),6,2,-1);
+    let wrong_empty:[i32;1]=[1]; let zero:[i32;1]=[0];
+    both(shape(0,ints(wrong_empty,0,1),ints(unread,0,0)),limits(1),6,-1,-1);
+    both(shape(0,ints(zero,0,1),ints(unread,0,1)),limits(2),6,-1,-1);
+    assert(first[0]==1 && first[1]==2 && first[2]==3 && first[3]==3);
+    assert(backwards[0]==0 && backwards[1]==2 && backwards[2]==1 && backwards[3]==3);
+    assert(negative[0]==0 && negative[1]==-1 && negative[2]==0 && negative[3]==3);
+    assert(excessive[0]==0 && excessive[1]==4 && excessive[2]==4 && excessive[3]==4);
+    assert(last[0]==0 && last[1]==1 && last[2]==2 && last[3]==2 && wrong_empty[0]==1 && zero[0]==0);
+}
+fn target_errors_and_exact_operation_rejection() {
+    let offsets:[i32;6]=[99,0,2,3,3,98]; let targets:[i32;5]=[77,1,2,2,88];
+    let value:ext::graph::View=shape(3,ints(offsets,1,4),ints(targets,1,3));
+    targets[2]=-1; both(value,limits(7),8,0,1);
+    targets[2]=3; both(value,limits(7),8,0,1);
+    targets[2]=1; targets[3]=-1; both(value,limits(7),9,0,1);
+    targets[1]=2; targets[2]=1; targets[3]=2; both(value,limits(7),9,0,1);
+    targets[1]=1; targets[2]=2; targets[3]=-1; both(value,limits(7),8,1,2); targets[3]=2;
+    failed(ext::graph_algorithms::strong_components(value,limits(67)),5,-1,-1);
+    failed(ext::graph_algorithms::condensation(value,limits(131)),5,-1,-1);
+    assert(offsets[0]==99 && offsets[1]==0 && offsets[2]==2 && offsets[3]==3 && offsets[4]==3 && offsets[5]==98);
+    assert(targets[0]==77 && targets[1]==1 && targets[2]==2 && targets[3]==2 && targets[4]==88);
+    let nowhere:ptr=0; let unread:[i32]=core::mem::typed_slice_from_raw_parts<i32>(nowhere,0); let zero:[i32;1]=[0];
+    let empty:ext::graph::View=shape(0,ints(zero,0,1),ints(unread,2147483647,0));
+    failed(ext::graph_algorithms::strong_components(empty,limits(1)),5,-1,-1);
+    failed(ext::graph_algorithms::condensation(empty,limits(2)),5,-1,-1);
+    let accepted:ext::graph_algorithms::StrongComponents=ext::graph_algorithms::strong_components(empty,limits(2)).unwrap();
+    assert(accepted.is_open() && accepted.node_count()==0 && accepted.component_count()==0);
+    failed(accepted.component(-1),2,-1,-1); failed(accepted.same_component(9,-2),2,9,-1);
+    assert(accepted.destroy() && !accepted.destroy()); failed(accepted.component(0),12,-1,-1);
+    assert(zero[0]==0);
+}
+fn main() -> i32 { unread_metadata_and_validation_budget(); all_offsets_before_any_target_and_body_work(); target_errors_and_exact_operation_rejection(); return 0; }

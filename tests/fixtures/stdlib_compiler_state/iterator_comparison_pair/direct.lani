@@ -1,0 +1,17 @@
+// Diagnostic probe: generic Option method results inside a Pair initializer.
+module app::main;
+import core::option;
+import core::pair;
+
+fn make_pair<T,U>(first: core::option::Option<T>, second: core::option::Option<U>) -> core::pair::Pair<T,U> {
+    let values: core::pair::Pair<T,U> = core::pair::Pair { first: first.unwrap(), second: second.unwrap() };
+    return values;
+}
+fn main() -> i32 {
+    let first: core::option::Option<i32> = core::option::Some(17);
+    let second: core::option::Option<u64> = core::option::Some(18446744073709551615);
+    let values: core::pair::Pair<i32,u64> = make_pair<i32,u64>(first,second);
+    if (values.first != 17) { return 1; }
+    if (values.second != 18446744073709551615) { return 2; }
+    return 0;
+}

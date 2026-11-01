@@ -3,6 +3,16 @@
 `ext::json` parses, builds, queries and encodes owned JSON documents in Lanius.
 Import it through the `extended` source root.
 
+The current [borrowed encoding increment](extended-json-streaming.md) adds
+exact encoded length and a canonical Read cursor, with one byte generator for
+preflight, streaming output and owned `encode`. The migrated
+[normalizer](extended-json-normalize.md) writes directly through Copier after
+bounded input and output admission. All four new JSON library gates and four
+normalizer groups/100 native cases pass. Standalone build/examples also pass
+as separate smoke checks. A selected old builder/query/ownership test passes
+separately.
+The earlier receipts below retain their original source scope.
+
 ## Format policy
 
 The grammar follows [RFC 8259](https://www.rfc-editor.org/rfc/rfc8259.html).
@@ -65,6 +75,8 @@ ownership or immutable String views.
 | `new()`, `with_options(options)` | Empty document; the latter returns Result and checks options |
 | `parse(input, options)` | `Result<Document, Error>` |
 | `encode(document)` | `Result<String, Error>`; an empty document is NoRoot |
+| `encoded_len()` | `Result<u64, Error>`; exact admitted output length, without output allocation |
+| `encoding()` | `Result<Encoding, Error>`; borrowed canonical Read cursor after the same length preflight |
 | `borrow()` | Reference to this owner, for helper calls |
 | `node_count()`, `root()` | Node count and `Option<NodeId>` |
 | `kind(id)` | `Result<Kind, Error>` |
@@ -118,7 +130,9 @@ AllocationFailed, and the API errors described above.
 Parse offsets are zero-based bytes. InvalidNumber identifies the token's start;
 InvalidSurrogate identifies the first escape's backslash. DuplicateKey identifies
 the duplicate member's value start. EOF errors can equal input length.
-Builder/query/encoder errors and invalid options use offset -1. Error priority
+Builder/query/encoder errors and invalid options use offset -1. Encoding now
+checks NoRoot and the complete output cap before output allocation; see its
+[preflight and error mapping](extended-json-streaming.md). Other error priority
 when several conditions apply is not specified.
 
 ## Execution evidence
@@ -150,10 +164,11 @@ timeout --kill-after=2s 100s target/stdlib-build/debug/laniusc \
   --source-root extended -o /tmp/json-normalize
 ```
 
-The normalizer reads stdin and writes stdout. Exit status is 0 for success,
-2 for invalid text/JSON or document limits, 3 for stream failure, and 4 for
-allocation failure. It produces no diagnostic text. A write failure can leave
-an output prefix.
+The migrated [normalizer guide](extended-json-normalize.md) records current
+input/output and call limits, direct borrowed output, quiet statuses and
+separate acceptance. The 2026-10-22 normalizer receipt above covers the older
+complete-output-String implementation. Both profiles preserve no appended
+newline; a write failure may leave an output prefix.
 
 Borrowed queries and exact integer conversion have additional execution
 evidence in [configuration](extended-config.md), including 64-bit boundaries,
@@ -162,7 +177,8 @@ Conversion accepts `1.25e2` as 125, rejects `1.25` as NotInteger, checks the
 destination range and treats negative zero as zero. It does not allocate or
 round through floating point; conversion errors have offset -1.
 
-Streaming parsing/encoding, floating-point conversion, further numeric builder
-helpers, editing/removal, deep cloning and other targets remain work.
+Streaming encoding has the separately accepted library increment above.
+Streaming parsing, floating-point conversion, further numeric builder helpers,
+editing/removal, deep cloning and other targets remain work.
 [Schema validation](extended-schema.md) executes separately through
 `ext::schema`, with its documented vocabulary and resource limits.

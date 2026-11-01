@@ -47,7 +47,7 @@ fn consumed_cache() {
 }
 struct Reverse {}
 impl Reverse { fn borrow(&self) -> &Reverse { return self; } }
-pub impl core::iter::Comparator<alloc::string::String> for Reverse {
+pub impl core::ordering::Comparator<alloc::string::String,alloc::string::String> for Reverse {
     pub fn compare(&self,a: alloc::string::String,b: alloc::string::String) -> core::ordering::Ordering {
         return core::ordering::compare_i32(b.byte_at(0).unwrap() as i32,a.byte_at(0).unwrap() as i32);
     }

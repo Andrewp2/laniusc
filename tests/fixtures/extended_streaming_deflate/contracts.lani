@@ -1,0 +1,83 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::slice;
+import ext::compression;
+import ext::deflate;
+import fixture::support;
+fn format(kind:i32) -> ext::compression::Format { return match(kind) { 0 -> ext::compression::Format::RawDeflate,1 -> ext::compression::Format::Zlib,_ -> ext::compression::Format::Gzip }; }
+fn empty_byte(kind:i32,index:i32) -> u8 {
+    let raw:[u8;2] = [3,0]; let zlib:[u8;8] = [120,1,3,0,0,0,0,1]; let gzip:[u8;20] = [31,139,8,0,0,0,0,0,0,255,3,0,0,0,0,0,0,0,0,0];
+    if(kind==0) { return raw[index]; } if(kind==1) { return zlib[index]; } return gzip[index];
+}
+fn literal_byte(kind:i32,index:i32) -> u8 {
+    let raw:[u8;3] = [115,4,0]; let zlib:[u8;9] = [120,1,115,4,0,0,66,0,66]; let gzip:[u8;21] = [31,139,8,0,0,0,0,0,0,255,115,4,0,139,158,217,211,1,0,0,0];
+    if(kind==0) { return raw[index]; } if(kind==1) { return zlib[index]; } return gzip[index];
+}
+fn limits(workspace:&fixture::support::Workspace) {
+    let input:[u8;3] = [91,65,92]; let output:[u8;32] = [211;32]; let empty=fixture::support::view(input,1,0);
+    let encoder=ext::compression::encoder(workspace.input(),workspace.output(),workspace.hash(),ext::compression::Format::RawDeflate,ext::compression::default_encode_limits()).unwrap();
+    let kind:i32 = 0; while(kind<3) {
+        let length:i32 = 2; if(kind==1) { length=8; } if(kind==2) { length=20; }
+        let cuts:[i32;4] = [0,1,length-1,length]; let c:i32 = 0; while(c<4) {
+            let cap:i32 = cuts[c]; let admission:ext::compression::EncodeLimits = ext::compression::EncodeLimits { max_input:0,max_output:cap as u64 };
+            encoder.reset(format(kind),admission); let i:i32 = 0; while(i<32) { output[i]=211; i+=1; }
+            let result=encoder.step(empty,fixture::support::view(output,2,length),true);
+            if(cap==length) { fixture::support::progress(result.unwrap(),0,length,3); assert(encoder.is_done() && !encoder.is_failed()); }
+            else { let failure=result.unwrap_err(); assert(match(failure.error) { ext::compression::Error::OutputLimit -> true,_ -> false }); assert(failure.read==0 && failure.written==cap && encoder.is_failed() && !encoder.is_done());
+                let again=encoder.step(empty,fixture::support::view(output,2+cap,length-cap),true).unwrap_err(); assert(again.read==0 && again.written==0 && match(again.error) { ext::compression::Error::OutputLimit -> true,_ -> false }); }
+            assert(encoder.total_read()==0 && encoder.total_written()==cap as u64); i=0; while(i<cap) { assert(output[2+i]==empty_byte(kind,i)); i+=1; }
+            assert(output[0]==211 && output[1]==211); i=2+cap; while(i<32) { assert(output[i]==211); i+=1; } c+=1;
+        }
+        // One-byte output suspends through every header, body and trailer boundary.
+        let literal_length:i32 = length+1; let exact:ext::compression::EncodeLimits = ext::compression::EncodeLimits { max_input:1,max_output:literal_length as u64 };
+        encoder.reset(format(kind),exact); let read:i32 = 0; let written:i32 = 0; let calls:i32 = 0;
+        while(!encoder.is_done()) {
+            assert(calls<32); calls+=1; output[2]=211; let step=encoder.step(fixture::support::view(input,1+read,1-read),fixture::support::view(output,2,1),true).unwrap();
+            assert(step.read>=0 && step.read<=1-read && step.written>=0 && step.written<=1); read+=step.read;
+            if(step.written==1) { assert(output[2]==literal_byte(kind,written)); written+=1; }
+            assert(step.read+step.written>0 || encoder.is_done()); assert(encoder.total_read()==read as u64 && encoder.total_written()==written as u64);
+        }
+        assert(read==1 && written==literal_length && !encoder.is_failed());
+        let prefix:i32 = 0; if(kind==1) { prefix=2; } if(kind==2) { prefix=10; }
+        encoder.reset(format(kind),ext::compression::EncodeLimits { max_input:1,max_output:(prefix+2) as u64 });
+        let partial=encoder.step(fixture::support::view(input,1,1),fixture::support::view(output,2,20),true).unwrap_err();
+        assert(partial.read==1 && partial.written==prefix+2 && match(partial.error) { ext::compression::Error::OutputLimit -> true,_ -> false });
+        assert(encoder.total_read()==1 && encoder.total_written()==(prefix+2) as u64); let i:i32 = 0; while(i<prefix+2) { assert(output[2+i]==literal_byte(kind,i)); i+=1; }
+        // Offered-input admission precedes even a queued deterministic header.
+        encoder.reset(format(kind),ext::compression::EncodeLimits { max_input:1,max_output:100 });
+        let failure=encoder.step(fixture::support::view(input,0,2),fixture::support::view(output,2,20),true).unwrap_err();
+        assert(failure.read==0 && failure.written==0 && match(failure.error) { ext::compression::Error::InputLimit -> true,_ -> false }); assert(encoder.total_read()==0 && encoder.total_written()==0);
+        kind+=1;
+    }
+    encoder.reset(ext::compression::Format::Gzip,ext::compression::default_encode_limits());
+    fixture::support::progress(encoder.step(empty,fixture::support::view(output,2,1),true).unwrap(),0,1,2); assert(output[2]==31);
+    encoder.reset(ext::compression::Format::Zlib,ext::compression::default_encode_limits());
+    fixture::support::progress(encoder.step(empty,fixture::support::view(output,2,8),true).unwrap(),0,8,3);
+    let i:i32 = 0; while(i<8) { assert(output[2+i]==empty_byte(1,i)); i+=1; }
+    assert(input[0]==91 && input[1]==65 && input[2]==92); workspace.guards();
+}
+fn main() -> i32 {
+    fixture::support::mark(65); let workspace=fixture::support::workspace(); let source:alloc::vec::Vec<u8> = alloc::vec::new(); source.try_resize(32775,91).unwrap(); fixture::support::mark(83); fixture::support::mark(80);
+    limits(workspace.borrow());
+    // Native u8 arrays have a real negative byte stride; the heap source is packed.
+    let native_block:[u8;32772] = [77;32772]; let native_pending:[u8;32777] = [99;32777]; let native_hash:[i32;32772] = [12345;32772]; let target:[u8;1024] = [211;1024];
+    assert(core::mem::slice_stride(native_block)<0 && core::mem::slice_stride(native_pending)<0 && core::mem::slice_stride(target)<0);
+    assert(core::mem::slice_stride(source.as_slice())==1 && core::mem::slice_stride(native_hash)==4);
+    let i:i32 = 0; while(i<32768) { source.set(3+i,65).unwrap(); i+=1; }
+    let raw=ext::deflate::encoder(fixture::support::view(native_block,2,32770),fixture::support::view(native_pending,2,32775),fixture::support::words(native_hash,2,32770)).unwrap();
+    fixture::support::progress(raw.step(source.as_view().subview(3,32771).unwrap(),fixture::support::view(target,2,0),false).unwrap(),32768,0,2);
+    // Recycle all consumed input immediately. The next byte must wait for pending output.
+    i=0; while(i<32768) { source.set(3+i,88).unwrap(); i+=1; } source.set(3,66).unwrap();
+    fixture::support::progress(raw.step(source.as_view().subview(3,4).unwrap(),fixture::support::view(target,2,0),false).unwrap(),0,0,2);
+    let step=raw.step(source.as_view().subview(3,4).unwrap(),fixture::support::view(target,2,1000),false).unwrap(); assert(step.read==1 && step.written>0 && step.written<1000 && fixture::support::status(step.status)==1);
+    let written:i32 = step.written; source.set(3,90).unwrap();
+    step=raw.step(source.as_view().subview(3,3).unwrap(),fixture::support::view(target,2+written,1000-written),true).unwrap(); assert(step.read==0 && step.written>0 && fixture::support::status(step.status)==3); written+=step.written; assert(raw.is_done());
+    assert(target[0]==211 && target[1]==211); i=2+written; while(i<1024) { assert(target[i]==211); i+=1; }
+    assert(native_block[0]==77 && native_block[1]==77 && native_block[32770]==77 && native_block[32771]==77);
+    assert(native_pending[0]==99 && native_pending[1]==99 && native_pending[32775]==99 && native_pending[32776]==99);
+    assert(native_hash[0]==12345 && native_hash[1]==12345 && native_hash[32770]==12345 && native_hash[32771]==12345);
+    assert(source.at(0)==91 && source.at(1)==91 && source.at(2)==91 && source.at(32771)==91 && source.at(32772)==91 && source.at(32773)==91 && source.at(32774)==91);
+    i=0; while(i<written) { source.set(i,target[2+i]).unwrap(); i+=1; }
+    fixture::support::mark(112); fixture::support::publish(source.storage,written); fixture::support::mark(82); source.destroy(); workspace.destroy(); fixture::support::mark(69); fixture::support::mark(68); return 0;
+}

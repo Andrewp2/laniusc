@@ -1,0 +1,143 @@
+module app::main;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::graph;
+import ext::graph_algorithms;
+
+fn kind(value:ext::graph::ErrorKind) -> i32 {
+    return match(value) {
+        ext::graph::ErrorKind::InvalidLimits -> 1,ext::graph::ErrorKind::Bounds -> 2,ext::graph::ErrorKind::NodeLimit -> 3,
+        ext::graph::ErrorKind::EdgeLimit -> 4,ext::graph::ErrorKind::WorkLimit -> 5,ext::graph::ErrorKind::Offset -> 6,
+        ext::graph::ErrorKind::Source -> 7,ext::graph::ErrorKind::Target -> 8,ext::graph::ErrorKind::Order -> 9,
+        ext::graph::ErrorKind::AllocationFailed -> 10,ext::graph::ErrorKind::Cycle -> 11,ext::graph::ErrorKind::Closed -> 12
+    };
+}
+fn failed<T>(result:core::result::Result<T,ext::graph::Error>,expected:i32,node:i32,edge:i32) {
+    assert(result.is_err()); let error:ext::graph::Error=result.unwrap_err(); assert(kind(error.kind)==expected && error.node==node && error.edge==edge);
+}
+fn limits(work:u64) -> ext::graph::Limits { return ext::graph::Limits { max_nodes:2147483647,max_edges:2147483647,max_work:work }; }
+fn ints(data:[i32],start:i32,length:i32) -> core::slice::View<i32> { return core::slice::View { values:data,start:start,length:length }; }
+fn shape(nodes:i32,offsets:core::slice::View<i32>,targets:core::slice::View<i32>) -> ext::graph::View { return ext::graph::View { nodes:nodes,offsets:offsets,targets:targets }; }
+
+fn descriptor_limits_and_full_width_work_admission() {
+    let defaults:ext::graph::Limits=ext::graph::default_limits(); assert(defaults.max_nodes==1048576 && defaults.max_edges==1048576 && defaults.max_work==100000000);
+    let nowhere:ptr=0; let unread:[i32]=core::mem::typed_slice_from_raw_parts<i32>(nowhere,0);
+    let edge_data:[ext::graph::Edge]=core::mem::typed_slice_from_raw_parts<ext::graph::Edge>(nowhere,0);
+    let empty:core::slice::View<i32> =ints(unread,0,0); let poison:ext::graph::View=shape(3,ints(unread,0,4),ints(unread,0,3));
+    let invalid_limits:ext::graph::Limits=ext::graph::Limits { max_nodes:-1,max_edges:0,max_work:0 };
+    failed(ext::graph::validate(shape(-1,empty,empty),invalid_limits),1,-1,-1);
+    let negative_edges:ext::graph::Limits=ext::graph::Limits { max_nodes:0,max_edges:-1,max_work:0 };
+    failed(ext::graph::validate(poison,negative_edges),1,-1,-1);
+    failed(ext::graph::validate(shape(-1,empty,empty),limits(0)),2,-1,-1);
+    failed(ext::graph::validate(shape(3,ints(unread,-1,0),empty),limits(0)),2,-1,-1);
+    failed(ext::graph::validate(shape(3,ints(unread,0,-1),empty),limits(0)),2,-1,-1);
+    failed(ext::graph::validate(shape(3,ints(unread,2147483647,1),empty),limits(0)),2,-1,-1);
+    failed(ext::graph::validate(shape(3,ints(unread,0,4),ints(unread,-1,0)),limits(0)),2,-1,-1);
+    failed(ext::graph::validate(shape(3,ints(unread,0,4),ints(unread,1,2147483647)),limits(0)),2,-1,-1);
+    failed(ext::graph::validate(shape(2147483647,empty,empty),limits(0)),3,-1,-1);
+    failed(ext::graph::validate(shape(536870911,empty,empty),limits(0)),3,-1,-1);
+    failed(ext::graph::validate(shape(536870911,ints(unread,-1,0),empty),limits(0)),2,-1,-1);
+    failed(ext::graph::validate(shape(1,empty,ints(unread,0,268435456)),limits(0)),4,-1,-1);
+    failed(ext::graph::validate(shape(3,ints(unread,0,3),empty),limits(0)),2,-1,-1);
+    let few_nodes:ext::graph::Limits=ext::graph::Limits { max_nodes:2,max_edges:3,max_work:18446744073709551615 };
+    failed(ext::graph::validate(poison,few_nodes),3,-1,-1);
+    let few_edges:ext::graph::Limits=ext::graph::Limits { max_nodes:3,max_edges:2,max_work:18446744073709551615 };
+    failed(ext::graph::validate(shape(3,empty,ints(unread,0,3)),few_edges),4,-1,-1);
+    failed(ext::graph::validate(poison,limits(6)),5,-1,-1);
+    failed(ext::graph::view(3,poison.offsets,poison.targets,limits(6)),5,-1,-1);
+    failed(ext::graph::neighbors(poison,-2147483648,limits(6)),5,-1,-1);
+    failed(ext::graph::from_view(poison,limits(13)),5,-1,-1);
+    let huge:ext::graph::View=shape(536870910,ints(unread,0,536870911),ints(unread,0,268435455));
+    failed(ext::graph::validate(huge,limits(805306365)),5,-1,-1);
+    failed(ext::graph::from_view(huge,limits(1610612731)),5,-1,-1);
+    let raw:core::slice::View<ext::graph::Edge> =core::slice::View { values:edge_data,start:0,length:3 };
+    failed(ext::graph::from_edges(3,raw,limits(57)),5,-1,-1);
+    failed(ext::graph::from_edges(-1,raw,invalid_limits),1,-1,-1);
+    failed(ext::graph::from_edges(-1,raw,limits(100)),2,-1,-1);
+    let malformed:core::slice::View<ext::graph::Edge> =core::slice::View { values:edge_data,start:2147483647,length:1 };
+    failed(ext::graph::from_edges(3,malformed,limits(100)),2,-1,-1);
+    let over_raw:core::slice::View<ext::graph::Edge> =core::slice::View { values:edge_data,start:0,length:268435456 };
+    failed(ext::graph::from_edges(1,over_raw,limits(18446744073709551615)),4,-1,-1);
+    // 100,000,000 Edge records fit the current native staging ceiling. The
+    // exact required work is 2+118*m, beyond both signed and unsigned 32 bits.
+    let wide_work:core::slice::View<ext::graph::Edge> =core::slice::View { values:edge_data,start:0,length:100000000 };
+    failed(ext::graph::from_edges(1,wide_work,limits(11800000001)),5,-1,-1);
+    let staging_cap:i32=(2147483647/core::mem::size_of<ext::graph::Edge>()) as i32;
+    let too_wide:core::slice::View<ext::graph::Edge> =core::slice::View { values:edge_data,start:0,length:staging_cap+1 };
+    failed(ext::graph::from_edges(1,too_wide,limits(18446744073709551615)),4,-1,-1);
+}
+
+fn offset_scan_precedes_all_targets() {
+    let nowhere:ptr=0; let unread:[i32]=core::mem::typed_slice_from_raw_parts<i32>(nowhere,0); let targets:core::slice::View<i32> =ints(unread,0,3);
+    let bad_first:[i32;4]=[1,2,3,3]; let backwards:[i32;4]=[0,2,1,3]; let negative:[i32;4]=[0,-1,0,3];
+    let past_end:[i32;4]=[0,4,4,4]; let wrong_final:[i32;4]=[0,1,2,2];
+    failed(ext::graph::validate(shape(3,ints(bad_first,0,4),targets),limits(7)),6,0,-1);
+    failed(ext::graph::validate(shape(3,ints(backwards,0,4),targets),limits(7)),6,1,-1);
+    failed(ext::graph::validate(shape(3,ints(negative,0,4),targets),limits(7)),6,0,-1);
+    failed(ext::graph::validate(shape(3,ints(past_end,0,4),targets),limits(7)),6,0,-1);
+    failed(ext::graph::validate(shape(3,ints(wrong_final,0,4),targets),limits(7)),6,2,-1);
+    let zero_bad:[i32;1]=[1]; let zero:[i32;1]=[0];
+    failed(ext::graph::validate(shape(0,ints(zero_bad,0,1),ints(unread,0,0)),limits(1)),6,-1,-1);
+    failed(ext::graph::validate(shape(0,ints(zero,0,1),ints(unread,0,1)),limits(2)),6,-1,-1);
+    assert(ext::graph::validate(shape(0,ints(zero,0,1),ints(unread,2147483647,0)),limits(1)).unwrap()==0);
+    assert(bad_first[0]==1 && backwards[1]==2 && backwards[2]==1 && negative[1]==-1 && past_end[1]==4 && wrong_final[3]==2 && zero_bad[0]==1);
+}
+
+fn target_order_endpoint_and_requested_node_errors() {
+    let offsets:[i32;4]=[0,2,3,3]; let targets:[i32;3]=[1,2,2]; let valid:ext::graph::View=shape(3,ints(offsets,0,4),ints(targets,0,3));
+    assert(ext::graph::validate(valid,limits(7)).unwrap()==3);
+    failed(ext::graph::validate(valid,limits(6)),5,-1,-1);
+    targets[1]=-1; failed(ext::graph::validate(valid,limits(7)),8,0,1);
+    failed(ext::graph::neighbors(valid,3,limits(7)),8,0,1); failed(ext::graph_algorithms::bfs(valid,3,limits(7)),8,0,1);
+    targets[1]=3; failed(ext::graph::validate(valid,limits(7)),8,0,1);
+    targets[1]=1; targets[2]=-1; failed(ext::graph::validate(valid,limits(7)),9,0,1);
+    targets[0]=2; targets[1]=1; targets[2]=2; failed(ext::graph::validate(valid,limits(7)),9,0,1);
+    targets[0]=1; targets[1]=2;
+    failed(ext::graph::neighbors(valid,3,limits(7)),2,3,-1);
+    failed(ext::graph::neighbors(valid,-2147483648,limits(7)),2,-2147483648,-1);
+    failed(ext::graph_algorithms::bfs(valid,3,limits(7)),2,3,-1);
+    failed(ext::graph_algorithms::bfs(valid,-2147483648,limits(7)),2,-2147483648,-1);
+    failed(ext::graph_algorithms::bfs(valid,0,limits(25)),5,-1,-1);
+    failed(ext::graph_algorithms::topological_order(valid,limits(60)),5,-1,-1);
+    let guarded:[ext::graph::Edge;4]=[ext::graph::Edge { source:-99,target:-99 },ext::graph::Edge { source:0,target:1 },ext::graph::Edge { source:2,target:3 },ext::graph::Edge { source:-98,target:-98 }];
+    let edges:core::slice::View<ext::graph::Edge> =core::slice::View { values:guarded,start:1,length:2 };
+    failed(ext::graph::from_edges(3,edges,limits(18446744073709551615)),8,3,1);
+    guarded[1]=ext::graph::Edge { source:3,target:-1 }; failed(ext::graph::from_edges(3,edges,limits(18446744073709551615)),7,3,0);
+    guarded[1]=ext::graph::Edge { source:-7,target:3 }; failed(ext::graph::from_edges(3,edges,limits(18446744073709551615)),7,-7,0);
+    guarded[1]=ext::graph::Edge { source:0,target:-9 }; failed(ext::graph::from_edges(3,edges,limits(18446744073709551615)),8,-9,0);
+    guarded[1]=ext::graph::Edge { source:2,target:3 }; guarded[2]=ext::graph::Edge { source:-7,target:0 };
+    failed(ext::graph::from_edges(3,edges,limits(18446744073709551615)),8,3,0);
+    assert(guarded[1].source==2 && guarded[1].target==3 && guarded[2].source==-7 && guarded[2].target==0);
+    guarded[1]=ext::graph::Edge { source:0,target:-9 }; guarded[2]=ext::graph::Edge { source:2,target:3 };
+    let duplicates:[ext::graph::Edge;3]=[ext::graph::Edge { source:0,target:1 };3];
+    let raw_limit:ext::graph::Limits=ext::graph::Limits { max_nodes:2,max_edges:2,max_work:18446744073709551615 };
+    failed(ext::graph::from_edges(2,core::slice::view_range<ext::graph::Edge>(duplicates,0,3).unwrap(),raw_limit),4,-1,-1);
+    assert(duplicates[0].source==0 && duplicates[0].target==1 && duplicates[1].source==0 && duplicates[2].target==1);
+    assert(guarded[0].source==-99 && guarded[0].target==-99 && guarded[1].source==0 && guarded[1].target==-9 && guarded[2].source==2 && guarded[2].target==3 && guarded[3].source==-98);
+    assert(offsets[0]==0 && offsets[1]==2 && offsets[2]==3 && offsets[3]==3 && targets[0]==1 && targets[1]==2 && targets[2]==2);
+}
+
+fn canonical_subviews_keep_actual_integer_strides_and_guards() {
+    let offsets:[i32;6]=[99,0,2,3,3,98]; let targets:[i32;6]=[77,88,1,2,2,99];
+    let offset_words:[i32;6]=[99,0,2,3,3,98]; let target_words:[i32;6]=[77,88,1,2,2,99];
+    let raw_offsets:[i32]=core::mem::typed_slice_from_raw_parts<i32>(core::mem::i32_array_data_ptr(offset_words),6);
+    let raw_targets:[i32]=core::mem::typed_slice_from_raw_parts<i32>(core::mem::i32_array_data_ptr(target_words),6);
+    assert(core::mem::slice_stride(offsets)==4 && core::mem::slice_stride(targets)==4 && core::mem::slice_stride(raw_offsets)==4 && core::mem::slice_stride(raw_targets)==4);
+    let mode:i32=0; while(mode<2) {
+        let selected_offsets:[i32]=offsets; let selected_targets:[i32]=targets; if(mode==1) { selected_offsets=raw_offsets; selected_targets=raw_targets; }
+        let value:ext::graph::View=ext::graph::view(3,ints(selected_offsets,1,4),ints(selected_targets,2,3),limits(7)).unwrap();
+        assert(value.nodes==3 && value.offsets.start==1 && value.targets.start==2 && ext::graph::validate(value,limits(7)).unwrap()==3);
+        let first:core::slice::View<i32> =ext::graph::neighbors(value,0,limits(7)).unwrap(); let last:core::slice::View<i32> =ext::graph::neighbors(value,2,limits(7)).unwrap();
+        assert(first.start==2 && first.length==2 && first.values[first.start]==1 && first.values[first.start+1]==2 && last.start==5 && last.length==0);
+        selected_targets[3]=-1; failed(ext::graph::validate(value,limits(7)),8,0,1); selected_targets[3]=2;
+        selected_offsets[3]=1; failed(ext::graph::validate(value,limits(7)),6,1,-1); selected_offsets[3]=3;
+        assert(selected_offsets[0]==99 && selected_offsets[1]==0 && selected_offsets[2]==2 && selected_offsets[3]==3 && selected_offsets[4]==3 && selected_offsets[5]==98);
+        assert(selected_targets[0]==77 && selected_targets[1]==88 && selected_targets[2]==1 && selected_targets[3]==2 && selected_targets[4]==2 && selected_targets[5]==99); mode+=1;
+    }
+}
+
+fn main() -> i32 {
+    descriptor_limits_and_full_width_work_admission(); offset_scan_precedes_all_targets(); target_order_endpoint_and_requested_node_errors();
+    canonical_subviews_keep_actual_integer_strides_and_guards(); return 0;
+}

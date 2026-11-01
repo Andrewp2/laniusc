@@ -1,0 +1,118 @@
+module fixture::owners;
+import alloc::string;
+import alloc::vec;
+import core::function;
+import core::mem;
+import core::pair;
+import core::result;
+import std::io;
+
+pub struct Owner { id:i32, payload:core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String> }
+pub struct Failure { owner:Owner, stage:i32 }
+pub struct Build { calls:i32 }
+pub struct Retire { calls:i32 }
+pub struct Keep { calls:i32 }
+pub struct Observe { calls:i32, id:i32, data:ptr, text:ptr, answer:bool }
+pub struct Fail { calls:i32 }
+pub struct Unit {}
+pub struct Empty {}
+pub impl Build { pub fn borrow(&self) -> &Build { return self; } }
+pub impl Retire { pub fn borrow(&self) -> &Retire { return self; } }
+pub impl Keep { pub fn borrow(&self) -> &Keep { return self; } }
+pub impl Observe { pub fn borrow(&self) -> &Observe { return self; } }
+pub impl Fail { pub fn borrow(&self) -> &Fail { return self; } }
+pub impl Empty { pub fn borrow(&self) -> &Empty { return self; } }
+
+pub fn mark(value:i32) { let byte:[i32;1] = [value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+pub fn mode() -> i32 {
+    let byte:[i32;1] = [0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(byte),1)==1);
+    let value:i32 = byte[0]&255; assert(value==0 || value==1); return value;
+}
+fn label() -> [u8] { return core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr("owner-value!"),12); }
+pub fn fill(value:&alloc::vec::Vec<u8>,id:i32) {
+    let i:i32 = 0; while(i<8) { value.try_push(((id*17+i)%256) as u8).unwrap(); i+=1; }
+}
+pub fn make(id:i32) -> Owner {
+    let data:alloc::vec::Vec<u8> = alloc::vec::with_capacity<u8>(8).unwrap(); fill(data.borrow(),id);
+    let text:alloc::string::String = alloc::string::from_utf8(label(),12).unwrap();
+    return Owner { id:id,payload:core::pair::Pair { first:data,second:text } };
+}
+pub fn check(value:Owner,id:i32,data:ptr,text:ptr) {
+    assert(value.id==id && value.payload.first.storage==data && value.payload.second.bytes.storage==text);
+    assert(data!=text && value.payload.first.len()==8 && value.payload.first.capacity()==8);
+    assert(value.payload.second.byte_len()==12 && value.payload.second.capacity()==12);
+    let wanted:[u8] = label(); let i:i32 = 0;
+    while(i<8) { assert(value.payload.first.at(i)==((id*17+i)%256) as u8); i+=1; }
+    i=0; while(i<12) { assert(value.payload.second.byte_at(i).unwrap()==wanted[i]); i+=1; }
+}
+pub fn destroy(value:Owner) { value.payload.first.destroy(); value.payload.second.destroy(); }
+pub fn publish(value:Owner) {
+    let used:i32 = 0; while(used<8) {
+        let n:i32 = std::io::write_stdout(value.payload.first.storage+(used as usize),(8-used) as usize);
+        assert(n>0 && n<=8-used); used+=n;
+    }
+    used=0; while(used<12) {
+        let n:i32 = std::io::write_stdout(value.payload.second.bytes.storage+(used as usize),(12-used) as usize);
+        assert(n>0 && n<=12-used); used+=n;
+    }
+}
+
+// The input's sole cleanup authority enters this callback. A normal Err
+// returns that authority untouched; a normal Ok retires it and returns two
+// distinct replacement allocations. Older descriptors remain inactive.
+pub impl core::function::Mapper<Owner,core::result::Result<Owner,Failure>> for Build {
+    pub fn apply(&self,source:Owner) -> core::result::Result<Owner,Failure> {
+        mark(66); self.calls+=1;
+        check(source,source.id,source.payload.first.storage,source.payload.second.bytes.storage);
+        let attempt:core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> = alloc::vec::with_capacity<u8>(8);
+        if(attempt.is_err()) {
+            assert(match(attempt.unwrap_err()) { alloc::vec::Error::AllocationFailed -> true,_ -> false });
+            mark(98); return core::result::Err(Failure { owner:source,stage:1 });
+        }
+        let data:alloc::vec::Vec<u8> = attempt.unwrap(); fill(data.borrow(),source.id+10);
+        let label_attempt:core::result::Result<alloc::string::String,alloc::string::Error> = alloc::string::from_utf8(label(),12);
+        if(label_attempt.is_err()) {
+            assert(match(label_attempt.unwrap_err()) { alloc::string::Error::AllocationFailed -> true,_ -> false });
+            data.destroy(); mark(98); return core::result::Err(Failure { owner:source,stage:2 });
+        }
+        let text:alloc::string::String = label_attempt.unwrap();
+        assert(data.storage!=source.payload.first.storage && text.bytes.storage!=source.payload.second.bytes.storage);
+        let value:Owner = Owner { id:source.id+10,payload:core::pair::Pair { first:data,second:text } };
+        destroy(source); mark(98); return core::result::Ok(value);
+    }
+}
+pub impl core::function::Mapper<Owner,i32> for Retire {
+    pub fn apply(&self,source:Owner) -> i32 {
+        mark(66); self.calls+=1; let id:i32 = source.id;
+        check(source,id,source.payload.first.storage,source.payload.second.bytes.storage);
+        destroy(source); mark(98); return id;
+    }
+}
+pub impl core::function::Mapper<Owner,Owner> for Keep {
+    pub fn apply(&self,value:Owner) -> Owner { self.calls+=1; return value; }
+}
+pub impl core::function::Mapper<Owner,bool> for Observe {
+    pub fn apply(&self,value:Owner) -> bool {
+        self.calls+=1; check(value,self.id,self.data,self.text); return self.answer;
+    }
+}
+// Both skipped callbacks contain real allocation plus an ordinary failure.
+// Entry would be visible even if allocation itself failed; neither is invoked
+// in the pure phases below. The borrowed input is not retired here.
+fn failing() -> core::result::Result<Owner,i32> {
+    let attempt:core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> = alloc::vec::with_capacity<u8>(19);
+    if(attempt.is_ok()) { let temporary:alloc::vec::Vec<u8> = attempt.unwrap(); temporary.destroy(); }
+    return core::result::Err(93);
+}
+pub impl core::function::Mapper<Owner,core::result::Result<Owner,i32>> for Fail {
+    pub fn apply(&self,value:Owner) -> core::result::Result<Owner,i32> {
+        mark(66); self.calls+=1; let result:core::result::Result<Owner,i32> = failing(); mark(98); return result;
+    }
+}
+pub impl core::function::Producer<core::result::Result<Owner,i32>> for Fail {
+    pub fn produce(&self) -> core::result::Result<Owner,i32> {
+        mark(66); self.calls+=1; let result:core::result::Result<Owner,i32> = failing(); mark(98); return result;
+    }
+}
+pub impl core::function::Mapper<Unit,i32> for Empty { pub fn apply(&self,value:Unit) -> i32 { return 17; } }
+pub impl core::function::Producer<i32> for Empty { pub fn produce(&self) -> i32 { return 42; } }

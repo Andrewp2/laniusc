@@ -1,0 +1,88 @@
+module app::main;
+import alloc::tree_map;
+import alloc::tree_set;
+import alloc::string;
+import alloc::vec;
+import core::option;
+import core::pair;
+import core::result;
+import core::text;
+import fixture::support;
+
+fn main() -> i32 {
+    fixture::support::mark(65);
+    let stored:alloc::string::String = fixture::support::string("bravo",5);
+    let value:core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String> = fixture::support::value();
+    let set_key:alloc::string::String = fixture::support::string("bravo",5);
+    let query_owner:alloc::vec::Vec<u8> = fixture::support::query();
+    let map:alloc::tree_map::TreeMap<alloc::string::String,core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>> = alloc::tree_map::new();
+    map.try_reserve(4).unwrap();
+    let set:alloc::tree_set::TreeSet<alloc::string::String> = alloc::tree_set::new(); set.try_reserve(4).unwrap();
+    assert(map.try_insert(stored,value).unwrap().is_none()); assert(set.try_insert(set_key).unwrap().is_none());
+    let map_storage:ptr = map.storage; let set_storage:ptr = set.state.storage;
+    let key_pointer:ptr = stored.bytes.storage; let set_pointer:ptr = set_key.bytes.storage;
+    let data_pointer:ptr = value.first.storage; let label_pointer:ptr = value.second.bytes.storage;
+    let query_pointer:ptr = query_owner.storage;
+    let policy:alloc::string::TextKey = alloc::string::TextKey {};
+    let update:fixture::support::Grow = fixture::support::Grow { calls:0 };
+    let query:core::text::Text = core::text::from_utf8_range(query_owner.as_slice(),2,5).unwrap();
+    let missing:core::text::Text = fixture::support::text("cello",5);
+    fixture::support::mark(83);
+    fixture::support::mark(80);
+    assert(key_pointer!=query_pointer && set_pointer!=query_pointer && key_pointer!=set_pointer);
+    assert(map.contains_key_by<core::text::Text,alloc::string::TextKey>(query,policy.borrow()));
+    assert(!map.contains_key_by<core::text::Text,alloc::string::TextKey>(missing,policy.borrow()));
+    let initial = map.get_entry_by<core::text::Text,alloc::string::TextKey>(query,policy.borrow()).unwrap();
+    fixture::support::check_string(initial.key,"bravo",5,key_pointer);
+    fixture::support::check_value(initial.value,false,data_pointer,label_pointer);
+    fixture::support::check_value(map.get_by<core::text::Text,alloc::string::TextKey>(query,policy.borrow()).unwrap(),false,data_pointer,label_pointer);
+    assert(map.get_by<core::text::Text,alloc::string::TextKey>(missing,policy.borrow()).is_none());
+    assert(map.remove_by<core::text::Text,alloc::string::TextKey>(missing,policy.borrow()).is_none());
+    let absent:core::option::Option<core::result::Result<i32,i32>> = map.update_value_by<core::text::Text,alloc::string::TextKey,fixture::support::Grow,core::result::Result<i32,i32>>(missing,policy.borrow(),update.borrow());
+    assert(absent.is_none() && update.calls==0);
+    assert(set.contains_by<core::text::Text,alloc::string::TextKey>(query,policy.borrow()));
+    assert(!set.contains_by<core::text::Text,alloc::string::TextKey>(missing,policy.borrow()));
+    fixture::support::check_string(set.get_by<core::text::Text,alloc::string::TextKey>(query,policy.borrow()).unwrap(),"bravo",5,set_pointer);
+    assert(set.remove_by<core::text::Text,alloc::string::TextKey>(missing,policy.borrow()).is_none());
+    fixture::support::check_query(query_owner.borrow(),query_pointer);
+    assert(map.storage==map_storage && set.state.storage==set_storage && map.len()==1 && set.len()==1);
+    assert(map.capacity()==4 && set.capacity()==4); fixture::support::mark(112);
+
+    // Getter aliases above are inactive before this exclusive value update.
+    fixture::support::mark(67);
+    let changed:core::option::Option<core::result::Result<i32,i32>> = map.update_value_by<core::text::Text,alloc::string::TextKey,fixture::support::Grow,core::result::Result<i32,i32>>(query,policy.borrow(),update.borrow());
+    fixture::support::mark(70); assert(changed.unwrap().unwrap_err()==71 && update.calls==1);
+    fixture::support::mark(80);
+    let current = map.get_entry_by<core::text::Text,alloc::string::TextKey>(query,policy.borrow()).unwrap();
+    let grown_data:ptr = current.value.first.storage; let grown_label:ptr = current.value.second.bytes.storage;
+    assert(grown_data!=data_pointer && grown_label!=label_pointer);
+    fixture::support::check_string(current.key,"bravo",5,key_pointer);
+    fixture::support::check_value(current.value,true,grown_data,grown_label);
+    fixture::support::check_query(query_owner.borrow(),query_pointer);
+    assert(map.storage==map_storage && set.state.storage==set_storage && map.len()==1 && set.len()==1);
+    assert(map.capacity()==4 && set.capacity()==4); fixture::support::mark(112);
+
+    // End current and all other borrowed results before removing actual owners.
+    fixture::support::mark(80);
+    let removed = map.remove_by<core::text::Text,alloc::string::TextKey>(query,policy.borrow()).unwrap();
+    let removed_set:alloc::string::String = set.remove_by<core::text::Text,alloc::string::TextKey>(query,policy.borrow()).unwrap();
+    fixture::support::check_string(removed.key,"bravo",5,key_pointer);
+    fixture::support::check_string(removed_set,"bravo",5,set_pointer);
+    fixture::support::check_value(removed.value,true,grown_data,grown_label);
+    assert(map.len()==0 && set.len()==0 && map.storage==map_storage && set.state.storage==set_storage);
+    assert(map.capacity()==4 && set.capacity()==4); fixture::support::check_query(query_owner.borrow(),query_pointer);
+    fixture::support::mark(112);
+    // No query/policy operand escapes the call. Retire query storage before
+    // either collection, then observe only the actual removed representatives.
+    fixture::support::mark(82); query_owner.destroy(); map.destroy(); set.destroy();
+    fixture::support::mark(80);
+    fixture::support::check_string(removed.key,"bravo",5,key_pointer);
+    fixture::support::check_value(removed.value,true,grown_data,grown_label);
+    fixture::support::check_string(removed_set,"bravo",5,set_pointer); fixture::support::mark(112);
+    fixture::support::publish(removed.key.bytes.storage,5);
+    fixture::support::publish(removed.value.first.storage,4);
+    fixture::support::publish(removed.value.second.bytes.storage,6);
+    fixture::support::publish(removed_set.bytes.storage,5);
+    removed.key.destroy(); removed.value.first.destroy(); removed.value.second.destroy(); removed_set.destroy();
+    fixture::support::mark(68); return 0;
+}

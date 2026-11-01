@@ -40,10 +40,12 @@ unchanged until their entries are removed or the map is destroyed.
 | `equals`, `compare` | Exact byte equality and lexicographic ordering (-1, 0, 1) |
 | `starts_with`, `ends_with` | Exact prefix/suffix matches; empty patterns match |
 | `find`, `rfind` | Optional byte offsets; empty patterns match at 0 and byte_len respectively |
+| `match_indices(needle)` | Forward nonoverlapping `Pair<i32, Text>` matches; [contract and accepted evidence](stdlib-text-replacement.md) |
 | `trim_ascii()` | Borrowed subview trimming HT, LF, VT, FF, CR and space |
 | `scalars()` | Iterator of `Scalar { byte_index, value: u32 }`, relative to this view |
 | `split(separator)` | Iterator of borrowed fields, preserving empty fields |
 | `split_ascii_whitespace()` | Iterator of nonempty borrowed words, separated by HT/LF/VT/FF/CR/space |
+| `lines()` | Borrowed LF/CRLF partition, excluding terminators and a phantom final line; shared forward/backward traversal |
 | `parse_u8/u16/u32/u64/usize/i8/i16/i32/i64/isize()` | Checked decimal parsing with errors relative to this view |
 
 `Scalars.next()`, `Split.next()` and `SplitAsciiWhitespace.next()` return Option and remain exhausted after
@@ -51,8 +53,16 @@ returning None. Copies of an iterator have independent cursor positions and
 borrow the same storage. A nonempty split separator consumes nonoverlapping
 matches. An empty separator yields a leading empty field, each Unicode scalar,
 then a trailing empty field; empty text therefore produces two empty fields.
-The iterators are concrete types; a shared adapter/consumer protocol is still
-part of the roadmap.
+These concrete cursors already implement the shared `core::iter::Iterator`
+protocol, with `borrow()` for generic adapters and consumers. See
+[scalar and byte integration](stdlib-collection-iterators.md) and
+[split integration](stdlib-text-split-iterators.md) for their existing evidence.
+The new [bidirectional text increment](stdlib-bidirectional-text.md) adds Lines
+and `DoubleEndedIterator` for Lines, Scalars and SplitAsciiWhitespace. It uses
+one common remaining sequence and original Text-relative scalar indices.
+All seven new library gates and the four line-summary groups/102 native cases
+pass on native Linux x86_64. Generic reverse callers require both iterator
+bounds. None of these three cursor families promises ExactSizeIterator.
 
 NUL, BOM and noncharacters are retained. There is no implicit normalization,
 locale ordering, case folding or Unicode whitespace trimming. The six-character
@@ -70,6 +80,9 @@ not revalidate already valid text.
 ## Owned and extended-library integration
 
 `alloc::string::from_text(view)` makes an independent owned copy.
+The [literal replacement increment](stdlib-text-replacement.md) adds bounded
+whole-result `replace`/`replacen` using the same match cursor. All five library
+groups and four literal-rewrite groups/94 cases pass on native Linux x86_64.
 The [composition APIs](stdlib-text-composition.md) join or repeat Text views
 into independent Strings, or append them atomically to an existing String.
 `String.try_append_text(view)` accepts a subview of the destination itself,
@@ -103,10 +116,13 @@ host bindings of its own.
   traces check complete cleanup and fixtures check unchanged source/owner data.
 - Physical overclaims terminating at the native slice bound with exit 101.
 
-All four groups passed across focused runs on 2026-10-22. The final contract
-fixture also checks independent iterator cursor copies and empty owned copies. The existing String (three
-groups), decimal (two), CSV (three) and report (two) suites also passed after
-integration, including their allocation and I/O fault cases.
+All four groups passed across focused runs on 2026-10-22. This historical
+receipt predates the bidirectional cursor state and Lines; current regression
+receipts belong to the [bidirectional guide](stdlib-bidirectional-text.md).
+The final contract fixture also checks independent iterator cursor copies and
+empty owned copies. The existing String (three groups), decimal (two), CSV
+(three) and report (two) suites also passed after integration, including their
+allocation and I/O fault cases.
 
 ```sh
 timeout --kill-after=2s 100s env \
@@ -117,5 +133,9 @@ timeout --kill-after=2s 100s env \
 ```
 
 Native `str` conversion without an explicit count still needs compiler length
-access. Unicode normalization, grapheme operations, general formatting and the
-shared iteration protocol remain tracked in the full library roadmap.
+access. Shared iteration is integrated. Unicode normalization, grapheme
+operations and formatting have separate guides and finite evidence in the
+[library roadmap](library-roadmap.md). Generic slice segmentation has its own
+[increment and evidence](stdlib-slice-segmentation.md), outside these Text
+receipts. Wider text policies, broader targets and enforced lifetimes remain
+separate work.

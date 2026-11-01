@@ -8,7 +8,13 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-**No contract guide registered.** This page makes no runtime support claim.
+Plain HTTP facade over owned URL planning, the shared TCP selector and canonical HTTP Prepared/Exchange/Response. Validates and copies the request once before lookup, adopts the exact selected socket without reconnecting, and never retries after TCP selection. No OpenSSL source/link dependency. Response ownership/destruction and request/URL backing lifetimes are explicit. Two direct numeric HTTP cases and one controlled four-address DNS fallback case pass with exact Host/target/binary wire checks and live pre-exit source/descriptor cleanup on Linux x86_64/glibc. Connector and real-fetch receipts remain separate; registered Rust runtime tests have no pass claim.
+
+## Contract and evidence guides
+
+- [extended-url-client](../../extended-url-client.md)
+- [extended-fetch-url](../../extended-fetch-url.md)
+- [library-url-client-plan](../../library-url-client-plan.md)
 
 Declaration counts: enum: 2; field: 13; function: 2; impl: 1; method: 5; struct: 4; variant: 10.
 
@@ -17,13 +23,13 @@ Declaration counts: enum: 2; field: 13; function: 2; impl: 1; method: 5; struct:
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
 - [core::io](../core/io.md) · [source](../../../extended/ext/url_client.lani#L4)
-- [core::option::Option](../core/option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L12) · [source](../../../extended/ext/url_client.lani#L5)
-- [core::option::Some](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L13) · [source](../../../extended/ext/url_client.lani#L6)
-- [core::option::None](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../extended/ext/url_client.lani#L7)
-- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L12) · [source](../../../extended/ext/url_client.lani#L8)
-- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L13) · [source](../../../extended/ext/url_client.lani#L9)
-- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L14) · [source](../../../extended/ext/url_client.lani#L10)
-- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L22) · [source](../../../extended/ext/url_client.lani#L11)
+- [core::option::Option](../core/option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../extended/ext/url_client.lani#L5)
+- [core::option::Some](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L15) · [source](../../../extended/ext/url_client.lani#L6)
+- [core::option::None](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L16) · [source](../../../extended/ext/url_client.lani#L7)
+- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/url_client.lani#L8)
+- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/url_client.lani#L9)
+- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/url_client.lani#L10)
+- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L24) · [source](../../../extended/ext/url_client.lani#L11)
 - [core::time](../core/time.md) · [source](../../../extended/ext/url_client.lani#L12)
 - [ext::http](http.md) · [source](../../../extended/ext/url_client.lani#L13)
 - [ext::http_client](http_client.md) · [source](../../../extended/ext/url_client.lani#L14)
@@ -276,6 +282,8 @@ active: bool
 pub fn default_options() -> Options
 ```
 
+Composes connector defaults and canonical HTTP defaults with explicit Trailing::Reject.
+
 ### function: exchange_until
 
 [Source line 56](../../../extended/ext/url_client.lani#L56)
@@ -284,6 +292,8 @@ pub fn default_options() -> Options
 pub fn exchange_until(url: &ext::http_url::Url, request: Request, options: Options,
     deadline: core::time::Deadline) -> Result<Response,Failure>
 ```
+
+Accepts Http only, checks the live URL/connector configuration and canonical request before DNS/socket effects, then transfers one selected connection into the shared driver. Returns one manually destroyed Response or typed stage/transport/cleanup diagnostics; it cannot replay onto spare endpoints.
 
 ## Implementation blocks and public methods
 

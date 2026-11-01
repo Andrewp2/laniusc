@@ -1,0 +1,7 @@
+module app::main;
+import core::option;
+fn main() -> i32 {
+    let value:core::option::Option<i32> =core::option::Some(17);
+    let rejected:core::option::Option<i32> =core::option::flatten<i32>(value); // rejected_outcome_shape
+    return 0;
+}

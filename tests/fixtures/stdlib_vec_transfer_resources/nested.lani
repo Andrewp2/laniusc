@@ -1,0 +1,31 @@
+module app::main;
+import alloc::vec;
+import fixture::support;
+fn main() -> i32 {
+    let empty:ptr = 0; let pointers:[ptr;34] = [empty;34]; fixture::support::mark(65);
+    let source=fixture::support::owner(0,17,23,pointers);
+    let target:alloc::vec::Vec<fixture::support::Entry> = alloc::vec::with_capacity<fixture::support::Entry>(33).unwrap();
+    let spare:alloc::vec::Vec<fixture::support::Entry> = alloc::vec::with_capacity<fixture::support::Entry>(5).unwrap(); fixture::support::mark(83);
+    fixture::support::mark(80); let old=source.storage; let spare_old=spare.storage; let moved=source.take(); let vacant=spare.take();
+    assert(source.storage==0 && source.len()==0 && source.capacity()==0 && moved.storage==old && moved.capacity()==23 && moved.len()==17);
+    assert(spare.storage==0 && spare.capacity()==0 && vacant.storage==spare_old && vacant.len()==0 && vacant.capacity()==5);
+    fixture::support::check(moved.borrow(),0,17,0,pointers); fixture::support::mark(112);
+    fixture::support::mark(67); let middle=moved.try_extract_range(5,12).unwrap(); fixture::support::mark(70);
+    fixture::support::mark(80); assert(moved.len()==10 && moved.storage==old && moved.capacity()==23 && middle.len()==7);
+    fixture::support::check(moved.borrow(),0,5,7,pointers); fixture::support::check(middle.borrow(),5,7,0,pointers); fixture::support::mark(112);
+    fixture::support::mark(67); let tail=moved.try_split_off(5).unwrap(); fixture::support::mark(70);
+    fixture::support::mark(80); assert(moved.len()==5 && moved.storage==old && moved.capacity()==23 && tail.len()==5);
+    fixture::support::check(moved.borrow(),0,5,0,pointers); fixture::support::check(tail.borrow(),12,5,0,pointers);
+    let middle_ptr=middle.storage; let middle_cap=middle.capacity(); let tail_ptr=tail.storage; let tail_cap=tail.capacity(); let target_ptr=target.storage;
+    assert(target.try_append(moved.borrow()).unwrap()==5); assert(target.try_append(middle.borrow()).unwrap()==12); assert(target.try_append(tail.borrow()).unwrap()==17);
+    assert(moved.len()==0 && moved.storage==old && moved.capacity()==23);
+    assert(middle.len()==0 && middle.storage==middle_ptr && middle.capacity()==middle_cap && tail.len()==0 && tail.storage==tail_ptr && tail.capacity()==tail_cap);
+    // Reuse the actual emptied donor and destination without growing either.
+    assert(moved.try_append(target.borrow()).unwrap()==17 && target.len()==0); assert(target.try_append(moved.borrow()).unwrap()==17);
+    assert(target.storage==target_ptr && target.capacity()==33 && moved.storage==old && moved.capacity()==23);
+    fixture::support::check(target.borrow(),0,17,0,pointers); let result=target.take();
+    assert(target.storage==0 && target.len()==0 && target.capacity()==0 && result.storage==target_ptr && result.capacity()==33); fixture::support::mark(112);
+    fixture::support::mark(82); source.destroy(); target.destroy(); spare.destroy(); moved.destroy(); middle.destroy(); tail.destroy(); vacant.destroy();
+    fixture::support::mark(80); fixture::support::check(result.borrow(),0,17,0,pointers); fixture::support::mark(112);
+    fixture::support::header(result.capacity(),middle_cap,tail_cap,17); fixture::support::publish_entries(result.borrow()); fixture::support::destroy_entries(result.borrow()); fixture::support::mark(69); fixture::support::mark(68); return 0;
+}

@@ -1,0 +1,124 @@
+module app::main;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::inflate;
+fn view(values:[u8],start:i32,length:i32) -> core::slice::View<u8> { return core::slice::View { values:values,start:start,length:length }; }
+fn state(value:ext::inflate::Status) -> i32 { return match(value) { ext::inflate::Status::NeedInput -> 1,ext::inflate::Status::NeedOutput -> 2,ext::inflate::Status::Done -> 3 }; }
+fn code(value:ext::inflate::Error) -> i32 { return match(value) { ext::inflate::Error::Bounds -> 1,ext::inflate::Error::UnexpectedEof -> 2,ext::inflate::Error::InvalidBlockType -> 3,ext::inflate::Error::InvalidStoredLength -> 4,ext::inflate::Error::InvalidCodeLengths -> 5,ext::inflate::Error::InvalidSymbol -> 6,ext::inflate::Error::InvalidDistance -> 7,ext::inflate::Error::OutputTooSmall -> 8 }; }
+fn failed(result:core::result::Result<ext::inflate::Step,ext::inflate::Failure>,error:i32,read:i32,written:i32) {
+    assert(result.is_err()); let failure:ext::inflate::Failure=result.unwrap_err(); assert(code(failure.error)==error && failure.read==read && failure.written==written);
+}
+fn exact(result:core::result::Result<ext::inflate::Step,ext::inflate::Failure>,read:i32,written:i32,status:i32) {
+    assert(result.is_ok()); let step:ext::inflate::Step=result.unwrap(); assert(step.read==read && step.written==written && state(step.status)==status);
+}
+// Recycle every input/output chunk between calls. Both byte storage directions
+// alternate across input/output/history, with nonzero logical starts and guards.
+fn walk(encoded:[u8],length:i32,expected:[u8],count:i32) {
+    let native_input:[u8;8]=[166;8]; let native_output:[u8;8]=[199;8]; let native_history:[u8;260]=[77;260];
+    let input_words:[i32;2]=[0;2]; let output_words:[i32;2]=[0;2]; let history_words:[i32;65]=[0;65];
+    let packed_input:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(input_words),8);
+    let packed_output:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(output_words),8);
+    let packed_history:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(history_words),260);
+    assert(core::mem::slice_stride(native_input)<0 && core::mem::slice_stride(native_output)<0 && core::mem::slice_stride(native_history)<0);
+    assert(core::mem::slice_stride(packed_input)==1 && core::mem::slice_stride(packed_output)==1 && core::mem::slice_stride(packed_history)==1);
+    let mode:i32=0; while(mode<2) {
+        let input:[u8]=native_input; let output:[u8]=packed_output; let history:[u8]=native_history;
+        if(mode==1) { input=packed_input; output=native_output; history=packed_history; }
+        let scratch:[i32;711]=[12345;711]; let workspace:core::slice::View<i32> =core::slice::View { values:scratch,start:2,length:707 };
+        let i:i32=0; while(i<260) { history[i]=77; i+=1; }
+        let decoder:ext::inflate::Decoder=ext::inflate::decoder(view(history,2,256),workspace,256).unwrap();
+        let position:i32=0; let produced:i32=0; let calls:i32=0; let done:bool=false;
+        while(!done) {
+            assert(calls<10000); i=0; while(i<8) { input[i]=166; output[i]=199; i+=1; }
+            let offered:i32=0; if(position<length && (calls%5!=0 || position==length-1)) { offered=1; input[2]=encoded[position]; }
+            let capacity:i32=calls%4; let last:bool=position+offered==length;
+            let result:core::result::Result<ext::inflate::Step,ext::inflate::Failure> =decoder.step(view(input,2,offered),view(output,2,capacity),last);
+            assert(result.is_ok()); let step:ext::inflate::Step=result.unwrap(); assert(step.read>=0 && step.read<=offered && step.written>=0 && step.written<=capacity);
+            i=0; while(i<8) {
+                let input_expected:u8=166; if(i==2 && offered==1) { input_expected=encoded[position]; } assert(input[i]==input_expected);
+                if(i>=2 && i<2+step.written) { assert(produced+i-2<count && output[i]==expected[produced+i-2]); } else { assert(output[i]==199); } i+=1;
+            }
+            position+=step.read; produced+=step.written; let status:i32=state(step.status);
+            if(status==1) { assert(!last && step.read==offered && !decoder.is_done()); }
+            if(status==2) { assert(step.written==capacity && !decoder.is_done()); }
+            if(status==3) { assert(position==length && produced==count && decoder.is_done()); done=true; }
+            assert(!decoder.is_failed());
+            assert(history[0]==77 && history[1]==77 && history[258]==77 && history[259]==77);
+            assert(scratch[0]==12345 && scratch[1]==12345 && scratch[709]==12345 && scratch[710]==12345);
+            // These bytes no longer belong to the decoder after this call.
+            i=0; while(i<8) { input[i]=239; output[i]=238; i+=1; } calls+=1;
+        }
+        exact(decoder.step(view(input,0,8),view(output,1,3),false),0,0,3);
+        i=0; while(i<8) { assert(input[i]==239 && output[i]==238); i+=1; } mode+=1;
+    }
+}
+fn malformed(encoded:[u8],length:i32,expected_error:i32,read:i32,expected:[u8],written:i32) {
+    let history:[u8;256]=[77;256]; let scratch:[i32;707]=[12345;707]; let output:[u8;12]=[199;12];
+    let workspace:core::slice::View<i32> =core::slice::View { values:scratch,start:0,length:707 };
+    let decoder:ext::inflate::Decoder=ext::inflate::decoder(view(history,0,256),workspace,256).unwrap();
+    failed(decoder.step(view(encoded,0,length),view(output,2,8),true),expected_error,read,written);
+    assert(decoder.is_failed() && !decoder.is_done()); let i:i32=0; while(i<12) { if(i>=2 && i<2+written) { assert(output[i]==expected[i-2]); } else { assert(output[i]==199); } i+=1; }
+    let valid:[u8;2]=[3,0]; failed(decoder.step(view(valid,0,2),view(output,2,8),true),expected_error,0,0);
+    assert(decoder.reset(256).unwrap()); exact(decoder.step(view(valid,0,2),view(output,0,0),true),2,0,3);
+}
+fn stored_precedence_and_partial_hlit() {
+    let history:[u8;256]=[77;256]; let scratch:[i32;707]=[12345;707]; let output:[u8;8]=[199;8];
+    let workspace:core::slice::View<i32> =core::slice::View { values:scratch,start:0,length:707 };
+    let decoder:ext::inflate::Decoder=ext::inflate::decoder(view(history,0,256),workspace,256).unwrap();
+    let stored:[u8;8]=[1,3,0,252,255,65,0,255]; let prefix:i32=0;
+    while(prefix<8) {
+        assert(decoder.reset(256).unwrap()); let written:i32=prefix-5; if(written<0) { written=0; }
+        let i:i32=0; while(i<8) { output[i]=199; i+=1; }
+        failed(decoder.step(view(stored,0,prefix),view(output,2,3),true),2,prefix,written);
+        i=0; while(i<8) { if(i>=2 && i<2+written) { assert(output[i]==stored[5+i-2]); } else { assert(output[i]==199); } i+=1; }
+        prefix+=1;
+    }
+    assert(decoder.reset(256).unwrap()); exact(decoder.step(view(stored,0,5),view(output,0,0),false),5,0,1);
+    failed(decoder.step(view(stored,5,0),view(output,0,0),true),2,0,0);
+    assert(decoder.reset(256).unwrap()); exact(decoder.step(view(stored,0,6),view(output,0,0),true),5,0,2);
+    // Drain the pending stored byte before noticing final exhaustion.
+    failed(decoder.step(view(stored,5,1),view(output,2,1),true),2,1,1); assert(output[2]==65);
+    // HLIT=31 is invalid, but all HLIT/HDIST/HCLEN bits must arrive first.
+    let invalid_hlit:[u8;3]=[253,0,0]; assert(decoder.reset(256).unwrap());
+    exact(decoder.step(view(invalid_hlit,0,2),view(output,0,0),false),2,0,1);
+    failed(decoder.step(view(invalid_hlit,2,0),view(output,0,0),true),2,0,0);
+    assert(decoder.reset(256).unwrap()); exact(decoder.step(view(invalid_hlit,0,2),view(output,0,0),false),2,0,1);
+    failed(decoder.step(view(invalid_hlit,2,1),view(output,0,0),true),5,1,0);
+}
+
+// Literal RFC 1951 streams; valid outputs independently checked by system zlib.
+fn corpus() {
+    let empty_fixed:[u8;2]=[3,0];
+    let empty_fixed_out:[u8;1]=[0];
+    walk(empty_fixed,2,empty_fixed_out,0);
+    let overlap_one:[u8;4]=[115,28,5,0];
+    let one:[u8;259]=[65;259];
+    walk(overlap_one,4,one,259);
+    let overlap_two:[u8;6]=[115,116,26,241,16,0];
+    let overlap_two_out:[u8;259]=[0;259]; let i:i32=0; while(i<259) { overlap_two_out[i]=65+(i%2) as u8; i+=1; }
+    walk(overlap_two,6,overlap_two_out,259);
+    let cross_block:[u8;11]=[0,3,0,252,255,0,255,65,27,69,0];
+    let cross_block_out:[u8;261]=[0;261]; let i:i32=0; while(i<261) { if(i%3==0) { cross_block_out[i]=0; } else { if(i%3==1) { cross_block_out[i]=255; } else { cross_block_out[i]=65; } } i+=1; }
+    walk(cross_block,11,cross_block_out,261);
+    let dynamic_repeats:[u8;15]=[5,192,33,9,0,0,0,0,160,208,79,249,255,148,32];
+    let dynamic_repeats_out:[u8;3]=[65,65,65];
+    walk(dynamic_repeats,15,dynamic_repeats_out,3);
+    let dynamic_repeat16_crossing:[u8;13]=[13,194,5,9,0,0,0,0,160,255,175,37,0];
+    let dynamic_repeat16_crossing_out:[u8;1]=[0];
+    walk(dynamic_repeat16_crossing,13,dynamic_repeat16_crossing_out,0);
+    let deep_codes:[u8;156]=[5,224,1,144,36,73,146,36,73,34,177,168,121,100,245,236,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,60,104,247,190,223,223,191,255,254,247,127,255,239,255,251,255,253,255,1];
+    let deep_codes_out:[u8;15]=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,65];
+    walk(deep_codes,156,deep_codes_out,15);
+}
+fn malformed_corpus() {
+    let none:[u8;1]=[0]; let a:[u8;1]=[65];
+    let block:[u8;1]=[7]; malformed(block,1,3,1,none,0);
+    let stored:[u8;5]=[1,1,0,0,0]; malformed(stored,5,4,5,none,0);
+    let reserved:[u8;2]=[27,3]; malformed(reserved,2,6,2,none,0);
+    let before_history:[u8;2]=[3,2]; malformed(before_history,2,7,2,none,0);
+    let reserved_distance:[u8;3]=[115,4,62]; malformed(reserved_distance,3,6,3,a,1);
+    let empty_alphabet:[u8;4]=[5,0,0,0]; malformed(empty_alphabet,4,5,4,none,0);
+    let repeat_without_previous:[u8;10]=[5,192,5,9,0,0,0,0,160,0]; malformed(repeat_without_previous,10,5,10,none,0);
+}
+fn main() -> i32 { corpus(); malformed_corpus(); stored_precedence_and_partial_hlit(); return 0; }

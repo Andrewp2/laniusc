@@ -1,0 +1,191 @@
+// Library-facing named Unix-stream probe. Input is eight u64 header words
+// (mode, namespace, layout, name length, mutation, reserved...) then raw name.
+// Modes 0/1 exchange bytes as server/client; 2/3 report bind/connect results.
+// A successful bind mode also probes name reuse after the explicit close.
+module app::main;
+
+import core::io;
+import core::mem;
+import core::path;
+import core::result;
+import core::slice;
+import core::time;
+import std::clock;
+import std::io;
+import std::socket;
+
+fn read_exact(pointer: ptr, count: i32) {
+    let done: i32 = 0;
+    while (done < count) {
+        let got: i32 = std::io::read_stdin(pointer + (done as usize), (count - done) as usize);
+        assert(got > 0); done += got;
+    }
+}
+
+fn write_all(pointer: ptr, count: i32) {
+    let done: i32 = 0;
+    while (done < count) {
+        let got: i32 = std::io::write_stdout(pointer + (done as usize), (count - done) as usize);
+        assert(got > 0); done += got;
+    }
+}
+
+fn get64(bytes: [u8], offset: i32) -> u64 {
+    let value: u64 = 0; let index: i32 = 0;
+    while (index < 8) { value |= (bytes[offset + index] as u64) << (index * 8); index += 1; }
+    return value;
+}
+
+fn deadline() -> core::time::Deadline {
+    let now: core::time::Instant = std::clock::monotonic_now().unwrap();
+    let end: core::time::Instant = now.checked_add(core::time::Duration { seconds: 5, nanos: 0 }).unwrap();
+    return core::time::deadline_at(end);
+}
+
+fn value(index: i32, response: bool) -> u8 {
+    let selected: i32 = index;
+    if (response) { selected = 15 - index; }
+    let result: u8 = ((selected * 37 + 11) & 255) as u8;
+    if (response) { result = result ^ 90; }
+    return result;
+}
+
+fn send_payload(stream: &std::socket::UnixStream, response: bool, until: core::time::Deadline) {
+    let words: [i32; 5] = [0; 5];
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words), 20);
+    let index: i32 = 0; while (index < 20) { bytes[index] = 197; index += 1; }
+    index = 0; while (index < 16) { bytes[2 + index] = value(index, response); index += 1; }
+    let done: i32 = 0; let attempts: i32 = 0;
+    while (done < 16) {
+        assert(attempts < 32); attempts += 1;
+        let part: core::slice::View<u8> = core::slice::view_range<u8>(bytes, 2 + done, 16 - done).unwrap();
+        let sent: i32 = stream.send_until(part, until).unwrap();
+        assert(sent > 0 && sent <= 16 - done); done += sent;
+    }
+    assert(bytes[0] == 197 && bytes[1] == 197 && bytes[18] == 197 && bytes[19] == 197);
+    stream.shutdown(std::socket::Shutdown::Write).unwrap();
+}
+
+fn receive_payload(stream: &std::socket::UnixStream, response: bool, until: core::time::Deadline) {
+    let bytes: [u8; 20] = [197; 20];
+    let done: i32 = 0; let attempts: i32 = 0;
+    while (done < 16) {
+        assert(attempts < 32); attempts += 1;
+        let part: core::slice::View<u8> = core::slice::view_range<u8>(bytes, 2 + done, 16 - done).unwrap();
+        let got: i32 = stream.receive_until(part, until).unwrap();
+        assert(got > 0 && got <= 16 - done); done += got;
+    }
+    let eof: core::slice::View<u8> = core::slice::view_range<u8>(bytes, 18, 1).unwrap();
+    assert(stream.receive_until(eof, until).unwrap() == 0);
+    let index: i32 = 0;
+    while (index < 16) { assert(bytes[2 + index] == value(index, response)); index += 1; }
+    assert(bytes[0] == 197 && bytes[1] == 197 && bytes[18] == 197 && bytes[19] == 197);
+}
+
+fn error_code(error: core::io::Error) -> u64 {
+    return match (error) {
+        core::io::Error::InvalidInput -> 1, core::io::Error::UnexpectedEof -> 2,
+        core::io::Error::WriteZero -> 3, core::io::Error::InvalidCount -> 4,
+        core::io::Error::CountOverflow -> 5, core::io::Error::LimitExceeded -> 6,
+        core::io::Error::Interrupted -> 7, core::io::Error::WouldBlock -> 8,
+        core::io::Error::AllocationFailed -> 9, core::io::Error::Host(code) -> 10,
+    };
+}
+
+fn report(result: core::result::Result<i32, core::io::Error>) {
+    let tag: u64 = 0; let code: u64 = 0; let host: i32 = 0;
+    if (result.is_err()) {
+        tag = 1; let cause: core::io::Error = result.unwrap_err(); code = error_code(cause);
+        host = match (cause) { core::io::Error::Host(value) -> value, _ -> 0 };
+    } else { assert(result.unwrap() == 0); }
+    let values: [u64; 4] = [tag, code, (host as i64) as u64, 1];
+    let words: [i32; 8] = [0; 8]; let pointer: ptr = core::mem::i32_array_data_ptr(words);
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(pointer, 32);
+    let index: i32 = 0;
+    while (index < 4) {
+        let part: i32 = 0;
+        while (part < 8) { bytes[index * 8 + part] = ((values[index] >> (part * 8)) & 255) as u8; part += 1; }
+        index += 1;
+    }
+    write_all(pointer, 32);
+}
+
+fn check_name(values: [u8], input: [u8], count: i32, mutation: i32) {
+    let changed: i32 = -1;
+    if (mutation == 1) { changed = 0; }
+    if (mutation == 2) { changed = count / 2; }
+    if (mutation == 3) { changed = count - 1; }
+    let index: i32 = 0;
+    while (index < 112) {
+        let expected: u8 = 197;
+        if (index >= 2 && index < 2 + count) {
+            expected = input[64 + index - 2];
+            if (index - 2 == changed) { expected = 0; }
+        }
+        assert(values[index] == expected); index += 1;
+    }
+}
+
+fn main() -> i32 {
+    let input_words: [i32; 44] = [0; 44]; let pointer: ptr = core::mem::i32_array_data_ptr(input_words);
+    let input: [u8] = core::mem::typed_slice_from_raw_parts<u8>(pointer, 176);
+    read_exact(pointer, 64);
+    let mode: u64 = get64(input, 0); let namespace: u64 = get64(input, 8);
+    let layout: u64 = get64(input, 16); let count: i32 = get64(input, 24) as i32;
+    let mutation: i32 = get64(input, 32) as i32;
+    assert(mode <= 3 && namespace <= 1 && layout <= 1 && count >= 0 && count <= 108);
+    assert(mutation >= 0 && mutation <= 3 && (mutation == 0 || (namespace == 0 && count > 0)));
+    read_exact(pointer + 64, count);
+    let native: [u8; 112] = [197; 112]; let packed_words: [i32; 28] = [0; 28];
+    let packed: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(packed_words), 112);
+    let values: [u8] = native; if (layout == 1) { values = packed; }
+    if (layout == 0) { assert(core::mem::slice_stride(values) < 0); }
+    else { assert(core::mem::slice_stride(values) == 1); }
+    let index: i32 = 0; while (index < 112) { values[index] = 197; index += 1; }
+    index = 0; while (index < count) { values[2 + index] = input[64 + index]; index += 1; }
+    let name: core::slice::View<u8> = core::slice::view_range<u8>(values, 2, count).unwrap();
+    let endpoint: std::socket::UnixAddress = std::socket::UnixAddress::Abstract(name);
+    if (namespace == 0) {
+        let path: core::path::Path = core::path::from_view(name).unwrap();
+        endpoint = std::socket::UnixAddress::Pathname(path);
+    }
+    if (mutation != 0) {
+        let changed: i32 = 0;
+        if (mutation == 2) { changed = count / 2; } if (mutation == 3) { changed = count - 1; }
+        values[2 + changed] = 0;
+    }
+    let stream: std::socket::UnixStream = std::socket::unix_stream(true).unwrap();
+    assert(stream.is_open() && stream.is_nonblocking().unwrap());
+    let result: core::result::Result<i32, core::io::Error> = core::result::Ok(0);
+    if (mode == 0) {
+        let until: core::time::Deadline = deadline();
+        stream.bind(endpoint).unwrap(); stream.listen(1).unwrap();
+        let ready: [i32; 1] = [82]; write_all(core::mem::i32_array_data_ptr(ready), 1);
+        assert(stream.wait_until(true, false, until).unwrap().readable);
+        let accepted: std::socket::UnixStream = stream.accept(true).unwrap();
+        assert(accepted.is_nonblocking().unwrap());
+        receive_payload(accepted.borrow(), false, until); send_payload(accepted.borrow(), true, until);
+        accepted.close().unwrap(); assert(!accepted.is_open() && accepted.raw_handle().is_none());
+    }
+    if (mode == 1) {
+        let until: core::time::Deadline = deadline(); stream.connect(endpoint).unwrap();
+        send_payload(stream.borrow(), false, until); receive_payload(stream.borrow(), true, until);
+    }
+    if (mode == 2) { result = stream.bind(endpoint); }
+    if (mode == 3) { result = stream.connect(endpoint); }
+    check_name(values, input, count, mutation);
+    stream.close().unwrap(); assert(!stream.is_open() && stream.raw_handle().is_none());
+    if (mode == 2 && result.is_ok()) {
+        let again: std::socket::UnixStream = std::socket::unix_stream(true).unwrap();
+        let rebound: core::result::Result<i32, core::io::Error> = again.bind(endpoint);
+        if (namespace == 1) { assert(rebound.is_ok() && rebound.unwrap() == 0); }
+        else {
+            assert(rebound.is_err()); let cause: core::io::Error = rebound.unwrap_err();
+            assert(error_code(cause) == 10);
+            assert(match (cause) { core::io::Error::Host(value) -> value == 98, _ -> false });
+        }
+        again.close().unwrap(); assert(!again.is_open());
+        check_name(values, input, count, mutation);
+    }
+    report(result); return 0;
+}

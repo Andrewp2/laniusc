@@ -1,0 +1,12 @@
+module app::main;
+import core::iter;
+import core::option;
+import core::result;
+struct InfallibleOnly {}
+impl InfallibleOnly { fn borrow(&self) -> &InfallibleOnly { return self; } }
+pub impl core::iter::Folder<i32,i32> for InfallibleOnly { pub fn apply(&self,accumulator:i32,value:i32) -> i32 { return accumulator+value; } }
+fn main() -> i32 {
+    let source:core::iter::Once<i32> =core::iter::once<i32>(1); let folder:InfallibleOnly=InfallibleOnly {};
+    let rejected:core::result::Result<core::option::Option<i32>,u64> =core::iter::try_reduce<core::iter::Once<i32>,InfallibleOnly,i32,u64>(source.borrow(),folder.borrow()); // rejected_fold_bound
+    return 0;
+}

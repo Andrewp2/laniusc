@@ -1,0 +1,67 @@
+module app::main;
+import alloc::hash_map;
+import alloc::hash_set;
+import alloc::tree_map;
+import alloc::tree_set;
+import core::cmp;
+import core::function;
+import core::hash;
+import core::option;
+import core::ordering;
+import core::pair;
+import core::result;
+struct Key { rank:i32,tag:u64 }
+struct Query { rank:i32,hash_calls:[i32] }
+pub impl core::hash::Hash<Key> for Key { pub fn hash(key:Key) -> u32 { return 7; } }
+pub impl core::cmp::Eq<Key> for Key {
+    pub fn eq(left:Key,right:Key) -> bool { return left.rank==right.rank; }
+    pub fn ne(left:Key,right:Key) -> bool { return !Key::eq(left,right); }
+}
+pub impl core::cmp::Ord<Key> for Key {
+    pub fn lt(left:Key,right:Key) -> bool { return left.rank<right.rank; }
+    pub fn le(left:Key,right:Key) -> bool { return left.rank<=right.rank; }
+    pub fn gt(left:Key,right:Key) -> bool { return left.rank>right.rank; }
+    pub fn ge(left:Key,right:Key) -> bool { return left.rank>=right.rank; }
+}
+pub impl core::hash::Hash<Query> for Query { pub fn hash(query:Query) -> u32 { query.hash_calls[0]+=1; return 7; } }
+struct Policy { calls:i32 }
+impl Policy { fn borrow(&self) -> &Policy { return self; } }
+pub impl core::function::Mapper<core::pair::Pair<Key,Query>,bool> for Policy {
+    pub fn apply(&self,pair:core::pair::Pair<Key,Query>) -> bool { self.calls+=1; assert(pair.first.tag==18446744073709551615); return pair.first.rank==pair.second.rank; }
+}
+pub impl core::ordering::Comparator<Key,Query> for Policy {
+    pub fn compare(&self,key:Key,query:Query) -> core::ordering::Ordering { self.calls+=1; assert(key.tag==18446744073709551615); if(key.rank<query.rank) { return core::ordering::Less; } if(key.rank>query.rank) { return core::ordering::Greater; } return core::ordering::Equal; }
+}
+struct Value { wide:u64,flag:core::option::Option<bool> }
+struct Update { calls:i32 }
+impl Update { fn borrow(&self) -> &Update { return self; } }
+pub impl core::function::Mapper<Value,core::pair::Pair<Value,core::result::Result<bool,u64>>> for Update {
+    pub fn apply(&self,value:Value) -> core::pair::Pair<Value,core::result::Result<bool,u64>> {
+        self.calls+=1; assert(value.wide==9223372036854775808 && value.flag.unwrap());
+        let changed:Value=Value { wide:18446744073709551615,flag:core::option::Some(false) }; let reported:core::result::Result<bool,u64> =core::result::Err(4294967297);
+        return core::pair::Pair { first:changed,second:reported };
+    }
+}
+fn main() -> i32 {
+    let hashes:[i32;1]=[0]; let query:Query=Query { rank:3,hash_calls:hashes }; let absent:Query=Query { rank:4,hash_calls:hashes };
+    let key:Key=Key { rank:3,tag:18446744073709551615 }; let initial:Value=Value { wide:9223372036854775808,flag:core::option::Some(true) };
+    let policy:Policy=Policy { calls:0 }; let update:Update=Update { calls:0 };
+    let hash:alloc::hash_map::HashMap<Key,Value> =alloc::hash_map::new<Key,Value>();
+    assert(!hash.contains_key_by(query,policy.borrow()) && hashes[0]==1 && policy.calls==0); hash.try_reserve(4).unwrap(); hash.try_insert(key,initial).unwrap();
+    assert(hash.contains_key_by(query,policy.borrow())); assert(hash.get_by(query,policy.borrow()).unwrap().wide==9223372036854775808);
+    assert(hash.get_entry_by(query,policy.borrow()).unwrap().key.tag==18446744073709551615);
+    let missing:core::option::Option<core::result::Result<bool,u64>> =hash.update_value_by<Query,Policy,Update,core::result::Result<bool,u64>>(absent,policy.borrow(),update.borrow()); assert(missing.is_none() && update.calls==0);
+    let result:core::option::Option<core::result::Result<bool,u64>> =hash.update_value_by<Query,Policy,Update,core::result::Result<bool,u64>>(query,policy.borrow(),update.borrow()); let report:core::result::Result<bool,u64> =result.unwrap(); assert(report.unwrap_err()==4294967297 && update.calls==1);
+    let removed:alloc::hash_map::Entry<Key,Value> =hash.remove_by(query,policy.borrow()).unwrap(); assert(removed.key.tag==18446744073709551615 && removed.value.wide==18446744073709551615 && !removed.value.flag.unwrap());
+    assert(hash.get_by(query,policy.borrow()).is_none() && hashes[0]==8); hash.destroy();
+    let tree:alloc::tree_map::TreeMap<Key,Value> =alloc::tree_map::with_capacity<Key,Value>(4).unwrap(); let before:i32=policy.calls;
+    assert(!tree.contains_key_by(query,policy.borrow()) && policy.calls==before); tree.try_insert(key,initial).unwrap();
+    assert(tree.contains_key_by(query,policy.borrow())); assert(tree.get_by(query,policy.borrow()).unwrap().wide==9223372036854775808); assert(tree.get_entry_by(query,policy.borrow()).unwrap().key.tag==18446744073709551615);
+    missing=tree.update_value_by<Query,Policy,Update,core::result::Result<bool,u64>>(absent,policy.borrow(),update.borrow()); assert(missing.is_none() && update.calls==1);
+    result=tree.update_value_by<Query,Policy,Update,core::result::Result<bool,u64>>(query,policy.borrow(),update.borrow()); report=result.unwrap(); assert(report.unwrap_err()==4294967297 && update.calls==2);
+    let tree_removed:alloc::tree_map::Entry<Key,Value> =tree.remove_by(query,policy.borrow()).unwrap(); assert(tree_removed.key.tag==18446744073709551615 && tree_removed.value.wide==18446744073709551615 && !tree_removed.value.flag.unwrap()); assert(tree.get_by(query,policy.borrow()).is_none() && hashes[0]==8); tree.destroy();
+    let hash_set:alloc::hash_set::HashSet<Key> =alloc::hash_set::with_capacity<Key>(4).unwrap(); assert(!hash_set.contains_by(query,policy.borrow())); hash_set.try_insert(key).unwrap(); assert(hash_set.contains_by(query,policy.borrow()) && hash_set.get_by(query,policy.borrow()).unwrap().tag==18446744073709551615);
+    assert(hash_set.remove_by(query,policy.borrow()).unwrap().tag==18446744073709551615 && hash_set.get_by(query,policy.borrow()).is_none() && hashes[0]==13); hash_set.destroy();
+    let tree_set:alloc::tree_set::TreeSet<Key> =alloc::tree_set::with_capacity<Key>(4).unwrap(); assert(!tree_set.contains_by(query,policy.borrow())); tree_set.try_insert(key).unwrap(); assert(tree_set.contains_by(query,policy.borrow()) && tree_set.get_by(query,policy.borrow()).unwrap().tag==18446744073709551615);
+    assert(tree_set.remove_by(query,policy.borrow()).unwrap().tag==18446744073709551615 && tree_set.get_by(query,policy.borrow()).is_none() && hashes[0]==13); tree_set.destroy(); return 0;
+}

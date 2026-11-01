@@ -1,0 +1,165 @@
+// Unicode oracle dump: properties, full casing and normalization as raw bytes.
+// Empty stdin: one record per code point 0..=U+10FFFF:
+//   category, combining class, decimal digit (10 = none), binary property
+//   flags (two bytes, low first), then twelve fields
+//   lower, upper, title, fold, NFC, NFD, NFKC, NFKD (quick-check fast path),
+//   and is-NFC/NFD/NFKC/NFKD ('1' or '0'), each followed by 0xFF.
+// Otherwise stdin holds UTF-8 strings each terminated by 0xFF; each string
+// yields the same twelve fields. A failed field is the single byte 0xFE; a
+// field whose quick path disagrees with the full engine starts with 0xFD.
+// Surrogate records leave all twelve fields empty.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import core::text;
+import core::unicode;
+import ext::unicode_case;
+import ext::unicode_normalize;
+import std::stream;
+
+struct Sink { bytes: alloc::vec::Vec<u8>, used: i32, failed: bool }
+impl Sink {
+    fn borrow(&self) -> &Sink { return self; }
+    fn flush(&self) {
+        if (self.used == 0) { return; }
+        let out: std::stream::Descriptor = std::stream::stdout();
+        if (core::result::is_err(core::io::write_all(out.borrow(), self.bytes.as_slice(), 0, self.used))) { self.failed = true; }
+        self.used = 0;
+    }
+    fn byte(&self, value: u8) {
+        if (self.used >= 1048576) { self.flush(); }
+        let data: [u8] = self.bytes.as_slice();
+        data[self.used] = value;
+        self.used += 1;
+    }
+    fn copy(&self, data: [u8], count: i32) {
+        let index: i32 = 0;
+        while (index < count) { self.byte(data[index]); index += 1; }
+    }
+}
+struct Work { output: alloc::vec::Vec<u8>, copy: alloc::vec::Vec<u8>, scratch: alloc::vec::Vec<u32> }
+impl Work { fn borrow(&self) -> &Work { return self; } }
+
+fn casing(input: core::text::Text, kind: ext::unicode_case::Kind, work: &Work, sink: &Sink) {
+    let done: core::result::Result<ext::unicode_case::Report, ext::unicode_case::Error> = ext::unicode_case::transform_into(input, kind, ext::unicode_case::Locale::Root, work.output.as_view(), 1000000000 as u64);
+    if (core::result::is_err(done)) { sink.byte(254 as u8); } else {
+        let report: ext::unicode_case::Report = core::result::unwrap(done);
+        sink.copy(work.output.as_slice(), report.bytes);
+    }
+    sink.byte(255 as u8);
+}
+fn normal(input: core::text::Text, form: ext::unicode_normalize::Form, work: &Work, sink: &Sink) {
+    let quick: core::result::Result<ext::unicode_normalize::Normalized, ext::unicode_normalize::Error> = ext::unicode_normalize::normalize_quick_into(input, form, work.output.as_view(), work.scratch.as_view(), 1000000000 as u64);
+    if (core::result::is_err(quick)) { sink.byte(254 as u8); sink.byte(255 as u8); return; }
+    let fast: ext::unicode_normalize::Normalized = core::result::unwrap(quick);
+    let count: i32 = fast.bytes;
+    let copy: [u8] = work.copy.as_slice();
+    let output: [u8] = work.output.as_slice();
+    let index: i32 = 0;
+    while (index < count) { copy[index] = output[index]; index += 1; }
+    // The quick path must agree byte for byte with the full engine.
+    let done: core::result::Result<ext::unicode_normalize::Normalized, ext::unicode_normalize::Error> = ext::unicode_normalize::normalize_into(input, form, work.output.as_view(), work.scratch.as_view(), 1000000000 as u64);
+    let same: bool = core::result::is_ok(done);
+    if (same) {
+        let report: ext::unicode_normalize::Normalized = core::result::unwrap(done);
+        if (report.bytes != count || report.scalars != fast.scalars) { same = false; }
+        index = 0;
+        while (same && index < count) { if (copy[index] != output[index]) { same = false; } index += 1; }
+    }
+    if (!same) { sink.byte(253 as u8); }
+    sink.copy(copy, count);
+    sink.byte(255 as u8);
+}
+fn checked(input: core::text::Text, form: ext::unicode_normalize::Form, work: &Work, sink: &Sink) {
+    let quick: core::result::Result<bool, ext::unicode_normalize::Error> = ext::unicode_normalize::is_normalized_quick(input, form, work.scratch.as_view(), 1000000000 as u64);
+    let full: core::result::Result<bool, ext::unicode_normalize::Error> = ext::unicode_normalize::is_normalized(input, form, work.scratch.as_view(), 1000000000 as u64);
+    if (core::result::is_err(quick) || core::result::is_err(full)) { sink.byte(254 as u8); }
+    else {
+        let answer: bool = core::result::unwrap(quick);
+        if (answer != core::result::unwrap(full)) { sink.byte(253 as u8); }
+        if (answer) { sink.byte(49 as u8); } else { sink.byte(48 as u8); }
+    }
+    sink.byte(255 as u8);
+}
+fn fields(input: core::text::Text, work: &Work, sink: &Sink) {
+    casing(input, ext::unicode_case::Kind::Lower, work, sink);
+    casing(input, ext::unicode_case::Kind::Upper, work, sink);
+    casing(input, ext::unicode_case::Kind::Title, work, sink);
+    casing(input, ext::unicode_case::Kind::Fold, work, sink);
+    normal(input, ext::unicode_normalize::Form::Nfc, work, sink);
+    normal(input, ext::unicode_normalize::Form::Nfd, work, sink);
+    normal(input, ext::unicode_normalize::Form::Nfkc, work, sink);
+    normal(input, ext::unicode_normalize::Form::Nfkd, work, sink);
+    checked(input, ext::unicode_normalize::Form::Nfc, work, sink);
+    checked(input, ext::unicode_normalize::Form::Nfd, work, sink);
+    checked(input, ext::unicode_normalize::Form::Nfkc, work, sink);
+    checked(input, ext::unicode_normalize::Form::Nfkd, work, sink);
+}
+fn encode(value: u32, bytes: [u8]) -> i32 {
+    if (value < 128) { bytes[0] = value as u8; return 1; }
+    if (value < 2048) { bytes[0] = (192 + (value >> 6)) as u8; bytes[1] = (128 + (value & 63)) as u8; return 2; }
+    if (value < 65536) { bytes[0] = (224 + (value >> 12)) as u8; bytes[1] = (128 + ((value >> 6) & 63)) as u8; bytes[2] = (128 + (value & 63)) as u8; return 3; }
+    bytes[0] = (240 + (value >> 18)) as u8; bytes[1] = (128 + ((value >> 12) & 63)) as u8;
+    bytes[2] = (128 + ((value >> 6) & 63)) as u8; bytes[3] = (128 + (value & 63)) as u8; return 4;
+}
+fn code_points(work: &Work, sink: &Sink) {
+    let storage: alloc::vec::Vec<u8> = core::result::unwrap(alloc::vec::with_capacity<u8>(4));
+    core::result::unwrap(storage.try_resize(4, 0));
+    let value: u32 = 0;
+    while (value <= 1114111) {
+        sink.byte(core::unicode::general_category(value) as u8);
+        sink.byte(core::unicode::canonical_combining_class(value) as u8);
+        sink.byte(core::unicode::decimal_digit_value_or(value, 10) as u8);
+        let flags: u32 = core::unicode::properties(value).flags;
+        sink.byte((flags & 255) as u8);
+        sink.byte((flags >> 8) as u8);
+        if (core::unicode::is_scalar(value)) {
+            let count: i32 = encode(value, storage.as_slice());
+            fields(core::text::from_utf8_unchecked(storage.as_slice(), 0, count), work, sink);
+        } else {
+            let index: i32 = 0;
+            while (index < 12) { sink.byte(255 as u8); index += 1; }
+        }
+        value += 1;
+    }
+    storage.destroy();
+}
+fn strings(buffer: &alloc::io::Buffer, work: &Work, sink: &Sink) {
+    let data: [u8] = buffer.as_bytes();
+    let total: i32 = buffer.len();
+    let start: i32 = 0;
+    let index: i32 = 0;
+    while (index < total) {
+        if (data[index] == 255 as u8) {
+            let checked: core::result::Result<core::text::Text, core::text::Error> = core::text::from_utf8_range(data, start, index - start);
+            if (core::result::is_err(checked)) {
+                let field: i32 = 0;
+                while (field < 12) { sink.byte(254 as u8); sink.byte(255 as u8); field += 1; }
+            } else { fields(core::result::unwrap(checked), work, sink); }
+            start = index + 1;
+        }
+        index += 1;
+    }
+}
+fn main() -> i32 {
+    let buffer: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(67108864));
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let copied: core::result::Result<u64, core::io::CopyFailure> = std::stream::copy(source.borrow(), buffer.borrow());
+    if (core::result::is_err(copied)) { buffer.destroy(); return 3; }
+    let sink: Sink = Sink { bytes: core::result::unwrap(alloc::vec::with_capacity<u8>(1048576)), used: 0, failed: false };
+    core::result::unwrap(sink.bytes.try_resize(1048576, 0));
+    let work: Work = Work { output: core::result::unwrap(alloc::vec::with_capacity<u8>(262144)), copy: core::result::unwrap(alloc::vec::with_capacity<u8>(262144)), scratch: core::result::unwrap(alloc::vec::with_capacity<u32>(65536)) };
+    core::result::unwrap(work.output.try_resize(262144, 0));
+    core::result::unwrap(work.copy.try_resize(262144, 0));
+    core::result::unwrap(work.scratch.try_resize(65536, 0));
+    if (buffer.len() == 0) { code_points(work.borrow(), sink.borrow()); } else { strings(buffer.borrow(), work.borrow(), sink.borrow()); }
+    sink.flush();
+    let status: i32 = 0;
+    if (sink.failed) { status = 3; }
+    sink.bytes.destroy(); work.output.destroy(); work.copy.destroy(); work.scratch.destroy(); buffer.destroy();
+    return status;
+}

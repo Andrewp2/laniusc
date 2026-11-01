@@ -1,0 +1,8 @@
+module app::main;
+import core::result;
+fn main() -> i32 {
+    let left:core::result::Result<i32,u64> =core::result::Ok(17);
+    let right:core::result::Result<u64,bool> =core::result::Err(false);
+    let rejected:core::result::Result<i32,bool> =core::result::or<i32,u64,bool>(left,right); // rejected_outcome_shape
+    return 0;
+}

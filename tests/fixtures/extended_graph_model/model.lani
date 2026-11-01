@@ -1,0 +1,240 @@
+// Test-only graph canonicalization, traversal and query adapter.
+module app::main;
+
+import core::mem;
+import core::option;
+import alloc::vec;
+import ext::graph;
+import ext::graph_algorithms;
+import core::result;
+import core::slice;
+import std::io;
+
+fn read_exact(pointer: ptr, count: i32, allow_eof: bool) -> bool {
+    let done: i32 = 0;
+    while (done < count) {
+        let got: i32 = std::io::read_stdin(pointer + (done as usize), (count - done) as usize);
+        assert(got >= 0);
+        if (got == 0) { assert(allow_eof && done == 0); return false; }
+        done += got;
+    }
+    return true;
+}
+
+fn write_all(pointer: ptr, count: i32) {
+    let done: i32 = 0;
+    while (done < count) {
+        let got: i32 = std::io::write_stdout(pointer + (done as usize), (count - done) as usize);
+        assert(got > 0);
+        done += got;
+    }
+}
+
+fn get64(bytes: [u8], offset: i32) -> u64 {
+    let result: u64 = 0;
+    let index: i32 = 0;
+    while (index < 8) {
+        result |= (bytes[offset + index] as u64) << (index * 8);
+        index += 1;
+    }
+    return result;
+}
+
+struct Output { bytes: [u8], pointer: ptr, used: i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { write_all(self.pointer, self.used); self.used = 0; }
+    fn word(&self, value: u64) {
+        if (self.used == 4096) { self.flush(); }
+        let index: i32 = 0;
+        while (index < 8) {
+            self.bytes[self.used + index] = ((value >> (index * 8)) & 255) as u8;
+            index += 1;
+        }
+        self.used += 8;
+    }
+}
+
+fn code(kind: ext::graph::ErrorKind) -> u64 {
+    return match (kind) {
+        ext::graph::ErrorKind::InvalidLimits -> 1, ext::graph::ErrorKind::Bounds -> 2,
+        ext::graph::ErrorKind::NodeLimit -> 3, ext::graph::ErrorKind::EdgeLimit -> 4,
+        ext::graph::ErrorKind::WorkLimit -> 5, ext::graph::ErrorKind::Offset -> 6,
+        ext::graph::ErrorKind::Source -> 7, ext::graph::ErrorKind::Target -> 8,
+        ext::graph::ErrorKind::Order -> 9, ext::graph::ErrorKind::AllocationFailed -> 10,
+        ext::graph::ErrorKind::Cycle -> 11, ext::graph::ErrorKind::Closed -> 12,
+    };
+}
+fn failure(error: ext::graph::Error, output: &Output) {
+    output.word(1); output.word(code(error.kind));
+    output.word(error.node as i64 as u64); output.word(error.edge as i64 as u64);
+}
+fn success(output: &Output) { output.word(0); output.word(0); output.word(18446744073709551615); output.word(18446744073709551615); }
+fn option(value: core::option::Option<i32>, output: &Output) {
+    output.word(value.is_some() as u64);
+    let number: i32 = -1;
+    if (value.is_some()) { number = value.unwrap(); }
+    output.word(number as i64 as u64);
+}
+fn optional_result(result: core::result::Result<core::option::Option<i32>, ext::graph::Error>, output: &Output) {
+    if (result.is_err()) { failure(result.unwrap_err(), output); return; }
+    success(output); option(result.unwrap(), output);
+}
+fn csr(value: ext::graph::View, output: &Output) {
+    output.word(value.nodes as u64); output.word(value.targets.length as u64);
+    let index: i32 = 0;
+    while (index < value.offsets.length) { output.word(value.offsets.values[value.offsets.start + index] as i64 as u64); index += 1; }
+    index = 0;
+    while (index < value.targets.length) { output.word(value.targets.values[value.targets.start + index] as i64 as u64); index += 1; }
+}
+fn validation(value: ext::graph::View, limits: ext::graph::Limits, output: &Output) {
+    let result: core::result::Result<i32, ext::graph::Error> = ext::graph::validate(value, limits);
+    if (result.is_err()) { failure(result.unwrap_err(), output); return; }
+    success(output); output.word(result.unwrap() as u64);
+}
+fn neighbors(value: ext::graph::View, node: i32, limits: ext::graph::Limits, output: &Output) {
+    let result: core::result::Result<core::slice::View<i32>, ext::graph::Error> = ext::graph::neighbors(value, node, limits);
+    if (result.is_err()) { failure(result.unwrap_err(), output); return; }
+    let row: core::slice::View<i32> = result.unwrap();
+    success(output); output.word(row.length as u64);
+    let index: i32 = 0;
+    while (index < row.length) { output.word(row.values[row.start + index] as i64 as u64); index += 1; }
+}
+fn bfs(value: ext::graph::View, source: i32, limits: ext::graph::Limits, output: &Output) {
+    let result: core::result::Result<ext::graph_algorithms::BfsPaths, ext::graph::Error> = ext::graph_algorithms::bfs(value, source, limits);
+    if (result.is_err()) { failure(result.unwrap_err(), output); return; }
+    let owner: ext::graph_algorithms::BfsPaths = result.unwrap();
+    success(output); output.word(owner.is_open() as u64); output.word(owner.node_count() as u64);
+    let selected: core::option::Option<i32> = owner.source(); option(selected, output);
+    let node: i32 = 0;
+    while (node < value.nodes) {
+        let distance: core::result::Result<core::option::Option<i32>, ext::graph::Error> = owner.distance(node);
+        let parent: core::result::Result<core::option::Option<i32>, ext::graph::Error> = owner.predecessor(node);
+        optional_result(distance, output); optional_result(parent, output); node += 1;
+    }
+    let distance_low: core::result::Result<core::option::Option<i32>, ext::graph::Error> = owner.distance(-1);
+    optional_result(distance_low, output);
+    let parent_low: core::result::Result<core::option::Option<i32>, ext::graph::Error> = owner.predecessor(-1);
+    optional_result(parent_low, output);
+    let distance_high: core::result::Result<core::option::Option<i32>, ext::graph::Error> = owner.distance(value.nodes);
+    optional_result(distance_high, output);
+    let parent_high: core::result::Result<core::option::Option<i32>, ext::graph::Error> = owner.predecessor(value.nodes);
+    optional_result(parent_high, output);
+    output.word(owner.destroy() as u64); output.word(owner.destroy() as u64);
+    output.word(owner.is_open() as u64); output.word(owner.node_count() as u64);
+    let closed_source: core::option::Option<i32> = owner.source(); option(closed_source, output);
+    let closed_distance: core::result::Result<core::option::Option<i32>, ext::graph::Error> = owner.distance(-1);
+    optional_result(closed_distance, output);
+    let closed_parent: core::result::Result<core::option::Option<i32>, ext::graph::Error> = owner.predecessor(value.nodes);
+    optional_result(closed_parent, output);
+}
+fn topology(value: ext::graph::View, limits: ext::graph::Limits, output: &Output) {
+    let result: core::result::Result<alloc::vec::Vec<i32>, ext::graph::Error> = ext::graph_algorithms::topological_order(value, limits);
+    if (result.is_err()) { failure(result.unwrap_err(), output); return; }
+    let owner: alloc::vec::Vec<i32> = result.unwrap();
+    success(output); output.word(owner.len() as u64);
+    let index: i32 = 0;
+    while (index < owner.len()) { let item: core::option::Option<i32> = owner.get(index); output.word(item.unwrap() as i64 as u64); index += 1; }
+    owner.destroy();
+}
+fn owned(result: core::result::Result<ext::graph::Graph, ext::graph::Error>, limits: ext::graph::Limits, output: &Output) {
+    if (result.is_err()) { failure(result.unwrap_err(), output); return; }
+    let owner: ext::graph::Graph = result.unwrap();
+    success(output); output.word(owner.is_open() as u64);
+    output.word(owner.node_count() as u64); output.word(owner.edge_count() as u64);
+    let available: core::option::Option<ext::graph::View> = owner.view();
+    output.word(available.is_some() as u64);
+    let value: ext::graph::View = available.unwrap(); csr(value, output);
+    validation(value, limits, output);
+    let query: i32 = -1;
+    while (query <= value.nodes) { neighbors(value, query, limits, output); query += 1; }
+    query = -1;
+    while (query <= value.nodes) { bfs(value, query, limits, output); query += 1; }
+    topology(value, limits, output);
+    // Algorithms and queries must leave the canonical graph unchanged.
+    csr(value, output);
+    output.word(owner.destroy() as u64); output.word(owner.destroy() as u64);
+    output.word(owner.is_open() as u64); output.word(owner.node_count() as u64); output.word(owner.edge_count() as u64);
+    let closed: core::option::Option<ext::graph::View> = owner.view(); output.word(closed.is_some() as u64);
+}
+fn emit_inputs(edges: [ext::graph::Edge], offsets: [i32], targets: [i32], output: &Output) {
+    let index: i32 = 0;
+    while (index < 100) { output.word(edges[index].source as i64 as u64); output.word(edges[index].target as i64 as u64); index += 1; }
+    index = 0;
+    while (index < 12) { output.word(offsets[index] as i64 as u64); index += 1; }
+    index = 0;
+    while (index < 100) { output.word(targets[index] as i64 as u64); index += 1; }
+}
+fn run(input: [u8], output: &Output) {
+    let operation: u64 = get64(input, 0);
+    let blank: ext::graph::Edge = ext::graph::Edge { source: 0, target: 0 };
+    let edge_native: [ext::graph::Edge; 100] = [blank; 100];
+    let offset_native: [i32; 12] = [0; 12];
+    let target_native: [i32; 100] = [0; 100];
+    let edge_storage: [i32; 1024] = [0; 1024];
+    let offset_storage: [i32; 12] = [0; 12];
+    let target_storage: [i32; 100] = [0; 100];
+    let edges: [ext::graph::Edge] = edge_native;
+    let offsets: [i32] = offset_native;
+    let targets: [i32] = target_native;
+    assert(core::mem::size_of<ext::graph::Edge>() * 100 <= 4096);
+    if (get64(input, 8) == 1) {
+        edges = core::mem::typed_slice_from_storage<ext::graph::Edge>(core::mem::i32_array_data_ptr(edge_storage), 100);
+        offsets = core::mem::typed_slice_from_raw_parts<i32>(core::mem::i32_array_data_ptr(offset_storage), 12);
+        targets = core::mem::typed_slice_from_raw_parts<i32>(core::mem::i32_array_data_ptr(target_storage), 100);
+    }
+    let index: i32 = 0;
+    while (index < 100) { edges[index] = ext::graph::Edge { source: -700 - index, target: -900 - index }; targets[index] = -888; index += 1; }
+    index = 0;
+    while (index < 12) { offsets[index] = -777; index += 1; }
+    let at: i32 = 128;
+    index = 0;
+    while (index < get64(input, 104) as i32) {
+        edges[2 + index] = ext::graph::Edge { source: get64(input, at) as i32, target: get64(input, at + 8) as i32 };
+        index += 1; at += 16;
+    }
+    index = 0;
+    while (index < get64(input, 112) as i32) { offsets[2 + index] = get64(input, at) as i32; index += 1; at += 8; }
+    index = 0;
+    while (index < get64(input, 120) as i32) { targets[2 + index] = get64(input, at) as i32; index += 1; at += 8; }
+    let limits: ext::graph::Limits = ext::graph::Limits { max_nodes: get64(input, 32) as i32, max_edges: get64(input, 40) as i32, max_work: get64(input, 48) };
+    let edge_view: core::slice::View<ext::graph::Edge> = core::slice::View { values: edges, start: get64(input, 56) as i32, length: get64(input, 64) as i32 };
+    let offset_view: core::slice::View<i32> = core::slice::View { values: offsets, start: get64(input, 72) as i32, length: get64(input, 80) as i32 };
+    let target_view: core::slice::View<i32> = core::slice::View { values: targets, start: get64(input, 88) as i32, length: get64(input, 96) as i32 };
+    let value: ext::graph::View = ext::graph::View { nodes: get64(input, 16) as i32, offsets: offset_view, targets: target_view };
+    if (operation == 0) {
+        let result: core::result::Result<ext::graph::Graph, ext::graph::Error> = ext::graph::from_edges(value.nodes, edge_view, limits);
+        owned(result, limits, output);
+    }
+    if (operation == 1) {
+        let result: core::result::Result<ext::graph::Graph, ext::graph::Error> = ext::graph::from_view(value, limits);
+        owned(result, limits, output);
+    }
+    if (operation == 2) { validation(value, limits, output); }
+    if (operation == 3) {
+        let result: core::result::Result<ext::graph::View, ext::graph::Error> = ext::graph::view(value.nodes, offset_view, target_view, limits);
+        if (result.is_err()) { failure(result.unwrap_err(), output); }
+        else { success(output); csr(result.unwrap(), output); }
+    }
+    if (operation == 4) { neighbors(value, get64(input, 24) as i32, limits, output); }
+    if (operation == 5) { bfs(value, get64(input, 24) as i32, limits, output); }
+    if (operation == 6) { topology(value, limits, output); }
+    emit_inputs(edges, offsets, targets, output);
+}
+fn main() -> i32 {
+    let input_words: [i32; 628] = [0; 628];
+    let pointer: ptr = core::mem::i32_array_data_ptr(input_words);
+    let input: [u8] = core::mem::typed_slice_from_raw_parts<u8>(pointer, 2512);
+    let output_words: [i32; 1024] = [0; 1024];
+    let output_pointer: ptr = core::mem::i32_array_data_ptr(output_words);
+    let output_bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(output_pointer, 4096);
+    let output: Output = Output { bytes: output_bytes, pointer: output_pointer, used: 0 };
+    while (read_exact(pointer, 128, true)) {
+        assert(get64(input, 0) <= 6 && get64(input, 8) <= 1 && get64(input, 104) <= 96 && get64(input, 112) <= 10 && get64(input, 120) <= 96);
+        let length: i32 = (get64(input, 104) * 16 + (get64(input, 112) + get64(input, 120)) * 8) as i32;
+        assert(read_exact(pointer + 128, length, false));
+        run(input, output.borrow());
+    }
+    output.flush();
+    return 0;
+}

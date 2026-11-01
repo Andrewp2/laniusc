@@ -8,7 +8,13 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-**No contract guide registered.** This page makes no runtime support claim.
+One ordered bounded TCP selector, independent of HTTP/TLS and OpenSSL. Numeric URLs bypass NSS; DNS invokes the existing synchronous resolver at most once and preserves order/duplicates. One socket is live at a time; actual create/connect/poll/SO_ERROR/peer/failed-close calls share a quota with reserved cleanup credit. Explicit global/attempt deadlines, terminal versus endpoint fallback, primary/last-attempt/secondary-cleanup diagnostics and retire-once manual ownership are documented. Direct connector groups pass 12 admission and eight failure/cleanup cases separately on Linux x86_64/glibc. Connected URL DNS and transport groups have separate receipts. Blocking NSS is not deadline-cancellable; arbitrary clock/OOM/native internals and other targets remain outside those finite gates.
+
+## Contract and evidence guides
+
+- [extended-url-client](../../extended-url-client.md)
+- [library-url-client-plan](../../library-url-client-plan.md)
+- [stdlib-resolve](../../stdlib-resolve.md)
 
 Declaration counts: enum: 2; field: 29; function: 3; impl: 1; method: 4; struct: 6; variant: 18.
 
@@ -19,12 +25,12 @@ Direct source imports; this is not a package-resolution or transitive dependency
 - [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/url_connect.lani#L4)
 - [core::io](../core/io.md) · [source](../../../extended/ext/url_connect.lani#L5)
 - [core::net](../core/net.md) · [source](../../../extended/ext/url_connect.lani#L6)
-- [core::option::Option](../core/option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L12) · [source](../../../extended/ext/url_connect.lani#L7)
-- [core::option::Some](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L13) · [source](../../../extended/ext/url_connect.lani#L8)
-- [core::option::None](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../extended/ext/url_connect.lani#L9)
-- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L12) · [source](../../../extended/ext/url_connect.lani#L10)
-- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L13) · [source](../../../extended/ext/url_connect.lani#L11)
-- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L14) · [source](../../../extended/ext/url_connect.lani#L12)
+- [core::option::Option](../core/option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../extended/ext/url_connect.lani#L7)
+- [core::option::Some](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L15) · [source](../../../extended/ext/url_connect.lani#L8)
+- [core::option::None](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L16) · [source](../../../extended/ext/url_connect.lani#L9)
+- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/url_connect.lani#L10)
+- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/url_connect.lani#L11)
+- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/url_connect.lani#L12)
 - [core::time](../core/time.md) · [source](../../../extended/ext/url_connect.lani#L13)
 - [ext::http_url](http_url.md) · [source](../../../extended/ext/url_connect.lani#L14)
 - [std::clock](../std/clock.md) · [source](../../../extended/ext/url_connect.lani#L15)
@@ -485,6 +491,8 @@ metadata:ConnectionInfo
 pub fn default_options() -> Options
 ```
 
+Any family, addr_config false, 32 results, 16 attempts, 512 connector socket calls and five seconds per attempt.
+
 ### function: validate_options
 
 [Source line 49](../../../extended/ext/url_connect.lani#L49)
@@ -493,6 +501,8 @@ pub fn default_options() -> Options
 pub fn validate_options(options:Options) -> Result<bool,Cause>
 ```
 
+Host-free validation: result/attempt caps 1..4096 and nonzero normalized attempt duration. Zero/one socket-call budgets are valid values that connect_until rejects before native lookup or socket work.
+
 ### function: connect_until
 
 [Source line 281](../../../extended/ext/url_connect.lani#L281)
@@ -500,6 +510,8 @@ pub fn validate_options(options:Options) -> Result<bool,Cause>
 ```lanius
 pub fn connect_until(url:&ext::http_url::Url,options:Options,deadline:core::time::Deadline) -> Result<Connection,Failure>
 ```
+
+Borrows a live Url through one synchronous selection. Success transfers one Socket owner into Connection; resolver result backing is released and failed-socket tokens retire once, with close errors preserved. The first proven TCP connection ends fallback. Failure retains exact typed control/native/cleanup metadata.
 
 ## Implementation blocks and public methods
 

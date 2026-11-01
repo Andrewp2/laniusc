@@ -15,6 +15,7 @@ Reusable record construction, complete preflight and the shared canonical encodi
 - [extended-csv](../../extended-csv.md)
 - [extended-csv-write](../../extended-csv-write.md)
 - [extended-csv-rewrite](../../extended-csv-rewrite.md)
+- [extended-json-stream](../../extended-json-stream.md)
 
 Declaration counts: enum: 1; field: 36; function: 7; impl: 4; method: 33; struct: 6; variant: 15.
 

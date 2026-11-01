@@ -1,0 +1,199 @@
+// Concatenate two borrowed file readers, cap bytes and stage before publication.
+module app::main;
+import alloc::buffered;
+import alloc::io;
+import alloc::string;
+import alloc::vec;
+import alloc::vec::Vec;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::option;
+import core::option::Option;
+import core::path;
+import core::result;
+import core::result::Result;
+import core::slice;
+import core::slice::View;
+import ext::cli;
+import std::args;
+import std::file;
+import std::file_ops;
+import std::signal;
+import std::stream;
+
+struct Options {
+    limit:i32, limit_set:bool, help:bool,
+    first:Option<core::path::Path>, second:Option<core::path::Path>
+}
+impl Options { fn borrow(&self) -> &Options { return self; } }
+
+fn literal(value:str, count:i32) -> View<u8> {
+    let raw:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return core::slice::view(raw,count).unwrap();
+}
+
+fn write(value:View<u8>, handle:i32, maximum:i32) -> i32 {
+    let sink = std::stream::from_handle(handle); let completed:i32 = 0; let calls:i32 = 0;
+    while(completed < value.length) {
+        if (calls == maximum) { return 5; } calls += 1;
+        let sent:Result<i32,core::io::Error> = sink.write(value.values,value.start+completed,value.length-completed);
+        if (sent.is_err()) {
+            let cause:core::io::Error = sent.unwrap_err();
+            if (core::io::is_interrupted(cause)) { continue; }
+            return match(cause) {
+                core::io::Error::InvalidInput -> 6,
+                core::io::Error::InvalidCount -> 6,
+                core::io::Error::CountOverflow -> 6,
+                _ -> 5
+            };
+        }
+        let count:i32 = sent.unwrap();
+        if ((count < 0) || (count > value.length-completed)) { return 6; }
+        if (count == 0) { return 5; }
+        completed += count;
+    }
+    return 0;
+}
+
+fn report(status:i32) -> i32 {
+    write(literal("concat_bytes: operation failed\n",31),2,8); return status;
+}
+
+fn io_status(cause:core::io::Error) -> i32 {
+    return match(cause) {
+        core::io::Error::AllocationFailed -> 4,
+        core::io::Error::InvalidInput -> 6,
+        core::io::Error::InvalidCount -> 6,
+        core::io::Error::CountOverflow -> 6,
+        core::io::Error::LimitExceeded -> 2,
+        _ -> 3
+    };
+}
+
+fn read_status(cause:alloc::io::ReadError) -> i32 {
+    return match(cause) {
+        alloc::io::ReadError::InvalidLimits -> 6,
+        alloc::io::ReadError::CallLimit -> 2,
+        alloc::io::ReadError::ByteLimit -> 2,
+        alloc::io::ReadError::Io(detail) -> io_status(detail),
+        alloc::io::ReadError::Storage(detail) -> match(detail) {
+            alloc::vec::Error::AllocationFailed -> 4, _ -> 6
+        },
+        alloc::io::ReadError::Text(detail) -> match(detail) {
+            alloc::string::Error::AllocationFailed -> 4, _ -> 6
+        }
+    };
+}
+
+// Always attempt retirement once. Keep an earlier failure as the primary one.
+fn close_status(file:&std::file::File, status:i32) -> i32 {
+    let closed:Result<i32,core::io::Error> = file.close();
+    if (status != 0) { return status; }
+    if (closed.is_err()) { return io_status(closed.unwrap_err()); }
+    if (closed.unwrap() != 0) { return 6; }
+    return 0;
+}
+
+fn collect(first:&std::file::File, second:&std::file::File, limit:i32) -> Result<Vec<u8>,i32> {
+    let joined = core::io::chain(first,second);
+    let limited = core::io::take(joined.borrow(),limit as u64);
+    let created = alloc::buffered::reader(limited.borrow(),4096);
+    if (created.is_err()) { return core::result::Err(io_status(created.unwrap_err())); }
+    let buffered = created.unwrap();
+    let bounds:alloc::io::ReadLimits = alloc::io::ReadLimits { max_bytes:limit,max_calls:16384 };
+    let received:Result<Vec<u8>,alloc::io::ReadFailure> = alloc::io::read_to_end(buffered.borrow(),bounds);
+    if (received.is_err()) {
+        let failure:alloc::io::ReadFailure = received.unwrap_err(); let status:i32 = read_status(failure.cause);
+        failure.destroy(); buffered.discard(); return core::result::Err(status);
+    }
+    let bytes:Vec<u8> = received.unwrap(); buffered.discard();
+    if ((bytes.len() < 0) || (bytes.len() > limit)) { bytes.destroy(); return core::result::Err(6); }
+    return core::result::Ok(bytes);
+}
+
+fn option(options:&Options, found:ext::cli::Occurrence) -> i32 {
+    if (found.id == 1) {
+        if (options.help) { return 2; } options.help = true; return 0;
+    }
+    if ((found.id != 2) || options.limit_set || found.value.is_none()) { return 2; }
+    let token:View<u8> = found.value.unwrap().bytes;
+    if ((token.length < 1) || (token.length > 64)) { return 2; }
+    let parsed:Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(token.values,token.start,token.length);
+    if (parsed.is_err()) { return 2; }
+    let number:u64 = parsed.unwrap(); if (number > 1048576) { return 2; }
+    options.limit = number as i32; options.limit_set = true; return 0;
+}
+
+fn operand(options:&Options, found:ext::cli::Argument) -> i32 {
+    if (options.second.is_some()) { return 2; }
+    let value:View<u8> = found.bytes;
+    if ((value.length < 1) || (value.length > 4095)) { return 2; }
+    let checked:Result<core::path::Path,core::path::Error> = core::path::from_view(value);
+    if (checked.is_err()) { return 2; }
+    let path:core::path::Path = checked.unwrap();
+    if (options.first.is_none()) { options.first = core::option::Some(path); }
+    else { options.second = core::option::Some(path); }
+    return 0;
+}
+
+fn arguments(values:View<View<u8>>) -> Result<Options,i32> {
+    let specs:[ext::cli::Spec;2] = [
+        ext::cli::Spec { id:1,long:literal("help",4),short:104,arity:ext::cli::Arity::Flag },
+        ext::cli::Spec { id:2,long:literal("limit",5),short:110,arity:ext::cli::Arity::Required }
+    ];
+    let made:Result<ext::cli::Parser,ext::cli::Error> = ext::cli::parser(values,core::slice::view(specs,2).unwrap(),ext::cli::Ordering::Intermixed);
+    if (made.is_err()) { return core::result::Err(2); }
+    let parser:ext::cli::Parser = made.unwrap();
+    let options:Options = Options {
+        limit:0,limit_set:false,help:false,first:core::option::None(),second:core::option::None()
+    };
+    while(true) {
+        let event:Result<Option<ext::cli::Event>,ext::cli::Error> = parser.next();
+        if (event.is_err()) { return core::result::Err(2); }
+        let next:Option<ext::cli::Event> = event.unwrap(); if (next.is_none()) { break; }
+        let status:i32 = match(next.unwrap()) {
+            ext::cli::Event::Option(found) -> option(options.borrow(),found),
+            ext::cli::Event::Operand(found) -> operand(options.borrow(),found)
+        };
+        if (status != 0) { return core::result::Err(status); }
+    }
+    if (!options.help && (!options.limit_set || options.second.is_none())) { return core::result::Err(2); }
+    return core::result::Ok(options);
+}
+
+fn help() -> i32 {
+    let value = literal("Usage: concat_bytes --limit N [--] FIRST SECOND\nWrite up to N bytes from FIRST followed by SECOND, unchanged, to stdout.\nN is 0..1048576; use 1..64 ASCII decimal digits. Leading zeros are allowed.\nEarly EOF succeeds. Limit zero still opens both files but performs no data reads.\nPaths are literal nonempty byte paths, at most 4095 bytes each; - is a filename.\nShort options: -n N, -h. --help shows help without opening files or reading stdin.\nHelp waives required limit and paths but checks supplied arguments.\nDuplicate options, extra operands and malformed supplied values are errors.\nInput is staged before stdout; both files and the input buffer are retired first.\nLimits: 16 arguments, 8192 argument bytes, 16384 collection calls, 4096 output attempts.\nThe input buffer is 4096 bytes. Interrupted operations spend attempts.\nOutput failures can leave a confirmed prefix; blocking I/O has no time limit.\n",907);
+    return write(value,1,64);
+}
+
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let captured = std::args::snapshot(1,16,8192);
+    if (captured.is_err()) {
+        return report(match(captured.unwrap_err()) {
+            std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2
+        });
+    }
+    let owner = captured.unwrap(); let parsed:Result<Options,i32> = arguments(owner.as_view());
+    if (parsed.is_err()) { owner.destroy(); return report(parsed.unwrap_err()); }
+    let options:Options = parsed.unwrap();
+    if (options.help) {
+        owner.destroy(); let status:i32 = help(); if (status != 0) { return report(status); } return 0;
+    }
+    let limit:i32 = options.limit;
+    let opened_first:Result<std::file::File,core::io::Error> = std::file_ops::open(options.first.unwrap(),std::file_ops::options());
+    if (opened_first.is_err()) { owner.destroy(); return report(io_status(opened_first.unwrap_err())); }
+    let first:std::file::File = opened_first.unwrap();
+    let opened_second:Result<std::file::File,core::io::Error> = std::file_ops::open(options.second.unwrap(),std::file_ops::options());
+    owner.destroy();
+    if (opened_second.is_err()) { return report(close_status(first.borrow(),io_status(opened_second.unwrap_err()))); }
+    let second:std::file::File = opened_second.unwrap();
+    let collected:Result<Vec<u8>,i32> = collect(first.borrow(),second.borrow(),limit);
+    let status:i32 = 0; if (collected.is_err()) { status = collected.unwrap_err(); }
+    status = close_status(second.borrow(),status); status = close_status(first.borrow(),status);
+    if (collected.is_err()) { return report(status); }
+    let output:Vec<u8> = collected.unwrap();
+    if (status == 0) { status = write(output.as_view(),1,4096); }
+    output.destroy(); if (status != 0) { return report(status); } return 0;
+}

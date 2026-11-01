@@ -1,6 +1,7 @@
 // Five-u64 commands: adapter, source length, pulls, copy schedule, mask/count.
 // Emit every item, source/callback state and ordered successful/EOF event.
 module app::main;
+import core::function;
 import core::io;
 import core::iter;
 import core::option;
@@ -33,12 +34,12 @@ impl Context {
 }
 struct Predicate { state: &Context }
 impl Predicate { fn borrow(&self) -> &Predicate { return self; } }
-pub impl core::iter::Mapper<i64, bool> for Predicate {
+pub impl core::function::Mapper<i64, bool> for Predicate {
     pub fn apply(&self, value: i64) -> bool { let state: &Context = self.state; return state.test(value, 200); }
 }
 struct SelectMap { state: &Context }
 impl SelectMap { fn borrow(&self) -> &SelectMap { return self; } }
-pub impl core::iter::Mapper<i64, core::option::Option<i64>> for SelectMap {
+pub impl core::function::Mapper<i64, core::option::Option<i64>> for SelectMap {
     pub fn apply(&self, value: i64) -> core::option::Option<i64> {
         let state: &Context = self.state;
         if (!state.test(value, 300)) { return core::option::None(); }

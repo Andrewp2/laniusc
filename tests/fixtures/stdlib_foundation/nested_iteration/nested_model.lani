@@ -1,6 +1,7 @@
 // Binary test transport only: 25 u64 command words, 14 words per action,
 // followed by effect-count and effects. All traversal is actual core::iter.
 module app::main;
+import core::function;
 import core::io;
 import core::iter;
 import core::option;
@@ -50,7 +51,7 @@ pub impl core::iter::Iterator<i32> for Input {
 }
 struct Mapping { state: &State, fail: i32, calls: i32 }
 impl Mapping { fn borrow(&self) -> &Mapping { return self; } }
-pub impl core::iter::Mapper<i32,core::result::Result<Inner,u64>> for Mapping {
+pub impl core::function::Mapper<i32,core::result::Result<Inner,u64>> for Mapping {
     pub fn apply(&self, id: i32) -> core::result::Result<Inner,u64> {
         let state: &State = self.state; let trace: &Trace = state.trace;
         self.calls += 1; trace.add(400+id as u64);

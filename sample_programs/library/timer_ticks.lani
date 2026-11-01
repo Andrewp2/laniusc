@@ -1,0 +1,153 @@
+// Arm one timerfd timer and report each blocking read: how many expirations it
+// returned (overruns included), the running total and the elapsed time on the
+// timer's own clock. --work-ms simulates a slow consumer between reads.
+module app::main;
+import core::decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import core::time;
+import std::args;
+import std::host_clocks;
+import std::signal;
+import std::stream;
+import std::timer;
+
+struct Options { clock: i32, interval: u64, initial: u64, initial_set: bool, count: u64, work: u64, absolute: bool, json: bool, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Start { wall: core::time::SystemTime, steady: core::time::Instant }
+fn bytes(value: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),n); return core::slice::view(raw,n).unwrap(); }
+fn text(value: str, n: i32) -> core::text::Text { let raw = bytes(value,n); return core::text::from_utf8_unchecked(raw.values,raw.start,raw.length); }
+fn equal(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool { if (a.length != b.length) { return false; } let i: i32 = 0; while (i < a.length) { if (a.values[a.start+i] != b.values[b.start+i]) { return false; } i += 1; } return true; }
+fn number(value: core::slice::View<u8>, maximum: u64) -> core::option::Option<u64> {
+    if (value.length < 1 || value.length > 20) { return core::option::None(); } let index: i32 = 0;
+    while (index < value.length) { let byte: u8 = value.values[value.start+index]; if (byte < 48 || byte > 57) { return core::option::None(); } index += 1; }
+    let parsed: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(value.values,value.start,value.length);
+    if (parsed.is_err() || parsed.unwrap() > maximum) { return core::option::None(); } return core::option::Some(parsed.unwrap());
+}
+fn clock_index(value: core::slice::View<u8>) -> i32 {
+    if (equal(value,bytes("monotonic",9))) { return 0; } if (equal(value,bytes("boottime",8))) { return 1; } if (equal(value,bytes("realtime",8))) { return 2; }
+    if (equal(value,bytes("realtime-alarm",14))) { return 3; } if (equal(value,bytes("boottime-alarm",14))) { return 4; } return -1;
+}
+fn clock_of(index: i32) -> std::host_clocks::Clock {
+    if (index == 1) { return std::host_clocks::Clock::Boottime; } if (index == 2) { return std::host_clocks::Clock::Realtime; }
+    if (index == 3) { return std::host_clocks::Clock::RealtimeAlarm; } if (index == 4) { return std::host_clocks::Clock::BoottimeAlarm; } return std::host_clocks::Clock::Monotonic;
+}
+fn wall(index: i32) -> bool { return index == 2 || index == 3; }
+fn parse(args: std::args::Arguments, options: &Options) -> bool {
+    let index: i32 = 0; let seen: u32 = 0;
+    while (index < args.len()) {
+        let value = args.get(index).unwrap(); let id: i32 = 0;
+        if (equal(value,bytes("--clock",7))) { id = 1; } if (equal(value,bytes("--interval-ms",13))) { id = 2; } if (equal(value,bytes("--initial-ms",12))) { id = 3; }
+        if (equal(value,bytes("--count",7))) { id = 4; } if (equal(value,bytes("--work-ms",9))) { id = 5; } if (equal(value,bytes("--absolute",10))) { id = 6; }
+        if (equal(value,bytes("--format",8))) { id = 7; } if (equal(value,bytes("--help",6))) { id = 8; }
+        if (id == 0) { return false; } let bit: u32 = (1 as u32) << id; if ((seen & bit) != 0) { return false; } seen |= bit;
+        if (id == 6) { options.absolute = true; index += 1; continue; } if (id == 8) { options.help = true; index += 1; continue; }
+        if (index+1 >= args.len()) { return false; } let operand = args.get(index+1).unwrap();
+        if (id == 1) { options.clock = clock_index(operand); if (options.clock < 0) { return false; } }
+        if (id == 7) { if (equal(operand,bytes("json",4))) { options.json = true; } else { if (equal(operand,bytes("tsv",3))) { options.json = false; } else { return false; } } }
+        if (id >= 2 && id <= 5) {
+            let maximum: u64 = 60000; if (id == 4) { maximum = 10000; }
+            let parsed = number(operand,maximum); if (parsed.is_none()) { return false; }
+            if (id == 2) { options.interval = parsed.unwrap(); } if (id == 3) { options.initial = parsed.unwrap(); options.initial_set = true; }
+            if (id == 4) { options.count = parsed.unwrap(); } if (id == 5) { options.work = parsed.unwrap(); }
+        }
+        index += 2;
+    }
+    if (options.help) { return args.len() == 1; }
+    if (!options.initial_set) { options.initial = options.interval; if (options.interval == 0) { options.initial = 10; } }
+    // A one-shot timer expires once, so only one read can complete.
+    return options.initial >= 1 && options.count >= 1 && (options.interval > 0 || options.count == 1);
+}
+fn publish(raw: [u8], count: i32, error: bool) -> bool {
+    let sink = std::stream::stdout(); if (error) { sink = std::stream::stderr(); }
+    return core::io::write_all(sink.borrow(),raw,0,count).is_ok();
+}
+fn fail(reason: str, n: i32, errno: i32) -> i32 {
+    let raw: [u8;160] = [0;160]; let out = core::fmt::buffer(raw,0,160).unwrap();
+    out.write_text(text("timer-ticks: ",13)); out.write_text(text(reason,n)); out.write_text(text(" errno=",7)); out.write_signed(errno as i64,core::fmt::decimal()); out.write_text(text("\n",1));
+    publish(raw,out.finish().unwrap(),true); return 3;
+}
+fn clock_errno(error: std::host_clocks::Error) -> i32 { return match (error) { std::host_clocks::Error::Host(code) -> code, _ -> 0 }; }
+fn timer_errno(error: std::timer::Error) -> i32 { return match (error) { std::timer::Error::Host(code) -> code, std::timer::Error::Clock(cause) -> clock_errno(cause), std::timer::Error::Cancelled -> 125, _ -> 0 }; }
+fn read_start(clock: std::host_clocks::Clock, index: i32) -> core::result::Result<Start, i32> {
+    let start = Start { wall: core::time::unix_epoch(), steady: core::time::instant(core::time::zero()) };
+    if (wall(index)) { let read = std::host_clocks::timestamp(clock); if (read.is_err()) { return core::result::Err(clock_errno(read.unwrap_err())); } start.wall = read.unwrap(); }
+    else { let read = std::host_clocks::instant(clock); if (read.is_err()) { return core::result::Err(clock_errno(read.unwrap_err())); } start.steady = read.unwrap(); }
+    return core::result::Ok(start);
+}
+// Elapsed time on the timer's own clock; a wall clock set backwards is an error.
+fn elapsed(clock: std::host_clocks::Clock, index: i32, start: Start) -> core::result::Result<core::time::Duration, i32> {
+    if (wall(index)) {
+        let read = std::host_clocks::timestamp(clock); if (read.is_err()) { return core::result::Err(clock_errno(read.unwrap_err())); }
+        let span = read.unwrap().duration_since(start.wall); if (span.is_err()) { return core::result::Err(-1); } return core::result::Ok(span.unwrap());
+    }
+    let read = std::host_clocks::instant(clock); if (read.is_err()) { return core::result::Err(clock_errno(read.unwrap_err())); }
+    return core::result::Ok(read.unwrap().saturating_duration_since(start.steady));
+}
+fn nanos(span: core::time::Duration) -> u64 { let total = span.as_nanos(); if (total.is_err()) { return 18446744073709551615; } return total.unwrap(); }
+fn arm(timer: &std::timer::Timer, options: Options, start: Start) -> core::result::Result<std::timer::Setting, std::timer::Error> {
+    let initial: core::time::Duration = core::time::from_millis(options.initial); let interval: core::time::Duration = core::time::from_millis(options.interval);
+    if (!options.absolute) { return timer.arm_after(initial,interval); }
+    if (wall(options.clock)) { return timer.arm_at_timestamp(start.wall.checked_add(initial).unwrap(),interval,false); }
+    return timer.arm_at_instant(start.steady.checked_add(initial).unwrap(),interval);
+}
+fn row(options: Options, read: u64, expirations: u64, total: u64, span: core::time::Duration) -> bool {
+    let raw: [u8;192] = [0;192]; let out = core::fmt::buffer(raw,0,192).unwrap();
+    if (options.json) {
+        out.write_text(text("{\"read\":",8)); out.write_unsigned(read,core::fmt::decimal()); out.write_text(text(",\"expirations\":",15)); out.write_unsigned(expirations,core::fmt::decimal());
+        out.write_text(text(",\"total\":",9)); out.write_unsigned(total,core::fmt::decimal()); out.write_text(text(",\"elapsed_ns\":",14)); out.write_unsigned(nanos(span),core::fmt::decimal()); out.write_text(text("}\n",2));
+    } else {
+        out.write_unsigned(read,core::fmt::decimal()); out.write_text(text("\t",1)); out.write_unsigned(expirations,core::fmt::decimal()); out.write_text(text("\t",1));
+        out.write_unsigned(total,core::fmt::decimal()); out.write_text(text("\t",1)); out.write_unsigned(nanos(span),core::fmt::decimal()); out.write_text(text("\n",1));
+    }
+    let finished = out.finish(); if (finished.is_err()) { return false; } return publish(raw,finished.unwrap(),false);
+}
+fn work(milliseconds: u64) -> i32 {
+    if (milliseconds == 0) { return 0; }
+    let now = std::host_clocks::instant(std::host_clocks::Clock::Monotonic); if (now.is_err()) { return clock_errno(now.unwrap_err()); }
+    let slept = std::host_clocks::sleep_until_instant(std::host_clocks::Clock::Monotonic,now.unwrap().checked_add(core::time::from_millis(milliseconds)).unwrap());
+    if (slept.is_err()) { return clock_errno(slept.unwrap_err()); } return 0;
+}
+fn ticks(timer: &std::timer::Timer, options: Options) -> i32 {
+    let clock: std::host_clocks::Clock = clock_of(options.clock);
+    let started = read_start(clock,options.clock); if (started.is_err()) { return fail("clock read failed",17,started.unwrap_err()); } let start: Start = started.unwrap();
+    let armed = arm(timer,options,start); if (armed.is_err()) { return fail("arm failed",10,timer_errno(armed.unwrap_err())); }
+    if (!options.json && !publish(core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr("read\texpirations\ttotal\telapsed_ns\n"),34),34,false)) { return fail("write failed",12,0); }
+    let read: u64 = 0; let total: u64 = 0;
+    while (read < options.count) {
+        let waited = timer.wait(); if (waited.is_err()) { return fail("wait failed",11,timer_errno(waited.unwrap_err())); }
+        let span = elapsed(clock,options.clock,start); if (span.is_err()) { return fail("clock read failed",17,span.unwrap_err()); }
+        read += 1; total += waited.unwrap();
+        if (!row(options,read,waited.unwrap(),total,span.unwrap())) { return fail("write failed",12,0); }
+        if (read < options.count) { let paused: i32 = work(options.work); if (paused != 0) { return fail("work pause failed",17,paused); } }
+    }
+    let stopped = timer.disarm(); if (stopped.is_err()) { return fail("disarm failed",13,timer_errno(stopped.unwrap_err())); }
+    let after = timer.setting(); if (after.is_err()) { return fail("setting failed",14,timer_errno(after.unwrap_err())); }
+    if (after.unwrap().is_armed()) { return fail("still armed",11,0); }
+    return 0;
+}
+fn process(args: std::args::Arguments) -> i32 {
+    let options = Options { clock: 0, interval: 0, initial: 0, initial_set: false, count: 1, work: 0, absolute: false, json: true, help: false };
+    if (!parse(args,options.borrow())) { fail("invalid arguments; see --help",29,0); return 2; }
+    if (options.help) {
+        let usage: str = "Usage: timer-ticks [--clock monotonic|boottime|realtime|realtime-alarm|boottime-alarm] [--interval-ms N] [--initial-ms N] [--count N] [--work-ms N] [--absolute] [--format json|tsv]\n";
+        if (!publish(core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(usage),181),181,false)) { return 3; } return 0;
+    }
+    let made = std::timer::create(clock_of(options.clock),std::timer::Mode::Blocking);
+    if (made.is_err()) { return fail("create failed",13,timer_errno(made.unwrap_err())); }
+    let timer: std::timer::Timer = made.unwrap();
+    let result: i32 = ticks(timer.borrow(),options);
+    let closed = timer.close(); if (closed.is_err() && result == 0) { return fail("close failed",12,timer_errno(closed.unwrap_err())); }
+    return result;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let captured = std::args::snapshot(1,32,4096);
+    if (captured.is_err()) { fail("invalid arguments; see --help",29,0); return 2; }
+    let args = captured.unwrap(); let result: i32 = process(args); args.destroy(); return result;
+}

@@ -1,0 +1,62 @@
+// Cost per LRU operation at a small and a large capacity. The same mixed
+// workload (put with eviction, get hits and misses, touch, remove) runs at
+// 1,024 and 1,048,576 entries; stdout gets the nanoseconds of each run, so a
+// caller can compare per-operation time. The run asserts exact final counts.
+module app::main;
+import alloc::lru;
+import core::cmp;
+import core::hash;
+import core::mem;
+import core::option;
+import core::result;
+import core::time;
+import std::clock;
+import std::io;
+struct Key { id:i32 }
+pub impl core::cmp::Eq<Key> for Key {
+    pub fn eq(left:Key,right:Key) -> bool { return left.id==right.id; }
+    pub fn ne(left:Key,right:Key) -> bool { return left.id!=right.id; }
+}
+pub impl core::hash::Hash<Key> for Key { pub fn hash(value:Key) -> u32 { return (value.id as u32)*2654435761; } }
+const OPERATIONS: i32 = 4000000;
+// Returns elapsed nanoseconds; checks the count of evictions and hits.
+fn workload(limit:i32) -> u64 {
+    let cache:alloc::lru::LruCache<Key,i32> = alloc::lru::with_capacity<Key,i32>(limit).unwrap();
+    let i:i32=0; while(i<limit) { cache.put(Key { id:i },i); i+=1; }
+    let start:core::time::Instant = std::clock::monotonic_now().unwrap();
+    let state:u32=12345; let step:i32=0; let evicted:i32=0; let hits:i32=0;
+    while(step<OPERATIONS) {
+        state=state*1664525+1013904223;
+        let id:i32=((state>>8) as i32)%(limit+limit/2);
+        let choice:u32=state&3;
+        if(choice==0) {
+            let outcome:alloc::lru::Put<Key,i32> = cache.put(Key { id:id },step);
+            if(match(outcome) { alloc::lru::Put::Evicted(entry) -> true, _ -> false }) { evicted+=1; }
+        }
+        if(choice==1) { if(cache.get(Key { id:id }).is_some()) { hits+=1; } }
+        if(choice==2) { if(cache.touch(Key { id:id })) { hits+=1; } }
+        if(choice==3) { if(cache.remove(Key { id:id }).is_some()) { hits+=1; cache.put(Key { id:id },0); } }
+        step+=1;
+    }
+    let finish:core::time::Instant = std::clock::monotonic_now().unwrap();
+    assert(cache.len()==limit && evicted>0 && hits>0);
+    cache.destroy();
+    return finish.duration_since(start).unwrap().as_nanos().unwrap();
+}
+// Not named print: that name resolves to the built-in i32 printer
+// (tests/fixtures/compiler_defects/user_fn_print_replaced_by_builtin.lani).
+fn emit(value:u64) {
+    let storage:[i32;8]=[0;8]; let base:ptr=core::mem::i32_array_data_ptr(storage);
+    let digits:[u8]=core::mem::typed_slice_from_raw_parts<u8>(base,24);
+    let n:i32=23; let v:u64=value; digits[n]=10;
+    if(v==0) { n-=1; digits[n]=48; }
+    while(v>0) { n-=1; digits[n]=((v%10) as u8)+48; v=v/10; }
+    assert(std::io::write_stdout(base+(n as usize),(24-n) as usize)==24-n);
+    // Read the array after the raw writes so its storage stays live.
+    assert(storage[5]==storage[5]);
+}
+fn main() -> i32 {
+    emit(workload(1024));
+    emit(workload(1048576));
+    return 0;
+}

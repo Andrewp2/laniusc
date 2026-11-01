@@ -1,0 +1,80 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::path;
+import core::result;
+import core::slice;
+import std::file;
+import std::file_ops;
+import std::io;
+import std::linux;
+
+fn path() -> core::path::Path {
+    let bytes:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr("input"),5);
+    return core::path::from_view(core::slice::view<u8>(bytes,5).unwrap()).unwrap();
+}
+fn host(error:core::io::Error,expected:i32) -> bool { return match(error) { core::io::Error::Host(code)->code==expected,_ ->false }; }
+fn invalid(error:core::io::Error) -> bool { return match(error) { core::io::Error::InvalidInput->true,_ ->false }; }
+fn close(file:&std::file::File) { assert(file.close().unwrap()==0 && file.close().unwrap()==0 && !file.is_open()); }
+fn mark(value:i32) { let byte:[i32;1]=[value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn seek<S>(source:&S,from:core::io::SeekFrom) -> u64 where S:core::io::Seek {
+    let positioned:core::result::Result<u64,core::io::Error> =source.seek(from);
+    return positioned.unwrap();
+}
+fn main() -> i32 {
+    let options:std::file_ops::OpenOptions=std::file_ops::options(); options.access=std::file_ops::Access::ReadWrite;
+    let file:std::file::File=std::file_ops::open(path(),options).unwrap();
+    let duplicate:std::file::File=std::file_ops::duplicate(file.borrow(),40,true).unwrap();
+    assert(file.raw_handle().unwrap()!=duplicate.raw_handle().unwrap());
+    assert(seek<std::file::File>(file.borrow(),core::io::SeekFrom::Start(2))==2);
+    let bytes:[u8;8]=[211;8];
+    assert(file.read(bytes,2,3).unwrap()==3);
+    assert(bytes[0]==211 && bytes[1]==211 && bytes[2]==2 && bytes[3]==3 && bytes[4]==4 && bytes[5]==211 && bytes[6]==211 && bytes[7]==211);
+    assert(core::io::stream_position<std::file::File>(duplicate.borrow()).unwrap()==5);
+    assert(seek<std::file::File>(duplicate.borrow(),core::io::SeekFrom::Current(-2))==3);
+    let source:[u8;4]=[211,0,255,211]; assert(file.write(source,1,2).unwrap()==2);
+    assert(core::io::stream_position<std::file::File>(duplicate.borrow()).unwrap()==5);
+    assert(seek<std::file::File>(duplicate.borrow(),core::io::SeekFrom::End(-2))==14);
+    assert(file.read(bytes,2,2).unwrap()==2 && bytes[2]==14 && bytes[3]==15 && bytes[0]==211 && bytes[1]==211 && bytes[5]==211);
+    assert(core::io::stream_position<std::file::File>(file.borrow()).unwrap()==16);
+    assert(seek<std::file::File>(file.borrow(),core::io::SeekFrom::Start(4294967311))==4294967311);
+    assert(core::io::stream_position<std::file::File>(duplicate.borrow()).unwrap()==4294967311);
+    assert(seek<std::file::File>(duplicate.borrow(),core::io::SeekFrom::Current(-4294967296))==15);
+    assert(seek<std::file::File>(file.borrow(),core::io::SeekFrom::End(4294967296))==4294967312);
+    assert(seek<std::file::File>(duplicate.borrow(),core::io::SeekFrom::End(-16))==0);
+    assert(host(file.seek(core::io::SeekFrom::Current(-9223372036854775808)).unwrap_err(),22));
+    assert(host(file.seek(core::io::SeekFrom::End(-9223372036854775808)).unwrap_err(),22));
+    assert(core::io::stream_position<std::file::File>(duplicate.borrow()).unwrap()==0);
+    assert(core::io::rewind<std::file::File>(file.borrow()).unwrap()==0);
+    close(file.borrow());
+    // Closed owner wins over an invalid Start target. Live high targets and
+    // all closed operations are pure admission and make no lseek syscall.
+    mark(80);
+    assert(invalid(duplicate.seek(core::io::SeekFrom::Start(9223372036854775808)).unwrap_err()));
+    assert(invalid(duplicate.seek(core::io::SeekFrom::Start(18446744073709551615)).unwrap_err()));
+    assert(host(file.seek(core::io::SeekFrom::Start(18446744073709551615)).unwrap_err(),9));
+    assert(host(file.seek(core::io::SeekFrom::Current(-9223372036854775808)).unwrap_err(),9));
+    assert(host(file.seek(core::io::SeekFrom::End(9223372036854775807)).unwrap_err(),9));
+    assert(host(core::io::stream_position<std::file::File>(file.borrow()).unwrap_err(),9));
+    assert(host(core::io::rewind<std::file::File>(file.borrow()).unwrap_err(),9));
+    assert(duplicate.is_open()); mark(112); close(duplicate.borrow());
+    // O_APPEND still places a write at EOF after an acknowledged Start(0).
+    options.append=true; let append:std::file::File=std::file_ops::open(path(),options).unwrap();
+    assert(seek<std::file::File>(append.borrow(),core::io::SeekFrom::Start(0))==0);
+    assert(append.write(source,1,2).unwrap()==2);
+    assert(core::io::stream_position<std::file::File>(append.borrow()).unwrap()==18); close(append.borrow());
+    // Real unseekable endpoints, adopted exactly once from packed pipe2 output.
+    let handles:[i32;2]=[-1,-1];
+    let args:[std::linux::Argument;2]=[std::linux::Argument::Address(core::mem::i32_array_data_ptr(handles)),std::linux::Argument::Word(524288)];
+    assert(std::linux::call(293,core::slice::view<std::linux::Argument>(args,2).unwrap()).unwrap()==0);
+    assert(handles[0]>=0 && handles[1]>=0 && handles[0]!=handles[1]);
+    let reader:std::file::File=std::file::from_owned_handle(handles[0]).unwrap();
+    let writer:std::file::File=std::file::from_owned_handle(handles[1]).unwrap();
+    assert(host(reader.seek(core::io::SeekFrom::Start(0)).unwrap_err(),29));
+    assert(host(writer.seek(core::io::SeekFrom::Current(-9223372036854775808)).unwrap_err(),29));
+    assert(writer.write(source,1,2).unwrap()==2 && reader.read(bytes,2,2).unwrap()==2);
+    assert(bytes[2]==0 && bytes[3]==255 && bytes[0]==211 && bytes[1]==211 && bytes[5]==211);
+    close(reader.borrow()); close(writer.borrow());
+    assert(source[0]==211 && source[1]==0 && source[2]==255 && source[3]==211);
+    mark(68); return 0;
+}

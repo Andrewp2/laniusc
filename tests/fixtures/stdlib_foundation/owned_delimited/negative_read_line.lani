@@ -1,0 +1,14 @@
+module app::main;
+import alloc::io;
+import core::io;
+import core::result;
+struct Sequential {}
+impl Sequential { fn borrow(&self) -> &Sequential { return self; } }
+pub impl core::io::Read for Sequential {
+    pub fn read(&self,bytes:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error> { return core::result::Ok(0); }
+}
+fn main() -> i32 {
+    let reader:Sequential=Sequential {};
+    let rejected:core::result::Result<alloc::io::ReadLine,alloc::io::BufferedReadFailure> =alloc::io::read_line<Sequential>(reader.borrow(),alloc::io::ReadLimits { max_bytes:0,max_calls:1 }); // rejected_bufread_bound
+    return 0;
+}

@@ -123,14 +123,21 @@ that implementation resource bound is an explicit `NumberLimit` error.
 
 ## Encoding
 
-`encode(document)` returns an owned `String` or an explicit error.
-`measure(document)` returns the exact output byte count without allocating.
+The [resumable serializer](extended-toml-streaming.md) now defines one shared
+byte machine for all output paths; all five library gates pass on Linux x86_64
+CPU output from the GPU compiler.
+`document.encoded_len()` replaces free `measure(document)` and returns the exact
+u64 output byte count without allocating. `document.encoding()` admits a
+borrowed canonical `Read` cursor. `encode(document)` still returns an independent
+owned String or an explicit error.
+
 `encode_into(document, output: core::slice::View<u8>)` returns the written byte
-count. The caller's output remains byte-for-byte unchanged on every returned
-error, including insufficient output capacity, work exhaustion, and allocation
-failure. Its capacity error is `OutputLimit`. It first measures, then creates an
-owned temporary encoding, and only then writes the complete result to caller
-storage. Bytes outside the returned span are unchanged.
+count. Logical metadata, semantic/output preflight, caller capacity and replay
+work are checked before writing. Its capacity error is `OutputLimit`; every
+returned error leaves the complete destination unchanged. The new path fills
+the admitted prefix directly without a temporary String or output allocation.
+Bytes outside that prefix are unchanged. Document backing stays immutable/live
+and disjoint from cursor and destination storage throughout serialization.
 
 Encoding emits one quoted root key, equals sign, value, and LF per root member.
 Nested tables become inline tables and arrays of tables become arrays of inline
@@ -176,11 +183,20 @@ Parsing charges selected input length before UTF-8 validation, charges scanning
 and node insertion, and charges key-comparison bytes to bound adversarial wide
 tables. A floating conversion reserves one million work units for the bounded
 exact converter; non-NaN formatting reserves a further million. These are
-conservative charges, not measurements of elapsed processor time. Encoder work
-charges traversed nodes, emitted bytes, and scanned temporal fraction bytes.
-`encode_into` checks that both encoding passes and the final byte copy fit its
-single work bound before the first write. Public document queries operate on an
-already bounded immutable document and do not consume parser or encoder budgets.
+conservative charges, not measurements of elapsed processor time. Serializer
+work W counts emitted bytes, nonroot node visits, scanned fraction digits and
+trimmed trailing-zero digits. `encoded_len()` admits W; reader construction,
+owned `encode` and direct `encode_into` admit 2W for preflight plus replay.
+This deliberately replaces old owned encode's W and old encode_into's
+2W + output-byte-copy charge. Allocator/collector work and host calls are outside
+this serializer budget. See the [work contract](extended-toml-streaming.md#work-accounting).
+Preflight reports the first exhausted bound in generator order: each emitted
+byte checks output capacity before its byte-work charge, while node/fraction
+work is charged where encountered. Simultaneously insufficient caps can select
+a different error from the earlier scalar/raw-chunk implementation; there is
+no whole-pass output-over-work precedence.
+Public value queries operate on an already bounded immutable document and do
+not consume parser or encoder budgets.
 
 `Error { kind: ErrorKind, offset: i32 }` reports a byte offset relative to the
 selected input range. Query and encoder errors use offset `-1`. Invalid options
@@ -195,6 +211,68 @@ number or date/time, integer range, duplicate key, table redefinition, each
 resource limit, allocation failure, invalid options, bounds, and wrong kind.
 
 ## Executable evidence
+
+### Python tomllib oracle (2026-10-31)
+
+[`toml_oracle/oracle.py`](../tests/fixtures/stdlib_execution/toml_oracle/oracle.py)
+runs the [normalizer](extended-toml-normalize.md), built by the GPU compiler
+for native Linux x86_64. It is registered in
+`tests/extended_toml_oracle_execution.rs`. For each input accepted by
+Python's `tomllib`, two checks apply. First, `tomllib.loads` of the
+normalizer's output must equal `tomllib.loads` of the input. The comparison
+keeps key order and exact types, including float sign, NaN and datetime
+spelling and offset. Second, normalizing the output again must reproduce it
+byte for byte. For each rejected input, the program must exit 2 with a typed
+`toml-error` diagnostic (kind and byte offset) or an `invalid-utf8` one, and
+write nothing to stdout.
+
+| Group | Cases | Agreement | tomllib accepts | tomllib rejects | TOML 1.1 only | Integers beyond i64 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| edge: hand-written | 154 | 154 | 67 | 80 | 6 | 1 |
+| generated documents | 600 | 600 | 600 | 0 | 0 | 0 |
+| 1–2 byte mutations of generated documents | 1,000 | 1,000 | 221 | 777 | 1 | 1 |
+
+The edge cases cover:
+
+- dotted keys, including quoted dots, collisions between escaped and bare
+  spellings, and extending dotted tables from headers;
+- inline tables, including duplicates, extension from outside, and nesting;
+- arrays and arrays of tables, including subtables, nested arrays of tables,
+  and static-array conflicts;
+- table redefinition;
+- all four date-time kinds, separators, offsets, fractions, leap days and
+  invalid fields;
+- integer and float spellings, including the i64 bounds, radix prefixes, `inf`
+  and `nan`;
+- all string forms with quote runs, escapes, surrogates, controls, and CRLF;
+- comments and a BOM.
+
+Six of these cases also check the exact error kind: four
+`duplicate key`, one `table redefinition` and one `number out of range`.
+
+Generated documents mix inline values, dotted keys, `[table]` and
+`[[array]]` headers, every string form, radix integers, special floats, all
+date-time kinds and CRLF line endings.
+
+Two classes are expected disagreements by policy:
+
+- **TOML 1.1 syntax** (`\e`, `\xHH`, omitted seconds, multiline or
+  trailing-comma inline tables): `ext::toml` accepts it, while `tomllib`
+  implements TOML 1.0.0 and rejects it. Each such case must still normalize
+  idempotently.
+- **Integers outside i64**: `tomllib` keeps them as unbounded Python ints.
+  TOML requires an error when an integer cannot be kept losslessly, so
+  `ext::toml` reports `number out of range`.
+
+No other disagreement occurred. `cargo test` was not run in this session.
+
+### Earlier receipts
+
+The historical receipts below predate the shared resumable serializer. Its
+[current acceptance](extended-toml-streaming.md#status-and-dependencies) covers
+five library groups, including the independent state model and selected
+owned-output allocation failures. Parser corpus coverage and old
+output/allocation observations retain their original source scope.
 
 `tests/fixtures/extended_library/toml_smoke.lani` checks native parsing, signed
 64-bit minimum, negative floating zero, TOML 1.1 escapes, checked leap-day and

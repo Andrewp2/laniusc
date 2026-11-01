@@ -1,0 +1,92 @@
+module app::main;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::compression;
+import ext::deflate;
+import fixture::support;
+fn raw_code(error:ext::deflate::Error) -> i32 { return match(error) { ext::deflate::Error::Bounds -> 1,ext::deflate::Error::ScratchTooSmall(count) -> count+10,ext::deflate::Error::Capacity(count) -> count+100000,_ -> 2 }; }
+fn container_code(error:ext::compression::Error) -> i32 { return match(error) { ext::compression::Error::Bounds -> 1,ext::compression::Error::InputLimit -> 2,ext::compression::Error::OutputLimit -> 3,ext::compression::Error::Encode(inner) -> raw_code(inner)+200000,_ -> 4 }; }
+fn save(source:&fixture::support::Workspace,target:&fixture::support::Workspace) {
+    let i:i32 = 0; while(i<32772) { target.block.set(i,source.block.at(i)).unwrap(); target.scratch.set(i,source.scratch.at(i)).unwrap(); i+=1; }
+    i=0; while(i<32777) { target.pending.set(i,source.pending.at(i)).unwrap(); i+=1; }
+}
+fn equal(source:&fixture::support::Workspace,target:&fixture::support::Workspace) {
+    let i:i32 = 0; while(i<32772) { assert(target.block.at(i)==source.block.at(i) && target.scratch.at(i)==source.scratch.at(i)); i+=1; }
+    i=0; while(i<32777) { assert(target.pending.at(i)==source.pending.at(i)); i+=1; }
+}
+fn invalid_raw(raw:&ext::deflate::Encoder,output:[u8]) {
+    let nowhere:ptr = 0; let absent:[u8] = core::mem::typed_slice_from_raw_parts<u8>(nowhere,0); let empty=fixture::support::view(absent,0,0);
+    let case:i32 = 0; while(case<6) {
+        let bad=fixture::support::view(absent,-1,1); if(case%3==1) { bad.start=0; bad.length=-1; } if(case%3==2) { bad.start=2147483647; bad.length=1; }
+        let result:core::result::Result<ext::deflate::Step,ext::deflate::Failure> = raw.step(bad,fixture::support::view(output,2,2),true);
+        if(case>=3) { result=raw.step(empty,bad,true); }
+        let failed=result.unwrap_err(); assert(raw_code(failed.error)==1 && failed.read==0 && failed.written==0); case+=1;
+    }
+    let i:i32 = 0; while(i<32) { assert(output[i]==211); i+=1; }
+}
+fn invalid_container(encoder:&ext::compression::Encoder,output:[u8]) {
+    let nowhere:ptr = 0; let absent:[u8] = core::mem::typed_slice_from_raw_parts<u8>(nowhere,0); let empty=fixture::support::view(absent,0,0);
+    let case:i32 = 0; while(case<6) {
+        let bad=fixture::support::view(absent,-1,1); if(case%3==1) { bad.start=0; bad.length=-1; } if(case%3==2) { bad.start=2147483647; bad.length=1; }
+        let result:core::result::Result<ext::deflate::Step,ext::compression::EncodeFailure> = encoder.step(bad,fixture::support::view(output,2,2),true);
+        if(case>=3) { result=encoder.step(empty,bad,true); }
+        let failed=result.unwrap_err(); assert(container_code(failed.error)==1 && failed.read==0 && failed.written==0); case+=1;
+    }
+    let i:i32 = 0; while(i<32) { assert(output[i]==211); i+=1; }
+}
+fn main() -> i32 {
+    fixture::support::mark(65); let workspace=fixture::support::workspace(); let saved=fixture::support::workspace(); fixture::support::mark(83); fixture::support::mark(80);
+    let block=workspace.input(); let pending=workspace.output(); let hash=workspace.hash(); let target:[u8;32] = [211;32]; let source:[u8;3] = [91,65,92];
+    let input=fixture::support::view(source,1,1); let empty=fixture::support::view(source,1,0);
+    let nowhere:ptr = 0; let absent:[u8] = core::mem::typed_slice_from_raw_parts<u8>(nowhere,0); let absent_words:[i32] = core::mem::typed_slice_from_raw_parts<i32>(nowhere,0);
+    let short_block=block; short_block.length=32767; let short_pending=pending; short_pending.length=32772; let short_hash=hash; short_hash.length=32767;
+    assert(raw_code(ext::deflate::encoder(short_block,pending,hash).unwrap_err())==32778);
+    assert(raw_code(ext::deflate::encoder(block,short_pending,hash).unwrap_err())==132773);
+    assert(raw_code(ext::deflate::encoder(block,pending,short_hash).unwrap_err())==32778);
+    let limits=ext::compression::default_encode_limits(); assert(limits.max_input==16777216 && limits.max_output==67108864);
+    assert(container_code(ext::compression::encoder(short_block,pending,hash,ext::compression::Format::Zlib,limits).unwrap_err())==232778);
+    assert(container_code(ext::compression::encoder(block,short_pending,hash,ext::compression::Format::Zlib,limits).unwrap_err())==332773);
+    assert(container_code(ext::compression::encoder(block,pending,short_hash,ext::compression::Format::Zlib,limits).unwrap_err())==232778);
+    let case:i32 = 0; while(case<9) {
+        let bad=fixture::support::view(absent,-1,1); let bad_hash=fixture::support::words(absent_words,-1,1);
+        if(case%3==1) { bad.start=0; bad.length=-1; bad_hash.start=0; bad_hash.length=-1; }
+        if(case%3==2) { bad.start=2147483647; bad.length=1; bad_hash.start=2147483647; bad_hash.length=1; }
+        let b=short_block; let p=short_pending; let h=short_hash;
+        if(case<3) { b=bad; } else { if(case<6) { p=bad; } else { h=bad_hash; } }
+        assert(raw_code(ext::deflate::encoder(b,p,h).unwrap_err())==1);
+        assert(container_code(ext::compression::encoder(b,p,h,ext::compression::Format::Gzip,limits).unwrap_err())==1); case+=1;
+    }
+    workspace.pristine(); saved.pristine();
+    // Admit extra suffix capacity, but every byte outside the required prefix remains a guard.
+    block.length+=2; pending.length+=2; hash.length+=2;
+    let raw=ext::deflate::encoder(block,pending,hash).unwrap(); workspace.pristine(); invalid_raw(raw.borrow(),target); workspace.pristine();
+    fixture::support::progress(raw.step(input,fixture::support::view(target,2,0),true).unwrap(),1,0,2);
+    save(workspace.borrow(),saved.borrow()); invalid_raw(raw.borrow(),target); equal(workspace.borrow(),saved.borrow());
+    fixture::support::progress(raw.step(empty,fixture::support::view(target,2,3),true).unwrap(),0,3,3); assert(target[2]==115 && target[3]==4 && target[4]==0);
+    target[2]=211; target[3]=211; target[4]=211; save(workspace.borrow(),saved.borrow()); invalid_raw(raw.borrow(),target); equal(workspace.borrow(),saved.borrow()); assert(raw.is_done());
+    fixture::support::progress(raw.step(input,fixture::support::view(target,2,20),false).unwrap(),0,0,3); equal(workspace.borrow(),saved.borrow());
+    raw.reset(); equal(workspace.borrow(),saved.borrow()); assert(!raw.is_done());
+    fixture::support::progress(raw.step(input,fixture::support::view(target,2,0),false).unwrap(),1,0,1); save(workspace.borrow(),saved.borrow()); raw.reset(); equal(workspace.borrow(),saved.borrow());
+    fixture::support::progress(raw.step(empty,fixture::support::view(target,2,2),true).unwrap(),0,2,3); assert(target[2]==3 && target[3]==0); target[2]=211; target[3]=211;
+    raw.reset(); fixture::support::progress(raw.step(input,fixture::support::view(target,2,0),true).unwrap(),1,0,2);
+    save(workspace.borrow(),saved.borrow()); raw.reset(); equal(workspace.borrow(),saved.borrow());
+    fixture::support::progress(raw.step(empty,fixture::support::view(target,2,2),true).unwrap(),0,2,3); assert(target[2]==3 && target[3]==0); target[2]=211; target[3]=211;
+    let no_input:ext::compression::EncodeLimits = ext::compression::EncodeLimits { max_input:0,max_output:100 };
+    let encoder=ext::compression::encoder(block,pending,hash,ext::compression::Format::Gzip,no_input).unwrap();
+    save(workspace.borrow(),saved.borrow()); invalid_container(encoder.borrow(),target); equal(workspace.borrow(),saved.borrow()); assert(!encoder.is_failed() && !encoder.is_done());
+    let failure=encoder.step(input,fixture::support::view(target,2,20),true).unwrap_err(); assert(container_code(failure.error)==2 && failure.read==0 && failure.written==0);
+    assert(encoder.is_failed() && encoder.total_read()==0 && encoder.total_written()==0); equal(workspace.borrow(),saved.borrow());
+    invalid_container(encoder.borrow(),target); equal(workspace.borrow(),saved.borrow());
+    failure=encoder.step(empty,fixture::support::view(target,2,20),true).unwrap_err(); assert(container_code(failure.error)==2 && failure.read==0 && failure.written==0); equal(workspace.borrow(),saved.borrow());
+    let wide_limit:u64 = 4294967296;
+    let wide:ext::compression::EncodeLimits = ext::compression::EncodeLimits { max_input:wide_limit,max_output:wide_limit };
+    encoder.reset(ext::compression::Format::RawDeflate,wide); equal(workspace.borrow(),saved.borrow()); assert(!encoder.is_failed() && !encoder.is_done() && encoder.total_read()==0 && encoder.total_written()==0);
+    fixture::support::progress(encoder.step(input,fixture::support::view(target,2,3),true).unwrap(),1,3,3); assert(encoder.total_read()==1 && encoder.total_written()==3);
+    target[2]=211; target[3]=211; target[4]=211; save(workspace.borrow(),saved.borrow()); invalid_container(encoder.borrow(),target); equal(workspace.borrow(),saved.borrow());
+    fixture::support::progress(encoder.step(input,fixture::support::view(target,2,20),false).unwrap(),0,0,3); equal(workspace.borrow(),saved.borrow());
+    encoder.reset(ext::compression::Format::Zlib,limits); equal(workspace.borrow(),saved.borrow()); fixture::support::progress(encoder.step(empty,fixture::support::view(target,2,8),true).unwrap(),0,8,3);
+    let expected:[u8;8] = [120,1,3,0,0,0,0,1]; let i:i32 = 0; while(i<8) { assert(target[2+i]==expected[i]); i+=1; }
+    assert(target[0]==211 && target[1]==211); i=10; while(i<32) { assert(target[i]==211); i+=1; }
+    assert(source[0]==91 && source[1]==65 && source[2]==92); workspace.guards(); fixture::support::mark(112); fixture::support::mark(82); saved.destroy(); workspace.destroy(); fixture::support::mark(69); fixture::support::mark(68); return 0;
+}
