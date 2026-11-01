@@ -10,7 +10,7 @@ context `Γ` names is bound to a cell `Σ` gives its type. Binding a local, or
 a list of them, assigning a typed value to a typed cell, and restoring a
 caller's locals keep both, with `Σ` only growing. -/
 
-namespace Lanius.Mini
+namespace Lanius.Mini.NoMismatch
 
 open Lanius.Core (Value Ty)
 open Lanius.Semantics (State Cell)
@@ -208,4 +208,4 @@ theorem LocalsOk.restore {S S' : CellTypes} {Γ : Typing.Context} {caller st : S
     (le : S.Le S') : LocalsOk S' Γ (Lanius.Semantics.restoreLocals caller st) :=
   h.mono le rfl
 
-end Lanius.Mini
+end Lanius.Mini.NoMismatch

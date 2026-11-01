@@ -9,7 +9,7 @@ program this holds for every fuel, by induction; the step from `k` to
 `k + 1` is one lemma per syntactic form. `evalExpr_ne_typeMismatch` is the
 consequence finding 2 asks for: such a run never traps with `typeMismatch`. -/
 
-namespace Lanius.Mini
+namespace Lanius.Mini.NoMismatch
 
 open Lanius.Core (Value Ty Expr Place Stmt Pattern)
 open Lanius.Semantics (State Cell Outcome Completion ResolvedPlace evalExpr evalExprs evalMatchArms evalPlace
@@ -320,12 +320,12 @@ theorem step_assign {op : Core.AssignOp} {p : Place} {e : Expr} {t : Ty} (fp : P
   all_goals (rename_i heq; pass (hp heq))
 
 include ih in
-theorem step_call (prog : ProgOk P) {fid : Nat} {f : Core.Function} {es : List Expr} (fes : ExprsFrag es = true)
-    (found : P.function? fid = some f) (arguments : ExprsHaveTypes P Γ es (f.parameters.map Prod.snd))
-    (cells : CellsOk P S st) (locs : LocalsOk S Γ st) :
+/-- A call whose arguments evaluate as `EsOk` promises. -/
+theorem step_call_of (prog : ProgOk P) {fid : Nat} {f : Core.Function} {es : List Expr}
+    (found : P.function? fid = some f) (args : EsOk P S st (f.parameters.map Prod.snd) (evalExprs k P st es)) :
     EOk P S st f.returnType (evalExpr (k + 1) P st (.call fid es)) := by
   simp only [evalExpr]
-  have h := ih.exprs fes arguments cells locs
+  have h := args
   cases hr : evalExprs k P st es with
   | done vs after =>
     rw [hr] at h
@@ -382,6 +382,13 @@ theorem step_call (prog : ProgOk P) {fid : Nat} {f : Core.Function} {es : List E
       | trapped r hp w => rw [hc] at ho; simp only [Lanius.Semantics.worldCallOutcome]; exact ho
       | typeMismatch hp w => rw [hc] at ho; exact ho.elim
   | _ => rw [hr] at h; pass h
+
+include ih in
+theorem step_call (prog : ProgOk P) {fid : Nat} {f : Core.Function} {es : List Expr} (fes : ExprsFrag es = true)
+    (found : P.function? fid = some f) (arguments : ExprsHaveTypes P Γ es (f.parameters.map Prod.snd))
+    (cells : CellsOk P S st) (locs : LocalsOk S Γ st) :
+    EOk P S st f.returnType (evalExpr (k + 1) P st (.call fid es)) :=
+  step_call_of ih prog found (ih.exprs fes arguments cells locs)
 
 /-! ## Lists of expressions and match arms -/
 
@@ -703,4 +710,4 @@ theorem execStmt_ne_typeMismatch {P : Core.Program} (prog : ProgOk P) {k : Nat} 
   rw [run] at this
   exact this rfl
 
-end Lanius.Mini
+end Lanius.Mini.NoMismatch

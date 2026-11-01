@@ -14,7 +14,7 @@ of the result shape or a trap other than `typeMismatch`; a pattern typed by
 `PatternHasType` binds, on a value of its shape, values of its bindings'
 shapes. -/
 
-namespace Lanius.Mini
+namespace Lanius.Mini.NoMismatch
 
 open Lanius.Core (Value Ty ScalarTy)
 open Lanius.Typing
@@ -311,4 +311,4 @@ theorem patterns_binds {P : Core.Program} :
 termination_by pats => sizeOf pats
 end
 
-end Lanius.Mini
+end Lanius.Mini.NoMismatch

@@ -9,7 +9,7 @@ the two clocks and the secure bytes), called with arguments of their
 parameter types' shapes, never give `typeMismatch`, and what they return is
 an `i32`. -/
 
-namespace Lanius.Mini
+namespace Lanius.Mini.NoMismatch
 
 open Lanius.Core (Value Ty HostService)
 
@@ -101,4 +101,4 @@ theorem host_ok {P : Core.Program} {heap : Memory.Heap} {world : Lanius.World.St
     | (rename_i heq; exact storeBytesFrom_ne heq)
     | skip
 
-end Lanius.Mini
+end Lanius.Mini.NoMismatch

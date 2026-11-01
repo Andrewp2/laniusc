@@ -19,7 +19,7 @@ locals, or a trap other than `typeMismatch`. The helper lemmas here (field
 paths, writes through them, binding a list of locals) feed the induction on
 fuel in `ShapeStep`. -/
 
-namespace Lanius.Mini
+namespace Lanius.Mini.NoMismatch
 
 open Lanius.Core (Value Ty Expr Place Stmt Pattern)
 open Lanius.Semantics (State Cell Outcome Completion ResolvedPlace)
@@ -374,4 +374,4 @@ theorem bindParameters_binds {P : Core.Program} :
       simp only [List.zip_cons_cons, List.map_cons]
       exact Shapes.cons hv snd
 
-end Lanius.Mini
+end Lanius.Mini.NoMismatch
