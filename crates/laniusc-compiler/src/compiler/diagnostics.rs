@@ -3202,13 +3202,23 @@ fn missing_statement_semicolon_label(tokens: &SourceSyntaxTokens<'_>) -> Option<
             continue;
         };
 
-        let mut expression_depth = 0u32;
+        // The statement's open brackets, innermost last.
+        let mut open_brackets: Vec<&Token> = Vec::new();
         let mut cursor = index + 1;
         while let Some(scan_token) = tokens.get(cursor) {
-            if expression_depth == 0 && token_terminates_statement(scan_token.kind) {
+            if open_brackets.is_empty() && token_terminates_statement(scan_token.kind) {
                 break;
             }
-            if expression_depth == 0 && scan_token.kind == TokenKind::RBrace {
+            // No `;` belongs directly inside a `(`: the statement ends here
+            // with the `(` unclosed (`return (value;`). A `[` may hold one
+            // (`[0; 8]`) and a `{` holds statements.
+            if token_terminates_statement(scan_token.kind)
+                && let Some(open) = open_brackets.last()
+                && open.kind == TokenKind::LParen
+            {
+                return Some(unclosed_paren_label(open));
+            }
+            if open_brackets.is_empty() && scan_token.kind == TokenKind::RBrace {
                 return Some(SourceSyntaxLabel {
                     start: scan_token.start,
                     len: scan_token.len,
@@ -3218,10 +3228,10 @@ fn missing_statement_semicolon_label(tokens: &SourceSyntaxTokens<'_>) -> Option<
 
             match scan_token.kind {
                 TokenKind::LParen | TokenKind::LBracket | TokenKind::LBrace => {
-                    expression_depth = expression_depth.saturating_add(1);
+                    open_brackets.push(scan_token);
                 }
                 TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
-                    expression_depth = expression_depth.saturating_sub(1);
+                    open_brackets.pop();
                 }
                 _ => {}
             }
@@ -3229,6 +3239,10 @@ fn missing_statement_semicolon_label(tokens: &SourceSyntaxTokens<'_>) -> Option<
         }
 
         if cursor >= tokens.tokens.len() {
+            if let Some(open) = open_brackets.iter().rev().find(|open| open.kind == TokenKind::LParen)
+            {
+                return Some(unclosed_paren_label(open));
+            }
             return Some(tokens.eof_label(format!("expected ';' after {statement_context}")));
         }
     }
@@ -3242,6 +3256,14 @@ fn semicolon_terminated_statement_context(kind: TokenKind) -> Option<&'static st
         TokenKind::Continue => Some("continue statement"),
         TokenKind::Let => Some("let statement"),
         _ => None,
+    }
+}
+
+fn unclosed_paren_label(open: &Token) -> SourceSyntaxLabel {
+    SourceSyntaxLabel {
+        start: open.start,
+        len: open.len,
+        message: "this `(` is not closed".to_string(),
     }
 }
 
@@ -5548,6 +5570,26 @@ mod tests {
         assert_eq!(label.start, close_brace);
         assert_eq!(label.len, 1);
         assert_eq!(label.message, "expected ';' after return statement");
+    }
+
+    #[test]
+    fn source_context_label_targets_the_unclosed_paren_of_a_return() {
+        let source = "fn main() -> i32 {\n    let status: i32 = 3;\n    return (status;\n}\n";
+        let open = source.rfind('(').expect("source should contain (");
+
+        let label = source_context_syntax_label(source)
+            .expect("unclosed return paren should produce a source-context label");
+
+        assert_eq!(label.start, open);
+        assert_eq!(label.len, 1);
+        assert_eq!(label.message, "this `(` is not closed");
+    }
+
+    #[test]
+    fn source_context_label_accepts_array_repeat_semicolons() {
+        let source = "fn main() -> i32 { let a: [i32; 4] = [0; 4]; return a[0]; }\n";
+
+        assert!(source_context_syntax_label(source).is_none());
     }
 
     #[test]

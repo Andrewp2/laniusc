@@ -107,7 +107,7 @@ pub(crate) fn print_lsp_help() {
          Usage: laniusc lsp [--diagnostic-format text|json|lsp-json] serve --stdio\n\
          capabilities prints no-run JSON metadata for editor experiments: diagnostic registry, diagnostic format registry, LSP source, severity, UTF-16 position encoding, full-document sync mode, explicit unsupported workspace scope, formatter metadata, and the supported stdio methods.\n\
          --diagnostic-format selects text, JSON, or LSP Diagnostic-shaped JSON for command-line invocation diagnostics before the stdio server starts.\n\
-         serve --stdio starts a minimal JSON-RPC LSP server that handles initialize/shutdown without compiling source, tracks opened documents, rejects ranged incremental changes, returns full-document textDocument/formatting edits without GPU work, and returns pull diagnostics through textDocument/diagnostic without target codegen."
+         serve --stdio starts a minimal JSON-RPC LSP server that handles initialize/shutdown without compiling source, tracks opened documents, rejects ranged incremental changes, returns full-document textDocument/formatting edits without GPU work, and returns pull diagnostics through textDocument/diagnostic. Diagnostics load imports from a stdlib root as `laniusc check --stdlib-root` does: initializationOptions.stdlibRoot, else stdlib/ next to the binary, else stdlib/ in the workspace root."
     );
 }
 

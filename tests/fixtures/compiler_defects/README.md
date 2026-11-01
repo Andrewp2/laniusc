@@ -102,9 +102,21 @@ library functions themselves (`type_check_entry_with_stdlib`,
 `_with_source_root`, `_with_source_roots`, `type_check_source_with_gpu` and
 `type_check_source_with_gpu_from_path`), so `laniusc check` and the language
 server share it. The language server's pull diagnostics now accept
-`check_generic_impl_bound.lani` (before: LNC0008 at its call). The server
-still checks one document without the stdlib, so it reports a `core::slice`
-import as LNC0010 "imported module not found", as before.
+`check_generic_impl_bound.lani` (before: LNC0008 at its call).
+
+The server also loads the stdlib now. Before, it checked each document on
+its own, so it reported every `core::slice` import as LNC0010 "imported
+module not found". The root comes from `initializationOptions.stdlibRoot` (a
+path or `file:` URI). Without that option, the server uses `stdlib/` next to
+the laniusc binary, then `stdlib/` in the workspace root (`rootUri`,
+`rootPath` or the first workspace folder). With a root, a document is
+checked as `laniusc check --stdlib-root ROOT FILE` checks it. If the open
+text differs from the file on disk, the text is written to a private overlay
+file for the check. A label in an imported file keeps its own path in
+`relatedInformation`, and the diagnostic sits at the start of the document.
+`tests/cli_lsp.rs` drives the server over stdio on `check_slice_import.lani`,
+`check_generic_impl_bound.lani` and `tests/fixtures/lsp/slice_import_type_error.lani`
+(saved and unsaved), and on the workspace-root fallback.
 
 Before the fix, check rejected `check_generic_impl_bound.lani`,
 `check_slice_import.lani`, `check_slice_select_label.lani`, seven other
@@ -303,6 +315,14 @@ and 104 mutants gave identical results, and the 53 binaries were identical.
 The 8 mutants that changed all had wrong labels before. Six had a false
 LNC0021 at a valid `Mapper<View<u8>,Result<i64,i32>>` impl header, and two
 had LNC0016 labels three lines before the error. Six now point at the error.
-The two `return (status;` mutants report "expected ';' after return
+The two `return (status;` mutants reported "expected ';' after return
 statement" at the end of the file, just past the `}` after the unclosed
-`(`. That is the statement heuristic's label, not one of these two steps.
+`(`. That label came from the statement heuristic
+(`missing_statement_semicolon_label`), which counted bracket depth and so
+read past the `;` inside the `(`. Since 2026-11-01 it tracks the open
+brackets, and a `;` directly inside a `(` (never valid, unlike `[0; 8]` or a
+block) labels that `(` "this `(` is not closed". An unclosed `(` at the end
+of the file gets the same label. All 40 unclosed-paren mutants now point at
+their `return (`. Before, 31 said "expected ';' after return statement" at
+the end of the file or the line, and 9 said "expected `)`, found `;`" at the
+`;`. The other 72 mutants are unchanged.
