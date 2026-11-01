@@ -1172,6 +1172,12 @@ low 32 bits as i32. Unresolved names keep their intrinsic meaning, so
 `std::io::print_i32` now runs its library body, which calls `print`. The fix
 is in `shaders/type_checker/calls/02c_intrinsics.slang`; the two
 `tests/codegen_x86.rs` intrinsic-shadowing tests are its regressions.
+Inside its own body, a function that shadows an intrinsic reaches the
+intrinsic by that name, so wrappers such as verified::host's
+`i32_slice_from_raw_parts`, whose body calls `i32_slice_from_raw_parts`, no
+longer recurse forever; a recursive function needs a name that is not an
+intrinsic. `tests/fixtures/compiler_defects/intrinsic_wrapper_self_call.lani`
+is the regression.
 
 Inline fixed-capacity containers and an LRU cache follow ordered navigation.
 `core::ring::Ring<T, N>` is an allocation-free ring buffer with O(1) pushes and
