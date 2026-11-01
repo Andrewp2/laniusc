@@ -2044,6 +2044,27 @@ passes 8,662 cases with 0 failures against Python `zipfile` and Info-ZIP
 An optional case writes and reads back a 4 GiB member. `ext::compression`
 exports `crc32_update`.
 
+**Zstandard.** [`ext::zstd`](extended-zstd.md) decodes zstd frames
+(RFC 8878) as a stream over caller-owned workspace, staging, literal and
+window views. It handles skippable and concatenated frames, raw, RLE and
+compressed blocks, one- and four-stream Huffman literals, all four FSE table
+modes, repeat offsets, content sizes, XXH64 checksums
+([`ext::xxhash`](extended-zstd.md#xxh64)) and a window limit (128 MiB by
+default). The [`unzstd`/`zstdcat` program](../sample_programs/library/unzstd.lani)
+decodes files or pipes. A seeded oracle
+(`tests/fixtures/extended/zstd_oracle/oracle.py`) passes 3,866 cases with 0
+failures against `/usr/bin/zstd` 1.5.5:
+
+- levels 1-22, piped frames, advanced parameters and `--long=27`;
+- multi-frame and skippable-frame files;
+- 50 step-size replays through the streaming API;
+- dictionary, window-limit and trailing-garbage refusals;
+- 3,493 truncated or bit-flipped frames, each exiting 0 or 2 and matching
+  zstd's output whenever both accept.
+
+It decodes at about 105 MB/s at `-3` and 300 MB/s at `-19`; zstd itself
+decodes at about 1 GB/s and 3 GB/s.
+
 **Accepted bounded archive increment.**
 
 The new production code is Lanius over the existing TAR/ZIP engines,

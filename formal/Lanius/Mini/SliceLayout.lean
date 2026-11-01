@@ -43,6 +43,8 @@ and the mini side's element and field addresses.
 
 namespace Lanius.Mini
 
+variable {places : List Addressed}
+
 open Lanius.Core (Value)
 
 mutual
@@ -391,7 +393,7 @@ theorem fieldAddress_eval {env : Env} {base : Expr} {offset : Nat}
   omega
 
 theorem holdsAt_struct_inv {id : Nat} {fields : List SrcType} {v : Value} {env : Env} {slot : Nat}
-    (h : SrcType.HoldsAt (.struct id fields) v env slot) : ∃ vals, v = .structure id vals ∧ FieldsHold fields vals env slot := by
+    (h : SrcType.HoldsAt places (.struct id fields) v env slot) : ∃ vals, v = .structure id vals ∧ FieldsHold places fields vals env slot := by
   cases h with
   | struct fh => exact ⟨_, rfl, fh⟩
 
