@@ -8,15 +8,12 @@ Gaps found while writing the generic core::vec, core::set and core::pair
 (2026-10-15). Each probe returns 42 once the feature works; the diagnostic is
 what the current compiler prints. "Blocks" counts the existing per-type
 stdlib modules that a generic replacement cannot cover until the gap closes.
-- b14 (directory): a self method called through a path on a type imported
-  from a local module, `Counter::get(next)` after `import gen::count;`.
-  LNC0027 "call resolution failed" ("call does not match a resolved function
-  or method"). `next.get()` works (p57). Fails before and after bf4fd323,
-  so it is not the import-visible capacity. It is not about imports at all:
-  a local `Counter::get(next)` fails the same way, and so does the qualified
-  `gen::count::Counter::get(next)`, while a static `Counter::make(40)` works
-  locally and imported. Calling a self method through its type's path is
-  not an implemented call form (no doc or test claims it). Owner: P13.
+- b19: a self method of a stdlib type called through the type's path,
+  `Option::is_some(o)` after `import core::option;`. LNC0005 "unresolved
+  identifier" at the path. Local and source-module types take this form
+  since b14 (p82). An imported library's portable parameter rows omit
+  syntactic self, so its path call also needs the receiver row
+  (dependencies/15a, 15b) (found 2026-10-31). Owner: TBD.
 - b16 (Wasm only): a function whose result type is an imported generic
   enum, `fn half(x: i32) -> core::option::Option<i32>`, compiles to a module
   node rejects ("not enough arguments on the stack for local.set"). The same
@@ -57,7 +54,13 @@ Not probes here:
   rejection rather than exit 42 (docs/compiler-generic-types.md, "Recursive
   by-value types").
 
-Passed and moved to the matrix: b02 (a bound proved through two levels of a
+Passed and moved to the matrix: b14 (a self method called through its
+type's path, `Counter::get(next)` on a type from a source module) is p82,
+passing by 2026-10-31: a path call names every method of the type, and a
+self method's receiver is its first argument, checked against the self
+parameter row that methods/02b now types (`S::get(s, 1)`, `S::peek(r, 2)`
+with `r: &S`, `W<i32>::get(w)`, and `T::tw(x, 3)` through `T: Tw<T>`, routed by
+methods/09). b02 (a bound proved through two levels of a
 generic impl) is p79 and b13 (returning another generic function's imported
 Option<T>) is p80, both passing by 2026-10-20. b15 (a bounded generic stdlib
 body over a stdlib type whose impl is in its own module, such as

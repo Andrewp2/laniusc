@@ -223,9 +223,11 @@ bool external_target(uint token, uint4 required, MethodCandidate candidate,
         target.x == INVALID || target.y == INVALID || target.z == INVALID) return false;
     // Transport retains the declaration's source mode. Explicit typed first
     // parameters use the existing15a adjustment, not a newly inferred plan:
-    // dotted mode3 is value-self1, qualified mode3 is static0. Earlier bound
-    // candidate eligibility and the accepted parameter plan remain unchanged.
-    uint mode = environment.w == 3u ? (method_call_receiver_hir[token] != INVALID ? 1u : 0u) : environment.w;
+    // dotted mode3 is value-self1, and every qualified call is static0 (a
+    // self member's receiver is its first argument). Earlier bound candidate
+    // eligibility and the accepted parameter plan remain unchanged.
+    uint mode = method_call_receiver_hir[token] == INVALID ? 0u
+        : environment.w == 3u ? 1u : environment.w;
     return mode == candidate.receiver_mode;
 }
 

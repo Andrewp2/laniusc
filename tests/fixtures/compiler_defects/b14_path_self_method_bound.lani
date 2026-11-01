@@ -1,0 +1,35 @@
+// b14: a self member of a trait bound called through the bounded parameter's
+// path, `T::tw(x, 3)`, takes the receiver as its first argument and routes
+// to the implementation the instance selects, like `x.tw(3)`.
+// Exits 0 when compiled correctly.
+module app::main;
+
+trait Tw<T> {
+    fn tw(self, k: i32) -> i32;
+}
+
+impl Tw<i32> for i32 {
+    fn tw(self, k: i32) -> i32 {
+        return self + k;
+    }
+}
+
+struct P { a: i32 }
+
+impl Tw<P> for P {
+    fn tw(self, k: i32) -> i32 {
+        return self.a * k;
+    }
+}
+
+fn g<T: Tw<T> >(x: T) -> i32 {
+    return T::tw(x, 3);
+}
+
+fn main() -> i32 {
+    let x: i32 = 5;
+    if (g(x) != 8) { return 1; }
+    if (g(P { a: 7 }) != 21) { return 2; }
+    if (i32::tw(x, 1) != 6) { return 3; }
+    return 0;
+}

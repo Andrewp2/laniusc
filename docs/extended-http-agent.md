@@ -1,10 +1,11 @@
 # HTTP/1.1 client agent
 
-`ext::http_agent` is a synchronous HTTP/1.1 client for cleartext `http://`
-URLs. It adds three things to the client stack:
+`ext::http_agent` is a synchronous HTTP/1.1 client for `http://` and
+`https://` URLs. It adds three things to the client stack:
 
-- a keep-alive connection pool keyed by host and port, with idle-count,
-  idle-time and per-connection use limits;
+- a keep-alive connection pool keyed by scheme, host and port, with
+  idle-count, idle-time and per-connection use limits, for cleartext and
+  verified TLS connections alike;
 - redirect following with a hop limit, method rules and an origin policy for
   credentials;
 - request bodies that are either fixed (`Content-Length`) or streamed from any
@@ -15,7 +16,12 @@ cursor, and the final message is checked once by the canonical parser. URLs
 come from [`ext::http_url`](extended-http-url.md), reference resolution uses
 [`ext::uri`](extended-uri.md) syntax, and connections come from
 [`ext::url_connect`](extended-url-client.md) (resolution through libc, then
-ordered connect attempts). Programs that use it therefore link natively.
+ordered connect attempts). TLS comes from
+[`ext::tls_stream`](../extended/ext/tls_stream.lani) over
+[`ext::openssl_tls`](extended-openssl-tls.md). Programs that use the agent
+therefore link natively, against `libssl` and `libcrypto` as well, and must
+ignore SIGPIPE before their first https request (OpenSSL writes with
+`write`).
 
 The existing [`ext::http_client`](extended-http-client.md) remains the
 resumable one-exchange engine shared with the TLS drivers. It always sends
@@ -94,11 +100,48 @@ supplies one fails with `InvalidHeader` before any connection is made:
 
 `CONNECT` and invalid method tokens fail with `InvalidRequest`.
 
+## HTTPS
+
+An `https://` request, or a redirect to one, uses a verified TLS connection.
+The agent creates one OpenSSL client context at its first https use, from
+`Options.trust` (`Trust::DefaultPaths` by default, or `Trust::CaFile(path)`)
+and `Options.tls` (`openssl_tls::default_limits()`), and keeps it until
+`close`. The OpenSSL wrapper's peer policy applies unchanged: chain
+verification, a mandatory DNS or IP identity taken from the URL host (DNS
+names also send SNI), and TLS 1.2 as the minimum. A certificate failure,
+including one on a redirect hop, fails with `Tls(error)` before any HTTP byte
+is sent. Set `Options.https` to false to refuse https URLs and redirects
+with `UnsupportedScheme`.
+
+Each connection is a [`tls_stream`](../extended/ext/tls_stream.lani) over
+the socket from `ext::url_connect`, adopted by
+`adopt_connected_with_context_until` (resolution and connect attempts are
+the same as for cleartext). Pooling, reuse limits, stale retries and
+redirects work exactly as below. Three details differ from cleartext:
+
+- **Idle probe.** TLS 1.3 servers send session tickets after the handshake,
+  so a parked connection can be readable without being dead. At checkout a
+  readable TLS connection gets one nonblocking TLS read
+  (`Stream.idle_probe`): only post-handshake records keep it, and
+  application data, close_notify or EOF make it stale.
+- **Unauthenticated EOF.** A TCP close without close_notify ends the
+  response like EOF, so a length-framed or chunked response still completes
+  and an empty reply on a reused connection is still retried. A
+  close-delimited body cannot be trusted that way and fails with
+  `Truncated(n)`.
+- **Early responses.** A readable socket can again mean session tickets, so
+  an upload is not cut short by polling. A server that answers before
+  reading the body and resets the connection ends the request with
+  `Io(error)`, since a failed TLS stream is closed at once.
+
+Pooled TLS connections are closed with a close_notify when it can be sent
+within 200 ms.
+
 ## Connection pool
 
-The pool key is the URL host (ASCII case-insensitive) and port. So
+The pool key is the URL scheme, host (ASCII case-insensitive) and port. So
 `127.0.0.1` and `localhost` are separate keys even when they reach the same
-server. A finished exchange goes back to the pool only when:
+server, and `http://h:8443` never reuses a TLS connection to `https://h:8443`. A finished exchange goes back to the pool only when:
 
 - the response is HTTP/1.1 without `Connection: close`, or HTTP/1.0 with
   `Connection: keep-alive`;
@@ -174,15 +217,17 @@ When the body is dropped, `Content-Type`, `Content-Encoding`,
 `Content-Language` and `Content-Location` go with it. A fixed body is sent
 again. A streamed body cannot be read again, so a redirect that keeps it
 fails with `UnreplayableBody(status)`. A hop to a different host, port or
-scheme drops `Authorization` and `Cookie`.
+scheme drops `Authorization` and `Cookie`, so an http→https upgrade on the
+same host drops them too. Downgrades from https to http are followed.
 
 There are three ways a redirect ends the request with an error:
 
 - `max_redirects` (default 10) bounds the hops: a further redirect fails with
   `TooManyRedirects(hops)`;
-- a `Location` that does not resolve to a valid http URL fails with
-  `BadLocation`;
-- an `https://` target fails with `UnsupportedScheme`.
+- a `Location` that does not resolve to a valid http or https URL fails
+  with `BadLocation`;
+- an `https://` target fails with `UnsupportedScheme` when `Options.https`
+  is false.
 
 The response body of every followed redirect is read in full. The connection
 therefore goes back to the pool and is used for the next hop when the host is
@@ -214,7 +259,8 @@ fails with `UnexpectedUpgrade`.
 | --- | --- |
 | `InvalidRequest`, `InvalidHeader` | bad options, method or caller field |
 | `Url(kind)` | the request URL does not parse |
-| `UnsupportedScheme` | `https://` request or redirect |
+| `UnsupportedScheme` | `https://` request or redirect with `Options.https` false |
+| `Tls(error)` | TLS context, identity, handshake or certificate verification failure |
 | `Connect(cause)` | resolution or every connect attempt failed |
 | `Io(error)` | send or receive error, such as a reset mid-response |
 | `Timeout` | the exchange deadline passed |
@@ -234,7 +280,8 @@ A valid 4xx or 5xx response is a successful result; check `status()`.
 http-curl [-X METHOD] [-H 'Name: value']... [-d DATA | -T FILE|-] [-L]
           [--max-redirs N] [-i] [-I] [-f] [--max-time MS]
           [--max-idle-per-host N] [--max-idle N] [--idle-timeout MS]
-          [--max-uses N] [--preconnect N] [--pause MS] [--no-retry] [--stats] URL...
+          [--max-uses N] [--preconnect N] [--pause MS] [--no-retry] [--stats]
+          [--cacert FILE] [--no-https] URL...
 ```
 
 The sample fetches each URL in turn through one agent and writes the bodies
@@ -246,6 +293,8 @@ to stdout.
 - `-i` prints the head before the body, and `-I` sends HEAD.
 - `-f` fails on statuses of 400 and above.
 - `--pause` waits between URLs.
+- `--cacert FILE` trusts the PEM certificates in FILE instead of the system
+  default paths; `--no-https` refuses https URLs.
 - `--stats` writes one `response ...` line per URL and one `pool ...` line to
   stderr.
 
@@ -261,17 +310,24 @@ The exit codes follow curl:
 | 22 | `-f` and status ≥ 400 |
 | 26 | upload read error |
 | 28 | timeout |
+| 35 | other TLS failure (handshake, unreadable CA file) |
 | 47 | too many redirects |
 | 52 | empty reply |
 | 56 | receive error |
 | 63 | too large |
+| 60 | certificate verification failed |
 | 65 | redirect needs the streamed body again |
 
 ## Executed evidence
 
 `tests/extended_http_agent_execution.rs` compiles the sample with native
-linking. It runs `tests/fixtures/extended/http_agent/oracle.py` against two
-Python `http.server` origins and scripted raw-socket servers. Every case
+linking against `libssl` and `libcrypto`. It runs
+`tests/fixtures/extended/http_agent/oracle.py` against two Python
+`http.server` origins, scripted raw-socket servers and, for the https group,
+two Python `ssl` origins. Their test root, server certificates and keys are
+generated for each run with the installed `openssl` CLI by
+[`certificates.py`](../tests/fixtures/extended/openssl_tls/certificates.py);
+nothing is checked in or downloaded. Every case
 checks:
 
 - the exit code and output;
@@ -283,6 +339,7 @@ checks:
 | pool | 18 | reuse, per-host keys, total and per-host eviction, use limit, idle and `Keep-Alive` expiry, `Connection: close`, HTTP/1.0, trailing bytes, stale probe, GET retry vs. no POST retry, disabled pool, chunked and HEAD/204 reuse |
 | redirect | 29 | chains on one connection, hop limits and loops, the 11-row method/body table, HEAD on 303, relative/dot/query/fragment/network-path references, credential stripping, missing/https/malformed `Location`, streamed body on 307 vs. 303 |
 | upload | 10 | stdin and file chunked uploads with exact chunk counts, empty stream, fixed body, PATCH, no length on GET, early `413` during a 32 MiB upload, `-f`, reserved and injected headers |
+| https | 17 | TLS reuse over 127.0.0.1 (IP identity) and localhost (DNS identity, SNI), http→https redirect with credential stripping and pooled reuse afterwards, https→http redirect, scheme-separated pool keys on one port, 1 MB fixed and 250 KB chunked bodies, 3 MiB chunked upload, fixed POST, stale TLS connection, retry after an EOF without close_notify, `--no-retry` empty reply, preconnected TLS connections kept through their session tickets, untrusted root, expired certificate (also on a redirect hop), `--no-https`, missing CA file |
 | broken | 21 | empty reply, truncated head and body, garbage, bad chunk size, CL+TE, conflicting lengths, stalled head and body, slow drip within and past the deadline, 101, oversized head, too many 1xx, 100+103 then 200, close-delimited body, HEAD with a length, refused connect, bad and https URLs, reset mid-body |
 
 ```text
@@ -290,14 +347,15 @@ http-agent-pool cases=18 connections=33 requests=44
 http-agent-redirect cases=29 connections=31 requests=67
 http-agent-upload cases=10 connections=8 requests=9
 http-agent-broken cases=21 connections=18 requests=1
+http-agent-https cases=17 connections=22 requests=27
 ```
 
-The whole oracle runs in about 9 seconds.
+The https group runs in about 3 seconds, the whole oracle in about 12.
 
 ## Limits of this version
 
-- Cleartext only. HTTPS needs the TLS driver from
-  [`ext::https_client`](extended-https-client.md) under the pool.
+- TLS has no session resumption, client certificates, ALPN or HTTP/2, and
+  no option to disable verification.
 - The agent is synchronous: one exchange at a time, with no pipelining and no
   concurrent requests.
 - It does not implement cookies, authentication challenges, proxies,

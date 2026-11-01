@@ -14,20 +14,22 @@ Byte-fed RFC 8259 tokenizer (one token per feed, arbitrary chunk splits, increme
 
 - [extended-json-stream](../../extended-json-stream.md)
 
-Declaration counts: enum: 3; field: 47; function: 6; impl: 4; method: 37; struct: 6; variant: 29.
+Declaration counts: enum: 3; field: 54; function: 6; impl: 4; method: 47; struct: 6; variant: 29.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
 - [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/json_stream.lani#L6)
-- [core::io](../core/io.md) · [source](../../../extended/ext/json_stream.lani#L7)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/json_stream.lani#L8)
-- [core::option](../core/option.md) · [source](../../../extended/ext/json_stream.lani#L9)
-- [core::result](../core/result.md) · [source](../../../extended/ext/json_stream.lani#L10)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/json_stream.lani#L11)
-- [core::text](../core/text.md) · [source](../../../extended/ext/json_stream.lani#L12)
-- [core::utf8](../core/utf8.md) · [source](../../../extended/ext/json_stream.lani#L13)
+- [core::f64](../core/f64.md) · [source](../../../extended/ext/json_stream.lani#L7)
+- [core::float_decimal](../core/float_decimal.md) · [source](../../../extended/ext/json_stream.lani#L8)
+- [core::io](../core/io.md) · [source](../../../extended/ext/json_stream.lani#L9)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/json_stream.lani#L10)
+- [core::option](../core/option.md) · [source](../../../extended/ext/json_stream.lani#L11)
+- [core::result](../core/result.md) · [source](../../../extended/ext/json_stream.lani#L12)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/json_stream.lani#L13)
+- [core::text](../core/text.md) · [source](../../../extended/ext/json_stream.lani#L14)
+- [core::utf8](../core/utf8.md) · [source](../../../extended/ext/json_stream.lani#L15)
 
 ## Types, fields and variants
 
@@ -35,7 +37,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Token
 
-[Source line 15](../../../extended/ext/json_stream.lani#L15)
+[Source line 17](../../../extended/ext/json_stream.lani#L17)
 
 ```lanius
 pub enum Token
@@ -43,7 +45,7 @@ pub enum Token
 
 #### variant: BeginObject
 
-[Source line 15](../../../extended/ext/json_stream.lani#L15)
+[Source line 17](../../../extended/ext/json_stream.lani#L17)
 
 ```lanius
 BeginObject
@@ -51,7 +53,7 @@ BeginObject
 
 #### variant: EndObject
 
-[Source line 15](../../../extended/ext/json_stream.lani#L15)
+[Source line 17](../../../extended/ext/json_stream.lani#L17)
 
 ```lanius
 EndObject
@@ -59,7 +61,7 @@ EndObject
 
 #### variant: BeginArray
 
-[Source line 15](../../../extended/ext/json_stream.lani#L15)
+[Source line 17](../../../extended/ext/json_stream.lani#L17)
 
 ```lanius
 BeginArray
@@ -67,7 +69,7 @@ BeginArray
 
 #### variant: EndArray
 
-[Source line 15](../../../extended/ext/json_stream.lani#L15)
+[Source line 17](../../../extended/ext/json_stream.lani#L17)
 
 ```lanius
 EndArray
@@ -75,7 +77,7 @@ EndArray
 
 #### variant: Key
 
-[Source line 15](../../../extended/ext/json_stream.lani#L15)
+[Source line 17](../../../extended/ext/json_stream.lani#L17)
 
 ```lanius
 Key
@@ -83,7 +85,7 @@ Key
 
 #### variant: Text
 
-[Source line 15](../../../extended/ext/json_stream.lani#L15)
+[Source line 17](../../../extended/ext/json_stream.lani#L17)
 
 ```lanius
 Text
@@ -91,7 +93,7 @@ Text
 
 #### variant: Number
 
-[Source line 15](../../../extended/ext/json_stream.lani#L15)
+[Source line 17](../../../extended/ext/json_stream.lani#L17)
 
 ```lanius
 Number
@@ -99,7 +101,7 @@ Number
 
 #### variant: Boolean
 
-[Source line 15](../../../extended/ext/json_stream.lani#L15)
+[Source line 17](../../../extended/ext/json_stream.lani#L17)
 
 ```lanius
 Boolean
@@ -107,7 +109,7 @@ Boolean
 
 #### variant: Null
 
-[Source line 15](../../../extended/ext/json_stream.lani#L15)
+[Source line 17](../../../extended/ext/json_stream.lani#L17)
 
 ```lanius
 Null
@@ -115,7 +117,7 @@ Null
 
 ### enum: ErrorKind
 
-[Source line 16](../../../extended/ext/json_stream.lani#L16)
+[Source line 18](../../../extended/ext/json_stream.lani#L18)
 
 ```lanius
 pub enum ErrorKind
@@ -123,7 +125,7 @@ pub enum ErrorKind
 
 #### variant: UnexpectedByte
 
-[Source line 17](../../../extended/ext/json_stream.lani#L17)
+[Source line 19](../../../extended/ext/json_stream.lani#L19)
 
 ```lanius
 UnexpectedByte
@@ -131,7 +133,7 @@ UnexpectedByte
 
 #### variant: UnexpectedEnd
 
-[Source line 17](../../../extended/ext/json_stream.lani#L17)
+[Source line 19](../../../extended/ext/json_stream.lani#L19)
 
 ```lanius
 UnexpectedEnd
@@ -139,7 +141,7 @@ UnexpectedEnd
 
 #### variant: InvalidUtf8
 
-[Source line 17](../../../extended/ext/json_stream.lani#L17)
+[Source line 19](../../../extended/ext/json_stream.lani#L19)
 
 ```lanius
 InvalidUtf8
@@ -147,7 +149,7 @@ InvalidUtf8
 
 #### variant: ControlCharacter
 
-[Source line 17](../../../extended/ext/json_stream.lani#L17)
+[Source line 19](../../../extended/ext/json_stream.lani#L19)
 
 ```lanius
 ControlCharacter
@@ -155,7 +157,7 @@ ControlCharacter
 
 #### variant: InvalidEscape
 
-[Source line 17](../../../extended/ext/json_stream.lani#L17)
+[Source line 19](../../../extended/ext/json_stream.lani#L19)
 
 ```lanius
 InvalidEscape
@@ -163,7 +165,7 @@ InvalidEscape
 
 #### variant: InvalidSurrogate
 
-[Source line 18](../../../extended/ext/json_stream.lani#L18)
+[Source line 20](../../../extended/ext/json_stream.lani#L20)
 
 ```lanius
 InvalidSurrogate
@@ -171,7 +173,7 @@ InvalidSurrogate
 
 #### variant: InvalidNumber
 
-[Source line 18](../../../extended/ext/json_stream.lani#L18)
+[Source line 20](../../../extended/ext/json_stream.lani#L20)
 
 ```lanius
 InvalidNumber
@@ -179,7 +181,7 @@ InvalidNumber
 
 #### variant: TrailingInput
 
-[Source line 18](../../../extended/ext/json_stream.lani#L18)
+[Source line 20](../../../extended/ext/json_stream.lani#L20)
 
 ```lanius
 TrailingInput
@@ -187,7 +189,7 @@ TrailingInput
 
 #### variant: DepthLimit
 
-[Source line 18](../../../extended/ext/json_stream.lani#L18)
+[Source line 20](../../../extended/ext/json_stream.lani#L20)
 
 ```lanius
 DepthLimit
@@ -195,7 +197,7 @@ DepthLimit
 
 #### variant: StringLimit
 
-[Source line 18](../../../extended/ext/json_stream.lani#L18)
+[Source line 20](../../../extended/ext/json_stream.lani#L20)
 
 ```lanius
 StringLimit
@@ -203,7 +205,7 @@ StringLimit
 
 #### variant: NumberLimit
 
-[Source line 19](../../../extended/ext/json_stream.lani#L19)
+[Source line 21](../../../extended/ext/json_stream.lani#L21)
 
 ```lanius
 NumberLimit
@@ -211,7 +213,7 @@ NumberLimit
 
 #### variant: OutputLimit
 
-[Source line 19](../../../extended/ext/json_stream.lani#L19)
+[Source line 21](../../../extended/ext/json_stream.lani#L21)
 
 ```lanius
 OutputLimit
@@ -219,7 +221,7 @@ OutputLimit
 
 #### variant: InvalidPlacement
 
-[Source line 19](../../../extended/ext/json_stream.lani#L19)
+[Source line 21](../../../extended/ext/json_stream.lani#L21)
 
 ```lanius
 InvalidPlacement
@@ -227,7 +229,7 @@ InvalidPlacement
 
 #### variant: AllocationFailed
 
-[Source line 19](../../../extended/ext/json_stream.lani#L19)
+[Source line 21](../../../extended/ext/json_stream.lani#L21)
 
 ```lanius
 AllocationFailed
@@ -235,7 +237,7 @@ AllocationFailed
 
 #### variant: InvalidOptions
 
-[Source line 19](../../../extended/ext/json_stream.lani#L19)
+[Source line 21](../../../extended/ext/json_stream.lani#L21)
 
 ```lanius
 InvalidOptions
@@ -243,7 +245,7 @@ InvalidOptions
 
 #### variant: Bounds
 
-[Source line 20](../../../extended/ext/json_stream.lani#L20)
+[Source line 22](../../../extended/ext/json_stream.lani#L22)
 
 ```lanius
 Bounds
@@ -251,7 +253,7 @@ Bounds
 
 #### variant: Finished
 
-[Source line 20](../../../extended/ext/json_stream.lani#L20)
+[Source line 22](../../../extended/ext/json_stream.lani#L22)
 
 ```lanius
 Finished
@@ -259,7 +261,7 @@ Finished
 
 #### variant: OffsetOverflow
 
-[Source line 20](../../../extended/ext/json_stream.lani#L20)
+[Source line 22](../../../extended/ext/json_stream.lani#L22)
 
 ```lanius
 OffsetOverflow
@@ -267,7 +269,7 @@ OffsetOverflow
 
 ### struct: Error
 
-[Source line 22](../../../extended/ext/json_stream.lani#L22)
+[Source line 24](../../../extended/ext/json_stream.lani#L24)
 
 ```lanius
 pub struct Error
@@ -275,7 +277,7 @@ pub struct Error
 
 #### field: kind
 
-[Source line 22](../../../extended/ext/json_stream.lani#L22)
+[Source line 24](../../../extended/ext/json_stream.lani#L24)
 
 ```lanius
 kind: ErrorKind
@@ -283,7 +285,7 @@ kind: ErrorKind
 
 #### field: offset
 
-[Source line 22](../../../extended/ext/json_stream.lani#L22)
+[Source line 24](../../../extended/ext/json_stream.lani#L24)
 
 ```lanius
 offset: u64
@@ -291,7 +293,7 @@ offset: u64
 
 ### struct: Options
 
-[Source line 23](../../../extended/ext/json_stream.lani#L23)
+[Source line 25](../../../extended/ext/json_stream.lani#L25)
 
 ```lanius
 pub struct Options
@@ -299,7 +301,7 @@ pub struct Options
 
 #### field: max_depth
 
-[Source line 23](../../../extended/ext/json_stream.lani#L23)
+[Source line 25](../../../extended/ext/json_stream.lani#L25)
 
 ```lanius
 max_depth: i32
@@ -307,7 +309,7 @@ max_depth: i32
 
 #### field: max_string_bytes
 
-[Source line 23](../../../extended/ext/json_stream.lani#L23)
+[Source line 25](../../../extended/ext/json_stream.lani#L25)
 
 ```lanius
 max_string_bytes: i32
@@ -315,7 +317,7 @@ max_string_bytes: i32
 
 #### field: max_number_bytes
 
-[Source line 23](../../../extended/ext/json_stream.lani#L23)
+[Source line 25](../../../extended/ext/json_stream.lani#L25)
 
 ```lanius
 max_number_bytes: i32
@@ -323,7 +325,7 @@ max_number_bytes: i32
 
 ### struct: Progress
 
-[Source line 24](../../../extended/ext/json_stream.lani#L24)
+[Source line 26](../../../extended/ext/json_stream.lani#L26)
 
 ```lanius
 pub struct Progress
@@ -331,7 +333,7 @@ pub struct Progress
 
 #### field: consumed
 
-[Source line 24](../../../extended/ext/json_stream.lani#L24)
+[Source line 26](../../../extended/ext/json_stream.lani#L26)
 
 ```lanius
 consumed: i32
@@ -339,7 +341,7 @@ consumed: i32
 
 #### field: token
 
-[Source line 24](../../../extended/ext/json_stream.lani#L24)
+[Source line 26](../../../extended/ext/json_stream.lani#L26)
 
 ```lanius
 token: bool
@@ -347,7 +349,7 @@ token: bool
 
 ### struct: Tokenizer
 
-[Source line 104](../../../extended/ext/json_stream.lani#L104)
+[Source line 106](../../../extended/ext/json_stream.lani#L106)
 
 ```lanius
 pub struct Tokenizer
@@ -355,7 +357,7 @@ pub struct Tokenizer
 
 #### field: options
 
-[Source line 105](../../../extended/ext/json_stream.lani#L105)
+[Source line 107](../../../extended/ext/json_stream.lani#L107)
 
 ```lanius
 options: Options
@@ -363,7 +365,7 @@ options: Options
 
 #### field: text
 
-[Source line 105](../../../extended/ext/json_stream.lani#L105)
+[Source line 107](../../../extended/ext/json_stream.lani#L107)
 
 ```lanius
 text: alloc::vec::Vec<u8>
@@ -371,7 +373,7 @@ text: alloc::vec::Vec<u8>
 
 #### field: stack
 
-[Source line 105](../../../extended/ext/json_stream.lani#L105)
+[Source line 107](../../../extended/ext/json_stream.lani#L107)
 
 ```lanius
 stack: alloc::vec::Vec<u8>
@@ -379,7 +381,7 @@ stack: alloc::vec::Vec<u8>
 
 #### field: failure
 
-[Source line 106](../../../extended/ext/json_stream.lani#L106)
+[Source line 108](../../../extended/ext/json_stream.lani#L108)
 
 ```lanius
 failure: core::option::Option<Error>
@@ -387,7 +389,7 @@ failure: core::option::Option<Error>
 
 #### field: offset
 
-[Source line 106](../../../extended/ext/json_stream.lani#L106)
+[Source line 108](../../../extended/ext/json_stream.lani#L108)
 
 ```lanius
 offset: u64
@@ -395,7 +397,7 @@ offset: u64
 
 #### field: tokens
 
-[Source line 106](../../../extended/ext/json_stream.lani#L106)
+[Source line 108](../../../extended/ext/json_stream.lani#L108)
 
 ```lanius
 tokens: u64
@@ -403,7 +405,7 @@ tokens: u64
 
 #### field: expect
 
-[Source line 107](../../../extended/ext/json_stream.lani#L107)
+[Source line 109](../../../extended/ext/json_stream.lani#L109)
 
 ```lanius
 expect: i32
@@ -411,7 +413,7 @@ expect: i32
 
 #### field: lex
 
-[Source line 107](../../../extended/ext/json_stream.lani#L107)
+[Source line 109](../../../extended/ext/json_stream.lani#L109)
 
 ```lanius
 lex: i32
@@ -419,7 +421,7 @@ lex: i32
 
 #### field: tag
 
-[Source line 107](../../../extended/ext/json_stream.lani#L107)
+[Source line 109](../../../extended/ext/json_stream.lani#L109)
 
 ```lanius
 tag: i32
@@ -427,7 +429,7 @@ tag: i32
 
 #### field: ready
 
-[Source line 107](../../../extended/ext/json_stream.lani#L107)
+[Source line 109](../../../extended/ext/json_stream.lani#L109)
 
 ```lanius
 ready: bool
@@ -435,7 +437,7 @@ ready: bool
 
 #### field: finished
 
-[Source line 107](../../../extended/ext/json_stream.lani#L107)
+[Source line 109](../../../extended/ext/json_stream.lani#L109)
 
 ```lanius
 finished: bool
@@ -443,7 +445,7 @@ finished: bool
 
 #### field: flag
 
-[Source line 107](../../../extended/ext/json_stream.lani#L107)
+[Source line 109](../../../extended/ext/json_stream.lani#L109)
 
 ```lanius
 flag: bool
@@ -451,7 +453,7 @@ flag: bool
 
 #### field: start
 
-[Source line 108](../../../extended/ext/json_stream.lani#L108)
+[Source line 110](../../../extended/ext/json_stream.lani#L110)
 
 ```lanius
 start: u64
@@ -459,7 +461,7 @@ start: u64
 
 #### field: is_key
 
-[Source line 108](../../../extended/ext/json_stream.lani#L108)
+[Source line 110](../../../extended/ext/json_stream.lani#L110)
 
 ```lanius
 is_key: bool
@@ -467,7 +469,7 @@ is_key: bool
 
 #### field: escape_start
 
-[Source line 108](../../../extended/ext/json_stream.lani#L108)
+[Source line 110](../../../extended/ext/json_stream.lani#L110)
 
 ```lanius
 escape_start: u64
@@ -475,7 +477,7 @@ escape_start: u64
 
 #### field: hex_count
 
-[Source line 108](../../../extended/ext/json_stream.lani#L108)
+[Source line 110](../../../extended/ext/json_stream.lani#L110)
 
 ```lanius
 hex_count: i32
@@ -483,7 +485,7 @@ hex_count: i32
 
 #### field: hex_value
 
-[Source line 108](../../../extended/ext/json_stream.lani#L108)
+[Source line 110](../../../extended/ext/json_stream.lani#L110)
 
 ```lanius
 hex_value: i32
@@ -491,7 +493,7 @@ hex_value: i32
 
 #### field: high
 
-[Source line 109](../../../extended/ext/json_stream.lani#L109)
+[Source line 111](../../../extended/ext/json_stream.lani#L111)
 
 ```lanius
 high: i32
@@ -499,7 +501,7 @@ high: i32
 
 #### field: high_start
 
-[Source line 109](../../../extended/ext/json_stream.lani#L109)
+[Source line 111](../../../extended/ext/json_stream.lani#L111)
 
 ```lanius
 high_start: u64
@@ -507,7 +509,7 @@ high_start: u64
 
 #### field: phase
 
-[Source line 109](../../../extended/ext/json_stream.lani#L109)
+[Source line 111](../../../extended/ext/json_stream.lani#L111)
 
 ```lanius
 phase: i32
@@ -515,7 +517,7 @@ phase: i32
 
 #### field: literal
 
-[Source line 109](../../../extended/ext/json_stream.lani#L109)
+[Source line 111](../../../extended/ext/json_stream.lani#L111)
 
 ```lanius
 literal: i32
@@ -523,7 +525,7 @@ literal: i32
 
 #### field: literal_index
 
-[Source line 109](../../../extended/ext/json_stream.lani#L109)
+[Source line 111](../../../extended/ext/json_stream.lani#L111)
 
 ```lanius
 literal_index: i32
@@ -531,7 +533,7 @@ literal_index: i32
 
 #### field: utf8_width
 
-[Source line 110](../../../extended/ext/json_stream.lani#L110)
+[Source line 112](../../../extended/ext/json_stream.lani#L112)
 
 ```lanius
 utf8_width: u32
@@ -539,7 +541,7 @@ utf8_width: u32
 
 #### field: utf8_used
 
-[Source line 110](../../../extended/ext/json_stream.lani#L110)
+[Source line 112](../../../extended/ext/json_stream.lani#L112)
 
 ```lanius
 utf8_used: u32
@@ -547,7 +549,7 @@ utf8_used: u32
 
 #### field: utf8_start
 
-[Source line 110](../../../extended/ext/json_stream.lani#L110)
+[Source line 112](../../../extended/ext/json_stream.lani#L112)
 
 ```lanius
 utf8_start: u64
@@ -555,7 +557,7 @@ utf8_start: u64
 
 #### field: first
 
-[Source line 110](../../../extended/ext/json_stream.lani#L110)
+[Source line 112](../../../extended/ext/json_stream.lani#L112)
 
 ```lanius
 first: u8
@@ -563,7 +565,7 @@ first: u8
 
 #### field: second
 
-[Source line 110](../../../extended/ext/json_stream.lani#L110)
+[Source line 112](../../../extended/ext/json_stream.lani#L112)
 
 ```lanius
 second: u8
@@ -571,7 +573,7 @@ second: u8
 
 #### field: third
 
-[Source line 110](../../../extended/ext/json_stream.lani#L110)
+[Source line 112](../../../extended/ext/json_stream.lani#L112)
 
 ```lanius
 third: u8
@@ -579,7 +581,7 @@ third: u8
 
 ### struct: Writer
 
-[Source line 380](../../../extended/ext/json_stream.lani#L380)
+[Source line 382](../../../extended/ext/json_stream.lani#L382)
 
 ```lanius
 pub struct Writer
@@ -587,7 +589,7 @@ pub struct Writer
 
 #### field: out
 
-[Source line 381](../../../extended/ext/json_stream.lani#L381)
+[Source line 383](../../../extended/ext/json_stream.lani#L383)
 
 ```lanius
 out: alloc::vec::Vec<u8>
@@ -595,7 +597,7 @@ out: alloc::vec::Vec<u8>
 
 #### field: stack
 
-[Source line 381](../../../extended/ext/json_stream.lani#L381)
+[Source line 383](../../../extended/ext/json_stream.lani#L383)
 
 ```lanius
 stack: alloc::vec::Vec<u8>
@@ -603,7 +605,7 @@ stack: alloc::vec::Vec<u8>
 
 #### field: expect
 
-[Source line 381](../../../extended/ext/json_stream.lani#L381)
+[Source line 383](../../../extended/ext/json_stream.lani#L383)
 
 ```lanius
 expect: i32
@@ -611,7 +613,7 @@ expect: i32
 
 #### field: max_depth
 
-[Source line 382](../../../extended/ext/json_stream.lani#L382)
+[Source line 384](../../../extended/ext/json_stream.lani#L384)
 
 ```lanius
 max_depth: i32
@@ -619,15 +621,71 @@ max_depth: i32
 
 #### field: max_output_bytes
 
-[Source line 382](../../../extended/ext/json_stream.lani#L382)
+[Source line 384](../../../extended/ext/json_stream.lani#L384)
 
 ```lanius
 max_output_bytes: i32
 ```
 
+#### field: top
+
+[Source line 384](../../../extended/ext/json_stream.lani#L384)
+
+```lanius
+top: u8
+```
+
+#### field: data
+
+[Source line 387](../../../extended/ext/json_stream.lani#L387)
+
+```lanius
+data: [u8]
+```
+
+#### field: used
+
+[Source line 387](../../../extended/ext/json_stream.lani#L387)
+
+```lanius
+used: i32
+```
+
+#### field: cap
+
+[Source line 387](../../../extended/ext/json_stream.lani#L387)
+
+```lanius
+cap: i32
+```
+
+#### field: levels
+
+[Source line 390](../../../extended/ext/json_stream.lani#L390)
+
+```lanius
+levels: [u8]
+```
+
+#### field: levels_cap
+
+[Source line 390](../../../extended/ext/json_stream.lani#L390)
+
+```lanius
+levels_cap: i32
+```
+
+#### field: count
+
+[Source line 390](../../../extended/ext/json_stream.lani#L390)
+
+```lanius
+count: i32
+```
+
 ### enum: StreamError
 
-[Source line 591](../../../extended/ext/json_stream.lani#L591)
+[Source line 778](../../../extended/ext/json_stream.lani#L778)
 
 ```lanius
 pub enum StreamError
@@ -635,7 +693,7 @@ pub enum StreamError
 
 #### variant: Json
 
-[Source line 591](../../../extended/ext/json_stream.lani#L591)
+[Source line 778](../../../extended/ext/json_stream.lani#L778)
 
 ```lanius
 Json(Error)
@@ -643,7 +701,7 @@ Json(Error)
 
 #### variant: Io
 
-[Source line 591](../../../extended/ext/json_stream.lani#L591)
+[Source line 778](../../../extended/ext/json_stream.lani#L778)
 
 ```lanius
 Io(core::io::Error)
@@ -651,7 +709,7 @@ Io(core::io::Error)
 
 ### struct: TokenReader
 
-[Source line 594](../../../extended/ext/json_stream.lani#L594)
+[Source line 781](../../../extended/ext/json_stream.lani#L781)
 
 ```lanius
 pub struct TokenReader<R>
@@ -659,7 +717,7 @@ pub struct TokenReader<R>
 
 #### field: reader
 
-[Source line 595](../../../extended/ext/json_stream.lani#L595)
+[Source line 782](../../../extended/ext/json_stream.lani#L782)
 
 ```lanius
 reader: &R
@@ -667,7 +725,7 @@ reader: &R
 
 #### field: tokens
 
-[Source line 595](../../../extended/ext/json_stream.lani#L595)
+[Source line 782](../../../extended/ext/json_stream.lani#L782)
 
 ```lanius
 tokens: &Tokenizer
@@ -675,7 +733,7 @@ tokens: &Tokenizer
 
 #### field: scratch
 
-[Source line 595](../../../extended/ext/json_stream.lani#L595)
+[Source line 782](../../../extended/ext/json_stream.lani#L782)
 
 ```lanius
 scratch: core::slice::View<u8>
@@ -683,7 +741,7 @@ scratch: core::slice::View<u8>
 
 #### field: begin
 
-[Source line 595](../../../extended/ext/json_stream.lani#L595)
+[Source line 782](../../../extended/ext/json_stream.lani#L782)
 
 ```lanius
 begin: i32
@@ -691,7 +749,7 @@ begin: i32
 
 #### field: end
 
-[Source line 595](../../../extended/ext/json_stream.lani#L595)
+[Source line 782](../../../extended/ext/json_stream.lani#L782)
 
 ```lanius
 end: i32
@@ -699,7 +757,7 @@ end: i32
 
 #### field: eof
 
-[Source line 595](../../../extended/ext/json_stream.lani#L595)
+[Source line 782](../../../extended/ext/json_stream.lani#L782)
 
 ```lanius
 eof: bool
@@ -707,7 +765,7 @@ eof: bool
 
 #### field: reads
 
-[Source line 595](../../../extended/ext/json_stream.lani#L595)
+[Source line 782](../../../extended/ext/json_stream.lani#L782)
 
 ```lanius
 reads: u64
@@ -717,7 +775,7 @@ reads: u64
 
 ### function: default_options
 
-[Source line 26](../../../extended/ext/json_stream.lani#L26)
+[Source line 28](../../../extended/ext/json_stream.lani#L28)
 
 ```lanius
 pub fn default_options() -> Options
@@ -725,7 +783,7 @@ pub fn default_options() -> Options
 
 ### function: kind_name
 
-[Source line 36](../../../extended/ext/json_stream.lani#L36)
+[Source line 38](../../../extended/ext/json_stream.lani#L38)
 
 ```lanius
 pub fn kind_name(kind: ErrorKind) -> core::text::Text
@@ -733,7 +791,7 @@ pub fn kind_name(kind: ErrorKind) -> core::text::Text
 
 ### function: tokenizer
 
-[Source line 113](../../../extended/ext/json_stream.lani#L113)
+[Source line 115](../../../extended/ext/json_stream.lani#L115)
 
 ```lanius
 pub fn tokenizer(options: Options) -> core::result::Result<Tokenizer, Error>
@@ -741,7 +799,7 @@ pub fn tokenizer(options: Options) -> core::result::Result<Tokenizer, Error>
 
 ### function: writer
 
-[Source line 384](../../../extended/ext/json_stream.lani#L384)
+[Source line 392](../../../extended/ext/json_stream.lani#L392)
 
 ```lanius
 pub fn writer(max_depth: i32, max_output_bytes: i32) -> core::result::Result<Writer, Error>
@@ -749,7 +807,7 @@ pub fn writer(max_depth: i32, max_output_bytes: i32) -> core::result::Result<Wri
 
 ### function: number_error
 
-[Source line 390](../../../extended/ext/json_stream.lani#L390)
+[Source line 400](../../../extended/ext/json_stream.lani#L400)
 
 ```lanius
 pub fn number_error(text: core::text::Text) -> i32
@@ -757,7 +815,7 @@ pub fn number_error(text: core::text::Text) -> i32
 
 ### function: token_reader
 
-[Source line 597](../../../extended/ext/json_stream.lani#L597)
+[Source line 784](../../../extended/ext/json_stream.lani#L784)
 
 ```lanius
 pub fn token_reader<R>(reader: &R, tokens: &Tokenizer, scratch: core::slice::View<u8>)
@@ -766,9 +824,9 @@ pub fn token_reader<R>(reader: &R, tokens: &Tokenizer, scratch: core::slice::Vie
 
 ## Implementation blocks and public methods
 
-### impl at line 132
+### impl at line 134
 
-[Source line 132](../../../extended/ext/json_stream.lani#L132)
+[Source line 134](../../../extended/ext/json_stream.lani#L134)
 
 ```lanius
 pub impl Tokenizer
@@ -776,7 +834,7 @@ pub impl Tokenizer
 
 #### method: borrow
 
-[Source line 133](../../../extended/ext/json_stream.lani#L133)
+[Source line 135](../../../extended/ext/json_stream.lani#L135)
 
 ```lanius
 pub fn borrow(&self) -> &Tokenizer
@@ -784,7 +842,7 @@ pub fn borrow(&self) -> &Tokenizer
 
 #### method: byte_offset
 
-[Source line 134](../../../extended/ext/json_stream.lani#L134)
+[Source line 136](../../../extended/ext/json_stream.lani#L136)
 
 ```lanius
 pub fn byte_offset(&self) -> u64
@@ -792,7 +850,7 @@ pub fn byte_offset(&self) -> u64
 
 #### method: tokens_read
 
-[Source line 135](../../../extended/ext/json_stream.lani#L135)
+[Source line 137](../../../extended/ext/json_stream.lani#L137)
 
 ```lanius
 pub fn tokens_read(&self) -> u64
@@ -800,7 +858,7 @@ pub fn tokens_read(&self) -> u64
 
 #### method: has_token
 
-[Source line 136](../../../extended/ext/json_stream.lani#L136)
+[Source line 138](../../../extended/ext/json_stream.lani#L138)
 
 ```lanius
 pub fn has_token(&self) -> bool
@@ -808,7 +866,7 @@ pub fn has_token(&self) -> bool
 
 #### method: depth
 
-[Source line 138](../../../extended/ext/json_stream.lani#L138)
+[Source line 140](../../../extended/ext/json_stream.lani#L140)
 
 ```lanius
 pub fn depth(&self) -> i32
@@ -816,7 +874,7 @@ pub fn depth(&self) -> i32
 
 #### method: is_complete
 
-[Source line 139](../../../extended/ext/json_stream.lani#L139)
+[Source line 141](../../../extended/ext/json_stream.lani#L141)
 
 ```lanius
 pub fn is_complete(&self) -> bool
@@ -824,7 +882,7 @@ pub fn is_complete(&self) -> bool
 
 #### method: token
 
-[Source line 140](../../../extended/ext/json_stream.lani#L140)
+[Source line 142](../../../extended/ext/json_stream.lani#L142)
 
 ```lanius
 pub fn token(&self) -> core::option::Option<Token>
@@ -832,7 +890,7 @@ pub fn token(&self) -> core::option::Option<Token>
 
 #### method: token_offset
 
-[Source line 146](../../../extended/ext/json_stream.lani#L146)
+[Source line 148](../../../extended/ext/json_stream.lani#L148)
 
 ```lanius
 pub fn token_offset(&self) -> u64
@@ -840,7 +898,7 @@ pub fn token_offset(&self) -> u64
 
 #### method: boolean
 
-[Source line 147](../../../extended/ext/json_stream.lani#L147)
+[Source line 149](../../../extended/ext/json_stream.lani#L149)
 
 ```lanius
 pub fn boolean(&self) -> core::result::Result<bool, Error>
@@ -848,7 +906,7 @@ pub fn boolean(&self) -> core::result::Result<bool, Error>
 
 #### method: text
 
-[Source line 153](../../../extended/ext/json_stream.lani#L153)
+[Source line 155](../../../extended/ext/json_stream.lani#L155)
 
 ```lanius
 pub fn text(&self) -> core::result::Result<core::text::Text, Error>
@@ -856,7 +914,7 @@ pub fn text(&self) -> core::result::Result<core::text::Text, Error>
 
 #### method: feed
 
-[Source line 326](../../../extended/ext/json_stream.lani#L326)
+[Source line 328](../../../extended/ext/json_stream.lani#L328)
 
 ```lanius
 pub fn feed(&self, source: [u8], start: i32, count: i32) -> core::result::Result<Progress, Error>
@@ -864,7 +922,7 @@ pub fn feed(&self, source: [u8], start: i32, count: i32) -> core::result::Result
 
 #### method: finish
 
-[Source line 347](../../../extended/ext/json_stream.lani#L347)
+[Source line 349](../../../extended/ext/json_stream.lani#L349)
 
 ```lanius
 pub fn finish(&self) -> core::result::Result<bool, Error>
@@ -872,7 +930,7 @@ pub fn finish(&self) -> core::result::Result<bool, Error>
 
 #### method: reset
 
-[Source line 363](../../../extended/ext/json_stream.lani#L363)
+[Source line 365](../../../extended/ext/json_stream.lani#L365)
 
 ```lanius
 pub fn reset(&self)
@@ -880,15 +938,15 @@ pub fn reset(&self)
 
 #### method: destroy
 
-[Source line 371](../../../extended/ext/json_stream.lani#L371)
+[Source line 373](../../../extended/ext/json_stream.lani#L373)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 403
+### impl at line 418
 
-[Source line 403](../../../extended/ext/json_stream.lani#L403)
+[Source line 418](../../../extended/ext/json_stream.lani#L418)
 
 ```lanius
 pub impl Writer
@@ -896,7 +954,7 @@ pub impl Writer
 
 #### method: borrow
 
-[Source line 404](../../../extended/ext/json_stream.lani#L404)
+[Source line 419](../../../extended/ext/json_stream.lani#L419)
 
 ```lanius
 pub fn borrow(&self) -> &Writer
@@ -904,7 +962,7 @@ pub fn borrow(&self) -> &Writer
 
 #### method: len
 
-[Source line 405](../../../extended/ext/json_stream.lani#L405)
+[Source line 420](../../../extended/ext/json_stream.lani#L420)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -912,7 +970,7 @@ pub fn len(&self) -> i32
 
 #### method: depth
 
-[Source line 406](../../../extended/ext/json_stream.lani#L406)
+[Source line 421](../../../extended/ext/json_stream.lani#L421)
 
 ```lanius
 pub fn depth(&self) -> i32
@@ -920,7 +978,7 @@ pub fn depth(&self) -> i32
 
 #### method: is_complete
 
-[Source line 407](../../../extended/ext/json_stream.lani#L407)
+[Source line 422](../../../extended/ext/json_stream.lani#L422)
 
 ```lanius
 pub fn is_complete(&self) -> bool
@@ -928,7 +986,7 @@ pub fn is_complete(&self) -> bool
 
 #### method: output
 
-[Source line 409](../../../extended/ext/json_stream.lani#L409)
+[Source line 424](../../../extended/ext/json_stream.lani#L424)
 
 ```lanius
 pub fn output(&self) -> core::slice::View<u8>
@@ -936,7 +994,7 @@ pub fn output(&self) -> core::slice::View<u8>
 
 #### method: output_text
 
-[Source line 410](../../../extended/ext/json_stream.lani#L410)
+[Source line 425](../../../extended/ext/json_stream.lani#L425)
 
 ```lanius
 pub fn output_text(&self) -> core::text::Text
@@ -944,7 +1002,7 @@ pub fn output_text(&self) -> core::text::Text
 
 #### method: begin_array
 
-[Source line 456](../../../extended/ext/json_stream.lani#L456)
+[Source line 564](../../../extended/ext/json_stream.lani#L564)
 
 ```lanius
 pub fn begin_array(&self) -> core::result::Result<i32, Error>
@@ -952,7 +1010,7 @@ pub fn begin_array(&self) -> core::result::Result<i32, Error>
 
 #### method: begin_object
 
-[Source line 457](../../../extended/ext/json_stream.lani#L457)
+[Source line 565](../../../extended/ext/json_stream.lani#L565)
 
 ```lanius
 pub fn begin_object(&self) -> core::result::Result<i32, Error>
@@ -960,7 +1018,7 @@ pub fn begin_object(&self) -> core::result::Result<i32, Error>
 
 #### method: end_array
 
-[Source line 458](../../../extended/ext/json_stream.lani#L458)
+[Source line 566](../../../extended/ext/json_stream.lani#L566)
 
 ```lanius
 pub fn end_array(&self) -> core::result::Result<i32, Error>
@@ -968,15 +1026,87 @@ pub fn end_array(&self) -> core::result::Result<i32, Error>
 
 #### method: end_object
 
-[Source line 459](../../../extended/ext/json_stream.lani#L459)
+[Source line 567](../../../extended/ext/json_stream.lani#L567)
 
 ```lanius
 pub fn end_object(&self) -> core::result::Result<i32, Error>
 ```
 
+#### method: fast_begin_array
+
+[Source line 573](../../../extended/ext/json_stream.lani#L573)
+
+```lanius
+pub fn fast_begin_array(&self) -> bool
+```
+
+#### method: fast_begin_object
+
+[Source line 574](../../../extended/ext/json_stream.lani#L574)
+
+```lanius
+pub fn fast_begin_object(&self) -> bool
+```
+
+#### method: fast_end_array
+
+[Source line 575](../../../extended/ext/json_stream.lani#L575)
+
+```lanius
+pub fn fast_end_array(&self) -> bool
+```
+
+#### method: fast_end_object
+
+[Source line 576](../../../extended/ext/json_stream.lani#L576)
+
+```lanius
+pub fn fast_end_object(&self) -> bool
+```
+
+#### method: fast_key
+
+[Source line 578](../../../extended/ext/json_stream.lani#L578)
+
+```lanius
+pub fn fast_key(&self, bytes: [u8], start: i32, length: i32) -> bool
+```
+
+#### method: fast_string
+
+[Source line 583](../../../extended/ext/json_stream.lani#L583)
+
+```lanius
+pub fn fast_string(&self, bytes: [u8], start: i32, length: i32) -> bool
+```
+
+#### method: fast_number_unchecked
+
+[Source line 588](../../../extended/ext/json_stream.lani#L588)
+
+```lanius
+pub fn fast_number_unchecked(&self, bytes: [u8], start: i32, length: i32) -> bool
+```
+
+#### method: fast_f64
+
+[Source line 599](../../../extended/ext/json_stream.lani#L599)
+
+```lanius
+pub fn fast_f64(&self, value: f64, scratch: core::slice::View<u32>) -> bool
+```
+
+#### method: fast_null
+
+[Source line 611](../../../extended/ext/json_stream.lani#L611)
+
+```lanius
+pub fn fast_null(&self) -> bool
+```
+
 #### method: key
 
-[Source line 492](../../../extended/ext/json_stream.lani#L492)
+[Source line 665](../../../extended/ext/json_stream.lani#L665)
 
 ```lanius
 pub fn key(&self, text: core::text::Text) -> core::result::Result<i32, Error>
@@ -984,7 +1114,7 @@ pub fn key(&self, text: core::text::Text) -> core::result::Result<i32, Error>
 
 #### method: string
 
-[Source line 517](../../../extended/ext/json_stream.lani#L517)
+[Source line 688](../../../extended/ext/json_stream.lani#L688)
 
 ```lanius
 pub fn string(&self, text: core::text::Text) -> core::result::Result<i32, Error>
@@ -992,15 +1122,23 @@ pub fn string(&self, text: core::text::Text) -> core::result::Result<i32, Error>
 
 #### method: number
 
-[Source line 523](../../../extended/ext/json_stream.lani#L523)
+[Source line 695](../../../extended/ext/json_stream.lani#L695)
 
 ```lanius
 pub fn number(&self, text: core::text::Text) -> core::result::Result<i32, Error>
 ```
 
+#### method: number_unchecked
+
+[Source line 707](../../../extended/ext/json_stream.lani#L707)
+
+```lanius
+pub fn number_unchecked(&self, text: core::text::Text) -> core::result::Result<i32, Error>
+```
+
 #### method: boolean
 
-[Source line 529](../../../extended/ext/json_stream.lani#L529)
+[Source line 712](../../../extended/ext/json_stream.lani#L712)
 
 ```lanius
 pub fn boolean(&self, value: bool) -> core::result::Result<i32, Error>
@@ -1008,7 +1146,7 @@ pub fn boolean(&self, value: bool) -> core::result::Result<i32, Error>
 
 #### method: null
 
-[Source line 533](../../../extended/ext/json_stream.lani#L533)
+[Source line 716](../../../extended/ext/json_stream.lani#L716)
 
 ```lanius
 pub fn null(&self) -> core::result::Result<i32, Error>
@@ -1016,7 +1154,7 @@ pub fn null(&self) -> core::result::Result<i32, Error>
 
 #### method: token
 
-[Source line 537](../../../extended/ext/json_stream.lani#L537)
+[Source line 722](../../../extended/ext/json_stream.lani#L722)
 
 ```lanius
 pub fn token(&self, source: &Tokenizer) -> core::result::Result<i32, Error>
@@ -1024,7 +1162,7 @@ pub fn token(&self, source: &Tokenizer) -> core::result::Result<i32, Error>
 
 #### method: next_document
 
-[Source line 552](../../../extended/ext/json_stream.lani#L552)
+[Source line 737](../../../extended/ext/json_stream.lani#L737)
 
 ```lanius
 pub fn next_document(&self) -> core::result::Result<i32, Error>
@@ -1032,7 +1170,7 @@ pub fn next_document(&self) -> core::result::Result<i32, Error>
 
 #### method: clear
 
-[Source line 560](../../../extended/ext/json_stream.lani#L560)
+[Source line 745](../../../extended/ext/json_stream.lani#L745)
 
 ```lanius
 pub fn clear(&self)
@@ -1040,15 +1178,15 @@ pub fn clear(&self)
 
 #### method: destroy
 
-[Source line 561](../../../extended/ext/json_stream.lani#L561)
+[Source line 746](../../../extended/ext/json_stream.lani#L746)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 571
+### impl at line 758
 
-[Source line 571](../../../extended/ext/json_stream.lani#L571)
+[Source line 758](../../../extended/ext/json_stream.lani#L758)
 
 ```lanius
 pub impl Writer
@@ -1056,15 +1194,15 @@ pub impl Writer
 
 #### method: flush_to
 
-[Source line 572](../../../extended/ext/json_stream.lani#L572)
+[Source line 759](../../../extended/ext/json_stream.lani#L759)
 
 ```lanius
 pub fn flush_to<W>(&self, sink: &W) -> core::result::Result<i32, core::io::Failure> where W: core::io::Write
 ```
 
-### impl at line 603
+### impl at line 790
 
-[Source line 603](../../../extended/ext/json_stream.lani#L603)
+[Source line 790](../../../extended/ext/json_stream.lani#L790)
 
 ```lanius
 pub impl<R> TokenReader<R>
@@ -1072,7 +1210,7 @@ pub impl<R> TokenReader<R>
 
 #### method: borrow
 
-[Source line 604](../../../extended/ext/json_stream.lani#L604)
+[Source line 791](../../../extended/ext/json_stream.lani#L791)
 
 ```lanius
 pub fn borrow(&self) -> &TokenReader<R>
@@ -1080,7 +1218,7 @@ pub fn borrow(&self) -> &TokenReader<R>
 
 #### method: read_calls
 
-[Source line 606](../../../extended/ext/json_stream.lani#L606)
+[Source line 793](../../../extended/ext/json_stream.lani#L793)
 
 ```lanius
 pub fn read_calls(&self) -> u64
@@ -1088,7 +1226,7 @@ pub fn read_calls(&self) -> u64
 
 #### method: next
 
-[Source line 611](../../../extended/ext/json_stream.lani#L611)
+[Source line 798](../../../extended/ext/json_stream.lani#L798)
 
 ```lanius
 pub fn next(&self) -> core::result::Result<bool, StreamError> where R: core::io::Read

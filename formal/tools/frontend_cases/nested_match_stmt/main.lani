@@ -1,0 +1,48 @@
+module app::main;
+
+// Nested patterns in match statements, read as nested match statements:
+// the arm `Has(h) -> match (h) { .. }` runs the inner match on the payload.
+enum Color { Red, Green, Blue }
+enum Num { Val(i32), Nothing }
+enum Outer { In(Num), Out }
+enum Slot { Has(Color), Empty }
+enum Shelf { Full(Slot), Gone }
+
+fn f(o: Outer) -> i32 {
+    match (o) {
+        Outer::In(Num::Val(x)) -> { return x; },
+        Outer::In(Num::Nothing) -> { return 100; },
+        Outer::Out -> { return 200; },
+    };
+}
+
+// The wildcard is the inner match's last arm and Empty's arm.
+fn g(s: Slot) -> i32 {
+    match (s) {
+        Slot::Has(Color::Green) -> { return 1; },
+        _ -> { return 2; },
+    };
+}
+
+// Two levels; c is unused, so its arm is `_`.
+fn h(s: Shelf) -> i32 {
+    match (s) {
+        Shelf::Full(Slot::Has(Color::Red)) -> { return 1; },
+        Shelf::Full(Slot::Has(c)) -> { return 2; },
+        _ -> { return 3; },
+    };
+}
+
+fn main() -> i32 {
+    if (f(Outer::In(Num::Val(7))) != 7) { return 1; }
+    if (f(Outer::In(Num::Nothing)) != 100) { return 2; }
+    if (f(Outer::Out) != 200) { return 3; }
+    if (g(Slot::Has(Color::Green)) != 1) { return 4; }
+    if (g(Slot::Has(Color::Blue)) != 2) { return 5; }
+    if (g(Slot::Empty) != 2) { return 6; }
+    if (h(Shelf::Full(Slot::Has(Color::Red))) != 1) { return 7; }
+    if (h(Shelf::Full(Slot::Has(Color::Blue))) != 2) { return 8; }
+    if (h(Shelf::Full(Slot::Empty)) != 3) { return 9; }
+    if (h(Shelf::Gone) != 3) { return 10; }
+    return 0;
+}

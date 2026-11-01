@@ -1220,9 +1220,10 @@
       "guides": [
         "docs/extended-http-agent.md",
         "docs/extended-http.md",
-        "docs/extended-url-client.md"
+        "docs/extended-url-client.md",
+        "docs/extended-openssl-tls.md"
       ],
-      "note": "Synchronous cleartext HTTP/1.1 client over ext::http framing, ext::http_url and ext::url_connect: a keep-alive pool keyed by host and port with per-host/total idle counts, idle time, Keep-Alive hints and use limits, stale probing and one idempotent retry; redirects with a hop limit, 303/301/302/307/308 method rules, RFC 3986 reference resolution and cross-origin Authorization/Cookie stripping; fixed or chunked streamed bodies with early-response handling. The curl-like sample passes four Python http.server oracle groups (pool 18, redirect 29, upload 10, broken 21 cases) with exact counters."
+      "note": "Synchronous HTTP/1.1 client for http:// and verified https:// over ext::http framing, ext::http_url, ext::url_connect and ext::tls_stream: a keep-alive pool of cleartext and TLS connections keyed by scheme, host and port with per-host/total idle counts, idle time, Keep-Alive hints and use limits, stale probing and one idempotent retry; redirects with a hop limit, 303/301/302/307/308 method rules, RFC 3986 reference resolution and cross-origin Authorization/Cookie stripping; fixed or chunked streamed bodies with early-response handling. The curl-like sample passes five oracle groups (pool 18, redirect 29, upload 10, broken 21, https 17 cases against Python ssl origins with locally generated certificates) with exact counters."
     },
     "ext::http_service": {
       "guides": [
@@ -1387,6 +1388,11 @@
     "ext::parse": {
       "guides": [
         "docs/extended-parse.md"
+      ]
+    },
+    "ext::patchset": {
+      "guides": [
+        "docs/extended-patchset.md"
       ]
     },
     "ext::pratt": {
@@ -1716,11 +1722,24 @@
         "docs/extended-uri-resolve.md"
       ]
     },
+    "ext::idna": {
+      "guides": [
+        "docs/extended-idna.md"
+      ],
+      "note": "UTS #46 ToASCII with the WHATWG URL options and Node.js's per-label Bidi rule; table derived from the vendored Unicode 17 UCD. A ZWNJ outside the virama/ASCII/edge cases returns UnsupportedJoiner (no Joining_Type data). Evidence is finite native Linux x86_64 CPU execution compared with Node.js."
+    },
+    "ext::idna_data": {
+      "guides": [
+        "docs/extended-idna.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
     "ext::url": {
       "guides": [
         "docs/extended-url.md"
       ],
-      "note": "WHATWG basic URL parser without state override or UTS #46: non-ASCII and xn-- domains return UnsupportedIdna. A Url owns its href; destroy once. Evidence is finite native Linux x86_64 CPU execution compared with Node.js."
+      "note": "WHATWG basic URL parser without state override; hosts use ext::idna (UTS #46). A Url owns its href; destroy once. Evidence is finite native Linux x86_64 CPU execution compared with Node.js."
     },
     "ext::url_client": {
       "guides": [

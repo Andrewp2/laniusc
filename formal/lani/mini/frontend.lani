@@ -6189,6 +6189,18 @@ pub fn cons_binder(id: usize, rest: core::option::Option<Bound>) -> core::option
     };
 }
 
+// Some enum of the program has a variant spelled name. laniusc reads a
+// payload pattern whose name resolves to a variant as a check of that
+// payload, not a binder (match_payload_binding in
+// shaders/codegen/lir/semantic/local_mark.slang); a payload pattern spelled
+// like any variant is never read as a binder.
+pub fn any_variant(types: List<TypeDecl>, name: List<usize>) -> bool {
+    return match (types) {
+        Nil -> false,
+        Cons(t, rest) -> (t.is_enum && member(t.variants, name)) || any_variant(unbox(rest), name),
+    };
+}
+
 // One plain name pattern per payload type, each a fresh local.
 pub fn binders_of(env: FrontEnv, scope: List<Local>, pats: List<CTree>, payload: List<Ty>) -> core::option::Option<Bound> {
     return match (payload) {
@@ -6207,7 +6219,7 @@ pub fn binders_of(env: FrontEnv, scope: List<Local>, pats: List<CTree>, payload:
 fn binder_of(env: FrontEnv, scope: List<Local>, p: CTree, t: Ty, pats: List<CTree>, payload: List<Ty>) -> core::option::Option<Bound> {
     let path: CTree = kid(p, 0);
     let tok: Token = kid_token(kid(path, 0), 0);
-    if (node_prod(p) == p_pattern_ident() && node_prod(kid(p, 1)) == p_pattern_plain() && is_some_name(path_name(path)) && !member(env.globals, tok.text) && fresh_id(scope, minus(tok.start, env.base))) {
+    if (node_prod(p) == p_pattern_ident() && node_prod(kid(p, 1)) == p_pattern_plain() && is_some_name(path_name(path)) && !member(env.globals, tok.text) && !any_variant(env.decls.types, tok.text) && fresh_id(scope, minus(tok.start, env.base))) {
         return cons_binder(minus(tok.start, env.base), binders_of(env, cons(Local { name: tok.text, id: minus(tok.start, env.base), ty: t }, scope), pats, payload));
     }
     return None;
@@ -6484,11 +6496,11 @@ pub fn arms_of(fuel: usize, env: FrontEnv, scope: List<Local>, owner: TypeDecl, 
 // SEMANTIC_DECISIONS "Nested patterns".
 
 // A payload pattern that binds a name, as binder_of reads one: a plain
-// one-segment name that is no global's.
+// one-segment name that is no global's and no variant's.
 pub fn binder_name_ok(env: FrontEnv, name: core::option::Option<List<usize>>) -> bool {
     return match (name) {
         None -> false,
-        Some(n) -> !member(env.globals, n),
+        Some(n) -> !member(env.globals, n) && !any_variant(env.decls.types, n),
     };
 }
 
@@ -6931,10 +6943,27 @@ pub fn nest_use(fuel: usize, env: FrontEnv, v: VariantTy, a: CTree, rows: List<C
     };
 }
 
-pub fn plain_use(a: CTree, more: List<CTree>) -> core::option::Option<ArmUse> {
+pub fn shadow_if(a: CTree, n: bool) -> core::option::Option<ArmUse> {
+    if (n) {
+        return Some(ArmUse { arm: a, used: false });
+    }
+    return None;
+}
+
+pub fn shadow_use(a: CTree, n: core::option::Option<bool>) -> core::option::Option<ArmUse> {
+    return match (n) {
+        None -> None,
+        Some(b) -> shadow_if(a, b),
+    };
+}
+
+// V's first arm a is plain: it is V's arm. It matches every value of V, so
+// laniusc never runs V's later arms; they are allowed when one of them is
+// nested (laniusc accepts them), and are not read.
+pub fn plain_use(fuel: usize, env: FrontEnv, a: CTree, more: List<CTree>) -> core::option::Option<ArmUse> {
     return match (more) {
         Nil -> Some(ArmUse { arm: a, used: false }),
-        Cons(b, others) -> None,
+        Cons(b, others) -> shadow_use(a, any_nested(fuel, env, more)),
     };
 }
 
@@ -6942,7 +6971,7 @@ pub fn nested_or_plain(fuel: usize, env: FrontEnv, v: VariantTy, a: CTree, more:
     if (n) {
         return nest_use(fuel, env, v, a, rows, w);
     }
-    return plain_use(a, more);
+    return plain_use(fuel, env, a, more);
 }
 
 pub fn rows_use(fuel: usize, env: FrontEnv, v: VariantTy, a: CTree, more: List<CTree>, rows: List<CTree>, w: core::option::Option<CTree>, nested: core::option::Option<bool>) -> core::option::Option<ArmUse> {
@@ -7085,6 +7114,23 @@ pub fn match_order(fuel: usize, env: FrontEnv, owner: TypeDecl, variants: List<V
     return match (any_nested(fuel, env, arms)) {
         None -> None,
         Some(n) -> order_by(fuel, env, owner, variants, arms, n),
+    };
+}
+
+pub fn stmt_order_by(fuel: usize, env: FrontEnv, owner: TypeDecl, variants: List<VariantTy>, arms: List<CTree>, nested: bool) -> core::option::Option<List<CTree>> {
+    if (nested) {
+        return nested_checked(fuel, env, owner, variants, arms, true);
+    }
+    return arms_in_order(fuel, owner, variants, arms);
+}
+
+// A match statement's arms in variant order: as a match expression's, but
+// an arm's value may be a block. A nested arm's value is then the inner
+// match `match (h) { arms }` (nest_arm), read as a match statement.
+pub fn stmt_arm_order(fuel: usize, env: FrontEnv, owner: TypeDecl, variants: List<VariantTy>, arms: List<CTree>) -> core::option::Option<List<CTree>> {
+    return match (any_nested(fuel, env, arms)) {
+        None -> None,
+        Some(n) -> stmt_order_by(fuel, env, owner, variants, arms, n),
     };
 }
 
@@ -9127,11 +9173,11 @@ pub fn match_stmt_parts(fuel: usize, env: FrontEnv, scope: List<Local>, m: CTree
     return match_stmt_on(fuel, env, scope, m, eff_of(fuel, env, scope, None, kid(m, 2)));
 }
 
-// The arms in variant order.
-pub fn match_stmt_arms(fuel: usize, h: MatchStmt, m: CTree) -> core::option::Option<List<CTree>> {
+// A match statement's arms in variant order (stmt_arm_order).
+pub fn stmt_arms(fuel: usize, env: FrontEnv, h: MatchStmt, m: CTree) -> core::option::Option<List<CTree>> {
     return match (list_items(fuel, kid(m, 5))) {
         None -> None,
-        Some(arms) -> arms_in_order(fuel, h.owner, h.variants, arms),
+        Some(arms) -> stmt_arm_order(fuel, env, h.owner, h.variants, arms),
     };
 }
 
@@ -9388,8 +9434,9 @@ pub fn nested_of(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree) -> co
     return None;
 }
 
-// `match (s) { arms };` with every arm a block: arm k (variant k) runs its
-// block, else the next arm is tried; after the last, Unreachable. Every
+// `match (s) { arms };` with every arm a block (or, for a nested arm, an
+// inner match statement): arm k (variant k) runs its block, else the next
+// arm is tried; after the last, Unreachable. Every
 // block arm leaves the match (laniusc rejects one whose end is reachable),
 // so the match's own end is never reached either.
 pub fn match_stmt_of(fuel: usize, env: FrontEnv, scope: List<Local>, e: CTree) -> core::option::Option<MStmt> {
@@ -9400,7 +9447,7 @@ pub fn match_stmt_of(fuel: usize, env: FrontEnv, scope: List<Local>, e: CTree) -
         None -> None,
         Some(m) -> match (match_stmt_parts(fuel, env, scope, m)) {
             None -> None,
-            Some(h) -> match (match_stmt_arms(fuel, h, m)) {
+            Some(h) -> match (stmt_arms(fuel, env, h, m)) {
                 None -> None,
                 Some(os) -> match_stmt_value(h, match_arms_of(minus(fuel, 1), env, scope, h, 0, h.variants, os)),
             },
@@ -9430,11 +9477,38 @@ pub fn match_arm_of(fuel: usize, env: FrontEnv, scope: List<Local>, h: MatchStmt
     }
     return match (arm_binding(fuel, env, scope, h.owner, v, a)) {
         None -> None,
-        Some(b) -> match (arm_block_list(fuel, a)) {
-            None -> None,
-            Some(list) -> arm_stmt(h, k, b, v, block_of(minus(fuel, 1), env, bound_scope(b), list), rest),
-        },
+        Some(b) -> arm_stmt(h, k, b, v, arm_body_of(minus(fuel, 1), env, bound_scope(b), a), rest),
     };
+}
+
+// A match statement arm's body: its block, or, for a nested arm, its inner
+// match statement.
+pub fn arm_body_of(fuel: usize, env: FrontEnv, scope: List<Local>, a: CTree) -> core::option::Option<MStmt> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (arm_block_list(fuel, a)) {
+        Some(list) -> block_of(minus(fuel, 1), env, scope, list),
+        None -> inner_match_of(minus(fuel, 1), env, scope, kid(a, 2)),
+    };
+}
+
+// The inner match `match (h) { arms }` of a nested arm in a match statement
+// (nest_arm), read as a match statement on h; its closer is the arm's `->`.
+pub fn inner_match_of(fuel: usize, env: FrontEnv, scope: List<Local>, m: CTree) -> core::option::Option<MStmt> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (node_prod(m) == p_match_expr()) {
+        return match (match_stmt_parts(fuel, env, scope, m)) {
+            None -> None,
+            Some(h) -> match (stmt_arms(fuel, env, h, m)) {
+                None -> None,
+                Some(os) -> match_stmt_value(h, match_arms_of(minus(fuel, 1), env, scope, h, 0, h.variants, os)),
+            },
+        };
+    }
+    return None;
 }
 
 // `let x: ty = match (s) { arms }; rest` with block arms and one value arm:
@@ -9448,7 +9522,7 @@ pub fn let_match_of(fuel: usize, env: FrontEnv, scope: List<Local>, x: Local, in
         None -> None,
         Some(m) -> match (match_stmt_parts(fuel, env, scope, m)) {
             None -> None,
-            Some(h) -> match (match_stmt_arms(fuel, h, m)) {
+            Some(h) -> match (stmt_arms(fuel, env, h, m)) {
                 None -> None,
                 Some(os) -> match (body) {
                     None -> None,
@@ -9483,7 +9557,35 @@ pub fn let_arm_of(fuel: usize, env: FrontEnv, scope: List<Local>, h: MatchStmt, 
         None -> None,
         Some(b) -> match (arm_block_list(fuel, a)) {
             Some(list) -> arm_stmt(h, k, b, v, block_of(minus(fuel, 1), env, bound_scope(b), list), others),
-            None -> arm_stmt(h, k, b, v, let_of(local_id_of(x), local_ty_of(x), let_head_or_eval(minus(fuel, 1), env, bound_scope(b), local_ty_of(x), kid(a, 2)), Some(rest)), others),
+            None -> arm_stmt(h, k, b, v, let_body_of(minus(fuel, 1), env, bound_scope(b), x, rest, a), others),
+        },
+    };
+}
+
+// A let match's arm that is not a block: a nested arm's inner match (a bare
+// match node, as nest_arm builds; a written value is never one), else a
+// value binding x, then rest.
+pub fn let_body_of(fuel: usize, env: FrontEnv, scope: List<Local>, x: Local, rest: MStmt, a: CTree) -> core::option::Option<MStmt> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (node_prod(kid(a, 2)) == p_match_expr()) {
+        return inner_let_of(minus(fuel, 1), env, scope, x, rest, kid(a, 2));
+    }
+    return let_of(local_id_of(x), local_ty_of(x), let_head_or_eval(minus(fuel, 1), env, scope, local_ty_of(x), kid(a, 2)), Some(rest));
+}
+
+// The inner match of a nested arm in a let's match, read as the let's match
+// on h: its block arms leave, its value arms bind x and run rest.
+pub fn inner_let_of(fuel: usize, env: FrontEnv, scope: List<Local>, x: Local, rest: MStmt, m: CTree) -> core::option::Option<MStmt> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (match_stmt_parts(fuel, env, scope, m)) {
+        None -> None,
+        Some(h) -> match (stmt_arms(fuel, env, h, m)) {
+            None -> None,
+            Some(os) -> match_stmt_value(h, let_arms_of(minus(fuel, 1), env, scope, h, x, rest, 0, h.variants, os)),
         },
     };
 }

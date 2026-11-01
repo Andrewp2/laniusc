@@ -69,6 +69,17 @@ def chunks(name, entries, width):
     return lines
 
 
+def tree(values, lo, hi, indent):
+    # Binary search over literal returns: about log2(87) comparisons instead
+    # of parsing 16 hex digits per lookup.
+    pad = '    ' * indent
+    if hi - lo == 1:
+        return [pad + 'return %d;' % values[lo]]
+    mid = (lo + hi) // 2
+    return ([pad + 'if (i < %d) {' % mid] + tree(values, lo, mid, indent + 1) + [pad + '}']
+            + tree(values, mid, hi, indent))
+
+
 def main():
     p5 = ['%032x' % v for v in pow5()]
     cp = ['%016x%04x' % (f, e + 32768) for f, e in cached()]
@@ -80,8 +91,9 @@ def main():
         'import core::mem;',
         '',
         'fn hex(bytes: [u8], offset: i32, width: i32) -> u64 {',
-        '    let value: u64 = 0; let i: i32 = 0;',
-        '    while (i < width) { let b: u8 = bytes[offset + i]; let d: u64 = (b as u64) - 48; if (b >= 97) { d = (b as u64) - 87; } value = (value << 4) | d; i += 1; }',
+        '    // Lowercase hex digits: (b & 15) + 9 * (b >> 6) maps 0-9 and a-f to 0..15.',
+        '    let value: u64 = 0; let at: i32 = offset; let end: i32 = offset + width;',
+        '    while (at < end) { let b: u64 = bytes[at] as u64; value = (value << 4) | ((b & 15) + 9 * (b >> 6)); at += 1; }',
         '    return value;',
         '}',
     ]
@@ -95,7 +107,12 @@ def main():
         'pub fn pow5_high(q: i32) -> u64 { let i: i32 = q + 342; return hex(pow5_chunk(i / %d), (i %% %d) * 32, 16); }' % (CHUNK, CHUNK),
         'pub fn pow5_low(q: i32) -> u64 { let i: i32 = q + 342; return hex(pow5_chunk(i / %d), (i %% %d) * 32 + 16, 16); }' % (CHUNK, CHUNK),
         '// Cached power i approximates 10^(-348 + 8i) as significand * 2^exponent.',
-        'pub fn cached_significand(i: i32) -> u64 { return hex(cached_chunk(i / %d), (i %% %d) * 20, 16); }' % (CHUNK, CHUNK),
+        'pub fn cached_significand(i: i32) -> u64 {',
+        '    if (i < 0 || i >= %d) { return hex(cached_chunk(i / %d), (i %% %d) * 20, 16); }' % (len(cp), CHUNK, CHUNK),
+    ]
+    lines += tree([f for f, e in cached()], 0, len(cp), 1)
+    lines += [
+        '}',
         'pub fn cached_exponent(i: i32) -> i32 { return (hex(cached_chunk(i / %d), (i %% %d) * 20 + 16, 4) as i32) - 32768; }' % (CHUNK, CHUNK),
         'pub fn cached_decimal(i: i32) -> i32 { return -348 + 8 * i; }',
         '',

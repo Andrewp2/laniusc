@@ -39,7 +39,7 @@ stopping at the computations the theorems are about (`compileSource`,
 `linkObjects`, `elfFile`, `sourceProgramFiles`, `compileWords`,
 `frontEndWords` and the self program `Lanius.Faithful.Self.prog`, which are
 not trusted, section 10), with each one's type and body:
-definitions `3122c415b55d5c87` (4,321 constants). This covers Core's
+definitions `ee4b08e694b3e079` (4,330 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
@@ -47,7 +47,16 @@ modules keeps its hash. The last change of the hash (10-31): the lexer
 (`Lanius/Compiler/Lexer*.lean`, `Tokens.lean`) and the reading became Lean
 `module`s, so a function's matcher is its own (`OneTokenResult.shift.match_1`)
 rather than shared with a derived `Repr` instance's; no definition's meaning
-changed. `trusted_check.py` writes each constant's own hash to
+changed. Before that (10-31, F11b): the
+reading of patterns: a payload name spelled like a variant is never a
+binder (`BindersR`'s `NoVariant`), match statements and lets' matches read
+nested arms (`StmtOrder`, `NestedRows`, `ArmsStmtR.inner`,
+`LetArmsR.inner`, `LetArmsR.value`'s bare-match condition), and a plain
+arm before a nested one for the same variant is that variant's arm
+(`VariantArm.shadow`); `MatchArmsOrder` is gone. Before that (10-31): the
+self-host theorems state the reason for a fault (`SelfFaults`, `selfRun`,
+review finding 5), `compileSource_behaviour_rawFree` brings in `RawFree`,
+and the front end's review fixes changed the reading. `trusted_check.py` writes each constant's own hash to
 its work directory's `definitions.txt`, to find which one changed.
 
 ### Processes (`Lanius/Mini/Process.lean`)
@@ -540,7 +549,17 @@ unique. Trusted:
     value of V reaches it (an inner `_`, or `Covers`) and only when its
     value spells none of the first arm's other binders (`ColsQuiet`); h is
     the binder spelled `[0]`, which no source can spell. No arm's value is
-    a block (`BlockValue`). SEMANTIC_DECISIONS "Nested patterns";
+    a block (`BlockValue`). A match statement's nested arms are read the
+    same way (`StmtOrder`, arms may be blocks), the inner match read as a
+    match statement on h (`ArmsStmtR.inner`), and so are a let's match's
+    (`LetArmsR.inner`; a value arm's value is not that bare match node).
+    When V's first arm is plain and a later one nested, the plain arm is
+    V's arm and the later ones are not read (`VariantArm.shadow`).
+    SEMANTIC_DECISIONS "Nested patterns";
+  - (F11b) a payload pattern binds a name only when no enum of the program
+    has a variant so spelled (`BindersR`'s `NoVariant`): laniusc reads one
+    that resolves to a variant as a check. SEMANTIC_DECISIONS "Payload
+    names that are variants";
   - `x.f` is `Field` when `x` is a local, and otherwise the call of the
     projection `fn(v: T) -> F { return v.f; }` on `x`, an instance numbered
     like any other;

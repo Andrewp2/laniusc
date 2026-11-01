@@ -84,7 +84,7 @@ theorem pure1817 : PureFunc prog prims outside src1817 = true :=
 theorem pure1818 : PureFunc prog prims outside src1818 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::match_stmt_arms -/
+/-- mini::selfhost::stmt_arms -/
 theorem pure1819 : PureFunc prog prims outside src1819 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 

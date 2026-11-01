@@ -386,7 +386,7 @@ fn sd_patience_step(a: core::slice::View<i32>, b: core::slice::View<i32>, r: Ran
     while (q < count) {
         let lo: i32 = 0; let hi: i32 = p.tails.len();
         while (lo < hi) { let mid: i32 = (lo + hi) / 2; if (pj[p.tails.as_slice()[mid]] < pj[q]) { lo = mid + 1; } else { hi = mid; } }
-        if (lo > 0) { prev[q] = p.tails.as_slice()[lo-1]; }
+        if (lo > 0) { let stored: i32 = p.tails.as_slice()[lo-1]; prev[q] = stored; }
         if (lo == p.tails.len()) { if (core::result::is_err(p.tails.try_push(q))) { e.failed = true; e.error = Error::AllocationFailed; return; } }
         else { p.tails.as_slice()[lo] = q; }
         q += 1;

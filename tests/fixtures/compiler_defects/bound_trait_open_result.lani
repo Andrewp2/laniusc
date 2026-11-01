@@ -1,0 +1,16 @@
+// Fixed 2026-10-31: with a bound on an imported generic trait
+// (I: core::iter::Iterator<i32>), an untyped `let x = it.next();` had no type
+// and the unwrap_or reported LNC0006. It now types as Option<i32>. Expected: exit 6.
+module app::main;
+import core::iter;
+import core::option;
+pub struct Count { n: i32 }
+pub impl Count { pub fn borrow(&self) -> &Count { return self; } }
+pub impl core::iter::Iterator<i32> for Count {
+    pub fn next(&self) -> core::option::Option<i32> { return core::option::Option::Some(6); }
+}
+fn first<I>(it: &I) -> i32 where I: core::iter::Iterator<i32> {
+    let x = it.next();
+    return core::option::unwrap_or(x, 9);
+}
+fn main() -> i32 { let c: Count = Count { n: 0 }; return first<Count>(c.borrow()); }
