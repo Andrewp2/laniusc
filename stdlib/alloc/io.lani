@@ -106,13 +106,9 @@ fn collect_input<R>(reader: &R, limits: ReadLimits)
                 extra: core::option::Some(probe[0]),
             });
         }
-        let index: i32 = 0;
-        while (index < count) {
-            // The complete request is already reserved, and count is checked.
-            // These pushes cannot allocate or fail at the u8 capacity bound.
-            core::result::unwrap(bytes.try_push(scratch[index]));
-            index += 1;
-        }
+        // The complete request is already reserved, and count is checked.
+        // This bulk append cannot allocate or fail at the u8 capacity bound.
+        core::result::unwrap(bytes.try_extend(core::slice::View { values: scratch, start: 0, length: count }));
     }
     return core::result::Ok(ReadCollected { bytes: bytes, calls: calls });
 }
@@ -347,15 +343,13 @@ pub impl core::io::Write for Buffer {
             let allocated: core::result::Result<alloc::vec::Vec<u8>, alloc::vec::Error> = alloc::vec::with_capacity(target);
             if (core::result::is_err(allocated)) { return core::result::Err(core::io::Error::AllocationFailed); }
             grown = core::result::unwrap(allocated);
-            let old: [u8] = self.bytes.as_slice();
-            let index: i32 = 0;
-            while (index < length) { core::result::unwrap(grown.try_push(old[index])); index += 1; }
+            // One bulk copy into the fresh allocation; target >= needed, so
+            // neither extend below can allocate.
+            core::result::unwrap(grown.try_extend(self.bytes.as_view()));
         }
-        let index: i32 = 0;
-        while (index < count) {
-            core::result::unwrap(grown.try_push(source[offset + index]));
-            index += 1;
-        }
+        // Sequential bulk append in the same element order as single pushes,
+        // so a source aliasing this buffer observes identical bytes.
+        core::result::unwrap(grown.try_extend(core::slice::View { values: source, start: offset, length: count }));
         // Keep aliased source views alive through the final byte copy.
         if (needed > capacity) { self.bytes.destroy(); }
         self.bytes = grown;
