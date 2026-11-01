@@ -1,0 +1,409 @@
+// WebSocket (RFC 6455) sessions on one std::event (epoll) loop, upgraded
+// from ext::http_service: Hub.upgrade validates the request, answers 101
+// (with permessage-deflate through ext::ws_deflate when offered), detaches
+// the socket from the HTTP server and serves frames from then on. Pings get
+// pongs, fragmented messages are reassembled, text is checked as UTF-8 and
+// protocol errors close with 1002/1007/1009. The HTTP server's own epoll
+// descriptor can be watched so one wait covers both.
+module ext::websocket_service;
+import alloc::vec;
+import core::io;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import ext::http;
+import ext::http_service;
+import ext::websocket;
+import ext::ws_deflate;
+import std::clock;
+import std::event;
+import std::linux;
+import std::socket;
+
+pub enum Error { Handshake, Full, Backlog, InvalidState, AllocationFailed, Clock, Event(std::event::Error), Http(ext::http_service::Error), Wire(ext::websocket::Error) }
+// What a poll delivered: a complete message, or the end of a session with
+// its close code (the peer's, 1005 when it sent none, ours when we failed
+// the connection, 1006 when the transport ended without a close).
+pub enum Kind { Text, Binary, Closed }
+pub struct Message { session: i32, kind: Kind, start: i32, length: i32, code: i32 }
+// limits bound frames and messages (also after inflation); sessions the
+// number of open sessions; output_bytes the unsent bytes a session may hold
+// before send fails with Backlog; idle_timeout_ms (0 for none) starts a
+// close after silence; close_timeout_ms bounds the closing handshake.
+pub struct Options { limits: ext::websocket::Limits, deflate: bool, sessions: i32, output_bytes: i32, idle_timeout_ms: i32, close_timeout_ms: i32, compress_min: i32 }
+pub struct Stats { sessions: i32, messages_in: u64, messages_out: u64, bytes_in: u64, bytes_out: u64, failed: i32, compressed: i32 }
+
+// Session states.
+const FREE: i32 = 0;
+const OPEN: i32 = 1;
+const CLOSING: i32 = 2;
+const DRAIN: i32 = 3;
+const LINGER: i32 = 4;
+const DEAD: i32 = 5;
+const EXTERNAL: u64 = 4294967295;
+
+struct Session { state: i32, socket: std::socket::Socket, peer: core::net::SocketAddr, ws: ext::websocket::Connection, codec: core::option::Option<ext::ws_deflate::Codec>, input: alloc::vec::Vec<u8>, filled: i32, output: alloc::vec::Vec<u8>, sent: i32, deadline: core::time::Deadline, code: i32, applied: u32 }
+pub struct Hub { events: std::event::Loop, options: Options, sessions: alloc::vec::Vec<Session>, messages: alloc::vec::Vec<Message>, head: i32, inbox: alloc::vec::Vec<u8>, scratch: alloc::vec::Vec<u8>, active: i32, external: bool, stats: Stats }
+
+pub fn default_options() -> Options {
+    let limits: ext::websocket::Limits = ext::websocket::default_limits(); limits.frame_bytes = 1048576; limits.message_bytes = 1048576;
+    return Options { limits: limits, deflate: true, sessions: 256, output_bytes: 8388608, idle_timeout_ms: 300000, close_timeout_ms: 5000, compress_min: 64 };
+}
+
+fn part(v: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> { return v.subview(start,end).unwrap(); }
+fn now_instant() -> core::result::Result<core::time::Instant,Error> {
+    let now: core::result::Result<core::time::Instant,std::clock::Error> = std::clock::monotonic_now(); if (now.is_err()) { return core::result::Err(Error::Clock); } return core::result::Ok(now.unwrap());
+}
+fn deadline_ms(ms: i32) -> core::time::Deadline {
+    let now: core::result::Result<core::time::Instant,Error> = now_instant(); let base: core::time::Instant = core::time::instant(core::time::zero()); if (now.is_ok()) { base = now.unwrap(); }
+    let shifted: core::result::Result<core::time::Deadline,core::time::Error> = core::time::deadline_after(base,core::time::from_millis(ms as u64));
+    if (shifted.is_err()) { return core::time::Deadline { instant: base }; } return shifted.unwrap();
+}
+fn far() -> core::time::Deadline { return deadline_ms(2000000000); }
+fn earlier(a: core::time::Deadline, b: core::time::Deadline) -> core::time::Deadline { if (a.instant.compare(b.instant) <= 0) { return a; } return b; }
+fn would_block(error: core::io::Error) -> bool { return match(error) { core::io::Error::WouldBlock -> true, core::io::Error::Interrupted -> true, _ -> false }; }
+// Direct sendto/recvfrom on a Vec's storage (MSG_NOSIGNAL|MSG_DONTWAIT).
+fn host_io(result: core::result::Result<i64,std::linux::Error>, limit: i32) -> core::result::Result<i32,core::io::Error> {
+    if (result.is_err()) { return core::result::Err(match(result.unwrap_err()) { std::linux::Error::System(n) -> match(n) { 11 -> core::io::Error::WouldBlock, 4 -> core::io::Error::Interrupted, _ -> core::io::Error::Host(n) }, _ -> core::io::Error::InvalidInput }); }
+    let n: i64 = result.unwrap(); if (n < 0 || n > limit as i64) { return core::result::Err(core::io::Error::InvalidCount); } return core::result::Ok(n as i32);
+}
+fn vec_send(socket: std::socket::Socket, buffer: alloc::vec::Vec<u8>, start: i32, count: i32) -> core::result::Result<i32,core::io::Error> {
+    if (socket.handle < 0 || start < 0 || count <= 0 || start > buffer.len() - count) { return core::result::Err(core::io::Error::InvalidInput); }
+    let args: [std::linux::Argument;6] = [std::linux::Argument::Word(socket.handle as i64),std::linux::Argument::Address(buffer.storage + start),std::linux::Argument::Word(count as i64),std::linux::Argument::Word(16448),std::linux::Argument::Word(0),std::linux::Argument::Word(0)];
+    return host_io(std::linux::call(44,core::slice::view(args,6).unwrap()),count);
+}
+fn vec_receive(socket: std::socket::Socket, buffer: alloc::vec::Vec<u8>, start: i32, count: i32) -> core::result::Result<i32,core::io::Error> {
+    if (socket.handle < 0 || start < 0 || count <= 0 || start > buffer.len() - count) { return core::result::Err(core::io::Error::InvalidInput); }
+    let args: [std::linux::Argument;6] = [std::linux::Argument::Word(socket.handle as i64),std::linux::Argument::Address(buffer.storage + start),std::linux::Argument::Word(count as i64),std::linux::Argument::Word(64),std::linux::Argument::Word(0),std::linux::Argument::Word(0)];
+    return host_io(std::linux::call(45,core::slice::view(args,6).unwrap()),count);
+}
+// The close code for a receive failure.
+fn failure_code(error: ext::websocket::Error) -> i32 {
+    return match(error) { ext::websocket::Error::InvalidUtf8(at) -> 1007, ext::websocket::Error::Limit(at) -> 1009, ext::websocket::Error::AllocationFailed -> 1011, _ -> 1002 };
+}
+fn empty_session() -> Session {
+    let ws: core::result::Result<ext::websocket::Connection,ext::websocket::Error> = ext::websocket::connection(ext::websocket::Role::Server,ext::websocket::default_limits());
+    return Session { state: FREE, socket: std::socket::Socket { handle: -1, domain: 2, datagram: false }, peer: core::net::SocketAddr::V4(core::net::SocketAddrV4 { address: core::net::ipv4(0,0,0,0), port: 0 }), ws: ws.unwrap(), codec: core::option::None(), input: alloc::vec::new<u8>(), filled: 0, output: alloc::vec::new<u8>(), sent: 0, deadline: far(), code: 1006, applied: 0 };
+}
+
+pub fn hub(options: Options) -> core::result::Result<Hub,Error> {
+    if (options.sessions <= 0 || options.output_bytes <= 0 || options.close_timeout_ms <= 0 || options.idle_timeout_ms < 0) { return core::result::Err(Error::InvalidState); }
+    let made: core::result::Result<std::event::Loop,std::event::Error> = std::event::create(); if (made.is_err()) { return core::result::Err(Error::Event(made.unwrap_err())); }
+    let sessions: alloc::vec::Vec<Session> = alloc::vec::new<Session>(); let i: i32 = 0;
+    while (i < options.sessions) { if (sessions.try_push(empty_session()).is_err()) { sessions.destroy(); let l: std::event::Loop = made.unwrap(); l.close(); return core::result::Err(Error::AllocationFailed); } i += 1; }
+    return core::result::Ok(Hub { events: made.unwrap(), options: options, sessions: sessions, messages: alloc::vec::new<Message>(), head: 0, inbox: alloc::vec::new<u8>(), scratch: alloc::vec::new<u8>(), active: 0, external: false, stats: Stats { sessions: 0, messages_in: 0, messages_out: 0, bytes_in: 0, bytes_out: 0, failed: 0, compressed: 0 } });
+}
+
+pub impl Hub {
+    pub fn borrow(&self) -> &Hub { return self; }
+    pub fn stats(&self) -> Stats { return self.stats; }
+    pub fn active(&self) -> i32 { return self.active; }
+    pub fn is_open(&self, session: i32) -> bool { if (session < 0 || session >= self.sessions.len()) { return false; } return self.sessions.get(session).unwrap().state == OPEN; }
+    pub fn peer(&self, session: i32) -> core::net::SocketAddr { return self.sessions.get(session).unwrap().peer; }
+    // Whether the session negotiated permessage-deflate.
+    pub fn compressed(&self, session: i32) -> bool { if (session < 0 || session >= self.sessions.len()) { return false; } return self.sessions.get(session).unwrap().codec.is_some(); }
+    // Also wake poll when fd is readable, such as an
+    // ext::http_service::Server's event_fd; external() reports it.
+    pub fn watch(&self, fd: i32) -> core::result::Result<i32,Error> {
+        let added: core::result::Result<i32,std::event::Error> = self.events.add(fd,std::event::readable(),EXTERNAL);
+        if (added.is_err()) { return core::result::Err(Error::Event(added.unwrap_err())); } return core::result::Ok(0);
+    }
+    // Whether the watched descriptor was ready in the last poll.
+    pub fn external(&self) -> bool { return self.external; }
+    // Upgrade the request waiting in the server's slot (after next, before
+    // put): on success the 101 is queued, the socket detached and the new
+    // session's id returned. Err(Handshake) or Err(Full) leaves the slot to
+    // the caller, which still answers it (such as 400 or 503). protocol is
+    // a subprotocol to select; it must be one the client offered.
+    pub fn upgrade(&self, server: &ext::http_service::Server, slot: i32, protocol: core::option::Option<core::slice::View<u8>>) -> core::result::Result<i32,Error> {
+        let id: i32 = 0; while (id < self.sessions.len() && self.sessions.get(id).unwrap().state != FREE) { id += 1; }
+        if (id == self.sessions.len()) { return core::result::Err(Error::Full); }
+        let request: ext::http_service::Request = server.request(slot);
+        let checked: core::result::Result<ext::websocket::Request,ext::websocket::Error> = ext::websocket::validate_request(request.head.raw,self.options.limits);
+        if (checked.is_err()) { return core::result::Err(Error::Handshake); }
+        let wsr: ext::websocket::Request = checked.unwrap();
+        if (protocol.is_some() && !ext::websocket::offers(wsr,protocol.unwrap())) { return core::result::Err(Error::Handshake); }
+        let accept: [u8;28] = [0;28]; let av: core::slice::View<u8> = core::slice::View { values: accept, start: 0, length: 28 };
+        if (ext::websocket::accept_into(wsr.key,av).is_err()) { return core::result::Err(Error::Handshake); }
+        let value: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); let params: core::option::Option<ext::ws_deflate::Params> = core::option::None();
+        if (self.options.deflate) { params = ext::ws_deflate::negotiate(wsr.head,value.borrow()); }
+        let codec: core::option::Option<ext::ws_deflate::Codec> = core::option::None();
+        if (params.is_some()) {
+            let made: core::result::Result<ext::ws_deflate::Codec,ext::ws_deflate::Error> = ext::ws_deflate::codec(ext::websocket::Role::Server,params.unwrap());
+            if (made.is_err()) { value.destroy(); return core::result::Err(Error::AllocationFailed); } codec = core::option::Some(made.unwrap());
+        }
+        if (codec.is_none()) { value.clear(); }
+        let none: ext::http::Field = ext::http::Field { raw: part(av,0,0), name: part(av,0,0), value: part(av,0,0), offset: 0 }; let fields: [ext::http::Field;1] = [none];
+        let encoded: core::result::Result<alloc::vec::Vec<u8>,ext::websocket::Error> = ext::websocket::encode_response_extensions(wsr,core::slice::View { values: fields, start: 0, length: 0 },av,protocol,value.as_view(),self.options.limits);
+        value.destroy();
+        if (encoded.is_err()) { if (codec.is_some()) { let c: ext::ws_deflate::Codec = codec.unwrap(); c.destroy(); } return core::result::Err(Error::Wire(encoded.unwrap_err())); }
+        let ws: core::result::Result<ext::websocket::Connection,ext::websocket::Error> = ext::websocket::connection(ext::websocket::Role::Server,self.options.limits);
+        let detached: core::result::Result<ext::http_service::Detached,ext::http_service::Error> = core::result::Err(ext::http_service::Error::InvalidState);
+        if (ws.is_ok()) { detached = server.detach(slot); }
+        if (detached.is_err()) {
+            let out: alloc::vec::Vec<u8> = encoded.unwrap(); out.destroy(); if (codec.is_some()) { let c: ext::ws_deflate::Codec = codec.unwrap(); c.destroy(); }
+            if (ws.is_err()) { return core::result::Err(Error::Wire(ws.unwrap_err())); } return core::result::Err(Error::Http(detached.unwrap_err()));
+        }
+        let d: ext::http_service::Detached = detached.unwrap(); let conn: ext::websocket::Connection = ws.unwrap(); if (codec.is_some()) { conn.enable_compression(); }
+        let s: Session = Session { state: OPEN, socket: d.socket, peer: d.peer, ws: conn, codec: codec, input: d.input, filled: d.input.len(), output: encoded.unwrap(), sent: 0, deadline: far(), code: 1006, applied: 1 };
+        if (self.options.idle_timeout_ms > 0) { s.deadline = deadline_ms(self.options.idle_timeout_ms); }
+        let fd: i32 = s.socket.raw_handle().unwrap();
+        let added: core::result::Result<i32,std::event::Error> = self.events.add(fd,std::event::readable(),id as u64);
+        if (added.is_err()) { s.socket.close(); s.ws.destroy(); s.input.destroy(); s.output.destroy(); if (s.codec.is_some()) { let c: ext::ws_deflate::Codec = s.codec.unwrap(); c.destroy(); } return core::result::Err(Error::Event(added.unwrap_err())); }
+        self.sessions.set(id,s); self.active += 1; self.stats.sessions += 1; if (codec.is_some()) { self.stats.compressed += 1; }
+        self.flush(id); self.process(id);
+        return core::result::Ok(id);
+    }
+    // Want write readiness while output is pending.
+    fn set_interest(&self, id: i32) {
+        let s: Session = self.sessions.get(id).unwrap(); if (s.state == FREE || s.state == DEAD) { return; }
+        let want: u32 = 1; if (s.sent < s.output.len()) { want = 5; }
+        if (want == s.applied) { return; }
+        if (self.events.modify(s.socket.raw_handle().unwrap(),std::event::Interest { bits: want },id as u64).is_ok()) { s.applied = want; self.sessions.set(id,s); }
+    }
+    // Send pending output; a drained DRAIN session shuts down its write side
+    // and lingers for the peer's EOF.
+    fn flush(&self, id: i32) {
+        let s: Session = self.sessions.get(id).unwrap(); if (s.state == FREE || s.state == DEAD || s.state == LINGER) { return; }
+        while (s.sent < s.output.len()) {
+            let got: core::result::Result<i32,core::io::Error> = vec_send(s.socket,s.output,s.sent,s.output.len() - s.sent);
+            if (got.is_err()) {
+                if (would_block(got.unwrap_err())) { break; }
+                self.sessions.set(id,s); self.kill(id); return;
+            }
+            s.sent += got.unwrap(); self.stats.bytes_out += got.unwrap() as u64;
+        }
+        if (s.sent == s.output.len()) { s.output.clear(); s.sent = 0;
+            if (s.state == DRAIN) { s.socket.shutdown(std::socket::Shutdown::Write); s.state = LINGER; s.deadline = deadline_ms(self.options.close_timeout_ms); }
+        }
+        self.sessions.set(id,s); self.set_interest(id);
+    }
+    // End a session now: unregister, close, free its buffers and report
+    // Closed. The slot is reused after the next poll.
+    fn kill(&self, id: i32) {
+        let s: Session = self.sessions.get(id).unwrap(); if (s.state == FREE || s.state == DEAD) { return; }
+        let fd: core::option::Option<i32> = s.socket.raw_handle(); if (fd.is_some()) { self.events.remove(fd.unwrap()); }
+        s.socket.close(); s.ws.destroy(); s.input.destroy(); s.output.destroy();
+        if (s.codec.is_some()) { let c: ext::ws_deflate::Codec = s.codec.unwrap(); c.destroy(); s.codec = core::option::None(); }
+        s.state = DEAD; self.sessions.set(id,s); self.active -= 1;
+        self.messages.try_push(Message { session: id, kind: Kind::Closed, start: 0, length: 0, code: s.code });
+    }
+    // Queue an encoded frame (consumed).
+    fn queue(&self, id: i32, frame: alloc::vec::Vec<u8>) -> bool {
+        let s: Session = self.sessions.get(id).unwrap();
+        let ok: bool = s.output.try_extend(frame.as_view()).is_ok(); frame.destroy();
+        self.sessions.set(id,s); return ok;
+    }
+    // Fail the connection (RFC 6455 7.1.7): send Close with code, then drain.
+    fn fail(&self, id: i32, code: i32) {
+        let s: Session = self.sessions.get(id).unwrap(); if (s.state != OPEN && s.state != CLOSING) { return; }
+        self.stats.failed += 1; s.code = code;
+        if (!s.ws.close_sent()) {
+            let body: [u8;2] = [((code >> 8) & 255) as u8, (code & 255) as u8]; let zero: [u8;4] = [0;4];
+            let frame: core::result::Result<alloc::vec::Vec<u8>,ext::websocket::Error> = s.ws.send(true,8,core::slice::View { values: body, start: 0, length: 2 },zero);
+            self.sessions.set(id,s);
+            if (frame.is_ok()) { self.queue(id,frame.unwrap()); }
+            s = self.sessions.get(id).unwrap();
+        }
+        s.state = DRAIN; s.deadline = deadline_ms(self.options.close_timeout_ms); self.sessions.set(id,s); self.flush(id);
+    }
+    // Read what is available (bounded calls); the buffer grows to hold one
+    // frame. On EOF the session ends: cleanly after a closing handshake,
+    // with 1006 otherwise.
+    fn on_readable(&self, id: i32) {
+        let s: Session = self.sessions.get(id).unwrap(); let calls: i32 = 16; let eof: bool = false; let got_any: bool = false;
+        let most: i32 = self.options.limits.frame_bytes + 14;
+        while (calls > 0) {
+            calls -= 1;
+            if (s.filled == s.input.len()) {
+                let want: i32 = 4096; if (s.input.len() > 0) { want = s.input.len() * 2; } if (want > most) { want = most; }
+                if (s.state == LINGER) { want = 4096; s.filled = 0; }
+                if (want <= s.input.len()) { break; }
+                if (s.input.try_reserve(want - s.input.len()).is_err()) { break; } s.input.length = want;
+            }
+            let got: core::result::Result<i32,core::io::Error> = vec_receive(s.socket,s.input,s.filled,s.input.len() - s.filled);
+            if (got.is_err()) { if (would_block(got.unwrap_err())) { break; } eof = true; break; }
+            let n: i32 = got.unwrap(); if (n == 0) { eof = true; break; }
+            got_any = true; self.stats.bytes_in += n as u64;
+            if (s.state == LINGER) { s.filled = 0; } else { s.filled += n; }
+        }
+        if (got_any && s.state == OPEN && self.options.idle_timeout_ms > 0) { s.deadline = deadline_ms(self.options.idle_timeout_ms); }
+        self.sessions.set(id,s);
+        self.process(id);
+        if (eof) {
+            s = self.sessions.get(id).unwrap();
+            if (s.state == OPEN || s.state == CLOSING) { s.code = 1006; self.sessions.set(id,s); }
+            self.kill(id);
+        }
+    }
+    // Handle the complete frames in the session's input.
+    fn process(&self, id: i32) {
+        let s: Session = self.sessions.get(id).unwrap(); let at: i32 = 0;
+        while (s.state == OPEN || s.state == CLOSING) {
+            let step: core::result::Result<ext::websocket::Step,ext::websocket::Error> = s.ws.receive(part(s.input.as_view(),at,s.filled));
+            if (step.is_err()) {
+                let e: ext::websocket::Error = step.unwrap_err(); let partial: bool = match(e) { ext::websocket::Error::Incomplete(n) -> true, _ -> false };
+                if (partial) { break; }
+                self.sessions.set(id,s); self.fail(id,failure_code(e)); s = self.sessions.get(id).unwrap(); break;
+            }
+            let st: ext::websocket::Step = step.unwrap(); at += st.consumed;
+            let kind: i32 = match(st.event) { ext::websocket::Event::Pending -> 0, ext::websocket::Event::Text -> 1, ext::websocket::Event::Binary -> 2, ext::websocket::Event::Ping -> 9, ext::websocket::Event::Pong -> 10, ext::websocket::Event::Close -> 8 };
+            if (kind == 0 || kind == 10) { continue; }
+            self.sessions.set(id,s);
+            if (kind == 1 || kind == 2) { self.deliver(id,kind,st.payload,s.ws.last_compressed()); }
+            if (kind == 9) { self.answer(id,10,st.payload); }
+            if (kind == 8) { self.closed_by_peer(id,st.close_code); }
+            s = self.sessions.get(id).unwrap();
+        }
+        if (s.state == FREE || s.state == DEAD) { return; }
+        // Keep the unparsed tail at the front.
+        if (at > 0) { let i: i32 = 0; while (at + i < s.filled) { let b: u8 = s.input.get(at + i).unwrap(); s.input.set(i,b); i += 1; } s.filled -= at; }
+        if (s.state != OPEN && s.state != CLOSING) { s.filled = 0; }
+        self.sessions.set(id,s);
+    }
+    // A complete message: inflate if compressed, check text, queue it.
+    fn deliver(&self, id: i32, kind: i32, payload: core::slice::View<u8>, compressed: bool) {
+        let s: Session = self.sessions.get(id).unwrap(); let start: i32 = self.inbox.len();
+        if (compressed) {
+            let c: ext::ws_deflate::Codec = s.codec.unwrap();
+            let got: core::result::Result<i32,ext::ws_deflate::Error> = c.inflate(payload,self.inbox.borrow(),self.options.limits.message_bytes);
+            s.codec = core::option::Some(c); self.sessions.set(id,s);
+            if (got.is_err()) { let code: i32 = match(got.unwrap_err()) { ext::ws_deflate::Error::TooLarge -> 1009, ext::ws_deflate::Error::AllocationFailed -> 1011, _ -> 1007 }; self.fail(id,code); return; }
+        } else {
+            if (self.inbox.try_extend(payload).is_err()) { self.fail(id,1011); return; }
+        }
+        let length: i32 = self.inbox.len() - start;
+        if (kind == 1 && compressed && !ext::websocket::valid_text(part(self.inbox.as_view(),start,start + length))) { self.inbox.length = start; self.fail(id,1007); return; }
+        let k: Kind = Kind::Binary; if (kind == 1) { k = Kind::Text; }
+        self.messages.try_push(Message { session: id, kind: k, start: start, length: length, code: 0 }); self.stats.messages_in += 1;
+    }
+    // Answer a ping (or send a control frame) on an open or closing session.
+    fn answer(&self, id: i32, opcode: i32, payload: core::slice::View<u8>) {
+        let s: Session = self.sessions.get(id).unwrap(); let zero: [u8;4] = [0;4];
+        let frame: core::result::Result<alloc::vec::Vec<u8>,ext::websocket::Error> = s.ws.send(true,opcode,payload,zero); self.sessions.set(id,s);
+        if (frame.is_ok()) { self.queue(id,frame.unwrap()); self.flush(id); }
+    }
+    // The peer's Close: echo it unless ours is out, then drain and linger.
+    fn closed_by_peer(&self, id: i32, code: i32) {
+        let s: Session = self.sessions.get(id).unwrap(); s.code = code; if (code < 0) { s.code = 1005; }
+        if (s.state == OPEN && !s.ws.close_sent()) {
+            let zero: [u8;4] = [0;4]; let body: [u8;2] = [((code >> 8) & 255) as u8, (code & 255) as u8]; let length: i32 = 2; if (code < 0) { length = 0; }
+            let frame: core::result::Result<alloc::vec::Vec<u8>,ext::websocket::Error> = s.ws.send(true,8,core::slice::View { values: body, start: 0, length: length },zero);
+            self.sessions.set(id,s); if (frame.is_ok()) { self.queue(id,frame.unwrap()); } s = self.sessions.get(id).unwrap();
+        }
+        s.state = DRAIN; s.deadline = deadline_ms(self.options.close_timeout_ms); self.sessions.set(id,s); self.flush(id);
+    }
+    // Queue a text (opcode 1) or binary (2) message, compressed when the
+    // session negotiated permessage-deflate and it is at least compress_min
+    // bytes, fragmented at the frame limit. Err(Backlog) when the session
+    // already holds output_bytes unsent.
+    pub fn send(&self, session: i32, opcode: i32, data: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        if (session < 0 || session >= self.sessions.len() || (opcode != 1 && opcode != 2)) { return core::result::Err(Error::InvalidState); }
+        let s: Session = self.sessions.get(session).unwrap(); if (s.state != OPEN) { return core::result::Err(Error::InvalidState); }
+        if (s.output.len() - s.sent > self.options.output_bytes) { return core::result::Err(Error::Backlog); }
+        let compress: bool = s.codec.is_some() && data.len() >= self.options.compress_min;
+        if (compress) { let c: ext::ws_deflate::Codec = s.codec.unwrap(); compress = c.compresses(); }
+        let body: core::slice::View<u8> = data; self.scratch.clear();
+        if (compress) {
+            let c: ext::ws_deflate::Codec = s.codec.unwrap();
+            if (c.compress(data,self.scratch.borrow()).is_err()) { return core::result::Err(Error::AllocationFailed); }
+            s.codec = core::option::Some(c); body = self.scratch.as_view();
+        }
+        let zero: [u8;4] = [0;4]; let offset: i32 = 0; let first: bool = true;
+        while (first || offset < body.len()) {
+            let n: i32 = body.len() - offset; if (n > self.options.limits.frame_bytes) { n = self.options.limits.frame_bytes; }
+            let fin: bool = offset + n == body.len(); let op: i32 = 0; if (first) { op = opcode; }
+            let piece: core::slice::View<u8> = part(body,offset,offset + n);
+            let frame: core::result::Result<alloc::vec::Vec<u8>,ext::websocket::Error> = core::result::Err(ext::websocket::Error::Failed);
+            if (first && compress) { frame = s.ws.send_compressed(fin,op,piece,zero); } else { frame = s.ws.send(fin,op,piece,zero); }
+            if (frame.is_err()) { self.sessions.set(session,s); return core::result::Err(Error::Wire(frame.unwrap_err())); }
+            let f: alloc::vec::Vec<u8> = frame.unwrap();
+            if (s.output.try_extend(f.as_view()).is_err()) { f.destroy(); self.sessions.set(session,s); self.fail(session,1011); return core::result::Err(Error::AllocationFailed); }
+            f.destroy(); offset += n; first = false;
+        }
+        self.sessions.set(session,s); self.stats.messages_out += 1; self.flush(session);
+        return core::result::Ok(data.len());
+    }
+    pub fn send_text(&self, session: i32, data: core::slice::View<u8>) -> core::result::Result<i32,Error> { return self.send(session,1,data); }
+    pub fn send_binary(&self, session: i32, data: core::slice::View<u8>) -> core::result::Result<i32,Error> { return self.send(session,2,data); }
+    // A ping with up to 125 bytes of payload.
+    pub fn ping(&self, session: i32, data: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        if (session < 0 || session >= self.sessions.len() || data.len() > 125 || self.sessions.get(session).unwrap().state != OPEN) { return core::result::Err(Error::InvalidState); }
+        self.answer(session,9,data); return core::result::Ok(0);
+    }
+    // Start the closing handshake with code (and a short UTF-8 reason);
+    // the session reports Closed once the peer answers or close_timeout_ms
+    // passes.
+    pub fn close(&self, session: i32, code: i32, reason: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        if (session < 0 || session >= self.sessions.len() || !ext::websocket::valid_close_code(code) || reason.len() > 123 || !ext::websocket::valid_text(reason)) { return core::result::Err(Error::InvalidState); }
+        let s: Session = self.sessions.get(session).unwrap(); if (s.state != OPEN) { return core::result::Err(Error::InvalidState); }
+        let body: [u8;125] = [0;125]; body[0] = ((code >> 8) & 255) as u8; body[1] = (code & 255) as u8;
+        let i: i32 = 0; while (i < reason.len()) { let b: u8 = reason.get(i).unwrap(); body[2 + i] = b; i += 1; }
+        let zero: [u8;4] = [0;4];
+        let frame: core::result::Result<alloc::vec::Vec<u8>,ext::websocket::Error> = s.ws.send(true,8,core::slice::View { values: body, start: 0, length: 2 + reason.len() },zero);
+        if (frame.is_err()) { self.sessions.set(session,s); return core::result::Err(Error::Wire(frame.unwrap_err())); }
+        s.state = CLOSING; s.code = code; s.deadline = deadline_ms(self.options.close_timeout_ms); self.sessions.set(session,s);
+        self.queue(session,frame.unwrap()); self.flush(session); return core::result::Ok(0);
+    }
+    // Wait once for readiness (until deadline or a session's own), do the
+    // I/O and timeouts, and return how many messages are ready for next.
+    // Payload views from data stay valid until the following poll.
+    pub fn poll(&self, deadline: core::time::Deadline) -> core::result::Result<i32,Error> {
+        // Keep messages not yet taken (such as ones queued by upgrade), with
+        // their payloads moved to the front; then do not block.
+        let keep: i32 = 0; let used: i32 = 0; let k: i32 = self.head;
+        while (k < self.messages.len()) {
+            let m: Message = self.messages.get(k).unwrap(); let j: i32 = 0;
+            while (j < m.length) { let b: u8 = self.inbox.get(m.start + j).unwrap(); self.inbox.set(used + j,b); j += 1; }
+            m.start = used; used += m.length; self.messages.set(keep,m); keep += 1; k += 1;
+        }
+        self.messages.truncate(keep); self.inbox.truncate(used); self.head = 0; self.external = false;
+        let i: i32 = 0; let wake: core::time::Deadline = deadline; if (keep > 0) { wake = deadline_ms(0); }
+        while (i < self.sessions.len()) {
+            let s: Session = self.sessions.get(i).unwrap();
+            if (s.state == DEAD) { s.state = FREE; s.filled = 0; s.sent = 0; s.code = 1006; s.applied = 0; s.input = alloc::vec::new<u8>(); s.output = alloc::vec::new<u8>(); self.sessions.set(i,s); }
+            if (s.state != FREE) { wake = earlier(wake,s.deadline); }
+            i += 1;
+        }
+        let storage: [std::event::Event;64] = [std::event::empty_event();64]; let events: core::slice::View<std::event::Event> = core::slice::view(storage,64).unwrap();
+        let got: core::result::Result<i32,std::event::Error> = self.events.wait_until(events,wake);
+        if (got.is_err()) { let e: std::event::Error = got.unwrap_err(); let eintr: bool = match(e) { std::event::Error::Host(n) -> n == 4, _ -> false }; if (eintr) { return core::result::Ok(0); } return core::result::Err(Error::Event(e)); }
+        let n: i32 = got.unwrap(); i = 0;
+        while (i < n) {
+            let event: std::event::Event = events.get(i).unwrap(); i += 1;
+            if (event.token == EXTERNAL) { self.external = true; continue; }
+            let id: i32 = event.token as i32; if (id < 0 || id >= self.sessions.len()) { continue; }
+            let state: i32 = self.sessions.get(id).unwrap().state; if (state == FREE || state == DEAD) { continue; }
+            if (event.writable()) { self.flush(id); }
+            if (event.readable() || event.hangup() || event.error()) { self.on_readable(id); }
+        }
+        self.expire();
+        return core::result::Ok(self.messages.len() - self.head);
+    }
+    fn expire(&self) {
+        let now: core::result::Result<core::time::Instant,Error> = now_instant(); if (now.is_err()) { return; }
+        let i: i32 = 0;
+        while (i < self.sessions.len()) {
+            let s: Session = self.sessions.get(i).unwrap();
+            if (s.state != FREE && s.state != DEAD && s.deadline.is_expired(now.unwrap())) {
+                if (s.state == OPEN) { let quiet: [u8;1] = [0;1]; self.close(i,1001,core::slice::View { values: quiet, start: 0, length: 0 }); }
+                else { if (s.state == CLOSING) { s.code = 1006; self.sessions.set(i,s); } self.kill(i); }
+            }
+            i += 1;
+        }
+    }
+    // The next delivered message, if any.
+    pub fn next(&self) -> core::option::Option<Message> {
+        if (self.head >= self.messages.len()) { return core::option::None(); }
+        let m: Message = self.messages.get(self.head).unwrap(); self.head += 1; return core::option::Some(m);
+    }
+    // A message's payload (valid until the next poll).
+    pub fn data(&self, message: Message) -> core::slice::View<u8> { return part(self.inbox.as_view(),message.start,message.start + message.length); }
+    // Close every session at once (no handshake) and the loop.
+    pub fn destroy(&self) {
+        let i: i32 = 0; while (i < self.sessions.len()) { self.kill(i); i += 1; }
+        self.sessions.destroy(); self.messages.destroy(); self.inbox.destroy(); self.scratch.destroy(); self.events.close();
+    }
+}

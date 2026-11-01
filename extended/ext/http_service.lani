@@ -713,6 +713,9 @@ pub impl Router {
 pub struct ServerStats { connections: i32, requests: i32, rejected: i32, timeouts: i32, idle: i32, errors: i32, peak: i32, h2_connections: i32 }
 // stream 0: an HTTP/1.1 request (take/put); otherwise an HTTP/2 stream.
 pub struct Ready { slot: i32, stream: i32 }
+// A connection handed off by Server.detach: its socket, peer and the bytes
+// already read past the request.
+pub struct Detached { socket: std::socket::Socket, peer: core::net::SocketAddr, input: alloc::vec::Vec<u8> }
 pub struct Server { events: std::event::Loop, listener: std::socket::Socket, options: Options, slots: alloc::vec::Vec<Connection>, interest: alloc::vec::Vec<u32>, ready: alloc::vec::Vec<i32>, active: i32, listening: bool, stats: ServerStats, engines: alloc::vec::Vec<core::option::Option<ext::http2_server::Connection>>, ready_streams: alloc::vec::Vec<i32>, h2_enabled: bool, ready_head: i32, dirty: alloc::vec::Vec<bool>, flush: alloc::vec::Vec<i32>, wrap: bool, closing: bool, wrapped: alloc::vec::Vec<bool>, holds: alloc::vec::Vec<u32>, applied: alloc::vec::Vec<u32>, notices: alloc::vec::Vec<ext::client_transport::Notice> }
 const LISTENER: u64 = 4294967295;
 
@@ -757,6 +760,34 @@ pub impl Server {
         }
         self.slots.set(slot,c);
         return self.start_write(slot);
+    }
+    // Hand a connection waiting for its response (after next or take, before
+    // put) to another protocol, such as WebSocket after an Upgrade request:
+    // the socket leaves this server unclosed, with the bytes read past the
+    // request, and the slot is free again. Read the request first; its views
+    // end here. Not for wrapped (TLS) or HTTP/2 connections.
+    pub fn detach(&self, slot: i32) -> core::result::Result<Detached,Error> {
+        if (slot < 0 || slot >= self.slots.len()) { return core::result::Err(Error::InvalidState); }
+        let c: Connection = self.slots.get(slot).unwrap();
+        if (c.closed || c.phase != HANDLER || self.wrapped.get(slot).unwrap() || self.engines.get(slot).unwrap().is_some()) { return core::result::Err(Error::InvalidState); }
+        let rest: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+        if (rest.try_extend(part(c.input.as_view(),c.consumed,c.filled)).is_err()) { return core::result::Err(Error::AllocationFailed); }
+        let d: Detached = Detached { socket: c.socket, peer: c.peer, input: rest };
+        let fd: i32 = c.socket.raw_handle().unwrap(); self.events.remove(fd);
+        c.socket = std::socket::Socket { handle: -1, domain: c.socket.domain, datagram: false }; c.stats.responses += 1;
+        self.slots.set(slot,c); self.retire(slot);
+        return core::result::Ok(d);
+    }
+    // The server's own epoll descriptor, readable when it has I/O to do, for
+    // nesting in another std::event loop (then call next_ready with an
+    // expired deadline).
+    pub fn event_fd(&self) -> i32 { return self.events.fd; }
+    // The earlier of limit and the next connection deadline, for an outer
+    // loop's wait.
+    pub fn next_deadline(&self, limit: core::time::Deadline) -> core::time::Deadline {
+        let wake: core::time::Deadline = limit; let i: i32 = 0;
+        while (i < self.slots.len()) { let c: Connection = self.slots.get(i).unwrap(); if (!c.closed && c.phase != HANDLER) { wake = earlier(wake,c.deadline); } i += 1; }
+        return wake;
     }
     fn start_write(&self, slot: i32) -> core::result::Result<i32,Error> {
         let c: Connection = self.slots.get(slot).unwrap(); c.phase = WRITE;
