@@ -1,7 +1,9 @@
-// Scalar byte I/O for the bound x86_64 Linux stdio service. This module uses
-// one synchronous host call per byte and allocates no heap storage.
+// Byte I/O for the bound x86_64 Linux stdio service. The scalar functions use
+// one synchronous host call per byte; the view writers batch a whole view.
+// Nothing here allocates heap storage.
 module std::io_byte;
 import core::mem;
+import core::slice;
 import std::io;
 
 // Returns a byte in 0..=255. EOF and host failure return the caller's
@@ -35,4 +37,71 @@ pub fn write_stderr_byte(value: i32) -> bool {
         return false;
     }
     return std::io::write_byte(2, value) == 1;
+}
+
+// Write every byte of `count` bytes at `base` to handle 1 or 2, retrying
+// short writes. A host error or a write that makes no progress returns false.
+fn write_all_raw(handle: i32, base: ptr, count: i32) -> bool {
+    let sent: i32 = 0;
+    while (sent < count) {
+        let remaining: i32 = count - sent;
+        let moved: i32 = 0;
+        if (handle == 2) { moved = std::io::write_stderr(base + (sent as usize), remaining as usize); }
+        else { moved = std::io::write_stdout(base + (sent as usize), remaining as usize); }
+        if (moved <= 0 || moved > remaining) { return false; }
+        sent += moved;
+    }
+    return true;
+}
+
+// Write the first len bytes of a view to stdout (handle 1) or stderr (2).
+// A packed view goes to the host in place; other layouts (native arrays)
+// pass through a 1 KiB stack buffer. Invalid handles or lengths return false
+// without output. A host failure returns false and may leave a prefix. The
+// view must back len bytes: the last one is indexed first, so an overstated
+// length traps before any output.
+pub fn write_byte_view(handle: i32, values: [u8], len: i32) -> bool {
+    if ((handle != 1 && handle != 2) || len < 0) { return false; }
+    if (len == 0) { return true; }
+    let last: u8 = values[len - 1];
+    if (core::mem::slice_stride(values) == 1) {
+        return write_all_raw(handle, core::mem::i32_slice_data_ptr(values), len);
+    }
+    let storage: [i32; 256] = [0; 256];
+    let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let packed: [u8] = core::mem::typed_slice_from_raw_parts(pointer, 1024);
+    let done: i32 = 0;
+    while (done < len) {
+        let chunk: i32 = len - done;
+        if (chunk > 1024) { chunk = 1024; }
+        core::slice::copy_nonoverlapping_range(packed, 1024, 0, values, len, done, chunk);
+        if (!write_all_raw(handle, pointer, chunk)) { return false; }
+        done += chunk;
+    }
+    return true;
+}
+
+// The same for byte codes held in i32 elements. Every code must be in
+// 0..=255; any other code returns false before any output.
+pub fn write_code_view(handle: i32, values: [i32], len: i32) -> bool {
+    if ((handle != 1 && handle != 2) || len < 0) { return false; }
+    let index: i32 = 0;
+    while (index < len) {
+        let code: i32 = values[index];
+        if (code < 0 || code > 255) { return false; }
+        index += 1;
+    }
+    let storage: [i32; 256] = [0; 256];
+    let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let packed: [u8] = core::mem::typed_slice_from_raw_parts(pointer, 1024);
+    let done: i32 = 0;
+    while (done < len) {
+        let chunk: i32 = len - done;
+        if (chunk > 1024) { chunk = 1024; }
+        let k: i32 = 0;
+        while (k < chunk) { let code: i32 = values[done + k]; packed[k] = code as u8; k += 1; }
+        if (!write_all_raw(handle, pointer, chunk)) { return false; }
+        done += chunk;
+    }
+    return true;
 }

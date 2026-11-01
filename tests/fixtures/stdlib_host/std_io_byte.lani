@@ -1,4 +1,5 @@
 module app::main;
+import core::mem;
 import std::io_byte;
 
 fn main() -> i32 {
@@ -24,6 +25,25 @@ fn main() -> i32 {
         std::io_byte::write_stderr_byte(-1) ||
         std::io_byte::write_stderr_byte(256)) {
         return 6;
+    }
+    // A packed view is written in place; a native array goes through the
+    // bounce buffer. Invalid handles, lengths and codes write nothing.
+    let storage: [i32; 1] = [0];
+    let packed: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(storage), 4);
+    packed[0] = 66; packed[1] = 67;
+    let native: [u8; 2] = [1, 2];
+    if (!std::io_byte::write_byte_view(1, packed, 2) ||
+        !std::io_byte::write_byte_view(2, native, 2) ||
+        !std::io_byte::write_byte_view(1, native, 0) ||
+        std::io_byte::write_byte_view(3, native, 2) ||
+        std::io_byte::write_byte_view(1, native, -1)) {
+        return 7;
+    }
+    let codes: [i32; 3] = [68, 300, 69];
+    if (std::io_byte::write_code_view(1, codes, 3) ||
+        std::io_byte::write_code_view(0, codes, 1) ||
+        !std::io_byte::write_code_view(1, codes, 1)) {
+        return 8;
     }
     return 0;
 }

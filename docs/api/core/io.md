@@ -536,7 +536,7 @@ cursor: i32
 
 ### enum: DelimiterEnd
 
-[Source line 517](../../../stdlib/core/io.lani#L517)
+[Source line 509](../../../stdlib/core/io.lani#L509)
 
 ```lanius
 pub enum DelimiterEnd
@@ -544,7 +544,7 @@ pub enum DelimiterEnd
 
 #### variant: Delimiter
 
-[Source line 517](../../../stdlib/core/io.lani#L517)
+[Source line 509](../../../stdlib/core/io.lani#L509)
 
 ```lanius
 Delimiter
@@ -552,7 +552,7 @@ Delimiter
 
 #### variant: Eof
 
-[Source line 517](../../../stdlib/core/io.lani#L517)
+[Source line 509](../../../stdlib/core/io.lani#L509)
 
 ```lanius
 Eof
@@ -560,7 +560,7 @@ Eof
 
 #### variant: Limit
 
-[Source line 517](../../../stdlib/core/io.lani#L517)
+[Source line 509](../../../stdlib/core/io.lani#L509)
 
 ```lanius
 Limit
@@ -568,7 +568,7 @@ Limit
 
 ### struct: Delimited
 
-[Source line 518](../../../stdlib/core/io.lani#L518)
+[Source line 510](../../../stdlib/core/io.lani#L510)
 
 ```lanius
 pub struct Delimited
@@ -576,7 +576,7 @@ pub struct Delimited
 
 #### field: completed
 
-[Source line 518](../../../stdlib/core/io.lani#L518)
+[Source line 510](../../../stdlib/core/io.lani#L510)
 
 ```lanius
 completed:u64
@@ -584,7 +584,7 @@ completed:u64
 
 #### field: ending
 
-[Source line 518](../../../stdlib/core/io.lani#L518)
+[Source line 510](../../../stdlib/core/io.lani#L510)
 
 ```lanius
 ending:DelimiterEnd
@@ -592,7 +592,7 @@ ending:DelimiterEnd
 
 ### struct: DelimiterFailure
 
-[Source line 519](../../../stdlib/core/io.lani#L519)
+[Source line 511](../../../stdlib/core/io.lani#L511)
 
 ```lanius
 pub struct DelimiterFailure
@@ -600,7 +600,7 @@ pub struct DelimiterFailure
 
 #### field: cause
 
-[Source line 519](../../../stdlib/core/io.lani#L519)
+[Source line 511](../../../stdlib/core/io.lani#L511)
 
 ```lanius
 cause:Error
@@ -608,7 +608,7 @@ cause:Error
 
 #### field: copied
 
-[Source line 519](../../../stdlib/core/io.lani#L519)
+[Source line 511](../../../stdlib/core/io.lani#L511)
 
 ```lanius
 copied:i32
@@ -616,7 +616,7 @@ copied:i32
 
 #### field: consumed
 
-[Source line 519](../../../stdlib/core/io.lani#L519)
+[Source line 511](../../../stdlib/core/io.lani#L511)
 
 ```lanius
 consumed:u64
@@ -624,7 +624,7 @@ consumed:u64
 
 ### struct: Take
 
-[Source line 630](../../../stdlib/core/io.lani#L630)
+[Source line 620](../../../stdlib/core/io.lani#L620)
 
 ```lanius
 pub struct Take<R>
@@ -632,7 +632,7 @@ pub struct Take<R>
 
 #### field: inner
 
-[Source line 630](../../../stdlib/core/io.lani#L630)
+[Source line 620](../../../stdlib/core/io.lani#L620)
 
 ```lanius
 inner: &R
@@ -640,7 +640,7 @@ inner: &R
 
 #### field: remaining
 
-[Source line 630](../../../stdlib/core/io.lani#L630)
+[Source line 620](../../../stdlib/core/io.lani#L620)
 
 ```lanius
 remaining: u64
@@ -648,7 +648,7 @@ remaining: u64
 
 #### field: faulted
 
-[Source line 630](../../../stdlib/core/io.lani#L630)
+[Source line 620](../../../stdlib/core/io.lani#L620)
 
 ```lanius
 faulted: bool
@@ -656,7 +656,7 @@ faulted: bool
 
 ### struct: Chain
 
-[Source line 631](../../../stdlib/core/io.lani#L631)
+[Source line 621](../../../stdlib/core/io.lani#L621)
 
 ```lanius
 pub struct Chain<A,B>
@@ -664,7 +664,7 @@ pub struct Chain<A,B>
 
 #### field: first
 
-[Source line 631](../../../stdlib/core/io.lani#L631)
+[Source line 621](../../../stdlib/core/io.lani#L621)
 
 ```lanius
 first: &A
@@ -672,7 +672,7 @@ first: &A
 
 #### field: second
 
-[Source line 631](../../../stdlib/core/io.lani#L631)
+[Source line 621](../../../stdlib/core/io.lani#L621)
 
 ```lanius
 second: &B
@@ -680,7 +680,7 @@ second: &B
 
 #### field: first_done
 
-[Source line 631](../../../stdlib/core/io.lani#L631)
+[Source line 621](../../../stdlib/core/io.lani#L621)
 
 ```lanius
 first_done: bool
@@ -688,7 +688,7 @@ first_done: bool
 
 #### field: faulted
 
-[Source line 631](../../../stdlib/core/io.lani#L631)
+[Source line 621](../../../stdlib/core/io.lani#L621)
 
 ```lanius
 faulted: bool
@@ -800,7 +800,7 @@ pub fn slice_writer(data: [u8], length: i32) -> core::result::Result<SliceWriter
 
 ### function: valid_position
 
-[Source line 443](../../../stdlib/core/io.lani#L443)
+[Source line 435](../../../stdlib/core/io.lani#L435)
 
 ```lanius
 pub fn valid_position(position:u64,count:i32) -> bool
@@ -810,7 +810,7 @@ Checks count >= 0 and the complete positional span, including exclusive end, wit
 
 ### function: read_exact_at
 
-[Source line 451](../../../stdlib/core/io.lani#L451)
+[Source line 443](../../../stdlib/core/io.lani#L443)
 
 ```lanius
 pub fn read_exact_at<R>(reader:&R,destination:[u8],offset:i32,count:i32,
@@ -822,7 +822,7 @@ Portable contracts and independent schedule-model execution accepted; File adapt
 
 ### function: write_all_at
 
-[Source line 484](../../../stdlib/core/io.lani#L484)
+[Source line 476](../../../stdlib/core/io.lani#L476)
 
 ```lanius
 pub fn write_all_at<W>(writer:&W,source:[u8],offset:i32,count:i32,
@@ -834,7 +834,7 @@ Portable contracts and independent schedule-model execution accepted; File adapt
 
 ### function: read_until
 
-[Source line 607](../../../stdlib/core/io.lani#L607)
+[Source line 597](../../../stdlib/core/io.lani#L597)
 
 ```lanius
 pub fn read_until<B>(reader:&B, delimiter:u8, destination:[u8], offset:i32,
@@ -846,7 +846,7 @@ B:BufRead only. Reads a bounded caller range through and including one delimiter
 
 ### function: skip_until
 
-[Source line 618](../../../stdlib/core/io.lani#L618)
+[Source line 608](../../../stdlib/core/io.lani#L608)
 
 ```lanius
 pub fn skip_until<B>(reader:&B, delimiter:u8, byte_limit:u64, max_calls:i32)
@@ -857,7 +857,7 @@ B:BufRead only; shares the read engine with copying disabled. Skips through and 
 
 ### function: take
 
-[Source line 634](../../../stdlib/core/io.lani#L634)
+[Source line 624](../../../stdlib/core/io.lani#L624)
 
 ```lanius
 pub fn take<R>(inner: &R, limit: u64) -> Take<R>
@@ -867,7 +867,7 @@ Inert borrowed factory with no protocol bound. Read requires R:Read and BufRead 
 
 ### function: chain
 
-[Source line 638](../../../stdlib/core/io.lani#L638)
+[Source line 628](../../../stdlib/core/io.lani#L628)
 
 ```lanius
 pub fn chain<A,B>(first: &A, second: &B) -> Chain<A,B>
@@ -959,7 +959,7 @@ pub fn seek(&self, from:SeekFrom) -> core::result::Result<u64,Error>;
 
 ### trait: ReadAt
 
-[Source line 432](../../../stdlib/core/io.lani#L432)
+[Source line 424](../../../stdlib/core/io.lani#L424)
 
 ```lanius
 pub trait ReadAt
@@ -967,7 +967,7 @@ pub trait ReadAt
 
 #### trait member: read_at
 
-[Source line 433](../../../stdlib/core/io.lani#L433)
+[Source line 425](../../../stdlib/core/io.lani#L425)
 
 ```lanius
 pub fn read_at(&self,destination:[u8],offset:i32,count:i32,position:u64)
@@ -976,7 +976,7 @@ pub fn read_at(&self,destination:[u8],offset:i32,count:i32,position:u64)
 
 ### trait: WriteAt
 
-[Source line 436](../../../stdlib/core/io.lani#L436)
+[Source line 428](../../../stdlib/core/io.lani#L428)
 
 ```lanius
 pub trait WriteAt
@@ -984,7 +984,7 @@ pub trait WriteAt
 
 #### trait member: write_at
 
-[Source line 437](../../../stdlib/core/io.lani#L437)
+[Source line 429](../../../stdlib/core/io.lani#L429)
 
 ```lanius
 pub fn write_at(&self,source:[u8],offset:i32,count:i32,position:u64)
@@ -1186,9 +1186,9 @@ pub impl Read for SliceReader
 pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32, Error>
 ```
 
-### impl at line 387
+### impl at line 383
 
-[Source line 387](../../../stdlib/core/io.lani#L387)
+[Source line 383](../../../stdlib/core/io.lani#L383)
 
 ```lanius
 pub impl Write for SliceWriter
@@ -1196,7 +1196,7 @@ pub impl Write for SliceWriter
 
 #### method: write
 
-[Source line 388](../../../stdlib/core/io.lani#L388)
+[Source line 384](../../../stdlib/core/io.lani#L384)
 
 ```lanius
 pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Result<i32, Error>
@@ -1204,15 +1204,15 @@ pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Resu
 
 #### method: flush
 
-[Source line 400](../../../stdlib/core/io.lani#L400)
+[Source line 392](../../../stdlib/core/io.lani#L392)
 
 ```lanius
 pub fn flush(&self) -> core::result::Result<i32, Error>
 ```
 
-### impl at line 406
+### impl at line 398
 
-[Source line 406](../../../stdlib/core/io.lani#L406)
+[Source line 398](../../../stdlib/core/io.lani#L398)
 
 ```lanius
 pub impl BufRead for SliceReader
@@ -1220,7 +1220,7 @@ pub impl BufRead for SliceReader
 
 #### method: fill_buf
 
-[Source line 407](../../../stdlib/core/io.lani#L407)
+[Source line 399](../../../stdlib/core/io.lani#L399)
 
 ```lanius
 pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>, Error>
@@ -1228,15 +1228,15 @@ pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>, Error>
 
 #### method: consume
 
-[Source line 416](../../../stdlib/core/io.lani#L416)
+[Source line 408](../../../stdlib/core/io.lani#L408)
 
 ```lanius
 pub fn consume(&self, count:i32) -> core::result::Result<i32, Error>
 ```
 
-### impl at line 642
+### impl at line 632
 
-[Source line 642](../../../stdlib/core/io.lani#L642)
+[Source line 632](../../../stdlib/core/io.lani#L632)
 
 ```lanius
 pub impl<R> Take<R>
@@ -1244,7 +1244,7 @@ pub impl<R> Take<R>
 
 #### method: borrow
 
-[Source line 643](../../../stdlib/core/io.lani#L643)
+[Source line 633](../../../stdlib/core/io.lani#L633)
 
 ```lanius
 pub fn borrow(&self) -> &Take<R>
@@ -1252,7 +1252,7 @@ pub fn borrow(&self) -> &Take<R>
 
 #### method: limit
 
-[Source line 644](../../../stdlib/core/io.lani#L644)
+[Source line 634](../../../stdlib/core/io.lani#L634)
 
 ```lanius
 pub fn limit(&self) -> u64
@@ -1260,7 +1260,7 @@ pub fn limit(&self) -> u64
 
 #### method: is_faulted
 
-[Source line 645](../../../stdlib/core/io.lani#L645)
+[Source line 635](../../../stdlib/core/io.lani#L635)
 
 ```lanius
 pub fn is_faulted(&self) -> bool
@@ -1268,15 +1268,15 @@ pub fn is_faulted(&self) -> bool
 
 #### method: set_limit
 
-[Source line 646](../../../stdlib/core/io.lani#L646)
+[Source line 636](../../../stdlib/core/io.lani#L636)
 
 ```lanius
 pub fn set_limit(&self, limit: u64) -> core::result::Result<u64,Error>
 ```
 
-### impl at line 653
+### impl at line 643
 
-[Source line 653](../../../stdlib/core/io.lani#L653)
+[Source line 643](../../../stdlib/core/io.lani#L643)
 
 ```lanius
 pub impl<A,B> Chain<A,B>
@@ -1284,7 +1284,7 @@ pub impl<A,B> Chain<A,B>
 
 #### method: borrow
 
-[Source line 654](../../../stdlib/core/io.lani#L654)
+[Source line 644](../../../stdlib/core/io.lani#L644)
 
 ```lanius
 pub fn borrow(&self) -> &Chain<A,B>
@@ -1292,7 +1292,7 @@ pub fn borrow(&self) -> &Chain<A,B>
 
 #### method: is_first_done
 
-[Source line 655](../../../stdlib/core/io.lani#L655)
+[Source line 645](../../../stdlib/core/io.lani#L645)
 
 ```lanius
 pub fn is_first_done(&self) -> bool
@@ -1300,15 +1300,15 @@ pub fn is_first_done(&self) -> bool
 
 #### method: is_faulted
 
-[Source line 656](../../../stdlib/core/io.lani#L656)
+[Source line 646](../../../stdlib/core/io.lani#L646)
 
 ```lanius
 pub fn is_faulted(&self) -> bool
 ```
 
-### impl at line 659
+### impl at line 649
 
-[Source line 659](../../../stdlib/core/io.lani#L659)
+[Source line 649](../../../stdlib/core/io.lani#L649)
 
 ```lanius
 pub impl<R> Read for Take<R> where R: Read
@@ -1316,15 +1316,15 @@ pub impl<R> Read for Take<R> where R: Read
 
 #### method: read
 
-[Source line 660](../../../stdlib/core/io.lani#L660)
+[Source line 650](../../../stdlib/core/io.lani#L650)
 
 ```lanius
 pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32,Error>
 ```
 
-### impl at line 682
+### impl at line 672
 
-[Source line 682](../../../stdlib/core/io.lani#L682)
+[Source line 672](../../../stdlib/core/io.lani#L672)
 
 ```lanius
 pub impl<R> BufRead for Take<R> where R: BufRead
@@ -1332,7 +1332,7 @@ pub impl<R> BufRead for Take<R> where R: BufRead
 
 #### method: fill_buf
 
-[Source line 683](../../../stdlib/core/io.lani#L683)
+[Source line 673](../../../stdlib/core/io.lani#L673)
 
 ```lanius
 pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>,Error>
@@ -1340,15 +1340,15 @@ pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>,Error>
 
 #### method: consume
 
-[Source line 703](../../../stdlib/core/io.lani#L703)
+[Source line 693](../../../stdlib/core/io.lani#L693)
 
 ```lanius
 pub fn consume(&self, count: i32) -> core::result::Result<i32,Error>
 ```
 
-### impl at line 720
+### impl at line 710
 
-[Source line 720](../../../stdlib/core/io.lani#L720)
+[Source line 710](../../../stdlib/core/io.lani#L710)
 
 ```lanius
 pub impl<A,B> Read for Chain<A,B> where A: Read, B: Read
@@ -1356,15 +1356,15 @@ pub impl<A,B> Read for Chain<A,B> where A: Read, B: Read
 
 #### method: read
 
-[Source line 721](../../../stdlib/core/io.lani#L721)
+[Source line 711](../../../stdlib/core/io.lani#L711)
 
 ```lanius
 pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32,Error>
 ```
 
-### impl at line 752
+### impl at line 742
 
-[Source line 752](../../../stdlib/core/io.lani#L752)
+[Source line 742](../../../stdlib/core/io.lani#L742)
 
 ```lanius
 pub impl<A,B> BufRead for Chain<A,B> where A: BufRead, B: BufRead
@@ -1372,7 +1372,7 @@ pub impl<A,B> BufRead for Chain<A,B> where A: BufRead, B: BufRead
 
 #### method: fill_buf
 
-[Source line 753](../../../stdlib/core/io.lani#L753)
+[Source line 743](../../../stdlib/core/io.lani#L743)
 
 ```lanius
 pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>,Error>
@@ -1380,7 +1380,7 @@ pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>,Error>
 
 #### method: consume
 
-[Source line 777](../../../stdlib/core/io.lani#L777)
+[Source line 767](../../../stdlib/core/io.lani#L767)
 
 ```lanius
 pub fn consume(&self, count: i32) -> core::result::Result<i32,Error>

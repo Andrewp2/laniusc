@@ -47,7 +47,7 @@ pub fn write_stderr_scalar(value: u32) -> bool
 
 ### function: write_stdout_codes
 
-[Source line 128](../../../stdlib/std/io_utf8.lani#L128)
+[Source line 116](../../../stdlib/std/io_utf8.lani#L116)
 
 ```lanius
 pub fn write_stdout_codes(values: [i32], len: i32) -> bool
@@ -55,7 +55,7 @@ pub fn write_stdout_codes(values: [i32], len: i32) -> bool
 
 ### function: write_stderr_codes
 
-[Source line 132](../../../stdlib/std/io_utf8.lani#L132)
+[Source line 120](../../../stdlib/std/io_utf8.lani#L120)
 
 ```lanius
 pub fn write_stderr_codes(values: [i32], len: i32) -> bool
@@ -63,7 +63,7 @@ pub fn write_stderr_codes(values: [i32], len: i32) -> bool
 
 ### function: write_stdout_bytes
 
-[Source line 162](../../../stdlib/std/io_utf8.lani#L162)
+[Source line 137](../../../stdlib/std/io_utf8.lani#L137)
 
 ```lanius
 pub fn write_stdout_bytes(values: [u8], len: i32) -> bool
@@ -71,7 +71,7 @@ pub fn write_stdout_bytes(values: [u8], len: i32) -> bool
 
 ### function: write_stderr_bytes
 
-[Source line 166](../../../stdlib/std/io_utf8.lani#L166)
+[Source line 141](../../../stdlib/std/io_utf8.lani#L141)
 
 ```lanius
 pub fn write_stderr_bytes(values: [u8], len: i32) -> bool

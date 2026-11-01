@@ -4,26 +4,27 @@
 
 Generated source inventory. Linked guides own runtime and semantic contracts; a listed declaration does not establish executable behavior.
 
-[All modules](../README.md) · [Source](../../../stdlib/std/io_byte.lani#L3)
+[All modules](../README.md) · [Source](../../../stdlib/std/io_byte.lani#L4)
 
 Layer: `std`. Role: module. Profile: **Source inventory**.
 
 **No contract guide registered.** This page makes no runtime support claim.
 
-Declaration counts: function: 3.
+Declaration counts: function: 5.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::mem](../core/mem.md) · [source](../../../stdlib/std/io_byte.lani#L4)
-- [std::io](io.md) · [source](../../../stdlib/std/io_byte.lani#L5)
+- [core::mem](../core/mem.md) · [source](../../../stdlib/std/io_byte.lani#L5)
+- [core::slice](../core/slice.md) · [source](../../../stdlib/std/io_byte.lani#L6)
+- [std::io](io.md) · [source](../../../stdlib/std/io_byte.lani#L7)
 
 ## Free functions and extern declarations
 
 ### function: read_stdin_byte_or
 
-[Source line 11](../../../stdlib/std/io_byte.lani#L11)
+[Source line 13](../../../stdlib/std/io_byte.lani#L13)
 
 ```lanius
 pub fn read_stdin_byte_or(eof_fallback: i32, error_fallback: i32) -> i32
@@ -31,7 +32,7 @@ pub fn read_stdin_byte_or(eof_fallback: i32, error_fallback: i32) -> i32
 
 ### function: write_stdout_byte
 
-[Source line 26](../../../stdlib/std/io_byte.lani#L26)
+[Source line 28](../../../stdlib/std/io_byte.lani#L28)
 
 ```lanius
 pub fn write_stdout_byte(value: i32) -> bool
@@ -39,8 +40,24 @@ pub fn write_stdout_byte(value: i32) -> bool
 
 ### function: write_stderr_byte
 
-[Source line 33](../../../stdlib/std/io_byte.lani#L33)
+[Source line 35](../../../stdlib/std/io_byte.lani#L35)
 
 ```lanius
 pub fn write_stderr_byte(value: i32) -> bool
+```
+
+### function: write_byte_view
+
+[Source line 63](../../../stdlib/std/io_byte.lani#L63)
+
+```lanius
+pub fn write_byte_view(handle: i32, values: [u8], len: i32) -> bool
+```
+
+### function: write_code_view
+
+[Source line 86](../../../stdlib/std/io_byte.lani#L86)
+
+```lanius
+pub fn write_code_view(handle: i32, values: [i32], len: i32) -> bool
 ```
