@@ -47,6 +47,9 @@ static const uint TYPE_REF_EXTERNAL_CANONICAL = 5u;
 static const uint TYPE_REF_EXTERNAL_GENERIC = 6u;
 static const uint TY_UNKNOWN = 0u;
 static const uint TY_GENERIC_BASE = 8192u;
+// A path call's &self receiver row: its type is the impl root behind one
+// reference, which argument checking adds (calls/03a, 03a1; dependencies/08).
+static const uint TY_BORROWED_SELF = 0x40000000u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -90,6 +93,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         row >= call_param_row_count_out[0u] || row >= gParams.hir_capacity) return;
 
     uint type_i;
+    bool borrowed = false;
     if (declaration_i != INVALID)
     {
         uint signature_i = dependency_declaration_word(declaration_i * DECL_WORDS + 7u);
@@ -101,13 +105,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         uint callee = compact_hir_payload[arg.call].a;
         bool dotted = valid_hir(callee) && compact_hir_core[callee].kind == HIR_MEMBER_EXPR;
-        type_i = dependency_method_parameter_type(method_i,arg.ordinal+(dotted?1u:0u));
+        type_i = dependency_method_argument_type(method_i, arg.ordinal, dotted, borrowed);
     }
     if (type_i >= dependency_type_count()) return;
     type_i = canonical_type_roots[type_i];
     uint type_base = type_i * TYPE_WORDS;
     uint kind = dependency_type_word(type_base);
-    semantic_argument_mode_by_hir[arg.value] = kind == 6u ? 3u : kind == 5u ? 2u : 1u;
+    semantic_argument_mode_by_hir[arg.value] = kind == 6u || borrowed ? 3u : kind == 5u ? 2u : 1u;
     uint tag = TYPE_REF_EXTERNAL_CANONICAL;
     uint payload = type_i;
     uint type_code = TY_UNKNOWN;
@@ -126,7 +130,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     call_param_row_node[row] = arg.value;
     call_param_row_fn_token[row] = token;
     call_param_row_ordinal[row] = arg.ordinal;
-    call_param_row_type[row] = type_code;
+    call_param_row_type[row] = borrowed ? TY_BORROWED_SELF : type_code;
     call_param_row_ref_tag[row] = tag;
     call_param_row_ref_payload[row] = payload;
     if (arg.ordinal == 0u) call_param_row_count[token] = count;

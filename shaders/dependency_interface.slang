@@ -543,6 +543,29 @@ uint dependency_method_parameter_type(uint method_row, uint ordinal)
 
 // Version 6 method value words carry declared requirements, not signature uses.
 uint dependency_method_parameter_count(uint method) { return dependency_member_word(method * SEMANTIC_INTERFACE_MEMBER_WORDS + 8u) & 0xffffu; }
+// Syntactic self or &self (receiver modes 1 and 2), which has no parameter row.
+bool dependency_method_implicit_self(uint method)
+{
+    if (method >= dependency_member_count()) return false;
+    uint mode = (dependency_member_word(method * SEMANTIC_INTERFACE_MEMBER_WORDS + 8u) >> 28u) & 3u;
+    return mode == 1u || mode == 2u;
+}
+// The parameter type that argument `ordinal` of a call of `method` binds. A
+// dotted call's receiver consumed the first parameter. A path call passes a
+// self method's receiver first: its type is the impl root, behind one
+// reference for &self (`borrowed`).
+uint dependency_method_argument_type(uint method, uint ordinal, bool dotted, out bool borrowed)
+{
+    borrowed = false;
+    if (!dotted && ordinal == 0u && dependency_method_implicit_self(method))
+    {
+        uint base = method * SEMANTIC_INTERFACE_MEMBER_WORDS;
+        borrowed = ((dependency_member_word(base + 8u) >> 28u) & 3u) == 2u;
+        uint root = dependency_member_word(base + 10u);
+        return root < dependency_type_count() ? root : 0xffffffffu;
+    }
+    return dependency_method_parameter_type(method, ordinal + (dotted ? 1u : 0u));
+}
 uint dependency_method_type_count(uint method) { return (dependency_member_word(method * SEMANTIC_INTERFACE_MEMBER_WORDS + 8u) >> 16u) & 63u; }
 uint dependency_method_constant_count(uint method) { return (dependency_member_word(method * SEMANTIC_INTERFACE_MEMBER_WORDS + 8u) >> 22u) & 63u; }
 

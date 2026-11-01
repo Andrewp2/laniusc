@@ -31,7 +31,14 @@ one should become a passing regression test once its defect is fixed.
 | `candidate_missing_module_long.lani` | reported: LNC0016 "syntax error" on a long file without a `module` line | compiles, exit 0 | **not reproduced**: 401 functions and no `module` line compile and exit 0 |
 | `b14_path_self_method_inherent.lani` | a self method called through its type's path: `S::get(s, 1)`, `S::peek(s.borrow(), 2)` for `&self` | exit 0 | **fixed 2026-10-31**: was LNC0027 "call resolution failed"; registered in `tests/compiler_defect_fixtures_execution.rs` |
 | `b14_path_self_method_bound.lani` | a bound's self member called through the parameter's path, `T::tw(x, 3)` with `T: Tw<T>`, on `i32` and a record | exit 0 | **fixed 2026-10-31**: was LNC0027 "call resolution failed"; registered in `tests/compiler_defect_fixtures_execution.rs` |
+| `b19_stdlib_path_self_method.lani` | self methods of stdlib types through the type's path: `TotalF32::to_bits(t)`, `Descriptor::raw_handle(d.borrow())`, `Option<i32>::is_some(o)` | exit 0 | **fixed 2026-10-31**: was LNC0027 "call resolution failed". The bare `Option::is_some(o)` is still LNC0005 (generics backlog b19) |
+| `generic_impl_path_inference.lani` | a bare generic type's path infers the impl's parameters: `W::wrap(5)`, `W::get(w)`, `W::peek(u.borrow())` on `impl<T> W<T>` | exit 0 | **fixed 2026-10-31**: was LNC0006 "type mismatch" (the bare `W` bound T to the declaration's own parameter) |
 | `byte_loop_codegen.lani` | performance: a `[u8]` newline-count loop, 160 M byte reads; compare `byte_loop_codegen.c` and the loop disassembly in `byte_loop_codegen.s` | about `gcc -O0` speed (0.14 s; `-O2` 0.02 s) | 0.50 s (2.8 ns/byte), exit 0: per-iteration slice copy, bounds check, stride `imul` and branch, spills of every temporary |
+
+An imported method called with too few arguments, `o.unwrap_or()` on an
+`Option<i32>` or `TotalF32::to_bits()`, compiled and ran with an undefined
+argument until 2026-10-31. dependencies/08c now checks a method's arity as it
+did a function's, and both report LNC0027.
 
 The three candidates are the closest shapes tried from the reports. Six other
 shapes also compiled correctly: generic-function and user-enum nested matches,
