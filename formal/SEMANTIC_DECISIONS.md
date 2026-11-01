@@ -1409,11 +1409,22 @@ its value. The inner match is read again, nested or not.
   inner match's scrutinee is h.
 - A match statement reads block arms; a nested match expression may have
   no arm whose value is a block (`BlockValue`), so the two readings never
-  overlap. Nested arms in match statements and lets' matches are not read.
+  overlap. Lets' matches with a nested arm are not read.
+- (F11b) A match statement with a nested arm is read the same way
+  (`stmt_arm_order`, `StmtOrder`), its arms' values blocks: the nested arm
+  `V(h) -> match (h) { p -> { .. }, .. }` is read as a match statement on h
+  inside V's arm (`ArmsStmtR.inner`), its closer the arm's `->` token, so
+  every inner arm leaves the match as a block arm does. laniusc runs such
+  a statement as written (case nested_match_stmt runs alike); an inner
+  match that names some of h's variants and has no wildcard is rejected
+  (case reject_nested_stmt_gap). A block arm's value is never the bare
+  match node `nest_arm` builds (`armBlockR_noMatch`), so the two arm
+  readings never overlap.
 - Every arm but a last wildcard must name a variant, as without nesting.
 - Determinism: whether some arm is nested decides the branch; the arms
   naming a variant, their patterns, the column and the inner arms are each
-  determined by the tree (`nestedOrder_unique`, `matchOrder_unique`).
+  determined by the tree (`nestedOrder_unique`, `matchOrder_unique`,
+  `stmtOrder_unique`).
 
 ## Payload names that are variants (decided 10-31, F11b)
 

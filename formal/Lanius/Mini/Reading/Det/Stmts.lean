@@ -675,6 +675,24 @@ theorem armsStmtR_named {h : MatchStmt} : ∀ {os : List CTree} {k : Nat} {vs : 
   | _ :: _, _, _, _, r => by
     cases r with
     | cons ab _ _ rest _ => exact .cons (armBindR_names ab) (armsStmtR_named rest)
+    | inner ab _ _ _ _ _ rest _ => exact .cons (armBindR_names ab) (armsStmtR_named rest)
+
+/-- A match statement's arm order is one list: the statement's variants have
+distinct names (`VariantsNodup`). -/
+theorem stmtArmsOrder_unique {m : CTree} {h : MatchStmt} {os os' : List CTree} {c c' : MStmt}
+    {sc sc' : List Local} (vn : VariantsNodup env.decls) (mr : MatchStmtR env scope m h)
+    (mo : StmtArmsOrder env h m os) (mo' : StmtArmsOrder env h m os')
+    (ar : ArmsStmtR env sc h 0 h.variants os c) (ar' : ArmsStmtR env sc' h 0 h.variants os' c') : os = os' := by
+  obtain ⟨arms, it, ord⟩ := mo
+  obtain ⟨arms', it', ord'⟩ := mo'
+  have e := items_unique it it'
+  subst e
+  cases mr with
+  | mk _ _ _ td en _ _ hh =>
+    obtain ⟨ho, hv⟩ := matchStmtHead_parts hh
+    exact stmtOrder_unique
+      ((vn _ _ td en).sublist (by rw [hv, zipVariants_eq, ← ho]; exact zipVariants_names _ _))
+      ord ord' (armsStmtR_named ar) (armsStmtR_named ar')
 
 theorem letArmsR_named {h : MatchStmt} {x : Local} {rest : MStmt} : ∀ {os : List CTree} {k : Nat}
     {vs : List VariantTy} {c : MStmt}, LetArmsR env scope h x rest k vs os c → ListRel (ArmNames h.owner) os (vs.map (·.name))
@@ -955,6 +973,28 @@ theorem armsStmtR_unique : ∀ {scope : List Local} {h : MatchStmt} {k : Nat} {v
       subst e
       rw [hb'] at hb
       exact (Option.some.inj hb).symm
+    | inner _ pm _ _ _ _ _ _ => exact (armBlockR_noMatch al pm).elim
+  | _, _, _, _, _, _, .inner ab pm mr mo ar mv rest hb, nd, vn, _, h₂ => by
+    have fr := armBindR_fresh ab nd
+    have ih1 := fun {y} k' => armsStmtR_unique ar fr vn (b := y) k'
+    have ih2 := fun {y} k' => armsStmtR_unique rest nd vn (b := y) k'
+    cases h₂ with
+    | cons _ al' _ _ _ => exact (armBlockR_noMatch al' pm).elim
+    | inner ab' _ mr' mo' ar' mv' rest' hb' =>
+      have e := armBindR_unique ab ab'
+      subst e
+      have e := matchStmtR_unique fr vn mr mr'
+      subst e
+      have e := stmtArmsOrder_unique vn mr mo mo' ar ar'
+      subst e
+      have e := ih1 ar'
+      subst e
+      rw [mv'] at mv
+      cases mv
+      have e := ih2 rest'
+      subst e
+      rw [hb'] at hb
+      exact (Option.some.inj hb).symm
 termination_by structural _ _ _ _ _ _ h _ _ _ _ => h
 
 theorem letArmsR_unique : ∀ {scope : List Local} {h : MatchStmt} {x : Local} {rest : MStmt} {k : Nat}
@@ -1048,21 +1088,12 @@ theorem stmtR_unique : ∀ {scope : List Local} {s : CTree} {a : MStmt}, StmtR e
       subst e
       have e := matchStmtR_unique nd vn mr mr'
       subst e
-      obtain ⟨arms, it, ord⟩ := mo
-      obtain ⟨arms', it', ord'⟩ := mo'
-      have e := items_unique it it'
+      have eo := stmtArmsOrder_unique vn mr mo mo' ar ar'
+      subst eo
+      have e := ih ar'
       subst e
-      cases mr with
-      | mk _ _ _ td en _ _ hh =>
-        obtain ⟨ho, hv⟩ := matchStmtHead_parts hh
-        have eo := armsOrder_unique
-          ((vn _ _ td en).sublist (by rw [hv, zipVariants_eq, ← ho]; exact zipVariants_names _ _))
-          ord ord' (armsStmtR_named ar) (armsStmtR_named ar')
-        subst eo
-        have e := ih ar'
-        subst e
-        rw [mv'] at mv
-        exact (Option.some.inj mv).symm
+      rw [mv'] at mv
+      exact (Option.some.inj mv).symm
     | assign _ a' => exact (assignR_noMatch a' mp).elim
     | _ => prod_clash
   | _, _, _, .forRange _ _ _ _ _ _ _ _ _ _ fx ln il bb fr, nd, vn, _, h₂ => by

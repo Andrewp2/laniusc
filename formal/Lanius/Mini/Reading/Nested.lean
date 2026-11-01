@@ -811,14 +811,18 @@ theorem namesSome_sound {fuel : Nat} {owner : TypeDecl} {vs : List VariantTy} {a
     rw [hp] at hn
     exact ⟨v, mv, pp, ss, pathSpellings_sound hp, hn⟩
 
-/-- The arms in variant order when some arm is nested: no arm's value is a
-block, every arm but a last wildcard names a variant, and each variant's arm
-is `VariantArm`'s; a wildcard is used. -/
+/-- The arms in variant order when some arm is nested: every arm but a last
+wildcard names a variant, and each variant's arm is `VariantArm`'s; a
+wildcard is used. -/
+def NestedRows (env : FrontEnv) (owner : TypeDecl) (vs : List VariantTy) (arms os : List CTree) : Prop :=
+  (wildSplit arms = none ∧ (∀ a ∈ arms, NamesSome owner vs a) ∧ ∃ u, VariantArms env owner arms none vs os u) ∨
+    ∃ s, wildSplit arms = some s ∧ (∀ a ∈ s.init, NamesSome owner vs a) ∧
+      VariantArms env owner s.init (some s.wild) vs os true
+
+/-- A match expression's nested arms in variant order: `NestedRows`, no
+arm's value a block. -/
 def NestedOrder (env : FrontEnv) (owner : TypeDecl) (vs : List VariantTy) (arms os : List CTree) : Prop :=
-  (∀ a ∈ arms, ¬BlockValue (kid a 2)) ∧
-    ((wildSplit arms = none ∧ (∀ a ∈ arms, NamesSome owner vs a) ∧ ∃ u, VariantArms env owner arms none vs os u) ∨
-      ∃ s, wildSplit arms = some s ∧ (∀ a ∈ s.init, NamesSome owner vs a) ∧
-        VariantArms env owner s.init (some s.wild) vs os true)
+  (∀ a ∈ arms, ¬BlockValue (kid a 2)) ∧ NestedRows env owner vs arms os
 
 /-- A match expression's arms in variant order: `ArmsOrder` when no arm is
 nested, else `NestedOrder`. -/
@@ -826,15 +830,64 @@ def MatchOrder (env : FrontEnv) (owner : TypeDecl) (vs : List VariantTy) (arms o
   ((∀ a ∈ arms, ¬Nested env a) ∧ ArmsOrder vs arms os) ∨
     ((∃ a ∈ arms, Nested env a) ∧ NestedOrder env owner vs arms os)
 
-theorem nestedOrder_unique {env : FrontEnv} {owner : TypeDecl} {vs : List VariantTy} {arms os os' : List CTree}
-    (h₁ : NestedOrder env owner vs arms os) (h₂ : NestedOrder env owner vs arms os') : os = os' := by
-  rcases h₁ with ⟨_, ⟨w, _, u, va⟩ | ⟨s, w, _, va⟩⟩ <;> rcases h₂ with ⟨_, ⟨w', _, u', va'⟩ | ⟨s', w', _, va'⟩⟩
+theorem nestedRows_unique {env : FrontEnv} {owner : TypeDecl} {vs : List VariantTy} {arms os os' : List CTree}
+    (h₁ : NestedRows env owner vs arms os) (h₂ : NestedRows env owner vs arms os') : os = os' := by
+  rcases h₁ with ⟨w, _, u, va⟩ | ⟨s, w, _, va⟩ <;> rcases h₂ with ⟨w', _, u', va'⟩ | ⟨s', w', _, va'⟩
   · exact (variantArms_unique va va').1
   · rw [w] at w'; cases w'
   · rw [w] at w'; cases w'
   · rw [w] at w'
     cases w'
     exact (variantArms_unique va va').1
+
+theorem nestedOrder_unique {env : FrontEnv} {owner : TypeDecl} {vs : List VariantTy} {arms os os' : List CTree}
+    (h₁ : NestedOrder env owner vs arms os) (h₂ : NestedOrder env owner vs arms os') : os = os' :=
+  nestedRows_unique h₁.2 h₂.2
+
+theorem nestedChecked_sound {fuel : Nat} {env : FrontEnv} {owner : TypeDecl} {vs : List VariantTy}
+    {arms os : List CTree} (h : nestedChecked fuel env owner vs arms true = some os) :
+    NestedRows env owner vs arms os := by
+  unfold NestedRows
+  unfold nestedChecked at h
+  simp only [if_true] at h
+  cases hw : wildSplit arms with
+  | none =>
+    rw [hw] at h
+    simp only at h
+    unfold nestedWith at h
+    split at h
+    · rename_i all
+      unfold nestedUsed at h
+      cases hv : variantArms fuel env owner vs arms none with
+      | none => rw [hv] at h; simp at h
+      | some r =>
+        rw [hv] at h
+        simp only [wildUsed, Option.some.injEq] at h
+        subst h
+        exact .inl ⟨rfl, fun a ma => namesSome_sound (allNameSome_mem all a ma), r.used, variantArms_sound hv⟩
+    · cases h
+  | some s =>
+    rw [hw] at h
+    simp only at h
+    unfold nestedWith at h
+    split at h
+    · rename_i all
+      unfold nestedUsed at h
+      cases hv : variantArms fuel env owner vs s.init (some s.wild) with
+      | none => rw [hv] at h; simp at h
+      | some r =>
+        rw [hv] at h
+        simp only [wildUsed] at h
+        unfold usedArms at h
+        split at h
+        · rename_i eu
+          simp only [Option.some.injEq] at h
+          subst h
+          have va := variantArms_sound hv
+          rw [eu] at va
+          exact .inr ⟨s, rfl, fun a ma => namesSome_sound (allNameSome_mem all a ma), va⟩
+        · cases h
+    · cases h
 
 theorem nestedOrder_sound {fuel : Nat} {env : FrontEnv} {owner : TypeDecl} {vs : List VariantTy} {arms os : List CTree}
     (h : nestedOrder fuel env owner vs arms = some os) : NestedOrder env owner vs arms os := by
@@ -844,50 +897,9 @@ theorem nestedOrder_sound {fuel : Nat} {env : FrontEnv} {owner : TypeDecl} {vs :
   | some ok =>
     rw [hb] at h
     simp only at h
-    unfold nestedChecked at h
-    split at h
-    · rename_i eo
-      subst eo
-      refine ⟨noBlock_true hb, ?_⟩
-      cases hw : wildSplit arms with
-      | none =>
-        rw [hw] at h
-        simp only at h
-        unfold nestedWith at h
-        split at h
-        · rename_i all
-          unfold nestedUsed at h
-          cases hv : variantArms fuel env owner vs arms none with
-          | none => rw [hv] at h; simp at h
-          | some r =>
-            rw [hv] at h
-            simp only [wildUsed, Option.some.injEq] at h
-            subst h
-            exact .inl ⟨rfl, fun a ma => namesSome_sound (allNameSome_mem all a ma), r.used, variantArms_sound hv⟩
-        · cases h
-      | some s =>
-        rw [hw] at h
-        simp only at h
-        unfold nestedWith at h
-        split at h
-        · rename_i all
-          unfold nestedUsed at h
-          cases hv : variantArms fuel env owner vs s.init (some s.wild) with
-          | none => rw [hv] at h; simp at h
-          | some r =>
-            rw [hv] at h
-            simp only [wildUsed] at h
-            unfold usedArms at h
-            split at h
-            · rename_i eu
-              simp only [Option.some.injEq] at h
-              subst h
-              have va := variantArms_sound hv
-              rw [eu] at va
-              exact .inr ⟨s, rfl, fun a ma => namesSome_sound (allNameSome_mem all a ma), va⟩
-            · cases h
-        · cases h
-    · cases h
+    cases ok with
+    | true => exact ⟨noBlock_true hb, nestedChecked_sound h⟩
+    | false => unfold nestedChecked at h; simp at h
 
 theorem matchOrder_sound {fuel : Nat} {env : FrontEnv} {owner : TypeDecl} {vs : List VariantTy} {arms os : List CTree}
     (h : matchOrder fuel env owner vs arms = some os) : MatchOrder env owner vs arms os := by
@@ -904,5 +916,27 @@ theorem matchOrder_sound {fuel : Nat} {env : FrontEnv} {owner : TypeDecl} {vs : 
       exact .inr ⟨an.2 e, nestedOrder_sound h⟩
     · rename_i e
       refine .inl ⟨fun a ma na => e (an.1 ⟨a, ma, na⟩), armsInOrder_sound h⟩
+
+/-- A match statement's arms in variant order: as a match expression's
+(`MatchOrder`), but an arm's value may be a block. -/
+def StmtOrder (env : FrontEnv) (owner : TypeDecl) (vs : List VariantTy) (arms os : List CTree) : Prop :=
+  ((∀ a ∈ arms, ¬Nested env a) ∧ ArmsOrder vs arms os) ∨
+    ((∃ a ∈ arms, Nested env a) ∧ NestedRows env owner vs arms os)
+
+theorem stmtArmOrder_sound {fuel : Nat} {env : FrontEnv} {owner : TypeDecl} {vs : List VariantTy}
+    {arms os : List CTree} (h : stmtArmOrder fuel env owner vs arms = some os) : StmtOrder env owner vs arms os := by
+  unfold stmtArmOrder at h
+  cases hn : anyNested fuel env arms with
+  | none => rw [hn] at h; simp at h
+  | some n =>
+    rw [hn] at h
+    simp only at h
+    have an := anyNested_sound hn
+    unfold stmtOrderBy at h
+    split at h
+    · rename_i e
+      exact .inr ⟨an.2 e, nestedChecked_sound h⟩
+    · rename_i e
+      exact .inl ⟨fun a ma na => e (an.1 ⟨a, ma, na⟩), armsInOrder_sound h⟩
 
 end Lanius.Mini.Reading

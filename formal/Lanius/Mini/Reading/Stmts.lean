@@ -841,6 +841,21 @@ theorem matchStmtArms_sound {fuel : Nat} {h : MatchStmt} {m : CTree} {os : List 
     simp only at hh
     exact ⟨arms, listItems_sound hi, armsInOrder_sound hh⟩
 
+/-- A match statement's arms in variant order (`StmtOrder`: an arm may be
+nested, its value a block). -/
+def StmtArmsOrder (env : FrontEnv) (h : MatchStmt) (m : CTree) (os : List CTree) : Prop :=
+  ∃ arms, Items (kid m 5) arms ∧ StmtOrder env h.owner h.variants arms os
+
+theorem stmtArms_sound {fuel : Nat} {env : FrontEnv} {h : MatchStmt} {m : CTree} {os : List CTree}
+    (hh : stmtArms fuel env h m = some os) : StmtArmsOrder env h m os := by
+  unfold stmtArms at hh
+  cases hi : listItems fuel (kid m 5) with
+  | none => rw [hi] at hh; cases hh
+  | some arms =>
+    rw [hi] at hh
+    simp only at hh
+    exact ⟨arms, listItems_sound hi, stmtArmOrder_sound hh⟩
+
 /-- An arm's pattern names variant v: `V` binds nothing, `V(b, ...)` its
 payload's plain name binders. -/
 inductive ArmBindR (env : FrontEnv) (scope : List Local) (owner : TypeDecl) (v : VariantTy) (arm : CTree) :
@@ -898,6 +913,23 @@ theorem armBlockList_sound {fuel : Nat} {arm list : CTree} (h : armBlockList fue
       subst h
       exact .mk (peel_sound hp) c.1 c.2
     · cases h
+
+/-- A block arm's value is not a bare match node (a nested arm's inner match,
+`nestArm`). -/
+theorem armBlockR_noMatch {arm list : CTree} (ab : ArmBlockR arm list) : nodeProd (kid arm 2) ≠ pMatchExpr := by
+  cases ab with
+  | mk pl _ _ =>
+    intro e
+    cases pl with
+    | wrap w _ => rcases w with w | w <;> rw [e] at w <;> cases w
+    | bare w _ _ =>
+      rcases w with w | w | w
+      · rw [e] at w; cases w
+      · rw [e] at w
+        simp only [levelProds, List.mem_cons, List.not_mem_nil, or_false] at w
+        rcases w with w | w | w | w | w | w | w | w | w | w <;> cases w
+      · rw [e] at w; cases w
+    | here w => rw [e] at w; cases w
 
 /-- A let's value spelled `match (s) { arms }`: the match. -/
 inductive MatchInit (init : CTree) : CTree → Prop
@@ -1033,7 +1065,7 @@ inductive StmtR (env : FrontEnv) : List Local → CTree → MStmt → Prop
   /-- `match (s) { arms };`, every arm a block: arm k runs if the scrutinee
   is variant k, else the next is tried; after the last, Unreachable. -/
   | «match» {scope : List Local} {s m : CTree} {h : MatchStmt} {os : List CTree} {c mm : MStmt} :
-      nodeProd s = pExprStmt → MatchPrimary (kid s 0) m → MatchStmtR env scope m h → MatchArmsOrder h m os →
+      nodeProd s = pExprStmt → MatchPrimary (kid s 0) m → MatchStmtR env scope m h → StmtArmsOrder env h m os →
       ArmsStmtR env scope h 0 h.variants os c → matchStmtValue h (some c) = some mm → StmtR env scope s mm
 
 /-- A match statement's arms from variant k on. -/
@@ -1042,6 +1074,15 @@ inductive ArmsStmtR (env : FrontEnv) : List Local → MatchStmt → Nat → List
   | cons {scope : List Local} {h : MatchStmt} {k : Nat} {v : VariantTy} {vs : List VariantTy} {a : CTree}
       {as : List CTree} {b : Bound} {list : CTree} {body r m : MStmt} :
       ArmBindR env scope h.owner v a b → ArmBlockR a list → BlockR env b.scope list body →
+      ArmsStmtR env scope h (k + 1) vs as r → armBinder h k b.ids v.payload body r = some m →
+      ArmsStmtR env scope h k (v :: vs) (a :: as) m
+  /-- A nested arm `V(.., h, ..) -> match (h) { arms }` (`nestArm`): its inner
+  match, read as a match statement on h in the arm's scope. -/
+  | inner {scope : List Local} {h : MatchStmt} {k : Nat} {v : VariantTy} {vs : List VariantTy} {a : CTree}
+      {as : List CTree} {b : Bound} {h' : MatchStmt} {os' : List CTree} {c body r m : MStmt} :
+      ArmBindR env scope h.owner v a b → nodeProd (kid a 2) = pMatchExpr → MatchStmtR env b.scope (kid a 2) h' →
+      StmtArmsOrder env h' (kid a 2) os' → ArmsStmtR env b.scope h' 0 h'.variants os' c →
+      matchStmtValue h' (some c) = some body →
       ArmsStmtR env scope h (k + 1) vs as r → armBinder h k b.ids v.payload body r = some m →
       ArmsStmtR env scope h k (v :: vs) (a :: as) m
 
@@ -1063,6 +1104,15 @@ inductive LetArmsR (env : FrontEnv) : List Local → MatchStmt → Local → MSt
       LetArmsR env scope h x rest k (v :: vs) (a :: as) m
 end
 
+/-- A nested arm's inner match statement. -/
+def InnerMatchR (env : FrontEnv) (scope : List Local) (m : CTree) (body : MStmt) : Prop :=
+  ∃ h os c, nodeProd m = pMatchExpr ∧ MatchStmtR env scope m h ∧ StmtArmsOrder env h m os ∧
+    ArmsStmtR env scope h 0 h.variants os c ∧ matchStmtValue h (some c) = some body
+
+/-- A match statement arm's body: its block, or its inner match. -/
+def ArmBodyR (env : FrontEnv) (scope : List Local) (a : CTree) (body : MStmt) : Prop :=
+  (∃ list, ArmBlockR a list ∧ BlockR env scope list body) ∨ InnerMatchR env scope (kid a 2) body
+
 def StmtSound (fuel : Nat) : Prop :=
   (∀ {env scope list m}, blockOf fuel env scope list = some m → BlockR env scope list m) ∧
   (∀ {env scope items m}, stmtsOf fuel env scope items = some m → StmtsR env scope items m) ∧
@@ -1072,12 +1122,14 @@ def StmtSound (fuel : Nat) : Prop :=
   (∀ {env scope s m}, stmtOf fuel env scope s = some m → StmtR env scope s m) ∧
   (∀ {env scope s m}, nestedOf fuel env scope s = some m → StmtR env scope s m) ∧
   (∀ {env scope e mm}, matchStmtOf fuel env scope e = some mm → ∃ m h os c, MatchPrimary e m ∧
-    MatchStmtR env scope m h ∧ MatchArmsOrder h m os ∧ ArmsStmtR env scope h 0 h.variants os c ∧
+    MatchStmtR env scope m h ∧ StmtArmsOrder env h m os ∧ ArmsStmtR env scope h 0 h.variants os c ∧
     matchStmtValue h (some c) = some mm) ∧
   (∀ {env scope h k vs arms c}, matchArmsOf fuel env scope h k vs arms = some c → ArmsStmtR env scope h k vs arms c) ∧
-  (∀ {env scope h k v a rest m}, matchArmOf fuel env scope h k v a rest = some m → ∃ b list body r,
-    rest = some r ∧ ArmBindR env scope h.owner v a b ∧ ArmBlockR a list ∧ BlockR env b.scope list body ∧
+  (∀ {env scope h k v a rest m}, matchArmOf fuel env scope h k v a rest = some m → ∃ b body r,
+    rest = some r ∧ ArmBindR env scope h.owner v a b ∧ ArmBodyR env b.scope a body ∧
     armBinder h k b.ids v.payload body r = some m) ∧
+  (∀ {env scope a body}, armBodyOf fuel env scope a = some body → ArmBodyR env scope a body) ∧
+  (∀ {env scope m body}, innerMatchOf fuel env scope m = some body → InnerMatchR env scope m body) ∧
   (∀ {env scope x init body mm}, letMatchOf fuel env scope x init body = some mm → ∃ m h os b c, MatchInit init m ∧
     MatchStmtR env scope m h ∧ MatchArmsOrder h m os ∧ body = some b ∧ LetArmsR env scope h x b 0 h.variants os c ∧
     matchStmtValue h (some c) = some mm) ∧
@@ -1091,7 +1143,7 @@ def StmtSound (fuel : Nat) : Prop :=
 
 theorem stmtSound : ∀ fuel, StmtSound fuel
   | 0 => by
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     all_goals intros
     all_goals rename_i h
     · rw [blockOf.eq_def] at h; simp at h
@@ -1103,13 +1155,15 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
     · rw [matchStmtOf.eq_def] at h; simp at h
     · rw [matchArmsOf.eq_def] at h; simp at h
     · rw [matchArmOf.eq_def] at h; simp at h
+    · rw [armBodyOf.eq_def] at h; simp at h
+    · rw [innerMatchOf.eq_def] at h; simp at h
     · rw [letMatchOf.eq_def] at h; simp at h
     · rw [letArmsOf.eq_def] at h; simp at h
     · rw [letArmOf.eq_def] at h; simp at h
   | f + 1 => by
-    obtain ⟨ihBlock, ihStmts, ihFirst, ihLet, ihStmt, ihNested, ihMatch, ihArms, ihArm, ihLetMatch, ihLetArms,
-      ihLetArm⟩ := stmtSound f
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    obtain ⟨ihBlock, ihStmts, ihFirst, ihLet, ihStmt, ihNested, ihMatch, ihArms, ihArm, ihArmBody, ihInner,
+      ihLetMatch, ihLetArms, ihLetArm⟩ := stmtSound f
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · intro env scope list m h
       rw [blockOf.eq_def] at h
       simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
@@ -1308,7 +1362,7 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
         | some hd =>
           rw [hp] at h
           simp only at h
-          cases ho : matchStmtArms (f + 1) hd m with
+          cases ho : stmtArms (f + 1) env hd m with
           | none => rw [ho] at h; cases h
           | some os =>
             rw [ho] at h
@@ -1317,7 +1371,7 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
             | none => rw [hc] at h; simp [matchStmtValue] at h
             | some c =>
               rw [hc] at h
-              exact ⟨m, hd, os, c, matchPrimary_sound hm, matchStmtParts_sound hp, matchStmtArms_sound ho,
+              exact ⟨m, hd, os, c, matchPrimary_sound hm, matchStmtParts_sound hp, stmtArms_sound ho,
                 ihArms hc, h⟩
     · intro env scope hd k vs arms c h
       rw [matchArmsOf.eq_def] at h
@@ -1335,8 +1389,9 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
         | nil => simp at h
         | cons a more =>
           simp only at h
-          obtain ⟨b, list, body, r, hr, ab, al, bb, hb⟩ := ihArm h
-          exact .cons ab al bb (ihArms hr) hb
+          obtain ⟨b, body, r, hr, ab, ⟨list, al, bb⟩ | ⟨h', os', c, pm, mr, mo, ar, mv⟩, hb⟩ := ihArm h
+          · exact .cons ab al bb (ihArms hr) hb
+          · exact .inner ab pm mr mo ar mv (ihArms hr) hb
     · intro env scope hd k v a rest m h
       rw [matchArmOf.eq_def] at h
       simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
@@ -1344,21 +1399,46 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
       | none => rw [hb] at h; cases h
       | some b =>
         rw [hb] at h
-        simp only at h
-        cases hl : armBlockList (f + 1) a with
-        | none => rw [hl] at h; cases h
-        | some list =>
-          rw [hl] at h
-          simp only [armStmt, boundScope] at h
-          cases hx : blockOf f env b.scope list with
-          | none => rw [hx] at h; cases h
-          | some body =>
-            rw [hx] at h
+        simp only [armStmt, boundScope] at h
+        cases hx : armBodyOf f env b.scope a with
+        | none => rw [hx] at h; cases h
+        | some body =>
+          rw [hx] at h
+          simp only at h
+          cases rest with
+          | none => cases h
+          | some r => exact ⟨b, body, r, rfl, armBind_sound hb, ihArmBody hx, h⟩
+    · intro env scope a body h
+      rw [armBodyOf.eq_def] at h
+      simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
+      cases hl : armBlockList (f + 1) a with
+      | some list =>
+        rw [hl] at h
+        exact .inl ⟨list, armBlockList_sound hl, ihBlock h⟩
+      | none =>
+        rw [hl] at h
+        exact .inr (ihInner h)
+    · intro env scope m body h
+      rw [innerMatchOf.eq_def] at h
+      simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
+      split at h
+      · rename_i pm
+        cases hp : matchStmtParts (f + 1) env scope m with
+        | none => rw [hp] at h; cases h
+        | some hd =>
+          rw [hp] at h
+          simp only at h
+          cases ho : stmtArms (f + 1) env hd m with
+          | none => rw [ho] at h; cases h
+          | some os =>
+            rw [ho] at h
             simp only at h
-            cases rest with
-            | none => cases h
-            | some r =>
-              exact ⟨b, list, body, r, rfl, armBind_sound hb, armBlockList_sound hl, ihBlock hx, h⟩
+            cases hc : matchArmsOf f env scope hd 0 hd.variants os with
+            | none => rw [hc] at h; simp [matchStmtValue] at h
+            | some c =>
+              rw [hc] at h
+              exact ⟨hd, os, c, pm, matchStmtParts_sound hp, stmtArms_sound ho, ihArms hc, h⟩
+      · cases h
     · intro env scope x init body mm h
       rw [letMatchOf.eq_def] at h
       simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h

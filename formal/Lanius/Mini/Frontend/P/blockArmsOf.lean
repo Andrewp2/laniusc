@@ -146,7 +146,7 @@ def nestedOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) : Op
         blockOf f env scope (kid (kid s 0) 1)
       else
         none
-/-- `match (s) { arms };` with every arm a block: arm k (variant k) runs its block, else the next arm is tried; after the last, Unreachable. Every block arm leaves the match (laniusc rejects one whose end is reachable), so the match's own end is never reached either. -/
+/-- `match (s) { arms };` with every arm a block (or, for a nested arm, an inner match statement): arm k (variant k) runs its block, else the next arm is tried; after the last, Unreachable. Every block arm leaves the match (laniusc rejects one whose end is reachable), so the match's own end is never reached either. -/
 def matchStmtOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (e : CTree) : Option MStmt :=
   if fuel = 0 then
     none
@@ -157,7 +157,7 @@ def matchStmtOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (e : CTree) :
       match matchStmtParts fuel env scope m with
       | none => none
       | some h =>
-        match matchStmtArms fuel h m with
+        match stmtArms fuel env h m with
         | none => none
         | some os => matchStmtValue h (matchArmsOf (fuel - 1) env scope h 0 h.variants os)
 def matchArmsOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (h : MatchStmt) (k : Nat) (variants : List VariantTy) (arms : List CTree) : Option MStmt :=
@@ -179,10 +179,29 @@ def matchArmOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (h : MatchStmt
   else
     match armBinding fuel env scope h.owner v a with
     | none => none
-    | some b =>
-      match armBlockList fuel a with
+    | some b => armStmt h k b v (armBodyOf (fuel - 1) env (boundScope b) a) rest
+/-- A match statement arm's body: its block, or, for a nested arm, its inner match statement. -/
+def armBodyOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (a : CTree) : Option MStmt :=
+  if fuel = 0 then
+    none
+  else
+    match armBlockList fuel a with
+    | some list => blockOf (fuel - 1) env scope list
+    | none => innerMatchOf (fuel - 1) env scope (kid a 2)
+/-- The inner match `match (h) { arms }` of a nested arm in a match statement (nest_arm), read as a match statement on h; its closer is the arm's `->`. -/
+def innerMatchOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (m : CTree) : Option MStmt :=
+  if fuel = 0 then
+    none
+  else
+    if nodeProd m = (187) then
+      match matchStmtParts fuel env scope m with
       | none => none
-      | some list => armStmt h k b v (blockOf (fuel - 1) env (boundScope b) list) rest
+      | some h =>
+        match stmtArms fuel env h m with
+        | none => none
+        | some os => matchStmtValue h (matchArmsOf (fuel - 1) env scope h 0 h.variants os)
+    else
+      none
 /-- `let x: ty = match (s) { arms }; rest` with block arms and one value arm: the match statement's chain, where the value arm binds x to its value and runs rest. -/
 def letMatchOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (x : Local) (init : CTree) (body : Option MStmt) : Option MStmt :=
   if fuel = 0 then

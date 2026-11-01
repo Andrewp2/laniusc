@@ -525,7 +525,10 @@ unique. Trusted:
     value of V reaches it (an inner `_`, or `Covers`) and only when its
     value spells none of the first arm's other binders (`ColsQuiet`); h is
     the binder spelled `[0]`, which no source can spell. No arm's value is
-    a block (`BlockValue`). SEMANTIC_DECISIONS "Nested patterns";
+    a block (`BlockValue`). A match statement's nested arms are read the
+    same way (`StmtOrder`, arms may be blocks), the inner match read as a
+    match statement on h (`ArmsStmtR.inner`). SEMANTIC_DECISIONS "Nested
+    patterns";
   - (F11b) a payload pattern binds a name only when no enum of the program
     has a variant so spelled (`BindersR`'s `NoVariant`): laniusc reads one
     that resolves to a variant as a check. SEMANTIC_DECISIONS "Payload
