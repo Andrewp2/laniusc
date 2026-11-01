@@ -80,7 +80,7 @@ pub fn from_owned_handle(handle: i32, family: Family, kind: Kind) -> core::resul
 fn encode_v4(value: core::net::SocketAddrV4, expected_domain: i32, bytes: [u8]) -> core::result::Result<i32,core::io::Error> {
     if (expected_domain != 2) { return core::result::Err(core::io::Error::InvalidInput); }
     bytes[0] = 2; let index: i32 = 0;
-    while (index < 4) { bytes[4+index] = value.address.octet(index).unwrap(); index += 1; }
+    while (index < 4) { let stored1 = value.address.octet(index).unwrap(); bytes[4+index] = stored1; index += 1; }
     return core::result::Ok(16);
 }
 fn encode_v6(value: core::net::SocketAddrV6, expected_domain: i32, bytes: [u8]) -> core::result::Result<i32,core::io::Error> {
@@ -92,7 +92,7 @@ fn encode_v6(value: core::net::SocketAddrV6, expected_domain: i32, bytes: [u8]) 
 }
 fn encode(endpoint: core::net::SocketAddr, expected_domain: i32, bytes: [u8]) -> core::result::Result<i32,core::io::Error> {
     let index: i32 = 0; while (index < 32) { bytes[index] = 0; index += 1; }
-    bytes[2] = (endpoint.port() >> 8) as u8; bytes[3] = endpoint.port() as u8;
+    let stored3: u8 = (endpoint.port() >> 8) as u8; bytes[2] = stored3; let stored2: u8 = endpoint.port() as u8; bytes[3] = stored2;
     return match (endpoint) {
         core::net::SocketAddr::V4(value) -> encode_v4(value,expected_domain,bytes),
         core::net::SocketAddr::V6(value) -> encode_v6(value,expected_domain,bytes),
@@ -197,12 +197,29 @@ fn descriptor_wait_until(handle:i32,readable:bool,writable:bool,deadline:core::t
     return core::result::Err(core::io::Error::InvalidCount);
 }
 
-// Packed stream transfers preserve a logical view's native stride. The whole
+// A packed (stride 1) byte view selects contiguous native bytes, so a stream
+// transfer passes them to the host directly and may move the whole view in
+// one call. Other layouts, such as native [u8;N] arrays, keep the staged path:
+// at most 1024 bytes per call through a private packed buffer.
+fn packed_address(view:core::slice::View<u8>) -> core::option::Option<ptr> {
+    if(core::mem::slice_stride(view.values)!=1) { return core::option::None(); }
+    return core::option::Some(core::mem::i32_slice_data_ptr(view.values)+view.start);
+}
+// Stream transfers preserve a logical view's native stride. The whole
 // metadata range is admitted before reading source or publishing destination.
 fn stream_send(handle:i32,input:core::slice::View<u8>,nonblocking:bool) -> core::result::Result<i32,core::io::Error> {
     if(handle<0) { return core::result::Err(core::io::Error::Host(9)); }
     if(!valid(input)) { return core::result::Err(core::io::Error::InvalidInput); }
     if(input.length==0) { return core::result::Ok(0); }
+    let direct:core::option::Option<ptr> =packed_address(input);
+    if(direct.is_some()) {
+        let mode:i64=16384; if(nonblocking) { mode=mode|64; }
+        let call:[std::linux::Argument;6]=[word(handle as i64),address(direct.unwrap()),word(input.length as i64),word(mode),address(null()),word(0)];
+        let done:core::result::Result<i64,core::io::Error> =invoke(44,call);
+        if(done.is_err()) { return core::result::Err(done.unwrap_err()); }
+        let moved:i64=done.unwrap(); if(moved<0 || moved>(input.length as i64)) { return core::result::Err(core::io::Error::InvalidCount); }
+        return core::result::Ok(moved as i32);
+    }
     let count:i32=input.length; if(count>1024) { count=1024; }
     let storage:[i32;256]=[0;256]; let pointer:ptr=core::mem::i32_array_data_ptr(storage);
     let packed:[u8]=core::mem::typed_slice_from_raw_parts(pointer,1024);
@@ -219,6 +236,15 @@ fn stream_receive(handle:i32,output:core::slice::View<u8>,nonblocking:bool) -> c
     if(handle<0) { return core::result::Err(core::io::Error::Host(9)); }
     if(!valid(output)) { return core::result::Err(core::io::Error::InvalidInput); }
     if(output.length==0) { return core::result::Ok(0); }
+    let direct:core::option::Option<ptr> =packed_address(output);
+    if(direct.is_some()) {
+        let mode:i64=0; if(nonblocking) { mode=64; }
+        let call:[std::linux::Argument;6]=[word(handle as i64),address(direct.unwrap()),word(output.length as i64),word(mode),address(null()),address(null())];
+        let done:core::result::Result<i64,core::io::Error> =invoke(45,call);
+        if(done.is_err()) { return core::result::Err(done.unwrap_err()); }
+        let moved:i64=done.unwrap(); if(moved<0 || moved>(output.length as i64)) { return core::result::Err(core::io::Error::InvalidCount); }
+        return core::result::Ok(moved as i32);
+    }
     let count:i32=output.length; if(count>1024) { count=1024; }
     let storage:[i32;256]=[0;256]; let pointer:ptr=core::mem::i32_array_data_ptr(storage);
     let packed:[u8]=core::mem::typed_slice_from_raw_parts(pointer,1024);
@@ -304,6 +330,13 @@ pub impl Socket {
     }
     pub fn is_nonblocking(&self) -> core::result::Result<bool,core::io::Error> {
         return descriptor_is_nonblocking(self.handle);
+    }
+    // TCP_NODELAY: send small segments without waiting for earlier ACKs.
+    pub fn set_nodelay(&self, enabled: bool) -> core::result::Result<i32,core::io::Error> {
+        let value: i32 = 0; if (enabled) { value = 1; } return self.set_option(Setting::NoDelay,value);
+    }
+    pub fn nodelay(&self) -> core::result::Result<bool,core::io::Error> {
+        let got: core::result::Result<i32,core::io::Error> = self.option(Setting::NoDelay); if (got.is_err()) { return core::result::Err(got.unwrap_err()); } return core::result::Ok(got.unwrap() != 0);
     }
     // Duplicated handles share status flags, including nonblocking state.
     pub fn set_nonblocking(&self, enabled: bool) -> core::result::Result<i32,core::io::Error> {
@@ -400,6 +433,33 @@ pub impl Socket {
     }
 }
 pub impl Datagram { pub fn is_truncated(&self) -> bool { return self.copied < self.full_length; } }
+fn retry_later(error: core::io::Error) -> bool { return core::io::is_interrupted(error) || match (error) { core::io::Error::WouldBlock -> true, _ -> false }; }
+pub impl Socket {
+    // UDP with a deadline: EAGAIN and EINTR wait for readiness against the same
+    // absolute deadline; expiry is Host(110) (ETIMEDOUT), as for connect_until.
+    // Use a nonblocking socket, so a readiness report never leaves a call blocked.
+    pub fn send_to_until(&self, input: core::slice::View<u8>, endpoint: core::net::SocketAddr, deadline: core::time::Deadline) -> core::result::Result<i32,core::io::Error> {
+        while (true) {
+            let sent: core::result::Result<i32,core::io::Error> = self.send_to(input,endpoint);
+            if (sent.is_ok() || !retry_later(sent.unwrap_err())) { return sent; }
+            let waited: core::result::Result<Ready,core::io::Error> = self.wait_until(false,true,deadline);
+            if (waited.is_err()) { return core::result::Err(waited.unwrap_err()); }
+            if (waited.unwrap().timed_out) { return core::result::Err(core::io::Error::Host(110)); }
+        }
+        return core::result::Err(core::io::Error::InvalidCount);
+    }
+    // Receive one datagram before the deadline; Host(110) once it passes.
+    pub fn receive_from_until(&self, output: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<Datagram,core::io::Error> {
+        while (true) {
+            let waited: core::result::Result<Ready,core::io::Error> = self.wait_until(true,false,deadline);
+            if (waited.is_err()) { return core::result::Err(waited.unwrap_err()); }
+            if (waited.unwrap().timed_out) { return core::result::Err(core::io::Error::Host(110)); }
+            let got: core::result::Result<Datagram,core::io::Error> = self.receive_from(output);
+            if (got.is_ok() || !retry_later(got.unwrap_err())) { return got; }
+        }
+        return core::result::Err(core::io::Error::InvalidCount);
+    }
+}
 pub impl core::io::Read for Socket {
     pub fn read(&self, output: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> {
         if (!core::io::valid_range(offset,count)) { return core::result::Err(core::io::Error::InvalidInput); }

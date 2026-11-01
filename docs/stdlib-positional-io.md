@@ -113,8 +113,21 @@ File returns zero without host calls; it does not inspect status flags or
 access mode. An empty portable helper does not dispatch to this adapter at
 all, so its zero result alone does not validate a File owner.
 
-For a nonempty request the adapter reads status with `F_GETFL`, then applies
-these policies before any transfer:
+For a nonempty read into a packed (stride 1) destination, such as a
+`Vec<u8>` or raw byte view, `read_at` issues one `pread64` straight into the
+destination for the whole length, with no status probe. Only if that returns
+EINVAL does it read `F_GETFL`; an `O_DIRECT` descriptor is then reported as
+`InvalidInput`, as before. (A packed read on an `O_DIRECT` descriptor whose
+buffer, offset and length happen to meet the device's alignment can succeed.)
+Other errors, short counts and EOF are returned unchanged. A failed host call
+can leave bytes in the destination, because the kernel writes there directly.
+Reading a 16 MiB file into a 64 KiB `Vec` took 118-334 ms in 16,384 staged
+reads, each with its own `F_GETFL`, and 1-2 ms in 256 direct reads (three runs
+each, laptop).
+
+For a nonempty write, or a read into a non-packed destination such as a native
+`[u8;N]` array, the adapter reads status with `F_GETFL`, then applies these
+policies before any transfer:
 
 | Flag | Read | Write |
 | --- | --- | --- |
@@ -127,8 +140,8 @@ append despite an explicit offset when O_APPEND is set; rejecting append
 writes preserves the promised position. Packed stack staging does not supply
 direct-I/O alignment. The adapter does not change either flag.
 
-After status validation there is at most one `pread64` (syscall 17) or
-`pwrite64` (18), transferring at most 1024 bytes. Write bytes are packed from
+On that staged path, after status validation there is at most one `pread64`
+(syscall 17) or `pwrite64` (18), transferring at most 1024 bytes. Write bytes are packed from
 the selected native stride into contiguous stack storage. Reads go to private
 stack storage; only a valid successful count publishes bytes to the selected
 destination prefix. Host errors and malformed read counts leave destination

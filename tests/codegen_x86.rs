@@ -672,6 +672,59 @@ fn x86_jump_check_rejects_a_jump_into_another_function() {
     );
 }
 
+#[test]
+fn x86_user_functions_shadow_language_intrinsics() {
+    // Formerly tests/fixtures/compiler_defects/user_fn_print_replaced_by_builtin.lani:
+    // a user `print` was silently replaced by the built-in i32 printer.
+    assert_source_exit(
+        "user_functions_shadow_language_intrinsics",
+        r#"
+fn print(value: u64) -> i32 {
+    if (value == 4534056964) { return 7; }
+    return 1;
+}
+
+fn assert(value: bool) -> i32 {
+    if (value) { return 1; }
+    return 11;
+}
+
+fn print_i32(value: i32) -> i32 { return value + 10; }
+
+fn slice_stride(value: i32) -> i32 { return value; }
+
+fn main() -> i32 {
+    let big: u64 = 4534056964;
+    return print(big) + assert(false) + print_i32(0) + slice_stride(3);
+}
+"#,
+        31,
+    );
+}
+
+#[test]
+fn x86_unshadowed_language_intrinsics_keep_builtin_meaning() {
+    let bytes = compile_source(
+        "x86 unshadowed language intrinsics",
+        r#"
+fn main() -> i32 {
+    print(41);
+    print_i32(42);
+    assert(1 == 1);
+    return 0;
+}
+"#,
+    );
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_stdout(
+        "x86 unshadowed language intrinsics",
+        "x86_unshadowed_language_intrinsics",
+        &bytes,
+        "41\n42\n",
+    );
+}
+
 fn assert_source_exit(name: &str, source: &str, expected: i32) {
     let bytes = compile_source(&format!("x86 source {name}"), source);
 

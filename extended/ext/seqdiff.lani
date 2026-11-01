@@ -1,0 +1,789 @@
+// Generic sequence diff: linear-space Myers, patience, hunks. See docs/extended-seqdiff.md.
+module ext::seqdiff;
+import alloc::vec;
+import core::slice;
+import core::option;
+import core::result;
+import core::cmp;
+import core::hash;
+import core::u32;
+
+pub struct Limits { max_items: i32, max_work: u64 }
+pub fn default_limits() -> Limits { return Limits { max_items: 4000000, max_work: 4000000000 }; }
+pub enum Error { InvalidLimits, Bounds, ItemLimit, WorkLimit, AllocationFailed }
+// Xdiff reproduces git's default line and word alignment (see xdiff_classes).
+pub enum Algorithm { Myers, Patience, Xdiff }
+// kind 0 equal, 1 delete (before advances), 2 insert (after advances).
+pub struct Edit { kind: i32, before: i32, after: i32 }
+pub struct Script { steps: alloc::vec::Vec<Edit>, cost: i32, before_len: i32, after_len: i32 }
+pub struct Hunk { before: i32, before_count: i32, after: i32, after_count: i32, first: i32, count: i32 }
+pub struct Classes { before: alloc::vec::Vec<i32>, after: alloc::vec::Vec<i32>, count: i32 }
+
+// One byte line of a file, including its LF when present, with its FNV-1a
+// hash cached at construction (split_lines or line()). Build lines only
+// through those functions so the hash stays consistent with the bytes.
+pub struct Line { bytes: core::slice::View<u8>, hash: u32 }
+pub impl core::cmp::Eq<Line> for Line {
+    pub fn eq(left: Line, right: Line) -> bool {
+        let a: core::slice::View<u8> = left.bytes; let b: core::slice::View<u8> = right.bytes;
+        if (left.hash != right.hash || a.length != b.length) { return false; }
+        let i: i32 = 0; while (i < a.length) { if (a.values[a.start+i] != b.values[b.start+i]) { return false; } i += 1; } return true;
+    }
+    pub fn ne(left: Line, right: Line) -> bool { return !Line::eq(left, right); }
+}
+pub impl core::hash::Hash<Line> for Line { pub fn hash(value: Line) -> u32 { return value.hash; } }
+pub fn line(bytes: core::slice::View<u8>) -> Line {
+    let data: [u8] = bytes.values; let at: i32 = bytes.start; let end: i32 = bytes.start + bytes.length; let h: u32 = 2166136261;
+    while (at < end) { h = (((h ^ (data[at] as u32)) as u64) * 16777619) as u32; at += 1; }
+    return Line { bytes: bytes, hash: h };
+}
+
+fn sd_view_ok<T>(value: core::slice::View<T>) -> bool { return value.start >= 0 && value.length >= 0 && value.start <= 2147483647 - value.length; }
+fn sd_limits_ok(limits: Limits) -> bool { return limits.max_items >= 0; }
+
+// Split bytes into lines; each line keeps its LF. A final fragment is a line.
+pub fn split_lines(input: core::slice::View<u8>, limits: Limits) -> core::result::Result<alloc::vec::Vec<Line>, Error> {
+    if (!sd_limits_ok(limits)) { return core::result::Err(Error::InvalidLimits); }
+    if (!sd_view_ok(input)) { return core::result::Err(Error::Bounds); }
+    // One pass: find line ends and hash each line; slots grow geometrically
+    // through try_resize and are written directly, then trimmed.
+    let data: [u8] = input.values; let base: i32 = input.start; let n: i32 = input.length;
+    let out: alloc::vec::Vec<Line> = alloc::vec::new();
+    let empty: Line = Line { bytes: core::slice::View { values: data, start: base, length: 0 }, hash: 2166136261 };
+    let room: i32 = n / 32 + 16; if (room > limits.max_items + 1) { room = limits.max_items + 1; }
+    if (core::result::is_err(out.try_resize(room, empty))) { out.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let slots: [Line] = out.as_slice(); let k: i32 = 0; let start: i32 = 0; let i: i32 = 0; let h: u32 = 2166136261;
+    while (i < n) {
+        let c: u8 = data[base+i]; h = (((h ^ (c as u32)) as u64) * 16777619) as u32; i += 1;
+        if (c == 10 || i == n) {
+            if (k >= limits.max_items) { out.destroy(); return core::result::Err(Error::ItemLimit); }
+            if (k == room) {
+                room = room * 2; if (room > limits.max_items + 1) { room = limits.max_items + 1; }
+                if (core::result::is_err(out.try_resize(room, empty))) { out.destroy(); return core::result::Err(Error::AllocationFailed); }
+                slots = out.as_slice();
+            }
+            slots[k] = Line { bytes: core::slice::View { values: data, start: base+start, length: i-start }, hash: h }; k += 1; start = i; h = 2166136261;
+        }
+    }
+    let cut: core::result::Result<i32, alloc::vec::Error> = out.truncate(k);
+    return core::result::Ok(out);
+}
+
+fn sd_filled(count: i32, fill: i32) -> core::result::Result<alloc::vec::Vec<i32>, Error> {
+    let out: alloc::vec::Vec<i32> = alloc::vec::new();
+    if (core::result::is_err(out.try_resize(count, fill))) { out.destroy(); return core::result::Err(Error::AllocationFailed); }
+    return core::result::Ok(out);
+}
+
+// Map equal items to equal dense class ids. Hashes only bucket; Eq decides.
+pub fn classify<T>(a: core::slice::View<T>, b: core::slice::View<T>, limits: Limits) -> core::result::Result<Classes, Error> where T: core::cmp::Eq<T>, T: core::hash::Hash<T> {
+    if (!sd_limits_ok(limits)) { return core::result::Err(Error::InvalidLimits); }
+    if (!sd_view_ok(a) || !sd_view_ok(b)) { return core::result::Err(Error::Bounds); }
+    if (a.length > limits.max_items || b.length > limits.max_items) { return core::result::Err(Error::ItemLimit); }
+    let total: i32 = a.length + b.length; let size: i32 = 16;
+    while (size < 2 * total) { size = size * 2; }
+    let mask: u32 = (size - 1) as u32;
+    let made: core::result::Result<alloc::vec::Vec<i32>, Error> = sd_filled(size, -1);
+    if (core::result::is_err(made)) { return core::result::Err(Error::AllocationFailed); }
+    let table: alloc::vec::Vec<i32> = core::result::unwrap(made); let slots: [i32] = table.as_slice();
+    let reps: alloc::vec::Vec<T> = alloc::vec::new(); let hashes: alloc::vec::Vec<u32> = alloc::vec::new();
+    let ca: alloc::vec::Vec<i32> = alloc::vec::new(); let cb: alloc::vec::Vec<i32> = alloc::vec::new();
+    let failed: bool = false; let side: i32 = 0;
+    while (side < 2 && !failed) {
+        let src: core::slice::View<T> = a; if (side == 1) { src = b; }
+        let i: i32 = 0;
+        while (i < src.length && !failed) {
+            let item: T = src.values[src.start+i]; let h: u32 = T::hash(item); let slot: u32 = h & mask; let id: i32 = -1;
+            while (id < 0) {
+                let c: i32 = slots[slot as i32];
+                if (c < 0) {
+                    c = reps.len(); slots[slot as i32] = c; id = c;
+                    if (core::result::is_err(reps.try_push(item)) || core::result::is_err(hashes.try_push(h))) { failed = true; }
+                } else {
+                    if (hashes.as_slice()[c] == h && T::eq(reps.as_slice()[c], item)) { id = c; } else { slot = (slot + 1) & mask; }
+                }
+            }
+            if (!failed) { if (side == 0) { if (core::result::is_err(ca.try_push(id))) { failed = true; } } else { if (core::result::is_err(cb.try_push(id))) { failed = true; } } }
+            i += 1;
+        }
+        side += 1;
+    }
+    let count: i32 = reps.len(); table.destroy(); reps.destroy(); hashes.destroy();
+    if (failed) { ca.destroy(); cb.destroy(); return core::result::Err(Error::AllocationFailed); }
+    return core::result::Ok(Classes { before: ca, after: cb, count: count });
+}
+pub impl Classes {
+    pub fn borrow(&self) -> &Classes { return self; }
+    pub fn destroy(&self) { self.before.destroy(); self.after.destroy(); self.before = alloc::vec::new(); self.after = alloc::vec::new(); self.count = 0; }
+}
+
+// Shared engine state: match table, Myers frontier rows and a range stack.
+struct Engine { pair: alloc::vec::Vec<i32>, v1: alloc::vec::Vec<i32>, v2: alloc::vec::Vec<i32>, off: i32, stack: alloc::vec::Vec<i32>, work: u64, max_work: u64, sx: i32, sy: i32, failed: bool, error: Error }
+impl Engine { fn borrow(&self) -> &Engine { return self; } }
+fn sd_engine_destroy(e: &Engine) { e.pair.destroy(); e.v1.destroy(); e.v2.destroy(); e.stack.destroy(); }
+fn sd_engine(n: i32, m: i32, limits: Limits) -> core::result::Result<Engine, Error> {
+    let maxd: i32 = (n + m + 1) / 2;
+    let p: core::result::Result<alloc::vec::Vec<i32>, Error> = sd_filled(n, -1);
+    if (core::result::is_err(p)) { return core::result::Err(Error::AllocationFailed); }
+    let pair: alloc::vec::Vec<i32> = core::result::unwrap(p);
+    let q: core::result::Result<alloc::vec::Vec<i32>, Error> = sd_filled(2 * maxd + 4, -1);
+    if (core::result::is_err(q)) { pair.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let r: core::result::Result<alloc::vec::Vec<i32>, Error> = sd_filled(2 * maxd + 4, -1);
+    if (core::result::is_err(r)) { pair.destroy(); let v: alloc::vec::Vec<i32> = core::result::unwrap(q); v.destroy(); return core::result::Err(Error::AllocationFailed); }
+    return core::result::Ok(Engine { pair: pair, v1: core::result::unwrap(q), v2: core::result::unwrap(r), off: maxd + 1, stack: alloc::vec::new(), work: 0, max_work: limits.max_work, sx: 0, sy: 0, failed: false, error: Error::AllocationFailed });
+}
+fn sd_push(e: &Engine, x0: i32, x1: i32, y0: i32, y1: i32, mode: i32) {
+    if (e.failed) { return; }
+    if (core::result::is_err(e.stack.try_push(x0)) || core::result::is_err(e.stack.try_push(x1)) || core::result::is_err(e.stack.try_push(y0)) || core::result::is_err(e.stack.try_push(y1)) || core::result::is_err(e.stack.try_push(mode))) { e.failed = true; e.error = Error::AllocationFailed; }
+}
+fn sd_charge(e: &Engine, amount: i32) -> bool {
+    let cost: u64 = amount as u64;
+    if (cost > e.max_work - e.work) { e.work = e.max_work; e.failed = true; e.error = Error::WorkLimit; return false; }
+    e.work += cost; return true;
+}
+
+// Find a split point on an optimal path through a[x0,x1) x b[y0,y1).
+// Forward and reverse frontiers meet in the middle (Myers 1986, section 4b).
+fn sd_bisect<T>(a: core::slice::View<T>, b: core::slice::View<T>, x0: i32, x1: i32, y0: i32, y1: i32, e: &Engine) -> bool where T: core::cmp::Eq<T> {
+    let n: i32 = x1 - x0; let m: i32 = y1 - y0; let maxd: i32 = (n + m + 1) / 2; let off: i32 = e.off;
+    let v1: [i32] = e.v1.as_slice(); let v2: [i32] = e.v2.as_slice();
+    // Rows are initialized lazily: before round d, indices +-(d+1) are reset,
+    // so every read below sees this range's values or -1, never a stale row.
+    v1[off-1] = -1; v2[off-1] = -1; v1[off] = -1; v2[off] = -1; v1[off+1] = 0; v2[off+1] = 0;
+    let delta: i32 = n - m; let front: bool = delta % 2 != 0;
+    let k1start: i32 = 0; let k1end: i32 = 0; let k2start: i32 = 0; let k2end: i32 = 0;
+    let d: i32 = 0;
+    while (d <= maxd) {
+        if (d > 0) { v1[off-d-1] = -1; v2[off-d-1] = -1; v1[off+d+1] = -1; v2[off+d+1] = -1; }
+        let k1: i32 = -d + k1start;
+        while (k1 <= d - k1end) {
+            let x: i32 = 0;
+            if (k1 == -d || (k1 != d && v1[off+k1-1] < v1[off+k1+1])) { x = v1[off+k1+1]; } else { x = v1[off+k1-1] + 1; }
+            let y: i32 = x - k1; let sx: i32 = x;
+            while (x < n && y < m && T::eq(a.values[a.start+x0+x], b.values[b.start+y0+y])) { x += 1; y += 1; }
+            if (!sd_charge(e, x - sx + 1)) { return false; }
+            v1[off+k1] = x;
+            if (x > n) { k1end += 2; }
+            else { if (y > m) { k1start += 2; }
+            else { if (front) {
+                let k2: i32 = delta - k1;
+                if (k2 >= -d - 1 && k2 <= d + 1 && k2 >= -maxd && k2 <= maxd && v2[off+k2] != -1) {
+                    if (x >= n - v2[off+k2]) { e.sx = x0 + x; e.sy = y0 + y; return true; }
+                }
+            } } }
+            k1 += 2;
+        }
+        let k2: i32 = -d + k2start;
+        while (k2 <= d - k2end) {
+            let x: i32 = 0;
+            if (k2 == -d || (k2 != d && v2[off+k2-1] < v2[off+k2+1])) { x = v2[off+k2+1]; } else { x = v2[off+k2-1] + 1; }
+            let y: i32 = x - k2; let sx: i32 = x;
+            while (x < n && y < m && T::eq(a.values[a.start+x1-1-x], b.values[b.start+y1-1-y])) { x += 1; y += 1; }
+            if (!sd_charge(e, x - sx + 1)) { return false; }
+            v2[off+k2] = x;
+            if (x > n) { k2end += 2; }
+            else { if (y > m) { k2start += 2; }
+            else { if (!front) {
+                let k: i32 = delta - k2;
+                if (k >= -d - 1 && k <= d + 1 && k >= -maxd && k <= maxd && v1[off+k] != -1) {
+                    let fx: i32 = v1[off+k];
+                    if (fx >= n - x) { e.sx = x0 + fx; e.sy = y0 + fx - k; return true; }
+                }
+            } } }
+            k2 += 2;
+        }
+        d += 1;
+    }
+    // Exhausted without meeting: the range has no common item.
+    e.sx = -1; return true;
+}
+
+// Trim equal prefix/suffix of one range, recording matches. Returns the
+// narrowed range through the engine's sx/sy and the stack-free out params.
+struct Range { x0: i32, x1: i32, y0: i32, y1: i32 }
+fn sd_trim<T>(a: core::slice::View<T>, b: core::slice::View<T>, r: Range, e: &Engine) -> Range where T: core::cmp::Eq<T> {
+    let pair: [i32] = e.pair.as_slice(); let x0: i32 = r.x0; let x1: i32 = r.x1; let y0: i32 = r.y0; let y1: i32 = r.y1;
+    let begin: i32 = x0;
+    while (x0 < x1 && y0 < y1 && T::eq(a.values[a.start+x0], b.values[b.start+y0])) { pair[x0] = y0; x0 += 1; y0 += 1; }
+    let end: i32 = x1;
+    while (x0 < x1 && y0 < y1 && T::eq(a.values[a.start+x1-1], b.values[b.start+y1-1])) { x1 -= 1; y1 -= 1; pair[x1] = y1; }
+    sd_charge(e, (x0 - begin) + (end - x1) + 1);
+    return Range { x0: x0, x1: x1, y0: y0, y1: y1 };
+}
+fn sd_myers_step<T>(a: core::slice::View<T>, b: core::slice::View<T>, r: Range, e: &Engine) where T: core::cmp::Eq<T> {
+    let t: Range = sd_trim(a, b, r, e);
+    if (e.failed || t.x0 == t.x1 || t.y0 == t.y1) { return; }
+    if (!sd_bisect(a, b, t.x0, t.x1, t.y0, t.y1, e)) { return; }
+    let sx: i32 = e.sx; let sy: i32 = e.sy; if (sx < 0) { return; }
+    sd_push(e, sx, t.x1, sy, t.y1, 0); sd_push(e, t.x0, sx, t.y0, sy, 0);
+}
+fn sd_run<T>(a: core::slice::View<T>, b: core::slice::View<T>, e: &Engine) where T: core::cmp::Eq<T> {
+    while (!e.failed && e.stack.len() > 0) {
+        let s: [i32] = e.stack.as_slice(); let top: i32 = e.stack.len() - 5;
+        let r: Range = Range { x0: s[top], x1: s[top+1], y0: s[top+2], y1: s[top+3] };
+        e.stack.truncate(top);
+        sd_myers_step(a, b, r, e);
+    }
+}
+// Class-id specializations of the engine: plain i32 comparisons on hoisted
+// arrays instead of trait calls through views.
+// Find a split point on an optimal path through a[x0,x1) x b[y0,y1).
+// Forward and reverse frontiers meet in the middle (Myers 1986, section 4b).
+fn sd_bisect_c(a: core::slice::View<i32>, b: core::slice::View<i32>, x0: i32, x1: i32, y0: i32, y1: i32, e: &Engine) -> bool {
+    let av: [i32] = a.values; let bv: [i32] = b.values; let ab: i32 = a.start; let bb: i32 = b.start;
+    let n: i32 = x1 - x0; let m: i32 = y1 - y0; let maxd: i32 = (n + m + 1) / 2; let off: i32 = e.off;
+    let v1: [i32] = e.v1.as_slice(); let v2: [i32] = e.v2.as_slice();
+    // Rows are initialized lazily: before round d, indices +-(d+1) are reset,
+    // so every read below sees this range's values or -1, never a stale row.
+    v1[off-1] = -1; v2[off-1] = -1; v1[off] = -1; v2[off] = -1; v1[off+1] = 0; v2[off+1] = 0;
+    let delta: i32 = n - m; let front: bool = delta % 2 != 0;
+    let k1start: i32 = 0; let k1end: i32 = 0; let k2start: i32 = 0; let k2end: i32 = 0;
+    let d: i32 = 0;
+    while (d <= maxd) {
+        if (d > 0) { v1[off-d-1] = -1; v2[off-d-1] = -1; v1[off+d+1] = -1; v2[off+d+1] = -1; }
+        let k1: i32 = -d + k1start;
+        while (k1 <= d - k1end) {
+            let x: i32 = 0;
+            if (k1 == -d || (k1 != d && v1[off+k1-1] < v1[off+k1+1])) { x = v1[off+k1+1]; } else { x = v1[off+k1-1] + 1; }
+            let y: i32 = x - k1; let sx: i32 = x;
+            while (x < n && y < m && av[ab+x0+x] == bv[bb+y0+y]) { x += 1; y += 1; }
+            if (!sd_charge(e, x - sx + 1)) { return false; }
+            v1[off+k1] = x;
+            if (x > n) { k1end += 2; }
+            else { if (y > m) { k1start += 2; }
+            else { if (front) {
+                let k2: i32 = delta - k1;
+                if (k2 >= -d - 1 && k2 <= d + 1 && k2 >= -maxd && k2 <= maxd && v2[off+k2] != -1) {
+                    if (x >= n - v2[off+k2]) { e.sx = x0 + x; e.sy = y0 + y; return true; }
+                }
+            } } }
+            k1 += 2;
+        }
+        let k2: i32 = -d + k2start;
+        while (k2 <= d - k2end) {
+            let x: i32 = 0;
+            if (k2 == -d || (k2 != d && v2[off+k2-1] < v2[off+k2+1])) { x = v2[off+k2+1]; } else { x = v2[off+k2-1] + 1; }
+            let y: i32 = x - k2; let sx: i32 = x;
+            while (x < n && y < m && av[ab+x1-1-x] == bv[bb+y1-1-y]) { x += 1; y += 1; }
+            if (!sd_charge(e, x - sx + 1)) { return false; }
+            v2[off+k2] = x;
+            if (x > n) { k2end += 2; }
+            else { if (y > m) { k2start += 2; }
+            else { if (!front) {
+                let k: i32 = delta - k2;
+                if (k >= -d - 1 && k <= d + 1 && k >= -maxd && k <= maxd && v1[off+k] != -1) {
+                    let fx: i32 = v1[off+k];
+                    if (fx >= n - x) { e.sx = x0 + fx; e.sy = y0 + fx - k; return true; }
+                }
+            } } }
+            k2 += 2;
+        }
+        d += 1;
+    }
+    // Exhausted without meeting: the range has no common item.
+    e.sx = -1; return true;
+}
+
+// Trim equal prefix/suffix of one range, recording matches. Returns the
+// narrowed range through the engine's sx/sy and the stack-free out params.
+fn sd_trim_c(a: core::slice::View<i32>, b: core::slice::View<i32>, r: Range, e: &Engine) -> Range {
+    let av: [i32] = a.values; let bv: [i32] = b.values; let ab: i32 = a.start; let bb: i32 = b.start;
+    let pair: [i32] = e.pair.as_slice(); let x0: i32 = r.x0; let x1: i32 = r.x1; let y0: i32 = r.y0; let y1: i32 = r.y1;
+    let begin: i32 = x0;
+    while (x0 < x1 && y0 < y1 && av[ab+x0] == bv[bb+y0]) { pair[x0] = y0; x0 += 1; y0 += 1; }
+    let end: i32 = x1;
+    while (x0 < x1 && y0 < y1 && av[ab+x1-1] == bv[bb+y1-1]) { x1 -= 1; y1 -= 1; pair[x1] = y1; }
+    sd_charge(e, (x0 - begin) + (end - x1) + 1);
+    return Range { x0: x0, x1: x1, y0: y0, y1: y1 };
+}
+fn sd_myers_step_c(a: core::slice::View<i32>, b: core::slice::View<i32>, r: Range, e: &Engine) {
+    let t: Range = sd_trim_c(a, b, r, e);
+    if (e.failed || t.x0 == t.x1 || t.y0 == t.y1) { return; }
+    if (!sd_bisect_c(a, b, t.x0, t.x1, t.y0, t.y1, e)) { return; }
+    let sx: i32 = e.sx; let sy: i32 = e.sy; if (sx < 0) { return; }
+    sd_push(e, sx, t.x1, sy, t.y1, 0); sd_push(e, t.x0, sx, t.y0, sy, 0);
+}
+fn sd_run_c(a: core::slice::View<i32>, b: core::slice::View<i32>, e: &Engine) {
+    while (!e.failed && e.stack.len() > 0) {
+        let s: [i32] = e.stack.as_slice(); let top: i32 = e.stack.len() - 5;
+        let r: Range = Range { x0: s[top], x1: s[top+1], y0: s[top+2], y1: s[top+3] };
+        e.stack.truncate(top);
+        sd_myers_step_c(a, b, r, e);
+    }
+}
+fn sd_script(e: &Engine, n: i32, m: i32, limits: Limits) -> core::result::Result<Script, Error> {
+    let pair: [i32] = e.pair.as_slice();
+    // Count the steps, size the vector once, then fill its slots.
+    let matched: i32 = 0; let q: i32 = 0; while (q < n) { if (pair[q] >= 0) { matched += 1; } q += 1; }
+    let total: i32 = n + m - matched;
+    let steps: alloc::vec::Vec<Edit> = alloc::vec::new();
+    if (core::result::is_err(steps.try_resize(total, Edit { kind: 0, before: 0, after: 0 }))) { steps.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let slots: [Edit] = steps.as_slice();
+    let i: i32 = 0; let j: i32 = 0; let cost: i32 = 0; let at: i32 = 0;
+    while (i < n || j < m) {
+        let kind: i32 = 0; let bi: i32 = i; let aj: i32 = j;
+        if (i < n && pair[i] < 0) { kind = 1; i += 1; cost += 1; }
+        else { if (j < m && (i == n || j < pair[i])) { kind = 2; j += 1; cost += 1; }
+        else { i += 1; j += 1; } }
+        slots[at] = Edit { kind: kind, before: bi, after: aj }; at += 1;
+    }
+    return core::result::Ok(Script { steps: steps, cost: cost, before_len: n, after_len: m });
+}
+fn sd_finish(e: &Engine, n: i32, m: i32, limits: Limits) -> core::result::Result<Script, Error> {
+    if (e.failed) { let error: Error = e.error; sd_engine_destroy(e); return core::result::Err(error); }
+    let s: core::result::Result<Script, Error> = sd_script(e, n, m, limits); sd_engine_destroy(e); return s;
+}
+
+// Minimal edit script by linear-space Myers divide and conquer.
+pub fn myers<T>(a: core::slice::View<T>, b: core::slice::View<T>, limits: Limits) -> core::result::Result<Script, Error> where T: core::cmp::Eq<T> {
+    if (!sd_limits_ok(limits)) { return core::result::Err(Error::InvalidLimits); }
+    if (!sd_view_ok(a) || !sd_view_ok(b)) { return core::result::Err(Error::Bounds); }
+    if (a.length > limits.max_items || b.length > limits.max_items) { return core::result::Err(Error::ItemLimit); }
+    let made: core::result::Result<Engine, Error> = sd_engine(a.length, b.length, limits);
+    if (core::result::is_err(made)) { return core::result::Err(core::result::unwrap_err(made)); }
+    let e: Engine = core::result::unwrap(made);
+    sd_push(e.borrow(), 0, a.length, 0, b.length, 0); sd_run(a, b, e.borrow());
+    return sd_finish(e.borrow(), a.length, b.length, limits);
+}
+
+// Minimal script over class ids (see classify); same algorithm as myers.
+pub fn myers_classes(a: core::slice::View<i32>, b: core::slice::View<i32>, limits: Limits) -> core::result::Result<Script, Error> {
+    if (!sd_limits_ok(limits)) { return core::result::Err(Error::InvalidLimits); }
+    if (!sd_view_ok(a) || !sd_view_ok(b)) { return core::result::Err(Error::Bounds); }
+    if (a.length > limits.max_items || b.length > limits.max_items) { return core::result::Err(Error::ItemLimit); }
+    let made: core::result::Result<Engine, Error> = sd_engine(a.length, b.length, limits);
+    if (core::result::is_err(made)) { return core::result::Err(core::result::unwrap_err(made)); }
+    let e: Engine = core::result::unwrap(made);
+    sd_push(e.borrow(), 0, a.length, 0, b.length, 0); sd_run_c(a, b, e.borrow());
+    return sd_finish(e.borrow(), a.length, b.length, limits);
+}
+
+// Patience over class ids: anchor on items unique in both ranges (longest
+// increasing run of their positions), recurse between anchors, and fall back
+// to Myers where a range has no unique common item.
+struct Patience { ca: alloc::vec::Vec<i32>, cb: alloc::vec::Vec<i32>, pb: alloc::vec::Vec<i32>, pi: alloc::vec::Vec<i32>, pj: alloc::vec::Vec<i32>, tails: alloc::vec::Vec<i32>, prev: alloc::vec::Vec<i32> }
+fn sd_patience_destroy(p: &Patience) { p.ca.destroy(); p.cb.destroy(); p.pb.destroy(); p.pi.destroy(); p.pj.destroy(); p.tails.destroy(); p.prev.destroy(); }
+fn sd_patience_step(a: core::slice::View<i32>, b: core::slice::View<i32>, r: Range, e: &Engine, p: &Patience) {
+    let t: Range = sd_trim_c(a, b, r, e);
+    if (e.failed || t.x0 == t.x1 || t.y0 == t.y1) { return; }
+    let ca: [i32] = p.ca.as_slice(); let cb: [i32] = p.cb.as_slice(); let pb: [i32] = p.pb.as_slice();
+    let i: i32 = t.x0; while (i < t.x1) { ca[a.values[a.start+i]] += 1; i += 1; }
+    let j: i32 = t.y0; while (j < t.y1) { let c: i32 = b.values[b.start+j]; cb[c] += 1; pb[c] = j; j += 1; }
+    p.pi.clear(); p.pj.clear();
+    i = t.x0;
+    while (i < t.x1) { let c: i32 = a.values[a.start+i]; if (ca[c] == 1 && cb[c] == 1) { if (core::result::is_err(p.pi.try_push(i)) || core::result::is_err(p.pj.try_push(pb[c]))) { e.failed = true; e.error = Error::AllocationFailed; } } i += 1; }
+    i = t.x0; while (i < t.x1) { ca[a.values[a.start+i]] = 0; i += 1; }
+    j = t.y0; while (j < t.y1) { cb[b.values[b.start+j]] = 0; j += 1; }
+    if (!sd_charge(e, 2 * (t.x1 - t.x0 + t.y1 - t.y0))) { return; }
+    let count: i32 = p.pi.len();
+    if (e.failed) { return; }
+    if (count == 0) { sd_push(e, t.x0, t.x1, t.y0, t.y1, 0); return; }
+    // Longest increasing subsequence of pj by patience sorting.
+    p.tails.clear(); p.prev.clear();
+    if (core::result::is_err(p.prev.try_resize(count, -1))) { e.failed = true; e.error = Error::AllocationFailed; return; }
+    let pj: [i32] = p.pj.as_slice(); let prev: [i32] = p.prev.as_slice();
+    let q: i32 = 0;
+    while (q < count) {
+        let lo: i32 = 0; let hi: i32 = p.tails.len();
+        while (lo < hi) { let mid: i32 = (lo + hi) / 2; if (pj[p.tails.as_slice()[mid]] < pj[q]) { lo = mid + 1; } else { hi = mid; } }
+        if (lo > 0) { let stored: i32 = p.tails.as_slice()[lo-1]; prev[q] = stored; }
+        if (lo == p.tails.len()) { if (core::result::is_err(p.tails.try_push(q))) { e.failed = true; e.error = Error::AllocationFailed; return; } }
+        else { p.tails.as_slice()[lo] = q; }
+        q += 1;
+    }
+    if (!sd_charge(e, count * 4)) { return; }
+    // Walk anchors backward; push gaps so the earliest gap is popped first.
+    let pair: [i32] = e.pair.as_slice(); let pi: [i32] = p.pi.as_slice();
+    let at: i32 = p.tails.as_slice()[p.tails.len()-1]; let hx: i32 = t.x1; let hy: i32 = t.y1;
+    while (at >= 0) {
+        let ax: i32 = pi[at]; let ay: i32 = pj[at]; pair[ax] = ay;
+        sd_push(e, ax + 1, hx, ay + 1, hy, 1); hx = ax; hy = ay; at = prev[at];
+    }
+    sd_push(e, t.x0, hx, t.y0, hy, 1);
+}
+fn sd_patience_run(a: core::slice::View<i32>, b: core::slice::View<i32>, e: &Engine, p: &Patience) {
+    while (!e.failed && e.stack.len() > 0) {
+        let s: [i32] = e.stack.as_slice(); let top: i32 = e.stack.len() - 5;
+        let r: Range = Range { x0: s[top], x1: s[top+1], y0: s[top+2], y1: s[top+3] }; let mode: i32 = s[top+4];
+        e.stack.truncate(top);
+        if (mode == 1) { sd_patience_step(a, b, r, e, p); } else { sd_myers_step_c(a, b, r, e); }
+    }
+}
+// Patience diff over dense class ids in [0, classes). Not always minimal.
+pub fn patience_classes(a: core::slice::View<i32>, b: core::slice::View<i32>, classes: i32, limits: Limits) -> core::result::Result<Script, Error> {
+    if (!sd_limits_ok(limits) || classes < 0) { return core::result::Err(Error::InvalidLimits); }
+    if (!sd_view_ok(a) || !sd_view_ok(b)) { return core::result::Err(Error::Bounds); }
+    if (a.length > limits.max_items || b.length > limits.max_items) { return core::result::Err(Error::ItemLimit); }
+    let i: i32 = 0; while (i < a.length) { let c: i32 = a.values[a.start+i]; if (c < 0 || c >= classes) { return core::result::Err(Error::Bounds); } i += 1; }
+    i = 0; while (i < b.length) { let c: i32 = b.values[b.start+i]; if (c < 0 || c >= classes) { return core::result::Err(Error::Bounds); } i += 1; }
+    let made: core::result::Result<Engine, Error> = sd_engine(a.length, b.length, limits);
+    if (core::result::is_err(made)) { return core::result::Err(core::result::unwrap_err(made)); }
+    let e: Engine = core::result::unwrap(made);
+    let p: Patience = Patience { ca: alloc::vec::new(), cb: alloc::vec::new(), pb: alloc::vec::new(), pi: alloc::vec::new(), pj: alloc::vec::new(), tails: alloc::vec::new(), prev: alloc::vec::new() };
+    if (core::result::is_err(p.ca.try_resize(classes, 0)) || core::result::is_err(p.cb.try_resize(classes, 0)) || core::result::is_err(p.pb.try_resize(classes, 0))) { e.failed = true; e.error = Error::AllocationFailed; }
+    sd_push(e.borrow(), 0, a.length, 0, b.length, 1); sd_patience_run(a, b, e.borrow(), p.borrow());
+    sd_patience_destroy(p.borrow());
+    return sd_finish(e.borrow(), a.length, b.length, limits);
+}
+impl Patience { fn borrow(&self) -> &Patience { return self; } }
+
+// git's xdiff Myers (xdiffi.c / xprepare.c, git 2.43, flags 0): trim common
+// ends, discard items with no match and multimatch items inside runs of
+// unmatched ones, split ranges with xdl_split (including its cost heuristics
+// above 256 steps), then slide each change group up and down and leave it
+// aligned with the other side's last reachable change group, else at its
+// lowest position. The indent heuristic is not included.
+struct Xd { kf: alloc::vec::Vec<i32>, kb: alloc::vec::Vec<i32>, koff: i32, h1: alloc::vec::Vec<i32>, h2: alloc::vec::Vec<i32>, mxcost: i32, si1: i32, si2: i32, min_lo: bool, min_hi: bool, work: u64, max_work: u64, failed: bool }
+impl Xd { fn borrow(&self) -> &Xd { return self; } }
+struct Grp { s: i32, e: i32 }
+impl Grp { fn borrow(&self) -> &Grp { return self; } }
+fn xd_bogosqrt(n: i32) -> i32 { let i: i32 = 1; let v: i32 = n; while (v > 0) { i = i * 2; v = v / 4; } return i; }
+// xdl_clean_mmatch over dis (offset 0 = item 0).
+fn xd_clean_mmatch(dis: [i32], i: i32, s0: i32, e0: i32) -> bool {
+    let s: i32 = s0; let e: i32 = e0;
+    if (i - s > 100) { s = i - 100; } if (e - i > 100) { e = i + 100; }
+    let r: i32 = 1; let rdis0: i32 = 0; let rpdis0: i32 = 1;
+    while (i - r >= s) { let d: i32 = dis[i-r]; if (d == 0) { rdis0 += 1; } else { if (d == 2) { rpdis0 += 1; } else { break; } } r += 1; }
+    if (rdis0 == 0) { return false; }
+    r = 1; let rdis1: i32 = 0; let rpdis1: i32 = 1;
+    while (i + r <= e) { let d: i32 = dis[i+r]; if (d == 0) { rdis1 += 1; } else { if (d == 2) { rpdis1 += 1; } else { break; } } r += 1; }
+    if (rdis1 == 0) { return false; }
+    rdis1 += rdis0; rpdis1 += rpdis0;
+    return rpdis1 * 4 < rpdis1 + rdis1;
+}
+fn xd_split(x: &Xd, off1: i32, lim1: i32, off2: i32, lim2: i32, need_min: bool) {
+    let kf: [i32] = x.kf.as_slice(); let kb: [i32] = x.kb.as_slice(); let o: i32 = x.koff; let h1: [i32] = x.h1.as_slice(); let h2: [i32] = x.h2.as_slice();
+    let dmin: i32 = off1 - lim2; let dmax: i32 = lim1 - off2; let fmid: i32 = off1 - off2; let bmid: i32 = lim1 - lim2;
+    let odd: bool = ((fmid - bmid) & 1) != 0;
+    let fmin: i32 = fmid; let fmax: i32 = fmid; let bmin: i32 = bmid; let bmax: i32 = bmid;
+    kf[o+fmid] = off1; kb[o+bmid] = lim1;
+    let ec: i32 = 1;
+    while (true) {
+        let got_snake: bool = false;
+        if (fmin > dmin) { fmin -= 1; kf[o+fmin-1] = -1; } else { fmin += 1; }
+        if (fmax < dmax) { fmax += 1; kf[o+fmax+1] = -1; } else { fmax -= 1; }
+        x.work += ((fmax - fmin) / 2 + 1) as u64;
+        let d: i32 = fmax;
+        while (d >= fmin) {
+            let i1: i32 = kf[o+d+1]; if (kf[o+d-1] >= kf[o+d+1]) { i1 = kf[o+d-1] + 1; }
+            let prev: i32 = i1; let i2: i32 = i1 - d;
+            while (i1 < lim1 && i2 < lim2 && h1[i1] == h2[i2]) { i1 += 1; i2 += 1; }
+            if (i1 - prev > 20) { got_snake = true; }
+            kf[o+d] = i1;
+            if (odd && bmin <= d && d <= bmax && kb[o+d] <= i1) { x.si1 = i1; x.si2 = i2; x.min_lo = true; x.min_hi = true; return; }
+            d -= 2;
+        }
+        if (bmin > dmin) { bmin -= 1; kb[o+bmin-1] = 2147483647; } else { bmin += 1; }
+        if (bmax < dmax) { bmax += 1; kb[o+bmax+1] = 2147483647; } else { bmax -= 1; }
+        x.work += ((bmax - bmin) / 2 + 1) as u64;
+        d = bmax;
+        while (d >= bmin) {
+            let i1: i32 = kb[o+d+1] - 1; if (kb[o+d-1] < kb[o+d+1]) { i1 = kb[o+d-1]; }
+            let prev: i32 = i1; let i2: i32 = i1 - d;
+            while (i1 > off1 && i2 > off2 && h1[i1-1] == h2[i2-1]) { i1 -= 1; i2 -= 1; }
+            if (prev - i1 > 20) { got_snake = true; }
+            kb[o+d] = i1;
+            if (!odd && fmin <= d && d <= fmax && i1 <= kf[o+d]) { x.si1 = i1; x.si2 = i2; x.min_lo = true; x.min_hi = true; return; }
+            d -= 2;
+        }
+        if (x.work > x.max_work) { x.failed = true; return; }
+        if (!need_min) {
+            if (got_snake && ec > 256) {
+                let best: i32 = 0; d = fmax;
+                while (d >= fmin) {
+                    let dd: i32 = fmid - d; if (d > fmid) { dd = d - fmid; }
+                    let i1: i32 = kf[o+d]; let i2: i32 = i1 - d; let v: i32 = (i1 - off1) + (i2 - off2) - dd;
+                    if (v > 4 * ec && v > best && off1 + 20 <= i1 && i1 < lim1 && off2 + 20 <= i2 && i2 < lim2) {
+                        let k: i32 = 1;
+                        while (h1[i1-k] == h2[i2-k]) { if (k == 20) { best = v; x.si1 = i1; x.si2 = i2; break; } k += 1; }
+                    }
+                    d -= 2;
+                }
+                if (best > 0) { x.min_lo = true; x.min_hi = false; return; }
+                best = 0; d = bmax;
+                while (d >= bmin) {
+                    let dd: i32 = bmid - d; if (d > bmid) { dd = d - bmid; }
+                    let i1: i32 = kb[o+d]; let i2: i32 = i1 - d; let v: i32 = (lim1 - i1) + (lim2 - i2) - dd;
+                    if (v > 4 * ec && v > best && off1 < i1 && i1 <= lim1 - 20 && off2 < i2 && i2 <= lim2 - 20) {
+                        let k: i32 = 0;
+                        while (h1[i1+k] == h2[i2+k]) { if (k == 19) { best = v; x.si1 = i1; x.si2 = i2; break; } k += 1; }
+                    }
+                    d -= 2;
+                }
+                if (best > 0) { x.min_lo = false; x.min_hi = true; return; }
+            }
+            if (ec >= x.mxcost) {
+                let fbest: i32 = -1; let fbest1: i32 = -1; d = fmax;
+                while (d >= fmin) {
+                    let i1: i32 = kf[o+d]; if (i1 > lim1) { i1 = lim1; } let i2: i32 = i1 - d;
+                    if (lim2 < i2) { i1 = lim2 + d; i2 = lim2; }
+                    if (fbest < i1 + i2) { fbest = i1 + i2; fbest1 = i1; }
+                    d -= 2;
+                }
+                let bbest: i32 = 2147483647; let bbest1: i32 = 2147483647; d = bmax;
+                while (d >= bmin) {
+                    let i1: i32 = kb[o+d]; if (i1 < off1) { i1 = off1; } let i2: i32 = i1 - d;
+                    if (i2 < off2) { i1 = off2 + d; i2 = off2; }
+                    if (i1 + i2 < bbest) { bbest = i1 + i2; bbest1 = i1; }
+                    d -= 2;
+                }
+                if ((lim1 + lim2) - bbest < fbest - (off1 + off2)) { x.si1 = fbest1; x.si2 = fbest - fbest1; x.min_lo = true; x.min_hi = false; }
+                else { x.si1 = bbest1; x.si2 = bbest - bbest1; x.min_lo = false; x.min_hi = true; }
+                return;
+            }
+        }
+        ec += 1;
+    }
+}
+// xdl_recs_cmp with an explicit stack; marks changed reduced items in r1/r2 (index + 1).
+fn xd_recs(x: &Xd, n1: i32, n2: i32, ix1: [i32], ix2: [i32], r1: [i32], r2: [i32], stack: &alloc::vec::Vec<i32>) {
+    let h1: [i32] = x.h1.as_slice(); let h2: [i32] = x.h2.as_slice();
+    if (core::result::is_err(stack.try_push(0)) || core::result::is_err(stack.try_push(n1)) || core::result::is_err(stack.try_push(0)) || core::result::is_err(stack.try_push(n2)) || core::result::is_err(stack.try_push(0))) { x.failed = true; return; }
+    while (stack.len() > 0 && !x.failed) {
+        let s: [i32] = stack.as_slice(); let top: i32 = stack.len() - 5;
+        let off1: i32 = s[top]; let lim1: i32 = s[top+1]; let off2: i32 = s[top+2]; let lim2: i32 = s[top+3]; let need_min: bool = s[top+4] != 0;
+        stack.truncate(top);
+        while (off1 < lim1 && off2 < lim2 && h1[off1] == h2[off2]) { off1 += 1; off2 += 1; }
+        while (off1 < lim1 && off2 < lim2 && h1[lim1-1] == h2[lim2-1]) { lim1 -= 1; lim2 -= 1; }
+        x.work += ((lim1 - off1) + (lim2 - off2)) as u64;
+        if (off1 == lim1) { while (off2 < lim2) { r2[ix2[off2]+1] = 1; off2 += 1; } }
+        else { if (off2 == lim2) { while (off1 < lim1) { r1[ix1[off1]+1] = 1; off1 += 1; } }
+        else {
+            xd_split(x, off1, lim1, off2, lim2, need_min);
+            if (x.failed) { return; }
+            let i1: i32 = x.si1; let i2: i32 = x.si2; let lo: i32 = 0; if (x.min_lo) { lo = 1; } let hi: i32 = 0; if (x.min_hi) { hi = 1; }
+            let pushed: bool = core::result::is_ok(stack.try_push(i1)) && core::result::is_ok(stack.try_push(lim1)) && core::result::is_ok(stack.try_push(i2)) && core::result::is_ok(stack.try_push(lim2)) && core::result::is_ok(stack.try_push(hi))
+                && core::result::is_ok(stack.try_push(off1)) && core::result::is_ok(stack.try_push(i1)) && core::result::is_ok(stack.try_push(off2)) && core::result::is_ok(stack.try_push(i2)) && core::result::is_ok(stack.try_push(lo));
+            if (!pushed) { x.failed = true; return; }
+        } }
+    }
+}
+// Group helpers over r (index + 1, sentinels at both ends) and items v.
+fn xg_init(r: [i32], g: &Grp) { g.s = 0; g.e = 0; while (r[g.e+1] != 0) { g.e += 1; } }
+fn xg_next(r: [i32], n: i32, g: &Grp) -> bool { if (g.e == n) { return false; } g.s = g.e + 1; g.e = g.s; while (r[g.e+1] != 0) { g.e += 1; } return true; }
+fn xg_prev(r: [i32], g: &Grp) -> bool { if (g.s == 0) { return false; } g.e = g.s - 1; g.s = g.e; while (r[g.s] != 0) { g.s -= 1; } return true; }
+fn xg_down(r: [i32], v: core::slice::View<i32>, n: i32, g: &Grp) -> bool {
+    if (g.e < n && v.values[v.start+g.s] == v.values[v.start+g.e]) { r[g.s+1] = 0; g.s += 1; r[g.e+1] = 1; g.e += 1; while (r[g.e+1] != 0) { g.e += 1; } return true; }
+    return false;
+}
+fn xg_up(r: [i32], v: core::slice::View<i32>, g: &Grp) -> bool {
+    if (g.s > 0 && v.values[v.start+g.s-1] == v.values[v.start+g.e-1]) { g.s -= 1; r[g.s+1] = 1; g.e -= 1; r[g.e+1] = 0; while (r[g.s] != 0) { g.s -= 1; } return true; }
+    return false;
+}
+// xdl_change_compact without the indent heuristic.
+fn xd_compact(r: [i32], v: core::slice::View<i32>, ro: [i32], vo_len: i32) {
+    let n: i32 = v.length;
+    let g: Grp = Grp { s: 0, e: 0 }; let go: Grp = Grp { s: 0, e: 0 };
+    xg_init(r, g.borrow()); xg_init(ro, go.borrow());
+    while (true) {
+        if (g.e != g.s) {
+            let size: i32 = -1; let earliest: i32 = 0; let matching: i32 = -1;
+            while (size != g.e - g.s) {
+                size = g.e - g.s; matching = -1;
+                while (xg_up(r, v, g.borrow())) { let moved: bool = xg_prev(ro, go.borrow()); }
+                earliest = g.e;
+                if (go.e > go.s) { matching = g.e; }
+                while (xg_down(r, v, n, g.borrow())) { let moved: bool = xg_next(ro, vo_len, go.borrow()); if (go.e > go.s) { matching = g.e; } }
+            }
+            if (g.e != earliest && matching != -1) {
+                while (go.e == go.s) { let up: bool = xg_up(r, v, g.borrow()); let moved: bool = xg_prev(ro, go.borrow()); if (!up) { break; } }
+            }
+        }
+        if (!xg_next(r, n, g.borrow())) { break; }
+        let moved: bool = xg_next(ro, vo_len, go.borrow());
+    }
+}
+// git-compatible script over class ids (any non-negative ids).
+pub fn xdiff_classes(a: core::slice::View<i32>, b: core::slice::View<i32>, limits: Limits) -> core::result::Result<Script, Error> {
+    if (!sd_limits_ok(limits)) { return core::result::Err(Error::InvalidLimits); }
+    if (!sd_view_ok(a) || !sd_view_ok(b)) { return core::result::Err(Error::Bounds); }
+    if (a.length > limits.max_items || b.length > limits.max_items) { return core::result::Err(Error::ItemLimit); }
+    let n1: i32 = a.length; let n2: i32 = b.length; let classes: i32 = 0; let i: i32 = 0;
+    while (i < n1) { let c: i32 = a.values[a.start+i]; if (c < 0) { return core::result::Err(Error::Bounds); } if (c >= classes) { classes = c + 1; } i += 1; }
+    i = 0; while (i < n2) { let c: i32 = b.values[b.start+i]; if (c < 0) { return core::result::Err(Error::Bounds); } if (c >= classes) { classes = c + 1; } i += 1; }
+    let c1: alloc::vec::Vec<i32> = alloc::vec::new(); let c2: alloc::vec::Vec<i32> = alloc::vec::new();
+    let r1v: alloc::vec::Vec<i32> = alloc::vec::new(); let r2v: alloc::vec::Vec<i32> = alloc::vec::new();
+    let d1v: alloc::vec::Vec<i32> = alloc::vec::new(); let d2v: alloc::vec::Vec<i32> = alloc::vec::new();
+    let ix1v: alloc::vec::Vec<i32> = alloc::vec::new(); let ix2v: alloc::vec::Vec<i32> = alloc::vec::new();
+    let stack: alloc::vec::Vec<i32> = alloc::vec::new();
+    let x: Xd = Xd { kf: alloc::vec::new(), kb: alloc::vec::new(), koff: 0, h1: alloc::vec::new(), h2: alloc::vec::new(), mxcost: 256, si1: 0, si2: 0, min_lo: false, min_hi: false, work: 0, max_work: limits.max_work, failed: false };
+    let ok: bool = core::result::is_ok(c1.try_resize(classes, 0)) && core::result::is_ok(c2.try_resize(classes, 0)) && core::result::is_ok(r1v.try_resize(n1 + 2, 0)) && core::result::is_ok(r2v.try_resize(n2 + 2, 0))
+        && core::result::is_ok(d1v.try_resize(n1 + 1, 0)) && core::result::is_ok(d2v.try_resize(n2 + 1, 0));
+    let out: core::result::Result<Script, Error> = core::result::Err(Error::AllocationFailed);
+    if (ok) {
+        let k1: [i32] = c1.as_slice(); let k2: [i32] = c2.as_slice(); let r1: [i32] = r1v.as_slice(); let r2: [i32] = r2v.as_slice(); let dis1: [i32] = d1v.as_slice(); let dis2: [i32] = d2v.as_slice();
+        i = 0; while (i < n1) { k1[a.values[a.start+i]] += 1; i += 1; }
+        i = 0; while (i < n2) { k2[b.values[b.start+i]] += 1; i += 1; }
+        // xdl_trim_ends
+        let lim: i32 = n1; if (n2 < lim) { lim = n2; }
+        let pre: i32 = 0; while (pre < lim && a.values[a.start+pre] == b.values[b.start+pre]) { pre += 1; }
+        let suf: i32 = 0; while (suf < lim - pre && a.values[a.start+n1-1-suf] == b.values[b.start+n2-1-suf]) { suf += 1; }
+        let e1: i32 = n1 - suf - 1; let e2: i32 = n2 - suf - 1;
+        // xdl_cleanup_records
+        let mlim: i32 = xd_bogosqrt(n1); if (mlim > 1024) { mlim = 1024; }
+        i = pre; while (i <= e1) { let nm: i32 = k2[a.values[a.start+i]]; if (nm == 0) { dis1[i] = 0; } else { if (nm >= mlim) { dis1[i] = 2; } else { dis1[i] = 1; } } i += 1; }
+        mlim = xd_bogosqrt(n2); if (mlim > 1024) { mlim = 1024; }
+        i = pre; while (i <= e2) { let nm: i32 = k1[b.values[b.start+i]]; if (nm == 0) { dis2[i] = 0; } else { if (nm >= mlim) { dis2[i] = 2; } else { dis2[i] = 1; } } i += 1; }
+        i = pre;
+        while (i <= e1 && ok) {
+            if (dis1[i] == 1 || (dis1[i] == 2 && !xd_clean_mmatch(dis1, i, pre, e1))) { ok = core::result::is_ok(ix1v.try_push(i)) && core::result::is_ok(x.h1.try_push(a.values[a.start+i])); }
+            else { r1[i+1] = 1; }
+            i += 1;
+        }
+        i = pre;
+        while (i <= e2 && ok) {
+            if (dis2[i] == 1 || (dis2[i] == 2 && !xd_clean_mmatch(dis2, i, pre, e2))) { ok = core::result::is_ok(ix2v.try_push(i)) && core::result::is_ok(x.h2.try_push(b.values[b.start+i])); }
+            else { r2[i+1] = 1; }
+            i += 1;
+        }
+        let m1: i32 = ix1v.len(); let m2: i32 = ix2v.len();
+        x.koff = m2 + 1; x.mxcost = xd_bogosqrt(m1 + m2 + 3); if (x.mxcost < 256) { x.mxcost = 256; }
+        ok = ok && core::result::is_ok(x.kf.try_resize(m1 + m2 + 3, 0)) && core::result::is_ok(x.kb.try_resize(m1 + m2 + 3, 0));
+        if (ok) { xd_recs(x.borrow(), m1, m2, ix1v.as_slice(), ix2v.as_slice(), r1, r2, stack.borrow()); }
+        if (ok && !x.failed) {
+            xd_compact(r1, a, r2, n2); xd_compact(r2, b, r1, n1);
+            out = sd_rchg_script(r1, r2, n1, n2);
+        }
+        else { if (ok && x.work > x.max_work) { out = core::result::Err(Error::WorkLimit); } }
+    }
+    c1.destroy(); c2.destroy(); r1v.destroy(); r2v.destroy(); d1v.destroy(); d2v.destroy(); ix1v.destroy(); ix2v.destroy(); stack.destroy();
+    x.kf.destroy(); x.kb.destroy(); x.h1.destroy(); x.h2.destroy();
+    return out;
+}
+// Script from change marks: within each change, deletions precede insertions.
+fn sd_rchg_script(r1: [i32], r2: [i32], n1: i32, n2: i32) -> core::result::Result<Script, Error> {
+    let steps: alloc::vec::Vec<Edit> = alloc::vec::new(); let cost: i32 = 0; let i: i32 = 0; let j: i32 = 0;
+    if (core::result::is_err(steps.try_reserve(n1 + n2))) { return core::result::Err(Error::AllocationFailed); }
+    while (i < n1 || j < n2) {
+        let e: Edit = Edit { kind: 0, before: i, after: j };
+        if (i < n1 && r1[i+1] != 0) { e.kind = 1; i += 1; cost += 1; }
+        else { if (j < n2 && r2[j+1] != 0) { e.kind = 2; j += 1; cost += 1; } else { i += 1; j += 1; } }
+        if (core::result::is_err(steps.try_push(e))) { steps.destroy(); return core::result::Err(Error::AllocationFailed); }
+    }
+    return core::result::Ok(Script { steps: steps, cost: cost, before_len: n1, after_len: n2 });
+}
+
+// Line classification without trait calls: FNV-1a inline, open addressing
+// on (hash, representative), byte comparison only on equal hashes.
+fn sd_line_hash(v: core::slice::View<u8>) -> u32 {
+    let data: [u8] = v.values; let at: i32 = v.start; let end: i32 = v.start + v.length; let h: u32 = 2166136261;
+    while (at < end) { h = (((h ^ (data[at] as u32)) as u64) * 16777619) as u32; at += 1; }
+    return h;
+}
+fn sd_bytes_eq(x: core::slice::View<u8>, y: core::slice::View<u8>) -> bool {
+    if (x.length != y.length) { return false; }
+    let dx: [u8] = x.values; let dy: [u8] = y.values; let i: i32 = x.start; let j: i32 = y.start; let end: i32 = x.start + x.length;
+    while (i < end) { if (dx[i] != dy[j]) { return false; } i += 1; j += 1; }
+    return true;
+}
+pub fn classify_lines(a: core::slice::View<Line>, b: core::slice::View<Line>, limits: Limits) -> core::result::Result<Classes, Error> {
+    if (!sd_limits_ok(limits)) { return core::result::Err(Error::InvalidLimits); }
+    if (!sd_view_ok(a) || !sd_view_ok(b)) { return core::result::Err(Error::Bounds); }
+    if (a.length > limits.max_items || b.length > limits.max_items) { return core::result::Err(Error::ItemLimit); }
+    let total: i32 = a.length + b.length; let size: i32 = 16;
+    while (size < 2 * total) { size = size * 2; }
+    let mask: u32 = (size - 1) as u32;
+    let t: core::result::Result<alloc::vec::Vec<i32>, Error> = sd_filled(size, -1);
+    let r: core::result::Result<alloc::vec::Vec<i32>, Error> = sd_filled(total, 0);
+    let hv: core::result::Result<alloc::vec::Vec<i32>, Error> = sd_filled(total, 0);
+    let x: core::result::Result<alloc::vec::Vec<i32>, Error> = sd_filled(a.length, 0);
+    let y: core::result::Result<alloc::vec::Vec<i32>, Error> = sd_filled(b.length, 0);
+    if (core::result::is_err(t) || core::result::is_err(r) || core::result::is_err(hv) || core::result::is_err(x) || core::result::is_err(y)) {
+        if (core::result::is_ok(t)) { let v: alloc::vec::Vec<i32> = core::result::unwrap(t); v.destroy(); }
+        if (core::result::is_ok(r)) { let v: alloc::vec::Vec<i32> = core::result::unwrap(r); v.destroy(); }
+        if (core::result::is_ok(hv)) { let v: alloc::vec::Vec<i32> = core::result::unwrap(hv); v.destroy(); }
+        if (core::result::is_ok(x)) { let v: alloc::vec::Vec<i32> = core::result::unwrap(x); v.destroy(); }
+        if (core::result::is_ok(y)) { let v: alloc::vec::Vec<i32> = core::result::unwrap(y); v.destroy(); }
+        return core::result::Err(Error::AllocationFailed);
+    }
+    let table: alloc::vec::Vec<i32> = core::result::unwrap(t); let reps: alloc::vec::Vec<i32> = core::result::unwrap(r); let hashes: alloc::vec::Vec<i32> = core::result::unwrap(hv);
+    let ca: alloc::vec::Vec<i32> = core::result::unwrap(x); let cb: alloc::vec::Vec<i32> = core::result::unwrap(y);
+    let slots: [i32] = table.as_slice(); let rep: [i32] = reps.as_slice(); let hs: [i32] = hashes.as_slice(); let oa: [i32] = ca.as_slice(); let ob: [i32] = cb.as_slice();
+    let lines_a: [Line] = a.values; let lines_b: [Line] = b.values;
+    let classes: i32 = 0; let q: i32 = 0; let none: [u8] = [0;1]; let dummy: Line = Line { bytes: core::slice::View { values: none, start: 0, length: 0 }, hash: 0 };
+    // Hash and compare inline on the lines' byte slices; no per-line calls.
+    while (q < total) {
+        let line: Line = dummy; let local: i32 = q;
+        if (q < a.length) { line = lines_a[a.start+q]; } else { line = lines_b[b.start+q-a.length]; local = q - a.length; }
+        let data: [u8] = line.bytes.values; let from: i32 = line.bytes.start; let len: i32 = line.bytes.length;
+        let h: u32 = line.hash; let end: i32 = from + len;
+        let slot: u32 = h & mask; let id: i32 = -1; let hi: i32 = h as i32;
+        while (id < 0) {
+            let c: i32 = slots[slot as i32];
+            if (c < 0) { c = classes; classes += 1; slots[slot as i32] = c; rep[c] = q; hs[c] = hi; id = c; }
+            else {
+                if (hs[c] == hi) {
+                    let w: i32 = rep[c]; let other: Line = dummy;
+                    if (w < a.length) { other = lines_a[a.start+w]; } else { other = lines_b[b.start+w-a.length]; }
+                    if (other.bytes.length == len && other.hash == h) {
+                        let od: [u8] = other.bytes.values; let oi: i32 = other.bytes.start; let k: i32 = from;
+                        while (k < end && od[oi] == data[k]) { k += 1; oi += 1; }
+                        if (k == end) { id = c; }
+                    }
+                }
+                if (id < 0) { slot = (slot + 1) & mask; }
+            }
+        }
+        if (q < a.length) { oa[q] = id; } else { ob[local] = id; }
+        q += 1;
+    }
+    table.destroy(); reps.destroy(); hashes.destroy();
+    return core::result::Ok(Classes { before: ca, after: cb, count: classes });
+}
+
+// Classify, then diff the class sequences with the chosen algorithm.
+pub fn diff<T>(a: core::slice::View<T>, b: core::slice::View<T>, algorithm: Algorithm, limits: Limits) -> core::result::Result<Script, Error> where T: core::cmp::Eq<T>, T: core::hash::Hash<T> {
+    let classified: core::result::Result<Classes, Error> = classify(a, b, limits);
+    if (core::result::is_err(classified)) { return core::result::Err(core::result::unwrap_err(classified)); }
+    return sd_diff_classes(core::result::unwrap(classified), algorithm, limits);
+}
+fn sd_diff_classes(c: Classes, algorithm: Algorithm, limits: Limits) -> core::result::Result<Script, Error> {
+    let out: core::result::Result<Script, Error> = core::result::Err(Error::Bounds);
+    let which: i32 = match (algorithm) { Algorithm::Patience -> 1, Algorithm::Myers -> 0, Algorithm::Xdiff -> 2 };
+    if (which == 1) { out = patience_classes(c.before.as_view(), c.after.as_view(), c.count, limits); }
+    else { if (which == 2) { out = xdiff_classes(c.before.as_view(), c.after.as_view(), limits); }
+    else { out = myers_classes(c.before.as_view(), c.after.as_view(), limits); } }
+    c.destroy(); return out;
+}
+pub fn diff_lines(a: core::slice::View<Line>, b: core::slice::View<Line>, algorithm: Algorithm, limits: Limits) -> core::result::Result<Script, Error> {
+    let classified: core::result::Result<Classes, Error> = classify_lines(a, b, limits);
+    if (core::result::is_err(classified)) { return core::result::Err(core::result::unwrap_err(classified)); }
+    return sd_diff_classes(core::result::unwrap(classified), algorithm, limits);
+}
+
+pub impl Script {
+    pub fn borrow(&self) -> &Script { return self; }
+    pub fn len(&self) -> i32 { return self.steps.len(); }
+    pub fn distance(&self) -> i32 { return self.cost; }
+    pub fn before_len(&self) -> i32 { return self.before_len; }
+    pub fn after_len(&self) -> i32 { return self.after_len; }
+    pub fn step(&self, index: i32) -> core::result::Result<Edit, Error> { if (index < 0 || index >= self.steps.len()) { return core::result::Err(Error::Bounds); } return core::result::Ok(self.steps.as_slice()[index]); }
+    pub fn destroy(&self) { self.steps.destroy(); self.steps = alloc::vec::new(); self.cost = 0; }
+}
+
+// Group changes into hunks with up to `context` equal steps on each side.
+// Changes separated by at most 2*context equal steps share one hunk.
+pub fn hunks(script: &Script, context: i32) -> core::result::Result<alloc::vec::Vec<Hunk>, Error> {
+    if (context < 0 || context > 1073741822) { return core::result::Err(Error::InvalidLimits); }
+    let out: alloc::vec::Vec<Hunk> = alloc::vec::new(); let steps: [Edit] = script.steps.as_slice(); let total: i32 = script.steps.len();
+    let search: i32 = 0;
+    while (search < total) {
+        if (steps[search].kind == 0) { search += 1; }
+        else {
+            let start: i32 = search - context; if (start < 0) { start = 0; }
+            let last: i32 = search; let scan: i32 = search + 1;
+            while (scan < total) {
+                if (steps[scan].kind != 0) { last = scan; }
+                else { if (scan - last > 2 * context) { break; } }
+                scan += 1;
+            }
+            let end: i32 = total; if (context < total - last - 1) { end = last + context + 1; }
+            let bc: i32 = 0; let ac: i32 = 0; let at: i32 = start;
+            while (at < end) { let k: i32 = steps[at].kind; if (k != 2) { bc += 1; } if (k != 1) { ac += 1; } at += 1; }
+            let first: Edit = steps[start];
+            if (core::result::is_err(out.try_push(Hunk { before: first.before, before_count: bc, after: first.after, after_count: ac, first: start, count: end - start }))) { out.destroy(); return core::result::Err(Error::AllocationFailed); }
+            search = end;
+        }
+    }
+    return core::result::Ok(out);
+}

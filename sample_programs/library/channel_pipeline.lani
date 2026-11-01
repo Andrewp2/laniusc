@@ -1,0 +1,77 @@
+// Three-stage pipeline over bounded channels: the parent emits 1..=200000,
+// three workers square each value, one worker sums the squares. Closing the
+// first channel's only sender disconnects the mappers, whose closes then
+// disconnect the summer. Prints "count sum_of_squares_mod_1e9".
+// Build: laniusc --native-link --native-library atomic --stdlib-root stdlib
+module app::main;
+import core::result;
+import std::atomic;
+import std::channel;
+import std::io;
+import std::sync;
+import std::worker;
+
+const N: u64 = 200000;
+const MAPPERS: i32 = 3;
+
+fn disconnected(error: std::channel::RecvError) -> bool { return match (error) { std::channel::RecvError::Disconnected -> true, _ -> false }; }
+
+fn mapper(input: std::channel::Receiver<u64>, output: std::channel::Sender<u64>) -> i32 {
+    while (true) {
+        let got: core::result::Result<u64, std::channel::RecvError> = input.recv();
+        if (got.is_err()) { input.close(); output.close(); if (disconnected(got.unwrap_err())) { return 0; } return 1; }
+        let value: u64 = got.unwrap();
+        if (output.send(value * value).is_err()) { return 2; }
+    }
+    return 3;
+}
+
+fn summer(input: std::channel::Receiver<u64>, count: std::atomic::Atomic64, total: std::atomic::Atomic64) -> i32 {
+    let seen: u64 = 0; let sum: u64 = 0;
+    while (true) {
+        let got: core::result::Result<u64, std::channel::RecvError> = input.recv();
+        if (got.is_err()) {
+            input.close();
+            if (!disconnected(got.unwrap_err())) { return 4; }
+            count.store(seen, std::atomic::Store::Release); total.store(sum, std::atomic::Store::Release);
+            return 0;
+        }
+        sum = (sum + got.unwrap() % 1000000000) % 1000000000; seen += 1;
+    }
+    return 5;
+}
+
+fn main() -> i32 {
+    let region: std::sync::Region = std::sync::map_shared(65536).unwrap();
+    let numbers: std::channel::Channel<u64> = std::channel::bounded<u64>(region.borrow(), 32).unwrap();
+    let squares: std::channel::Channel<u64> = std::channel::bounded<u64>(region.borrow(), 32).unwrap();
+    let count: std::atomic::Atomic64 = std::atomic::at64(region.allocate(8).unwrap());
+    let total: std::atomic::Atomic64 = std::atomic::at64(region.allocate(8).unwrap());
+    let emit: std::channel::Sender<u64> = numbers.open_sender().unwrap();
+    let take: std::channel::Receiver<u64> = numbers.open_receiver().unwrap();
+    let put: std::channel::Sender<u64> = squares.open_sender().unwrap();
+    let w: i32 = 1;
+    while (w < MAPPERS) { numbers.open_receiver().unwrap(); squares.open_sender().unwrap(); w += 1; }
+    let collect: std::channel::Receiver<u64> = squares.open_receiver().unwrap();
+    let pool: std::worker::Pool = std::worker::pool(MAPPERS + 1).unwrap();
+    w = 0;
+    while (w <= MAPPERS) {
+        let role: std::worker::Role = pool.spawn().unwrap();
+        let child: bool = match (role) { std::worker::Role::Child(index) -> true, std::worker::Role::Parent(index) -> false };
+        if (child) {
+            if (w < MAPPERS) { return std::worker::finish(mapper(take, put)); }
+            return std::worker::finish(summer(collect, count, total));
+        }
+        w += 1;
+    }
+    let value: u64 = 1;
+    while (value <= N) { if (emit.send(value).is_err()) { return 6; } value += 1; }
+    emit.close();
+    let summary: std::worker::Summary = pool.join_all().unwrap();
+    pool.destroy();
+    if (summary.failed != 0) { return 7; }
+    std::io::write_i32(1, count.load(std::atomic::Load::Acquire) as i32); std::io::write_text(1, " ");
+    std::io::write_i32(1, total.load(std::atomic::Load::Acquire) as i32); std::io::write_newline(1);
+    region.unmap();
+    return 0;
+}

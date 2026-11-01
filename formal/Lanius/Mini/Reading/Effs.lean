@@ -1,4 +1,4 @@
-import Lanius.Mini.Reading.LetHeads
+import Lanius.Mini.Reading.Nested
 
 /-! # The reading, V8d: effectful expressions
 
@@ -173,7 +173,7 @@ inductive EffR (env : FrontEnv) : List Local → Option Ty → CTree → MEff �
       {t : TypeDecl} {ps : List (List Ty)} {arms os : List CTree} {eas : List EffArm} {rt : Ty} :
       nodeProd c = pMatchExpr → EffR env scope none (kid c 2) s → EffTy env.decls scope s ety → ety = .tyNamed d args →
       env.decls.types[d]? = some t → t.isEnum = true → PayloadTys env.decls d args ps → Items (kid c 5) arms →
-      ArmsOrder (List.zipWith VariantTy.mk t.variants ps) arms os →
+      MatchOrder env t (List.zipWith VariantTy.mk t.variants ps) arms os →
       EffArmsR env scope expected t (List.zipWith VariantTy.mk t.variants ps) os eas → resultTy expected eas = some rt →
       EffR env scope expected c (.xMatch s ety rt (armBinders eas) (armValues eas))
   | array {scope : List Local} {expected : Option Ty} {c : CTree} {e : Ty} {n : Nat} {items : List CTree}
@@ -646,14 +646,14 @@ def MethodEff (env : FrontEnv) (scope : List Local) (expected : Option Ty) (pf :
 def MatchEnumEff (env : FrontEnv) (scope : List Local) (expected : Option Ty) (s : MEff) (ety : Ty) (t : TypeDecl)
     (payloads : Option (List (List Ty))) (m : CTree) (x : MEff) : Prop :=
   t.isEnum = true ∧ ∃ ps arms os eas rt, payloads = some ps ∧ Items (kid m 5) arms ∧
-    ArmsOrder (List.zipWith VariantTy.mk t.variants ps) arms os ∧
+    MatchOrder env t (List.zipWith VariantTy.mk t.variants ps) arms os ∧
     EffArmsR env scope expected t (List.zipWith VariantTy.mk t.variants ps) os eas ∧ resultTy expected eas = some rt ∧
     x = .xMatch s ety rt (armBinders eas) (armValues eas)
 
 def MatchOnEff (env : FrontEnv) (scope : List Local) (expected : Option Ty) (s : MEff) (m : CTree) (x : MEff) : Prop :=
   ∃ ety d args t ps arms os eas rt, EffTy env.decls scope s ety ∧ ety = .tyNamed d args ∧
     env.decls.types[d]? = some t ∧ t.isEnum = true ∧ PayloadTys env.decls d args ps ∧ Items (kid m 5) arms ∧
-    ArmsOrder (List.zipWith VariantTy.mk t.variants ps) arms os ∧
+    MatchOrder env t (List.zipWith VariantTy.mk t.variants ps) arms os ∧
     EffArmsR env scope expected t (List.zipWith VariantTy.mk t.variants ps) os eas ∧ resultTy expected eas = some rt ∧
     x = .xMatch s ety rt (armBinders eas) (armValues eas)
 
@@ -747,7 +747,7 @@ def EffSound (fuel : Nat) : Prop :=
   (∀ {env scope expected s ety t payloads m x}, effMatchEnum fuel env scope expected s ety t payloads m = some x →
     MatchEnumEff env scope expected s ety t payloads m x) ∧
   (∀ {env scope expected owner vs arms eas}, effArmsOrdered fuel env scope expected owner vs arms = some eas →
-    ∃ os, ArmsOrder vs arms os ∧ EffArmsR env scope expected owner vs os eas) ∧
+    ∃ os, MatchOrder env owner vs arms os ∧ EffArmsR env scope expected owner vs os eas) ∧
   (∀ {env scope expected owner vs arms eas}, effArms fuel env scope expected owner vs arms = some eas →
     EffArmsR env scope expected owner vs arms eas) ∧
   (∀ {env scope expected owner v arm ea}, effArm fuel env scope expected owner v arm = some ea →
@@ -1445,12 +1445,12 @@ theorem effSound : ∀ fuel, EffSound fuel
     · intro env scope expected owner vs arms eas h
       rw [effArmsOrdered.eq_def] at h
       simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
-      cases hio : armsInOrder (f + 1) owner vs arms with
+      cases hio : matchOrder (f + 1) env owner vs arms with
       | none => rw [hio] at h; cases h
       | some os =>
         rw [hio] at h
         simp only at h
-        exact ⟨os, armsInOrder_sound hio, ihArms h⟩
+        exact ⟨os, matchOrder_sound hio, ihArms h⟩
     -- effArms
     · intro env scope expected owner vs arms eas h
       rw [effArms.eq_def] at h

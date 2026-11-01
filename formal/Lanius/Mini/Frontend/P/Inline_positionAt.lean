@@ -1,12 +1,11 @@
 module
 
 public import Lanius.Mini.Frontend.Types
-public import Lanius.Mini.Frontend.P.collectedWith
+public import Lanius.Mini.Frontend.P.collect
 public import Lanius.Mini.Frontend.P.distinct
 public import Lanius.Mini.Frontend.P.findConst
 public import Lanius.Mini.Frontend.P.hasKids
 public import Lanius.Mini.Frontend.P.isEmptyUsize
-public import Lanius.Mini.Frontend.P.methodsOf
 public import Lanius.Mini.Frontend.P.moduleOr
 public import Lanius.Mini.Frontend.P.noToken
 public import Lanius.Mini.Frontend.P.noTrees
@@ -37,11 +36,6 @@ namespace Lanius.Mini
     consName (some (kidToken pp 0).text) (paramSpellings prest)
   else
     none
-
-@[expose] def Inline.collectNext (cfuel : Nat) (cmodule : List (List Nat)) (cacc : Option Decls) (crest : List CTree) : Option Decls :=
-  match cacc with
-  | none => none
-  | some d => collect cfuel cmodule crest d
 
 @[expose] def Inline.collectFileNext (ffuel : Nat) (facc : Collected) (ffile : Option FileDecls) (frest : List CTree) : Option Collected :=
   match ffile with

@@ -1,0 +1,320 @@
+// Parallel slice operations over Region storage with std::worker processes:
+// chunked for-each, map, reduce, inclusive scan (prefix sum) and merge sort.
+// Workers claim fixed-size chunks from a shared counter, so faster workers
+// take more chunks. Callbacks are statically dispatched trait values copied
+// into each worker; only Region storage is shared. A cancelled Token (or a
+// failing chunk, which cancels it) stops further claims: the call returns
+// Err(Cancelled) or Err(Failed) and outputs are then partially written.
+// Linux x86_64/glibc; link with --native-link --native-library atomic.
+// See docs/stdlib-concurrency.md#parallel-slice-operations.
+module std::parallel;
+import core::function;
+import core::iter;
+import core::cmp;
+import core::mem;
+import core::result;
+import std::atomic;
+import std::sync;
+import std::worker;
+
+pub const MAX_WORKERS: i32 = 256;
+
+pub enum Error { InvalidPlan, LengthMismatch, Cancelled, Failed(i32), Sync(std::sync::Error), Worker(std::worker::Error) }
+
+// A shared array of length T in Region storage.
+pub struct Shared<T> { storage: ptr, length: i32 }
+pub fn shared<T>(region: &std::sync::Region, length: i32) -> core::result::Result<Shared<T>, Error> {
+    if (length < 0) { return core::result::Err(Error::InvalidPlan); }
+    let bytes: usize = (length as usize) * core::mem::size_of<T>();
+    if (bytes == 0) { bytes = 8; }
+    let at: core::result::Result<ptr, std::sync::Error> = region.allocate(bytes);
+    if (at.is_err()) { return core::result::Err(Error::Sync(at.unwrap_err())); }
+    return core::result::Ok(Shared { storage: at.unwrap(), length: length });
+}
+pub impl<T> Shared<T> {
+    pub fn borrow(&self) -> &Shared<T> { return self; }
+    pub fn len(&self) -> i32 { return self.length; }
+    // Every view of one Shared uses its full length, so all agree on layout.
+    pub fn view(&self) -> [T] { return core::mem::typed_slice_from_storage<T>(self.storage, self.length); }
+}
+
+// workers 1..=256 processes, chunk >= 1 elements per claim. The token is
+// checked before every claim; scratch holds the claim counter.
+pub struct Plan { workers: i32, chunk: i32, token: std::sync::Token, scratch: ptr }
+pub fn plan(region: &std::sync::Region, workers: i32, chunk: i32, token: std::sync::Token) -> core::result::Result<Plan, Error> {
+    if (workers <= 0 || workers > MAX_WORKERS || chunk <= 0) { return core::result::Err(Error::InvalidPlan); }
+    let at: core::result::Result<ptr, std::sync::Error> = region.allocate(16);
+    if (at.is_err()) { return core::result::Err(Error::Sync(at.unwrap_err())); }
+    return core::result::Ok(Plan { workers: workers, chunk: chunk, token: token, scratch: at.unwrap() });
+}
+
+// Runs one chunk [start, end). Return 0 on success; any other value (1..255)
+// cancels the plan's token and is reported as Failed(value).
+pub trait ChunkBody {
+    pub fn run(&self, start: i32, end: i32) -> i32;
+}
+
+fn counter(plan: Plan) -> std::atomic::Atomic64 { return std::atomic::at64(plan.scratch); }
+fn failure(plan: Plan) -> std::atomic::Atomic64 { return std::atomic::at64(plan.scratch + 8); }
+fn chunks(length: i32, chunk: i32) -> i32 { if (length == 0) { return 0; } return (length - 1) / chunk + 1; }
+// The next chunk index for this worker, or -1 when none remain/cancelled.
+fn claim(plan: Plan, count: i32) -> i32 {
+    if (plan.token.is_cancelled()) { return -1; }
+    let index: u64 = counter(plan).fetch_add(1, std::atomic::Ordering::Relaxed);
+    if (index >= count as u64) { return -1; }
+    return index as i32;
+}
+fn fail(plan: Plan, status: i32) -> i32 {
+    failure(plan).compare_exchange(0, (status & 255) as u64, std::atomic::Ordering::SeqCst, std::atomic::Load::Relaxed);
+    plan.token.cancel();
+    return status;
+}
+fn start(plan: Plan) -> core::result::Result<std::worker::Pool, Error> {
+    counter(plan).store(0, std::atomic::Store::SeqCst);
+    failure(plan).store(0, std::atomic::Store::SeqCst);
+    let pool: core::result::Result<std::worker::Pool, std::worker::Error> = std::worker::pool(plan.workers);
+    if (pool.is_err()) { return core::result::Err(Error::Worker(pool.unwrap_err())); }
+    return core::result::Ok(pool.unwrap());
+}
+// Spawn one worker: -1 in the parent, the worker index in the child, or -2
+// after a spawn failure (already spawned workers still need finish_all).
+fn spawn_one(pool: &std::worker::Pool) -> i32 {
+    let role: core::result::Result<std::worker::Role, std::worker::Error> = pool.spawn();
+    if (role.is_err()) { return -2; }
+    return match (role.unwrap()) { std::worker::Role::Child(index) -> index, std::worker::Role::Parent(index) -> -1 };
+}
+fn finish_all(plan: Plan, pool: &std::worker::Pool, spawned: bool) -> core::result::Result<i32, Error> {
+    if (!spawned) { plan.token.cancel(); }
+    let summary: core::result::Result<std::worker::Summary, std::worker::Error> = pool.join_all();
+    if (summary.is_err()) { return core::result::Err(Error::Worker(summary.unwrap_err())); }
+    pool.destroy();
+    if (!spawned) { return core::result::Err(Error::Worker(std::worker::Error::Full)); }
+    let failed: u64 = failure(plan).load(std::atomic::Load::SeqCst);
+    if (failed != 0) { return core::result::Err(Error::Failed(failed as i32)); }
+    if (summary.unwrap().failed != 0) { return core::result::Err(Error::Failed(255)); }
+    let claimed: u64 = counter(plan).load(std::atomic::Load::SeqCst);
+    return core::result::Ok(claimed as i32);
+}
+// All chunks claimed means none was skipped by cancellation.
+fn complete(plan: Plan, finished: core::result::Result<i32, Error>, count: i32) -> core::result::Result<i32, Error> {
+    if (finished.is_err()) { return finished; }
+    if (finished.unwrap() < count) { return core::result::Err(Error::Cancelled); }
+    return core::result::Ok(count);
+}
+
+// Run body over [0, length) in chunks. Ok(chunk count) when every chunk ran.
+pub fn for_each<B>(plan: Plan, length: i32, body: &B) -> core::result::Result<i32, Error> where B: ChunkBody {
+    if (length < 0) { return core::result::Err(Error::InvalidPlan); }
+    let count: i32 = chunks(length, plan.chunk);
+    let started: core::result::Result<std::worker::Pool, Error> = start(plan);
+    if (started.is_err()) { return core::result::Err(started.unwrap_err()); }
+    let pool: std::worker::Pool = started.unwrap();
+    let w: i32 = 0; let spawned: bool = true;
+    while (w < plan.workers) {
+        let me: i32 = spawn_one(pool.borrow());
+        if (me == -2) { spawned = false; break; }
+        if (me >= 0) {
+            let index: i32 = claim(plan, count);
+            while (index >= 0) {
+                let first: i32 = index * plan.chunk; let end: i32 = first + plan.chunk;
+                if (end > length) { end = length; }
+                let status: i32 = body.run(first, end);
+                if (status != 0) { std::worker::finish(fail(plan, status)); return core::result::Err(Error::Cancelled); }
+                index = claim(plan, count);
+            }
+            std::worker::finish(0); return core::result::Err(Error::Cancelled);
+        }
+        w += 1;
+    }
+    return complete(plan, finish_all(plan, pool.borrow(), spawned), count);
+}
+
+// output[i] = mapper.apply(input[i]).
+pub fn map<T, U, M>(plan: Plan, input: Shared<T>, output: Shared<U>, mapper: &M) -> core::result::Result<i32, Error> where M: core::function::Mapper<T, U> {
+    if (input.length != output.length) { return core::result::Err(Error::LengthMismatch); }
+    let count: i32 = chunks(input.length, plan.chunk);
+    let started: core::result::Result<std::worker::Pool, Error> = start(plan);
+    if (started.is_err()) { return core::result::Err(started.unwrap_err()); }
+    let pool: std::worker::Pool = started.unwrap();
+    let w: i32 = 0; let spawned: bool = true;
+    while (w < plan.workers) {
+        let me: i32 = spawn_one(pool.borrow());
+        if (me == -2) { spawned = false; break; }
+        if (me >= 0) {
+            let source: [T] = input.view(); let target: [U] = output.view();
+            let index: i32 = claim(plan, count);
+            while (index >= 0) {
+                let i: i32 = index * plan.chunk; let end: i32 = i + plan.chunk;
+                if (end > input.length) { end = input.length; }
+                while (i < end) { let stored1 = mapper.apply(source[i]); target[i] = stored1; i += 1; }
+                index = claim(plan, count);
+            }
+            std::worker::finish(0); return core::result::Err(Error::Cancelled);
+        }
+        w += 1;
+    }
+    return complete(plan, finish_all(plan, pool.borrow(), spawned), count);
+}
+
+// Fold each chunk from identity with fold, then combine the chunk results
+// in chunk order. combine must be associative with identity as its unit;
+// it need not be commutative. partials needs one A per chunk.
+pub fn reduce<T, A, F, C>(plan: Plan, input: Shared<T>, partials: Shared<A>, identity: A, fold: &F, combine: &C) -> core::result::Result<A, Error>
+    where F: core::iter::Folder<A, T>, C: core::iter::Folder<A, A> {
+    let count: i32 = chunks(input.length, plan.chunk);
+    if (partials.length < count) { return core::result::Err(Error::LengthMismatch); }
+    let started: core::result::Result<std::worker::Pool, Error> = start(plan);
+    if (started.is_err()) { return core::result::Err(started.unwrap_err()); }
+    let pool: std::worker::Pool = started.unwrap();
+    let w: i32 = 0; let spawned: bool = true;
+    while (w < plan.workers) {
+        let me: i32 = spawn_one(pool.borrow());
+        if (me == -2) { spawned = false; break; }
+        if (me >= 0) {
+            let source: [T] = input.view(); let sums: [A] = partials.view();
+            let index: i32 = claim(plan, count);
+            while (index >= 0) {
+                let i: i32 = index * plan.chunk; let end: i32 = i + plan.chunk;
+                if (end > input.length) { end = input.length; }
+                let acc: A = identity;
+                while (i < end) { acc = fold.apply(acc, source[i]); i += 1; }
+                sums[index] = acc;
+                index = claim(plan, count);
+            }
+            std::worker::finish(0); return core::result::Err(Error::Cancelled);
+        }
+        w += 1;
+    }
+    let done: core::result::Result<i32, Error> = complete(plan, finish_all(plan, pool.borrow(), spawned), count);
+    if (done.is_err()) { return core::result::Err(done.unwrap_err()); }
+    let sums: [A] = partials.view();
+    let total: A = identity; let k: i32 = 0;
+    while (k < count) { total = combine.apply(total, sums[k]); k += 1; }
+    return core::result::Ok(total);
+}
+
+// In-place inclusive scan: data[i] = data[0] (+) ... (+) data[i], for an
+// associative combine with unit identity. Two parallel passes: chunk totals,
+// then each chunk rescans from the combined total of the chunks before it.
+pub fn scan<T, C>(plan: Plan, data: Shared<T>, partials: Shared<T>, identity: T, combine: &C) -> core::result::Result<i32, Error>
+    where C: core::iter::Folder<T, T> {
+    let count: i32 = chunks(data.length, plan.chunk);
+    let totals: core::result::Result<T, Error> = reduce(plan, data, partials, identity, combine, combine);
+    if (totals.is_err()) { return core::result::Err(totals.unwrap_err()); }
+    // Exclusive prefix of the chunk totals, in place.
+    let sums: [T] = partials.view();
+    let running: T = identity; let k: i32 = 0;
+    while (k < count) { let own: T = sums[k]; sums[k] = running; running = combine.apply(running, own); k += 1; }
+    let started: core::result::Result<std::worker::Pool, Error> = start(plan);
+    if (started.is_err()) { return core::result::Err(started.unwrap_err()); }
+    let pool: std::worker::Pool = started.unwrap();
+    let w: i32 = 0; let spawned: bool = true;
+    while (w < plan.workers) {
+        let me: i32 = spawn_one(pool.borrow());
+        if (me == -2) { spawned = false; break; }
+        if (me >= 0) {
+            let values: [T] = data.view(); let offsets: [T] = partials.view();
+            let index: i32 = claim(plan, count);
+            while (index >= 0) {
+                let i: i32 = index * plan.chunk; let end: i32 = i + plan.chunk;
+                if (end > data.length) { end = data.length; }
+                let acc: T = offsets[index];
+                while (i < end) { acc = combine.apply(acc, values[i]); values[i] = acc; i += 1; }
+                index = claim(plan, count);
+            }
+            std::worker::finish(0); return core::result::Err(Error::Cancelled);
+        }
+        w += 1;
+    }
+    return complete(plan, finish_all(plan, pool.borrow(), spawned), count);
+}
+
+fn merge<T>(from: [T], to: [T], lo: i32, mid: i32, hi: i32) where T: core::cmp::Ord<T> {
+    let i: i32 = lo; let j: i32 = mid; let k: i32 = lo;
+    while (i < mid && j < hi) {
+        // Take from the right only when strictly smaller: the merge is stable.
+        if (T::lt(from[j], from[i])) { to[k] = from[j]; j += 1; } else { to[k] = from[i]; i += 1; }
+        k += 1;
+    }
+    while (i < mid) { to[k] = from[i]; i += 1; k += 1; }
+    while (j < hi) { to[k] = from[j]; j += 1; k += 1; }
+}
+// Stable bottom-up merge sort of [lo, hi), result in data.
+fn sort_run<T>(data: [T], scratch: [T], lo: i32, hi: i32) where T: core::cmp::Ord<T> {
+    let i: i32 = lo + 1;
+    // Insertion-sort runs of 16 first.
+    let base: i32 = lo;
+    while (base < hi) {
+        let end: i32 = base + 16; if (end > hi) { end = hi; }
+        i = base + 1;
+        while (i < end) {
+            let v: T = data[i]; let j: i32 = i - 1;
+            while (j >= base && T::lt(v, data[j])) { data[j + 1] = data[j]; j -= 1; }
+            data[j + 1] = v; i += 1;
+        }
+        base = end;
+    }
+    let width: i32 = 16; let in_data: bool = true;
+    while (width < hi - lo) {
+        let start: i32 = lo;
+        while (start < hi) {
+            let mid: i32 = start + width; if (mid > hi) { mid = hi; }
+            let end: i32 = start + 2 * width; if (end > hi) { end = hi; }
+            if (in_data) { merge(data, scratch, start, mid, end); } else { merge(scratch, data, start, mid, end); }
+            start = end;
+        }
+        in_data = !in_data; width = width * 2;
+    }
+    if (!in_data) { let k: i32 = lo; while (k < hi) { data[k] = scratch[k]; k += 1; } }
+}
+
+// Stable parallel merge sort: workers sort chunk runs, then each round merges
+// pairs of adjacent runs in parallel until one run remains. scratch must have
+// data's length. Later rounds have fewer pairs, so the last merge is serial.
+pub fn merge_sort<T>(plan: Plan, data: Shared<T>, scratch: Shared<T>) -> core::result::Result<i32, Error> where T: core::cmp::Ord<T> {
+    if (data.length != scratch.length) { return core::result::Err(Error::LengthMismatch); }
+    let length: i32 = data.length;
+    let count: i32 = chunks(length, plan.chunk);
+    let width: i32 = plan.chunk; let round: i32 = 0;
+    // Round 0 sorts runs; round r > 0 merges runs of width into 2*width.
+    let in_data: bool = true;
+    while (round == 0 || width < length) {
+        let tasks: i32 = count;
+        if (round > 0) { tasks = chunks(length, 2 * width); }
+        let started: core::result::Result<std::worker::Pool, Error> = start(plan);
+        if (started.is_err()) { return core::result::Err(started.unwrap_err()); }
+        let pool: std::worker::Pool = started.unwrap();
+        let w: i32 = 0; let spawned: bool = true;
+        while (w < plan.workers) {
+            let me: i32 = spawn_one(pool.borrow());
+            if (me == -2) { spawned = false; break; }
+            if (me >= 0) {
+                let values: [T] = data.view(); let spare: [T] = scratch.view();
+                let index: i32 = claim(plan, tasks);
+                while (index >= 0) {
+                    if (round == 0) {
+                        let lo: i32 = index * plan.chunk; let hi: i32 = lo + plan.chunk; if (hi > length) { hi = length; }
+                        sort_run(values, spare, lo, hi);
+                    } else {
+                        let lo: i32 = index * 2 * width;
+                        let mid: i32 = lo + width; if (mid > length) { mid = length; }
+                        let hi: i32 = lo + 2 * width; if (hi > length) { hi = length; }
+                        if (in_data) { merge(values, spare, lo, mid, hi); } else { merge(spare, values, lo, mid, hi); }
+                    }
+                    index = claim(plan, tasks);
+                }
+                std::worker::finish(0); return core::result::Err(Error::Cancelled);
+            }
+            w += 1;
+        }
+        let done: core::result::Result<i32, Error> = complete(plan, finish_all(plan, pool.borrow(), spawned), tasks);
+        if (done.is_err()) { return done; }
+        if (round > 0) { in_data = !in_data; width = width * 2; }
+        round += 1;
+    }
+    if (!in_data) {
+        let values: [T] = data.view(); let spare: [T] = scratch.view();
+        let k: i32 = 0; while (k < length) { values[k] = spare[k]; k += 1; }
+    }
+    return core::result::Ok(round);
+}

@@ -36,6 +36,14 @@ is_normalized(input: Text, form: Form, scratch: View<u32>, work_limit: u64)
     -> Result<bool, Error>
 maximum_decomposition_length(form: Form) -> i32
 maximum_decomposition_depth(form: Form) -> i32
+
+pub enum QuickCheck { Yes, No, Maybe }
+quick_check(input: Text, form: Form, work_limit: u64)
+    -> Result<QuickCheck, Error>
+normalize_quick_into(input: Text, form: Form, output: View<u8>,
+    scratch: View<u32>, work_limit: u64) -> Result<Normalized, Error>
+is_normalized_quick(input: Text, form: Form, scratch: View<u32>,
+    work_limit: u64) -> Result<bool, Error>
 ```
 
 The names above abbreviate `core::text::Text`, `core::slice::View`, and
@@ -55,6 +63,33 @@ call `normalize_into`. Each call has its own budget and independently checks
 its input. A caller with existing reusable buffers can call `normalize_into`
 directly. `is_normalized` computes the requested form and compares the exact
 result; a `Quick_Check=Maybe` value does not bypass composition checks.
+
+## Quick check
+
+`quick_check` is the UAX #15 section 9 algorithm. It reads each scalar's
+combining class and `NFC_QC`/`NFD_QC`/`NFKC_QC`/`NFKD_QC` value from the
+two-level table. The answer is `No` if any scalar is `No` or a nonzero
+combining class follows a greater one, otherwise `Maybe` if any scalar is
+`Maybe`, otherwise `Yes`. It needs no scratch and validates the whole input,
+even after the answer is known, so malformed UTF-8 is always reported. It
+charges one work unit per scalar.
+
+`normalize_quick_into` returns a `Yes` input unchanged: it copies the input
+bytes, leaves scratch untouched and reports `scratch: 0`. Work is one unit
+per scalar plus one per copied byte. Output capacity is checked before
+anything is written. For `No` or `Maybe` it runs the full engine under the
+same budget, so the work is the quick check plus the full engine's work.
+`is_normalized_quick` answers `Yes` and `No` directly and runs the exact
+comparison only for `Maybe`. `measure`, `normalize_into` and `is_normalized`
+keep their earlier work accounting and error order.
+
+The same table also speeds up the full engine without changing its results
+or work units. Combining classes come from the table. The decomposition
+search runs only when the scalar's `NFD_QC`/`NFKD_QC` bit is `No`. The
+composition search runs only when the second scalar is `NFC_QC=Maybe`. The
+generator asserts both filters against `UnicodeData.txt`: every decomposable
+scalar has its bit set, and every primary composite's second scalar,
+including Hangul V and T jamo, is `Maybe`.
 
 ## Storage and failure contracts
 
@@ -87,18 +122,30 @@ The count pass returns insufficient scratch capacity before writing scratch.
 
 Every call accepts an explicit `u64` work budget. The count pass charges one
 unit per input scalar. The normalization pass charges one unit per decoded
-input scalar, one per decomposed scalar emitted, one per ordering iteration,
-one per ordering comparison, and one per composition iteration. Final sizing
+input scalar, one per decomposed scalar emitted, the ordering units below,
+and one per composition iteration. Final sizing
 charges one plus the UTF-8 width per normalized scalar; those width units
 reserve the later output write or comparison. Consequently, `measure` and
 `normalize_into` consume the same work for the same input and form. An empty
 input succeeds with a zero budget and empty views. These units are a stable
 description of this engine's accounting, rather than a CPU cycle estimate.
 
+Canonical ordering sorts each maximal run of nonstarters stably by combining
+class, which gives exactly the result of D109's adjacent exchanges. A run of
+at most 32 scalars uses insertion sorting and charges one unit per ordering
+iteration (every scalar after the first in the decomposition, starters
+included) and one per comparison. A longer run uses an in-place stable
+radix sort: each combining class is packed into bits 24 to 31 of its scalar,
+and every class bit that varies within the run gets a bottom-up stable
+partition whose merges exchange two blocks with three reversals. It charges
+one unit per run scalar, plus, unless the run is already in order, one unit
+per run scalar for each merge level (the base-2 logarithm of the run length,
+rounded up) of each varying bit. Ordering is therefore O(n log n) with at
+most eight varying bits, rather than quadratic: a decomposition of
+`a` + 4,000 × U+0301 + 4,000 × U+0316 orders in about a millisecond.
+
 Static table searches have fixed bounds determined by Unicode 17 table sizes.
-Canonical ordering uses stable insertion sorting and can take quadratic work
-on a hostile combining run. Every comparison consumes budget, so a finite
-caller budget bounds that work. Scratch holds the full decomposition; there
+Scratch holds the full decomposition; there
 is no input-length assumption that normalized UTF-8 must fit in the original
 byte count.
 
@@ -116,6 +163,10 @@ ordering context across their boundary.
 
 ## Data and verification
 
+`tools/unicode17/generate_quick_check.py` builds
+`extended/ext/unicode_quick_check_data.lani` from `UnicodeData.txt` and
+`DerivedNormalizationProps.txt`. That table has 8,704 blocks of 128 code
+points, 161 distinct blocks and 70 distinct 14-bit entries.
 `tools/unicode17/generate_normalization.py` translates the official archived
 Unicode 17 `UnicodeData.txt`, `DerivedNormalizationProps.txt`, and
 `CompositionExclusions.txt` into `extended/ext/unicode_normalize_data.lani`.

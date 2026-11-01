@@ -72,8 +72,13 @@ not a reservation, and does not by itself prove a connection succeeded.
 ## Stream and datagram I/O
 
 `send(View<u8>)` and `receive(View<u8>)` are TCP operations. They make one host
-attempt and transfer at most 1,024 bytes, adapting native/strided caller slices
-through packed stack storage. Positive short progress is returned explicitly;
+attempt. A packed (stride 1) view, such as a `Vec<u8>` or raw byte view, goes
+straight to `sendto`/`recvfrom` and may move the whole view in one call. Other
+layouts, such as native `[u8;N]` arrays, are staged through 1 KiB of packed
+stack storage, so they move at most 1,024 bytes per call. The same paths serve
+`UnixStream`. Moving 64 MiB through a Unix stream pair with 64 KiB `Vec`
+buffers took 850-1,490 ms in 131,072 calls with staging and 16-29 ms in 2,048
+calls direct (three runs each, laptop). Positive short progress is returned explicitly;
 nonempty receive returning zero is EOF. Empty TCP views return zero without a
 host transfer. The `core::io::Read`/`Write` implementations use the same paths;
 the existing `read_exact`, `write_all` and copy contracts apply. On nonblocking
@@ -102,6 +107,16 @@ UDP uses separate whole-message operations:
   Lengths above 65,535 or malformed endpoint metadata return `InvalidCount`.
   A datagram may already have been consumed when validation fails; caller
   output remains unchanged until the complete reply has been validated.
+- `send_to_until(view,address,deadline)` and `receive_from_until(view,deadline)`
+  do the same before an absolute `Deadline`. EAGAIN and EINTR wait for
+  readiness against that deadline, and expiry returns `Host(110)` (ETIMEDOUT),
+  as `connect_until` does. A receive waits first, so an expired deadline
+  returns `Host(110)` without consuming a datagram. Use a nonblocking socket:
+  on a blocking one, a datagram discarded after a readiness report (for
+  example on a checksum error) could leave the call blocked.
+  [Resolver contracts](stdlib-resolver-config.md#evidence) check timeouts on
+  nonblocking and blocking sockets, a zero-length datagram and an expired
+  deadline.
 
 The cap is a common non-jumbogram IPv4/IPv6 policy. Smaller path MTUs, socket
 buffers and other network errors remain real host results. No fragmentation,
@@ -110,7 +125,10 @@ delivery, retransmission or message-authentication guarantee is added by UDP.
 ## Options, readiness and failure behavior
 
 `option`/`set_option` support ReuseAddress, KeepAlive, NoDelay, ReceiveBuffer,
-SendBuffer and Ipv6Only. Boolean setters accept only 0/1; buffer requests must
+SendBuffer and Ipv6Only. `set_nodelay(bool)` and `nodelay()` wrap the NoDelay
+setting (TCP_NODELAY): request/response servers that write a head and body in
+separate calls should enable it, or each small response can wait about 40 ms
+for a delayed ACK. Boolean setters accept only 0/1; buffer requests must
 be positive. KeepAlive/NoDelay require TCP, and Ipv6Only requires IPv6. Buffer
 getters return kernel accounting values, which Linux may double relative to a
 request. `is_nonblocking` and `set_nonblocking` use fcntl and preserve unrelated
@@ -133,8 +151,8 @@ malformed view/options/kind/family are
 `Interrupted`/`WouldBlock`, other native errno remains `Host(code)`, and deadline
 expiry is `Host(110)`. Logical view bounds are checked before access. Initial
 physical backing, lifetime and immutability/exclusive output access remain
-caller preconditions. No operation allocates heap storage. TCP staging uses
-1 KiB, UDP staging 64 KiB of stack per transfer, plus small address/argument
+caller preconditions. No operation allocates heap storage. Staged TCP
+transfers of non-packed views use 1 KiB, UDP staging 64 KiB of stack per transfer, plus small address/argument
 blocks. Preserve sufficient stack space; the API supplies no stack exhaustion
 recovery. Low-level operations do not retry host errors implicitly.
 

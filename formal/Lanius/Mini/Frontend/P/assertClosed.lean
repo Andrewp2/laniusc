@@ -6,9 +6,9 @@ import Lanius.Mini.Frontend.P.allocClosed
 import Lanius.Mini.Frontend.P.distinct
 import Lanius.Mini.Frontend.P.eIndexClosed
 import Lanius.Mini.Frontend.P.findConst
+import Lanius.Mini.Frontend.P.funcsOnto
 import Lanius.Mini.Frontend.P.letClosed
 import Lanius.Mini.Frontend.P.letStructClosed
-import Lanius.Mini.Frontend.P.monoLoop
 import Lanius.Mini.Frontend.P.setEvalClosed
 
 public section

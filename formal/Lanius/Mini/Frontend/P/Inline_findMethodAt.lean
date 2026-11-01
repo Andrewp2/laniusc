@@ -2,21 +2,22 @@ module
 
 public import Lanius.Mini.Frontend.Types
 public import Lanius.Mini.Compiler.P.arithShiftRight
+public import Lanius.Mini.Compiler.P.matchVariants
 public import Lanius.Mini.Frontend.P.blockArmsOf
-public import Lanius.Mini.Frontend.P.compoundOf
 public import Lanius.Mini.Frontend.P.consBinder
 public import Lanius.Mini.Frontend.P.consTreeTail
 public import Lanius.Mini.Frontend.P.effNamedTys
 public import Lanius.Mini.Frontend.P.findConst
 public import Lanius.Mini.Frontend.P.floatTyped
+public import Lanius.Mini.Frontend.P.forRange
 public import Lanius.Mini.Frontend.P.freshId
+public import Lanius.Mini.Frontend.P.funcsOnto
 public import Lanius.Mini.Frontend.P.hasKids
 public import Lanius.Mini.Frontend.P.intLiteral
 public import Lanius.Mini.Frontend.P.isEmptyUsize
 public import Lanius.Mini.Frontend.P.lxBlockEnd
 public import Lanius.Mini.Frontend.P.lxSpaceEnd
 public import Lanius.Mini.Frontend.P.lxSymbolStart
-public import Lanius.Mini.Frontend.P.monoLoop
 public import Lanius.Mini.Frontend.P.noToken
 public import Lanius.Mini.Frontend.P.noTrees
 public import Lanius.Mini.Frontend.P.paramGoals
@@ -45,7 +46,7 @@ namespace Lanius.Mini
 @[expose] def Inline.binderOf (env : FrontEnv) (scope : List Local) (p : CTree) (t : Ty) (pats : List CTree) (payload : List Ty) : Option Bound :=
   let path : CTree := kid p 0
   let tok : Token := kidToken (kid path 0) 0
-  if decide (nodeProd p = (195)) && decide (nodeProd (kid p 1) = (199)) && isSomeName (pathName path) && !(member env.globals tok.text) && freshId scope (tok.start - env.base) then
+  if decide (nodeProd p = (195)) && decide (nodeProd (kid p 1) = (199)) && isSomeName (pathName path) && !(member env.globals tok.text) && !(anyVariant env.decls.types tok.text) && freshId scope (tok.start - env.base) then
     consBinder (tok.start - env.base) (bindersOf env (({ name := tok.text, id := tok.start - env.base, ty := t } : Local) :: scope) pats payload)
   else
     none
@@ -80,7 +81,7 @@ namespace Lanius.Mini
 @[expose] def Inline.monoNext (nfuel : Nat) (nrfuel : Nat) (ndecls : Decls) (ntable : List Inst) (ndone : List MFunc) (ni : Nat) (nf : Option MFunc) : Option Mono :=
   match nf with
   | none => none
-  | some mf => monoLoop nfuel nrfuel ndecls (addInsts ntable (stmtCalls mf.body)) (ndone ++ [mf]) (ni + 1)
+  | some mf => monoLoop nfuel nrfuel ndecls (addInsts ntable (stmtCalls mf.body)) (mf :: ndone) (ni + 1)
 
 @[expose] def Inline.typeTableNext (tfuel : Nat) (tdecls : Decls) (ttable : List Inst) (tnew : Option (List Inst)) (trest : List Ty) : Option (List Inst) :=
   match tnew with

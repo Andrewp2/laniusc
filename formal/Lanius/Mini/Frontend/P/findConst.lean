@@ -2,7 +2,6 @@ module
 
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Compiler.P.arithShiftRight
-import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Frontend.P.distinct
 import Lanius.Mini.Frontend.P.hasKids
 
@@ -261,29 +260,9 @@ def variantsNamed (types : List TypeDecl) (m : List (List Nat)) (name : List Nat
     else
       variantsNamed rest m name (k + 1)
 
-/-- Some declaration of module m: then m is a module, and `import m;` imports it rather than an item of m's prefix. -/
-def typesHome (types : List TypeDecl) (m : List (List Nat)) : Bool :=
-  match types with
-  | [] => false
-  | t :: rest => sameSpellings t.home m || typesHome rest m
-
-def fnsHome (fns : List FnDecl) (m : List (List Nat)) : Bool :=
-  match fns with
-  | [] => false
-  | f :: rest => sameSpellings f.home m || fnsHome rest m
-
-def constsHome (consts : List ConstDecl) (m : List (List Nat)) : Bool :=
-  match consts with
-  | [] => false
-  | c :: rest => sameSpellings c.home m || constsHome rest m
-
-def aliasesHome (aliases : List AliasDecl) (m : List (List Nat)) : Bool :=
-  match aliases with
-  | [] => false
-  | a :: rest => sameSpellings a.home m || aliasesHome rest m
-
+/-- A module path is a module when a file's `module` item names it, as in laniusc (modules/05_resolve_imports.slang), whatever the file declares; then `import m;` imports it rather than an item of m's prefix. -/
 def isModule (d : Decls) (m : List (List Nat)) : Bool :=
-  typesHome d.types m || fnsHome d.fns m || constsHome d.consts m || aliasesHome d.aliases m
+  moduleMember d.homes m
 
 def ifItem (b : Bool) (p : List (List Nat)) : Option (List (List Nat)) :=
   if b then

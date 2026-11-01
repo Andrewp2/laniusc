@@ -1,0 +1,11 @@
+// A match on an enum with no variants has no arms. The front end reads it
+// (a match of no arms); the compiler does not compile it.
+enum Never {}
+
+fn absurd(n: Never) -> i32 {
+    return match (n) {};
+}
+
+fn main() -> i32 {
+    return 0;
+}

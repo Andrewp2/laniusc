@@ -31,6 +31,15 @@ pub struct RangeTo<T> {
 pub struct RangeFull {
 }
 
+// One endpoint of an ordered-collection interval: the bound value itself is
+// included, excluded, or absent. Ordered collections interpret it as a lower
+// or upper endpoint; the enum holds the value shallowly and compares nothing.
+pub enum Bound<T> {
+    Included(T),
+    Excluded(T),
+    Unbounded,
+}
+
 pub fn range<T>(start: T, end: T) -> Range<T> {
     return Range { start: start, end: end };
 }

@@ -1,0 +1,79 @@
+// Self-checking UDP deadline, resolv.conf and hosts contracts. Exit 0 means
+// every check held; any other code names the failed check.
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import std::host_clocks;
+import std::resolver_config;
+import std::socket;
+
+fn bytes(value: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),n); return core::slice::view(raw,n).unwrap(); }
+fn same(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool { if (a.length != b.length) { return false; } let i: i32 = 0; while (i < a.length) { if (a.values[a.start+i] != b.values[b.start+i]) { return false; } i += 1; } return true; }
+fn now() -> core::time::Instant { return std::host_clocks::instant(std::host_clocks::Clock::Monotonic).unwrap(); }
+fn later(ms: u64) -> core::time::Deadline { return core::time::deadline_at(now().checked_add(core::time::from_millis(ms)).unwrap()); }
+fn host(error: core::io::Error) -> i32 { return match (error) { core::io::Error::Host(n) -> n, _ -> -1 }; }
+fn loopback() -> core::net::SocketAddr { return core::net::SocketAddr::V4(core::net::SocketAddrV4 { address: core::net::ipv4(127,0,0,1), port: 0 }); }
+fn port_of(address: core::net::SocketAddr) -> u16 { return address.port(); }
+fn config_error(result: core::result::Result<alloc::vec::Vec<u8>, std::resolver_config::Error>) -> i32 {
+    if (result.is_ok()) { return 0; }
+    return match (result.unwrap_err()) { std::resolver_config::Error::Io(e) -> host(e), std::resolver_config::Error::TooLarge -> 1000, std::resolver_config::Error::Bounds -> 1001, _ -> 1002 };
+}
+fn main() -> i32 {
+    // UDP deadlines on a nonblocking and a blocking socket.
+    let left = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Udp,true).unwrap();
+    let right = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Udp,false).unwrap();
+    if (left.bind(loopback()).is_err() || right.bind(loopback()).is_err()) { return 1; }
+    let left_addr = left.local_addr().unwrap(); let right_addr = right.local_addr().unwrap();
+    let storage: [u8;64] = [0;64]; let buffer = core::slice::view(storage,64).unwrap();
+    let started = now(); let waited = left.receive_from_until(buffer,later(30));
+    if (waited.is_ok() || host(waited.unwrap_err()) != 110 || now().duration_since(started).unwrap().compare(core::time::from_millis(30)) < 0) { return 2; }
+    if (left.send_to_until(bytes("ping",4),right_addr,later(1000)).unwrap() != 4) { return 3; }
+    let got = right.receive_from_until(buffer,later(1000)); if (got.is_err()) { return 4; }
+    let datagram = got.unwrap(); if (datagram.copied != 4 || port_of(datagram.peer) != port_of(left_addr) || storage[0] != 112) { return 5; }
+    let blocked = right.receive_from_until(buffer,later(20)); if (blocked.is_ok() || host(blocked.unwrap_err()) != 110) { return 6; }
+    if (right.send_to_until(bytes("",0),left_addr,later(1000)).unwrap() != 0) { return 7; }
+    let empty = left.receive_from_until(buffer,later(1000)); if (empty.is_err() || empty.unwrap().full_length != 0) { return 8; }
+    let expired = left.receive_from_until(buffer,core::time::deadline_at(started)); if (expired.is_ok() || host(expired.unwrap_err()) != 110) { return 9; }
+    left.close(); right.close();
+    // resolv.conf defaults.
+    let defaults = std::resolver_config::parse(bytes("",0)).unwrap();
+    if (!defaults.defaulted || defaults.server_count() != 1 || defaults.ndots != 1 || defaults.timeout_ms != 5000 || defaults.attempts != 2 || defaults.search_count() != 0) { return 20; }
+    let first = defaults.server(0).unwrap(); if (port_of(first) != 53 || first.address().version() != 4) { return 21; }
+    defaults.destroy();
+    // Limits, last-wins search, ignored entries and flags.
+    let text: str = "nameserver 10.0.0.1\n;x\n#y\nnameserver fe80::1%2\nnameserver ::1\nnameserver 10.0.0.4\nnameserver nope\nsearch a.test . b.test.\ndomain only.test\nsearch c.test d.test\noptions ndots:20 timeout:0 attempts:9 rotate edns0 use-vc trust-ad no-aaaa bogus\nunknown line\n";
+    let config = std::resolver_config::parse(bytes(text,254)).unwrap();
+    if (config.defaulted || config.server_count() != 3 || config.ignored_servers != 1 || config.ignored != 3) { return 22; }
+    let scoped = config.server(1).unwrap(); if (scoped.scope_id() != 2 || scoped.address().version() != 6) { return 23; }
+    if (config.search_count() != 2 || !same(config.search(0),bytes("c.test",6)) || !same(config.search(1),bytes("d.test",6)) || config.search(2).length != 0) { return 24; }
+    if (config.ndots != 15 || config.timeout_ms != 1000 || config.attempts != 5 || !config.rotate || !config.edns0 || !config.use_vc || !config.trust_ad || !config.no_aaaa) { return 25; }
+    config.destroy();
+    let dotted = std::resolver_config::parse(bytes("search . x.test.\n",17)).unwrap();
+    if (dotted.search_count() != 1 || !same(dotted.search(0),bytes("x.test",6))) { return 26; }
+    dotted.destroy();
+    let seven = std::resolver_config::parse(bytes("search a b c d e f g\n",21)).unwrap();
+    if (seven.search_count() != 6 || seven.ignored != 1) { return 27; }
+    seven.destroy();
+    // hosts.
+    let hosts: str = "10.0.0.1 one.test uno # 10.0.0.9 hidden.test\n::2 one.test\n10.0.0.3 ONE.test.\nbad one.test\n";
+    let entries: [std::resolver_config::HostEntry;2] = [std::resolver_config::HostEntry { address: core::net::IpAddr::V4(core::net::ipv4(0,0,0,0)), canonical: bytes("",0), line: 0 };2];
+    let out = core::slice::view(entries,2).unwrap();
+    if (std::resolver_config::hosts_lookup(bytes(hosts,90),bytes("one.test",8),std::resolver_config::Family::Any,out).unwrap() != 3) { return 30; }
+    if (entries[0].line != 1 || entries[1].line != 2 || entries[1].address.version() != 6 || !same(entries[0].canonical,bytes("one.test",8))) { return 31; }
+    if (std::resolver_config::hosts_lookup(bytes(hosts,90),bytes("UNO.",4),std::resolver_config::Family::Ipv4,out).unwrap() != 1) { return 32; }
+    if (std::resolver_config::hosts_lookup(bytes(hosts,90),bytes("hidden.test",11),std::resolver_config::Family::Any,out).unwrap() != 0) { return 33; }
+    if (std::resolver_config::hosts_lookup(bytes(hosts,90),bytes("one.test",8),std::resolver_config::Family::Ipv6,out).unwrap() != 1 || entries[0].line != 2) { return 34; }
+    // Files.
+    let null = std::resolver_config::read_file(bytes("/dev/null",9),16); if (null.is_err() || null.unwrap().len() != 0) { return 40; }
+    if (config_error(std::resolver_config::read_file(bytes("/nonexistent/hosts",18),16)) != 2) { return 41; }
+    if (config_error(std::resolver_config::read_file(bytes("/proc/self/status",17),16)) != 1000) { return 42; }
+    if (config_error(std::resolver_config::read_file(bytes("/dev/null",9),0)) != 1001) { return 43; }
+    let status = std::resolver_config::read_file(bytes("/proc/self/status",17),65536); if (status.is_err() || status.unwrap().len() < 100) { return 44; }
+    return 0;
+}

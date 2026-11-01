@@ -117,6 +117,10 @@ BOXES = True
 # assignments and returns, and as statements) and struct, enum and slice
 # parameters and struct and enum results (frontend_difftest.py turns them off).
 EFFECTS = True
+# Calls in the value of s[i] = value (frontend_difftest.py turns them off:
+# the front end does not read a store whose value can act, since Core
+# checks the index first and laniusc evaluates the value first).
+INDEX_VALUE_CALLS = True
 # Shifts by an amount Core accepts (below the left type's bits).
 SHIFT = [('shiftLeft', '<<'), ('shiftRight', '>>')]
 ARITH_NAMES = [name for name, _ in ARITH + SHIFT]
@@ -632,7 +636,7 @@ class Gen:
             slots = [j for j, t in enumerate(params) if fits(t, ('slice', element, n)) and isinstance(t, tuple)]
             if slots and (cret in INTEGERS if element == 'i32' else cret == element):
                 writers.append((k, slots[0]))
-        if writers and rng.random() < 0.5:
+        if writers and INDEX_VALUE_CALLS and rng.random() < 0.5:
             k, slot = rng.choice(writers)
             params, cret = self.sigs[k]
             args = [('ePure', ('local', view)) if j == slot else self.eff(t, 2, env, items) for j, t in enumerate(params)]
@@ -648,8 +652,8 @@ class Gen:
         sources = [(i, t[2]) for i, t in env if isinstance(t, tuple) and t[0] == 'slice' and t[1] == element]
         if element != 'i32' and rng.random() < 0.35:
             source, m = rng.choice(sources)
-            return ('setIndexEval', view, index, ('eIndex', source, self.in_bounds(m, 2, env, items)))
-        return ('setIndexEval', view, index, self.eff(element, 3, env, items))
+            return ('setIndexEval', view, index, ('eIndex', source, self.in_bounds(m, 2 if INDEX_VALUE_CALLS else 0, env, items)))
+        return ('setIndexEval', view, index, self.eff(element, 3 if INDEX_VALUE_CALLS else 0, env, items))
 
     def in_bounds(self, n, depth, env, items):
         """An i32 or usize index below n (the slice's length, or the least a
@@ -1989,10 +1993,11 @@ def main():
         lani_path = os.path.join(args.workdir, 'programs.lani')
         exe_path = os.path.join(args.workdir, 'programs')
         open(lani_path, 'w').write(lani_file(programs[start:start + args.chunk], calls[start:start + args.chunk]))
-        build = subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
-                                'target/claude-work/bin/heavy', '-t', '20', args.laniusc, '--stdlib-root', 'stdlib',
-                                '-o', exe_path, lani_path], capture_output=True, text=True)
-        if build.returncode != 0:
+        exe_path, build = run_cache.laniusc_build(
+            ['systemd-run', '--user', '--scope', '--slice=lean.slice', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
+             'target/claude-work/bin/heavy', '-t', '20', args.laniusc, '--stdlib-root', 'stdlib',
+             '-o', exe_path, lani_path], args.laniusc, lani_path, exe_path, ['stdlib'])
+        if build is not None:
             raise SystemExit('laniusc failed:\n' + build.stdout[-4000:] + build.stderr[-4000:])
         run = subprocess.run([exe_path], capture_output=True)
         if run.returncode != 0:

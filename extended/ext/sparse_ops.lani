@@ -270,7 +270,7 @@ pub fn to_dense(a:ext::sparse::CsrView,limits:ext::sparse::Limits)
     let data:alloc::vec::Vec<f64> =f64_buffer(elements)?; let values:[f64]=data.as_slice(); let row:i32=0;
     while(row<a.rows) {
         let entry:i32=integer(a.offsets,row); let end:i32=integer(a.offsets,row+1);
-        while(entry<end) { values[row*a.cols+integer(a.columns,entry)]=number(a.values,entry); entry+=1; } row+=1;
+        while(entry<end) { let stored:f64=number(a.values,entry); values[row*a.cols+integer(a.columns,entry)]=stored; entry+=1; } row+=1;
     }
     return core::result::Ok(ext::linalg::Matrix { data:data,rows:a.rows,cols:a.cols });
 }

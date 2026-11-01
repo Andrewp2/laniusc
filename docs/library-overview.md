@@ -1,6 +1,73 @@
 # Standard and extended library overview
 
-The full library goal remains open. The current
+The full library goal remains open. The current increment makes
+`core::slice` sorting adaptive: [pattern-defeating quicksort](stdlib-sort-algorithms.md)
+for unstable sorts and a run-adaptive stable merge sort with galloping over
+caller scratch. Both are checked against Python `sorted`, with recorded
+comparison counts and timings. The preceding increment adds inline
+fixed-capacity containers ([ring buffer and inline string](stdlib-inline-containers.md))
+and a fixed-capacity [LRU cache](stdlib-lru-cache.md) with O(1) expected
+operations, no allocation after construction and exact eviction order; one
+Python-reference model checks 11,346 commands. The preceding
+[ordered navigation increment](stdlib-ordered-navigation.md) adds predecessor
+searches, heterogeneous lower/upper/predecessor bounds and `Bound`-based
+intervals to TreeMap and TreeSet: sixteen methods plus `core::range::Bound`.
+Navigation policies may denote a contiguous Equal run of several keys, so
+`alloc::string::TextPrefix` traverses String prefix families. Exact call
+sequences are specified, and navigation allocates nothing. The same intervals
+can be removed in place or extracted, with cleanup authority, into a new
+exact-capacity owner (`remove_range`, `try_extract_range`, `try_split_off` and
+their `_by` forms). The independent 48-case model checks 7,592 policy calls as
+lawful descents, 20,923 two-ended pulls, 329 removals and 278 extractions; the
+contract fixture checks exact call counts, interval edges and unchanged
+owner fields, and the interval-edit fixture shows under an in-program
+RLIMIT_AS denial that failed extraction leaves the source unchanged. Native receipts use the prebuilt compiler; the two registered
+Rust tests type-check and await a full test-binary run.
+The [concurrency increment](stdlib-concurrency.md) adds four modules for parallel
+The [`core::search`](stdlib-search.md) increment adds SWAR byte scans and a
+rarest-byte substring prefilter, used by `Text::find` and the parallel
+grep. A budgeted Two-Way (Crochemore–Perrin) fallback keeps the worst case
+at O(n+m). 160,456 generated cases match Python's search results. That is
+eight runs, each adding the same 57 adversarial periodic cases.
+The preceding
+[concurrency increment](stdlib-concurrency.md) adds four modules for parallel
+work on native Linux x86_64/glibc with libatomic:
+
+- `std::worker`: scoped pools of forked worker processes.
+- `std::atomic`: 4/8-byte atomic words. Each operation takes its own C11
+  order enum, and compare-exchange is strong.
+- `std::sync`: shared `MAP_SHARED` regions, futex waits with monotonic
+  deadlines, and Mutex, Condvar, Once, Lazy64 and Barrier, all without
+  poisoning.
+- `std::channel`: a bounded MPMC channel of any plain value type, with try,
+  blocking and deadline forms and endpoint-count disconnection.
+- `std::steal`: work-stealing queues, one deque per worker, with
+  pending-count termination and token cancellation that drains the pool
+  cleanly.
+- `std::parallel`: chunked `for_each`, `map`, ordered `reduce`, `scan` and
+  stable `merge_sort` over shared arrays.
+
+The stress fixture keeps exact invariants: 1,600,000 atomic adds; 400,000
+locked increments; 1 initializer among 16 racers; 200 barrier leaders; and
+120,000/80,000/50,000 channel messages at capacity 64/1/7 with no loss,
+duplication or per-sender FIFO violation. Those 50 runs passed, alongside
+20 runs each of a parallel word count matching `wc` and a three-stage
+pipeline. The stealing fixture runs a 524,287-task tree with every leaf
+exactly once; a parallel quicksort sorts 2,000,000 values in 0.25 s with
+eight workers, against 0.80 s with one. In-process threads remain blocked on checked callback entry, so
+`std::thread` stays unbound.
+The preceding
+The full library goal remains open. The
+[Unicode quick-check and uconv increment](extended-unicode-uconv.md) replaces
+the binary search behind `core::unicode` properties with an O(1) two-level
+table (264 distinct 128-code-point blocks). It also adds a two-level
+combining-class/quick-check table, UAX #15 `quick_check`,
+`normalize_quick_into` and `is_normalized_quick`, and a line-wise
+`uconv -x any-nfc|...|any-casefold` program. A Python `unicodedata` 15.0.0
+oracle compares all 1,114,112 code points and 20,000 generated strings across
+category, combining class, digit, flags, full casing, the four normalization
+forms and `is_normalized`. Every disagreement comes from Unicode 15→17
+assignments: 0 defects. Its registered Rust test has no receipt yet. The current
 [borrowed collection lookup](stdlib-borrowed-lookup.md) adds sixteen point
 methods across hash/tree maps and sets with explicit query laws and stored
 representative ownership. `alloc::string::TextKey` permits borrowed Text
@@ -8,7 +75,8 @@ queries of String keys. The [word deduplicator](stdlib-unique-words.md) checks
 both committed and pending words before allocating a new key. All nine library
 groups and the migrated application's 124 native cases pass on Linux x86_64 CPU
 output, with four selected regressions recorded separately. Heterogeneous
-ordered bounds/ranges and caller-backed buffering remain separate work.
+ordered bounds/ranges are the current increment above; caller-backed
+buffering remains separate work.
 The preceding
 [lazy Option/Result increment](stdlib-lazy-outcomes.md) adds nineteen
 free-function/method pairs over one shared `core::function::Mapper` and
@@ -485,6 +553,26 @@ the selected increment is accepted on the finite profile below. The accepted
 temporary directories, checked link/readlink and permission operations, and a
 real `mktemp_dir` program. All 13 selected Rust tests pass across separate
 native commands on the profile below; this completes the selected increment.
+[Generic diff and fuzzy patch](extended-seqdiff.md) (`ext::seqdiff`,
+`ext::unidiff`) diffs any `Eq`/`Hash` item sequence with linear-space Myers or
+patience, groups context hunks, and writes, parses and applies unified diffs with
+GNU-style offset/fuzz and typed per-hunk rejects. Across 1,000 generated pairs,
+the `seq-diff`/`seq-patch` tools give 878/878 minimal Myers edit lengths against
+an O(N·M) LCS, 878/878 GNU and native round trips, 878/878 real GNU `diff -u`
+applications and 333/333 distinct-line plus 328/328 repeated-line offset/fuzz
+agreements with GNU `patch` at `-F0` and `-F2`.
+[Three-way merge](extended-merge3.md) (`ext::merge3`, `seq-merge`) aligns with
+the xdiff port. It agrees byte for byte with `git merge-file` and
+`git merge-file --diff3` on all 4,000 generated triples (2,000 distinct-line,
+2,000 repeated-line), and with GNU `diff3 -m` on 2,000/2,000 distinct-line and
+1,863/2,000 repeated-line triples.
+[Word diff and diffstat](extended-wordiff.md) (`ext::wordiff`, `ext::diffstat`,
+`seq-diff --word-diff|--char-diff|--stat`, `seq-diffstat`) use a port of git's
+xdiff alignment (`Algorithm::Xdiff`). Their output is identical to git 2.43 on
+all 2,040 generated pairs for word diffs, character diffs and `--stat`, on
+1,500 `git diff --stat` reports over generated repositories and on 282
+`diff -ruN` patches.
+
 The preceding [reusable regex-workspace increment](library-regex-workspace-plan.md) is
 implemented and passes the selected Workspace/Search, regex, lexer,
 regex-text and real-application gates on the native profile below. The preceding
@@ -564,6 +652,22 @@ selected wire/transport/OpenSSL tests and all 194 CLI cases pass separately
 on native Linux x86_64. Older
 standard-padded sentinel and broad WebSocket receipts retain their source scope.
 
+**Arbitrary precision integers.**
+
+The [big integer guide](stdlib-big-integers.md) moves owned `BigUint`/`BigInt`
+from `ext` into `alloc::big_uint` and `alloc::big_int`, keeping their explicit
+ownership, `Limits` and typed `Error` contracts. Multiplication switches from
+schoolbook to window-based Karatsuba when both operands reach 32 limbs;
+division is Knuth algorithm D; `mod_pow` follows Python `pow(a, e, m)` and adds
+the `NegativeExponent` error. Radix 2-36 parsing and formatting fold
+`radix^g < 2^32` digits per pass. The [bc calculator](stdlib-bc.md) evaluates
+infix expressions over stdin; its Python oracle checked 9,526 values and 103
+diagnostics across six radices on native Linux x86_64, including operands that
+straddle the threshold, zero, negatives and division by zero (now 9,735 values
+and 326 diagnostics with modular inverses). Karatsuba runs in one workspace;
+Burnikel-Ziegler division and divide-and-conquer/power-of-two conversion make
+million-digit operations pass a separate oracle at 12-38x Python's time.
+
 **Checked native varints.**
 
 The [varint guide](stdlib-varint.md) defines one shortest base-128/ZigZag
@@ -578,6 +682,86 @@ continuation-first two-byte domain is distributed across profiles, not a
 Cartesian repetition across every type/layout. Historical codec receipts keep
 their original API/source scope; the accepted profile is native Linux x86_64
 CPU output, with broader library/target/lifetime work open.
+
+**Named host clocks and child CPU time.**
+
+The [host-clock guide](stdlib-host-clocks.md) adds `std::host_clocks`: nine
+named Linux clocks plus other-process CPU clocks, typed by kind (wall
+timestamps, steady instants, CPU durations), clock resolutions, absolute
+`clock_nanosleep` waits that keep their target across EINTR, and a Boottime
+`std::clock::Monotonic` provider for suspend-inclusive deadlines. A blocking
+non-reaping `std::command::Child::observe_exit()` lets the
+[time-command](stdlib-host-clocks.md#application-time-command) program read a
+child's exact final CPU time before reaping it. The self-checking contracts
+program and the cli50/timing21/clocks48 oracle groups pass as direct runs of the
+compiled programs on native Linux x86_64; two existing command-group oracles
+pass after the observation change.
+
+**Timers and child resource usage.**
+
+The [timer guide](stdlib-timers.md) adds `std::timer`, a manual timerfd owner
+for one-shot and periodic timers on Monotonic, Boottime, Realtime and the two
+alarm clocks, armed relative, at an absolute instant or timestamp (optionally
+cancel-on-set), with blocking `wait()` and nonblocking `try_wait()` expiration
+counts that include overruns. Alarm clocks join `std::host_clocks`; their
+waits and timers report EPERM without CAP_WAKE_ALARM. The
+[resource-usage guide](stdlib-child-usage.md) adds wait4 reaps with rusage and
+getrusage totals to `std::command`. The timer and usage contracts programs, the
+[timer-ticks](stdlib-timers.md#application-timer-ticks) cli19/ticks138 groups
+and the [child-usage](stdlib-child-usage.md#application-child-usage)
+cli39/usage42 groups pass as direct runs on native Linux x86_64.
+
+**Event loop and process descriptors.**
+
+The [event-loop guide](stdlib-event-loop.md) adds `std::event`, an epoll
+owner that multiplexes pipes, sockets, timerfds and child pidfds with 64-bit
+caller tokens, level-triggered or oneshot interest, millisecond waits and
+EINTR-stable `Deadline` waits through `epoll_pwait2`. `close()` refuses while
+registrations remain. Pidfds report a child's exit before the reap and signal
+exactly that process. The contracts program and the
+[tee-children](stdlib-event-loop.md#application-tee-children) cli56/tee12571
+groups, which tee two children's output with timestamps and kill them on a
+timeout, pass as direct runs on native Linux x86_64.
+
+**Signals, resource limits and supervision.**
+
+The [signals guide](stdlib-signals.md) extends `std::signal` with sets of
+signals 1..64, the calling thread's block mask and pending set, action
+queries, and signalfd receivers that `std::event` can watch. `handle()` and
+`restore()` make a set synchronously handled and undo it. `std::command`
+children get a cleared block mask by default. The
+[resource-limit guide](stdlib-rlimit.md) adds `std::rlimit`, typed prlimit64
+limits for this or another process. The contracts program and the
+[supervise](stdlib-signals.md#application-supervise) cli50/supervise97 groups
+pass as direct runs on native Linux x86_64. The supervisor restarts a crashing
+child with backoff and forwards TERM/INT with a grace kill.
+
+**UDP deadlines and stub DNS resolution.**
+
+`std::socket` adds `send_to_until` and `receive_from_until`. The
+[resolver-config guide](stdlib-resolver-config.md) adds
+`std::resolver_config`, glibc-style resolv.conf parsing (nameservers, search
+list, ndots, timeout, attempts, rotate, edns0, use-vc, no-aaaa) and hosts
+lookups. The [stub-resolver guide](extended-stub-resolver.md) adds
+`ext::stub_resolver`, which resolves through hosts, the search list and the
+nameservers over `ext::dns_client` with ID and question validation and TCP
+fallback, and reports every exchange. The contracts program and the
+[stub-dig](extended-stub-resolver.md#application-stub-dig) cli30/dns42
+groups, run against Python fake DNS servers with malformed and truncated
+replies, pass as direct runs on native Linux x86_64.
+
+**WHATWG URL parsing.**
+
+The [URL guide](extended-url.md) adds `ext::url`, the WHATWG URL Standard
+basic URL parser and serializer with an optional base. It returns an owned
+href with spans for every getter, plus the host kind and origin. The
+[IDNA guide](extended-idna.md) adds `ext::idna`, UTS #46 ToASCII with Punycode
+over a table derived from the vendored Unicode 17 UCD, which `ext::url` uses
+for internationalized hosts; a ZWNJ that needs Joining_Type data returns
+`UnsupportedIdna`. The contracts program and the
+[url-parse](extended-url.md#application-url-parse) cli25, whatwg9174,
+idna46060 and table1111937 groups pass as direct runs on native Linux x86_64,
+comparing every getter, and every scalar's IDNA behaviour, with Node.js.
 
 **Shared random-source budgets.**
 
@@ -839,8 +1023,9 @@ make no callback; short transfers advance both array/file coordinates.
 Interrupted calls spend attempts, and every failure retains only confirmed
 progress. A call quota is separate from callback duration or a host deadline.
 
-The `std::file_ops` File adapter stages at most 1024 bytes through stack
-storage and makes one pread64/pwrite64 transfer after status validation.
+The `std::file_ops` File adapter reads packed (stride 1) destinations with one
+direct pread64 and no status probe. Writes and other layouts stage at most 1024
+bytes through stack storage and make one transfer after status validation.
 Read bytes publish only after a valid count. It leaves the shared cursor
 unchanged, rejects O_DIRECT and rejects O_APPEND for nonempty writes.
 Manual owner/backing and descriptor/status stability remain caller duties;
@@ -1719,6 +1904,39 @@ six smaller constructor/arithmetic/propagation controls execute. No individual
 operator or aggregate shape has been isolated as the cause, and ordinary `?`
 support is not declared unavailable. Compiler repair remains separate work.
 
+**pax archives and tgz.** [`ext::pax`](extended-pax.md) adds POSIX pax `x`/`g`
+extension headers and GNU `././@LongLink` names over `ext::tar`, which now
+also reads old-GNU members and parses headers alone for streaming callers. The
+[`tgz` program](../sample_programs/library/tgz.lani) creates, lists and
+extracts gzip or plain archives as streams through 64 KiB buffers, with hard
+links, mode/mtime restore and a guard against symlinks already in the
+destination. A seeded oracle (`tests/fixtures/extended/tgz_oracle.py`) passes
+3,410 cases with 0 failures against Python `zlib`, `gzip`, `tarfile` and GNU
+tar 1.35: 2,328 codec cases (stored/fixed/dynamic blocks and 600 corrupted
+streams), 898 tree comparisons in both directions, 176 corrupted or unsafe
+archive rejections, five destination-guard cases and a 96 MiB pipeline under
+32 MiB RSS. The oracle ran directly against `lcc` executables on native Linux
+x86_64; its cargo wrapper `tests/extended_tgz_execution.rs` was not run.
+
+**xz and .lzma.** [`ext::xz`](extended-xz.md) decodes xz (LZMA2; none, CRC32
+and CRC64 checks; multi-block, concatenated and padded streams with index
+verification) and `.lzma` streams incrementally over caller-owned
+probability, staging and dictionary views, with a dictionary that grows on
+demand, and encodes xz with a streaming LZMA2 encoder (levels 0-3, hash-chain
+match finder, greedy or one-step lazy) whose output is independent of call
+boundaries. `tgz` detects and reads xz archives and writes them with `-J` at
+level 2, which matches `xz -1`'s size on the docs/stdlib tar (7,562,060
+against 7,561,504 bytes) at roughly an eighth of its speed. A seeded oracle
+(`tests/fixtures/extended/xz_oracle.py`) passes 22,913 cases with 0 failures
+against Python `lzma` and the xz 5.4.6 CLI: 2,268 decodes of valid streams
+under step sizes down to one byte, 20,639 concatenated, truncated,
+bit-flipped or extended streams rejected exactly when a strict Python decode
+rejects them (and decoded identically otherwise) and 6 error-class checks. The tgz
+oracle adds 691 xz archive cases (now 4,160 in total) against Python
+`tarfile` and GNU tar; the encoder adds 228 step-size-invariance checks and
+300 exact decodes by Python, `xz -t` and the Lanius decoder (23,475 cases in
+all).
+
 **Accepted bounded archive increment.**
 
 The new production code is Lanius over the existing TAR/ZIP engines,
@@ -2008,6 +2226,28 @@ pass across separate receipts; the supervisor covers 53 cases.
 Descendants can escape a group, and deadlines do not guarantee kernel-stuck
 processes become reapable; these APIs do not provide process-tree containment.
 
+The [HTTP/1.1 service](extended-http-service.md) (`ext::http_service`)
+reads keep-alive and pipelined requests through the `ext::http` codec under
+absolute head/body/idle/write deadlines, maps typed errors to
+400/408/413/431/501/505, sends 100 Continue and Date, and provides a response
+writer with file streaming and an id-based router. A one-thread `std::event`
+server multiplexes many buffered connections, and a sequential driver shares
+the same code. The static-file sample with listings, single byte ranges and
+ETag/Last-Modified conditional requests passes Python loopback oracle groups
+functional70, malformed45, slowloris12, conditional23 and concurrent39 on the
+event server plus four sequential groups, with exact server counters. TLS,
+threads, multipart ranges and allocation-failure coverage remain open.
+
+The [HTTP/1.1 client agent](extended-http-agent.md) (`ext::http_agent`) is a
+synchronous cleartext client over the same codec, `ext::http_url` and
+`ext::url_connect`. It pools keep-alive connections per host and port under
+idle-count, idle-time and use limits, discards stale ones and retries an
+idempotent request once on a fresh connection. It follows redirects with a
+hop limit, RFC 9110 method rules and cross-origin credential stripping, and
+sends fixed or chunked streamed bodies, stopping an upload on an early final
+response. The curl-like sample passes Python `http.server` oracle groups
+pool18, redirect29, upload10 and broken21 with exact counters.
+
 [Resumable cleartext HTTP exchanges](extended-http-client.md) expose owned
 Prepared request staging and caller-driven Exchange steps. At `480432e8`,
 all five direct [Exchange groups](extended-http-exchange-testing.md) passed
@@ -2047,7 +2287,9 @@ five groups in 24.18 seconds, including 59 reached allocation failures and a
 stream receipts remain distinct from these selected current program gates.
 The [current concurrent-server increment](library-server-concurrency-plan.md)
 has the finite passes recorded above; its complete acceptance remains open.
-Executable worker threads also remain part of the full goal. The
+Parallel [forked workers, atomics, futex synchronization and bounded
+channels](stdlib-concurrency.md) execute separately. In-process worker
+threads remain part of the full goal. The
 [concurrency admission audit](library-concurrency-dependencies.md) records
 separate compiler/runtime boundaries. The historical execution receipts cover
 native Linux x86-64 CPU programs built by the GPU compiler.
@@ -2108,6 +2350,34 @@ Optional modules use the [`extended` source root](../extended/README.md).
 have earlier normalizer, generated round-trip and allocation-failure receipts
 scoped to their recorded sources. The current JSON streaming normalizer's
 acceptance status is recorded separately above.
+[`ext::json_stream`](extended-json-stream.md) tokenizes JSON from byte chunks
+of any size without a document. It validates UTF-8, rejects lone surrogates,
+keeps exact number spelling and reports typed errors with u64 byte offsets.
+Its structural writer emits the `ext::json` byte policy. The streaming
+[jq-lite](../sample_programs/jq_lite.lani) path query agrees with strict Python
+`json` on 2,237 cases, and [csv-to-json](../sample_programs/csv_to_json.lani)
+agrees with Python `csv` on 550 RFC 4180 cases. `TokenReader` pulls tokens
+from any `core::io::Read` source, and `Writer.flush_to` streams output to any
+`core::io::Write` sink. [`core::float_decimal`](stdlib-float-decimal.md) now
+tries Eisel-Lemire parsing and Grisu3 shortest formatting before its exact
+big-integer path. It agrees with Python `float()` and `repr()` on 4.8 million
+generated values, about 15 to 24 times faster on typical values.
+[`ext::toml`](extended-toml.md) agrees with Python `tomllib` on 1,754
+hand-written, generated and mutated documents. The only differences are by
+policy: TOML 1.1-only syntax, and integers outside i64.
+[`ext::cbor_stream`](extended-cbor-stream.md) streams CBOR: its decoder takes
+byte chunks of any size, its writer flushes to `core::io::Write`, and both have
+an RFC 8949 core deterministic mode (sorted unique keys, definite lengths,
+shortest exact floats). Errors are typed with u64 offsets under depth, item,
+string and input limits. It agrees with all 81 hand-typed Appendix A rows and
+an independent Python implementation on 8,100 generated, mutated, limit and
+sequence cases at four chunk sizes; the
+[cbor-to-json](../sample_programs/cbor_to_json.lani) sample agrees on 700.
+[`ext::msgpack`](extended-msgpack.md) streams MessagePack the same way, with
+optional canonical-header and timestamp checks. It agrees with the installed
+Python `msgpack` package and an independent model on 8,174 format-table,
+generated, mutated, limit and stream cases; the two-way
+[msgpack-json](../sample_programs/msgpack_json.lani) sample agrees on 900.
 [Reusable CSV records and bounded stream writing](extended-csv-write.md)
 share the canonical encoder, preflight the complete record and retain exact
 accepted-prefix progress. The [column rewrite program](extended-csv-rewrite.md)
@@ -2116,6 +2386,23 @@ its five native groups cover independent output models, limits, I/O and
 allocation failures, plus a 4,096-row resource control. The
 [reduced compiler dependencies](library-context-inference-dependencies.md)
 retain original failing expressions beside native passing controls.
+
+[Table-driven Pratt parsing](extended-pratt.md) turns a binding-power table of
+atoms, prefix, infix, postfix, grouping and call kinds into postfix events. It
+uses fixed scratch, allocation-free O(n) parsing and typed errors with token
+indices. Its Python-precedence calculator sample agrees with CPython `ast` on
+100,000 generated expressions and 25,000 token-soup lines.
+
+The [regex differential oracle](extended-regex-oracle.md) runs the real
+`find_iter`, template-replacement and grep programs against CPython `re` on
+seeded grammar-generated patterns from the shared subset. Five seeds agree on
+60,025 find/capture cases (with named groups), 5,000 replacements, 5,000 grep
+runs, 13,853 fixed-width lookbehind cases and 15,000 capture-free lazy-DFA `is_match`/`find` cases, and five
+pathological inputs finish in about 0.2 s. It found, and the engine now fixes,
+a lazy counted-repetition priority error (`(?:a|aab){0,2}?b` on `aabb`).
+The DFA, which carries `^ $ \A \z \b \B` as look-behind bits and delayed
+accepts in its states, lets `text_grep` count any lookbehind-free pattern on a
+0.9 MB corpus in about 0.1–0.2 s instead of 2.3–3.8 s.
 
 [Regex splitting and replacement](extended-regex-text.md) now reuse canonical
 Search with one lazily acquired workspace. Borrowed split fields, independent
@@ -2132,7 +2419,11 @@ regex engine and validates each input once. Each nonempty cursor now owns one
 eager span workspace, reused during token selection; terminal calls can release
 it. All six current groups pass: owner/admission/contracts, 576 model cases,
 63 explicit tables and all 30 reached OOM positions. The earlier 120-position
-receipt retains its preceding per-probe scope. Competing patterns can rescan
+receipt retains its preceding per-probe scope. A combined lazy DFA over the
+lookbehind-free rules now runs each step once, with VM fallback for lookbehind,
+a full cache or a possible work limit. Its traces are byte-identical to the
+frozen per-rule lexer on 30,000 generated cases, and it is about 40 times
+faster on an 18-rule corpus. Competing patterns can rescan
 input; neither reusable scratch nor these receipts establish whole-input
 linear time.
 The [CSV-rules lexer program](extended-lex-scan.md) emits staged token spans or

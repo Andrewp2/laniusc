@@ -1,0 +1,123 @@
+// Inline fixed-capacity UTF-8 string. A [u8; N] array and a byte length hold
+// text that is always valid UTF-8; every rejected edit leaves bytes and length
+// unchanged. Nothing allocates. By-value copies own independent arrays.
+// See docs/stdlib-inline-containers.md.
+module core::inline_string;
+import core::option;
+import core::panic;
+import core::result;
+import core::text;
+import core::utf8;
+pub enum Error {
+    Full,
+    Bounds,
+    NotCharBoundary,
+    InvalidScalar
+}
+pub struct InlineString<const N: usize> {
+    bytes:[u8; N],
+    length: i32
+}
+// Empty string over caller filler; the filler bytes are never read as text.
+pub fn from_storage<const N: usize>(storage:[u8; N]) -> InlineString<N> {
+    let count: usize = N;
+    if (count > 2147483647) { core::panic::panic(); }
+    return InlineString { bytes: storage, length: 0 };
+}
+// Copy text into fresh storage; Full when it does not fit.
+pub fn try_from_text<const N: usize>(storage:[u8; N], text: core::text::Text) -> core::result::Result<InlineString<N>, Error> {
+    let value: InlineString<N> = from_storage<N>(storage);
+    let pushed: core::result::Result<i32, Error> = try_push_text<N>(value.borrow(), text);
+    if (pushed.is_err()) { return core::result::Err(pushed.unwrap_err()); }
+    return core::result::Ok(value);
+}
+pub impl<const N: usize> InlineString<N> {
+    pub fn borrow(&self) -> &InlineString<N> { return self; }
+}
+fn cap<const N: usize>(value: &InlineString<N>) -> i32 {
+    let count: usize = N;
+    return count as i32;
+}
+// Lengths are bytes, not scalars.
+pub fn len<const N: usize>(value: &InlineString<N>) -> i32 { return value.length; }
+pub fn capacity<const N: usize>(value: &InlineString<N>) -> i32 { return cap<N>(value); }
+pub fn spare<const N: usize>(value: &InlineString<N>) -> i32 { return cap<N>(value) - value.length; }
+pub fn is_empty<const N: usize>(value: &InlineString<N>) -> bool { return value.length == 0; }
+pub fn is_full<const N: usize>(value: &InlineString<N>) -> bool { return value.length == cap<N>(value); }
+// Borrow the current text. End the Text before editing or moving the owner.
+pub fn as_text<const N: usize>(value: &InlineString<N>) -> core::text::Text {
+    return core::text::from_utf8_unchecked(value.bytes, 0, value.length);
+}
+// Append all of text or nothing; return the new byte length.
+pub fn try_push_text<const N: usize>(value: &InlineString<N>, text: core::text::Text) -> core::result::Result<i32, Error> {
+    let count: i32 = text.byte_len();
+    if (count > cap<N>(value) - value.length) { return core::result::Err(Error::Full); }
+    let index: i32 = 0;
+    while (index < count) {
+        value.bytes[value.length + index] = text.bytes[text.start + index];
+        index += 1;
+    }
+    value.length += count;
+    return core::result::Ok(value.length);
+}
+// Append the longest prefix of text that fits and ends on a scalar boundary;
+// return how many bytes of text were taken (possibly 0). Never fails.
+pub fn push_text_truncating<const N: usize>(value: &InlineString<N>, text: core::text::Text) -> i32 {
+    let count: i32 = text.byte_len();
+    let room: i32 = cap<N>(value) - value.length;
+    if (count > room) {
+        count = room;
+        while (count > 0 && !text.is_char_boundary(count)) { count -= 1; }
+    }
+    let index: i32 = 0;
+    while (index < count) {
+        value.bytes[value.length + index] = text.bytes[text.start + index];
+        index += 1;
+    }
+    value.length += count;
+    return count;
+}
+// Append one Unicode scalar value. InvalidScalar (a surrogate or above
+// U+10FFFF) is checked before Full.
+pub fn try_push_scalar<const N: usize>(value: &InlineString<N>, scalar: u32) -> core::result::Result<i32, Error> {
+    let width: u32 = core::utf8::encoded_len_or(scalar, 0);
+    if (width == 0) { return core::result::Err(Error::InvalidScalar); }
+    if ((width as i32) > cap<N>(value) - value.length) { return core::result::Err(Error::Full); }
+    let index: u32 = 0;
+    while (index < width) {
+        value.bytes[value.length + (index as i32)] = core::utf8::encoded_byte_or(scalar, index, 0);
+        index += 1;
+    }
+    value.length += width as i32;
+    return core::result::Ok(value.length);
+}
+// Remove and return the last scalar value.
+pub fn pop<const N: usize>(value: &InlineString<N>) -> core::option::Option<u32> {
+    if (value.length == 0) { return core::option::None(); }
+    let start: i32 = value.length - 1;
+    while (start > 0 && core::utf8::is_continuation_byte(value.bytes[start])) { start -= 1; }
+    let scalar: core::option::Option<u32> = as_text<N>(value).scalar_at_byte(start);
+    value.length = start;
+    return scalar;
+}
+// Keep exactly the first new_len bytes and return how many were discarded.
+// new_len outside 0..=len gives Bounds; inside a scalar, NotCharBoundary.
+pub fn truncate<const N: usize>(value: &InlineString<N>, new_len: i32) -> core::result::Result<i32, Error> {
+    if (new_len < 0 || new_len > value.length) { return core::result::Err(Error::Bounds); }
+    if (!as_text<N>(value).is_char_boundary(new_len)) { return core::result::Err(Error::NotCharBoundary); }
+    let removed: i32 = value.length - new_len;
+    value.length = new_len;
+    return core::result::Ok(removed);
+}
+pub fn clear<const N: usize>(value: &InlineString<N>) -> i32 {
+    let removed: i32 = value.length;
+    value.length = 0;
+    return removed;
+}
+// Byte-exact comparisons of the current text; capacities may differ.
+pub fn equals<const N: usize>(value: &InlineString<N>, other: core::text::Text) -> bool {
+    return as_text<N>(value).equals(other);
+}
+pub fn compare<const N: usize>(value: &InlineString<N>, other: core::text::Text) -> i32 {
+    return as_text<N>(value).compare(other);
+}

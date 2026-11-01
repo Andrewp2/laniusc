@@ -1,0 +1,83 @@
+// Self-checking timerfd contracts. Exit 0 means every assertion held.
+module app::main;
+import core::option;
+import core::result;
+import core::time;
+import std::host_clocks;
+import std::timer;
+
+fn code(error: std::timer::Error) -> i32 {
+    return match (error) {
+        std::timer::Error::Clock(cause) -> match (cause) { std::host_clocks::Error::Unsupported -> 2001, std::host_clocks::Error::WrongKind -> 2002, std::host_clocks::Error::InvalidProcess -> 2003, _ -> 2000 },
+        std::timer::Error::Host(value) -> value, std::timer::Error::Closed -> 1000, std::timer::Error::InvalidSetting -> 1001,
+        std::timer::Error::WrongMode -> 1002, std::timer::Error::Cancelled -> 1003, std::timer::Error::InvalidCount -> 1004
+    };
+}
+fn made_code(result: core::result::Result<std::timer::Timer, std::timer::Error>) -> i32 { if (result.is_ok()) { return 0; } return code(result.unwrap_err()); }
+fn set_code(result: core::result::Result<std::timer::Setting, std::timer::Error>) -> i32 { if (result.is_ok()) { return 0; } return code(result.unwrap_err()); }
+fn wait_code(result: core::result::Result<u64, std::timer::Error>) -> i32 { if (result.is_ok()) { return 0; } return code(result.unwrap_err()); }
+fn ms(value: u64) -> core::time::Duration { return core::time::from_millis(value); }
+fn now(clock: std::host_clocks::Clock) -> core::time::Instant { return std::host_clocks::instant(clock).unwrap(); }
+fn pause(milliseconds: u64) { let start: core::time::Instant = now(std::host_clocks::Clock::Monotonic); std::host_clocks::sleep_until_instant(std::host_clocks::Clock::Monotonic,start.checked_add(ms(milliseconds)).unwrap()).unwrap(); }
+fn main() -> i32 {
+    // Unsupported clocks are rejected before timerfd_create.
+    assert(made_code(std::timer::create(std::host_clocks::Clock::Tai,std::timer::Mode::Blocking)) == 2001);
+    assert(made_code(std::timer::create(std::host_clocks::Clock::MonotonicRaw,std::timer::Mode::Blocking)) == 2001);
+    assert(made_code(std::timer::create(std::host_clocks::Clock::ProcessCpuOf(0),std::timer::Mode::Blocking)) == 2001);
+    // Alarm timers need CAP_WAKE_ALARM: either a timer or EPERM.
+    let alarm: core::result::Result<std::timer::Timer, std::timer::Error> = std::timer::create(std::host_clocks::Clock::BoottimeAlarm,std::timer::Mode::Blocking);
+    if (alarm.is_ok()) { assert(alarm.unwrap().close().unwrap() == 0); } else { assert(code(alarm.unwrap_err()) == 1); }
+    // One-shot relative timer.
+    let timer: std::timer::Timer = std::timer::create(std::host_clocks::Clock::Monotonic,std::timer::Mode::Blocking).unwrap();
+    assert(timer.is_open() && timer.raw_fd().is_some() && timer.raw_fd().unwrap() >= 3);
+    let idle: std::timer::Setting = timer.setting().unwrap(); assert(!idle.is_armed() && !idle.is_periodic());
+    assert(set_code(timer.arm_after(core::time::zero(),ms(1))) == 1001);
+    let start: core::time::Instant = now(std::host_clocks::Clock::Monotonic);
+    let previous: std::timer::Setting = timer.arm_after(ms(5),core::time::zero()).unwrap(); assert(!previous.is_armed());
+    let armed: std::timer::Setting = timer.setting().unwrap(); assert(armed.is_armed() && !armed.is_periodic() && armed.remaining.compare(ms(5)) <= 0);
+    assert(timer.wait().unwrap() == 1);
+    let woke: core::time::Instant = now(std::host_clocks::Clock::Monotonic); assert(woke.duration_since(start).unwrap().compare(ms(5)) >= 0);
+    assert(!timer.setting().unwrap().is_armed());
+    // Periodic timer: overruns accumulate while the consumer is busy.
+    let before: std::timer::Setting = timer.arm_after(ms(2),ms(2)).unwrap(); assert(!before.is_armed());
+    pause(11);
+    assert(timer.wait().unwrap() >= 5);
+    assert(timer.wait().unwrap() >= 1);
+    let stopped: std::timer::Setting = timer.disarm().unwrap(); assert(stopped.is_periodic() && stopped.interval.compare(ms(2)) == 0 && stopped.is_armed());
+    assert(!timer.setting().unwrap().is_armed());
+    // Kind and setting checks.
+    assert(set_code(timer.arm_at_timestamp(core::time::unix_epoch(),core::time::zero(),false)) == 2002);
+    assert(set_code(timer.arm_at_instant(core::time::instant(core::time::zero()),core::time::zero())) == 1001);
+    assert(set_code(timer.arm_after(ms(1),core::time::Duration { seconds: 0, nanos: 1000000000 })) == 1001);
+    let try_blocking: core::result::Result<core::option::Option<u64>, std::timer::Error> = timer.try_wait();
+    assert(try_blocking.is_err() && code(try_blocking.unwrap_err()) == 1002);
+    // Absolute steady target.
+    let target: core::time::Instant = now(std::host_clocks::Clock::Monotonic).checked_add(ms(4)).unwrap();
+    timer.arm_at_instant(target,core::time::zero()).unwrap(); assert(timer.wait().unwrap() == 1);
+    assert(now(std::host_clocks::Clock::Monotonic).compare(target) >= 0);
+    // Close exactly once.
+    assert(timer.close().unwrap() == 0 && !timer.is_open() && timer.raw_fd().is_none());
+    let reclosed: core::result::Result<i32, std::timer::Error> = timer.close(); assert(reclosed.is_err() && code(reclosed.unwrap_err()) == 1000);
+    assert(wait_code(timer.wait()) == 1000 && set_code(timer.setting()) == 1000 && set_code(timer.disarm()) == 1000);
+    // Nonblocking timer with a past absolute target counts missed periods.
+    let poller: std::timer::Timer = std::timer::create(std::host_clocks::Clock::Boottime,std::timer::Mode::Nonblocking).unwrap();
+    assert(poller.try_wait().unwrap().is_none());
+    assert(wait_code(poller.wait()) == 1002);
+    let past: core::time::Instant = now(std::host_clocks::Clock::Boottime).checked_sub(ms(10)).unwrap();
+    poller.arm_at_instant(past,ms(1)).unwrap();
+    // A past target expires asynchronously, soon after arming, not necessarily before the next read.
+    let missed: core::option::Option<u64> = poller.try_wait().unwrap(); let tries: i32 = 0;
+    while (missed.is_none() && tries < 1000) { pause(1); missed = poller.try_wait().unwrap(); tries += 1; }
+    assert(missed.is_some() && missed.unwrap() >= 10);
+    poller.disarm().unwrap(); assert(poller.close().unwrap() == 0);
+    // Wall timer at an absolute timestamp with cancel-on-set.
+    let wall: std::timer::Timer = std::timer::create(std::host_clocks::Clock::Realtime,std::timer::Mode::Blocking).unwrap();
+    assert(set_code(wall.arm_at_instant(now(std::host_clocks::Clock::Monotonic),core::time::zero())) == 2002);
+    assert(set_code(wall.arm_at_timestamp(core::time::unix_epoch(),core::time::zero(),false)) == 1001);
+    assert(set_code(wall.arm_at_timestamp(core::time::SystemTime { seconds: -5, nanos: 0 },core::time::zero(),false)) == 1001);
+    let at: core::time::SystemTime = std::host_clocks::timestamp(std::host_clocks::Clock::Realtime).unwrap().checked_add(ms(3)).unwrap();
+    wall.arm_at_timestamp(at,core::time::zero(),true).unwrap(); assert(wall.wait().unwrap() == 1);
+    assert(std::host_clocks::timestamp(std::host_clocks::Clock::Realtime).unwrap().compare(at) >= 0);
+    assert(wall.close().unwrap() == 0);
+    return 0;
+}

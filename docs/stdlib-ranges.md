@@ -1,7 +1,11 @@
 # Ranges
 
 `core::range` stores bounds and answers comparison questions. Its five value
-types, 20 free functions and 15 methods allocate nothing. `Range<i32>` uses
+types, 20 free functions and 15 methods allocate nothing. A sixth type,
+`Bound<T>` (`Included(T)`, `Excluded(T)`, `Unbounded`), describes one
+interval end for ordered collections; it compares nothing itself, and
+[ordered navigation](stdlib-ordered-navigation.md) defines how TreeMap and
+TreeSet interpret it. `Range<i32>` uses
 the same generic implementation as other element types; there is no separate
 i32 range API.
 

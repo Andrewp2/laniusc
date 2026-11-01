@@ -1,6 +1,6 @@
 # Finite arbitrary precision decimals
 
-`ext::decimal` provides owned finite decimal arithmetic over `ext::big_int`.
+`ext::decimal` provides owned finite decimal arithmetic over `alloc::big_int`.
 A value is an arbitrary signed integer coefficient multiplied by ten raised
 to a checked decimal exponent. The implementation is entirely Lanius; it
 uses the existing big integer provider for integer arithmetic and division.
@@ -170,7 +170,7 @@ scratch coefficient. It is independent of context precision. Consequently,
 precision five with a five digit resource bound can reject `1/3`: the scaled
 integer numerator requires six digits. Supply scratch headroom as well as
 output precision. `max_limbs` bounds each integer allocation following
-`ext::big_uint`'s rules, including its single division guard limb. Neither is
+`alloc::big_uint`'s rules, including its single division guard limb. Neither is
 a total live memory quota; the allocator may deny every allocation. Cache
 and output vector capacity/allocation failures return `AllocationFailed`.
 An operation with smaller per-call limits validates existing input sizes too.

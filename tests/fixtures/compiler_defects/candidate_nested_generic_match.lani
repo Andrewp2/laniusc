@@ -1,0 +1,8 @@
+// CANDIDATE, NOT REPRODUCED: reported LNC0047 for a nested match on a generic
+// enum bound in an outer arm. This shape compiles and exits 4 as expected.
+module app::main;
+import core::option;
+fn pick<T>(outer: core::option::Option<core::option::Option<T>>, fallback: T) -> T {
+    return match (outer) { Some(inner) -> match (inner) { Some(value) -> value, None -> fallback }, None -> fallback };
+}
+fn main() -> i32 { return pick<i32>(core::option::Some(core::option::Some(4)),1); }

@@ -22,17 +22,23 @@ def moduleOr (current : List (List Nat)) (m : List (List Nat)) : List (List Nat)
   | n :: rest => m
 
 def noDecls : Decls :=
-  ({ types := [], fns := [], consts := [], imports := [], aliases := [], impls := [] } : Decls)
+  ({ types := [], fns := [], consts := [], imports := [], aliases := [], impls := [], homes := [] } : Decls)
 
 def joinDecls (a : Decls) (b : Option Decls) : Option Decls :=
   match b with
   | none => none
-  | some d => some ({ types := a.types ++ d.types, fns := a.fns ++ d.fns, consts := a.consts ++ d.consts, imports := a.imports ++ d.imports, aliases := a.aliases ++ d.aliases, impls := a.impls ++ d.impls } : Decls)
+  | some d => some ({ types := a.types ++ d.types, fns := a.fns ++ d.fns, consts := a.consts ++ d.consts, imports := a.imports ++ d.imports, aliases := a.aliases ++ d.aliases, impls := a.impls ++ d.impls, homes := a.homes ++ d.homes } : Decls)
+
+/-- A `module` item declares its path a module. -/
+def moduleDecls (path : Option (List (List Nat))) : Option Decls :=
+  match path with
+  | none => none
+  | some m => some ({ types := [], fns := [], consts := [], imports := [], aliases := [], impls := [], homes := [m] } : Decls)
 
 def importDecls (home : List (List Nat)) (target : Option (List (List Nat))) : Option Decls :=
   match target with
   | none => none
-  | some t => some ({ types := [], fns := [], consts := [], imports := [({ home := home, target := t } : ImportDecl)], aliases := [], impls := [] } : Decls)
+  | some t => some ({ types := [], fns := [], consts := [], imports := [({ home := home, target := t } : ImportDecl)], aliases := [], impls := [], homes := [] } : Decls)
 
 /-- The item an item node holds, `pub` or not. -/
 def itemBody (item : CTree) : CTree :=
@@ -164,16 +170,5 @@ def consFnDecl (f : Option FnDecl) (rest : Option (List FnDecl)) : Option (List 
     match rest with
     | none => none
     | some ds => some (d :: ds)
-
-def methodDecl (fuel : Nat) (home : List (List Nat)) (implParams : List (List Nat)) (selfType : CTree) (implTree : CTree) (m : CTree) : Option FnDecl :=
-  let f : CTree := kid m 0
-  let g : CTree := kid m 1
-  if decide (nodeProd m = (21)) && decide (nodeProd f = (13)) then
-    fnDeclOf home f true implParams selfType implTree (typeParams fuel (kid f 2))
-  else
-    if decide (nodeProd m = (22)) && decide (nodeProd g = (13)) then
-      fnDeclOf home g true implParams selfType implTree (typeParams fuel (kid g 2))
-    else
-      none
 
 end Lanius.Mini

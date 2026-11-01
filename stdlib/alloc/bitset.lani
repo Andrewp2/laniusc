@@ -27,7 +27,7 @@ pub fn from_view(view: core::bitset::BitView) -> core::result::Result<BitSet, Er
     let built: core::result::Result<BitSet, Error> = with_len(view.len(), false);
     if (core::result::is_err(built)) { return built; }
     let value: BitSet = core::result::unwrap(built); let words: [u32] = value.words.as_slice(); let index: i32 = 0;
-    while (index < value.words.len()) { words[index] = core::option::unwrap(view.word(index)); index += 1; }
+    while (index < value.words.len()) { let stored1 = core::option::unwrap(view.word(index)); words[index] = stored1; index += 1; }
     return core::result::Ok(value);
 }
 fn vec_error(error: alloc::vec::Error) -> Error {

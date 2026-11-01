@@ -8,15 +8,15 @@ open Lanius.Mini
 open Lanius.Faithful
 open Lanius.Faithful.Self
 
-/-- mini::selfhost::result_ty -/
+/-- mini::selfhost::arm_binders -/
 theorem pure2000 : PureFunc prog prims outside src2000 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::arm_binders -/
+/-- mini::selfhost::arm_values -/
 theorem pure2001 : PureFunc prog prims outside src2001 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::arm_values -/
+/-- mini::selfhost::match_order -/
 theorem pure2002 : PureFunc prog prims outside src2002 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
@@ -44,99 +44,99 @@ theorem pure2007 : PureFunc prog prims outside src2007 = true :=
 theorem pure2008 : PureFunc prog prims outside src2008 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::wild_split -/
+/-- mini::selfhost::any_nested -/
 theorem pure2009 : PureFunc prog prims outside src2009 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::wild_order -/
+/-- mini::selfhost::stmt_order_by -/
 theorem pure2010 : PureFunc prog prims outside src2010 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::arms_exact -/
+/-- mini::selfhost::arm_binding -/
 theorem pure2011 : PureFunc prog prims outside src2011 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::arm_binding -/
+/-- mini::selfhost::arm_block_list -/
 theorem pure2012 : PureFunc prog prims outside src2012 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::arm_block_list -/
+/-- mini::selfhost::arm_stmt -/
 theorem pure2013 : PureFunc prog prims outside src2013 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::arm_stmt -/
+/-- mini::selfhost::bound_scope -/
 theorem pure2014 : PureFunc prog prims outside src2014 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::bound_scope -/
+/-- mini::selfhost::let_body_of -/
 theorem pure2015 : PureFunc prog prims outside src2015 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::local_id_of -/
-theorem pure2016 : PureFunc prog prims outside src2016 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::local_ty_of -/
+/-- mini::selfhost::call_path_head -/
 theorem pure2017 : PureFunc prog prims outside src2017 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::call_path_head -/
-theorem pure2019 : PureFunc prog prims outside src2019 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
 /-- mini::selfhost::call_let_head -/
-theorem pure2020 : PureFunc prog prims outside src2020 = true :=
+theorem pure2018 : PureFunc prog prims outside src2018 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
 /-- mini::selfhost::call_parts -/
-theorem pure2021 : PureFunc prog prims outside src2021 = true :=
+theorem pure2019 : PureFunc prog prims outside src2019 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
 /-- mini::selfhost::index_let_head -/
-theorem pure2022 : PureFunc prog prims outside src2022 = true :=
+theorem pure2020 : PureFunc prog prims outside src2020 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
 /-- mini::selfhost::struct_head -/
-theorem pure2023 : PureFunc prog prims outside src2023 = true :=
+theorem pure2021 : PureFunc prog prims outside src2021 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
 /-- mini::selfhost::pure_list -/
-theorem pure2024 : PureFunc prog prims outside src2024 = true :=
+theorem pure2022 : PureFunc prog prims outside src2022 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
 /-- mini::selfhost::variant_let_head -/
-theorem pure2025 : PureFunc prog prims outside src2025 = true :=
+theorem pure2023 : PureFunc prog prims outside src2023 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
 /-- mini::selfhost::match_let_head -/
-theorem pure2026 : PureFunc prog prims outside src2026 = true :=
+theorem pure2024 : PureFunc prog prims outside src2024 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
 /-- mini::selfhost::pure_arms -/
-theorem pure2027 : PureFunc prog prims outside src2027 = true :=
+theorem pure2025 : PureFunc prog prims outside src2025 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
 /-- mini::selfhost::is_try_method -/
-theorem pure2028 : PureFunc prog prims outside src2028 = true :=
+theorem pure2026 : PureFunc prog prims outside src2026 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
 /-- mini::selfhost::try_method_of -/
-theorem pure2029 : PureFunc prog prims outside src2029 = true :=
+theorem pure2027 : PureFunc prog prims outside src2027 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
 /-- mini::selfhost::is_try_local -/
-theorem pure2030 : PureFunc prog prims outside src2030 = true :=
+theorem pure2028 : PureFunc prog prims outside src2028 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
 /-- mini::selfhost::try_local_of -/
-theorem pure2031 : PureFunc prog prims outside src2031 = true :=
+theorem pure2029 : PureFunc prog prims outside src2029 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
 /-- mini::selfhost::pure_inferred -/
-theorem pure2032 : PureFunc prog prims outside src2032 = true :=
+theorem pure2030 : PureFunc prog prims outside src2030 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
 /-- mini::selfhost::try_rest -/
+theorem pure2031 : PureFunc prog prims outside src2031 = true :=
+  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
+
+/-- mini::selfhost::stmt_unless -/
+theorem pure2032 : PureFunc prog prims outside src2032 = true :=
+  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
+
+/-- mini::selfhost::arm_body_of -/
 theorem pure2033 : PureFunc prog prims outside src2033 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
@@ -411,9 +411,9 @@ theorem chunk20 : FuncsOk prog prims outside 2000 part20 :=
   funcsOk_cons (funcOk_pure pure2013) <|
   funcsOk_cons (funcOk_pure pure2014) <|
   funcsOk_cons (funcOk_pure pure2015) <|
-  funcsOk_cons (funcOk_pure pure2016) <|
+  funcsOk_cons (funcOk_outside (by decide +kernel)) <| -- 2016 core::mem::typed_slice_from_storage<mini::selfhost::List<mini::selfhost::VariantTy>>, outside
   funcsOk_cons (funcOk_pure pure2017) <|
-  funcsOk_cons (funcOk_outside (by decide +kernel)) <| -- 2018 core::mem::typed_slice_from_storage<mini::selfhost::List<mini::selfhost::VariantTy>>, outside
+  funcsOk_cons (funcOk_pure pure2018) <|
   funcsOk_cons (funcOk_pure pure2019) <|
   funcsOk_cons (funcOk_pure pure2020) <|
   funcsOk_cons (funcOk_pure pure2021) <|

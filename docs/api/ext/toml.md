@@ -8,7 +8,7 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-One constant-storage byte machine serves Document.encoded_len, Document.encoding, owned encode and direct encode_into. The free measure function is replaced by the encoded_len method. W counts emitted bytes, nonroot node visits and fraction scan/trim digits; sizing admits W and the other paths admit 2W for preflight/replay. This changes old owned encode W and encode_into 2W+output-bytes policy. Preflight reports the first exhausted bound in generator order: per-byte output cap precedes byte work, with node/fraction charges where encountered; there is no whole-pass output-over-work precedence. Cursor copies fork replay allowance. Borrowed Encoding implements Read only, with exact fills, inert valid zero requests, metadata rejection before EOF, independent cursor copies and immutable/disjoint backing obligations. Borrowed serialization and direct encode_into allocate no output storage; every returned encode_into error preserves the complete destination. Owned output uses the existing collector, skips allocation for empty output, and cleans partial owners on failure. The linked guides record current runtime acceptance; older parser/corpus/normalizer receipts retain their original source scope. Initial target Linux x86_64 CPU output, with other hosts/device execution/lifetime enforcement/proofs separate.
+One constant-storage byte machine serves Document.encoded_len, Document.encoding, owned encode and direct encode_into. The free measure function is replaced by the encoded_len method. W counts emitted bytes, nonroot node visits and fraction scan/trim digits; sizing admits W and the other paths admit 2W for preflight/replay. This changes old owned encode W and encode_into 2W+output-bytes policy. Preflight reports the first exhausted bound in generator order: per-byte output cap precedes byte work, with node/fraction charges where encountered; there is no whole-pass output-over-work precedence. Cursor copies fork replay allowance. Borrowed Encoding implements Read only, with exact fills, inert valid zero requests, metadata rejection before EOF, independent cursor copies and immutable/disjoint backing obligations. Borrowed serialization and direct encode_into allocate no output storage; every returned encode_into error preserves the complete destination. Owned output uses the existing collector, skips allocation for empty output, and cleans partial owners on failure. The linked guides record current runtime acceptance; older parser/corpus/normalizer receipts retain their original source scope. Initial target Linux x86_64 CPU output, with other hosts/device execution/lifetime enforcement/proofs separate. Python tomllib oracle (2026-10-31): 1,754 edge/generated/mutated documents agree through the normalizer (value equality in order, idempotent output, typed rejections); the only differences are 7 TOML 1.1-only inputs and 2 integers outside i64, both documented policy.
 
 ## Contract and evidence guides
 
@@ -516,7 +516,7 @@ pub fn parse(input: alloc::string::String, options: Options) -> core::result::Re
 
 ### function: encode
 
-[Source line 726](../../../extended/ext/toml.lani#L726)
+[Source line 727](../../../extended/ext/toml.lani#L727)
 
 ```lanius
 pub fn encode(document: Document) -> core::result::Result<alloc::string::String,Error>
@@ -526,7 +526,7 @@ Admit the shared borrowed reader under a 2W serializer budget, then collect inde
 
 ### function: encode_into
 
-[Source line 748](../../../extended/ext/toml.lani#L748)
+[Source line 749](../../../extended/ext/toml.lani#L749)
 
 ```lanius
 pub fn encode_into(document: Document, output: core::slice::View<u8>) -> core::result::Result<i32,Error>

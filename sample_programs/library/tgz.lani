@@ -1,0 +1,583 @@
+// tar czf / cJf / xzf / tzf over ext::pax, ext::tar, streaming ext::compression
+// (gzip) and ext::xz (xz decoding; -cJ encodes LZMA2 at level 2).
+// Archives stream through fixed 64 KiB buffers: neither side holds a whole
+// archive or member. Listing or extracting a file validates it in a first
+// streaming pass before any output; `-f -` (stdin) works in one pass.
+// Exit 2: arguments/format/unsafe/limits; 3: I/O; 4: allocation.
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import ext::cli;
+import ext::compression;
+import ext::deflate;
+import ext::inflate;
+import ext::pax;
+import ext::tar;
+import ext::xz;
+import std::args;
+import std::directory;
+import std::file;
+import std::file_ops;
+import std::filesystem;
+import std::linux;
+import std::stream;
+
+const CHUNK: i32 = 65536;
+const MAX_HEADERS: i32 = 1048576;
+enum Error { Usage, Archive, Unsafe, Unsupported, Compression, Limit, Io, Allocation }
+struct Options { mode: i32, gzip: bool, xz: bool, archive: core::slice::View<u8>, has_archive: bool, directory: core::slice::View<u8>, has_directory: bool, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+// Input: raw descriptor bytes, gzip-decoded on detection of 1f 8b and
+// xz-decoded on fd 37 7a 58 5a 00 (the xz dictionary grows on demand).
+struct Source { fd: i32, gzip: bool, xz: bool, detected: bool, raw: alloc::vec::Vec<u8>, raw_pos: i32, raw_len: i32, raw_eof: bool, out: alloc::vec::Vec<u8>, out_pos: i32, out_len: i32, done: bool, history: alloc::vec::Vec<u8>, workspace: alloc::vec::Vec<i32>, decoder: ext::compression::Decoder, probs: alloc::vec::Vec<i32>, stage: alloc::vec::Vec<u8>, dict: alloc::vec::Vec<u8>, unxz: ext::xz::Decoder }
+impl Source { fn borrow(&self) -> &Source { return self; } fn destroy(&self) { self.raw.destroy(); self.out.destroy(); self.history.destroy(); self.workspace.destroy(); self.probs.destroy(); self.stage.destroy(); self.dict.destroy(); } }
+struct Sink { fd: i32, gzip: bool, xz: bool, out: alloc::vec::Vec<u8>, block: alloc::vec::Vec<u8>, pending: alloc::vec::Vec<u8>, scratch: alloc::vec::Vec<i32>, encoder: ext::compression::Encoder,
+    xz_work: alloc::vec::Vec<i32>, xz_window: alloc::vec::Vec<u8>, xz_stage: alloc::vec::Vec<u8>, xz_encoder: ext::xz::Encoder }
+impl Sink { fn borrow(&self) -> &Sink { return self; } fn destroy(&self) { self.out.destroy(); self.block.destroy(); self.pending.destroy(); self.scratch.destroy(); self.xz_work.destroy(); self.xz_window.destroy(); self.xz_stage.destroy(); } }
+const XZ_LEVEL: i32 = 2;
+struct Directory { start: i32, length: i32, mode: u32, mtime: u64, nanos: u32 }
+struct Link { major: u32, minor: u32, inode: u64, start: i32, length: i32 }
+// Reused scratch storage for one read pass.
+struct Work { block: alloc::vec::Vec<u8>, globals: alloc::vec::Vec<u8>, pending: alloc::vec::Vec<u8>, combined: alloc::vec::Vec<u8>, name: alloc::vec::Vec<u8>, path: alloc::vec::Vec<u8>, other: alloc::vec::Vec<u8>, dir_names: alloc::vec::Vec<u8>, dirs: alloc::vec::Vec<Directory> }
+impl Work { fn borrow(&self) -> &Work { return self; } fn destroy(&self) { self.block.destroy(); self.globals.destroy(); self.pending.destroy(); self.combined.destroy(); self.name.destroy(); self.path.destroy(); self.other.destroy(); self.dir_names.destroy(); self.dirs.destroy(); } }
+
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(bytes,count));
+}
+fn at(view: core::slice::View<u8>, index: i32) -> u8 { return core::option::unwrap(view.get(index)); }
+fn sub(view: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> { return core::result::unwrap(view.subview(start,end)); }
+fn zero_view(view: core::slice::View<u8>) -> bool { let index: i32 = 0; while (index < view.len()) { if (at(view,index) != 0) { return false; } index += 1; } return true; }
+fn report(status: i32, message: core::slice::View<u8>) -> i32 {
+    let sink: std::stream::Descriptor = std::stream::stderr(); core::io::write_all(sink.borrow(),message.values,message.start,message.len()); return status;
+}
+fn failed(error: Error) -> i32 {
+    return match (error) {
+        Error::Usage -> report(2,literal("tgz: invalid arguments\n",23)),
+        Error::Archive -> report(2,literal("tgz: invalid tar archive\n",25)),
+        Error::Unsafe -> report(2,literal("tgz: unsafe member path\n",24)),
+        Error::Unsupported -> report(2,literal("tgz: unsupported file type\n",27)),
+        Error::Compression -> report(2,literal("tgz: invalid compressed stream\n",31)),
+        Error::Limit -> report(2,literal("tgz: size limit exceeded\n",25)),
+        Error::Io -> report(3,literal("tgz: I/O failed\n",16)),
+        Error::Allocation -> report(4,literal("tgz: allocation failed\n",23))
+    };
+}
+fn path_of(bytes: core::slice::View<u8>) -> core::result::Result<core::path::Path,Error> {
+    let made: core::result::Result<core::path::Path,core::path::Error> = core::path::from_view(bytes);
+    if (core::result::is_err(made)) { return core::result::Err(Error::Usage); } return core::result::Ok(core::result::unwrap(made));
+}
+fn sized(vector: &alloc::vec::Vec<u8>, length: i32) -> core::result::Result<i32,Error> {
+    if (core::result::is_err(vector.try_resize(length,0))) { return core::result::Err(Error::Allocation); } return core::result::Ok(length);
+}
+fn extend(vector: &alloc::vec::Vec<u8>, bytes: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    if (core::result::is_err(vector.try_extend(bytes))) { return core::result::Err(Error::Allocation); } return core::result::Ok(vector.len());
+}
+// output = base + "/" + name (base may be empty).
+fn join(output: &alloc::vec::Vec<u8>, base: core::slice::View<u8>, name: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    output.clear(); extend(output,base)?;
+    if (base.len() > 0 && name.len() > 0) { if (core::result::is_err(output.try_push(47))) { return core::result::Err(Error::Allocation); } }
+    return extend(output,name);
+}
+fn write_fd(fd: i32, bytes: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    if (bytes.len() == 0) { return core::result::Ok(0); }
+    let sink: std::stream::Descriptor = std::stream::from_handle(fd);
+    if (core::result::is_err(core::io::write_all(sink.borrow(),bytes.values,bytes.start,bytes.len()))) { return core::result::Err(Error::Io); } return core::result::Ok(bytes.len());
+}
+fn read_fd(fd: i32, into: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    let source: std::stream::Descriptor = std::stream::from_handle(fd);
+    while (true) {
+        let got: core::result::Result<i32,core::io::Error> = source.read(into.values,into.start,into.len());
+        if (core::result::is_ok(got)) { return core::result::Ok(core::result::unwrap(got)); }
+        let retry: bool = match (core::result::unwrap_err(got)) { core::io::Error::Interrupted -> true, _ -> false };
+        if (!retry) { return core::result::Err(Error::Io); }
+    } return core::result::Err(Error::Io);
+}
+// Indexed stores into a multi-element [i64] view made in the same function
+// as its backing array are lost (compiler defect); store one word per call.
+fn store_word(base: ptr, index: i32, value: i64) -> i32 { let word: [i64] = core::mem::typed_slice_from_raw_parts<i64>(base + (index as usize) * 8, 1); word[0] = value; return 0; }
+// futimens(fd, {UTIME_OMIT, mtime}) through utimensat(2) with a NULL path.
+fn set_mtime(fd: i32, seconds: u64, nanos: u32) -> bool {
+    let storage: [i32;8] = [0;8]; let base: ptr = core::mem::i32_array_data_ptr(storage);
+    store_word(base,0,0); store_word(base,1,1073741822); store_word(base,2,seconds as i64); store_word(base,3,nanos as i64);
+    let arguments: [std::linux::Argument;4] = [std::linux::Argument::Word(fd as i64),std::linux::Argument::Word(0),std::linux::Argument::Address(base),std::linux::Argument::Word(0)];
+    return core::result::is_ok(std::linux::call(280,core::result::unwrap(core::slice::view(arguments,4))));
+}
+fn handle(file: std::file::File) -> i32 { return core::option::unwrap(file.raw_handle()); }
+
+// ---------------------------------------------------------------- input stream
+fn source(fd: i32) -> core::result::Result<Source,Error> {
+    let raw: alloc::vec::Vec<u8> = alloc::vec::new(); let out: alloc::vec::Vec<u8> = alloc::vec::new(); let history: alloc::vec::Vec<u8> = alloc::vec::new(); let workspace: alloc::vec::Vec<i32> = alloc::vec::new();
+    let probs: alloc::vec::Vec<i32> = alloc::vec::new(); let stage: alloc::vec::Vec<u8> = alloc::vec::new(); let dict: alloc::vec::Vec<u8> = alloc::vec::new();
+    let ok: bool = core::result::is_ok(raw.try_resize(CHUNK,0)) && core::result::is_ok(out.try_resize(CHUNK,0)) && core::result::is_ok(history.try_resize(32768,0)) && core::result::is_ok(workspace.try_resize(707,0))
+        && core::result::is_ok(probs.try_resize(ext::xz::probabilities_len(),0)) && core::result::is_ok(stage.try_resize(ext::xz::stage_len(),0));
+    let limits: ext::compression::Limits = ext::compression::Limits { max_input: 2147483647, max_output: 2147483647, max_members: 1024 };
+    let made: core::result::Result<ext::compression::Decoder,ext::compression::Error> = core::result::Err(ext::compression::Error::Bounds);
+    let unxz: core::result::Result<ext::xz::Decoder,ext::xz::Error> = core::result::Err(ext::xz::Error::Bounds);
+    if (ok) { made = ext::compression::decoder(history.as_view(),workspace.as_view(),ext::compression::Format::Gzip,limits); unxz = ext::xz::decoder(probs.as_view(),stage.as_view(),ext::xz::Format::Xz); }
+    if (core::result::is_err(made) || core::result::is_err(unxz)) { raw.destroy(); out.destroy(); history.destroy(); workspace.destroy(); probs.destroy(); stage.destroy(); return core::result::Err(Error::Allocation); }
+    return core::result::Ok(Source { fd: fd, gzip: false, xz: false, detected: false, raw: raw, raw_pos: 0, raw_len: 0, raw_eof: false, out: out, out_pos: 0, out_len: 0, done: false, history: history, workspace: workspace, decoder: core::result::unwrap(made),
+        probs: probs, stage: stage, dict: dict, unxz: core::result::unwrap(unxz) });
+}
+fn fill_raw(input: &Source) -> core::result::Result<bool,Error> {
+    if (input.raw_pos < input.raw_len) { return core::result::Ok(true); }
+    if (input.raw_eof) { return core::result::Ok(false); }
+    let got: i32 = read_fd(input.fd,input.raw.as_view())?; input.raw_pos = 0; input.raw_len = got;
+    if (got == 0) { input.raw_eof = true; return core::result::Ok(false); } return core::result::Ok(true);
+}
+// Make decoded bytes available; returns how many (0 = end of stream).
+fn available(input: &Source) -> core::result::Result<i32,Error> {
+    if (input.out_pos < input.out_len) { return core::result::Ok(input.out_len-input.out_pos); }
+    if (!input.detected) {
+        // Read until the six magic bytes are in (or the input ends).
+        while (input.raw_len < 6 && !input.raw_eof) {
+            let got: i32 = read_fd(input.fd,sub(input.raw.as_view(),input.raw_len,CHUNK))?;
+            if (got == 0) { input.raw_eof = true; } input.raw_len += got;
+        }
+        input.detected = true; let head: core::slice::View<u8> = input.raw.as_view();
+        if (input.raw_len >= 2 && at(head,0) == 31 && at(head,1) == 139) { input.gzip = true; }
+        if (input.raw_len >= 6 && at(head,0) == 253 && at(head,1) == 55 && at(head,2) == 122 && at(head,3) == 88 && at(head,4) == 90 && at(head,5) == 0) { input.xz = true; }
+    }
+    if (input.xz) { return unxz(input); }
+    if (!input.gzip) {
+        if (fill_raw(input)?) {
+            let count: i32 = input.raw_len-input.raw_pos; let index: i32 = 0; let raw: core::slice::View<u8> = input.raw.as_view(); let out: core::slice::View<u8> = input.out.as_view();
+            while (index < count) { out.values[out.start+index] = raw.values[raw.start+input.raw_pos+index]; index += 1; }
+            input.raw_pos = input.raw_len; input.out_pos = 0; input.out_len = count; return core::result::Ok(count);
+        } return core::result::Ok(0);
+    }
+    while (!input.done) {
+        fill_raw(input)?;
+        let offered: core::slice::View<u8> = sub(input.raw.as_view(),input.raw_pos,input.raw_len);
+        let stepped: core::result::Result<ext::inflate::Step,ext::compression::DecodeFailure> = input.decoder.borrow().step(offered,input.out.as_view(),input.raw_eof);
+        if (core::result::is_err(stepped)) { return core::result::Err(Error::Compression); }
+        let progress: ext::inflate::Step = core::result::unwrap(stepped);
+        input.raw_pos += progress.read; input.out_pos = 0; input.out_len = progress.written;
+        if (input.decoder.borrow().is_done()) { input.done = true; }
+        if (progress.written > 0) { return core::result::Ok(progress.written); }
+        if (progress.read == 0 && input.raw_eof && !input.done) { return core::result::Err(Error::Compression); }
+    } return core::result::Ok(0);
+}
+fn unxz(input: &Source) -> core::result::Result<i32,Error> {
+    while (!input.done) {
+        fill_raw(input)?;
+        let offered: core::slice::View<u8> = sub(input.raw.as_view(),input.raw_pos,input.raw_len);
+        let stepped: core::result::Result<ext::xz::Step,ext::xz::Error> = input.unxz.borrow().step(offered,input.out.as_view(),input.raw_eof);
+        if (core::result::is_err(stepped)) { return core::result::Err(Error::Compression); }
+        let progress: ext::xz::Step = core::result::unwrap(stepped);
+        input.raw_pos += progress.read; input.out_pos = 0; input.out_len = progress.written;
+        let status: i32 = match (progress.status) { ext::xz::Status::Done -> 1, ext::xz::Status::NeedDictionary -> 2, ext::xz::Status::NeedInput -> 0, ext::xz::Status::NeedOutput -> 0 };
+        if (status == 1) { input.done = true; }
+        if (status == 2) {
+            sized(input.dict.borrow(),input.unxz.borrow().dictionary_len())?;
+            if (core::result::is_err(input.unxz.borrow().set_dictionary(input.dict.as_view()))) { return core::result::Err(Error::Compression); }
+        }
+        if (progress.written > 0) { return core::result::Ok(progress.written); }
+    } return core::result::Ok(0);
+}
+// Fill `into` completely; returns the byte count (short only at end of stream).
+fn read_exact(input: &Source, into: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    let filled: i32 = 0;
+    while (filled < into.len()) {
+        let ready: i32 = available(input)?; if (ready == 0) { return core::result::Ok(filled); }
+        let count: i32 = ready; if (count > into.len()-filled) { count = into.len()-filled; }
+        let out: core::slice::View<u8> = input.out.as_view(); let index: i32 = 0;
+        while (index < count) { into.values[into.start+filled+index] = out.values[out.start+input.out_pos+index]; index += 1; }
+        input.out_pos += count; filled += count;
+    } return core::result::Ok(filled);
+}
+// Move `count` member bytes to fd (or discard when fd < 0), then skip padding.
+fn transfer(input: &Source, count: i32, fd: i32) -> core::result::Result<i32,Error> {
+    let left: i32 = count;
+    while (left > 0) {
+        let ready: i32 = available(input)?; if (ready == 0) { return core::result::Err(Error::Archive); }
+        let take: i32 = ready; if (take > left) { take = left; }
+        if (fd >= 0) { write_fd(fd,sub(input.out.as_view(),input.out_pos,input.out_pos+take))?; }
+        input.out_pos += take; left -= take;
+    }
+    let padding: i32 = (512-count%512)%512; let words: [i32;128] = [0;128]; let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(words),512);
+    let pad: core::slice::View<u8> = sub(core::result::unwrap(core::slice::view(raw,512)),0,padding);
+    let padded: i32 = read_exact(input,pad)?; if (padded != padding || !zero_view(pad)) { return core::result::Err(Error::Archive); } return core::result::Ok(count);
+}
+
+// ---------------------------------------------------------------- output stream
+fn sink(fd: i32, gzip: bool, xz: bool) -> core::result::Result<Sink,Error> {
+    let out: alloc::vec::Vec<u8> = alloc::vec::new(); let block: alloc::vec::Vec<u8> = alloc::vec::new(); let pending: alloc::vec::Vec<u8> = alloc::vec::new(); let scratch: alloc::vec::Vec<i32> = alloc::vec::new();
+    let ok: bool = core::result::is_ok(out.try_resize(CHUNK,0)) && core::result::is_ok(block.try_resize(32768,0)) && core::result::is_ok(pending.try_resize(32773,0)) && core::result::is_ok(scratch.try_resize(32768,0));
+    if (!ok) { out.destroy(); block.destroy(); pending.destroy(); scratch.destroy(); return core::result::Err(Error::Allocation); }
+    let limits: ext::compression::EncodeLimits = ext::compression::EncodeLimits { max_input: 1099511627776, max_output: 1099511627776 };
+    let made: core::result::Result<ext::compression::Encoder,ext::compression::Error> = ext::compression::encoder(block.as_view(),pending.as_view(),scratch.as_view(),ext::compression::Format::Gzip,limits);
+    if (core::result::is_err(made)) { out.destroy(); block.destroy(); pending.destroy(); scratch.destroy(); return core::result::Err(Error::Allocation); }
+    let output: Sink = Sink { fd: fd, gzip: gzip, xz: xz, out: out, block: block, pending: pending, scratch: scratch, encoder: core::result::unwrap(made),
+        xz_work: alloc::vec::new(), xz_window: alloc::vec::new(), xz_stage: alloc::vec::new(), xz_encoder: ext::xz::unused_encoder(out.as_view(),scratch.as_view()) };
+    if (xz) {
+        let ok: bool = core::result::is_ok(output.xz_work.try_resize(ext::xz::encoder_workspace_len(XZ_LEVEL),0)) && core::result::is_ok(output.xz_window.try_resize(ext::xz::encoder_window_len(XZ_LEVEL),0)) && core::result::is_ok(output.xz_stage.try_resize(ext::xz::ENCODER_STAGE,0));
+        let encoder: core::result::Result<ext::xz::Encoder,ext::xz::Error> = core::result::Err(ext::xz::Error::Bounds);
+        if (ok) { encoder = ext::xz::encoder(output.xz_work.as_view(),output.xz_window.as_view(),output.xz_stage.as_view(),XZ_LEVEL); }
+        if (core::result::is_err(encoder)) { output.destroy(); return core::result::Err(Error::Allocation); }
+        output.xz_encoder = core::result::unwrap(encoder);
+    }
+    return core::result::Ok(output);
+}
+// xz output through the streaming LZMA2 encoder.
+fn emit_xz(output: &Sink, bytes: core::slice::View<u8>, final_input: bool) -> core::result::Result<i32,Error> {
+    let offset: i32 = 0;
+    while (offset < bytes.len() || final_input) {
+        let stepped: core::result::Result<ext::xz::Step,ext::xz::Error> = output.xz_encoder.borrow().step(sub(bytes,offset,bytes.len()),output.out.as_view(),final_input);
+        if (core::result::is_err(stepped)) { return core::result::Err(Error::Limit); }
+        let progress: ext::xz::Step = core::result::unwrap(stepped); offset += progress.read;
+        write_fd(output.fd,sub(output.out.as_view(),0,progress.written))?;
+        if (final_input && output.xz_encoder.borrow().is_done()) { return core::result::Ok(offset); }
+        if (!final_input && offset == bytes.len()) { return core::result::Ok(offset); }
+    } return core::result::Ok(offset);
+}
+fn emit(output: &Sink, bytes: core::slice::View<u8>, final_input: bool) -> core::result::Result<i32,Error> {
+    if (output.xz) { return emit_xz(output,bytes,final_input); }
+    if (!output.gzip) { return write_fd(output.fd,bytes); }
+    let offset: i32 = 0;
+    while (offset < bytes.len() || final_input) {
+        let stepped: core::result::Result<ext::deflate::Step,ext::compression::EncodeFailure> = output.encoder.borrow().step(sub(bytes,offset,bytes.len()),output.out.as_view(),final_input);
+        if (core::result::is_err(stepped)) { return core::result::Err(Error::Limit); }
+        let progress: ext::deflate::Step = core::result::unwrap(stepped); offset += progress.read;
+        write_fd(output.fd,sub(output.out.as_view(),0,progress.written))?;
+        if (final_input && output.encoder.borrow().is_done()) { return core::result::Ok(offset); }
+        if (progress.read == 0 && progress.written == 0) { return core::result::Err(Error::Limit); }
+    } return core::result::Ok(offset);
+}
+fn emit_zeros(output: &Sink, count: i32) -> core::result::Result<i32,Error> {
+    let words: [i32;256] = [0;256]; let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(words),1024);
+    return emit(output,sub(core::result::unwrap(core::slice::view(raw,1024)),0,count),false);
+}
+
+// ---------------------------------------------------------------- filesystem guard
+// 0 missing, 1 directory, 2 symbolic link, 3 anything else. Never follows.
+fn lkind(path: core::path::Path) -> core::result::Result<i32,Error> {
+    let meta: std::file_ops::Metadata = std::file_ops::empty_metadata();
+    let queried: core::result::Result<i32,core::io::Error> = std::file_ops::metadata_into(path,false,meta.borrow());
+    if (core::result::is_err(queried)) {
+        let missing: bool = match (core::result::unwrap_err(queried)) { core::io::Error::Host(code) -> code == 2, _ -> false };
+        if (missing) { return core::result::Ok(0); } return core::result::Err(Error::Io);
+    }
+    return match (std::file_ops::kind(meta.mode)) { std::file_ops::Kind::Directory -> core::result::Ok(1), std::file_ops::Kind::Symlink -> core::result::Ok(2), _ -> core::result::Ok(3) };
+}
+// Every parent of root/name must be a real directory (created when missing);
+// an existing symbolic link or file among them is refused.
+fn make_parents(scratch: &alloc::vec::Vec<u8>, root: core::slice::View<u8>, name: core::slice::View<u8>, create: bool) -> core::result::Result<i32,Error> {
+    let index: i32 = 0;
+    while (index < name.len()) {
+        if (at(name,index) == 47) {
+            join(scratch,root,sub(name,0,index))?; let path: core::path::Path = path_of(scratch.as_view())?;
+            let kind: i32 = lkind(path)?;
+            if (kind == 0 && create) { if (core::result::is_err(std::filesystem::create_dir(path))) { return core::result::Err(Error::Io); } }
+            if (kind == 0 && !create) { return core::result::Err(Error::Io); }
+            if (kind >= 2) { return core::result::Err(Error::Unsafe); }
+        } index += 1;
+    } return core::result::Ok(0);
+}
+// Remove a non-directory already at the leaf so nothing is written through it.
+fn clear_leaf(path: core::path::Path) -> core::result::Result<i32,Error> {
+    let kind: i32 = lkind(path)?;
+    if (kind == 1) { return core::result::Err(Error::Unsafe); }
+    if (kind >= 2) { if (core::result::is_err(std::filesystem::remove_file(path))) { return core::result::Err(Error::Io); } }
+    return core::result::Ok(kind);
+}
+
+// Member names: strip leading "./" and trailing "/"; reject "", "/x", ".", ".." and NUL.
+fn clean(name: core::slice::View<u8>) -> core::result::Result<core::slice::View<u8>,Error> {
+    let start: i32 = 0; let end: i32 = name.len();
+    while (end - start >= 2 && at(name,start) == 46 && at(name,start+1) == 47) { start += 2; while (start < end && at(name,start) == 47) { start += 1; } }
+    while (end > start && at(name,end-1) == 47) { end -= 1; }
+    if (end == start) { return core::result::Err(Error::Unsafe); }
+    if (at(name,start) == 47) { return core::result::Err(Error::Unsafe); }
+    let component: i32 = start; let index: i32 = start;
+    while (index <= end) {
+        if (index == end || at(name,index) == 47) {
+            let length: i32 = index - component;
+            if (length == 0) { return core::result::Err(Error::Unsafe); }
+            if (length == 2 && at(name,component) == 46 && at(name,component+1) == 46) { return core::result::Err(Error::Unsafe); }
+            if (length == 1 && at(name,component) == 46) { return core::result::Err(Error::Unsafe); }
+            component = index + 1;
+        } else { if (at(name,index) == 0) { return core::result::Err(Error::Unsafe); } }
+        index += 1;
+    } return core::result::Ok(sub(name,start,end));
+}
+
+// ---------------------------------------------------------------- reading
+fn read_options() -> ext::tar::ReadOptions { return ext::tar::ReadOptions { full_uname: false, full_gname: false, gnu: true, headers_only: true }; }
+// One streaming pass. Pass 0 validates only; pass 1 lists or extracts.
+fn scan(options: Options, input: &Source, pass: i32, work: &Work) -> core::result::Result<i32,Error> {
+    let root: core::slice::View<u8> = literal(".",1); if (options.has_directory) { root = options.directory; }
+    sized(work.block.borrow(),512)?; work.globals.clear(); work.pending.clear(); let count: i32 = 0;
+    while (true) {
+        let block: core::slice::View<u8> = work.block.as_view();
+        let first: i32 = read_exact(input,block)?; if (first != 512) { return core::result::Err(Error::Archive); }
+        if (zero_view(block)) {
+            if (work.pending.len() != 0) { return core::result::Err(Error::Archive); }
+            let second: i32 = read_exact(input,block)?; if (second != 512 || !zero_view(block)) { return core::result::Err(Error::Archive); }
+            while (true) { let got: i32 = read_exact(input,block)?; if (!zero_view(sub(block,0,got))) { return core::result::Err(Error::Archive); } if (got < 512) { break; } }
+            return core::result::Ok(count);
+        }
+        let extension: core::result::Result<core::option::Option<i32>,ext::pax::Error> = ext::pax::extension_data_len(block,read_options());
+        if (core::result::is_err(extension)) { return core::result::Err(Error::Archive); }
+        let length: core::option::Option<i32> = core::result::unwrap(extension);
+        let global: bool = at(block,156) == 103;
+        if (global && work.pending.len() != 0) { return core::result::Err(Error::Archive); }
+        let target: &alloc::vec::Vec<u8> = work.pending.borrow(); if (global && core::option::is_some(length)) { target = work.globals.borrow(); }
+        if (work.pending.len()+work.globals.len() > MAX_HEADERS) { return core::result::Err(Error::Limit); }
+        let start: i32 = target.len(); extend(target,block)?;
+        if (core::option::is_some(length)) {
+            let size: i32 = core::option::unwrap(length); if (size > MAX_HEADERS) { return core::result::Err(Error::Limit); }
+            let padded: i32 = size+(512-size%512)%512; sized(target,start+512+padded)?;
+            let loaded: i32 = read_exact(input,sub(target.as_view(),start+512,start+512+padded))?; if (loaded != padded) { return core::result::Err(Error::Archive); }
+            continue;
+        }
+        // One member: globals, then its extension headers, then its header.
+        work.combined.clear(); extend(work.combined.borrow(),work.globals.as_view())?; extend(work.combined.borrow(),work.pending.as_view())?; work.pending.clear();
+        let opened: core::result::Result<ext::pax::Reader,ext::pax::Error> = ext::pax::reader_with(work.combined.as_view(),read_options());
+        if (core::result::is_err(opened)) { return core::result::Err(Error::Archive); }
+        let reader: ext::pax::Reader = core::result::unwrap(opened);
+        let parsed: core::result::Result<core::option::Option<ext::pax::Entry>,ext::pax::Error> = reader.next();
+        if (core::result::is_err(parsed) || reader.position() != work.combined.len()) { return core::result::Err(Error::Archive); }
+        let item: core::option::Option<ext::pax::Entry> = core::result::unwrap(parsed); if (core::option::is_none(item)) { return core::result::Err(Error::Archive); }
+        let entry: ext::pax::Entry = core::option::unwrap(item); count += 1;
+        sized(work.name.borrow(),entry.path_len())?;
+        if (core::result::is_err(entry.copy_path(work.name.as_view()))) { return core::result::Err(Error::Archive); }
+        let kind: ext::tar::Kind = entry.header.kind;
+        let data: bool = match (kind) { ext::tar::Kind::Regular -> true, ext::tar::Kind::Contiguous -> true, _ -> false };
+        let size: i32 = 0; if (data) { size = entry.header.size as i32; }
+        if (options.mode == 3) {
+            if (pass == 1) { write_fd(1,work.name.as_view())?; write_fd(1,literal("\n",1))?; }
+            transfer(input,size,-1)?; continue;
+        }
+        let member: core::slice::View<u8> = clean(work.name.as_view())?;
+        let directory: bool = match (kind) { ext::tar::Kind::Directory -> true, _ -> false };
+        let symbolic: bool = match (kind) { ext::tar::Kind::SymbolicLink -> true, _ -> false };
+        let hard: bool = match (kind) { ext::tar::Kind::HardLink -> true, _ -> false };
+        if (!data && !directory && !symbolic && !hard) { return core::result::Err(Error::Unsupported); }
+        if (symbolic && (entry.link_name.len() == 0 || at(entry.link_name,0) == 47)) { return core::result::Err(Error::Unsafe); }
+        let link_target: core::slice::View<u8> = entry.link_name; if (hard) { link_target = clean(entry.link_name)?; }
+        if (pass == 0) { transfer(input,size,-1)?; continue; }
+        make_parents(work.path.borrow(),root,member,true)?;
+        join(work.path.borrow(),root,member)?; let target_path: core::path::Path = path_of(work.path.as_view())?;
+        if (directory) {
+            let existing: i32 = lkind(target_path)?;
+            if (existing >= 2) { return core::result::Err(Error::Unsafe); }
+            if (existing == 0 && core::result::is_err(std::filesystem::create_dir(target_path))) { return core::result::Err(Error::Io); }
+            let at_name: i32 = work.dir_names.len(); extend(work.dir_names.borrow(),work.path.as_view())?;
+            if (core::result::is_err(work.dirs.try_push(Directory { start: at_name, length: work.path.len(), mode: entry.header.mode, mtime: entry.mtime, nanos: entry.mtime_nanos }))) { return core::result::Err(Error::Allocation); }
+            continue;
+        }
+        clear_leaf(target_path)?;
+        if (symbolic) {
+            if (core::result::is_err(std::file_ops::symlink(path_of(entry.link_name)?,target_path))) { return core::result::Err(Error::Io); } continue;
+        }
+        if (hard) {
+            make_parents(work.other.borrow(),root,link_target,false)?; join(work.other.borrow(),root,link_target)?; let source_path: core::path::Path = path_of(work.other.as_view())?;
+            let existing: i32 = lkind(source_path)?; if (existing != 3) { return core::result::Err(Error::Unsafe); }
+            if (core::result::is_err(std::file_ops::hard_link(source_path,target_path,false))) { return core::result::Err(Error::Io); } continue;
+        }
+        let open: std::file_ops::OpenOptions = std::file_ops::options(); open.access = std::file_ops::Access::Write; open.create = true; open.exclusive = true; open.no_follow = true; open.mode = 384;
+        let created: core::result::Result<std::file::File,core::io::Error> = std::file_ops::open(target_path,open);
+        if (core::result::is_err(created)) { return core::result::Err(Error::Io); }
+        let file: std::file::File = core::result::unwrap(created);
+        let moved: core::result::Result<i32,Error> = transfer(input,size,handle(file));
+        let finished: bool = core::result::is_ok(moved) && core::result::is_ok(std::file_ops::set_permissions(file.borrow(),entry.header.mode & 511)) && set_mtime(handle(file),entry.mtime,entry.mtime_nanos);
+        let closed: core::result::Result<i32,core::io::Error> = file.close();
+        if (core::result::is_err(moved)) { return moved; }
+        if (!finished || core::result::is_err(closed)) { return core::result::Err(Error::Io); }
+    } return core::result::Ok(count);
+}
+// Directory modes and times last, deepest first, so contents do not disturb them.
+fn finish_directories(work: &Work) -> core::result::Result<i32,Error> {
+    let index: i32 = work.dirs.len()-1;
+    while (index >= 0) {
+        let item: Directory = work.dirs.at(index); index -= 1;
+        let open: std::file_ops::OpenOptions = std::file_ops::options(); open.directory = true; open.no_follow = true;
+        let opened: core::result::Result<std::file::File,core::io::Error> = std::file_ops::open(path_of(sub(work.dir_names.as_view(),item.start,item.start+item.length))?,open);
+        if (core::result::is_err(opened)) { return core::result::Err(Error::Io); }
+        let file: std::file::File = core::result::unwrap(opened);
+        let ok: bool = core::result::is_ok(std::file_ops::set_permissions(file.borrow(),item.mode & 1023)) && set_mtime(handle(file),item.mtime,item.nanos);
+        let closed: core::result::Result<i32,core::io::Error> = file.close();
+        if (!ok || core::result::is_err(closed)) { return core::result::Err(Error::Io); }
+    } return core::result::Ok(0);
+}
+fn open_input(options: Options) -> core::result::Result<i32,Error> {
+    if (options.archive.len() == 1 && at(options.archive,0) == 45) { return core::result::Ok(0); }
+    let opened: core::result::Result<std::file::File,core::io::Error> = std::file::open(path_of(options.archive)?,std::file::OpenMode::Read);
+    if (core::result::is_err(opened)) { return core::result::Err(Error::Io); } return core::result::Ok(handle(core::result::unwrap(opened)));
+}
+fn close_fd(fd: i32) { if (fd > 2) { let file: std::file::File = core::result::unwrap(std::file::from_owned_handle(fd)); file.close(); } }
+fn one_pass(options: Options, pass: i32, work: &Work) -> core::result::Result<i32,Error> {
+    let fd: i32 = open_input(options)?;
+    let made: core::result::Result<Source,Error> = source(fd); if (core::result::is_err(made)) { close_fd(fd); return core::result::Err(core::result::unwrap_err(made)); }
+    let input: Source = core::result::unwrap(made);
+    let result: core::result::Result<i32,Error> = scan(options,input.borrow(),pass,work);
+    input.destroy(); close_fd(fd); return result;
+}
+fn read_archive(options: Options) -> core::result::Result<i32,Error> {
+    let work: Work = Work { block: alloc::vec::new(), globals: alloc::vec::new(), pending: alloc::vec::new(), combined: alloc::vec::new(), name: alloc::vec::new(), path: alloc::vec::new(), other: alloc::vec::new(), dir_names: alloc::vec::new(), dirs: alloc::vec::new() };
+    let stdin: bool = options.archive.len() == 1 && at(options.archive,0) == 45;
+    let result: core::result::Result<i32,Error> = core::result::Ok(0);
+    if (!stdin) { result = one_pass(options,0,work.borrow()); }
+    if (core::result::is_ok(result)) { result = one_pass(options,1,work.borrow()); }
+    if (core::result::is_ok(result) && options.mode == 2) { result = finish_directories(work.borrow()); }
+    work.destroy(); return result;
+}
+
+// ---------------------------------------------------------------- creating
+struct Create { scratch: alloc::vec::Vec<u8>, link: alloc::vec::Vec<u8>, member: alloc::vec::Vec<u8>, header: alloc::vec::Vec<u8>, buffer: alloc::vec::Vec<u8>, names: alloc::vec::Vec<u8>, links: alloc::vec::Vec<Link> }
+impl Create { fn borrow(&self) -> &Create { return self; } fn destroy(&self) { self.scratch.destroy(); self.link.destroy(); self.member.destroy(); self.header.destroy(); self.buffer.destroy(); self.names.destroy(); self.links.destroy(); } }
+fn emit_header(output: &Sink, state: &Create, meta: ext::tar::Metadata, size: i32) -> core::result::Result<i32,Error> {
+    let measured: core::result::Result<i32,ext::pax::Error> = ext::pax::header_len(meta);
+    if (core::result::is_err(measured)) { return core::result::Err(Error::Limit); }
+    sized(state.header.borrow(),core::result::unwrap(measured))?;
+    let writer: ext::pax::Writer = core::result::unwrap(ext::pax::writer(state.header.as_view()));
+    if (core::result::is_err(writer.add_header(meta,size))) { return core::result::Err(Error::Archive); }
+    return emit(output,state.header.as_view(),false);
+}
+fn add_path(options: Options, output: &Sink, state: &Create, name: core::slice::View<u8>) -> core::result::Result<bool,Error> {
+    let root: core::slice::View<u8> = literal("",0); if (options.has_directory) { root = options.directory; }
+    join(state.scratch.borrow(),root,name)?; let source_path: core::path::Path = path_of(state.scratch.as_view())?;
+    let meta: std::file_ops::Metadata = std::file_ops::empty_metadata();
+    if (core::result::is_err(std::file_ops::metadata_into(source_path,false,meta.borrow()))) { return core::result::Err(Error::Io); }
+    let kind: std::file_ops::Kind = std::file_ops::kind(meta.mode);
+    let header: ext::tar::Metadata = ext::tar::metadata(name,ext::tar::Kind::Regular);
+    header.mode = meta.mode & 4095; header.uid = meta.identity.uid as u64; header.gid = meta.identity.gid as u64;
+    if (meta.times.modified.seconds > 0) { header.mtime = meta.times.modified.seconds as u64; }
+    let directory: bool = match (kind) { std::file_ops::Kind::Directory -> true, _ -> false };
+    let file: bool = match (kind) { std::file_ops::Kind::Regular -> true, _ -> false };
+    let symbolic: bool = match (kind) { std::file_ops::Kind::Symlink -> true, _ -> false };
+    if (file) {
+        if (meta.identity.links > 1) {
+            let index: i32 = 0;
+            while (index < state.links.len()) {
+                let seen: Link = state.links.at(index); index += 1;
+                if (seen.inode == meta.identity.inode && seen.major == meta.identity.device_major && seen.minor == meta.identity.device_minor) {
+                    header.kind = ext::tar::Kind::HardLink; header.link_name = sub(state.names.as_view(),seen.start,seen.start+seen.length);
+                    emit_header(output,state,header,0)?; return core::result::Ok(false);
+                }
+            }
+            let start: i32 = state.names.len(); extend(state.names.borrow(),name)?;
+            if (core::result::is_err(state.links.try_push(Link { major: meta.identity.device_major, minor: meta.identity.device_minor, inode: meta.identity.inode, start: start, length: name.len() }))) { return core::result::Err(Error::Allocation); }
+        }
+        if (meta.length.bytes > 2147483647) { return core::result::Err(Error::Limit); }
+        let size: i32 = meta.length.bytes as i32;
+        let opened: core::result::Result<std::file::File,core::io::Error> = std::file::open(source_path,std::file::OpenMode::Read);
+        if (core::result::is_err(opened)) { return core::result::Err(Error::Io); }
+        let input: std::file::File = core::result::unwrap(opened);
+        let result: core::result::Result<i32,Error> = emit_header(output,state,header,size); let left: i32 = size;
+        while (core::result::is_ok(result) && left > 0) {
+            let want: i32 = CHUNK; if (want > left) { want = left; }
+            let got: core::result::Result<i32,Error> = read_fd(handle(input),sub(state.buffer.as_view(),0,want));
+            if (core::result::is_err(got)) { result = got; break; }
+            let count: i32 = core::result::unwrap(got); if (count == 0) { result = core::result::Err(Error::Io); break; }
+            result = emit(output,sub(state.buffer.as_view(),0,count),false); left -= count;
+        }
+        input.close();
+        if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); }
+        emit_zeros(output,(512-size%512)%512)?; return core::result::Ok(false);
+    }
+    if (symbolic) {
+        sized(state.link.borrow(),4096)?;
+        let read: core::result::Result<std::file_ops::LinkRead,core::io::Error> = std::file_ops::read_link_into(source_path,state.link.as_view());
+        if (core::result::is_err(read)) { return core::result::Err(Error::Io); }
+        let got: std::file_ops::LinkRead = core::result::unwrap(read); if (!got.complete) { return core::result::Err(Error::Limit); }
+        header.kind = ext::tar::Kind::SymbolicLink; header.link_name = sub(state.link.as_view(),0,got.copied);
+        emit_header(output,state,header,0)?; return core::result::Ok(false);
+    }
+    if (!directory) { return core::result::Err(Error::Unsupported); }
+    // Directory names carry one trailing slash, as GNU tar and Python write them.
+    state.link.clear(); extend(state.link.borrow(),name)?; if (core::result::is_err(state.link.try_push(47))) { return core::result::Err(Error::Allocation); }
+    header.kind = ext::tar::Kind::Directory; header.path = state.link.as_view();
+    emit_header(output,state,header,0)?; return core::result::Ok(true);
+}
+fn create_into(options: Options, operands: alloc::vec::Vec<core::slice::View<u8>>, output: &Sink, state: &Create) -> core::result::Result<i32,Error> {
+    sized(state.buffer.borrow(),CHUNK)?; let index: i32 = 0;
+    while (index < operands.len()) {
+        let name: core::slice::View<u8> = operands.at(index); index += 1;
+        let top: core::slice::View<u8> = name; while (top.len() > 1 && at(top,top.len()-1) == 47) { top = sub(top,0,top.len()-1); }
+        let descend: bool = add_path(options,output,state,top)?; if (!descend) { continue; }
+        let root: core::slice::View<u8> = literal("",0); if (options.has_directory) { root = options.directory; }
+        join(state.scratch.borrow(),root,top)?;
+        let walked: core::result::Result<std::directory::Snapshot,std::directory::Error> = std::directory::walk(path_of(state.scratch.as_view())?,64,std::directory::default_limits());
+        if (core::result::is_err(walked)) { return core::result::Err(Error::Io); }
+        let snapshot: std::directory::Snapshot = core::result::unwrap(walked); let row: i32 = 0; let failure: core::option::Option<Error> = core::option::None();
+        let entry: std::directory::WalkEntry = std::directory::empty_entry();
+        while (row < snapshot.len()) {
+            core::result::unwrap(snapshot.entry_into(row,entry.borrow())); row += 1;
+            let joined: core::result::Result<i32,Error> = join(state.member.borrow(),top,entry.path);
+            if (core::result::is_err(joined)) { failure = core::option::Some(core::result::unwrap_err(joined)); break; }
+            let owned: core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> = alloc::vec::from_view(state.member.as_view());
+            if (core::result::is_err(owned)) { failure = core::option::Some(Error::Allocation); break; }
+            let copy: alloc::vec::Vec<u8> = core::result::unwrap(owned);
+            let added: core::result::Result<bool,Error> = add_path(options,output,state,copy.as_view()); copy.destroy();
+            if (core::result::is_err(added)) { failure = core::option::Some(core::result::unwrap_err(added)); break; }
+        }
+        snapshot.destroy();
+        if (core::option::is_some(failure)) { return core::result::Err(core::option::unwrap(failure)); }
+    }
+    emit_zeros(output,1024)?; emit(output,literal("",0),true)?; return core::result::Ok(0);
+}
+fn create(options: Options, operands: alloc::vec::Vec<core::slice::View<u8>>) -> core::result::Result<i32,Error> {
+    if (operands.len() == 0) { return core::result::Err(Error::Usage); }
+    let fd: i32 = 1;
+    if (!(options.archive.len() == 1 && at(options.archive,0) == 45)) {
+        let opened: core::result::Result<std::file::File,core::io::Error> = std::file::open(path_of(options.archive)?,std::file::OpenMode::Create);
+        if (core::result::is_err(opened)) { return core::result::Err(Error::Io); } fd = handle(core::result::unwrap(opened));
+    }
+    let made: core::result::Result<Sink,Error> = sink(fd,options.gzip,options.xz); if (core::result::is_err(made)) { close_fd(fd); return core::result::Err(core::result::unwrap_err(made)); }
+    let output: Sink = core::result::unwrap(made);
+    let state: Create = Create { scratch: alloc::vec::new(), link: alloc::vec::new(), member: alloc::vec::new(), header: alloc::vec::new(), buffer: alloc::vec::new(), names: alloc::vec::new(), links: alloc::vec::new() };
+    let result: core::result::Result<i32,Error> = create_into(options,operands,output.borrow(),state.borrow());
+    state.destroy(); output.destroy(); close_fd(fd); return result;
+}
+
+fn apply(options: &Options, item: ext::cli::Occurrence) -> bool {
+    if (item.id >= 1 && item.id <= 3) { if (options.mode != 0) { return false; } options.mode = item.id; return true; }
+    if (item.id == 4) { if (options.xz) { return false; } options.gzip = true; return true; }
+    if (item.id == 7) { if (options.gzip) { return false; } options.xz = true; return true; }
+    if (item.id == 8) { options.help = true; return true; }
+    let value: core::slice::View<u8> = core::option::unwrap(item.value).bytes;
+    if (item.id == 5) { if (options.has_archive || value.is_empty()) { return false; } options.archive = value; options.has_archive = true; return true; }
+    if (item.id == 6) { if (options.has_directory || value.is_empty()) { return false; } options.directory = value; options.has_directory = true; return true; }
+    return false;
+}
+fn arguments(values: std::args::Arguments) -> i32 {
+    let specs: [ext::cli::Spec;8] = [
+        ext::cli::Spec { id: 1, long: literal("create",6), short: 99, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 2, long: literal("extract",7), short: 120, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 3, long: literal("list",4), short: 116, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 4, long: literal("gzip",4), short: 122, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 5, long: literal("file",4), short: 102, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 6, long: literal("directory",9), short: 67, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 7, long: literal("xz",2), short: 74, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 8, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag }
+    ];
+    let schema: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,8)); let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(values.as_view(),schema,ext::cli::Ordering::Intermixed));
+    let options: Options = Options { mode: 0, gzip: false, xz: false, archive: literal("",0), has_archive: false, directory: literal("",0), has_directory: false, help: false };
+    let operands: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new();
+    while (true) {
+        let parsed: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next(); if (core::result::is_err(parsed)) { operands.destroy(); return failed(Error::Usage); }
+        let next: core::option::Option<ext::cli::Event> = core::result::unwrap(parsed); if (core::option::is_none(next)) { break; }
+        let valid: bool = match (core::option::unwrap(next)) { ext::cli::Event::Option(item) -> apply(options.borrow(),item), ext::cli::Event::Operand(item) -> core::result::is_ok(operands.try_push(item.bytes)) };
+        if (!valid) { operands.destroy(); return failed(Error::Usage); }
+    }
+    if (options.help) {
+        operands.destroy(); let usage: core::slice::View<u8> = literal("Usage: tgz (-c|-x|-t) [-z|-J] -f ARCHIVE|- [-C DIR] [PATH...]\n",62);
+        if (core::result::is_err(write_fd(1,usage))) { return failed(Error::Io); } return 0;
+    }
+    if (options.mode == 0 || !options.has_archive || (options.mode != 1 && operands.len() != 0)) { operands.destroy(); return failed(Error::Usage); }
+    let result: core::result::Result<i32,Error> = core::result::Ok(0);
+    if (options.mode == 1) { result = create(options,operands); } else { result = read_archive(options); }
+    operands.destroy();
+    if (core::result::is_err(result)) { return failed(core::result::unwrap_err(result)); } return 0;
+}
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,256,65536);
+    if (core::result::is_err(captured)) { return report(2,literal("tgz: cannot capture arguments\n",30)); }
+    let values: std::args::Arguments = core::result::unwrap(captured); let status: i32 = arguments(values); values.destroy(); return status;
+}
