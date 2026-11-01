@@ -345,8 +345,9 @@ pub impl Builder {
                                 else { f.phase = 4; f.remaining = n.a; self.push(f); }
                             } else {
                                 if (f.phase == 3) {
-                                    if (n.flag) { result = self.emit(instruction(11, f.saved, result, 0, 0, false)); }
-                                    else { result = self.emit(instruction(11, result, f.saved, 0, 0, false)); }
+                                    // Every optional copy skips to the repeat's exit, so x{0,2}? nests as (?:x(?:x)??)??.
+                                    if (n.flag) { result = self.emit(instruction(11, f.next, result, 0, 0, false)); }
+                                    else { result = self.emit(instruction(11, result, f.next, 0, 0, false)); }
                                     f.remaining -= 1; f.phase = 2; self.push(f);
                                 } else {
                                     if (f.remaining > 0) { f.remaining -= 1; self.push(f); self.push(frame(n.left, result)); }
