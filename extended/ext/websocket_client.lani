@@ -200,7 +200,7 @@ pub impl Client {
             self.used = 0;
         }
         let key: [u8;4] = [0;4]; let pool: core::slice::View<u8> = self.masks.as_view(); let i: i32 = 0;
-        while (i < 4) { key[i] = byte(pool,self.used + i); i += 1; }
+        while (i < 4) { let b: u8 = byte(pool,self.used + i); key[i] = b; i += 1; }
         self.used += 4; return core::result::Ok(key);
     }
     // Stop using the transport. graceful sends TLS close_notify first.
