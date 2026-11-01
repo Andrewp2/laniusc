@@ -309,8 +309,149 @@ def errors_group(exe):
     print("http-proxy-errors cases=%d bad_gateway=%d gateway_timeout=%d rejected=%d" % (cases, stats["bad_gateway"] + dead_stats["bad_gateway"], stats["gateway_timeout"], stats["rejected"]))
 
 
+class H2:
+    """A libnghttp2 client session over TCP (prior-knowledge h2c)."""
+
+    def __init__(self, port):
+        import ctypes
+        import nghttp2_client as ng
+        self.ng, self.ctypes = ng, ctypes
+        self.s = socket.create_connection(("127.0.0.1", port), timeout=10)
+        self.c = ng.Client()
+        self.pending = {}
+
+    def request(self, method, path, headers=(), body=None):
+        return self.c.request(method, path, list(headers), body)
+
+    def streaming(self, method, path, headers=()):
+        """A request whose body is fed later with feed(); deferred until then."""
+        ng, ctypes = self.ng, self.ctypes
+        state = {"data": bytearray(), "end": False}
+
+        def read(session, stream_id, buf, length, flags, source, user):
+            if not state["data"] and not state["end"]:
+                return -508  # NGHTTP2_ERR_DEFERRED
+            n = min(length, len(state["data"]))
+            ctypes.memmove(buf, bytes(state["data"][:n]), n)
+            del state["data"][:n]
+            if state["end"] and not state["data"]:
+                flags[0] |= ng.DATA_FLAG_EOF
+            return n
+        cb = ng.READ_CB(read)
+        provider = ng.DataProvider(ng.DataSource(0), cb)
+        self.c._keep += [cb, provider]
+        fields = [(b":method", method), (b":scheme", b"http"), (b":authority", b"localhost"), (b":path", path)] + list(headers)
+        keep = [ctypes.create_string_buffer(x, len(x)) for f in fields for x in f]
+        self.c._keep.append(keep)
+        nva = (ng.Nv * len(fields))()
+        for i in range(len(fields)):
+            nva[i] = ng.Nv(ctypes.cast(keep[2 * i], ctypes.c_void_p), ctypes.cast(keep[2 * i + 1], ctypes.c_void_p), len(fields[i][0]), len(fields[i][1]), 0)
+        sid = ng.lib.nghttp2_submit_request(self.c.session, None, nva, len(fields), ctypes.byref(provider), None)
+        self.c.streams[sid] = ng.Stream()
+        self.pending[sid] = state
+        return sid
+
+    def feed(self, sid, data, end=False):
+        state = self.pending[sid]
+        state["data"] += data; state["end"] = end
+        self.ng.lib.nghttp2_session_resume_data(self.c.session, sid)
+
+    def pump(self, until, limit=20):
+        deadline = time.monotonic() + limit
+        while True:
+            out = self.c.output()
+            if out:
+                self.s.sendall(out)
+            if until():
+                return
+            if time.monotonic() > deadline:
+                raise AssertionError("h2 pump timed out")
+            self.s.settimeout(0.05)
+            try:
+                data = self.s.recv(1 << 20)
+            except socket.timeout:
+                continue
+            if not data:
+                raise EOFError()
+            self.c.receive(data)
+
+    def wait(self, *sids):
+        self.pump(lambda: all(self.c.streams[s].closed for s in sids))
+        return [self.c.streams[s] for s in sids]
+
+    def close(self):
+        self.c.goaway_submit(0)
+        try:
+            self.s.sendall(self.c.output())
+        except OSError:
+            pass
+        self.s.close(); self.c.close()
+
+
+def h2_echo(stream):
+    return Response(stream.status, b"", stream.headers, bytes(stream.body)).echo()
+
+
+def h2_group(exe):
+    up_a, port_a = start_upstream("A")
+    up_b, port_b = start_upstream("B")
+    proxy, port = start_proxy(exe, port_a, port_b)
+    cases = 0
+    try:
+        c = H2(port)
+        # 20 multiplexed requests on one connection.
+        sids = [c.request(b"GET", b"/echo/%d" % i, [(b"x-tag", b"t%d" % i)]) for i in range(20)]
+        for i, st in enumerate(c.wait(*sids)):
+            e = h2_echo(st); h = dict(e["h"])
+            check(st.status == 200 and st.error == 0 and e["request"] == "GET /echo/%d HTTP/1.1" % i and h["x-tag"] == "t%d" % i, ("multiplexed", i, st.status, e))
+            check(h["via"] == "2 lanius" and h["host"] == "localhost" and h["x-forwarded-for"] == "127.0.0.1", ("h2 rewrite", h))
+            names = [k for k, v in st.headers]
+            check(b"connection" not in names and b"keep-alive" not in names and b"x-up-secret" not in names and (b"via", b"1.1 lanius") in st.headers, ("h2 response fields", st.headers))
+        cases += 1
+        # Request bodies: with a length, and without one (chunked upstream).
+        body = pattern(200000)
+        s1 = c.request(b"POST", b"/echo", [(b"content-length", b"200000")], body)
+        s2 = c.request(b"POST", b"/upload", [], pattern(300000))
+        r1, r2 = c.wait(s1, s2); e1, e2 = h2_echo(r1), h2_echo(r2)
+        check(e1["body-sha"] == sha(body) and dict(e1["h"]).get("content-length") == "200000", ("h2 fixed upload", e1))
+        check(e2["body-sha"] == sha(pattern(300000)) and dict(e2["h"]).get("transfer-encoding") == "chunked", ("h2 chunked upload", e2)); cases += 2
+        # Split cookies are joined; /b/ is routed to B.
+        s1 = c.request(b"GET", b"/echo", [(b"cookie", b"a=1"), (b"cookie", b"b=2")]); s2 = c.request(b"GET", b"/b/z")
+        r1, r2 = c.wait(s1, s2)
+        check(dict(h2_echo(r1)["h"]).get("cookie") == "a=1; b=2" and h2_echo(r2)["upstream"] == "B", "cookies, route"); cases += 2
+        # Chunked, close-delimited, HEAD and large responses.
+        s1 = c.request(b"GET", b"/chunked/100000"); s2 = c.request(b"GET", b"/close/20000"); s3 = c.request(b"HEAD", b"/head-only"); s4 = c.request(b"GET", b"/fixed/5000000")
+        r1, r2, r3, r4 = c.wait(s1, s2, s3, s4)
+        check(bytes(r1.body) == pattern(100000) and b"transfer-encoding" not in [k for k, v in r1.headers], "h2 chunked response")
+        check(bytes(r2.body) == pattern(20000) and r2.error == 0, "h2 close-delimited")
+        check(r3.status == 200 and dict(r3.headers).get(b"content-length") == b"1234" and not r3.body, ("h2 HEAD", r3.headers))
+        check(sha(bytes(r4.body)) == sha(pattern(5000000)), "h2 big download"); cases += 4
+        big = pattern(5000000)
+        r = c.wait(c.request(b"POST", b"/upload", [(b"content-length", b"5000000")], big))[0]
+        check(h2_echo(r)["body-sha"] == sha(big), "h2 big upload"); cases += 1
+        # One stream fails upstream while its neighbour completes.
+        s1 = c.request(b"GET", b"/drop"); s2 = c.request(b"GET", b"/echo/ok"); s3 = c.request(b"GET", b"/slow-head")
+        r1, r2, r3 = c.wait(s1, s2, s3)
+        check(r1.status == 502 and r2.status == 200 and r3.status == 504, ("h2 errors", r1.status, r2.status, r3.status)); cases += 2
+        # Streaming both ways over HTTP/2.
+        sid = c.streaming(b"POST", b"/stream")
+        for k in range(5):
+            piece = bytes([97 + k]) * (5000 + k); want = len(c.c.streams[sid].body) + len(piece)
+            c.feed(sid, piece, end=False)
+            c.pump(lambda: len(c.c.streams[sid].body) >= want)
+            check(bytes(c.c.streams[sid].body[-len(piece):]) == piece, ("h2 stream echo", k))
+        c.feed(sid, b"", end=True); st = c.wait(sid)[0]
+        check(st.status == 200 and st.error == 0, "h2 stream end"); cases += 1
+        c.close()
+    finally:
+        stats = stop_proxy(proxy)
+        up_a.kill(); up_b.kill()
+    check(stats["h2"] == 1 and stats["h2_requests"] == 33 and stats["bad_gateway"] == 1 and stats["gateway_timeout"] == 1, ("stats", stats))
+    print("http-proxy-h2 cases=%d requests=%d connects=%d reused=%d" % (cases, stats["h2_requests"], stats["connects"], stats["reused"]))
+
+
 def main():
     group, exe = sys.argv[1], sys.argv[2]
-    {"h1": h1_group, "errors": errors_group}[group](exe)
+    {"h1": h1_group, "errors": errors_group, "h2": h2_group}[group](exe)
 
 main()
