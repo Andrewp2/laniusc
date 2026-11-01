@@ -1,0 +1,262 @@
+// HTTP/2 frame layer (RFC 9113 section 4 and 6): the 9-byte frame header,
+// per-type payload parsing with the RFC's size, stream and padding rules,
+// SETTINGS validation, and frame writers that split header blocks into
+// HEADERS + CONTINUATION and data into frames of a maximum size.
+module ext::http2_frame;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+
+pub const DATA: i32 = 0;
+pub const HEADERS: i32 = 1;
+pub const PRIORITY: i32 = 2;
+pub const RST_STREAM: i32 = 3;
+pub const SETTINGS: i32 = 4;
+pub const PUSH_PROMISE: i32 = 5;
+pub const PING: i32 = 6;
+pub const GOAWAY: i32 = 7;
+pub const WINDOW_UPDATE: i32 = 8;
+pub const CONTINUATION: i32 = 9;
+
+pub const END_STREAM: i32 = 1;
+pub const ACK: i32 = 1;
+pub const END_HEADERS: i32 = 4;
+pub const PADDED: i32 = 8;
+pub const PRIORITY_FLAG: i32 = 32;
+
+// Error codes (RFC 9113 section 7).
+pub const NO_ERROR: i32 = 0;
+pub const PROTOCOL_ERROR: i32 = 1;
+pub const INTERNAL_ERROR: i32 = 2;
+pub const FLOW_CONTROL_ERROR: i32 = 3;
+pub const SETTINGS_TIMEOUT: i32 = 4;
+pub const STREAM_CLOSED: i32 = 5;
+pub const FRAME_SIZE_ERROR: i32 = 6;
+pub const REFUSED_STREAM: i32 = 7;
+pub const CANCEL: i32 = 8;
+pub const COMPRESSION_ERROR: i32 = 9;
+pub const CONNECT_ERROR: i32 = 10;
+pub const ENHANCE_YOUR_CALM: i32 = 11;
+pub const INADEQUATE_SECURITY: i32 = 12;
+pub const HTTP_1_1_REQUIRED: i32 = 13;
+
+// SETTINGS identifiers (RFC 9113 section 6.5.2).
+pub const HEADER_TABLE_SIZE: i32 = 1;
+pub const ENABLE_PUSH: i32 = 2;
+pub const MAX_CONCURRENT_STREAMS: i32 = 3;
+pub const INITIAL_WINDOW_SIZE: i32 = 4;
+pub const MAX_FRAME_SIZE: i32 = 5;
+pub const MAX_HEADER_LIST_SIZE: i32 = 6;
+
+pub const HEADER_BYTES: i32 = 9;
+pub const DEFAULT_FRAME_SIZE: i32 = 16384;
+pub const LARGEST_FRAME_SIZE: i32 = 16777215;
+pub const DEFAULT_WINDOW: i32 = 65535;
+pub const LARGEST_WINDOW: i64 = 2147483647;
+
+// A protocol error: code is an error code above; stream 0 means a
+// connection error, otherwise a stream error on that stream.
+pub struct Error { code: i32, stream: i32 }
+fn connection_error(code: i32) -> Error { return Error { code: code, stream: 0 }; }
+// One frame whose payload is a view of the input it was parsed from.
+pub struct Frame { kind: i32, flags: i32, stream: i32, payload: core::slice::View<u8> }
+pub struct Setting { id: i32, value: i64 }
+pub struct Data { data: core::slice::View<u8>, end_stream: bool }
+pub struct Headers { block: core::slice::View<u8>, end_stream: bool, end_headers: bool, priority: bool, exclusive: bool, dependency: i32, weight: i32 }
+pub struct PushPromise { promised: i32, block: core::slice::View<u8>, end_headers: bool }
+pub struct Goaway { last_stream: i32, code: i32, debug: core::slice::View<u8> }
+
+fn valid(view: core::slice::View<u8>) -> bool { return view.start >= 0 && view.length >= 0 && view.start <= 2147483647 - view.length; }
+fn at(view: core::slice::View<u8>, index: i32) -> i32 { return view.values[view.start + index] as i32; }
+fn u32_at(view: core::slice::View<u8>, index: i32) -> i64 {
+    return ((at(view, index) as i64) << 24) | ((at(view, index + 1) as i64) << 16) | ((at(view, index + 2) as i64) << 8) | (at(view, index + 3) as i64);
+}
+fn sub(view: core::slice::View<u8>, start: i32, count: i32) -> core::slice::View<u8> { return core::slice::View { values: view.values, start: view.start + start, length: count }; }
+pub fn has(frame: Frame, flag: i32) -> bool { return (frame.flags & flag) != 0; }
+
+// The client connection preface (RFC 9113 section 3.4).
+pub fn preface() -> core::slice::View<u8> {
+    let text: str = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text), 24);
+    return core::slice::View { values: raw, start: 0, length: 24 };
+}
+
+// The next complete frame at input[0], or None when more bytes are needed.
+// Applies the checks every receiver makes before looking at stream state:
+// frame size against max_frame (the SETTINGS_MAX_FRAME_SIZE we advertised),
+// stream identifier zero or nonzero per type, fixed payload lengths, and
+// padding. Unknown frame types are returned for the caller to ignore.
+pub fn next(input: core::slice::View<u8>, max_frame: i32) -> core::result::Result<core::option::Option<Frame>,Error> {
+    if (!valid(input) || input.length < HEADER_BYTES) { return core::result::Ok(core::option::None()); }
+    let length: i32 = (at(input, 0) << 16) | (at(input, 1) << 8) | at(input, 2);
+    let kind: i32 = at(input, 3); let flags: i32 = at(input, 4);
+    let stream: i32 = (u32_at(input, 5) & 2147483647) as i32;
+    if (length > max_frame) { return core::result::Err(connection_error(FRAME_SIZE_ERROR)); }
+    if (input.length - HEADER_BYTES < length) { return core::result::Ok(core::option::None()); }
+    let frame: Frame = Frame { kind: kind, flags: flags, stream: stream, payload: sub(input, HEADER_BYTES, length) };
+    let checked = check(frame); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+    return core::result::Ok(core::option::Some(frame));
+}
+// Bytes the frame took in the input: header plus payload.
+pub fn size(frame: Frame) -> i32 { return HEADER_BYTES + frame.payload.length; }
+
+fn check(frame: Frame) -> core::result::Result<i32,Error> {
+    let n: i32 = frame.payload.length; let k: i32 = frame.kind;
+    let on_stream: bool = k == DATA || k == HEADERS || k == PRIORITY || k == RST_STREAM || k == PUSH_PROMISE || k == CONTINUATION;
+    let on_connection: bool = k == SETTINGS || k == PING || k == GOAWAY;
+    if (on_stream && frame.stream == 0) { return core::result::Err(connection_error(PROTOCOL_ERROR)); }
+    if (on_connection && frame.stream != 0) { return core::result::Err(connection_error(PROTOCOL_ERROR)); }
+    if (k == SETTINGS) {
+        if (has(frame, ACK) && n != 0) { return core::result::Err(connection_error(FRAME_SIZE_ERROR)); }
+        if (n % 6 != 0) { return core::result::Err(connection_error(FRAME_SIZE_ERROR)); }
+    }
+    if (k == PING && n != 8) { return core::result::Err(connection_error(FRAME_SIZE_ERROR)); }
+    if (k == GOAWAY && n < 8) { return core::result::Err(connection_error(FRAME_SIZE_ERROR)); }
+    if (k == RST_STREAM && n != 4) { return core::result::Err(connection_error(FRAME_SIZE_ERROR)); }
+    if (k == WINDOW_UPDATE && n != 4) { return core::result::Err(connection_error(FRAME_SIZE_ERROR)); }
+    if (k == PRIORITY && n != 5) { return core::result::Err(Error { code: FRAME_SIZE_ERROR, stream: frame.stream }); }
+    if ((k == DATA || k == HEADERS || k == PUSH_PROMISE) && has(frame, PADDED)) {
+        if (n < 1) { return core::result::Err(connection_error(FRAME_SIZE_ERROR)); }
+        let fixed: i32 = 1; if (k == HEADERS && has(frame, PRIORITY_FLAG)) { fixed += 5; } if (k == PUSH_PROMISE) { fixed += 4; }
+        // Padding that fills the rest of the payload or more (6.1, 6.2).
+        if (at(frame.payload, 0) > n - fixed) { return core::result::Err(connection_error(PROTOCOL_ERROR)); }
+    }
+    if (k == HEADERS && has(frame, PRIORITY_FLAG)) { let fixed: i32 = 5; if (has(frame, PADDED)) { fixed += 1; } if (n < fixed) { return core::result::Err(connection_error(FRAME_SIZE_ERROR)); } }
+    if (k == PUSH_PROMISE) { let fixed: i32 = 4; if (has(frame, PADDED)) { fixed += 1; } if (n < fixed) { return core::result::Err(connection_error(FRAME_SIZE_ERROR)); } }
+    return core::result::Ok(0);
+}
+fn unpadded(frame: Frame, fixed: i32) -> core::slice::View<u8> {
+    let p: core::slice::View<u8> = frame.payload; let pad: i32 = 0; let start: i32 = fixed;
+    if (has(frame, PADDED)) { pad = at(p, 0); start += 1; }
+    return sub(p, start, p.length - start - pad);
+}
+// A DATA frame's data without padding. Flow control counts the whole
+// payload (frame.payload.length), padding included.
+pub fn data(frame: Frame) -> Data { return Data { data: unpadded(frame, 0), end_stream: has(frame, END_STREAM) }; }
+// A HEADERS frame's header block fragment and priority fields. A stream
+// that depends on itself is a stream error (5.3.1); the block is still
+// returned, since it must be decoded to keep HPACK in step.
+pub fn headers(frame: Frame) -> Headers {
+    let fixed: i32 = 0; let exclusive: bool = false; let dependency: i32 = 0; let weight: i32 = 16;
+    let priority: bool = has(frame, PRIORITY_FLAG);
+    if (priority) {
+        let base: i32 = 0; if (has(frame, PADDED)) { base = 1; }
+        let raw: i64 = u32_at(frame.payload, base); exclusive = (raw & 2147483648) != 0; dependency = (raw & 2147483647) as i32;
+        weight = at(frame.payload, base + 4) + 1; fixed = 5;
+    }
+    return (Headers { block: unpadded(frame, fixed), end_stream: has(frame, END_STREAM), end_headers: has(frame, END_HEADERS), priority: priority, exclusive: exclusive, dependency: dependency, weight: weight });
+}
+// The frame's total size from its header, for skipping a frame that
+// failed with a stream error.
+pub fn declared_size(input: core::slice::View<u8>) -> i32 { if (input.length < HEADER_BYTES) { return 0; } return HEADER_BYTES + ((at(input, 0) << 16) | (at(input, 1) << 8) | at(input, 2)); }
+pub fn continuation(frame: Frame) -> core::slice::View<u8> { return frame.payload; }
+pub fn push_promise(frame: Frame) -> PushPromise {
+    let base: i32 = 0; if (has(frame, PADDED)) { base = 1; }
+    return PushPromise { promised: (u32_at(frame.payload, base) & 2147483647) as i32, block: unpadded(frame, 4), end_headers: has(frame, END_HEADERS) };
+}
+pub fn rst_stream(frame: Frame) -> i32 { return u32_at(frame.payload, 0) as i32; }
+pub fn ping(frame: Frame) -> core::slice::View<u8> { return frame.payload; }
+pub fn goaway(frame: Frame) -> Goaway {
+    return Goaway { last_stream: (u32_at(frame.payload, 0) & 2147483647) as i32, code: u32_at(frame.payload, 4) as i32, debug: sub(frame.payload, 8, frame.payload.length - 8) };
+}
+// The window increment; zero is a stream error on a stream and a connection
+// error on stream 0 (6.9).
+pub fn window_update(frame: Frame) -> core::result::Result<i32,Error> {
+    let increment: i32 = (u32_at(frame.payload, 0) & 2147483647) as i32;
+    if (increment == 0) { return core::result::Err(Error { code: PROTOCOL_ERROR, stream: frame.stream }); }
+    return core::result::Ok(increment);
+}
+pub fn setting_count(frame: Frame) -> i32 { return frame.payload.length / 6; }
+pub fn setting(frame: Frame, index: i32) -> Setting {
+    let base: i32 = index * 6;
+    return Setting { id: (at(frame.payload, base) << 8) | at(frame.payload, base + 1), value: u32_at(frame.payload, base + 2) };
+}
+// Value checks of 6.5.2. Unknown identifiers are accepted (and ignored).
+pub fn check_setting(setting: Setting) -> core::result::Result<i32,Error> {
+    if (setting.id == ENABLE_PUSH && setting.value > 1) { return core::result::Err(connection_error(PROTOCOL_ERROR)); }
+    if (setting.id == INITIAL_WINDOW_SIZE && setting.value > LARGEST_WINDOW) { return core::result::Err(connection_error(FLOW_CONTROL_ERROR)); }
+    if (setting.id == MAX_FRAME_SIZE && (setting.value < DEFAULT_FRAME_SIZE as i64 || setting.value > LARGEST_FRAME_SIZE as i64)) { return core::result::Err(connection_error(PROTOCOL_ERROR)); }
+    return core::result::Ok(0);
+}
+
+fn push4(out: &alloc::vec::Vec<u8>, value: i64) -> bool {
+    return out.try_push(((value >> 24) & 255) as u8).is_ok() && out.try_push(((value >> 16) & 255) as u8).is_ok() && out.try_push(((value >> 8) & 255) as u8).is_ok() && out.try_push((value & 255) as u8).is_ok();
+}
+// Append a frame header.
+pub fn write_header(out: &alloc::vec::Vec<u8>, length: i32, kind: i32, flags: i32, stream: i32) -> bool {
+    if (length < 0 || length > LARGEST_FRAME_SIZE || stream < 0) { return false; }
+    if (out.try_reserve(HEADER_BYTES + length).is_err()) { return false; }
+    return out.try_push(((length >> 16) & 255) as u8).is_ok() && out.try_push(((length >> 8) & 255) as u8).is_ok() && out.try_push((length & 255) as u8).is_ok()
+        && out.try_push(kind as u8).is_ok() && out.try_push(flags as u8).is_ok() && push4(out, stream as i64);
+}
+pub fn write_frame(out: &alloc::vec::Vec<u8>, kind: i32, flags: i32, stream: i32, payload: core::slice::View<u8>) -> bool {
+    if (!valid(payload)) { return false; }
+    let mark: i32 = out.len();
+    if (!write_header(out, payload.length, kind, flags, stream) || out.try_extend(payload).is_err()) { out.truncate(mark); return false; }
+    return true;
+}
+pub fn write_settings(out: &alloc::vec::Vec<u8>, settings: core::slice::View<Setting>) -> bool {
+    let mark: i32 = out.len();
+    if (!write_header(out, settings.length * 6, SETTINGS, 0, 0)) { return false; }
+    let i: i32 = 0;
+    while (i < settings.length) {
+        let s: Setting = settings.values[settings.start + i];
+        if (out.try_push(((s.id >> 8) & 255) as u8).is_err() || out.try_push((s.id & 255) as u8).is_err() || !push4(out, s.value)) { out.truncate(mark); return false; }
+        i += 1;
+    }
+    return true;
+}
+pub fn write_settings_ack(out: &alloc::vec::Vec<u8>) -> bool { return write_header(out, 0, SETTINGS, ACK, 0); }
+pub fn write_ping(out: &alloc::vec::Vec<u8>, ack: bool, opaque: core::slice::View<u8>) -> bool {
+    if (opaque.length != 8) { return false; }
+    let flags: i32 = 0; if (ack) { flags = ACK; }
+    return write_frame(out, PING, flags, 0, opaque);
+}
+pub fn write_goaway(out: &alloc::vec::Vec<u8>, last_stream: i32, code: i32, debug: core::slice::View<u8>) -> bool {
+    let mark: i32 = out.len();
+    if (!write_header(out, 8 + debug.length, GOAWAY, 0, 0) || !push4(out, last_stream as i64) || !push4(out, code as i64) || out.try_extend(debug).is_err()) { out.truncate(mark); return false; }
+    return true;
+}
+pub fn write_window_update(out: &alloc::vec::Vec<u8>, stream: i32, increment: i32) -> bool {
+    if (increment < 1) { return false; }
+    let mark: i32 = out.len();
+    if (!write_header(out, 4, WINDOW_UPDATE, 0, stream) || !push4(out, increment as i64)) { out.truncate(mark); return false; }
+    return true;
+}
+pub fn write_rst_stream(out: &alloc::vec::Vec<u8>, stream: i32, code: i32) -> bool {
+    let mark: i32 = out.len();
+    if (!write_header(out, 4, RST_STREAM, 0, stream) || !push4(out, code as i64)) { out.truncate(mark); return false; }
+    return true;
+}
+// A header block as one HEADERS frame and as many CONTINUATION frames as
+// max_frame requires; END_HEADERS goes on the last of them.
+pub fn write_headers(out: &alloc::vec::Vec<u8>, stream: i32, block: core::slice::View<u8>, end_stream: bool, max_frame: i32) -> bool {
+    if (!valid(block) || max_frame < 1 || stream < 1) { return false; }
+    let mark: i32 = out.len(); let offset: i32 = 0; let first: bool = true;
+    while (first || offset < block.length) {
+        let count: i32 = block.length - offset; if (count > max_frame) { count = max_frame; }
+        let last: bool = offset + count == block.length;
+        let kind: i32 = CONTINUATION; let flags: i32 = 0;
+        if (first) { kind = HEADERS; if (end_stream) { flags = END_STREAM; } }
+        if (last) { flags = flags | END_HEADERS; }
+        if (!write_frame(out, kind, flags, stream, sub(block, offset, count))) { out.truncate(mark); return false; }
+        offset += count; first = false;
+    }
+    return true;
+}
+// Data as DATA frames of at most max_frame bytes; END_STREAM on the last
+// when end_stream. Empty data with end_stream sends one empty frame.
+pub fn write_data(out: &alloc::vec::Vec<u8>, stream: i32, data: core::slice::View<u8>, end_stream: bool, max_frame: i32) -> bool {
+    if (!valid(data) || max_frame < 1 || stream < 1) { return false; }
+    let mark: i32 = out.len(); let offset: i32 = 0;
+    if (data.length == 0 && !end_stream) { return true; }
+    while (offset < data.length || (data.length == 0 && offset == 0)) {
+        let count: i32 = data.length - offset; if (count > max_frame) { count = max_frame; }
+        let flags: i32 = 0; if (end_stream && offset + count == data.length) { flags = END_STREAM; }
+        if (!write_frame(out, DATA, flags, stream, sub(data, offset, count))) { out.truncate(mark); return false; }
+        offset += count; if (data.length == 0) { break; }
+    }
+    return true;
+}

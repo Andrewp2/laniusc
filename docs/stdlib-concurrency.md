@@ -1,7 +1,7 @@
 # Workers, atomics, synchronization and channels
 
-`std::atomic`, `std::sync`, `std::channel`, `std::steal`, `std::parallel`
-and `std::worker` run parallel work on Linux x86_64/glibc. Programs must be native-linked with libatomic:
+`std::atomic`, `std::sync`, `std::channel`, `std::steal`, `std::parallel`,
+`std::par` and `std::worker` run parallel work on Linux x86_64/glibc. Programs must be native-linked with libatomic:
 
 ```sh
 target/release/laniusc --native-link --native-library atomic --stdlib-root stdlib \
@@ -210,6 +210,39 @@ claims. The call then returns `Err(Cancelled)` or `Err(Failed(n))`, and the
 outputs are partly written. A cancelled token stays cancelled, so use a
 fresh token for each plan you want to rerun.
 
+## Parallel sorting, map, reduce and scan
+
+`std::par` runs sorts, `map`, `reduce` and `scan` as tasks on a `std::steal` pool. A
+`Plan(region, workers, grain)` holds the pool's deques (1,024 tasks per
+worker) and a target task size. Each phase seeds its tasks round-robin over
+the deques, forks the workers, and they pop, steal and run tasks until
+nothing is pending. If a phase would need more tasks than the deques hold,
+the grain grows to fit.
+
+| Operation | Contract |
+| --- | --- |
+| `sort_unstable(plan, data, scratch)` | Splits `data` into runs (the power of four at or above twice the workers, so the merge round count is even) and sorts each run with an introsort: ninther pivots, Hoare partitioning, insertion below 24 elements and a heapsort fallback. Merge rounds then merge adjacent runs into `scratch` and back. Equal keys may reorder. Returns the phase count |
+| `sort_stable(plan, data, scratch)` | Same shape, but each run uses a bottom-up merge sort (insertion on 32-element blocks) through the run's own range of `scratch`. Every merge takes the left run on ties, so equal keys keep their input order |
+| `map(plan, input, output, &mapper)` | `output[i] = mapper.apply(input[i])` in grain-sized stolen tasks. Returns the task count |
+| `reduce(plan, input, partials, identity, &fold, &combine)` | Each task folds its range from `identity` into `partials[task]`. The parent then combines those results in task order, so `combine` must be associative but need not be commutative. `partials` needs `ceil(length / grain)` slots |
+| `scan(plan, data, partials, identity, &combine)` | In-place inclusive scan: `data[i]` becomes the combination of `data[0..=i]` in index order. Pass 1 folds each task's range into `partials[task]`. The parent turns those into exclusive prefixes in task order, and pass 2 rescans each range from its prefix. Same `combine` and `partials` rules as `reduce`. Returns the task count |
+
+A sort keeps one crew of workers for all of its phases. The calling process
+is steal worker 0 and forks `workers - 1` children once. For each phase it
+seeds tasks, bumps a futex phase word and works through them as worker 0;
+the phase is over when `next` reports nothing pending. The children exit
+when the sort sets a stop word. The run sorts call `T::lt` directly rather
+than through `core::slice`, whose `Comparator` path costs about three times
+as much per comparison (measured below).
+
+Merges are parallel within a round, too. Each pair merge is cut into
+grain-sized output pieces at merge-path (co-rank) boundaries, found by binary
+search. Every worker therefore shares even the last round, which merges the
+two halves of the whole array. `scratch` must be as long as `data`; if the
+round count is odd, a parallel copy moves the result back. Errors are
+`InvalidPlan`, `LengthMismatch`, `Failed` (a worker exited nonzero or work
+was left pending), `Steal`, `Sync` and `Worker`.
+
 ## Samples
 
 [`parallel_word_count.lani`](../sample_programs/library/parallel_word_count.lani)
@@ -322,8 +355,95 @@ byte-identical stdout; one run takes about 0.6 s.
 | Steal pool cancelled by deadline | Same tree, 30 ms deadline | Same balance; 8 `Cancelled` workers |
 | Joins | A worker waiting on a token; a second worker blocked forever | `join_until` returns `TimedOut` after 20 ms, then a clean join after `cancel`; `signal_all(9)` sends 1 signal and the join decodes `Signal(9)` |
 
+[`par_sort.lani`](../tests/fixtures/stdlib_execution/concurrency/par_sort.lani)
+reads a mode, a worker count and n i64 keys, then writes back the result.
+[`par_oracle.py`](../tests/fixtures/stdlib_execution/concurrency/par_oracle.py)
+compares every mode with a Python model:
+
+- the sorts with `sorted()`;
+- the stable sorts with a stable sort by key, where the original indices must
+  match exactly;
+- `map` element by element;
+- `reduce` with a wrapping sum plus an ordered polynomial hash.
+
+The shapes are random full-range keys, all-equal keys, sorted, reversed, four
+distinct values, organ pipe, sawtooth, i64 extremes and dense duplicates.
+The scan modes compare running prefixes: a wrapping u64 sum, and the
+composition of affine maps `x -> a*x + b` mod 1,000,000,007, which is not
+commutative. They use a 997-element grain, so even small inputs split into
+many tasks. Sizes run from 0 to 300,000 keys, with 1 to 13 workers. Eight
+seeds covered every mode: 3,003 runs before `scan` existed and 3,600 runs
+after, with 0 mismatches.
+
+On 10,000,000 random i64 keys, the laptop (16 hardware threads, shared
+with other agents' jobs) timed the sort alone, as the runner measures it.
+C++ is `g++ 13.3 -O2` on the same binary keys, also timing the sort alone.
+Quiet means a load average below 16; loaded means 16–25, with C++ runs
+interleaved with the Lanius ones.
+
+| Sort | Workers | Quiet | Loaded |
+| --- | --- | --- | --- |
+| C++ `std::sort` | 1 | 638–699 ms | 682–1,019 ms |
+| C++ `std::stable_sort` | 1 | 775 ms | 859 ms |
+| C++ `__gnu_parallel::sort` (OpenMP) | 8 | 140 ms | 231 ms |
+| `std::par::sort_unstable` | 1 | 1.77 s | |
+| `std::par::sort_unstable` | 8 | 387–392 ms | 611–881 ms |
+| `std::par::sort_unstable` | 16 | 390 ms | 861 ms |
+| `std::par::sort_stable` on (key, index) | 8 | 1.94 s | 1.99 s |
+| `std::par::sort_stable` on (key, index) | 16 | | 1.84 s |
+| `core::slice::sort_unstable` | 1 | 7.1–9.2 s | |
+| `core::slice::sort_stable` on (key, index) | 1 | 27.9 s | |
+| GNU `sort -n --parallel=8` on the same keys as text | 8 | 6.6 s | |
+| GNU `sort -n --parallel=16` | 16 | 4.5 s | |
+
+At 8 workers `std::par::sort_unstable` takes 0.6 times as long as C++
+`std::sort` when quiet. Under load the worst pairing was 1.3 times. The GNU
+times include parsing and printing 203 MB of text, written to a file. Every
+`std::par` output matched `core::slice`'s byte for byte, and GNU's once
+converted.
+
+Where the time goes, from a timing build at 8 workers with the load average
+near 16 (667–696 ms in all):
+
+| Step | Time |
+| --- | --- |
+| Forking 7 children, once | 17–18 ms |
+| Run sorts (16 runs of 625,000 keys) | 454–460 ms |
+| Four merge rounds | 33–56 ms each, 165–185 ms in all |
+| Stop and join | 15–26 ms |
+
+Two changes brought 8 workers from 1.1–1.7 s to under 0.4 s:
+
+- The direct `T::lt` run sort cut the run phase from 943 ms to 314 ms.
+- Keeping one crew saved most of the rest. Forking per phase cost 30–39 ms
+  of fork stagger in every one of the five phases, because each fork copies
+  the page tables of the parent's large input buffers.
+
+What is left is per-core speed. Single-threaded, the introsort takes 1.77 s
+against C++'s 0.65 s, about 2.7 times as long. A direct `T::lt` comparison in
+a loop costs about 6 ns in the current native code.
+
+`scan` on the same 10,000,000 keys:
+
+| Scan | Workers | Time |
+| --- | --- | --- |
+| Sequential wrapping u64 prefix sum | 1 | 115 ms |
+| `std::par::scan` u64 sum | 1 / 8 / 16 | 99 / 100 / 127 ms |
+| `std::par::scan` affine composition | 1 / 8 / 16 | 626 / 209 / 197 ms |
+
+The sum is limited by memory bandwidth: two passes over 80 MB give no gain
+from more workers. The affine scan does a few modular multiplies per element
+and runs 3.0x faster at 8 workers. All worker counts produced
+byte-identical output.
+
+`core::slice::sort_unstable` pays about 19 ns per comparison through
+`core::ordering::Comparator`, where `compare` returns an `Ordering` value
+that `is_less` then tests. A direct `T::lt` costs 6 ns. The
+50,000,000-compare microbenchmark took 966 ms against 303 ms. That is why
+`std::par` sorts its runs itself.
+
 [`tests/stdlib_concurrency_execution.rs`](../tests/stdlib_concurrency_execution.rs)
-compiles the three fixtures and four samples through
+compiles the four fixtures and four samples through
 `compile_entry_to_x86_64_with_native_link`, then checks:
 
 - Three stress runs produce the exact summary lines.
@@ -334,6 +454,9 @@ compiles the three fixtures and four samples through
 - The quicksort prints `sorted 2000000`.
 - The parallel fixture produces its exact lines.
 - The grep matches GNU `grep -F` on generated inputs.
+- Every `par_sort` mode, the scans included, matches a Rust model on
+  random, five-valued, all-equal, sorted, reversed, empty and one-key
+  inputs.
 
 These test wrappers are checked at merge time; this session ran the same
 programs directly.

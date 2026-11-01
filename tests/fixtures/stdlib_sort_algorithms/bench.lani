@@ -1,7 +1,9 @@
 // Native timings: 100,000 u64 keys per pattern, sorted by core::slice
 // sort_unstable_by (pdqsort), sort_stable_by (run-adaptive merge with
-// galloping) and alloc::slice::sort_by (bottom-up merge). stdout, one line per
-// pattern and algorithm: pattern algorithm nanoseconds comparator-calls.
+// galloping) and alloc::slice::sort_by (bottom-up merge), then the natural-order
+// sort_unstable and sort_stable (u64::lt, no comparator: calls stay 0). stdout,
+// one line per pattern and algorithm: pattern algorithm nanoseconds
+// comparator-calls. Each run checks order and an order-free checksum.
 module app::main;
 import alloc::slice;
 import alloc::vec;
@@ -47,6 +49,12 @@ fn newline() {
     let storage:[i32;1]=[10]; let base:ptr=core::mem::i32_array_data_ptr(storage);
     assert(std::io::write_stdout(base,1)==1);
 }
+// Sum of squares plus xor: unchanged by any permutation.
+fn checksum(values:&alloc::vec::Vec<u64>) -> u64 {
+    let sum:u64=0; let mixed:u64=0; let i:i32=0;
+    while(i<values.len()) { let v:u64=values.get(i).unwrap(); sum+=v*v+v; mixed=mixed^(v*11400714819323198485); i+=1; }
+    return sum^mixed;
+}
 fn run(pattern:i32,algorithm:i32) {
     let values:alloc::vec::Vec<u64> = alloc::vec::with_capacity<u64>(N).unwrap();
     let scratch:alloc::vec::Vec<u64> = alloc::vec::with_capacity<u64>(N/2).unwrap();
@@ -56,19 +64,23 @@ fn run(pattern:i32,algorithm:i32) {
         values.try_push(key(pattern,i,state)).unwrap(); i+=1;
     }
     i=0; while(i<N/2) { scratch.try_push(0).unwrap(); i+=1; }
+    let before:u64=checksum(values.borrow());
     let order:Order=Order { calls:0 };
     let start:core::time::Instant = std::clock::monotonic_now().unwrap();
     if(algorithm==0) { core::slice::sort_unstable_by<u64,Order>(values.as_view(),order.borrow()).unwrap(); }
     if(algorithm==1) { core::slice::sort_stable_by<u64,Order>(values.as_view(),scratch.as_view(),order.borrow()).unwrap(); }
     if(algorithm==2) { alloc::slice::sort_by<u64,Order>(values.as_view(),order.borrow()).unwrap(); }
+    if(algorithm==3) { core::slice::sort_unstable<u64>(values.as_view()).unwrap(); }
+    if(algorithm==4) { core::slice::sort_stable<u64>(values.as_view(),scratch.as_view()).unwrap(); }
     let finish:core::time::Instant = std::clock::monotonic_now().unwrap();
     i=1; while(i<N) { assert(values.get(i-1).unwrap()<=values.get(i).unwrap()); i+=1; }
+    assert(checksum(values.borrow())==before);
     emit(pattern as u64); emit(algorithm as u64);
     emit(finish.duration_since(start).unwrap().as_nanos().unwrap()); emit(order.calls); newline();
     values.destroy(); scratch.destroy();
 }
 fn main() -> i32 {
     let pattern:i32=0;
-    while(pattern<7) { let algorithm:i32=0; while(algorithm<3) { run(pattern,algorithm); algorithm+=1; } pattern+=1; }
+    while(pattern<7) { let algorithm:i32=0; while(algorithm<5) { run(pattern,algorithm); algorithm+=1; } pattern+=1; }
     return 0;
 }

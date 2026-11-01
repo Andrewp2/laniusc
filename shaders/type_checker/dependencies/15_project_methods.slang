@@ -63,6 +63,9 @@ void publish_method_result(
     if (dotted_call && call_param_count[method_token] != 0u &&
         dependency_method_parameter_type(member_i, 0u) != INVALID)
         call_param_count[method_token] -= 1u;
+    // Portable rows omit syntactic self; a path call passes it first.
+    if (!dotted_call && dependency_method_implicit_self(member_i))
+        call_param_count[method_token] += 1u;
 
     uint return_type_i = dependency_member_word(member_base + 7u);
     uint type_count = dependency_type_count();

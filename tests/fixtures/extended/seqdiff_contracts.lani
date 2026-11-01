@@ -1,4 +1,4 @@
-// API contracts for ext::seqdiff and ext::unidiff. Exit 0 or the failing check.
+// API contracts for ext::seqdiff, ext::unidiff and the split writers. Exit 0 or the failing check.
 module app::main;
 import alloc::vec;
 import core::cmp;
@@ -9,6 +9,7 @@ import core::result;
 import core::slice;
 import ext::seqdiff;
 import ext::unidiff;
+import ext::wordiff;
 
 // A caller type: equality and hashing look only at `id`.
 struct Token { id: i32, weight: i32 }
@@ -162,9 +163,111 @@ fn parse_checks() -> i32 {
     return 0;
 }
 
+// Pseudo-random text: `count` lines over a small alphabet, so lines repeat;
+// lengths 0..23 (crossing 8-byte words); no final LF when `open`.
+struct Rng { state: u32 }
+impl Rng { fn borrow(&self) -> &Rng { return self; } }
+fn next(r: &Rng, bound: i32) -> i32 { r.state = (((r.state as u64) * 1103515245 + 12345) & 2147483647) as u32; return ((r.state >> 8) % (bound as u32)) as i32; }
+fn text(r: &Rng, count: i32, open: bool) -> alloc::vec::Vec<u8> {
+    let out: alloc::vec::Vec<u8> = alloc::vec::new(); let k: i32 = 0;
+    while (k < count) {
+        let len: i32 = next(r, 24); if (next(r, 3) == 0) { len = next(r, 3); }
+        let j: i32 = 0; while (j < len) { let pushed: core::result::Result<i32, alloc::vec::Error> = out.try_push((97 + next(r, 2)) as u8); j += 1; }
+        if (!(open && k + 1 == count)) { let pushed: core::result::Result<i32, alloc::vec::Error> = out.try_push(10); }
+        k += 1;
+    }
+    return out;
+}
+fn digits_text(count: i32) -> alloc::vec::Vec<u8> {
+    let out: alloc::vec::Vec<u8> = alloc::vec::new(); let k: i32 = 0;
+    while (k < count) {
+        let v: i32 = k; let d: [u8;8] = [0;8]; let c: i32 = 0;
+        if (v == 0) { d[0] = 48; c = 1; } while (v > 0) { d[c] = (48 + v % 10) as u8; c += 1; v = v / 10; }
+        while (c > 0) { c -= 1; let pushed: core::result::Result<i32, alloc::vec::Error> = out.try_push(d[c]); }
+        let pushed: core::result::Result<i32, alloc::vec::Error> = out.try_push(10); k += 1;
+    }
+    return out;
+}
+fn sub(v: alloc::vec::Vec<u8>, from: i32) -> core::slice::View<u8> { return core::slice::View { values: v.as_slice(), start: from, length: v.len() - from }; }
+fn same_ints(x: core::slice::View<i32>, y: core::slice::View<i32>) -> bool {
+    if (x.length != y.length) { return false; }
+    let i: i32 = 0; while (i < x.length) { if (x.values[x.start+i] != y.values[y.start+i]) { return false; } i += 1; } return true;
+}
+// split_classify agrees with split_lines + classify_lines: same lines, same
+// dense ids (first-occurrence order), and the split writers' output.
+fn split_agrees(a: core::slice::View<u8>, b: core::slice::View<u8>, base: i32) -> i32 {
+    let limits: ext::seqdiff::Limits = ext::seqdiff::default_limits();
+    let sp: ext::seqdiff::Split = core::result::unwrap(ext::seqdiff::split_classify(a, b, limits));
+    let la: alloc::vec::Vec<ext::seqdiff::Line> = core::result::unwrap(ext::seqdiff::split_lines(a, limits));
+    let lb: alloc::vec::Vec<ext::seqdiff::Line> = core::result::unwrap(ext::seqdiff::split_lines(b, limits));
+    if (sp.before_len() != la.len() || sp.after_len() != lb.len()) { return base; }
+    let i: i32 = 0;
+    while (i < la.len()) {
+        let x: ext::seqdiff::Line = la.as_slice()[i]; let v: core::slice::View<u8> = sp.before_line(i);
+        if (v.start != x.bytes.start || v.length != x.bytes.length) { return base + 1; }
+        if (ext::seqdiff::line(x.bytes).hash != x.hash) { return base + 2; }
+        i += 1;
+    }
+    i = 0; while (i < lb.len()) { let v: core::slice::View<u8> = sp.after_line(i); if (!same(v, lb.as_slice()[i].bytes)) { return base + 1; } i += 1; }
+    let c: ext::seqdiff::Classes = core::result::unwrap(ext::seqdiff::classify_lines(la.as_view(), lb.as_view(), limits));
+    if (c.count != sp.classes.count || !same_ints(c.before.as_view(), sp.classes.before.as_view()) || !same_ints(c.after.as_view(), sp.classes.after.as_view())) { return base + 3; }
+    let s1: ext::seqdiff::Script = core::result::unwrap(ext::seqdiff::diff_split(sp.borrow(), ext::seqdiff::Algorithm::Xdiff, limits));
+    let s2: ext::seqdiff::Script = core::result::unwrap(ext::seqdiff::diff_lines(la.as_view(), lb.as_view(), ext::seqdiff::Algorithm::Xdiff, limits));
+    if (s1.len() != s2.len() || s1.distance() != s2.distance()) { return base + 4; }
+    let h: alloc::vec::Vec<ext::seqdiff::Hunk> = core::result::unwrap(ext::seqdiff::hunks(s1.borrow(), 3));
+    let u1: alloc::vec::Vec<u8> = core::result::unwrap(ext::unidiff::write_unified_split(sp.borrow(), s1.borrow(), h.as_view(), literal("old", 3), literal("new", 3), 10000000));
+    let u2: alloc::vec::Vec<u8> = core::result::unwrap(ext::unidiff::write_unified(la.as_view(), lb.as_view(), s2.borrow(), h.as_view(), literal("old", 3), literal("new", 3), 10000000));
+    if (!same(u1.as_view(), u2.as_view())) { return base + 5; }
+    let o: ext::wordiff::Options = ext::wordiff::default_options(ext::wordiff::Mode::Words);
+    let w1: alloc::vec::Vec<u8> = core::result::unwrap(ext::wordiff::write_word_diff_split(sp.borrow(), s1.borrow(), h.as_view(), literal("old", 3), literal("new", 3), o));
+    let w2: alloc::vec::Vec<u8> = core::result::unwrap(ext::wordiff::write_word_diff(la.as_view(), lb.as_view(), s2.borrow(), h.as_view(), literal("old", 3), literal("new", 3), o));
+    if (!same(w1.as_view(), w2.as_view())) { return base + 6; }
+    u1.destroy(); u2.destroy(); w1.destroy(); w2.destroy(); h.destroy(); s1.destroy(); s2.destroy(); c.destroy(); la.destroy(); lb.destroy(); sp.destroy();
+    return 0;
+}
+fn split_checks() -> i32 {
+    let limits: ext::seqdiff::Limits = ext::seqdiff::default_limits();
+    let r: Rng = Rng { state: 12345 }; let round: i32 = 0;
+    while (round < 12) {
+        let a: alloc::vec::Vec<u8> = text(r.borrow(), 1 + next(r.borrow(), 300), round % 2 == 0);
+        let b: alloc::vec::Vec<u8> = text(r.borrow(), 1 + next(r.borrow(), 300), round % 3 == 0);
+        let status: i32 = split_agrees(a.as_view(), b.as_view(), 60); if (status != 0) { return status; }
+        // Views that start inside their storage (unaligned word reads).
+        status = split_agrees(sub(a, round % 7), sub(b, round % 5), 60); if (status != 0) { return status; }
+        a.destroy(); b.destroy(); round += 1;
+    }
+    // Many distinct lines grow the hash-consing table past its estimate.
+    let d1: alloc::vec::Vec<u8> = digits_text(6000); let d2: alloc::vec::Vec<u8> = digits_text(5000);
+    let status: i32 = split_agrees(d1.as_view(), d2.as_view(), 70); if (status != 0) { return status; }
+    let sp: ext::seqdiff::Split = core::result::unwrap(ext::seqdiff::split_classify(d1.as_view(), d2.as_view(), limits));
+    if (sp.classes.count != 6000) { return 77; } sp.destroy(); d1.destroy(); d2.destroy();
+    // Empty inputs, a final fragment, and the item limit.
+    let e: ext::seqdiff::Split = core::result::unwrap(ext::seqdiff::split_classify(literal("", 0), literal("abc", 3), limits));
+    if (e.before_len() != 0 || e.after_len() != 1 || e.after_line(0).length != 3 || e.classes.count != 1) { return 78; } e.destroy();
+    let few: ext::seqdiff::Limits = ext::seqdiff::Limits { max_items: 3, max_work: 1000 };
+    let over: core::result::Result<ext::seqdiff::Split, ext::seqdiff::Error> = ext::seqdiff::split_classify(literal("a\nb\nc\nd\n", 8), literal("", 0), few);
+    if (core::result::is_ok(over)) { return 79; }
+    let why: i32 = match (core::result::unwrap_err(over)) { ext::seqdiff::Error::ItemLimit -> 0, ext::seqdiff::Error::InvalidLimits -> 1, ext::seqdiff::Error::Bounds -> 1, ext::seqdiff::Error::WorkLimit -> 1, ext::seqdiff::Error::AllocationFailed -> 1 };
+    if (why != 0) { return 79; }
+    // Native arrays are not packed bytes: their lines hash the same way.
+    let native: [u8; 21] = [97,98,99,100,101,102,103,104,105,10,120,10,97,98,99,100,101,102,103,104,105];
+    let nv: core::slice::View<u8> = core::result::unwrap(core::slice::view(native, 21));
+    let packed: core::slice::View<u8> = literal("abcdefghi\nx\nabcdefghi", 21);
+    let ln: alloc::vec::Vec<ext::seqdiff::Line> = core::result::unwrap(ext::seqdiff::split_lines(nv, limits));
+    let lp: alloc::vec::Vec<ext::seqdiff::Line> = core::result::unwrap(ext::seqdiff::split_lines(packed, limits));
+    if (ln.len() != 3 || lp.len() != 3) { return 80; }
+    let i: i32 = 0; while (i < 3) { if (ln.as_slice()[i].hash != lp.as_slice()[i].hash || !same(ln.as_slice()[i].bytes, lp.as_slice()[i].bytes)) { return 81; } i += 1; }
+    ln.destroy(); lp.destroy();
+    let mixed: ext::seqdiff::Split = core::result::unwrap(ext::seqdiff::split_classify(nv, packed, limits));
+    if (mixed.classes.count != 3 || !same_ints(mixed.classes.before.as_view(), mixed.classes.after.as_view())) { return 82; }
+    mixed.destroy();
+    return 0;
+}
+
 fn main() -> i32 {
     let status: i32 = generic_checks(); if (status != 0) { return status; }
     status = hunk_and_text_checks(); if (status != 0) { return status; }
     status = overlap_check(); if (status != 0) { return status; }
+    status = split_checks(); if (status != 0) { return status; }
     return parse_checks();
 }

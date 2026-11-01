@@ -24,6 +24,8 @@ StructuredBuffer<uint> x86_stack_slot_count_by_function;
 RWStructuredBuffer<uint> x86_frame_slot_count_by_function;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
+// allocation_words scans the same number of locals (LOCAL_SLOT_SCAN_LIMIT).
+static const uint LOCAL_SLOT_SCAN_LIMIT = 256u;
 
 bool valid_function(uint function_id)
 {
@@ -49,6 +51,11 @@ uint register_location(uint function_id, uint ordinal, uint type_id,
     X86FunctionRegisterAnalysis register_analysis =
         x86_register_analysis_by_function[function_id];
     uint last_read = x86_decl_analysis_by_token[declaration_token].last_read;
+    // allocation_words lets temporaries use R8-R11 throughout a function with
+    // calls, so a declaration there that is written but never read (and so
+    // would pass the caller-register test below) keeps a stack home.
+    if (register_analysis.first_call != 0u && last_read == 0u)
+        return X86_LOCATION_INVALID;
     bool repeated_after_call =
         (register_analysis.flags &
          X86_FUNCTION_REGISTER_CALL_WITH_LOOP) != 0u && last_read != 0u;
@@ -79,15 +86,18 @@ uint register_location(uint function_id, uint ordinal, uint type_id,
     return X86_LOCATION_REGISTER | physical;
 }
 
-uint assign_declaration(uint function_id, uint ordinal, uint type_id,
-                        uint declaration_token, uint incoming_register,
-                        bool stack_parameter)
+// `register_ordinal` picks the declaration's register in the RDI, RSI, R10,
+// R11, R8, R9 (call-free) or RBX, R12-R14 sequence; INVALID means none.
+// `ordinal` keeps its stack home distinct.
+uint assign_declaration(uint function_id, uint ordinal, uint register_ordinal,
+                        uint type_id, uint declaration_token,
+                        uint incoming_register, bool stack_parameter)
 {
     // Incoming stack arguments must not occupy a still-live ABI input
     // register while the prologue materializes register arguments.
     uint location = stack_parameter || semantic_place_storage_by_token[declaration_token].x != 0u
         ? X86_LOCATION_INVALID :
-        register_location(function_id, ordinal, type_id,
+        register_location(function_id, register_ordinal, type_id,
             declaration_token, incoming_register);
     if (location != X86_LOCATION_INVALID) return location;
     // Stack declaration homes use stable source ordinals, keeping allocation
@@ -121,6 +131,42 @@ bool function_has_pair_parameter(SemanticLirFunction function)
                 semantic_lir_params[function.param_start + ordinal]) > 1u)
             return true;
     return false;
+}
+
+// The register slot of the function's local at `index`, or INVALID. A
+// register-typed parameter keeps its own ordinal as its slot unless a hidden
+// result pointer or a pair parameter keeps every parameter on the stack;
+// register-typed locals take the remaining slots in order, so a slice
+// parameter or a non-register local no longer uses up a register.
+// allocation_words reserves the same slots (declaration_register_mask).
+uint local_register_slot(SemanticLirFunction function, uint index, bool has_call)
+{
+    uint limit = has_call ? 4u : 6u;
+    uint param_total = semantic_lir_param_total[0u];
+    uint local_total = min(gParams.local_capacity, semantic_lir_local_total[0u]);
+    if (index >= LOCAL_SLOT_SCAN_LIMIT ||
+        function.param_start + function.param_count > param_total ||
+        function.local_start + function.local_count > local_total)
+        return X86_LOCATION_INVALID;
+    uint slots = 0u;
+    if (function.result_word_count <= 2u && !function_has_pair_parameter(function))
+        for (uint ordinal = 0u; ordinal < min(function.param_count, limit); ordinal += 1u)
+            if (scalar_gpr_type(semantic_lir_params[function.param_start + ordinal].type_id))
+                slots |= 1u << ordinal;
+    uint cursor = 0u;
+    for (uint prior = 0u; prior <= index; prior += 1u)
+    {
+        if (!scalar_gpr_type(semantic_lir_locals[function.local_start + prior].type_id))
+        {
+            if (prior == index) return X86_LOCATION_INVALID;
+            continue;
+        }
+        while (cursor < limit && (slots & (1u << cursor)) != 0u) cursor += 1u;
+        if (cursor >= limit) return X86_LOCATION_INVALID;
+        if (prior == index) return cursor;
+        cursor += 1u;
+    }
+    return X86_LOCATION_INVALID;
 }
 
 uint local_payload_words(SemanticLirFunction function)
@@ -186,7 +232,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 abi_ordinal += x86_abi_param_width(
                     semantic_lir_params[function.param_start + prior]);
             x86_decl_location_by_token[param.declaration_id] =
-                assign_declaration(param.function_id, param.ordinal,
+                assign_declaration(param.function_id, param.ordinal, param.ordinal,
                     param.type_id, param.declaration_id,
                     abi_ordinal < 6u ? x86_abi_argument_register(abi_ordinal) : X86_LOCATION_INVALID,
                     // A hidden return pointer shifts the incoming register
@@ -214,8 +260,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
         {
             SemanticLirFunction semantic_function = semantic_lir_functions[local.function_id];
             uint ordinal = semantic_function.param_count + local.ordinal;
+            bool has_call =
+                x86_register_analysis_by_function[local.function_id].first_call != 0u;
             x86_decl_location_by_token[local.declaration_id] =
                 assign_declaration(local.function_id, ordinal,
+                    local_register_slot(semantic_function, local.ordinal, has_call),
                     local.type_id, local.declaration_id,
                     X86_LOCATION_INVALID, false);
             uint4 storage = semantic_place_storage_by_token[local.declaration_id];

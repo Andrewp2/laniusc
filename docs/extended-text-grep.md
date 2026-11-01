@@ -118,9 +118,16 @@ pattern with lookbehind uses the VM instead. Spare line capacity and regex scrat
 total memory limit. The input is read with `std::fs::read`, up to 64 KiB per
 call, straight into the record buffer. A UTF-8 sequence or record may cross a
 read boundary safely, because validation happens after record assembly.
-Selected records collect in one output buffer. It is written when it holds
-64 KiB, at EOF, and before any error is reported. If that last write fails,
-the status is 3 at `stage=output`, in place of the earlier error.
+Selected records collect in one fixed 64 KiB output area. It is allocated at
+the first selected record and is never grown. It is written when the next
+piece would not fit, at EOF, and before any error is reported. If that last
+write fails, the status is 3 at `stage=output`, in place of the earlier
+error. A record of 64 KiB or more is written straight from the input buffer.
+Records are copied in eight-byte words. The 32 bytes in front of the area keep
+the last line number in decimal, so the next number is one increment with
+carry and only a jump in numbering runs the division loop. `--invert` uses
+both scans: the records between literal hits, or before the line scan's next
+match, are the selected ones. With `--count` only their number is added.
 
 ## Literal prefilter
 
@@ -142,8 +149,36 @@ the record-at-a-time scan.
 `tests/fixtures/extended/text_grep_scan/compare.py` checks that against a
 build from before the change on generated inputs. The inputs mix multibyte
 scalars, CR, NUL, invalid UTF-8, records over 64 KiB, `-v`, `-n`, `-c`, small
-`--max-line` and small `--max-work`. Seeds 20261031, 1 and 2 gave 1500/1500
-identical runs (log `target/claude-work/s3/text-grep-scan-receipt.log`).
+`--max-line` and small `--max-work`. A third of the inputs have 3,000
+records, which brings in dense literal hits and long line scans. Seeds
+20261031, 1 and 2 gave 1,500/1,500 identical runs, both before and after the
+output rework (`text-grep-output-receipt.log`) and after the skip and numbered
+blocks (`text-grep-numbers-receipt.log`, tiny build included). A build with a 3-state DFA
+cache and 2 partials gave 800/800 on seeds 20261031 and 7, which forces the
+undecided-record path (log `target/claude-work/s3/text-grep-scan-receipt.log`).
+
+Patterns with no required literal use the
+[line scan](extended-regex.md#line-scanning): `Dfa.match_lines` runs over the
+whole region in one pass and stops only at a record that matches or that it
+cannot decide. text_grep checks the rest of a matching record, emits it, and
+resumes after its LF. An undecided record goes through the per-record path,
+which runs the VM or reports the UTF-8 error at its exact offset. With
+`--invert`, the records the scan passed over are the ones selected. The
+literal path also switches to the line scan for the rest of a region when hit
+records come denser than one per 256 bytes (after 32 hits), unless the
+pattern is a pure literal. Each hit record it still handles goes through
+`match_lines` on that record alone.
+
+The between-hit pass is the SWAR loop that was asked for. It tests two 8-byte
+words at a time for any high bit, so all-ASCII words skip the scalar
+validator. For newlines it computes `((w ^ 0x0a..0a) + 0x7f..7f) & 0x80..80`,
+which marks the bytes that are not LF. On an ASCII word this has no carries
+between lanes, so it is exact. The marks add up in byte lanes and are folded
+every 255 words, which costs less than a popcount or multiply per word. Only a
+word with a high bit goes byte by byte through `core::utf8`. Matching records
+used to be validated twice, once by text_grep and once byte-wise inside
+`Dfa.is_match`. They now go through `Dfa.is_match_input`, so the matcher does
+not check them again.
 
 The table compares GNU grep 3.11 (`-E`, `en_US.UTF-8`) with text_grep on
 S4's 48,770,754-byte, 814,590-line Rust-heavy corpus. Times are best of three
@@ -151,19 +186,82 @@ wall times in ms, with stdout written to a file. Every row's output (`-c`
 count, or the `-n` listing) is byte-identical to GNU's. "Before" is the build
 from the assertion commit above, which used 1024-byte reads, a matcher run
 on every record and one write per record. The laptop had other work running
-(load 10–19). Logs: `target/claude-work/s3/grep-prefilter-timings.log` and
-`grep-unicode-timings.log`.
+(load 10–19). Logs: `target/claude-work/s3/grep-lines-timings.log` (this
+table), `grep-prefilter-timings.log` (prefilter build), `grep-unicode-timings.log`
+and `grep-unicode-lines-timings.log`.
 
 | Pattern | Before `-c` | `-c` | `-n` | GNU `-c` | GNU `-n` |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `zzzz` (no match) | 5176 | 68 | 69 | 11 | 18 |
-| `core::result::Result` (8,682 lines) | 5035 | 140 | 165 | 17 | 31 |
-| `fn main` | 5024 | 109 | 134 | 32 | 47 |
-| `the` | 5552 | 272 | 473 | 69 | 100 |
-| `^\s*//` | 4835 | 114 | 142 | 30 | 42 |
-| `\bResult<` | 5066 | 110 | 131 | 16 | 28 |
-| `fn [a-z_]+_main\(` | 4717 | 85 | 84 | 15 | 23 |
-| `[0-9]+$` (no required literal) | | 1583 | 1690 | 44 | 57 |
+| `zzzz` (no match) | 5176 | 64 | 63 | 8 | 15 |
+| `core::result::Result` (8,682 lines) | 5035 | 132 | 141 | 15 | 24 |
+| `fn main` | 5024 | 99 | 102 | 29 | 36 |
+| `the` | 5552 | 210 | 426 | 54 | 90 |
+| `^\s*//` | 4835 | 88 | 113 | 24 | 34 |
+| `\bResult<` | 5066 | 87 | 108 | 14 | 24 |
+| `fn [a-z_]+_main\(` | 4717 | 78 | 76 | 13 | 20 |
+| `[0-9]+$` (no required literal) | 1771 | 543 | 542 | 37 | 49 |
+| `a.c` (literal `a` on most lines) | 1224 | 538 | 618 | 73 | 91 |
+
+For `[0-9]+$` and `a.c`, "Before" is the prefilter build before the line
+scan, which ran the DFA record by record. With `-v -c`, `[0-9]+$` went from
+1414 ms to 663 ms (GNU 48 ms). `-v -n` writes 800,000 numbered lines and
+took 1737 ms (GNU 177 ms), mostly formatting output. Log:
+`target/claude-work/s3/grep-lines-timings.log`.
+
+The output path and `--invert` were then reworked as described under
+[Options and limits](#options-and-limits). Same corpus, best of three in ms
+(load 12–16; log `target/claude-work/s3/grep-output-timings.log`). "Before"
+is the line-scan build above, run in the same session. Every row's output is
+byte-identical to GNU's.
+
+| Pattern | Mode | Before | After | GNU |
+| --- | --- | ---: | ---: | ---: |
+| `[0-9]+$` | `-v -n` | 2547 | 891 | 271 |
+| `[0-9]+$` | `-v` | 1041 | 558 | 131 |
+| `[0-9]+$` | `-v -c` | 703 | 430 | 54 |
+| `[0-9]+$` | `-n` | 555 | 384 | 45 |
+| `the` | `-v -n` | 1435 | 430 | 204 |
+| `the` | `-v` | 735 | 341 | 119 |
+| `the` | `-n` | 449 | 216 | 91 |
+| `the` | `-v -c` | 420 | 148 | 58 |
+| `fn main` | `-v -n` | 1374 | 392 | 202 |
+| `fn main` | `-v -c` | 268 | 107 | 38 |
+
+`-c` times also fell, for example `[0-9]+$` from 592 to 400 ms, although the
+`-c` path did not change. The other difference between the two builds is the
+compiler from the merged lang branch, so part of every gain may come from
+code generation.
+
+Then the per-line costs were removed (log
+`target/claude-work/s3/grep-numbers-timings.log`):
+
+- **Inverted blocks:** with `--invert`, a run of selected records between
+  matches is handled as one block. With `-c` only its line count, which the
+  8-byte gap pass already has, is added. Without `-n`, a block of 4 KiB or
+  more is written straight from the input buffer, and a smaller block is one
+  word copy. With `-n`, one loop writes "N:" and the record for each line. It
+  increments the stored digits in place, so there is no per-record call into
+  emit, put or the formatter.
+- **Skipping in the line scan:** `Dfa.match_lines` skips over the start state
+  eight bytes at a time (see
+  [Line scanning](extended-regex.md#line-scanning)). This applies when no
+  ASCII byte other than LF leaves the start state except at most three values
+  or a range of at most 48. It counts LFs on the way with the has-zero-byte
+  test and a multiply.
+
+Best of three in ms, before (the output-area build above) / after / GNU:
+
+| Pattern | `-v -n` | `-v` | `-c` |
+| --- | --- | --- | --- |
+| `[0-9]+$` | 746 / 375 / 175 | 1168 / 205 / 201 | 430 / 173 / 44 |
+| `the` | 424 / 360 / 173 | 357 / 231 / 137 | 212 / 202 / 58 |
+| `fn main` | 389 / 289 / 216 | 329 / 128 / 121 | 116 / 119 / 33 |
+| `\bResult<` | 356 / 270 / 153 | 382 / 136 / 165 | 109 / 104 / 17 |
+
+The `-v -n` column comes from a run at load 11–14. The `-v` and `-c` columns
+come from a run at load 17–19, where a repeat of `-v -n` measured 531 / 532 /
+626 / 600 ms against GNU's 196 / 251 / 287 / 298. `-v -n` is 1.3–2.1x GNU at
+the lower load. Every row's output is byte-identical to GNU's.
 
 The no-match scan is now close to the cost of `core::search` itself. A
 program that only reads the corpus and calls `core::search::find` in a loop
@@ -171,17 +269,17 @@ takes 30 ms for `zzzz` and 100–110 ms for `core::result::Result`; the rest of
 text_grep's time is the validating line count. The `core::result::Result`
 search is slower because `find` picks its two probe bytes by rank, and here
 both are the adjacent `::` at offsets 4 and 5. Every `::` in Rust text then
-costs a full compare. Patterns with no required literal, such as `[0-9]+$`,
-still run the DFA on every record, at about 32 ns per byte. On the 1.3 MB
+costs a full compare; S4 is changing that choice. The line scan runs at
+about 11 ns per byte. On the 1.3 MB
 mixed-script file `target/claude-work/s3/unicode_lines.txt`, compared with
 GNU `grep -P`:
 
-| Pattern | Before `-c` | `-c` | `-n` | GNU `-P -c` |
+| Pattern | Before `-c` | Prefilter build `-c` | Line scan `-c` | GNU `-P -c` |
 | --- | ---: | ---: | ---: | ---: |
-| `\p{Lu}` | 1110 | 147 | 142 | 9 |
-| `\p{L}+ \p{N}` | 1329 | 153 | 143 | 8 |
-| `日\p{L}` | 832 | 145 | 166 | 5 |
-| `[^\p{L}\s]` | 1583 | 197 | 203 | 13 |
+| `\p{Lu}` | 1110 | 141 | 73 | 9 |
+| `\p{L}+ \p{N}` | 1329 | 141 | 73 | 8 |
+| `日\p{L}` | 832 | 106 | 84 | 5 |
+| `[^\p{L}\s]` | 1583 | 130 | 72 | 8 |
 
 ## Exit status and failures
 
@@ -237,26 +335,29 @@ also checks `/dev/full` and a failed diagnostic write. It requires `python3` and
 without ptrace. `faultinj.c` in that directory uses seccomp user notification
 to count `mmap`, `munmap`, `read` and `write` calls and to fail the N-th one.
 At exit it compares `/proc/PID/maps` with the map at the first trapped call, so
-an unreleased mapping is a failure. The driver runs the matrix for three
+an unreleased mapping is a failure. The driver runs the matrix for seven
 patterns on `aaé\r\nnope\néa` with `-n`:
 
 | Pattern | Path | mmap = munmap | Allocation failures (status 4) | Read faults | Stdout write faults |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `^(?<!x)(?:a\|é)+$` | VM (lookbehind) | 45 | 45/45 | 2 × EIO, EINTR | 1 × EIO, 0, EINTR, short |
-| `^(?:a\|é)+$` | lazy DFA with anchors | 34 | 34/34 | 2 × EIO, EINTR | 1 × EIO, 0, EINTR, short |
-| `(?:a\|é)+` | lazy DFA | 31 | 31/31 | 2 × EIO, EINTR | 1 × EIO, 0, EINTR, short |
-| `a*é` | prefilter, DFA on hit records | 31 | 31/31 | 2 × EIO, EINTR | 1 × EIO, 0, EINTR, short |
-| `é` | prefilter, literal decides | 30 | 30/30 | 2 × EIO, EINTR | 1 × EIO, 0, EINTR, short |
+| `^(?<!x)(?:a\|é)+$` | VM (lookbehind) | 43 | 43/43 | 2 × EIO, EINTR | 1 × EIO, 0, EINTR, short |
+| `^(?:a\|é)+$` | lazy DFA with anchors | 32 | 32/32 | 2 × EIO, EINTR | 1 × EIO, 0, EINTR, short |
+| `(?:a\|é)+` | lazy DFA | 29 | 29/29 | 2 × EIO, EINTR | 1 × EIO, 0, EINTR, short |
+| `a*é` | prefilter, DFA on hit records | 29 | 29/29 | 2 × EIO, EINTR | 1 × EIO, 0, EINTR, short |
+| `é` | prefilter, literal decides | 28 | 28/28 | 2 × EIO, EINTR | 1 × EIO, 0, EINTR, short |
+| `nope` with `-v` | prefilter, numbered gap blocks | 31 | 31/31 | 2 × EIO, EINTR | 1 × EIO, 0, EINTR, short |
+| `[nx][o][p][e]` with `-v` | line scan, numbered gap blocks | 34 | 34/34 | 2 × EIO, EINTR | 1 × EIO, 0, EINTR, short |
 
-All 218 runs, including `/dev/full` and the failed diagnostic, give the
+All 291 runs, including `/dev/full` and the failed diagnostic, give the
 documented status, diagnostic and stdout prefix, and leave the map unchanged.
 The DFA path maps fewer regions because it never creates per-record VM
-scratch. The single stdout write is the buffered output. There are more
-mappings than before because of the output buffer, the DFA's partial-state
-tables and `required_literal`'s three temporary vectors. Before the fix above,
+scratch. The single stdout write is the buffered output. The DFA's
+partial-state tables and `required_literal`'s three temporary vectors add
+mappings. The fixed output area saves two compared with the growing
+buffer it replaced. Before the fix above,
 failures 8 through 21 of the DFA pattern were silently absorbed: the search
 fell back to the VM and exited 0. Log:
-`target/claude-work/s3/text-grep-faults-unicode-receipt.log`.
+`target/claude-work/s3/text-grep-faults-numbers-receipt.log`. The `(?:a|é)+` row goes through the line scan.
 
 ```sh
 W=target/claude-work/s3

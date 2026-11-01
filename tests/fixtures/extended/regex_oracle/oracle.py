@@ -457,23 +457,37 @@ def replace_surface(exe, rng, count):
     return agree, count, failures
 
 
-def grep_surface(exe, rng, count):
+def grep_surface(exe, rng, count, unicode=False):
+    """text_grep against a per-record Python search. The unicode form uses
+    the dfa_unicode patterns, up to 300 records over the mixed-script
+    alphabet, and CRLF endings on some records (CR is not searched but is
+    written back)."""
     agree, failures = 0, []
     for _ in range(count):
-        lan, py = pattern(rng, False)
+        if unicode:
+            lan, py = unicode_pattern(rng, False)
+            alphabet = [c for c in UNICODE_ALPHABET if c != "\n"]
+            # CPython 3.12's \B never matches an empty string; keep records nonempty.
+            lo = 1 if r"\B" in lan else 0
+            lines = ["".join(rng.choice(alphabet) for _ in range(rng.randint(lo, 12)))
+                     for _ in range(rng.randint(0, rng.choice([12, 300])))]
+            ends = [rng.choice(["\n", "\n", "\r\n"]) for _ in lines]
+        else:
+            lan, py = pattern(rng, False)
+            lo = 1 if r"\B" in lan else 0
+            lines = [text(rng, lo, 8).replace("\n", "") or "a" * lo for _ in range(rng.randint(0, 12))]
+            ends = ["\n" for _ in lines]
         q = re.compile(py, re.ASCII)
-        lo = 1 if r"\B" in lan else 0
-        lines = [text(rng, lo, 8).replace("\n", "") or "a" * lo for _ in range(rng.randint(0, 12))]
-        data = "".join(line + "\n" for line in lines)
+        data = "".join(line + end for line, end in zip(lines, ends))
         flags = rng.choice(["", "-v", "-n", "-c", "-vn", "-vc"])
-        selected = [(i + 1, l) for i, l in enumerate(lines)
+        selected = [(i + 1, l + ends[i]) for i, l in enumerate(lines)
                     if (q.search(l) is not None) != ("v" in flags)]
         if "c" in flags:
             want = f"{len(selected)}\n"
         elif "n" in flags:
-            want = "".join(f"{n}:{l}\n" for n, l in selected)
+            want = "".join(f"{n}:{l}" for n, l in selected)
         else:
-            want = "".join(l + "\n" for _, l in selected)
+            want = "".join(l for _, l in selected)
         status = 0 if selected else 1
         argv = [exe] + ([flags] if flags else []) + ["--", lan]
         result = run(argv, data.encode())
@@ -554,6 +568,9 @@ def main():
         agree, total, failures = dfa_surface(dfa_exe, random.Random(f"{seed}:dfa_unicode"), patterns // 3, unicode=True)
         report("dfa_unicode", agree, total, failures)
         total_failures += total - agree
+    agree, total, failures = grep_surface(grep_exe, random.Random(f"{seed}:grep_unicode"), patterns // 3, unicode=True)
+    report("grep_unicode", agree, total, failures)
+    total_failures += total - agree
     for name, surface, exe in [("linear_time", linear_surface, input_exe)]:
         agree, total, failures = surface(exe)
         report(name, agree, total, failures)

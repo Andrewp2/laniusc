@@ -95,6 +95,32 @@ as each lands, F12, F13. Each feature extends the front end (the reading
 and `build`), the front pass (`compileSource_correct`) and, where needed,
 the mini IR and the x86 model, with the gate's difftests for each.
 
+### Bare shift amounts (found 10-31 by `fuzz_oracle.py`; to fix)
+
+A reading bug, not a gap: the front end reads a shift amount whose atoms are
+all literals (or constants, which it reads as their literals) at the
+shifted value's type (`amount_want` in `frontend.lani`; TRUSTED_BASE.md
+section 4, "a bare amount the value's"). laniusc gives the amount a type of
+its own, as Rust does: `i32` for literals, a constant's declared type.
+So the two compilers disagree on programs both compile:
+
+- `(1 as u32) << (((0 - 6) / 4) & 7)`: laniusc 1 << 7 = 128 (`-6 / 4 = -1`
+  at `i32`), the verified compiler 1 << 6 = 64 (`(2^32 - 6) / 4` at `u32`);
+- `a << (200 + 59)` with `a: u8`: laniusc traps (amount 259, invalid
+  shift), the verified compiler shifts by 3 (259 wraps at `u8`).
+
+The programs are `target/claude-work/fuzz/found/bare_amount_value.lani` and
+`bare_amount_trap.lani`. The same rule is why such amounts often fail to
+compile (srcDump "lower fails"): `a << ((-5) & 31)` with an unsigned `a`
+needs `-5` at that unsigned type, which `lower_negate_typed` has no case for,
+and `a << (300 & 7)` with `a: u8` needs 300 at `u8`. Fix: read a bare
+amount at `i32` (a constant at its own type), as an operand with no other
+expectation is read, in `amount_want`, its proofs and TRUSTED_BASE section 4;
+then set `BARE_AMOUNTS = True` in `fuzz_oracle.py`, which until then casts
+each computed amount to its own type. Constants count as bare: the front end
+reads a constant as its literal, so `x >> (((K1 >> (l & 31)) % 7) & 15)`
+with `K1: i32 = -93` and `x: u16` fails to lower too.
+
 ### V2 plan (decided 10-28)
 
 Core's traps split three ways. Checked traps must make the compiled code

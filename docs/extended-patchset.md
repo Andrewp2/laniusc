@@ -82,6 +82,15 @@ Tree modes patch files below the current directory. `-p` defaults to 1. Exit
 status 0 means everything applied, 1 that some hunk or file failed or a merge
 left conflicts, and 2 a usage error, malformed patch, limit or I/O error.
 
+**Speed.** Applying a 2,937-line `diff -u` to a 1.6 MB, 100,000-line file
+(`seq-patch BASE PATCH`) takes 10.1 ms, against 9.5 ms for
+`patch -s -o OUT BASE PATCH` (best of 10, same load). The output is
+byte-identical. It took 66 ms before. `ext::unidiff::apply` works on line
+offsets and writes its output in one allocation (see
+[the applier](extended-seqdiff.md)). `seq-patch` sizes its read buffers from
+the file length, writes all hunk reports in one write, and writes the result
+straight from its storage.
+
 **GNU mode** handles each file on its own and prints GNU's messages to stdout.
 Hunks are placed with `ext::unidiff::apply`: offset search, fuzz up to `-F`
 (default 2) and GNU's anchoring rules. Rejected hunks are reported and dropped,

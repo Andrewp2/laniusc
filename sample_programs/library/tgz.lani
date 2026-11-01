@@ -24,6 +24,7 @@ import std::directory;
 import std::file;
 import std::file_ops;
 import std::filesystem;
+import std::fs;
 import std::linux;
 import std::stream;
 
@@ -83,12 +84,31 @@ fn join(output: &alloc::vec::Vec<u8>, base: core::slice::View<u8>, name: core::s
     if (base.len() > 0 && name.len() > 0) { if (core::result::is_err(output.try_push(47))) { return core::result::Err(Error::Allocation); } }
     return extend(output,name);
 }
+// Packed views go straight to the host; std::stream stages 1 KiB at a time.
+fn base(view: core::slice::View<u8>) -> ptr { return core::mem::i32_slice_data_ptr(view.values)+(view.start as usize); }
 fn write_fd(fd: i32, bytes: core::slice::View<u8>) -> core::result::Result<i32,Error> {
     if (bytes.len() == 0) { return core::result::Ok(0); }
+    if (core::mem::slice_stride(bytes.values) == 1) {
+        let done: i32 = 0;
+        while (done < bytes.len()) {
+            let put: i32 = std::fs::write(fd,base(bytes)+(done as usize),(bytes.len()-done) as usize);
+            if (put == -4) { continue; }
+            if (put <= 0) { return core::result::Err(Error::Io); }
+            done += put;
+        }
+        return core::result::Ok(done);
+    }
     let sink: std::stream::Descriptor = std::stream::from_handle(fd);
     if (core::result::is_err(core::io::write_all(sink.borrow(),bytes.values,bytes.start,bytes.len()))) { return core::result::Err(Error::Io); } return core::result::Ok(bytes.len());
 }
 fn read_fd(fd: i32, into: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    if (core::mem::slice_stride(into.values) == 1 && into.len() > 0) {
+        while (true) {
+            let got: i32 = std::fs::read(fd,base(into),into.len() as usize);
+            if (got >= 0 && got <= into.len()) { return core::result::Ok(got); }
+            if (got != -4) { return core::result::Err(Error::Io); }
+        }
+    }
     let source: std::stream::Descriptor = std::stream::from_handle(fd);
     while (true) {
         let got: core::result::Result<i32,core::io::Error> = source.read(into.values,into.start,into.len());
@@ -113,7 +133,7 @@ fn handle(file: std::file::File) -> i32 { return core::option::unwrap(file.raw_h
 fn source(fd: i32) -> core::result::Result<Source,Error> {
     let raw: alloc::vec::Vec<u8> = alloc::vec::new(); let out: alloc::vec::Vec<u8> = alloc::vec::new(); let history: alloc::vec::Vec<u8> = alloc::vec::new(); let workspace: alloc::vec::Vec<i32> = alloc::vec::new();
     let probs: alloc::vec::Vec<i32> = alloc::vec::new(); let stage: alloc::vec::Vec<u8> = alloc::vec::new(); let dict: alloc::vec::Vec<u8> = alloc::vec::new();
-    let ok: bool = core::result::is_ok(raw.try_resize(CHUNK,0)) && core::result::is_ok(out.try_resize(CHUNK,0)) && core::result::is_ok(history.try_resize(32768,0)) && core::result::is_ok(workspace.try_resize(707,0))
+    let ok: bool = core::result::is_ok(raw.try_resize(CHUNK,0)) && core::result::is_ok(out.try_resize(CHUNK,0)) && core::result::is_ok(history.try_resize(32768,0)) && core::result::is_ok(workspace.try_resize(ext::compression::fast_workspace_len(),0))
         && core::result::is_ok(probs.try_resize(ext::xz::probabilities_len(),0)) && core::result::is_ok(stage.try_resize(ext::xz::stage_len(),0));
     let limits: ext::compression::Limits = ext::compression::Limits { max_input: 2147483647, max_output: 2147483647, max_members: 1024 };
     let made: core::result::Result<ext::compression::Decoder,ext::compression::Error> = core::result::Err(ext::compression::Error::Bounds);

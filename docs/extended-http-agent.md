@@ -1,7 +1,7 @@
-# HTTP/1.1 client agent
+# HTTP client agent
 
-`ext::http_agent` is a synchronous HTTP/1.1 client for `http://` and
-`https://` URLs. It adds three things to the client stack:
+`ext::http_agent` is a synchronous HTTP/1.1 and HTTP/2 client for `http://`
+and `https://` URLs. It adds four things to the client stack:
 
 - a keep-alive connection pool keyed by scheme, host and port, with
   idle-count, idle-time and per-connection use limits, for cleartext and
@@ -9,7 +9,10 @@
 - redirect following with a hop limit, method rules and an origin policy for
   credentials;
 - request bodies that are either fixed (`Content-Length`) or streamed from any
-  `core::io::Read` source as `Transfer-Encoding: chunked`.
+  `core::io::Read` source as `Transfer-Encoding: chunked`;
+- [HTTP/2](#http2) for https origins that select `h2` by ALPN: one
+  multiplexed connection per origin, and `fetch_all` to run requests
+  concurrently on it.
 
 Response framing comes from the incremental [`ext::http`](extended-http.md)
 cursor, and the final message is checked once by the canonical parser. URLs
@@ -41,24 +44,36 @@ pub fn resolve(base: View<u8>, location: View<u8>, out: &Vec<u8>) -> bool;
 
 pub impl Agent {
     pub fn fetch(&self, request: Request) -> Result<Response,Error>;
+    pub fn fetch_all(&self, requests: View<Request>, results: &Vec<Result<Response,Error>>) -> i32;
     pub fn preconnect(&self, url: View<u8>, count: i32) -> Result<i32,Error>;
+    pub fn dial(&self, url: &ext::http_url::Url, deadline: Deadline) -> Result<Connection,Error>;
     pub fn stats(&self) -> Stats;
     pub fn idle(&self) -> i32;
+    pub fn sessions(&self) -> i32;
     pub fn clear(&self) -> i32;
     pub fn close(&self) -> bool;
 }
 pub impl Response {
     pub fn status(&self) -> i32;
+    pub fn version(&self) -> i32;
     pub fn head(&self) -> View<u8>;
     pub fn header(&self, name: View<u8>) -> Option<View<u8>>;
     pub fn body(&self) -> View<u8>;
     pub fn url(&self) -> View<u8>;
     pub fn destroy(&self) -> bool;
 }
+pub impl Connection {
+    pub fn send(&self, data: View<u8>, deadline: Deadline) -> Result<i32,Error>;
+    pub fn receive(&self, space: View<u8>, deadline: Deadline) -> Result<i32,Error>;
+    pub fn is_secure(&self) -> bool;
+    pub fn is_open(&self) -> bool;
+    pub fn close(&self, graceful: bool) -> bool;
+}
 ```
 
-`View`, `Vec`, `Option` and `Result` abbreviate the `core::slice`,
-`alloc::vec`, `core::option` and `core::result` types.
+`View`, `Vec`, `Option`, `Result` and `Deadline` abbreviate the
+`core::slice`, `alloc::vec`, `core::option`, `core::result` and `core::time`
+types.
 
 - **`fetch`** sends `request.body` with a fixed length.
 - **`fetch_stream`** reads `source` until EOF and sends it as chunks of up to
@@ -66,7 +81,10 @@ pub impl Response {
   body field is ignored.
 - **`Response`** has one manual owner; call `destroy` once you are done with
   its views.
-  - `head()` is the raw final response head.
+  - `version()` is 10 or 11 for HTTP/1.x and 20 for HTTP/2.
+  - `head()` is the raw final response head. For HTTP/2 it is the response
+    fields as `name: value` CRLF lines with lowercase names and no status
+    line; `header(name)` searches them case-insensitively either way.
   - `body()` is the decoded body. A fixed or close-delimited body is served in
     place from the receive buffer; a chunked body is decoded into its own
     buffer, and its trailers are discarded.
@@ -74,8 +92,10 @@ pub impl Response {
   - The `redirects`, `reused` and `kept` fields record how many hops were
     followed, whether the final hop used a pooled connection, and whether that
     connection went back to the pool.
-- **`close`** closes every pooled connection and releases the pool. After it
-  the agent rejects new requests.
+- **`fetch_all`** appends one result per request, in order, and returns
+  how many succeeded (see [HTTP/2](#http2)).
+- **`close`** closes every pooled and HTTP/2 connection and releases the
+  pool. After it the agent rejects new requests.
 
 ### Request head
 
@@ -137,6 +157,49 @@ redirects work exactly as below. Three details differ from cleartext:
 Pooled TLS connections are closed with a close_notify when it can be sent
 within 200 ms.
 
+## HTTP/2
+
+With `Options.http2` set (the default), every new https connection offers
+`h2` and `http/1.1` by ALPN (`tls_stream::adopt_connected_with_alpn_until`,
+`openssl_tls::Session.set_alpn`). When the server selects `h2`, the
+connection runs [`ext::http2`](extended-http2.md) and becomes the origin's
+HTTP/2 connection: later requests to the same host and port are streams on
+it, without the pool. An origin that selects `http/1.1`, or nothing, is
+served by the HTTP/1.1 code above, and its connections are pooled as
+before. `dial` never offers `h2`, since upgrades need HTTP/1.1.
+
+A request becomes one stream: `:method`, `:scheme`, `:authority` (the URL
+authority) and `:path` (the origin-form target), then the caller's fields
+with lowercase names, and `content-length` on the HTTP/1.1 rules. A fixed
+body goes out as DATA; a streamed body is read in `chunk_bytes` pieces, each
+sent as flow control allows, with END_STREAM after EOF, and no chunked
+coding. The engine's limits come from the agent's: `limits.body_bytes` per
+response and `limits.head_bytes` as the advertised header list size.
+Trailers are dropped, as for HTTP/1.1. Redirects, the deadline per exchange
+and the `Response` interface are unchanged.
+
+Reuse follows the pool's options. Before each request the agent reads, without
+waiting, anything the server sent the idle connection (SETTINGS, PING,
+GOAWAY). It closes the connection, with GOAWAY(NO_ERROR) when that can be
+sent within 200 ms, once it is idle past `idle_timeout_ms` (counted as
+`expired`), after `max_uses` streams, after a GOAWAY from the server, on a
+transport or connection error, and when pooling is disabled.
+
+Retries:
+
+- a stream the server refused (RST_STREAM REFUSED_STREAM, or above a
+  GOAWAY's last stream) is retried once, whatever the method, when no
+  streamed body was read;
+- a request on a reused HTTP/2 connection that fails before any response is
+  retried once on the HTTP/1.1 stale rules (idempotent, `retry_stale`).
+
+`fetch_all` runs the requests to each https origin that negotiates HTTP/2
+as concurrent streams of its connection, starting more as streams finish
+when the server's MAX_CONCURRENT_STREAMS is lower. Each origin's batch has
+one `timeout_ms` deadline. All other requests, and any that a server
+refused, are then fetched one at a time like `fetch`. `fetch_all` does not
+follow redirects: a redirect is returned as the response.
+
 ## Connection pool
 
 The pool key is the URL scheme, host (ASCII case-insensitive) and port. So
@@ -157,7 +220,7 @@ Otherwise the connection is closed.
 | `max_idle_per_host` | 4 | Parking beyond this closes that host's oldest idle connection. |
 | `max_idle_total` | 16 | Parking beyond this closes the oldest idle connection overall. |
 | `idle_timeout_ms` | 15000 | An idle connection older than this is closed at the next checkout. |
-| `max_uses` | 100 | Requests per connection before it is retired. |
+| `max_uses` | 100 | Requests per connection (streams per HTTP/2 connection) before it is retired. |
 
 A server `Keep-Alive: timeout=N` header shortens the idle time to
 `N` seconds minus 500 ms. Setting either idle limit to 0 disables pooling;
@@ -198,6 +261,11 @@ preconnecting.
 | `evicted` | idle connections closed by the count limits |
 | `expired` | idle connections closed by idle time |
 | `early` | uploads cut short by an early final response |
+| `http2` | connections that negotiated HTTP/2 (also in `connections`) |
+
+A request on an HTTP/2 connection that was already open counts as
+`reused`. `idle()` counts parked HTTP/1.1 connections and `sessions()` open
+HTTP/2 connections.
 
 ## Redirects
 
@@ -243,6 +311,26 @@ Then the agent stops uploading, reads that response and returns it. That
 connection is not pooled, because its request was never completed. A read
 error from the source fails with `Source(error)`.
 
+## Connections for upgrades
+
+`dial` opens a fresh connection to a parsed `http://` or `https://` URL's
+origin, the same way the agent opens its own: resolution, ordered connect
+attempts, and verified TLS with the agent's `trust` and `tls` options. The
+connection never enters the pool. It is for protocols that take over the
+connection after an HTTP/1.1 upgrade;
+[`ext::websocket_client`](extended-websocket-client.md) uses it. A
+`Connection` has one owner and is closed once. Each call takes its own
+absolute deadline.
+
+- `send` writes all of `data`.
+- `receive` waits for at least one byte. `Ok(0)` is a clean EOF (a TCP FIN or
+  TLS close_notify) and `Truncated(0)` is a TLS EOF without close_notify.
+  `Timeout` leaves the connection usable, over TLS too: TLS reads are tried
+  without blocking, then the socket is polled, so a quiet peer does not abort
+  the TLS stream.
+- `close(true)` sends TLS close_notify first; `close(false)` drops the
+  transport.
+
 ## Deadlines, limits and errors
 
 Each exchange has one absolute deadline of `timeout_ms` (default 30 s),
@@ -269,6 +357,7 @@ fails with `UnexpectedUpgrade`.
 | `TooLarge` | a head, line, body or informational limit was exceeded |
 | `TooManyRedirects(n)`, `BadLocation`, `UnreplayableBody(status)` | redirect failures |
 | `UnexpectedUpgrade` | a `101` response |
+| `Http2(error)` | an HTTP/2 stream or connection error: a reset or GOAWAY from the server, a protocol violation or a malformed response |
 | `Source(error)` | the streamed body's source failed |
 | `AllocationFailed`, `Clock` | resource failures |
 
@@ -281,7 +370,7 @@ http-curl [-X METHOD] [-H 'Name: value']... [-d DATA | -T FILE|-] [-L]
           [--max-redirs N] [-i] [-I] [-f] [--max-time MS]
           [--max-idle-per-host N] [--max-idle N] [--idle-timeout MS]
           [--max-uses N] [--preconnect N] [--pause MS] [--no-retry] [--stats]
-          [--cacert FILE] [--no-https] URL...
+          [--cacert FILE] [--no-https] [--http1.1] [--parallel] URL...
 ```
 
 The sample fetches each URL in turn through one agent and writes the bodies
@@ -295,6 +384,8 @@ to stdout.
 - `--pause` waits between URLs.
 - `--cacert FILE` trusts the PEM certificates in FILE instead of the system
   default paths; `--no-https` refuses https URLs.
+- `--http1.1` turns HTTP/2 off; `--parallel` fetches all URLs with
+  `fetch_all` (no redirects, no `-T`).
 - `--stats` writes one `response ...` line per URL and one `pool ...` line to
   stderr.
 
@@ -303,6 +394,7 @@ The exit codes follow curl:
 | Code | Meaning |
 | --- | --- |
 | 1 | unsupported scheme |
+| 16 | HTTP/2 error |
 | 3 | bad URL or Location |
 | 7 | connect failed |
 | 8 | malformed response or upgrade |
@@ -331,7 +423,8 @@ nothing is checked in or downloaded. Every case
 checks:
 
 - the exit code and output;
-- the client's `response`/`pool` statistics;
+- the client's `response`/`pool` statistics (`version`, `http2`, `sessions`
+  included);
 - the server-observed connection and request counts.
 
 | Group | Cases | Covers |
@@ -342,22 +435,37 @@ checks:
 | https | 17 | TLS reuse over 127.0.0.1 (IP identity) and localhost (DNS identity, SNI), http→https redirect with credential stripping and pooled reuse afterwards, https→http redirect, scheme-separated pool keys on one port, 1 MB fixed and 250 KB chunked bodies, 3 MiB chunked upload, fixed POST, stale TLS connection, retry after an EOF without close_notify, `--no-retry` empty reply, preconnected TLS connections kept through their session tickets, untrusted root, expired certificate (also on a redirect hop), `--no-https`, missing CA file |
 | broken | 21 | empty reply, truncated head and body, garbage, bad chunk size, CL+TE, conflicting lengths, stalled head and body, slow drip within and past the deadline, 101, oversized head, too many 1xx, 100+103 then 200, close-delimited body, HEAD with a length, refused connect, bad and https URLs, reset mid-body |
 
+The HTTP/2 group is
+[`tests/fixtures/extended/http2/agent_oracle.py`](../tests/fixtures/extended/http2/agent_oracle.py),
+run by the same test file against libnghttp2's server session over TLS with
+ALPN `h2` ([`h2server.py`](../tests/fixtures/extended/http2/h2server.py),
+through ctypes; Python's `h2` and `nghttpd` are not installed here). The
+server reports every stream, the client's SETTINGS and GOAWAY, and its peak
+number of concurrent streams.
+
+| Group | Cases | Covers |
+| --- | --- | --- |
+| h2 | 21 | ALPN selection and pseudo-fields, three requests as streams 1/3/5 of one connection with a 300 KB body, 8 `--parallel` 400 ms requests in under 2.5 s with 8 streams open at once, a server limit of 2 concurrent streams, `--parallel` across an HTTP/2 and an HTTP/1.1 origin in order, fixed and 400 KB streamed uploads under flow control, an empty stream, methods and caller fields, 60 × 400-byte response fields (CONTINUATION), trailers, 103 then 200, HEAD, a redirect on the same connection, `-f`, RST_STREAM (exit 16) and a refused stream retried once, GOAWAY then a new connection, server PING, idle expiry, `max_uses`, HTTP/1.1 fallback and `--http1.1` (ALPN seen by the server), certificate verification |
+
 ```text
 http-agent-pool cases=18 connections=33 requests=44
 http-agent-redirect cases=29 connections=31 requests=67
 http-agent-upload cases=10 connections=8 requests=9
 http-agent-broken cases=21 connections=18 requests=1
 http-agent-https cases=17 connections=22 requests=27
+http2-agent-h2 cases=21 connections=23 requests=43
 ```
 
-The https group runs in about 3 seconds, the whole oracle in about 12.
+The https group runs in about 3 seconds, the whole oracle in about 12, and
+the HTTP/2 group in about 4.
 
 ## Limits of this version
 
-- TLS has no session resumption, client certificates, ALPN or HTTP/2, and
-  no option to disable verification.
-- The agent is synchronous: one exchange at a time, with no pipelining and no
-  concurrent requests.
+- TLS has no session resumption, client certificates or option to disable
+  verification.
+- The agent is synchronous. Over HTTP/1.1 it runs one exchange at a time,
+  with no pipelining; concurrency needs HTTP/2 and `fetch_all`. Cleartext
+  `h2c` is not offered.
 - It does not implement cookies, authentication challenges, proxies,
   decompression or `Expect: 100-continue`.
 - Response trailers are discarded.

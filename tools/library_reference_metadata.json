@@ -1219,11 +1219,33 @@
     "ext::http_agent": {
       "guides": [
         "docs/extended-http-agent.md",
+        "docs/extended-http2.md",
         "docs/extended-http.md",
         "docs/extended-url-client.md",
         "docs/extended-openssl-tls.md"
       ],
-      "note": "Synchronous HTTP/1.1 client for http:// and verified https:// over ext::http framing, ext::http_url, ext::url_connect and ext::tls_stream: a keep-alive pool of cleartext and TLS connections keyed by scheme, host and port with per-host/total idle counts, idle time, Keep-Alive hints and use limits, stale probing and one idempotent retry; redirects with a hop limit, 303/301/302/307/308 method rules, RFC 3986 reference resolution and cross-origin Authorization/Cookie stripping; fixed or chunked streamed bodies with early-response handling. The curl-like sample passes five oracle groups (pool 18, redirect 29, upload 10, broken 21, https 17 cases against Python ssl origins with locally generated certificates) with exact counters."
+      "note": "Synchronous HTTP/1.1 and HTTP/2 client for http:// and verified https:// over ext::http framing, ext::http_url, ext::url_connect and ext::tls_stream: a keep-alive pool of cleartext and TLS connections keyed by scheme, host and port with per-host/total idle counts, idle time, Keep-Alive hints and use limits, stale probing and one idempotent retry; redirects with a hop limit, 303/301/302/307/308 method rules, RFC 3986 reference resolution and cross-origin Authorization/Cookie stripping; fixed or chunked streamed bodies with early-response handling; unpooled dial connections for HTTP/1.1 upgrades; over https it offers h2 by ALPN and runs requests to an origin that selects it as streams of one ext::http2 connection (reused under the pool's idle, use and GOAWAY rules, refused streams retried once), with fetch_all multiplexing requests per origin. The curl-like sample passes five oracle groups (pool 18, redirect 29, upload 10, broken 21, https 17 cases against Python ssl origins with locally generated certificates) with exact counters, plus an h2 group of 21 cases against libnghttp2's server session over TLS."
+    },
+    "ext::hpack": {
+      "guides": [
+        "docs/extended-hpack.md",
+        "docs/extended-http2.md"
+      ],
+      "note": "RFC 7541 HPACK without I/O: N-bit prefix integers (at most 2^31-1, five continuation bytes), raw and canonical-Huffman string literals with strict padding/EOS checks, the 61-entry static table, a bounded dynamic table with eviction and size updates, a Decoder with table, header-list, field-count and string limits (Limit is non-fatal and keeps the table in step; every other error is final) and an Encoder that signals the smallest and final table size and never-indexes credentials. Passes rfc 8 (Appendix C byte for byte), nghttp2 3 (both directions against libnghttp2's HPACK, 2,512 blocks) and malformed 17 (624 blocks) oracle cases."
+    },
+    "ext::http2_frame": {
+      "guides": [
+        "docs/extended-http2.md"
+      ],
+      "note": "HTTP/2 frame codec (RFC 9113 sections 4 and 6): constants for frame types, flags, error codes and SETTINGS; next() parses one frame with the size, stream-zero, fixed-length and padding rules as connection or stream errors; per-type payload readers (DATA without padding, HEADERS priority and self-dependency, PUSH_PROMISE, RST_STREAM, PING, GOAWAY, WINDOW_UPDATE, SETTINGS with value checks) and writers that split header blocks into HEADERS + CONTINUATION and data into frames of the peer's maximum size. Exercised through the ext::http2 engine oracles."
+    },
+    "ext::http2": {
+      "guides": [
+        "docs/extended-http2.md",
+        "docs/extended-hpack.md",
+        "docs/extended-http-agent.md"
+      ],
+      "note": "I/O-free HTTP/2 client connection engine: the caller sends output() and feeds received bytes. Multiplexes request streams under the smaller of the peer's MAX_CONCURRENT_STREAMS and a local cap, runs flow control both ways (round-robin DATA within windows and frame size, WINDOW_UPDATE at half a window, overflow and violation errors, INITIAL_WINDOW_SIZE deltas), applies and acknowledges SETTINGS (push disabled), answers PING, honours GOAWAY and RST_STREAM (refused streams marked retryable), assembles CONTINUATION and validates responses (one :status, 1xx skipped, 101 rejected, field syntax, connection-specific fields, content-length, trailers). Connection errors send GOAWAY and fail every stream; stream errors send RST_STREAM. Passes 17 cases against libnghttp2's server session and 46 hand-built raw-frame cases."
     },
     "ext::http_service": {
       "guides": [
@@ -1830,6 +1852,15 @@
         "server": "Creates an empty borrowed server handshake without allocation or transport I/O. Reads one canonical request before a no-write Request policy pause; the caller supplies established-provider Accept and optional offered protocol through accept. Ready requires all response bytes and inner flush; conversion uses Role::Server over the same caller-owned transport."
       }
     },
+    "ext::websocket_client": {
+      "guides": [
+        "docs/extended-websocket-client.md",
+        "docs/extended-websocket.md",
+        "docs/extended-http-agent.md",
+        "docs/extended-openssl-websocket.md"
+      ],
+      "note": "Synchronous RFC 6455 client for ws:// and verified wss:// URLs over ext::http_agent dial connections and the canonical ext::websocket wire engine in Role::Client. The opening handshake uses a fresh 16-byte OS-random key and validates the 101 (Upgrade, Connection, Accept, no extensions, offered protocol); frame bytes coalesced with the head are kept. Every frame is masked with a key from a 256-byte OS-random pool. Supports single-frame and fragmented sends, assembles fragmented messages with interleaved control frames, answers Pings, echoes peer Close codes, starts the close handshake with a bounded wait, and fails the connection with Close 1002/1007/1009 on protocol violations. Receive timeouts leave plain and TLS connections usable. The ws_cat sample passes ws (24 cases) and wss (26 cases) groups against a minimal asyncio RFC 6455 server."
+    },
     "ext::weighted_statistics": {
       "guides": [
         "docs/extended-weighted-statistics.md",
@@ -2040,6 +2071,11 @@
       ],
       "profile": "Unbound host declarations",
       "note": "The direct legacy network service declarations are unbound. Metadata helpers describe that unavailable service; executable owned sockets use std::socket over std::linux separately."
+    },
+    "std::par": {
+      "guides": [
+        "docs/stdlib-concurrency.md"
+      ]
     },
     "std::parallel": {
       "guides": [

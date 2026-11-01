@@ -8,6 +8,8 @@ import core::result;
 import core::cmp;
 import core::hash;
 import core::mem;
+import alloc::io;
+import core::io;
 import ext::seqdiff;
 
 pub enum Error { InvalidOptions, Bounds, ItemLimit, WorkLimit, OutputLimit, AllocationFailed }
@@ -35,8 +37,8 @@ fn m3_range_eq<T>(x: core::slice::View<T>, x0: i32, x1: i32, y: core::slice::Vie
 fn m3_matches(script: &ext::seqdiff::Script, count: i32) -> core::result::Result<alloc::vec::Vec<i32>, Error> {
     let out: alloc::vec::Vec<i32> = alloc::vec::new();
     if (core::result::is_err(out.try_resize(count, -1))) { out.destroy(); return core::result::Err(Error::AllocationFailed); }
-    let slots: [i32] = out.as_slice(); let i: i32 = 0;
-    while (i < script.len()) { let e: ext::seqdiff::Edit = core::result::unwrap(script.step(i)); if (e.kind == 0) { slots[e.before] = e.after; } i += 1; }
+    let slots: [i32] = out.as_slice(); let steps: [ext::seqdiff::Edit] = script.steps.as_slice(); let total: i32 = script.steps.len(); let i: i32 = 0;
+    while (i < total) { let e: ext::seqdiff::Edit = steps[i]; if (e.kind == 0) { slots[e.before] = e.after; } i += 1; }
     return core::result::Ok(out);
 }
 fn m3_push(out: &alloc::vec::Vec<Chunk>, c: Chunk) -> bool { return core::result::is_ok(out.try_push(c)); }
@@ -49,23 +51,105 @@ fn m3_refine<T>(a: core::slice::View<T>, b: core::slice::View<T>, c: Chunk, out:
     let made: core::result::Result<ext::seqdiff::Script, ext::seqdiff::Error> = ext::seqdiff::diff(sa, sb, algorithm, limits);
     if (core::result::is_err(made)) { return core::result::Err(m3_error(core::result::unwrap_err(made))); }
     let s: ext::seqdiff::Script = core::result::unwrap(made);
+    let r: core::result::Result<i32, Error> = m3_split_by(s.borrow(), c, out); s.destroy(); return r;
+}
+// The chunks of conflict c split by script s of its two sides: shared runs
+// (kind 5) and the conflicts between them.
+fn m3_split_by(s: &ext::seqdiff::Script, c: Chunk, out: &alloc::vec::Vec<Chunk>) -> core::result::Result<i32, Error> {
+    let steps: [ext::seqdiff::Edit] = s.steps.as_slice(); let total: i32 = s.steps.len();
     let count: i32 = 0; let i: i32 = 0; let ok: bool = true;
-    while (i < s.len() && ok) {
-        let e: ext::seqdiff::Edit = core::result::unwrap(s.step(i)); let j: i32 = i;
+    while (i < total && ok) {
+        let e: ext::seqdiff::Edit = steps[i]; let j: i32 = i;
         if (e.kind == 0) {
-            while (j < s.len() && core::result::unwrap(s.step(j)).kind == 0) { j += 1; }
+            while (j < total && steps[j].kind == 0) { j += 1; }
             ok = m3_push(out, Chunk { kind: 5, o0: c.o0, o1: c.o0, a0: c.a0 + e.before, a1: c.a0 + e.before + (j - i), b0: c.b0 + e.after, b1: c.b0 + e.after + (j - i) });
         } else {
-            while (j < s.len() && core::result::unwrap(s.step(j)).kind != 0) { j += 1; }
-            let end_a: i32 = s.before_len(); let end_b: i32 = s.after_len();
-            if (j < s.len()) { let f: ext::seqdiff::Edit = core::result::unwrap(s.step(j)); end_a = f.before; end_b = f.after; }
+            while (j < total && steps[j].kind != 0) { j += 1; }
+            let end_a: i32 = s.before_len; let end_b: i32 = s.after_len;
+            if (j < total) { let f: ext::seqdiff::Edit = steps[j]; end_a = f.before; end_b = f.after; }
             ok = m3_push(out, Chunk { kind: 4, o0: c.o0, o1: c.o1, a0: c.a0 + e.before, a1: c.a0 + end_a, b0: c.b0 + e.after, b1: c.b0 + end_b }); count += 1;
         }
         i = j;
     }
-    s.destroy();
     if (!ok) { return core::result::Err(Error::AllocationFailed); }
     return core::result::Ok(count);
+}
+// m3_refine over class ids. The two sides are renumbered densely (remap is
+// all -1 on entry and on exit) so the diff's tables fit the conflict.
+fn m3_refine_ids(a: core::slice::View<i32>, b: core::slice::View<i32>, c: Chunk, out: &alloc::vec::Vec<Chunk>, remap: [i32], local: &alloc::vec::Vec<i32>, algorithm: ext::seqdiff::Algorithm, limits: ext::seqdiff::Limits) -> core::result::Result<i32, Error> {
+    if (c.a1 == c.a0 || c.b1 == c.b0) { if (!m3_push(out, c)) { return core::result::Err(Error::AllocationFailed); } return core::result::Ok(1); }
+    let la: i32 = c.a1 - c.a0; let lb: i32 = c.b1 - c.b0;
+    local.clear(); if (core::result::is_err(local.try_resize(la + lb, 0))) { return core::result::Err(Error::AllocationFailed); }
+    let lv: [i32] = local.as_slice(); let av: [i32] = a.values; let ab: i32 = a.start + c.a0; let bv: [i32] = b.values; let bb: i32 = b.start + c.b0;
+    let next: i32 = 0; let i: i32 = 0;
+    while (i < la) { let g: i32 = av[ab+i]; let id: i32 = remap[g]; if (id < 0) { id = next; remap[g] = id; next += 1; } lv[i] = id; i += 1; }
+    i = 0; while (i < lb) { let g: i32 = bv[bb+i]; let id: i32 = remap[g]; if (id < 0) { id = next; remap[g] = id; next += 1; } lv[la+i] = id; i += 1; }
+    i = 0; while (i < la) { remap[av[ab+i]] = -1; i += 1; }
+    i = 0; while (i < lb) { remap[bv[bb+i]] = -1; i += 1; }
+    let made: core::result::Result<ext::seqdiff::Script, ext::seqdiff::Error> = ext::seqdiff::diff_classes(core::slice::View { values: lv, start: 0, length: la }, core::slice::View { values: lv, start: la, length: lb }, next, algorithm, limits);
+    if (core::result::is_err(made)) { return core::result::Err(m3_error(core::result::unwrap_err(made))); }
+    let s: ext::seqdiff::Script = core::result::unwrap(made);
+    let r: core::result::Result<i32, Error> = m3_split_by(s.borrow(), c, out); s.destroy(); return r;
+}
+fn m3_ids_eq(x: core::slice::View<i32>, x0: i32, x1: i32, y: core::slice::View<i32>, y0: i32, y1: i32) -> bool {
+    if (x1 - x0 != y1 - y0) { return false; }
+    let xv: [i32] = x.values; let xb: i32 = x.start + x0; let yv: [i32] = y.values; let yb: i32 = y.start + y0;
+    let i: i32 = 0; while (i < x1 - x0) { if (xv[xb+i] != yv[yb+i]) { return false; } i += 1; } return true;
+}
+// merge3_with over class ids in [0, classes) (equal ids are equal items).
+fn m3_core(o: core::slice::View<i32>, a: core::slice::View<i32>, b: core::slice::View<i32>, classes: i32, level: Level, algorithm: ext::seqdiff::Algorithm, limits: ext::seqdiff::Limits) -> core::result::Result<Merge, Error> {
+    let first: core::result::Result<ext::seqdiff::Script, ext::seqdiff::Error> = ext::seqdiff::diff_classes(o, a, classes, algorithm, limits);
+    if (core::result::is_err(first)) { return core::result::Err(m3_error(core::result::unwrap_err(first))); }
+    let sa: ext::seqdiff::Script = core::result::unwrap(first);
+    let second: core::result::Result<ext::seqdiff::Script, ext::seqdiff::Error> = ext::seqdiff::diff_classes(o, b, classes, algorithm, limits);
+    if (core::result::is_err(second)) { sa.destroy(); return core::result::Err(m3_error(core::result::unwrap_err(second))); }
+    let sb: ext::seqdiff::Script = core::result::unwrap(second);
+    let ma: core::result::Result<alloc::vec::Vec<i32>, Error> = m3_matches(sa.borrow(), o.length); sa.destroy();
+    let mb: core::result::Result<alloc::vec::Vec<i32>, Error> = m3_matches(sb.borrow(), o.length); sb.destroy();
+    if (core::result::is_err(ma) || core::result::is_err(mb)) {
+        if (core::result::is_ok(ma)) { let v: alloc::vec::Vec<i32> = core::result::unwrap(ma); v.destroy(); }
+        if (core::result::is_ok(mb)) { let v: alloc::vec::Vec<i32> = core::result::unwrap(mb); v.destroy(); }
+        return core::result::Err(Error::AllocationFailed);
+    }
+    let va: alloc::vec::Vec<i32> = core::result::unwrap(ma); let vb: alloc::vec::Vec<i32> = core::result::unwrap(mb);
+    let pa: [i32] = va.as_slice(); let pb: [i32] = vb.as_slice();
+    let raw: alloc::vec::Vec<Chunk> = alloc::vec::new(); let ok: bool = true;
+    let n: i32 = o.length; let an: i32 = a.length; let bn: i32 = b.length; let io: i32 = 0; let ia: i32 = 0; let ib: i32 = 0;
+    while (ok && (io < n || ia < an || ib < bn)) {
+        if (io < n && pa[io] == ia && pb[io] == ib) {
+            let k: i32 = 0; while (io + k < n && pa[io+k] == ia + k && pb[io+k] == ib + k) { k += 1; }
+            ok = m3_push(raw.borrow(), Chunk { kind: 0, o0: io, o1: io + k, a0: ia, a1: ia + k, b0: ib, b1: ib + k });
+            io += k; ia += k; ib += k;
+        } else {
+            let o2: i32 = io; while (o2 < n && (pa[o2] < 0 || pb[o2] < 0)) { o2 += 1; }
+            let a2: i32 = an; let b2: i32 = bn; if (o2 < n) { a2 = pa[o2]; b2 = pb[o2]; }
+            let same_a: bool = m3_ids_eq(o, io, o2, a, ia, a2); let same_b: bool = m3_ids_eq(o, io, o2, b, ib, b2);
+            let kind: i32 = 4;
+            if (same_a && same_b) { kind = 0; } else { if (same_a) { kind = 2; } else { if (same_b) { kind = 1; } else { if (m3_ids_eq(a, ia, a2, b, ib, b2)) { kind = 3; } } } }
+            ok = m3_push(raw.borrow(), Chunk { kind: kind, o0: io, o1: o2, a0: ia, a1: a2, b0: ib, b1: b2 });
+            io = o2; ia = a2; ib = b2;
+        }
+    }
+    va.destroy(); vb.destroy();
+    if (!ok) { raw.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let eager: bool = match (level) { Level::Eager -> true, _ -> false };
+    if (eager) { return core::result::Ok(Merge { chunks: raw, conflicts: m3_count(raw.borrow()) }); }
+    let refined: alloc::vec::Vec<Chunk> = alloc::vec::new(); let remap: alloc::vec::Vec<i32> = alloc::vec::new(); let local: alloc::vec::Vec<i32> = alloc::vec::new();
+    let rs: [Chunk] = raw.as_slice(); let total: i32 = raw.len(); let i: i32 = 0; let failure: Error = Error::AllocationFailed;
+    while (i < total && ok) {
+        let c: Chunk = rs[i];
+        if (c.kind == 4) {
+            if (remap.len() == 0) { if (core::result::is_err(remap.try_resize(classes + 1, -1))) { ok = false; } }
+            if (ok) {
+                let r: core::result::Result<i32, Error> = m3_refine_ids(a, b, c, refined.borrow(), remap.as_slice(), local.borrow(), algorithm, limits);
+                if (core::result::is_err(r)) { ok = false; failure = core::result::unwrap_err(r); }
+            }
+        } else { ok = m3_push(refined.borrow(), c); }
+        i += 1;
+    }
+    raw.destroy(); remap.destroy(); local.destroy();
+    if (!ok) { refined.destroy(); return core::result::Err(failure); }
+    return core::result::Ok(Merge { chunks: refined, conflicts: m3_count(refined.borrow()) });
 }
 
 // Classic diff3 chunking over matchings of base->ours and base->theirs, aligned
@@ -125,19 +209,26 @@ pub fn merge3_with<T>(o: core::slice::View<T>, a: core::slice::View<T>, b: core:
 }
 fn m3_count(chunks: &alloc::vec::Vec<Chunk>) -> i32 { let n: i32 = 0; let i: i32 = 0; while (i < chunks.len()) { if (chunks.as_slice()[i].kind == 4) { n += 1; } i += 1; } return n; }
 
+fn m3_alnum(v: core::slice::View<u8>) -> bool {
+    let j: i32 = 0;
+    while (j < v.length) { let c: u8 = v.values[v.start+j]; if ((c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122)) { return true; } j += 1; }
+    return false;
+}
 fn m3_has_alnum(a: core::slice::View<ext::seqdiff::Line>, a0: i32, a1: i32) -> bool {
     let i: i32 = a0;
-    while (i < a1) {
-        let v: core::slice::View<u8> = a.values[a.start+i].bytes; let j: i32 = 0;
-        while (j < v.length) { let c: u8 = v.values[v.start+j]; if ((c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122)) { return true; } j += 1; }
-        i += 1;
-    }
+    while (i < a1) { if (m3_alnum(a.values[a.start+i].bytes)) { return true; } i += 1; }
     return false;
+}
+// Ours as text (see TextMerge): lines a0..a1 are one contiguous range.
+fn m3_text_alnum(text: core::slice::View<u8>, st: [i32], a0: i32, a1: i32) -> bool {
+    if (a1 <= a0) { return false; }
+    return m3_alnum(core::slice::View { values: text.values, start: text.start + st[a0], length: st[a1] - st[a0] });
 }
 // Rejoin conflicts separated only by shared lines when the gap is at most three
 // lines, or (alnum) contains no ASCII letter or digit. Mirrors git's
 // xdl_simplify_non_conflicts; gap lines become part of both conflict sides.
-fn m3_simplify(a: core::slice::View<ext::seqdiff::Line>, m: &Merge, alnum: bool) -> bool {
+// Ours is either Line records (by_text false) or text with line starts.
+fn m3_simplify(a: core::slice::View<ext::seqdiff::Line>, text: core::slice::View<u8>, st: [i32], by_text: bool, m: &Merge, alnum: bool) -> bool {
     let out: alloc::vec::Vec<Chunk> = alloc::vec::new(); let src: [Chunk] = m.chunks.as_slice(); let total: i32 = m.chunks.len();
     let i: i32 = 0; let ok: bool = true;
     while (i < total && ok) {
@@ -150,7 +241,9 @@ fn m3_simplify(a: core::slice::View<ext::seqdiff::Line>, m: &Merge, alnum: bool)
                 merging = false;
                 if (j < total && src[j].kind == 4) {
                     let gap0: i32 = c.a1; let gap1: i32 = src[j].a0;
-                    if (gap1 - gap0 <= 3 || (alnum && !m3_has_alnum(a, gap0, gap1))) {
+                    let plain: bool = false;
+                    if (gap1 - gap0 > 3 && alnum) { if (by_text) { plain = !m3_text_alnum(text, st, gap0, gap1); } else { plain = !m3_has_alnum(a, gap0, gap1); } }
+                    if (gap1 - gap0 <= 3 || plain) {
                         let n: Chunk = src[j]; c.a1 = n.a1; c.b1 = n.b1; c.o1 = n.o1; i = j; merging = true;
                     }
                 }
@@ -167,12 +260,43 @@ pub fn merge_lines(o: core::slice::View<ext::seqdiff::Line>, a: core::slice::Vie
     return merge_lines_with(o, a, b, level, ext::seqdiff::Algorithm::Xdiff, limits);
 }
 pub fn merge_lines_with(o: core::slice::View<ext::seqdiff::Line>, a: core::slice::View<ext::seqdiff::Line>, b: core::slice::View<ext::seqdiff::Line>, level: Level, algorithm: ext::seqdiff::Algorithm, limits: ext::seqdiff::Limits) -> core::result::Result<Merge, Error> {
-    let made: core::result::Result<Merge, Error> = merge3_with(o, a, b, level, algorithm, limits);
+    // Lines are classified once, all three together; the merge runs on ids.
+    let classified: core::result::Result<ext::seqdiff::Classes3, ext::seqdiff::Error> = ext::seqdiff::classify_lines3(o, a, b, limits);
+    if (core::result::is_err(classified)) { return core::result::Err(m3_error(core::result::unwrap_err(classified))); }
+    let c: ext::seqdiff::Classes3 = core::result::unwrap(classified);
+    let made: core::result::Result<Merge, Error> = m3_core(c.base.as_view(), c.ours.as_view(), c.theirs.as_view(), c.count, level, algorithm, limits);
+    c.destroy();
     if (core::result::is_err(made)) { return made; }
     let m: Merge = core::result::unwrap(made);
-    let simplify: i32 = match (level) { Level::Eager -> 0, Level::Zealous -> 1, Level::ZealousAlnum -> 2 };
-    if (simplify > 0 && !m3_simplify(a, m.borrow(), simplify == 2)) { m.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let none: [i32] = [0;1]; let zero: [u8] = [0;1];
+    if (!m3_simplify_level(a, core::slice::View { values: zero, start: 0, length: 0 }, none, false, m.borrow(), level)) { m.destroy(); return core::result::Err(Error::AllocationFailed); }
     return core::result::Ok(m);
+}
+fn m3_simplify_level(a: core::slice::View<ext::seqdiff::Line>, text: core::slice::View<u8>, st: [i32], by_text: bool, m: &Merge, level: Level) -> bool {
+    let simplify: i32 = match (level) { Level::Eager -> 0, Level::Zealous -> 1, Level::ZealousAlnum -> 2 };
+    if (simplify == 0) { return true; }
+    return m3_simplify(a, text, st, by_text, m, simplify == 2);
+}
+
+// A merge of three texts' lines: the split (borrowing the texts) and chunks
+// over its line indices.
+pub struct TextMerge { lines: ext::seqdiff::Split3, merge: Merge }
+pub impl TextMerge {
+    pub fn borrow(&self) -> &TextMerge { return self; }
+    pub fn destroy(&self) { self.lines.destroy(); self.merge.destroy(); }
+}
+// merge_lines_with on bytes: the same chunks, without Line records. The
+// texts must outlive the result.
+pub fn merge_text(o: core::slice::View<u8>, a: core::slice::View<u8>, b: core::slice::View<u8>, level: Level, algorithm: ext::seqdiff::Algorithm, limits: ext::seqdiff::Limits) -> core::result::Result<TextMerge, Error> {
+    let split: core::result::Result<ext::seqdiff::Split3, ext::seqdiff::Error> = ext::seqdiff::split_classify3(o, a, b, limits);
+    if (core::result::is_err(split)) { return core::result::Err(m3_error(core::result::unwrap_err(split))); }
+    let s: ext::seqdiff::Split3 = core::result::unwrap(split);
+    let made: core::result::Result<Merge, Error> = m3_core(s.classes.base.as_view(), s.classes.ours.as_view(), s.classes.theirs.as_view(), s.classes.count, level, algorithm, limits);
+    if (core::result::is_err(made)) { s.destroy(); return core::result::Err(core::result::unwrap_err(made)); }
+    let m: Merge = core::result::unwrap(made);
+    let none: alloc::vec::Vec<ext::seqdiff::Line> = alloc::vec::new();
+    if (!m3_simplify_level(none.as_view(), a, s.ours_starts.as_slice(), true, m.borrow(), level)) { m.destroy(); s.destroy(); return core::result::Err(Error::AllocationFailed); }
+    return core::result::Ok(TextMerge { lines: s, merge: m });
 }
 pub impl Merge {
     pub fn borrow(&self) -> &Merge { return self; }
@@ -229,4 +353,80 @@ pub fn write_merge(o: core::slice::View<ext::seqdiff::Line>, a: core::slice::Vie
     }
     if (out.failed) { out.bytes.destroy(); if (out.full) { return core::result::Err(Error::OutputLimit); } return core::result::Err(Error::AllocationFailed); }
     return core::result::Ok(out.bytes);
+}
+
+// Lines x0..x1 of one text side for write_text_merge.
+struct Side { text: core::slice::View<u8>, st: [i32], count: i32 }
+fn m3_side(text: core::slice::View<u8>, starts: &alloc::vec::Vec<i32>) -> Side { return Side { text: text, st: starts.as_slice(), count: starts.len() - 1 }; }
+// Bytes of lines x0..x1, plus one LF when terminate and the last lacks one.
+fn m3_side_size(s: Side, x0: i32, x1: i32, terminate: bool) -> i64 {
+    if (x1 <= x0) { return 0; }
+    let n: i64 = (s.st[x1] - s.st[x0]) as i64;
+    if (terminate && s.text.values[s.text.start+s.st[x1]-1] != 10) { n += 1; }
+    return n;
+}
+fn m3_marker_size(label: core::slice::View<u8>) -> i64 { if (label.length > 0) { return (9 + label.length) as i64; } return 8; }
+fn m3_put_side(dst: [u8], target: ptr, at: i32, s: Side, x0: i32, x1: i32, terminate: bool) -> i32 {
+    if (x1 <= x0) { return at; }
+    let n: i32 = s.st[x1] - s.st[x0];
+    ext::seqdiff::copy_bytes(target + (at as usize), core::slice::View { values: s.text.values, start: s.text.start + s.st[x0], length: n });
+    at += n;
+    if (terminate && s.text.values[s.text.start+s.st[x1]-1] != 10) { dst[at] = 10; at += 1; }
+    return at;
+}
+fn m3_put_marker(dst: [u8], target: ptr, at: i32, byte: u8, label: core::slice::View<u8>) -> i32 {
+    let i: i32 = 0; while (i < 7) { dst[at+i] = byte; i += 1; }
+    at += 7;
+    if (label.length > 0) { dst[at] = 32; at += 1; ext::seqdiff::copy_bytes(target + (at as usize), label); at += label.length; }
+    dst[at] = 10; return at + 1;
+}
+// write_merge for a TextMerge. Sizes are summed first, so the output is
+// allocated once and each run of lines is copied whole.
+pub fn write_text_merge(t: &TextMerge, labels: Labels, format: Format) -> core::result::Result<alloc::vec::Vec<u8>, Error> {
+    if (format.max_output < 0) { return core::result::Err(Error::InvalidOptions); }
+    let diff3: bool = match (format.style) { Style::Diff3 -> true, Style::Merge -> false };
+    let o: Side = m3_side(t.lines.base, t.lines.base_starts.borrow()); let a: Side = m3_side(t.lines.ours, t.lines.ours_starts.borrow()); let b: Side = m3_side(t.lines.theirs, t.lines.theirs_starts.borrow());
+    let cs: [Chunk] = t.merge.chunks.as_slice(); let count: i32 = t.merge.chunks.len(); let limit: i64 = format.max_output as i64;
+    let lt: i64 = m3_marker_size(labels.ours); let lb: i64 = m3_marker_size(labels.base); let lr: i64 = m3_marker_size(labels.theirs);
+    let total: i64 = 0; let i: i32 = 0;
+    while (i < count) {
+        if (total > limit) { return core::result::Err(Error::OutputLimit); }
+        let c: Chunk = cs[i];
+        if (c.a0 < 0 || c.a1 > a.count || c.b0 < 0 || c.b1 > b.count || c.o0 < 0 || c.o1 > o.count || c.a0 > c.a1 || c.b0 > c.b1 || c.o0 > c.o1) { return core::result::Err(Error::Bounds); }
+        if (c.kind == 2) { total += m3_side_size(b, c.b0, c.b1, false); }
+        else { if (c.kind == 4) {
+            total += lt + m3_side_size(a, c.a0, c.a1, true) + 8 + m3_side_size(b, c.b0, c.b1, true) + lr;
+            if (diff3) { total += lb + m3_side_size(o, c.o0, c.o1, true); }
+        } else { if (c.kind == 3 && format.gnu_identical) {
+            total += lb + m3_side_size(o, c.o0, c.o1, true) + 8 + m3_side_size(a, c.a0, c.a1, true) + lr;
+        } else { total += m3_side_size(a, c.a0, c.a1, false); } } }
+        i += 1;
+    }
+    if (total > limit) { return core::result::Err(Error::OutputLimit); }
+    let made: core::result::Result<alloc::io::Buffer, core::io::Error> = alloc::io::with_limit(format.max_output);
+    if (core::result::is_err(made)) { return core::result::Err(Error::AllocationFailed); }
+    let buffer: alloc::io::Buffer = core::result::unwrap(made);
+    if (total == 0) { return core::result::Ok(buffer.bytes); }
+    let room: core::result::Result<ptr, core::io::Error> = buffer.reserve_raw(total as i32);
+    if (core::result::is_err(room)) { buffer.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let target: ptr = core::result::unwrap(room); let dst: [u8] = core::mem::typed_slice_from_raw_parts<u8>(target, total as i32);
+    let none: core::slice::View<u8> = core::slice::View { values: labels.base.values, start: labels.base.start, length: 0 };
+    let at: i32 = 0; i = 0;
+    while (i < count) {
+        let c: Chunk = cs[i];
+        if (c.kind == 2) { at = m3_put_side(dst, target, at, b, c.b0, c.b1, false); }
+        else { if (c.kind == 4) {
+            at = m3_put_marker(dst, target, at, 60, labels.ours); at = m3_put_side(dst, target, at, a, c.a0, c.a1, true);
+            if (diff3) { at = m3_put_marker(dst, target, at, 124, labels.base); at = m3_put_side(dst, target, at, o, c.o0, c.o1, true); }
+            at = m3_put_marker(dst, target, at, 61, none); at = m3_put_side(dst, target, at, b, c.b0, c.b1, true);
+            at = m3_put_marker(dst, target, at, 62, labels.theirs);
+        } else { if (c.kind == 3 && format.gnu_identical) {
+            at = m3_put_marker(dst, target, at, 60, labels.base); at = m3_put_side(dst, target, at, o, c.o0, c.o1, true);
+            at = m3_put_marker(dst, target, at, 61, none); at = m3_put_side(dst, target, at, a, c.a0, c.a1, true);
+            at = m3_put_marker(dst, target, at, 62, labels.theirs);
+        } else { at = m3_put_side(dst, target, at, a, c.a0, c.a1, false); } } }
+        i += 1;
+    }
+    let committed: core::result::Result<i32, core::io::Error> = buffer.commit_raw(at);
+    return core::result::Ok(buffer.bytes);
 }

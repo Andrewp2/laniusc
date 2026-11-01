@@ -12,7 +12,7 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 
 - [extended-wordiff](../../extended-wordiff.md)
 
-Declaration counts: enum: 2; field: 4; function: 4; struct: 1; variant: 7.
+Declaration counts: enum: 2; field: 4; function: 5; struct: 1; variant: 7.
 
 ## Declared imports
 
@@ -161,7 +161,7 @@ pub fn split_words(text: core::slice::View<u8>, mode: Mode, limits: ext::seqdiff
 
 ### function: write_group
 
-[Source line 149](../../../extended/ext/wordiff.lani#L149)
+[Source line 152](../../../extended/ext/wordiff.lani#L152)
 
 ```lanius
 pub fn write_group(minus: core::slice::View<u8>, plus: core::slice::View<u8>, options: Options) -> core::result::Result<alloc::vec::Vec<u8>, Error>
@@ -169,8 +169,16 @@ pub fn write_group(minus: core::slice::View<u8>, plus: core::slice::View<u8>, op
 
 ### function: write_word_diff
 
-[Source line 180](../../../extended/ext/wordiff.lani#L180)
+[Source line 190](../../../extended/ext/wordiff.lani#L190)
 
 ```lanius
 pub fn write_word_diff(a: core::slice::View<ext::seqdiff::Line>, b: core::slice::View<ext::seqdiff::Line>, script: &ext::seqdiff::Script, hunks: core::slice::View<ext::seqdiff::Hunk>, old_name: core::slice::View<u8>, new_name: core::slice::View<u8>, options: Options) -> core::result::Result<alloc::vec::Vec<u8>, Error>
+```
+
+### function: write_word_diff_split
+
+[Source line 196](../../../extended/ext/wordiff.lani#L196)
+
+```lanius
+pub fn write_word_diff_split(split: &ext::seqdiff::Split, script: &ext::seqdiff::Script, hunks: core::slice::View<ext::seqdiff::Hunk>, old_name: core::slice::View<u8>, new_name: core::slice::View<u8>, options: Options) -> core::result::Result<alloc::vec::Vec<u8>, Error>
 ```

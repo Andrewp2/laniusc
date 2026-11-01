@@ -13,13 +13,14 @@ Equality must be reflexive, symmetric and transitive. Equal keys must have the
 same hash. Hash/equality-relevant key contents must stay unchanged while stored.
 
 Hash implementations exist for all integer widths, bool, char and owned String.
-Narrow/32-bit integers use their widened 32-bit pattern; 64-bit integers and
-size types hash a little-endian 64-bit representation. String hashes its exact
+Narrow/32-bit integers use their widened 32-bit pattern. 64-bit integers and
+size types fold the high word into the low one, multiply by an odd constant
+and keep the product's high word (one multiply instead of eight FNV steps). String hashes its exact
 UTF-8 bytes, including NUL, without normalization. Floating-point types have
 no default Hash implementation; their existing IEEE equality is not an
 equivalence relation for NaNs.
 
-String and 64-bit hashing use [FNV-1a](https://www.rfc-editor.org/rfc/rfc9923.html).
+String hashing uses [FNV-1a](https://www.rfc-editor.org/rfc/rfc9923.html).
 Hashing is deterministic and noncryptographic. This table does not provide
 randomized or collision-resistant hashing for adversarial keys.
 
@@ -109,15 +110,31 @@ allocate nor own table storage.
 
 ## Algorithm, capacity and failure
 
-The table uses linear probing with empty/deleted/full states, following the
-algorithm described in [Open Data Structures, section 5.2](https://opendatastructures.org/versions/edition-0.1f/ods-cpp/5_2_Linear_Probing.html).
-At most half its slots are nonempty, counting deleted slots. Searches are
-bounded by the slot count, including when every key collides.
+The table is a SwissTable-style open-addressed table, after
+[Abseil's flat_hash_map design](https://abseil.io/about/design/swisstables).
+One allocation holds the cells (cached 32-bit hash, key, value) and one
+control byte per cell: empty, deleted, or seven bits of the spread hash. The
+map multiplies a key's 32-bit hash by 2^64 divided by the golden ratio, so
+identity hashes such as i32's still spread; the product's top seven bits are
+the control tag and bits 32 and up pick the first group.
 
-This implementation caches full hashes, folds their high bits into the index,
-and rebuilds transactionally before a write would exceed the load bound.
-Removing an entry leaves a deleted marker; removing the last entry resets the
-markers. Shrinking is explicit, so removal never fails allocation.
+Probing reads aligned groups of eight control bytes as one u64 word and
+matches them with SWAR bit tricks: the tag match is
+`(x - 0x01..01) & !x & 0x80..80` on `x = word ^ tag * 0x01..01`, an empty
+byte has its top two bits set, and the lowest marked byte comes from one
+multiply. Only cells whose tag matches are read; their cached hash is
+compared before key equality runs, so equality still sees only entries with
+the same full hash. A probe ends at the first group that holds an empty
+byte. Later groups follow triangular offsets, which visit every group of a
+power-of-two group count once. One bounds-checked word load covers eight
+cells, and building the two raw views needs no per-type stride probe.
+
+At most half the cells are nonempty, counting deleted cells, so a probe
+almost always ends in its first group. Removing an entry empties its cell
+when the group already holds an empty byte (no probe path runs through such
+a group); otherwise the cell becomes a deleted marker. Removing the last
+entry resets every marker. Shrinking is explicit, so removal never fails
+allocation.
 
 Capacity counts permitted live entries, not physical slots. Deleted markers
 can require an allocation to rebuild at the same capacity. Successful reserve
@@ -130,7 +147,7 @@ when the allocator returns no storage. Table bytes are limited to `i32::MAX`;
 the maximum entry count depends on the concrete key/value layout.
 
 Lookup and mutation are expected constant time with well-distributed hashes,
-with linear worst-case probes. Rehash/clone/clear/iteration scan table capacity.
+with linear worst-case probes (every group, when all hashes collide). Rehash/clone/clear/iteration scan table capacity.
 There is no constant-time guarantee for malicious or pathological hash functions.
 
 ## Execution evidence
@@ -164,6 +181,73 @@ remain work. Distinct borrowed-key point lookup has its separate contract and
 acceptance above. Later
 [shared cursor integration](stdlib-collection-iterators.md) and
 [opt-in deep cleanup](stdlib-clone-hash-map.md) have separate accepted evidence.
+
+## Performance at one million keys
+
+[`bench.lani`](../tests/fixtures/stdlib_hash_map_perf/bench.lani) times six
+phases on 1,048,576 keys: u64 keys spread by an odd multiplier, then dense i32
+keys 0..N in shuffled order. [`bench.py`](../tests/fixtures/stdlib_hash_map_perf/bench.py)
+(Python dict) and [`bench.cpp`](../tests/fixtures/stdlib_hash_map_perf/bench.cpp)
+(`std::unordered_map`, g++ -O2) run the same keys, phases and checks.
+Best of three interleaved rounds on 2026-10-31 on the development laptop,
+in milliseconds per phase. Other jobs shared the machine (load average 17-20).
+
+| Phase | before | after | C++ | Python |
+| --- | ---: | ---: | ---: | ---: |
+| u64 insert | 811 | 503 | 212 | 262 |
+| u64 hit | 458 | 284 | 27 | 196 |
+| u64 miss | 425 | 129 | 33 | 209 |
+| u64 remove half | 239 | 144 | 83 | 111 |
+| u64 half hit | 599 | 204 | 26 | 232 |
+| u64 remove rest | 263 | 170 | 75 | 124 |
+| i32 insert | 727 | 428 | 178 | 231 |
+| i32 hit | 435 | 286 | 18 | 145 |
+| i32 miss | 158 | 88 | 27 | 17 |
+| i32 remove half | 205 | 199 | 39 | 41 |
+| i32 half hit | did not finish | 258 | 20 | 204 |
+| i32 remove rest | did not finish | 184 | 31 | 38 |
+
+Before, linear probing with the identity i32 hash packed the dense keys into
+one run of a million slots. After half were removed, each lookup of a removed
+key scanned tombstones to the end of the run; the phase had not finished
+after four minutes. Group probing with the spread hash ends at the first
+group with an empty byte.
+
+The remaining gap to C++ is mostly generated code, not probing. In the
+current x86_64 backend every named constant is a call, aggregates (slices,
+records, Option, Result) are copied through memory with `rep movsq`, constant
+shift amounts keep their range check, and every value round-trips through the
+stack. On a cache-resident 1,024-key map, a hit costs about 50 ns and a miss
+about 27 ns. Hits at one million keys add a cache miss on the cell. Python and C++ also gain from this benchmark's order: they store entries
+in insertion order, so in-order lookups touch memory sequentially.
+
+Insert stays above the 1.2x-of-Python goal: a rerun at load average 17-19
+measured 414-458 ms against Python's 313-393 ms for u64 keys and 464-535 ms
+against 210-222 ms for i32 keys. Timing parts of one insert at one million
+keys puts about 80 ns in hashing and probing, about 100 ns in the random
+writes to the cell and its control byte, and 35-45 ns in the caller's
+`unwrap().is_none()` on the returned `Result<Option<V>>`. Doubling the table
+costs 40-85 ms in all, part of it page faults on the new allocation. Insert
+already hashes once: the cell caches its hash and rehash reuses it. Four
+changes made no measurable difference or a worse one: presizing growth,
+inserting directly into the new table during rehash, a word-copy rehash, and
+a compact layout that separated entries from a slot index (clone became
+about 2x slower). The rest of the gap is the backend cost described above.
+
+`remove` clears leftover tombstones when the map empties only if some
+remain. Emptying and refilling a map therefore stays O(1) per operation
+instead of scanning every bucket at each empty point.
+
+[`model.lani`](../tests/fixtures/stdlib_hash_map_perf/model.lani) and its
+[`oracle.py`](../tests/fixtures/stdlib_hash_map_perf/oracle.py) check five
+seeded histories (219,000 operations: 92,116 inserts, 93,885 removes, 32,999
+lookups) against a Python dict, word for word. Each history is insert-heavy,
+then remove-heavy, then mixed. Two use u64 keys, and three use keys whose
+hashes all collide, fall into seven classes, or are the identity. The
+histories also cover checkpoints of length and an order-free iteration
+digest, shrink, clone, clear, and partial `take_iter` consumption followed
+by `take_remaining`. Making removal always empty the cell, which breaks
+probe paths, fails the oracle at operation 16,402.
 
 ## Hash sets and the earlier wrapper dependency
 

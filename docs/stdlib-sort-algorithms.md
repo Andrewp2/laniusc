@@ -126,3 +126,32 @@ The existing slice-ordering model (2,808 cases), the stable-sort model
 three exhaustive small-sort fixtures and four other `core::slice` users pass
 on the new engine. The compiler is the prebuilt one through `lcc`; the
 registered Rust test was not compiled or run.
+
+### Natural-order fast path
+
+The engines ask only whether one element is strictly before another. The
+natural-order entry points (`sort`, `sort_unstable`, `sort_stable`,
+`is_sorted`) answer with one `T::lt` call. Building and testing an
+`Ordering` costs about 19 ns, against about 6 ns for `lt`. The `_by` entry
+points wrap the caller's Comparator once per sort and call it once per
+question, so their comparator call counts are unchanged; the model's
+recorded counts still match. The extra adapter call per comparison makes
+them 5-15% slower in this backend, which does not inline.
+
+Best of three interleaved runs on 2026-10-31, before and after the change,
+in ms. Other jobs shared the machine (load average 22), and `bench.lani` now
+also runs and checks the two natural-order sorts:
+
+| Pattern | pdqsort `_by` | stable `_by` | pdqsort natural | stable natural |
+| --- | --- | --- | --- | --- |
+| random | 63 -> 74 | 64 -> 78 | 65 -> 41 | 67 -> 46 |
+| sorted | 4.1 -> 4.7 | 2.4 -> 2.5 | 4.6 -> 2.0 | 2.4 -> 1.2 |
+| reversed | 8.1 -> 8.3 | 3.3 -> 3.6 | 8.8 -> 4.6 | 3.5 -> 2.3 |
+| 16 distinct | 17 -> 18 | 45 -> 43 | 19 -> 10 | 44 -> 30 |
+| organ pipe | 72 -> 79 | 6.0 -> 6.4 | 75 -> 42 | 6.4 -> 4.2 |
+| sawtooth (period 1,000) | 41 -> 46 | 18 -> 23 | 43 -> 24 | 22 -> 15 |
+| 1 in 997 replaced | 38 -> 43 | 6.0 -> 5.9 | 41 -> 21 | 7.0 -> 4.5 |
+
+On the slice-ordering scale fixture, the legacy `sort` makes 404,516
+instrumented `lt` calls instead of 619,899, because `Natural.compare`
+needed a second call to tell Equal from Greater.
