@@ -817,7 +817,7 @@ theorem host_read {ea : EvaluatedArgs}
   have input := hcA.input
   rw [input] at stored
   obtain ⟨hc', inside⟩ := hcA.storeBytesAll stored
-  obtain ⟨E', exec, keep, result⟩ := hostRead_exec (mp := mp) (d := dA) (E := envA) (H := hpA) slot
+  obtain ⟨E', limits, exec, keep, result⟩ := hostRead_exec (mp := mp) (d := dA) (E := envA) (H := hpA) slot
     (by
       by_cases empty : hpA.io.input.take (envA (slot + 1)).toNat = []
       · exact .inl empty

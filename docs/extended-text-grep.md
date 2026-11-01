@@ -89,17 +89,32 @@ The work budget starts afresh for each regex search; it is not a total process
 instruction count. Input scanning, UTF-8 validation, and native I/O are outside
 that budget. The line limit bounds input storage per record. The process may
 consume an unlimited number of records, retaining one geometrically growing
-buffer and one compiled regex. An assertion-free pattern also gets one
+buffer and one compiled regex. A pattern without lookbehind also gets one
 capture-free [lazy DFA](extended-regex.md#capture-free-dfa-matching), which
-answers each record exactly as the VM would. VM scratch is created and released
-only for a search the DFA cannot decide, or for patterns with assertions. On a
+answers each record exactly as the VM would, anchors and word boundaries
+included. VM scratch is created and released only for a search the DFA cannot
+decide, or for patterns with lookbehind. On a
 915,606-byte, 25,000-line corpus, `-c` searches for `zzz`, `abs`, `max\(`,
 `(min|max)\([^)]*,`, `9{3,}` and `[0-9]+ *\*\* *[0-9]+` dropped from
 3.0–3.8 s to 0.15–0.23 s each, with identical counts and `-n` output. The
-assertion pattern `^ *1` still takes about 3 s on the VM. These are wall times
-on a loaded laptop. A failed DFA cache allocation is an allocation failure
-(status 4, `stage=pattern`); only a pattern with assertions uses the VM
-instead. Spare line capacity and regex scratch mean these limits do not specify a
+Since anchors and word boundaries became DFA state, the assertion patterns
+below dropped as well (`-c`, same corpus, before / best of three after):
+
+| Pattern | VM | Lazy DFA |
+| --- | ---: | ---: |
+| `^ *1` | 2.64 s | 0.10 s |
+| `\bmax\b` | 2.40 s | 0.09 s |
+| `[0-9]+$` | 2.68 s | 0.09 s |
+| `^\(` | 2.26 s | 0.09 s |
+| `\B9\b` | 2.44 s | 0.09 s |
+| `1$\|^2` | 2.46 s | 0.09 s |
+| `abs` (no assertion) | 0.13 s | 0.09 s |
+
+Counts and `-n` output are byte-identical before and after. These are wall
+times on a laptop with other work running; log
+`target/claude-work/s3/grep-assert-timings.log`. A failed DFA cache
+allocation is an allocation failure (status 4, `stage=pattern`); only a
+pattern with lookbehind uses the VM instead. Spare line capacity and regex scratch mean these limits do not specify a
 total memory limit. The input is read in 1024-byte chunks; a UTF-8 sequence may
 cross a read boundary safely because validation happens after record assembly.
 
@@ -157,15 +172,16 @@ also checks `/dev/full` and a failed diagnostic write. It requires `python3` and
 without ptrace. `faultinj.c` in that directory uses seccomp user notification
 to count `mmap`, `munmap`, `read` and `write` calls and to fail the N-th one.
 At exit it compares `/proc/PID/maps` with the map at the first trapped call, so
-an unreleased mapping is a failure. The driver runs the matrix for two
+an unreleased mapping is a failure. The driver runs the matrix for three
 patterns on `aaé\r\nnope\néa` with `-n`:
 
 | Pattern | Path | mmap = munmap | Allocation failures (status 4) | Read faults | Stdout write faults |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `^(?:a\|é)+$` | VM | 39 | 39/39 | 2 × EIO, EINTR | 5 × EIO, 0, EINTR, short |
+| `^(?<!x)(?:a\|é)+$` | VM (lookbehind) | 42 | 42/42 | 2 × EIO, EINTR | 5 × EIO, 0, EINTR, short |
+| `^(?:a\|é)+$` | lazy DFA with anchors | 26 | 26/26 | 2 × EIO, EINTR | 5 × EIO, 0, EINTR, short |
 | `(?:a\|é)+` | lazy DFA | 23 | 23/23 | 2 × EIO, EINTR | 5 × EIO, 0, EINTR, short |
 
-All 114 runs, including `/dev/full` and the failed diagnostic, give the
+All 168 runs, including `/dev/full` and the failed diagnostic, give the
 documented status, diagnostic and stdout prefix, and leave the map unchanged.
 The DFA path maps fewer regions because it never creates per-record VM
 scratch. Before the fix above, failures 8 through 21 of the DFA pattern were

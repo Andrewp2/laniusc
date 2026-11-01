@@ -8,7 +8,7 @@ fn fill(n: i32) -> i32 {
     q[n] = 5;
     let i: usize = 2;
     q[i] = q[0] + 1;
-    q[id(3)] = id(n);
+    q[id(3)] = n;
     return q[0] + q[1] + q[2] + q[3];
 }
 

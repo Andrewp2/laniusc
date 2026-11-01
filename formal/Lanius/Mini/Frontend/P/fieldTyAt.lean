@@ -1,7 +1,6 @@
 module
 
 public import Lanius.Mini.Frontend.Types
-import Lanius.Mini.Frontend.P.armsOf
 import Lanius.Mini.Frontend.P.divergeArm
 import Lanius.Mini.Frontend.P.floatTyped
 import Lanius.Mini.Frontend.P.fnInstRet
@@ -10,6 +9,7 @@ import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.isPathCall
 import Lanius.Mini.Frontend.P.isTryEnum
+import Lanius.Mini.Frontend.P.noBlock
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.noTrees
 import Lanius.Mini.Frontend.P.purePart

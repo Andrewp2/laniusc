@@ -1,0 +1,18 @@
+module app::main;
+
+// The last arm binds c at the column matched on and its value spells c;
+// the front end reads such a binder only as `_`, so it rejects the match.
+enum Color { Red, Green }
+enum Slot { Has(Color), Empty }
+
+fn code(s: Slot) -> i32 {
+    return match (s) {
+        Slot::Has(Color::Green) -> 1,
+        Slot::Has(c) -> match (c) { Red -> 2, Green -> 3 },
+        Slot::Empty -> 0,
+    };
+}
+
+fn main() -> i32 {
+    return code(Slot::Has(Color::Red));
+}

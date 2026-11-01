@@ -34,7 +34,7 @@ fn top(n: i32) -> i32 {
     };
     let p: ptr = alloc::allocator::alloc((16 as usize), (4 as usize));
     let s: [i32] = slice_from_raw_parts(p, 4);
-    s[k & 3] = c.add(2);
+    s[c.add(2) & 3] = k;
     while (r < 10 && c.add(r) > 0) {
         r += 1;
     }

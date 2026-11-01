@@ -208,8 +208,8 @@ fn positional_native_strides_chunks_sparse_offsets_and_duplicate_cursors() {
             .iter()
             .filter(|line| line.contains("F_GETFL"))
             .count(),
-        11,
-        "empty/invalid/closed calls do not check status: {events}"
+        8,
+        "staged native reads and all writes check status once; packed reads, empty, invalid and closed calls do not: {events}"
     );
     let mut expected = seed();
     expected[100..2153].copy_from_slice(&(0..2053).map(pattern).collect::<Vec<_>>());

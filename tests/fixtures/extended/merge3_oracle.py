@@ -11,9 +11,10 @@ on clean/conflicted status:
   seq-merge --gnu      vs diff3 -m                     (GNU identical-change form)
 plus independent properties: a side equal to the base yields the other side,
 and clean merges contain no markers.
-Distinct-line triples must agree exactly. Repeated-line triples can admit
-several minimal diffs; their agreement is counted and, with --strict-repeated,
-required.
+Distinct-line triples must agree exactly. seq-merge aligns with its port of
+git's xdiff, so repeated-line triples must also agree exactly with git
+merge-file. GNU diff3 uses GNU diff's own alignment, so its repeated-line
+agreement is counted and, with --strict-repeated, required.
 """
 import os
 import random
@@ -96,7 +97,7 @@ def compare(label, ours_args, tool_args, group, o, a, b):
             bump("%s %s: ... of which conflicted" % (group, label))
         return
     bump("%s %s: DIFFERENT" % (group, label))
-    if group == "distinct" or STRICT:
+    if group == "distinct" or label.startswith("git") or STRICT:
         fail("%s output differs" % label, o, a, b, mine.stdout, ref.stdout)
 
 

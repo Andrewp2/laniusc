@@ -1,0 +1,558 @@
+// HTTP/1.1 client agent over ext::http framing: a keep-alive connection pool
+// keyed by host and port with idle-count, idle-time and per-connection use
+// limits; redirect following with a hop limit and RFC 9110 method rules; and
+// fixed (Content-Length) or streamed (chunked) request bodies. Cleartext
+// http:// only; resolution and connection setup come from ext::url_connect.
+module ext::http_agent;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import ext::http;
+import ext::http_url;
+import ext::uri;
+import ext::url_connect;
+import std::clock;
+import std::socket;
+
+// Truncated(n): the peer closed after n response bytes (0 = empty reply).
+// UnreplayableBody(status): a redirect needs the streamed body again.
+pub enum Error {
+    InvalidRequest, InvalidHeader, Url(ext::http_url::ErrorKind), UnsupportedScheme,
+    Connect(ext::url_connect::Cause), Io(core::io::Error), Timeout, Truncated(i32),
+    Parse(ext::http::Error), TooLarge, TooManyRedirects(i32), BadLocation,
+    UnreplayableBody(i32), UnexpectedUpgrade, Source(core::io::Error), AllocationFailed, Clock
+}
+pub struct Options {
+    limits: ext::http::Limits, url: ext::http_url::Limits, connect: ext::url_connect::Options,
+    max_idle_per_host: i32, max_idle_total: i32, idle_timeout_ms: i32, max_uses: i32,
+    follow_redirects: bool, max_redirects: i32, timeout_ms: i32, chunk_bytes: i32,
+    max_informational: i32, retry_stale: bool
+}
+// connections: opened; reused: pooled checkouts; requests: exchanges sent
+// (including retries and redirect hops); stale: pooled connections found
+// closed or readable at checkout; evicted: closed by the idle-count limits;
+// expired: closed by idle time; early: uploads cut short by a final response.
+pub struct Stats { connections: i32, reused: i32, requests: i32, redirects: i32, retries: i32, stale: i32, evicted: i32, expired: i32, early: i32 }
+pub struct Request { method: core::slice::View<u8>, url: core::slice::View<u8>, headers: core::slice::View<ext::http::Field>, body: core::slice::View<u8> }
+struct Idle { socket: std::socket::Socket, host: alloc::vec::Vec<u8>, port: u16, expires: core::time::Deadline, uses: i32, stamp: u64 }
+struct Lease { socket: std::socket::Socket, uses: i32, reused: bool }
+struct Failure { error: Error, retryable: bool }
+pub struct Agent { options: Options, pool: alloc::vec::Vec<Idle>, stats: Stats, stamp: u64, active: bool }
+// One manual owner. wire holds the received bytes: the raw final head, then a
+// fixed or close-delimited body in place; a chunked body is decoded apart.
+pub struct Response { status: i32, version: i32, wire: alloc::vec::Vec<u8>, head_length: i32, body_start: i32, body_length: i32, decoded: alloc::vec::Vec<u8>, chunked: bool, method: alloc::vec::Vec<u8>, url: alloc::vec::Vec<u8>, limits: ext::http::Limits, redirects: i32, reused: bool, kept: bool, hint_ms: i32, active: bool }
+// The body source of a request without a streamed body.
+struct NoBody { unused: i32 }
+impl NoBody { fn borrow(&self) -> &NoBody { return self; } }
+pub impl core::io::Read for NoBody {
+    pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> { return core::result::Ok(0); }
+}
+
+pub fn default_options() -> Options {
+    return Options { limits: ext::http::default_limits(), url: ext::http_url::default_limits(), connect: ext::url_connect::default_options(),
+        max_idle_per_host: 4, max_idle_total: 16, idle_timeout_ms: 15000, max_uses: 100, follow_redirects: true, max_redirects: 10,
+        timeout_ms: 30000, chunk_bytes: 16384, max_informational: 8, retry_stale: true };
+}
+fn options_valid(o: Options) -> bool {
+    return o.max_idle_per_host >= 0 && o.max_idle_total >= 0 && o.idle_timeout_ms >= 0 && o.max_uses >= 1 && o.max_redirects >= 0
+        && o.timeout_ms > 0 && o.chunk_bytes > 0 && o.chunk_bytes <= 1048576 && o.max_informational >= 0
+        && o.limits.head_bytes > 0 && o.limits.body_bytes >= 0 && o.limits.body_bytes <= 536870912;
+}
+pub fn agent(options: Options) -> core::result::Result<Agent,Error> {
+    if (!options_valid(options)) { return core::result::Err(Error::InvalidRequest); }
+    let stats: Stats = Stats { connections: 0, reused: 0, requests: 0, redirects: 0, retries: 0, stale: 0, evicted: 0, expired: 0, early: 0 };
+    return core::result::Ok(Agent { options: options, pool: alloc::vec::new<Idle>(), stats: stats, stamp: 0, active: true });
+}
+
+fn literal(s: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(s),n); return core::slice::view<u8>(raw,n).unwrap(); }
+fn byte(v: core::slice::View<u8>, i: i32) -> u8 { return v.values[v.start+i]; }
+fn part(v: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> { return v.subview(start,end).unwrap(); }
+fn lower(c: u8) -> u8 { if (c >= 65 && c <= 90) { return c + 32; } return c; }
+fn same(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool { if (a.len() != b.len()) { return false; } let i: i32 = 0; while (i < a.len()) { if (byte(a,i) != byte(b,i)) { return false; } i += 1; } return true; }
+fn same_case(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool { if (a.len() != b.len()) { return false; } let i: i32 = 0; while (i < a.len()) { if (lower(byte(a,i)) != lower(byte(b,i))) { return false; } i += 1; } return true; }
+fn is(v: core::slice::View<u8>, s: str, n: i32) -> bool { return same(v,literal(s,n)); }
+fn named(v: core::slice::View<u8>, s: str, n: i32) -> bool { return same_case(v,literal(s,n)); }
+fn push(out: &alloc::vec::Vec<u8>, v: core::slice::View<u8>) -> bool { return out.try_extend(v).is_ok(); }
+fn put(out: &alloc::vec::Vec<u8>, s: str, n: i32) -> bool { return out.try_extend(literal(s,n)).is_ok(); }
+fn push_number(out: &alloc::vec::Vec<u8>, value: i32) -> bool {
+    let digits: [u8;12] = [0;12]; let i: i32 = 12; let v: i32 = value;
+    while (true) { i -= 1; digits[i] = (48 + v % 10) as u8; v = v / 10; if (v == 0) { break; } }
+    while (i < 12) { if (out.try_push(digits[i]).is_err()) { return false; } i += 1; }
+    return true;
+}
+fn ows(c: u8) -> bool { return c == 32 || c == 9; }
+fn has_token(value: core::slice::View<u8>, token: core::slice::View<u8>) -> bool {
+    let i: i32 = 0;
+    while (i < value.len()) {
+        while (i < value.len() && (ows(byte(value,i)) || byte(value,i) == 44)) { i += 1; }
+        let start: i32 = i; while (i < value.len() && byte(value,i) != 44) { i += 1; }
+        let end: i32 = i; while (end > start && ows(byte(value,end-1))) { end -= 1; }
+        if (end > start && same_case(part(value,start,end),token)) { return true; }
+    }
+    return false;
+}
+fn tchar(c: u8) -> bool {
+    return (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 33 || c == 35 || c == 36 || c == 37 || c == 38 || c == 39
+        || c == 42 || c == 43 || c == 45 || c == 46 || c == 94 || c == 95 || c == 96 || c == 124 || c == 126;
+}
+fn token(v: core::slice::View<u8>) -> bool { if (v.len() == 0) { return false; } let i: i32 = 0; while (i < v.len()) { if (!tchar(byte(v,i))) { return false; } i += 1; } return true; }
+fn field_value(v: core::slice::View<u8>) -> bool { let i: i32 = 0; while (i < v.len()) { let c: u8 = byte(v,i); if (c != 9 && (c < 32 || c == 127)) { return false; } i += 1; } return true; }
+fn now_instant() -> core::result::Result<core::time::Instant,Error> {
+    let now: core::result::Result<core::time::Instant,std::clock::Error> = std::clock::monotonic_now(); if (now.is_err()) { return core::result::Err(Error::Clock); } return core::result::Ok(now.unwrap());
+}
+fn deadline_ms(ms: i32) -> core::result::Result<core::time::Deadline,Error> {
+    let now: core::result::Result<core::time::Instant,Error> = now_instant(); if (now.is_err()) { return core::result::Err(now.unwrap_err()); }
+    let shifted: core::result::Result<core::time::Deadline,core::time::Error> = core::time::deadline_after(now.unwrap(),core::time::from_millis(ms as u64)); if (shifted.is_err()) { return core::result::Err(Error::Clock); }
+    return core::result::Ok(shifted.unwrap());
+}
+fn timed_out(e: core::io::Error) -> bool { return match(e) { core::io::Error::Host(n) -> n == 110, _ -> false }; }
+// EPIPE or ECONNRESET: the peer is gone.
+fn reset(e: core::io::Error) -> bool { return match(e) { core::io::Error::Host(n) -> n == 32 || n == 104, _ -> false }; }
+fn bytes(n: i32) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+    let made: core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> = alloc::vec::with_capacity<u8>(n); if (made.is_err()) { return core::result::Err(Error::AllocationFailed); }
+    // Only bytes written by the host or a copy are read back.
+    let v: alloc::vec::Vec<u8> = made.unwrap(); v.length = n; return core::result::Ok(v);
+}
+// Ensure room past filled, doubling up to cap. False when cap is reached.
+fn room(v: &alloc::vec::Vec<u8>, filled: i32, cap: i32) -> bool {
+    if (filled < v.len()) { return true; }
+    let target: i32 = v.len() * 2; if (target < filled + 16384) { target = filled + 16384; } if (target > cap) { target = cap; }
+    if (target <= filled) { return false; }
+    if (v.try_reserve(target - v.len()).is_err()) { return false; } v.length = target; return true;
+}
+// Grow to exactly n bytes (at most cap) once a fixed body's size is known.
+fn reserve_total(v: &alloc::vec::Vec<u8>, n: i64, cap: i32) {
+    let target: i64 = n; if (target > cap as i64) { target = cap as i64; }
+    if (target <= v.len() as i64) { return; }
+    if (v.try_reserve((target as i32) - v.len()).is_ok()) { v.length = target as i32; }
+}
+fn idempotent(method: core::slice::View<u8>) -> bool {
+    return is(method,"GET",3) || is(method,"HEAD",4) || is(method,"PUT",3) || is(method,"DELETE",6) || is(method,"OPTIONS",7) || is(method,"TRACE",5);
+}
+// Fields the agent owns: framing, connection management and the pool's Host.
+fn reserved(name: core::slice::View<u8>) -> bool {
+    if (name.len() >= 6 && named(part(name,0,6),"Proxy-",6)) { return true; }
+    return named(name,"Host",4) || named(name,"Connection",10) || named(name,"Content-Length",14) || named(name,"Transfer-Encoding",17)
+        || named(name,"TE",2) || named(name,"Trailer",7) || named(name,"Upgrade",7) || named(name,"Keep-Alive",10) || named(name,"Expect",6);
+}
+fn drop_named(headers: &alloc::vec::Vec<ext::http::Field>, name: core::slice::View<u8>) {
+    let i: i32 = headers.len() - 1;
+    while (i >= 0) { if (ext::http::equal_name(headers.at(i).name,name)) { headers.remove(i); } i -= 1; }
+}
+
+// Request head: start line, Host, caller fields, then framing. Bodies of
+// POST/PUT/PATCH always carry a length; other methods only when nonempty.
+fn write_head(out: &alloc::vec::Vec<u8>, method: core::slice::View<u8>, url: &ext::http_url::Url, headers: core::slice::View<ext::http::Field>, body: i32, streaming: bool, close: bool) -> bool {
+    let ok: bool = push(out,method) && put(out," ",1) && push(out,url.target().unwrap()) && put(out," HTTP/1.1\r\nHost: ",17) && push(out,url.authority().unwrap()) && put(out,"\r\n",2);
+    let i: i32 = 0;
+    while (ok && i < headers.len()) { let f: ext::http::Field = headers.get(i).unwrap(); ok = push(out,f.name) && put(out,": ",2) && push(out,f.value) && put(out,"\r\n",2); i += 1; }
+    if (streaming) { ok = ok && put(out,"Transfer-Encoding: chunked\r\n",28); }
+    else { if (body > 0 || is(method,"POST",4) || is(method,"PUT",3) || is(method,"PATCH",5)) { ok = ok && put(out,"Content-Length: ",16) && push_number(out,body) && put(out,"\r\n",2); } }
+    if (close) { ok = ok && put(out,"Connection: close\r\n",19); }
+    return ok && put(out,"\r\n",2);
+}
+fn check_request(request: Request) -> core::result::Result<bool,Error> {
+    if (!token(request.method) || is(request.method,"CONNECT",7)) { return core::result::Err(Error::InvalidRequest); }
+    let i: i32 = 0;
+    while (i < request.headers.len()) {
+        let f: ext::http::Field = request.headers.get(i).unwrap();
+        if (!token(f.name) || reserved(f.name) || !field_value(f.value)) { return core::result::Err(Error::InvalidHeader); }
+        i += 1;
+    }
+    return core::result::Ok(true);
+}
+
+fn send_all(socket: std::socket::Socket, data: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<i32,core::io::Error> {
+    let done: i32 = 0;
+    while (done < data.len()) {
+        let sent: core::result::Result<i32,core::io::Error> = socket.send_until(part(data,done,data.len()),deadline);
+        if (sent.is_err()) { return sent; }
+        let n: i32 = sent.unwrap(); if (n <= 0) { return core::result::Err(core::io::Error::WriteZero); } done += n;
+    }
+    return core::result::Ok(done);
+}
+// Fill up to count bytes at offset from the source, stopping only at EOF.
+fn fill<R>(source: &R, buffer: core::slice::View<u8>, offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> where R: core::io::Read {
+    let got: i32 = 0;
+    while (got < count) {
+        let r: core::result::Result<i32,core::io::Error> = source.read(buffer.values,buffer.start+offset+got,count-got);
+        if (r.is_err()) { if (core::io::is_interrupted(r.unwrap_err())) { continue; } return r; }
+        let n: i32 = r.unwrap(); if (n < 0 || n > count - got) { return core::result::Err(core::io::Error::InvalidCount); }
+        if (n == 0) { break; } got += n;
+    }
+    return core::result::Ok(got);
+}
+// Keep-Alive: timeout=N, as milliseconds with a half-second margin, or -1.
+fn keep_alive_hint(head: ext::http::Head) -> i32 {
+    let found: core::option::Option<ext::http::Field> = head.lookup(literal("Keep-Alive",10)); if (found.is_none()) { return -1; }
+    let v: core::slice::View<u8> = found.unwrap().value; let i: i32 = 0;
+    while (i + 8 <= v.len()) {
+        if (named(part(v,i,i+8),"timeout=",8) && (i == 0 || byte(v,i-1) == 32 || byte(v,i-1) == 44)) {
+            let j: i32 = i + 8; let n: i32 = 0; let digits: i32 = 0;
+            while (j < v.len() && byte(v,j) >= 48 && byte(v,j) <= 57 && n < 100000) { n = n * 10 + ((byte(v,j) - 48) as i32); j += 1; digits += 1; }
+            if (digits == 0) { return -1; } let ms: i32 = n * 1000 - 500; if (ms < 0) { ms = 0; } return ms;
+        }
+        i += 1;
+    }
+    return -1;
+}
+fn reusable(head: ext::http::Head) -> bool {
+    let connection: core::option::Option<ext::http::Field> = head.lookup(literal("Connection",10));
+    if (head.version == 11) { return connection.is_none() || !has_token(connection.unwrap().value,literal("close",5)); }
+    return connection.is_some() && has_token(connection.unwrap().value,literal("keep-alive",10));
+}
+fn failed(error: Error, received: i32) -> core::result::Result<Response,Failure> {
+    let retry: bool = received == 0 && match(error) { Error::Truncated(n) -> true, Error::Io(e) -> reset(e), _ -> false };
+    return core::result::Err(Failure { error: error, retryable: retry });
+}
+fn parse_failure(e: ext::http::Error, received: i32) -> core::result::Result<Response,Failure> {
+    return match(e) { ext::http::Error::Incomplete(n) -> failed(Error::Truncated(received),received), ext::http::Error::Limit(n) -> failed(Error::TooLarge,received), _ -> failed(Error::Parse(e),received) };
+}
+
+// Read one final response, skipping informational ones. Framing comes from
+// the incremental cursor; the final prefix is parsed canonically once.
+fn read_response(o: Options, socket: std::socket::Socket, method: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<Response,Failure> {
+    let cap: i64 = (o.limits.head_bytes as i64) * 2 + (o.limits.body_bytes as i64) * 2 + 65536; if (cap > 1073741824) { cap = 1073741824; }
+    let made: core::result::Result<ext::http::Cursor,ext::http::Error> = ext::http::cursor(ext::http::CursorMode::Response,o.limits,cap as i32,4611686018427387904);
+    if (made.is_err()) { return failed(Error::Parse(made.unwrap_err()),0); }
+    let cur: ext::http::Cursor = made.unwrap();
+    let input: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); let filled: i32 = 0; let received: i32 = 0; let eof: bool = false; let informational: i32 = 0;
+    while (true) {
+        let scanned: core::result::Result<ext::http::Scan,ext::http::Error> = cur.advance(part(input.as_view(),0,filled),method,eof);
+        if (scanned.is_err()) { input.destroy(); return parse_failure(scanned.unwrap_err(),received); }
+        let s: ext::http::Scan = scanned.unwrap();
+        let kind: i32 = match(s) { ext::http::Scan::NeedMore -> 0, ext::http::Scan::HeadReady(h) -> 1, ext::http::Scan::Boundary(b) -> 2 };
+        if (kind == 1) {
+            let status: i32 = match(s) { ext::http::Scan::HeadReady(h) -> h.status, _ -> 0 };
+            if (status == 101) { input.destroy(); return failed(Error::UnexpectedUpgrade,received); }
+            let info: ext::http::HeadInfo = match(s) { ext::http::Scan::HeadReady(h) -> h, _ -> ext::http::HeadInfo { status: 0, version: 0, kind: ext::http::BodyKind::Empty, content_length: 0, head_end: 0 } };
+            let fixed: bool = match(info.kind) { ext::http::BodyKind::Fixed -> true, _ -> false };
+            let total: i64 = 0; if (fixed) { total = (info.head_end as i64) + (info.content_length as i64); }
+            reserve_total(input.borrow(),total,cap as i32);
+            continue;
+        }
+        if (kind == 0) {
+            if (eof) { input.destroy(); return failed(Error::Truncated(received),received); }
+            if (!room(input.borrow(),filled,cap as i32)) { input.destroy(); return failed(Error::TooLarge,received); }
+            let space: core::slice::View<u8> = part(input.as_view(),filled,input.len());
+            let got: core::result::Result<i32,core::io::Error> = socket.receive_until(space,deadline);
+            if (got.is_err()) { input.destroy(); let e: core::io::Error = got.unwrap_err(); if (timed_out(e)) { return failed(Error::Timeout,received); } return failed(Error::Io(e),received); }
+            let n: i32 = got.unwrap(); if (n < 0 || n > space.len()) { input.destroy(); return failed(Error::Io(core::io::Error::InvalidCount),received); }
+            if (n == 0) { eof = true; } filled += n; received += n;
+            continue;
+        }
+        let consumed: i32 = match(s) { ext::http::Scan::Boundary(b) -> b.consumed, _ -> 0 };
+        let parsed: core::result::Result<ext::http::Message,ext::http::Error> = ext::http::parse_response(part(input.as_view(),0,consumed),method,eof,o.limits);
+        if (parsed.is_err()) { input.destroy(); return parse_failure(parsed.unwrap_err(),received); }
+        let m: ext::http::Message = parsed.unwrap();
+        if (m.head.status < 200) {
+            informational += 1; if (informational > o.max_informational) { input.destroy(); return failed(Error::TooLarge,received); }
+            let all: core::slice::View<u8> = input.as_view(); let i: i32 = 0; let left: i32 = filled - consumed;
+            while (i < left) { all.values[all.start+i] = all.values[all.start+consumed+i]; i += 1; }
+            filled = left;
+            let again: core::result::Result<ext::http::Cursor,ext::http::Error> = ext::http::cursor(ext::http::CursorMode::Response,o.limits,cap as i32,4611686018427387904);
+            if (again.is_err()) { input.destroy(); return failed(Error::Parse(again.unwrap_err()),received); }
+            cur = again.unwrap(); continue;
+        }
+        let window: core::slice::View<u8> = part(input.as_view(),0,consumed);
+        let chunked: bool = match(m.head.kind) { ext::http::BodyKind::Chunked -> true, _ -> false };
+        let copy: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); let size: i32 = 0; if (chunked) { size = m.decoded_length; }
+        let body: core::result::Result<alloc::vec::Vec<u8>,Error> = bytes(size);
+        if (body.is_err() || !push(copy.borrow(),method)) { copy.destroy(); input.destroy(); if (body.is_ok()) { let b: alloc::vec::Vec<u8> = body.unwrap(); b.destroy(); } return failed(Error::AllocationFailed,received); }
+        let decoded: alloc::vec::Vec<u8> = body.unwrap();
+        if (chunked) { ext::http::decode_into(m,decoded.as_view()); }
+        let close: bool = match(m.head.kind) { ext::http::BodyKind::Close -> true, ext::http::BodyKind::Tunnel -> true, _ -> false };
+        let kept: bool = !eof && !close && filled == consumed && reusable(m.head);
+        let r: Response = Response { status: m.head.status, version: m.head.version, wire: input, head_length: m.head.raw.len(), body_start: m.encoded_body.start - window.start,
+            body_length: m.decoded_length, decoded: decoded, chunked: chunked, method: copy, url: alloc::vec::new<u8>(), limits: o.limits,
+            redirects: 0, reused: false, kept: kept, hint_ms: keep_alive_hint(m.head), active: true };
+        return core::result::Ok(r);
+    }
+    input.destroy(); return failed(Error::Parse(ext::http::Error::Bounds),received);
+}
+
+// One request on one connection. A streamed body goes out as chunks; a final
+// response that arrives first ends the upload and the connection.
+fn transact<R>(agent: &Agent, socket: std::socket::Socket, head: core::slice::View<u8>, source: &R, streaming: bool, method: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<Response,Failure> where R: core::io::Read {
+    let o: Options = agent.options;
+    let sent: core::result::Result<i32,core::io::Error> = send_all(socket,head,deadline);
+    let early: bool = false; let used: bool = false;
+    if (sent.is_err()) {
+        let e: core::io::Error = sent.unwrap_err();
+        if (timed_out(e)) { return failed(Error::Timeout,1); }
+        if (!reset(e)) { return failed(Error::Io(e),1); }
+        early = true;
+    }
+    if (streaming && !early) {
+        let made: core::result::Result<alloc::vec::Vec<u8>,Error> = bytes(o.chunk_bytes + 12);
+        if (made.is_err()) { return failed(Error::AllocationFailed,1); }
+        let chunk: alloc::vec::Vec<u8> = made.unwrap(); let all: core::slice::View<u8> = chunk.as_view();
+        while (true) {
+            let ready: core::result::Result<std::socket::Ready,core::io::Error> = socket.wait_ms(true,false,0);
+            if (ready.is_ok() && !ready.unwrap().timed_out) { early = true; agent.stats.early += 1; break; }
+            let got: core::result::Result<i32,core::io::Error> = fill<R>(source,all,10,o.chunk_bytes);
+            if (got.is_err()) { chunk.destroy(); return failed(Error::Source(got.unwrap_err()),1); }
+            used = true;
+            let n: i32 = got.unwrap(); let start: i32 = 5; let end: i32 = 10;
+            if (n == 0) { all.values[all.start+5] = 48; all.values[all.start+6] = 13; all.values[all.start+7] = 10; all.values[all.start+8] = 13; all.values[all.start+9] = 10; }
+            else {
+                let k: i32 = 0; let v: i32 = n; while (v > 0) { k += 1; v = v / 16; }
+                start = 10 - k - 2; let j: i32 = 0;
+                while (j < k) { let d: i32 = (n >> (4 * (k - 1 - j))) & 15; let c: u8 = (48 + d) as u8; if (d >= 10) { c = (87 + d) as u8; } all.values[all.start+start+j] = c; j += 1; }
+                all.values[all.start+8] = 13; all.values[all.start+9] = 10; all.values[all.start+10+n] = 13; all.values[all.start+11+n] = 10; end = 12 + n;
+            }
+            let out: core::result::Result<i32,core::io::Error> = send_all(socket,part(all,start,end),deadline);
+            if (out.is_err()) {
+                let e: core::io::Error = out.unwrap_err(); if (timed_out(e)) { chunk.destroy(); return failed(Error::Timeout,1); }
+                if (!reset(e)) { chunk.destroy(); return failed(Error::Io(e),1); }
+                early = true; agent.stats.early += 1; break;
+            }
+            if (n == 0) { break; }
+        }
+        chunk.destroy();
+    }
+    let got: core::result::Result<Response,Failure> = read_response(o,socket,method,deadline);
+    if (got.is_err()) { let f: Failure = got.unwrap_err(); return core::result::Err(Failure { error: f.error, retryable: f.retryable && !used }); }
+    let r: Response = got.unwrap(); if (early) { r.kept = false; }
+    return core::result::Ok(r);
+}
+
+// One hop: lease a connection, exchange, then pool or close it. A request
+// whose pooled connection turns out dead before any response byte is retried
+// once on a new connection when it is idempotent and its body is replayable.
+fn exchange<R>(agent: &Agent, url: &ext::http_url::Url, method: core::slice::View<u8>, headers: core::slice::View<ext::http::Field>, body: core::slice::View<u8>, source: &R, streaming: bool) -> core::result::Result<Response,Error> where R: core::io::Read {
+    let o: Options = agent.options;
+    let head: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+    let close: bool = o.max_idle_per_host == 0 || o.max_idle_total == 0;
+    if (!write_head(head.borrow(),method,url,headers,body.len(),streaming,close) || (!streaming && !push(head.borrow(),body))) { head.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let attempt: i32 = 0;
+    while (true) {
+        let deadline: core::result::Result<core::time::Deadline,Error> = deadline_ms(o.timeout_ms);
+        if (deadline.is_err()) { head.destroy(); return core::result::Err(deadline.unwrap_err()); }
+        let leased: core::result::Result<Lease,Error> = agent.acquire(url,attempt > 0,deadline.unwrap());
+        if (leased.is_err()) { head.destroy(); return core::result::Err(leased.unwrap_err()); }
+        let lease: Lease = leased.unwrap(); agent.stats.requests += 1;
+        let done: core::result::Result<Response,Failure> = transact<R>(agent,lease.socket,head.as_view(),source,streaming,method,deadline.unwrap());
+        if (done.is_err()) {
+            let f: Failure = done.unwrap_err(); lease.socket.close();
+            if (lease.reused && attempt == 0 && o.retry_stale && f.retryable && idempotent(method)) { agent.stats.retries += 1; attempt += 1; continue; }
+            head.destroy(); return core::result::Err(f.error);
+        }
+        let r: Response = done.unwrap(); r.reused = lease.reused;
+        if (r.kept && lease.uses + 1 < o.max_uses) { agent.release(url.host().unwrap(),url.port().unwrap(),lease.socket,lease.uses + 1,r.hint_ms); }
+        else { r.kept = false; lease.socket.close(); }
+        head.destroy(); return core::result::Ok(r);
+    }
+    head.destroy(); return core::result::Err(Error::InvalidRequest);
+}
+
+// RFC 3986 5.2.4 for an absolute or empty path, appended to out.
+fn remove_dots(path: core::slice::View<u8>, out: &alloc::vec::Vec<u8>) -> bool {
+    if (path.len() == 0) { return true; }
+    let base: i32 = out.len(); let i: i32 = 0; if (byte(path,0) == 47) { i = 1; } let trailing: bool = false;
+    while (true) {
+        let start: i32 = i; while (i < path.len() && byte(path,i) != 47) { i += 1; }
+        let seg: core::slice::View<u8> = part(path,start,i); let last: bool = i >= path.len();
+        if (is(seg,".",1)) { trailing = last; }
+        else {
+            if (is(seg,"..",2)) {
+                let k: i32 = out.len() - 1; while (k >= base && out.at(k) != 47) { k -= 1; }
+                if (k >= base) { out.truncate(k); } trailing = last;
+            } else { if (!put(out,"/",1) || !push(out,seg)) { return false; } trailing = false; }
+        }
+        i += 1; if (last) { break; }
+    }
+    if (trailing || out.len() == base) { return put(out,"/",1); }
+    return true;
+}
+// Resolve a Location reference against the absolute base URL into out.
+pub fn resolve(base: core::slice::View<u8>, location: core::slice::View<u8>, out: &alloc::vec::Vec<u8>) -> bool {
+    let lp: core::result::Result<ext::uri::Reference,ext::uri::Error> = ext::uri::parse(location); if (lp.is_err()) { return false; }
+    let bp: core::result::Result<ext::uri::Reference,ext::uri::Error> = ext::uri::parse(base); if (bp.is_err()) { return false; }
+    let r: ext::uri::Reference = lp.unwrap(); let b: ext::uri::Reference = bp.unwrap();
+    if (b.scheme.is_none() || b.authority.is_none()) { return false; }
+    let scheme: core::slice::View<u8> = b.scheme.unwrap(); let authority: core::slice::View<u8> = b.authority.unwrap().raw;
+    let query: core::option::Option<core::slice::View<u8>> = r.query;
+    let path: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); let ok: bool = true;
+    if (r.scheme.is_some()) {
+        if (r.authority.is_none()) { path.destroy(); return false; }
+        scheme = r.scheme.unwrap(); authority = r.authority.unwrap().raw; ok = remove_dots(r.path,path.borrow());
+    } else {
+        if (r.authority.is_some()) { authority = r.authority.unwrap().raw; ok = remove_dots(r.path,path.borrow()); }
+        else {
+            if (r.path.len() == 0) { ok = push(path.borrow(),b.path); if (query.is_none()) { query = b.query; } }
+            else {
+                if (byte(r.path,0) == 47) { ok = remove_dots(r.path,path.borrow()); }
+                else {
+                    let merged: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+                    let k: i32 = b.path.len() - 1; while (k >= 0 && byte(b.path,k) != 47) { k -= 1; }
+                    if (k < 0) { ok = put(merged.borrow(),"/",1); } else { ok = push(merged.borrow(),part(b.path,0,k+1)); }
+                    ok = ok && push(merged.borrow(),r.path) && remove_dots(merged.as_view(),path.borrow()); merged.destroy();
+                }
+            }
+        }
+    }
+    ok = ok && push(out,scheme) && put(out,"://",3) && push(out,authority) && push(out,path.as_view());
+    if (ok && query.is_some()) { ok = put(out,"?",1) && push(out,query.unwrap()); }
+    path.destroy(); return ok;
+}
+fn is_redirect(status: i32) -> bool { return status == 301 || status == 302 || status == 303 || status == 307 || status == 308; }
+fn https(url: &ext::http_url::Url) -> bool { return match(url.scheme().unwrap()) { ext::http_url::Scheme::Https -> true, ext::http_url::Scheme::Http -> false }; }
+
+// Redirects: 303 turns any method but HEAD into GET without a body, and 301
+// or 302 turn POST into GET; 307 and 308 keep the method and resend the body,
+// which a streamed body cannot do. A hop to another host or port drops
+// Authorization and Cookie. Body headers go with the body.
+fn run<R>(agent: &Agent, request: Request, source: &R, streaming: bool) -> core::result::Result<Response,Error> where R: core::io::Read {
+    if (!agent.active) { return core::result::Err(Error::InvalidRequest); }
+    let checked: core::result::Result<bool,Error> = check_request(request); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+    let o: Options = agent.options;
+    let current: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); let headers: alloc::vec::Vec<ext::http::Field> = alloc::vec::new<ext::http::Field>();
+    if (!push(current.borrow(),request.url) || headers.try_extend(request.headers).is_err()) { current.destroy(); headers.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let method: core::slice::View<u8> = request.method; let body: core::slice::View<u8> = request.body; let upload: bool = streaming; let hops: i32 = 0;
+    let parsed: core::result::Result<ext::http_url::Url,ext::http_url::Error> = ext::http_url::parse(current.as_view(),o.url);
+    if (parsed.is_err()) { current.destroy(); headers.destroy(); return core::result::Err(Error::Url(parsed.unwrap_err().kind)); }
+    let url: ext::http_url::Url = parsed.unwrap();
+    while (true) {
+        if (https(url.borrow())) { url.destroy(); current.destroy(); headers.destroy(); return core::result::Err(Error::UnsupportedScheme); }
+        let got: core::result::Result<Response,Error> = exchange<R>(agent,url.borrow(),method,headers.as_view(),body,source,upload);
+        if (got.is_err()) { url.destroy(); current.destroy(); headers.destroy(); return got; }
+        let r: Response = got.unwrap();
+        let location: core::option::Option<core::slice::View<u8>> = core::option::None();
+        if (o.follow_redirects && is_redirect(r.status)) { location = r.header(literal("Location",8)); }
+        if (location.is_none()) {
+            r.redirects = hops; let ok: bool = push(r.url.borrow(),current.as_view()); url.destroy(); current.destroy(); headers.destroy();
+            if (!ok) { r.destroy(); return core::result::Err(Error::AllocationFailed); } return core::result::Ok(r);
+        }
+        if (hops >= o.max_redirects) { r.destroy(); url.destroy(); current.destroy(); headers.destroy(); return core::result::Err(Error::TooManyRedirects(hops)); }
+        let next: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+        let resolved: bool = resolve(current.as_view(),location.unwrap(),next.borrow()); let status: i32 = r.status; r.destroy();
+        let following: core::result::Result<ext::http_url::Url,ext::http_url::Error> = ext::http_url::parse(next.as_view(),o.url);
+        if (!resolved || following.is_err()) { next.destroy(); url.destroy(); current.destroy(); headers.destroy(); if (following.is_ok()) { let f: ext::http_url::Url = following.unwrap(); f.destroy(); } return core::result::Err(Error::BadLocation); }
+        let to: ext::http_url::Url = following.unwrap();
+        let to_get: bool = (status == 303 && !is(method,"HEAD",4)) || ((status == 301 || status == 302) && is(method,"POST",4));
+        if (!to_get && upload) { to.destroy(); next.destroy(); url.destroy(); current.destroy(); headers.destroy(); return core::result::Err(Error::UnreplayableBody(status)); }
+        if (to_get) {
+            method = literal("GET",3); body = literal("",0); upload = false;
+            drop_named(headers.borrow(),literal("Content-Type",12)); drop_named(headers.borrow(),literal("Content-Encoding",16));
+            drop_named(headers.borrow(),literal("Content-Language",16)); drop_named(headers.borrow(),literal("Content-Location",16));
+        }
+        let moved: bool = url.port().unwrap() != to.port().unwrap() || !same_case(url.host().unwrap(),to.host().unwrap()) || https(url.borrow()) != https(to.borrow());
+        if (moved) { drop_named(headers.borrow(),literal("Authorization",13)); drop_named(headers.borrow(),literal("Cookie",6)); }
+        url.destroy(); current.destroy(); current = next; url = to; hops += 1; agent.stats.redirects += 1;
+    }
+    url.destroy(); current.destroy(); headers.destroy(); return core::result::Err(Error::InvalidRequest);
+}
+// Send request.body (fixed length) or, with fetch_stream, the bytes read from
+// source until EOF as a chunked body.
+pub fn fetch_stream<R>(agent: &Agent, request: Request, source: &R) -> core::result::Result<Response,Error> where R: core::io::Read { return run<R>(agent,request,source,true); }
+
+pub impl Agent {
+    pub fn borrow(&self) -> &Agent { return self; }
+    pub fn stats(&self) -> Stats { return self.stats; }
+    pub fn idle(&self) -> i32 { return self.pool.len(); }
+    pub fn fetch(&self, request: Request) -> core::result::Result<Response,Error> { let none: NoBody = NoBody { unused: 0 }; return run<NoBody>(self,request,none.borrow(),false); }
+    fn close_idle(&self, i: i32) { let e: Idle = self.pool.at(i); e.socket.close(); e.host.destroy(); self.pool.remove(i); }
+    // Pooled connection for host:port, dropping expired and stale ones on the way.
+    fn checkout(&self, host: core::slice::View<u8>, port: u16) -> core::option::Option<Idle> {
+        let now: core::result::Result<core::time::Instant,Error> = now_instant();
+        let i: i32 = self.pool.len() - 1;
+        while (i >= 0) { if (now.is_ok() && self.pool.at(i).expires.is_expired(now.unwrap())) { self.close_idle(i); self.stats.expired += 1; } i -= 1; }
+        i = self.pool.len() - 1;
+        while (i >= 0) {
+            let e: Idle = self.pool.at(i);
+            if (e.port == port && same_case(e.host.as_view(),host)) {
+                self.pool.remove(i);
+                // An idle HTTP/1.1 connection has nothing to say: readable means EOF or junk.
+                let probe: core::result::Result<std::socket::Ready,core::io::Error> = e.socket.wait_ms(true,false,0);
+                if (probe.is_ok() && probe.unwrap().timed_out) { e.host.destroy(); return core::option::Some(e); }
+                e.socket.close(); e.host.destroy(); self.stats.stale += 1;
+            }
+            i -= 1;
+        }
+        return core::option::None();
+    }
+    fn acquire(&self, url: &ext::http_url::Url, fresh: bool, deadline: core::time::Deadline) -> core::result::Result<Lease,Error> {
+        if (!fresh) {
+            let idle: core::option::Option<Idle> = self.checkout(url.host().unwrap(),url.port().unwrap());
+            if (idle.is_some()) { let e: Idle = idle.unwrap(); self.stats.reused += 1; return core::result::Ok(Lease { socket: e.socket, uses: e.uses, reused: true }); }
+        }
+        let made: core::result::Result<ext::url_connect::Connection,ext::url_connect::Failure> = ext::url_connect::connect_until(url,self.options.connect,deadline);
+        if (made.is_err()) { return core::result::Err(Error::Connect(made.unwrap_err().cause)); }
+        let socket: std::socket::Socket = made.unwrap().transport;
+        // Heads and bodies go out in separate sends; Nagle would hold the second.
+        socket.set_nodelay(true); self.stats.connections += 1;
+        return core::result::Ok(Lease { socket: socket, uses: 0, reused: false });
+    }
+    fn oldest(&self, host: core::option::Option<core::slice::View<u8>>, port: u16) -> i32 {
+        let best: i32 = -1; let i: i32 = 0;
+        while (i < self.pool.len()) {
+            let e: Idle = self.pool.at(i);
+            let mine: bool = host.is_none() || (e.port == port && same_case(e.host.as_view(),host.unwrap()));
+            if (mine && (best < 0 || e.stamp < self.pool.at(best).stamp)) { best = i; }
+            i += 1;
+        }
+        return best;
+    }
+    // Park a reusable connection, evicting the oldest per host, then overall.
+    fn release(&self, host: core::slice::View<u8>, port: u16, socket: std::socket::Socket, uses: i32, hint_ms: i32) {
+        let o: Options = self.options; let ms: i32 = o.idle_timeout_ms; if (hint_ms >= 0 && hint_ms < ms) { ms = hint_ms; }
+        if (o.max_idle_per_host == 0 || o.max_idle_total == 0 || ms == 0) { socket.close(); return; }
+        let count: i32 = 0; let i: i32 = 0;
+        while (i < self.pool.len()) { let e: Idle = self.pool.at(i); if (e.port == port && same_case(e.host.as_view(),host)) { count += 1; } i += 1; }
+        if (count >= o.max_idle_per_host) { self.close_idle(self.oldest(core::option::Some(host),port)); self.stats.evicted += 1; }
+        if (self.pool.len() >= o.max_idle_total) { self.close_idle(self.oldest(core::option::None(),port)); self.stats.evicted += 1; }
+        let copy: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); let expires: core::result::Result<core::time::Deadline,Error> = deadline_ms(ms);
+        if (!push(copy.borrow(),host) || expires.is_err()) { copy.destroy(); socket.close(); return; }
+        self.stamp += 1;
+        if (self.pool.try_push(Idle { socket: socket, host: copy, port: port, expires: expires.unwrap(), uses: uses, stamp: self.stamp }).is_err()) { copy.destroy(); socket.close(); }
+    }
+    // Open count new connections to url's origin and park them, subject to
+    // the idle limits. Returns the number of pooled connections afterwards.
+    pub fn preconnect(&self, url: core::slice::View<u8>, count: i32) -> core::result::Result<i32,Error> {
+        if (!self.active || count < 0) { return core::result::Err(Error::InvalidRequest); }
+        let parsed: core::result::Result<ext::http_url::Url,ext::http_url::Error> = ext::http_url::parse(url,self.options.url);
+        if (parsed.is_err()) { return core::result::Err(Error::Url(parsed.unwrap_err().kind)); }
+        let u: ext::http_url::Url = parsed.unwrap(); if (https(u.borrow())) { u.destroy(); return core::result::Err(Error::UnsupportedScheme); }
+        let held: alloc::vec::Vec<std::socket::Socket> = alloc::vec::new<std::socket::Socket>(); let failure: core::option::Option<Error> = core::option::None();
+        let deadline: core::result::Result<core::time::Deadline,Error> = deadline_ms(self.options.timeout_ms);
+        if (deadline.is_err()) { u.destroy(); held.destroy(); return core::result::Err(deadline.unwrap_err()); }
+        let i: i32 = 0;
+        while (i < count) {
+            let lease: core::result::Result<Lease,Error> = self.acquire(u.borrow(),true,deadline.unwrap());
+            if (lease.is_err()) { failure = core::option::Some(lease.unwrap_err()); break; }
+            if (held.try_push(lease.unwrap().socket).is_err()) { failure = core::option::Some(Error::AllocationFailed); break; }
+            i += 1;
+        }
+        i = 0; while (i < held.len()) { if (failure.is_some()) { held.at(i).close(); } else { self.release(u.host().unwrap(),u.port().unwrap(),held.at(i),0,-1); } i += 1; }
+        held.destroy(); u.destroy();
+        if (failure.is_some()) { return core::result::Err(failure.unwrap()); }
+        return core::result::Ok(self.pool.len());
+    }
+    // Close every pooled connection; the agent stays usable unless finished.
+    pub fn clear(&self) -> i32 { let n: i32 = self.pool.len(); while (self.pool.len() > 0) { self.close_idle(self.pool.len() - 1); } return n; }
+    pub fn close(&self) -> bool { if (!self.active) { return false; } self.clear(); self.pool.destroy(); self.active = false; return true; }
+}
+
+pub impl Response {
+    pub fn borrow(&self) -> &Response { return self; }
+    pub fn status(&self) -> i32 { return self.status; }
+    pub fn body(&self) -> core::slice::View<u8> { if (self.chunked) { return self.decoded.as_view(); } return part(self.wire.as_view(),self.body_start,self.body_start+self.body_length); }
+    pub fn head(&self) -> core::slice::View<u8> { return part(self.wire.as_view(),0,self.head_length); }
+    pub fn url(&self) -> core::slice::View<u8> { return self.url.as_view(); }
+    pub fn header(&self, name: core::slice::View<u8>) -> core::option::Option<core::slice::View<u8>> {
+        let parsed: core::result::Result<ext::http::Head,ext::http::Error> = ext::http::parse_response_head(self.head(),self.method.as_view(),self.limits);
+        if (parsed.is_err()) { return core::option::None(); }
+        let found: core::option::Option<ext::http::Field> = parsed.unwrap().lookup(name); if (found.is_none()) { return core::option::None(); }
+        return core::option::Some(found.unwrap().value);
+    }
+    pub fn destroy(&self) -> bool {
+        if (!self.active) { return false; } self.active = false;
+        self.wire.destroy(); self.method.destroy(); self.decoded.destroy(); self.url.destroy(); return true;
+    }
+}

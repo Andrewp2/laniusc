@@ -3,6 +3,7 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_whileEvalOf
+public import Lanius.Faithful.Gen.SelfStmt0
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmtF_callParts
 public import Lanius.Faithful.Gen.SelfStmtF_divergeArm
@@ -32,6 +33,27 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
+theorem step_eff_acts {prog : SrcProgram} {prims : Prims} {ix_eff_acts ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_unbox_of_mini_selfhost_MEff ix_effs_act : Nat} (fn : prog.funcs[ix_eff_acts]? = some (src_eff_acts ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_unbox_of_mini_selfhost_MEff ix_eff_acts ix_effs_act)) (np : prims.isPrim ix_eff_acts = false)
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_MEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_MEff prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff n))
+    (ext_unbox_of_mini_selfhost_MEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_MEff prog prims ix_unbox_of_mini_selfhost_MEff n)) {n : Nat}
+    (ih_eff_acts : Certified (Stmt_eff_acts prog prims ix_eff_acts n))
+    (ih_effs_act : Certified (Stmt_effs_act prog prims ix_effs_act n)) :
+    Stmt_eff_acts prog prims ix_eff_acts (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_eff_acts] at h
+  faithful [Lanius.Mini.effActs]
+
+theorem step_effs_act {prog : SrcProgram} {prims : Prims} {ix_effs_act ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_eff_acts : Nat} (fn : prog.funcs[ix_effs_act]? = some (src_effs_act ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_eff_acts ix_effs_act)) (np : prims.isPrim ix_effs_act = false)
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_MEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_MEff prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff n)) {n : Nat}
+    (ih_eff_acts : Certified (Stmt_eff_acts prog prims ix_eff_acts n))
+    (ih_effs_act : Certified (Stmt_effs_act prog prims ix_effs_act n)) :
+    Stmt_effs_act prog prims ix_effs_act (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_effs_act] at h
+  faithful [Lanius.Mini.effsAct]
+
 theorem proof_set_eval_of {prog : SrcProgram} {prims : Prims} {ix_set_eval_of ix_call_parts ix_set_eff : Nat} (fn : prog.funcs[ix_set_eval_of]? = some (src_set_eval_of ix_call_parts ix_set_eff)) (np : prims.isPrim ix_set_eval_of = false)
     (ext_call_parts : Certified (∀ {n : Nat}, Stmt_call_parts prog prims ix_call_parts n))
     (ext_set_eff : Certified (∀ {n : Nat}, Stmt_set_eff prog prims ix_set_eff n)) {n : Nat} :
@@ -43,10 +65,12 @@ theorem proof_set_eval_of {prog : SrcProgram} {prims : Prims} {ix_set_eval_of ix
   simp only [src_set_eval_of] at h
   faithful [Lanius.Mini.setEvalOf]
 
-theorem proof_set_index_eval_of {prog : SrcProgram} {prims : Prims} {ix_set_index_eval_of ix_set_index_eff : Nat} (fn : prog.funcs[ix_set_index_eval_of]? = some (src_set_index_eval_of ix_set_index_eff)) (np : prims.isPrim ix_set_index_eval_of = false)
+theorem proof_set_index_eval_of {prog : SrcProgram} {prims : Prims} {ix_set_index_eval_of ix_stmt_unless ix_eff_acts ix_set_index_eff : Nat} (fn : prog.funcs[ix_set_index_eval_of]? = some (src_set_index_eval_of ix_stmt_unless ix_eff_acts ix_set_index_eff)) (np : prims.isPrim ix_set_index_eval_of = false)
+    (ext_stmt_unless : Certified (∀ {n : Nat}, Stmt_stmt_unless prog prims ix_stmt_unless n))
+    (ext_eff_acts : Certified (∀ {n : Nat}, Stmt_eff_acts prog prims ix_eff_acts n))
     (ext_set_index_eff : Certified (∀ {n : Nat}, Stmt_set_index_eff prog prims ix_set_index_eff n)) {n : Nat} :
     Stmt_set_index_eval_of prog prims ix_set_index_eval_of n := by
-  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
@@ -77,6 +101,15 @@ theorem proof_set_try_or_eval {prog : SrcProgram} {prims : Prims} {ix_set_try_or
   rw [pcall_succ np fn] at h
   simp only [src_set_try_or_eval] at h
   faithful [Lanius.Mini.setTryOrEval]
+
+theorem proof_stmt_unless {prog : SrcProgram} {prims : Prims} {ix_stmt_unless : Nat} (fn : prog.funcs[ix_stmt_unless]? = some (src_stmt_unless)) (np : prims.isPrim ix_stmt_unless = false) {n : Nat} :
+    Stmt_stmt_unless prog prims ix_stmt_unless n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_stmt_unless] at h
+  faithful [Lanius.Mini.stmtUnless]
 
 theorem proof_try_set {prog : SrcProgram} {prims : Prims} {ix_try_set ix_boxed_of_mini_selfhost_MStmt ix_try_rest : Nat} (fn : prog.funcs[ix_try_set]? = some (src_try_set ix_boxed_of_mini_selfhost_MStmt ix_try_rest)) (np : prims.isPrim ix_try_set = false)
     (ext_boxed_of_mini_selfhost_MStmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_MStmt prog prims ix_boxed_of_mini_selfhost_MStmt n))

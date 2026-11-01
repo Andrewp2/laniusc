@@ -1216,6 +1216,14 @@
       ],
       "note": "Plain factory/driver adapter over the single server_poll engine and http_server::Exchange. Factory, caller-owned listener and handler stay live unchanged through Server destruction. The actual plain health/echo program passes two causal native cases: held partial-head with queued refill and held 4 MiB response reader with real EAGAIN before healthy-sibling completion. Both enforce at most two active accepted owners and three sockets including the listener, with complete responses, EOF and acceptance-order reports. A separate traced 64-connection observation transfers 4,194,304 body bytes with eight-client demand, active/socket peaks four/five, 1,224 verified source allocations and 1,165,325 peak live requested source bytes in 3.346761 seconds. These source metrics exclude native heaps, bootstrap, kernel memory and RSS. Current plain application groups pass matrix 30, quota 1, limits 16, boundaries 25 and faults 41 across separate receipts, with 23 reached source-allocation positions. These 113 process-case invocations include the standalone quota repeated inside faults and are not distinct coverage. Historical sequential receipts retain their own scope. The thin serve_until helper does not require A:Destroy; both helpers pass a native empty-report transfer control with a non-Destroy application error type (21.84 seconds). The empty-report helper scope remains separate from the accepted three-profile populated E/A control."
     },
+    "ext::http_agent": {
+      "guides": [
+        "docs/extended-http-agent.md",
+        "docs/extended-http.md",
+        "docs/extended-url-client.md"
+      ],
+      "note": "Synchronous cleartext HTTP/1.1 client over ext::http framing, ext::http_url and ext::url_connect: a keep-alive pool keyed by host and port with per-host/total idle counts, idle time, Keep-Alive hints and use limits, stale probing and one idempotent retry; redirects with a hop limit, 303/301/302/307/308 method rules, RFC 3986 reference resolution and cross-origin Authorization/Cookie stripping; fixed or chunked streamed bodies with early-response handling. The curl-like sample passes four Python http.server oracle groups (pool 18, redirect 29, upload 10, broken 21 cases) with exact counters."
+    },
     "ext::http_service": {
       "guides": [
         "docs/extended-http-service.md",

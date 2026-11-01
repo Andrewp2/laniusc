@@ -33,11 +33,11 @@ abbrev Stmt_distinct (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     RepBool (Lanius.Mini.distinct x0) w
 
 abbrev Stmt_distinct_modules (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List (List (List Nat))} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 125 (RepList 31 (RepList 25 RepNat))) x0 v0 →
+  ∀ {x0 : List (List (List Nat))} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 124 (RepList 31 (RepList 25 RepNat))) x0 v0 →
     RepBool (Lanius.Mini.distinctModules x0) w
 
 abbrev Stmt_module_member (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List (List (List Nat))} {x1 : List (List Nat)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 125 (RepList 31 (RepList 25 RepNat))) x0 v0 → (RepList 31 (RepList 25 RepNat)) x1 v1 →
+  ∀ {x0 : List (List (List Nat))} {x1 : List (List Nat)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 124 (RepList 31 (RepList 25 RepNat))) x0 v0 → (RepList 31 (RepList 25 RepNat)) x1 v1 →
     RepBool (Lanius.Mini.moduleMember x0 x1) w
 
 abbrev Stmt_position (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

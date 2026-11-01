@@ -13,8 +13,8 @@ public import Lanius.Mini.Frontend.P.noTrees
 public import Lanius.Mini.Frontend.P.pathRef
 public import Lanius.Mini.Frontend.P.typePathSpellings
 public import Lanius.Mini.Frontend.P.moduleOr
-public import Lanius.Mini.Frontend.P.methodsOf
-public import Lanius.Mini.Frontend.P.collectedWith
+public import Lanius.Mini.Frontend.P.methodDecl
+public import Lanius.Mini.Frontend.P.collect
 public import Lanius.Mini.Frontend.P.rootInsts
 public import Lanius.Mini.Frontend.P.findConst
 public import Lanius.Mini.Frontend.P.itemOf
@@ -55,6 +55,12 @@ public import Lanius.Mini.Frontend.P.armsNaming
 public import Lanius.Mini.Frontend.P.isUnderscore
 public import Lanius.Mini.Frontend.P.namesSome
 public import Lanius.Mini.Frontend.P.armsOf
+public import Lanius.Mini.Frontend.P.anyNested
+public import Lanius.Mini.Frontend.P.plainNaming
+public import Lanius.Mini.Frontend.P.nestedOrPlain
+public import Lanius.Mini.Frontend.P.variantArm
+public import Lanius.Mini.Frontend.P.nestedUsed
+public import Lanius.Mini.Frontend.P.noBlock
 public import Lanius.Mini.Frontend.P.hasConst
 public import Lanius.Mini.Frontend.P.callParts
 public import Lanius.Mini.Frontend.P.consBound
@@ -75,17 +81,17 @@ public import Lanius.Mini.Frontend.P.setIndexOrEval
 public import Lanius.Mini.Frontend.P.fieldTyAt
 public import Lanius.Mini.Frontend.P.compoundEval
 public import Lanius.Mini.Frontend.P.compoundOf
+public import Lanius.Mini.Frontend.P.forRange
 public import Lanius.Mini.Frontend.P.isMatchStmt
 public import Lanius.Mini.Frontend.P.matchStmtIf
 public import Lanius.Mini.Frontend.P.blockArmsOf
-public import Lanius.Mini.Frontend.P.writesLocal
 public import Lanius.Mini.Frontend.P.selfRefOf
 public import Lanius.Mini.Frontend.P.ifNotWrites
 public import Lanius.Mini.Frontend.P.externBody
 public import Lanius.Mini.Frontend.P.readDeclInst
 public import Lanius.Mini.Frontend.P.readInst
 public import Lanius.Mini.Frontend.P.effNamedTys
-public import Lanius.Mini.Frontend.P.monoLoop
+public import Lanius.Mini.Frontend.P.funcsOnto
 public import Lanius.Mini.Frontend.P.letClosed
 public import Lanius.Mini.Frontend.P.letStructClosed
 public import Lanius.Mini.Frontend.P.allocClosed
@@ -158,6 +164,6 @@ operations become `Lists.name` with a spec theorem). `usize` is `Nat`, `i32` is
 prelude's `plus`/`minus`/`times` panic instead of wrapping, so they are
 `+`/`-`/`*` on `Nat` for every run that returns.
 
-The definitions are in 147 parts, `.P0` on, in source order, whose bodies
+The definitions are in 153 parts, `.P0` on, in source order, whose bodies
 are hidden from other modules: a proof that unfolds one imports its part with
 `import all`, so that it is rebuilt only when that part changes. -/

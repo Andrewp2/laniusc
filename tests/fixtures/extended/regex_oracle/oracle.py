@@ -286,12 +286,18 @@ def dfa_surface(exe, rng, count):
     cases, expected = [], []
     for _ in range(count):
         flags = (1 if rng.random() < 0.25 else 0) | (2 if rng.random() < 0.25 else 0)
-        lan, py = pattern(rng, flags & 1)
+        # Assertions are DFA state; a tenth of patterns have lookbehind, which
+        # dfa() must refuse so that the VM answers.
+        error = True
+        if rng.random() < 0.1:
+            lan, py, error = behind_pattern(rng, flags & 1)
+        if error:
+            lan, py = pattern(rng, flags & 1)
         q = re.compile(py, re.ASCII | (re.M if flags & 1 else 0) | (re.S if flags & 2 else 0))
         # CPython backtracks exponentially on long inputs under quantified
-        # groups, so 400-scalar inputs go only to patterns without them.
-        longest = 400 if not re.search(r"\)[*+?{]", py) else 40
-        t = text(rng, 1 if r"\B" in lan else 0, rng.choice([10, 40, longest]))
+        # groups, so those patterns get at most 20 scalars; others up to 400.
+        quantified = re.search(r"\)[*+?{]", py) is not None
+        t = text(rng, 1 if r"\B" in lan else 0, min(rng.choice([10, 40, 400]), 20 if quantified else 400))
         work = rng.choice([1, 20, 200]) if rng.random() < 0.1 else 10_000_000
         m = q.search(t)
         b = "0" if m is None else "1"
@@ -304,10 +310,19 @@ def dfa_surface(exe, rng, count):
     if result.returncode != 0 or len(actual) != len(cases):
         print(f"dfa harness failed: status {result.returncode}, {len(actual)}/{len(cases)} lines")
         return 0, len(cases), [("harness", result.returncode)]
-    failures, built, budget = [], 0, 0
+    failures, built, budget, asserting, behind = [], 0, 0, 0, 0
     for case, want, got in zip(cases, expected, actual):
         body, kind = got.rsplit(" ", 1)
         built += kind == "D"
+        lookbehind = "(?<=" in case[0] or "(?<!" in case[0]
+        behind += kind == "V"
+        bare = case[0].replace("[^", "[")
+        asserting += not lookbehind and any(a in bare for a in ("^", "$", r"\A", r"\z", r"\b", r"\B"))
+        # Lookbehind inside a {0} repeat compiles away, so only patterns
+        # without lookbehind are required to get a Dfa.
+        if kind != "D" and not lookbehind:
+            failures.append((case, "D", got))
+            continue
         if want is None:
             budget += 1
             dm, vm, ds, vs, again = body.split(" ")
@@ -316,8 +331,8 @@ def dfa_surface(exe, rng, count):
             ok = body == want
         if not ok:
             failures.append((case, want, got))
-    print(f"  dfa_match_find coverage: {built} with a Dfa, {len(cases) - built} assertion patterns on the VM, "
-          f"{budget} with a tiny work budget")
+    print(f"  dfa_match_find coverage: {built} with a Dfa ({asserting} with assertions), "
+          f"{behind} lookbehind patterns on the VM, {budget} with a tiny work budget")
     return len(cases) - len(failures), len(cases), failures
 
 

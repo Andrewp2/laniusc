@@ -96,7 +96,7 @@ pub impl<T> Deque<T> {
         let source: [T] = self.slots();
         let target: [T] = core::mem::typed_slice_from_storage(storage, capacity);
         let ordinal: i32 = 0;
-        while (ordinal < self.length) { target[ordinal] = source[self.index(ordinal)]; ordinal += 1; }
+        while (ordinal < self.length) { let stored1 = source[self.index(ordinal)]; target[ordinal] = stored1; ordinal += 1; }
         if (self.reserved > 0) { alloc::allocator::dealloc(self.storage, size * (self.reserved as usize), ALIGN); }
         self.storage = storage; self.reserved = capacity; self.head = 0;
         return core::result::Ok(capacity);
@@ -167,10 +167,10 @@ pub impl<T> Deque<T> {
             if (self.head == 0) { self.head = self.reserved; }
             self.head -= 1;
             let index: i32 = 0;
-            while (index < ordinal) { values[self.index(index)] = values[self.index(index + 1)]; index += 1; }
+            while (index < ordinal) { let slot2 = self.index(index); let stored2 = values[self.index(index + 1)]; values[slot2] = stored2; index += 1; }
         } else {
             let index: i32 = self.length;
-            while (index > ordinal) { values[self.index(index)] = values[self.index(index - 1)]; index -= 1; }
+            while (index > ordinal) { let slot3 = self.index(index); let stored3 = values[self.index(index - 1)]; values[slot3] = stored3; index -= 1; }
         }
         values[self.index(ordinal)] = item; self.length += 1; return core::result::Ok(self.length);
     }
@@ -179,11 +179,11 @@ pub impl<T> Deque<T> {
         let values: [T] = self.slots(); let removed: T = values[self.index(ordinal)];
         if (ordinal < self.length - 1 - ordinal) {
             let index: i32 = ordinal;
-            while (index > 0) { values[self.index(index)] = values[self.index(index - 1)]; index -= 1; }
+            while (index > 0) { let slot4 = self.index(index); let stored4 = values[self.index(index - 1)]; values[slot4] = stored4; index -= 1; }
             self.head += 1; if (self.head == self.reserved) { self.head = 0; }
         } else {
             let index: i32 = ordinal;
-            while (index < self.length - 1) { values[self.index(index)] = values[self.index(index + 1)]; index += 1; }
+            while (index < self.length - 1) { let slot5 = self.index(index); let stored5 = values[self.index(index + 1)]; values[slot5] = stored5; index += 1; }
         }
         self.length -= 1; if (self.length == 0) { self.head = 0; }
         return core::result::Ok(removed);
@@ -196,7 +196,7 @@ pub impl<T> Deque<T> {
     pub fn swap_remove_back(&self, ordinal: i32) -> core::result::Result<T, Error> {
         if (ordinal < 0 || ordinal >= self.length) { return core::result::Err(Error::Bounds); }
         let values: [T] = self.slots(); let removed: T = values[self.index(ordinal)];
-        values[self.index(ordinal)] = values[self.index(self.length - 1)]; self.pop_back(); return core::result::Ok(removed);
+        let slot6 = self.index(ordinal); let stored6 = values[self.index(self.length - 1)]; values[slot6] = stored6; self.pop_back(); return core::result::Ok(removed);
     }
     // Preserve the input view's order at either end. On growth keep the old
     // allocation alive through all copies, including aliased input views.
@@ -225,11 +225,11 @@ pub impl<T> Deque<T> {
         if (grows) {
             let source: [T] = self.slots(); let offset: i32 = 0;
             if (front) { offset = count; }
-            while (index < self.length) { target[offset + index] = source[self.index(index)]; index += 1; }
+            while (index < self.length) { let stored7 = source[self.index(index)]; target[offset + index] = stored7; index += 1; }
         }
         let offset: i32 = self.length; if (front) { offset = 0; }
         index = 0;
-        while (index < count) { target[physical(head, capacity, offset + index)] = core::option::unwrap(input.get(index)); index += 1; }
+        while (index < count) { let slot8 = physical(head, capacity, offset + index); let stored8 = core::option::unwrap(input.get(index)); target[slot8] = stored8; index += 1; }
         if (grows && self.reserved > 0 && size > 0) { alloc::allocator::dealloc(self.storage, size * (self.reserved as usize), ALIGN); }
         self.storage = storage; self.reserved = capacity; self.head = head; self.length = needed;
         return core::result::Ok(needed);
@@ -292,7 +292,7 @@ pub impl<T> Deque<T> {
         let reserved: core::result::Result<i32, Error> = copy.try_reserve(self.length);
         if (core::result::is_err(reserved)) { return core::result::Err(core::result::unwrap_err(reserved)); }
         let source: [T] = self.slots(); let target: [T] = copy.slots(); let index: i32 = 0;
-        while (index < self.length) { target[index] = source[self.index(index)]; index += 1; }
+        while (index < self.length) { let stored9 = source[self.index(index)]; target[index] = stored9; index += 1; }
         copy.length = self.length; return core::result::Ok(copy);
     }
     pub fn try_split_off(&self, ordinal: i32) -> core::result::Result<Deque<T>, Error> {
@@ -301,7 +301,7 @@ pub impl<T> Deque<T> {
         let reserved: core::result::Result<i32, Error> = tail.try_reserve(count);
         if (core::result::is_err(reserved)) { return core::result::Err(core::result::unwrap_err(reserved)); }
         let source: [T] = self.slots(); let target: [T] = tail.slots(); let index: i32 = 0;
-        while (index < count) { target[index] = source[self.index(ordinal + index)]; index += 1; }
+        while (index < count) { let stored10 = source[self.index(ordinal + index)]; target[index] = stored10; index += 1; }
         tail.length = count; self.truncate(ordinal); return core::result::Ok(tail);
     }
     pub fn index_of(&self, item: T) -> i32 where T: core::cmp::PartialEq<T> {
