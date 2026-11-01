@@ -13,6 +13,7 @@ import core::option;
 import core::result;
 import core::slice;
 import core::time;
+import ext::http;
 import ext::http_service;
 import std::args;
 import std::clock;
@@ -56,7 +57,7 @@ fn main() -> i32 {
     let startup: [u8;96] = [0;96]; let formatted = actual.unwrap().format_into(core::slice::view(startup,95).unwrap()); if (formatted.is_err()) { listener.close(); return 3; }
     let length = formatted.unwrap(); startup[length] = 10; if (!write_output(core::slice::view(startup,length+1).unwrap())) { listener.close(); return 5; }
     let options: ext::http_service::Options = ext::http_service::default_options();
-    options.limits.body_bytes = 200000; options.date = false; options.idle_timeout_ms = 2000;
+    let limits: ext::http::Limits = options.limits; limits.body_bytes = 200000; options.limits = limits; options.date = false; options.idle_timeout_ms = 2000; options.max_requests = 1000;
     let served: i32 = 0; let upgraded: i32 = 0;
     while (served < limit) {
         let now = std::clock::monotonic_now(); if (now.is_err()) { break; }

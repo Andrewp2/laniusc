@@ -244,7 +244,14 @@ def raw_cases(connect, limits):
         if d is None: continue
         if d == b"": break
         got += d
-    t.finish(); check(goaway_code(frames(got)) == 1, "bad preface"); count += 1
+    t.finish()
+    # The engine answers GOAWAY; the service treats it as a malformed
+    # HTTP/1.1 head and answers 400.
+    if limits.get("http1"):
+        check(got.startswith(b"HTTP/1.1 400"), ("bad preface", got[:40]))
+    else:
+        check(goaway_code(frames(got)) == 1, "bad preface")
+    count += 1
     after = frame(1, 5, 3, block(get(b"/after")))
     expect_goaway(frame(0, 0, 0, b"x"), 1, "DATA on stream 0"); count += 1
     expect_goaway(frame(1, 5, 2, block(get())), 1, "HEADERS on an even stream"); count += 1
@@ -281,6 +288,28 @@ def main():
         a = nghttp2_cases(connect, limits)
         b = raw_cases(connect, limits)
         print("http2-server-engine nghttp2=%d raw=%d" % (a, b))
+        return
+    if mode == "tcp":
+        server = subprocess.Popen([exe], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            port = int(server.stdout.readline().decode().rsplit(":", 1)[1])
+            limits = {"streams": 100, "body": 200000, "connection_window": 4194304, "http1": True}
+            connect = lambda: Tcp(port)
+            a = nghttp2_cases(connect, limits)
+            b = raw_cases(connect, limits)
+            # The same listener still serves HTTP/1.1.
+            s1 = socket.create_connection(("127.0.0.1", port), timeout=5)
+            s1.sendall(b"GET /plain HTTP/1.1\r\nHost: x\r\n\r\n")
+            reply = b""
+            while True:
+                d = s1.recv(65536)
+                if not d: break
+                reply += d
+            s1.close()
+            check(reply.startswith(b"HTTP/1.1 200") and reply.endswith(b"h1 /plain"), ("HTTP/1.1 fallback", reply[-60:]))
+            print("http2-server-h2c nghttp2=%d raw=%d http1=1" % (a, b))
+        finally:
+            server.kill(); server.wait()
         return
     raise SystemExit("unknown mode")
 
