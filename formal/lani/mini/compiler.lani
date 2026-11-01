@@ -195,6 +195,31 @@ impl MemWidth {
     }
 }
 
+// An IEEE binary floating-point format: binary32 or binary64. A word holds
+// a float's bit pattern, an F32 one zero-extended.
+pub enum FloatTy { F32, F64, }
+
+// IEEE arithmetic, rounded to nearest, ties to even.
+pub enum FArith { FAdd, FSub, FMul, FDiv, }
+
+// IEEE comparisons: false when either operand is a NaN.
+pub enum FCmp { FEq, FLt, FLe, }
+
+// A float operation of the left and the right operand, by Lanius.IEEE. The
+// conversions read only the right operand.
+pub enum FOp {
+    Basic(FloatTy, FArith),
+    // 1 when the comparison holds, else 0
+    FCompare(FloatTy, FCmp),
+    // the right operand, a signed integer (its low 32 bits for S32, all 64
+    // for U64), to the nearest float
+    FromInt(FloatTy, Word),
+    // the right operand, an F32, as an F64 (exact)
+    Widen,
+    // the right operand, an F64, to the nearest F32
+    Narrow,
+}
+
 pub enum Expr {
     Lit(u64),
     Var(usize),
@@ -202,7 +227,17 @@ pub enum Expr {
     Neg(Box<Expr>),
     Binary(Word, BinOp, Box<Expr>, Box<Expr>),
     Compare(Word, CmpOp, Box<Expr>, Box<Expr>),
+    // a float operation (SSE on x86)
+    Fp(FOp, Box<Expr>, Box<Expr>),
 }
+
+// A Linux system call (roadmap F8). Write: write(fd, the heap address,
+// count), arguments in that order; Read: read(fd, the heap address, count);
+// Poll: poll(fds, nfds, timeout), the second argument not made an address;
+// Clock: clock_gettime(clock, the heap address, unused); Random:
+// getrandom(the heap address, count, flags), the first argument made an
+// address.
+pub enum Syscall { Write, Read, Poll, Clock, Random, }
 
 pub enum Stmt {
     Skip,
@@ -214,6 +249,10 @@ pub enum Stmt {
     // target, ..., target + count - 1 = callee(args)
     Call(usize, usize, usize, List<Expr>),
     Ret(List<Expr>),
+    // leave the innermost loop
+    Brk,
+    // go back to the innermost loop's condition
+    Cont,
     // target = the cursor rounded up to a multiple of 2^shift; the cursor
     // moves past size bytes from there
     Alloc(usize, usize, Expr),
@@ -228,6 +267,11 @@ pub enum Stmt {
     // target = left op right; a zero divisor, or a signed division of the
     // least value by -1, has no run
     Divide(Word, DivOp, usize, Expr, Expr),
+    // target = what the kernel returns for call(args)
+    Sys(Syscall, usize, List<Expr>),
+    // target = the frame pointer less bytes, which becomes the frame
+    // pointer: this activation's frame memory (not produced yet)
+    Frame(usize, usize),
 }
 
 pub struct Func {
@@ -282,6 +326,13 @@ pub enum Instr {
     StoreWordAt(MemWidth, usize),
     // rax := slot op rax
     Div(Word, DivOp, usize),
+    // rax := slot op rax, a float operation through xmm0 and xmm1
+    Fp(FOp, usize),
+    // rax := call(slot, slot + 1, slot + 2), through rdi, rsi and rdx
+    Sys(Syscall, usize),
+    // Frame memory: the frame pointer (rbx) drops by bytes, to no lower than
+    // the limit (r14), and rax gets its new value
+    Frame(usize),
 }
 
 impl BinOp {
@@ -325,6 +376,69 @@ impl DivOp {
     }
 }
 
+impl FloatTy {
+    // The REX.W prefix of a move between a general register and an xmm
+    // register for this format: none for F32 (movd), one byte for F64 (movq).
+    pub fn rex_size(self) -> usize {
+        return match (self) {
+            F32 -> 0,
+            F64 -> 1,
+        };
+    }
+}
+
+impl FloatTy {
+    pub fn number(self) -> usize {
+        return match (self) {
+            F32 -> 0,
+            F64 -> 1,
+        };
+    }
+}
+
+impl FloatTy {
+    // The largest pattern: 2^32 - 1 for F32, 2^64 - 1 for F64.
+    pub fn mask(self) -> u64 {
+        return match (self) {
+            F32 -> 4294967295,
+            F64 -> 18446744073709551615,
+        };
+    }
+
+    // The sign bit's pattern.
+    pub fn sign_bit(self) -> u64 {
+        return match (self) {
+            F32 -> 2147483648,
+            F64 -> 9223372036854775808,
+        };
+    }
+
+    // The word whose addition of the sign bit flips it: the low 32 bits for
+    // an f32 (the carry out is dropped), all 64 for an f64.
+    pub fn sign_word(self) -> Word {
+        return match (self) {
+            F32 -> S32,
+            F64 -> U64,
+        };
+    }
+}
+
+impl FOp {
+    // The bytes after mov rcx, rax; mov rax, [slot]: the operands into
+    // xmm0 and xmm1 (8 bytes, 10 for F64), the operation (4; a compare 5),
+    // then the result into eax (4, 5 for F64; a compare's mask 4, then neg
+    // eax 2). A conversion reads rcx directly.
+    pub fn size(self) -> usize {
+        return match (self) {
+            Basic(ty, operation) -> plus(16, times(3, ty.rex_size())),
+            FCompare(ty, operation) -> plus(19, times(2, ty.rex_size())),
+            FromInt(ty, word) -> plus(plus(8, word.prefix()), ty.rex_size()),
+            Widen -> 13,
+            Narrow -> 13,
+        };
+    }
+}
+
 impl Instr {
     pub fn size(self) -> usize {
         return match (self) {
@@ -336,14 +450,17 @@ impl Instr {
             Cmp(word, operation, slot) -> plus(18, word.prefix()),
             Jmp(target) -> 5,
             Jz(target) -> 9,
-            Instr::Call(callee, args, target, count) -> plus(plus(times(14, length(args)), 5), times(14, count)),
+            Instr::Call(callee, args, target, count) -> plus(plus(times(14, length(args)), 19), times(14, count)),
             Instr::Ret(sources) -> plus(times(14, length(sources)), 5),
-            Bump(shift) -> 52,
+            Bump(shift) -> 58,
             LoadAt -> 10,
             StoreAt(slot) -> 16,
             LoadWordAt(width) -> plus(9, width.prefix()),
             StoreWordAt(width, slot) -> plus(16, width.prefix()),
             Div(word, operation, slot) -> plus(plus(18, word.prefix()), operation.size(word)),
+            Instr::Fp(operation, slot) -> plus(10, operation.size()),
+            Instr::Sys(kind, slot) -> 34,
+            Instr::Frame(bytes) -> 39,
         };
     }
 }
@@ -365,6 +482,7 @@ pub fn compile_expr(base: usize, e: Expr, depth: usize) -> List<Instr> {
         Expr::Neg(operand) -> concat(compile_expr(base, unbox(operand), depth), single(Instr::Neg)),
         Binary(word, operation, left, right) -> concat(concat(concat(compile_expr(base, unbox(left), depth), single(Store(plus(base, depth)))), compile_expr(base, unbox(right), plus(depth, 1))), single(Op(word, operation, plus(base, depth)))),
         Compare(word, operation, left, right) -> concat(concat(concat(compile_expr(base, unbox(left), depth), single(Store(plus(base, depth)))), compile_expr(base, unbox(right), plus(depth, 1))), single(Cmp(word, operation, plus(base, depth)))),
+        Expr::Fp(operation, left, right) -> concat(concat(concat(compile_expr(base, unbox(left), depth), single(Store(plus(base, depth)))), compile_expr(base, unbox(right), plus(depth, 1))), single(Instr::Fp(operation, plus(base, depth)))),
     };
 }
 
@@ -384,43 +502,49 @@ pub fn arg_slots(base: usize, args: List<Expr>, k: usize) -> List<usize> {
 }
 
 // Statement code is placed at offset pos, so jumps are absolute offsets
-// within the function.
-pub fn compile_stmt(base: usize, pos: usize, s: Stmt) -> List<Instr> {
+// within the function. A break jumps to brk with the accumulator 0 (the
+// innermost loop's exit test, which then leaves it); a continue jumps to
+// cont (its condition).
+pub fn compile_stmt(base: usize, pos: usize, brk: usize, cont: usize, s: Stmt) -> List<Instr> {
     return match (s) {
         Skip -> empty(),
         Assign(index, value) -> concat(compile_expr(base, value, 0), single(Store(index))),
-        Seq(first, second) -> seq_code(base, pos, compile_stmt(base, pos, unbox(first)), unbox(second)),
-        Ite(condition, then_branch, else_branch) -> ite_code(base, pos, compile_expr(base, condition, 0), unbox(then_branch), unbox(else_branch)),
+        Seq(first, second) -> seq_code(base, pos, brk, cont, compile_stmt(base, pos, brk, cont, unbox(first)), unbox(second)),
+        Ite(condition, then_branch, else_branch) -> ite_code(base, pos, brk, cont, compile_expr(base, condition, 0), unbox(then_branch), unbox(else_branch)),
         Loop(condition, body) -> loop_code(base, pos, compile_expr(base, condition, 0), unbox(body)),
         Stmt::Call(target, count, callee, args) -> concat(compile_args(base, args, 0), single(Instr::Call(callee, arg_slots(base, args, 0), target, count))),
         Stmt::Ret(values) -> concat(compile_args(base, values, 0), single(Instr::Ret(arg_slots(base, values, 0)))),
+        Brk -> cons(Imm(0), single(Jmp(brk))),
+        Cont -> single(Jmp(cont)),
         Alloc(target, shift, size) -> concat(compile_expr(base, size, 0), cons(Bump(shift), single(Store(target)))),
         LoadByte(target, address) -> concat(compile_expr(base, address, 0), cons(LoadAt, single(Store(target)))),
         StoreByte(address, value) -> concat(concat(compile_expr(base, address, 0), single(Store(base))), concat(compile_expr(base, value, 1), single(StoreAt(base)))),
         LoadWord(width, target, address) -> concat(compile_expr(base, address, 0), cons(LoadWordAt(width), single(Store(target)))),
         StoreWord(width, address, value) -> concat(concat(compile_expr(base, address, 0), single(Store(base))), concat(compile_expr(base, value, 1), single(StoreWordAt(width, base)))),
         Divide(word, operation, target, left, right) -> concat(concat(concat(compile_expr(base, left, 0), single(Store(base))), compile_expr(base, right, 1)), cons(Div(word, operation, base), single(Store(target)))),
+        Stmt::Sys(kind, target, args) -> concat(compile_args(base, args, 0), cons(Instr::Sys(kind, base), single(Store(target)))),
+        Stmt::Frame(target, bytes) -> cons(Instr::Frame(bytes), single(Store(target))),
     };
 }
 
 // extract: inline
-fn seq_code(base: usize, pos: usize, first_code: List<Instr>, second: Stmt) -> List<Instr> {
-    return concat(first_code, compile_stmt(base, plus(pos, code_size(first_code)), second));
+fn seq_code(base: usize, pos: usize, brk: usize, cont: usize, first_code: List<Instr>, second: Stmt) -> List<Instr> {
+    return concat(first_code, compile_stmt(base, plus(pos, code_size(first_code)), brk, cont, second));
 }
 
 // extract: inline
-fn ite_code(base: usize, pos: usize, condition_code: List<Instr>, then_branch: Stmt, else_branch: Stmt) -> List<Instr> {
+fn ite_code(base: usize, pos: usize, brk: usize, cont: usize, condition_code: List<Instr>, then_branch: Stmt, else_branch: Stmt) -> List<Instr> {
     let then_start: usize = plus(plus(pos, code_size(condition_code)), 9);
-    let then_code: List<Instr> = compile_stmt(base, then_start, then_branch);
+    let then_code: List<Instr> = compile_stmt(base, then_start, brk, cont, then_branch);
     let else_start: usize = plus(plus(then_start, code_size(then_code)), 5);
-    let else_code: List<Instr> = compile_stmt(base, else_start, else_branch);
+    let else_code: List<Instr> = compile_stmt(base, else_start, brk, cont, else_branch);
     return concat(concat(concat(concat(condition_code, single(Jz(else_start))), then_code), single(Jmp(plus(else_start, code_size(else_code))))), else_code);
 }
 
 // extract: inline
 fn loop_code(base: usize, pos: usize, condition_code: List<Instr>, body: Stmt) -> List<Instr> {
     let body_start: usize = plus(plus(pos, code_size(condition_code)), 9);
-    let body_code: List<Instr> = compile_stmt(base, body_start, body);
+    let body_code: List<Instr> = compile_stmt(base, body_start, plus(pos, code_size(condition_code)), pos, body);
     return concat(concat(concat(condition_code, single(Jz(plus(plus(body_start, code_size(body_code)), 5)))), body_code), single(Jmp(pos)));
 }
 
@@ -433,6 +557,7 @@ impl Expr {
             Expr::Neg(operand) -> unbox(operand).within(locals),
             Binary(word, operation, left, right) -> unbox(left).within(locals) && unbox(right).within(locals),
             Compare(word, operation, left, right) -> unbox(left).within(locals) && unbox(right).within(locals),
+            Expr::Fp(operation, left, right) -> unbox(left).within(locals) && unbox(right).within(locals),
         };
     }
 
@@ -444,6 +569,7 @@ impl Expr {
             Expr::Neg(operand) -> unbox(operand).temps(),
             Binary(word, operation, left, right) -> max_of(unbox(left).temps(), plus(unbox(right).temps(), 1)),
             Compare(word, operation, left, right) -> max_of(unbox(left).temps(), plus(unbox(right).temps(), 1)),
+            Expr::Fp(operation, left, right) -> max_of(unbox(left).temps(), plus(unbox(right).temps(), 1)),
         };
     }
 }
@@ -489,12 +615,16 @@ impl Stmt {
             Loop(condition, body) -> condition.within(locals) && unbox(body).within(locals, arities, results),
             Stmt::Call(target, count, callee, args) -> locals >= plus(target, count) && count > 0 && arity_is(arities, callee, length(args), count) && all_within(locals, args),
             Stmt::Ret(values) -> (length(values) == results) && all_within(locals, values),
+            Brk -> true,
+            Cont -> true,
             Alloc(target, shift, size) -> locals > target && 32 > shift && size.within(locals),
             LoadByte(target, address) -> locals > target && address.within(locals),
             StoreByte(address, value) -> address.within(locals) && value.within(locals),
             LoadWord(width, target, address) -> locals > target && address.within(locals),
             StoreWord(width, address, value) -> address.within(locals) && value.within(locals),
             Divide(word, operation, target, left, right) -> locals > target && left.within(locals) && right.within(locals),
+            Stmt::Sys(kind, target, args) -> locals > target && (length(args) == 3) && all_within(locals, args),
+            Stmt::Frame(target, bytes) -> locals > target && 2147483648 > bytes,
         };
     }
 
@@ -507,12 +637,16 @@ impl Stmt {
             Loop(condition, body) -> max_of(condition.temps(), unbox(body).temps()),
             Stmt::Call(target, count, callee, args) -> args_temps(args, 0),
             Stmt::Ret(values) -> args_temps(values, 0),
+            Brk -> 0,
+            Cont -> 0,
             Alloc(target, shift, size) -> size.temps(),
             LoadByte(target, address) -> address.temps(),
             StoreByte(address, value) -> max_of(address.temps(), plus(value.temps(), 1)),
             LoadWord(width, target, address) -> address.temps(),
             StoreWord(width, address, value) -> max_of(address.temps(), plus(value.temps(), 1)),
             Divide(word, operation, target, left, right) -> max_of(left.temps(), plus(right.temps(), 1)),
+            Stmt::Sys(kind, target, args) -> args_temps(args, 0),
+            Stmt::Frame(target, bytes) -> 0,
         };
     }
 }
@@ -541,7 +675,7 @@ pub fn compile_func(arities: List<Arity>, func: Func) -> core::option::Option<Co
     let slots: usize = plus(func.locals, func.body.temps());
     if (func.locals >= func.params && func.results > 0 && func.locals >= func.results && func.body.within(func.locals, arities, func.results) && frame_limit() >= slots) {
         let init: List<Instr> = cons(Imm(0), zero_locals(func.params, minus(func.locals, func.params)));
-        return Some(Code { slots: slots, instrs: concat(init, compile_stmt(func.locals, code_size(init), func.body)) });
+        return Some(Code { slots: slots, instrs: concat(init, compile_stmt(func.locals, code_size(init), 0, 0, func.body)) });
     }
     return None;
 }
@@ -594,6 +728,17 @@ pub fn slot_load(slot: usize) -> List<u8> {
 // mov [rbp + disp32], rax
 pub fn slot_store(slot: usize) -> List<u8> {
     return concat(cons(72, cons(137, single(133))), le32(slot_offset(slot)));
+}
+
+// mov [rbp + disp32], rbx: a call keeps the caller's frame pointer in its
+// first result slot while the callee runs.
+pub fn fsp_save(slot: usize) -> List<u8> {
+    return concat(cons(72, cons(137, single(157))), le32(slot_offset(slot)));
+}
+
+// mov rbx, [rbp + disp32]
+pub fn fsp_load(slot: usize) -> List<u8> {
+    return concat(cons(72, cons(139, single(157))), le32(slot_offset(slot)));
 }
 
 // mov rcx, rax; mov rax, [slot]
@@ -711,6 +856,80 @@ pub fn slot_compare(word: Word, operation: CmpOp, slot: usize) -> List<u8> {
     return concat(concat(slot_operands(slot), concat(word.rex(), cons(57, single(200)))), cons(15, cons(operation.setcc(word), cons(192, cons(15, cons(182, single(192)))))));
 }
 
+impl FloatTy {
+    // The REX.W prefix of movq for F64.
+    pub fn rex(self) -> List<u8> {
+        return match (self) {
+            F32 -> empty(),
+            F64 -> single(72),
+        };
+    }
+
+    // The mandatory prefix of its scalar instructions: F3 for single, F2
+    // for double.
+    pub fn scalar_prefix(self) -> u8 {
+        return match (self) {
+            F32 -> 243,
+            F64 -> 242,
+        };
+    }
+}
+
+impl FArith {
+    // addss, subss, mulss, divss (sd with F2)
+    pub fn opcode(self) -> u8 {
+        return match (self) {
+            FAdd -> 88,
+            FSub -> 92,
+            FMul -> 89,
+            FDiv -> 94,
+        };
+    }
+}
+
+impl FCmp {
+    // The cmpss/cmpsd predicate: EQ_OQ, LT_OS, LE_OS.
+    pub fn predicate(self) -> u8 {
+        return match (self) {
+            FEq -> 0,
+            FLt -> 1,
+            FLe -> 2,
+        };
+    }
+}
+
+// movd xmm0, eax; movd xmm1, ecx (movq rax, rcx for F64)
+pub fn float_operands(ty: FloatTy) -> List<u8> {
+    return concat(cons(102, concat(ty.rex(), cons(15, cons(110, single(192))))), cons(102, concat(ty.rex(), cons(15, cons(110, single(201))))));
+}
+
+// movd eax, xmm0 (movq rax for F64)
+pub fn float_result(ty: FloatTy) -> List<u8> {
+    return cons(102, concat(ty.rex(), cons(15, cons(126, single(192)))));
+}
+
+impl FOp {
+    // The operation on rax (left) and rcx (right) into rax: op xmm0, xmm1
+    // with movd/movq around it; for a compare, cmpss/cmpsd xmm0, xmm1, then
+    // its mask's low half in eax and neg eax; cvtsi2ss/cvtsi2sd xmm0, ecx
+    // (rcx with REX.W); movd xmm0, ecx; cvtss2sd xmm0, xmm0; movq xmm0, rcx;
+    // cvtsd2ss xmm0, xmm0.
+    pub fn opcode_bytes(self) -> List<u8> {
+        return match (self) {
+            Basic(ty, operation) -> concat(float_operands(ty), concat(cons(ty.scalar_prefix(), cons(15, cons(operation.opcode(), single(193)))), float_result(ty))),
+            FCompare(ty, operation) -> concat(float_operands(ty), concat(cons(ty.scalar_prefix(), cons(15, cons(194, cons(193, single(operation.predicate()))))), cons(102, cons(15, cons(126, cons(192, cons(247, single(216)))))))),
+            FromInt(ty, word) -> concat(cons(ty.scalar_prefix(), concat(word.rex(), cons(15, cons(42, single(193))))), float_result(ty)),
+            Widen -> concat(cons(102, cons(15, cons(110, single(193)))), concat(cons(243, cons(15, cons(90, single(192)))), float_result(F64))),
+            Narrow -> concat(cons(102, cons(72, cons(15, cons(110, single(193))))), concat(cons(242, cons(15, cons(90, single(192)))), float_result(F32))),
+        };
+    }
+
+    // slot_operands, then the operation
+    pub fn bytes(self, slot: usize) -> List<u8> {
+        return concat(slot_operands(slot), self.opcode_bytes());
+    }
+}
+
 // 2^shift as a 64-bit word.
 pub fn pow2(shift: usize) -> u64 {
     if (shift == 0) {
@@ -722,12 +941,22 @@ pub fn pow2(shift: usize) -> u64 {
 
 // mov rcx, r13; mov r11, 2^shift - 1; add rcx, r11; mov r11, -2^shift;
 // and rcx, r11 (rcx is the cursor rounded up); mov r11, rcx; add r11, rax;
-// cmp r11, r14; jbe +2; ud2 (past the limit); mov r13, r11; mov rax, rcx
+// jb +9 (the end wrapped); cmp r11, r14; jbe +2; ud2 (past the limit);
+// mov r13, r11; mov rax, rcx
 pub fn bump_bytes(shift: usize) -> List<u8> {
     let round: List<u8> = concat(concat(cons(76, cons(137, cons(233, cons(73, single(187))))), le64(pow2(shift) - 1)), cons(76, cons(1, cons(217, cons(73, single(187))))));
     let mask: List<u8> = concat(le64(0 - pow2(shift)), cons(76, cons(33, single(217))));
-    let check: List<u8> = cons(73, cons(137, cons(203, cons(73, cons(1, cons(195, cons(77, cons(57, cons(243, cons(15, cons(134, cons(2, cons(0, cons(0, cons(0, cons(15, single(11)))))))))))))))));
-    return concat(concat(concat(round, mask), check), cons(77, cons(137, cons(221, cons(72, cons(137, single(200)))))));
+    let carry: List<u8> = cons(73, cons(137, cons(203, cons(73, cons(1, cons(195, cons(15, cons(130, cons(9, cons(0, cons(0, single(0))))))))))));
+    let check: List<u8> = cons(77, cons(57, cons(243, cons(15, cons(134, cons(2, cons(0, cons(0, cons(0, cons(15, single(11)))))))))));
+    return concat(concat(concat(round, mask), concat(carry, check)), cons(77, cons(137, cons(221, cons(72, cons(137, single(200)))))));
+}
+
+// mov r11, bytes; mov rax, rbx; sub rax, r11; jb +12 (below zero);
+// mov r11, rax; cmp r11, r14; jae +2; ud2 (below the limit); mov rbx, rax
+pub fn frame_memory_bytes(bytes: usize) -> List<u8> {
+    let start: List<u8> = concat(cons(73, cons(187, le64(bytes as u64))), cons(72, cons(137, cons(216, cons(76, cons(41, single(216)))))));
+    let check: List<u8> = cons(15, cons(130, cons(12, cons(0, cons(0, cons(0, cons(73, cons(137, cons(195, cons(77, cons(57, cons(243, cons(15, cons(131, cons(2, cons(0, cons(0, single(0))))))))))))))))));
+    return concat(concat(start, check), cons(15, cons(11, cons(72, cons(137, single(195))))));
 }
 
 // add rax, r12; movzx eax, byte [rax + 0]
@@ -750,6 +979,52 @@ pub fn store_word_bytes(width: MemWidth, slot: usize) -> List<u8> {
     return concat(concat(cons(72, cons(139, single(141))), le32(slot_offset(slot))), cons(76, cons(1, cons(225, concat(width.rex(), cons(137, cons(129, cons(0, cons(0, cons(0, single(0)))))))))));
 }
 
+// The low byte of a system call's Linux number (mov eax, number).
+pub fn syscall_linux_byte(kind: Syscall) -> u8 {
+    return match (kind) {
+        Write -> 1,
+        Read -> 0,
+        Poll -> 7,
+        Clock -> 228,
+        Random -> 62,
+    };
+}
+
+// The second byte of a system call's Linux number (getrandom is 318).
+pub fn syscall_linux_high(kind: Syscall) -> u8 {
+    return match (kind) {
+        Write -> 0,
+        Read -> 0,
+        Poll -> 0,
+        Clock -> 0,
+        Random -> 1,
+    };
+}
+
+// Which argument a system call makes a heap address: add rsi, r12 (the
+// second) for write, read and clock_gettime, mov rsi, rsi (none) for poll,
+// add rdi, r12 (the first) for getrandom.
+pub fn syscall_rsi_bytes(kind: Syscall) -> List<u8> {
+    return match (kind) {
+        Write -> cons(76, cons(1, single(230))),
+        Read -> cons(76, cons(1, single(230))),
+        Poll -> cons(72, cons(137, single(246))),
+        Clock -> cons(76, cons(1, single(230))),
+        Random -> cons(76, cons(1, single(231))),
+    };
+}
+
+// mov rdi, [rbp + disp32] (the fd); mov rsi, [rbp + disp32]; add rsi, r12
+// (the heap address; mov rsi, rsi for poll); mov rdx, [rbp + disp32] (the
+// count); mov eax, the call's number; syscall; mov r11, rcx (the kernel
+// leaves RFLAGS in r11)
+pub fn sys_bytes(kind: Syscall, slot: usize) -> List<u8> {
+    let fd: List<u8> = concat(cons(72, cons(139, single(189))), le32(slot_offset(slot)));
+    let address: List<u8> = concat(concat(cons(72, cons(139, single(181))), le32(slot_offset(plus(slot, 1)))), syscall_rsi_bytes(kind));
+    let count: List<u8> = concat(cons(72, cons(139, single(149))), le32(slot_offset(plus(slot, 2))));
+    return concat(concat(fd, address), concat(count, cons(184, cons(syscall_linux_byte(kind), cons(syscall_linux_high(kind), cons(0, cons(0, cons(15, cons(5, cons(73, cons(137, single(203))))))))))));
+}
+
 // mov rsp, rbp; pop rbp; ret
 pub fn epilogue() -> List<u8> {
     return cons(72, cons(137, cons(236, cons(93, single(195)))));
@@ -760,9 +1035,14 @@ pub fn frame_size(slots: usize) -> usize {
     return times(plus(slots, 1) / 2, 16);
 }
 
-// push rbp; mov rbp, rsp; mov r11d, frame_size; sub rsp, r11
+// cmp r15, rsp; jbe +2; ud2 (past the stack limit in r15)
+pub fn stack_check() -> List<u8> {
+    return cons(73, cons(57, cons(231, cons(15, cons(134, cons(2, cons(0, cons(0, cons(0, cons(15, single(11)))))))))));
+}
+
+// push rbp; mov rbp, rsp; mov r11d, frame_size; sub rsp, r11; the stack check
 pub fn prologue(slots: usize) -> List<u8> {
-    return concat(concat(cons(85, cons(72, cons(137, cons(229, cons(65, single(187)))))), le32(frame_size(slots) as i32)), cons(76, cons(41, single(220))));
+    return concat(concat(concat(cons(85, cons(72, cons(137, cons(229, cons(65, single(187)))))), le32(frame_size(slots) as i32)), cons(76, cons(41, single(220)))), stack_check());
 }
 
 // The rel32 field of a transfer from the end of an instruction at source to target.
@@ -814,7 +1094,7 @@ impl Instr {
             Cmp(word, operation, slot) -> slot_compare(word, operation, slot),
             Jmp(target) -> cons(233, le32(relative(plus(pc, 5), target))),
             Jz(target) -> concat(cons(72, cons(133, cons(192, cons(15, single(132))))), le32(relative(plus(pc, 9), target))),
-            Instr::Call(callee, args, target, count) -> concat(concat(copy_bytes(arg_base(place.slots), args, 0), cons(232, le32(relative(plus(plus(plus(place.body, pc), times(14, length(args))), 5), get_or(place.entries, callee, 0))))), copy_bytes(target, slot_range(arg_base(place.slots), count), 0)),
+            Instr::Call(callee, args, target, count) -> concat(concat(concat(concat(copy_bytes(arg_base(place.slots), args, 0), fsp_save(target)), cons(232, le32(relative(plus(plus(plus(place.body, pc), times(14, length(args))), 12), get_or(place.entries, callee, 0))))), fsp_load(target)), copy_bytes(target, slot_range(arg_base(place.slots), count), 0)),
             Instr::Ret(sources) -> concat(copy_bytes(0, sources, 0), epilogue()),
             Bump(shift) -> bump_bytes(shift),
             LoadAt -> load_at_bytes(),
@@ -822,6 +1102,9 @@ impl Instr {
             LoadWordAt(width) -> load_word_bytes(width),
             StoreWordAt(width, slot) -> store_word_bytes(width, slot),
             Div(word, operation, slot) -> operation.bytes(word, slot),
+            Instr::Fp(operation, slot) -> operation.bytes(slot),
+            Instr::Sys(kind, slot) -> sys_bytes(kind, slot),
+            Instr::Frame(bytes) -> frame_memory_bytes(bytes),
         };
     }
 }
@@ -837,11 +1120,11 @@ pub fn encode_from(place: Place, pc: usize, code: List<Instr>) -> List<u8> {
 // followed by its body.
 impl Code {
     pub fn size(self) -> usize {
-        return plus(13, code_size(self.instrs));
+        return plus(24, code_size(self.instrs));
     }
 
     pub fn image(self, start: usize, entries: List<usize>) -> List<u8> {
-        return concat(prologue(self.slots), encode_from(Place { body: plus(start, 13), slots: self.slots, entries: entries }, 0, self.instrs));
+        return concat(prologue(self.slots), encode_from(Place { body: plus(start, 24), slots: self.slots, entries: entries }, 0, self.instrs));
     }
 }
 
@@ -860,6 +1143,24 @@ pub fn link_from(entries: List<usize>, start: usize, codes: List<Code>) -> List<
     };
 }
 
+// The bytes of code followed by tail.
+pub fn encode_onto(place: Place, pc: usize, code: List<Instr>, tail: List<u8>) -> List<u8> {
+    return match (code) {
+        Nil -> tail,
+        Cons(i, rest) -> concat(i.encode(place, pc), encode_onto(place, plus(pc, i.size()), unbox(rest), tail)),
+    };
+}
+
+// link_from's bytes, each function's built in front of the rest instead of
+// concatenated onto it: concat copies its first list, and the heap of the
+// self-built verified compiler is never freed (roadmap F12).
+pub fn link_onto(entries: List<usize>, start: usize, codes: List<Code>) -> List<u8> {
+    return match (codes) {
+        Nil -> empty(),
+        Cons(code, rest) -> concat(prologue(code.slots), encode_onto(Place { body: plus(start, 24), slots: code.slots, entries: entries }, 0, code.instrs, link_onto(entries, plus(start, code.size()), unbox(rest)))),
+    };
+}
+
 // Machine code of a compiled program.
 pub struct Binary {
     codes: List<Code>,
@@ -872,6 +1173,15 @@ pub fn image_limit() -> usize {
     return 1073741824;
 }
 
+// The size of functions laid out back to back: the image's length, found
+// without a walk over the image.
+pub fn linked_size(codes: List<Code>) -> usize {
+    return match (codes) {
+        Nil -> 0,
+        Cons(code, rest) -> plus(code.size(), linked_size(unbox(rest))),
+    };
+}
+
 pub fn compile_program(prog: Program) -> core::option::Option<Binary> {
     return match (compile_funcs(arities(prog.funcs), prog.funcs)) {
         None -> None,
@@ -882,8 +1192,8 @@ pub fn compile_program(prog: Program) -> core::option::Option<Binary> {
 // extract: inline
 fn link(codes: List<Code>) -> core::option::Option<Binary> {
     let entries: List<usize> = layout(0, codes);
-    let image: List<u8> = link_from(entries, 0, codes);
-    if (image_limit() >= length(image)) {
+    let image: List<u8> = link_onto(entries, 0, codes);
+    if (image_limit() >= linked_size(codes)) {
         return Some(Binary { codes: codes, entries: entries, image: image });
     }
     return None;
@@ -967,12 +1277,16 @@ impl Stmt {
             Loop(condition, body) -> Stmt::Loop(condition, boxed(unbox(body).rename(table, missing))),
             Stmt::Call(target, count, callee, args) -> Stmt::Call(target, count, get_or(table, callee, missing), args),
             Stmt::Ret(values) -> Stmt::Ret(values),
+            Brk -> Brk,
+            Cont -> Cont,
             Alloc(target, shift, size) -> Stmt::Alloc(target, shift, size),
             LoadByte(target, address) -> Stmt::LoadByte(target, address),
             StoreByte(address, value) -> Stmt::StoreByte(address, value),
             LoadWord(width, target, address) -> Stmt::LoadWord(width, target, address),
             StoreWord(width, address, value) -> Stmt::StoreWord(width, address, value),
             Divide(word, operation, target, left, right) -> Stmt::Divide(word, operation, target, left, right),
+            Stmt::Sys(kind, target, args) -> Stmt::Sys(kind, target, args),
+            Stmt::Frame(target, bytes) -> Stmt::Frame(target, bytes),
         };
     }
 }
@@ -1035,7 +1349,7 @@ pub struct Object {
 // import, so its rel32 field is a hole.
 pub fn call_pieces(own: usize, place: Place, pc: usize, callee: usize, args: List<usize>, target: usize, count: usize) -> List<Piece> {
     if (callee >= own) {
-        return cons(Piece::Bytes(concat(copy_bytes(arg_base(place.slots), args, 0), single(232))), cons(Piece::Rel(minus(callee, own)), single(Piece::Bytes(copy_bytes(target, slot_range(arg_base(place.slots), count), 0)))));
+        return cons(Piece::Bytes(concat(concat(copy_bytes(arg_base(place.slots), args, 0), fsp_save(target)), single(232))), cons(Piece::Rel(minus(callee, own)), single(Piece::Bytes(concat(fsp_load(target), copy_bytes(target, slot_range(arg_base(place.slots), count), 0))))));
     }
     let call: Instr = Instr::Call(callee, args, target, count);
     return single(Piece::Bytes(call.encode(place, pc)));
@@ -1062,6 +1376,9 @@ impl Instr {
             LoadWordAt(width) -> single(Piece::Bytes(self.encode(place, pc))),
             StoreWordAt(width, slot) -> single(Piece::Bytes(self.encode(place, pc))),
             Div(word, operation, slot) -> single(Piece::Bytes(self.encode(place, pc))),
+            Instr::Fp(operation, slot) -> single(Piece::Bytes(self.encode(place, pc))),
+            Instr::Sys(kind, slot) -> single(Piece::Bytes(self.encode(place, pc))),
+            Instr::Frame(bytes) -> single(Piece::Bytes(self.encode(place, pc))),
         };
     }
 }
@@ -1078,7 +1395,7 @@ pub fn pieces_from(own: usize, place: Place, pc: usize, code: List<Instr>) -> Li
 pub fn object_funcs(own: usize, entries: List<usize>, start: usize, codes: List<Code>) -> List<ObjFunc> {
     return match (codes) {
         Nil -> empty(),
-        Cons(code, rest) -> cons(ObjFunc { slots: code.slots, pieces: cons(Piece::Bytes(prologue(code.slots)), pieces_from(own, Place { body: plus(start, 13), slots: code.slots, entries: entries }, 0, code.instrs)) }, object_funcs(own, entries, plus(start, code.size()), unbox(rest))),
+        Cons(code, rest) -> cons(ObjFunc { slots: code.slots, pieces: cons(Piece::Bytes(prologue(code.slots)), pieces_from(own, Place { body: plus(start, 24), slots: code.slots, entries: entries }, 0, code.instrs)) }, object_funcs(own, entries, plus(start, code.size()), unbox(rest))),
     };
 }
 
@@ -1252,7 +1569,7 @@ pub fn link_objects(objs: List<Object>) -> core::option::Option<Executable> {
 // any of these types.
 
 // An unsigned integer type. A value sits zero-extended in its slot.
-pub enum UintTy { Uint8, Uint32, Uint64, Usize, }
+pub enum UintTy { Uint8, Uint32, Uint64, Usize, Uint16, }
 
 impl UintTy {
     // Its index, for comparing types.
@@ -1262,6 +1579,7 @@ impl UintTy {
             Uint32 -> 1,
             Uint64 -> 2,
             Usize -> 3,
+            Uint16 -> 4,
         };
     }
 
@@ -1272,6 +1590,7 @@ impl UintTy {
             Uint32 -> 4294967295,
             Uint64 -> 18446744073709551615,
             Usize -> 18446744073709551615,
+            Uint16 -> 65535,
         };
     }
 
@@ -1282,7 +1601,50 @@ impl UintTy {
             Uint32 -> false,
             Uint64 -> true,
             Usize -> true,
+            Uint16 -> false,
         };
+    }
+
+    // 2^(width - 1), the sign bit of the signed type as wide.
+    pub fn half(self) -> u64 {
+        return match (self) {
+            Uint8 -> 128,
+            Uint32 -> 2147483648,
+            Uint64 -> 9223372036854775808,
+            Usize -> 9223372036854775808,
+            Uint16 -> 32768,
+        };
+    }
+
+    // 32 less the width of a narrow type (none for a wide one).
+    pub fn spare(self) -> u64 {
+        return match (self) {
+            Uint8 -> 24,
+            Uint32 -> 0,
+            Uint64 -> 0,
+            Usize -> 0,
+            Uint16 -> 16,
+        };
+    }
+
+    // The least value of the signed type as wide, as 32-bit two's
+    // complement (narrow types only).
+    pub fn least_bits(self) -> u64 {
+        return match (self) {
+            Uint8 -> 4294967168,
+            Uint32 -> 2147483648,
+            Uint64 -> 0,
+            Usize -> 0,
+            Uint16 -> 4294934528,
+        };
+    }
+
+    // How the signed type as wide computes: on 32 bits when narrow.
+    pub fn signed_word(self) -> Word {
+        if (self.is_wide()) {
+            return U64;
+        }
+        return S32;
     }
 }
 
@@ -1296,10 +1658,22 @@ pub enum SrcType {
     Ptr,
     // Core's raw slice of this element type: one slot, its address
     Slice(Box<SrcType>),
+    // Core's array [element; length]: its elements one after another, laid
+    // out as a struct of length fields of the element type
+    Array(Box<SrcType>, usize),
     // the unit type: one slot whose bits do not matter
     Unit,
     // a signed 64-bit integer, its two's complement bits in one slot
     Isize,
+    // a char, its 32-bit code in one slot
+    Char,
+    // an f32 or f64, its IEEE bit pattern in one slot (an f32's
+    // zero-extended)
+    Float(FloatTy),
+    // the signed integer type as wide as kind (i8, i16, i32, i64, isize). A
+    // narrow one sits in its slot as an i32 does, its value's 32-bit two's
+    // complement zero-extended; a 64-bit one as an isize does.
+    Sint(UintTy),
 }
 
 pub enum SrcOp {
@@ -1323,6 +1697,10 @@ pub enum SrcExpr {
     Cast(SrcType, Box<SrcExpr>),
     // the null pointer, Core's pointer 0
     Null,
+    // a char literal: its code, a Unicode scalar value
+    Char(u32),
+    // a float literal: its IEEE bit pattern
+    Float(FloatTy, u64),
 }
 
 // A match arm: the binders of its variant's payload, and its value.
@@ -1345,9 +1723,9 @@ pub enum SrcEff {
     ENeg(Box<SrcEff>),
     ENot(Box<SrcEff>),
     ECast(SrcType, Box<SrcEff>),
-    // slice[index] of a slice local
+    // slice[index] of a slice local, or array[index] of an array local
     EIndex(usize, Box<SrcEff>),
-    // a struct of type ty
+    // a struct of type ty, or an array of type ty (its elements)
     EStruct(SrcType, Box<List<SrcEff>>),
     // variant(payload) of the enum type ty
     EVariant(SrcType, usize, Box<List<SrcEff>>),
@@ -1413,6 +1791,17 @@ pub enum SrcStmt {
     ReturnUnit,
     // assert(condition): Core traps when it is false
     Assert(SrcEff),
+    // break; and continue; of the innermost loop
+    Break,
+    Continue,
+    // MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest):
+    // when the enum local scrutinee (Core id enum_id) is the variant, run
+    // body, else run rest. A variant with no payload binds nothing (binds is
+    // false); one with one field, of type ty, binds a copy of it to binder.
+    MatchArm(usize, usize, usize, bool, usize, SrcType, Box<SrcStmt>, Box<SrcStmt>),
+    // Unreachable(id, ty): Core binds id, uninitialized, at type ty and
+    // returns it, so it traps; ty is the function's result type.
+    Unreachable(usize, SrcType),
 }
 
 pub struct SrcParam {
@@ -1478,8 +1867,12 @@ impl SrcType {
             Enum(id, variants) -> false,
             Ptr -> false,
             Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> false,
             Unit -> false,
             Isize -> false,
+            SrcType::Char -> false,
+            SrcType::Float(ft) -> false,
+            Sint(sk) -> false,
         };
     }
 
@@ -1492,8 +1885,12 @@ impl SrcType {
             Enum(id, variants) -> false,
             Ptr -> false,
             Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> false,
             Unit -> false,
             Isize -> false,
+            SrcType::Char -> false,
+            SrcType::Float(ft) -> false,
+            Sint(sk) -> false,
         };
     }
 
@@ -1506,8 +1903,12 @@ impl SrcType {
             Enum(id, variants) -> false,
             Ptr -> true,
             Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> false,
             Unit -> false,
             Isize -> true,
+            SrcType::Char -> true,
+            SrcType::Float(ft) -> true,
+            Sint(kind) -> true,
         };
     }
 
@@ -1520,8 +1921,12 @@ impl SrcType {
             Enum(id, variants) -> false,
             Ptr -> false,
             Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> false,
             Unit -> false,
             Isize -> false,
+            SrcType::Char -> false,
+            SrcType::Float(ft) -> false,
+            Sint(sk) -> false,
         };
     }
 
@@ -1534,8 +1939,12 @@ impl SrcType {
             Enum(id, variants) -> false,
             Ptr -> true,
             Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> false,
             Unit -> false,
             Isize -> false,
+            SrcType::Char -> false,
+            SrcType::Float(ft) -> false,
+            Sint(sk) -> false,
         };
     }
 
@@ -1548,8 +1957,12 @@ impl SrcType {
             Enum(id, variants) -> false,
             Ptr -> false,
             Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> false,
             Unit -> true,
             Isize -> false,
+            SrcType::Char -> false,
+            SrcType::Float(ft) -> false,
+            Sint(sk) -> false,
         };
     }
 
@@ -1562,8 +1975,158 @@ impl SrcType {
             Enum(id, variants) -> false,
             Ptr -> false,
             Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> false,
             Unit -> false,
             Isize -> true,
+            SrcType::Char -> false,
+            SrcType::Float(ft) -> false,
+            Sint(kind) -> false,
+        };
+    }
+
+    pub fn is_char(self) -> bool {
+        return match (self) {
+            I32 -> false,
+            Bool -> false,
+            Uint(kind) -> false,
+            Struct(id, fields) -> false,
+            Enum(id, variants) -> false,
+            Ptr -> false,
+            Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> false,
+            Unit -> false,
+            Isize -> false,
+            SrcType::Char -> true,
+            SrcType::Float(ft) -> false,
+            Sint(kind) -> false,
+        };
+    }
+
+    pub fn is_float(self, t: FloatTy) -> bool {
+        return match (self) {
+            I32 -> false,
+            Bool -> false,
+            Uint(kind) -> false,
+            Struct(id, fields) -> false,
+            Enum(id, variants) -> false,
+            Ptr -> false,
+            Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> false,
+            Unit -> false,
+            Isize -> false,
+            SrcType::Char -> false,
+            SrcType::Float(ft) -> ft.number() == t.number(),
+            Sint(kind) -> false,
+        };
+    }
+
+    pub fn float_ty(self) -> core::option::Option<FloatTy> {
+        return match (self) {
+            I32 -> None,
+            Bool -> None,
+            Uint(kind) -> None,
+            Struct(id, fields) -> None,
+            Enum(id, variants) -> None,
+            Ptr -> None,
+            Slice(element) -> None,
+            SrcType::Array(array_element, array_length) -> None,
+            Unit -> None,
+            Isize -> None,
+            SrcType::Char -> None,
+            SrcType::Float(ft) -> Some(ft),
+            Sint(kind) -> None,
+        };
+    }
+
+    pub fn is_float_any(self) -> bool {
+        return match (self) {
+            I32 -> false,
+            Bool -> false,
+            Uint(kind) -> false,
+            Struct(id, fields) -> false,
+            Enum(id, variants) -> false,
+            Ptr -> false,
+            Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> false,
+            Unit -> false,
+            Isize -> false,
+            SrcType::Char -> false,
+            SrcType::Float(ft) -> true,
+            Sint(kind) -> false,
+        };
+    }
+
+    // An integer type: a shift takes an amount of any of them.
+    pub fn is_integer(self) -> bool {
+        return match (self) {
+            I32 -> true,
+            Bool -> false,
+            Uint(kind) -> true,
+            Struct(id, fields) -> false,
+            Enum(id, variants) -> false,
+            Ptr -> false,
+            Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> false,
+            Unit -> false,
+            Isize -> true,
+            SrcType::Char -> false,
+            SrcType::Float(ft) -> false,
+            Sint(kind) -> true,
+        };
+    }
+
+    pub fn is_sint_any(self) -> bool {
+        return match (self) {
+            I32 -> false,
+            Bool -> false,
+            Uint(kind) -> false,
+            Struct(id, fields) -> false,
+            Enum(id, variants) -> false,
+            Ptr -> false,
+            Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> false,
+            Unit -> false,
+            Isize -> false,
+            SrcType::Char -> false,
+            SrcType::Float(ft) -> false,
+            Sint(kind) -> true,
+        };
+    }
+
+    pub fn is_sint(self, kind: UintTy) -> bool {
+        return match (self) {
+            I32 -> false,
+            Bool -> false,
+            Uint(other) -> false,
+            Struct(id, fields) -> false,
+            Enum(id, variants) -> false,
+            Ptr -> false,
+            Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> false,
+            Unit -> false,
+            Isize -> false,
+            SrcType::Char -> false,
+            SrcType::Float(ft) -> false,
+            Sint(other) -> other.code() == kind.code(),
+        };
+    }
+
+    // The width of the signed type this is, if it is one of Sint.
+    pub fn sint_kind(self) -> core::option::Option<UintTy> {
+        return match (self) {
+            I32 -> None,
+            Bool -> None,
+            Uint(kind) -> None,
+            Struct(id, fields) -> None,
+            Enum(id, variants) -> None,
+            Ptr -> None,
+            Slice(element) -> None,
+            SrcType::Array(array_element, array_length) -> None,
+            Unit -> None,
+            Isize -> None,
+            SrcType::Char -> None,
+            SrcType::Float(ft) -> None,
+            Sint(kind) -> Some(kind),
         };
     }
 
@@ -1577,8 +2140,12 @@ impl SrcType {
             Enum(id, variants) -> None,
             Ptr -> None,
             Slice(element) -> None,
+            SrcType::Array(array_element, array_length) -> None,
             Unit -> None,
             Isize -> None,
+            SrcType::Char -> None,
+            SrcType::Float(ft) -> None,
+            Sint(sk) -> None,
         };
     }
 
@@ -1592,8 +2159,12 @@ impl SrcType {
             Enum(id, variants) -> S32,
             Ptr -> U64,
             Slice(element) -> U64,
+            SrcType::Array(array_element, array_length) -> S32,
             Unit -> S32,
             Isize -> U64,
+            SrcType::Char -> U64,
+            SrcType::Float(ft) -> U64,
+            Sint(kind) -> kind.signed_word(),
         };
     }
 }
@@ -1613,8 +2184,12 @@ impl SrcType {
                 Enum(other_id, other_variants) -> false,
                 Ptr -> false,
                 Slice(other_element) -> false,
+                SrcType::Array(array_element, array_length) -> false,
                 Unit -> false,
                 Isize -> false,
+                SrcType::Char -> false,
+                SrcType::Float(ft) -> false,
+                Sint(other_sk) -> false,
             },
             Enum(id, variants) -> match (other) {
                 I32 -> false,
@@ -1624,8 +2199,12 @@ impl SrcType {
                 Enum(other_id, other_variants) -> (id == other_id) && variants_same(unbox(variants), unbox(other_variants)),
                 Ptr -> false,
                 Slice(other_element) -> false,
+                SrcType::Array(array_element, array_length) -> false,
                 Unit -> false,
                 Isize -> false,
+                SrcType::Char -> false,
+                SrcType::Float(ft) -> false,
+                Sint(other_sk) -> false,
             },
             Ptr -> other.is_ptr(),
             Slice(element) -> match (other) {
@@ -1636,11 +2215,33 @@ impl SrcType {
                 Enum(other_id, other_variants) -> false,
                 Ptr -> false,
                 Slice(other_element) -> unbox(element).same(unbox(other_element)),
+                SrcType::Array(array_element, array_length) -> false,
                 Unit -> false,
                 Isize -> false,
+                SrcType::Char -> false,
+                SrcType::Float(ft) -> false,
+                Sint(other_sk) -> false,
+            },
+            SrcType::Array(array_element, array_length) -> match (other) {
+                I32 -> false,
+                Bool -> false,
+                Uint(other_kind) -> false,
+                Struct(other_id, other_fields) -> false,
+                Enum(other_id, other_variants) -> false,
+                Ptr -> false,
+                Slice(other_element) -> false,
+                SrcType::Array(other_element, other_length) -> (array_length == other_length) && unbox(array_element).same(unbox(other_element)),
+                Unit -> false,
+                Isize -> false,
+                SrcType::Char -> false,
+                SrcType::Float(ft) -> false,
+                Sint(other_sk) -> false,
             },
             Unit -> other.is_unit(),
             Isize -> other.is_isize(),
+            SrcType::Char -> other.is_char(),
+            SrcType::Float(ft) -> other.is_float(ft),
+            Sint(kind) -> other.is_sint(kind),
         };
     }
 }
@@ -1684,9 +2285,13 @@ impl SrcType {
             Struct(id, fields) -> sizes(unbox(fields)),
             Enum(id, variants) -> plus(1, max_size(unbox(variants))),
             Ptr -> 1,
-            Slice(element) -> 1,
+            Slice(element) -> 2,
+            SrcType::Array(array_element, array_length) -> times(array_length, unbox(array_element).size()),
             Unit -> 1,
             Isize -> 1,
+            SrcType::Char -> 1,
+            SrcType::Float(ft) -> 1,
+            Sint(kind) -> 1,
         };
     }
 }
@@ -1737,6 +2342,14 @@ pub fn wrap(kind: UintTy, e: Expr) -> Expr {
     return Binary(U64, And, boxed(e), boxed(Lit(kind.mask())));
 }
 
+// The low bits of e as wide as kind, sign-extended to 32 bits: a narrow
+// signed value's slot from any bits with the same low bits. The shift left
+// drops the bits above the width and the arithmetic shift back copies the
+// sign bit down.
+pub fn norm(kind: UintTy, e: Expr) -> Expr {
+    return Binary(S32, Sar, boxed(Binary(S32, Shl, boxed(e), boxed(Lit(kind.spare())))), boxed(Lit(kind.spare())));
+}
+
 pub fn arith_uint(operation: BinOp, left: Typed, right: Typed, kind: core::option::Option<UintTy>) -> core::option::Option<Typed> {
     return match (kind) {
         None -> None,
@@ -1752,26 +2365,128 @@ fn arith_of(operation: BinOp, left: Typed, right: Typed, k: UintTy) -> core::opt
     return None;
 }
 
+pub fn arith_sint(operation: BinOp, left: Typed, right: Typed, kind: core::option::Option<UintTy>) -> core::option::Option<Typed> {
+    return match (kind) {
+        None -> None,
+        Some(k) -> arith_signed_of(operation, left, right, k),
+    };
+}
+
+// A narrow signed type computes on 32 bits and keeps the low bits of the
+// result, sign-extended; a 64-bit one computes on the bits as isize does.
+// extract: inline
+fn arith_signed_of(operation: BinOp, left: Typed, right: Typed, k: UintTy) -> core::option::Option<Typed> {
+    if (right.ty.is_sint(k) && k.is_wide()) {
+        return Some(Typed { expr: Binary(U64, operation, boxed(left.expr), boxed(right.expr)), ty: Sint(k) });
+    }
+    if (right.ty.is_sint(k)) {
+        return Some(Typed { expr: norm(k, Binary(S32, operation, boxed(left.expr), boxed(right.expr))), ty: Sint(k) });
+    }
+    return None;
+}
+
 // isize arithmetic is 64-bit arithmetic on the bits, which wraps as Core's
 // two's complement does.
+// IEEE arithmetic on two floats of one format: + - * only (Core's / is a
+// division, eval_division).
+pub fn float_op(operation: BinOp) -> core::option::Option<FArith> {
+    return match (operation) {
+        Add -> Some(FAdd),
+        Sub -> Some(FSub),
+        Mul -> Some(FMul),
+        And -> None,
+        Or -> None,
+        Xor -> None,
+        Shl -> None,
+        Shr -> None,
+        Sar -> None,
+    };
+}
+
+pub fn float_apply(operation: core::option::Option<FArith>, t: FloatTy, left: Typed, right: Typed) -> core::option::Option<Typed> {
+    return match (operation) {
+        None -> None,
+        Some(o) -> Some(Typed { expr: Expr::Fp(Basic(t, o), boxed(left.expr), boxed(right.expr)), ty: SrcType::Float(t) }),
+    };
+}
+
+// extract: inline
+fn float_arith_of(operation: BinOp, left: Typed, right: Typed, t: FloatTy) -> core::option::Option<Typed> {
+    if (right.ty.is_float(t)) {
+        return float_apply(float_op(operation), t, left, right);
+    }
+    return None;
+}
+
+pub fn float_arith(operation: BinOp, left: Typed, right: Typed, kind: core::option::Option<FloatTy>) -> core::option::Option<Typed> {
+    return match (kind) {
+        None -> None,
+        Some(t) -> float_arith_of(operation, left, right, t),
+    };
+}
+
+// IEEE comparisons: > and >= swap the operands, != is == being false. Both
+// operands are pure, so the swap does not reorder anything.
+pub fn float_compare(t: FloatTy, operation: CmpOp, left: Expr, right: Expr) -> Expr {
+    return match (operation) {
+        Eq -> Expr::Fp(FCompare(t, FEq), boxed(left), boxed(right)),
+        Ne -> Compare(U64, Eq, boxed(Expr::Fp(FCompare(t, FEq), boxed(left), boxed(right))), boxed(Lit(0))),
+        Lt -> Expr::Fp(FCompare(t, FLt), boxed(left), boxed(right)),
+        Le -> Expr::Fp(FCompare(t, FLe), boxed(left), boxed(right)),
+        Gt -> Expr::Fp(FCompare(t, FLt), boxed(right), boxed(left)),
+        Ge -> Expr::Fp(FCompare(t, FLe), boxed(right), boxed(left)),
+    };
+}
+
+// extract: inline
+fn float_order_of(operation: CmpOp, left: Typed, right: Typed, t: FloatTy) -> core::option::Option<Typed> {
+    if (right.ty.is_float(t)) {
+        return Some(Typed { expr: float_compare(t, operation, left.expr, right.expr), ty: Bool });
+    }
+    return None;
+}
+
+pub fn float_order(operation: CmpOp, left: Typed, right: Typed, kind: core::option::Option<FloatTy>) -> core::option::Option<Typed> {
+    return match (kind) {
+        None -> None,
+        Some(t) -> float_order_of(operation, left, right, t),
+    };
+}
+
 pub fn arith(operation: BinOp, left: Typed, right: Typed) -> core::option::Option<Typed> {
+    if (left.ty.is_float_any()) {
+        return float_arith(operation, left, right, left.ty.float_ty());
+    }
     if (left.ty.is_i32() && right.ty.is_i32()) {
         return Some(Typed { expr: Binary(S32, operation, boxed(left.expr), boxed(right.expr)), ty: I32 });
     }
     if (left.ty.is_isize() && right.ty.is_isize()) {
         return Some(Typed { expr: Binary(U64, operation, boxed(left.expr), boxed(right.expr)), ty: Isize });
     }
+    if (left.ty.is_sint_any()) {
+        return arith_sint(operation, left, right, left.ty.sint_kind());
+    }
     return arith_uint(operation, left, right, left.ty.uint_kind());
 }
 
-// >> is arithmetic on i32 and isize, logical on the unsigned types. Core
+// A shift's amount may be of any integer type. Core traps unless it is below
+// the left operand's width, and then its slot holds the same number as the
+// left operand's type would, so it is lowered as that type.
+pub fn lower_shift(operation: BinOp, left: Typed, right: Typed) -> core::option::Option<Typed> {
+    if (left.ty.is_integer() && right.ty.is_integer()) {
+        return arith(operation, left, Typed { expr: right.expr, ty: left.ty });
+    }
+    return None;
+}
+
+// >> is arithmetic on the signed types, logical on the unsigned ones. Core
 // traps on an amount outside the type's bits, so the low bits x86 keeps are
 // the whole amount.
 pub fn arith_shift_right(left: Typed, right: Typed) -> core::option::Option<Typed> {
-    if (left.ty.is_i32() || left.ty.is_isize()) {
-        return arith(Sar, left, right);
+    if (left.ty.is_i32() || left.ty.is_isize() || left.ty.is_sint_any()) {
+        return lower_shift(Sar, left, right);
     }
-    return arith(Shr, left, right);
+    return lower_shift(Shr, left, right);
 }
 
 // ptr + usize and ptr - usize move the address, wrapping at 2^64 like
@@ -1804,17 +2519,48 @@ pub fn sign_key(e: Expr) -> Expr {
     return Binary(U64, Add, boxed(e), boxed(Lit(9223372036854775808)));
 }
 
+pub fn order_sint(operation: CmpOp, left: Typed, right: Typed, kind: core::option::Option<UintTy>) -> core::option::Option<Typed> {
+    return match (kind) {
+        None -> None,
+        Some(k) -> order_signed_of(operation, left, right, k),
+    };
+}
+
+// A narrow signed type compares as i32, a 64-bit one as isize.
+// extract: inline
+fn order_signed_of(operation: CmpOp, left: Typed, right: Typed, k: UintTy) -> core::option::Option<Typed> {
+    if (right.ty.is_sint(k) && k.is_wide()) {
+        return Some(Typed { expr: Compare(U64, operation, boxed(sign_key(left.expr)), boxed(sign_key(right.expr))), ty: Bool });
+    }
+    if (right.ty.is_sint(k)) {
+        return Some(Typed { expr: Compare(S32, operation, boxed(left.expr), boxed(right.expr)), ty: Bool });
+    }
+    return None;
+}
+
 pub fn order(operation: CmpOp, left: Typed, right: Typed) -> core::option::Option<Typed> {
+    if (left.ty.is_float_any()) {
+        return float_order(operation, left, right, left.ty.float_ty());
+    }
     if (left.ty.is_i32() && right.ty.is_i32()) {
         return Some(Typed { expr: Compare(S32, operation, boxed(left.expr), boxed(right.expr)), ty: Bool });
     }
     if (left.ty.is_isize() && right.ty.is_isize()) {
         return Some(Typed { expr: Compare(U64, operation, boxed(sign_key(left.expr)), boxed(sign_key(right.expr))), ty: Bool });
     }
+    if (left.ty.is_sint_any()) {
+        return order_sint(operation, left, right, left.ty.sint_kind());
+    }
+    if (left.ty.is_char() && right.ty.is_char()) {
+        return Some(Typed { expr: Compare(U64, operation, boxed(left.expr), boxed(right.expr)), ty: Bool });
+    }
     return order_uint(operation, left, right, left.ty.uint_kind());
 }
 
 pub fn equality(operation: CmpOp, left: Typed, right: Typed) -> core::option::Option<Typed> {
+    if (left.ty.is_float_any()) {
+        return float_order(operation, left, right, left.ty.float_ty());
+    }
     if (left.ty.same(right.ty)) {
         return Some(Typed { expr: Compare(left.ty.word(), operation, boxed(left.expr), boxed(right.expr)), ty: Bool });
     }
@@ -1845,7 +2591,7 @@ impl SrcOp {
             BitAnd -> arith(And, left, right),
             BitOr -> arith(Or, left, right),
             BitXor -> arith(Xor, left, right),
-            ShiftLeft -> arith(Shl, left, right),
+            ShiftLeft -> lower_shift(Shl, left, right),
             ShiftRight -> arith_shift_right(left, right),
             Less -> order(Lt, left, right),
             LessEq -> order(Le, left, right),
@@ -1898,8 +2644,12 @@ pub fn lower_field_of(b: Binding, field: usize) -> core::option::Option<Typed> {
         Enum(id, variants) -> None,
         Ptr -> None,
         Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> None,
         Unit -> None,
         Isize -> None,
+        SrcType::Char -> None,
+        SrcType::Float(ft) -> None,
+        Sint(sk) -> None,
     };
 }
 
@@ -1910,14 +2660,37 @@ pub fn lower_field(binding: core::option::Option<Binding>, field: usize) -> core
     };
 }
 
+// -e for the signed type as wide as kind.
+pub fn negate_signed(kind: UintTy, e: Expr) -> Expr {
+    if (kind.is_wide()) {
+        return Binary(U64, Sub, boxed(Lit(0)), boxed(e));
+    }
+    return norm(kind, Expr::Neg(boxed(e)));
+}
+
+pub fn negate_float(operand: Typed, kind: core::option::Option<FloatTy>) -> core::option::Option<Typed> {
+    return match (kind) {
+        None -> None,
+        Some(t) -> Some(Typed { expr: Binary(t.sign_word(), Add, boxed(operand.expr), boxed(Lit(t.sign_bit()))), ty: operand.ty }),
+    };
+}
+
+// A float's negation flips its sign bit, NaNs included: it adds the sign
+// bit, dropping the carry.
 pub fn lower_negate_typed(operand: Typed) -> core::option::Option<Typed> {
+    if (operand.ty.is_float_any()) {
+        return negate_float(operand, operand.ty.float_ty());
+    }
     if (operand.ty.is_i32()) {
         return Some(Typed { expr: Expr::Neg(boxed(operand.expr)), ty: I32 });
     }
     if (operand.ty.is_isize()) {
         return Some(Typed { expr: Binary(U64, Sub, boxed(Lit(0)), boxed(operand.expr)), ty: Isize });
     }
-    return None;
+    return match (operand.ty.sint_kind()) {
+        None -> None,
+        Some(k) -> Some(Typed { expr: negate_signed(k, operand.expr), ty: Sint(k) }),
+    };
 }
 
 pub fn lower_negate(operand: core::option::Option<Typed>) -> core::option::Option<Typed> {
@@ -1958,6 +2731,31 @@ pub fn from_i32(kind: UintTy, e: Expr) -> Expr {
     return wrap(kind, e);
 }
 
+// The signed type's value from the bits e, as an i32's bits: the low 32
+// bits, or e itself when narrow.
+pub fn sint_to_i32(kind: UintTy, e: Expr) -> Expr {
+    if (kind.is_wide()) {
+        return wrap(Uint32, e);
+    }
+    return e;
+}
+
+// The signed type's value from the bits e, as an unsigned value of kind.
+pub fn sint_to_uint(source: UintTy, kind: UintTy, e: Expr) -> Expr {
+    if (source.is_wide()) {
+        return wrap(kind, e);
+    }
+    return from_i32(kind, e);
+}
+
+// The signed type's value from the bits e, as 64-bit two's complement.
+pub fn sint_to_wide(kind: UintTy, e: Expr) -> Expr {
+    if (kind.is_wide()) {
+        return e;
+    }
+    return from_i32(Uint64, e);
+}
+
 pub fn cast_to_i32(e: Typed) -> core::option::Option<Typed> {
     return match (e.ty) {
         I32 -> Some(e),
@@ -1967,8 +2765,12 @@ pub fn cast_to_i32(e: Typed) -> core::option::Option<Typed> {
         Enum(id, variants) -> None,
         Ptr -> None,
         Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> None,
         Unit -> None,
         Isize -> Some(Typed { expr: wrap(Uint32, e.expr), ty: I32 }),
+        SrcType::Char -> Some(Typed { expr: wrap(Uint32, e.expr), ty: I32 }),
+        SrcType::Float(ft) -> None,
+        Sint(kind) -> Some(Typed { expr: sint_to_i32(kind, e.expr), ty: I32 }),
     };
 }
 
@@ -1981,8 +2783,12 @@ pub fn cast_to_uint(kind: UintTy, e: Typed) -> core::option::Option<Typed> {
         Enum(id, variants) -> None,
         Ptr -> None,
         Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> None,
         Unit -> None,
         Isize -> Some(Typed { expr: wrap(kind, e.expr), ty: Uint(kind) }),
+        SrcType::Char -> Some(Typed { expr: wrap(kind, e.expr), ty: Uint(kind) }),
+        SrcType::Float(ft) -> None,
+        Sint(source) -> Some(Typed { expr: sint_to_uint(source, kind, e.expr), ty: Uint(kind) }),
     };
 }
 
@@ -1997,8 +2803,77 @@ pub fn cast_to_isize(e: Typed) -> core::option::Option<Typed> {
         Enum(id, variants) -> None,
         Ptr -> None,
         Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> None,
         Unit -> None,
         Isize -> Some(e),
+        SrcType::Char -> Some(Typed { expr: e.expr, ty: Isize }),
+        SrcType::Float(ft) -> None,
+        Sint(source) -> Some(Typed { expr: sint_to_wide(source, e.expr), ty: Isize }),
+    };
+}
+
+// To a signed type: a narrow one keeps the low bits, sign-extended; a 64-bit
+// one sign-extends a narrower signed value and keeps an unsigned value's bits.
+pub fn cast_to_sint(kind: UintTy, e: Typed) -> core::option::Option<Typed> {
+    if (kind.is_wide()) {
+        return match (cast_to_isize(e)) {
+            None -> None,
+            Some(t) -> Some(Typed { expr: t.expr, ty: Sint(kind) }),
+        };
+    }
+    if (e.ty.is_scalar() && !e.ty.is_bool() && !e.ty.is_ptr() && !e.ty.is_float_any()) {
+        return Some(Typed { expr: norm(kind, e.expr), ty: Sint(kind) });
+    }
+    return None;
+}
+
+// A cast to a float: i32 and the narrow signed types from their 32-bit
+// value, isize, i64 and the narrow unsigned types from their slot as a signed
+// 64-bit integer (an unsigned one is below 2^32), f32 to f64 exactly, f64 to
+// f32 rounded, a char as its code. u64 and usize (an unsigned 64-bit
+// conversion) are not lowered.
+// None for a 64-bit unsigned kind.
+pub fn if_narrow(kind: UintTy, t: core::option::Option<Typed>) -> core::option::Option<Typed> {
+    if (kind.is_wide()) {
+        return None;
+    }
+    return t;
+}
+
+pub fn int_to_float(t: FloatTy, word: Word, e: Expr) -> core::option::Option<Typed> {
+    return Some(Typed { expr: Expr::Fp(FromInt(t, word), boxed(Lit(0)), boxed(e)), ty: SrcType::Float(t) });
+}
+
+// f32 to f64 widens exactly, f64 to f32 rounds; Core has no cast of a float
+// to its own type.
+pub fn float_to_float(t: FloatTy, source: FloatTy, e: Expr) -> core::option::Option<Typed> {
+    return match (source) {
+        F32 -> match (t) {
+            F32 -> None,
+            F64 -> Some(Typed { expr: Expr::Fp(Widen, boxed(Lit(0)), boxed(e)), ty: SrcType::Float(t) }),
+        },
+        F64 -> match (t) {
+            F32 -> Some(Typed { expr: Expr::Fp(Narrow, boxed(Lit(0)), boxed(e)), ty: SrcType::Float(t) }),
+            F64 -> None,
+        },
+    };
+}
+
+pub fn cast_to_float(t: FloatTy, e: Typed) -> core::option::Option<Typed> {
+    return match (e.ty) {
+        I32 -> int_to_float(t, S32, e.expr),
+        Bool -> None,
+        Uint(kind) -> if_narrow(kind, int_to_float(t, U64, e.expr)),
+        Struct(id, fields) -> None,
+        Enum(id, variants) -> None,
+        Ptr -> None,
+        Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> None,
+        Unit -> None,
+        Isize -> int_to_float(t, U64, e.expr),
+        SrcType::Char -> int_to_float(t, U64, e.expr),
+        SrcType::Float(source) -> float_to_float(t, source, e.expr),
+        Sint(kind) -> int_to_float(t, kind.signed_word(), e.expr),
     };
 }
 
@@ -2011,8 +2886,12 @@ pub fn cast_to(ty: SrcType, e: Typed) -> core::option::Option<Typed> {
         Enum(id, variants) -> None,
         Ptr -> None,
         Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> None,
         Unit -> None,
         Isize -> cast_to_isize(e),
+        SrcType::Char -> None,
+        SrcType::Float(ft) -> cast_to_float(ft, e),
+        Sint(kind) -> cast_to_sint(kind, e),
     };
 }
 
@@ -2021,6 +2900,14 @@ pub fn lower_cast(ty: SrcType, operand: core::option::Option<Typed>) -> core::op
         None -> None,
         Some(e) -> cast_to(ty, e),
     };
+}
+
+// A float literal's pattern fits its format.
+pub fn lower_float(t: FloatTy, bits: u64) -> core::option::Option<Typed> {
+    if (bits <= t.mask()) {
+        return Some(Typed { expr: Lit(bits), ty: SrcType::Float(t) });
+    }
+    return None;
 }
 
 pub fn lower_apply(op: SrcOp, left: core::option::Option<Typed>, right: core::option::Option<Typed>) -> core::option::Option<Typed> {
@@ -2046,8 +2933,214 @@ impl SrcExpr {
             Apply(op, left, right) -> lower_apply(op, unbox(left).lower(scope), unbox(right).lower(scope)),
             Cast(ty, operand) -> lower_cast(ty, unbox(operand).lower(scope)),
             Null -> Some(Typed { expr: Lit(0), ty: Ptr }),
+            SrcExpr::Char(code) -> Some(Typed { expr: Lit(code as u64), ty: SrcType::Char }),
+            SrcExpr::Float(ft, bits) -> lower_float(ft, bits),
         };
     }
+}
+
+// Checked shifts. Core traps on a shift amount outside 0..bits of the
+// operand type, where x86 masks the amount, so the code first divides 1 by a
+// guard: a word that is 1 when every shift Core evaluates has its amount in
+// range, and 0 otherwise. A guard that is Lit(1) emits no check.
+
+// The literal 1.
+pub fn is_one(e: Expr) -> bool {
+    return match (e) {
+        Lit(value) -> value == 1,
+        Var(slot) -> false,
+        Expr::Neg(operand) -> false,
+        Binary(word, operation, left, right) -> false,
+        Compare(word, operation, left, right) -> false,
+        Expr::Fp(operation, left, right) -> false,
+    };
+}
+
+// Both guards hold.
+pub fn guard_and(a: Expr, b: Expr) -> Expr {
+    if (is_one(a)) {
+        return b;
+    }
+    if (is_one(b)) {
+        return a;
+    }
+    return Binary(U64, And, boxed(a), boxed(b));
+}
+
+// Either word is nonzero, as 1 or 0.
+pub fn guard_or(a: Expr, b: Expr) -> Expr {
+    if (is_one(a) || is_one(b)) {
+        return Lit(1);
+    }
+    return Compare(U64, Ne, boxed(Binary(U64, Or, boxed(a), boxed(b))), boxed(Lit(0)));
+}
+
+impl UintTy {
+    // Its width in bits.
+    pub fn bits(self) -> u64 {
+        return match (self) {
+            Uint8 -> 8,
+            Uint32 -> 32,
+            Uint64 -> 64,
+            Usize -> 64,
+            Uint16 -> 16,
+        };
+    }
+}
+
+
+// The bits of a shift's operand type.
+pub fn shift_width(ty: SrcType) -> u64 {
+    return match (ty) {
+        I32 -> 32,
+        Bool -> 64,
+        Uint(kind) -> kind.bits(),
+        Struct(id, fields) -> 64,
+        Enum(id, variants) -> 64,
+        Ptr -> 64,
+        Slice(element) -> 64,
+        SrcType::Array(array_element, array_length) -> 64,
+        Unit -> 64,
+        Isize -> 64,
+        SrcType::Char -> 32,
+        SrcType::Float(ft) -> 64,
+        Sint(kind) -> kind.bits(),
+    };
+}
+
+// A literal amount below width.
+pub fn literal_below(amount: Expr, width: u64) -> bool {
+    return match (amount) {
+        Lit(value) -> value < width,
+        Var(slot) -> false,
+        Expr::Neg(operand) -> false,
+        Binary(word, operation, left, right) -> false,
+        Compare(word, operation, left, right) -> false,
+        Expr::Fp(operation, left, right) -> false,
+    };
+}
+
+// amount below width, compared as unsigned words: a negative i32 or isize
+// amount is a large word. A literal amount below width needs no check.
+pub fn amount_guard(width: u64, amount: Expr) -> Expr {
+    if (literal_below(amount, width)) {
+        return Lit(1);
+    }
+    return Compare(U64, Lt, boxed(amount), boxed(Lit(width)));
+}
+
+// The guard of a shift of left by right, both lowered.
+pub fn shift_guard(left: core::option::Option<Typed>, right: core::option::Option<Typed>) -> Expr {
+    return match (left) {
+        None -> Lit(1),
+        Some(l) -> match (right) {
+            None -> Lit(1),
+            Some(r) -> amount_guard(shift_width(l.ty), r.expr),
+        },
+    };
+}
+
+// The left operand of && is false, as 1 or 0.
+pub fn left_false(left: core::option::Option<Typed>) -> Expr {
+    return match (left) {
+        None -> Lit(1),
+        Some(l) -> Compare(U64, Eq, boxed(l.expr), boxed(Lit(0))),
+    };
+}
+
+// The left operand of || is true.
+pub fn left_true(left: core::option::Option<Typed>) -> Expr {
+    return match (left) {
+        None -> Lit(1),
+        Some(l) -> l.expr,
+    };
+}
+
+// The guard of op on two operands with guards gl and gr: Core skips the right
+// operand of && and || when the left one decides.
+pub fn apply_guard(op: SrcOp, left: core::option::Option<Typed>, right: core::option::Option<Typed>, gl: Expr, gr: Expr) -> Expr {
+    return match (op) {
+        Plus -> guard_and(gl, gr),
+        Minus -> guard_and(gl, gr),
+        Times -> guard_and(gl, gr),
+        BitAnd -> guard_and(gl, gr),
+        BitOr -> guard_and(gl, gr),
+        BitXor -> guard_and(gl, gr),
+        ShiftLeft -> guard_and(guard_and(gl, gr), shift_guard(left, right)),
+        ShiftRight -> guard_and(guard_and(gl, gr), shift_guard(left, right)),
+        Less -> guard_and(gl, gr),
+        LessEq -> guard_and(gl, gr),
+        Greater -> guard_and(gl, gr),
+        GreaterEq -> guard_and(gl, gr),
+        Equal -> guard_and(gl, gr),
+        NotEqual -> guard_and(gl, gr),
+        LogicalAnd -> guard_and(gl, guard_or(left_false(left), gr)),
+        LogicalOr -> guard_and(gl, guard_or(left_true(left), gr)),
+    };
+}
+
+impl SrcExpr {
+    // The expression's guard: 1 when every shift Core evaluates in it has
+    // its amount in range.
+    pub fn guard(self, scope: List<Binding>) -> Expr {
+        return match (self) {
+            Int(value) -> Lit(1),
+            Boolean(value) -> Lit(1),
+            Unsigned(kind, value) -> Lit(1),
+            Local(id) -> Lit(1),
+            Field(id, index) -> Lit(1),
+            Negate(operand) -> unbox(operand).guard(scope),
+            Not(operand) -> unbox(operand).guard(scope),
+            Apply(op, left, right) -> apply_guard(op, unbox(left).lower(scope), unbox(right).lower(scope), unbox(left).guard(scope), unbox(right).guard(scope)),
+            Cast(ty, operand) -> unbox(operand).guard(scope),
+            Null -> Lit(1),
+            SrcExpr::Char(code) -> Lit(1),
+            SrcExpr::Float(ft, bits) -> Lit(1),
+        };
+    }
+}
+
+// The guards of expressions Core evaluates one after another.
+pub fn guard_all(scope: List<Binding>, es: List<SrcExpr>) -> Expr {
+    return match (es) {
+        Nil -> Lit(1),
+        Cons(e, rest) -> guard_and(e.guard(scope), guard_all(scope, unbox(rest))),
+    };
+}
+
+// 1 / 0 into slot: a division fault.
+pub fn trap(slot: usize) -> Stmt {
+    return Stmt::Divide(U64, UDiv, slot, Lit(1), Lit(0));
+}
+
+// The check of g, then s: s when g is nonzero, else the trap.
+pub fn check_then(slot: usize, g: Expr, s: Stmt) -> Stmt {
+    if (is_one(g)) {
+        return s;
+    }
+    return Ite(g, boxed(s), boxed(trap(slot)));
+}
+
+// s, then the check of g.
+pub fn then_check(slot: usize, g: Expr, s: Stmt) -> Stmt {
+    if (is_one(g)) {
+        return s;
+    }
+    return Seq(boxed(s), boxed(Ite(g, boxed(Skip), boxed(trap(slot)))));
+}
+
+// The index i below the length of the slice local b, which a slice keeps
+// in its second slot. An i32 index below 0 is a word of at least 2^31, and a
+// length is below 2^31.
+pub fn bounds_guard(b: Binding, i: Expr) -> Expr {
+    return Compare(U64, Lt, boxed(i), boxed(Var(plus(b.slot, 1))));
+}
+
+pub fn guarded(slot: usize, g: Expr, s: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    return match (s) {
+        None -> None,
+        Some(b) -> Some(check_then(slot, g, b)),
+    };
 }
 
 pub fn expect_type(typed: Typed, ty: SrcType) -> core::option::Option<Expr> {
@@ -2081,6 +3174,15 @@ pub fn slot_vars(slot: usize, count: usize) -> List<Expr> {
         return empty();
     }
     return cons(Var(slot), slot_vars(plus(slot, 1), minus(count, 1)));
+}
+
+// count copies of ty: an array's element types, which it takes slots as a
+// struct of count fields of type ty does
+pub fn repeat_type(ty: SrcType, count: usize) -> List<SrcType> {
+    if (count == 0) {
+        return empty();
+    }
+    return cons(ty, repeat_type(ty, minus(count, 1)));
 }
 
 pub fn copy_binding(binding: core::option::Option<Binding>, ty: SrcType) -> core::option::Option<List<Expr>> {
@@ -2122,8 +3224,12 @@ pub fn copy_field_of(b: Binding, index: usize, ty: SrcType) -> core::option::Opt
         Enum(id, variants) -> None,
         Ptr -> None,
         Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> None,
         Unit -> None,
         Isize -> None,
+        SrcType::Char -> None,
+        SrcType::Float(ft) -> None,
+        Sint(sk) -> None,
     };
 }
 
@@ -2148,6 +3254,8 @@ pub fn lower_copy(scope: List<Binding>, e: SrcExpr, ty: SrcType) -> core::option
         Apply(op, left, right) -> None,
         Cast(target, operand) -> None,
         Null -> None,
+        SrcExpr::Char(code) -> None,
+        SrcExpr::Float(ft, bits) -> None,
     };
 }
 
@@ -2198,8 +3306,12 @@ pub fn lower_literal(scope: List<Binding>, ty: SrcType, fields: List<SrcExpr>) -
         Enum(id, variants) -> None,
         Ptr -> None,
         Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> lower_struct_fields(scope, fields, repeat_type(unbox(array_element), array_length)),
         Unit -> None,
         Isize -> None,
+        SrcType::Char -> None,
+        SrcType::Float(ft) -> None,
+        Sint(sk) -> None,
     };
 }
 
@@ -2236,8 +3348,12 @@ pub fn lower_enum_value(scope: List<Binding>, ty: SrcType, variant: usize, paylo
         Enum(id, variants) -> lower_tagged(scope, unbox(variants), variant, payload),
         Ptr -> None,
         Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> None,
         Unit -> None,
         Isize -> None,
+        SrcType::Char -> None,
+        SrcType::Float(ft) -> None,
+        Sint(sk) -> None,
     };
 }
 
@@ -2280,15 +3396,24 @@ pub fn lower_arm_value(scope: core::option::Option<List<Binding>>, value: SrcExp
     };
 }
 
-// Arm k stores its value's slots from target; the last arm needs no tag test.
-pub fn lower_arm(slot: usize, target: usize, k: usize, values: core::option::Option<List<Expr>>, rest: List<SrcArm>, others: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+// The guard of an arm's value in the arm's scope.
+pub fn arm_guard(scope: core::option::Option<List<Binding>>, value: SrcExpr) -> Expr {
+    return match (scope) {
+        None -> Lit(1),
+        Some(s) -> value.guard(s),
+    };
+}
+
+// Arm k checks its guard g and stores its value's slots from target; the last
+// arm needs no tag test.
+pub fn lower_arm(slot: usize, target: usize, k: usize, g: Expr, values: core::option::Option<List<Expr>>, rest: List<SrcArm>, others: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
     return match (values) {
         None -> None,
         Some(vs) -> match (rest) {
-            Nil -> Some(assign_from(target, vs, Skip)),
+            Nil -> Some(check_then(target, g, assign_from(target, vs, Skip))),
             Cons(arm, more) -> match (others) {
                 None -> None,
-                Some(o) -> Some(Ite(Compare(U64, Eq, boxed(Var(slot)), boxed(Lit(k as u64))), boxed(assign_from(target, vs, Skip)), boxed(o))),
+                Some(o) -> Some(Ite(Compare(U64, Eq, boxed(Var(slot)), boxed(Lit(k as u64))), boxed(check_then(target, g, assign_from(target, vs, Skip))), boxed(o))),
             },
         },
     };
@@ -2300,7 +3425,85 @@ pub fn lower_arms(scope: List<Binding>, slot: usize, target: usize, ty: SrcType,
         Nil -> None,
         Cons(arm, rest) -> match (variants) {
             Nil -> None,
-            Cons(types, more) -> lower_arm(slot, target, k, lower_arm_value(arm_scope(arm.binders, types, plus(slot, 1), scope), arm.value, ty), unbox(rest), lower_arms(scope, slot, target, ty, plus(k, 1), unbox(more), unbox(rest))),
+            Cons(types, more) -> lower_arm(slot, target, k, arm_guard(arm_scope(arm.binders, types, plus(slot, 1), scope), arm.value), lower_arm_value(arm_scope(arm.binders, types, plus(slot, 1), scope), arm.value, ty), unbox(rest), lower_arms(scope, slot, target, ty, plus(k, 1), unbox(more), unbox(rest))),
+        },
+    };
+}
+
+// The scope of a match arm statement's body: the binder at next, if it binds.
+pub fn arm_body_scope(binds: bool, binder: usize, ty: SrcType, next: usize, scope: List<Binding>) -> List<Binding> {
+    if (!binds) {
+        return scope;
+    }
+    return cons(Binding { id: binder, slot: next, ty: ty }, scope);
+}
+
+pub fn unit_payload(unit: bool) -> core::option::Option<List<Expr>> {
+    if (unit) {
+        return Some(empty());
+    }
+    return None;
+}
+
+pub fn field_payload(bound: bool, values: core::option::Option<List<Expr>>) -> core::option::Option<List<Expr>> {
+    if (bound) {
+        return values;
+    }
+    return None;
+}
+
+// The payload a match arm statement copies to its binder: nothing for a
+// variant with no payload, else its one field, read in the arm's scope from
+// the slots after the tag. A bound field takes slots.
+pub fn arm_payload(scope: List<Binding>, slot: usize, fields: List<SrcType>, binds: bool, binder: usize, ty: SrcType) -> core::option::Option<List<Expr>> {
+    return match (fields) {
+        Nil -> unit_payload(!binds),
+        Cons(f, more) -> field_payload(binds && (ty.size() > 0), lower_arm_value(arm_scope(cons(binder, empty()), fields, plus(slot, 1), scope), Local(binder), ty)),
+    };
+}
+
+// If the tag at slot is the variant, copy the payload to next and run body;
+// else run rest. Tags are 32-bit.
+pub fn lower_arm_stmt(slot: usize, ok: bool, variant: usize, values: core::option::Option<List<Expr>>, next: usize, body: core::option::Option<Stmt>, rest: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    if (!ok) {
+        return None;
+    }
+    return match (values) {
+        None -> None,
+        Some(vs) -> match (body) {
+            None -> None,
+            Some(b) -> match (rest) {
+                None -> None,
+                Some(r) -> Some(Ite(Compare(U64, Eq, boxed(Var(slot)), boxed(Lit(variant as u64))), boxed(assign_from(next, vs, b)), boxed(r))),
+            },
+        },
+    };
+}
+
+pub fn lower_arm_found(scope: List<Binding>, slot: usize, ok: bool, variant: usize, found: core::option::Option<List<SrcType>>, binds: bool, binder: usize, ty: SrcType, next: usize, body: core::option::Option<Stmt>, rest: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    return match (found) {
+        None -> None,
+        Some(fields) -> lower_arm_stmt(slot, ok, variant, arm_payload(scope, slot, fields, binds, binder, ty), next, body, rest),
+    };
+}
+
+pub fn lower_match_arm(scope: List<Binding>, binding: core::option::Option<Binding>, enum_id: usize, variant: usize, binds: bool, binder: usize, ty: SrcType, next: usize, body: core::option::Option<Stmt>, rest: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    return match (binding) {
+        None -> None,
+        Some(b) -> match (b.ty) {
+            I32 -> None,
+            Bool -> None,
+            Uint(kind) -> None,
+            Struct(id, types) -> None,
+            Enum(id, variants) -> lower_arm_found(scope, b.slot, (id == enum_id) && (length(unbox(variants)) < 4294967296), variant, get(unbox(variants), variant), binds, binder, ty, next, body, rest),
+            Ptr -> None,
+            Slice(element) -> None,
+            SrcType::Array(array_element, array_length) -> None,
+            Unit -> None,
+            Isize -> None,
+            SrcType::Char -> None,
+            SrcType::Float(ft) -> None,
+            Sint(sk) -> None,
         },
     };
 }
@@ -2322,8 +3525,12 @@ pub fn lower_match_on(scope: List<Binding>, b: Binding, enum_id: usize, arms: Li
         Enum(id, variants) -> lower_match_arms(scope, b.slot, id == enum_id, unbox(variants), arms, ty, target),
         Ptr -> None,
         Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> None,
         Unit -> None,
         Isize -> None,
+        SrcType::Char -> None,
+        SrcType::Float(ft) -> None,
+        Sint(sk) -> None,
     };
 }
 
@@ -2373,6 +3580,11 @@ pub fn eval_scalar(slot: usize, t: Typed) -> Evaluated {
     return Evaluated { stmt: Assign(slot, t.expr), ty: t.ty };
 }
 
+// The value of a pure expression with guard g.
+pub fn eval_checked(slot: usize, g: Expr, t: Typed) -> Evaluated {
+    return Evaluated { stmt: check_then(slot, g, Assign(slot, t.expr)), ty: t.ty };
+}
+
 pub fn eval_typed(slot: usize, t: core::option::Option<Typed>) -> core::option::Option<Evaluated> {
     return match (t) {
         None -> None,
@@ -2420,8 +3632,12 @@ pub fn eval_field_of(scope: List<Binding>, e: SrcExpr, slot: usize, b: Binding, 
         Enum(id, variants) -> None,
         Ptr -> None,
         Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> None,
         Unit -> None,
         Isize -> None,
+        SrcType::Char -> None,
+        SrcType::Float(ft) -> None,
+        Sint(sk) -> None,
     };
 }
 
@@ -2436,7 +3652,7 @@ pub fn eval_field_copy(scope: List<Binding>, e: SrcExpr, slot: usize, binding: c
 
 pub fn eval_pure(scope: List<Binding>, e: SrcExpr, slot: usize) -> core::option::Option<Evaluated> {
     return match (e.lower(scope)) {
-        Some(t) -> Some(eval_scalar(slot, t)),
+        Some(t) -> Some(eval_checked(slot, e.guard(scope), t)),
         None -> match (e) {
             Int(value) -> None,
             Boolean(value) -> None,
@@ -2448,6 +3664,8 @@ pub fn eval_pure(scope: List<Binding>, e: SrcExpr, slot: usize) -> core::option:
             Apply(op, left, right) -> None,
             Cast(ty, operand) -> None,
             Null -> None,
+            SrcExpr::Char(code) -> None,
+            SrcExpr::Float(ft, bits) -> None,
         },
     };
 }
@@ -2459,9 +3677,123 @@ pub fn eval_call_sig(sig: Sig, callee: usize, slot: usize, args: EvaluatedArgs) 
     return None;
 }
 
+// Core's host services (roadmap F8) are its functions from id 2^32 on
+// (`hostService?`, Mini/SourceCore.lean), past every program's own: 2^32 is
+// write_byte, 2^32 + 1 write_stdout, 2^32 + 2 write_stderr, 2^32 + 3
+// read_stdin, 2^32 + 4 sleep_ms_i32. Their code is system calls.
+//
+// write_byte(handle, value), handle and value in slot and slot + 1: to handle
+// 1 or 2 the value's low byte goes through the heap's byte 0 (no block's,
+// kept as it was) and returns 1; any other handle returns -1, as Core's does
+// with no file open.
+pub fn host_byte_code(slot: usize) -> Stmt {
+    let handle_ok: Expr = Binary(U64, Or, boxed(Compare(U64, Eq, boxed(Var(slot)), boxed(Lit(1)))), boxed(Compare(U64, Eq, boxed(Var(slot)), boxed(Lit(2)))));
+    let restore: Stmt = Seq(boxed(Stmt::StoreByte(Lit(0), Var(plus(slot, 2)))), boxed(Assign(slot, Lit(1))));
+    let write: Stmt = Seq(boxed(Stmt::Sys(Write, plus(slot, 3), cons(Var(slot), cons(Lit(0), single(Lit(1)))))), boxed(restore));
+    let store: Stmt = Seq(boxed(Stmt::StoreByte(Lit(0), Var(plus(slot, 1)))), boxed(write));
+    let save: Stmt = Seq(boxed(Stmt::LoadByte(plus(slot, 2), Lit(0))), boxed(store));
+    return Stmt::Ite(handle_ok, boxed(save), boxed(Assign(slot, Lit(4294967295))));
+}
+
+// write_stdout / write_stderr(pointer, count) to fd, pointer and count in slot
+// and slot + 1: writes of at most Linux's MAX_RW_COUNT bytes until none are
+// left, then the count as i32.
+pub fn host_write_code(fd: u64, slot: usize) -> Stmt {
+    let count: usize = plus(slot, 1);
+    let chunk: usize = plus(slot, 3);
+    let pick: Stmt = Stmt::Ite(Compare(U64, Lt, boxed(Var(count)), boxed(Lit(2147479552))), boxed(Assign(chunk, Var(count))), boxed(Assign(chunk, Lit(2147479552))));
+    let advance: Stmt = Seq(boxed(Assign(slot, Binary(U64, Add, boxed(Var(slot)), boxed(Var(chunk))))), boxed(Assign(count, Binary(U64, Sub, boxed(Var(count)), boxed(Var(chunk))))));
+    let write: Stmt = Seq(boxed(Stmt::Sys(Write, plus(slot, 4), cons(Lit(fd), cons(Var(slot), single(Var(chunk)))))), boxed(advance));
+    let body: Stmt = Seq(boxed(pick), boxed(write));
+    let looped: Stmt = Seq(boxed(Stmt::Loop(Compare(U64, Ne, boxed(Var(count)), boxed(Lit(0))), boxed(body))), boxed(Assign(slot, Binary(S32, Add, boxed(Var(plus(slot, 2))), boxed(Lit(0))))));
+    return Seq(boxed(Assign(plus(slot, 2), Var(count))), boxed(looped));
+}
+
+// read_stdin(pointer, count), pointer and count in slot and slot + 1: reads
+// of at most MAX_RW_COUNT bytes from fd 0 to the pointer until none are left
+// to ask for or a read delivers fewer than it asked for (standard input is
+// used up), then the total as i32.
+pub fn host_read_code(slot: usize) -> Stmt {
+    let count: usize = plus(slot, 1);
+    let total: usize = plus(slot, 2);
+    let chunk: usize = plus(slot, 3);
+    let got: usize = plus(slot, 4);
+    let pick: Stmt = Stmt::Ite(Compare(U64, Lt, boxed(Var(count)), boxed(Lit(2147479552))), boxed(Assign(chunk, Var(count))), boxed(Assign(chunk, Lit(2147479552))));
+    let stop: Stmt = Stmt::Ite(Compare(U64, Ne, boxed(Var(got)), boxed(Var(chunk))), boxed(Assign(count, Lit(0))), boxed(Stmt::Skip));
+    let tally: Stmt = Seq(boxed(Assign(total, Binary(U64, Add, boxed(Var(total)), boxed(Var(got))))), boxed(stop));
+    let advance: Stmt = Seq(boxed(Assign(slot, Binary(U64, Add, boxed(Var(slot)), boxed(Var(got))))), boxed(Seq(boxed(Assign(count, Binary(U64, Sub, boxed(Var(count)), boxed(Var(got))))), boxed(tally))));
+    let read: Stmt = Seq(boxed(Stmt::Sys(Read, got, cons(Lit(0), cons(Var(slot), single(Var(chunk)))))), boxed(advance));
+    let body: Stmt = Seq(boxed(pick), boxed(read));
+    let looped: Stmt = Seq(boxed(Stmt::Loop(Compare(U64, Ne, boxed(Var(count)), boxed(Lit(0))), boxed(body))), boxed(Assign(slot, Binary(S32, Add, boxed(Var(total)), boxed(Lit(0))))));
+    return Seq(boxed(Assign(total, Lit(0))), boxed(looped));
+}
+
+// sleep_ms_i32(milliseconds), milliseconds in slot: -1 for a negative count;
+// else poll(0, 0, milliseconds), which polls no fd and so returns after the
+// timeout, and 0.
+pub fn host_sleep_code(slot: usize) -> Stmt {
+    let sleep: Stmt = Seq(boxed(Stmt::Sys(Poll, plus(slot, 1), cons(Lit(0), cons(Lit(0), single(Var(slot)))))), boxed(Assign(slot, Lit(0))));
+    return Stmt::Ite(Compare(S32, Lt, boxed(Var(slot)), boxed(Lit(0))), boxed(Assign(slot, Lit(4294967295))), boxed(sleep));
+}
+
+// monotonic_read(pointer, len) (clock 1) or system_read (clock 0), pointer
+// and len in slot and slot + 1: -1 when len is below 16; else
+// clock_gettime(clock, pointer) and 0.
+pub fn host_clock_code(clock: u64, slot: usize) -> Stmt {
+    let read: Stmt = Seq(boxed(Stmt::Sys(Clock, plus(slot, 2), cons(Lit(clock), cons(Var(slot), single(Lit(0)))))), boxed(Assign(slot, Lit(0))));
+    return Stmt::Ite(Compare(U64, Lt, boxed(Var(plus(slot, 1))), boxed(Lit(16))), boxed(Assign(slot, Lit(4294967295))), boxed(read));
+}
+
+// fill_secure_bytes(pointer, count), pointer and count in slot and slot + 1:
+// getrandom of at most 256 bytes at a time to the pointer until none are
+// left to ask for, then the count as i32.
+pub fn host_random_code(slot: usize) -> Stmt {
+    let count: usize = plus(slot, 1);
+    let total: usize = plus(slot, 2);
+    let chunk: usize = plus(slot, 3);
+    let got: usize = plus(slot, 4);
+    let pick: Stmt = Stmt::Ite(Compare(U64, Lt, boxed(Var(count)), boxed(Lit(256))), boxed(Assign(chunk, Var(count))), boxed(Assign(chunk, Lit(256))));
+    let advance: Stmt = Seq(boxed(Assign(slot, Binary(U64, Add, boxed(Var(slot)), boxed(Var(chunk))))), boxed(Assign(count, Binary(U64, Sub, boxed(Var(count)), boxed(Var(chunk))))));
+    let fill: Stmt = Seq(boxed(Stmt::Sys(Random, got, cons(Var(slot), cons(Var(chunk), single(Lit(0)))))), boxed(advance));
+    let body: Stmt = Seq(boxed(pick), boxed(fill));
+    let looped: Stmt = Seq(boxed(Stmt::Loop(Compare(U64, Ne, boxed(Var(count)), boxed(Lit(0))), boxed(body))), boxed(Assign(slot, Binary(S32, Add, boxed(Var(total)), boxed(Lit(0))))));
+    return Seq(boxed(Assign(total, Var(count))), boxed(looped));
+}
+
+pub fn eval_host(callee: usize, slot: usize, args: EvaluatedArgs) -> core::option::Option<Evaluated> {
+    if ((callee == 4294967296) && types_same(args.types, cons(I32, single(I32)))) {
+        return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_byte_code(slot))), ty: I32 });
+    }
+    if ((callee == 4294967297) && types_same(args.types, cons(Ptr, single(Uint(Usize))))) {
+        return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_write_code(1, slot))), ty: I32 });
+    }
+    if ((callee == 4294967298) && types_same(args.types, cons(Ptr, single(Uint(Usize))))) {
+        return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_write_code(2, slot))), ty: I32 });
+    }
+    if ((callee == 4294967299) && types_same(args.types, cons(Ptr, single(Uint(Usize))))) {
+        return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_read_code(slot))), ty: I32 });
+    }
+    if ((callee == 4294967300) && types_same(args.types, single(I32))) {
+        return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_sleep_code(slot))), ty: I32 });
+    }
+    if ((callee == 4294967301) && types_same(args.types, cons(Ptr, single(Uint(Usize))))) {
+        return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_clock_code(1, slot))), ty: I32 });
+    }
+    if ((callee == 4294967302) && types_same(args.types, cons(Ptr, single(Uint(Usize))))) {
+        return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_clock_code(0, slot))), ty: I32 });
+    }
+    if ((callee == 4294967303) && types_same(args.types, cons(Ptr, single(Uint(Usize))))) {
+        return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_random_code(slot))), ty: I32 });
+    }
+    return None;
+}
+
 pub fn eval_call(sig: core::option::Option<Sig>, callee: usize, slot: usize, args: core::option::Option<EvaluatedArgs>) -> core::option::Option<Evaluated> {
     return match (sig) {
-        None -> None,
+        None -> match (args) {
+            None -> None,
+            Some(a) -> eval_host(callee, slot, a),
+        },
         Some(s) -> match (args) {
             None -> None,
             Some(a) -> eval_call_sig(s, callee, slot, a),
@@ -2505,11 +3837,34 @@ pub fn eval_right(slot: usize, r: Evaluated) -> Stmt {
 
 // left in slot, right in slot + 1. && and || run the right side's code
 // only when Core evaluates it.
+// The guard of op on evaluated operands, the right one at slot: shifts check
+// their amount, after the result is in the left operand's slot.
+pub fn operand_guard(op: SrcOp, ty: SrcType, slot: usize) -> Expr {
+    return match (op) {
+        Plus -> Lit(1),
+        Minus -> Lit(1),
+        Times -> Lit(1),
+        BitAnd -> Lit(1),
+        BitOr -> Lit(1),
+        BitXor -> Lit(1),
+        ShiftLeft -> amount_guard(shift_width(ty), Var(slot)),
+        ShiftRight -> amount_guard(shift_width(ty), Var(slot)),
+        Less -> Lit(1),
+        LessEq -> Lit(1),
+        Greater -> Lit(1),
+        GreaterEq -> Lit(1),
+        Equal -> Lit(1),
+        NotEqual -> Lit(1),
+        LogicalAnd -> Lit(1),
+        LogicalOr -> Lit(1),
+    };
+}
+
 pub fn eval_operands(op: SrcOp, slot: usize, l: Evaluated, r: Evaluated) -> core::option::Option<Evaluated> {
     if (l.ty.is_scalar() && r.ty.is_scalar() && (short_circuit(op) == 0)) {
         return match (op.lower(Typed { expr: Var(slot), ty: l.ty }, Typed { expr: Var(plus(slot, 1)), ty: r.ty })) {
             None -> None,
-            Some(t) -> Some(Evaluated { stmt: Seq(boxed(l.stmt), boxed(Seq(boxed(r.stmt), boxed(Assign(slot, t.expr))))), ty: t.ty }),
+            Some(t) -> Some(Evaluated { stmt: Seq(boxed(l.stmt), boxed(Seq(boxed(r.stmt), boxed(then_check(plus(slot, 1), operand_guard(op, l.ty, plus(slot, 1)), Assign(slot, t.expr)))))), ty: t.ty }),
         };
     }
     if (l.ty.is_bool() && r.ty.is_bool() && (short_circuit(op) == 1)) {
@@ -2541,15 +3896,19 @@ pub fn element_of(ty: SrcType) -> core::option::Option<SrcType> {
         Enum(id, variants) -> None,
         Ptr -> None,
         Slice(element) -> Some(unbox(element)),
+        SrcType::Array(array_element, array_length) -> None,
         Unit -> None,
         Isize -> None,
+        SrcType::Char -> None,
+        SrcType::Float(ft) -> None,
+        Sint(sk) -> None,
     };
 }
 
 // The index in slot, then the element it picks loaded over it.
 pub fn eval_load(b: Binding, slot: usize, i: Evaluated) -> core::option::Option<Evaluated> {
     if (i.ty.is_i32() || i.ty.is_uint(Usize)) {
-        return Some(Evaluated { stmt: Seq(boxed(i.stmt), boxed(LoadWord(M32, slot, Binary(U64, Add, boxed(Var(b.slot)), boxed(Binary(U64, Mul, boxed(Var(slot)), boxed(Lit(4)))))))), ty: I32 });
+        return Some(Evaluated { stmt: Seq(boxed(i.stmt), boxed(check_then(slot, bounds_guard(b, Var(slot)), LoadWord(M32, slot, Binary(U64, Add, boxed(Var(b.slot)), boxed(Binary(U64, Mul, boxed(Var(slot)), boxed(Lit(4))))))))), ty: I32 });
     }
     return None;
 }
@@ -2575,8 +3934,12 @@ pub fn eval_struct(ty: SrcType, args: core::option::Option<EvaluatedArgs>) -> co
             Enum(id, variants) -> None,
             Ptr -> None,
             Slice(element) -> None,
+            SrcType::Array(array_element, array_length) -> eval_struct_of(ty, repeat_type(unbox(array_element), array_length), a),
             Unit -> None,
             Isize -> None,
+            SrcType::Char -> None,
+            SrcType::Float(ft) -> None,
+            Sint(sk) -> None,
         },
     };
 }
@@ -2611,8 +3974,12 @@ pub fn eval_variant(ty: SrcType, variant: usize, slot: usize, args: core::option
             Enum(id, variants) -> eval_tagged(ty, unbox(variants), variant, slot, a),
             Ptr -> None,
             Slice(element) -> None,
+            SrcType::Array(array_element, array_length) -> None,
             Unit -> None,
             Isize -> None,
+            SrcType::Char -> None,
+            SrcType::Float(ft) -> None,
+            Sint(sk) -> None,
         },
     };
 }
@@ -2638,16 +4005,44 @@ pub fn eval_divide_uint(op: SrcDivOp, slot: usize, l: Evaluated, r: Evaluated, k
     return None;
 }
 
+// Not the least value of the narrow signed type kind over -1: left in slot,
+// right in slot + 1, as i32 bits.
+pub fn overflow_guard(kind: UintTy, slot: usize) -> Expr {
+    let least: Expr = Compare(S32, Eq, boxed(Var(slot)), boxed(Lit(kind.least_bits())));
+    let by_minus_one: Expr = Compare(S32, Eq, boxed(Var(plus(slot, 1))), boxed(Lit(4294967295)));
+    return Compare(U64, Eq, boxed(Binary(U64, And, boxed(least), boxed(by_minus_one))), boxed(Lit(0)));
+}
+
+// A narrow signed division divides on 32 bits, where the least value over
+// -1 does not overflow, so it checks for that first, as Core traps on it; a
+// 64-bit one divides the whole word, whose least value over -1 has no result.
+pub fn eval_divide_sint(op: SrcDivOp, slot: usize, l: Evaluated, r: Evaluated, k: UintTy) -> core::option::Option<Evaluated> {
+    if (r.ty.is_sint(k) && k.is_wide()) {
+        return Some(Evaluated { stmt: Seq(boxed(l.stmt), boxed(Seq(boxed(r.stmt), boxed(Stmt::Divide(U64, signed_div(op), slot, Var(slot), Var(plus(slot, 1))))))), ty: Sint(k) });
+    }
+    if (r.ty.is_sint(k)) {
+        let divide: Stmt = Stmt::Divide(S32, signed_div(op), slot, Var(slot), Var(plus(slot, 1)));
+        return Some(Evaluated { stmt: Seq(boxed(l.stmt), boxed(Seq(boxed(r.stmt), boxed(check_then(plus(slot, 1), overflow_guard(k, slot), divide))))), ty: Sint(k) });
+    }
+    return None;
+}
+
 // left in slot, right in slot + 1, then the division into slot: on the
-// low 32 bits for i32, on the whole word for the unsigned types, whose
-// values are below their width.
+// low 32 bits for i32, on the whole word for isize and the unsigned types,
+// whose values are below their width.
 pub fn eval_divide(op: SrcDivOp, slot: usize, l: Evaluated, r: Evaluated) -> core::option::Option<Evaluated> {
     if (l.ty.is_i32() && r.ty.is_i32()) {
         return Some(Evaluated { stmt: Seq(boxed(l.stmt), boxed(Seq(boxed(r.stmt), boxed(Stmt::Divide(S32, signed_div(op), slot, Var(slot), Var(plus(slot, 1))))))), ty: I32 });
     }
-    return match (l.ty.uint_kind()) {
-        None -> None,
-        Some(k) -> eval_divide_uint(op, slot, l, r, k),
+    if (l.ty.is_isize() && r.ty.is_isize()) {
+        return Some(Evaluated { stmt: Seq(boxed(l.stmt), boxed(Seq(boxed(r.stmt), boxed(Stmt::Divide(U64, signed_div(op), slot, Var(slot), Var(plus(slot, 1))))))), ty: Isize });
+    }
+    return match (l.ty.sint_kind()) {
+        None -> match (l.ty.uint_kind()) {
+            None -> None,
+            Some(k) -> eval_divide_uint(op, slot, l, r, k),
+        },
+        Some(k) -> eval_divide_sint(op, slot, l, r, k),
     };
 }
 
@@ -2747,8 +4142,12 @@ pub fn match_variants(ty: SrcType) -> List<List<SrcType>> {
         Enum(id, variants) -> unbox(variants),
         Ptr -> empty(),
         Slice(element) -> empty(),
+        SrcType::Array(array_element, array_length) -> empty(),
         Unit -> empty(),
         Isize -> empty(),
+        SrcType::Char -> empty(),
+        SrcType::Float(ft) -> empty(),
+        Sint(sk) -> empty(),
     };
 }
 
@@ -2843,7 +4242,7 @@ pub fn lower_while_eval(slot: usize, condition: core::option::Option<Evaluated>,
         None -> None,
         Some(c) -> match (body) {
             None -> None,
-            Some(b) -> eval_same(c, Bool, Seq(boxed(c.stmt), boxed(Loop(Var(slot), boxed(Seq(boxed(b), boxed(c.stmt))))))),
+            Some(b) -> eval_same(c, Bool, Loop(Lit(1), boxed(Seq(boxed(c.stmt), boxed(Ite(Var(slot), boxed(b), boxed(Brk))))))),
         },
     };
 }
@@ -2928,8 +4327,12 @@ pub fn lower_set_field_of(b: Binding, field: usize, scope: List<Binding>, value:
         Enum(id, variants) -> None,
         Ptr -> None,
         Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> None,
         Unit -> None,
         Isize -> None,
+        SrcType::Char -> None,
+        SrcType::Float(ft) -> None,
+        Sint(sk) -> None,
     };
 }
 
@@ -2977,12 +4380,22 @@ pub fn lower_if(condition: core::option::Option<Expr>, then_branch: core::option
     };
 }
 
-pub fn lower_while(condition: core::option::Option<Expr>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+// The body checks the condition's guard g before Core evaluates it again.
+// A loop whose condition c needs the check g tests g, then c, at the top of
+// every iteration, so a continue reaches both.
+pub fn while_loop(slot: usize, g: Expr, c: Expr, b: Stmt) -> Stmt {
+    if (is_one(g)) {
+        return Loop(c, boxed(b));
+    }
+    return Loop(Lit(1), boxed(check_then(slot, g, Ite(c, boxed(b), boxed(Brk)))));
+}
+
+pub fn lower_while(slot: usize, g: Expr, condition: core::option::Option<Expr>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
     return match (condition) {
         None -> None,
         Some(c) -> match (body) {
             None -> None,
-            Some(b) -> Some(Loop(c, boxed(b))),
+            Some(b) -> Some(while_loop(slot, g, c, b)),
         },
     };
 }
@@ -3112,12 +4525,13 @@ pub fn usize_width(kind: UintTy) -> core::option::Option<MemWidth> {
         Uint32 -> Some(M32),
         Uint64 -> Some(M64),
         Usize -> Some(M64),
+        Uint16 -> Some(M32),
     };
 }
 
 // The width a scalar of a slice element is loaded and stored with. Each
-// takes one native word: 4 bytes are read and written for i32, bool, u8 and
-// u32, 8 for u64, usize, isize and ptr.
+// takes one native word: 4 bytes are read and written for i32, bool, u8, u16
+// and u32, 8 for u64, usize, isize and ptr.
 pub fn word_width(ty: SrcType) -> core::option::Option<MemWidth> {
     return match (ty) {
         I32 -> Some(M32),
@@ -3127,8 +4541,12 @@ pub fn word_width(ty: SrcType) -> core::option::Option<MemWidth> {
         Enum(id, variants) -> None,
         Ptr -> Some(M64),
         Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> None,
         Unit -> None,
         Isize -> Some(M64),
+        SrcType::Char -> None,
+        SrcType::Float(ft) -> None,
+        Sint(kind) -> usize_width(kind),
     };
 }
 
@@ -3164,8 +4582,12 @@ pub fn word_type(decls: SrcDecls, ty: SrcType) -> bool {
         Enum(id, variants) -> declared_variants(enum_variants(decls.enums, id), unbox(variants)) && length(unbox(variants)) > 0 && 4294967296 > length(unbox(variants)) && word_variants(decls, unbox(variants)),
         Ptr -> true,
         Slice(element) -> false,
+        SrcType::Array(array_element, array_length) -> false,
         Unit -> false,
         Isize -> true,
+        SrcType::Char -> false,
+        SrcType::Float(ft) -> false,
+        Sint(kind) -> true,
     };
 }
 
@@ -3194,8 +4616,12 @@ pub fn word_element(decls: SrcDecls, element: SrcType) -> bool {
         Enum(id, variants) -> word_type(decls, element),
         Ptr -> false,
         Slice(inner) -> false,
+        SrcType::Array(array_element, array_length) -> false,
         Unit -> false,
         Isize -> false,
+        SrcType::Char -> false,
+        SrcType::Float(ft) -> false,
+        Sint(sk) -> false,
     };
 }
 
@@ -3232,8 +4658,12 @@ pub fn load_type(ty: SrcType, target: usize, base: Expr, offset: usize, body: St
         Enum(id, variants) -> Seq(boxed(LoadWord(M32, target, address_below(base, offset))), boxed(Seq(boxed(load_cases(target, base, offset, 0, unbox(variants))), boxed(body)))),
         Ptr -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
         Slice(element) -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
+        SrcType::Array(array_element, array_length) -> body,
         Unit -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
         Isize -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
+        SrcType::Char -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
+        SrcType::Float(ft) -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
+        Sint(kind) -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
     };
 }
 
@@ -3291,8 +4721,12 @@ pub fn store_type(ty: SrcType, values: List<Expr>, first: usize, base: Expr, off
         },
         Ptr -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
         Slice(element) -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
+        SrcType::Array(array_element, array_length) -> None,
         Unit -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
         Isize -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
+        SrcType::Char -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
+        SrcType::Float(ft) -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
+        Sint(kind) -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
     };
 }
 
@@ -3316,16 +4750,56 @@ pub fn store_cases(tag: Expr, values: List<Expr>, first: usize, base: Expr, offs
 }
 // extract: mutual end
 
+// extract: mutual begin
+// A word type within Core's native layout limits (NativeLayout.words? at
+// maxDepth), its top at depth: nested less than 64 deep, each struct at most
+// 4096 words and each enum payload under 4096.
+pub fn within_layout(depth: usize, ty: SrcType) -> bool {
+    if (depth > 63) {
+        return false;
+    }
+    return match (ty) {
+        I32 -> true,
+        Bool -> true,
+        Uint(kind) -> true,
+        Struct(id, fields) -> 4097 > sizes(unbox(fields)) && within_layouts(plus(depth, 1), unbox(fields)),
+        Enum(id, variants) -> within_payloads(plus(depth, 1), unbox(variants)),
+        Ptr -> true,
+        Slice(element) -> false,
+        SrcType::Array(array_element, array_length) -> false,
+        Unit -> false,
+        Isize -> true,
+        SrcType::Char -> false,
+        SrcType::Float(ft) -> false,
+        Sint(kind) -> true,
+    };
+}
+
+pub fn within_layouts(depth: usize, types: List<SrcType>) -> bool {
+    return match (types) {
+        Nil -> true,
+        Cons(ty, rest) -> within_layout(depth, ty) && within_layouts(depth, unbox(rest)),
+    };
+}
+
+pub fn within_payloads(depth: usize, variants: List<List<SrcType>>) -> bool {
+    return match (variants) {
+        Nil -> true,
+        Cons(types, rest) -> 4096 > sizes(types) && within_layouts(depth, types) && within_payloads(depth, unbox(rest)),
+    };
+}
+// extract: mutual end
+
 // A raw slice's one slot: its address. Elements are i32, word structs or
-// word enums; Core checks the length when the slice is made and each index
-// against it.
+// word enums within Core's layout limits; Core checks the length when the
+// slice is made and each index against it.
 pub fn lower_slice(decls: SrcDecls, element: SrcType, pointer: core::option::Option<Expr>, length: core::option::Option<Expr>) -> core::option::Option<List<Expr>> {
-    if (element.is_i32() || word_element(decls, element)) {
+    if ((element.is_i32() || word_element(decls, element)) && within_layout(0, element)) {
         return match (pointer) {
             None -> None,
             Some(p) -> match (length) {
                 None -> None,
-                Some(l) -> Some(single(p)),
+                Some(l) -> Some(Cons(p, boxed(single(l)))),
             },
         };
     }
@@ -3344,6 +4818,17 @@ pub fn lower_index(scope: List<Binding>, index: SrcExpr) -> core::option::Option
     return match (index.lower(scope)) {
         None -> None,
         Some(t) -> index_of(t),
+    };
+}
+
+// The check of slice[index]: the index below the length.
+pub fn index_guard(scope: List<Binding>, slice: usize, index: SrcExpr) -> Expr {
+    return match (lookup(scope, slice)) {
+        None -> Lit(1),
+        Some(b) -> match (lower_index(scope, index)) {
+            None -> Lit(1),
+            Some(i) -> bounds_guard(b, i),
+        },
     };
 }
 
@@ -3473,7 +4958,7 @@ pub fn lower_set_index(decls: SrcDecls, binding: core::option::Option<Binding>, 
 // the value loaded from slot + 1 at Core's native offsets, then copied down.
 pub fn eval_word_element(decls: SrcDecls, b: Binding, element: SrcType, slot: usize, i: Evaluated) -> core::option::Option<Evaluated> {
     if (word_element(decls, element) && (i.ty.is_i32() || i.ty.is_uint(Usize))) {
-        return Some(Evaluated { stmt: Seq(boxed(i.stmt), boxed(load_type(element, plus(slot, 1), element_base(b.slot, element.size(), Var(slot)), 0, assign_from(slot, slot_vars(plus(slot, 1), element.size()), Skip)))), ty: element });
+        return Some(Evaluated { stmt: Seq(boxed(i.stmt), boxed(check_then(slot, bounds_guard(b, Var(slot)), load_type(element, plus(slot, 1), element_base(b.slot, element.size(), Var(slot)), 0, assign_from(slot, slot_vars(plus(slot, 1), element.size()), Skip))))), ty: element });
     }
     return None;
 }
@@ -3492,14 +4977,91 @@ pub fn eval_element(decls: SrcDecls, b: Binding, element: SrcType, slot: usize, 
     };
 }
 
+// The copy of element k of the array whose elements, size slots each, start
+// at slot base, k the index in slot: it tests the index against k, k + 1,
+// ..., count elements from k, the last one untested.
+pub fn pick_element(slot: usize, base: usize, size: usize, k: usize, count: usize) -> Stmt {
+    let copy: Stmt = assign_from(slot, slot_vars(plus(base, times(k, size)), size), Skip);
+    if (count < 2) {
+        return copy;
+    }
+    return Stmt::Ite(Compare(U64, Eq, boxed(Var(slot)), boxed(Lit(k as u64))), boxed(copy), boxed(pick_element(slot, base, size, plus(k, 1), minus(count, 1))));
+}
+
+// array[index] of an array local whose elements start at slot base: the
+// index in slot, checked below the length (an i32 index below 0 is a word of
+// at least 2^31), then the element it picks copied over it.
+pub fn eval_pick(base: usize, element: SrcType, count: usize, slot: usize, i: Evaluated) -> core::option::Option<Evaluated> {
+    if ((i.ty.is_i32() || i.ty.is_uint(Usize)) && (0 < count) && (count < 2147483648) && (0 < element.size())) {
+        return Some(Evaluated { stmt: Seq(boxed(i.stmt), boxed(check_then(slot, Compare(U64, Lt, boxed(Var(slot)), boxed(Lit(count as u64))), pick_element(slot, base, element.size(), 0, count)))), ty: element });
+    }
+    return None;
+}
+
+pub fn eval_array_element(base: usize, element: SrcType, count: usize, slot: usize, index: core::option::Option<Evaluated>) -> core::option::Option<Evaluated> {
+    return match (index) {
+        None -> None,
+        Some(i) -> eval_pick(base, element, count, slot, i),
+    };
+}
+
+pub fn eval_array_index(b: Binding, slot: usize, index: core::option::Option<Evaluated>) -> core::option::Option<Evaluated> {
+    return match (b.ty) {
+        I32 -> None,
+        Bool -> None,
+        Uint(kind) -> None,
+        Struct(id, fields) -> None,
+        Enum(id, variants) -> None,
+        Ptr -> None,
+        Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> eval_array_element(b.slot, unbox(array_element), array_length, slot, index),
+        Unit -> None,
+        Isize -> None,
+        SrcType::Char -> None,
+        SrcType::Float(ft) -> None,
+        Sint(sk) -> None,
+    };
+}
+
 pub fn eval_index(decls: SrcDecls, scope: List<Binding>, slice: usize, slot: usize, index: core::option::Option<Evaluated>) -> core::option::Option<Evaluated> {
     return match (lookup(scope, slice)) {
         None -> None,
         Some(b) -> match (element_of(b.ty)) {
-            None -> None,
+            None -> eval_array_index(b, slot, index),
             Some(element) -> eval_element(decls, b, element, slot, index),
         },
     };
+}
+
+// Whether the local id is an array.
+pub fn is_array_local(binding: core::option::Option<Binding>) -> bool {
+    return match (binding) {
+        None -> false,
+        Some(b) -> match (b.ty) {
+            I32 -> false,
+            Bool -> false,
+            Uint(kind) -> false,
+            Struct(id, fields) -> false,
+            Enum(id, variants) -> false,
+            Ptr -> false,
+            Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> true,
+            Unit -> false,
+            Isize -> false,
+            SrcType::Char -> false,
+            SrcType::Float(ft) -> false,
+            Sint(sk) -> false,
+        },
+    };
+}
+
+// let id: ty = local[index]; then body: an array's element as the let of
+// the effectful array[index] (LetEval of EIndex), a raw slice's loaded.
+pub fn lower_let_index_any(decls: SrcDecls, scope: List<Binding>, next: usize, ty: SrcType, slice: usize, index: SrcExpr, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    if (is_array_local(lookup(scope, slice))) {
+        return lower_let_eval(ty, eval_index(decls, scope, slice, next, eval_pure(scope, index, next)), body);
+    }
+    return guarded(next, guard_and(index.guard(scope), index_guard(scope, slice, index)), lower_let_index(decls, next, lookup(scope, slice), ty, lower_index(scope, index), body));
 }
 
 // A raw slice's stride as isize bits: element i + 1 of an i32 slice starts 4
@@ -3580,12 +5142,13 @@ pub fn eval_arms(sigs: List<Sig>, decls: SrcDecls, scope: List<Binding>, slot: u
 }
 // extract: mutual end
 
-// The index in slot, the value from slot + 1, then the stores of its words.
-pub fn store_eval_then(i: Evaluated, v: Evaluated, element: SrcType, store: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+// The index in slot and its check g, then the value from slot + 1 and the
+// stores of its words.
+pub fn store_eval_then(i: Evaluated, v: Evaluated, element: SrcType, slot: usize, g: Expr, store: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
     if ((i.ty.is_i32() || i.ty.is_uint(Usize)) && v.ty.same(element)) {
         return match (store) {
             None -> None,
-            Some(s) -> Some(Seq(boxed(i.stmt), boxed(Seq(boxed(v.stmt), boxed(s))))),
+            Some(s) -> Some(Seq(boxed(i.stmt), boxed(check_then(slot, g, Seq(boxed(v.stmt), boxed(s)))))),
         };
     }
     return None;
@@ -3594,15 +5157,16 @@ pub fn store_eval_then(i: Evaluated, v: Evaluated, element: SrcType, store: core
 // slice[index] = value on a raw slice of word structs or word enums.
 pub fn store_eval_word(decls: SrcDecls, b: Binding, element: SrcType, slot: usize, i: Evaluated, v: Evaluated) -> core::option::Option<Stmt> {
     if (word_element(decls, element)) {
-        return store_eval_then(i, v, element, store_type(element, slot_vars(plus(slot, 1), element.size()), 0, element_base(b.slot, element.size(), Var(slot)), 0));
+        return store_eval_then(i, v, element, slot, bounds_guard(b, Var(slot)), store_type(element, slot_vars(plus(slot, 1), element.size()), 0, element_base(b.slot, element.size(), Var(slot)), 0));
     }
     return None;
 }
 
-// The index in slot, the value in slot + 1, then the 32-bit store.
+// The index in slot and its bounds check, then the value in slot + 1 and the
+// 32-bit store: Core checks the bound before it evaluates the value.
 pub fn store_eval(b: Binding, slot: usize, i: Evaluated, v: Evaluated) -> core::option::Option<Stmt> {
     if ((i.ty.is_i32() || i.ty.is_uint(Usize)) && v.ty.is_i32()) {
-        return Some(Seq(boxed(i.stmt), boxed(Seq(boxed(v.stmt), boxed(StoreWord(M32, Binary(U64, Add, boxed(Var(b.slot)), boxed(Binary(U64, Mul, boxed(Var(slot)), boxed(Lit(4))))), Var(plus(slot, 1))))))));
+        return Some(Seq(boxed(i.stmt), boxed(check_then(slot, bounds_guard(b, Var(slot)), Seq(boxed(v.stmt), boxed(StoreWord(M32, Binary(U64, Add, boxed(Var(b.slot)), boxed(Binary(U64, Mul, boxed(Var(slot)), boxed(Lit(4))))), Var(plus(slot, 1)))))))));
     }
     return None;
 }
@@ -3624,6 +5188,57 @@ pub fn store_eval_element(decls: SrcDecls, b: Binding, element: SrcType, slot: u
             None -> None,
             Some(v) -> store_eval_word(decls, b, element, slot, i, v),
         },
+    };
+}
+
+// The value in slot + 1, slot + 2, ... copied over element k of the array
+// whose elements start at slot base when the index in slot is k, by a chain
+// of compares of the index with k .. k + count - 1 (the last unchecked).
+pub fn put_element(slot: usize, base: usize, size: usize, k: usize, count: usize) -> Stmt {
+    let copy: Stmt = assign_from(plus(base, times(k, size)), slot_vars(plus(slot, 1), size), Skip);
+    if (count < 2) {
+        return copy;
+    }
+    return Stmt::Ite(Compare(U64, Eq, boxed(Var(slot)), boxed(Lit(k as u64))), boxed(copy), boxed(put_element(slot, base, size, plus(k, 1), minus(count, 1))));
+}
+
+// array[index] = value of an array local whose elements start at slot base:
+// the index in slot, checked below the length, then the value in slot + 1
+// and its copy over the element. Core checks the bound before it evaluates
+// the value.
+pub fn store_pick(base: usize, element: SrcType, count: usize, slot: usize, i: Evaluated, v: Evaluated) -> core::option::Option<Stmt> {
+    if ((i.ty.is_i32() || i.ty.is_uint(Usize)) && v.ty.same(element) && (0 < count) && (count < 2147483648) && (0 < element.size())) {
+        return Some(Seq(boxed(i.stmt), boxed(check_then(slot, Compare(U64, Lt, boxed(Var(slot)), boxed(Lit(count as u64))), Seq(boxed(v.stmt), boxed(put_element(slot, base, element.size(), 0, count)))))));
+    }
+    return None;
+}
+
+pub fn store_array_element(base: usize, element: SrcType, count: usize, slot: usize, index: core::option::Option<Evaluated>, value: core::option::Option<Evaluated>) -> core::option::Option<Stmt> {
+    return match (index) {
+        None -> None,
+        Some(i) -> match (value) {
+            None -> None,
+            Some(v) -> store_pick(base, element, count, slot, i, v),
+        },
+    };
+}
+
+// array[index] = value on an array local.
+pub fn store_array(b: Binding, slot: usize, index: core::option::Option<Evaluated>, value: core::option::Option<Evaluated>) -> core::option::Option<Stmt> {
+    return match (b.ty) {
+        I32 -> None,
+        Bool -> None,
+        Uint(kind) -> None,
+        Struct(id, fields) -> None,
+        Enum(id, variants) -> None,
+        Ptr -> None,
+        Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> store_array_element(b.slot, unbox(array_element), array_length, slot, index, value),
+        Unit -> None,
+        Isize -> None,
+        SrcType::Char -> None,
+        SrcType::Float(ft) -> None,
+        Sint(sk) -> None,
     };
 }
 
@@ -3652,8 +5267,12 @@ pub fn set_field_eval_of(b: Binding, field: usize, slot: usize, v: Evaluated) ->
         Enum(id, variants) -> None,
         Ptr -> None,
         Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> None,
         Unit -> None,
         Isize -> None,
+        SrcType::Char -> None,
+        SrcType::Float(ft) -> None,
+        Sint(sk) -> None,
     };
 }
 
@@ -3678,6 +5297,16 @@ pub fn lower_return_unit(ret: SrcType) -> core::option::Option<Stmt> {
 // assert(condition): the condition's code, then 1 / condition into the same
 // slot, which has no run when the condition is false (on x86 the division
 // traps, as Core does), so a failed assert or a panic stops the program.
+// Unreachable at the function's result type: 1 / 0 into the slot, which
+// has no run (on x86 the division traps), as Core traps reading the
+// uninitialized local.
+pub fn lower_unreachable(same: bool, slot: usize) -> core::option::Option<Stmt> {
+    if (same) {
+        return Some(Stmt::Divide(U64, UDiv, slot, Lit(1), Lit(0)));
+    }
+    return None;
+}
+
 pub fn lower_assert(condition: core::option::Option<Evaluated>, slot: usize) -> core::option::Option<Stmt> {
     return match (condition) {
         None -> None,
@@ -3689,35 +5318,45 @@ pub fn lower_set_index_eval(decls: SrcDecls, slot: usize, binding: core::option:
     return match (binding) {
         None -> None,
         Some(b) -> match (element_of(b.ty)) {
-            None -> None,
+            None -> store_array(b, slot, index, value),
             Some(element) -> store_eval_element(decls, b, element, slot, index, value),
         },
     };
+}
+
+// slice[index] = value with pure operands: on an array local, the store of
+// the evaluated operands (as SetIndexEval of EPure), on a raw slice, the
+// guarded store.
+pub fn lower_set_index_any(decls: SrcDecls, scope: List<Binding>, next: usize, slice: usize, index: SrcExpr, value: SrcExpr) -> core::option::Option<Stmt> {
+    if (is_array_local(lookup(scope, slice))) {
+        return lower_set_index_eval(decls, next, lookup(scope, slice), eval_pure(scope, index, next), eval_pure(scope, value, plus(next, 1)));
+    }
+    return guarded(next, guard_and(guard_and(index.guard(scope), index_guard(scope, slice, index)), value.guard(scope)), lower_set_index(decls, lookup(scope, slice), lower_index(scope, index), scope, value));
 }
 
 impl SrcStmt {
     pub fn lower(self, sigs: List<Sig>, decls: SrcDecls, ret: SrcType, scope: List<Binding>, next: usize) -> core::option::Option<Stmt> {
         return match (self) {
             Nop -> Some(Skip),
-            Let(id, ty, value, body) -> lower_let(next, lower_value(scope, value, ty), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
-            LetStruct(id, ty, fields, body) -> lower_let(next, lower_literal(scope, ty, fields), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
-            LetCall(id, ty, callee, args, body) -> lower_let_call(next, ty.size(), callee, lower_call(sigs, scope, callee, args, ty), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
-            LetEnum(id, ty, variant, payload, body) -> lower_let(next, lower_enum_value(scope, ty, variant, payload), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
+            Let(id, ty, value, body) -> guarded(next, value.guard(scope), lower_let(next, lower_value(scope, value, ty), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size())))),
+            LetStruct(id, ty, fields, body) -> guarded(next, guard_all(scope, fields), lower_let(next, lower_literal(scope, ty, fields), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size())))),
+            LetCall(id, ty, callee, args, body) -> guarded(next, guard_all(scope, args), lower_let_call(next, ty.size(), callee, lower_call(sigs, scope, callee, args, ty), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size())))),
+            LetEnum(id, ty, variant, payload, body) -> guarded(next, guard_all(scope, payload), lower_let(next, lower_enum_value(scope, ty, variant, payload), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size())))),
             LetMatch(id, ty, scrutinee, enum_id, arms, body) -> lower_then(lower_match(scope, lookup(scope, scrutinee), enum_id, arms, ty, next), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
-            Set(id, value) -> lower_set(lookup(scope, id), scope, value),
-            SetField(id, index, value) -> lower_set_field(lookup(scope, id), index, scope, value),
-            SetCall(id, callee, args) -> lower_set_call(sigs, scope, lookup(scope, id), callee, args),
+            Set(id, value) -> guarded(next, value.guard(scope), lower_set(lookup(scope, id), scope, value)),
+            SetField(id, index, value) -> guarded(next, value.guard(scope), lower_set_field(lookup(scope, id), index, scope, value)),
+            SetCall(id, callee, args) -> guarded(next, guard_all(scope, args), lower_set_call(sigs, scope, lookup(scope, id), callee, args)),
             Then(first, second) -> lower_then(unbox(first).lower(sigs, decls, ret, scope, next), unbox(second).lower(sigs, decls, ret, scope, next)),
-            If(condition, then_branch, else_branch) -> lower_if(lower_as(scope, condition, Bool), unbox(then_branch).lower(sigs, decls, ret, scope, next), unbox(else_branch).lower(sigs, decls, ret, scope, next)),
-            While(condition, body) -> lower_while(lower_as(scope, condition, Bool), unbox(body).lower(sigs, decls, ret, scope, next)),
-            Return(value) -> lower_return(lower_value(scope, value, ret)),
-            LetAlloc(id, size, shift, body) -> lower_alloc(next, shift, lower_as(scope, size, Uint(Usize)), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Ptr }, scope), plus(next, 1))),
-            LetLoad(id, pointer, offset, body) -> lower_load(next, lower_address(lower_as(scope, pointer, Ptr), lower_as(scope, offset, Uint(Usize))), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Uint(Uint8) }, scope), plus(next, 1))),
-            SetByte(pointer, offset, value) -> lower_store(lower_address(lower_as(scope, pointer, Ptr), lower_as(scope, offset, Uint(Usize))), lower_as(scope, value, Uint(Uint8))),
-            Free(pointer, size, shift) -> lower_free(shift, lower_as(scope, pointer, Ptr), lower_as(scope, size, Uint(Usize))),
-            LetSlice(id, element, pointer, length, body) -> lower_let(next, lower_slice(decls, element, lower_as(scope, pointer, Ptr), lower_as(scope, length, I32)), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Slice(boxed(element)) }, scope), plus(next, 1))),
-            LetIndex(id, ty, slice, index, body) -> lower_let_index(decls, next, lookup(scope, slice), ty, lower_index(scope, index), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
-            SetIndex(slice, index, value) -> lower_set_index(decls, lookup(scope, slice), lower_index(scope, index), scope, value),
+            If(condition, then_branch, else_branch) -> guarded(next, condition.guard(scope), lower_if(lower_as(scope, condition, Bool), unbox(then_branch).lower(sigs, decls, ret, scope, next), unbox(else_branch).lower(sigs, decls, ret, scope, next))),
+            While(condition, body) -> lower_while(next, condition.guard(scope), lower_as(scope, condition, Bool), unbox(body).lower(sigs, decls, ret, scope, next)),
+            Return(value) -> guarded(next, value.guard(scope), lower_return(lower_value(scope, value, ret))),
+            LetAlloc(id, size, shift, body) -> guarded(next, size.guard(scope), lower_alloc(next, shift, lower_as(scope, size, Uint(Usize)), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Ptr }, scope), plus(next, 1)))),
+            LetLoad(id, pointer, offset, body) -> guarded(next, guard_and(pointer.guard(scope), offset.guard(scope)), lower_load(next, lower_address(lower_as(scope, pointer, Ptr), lower_as(scope, offset, Uint(Usize))), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Uint(Uint8) }, scope), plus(next, 1)))),
+            SetByte(pointer, offset, value) -> guarded(next, guard_and(pointer.guard(scope), guard_and(offset.guard(scope), value.guard(scope))), lower_store(lower_address(lower_as(scope, pointer, Ptr), lower_as(scope, offset, Uint(Usize))), lower_as(scope, value, Uint(Uint8)))),
+            Free(pointer, size, shift) -> guarded(next, guard_and(pointer.guard(scope), size.guard(scope)), lower_free(shift, lower_as(scope, pointer, Ptr), lower_as(scope, size, Uint(Usize)))),
+            LetSlice(id, element, pointer, length, body) -> guarded(next, guard_and(pointer.guard(scope), length.guard(scope)), lower_let(next, lower_slice(decls, element, lower_as(scope, pointer, Ptr), lower_as(scope, length, I32)), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Slice(boxed(element)) }, scope), plus(next, 2)))),
+            LetIndex(id, ty, slice, index, body) -> lower_let_index_any(decls, scope, next, ty, slice, index, unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
+            SetIndex(slice, index, value) -> lower_set_index_any(decls, scope, next, slice, index, value),
             LetEval(id, ty, value, body) -> lower_let_eval(ty, value.eval(sigs, decls, scope, next), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
             SetEval(id, value) -> lower_set_eval(next, lookup(scope, id), value.eval(sigs, decls, scope, next)),
             IfEval(condition, then_branch, else_branch) -> lower_if_eval(next, condition.eval(sigs, decls, scope, next), unbox(then_branch).lower(sigs, decls, ret, scope, next), unbox(else_branch).lower(sigs, decls, ret, scope, next)),
@@ -3728,6 +5367,51 @@ impl SrcStmt {
             SetFieldEval(id, field, value) -> lower_set_field_eval(next, lookup(scope, id), field, value.eval(sigs, decls, scope, next)),
             ReturnUnit -> lower_return_unit(ret),
             Assert(condition) -> lower_assert(condition.eval(sigs, decls, scope, next), next),
+            Break -> Some(Brk),
+            Continue -> Some(Cont),
+            MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> lower_match_arm(scope, lookup(scope, scrutinee), enum_id, variant, binds, binder, ty, next, unbox(body).lower(sigs, decls, ret, arm_body_scope(binds, binder, ty, next, scope), plus(next, ty.size())), unbox(rest).lower(sigs, decls, ret, scope, next)),
+            Unreachable(id, ty) -> lower_unreachable(ty.same(ret), next),
+        };
+    }
+
+    // A break or continue outside every loop of the statement: Core's
+    // typing rejects one outside every loop of the function.
+    pub fn breaks_out(self) -> bool {
+        return match (self) {
+            Nop -> false,
+            Let(id, ty, value, body) -> unbox(body).breaks_out(),
+            LetStruct(id, ty, fields, body) -> unbox(body).breaks_out(),
+            LetCall(id, ty, callee, args, body) -> unbox(body).breaks_out(),
+            LetEnum(id, ty, variant, payload, body) -> unbox(body).breaks_out(),
+            LetMatch(id, ty, scrutinee, enum_id, arms, body) -> unbox(body).breaks_out(),
+            Set(id, value) -> false,
+            SetField(id, index, value) -> false,
+            SetCall(id, callee, args) -> false,
+            Then(first, second) -> unbox(first).breaks_out() || unbox(second).breaks_out(),
+            If(condition, then_branch, else_branch) -> unbox(then_branch).breaks_out() || unbox(else_branch).breaks_out(),
+            While(condition, body) -> false,
+            Return(value) -> false,
+            LetAlloc(id, size, shift, body) -> unbox(body).breaks_out(),
+            LetLoad(id, pointer, offset, body) -> unbox(body).breaks_out(),
+            SetByte(pointer, offset, value) -> false,
+            Free(pointer, size, shift) -> false,
+            LetSlice(id, element, pointer, length, body) -> unbox(body).breaks_out(),
+            LetIndex(id, ty, slice, index, body) -> unbox(body).breaks_out(),
+            SetIndex(slice, index, value) -> false,
+            LetEval(id, ty, value, body) -> unbox(body).breaks_out(),
+            SetEval(id, value) -> false,
+            IfEval(condition, then_branch, else_branch) -> unbox(then_branch).breaks_out() || unbox(else_branch).breaks_out(),
+            WhileEval(condition, body) -> false,
+            ReturnEval(value) -> false,
+            Discard(value) -> false,
+            SetIndexEval(slice, index, value) -> false,
+            SetFieldEval(id, field, value) -> false,
+            ReturnUnit -> false,
+            Assert(condition) -> false,
+            Break -> true,
+            Continue -> true,
+            MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> unbox(body).breaks_out() || unbox(rest).breaks_out(),
+            Unreachable(id, ty) -> false,
         };
     }
 
@@ -3751,7 +5435,7 @@ impl SrcStmt {
             LetLoad(id, pointer, offset, body) -> plus(unbox(body).depth(), 1),
             SetByte(pointer, offset, value) -> 0,
             Free(pointer, size, shift) -> 0,
-            LetSlice(id, element, pointer, length, body) -> plus(unbox(body).depth(), 1),
+            LetSlice(id, element, pointer, length, body) -> plus(unbox(body).depth(), 2),
             LetIndex(id, ty, slice, index, body) -> plus(unbox(body).depth(), ty.size()),
             SetIndex(slice, index, value) -> 0,
             LetEval(id, ty, value, body) -> plus(unbox(body).depth(), ty.size()),
@@ -3764,6 +5448,10 @@ impl SrcStmt {
             SetFieldEval(id, field, value) -> 0,
             ReturnUnit -> 0,
             Assert(condition) -> 0,
+            Break -> 0,
+            Continue -> 0,
+            MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> max_of(plus(unbox(body).depth(), ty.size()), unbox(rest).depth()),
+            Unreachable(id, ty) -> 1,
         };
     }
 }
@@ -3815,6 +5503,7 @@ impl Expr {
             Expr::Neg(operand) -> unbox(operand).extent(),
             Binary(word, operation, left, right) -> max_of(unbox(left).extent(), unbox(right).extent()),
             Compare(word, operation, left, right) -> max_of(unbox(left).extent(), unbox(right).extent()),
+            Expr::Fp(operation, left, right) -> max_of(unbox(left).extent(), unbox(right).extent()),
         };
     }
 }
@@ -3838,12 +5527,16 @@ impl Stmt {
             Loop(condition, body) -> max_of(condition.extent(), unbox(body).extent()),
             Stmt::Call(target, count, callee, args) -> max_of(plus(target, count), args_extent(args)),
             Stmt::Ret(values) -> args_extent(values),
+            Brk -> 0,
+            Cont -> 0,
             Alloc(target, shift, size) -> max_of(plus(target, 1), size.extent()),
             LoadByte(target, address) -> max_of(plus(target, 1), address.extent()),
             StoreByte(address, value) -> max_of(address.extent(), value.extent()),
             LoadWord(width, target, address) -> max_of(plus(target, 1), address.extent()),
             StoreWord(width, address, value) -> max_of(address.extent(), value.extent()),
             Stmt::Divide(word, operation, target, left, right) -> max_of(plus(target, 1), max_of(left.extent(), right.extent())),
+            Stmt::Sys(kind, target, args) -> max_of(plus(target, 1), args_extent(args)),
+            Stmt::Frame(target, bytes) -> plus(target, 1),
         };
     }
 }
@@ -3870,7 +5563,7 @@ pub fn unit_tail(ret: SrcType, body: core::option::Option<Stmt>) -> core::option
 // type's slots, so it has at least that many locals.
 pub fn lower_func(sigs: List<Sig>, decls: SrcDecls, func: SrcFunc) -> core::option::Option<Func> {
     let count: usize = params_size(func.params);
-    if ((func.ret.size() > 0) && params_valid(func.params)) {
+    if ((func.ret.size() > 0) && params_valid(func.params) && !func.body.breaks_out()) {
         return lower_body(count, func.ret.size(), func.body.depth(), unit_tail(func.ret, func.body.lower(sigs, decls, func.ret, param_scope(func.params, 0, empty()), count)));
     }
     return None;
@@ -3974,8 +5667,12 @@ impl SrcType {
             Enum(id, variants) -> declare_enum(id, unbox(variants), declare_variants(unbox(variants), decls)),
             Ptr -> Some(decls),
             Slice(element) -> unbox(element).declare(decls),
+            SrcType::Array(array_element, array_length) -> unbox(array_element).declare(decls),
             Unit -> Some(decls),
             Isize -> Some(decls),
+            SrcType::Char -> Some(decls),
+            SrcType::Float(ft) -> Some(decls),
+            Sint(kind) -> Some(decls),
         };
     }
 }
@@ -4037,6 +5734,10 @@ impl SrcStmt {
             SetFieldEval(id, field, value) -> declare_types(value.types(), decls),
             ReturnUnit -> Some(decls),
             Assert(condition) -> declare_types(condition.types(), decls),
+            Break -> Some(decls),
+            Continue -> Some(decls),
+            MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> declare_in(declare_in(ty.declare(decls), unbox(body)), unbox(rest)),
+            Unreachable(id, ty) -> ty.declare(decls),
         };
     }
 
@@ -4074,6 +5775,10 @@ impl SrcStmt {
             SetFieldEval(id, field, value) -> false,
             ReturnUnit -> true,
             Assert(condition) -> false,
+            Break -> false,
+            Continue -> false,
+            MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> unbox(body).returns() && unbox(rest).returns(),
+            Unreachable(id, ty) -> true,
         };
     }
 }
@@ -4248,6 +5953,18 @@ impl DivOp {
     }
 }
 
+impl Syscall {
+    pub fn number(self) -> usize {
+        return match (self) {
+            Write -> 0,
+            Read -> 1,
+            Poll -> 2,
+            Clock -> 3,
+            Random -> 4,
+        };
+    }
+}
+
 impl CmpOp {
     // Unsigned comparison.
     pub fn test(self, a: u64, b: u64) -> bool {
@@ -4314,6 +6031,40 @@ impl Word {
     }
 }
 
+impl FArith {
+    pub fn number(self) -> usize {
+        return match (self) {
+            FAdd -> 0,
+            FSub -> 1,
+            FMul -> 2,
+            FDiv -> 3,
+        };
+    }
+}
+
+impl FCmp {
+    pub fn number(self) -> usize {
+        return match (self) {
+            FEq -> 0,
+            FLt -> 1,
+            FLe -> 2,
+        };
+    }
+}
+
+impl FOp {
+    // Distinct operations have distinct numbers.
+    pub fn number(self) -> usize {
+        return match (self) {
+            Basic(ty, operation) -> plus(times(4, ty.number()), operation.number()),
+            FCompare(ty, operation) -> plus(plus(8, times(3, ty.number())), operation.number()),
+            FromInt(ty, word) -> plus(plus(14, times(2, ty.number())), word.number()),
+            Widen -> 18,
+            Narrow -> 19,
+        };
+    }
+}
+
 impl Expr {
     // The value is below 2^32 in every environment.
     pub fn narrow(self) -> bool {
@@ -4323,6 +6074,7 @@ impl Expr {
             Expr::Neg(operand) -> true,
             Binary(word, operation, left, right) -> word.narrows(),
             Compare(word, operation, left, right) -> true,
+            Expr::Fp(operation, left, right) -> false,
         };
     }
 }
@@ -4398,6 +6150,7 @@ impl Expr {
             Expr::Neg(operand) -> negate_constant(unbox(operand).constant()),
             Binary(word, operation, left, right) -> binary_constant(word, operation, unbox(left).constant(), unbox(right).constant()),
             Compare(word, operation, left, right) -> compare_constant(word, operation, unbox(left).constant(), unbox(right).constant()),
+            Expr::Fp(operation, left, right) -> None,
         };
     }
 
@@ -4409,6 +6162,7 @@ impl Expr {
             Expr::Neg(operand) -> false,
             Binary(word, operation, left, right) -> false,
             Compare(word, operation, left, right) -> false,
+            Expr::Fp(operation, left, right) -> false,
         };
     }
 
@@ -4419,6 +6173,7 @@ impl Expr {
             Expr::Neg(operand) -> false,
             Binary(word, operation, left, right) -> false,
             Compare(word, operation, left, right) -> false,
+            Expr::Fp(operation, left, right) -> false,
         };
     }
 
@@ -4447,6 +6202,7 @@ impl Expr {
             Expr::Neg(operand) -> neg_agrees(unbox(operand), other),
             Binary(word, operation, left, right) -> binary_agrees(word, operation, unbox(left), unbox(right), other) || unit_agrees(word, operation, unbox(left), unbox(right), other),
             Compare(word, operation, left, right) -> compare_agrees(word, operation, unbox(left), unbox(right), other),
+            Expr::Fp(operation, left, right) -> fp_agrees(operation, unbox(left), unbox(right), other),
         };
     }
 }
@@ -4459,6 +6215,7 @@ fn neg_agrees(operand: Expr, other: Expr) -> bool {
         Expr::Neg(o) -> operand.agrees(unbox(o)),
         Binary(w, op, l, r) -> false,
         Compare(w, op, l, r) -> false,
+        Expr::Fp(op, l, r) -> false,
     };
 }
 
@@ -4470,6 +6227,7 @@ fn binary_agrees(word: Word, operation: BinOp, left: Expr, right: Expr, other: E
         Expr::Neg(o) -> false,
         Binary(w, op, l, r) -> (word.number() == w.number()) && (operation.number() == op.number()) && left.agrees(unbox(l)) && right.agrees(unbox(r)),
         Compare(w, op, l, r) -> false,
+        Expr::Fp(op, l, r) -> false,
     };
 }
 
@@ -4486,6 +6244,19 @@ fn compare_agrees(word: Word, operation: CmpOp, left: Expr, right: Expr, other: 
         Expr::Neg(o) -> false,
         Binary(w, op, l, r) -> false,
         Compare(w, op, l, r) -> (word.number() == w.number()) && (operation.number() == op.number()) && left.agrees(unbox(l)) && right.agrees(unbox(r)),
+        Expr::Fp(op, l, r) -> false,
+    };
+}
+
+// extract: inline
+fn fp_agrees(operation: FOp, left: Expr, right: Expr, other: Expr) -> bool {
+    return match (other) {
+        Lit(v) -> false,
+        Var(i) -> false,
+        Expr::Neg(o) -> false,
+        Binary(w, op, l, r) -> false,
+        Compare(w, op, l, r) -> false,
+        Expr::Fp(op, l, r) -> (operation.number() == op.number()) && left.agrees(unbox(l)) && right.agrees(unbox(r)),
     };
 }
 
@@ -4511,12 +6282,16 @@ pub fn assign_agrees(index: usize, value: Expr, other: Stmt) -> bool {
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
+        Stmt::Sys(c, t, a) -> false,
+        Stmt::Frame(t, b) -> false,
     };
 }
 
@@ -4529,12 +6304,16 @@ pub fn call_agrees(target: usize, count: usize, callee: usize, args: List<Expr>,
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> (target == t) && (count == n) && (callee == f) && args_agree(args, a),
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
+        Stmt::Sys(c, t, a) -> false,
+        Stmt::Frame(t, b) -> false,
     };
 }
 
@@ -4547,12 +6326,16 @@ pub fn ret_agrees(values: List<Expr>, other: Stmt) -> bool {
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> args_agree(values, v),
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
+        Stmt::Sys(c, t, a) -> false,
+        Stmt::Frame(t, b) -> false,
     };
 }
 
@@ -4565,12 +6348,38 @@ pub fn alloc_agrees(target: usize, shift: usize, size: Expr, other: Stmt) -> boo
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> (target == t) && (shift == sh) && size.agrees(sz),
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
+        Stmt::Sys(c, t, a) -> false,
+        Stmt::Frame(t, b) -> false,
+    };
+}
+
+pub fn frame_agrees(target: usize, bytes: usize, other: Stmt) -> bool {
+    return match (other) {
+        Skip -> false,
+        Assign(i, v) -> false,
+        Seq(f, s) -> false,
+        Ite(c, t, e) -> false,
+        Loop(c, b) -> false,
+        Stmt::Call(t, n, f, a) -> false,
+        Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
+        Alloc(t, sh, sz) -> false,
+        LoadByte(t, a) -> false,
+        StoreByte(a, v) -> false,
+        LoadWord(w, t, a) -> false,
+        StoreWord(w, a, v) -> false,
+        Divide(w, o, t, l, r) -> false,
+        Stmt::Sys(c, t, a) -> false,
+        Stmt::Frame(t, b) -> (target == t) && (bytes == b),
     };
 }
 
@@ -4583,12 +6392,16 @@ pub fn load_byte_agrees(target: usize, address: Expr, other: Stmt) -> bool {
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> (target == t) && address.agrees(a),
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
+        Stmt::Sys(c, t, a) -> false,
+        Stmt::Frame(t, b) -> false,
     };
 }
 
@@ -4601,12 +6414,16 @@ pub fn store_byte_agrees(address: Expr, value: Expr, other: Stmt) -> bool {
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> address.agrees(a) && value.agrees(v),
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
+        Stmt::Sys(c, t, a) -> false,
+        Stmt::Frame(t, b) -> false,
     };
 }
 
@@ -4619,12 +6436,16 @@ pub fn load_word_agrees(width: MemWidth, target: usize, address: Expr, other: St
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> (width.bytes() == w.bytes()) && (target == t) && address.agrees(a),
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
+        Stmt::Sys(c, t, a) -> false,
+        Stmt::Frame(t, b) -> false,
     };
 }
 
@@ -4637,12 +6458,16 @@ pub fn store_word_agrees(width: MemWidth, address: Expr, value: Expr, other: Stm
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> (width.bytes() == w.bytes()) && address.agrees(a) && value.agrees(v),
         Divide(w, o, t, l, r) -> false,
+        Stmt::Sys(c, t, a) -> false,
+        Stmt::Frame(t, b) -> false,
     };
 }
 
@@ -4655,12 +6480,38 @@ pub fn divide_agrees(word: Word, operation: DivOp, target: usize, left: Expr, ri
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> (word.number() == w.number()) && (operation.number() == o.number()) && (target == t) && left.agrees(l) && right.agrees(r),
+        Stmt::Sys(c, t, a) -> false,
+        Stmt::Frame(t, b) -> false,
+    };
+}
+
+pub fn sys_agrees(kind: Syscall, target: usize, args: List<Expr>, other: Stmt) -> bool {
+    return match (other) {
+        Skip -> false,
+        Assign(i, v) -> false,
+        Seq(f, s) -> false,
+        Ite(c, t, e) -> false,
+        Loop(c, b) -> false,
+        Stmt::Call(t, n, f, a) -> false,
+        Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
+        Alloc(t, sh, sz) -> false,
+        LoadByte(t, a) -> false,
+        StoreByte(a, v) -> false,
+        LoadWord(w, t, a) -> false,
+        StoreWord(w, a, v) -> false,
+        Divide(w, o, t, l, r) -> false,
+        Stmt::Sys(c, t, a) -> (kind.number() == c.number()) && (target == t) && args_agree(args, a),
+        Stmt::Frame(t, b) -> false,
     };
 }
 
@@ -4697,6 +6548,7 @@ impl Expr {
             Expr::Neg(operand) -> unbox(operand).mentions(index),
             Binary(word, operation, left, right) -> unbox(left).mentions(index) || unbox(right).mentions(index),
             Compare(word, operation, left, right) -> unbox(left).mentions(index) || unbox(right).mentions(index),
+            Expr::Fp(operation, left, right) -> unbox(left).mentions(index) || unbox(right).mentions(index),
         };
     }
 
@@ -4708,6 +6560,7 @@ impl Expr {
             Expr::Neg(operand) -> Expr::Neg(boxed(unbox(operand).subst(facts))),
             Binary(word, operation, left, right) -> Binary(word, operation, boxed(unbox(left).subst(facts)), boxed(unbox(right).subst(facts))),
             Compare(word, operation, left, right) -> Compare(word, operation, boxed(unbox(left).subst(facts)), boxed(unbox(right).subst(facts))),
+            Expr::Fp(operation, left, right) -> Expr::Fp(operation, boxed(unbox(left).subst(facts)), boxed(unbox(right).subst(facts))),
         };
     }
 
@@ -4719,6 +6572,7 @@ impl Expr {
             Expr::Neg(operand) -> false,
             Binary(word, operation, left, right) -> false,
             Compare(word, operation, left, right) -> false,
+            Expr::Fp(operation, left, right) -> false,
         };
     }
 }
@@ -4753,17 +6607,183 @@ fn kept(fact: Fact, index: usize, tail: List<Fact>) -> List<Fact> {
     return tail;
 }
 
+pub fn fact_dies(fact: Fact, index: usize) -> bool {
+    return (fact.slot == index) || fact.value.mentions(index);
+}
+
+pub fn none_dies(facts: List<Fact>, index: usize) -> bool {
+    return match (facts) {
+        Nil -> true,
+        Cons(fact, rest) -> !fact_dies(fact, index) && none_dies(unbox(rest), index),
+    };
+}
+
+// The facts themselves when none dies, else kill's list.
+pub fn kill_tail(facts: List<Fact>, index: usize) -> List<Fact> {
+    if (none_dies(facts, index)) {
+        return facts;
+    }
+    return kill(facts, index);
+}
+
+pub fn extent_after(dies: bool, k: usize, extent: usize) -> usize {
+    if (dies) {
+        return k;
+    }
+    return extent;
+}
+
+// How many of the facts, counted from the front, reach the last one that
+// dies (0 when none does); k facts come before these.
+pub fn dying_extent(facts: List<Fact>, index: usize, k: usize, extent: usize) -> usize {
+    return match (facts) {
+        Nil -> extent,
+        Cons(fact, rest) -> dying_extent(unbox(rest), index, plus(k, 1), extent_after(fact_dies(fact, index), plus(k, 1), extent)),
+    };
+}
+
+pub fn kill_prefix_at(fact: Fact, index: usize, tail: List<Fact>) -> List<Fact> {
+    if (fact_dies(fact, index)) {
+        return tail;
+    }
+    return cons(fact, tail);
+}
+
+// The first n facts filtered as kill does, followed by kill_tail of the rest.
+pub fn kill_prefix(facts: List<Fact>, index: usize, n: usize) -> List<Fact> {
+    if (n == 0) {
+        return kill_tail(facts, index);
+    }
+    return match (facts) {
+        Nil -> empty(),
+        Cons(fact, rest) -> kill_prefix_at(fact, index, kill_prefix(unbox(rest), index, minus(n, 1))),
+    };
+}
+
+// The facts that survive a write to slot index, in kill's order, sharing the
+// part of the list after the last fact that dies: the self-built verified
+// compiler's heap is never freed, and rebuilding the list on every write
+// cost gigabytes (roadmap F12). dying_extent only picks where the sharing
+// starts; kill_tail checks that nothing after it dies.
+pub fn kill_shared(facts: List<Fact>, index: usize) -> List<Fact> {
+    return kill_prefix(facts, index, dying_extent(facts, index, 0, 0));
+}
+
+// The first n facts.
+pub fn first_facts(facts: List<Fact>, n: usize) -> List<Fact> {
+    if (n == 0) {
+        return empty();
+    }
+    return match (facts) {
+        Nil -> empty(),
+        Cons(fact, rest) -> cons(fact, first_facts(unbox(rest), minus(n, 1))),
+    };
+}
+
+// The list has more than n facts.
+pub fn longer(facts: List<Fact>, n: usize) -> bool {
+    if (n == 0) {
+        return match (facts) {
+            Nil -> false,
+            Cons(fact, rest) -> true,
+        };
+    }
+    return match (facts) {
+        Nil -> false,
+        Cons(fact, rest) -> longer(unbox(rest), minus(n, 1)),
+    };
+}
+
+// A list past 31 facts is cut to its 15 newest, so a list holds at most 32
+// facts and finding one or killing some walks at most 32, and the cut copies
+// 15 facts once per 16 or more writes (an unbounded list made the self-built
+// verified compiler allocate gigabytes of facts on its own long functions;
+// roadmap F12).
+pub fn trim_facts(facts: List<Fact>) -> List<Fact> {
+    if (longer(facts, 31)) {
+        return first_facts(facts, 15);
+    }
+    return facts;
+}
+
 // The facts after index = value.
 pub fn assigned(facts: List<Fact>, index: usize, value: Expr) -> List<Fact> {
     let known: Expr = value.subst(facts);
-    let rest: List<Fact> = kill(facts, index);
+    let rest: List<Fact> = kill_shared(facts, index);
     if (known.is_atom() && !known.mentions(index)) {
-        return cons(Fact { slot: index, value: known }, rest);
+        return cons(Fact { slot: index, value: known }, trim_facts(rest));
     }
     return rest;
 }
 
 impl Stmt {
+    pub fn is_brk(self) -> bool {
+        return match (self) {
+            Skip -> false,
+            Assign(i, v) -> false,
+            Seq(f, s) -> false,
+            Ite(c, t, e) -> false,
+            Loop(c, b) -> false,
+            Stmt::Call(t, n, f, a) -> false,
+            Stmt::Ret(v) -> false,
+            Brk -> true,
+            Cont -> false,
+            Alloc(t, sh, sz) -> false,
+            LoadByte(t, a) -> false,
+            StoreByte(a, v) -> false,
+            LoadWord(w, t, a) -> false,
+            StoreWord(w, a, v) -> false,
+            Divide(w, o, t, l, r) -> false,
+            Stmt::Sys(c, t, a) -> false,
+            Stmt::Frame(t, b) -> false,
+        };
+    }
+
+    pub fn is_cont(self) -> bool {
+        return match (self) {
+            Skip -> false,
+            Assign(i, v) -> false,
+            Seq(f, s) -> false,
+            Ite(c, t, e) -> false,
+            Loop(c, b) -> false,
+            Stmt::Call(t, n, f, a) -> false,
+            Stmt::Ret(v) -> false,
+            Brk -> false,
+            Cont -> true,
+            Alloc(t, sh, sz) -> false,
+            LoadByte(t, a) -> false,
+            StoreByte(a, v) -> false,
+            LoadWord(w, t, a) -> false,
+            StoreWord(w, a, v) -> false,
+            Divide(w, o, t, l, r) -> false,
+            Stmt::Sys(c, t, a) -> false,
+            Stmt::Frame(t, b) -> false,
+        };
+    }
+
+    // A run of this statement may break or continue a loop around it.
+    pub fn jumps(self) -> bool {
+        return match (self) {
+            Skip -> false,
+            Assign(i, v) -> false,
+            Seq(f, s) -> unbox(f).jumps() || unbox(s).jumps(),
+            Ite(c, t, e) -> unbox(t).jumps() || unbox(e).jumps(),
+            Loop(c, b) -> false,
+            Stmt::Call(t, n, f, a) -> false,
+            Stmt::Ret(v) -> false,
+            Brk -> true,
+            Cont -> true,
+            Alloc(t, sh, sz) -> false,
+            LoadByte(t, a) -> false,
+            StoreByte(a, v) -> false,
+            LoadWord(w, t, a) -> false,
+            StoreWord(w, a, v) -> false,
+            Divide(w, o, t, l, r) -> false,
+            Stmt::Sys(c, t, a) -> false,
+            Stmt::Frame(t, b) -> false,
+        };
+    }
+
     pub fn is_skip(self) -> bool {
         return match (self) {
             Skip -> true,
@@ -4773,12 +6793,16 @@ impl Stmt {
             Loop(c, b) -> false,
             Stmt::Call(t, n, f, a) -> false,
             Stmt::Ret(v) -> false,
+            Brk -> false,
+            Cont -> false,
             Alloc(t, sh, sz) -> false,
             LoadByte(t, a) -> false,
             StoreByte(a, v) -> false,
             LoadWord(w, t, a) -> false,
             StoreWord(w, a, v) -> false,
             Divide(w, o, t, l, r) -> false,
+            Stmt::Sys(c, t, a) -> false,
+            Stmt::Frame(t, b) -> false,
         };
     }
 
@@ -4794,12 +6818,16 @@ impl Stmt {
             Loop(c, b) -> empty(),
             Stmt::Call(t, n, f, a) -> empty(),
             Stmt::Ret(v) -> empty(),
-            Alloc(target, sh, sz) -> kill(facts, target),
-            LoadByte(target, a) -> kill(facts, target),
+            Brk -> empty(),
+            Cont -> empty(),
+            Alloc(target, sh, sz) -> kill_shared(facts, target),
+            LoadByte(target, a) -> kill_shared(facts, target),
             StoreByte(a, v) -> facts,
-            LoadWord(w, target, a) -> kill(facts, target),
+            LoadWord(w, target, a) -> kill_shared(facts, target),
             StoreWord(w, a, v) -> facts,
-            Divide(w, o, target, l, r) -> kill(facts, target),
+            Divide(w, o, target, l, r) -> kill_shared(facts, target),
+            Stmt::Sys(c, t, a) -> empty(),
+            Stmt::Frame(t, b) -> kill_shared(facts, t),
         };
     }
 
@@ -4814,32 +6842,42 @@ impl Stmt {
             Loop(c, b) -> !c.mentions(index) && unbox(b).ignores(index),
             Stmt::Call(t, n, f, a) -> !mentions_any(a, index),
             Stmt::Ret(v) -> !mentions_any(v, index),
+            Brk -> true,
+            Cont -> true,
             Alloc(t, sh, sz) -> !sz.mentions(index),
             LoadByte(t, a) -> !a.mentions(index),
             StoreByte(a, v) -> !a.mentions(index) && !v.mentions(index),
             LoadWord(w, t, a) -> !a.mentions(index),
             StoreWord(w, a, v) -> !a.mentions(index) && !v.mentions(index),
             Divide(w, o, t, l, r) -> !l.mentions(index) && !r.mentions(index),
+            Stmt::Sys(c, t, a) -> !mentions_any(a, index),
+            Stmt::Frame(t, b) -> true,
         };
     }
 
     // Every run of this statement writes slot index before reading it, or
-    // returns without reading it: the value index holds on entry is dead.
+    // returns without reading it: the value index holds on entry is dead. A
+    // statement before the write must not break or continue, as a loop's
+    // code after it may read index.
     pub fn kills(self, index: usize) -> bool {
         return match (self) {
             Skip -> false,
             Assign(i, v) -> (i == index) && !v.mentions(index),
-            Seq(f, s) -> unbox(f).kills(index) || (unbox(f).ignores(index) && unbox(s).kills(index)),
+            Seq(f, s) -> unbox(f).kills(index) || (unbox(f).ignores(index) && !unbox(f).jumps() && unbox(s).kills(index)),
             Ite(c, t, e) -> !c.mentions(index) && unbox(t).kills(index) && unbox(e).kills(index),
             Loop(c, b) -> false,
             Stmt::Call(t, n, f, a) -> false,
             Stmt::Ret(v) -> !mentions_any(v, index),
+            Brk -> false,
+            Cont -> false,
             Alloc(t, sh, sz) -> false,
             LoadByte(t, a) -> false,
             StoreByte(a, v) -> false,
             LoadWord(w, t, a) -> false,
             StoreWord(w, a, v) -> false,
             Divide(w, o, t, l, r) -> false,
+            Stmt::Sys(c, t, a) -> false,
+            Stmt::Frame(t, b) -> false,
         };
     }
 
@@ -4862,12 +6900,16 @@ impl Stmt {
             Loop(condition, body) -> (condition.is_zero() && other.is_skip()) || loop_agrees(condition, unbox(body), other),
             Stmt::Call(target, count, callee, args) -> call_agrees(target, count, callee, subst_all(args, facts), other),
             Stmt::Ret(values) -> ret_agrees(subst_all(values, facts), other),
+            Brk -> other.is_brk(),
+            Cont -> other.is_cont(),
             Alloc(target, shift, size) -> alloc_agrees(target, shift, size.subst(facts), other),
             LoadByte(target, address) -> load_byte_agrees(target, address.subst(facts), other),
             StoreByte(address, value) -> store_byte_agrees(address.subst(facts), value.subst(facts), other),
             LoadWord(width, target, address) -> load_word_agrees(width, target, address.subst(facts), other),
             StoreWord(width, address, value) -> store_word_agrees(width, address.subst(facts), value.subst(facts), other),
             Divide(word, operation, target, left, right) -> divide_agrees(word, operation, target, left.subst(facts), right.subst(facts), other),
+            Stmt::Sys(kind, target, args) -> sys_agrees(kind, target, subst_all(args, facts), other),
+            Stmt::Frame(target, bytes) -> frame_agrees(target, bytes, other),
         };
     }
 }
@@ -4883,12 +6925,16 @@ fn dead_agrees(first: Stmt, second: Stmt, facts: List<Fact>, other: Stmt) -> boo
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
+        Stmt::Sys(c, t, a) -> false,
+        Stmt::Frame(t, b) -> false,
     };
 }
 
@@ -4902,12 +6948,16 @@ fn seq_agrees(first: Stmt, second: Stmt, facts: List<Fact>, other: Stmt) -> bool
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
+        Stmt::Sys(c, t, a) -> false,
+        Stmt::Frame(t, b) -> false,
     };
 }
 
@@ -4938,12 +6988,16 @@ fn ite_agrees(test: Expr, then_branch: Stmt, else_branch: Stmt, facts: List<Fact
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
+        Stmt::Sys(c, t, a) -> false,
+        Stmt::Frame(t, b) -> false,
     };
 }
 
@@ -4958,12 +7012,16 @@ fn loop_agrees(condition: Expr, body: Stmt, other: Stmt) -> bool {
         Loop(c, b) -> condition.agrees(c) && body.agrees(empty(), unbox(b)),
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
+        Stmt::Sys(c, t, a) -> false,
+        Stmt::Frame(t, b) -> false,
     };
 }
 
@@ -5003,80 +7061,6 @@ pub fn validate(original: Program, optimized: Program) -> bool {
 // or y is written; branches, loops and calls forget all of them), and drops
 // x = e when the optimized rest of the sequence writes x before reading it.
 
-pub fn fact_dies(fact: Fact, index: usize) -> bool {
-    return (fact.slot == index) || fact.value.mentions(index);
-}
-
-pub fn extent_after(dies: bool, k: usize, extent: usize) -> usize {
-    if (dies) {
-        return k;
-    }
-    return extent;
-}
-
-// How many of the facts, counted from the front, reach the last one that
-// dies (0 when none does); k facts come before these.
-pub fn dying_extent(facts: List<Fact>, index: usize, k: usize, extent: usize) -> usize {
-    return match (facts) {
-        Nil -> extent,
-        Cons(fact, rest) -> dying_extent(unbox(rest), index, plus(k, 1), extent_after(fact_dies(fact, index), plus(k, 1), extent)),
-    };
-}
-
-pub fn kill_prefix_at(fact: Fact, index: usize, tail: List<Fact>) -> List<Fact> {
-    if (fact_dies(fact, index)) {
-        return tail;
-    }
-    return cons(fact, tail);
-}
-
-// The first n facts filtered as kill does, followed by the rest unchanged.
-pub fn kill_prefix(facts: List<Fact>, index: usize, n: usize) -> List<Fact> {
-    if (n == 0) {
-        return facts;
-    }
-    return match (facts) {
-        Nil -> empty(),
-        Cons(fact, rest) -> kill_prefix_at(fact, index, kill_prefix(unbox(rest), index, minus(n, 1))),
-    };
-}
-
-// kill(facts, index), sharing the facts after the last one that dies.
-pub fn opt_kill(facts: List<Fact>, index: usize) -> List<Fact> {
-    return kill_prefix(facts, index, dying_extent(facts, index, 0, 0));
-}
-
-pub fn opt_assigned(facts: List<Fact>, index: usize, value: Expr) -> List<Fact> {
-    let known: Expr = value.subst(facts);
-    let rest: List<Fact> = opt_kill(facts, index);
-    if (known.is_atom() && !known.mentions(index)) {
-        return cons(Fact { slot: index, value: known }, rest);
-    }
-    return rest;
-}
-
-// The optimizer's copy of the validator's facts_after: the same facts, but a
-// write keeps the part of the list after the last fact it kills instead of
-// rebuilding it (the self-built compiler's heap is never freed, and the
-// validator's kill rebuilds the whole list on every write).
-pub fn opt_facts_after(s: Stmt, facts: List<Fact>) -> List<Fact> {
-    return match (s) {
-        Skip -> facts,
-        Assign(index, value) -> opt_assigned(facts, index, value),
-        Seq(first, second) -> opt_facts_after(unbox(second), opt_facts_after(unbox(first), facts)),
-        Ite(c, t, e) -> empty(),
-        Loop(c, b) -> empty(),
-        Stmt::Call(t, n, f, a) -> empty(),
-        Stmt::Ret(v) -> empty(),
-        Alloc(target, sh, sz) -> opt_kill(facts, target),
-        LoadByte(target, a) -> opt_kill(facts, target),
-        StoreByte(a, v) -> facts,
-        LoadWord(w, target, a) -> opt_kill(facts, target),
-        StoreWord(w, a, v) -> facts,
-        Divide(w, o, target, l, r) -> opt_kill(facts, target),
-    };
-}
-
 impl Expr {
     pub fn literal(self) -> core::option::Option<u64> {
         return match (self) {
@@ -5085,6 +7069,7 @@ impl Expr {
             Expr::Neg(operand) -> None,
             Binary(word, operation, left, right) -> None,
             Compare(word, operation, left, right) -> None,
+            Expr::Fp(operation, left, right) -> None,
         };
     }
 }
@@ -5157,6 +7142,7 @@ impl Expr {
             Expr::Neg(operand) -> optimize_neg(unbox(operand).optimize()),
             Binary(word, operation, left, right) -> optimize_binary(word, operation, unbox(left).optimize(), unbox(right).optimize()),
             Compare(word, operation, left, right) -> optimize_compare(word, operation, unbox(left).optimize(), unbox(right).optimize()),
+            Expr::Fp(operation, left, right) -> Expr::Fp(operation, boxed(unbox(left).optimize()), boxed(unbox(right).optimize())),
         };
     }
 }
@@ -5231,12 +7217,16 @@ impl Stmt {
             Loop(c, b) -> false,
             Stmt::Call(t, n, f, a) -> false,
             Stmt::Ret(v) -> false,
+            Brk -> false,
+            Cont -> false,
             Alloc(t, sh, sz) -> false,
             LoadByte(t, a) -> false,
             StoreByte(a, v) -> false,
             LoadWord(w, t, a) -> false,
             StoreWord(w, a, v) -> false,
             Divide(w, o, t, l, r) -> false,
+            Stmt::Sys(c, t, a) -> false,
+            Stmt::Frame(t, b) -> false,
         };
     }
 
@@ -5250,12 +7240,16 @@ impl Stmt {
             Loop(condition, body) -> optimize_loop(condition.optimize(), unbox(body).optimize(empty())),
             Stmt::Call(target, count, callee, args) -> Stmt::Call(target, count, callee, optimize_all(subst_all(args, facts))),
             Stmt::Ret(values) -> Stmt::Ret(optimize_all(subst_all(values, facts))),
+            Brk -> Brk,
+            Cont -> Cont,
             Alloc(target, shift, size) -> Alloc(target, shift, size.subst(facts).optimize()),
             LoadByte(target, address) -> LoadByte(target, address.subst(facts).optimize()),
             StoreByte(address, value) -> StoreByte(address.subst(facts).optimize(), value.subst(facts).optimize()),
             LoadWord(width, target, address) -> LoadWord(width, target, address.subst(facts).optimize()),
             StoreWord(width, address, value) -> StoreWord(width, address.subst(facts).optimize(), value.subst(facts).optimize()),
             Divide(word, operation, target, left, right) -> Divide(word, operation, target, left.subst(facts).optimize(), right.subst(facts).optimize()),
+            Stmt::Sys(kind, target, args) -> Stmt::Sys(kind, target, optimize_all(subst_all(args, facts))),
+            Stmt::Frame(target, bytes) -> Stmt::Frame(target, bytes),
         };
     }
 }
@@ -5264,7 +7258,7 @@ impl Stmt {
 // to a slot the optimized rest kills is dropped.
 // extract: inline
 fn optimize_sequence(first: Stmt, second: Stmt, facts: List<Fact>) -> Stmt {
-    let rest: Stmt = second.optimize(opt_facts_after(first, facts));
+    let rest: Stmt = second.optimize(first.facts_after(facts));
     if (first.dead_before(rest)) {
         return rest;
     }
@@ -5320,6 +7314,210 @@ pub fn compile_declared(decls: core::option::Option<SrcDecls>, prog: SrcProgram)
 pub fn compile_source(prog: SrcProgram) -> core::option::Option<Binary> {
     if (funcs_return(prog.funcs)) {
         return compile_declared(declare_program(prog), prog);
+    }
+    return None;
+}
+
+// ---------------------------------------------------------------- the driver's output
+
+// The words a driver writes for a program the front end read (or did not):
+// the entry count, the entries, the image length, then the image's bytes
+// packed four to a word, little-endian, the last word padded with zeros;
+// none when the program is rejected (roadmap V1). `compile_words` is the
+// entry. The image is packed in rounds of at most 4096 words, so no call
+// chain over it is deeper than one round plus the number of rounds: the
+// self-built compiler's own image is 15 MB, and a call per byte took
+// gigabytes of stack (roadmap F12).
+
+pub fn usize_words(xs: List<usize>) -> List<i32> {
+    return match (xs) {
+        Nil -> empty(),
+        Cons(x, rest) -> cons(x as i32, usize_words(unbox(rest))),
+    };
+}
+
+// Bytes a, b, c, d as one little-endian word.
+pub fn pack_word(a: u8, b: u8, c: u8, d: u8) -> i32 {
+    return (a as i32) + ((b as i32) * 256) + ((c as i32) * 65536) + ((d as i32) * 16777216);
+}
+
+// Packed words, the number of bytes they hold, and the bytes after them.
+pub struct Round {
+    words: List<i32>,
+    count: usize,
+    rest: List<u8>,
+}
+
+pub fn round_end() -> Round {
+    return Round { words: empty(), count: 0, rest: empty() };
+}
+
+// One more word, of k bytes, in front of a round.
+pub fn round_cons(word: i32, k: usize, after: Round) -> Round {
+    return Round { words: cons(word, after.words), count: plus(after.count, k), rest: after.rest };
+}
+
+// Up to n words of the bytes xs.
+pub fn pack_round(xs: List<u8>, n: usize) -> Round {
+    if (n == 0) {
+        return Round { words: empty(), count: 0, rest: xs };
+    }
+    return match (xs) {
+        Nil -> round_end(),
+        Cons(a, ra) -> match (unbox(ra)) {
+            Nil -> round_cons(pack_word(a, 0, 0, 0), 1, round_end()),
+            Cons(b, rb) -> match (unbox(rb)) {
+                Nil -> round_cons(pack_word(a, b, 0, 0), 2, round_end()),
+                Cons(c, rc) -> match (unbox(rc)) {
+                    Nil -> round_cons(pack_word(a, b, c, 0), 3, round_end()),
+                    Cons(d, rd) -> round_cons(pack_word(a, b, c, d), 4, pack_round(unbox(rd), minus(n, 1))),
+                },
+            },
+        },
+    };
+}
+
+// Two rounds, one after the other.
+pub fn round_join(first: Round, second: Round) -> Round {
+    return Round { words: concat(first.words, second.words), count: plus(first.count, second.count), rest: second.rest };
+}
+
+// All the bytes xs packed: rounds of 4096 words while the fuel lasts, then
+// the rest in one round.
+pub fn pack_rounds(xs: List<u8>, fuel: usize) -> Round {
+    if (fuel == 0) {
+        return pack_round(xs, 4611686018427387904);
+    }
+    let round: Round = pack_round(xs, 4096);
+    return match (round.rest) {
+        Nil -> round,
+        Cons(x, more) -> round_join(round, pack_rounds(round.rest, minus(fuel, 1))),
+    };
+}
+
+// The words of a binary, from its entries and its packed image.
+pub fn image_words(entries: List<usize>, packed: Round) -> List<i32> {
+    return concat(cons(length(entries) as i32, usize_words(entries)), cons(packed.count as i32, packed.words));
+}
+
+// 2^20 rounds of 4096 words cover 16 GiB, past the image limit.
+pub fn binary_words(binary: core::option::Option<Binary>) -> core::option::Option<List<i32>> {
+    return match (binary) {
+        None -> None,
+        Some(b) -> Some(image_words(b.entries, pack_rounds(b.image, 1048576))),
+    };
+}
+
+pub fn compile_words(program: core::option::Option<SrcProgram>) -> core::option::Option<List<i32>> {
+    return match (program) {
+        None -> None,
+        Some(prog) -> binary_words(compile_source(prog)),
+    };
+}
+
+// ---------------------------------------------------------------- the process
+
+// The ELF file for a binary (roadmap V6): one loadable segment at 2^32,
+// readable, writable and executable, from the file's first byte. The file is
+// the ELF header, its one program header, the startup code and the image;
+// the segment goes on, zero-filled by Linux, to a page boundary, then `stack`
+// bytes of stack, `heap` bytes of heap and `stack` bytes of frame memory. The startup code sets rsp to the
+// stack's top, r15 to the stack limit (`binary.guard` above its bottom),
+// r12, r14 and r13 to the heap's base, its limit and cursor 1, r10 and rbx
+// to the heap's top (the end of frame memory) and the frame pointer there,
+// calls function
+// `entry`, and exits with its rax: mov rdi, rax; mov eax, 60; syscall. None
+// when the sizes do not fit (`elf_fits`).
+
+pub fn elf_base() -> usize {
+    return 4294967296;
+}
+
+// The bytes before the image: the headers (120) and the startup code (85).
+pub fn elf_before_image() -> usize {
+    return 205;
+}
+
+pub fn larger(a: usize, b: usize) -> usize {
+    if (a > b) {
+        return a;
+    }
+    return b;
+}
+
+// `frameNeed`: stack bytes one activation uses, the most over the codes.
+pub fn frame_need_of(codes: List<Code>) -> usize {
+    return match (codes) {
+        Nil -> 0,
+        Cons(c, rest) -> larger(plus(frame_size(c.slots), 16), frame_need_of(unbox(rest))),
+    };
+}
+
+// `Binary.guard`
+pub fn stack_guard(binary: Binary) -> usize {
+    return plus(frame_need_of(binary.codes), 8);
+}
+
+// `n` rounded up to a multiple of 4096.
+pub fn page_up(n: usize) -> usize {
+    return times(plus(n, 4095) / 4096, 4096);
+}
+
+pub fn le16(value: usize) -> List<u8> {
+    let bits: u64 = value as u64;
+    return cons(bits as u8, single((bits >> 8) as u8));
+}
+
+pub fn le64n(value: usize) -> List<u8> {
+    return le64(value as u64);
+}
+
+// Where the stack starts: the first page boundary after the file.
+pub fn elf_stack_base(binary: Binary) -> usize {
+    return plus(elf_base(), page_up(plus(elf_before_image(), length(binary.image))));
+}
+
+// The ELF header: 64-bit, little-endian, an x86-64 executable entered at
+// the startup code, with its one program header right after it.
+pub fn elf_header(binary: Binary) -> List<u8> {
+    let ident: List<u8> = cons(127, cons(69, cons(76, cons(70, cons(2, cons(1, cons(1, cons(0, cons(0, cons(0, cons(0, cons(0, cons(0, cons(0, cons(0, single(0))))))))))))))));
+    let kinds: List<u8> = concat(concat(le16(2), le16(62)), le32(1));
+    let places: List<u8> = concat(concat(le64n(plus(elf_base(), 120)), le64n(64)), le64n(0));
+    let sizes: List<u8> = concat(concat(concat(concat(concat(le32(0), le16(64)), le16(56)), le16(1)), le16(64)), concat(le16(0), le16(0)));
+    return concat(concat(concat(ident, kinds), places), sizes);
+}
+
+// The program header: a loadable segment, readable, writable and
+// executable, from file offset 0 to the segment's start, the file's bytes
+// and then zeros up to the end of frame memory.
+pub fn elf_program_header(binary: Binary, stack: usize, heap: usize) -> List<u8> {
+    let file: usize = plus(elf_before_image(), length(binary.image));
+    let memory: usize = plus(plus(plus(minus(elf_stack_base(binary), elf_base()), stack), heap), stack);
+    let kinds: List<u8> = concat(concat(le32(1), le32(7)), le64n(0));
+    let places: List<u8> = concat(le64n(elf_base()), le64n(elf_base()));
+    return concat(concat(concat(kinds, places), concat(le64n(file), le64n(memory))), le64n(4096));
+}
+
+// mov reg, imm64 for rsp, r15, r12, r14, r13, r10 and rbx; call the entry; exit.
+pub fn elf_startup(binary: Binary, entry: usize, stack: usize, heap: usize) -> List<u8> {
+    let bottom: usize = elf_stack_base(binary);
+    let top: usize = plus(bottom, stack);
+    let sets: List<u8> = concat(concat(concat(cons(72, cons(188, le64n(top))), cons(73, cons(191, le64n(plus(bottom, stack_guard(binary)))))), concat(cons(73, cons(188, le64n(top))), cons(73, cons(190, le64n(heap))))), concat(concat(cons(73, cons(189, le64n(1))), cons(73, cons(186, le64n(plus(heap, stack))))), cons(72, cons(187, le64n(plus(heap, stack))))));
+    let call: List<u8> = cons(232, le32(plus(get_or(binary.entries, entry, 0), 10) as i32));
+    let exit: List<u8> = cons(72, cons(137, cons(199, cons(184, cons(60, cons(0, cons(0, cons(0, cons(15, single(5))))))))));
+    return concat(concat(sets, call), exit);
+}
+
+// The sizes the startup code and the proofs need: the image and the entry's
+// offset below 2^30, the stack at least the guard, the stack below 2^40, and
+// the heap at least one byte and below 2^40.
+pub fn elf_fits(binary: Binary, entry: usize, stack: usize, heap: usize) -> bool {
+    return length(binary.image) < 1073741824 && get_or(binary.entries, entry, 0) < 1073741824 && stack_guard(binary) <= stack && stack < 1099511627776 && 1 <= heap && heap < 1099511627776;
+}
+
+pub fn elf_file(binary: Binary, entry: usize, stack: usize, heap: usize) -> core::option::Option<List<u8>> {
+    if (elf_fits(binary, entry, stack, heap)) {
+        return Some(concat(concat(concat(elf_header(binary), elf_program_header(binary, stack, heap)), elf_startup(binary, entry, stack, heap)), binary.image));
     }
     return None;
 }

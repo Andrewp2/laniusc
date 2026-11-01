@@ -27,7 +27,7 @@ size relative to the compiler, and Lean check time.
 The difftests run through one gate, from the repository root:
 
 ```text
-python3 -I formal/tools/gate.py                 # quick tier: 9 steps, about 2 minutes cold
+python3 -I formal/tools/gate.py                 # quick tier: 10 steps, about 2 minutes cold
 python3 -I formal/tools/gate.py --tier full     # larger counts, every stdlib module
 ```
 
@@ -264,6 +264,18 @@ semantics:
   never frees). The theorem's premise bounds Core's final `nextAddress` by the
   mini limit; `execStmt_grows` (Core's `nextAddress` never decreases) carries
   that bound back to every allocation.
+- The world (`HeapCorr`, `WorldTrace`, roadmap F8): `HeapCorr h w hp` also
+  says Core's standard output and error are the bytes the mini trace writes
+  to fds 1 and 2 (`outputOf`), and that no file is open. Core's host
+  services `write_byte`, `write_stdout` and `write_stderr` are functions
+  2^32, 2^32 + 1 and 2^32 + 2 of `sp.toCore` (`hostFuncs`); an effectful call
+  of one lowers to inline code (`eval_host`): `write_byte` borrows heap byte
+  0 (no Core block's) for a one-byte `Sys write`, the others loop over
+  chunks of at most `maxTransfer`. `eval_host` in `LowerEval` runs that code
+  against Core's `World.call` (`hostByte_exec`, `hostWrite_exec`), and
+  `eff_call` in `EvalStops` shows the call never fails within the limit. The
+  top theorems conclude that Core's final output equals `outputOf` of the
+  returned heap's trace.
 - Raw slices (`LowerStmt`, `HeapCorr`): a slice is its address in one slot.
   Its length lives only in Core, which checks every index against it; the
   theorem covers runs that return, so the lowered code needs no bounds test.
@@ -817,8 +829,9 @@ program's own first; `sourceProgram` is the one-file case.
 Proved, with only `propext` and `Quot.sound`:
 
 - `validate_sound`: when `validateTree g tokens prods parents = some root`, then
-  `Shape g 0 root` (a parse tree of `file`), `Reads root.leaves tokens []`
-  (its leaves are the tokens, with some `>>` read as two `>`) and
+  `Shape g 0 root` (a parse tree of `file`), `Picked root tokens []`
+  (its leaves are the tokens, with some `>>` read as two `>`, and `picks`
+  allows each node's production at its tokens) and
   `root.preorder = prods` (it is laniusc's tree).
 - `validate_derives`: the leaves' token kinds are derived from `file`.
 - `sourceProgram_sound`: the program is `build` of such a tree for the tokens
@@ -827,16 +840,27 @@ Proved, with only `propext` and `Quot.sound`:
   file.
 
 laniusc's lexer and parser are not trusted. The trusted parts are the Lean
-lexer, the grammar table, the grammar's unambiguity (not proved) and `build`
-as the meaning of the concrete syntax. TRUSTED_BASE.md section 4 lists them.
+lexer (since V3 proved equal to the lexical rules), the grammar table,
+`picks` (which of two readings of `x<` an expression has; V4 proved that with
+it the grammar has one reading, `Mini/ParseUnique.lean`) and `build` as the
+meaning of the concrete syntax. TRUSTED_BASE.md section 4 lists them.
 
 `frontend.lani` is about 7,050 hand-written lines, followed by the generated
-grammar table: 318 productions, with terminals as lexer token codes. Two
+grammar table: 324 productions, with terminals as lexer token codes. Two
 tools regenerate it:
 
 ```bash
 python3 formal/tools/grammar_table.py formal/lani/mini/frontend.lani
-python3 formal/tools/extract.py formal/lani/mini/frontend.lani formal/Lanius/Mini/Frontend.lean
+python3 -I formal/tools/lani_extract.py frontend
+```
+
+After a grammar change, `formal/tools/grammar_cert.py` rewrites the one-reading
+certificate (`formal/Lanius/Mini/GrammarCert.lean`); it fails if two
+productions of a nonterminal are no longer told apart, and a stale
+certificate fails the kernel's check when the file builds:
+
+```bash
+python3 formal/tools/grammar_cert.py formal/Lanius/Mini/GrammarCert.lean
 ```
 
 Both take `--check`. The source types and list operations sit in an
@@ -890,7 +914,12 @@ Generics, modules, constants and methods. Each file is a module, named by
 its `module a::b;` item (the empty path without one). A path `a::b::x` names
 `x` of module `a::b`; a bare `x` names `x` of the current module. An
 `import m;` item only adds m's variants to those a bare variant name may
-mean; traits, type aliases and extern functions are skipped. Generic structs,
+mean; traits, type aliases and extern functions are skipped, except the
+host externs: `extern "lanius_std" fn write_byte`, `write_stdout` and
+`write_stderr` (`host_extern`) declare functions whose instance is
+`return host(params);` (`XHost`, closed to `ECall(2^32 + k, params)`, which
+`eval_host` lowers to `Sys write` code; the cases `host_write` and
+`host_wrong_type`). Generic structs,
 enums and functions are monomorphized by `mono`, a worklist of instances, each
 a declaration with its type arguments:
 - the roots are the first file's functions without type parameters, in order,
@@ -1292,7 +1321,9 @@ list lemmas. A wrong list operation fails its theorem when Lean checks the
 generated file. This replaced an earlier prelude on `std::vec::Vec<T>` whose
 operations were loops that copied, so their Lean meaning was trusted.
 
-`formal/tools/extract.py` turns everything after the prelude into
+The extractor in Lanius (`formal/lani/mini/extract.lani`, run on laniusc's
+parse tree by `lake exe extract`; `formal/tools/extract.py` until 10-30)
+turns everything after the prelude into
 `Lanius/Mini/Compiler.lean`, a Lean module importing the types
 (`Compiler/Types.lean`) and the parts `Lanius/Mini/Compiler/P/<first
 definition>.lean` (about 8 definitions each, the boundaries chosen by a hash
@@ -1304,8 +1335,8 @@ import all`, and one that names them in its statements lists the names after
 `-- import parts: Lanius.Mini.Compiler`; the extractor rewrites both blocks:
 
 ```bash
-python3 formal/tools/extract.py formal/lani/mini/compiler.lani formal/Lanius/Mini/Compiler.lean
-python3 formal/tools/extract.py --check formal/lani/mini/compiler.lani formal/Lanius/Mini/Compiler.lean
+python3 -I formal/tools/lani_extract.py compiler
+python3 -I formal/tools/lani_extract.py --check
 ```
 
 The extractor rejects anything outside the subset (loops, mutation, `usize`
@@ -1388,3 +1419,38 @@ Limits found on the way:
   so laniusc's build cannot run the self-hosting fixpoint (about 10^8
   allocations); the self-built compiler's own bump allocator can (see the
   self-hosting paragraph of the front end section).
+
+### Exclusive references: the `&mut` extraction pilot
+
+`&mut T` and `&mut self` (phase S4 of `docs/memory-scoped-stacks-design.md`)
+exist so that mutating code still extracts to pure functions. The pilot,
+`formal/lani/mini/mut_pilot.lani`, is a small bank (`Account.deposit`,
+`Account.withdraw`, `transfer`, `relay`, `paid`, `pay_all`). extract.py
+translates it the way Aeneas translates Rust's mutable borrows:
+
+```text
+fn transfer(source: &mut Account, target: &mut Account, amount: u32) -> bool
+def transfer (source : Account) (target : Account) (amount : BitVec 32) : Bool × Account × Account
+```
+
+- A function returns its result, then each `&mut` parameter's final value,
+  in parameter order (just the values when it has no result).
+- `x = e;` and `x.f.g = e;` become `let x := { x with f := ... }`.
+- A call that passes `&mut` arguments is a statement or a `let`'s whole
+  initializer: `let (moved, source) := Account.withdraw source amount`.
+- A `&mut` argument is a bare local that no other argument of the call uses.
+  laniusc rejects the same calls (LNC0006), so the translation is never asked
+  to model an alias.
+
+`Lanius/Mini/MutPilotCorrect.lean` proves seven facts about the extracted
+definitions, among them that a transfer conserves the sum of the two
+balances and that a relay's result is the total before it (`bv_omega`, no
+`bv_decide`). Gate step `mut-pilot` runs `fn_difftest.py` on the pilot: each
+case calls the function natively with references to locals, prints the result
+and then each local, and compares that with the Lean tuple. 2026-10-27: 300
+cases on seed 7 and 180 in the gate, no differences; one wrong `+ 1` in a
+copy of `deposit` gives 40 mismatches in 60 cases.
+
+Not covered: `&mut` into a field or an array element (`f(x.field)`: the
+argument must be a bare local), and `&mut` in `compiler.lani`, which stays as
+it is.

@@ -1,0 +1,19 @@
+module app::main;
+import core::option;
+// The receiver binds V = i64; the literal argument takes that type, so the
+// unannotated result is Option<i64>, not Option<i32>.
+pub struct Cell<V> { v: V }
+pub impl<V> Cell<V> {
+    pub fn put(&self, x: V) -> core::option::Option<V> {
+        let old: V = self.v; self.v = x; return core::option::Option::Some(old);
+    }
+}
+fn observe(item: core::option::Option<i64>) -> i64 { return item.unwrap(); }
+fn main() -> i32 {
+    let c: Cell<i64> = Cell<i64> { v: 3 };
+    let r = c.put(-9223372036854775807);
+    assert(observe(r) == 3);
+    assert(observe(c.put(5)) == -9223372036854775807);
+    assert(c.v == 5);
+    return 0;
+}

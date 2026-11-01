@@ -44,6 +44,7 @@ mutual
     | .local _ => 1
     | .field base _ => 1 + placeFuelSize base
     | .index base index => 1 + placeFuelSize base + exprFuelSize index
+    | .deref reference => 1 + exprFuelSize reference
   termination_by structural place
 
   def patternsFuelSize (patterns : List Pattern) : Nat :=
@@ -305,6 +306,8 @@ mutual
                pure ⟨elementType, ⟨.indexSlice baseTyped.down indexTyped.2.down
                  integerIndex.down⟩⟩
            | _ => none
+    -- The typing judgment has no rule for writes through a reference yet.
+    | .deref _ => none
 
   def checkMatchArmsFuel (fuel : Nat) (program : Program) (context : Context)
       (arms : List (Pattern × Expr)) (scrutineeType resultType : Ty) :

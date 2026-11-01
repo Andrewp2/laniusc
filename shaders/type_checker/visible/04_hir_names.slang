@@ -108,27 +108,17 @@ uint active_decl_count()
     return min(hir_visible_decl_count_out[0], gParams.n_tokens);
 }
 
-uint visible_decl_leaf_count()
-{
-    uint capacity = max(gParams.n_tokens, 1u);
-    return ((capacity - 1u) / HIR_VISIBLE_DECL_ROW_BLOCK_SIZE) + 1u;
-}
-
-uint round_power_of_two_nonzero(uint value)
-{
-    value = max(value, 1u);
-    value -= 1u;
-    value |= value >> 1u;
-    value |= value >> 2u;
-    value |= value >> 4u;
-    value |= value >> 8u;
-    value |= value >> 16u;
-    return value + 1u;
-}
-
+// The builder lays the tree out for the resident workspace's capacity, which
+// can exceed this unit's tokens. It publishes that leaf base in the heap's
+// unused node 0; every leaf past this unit's rows aggregates nothing.
 uint visible_decl_leaf_base()
 {
-    return round_power_of_two_nonzero(visible_decl_leaf_count());
+    return hir_visible_decl_scope_tree[0u];
+}
+
+uint visible_decl_leaf_count()
+{
+    return visible_decl_leaf_base();
 }
 
 bool visible_decl_tree_shape_supported()

@@ -59,6 +59,7 @@ static const uint TK_RBRACKET = 21u;
 static const uint TK_LBRACE = 22u;
 static const uint TK_RBRACE = 23u;
 static const uint TK_AMPERSAND = 25u;
+static const uint TK_MUT = 203u;
 static const uint TK_STRING = 32u;
 static const uint TK_FLOAT = 33u;
 static const uint TK_CHAR = 34u;
@@ -169,6 +170,28 @@ bool value_path_arguments_share_container(uint open_i, uint close_i)
     return all(open_owner == close_owner);
 }
 
+// Raw token ids (generated_token_ids.slang).
+static const uint TK_LE = 14u;
+static const uint TK_GE = 15u;
+static const uint TK_EQEQ = 16u;
+static const uint TK_OROR = 18u;
+static const uint TK_NOT_EQUAL = 40u;
+
+// Type and constant arguments hold no comparison or `||`, so in
+// `a<b || c>(d)` both angles stay comparisons. `&&` can begin `&&T`. Long
+// argument lists are scanned for their first 64 tokens.
+bool value_path_arguments_are_operator_free(uint open_i, uint close_i)
+{
+    uint end = min(close_i, open_i + 64u);
+    for (uint at = open_i + 1u; at < end; ++at)
+    {
+        uint kind = token_words[at].kind;
+        if (kind == TK_OROR || kind == TK_EQEQ || kind == TK_NOT_EQUAL ||
+            kind == TK_LE || kind == TK_GE) return false;
+    }
+    return true;
+}
+
 bool value_path_type_arguments_have_tail(uint open_i, uint count)
 {
     if (open_i == 0u || open_i >= count || token_words[open_i].kind != TK_LT ||
@@ -184,7 +207,8 @@ bool value_path_type_arguments_have_tail(uint open_i, uint count)
     bool tail = next == TK_LPAREN ||
         (next == TK_COLON && next_i + 1u < count && token_words[next_i + 1u].kind == TK_COLON) ||
         (next == TK_LBRACE && brace_semantic_kind[next_i] == TK_STRUCT_LIT_LBRACE);
-    return tail && value_path_arguments_share_container(open_i, close_i);
+    return tail && value_path_arguments_share_container(open_i, close_i) &&
+        value_path_arguments_are_operator_free(open_i, close_i);
 }
 
 bool raw_angle_open_can_start_type_args(uint open_i)
@@ -245,7 +269,7 @@ bool type_array_open_context(uint token_i)
                 (prev == TK_ARROW && owner == TK_MATCH_LBRACE)) return false;
         }
         if ((statement_context_kind[current] & 0xffu) == STATEMENT_CONTEXT_TYPE_ALIAS_RHS ||
-            prev == TK_COLON || prev == TK_ARROW || prev == TK_AMPERSAND)
+            prev == TK_COLON || prev == TK_ARROW || prev == TK_AMPERSAND || prev == TK_MUT)
             return true;
         if (inside_type_arg_angle(current) && (prev == TK_LT || prev == TK_COMMA))
             return true;

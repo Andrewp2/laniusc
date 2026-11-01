@@ -243,13 +243,19 @@ static const uint WASM_CLASS_I32 = 0u;
 static const uint WASM_CLASS_I64 = 1u;
 static const uint WASM_CLASS_F32 = 2u;
 static const uint WASM_CLASS_NONE = 3u;
+static const uint WASM_CLASS_F64 = 4u;
 
 uint wasm_scalar_class(uint type_id)
 {
     if (type_id == SCALAR_I64 || type_id == SCALAR_U64) return WASM_CLASS_I64;
     if (type_id == SCALAR_F32) return WASM_CLASS_F32;
-    if (type_id == SCALAR_F64) return WASM_CLASS_NONE;
+    if (type_id == SCALAR_F64) return WASM_CLASS_F64;
     return WASM_CLASS_I32;
+}
+
+bool wasm_class_is_float(uint value_class)
+{
+    return value_class == WASM_CLASS_F32 || value_class == WASM_CLASS_F64;
 }
 
 // The class of the value a row leaves on the stack (a comparison's type is
@@ -281,6 +287,18 @@ uint wasm_convert_class_opcode(uint target, uint source)
         return source_unsigned ? WASM_LIR_OP_I64_EXTEND_I32_U : WASM_LIR_OP_I64_EXTEND_I32_S;
     if (target_class == WASM_CLASS_I32 && source_class == WASM_CLASS_I64)
         return WASM_LIR_OP_I32_WRAP_I64;
+    if (target_class == WASM_CLASS_F64 && source_class == WASM_CLASS_F32)
+        return WASM_LIR_OP_F64_PROMOTE_F32;
+    if (target_class == WASM_CLASS_F32 && source_class == WASM_CLASS_F64)
+        return WASM_LIR_OP_F32_DEMOTE_F64;
+    if (target_class == WASM_CLASS_F64)
+        return source_class == WASM_CLASS_I64
+            ? (source_unsigned ? WASM_LIR_OP_F64_CONVERT_I64_U : WASM_LIR_OP_F64_CONVERT_I64_S)
+            : (source_unsigned ? WASM_LIR_OP_F64_CONVERT_I32_U : WASM_LIR_OP_F64_CONVERT_I32_S);
+    if (source_class == WASM_CLASS_F64)
+        return target_class == WASM_CLASS_I64
+            ? (target_unsigned ? WASM_LIR_OP_I64_TRUNC_F64_U : WASM_LIR_OP_I64_TRUNC_F64_S)
+            : (target_unsigned ? WASM_LIR_OP_I32_TRUNC_F64_U : WASM_LIR_OP_I32_TRUNC_F64_S);
     if (target_class == WASM_CLASS_F32)
         return source_class == WASM_CLASS_I64
             ? (source_unsigned ? WASM_LIR_OP_F32_CONVERT_I64_U : WASM_LIR_OP_F32_CONVERT_I64_S)
@@ -333,10 +351,25 @@ uint wasm_const_i64_rows(OptIrNodeCore core, OptIrNodeOperands operands)
         wasm_const_i64_is_short(operands) ? 1u : 5u;
 }
 
+// An f64 constant is its bit pattern as i64 rows, then f64.reinterpret_i64.
+uint wasm_const_f64_rows(OptIrNodeOperands operands)
+{
+    return (wasm_const_i64_is_short(operands) ? 1u : 5u) + 1u;
+}
+
 uint wasm_compare_opcode(uint predicate, uint type_id)
 {
     uint value_class = wasm_scalar_class(type_id);
     if (value_class == WASM_CLASS_NONE) return WASM_LIR_OP_UNREACHABLE;
+    if (value_class == WASM_CLASS_F64)
+    {
+        if (predicate == 0u) return WASM_LIR_OP_F64_EQ;
+        if (predicate == 1u) return WASM_LIR_OP_F64_NE;
+        if (predicate == 2u) return WASM_LIR_OP_F64_LT;
+        if (predicate == 3u) return WASM_LIR_OP_F64_GT;
+        if (predicate == 4u) return WASM_LIR_OP_F64_LE;
+        return WASM_LIR_OP_F64_GE;
+    }
     if (value_class == WASM_CLASS_F32)
     {
         if (predicate == 0u) return WASM_LIR_OP_F32_EQ;
@@ -362,6 +395,18 @@ uint wasm_scalar_opcode(OptIrNodeCore core, OptIrNodeOperands operands)
     uint value_class = wasm_scalar_class(core.type_id);
     if (value_class == WASM_CLASS_NONE) return WASM_LIR_OP_UNREACHABLE;
     bool f32 = value_class == WASM_CLASS_F32;
+    if (value_class == WASM_CLASS_F64)
+    {
+        // The f64 rows of a float operation; the rest are shared below.
+        uint f64_op = opt_ir_op(core);
+        if (f64_op == SEMANTIC_LIR_OP_ADD) return WASM_LIR_OP_F64_ADD;
+        if (f64_op == SEMANTIC_LIR_OP_SUB) return WASM_LIR_OP_F64_SUB;
+        if (f64_op == SEMANTIC_LIR_OP_MUL) return WASM_LIR_OP_F64_MUL;
+        if (f64_op == SEMANTIC_LIR_OP_DIV) return WASM_LIR_OP_F64_DIV;
+        if (f64_op == SEMANTIC_LIR_OP_NEGATE) return WASM_LIR_OP_F64_NEG;
+        if (f64_op >= SEMANTIC_LIR_OP_REM && f64_op <= SEMANTIC_LIR_OP_SHIFT_RIGHT)
+            return WASM_LIR_OP_UNREACHABLE;
+    }
     // i64 integer arithmetic keeps the i32 order (add through shr_u).
     uint wide = value_class == WASM_CLASS_I64 ? WASM_LIR_OP_I64_ADD - WASM_LIR_OP_I32_ADD : 0u;
     uint is_unsigned = scalar_is_unsigned_value(core.type_id) ? 1u : 0u;
@@ -431,6 +476,7 @@ uint wasm_lir_count(OptIrNodeCore core, OptIrNodeOperands operands,
     if (false_branch && exhaustion_reload) return 3u;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_CONST_STRING) return 2u;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_CONST_I64) return wasm_const_i64_rows(core, operands);
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_CONST_F64) return wasm_const_f64_rows(operands);
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_CONVERT) return wasm_convert_rows(core, operands);
     if (wasm_shift_amount_opcode(core, shift_amount_type) != WASM_LIR_OP_NOP) return 2u;
     // A call of a `-> !` function is followed by `unreachable`: the callee
@@ -448,17 +494,17 @@ uint wasm_lir_count(OptIrNodeCore core, OptIrNodeOperands operands,
     // one row widens the checked value and one row calls import zero.
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_INTRINSIC && operands.a == 1u)
         return 2u;
-    return (opt_ir_op(core) == SEMANTIC_LIR_OP_NEGATE && core.type_id != TY_FLOAT) ||
+    return (opt_ir_op(core) == SEMANTIC_LIR_OP_NEGATE &&
+            !wasm_class_is_float(wasm_scalar_class(core.type_id))) ||
         false_branch ? 2u : 1u;
 }
 
 
 bool wasm_lir_supported(OptIrNodeCore core)
 {
-    // Native f64 support does not imply a Wasm value or ABI representation.
-    if (core.type_id == SCALAR_F64) return false;
     uint op = opt_ir_op(core);
     return op == SEMANTIC_LIR_OP_CONST_I32 || op == SEMANTIC_LIR_OP_CONST_F32 ||
+        op == SEMANTIC_LIR_OP_CONST_F64 ||
         op == SEMANTIC_LIR_OP_CONST_I64 || op == SEMANTIC_LIR_OP_CONST_STRING ||
         op == SEMANTIC_LIR_OP_VALUE_GET || op == SEMANTIC_LIR_OP_VALUE_SET ||
         op == SEMANTIC_LIR_OP_STORE ||
@@ -544,6 +590,10 @@ struct WasmPlanRow
     uint param_count;
     bool first;
     bool last;
+    // A return with no value in a function that has a result: the unit
+    // fallthrough of a body whose every path returns (`fn main()` with
+    // `return 0;` arms). Wasm validates the fallthrough, so it traps.
+    bool missing_result;
     // A literal inside a type (the length in `f<[i32; 2]>()`): its value
     // row has no consumer, so a stack machine must not push it.
     bool type_literal;
@@ -607,8 +657,11 @@ void wasm_emit_frame(uint offset)
 
 uint wasm_word_delta(uint words) { return 0u - words * WASM_WORD_BYTES; }
 
+// An f64 in linear memory has no layout here yet (memory words are four
+// bytes); its rows are rejected and only locals and the stack hold f64.
 uint wasm_load_opcode(uint type_id)
 {
+    if (type_id == SCALAR_F64) wasm_plan_unsupported = true;
     if (type_id == SCALAR_I64 || type_id == SCALAR_U64) return WASM_LIR_OP_I64_LOAD;
     if (type_id == SCALAR_F32) return WASM_LIR_OP_F32_LOAD;
     if (type_id == SCALAR_I8) return WASM_LIR_OP_I32_LOAD8_S;
@@ -620,6 +673,7 @@ uint wasm_load_opcode(uint type_id)
 
 uint wasm_store_opcode(uint type_id)
 {
+    if (type_id == SCALAR_F64) wasm_plan_unsupported = true;
     if (type_id == SCALAR_I64 || type_id == SCALAR_U64) return WASM_LIR_OP_I64_STORE;
     if (type_id == SCALAR_F32) return WASM_LIR_OP_F32_STORE;
     if (type_id == SCALAR_I8 || type_id == SCALAR_U8) return WASM_LIR_OP_I32_STORE8;
@@ -1251,7 +1305,7 @@ void wasm_plan_body(WasmPlanRow row,
     if (op == SEMANTIC_LIR_OP_RETURN)
     {
         if (row.frame_bytes != 0u) wasm_emit_epilogue(row.frame_bytes);
-        wasm_emit(WASM_LIR_OP_RETURN, 0u);
+        wasm_emit(row.missing_result ? WASM_LIR_OP_UNREACHABLE : WASM_LIR_OP_RETURN, 0u);
         return;
     }
     wasm_emit_legacy(row.legacy_rows);
@@ -1343,6 +1397,9 @@ WasmPlanRow wasm_plan_row_at(uint scheduled_row, uint count,
     functions.GetDimensions(function_rows, stride);
     row.param_start = 0u;
     row.param_count = 0u;
+    uint result_type = function_id < function_rows ? functions[function_id].result_type : 0u;
+    row.missing_result = op == SEMANTIC_LIR_OP_RETURN && operands.a == WASM_LIR_INVALID &&
+        result_type != 0u && result_type != 1u && result_type != SCALAR_NEVER;
     if (row.first && function_id < function_rows)
     {
         row.param_start = functions[function_id].param_start;

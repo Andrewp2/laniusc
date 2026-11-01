@@ -2,8 +2,9 @@ module
 
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.Lists_empty
+import Lanius.Mini.Compiler.P.SrcType_size
+import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.enumVariants
-import Lanius.Mini.Compiler.P.lookup
 import Lanius.Mini.Compiler.P.structFields
 import Lanius.Mini.Compiler.P.usizeWidth
 
@@ -14,7 +15,7 @@ set_option linter.unusedVariables false
 
 namespace Lanius.Mini
 
-/-- The width a scalar of a slice element is loaded and stored with. Each takes one native word: 4 bytes are read and written for i32, bool, u8 and u32, 8 for u64, usize, isize and ptr. -/
+/-- The width a scalar of a slice element is loaded and stored with. Each takes one native word: 4 bytes are read and written for i32, bool, u8, u16 and u32, 8 for u64, usize, isize and ptr. -/
 def wordWidth (ty : SrcType) : Option MemWidth :=
   match ty with
   | .i32 => some MemWidth.m32
@@ -24,8 +25,12 @@ def wordWidth (ty : SrcType) : Option MemWidth :=
   | .enum id variants => none
   | .ptr => some MemWidth.m64
   | .slice element => none
+  | .array arrayElement arrayLength => none
   | .unit => none
   | .isize => some MemWidth.m64
+  | .char => none
+  | .float ft => none
+  | .sint kind => usizeWidth kind
 
 /-- The fields declared for a struct match the type's. -/
 def declaredSame (declared : Option (List SrcType)) (fields : List SrcType) : Bool :=
@@ -50,8 +55,12 @@ def wordType (decls : SrcDecls) (ty : SrcType) : Bool :=
   | .enum id variants => declaredVariants (enumVariants decls.enums id) variants && decide (0 < variants.length) && decide (variants.length < 4294967296) && wordVariants decls variants
   | .ptr => true
   | .slice element => false
+  | .array arrayElement arrayLength => false
   | .unit => false
   | .isize => true
+  | .char => false
+  | .float ft => false
+  | .sint kind => true
 def wordTypes (decls : SrcDecls) (types : List SrcType) : Bool :=
   match types with
   | [] => true

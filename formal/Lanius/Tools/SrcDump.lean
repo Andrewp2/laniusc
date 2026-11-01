@@ -33,6 +33,15 @@ def uintName : UintTy → String
   | .uint32 => "u32"
   | .uint64 => "u64"
   | .usize => "usize"
+  | .uint16 => "u16"
+
+/-- The signed type as wide as an unsigned one. -/
+def sintName : UintTy → String
+  | .uint8 => "i8"
+  | .uint32 => "i32"
+  | .uint64 => "i64"
+  | .usize => "isize"
+  | .uint16 => "i16"
 
 /-- A type as Lanius writes it, each named type with its module. -/
 partial def tyName (decls : Decls) : Ty → String
@@ -41,7 +50,12 @@ partial def tyName (decls : Decls) : Ty → String
   | .tyUint k => uintName k
   | .tyPtr => "ptr"
   | .tyIsize => "isize"
+  | .tyChar => "char"
+  | .tyFloat .f32 => "f32"
+  | .tyFloat .f64 => "f64"
+  | .tySint k => sintName k
   | .tySlice e => s!"[{tyName decls e}]"
+  | .tyArray e n => s!"[{tyName decls e}; {n}]"
   | .tyNamed d args =>
     let name := match decls.types[d]? with
       | none => s!"?{d}"
@@ -60,9 +74,14 @@ def srcTyName : SrcType → String
   | .ptr => "ptr"
   | .unit => "unit"
   | .isize => "isize"
+  | .char => "char"
+  | .float .f32 => "f32"
+  | .float .f64 => "f64"
   | .slice _ => "slice"
+  | .array _ n => s!"array{n}"
   | .struct id _ => s!"#{id}"
   | .enum id _ => s!"#{id}"
+  | .sint k => sintName k
 
 mutual
 partial def effCalls : SrcEff → List Nat
@@ -85,6 +104,8 @@ partial def stmtCalls : SrcStmt → List Nat
   | .letCall _ _ c _ b => c :: stmtCalls b
   | .setCall _ c _ => [c]
   | .then a b => stmtCalls a ++ stmtCalls b
+  | .matchArm _ _ _ _ _ _ a b => stmtCalls a ++ stmtCalls b
+  | .unreachable _ _ => []
   | .if _ a b => stmtCalls a ++ stmtCalls b
   | .while _ b => stmtCalls b
   | .letEval _ _ v b => effCalls v ++ stmtCalls b
@@ -93,7 +114,7 @@ partial def stmtCalls : SrcStmt → List Nat
   | .whileEval c b => effCalls c ++ stmtCalls b
   | .setIndexEval _ i v => effCalls i ++ effCalls v
   | .nop | .set _ _ | .setField _ _ _ | .return _ | .setByte _ _ _ | .free _ _ _ | .setIndex _ _ _
-  | .returnUnit => []
+  | .returnUnit | .break | .continue => []
 end
 
 /-- `sig ID PARAMS RET CALLEES` (comma lists, `-` when empty), and for a
@@ -163,6 +184,7 @@ def uintText : UintTy → String
   | .uint32 => ".uint32"
   | .uint64 => ".uint64"
   | .usize => ".usize"
+  | .uint16 => ".uint16"
 
 /-- A type's text: scalars as themselves, the rest by name. -/
 partial def typeText : SrcType → StateM Table String
@@ -172,7 +194,12 @@ partial def typeText : SrcType → StateM Table String
   | .ptr => pure ".ptr"
   | .unit => pure ".unit"
   | .isize => pure ".isize"
+  | .char => pure ".char"
+  | .float .f32 => pure "(.float .f32)"
+  | .float .f64 => pure "(.float .f64)"
+  | .sint k => pure s!"(.sint {uintText k})"
   | .slice e => do named s!".slice {← typeText e}"
+  | .array e n => do named s!"(.array {← typeText e} {n})"
   | .struct id fs => do
     let ts ← fs.mapM typeText
     named s!".struct {id} [{", ".intercalate ts}]"
@@ -247,6 +274,126 @@ def markFunc (f : SrcFunc) : StateM Table SrcFunc := do
   return { params := ← f.params.mapM fun p => return { p with ty := ← mark p.ty },
            ret := ← mark f.ret, body := ← markStmt f.body }
 
+/-- A subtree's source: its tokens' texts, spaced, cut at 160 characters. -/
+partial def leaves : CTree → List Token
+  | .leaf t => [t]
+  | .node _ kids => kids.flatMap leaves
+
+def snippet (t : CTree) : String :=
+  let s := " ".intercalate ((leaves t).map fun k => text k.text)
+  if s.length > 160 then "`" ++ String.ofList (s.toList.take 160) ++ " ..`" else "`" ++ s ++ "`"
+
+/-- The local a let statement binds, when its type is read (as `letFirst` binds it). -/
+def letLocal (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) : Option Local :=
+  let tok := kidToken s 1
+  let mk (t : Ty) : Local := { name := tok.text, id := tok.start - env.base, ty := t }
+  if nodeProd (kid s 2) == Inline.pLetType then (tyOf fuel env (kid (kid s 2) 1)).map mk
+  else (untypedHead fuel env scope (kid (kid s 3) 1)).map fun u => mk u.ty
+
+mutual
+/-- The first statement of a list the front end cannot read, innermost first:
+a statement inside an if, while or block statement that fails on its own is
+named rather than the statement around it. -/
+partial def whyStmts (fuel : Nat) (env : FrontEnv) (scope : List Local) : List CTree → Option String
+  | [] => none
+  | s :: rest =>
+    if nodeProd s == Inline.pLetStmt then
+      match letFirst fuel env scope s [] with
+      | none => some s!"let {snippet s}"
+      | some _ => match letLocal fuel env scope s with
+        | some l => whyStmts fuel env (l :: scope) rest
+        | none => none
+    else
+      match stmtOf fuel env scope s with
+      | none => some ((whyNested fuel env scope s).getD s!"statement {snippet s}")
+      | some _ => whyStmts fuel env scope rest
+
+partial def whyBlock (fuel : Nat) (env : FrontEnv) (scope : List Local) (list : CTree) : Option String :=
+  (listItems fuel list).bind (whyStmts fuel env scope)
+
+partial def whyNested (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) : Option String :=
+  let p := nodeProd s
+  if p == Inline.pIfStmt then
+    (whyBlock fuel env scope (kid (kid s 4) 1)).orElse fun _ =>
+      if nodeProd (kid s 5) == Inline.pElseStmt then whyBlock fuel env scope (kid (kid (kid s 5) 1) 1) else none
+  else if p == Inline.pWhileStmt then whyBlock fuel env scope (kid (kid s 4) 1)
+  else if p == Inline.pBlockStmt then whyBlock fuel env scope (kid (kid s 0) 1)
+  else none
+end
+
+/-- Why a function instance is not read: the part of `readFn` that fails. -/
+def whyFn (fuel : Nat) (decls : Decls) (fd : FnDecl) (inst : Inst) : String :=
+  if nodeProd fd.tree == Inline.pExternFn then "an extern it does not read" else
+  let args := if diverges fd inst then initTys inst.args else inst.args
+  let names := fd.implParams ++ fd.params
+  let f := fd.tree
+  let tenv : FrontEnv := { decls := decls, home := fd.home, names := names, subst := args,
+                           globals := moduleGlobals decls fd.home, ret := none, base := (kidToken f 1).start }
+  let rt := resultOf fuel tenv (kid f 6)
+  let env := { tenv with ret := retExpected rt }
+  if names.length != args.length then "its type arguments" else
+  if !fnBoundsOk fuel decls fd tenv then "a bound that does not hold" else
+  match listItems fuel (kid f 4) with
+  | none => "its parameter list"
+  | some items => match paramsOf fuel env fd [] items with
+    | none => s!"its parameters {snippet (kid f 4)}"
+    | some ps => match rt with
+      | none => s!"its result type {snippet (kid f 6)}"
+      | some _ => match funcParams fuel env (some ps) rt (kid f 8) (kid (kid f 9) 1) with
+        | some _ => "a write to its `&self` local"
+        | none => ((listItems fuel (kid (kid f 9) 1)).bind (whyStmts fuel env ps.scope)).getD
+            "its contracts, or its body as a whole"
+
+/-- Why `describe` rejects the files: the step that fails, or the first
+function instance the front end cannot read. -/
+def diagnose (files : List FileInput) : String := Id.run do
+  let some roots := validateFiles grammar files | return "the files do not parse"
+  let fuel := filesFuel files
+  match roots with
+  | [] => return "no files"
+  | first :: rest =>
+    -- A file's items that do not read on their own, with their source.
+    let badItems (r : CTree) : String :=
+      let items := (listItems fuel (kid r 0)).getD []
+      let home := (modulePath fuel items).getD []
+      let fails := items.filter fun p => (itemDecls fuel home p).isNone
+      "; ".intercalate (fails.map fun p => snippet (itemBody p))
+    let some f := fileDecls fuel first | return s!"the first file's declarations: {badItems first}"
+    let some c := collectFiles fuel rest ({ decls := f.decls, modules := [f.home] } : Collected)
+      | let bad := rest.zipIdx.filter fun (r, _) => (fileDecls fuel r).isNone
+        let why := bad.map fun (r, i) => s!"file {i + 1}: {badItems r}"
+        return s!"the declarations of {why}"
+    let name (inst : Inst) := match c.decls.fns[inst.decl]? with
+      | none => "a projection"
+      | some d => s!"{path d.home}::{text d.name}"
+    let mut table := rootInsts f.decls.fns 0
+    let mut funcs : List MFunc := []
+    let mut i := 0
+    for _ in [0:fuel] do
+      match table[i]? with
+      | none => break
+      | some inst =>
+        match readInst fuel c.decls inst with
+        | none =>
+          let why := match c.decls.fns[inst.decl]? with
+            | none => "a projection"
+            | some fd => whyFn fuel c.decls fd inst
+          return s!"the front end cannot read {name inst}: {why}"
+        | some mf =>
+          table := addInsts table (Lanius.Mini.stmtCalls mf.body)
+          funcs := funcs ++ [mf]
+          i := i + 1
+    if !wellNamed c then return "two declarations share a name (wellNamed)"
+    let seeds := seedInsts f.decls.types 0
+    let some ts := typeTableMore fuel c.decls (typeTable fuel c.decls seeds (seedTys seeds)) (funcsTys funcs)
+      | return "the type table fails"
+    let t : Tables := { decls := c.decls, fns := table, types := ts, lowered := loweredAll fuel c.decls ts ts }
+    for (inst, mf) in table.zip funcs do
+      if (closeParams fuel t mf.params).isNone then return s!"{name inst}'s parameters do not close"
+      if (closeRet fuel t mf.ret).isNone then return s!"{name inst}'s result does not close"
+      if (closeStmt fuel t mf.body).isNone then return s!"{name inst}'s body does not close"
+    return "every function closes; an untyped literal is rejected (untypedRejected)"
+
 end Lanius.Tools.SrcDump
 
 open Lanius.Tools.SrcDump in
@@ -259,13 +406,13 @@ def main (args : List String) : IO UInt32 := do
     match ← loadFile b with
     | none => IO.eprintln s!"{b} does not lex"; return 1
     | some f => files := files ++ [f]
-  let some lines := describe files | IO.eprintln "the front end rejects the files"; return 1
+  let some lines := describe files | IO.eprintln s!"the front end rejects the files: {diagnose files}"; return 1
   let names := (lines.filter (fun (l : String) => l.startsWith "fn ")).map fun (l : String) =>
     match l.splitOn " " with
     | [_, _, name, self, args] =>
       (if self == "-" then name else s!"{self}::{name}") ++ (if args == "-" then "" else s!"<{args}>")
     | _ => l
-  let some p := frontEndFiles grammar files | IO.eprintln "the front end rejects the files"; return 1
+  let some p := frontEndFiles grammar files | IO.eprintln s!"the front end rejects the files: {diagnose files}"; return 1
   IO.FS.writeFile (out ++ ".meta") ("\n".intercalate (lines ++ ((List.range p.funcs.length).zip p.funcs).map (fun (i, f) => sigLine i f)) ++ "\n")
   let (funcs, table) := (p.funcs.mapM markFunc).run {}
   let h ← IO.FS.Handle.mk out .write

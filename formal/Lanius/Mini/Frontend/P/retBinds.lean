@@ -4,7 +4,7 @@ public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.consTreeTail
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.fnInstRet
-import Lanius.Mini.Frontend.P.pickTy
+import Lanius.Mini.Frontend.P.repeatEff
 import Lanius.Mini.Frontend.P.typeDeclAt
 
 public section

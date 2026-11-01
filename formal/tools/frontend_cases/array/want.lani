@@ -1,0 +1,16 @@
+fn sum(values: [i32; 4]) -> i32 {
+    let a: i32 = values[0];
+    let b: i32 = values[1];
+    return a + b + values[2] + values[3];
+}
+
+fn pick(values: [u8; 4], index: i32) -> u8 {
+    let x: u8 = values[index];
+    return x;
+}
+
+fn run(n: i32) -> i32 {
+    let q: [i32; 4] = [n, 2, 3, n + 1];
+    let z: [u8; 4] = [7; 4];
+    return sum(q) + (pick(z, n) as i32);
+}

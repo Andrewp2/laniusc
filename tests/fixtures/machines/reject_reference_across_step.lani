@@ -1,0 +1,26 @@
+// Rejected (M4): `view` points into the machine, and `step` changes it
+// while `view` is still used.
+enum Tick { Up, Reset }
+struct Log { count: i32, resets: i32 }
+impl Log { fn view(&self) -> &Log { return self; } }
+
+machine Counter on Tick {
+    log: Log,
+    start Counting;
+
+    state Counting {
+        Tick::Up -> { self.log.count += 1; stay; },
+        Tick::Reset -> { self.log.resets += 1; goto Idle; },
+    }
+    state Idle {
+        Tick::Up -> { self.log.count = 1; goto Counting; },
+        Tick::Reset -> stay,
+    }
+}
+
+fn main() -> i32 {
+    let m: Counter = counter_start(Log { count: 0, resets: 0 });
+    let view: &Log = m.log.view();
+    m.step(Tick::Up);
+    return view.count;
+}

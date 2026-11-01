@@ -1,0 +1,34 @@
+// Nested patterns through imported and generic variants.
+module app::main;
+import core::io;
+import core::option;
+import core::result;
+enum Error { OutputTooSmall(u64), UnknownCommandId(i32) }
+enum Cause { Io(core::io::Error), Other }
+
+fn host_five(value: Cause) -> bool {
+    return match (value) { Cause::Io(core::io::Error::Host(number)) -> number == 5, _ -> false };
+}
+
+fn pick(r: core::result::Result<core::option::Option<i32>, i32>) -> i32 {
+    return match (r) {
+        core::result::Ok(core::option::Some(x)) -> x,
+        core::result::Ok(core::option::None) -> 100,
+        core::result::Err(e) -> 200 + e,
+    };
+}
+
+fn main() -> i32 {
+    let rejected: core::result::Result<i32, Error> = core::result::Err(Error::OutputTooSmall(113));
+    if (!match (rejected) { core::result::Err(Error::OutputTooSmall(required)) -> required == 113, _ -> false }) { return 1; }
+    let unknown: core::result::Result<i32, Error> = core::result::Err(Error::UnknownCommandId(99));
+    if (match (unknown) { core::result::Err(Error::OutputTooSmall(required)) -> true, _ -> false }) { return 2; }
+    if (!host_five(Cause::Io(core::io::Error::Host(5)))) { return 3; }
+    if (host_five(Cause::Io(core::io::Error::Host(4)))) { return 4; }
+    if (host_five(Cause::Io(core::io::Error::Interrupted))) { return 5; }
+    if (host_five(Cause::Other)) { return 6; }
+    if (pick(core::result::Ok(core::option::Some(7))) != 7) { return 7; }
+    if (pick(core::result::Ok(core::option::None)) != 100) { return 8; }
+    if (pick(core::result::Err(5)) != 205) { return 9; }
+    return 0;
+}

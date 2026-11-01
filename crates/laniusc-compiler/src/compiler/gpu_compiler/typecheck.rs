@@ -4275,6 +4275,42 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
                     .with_note("a `-> !` function must not return: end every path with a call to another `-> !` function (such as core::panic::panic()) or `assert(false)`, or change the return type"),
             )
         }
+        GpuTypeCheckCode::AssignMismatch if detail == crate::primitive_types::BLOCK_ARM_FALLS_THROUGH => {
+            CompileError::Diagnostic(
+                Diagnostic::error("LNC0006", "type mismatch")
+                    .with_primary_label(diagnostic_label_from_source_span(
+                        path, source, start, len, "the end of this block arm can be reached",
+                    ))
+                    .with_note("a block arm (`pattern -> { ... }`) must not complete: end every path through it with `return` or a call to a `-> !` function"),
+            )
+        }
+        GpuTypeCheckCode::AssignMismatch if detail == crate::primitive_types::DISTINCT_TYPE_MISMATCH => {
+            CompileError::Diagnostic(
+                Diagnostic::error("LNC0006", "type mismatch")
+                    .with_primary_label(diagnostic_label_from_source_span(
+                        path, source, start, len, "this value's distinct type differs from the one expected here",
+                    ))
+                    .with_note("a value of a distinct type (`type M = distinct T;`) mixes only with values of the same type and with literals; convert with `as`"),
+            )
+        }
+        GpuTypeCheckCode::AssignMismatch if detail == crate::primitive_types::EXCLUSIVE_REFERENCE_ALIAS => {
+            CompileError::Diagnostic(
+                Diagnostic::error("LNC0006", "type mismatch")
+                    .with_primary_label(diagnostic_label_from_source_span(
+                        path, source, start, len, "this argument reaches the same value as a `&mut` argument of this call",
+                    ))
+                    .with_note("a `&mut` argument must be the only reference to its value in the call; pass a copy, or make two calls"),
+            )
+        }
+        GpuTypeCheckCode::AssignMismatch if detail == crate::primitive_types::LIVE_REFERENCE_WRITTEN => {
+            CompileError::Diagnostic(
+                Diagnostic::error("LNC0006", "type mismatch")
+                    .with_primary_label(diagnostic_label_from_source_span(
+                        path, source, start, len, "this `&mut` use changes a value that a reference still in use points into",
+                    ))
+                    .with_note("a reference local (`let r: &T = ...`) borrows its value until its last use; finish using it first, or copy what it reads"),
+            )
+        }
         GpuTypeCheckCode::AssignMismatch
             if assign_mismatch_looks_like_invalid_member_access(source, start, detail) =>
         {

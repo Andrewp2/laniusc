@@ -1,0 +1,70 @@
+// The scanner as a `machine` driven by `run` (M3): one loop per state, the
+// code that must beat scan_step.
+import alloc::allocator;
+import core::mem;
+const BYTES: i32 = 67108864;
+
+// Deterministic text: runs of digits, words, spaces and `#` comments to the end
+// of a line. The same bytes in every version.
+fn fill(bytes: [u8]) {
+    let seed: u32 = 12345;
+    let at: i32 = 0;
+    while (at < BYTES) {
+        seed = seed * 1103515245 + 12345;
+        let pick: u32 = (seed >> 16) % 8;
+        let length: i32 = (((seed >> 8) % 7) + 1) as i32;
+        let base: u8 = 32;
+        if (pick < 3) { base = 48; }
+        if (pick == 3 || pick == 4) { base = 97; }
+        if (pick == 5) { base = 35; }
+        let k: i32 = 0;
+        while (k < length && at < BYTES) {
+            let byte: u8 = base;
+            if (base == 48) { byte = (48 + ((seed >> (k as u32)) % 10)) as u8; }
+            if (base == 97) { byte = (97 + ((seed >> (k as u32)) % 26)) as u8; }
+            if (base == 35 && k == length - 1) { byte = 10; }
+            bytes[at] = byte;
+            at += 1; k += 1;
+        }
+    }
+}
+
+fn digit(c: u8) -> bool { return c >= 48 && c <= 57; }
+
+machine Scanner on u8 {
+    total: i64,
+    start Between;
+
+    state Between {
+        c -> {
+            if (digit(c)) { goto InNumber((c - 48) as i64); }
+            if (c == 35) { goto InComment; }
+            stay;
+        },
+    }
+    state InNumber(value: i64) {
+        c -> {
+            if (digit(c)) { goto InNumber(value * 10 + (c - 48) as i64); }
+            self.total += value;
+            if (c == 35) { goto InComment; }
+            goto Between;
+        },
+    }
+    state InComment {
+        c -> {
+            if (c == 10) { goto Between; }
+            stay;
+        },
+    }
+}
+
+fn main() -> i32 {
+    let storage: ptr = alloc::allocator::alloc(BYTES as usize, 8);
+    let bytes: [u8] = core::mem::typed_slice_from_storage<u8>(storage, BYTES);
+    fill(bytes);
+    let m: Scanner = scanner_start(0);
+    m.run(bytes, BYTES);
+    let last: i64 = match (m.state()) { ScannerState::Between -> 0, ScannerState::InNumber(value) -> value, ScannerState::InComment -> 0 };
+    print(m.total + last);
+    return 0;
+}

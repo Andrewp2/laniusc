@@ -1,0 +1,24 @@
+module app::main;
+
+// Item imports: `Option`, `Some`, `None` and `unwrap_or` by their short
+// names, as stdlib/core/wide_i64_checked.lani writes them.
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+import core::option::unwrap_or;
+
+fn half(n: i32) -> Option<i32> {
+    if (n % 2 != 0) {
+        return None();
+    }
+    return Some(n / 2);
+}
+
+fn top(n: i32) -> i32 {
+    let h: Option<i32> = half(n);
+    let k: i32 = match (h) {
+        Some(x) -> x,
+        None -> 0 - 1,
+    };
+    return k + unwrap_or(half(n + 1), 7);
+}

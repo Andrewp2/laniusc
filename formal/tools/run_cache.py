@@ -14,6 +14,60 @@ import os
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CACHE = os.path.join(ROOT, 'target/claude-work/cache')
 
+
+class lean_lock:
+    """Held while Lean builds or runs: this worktree's lock (no two builds of
+    one checkout at once) and one of two machine-wide slots in the common git
+    directory, the second taken only while 5 GB are available. Every Lean
+    scope runs in lean.slice (SLICE), which caps all of them together.
+    With LEAN_LOCK_HELD=1 the caller already holds them
+    (`target/claude-work/bin/leanslot gate.py`), so a whole gate run waits
+    once rather than at every step."""
+
+    def __enter__(self):
+        import fcntl
+        import subprocess
+        import time
+        self.held = []
+        if os.environ.get('LEAN_LOCK_HELD') == '1':
+            return self
+        def git_dir(flag):
+            out = subprocess.run(['git', 'rev-parse', flag], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+            return os.path.join(ROOT, out or '.git')
+        own = open(os.path.join(git_dir('--git-dir'), 'lean-wt.lock'), 'a')
+        fcntl.flock(own, fcntl.LOCK_EX)
+        self.held.append(own)
+        common = git_dir('--git-common-dir')
+        while True:
+            for i, name in enumerate(('lean.lock', 'lean.lock.2')):
+                if i and available_gb() < 5:
+                    continue
+                f = open(os.path.join(common, name), 'a')
+                try:
+                    fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    f.close()
+                    continue
+                self.held.append(f)
+                return self
+            time.sleep(3)
+
+    def __exit__(self, *exc):
+        for f in reversed(self.held):
+            f.close()
+
+
+SLICE = '--slice=lean.slice'
+
+
+def available_gb():
+    with open('/proc/meminfo') as f:
+        for line in f:
+            if line.startswith('MemAvailable:'):
+                return int(line.split()[1]) // 1048576
+    return 0
+
+
 _digests = {}
 
 
@@ -103,10 +157,11 @@ OLEANS = os.path.join(FORMAL, '.lake/build/lib/lean')
 
 
 def olean_digest(text):
-    """A digest of the built .olean files a Lean file's imports reach in
-    formal/ (with the toolchain), or None when one is missing."""
+    """A digest of the built .olean files (with their .private, .server and
+    .ir parts) a Lean file's imports reach in formal/ (with the toolchain),
+    or None when one is missing."""
     import re
-    seen, todo = set(), re.findall(r'^import\s+(\S+)', text, re.M)
+    seen, todo = set(), re.findall(r'^(?:public\s+|meta\s+)*import\s+(?:all\s+)?(\S+)', text, re.M)
     h = hashlib.sha256(open(os.path.join(FORMAL, 'lean-toolchain'), 'rb').read())
     while todo:
         m = todo.pop()
@@ -118,8 +173,12 @@ def olean_digest(text):
         olean = os.path.join(OLEANS, rel + '.olean')
         if not os.path.exists(olean):
             return None
-        h.update(m.encode() + b'\0' + file_digest(olean).encode())
-        todo += re.findall(r'^import\s+(\S+)', open(source).read(), re.M)
+        # A `module`'s bodies and compiled code are in the .olean.private
+        # and .ir files beside its .olean, which holds only the interface.
+        for part in (olean, olean + '.private', olean + '.server', os.path.join(OLEANS, rel + '.ir')):
+            if os.path.exists(part):
+                h.update(m.encode() + b'\0' + os.path.basename(part).encode() + b'\0' + file_digest(part).encode())
+        todo += re.findall(r'^(?:public\s+|meta\s+)*import\s+(?:all\s+)?(\S+)', open(source).read(), re.M)
     return h.hexdigest()
 
 
@@ -136,9 +195,10 @@ def run_lean(lean_path, memory='6G'):
     if hit is not None:
         return types.SimpleNamespace(returncode=0, stdout=hit['stdout'], stderr='')
     env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
-    run = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', f'MemoryMax={memory}', '-p', 'MemorySwapMax=0',
-                          'lake', 'env', 'lean', os.path.abspath(lean_path)], cwd=FORMAL, env=env,
-                         capture_output=True, text=True)
+    with lean_lock():
+        run = subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', f'MemoryMax={memory}', '-p',
+                              'MemorySwapMax=0', 'lake', 'env', 'lean', os.path.abspath(lean_path)], cwd=FORMAL,
+                             env=env, capture_output=True, text=True)
     if run.returncode == 0 and digest:
         store('lean', k, dict(stdout=run.stdout))
     return run

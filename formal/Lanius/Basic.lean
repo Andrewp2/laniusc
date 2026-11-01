@@ -40,6 +40,7 @@ inductive Trap where
   | allocatorContract
   | allocationFailure
   | entropyExhausted
+  | clockExhausted
   | assertionFailed
   | nonExhaustiveMatch
   | uninitializedLocal

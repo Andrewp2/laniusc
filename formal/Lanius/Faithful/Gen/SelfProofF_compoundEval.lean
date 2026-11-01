@@ -7,12 +7,12 @@ public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pLeTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pPathMore
 public import Lanius.Faithful.Gen.SelfStmtF_compoundEval
-public import Lanius.Faithful.Gen.SelfStmtF_compoundTarget
+public import Lanius.Faithful.Gen.SelfStmtF_divergeArm
+public import Lanius.Faithful.Gen.SelfStmtF_fieldTyAt
+public import Lanius.Faithful.Gen.SelfStmtF_floatTyped
+public import Lanius.Faithful.Gen.SelfStmtF_freshId
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
-public import Lanius.Faithful.Gen.SelfStmtF_intLiteral
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
-public import Lanius.Faithful.Gen.SelfStmtF_localExpr
-public import Lanius.Faithful.Gen.SelfStmtF_matchTysOrNone
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_whileEvalOf
 import all Lanius.Faithful.Gen.SelfSrcF_compoundEval
@@ -35,7 +35,7 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_compound_eval {prog : SrcProgram} {prims : Prims} {ix_compound_eval ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_eff_of ix_local_of ix_p_postfix_end ix_p_postfix_member ix_p_member_type_args_none ix_set_eval_of ix_field_index ix_compound_eff ix_compound_field_eval : Nat} (fn : prog.funcs[ix_compound_eval]? = some (src_compound_eval ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_eff_of ix_local_of ix_p_postfix_end ix_p_postfix_member ix_p_member_type_args_none ix_set_eval_of ix_field_index ix_compound_eff ix_compound_field_eval)) (np : prims.isPrim ix_compound_eval = false)
+theorem proof_compound_eval {prog : SrcProgram} {prims : Prims} {ix_compound_eval ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_eff_of ix_local_of ix_p_postfix_end ix_p_postfix_member ix_p_member_type_args_none ix_field_index ix_set_eval_of ix_compound_eff ix_compound_field_eval : Nat} (fn : prog.funcs[ix_compound_eval]? = some (src_compound_eval ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_eff_of ix_local_of ix_p_postfix_end ix_p_postfix_member ix_p_member_type_args_none ix_field_index ix_set_eval_of ix_compound_eff ix_compound_field_eval)) (np : prims.isPrim ix_compound_eval = false)
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
     (ext_field_text_Token_of_mini_selfhost_Token : Certified (∀ {n : Nat}, Stmt_field_text_Token_of_mini_selfhost_Token prog prims ix_field_text_Token_of_mini_selfhost_Token n))
@@ -45,8 +45,8 @@ theorem proof_compound_eval {prog : SrcProgram} {prims : Prims} {ix_compound_eva
     (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n))
     (ext_p_postfix_member : Certified (∀ {n : Nat}, Stmt_p_postfix_member prog prims ix_p_postfix_member n))
     (ext_p_member_type_args_none : Certified (∀ {n : Nat}, Stmt_p_member_type_args_none prog prims ix_p_member_type_args_none n))
-    (ext_set_eval_of : Certified (∀ {n : Nat}, Stmt_set_eval_of prog prims ix_set_eval_of n))
     (ext_field_index : Certified (∀ {n : Nat}, Stmt_field_index prog prims ix_field_index n))
+    (ext_set_eval_of : Certified (∀ {n : Nat}, Stmt_set_eval_of prog prims ix_set_eval_of n))
     (ext_compound_eff : Certified (∀ {n : Nat}, Stmt_compound_eff prog prims ix_compound_eff n))
     (ext_compound_field_eval : Certified (∀ {n : Nat}, Stmt_compound_field_eval prog prims ix_compound_field_eval n)) {n : Nat} :
     Stmt_compound_eval prog prims ix_compound_eval n := by

@@ -1,0 +1,40 @@
+// Per-request, today's style: each request parses its headers into a
+// Vec<Header>, builds a reply in a Vec<u8>, and destroys both at the end.
+import alloc::vec;
+import core::result;
+
+const REQUESTS: i32 = 50000;
+const HEADERS: i32 = 24;
+
+struct Header { name: i64, value: i64 }
+
+fn main() -> i32 {
+    let total: i64 = 0;
+    let request: i32 = 0;
+    while (request < REQUESTS) {
+        let headers: alloc::vec::Vec<Header> = alloc::vec::new<Header>();
+        let index: i32 = 0;
+        while (index < HEADERS) {
+            headers.try_push(Header { name: (index * 31 + request) as i64, value: (request % (index + 3)) as i64 });
+            index += 1;
+        }
+        let reply: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+        index = 0;
+        while (index < headers.len()) {
+            let header: Header = headers.at(index);
+            let width: i64 = 2 + (header.name + header.value) % 6;
+            let byte: i64 = 0;
+            while (byte < width) { reply.try_push((65 + (header.value + byte) % 26) as u8); byte += 1; }
+            reply.try_push(10 as u8);
+            index += 1;
+        }
+        let bytes: [u8] = reply.as_slice();
+        index = 0;
+        while (index < reply.len()) { total += bytes[index] as i64; index += 1; }
+        reply.destroy();
+        headers.destroy();
+        request += 1;
+    }
+    print(total);
+    return 0;
+}

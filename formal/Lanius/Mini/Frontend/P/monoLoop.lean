@@ -62,6 +62,10 @@ def stmtTys (m : MStmt) : List Ty :=
   | .mSetFieldEval id j x => effNamedTys x
   | .mReturnUnit => []
   | .mAssert x => effNamedTys x
+  | .mBreak => []
+  | .mContinue => []
+  | .mMatchArm sc sty k bs x ty body rest => sty :: ty :: (stmtTys body ++ stmtTys rest)
+  | .mUnreachable id ty => [ty]
 
 def paramTys (ps : List MParam) : List Ty :=
   match ps with
@@ -102,8 +106,12 @@ def tyKnown (table : List Inst) (t : Ty) : Bool :=
   | .tyUint k => true
   | .tyPtr => true
   | .tyIsize => true
+  | .tyChar => true
+  | .tyFloat ft => true
   | .tySlice e => tyKnown table e
+  | .tyArray e n => tyKnown table e
   | .tyNamed d args => instMember table ({ decl := d, args := args } : Inst)
+  | .tySint k => true
 
 /-- type_table over more types, from a table that holds every instance the types of its members need (as type_table's result from the seeds does): a type whose instance the table holds adds nothing new, so it is passed over without reading its declaration again. The types are every type the functions mention, most of them many times over. -/
 def typeTableMore (fuel : Nat) (decls : Decls) (table : Option (List Inst)) (ts : List Ty) : Option (List Inst) :=
@@ -142,8 +150,12 @@ def closeTy (fuel : Nat) (t : Tables) (ty : Ty) : Option SrcType :=
     | .tyUint k => some (SrcType.uint k)
     | .tyPtr => some SrcType.ptr
     | .tyIsize => some SrcType.isize
+    | .tyChar => some SrcType.char
+    | .tyFloat ft => some (SrcType.float ft)
     | .tySlice e => sliceType (closeTy (fuel - 1) t e)
+    | .tyArray e n => arrayType (closeTy (fuel - 1) t e) n
     | .tyNamed d args => closeNamed fuel t d args (instIndex t.types ({ decl := d, args := args } : Inst) 0)
+    | .tySint k => some (SrcType.sint k)
 
 def srcEnumId (t : Option SrcType) : Option Nat :=
   match t with
@@ -157,7 +169,11 @@ def srcEnumId (t : Option SrcType) : Option Nat :=
     | .enum id variants => some id
     | .ptr => none
     | .slice e => none
+    | .array e arrayLength => none
     | .unit => none
     | .isize => none
+    | .char => none
+    | .float ft => none
+    | .sint sk => none
 
 end Lanius.Mini

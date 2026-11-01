@@ -1,0 +1,42 @@
+// Tree, Goose style: nodes are bumped from the stack's top end; one release
+// per tree.
+import std::scope;
+import core::mem;
+import core::result;
+
+const DEPTH: i32 = 15;
+const TREES: i32 = 20;
+
+struct Node { left: ptr, right: ptr, value: i64 }
+
+fn build(stack: &std::scope::Stack, depth: i32, seed: i64) -> ptr {
+    let empty: ptr = 0;
+    let left: ptr = empty;
+    let right: ptr = empty;
+    if (depth > 0) { left = build(stack, depth - 1, seed * 2); right = build(stack, depth - 1, seed * 2 + 1); }
+    let node: Node = Node { left: left, right: right, value: seed % 1000 };
+    let at: ptr = core::result::unwrap(std::scope::place<Node>(stack, node));
+    return at;
+}
+
+fn check(at: ptr) -> i64 {
+    if (at == 0) { return 0; }
+    let node: Node = core::mem::typed_slice_from_storage<Node>(at, 1)[0];
+    return node.value + check(node.left) - check(node.right) / 2;
+}
+
+fn main() -> i32 {
+    let stack: std::scope::Stack = core::result::unwrap(std::scope::new(16777216));
+    let total: i64 = 0;
+    let tree: i32 = 0;
+    while (tree < TREES) {
+        let mark: std::scope::Mark = stack.mark();
+        let root: ptr = build(stack.borrow(), DEPTH, (tree + 1) as i64);
+        total += check(root);
+        stack.release(mark);
+        tree += 1;
+    }
+    print(total);
+    stack.destroy();
+    return 0;
+}

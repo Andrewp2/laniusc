@@ -1,0 +1,14 @@
+module app::main;
+
+// `x = op?;` where x's type is not the success payload's.
+import core::result;
+
+fn half(n: i32) -> core::result::Result<i32, i32> {
+    return Ok(n);
+}
+
+fn step(n: i32) -> core::result::Result<i32, i32> {
+    let b: bool = true;
+    b = half(n)?;
+    return Ok(n);
+}

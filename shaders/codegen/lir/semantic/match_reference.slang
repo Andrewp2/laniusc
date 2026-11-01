@@ -20,6 +20,33 @@ uint semantic_match_variant_ordinal(uint pattern, uint hir_count)
         ? compact_variants[lo].ordinal : LIR_INVALID;
 }
 
+// A payload sub-pattern that names a variant binds nothing. It checks that
+// payload's own discriminant: VALUE_GET, LOAD, CONST, COMPARE and IF_BEGIN
+// open inside its arm, and CONTROL_END closes after the arm's branch, so a
+// failed check falls through to the next arm.
+static const uint SEMANTIC_MATCH_CHECK_ROWS = 6u;
+
+uint semantic_match_payload_row(uint node)
+{
+    uint total = active_match_payload_count();
+    uint lo = 0u; uint hi = total;
+    while (lo < hi)
+    {
+        uint mid = lo + (hi - lo) / 2u;
+        if (compact_match_payloads[mid].pattern < node) lo = mid + 1u;
+        else hi = mid;
+    }
+    return lo < total && compact_match_payloads[lo].pattern == node ? lo : LIR_INVALID;
+}
+
+uint semantic_match_check_row(uint node, uint hir_count)
+{
+    uint row = semantic_match_payload_row(node);
+    return row != LIR_INVALID &&
+        semantic_match_variant_ordinal(node, hir_count) != LIR_INVALID
+        ? row : LIR_INVALID;
+}
+
 bool semantic_match_pattern_accepts_enum(uint pattern, uint tag, uint payload, uint hir_count)
 {
     if (pattern >= hir_count) return false;

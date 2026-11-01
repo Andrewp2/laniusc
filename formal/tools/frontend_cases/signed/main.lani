@@ -1,0 +1,27 @@
+const LOW: i8 = -128;
+const MID: i16 = 300;
+const WIDE: i64 = -9223372036854775808;
+
+struct S { a: i8, b: i16, c: i64 }
+
+fn step(x: i8, y: i16, z: i64) -> i64 {
+    let a: i8 = x * 3 + 1;
+    let b: i16 = -32768;
+    let c: i64 = 9223372036854775807;
+    let d: i8 = -x;
+    if (a < 0 || 10 <= a) {
+        a = a - 100;
+    }
+    let s: S = S { a: 2, b: 4, c: -1 };
+    s.b = s.b + y;
+    let q: i16 = y / 7 + y % 3;
+    let low: i8 = LOW;
+    let wide: i64 = WIDE;
+    let r: i64 = z / 5 - (a as i64) + (b as i64) + (s.b as i64) + (q as i64);
+    return r + c + (d as i64) + (low as i64) + (MID as i64) + wide;
+}
+
+fn top(n: i32) -> i32 {
+    let r: i64 = step(5, 1000, -77);
+    return (r as i32) + n;
+}

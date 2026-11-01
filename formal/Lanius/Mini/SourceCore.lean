@@ -21,12 +21,31 @@ def UintTy.toCore : UintTy → Core.UnsignedIntTy
   | .uint32 => .u32
   | .uint64 => .u64
   | .usize => .usize
+  | .uint16 => .u16
+
+/-- The signed type as wide. -/
+def UintTy.toSigned : UintTy → Core.SignedIntTy
+  | .uint8 => .i8
+  | .uint32 => .i32
+  | .uint64 => .i64
+  | .usize => .isize
+  | .uint16 => .i16
 
 def UintTy.width : UintTy → Nat
   | .uint8 => 8
   | .uint32 => 32
   | .uint64 => 64
   | .usize => 64
+  | .uint16 => 16
+
+def FloatTy.toCore : FloatTy → Core.ScalarTy
+  | .f32 => .f32
+  | .f64 => .f64
+
+/-- The Core value of a float pattern. -/
+def FloatTy.value : FloatTy → BitVec 64 → Value
+  | .f32, bits => .f32Bits (UInt32.ofNat bits.toNat)
+  | .f64, bits => .f64Bits (UInt64.ofNat bits.toNat)
 
 def SrcType.toCore : SrcType → Core.Ty
   | .i32 => .scalar (.signed .i32)
@@ -36,8 +55,12 @@ def SrcType.toCore : SrcType → Core.Ty
   | .enum id _ => .enumeration id
   | .ptr => .scalar .rawPtr
   | .slice element => .slice element.toCore
+  | .array element length => .array element.toCore length
   | .unit => .unit
   | .isize => .scalar (.signed .isize)
+  | .char => .scalar .char
+  | .float t => .scalar t.toCore
+  | .sint kind => .scalar (.signed kind.toSigned)
 
 /-- The Core type id of a struct or enum type. -/
 def SrcType.typeId : SrcType → Nat
@@ -48,8 +71,29 @@ def SrcType.typeId : SrcType → Nat
   | .enum id _ => id
   | .ptr => 0
   | .slice _ => 0
+  | .array _ _ => 0
   | .unit => 0
   | .isize => 0
+  | .char => 0
+  | .float _ => 0
+  | .sint _ => 0
+
+/-- Core's literal of this type from its fields' expressions: an array's
+elements, or a struct's fields (no other type has a literal of this form). -/
+def SrcType.literal : SrcType → List Core.Expr → Core.Expr
+  | .i32, xs => .structValue 0 xs
+  | .bool, xs => .structValue 0 xs
+  | .uint _, xs => .structValue 0 xs
+  | .struct id _, xs => .structValue id xs
+  | .enum id _, xs => .structValue id xs
+  | .ptr, xs => .structValue 0 xs
+  | .slice _, xs => .structValue 0 xs
+  | .array element _, xs => .array element.toCore xs
+  | .unit, xs => .structValue 0 xs
+  | .isize, xs => .structValue 0 xs
+  | .char, xs => .structValue 0 xs
+  | .float _, xs => .structValue 0 xs
+  | .sint _, xs => .structValue 0 xs
 
 /-- The Core type a cast to this type names. Lowering only casts to `i32`
 and the unsigned types. -/
@@ -61,8 +105,12 @@ def SrcType.toScalar : SrcType → Core.ScalarTy
   | .enum _ _ => .bool
   | .ptr => .rawPtr
   | .slice _ => .bool
+  | .array _ _ => .bool
   | .unit => .bool
   | .isize => .signed .isize
+  | .char => .char
+  | .float t => t.toCore
+  | .sint kind => .signed kind.toSigned
 
 /-- Core's raw slice of this element type from a pointer and a length:
 `slice_from_raw_parts` for `i32`, the typed form for the rest. -/
@@ -74,8 +122,12 @@ def SrcType.sliceFrom : SrcType → Core.Expr → Core.Expr → Core.Expr
   | .enum id _, pointer, length => .typedSliceFromRawParts (.enumeration id) pointer length
   | .ptr, pointer, length => .typedSliceFromRawParts (.scalar .rawPtr) pointer length
   | .slice element, pointer, length => .typedSliceFromRawParts (.slice element.toCore) pointer length
+  | .array element n, pointer, length => .typedSliceFromRawParts (.array element.toCore n) pointer length
   | .unit, pointer, length => .typedSliceFromRawParts .unit pointer length
   | .isize, pointer, length => .typedSliceFromRawParts (.scalar (.signed .isize)) pointer length
+  | .char, pointer, length => .typedSliceFromRawParts (.scalar .char) pointer length
+  | .float t, pointer, length => .typedSliceFromRawParts (.scalar t.toCore) pointer length
+  | .sint kind, pointer, length => .typedSliceFromRawParts (.scalar (.signed kind.toSigned)) pointer length
 
 def SrcDivOp.toCore : SrcDivOp → Core.BinaryOp
   | .quotient => .divide
@@ -110,6 +162,8 @@ def SrcExpr.toCore : SrcExpr → Core.Expr
   | .apply op left right => .binary op.toCore left.toCore right.toCore
   | .cast ty operand => .cast ty.toScalar operand.toCore
   | .null => .value (.pointer 0)
+  | .char code => .value (.character (UInt32.ofNat code.toNat))
+  | .float t bits => .value (t.value bits)
 
 /-- Match arms from variant `k`: arm `k` matches variant `k` of enum type
 `id`, binding its payload. -/
@@ -128,7 +182,7 @@ def SrcEff.toCore : SrcEff → Core.Expr
   | .eNot operand => .unary .logicalNot operand.toCore
   | .eCast ty operand => .cast ty.toScalar operand.toCore
   | .eIndex slice index => .index (.local slice) index.toCore
-  | .eStruct ty fields => .structValue ty.typeId (SrcEff.toCoreList fields)
+  | .eStruct ty fields => ty.literal (SrcEff.toCoreList fields)
   | .eVariant ty variant payload => .enumValue ty.typeId variant (SrcEff.toCoreList payload)
   | .eMatch scrutinee ety _ binders values =>
       .matchValue scrutinee.toCore (SrcEff.coreArms ety.typeId 0 binders values)
@@ -151,7 +205,7 @@ def SrcStmt.toCore : SrcStmt → Core.Stmt
   | .nop => .skip
   | .let id ty value body => .letLocal id ty.toCore value.toCore body.toCore
   | .letStruct id ty fields body =>
-      .letLocal id ty.toCore (.structValue ty.typeId (fields.map SrcExpr.toCore)) body.toCore
+      .letLocal id ty.toCore (ty.literal (fields.map SrcExpr.toCore)) body.toCore
   | .letCall id ty callee args body =>
       .letLocal id ty.toCore (.call callee (args.map SrcExpr.toCore)) body.toCore
   | .letEnum id ty variant payload body =>
@@ -192,6 +246,20 @@ def SrcStmt.toCore : SrcStmt → Core.Stmt
   | .setFieldEval id index value => .expression (.assign .set (.field (.local id) index) value.toCore)
   | .returnUnit => .returnValue none
   | .assert condition => .expression (.intrinsic .assert condition.toCore)
+  | .break => .breakLoop
+  | .continue => .continueLoop
+  | .matchArm scrutinee enumId variant binds binder ty body rest =>
+      .ifThenElse
+        (.matchValue (.local scrutinee)
+          [(.enumVariant enumId variant (if binds then [.wildcard] else []), .value (.boolean true)),
+           (.wildcard, .value (.boolean false))])
+        (if binds then
+          .letLocal binder ty.toCore
+            (.matchValue (.local scrutinee) [(.enumVariant enumId variant [.bind binder], .local binder)])
+            body.toCore
+        else body.toCore)
+        rest.toCore
+  | .unreachable id ty => .letUninitialized id ty.toCore (.returnValue (some (.local id)))
 
 def SrcFunc.toCore (id : Nat) (func : SrcFunc) : Core.Function where
   id := id
@@ -203,6 +271,47 @@ def SrcFunc.toCore (id : Nat) (func : SrcFunc) : Core.Function where
 def coreFuncs : Nat → List SrcFunc → List Core.Function
   | _, [] => []
   | id, func :: rest => func.toCore id :: coreFuncs (id + 1) rest
+
+/-! ## Host services (roadmap F8)
+
+Core's host services that the verified compiler lowers to system calls are
+Core functions without a body (`ExternalBehavior.host`), from function id
+`hostBase` = 2^32 on, past every program's own functions. A source program
+calls them like its own functions (an `extern` declaration is a function of
+the program whose body returns the host function's result). -/
+
+def hostBase : Nat := 4294967296
+
+/-- The host service at function id `id`. -/
+def hostService? (id : Nat) : Option Core.HostService :=
+  if id = hostBase then some .writeByte
+  else if id = hostBase + 1 then some .writeStdout
+  else if id = hostBase + 2 then some .writeStderr
+  else if id = hostBase + 3 then some .readStdin
+  else if id = hostBase + 4 then some .sleepMsI32
+  else if id = hostBase + 5 then some .monotonicRead
+  else if id = hostBase + 6 then some .systemRead
+  else if id = hostBase + 7 then some .fillSecureBytes
+  else none
+
+/-- Parameters numbered from `n`. -/
+def numberedParams : Nat → List Core.Ty → List (Nat × Core.Ty)
+  | _, [] => []
+  | n, ty :: rest => (n, ty) :: numberedParams (n + 1) rest
+
+/-- The host function `id` for `service`: its parameters have the service's
+types, numbered from 0. -/
+def hostFunc (id : Nat) (service : Core.HostService) : Core.Function where
+  id := id
+  parameters := numberedParams 0 service.parameterTypes
+  returnType := service.returnType
+  body := none
+  external := some (.host service)
+
+def hostFuncs : List Core.Function :=
+  [hostFunc hostBase .writeByte, hostFunc (hostBase + 1) .writeStdout, hostFunc (hostBase + 2) .writeStderr,
+    hostFunc (hostBase + 3) .readStdin, hostFunc (hostBase + 4) .sleepMsI32, hostFunc (hostBase + 5) .monotonicRead,
+    hostFunc (hostBase + 6) .systemRead, hostFunc (hostBase + 7) .fillSecureBytes]
 
 def SrcStructDecl.toCore (decl : SrcStructDecl) : Core.StructDecl where
   id := decl.id

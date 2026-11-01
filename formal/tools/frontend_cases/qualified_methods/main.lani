@@ -1,0 +1,16 @@
+module app::main;
+
+// `p::S::m(args)` (F7): the prefix is a type path resolved like any other,
+// here a struct and an enum of another module; an item import names the
+// type by its short name.
+import util::geo::Point;
+
+fn top(n: i32) -> i32 {
+    let p: util::geo::Point = util::geo::Point { x: n, y: 2 };
+    let a: i32 = util::geo::Point::norm(p);
+    let d: util::geo::Dir = util::geo::Dir::Left;
+    let e: util::geo::Dir = util::geo::Dir::turn(d);
+    let b: i32 = util::geo::Dir::code(e);
+    let q: Point = Point { x: a, y: b };
+    return Point::norm(q);
+}

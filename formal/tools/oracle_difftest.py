@@ -99,8 +99,8 @@ ARITH = [('plus', '+'), ('minus', '-'), ('times', '*'), ('bitAnd', '&'), ('bitOr
 ORDER = [('less', '<'), ('lessEq', '<='), ('greater', '>'), ('greaterEq', '>=')]
 EQUAL = [('equal', '=='), ('notEqual', '!=')]
 LOGIC = [('logicalAnd', '&&'), ('logicalOr', '||')]
-UINT_BITS = {'u8': 8, 'u32': 32, 'u64': 64, 'usize': 64}
-UINT_LEAN = {'u8': '.uint8', 'u32': '.uint32', 'u64': '.uint64', 'usize': '.usize'}
+UINT_BITS = {'u8': 8, 'u16': 16, 'u32': 32, 'u64': 64, 'usize': 64}
+UINT_LEAN = {'u8': '.uint8', 'u16': '.uint16', 'u32': '.uint32', 'u64': '.uint64', 'usize': '.usize'}
 INTEGERS = ['i32'] + list(UINT_BITS)
 SHIFT_BITS = dict(UINT_BITS, i32=32, isize=64)
 WORDS = ['i32', 'bool'] + list(UINT_BITS)  # the field types slices hold, one native word each
@@ -142,7 +142,7 @@ def i32(x):
 
 
 # ---------------------------------------------------------------- generator
-# Types: 'i32' 'bool' 'u8' 'u32' 'u64' 'usize' 'ptr' ('struct', k) ('enum', k) ('slice', element, n),
+# Types: 'i32' 'bool' 'u8' 'u16' 'u32' 'u64' 'usize' 'ptr' ('struct', k) ('enum', k) ('slice', element, n),
 # struct k's field types TYPES.structs[k], enum k's variants' payload types TYPES.enums[k];
 # n is the slice's length, known statically.
 # Expressions: ('int', k) ('bool', b) ('uint', ty, k) ('local', id) ('field', id, j) ('neg', e)
@@ -1429,7 +1429,7 @@ def run_stmt(s, env, funcs):
         value = ev_eff(s[3], env, funcs)
         env[s[1]][0][s[2]] = value
     elif kind == 'setIndexEval':
-        # Core's order: the index, then the value, then the store.
+        # Core's order: the index, its bounds, then the value, then the store.
         k, elements = ev_eff(s[2], env, funcs), env[s[1]][0]
         if not 0 <= k < len(elements):
             raise SystemExit('a generated index is out of bounds')
@@ -1898,11 +1898,14 @@ def lani_file(programs, calls):
 
 ARG_REGS = [0x7C, 0x74, 0x54]  # rdi, rsi, rdx as the reg field of mov [rsp+disp8], r64
 
+# The stack the compiled code may use below the stub's rsp; `lea r15, [rsp - STACK_ROOM]`.
+STACK_ROOM = 1 << 20
+
 
 class Native:
-    """The verified compiler's image in executable memory. A stub saves r12-r14,
-    points r12 at a heap, sets the cursor r13 to 1 (the top theorem's premise)
-    and the limit r14, stores the SysV arguments where the mini calling
+    """The verified compiler's image in executable memory. A stub saves r12-r15,
+    points r12 at a heap, sets the cursor r13 to 1 (the top theorem's premise),
+    the limit r14 and the stack limit r15 (STACK_ROOM below rsp), stores the SysV arguments where the mini calling
     convention expects them (below the return address) and calls."""
 
     HEAP = 1 << 16
@@ -1916,15 +1919,16 @@ class Native:
     def load(self, entries, image, arity):
         self.code[0:len(image)] = image
         at = len(image)
-        stub = bytes([0x41, 0x54, 0x41, 0x55, 0x41, 0x56])
+        stub = bytes([0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57])
         stub += bytes([0x49, 0xBC]) + self.heap_base.to_bytes(8, 'little')
         stub += bytes([0x49, 0xBD]) + (1).to_bytes(8, 'little')
         stub += bytes([0x49, 0xBE]) + (self.HEAP - 64).to_bytes(8, 'little')
+        stub += bytes([0x4C, 0x8D, 0xBC, 0x24]) + (-STACK_ROOM & 0xffffffff).to_bytes(4, 'little')
         for k, reg in zip(range(arity), ARG_REGS):
             stub += bytes([0x48, 0x89, reg, 0x24, (256 - (8 * k + 24)) & 0xff])
         rel = entries[0] - (at + len(stub) + 5)
         stub += b'\xe8' + (rel & 0xffffffff).to_bytes(4, 'little')
-        stub += bytes([0x41, 0x5E, 0x41, 0x5D, 0x41, 0x5C, 0xC3])
+        stub += bytes([0x41, 0x5F, 0x41, 0x5E, 0x41, 0x5D, 0x41, 0x5C, 0xC3])
         self.code[at:at + len(stub)] = stub
         self.fn = ctypes.CFUNCTYPE(ctypes.c_uint64, *([ctypes.c_uint64] * arity))(self.base + at)
 
@@ -1985,7 +1989,7 @@ def main():
         lani_path = os.path.join(args.workdir, 'programs.lani')
         exe_path = os.path.join(args.workdir, 'programs')
         open(lani_path, 'w').write(lani_file(programs[start:start + args.chunk], calls[start:start + args.chunk]))
-        build = subprocess.run(['systemd-run', '--user', '--scope', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
+        build = subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
                                 'target/claude-work/bin/heavy', '-t', '20', args.laniusc, '--stdlib-root', 'stdlib',
                                 '-o', exe_path, lani_path], capture_output=True, text=True)
         if build.returncode != 0:

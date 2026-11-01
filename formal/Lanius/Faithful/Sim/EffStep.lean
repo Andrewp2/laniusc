@@ -34,7 +34,12 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
     exact ⟨p, hp, r, .refl inv⟩
   | eCall callee args =>
     simp only [SrcEff.toCore] at run
-    obtain ⟨j, f, values, afterArgs, completed, c, hj, argsRun, found, len, bodyRun, result, rfl⟩ := call_inv' run
+    have inside : callee < sp.funcs.length := by
+      simp only [effTy, Option.bind_eq_some_iff] at ht
+      obtain ⟨ts, hts, hc⟩ := ht
+      obtain ⟨-, f', found', -, -⟩ := callTy_some hc
+      exact inside_of found'
+    obtain ⟨j, f, values, afterArgs, completed, c, hj, argsRun, found, len, bodyRun, result, rfl⟩ := call_inv' inside run
     obtain rfl : j = k := by omega
     simp only [effTy, Option.bind_eq_some_iff] at ht
     obtain ⟨ts, hts, hc⟩ := ht
@@ -90,14 +95,16 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
     obtain ⟨ql, hql, rl, ran1⟩ := eff lrun htl inv rel b1
     obtain ⟨qr, hqr, rr, ran2⟩ := eff rrun htr ran1.inv (rel.step ran1.step ran1.locals) bound
     rw [toCore_target] at hv
-    obtain ⟨happ, sv⟩ := binary_sim isAnd isOr ht (rl.mono ran2.step.reads) rr hv
+    obtain ⟨happ, sv⟩ := binary_sim isAnd isOr ht (rl.mono ran2.step.reads ran2.step.ranges) rr hv
     exact ⟨v, by simp only [peff, hql, hqr, happ], .scalar sv, ran1.trans ran2⟩
   | eNeg o =>
     simp only [SrcEff.toCore] at run
     obtain ⟨j, w, hj, sub, hw⟩ := unary_inv run
     obtain rfl : j = k := by omega
-    simp only [effTy] at ht
-    obtain ⟨q, hq, rq, ran⟩ := eff sub ht inv rel bound
+    simp only [effTy, Option.bind_eq_some_iff] at ht
+    obtain ⟨to, hto, hn⟩ := ht
+    obtain ⟨rfl, -⟩ := numOf_some hn
+    obtain ⟨q, hq, rq, ran⟩ := eff sub hto inv rel bound
     obtain ⟨rfl, sw⟩ := rq.flat (unary_flat hw)
     rw [toCore_target] at hw
     refine ⟨v, ?_, .scalar (neg_sty sw hw), ran⟩
@@ -107,8 +114,9 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
     simp only [SrcEff.toCore] at run
     obtain ⟨j, w, hj, sub, hw⟩ := unary_inv run
     obtain rfl : j = k := by omega
-    simp only [effTy, Option.map_eq_some_iff] at ht
-    obtain ⟨to, hto, rfl⟩ := ht
+    simp only [effTy, Option.bind_eq_some_iff] at ht
+    obtain ⟨to, hto, hb⟩ := ht
+    obtain ⟨rfl, -⟩ := boolOf_some hb
     obtain ⟨q, hq, rq, ran⟩ := eff sub hto inv rel bound
     obtain ⟨rfl, -⟩ := rq.flat (unary_flat hw)
     rw [toCore_target] at hw
@@ -119,22 +127,23 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
     simp only [SrcEff.toCore] at run
     obtain ⟨j, w, hj, sub, hw⟩ := cast_inv run
     obtain rfl : j = k := by omega
-    simp only [effTy, Option.map_eq_some_iff] at ht
-    obtain ⟨to, hto, rfl⟩ := ht
+    simp only [effTy, Option.bind_eq_some_iff] at ht
+    obtain ⟨to, hto, hc⟩ := ht
+    obtain ⟨rfl, -, numTo⟩ := castTy_some hc
     obtain ⟨q, hq, rq, ran⟩ := eff sub hto inv rel bound
     obtain ⟨rfl, sw⟩ := rq.flat (cast_flat hw)
     rw [toCore_target] at hw
-    refine ⟨v, ?_, .scalar (cast_sty sw hw), ran⟩
+    refine ⟨v, ?_, .scalar (cast_sty sw numTo hw), ran⟩
     simp only [peff, hq, Option.bind_some, cast, Lanius.Faithful.target, hw]
     rfl
   | eIndex => simp [effTy] at ht
   | eStruct ty fields =>
-    simp only [SrcEff.toCore] at run
-    obtain ⟨j, vs, hj, frun, rfl⟩ := structValue_inv run
-    obtain rfl : j = k := by omega
     simp only [effTy, Option.bind_eq_some_iff] at ht
     obtain ⟨ts, hts, hs⟩ := ht
     obtain ⟨id, rfl, hb, rfl⟩ := structTy_some hs
+    simp only [SrcEff.toCore, SrcType.literal] at run
+    obtain ⟨j, vs, hj, frun, rfl⟩ := structValue_inv run
+    obtain rfl : j = k := by omega
     obtain ⟨ps, hps, rs, ran⟩ := effs frun hts inv rel bound
     exact ⟨.structure id ps, by simp [peff, hps, SrcType.typeId], .struct hb rs, ran⟩
   | eVariant ty variant payload =>
@@ -181,20 +190,25 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
     | slice => simp at hm
     | unit => simp at hm
     | isize => simp at hm
+    | char => simp at hm
+    | float => simp at hm
+    | sint => simp at hm
+    | array => simp at hm
   | eDivide op l r =>
     simp only [SrcEff.toCore] at run
     have notAnd : op.toCore ≠ .logicalAnd := by cases op <;> simp [SrcDivOp.toCore]
     have notOr : op.toCore ≠ .logicalOr := by cases op <;> simp [SrcDivOp.toCore]
     obtain ⟨j, lv, s1, rv, hj, lrun, rrun, hv⟩ := binary_inv notAnd notOr run
     obtain rfl : j = k := by omega
-    simp only [effTy, Option.bind_eq_some_iff, Option.map_eq_some_iff] at ht
-    obtain ⟨tl, htl, tr, htr, rfl⟩ := ht
+    simp only [effTy, Option.bind_eq_some_iff] at ht
+    obtain ⟨tl, htl, tr, htr, hd⟩ := ht
+    obtain ⟨rfl, -⟩ := divTy_some hd
     have b1 := Grows.bound (effGrows lrun) (effGrows rrun) inv.views bound
     obtain ⟨ql, hql, rl, ran1⟩ := eff lrun htl inv rel b1
     obtain ⟨qr, hqr, rr, ran2⟩ := eff rrun htr ran1.inv (rel.step ran1.step ran1.locals) bound
     rw [toCore_target] at hv
     have flat := binary_flat hv
-    obtain ⟨rfl, sl⟩ := (rl.mono ran2.step.reads).flat
+    obtain ⟨rfl, sl⟩ := (rl.mono ran2.step.reads ran2.step.ranges).flat
       (flat.2 (by cases op <;> simp [SrcDivOp.toCore]) (by cases op <;> simp [SrcDivOp.toCore]))
     obtain ⟨rfl, -⟩ := rr.flat (flat.1 sl)
     refine ⟨v, ?_, .scalar (divide_sty sl hv), ran1.trans ran2⟩

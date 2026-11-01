@@ -39,7 +39,8 @@ bool wasm_is_memory_access(uint opcode)
 
 uint wasm_memory_access_align(uint opcode)
 {
-    if (opcode == WASM_LIR_OP_I64_LOAD || opcode == WASM_LIR_OP_I64_STORE) return 3u;
+    if (opcode == WASM_LIR_OP_I64_LOAD || opcode == WASM_LIR_OP_I64_STORE ||
+        opcode == WASM_LIR_OP_F64_LOAD || opcode == WASM_LIR_OP_F64_STORE) return 3u;
     if (opcode == WASM_LIR_OP_I32_LOAD8_S || opcode == WASM_LIR_OP_I32_LOAD8_U ||
         opcode == WASM_LIR_OP_I32_STORE8) return 0u;
     if (opcode == WASM_LIR_OP_I32_LOAD16_S || opcode == WASM_LIR_OP_I32_LOAD16_U ||

@@ -1,5 +1,7 @@
 # Hash insertion result-context compiler dependency
 
+Status (2026-10-27): fixed on `lang`. The literal was the cause. In a call's value environment, an argument claim came before the receiver's binding, so the unsuffixed literal's default `i32` claim set `V`. `try_insert` then returned `Result<Option<Entry<i32,i32>>,...>`. The value environment now ranks claims from literals that can take context after the context bindings, as the expected environment already did. `primitive_nested.lani` compiles and runs with exit 0. The regression test is `a_receiver_binding_types_a_literal_argument` (`tests/fixtures/language/receiver_binds_literal_argument.lani`).
+
 These retain a primitive-key reproducer and an accepted explicitly typed
 control for an observed failure in the owning-hash sequence fixture. They are
 outside the ordinary runtime fixture root. The root ran both with the current

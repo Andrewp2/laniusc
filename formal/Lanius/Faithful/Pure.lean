@@ -103,6 +103,8 @@ def pexpr (env : Env) : SrcExpr → Option Value
   | .apply op left right => applyOp op (pexpr env left) (pexpr env right)
   | .cast ty operand => (pexpr env operand).bind (cast ty)
   | .null => some (.pointer 0)
+  | .char code => some (.character (UInt32.ofNat code.toNat))
+  | .float t x => some (t.value x)
 
 def pexprs (env : Env) : List SrcExpr → Option (List Value)
   | [] => some []
@@ -203,6 +205,10 @@ def pstmt (env : Env) : SrcStmt → Option Done
   | .setIndexEval _ _ _ => none
   | .setFieldEval _ _ _ => none
   | .returnUnit => some (.ret none)
+  | .break => none
+  | .continue => none
+  | .matchArm _ _ _ _ _ _ _ _ => none
+  | .unreachable _ _ => none
   | .assert condition =>
       ((peff call env condition).bind asBool).bind fun b => if b then some .next else none
 

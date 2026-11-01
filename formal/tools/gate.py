@@ -39,19 +39,56 @@ T = 'formal/tools/'
 # step reads besides its script, from INPUTS below. {w} is the step's
 # workdir, {s} the seed.
 STEPS = [
+    # F9: the IEEE specification against this CPU's SSE unit.
+    ('float', ['float_test.py', '{w}', '--count', '2000', '--seed', '{s}'], ['float_test'], True),
+    # Step 14 and F9: the x86 model's decode and execute against this CPU, every emitted form.
+    ('x86-model', ['x86_model_test.py', '{w}', '--per-form', '100', '--seed', '{s}'], ['lean'], True),
     ('mini', ['mini_difftest.py', '{w}', '--count', '40', '--seed', '{s}'], ['lean', 'laniusc', 'stdlib'], True),
     ('oracle', ['oracle_difftest.py', '{w}', '--count', '40', '--seed', '{s}'], ['lean', 'laniusc', 'stdlib'], True),
     ('optimize', ['optimize_test.py', '{w}', '--count', '60', '--seed', '{s}'], ['lean'], True),
+    # V2e: checked traps, stack and heap exhaustion fault natively; a loop that never ends runs on.
+    ('traps', ['trap_test.py', '{w}'], ['lean'], True),
     ('frontend-cases', ['frontend_difftest.py', '{w}', '--cases', T + 'frontend_cases'], ['lean', 'laniusc', 'stdlib'],
      True),
-    ('fn', ['fn_difftest.py', '{w}', '--per-fn', '5', '--seed', '{s}'], ['lean', 'lani', 'laniusc', 'stdlib'], True),
+    # Two shards: laniusc runs out of GPU resources on the whole harness.
+    ('fn', ['fn_difftest.py', '{w}', '--per-fn', '5', '--seed', '{s}', '--shard', '0/2'], ['lean', 'lani', 'laniusc', 'stdlib'], True),
+    ('fn-2', ['fn_difftest.py', '{w}', '--per-fn', '5', '--seed', '{s}', '--shard', '1/2'], ['lean', 'lani', 'laniusc', 'stdlib'], True),
     ('self-compile-encode', ['self_compile.py', '{w}', '--count', '40', '--seed', '{s}'],
      ['lean', 'run_all', 'lani', 'laniusc', 'stdlib'], True),
     ('self-compile-program', ['self_compile.py', '{w}', '--stage', 'program', '--count', '40', '--seed', '{s}'],
      ['lean', 'run_all', 'lani', 'laniusc', 'stdlib'], True),
     ('stdlib-scalars', ['stdlib_oracle.py', '{w}', '--modules', 'core::cmp,core::u64,core::option', '--seed', '{s}'],
      ['run_all', 'laniusc', 'stdlib'], True),
+    # F8: stdlib output through the host externs, stdout and stderr compared.
+    ('stdlib-io', ['stdlib_oracle.py', '{w}', '--modules', 'std::io_byte,std::io_hex,std::io_binary,std::io_hex_wide_u64,std::io_utf8', '--calls', '32', '--seed', '{s}'],
+     ['run_all', 'laniusc', 'stdlib'], True),
+    # F8: the time externs (sleep_ms_i32 through poll), on small and negative counts.
+    ('stdlib-time', ['stdlib_oracle.py', '{w}', '--modules', 'std::time_checked', '--calls', '16', '--seed', '{s}'],
+     ['run_all', 'laniusc', 'stdlib'], True),
+    # F6: arrays [T; N] passed by value, built by the wrapper from scalars.
+    ('stdlib-arrays', ['stdlib_oracle.py', '{w}', '--modules', 'core::array_i32_4,core::array_u8_4', '--seed', '{s}'],
+     ['run_all', 'laniusc', 'stdlib'], True),
     ('self-host', ['self_host.py', '{w}'], ['run_all', 'lani', 'laniusc', 'stdlib'], True),
+    # V6: the verified compiler's ELF executables exit with main's result.
+    ('elf', ['elf_test.py', '{w}'], ['run_all', 'laniusc', 'stdlib'], True),
+    # The `&mut` extraction pilot against laniusc's build of the same source.
+    ('mut-pilot', ['fn_difftest.py', '{w}', '--per-fn', '30', '--seed', '{s}', '--source',
+                   'formal/lani/mini/mut_pilot.lani', '--lean-module', 'Lanius.Mini.MutPilot'],
+     ['lean', 'lani', 'laniusc', 'stdlib'], True),
+    # The sqlite statement machine (docs/state-machines-design.md, M0).
+    ('machine-sqlite', ['fn_difftest.py', '{w}', '--per-fn', '30', '--seed', '{s}', '--source',
+                        'extended/ext/sqlite_statement.lani', '--lean-module', 'Lanius.Machines.SqliteStatement'],
+     ['lean', 'extended', 'laniusc', 'stdlib'], True),
+    # The TLS session's lifecycle machine (M2): event sequences through step.
+    ('machine-tls', ['fn_difftest.py', '{w}', '--per-fn', '30', '--seed', '{s}', '--source',
+                     'extended/ext/openssl_tls_lifecycle.lani', '--lean-module', 'Lanius.Machines.TlsLifecycle'],
+     ['lean', 'extended', 'laniusc', 'stdlib'], True),
+    # F2: the extractor in Lanius, run on laniusc's trees, writes the checked-in extraction.
+    ('extract', ['lani_extract.py', '--check', '--work', '{w}'], ['extract', 'lani', 'extended', 'laniusc', 'stdlib'], True),
+    # F12: Gen/'s self program is the front end's reading of the current self source text.
+    ('self-current', ['faithful_current.py', '{w}'], ['extract', 'lean', 'lani', 'laniusc', 'stdlib'], True),
+    # F13: the top theorems' axioms are the standard three, and each statement is the one TRUSTED_BASE.md lists.
+    ('trusted', ['trusted_check.py', '{w}'], ['trusted'], True),
     # The full tier: larger counts and the rest.
     ('mini-200', ['mini_difftest.py', '{w}', '--count', '200', '--seed', '{s}'], ['lean', 'laniusc', 'stdlib'], False),
     ('oracle-300', ['oracle_difftest.py', '{w}', '--count', '300', '--seed', '{s}'], ['lean', 'laniusc', 'stdlib'],
@@ -61,41 +98,69 @@ STEPS = [
      ['lean', 'laniusc', 'stdlib'], False),
     ('frontend-generic', ['frontend_difftest.py', '{w}', '--generic', '--count', '100', '--seed', '{s}'],
      ['lean', 'laniusc', 'stdlib'], False),
-] + [(f'fn-20-{k}', ['fn_difftest.py', '{w}', '--per-fn', '20', '--seed', '{s}', '--shard', f'{k}/4'],
-      ['lean', 'lani', 'laniusc', 'stdlib'], False) for k in range(4)] + [
+] + [(f'fn-20-{k}', ['fn_difftest.py', '{w}', '--per-fn', '20', '--seed', '{s}', '--shard', f'{k}/6'],
+      ['lean', 'lani', 'laniusc', 'stdlib'], False) for k in range(6)] + [
     ('self-compile-encode-100', ['self_compile.py', '{w}', '--count', '100', '--seed', '{s}'],
      ['lean', 'run_all', 'lani', 'laniusc', 'stdlib'], False),
     ('self-compile-program-100', ['self_compile.py', '{w}', '--stage', 'program', '--count', '100', '--seed', '{s}'],
      ['lean', 'run_all', 'lani', 'laniusc', 'stdlib'], False),
-    ('stdlib', ['stdlib_oracle.py', '{w}', '--seed', '{s}'], ['run_all', 'laniusc', 'stdlib'], False),
+] + [(f'stdlib-{k}', ['stdlib_oracle.py', '{w}', '--seed', '{s}', '--shard', f'{k}/3'], ['run_all', 'laniusc', 'stdlib'],
+      False) for k in range(3)] + [
+    # F11: laniusc's own test programs, a seeded sample of them, run both ways.
+    ('programs', ['programs_oracle.py', '{w}', '--sample', '60', '--seed', '{s}'],
+     ['lean', 'run_all', 'laniusc', 'stdlib', 'programs', 'extended_all'], False),
+    # F11: every extended/ module's testable targets, as stdlib-* tests the stdlib's.
+    ('extended', ['stdlib_oracle.py', '{w}', '--root', 'extended', '--seed', '{s}'],
+     ['run_all', 'laniusc', 'stdlib', 'extended_all'], False),
     # M11c: the self-built verified compiler compiles itself to its own image.
     ('self-host-fixpoint', ['self_host.py', '{w}', '--no-cases', '--fixpoint', '--timeout', '280'],
      ['run_all', 'lani', 'laniusc', 'stdlib'], False),
 ]
 
 
+def trusted_digest():
+    """The top theorems' built modules, their list and TRUSTED_BASE.md, for the `trusted` step."""
+    import trusted_check
+    modules = ''.join(f'import {m}\n' for m in trusted_check.top_modules())
+    exe = os.path.join(run_cache.FORMAL, '.lake/build/bin/topAxioms')
+    return ((run_cache.olean_digest(modules) or 'unbuilt') + run_cache.file_digest(trusted_check.TRUSTED)
+            + run_cache.file_digest(trusted_check.TOPS) + (run_cache.file_digest(exe) if os.path.exists(exe) else ''))
+
+
 def inputs():
     """The digest of each kind of input."""
-    lean = run_cache.olean_digest('import Lanius.Mini.FrontLex\n')
+    lean = run_cache.olean_digest('import Lanius.Mini.Process\nimport Lanius.Mini.TextCorrect\nimport Lanius.Mini.FrontLex\nimport Lanius.Mini.MutPilotCorrect\nimport Lanius.Machines.SqliteStatementCorrect\nimport Lanius.Machines.TlsLifecycleCorrect\nimport Lanius.Machines.RunLowering\n')
     if lean is None:
         raise SystemExit('the Lean definitions are not built')
     run_all = os.path.join(run_cache.FORMAL, '.lake/build/bin/runAll')
     return {
         'lean': lean,
         'run_all': run_cache.file_digest(run_all),
+        'float_test': run_cache.file_digest(os.path.join(run_cache.FORMAL, '.lake/build/bin/floatTest')),
+        'extract': run_cache.file_digest(os.path.join(run_cache.FORMAL, '.lake/build/bin/extract'))
+        + run_cache.tree_digest(os.path.join(run_cache.FORMAL, 'Lanius')),
         'lani': run_cache.tree_digest(os.path.join(run_cache.FORMAL, 'lani')),
         'tools': run_cache.tree_digest(os.path.join(ROOT, T)),
         'laniusc': run_cache.file_digest(LANIUSC),
         'stdlib': run_cache.tree_digest(os.path.join(ROOT, 'stdlib')),
+        'programs': run_cache.tree_digest(os.path.join(ROOT, 'tests/fixtures'))
+        + run_cache.tree_digest(os.path.join(ROOT, 'sample_programs')),
+        'extended_all': run_cache.tree_digest(os.path.join(ROOT, 'extended')),
+        'trusted': trusted_digest(),
+        'extended': ''.join(run_cache.file_digest(os.path.join(ROOT, 'extended/ext', name))
+                            for name in ('sqlite_statement.lani', 'openssl_tls_lifecycle.lani')),
     }
 
 
 def build():
     """Build what the tests run (a no-op when it is current)."""
     env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
-    run = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
-                          'lake', 'build', 'runAll', 'Lanius.Mini.FrontLex'], cwd=run_cache.FORMAL, env=env,
-                         capture_output=True, text=True)
+    with run_cache.lean_lock():
+        run = subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
+                              'lake', 'build', 'runAll', 'extract', 'floatTest', 'srcDump', 'topAxioms', 'LaniusMini', 'Lanius.Mini.FrontLex',
+                              'Lanius.Mini.MutPilotCorrect', 'Lanius.Machines.SqliteStatementCorrect',
+                              'Lanius.Machines.TlsLifecycleCorrect', 'Lanius.Machines.RunLowering'],
+                             cwd=run_cache.FORMAL, env=env, capture_output=True, text=True)
     if run.returncode != 0:
         raise SystemExit('lake build failed:\n' + run.stdout[-3000:] + run.stderr[-3000:])
 
@@ -125,6 +190,8 @@ def main():
     args = parser.parse_args()
     run_cache.no_core_dumps()
     build()
+    # The steps' own builds of runAll would only wait on the Lean lock.
+    os.environ['LANIUS_BUILT'] = '1'
     digests = inputs()
     steps = [s for s in STEPS if (s[3] or args.tier == 'full')]
     if args.only:

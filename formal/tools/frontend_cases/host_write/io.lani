@@ -1,0 +1,11 @@
+module std::io;
+
+pub type StdioOperationResult = i32;
+
+pub extern "lanius_std" fn write_stdout(ptr: ptr, len: usize) -> StdioOperationResult;
+
+pub extern "lanius_std" fn write_stderr(ptr: ptr, len: usize) -> StdioOperationResult;
+
+pub extern "lanius_std" fn read_stdin(ptr: ptr, len: usize) -> StdioOperationResult;
+
+pub extern "lanius_std" fn write_byte(handle: i32, value: i32) -> StdioOperationResult;

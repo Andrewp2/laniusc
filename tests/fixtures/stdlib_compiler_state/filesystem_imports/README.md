@@ -1,5 +1,7 @@
 # Parser disambiguation in the readlink count guard
 
+Status (2026-10-27): fixed on `lang`. A `<` that would start a value-path generic application is now taken as a comparison when the bracketed tokens contain a comparison or logical operator (`<=`, `>=`, `==`, `!=`, `||`). `cast_guard.lani` compiles and runs.
+
 `cast_guard.lani` is the minimal failing reproduction. It imports no library
 module. This condition is read as the start of a generic application:
 

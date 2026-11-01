@@ -24,17 +24,18 @@ structure Inv (st : State) : Prop where
 structure Step (st st' : State) : Prop where
   cells : st.cells <+: st'.cells
   reads : HeapReads st.heap st'.heap
+  ranges : HeapRanges st.heap st'.heap
 
-theorem Step.refl (st : State) : Step st st := ⟨List.prefix_refl _, HeapReads.refl _⟩
+theorem Step.refl (st : State) : Step st st := ⟨List.prefix_refl _, HeapReads.refl _, HeapRanges.refl _⟩
 
 theorem Step.trans {a b c : State} (first : Step a b) (second : Step b c) : Step a c :=
-  ⟨first.cells.trans second.cells, first.reads.trans second.reads⟩
+  ⟨first.cells.trans second.cells, first.reads.trans second.reads, first.ranges.trans second.ranges⟩
 
 theorem Step.restore {st st' : State} (s : State) (step : Step st st') : Step st (restoreLocals s st') :=
-  ⟨step.cells, step.reads⟩
+  ⟨step.cells, step.reads, step.ranges⟩
 
 theorem Step.restore_left {st st' : State} (s : State) (step : Step st st') : Step (restoreLocals s st) st' :=
-  ⟨step.cells, step.reads⟩
+  ⟨step.cells, step.reads, step.ranges⟩
 
 theorem Inv.restore {st : State} (s : State) (inv : Inv st) : Inv (restoreLocals s st) :=
   ⟨inv.views, inv.fresh, inv.below, inv.unique⟩
@@ -42,10 +43,10 @@ theorem Inv.restore {st : State} (s : State) (inv : Inv st) : Inv (restoreLocals
 theorem Inv.clear {st : State} (inv : Inv st) : Inv { st with locals := [] } :=
   ⟨inv.views, inv.fresh, inv.below, inv.unique⟩
 
-theorem Step.clear (st : State) : Step st { st with locals := [] } := ⟨List.prefix_refl _, HeapReads.refl _⟩
+theorem Step.clear (st : State) : Step st { st with locals := [] } := ⟨List.prefix_refl _, HeapReads.refl _, HeapRanges.refl _⟩
 
 theorem Step.clear_left {st st' : State} (step : Step { st with locals := [] } st') : Step st st' :=
-  ⟨step.cells, step.reads⟩
+  ⟨step.cells, step.reads, step.ranges⟩
 
 theorem Inv.bindLocal {st : State} (inv : Inv st) (id : Nat) (v : Value) : Inv (st.bindLocal id v) := by
   refine ⟨inv.views, ?_, inv.below, inv.unique⟩
@@ -59,7 +60,7 @@ theorem Inv.bindLocal {st : State} (inv : Inv st) (id : Nat) (v : Value) : Inv (
     exact Nat.lt_succ_self _
 
 theorem Step.bindLocal (st : State) (id : Nat) (v : Value) : Step st (st.bindLocal id v) :=
-  ⟨by simp [State.bindLocal, State.bindCell], HeapReads.refl _⟩
+  ⟨by simp [State.bindLocal, State.bindCell], HeapReads.refl _, HeapRanges.refl _⟩
 
 theorem bindLocals_cons (st : State) (b : Nat × Value) (bs : List (Nat × Value)) :
     st.bindLocals (b :: bs) = (st.bindLocal b.1 b.2).bindLocals bs := rfl
@@ -134,7 +135,7 @@ theorem EnvRel.step {tenv : TEnv} {env : Env} {st st' : State} (rel : EnvRel P b
     (step : Step st st') (locals : st'.locals = st.locals) : EnvRel P boxes st'.heap tenv env st' := by
   intro x t found
   obtain ⟨v, p, hv, hp, r⟩ := rel x t found
-  exact ⟨v, p, local?_step step locals hv, hp, r.mono step.reads⟩
+  exact ⟨v, p, local?_step step locals hv, hp, r.mono step.reads step.ranges⟩
 
 theorem EnvRel.bind {heap : Memory.Heap} {tenv : TEnv} {env : Env} {st : State} (inv : Inv st)
     (rel : EnvRel P boxes heap tenv env st) {id : Nat} {t : SrcType} {v p : Value} (r : VRel P boxes heap t v p) :

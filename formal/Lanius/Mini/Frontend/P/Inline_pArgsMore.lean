@@ -18,49 +18,10 @@ namespace Lanius.Mini
 @[expose] def Inline.pArgsSome : Nat :=
   166
 
-@[expose] def Inline.pAssign : Nat :=
-  105
+@[expose] def Inline.pArmBlock : Nat :=
+  326
 
-@[expose] def Inline.pAssignAdd : Nat :=
-  107
-
-@[expose] def Inline.pAssignBand : Nat :=
-  115
-
-@[expose] def Inline.pAssignBor : Nat :=
-  116
-
-@[expose] def Inline.pAssignDiv : Nat :=
-  110
-
-@[expose] def Inline.pAssignEnd : Nat :=
-  117
-
-@[expose] def Inline.pAssignMod : Nat :=
-  111
-
-@[expose] def Inline.pAssignMul : Nat :=
-  109
-
-@[expose] def Inline.pAssignSet : Nat :=
-  106
-
-@[expose] def Inline.pAssignShl : Nat :=
-  113
-
-@[expose] def Inline.pAssignShr : Nat :=
-  114
-
-@[expose] def Inline.pAssignSub : Nat :=
-  108
-
-@[expose] def Inline.pAssignXor : Nat :=
-  112
-
-@[expose] def Inline.pBandTail : Nat :=
-  131
-
-@[expose] def Inline.pBase : Nat :=
-  159
+@[expose] def Inline.pArrayAfterCommaMore : Nat :=
+  183
 
 end Lanius.Mini

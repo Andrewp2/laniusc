@@ -1,0 +1,8 @@
+module app::main;
+
+// An untyped let of a bare literal: the reader does not pick a literal's
+// type, so it does not read this.
+fn top(n: i32) -> i32 {
+    let k = 5;
+    return n + k;
+}

@@ -1,0 +1,47 @@
+// Tree, today's style: every node is its own allocation (a Box), freed by a
+// walk after each tree.
+import alloc::allocator;
+import core::mem;
+import core::result;
+
+const DEPTH: i32 = 15;
+const TREES: i32 = 20;
+
+struct Node { left: ptr, right: ptr, value: i64 }
+
+fn build(depth: i32, seed: i64) -> ptr {
+    let empty: ptr = 0;
+    let left: ptr = empty;
+    let right: ptr = empty;
+    if (depth > 0) { left = build(depth - 1, seed * 2); right = build(depth - 1, seed * 2 + 1); }
+    let node: Node = Node { left: left, right: right, value: seed % 1000 };
+    let at: ptr = alloc::allocator::alloc(core::mem::size_of<Node>(), 8);
+    let slots: [Node] = core::mem::typed_slice_from_storage<Node>(at, 1); slots[0] = node;
+    return at;
+}
+
+fn check(at: ptr) -> i64 {
+    if (at == 0) { return 0; }
+    let node: Node = core::mem::typed_slice_from_storage<Node>(at, 1)[0];
+    return node.value + check(node.left) - check(node.right) / 2;
+}
+
+fn free(at: ptr) {
+    if (at == 0) { return; }
+    let node: Node = core::mem::typed_slice_from_storage<Node>(at, 1)[0];
+    free(node.left); free(node.right);
+    alloc::allocator::dealloc(at, core::mem::size_of<Node>(), 8);
+}
+
+fn main() -> i32 {
+    let total: i64 = 0;
+    let tree: i32 = 0;
+    while (tree < TREES) {
+        let root: ptr = build(DEPTH, (tree + 1) as i64);
+        total += check(root);
+        free(root);
+        tree += 1;
+    }
+    print(total);
+    return 0;
+}

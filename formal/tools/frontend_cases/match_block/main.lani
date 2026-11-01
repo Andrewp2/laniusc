@@ -1,0 +1,41 @@
+module app::main;
+
+// Match statements whose arms are blocks: on a local and on a call, arms
+// with and without a payload binder, written out of variant order.
+enum Door {
+    Open(i32),
+    Shut,
+    Stuck(bool),
+}
+
+fn door(n: i32) -> Door {
+    if (n < 0) {
+        return Door::Shut;
+    }
+    if (n == 0) {
+        return Door::Stuck(true);
+    }
+    return Door::Open(n);
+}
+
+fn step(d: Door, n: i32) -> i32 {
+    let t: i32 = n + 1;
+    match (d) {
+        Door::Shut -> { return 0; },
+        Door::Open(w) -> {
+            if (w > 3) {
+                return w;
+            }
+            return w + t;
+        },
+        Door::Stuck(b) -> { if (b) { return 7; } return 8; },
+    };
+}
+
+fn top(n: i32) -> i32 {
+    match (door(n)) {
+        Open(w) -> { return step(Door::Open(w), n); },
+        Shut -> { return step(Door::Shut, n); },
+        Stuck(b) -> { return step(Door::Stuck(b), n) + 1; },
+    };
+}

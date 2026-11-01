@@ -1,0 +1,10 @@
+module app::main;
+
+fn top(n: i32) -> i32 {
+    let ok: bool = std::io_byte::write_stdout_byte(n);
+    let e: i32 = std::io::write_byte(2, 65);
+    if (ok) {
+        return e;
+    }
+    return 0 - e;
+}

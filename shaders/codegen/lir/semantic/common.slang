@@ -104,6 +104,13 @@ bool semantic_lir_is_if(HirCore core, HirPayload payload)
         (core.kind == HIR_STMT && payload.a == HIR_STMT_IF);
 }
 
+// `requires (cond)` is an `if` record with no then arm (nodes.slang). It
+// lowers as `if (cond) {} else { trap }`: IF_BEGIN, ELSE, TRAP, CONTROL_END.
+bool semantic_lir_is_contract(HirCore core, HirPayload payload)
+{
+    return semantic_lir_is_if(core, payload) && payload.c == LIR_INVALID;
+}
+
 bool semantic_lir_is_loop(HirCore core, HirPayload payload)
 {
     return core.kind == HIR_WHILE_STMT || core.kind == HIR_FOR_STMT ||
@@ -158,7 +165,7 @@ uint semantic_lir_row_count(HirCore core, HirPayload payload)
     if (semantic_lir_is_zero_let(core, payload)) return 2u;
     if (core.kind == HIR_CONST_ITEM) return 1u;
     if (semantic_lir_is_if(core, payload))
-        return payload.d == LIR_INVALID ? 2u : 3u;
+        return payload.c == LIR_INVALID ? 4u : payload.d == LIR_INVALID ? 2u : 3u;
     if (semantic_lir_is_loop(core, payload))
         return 6u;
     if (semantic_lir_is_assignment(core, payload) &&
@@ -209,6 +216,9 @@ uint semantic_lir_local_op(HirCore core, HirPayload payload, uint local_row,
     if (semantic_lir_is_if(core, payload))
     {
         if (local_row == 0u) return SEMANTIC_LIR_OP_IF_BEGIN;
+        if (row_count == 4u)
+            return local_row == 1u ? SEMANTIC_LIR_OP_ELSE
+                : local_row == 2u ? SEMANTIC_LIR_OP_TRAP : SEMANTIC_LIR_OP_CONTROL_END;
         if (row_count == 3u && local_row == 1u) return SEMANTIC_LIR_OP_ELSE;
         return SEMANTIC_LIR_OP_CONTROL_END;
     }

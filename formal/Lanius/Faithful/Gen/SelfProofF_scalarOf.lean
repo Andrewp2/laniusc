@@ -83,9 +83,9 @@ theorem proof_cast_value {prog : SrcProgram} {prims : Prims} {ix_cast_value ix_b
   simp only [src_cast_value] at h
   faithful [Lanius.Mini.castValue]
 
-theorem step_casts {prog : SrcProgram} {prims : Prims} {ix_casts ix_kid ix_minus ix_has_kids ix_cast_into ix_cast_type_of : Nat} (fn : prog.funcs[ix_casts]? = some (src_casts ix_kid ix_minus ix_has_kids ix_casts ix_cast_into ix_cast_type_of)) (np : prims.isPrim ix_casts = false)
-    (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
+theorem step_casts {prog : SrcProgram} {prims : Prims} {ix_casts ix_minus ix_kid ix_has_kids ix_cast_into ix_cast_type_of : Nat} (fn : prog.funcs[ix_casts]? = some (src_casts ix_minus ix_kid ix_has_kids ix_casts ix_cast_into ix_cast_type_of)) (np : prims.isPrim ix_casts = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
     (ext_has_kids : Certified (∀ {n : Nat}, Stmt_has_kids prog prims ix_has_kids n))
     (ext_cast_into : Certified (∀ {n : Nat}, Stmt_cast_into prog prims ix_cast_into n))
     (ext_cast_type_of : Certified (∀ {n : Nat}, Stmt_cast_type_of prog prims ix_cast_type_of n)) {n : Nat}

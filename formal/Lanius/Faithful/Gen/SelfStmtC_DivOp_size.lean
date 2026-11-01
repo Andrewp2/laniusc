@@ -24,6 +24,30 @@ abbrev Stmt_DivOp_size (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
   ∀ {x0 : Lanius.Mini.DivOp} {x1 : Lanius.Mini.Word} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepDivOp x0 v0 → RepWord x1 v1 →
     RepNat (Lanius.Mini.DivOp.size x0 x1) w
 
+abbrev Stmt_FOp_size (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.FOp} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepFOp x0 v0 →
+    RepNat (Lanius.Mini.FOp.size x0) w
+
+abbrev Stmt_FloatTy_mask (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.FloatTy} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepFloatTy x0 v0 →
+    RepU64 (Lanius.Mini.FloatTy.mask x0) w
+
+abbrev Stmt_FloatTy_number (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.FloatTy} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepFloatTy x0 v0 →
+    RepNat (Lanius.Mini.FloatTy.number x0) w
+
+abbrev Stmt_FloatTy_rex_size (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.FloatTy} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepFloatTy x0 v0 →
+    RepNat (Lanius.Mini.FloatTy.rexSize x0) w
+
+abbrev Stmt_FloatTy_sign_bit (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.FloatTy} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepFloatTy x0 v0 →
+    RepU64 (Lanius.Mini.FloatTy.signBit x0) w
+
+abbrev Stmt_FloatTy_sign_word (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.FloatTy} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepFloatTy x0 v0 →
+    RepWord (Lanius.Mini.FloatTy.signWord x0) w
+
 abbrev Stmt_Instr_size (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Instr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepInstr x0 v0 →
     RepNat (Lanius.Mini.Instr.size x0) w

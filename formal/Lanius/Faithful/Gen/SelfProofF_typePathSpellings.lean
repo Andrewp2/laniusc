@@ -55,10 +55,10 @@ theorem proof_split_more {prog : SrcProgram} {prims : Prims} {ix_split_more ix_e
   simp only [src_split_more] at h
   faithful [Lanius.Mini.splitMore]
 
-theorem step_type_path_spellings {prog : SrcProgram} {prims : Prims} {ix_type_path_spellings ix_node_prod ix_kid ix_minus ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_single_of_mini_selfhost_List_usize ix_cons_name ix_p_type_path_ident ix_p_type_path_end ix_p_type_path_more : Nat} (fn : prog.funcs[ix_type_path_spellings]? = some (src_type_path_spellings ix_node_prod ix_kid ix_minus ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_single_of_mini_selfhost_List_usize ix_cons_name ix_type_path_spellings ix_p_type_path_ident ix_p_type_path_end ix_p_type_path_more)) (np : prims.isPrim ix_type_path_spellings = false)
+theorem step_type_path_spellings {prog : SrcProgram} {prims : Prims} {ix_type_path_spellings ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_single_of_mini_selfhost_List_usize ix_cons_name ix_p_type_path_ident ix_p_type_path_end ix_p_type_path_more : Nat} (fn : prog.funcs[ix_type_path_spellings]? = some (src_type_path_spellings ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_single_of_mini_selfhost_List_usize ix_cons_name ix_type_path_spellings ix_p_type_path_ident ix_p_type_path_end ix_p_type_path_more)) (np : prims.isPrim ix_type_path_spellings = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
-    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_field_text_Token_of_mini_selfhost_Token : Certified (∀ {n : Nat}, Stmt_field_text_Token_of_mini_selfhost_Token prog prims ix_field_text_Token_of_mini_selfhost_Token n))
     (ext_kid_token : Certified (∀ {n : Nat}, Stmt_kid_token prog prims ix_kid_token n))
     (ext_single_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_List_usize prog prims ix_single_of_mini_selfhost_List_usize n))

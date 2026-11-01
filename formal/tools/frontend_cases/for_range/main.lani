@@ -1,0 +1,20 @@
+fn sum_to(n: i32) {
+    let total: i32 = 0;
+    for i in 0..n {
+        if (i == 3) {
+            continue;
+        }
+        if (i > 50) {
+            break;
+        }
+        total = total + i;
+    }
+}
+
+fn count(n: u32) {
+    let hits: u32 = 0;
+    for k in 2..n {
+        n = n - 1;
+        hits = hits + k;
+    }
+}

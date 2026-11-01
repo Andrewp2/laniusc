@@ -46,6 +46,7 @@ def Expr.bump : Expr → Expr
   | .neg e => .neg e.bump
   | .binary w o l r => .binary w o l.bump r.bump
   | .compare w o l r => .compare w o l.bump r.bump
+  | .fp o l r => .fp o l.bump r.bump
 
 partial def Stmt.bump : Stmt → Stmt
   | .skip => .skip
@@ -61,6 +62,10 @@ partial def Stmt.bump : Stmt → Stmt
   | .loadWord w t a => .loadWord w t a.bump
   | .storeWord w a v => .storeWord w a.bump v.bump
   | .divide w o t l r => .divide w o t l.bump r.bump
+  | .brk => .brk
+  | .cont => .cont
+  | .sys k t args => .sys k t (args.map Expr.bump)
+  | .frame t b => .frame t b
 
 def mutant (p : Program) : Program :=
   { funcs := p.funcs.map fun f => { f with body := f.body.bump } }

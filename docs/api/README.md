@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **278 modules**, **14206 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **281 modules**, **14300 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -172,6 +172,7 @@ Inventory: **278 modules**, **14206 declaration/member entries**. Counts include
 | [std::random_checked](std/random_checked.md) | [source](../../stdlib/std/random_checked.lani#L5) | 6 | Source inventory | [stdlib-randomness](../stdlib-randomness.md) |
 | [std::random_wide](std/random_wide.md) | [source](../../stdlib/std/random_wide.lani#L3) | 5 | Source inventory | [stdlib-randomness](../stdlib-randomness.md) |
 | [std::resolve](std/resolve.md) | [source](../../stdlib/std/resolve.lani#L4) | 59 | Source inventory | [stdlib-resolve](../stdlib-resolve.md), [stdlib-resolve-host](../stdlib-resolve-host.md) |
+| [std::scope](std/scope.md) | [source](../../stdlib/std/scope.lani#L14) | 65 | Source inventory | [stdlib-scope](../stdlib-scope.md), [memory-scoped-stacks-design](../memory-scoped-stacks-design.md) |
 | [std::signal](std/signal.md) | [source](../../stdlib/std/signal.lani#L3) | 14 | Source inventory | [stdlib-signals](../stdlib-signals.md) |
 | [std::socket](std/socket.md) | [source](../../stdlib/std/socket.lani#L3) | 119 | Source inventory | [stdlib-sockets](../stdlib-sockets.md), [stdlib-unix-streams](../stdlib-unix-streams.md), [stdlib-unix-request](../stdlib-unix-request.md) |
 | [std::stream](std/stream.md) | [source](../../stdlib/std/stream.lani#L3) | 15 | Source inventory | [stdlib-streams](../stdlib-streams.md) |
@@ -254,6 +255,7 @@ Inventory: **278 modules**, **14206 declaration/member entries**. Counts include
 | [ext::log](ext/log.md) | [source](../../extended/ext/log.lani#L3) | 38 | Source inventory | [extended-log](../extended-log.md) |
 | [ext::openssl_digest](ext/openssl_digest.md) | [source](../../extended/ext/openssl_digest.lani#L3) | 46 | Source inventory | [extended-openssl-digest](../extended-openssl-digest.md), [library-native-c](../library-native-c.md), [extended-openssl-hash](../extended-openssl-hash.md) |
 | [ext::openssl_tls](ext/openssl_tls.md) | [source](../../extended/ext/openssl_tls.lani#L3) | 185 | Source inventory | [extended-openssl-tls](../extended-openssl-tls.md), [extended-openssl-tls-server](../extended-openssl-tls-server.md), [extended-openssl-mutual-tls](../extended-openssl-mutual-tls.md), [extended-https-mutual-tls](../extended-https-mutual-tls.md), [library-native-c](../library-native-c.md), [extended-https-client](../extended-https-client.md), [extended-https-batch-testing](../extended-https-batch-testing.md) |
+| [ext::openssl_tls_lifecycle](ext/openssl_tls_lifecycle.md) | [source](../../extended/ext/openssl_tls_lifecycle.lani#L8) | 7 | Source inventory | **Unregistered** |
 | [ext::openssl_websocket](ext/openssl_websocket.md) | [source](../../extended/ext/openssl_websocket.lani#L4) | 10 | Source inventory | [extended-openssl-websocket](../extended-openssl-websocket.md), [extended-websocket](../extended-websocket.md), [extended-websocket-upgrade-program](../extended-websocket-upgrade-program.md), [library-native-c](../library-native-c.md) |
 | [ext::parse](ext/parse.md) | [source](../../extended/ext/parse.lani#L3) | 68 | Source inventory | [extended-parse](../extended-parse.md) |
 | [ext::patch](ext/patch.md) | [source](../../extended/ext/patch.lani#L2) | 32 | Source inventory | [extended-patch](../extended-patch.md) |
@@ -273,6 +275,7 @@ Inventory: **278 modules**, **14206 declaration/member entries**. Counts include
 | [ext::sparse_matrix](ext/sparse_matrix.md) | [source](../../extended/ext/sparse_matrix.lani#L3) | 16 | Source inventory | [extended-sparse](../extended-sparse.md), [extended-graph-walk](../extended-graph-walk.md) |
 | [ext::sparse_ops](ext/sparse_ops.md) | [source](../../extended/ext/sparse_ops.lani#L5) | 10 | Source inventory | [extended-sparse](../extended-sparse.md), [extended-sparse-product](../extended-sparse-product.md), [extended-sparse-paths](../extended-sparse-paths.md), [extended-linalg](../extended-linalg.md), [extended-graph-walk](../extended-graph-walk.md) |
 | [ext::sqlite](ext/sqlite.md) | [source](../../extended/ext/sqlite.lani#L3) | 145 | Source inventory | [extended-sqlite](../extended-sqlite.md), [library-native-c](../library-native-c.md), [extended-sqlite-kv](../extended-sqlite-kv.md), [extended-sqlite-allocation](../extended-sqlite-allocation.md) |
+| [ext::sqlite_statement](ext/sqlite_statement.md) | [source](../../extended/ext/sqlite_statement.lani#L12) | 22 | Source inventory | [state-machines-design](../state-machines-design.md) |
 | [ext::statistics](ext/statistics.md) | [source](../../extended/ext/statistics.lani#L4) | 105 | Source inventory | [extended-statistics](../extended-statistics.md), [extended-weighted-statistics](../extended-weighted-statistics.md), [extended-higher-statistics](../extended-higher-statistics.md) |
 | [ext::table](ext/table.md) | [source](../../extended/ext/table.lani#L2) | 27 | Source inventory | [extended-table](../extended-table.md) |
 | [ext::tar](ext/tar.md) | [source](../../extended/ext/tar.lani#L3) | 81 | Source inventory | [extended-tar](../extended-tar.md) |
@@ -370,3 +373,4 @@ These are discovery/contract-link gaps, not claims that their code is missing or
 - [std::io_hex_wide_u64](std/io_hex_wide_u64.md)
 - [std::io_line](std/io_line.md)
 - [std::io_utf8](std/io_utf8.md)
+- [ext::openssl_tls_lifecycle](ext/openssl_tls_lifecycle.md)

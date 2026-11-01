@@ -3,17 +3,14 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_compileSource
+public import Lanius.Faithful.Gen.SelfStmt0
 public import Lanius.Faithful.Gen.SelfStmt1
-public import Lanius.Faithful.Gen.SelfStmt3
-public import Lanius.Faithful.Gen.SelfStmt4
-public import Lanius.Faithful.Gen.SelfStmt7
-public import Lanius.Faithful.Gen.SelfStmtC_codeSize
-public import Lanius.Faithful.Gen.SelfStmtC_compileArgs
+public import Lanius.Faithful.Gen.SelfStmt2
+public import Lanius.Faithful.Gen.SelfStmt5
+public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmtC_compileOr
 public import Lanius.Faithful.Gen.SelfStmtC_compileSource
 public import Lanius.Faithful.Gen.SelfStmtC_declareProgram
-public import Lanius.Faithful.Gen.SelfStmtC_lookup
-public import Lanius.Faithful.Gen.SelfStmtC_pow2
 import all Lanius.Faithful.Gen.SelfSrcC_compileSource
 import all Lanius.Mini.Compiler.P.compileSource
 
@@ -46,71 +43,46 @@ theorem proof_compile_source {prog : SrcProgram} {prims : Prims} {ix_compile_sou
   simp only [src_compile_source] at h
   faithful [Lanius.Mini.compileSource]
 
-theorem step_ite_code {prog : SrcProgram} {prims : Prims} {ix_ite_code ix_plus ix_concat_of_mini_selfhost_Instr ix_compile_stmt ix_code_size ix_single_of_mini_selfhost_Instr : Nat} (fn : prog.funcs[ix_ite_code]? = some (src_ite_code ix_plus ix_concat_of_mini_selfhost_Instr ix_compile_stmt ix_code_size ix_single_of_mini_selfhost_Instr)) (np : prims.isPrim ix_ite_code = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_concat_of_mini_selfhost_Instr : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_Instr prog prims ix_concat_of_mini_selfhost_Instr n))
-    (ext_code_size : Certified (∀ {n : Nat}, Stmt_code_size prog prims ix_code_size n))
-    (ext_single_of_mini_selfhost_Instr : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_Instr prog prims ix_single_of_mini_selfhost_Instr n)) {n : Nat}
-    (ih_compile_stmt : Certified (Stmt_compile_stmt prog prims ix_compile_stmt n)) :
-    Stmt_ite_code prog prims ix_ite_code (n + 1) := by
-  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
-  rw [pcall_succ np fn] at h
-  simp only [src_ite_code] at h
-  faithful [Lanius.Mini.Inline.iteCode]
-
-theorem proof_link {prog : SrcProgram} {prims : Prims} {ix_link ix_length_of_u8 ix_layout ix_link_from ix_image_limit : Nat} (fn : prog.funcs[ix_link]? = some (src_link ix_length_of_u8 ix_layout ix_link_from ix_image_limit)) (np : prims.isPrim ix_link = false)
-    (ext_length_of_u8 : Certified (∀ {n : Nat}, Stmt_length_of_u8 prog prims ix_length_of_u8 n))
-    (ext_layout : Certified (∀ {n : Nat}, Stmt_layout prog prims ix_layout n))
-    (ext_link_from : Certified (∀ {n : Nat}, Stmt_link_from prog prims ix_link_from n))
-    (ext_image_limit : Certified (∀ {n : Nat}, Stmt_image_limit prog prims ix_image_limit n)) {n : Nat} :
-    Stmt_link prog prims ix_link n := by
-  intro x0 v0 w h r0
+theorem proof_pack_word {prog : SrcProgram} {prims : Prims} {ix_pack_word : Nat} (fn : prog.funcs[ix_pack_word]? = some (src_pack_word)) (np : prims.isPrim ix_pack_word = false) {n : Nat} :
+    Stmt_pack_word prog prims ix_pack_word n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_link] at h
-  faithful [Lanius.Mini.Inline.link]
+  simp only [src_pack_word] at h
+  faithful [Lanius.Mini.packWord]
 
-theorem step_lookup_at {prog : SrcProgram} {prims : Prims} {ix_lookup_at ix_lookup : Nat} (fn : prog.funcs[ix_lookup_at]? = some (src_lookup_at ix_lookup)) (np : prims.isPrim ix_lookup_at = false) {n : Nat}
-    (ih_lookup : Certified (Stmt_lookup prog prims ix_lookup n)) :
-    Stmt_lookup_at prog prims ix_lookup_at (n + 1) := by
+theorem proof_round_cons {prog : SrcProgram} {prims : Prims} {ix_round_cons ix_cons_of_i32 ix_plus : Nat} (fn : prog.funcs[ix_round_cons]? = some (src_round_cons ix_cons_of_i32 ix_plus)) (np : prims.isPrim ix_round_cons = false)
+    (ext_cons_of_i32 : Certified (∀ {n : Nat}, Stmt_cons_of_i32 prog prims ix_cons_of_i32 n))
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n)) {n : Nat} :
+    Stmt_round_cons prog prims ix_round_cons n := by
   intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  rcases n with _ | n
+  · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_lookup_at] at h
-  faithful [Lanius.Mini.Inline.lookupAt]
+  simp only [src_round_cons] at h
+  faithful [Lanius.Mini.roundCons]
 
-theorem step_loop_code {prog : SrcProgram} {prims : Prims} {ix_loop_code ix_plus ix_concat_of_mini_selfhost_Instr ix_compile_stmt ix_code_size ix_single_of_mini_selfhost_Instr : Nat} (fn : prog.funcs[ix_loop_code]? = some (src_loop_code ix_plus ix_concat_of_mini_selfhost_Instr ix_compile_stmt ix_code_size ix_single_of_mini_selfhost_Instr)) (np : prims.isPrim ix_loop_code = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_concat_of_mini_selfhost_Instr : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_Instr prog prims ix_concat_of_mini_selfhost_Instr n))
-    (ext_code_size : Certified (∀ {n : Nat}, Stmt_code_size prog prims ix_code_size n))
-    (ext_single_of_mini_selfhost_Instr : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_Instr prog prims ix_single_of_mini_selfhost_Instr n)) {n : Nat}
-    (ih_compile_stmt : Certified (Stmt_compile_stmt prog prims ix_compile_stmt n)) :
-    Stmt_loop_code prog prims ix_loop_code (n + 1) := by
-  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+theorem proof_round_end {prog : SrcProgram} {prims : Prims} {ix_round_end ix_empty_of_i32 ix_empty_of_u8 : Nat} (fn : prog.funcs[ix_round_end]? = some (src_round_end ix_empty_of_i32 ix_empty_of_u8)) (np : prims.isPrim ix_round_end = false)
+    (ext_empty_of_i32 : Certified (∀ {n : Nat}, Stmt_empty_of_i32 prog prims ix_empty_of_i32 n))
+    (ext_empty_of_u8 : Certified (∀ {n : Nat}, Stmt_empty_of_u8 prog prims ix_empty_of_u8 n)) {n : Nat} :
+    Stmt_round_end prog prims ix_round_end n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_loop_code] at h
-  faithful [Lanius.Mini.Inline.loopCode]
+  simp only [src_round_end] at h
+  faithful [Lanius.Mini.roundEnd]
 
-theorem step_offset_after {prog : SrcProgram} {prims : Prims} {ix_offset_after ix_plus ix_minus ix_SrcType_size ix_field_offset : Nat} (fn : prog.funcs[ix_offset_after]? = some (src_offset_after ix_plus ix_minus ix_SrcType_size ix_field_offset)) (np : prims.isPrim ix_offset_after = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
-    (ext_SrcType_size : Certified (∀ {n : Nat}, Stmt_SrcType_size prog prims ix_SrcType_size n)) {n : Nat}
-    (ih_field_offset : Certified (Stmt_field_offset prog prims ix_field_offset n)) :
-    Stmt_offset_after prog prims ix_offset_after (n + 1) := by
-  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+theorem step_usize_words {prog : SrcProgram} {prims : Prims} {ix_usize_words ix_empty_of_i32 ix_cons_of_i32 ix_unbox_of_mini_selfhost_List_usize : Nat} (fn : prog.funcs[ix_usize_words]? = some (src_usize_words ix_empty_of_i32 ix_cons_of_i32 ix_usize_words ix_unbox_of_mini_selfhost_List_usize)) (np : prims.isPrim ix_usize_words = false)
+    (ext_empty_of_i32 : Certified (∀ {n : Nat}, Stmt_empty_of_i32 prog prims ix_empty_of_i32 n))
+    (ext_cons_of_i32 : Certified (∀ {n : Nat}, Stmt_cons_of_i32 prog prims ix_cons_of_i32 n))
+    (ext_unbox_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_usize n)) {n : Nat}
+    (ih_usize_words : Certified (Stmt_usize_words prog prims ix_usize_words n)) :
+    Stmt_usize_words prog prims ix_usize_words (n + 1) := by
+  intro x0 v0 w h r0
   rw [pcall_succ np fn] at h
-  simp only [src_offset_after] at h
-  faithful [Lanius.Mini.Inline.offsetAfter]
-
-theorem step_seq_code {prog : SrcProgram} {prims : Prims} {ix_seq_code ix_plus ix_concat_of_mini_selfhost_Instr ix_compile_stmt ix_code_size : Nat} (fn : prog.funcs[ix_seq_code]? = some (src_seq_code ix_plus ix_concat_of_mini_selfhost_Instr ix_compile_stmt ix_code_size)) (np : prims.isPrim ix_seq_code = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_concat_of_mini_selfhost_Instr : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_Instr prog prims ix_concat_of_mini_selfhost_Instr n))
-    (ext_code_size : Certified (∀ {n : Nat}, Stmt_code_size prog prims ix_code_size n)) {n : Nat}
-    (ih_compile_stmt : Certified (Stmt_compile_stmt prog prims ix_compile_stmt n)) :
-    Stmt_seq_code prog prims ix_seq_code (n + 1) := by
-  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
-  rw [pcall_succ np fn] at h
-  simp only [src_seq_code] at h
-  faithful [Lanius.Mini.Inline.seqCode]
+  simp only [src_usize_words] at h
+  faithful [Lanius.Mini.usizeWords]
 
 end Lanius.Faithful.SelfCert

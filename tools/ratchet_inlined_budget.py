@@ -7,11 +7,12 @@ Reads target/laniusc-shader-artifacts/<profile>/inlined_sizes.txt (written by th
 shader build) and rewrites each line of both budget files to min(limit, measured):
 
 - crates/laniusc-shaders/inlined_size_budget.txt: fully inlined instructions.
-  Kernels that now fit the 40k default lose their line.
+  Kernels that now fit the 40k default lose their line, except headroom lines
+  (a limit under the default, kept for a kernel that was split to make room).
 - crates/laniusc-shaders/local_array_budget.txt: per-thread local array bytes.
   Kernels that now have no local arrays (the default, 0) lose their line.
 
-Limits never go up and no kernel is added; a kernel that grew past its limit
+Limits never go up and no kernel is added (a headroom line is added by hand); a kernel that grew past its limit
 fails the build before this script ever sees it.
 """
 import argparse
@@ -48,7 +49,9 @@ for budget, column, default, what in BUDGETS:
             continue
         limit, key = int(fields[0]), fields[1]
         measured = rows.get(key, [None] * 5)[column]
-        if measured is None or measured <= default:
+        # A line under the default caps a kernel that was split to make
+        # room; it stays. A line over the default goes once the kernel fits.
+        if measured is None or (measured <= default and limit > default):
             dropped.append(key)
             continue
         if measured < limit:

@@ -2493,6 +2493,22 @@ impl GpuTypeChecker {
                 .semantic_projection
                 .compact_stmt
                 .record(encoder)?;
+            if type_alias_passes_required(parser_feature_flags) {
+                bind_groups
+                    .semantic_projection
+                    .compact_distinct_nodes
+                    .record(encoder)?;
+                bind_groups
+                    .semantic_projection
+                    .compact_distinct
+                    .record(encoder)?;
+            }
+            if exclusive_reference_pass_required(parser_feature_flags) {
+                bind_groups
+                    .semantic_projection
+                    .compact_exclusive
+                    .record(encoder)?;
+            }
             bind_groups
                 .semantic_projection
                 .compact_aggregate_requests

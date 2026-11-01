@@ -7,13 +7,12 @@ public import Lanius.Faithful.Gen.SelfStmt1
 public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt7
+public import Lanius.Faithful.Gen.SelfStmtC_SrcType_size
 public import Lanius.Faithful.Gen.SelfStmtC_elementBase
 public import Lanius.Faithful.Gen.SelfStmtC_iteThen
-public import Lanius.Faithful.Gen.SelfStmtC_lookup
 public import Lanius.Faithful.Gen.SelfStmtC_lowerSetCallArgs
 public import Lanius.Faithful.Gen.SelfStmtC_storeType
 public import Lanius.Faithful.Gen.SelfStmtC_widthOf
-public import Lanius.Faithful.Gen.SelfStmtC_wordElement
 import all Lanius.Faithful.Gen.SelfSrcC_storeType
 import all Lanius.Mini.Compiler.P.storeType
 
@@ -34,18 +33,6 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_lower_slice {prog : SrcProgram} {prims : Prims} {ix_lower_slice ix_single_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_word_element : Nat} (fn : prog.funcs[ix_lower_slice]? = some (src_lower_slice ix_single_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_word_element)) (np : prims.isPrim ix_lower_slice = false)
-    (ext_single_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_Expr prog prims ix_single_of_mini_selfhost_Expr n))
-    (ext_SrcType_is_i32 : Certified (∀ {n : Nat}, Stmt_SrcType_is_i32 prog prims ix_SrcType_is_i32 n))
-    (ext_word_element : Certified (∀ {n : Nat}, Stmt_word_element prog prims ix_word_element n)) {n : Nat} :
-    Stmt_lower_slice prog prims ix_lower_slice n := by
-  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_lower_slice] at h
-  faithful [Lanius.Mini.lowerSlice]
-
 theorem step_store_cases {prog : SrcProgram} {prims : Prims} {ix_store_cases ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_boxed_of_mini_selfhost_Expr ix_store_types ix_ite_then : Nat} (fn : prog.funcs[ix_store_cases]? = some (src_store_cases ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_boxed_of_mini_selfhost_Expr ix_store_types ix_store_cases ix_ite_then)) (np : prims.isPrim ix_store_cases = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType n))
@@ -59,14 +46,14 @@ theorem step_store_cases {prog : SrcProgram} {prims : Prims} {ix_store_cases ix_
   simp only [src_store_cases] at h
   faithful [Lanius.Mini.storeCases]
 
-theorem step_store_type {prog : SrcProgram} {prims : Prims} {ix_store_type ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_lower_then ix_width_of ix_address_below ix_store_one ix_get_of_mini_selfhost_Expr ix_store_types ix_store_cases : Nat} (fn : prog.funcs[ix_store_type]? = some (src_store_type ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_lower_then ix_width_of ix_address_below ix_store_one ix_get_of_mini_selfhost_Expr ix_store_types ix_store_cases)) (np : prims.isPrim ix_store_type = false)
+theorem step_store_type {prog : SrcProgram} {prims : Prims} {ix_store_type ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_lower_then ix_store_one ix_width_of ix_address_below ix_get_of_mini_selfhost_Expr ix_store_types ix_store_cases : Nat} (fn : prog.funcs[ix_store_type]? = some (src_store_type ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_lower_then ix_store_one ix_width_of ix_address_below ix_get_of_mini_selfhost_Expr ix_store_types ix_store_cases)) (np : prims.isPrim ix_store_type = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType n))
     (ext_lower_then : Certified (∀ {n : Nat}, Stmt_lower_then prog prims ix_lower_then n))
+    (ext_store_one : Certified (∀ {n : Nat}, Stmt_store_one prog prims ix_store_one n))
     (ext_width_of : Certified (∀ {n : Nat}, Stmt_width_of prog prims ix_width_of n))
     (ext_address_below : Certified (∀ {n : Nat}, Stmt_address_below prog prims ix_address_below n))
-    (ext_store_one : Certified (∀ {n : Nat}, Stmt_store_one prog prims ix_store_one n))
     (ext_get_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_get_of_mini_selfhost_Expr prog prims ix_get_of_mini_selfhost_Expr n)) {n : Nat}
     (ih_store_types : Certified (Stmt_store_types prog prims ix_store_types n))
     (ih_store_cases : Certified (Stmt_store_cases prog prims ix_store_cases n)) :
@@ -89,5 +76,39 @@ theorem step_store_types {prog : SrcProgram} {prims : Prims} {ix_store_types ix_
   rw [pcall_succ np fn] at h
   simp only [src_store_types] at h
   faithful [Lanius.Mini.storeTypes]
+
+theorem step_within_layout {prog : SrcProgram} {prims : Prims} {ix_within_layout ix_plus ix_sizes ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_within_layouts ix_within_payloads : Nat} (fn : prog.funcs[ix_within_layout]? = some (src_within_layout ix_plus ix_sizes ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_within_layouts ix_within_payloads)) (np : prims.isPrim ix_within_layout = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_sizes : Certified (∀ {n : Nat}, Stmt_sizes prog prims ix_sizes n))
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType n))
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType n)) {n : Nat}
+    (ih_within_layouts : Certified (Stmt_within_layouts prog prims ix_within_layouts n))
+    (ih_within_payloads : Certified (Stmt_within_payloads prog prims ix_within_payloads n)) :
+    Stmt_within_layout prog prims ix_within_layout (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_within_layout] at h
+  faithful [Lanius.Mini.withinLayout]
+
+theorem step_within_layouts {prog : SrcProgram} {prims : Prims} {ix_within_layouts ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_within_layout : Nat} (fn : prog.funcs[ix_within_layouts]? = some (src_within_layouts ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_within_layout ix_within_layouts)) (np : prims.isPrim ix_within_layouts = false)
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType n)) {n : Nat}
+    (ih_within_layout : Certified (Stmt_within_layout prog prims ix_within_layout n))
+    (ih_within_layouts : Certified (Stmt_within_layouts prog prims ix_within_layouts n)) :
+    Stmt_within_layouts prog prims ix_within_layouts (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_within_layouts] at h
+  faithful [Lanius.Mini.withinLayouts]
+
+theorem step_within_payloads {prog : SrcProgram} {prims : Prims} {ix_within_payloads ix_sizes ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_within_layouts : Nat} (fn : prog.funcs[ix_within_payloads]? = some (src_within_payloads ix_sizes ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_within_layouts ix_within_payloads)) (np : prims.isPrim ix_within_payloads = false)
+    (ext_sizes : Certified (∀ {n : Nat}, Stmt_sizes prog prims ix_sizes n))
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType n)) {n : Nat}
+    (ih_within_layouts : Certified (Stmt_within_layouts prog prims ix_within_layouts n))
+    (ih_within_payloads : Certified (Stmt_within_payloads prog prims ix_within_payloads n)) :
+    Stmt_within_payloads prog prims ix_within_payloads (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_within_payloads] at h
+  faithful [Lanius.Mini.withinPayloads]
 
 end Lanius.Faithful.SelfCert

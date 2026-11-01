@@ -85,6 +85,7 @@ static const uint TK_ELSE = 71u;
 static const uint TK_WHILE = 72u;
 static const uint TK_BREAK = 73u;
 static const uint TK_CONTINUE = 74u;
+static const uint TK_ARROW = 75u;
 static const uint TK_IF_LBRACE = 88u;
 static const uint TK_MATCH_LBRACE = 119u;
 static const uint TK_IMPL_LBRACE = 121u;
@@ -279,6 +280,10 @@ uint brace_open_kind_for(
 {
     uint owner = decode_owner_kind(header_context);
     uint prev_raw = raw_kind_at(parser_i - 1u, count);
+    // A `{` right after a match arm's `->` opens a block arm. It takes the
+    // `if` block's kinds, so its statements parse as an `if` body's do.
+    if (prev_raw == TK_ARROW)
+        return TK_IF_LBRACE;
     // Raw `<`/`>` depth is ambiguous until generic delimiters have been
     // semantically retagged: an earlier comparison such as `a < b` can leave
     // the raw angle depth open across later statements. Parenthesis and bracket

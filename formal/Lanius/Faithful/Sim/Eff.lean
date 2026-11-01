@@ -74,7 +74,7 @@ end
 
 /-! ## Facts the cases use -/
 
-theorem matchPatterns_binds : ∀ (bs : List Nat) (vs : List Value),
+private theorem matchPatterns_binds : ∀ (bs : List Nat) (vs : List Value),
     matchPatterns (bs.map .bind) vs = if bs.length = vs.length then some (bs.zip vs) else none
   | [], [] => by simp [matchPatterns]
   | [], _ :: _ => by simp [matchPatterns]
@@ -137,6 +137,10 @@ theorem structTy_some {boxes : Boxes} {ty t : SrcType} {ts : List SrcType} (h : 
   | slice => simp [structTy] at h
   | unit => simp [structTy] at h
   | isize => simp [structTy] at h
+  | char => simp [structTy] at h
+  | float => simp [structTy] at h
+  | sint => simp [structTy] at h
+  | array => simp [structTy] at h
 
 theorem variantTy_some {ty t : SrcType} {k : Nat} {ts : List SrcType} (h : variantTy ty k ts = some t) :
     ∃ id variants, ty = .enum id variants ∧ variants[k]? = some ts ∧ t = ty := by
@@ -160,6 +164,10 @@ theorem variantTy_some {ty t : SrcType} {k : Nat} {ts : List SrcType} (h : varia
   | slice => simp [variantTy] at h
   | unit => simp [variantTy] at h
   | isize => simp [variantTy] at h
+  | char => simp [variantTy] at h
+  | float => simp [variantTy] at h
+  | sint => simp [variantTy] at h
+  | array => simp [variantTy] at h
 
 /-- A state between two that grow is below the later one's cursor. -/
 theorem Grows.bound {a b c : State} (first : Grows a b) (second : Grows b c) (views : a.i32ArrayViews = [])
@@ -198,7 +206,7 @@ theorem effs_step (eff : EffOk sp prims outside N k) (effs : EffsOk sp prims out
     have b1 := Grows.bound (effGrows erun) (effsGrows esrun) inv.views bound
     obtain ⟨p, hp, r, ran1⟩ := eff erun het inv rel b1
     obtain ⟨ps, hps, rs, ran2⟩ := effs esrun hts ran1.inv (rel.step ran1.step ran1.locals) bound
-    exact ⟨p :: ps, by simp [peffs, hp, hps], .cons (r.mono ran2.step.reads) rs, ran1.trans ran2⟩
+    exact ⟨p :: ps, by simp [peffs, hp, hps], .cons (r.mono ran2.step.reads ran2.step.ranges) rs, ran1.trans ran2⟩
 
 theorem arms_step (eff : EffOk sp prims outside N k) (arms : ArmsOk sp prims outside N k) :
     ArmsOk sp prims outside N (k + 1) := by

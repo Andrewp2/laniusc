@@ -1,0 +1,51 @@
+module app::main;
+
+// `?` after a method call, on a local and on self, in a typed let, an
+// untyped let and an assignment, for Result and Option.
+import core::result;
+import core::option;
+
+struct Meter { limit: i32 }
+
+impl Meter {
+    fn check(&self, n: i32) -> core::result::Result<i32, i32> {
+        if (n > self.limit) {
+            return Err(n);
+        }
+        return Ok(n + 1);
+    }
+
+    fn twice(&self, n: i32) -> core::result::Result<i32, i32> {
+        let a: i32 = self.check(n)?;
+        let b = self.check(a)?;
+        return Ok(b);
+    }
+
+    fn pick(&self, n: i32) -> core::option::Option<i32> {
+        if (n > self.limit) {
+            return None;
+        }
+        return Some(n);
+    }
+}
+
+fn step(m: Meter, n: i32) -> core::result::Result<i32, i32> {
+    let a: i32 = m.twice(n)?;
+    let c: i32 = 0;
+    c = m.check(a)?;
+    return Ok(a + c);
+}
+
+fn first(m: Meter, n: i32) -> core::option::Option<bool> {
+    let v = m.pick(n)?;
+    return Some(v > 0);
+}
+
+fn top(n: i32) -> i32 {
+    let m: Meter = Meter { limit: 10 };
+    let s: core::result::Result<i32, i32> = step(m, n);
+    let a: i32 = match (s) { Ok(v) -> v, Err(e) -> 0 - e };
+    let f: core::option::Option<bool> = first(m, n);
+    let b: i32 = match (f) { Some(x) -> 1, None -> 2 };
+    return a + b;
+}

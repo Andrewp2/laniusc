@@ -42,7 +42,7 @@ pub(super) fn read_explicit_source_paths<P: AsRef<Path>>(
                 "create the source file or pass a readable .lani input path",
             )
         })?;
-        sources.push(source);
+        sources.push(crate::compiler::machine_elaboration::elaborate_source(path, source)?);
     }
     Ok(sources)
 }
@@ -204,7 +204,7 @@ pub(super) fn read_explicit_source_path_files(
                 "restore the source file or regenerate the source-pack manifest",
             )
         })?;
-        sources.push(source);
+        sources.push(crate::compiler::machine_elaboration::elaborate_source(&file.path, source)?);
     }
     Ok(sources)
 }

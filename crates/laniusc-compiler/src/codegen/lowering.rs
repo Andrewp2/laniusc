@@ -351,6 +351,7 @@ struct SemanticPasses {
     scan_up: PassData,
     scan_down: PassData,
     scan_apply: PassData,
+    schedule: PassData,
     scatter: PassData,
     try_rows: PassData,
     call_args: PassData,
@@ -388,6 +389,7 @@ impl SemanticPasses {
             scan_up: load("scan/counted/01_hierarchy_up"),
             scan_down: load("scan/counted/02_hierarchy_down"),
             scan_apply: load("scan/counted/02_apply"),
+            schedule: load("codegen/lir/semantic/schedule"),
             scatter: load("codegen/lir/semantic/scatter"),
             try_rows: load("codegen/lir/semantic/try_rows"),
             call_args: load("codegen/lir/semantic/call_args"),
@@ -1117,6 +1119,7 @@ struct GpuSemanticLoweringOperations {
     value_uses_mark: JobSized,
     count: JobSized,
     instruction_scan: GpuResidentExclusiveScan,
+    schedule: JobSized,
     scatter: JobSized,
     try_rows: JobSized,
     call_args: JobSized,
@@ -1375,6 +1378,7 @@ impl GpuSemanticLoweringStage {
                 "lir.semantic.scan.apply",
                 passes.scan_apply.reflection.as_ref(),
             ),
+            ("lir.semantic.schedule", passes.schedule.reflection.as_ref()),
             ("lir.semantic.scatter", passes.scatter.reflection.as_ref()),
             (
                 "lir.semantic.call_args",
@@ -1963,6 +1967,12 @@ impl GpuSemanticLoweringStage {
                 hir_nodes,
             )?, sem_extent::hir, capacities)?,
             instruction_scan,
+            schedule: JobSized::new(direct_uniform!(
+                "lir.semantic.schedule",
+                &passes.schedule,
+                &scatter_params,
+                capacities.semantic_instructions,
+            )?, sem_extent::semantic_rows, capacities)?,
             scatter: JobSized::new(direct_uniform!(
                 "lir.semantic.scatter",
                 &passes.scatter,
@@ -2216,6 +2226,7 @@ impl GpuSemanticLoweringStage {
         operations.instruction_scan.record(encoder)?;
         operations.place_addresses.record_job(encoder, job)?;
         stamp!("lowering.semantic.instructions.scan.done");
+        operations.schedule.record_job(encoder, job)?;
         operations.scatter.record_job(encoder, job)?;
         operations.try_rows.record_job(encoder, job)?;
         stamp!("lowering.semantic.instructions.scatter.done");

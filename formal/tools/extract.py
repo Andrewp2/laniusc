@@ -20,7 +20,24 @@ meaning, and everything else is rejected:
              user enums -> inductive, user structs -> structure
   functions  fn and impl methods (self first) -> def, recursion as written;
              generic functions only as the list operations in SPEC_FNS
-  bodies     let, if/else, return; match on an enum, an Option, or a List
+  bodies     let, if/else, return, `+=` and `-=`; match on an enum, an Option,
+             or a List, with expression arms, or block arms that return (a
+             match statement, or `return match`)
+  machines   a `machine` on an enum event (docs/state-machines-design.md) as
+             what laniusc elaborates it to: inductive MState, structure M with
+             its fields and `state`, `mStart`, one method `M.inS` per state and
+             `M.step : M → E → O × M` (just M with no output). `goto S(a) with
+             o` is `self.state = MState::S(a); return o;`, `stay with o` is
+             `return o;`
+  &mut       `&mut T` parameters and `&mut self`, translated as Aeneas does
+             a mutable borrow: the Lean function takes the value and returns
+             (result, updated values) in parameter order (just the updated
+             values when there is no result). Assignments `x = e;` and
+             `x.f.g = e;` rebind a local or parameter; a call passing one as a
+             `&mut` argument (a statement, or a let's whole initializer)
+             rebinds it to the returned value. Such an argument is a bare
+             local, used by no other argument of the call (laniusc's
+             exclusivity check, LNC0006, rejects the same calls).
   arithmetic i32/u32/u64 + - * & | ^ wrap, like BitVec; u32/u64 >> by a constant;
              usize only /, since + - * go through the prelude's panicking
              plus/minus/times, which equal Nat + - * whenever they return;
@@ -28,7 +45,7 @@ meaning, and everything else is rejected:
              bits), u32 -> u64 (zero-extended), i32/u32/u64 -> u8 (low byte)
 
 The prelude section (between `// extract: prelude begin` and `end`) is not
-extracted. Every item in it must be in PRELUDE below with exactly the listed
+extracted; a file that uses no List or Box may omit it and the list operations. Every item in it must be in PRELUDE below with exactly the listed
 signature; calls to it become the listed Lean term. A list operation in
 SPEC_FNS is extracted as Lists.<name> followed by a theorem, checked by Lean,
 that it equals its Lean list function; calls to it from other code are written
@@ -36,16 +53,19 @@ as that function. A function marked
 `// extract: inline` is not emitted: each call becomes `let` bindings of its
 arguments followed by its body (calls to it must not be recursive).
 Functions and impl blocks between `// extract: mutual begin` and `end` are one
-Lean `mutual` block, for recursion through a type nested in a List. A type
+Lean `mutual` block, for recursion through a type nested in a List. After
+`// extract: mutual begin fuel` every member gets `termination_by fuel`: each
+takes fuel and every call in the block passes less. A type
 nested in itself that way, and every type containing one, derives only Repr,
 since Lean cannot derive DecidableEq for it.
 
 A second program can use the types of the first: items between
 `// extract: external begin MODULE from PATH` and `// extract: external end`
-are copies of types and list operations of the Lanius file PATH (relative to
-the repository root), whose extraction is the Lean module MODULE. Each must be
-the item of the same name in PATH, with the same fields, constructors or
-signature. They are not emitted, and the output imports MODULE.
+are copies of types and functions of the Lanius file PATH (relative to the
+repository root), whose extraction is the Lean module MODULE. Each must be the
+item of the same name in PATH, with the same fields, constructors or
+signature. They are not emitted, and the output imports MODULE (the parts
+defining the functions it calls).
 """
 
 import os
@@ -92,8 +112,10 @@ SPEC_FNS = {
                'by induction items generalizing index <;> cases index <;> simp_all [Lists.getOr]'),
 }
 
-LEAN_KEYWORDS = set('''at by do else end fun from have if import in instance let match namespace open
-show then theorem universe variable where with deriving structure inductive def section'''.split())
+LEAN_KEYWORDS = set('''at by do else end fun from have if import in instance let match namespace open show then theorem
+universe variable where with deriving structure inductive def section matches public private
+protected mutual partial unsafe noncomputable abbrev example axiom opaque macro syntax notation calc
+suffices obtain nomatch nofun infix infixl infixr postfix'''.split())
 
 
 class ExtractError(Exception):
@@ -115,7 +137,7 @@ class Token:
         return f'{self.kind}:{self.text}@{self.line}'
 
 
-PUNCT = ['::', '->', '==', '!=', '<=', '>=', '&&', '||', '>>', '+=',
+PUNCT = ['::', '->', '==', '!=', '<=', '>=', '&&', '||', '>>', '+=', '-=',
          '(', ')', '{', '}', '[', ']', '<', '>', ',', ';', ':', '.', '=', '+', '-', '*', '/', '%', '&', '|', '^', '!']
 
 
@@ -182,13 +204,20 @@ class Ty:
     def strip_box(self):
         return self.args[0].strip_box() if self.name == 'Box' else self
 
+    def is_mut(self):
+        return self.name == '&mut'
+
+    def value(self):
+        """The type a parameter's value has in the body: T for `&mut T`."""
+        return self.args[0] if self.is_mut() else self
+
 
 USIZE, I32, U32, U64, U8, BOOL = Ty('usize'), Ty('i32'), Ty('u32'), Ty('u64'), Ty('u8'), Ty('bool')
 TYPE_PATHS = {'core::option::Option': 'Option'}
 
 
 def lean_type(t):
-    t = t.strip_box()
+    t = t.value().strip_box()
     simple = {'usize': 'Nat', 'i32': 'BitVec 32', 'u32': 'BitVec 32', 'u64': 'BitVec 64', 'u8': 'UInt8',
               'bool': 'Bool'}
     if t.name in simple:
@@ -243,6 +272,12 @@ class Parser:
         return parts
 
     def type_(self):
+        if self.at('&'):
+            t = self.next()
+            if not self.at('mut'):
+                fail('shared references are not in the extracted subset', t)
+            self.next()
+            return Ty('&mut', [self.type_()])
         name = '::'.join(self.path())
         name = TYPE_PATHS.get(name, name)
         if '::' in name:
@@ -300,10 +335,11 @@ class Parser:
                     prelude = None
                 elif t.text == 'inline':
                     inline = True
-                elif t.text in ('mutual begin', 'mutual end'):
+                elif t.text in ('mutual begin', 'mutual begin fuel', 'mutual end'):
                     if prelude is not None:
                         fail('mutual blocks are not allowed in the prelude', t)
-                    items.append(('item', {'kind': 'mutual', 'begin': t.text == 'mutual begin', 'doc': []}))
+                    items.append(('item', {'kind': 'mutual', 'begin': t.text != 'mutual end',
+                                           'fuel': t.text == 'mutual begin fuel', 'doc': []}))
                 else:
                     fail(f'unknown marker {t.text!r}', t)
                 continue
@@ -325,6 +361,13 @@ class Parser:
                 inline = False
             elif self.at('impl'):
                 item = self.impl()
+            elif self.at('machine'):
+                if prelude is not None:
+                    fail('a machine cannot be in the prelude', t)
+                for item in self.machine(comments):
+                    item['external'] = external
+                    items.append(('item', item))
+                continue
             else:
                 fail(f'unexpected {t.text!r} at item level', t)
             item['doc'] = comments
@@ -385,11 +428,15 @@ class Parser:
         self.expect('(')
         params = []
         while not self.at(')'):
-            if self.at('self'):
+            if self.at('self') or (self.at('&') and self.at('mut', 1) and self.at('self', 2)):
+                exclusive = self.at('&')
+                if exclusive:
+                    self.next()
+                    self.next()
                 self.next()
                 if self_type is None:
                     fail('self outside an impl', self.peek())
-                params.append(('self', self_type))
+                params.append(('self', Ty('&mut', [self_type]) if exclusive else self_type))
             else:
                 pname = self.ident()
                 self.expect(':')
@@ -425,6 +472,141 @@ class Parser:
             fns.append(f)
         self.expect('}')
         return {'kind': 'impl', 'name': name, 'fns': fns}
+
+    def machine(self, comments):
+        """A `machine` (docs/state-machines-design.md) as the items it
+        elaborates to, as laniusc does: the enum `{M}State`, the struct `M`
+        with its fields and a `state` field, `{m}_start`, and an impl with one
+        handler per state and `step`. The handlers and `step` take `self` by
+        `&mut`, so `step : M → E → O × M` (just `M` with no output); the field
+        `state` is laniusc's `state()`."""
+        t = self.expect('machine')
+        name = self.ident()
+        self.expect('on')
+        event = self.type_()
+        if event.name not in ('List', 'Option') and event.name[:1].islower():
+            fail('only machines on an enum event are in the extracted subset', t)
+        out = None
+        if self.at('->'):
+            self.next()
+            out = self.type_()
+        self.expect('{')
+        fields, start, states = [], None, []
+        while not self.at('}'):
+            doc = self.peek().comments
+            if self.at('start'):
+                self.next()
+                start = self.ident()
+                self.expect(';')
+                continue
+            if self.at('final'):
+                self.next()
+                if not self.at('state'):
+                    fail('final is followed by state', self.peek())
+            if self.at('state'):
+                st = self.next()
+                sname = self.ident()
+                data = []
+                if self.at('('):
+                    self.next()
+                    while not self.at(')'):
+                        dname = self.ident()
+                        self.expect(':')
+                        data.append((dname, self.type_()))
+                        if self.at(','):
+                            self.next()
+                    self.expect(')')
+                self.expect('{')
+                arms = []
+                while not self.at('}'):
+                    ctor, binders, at = self.pattern()
+                    self.expect('->')
+                    body = self.block() if self.at('{') else [self.transition()]
+                    arms.append((ctor, binders, ('block', body, at), at))
+                    if self.at(','):
+                        self.next()
+                self.expect('}')
+                states.append({'name': sname, 'data': data, 'arms': arms, 'doc': doc, 'token': st})
+                continue
+            field = self.ident()
+            if field == 'state':
+                fail('a machine field named state would hide the state', self.peek(-1))
+            self.expect(':')
+            fields.append((field, self.type_(), doc))
+            if self.at(','):
+                self.next()
+        self.expect('}')
+        if start is None:
+            fail(f'machine {name} has no start state', t)
+        state_type = Ty(f'{name}State')
+        self_ty = Ty(name)
+        mut_self = ('self', Ty('&mut', [self_ty]))
+        enum = {'kind': 'enum', 'name': state_type.name, 'tparams': [],
+                'ctors': [(st['name'], [ty for _, ty in st['data']], st['doc']) for st in states],
+                'doc': [f'The states of {name}.']}
+        struct = {'kind': 'struct', 'name': name, 'tparams': [], 'doc': comments, 'machine': name,
+                  'fields': fields + [('state', state_type, ['The current state (laniusc\'s `state()`).'])]}
+        values = [(f, ('name', [f], t)) for f, _, _ in fields]
+        start_fn = {'kind': 'fn', 'name': f'{snake_case(name)}_start', 'tparams': [],
+                    'params': [(f, ft) for f, ft, _ in fields], 'ret': self_ty, 'self_type': None,
+                    'inline': False, 'machine': name, 'doc': [f'{name} with these fields, in state {start}.'],
+                    'body': [('return', ('struct', name, values + [('state', ('name', [state_type.name, start], t))], t), t)]}
+        handlers, step_arms = [], []
+        event_name = ('name', ['event'], t)
+        for st in states:
+            params = [mut_self] + st['data'] + [('event', event)]
+            body = [('match_stmt', ('match', event_name, st['arms'], st['token']), st['token'])]
+            handlers.append({'kind': 'fn', 'name': f'in_{st["name"]}', 'tparams': [], 'params': params,
+                             'ret': out, 'body': body, 'self_type': self_ty, 'inline': False,
+                             'machine': name, 'doc': st['doc'] or [f'{name}.step in state {st["name"]}.']})
+            binders = [d for d, _ in st['data']]
+            call = ('method', ('name', ['self'], t), f'in_{st["name"]}',
+                    [('name', [b], t) for b in binders] + [event_name], t)
+            if out is not None:
+                arm = [('let', 'output', out, call, t), ('return', ('name', ['output'], t), t)]
+            else:
+                arm = [('call', call, t), ('return', None, t)]
+            step_arms.append(([state_type.name, st['name']], binders, ('block', arm, t), t))
+        state_field = ('field', ('name', ['self'], t), 'state', t)
+        step = {'kind': 'fn', 'name': 'step', 'tparams': [], 'params': [mut_self, ('event', event)], 'ret': out,
+                'body': [('match_stmt', ('match', state_field, step_arms, t), t)], 'self_type': self_ty,
+                'inline': False, 'machine': name, 'doc': [f'One event: the handler of the current state.']}
+        impl = {'kind': 'impl', 'name': name, 'fns': handlers + [step], 'doc': [], 'machine': name}
+        return [enum, struct, start_fn, impl]
+
+    def pattern(self):
+        """A match arm's constructor path and binders."""
+        at = self.peek()
+        ctor = self.path()
+        binders = []
+        if self.at('('):
+            self.next()
+            while not self.at(')'):
+                binders.append(self.ident())
+                if self.at(','):
+                    self.next()
+            self.expect(')')
+        return ctor, binders, at
+
+    def transition(self):
+        """`goto S(args) with e` or `stay with e` (without `with e` when the
+        machine has no output)."""
+        t = self.peek()
+        target, args = None, []
+        if self.at('goto'):
+            self.next()
+            target = self.ident()
+            if self.at('('):
+                args = self.args()
+        elif self.at('stay'):
+            self.next()
+        else:
+            fail('a machine arm ends in goto or stay', t)
+        out = None
+        if self.at('with'):
+            self.next()
+            out = self.expr()
+        return ('transition', target, args, out, t)
 
     def skip_block(self):
         self.expect('{')
@@ -472,10 +654,30 @@ class Parser:
             return ('if', cond, then, other, t)
         if self.at('return'):
             self.next()
-            value = self.expr()
+            value = None if self.at(';') else self.expr()
             self.expect(';')
             return ('return', value, t)
-        fail(f'statement {t.text!r} is not in the extracted subset', t)
+        if self.at('stay') or (self.at('goto') and self.peek(1).kind == 'ident'):
+            s = self.transition()
+            self.expect(';')
+            return s
+        e = self.expr()
+        if self.at('='):
+            self.next()
+            value = self.expr()
+            self.expect(';')
+            return ('assign', e, value, t)
+        if self.at('+=') or self.at('-='):
+            op = self.next()
+            value = self.expr()
+            self.expect(';')
+            return ('assign', e, ('binary', op.text[0], e, value, op), t)
+        self.expect(';')
+        if e[0] == 'match':
+            return ('match_stmt', e, t)
+        if e[0] not in ('call', 'method'):
+            fail(f'statement {t.text!r} is not in the extracted subset', t)
+        return ('call', e, t)
 
     # expressions ------------------------------------------------------
 
@@ -548,18 +750,10 @@ class Parser:
             self.expect('{')
             arms = []
             while not self.at('}'):
-                at = self.peek()
-                ctor = self.path()
-                binders = []
-                if self.at('('):
-                    self.next()
-                    while not self.at(')'):
-                        binders.append(self.ident())
-                        if self.at(','):
-                            self.next()
-                    self.expect(')')
+                ctor, binders, at = self.pattern()
                 self.expect('->')
-                arms.append((ctor, binders, self.expr(), at))
+                body = ('block', self.block(), at) if self.at('{') else self.expr()
+                arms.append((ctor, binders, body, at))
                 if self.at(','):
                     self.next()
             self.expect('}')
@@ -600,6 +794,21 @@ def camel(name):
 
 def lower_first(name):
     return name[:1].lower() + name[1:]
+
+
+def snake_case(name):
+    """laniusc's machine_elaboration::snake_case: `TlsSession` -> `tls_session`."""
+    out = ''
+    for i, c in enumerate(name):
+        if c.isupper():
+            prev = name[i - 1] if i else ''
+            nxt = name[i + 1] if i + 1 < len(name) else ''
+            if (prev.islower() or prev.isdigit()) or (prev.isupper() and nxt.islower()):
+                out += '_'
+            out += c.lower()
+        else:
+            out += c
+    return out
 
 
 def paren(term, need):
@@ -691,7 +900,7 @@ class Extractor:
                 self.order.append(item)
         if in_mutual:
             fail('mutual block is not closed')
-        if not self.prelude_seen:
+        if not self.prelude_seen and self.mentions_prelude_types():
             fail('no prelude section')
         self.no_deq = self.nested_types()
         ctor_names = {lower_first(c) for c in self.ctors}
@@ -699,7 +908,7 @@ class Extractor:
         if clash:
             fail(f'functions named like a constructor resolve to it inside that enum\'s methods: {clash}')
         missing = sorted(set(SPEC_FNS) - set(self.fns))
-        if missing:
+        if missing and self.prelude_seen:
             fail(f'list operations missing: {missing}')
         self.current = None
 
@@ -732,6 +941,17 @@ class Extractor:
                     bad.add(name)
                     changed = True
         return bad
+
+    def mentions_prelude_types(self):
+        """Whether a type or signature uses List or Box. A file without them
+        (a pure state machine, say) needs no prelude or list operations."""
+        def uses(t):
+            return t is not None and (t.name in PRELUDE_TYPES or any(uses(a) for a in t.args))
+        tys = [ft for s in self.structs.values() for _, ft, _ in s['fields']]
+        tys += [p for e in self.enums.values() for _, ps, _ in e['ctors'] for p in ps]
+        fns = list(self.fns.values()) + list(self.methods.values())
+        tys += [pt for f in fns for _, pt in f['params']] + [f['ret'] for f in fns]
+        return any(uses(t) for t in tys)
 
     def check_prelude(self, prelude):
         self.prelude_seen = True
@@ -766,8 +986,8 @@ class Extractor:
                 fail(f'external source {source["path"]}: {error}')
             source['items'] = {i['name']: i for k, i in Parser(lex(text)).items()
                                if k == 'item' and i['kind'] in ('struct', 'enum', 'fn')}
-        if item['kind'] == 'fn' and item['name'] not in SPEC_FNS:
-            fail(f'{item["name"]}: only types and list operations can be external')
+        if item['kind'] == 'fn' and item['inline']:
+            fail(f'{item["name"]}: inline functions cannot be external')
         if item['kind'] == 'impl':
             fail(f'{item["name"]}: impl blocks cannot be external')
         theirs = source['items'].get(item['name'])
@@ -799,8 +1019,13 @@ class Extractor:
         for item in self.order:
             if item['kind'] == 'mutual':
                 if item['begin']:
-                    current = {'texts': ['mutual\n'], 'names': []}
+                    current = {'texts': ['mutual\n'], 'names': [], 'fuel': item['fuel']}
                 else:
+                    if current['fuel']:
+                        # Every member takes fuel and every call spends it:
+                        # say so, sparing Lean the search for a measure.
+                        current['texts'] = [current['texts'][0]] + \
+                            [t + 'termination_by fuel\n' for t in current['texts'][1:]]
                     current['texts'].append('end\n')
                     units.append(current)
                     current = None
@@ -918,38 +1143,86 @@ class Extractor:
         return '  deriving Repr' if item['name'] in self.no_deq else '  deriving DecidableEq, Repr'
 
     def emit_fn(self, f, lean_name, keyword_params=False):
-        if f['ret'] is None:
+        if f['ret'] is None and not mutables(f):
             fail(f'{f["name"]} returns nothing')
         env = {}
         binders = [f'{{{t} : Type}}' for t in f['tparams']]
         self.current = f
         for name, ty in f['params']:
             lname = name + '_' if keyword_params and name in LEAN_KEYWORDS else camel(name)
-            env[name] = (lname, ty)
+            env[name] = (lname, ty.value())
             binders.append(f'({lname} : {lean_type(ty)})')
         body = self.block(f['body'], env, f['ret'])
         self.current = None
-        head = ' '.join([f'def {lean_name}'] + binders) + f' : {lean_type(f["ret"])} :='
+        head = ' '.join([f'def {lean_name}'] + binders) + f' : {result_type(f)} :='
         return '\n'.join(doc(f['doc'], '')) + ('\n' if f['doc'] else '') + head + '\n  ' + indent_tail(body[0], 2) + '\n'
 
     # statements -------------------------------------------------------
 
     def block(self, stmts, env, ret):
         if not stmts:
+            if ret is None and mutables(self.current):
+                return self.returned(None, env)
             fail('a block must end with return')
         s, rest = stmts[0], stmts[1:]
         if s[0] == 'let':
             _, name, ty, value, t = s
-            v = self.expr(value, env, ty)
             lname = camel(name)
             inner = dict(env)
             inner[name] = (lname, ty)
+            if self.is_mut_call(value, env):
+                term, vty, rebound = self.mut_call(value, env)
+                if vty is None or vty.strip_box() != ty.strip_box():
+                    fail(f'expected {ty!r}, found {vty!r}', t)
+                body = self.block(rest, inner, ret)
+                return (f'let {tuple_pattern([lname] + rebound)} := {paren(term, 1)}\n{body[0]}', 0)
+            v = self.expr(value, env, ty)
             body = self.block(rest, inner, ret)
             return (f'let {lname} : {lean_type(ty)} := {paren(v, 1)}\n{body[0]}', 0)
+        if s[0] == 'assign':
+            _, place, value, t = s
+            lname, update = self.assignment(place, value, env, t)
+            body = self.block(rest, env, ret)
+            return (f'let {lname} := {paren(update, 1)}\n{body[0]}', 0)
+        if s[0] == 'call':
+            _, e, t = s
+            if not self.is_mut_call(e, env):
+                fail('a call statement must pass a &mut argument', t)
+            term, vty, rebound = self.mut_call(e, env)
+            names = (['_'] if vty is not None else []) + rebound
+            body = self.block(rest, env, ret)
+            return (f'let {tuple_pattern(names)} := {paren(term, 1)}\n{body[0]}', 0)
+        if s[0] == 'transition':
+            # goto S(args) with o: `self.state = MState::S(args); return o;`
+            _, target, args, out, t = s
+            if rest:
+                fail('unreachable code after a transition', t)
+            machine = self.current.get('machine')
+            if machine is None:
+                fail('goto and stay are only in machine arms', t)
+            lowered = [('return', out, t)]
+            if target is not None:
+                path = [f'{machine}State', target]
+                value = ('call', path, args, t) if args else ('name', path, t)
+                lowered.insert(0, ('assign', ('field', ('name', ['self'], t), 'state', t), value, t))
+            return self.block(lowered, env, ret)
+        if s[0] == 'match_stmt':
+            if rest:
+                fail('unreachable code after a match whose arms return', s[2])
+            return self.match(s[1], env, None, ret_block=(ret,))[0]
+        if s[0] == 'return' and s[1] is not None and s[1][0] == 'match' and \
+                any(arm[2][0] == 'block' for arm in s[1][2]):
+            if rest:
+                fail('unreachable code after return', s[2])
+            return self.match(s[1], env, None, ret_block=(ret,))[0]
         if s[0] == 'return':
             if rest:
                 fail('unreachable code after return', s[2])
-            return self.expr(s[1], env, ret)
+            if (s[1] is None) != (ret is None):
+                fail('return needs a value exactly when the function has a result', s[2])
+            if not mutables(self.current):
+                return self.expr(s[1], env, ret)
+            return self.returned(None if s[1] is None else self.expr(s[1], env, ret), env)
         if s[0] == 'if':
             _, cond, then, other, t = s
             c = self.condition(cond, env)
@@ -962,6 +1235,86 @@ class Extractor:
                 b = self.block(rest, env, ret)
             return (f'if {c} then\n  {indent_tail(a[0], 2)}\nelse\n  {indent_tail(b[0], 2)}', 0)
         fail('unknown statement')
+
+    def returned(self, value, env):
+        """The result tuple: the value (if any), then each `&mut` parameter."""
+        parts = ([value] if value is not None else []) + \
+            [(env[name][0], ATOM) for name, _ in mutables(self.current)]
+        if len(parts) == 1:
+            return parts[0]
+        return ('(' + ', '.join(paren(p, 1) for p in parts) + ')', ATOM)
+
+    def assignment(self, place, value, env, t):
+        """`x = e` or `x.f.g = e`: x's Lean name and its new value."""
+        fields = []
+        while place[0] == 'field':
+            fields.insert(0, place[2])
+            place = place[1]
+        if place[0] != 'name' or len(place[1]) != 1 or place[1][0] not in env:
+            fail('an assignment target is a local or parameter, or fields of one', t)
+        lname, ty = env[place[1][0]]
+        chain = [(lname, ty)]
+        for name in fields:
+            outer = chain[-1][1].strip_box()
+            s = self.structs.get(outer.name)
+            field = next((ft for fn, ft, _ in s['fields'] if fn == name), None) if s else None
+            if field is None:
+                fail(f'no field {outer!r}.{name}', t)
+            chain.append((f'{paren((chain[-1][0], ATOM), ATOM)}.{camel(name)}', field))
+        new = self.expr(value, env, chain[-1][1])
+        for k in range(len(fields) - 1, -1, -1):
+            new = (f'{{ {chain[k][0]} with {camel(fields[k])} := {paren(new, 1)} }}', ATOM)
+        return lname, new
+
+    def callee(self, e, env):
+        """The function a call or method expression calls, or None."""
+        if e[0] == 'call' and len(e[1]) == 1:
+            return self.fns.get(e[1][0])
+        if e[0] == 'method':
+            _, recv_ty = self.infer(e[1], env, None)
+            return self.methods.get((recv_ty.strip_box().name, e[2]))
+        return None
+
+    def is_mut_call(self, e, env):
+        """Whether e calls a function with `&mut` parameters."""
+        if e[0] not in ('call', 'method'):
+            return False
+        f = self.callee(e, env)
+        return f is not None and bool(mutables(f))
+
+    def mut_call(self, e, env):
+        """(term, result type or None, names rebound) of a call with `&mut` arguments."""
+        t = e[-1]
+        f = self.callee(e, env)
+        if f is None or not mutables(f):
+            fail('this call passes no &mut argument', t)
+        if e[0] == 'call':
+            head, args = camel(f['name']), list(e[2])
+        else:
+            head = f'{f["self_type"].name}.{camel(f["name"])}'
+            args = [e[1]] + list(e[3])
+        if f['inline'] or f['name'] in SPEC_FNS:
+            fail('inline functions and list operations cannot take &mut parameters', t)
+        if len(args) != len(f['params']):
+            fail(f'expected {len(f["params"])} arguments, found {len(args)}', t)
+        terms, rebound = [], []
+        for (_, pty), a in zip(f['params'], args):
+            if pty.is_mut():
+                if a[0] != 'name' or len(a[1]) != 1 or a[1][0] not in env:
+                    fail('a &mut argument is a local or parameter', t)
+                lname, aty = env[a[1][0]]
+                if aty.strip_box() != pty.value().strip_box():
+                    fail(f'expected {pty.value()!r}, found {aty!r}', t)
+                if lname in rebound:
+                    fail(f'{a[1][0]} is passed twice as a &mut argument', t)
+                rebound.append(lname)
+                terms.append((lname, ATOM))
+            else:
+                terms.append(self.expr(a, env, pty))
+        for (_, pty), a in zip(f['params'], args):
+            if not pty.is_mut() and set(names_in(a)) & {n for n in names_in_env(env, rebound)}:
+                fail('an argument uses a value passed as a &mut argument of the same call', t)
+        return app(head, terms), f['ret'], rebound
 
     def condition(self, cond, env):
         """An if condition: comparisons stay propositions, other bools are tested with = true."""
@@ -1007,6 +1360,8 @@ class Extractor:
             if payload:
                 fail(f'{ctor} needs arguments', e[-1])
             return (f'{enum}.{lower_first(ctor)}', ATOM), Ty(enum)
+        if self.is_mut_call(e, env):
+            fail('a call with &mut arguments is a statement or a let\'s whole initializer', e[-1])
         if kind == 'call':
             return self.call(e, env, expected)
         if kind == 'method':
@@ -1250,11 +1605,18 @@ class Extractor:
             return term, U32
         if source == U32 and target == U64:
             return app('BitVec.setWidth', [('64', ATOM), term]), U64
+        if source == U32 and target == USIZE:
+            return (f'{paren(term, ATOM)}.toNat', ATOM), USIZE
+        if source == U8 and target == I32:
+            return app('BitVec.ofNat', [('32', ATOM), (f'{paren(term, ATOM)}.toNat', ATOM)]), I32
         if source in (I32, U32, U64) and target == U8:
             return app('UInt8.ofNat', [(f'{paren(term, ATOM)}.toNat', ATOM)]), U8
         fail(f'cast {source!r} as {target!r} is not in the extracted subset', t)
 
-    def match(self, e, env, expected):
+    def match(self, e, env, expected, ret_block=None):
+        """A match expression, or with ret_block = (ret,) a match whose arms
+        are blocks that return (a block arm, or an expression arm of `return
+        match`, returns its value) from a function with result ret."""
         _, scrutinee, arms, t = e
         term, ty = self.infer(scrutinee, env, None)
         ty = ty.strip_box()
@@ -1295,10 +1657,20 @@ class Extractor:
             inner = dict(env)
             lnames = []
             for b, bty in zip(binders, binder_types(ctor)):
-                lnames.append(camel(b))
-                inner[b] = (camel(b), bty)
-            arm_term, arm_ty = self.infer(body, inner, result_ty)
-            if result_ty is None:
+                lname = '_' if b == '_' else camel(b)
+                lnames.append(lname)
+                if b != '_':
+                    inner[b] = (lname, bty)
+            if ret_block is not None:
+                stmts = body[1] if body[0] == 'block' else [('return', body, at)]
+                arm_term, arm_ty = self.block(stmts, inner, ret_block[0]), None
+            elif body[0] == 'block':
+                fail('a block arm must return (use it in a match statement or return match)', at)
+            else:
+                arm_term, arm_ty = self.infer(body, inner, result_ty)
+            if ret_block is not None:
+                pass
+            elif result_ty is None:
                 result_ty = arm_ty
             elif arm_ty.strip_box() != result_ty.strip_box():
                 fail(f'arm {ctor} has type {arm_ty!r}, expected {result_ty!r}', at)
@@ -1311,6 +1683,38 @@ class Extractor:
         if seen != set(shapes):
             fail(f'match is missing {sorted(set(shapes) - seen)}', t)
         return (f'match {paren(term, 1)} with\n' + '\n'.join(lines), 0), result_ty
+
+
+def mutables(f):
+    """The `&mut` parameters of f, as (name, T)."""
+    return [(name, ty.value()) for name, ty in f['params'] if ty.is_mut()] if f else []
+
+
+def result_type(f):
+    parts = ([f['ret']] if f['ret'] is not None else []) + [ty for _, ty in mutables(f)]
+    if len(parts) == 1:
+        return lean_type(parts[0])
+    return ' × '.join(atom_type(p) for p in parts)
+
+
+def tuple_pattern(names):
+    return names[0] if len(names) == 1 else '(' + ', '.join(names) + ')'
+
+
+def names_in(e):
+    """The single-segment names an expression mentions."""
+    if isinstance(e, tuple):
+        if e and e[0] == 'name' and len(e[1]) == 1:
+            yield e[1][0]
+        for part in e[1:]:
+            yield from names_in(part)
+    elif isinstance(e, list):
+        for part in e:
+            yield from names_in(part)
+
+
+def names_in_env(env, lnames):
+    return [name for name, (lname, _) in env.items() if lname in lnames]
 
 
 def walk_lets(stmts):

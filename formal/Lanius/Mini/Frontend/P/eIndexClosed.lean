@@ -73,6 +73,7 @@ def closeEff (fuel : Nat) (t : Tables) (x : MEff) : Option SrcEff :=
   | .xMatch s ety ty bs vs => eMatchClosed (closeEff fuel t s) (closeTy fuel t ety) (closeTy fuel t ty) bs (closeEffs fuel t vs)
   | .xDivide op l r => eDivideClosed op (closeEff fuel t l) (closeEff fuel t r)
   | .xStride sl => some (SrcEff.eStride sl)
+  | .xHost id args => eCallClosed (some id) (closeEffs fuel t args)
 def closeEffs (fuel : Nat) (t : Tables) (xs : List MEff) : Option (List SrcEff) :=
   match xs with
   | [] => some []

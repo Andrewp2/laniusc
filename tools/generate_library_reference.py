@@ -372,6 +372,17 @@ class Scanner:
                 if public or (keyword == "impl" and declaration.children):
                     result.append(declaration)
                 self.position = closing + 1
+            elif keyword == "machine" and context == "module":
+                # A machine (docs/state-machines-design.md) declares the
+                # struct `Name` and the enum `NameState`; its header is its
+                # declaration.
+                name = self.identifier(self.position + 1)
+                opening = self.boundary(self.position + 1, {"{"})
+                closing = self.close_body(opening)
+                (self.public_nominals if public else self.private_nominals).update({name, name + "State"})
+                if public:
+                    result.append(self.span(start, opening, "machine", name))
+                self.position = closing + 1
             else:
                 label = "public declaration" if public else f"{context} item"
                 self.error(f"unsupported {label} shape {keyword!r}", start)
@@ -570,7 +581,7 @@ def render_module(module: Module, metadata: dict, known: dict) -> str:
                     imported += " · " + link(path, target.path, f"{item.kind} declaration", item.line)
             result.append(imported + " · " + link(path, module.path, "source", line))
         result.append("")
-    groups = [("Types, fields and variants", {"type alias", "struct", "enum"}),
+    groups = [("Types, fields and variants", {"type alias", "struct", "enum", "machine"}),
               ("Constants", {"constant"}), ("Free functions and extern declarations", {"function", "extern function"}),
               ("Traits and members", {"trait"}), ("Implementation blocks and public methods", {"impl"})]
     for title, kinds in groups:

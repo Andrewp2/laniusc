@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Mini.Compiler.Types
+import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.declareProgram
 
 public section
@@ -80,6 +81,14 @@ def DivOp.number (self : DivOp) : Nat :=
   | .sRem => 1
   | .uDiv => 2
   | .uRem => 3
+
+def Syscall.number (self : Syscall) : Nat :=
+  match self with
+  | .write => 0
+  | .read => 1
+  | .poll => 2
+  | .clock => 3
+  | .random => 4
 
 /-- Unsigned comparison. -/
 def CmpOp.test (self : CmpOp) (a : BitVec 64) (b : BitVec 64) : Bool :=

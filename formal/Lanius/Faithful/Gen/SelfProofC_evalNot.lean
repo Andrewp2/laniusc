@@ -3,9 +3,9 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_evalNot
+public import Lanius.Faithful.Gen.SelfStmtC_evalDivide
 public import Lanius.Faithful.Gen.SelfStmtC_evalNot
 public import Lanius.Faithful.Gen.SelfStmtC_lowerLocal
-public import Lanius.Faithful.Gen.SelfStmtC_shortCircuit
 import all Lanius.Faithful.Gen.SelfSrcC_evalNot
 import all Lanius.Mini.Compiler.P.evalNot
 

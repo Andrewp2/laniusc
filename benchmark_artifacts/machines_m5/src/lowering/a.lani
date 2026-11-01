@@ -1,0 +1,40 @@
+import core::option;
+const LIMIT: i64 = 200000000;
+enum R { Next }
+enum S { Start, Y0(i64), Done }
+struct G { limit: i64, st: S }
+impl G {
+    fn next(&mut self) -> core::option::Option<i64> { return self.step(R::Next); }
+    fn step(&mut self, ev: R) -> core::option::Option<i64> {
+        return match (self.st) {
+            S::Start -> { return self.in_start(ev); },
+            S::Y0(i) -> { return self.in_y0(i, ev); },
+            S::Done -> { return self.in_done(ev); },
+        };
+    }
+    fn in_start(&mut self, ev: R) -> core::option::Option<i64> {
+        return match (ev) {
+            R::Next -> { let limit: i64 = self.limit; let i: i64 = 0; while (i < limit) { if (i % 2 == 1) { self.st = S::Y0(i); return core::option::Some(i * i); } i += 1; } self.st = S::Done; return core::option::None(); },
+        };
+    }
+    fn in_y0(&mut self, g: i64, ev: R) -> core::option::Option<i64> {
+        return match (ev) {
+            R::Next -> { let limit: i64 = self.limit; let i: i64 = g; { { } i += 1; } while (i < limit) { if (i % 2 == 1) { self.st = S::Y0(i); return core::option::Some(i * i); } i += 1; } self.st = S::Done; return core::option::None(); },
+        };
+    }
+    fn in_done(&mut self, ev: R) -> core::option::Option<i64> {
+        return match (ev) { R::Next -> { return core::option::None(); }, };
+    }
+}
+fn main() -> i32 {
+    let it: G = G { limit: LIMIT, st: S::Start };
+    let total: i64 = 0;
+    while (true) {
+        match (it.next()) {
+            Some(v) -> { total += v; continue; },
+            None -> { break; },
+        };
+    }
+    print(total);
+    return 0;
+}

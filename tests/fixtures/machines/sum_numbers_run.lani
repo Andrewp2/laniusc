@@ -1,0 +1,46 @@
+// SumNumbers driven by `run` over a slice (M3).
+import alloc::allocator;
+import core::mem;
+
+machine SumNumbers on u8 {
+    total: i64,
+    start Between;
+
+    state Between {
+        c -> {
+            if (c >= 48 && c <= 57) { goto InNumber((c - 48) as i64); }
+            stay;
+        },
+    }
+    state InNumber(value: i64) {
+        c -> {
+            if (c >= 48 && c <= 57) { goto InNumber(value * 10 + (c - 48) as i64); }
+            self.total = self.total + value;
+            goto Between;
+        },
+    }
+}
+
+fn main() -> i32 {
+    let text: [u8] = core::mem::typed_slice_from_storage<u8>(alloc::allocator::alloc(12, 8), 12);
+    let digits: [u8; 12] = [49, 50, 32, 51, 52, 53, 120, 54, 32, 32, 55, 48];
+    let index: i32 = 0;
+    while (index < 12) { text[index] = digits[index]; index += 1; }
+    let m: SumNumbers = sum_numbers_start(0);
+    m.run(text, 12);
+    let total: i64 = match (m.state()) {
+        SumNumbersState::InNumber(v) -> m.total + v,
+        SumNumbersState::Between -> m.total,
+    };
+    // 12 + 345 + 6 + 70
+    if (total != 433) { return 1; }
+    // An empty slice changes nothing; a second run continues from the state.
+    m.run(text, 0);
+    m.run(text, 2);
+    let again: i64 = match (m.state()) {
+        SumNumbersState::InNumber(v) -> v,
+        SumNumbersState::Between -> 0 - 1,
+    };
+    if (again != 7012) { return 2; }
+    return 0;
+}

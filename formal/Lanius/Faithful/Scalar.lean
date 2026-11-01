@@ -293,6 +293,19 @@ open Lanius.Semantics (wrapSigned wrapUnsigned wrapUnsignedInt unsignedModulus)
     evalScalarCast target (.unsigned .u64) (.unsigned .usize n) = .ok (.unsigned .u64 (BitVec.ofNat 64 n).toNat) := by
   simp [evalScalarCast, wrapUnsigned, unsignedModulus, Core.UnsignedIntTy.bits, BitVec.toNat_ofNat]
 
+/-- `u32 -> usize`: the same number. -/
+@[pure_rule] theorem cast_u32_usize (x : BitVec 32) :
+    evalScalarCast target (.unsigned .usize) (.unsigned .u32 x.toNat) = .ok (.unsigned .usize x.toNat) := by
+  have : x.toNat < 2 ^ target.pointerWidth.bits := Nat.lt_trans x.isLt (by decide)
+  simp [evalScalarCast, wrapUnsigned, unsignedModulus, Core.UnsignedIntTy.bits, Nat.mod_eq_of_lt this]
+
+/-- `u8 -> i32`: zero-extended. -/
+@[pure_rule] theorem cast_u8_i32 (n : Nat) :
+    evalScalarCast target (.signed .i32) (.unsigned .u8 n) = .ok (.signed .i32 (BitVec.ofNat 32 n).toInt) := by
+  simp only [evalScalarCast, Except.ok.injEq, Value.signed.injEq, true_and]
+  rw [show target = Core.Target.x86_64 from rfl, wrapSigned_i32]
+  congr 1
+
 /-- `usize -> i32`. -/
 @[pure_rule] theorem cast_usize_i32 (n : Nat) :
     evalScalarCast target (.signed .i32) (.unsigned .usize n) = .ok (.signed .i32 (BitVec.ofNat 32 n).toInt) := by

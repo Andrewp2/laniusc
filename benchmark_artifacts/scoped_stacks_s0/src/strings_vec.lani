@@ -1,0 +1,31 @@
+// String-heavy, today's style: a fresh Vec<u8> per line, destroyed after use.
+import alloc::vec;
+import core::result;
+
+const LINES: i32 = 200000;
+
+fn digits(buffer: &alloc::vec::Vec<u8>, value: i32) {
+    if (value >= 10) { digits(buffer, value / 10); }
+    buffer.try_push((48 + value % 10) as u8);
+}
+
+fn main() -> i32 {
+    let total: i64 = 0;
+    let line_index: i32 = 0;
+    while (line_index < LINES) {
+        let line: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+        line.try_push(105 as u8); line.try_push(116 as u8); line.try_push(101 as u8); line.try_push(109 as u8);
+        digits(line.borrow(), line_index);
+        line.try_push(58 as u8);
+        let pad: i32 = 0;
+        while (pad < line_index % 48) { line.try_push(120 as u8); pad += 1; }
+        line.try_push(10 as u8);
+        let bytes: [u8] = line.as_slice();
+        let at: i32 = 0;
+        while (at < line.len()) { total += (bytes[at] as i64) * ((at + 1) as i64); at += 1; }
+        line.destroy();
+        line_index += 1;
+    }
+    print(total);
+    return 0;
+}

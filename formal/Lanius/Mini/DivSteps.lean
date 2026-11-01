@@ -121,14 +121,14 @@ theorem signExtendDividend_noRead {st : State} {width : X86.Register.Width}
 /-- `cdq`, `cqo` or `xor edx, edx`. -/
 theorem dividend_step (word : Word) (signed : Bool) (st : State)
     (loaded : CodeAt st.memory st.rip (dividendBytes word signed)) :
-    ∃ st', Lanius.X86.Machine.Step st st' ∧ NoRead st ∧ st'.memory = st.memory ∧
+    ∃ st', Lanius.X86.Machine.Step st st' ∧ NoRead st ∧ st'.io = st.io ∧ st'.memory = st.memory ∧
       st'.rip = st.rip + BitVec.ofNat 64 (dividendBytes word signed).length ∧
       (∀ register, register ≠ 2 → st'.registers register = st.registers register) ∧
       HighHalf word.width.bits st' signed := by
   cases signed with
   | false =>
     let st' := st.alu32 .xor rdxRegister rdxRegister false (aluBytes .w32 .xor rdxRegister rdxRegister).length
-    refine ⟨st', alu_step .w32 st st' .xor _ _ loaded false rfl, alu_noRead loaded, rfl, rfl, ?_, ?_⟩
+    refine ⟨st', alu_step .w32 st st' .xor _ _ loaded false rfl, alu_noRead loaded, rfl, rfl, rfl, ?_, ?_⟩
     · intro register other
       simp [st', State.alu32, State.alu, rdxRegister, other]
     · cases word <;> simp [HighHalf, st', State.alu32, State.alu, Alu.result, rdxRegister, Word.width,
@@ -138,7 +138,7 @@ theorem dividend_step (word : Word) (signed : Bool) (st : State)
     cases word with
     | s32 =>
       let st' := st.signExtendDividend32 (signExtendDividendBytes .w32).length
-      refine ⟨st', signExtendDividend_step .w32 st st' loaded rfl, signExtendDividend_noRead loaded, rfl, rfl,
+      refine ⟨st', signExtendDividend_step .w32 st st' loaded rfl, signExtendDividend_noRead loaded, rfl, rfl, rfl,
         ?_, ?_⟩
       · intro register other
         simp [st', State.signExtendDividend32, other]
@@ -149,7 +149,7 @@ theorem dividend_step (word : Word) (signed : Bool) (st : State)
         cases (st.registers 0).getLsbD 31 <;> decide
     | u64 =>
       let st' := st.signExtendDividend64 (signExtendDividendBytes .w64).length
-      refine ⟨st', signExtendDividend_step .w64 st st' loaded rfl, signExtendDividend_noRead loaded, rfl, rfl,
+      refine ⟨st', signExtendDividend_step .w64 st st' loaded rfl, signExtendDividend_noRead loaded, rfl, rfl, rfl,
         ?_, ?_⟩
       · intro register other
         simp [st', State.signExtendDividend64, other]
@@ -164,7 +164,7 @@ theorem divide_steps (word : Word) (signed : Bool) (st : State)
     (nonzero : (st.registers rcxRegister).setWidth word.width.bits ≠ 0)
     (fits : signed = true → (st.registers 0).setWidth word.width.bits ≠ BitVec.intMin _ ∨
       (st.registers rcxRegister).setWidth word.width.bits ≠ -1) :
-    ∃ st', Steps 2 st st' ∧ Det 2 st st' ∧ st'.memory = st.memory ∧
+    ∃ st', Steps 2 st st' ∧ Det 2 st st' ∧ st'.io = st.io ∧ st'.memory = st.memory ∧
       st'.rip = st.rip + BitVec.ofNat 64
         (dividendBytes word signed ++ divisionBytes word.width signed rcxRegister).length ∧
       st'.registers 0 = (quotientOf signed ((st.registers 0).setWidth word.width.bits)
@@ -173,7 +173,7 @@ theorem divide_steps (word : Word) (signed : Bool) (st : State)
         ((st.registers rcxRegister).setWidth word.width.bits)).setWidth 64 ∧
       ∀ register, register ≠ 0 → register ≠ 2 → st'.registers register = st.registers register := by
   obtain ⟨pos, le⟩ := word.width_bits
-  obtain ⟨st1, t1, no1, memory1, rip1, kept1, high⟩ := dividend_step word signed st loaded.prefix
+  obtain ⟨st1, t1, no1, io1, memory1, rip1, kept1, high⟩ := dividend_step word signed st loaded.prefix
   have c1 := loaded.next (s' := st1) memory1 rip1
   have rax1 := kept1 0 (by decide)
   have rcx1 := kept1 rcxRegister (by decide)
@@ -193,7 +193,7 @@ theorem divide_steps (word : Word) (signed : Bool) (st : State)
     (divisionBytes word.width signed rcxRegister).length
   have t2 := division_step word.width signed st1 st2 rcxRegister c1 q r st1.flags success rfl
   refine ⟨st2, .cons t1 (.cons t2 (.refl _)), Det.cons t1 no1 (Det.cons t2 (divide_noRead c1) (Det.refl _)),
-    memory1, ?_, ?_, ?_, ?_⟩
+    io1, memory1, ?_, ?_, ?_, ?_⟩
   · simp only [st2, State.divide, rip1, List.length_append, BitVec.ofNat_add, BitVec.add_assoc]
   · simp [st2, State.divide, q, setWidth_back le]
   · simp [st2, State.divide, r, setWidth_back le]
@@ -203,7 +203,7 @@ theorem divide_steps (word : Word) (signed : Bool) (st : State)
 /-- `mov rax, rdx` for a remainder, then `mov rdx, r11`. -/
 theorem result_steps (remainder : Bool) (st : State)
     (loaded : CodeAt st.memory st.rip (resultBytes remainder ++ moveBytes .w64 rdxRegister r11Register)) :
-    ∃ n st', Steps n st st' ∧ Det n st st' ∧ st'.memory = st.memory ∧
+    ∃ n st', Steps n st st' ∧ Det n st st' ∧ st'.io = st.io ∧ st'.memory = st.memory ∧
       st'.rip = st.rip + BitVec.ofNat 64 (resultBytes remainder ++ moveBytes .w64 rdxRegister r11Register).length ∧
       st'.registers 0 = (if remainder then st.registers 2 else st.registers 0) ∧
       st'.registers 2 = st.registers r11Register ∧
@@ -212,7 +212,7 @@ theorem result_steps (remainder : Bool) (st : State)
   | false =>
     let st' := st.move64 rdxRegister r11Register 3
     have t := move_step st st' .w64 rdxRegister r11Register loaded rfl
-    refine ⟨1, st', .cons t (.refl _), Det.cons t (move_noRead loaded) (Det.refl _), rfl, rfl, ?_, ?_, ?_⟩
+    refine ⟨1, st', .cons t (.refl _), Det.cons t (move_noRead loaded) (Det.refl _), rfl, rfl, rfl, ?_, ?_, ?_⟩
     · simp [st', State.move64, rdxRegister]
     · simp [st', State.move64, rdxRegister]
     · intro register zero two
@@ -224,7 +224,7 @@ theorem result_steps (remainder : Bool) (st : State)
     let st2 := st1.move64 rdxRegister r11Register 3
     have t2 := move_step st1 st2 .w64 rdxRegister r11Register c1 rfl
     refine ⟨2, st2, .cons t1 (.cons t2 (.refl _)),
-      Det.cons t1 (move_noRead loaded.prefix) (Det.cons t2 (move_noRead c1) (Det.refl _)), rfl, ?_, ?_, ?_, ?_⟩
+      Det.cons t1 (move_noRead loaded.prefix) (Det.cons t2 (move_noRead c1) (Det.refl _)), rfl, rfl, ?_, ?_, ?_, ?_⟩
     · simp only [st2, st1, State.move64, resultBytes, List.length_append, BitVec.add_assoc, ← BitVec.ofNat_add]
       rfl
     · simp [st2, st1, State.move64, rdxRegister]

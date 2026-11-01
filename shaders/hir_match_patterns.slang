@@ -56,9 +56,12 @@ bool hir_match_arm_pattern_contains(uint match, HirCore candidate, uint hir_coun
     if (low == value.b) return false;
     uint pattern = arms[low - 1u].pattern;
     if (pattern >= hir_count) return false;
-    HirCore span = cores[pattern];
-    return candidate.token_start >= span.token_start &&
-        candidate.token_end <= span.token_end;
+    // The pattern node spans its path; nested payload patterns follow it.
+    // The arm's pattern syntax ends where its result begins.
+    uint result = arms[low - 1u].result;
+    uint end = result < hir_count ? cores[result].token_start : cores[pattern].token_end;
+    return candidate.token_start >= cores[pattern].token_start &&
+        candidate.token_end <= end;
 }
 
 // Whether the node lies inside an arm pattern of a match, as opposed to its

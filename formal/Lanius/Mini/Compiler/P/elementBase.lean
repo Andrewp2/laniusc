@@ -3,9 +3,9 @@ module
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Lists_empty
+import Lanius.Mini.Compiler.P.SrcType_size
 import Lanius.Mini.Compiler.P.compileModules
-import Lanius.Mini.Compiler.P.lookup
-import Lanius.Mini.Compiler.P.pow2
+import Lanius.Mini.Compiler.P.loadAtBytes
 import Lanius.Mini.Compiler.P.widthOf
 
 public section
@@ -34,8 +34,12 @@ def loadType (ty : SrcType) (target : Nat) (base : Expr) (offset : Nat) (body : 
   | .enum id variants => Stmt.seq (Stmt.loadWord MemWidth.m32 target (addressBelow base offset)) (Stmt.seq (loadCases target base offset 0 variants) body)
   | .ptr => Stmt.seq (Stmt.loadWord (widthOf ty) target (addressBelow base offset)) body
   | .slice element => Stmt.seq (Stmt.loadWord (widthOf ty) target (addressBelow base offset)) body
+  | .array arrayElement arrayLength => body
   | .unit => Stmt.seq (Stmt.loadWord (widthOf ty) target (addressBelow base offset)) body
   | .isize => Stmt.seq (Stmt.loadWord (widthOf ty) target (addressBelow base offset)) body
+  | .char => Stmt.seq (Stmt.loadWord (widthOf ty) target (addressBelow base offset)) body
+  | .float ft => Stmt.seq (Stmt.loadWord (widthOf ty) target (addressBelow base offset)) body
+  | .sint kind => Stmt.seq (Stmt.loadWord (widthOf ty) target (addressBelow base offset)) body
 /-- Values of these types one after another, the first at target and base - offset. -/
 def loadTypes (types : List SrcType) (target : Nat) (base : Expr) (offset : Nat) (body : Stmt) : Stmt :=
   match types with

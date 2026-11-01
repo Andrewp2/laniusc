@@ -1,0 +1,5 @@
+module std::time;
+
+pub type ClockSleepResult = i32;
+
+pub extern "lanius_std" fn sleep_ms_i32(milliseconds: i32) -> ClockSleepResult;

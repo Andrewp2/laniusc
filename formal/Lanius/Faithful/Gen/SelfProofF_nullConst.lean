@@ -3,10 +3,8 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_nullConst
-public import Lanius.Faithful.Gen.SelfStmt0
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmtF_nullConst
-public import Lanius.Faithful.Gen.SelfStmtF_scalarOf
 import all Lanius.Faithful.Gen.SelfSrcF_nullConst
 import all Lanius.Mini.Frontend.P.nullConst
 
@@ -27,15 +25,15 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_literal_as {prog : SrcProgram} {prims : Prims} {ix_literal_as ix_typed_literal : Nat} (fn : prog.funcs[ix_literal_as]? = some (src_literal_as ix_typed_literal)) (np : prims.isPrim ix_literal_as = false)
-    (ext_typed_literal : Certified (∀ {n : Nat}, Stmt_typed_literal prog prims ix_typed_literal n)) {n : Nat} :
-    Stmt_literal_as prog prims ix_literal_as n := by
+theorem proof_neg_sint_const {prog : SrcProgram} {prims : Prims} {ix_neg_sint_const ix_sint_const : Nat} (fn : prog.funcs[ix_neg_sint_const]? = some (src_neg_sint_const ix_sint_const)) (np : prims.isPrim ix_neg_sint_const = false)
+    (ext_sint_const : Certified (∀ {n : Nat}, Stmt_sint_const prog prims ix_sint_const n)) {n : Nat} :
+    Stmt_neg_sint_const prog prims ix_neg_sint_const n := by
   intro x0 x1 v0 v1 w h r0 r1
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_literal_as] at h
-  faithful [Lanius.Mini.literalAs]
+  simp only [src_neg_sint_const] at h
+  faithful [Lanius.Mini.negSintConst]
 
 theorem proof_null_const {prog : SrcProgram} {prims : Prims} {ix_null_const : Nat} (fn : prog.funcs[ix_null_const]? = some (src_null_const)) (np : prims.isPrim ix_null_const = false) {n : Nat} :
     Stmt_null_const prog prims ix_null_const n := by
@@ -46,18 +44,33 @@ theorem proof_null_const {prog : SrcProgram} {prims : Prims} {ix_null_const : Na
   simp only [src_null_const] at h
   faithful [Lanius.Mini.nullConst]
 
-theorem proof_typed_literal {prog : SrcProgram} {prims : Prims} {ix_typed_literal ix_unbox_of_mini_selfhost_SrcExpr ix_boxed_of_mini_selfhost_SrcExpr ix_uint_in_range ix_null_const ix_negated_int : Nat} (fn : prog.funcs[ix_typed_literal]? = some (src_typed_literal ix_unbox_of_mini_selfhost_SrcExpr ix_boxed_of_mini_selfhost_SrcExpr ix_uint_in_range ix_null_const ix_negated_int)) (np : prims.isPrim ix_typed_literal = false)
-    (ext_unbox_of_mini_selfhost_SrcExpr : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcExpr prog prims ix_unbox_of_mini_selfhost_SrcExpr n))
+theorem proof_sint_const {prog : SrcProgram} {prims : Prims} {ix_sint_const ix_boxed_of_mini_selfhost_SrcExpr ix_sint_fits : Nat} (fn : prog.funcs[ix_sint_const]? = some (src_sint_const ix_boxed_of_mini_selfhost_SrcExpr ix_sint_fits)) (np : prims.isPrim ix_sint_const = false)
     (ext_boxed_of_mini_selfhost_SrcExpr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcExpr prog prims ix_boxed_of_mini_selfhost_SrcExpr n))
-    (ext_uint_in_range : Certified (∀ {n : Nat}, Stmt_uint_in_range prog prims ix_uint_in_range n))
-    (ext_null_const : Certified (∀ {n : Nat}, Stmt_null_const prog prims ix_null_const n))
-    (ext_negated_int : Certified (∀ {n : Nat}, Stmt_negated_int prog prims ix_negated_int n)) {n : Nat} :
-    Stmt_typed_literal prog prims ix_typed_literal n := by
+    (ext_sint_fits : Certified (∀ {n : Nat}, Stmt_sint_fits prog prims ix_sint_fits n)) {n : Nat} :
+    Stmt_sint_const prog prims ix_sint_const n := by
   intro x0 x1 v0 v1 w h r0 r1
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_typed_literal] at h
-  faithful [Lanius.Mini.typedLiteral]
+  simp only [src_sint_const] at h
+  faithful [Lanius.Mini.sintConst]
+
+theorem proof_sint_fits {prog : SrcProgram} {prims : Prims} {ix_sint_fits : Nat} (fn : prog.funcs[ix_sint_fits]? = some (src_sint_fits)) (np : prims.isPrim ix_sint_fits = false) {n : Nat} :
+    Stmt_sint_fits prog prims ix_sint_fits n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_sint_fits] at h
+  faithful [Lanius.Mini.sintFits]
+
+theorem proof_sint_wide {prog : SrcProgram} {prims : Prims} {ix_sint_wide : Nat} (fn : prog.funcs[ix_sint_wide]? = some (src_sint_wide)) (np : prims.isPrim ix_sint_wide = false) {n : Nat} :
+    Stmt_sint_wide prog prims ix_sint_wide n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_sint_wide] at h
+  faithful [Lanius.Mini.sintWide]
 
 end Lanius.Faithful.SelfCert

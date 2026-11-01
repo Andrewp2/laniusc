@@ -292,7 +292,7 @@ def main():
     programs = [dict(test=k, part=part) for k in range(len(tests)) for part in (0, 1)]
     for j, p in enumerate(programs):
         native.load(entries[j:], image, 0)
-        p['self'] = so.native_call(native, [], [])
+        p['self'] = so.native_call(native, [], [])[0]
 
     # laniusc: the same module, with a main that writes each entry's result.
     harness = text.replace('module app::main;\n', 'module app::main;\nimport std::io_byte;\n', 1)
@@ -304,7 +304,7 @@ def main():
     open(exe + '.lani', 'w').write(harness)
     if os.path.exists(exe):
         os.remove(exe)
-    build = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
+    build = subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
                             so.HEAVY, '-t', '20', args.laniusc, '--stdlib-root', 'stdlib', '--source-root', 'formal/lani',
                             '-o', exe, exe + '.lani'], capture_output=True, text=True)
     if build.returncode != 0 or not os.path.exists(exe):

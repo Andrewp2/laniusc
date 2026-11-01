@@ -1,13 +1,6 @@
 module
 
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Compiler.P.DivOp_size
-public import Lanius.Mini.Compiler.P.Lists_empty
-public import Lanius.Mini.Compiler.P.codeSize
-public import Lanius.Mini.Compiler.P.compileArgs
-public import Lanius.Mini.Compiler.P.compileModules
-public import Lanius.Mini.Compiler.P.lookup
-public import Lanius.Mini.Compiler.P.pow2
 import Lanius.Mini.Compiler.P.compileOr
 import Lanius.Mini.Compiler.P.declareProgram
 
@@ -25,39 +18,20 @@ def compileSource (prog : SrcProgram) : Option Binary :=
   else
     none
 
-@[expose] def Inline.seqCode (base : Nat) (pos : Nat) (firstCode : List Instr) (second : Stmt) : List Instr :=
-  firstCode ++ compileStmt base (pos + codeSize firstCode) second
+def usizeWords (xs : List Nat) : List (BitVec 32) :=
+  match xs with
+  | [] => []
+  | x :: rest => BitVec.ofNat 32 x :: usizeWords rest
 
-@[expose] def Inline.iteCode (base : Nat) (pos : Nat) (conditionCode : List Instr) (thenBranch : Stmt) (elseBranch : Stmt) : List Instr :=
-  let thenStart : Nat := pos + codeSize conditionCode + 9
-  let thenCode : List Instr := compileStmt base thenStart thenBranch
-  let elseStart : Nat := thenStart + codeSize thenCode + 5
-  let elseCode : List Instr := compileStmt base elseStart elseBranch
-  conditionCode ++ [Instr.jz elseStart] ++ thenCode ++ [Instr.jmp (elseStart + codeSize elseCode)] ++ elseCode
+/-- Bytes a, b, c, d as one little-endian word. -/
+def packWord (a : UInt8) (b : UInt8) (c : UInt8) (d : UInt8) : BitVec 32 :=
+  BitVec.ofNat 32 a.toNat + BitVec.ofNat 32 b.toNat * 256 + BitVec.ofNat 32 c.toNat * 65536 + BitVec.ofNat 32 d.toNat * 16777216
 
-@[expose] def Inline.loopCode (base : Nat) (pos : Nat) (conditionCode : List Instr) (body : Stmt) : List Instr :=
-  let bodyStart : Nat := pos + codeSize conditionCode + 9
-  let bodyCode : List Instr := compileStmt base bodyStart body
-  conditionCode ++ [Instr.jz (bodyStart + codeSize bodyCode + 5)] ++ bodyCode ++ [Instr.jmp pos]
+def roundEnd : Round :=
+  ({ words := [], count := 0, rest := [] } : Round)
 
-@[expose] def Inline.link (codes : List Code) : Option Binary :=
-  let entries : List Nat := layout 0 codes
-  let image : List UInt8 := linkFrom entries 0 codes
-  if image.length ≤ imageLimit then
-    some ({ codes := codes, entries := entries, image := image } : Binary)
-  else
-    none
-
-@[expose] def Inline.lookupAt (binding : Binding) (rest : List Binding) (id : Nat) : Option Binding :=
-  if binding.id = id then
-    some binding
-  else
-    lookup rest id
-
-@[expose] def Inline.offsetAfter (ty : SrcType) (rest : List SrcType) (index : Nat) : Nat :=
-  if index = 0 then
-    0
-  else
-    SrcType.size ty + fieldOffset rest (index - 1)
+/-- One more word, of k bytes, in front of a round. -/
+def roundCons (word : BitVec 32) (k : Nat) (after : Round) : Round :=
+  ({ words := word :: after.words, count := after.count + k, rest := after.rest } : Round)
 
 end Lanius.Mini

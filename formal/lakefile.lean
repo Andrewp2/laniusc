@@ -5,6 +5,10 @@ open Lake DSL
 package «lanius-formal» where
   version := v!"0.1.0"
   leanOptions := #[⟨`experimental.module, true⟩]
+  -- Share build outputs between worktrees: a module whose inputs match one
+  -- built anywhere is restored from Lake's cache instead of rebuilt.
+  enableArtifactCache := true
+  restoreAllArtifacts := true
 
 @[default_target]
 lean_lib Lanius
@@ -17,9 +21,21 @@ lean_lib LaniusMini where
 lean_exe runAll where
   root := `Lanius.Tools.RunAll
 
+/-- The extractor in Lanius, run on a file and laniusc's tree of it. -/
+lean_exe extract where
+  root := `Lanius.Tools.Extract
+
 /-- The front end's program of some files, for the extraction certificates. -/
 lean_exe srcDump where
   root := `Lanius.Tools.SrcDump
+
+/-- The IEEE specification, compiled, for formal/tools/float_test.py. -/
+lean_exe floatTest where
+  root := `Lanius.Tools.FloatTest
+
+/-- The top theorems' axioms and statement hashes, for formal/tools/trusted_check.py. -/
+lean_exe topAxioms where
+  root := `Lanius.Tools.TopAxioms
 
 lean_exe checkCompact where
   root := `Lanius.Extraction.CheckCompact

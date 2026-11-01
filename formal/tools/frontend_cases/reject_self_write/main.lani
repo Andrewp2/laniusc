@@ -1,0 +1,16 @@
+// A write through `&self`: laniusc writes the caller's value (top(5) is
+// 12), so reading `&self` by value would be wrong; the method is not read.
+struct C { n: i32 }
+
+impl C {
+    fn bump(&self) -> i32 {
+        self.n = self.n + 1;
+        return self.n;
+    }
+}
+
+fn top(k: i32) -> i32 {
+    let c: C = C { n: k };
+    let a: i32 = c.bump();
+    return c.n + a;
+}

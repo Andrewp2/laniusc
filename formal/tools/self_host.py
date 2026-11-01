@@ -8,9 +8,9 @@ Run from the repository root. `mini::selfhost` is formal/lani/mini/compiler.lani
 followed by the body of formal/lani/mini/frontend.lani (after its prelude and
 its copy of compiler.lani's types), so the front end's `SrcProgram` is the one
 `compile_source` takes. The driver `w(input, words, output, room)` decodes
-lexed files and their parse trees from an i32 slice, runs `front_end_files`
-on `grammar()` and `compile_source`, and writes the entries and the image
-into the output slice.
+source files and their parse trees from an i32 slice, lexes each file with
+`lex_source`, runs `front_end_files` on `grammar()` and `compile_source`, and
+writes the entries and the image into the output slice.
 
   self       Lean's `compileSource` of the driver and mini::selfhost (the
              self-built verified compiler), run natively on each test input;
@@ -58,105 +58,54 @@ DRIVER = f'''module app::main;
 import core::option;
 import mini::selfhost;
 
-// The input: word 0 is the file count, word 1 + f the offset of file f's
-// record (token count, token offset, prod count, prod offset, parent count,
-// parent offset); a token is 4 words (kind, start, text length, text offset).
-// The output: the entry count, the entries, the image length, the bytes;
-// the result is the number of words written, or -1 when the program is
-// rejected.
+// The input words, as front_end_words reads them (formal/lani/mini/frontend.lani):
+// the file count, then each file's counted bytes, productions and parents.
+// The output words, as compile_words gives
+// them: the entry count, the entries, the image length, the bytes. The
+// result is the number of words written, or -1 when the program is
+// rejected. Everything but reading the input and writing the output is pure
+// selfhost code, whose Lean meaning is its extraction (roadmap V1).
 fn w(input: ptr, words: i32, output: ptr, room: i32) -> i32 {{
     let data: [i32] = slice_from_raw_parts(input, words);
     let out: [i32] = slice_from_raw_parts(output, room);
-    return oracle_emit(out, oracle_run(data));
+    let read: {S}List<i32> = oracle_read(data, 0, words as usize, {S}empty());
+    return oracle_put(out, {S}compile_words({S}front_end_words({S}grammar(), read)));
 }}
 
-fn oracle_run(data: [i32]) -> core::option::Option<{S}Binary> {{
-    return match ({S}front_end_files({S}grammar(), oracle_files(data, 0, data[0] as usize))) {{
-        None -> None,
-        Some(program) -> {S}compile_source(program),
-    }};
+// data[lo..hi] in front of tail. Each call halves the range, so the
+// recursion is as deep as log2 of the input's length.
+fn oracle_read(data: [i32], lo: usize, hi: usize, tail: {S}List<i32>) -> {S}List<i32> {{
+    if (hi - lo > 1) {{
+        let mid: usize = lo + (hi - lo) / 2;
+        let right: {S}List<i32> = oracle_read(data, mid, hi, tail);
+        return oracle_read(data, lo, mid, right);
+    }}
+    if (hi > lo) {{
+        return {S}cons(data[lo], tail);
+    }}
+    return tail;
 }}
 
-fn oracle_emit(out: [i32], result: core::option::Option<{S}Binary>) -> i32 {{
+fn oracle_put(out: [i32], result: core::option::Option<{S}List<i32>>) -> i32 {{
     return match (result) {{
         None -> 0 - 1,
-        Some(binary) -> oracle_put(out, binary),
+        Some(ws) -> oracle_write(out, 0, ws) as i32,
     }};
 }}
 
-fn oracle_put(out: [i32], binary: {S}Binary) -> i32 {{
-    let at: usize = oracle_write_usizes(out, 0, binary.entries);
-    return oracle_write_bytes(out, at, binary.image) as i32;
-}}
-
-fn oracle_write_usizes(out: [i32], at: usize, xs: {S}List<usize>) -> usize {{
-    out[at] = {S}length(xs) as i32;
-    return oracle_fill_usizes(out, at + 1, xs);
-}}
-
-fn oracle_fill_usizes(out: [i32], at: usize, xs: {S}List<usize>) -> usize {{
-    return match (xs) {{
+fn oracle_write(out: [i32], at: usize, ws: {S}List<i32>) -> usize {{
+    return match (ws) {{
         Nil -> at,
-        Cons(x, rest) -> oracle_fill_usize(out, at, x, {S}unbox(rest)),
+        Cons(x, rest) -> oracle_write_one(out, at, x, {S}unbox(rest)),
     }};
 }}
 
-fn oracle_fill_usize(out: [i32], at: usize, x: usize, rest: {S}List<usize>) -> usize {{
-    out[at] = x as i32;
-    return oracle_fill_usizes(out, at + 1, rest);
-}}
-
-fn oracle_write_bytes(out: [i32], at: usize, xs: {S}List<u8>) -> usize {{
-    out[at] = {S}length(xs) as i32;
-    return oracle_fill_bytes(out, at + 1, xs);
-}}
-
-fn oracle_fill_bytes(out: [i32], at: usize, xs: {S}List<u8>) -> usize {{
-    return match (xs) {{
-        Nil -> at,
-        Cons(x, rest) -> oracle_fill_byte(out, at, x, {S}unbox(rest)),
-    }};
-}}
-
-fn oracle_fill_byte(out: [i32], at: usize, x: u8, rest: {S}List<u8>) -> usize {{
-    out[at] = x as i32;
-    return oracle_fill_bytes(out, at + 1, rest);
-}}
-
-fn oracle_files(data: [i32], f: usize, count: usize) -> {S}List<{S}FileInput> {{
-    if (f == count) {{
-        return {S}empty();
-    }}
-    return {S}cons(oracle_file(data, data[1 + f] as usize), oracle_files(data, f + 1, count));
-}}
-
-fn oracle_file(data: [i32], o: usize) -> {S}FileInput {{
-    return {S}FileInput {{
-        tokens: oracle_tokens(data, data[o + 1] as usize, 0, data[o] as usize),
-        prods: oracle_nums(data, data[o + 3] as usize, 0, data[o + 2] as usize),
-        parents: oracle_nums(data, data[o + 5] as usize, 0, data[o + 4] as usize),
-    }};
-}}
-
-fn oracle_tokens(data: [i32], base: usize, i: usize, count: usize) -> {S}List<{S}Token> {{
-    if (i == count) {{
-        return {S}empty();
-    }}
-    let at: usize = base + 4 * i;
-    let token: {S}Token = {S}Token {{
-        kind: data[at] as usize,
-        start: data[at + 1] as usize,
-        text: oracle_nums(data, data[at + 3] as usize, 0, data[at + 2] as usize),
-    }};
-    return {S}cons(token, oracle_tokens(data, base, i + 1, count));
-}}
-
-fn oracle_nums(data: [i32], base: usize, i: usize, count: usize) -> {S}List<usize> {{
-    if (i == count) {{
-        return {S}empty();
-    }}
-    // As u32 first: a parse tree's root has parent 2^32 - 1.
-    return {S}cons((data[base + i] as u32) as usize, oracle_nums(data, base, i + 1, count));
+// The rest first, then this word: every box is read before the first
+// write, so the writes cannot change a list still to be read.
+fn oracle_write_one(out: [i32], at: usize, x: i32, rest: {S}List<i32>) -> usize {{
+    let written: usize = oracle_write(out, at + 1, rest);
+    out[at] = x;
+    return written;
 }}
 '''
 
@@ -220,44 +169,48 @@ def selfhost_text():
     return compiler.replace('module mini::compiler;', 'module mini::selfhost;', 1) + '\n' + body
 
 
-def layout(files):
-    """The driver's input words for files of (tokens, prods, parents)."""
-    words = [len(files)] + [0] * len(files)
-    for f, (tokens, prods, parents) in enumerate(files):
-        record = len(words)
-        words[1 + f] = record
-        words += [0] * 6
-        token_at = len(words)
-        words += [0] * (4 * len(tokens))
-        for i, (kind, start, text) in enumerate(tokens):
-            words[token_at + 4 * i:token_at + 4 * i + 4] = [kind, start, len(text), len(words)]
-            words += text
-        prod_at = len(words)
-        words += prods
-        parent_at = len(words)
-        words += parents
-        words[record:record + 6] = [len(tokens), token_at, len(prods), prod_at, len(parents), parent_at]
+def layout(bases):
+    """The driver's input words (`filesWords` in Lanius/Mini/TextWords.lean)
+    for the files BASE.lani with their trees BASE.prods and BASE.parents."""
+    words = [len(bases)]
+    for base in bases:
+        source = open(base + '.lani', 'rb').read()
+        words += [len(source)] + list(source)
+        for ext in ('.prods', '.parents'):
+            nums = [int(x) for x in open(base + ext).read().split()]
+            words += [len(nums)] + nums
     return words
 
 
-def parse_dump(line):
-    tokens_s, prods_s, parents_s = line.split('|')
-    tokens = []
-    for t in tokens_s.split(' ') if tokens_s else []:
-        kind, start, text = t.split(':')
-        tokens.append((int(kind), int(start), [int(x) for x in text.split('.')] if text else []))
-    nums = lambda s: [int(x) for x in s.split(' ')] if s else []  # noqa: E731
-    return tokens, nums(prods_s), nums(parents_s)
-
-
-def expected_words(status):
-    """compileSource's result as the driver writes it, or None when rejected."""
+def parse_image(status):
+    """compileSource's (entries, image) from runAll's status line, or None when rejected."""
     if not status.startswith('image'):
         return None
     entries_s, image_s = re.match(r'image \[(.*?)\] \[(.*?)\]$', status).groups()
     entries = [int(x) for x in entries_s.split(',')] if entries_s else []
     image = [int(x) for x in image_s.split(',')] if image_s else []
-    return [len(entries)] + entries + [len(image)] + image
+    return entries, image
+
+
+def pack(image):
+    """The image's bytes four to a word, little-endian, the last word padded
+    with zeros (`pack_rounds` in compiler.lani), as signed words."""
+    padded = bytes(image) + bytes(-len(image) % 4)
+    return [int.from_bytes(padded[i:i + 4], 'little', signed=True) for i in range(0, len(padded), 4)]
+
+
+def unpack(words, count):
+    """The first count bytes of packed words."""
+    return list(b''.join((w & 0xffffffff).to_bytes(4, 'little') for w in words)[:count])
+
+
+def expected_words(status):
+    """compileSource's result as the driver writes it, or None when rejected."""
+    parsed = parse_image(status)
+    if parsed is None:
+        return None
+    entries, image = parsed
+    return [len(entries)] + entries + [len(image)] + pack(image)
 
 
 def backed(path, size):
@@ -279,8 +232,10 @@ def backed(path, size):
 class Native:
     """The self-built image in executable memory. Each run forks; the child
     maps a fresh heap and a fresh stack, both backed by files under `scratch`
-    (see backed), and the stub switches to that stack for the call. The input
-    and output slices sit at the top of the heap, above the limit."""
+    (see backed), and the stub switches to that stack for the call. The heap
+    is laid out as `selfCompiler_outcome` (Lanius/Faithful/SelfCompiler.lean)
+    takes it: the input words from offset 4 (`selfInput`), the output view
+    after them (`selfOutput`), and the cursor 4 bytes past it (`selfNext`)."""
 
     def __init__(self, entries, image, heap_size, stack_size, scratch):
         private = mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS
@@ -291,20 +246,22 @@ class Native:
         self.entries, self.at = entries, len(image)
         self.heap_size, self.stack_size, self.scratch = heap_size, stack_size, scratch
 
-    def stub(self, heap_base, stack_top, limit):
-        # push rbx, r12, r13, r14; mov rbx, rsp; mov rsp, stack_top; r12 = the
-        # heap, r13 = the cursor (1), r14 = the limit; the four arguments just
-        # below rsp; call w; mov rsp, rbx; pop r14, r13, r12, rbx; ret
-        stub = bytes([0x53, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x48, 0x89, 0xE3])
+    def stub(self, heap_base, stack_top, cursor, limit, stack_limit):
+        # push rbx, r12, r13, r14, r15; mov rbx, rsp; mov rsp, stack_top; r12 =
+        # the heap, r13 = the cursor, r14 = the limit, r15 = the stack
+        # limit; the four arguments just below rsp; call w; mov rsp, rbx;
+        # pop r15, r14, r13, r12, rbx; ret
+        stub = bytes([0x53, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48, 0x89, 0xE3])
         stub += bytes([0x48, 0xBC]) + stack_top.to_bytes(8, 'little')
         stub += bytes([0x49, 0xBC]) + heap_base.to_bytes(8, 'little')
-        stub += bytes([0x49, 0xBD]) + (1).to_bytes(8, 'little')
+        stub += bytes([0x49, 0xBD]) + cursor.to_bytes(8, 'little')
         stub += bytes([0x49, 0xBE]) + limit.to_bytes(8, 'little')
+        stub += bytes([0x49, 0xBF]) + stack_limit.to_bytes(8, 'little')
         for k in range(4):
             stub += so.ARG_STORES[k] + bytes([(256 - (8 * k + 24)) & 0xff])
         rel = self.entries[0] - (self.at + len(stub) + 5)
         stub += b'\xe8' + (rel & 0xffffffff).to_bytes(4, 'little')
-        stub += bytes([0x48, 0x89, 0xDC, 0x41, 0x5E, 0x41, 0x5D, 0x41, 0x5C, 0x5B, 0xC3])
+        stub += bytes([0x48, 0x89, 0xDC, 0x41, 0x5F, 0x41, 0x5E, 0x41, 0x5D, 0x41, 0x5C, 0x5B, 0xC3])
         self.code[self.at:self.at + len(stub)] = stub
         return ctypes.CFUNCTYPE(ctypes.c_uint64, *([ctypes.c_uint64] * 4))(self.base + self.at)
 
@@ -319,10 +276,11 @@ class Native:
             signal.alarm(timeout)
             heap, heap_base = backed(os.path.join(self.scratch, f'heap.{os.getpid()}'), self.heap_size)
             stack, stack_base = backed(os.path.join(self.scratch, f'stack.{os.getpid()}'), self.stack_size)
-            in_at = self.heap_size - 4 * (len(words) + room) - 4096
-            out_at = in_at + 4 * len(words) + 64
+            in_at = 4
+            out_at = in_at + 4 * len(words)
             heap[in_at:in_at + 4 * len(words)] = b''.join((x & 0xffffffff).to_bytes(4, 'little') for x in words)
-            fn = self.stub(heap_base, stack_base + self.stack_size - 64, in_at - 4096)
+            fn = self.stub(heap_base, stack_base + self.stack_size - 64, out_at + 4 * room + 4, self.heap_size - 4096,
+                           stack_base + 4096)
             n = fn(in_at, len(words), out_at, room) & 0xffffffff
             n = n - 2 ** 32 if n >= 2 ** 31 else n
             payload = n.to_bytes(4, 'little', signed=True)
@@ -380,7 +338,7 @@ def native_batch(batch, heap_log2, stack_log2, room, timeout):
 def read_out(path):
     data = open(path, 'rb').read()
     line, rest = data.split(b'\n', 1)
-    status, seconds, rss = line.decode().split(' ')
+    status, seconds, rss = line.decode().rsplit(' ', 2)
     got = {'words': None, 'rejected': None}.get(status, status)
     if status == 'words':
         got = [int.from_bytes(rest[i:i + 4], 'little', signed=True) for i in range(0, len(rest), 4)]
@@ -478,53 +436,44 @@ def main():
         tests.append(dict(name='the verified compiler itself', bases=self_bases, fixpoint=True))
     manifest = [f'compile self {" ".join(self_bases)}']
     for k, t in enumerate(tests):
-        manifest += [f'compile t{k} {" ".join(t["bases"])}', f'dump in{k} {" ".join(t["bases"])}']
+        manifest.append(f'compile t{k} {" ".join(t["bases"])}')
     manifest_path = os.path.join(workdir, 'manifest.txt')
     open(manifest_path, 'w').write('\n'.join(manifest) + '\n')
     print(f'time: parse {time.time() - began:.0f} s', file=sys.stderr, flush=True)
     began = time.time()
-    lean = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=10G', '-p', 'MemorySwapMax=0',
+    lean = subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryMax=10G', '-p', 'MemorySwapMax=0',
                            so.RUN_ALL, manifest_path], capture_output=True, text=True)
     print(f'time: runAll {time.time() - began:.0f} s', file=sys.stderr, flush=True)
     began = time.time()
     if lean.returncode != 0:
         raise SystemExit('runAll failed:\n' + lean.stdout[-4000:] + lean.stderr[-4000:])
-    status, inputs = {}, {}
+    status = {}
     for line in lean.stdout.split('\n'):
-        if not line:
-            continue
-        name, rest = line.split(' ', 1)
-        if name.startswith('in'):
-            k = int(name[2:])
-            if rest == 'nolex':
-                inputs[k] = None
-            elif inputs.get(k, []) is not None:
-                inputs.setdefault(k, []).append(parse_dump(rest[5:]))
-        else:
+        if line:
+            name, rest = line.split(' ', 1)
             status[name] = rest
     self_status = status.get('self', 'missing')
     if not self_status.startswith('image'):
         raise SystemExit(f'the verified compiler does not compile itself: {self_status}')
-    self_words = expected_words(self_status)
-    entries = self_words[1:1 + self_words[0]]
-    image = self_words[2 + self_words[0]:]
+    entries, image = parse_image(self_status)
     print(f'self-built verified compiler: {len(image)} bytes, {len(entries)} functions')
     open(os.path.join(workdir, 'self.image'), 'wb').write(bytes(image))
 
     room = 1 << 24  # output words: the fixpoint image is about 11M bytes
 
-    # laniusc's build of the same driver.
+    # laniusc's build of the same driver, for the cases.
+    cases = any(not t.get('fixpoint') for t in tests)
     imports = 'import alloc::allocator;\nimport std::io_byte;\n'
     exe = os.path.join(workdir, 'laniusc_driver')
     text = DRIVER.replace('import mini::selfhost;\n', 'import mini::selfhost;\n' + imports, 1) + LANIUSC_MAIN
     open(exe + '.lani', 'w').write(text)
     if os.path.exists(exe):
         os.remove(exe)
-    build = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=8G', '-p', 'MemorySwapMax=0',
+    build = None if not cases else subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryMax=8G', '-p', 'MemorySwapMax=0',
                             so.HEAVY, '-t', '30', args.laniusc, '--stdlib-root', 'stdlib', '--source-root',
                             source_root, '-o', exe, exe + '.lani'],
                            capture_output=True, text=True)
-    if build.returncode != 0 or not os.path.exists(exe):
+    if build is not None and (build.returncode != 0 or not os.path.exists(exe)):
         raise SystemExit('laniusc does not build the driver:\n' + build.stdout[-2000:] + build.stderr[-2000:])
     print(f'time: laniusc build {time.time() - began:.0f} s', file=sys.stderr, flush=True)
     began = time.time()
@@ -537,12 +486,10 @@ def main():
     os.makedirs(batch)
     open(os.path.join(batch, 'self.image'), 'wb').write(bytes(image))
     open(os.path.join(batch, 'self.entries'), 'w').write(' '.join(map(str, entries)) + '\n')
-    runnable = []
+    runnable = list(range(len(tests)))
     for k, t in enumerate(tests):
-        if inputs.get(k) is not None:
-            words_file(os.path.join(batch, f'in{len(runnable)}.words'), layout(inputs[k]))
-            runnable.append(k)
-    subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', f'MemoryMax={args.memory_max}',
+        words_file(os.path.join(batch, f'in{k}.words'), layout(t['bases']))
+    subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', f'MemoryMax={args.memory_max}',
                     '-p', 'MemorySwapMax=0', sys.executable, '-I', os.path.abspath(__file__), batch,
                     '--native-batch', '--heap-log2', str(args.heap_log2), '--stack-log2', str(args.stack_log2),
                     '--timeout', str(args.timeout)], check=True)
@@ -553,25 +500,17 @@ def main():
     problems, agree, notes = [], 0, []
     for k, t in enumerate(tests):
         want = expected_words(status.get(f't{k}', 'missing'))
-        if inputs.get(k) is None:
-            problems.append(f'{t["name"]}: the Lean lexer rejects it')
-            continue
         got_self, seconds, rss = selfs[k]
-        words = read_words(os.path.join(batch, f'in{runnable.index(k)}.words'))
-        stdin = b''.join((x & 0xffffffff).to_bytes(4, 'little') for x in [len(words), room] + words)
         show = lambda v: v if not isinstance(v, list) else f'{len(v)} words'  # noqa: E731
         if t.get('fixpoint'):
-            image_words = want[2 + want[0]:] if isinstance(want, list) else None
+            image_words = (unpack(got_self[2 + got_self[0]:], got_self[1 + got_self[0]])
+                           if isinstance(got_self, list) else None)
             print(f'fixpoint: the self-built verified compiler on its own source: {show(got_self)} in {seconds:.0f} s '
                   f'(peak resident {rss >> 10} MiB), Lean {show(want)}; '
                   f'its own image: {image_words == list(image)}')
-            # laniusc's build on the same input. Its runtime allocator maps
-            # fresh pages for every allocation (one mmap each), and this run
-            # makes on the order of 10^8 allocations, so it cannot finish; it
-            # is run under a cap and reported, not counted.
-            got_laniusc = run_laniusc(exe, stdin, args.timeout, args.memory_max, 1 << args.stack_log2)
-            notes.append(f'{t["name"]}: laniusc {show(got_laniusc)} (not counted: laniusc\'s runtime maps a fresh '
-                         f'page for every allocation)')
+            # laniusc's build is not run on this input: its runtime allocator
+            # maps fresh pages for every allocation (one mmap each), and this
+            # run makes on the order of 10^8 allocations, so it cannot finish.
             if got_self == want and image_words == list(image):
                 agree += 1
             else:
@@ -579,6 +518,8 @@ def main():
                                 + ('' if not (isinstance(want, list) and isinstance(got_self, list)) or want == got_self
                                    else ' (self differs from Lean)'))
             continue
+        words = read_words(os.path.join(batch, f'in{runnable.index(k)}.words'))
+        stdin = b''.join((x & 0xffffffff).to_bytes(4, 'little') for x in [len(words), room] + words)
         got_laniusc = run_laniusc(exe, stdin, args.timeout, None, None)
         if got_self == want and got_laniusc == want:
             agree += 1
@@ -602,7 +543,7 @@ def run_laniusc(exe, stdin, timeout, memory_max, stack):
     argv = [exe]
     preexec = None
     if memory_max is not None:
-        argv = ['systemd-run', '--user', '--scope', '-q', '-p', f'MemoryMax={memory_max}', '-p', 'MemorySwapMax=0',
+        argv = ['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', f'MemoryMax={memory_max}', '-p', 'MemorySwapMax=0',
                 exe]
 
         def preexec():

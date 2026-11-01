@@ -50,6 +50,19 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import oracle_difftest as oracle  # noqa: E402
+
+
+def inputs_digest(workdir):
+    """A digest of the files a check reads (the run cache keys on the check's
+    text, which names these files but not their contents)."""
+    import hashlib
+    h = hashlib.sha256()
+    for root, _, names in sorted(os.walk(workdir)):
+        for name in sorted(names):
+            if name.endswith(('.lani', '.prods', '.parents')):
+                path = os.path.join(root, name)
+                h.update(path.encode() + b'\0' + open(path, 'rb').read() + b'\0')
+    return h.hexdigest()
 import run_cache  # noqa: E402
 oracle.EFFECTS = False  # set in main: effectful expressions, except with --generic
 oracle.NESTED = False  # nested struct fields: the oracle's, not yet the front end tests'
@@ -994,7 +1007,7 @@ set_option linter.unusedVariables false
 -- The front end's program, written the way this script writes the expected
 -- one (elaborating the expected programs as Lean terms is far too slow).
 def serTy : UintTy → String
-  | .uint8 => ".uint8" | .uint32 => ".uint32" | .uint64 => ".uint64" | .usize => ".usize"
+  | .uint8 => ".uint8" | .uint32 => ".uint32" | .uint64 => ".uint64" | .usize => ".usize" | .uint16 => ".uint16"
 
 def serOp : SrcOp → String
   | .plus => "plus" | .minus => "minus" | .times => "times" | .bitAnd => "bitAnd"
@@ -1011,8 +1024,13 @@ partial def serType : SrcType → String
   | .struct n fs => s!"(.struct {n} {bracket (fs.map serType)})"
   | .enum n vs => s!"(.enum {n} {bracket (vs.map fun v => bracket (v.map serType))})"
   | .slice t => s!"(.slice {serType t})"
+  | .array t n => s!"(.array {serType t} {n})"
   | .unit => ".unit"
   | .isize => ".isize"
+  | .char => ".char"
+  | .sint u => s!"(.sint {serTy u})"
+  | .float .f32 => "(.float .f32)"
+  | .float .f64 => "(.float .f64)"
 
 partial def serExpr : SrcExpr → String
   | .int k => s!"(.int {k.toNat})"
@@ -1025,6 +1043,9 @@ partial def serExpr : SrcExpr → String
   | .apply o a b => s!"(.apply .{serOp o} {serExpr a} {serExpr b})"
   | .cast t e => s!"(.cast {serType t} {serExpr e})"
   | .null => ".null"
+  | .char c => s!"(.char {c.toNat})"
+  | .float .f32 x => s!"(.float .f32 {x.toNat})"
+  | .float .f64 x => s!"(.float .f64 {x.toNat})"
 
 def serExprs (es : List SrcExpr) : String := bracket (es.map serExpr)
 
@@ -1079,7 +1100,11 @@ partial def serStmt : SrcStmt → String
   | .setIndexEval sl i v => s!"(.setIndexEval {sl} {serEff i} {serEff v})"
   | .setFieldEval n f x => s!"(.setFieldEval {n} {f} {serEff x})"
   | .returnUnit => ".returnUnit"
+  | .break => ".break"
+  | .continue => ".continue"
   | .assert x => s!"(.assert {serEff x})"
+  | .matchArm sc e k b x t body r => s!"(.matchArm {sc} {e} {k} {b} {x} {serType t} {serStmt body} {serStmt r})"
+  | .unreachable n t => s!"(.unreachable {n} {serType t})"
 
 def serParam (p : SrcParam) : String := "{ id := " ++ toString p.id ++ ", ty := " ++ serType p.ty ++ " }"
 
@@ -1182,6 +1207,7 @@ partial def bindersOf : SrcStmt → List Nat
   | .whileEval x b => effBinders x ++ bindersOf b
   | .setIndexEval _ i v => effBinders i ++ effBinders v
   | .setFieldEval _ _ x | .assert x => effBinders x
+  | .matchArm _ _ _ b x _ body r => (if b then [x] else []) ++ bindersOf body ++ bindersOf r
   | _ => []
 
 partial def renExpr (f : Nat → Nat) : SrcExpr → SrcExpr
@@ -1238,6 +1264,10 @@ partial def renStmt (f : Nat → Nat) : SrcStmt → SrcStmt
   | .setIndexEval sl i v => .setIndexEval (f sl) (renEff f i) (renEff f v)
   | .setFieldEval n k x => .setFieldEval (f n) k (renEff f x)
   | .returnUnit => .returnUnit
+  | .break => .break
+  | .continue => .continue
+  | .matchArm sc e k b x t body r => .matchArm (f sc) e k b (f x) t (renStmt f body) (renStmt f r)
+  | .unreachable n t => .unreachable (f n) t
   | .assert x => .assert (renEff f x)
 
 def canonFunc (fn : SrcFunc) : SrcFunc :=
@@ -1274,7 +1304,9 @@ def run_cases(args, cases_dir):
     """Hand-written cases. A case directory holds the files of one program
     (main.lani first, then the others in name order) and either want.lani,
     a single-file monomorphic copy that must read as the same program up to
-    local names, or a file named reject, when the program must be rejected."""
+    local names, expect.out, the program it must read as, written out (for a
+    reading no source spelling has, such as `?`), or a file named reject,
+    when the program must be rejected."""
     workdir = os.path.abspath(args.workdir)
     os.makedirs(workdir, exist_ok=True)
     lean = [LEAN_HEAD]
@@ -1303,6 +1335,7 @@ def run_cases(args, cases_dir):
             lean.append(f'#eval checkFiles [{", ".join(chr(34) + b + chr(34) for b in bases)}] "{out}"')
         checks.append((case, out_dir, os.path.exists(os.path.join(src, 'reject'))))
     lean_path = os.path.join(workdir, 'cases_check.lean')
+    lean.append(f'-- inputs {inputs_digest(workdir)}')
     open(lean_path, 'w').write('\n'.join(lean) + '\n')
     run = run_cache.run_lean(lean_path)
     if run.returncode != 0:
@@ -1335,10 +1368,17 @@ def run_cases(args, cases_dir):
             if not os.path.exists(compiled) or open(compiled).read() != 'compiles\n':
                 problems += 1
                 print(f'{case}: compileSource rejects the program read')
+        if os.path.exists(os.path.join(cases_dir, case, 'compile_rejects')):
+            # the front end reads the program but compileSource must reject it
+            compiled = os.path.join(out_dir, 'got.out.compile')
+            if not os.path.exists(compiled) or open(compiled).read() != 'rejected\n':
+                problems += 1
+                print(f'{case}: compileSource accepts the program read')
         if reject:
             ok = got == 'rejected\n'
         else:
-            want = open(os.path.join(out_dir, 'want.out')).read()
+            expect = os.path.join(cases_dir, case, 'expect.out')
+            want = open(expect if os.path.exists(expect) else os.path.join(out_dir, 'want.out')).read()
             ok = got != 'rejected\n' and got == want
         if not ok:
             problems += 1
@@ -1425,6 +1465,7 @@ def main():
         moved_total += sum(1 for m in chunk.module.values() if m == 'lib')
         consts_total += sum(len(v) for v in chunk.consts.values())
     lean_path = os.path.join(workdir, 'frontend_check.lean')
+    lean.append(f'-- inputs {inputs_digest(workdir)}')
     open(lean_path, 'w').write('\n'.join(lean) + '\n')
     run = run_cache.run_lean(lean_path)
     if run.returncode != 0:

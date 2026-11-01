@@ -65,6 +65,10 @@ theorem sty_signed {t : SrcType} {ty : Core.SignedIntTy} {a : Int} (h : STy t (.
   | enum => exact h.elim
   | ptr => exact h.elim
   | slice => exact h.elim
+  | char => exact h.elim
+  | float => exact h.elim
+  | sint => exact h.elim
+  | array => exact h.elim
 
 theorem sty_unsigned {t : SrcType} {ty : Core.UnsignedIntTy} {a : Nat} (h : STy t (.unsigned ty a)) :
     ∃ k, t = .uint k ∧ ty = k.toCore := by
@@ -81,6 +85,10 @@ theorem sty_unsigned {t : SrcType} {ty : Core.UnsignedIntTy} {a : Nat} (h : STy 
   | enum => exact h.elim
   | ptr => exact h.elim
   | slice => exact h.elim
+  | char => exact h.elim
+  | float => exact h.elim
+  | sint => exact h.elim
+  | array => exact h.elim
 
 theorem sty_wrapU {t : SrcType} {ty : Core.UnsignedIntTy} {a : Nat} (h : STy t (.unsigned ty a)) (x : Nat) :
     STy t (.unsigned ty (wrapUnsigned .x86_64 ty x)) := by
@@ -105,6 +113,10 @@ theorem sty_cases {t : SrcType} {v : Value} (h : STy t v) :
   | enum => exact h.elim
   | ptr => exact h.elim
   | slice => exact h.elim
+  | char => exact h.elim
+  | float => exact h.elim
+  | sint => exact h.elim
+  | array => exact h.elim
 
 /-! ## Binary operators -/
 
@@ -117,7 +129,27 @@ theorem binary_ok_cases {tgt : Core.Target} {op : Core.BinaryOp} {l r v : Value}
     (∃ b, op = .notEqual ∧ scalarEqual l r = some b ∧ v = .boolean !b) ∨
     (∃ ty a b, l = .signed ty a ∧ r = .signed ty b ∧ evalSignedBinary tgt op ty a b = .ok v) ∨
     (∃ ty a b, l = .unsigned ty a ∧ r = .unsigned ty b ∧ evalUnsignedBinary tgt op ty a b = .ok v) ∨
-    (∃ a, l = .pointer a) ∨ (∃ a, l = .f32Bits a) ∨ (∃ a, l = .f64Bits a) ∨ (∃ a, l = .character a) := by
+    (∃ a, l = .pointer a) ∨ (∃ a, l = .f32Bits a) ∨ (∃ a, l = .f64Bits a) ∨ (∃ a, l = .character a) ∨
+    ((op = .shiftLeft ∨ op = .shiftRight) ∧ ((∃ t b, r = .signed t b) ∨ (∃ t b, r = .unsigned t b)) ∧
+      ((∃ ty a n, l = .signed ty a ∧ evalSignedBinary tgt op ty a n = .ok v) ∨
+       (∃ ty a n, l = .unsigned ty a ∧ evalUnsignedBinary tgt op ty a n = .ok v))) := by
+  have shiftBy : ∀ {x : Value} {n : Int}, ((∃ t b, r = .signed t b) ∨ (∃ t b, r = .unsigned t b)) →
+      Semantics.evalShiftBy tgt op x n = .ok v →
+      ((op = .shiftLeft ∨ op = .shiftRight) ∧ ((∃ t b, r = .signed t b) ∨ (∃ t b, r = .unsigned t b)) ∧
+        ((∃ ty a n, x = .signed ty a ∧ evalSignedBinary tgt op ty a n = .ok v) ∨
+         (∃ ty a n, x = .unsigned ty a ∧ evalUnsignedBinary tgt op ty a n = .ok v))) := by
+    intro x n hr hs
+    unfold Semantics.evalShiftBy at hs
+    split at hs
+    · exact ⟨.inl rfl, hr, .inl ⟨_, _, _, rfl, hs⟩⟩
+    · exact ⟨.inr rfl, hr, .inl ⟨_, _, _, rfl, hs⟩⟩
+    · split at hs
+      · simp at hs
+      · exact ⟨.inl rfl, hr, .inr ⟨_, _, _, rfl, hs⟩⟩
+    · split at hs
+      · simp at hs
+      · exact ⟨.inr rfl, hr, .inr ⟨_, _, _, rfl, hs⟩⟩
+    · simp at hs
   unfold evalBinaryValue at h
   split at h
   · simp only [Except.ok.injEq] at h
@@ -141,15 +173,17 @@ theorem binary_ok_cases {tgt : Core.Target} {op : Core.BinaryOp} {l r v : Value}
     · rename_i same
       obtain rfl := beq_iff_eq.mp same
       exact .inr (.inr (.inr (.inr (.inl ⟨_, _, _, rfl, rfl, h⟩))))
-    · simp at h
+    · exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr ((shiftBy (.inl ⟨_, _, rfl⟩) h)))))))))))
   · split at h
     · rename_i same
       obtain rfl := beq_iff_eq.mp same
       exact .inr (.inr (.inr (.inr (.inr (.inl ⟨_, _, _, rfl, rfl, h⟩)))))
-    · simp at h
+    · exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr ((shiftBy (.inr ⟨_, _, rfl⟩) h)))))))))))
+  · exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr ((shiftBy (.inr ⟨_, _, rfl⟩) h)))))))))))
+  · exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr ((shiftBy (.inl ⟨_, _, rfl⟩) h)))))))))))
   · exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inl ⟨_, rfl⟩)))))))
   · exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inl ⟨_, rfl⟩))))))))
-  · exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr ⟨_, rfl⟩))))))))
+  · exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inl ⟨_, rfl⟩)))))))))
   · simp at h
 
 theorem scalarEqual_flat {l r : Value} {b : Bool} (h : scalarEqual l r = some b) (flat : Flat l) : Flat r := by
@@ -195,13 +229,15 @@ theorem binary_flat {tgt : Core.Target} {op : Core.BinaryOp} {l r v : Value}
     (h : evalBinaryValue tgt op l r = .ok v) :
     (∀ {t : SrcType}, STy t l → Flat r) ∧ (op ≠ .equal → op ≠ .notEqual → Flat l) := by
   rcases binary_ok_cases h with ⟨x, y, rfl, rfl, rfl, -⟩ | ⟨x, y, rfl, rfl, rfl, -⟩ | ⟨b, rfl, eq, -⟩ |
-    ⟨b, rfl, eq, -⟩ | ⟨ty, a, b, rfl, rfl, -⟩ | ⟨ty, a, b, rfl, rfl, -⟩ | ⟨a, rfl⟩ | ⟨a, rfl⟩ | ⟨a, rfl⟩ | ⟨a, rfl⟩
+    ⟨b, rfl, eq, -⟩ | ⟨ty, a, b, rfl, rfl, -⟩ | ⟨ty, a, b, rfl, rfl, -⟩ | ⟨a, rfl⟩ | ⟨a, rfl⟩ | ⟨a, rfl⟩ | ⟨a, rfl⟩ |
+    ⟨-, ⟨_, _, rfl⟩ | ⟨_, _, rfl⟩, ⟨_, _, _, rfl, -⟩ | ⟨_, _, _, rfl, -⟩⟩
   · exact ⟨fun _ => trivial, fun _ _ => trivial⟩
   · exact ⟨fun _ => trivial, fun _ _ => trivial⟩
   · exact ⟨fun hl => scalarEqual_flat eq hl.flat, fun ne => absurd rfl ne⟩
   · exact ⟨fun hl => scalarEqual_flat eq hl.flat, fun _ ne => absurd rfl ne⟩
   · exact ⟨fun _ => trivial, fun _ _ => trivial⟩
   · exact ⟨fun _ => trivial, fun _ _ => trivial⟩
+  all_goals first | exact ⟨fun _ => by trivial, fun _ _ => by trivial⟩ | skip
   all_goals refine ⟨fun hl => ?_, fun _ _ => trivial⟩
   all_goals rcases sty_cases hl with ⟨_, h'⟩ | ⟨_, _, h'⟩ | ⟨_, _, h'⟩ | h' <;> cases h'
 
@@ -215,7 +251,8 @@ theorem SrcOp.toCore_logicalOr {op : SrcOp} (h : op.toCore = .logicalOr) : op = 
 theorem compare_bool {tgt : Core.Target} {op : Core.BinaryOp} {tl : SrcType} {lv rv v : Value} (hl : STy tl lv)
     (h : evalBinaryValue tgt op lv rv = .ok v) (cmp : isCompare op = true) : ∃ b, v = .boolean b := by
   rcases binary_ok_cases h with ⟨x, y, -, -, -, rfl⟩ | ⟨x, y, -, -, -, rfl⟩ | ⟨b, -, -, rfl⟩ |
-    ⟨b, -, -, rfl⟩ | ⟨ty, a, b, rfl, rfl, hs⟩ | ⟨ty, a, b, rfl, rfl, hs⟩ | ⟨a, rfl⟩ | ⟨a, rfl⟩ | ⟨a, rfl⟩ | ⟨a, rfl⟩
+    ⟨b, -, -, rfl⟩ | ⟨ty, a, b, rfl, rfl, hs⟩ | ⟨ty, a, b, rfl, rfl, hs⟩ | ⟨a, rfl⟩ | ⟨a, rfl⟩ | ⟨a, rfl⟩ | ⟨a, rfl⟩ |
+    ⟨hop, -, -⟩
   · exact ⟨_, rfl⟩
   · exact ⟨_, rfl⟩
   · exact ⟨_, rfl⟩
@@ -226,6 +263,7 @@ theorem compare_bool {tgt : Core.Target} {op : Core.BinaryOp} {tl : SrcType} {lv
   · rcases unsigned_result hs with ⟨-, x, rfl⟩ | ⟨ncmp, -⟩
     · exact ⟨_, rfl⟩
     · rw [cmp] at ncmp; cases ncmp
+  any_goals (rcases hop with rfl | rfl <;> cases cmp)
   all_goals rcases sty_cases hl with ⟨_, h'⟩ | ⟨_, _, h'⟩ | ⟨_, _, h'⟩ | h' <;> cases h'
 
 /-- Arithmetic on a scalar keeps its type. -/
@@ -233,7 +271,8 @@ theorem arith_sty {op : Core.BinaryOp} {tl : SrcType} {lv rv v : Value} (hl : ST
     (h : evalBinaryValue .x86_64 op lv rv = .ok v) (cmp : isCompare op = false)
     (notAnd : op ≠ .logicalAnd) (notOr : op ≠ .logicalOr) : STy tl v := by
   rcases binary_ok_cases h with ⟨x, y, hop, -, -, -⟩ | ⟨x, y, hop, -, -, -⟩ | ⟨b, hop, -, rfl⟩ |
-    ⟨b, hop, -, rfl⟩ | ⟨ty, a, b, rfl, rfl, hs⟩ | ⟨ty, a, b, rfl, rfl, hs⟩ | ⟨a, rfl⟩ | ⟨a, rfl⟩ | ⟨a, rfl⟩ | ⟨a, rfl⟩
+    ⟨b, hop, -, rfl⟩ | ⟨ty, a, b, rfl, rfl, hs⟩ | ⟨ty, a, b, rfl, rfl, hs⟩ | ⟨a, rfl⟩ | ⟨a, rfl⟩ | ⟨a, rfl⟩ | ⟨a, rfl⟩ |
+    ⟨-, -, ⟨ty, a, b, rfl, hs⟩ | ⟨ty, a, b, rfl, hs⟩⟩
   · exact absurd hop notAnd
   · exact absurd hop notOr
   · subst hop; simp [isCompare] at cmp
@@ -244,6 +283,12 @@ theorem arith_sty {op : Core.BinaryOp} {tl : SrcType} {lv rv v : Value} (hl : ST
   · rcases unsigned_result hs with ⟨ncmp, -⟩ | ⟨-, x, rfl⟩
     · rw [cmp] at ncmp; cases ncmp
     · exact sty_wrapU hl x
+  any_goals (rcases signed_result hs with ⟨ncmp, -⟩ | ⟨-, x, rfl⟩
+             · rw [cmp] at ncmp; cases ncmp
+             · exact sty_signed hl x)
+  any_goals (rcases unsigned_result hs with ⟨ncmp, -⟩ | ⟨-, x, rfl⟩
+             · rw [cmp] at ncmp; cases ncmp
+             · exact sty_wrapU hl x)
   all_goals rcases sty_cases hl with ⟨_, h'⟩ | ⟨_, _, h'⟩ | ⟨_, _, h'⟩ | h' <;> cases h'
 
 /-- `left op right` has the type `opTy` gives it. -/
@@ -255,13 +300,11 @@ theorem binary_sty {op : SrcOp} {tl tr t : SrcType} {lv rv v : Value} (hl : STy 
   all_goals first
     | exact absurd rfl notAnd
     | exact absurd rfl notOr
-    | (simp only [Option.some.injEq] at ht; subst ht
-       first
-       | (obtain ⟨b, rfl⟩ := compare_bool hl h rfl; exact ⟨b, rfl⟩)
-       | exact arith_sty hl h rfl (by simp [SrcOp.toCore]) (by simp [SrcOp.toCore]))
     | (split at ht
        · simp only [Option.some.injEq] at ht; subst ht
-         obtain ⟨b, rfl⟩ := compare_bool hl h rfl; exact ⟨b, rfl⟩
+         first
+         | (obtain ⟨b, rfl⟩ := compare_bool hl h rfl; exact ⟨b, rfl⟩)
+         | exact arith_sty hl h rfl (by simp [SrcOp.toCore]) (by simp [SrcOp.toCore])
        · simp at ht)
 
 /-- Division keeps its left operand's type. -/
@@ -293,15 +336,18 @@ theorem cast_flat {tgt : Core.Target} {d : Core.ScalarTy} {l v : Value} (h : eva
   unfold evalScalarCast at h
   split at h <;> first | trivial | simp at h
 
-theorem cast_sty {ty t : SrcType} {lv v : Value} (hl : STy t lv)
+theorem cast_sty {ty t : SrcType} {lv v : Value} (hl : STy t lv) (num : numTy ty = true)
     (h : evalScalarCast .x86_64 ty.toScalar lv = .ok v) : STy ty v := by
+  have notFloat : ∀ ft, ty ≠ .float ft := by rintro ft rfl; simp [numTy] at num
   rcases sty_cases hl with ⟨b, rfl⟩ | ⟨sty, a, rfl⟩ | ⟨uty, a, rfl⟩ | rfl <;>
     cases ty <;> simp only [SrcType.toScalar, evalScalarCast, Except.ok.injEq, reduceCtorEq] at h
+  all_goals try exact absurd rfl (notFloat _)
   all_goals subst h
   all_goals first
     | exact ⟨_, rfl, wrap_i32 _⟩
     | exact ⟨_, rfl, wrap_isize _⟩
     | exact ⟨_, rfl, wrapU_lt _ _⟩
     | exact ⟨_, rfl, wrapUInt_lt _ _⟩
+    | simp [numTy] at num
 
 end Lanius.Faithful

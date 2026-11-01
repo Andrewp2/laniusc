@@ -51,6 +51,9 @@ def Instr.rename (table : List Nat) (missing : Nat) : Instr → Instr
   | .loadWordAt width => .loadWordAt width
   | .storeWordAt width slot => .storeWordAt width slot
   | .div word operation slot => .div word operation slot
+  | .fp operation slot => .fp operation slot
+  | .sys kind slot => .sys kind slot
+  | .frame bytes => .frame bytes
 
 def Code.rename (table : List Nat) (missing : Nat) (code : Code) : Code :=
   { slots := code.slots, instrs := code.instrs.map (Instr.rename table missing) }
@@ -78,9 +81,10 @@ theorem compileArgs_rename (table : List Nat) (missing base : Nat) (args : List 
   | nil => rfl
   | cons arg rest ih => simp [compileArgs, ih, compileExpr_rename, Instr.rename]
 
-theorem compileStmt_rename (table : List Nat) (missing base : Nat) (s : Stmt) (pos : Nat) :
-    compileStmt base pos (s.rename table missing) = (compileStmt base pos s).map (Instr.rename table missing) := by
-  induction s generalizing pos <;>
+theorem compileStmt_rename (table : List Nat) (missing base : Nat) (s : Stmt) (pos brk cont : Nat) :
+    compileStmt base pos brk cont (s.rename table missing) =
+      (compileStmt base pos brk cont s).map (Instr.rename table missing) := by
+  induction s generalizing pos brk cont <;>
     simp_all [Stmt.rename, compileStmt, compileExpr_rename, compileArgs_rename, codeSize_rename, Instr.rename]
 
 theorem Stmt.temps_rename (table : List Nat) (missing : Nat) (s : Stmt) :
@@ -358,7 +362,9 @@ theorem Instr.pieces_size (own : Nat) (place : Place) (pc : Nat) (i : Instr) :
   | call callee args target count =>
     simp only [Instr.pieces, callPieces]
     split
-    · simp [piecesSize, Piece.size, copyBytes_length, slotRange_length, Instr.size]; omega
+    · simp [piecesSize, Piece.size, copyBytes_length, slotRange_length, Instr.size, fspSave_eq, fspLoad_eq,
+        fspSaveBytes_length, fspLoadBytes_length]
+      omega
     · simp [piecesSize, Piece.size, Instr.encode_length]
   | _ => simp [Instr.pieces, piecesSize, Piece.size, Instr.encode_length]
 
@@ -393,10 +399,11 @@ theorem Instr.pieces_render {table : List Nat} {missing own : Nat} {targets entr
       simp only [render, Piece.render, Piece.size, List.length_append, copyBytes_length, List.length_cons,
         List.length_nil, List.append_nil, importCalls callee imported, List.append_assoc, List.cons_append,
         List.nil_append]
-      rw [show pos + body + pc + (14 * args.length + (0 + 1)) + 4 = pos + body + pc + 14 * args.length + 5 by omega]
+      rw [show pos + body + pc + (14 * args.length + ((fspSave target).length + (0 + 1))) + 4 =
+        pos + body + pc + 14 * args.length + 12 by rw [fspSave_eq, fspSaveBytes_length]; omega]
     · rename_i local_
       simp only [render, Piece.render, List.append_nil, ownCalls callee (by omega)]
-      rw [show pos + body + pc + 14 * args.length + 5 = pos + (body + pc + 14 * args.length + 5) by omega,
+      rw [show pos + body + pc + 14 * args.length + 12 = pos + (body + pc + 14 * args.length + 12) by omega,
         relative_shift]
   | _ => simp [Instr.pieces, render, Piece.render, Instr.rename, Instr.encode]
 
@@ -426,7 +433,7 @@ theorem codesSize_rename (table : List Nat) (missing : Nat) (codes : List Code) 
 
 theorem objectFunc_size (own : Nat) (place : Place) (code : Code) :
     piecesSize (Piece.bytes (prologue code.slots) :: piecesFrom own place 0 code.instrs) = code.size := by
-  simp [piecesSize, Piece.size, piecesFrom_size, Code.size, prologue_eq, framePrologueBytes_length]
+  simp [piecesSize, Piece.size, piecesFrom_size, Code.size, prologue_length]
 
 theorem objectFuncs_facts (own : Nat) (entries : List Nat) :
     ∀ (codes : List Code) (start pos : Nat),
@@ -452,9 +459,9 @@ theorem objectFuncs_render {table : List Nat} {missing own : Nat} {targets entri
   | [], _ => rfl
   | code :: rest, start => by
     simp only [objectFuncs, renderFuncs, List.map_cons, linkFrom, Code.image, Code.rename, objectFunc_size]
-    simp only [render, Piece.render, Piece.size, prologue_eq, framePrologueBytes_length]
-    rw [show pos + start + 13 = pos + (start + 13) + 0 by omega,
-      piecesFrom_render ownCalls importCalls (start + 13) code.slots code.instrs 0,
+    simp only [render, Piece.render, Piece.size, prologue_length]
+    rw [show pos + start + 24 = pos + (start + 24) + 0 by omega,
+      piecesFrom_render ownCalls importCalls (start + 24) code.slots code.instrs 0,
       show pos + start + code.size = pos + (start + code.size) by omega,
       objectFuncs_render ownCalls importCalls rest (start + code.size)]
     simp [Code.size, codeSize_rename, Nat.add_assoc]
@@ -580,7 +587,7 @@ theorem link_eq (ms : List Module) :
         agrees.bytes (entries := layout 0 codes) (by rw [layout_length, codesLength]; exact Nat.le_refl _) 0 (fun j _ => by simp)
       simp only [Option.bind_some, compileProgram, program, c2, linkObjects, firstsSame, at_, image, okSame, ok,
         exportsSame, slots, Bool.true_and]
-      split <;> simp_all [Binary.executable]
+      split <;> simp_all [Binary.executable, linkOnto_eq, linkFrom_length]
   · have meaning : linkProgram ms = none := by simp [linkProgram, ok]
     rw [meaning]
     cases compiled : compileModules ms with
@@ -612,14 +619,20 @@ def slotsNeed : List Nat → Nat
   | slots :: rest => max (frameBytes slots + 16) (slotsNeed rest)
 
 /-- `Binary.stackNeed` of the executable's frames. -/
-def Executable.stackNeed (exe : Executable) (depth : Nat) : Nat := (depth + 1) * slotsNeed exe.slots
+def Executable.stackNeed (exe : Executable) (depth : Nat) : Nat := (depth + 2) * slotsNeed exe.slots
+
+/-- `Binary.guard` of the executable's frames. -/
+def Executable.guard (exe : Executable) : Nat := slotsNeed exe.slots + 8
+
+theorem slotsNeed_map (codes : List Code) : slotsNeed (codes.map (·.slots)) = frameNeed codes := by
+  induction codes <;> simp_all [slotsNeed, frameNeed]
 
 theorem executable_stackNeed (binary : Binary) (depth : Nat) :
     binary.executable.stackNeed depth = binary.stackNeed depth := by
-  have : ∀ codes : List Code, slotsNeed (codes.map (·.slots)) = frameNeed codes := by
-    intro codes
-    induction codes <;> simp_all [slotsNeed, frameNeed]
-  simp [Executable.stackNeed, Binary.stackNeed, Binary.executable, this]
+  simp [Executable.stackNeed, Binary.stackNeed, Binary.executable, slotsNeed_map]
+
+theorem executable_guard (binary : Binary) : binary.executable.guard = binary.guard := by
+  simp [Executable.guard, Binary.guard, Binary.executable, slotsNeed_map]
 
 /-- **Separately compiled modules are correct.** `compileProgram_correct`
 for a linked executable: if function `f` of the modules' program returns
@@ -639,13 +652,13 @@ theorem linked_correct {ms : List Module} {objs : List Object} {exe : Executable
     (entry : s.rip = imageBase + BitVec.ofNat 64 (exe.entries.getD f 0))
     (params : ∀ k (bound : k < args.length),
       read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = args[k])
-    (heapAt : HeapAt window s heap) :
-    ∃ n s', Steps n s s' ∧ Returned window s s' value after := by
+    (heapAt : HeapAt window s heap) (stack : StackAt exe.guard window s) :
+    ∃ n s', Steps n s s' ∧ Det n s s' ∧ Returned window s s' value after := by
   obtain ⟨prog', binary, meaning', binaryOf, same⟩ := linked_spec compiled linked
   rw [meaning, Option.some.injEq] at meaning'
   subst meaning' same
   exact compileProgram_correct binaryOf returns s imageBase window (by rwa [← executable_stackNeed]) bounded
-    loaded apart imageHeap entry params heapAt
+    loaded apart imageHeap entry params heapAt (by rwa [← executable_guard])
 
 /-- `compileProgram_deterministic` for a linked executable: every run of the
 same length returns the same way. -/
@@ -663,13 +676,13 @@ theorem linked_deterministic {ms : List Module} {objs : List Object} {exe : Exec
     (entry : s.rip = imageBase + BitVec.ofNat 64 (exe.entries.getD f 0))
     (params : ∀ k (bound : k < args.length),
       read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = args[k])
-    (heapAt : HeapAt window s heap) :
-    ∃ n s', Steps n s s' ∧ Returned window s s' value after ∧
+    (heapAt : HeapAt window s heap) (stack : StackAt exe.guard window s) :
+    ∃ n s', Steps n s s' ∧ Det n s s' ∧ Returned window s s' value after ∧
       ∀ t, Steps n s t → DataEq s' t ∧ Returned window s t value after := by
   obtain ⟨prog', binary, meaning', binaryOf, same⟩ := linked_spec compiled linked
   rw [meaning, Option.some.injEq] at meaning'
   subst meaning' same
   exact compileProgram_deterministic binaryOf returns s imageBase window (by rwa [← executable_stackNeed])
-    bounded loaded apart imageHeap entry params heapAt
+    bounded loaded apart imageHeap entry params heapAt (by rwa [← executable_guard])
 
 end Lanius.Mini

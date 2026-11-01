@@ -1,0 +1,19 @@
+// A type error in a generator's body is reported at its source line.
+import core::option;
+
+gen fn halves(limit: i32) -> i32 {
+    let i: i32 = 0;
+    while (i < limit) {
+        let half: bool = i / 2;
+        yield i;
+        i += 1;
+    }
+}
+
+fn main() -> i32 {
+    let h: Halves = halves(4);
+    match (h.next()) {
+        Some(v) -> { return v; },
+        None -> { return 1; },
+    };
+}

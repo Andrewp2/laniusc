@@ -22,9 +22,9 @@ def effTyC (tenv : TEnv) : SrcEff → Option SrcType
   | .ePure e => exprTy boxes tenv e
   | .eCall callee args => (effTysC tenv args).bind (calls callee)
   | .eApply op left right => (effTyC tenv left).bind fun l => (effTyC tenv right).bind (opTy op l)
-  | .eNeg operand => effTyC tenv operand
-  | .eNot operand => (effTyC tenv operand).map fun _ => .bool
-  | .eCast ty operand => (effTyC tenv operand).map fun _ => ty
+  | .eNeg operand => (effTyC tenv operand).bind numOf
+  | .eNot operand => (effTyC tenv operand).bind boolOf
+  | .eCast ty operand => (effTyC tenv operand).bind (castTy ty)
   | .eIndex _ _ => none
   | .eStruct ty fields => (effTysC tenv fields).bind (structTy boxes ty)
   | .eVariant ty variant payload => (effTysC tenv payload).bind (variantTy ty variant)
@@ -32,8 +32,8 @@ def effTyC (tenv : TEnv) : SrcEff → Option SrcType
     (effTyC tenv scrutinee).bind fun st =>
       match ety with
       | .enum _ variants => if st.same ety && armsOkC tenv rty variants binders values then some rty else none
-      | .i32 | .bool | .uint _ | .struct _ _ | .ptr | .slice _ | .unit | .isize => none
-  | .eDivide _ left right => (effTyC tenv left).bind fun l => (effTyC tenv right).map fun _ => l
+      | .i32 | .bool | .uint _ | .struct _ _ | .ptr | .slice _ | .unit | .isize | .char | .float _ | .sint _ | .array _ _ => none
+  | .eDivide _ left right => (effTyC tenv left).bind fun l => (effTyC tenv right).bind (divTy l)
   | .eStride _ => none
 
 def effTysC (tenv : TEnv) : List SrcEff → Option (List SrcType)
@@ -77,7 +77,7 @@ def stmtOkC (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
   | .setCall _ _ _ => false
   | .then first second => stmtOkC ret tenv first && stmtOkC ret tenv second
   | .if condition thenBranch elseBranch =>
-    (exprTy boxes tenv condition).isSome && stmtOkC ret tenv thenBranch && stmtOkC ret tenv elseBranch
+    isBoolTy (exprTy boxes tenv condition) && stmtOkC ret tenv thenBranch && stmtOkC ret tenv elseBranch
   | .while _ _ => false
   | .return value =>
     match exprTy boxes tenv value with
@@ -96,7 +96,7 @@ def stmtOkC (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
     | none => false
   | .setEval _ _ => false
   | .ifEval condition thenBranch elseBranch =>
-    (effTyC calls boxes tenv condition).isSome && stmtOkC ret tenv thenBranch && stmtOkC ret tenv elseBranch
+    isBoolTy (effTyC calls boxes tenv condition) && stmtOkC ret tenv thenBranch && stmtOkC ret tenv elseBranch
   | .whileEval _ _ => false
   | .returnEval value =>
     match effTyC calls boxes tenv value with
@@ -106,7 +106,11 @@ def stmtOkC (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
   | .setIndexEval _ _ _ => false
   | .setFieldEval _ _ _ => false
   | .returnUnit => true
-  | .assert condition => (effTyC calls boxes tenv condition).isSome
+  | .assert condition => isBoolTy (effTyC calls boxes tenv condition)
+  | .break => false
+  | .continue => false
+  | .matchArm _ _ _ _ _ _ _ _ => false
+  | .unreachable _ _ => false
 
 end
 
@@ -136,6 +140,10 @@ theorem effTyC_eq (tenv : TEnv) : ∀ e : SrcEff, effTyC (callTy sp outside) box
     | slice _ => rfl
     | unit => rfl
     | isize => rfl
+    | char => rfl
+    | float => rfl
+    | sint _ => rfl
+    | array _ _ => rfl
   | .eDivide _ left right => by rw [effTyC, effTy, effTyC_eq tenv left, effTyC_eq tenv right]
   | .eStride _ => by rw [effTyC, effTy]
 
@@ -190,6 +198,10 @@ theorem stmtOkC_eq (ret : SrcType) (s : SrcStmt) : ∀ tenv : TEnv,
   | setFieldEval => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
   | returnUnit => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
   | «assert» condition => intro tenv; rw [stmtOkC, stmtOk, effTyC_eq] <;> rfl
+  | «break» => intro tenv; rw [stmtOkC, stmtOk]
+  | «continue» => intro tenv; rw [stmtOkC, stmtOk]
+  | matchArm => intro tenv; rw [stmtOkC, stmtOk]
+  | unreachable => intro tenv; rw [stmtOkC, stmtOk]
 
 end
 

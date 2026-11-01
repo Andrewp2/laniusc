@@ -1,0 +1,7 @@
+enum E { A, B }
+machine M on E -> i32 {
+    start S;
+    state S { E::A -> stay with 1, E::B -> goto Closed with 2, }
+    state Closed { E::A -> stay with 0, E::B -> stay with 0, }
+}
+fn main() -> i32 { return 0; }
