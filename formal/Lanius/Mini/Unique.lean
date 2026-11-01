@@ -13,8 +13,9 @@ productions (so they hold at least what they claim) and that two productions
 of one nonterminal never both fit: after their common prefix, the first two
 kinds the rest of each can begin with, followed by the nonterminal's follow
 set, are told apart by the tokens, even where a `>>` may be read as two `>`.
-The two exceptions are the generic path segment `x<...>` against `x`, which
-`picks` decides, and the two productions `picks` never allows.
+The exceptions are the pairs `picks` decides: the generic path segment
+`x<...>` against `x`, a method's type arguments `.f<...>` against none, and a
+block statement against an expression statement.
 
 Sets are `Kinds2`, of lists of codes: the certificate gives each token kind a
 code below 80 (`Cert.ix`; the grammar has 78 kinds), `>` code 1 and `>>`
@@ -442,20 +443,18 @@ def commonPrefix : List Sym → List Sym → Nat
   | _ :: _, [] => 0
   | a :: r, b :: s => if a = b then commonPrefix r s + 1 else 0
 
-/-- The productions `picks` never allows. -/
-def ruledOut (p : Nat) : Bool := p == 298
-
 /-- The pairs of productions `picks` tells apart: a path segment with or
-without type arguments, and a block or expression statement. -/
-def pickedPair (p q : Nat) : Bool := (p == 48 && q == 49) || (p == 84 && q == 85)
+without type arguments, a block or expression statement, and a method's
+type arguments or none. -/
+def pickedPair (p q : Nat) : Bool := (p == 48 && q == 49) || (p == 84 && q == 85) || (p == 297 && q == 298)
 
 namespace Cert
 
-def ruleOK (C : Cert) (p : Nat) (r : Rule) : Bool :=
-  ruledOut p || (Kinds2.sub (C.seqFirst r.rhs) (C.firstOf r.lhs) && C.itemsOK r.lhs r.rhs)
+def ruleOK (C : Cert) (_p : Nat) (r : Rule) : Bool :=
+  Kinds2.sub (C.seqFirst r.rhs) (C.firstOf r.lhs) && C.itemsOK r.lhs r.rhs
 
 def pairOK (C : Cert) (p : Nat) (r : Rule) (q : Nat) (r' : Rule) : Bool :=
-  ruledOut p || ruledOut q || r.lhs != r'.lhs || pickedPair p q ||
+  r.lhs != r'.lhs || pickedPair p q ||
     Kinds2.apart (C.lookahead r.lhs (commonPrefix r.rhs r'.rhs) r.rhs)
       (C.lookahead r.lhs (commonPrefix r.rhs r'.rhs) r'.rhs)
 
@@ -512,26 +511,23 @@ theorem pairsAll_get {f : Nat → Rule → Nat → Rule → Bool} :
     have := pairsAll_get h.2 e₁ e₂ (by omega)
     rwa [show i + 1 + p = i + (p + 1) by omega, show i + 1 + q = i + (q + 1) by omega] at this
 
-theorem picks_ruledOut {p : Nat} {tokens : List Token} (h : picks p tokens = true) : ruledOut p = false := by
-  unfold picks at h
-  unfold ruledOut
-  by_cases e : p = 298
-  · subst e; simp at h
-  · simp [e]
-
 theorem picks_pair {p q : Nat} {tokens : List Token} (pair : pickedPair p q = true) (h₁ : picks p tokens = true)
     (h₂ : picks q tokens = true) : False := by
   simp only [pickedPair, Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at pair
-  rcases pair with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+  rcases pair with (⟨rfl, rfl⟩ | ⟨rfl, rfl⟩) | ⟨rfl, rfl⟩
   · unfold picks at h₁ h₂
     simp only [show ¬(48 = 84) by decide, show ¬(48 = 85) by decide, show ¬(48 = 298) by decide,
-      show ¬(49 = 84) by decide, show ¬(49 = 85) by decide, show ¬(49 = 298) by decide,
-      show ¬(49 = 48) by decide, if_false, if_true] at h₁ h₂
+      show ¬(48 = 297) by decide, show ¬(49 = 84) by decide, show ¬(49 = 85) by decide,
+      show ¬(49 = 298) by decide, show ¬(49 = 297) by decide, show ¬(49 = 48) by decide,
+      if_false, if_true] at h₁ h₂
     simp [h₂] at h₁
   · unfold picks at h₁ h₂
     simp only [show ¬(84 = 298) by decide, show ¬(85 = 298) by decide, show ¬(85 = 84) by decide,
-      if_false, if_true] at h₁ h₂
+      show ¬(84 = 297) by decide, show ¬(85 = 297) by decide, if_false, if_true] at h₁ h₂
     simp [h₁] at h₂
+  · unfold picks at h₁ h₂
+    simp only [show ¬(297 = 298) by decide, if_false, if_true] at h₁ h₂
+    simp [h₂] at h₁
 
 theorem commonPrefix_symm : ∀ (r s : List Sym), commonPrefix r s = commonPrefix s r
   | [], [] => rfl
@@ -627,11 +623,11 @@ theorem certOK_codes (ok : certOK g C = true) : C.ix 13 = 1 ∧ C.ix 44 = 2 := b
 
 /-- The facts `certOK` gives about a production `picks` allows somewhere. -/
 theorem rule_facts (ok : certOK g C = true) {p : Nat} {prod : Rule} (found : g[p]? = some prod)
-    {tokens : List Token} (hp : picks p tokens = true) :
+    {tokens : List Token} (_hp : picks p tokens = true) :
     Kinds2.sub (C.seqFirst prod.rhs) (C.firstOf prod.lhs) = true ∧ C.itemsOK prod.lhs prod.rhs = true := by
   simp only [certOK, Bool.and_eq_true] at ok
   have := allWith_get ok.1.2 found
-  simp only [Nat.zero_add, ruleOK, picks_ruledOut hp, Bool.false_or, Bool.and_eq_true] at this
+  simp only [ruleOK, Bool.and_eq_true] at this
   exact this
 
 theorem pairs_ok (ok : certOK g C = true) : pairsAll C.pairOK 0 g = true := by
@@ -793,16 +789,14 @@ theorem treeU_succ (ok : certOK g C = true) {n : Nat} (hT : TreeU g C n) : TreeU
           · exfalso
             rcases Nat.lt_or_gt_of_ne e with lt | lt
             · have pair := pairsAll_get (pairs_ok ok) found₁ found₂ lt
-              simp only [Nat.zero_add, pairOK, picks_ruledOut hp₁, picks_ruledOut hp₂, lhs₁, lhs₂,
-                bne_self_eq_false, Bool.false_or] at pair
+              simp only [Nat.zero_add, pairOK, lhs₁, lhs₂, bne_self_eq_false, Bool.false_or] at pair
               cases rule : pickedPair q₁ q₂ with
               | true => exact picks_pair rule hp₁ hp₂
               | false =>
                 rw [rule, Bool.false_or] at pair
                 exact apart_false ok hT (.inl pair) (by omega) ks₁ ks₂ pk₁ pk₂ rd₁ rd₂ kf₁ kf₂ fa₁ fa₂
             · have pair := pairsAll_get (pairs_ok ok) found₂ found₁ lt
-              simp only [Nat.zero_add, pairOK, picks_ruledOut hp₁, picks_ruledOut hp₂, lhs₁, lhs₂,
-                bne_self_eq_false, Bool.false_or] at pair
+              simp only [Nat.zero_add, pairOK, lhs₁, lhs₂, bne_self_eq_false, Bool.false_or] at pair
               cases rule : pickedPair q₂ q₁ with
               | true => exact picks_pair rule hp₂ hp₁
               | false =>

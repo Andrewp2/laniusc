@@ -77,16 +77,16 @@ theorem proof_is_try_local {prog : SrcProgram} {prims : Prims} {ix_is_try_local 
   simp only [src_is_try_local] at h
   faithful [Lanius.Mini.isTryLocal]
 
-theorem proof_is_try_method {prog : SrcProgram} {prims : Prims} {ix_is_try_method ix_node_prod ix_kid ix_p_ident ix_p_self_value ix_p_postfix_end ix_p_postfix_member ix_p_ident_plain ix_p_postfix_call ix_p_member_type_args_none ix_p_postfix_try : Nat} (fn : prog.funcs[ix_is_try_method]? = some (src_is_try_method ix_node_prod ix_kid ix_p_ident ix_p_self_value ix_p_postfix_end ix_p_postfix_member ix_p_ident_plain ix_p_postfix_call ix_p_member_type_args_none ix_p_postfix_try)) (np : prims.isPrim ix_is_try_method = false)
+theorem proof_is_try_method {prog : SrcProgram} {prims : Prims} {ix_is_try_method ix_node_prod ix_kid ix_p_member_type_args_none ix_p_ident ix_p_self_value ix_p_postfix_end ix_p_postfix_member ix_p_ident_plain ix_p_postfix_call ix_p_postfix_try : Nat} (fn : prog.funcs[ix_is_try_method]? = some (src_is_try_method ix_node_prod ix_kid ix_p_member_type_args_none ix_p_ident ix_p_self_value ix_p_postfix_end ix_p_postfix_member ix_p_ident_plain ix_p_postfix_call ix_p_postfix_try)) (np : prims.isPrim ix_is_try_method = false)
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
+    (ext_p_member_type_args_none : Certified (∀ {n : Nat}, Stmt_p_member_type_args_none prog prims ix_p_member_type_args_none n))
     (ext_p_ident : Certified (∀ {n : Nat}, Stmt_p_ident prog prims ix_p_ident n))
     (ext_p_self_value : Certified (∀ {n : Nat}, Stmt_p_self_value prog prims ix_p_self_value n))
     (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n))
     (ext_p_postfix_member : Certified (∀ {n : Nat}, Stmt_p_postfix_member prog prims ix_p_postfix_member n))
     (ext_p_ident_plain : Certified (∀ {n : Nat}, Stmt_p_ident_plain prog prims ix_p_ident_plain n))
     (ext_p_postfix_call : Certified (∀ {n : Nat}, Stmt_p_postfix_call prog prims ix_p_postfix_call n))
-    (ext_p_member_type_args_none : Certified (∀ {n : Nat}, Stmt_p_member_type_args_none prog prims ix_p_member_type_args_none n))
     (ext_p_postfix_try : Certified (∀ {n : Nat}, Stmt_p_postfix_try prog prims ix_p_postfix_try n)) {n : Nat} :
     Stmt_is_try_method prog prims ix_is_try_method n := by
   intro x0 v0 w h r0

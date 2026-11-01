@@ -1,0 +1,11 @@
+struct P { a: i32, b: i32 }
+
+fn top(n: i32) -> i32 {
+    let p: P = P { a: n, b: 2 };
+    if (p.a < p.b) {
+        return 1;
+    }
+    let c: bool = p.a < 3 && p.b > 1;
+    let d: bool = p.a < p.b == p.b > n;
+    return p.a;
+}
