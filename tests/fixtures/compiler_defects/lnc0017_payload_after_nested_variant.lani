@@ -1,0 +1,36 @@
+// LNC0017 "first unsupported target LIR opcode: 8": a payload binder after a
+// nested local variant pattern, `V6(V3(p), q) -> (q as usize)`, had no word
+// offset, because the nested pattern's slot had no type to size it. The
+// type checker now publishes that slot's type, as it did for imported
+// variants. Found by formal/tools/fuzz_oracle.py. Exits 0.
+module app::main;
+import core::option;
+struct S1 { q0: [i32; 2] }
+enum E2 { V3(core::option::Option<u8>), V4(S1), V8 }
+enum E5 { V6(E2, i32), V7 }
+enum E9 { W1(E5, E2, i64), W2 }
+fn g(a1: E5) -> usize {
+    return (match (a1) { V6(V3(p13), p11) -> (p11 as usize), V6(p12, p11) -> 3, V7 -> 0 });
+}
+fn h(a1: E5) -> i32 {
+    return (match (a1) { V6(V4(s), k) -> (s.q0[1] + k), V6(V8, k) -> (k * 2), V6(V3(o), k) -> (k + 100), V7 -> 0 });
+}
+fn deep(e: E9) -> i64 {
+    return (match (e) { W1(V6(V4(s), k), V8, w) -> ((s.q0[0] + k) as i64) + w, W1(x, V3(o), w) -> w, W1(x, y, w) -> 1, W2 -> 2 });
+}
+fn main() -> i32 {
+    let k: i32 = 4;
+    let s: S1 = S1 { q0: [1, 2] };
+    let n: u8 = 9;
+    let o: core::option::Option<u8> = Some(n);
+    if (g(V6(V4(s), k)) != 3) { return 1; }
+    if (g(V6(V3(o), k)) != 4) { return 2; }
+    if (h(V6(V4(s), k)) != 6) { return 3; }
+    if (h(V6(V8, k)) != 8) { return 4; }
+    if (h(V6(V3(o), k)) != 104) { return 5; }
+    let w: i64 = 30;
+    if (deep(W1(V6(V4(s), k), V8, w)) != 35) { return 6; }
+    if (deep(W1(V7, V3(o), w)) != 30) { return 7; }
+    if (deep(W1(V7, V8, w)) != 1) { return 8; }
+    return 0;
+}

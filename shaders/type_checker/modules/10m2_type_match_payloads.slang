@@ -380,14 +380,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint variant_token;
     uint enum_token;
     uint variant;
-    if (resolved_enum_variant(
+    // A nested local variant binds nothing, but its slot's type still sizes
+    // the payloads after it (`V6(V3(p), q)` reads q past V3's enum words).
+    bool nested_variant = resolved_enum_variant(
             payload.pattern,
             variant_token,
             enum_token,
-            variant))
-        return;
+            variant);
     bool wildcard = token_is_wildcard(binder_token);
-    if (!wildcard)
+    if (!wildcard && !nested_variant)
     {
         visible_decl[binder_token] = binder_token;
         module_value_path_status[binder_token] = INVALID;
@@ -396,6 +397,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint ref_payload;
     if (!payload_ref(payload, tag, ref_payload))
     {
+        if (nested_variant) return;
         uint path = path_for_pattern(payload.parent_pattern);
         if (call_inference_state[0u] == 0u && valid_path(path) &&
             resolved_dependency_value_metadata[path * 4u] == IMPORTED_PAYLOAD_VARIANT)
@@ -410,6 +412,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     decl_type_ref_tag[binder_token] = tag;
     decl_type_ref_payload[binder_token] = ref_payload;
     if (changed) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); }
+    if (nested_variant) return;
     uint ty = type_ref_to_type_code(tag, ref_payload);
     if (!wildcard && ty != TY_UNKNOWN)
         visible_type[binder_token] = ty;
