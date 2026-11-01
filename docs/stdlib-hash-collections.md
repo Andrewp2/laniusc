@@ -6,7 +6,9 @@ dependency beyond the allocator.
 
 ## Key contracts
 
-Keys implement `core::cmp::Eq<K>` and `core::hash::Hash<K>`.
+Stored-key insertion and same-key queries use `core::cmp::Eq<K>` and
+`core::hash::Hash<K>`. The borrowed query methods below instead name Q and
+a policy, while preserving the stored-key laws.
 Equality must be reflexive, symmetric and transitive. Equal keys must have the
 same hash. Hash/equality-relevant key contents must stay unchanged while stored.
 
@@ -20,6 +22,20 @@ equivalence relation for NaNs.
 String and 64-bit hashing use [FNV-1a](https://www.rfc-editor.org/rfc/rfc9923.html).
 Hashing is deterministic and noncryptographic. This table does not provide
 randomized or collision-resistant hashing for adversarial keys.
+
+## Borrowed point queries
+
+[Borrowed collection lookup](stdlib-borrowed-lookup.md) adds `contains_key_by`,
+`get_by`, `get_entry_by`, `remove_by` and `update_value_by`. Q hashes once per
+operation; a borrowed `Mapper<Pair<K,Q>,bool>` compares stored key first and
+query second only after the full cached hash matches. Matching keys must have
+the query hash and belong to one stored equivalence class. Queries allocate
+no owned key; getters borrow stored representatives, and removal transfers
+the actual stored entry. `alloc::string::TextKey` supplies String/Text policy.
+All nine borrowed-lookup library groups and the migrated application pass
+on native Linux x86_64 CPU output; the dedicated guide defines their scope.
+The dedicated guide records current evidence separately from the older
+hash-map receipts below.
 
 ## API and ownership
 
@@ -47,6 +63,7 @@ counts.destroy();
 | `len()`, `is_empty()`, `capacity()` | Live size and capacity in entries |
 | `contains_key(key)`, `get(key)` | Presence and optional copied value |
 | `get_entry(key)` | Optional copied `Entry { key, value }`, including the stored key |
+| `update_value(key, update)` | One lookup; missing returns None, present reinstalls callback Pair.first and returns Some(Pair.second), preserving the stored key; [current evidence](stdlib-map-updates.md) |
 | `try_insert(key, value)` | Result containing the displaced entry, or None for a new key |
 | `remove(key)` | Optional removed entry; does not allocate |
 | `try_reserve(additional)` | Reserve for additional distinct keys; return resulting capacity |
@@ -60,6 +77,13 @@ Replacing an existing key does not allocate, even when the table is at capacity.
 Both its old key and old value are returned. A failed insertion retains the
 supplied key/value with the caller and preserves every existing entry and the
 table allocation. Reserve, shrink and clone failures also preserve the source.
+
+The [scoped value update](stdlib-map-updates.md) can grow or replace an owned
+value without removing its key. End prior borrows/cursors first; the callback
+returns the latest V descriptor even when its separate result is an error.
+The callback may not reenter this map or change key identity through aliases.
+All seven new library gates pass on the finite native Linux x86_64 profile;
+the dedicated guide records their scope and the accepted 103-case application. Older receipts below do not establish it.
 
 The map copies values and does **not** deeply clone or destroy allocations
 inside them. The application chooses their ownership:
@@ -135,8 +159,11 @@ timeout --kill-after=2s 100s env \
 ```
 
 Native execution is established for x86_64 Linux. GPU user-program execution
-and other hosts remain unverified. Keyed hashing, automatic/deep destruction,
-borrowed-key lookup and shared iterator-protocol integration remain work.
+and other hosts remain unverified. Keyed hashing and automatic destruction
+remain work. Distinct borrowed-key point lookup has its separate contract and
+acceptance above. Later
+[shared cursor integration](stdlib-collection-iterators.md) and
+[opt-in deep cleanup](stdlib-clone-hash-map.md) have separate accepted evidence.
 
 ## Hash sets and the earlier wrapper dependency
 

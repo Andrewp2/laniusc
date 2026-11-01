@@ -1,5 +1,6 @@
 // Actual public adapter specialization with nested, wide and zero-sized items.
 module app::main;
+import core::function;
 import core::iter;
 import core::mem;
 import core::option;
@@ -17,12 +18,12 @@ pub impl<J,E> core::iter::InnerRetirement<J,E> for Borrowed<J,E> {
 }
 struct AsSome<T> { calls: i32 }
 impl<T> AsSome<T> { fn borrow(&self) -> &AsSome<T> { return self; } }
-pub impl<T> core::iter::Mapper<T,core::option::Option<T>> for AsSome<T> {
+pub impl<T> core::function::Mapper<T,core::option::Option<T>> for AsSome<T> {
     pub fn apply(&self, item: T) -> core::option::Option<T> { self.calls += 1; return core::option::Some(item); }
 }
 struct AsOnce<T> { calls: i32 }
 impl<T> AsOnce<T> { fn borrow(&self) -> &AsOnce<T> { return self; } }
-pub impl<T> core::iter::Mapper<T,core::result::Result<core::iter::Once<T>,u64>> for AsOnce<T> {
+pub impl<T> core::function::Mapper<T,core::result::Result<core::iter::Once<T>,u64>> for AsOnce<T> {
     pub fn apply(&self, item: T) -> core::result::Result<core::iter::Once<T>,u64> {
         self.calls += 1; return core::result::Ok(core::iter::once<T>(item));
     }
@@ -31,7 +32,7 @@ struct Payload { unsigned: u64, signed: i64, cells: [u64;2], nested: core::optio
 struct Unit {}
 struct Arrays { calls: i32 }
 impl Arrays { fn borrow(&self) -> &Arrays { return self; } }
-pub impl core::iter::Mapper<i64,core::result::Result<core::option::Option<[u64;2]>,core::option::Option<core::result::Result<i64,[u64;2]>>>> for Arrays {
+pub impl core::function::Mapper<i64,core::result::Result<core::option::Option<[u64;2]>,core::option::Option<core::result::Result<i64,[u64;2]>>>> for Arrays {
     pub fn apply(&self, value: i64) -> core::result::Result<core::option::Option<[u64;2]>,core::option::Option<core::result::Result<i64,[u64;2]>>> {
         self.calls += 1;
         let cells: [u64;2] = [18446744073709551615,value as u64];

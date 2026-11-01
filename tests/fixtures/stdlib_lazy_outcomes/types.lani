@@ -1,0 +1,86 @@
+module app::main;
+import core::function;
+import core::f32;
+import core::f64;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+
+struct Identity<T> { calls:i32 }
+impl<T> Identity<T> { fn borrow(&self) -> &Identity<T> { return self; } }
+pub impl<T> core::function::Mapper<T,T> for Identity<T> { pub fn apply(&self,input:T) -> T { self.calls+=1; return input; } }
+struct Make<T> { value:T,calls:i32 }
+impl<T> Make<T> { fn borrow(&self) -> &Make<T> { return self; } }
+pub impl<T> core::function::Producer<T> for Make<T> { pub fn produce(&self) -> T { self.calls+=1; return self.value; } }
+struct Wrap<T> { calls:i32 }
+impl<T> Wrap<T> { fn borrow(&self) -> &Wrap<T> { return self; } }
+pub impl<T> core::function::Mapper<T,core::option::Option<T>> for Wrap<T> { pub fn apply(&self,input:T) -> core::option::Option<T> { self.calls+=1; return core::option::Some(input); } }
+struct Succeed<T,E> { calls:i32 }
+impl<T,E> Succeed<T,E> { fn borrow(&self) -> &Succeed<T,E> { return self; } }
+pub impl<T,E> core::function::Mapper<T,core::result::Result<T,E>> for Succeed<T,E> { pub fn apply(&self,input:T) -> core::result::Result<T,E> { self.calls+=1; return core::result::Ok(input); } }
+fn option_map<T,U,M>(input:core::option::Option<T>,mapper:&M) -> core::option::Option<U> where M:core::function::Mapper<T,U> { return input.map<U,M>(mapper); }
+fn result_map<T,E,U,M>(input:core::result::Result<T,E>,mapper:&M) -> core::result::Result<U,E> where M:core::function::Mapper<T,U> { return input.map<U,M>(mapper); }
+fn error_map<T,E,F,M>(input:core::result::Result<T,E>,mapper:&M) -> core::result::Result<T,F> where M:core::function::Mapper<E,F> { return input.map_err<F,M>(mapper); }
+fn produced<T,P>(input:core::option::Option<T>,producer:&P) -> T where P:core::function::Producer<T> { return input.unwrap_or_else<P>(producer); }
+fn option_chain<T,U,M>(input:core::option::Option<T>,mapper:&M) -> core::option::Option<U> where M:core::function::Mapper<T,core::option::Option<U>> { return input.and_then<U,M>(mapper); }
+fn result_chain<T,E,U,M>(input:core::result::Result<T,E>,mapper:&M) -> core::result::Result<U,E> where M:core::function::Mapper<T,core::result::Result<U,E>> { return input.and_then<U,M>(mapper); }
+
+struct Packet { words:[u64;3], flag:core::option::Option<bool>, view:core::slice::View<u8>, number:f64 }
+enum Fault { Empty, Code(i64,core::option::Option<bool>,core::slice::View<u8>) }
+fn packet(bytes:[u8]) -> Packet { return Packet { words:[18446744073709551615,9223372036854775808,4294967297],flag:core::option::Some(false),view:core::slice::view_range(bytes,2,4).unwrap(),number:core::f64::from_bits(9221120237041090627) }; }
+fn check_packet(value:Packet,bytes:[u8]) {
+    assert(value.words[0]==18446744073709551615 && value.words[1]==9223372036854775808 && value.words[2]==4294967297);
+    assert(value.flag.is_some() && !value.flag.unwrap() && core::f64::to_bits(value.number)==9221120237041090627);
+    assert(value.view.start==2 && value.view.length==4 && core::mem::slice_stride(value.view.values)==core::mem::slice_stride(bytes));
+    let expected:[u8;4]=[0,195,169,255]; let i:i32=0; while(i<4) { assert(value.view.get(i).unwrap()==expected[i]); i+=1; }
+}
+fn check_fault(value:Fault,bytes:[u8]) {
+    assert(match(value) { Fault::Code(code,flag,view) -> code == -9223372036854775808 && flag.is_some() && !flag.unwrap() && view.start==2 && view.length==4 && core::mem::slice_stride(view.values)==core::mem::slice_stride(bytes) && view.get(0).unwrap()==0 && view.get(1).unwrap()==195 && view.get(2).unwrap()==169 && view.get(3).unwrap()==255, _ -> false });
+}
+fn compound() {
+    let bytes:[u8;8]=[91,92,0,195,169,255,93,94]; let source:Packet=packet(bytes); let fault:Fault=Fault::Code(-9223372036854775808,core::option::Some(false),source.view);
+    let identity:Identity<Packet> =Identity { calls:0 }; let errors:Identity<Fault> =Identity { calls:0 }; let make:Make<Packet> =Make { value:source,calls:0 }; let wrapped:Wrap<Packet> =Wrap { calls:0 }; let succeeded:Succeed<Packet,Fault> =Succeed { calls:0 };
+    let optional:core::option::Option<Packet> =core::option::Some(source);
+    let mapped:core::option::Option<Packet> =option_map<Packet,Packet,Identity<Packet>>(optional,identity.borrow()); check_packet(mapped.unwrap(),bytes); assert(identity.calls==1);
+    let chained:core::option::Option<Packet> =option_chain<Packet,Packet,Wrap<Packet>>(mapped,wrapped.borrow()); check_packet(chained.unwrap(),bytes); assert(wrapped.calls==1);
+    let absent:core::option::Option<Packet> =core::option::None(); let skipped:core::option::Option<Packet> =option_map<Packet,Packet,Identity<Packet>>(absent,identity.borrow()); assert(skipped.is_none() && identity.calls==1);
+    check_packet(produced<Packet,Make<Packet>>(optional,make.borrow()),bytes); assert(make.calls==0); check_packet(produced<Packet,Make<Packet>>(absent,make.borrow()),bytes); assert(make.calls==1);
+    let success:core::result::Result<Packet,Fault> =core::result::Ok(source); let failure:core::result::Result<Packet,Fault> =core::result::Err(fault);
+    let changed:core::result::Result<Packet,Fault> =result_map<Packet,Fault,Packet,Identity<Packet>>(success,identity.borrow()); check_packet(changed.unwrap(),bytes); assert(identity.calls==2);
+    changed=result_map<Packet,Fault,Packet,Identity<Packet>>(failure,identity.borrow()); check_fault(changed.unwrap_err(),bytes); assert(identity.calls==2);
+    changed=error_map<Packet,Fault,Fault,Identity<Fault>>(success,errors.borrow()); check_packet(changed.unwrap(),bytes); assert(errors.calls==0);
+    changed=error_map<Packet,Fault,Fault,Identity<Fault>>(failure,errors.borrow()); check_fault(changed.unwrap_err(),bytes); assert(errors.calls==1);
+    changed=result_chain<Packet,Fault,Packet,Succeed<Packet,Fault>>(success,succeeded.borrow()); check_packet(changed.unwrap(),bytes); assert(succeeded.calls==1);
+    changed=result_chain<Packet,Fault,Packet,Succeed<Packet,Fault>>(failure,succeeded.borrow()); check_fault(changed.unwrap_err(),bytes); assert(succeeded.calls==1);
+    check_packet(optional.unwrap(),bytes); check_packet(success.unwrap(),bytes); check_fault(failure.unwrap_err(),bytes);
+    let expected:[u8;8]=[91,92,0,195,169,255,93,94]; let i:i32=0; while(i<8) { assert(bytes[i]==expected[i]); i+=1; }
+}
+fn arrays_and_float_bits() {
+    let words:[u64;3]=[18446744073709551615,9223372036854775808,4294967297]; let arrays:Identity<[u64;3]> =Identity { calls:0 };
+    let input:core::option::Option<[u64;3]> =core::option::Some(words); let output:core::option::Option<[u64;3]> =option_map<[u64;3],[u64;3],Identity<[u64;3]>>(input,arrays.borrow()); let actual:[u64;3]=output.unwrap();
+    let i:i32=0; while(i<3) { assert(actual[i]==words[i]); i+=1; } assert(arrays.calls==1);
+    let large:Identity<f64> =Identity { calls:0 }; let small:Identity<f32> =Identity { calls:0 }; let bits:[u64;3]=[9223372036854775808,9221120237041090627,18442240474082181120]; let single:[u32;3]=[2147483648,2143289411,4286578688]; i=0;
+    while(i<3) {
+        let wide:core::option::Option<f64> =core::option::Some(core::f64::from_bits(bits[i])); let mapped:core::option::Option<f64> =option_map<f64,f64,Identity<f64>>(wide,large.borrow()); assert(core::f64::to_bits(mapped.unwrap())==bits[i]);
+        let failed:core::result::Result<bool,f32> =core::result::Err(core::f32::from_bits(single[i])); let changed:core::result::Result<bool,f32> =error_map<bool,f32,f32,Identity<f32>>(failed,small.borrow()); assert(core::f32::to_bits(changed.unwrap_err())==single[i]); i+=1;
+    }
+    assert(large.calls==3 && small.calls==3);
+    let booleans:Identity<bool> =Identity { calls:0 }; let false_value:core::option::Option<bool> =core::option::Some(false); let copied:core::option::Option<bool> =option_map<bool,bool,Identity<bool>>(false_value,booleans.borrow()); assert(copied.is_some() && !copied.unwrap() && booleans.calls==1);
+}
+struct Unit {}
+fn zero_sized() {
+    let identity:Identity<Unit> =Identity { calls:0 }; let producer:Make<Unit> =Make { value:Unit {},calls:0 }; let wrap:Wrap<Unit> =Wrap { calls:0 }; let succeed:Succeed<Unit,Unit> =Succeed { calls:0 };
+    let source:core::option::Option<Unit> =core::option::Some(Unit {}); let absent:core::option::Option<Unit> =core::option::None();
+    let mapped:core::option::Option<Unit> =option_map<Unit,Unit,Identity<Unit>>(source,identity.borrow()); assert(mapped.is_some() && identity.calls==1);
+    mapped=option_map<Unit,Unit,Identity<Unit>>(absent,identity.borrow()); assert(mapped.is_none() && identity.calls==1);
+    produced<Unit,Make<Unit>>(source,producer.borrow()); assert(producer.calls==0); produced<Unit,Make<Unit>>(absent,producer.borrow()); assert(producer.calls==1);
+    mapped=option_chain<Unit,Unit,Wrap<Unit>>(source,wrap.borrow()); assert(mapped.is_some() && wrap.calls==1);
+    let success:core::result::Result<Unit,Unit> =core::result::Ok(Unit {}); let failure:core::result::Result<Unit,Unit> =core::result::Err(Unit {});
+    let changed:core::result::Result<Unit,Unit> =result_map<Unit,Unit,Unit,Identity<Unit>>(success,identity.borrow()); assert(changed.is_ok() && identity.calls==2);
+    changed=result_map<Unit,Unit,Unit,Identity<Unit>>(failure,identity.borrow()); assert(changed.is_err() && identity.calls==2);
+    changed=error_map<Unit,Unit,Unit,Identity<Unit>>(failure,identity.borrow()); assert(changed.is_err() && identity.calls==3);
+    changed=result_chain<Unit,Unit,Unit,Succeed<Unit,Unit>>(success,succeed.borrow()); assert(changed.is_ok() && succeed.calls==1);
+    changed=result_chain<Unit,Unit,Unit,Succeed<Unit,Unit>>(failure,succeed.borrow()); assert(changed.is_err() && succeed.calls==1);
+}
+fn main() -> i32 { compound(); arrays_and_float_bits(); zero_sized(); return 0; }

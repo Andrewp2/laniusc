@@ -1,0 +1,11 @@
+// Native u64 replaces the retired two-word codec's physical overclaim case.
+module app::main;
+import core::result;
+import core::slice;
+import core::varint;
+fn main() -> i32 {
+    let short:[u8;1]=[128];
+    let view:core::slice::View<u8> =core::slice::View { values:short,start:0,length:2 };
+    let decoded:core::result::Result<core::varint::Decoded<u64>,core::varint::Error> =core::varint::read_u64(view,0);
+    if(decoded.is_err()) { return 2; } return 0;
+}

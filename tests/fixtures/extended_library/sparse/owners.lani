@@ -1,0 +1,181 @@
+// Operation 0: owner contracts. Operations 1..14: reached mmap fault sites.
+module app::main;
+import alloc::vec;
+import core::f64;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::linalg;
+import ext::sparse;
+import ext::sparse_matrix;
+import ext::sparse_ops;
+import std::io;
+
+fn kind(error:ext::sparse::Error) -> i32 {
+    return match(error.kind) {
+        ext::sparse::ErrorKind::InvalidLimits -> 1, ext::sparse::ErrorKind::Shape -> 2,
+        ext::sparse::ErrorKind::Bounds -> 3, ext::sparse::ErrorKind::DimensionLimit -> 4,
+        ext::sparse::ErrorKind::EntryLimit -> 5, ext::sparse::ErrorKind::WorkLimit -> 6,
+        ext::sparse::ErrorKind::Offset -> 7, ext::sparse::ErrorKind::Column -> 8,
+        ext::sparse::ErrorKind::Order -> 9, ext::sparse::ErrorKind::NonFinite -> 10,
+        ext::sparse::ErrorKind::NumericalFailure -> 11, ext::sparse::ErrorKind::AllocationFailed -> 12
+    };
+}
+fn csr(rows:i32,cols:i32,offsets:[i32],columns:[i32],values:[f64],nnz:i32) -> ext::sparse::CsrView {
+    return ext::sparse::view(rows,cols,core::slice::view(offsets,rows+1).unwrap(),core::slice::view(columns,nnz).unwrap(),core::slice::view(values,nnz).unwrap(),ext::sparse::default_limits()).unwrap();
+}
+fn value(view:ext::sparse::CsrView,row:i32,col:i32) -> f64 { return ext::sparse::get(view,row,col,ext::sparse::default_limits()).unwrap(); }
+fn rejected(result:core::result::Result<ext::sparse_matrix::Matrix,ext::sparse::Error>,expected:i32) { assert(result.is_err() && kind(result.unwrap_err())==expected); }
+fn clean_sparse(result:core::result::Result<ext::sparse_matrix::Matrix,ext::sparse::Error>) -> bool {
+    if (result.is_err()) { assert(kind(result.unwrap_err())==12); return false; }
+    let owner:ext::sparse_matrix::Matrix=result.unwrap(); owner.destroy(); owner.destroy(); return true;
+}
+fn clean_dense(result:core::result::Result<ext::linalg::Matrix,ext::sparse::Error>) -> bool {
+    if (result.is_err()) { assert(kind(result.unwrap_err())==12); return false; }
+    let owner:ext::linalg::Matrix=result.unwrap(); owner.destroy(); return true;
+}
+fn clean_vector(result:core::result::Result<alloc::vec::Vec<f64>,ext::sparse::Error>) -> bool {
+    if (result.is_err()) { assert(kind(result.unwrap_err())==12); return false; }
+    let owner:alloc::vec::Vec<f64> =result.unwrap(); owner.destroy(); return true;
+}
+fn copied_owners_clone_transpose_and_empty_shapes() {
+    let limits:ext::sparse::Limits=ext::sparse::default_limits();
+    let offsets:[i32;3]=[0,2,3]; let columns:[i32;3]=[0,2,1]; let values:[f64;3]=[2.0,-0.0,3.0];
+    let input:ext::sparse::CsrView=csr(2,3,offsets,columns,values,3);
+    let owner:ext::sparse_matrix::Matrix=ext::sparse_matrix::from_csr(input,limits).unwrap();
+    let cloned:ext::sparse_matrix::Matrix=owner.try_clone(limits).unwrap();
+    let turned:ext::sparse_matrix::Matrix=ext::sparse_matrix::transpose(owner.view(),limits).unwrap();
+    assert(owner.borrow().nnz()==3 && cloned.nnz()==3 && turned.nnz()==3 && turned.view().rows==3 && turned.view().cols==2);
+    offsets[1]=0; columns[0]=1; values[0]=99.0;
+    assert(value(owner.view(),0,0)==2.0 && value(cloned.view(),0,0)==2.0 && value(turned.view(),0,0)==2.0);
+    assert(core::f64::to_bits(value(cloned.view(),0,2))==9223372036854775808 && core::f64::to_bits(value(turned.view(),2,0))==9223372036854775808);
+    let owned_view:ext::sparse::CsrView=owner.view(); owned_view.values.try_set(0,7.0).unwrap();
+    assert(value(owner.view(),0,0)==7.0 && value(cloned.view(),0,0)==2.0 && value(turned.view(),0,0)==2.0);
+    turned.destroy(); cloned.destroy(); owner.destroy(); owner.destroy();
+    assert(owner.nnz()==0 && owner.view().rows==0 && owner.view().cols==0 && values[0]==99.0 && offsets[1]==0 && columns[0]==1);
+    let wide:ext::sparse_matrix::Matrix=ext::sparse_matrix::zeros(0,3,limits).unwrap();
+    let narrow:ext::sparse_matrix::Matrix=ext::sparse_matrix::zeros(2,0,limits).unwrap();
+    assert(wide.view().rows==0 && wide.view().cols==3 && ext::sparse::validate(wide.view(),limits).unwrap()==0);
+    assert(narrow.view().rows==2 && narrow.view().cols==0 && ext::sparse::validate(narrow.view(),limits).unwrap()==0);
+    let swapped:ext::sparse_matrix::Matrix=ext::sparse_matrix::transpose(wide.view(),limits).unwrap();
+    assert(swapped.view().rows==3 && swapped.view().cols==0 && swapped.nnz()==0); swapped.destroy(); narrow.destroy(); wide.destroy();
+}
+fn ordered_duplicates_cancellation_and_input_preservation() {
+    let limits:ext::sparse::Limits=ext::sparse::default_limits();
+    let entries:[ext::sparse::Triplet;7]=[
+        ext::sparse::Triplet { row:1,column:2,value:4.0 }, ext::sparse::Triplet { row:0,column:0,value:1e16 },
+        ext::sparse::Triplet { row:0,column:0,value:1.0 }, ext::sparse::Triplet { row:0,column:0,value:-1e16 },
+        ext::sparse::Triplet { row:0,column:0,value:2.0 }, ext::sparse::Triplet { row:1,column:2,value:-4.0 },
+        ext::sparse::Triplet { row:0,column:1,value:-0.0 }];
+    let original:ext::sparse_matrix::Matrix=ext::sparse_matrix::from_triplets(2,3,core::slice::view(entries,7).unwrap(),limits).unwrap();
+    assert(original.nnz()==1 && value(original.view(),0,0)==2.0 && value(original.view(),1,2)==0.0);
+    assert(entries[0].row==1 && entries[0].value==4.0 && entries[2].value==1.0 && entries[3].value==-1e16);
+    entries[2].value=-1e16; entries[3].value=1.0;
+    let reordered:ext::sparse_matrix::Matrix=ext::sparse_matrix::from_triplets(2,3,core::slice::view(entries,7).unwrap(),limits).unwrap();
+    assert(reordered.nnz()==1 && value(reordered.view(),0,0)==3.0 && value(original.view(),0,0)==2.0);
+    entries[1].value=1e308; entries[2].value=1e308; entries[3].value=-1e308;
+    rejected(ext::sparse_matrix::from_triplets(2,3,core::slice::view(entries,7).unwrap(),limits),11);
+    assert(entries[1].value==1e308 && entries[2].value==1e308 && value(original.view(),0,0)==2.0);
+    entries[1].value=core::f64::nan(); rejected(ext::sparse_matrix::from_triplets(2,3,core::slice::view(entries,7).unwrap(),limits),10);
+    entries[1].value=1.0; entries[1].row=2; assert(ext::sparse_matrix::from_triplets(2,3,core::slice::view(entries,7).unwrap(),limits).is_err());
+    original.destroy(); reordered.destroy();
+}
+fn sparse_arithmetic_and_dense_composition() {
+    let limits:ext::sparse::Limits=ext::sparse::default_limits();
+    let offsets:[i32;3]=[0,2,3]; let ac:[i32;3]=[0,2,1]; let av:[f64;3]=[2.0,-0.0,3.0]; let bc:[i32;3]=[0,1,2]; let bv:[f64;3]=[-2.0,4.0,5.0];
+    let a:ext::sparse::CsrView=csr(2,3,offsets,ac,av,3); let b:ext::sparse::CsrView=csr(2,3,offsets,bc,bv,3);
+    let sum:ext::sparse_matrix::Matrix=ext::sparse_ops::add(a,b,limits).unwrap();
+    assert(sum.nnz()==3 && value(sum.view(),0,0)==0.0 && value(sum.view(),0,1)==4.0 && value(sum.view(),1,1)==3.0 && value(sum.view(),1,2)==5.0);
+    let difference:ext::sparse_matrix::Matrix=ext::sparse_ops::sub(a,b,limits).unwrap();
+    assert(difference.nnz()==4 && value(difference.view(),0,0)==4.0 && value(difference.view(),0,1)==-4.0 && value(difference.view(),1,2)==-5.0);
+    let doubled:ext::sparse_matrix::Matrix=ext::sparse_ops::scale(a,2.0,limits).unwrap(); let cleared:ext::sparse_matrix::Matrix=ext::sparse_ops::scale(a,0.0,limits).unwrap();
+    assert(doubled.nnz()==2 && value(doubled.view(),0,0)==4.0 && value(doubled.view(),1,1)==6.0 && cleared.nnz()==0);
+    let row_factors:[f64;2]=[0.0,2.0]; let col_factors:[f64;3]=[0.0,2.0,3.0]; let x:[f64;3]=[4.0,5.0,6.0];
+    let rows:ext::sparse_matrix::Matrix=ext::sparse_ops::scale_rows(a,core::slice::view(row_factors,2).unwrap(),limits).unwrap();
+    let cols:ext::sparse_matrix::Matrix=ext::sparse_ops::scale_columns(a,core::slice::view(col_factors,3).unwrap(),limits).unwrap();
+    assert(rows.nnz()==1 && cols.nnz()==1 && value(rows.view(),1,1)==6.0 && value(cols.view(),1,1)==6.0);
+    let product:alloc::vec::Vec<f64> =ext::sparse_ops::matvec(a,core::slice::view(x,3).unwrap(),limits).unwrap();
+    assert(product.len()==2 && product.get(0).unwrap()==8.0 && product.get(1).unwrap()==15.0);
+    let dense_values:[f64;9]=[99.0,2.0,0.0,-0.0,99.0,0.0,3.0,0.0,99.0];
+    let dense_view:ext::linalg::MatrixView=ext::linalg::strided(dense_values,9,1,2,3,4,1).unwrap();
+    let sparse:ext::sparse_matrix::Matrix=ext::sparse_ops::from_dense(dense_view,limits).unwrap(); assert(sparse.nnz()==2 && value(sparse.view(),0,0)==2.0 && value(sparse.view(),1,1)==3.0);
+    let dense:ext::linalg::Matrix=ext::sparse_ops::to_dense(a,limits).unwrap(); assert(dense.view().rows==2 && dense.view().cols==3 && dense.get(0,0).unwrap()==2.0 && dense.get(0,1).unwrap()==0.0 && dense.get(1,1).unwrap()==3.0);
+    let rhs_values:[f64;6]=[1.0,2.0,3.0,4.0,5.0,6.0]; let rhs:ext::linalg::MatrixView=ext::linalg::row_major(rhs_values,6,3,2).unwrap();
+    let composed:ext::linalg::Matrix=ext::sparse_ops::matmul_dense(a,rhs,limits).unwrap();
+    assert(composed.view().rows==2 && composed.view().cols==2 && composed.get(0,0).unwrap()==2.0 && composed.get(0,1).unwrap()==4.0 && composed.get(1,0).unwrap()==9.0 && composed.get(1,1).unwrap()==12.0);
+    assert(av[0]==2.0 && core::f64::to_bits(av[1])==9223372036854775808 && rhs_values[5]==6.0 && dense_values[0]==99.0 && dense_values[8]==99.0);
+    composed.destroy(); dense.destroy(); sparse.destroy(); product.destroy(); cols.destroy(); rows.destroy(); cleared.destroy(); doubled.destroy(); difference.destroy(); sum.destroy();
+}
+fn owner_limits_errors_and_failed_arithmetic() {
+    let limits:ext::sparse::Limits=ext::sparse::default_limits(); let off:[i32;3]=[0,1,2]; let col:[i32;2]=[0,1]; let vals:[f64;2]=[2.0,3.0]; let a:ext::sparse::CsrView=csr(2,3,off,col,vals,2);
+    let tight:ext::sparse::Limits=limits; tight.max_entries=1; rejected(ext::sparse_matrix::from_csr(a,tight),5);
+    tight=limits; tight.max_dimension=1; rejected(ext::sparse_matrix::zeros(2,0,tight),4);
+    tight=limits; tight.max_work=0; rejected(ext::sparse_matrix::zeros(0,0,tight),6);
+    tight=limits; tight.max_entries=-1; rejected(ext::sparse_matrix::zeros(0,0,tight),1);
+    rejected(ext::sparse_matrix::zeros(-1,2,limits),2);
+    let wide:ext::sparse::Limits=ext::sparse::Limits { max_dimension:2147483647,max_entries:2147483647,max_work:18446744073709551615 };
+    rejected(ext::sparse_matrix::zeros(536870911,0,wide),4);
+    let nowhere:ptr=0; let unread_i:[i32]=core::mem::typed_slice_from_raw_parts<i32>(nowhere,0); let unread_f:[f64]=core::mem::typed_slice_from_raw_parts<f64>(nowhere,0);
+    let poison:ext::sparse::CsrView=ext::sparse::CsrView { rows:0,cols:1,
+        offsets:core::slice::View { values:unread_i,start:0,length:1 },
+        columns:core::slice::View { values:unread_i,start:0,length:268435456 },
+        values:core::slice::View { values:unread_f,start:0,length:268435456 } };
+    rejected(ext::sparse_matrix::from_csr(poison,wide),5);
+    // A zero-row matrix still requires inspection of every logical vector
+    // element. Admit that work before attempting to inspect its backing.
+    let empty:ext::sparse::CsrView=csr(0,3,off,col,vals,0);
+    let unread_vector:core::slice::View<f64> =core::slice::View { values:unread_f,start:0,length:3 };
+    tight=limits; tight.max_work=1;
+    let denied_vector:core::result::Result<alloc::vec::Vec<f64>,ext::sparse::Error> =ext::sparse_ops::matvec(empty,unread_vector,tight);
+    assert(denied_vector.is_err() && kind(denied_vector.unwrap_err())==6);
+    rejected(ext::sparse_ops::scale_columns(empty,unread_vector,tight),6);
+    tight=limits; tight.max_work=11; rejected(ext::sparse_matrix::from_csr(a,tight),6);
+    tight.max_work=12; let admitted:ext::sparse_matrix::Matrix=ext::sparse_matrix::from_csr(a,tight).unwrap(); admitted.destroy();
+    tight.max_work=27; rejected(ext::sparse_matrix::transpose(a,tight),6);
+    tight.max_work=28; let transposed:ext::sparse_matrix::Matrix=ext::sparse_matrix::transpose(a,tight).unwrap(); transposed.destroy();
+    rejected(ext::sparse_ops::scale(a,core::f64::nan(),limits),10);
+    let factors:[f64;3]=[1.0,2.0,core::f64::nan()]; rejected(ext::sparse_ops::scale_columns(a,core::slice::view(factors,3).unwrap(),limits),10);
+    assert(ext::sparse_ops::scale_rows(a,core::slice::view(factors,1).unwrap(),limits).is_err());
+    let wrong:ext::sparse::CsrView=a; wrong.cols=2; rejected(ext::sparse_ops::add(a,wrong,limits),2); rejected(ext::sparse_ops::sub(a,wrong,limits),2);
+    let wrong_x:[f64;2]=[1.0,2.0]; assert(ext::sparse_ops::matvec(a,core::slice::view(wrong_x,2).unwrap(),limits).is_err());
+    vals[1]=core::f64::MAX; rejected(ext::sparse_ops::scale(a,2.0,limits),11); rejected(ext::sparse_ops::add(a,a,limits),11);
+    let x:[f64;3]=[1.0,2.0,3.0]; let failed:core::result::Result<alloc::vec::Vec<f64>,ext::sparse::Error> =ext::sparse_ops::matvec(a,core::slice::view(x,3).unwrap(),limits); assert(failed.is_err() && kind(failed.unwrap_err())==11);
+    let data:[f64;4]=[1.0,2.0,3.0,4.0]; let bad_dense:ext::linalg::MatrixView=ext::linalg::row_major(data,4,2,2).unwrap(); assert(ext::sparse_ops::matmul_dense(a,bad_dense,limits).is_err());
+    let explosive_data:[f64;3]=[1.0,2.0,0.0]; let explosive:ext::linalg::MatrixView=ext::linalg::row_major(explosive_data,3,3,1).unwrap();
+    let failed_dense:core::result::Result<ext::linalg::Matrix,ext::sparse::Error> =ext::sparse_ops::matmul_dense(a,explosive,limits); assert(failed_dense.is_err() && kind(failed_dense.unwrap_err())==11);
+    data[0]=core::f64::infinity(); rejected(ext::sparse_ops::from_dense(bad_dense,limits),10);
+    assert(vals[0]==2.0 && vals[1]==core::f64::MAX && off[2]==2 && col[1]==1 && factors[0]==1.0);
+}
+fn denial_operation(op:i32) {
+    let limits:ext::sparse::Limits=ext::sparse::default_limits(); let off:[i32;3]=[0,2,3]; let col:[i32;3]=[0,2,1]; let vals:[f64;3]=[2.0,-0.0,3.0]; let a:ext::sparse::CsrView=csr(2,3,off,col,vals,3);
+    let x:[f64;3]=[4.0,5.0,6.0]; let rows:[f64;2]=[1.0,2.0]; let dense_values:[f64;6]=[1.0,2.0,3.0,4.0,5.0,6.0]; let dense:ext::linalg::MatrixView=ext::linalg::row_major(dense_values,6,3,2).unwrap();
+    let entries:[ext::sparse::Triplet;4]=[ext::sparse::Triplet { row:1,column:1,value:3.0 },ext::sparse::Triplet { row:0,column:0,value:1.0 },ext::sparse::Triplet { row:0,column:0,value:1.0 },ext::sparse::Triplet { row:0,column:2,value:4.0 }];
+    let ok:bool=false;
+    if (op==1) { ok=clean_sparse(ext::sparse_matrix::zeros(2,3,limits)); }
+    if (op==2) { ok=clean_sparse(ext::sparse_matrix::from_csr(a,limits)); }
+    if (op==3) { ok=clean_sparse(ext::sparse_matrix::from_triplets(2,3,core::slice::view(entries,4).unwrap(),limits)); }
+    if (op==4) { ok=clean_sparse(ext::sparse_matrix::transpose(a,limits)); }
+    if (op==5) {
+        let made:core::result::Result<ext::sparse_matrix::Matrix,ext::sparse::Error> =ext::sparse_matrix::from_csr(a,limits);
+        if (made.is_err()) { assert(kind(made.unwrap_err())==12 && vals[0]==2.0 && off[2]==3); assert(std::io::write_byte(2,73)==1); return; }
+        let source:ext::sparse_matrix::Matrix=made.unwrap(); ok=clean_sparse(source.try_clone(limits));
+        assert(source.nnz()==3 && value(source.view(),0,0)==2.0 && value(source.view(),1,1)==3.0); source.destroy();
+    }
+    if (op==6) { ok=clean_sparse(ext::sparse_ops::add(a,a,limits)); }
+    if (op==7) { ok=clean_sparse(ext::sparse_ops::sub(a,a,limits)); }
+    if (op==8) { ok=clean_sparse(ext::sparse_ops::scale(a,2.0,limits)); }
+    if (op==9) { ok=clean_sparse(ext::sparse_ops::scale_rows(a,core::slice::view(rows,2).unwrap(),limits)); }
+    if (op==10) { ok=clean_sparse(ext::sparse_ops::scale_columns(a,core::slice::view(x,3).unwrap(),limits)); }
+    if (op==11) { ok=clean_vector(ext::sparse_ops::matvec(a,core::slice::view(x,3).unwrap(),limits)); }
+    if (op==12) { ok=clean_sparse(ext::sparse_ops::from_dense(dense,limits)); }
+    if (op==13) { ok=clean_dense(ext::sparse_ops::to_dense(a,limits)); }
+    if (op==14) { ok=clean_dense(ext::sparse_ops::matmul_dense(a,dense,limits)); }
+    assert(op>=1 && op<=14 && vals[0]==2.0 && core::f64::to_bits(vals[1])==9223372036854775808 && vals[2]==3.0 && off[1]==2 && col[2]==1 && x[2]==6.0 && entries[0].row==1 && entries[1].value==1.0 && dense_values[5]==6.0);
+    let marker:i32=70; if (ok) { marker=83; } assert(std::io::write_byte(2,marker)==1);
+}
+fn main() -> i32 {
+    let input:[i32;1]=[0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(input),1)==1); let op:i32=input[0]&255;
+    if (op==0) { copied_owners_clone_transpose_and_empty_shapes(); ordered_duplicates_cancellation_and_input_preservation(); sparse_arithmetic_and_dense_composition(); owner_limits_errors_and_failed_arithmetic(); }
+    else { denial_operation(op); }
+    return 0;
+}

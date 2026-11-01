@@ -1,0 +1,11 @@
+module app::main;
+import core::ordering;
+import core::slice;
+struct Item { key:i32 }
+fn main() -> i32 {
+    let data:[Item;2]=[Item { key:2 },Item { key:1 }];
+    let order:core::ordering::Natural<Item> =core::ordering::Natural {};
+    let view:core::slice::View<Item> =core::slice::view<Item>(data,2).unwrap();
+    let rejected:i32=core::slice::sort_unstable_by<Item,core::ordering::Natural<Item>>(view,order.borrow()).unwrap(); // rejected_ordering_bound
+    return 0;
+}

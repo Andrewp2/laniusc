@@ -59,9 +59,10 @@ impl<K,V> Iterator<Entry<K,V>> for alloc::tree_map::IntoIter<K,V>
 impl<T> Iterator<T> for alloc::tree_set::IntoIter<T>
 ```
 
-Import `core::iter` to select the shared `next` protocol. Keep one active
-owning cursor descriptor; copying it cannot fork cleanup authority or create
-two independent positions.
+Import `core::iter` to select the canonical `Iterator::next` and
+`DoubleEndedIterator::next_back` protocols. Reverse generic consumers name both
+bounds explicitly. Keep one active owning cursor descriptor; copying it cannot
+fork cleanup authority or create two independent positions.
 
 ## Canonical tree state and costs
 

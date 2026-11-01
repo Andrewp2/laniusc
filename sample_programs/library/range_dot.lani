@@ -7,7 +7,7 @@ import core::decimal::parse_i32_range;
 import core::decimal::parse_u64_range;
 import core::i64::checked_add;
 import core::io::write_all;
-import core::iter::Mapper;
+import core::function::Mapper;
 import core::iter::range_i32_inclusive;
 import core::iter::zip;
 import core::iter::take;

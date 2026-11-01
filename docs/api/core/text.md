@@ -8,6 +8,8 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `core`. Role: module. Profile: **Source inventory**.
 
+Literal MatchIndices yields canonical Pair<i32,Text> through forward Iterator: original Text-relative byte indices and source subviews with retained stride. Empty needles match scalar boundaries including both ends; cursors are fused and copies fork positions over immutable borrowed backing. No reverse or ExactSize promise is added. All five literal-replacement library groups and four application groups/94 cases pass on native Linux x86_64, with the 440-case independent model and reached allocation failures. Selected existing regressions and standalone examples remain separate. Earlier Text receipts retain their own source/API scope. Text scalars and split cursors already use canonical Iterator and borrowed adapters. The earlier bidirectional increment adds Text.lines and DoubleEndedIterator for Lines, Scalars and SplitAsciiWhitespace. All seven new library gates pass: six native tests and one group of three ExactSize rejections. The independent model checks 4878 cases, 276732 pulls, 129686 items and 77262 cursor copies across three families/two actual layouts. Live owner tests verify exact setup/releases and no traversal allocations; the canonical report function preserves input, uses fixed staging and recovers a reached write failure. The canonical Unicode-report stdin regression also passes. Line-summary passes all four groups/102 native cases, including 11 reached allocation failures, plus standalone build/examples. Continuous output-budget faults establish 131072 payload attempts and the exact limit-message requests, then exhaust all 64 diagnostic attempts with final status 3; successful status-2 output-limit reporting is not directly exercised. A reduced chained generic Option method call still rejects LNC0027 while its typed-match control executes; no compiler repair is claimed. Front/back pulls share one remainder and None from either end fuses both. Lines consume LF/CRLF, omit terminators and a phantom final item, retain leading/repeated empty lines and keep lone CR as content. Scalar byte_index remains relative to the original selected Text. Words keep exactly HT/LF/VT/FF/CR/space; NUL and non-ASCII whitespace remain content. Those bidirectional cursor constructors are inert; their traversal is allocation-free with constant cursor storage and linear complete traversal, preserving actual stride and offsets. Literal MatchIndices instead retains the existing O(source bytes * needle bytes) worst-case search bound. No ExactSize capability, owner transfer, backing validation or automatic lifetime enforcement is added. Copies fork leaf positions over the same immutable backing; borrowed adapter copies share their source. The initial target is native Linux x86_64 CPU output, with other hosts/device execution/proofs separate. Earlier forward receipts retain their original source/API scope.
+
 ## Contract and evidence guides
 
 - [stdlib-text](../../stdlib-text.md)
@@ -15,8 +17,11 @@ Layer: `core`. Role: module. Profile: **Source inventory**.
 - [stdlib-collection-iterators](../../stdlib-collection-iterators.md)
 - [stdlib-cursor-integration](../../stdlib-cursor-integration.md)
 - [stdlib-text-split-iterators](../../stdlib-text-split-iterators.md)
+- [stdlib-bidirectional-text](../../stdlib-bidirectional-text.md)
+- [stdlib-text-replacement](../../stdlib-text-replacement.md)
+- [stdlib-literal-rewrite](../../stdlib-literal-rewrite.md)
 
-Declaration counts: enum: 1; field: 14; function: 3; impl: 12; method: 48; struct: 5; variant: 3.
+Declaration counts: enum: 1; field: 23; function: 3; impl: 19; method: 57; struct: 7; variant: 3.
 
 ## Declared imports
 
@@ -28,9 +33,11 @@ Direct source imports; this is not a package-resolution or transitive dependency
 - [core::hash](hash.md) · [source](../../../stdlib/core/text.lani#L8)
 - [core::iter](iter.md) · [source](../../../stdlib/core/text.lani#L9)
 - [core::option](option.md) · [source](../../../stdlib/core/text.lani#L10)
-- [core::result](result.md) · [source](../../../stdlib/core/text.lani#L11)
-- [core::slice](slice.md) · [source](../../../stdlib/core/text.lani#L12)
-- [core::utf8](utf8.md) · [source](../../../stdlib/core/text.lani#L13)
+- [core::ordering](ordering.md) · [source](../../../stdlib/core/text.lani#L11)
+- [core::pair](pair.md) · [source](../../../stdlib/core/text.lani#L12)
+- [core::result](result.md) · [source](../../../stdlib/core/text.lani#L13)
+- [core::slice](slice.md) · [source](../../../stdlib/core/text.lani#L14)
+- [core::utf8](utf8.md) · [source](../../../stdlib/core/text.lani#L15)
 
 ## Types, fields and variants
 
@@ -38,7 +45,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 15](../../../stdlib/core/text.lani#L15)
+[Source line 17](../../../stdlib/core/text.lani#L17)
 
 ```lanius
 pub enum Error
@@ -46,7 +53,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 15](../../../stdlib/core/text.lani#L15)
+[Source line 17](../../../stdlib/core/text.lani#L17)
 
 ```lanius
 Bounds
@@ -54,7 +61,7 @@ Bounds
 
 #### variant: NotCharBoundary
 
-[Source line 15](../../../stdlib/core/text.lani#L15)
+[Source line 17](../../../stdlib/core/text.lani#L17)
 
 ```lanius
 NotCharBoundary
@@ -62,7 +69,7 @@ NotCharBoundary
 
 #### variant: InvalidUtf8
 
-[Source line 15](../../../stdlib/core/text.lani#L15)
+[Source line 17](../../../stdlib/core/text.lani#L17)
 
 ```lanius
 InvalidUtf8(i32)
@@ -70,7 +77,7 @@ InvalidUtf8(i32)
 
 ### struct: Text
 
-[Source line 16](../../../stdlib/core/text.lani#L16)
+[Source line 18](../../../stdlib/core/text.lani#L18)
 
 ```lanius
 pub struct Text
@@ -78,7 +85,7 @@ pub struct Text
 
 #### field: bytes
 
-[Source line 16](../../../stdlib/core/text.lani#L16)
+[Source line 18](../../../stdlib/core/text.lani#L18)
 
 ```lanius
 bytes: [u8]
@@ -86,7 +93,7 @@ bytes: [u8]
 
 #### field: start
 
-[Source line 16](../../../stdlib/core/text.lani#L16)
+[Source line 18](../../../stdlib/core/text.lani#L18)
 
 ```lanius
 start: i32
@@ -94,7 +101,7 @@ start: i32
 
 #### field: length
 
-[Source line 16](../../../stdlib/core/text.lani#L16)
+[Source line 18](../../../stdlib/core/text.lani#L18)
 
 ```lanius
 length: i32
@@ -102,7 +109,7 @@ length: i32
 
 ### struct: Scalar
 
-[Source line 17](../../../stdlib/core/text.lani#L17)
+[Source line 19](../../../stdlib/core/text.lani#L19)
 
 ```lanius
 pub struct Scalar
@@ -110,7 +117,7 @@ pub struct Scalar
 
 #### field: byte_index
 
-[Source line 17](../../../stdlib/core/text.lani#L17)
+[Source line 19](../../../stdlib/core/text.lani#L19)
 
 ```lanius
 byte_index: i32
@@ -118,7 +125,7 @@ byte_index: i32
 
 #### field: value
 
-[Source line 17](../../../stdlib/core/text.lani#L17)
+[Source line 19](../../../stdlib/core/text.lani#L19)
 
 ```lanius
 value: u32
@@ -126,7 +133,7 @@ value: u32
 
 ### struct: Scalars
 
-[Source line 18](../../../stdlib/core/text.lani#L18)
+[Source line 20](../../../stdlib/core/text.lani#L20)
 
 ```lanius
 pub struct Scalars
@@ -134,7 +141,7 @@ pub struct Scalars
 
 #### field: text
 
-[Source line 18](../../../stdlib/core/text.lani#L18)
+[Source line 20](../../../stdlib/core/text.lani#L20)
 
 ```lanius
 text: Text
@@ -142,15 +149,63 @@ text: Text
 
 #### field: position
 
-[Source line 18](../../../stdlib/core/text.lani#L18)
+[Source line 20](../../../stdlib/core/text.lani#L20)
 
 ```lanius
 position: i32
 ```
 
+#### field: back
+
+[Source line 20](../../../stdlib/core/text.lani#L20)
+
+```lanius
+back: i32
+```
+
+### struct: MatchIndices
+
+[Source line 21](../../../stdlib/core/text.lani#L21)
+
+```lanius
+pub struct MatchIndices
+```
+
+#### field: text
+
+[Source line 21](../../../stdlib/core/text.lani#L21)
+
+```lanius
+text: Text
+```
+
+#### field: needle
+
+[Source line 21](../../../stdlib/core/text.lani#L21)
+
+```lanius
+needle: Text
+```
+
+#### field: position
+
+[Source line 21](../../../stdlib/core/text.lani#L21)
+
+```lanius
+position: i32
+```
+
+#### field: done
+
+[Source line 21](../../../stdlib/core/text.lani#L21)
+
+```lanius
+done: bool
+```
+
 ### struct: Split
 
-[Source line 19](../../../stdlib/core/text.lani#L19)
+[Source line 22](../../../stdlib/core/text.lani#L22)
 
 ```lanius
 pub struct Split
@@ -158,7 +213,7 @@ pub struct Split
 
 #### field: text
 
-[Source line 19](../../../stdlib/core/text.lani#L19)
+[Source line 22](../../../stdlib/core/text.lani#L22)
 
 ```lanius
 text: Text
@@ -166,7 +221,7 @@ text: Text
 
 #### field: separator
 
-[Source line 19](../../../stdlib/core/text.lani#L19)
+[Source line 22](../../../stdlib/core/text.lani#L22)
 
 ```lanius
 separator: Text
@@ -174,7 +229,7 @@ separator: Text
 
 #### field: position
 
-[Source line 19](../../../stdlib/core/text.lani#L19)
+[Source line 22](../../../stdlib/core/text.lani#L22)
 
 ```lanius
 position: i32
@@ -182,7 +237,7 @@ position: i32
 
 #### field: empty_head
 
-[Source line 19](../../../stdlib/core/text.lani#L19)
+[Source line 22](../../../stdlib/core/text.lani#L22)
 
 ```lanius
 empty_head: bool
@@ -190,7 +245,7 @@ empty_head: bool
 
 #### field: done
 
-[Source line 19](../../../stdlib/core/text.lani#L19)
+[Source line 22](../../../stdlib/core/text.lani#L22)
 
 ```lanius
 done: bool
@@ -198,7 +253,7 @@ done: bool
 
 ### struct: SplitAsciiWhitespace
 
-[Source line 20](../../../stdlib/core/text.lani#L20)
+[Source line 23](../../../stdlib/core/text.lani#L23)
 
 ```lanius
 pub struct SplitAsciiWhitespace
@@ -206,7 +261,7 @@ pub struct SplitAsciiWhitespace
 
 #### field: text
 
-[Source line 20](../../../stdlib/core/text.lani#L20)
+[Source line 23](../../../stdlib/core/text.lani#L23)
 
 ```lanius
 text: Text
@@ -214,17 +269,57 @@ text: Text
 
 #### field: position
 
-[Source line 20](../../../stdlib/core/text.lani#L20)
+[Source line 23](../../../stdlib/core/text.lani#L23)
 
 ```lanius
 position: i32
+```
+
+#### field: back
+
+[Source line 23](../../../stdlib/core/text.lani#L23)
+
+```lanius
+back: i32
+```
+
+### struct: Lines
+
+[Source line 24](../../../stdlib/core/text.lani#L24)
+
+```lanius
+pub struct Lines
+```
+
+#### field: text
+
+[Source line 24](../../../stdlib/core/text.lani#L24)
+
+```lanius
+text: Text
+```
+
+#### field: front
+
+[Source line 24](../../../stdlib/core/text.lani#L24)
+
+```lanius
+front: i32
+```
+
+#### field: back
+
+[Source line 24](../../../stdlib/core/text.lani#L24)
+
+```lanius
+back: i32
 ```
 
 ## Free functions and extern declarations
 
 ### function: from_utf8_range
 
-[Source line 25](../../../stdlib/core/text.lani#L25)
+[Source line 29](../../../stdlib/core/text.lani#L29)
 
 ```lanius
 pub fn from_utf8_range(bytes: [u8], offset: i32, count: i32) -> core::result::Result<Text, Error>
@@ -232,7 +327,7 @@ pub fn from_utf8_range(bytes: [u8], offset: i32, count: i32) -> core::result::Re
 
 ### function: from_utf8
 
-[Source line 50](../../../stdlib/core/text.lani#L50)
+[Source line 54](../../../stdlib/core/text.lani#L54)
 
 ```lanius
 pub fn from_utf8(bytes: [u8], count: i32) -> core::result::Result<Text, Error>
@@ -240,7 +335,7 @@ pub fn from_utf8(bytes: [u8], count: i32) -> core::result::Result<Text, Error>
 
 ### function: from_utf8_unchecked
 
-[Source line 58](../../../stdlib/core/text.lani#L58)
+[Source line 62](../../../stdlib/core/text.lani#L62)
 
 ```lanius
 pub fn from_utf8_unchecked(bytes: [u8], offset: i32, count: i32) -> Text
@@ -248,9 +343,9 @@ pub fn from_utf8_unchecked(bytes: [u8], offset: i32, count: i32) -> Text
 
 ## Implementation blocks and public methods
 
-### impl at line 63
+### impl at line 67
 
-[Source line 63](../../../stdlib/core/text.lani#L63)
+[Source line 67](../../../stdlib/core/text.lani#L67)
 
 ```lanius
 pub impl Text
@@ -258,7 +353,7 @@ pub impl Text
 
 #### method: byte_len
 
-[Source line 89](../../../stdlib/core/text.lani#L89)
+[Source line 93](../../../stdlib/core/text.lani#L93)
 
 ```lanius
 pub fn byte_len(&self) -> i32
@@ -266,7 +361,7 @@ pub fn byte_len(&self) -> i32
 
 #### method: is_empty
 
-[Source line 90](../../../stdlib/core/text.lani#L90)
+[Source line 94](../../../stdlib/core/text.lani#L94)
 
 ```lanius
 pub fn is_empty(&self) -> bool
@@ -274,7 +369,7 @@ pub fn is_empty(&self) -> bool
 
 #### method: byte_at
 
-[Source line 91](../../../stdlib/core/text.lani#L91)
+[Source line 95](../../../stdlib/core/text.lani#L95)
 
 ```lanius
 pub fn byte_at(&self, index: i32) -> core::option::Option<u8>
@@ -282,7 +377,7 @@ pub fn byte_at(&self, index: i32) -> core::option::Option<u8>
 
 #### method: is_char_boundary
 
-[Source line 95](../../../stdlib/core/text.lani#L95)
+[Source line 99](../../../stdlib/core/text.lani#L99)
 
 ```lanius
 pub fn is_char_boundary(&self, index: i32) -> bool
@@ -290,7 +385,7 @@ pub fn is_char_boundary(&self, index: i32) -> bool
 
 #### method: slice
 
-[Source line 100](../../../stdlib/core/text.lani#L100)
+[Source line 104](../../../stdlib/core/text.lani#L104)
 
 ```lanius
 pub fn slice(&self, start: i32, end: i32) -> core::result::Result<Text, Error>
@@ -298,7 +393,7 @@ pub fn slice(&self, start: i32, end: i32) -> core::result::Result<Text, Error>
 
 #### method: scalar_at_byte
 
-[Source line 107](../../../stdlib/core/text.lani#L107)
+[Source line 111](../../../stdlib/core/text.lani#L111)
 
 ```lanius
 pub fn scalar_at_byte(&self, index: i32) -> core::option::Option<u32>
@@ -306,7 +401,7 @@ pub fn scalar_at_byte(&self, index: i32) -> core::option::Option<u32>
 
 #### method: scalar_count
 
-[Source line 120](../../../stdlib/core/text.lani#L120)
+[Source line 124](../../../stdlib/core/text.lani#L124)
 
 ```lanius
 pub fn scalar_count(&self) -> i32
@@ -314,7 +409,7 @@ pub fn scalar_count(&self) -> i32
 
 #### method: equals
 
-[Source line 129](../../../stdlib/core/text.lani#L129)
+[Source line 133](../../../stdlib/core/text.lani#L133)
 
 ```lanius
 pub fn equals(&self, other: Text) -> bool
@@ -322,7 +417,7 @@ pub fn equals(&self, other: Text) -> bool
 
 #### method: compare
 
-[Source line 133](../../../stdlib/core/text.lani#L133)
+[Source line 140](../../../stdlib/core/text.lani#L140)
 
 ```lanius
 pub fn compare(&self, other: Text) -> i32
@@ -330,7 +425,7 @@ pub fn compare(&self, other: Text) -> i32
 
 #### method: starts_with
 
-[Source line 148](../../../stdlib/core/text.lani#L148)
+[Source line 146](../../../stdlib/core/text.lani#L146)
 
 ```lanius
 pub fn starts_with(&self, prefix: Text) -> bool
@@ -338,7 +433,7 @@ pub fn starts_with(&self, prefix: Text) -> bool
 
 #### method: ends_with
 
-[Source line 151](../../../stdlib/core/text.lani#L151)
+[Source line 149](../../../stdlib/core/text.lani#L149)
 
 ```lanius
 pub fn ends_with(&self, suffix: Text) -> bool
@@ -346,7 +441,7 @@ pub fn ends_with(&self, suffix: Text) -> bool
 
 #### method: find
 
-[Source line 156](../../../stdlib/core/text.lani#L156)
+[Source line 154](../../../stdlib/core/text.lani#L154)
 
 ```lanius
 pub fn find(&self, needle: Text) -> core::option::Option<i32>
@@ -354,15 +449,23 @@ pub fn find(&self, needle: Text) -> core::option::Option<i32>
 
 #### method: rfind
 
-[Source line 157](../../../stdlib/core/text.lani#L157)
+[Source line 155](../../../stdlib/core/text.lani#L155)
 
 ```lanius
 pub fn rfind(&self, needle: Text) -> core::option::Option<i32>
 ```
 
-#### method: trim_ascii
+#### method: match_indices
 
 [Source line 166](../../../stdlib/core/text.lani#L166)
+
+```lanius
+pub fn match_indices(&self, needle: Text) -> MatchIndices
+```
+
+#### method: trim_ascii
+
+[Source line 169](../../../stdlib/core/text.lani#L169)
 
 ```lanius
 pub fn trim_ascii(&self) -> Text
@@ -370,7 +473,7 @@ pub fn trim_ascii(&self) -> Text
 
 #### method: iter_bytes
 
-[Source line 174](../../../stdlib/core/text.lani#L174)
+[Source line 177](../../../stdlib/core/text.lani#L177)
 
 ```lanius
 pub fn iter_bytes(&self) -> core::slice::Iter<u8>
@@ -378,15 +481,23 @@ pub fn iter_bytes(&self) -> core::slice::Iter<u8>
 
 #### method: scalars
 
-[Source line 178](../../../stdlib/core/text.lani#L178)
+[Source line 181](../../../stdlib/core/text.lani#L181)
 
 ```lanius
 pub fn scalars(&self) -> Scalars
 ```
 
+#### method: lines
+
+[Source line 184](../../../stdlib/core/text.lani#L184)
+
+```lanius
+pub fn lines(&self) -> Lines
+```
+
 #### method: split
 
-[Source line 181](../../../stdlib/core/text.lani#L181)
+[Source line 189](../../../stdlib/core/text.lani#L189)
 
 ```lanius
 pub fn split(&self, separator: Text) -> Split
@@ -394,7 +505,7 @@ pub fn split(&self, separator: Text) -> Split
 
 #### method: split_ascii_whitespace
 
-[Source line 186](../../../stdlib/core/text.lani#L186)
+[Source line 194](../../../stdlib/core/text.lani#L194)
 
 ```lanius
 pub fn split_ascii_whitespace(&self) -> SplitAsciiWhitespace
@@ -402,7 +513,7 @@ pub fn split_ascii_whitespace(&self) -> SplitAsciiWhitespace
 
 #### method: parse_u8
 
-[Source line 189](../../../stdlib/core/text.lani#L189)
+[Source line 197](../../../stdlib/core/text.lani#L197)
 
 ```lanius
 pub fn parse_u8(&self) -> core::result::Result<u8, core::decimal::ParseError>
@@ -410,7 +521,7 @@ pub fn parse_u8(&self) -> core::result::Result<u8, core::decimal::ParseError>
 
 #### method: parse_u16
 
-[Source line 192](../../../stdlib/core/text.lani#L192)
+[Source line 200](../../../stdlib/core/text.lani#L200)
 
 ```lanius
 pub fn parse_u16(&self) -> core::result::Result<u16, core::decimal::ParseError>
@@ -418,7 +529,7 @@ pub fn parse_u16(&self) -> core::result::Result<u16, core::decimal::ParseError>
 
 #### method: parse_u32
 
-[Source line 195](../../../stdlib/core/text.lani#L195)
+[Source line 203](../../../stdlib/core/text.lani#L203)
 
 ```lanius
 pub fn parse_u32(&self) -> core::result::Result<u32, core::decimal::ParseError>
@@ -426,7 +537,7 @@ pub fn parse_u32(&self) -> core::result::Result<u32, core::decimal::ParseError>
 
 #### method: parse_i8
 
-[Source line 198](../../../stdlib/core/text.lani#L198)
+[Source line 206](../../../stdlib/core/text.lani#L206)
 
 ```lanius
 pub fn parse_i8(&self) -> core::result::Result<i8, core::decimal::ParseError>
@@ -434,7 +545,7 @@ pub fn parse_i8(&self) -> core::result::Result<i8, core::decimal::ParseError>
 
 #### method: parse_i16
 
-[Source line 201](../../../stdlib/core/text.lani#L201)
+[Source line 209](../../../stdlib/core/text.lani#L209)
 
 ```lanius
 pub fn parse_i16(&self) -> core::result::Result<i16, core::decimal::ParseError>
@@ -442,7 +553,7 @@ pub fn parse_i16(&self) -> core::result::Result<i16, core::decimal::ParseError>
 
 #### method: parse_i32
 
-[Source line 204](../../../stdlib/core/text.lani#L204)
+[Source line 212](../../../stdlib/core/text.lani#L212)
 
 ```lanius
 pub fn parse_i32(&self) -> core::result::Result<i32, core::decimal::ParseError>
@@ -450,7 +561,7 @@ pub fn parse_i32(&self) -> core::result::Result<i32, core::decimal::ParseError>
 
 #### method: parse_u64
 
-[Source line 207](../../../stdlib/core/text.lani#L207)
+[Source line 215](../../../stdlib/core/text.lani#L215)
 
 ```lanius
 pub fn parse_u64(&self) -> core::result::Result<u64, core::decimal::ParseError>
@@ -458,7 +569,7 @@ pub fn parse_u64(&self) -> core::result::Result<u64, core::decimal::ParseError>
 
 #### method: parse_i64
 
-[Source line 210](../../../stdlib/core/text.lani#L210)
+[Source line 218](../../../stdlib/core/text.lani#L218)
 
 ```lanius
 pub fn parse_i64(&self) -> core::result::Result<i64, core::decimal::ParseError>
@@ -466,7 +577,7 @@ pub fn parse_i64(&self) -> core::result::Result<i64, core::decimal::ParseError>
 
 #### method: parse_usize
 
-[Source line 213](../../../stdlib/core/text.lani#L213)
+[Source line 221](../../../stdlib/core/text.lani#L221)
 
 ```lanius
 pub fn parse_usize(&self) -> core::result::Result<usize, core::decimal::ParseError>
@@ -474,15 +585,15 @@ pub fn parse_usize(&self) -> core::result::Result<usize, core::decimal::ParseErr
 
 #### method: parse_isize
 
-[Source line 216](../../../stdlib/core/text.lani#L216)
+[Source line 224](../../../stdlib/core/text.lani#L224)
 
 ```lanius
 pub fn parse_isize(&self) -> core::result::Result<isize, core::decimal::ParseError>
 ```
 
-### impl at line 221
+### impl at line 229
 
-[Source line 221](../../../stdlib/core/text.lani#L221)
+[Source line 229](../../../stdlib/core/text.lani#L229)
 
 ```lanius
 pub impl SplitAsciiWhitespace
@@ -490,15 +601,15 @@ pub impl SplitAsciiWhitespace
 
 #### method: borrow
 
-[Source line 222](../../../stdlib/core/text.lani#L222)
+[Source line 230](../../../stdlib/core/text.lani#L230)
 
 ```lanius
 pub fn borrow(&self) -> &SplitAsciiWhitespace
 ```
 
-### impl at line 225
+### impl at line 233
 
-[Source line 225](../../../stdlib/core/text.lani#L225)
+[Source line 233](../../../stdlib/core/text.lani#L233)
 
 ```lanius
 pub impl core::iter::Iterator<Text> for SplitAsciiWhitespace
@@ -506,15 +617,31 @@ pub impl core::iter::Iterator<Text> for SplitAsciiWhitespace
 
 #### method: next
 
-[Source line 226](../../../stdlib/core/text.lani#L226)
+[Source line 234](../../../stdlib/core/text.lani#L234)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<Text>
 ```
 
-### impl at line 239
+### impl at line 247
 
-[Source line 239](../../../stdlib/core/text.lani#L239)
+[Source line 247](../../../stdlib/core/text.lani#L247)
+
+```lanius
+pub impl core::iter::DoubleEndedIterator<Text> for SplitAsciiWhitespace
+```
+
+#### method: next_back
+
+[Source line 248](../../../stdlib/core/text.lani#L248)
+
+```lanius
+pub fn next_back(&self) -> core::option::Option<Text>
+```
+
+### impl at line 261
+
+[Source line 261](../../../stdlib/core/text.lani#L261)
 
 ```lanius
 pub impl Scalars
@@ -522,15 +649,15 @@ pub impl Scalars
 
 #### method: borrow
 
-[Source line 240](../../../stdlib/core/text.lani#L240)
+[Source line 262](../../../stdlib/core/text.lani#L262)
 
 ```lanius
 pub fn borrow(&self) -> &Scalars
 ```
 
-### impl at line 243
+### impl at line 265
 
-[Source line 243](../../../stdlib/core/text.lani#L243)
+[Source line 265](../../../stdlib/core/text.lani#L265)
 
 ```lanius
 pub impl core::iter::Iterator<Scalar> for Scalars
@@ -538,106 +665,42 @@ pub impl core::iter::Iterator<Scalar> for Scalars
 
 #### method: next
 
-[Source line 244](../../../stdlib/core/text.lani#L244)
+[Source line 266](../../../stdlib/core/text.lani#L266)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<Scalar>
 ```
 
-### impl at line 253
+### impl at line 275
 
-[Source line 253](../../../stdlib/core/text.lani#L253)
-
-```lanius
-pub impl Split
-```
-
-#### method: borrow
-
-[Source line 254](../../../stdlib/core/text.lani#L254)
+[Source line 275](../../../stdlib/core/text.lani#L275)
 
 ```lanius
-pub fn borrow(&self) -> &Split
+pub impl core::iter::DoubleEndedIterator<Scalar> for Scalars
 ```
 
-### impl at line 257
+#### method: next_back
 
-[Source line 257](../../../stdlib/core/text.lani#L257)
+[Source line 276](../../../stdlib/core/text.lani#L276)
 
 ```lanius
-pub impl core::iter::Iterator<Text> for Split
+pub fn next_back(&self) -> core::option::Option<Scalar>
 ```
 
-#### method: next
-
-[Source line 258](../../../stdlib/core/text.lani#L258)
-
-```lanius
-pub fn next(&self) -> core::option::Option<Text>
-```
-
-### impl at line 284
-
-[Source line 284](../../../stdlib/core/text.lani#L284)
-
-```lanius
-pub impl core::cmp::Eq<Text> for Text
-```
-
-#### method: eq
-
-[Source line 285](../../../stdlib/core/text.lani#L285)
-
-```lanius
-pub fn eq(left: Text, right: Text) -> bool
-```
-
-#### method: ne
-
-[Source line 286](../../../stdlib/core/text.lani#L286)
-
-```lanius
-pub fn ne(left: Text, right: Text) -> bool
-```
-
-### impl at line 288
-
-[Source line 288](../../../stdlib/core/text.lani#L288)
-
-```lanius
-pub impl core::cmp::Ord<Text> for Text
-```
-
-#### method: lt
-
-[Source line 289](../../../stdlib/core/text.lani#L289)
-
-```lanius
-pub fn lt(left: Text, right: Text) -> bool
-```
-
-#### method: le
+### impl at line 290
 
 [Source line 290](../../../stdlib/core/text.lani#L290)
 
 ```lanius
-pub fn le(left: Text, right: Text) -> bool
+pub impl Lines
 ```
 
-#### method: gt
+#### method: borrow
 
 [Source line 291](../../../stdlib/core/text.lani#L291)
 
 ```lanius
-pub fn gt(left: Text, right: Text) -> bool
-```
-
-#### method: ge
-
-[Source line 292](../../../stdlib/core/text.lani#L292)
-
-```lanius
-pub fn ge(left: Text, right: Text) -> bool
+pub fn borrow(&self) -> &Lines
 ```
 
 ### impl at line 294
@@ -645,20 +708,180 @@ pub fn ge(left: Text, right: Text) -> bool
 [Source line 294](../../../stdlib/core/text.lani#L294)
 
 ```lanius
+pub impl core::iter::Iterator<Text> for Lines
+```
+
+#### method: next
+
+[Source line 295](../../../stdlib/core/text.lani#L295)
+
+```lanius
+pub fn next(&self) -> core::option::Option<Text>
+```
+
+### impl at line 308
+
+[Source line 308](../../../stdlib/core/text.lani#L308)
+
+```lanius
+pub impl core::iter::DoubleEndedIterator<Text> for Lines
+```
+
+#### method: next_back
+
+[Source line 309](../../../stdlib/core/text.lani#L309)
+
+```lanius
+pub fn next_back(&self) -> core::option::Option<Text>
+```
+
+### impl at line 325
+
+[Source line 325](../../../stdlib/core/text.lani#L325)
+
+```lanius
+pub impl MatchIndices
+```
+
+#### method: borrow
+
+[Source line 326](../../../stdlib/core/text.lani#L326)
+
+```lanius
+pub fn borrow(&self) -> &MatchIndices
+```
+
+### impl at line 329
+
+[Source line 329](../../../stdlib/core/text.lani#L329)
+
+```lanius
+pub impl core::iter::Iterator<core::pair::Pair<i32,Text>> for MatchIndices
+```
+
+#### method: next
+
+[Source line 330](../../../stdlib/core/text.lani#L330)
+
+```lanius
+pub fn next(&self) -> core::option::Option<core::pair::Pair<i32,Text>>
+```
+
+### impl at line 351
+
+[Source line 351](../../../stdlib/core/text.lani#L351)
+
+```lanius
+pub impl Split
+```
+
+#### method: borrow
+
+[Source line 352](../../../stdlib/core/text.lani#L352)
+
+```lanius
+pub fn borrow(&self) -> &Split
+```
+
+### impl at line 355
+
+[Source line 355](../../../stdlib/core/text.lani#L355)
+
+```lanius
+pub impl core::iter::Iterator<Text> for Split
+```
+
+#### method: next
+
+[Source line 356](../../../stdlib/core/text.lani#L356)
+
+```lanius
+pub fn next(&self) -> core::option::Option<Text>
+```
+
+### impl at line 382
+
+[Source line 382](../../../stdlib/core/text.lani#L382)
+
+```lanius
+pub impl core::cmp::Eq<Text> for Text
+```
+
+#### method: eq
+
+[Source line 383](../../../stdlib/core/text.lani#L383)
+
+```lanius
+pub fn eq(left: Text, right: Text) -> bool
+```
+
+#### method: ne
+
+[Source line 384](../../../stdlib/core/text.lani#L384)
+
+```lanius
+pub fn ne(left: Text, right: Text) -> bool
+```
+
+### impl at line 386
+
+[Source line 386](../../../stdlib/core/text.lani#L386)
+
+```lanius
+pub impl core::cmp::Ord<Text> for Text
+```
+
+#### method: lt
+
+[Source line 387](../../../stdlib/core/text.lani#L387)
+
+```lanius
+pub fn lt(left: Text, right: Text) -> bool
+```
+
+#### method: le
+
+[Source line 388](../../../stdlib/core/text.lani#L388)
+
+```lanius
+pub fn le(left: Text, right: Text) -> bool
+```
+
+#### method: gt
+
+[Source line 389](../../../stdlib/core/text.lani#L389)
+
+```lanius
+pub fn gt(left: Text, right: Text) -> bool
+```
+
+#### method: ge
+
+[Source line 390](../../../stdlib/core/text.lani#L390)
+
+```lanius
+pub fn ge(left: Text, right: Text) -> bool
+```
+
+### impl at line 392
+
+[Source line 392](../../../stdlib/core/text.lani#L392)
+
+```lanius
 pub impl core::hash::Hash<Text> for Text
 ```
 
 #### method: hash
 
-[Source line 295](../../../stdlib/core/text.lani#L295)
+[Source line 393](../../../stdlib/core/text.lani#L393)
 
 ```lanius
 pub fn hash(value: Text) -> u32
 ```
 
-### impl at line 306
+### impl at line 404
 
-[Source line 306](../../../stdlib/core/text.lani#L306)
+[Source line 404](../../../stdlib/core/text.lani#L404)
 
 ```lanius
 pub impl core::cmp::PartialEq<Text> for Text
@@ -666,7 +889,7 @@ pub impl core::cmp::PartialEq<Text> for Text
 
 #### method: partial_eq
 
-[Source line 307](../../../stdlib/core/text.lani#L307)
+[Source line 405](../../../stdlib/core/text.lani#L405)
 
 ```lanius
 pub fn partial_eq(left: Text, right: Text) -> bool
@@ -674,15 +897,15 @@ pub fn partial_eq(left: Text, right: Text) -> bool
 
 #### method: partial_ne
 
-[Source line 308](../../../stdlib/core/text.lani#L308)
+[Source line 406](../../../stdlib/core/text.lani#L406)
 
 ```lanius
 pub fn partial_ne(left: Text, right: Text) -> bool
 ```
 
-### impl at line 311
+### impl at line 409
 
-[Source line 311](../../../stdlib/core/text.lani#L311)
+[Source line 409](../../../stdlib/core/text.lani#L409)
 
 ```lanius
 pub impl core::cmp::PartialOrd<Text> for Text
@@ -690,7 +913,7 @@ pub impl core::cmp::PartialOrd<Text> for Text
 
 #### method: partial_lt
 
-[Source line 312](../../../stdlib/core/text.lani#L312)
+[Source line 410](../../../stdlib/core/text.lani#L410)
 
 ```lanius
 pub fn partial_lt(left: Text, right: Text) -> bool
@@ -698,7 +921,7 @@ pub fn partial_lt(left: Text, right: Text) -> bool
 
 #### method: partial_le
 
-[Source line 313](../../../stdlib/core/text.lani#L313)
+[Source line 411](../../../stdlib/core/text.lani#L411)
 
 ```lanius
 pub fn partial_le(left: Text, right: Text) -> bool
@@ -706,7 +929,7 @@ pub fn partial_le(left: Text, right: Text) -> bool
 
 #### method: partial_gt
 
-[Source line 314](../../../stdlib/core/text.lani#L314)
+[Source line 412](../../../stdlib/core/text.lani#L412)
 
 ```lanius
 pub fn partial_gt(left: Text, right: Text) -> bool
@@ -714,7 +937,7 @@ pub fn partial_gt(left: Text, right: Text) -> bool
 
 #### method: partial_ge
 
-[Source line 315](../../../stdlib/core/text.lani#L315)
+[Source line 413](../../../stdlib/core/text.lani#L413)
 
 ```lanius
 pub fn partial_ge(left: Text, right: Text) -> bool
@@ -722,7 +945,7 @@ pub fn partial_ge(left: Text, right: Text) -> bool
 
 #### method: partial_cmp
 
-[Source line 316](../../../stdlib/core/text.lani#L316)
+[Source line 414](../../../stdlib/core/text.lani#L414)
 
 ```lanius
 pub fn partial_cmp(left: Text, right: Text) -> core::cmp::PartialOrdering

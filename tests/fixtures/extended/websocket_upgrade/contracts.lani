@@ -1,0 +1,128 @@
+// Public handshake-response contracts; OpenSSL-independent wire processing.
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::http;
+import ext::websocket;
+fn bytes(value:str,count:i32) -> core::slice::View<u8> { let raw:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::slice::view(raw,count).unwrap(); }
+fn same(a:core::slice::View<u8>,b:core::slice::View<u8>) -> bool { if(a.len()!=b.len()) { return false; } let i:i32=0; while(i<a.len()) { if(a.get(i).unwrap()!=b.get(i).unwrap()) { return false; } i+=1; } return true; }
+fn accept() -> core::slice::View<u8> { return bytes("s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",28); }
+fn good(input:core::slice::View<u8>,request:ext::websocket::Request,protocol:core::option::Option<core::slice::View<u8>>,tail:core::slice::View<u8>) {
+ let parsed:ext::websocket::Response=ext::websocket::validate_response(input,request,accept(),ext::websocket::default_limits()).unwrap();
+ assert(parsed.head.status==101 && parsed.head.version==11 && same(parsed.remaining,tail));
+ assert(parsed.protocol.is_some()==protocol.is_some()); if(protocol.is_some()) { assert(same(parsed.protocol.unwrap(),protocol.unwrap())); }
+ assert(request.protocol_count==2 && ext::websocket::offers(request,bytes("chat",4)) && same(request.key,bytes("dGhlIHNhbXBsZSBub25jZQ==",24)));
+}
+fn bad(input:core::slice::View<u8>,request:ext::websocket::Request) { assert(ext::websocket::validate_response(input,request,accept(),ext::websocket::default_limits()).is_err()); }
+fn field(name:core::slice::View<u8>,value:core::slice::View<u8>) -> ext::http::Field { return ext::http::Field { raw:bytes("",0),name:name,value:value,offset:0 }; }
+fn main() -> i32 {
+ let limits:ext::websocket::Limits=ext::websocket::default_limits();
+ let request:ext::websocket::Request=ext::websocket::validate_request(bytes("GET /chat HTTP/1.1\r\nHost: server.example.com\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Protocol: chat, superchat\r\nSec-WebSocket-Extensions: permessage-deflate\r\n\r\n",248),limits).unwrap();
+ let empty:core::slice::View<u8> =bytes("",0);
+ good(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n",129),request,core::option::None(),empty);
+ good(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\nSec-WebSocket-Protocol: chat\r\n\r\n",159),request,core::option::Some(bytes("chat",4)),empty);
+ good(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\nSec-WebSocket-Protocol: superchat\r\n\r\n",164),request,core::option::Some(bytes("superchat",9)),empty);
+ good(bytes("HTTP/1.1 101 ws\r\nuPgRaDe: \tWebSocket \t\r\nConnection: keep-alive\r\nConnection: \tUpgrade, close \t\r\nSec-WebSocket-Accept: \ts3pPLMBiTxaQ9kYGzzhZRbK+xOo= \t\r\nSec-WebSocket-Protocol:\tchat \t\r\n\r\n",184),request,core::option::Some(bytes("chat",4)),empty);
+ let head:core::slice::View<u8> =bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n",129);
+ let native:[u8;512]=[90;512]; let words:[i32;128]=[0;128]; let packed:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words),512);
+ assert(core::mem::slice_stride(native)<0 && core::mem::slice_stride(packed)==1);
+ let layout:i32=0; while(layout<2) {
+  let backing:[u8]=native; if(layout==1) { backing=packed; } let i:i32=0; while(i<512) { backing[i]=90; i+=1; } i=0;
+  while(i<head.len()) { backing[3+i]=head.get(i).unwrap(); i+=1; } backing[3+i]=129; backing[4+i]=2; backing[5+i]=111; backing[6+i]=107;
+  let input:core::slice::View<u8> =core::slice::view_range(backing,3,head.len()+4).unwrap(); let frame:core::slice::View<u8> =core::slice::view_range(backing,3+head.len(),4).unwrap();
+  good(input,request,core::option::None(),frame); let response:ext::websocket::Response=ext::websocket::validate_response(input,request,accept(),limits).unwrap();
+  let parsed:ext::websocket::Frame=ext::websocket::parse_frame(response.remaining,ext::websocket::Role::Client,limits).unwrap(); assert(parsed.opcode==1 && same(parsed.payload,bytes("ok",2)));
+  assert(backing[2]==90 && backing[head.len()+7]==90); layout+=1;
+ }
+ // Rejection 1.
+ bad(bytes("HTTP/1.0 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n",129),request);
+ // Rejection 2.
+ bad(bytes("HTTP/1.1 200 OK\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n",112),request);
+ // Rejection 3.
+ bad(bytes("HTTP/1.1 100 Continue\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n",118),request);
+ // Rejection 4.
+ bad(bytes("HTTP/1.1 102 Processing\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n",120),request);
+ // Rejection 5.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n",109),request);
+ // Rejection 6.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: h2c\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n",123),request);
+ // Rejection 7.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket, h2c\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n",134),request);
+ // Rejection 8.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket/13\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n",132),request);
+ // Rejection 9.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n",149),request);
+ // Rejection 10.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: \r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n",120),request);
+ // Rejection 11.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n",108),request);
+ // Rejection 12.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: keep-alive\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n",132),request);
+ // Rejection 13.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgradex\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n",130),request);
+ // Rejection 14.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade,\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n",130),request);
+ // Rejection 15.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade;close\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n",135),request);
+ // Rejection 16.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nConnection: bad,\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n",147),request);
+ // Rejection 17.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n",77),request);
+ // Rejection 18.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: AAAAAAAAAAAAAAAAAAAAAAAAAAA=\r\n\r\n",129),request);
+ // Rejection 19.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo\r\n\r\n",128),request);
+ // Rejection 20.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOp=\r\n\r\n",129),request);
+ // Rejection 21.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n",181),request);
+ // Rejection 22.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\nSec-WebSocket-Extensions: permessage-deflate\r\n\r\n",175),request);
+ // Rejection 23.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\nSec-WebSocket-Extensions: \r\n\r\n",157),request);
+ // Rejection 24.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\nSec-WebSocket-Protocol: Chat\r\n\r\n",159),request);
+ // Rejection 25.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\nSec-WebSocket-Protocol: not-offered\r\n\r\n",166),request);
+ // Rejection 26.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\nSec-WebSocket-Protocol: chat, superchat\r\n\r\n",170),request);
+ // Rejection 27.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\nSec-WebSocket-Protocol: \r\n\r\n",155),request);
+ // Rejection 28.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\nSec-WebSocket-Protocol: chat\r\nSec-WebSocket-Protocol: chat\r\n\r\n",189),request);
+ // Rejection 29.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\nContent-Length: 0\r\n\r\n",148),request);
+ // Rejection 30.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\nContent-Length: 1\r\n\r\n",148),request);
+ // Rejection 31.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\nTransfer-Encoding: chunked\r\n\r\n",157),request);
+ // Rejection 32.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n",127),request);
+ // Rejection 33.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\n",128),request);
+ // Rejection 34.
+ bad(bytes("HTTP/1.1 101 Switching Protocols\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n",128),request);
+ let invalid:core::slice::View<u8> =head; invalid.start=-1; assert(ext::websocket::validate_response(invalid,request,accept(),limits).is_err()); invalid=head; invalid.length=-1; assert(ext::websocket::validate_response(invalid,request,accept(),limits).is_err());
+ let cap:ext::websocket::Limits=limits; cap.http.head_bytes=head.len()-1; assert(ext::websocket::validate_response(head,request,accept(),cap).is_err()); cap=limits; cap.http.headers=2; assert(ext::websocket::validate_response(head,request,accept(),cap).is_err()); cap=limits; cap.http.line_bytes=10; assert(ext::websocket::validate_response(head,request,accept(),cap).is_err()); cap=limits; cap.protocols=-1; assert(ext::websocket::validate_response(head,request,accept(),cap).is_err());
+ assert(ext::websocket::validate_response(head,request,bytes("",0),limits).is_err()); assert(ext::websocket::validate_response(head,request,bytes("s3pPLMBiTxaQ9kYGzzhZRbK+xOp=",28),limits).is_err());
+ let extra:[ext::http::Field;1]=[field(bytes("X-Example",9),bytes("value",5))]; let fields:core::slice::View<ext::http::Field> =core::slice::view(extra,1).unwrap();
+ let encoded:alloc::vec::Vec<u8> =ext::websocket::encode_response(request,fields,accept(),core::option::Some(bytes("superchat",9)),limits).unwrap();
+ let response:ext::websocket::Response=ext::websocket::validate_response(encoded.as_view(),request,accept(),limits).unwrap(); assert(same(response.protocol.unwrap(),bytes("superchat",9)) && response.remaining.len()==0); assert(same(response.head.lookup(bytes("x-example",9)).unwrap().value,bytes("value",5))); encoded.destroy();
+ let no_fields:core::slice::View<ext::http::Field> =core::slice::view(extra,0).unwrap(); let plain:alloc::vec::Vec<u8> =ext::websocket::encode_response(request,no_fields,accept(),core::option::None(),limits).unwrap(); good(plain.as_view(),request,core::option::None(),empty); plain.destroy();
+ assert(ext::websocket::encode_response(request,no_fields,accept(),core::option::Some(bytes("Chat",4)),limits).is_err()); assert(ext::websocket::encode_response(request,no_fields,accept(),core::option::Some(bytes("chat, superchat",15)),limits).is_err()); assert(ext::websocket::encode_response(request,no_fields,accept(),core::option::Some(empty),limits).is_err()); assert(ext::websocket::encode_response(request,no_fields,empty,core::option::None(),limits).is_err());
+ extra[0]=field(bytes("Upgrade",7),bytes("forbidden",9)); assert(ext::websocket::encode_response(request,fields,accept(),core::option::None(),limits).is_err());
+ extra[0]=field(bytes("Connection",10),bytes("forbidden",9)); assert(ext::websocket::encode_response(request,fields,accept(),core::option::None(),limits).is_err());
+ extra[0]=field(bytes("Sec-WebSocket-Key",17),bytes("forbidden",9)); assert(ext::websocket::encode_response(request,fields,accept(),core::option::None(),limits).is_err());
+ extra[0]=field(bytes("Sec-WebSocket-Version",21),bytes("forbidden",9)); assert(ext::websocket::encode_response(request,fields,accept(),core::option::None(),limits).is_err());
+ extra[0]=field(bytes("Sec-WebSocket-Accept",20),bytes("forbidden",9)); assert(ext::websocket::encode_response(request,fields,accept(),core::option::None(),limits).is_err());
+ extra[0]=field(bytes("Sec-WebSocket-Protocol",22),bytes("forbidden",9)); assert(ext::websocket::encode_response(request,fields,accept(),core::option::None(),limits).is_err());
+ extra[0]=field(bytes("Sec-WebSocket-Extensions",24),bytes("forbidden",9)); assert(ext::websocket::encode_response(request,fields,accept(),core::option::None(),limits).is_err());
+ extra[0]=field(bytes("Content-Length",14),bytes("forbidden",9)); assert(ext::websocket::encode_response(request,fields,accept(),core::option::None(),limits).is_err());
+ extra[0]=field(bytes("Transfer-Encoding",17),bytes("forbidden",9)); assert(ext::websocket::encode_response(request,fields,accept(),core::option::None(),limits).is_err());
+ extra[0]=field(bytes("X-Example",9),bytes("bad\r\nInjected: value",20)); assert(ext::websocket::encode_response(request,fields,accept(),core::option::None(),limits).is_err());
+ cap=limits; cap.http.head_bytes=10; assert(ext::websocket::encode_response(request,no_fields,accept(),core::option::None(),cap).is_err()); cap=limits; cap.http.headers=2; assert(ext::websocket::encode_response(request,no_fields,accept(),core::option::None(),cap).is_err());
+ return 0;
+}

@@ -1,8 +1,9 @@
-# Imported option constructor collision candidate
+# Imported option constructor collision
 
-The current source-only controls have not been compiled or executed. They are a
-candidate reduction, not an established compiler regression or a claim that
-generic `Option` is broken.
+The minimal pair reproduces a constructor name-resolution failure. The imported
+`None()` entry is rejected with `LNC0006`; the module-qualified entry compiles
+and executes with status 0. This does not establish that generic `Option` is
+broken. The production URL modules use the qualified constructor workaround.
 
 The full URL TLS module imported `core::option::None` as an item and also imported
 `ext::openssl_tls`, which declares `Need { None, Read, Write }`. An unqualified
@@ -31,11 +32,24 @@ selects the option constructor when the local initializer expects `Option<i32>`.
   its introductory comment).
 - `fixture/peer.lani` is their identical imported dependency.
 
-Both valid entries are expected to compile and return status 0, checking an absent
+Both valid entries should compile and return status 0, checking an absent
 option and an independently qualified `Need::Read`. Compile each with the
 repository `stdlib` as `--stdlib-root` and this directory as `--source-root`.
 Neither entry imports HTTP, TLS, native libraries, or the production URL facades.
-If both pass, the pair does not reproduce the imported production type graph.
+
+## Observed result
+
+- `unqualified.lani` (`78f56450`) fails at line 9, `None()`, with `LNC0006`.
+  Receipt: `target/stdlib-work/url-none-item-import-compile-first.log`.
+- `qualified.lani` (`615ada13`) compiles without diagnostics and returns 0.
+  Receipts: `target/stdlib-work/url-none-module-qualified-compile-first.log`
+  and `target/stdlib-work/url-none-module-qualified-native.trace`.
+- The common peer module is `bb234524`. The qualified control's full syscall
+  trace contains only `execve` and `exit(0)`; the reduction needs no allocator,
+  network, TLS or native-library boundary.
+
+No compiler change is included here. This pair is a dependency report, not a
+negative acceptance test that requires valid code to remain rejected.
 
 An earlier record-name candidate in this directory did not isolate a defect: its
 unqualified local `Failure` constructor compiled successfully. It has been

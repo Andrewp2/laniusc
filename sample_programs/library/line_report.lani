@@ -1,0 +1,294 @@
+// Bounded binary and UTF-8 record summaries through the public owned readers.
+module app::main;
+import alloc::buffered;
+import alloc::buffered::Reader;
+import alloc::io;
+import alloc::io::ReadBytes;
+import alloc::io::ReadEnding;
+import alloc::io::ReadLine;
+import alloc::io::ReadLimits;
+import alloc::string;
+import alloc::vec;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::option;
+import core::option::Option;
+import core::result;
+import core::result::Result;
+import core::slice;
+import core::slice::View;
+import core::text;
+import ext::cli;
+import ext::csv;
+import ext::csv_write;
+import std::args;
+import std::signal;
+import std::stream;
+import std::stream::Descriptor;
+
+struct Options { text:bool, maximum:i32, help:bool, maximum_set:bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Summary { bytes:i32, scalars:i32, ending:ReadEnding, calls:u64, consumed:u64 }
+struct Staged { bytes:u64, calls:u64 }
+impl Staged { fn borrow(&self) -> &Staged { return self; } }
+
+fn literal(value:str, count:i32) -> View<u8> {
+    let raw:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return core::slice::view(raw,count).unwrap();
+}
+fn text(value:View<u8>) -> core::text::Text {
+    return core::text::from_utf8_unchecked(value.values,value.start,value.length);
+}
+fn write(value:View<u8>, handle:i32, maximum:i32) -> bool {
+    let sink = std::stream::from_handle(handle);
+    let completed:i32 = 0;
+    let calls:i32 = 0;
+    while(completed < value.length) {
+        if (calls == maximum) { return false; }
+        calls += 1;
+        let sent:Result<i32,core::io::Error> = sink.write(value.values,value.start+completed,value.length-completed);
+        if (sent.is_err()) {
+            if (core::io::is_interrupted(sent.unwrap_err())) { continue; }
+            return false;
+        }
+        let count:i32 = sent.unwrap();
+        if ((count <= 0) || (count > value.length-completed)) { return false; }
+        completed += count;
+    }
+    return true;
+}
+fn report(status:i32) -> i32 {
+    write(literal("line_report: operation failed\n",30),2,8);
+    return status;
+}
+fn input_status(error:alloc::io::ReadError) -> i32 {
+    return match(error) {
+        alloc::io::ReadError::InvalidLimits -> 6,
+        alloc::io::ReadError::CallLimit -> 2,
+        alloc::io::ReadError::ByteLimit -> 2,
+        alloc::io::ReadError::Io(detail) -> match(detail) {
+            core::io::Error::AllocationFailed -> 4,
+            core::io::Error::InvalidInput -> 6,
+            core::io::Error::InvalidCount -> 6,
+            core::io::Error::CountOverflow -> 6,
+            _ -> 3
+        },
+        alloc::io::ReadError::Storage(detail) -> match(detail) {
+            alloc::vec::Error::AllocationFailed -> 4,
+            _ -> 6
+        },
+        alloc::io::ReadError::Text(detail) -> match(detail) {
+            alloc::string::Error::InvalidUtf8(index) -> 2,
+            alloc::string::Error::AllocationFailed -> 4,
+            _ -> 6
+        }
+    };
+}
+fn collect(reader:&Reader<Descriptor>, utf8:bool, limits:ReadLimits) -> Result<Summary,i32> {
+    if (utf8) {
+        let received:Result<ReadLine,alloc::io::BufferedReadFailure> = alloc::io::read_line<Reader<Descriptor>>(reader,limits);
+        if (received.is_err()) {
+            let failure = received.unwrap_err();
+            let status:i32 = input_status(failure.cause);
+            failure.destroy();
+            return core::result::Err(status);
+        }
+        let record:ReadLine = received.unwrap();
+        let summary = Summary { bytes:record.text.byte_len(),scalars:record.text.scalar_count(),ending:record.ending,calls:record.calls,consumed:record.consumed };
+        record.destroy();
+        return core::result::Ok(summary);
+    }
+    let received:Result<ReadBytes,alloc::io::BufferedReadFailure> = alloc::io::read_until<Reader<Descriptor>>(reader,10,limits);
+    if (received.is_err()) {
+        let failure = received.unwrap_err();
+        let status:i32 = input_status(failure.cause);
+        failure.destroy();
+        return core::result::Err(status);
+    }
+    let record:ReadBytes = received.unwrap();
+    let summary = Summary { bytes:record.bytes.len(),scalars:0,ending:record.ending,calls:record.calls,consumed:record.consumed };
+    record.destroy();
+    return core::result::Ok(summary);
+}
+fn emit(output:&alloc::io::Buffer, record:&ext::csv::Record, state:&Staged, fields:View<View<u8>>) -> i32 {
+    if ((state.bytes > 1048576) || (state.calls > 32768)) { return 6; }
+    record.clear();
+    let index:i32 = 0;
+    while(index < fields.length) {
+        let saved:Result<i32,ext::csv::Error> = record.try_push_field(text(fields.values[fields.start+index]));
+        if (saved.is_err()) {
+            return match(saved.unwrap_err()) { ext::csv::Error::AllocationFailed -> 4, _ -> 6 };
+        }
+        index += 1;
+    }
+    let remaining:u64 = 1048576-state.bytes;
+    let calls:u64 = 32768-state.calls;
+    let limits = ext::csv_write::Limits { max_output:remaining,max_write_calls:calls };
+    let sent:Result<ext::csv_write::Progress,ext::csv_write::Failure> = ext::csv_write::write_record<alloc::io::Buffer>(output,record,limits);
+    if (sent.is_err()) {
+        let failure = sent.unwrap_err();
+        if ((failure.written > remaining) || (failure.write_calls > calls)) { return 6; }
+        state.bytes += failure.written;
+        state.calls += failure.write_calls;
+        return match(failure.cause) {
+            ext::csv_write::Cause::Csv(detail) -> match(detail) { ext::csv::Error::AllocationFailed -> 4, _ -> 6 },
+            ext::csv_write::Cause::Io(detail) -> match(detail) {
+                core::io::Error::AllocationFailed -> 4,
+                core::io::Error::LimitExceeded -> 2,
+                _ -> 6
+            },
+            _ -> 2
+        };
+    }
+    let progress = sent.unwrap();
+    if ((progress.written > remaining) || (progress.write_calls > calls)) { return 6; }
+    state.bytes += progress.written;
+    state.calls += progress.write_calls;
+    return 0;
+}
+fn row(output:&alloc::io::Buffer, record:&ext::csv::Record, state:&Staged, position:u64, summary:Summary, utf8:bool) -> i32 {
+    let position_bytes:[u8;20] = [0;20];
+    let byte_bytes:[u8;20] = [0;20];
+    let scalar_bytes:[u8;20] = [0;20];
+    let position_count = core::decimal::format_u64(position_bytes,0,20,position);
+    let byte_count = core::decimal::format_u64(byte_bytes,0,20,summary.bytes as u64);
+    if (position_count.is_err() || byte_count.is_err()) { return 6; }
+    let scalar_count:i32 = 0;
+    if (utf8) {
+        let formatted = core::decimal::format_u64(scalar_bytes,0,20,summary.scalars as u64);
+        if (formatted.is_err()) { return 6; }
+        scalar_count = formatted.unwrap();
+    }
+    let ending:View<u8> = match(summary.ending) {
+        ReadEnding::Delimiter -> literal("lf",2),
+        ReadEnding::Eof -> literal("eof",3)
+    };
+    let fields:[View<u8>;4] = [
+        core::slice::view(position_bytes,position_count.unwrap()).unwrap(),
+        core::slice::view(byte_bytes,byte_count.unwrap()).unwrap(),
+        core::slice::view(scalar_bytes,scalar_count).unwrap(),
+        ending
+    ];
+    return emit(output,record,state,core::slice::view(fields,4).unwrap());
+}
+fn scan(reader:&Reader<Descriptor>, options:&Options, output:&alloc::io::Buffer) -> i32 {
+    let record = ext::csv::new();
+    let staged = Staged { bytes:0,calls:0 };
+    let header:[View<u8>;4] = [literal("record",6),literal("bytes",5),literal("scalars",7),literal("ending",6)];
+    let status:i32 = emit(output,record.borrow(),staged.borrow(),core::slice::view(header,4).unwrap());
+    let total:i32 = 0;
+    let records:u64 = 0;
+    let calls:u64 = 0;
+    while(status == 0) {
+        let maximum:i32 = options.maximum;
+        if (maximum > 4194304-total) { maximum = 4194304-total; }
+        // A zero-byte public collection distinguishes empty EOF from another
+        // record without consuming or draining a byte beyond admission.
+        if (records == 16384) { maximum = 0; }
+        let remaining:u64 = 131072-calls;
+        let limits = ReadLimits { max_bytes:maximum,max_calls:remaining };
+        let received:Result<Summary,i32> = collect(reader,options.text,limits);
+        if (received.is_err()) { status = received.unwrap_err(); break; }
+        let summary:Summary = received.unwrap();
+        if ((summary.bytes < 0) || (summary.bytes > maximum) || (summary.calls == 0) || (summary.calls > remaining)) { status = 6; break; }
+        if ((summary.consumed != (summary.bytes as u64)) || (summary.scalars < 0) || (summary.scalars > summary.bytes)) { status = 6; break; }
+        calls += summary.calls;
+        total += summary.bytes;
+        let ended:bool = match(summary.ending) { ReadEnding::Delimiter -> false, ReadEnding::Eof -> true };
+        if (summary.bytes == 0) {
+            if (!ended) { status = 6; }
+            break;
+        }
+        if (records == 16384) { status = 2; break; }
+        status = row(output,record.borrow(),staged.borrow(),records,summary,options.text);
+        records += 1;
+        if (ended) { break; }
+    }
+    record.destroy();
+    return status;
+}
+fn run(options:&Options) -> i32 {
+    let source = std::stream::stdin();
+    let made:Result<Reader<Descriptor>,core::io::Error> = alloc::buffered::reader<Descriptor>(source.borrow(),1024);
+    if (made.is_err()) {
+        return match(made.unwrap_err()) { core::io::Error::AllocationFailed -> 4, _ -> 6 };
+    }
+    let reader = made.unwrap();
+    let created = alloc::io::with_limit(1048576);
+    if (created.is_err()) { reader.discard(); return 6; }
+    let output = created.unwrap();
+    let status:i32 = scan(reader.borrow(),options,output.borrow());
+    reader.discard();
+    if ((status == 0) && !write(core::slice::view(output.as_bytes(),output.len()).unwrap(),1,2048)) { status = 5; }
+    output.destroy();
+    return status;
+}
+fn arguments(values:View<View<u8>>) -> Result<Options,i32> {
+    let specs:[ext::cli::Spec;3] = [
+        ext::cli::Spec { id:1,long:literal("help",4),short:104,arity:ext::cli::Arity::Flag },
+        ext::cli::Spec { id:2,long:literal("text",4),short:116,arity:ext::cli::Arity::Flag },
+        ext::cli::Spec { id:3,long:literal("max-bytes",9),short:109,arity:ext::cli::Arity::Required }
+    ];
+    let made = ext::cli::parser(values,core::slice::view(specs,3).unwrap(),ext::cli::Ordering::Intermixed);
+    if (made.is_err()) { return core::result::Err(2); }
+    let parser = made.unwrap();
+    let options = Options { text:false,maximum:65536,help:false,maximum_set:false };
+    while(true) {
+        let event:Result<Option<ext::cli::Event>,ext::cli::Error> = parser.next();
+        if (event.is_err()) { return core::result::Err(2); }
+        let next = event.unwrap();
+        if (next.is_none()) { break; }
+        let occurrence:Option<ext::cli::Occurrence> = match(next.unwrap()) {
+            ext::cli::Event::Option(value) -> core::option::Some(value),
+            _ -> core::option::None()
+        };
+        if (occurrence.is_none()) { return core::result::Err(2); }
+        let found = occurrence.unwrap();
+        if (found.id == 1) {
+            if (options.help) { return core::result::Err(2); }
+            options.help = true;
+        } else {
+            if (found.id == 2) {
+                if (options.text) { return core::result::Err(2); }
+                options.text = true;
+            } else {
+                if ((found.id != 3) || options.maximum_set) { return core::result::Err(2); }
+                let token = found.value.unwrap().bytes;
+                if ((token.length < 1) || (token.length > 64)) { return core::result::Err(2); }
+                let number = core::decimal::parse_u64_range(token.values,token.start,token.length);
+                if (number.is_err()) { return core::result::Err(2); }
+                if (number.unwrap() > 1048576) { return core::result::Err(2); }
+                options.maximum = number.unwrap() as i32;
+                options.maximum_set = true;
+            }
+        }
+    }
+    return core::result::Ok(options);
+}
+fn help() -> i32 {
+    let value = literal("Usage: line_report [--text] [--max-bytes N] [--help]\nRead LF-separated records from stdin and print quoted CRLF CSV: record,bytes,scalars,ending.\nRecord positions start at zero; bytes include LF and any preceding CR.\nBinary scalar fields are empty; --text requires UTF-8 and counts every Unicode scalar.\nEndings are lf or eof; a final unterminated record is kept and empty EOF adds no row.\nN is 0..1048576, default 65536, including LF. Leading zeros are allowed.\nLimits: 4 MiB input, 16384 records and 1 MiB staged output.\nInput permits 131072 buffered operations and output 2048 attempts; interruptions spend budgets.\nInput is fully processed before output; input errors publish no data.\nShort options: -t, -m N, -h. Duplicate options and operands are errors.\nHelp accepts otherwise valid options and does not read stdin.\n",823);
+    if (!write(value,1,64)) { return 5; }
+    return 0;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let captured = std::args::snapshot(1,16,1024);
+    if (captured.is_err()) {
+        return report(match(captured.unwrap_err()) {
+            std::args::Error::AllocationFailed -> 4,
+            std::args::Error::HostRead(index) -> 3,
+            _ -> 2
+        });
+    }
+    let owner = captured.unwrap();
+    let parsed:Result<Options,i32> = arguments(owner.as_view());
+    owner.destroy();
+    if (parsed.is_err()) { return report(parsed.unwrap_err()); }
+    let options = parsed.unwrap();
+    let status:i32 = 0;
+    if (options.help) { status = help(); }
+    else { status = run(options.borrow()); }
+    if (status != 0) { return report(status); }
+    return 0;
+}

@@ -8,11 +8,15 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `std`. Role: module. Profile: **Source inventory**.
 
+Linux AF_UNIX streams are separate from numeric IPv4/IPv6 Socket TCP/UDP. Frozen source 44f6739d adds three factories, 19 inherent UnixStream methods and three Read/Write/flush members, giving 60 module-wide public entries. Borrowed pathnames admit 1..107 non-NUL bytes and Linux abstract names 0..107 arbitrary bytes; complete metadata/NUL admission precedes stack copying and host calls. Creation/pair/accept request CLOEXEC and mode atomically. Pair publication requires exact-zero status and distinct nonnegative descriptors; adoption requires exclusive ownership, copies alias one cleanup authority, duplicates share endpoint state and close retires before one attempt. Connect preserves AF_UNIX EAGAIN as WouldBlock. Shared 1024-byte stream staging retains full-width counts, confirmed-prefix copying, MSG_NOSIGNAL and absolute-deadline retries without heap allocation. All six new library tests pass across separate pair/direct/address/effect receipts, including 90 address probes and 63 fault schedules (13 genuine/50 injected). Three skipped-close actual descriptors remain until process exit; those attempts are not executed kernel closes. Four unix-request groups pass 84 cases; three selected IP regressions pass separately, with Internet connect-EAGAIN/malformed-accept groups filtered. One selected real TCP-application test passes in 8.86s with six IPv4/IPv6 exchanges at payload lengths 0, 257 and 1048576; three other application tests were filtered. This finite Unix increment is accepted. A socket-free generic Write-result immediate unwrap reports LNC0027 while a typed Result-local native control executes; that ignored positive-test command is not a green gate, and no compiler fix is claimed. Historical IP receipts retain their scope. Address queries, Unix datagrams/seqpacket, credentials, ancillary descriptors, broader targets, automatic lifetimes and proofs remain open. Finite target is Linux x86_64 CPU output from the GPU compiler.
+
 ## Contract and evidence guides
 
 - [stdlib-sockets](../../stdlib-sockets.md)
+- [stdlib-unix-streams](../../stdlib-unix-streams.md)
+- [stdlib-unix-request](../../stdlib-unix-request.md)
 
-Declaration counts: constant: 1; enum: 5; field: 16; function: 2; impl: 6; method: 33; struct: 5; variant: 15.
+Declaration counts: constant: 1; enum: 6; field: 19; function: 5; impl: 9; method: 55; struct: 7; variant: 17.
 
 ## Declared imports
 
@@ -22,12 +26,13 @@ Direct source imports; this is not a package-resolution or transitive dependency
 - [core::mem](../core/mem.md) · [source](../../../stdlib/std/socket.lani#L5)
 - [core::net](../core/net.md) · [source](../../../stdlib/std/socket.lani#L6)
 - [core::option](../core/option.md) · [source](../../../stdlib/std/socket.lani#L7)
-- [core::result](../core/result.md) · [source](../../../stdlib/std/socket.lani#L8)
-- [core::slice](../core/slice.md) · [source](../../../stdlib/std/socket.lani#L9)
-- [core::time](../core/time.md) · [source](../../../stdlib/std/socket.lani#L10)
-- [std::clock](clock.md) · [source](../../../stdlib/std/socket.lani#L11)
-- [std::fs](fs.md) · [source](../../../stdlib/std/socket.lani#L12)
-- [std::linux](linux.md) · [source](../../../stdlib/std/socket.lani#L13)
+- [core::path](../core/path.md) · [source](../../../stdlib/std/socket.lani#L8)
+- [core::result](../core/result.md) · [source](../../../stdlib/std/socket.lani#L9)
+- [core::slice](../core/slice.md) · [source](../../../stdlib/std/socket.lani#L10)
+- [core::time](../core/time.md) · [source](../../../stdlib/std/socket.lani#L11)
+- [std::clock](clock.md) · [source](../../../stdlib/std/socket.lani#L12)
+- [std::fs](fs.md) · [source](../../../stdlib/std/socket.lani#L13)
+- [std::linux](linux.md) · [source](../../../stdlib/std/socket.lani#L14)
 
 ## Types, fields and variants
 
@@ -35,7 +40,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Family
 
-[Source line 15](../../../stdlib/std/socket.lani#L15)
+[Source line 16](../../../stdlib/std/socket.lani#L16)
 
 ```lanius
 pub enum Family
@@ -43,7 +48,7 @@ pub enum Family
 
 #### variant: Ipv4
 
-[Source line 15](../../../stdlib/std/socket.lani#L15)
+[Source line 16](../../../stdlib/std/socket.lani#L16)
 
 ```lanius
 Ipv4
@@ -51,7 +56,7 @@ Ipv4
 
 #### variant: Ipv6
 
-[Source line 15](../../../stdlib/std/socket.lani#L15)
+[Source line 16](../../../stdlib/std/socket.lani#L16)
 
 ```lanius
 Ipv6
@@ -59,7 +64,7 @@ Ipv6
 
 ### enum: Kind
 
-[Source line 16](../../../stdlib/std/socket.lani#L16)
+[Source line 17](../../../stdlib/std/socket.lani#L17)
 
 ```lanius
 pub enum Kind
@@ -67,7 +72,7 @@ pub enum Kind
 
 #### variant: Tcp
 
-[Source line 16](../../../stdlib/std/socket.lani#L16)
+[Source line 17](../../../stdlib/std/socket.lani#L17)
 
 ```lanius
 Tcp
@@ -75,7 +80,7 @@ Tcp
 
 #### variant: Udp
 
-[Source line 16](../../../stdlib/std/socket.lani#L16)
+[Source line 17](../../../stdlib/std/socket.lani#L17)
 
 ```lanius
 Udp
@@ -83,7 +88,7 @@ Udp
 
 ### enum: Connection
 
-[Source line 17](../../../stdlib/std/socket.lani#L17)
+[Source line 18](../../../stdlib/std/socket.lani#L18)
 
 ```lanius
 pub enum Connection
@@ -91,7 +96,7 @@ pub enum Connection
 
 #### variant: Connected
 
-[Source line 17](../../../stdlib/std/socket.lani#L17)
+[Source line 18](../../../stdlib/std/socket.lani#L18)
 
 ```lanius
 Connected
@@ -99,7 +104,7 @@ Connected
 
 #### variant: InProgress
 
-[Source line 17](../../../stdlib/std/socket.lani#L17)
+[Source line 18](../../../stdlib/std/socket.lani#L18)
 
 ```lanius
 InProgress
@@ -107,7 +112,7 @@ InProgress
 
 ### enum: Shutdown
 
-[Source line 18](../../../stdlib/std/socket.lani#L18)
+[Source line 19](../../../stdlib/std/socket.lani#L19)
 
 ```lanius
 pub enum Shutdown
@@ -115,7 +120,7 @@ pub enum Shutdown
 
 #### variant: Read
 
-[Source line 18](../../../stdlib/std/socket.lani#L18)
+[Source line 19](../../../stdlib/std/socket.lani#L19)
 
 ```lanius
 Read
@@ -123,7 +128,7 @@ Read
 
 #### variant: Write
 
-[Source line 18](../../../stdlib/std/socket.lani#L18)
+[Source line 19](../../../stdlib/std/socket.lani#L19)
 
 ```lanius
 Write
@@ -131,7 +136,7 @@ Write
 
 #### variant: Both
 
-[Source line 18](../../../stdlib/std/socket.lani#L18)
+[Source line 19](../../../stdlib/std/socket.lani#L19)
 
 ```lanius
 Both
@@ -139,7 +144,7 @@ Both
 
 ### enum: Setting
 
-[Source line 19](../../../stdlib/std/socket.lani#L19)
+[Source line 20](../../../stdlib/std/socket.lani#L20)
 
 ```lanius
 pub enum Setting
@@ -147,7 +152,7 @@ pub enum Setting
 
 #### variant: ReuseAddress
 
-[Source line 19](../../../stdlib/std/socket.lani#L19)
+[Source line 20](../../../stdlib/std/socket.lani#L20)
 
 ```lanius
 ReuseAddress
@@ -155,7 +160,7 @@ ReuseAddress
 
 #### variant: KeepAlive
 
-[Source line 19](../../../stdlib/std/socket.lani#L19)
+[Source line 20](../../../stdlib/std/socket.lani#L20)
 
 ```lanius
 KeepAlive
@@ -163,7 +168,7 @@ KeepAlive
 
 #### variant: NoDelay
 
-[Source line 19](../../../stdlib/std/socket.lani#L19)
+[Source line 20](../../../stdlib/std/socket.lani#L20)
 
 ```lanius
 NoDelay
@@ -171,7 +176,7 @@ NoDelay
 
 #### variant: ReceiveBuffer
 
-[Source line 19](../../../stdlib/std/socket.lani#L19)
+[Source line 20](../../../stdlib/std/socket.lani#L20)
 
 ```lanius
 ReceiveBuffer
@@ -179,7 +184,7 @@ ReceiveBuffer
 
 #### variant: SendBuffer
 
-[Source line 19](../../../stdlib/std/socket.lani#L19)
+[Source line 20](../../../stdlib/std/socket.lani#L20)
 
 ```lanius
 SendBuffer
@@ -187,7 +192,7 @@ SendBuffer
 
 #### variant: Ipv6Only
 
-[Source line 19](../../../stdlib/std/socket.lani#L19)
+[Source line 20](../../../stdlib/std/socket.lani#L20)
 
 ```lanius
 Ipv6Only
@@ -195,7 +200,7 @@ Ipv6Only
 
 ### struct: Socket
 
-[Source line 20](../../../stdlib/std/socket.lani#L20)
+[Source line 21](../../../stdlib/std/socket.lani#L21)
 
 ```lanius
 pub struct Socket
@@ -203,7 +208,7 @@ pub struct Socket
 
 #### field: handle
 
-[Source line 20](../../../stdlib/std/socket.lani#L20)
+[Source line 21](../../../stdlib/std/socket.lani#L21)
 
 ```lanius
 handle: i32
@@ -211,7 +216,7 @@ handle: i32
 
 #### field: domain
 
-[Source line 20](../../../stdlib/std/socket.lani#L20)
+[Source line 21](../../../stdlib/std/socket.lani#L21)
 
 ```lanius
 domain: i32
@@ -219,7 +224,7 @@ domain: i32
 
 #### field: datagram
 
-[Source line 20](../../../stdlib/std/socket.lani#L20)
+[Source line 21](../../../stdlib/std/socket.lani#L21)
 
 ```lanius
 datagram: bool
@@ -227,7 +232,7 @@ datagram: bool
 
 ### struct: Accepted
 
-[Source line 21](../../../stdlib/std/socket.lani#L21)
+[Source line 22](../../../stdlib/std/socket.lani#L22)
 
 ```lanius
 pub struct Accepted
@@ -235,7 +240,7 @@ pub struct Accepted
 
 #### field: socket
 
-[Source line 21](../../../stdlib/std/socket.lani#L21)
+[Source line 22](../../../stdlib/std/socket.lani#L22)
 
 ```lanius
 socket: Socket
@@ -243,7 +248,7 @@ socket: Socket
 
 #### field: peer
 
-[Source line 21](../../../stdlib/std/socket.lani#L21)
+[Source line 22](../../../stdlib/std/socket.lani#L22)
 
 ```lanius
 peer: core::net::SocketAddr
@@ -251,7 +256,7 @@ peer: core::net::SocketAddr
 
 ### struct: AcceptFailure
 
-[Source line 24](../../../stdlib/std/socket.lani#L24)
+[Source line 25](../../../stdlib/std/socket.lani#L25)
 
 ```lanius
 pub struct AcceptFailure
@@ -259,7 +264,7 @@ pub struct AcceptFailure
 
 #### field: cause
 
-[Source line 24](../../../stdlib/std/socket.lani#L24)
+[Source line 25](../../../stdlib/std/socket.lani#L25)
 
 ```lanius
 cause: core::io::Error
@@ -267,7 +272,7 @@ cause: core::io::Error
 
 #### field: cleanup_attempted
 
-[Source line 24](../../../stdlib/std/socket.lani#L24)
+[Source line 25](../../../stdlib/std/socket.lani#L25)
 
 ```lanius
 cleanup_attempted: bool
@@ -275,7 +280,7 @@ cleanup_attempted: bool
 
 #### field: cleanup_error
 
-[Source line 24](../../../stdlib/std/socket.lani#L24)
+[Source line 25](../../../stdlib/std/socket.lani#L25)
 
 ```lanius
 cleanup_error: core::option::Option<core::io::Error>
@@ -283,7 +288,7 @@ cleanup_error: core::option::Option<core::io::Error>
 
 ### struct: Datagram
 
-[Source line 25](../../../stdlib/std/socket.lani#L25)
+[Source line 26](../../../stdlib/std/socket.lani#L26)
 
 ```lanius
 pub struct Datagram
@@ -291,7 +296,7 @@ pub struct Datagram
 
 #### field: peer
 
-[Source line 25](../../../stdlib/std/socket.lani#L25)
+[Source line 26](../../../stdlib/std/socket.lani#L26)
 
 ```lanius
 peer: core::net::SocketAddr
@@ -299,7 +304,7 @@ peer: core::net::SocketAddr
 
 #### field: copied
 
-[Source line 25](../../../stdlib/std/socket.lani#L25)
+[Source line 26](../../../stdlib/std/socket.lani#L26)
 
 ```lanius
 copied: i32
@@ -307,7 +312,7 @@ copied: i32
 
 #### field: full_length
 
-[Source line 25](../../../stdlib/std/socket.lani#L25)
+[Source line 26](../../../stdlib/std/socket.lani#L26)
 
 ```lanius
 full_length: i32
@@ -315,7 +320,7 @@ full_length: i32
 
 ### struct: Ready
 
-[Source line 26](../../../stdlib/std/socket.lani#L26)
+[Source line 27](../../../stdlib/std/socket.lani#L27)
 
 ```lanius
 pub struct Ready
@@ -323,7 +328,7 @@ pub struct Ready
 
 #### field: readable
 
-[Source line 26](../../../stdlib/std/socket.lani#L26)
+[Source line 27](../../../stdlib/std/socket.lani#L27)
 
 ```lanius
 readable: bool
@@ -331,7 +336,7 @@ readable: bool
 
 #### field: writable
 
-[Source line 26](../../../stdlib/std/socket.lani#L26)
+[Source line 27](../../../stdlib/std/socket.lani#L27)
 
 ```lanius
 writable: bool
@@ -339,7 +344,7 @@ writable: bool
 
 #### field: hangup
 
-[Source line 26](../../../stdlib/std/socket.lani#L26)
+[Source line 27](../../../stdlib/std/socket.lani#L27)
 
 ```lanius
 hangup: bool
@@ -347,7 +352,7 @@ hangup: bool
 
 #### field: error
 
-[Source line 26](../../../stdlib/std/socket.lani#L26)
+[Source line 27](../../../stdlib/std/socket.lani#L27)
 
 ```lanius
 error: bool
@@ -355,17 +360,81 @@ error: bool
 
 #### field: timed_out
 
-[Source line 26](../../../stdlib/std/socket.lani#L26)
+[Source line 27](../../../stdlib/std/socket.lani#L27)
 
 ```lanius
 timed_out: bool
+```
+
+### enum: UnixAddress
+
+[Source line 505](../../../stdlib/std/socket.lani#L505)
+
+```lanius
+pub enum UnixAddress
+```
+
+#### variant: Pathname
+
+[Source line 505](../../../stdlib/std/socket.lani#L505)
+
+```lanius
+Pathname(core::path::Path)
+```
+
+#### variant: Abstract
+
+[Source line 505](../../../stdlib/std/socket.lani#L505)
+
+```lanius
+Abstract(core::slice::View<u8>)
+```
+
+### struct: UnixStream
+
+[Source line 506](../../../stdlib/std/socket.lani#L506)
+
+```lanius
+pub struct UnixStream
+```
+
+#### field: handle
+
+[Source line 506](../../../stdlib/std/socket.lani#L506)
+
+```lanius
+handle:i32
+```
+
+### struct: UnixPair
+
+[Source line 507](../../../stdlib/std/socket.lani#L507)
+
+```lanius
+pub struct UnixPair
+```
+
+#### field: first
+
+[Source line 507](../../../stdlib/std/socket.lani#L507)
+
+```lanius
+first:UnixStream
+```
+
+#### field: second
+
+[Source line 507](../../../stdlib/std/socket.lani#L507)
+
+```lanius
+second:UnixStream
 ```
 
 ## Constants
 
 ### constant: MAX_DATAGRAM
 
-[Source line 27](../../../stdlib/std/socket.lani#L27)
+[Source line 28](../../../stdlib/std/socket.lani#L28)
 
 ```lanius
 pub const MAX_DATAGRAM: i32 = 65507;
@@ -375,7 +444,7 @@ pub const MAX_DATAGRAM: i32 = 65507;
 
 ### function: create
 
-[Source line 62](../../../stdlib/std/socket.lani#L62)
+[Source line 63](../../../stdlib/std/socket.lani#L63)
 
 ```lanius
 pub fn create(family: Family, kind: Kind, nonblocking: bool) -> core::result::Result<Socket,core::io::Error>
@@ -383,17 +452,47 @@ pub fn create(family: Family, kind: Kind, nonblocking: bool) -> core::result::Re
 
 ### function: from_owned_handle
 
-[Source line 73](../../../stdlib/std/socket.lani#L73)
+[Source line 74](../../../stdlib/std/socket.lani#L74)
 
 ```lanius
 pub fn from_owned_handle(handle: i32, family: Family, kind: Kind) -> core::result::Result<Socket,core::io::Error>
 ```
 
+### function: unix_stream
+
+[Source line 520](../../../stdlib/std/socket.lani#L520)
+
+```lanius
+pub fn unix_stream(nonblocking:bool) -> core::result::Result<UnixStream,core::io::Error>
+```
+
+Creates one unconnected AF_UNIX/SOCK_STREAM owner, requesting CLOEXEC and the selected nonblocking mode atomically. No automatic destructor or pathname cleanup; callers close or transfer one cleanup authority.
+
+### function: unix_pair
+
+[Source line 525](../../../stdlib/std/socket.lani#L525)
+
+```lanius
+pub fn unix_pair(nonblocking:bool) -> core::result::Result<UnixPair,core::io::Error>
+```
+
+Creates two connected unnamed Unix stream endpoints with CLOEXEC and the selected mode. Exact-zero status and two distinct nonnegative descriptors publish both owners together; full-width status checks precede narrowing, and malformed invented outputs grant no authority to close arbitrary integers.
+
+### function: unix_from_owned_handle
+
+[Source line 543](../../../stdlib/std/socket.lani#L543)
+
+```lanius
+pub fn unix_from_owned_handle(handle:i32) -> core::result::Result<UnixStream,core::io::Error>
+```
+
+Adopts an exclusively owned live Unix-stream descriptor. Rejects a negative number only; family, type, state and flags are caller preconditions. It does not duplicate the descriptor or set CLOEXEC.
+
 ## Implementation blocks and public methods
 
-### impl at line 131
+### impl at line 267
 
-[Source line 131](../../../stdlib/std/socket.lani#L131)
+[Source line 267](../../../stdlib/std/socket.lani#L267)
 
 ```lanius
 pub impl Socket
@@ -401,7 +500,7 @@ pub impl Socket
 
 #### method: option
 
-[Source line 144](../../../stdlib/std/socket.lani#L144)
+[Source line 280](../../../stdlib/std/socket.lani#L280)
 
 ```lanius
 pub fn option(&self, setting: Setting) -> core::result::Result<i32,core::io::Error>
@@ -409,7 +508,7 @@ pub fn option(&self, setting: Setting) -> core::result::Result<i32,core::io::Err
 
 #### method: set_option
 
-[Source line 152](../../../stdlib/std/socket.lani#L152)
+[Source line 288](../../../stdlib/std/socket.lani#L288)
 
 ```lanius
 pub fn set_option(&self, setting: Setting, value: i32) -> core::result::Result<i32,core::io::Error>
@@ -417,7 +516,7 @@ pub fn set_option(&self, setting: Setting, value: i32) -> core::result::Result<i
 
 #### method: take_error
 
-[Source line 161](../../../stdlib/std/socket.lani#L161)
+[Source line 297](../../../stdlib/std/socket.lani#L297)
 
 ```lanius
 pub fn take_error(&self) -> core::result::Result<core::option::Option<i32>,core::io::Error>
@@ -425,7 +524,7 @@ pub fn take_error(&self) -> core::result::Result<core::option::Option<i32>,core:
 
 #### method: is_nonblocking
 
-[Source line 169](../../../stdlib/std/socket.lani#L169)
+[Source line 305](../../../stdlib/std/socket.lani#L305)
 
 ```lanius
 pub fn is_nonblocking(&self) -> core::result::Result<bool,core::io::Error>
@@ -433,7 +532,7 @@ pub fn is_nonblocking(&self) -> core::result::Result<bool,core::io::Error>
 
 #### method: set_nonblocking
 
-[Source line 178](../../../stdlib/std/socket.lani#L178)
+[Source line 309](../../../stdlib/std/socket.lani#L309)
 
 ```lanius
 pub fn set_nonblocking(&self, enabled: bool) -> core::result::Result<i32,core::io::Error>
@@ -441,7 +540,7 @@ pub fn set_nonblocking(&self, enabled: bool) -> core::result::Result<i32,core::i
 
 #### method: wait_ms
 
-[Source line 188](../../../stdlib/std/socket.lani#L188)
+[Source line 313](../../../stdlib/std/socket.lani#L313)
 
 ```lanius
 pub fn wait_ms(&self, readable: bool, writable: bool, milliseconds: i32) -> core::result::Result<Ready,core::io::Error>
@@ -449,7 +548,7 @@ pub fn wait_ms(&self, readable: bool, writable: bool, milliseconds: i32) -> core
 
 #### method: wait_until
 
-[Source line 203](../../../stdlib/std/socket.lani#L203)
+[Source line 317](../../../stdlib/std/socket.lani#L317)
 
 ```lanius
 pub fn wait_until(&self, readable: bool, writable: bool, deadline: core::time::Deadline) -> core::result::Result<Ready,core::io::Error>
@@ -457,15 +556,15 @@ pub fn wait_until(&self, readable: bool, writable: bool, deadline: core::time::D
 
 #### method: connect_until
 
-[Source line 226](../../../stdlib/std/socket.lani#L226)
+[Source line 322](../../../stdlib/std/socket.lani#L322)
 
 ```lanius
 pub fn connect_until(&self, endpoint: core::net::SocketAddr, deadline: core::time::Deadline) -> core::result::Result<i32,core::io::Error>
 ```
 
-### impl at line 247
+### impl at line 343
 
-[Source line 247](../../../stdlib/std/socket.lani#L247)
+[Source line 343](../../../stdlib/std/socket.lani#L343)
 
 ```lanius
 pub impl Socket
@@ -473,7 +572,7 @@ pub impl Socket
 
 #### method: send
 
-[Source line 276](../../../stdlib/std/socket.lani#L276)
+[Source line 354](../../../stdlib/std/socket.lani#L354)
 
 ```lanius
 pub fn send(&self, input: core::slice::View<u8>) -> core::result::Result<i32,core::io::Error>
@@ -481,7 +580,7 @@ pub fn send(&self, input: core::slice::View<u8>) -> core::result::Result<i32,cor
 
 #### method: receive
 
-[Source line 277](../../../stdlib/std/socket.lani#L277)
+[Source line 355](../../../stdlib/std/socket.lani#L355)
 
 ```lanius
 pub fn receive(&self, output: core::slice::View<u8>) -> core::result::Result<i32,core::io::Error>
@@ -489,7 +588,7 @@ pub fn receive(&self, output: core::slice::View<u8>) -> core::result::Result<i32
 
 #### method: send_until
 
-[Source line 278](../../../stdlib/std/socket.lani#L278)
+[Source line 356](../../../stdlib/std/socket.lani#L356)
 
 ```lanius
 pub fn send_until(&self, input: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<i32,core::io::Error>
@@ -497,7 +596,7 @@ pub fn send_until(&self, input: core::slice::View<u8>, deadline: core::time::Dea
 
 #### method: receive_until
 
-[Source line 291](../../../stdlib/std/socket.lani#L291)
+[Source line 361](../../../stdlib/std/socket.lani#L361)
 
 ```lanius
 pub fn receive_until(&self, output: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<i32,core::io::Error>
@@ -505,7 +604,7 @@ pub fn receive_until(&self, output: core::slice::View<u8>, deadline: core::time:
 
 #### method: send_to
 
-[Source line 305](../../../stdlib/std/socket.lani#L305)
+[Source line 367](../../../stdlib/std/socket.lani#L367)
 
 ```lanius
 pub fn send_to(&self, input: core::slice::View<u8>, endpoint: core::net::SocketAddr) -> core::result::Result<i32,core::io::Error>
@@ -513,15 +612,15 @@ pub fn send_to(&self, input: core::slice::View<u8>, endpoint: core::net::SocketA
 
 #### method: receive_from
 
-[Source line 322](../../../stdlib/std/socket.lani#L322)
+[Source line 384](../../../stdlib/std/socket.lani#L384)
 
 ```lanius
 pub fn receive_from(&self, output: core::slice::View<u8>) -> core::result::Result<Datagram,core::io::Error>
 ```
 
-### impl at line 340
+### impl at line 402
 
-[Source line 340](../../../stdlib/std/socket.lani#L340)
+[Source line 402](../../../stdlib/std/socket.lani#L402)
 
 ```lanius
 pub impl Datagram
@@ -529,15 +628,15 @@ pub impl Datagram
 
 #### method: is_truncated
 
-[Source line 340](../../../stdlib/std/socket.lani#L340)
+[Source line 402](../../../stdlib/std/socket.lani#L402)
 
 ```lanius
 pub fn is_truncated(&self) -> bool
 ```
 
-### impl at line 341
+### impl at line 403
 
-[Source line 341](../../../stdlib/std/socket.lani#L341)
+[Source line 403](../../../stdlib/std/socket.lani#L403)
 
 ```lanius
 pub impl core::io::Read for Socket
@@ -545,15 +644,15 @@ pub impl core::io::Read for Socket
 
 #### method: read
 
-[Source line 342](../../../stdlib/std/socket.lani#L342)
+[Source line 404](../../../stdlib/std/socket.lani#L404)
 
 ```lanius
 pub fn read(&self, output: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error>
 ```
 
-### impl at line 347
+### impl at line 409
 
-[Source line 347](../../../stdlib/std/socket.lani#L347)
+[Source line 409](../../../stdlib/std/socket.lani#L409)
 
 ```lanius
 pub impl core::io::Write for Socket
@@ -561,7 +660,7 @@ pub impl core::io::Write for Socket
 
 #### method: write
 
-[Source line 348](../../../stdlib/std/socket.lani#L348)
+[Source line 410](../../../stdlib/std/socket.lani#L410)
 
 ```lanius
 pub fn write(&self, input: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error>
@@ -569,15 +668,15 @@ pub fn write(&self, input: [u8], offset: i32, count: i32) -> core::result::Resul
 
 #### method: flush
 
-[Source line 352](../../../stdlib/std/socket.lani#L352)
+[Source line 414](../../../stdlib/std/socket.lani#L414)
 
 ```lanius
 pub fn flush(&self) -> core::result::Result<i32,core::io::Error>
 ```
 
-### impl at line 362
+### impl at line 424
 
-[Source line 362](../../../stdlib/std/socket.lani#L362)
+[Source line 424](../../../stdlib/std/socket.lani#L424)
 
 ```lanius
 pub impl Socket
@@ -585,7 +684,7 @@ pub impl Socket
 
 #### method: borrow
 
-[Source line 363](../../../stdlib/std/socket.lani#L363)
+[Source line 425](../../../stdlib/std/socket.lani#L425)
 
 ```lanius
 pub fn borrow(&self) -> &Socket
@@ -593,7 +692,7 @@ pub fn borrow(&self) -> &Socket
 
 #### method: is_open
 
-[Source line 364](../../../stdlib/std/socket.lani#L364)
+[Source line 426](../../../stdlib/std/socket.lani#L426)
 
 ```lanius
 pub fn is_open(&self) -> bool
@@ -601,7 +700,7 @@ pub fn is_open(&self) -> bool
 
 #### method: family
 
-[Source line 365](../../../stdlib/std/socket.lani#L365)
+[Source line 427](../../../stdlib/std/socket.lani#L427)
 
 ```lanius
 pub fn family(&self) -> Family
@@ -609,7 +708,7 @@ pub fn family(&self) -> Family
 
 #### method: kind
 
-[Source line 366](../../../stdlib/std/socket.lani#L366)
+[Source line 428](../../../stdlib/std/socket.lani#L428)
 
 ```lanius
 pub fn kind(&self) -> Kind
@@ -617,7 +716,7 @@ pub fn kind(&self) -> Kind
 
 #### method: raw_handle
 
-[Source line 367](../../../stdlib/std/socket.lani#L367)
+[Source line 429](../../../stdlib/std/socket.lani#L429)
 
 ```lanius
 pub fn raw_handle(&self) -> core::option::Option<i32>
@@ -625,7 +724,7 @@ pub fn raw_handle(&self) -> core::option::Option<i32>
 
 #### method: take_handle
 
-[Source line 368](../../../stdlib/std/socket.lani#L368)
+[Source line 430](../../../stdlib/std/socket.lani#L430)
 
 ```lanius
 pub fn take_handle(&self) -> core::option::Option<i32>
@@ -633,7 +732,7 @@ pub fn take_handle(&self) -> core::option::Option<i32>
 
 #### method: close
 
-[Source line 369](../../../stdlib/std/socket.lani#L369)
+[Source line 431](../../../stdlib/std/socket.lani#L431)
 
 ```lanius
 pub fn close(&self) -> core::result::Result<i32,core::io::Error>
@@ -641,7 +740,7 @@ pub fn close(&self) -> core::result::Result<i32,core::io::Error>
 
 #### method: try_clone
 
-[Source line 377](../../../stdlib/std/socket.lani#L377)
+[Source line 439](../../../stdlib/std/socket.lani#L439)
 
 ```lanius
 pub fn try_clone(&self) -> core::result::Result<Socket,core::io::Error>
@@ -649,7 +748,7 @@ pub fn try_clone(&self) -> core::result::Result<Socket,core::io::Error>
 
 #### method: bind
 
-[Source line 382](../../../stdlib/std/socket.lani#L382)
+[Source line 444](../../../stdlib/std/socket.lani#L444)
 
 ```lanius
 pub fn bind(&self, endpoint: core::net::SocketAddr) -> core::result::Result<i32,core::io::Error>
@@ -657,7 +756,7 @@ pub fn bind(&self, endpoint: core::net::SocketAddr) -> core::result::Result<i32,
 
 #### method: connect
 
-[Source line 391](../../../stdlib/std/socket.lani#L391)
+[Source line 453](../../../stdlib/std/socket.lani#L453)
 
 ```lanius
 pub fn connect(&self, endpoint: core::net::SocketAddr) -> core::result::Result<Connection,core::io::Error>
@@ -665,7 +764,7 @@ pub fn connect(&self, endpoint: core::net::SocketAddr) -> core::result::Result<C
 
 #### method: listen
 
-[Source line 401](../../../stdlib/std/socket.lani#L401)
+[Source line 463](../../../stdlib/std/socket.lani#L463)
 
 ```lanius
 pub fn listen(&self, backlog: i32) -> core::result::Result<i32,core::io::Error>
@@ -673,7 +772,7 @@ pub fn listen(&self, backlog: i32) -> core::result::Result<i32,core::io::Error>
 
 #### method: accept
 
-[Source line 407](../../../stdlib/std/socket.lani#L407)
+[Source line 469](../../../stdlib/std/socket.lani#L469)
 
 ```lanius
 pub fn accept(&self, nonblocking: bool) -> core::result::Result<Accepted,AcceptFailure>
@@ -681,7 +780,7 @@ pub fn accept(&self, nonblocking: bool) -> core::result::Result<Accepted,AcceptF
 
 #### method: local_addr
 
-[Source line 434](../../../stdlib/std/socket.lani#L434)
+[Source line 496](../../../stdlib/std/socket.lani#L496)
 
 ```lanius
 pub fn local_addr(&self) -> core::result::Result<core::net::SocketAddr,core::io::Error>
@@ -689,7 +788,7 @@ pub fn local_addr(&self) -> core::result::Result<core::net::SocketAddr,core::io:
 
 #### method: peer_addr
 
-[Source line 435](../../../stdlib/std/socket.lani#L435)
+[Source line 497](../../../stdlib/std/socket.lani#L497)
 
 ```lanius
 pub fn peer_addr(&self) -> core::result::Result<core::net::SocketAddr,core::io::Error>
@@ -697,8 +796,208 @@ pub fn peer_addr(&self) -> core::result::Result<core::net::SocketAddr,core::io::
 
 #### method: shutdown
 
-[Source line 436](../../../stdlib/std/socket.lani#L436)
+[Source line 498](../../../stdlib/std/socket.lani#L498)
 
 ```lanius
 pub fn shutdown(&self, direction: Shutdown) -> core::result::Result<i32,core::io::Error>
+```
+
+### impl at line 578
+
+[Source line 578](../../../stdlib/std/socket.lani#L578)
+
+```lanius
+pub impl UnixStream
+```
+
+#### method: borrow
+
+[Source line 579](../../../stdlib/std/socket.lani#L579)
+
+```lanius
+pub fn borrow(&self) -> &UnixStream
+```
+
+#### method: is_open
+
+[Source line 580](../../../stdlib/std/socket.lani#L580)
+
+```lanius
+pub fn is_open(&self) -> bool
+```
+
+#### method: raw_handle
+
+[Source line 581](../../../stdlib/std/socket.lani#L581)
+
+```lanius
+pub fn raw_handle(&self) -> core::option::Option<i32>
+```
+
+#### method: take_handle
+
+[Source line 585](../../../stdlib/std/socket.lani#L585)
+
+```lanius
+pub fn take_handle(&self) -> core::option::Option<i32>
+```
+
+#### method: close
+
+[Source line 590](../../../stdlib/std/socket.lani#L590)
+
+```lanius
+pub fn close(&self) -> core::result::Result<i32,core::io::Error>
+```
+
+#### method: try_clone
+
+[Source line 596](../../../stdlib/std/socket.lani#L596)
+
+```lanius
+pub fn try_clone(&self) -> core::result::Result<UnixStream,core::io::Error>
+```
+
+#### method: is_nonblocking
+
+[Source line 601](../../../stdlib/std/socket.lani#L601)
+
+```lanius
+pub fn is_nonblocking(&self) -> core::result::Result<bool,core::io::Error>
+```
+
+#### method: set_nonblocking
+
+[Source line 604](../../../stdlib/std/socket.lani#L604)
+
+```lanius
+pub fn set_nonblocking(&self,enabled:bool) -> core::result::Result<i32,core::io::Error>
+```
+
+#### method: bind
+
+[Source line 609](../../../stdlib/std/socket.lani#L609)
+
+```lanius
+pub fn bind(&self,endpoint:UnixAddress) -> core::result::Result<i32,core::io::Error>
+```
+
+#### method: listen
+
+[Source line 618](../../../stdlib/std/socket.lani#L618)
+
+```lanius
+pub fn listen(&self,backlog:i32) -> core::result::Result<i32,core::io::Error>
+```
+
+#### method: connect
+
+[Source line 626](../../../stdlib/std/socket.lani#L626)
+
+```lanius
+pub fn connect(&self,endpoint:UnixAddress) -> core::result::Result<i32,core::io::Error>
+```
+
+#### method: accept
+
+[Source line 635](../../../stdlib/std/socket.lani#L635)
+
+```lanius
+pub fn accept(&self,nonblocking:bool) -> core::result::Result<UnixStream,core::io::Error>
+```
+
+#### method: shutdown
+
+[Source line 641](../../../stdlib/std/socket.lani#L641)
+
+```lanius
+pub fn shutdown(&self,direction:Shutdown) -> core::result::Result<i32,core::io::Error>
+```
+
+#### method: send
+
+[Source line 644](../../../stdlib/std/socket.lani#L644)
+
+```lanius
+pub fn send(&self,input:core::slice::View<u8>) -> core::result::Result<i32,core::io::Error>
+```
+
+#### method: receive
+
+[Source line 647](../../../stdlib/std/socket.lani#L647)
+
+```lanius
+pub fn receive(&self,output:core::slice::View<u8>) -> core::result::Result<i32,core::io::Error>
+```
+
+#### method: wait_ms
+
+[Source line 650](../../../stdlib/std/socket.lani#L650)
+
+```lanius
+pub fn wait_ms(&self,readable:bool,writable:bool,milliseconds:i32) -> core::result::Result<Ready,core::io::Error>
+```
+
+#### method: wait_until
+
+[Source line 653](../../../stdlib/std/socket.lani#L653)
+
+```lanius
+pub fn wait_until(&self,readable:bool,writable:bool,deadline:core::time::Deadline) -> core::result::Result<Ready,core::io::Error>
+```
+
+#### method: send_until
+
+[Source line 657](../../../stdlib/std/socket.lani#L657)
+
+```lanius
+pub fn send_until(&self,input:core::slice::View<u8>,deadline:core::time::Deadline) -> core::result::Result<i32,core::io::Error>
+```
+
+#### method: receive_until
+
+[Source line 660](../../../stdlib/std/socket.lani#L660)
+
+```lanius
+pub fn receive_until(&self,output:core::slice::View<u8>,deadline:core::time::Deadline) -> core::result::Result<i32,core::io::Error>
+```
+
+### impl at line 666
+
+[Source line 666](../../../stdlib/std/socket.lani#L666)
+
+```lanius
+pub impl core::io::Read for UnixStream
+```
+
+#### method: read
+
+[Source line 667](../../../stdlib/std/socket.lani#L667)
+
+```lanius
+pub fn read(&self,output:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error>
+```
+
+### impl at line 674
+
+[Source line 674](../../../stdlib/std/socket.lani#L674)
+
+```lanius
+pub impl core::io::Write for UnixStream
+```
+
+#### method: write
+
+[Source line 675](../../../stdlib/std/socket.lani#L675)
+
+```lanius
+pub fn write(&self,input:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error>
+```
+
+#### method: flush
+
+[Source line 681](../../../stdlib/std/socket.lani#L681)
+
+```lanius
+pub fn flush(&self) -> core::result::Result<i32,core::io::Error>
 ```

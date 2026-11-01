@@ -1,0 +1,183 @@
+module app::main;
+import alloc::hash_map;
+import alloc::hash_set;
+import alloc::tree_map;
+import alloc::tree_set;
+import core::cmp;
+import core::function;
+import core::hash;
+import core::iter;
+import core::option;
+import core::ordering;
+import core::pair;
+import core::result;
+struct Event { kind:i32,left:i32,right:i32,stored:u64,query:u64 }
+fn guard() -> Event { return Event { kind:77,left:88,right:99,stored:111,query:222 }; }
+struct Log { events:[Event],used:i32 }
+impl Log {
+    fn borrow(&self) -> &Log { return self; }
+    fn put(&self,kind:i32,left:i32,right:i32,stored:u64,query:u64) { self.events[self.used]=Event { kind:kind,left:left,right:right,stored:stored,query:query }; self.used+=1; }
+    fn reset(&self) { self.used=0; let i:i32=0; while(i<64) { self.events[i]=guard(); i+=1; } }
+}
+struct Key { rank:i32,tag:u64 }
+struct Query { rank:i32,stamp:u64,log:&Log }
+fn fingerprint(rank:i32) -> u32 { if(rank%2==0) { return 0; } return 65537; }
+fn key(rank:i32) -> Key { return Key { rank:rank,tag:1000+rank as u64 }; }
+fn query(rank:i32,log:&Log) -> Query { return Query { rank:rank,stamp:18446744073709551615-rank as u64,log:log }; }
+fn marker(rank:i32) -> u64 { return 4294967297+(rank as u64)*17; }
+pub impl core::hash::Hash<Key> for Key { pub fn hash(value:Key) -> u32 { return fingerprint(value.rank); } }
+pub impl core::hash::Hash<Query> for Query { pub fn hash(value:Query) -> u32 { value.log.put(1,-1,value.rank,0,value.stamp); return fingerprint(value.rank); } }
+pub impl core::cmp::Eq<Key> for Key {
+    pub fn eq(left:Key,right:Key) -> bool { return left.rank==right.rank; }
+    pub fn ne(left:Key,right:Key) -> bool { return left.rank!=right.rank; }
+}
+pub impl core::cmp::Ord<Key> for Key {
+    pub fn lt(left:Key,right:Key) -> bool { return left.rank<right.rank; }
+    pub fn le(left:Key,right:Key) -> bool { return left.rank<=right.rank; }
+    pub fn gt(left:Key,right:Key) -> bool { return left.rank>right.rank; }
+    pub fn ge(left:Key,right:Key) -> bool { return left.rank>=right.rank; }
+}
+struct Policy {}
+impl Policy { fn borrow(&self) -> &Policy { return self; } }
+pub impl core::function::Mapper<core::pair::Pair<Key,Query>,bool> for Policy {
+    pub fn apply(&self,pair:core::pair::Pair<Key,Query>) -> bool {
+        // Both hashes fold to bucket zero, yet unequal cached hashes must not
+        // invoke equivalence. This guards more than a generic collision test.
+        assert(fingerprint(pair.first.rank)==fingerprint(pair.second.rank));
+        pair.second.log.put(2,pair.first.rank,pair.second.rank,pair.first.tag,pair.second.stamp); return pair.first.rank==pair.second.rank;
+    }
+}
+pub impl core::ordering::Comparator<Key,Query> for Policy {
+    pub fn compare(&self,key:Key,query:Query) -> core::ordering::Ordering {
+        query.log.put(3,key.rank,query.rank,key.tag,query.stamp);
+        if(key.rank<query.rank) { return core::ordering::Less; } if(key.rank>query.rank) { return core::ordering::Greater; } return core::ordering::Equal;
+    }
+}
+struct Update { log:&Log,calls:i32 }
+impl Update { fn borrow(&self) -> &Update { return self; } }
+pub impl core::function::Mapper<u64,core::pair::Pair<u64,core::result::Result<bool,u64>>> for Update {
+    pub fn apply(&self,value:u64) -> core::pair::Pair<u64,core::result::Result<bool,u64>> {
+        self.calls+=1; self.log.put(4,0,0,value,value+17); let report:core::result::Result<bool,u64> =core::result::Err(18446744073709551615);
+        return core::pair::Pair { first:value+17,second:report };
+    }
+}
+fn event_equal(left:Event,right:Event) -> bool { return left.kind==right.kind && left.left==right.left && left.right==right.right && left.stored==right.stored && left.query==right.query; }
+fn inspect(log:&Log,ask:Query,is_hash:bool,present:bool,live:[bool]) {
+    let at:i32=0; if(is_hash) { assert(log.used>=1 && event_equal(log.events[0],Event { kind:1,left:-1,right:ask.rank,stored:0,query:ask.stamp })); at=1; }
+    let seen:u32=0; while(at<log.used) {
+        let entry:Event=log.events[at]; let kind:i32=3; if(is_hash) { kind=2; }
+        assert(entry.kind==kind && entry.left>=0 && entry.left<16 && live[entry.left]); assert(entry.right==ask.rank && entry.stored==1000+entry.left as u64 && entry.query==ask.stamp);
+        let bit:u32=1<<entry.left; assert((seen&bit)==0); seen=seen|bit;
+        if(entry.left==ask.rank) { assert(present && at==log.used-1); } at+=1;
+    }
+    if(present) { assert(log.used>0 && log.events[log.used-1].left==ask.rank); }
+    while(at<64) { assert(event_equal(log.events[at],guard())); at+=1; }
+}
+fn save(log:&Log,copy:[Event]) { let i:i32=0; while(i<log.used) { copy[i]=log.events[i]; i+=1; } }
+fn prefix(log:&Log,copy:[Event],count:i32,updated:bool,old:u64) {
+    let size:i32=count; if(updated) { size+=1; } assert(log.used==size); let i:i32=0;
+    while(i<count) { assert(event_equal(log.events[i],copy[i])); i+=1; }
+    if(updated) { assert(event_equal(log.events[count],Event { kind:4,left:0,right:0,stored:old,query:old+17 })); }
+    i=size; while(i<64) { assert(event_equal(log.events[i],guard())); i+=1; }
+}
+fn check_hash_map(owner:&alloc::hash_map::HashMap<Key,u64>,live:[bool],values:[u64],storage:ptr,capacity:i32) {
+    assert(owner.storage==storage && owner.capacity()==capacity); let cursor:alloc::hash_map::Iter<Key,u64> =owner.iter(); let seen:u32=0; let count:i32=0; let previous:i32=-1;
+    while(true) { let next:core::option::Option<alloc::hash_map::Entry<Key,u64>> =cursor.next(); if(next.is_none()) { break; } let entry:alloc::hash_map::Entry<Key,u64> =next.unwrap(); let rank:i32=entry.key.rank;
+        assert(rank>=0 && rank<16 && live[rank] && entry.key.tag==1000+rank as u64 && entry.value==values[rank]); let bit:u32=1<<rank; assert((seen&bit)==0); seen=seen|bit;
+        if(!true) { assert(rank>previous); } previous=rank; count+=1;
+    }
+    let expected:i32=0; let i:i32=0; while(i<16) { if(live[i]) { assert((seen&(1<<i))!=0); expected+=1; } i+=1; } assert(count==expected && owner.len()==expected);
+}
+fn hash_map_contract() {
+    let events:[Event;64]=[guard();64]; let log:Log=Log { events:events,used:0 }; let saved:[Event;64]=[guard();64]; let live:[bool;16]=[false;16]; let values:[u64;16]=[0;16]; let policy:Policy=Policy {}; let update:Update=Update { log:log.borrow(),calls:0 };
+    let owner:alloc::hash_map::HashMap<Key,u64> =alloc::hash_map::new<Key,u64>(); owner.try_reserve(16).unwrap(); let storage:ptr=owner.storage; let capacity:i32=owner.capacity(); let ask:Query=query(4,log.borrow());
+    assert(!owner.contains_key_by(ask,policy.borrow())); inspect(log.borrow(),ask,true,false,live); log.reset();
+    let ranks:[i32;7]=[4,2,6,1,3,5,7]; let i:i32=0; while(i<7) { let rank:i32=ranks[i]; owner.try_insert(key(rank),marker(rank)).unwrap(); live[rank]=true; values[rank]=marker(rank); i+=1; }
+    owner.remove(key(2)).unwrap(); owner.remove(key(6)).unwrap(); live[2]=false; live[6]=false;
+    owner.try_insert(key(8),marker(8)).unwrap(); owner.try_insert(key(9),marker(9)).unwrap(); live[8]=true; live[9]=true; values[8]=marker(8); values[9]=marker(9);
+    check_hash_map(owner.borrow(),live,values,storage,capacity); let queries:[i32;5]=[4,6,8,15,7]; i=0;
+    while(i<5) { let rank:i32=queries[i]; ask=query(rank,log.borrow()); log.reset();
+        let entry:core::option::Option<alloc::hash_map::Entry<Key,u64>> =owner.get_entry_by(ask,policy.borrow()); let present:bool=live[rank]; assert(entry.is_some()==present); let old:u64=0;
+        if(present) { let item:alloc::hash_map::Entry<Key,u64> =entry.unwrap(); assert(item.key.tag==1000+rank as u64 && item.value==values[rank]); old=item.value; }
+        inspect(log.borrow(),ask,true,present,live); let count:i32=log.used; save(log.borrow(),saved); log.reset();
+        assert(owner.contains_key_by(ask,policy.borrow())==present); prefix(log.borrow(),saved,count,false,0); log.reset();
+        let found:core::option::Option<u64> =owner.get_by(ask,policy.borrow()); assert(found.is_some()==present); if(present) { assert(found.unwrap()==old); } prefix(log.borrow(),saved,count,false,0); log.reset();
+        let calls:i32=update.calls; let changed:core::option::Option<core::result::Result<bool,u64>> =owner.update_value_by<Query,Policy,Update,core::result::Result<bool,u64>>(ask,policy.borrow(),update.borrow());
+        assert(changed.is_some()==present && update.calls==calls+present as i32); if(present) { let result:core::result::Result<bool,u64> =changed.unwrap(); assert(result.unwrap_err()==18446744073709551615); values[rank]+=17; }
+        prefix(log.borrow(),saved,count,present,old); assert(ask.rank==rank && ask.stamp==18446744073709551615-rank as u64); check_hash_map(owner.borrow(),live,values,storage,capacity); i+=1;
+    }
+    let removals:[i32;8]=[6,4,9,1,7,3,8,5]; i=0;
+    while(i<8) { let rank:i32=removals[i]; ask=query(rank,log.borrow()); log.reset(); let before:core::option::Option<alloc::hash_map::Entry<Key,u64>> =owner.get_entry_by(ask,policy.borrow()); let present:bool=live[rank]; assert(before.is_some()==present); inspect(log.borrow(),ask,true,present,live); let count:i32=log.used; save(log.borrow(),saved); log.reset();
+        let removed:core::option::Option<alloc::hash_map::Entry<Key,u64>> =owner.remove_by(ask,policy.borrow()); assert(removed.is_some()==present); if(present) { let item:alloc::hash_map::Entry<Key,u64> =removed.unwrap(); assert(item.key.rank==rank && item.key.tag==1000+rank as u64 && item.value==values[rank]); live[rank]=false; }
+        prefix(log.borrow(),saved,count,false,0); check_hash_map(owner.borrow(),live,values,storage,capacity); i+=1;
+    }
+    log.reset(); assert(owner.get_by(ask,policy.borrow()).is_none()); inspect(log.borrow(),ask,true,false,live);
+    owner.try_insert(key(6),marker(6)).unwrap(); live[6]=true; values[6]=marker(6); check_hash_map(owner.borrow(),live,values,storage,capacity); log.reset(); assert(owner.get_entry_by(query(6,log.borrow()),policy.borrow()).unwrap().key.tag==1006); owner.destroy();
+}
+fn check_tree_map(owner:&alloc::tree_map::TreeMap<Key,u64>,live:[bool],values:[u64],storage:ptr,capacity:i32) {
+    assert(owner.storage==storage && owner.capacity()==capacity); let cursor:alloc::tree_map::Cursor<Key,u64> =owner.iter(); let seen:u32=0; let count:i32=0; let previous:i32=-1;
+    while(true) { let next:core::option::Option<alloc::tree_map::Entry<Key,u64>> =cursor.next(); if(next.is_none()) { break; } let entry:alloc::tree_map::Entry<Key,u64> =next.unwrap(); let rank:i32=entry.key.rank;
+        assert(rank>=0 && rank<16 && live[rank] && entry.key.tag==1000+rank as u64 && entry.value==values[rank]); let bit:u32=1<<rank; assert((seen&bit)==0); seen=seen|bit;
+        if(!false) { assert(rank>previous); } previous=rank; count+=1;
+    }
+    let expected:i32=0; let i:i32=0; while(i<16) { if(live[i]) { assert((seen&(1<<i))!=0); expected+=1; } i+=1; } assert(count==expected && owner.len()==expected);
+}
+fn tree_map_contract() {
+    let events:[Event;64]=[guard();64]; let log:Log=Log { events:events,used:0 }; let saved:[Event;64]=[guard();64]; let live:[bool;16]=[false;16]; let values:[u64;16]=[0;16]; let policy:Policy=Policy {}; let update:Update=Update { log:log.borrow(),calls:0 };
+    let owner:alloc::tree_map::TreeMap<Key,u64> =alloc::tree_map::with_capacity<Key,u64>(16).unwrap();  let storage:ptr=owner.storage; let capacity:i32=owner.capacity(); let ask:Query=query(4,log.borrow());
+    assert(!owner.contains_key_by(ask,policy.borrow())); inspect(log.borrow(),ask,false,false,live); log.reset();
+    let ranks:[i32;7]=[4,2,6,1,3,5,7]; let i:i32=0; while(i<7) { let rank:i32=ranks[i]; owner.try_insert(key(rank),marker(rank)).unwrap(); live[rank]=true; values[rank]=marker(rank); i+=1; }
+    owner.remove(key(2)).unwrap(); owner.remove(key(6)).unwrap(); live[2]=false; live[6]=false;
+    owner.try_insert(key(8),marker(8)).unwrap(); owner.try_insert(key(9),marker(9)).unwrap(); live[8]=true; live[9]=true; values[8]=marker(8); values[9]=marker(9);
+    check_tree_map(owner.borrow(),live,values,storage,capacity); let queries:[i32;5]=[4,6,8,15,7]; i=0;
+    while(i<5) { let rank:i32=queries[i]; ask=query(rank,log.borrow()); log.reset();
+        let entry:core::option::Option<alloc::tree_map::Entry<Key,u64>> =owner.get_entry_by(ask,policy.borrow()); let present:bool=live[rank]; assert(entry.is_some()==present); let old:u64=0;
+        if(present) { let item:alloc::tree_map::Entry<Key,u64> =entry.unwrap(); assert(item.key.tag==1000+rank as u64 && item.value==values[rank]); old=item.value; }
+        inspect(log.borrow(),ask,false,present,live); let count:i32=log.used; save(log.borrow(),saved); log.reset();
+        assert(owner.contains_key_by(ask,policy.borrow())==present); prefix(log.borrow(),saved,count,false,0); log.reset();
+        let found:core::option::Option<u64> =owner.get_by(ask,policy.borrow()); assert(found.is_some()==present); if(present) { assert(found.unwrap()==old); } prefix(log.borrow(),saved,count,false,0); log.reset();
+        let calls:i32=update.calls; let changed:core::option::Option<core::result::Result<bool,u64>> =owner.update_value_by<Query,Policy,Update,core::result::Result<bool,u64>>(ask,policy.borrow(),update.borrow());
+        assert(changed.is_some()==present && update.calls==calls+present as i32); if(present) { let result:core::result::Result<bool,u64> =changed.unwrap(); assert(result.unwrap_err()==18446744073709551615); values[rank]+=17; }
+        prefix(log.borrow(),saved,count,present,old); assert(ask.rank==rank && ask.stamp==18446744073709551615-rank as u64); check_tree_map(owner.borrow(),live,values,storage,capacity); i+=1;
+    }
+    let removals:[i32;8]=[6,4,9,1,7,3,8,5]; i=0;
+    while(i<8) { let rank:i32=removals[i]; ask=query(rank,log.borrow()); log.reset(); let before:core::option::Option<alloc::tree_map::Entry<Key,u64>> =owner.get_entry_by(ask,policy.borrow()); let present:bool=live[rank]; assert(before.is_some()==present); inspect(log.borrow(),ask,false,present,live); let count:i32=log.used; save(log.borrow(),saved); log.reset();
+        let removed:core::option::Option<alloc::tree_map::Entry<Key,u64>> =owner.remove_by(ask,policy.borrow()); assert(removed.is_some()==present); if(present) { let item:alloc::tree_map::Entry<Key,u64> =removed.unwrap(); assert(item.key.rank==rank && item.key.tag==1000+rank as u64 && item.value==values[rank]); live[rank]=false; }
+        prefix(log.borrow(),saved,count,false,0); check_tree_map(owner.borrow(),live,values,storage,capacity); i+=1;
+    }
+    log.reset(); assert(owner.get_by(ask,policy.borrow()).is_none()); inspect(log.borrow(),ask,false,false,live);
+    owner.try_insert(key(6),marker(6)).unwrap(); live[6]=true; values[6]=marker(6); check_tree_map(owner.borrow(),live,values,storage,capacity); log.reset(); assert(owner.get_entry_by(query(6,log.borrow()),policy.borrow()).unwrap().key.tag==1006); owner.destroy();
+}
+fn check_hash_set(owner:&alloc::hash_set::HashSet<Key>,live:[bool],storage:ptr,capacity:i32) {
+    assert(owner.state.storage==storage && owner.capacity()==capacity); let cursor:alloc::hash_set::Iter<Key> =owner.iter(); let seen:u32=0; let count:i32=0; let previous:i32=-1;
+    while(true) { let next:core::option::Option<Key> =cursor.next(); if(next.is_none()) { break; } let item:Key=next.unwrap(); let rank:i32=item.rank; assert(rank>=0 && rank<16 && live[rank] && item.tag==1000+rank as u64); let bit:u32=1<<rank; assert((seen&bit)==0); seen=seen|bit; if(!true) { assert(rank>previous); } previous=rank; count+=1; }
+    let expected:i32=0; let i:i32=0; while(i<16) { if(live[i]) { assert((seen&(1<<i))!=0); expected+=1; } i+=1; } assert(count==expected && owner.len()==expected);
+}
+fn hash_set_contract() {
+    let events:[Event;64]=[guard();64]; let log:Log=Log { events:events,used:0 }; let saved:[Event;64]=[guard();64]; let live:[bool;16]=[false;16]; let policy:Policy=Policy {};
+    let owner:alloc::hash_set::HashSet<Key> =alloc::hash_set::with_capacity<Key>(16).unwrap(); let storage:ptr=owner.state.storage; let capacity:i32=owner.capacity(); let ask:Query=query(4,log.borrow());
+    assert(!owner.contains_by(ask,policy.borrow())); inspect(log.borrow(),ask,true,false,live); log.reset();
+    let ranks:[i32;7]=[4,2,6,1,3,5,7]; let i:i32=0; while(i<7) { owner.try_insert(key(ranks[i])).unwrap(); live[ranks[i]]=true; i+=1; } owner.remove(key(2)).unwrap(); owner.remove(key(6)).unwrap(); live[2]=false; live[6]=false; owner.try_insert(key(8)).unwrap(); owner.try_insert(key(9)).unwrap(); live[8]=true; live[9]=true;
+    let queries:[i32;5]=[4,6,8,15,7]; i=0; while(i<5) { let rank:i32=queries[i]; ask=query(rank,log.borrow()); log.reset(); let found:core::option::Option<Key> =owner.get_by(ask,policy.borrow()); assert(found.is_some()==live[rank]); if(found.is_some()) { assert(found.unwrap().tag==1000+rank as u64); } inspect(log.borrow(),ask,true,live[rank],live); let count:i32=log.used; save(log.borrow(),saved); log.reset(); assert(owner.contains_by(ask,policy.borrow())==live[rank]); prefix(log.borrow(),saved,count,false,0); check_hash_set(owner.borrow(),live,storage,capacity); i+=1; }
+    let removals:[i32;8]=[6,4,9,1,7,3,8,5]; i=0; while(i<8) { let rank:i32=removals[i]; ask=query(rank,log.borrow()); log.reset(); let found:core::option::Option<Key> =owner.get_by(ask,policy.borrow()); let present:bool=live[rank]; assert(found.is_some()==present); inspect(log.borrow(),ask,true,present,live); let count:i32=log.used; save(log.borrow(),saved); log.reset();
+        let removed:core::option::Option<Key> =owner.remove_by(ask,policy.borrow()); assert(removed.is_some()==present); if(present) { assert(removed.unwrap().rank==rank && removed.unwrap().tag==1000+rank as u64); live[rank]=false; } prefix(log.borrow(),saved,count,false,0); check_hash_set(owner.borrow(),live,storage,capacity); i+=1;
+    }
+    log.reset(); assert(owner.get_by(ask,policy.borrow()).is_none()); inspect(log.borrow(),ask,true,false,live); owner.try_insert(key(6)).unwrap(); live[6]=true; check_hash_set(owner.borrow(),live,storage,capacity); log.reset(); assert(owner.get_by(query(6,log.borrow()),policy.borrow()).unwrap().tag==1006); owner.destroy();
+}
+fn check_tree_set(owner:&alloc::tree_set::TreeSet<Key>,live:[bool],storage:ptr,capacity:i32) {
+    assert(owner.state.storage==storage && owner.capacity()==capacity); let cursor:alloc::tree_set::Cursor<Key> =owner.iter(); let seen:u32=0; let count:i32=0; let previous:i32=-1;
+    while(true) { let next:core::option::Option<Key> =cursor.next(); if(next.is_none()) { break; } let item:Key=next.unwrap(); let rank:i32=item.rank; assert(rank>=0 && rank<16 && live[rank] && item.tag==1000+rank as u64); let bit:u32=1<<rank; assert((seen&bit)==0); seen=seen|bit; if(!false) { assert(rank>previous); } previous=rank; count+=1; }
+    let expected:i32=0; let i:i32=0; while(i<16) { if(live[i]) { assert((seen&(1<<i))!=0); expected+=1; } i+=1; } assert(count==expected && owner.len()==expected);
+}
+fn tree_set_contract() {
+    let events:[Event;64]=[guard();64]; let log:Log=Log { events:events,used:0 }; let saved:[Event;64]=[guard();64]; let live:[bool;16]=[false;16]; let policy:Policy=Policy {};
+    let owner:alloc::tree_set::TreeSet<Key> =alloc::tree_set::with_capacity<Key>(16).unwrap(); let storage:ptr=owner.state.storage; let capacity:i32=owner.capacity(); let ask:Query=query(4,log.borrow());
+    assert(!owner.contains_by(ask,policy.borrow())); inspect(log.borrow(),ask,false,false,live); log.reset();
+    let ranks:[i32;7]=[4,2,6,1,3,5,7]; let i:i32=0; while(i<7) { owner.try_insert(key(ranks[i])).unwrap(); live[ranks[i]]=true; i+=1; } owner.remove(key(2)).unwrap(); owner.remove(key(6)).unwrap(); live[2]=false; live[6]=false; owner.try_insert(key(8)).unwrap(); owner.try_insert(key(9)).unwrap(); live[8]=true; live[9]=true;
+    let queries:[i32;5]=[4,6,8,15,7]; i=0; while(i<5) { let rank:i32=queries[i]; ask=query(rank,log.borrow()); log.reset(); let found:core::option::Option<Key> =owner.get_by(ask,policy.borrow()); assert(found.is_some()==live[rank]); if(found.is_some()) { assert(found.unwrap().tag==1000+rank as u64); } inspect(log.borrow(),ask,false,live[rank],live); let count:i32=log.used; save(log.borrow(),saved); log.reset(); assert(owner.contains_by(ask,policy.borrow())==live[rank]); prefix(log.borrow(),saved,count,false,0); check_tree_set(owner.borrow(),live,storage,capacity); i+=1; }
+    let removals:[i32;8]=[6,4,9,1,7,3,8,5]; i=0; while(i<8) { let rank:i32=removals[i]; ask=query(rank,log.borrow()); log.reset(); let found:core::option::Option<Key> =owner.get_by(ask,policy.borrow()); let present:bool=live[rank]; assert(found.is_some()==present); inspect(log.borrow(),ask,false,present,live); let count:i32=log.used; save(log.borrow(),saved); log.reset();
+        let removed:core::option::Option<Key> =owner.remove_by(ask,policy.borrow()); assert(removed.is_some()==present); if(present) { assert(removed.unwrap().rank==rank && removed.unwrap().tag==1000+rank as u64); live[rank]=false; } prefix(log.borrow(),saved,count,false,0); check_tree_set(owner.borrow(),live,storage,capacity); i+=1;
+    }
+    log.reset(); assert(owner.get_by(ask,policy.borrow()).is_none()); inspect(log.borrow(),ask,false,false,live); owner.try_insert(key(6)).unwrap(); live[6]=true; check_tree_set(owner.borrow(),live,storage,capacity); log.reset(); assert(owner.get_by(query(6,log.borrow()),policy.borrow()).unwrap().tag==1006); owner.destroy();
+}
+fn main() -> i32 { hash_map_contract(); tree_map_contract(); hash_set_contract(); tree_set_contract(); return 0; }

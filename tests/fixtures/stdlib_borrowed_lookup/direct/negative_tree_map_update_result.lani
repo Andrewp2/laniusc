@@ -1,0 +1,24 @@
+module app::main;
+import alloc::hash_map;
+import alloc::hash_set;
+import alloc::tree_map;
+import alloc::tree_set;
+import core::function;
+import core::hash;
+import core::option;
+import core::ordering;
+import core::pair;
+struct Key { value:i32 }
+struct Query { value:i32 }
+struct Policy {}
+impl Policy { fn borrow(&self) -> &Policy { return self; } }
+pub impl core::ordering::Comparator<Key,Query> for Policy { pub fn compare(&self,key:Key,query:Query) -> core::ordering::Ordering { return core::ordering::compare_i32(key.value,query.value); } }
+struct Change {}
+impl Change { fn borrow(&self) -> &Change { return self; } }
+pub impl core::function::Mapper<i32,core::pair::Pair<bool,u64>> for Change { pub fn apply(&self,value:i32) -> core::pair::Pair<bool,u64> { let report:u64=7; return core::pair::Pair { first:false,second:report }; } }
+// An empty collection still requires the exact query capabilities.
+fn main() -> i32 {
+    let collection:alloc::tree_map::TreeMap<Key,i32> =alloc::tree_map::new<Key,i32>(); let query:Query=Query { value:3 }; let policy:Policy=Policy {}; let change:Change=Change {};
+    let rejected_lookup_bound = collection.update_value_by<Query,Policy,Change,u64>(query,policy.borrow(),change.borrow());
+    return 0;
+}

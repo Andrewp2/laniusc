@@ -1,10 +1,20 @@
 # `core::slice`
 
-`core::slice` is 40 allocation-free functions over a view `[T]` of any
-element type. A fixed array passes as a view directly; raw views come from
-`core::mem`. Callers supply a logical element length because Lanius source
+The raw slice/count family in `core::slice` operates over `[T]` values of any
+element type without allocation. A fixed array passes as a view directly;
+raw views come from `core::mem`. Callers supply a logical element length because Lanius source
 cannot yet read slice metadata. A view borrows its storage and never
 allocates or frees it.
+
+The separate [counted View family](stdlib-slice-views.md) validates logical
+metadata. Its [comparator-driven ordering APIs](stdlib-slice-ordering.md)
+share sort/search engines with the raw Ord functions documented here; raw
+signatures, fallbacks and nonpositive-length behavior remain unchanged.
+
+The separate [alloc::slice stable-sort family](stdlib-stable-sort.md) adds
+checked View sorting with one typed workspace and explicit reservation errors.
+Its selected native Linux x86_64 gates and migrated application pass. It does not change the
+allocation-free, unstable core sorts documented here.
 
 ```lanius
 import core::cmp;

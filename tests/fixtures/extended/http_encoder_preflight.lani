@@ -1,0 +1,130 @@
+// Checked encoder caps: fifteen successful outputs, exactly one allocation
+// each. Every rejected input must fail before any output allocation.
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::http;
+
+fn bytes(value: str, count: i32) -> core::slice::View<u8> {
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return core::slice::view(raw,count).unwrap();
+}
+fn empty() -> core::slice::View<u8> { return bytes("",0); }
+fn field(name: core::slice::View<u8>, value: core::slice::View<u8>) -> ext::http::Field {
+    return ext::http::Field { raw: empty(), name: name, value: value, offset: 0 };
+}
+fn none() -> core::slice::View<ext::http::Field> {
+    let raw: [ext::http::Field;1] = [field(empty(),empty())];
+    return core::slice::view(raw,0).unwrap();
+}
+fn limit(result: core::result::Result<alloc::vec::Vec<u8>,ext::http::Error>, offset: i32) {
+    assert(result.is_err());
+    assert(match(result.unwrap_err()) { ext::http::Error::Limit(at) -> at == offset, _ -> false });
+}
+fn malformed(result: core::result::Result<alloc::vec::Vec<u8>,ext::http::Error>, offset: i32) {
+    assert(result.is_err());
+    assert(match(result.unwrap_err()) { ext::http::Error::Malformed(at) -> at == offset, _ -> false });
+}
+fn no_body(start: core::slice::View<u8>, method: core::slice::View<u8>, tunnel: bool) {
+    let cap: ext::http::Limits = ext::http::default_limits();
+    cap.head_bytes = start.len()+4; cap.headers = 0;
+    limit(ext::http::encode_response(start,method,none(),empty(),ext::http::Limits {
+        head_bytes: cap.head_bytes-1, line_bytes: cap.line_bytes, headers: 0,
+        body_bytes: cap.body_bytes, trailer_bytes: cap.trailer_bytes,
+        trailers: cap.trailers, chunks: cap.chunks }),0);
+    let owner: alloc::vec::Vec<u8> = ext::http::encode_response(start,method,none(),empty(),cap).unwrap();
+    assert(owner.len() == cap.head_bytes && owner.capacity() == owner.len());
+    let head: ext::http::Head = ext::http::parse_response_head(owner.as_view(),method,cap).unwrap();
+    assert(head.raw.len() == owner.len() && head.field_count == 0 && head.content_length == -1);
+    assert(match(head.kind) { ext::http::BodyKind::Tunnel -> tunnel, ext::http::BodyKind::Empty -> !tunnel, _ -> false });
+    owner.destroy();
+    malformed(ext::http::encode_response(start,method,none(),bytes("x",1),cap),0);
+}
+fn main() -> i32 {
+    let get: core::slice::View<u8> = bytes("GET",3);
+    let start: core::slice::View<u8> = bytes("HTTP/1.1 200 OK",15);
+    let body: [u8;1000] = [255;1000];
+    let sizes: [i32;7] = [0,9,10,99,100,999,1000];
+    let widths: [i32;7] = [1,1,2,2,3,3,4];
+    let index: i32 = 0;
+    while (index < 7) {
+        let count: i32 = sizes[index]; let cap: ext::http::Limits = ext::http::default_limits();
+        cap.head_bytes = 37+widths[index];
+        let content: core::slice::View<u8> = core::slice::view(body,count).unwrap();
+        let owner: alloc::vec::Vec<u8> = ext::http::encode_response(start,get,none(),content,cap).unwrap();
+        assert(owner.len() == cap.head_bytes+count && owner.capacity() == owner.len());
+        let parsed: ext::http::Message = ext::http::parse_response(owner.as_view(),get,false,cap).unwrap();
+        assert(parsed.head.raw.len() == cap.head_bytes && parsed.head.content_length == count);
+        assert(parsed.decoded_length == count && parsed.consumed == owner.len());
+        assert(parsed.encoded_body.is_empty() || parsed.encoded_body.get(count-1).unwrap() == 255);
+        owner.destroy(); cap.head_bytes -= 1;
+        limit(ext::http::encode_response(start,get,none(),content,cap),0);
+        index += 1;
+    }
+    let caps: [i32;5] = [0,1,3,18,37]; index = 0;
+    while (index < 5) {
+        let cap: ext::http::Limits = ext::http::default_limits(); cap.head_bytes = caps[index];
+        limit(ext::http::encode_response(start,get,none(),empty(),cap),0); index += 1;
+    }
+    let cap: ext::http::Limits = ext::http::default_limits(); cap.line_bytes = 16;
+    limit(ext::http::encode_response(start,get,none(),empty(),cap),34);
+
+    let headers: [ext::http::Field;1] = [field(bytes("Host",4),bytes("x",1))];
+    let fields: core::slice::View<ext::http::Field> = core::slice::view(headers,1).unwrap();
+    cap = ext::http::default_limits(); cap.head_bytes = 47;
+    let request: alloc::vec::Vec<u8> = ext::http::encode_request(bytes("POST / HTTP/1.1",15),fields,bytes("x",1),cap).unwrap();
+    assert(request.len() == 48 && request.capacity() == request.len());
+    let parsed: ext::http::Message = ext::http::parse_request(request.as_view(),false,cap).unwrap();
+    assert(parsed.head.raw.len() == 47 && parsed.head.field_count == 2 && parsed.decoded_length == 1);
+    request.destroy(); cap.head_bytes = 46;
+    limit(ext::http::encode_request(bytes("POST / HTTP/1.1",15),fields,bytes("x",1),cap),0);
+
+    no_body(start,bytes("HEAD",4),false);
+    no_body(bytes("HTTP/1.1 101 X",14),get,false);
+    no_body(bytes("HTTP/1.1 204 X",14),get,false);
+    no_body(bytes("HTTP/1.1 304 X",14),get,false);
+    no_body(start,bytes("CONNECT",7),true);
+    cap = ext::http::default_limits(); cap.head_bytes = 37;
+    let reset: alloc::vec::Vec<u8> = ext::http::encode_response(bytes("HTTP/1.1 205 X",14),get,none(),empty(),cap).unwrap();
+    assert(reset.len() == 37 && reset.capacity() == reset.len());
+    assert(ext::http::parse_response_head(reset.as_view(),get,cap).unwrap().content_length == 0);
+    reset.destroy();
+    malformed(ext::http::encode_response(bytes("HTTP/1.1 205 X",14),get,none(),bytes("x",1),cap),0);
+
+    // Backed large value: no invented physical storage or oversized allocation.
+    let large: [u8;1024] = [120;1024];
+    headers[0] = field(bytes("X",1),core::slice::view(large,1024).unwrap());
+    cap = ext::http::default_limits(); cap.head_bytes = 64;
+    limit(ext::http::encode_response(start,get,fields,empty(),cap),0);
+    cap.head_bytes = 1066; limit(ext::http::encode_response(start,get,fields,empty(),cap),0);
+    cap.head_bytes = 1067;
+    let large_wire: alloc::vec::Vec<u8> = ext::http::encode_response(start,get,fields,empty(),cap).unwrap();
+    assert(large_wire.len() == 1067 && large_wire.capacity() == large_wire.len());
+    assert(ext::http::parse_response_head(large_wire.as_view(),get,cap).unwrap().lookup(bytes("X",1)).unwrap().value.len() == 1024);
+    large_wire.destroy();
+
+    cap = ext::http::default_limits(); cap.body_bytes = 9;
+    limit(ext::http::encode_response(start,get,none(),core::slice::view(body,10).unwrap(),cap),0);
+    cap = ext::http::default_limits(); cap.headers = 0;
+    limit(ext::http::encode_response(start,get,none(),empty(),cap),0);
+    cap = ext::http::default_limits(); cap.line_bytes = 14;
+    limit(ext::http::encode_response(start,get,none(),empty(),cap),0);
+    cap = ext::http::default_limits();
+    headers[0] = field(bytes("Content-Length",14),bytes("0",1));
+    malformed(ext::http::encode_response(start,get,fields,empty(),cap),0);
+    headers[0] = field(bytes("Transfer-Encoding",17),bytes("chunked",7));
+    malformed(ext::http::encode_response(start,get,fields,empty(),cap),0);
+    headers[0] = field(bytes("Bad Name",8),bytes("x",1));
+    malformed(ext::http::encode_response(start,get,fields,empty(),cap),0);
+    headers[0] = field(bytes("X",1),bytes("x\r\ny",4));
+    malformed(ext::http::encode_response(start,get,fields,empty(),cap),0);
+    headers[0] = field(empty(),bytes("x",1));
+    malformed(ext::http::encode_response(start,get,fields,empty(),cap),0);
+    headers[0] = field(bytes("X",1),bytes("x",1)); headers[0].value.start = -1;
+    let invalid: core::result::Result<alloc::vec::Vec<u8>,ext::http::Error> = ext::http::encode_response(start,get,fields,empty(),cap);
+    assert(invalid.is_err() && match(invalid.unwrap_err()) { ext::http::Error::Bounds -> true, _ -> false });
+    return 0;
+}

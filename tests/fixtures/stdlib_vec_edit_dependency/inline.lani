@@ -1,0 +1,13 @@
+module app::main;
+import core::pair;
+
+fn selected_pair<T>(values:[T],index:i32,current:T) -> core::pair::Pair<T,T> {
+    return core::pair::Pair { first:values[index],second:current };
+}
+
+fn main() -> i32 {
+    let values:[i32;2]=[17,29];
+    let selected:core::pair::Pair<i32,i32> =selected_pair<i32>(values,0,29);
+    assert(selected.first==17 && selected.second==29);
+    return 0;
+}

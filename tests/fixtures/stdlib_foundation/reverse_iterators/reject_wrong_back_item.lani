@@ -1,0 +1,16 @@
+module app::main;
+import core::iter;
+import core::option;
+struct WrongItem {}
+impl WrongItem { fn borrow(&self) -> &WrongItem { return self; } }
+pub impl core::iter::Iterator<u64> for WrongItem {
+    pub fn next(&self) -> core::option::Option<u64> { return core::option::None(); }
+}
+pub impl core::iter::DoubleEndedIterator<i32> for WrongItem {
+    pub fn next_back(&self) -> core::option::Option<i32> { return core::option::None(); }
+}
+fn main() -> i32 {
+    let source:WrongItem=WrongItem {};
+    let rejected:core::iter::Rev<WrongItem,u64> =core::iter::rev<WrongItem,u64>(source.borrow());
+    return 0;
+}

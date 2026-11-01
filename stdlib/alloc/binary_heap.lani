@@ -280,6 +280,10 @@ pub impl<T> core::iter::Iterator<T> for IntoIter<T> where T: core::cmp::Ord<T> {
     pub fn next(&self) -> core::option::Option<T> { return self.heap.pop(); }
 }
 
+pub impl<T> core::iter::ExactSizeIterator<T> for IntoIter<T> where T: core::cmp::Ord<T> {
+    pub fn remaining_count(&self) -> u64 { return self.remaining() as u64; }
+}
+
 // Preserve this heap's configured order and try_push's shallow ownership rules.
 pub impl<T> core::iter::TrySink<T, Error> for BinaryHeap<T> where T: core::cmp::Ord<T> {
     pub fn try_accept(&self, item: T) -> core::option::Option<Error> {

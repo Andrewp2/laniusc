@@ -21,6 +21,24 @@ All byte inputs are `core::slice::View<u8>`. Supply `default_limits()` or a `Lim
 
 A start line passed to an encoder excludes CRLF. Encoder fields are a view of `Field` records; only their `name` and `value` are used. The encoder validates field tokens and bytes, rejects CR/LF injection, reserves framing to itself, and emits `Content-Length` automatically. It rejects content in a 205 response and emits `Content-Length: 0` for an empty ordinary 205 response; parsing a received 205 still follows its ordinary framing, as RFC 9112 requires. Caller fields must exclude `Content-Length` and `Transfer-Encoding`. Empty bodies still receive a zero length except for responses whose semantics prohibit content; those responses require an empty body and omit the length. Validation or allocation failure releases all staging storage. The returned vector has one owner and must be destroyed once.
 
+The encoders preflight field metadata, line limits, tokens and value controls,
+then the complete serialized head size before allocating output. Head sizing
+includes every CRLF, the final empty line and the generated Content-Length
+digits when applicable. Head plus body must fit the signed 32-bit vector size.
+Success reserves exactly that combined size once; serialization uses that
+capacity without growth. The staged head still passes through the canonical
+head parser before body copying. These bounds count logical output bytes;
+allocator bookkeeping and physical backing have their own costs.
+
+An aggregate head or total-size preflight failure returns `Limit(0)` without
+an output allocation. A field line limit returns `Limit(field_index)`, and
+invalid field tokens/controls or caller framing fields retain
+`Malformed(field_index)` when their size is admitted. Size checks now precede
+field byte scanning: if an input violates both size and field syntax, the
+limit error may take precedence. A generated Content-Length line exceeding
+the line cap retains its staged-wire limit offset. Final canonical-parser
+errors still use staged wire offsets and can follow the one allocation.
+
 `Head` contains `raw`, ordered `fields`, `field_count`, `request`, `method`, `target`, `version` (10 or 11), `status`, `reason`, `kind`, and `content_length` (-1 if absent or ignored for a tunnel). Request-only or response-only byte fields are empty when inapplicable; the response `method` retains the supplied request method. `kind` is `Empty`, `Fixed`, `Chunked`, `Close`, or `Tunnel`. Header parsing normalizes no bytes.
 
 `Head.headers()` returns an ordered `Fields` cursor. Each `next()` returns a `Field` with raw line bytes (including CRLF), original name spelling, a value with outer SP/HTAB removed, and a source-relative line offset. Duplicate ordinary fields stay separate. `Head.lookup(name)` returns the first case-insensitive match; use the cursor to collect all values. `equal_name` compares ASCII field names without allocation.
@@ -62,3 +80,32 @@ Views carry caller-supplied logical metadata. The library rejects negative/overf
 ## Executable evidence
 
 `tests/extended_http_execution.rs` executes library contracts over native and packed storage, checks bounds/limits, exact pipeline positions, chunk extensions and trailers, binary decode, response method context and checked encoders. It traces allocations and injects every encoder allocation failure. `tests/extended_http_message_execution.rs` exercises offline stdin/file workflows, every truncation of a chunked message, malformed/smuggling inputs, deterministic generated binary framing compared with h11 and `http.client`, scale, and injected allocation/read/write/open/close failures. No test relies on network access or a host HTTP parser in production.
+
+The current `tests/extended_http_execution.rs` passes all three registered
+tests through actual Linux x86_64 execution, with GPU compilation producing
+raw CPU executables:
+
+- `http_borrowed_heads_framing_chunks_strides_limits_and_checked_encoders_execute`
+  retains the existing parser/framing/encoder regression coverage.
+- `http_encoder_preflights_caps_and_uses_one_exact_allocation_per_valid_message`
+  passes exact-head-cap and one-below boundaries, zero/tiny caps, decimal-width
+  changes, request/response and 101/HEAD/no-body rules, a physically backed
+  1,024-byte field under a small head cap and preserved invalid-field errors.
+  Its fifteen successful encodings produce fifteen matched allocation/release
+  pairs in total; rejected preflight inputs add no allocation. Successful Vec
+  capacity equals the exact serialized head-plus-body length.
+- `http_encoder_releases_staging_on_every_allocation_failure` reaches exactly
+  one output allocation on success, then denies that allocation and checks the
+  typed AllocationFailed result with no live allocation.
+
+The receipt is
+`target/stdlib-work/http-encoder-preflight-module-first.log`: build 2.13 seconds,
+three tests passed in 12.56 seconds. Accepted encoder source SHA-256 is
+`5d49571691ee7f01adc7a782842a59825276b5f012febba249b8f0702ef08591`;
+the focused fixture is
+`493ff5b5314adbb19e128d19be0f0656c761d8852cfd151bef273fddb37894ce`.
+This finite raw executable profile establishes the listed cases. It does not
+claim arbitrary-size/overflow execution, all callers' allocation-failure
+paths, user-program GPU execution or formal memory-safety proofs. Signed-size
+overflow prevention remains an explicit source preflight; no unbacked huge
+view or gigabyte allocation was used as test input.

@@ -1,0 +1,11 @@
+module app::main;
+import core::function;
+import core::option;
+import core::result;
+struct Policy {}
+impl Policy { fn borrow(&self) -> &Policy { return self; } }
+fn main() -> i32 {
+    let source:core::option::Option<i32> =core::option::Some(7); let policy:Policy=Policy {};
+    let rejected_outcome_bound = source.unwrap_or_else<Policy>(policy.borrow());
+    return 0;
+}

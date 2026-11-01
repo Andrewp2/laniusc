@@ -29,17 +29,17 @@ runtime behavior, failure rules and supported targets.
 | Boolean values and bit operations | `core::bool`, `core::bits` | [Truth functions, widths, rotations and extraction](../docs/stdlib-boolean-bits.md) |
 | Floating values and conversion | `core::f32`, `core::f64`, `core::float_decimal` | [Exact precision formatting](../docs/stdlib-float-precision.md) |
 | Elementary mathematics | `core::math` | [Full-range binary64 functions and accuracy evidence](../docs/stdlib-math.md) |
-| Wire coding and checksums | `core::base64`, `core::hex`, `core::binary`, `core::endian`, `core::varint`, `core::varint_i32`, `core::crc32`, `core::adler32` | [Byte codecs, endian values, varint statuses and CRC contracts](../docs/stdlib-byte-codecs.md) |
-| Borrowed data and algorithms | `core::slice`, `core::range`, array helpers | [Counted views](../docs/stdlib-slice-views.md), [slice algorithms](../docs/stdlib-slice.md), [range membership and ordered overlap](../docs/stdlib-ranges.md) |
-| Shared iteration | `core::iter`, collection and Text cursors | [Fused slice/range cursors and borrowed adapters](../docs/stdlib-iterators.md), [collection, Text and bitset integration](../docs/stdlib-collection-iterators.md), [range-statistics application](../docs/stdlib-range-stats.md) |
+| Wire coding and checksums | `core::base64`, `core::hex`, `core::binary`, `core::endian`, `core::varint`, `core::crc32`, `core::adler32` | [Byte codecs, endian values and CRC](../docs/stdlib-byte-codecs.md), [checked Base64 profiles](../docs/stdlib-base64.md), [checked native varints and explicit errors](../docs/stdlib-varint.md) |
+| Borrowed data and algorithms | `core::slice`, `alloc::slice`, `core::range`, array helpers | [Counted views](../docs/stdlib-slice-views.md), [allocation-free slice algorithms](../docs/stdlib-slice.md), [one-workspace stable sorting](../docs/stdlib-stable-sort.md), [range membership and ordered overlap](../docs/stdlib-ranges.md) |
+| Shared iteration | `core::iter`, collection and Text cursors | [Fused slice/range cursors and borrowed adapters](../docs/stdlib-iterators.md), [sequence equality, ordering and sortedness](../docs/stdlib-iterator-sequences.md), [collection, Text and bitset integration](../docs/stdlib-collection-iterators.md), [range-statistics application](../docs/stdlib-range-stats.md) |
 | UTF-8 and Unicode | `core::text`, `core::char`, `core::utf8`, `core::utf16`, `core::transcode`, `core::unicode` | [UTF encoding, edits and transcoding](../docs/stdlib-utf-codecs.md), [Unicode properties](../docs/stdlib-unicode.md); normalization and full casing are optional extended modules |
-| Owned strings | `alloc::string` | [String ownership, edits and failures](../docs/stdlib-string.md) |
+| Owned strings | `alloc::string` | [String ownership, edits and failures](../docs/stdlib-string.md), [validated byte-owner transfers](../docs/stdlib-owned-input.md#utf-8-ownership-transfer) |
 | Explicit value cloning and memory release | `core::clone`, `alloc::clone`, `alloc::clone_vec`, `alloc::string` | [Fallible element cloning and partial-owner cleanup](../docs/stdlib-clone.md), [recursive Vec ownership and typed errors](../docs/stdlib-nested-clone.md) |
 | Formatting | `core::fmt`, `core::format`, `alloc::format` | [Runtime format strings and owned results](../docs/stdlib-format-strings.md), [bounded scratch output to byte writers](../docs/stdlib-format-write.md) |
 | Inline collections | `core::vec`, `core::set` | [Borrowed free APIs, capacities, equality and returned values](../docs/stdlib-fixed-capacity.md) |
 | Owned collections | `alloc::vec`, `alloc::deque`, `alloc::hash_map`, `alloc::hash_set`, `alloc::tree_map`, `alloc::tree_set`, `alloc::binary_heap`, `alloc::bitset` | [Owned bitsets](../docs/stdlib-bitset-owned.md), [ordered maps](../docs/stdlib-tree-map.md), [generic sets, representatives and algebra](../docs/stdlib-owned-sets.md) |
 | Memory | `core::mem`, `alloc::allocator`, `alloc::arena` | [Value copying, raw storage and view layouts](../docs/stdlib-memory.md), [arena layouts and ownership](../docs/stdlib-arena.md) |
-| Streams and files | `core::io`, `alloc::io`, `alloc::buffered`, `std::stream`, `std::file`, `std::filesystem` | [Byte streams](../docs/stdlib-streams.md), [buffered adapters and binary copying](../docs/stdlib-buffered.md), [files](../docs/stdlib-files.md), [filesystem operations](../docs/stdlib-filesystem.md) |
+| Streams and files | `core::io`, `alloc::io`, `alloc::buffered`, `std::stream`, `std::file`, `std::filesystem` | [Byte streams](../docs/stdlib-streams.md), [bounded owned-input collection](../docs/stdlib-owned-input.md), [owned delimiter/line records](../docs/stdlib-owned-delimited.md), [buffered adapters and binary copying](../docs/stdlib-buffered.md), [files](../docs/stdlib-files.md), [filesystem operations](../docs/stdlib-filesystem.md) |
 | File options and directories | `std::file_ops`, `std::directory` | [Seek, metadata, sync and duplication](../docs/stdlib-file-operations.md), [checked file lengths](../docs/stdlib-file-resize.md), [raw names and bounded walks](../docs/stdlib-directory.md) |
 | Owned temporary files | `std::temp_file` | [Exclusive creation, bounded OS entropy, same-owner keep and retained cleanup](../docs/stdlib-temp-files.md); finite native Linux x86_64/ext4 profile, cooperative namespace |
 | Single-name file publication | `std::atomic_file` | [Bounded Replace/NoReplace commit, sync/visibility receipts and explicit recovery](../docs/stdlib-atomic-files.md); finite local Linux x86_64/ext4 profile, cooperative namespace |
@@ -55,8 +55,11 @@ runtime behavior, failure rules and supported targets.
 | Native C libraries | Checked `extern "C"` declarations; optional `ext::openssl_digest` | [Linux x86_64/glibc ABI and linking](../docs/library-native-c.md), [OpenSSL digest ownership](../docs/extended-openssl-digest.md), [binary stdin hashing](../docs/extended-openssl-hash.md) |
 | Tests and benchmarks | `test::assert`, `test::check`, `test::suite`, `test::property`, `test::bench` | [Development workflow](../docs/stdlib-development.md), `tools/lanius-test` |
 
-The older `std::vec` remains for the verified compiler's extraction contract and
-one heap dependency. New programs should use `alloc::vec`. Silent-failure map,
+The protected `std::vec` retains active formal vector specification/template
+contracts and remains heap backing. The mini compiler and extractor use `List`;
+the [dependency ledger](../docs/library-dependencies.md) records the protected
+formal contract and separate heap-migration dependency. New programs should
+use `alloc::vec`. Silent-failure map,
 set, byte-vector and UTF-8 owners have been removed with their repository
 consumers [migrated to checked APIs](../docs/stdlib-legacy-collections.md).
 

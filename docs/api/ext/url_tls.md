@@ -8,7 +8,14 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-**No contract guide registered.** This page makes no runtime support claim.
+Verified HTTPS facade over the same TCP selector and canonical HTTPS driver; explicit native ssl/crypto linking and a caller-owned OpenSSL Context are required. Original URL DNS identity drives certificate matching/SNI; numeric hosts use IP SAN without SNI. Preparation precedes lookup; the exact selected Socket is adopted and no handshake/HTTP failure can replay onto spare endpoints. OpenSSL performs cryptography. Eight direct cases across TLS 1.2/1.3 pass identity, mismatch-before-HTTP, authenticated truncated response, no-replay and pre-exit source cleanup checks on Linux x86_64/glibc/OpenSSL 3. Manual Response ownership, source/native quota boundaries and remaining finite-coverage gaps are explicit.
+
+## Contract and evidence guides
+
+- [extended-url-client](../../extended-url-client.md)
+- [extended-fetch-url](../../extended-fetch-url.md)
+- [extended-https-client](../../extended-https-client.md)
+- [library-url-client-plan](../../library-url-client-plan.md)
 
 Declaration counts: enum: 2; field: 12; function: 2; impl: 1; method: 6; struct: 3; variant: 14.
 
@@ -18,10 +25,10 @@ Direct source imports; this is not a package-resolution or transitive dependency
 
 - [core::io](../core/io.md) · [source](../../../extended/ext/url_tls.lani#L4)
 - [core::option](../core/option.md) · [source](../../../extended/ext/url_tls.lani#L5)
-- [core::option::Option](../core/option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L12) · [source](../../../extended/ext/url_tls.lani#L6)
-- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L12) · [source](../../../extended/ext/url_tls.lani#L7)
-- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L13) · [source](../../../extended/ext/url_tls.lani#L8)
-- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L14) · [source](../../../extended/ext/url_tls.lani#L9)
+- [core::option::Option](../core/option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../extended/ext/url_tls.lani#L6)
+- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/url_tls.lani#L7)
+- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/url_tls.lani#L8)
+- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/url_tls.lani#L9)
 - [core::time](../core/time.md) · [source](../../../extended/ext/url_tls.lani#L10)
 - [ext::http_client](http_client.md) · [source](../../../extended/ext/url_tls.lani#L11)
 - [ext::http_url](http_url.md) · [source](../../../extended/ext/url_tls.lani#L12)
@@ -292,6 +299,8 @@ active: bool
 pub fn default_options() -> Options
 ```
 
+Composes plain URL request/connector defaults with canonical HTTPS TLS-call defaults.
+
 ### function: exchange_until
 
 [Source line 53](../../../extended/ext/url_tls.lani#L53)
@@ -301,6 +310,8 @@ pub fn exchange_until(url: &ext::http_url::Url, context: &ext::openssl_tls::Cont
     request: ext::url_client::Request, options: Options,
     deadline: core::time::Deadline) -> Result<Response,Failure>
 ```
+
+Accepts Https only and validates live Context, original URL identity and TLS/request options before selection. Borrows caller inputs through the synchronous call and returns one manually destroyed Response with actual TLS statistics, or typed stage/HTTP/HTTPS/connection/cleanup diagnostics.
 
 ## Implementation blocks and public methods
 

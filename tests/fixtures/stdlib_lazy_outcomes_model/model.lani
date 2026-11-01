@@ -1,0 +1,315 @@
+// Real imported lazy APIs; test-only complete binary callback/state observations.
+module app::main;
+import core::function;
+import core::mem;
+import core::option;
+import core::result;
+import std::io;
+
+fn read_exact(pointer:ptr,count:i32,allow_eof:bool) -> bool {
+    let done:i32=0;
+    while(done<count) {
+        let got:i32=std::io::read_stdin(pointer+(done as usize),(count-done) as usize);
+        assert(got>=0);
+        if(got==0) { assert(allow_eof && done==0); return false; }
+        done+=got;
+    }
+    return true;
+}
+fn write_all(pointer:ptr,count:i32) {
+    let done:i32=0;
+    while(done<count) {
+        let got:i32=std::io::write_stdout(pointer+(done as usize),(count-done) as usize);
+        assert(got>0); done+=got;
+    }
+}
+fn get64(bytes:[u8],offset:i32) -> u64 {
+    let value:u64=0; let i:i32=0;
+    while(i<8) { value|=(bytes[offset+i] as u64)<<(i*8); i+=1; }
+    return value;
+}
+struct Output { bytes:[u8],pointer:ptr,used:i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { write_all(self.pointer,self.used); self.used=0; }
+    fn word(&self,value:u64) {
+        if(self.used==4096) { self.flush(); }
+        let i:i32=0; while(i<8) { self.bytes[self.used+i]=((value>>(i*8))&255) as u8; i+=1; }
+        self.used+=8;
+    }
+}
+fn emit_bool(value:bool,output:&Output) { if(value) { output.word(1); } else { output.word(0); } }
+trait Value<T> {
+    fn make(token:u64) -> T;
+    fn token(value:T) -> u64;
+    fn emit(value:T,output:&Output);
+}
+impl Value<u64> for u64 {
+    fn make(token:u64) -> u64 { return token; }
+    fn token(value:u64) -> u64 { return value; }
+    fn emit(value:u64,output:&Output) { output.word(value); }
+}
+struct Payload { token:u64,wide:u64,mark:core::option::Option<bool>,words:[i32;3],branch:core::result::Result<u64,i32> }
+impl Value<Payload> for Payload {
+    fn make(token:u64) -> Payload {
+        let n:i32=(token%2000001) as i32-1000000;
+        let mark:core::option::Option<bool> = core::option::None();
+        if(token%3!=0) { mark=core::option::Some((token&1)==0); }
+        let words:[i32;3]=[n,-n,n/2];
+        let branch:core::result::Result<u64,i32> = core::result::Ok(token^18364758544493064720);
+        if((token&2)!=0) { branch=core::result::Err(n); }
+        return Payload { token:token,wide:token^10494147739710322440,mark:mark,words:words,branch:branch };
+    }
+    fn token(value:Payload) -> u64 { return value.token; }
+    fn emit(value:Payload,output:&Output) {
+        output.word(value.token); output.word(value.wide);
+        if(value.mark.is_none()) { output.word(0); }
+        else { if(value.mark.unwrap()) { output.word(2); } else { output.word(1); } }
+        let i:i32=0; while(i<3) { output.word(value.words[i] as i64 as u64); i+=1; }
+        if(value.branch.is_ok()) { output.word(0); output.word(value.branch.unwrap()); }
+        else { output.word(1); output.word(value.branch.unwrap_err() as i64 as u64); }
+    }
+}
+fn emit_option<T>(value:core::option::Option<T>,output:&Output) where T:Value<T> {
+    if(value.is_none()) { output.word(0); return; }
+    output.word(1); T::emit(value.unwrap(),output);
+}
+fn emit_result<T>(value:core::result::Result<T,T>,output:&Output) where T:Value<T> {
+    if(value.is_ok()) { output.word(0); T::emit(value.unwrap(),output); }
+    else { output.word(1); T::emit(value.unwrap_err(),output); }
+}
+fn emit_values<T>(optional:core::option::Option<T>,result:core::result::Result<T,T>,plain:T,flag:bool,output:&Output)
+    where T:Value<T> {
+    emit_option<T>(optional,output); emit_result<T>(result,output); T::emit(plain,output); emit_bool(flag,output);
+}
+struct Context { calls:u64,output:&Output }
+impl Context {
+    fn borrow(&self) -> &Context { return self; }
+    fn begin(&self,kind:u64,id:u64,mode:i32,salt:u64,has_input:bool) {
+        self.calls+=1; let output:&Output=self.output;
+        output.word(57345); output.word(kind); output.word(id); output.word(self.calls);
+        output.word(mode as u64); output.word(salt); emit_bool(has_input,output);
+    }
+}
+struct Settings { state:&Context,id:u64,mode:i32,salt:u64 }
+fn transformed(input:u64,config:Settings) -> u64 {
+    let state:&Context=config.state; return input^config.salt^(state.calls<<32)^(config.id<<8);
+}
+fn selected(token:u64,config:Settings) -> bool {
+    let state:&Context=config.state;
+    return config.mode==1 || (config.mode>=2 && ((token^state.calls)&1)!=0);
+}
+struct Transform<T> { config:Settings }
+impl<T> Transform<T> { fn borrow(&self) -> &Transform<T> { return self; } }
+pub impl<T> core::function::Mapper<T,T> for Transform<T> where T:Value<T> {
+    pub fn apply(&self,input:T) -> T {
+        let config:Settings=self.config; let state:&Context=config.state; let output:&Output=state.output;
+        state.begin(0,config.id,config.mode,config.salt,true); T::emit(input,output);
+        let result:T=T::make(transformed(T::token(input),config)); T::emit(result,output); return result;
+    }
+}
+struct Predicate<T> { config:Settings }
+impl<T> Predicate<T> { fn borrow(&self) -> &Predicate<T> { return self; } }
+pub impl<T> core::function::Mapper<T,bool> for Predicate<T> where T:Value<T> {
+    pub fn apply(&self,input:T) -> bool {
+        let config:Settings=self.config; let state:&Context=config.state; let output:&Output=state.output;
+        state.begin(1,config.id,config.mode,config.salt,true); T::emit(input,output);
+        let base:u64=T::token(input);
+        let answer:bool=config.mode==1 || (config.mode==2 && ((base^config.salt^state.calls)&1)!=0)
+            || (config.mode==3 && base%5==state.calls%5);
+        emit_bool(answer,output); return answer;
+    }
+}
+struct Optional<T> { config:Settings }
+impl<T> Optional<T> { fn borrow(&self) -> &Optional<T> { return self; } }
+pub impl<T> core::function::Mapper<T,core::option::Option<T>> for Optional<T> where T:Value<T> {
+    pub fn apply(&self,input:T) -> core::option::Option<T> {
+        let config:Settings=self.config; let state:&Context=config.state; let output:&Output=state.output;
+        state.begin(2,config.id,config.mode,config.salt,true); T::emit(input,output);
+        let token:u64=transformed(T::token(input),config);
+        let result:core::option::Option<T> = core::option::None();
+        if(selected(token,config)) { result=core::option::Some(T::make(token)); }
+        emit_option<T>(result,output); return result;
+    }
+}
+struct Outcome<T> { config:Settings }
+impl<T> Outcome<T> { fn borrow(&self) -> &Outcome<T> { return self; } }
+pub impl<T> core::function::Mapper<T,core::result::Result<T,T>> for Outcome<T> where T:Value<T> {
+    pub fn apply(&self,input:T) -> core::result::Result<T,T> {
+        let config:Settings=self.config; let state:&Context=config.state; let output:&Output=state.output;
+        state.begin(3,config.id,config.mode,config.salt,true); T::emit(input,output);
+        let token:u64=transformed(T::token(input),config);
+        let result:core::result::Result<T,T> = core::result::Err(T::make(token^9223372036854775808));
+        if(selected(token,config)) { result=core::result::Ok(T::make(token)); }
+        emit_result<T>(result,output); return result;
+    }
+}
+struct Supply<T> { config:Settings }
+impl<T> Supply<T> { fn borrow(&self) -> &Supply<T> { return self; } }
+pub impl<T> core::function::Producer<T> for Supply<T> where T:Value<T> {
+    pub fn produce(&self) -> T {
+        let config:Settings=self.config; let state:&Context=config.state; let output:&Output=state.output;
+        state.begin(4,config.id,config.mode,config.salt,false);
+        let result:T=T::make(transformed(17357386176853808775,config)); T::emit(result,output); return result;
+    }
+}
+struct SupplyOptional<T> { config:Settings }
+impl<T> SupplyOptional<T> { fn borrow(&self) -> &SupplyOptional<T> { return self; } }
+pub impl<T> core::function::Producer<core::option::Option<T>> for SupplyOptional<T> where T:Value<T> {
+    pub fn produce(&self) -> core::option::Option<T> {
+        let config:Settings=self.config; let state:&Context=config.state; let output:&Output=state.output;
+        state.begin(5,config.id,config.mode,config.salt,false);
+        let token:u64=transformed(17357386176853808775,config);
+        let result:core::option::Option<T> = core::option::None();
+        if(selected(token,config)) { result=core::option::Some(T::make(token)); }
+        emit_option<T>(result,output); return result;
+    }
+}
+fn run<T>(mode:i32,token:u64,actions:[u8],count:i32,output:&Output) where T:Value<T> {
+    let state:Context=Context { calls:0,output:output };
+    let optional:core::option::Option<T> = core::option::None();
+    if((mode&1)!=0) { optional=core::option::Some(T::make(token)); }
+    let result:core::result::Result<T,T> = core::result::Err(T::make(token^18446744073709551615));
+    if((mode&2)!=0) { result=core::result::Ok(T::make(token^18446744073709551615)); }
+    let plain:T=T::make(token^1229782938247303441); let flag:bool=(mode&1)!=0;
+    emit_values<T>(optional,result,plain,flag,output);
+    let step:i32=0;
+    while(step<count) {
+        let offset:i32=step*32;
+        let op:i32=get64(actions,offset) as i32; let route:i32=get64(actions,offset+8) as i32;
+        let behavior:i32=get64(actions,offset+16) as i32; let salt:u64=get64(actions,offset+24);
+        assert(op>=0 && op<=22 && route>=0 && route<2 && behavior>=0 && behavior<4);
+        let old_optional:core::option::Option<T> = optional; let old_result:core::result::Result<T,T> = result;
+        let old_plain:T=plain; let old_flag:bool=flag;
+        output.word(step as u64); output.word(op as u64); output.word(route as u64);
+        let primary:Settings=Settings { state:state.borrow(),id:(op*2+1) as u64,mode:behavior,salt:salt };
+        let fallback:Settings=Settings { state:state.borrow(),id:(op*2+2) as u64,mode:behavior,salt:salt };
+        let mapper:Transform<T> = Transform { config:primary };
+        let fallback_mapper:Transform<T> = Transform { config:fallback };
+        let predicate:Predicate<T> = Predicate { config:primary };
+        let optional_mapper:Optional<T> = Optional { config:primary };
+        let outcome_mapper:Outcome<T> = Outcome { config:primary };
+        let fallback_outcome:Outcome<T> = Outcome { config:fallback };
+        let producer:Supply<T> = Supply { config:fallback };
+        let optional_producer:SupplyOptional<T> = SupplyOptional { config:fallback };
+        let eager:T=T::make(salt^12297829382473034410);
+        if(op==0) {
+            if(route==0) { optional=core::option::map<T,T,Transform<T>>(old_optional,mapper.borrow()); }
+            else { optional=old_optional.map<T,Transform<T>>(mapper.borrow()); }
+        }
+        if(op==1) {
+            if(route==0) { plain=core::option::map_or<T,T,Transform<T>>(old_optional,eager,mapper.borrow()); }
+            else { plain=old_optional.map_or<T,Transform<T>>(eager,mapper.borrow()); }
+        }
+        if(op==2) {
+            if(route==0) { plain=core::option::map_or_else<T,T,Supply<T>,Transform<T>>(old_optional,producer.borrow(),mapper.borrow()); }
+            else { plain=old_optional.map_or_else<T,Supply<T>,Transform<T>>(producer.borrow(),mapper.borrow()); }
+        }
+        if(op==3) {
+            if(route==0) { optional=core::option::and_then<T,T,Optional<T>>(old_optional,optional_mapper.borrow()); }
+            else { optional=old_optional.and_then<T,Optional<T>>(optional_mapper.borrow()); }
+        }
+        if(op==4) {
+            if(route==0) { optional=core::option::or_else<T,SupplyOptional<T>>(old_optional,optional_producer.borrow()); }
+            else { optional=old_optional.or_else<SupplyOptional<T>>(optional_producer.borrow()); }
+        }
+        if(op==5) {
+            if(route==0) { plain=core::option::unwrap_or_else<T,Supply<T>>(old_optional,producer.borrow()); }
+            else { plain=old_optional.unwrap_or_else<Supply<T>>(producer.borrow()); }
+        }
+        if(op==6) {
+            if(route==0) { result=core::option::ok_or_else<T,T,Supply<T>>(old_optional,producer.borrow()); }
+            else { result=old_optional.ok_or_else<T,Supply<T>>(producer.borrow()); }
+        }
+        if(op==7) {
+            if(route==0) { optional=core::option::filter<T,Predicate<T>>(old_optional,predicate.borrow()); }
+            else { optional=old_optional.filter<Predicate<T>>(predicate.borrow()); }
+        }
+        if(op==8) {
+            if(route==0) { flag=core::option::is_some_and<T,Predicate<T>>(old_optional,predicate.borrow()); }
+            else { flag=old_optional.is_some_and<Predicate<T>>(predicate.borrow()); }
+        }
+        if(op==9) {
+            if(route==0) { flag=core::option::is_none_or<T,Predicate<T>>(old_optional,predicate.borrow()); }
+            else { flag=old_optional.is_none_or<Predicate<T>>(predicate.borrow()); }
+        }
+        if(op==10) {
+            if(route==0) { result=core::result::map<T,T,T,Transform<T>>(old_result,mapper.borrow()); }
+            else { result=old_result.map<T,Transform<T>>(mapper.borrow()); }
+        }
+        if(op==11) {
+            if(route==0) { result=core::result::map_err<T,T,T,Transform<T>>(old_result,mapper.borrow()); }
+            else { result=old_result.map_err<T,Transform<T>>(mapper.borrow()); }
+        }
+        if(op==12) {
+            if(route==0) { plain=core::result::map_or<T,T,T,Transform<T>>(old_result,eager,mapper.borrow()); }
+            else { plain=old_result.map_or<T,Transform<T>>(eager,mapper.borrow()); }
+        }
+        if(op==13) {
+            if(route==0) { plain=core::result::map_or_else<T,T,T,Transform<T>,Transform<T>>(old_result,fallback_mapper.borrow(),mapper.borrow()); }
+            else { plain=old_result.map_or_else<T,Transform<T>,Transform<T>>(fallback_mapper.borrow(),mapper.borrow()); }
+        }
+        if(op==14) {
+            if(route==0) { result=core::result::and_then<T,T,T,Outcome<T>>(old_result,outcome_mapper.borrow()); }
+            else { result=old_result.and_then<T,Outcome<T>>(outcome_mapper.borrow()); }
+        }
+        if(op==15) {
+            if(route==0) { result=core::result::or_else<T,T,T,Outcome<T>>(old_result,fallback_outcome.borrow()); }
+            else { result=old_result.or_else<T,Outcome<T>>(fallback_outcome.borrow()); }
+        }
+        if(op==16) {
+            if(route==0) { plain=core::result::unwrap_or_else<T,T,Transform<T>>(old_result,fallback_mapper.borrow()); }
+            else { plain=old_result.unwrap_or_else<Transform<T>>(fallback_mapper.borrow()); }
+        }
+        if(op==17) {
+            if(route==0) { flag=core::result::is_ok_and<T,T,Predicate<T>>(old_result,predicate.borrow()); }
+            else { flag=old_result.is_ok_and<Predicate<T>>(predicate.borrow()); }
+        }
+        if(op==18) {
+            if(route==0) { flag=core::result::is_err_and<T,T,Predicate<T>>(old_result,predicate.borrow()); }
+            else { flag=old_result.is_err_and<Predicate<T>>(predicate.borrow()); }
+        }
+        if(op==19) {
+            optional=core::option::None();
+            if(behavior==1 || (behavior>=2 && flag)) { optional=core::option::Some(plain); }
+        }
+        if(op==20) {
+            result=core::result::Err(plain);
+            if(behavior==1 || (behavior>=2 && flag)) { result=core::result::Ok(plain); }
+        }
+        if(op==21) {
+            optional=core::option::None(); if((behavior&1)!=0) { optional=core::option::Some(T::make(salt)); }
+            result=core::result::Err(T::make(salt^18446744073709551615));
+            if((behavior&2)!=0) { result=core::result::Ok(T::make(salt^18446744073709551615)); }
+            plain=T::make(salt^1229782938247303441); flag=(behavior&1)!=0;
+        }
+        if(op==22) { optional=core::option::ok<T,T>(result); }
+        output.word(40961); output.word(state.calls);
+        emit_values<T>(old_optional,old_result,old_plain,old_flag,output);
+        emit_values<T>(optional,result,plain,flag,output); step+=1;
+    }
+    output.word(state.calls); emit_values<T>(optional,result,plain,flag,output);
+}
+fn main() -> i32 {
+    let header_words:[i32;8]=[0;8]; let header_pointer:ptr=core::mem::i32_array_data_ptr(header_words);
+    let header:[u8]=core::mem::typed_slice_from_raw_parts<u8>(header_pointer,32);
+    assert(read_exact(header_pointer,16,false)); assert(get64(header,0)==7809657890782798956);
+    let cases:i32=get64(header,8) as i32; assert(cases>0 && cases<=32);
+    let action_words:[i32;768]=[0;768]; let action_pointer:ptr=core::mem::i32_array_data_ptr(action_words);
+    let actions:[u8]=core::mem::typed_slice_from_raw_parts<u8>(action_pointer,3072);
+    let output_words:[i32;1024]=[0;1024]; let output_pointer:ptr=core::mem::i32_array_data_ptr(output_words);
+    let output:Output=Output { bytes:core::mem::typed_slice_from_raw_parts<u8>(output_pointer,4096),pointer:output_pointer,used:0 };
+    output.word(7809657890782798956); output.word(cases as u64); let index:i32=0;
+    while(index<cases) {
+        assert(read_exact(header_pointer,32,false));
+        let shape:i32=get64(header,0) as i32; let mode:i32=get64(header,8) as i32;
+        let token:u64=get64(header,16); let count:i32=get64(header,24) as i32;
+        assert(shape>=0 && shape<2 && mode>=0 && mode<4 && count>0 && count<=96);
+        assert(read_exact(action_pointer,count*32,false));
+        output.word(index as u64); output.word(shape as u64); output.word(mode as u64); output.word(token); output.word(count as u64);
+        if(shape==0) { run<u64>(mode,token,actions,count,output.borrow()); }
+        else { run<Payload>(mode,token,actions,count,output.borrow()); }
+        index+=1;
+    }
+    assert(!read_exact(header_pointer,1,true)); output.word(7308889661923555693); output.flush(); return 0;
+}

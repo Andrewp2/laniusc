@@ -1,10 +1,11 @@
 module app::main;
+import core::function;
 import core::iter;
 import core::range;
 
 struct IntegerPredicate {}
 impl IntegerPredicate { fn borrow(&self) -> &IntegerPredicate { return self; } }
-pub impl core::iter::Mapper<i32, i32> for IntegerPredicate {
+pub impl core::function::Mapper<i32, i32> for IntegerPredicate {
     pub fn apply(&self, value: i32) -> i32 { return value; }
 }
 fn main() -> i32 {

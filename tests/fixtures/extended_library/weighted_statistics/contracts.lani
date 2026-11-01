@@ -1,0 +1,180 @@
+// Public weighted contracts: explicit zero weight, atomic failures and views.
+module app::main;
+import core::f64;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::statistics;
+import ext::weighted_statistics;
+
+fn code(error:ext::weighted_statistics::Error) -> i32 {
+    return match(error.kind) {
+        ext::weighted_statistics::ErrorKind::Empty -> 1,
+        ext::weighted_statistics::ErrorKind::InsufficientData -> 2,
+        ext::weighted_statistics::ErrorKind::NonFiniteInput -> 3,
+        ext::weighted_statistics::ErrorKind::InvalidWeight -> 4,
+        ext::weighted_statistics::ErrorKind::Overflow -> 5,
+        ext::weighted_statistics::ErrorKind::CountLimit -> 6,
+        ext::weighted_statistics::ErrorKind::Bounds -> 7,
+        ext::weighted_statistics::ErrorKind::Degenerate -> 8
+    };
+}
+fn close(actual:f64,expected:f64) -> bool {
+    return core::f64::is_finite(actual) && core::f64::abs(actual-expected)<=1e-12*core::f64::max(1.0,core::f64::abs(expected));
+}
+fn equal_result(a:core::result::Result<f64,ext::weighted_statistics::Error>,b:core::result::Result<f64,ext::weighted_statistics::Error>) -> bool {
+    if (a.is_ok()!=b.is_ok()) { return false; }
+    if (a.is_ok()) { return core::f64::to_bits(a.unwrap())==core::f64::to_bits(b.unwrap()); }
+    let left:ext::weighted_statistics::Error=a.unwrap_err(); let right:ext::weighted_statistics::Error=b.unwrap_err();
+    return code(left)==code(right) && left.index==right.index;
+}
+fn unchanged(a:ext::weighted_statistics::Moments,b:ext::weighted_statistics::Moments) -> bool {
+    return a.count()==b.count() && equal_result(a.total_weight(),b.total_weight()) && equal_result(a.mean(),b.mean())
+        && equal_result(a.minimum(),b.minimum()) && equal_result(a.maximum(),b.maximum()) && equal_result(a.m2(),b.m2())
+        && equal_result(a.population_variance(),b.population_variance()) && equal_result(a.reliability_variance(),b.reliability_variance())
+        && equal_result(a.population_stddev(),b.population_stddev()) && equal_result(a.reliability_stddev(),b.reliability_stddev())
+        && equal_result(a.effective_count(),b.effective_count()) && equal_result(a.correction_denominator(),b.correction_denominator());
+}
+fn unchanged_pair(a:ext::weighted_statistics::PairedMoments,b:ext::weighted_statistics::PairedMoments) -> bool {
+    if (a.count()!=b.count() || !equal_result(a.total_weight(),b.total_weight()) || !equal_result(a.mean_x(),b.mean_x()) || !equal_result(a.mean_y(),b.mean_y())) { return false; }
+    if (!equal_result(a.population_covariance(),b.population_covariance()) || !equal_result(a.reliability_covariance(),b.reliability_covariance()) || !equal_result(a.correlation(),b.correlation())) { return false; }
+    let af:core::result::Result<ext::statistics::LinearFit,ext::weighted_statistics::Error> =a.linear_fit();
+    let bf:core::result::Result<ext::statistics::LinearFit,ext::weighted_statistics::Error> =b.linear_fit();
+    if (af.is_ok()!=bf.is_ok()) { return false; }
+    if (af.is_err()) { return code(af.unwrap_err())==code(bf.unwrap_err()); }
+    let x:ext::statistics::LinearFit=af.unwrap(); let y:ext::statistics::LinearFit=bf.unwrap();
+    return core::f64::to_bits(x.slope)==core::f64::to_bits(y.slope) && core::f64::to_bits(x.intercept)==core::f64::to_bits(y.intercept) && core::f64::to_bits(x.r_squared)==core::f64::to_bits(y.r_squared);
+}
+fn empty_zero_and_validation() {
+    let state:ext::weighted_statistics::Moments=ext::weighted_statistics::moments();
+    assert(state.count()==0 && state.total_weight().unwrap()==0.0);
+    assert(code(state.mean().unwrap_err())==1 && code(state.minimum().unwrap_err())==1 && code(state.maximum().unwrap_err())==1);
+    assert(code(state.m2().unwrap_err())==1 && code(state.population_variance().unwrap_err())==1);
+    assert(code(state.reliability_variance().unwrap_err())==2 && code(state.reliability_stddev().unwrap_err())==2);
+    assert(code(state.effective_count().unwrap_err())==1 && code(state.correction_denominator().unwrap_err())==1);
+    assert(!state.push(99.0,0.0).unwrap() && !state.push(-99.0,-0.0).unwrap() && state.count()==0);
+    let original:ext::weighted_statistics::Moments=state;
+    let bad:core::result::Result<bool,ext::weighted_statistics::Error> =state.push(core::f64::nan(),-1.0);
+    assert(code(bad.unwrap_err())==3 && bad.unwrap_err().index==-1 && unchanged(state,original));
+    assert(code(state.push(core::f64::infinity(),0.0).unwrap_err())==3 && unchanged(state,original));
+    assert(code(state.push(1.0,-1.0).unwrap_err())==4 && code(state.push(1.0,core::f64::nan()).unwrap_err())==4);
+    assert(code(state.push(1.0,core::f64::infinity()).unwrap_err())==4 && unchanged(state,original));
+    assert(state.push(7.0,2.0).unwrap() && !state.push(-100.0,0.0).unwrap());
+    assert(state.count()==1 && state.mean().unwrap()==7.0 && state.minimum().unwrap()==7.0 && state.maximum().unwrap()==7.0);
+    assert(state.m2().unwrap()==0.0 && state.population_variance().unwrap()==0.0 && state.correction_denominator().unwrap()==0.0 && state.effective_count().unwrap()==1.0);
+    assert(code(state.reliability_variance().unwrap_err())==2);
+}
+fn exact_weights_and_merges() {
+    let values:[f64;3]=[1.0,3.0,1000.0]; let weights:[f64;3]=[1.0,3.0,0.0];
+    let state:ext::weighted_statistics::Moments=ext::weighted_statistics::moments();
+    assert(state.push_views(core::slice::view(values,3).unwrap(),core::slice::view(weights,3).unwrap()).unwrap()==2);
+    assert(state.count()==2 && state.total_weight().unwrap()==4.0 && state.mean().unwrap()==2.5);
+    assert(state.minimum().unwrap()==1.0 && state.maximum().unwrap()==3.0 && state.m2().unwrap()==3.0);
+    assert(state.population_variance().unwrap()==0.75 && state.reliability_variance().unwrap()==2.0 && state.correction_denominator().unwrap()==1.5);
+    assert(close(state.effective_count().unwrap(),1.6));
+    let old:ext::weighted_statistics::Moments=state; let empty:ext::weighted_statistics::Moments=ext::weighted_statistics::moments();
+    assert(!state.merge(empty).unwrap() && unchanged(state,old));
+    assert(state.merge(old).unwrap() && state.count()==4 && state.total_weight().unwrap()==8.0 && state.m2().unwrap()==6.0);
+    assert(state.mean().unwrap()==2.5 && state.population_variance().unwrap()==0.75 && old.count()==2);
+    assert(close(state.reliability_variance().unwrap(),12.0/11.0));
+    let copy:ext::weighted_statistics::Moments=ext::weighted_statistics::summarize(core::slice::view(values,3).unwrap(),core::slice::view(weights,3).unwrap()).unwrap();
+    assert(unchanged(copy,old));
+    let equal:ext::weighted_statistics::Moments=ext::weighted_statistics::moments(); equal.push(1.0,2.0).unwrap(); equal.push(3.0,2.0).unwrap();
+    assert(equal.mean().unwrap()==2.0 && equal.population_variance().unwrap()==1.0 && equal.reliability_variance().unwrap()==2.0);
+    let scaled:ext::weighted_statistics::Moments=ext::weighted_statistics::moments(); scaled.push(1.0,8.0).unwrap(); scaled.push(3.0,24.0).unwrap();
+    assert(scaled.mean().unwrap()==old.mean().unwrap() && scaled.population_variance().unwrap()==old.population_variance().unwrap());
+    assert(scaled.reliability_variance().unwrap()==old.reliability_variance().unwrap() && close(scaled.effective_count().unwrap(),old.effective_count().unwrap()));
+    let frequency:ext::statistics::Moments=ext::statistics::moments(); frequency.push(1.0).unwrap(); frequency.push(3.0).unwrap(); frequency.push(3.0).unwrap(); frequency.push(3.0).unwrap();
+    assert(frequency.population_variance().unwrap()==old.population_variance().unwrap() && frequency.sample_variance().unwrap()!=old.reliability_variance().unwrap());
+}
+fn rollback_and_borrowed_views() {
+    let state:ext::weighted_statistics::Moments=ext::weighted_statistics::moments(); state.push(1.0,1.0).unwrap(); state.push(3.0,3.0).unwrap();
+    let old:ext::weighted_statistics::Moments=state;
+    let values:[f64;3]=[4.0,5.0,core::f64::nan()]; let weights:[f64;3]=[1.0,1.0,0.0];
+    let result:core::result::Result<u64,ext::weighted_statistics::Error> =state.push_views(core::slice::view(values,3).unwrap(),core::slice::view(weights,3).unwrap());
+    assert(code(result.unwrap_err())==3 && result.unwrap_err().index==2 && unchanged(state,old));
+    values[2]=6.0; weights[2]=-1.0;
+    let invalid:core::result::Result<u64,ext::weighted_statistics::Error> =state.push_views(core::slice::view(values,3).unwrap(),core::slice::view(weights,3).unwrap());
+    assert(code(invalid.unwrap_err())==4 && invalid.unwrap_err().index==2 && unchanged(state,old));
+    let bad:core::slice::View<f64> =core::slice::View { values:values,start:-1,length:1 };
+    assert(code(state.push_views(bad,core::slice::view(weights,1).unwrap()).unwrap_err())==7 && unchanged(state,old));
+    let mismatched:core::result::Result<u64,ext::weighted_statistics::Error> =state.push_views(core::slice::view(values,3).unwrap(),core::slice::view(weights,2).unwrap());
+    assert(code(mismatched.unwrap_err())==7 && mismatched.unwrap_err().index==-1 && unchanged(state,old));
+    let words:[i32;12]=[0;12]; let packed:[f64]=core::mem::typed_slice_from_storage(core::mem::i32_array_data_ptr(words),6);
+    packed[0]=99.0; packed[1]=1.0; packed[2]=3.0; packed[3]=99.0; packed[4]=1.0; packed[5]=3.0;
+    let pv:core::slice::View<f64> =core::slice::view_range(packed,1,2).unwrap(); let pw:core::slice::View<f64> =core::slice::view_range(packed,4,2).unwrap();
+    let summarized:ext::weighted_statistics::Moments=ext::weighted_statistics::summarize(pv,pw).unwrap(); assert(unchanged(summarized,old));
+    let alias:ext::weighted_statistics::Moments=ext::weighted_statistics::summarize(pv,pv).unwrap();
+    assert(alias.mean().unwrap()==2.5 && packed[0]==99.0 && packed[3]==99.0 && packed[1]==1.0 && packed[5]==3.0);
+    let large:ext::weighted_statistics::Moments=ext::weighted_statistics::moments(); large.push(1.0,1e308).unwrap(); let saved:ext::weighted_statistics::Moments=large;
+    assert(code(large.push(2.0,1e308).unwrap_err())==5 && unchanged(large,saved));
+    assert(code(large.merge(saved).unwrap_err())==5 && unchanged(large,saved));
+}
+fn paired_contracts() {
+    let state:ext::weighted_statistics::PairedMoments=ext::weighted_statistics::paired_moments();
+    assert(state.count()==0 && state.total_weight().unwrap()==0.0 && code(state.reliability_covariance().unwrap_err())==2);
+    assert(!state.push(8.0,9.0,0.0).unwrap() && code(state.push(1.0,core::f64::nan(),0.0).unwrap_err())==3);
+    state.push(1.0,5.0,1.0).unwrap(); state.push(3.0,9.0,3.0).unwrap();
+    assert(state.mean_x().unwrap()==2.5 && state.mean_y().unwrap()==8.0 && state.population_covariance().unwrap()==1.5 && state.reliability_covariance().unwrap()==4.0);
+    assert(close(state.correlation().unwrap(),1.0)); let fit:ext::statistics::LinearFit=state.linear_fit().unwrap();
+    assert(fit.slope==2.0 && fit.intercept==3.0 && close(fit.r_squared,1.0));
+    let before:ext::weighted_statistics::PairedMoments=state; let empty:ext::weighted_statistics::PairedMoments=ext::weighted_statistics::paired_moments();
+    assert(!state.merge(empty).unwrap() && unchanged_pair(state,before));
+    let x:[f64;3]=[4.0,5.0,6.0]; let y:[f64;3]=[11.0,13.0,core::f64::nan()]; let w:[f64;3]=[1.0,1.0,0.0];
+    let batch:core::result::Result<u64,ext::weighted_statistics::Error> =state.push_views(core::slice::view(x,3).unwrap(),core::slice::view(y,3).unwrap(),core::slice::view(w,3).unwrap());
+    assert(code(batch.unwrap_err())==3 && batch.unwrap_err().index==2 && unchanged_pair(state,before));
+    assert(state.merge(before).unwrap() && state.count()==4 && state.population_covariance().unwrap()==1.5 && before.count()==2);
+    let constant:ext::weighted_statistics::PairedMoments=ext::weighted_statistics::paired_moments(); constant.push(3.0,1.0,1.0).unwrap(); constant.push(3.0,2.0,2.0).unwrap();
+    assert(code(constant.correlation().unwrap_err())==8 && code(constant.linear_fit().unwrap_err())==8);
+    // All three view-shape guards precede reading even a nonfinite first row.
+    x[0]=core::f64::nan();
+    let malformed:core::slice::View<f64> =core::slice::View { values:x,start:-1,length:3 };
+    let xv:core::slice::View<f64> =core::slice::view(x,3).unwrap(); let yv:core::slice::View<f64> =core::slice::view(y,3).unwrap(); let wv:core::slice::View<f64> =core::slice::view(w,3).unwrap();
+    let saved:ext::weighted_statistics::PairedMoments=state;
+    let bounds:core::result::Result<u64,ext::weighted_statistics::Error> =state.push_views(xv,core::slice::view(y,2).unwrap(),wv);
+    assert(code(bounds.unwrap_err())==7 && bounds.unwrap_err().index==-1 && unchanged_pair(state,saved));
+    assert(code(state.push_views(xv,yv,core::slice::view(w,2).unwrap()).unwrap_err())==7 && unchanged_pair(state,saved));
+    assert(code(state.push_views(malformed,yv,wv).unwrap_err())==7 && unchanged_pair(state,saved));
+    assert(code(state.push_views(xv,malformed,wv).unwrap_err())==7 && unchanged_pair(state,saved));
+    assert(code(state.push_views(xv,yv,malformed).unwrap_err())==7 && unchanged_pair(state,saved));
+    // X's candidate update is valid; Y's second moment overflows. Neither
+    // marginal nor the cross state may be published after that later failure.
+    let overflow:ext::weighted_statistics::PairedMoments=ext::weighted_statistics::paired_moments(); overflow.push(0.0,0.0,1.0).unwrap();
+    let prior:ext::weighted_statistics::PairedMoments=overflow;
+    assert(code(overflow.push(1.0,core::f64::MAX,1.0).unwrap_err())==5 && unchanged_pair(overflow,prior));
+    let later:ext::weighted_statistics::PairedMoments=ext::weighted_statistics::paired_moments(); later.push(1.0,core::f64::MAX,1.0).unwrap();
+    assert(code(overflow.merge(later).unwrap_err())==5 && unchanged_pair(overflow,prior));
+    let capped:ext::weighted_statistics::PairedMoments=ext::weighted_statistics::paired_moments(); capped.push(7.0,11.0,1.0).unwrap();
+    let step:i32=0; while (step<53) { let copy:ext::weighted_statistics::PairedMoments=capped; assert(capped.merge(copy).unwrap()); step+=1; }
+    assert(capped.count()==9007199254740992);
+    let cap_before:ext::weighted_statistics::PairedMoments=capped;
+    assert(!capped.push(99.0,98.0,0.0).unwrap() && unchanged_pair(capped,cap_before));
+    assert(code(capped.push(7.0,11.0,1.0).unwrap_err())==6 && unchanged_pair(capped,cap_before));
+    assert(code(capped.merge(prior).unwrap_err())==6 && unchanged_pair(capped,cap_before));
+    let cx:[f64;3]=[7.0,7.0,7.0]; let cy:[f64;3]=[11.0,11.0,11.0]; let cw:[f64;3]=[0.0,0.0,1.0];
+    let capped_batch:core::result::Result<u64,ext::weighted_statistics::Error> =capped.push_views(core::slice::view(cx,3).unwrap(),core::slice::view(cy,3).unwrap(),core::slice::view(cw,3).unwrap());
+    assert(code(capped_batch.unwrap_err())==6 && capped_batch.unwrap_err().index==2 && unchanged_pair(capped,cap_before));
+}
+fn exact_count_cap_and_extreme_weights() {
+    let state:ext::weighted_statistics::Moments=ext::weighted_statistics::moments(); state.push(7.0,1.0).unwrap();
+    let index:i32=0; while (index<53) { let old:ext::weighted_statistics::Moments=state; assert(state.merge(old).unwrap()); index+=1; }
+    assert(state.count()==9007199254740992 && state.total_weight().unwrap()==9007199254740992.0);
+    let before:ext::weighted_statistics::Moments=state;
+    assert(!state.push(99.0,0.0).unwrap() && unchanged(state,before));
+    assert(code(state.push(7.0,1.0).unwrap_err())==6 && code(state.push(core::f64::nan(),0.0).unwrap_err())==3 && unchanged(state,before));
+    let singleton:ext::weighted_statistics::Moments=ext::weighted_statistics::moments(); singleton.push(7.0,1.0).unwrap();
+    assert(code(state.merge(singleton).unwrap_err())==6 && unchanged(state,before));
+    let extreme:ext::weighted_statistics::Moments=ext::weighted_statistics::moments(); extreme.push(0.0,1e300).unwrap(); extreme.push(1.0,1e-300).unwrap();
+    assert(extreme.count()==2 && extreme.correction_denominator().unwrap()>0.0 && close(extreme.reliability_variance().unwrap(),0.5));
+    assert(extreme.population_variance().unwrap()==0.0 && extreme.population_stddev().unwrap()>0.0);
+    let reverse:ext::weighted_statistics::Moments=ext::weighted_statistics::moments(); reverse.push(1.0,1e-300).unwrap(); reverse.push(0.0,1e300).unwrap();
+    assert(close(reverse.reliability_variance().unwrap(),0.5) && reverse.correction_denominator().unwrap()>0.0);
+    // Effective count uses squared-weight state, not the rounded norm value.
+    let subnormal:ext::weighted_statistics::Moments=ext::weighted_statistics::moments();
+    let smallest:f64=core::f64::from_bits(1); index=0;
+    while (index<4) {
+        subnormal.push(7.0,smallest).unwrap(); index+=1;
+        assert(close(subnormal.effective_count().unwrap(),index as f64));
+    }
+}
+fn main() -> i32 { empty_zero_and_validation(); exact_weights_and_merges(); rollback_and_borrowed_views(); paired_contracts(); exact_count_cap_and_extreme_weights(); return 0; }

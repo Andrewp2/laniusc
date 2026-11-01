@@ -1,0 +1,193 @@
+// Bounded UTF-8 stdin summarized through borrowed bidirectional Text cursors.
+module app::main;
+import alloc::io;
+import alloc::string;
+import alloc::vec;
+import core::decimal;
+import core::io;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+import core::result::Result;
+import core::slice;
+import core::slice::View;
+import core::text;
+import std::args;
+import std::signal;
+import std::stream;
+
+struct Calls { used:i32 }
+impl Calls { fn borrow(&self) -> &Calls { return self; } }
+enum Failure {
+    Arguments, ArgumentsIo, InvalidUtf8, InputBytes, InputLines,
+    InputCalls, OutputCalls, Allocation, InputIo, OutputIo
+}
+
+fn literal(value:str, count:i32) -> View<u8> {
+    let raw:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return core::slice::view(raw,count).unwrap();
+}
+
+// The counter is shared by every header/row write. A short write preserves
+// its confirmed prefix; Interrupted spends an attempt without progress.
+fn write(bytes:View<u8>, handle:i32, calls:&Calls, maximum:i32) -> i32 {
+    let sink:std::stream::Descriptor = std::stream::from_handle(handle);
+    let completed:i32 = 0;
+    while (completed < bytes.length) {
+        if (calls.used >= maximum) { return 2; }
+        calls.used += 1;
+        let sent:Result<i32,core::io::Error> = sink.write(bytes.values,bytes.start+completed,bytes.length-completed);
+        if (sent.is_err()) {
+            if (core::io::is_interrupted(sent.unwrap_err())) { continue; }
+            return 3;
+        }
+        let count:i32 = sent.unwrap();
+        if (count <= 0 || count > bytes.length-completed) { return 3; }
+        completed += count;
+    }
+    return 0;
+}
+
+fn report(failure:Failure) -> i32 {
+    let message:View<u8> = match (failure) {
+        Failure::Arguments -> literal("line_summary: arguments are not supported\n",42),
+        Failure::ArgumentsIo -> literal("line_summary: could not read arguments\n",39),
+        Failure::InvalidUtf8 -> literal("line_summary: input is not valid UTF-8\n",39),
+        Failure::InputBytes -> literal("line_summary: input exceeds 1048576 bytes\n",42),
+        Failure::InputLines -> literal("line_summary: input exceeds 65536 lines\n",40),
+        Failure::InputCalls -> literal("line_summary: read attempt limit exceeded\n",42),
+        Failure::OutputCalls -> literal("line_summary: write attempt limit exceeded\n",43),
+        Failure::Allocation -> literal("line_summary: allocation failed\n",32),
+        Failure::InputIo -> literal("line_summary: input operation failed\n",37),
+        Failure::OutputIo -> literal("line_summary: output operation failed\n",38)
+    };
+    let calls:Calls = Calls { used:0 };
+    if (write(message,2,calls.borrow(),64) != 0) { return 3; }
+    return match (failure) {
+        Failure::ArgumentsIo -> 3,
+        Failure::InputIo -> 3,
+        Failure::OutputIo -> 3,
+        Failure::Allocation -> 4,
+        _ -> 2
+    };
+}
+
+fn read_failure(cause:alloc::io::ReadError) -> Failure {
+    return match (cause) {
+        alloc::io::ReadError::InvalidLimits -> Failure::InputIo,
+        alloc::io::ReadError::CallLimit -> Failure::InputCalls,
+        alloc::io::ReadError::ByteLimit -> Failure::InputBytes,
+        alloc::io::ReadError::Io(error) -> match (error) {
+            core::io::Error::AllocationFailed -> Failure::Allocation,
+            core::io::Error::LimitExceeded -> Failure::InputBytes,
+            _ -> Failure::InputIo
+        },
+        alloc::io::ReadError::Storage(error) -> match (error) {
+            alloc::vec::Error::AllocationFailed -> Failure::Allocation,
+            _ -> Failure::InputIo
+        },
+        alloc::io::ReadError::Text(error) -> match (error) {
+            alloc::string::Error::InvalidUtf8(index) -> Failure::InvalidUtf8,
+            alloc::string::Error::AllocationFailed -> Failure::Allocation,
+            _ -> Failure::InputIo
+        }
+    };
+}
+
+fn admitted_lines(text:core::text::Text) -> Result<i32,i32> {
+    let lines:core::text::Lines = text.lines();
+    let count:i32 = 0;
+    while (lines.next().is_some()) {
+        count += 1;
+        if (count > 65536) { return core::result::Err(2); }
+    }
+    return core::result::Ok(count);
+}
+
+fn field(output:[u8], offset:i32, value:i32, ending:u8) -> Result<i32,i32> {
+    if (offset < 0 || offset >= 63) { return core::result::Err(3); }
+    let rendered:Result<i32,core::decimal::FormatError> = core::decimal::format_i32(output,offset,63-offset,value);
+    if (rendered.is_err()) { return core::result::Err(3); }
+    let length:i32 = rendered.unwrap();
+    if (length <= 0 || length > 63-offset) { return core::result::Err(3); }
+    let end:i32 = offset+length;
+    output[end] = ending;
+    return core::result::Ok(end+1);
+}
+
+fn row(output:[u8], number:i32, line:core::text::Text) -> Result<i32,i32> {
+    let words:core::text::SplitAsciiWhitespace = line.split_ascii_whitespace();
+    let last_word:core::option::Option<core::text::Text> = words.next_back();
+    let count:i32 = 0;
+    let last_bytes:i32 = 0;
+    if (last_word.is_some()) { count = 1; last_bytes = last_word.unwrap().byte_len(); }
+    // Count only the words remaining after the backward pull, so the final
+    // word is neither copied nor counted twice.
+    while (words.next().is_some()) { count += 1; }
+    let scalars:core::text::Scalars = line.scalars();
+    let last_scalar:core::option::Option<core::text::Scalar> = scalars.next_back();
+    let value:i32 = -1;
+    if (last_scalar.is_some()) { value = last_scalar.unwrap().value as i32; }
+    let offset:i32 = field(output,0,number,9)?;
+    offset = field(output,offset,line.byte_len(),9)?;
+    offset = field(output,offset,count,9)?;
+    offset = field(output,offset,last_bytes,9)?;
+    return field(output,offset,value,10);
+}
+
+fn publish(text:core::text::Text) -> i32 {
+    let calls:Calls = Calls { used:0 };
+    let status:i32 = write(literal("line\tbytes\twords\tlast_word_bytes\tlast_scalar\n",45),1,calls.borrow(),131072);
+    if (status != 0) { return status; }
+    let output:[u8;64] = [0;64];
+    let lines:core::text::Lines = text.lines();
+    let number:i32 = 0;
+    while (true) {
+        let found:core::option::Option<core::text::Text> = lines.next();
+        if (found.is_none()) { return 0; }
+        number += 1;
+        let rendered:Result<i32,i32> = row(output,number,found.unwrap());
+        if (rendered.is_err()) { return rendered.unwrap_err(); }
+        status = write(core::slice::view(output,rendered.unwrap()).unwrap(),1,calls.borrow(),131072);
+        if (status != 0) { return status; }
+    }
+    return 0;
+}
+
+fn main() -> i32 {
+    // A failed setup returns without writing: stderr might itself be a closed
+    // pipe, and without SIGPIPE protection a diagnostic could terminate us.
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    // A zero-entry snapshot rejects every operand, including --help and --,
+    // before input. Its empty owner needs no allocation or borrowed argv.
+    let captured = std::args::snapshot(1,0,0);
+    if (captured.is_err()) {
+        return report(match (captured.unwrap_err()) {
+            std::args::Error::AllocationFailed -> Failure::Allocation,
+            std::args::Error::HostRead(index) -> Failure::ArgumentsIo,
+            _ -> Failure::Arguments
+        });
+    }
+    let arguments = captured.unwrap();
+    arguments.destroy();
+    let source:std::stream::Descriptor = std::stream::stdin();
+    let limits:alloc::io::ReadLimits = alloc::io::ReadLimits { max_bytes:1048576,max_calls:16384 };
+    let collected:Result<alloc::string::String,alloc::io::ReadFailure> = alloc::io::read_to_string<std::stream::Descriptor>(source.borrow(),limits);
+    if (collected.is_err()) {
+        let failure:alloc::io::ReadFailure = collected.unwrap_err();
+        let cause:Failure = read_failure(failure.cause);
+        failure.destroy();
+        return report(cause);
+    }
+    let input:alloc::string::String = collected.unwrap();
+    let text:core::text::Text = input.as_text();
+    let admitted:Result<i32,i32> = admitted_lines(text);
+    if (admitted.is_err()) { input.destroy(); return report(Failure::InputLines); }
+    let status:i32 = publish(text);
+    // All cursors and views are finished before the sole input owner retires.
+    input.destroy();
+    if (status == 2) { return report(Failure::OutputCalls); }
+    if (status != 0) { return report(Failure::OutputIo); }
+    return 0;
+}

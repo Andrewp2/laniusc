@@ -5,6 +5,7 @@ import alloc::tree_map;
 import core::cmp;
 import core::iter;
 import core::option;
+import core::ordering;
 import core::result;
 
 pub struct TreeSet<T> { state: alloc::tree_map::KeyStorage }
@@ -47,6 +48,20 @@ pub impl<T> TreeSet<T> {
     }
     // Return the stored representative; callers manage any nested resources.
     pub fn remove(&self, key: T) -> core::option::Option<T> where T: core::cmp::Ord<T> { return alloc::tree_map::key_remove<T>(self.state.borrow(), key); }
+    // The shared map query laws and call-scoped observation rules apply.
+    // Get borrows the stored representative; remove transfers that owner.
+    pub fn contains_by<Q,P>(&self, query:Q, policy:&P) -> bool
+        where P:core::ordering::Comparator<T,Q> {
+        return alloc::tree_map::key_contains_by<T,Q,P>(self.state.borrow(),query,policy);
+    }
+    pub fn get_by<Q,P>(&self, query:Q, policy:&P) -> core::option::Option<T>
+        where P:core::ordering::Comparator<T,Q> {
+        return alloc::tree_map::key_get_by<T,Q,P>(self.state.borrow(),query,policy);
+    }
+    pub fn remove_by<Q,P>(&self, query:Q, policy:&P) -> core::option::Option<T>
+        where P:core::ordering::Comparator<T,Q> {
+        return alloc::tree_map::key_remove_by<T,Q,P>(self.state.borrow(),query,policy);
+    }
     // Any mutation/destruction invalidates outstanding cursors and borrowed keys.
     pub fn iter(&self) -> Cursor<T> { return Cursor { state: alloc::tree_map::key_iter<T>(self.state.borrow()) }; }
     pub fn try_reserve(&self, additional: i32) -> core::result::Result<i32, alloc::tree_map::Error> { return alloc::tree_map::key_reserve<T>(self.state.borrow(), additional); }
@@ -152,7 +167,6 @@ pub impl<T> core::iter::TryReplaceSink<T,alloc::tree_map::Error> for TreeSet<T>
 
 pub impl<T> Cursor<T> {
     pub fn borrow(&self) -> &Cursor<T> { return self; }
-    pub fn next_back(&self) -> core::option::Option<T> { return alloc::tree_map::key_next_back<T>(self.state.borrow()); }
     pub fn is_empty(&self) -> bool { return self.state.front < 0; }
 }
 
@@ -160,15 +174,15 @@ pub impl<T> core::iter::Iterator<T> for Cursor<T> {
     pub fn next(&self) -> core::option::Option<T> { return alloc::tree_map::key_next<T>(self.state.borrow()); }
 }
 
+pub impl<T> core::iter::DoubleEndedIterator<T> for Cursor<T> {
+    pub fn next_back(&self) -> core::option::Option<T> { return alloc::tree_map::key_next_back<T>(self.state.borrow()); }
+}
+
 pub impl<T> IntoIter<T> {
     pub fn borrow(&self) -> &IntoIter<T> { return self; }
     pub fn remaining(&self) -> i32 { return self.state.length; }
     pub fn capacity(&self) -> i32 { return self.state.reserved; }
     pub fn is_empty(&self) -> bool { return self.state.length == 0; }
-    // Canonical endpoint removal: O(log n), no leaf bounds or allocation.
-    pub fn next_back(&self) -> core::option::Option<T> {
-        return alloc::tree_map::key_pop<T>(self.state.borrow(), true);
-    }
     pub fn try_finish(&self) -> core::option::Option<IntoIterError> {
         let count: i32 = self.remaining();
         if (count > 0) { return core::option::Some(IntoIterError::Remaining(count)); }
@@ -184,4 +198,13 @@ pub impl<T> core::iter::Iterator<T> for IntoIter<T> {
     pub fn next(&self) -> core::option::Option<T> {
         return alloc::tree_map::key_pop<T>(self.state.borrow(), false);
     }
+}
+
+pub impl<T> core::iter::DoubleEndedIterator<T> for IntoIter<T> {
+    // Canonical endpoint removal: O(log n), no leaf bounds or allocation.
+    pub fn next_back(&self) -> core::option::Option<T> { return alloc::tree_map::key_pop<T>(self.state.borrow(),true); }
+}
+
+pub impl<T> core::iter::ExactSizeIterator<T> for IntoIter<T> {
+    pub fn remaining_count(&self) -> u64 { return self.remaining() as u64; }
 }

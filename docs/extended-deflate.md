@@ -10,6 +10,12 @@ native executables**. GPU-kernel execution and other targets are unverified.
 Use [`ext::compression`](extended-compression.md) for owned output, zlib or gzip
 containers, and [`ext::inflate`](extended-inflate.md) for raw decoding.
 
+The [resumable encoder](extended-streaming-deflate.md) adds fixed 32 KiB block
+storage, retained pending bytes and chunk-invariant progress through the same
+block helpers. All five streaming library groups pass on the finite native profile.
+The APIs and historical
+receipts below describe the whole-input policy.
+
 ## Caller storage and API
 
 ```lanius
@@ -100,10 +106,11 @@ Ties select fixed Huffman. Stored blocks hold at most 65535 input bytes each.
 Fixed output is one final block, and matches can refer anywhere in its allowed
 window. Both alternatives represent every input byte and have a final block.
 
-This is a deterministic fixed/stored compression profile. It does not emit
-dynamic Huffman trees, choose blocks independently for mixed data, accept preset
-dictionaries or expose incremental streaming state. Those are potential
-compression-ratio or streaming improvements. Ordinary DEFLATE decoders can read
+This whole-input policy does not emit dynamic Huffman trees, choose blocks
+independently for mixed data or accept preset dictionaries. The separate
+[streaming policy](extended-streaming-deflate.md#deterministic-block-policy)
+chooses each 32 KiB block independently and retains state across calls.
+Ordinary DEFLATE decoders can read
 the resulting streams; the decoder has broader block support than this encoder
 needs to emit.
 
@@ -119,7 +126,10 @@ fixed output or a copying pass for stored output.
 
 `tests/extended_deflate_execution.rs` runs compiled Lanius programs and uses
 the system zlib decoder solely as an independent test oracle. Production
-Lanius code has no foreign codec dependency. Six groups cover:
+Lanius code has no foreign codec dependency. The historical six-group receipt
+below predates the shared block-helper streaming change; selected current
+regressions belong in the [streaming guide](extended-streaming-deflate.md).
+Its original scope covers:
 
 - 644 empty, byte, generated binary, text, periodic, small-alphabet and mixed
   inputs, including all eight ending-bit positions and zero final padding.
@@ -148,6 +158,8 @@ timeout --kill-after=2s 100s env \
 ## Native measurements
 
 Measured on 2026-10-23, AMD Ryzen 9 5950X, Linux x86_64, pinned to CPU 8.
+These are historical whole-input measurements, not measurements of the
+resumable encoder or its current shared-helper revision.
 The compiler base was `441e66f9`. The native batch fixture's `encode-only`
 mode calls `encode_into` once per record, without a separate `encoded_len` call.
 One warm run preceded five measured runs, alternating case order. Times include

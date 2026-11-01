@@ -156,7 +156,7 @@ def build():
     """Build what the tests run (a no-op when it is current)."""
     env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
     with run_cache.lean_lock():
-        run = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
+        run = subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
                               'lake', 'build', 'runAll', 'extract', 'floatTest', 'srcDump', 'topAxioms', 'LaniusMini', 'Lanius.Mini.FrontLex',
                               'Lanius.Mini.MutPilotCorrect', 'Lanius.Machines.SqliteStatementCorrect',
                               'Lanius.Machines.TlsLifecycleCorrect', 'Lanius.Machines.RunLowering'],

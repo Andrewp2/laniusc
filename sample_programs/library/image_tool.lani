@@ -18,7 +18,8 @@ import std::args;
 import std::stream;
 
 struct Rectangle { x: i32, y: i32, width: i32, height: i32 }
-struct Options { mode: i32, limits: ext::png::Limits, max_output: i32, crop: core::option::Option<Rectangle>, turns: i32, flip_x: bool, flip_y: bool, transformed: bool, help: bool }
+struct Dimensions { width: i32, height: i32 }
+struct Options { mode: i32, limits: ext::png::Limits, max_output: i32, crop: core::option::Option<Rectangle>, turns: i32, flip_x: bool, flip_y: bool, resize: core::option::Option<Dimensions>, filter: ext::image::Filter, filter_set: bool, transformed: bool, help: bool }
 impl Options { fn borrow(&self) -> &Options { return self; } }
 struct Diagnostic { stage: i32, reason: i32 }
 impl Diagnostic { fn borrow(&self) -> &Diagnostic { return self; } }
@@ -53,12 +54,32 @@ fn rectangle(bytes: core::slice::View<u8>) -> core::option::Option<Rectangle> {
     if (field != 4 || values[2] == 0 || values[3] == 0) { return core::option::None(); }
     return core::option::Some(Rectangle { x: values[0], y: values[1], width: values[2], height: values[3] });
 }
+fn dimensions(bytes: core::slice::View<u8>) -> core::option::Option<Dimensions> {
+    let values: [i32;2] = [0;2]; let field: i32 = 0; let begin: i32 = 0; let index: i32 = 0;
+    while (index <= bytes.length) {
+        if (index == bytes.length || bytes.values[bytes.start+index] == 44) {
+            if (field == 2) { return core::option::None(); }
+            let part: core::slice::View<u8> = core::result::unwrap(bytes.subview(begin,index));
+            let parsed: core::option::Option<i32> = number(part,2147483647); if (core::option::is_none(parsed)) { return core::option::None(); }
+            values[field] = core::option::unwrap(parsed); field += 1; begin = index+1;
+        } index += 1;
+    }
+    if (field != 2 || values[0] == 0 || values[1] == 0) { return core::option::None(); }
+    return core::option::Some(Dimensions { width: values[0], height: values[1] });
+}
 fn option(options: &Options, item: ext::cli::Occurrence) -> bool {
     if (item.id == 10) { options.help = true; return true; }
     if (item.id == 2) { options.flip_x = true; options.transformed = true; return true; }
     if (item.id == 3) { options.flip_y = true; options.transformed = true; return true; }
     let argument: ext::cli::Argument = core::option::unwrap(item.value); let bytes: core::slice::View<u8> = argument.bytes;
     if (item.id == 1) { options.crop = rectangle(bytes); options.transformed = true; return core::option::is_some(options.crop); }
+    if (item.id == 11) { options.resize = dimensions(bytes); options.transformed = true; return core::option::is_some(options.resize); }
+    if (item.id == 12) {
+        options.filter_set = true; options.transformed = true;
+        if (equal(bytes,literal("nearest",7))) { options.filter = ext::image::Filter::Nearest; return true; }
+        if (equal(bytes,literal("bilinear",8))) { options.filter = ext::image::Filter::Bilinear; return true; }
+        if (equal(bytes,literal("area",4))) { options.filter = ext::image::Filter::Area; return true; } return false;
+    }
     let maximum: u64 = 268435456;
     if (item.id == 4) { maximum = 270; }
     if (item.id == 6) { maximum = 67108864; }
@@ -132,6 +153,14 @@ fn consume_image(decoded: ext::image::Image, options: Options, detail: &Diagnost
     }
     if (options.flip_x) { let flipped = ext::image::flip_horizontal(image.view()); if (core::result::is_err(flipped)) { image.destroy(); return image_error(core::result::unwrap_err(flipped),detail); } }
     if (options.flip_y) { let flipped = ext::image::flip_vertical(image.view()); if (core::result::is_err(flipped)) { image.destroy(); return image_error(core::result::unwrap_err(flipped),detail); } }
+    if (core::option::is_some(options.resize)) {
+        let size: Dimensions = core::option::unwrap(options.resize);
+        let pixels: u64 = (size.width as u64)*(size.height as u64);
+        if (pixels > options.limits.max_pixels as u64) { image.destroy(); return fail(detail,3,3,1); }
+        let resized: core::result::Result<ext::image::Image,ext::image::Error> = ext::image::resize(image.view(),size.width,size.height,options.filter);
+        if (core::result::is_err(resized)) { image.destroy(); return image_error(core::result::unwrap_err(resized),detail); }
+        let replacement: ext::image::Image = core::result::unwrap(resized); image.destroy(); image = replacement;
+    }
     let encoded: core::result::Result<alloc::vec::Vec<u8>,ext::png::Error> = ext::png::encode(image.view(),options.max_output); image.destroy();
     if (core::result::is_err(encoded)) { return png_error(core::result::unwrap_err(encoded),detail,4); }
     let bytes: alloc::vec::Vec<u8> = core::result::unwrap(encoded); let status: i32 = write(bytes.as_view(),detail); bytes.destroy(); return status;
@@ -146,7 +175,7 @@ fn execute(options: Options, detail: &Diagnostic) -> i32 {
     return consume_image(core::result::unwrap(decoded),options,detail);
 }
 fn process(arguments: std::args::Arguments, detail: &Diagnostic) -> i32 {
-    let specs: [ext::cli::Spec;10] = [
+    let specs: [ext::cli::Spec;12] = [
         ext::cli::Spec { id: 1, long: literal("crop",4), short: 0, arity: ext::cli::Arity::Required },
         ext::cli::Spec { id: 2, long: literal("flip-x",6), short: 0, arity: ext::cli::Arity::Flag },
         ext::cli::Spec { id: 3, long: literal("flip-y",6), short: 0, arity: ext::cli::Arity::Flag },
@@ -156,12 +185,14 @@ fn process(arguments: std::args::Arguments, detail: &Diagnostic) -> i32 {
         ext::cli::Spec { id: 7, long: literal("max-inflated-bytes",18), short: 0, arity: ext::cli::Arity::Required },
         ext::cli::Spec { id: 8, long: literal("max-chunks",10), short: 0, arity: ext::cli::Arity::Required },
         ext::cli::Spec { id: 9, long: literal("max-output-bytes",16), short: 0, arity: ext::cli::Arity::Required },
-        ext::cli::Spec { id: 10, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag }
+        ext::cli::Spec { id: 10, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 11, long: literal("resize",6), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 12, long: literal("filter",6), short: 0, arity: ext::cli::Arity::Required }
     ];
-    let schema: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,10));
+    let schema: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,12));
     let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(arguments.as_view(),schema,ext::cli::Ordering::Intermixed));
     let limits: ext::png::Limits = ext::png::Limits { max_input: 16777216, max_pixels: 16777216, max_inflated: 268435456, max_chunks: 65536 };
-    let options: Options = Options { mode: 0, limits: limits, max_output: 67108864, crop: core::option::None(), turns: 0, flip_x: false, flip_y: false, transformed: false, help: false };
+    let options: Options = Options { mode: 0, limits: limits, max_output: 67108864, crop: core::option::None(), turns: 0, flip_x: false, flip_y: false, resize: core::option::None(), filter: ext::image::Filter::Area, filter_set: false, transformed: false, help: false };
     while (true) {
         let event: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next();
         if (core::result::is_err(event)) { return fail(detail,2,0,0); }
@@ -170,6 +201,7 @@ fn process(arguments: std::args::Arguments, detail: &Diagnostic) -> i32 {
         if (!valid) { return fail(detail,2,0,0); }
     }
     if (options.mode == 1 && options.transformed) { return fail(detail,2,0,0); }
+    if (options.filter_set && core::option::is_none(options.resize)) { return fail(detail,2,0,0); }
     if (options.help) { return write(literal("Usage: image-tool info [OPTIONS] <INPUT.png\n       image-tool transform [OPTIONS] <INPUT.png >OUTPUT.png\n",105),detail); }
     if (options.mode == 0) { return fail(detail,2,0,0); } return execute(options,detail);
 }

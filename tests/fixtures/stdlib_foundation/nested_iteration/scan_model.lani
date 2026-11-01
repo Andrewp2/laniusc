@@ -1,5 +1,6 @@
 // Binary observations of two actual adapters sharing source/callback state.
 module app::main;
+import core::function;
 import core::io;
 import core::iter;
 import core::option;
@@ -29,7 +30,7 @@ impl Context {
 }
 struct Running { context: &Context }
 impl Running { fn borrow(&self) -> &Running { return self; } }
-pub impl core::iter::Mapper<i32,core::option::Option<u64>> for Running {
+pub impl core::function::Mapper<i32,core::option::Option<u64>> for Running {
     pub fn apply(&self, value: i32) -> core::option::Option<u64> {
         let context: &Context = self.context; context.update(value);
         if (value == context.stop) { return core::option::None(); }
@@ -38,7 +39,7 @@ pub impl core::iter::Mapper<i32,core::option::Option<u64>> for Running {
 }
 struct Fallible { context: &Context }
 impl Fallible { fn borrow(&self) -> &Fallible { return self; } }
-pub impl core::iter::Mapper<i32,core::result::Result<core::option::Option<u64>,u64>> for Fallible {
+pub impl core::function::Mapper<i32,core::result::Result<core::option::Option<u64>,u64>> for Fallible {
     pub fn apply(&self, value: i32) -> core::result::Result<core::option::Option<u64>,u64> {
         let context: &Context = self.context; context.update(value);
         if (value == context.fail) { return core::result::Err(18446744073709551615-value as u64); }

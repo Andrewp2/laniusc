@@ -8,21 +8,28 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `alloc`. Role: module. Profile: **Source inventory**.
 
+The shared Seek increment adds Reader<R> under R:Read+Seek and Writer<W> under W:Write+Seek. Reader Current queries/subtracts unread bytes/checks arithmetic/seeks absolute, even for zero; actual seek errors or malformed positions fault it and clear unread publication. Arithmetic rejection after query preserves unread bytes. Writer completes existing flush before seek; partial flush effects survive errors, and successful-flush/failed-seek leaves active empty pending state. Start acknowledgement mismatches fault adapters. Borrowed inner access must be exclusive; allocation/handoff/discard stay manual. Current buffered import executes in one probe/6.01s after two private nongeneric enum-projection helpers replace rejected Reader-body spellings. Public generic bounds and state behavior are unchanged; local/simple imported nested-bound controls execute, and the initial Mapper diagnostic is not a general generic limitation or compiler repair. The real reverse-records program passes four groups/86 cases in 8.00s on buffered source08212669. All three scripted Seek tests pass in 9.95s on production08212669/peer365d8062: nine reader phases, twelve writer phases, nested four-buffer ownership/handoff and four individually reached constructor allocation denials, with exact call/effect order, all-host-call-free pure phases and address/extent release checks. Four selected existing buffered tests pass separately in 10.57s (one writer-only test filtered): actual binary-copy sample, constructor denials, nested copy and reader handoff. The finite native Linux x86_64 Seek increment is accepted. Retained original-source controls document only the specific Reader-body admission boundary; no compiler repair or general generic restriction is claimed. Historical buffered receipts retain their API/source scope. Reader<R> now implements canonical core::io::BufRead under R:Read. Existing public fill_buf/consume bodies move into that single trait implementation with no duplicate inherent aliases; inactive/faulted checks, fixed capacity, no permanent EOF cache, read-ahead and unread handoff remain explicit. The new delimiter helpers require only BufRead and do not allocate; this adapter still owns one manually released buffer and borrows its inner Read stream. Small native protocol admission passes in 7.24s. Four selected buffered regressions pass in 9.81s: reader/handoff/faults, nested copy, four constructor OOM failures and the actual binary-copy sample; one writer-only test was filtered. Direct delimiter contracts pass separately in 7.56s. The independent model passes one test in 5.64s with 18000 cases, four stride combinations and two invocations/case after a fixture-only syntax correction. The real record-selector passes four groups/91 cases in 8.51s, including five reached allocation denials and actual output-prefix/required-EOF failures. The finite native Linux x86_64 increment is accepted. Direct no-effect trace evidence covers only mmap/mremap/munmap/brk/read/write/close, without an all-host-call claim. Historical buffered receipts retain their source/API scope and do not establish the current migration.
+
 ## Contract and evidence guides
 
 - [stdlib-buffered](../../stdlib-buffered.md)
 - [stdlib-format-write](../../stdlib-format-write.md)
+- [stdlib-delimited-io](../../stdlib-delimited-io.md)
+- [stdlib-select-records](../../stdlib-select-records.md)
+- [stdlib-seek](../../stdlib-seek.md)
+- [stdlib-reverse-records](../../stdlib-reverse-records.md)
 
-Declaration counts: field: 17; function: 2; impl: 5; method: 22; struct: 3.
+Declaration counts: field: 9; function: 4; impl: 8; method: 25; struct: 3.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
 - [alloc::vec](vec.md) · [source](../../../stdlib/alloc/buffered.lani#L5)
-- [core::io](../core/io.md) · [source](../../../stdlib/alloc/buffered.lani#L6)
-- [core::result](../core/result.md) · [source](../../../stdlib/alloc/buffered.lani#L7)
-- [core::slice](../core/slice.md) · [source](../../../stdlib/alloc/buffered.lani#L8)
+- [core::buffered](../core/buffered.md) · [source](../../../stdlib/alloc/buffered.lani#L6)
+- [core::io](../core/io.md) · [source](../../../stdlib/alloc/buffered.lani#L7)
+- [core::result](../core/result.md) · [source](../../../stdlib/alloc/buffered.lani#L8)
+- [core::slice](../core/slice.md) · [source](../../../stdlib/alloc/buffered.lani#L9)
 
 ## Types, fields and variants
 
@@ -30,7 +37,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: Parts
 
-[Source line 13](../../../stdlib/alloc/buffered.lani#L13)
+[Source line 11](../../../stdlib/alloc/buffered.lani#L11)
 
 ```lanius
 pub struct Parts<I>
@@ -38,7 +45,7 @@ pub struct Parts<I>
 
 #### field: inner
 
-[Source line 14](../../../stdlib/alloc/buffered.lani#L14)
+[Source line 12](../../../stdlib/alloc/buffered.lani#L12)
 
 ```lanius
 inner: &I
@@ -46,7 +53,7 @@ inner: &I
 
 #### field: buffer
 
-[Source line 15](../../../stdlib/alloc/buffered.lani#L15)
+[Source line 13](../../../stdlib/alloc/buffered.lani#L13)
 
 ```lanius
 buffer: alloc::vec::Vec<u8>
@@ -54,7 +61,7 @@ buffer: alloc::vec::Vec<u8>
 
 #### field: start
 
-[Source line 16](../../../stdlib/alloc/buffered.lani#L16)
+[Source line 14](../../../stdlib/alloc/buffered.lani#L14)
 
 ```lanius
 start: i32
@@ -62,7 +69,7 @@ start: i32
 
 #### field: length
 
-[Source line 17](../../../stdlib/alloc/buffered.lani#L17)
+[Source line 15](../../../stdlib/alloc/buffered.lani#L15)
 
 ```lanius
 length: i32
@@ -70,7 +77,7 @@ length: i32
 
 #### field: faulted
 
-[Source line 18](../../../stdlib/alloc/buffered.lani#L18)
+[Source line 16](../../../stdlib/alloc/buffered.lani#L16)
 
 ```lanius
 faulted: bool
@@ -78,147 +85,111 @@ faulted: bool
 
 ### struct: Reader
 
-[Source line 21](../../../stdlib/alloc/buffered.lani#L21)
+[Source line 18](../../../stdlib/alloc/buffered.lani#L18)
 
 ```lanius
 pub struct Reader<R>
 ```
 
-#### field: inner
-
-[Source line 22](../../../stdlib/alloc/buffered.lani#L22)
-
-```lanius
-inner: &R
-```
-
 #### field: buffer
 
-[Source line 23](../../../stdlib/alloc/buffered.lani#L23)
+[Source line 18](../../../stdlib/alloc/buffered.lani#L18)
 
 ```lanius
-buffer: alloc::vec::Vec<u8>
+buffer:alloc::vec::Vec<u8>
 ```
 
-#### field: start
+#### field: engine
 
-[Source line 24](../../../stdlib/alloc/buffered.lani#L24)
-
-```lanius
-start: i32
-```
-
-#### field: end
-
-[Source line 25](../../../stdlib/alloc/buffered.lani#L25)
+[Source line 18](../../../stdlib/alloc/buffered.lani#L18)
 
 ```lanius
-end: i32
-```
-
-#### field: active
-
-[Source line 26](../../../stdlib/alloc/buffered.lani#L26)
-
-```lanius
-active: bool
-```
-
-#### field: faulted
-
-[Source line 27](../../../stdlib/alloc/buffered.lani#L27)
-
-```lanius
-faulted: bool
+engine:core::buffered::Reader<R>
 ```
 
 ### struct: Writer
 
-[Source line 30](../../../stdlib/alloc/buffered.lani#L30)
+[Source line 19](../../../stdlib/alloc/buffered.lani#L19)
 
 ```lanius
 pub struct Writer<W>
 ```
 
-#### field: inner
-
-[Source line 31](../../../stdlib/alloc/buffered.lani#L31)
-
-```lanius
-inner: &W
-```
-
 #### field: buffer
 
-[Source line 32](../../../stdlib/alloc/buffered.lani#L32)
+[Source line 19](../../../stdlib/alloc/buffered.lani#L19)
 
 ```lanius
-buffer: alloc::vec::Vec<u8>
+buffer:alloc::vec::Vec<u8>
 ```
 
-#### field: start
+#### field: engine
 
-[Source line 33](../../../stdlib/alloc/buffered.lani#L33)
-
-```lanius
-start: i32
-```
-
-#### field: end
-
-[Source line 34](../../../stdlib/alloc/buffered.lani#L34)
+[Source line 19](../../../stdlib/alloc/buffered.lani#L19)
 
 ```lanius
-end: i32
-```
-
-#### field: active
-
-[Source line 35](../../../stdlib/alloc/buffered.lani#L35)
-
-```lanius
-active: bool
-```
-
-#### field: faulted
-
-[Source line 36](../../../stdlib/alloc/buffered.lani#L36)
-
-```lanius
-faulted: bool
+engine:core::buffered::Writer<W>
 ```
 
 ## Free functions and extern declarations
 
 ### function: reader
 
-[Source line 54](../../../stdlib/alloc/buffered.lani#L54)
+[Source line 36](../../../stdlib/alloc/buffered.lani#L36)
 
 ```lanius
-pub fn reader<R>(inner: &R, capacity: i32) -> core::result::Result<Reader<R>, core::io::Error> where R: core::io::Read
+pub fn reader<R>(inner:&R, capacity:i32) -> core::result::Result<Reader<R>,core::io::Error>
+    where R:core::io::Read
 ```
 
 ### function: writer
 
-[Source line 60](../../../stdlib/alloc/buffered.lani#L60)
+[Source line 45](../../../stdlib/alloc/buffered.lani#L45)
 
 ```lanius
-pub fn writer<W>(inner: &W, capacity: i32) -> core::result::Result<Writer<W>, core::io::Error> where W: core::io::Write
+pub fn writer<W>(inner:&W, capacity:i32) -> core::result::Result<Writer<W>,core::io::Error>
+    where W:core::io::Write
+```
+
+### function: reader_from_parts
+
+[Source line 56](../../../stdlib/alloc/buffered.lani#L56)
+
+```lanius
+pub fn reader_from_parts<R>(parts:&Parts<R>) -> core::result::Result<Reader<R>,core::io::Error>
+    where R:core::io::Read
+```
+
+### function: writer_from_parts
+
+[Source line 67](../../../stdlib/alloc/buffered.lani#L67)
+
+```lanius
+pub fn writer_from_parts<W>(parts:&Parts<W>) -> core::result::Result<Writer<W>,core::io::Error>
+    where W:core::io::Write
 ```
 
 ## Implementation blocks and public methods
 
-### impl at line 66
+### impl at line 79
 
-[Source line 66](../../../stdlib/alloc/buffered.lani#L66)
+[Source line 79](../../../stdlib/alloc/buffered.lani#L79)
 
 ```lanius
 pub impl<I> Parts<I>
 ```
 
+#### method: borrow
+
+[Source line 80](../../../stdlib/alloc/buffered.lani#L80)
+
+```lanius
+pub fn borrow(&self) -> &Parts<I>
+```
+
 #### method: bytes
 
-[Source line 68](../../../stdlib/alloc/buffered.lani#L68)
+[Source line 83](../../../stdlib/alloc/buffered.lani#L83)
 
 ```lanius
 pub fn bytes(&self) -> core::slice::View<u8>
@@ -226,15 +197,15 @@ pub fn bytes(&self) -> core::slice::View<u8>
 
 #### method: discard
 
-[Source line 73](../../../stdlib/alloc/buffered.lani#L73)
+[Source line 86](../../../stdlib/alloc/buffered.lani#L86)
 
 ```lanius
 pub fn discard(&self) -> i32
 ```
 
-### impl at line 80
+### impl at line 93
 
-[Source line 80](../../../stdlib/alloc/buffered.lani#L80)
+[Source line 93](../../../stdlib/alloc/buffered.lani#L93)
 
 ```lanius
 pub impl<R> Reader<R>
@@ -242,7 +213,7 @@ pub impl<R> Reader<R>
 
 #### method: borrow
 
-[Source line 81](../../../stdlib/alloc/buffered.lani#L81)
+[Source line 94](../../../stdlib/alloc/buffered.lani#L94)
 
 ```lanius
 pub fn borrow(&self) -> &Reader<R>
@@ -250,7 +221,7 @@ pub fn borrow(&self) -> &Reader<R>
 
 #### method: is_active
 
-[Source line 82](../../../stdlib/alloc/buffered.lani#L82)
+[Source line 95](../../../stdlib/alloc/buffered.lani#L95)
 
 ```lanius
 pub fn is_active(&self) -> bool
@@ -258,7 +229,7 @@ pub fn is_active(&self) -> bool
 
 #### method: is_faulted
 
-[Source line 83](../../../stdlib/alloc/buffered.lani#L83)
+[Source line 96](../../../stdlib/alloc/buffered.lani#L96)
 
 ```lanius
 pub fn is_faulted(&self) -> bool
@@ -266,7 +237,7 @@ pub fn is_faulted(&self) -> bool
 
 #### method: capacity
 
-[Source line 84](../../../stdlib/alloc/buffered.lani#L84)
+[Source line 97](../../../stdlib/alloc/buffered.lani#L97)
 
 ```lanius
 pub fn capacity(&self) -> i32
@@ -274,63 +245,87 @@ pub fn capacity(&self) -> i32
 
 #### method: buffered
 
-[Source line 85](../../../stdlib/alloc/buffered.lani#L85)
+[Source line 98](../../../stdlib/alloc/buffered.lani#L98)
 
 ```lanius
 pub fn buffered(&self) -> core::slice::View<u8>
 ```
 
-#### method: fill_buf
-
-[Source line 88](../../../stdlib/alloc/buffered.lani#L88)
-
-```lanius
-pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>, core::io::Error> where R: core::io::Read
-```
-
-#### method: consume
-
-[Source line 105](../../../stdlib/alloc/buffered.lani#L105)
-
-```lanius
-pub fn consume(&self, count: i32) -> core::result::Result<i32, core::io::Error>
-```
-
 #### method: take_parts
 
-[Source line 113](../../../stdlib/alloc/buffered.lani#L113)
+[Source line 99](../../../stdlib/alloc/buffered.lani#L99)
 
 ```lanius
-pub fn take_parts(&self) -> core::result::Result<Parts<R>, core::io::Error>
+pub fn take_parts(&self) -> core::result::Result<Parts<R>,core::io::Error>
 ```
 
 #### method: discard
 
-[Source line 119](../../../stdlib/alloc/buffered.lani#L119)
+[Source line 106](../../../stdlib/alloc/buffered.lani#L106)
 
 ```lanius
 pub fn discard(&self) -> i32
 ```
 
-### impl at line 126
+### impl at line 110
 
-[Source line 126](../../../stdlib/alloc/buffered.lani#L126)
+[Source line 110](../../../stdlib/alloc/buffered.lani#L110)
 
 ```lanius
-pub impl<R> core::io::Read for Reader<R> where R: core::io::Read
+pub impl<R> core::io::Read for Reader<R> where R:core::io::Read
 ```
 
 #### method: read
 
-[Source line 127](../../../stdlib/alloc/buffered.lani#L127)
+[Source line 111](../../../stdlib/alloc/buffered.lani#L111)
 
 ```lanius
-pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error>
+pub fn read(&self, destination:[u8], offset:i32, count:i32) -> core::result::Result<i32,core::io::Error>
 ```
 
-### impl at line 144
+### impl at line 115
 
-[Source line 144](../../../stdlib/alloc/buffered.lani#L144)
+[Source line 115](../../../stdlib/alloc/buffered.lani#L115)
+
+```lanius
+pub impl<R> core::io::BufRead for Reader<R> where R:core::io::Read
+```
+
+#### method: fill_buf
+
+[Source line 116](../../../stdlib/alloc/buffered.lani#L116)
+
+```lanius
+pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>,core::io::Error>
+```
+
+#### method: consume
+
+[Source line 117](../../../stdlib/alloc/buffered.lani#L117)
+
+```lanius
+pub fn consume(&self, count:i32) -> core::result::Result<i32,core::io::Error>
+```
+
+### impl at line 119
+
+[Source line 119](../../../stdlib/alloc/buffered.lani#L119)
+
+```lanius
+pub impl<R> core::io::Seek for Reader<R> where R:core::io::Read, R:core::io::Seek
+```
+
+#### method: seek
+
+[Source line 120](../../../stdlib/alloc/buffered.lani#L120)
+
+```lanius
+pub fn seek(&self, from:core::io::SeekFrom) -> core::result::Result<u64,core::io::Error>
+```
+
+### impl at line 123
+
+[Source line 123](../../../stdlib/alloc/buffered.lani#L123)
 
 ```lanius
 pub impl<W> Writer<W>
@@ -338,7 +333,7 @@ pub impl<W> Writer<W>
 
 #### method: borrow
 
-[Source line 145](../../../stdlib/alloc/buffered.lani#L145)
+[Source line 124](../../../stdlib/alloc/buffered.lani#L124)
 
 ```lanius
 pub fn borrow(&self) -> &Writer<W>
@@ -346,7 +341,7 @@ pub fn borrow(&self) -> &Writer<W>
 
 #### method: is_active
 
-[Source line 146](../../../stdlib/alloc/buffered.lani#L146)
+[Source line 125](../../../stdlib/alloc/buffered.lani#L125)
 
 ```lanius
 pub fn is_active(&self) -> bool
@@ -354,7 +349,7 @@ pub fn is_active(&self) -> bool
 
 #### method: is_faulted
 
-[Source line 147](../../../stdlib/alloc/buffered.lani#L147)
+[Source line 126](../../../stdlib/alloc/buffered.lani#L126)
 
 ```lanius
 pub fn is_faulted(&self) -> bool
@@ -362,7 +357,7 @@ pub fn is_faulted(&self) -> bool
 
 #### method: capacity
 
-[Source line 148](../../../stdlib/alloc/buffered.lani#L148)
+[Source line 127](../../../stdlib/alloc/buffered.lani#L127)
 
 ```lanius
 pub fn capacity(&self) -> i32
@@ -370,7 +365,7 @@ pub fn capacity(&self) -> i32
 
 #### method: pending
 
-[Source line 149](../../../stdlib/alloc/buffered.lani#L149)
+[Source line 128](../../../stdlib/alloc/buffered.lani#L128)
 
 ```lanius
 pub fn pending(&self) -> core::slice::View<u8>
@@ -378,48 +373,64 @@ pub fn pending(&self) -> core::slice::View<u8>
 
 #### method: finish
 
-[Source line 173](../../../stdlib/alloc/buffered.lani#L173)
+[Source line 129](../../../stdlib/alloc/buffered.lani#L129)
 
 ```lanius
-pub fn finish(&self) -> core::result::Result<i32, core::io::Error> where W: core::io::Write
+pub fn finish(&self) -> core::result::Result<i32,core::io::Error> where W:core::io::Write
 ```
 
 #### method: take_parts
 
-[Source line 179](../../../stdlib/alloc/buffered.lani#L179)
+[Source line 134](../../../stdlib/alloc/buffered.lani#L134)
 
 ```lanius
-pub fn take_parts(&self) -> core::result::Result<Parts<W>, core::io::Error>
+pub fn take_parts(&self) -> core::result::Result<Parts<W>,core::io::Error>
 ```
 
 #### method: discard
 
-[Source line 185](../../../stdlib/alloc/buffered.lani#L185)
+[Source line 141](../../../stdlib/alloc/buffered.lani#L141)
 
 ```lanius
 pub fn discard(&self) -> i32
 ```
 
-### impl at line 192
+### impl at line 145
 
-[Source line 192](../../../stdlib/alloc/buffered.lani#L192)
+[Source line 145](../../../stdlib/alloc/buffered.lani#L145)
 
 ```lanius
-pub impl<W> core::io::Write for Writer<W> where W: core::io::Write
+pub impl<W> core::io::Write for Writer<W> where W:core::io::Write
 ```
 
 #### method: write
 
-[Source line 193](../../../stdlib/alloc/buffered.lani#L193)
+[Source line 146](../../../stdlib/alloc/buffered.lani#L146)
 
 ```lanius
-pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error>
+pub fn write(&self, source:[u8], offset:i32, count:i32) -> core::result::Result<i32,core::io::Error>
 ```
 
 #### method: flush
 
-[Source line 212](../../../stdlib/alloc/buffered.lani#L212)
+[Source line 149](../../../stdlib/alloc/buffered.lani#L149)
 
 ```lanius
-pub fn flush(&self) -> core::result::Result<i32, core::io::Error>
+pub fn flush(&self) -> core::result::Result<i32,core::io::Error>
+```
+
+### impl at line 151
+
+[Source line 151](../../../stdlib/alloc/buffered.lani#L151)
+
+```lanius
+pub impl<W> core::io::Seek for Writer<W> where W:core::io::Write, W:core::io::Seek
+```
+
+#### method: seek
+
+[Source line 152](../../../stdlib/alloc/buffered.lani#L152)
+
+```lanius
+pub fn seek(&self, from:core::io::SeekFrom) -> core::result::Result<u64,core::io::Error>
 ```

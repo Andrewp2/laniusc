@@ -153,7 +153,9 @@ fn result_generic_methods_execute_all_state_pairs_and_preserve_inputs() {
 }
 
 #[test]
-fn result_generic_methods_bind_both_type_parameters_to_the_receiver() {
+fn result_methods_reject_inconsistent_arguments_and_receiving_types() {
+    // and may change the success type, and or may change the error type.
+    // The receiving annotations below still reject those inconsistent outputs.
     for statement in [
         "let found: i32 = primary.unwrap_or(false);",
         "let found: str = primary.unwrap_err_or(7);",

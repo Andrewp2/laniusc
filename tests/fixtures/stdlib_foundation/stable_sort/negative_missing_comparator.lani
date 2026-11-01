@@ -1,0 +1,12 @@
+module app::main;
+import alloc::slice;
+import core::result;
+import core::slice;
+struct Missing {}
+impl Missing { fn borrow(&self) -> &Missing { return self; } }
+fn main() -> i32 {
+    let data:[i32;2]=[2,1]; let order:Missing=Missing {};
+    let view:core::slice::View<i32> = core::slice::view<i32>(data,2).unwrap();
+    let rejected:core::result::Result<i32,alloc::slice::Error> = alloc::slice::sort_by<i32,Missing>(view,order.borrow()); // rejected_stable_bound
+    return 0;
+}

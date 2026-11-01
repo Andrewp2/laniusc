@@ -53,9 +53,10 @@ Both modules define their own `IntoIter<T>` and
 | `try_finish() -> Option<IntoIterError>` | Reject unconsumed items or release empty backing and disarm |
 | `take_remaining() -> Vec<T>` / `Deque<T>` | Transfer remainder and allocation into a reusable collection; disarm cursor |
 
-Import `core::iter` for the forward trait method. Backward access and lifecycle
-methods are inherent. Public metadata is not a validation boundary; use the
-factory and preserve its invariants.
+Import `core::iter` for the canonical `Iterator::next` and
+`DoubleEndedIterator::next_back` trait methods. Lifecycle and inspection methods
+remain inherent; no same-named backward wrapper is retained. Public metadata is
+not a validation boundary; use the factory and preserve its invariants.
 
 ## Pulls, views and exhaustion
 

@@ -1,0 +1,6 @@
+// Control removes only the nested argument shape from the local trait bound.
+module app::main;
+import core::option;
+pub trait Project<T,U> { pub fn project(&self,value:T) -> U; }
+pub fn flat<M,T,U>(mapper:&M) -> bool where M:Project<T,U> { return true; }
+fn main() -> i32 { return 0; }

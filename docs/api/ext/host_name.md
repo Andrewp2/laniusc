@@ -8,7 +8,12 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-**No contract guide registered.** This page makes no runtime support claim.
+Shared allocation-free ASCII DNS identity admission used by HTTP URL policy and OpenSSL identity validation. Checks logical bounds and caller-selected byte cap, labels, NULs and indexed byte/final-state failures; never normalizes, allocates or resolves. Direct URL contracts and the finite semantic catalog execute on Linux x86_64 CPU output from the GPU compiler. Physical backing/lifetimes remain caller preconditions; no GPU-device execution claim.
+
+## Contract and evidence guides
+
+- [extended-http-url](../../extended-http-url.md)
+- [extended-url-client](../../extended-url-client.md)
 
 Declaration counts: enum: 1; function: 1; variant: 5.
 
@@ -16,10 +21,10 @@ Declaration counts: enum: 1; function: 1; variant: 5.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L12) · [source](../../../extended/ext/host_name.lani#L4)
-- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L13) · [source](../../../extended/ext/host_name.lani#L5)
-- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L14) · [source](../../../extended/ext/host_name.lani#L6)
-- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L22) · [source](../../../extended/ext/host_name.lani#L7)
+- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/host_name.lani#L4)
+- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/host_name.lani#L5)
+- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/host_name.lani#L6)
+- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L24) · [source](../../../extended/ext/host_name.lani#L7)
 
 ## Types, fields and variants
 
@@ -82,3 +87,5 @@ Invalid(i32)
 ```lanius
 pub fn check_dns(bytes:View<u8>, maximum_bytes:i32) -> Result<i32,Error>
 ```
+
+Returns Ok(0) for the selected ASCII DNS profile. Bounds, cap, empty/overlong input and indexed NUL/invalid failures are explicit. Host lookup and URL legacy-numeric rejection belong to separate layers.

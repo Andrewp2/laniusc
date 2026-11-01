@@ -1,0 +1,220 @@
+// Honest physical extents, exact aliases and strict effect-free codec phases.
+module app::main;
+import alloc::allocator;
+import core::base64;
+import core::mem;
+import core::result;
+import core::slice;
+import std::io;
+import std::linux;
+
+fn mark(value:i32) { let byte:[i32;1]=[value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn profile(kind:i32) -> core::base64::Profile {
+    if(kind==0) { return core::base64::Profile::Standard; }
+    if(kind==1) { return core::base64::Profile::StandardUnpadded; }
+    if(kind==2) { return core::base64::Profile::UrlSafe; }
+    return core::base64::Profile::UrlSafeUnpadded;
+}
+fn wire_length(count:i32,kind:i32) -> i32 {
+    let padded:[i32;11]=[0,4,4,4,8,8,8,12,12,12,16];
+    let unpadded:[i32;11]=[0,2,3,4,6,7,8,10,11,12,14];
+    if(kind==1 || kind==3) { return unpadded[count]; } return padded[count];
+}
+fn data_at(index:i32) -> u8 { let data:[u8;10]=[251,255,255,102,111,111,98,97,114,0]; return data[index]; }
+fn wire_at(count:i32,index:i32,kind:i32) -> u8 {
+    // Independent Python standard-library Base64 literals for eleven prefixes.
+    let table:[u8;176]=[
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+        43,119,61,61,0,0,0,0,0,0,0,0,0,0,0,0,
+        43,47,56,61,0,0,0,0,0,0,0,0,0,0,0,0,
+        43,47,47,47,0,0,0,0,0,0,0,0,0,0,0,0,
+        43,47,47,47,90,103,61,61,0,0,0,0,0,0,0,0,
+        43,47,47,47,90,109,56,61,0,0,0,0,0,0,0,0,
+        43,47,47,47,90,109,57,118,0,0,0,0,0,0,0,0,
+        43,47,47,47,90,109,57,118,89,103,61,61,0,0,0,0,
+        43,47,47,47,90,109,57,118,89,109,69,61,0,0,0,0,
+        43,47,47,47,90,109,57,118,89,109,70,121,0,0,0,0,
+        43,47,47,47,90,109,57,118,89,109,70,121,65,65,61,61
+    ];
+    let value:u8=table[count*16+index];
+    if(kind>=2 && value==43) { value=45; }
+    if(kind>=2 && value==47) { value=95; } return value;
+}
+fn view(bytes:[u8],start:i32,length:i32) -> core::slice::View<u8> { return core::slice::View { values:bytes,start:start,length:length }; }
+fn reset(bytes:[u8],count:i32) { let index:i32=0; while(index<count) { bytes[index]=211; index+=1; } }
+fn put_data(bytes:core::slice::View<u8>,count:i32) { let index:i32=0; while(index<count) { bytes.values[bytes.start+index]=data_at(index); index+=1; } }
+fn put_wire(bytes:core::slice::View<u8>,count:i32,kind:i32) { let index:i32=0; let length:i32=wire_length(count,kind); while(index<length) { bytes.values[bytes.start+index]=wire_at(count,index,kind); index+=1; } }
+fn check_wire(bytes:[u8],extent:i32,start:i32,count:i32,kind:i32) {
+    let length:i32=wire_length(count,kind); let index:i32=0;
+    while(index<extent) { let expected:u8=211; if(index>=start && index<start+length) { expected=wire_at(count,index-start,kind); } assert(bytes[index]==expected); index+=1; }
+}
+fn check_data(bytes:[u8],extent:i32,start:i32,count:i32) {
+    let index:i32=0;
+    while(index<extent) { let expected:u8=211; if(index>=start && index<start+count) { expected=data_at(index-start); } assert(bytes[index]==expected); index+=1; }
+}
+fn check_decoded_alias(bytes:[u8],extent:i32,start:i32,count:i32,kind:i32) {
+    let length:i32=wire_length(count,kind); let index:i32=0;
+    while(index<extent) {
+        let expected:u8=211;
+        if(index>=start && index<start+length) { expected=wire_at(count,index-start,kind); }
+        if(index>=start && index<start+count) { expected=data_at(index-start); }
+        assert(bytes[index]==expected); index+=1;
+    }
+}
+fn error(result:core::result::Result<i32,core::base64::Error>,code:i32,payload:i32) {
+    assert(result.is_err()); let cause:core::base64::Error=result.unwrap_err();
+    let actual:i32=match(cause) {
+        core::base64::Error::Bounds->1,core::base64::Error::LengthOverflow->2,
+        core::base64::Error::InvalidLength->3,core::base64::Error::InvalidByte(index)->4,
+        core::base64::Error::InvalidPadding(index)->5,core::base64::Error::NonCanonical(index)->6,
+        core::base64::Error::BufferTooSmall(required)->7
+    };
+    assert(actual==code);
+    let actual_payload:i32=match(cause) {
+        core::base64::Error::InvalidByte(index)->index,core::base64::Error::InvalidPadding(index)->index,
+        core::base64::Error::NonCanonical(index)->index,core::base64::Error::BufferTooSmall(required)->required,_ ->0
+    }; assert(actual_payload==payload);
+}
+fn aliases(bytes:[u8]) {
+    mark(80); let kind:i32=0;
+    while(kind<4) {
+        let policy:core::base64::Profile=profile(kind); let count:i32=0;
+        while(count<=10) {
+            let length:i32=wire_length(count,kind);
+            let input:core::slice::View<u8> =view(bytes,3,count);
+            let output:core::slice::View<u8> =view(bytes,3,length);
+            reset(bytes,64); put_data(input,count);
+            assert(core::base64::encode_into(input,output,policy).unwrap()==length); check_wire(bytes,64,3,count,kind);
+            reset(bytes,64); put_wire(output,count,kind);
+            assert(core::base64::decoded_len(output,policy).unwrap()==count); check_wire(bytes,64,3,count,kind);
+            assert(core::base64::decode_into(output,input,policy).unwrap()==count); check_decoded_alias(bytes,64,3,count,kind);
+            if(count>0) {
+                reset(bytes,64); put_data(input,count);
+                error(core::base64::encode_into(input,view(bytes,3,length-1),policy),7,length); check_data(bytes,64,3,count);
+                reset(bytes,64); put_wire(output,count,kind);
+                error(core::base64::decode_into(output,view(bytes,3,count-1),policy),7,count); check_wire(bytes,64,3,count,kind);
+            }
+            count+=1;
+        }
+        // Malformed final group follows a complete valid group. It must be
+        // found before any decode store, even when the aliased output is short.
+        let malformed:[u8;8]=[90,109,57,118,90,104,61,61]; let length:i32=8;
+        if(kind==1 || kind==3) { length=6; }
+        reset(bytes,64); let index:i32=0;
+        while(index<length) { bytes[3+index]=malformed[index]; index+=1; }
+        let source:core::slice::View<u8> =view(bytes,3,length);
+        error(core::base64::decoded_len(source,policy),6,5);
+        error(core::base64::decode_into(source,view(bytes,3,0),policy),6,5);
+        error(core::base64::decode_into(source,view(bytes,3,64-3),policy),6,5);
+        index=0;
+        while(index<64) { let expected:u8=211; if(index>=3 && index<3+length) { expected=malformed[index-3]; } assert(bytes[index]==expected); index+=1; }
+        bytes[3+length-1]=36;
+        // An invalid final symbol is checked without writing the valid prefix.
+        if(kind==1 || kind==3) { error(core::base64::decode_into(source,view(bytes,3,0),policy),4,length-1); }
+        if(kind==0 || kind==2) { error(core::base64::decode_into(source,view(bytes,3,0),policy),5,6); }
+        index=0;
+        while(index<64) { let expected:u8=211; if(index>=3 && index<3+length) { expected=malformed[index-3]; } if(index==3+length-1) { expected=36; } assert(bytes[index]==expected); index+=1; }
+        kind+=1;
+    }
+    mark(112);
+}
+fn invalid() {
+    let nowhere:ptr=0; let bytes:[u8]=core::mem::typed_slice_from_raw_parts<u8>(nowhere,0);
+    let empty:core::slice::View<u8> =view(bytes,2147483647,0);
+    let starts:[i32;4]=[-1,0,2147483647,1]; let lengths:[i32;4]=[0,-1,1,2147483647];
+    mark(80); let kind:i32=0;
+    while(kind<4) {
+        let policy:core::base64::Profile=profile(kind); let index:i32=0;
+        while(index<4) {
+            let bad:core::slice::View<u8> =view(bytes,starts[index],lengths[index]);
+            error(core::base64::decoded_len(bad,policy),1,0);
+            error(core::base64::encode_into(bad,empty,policy),1,0);
+            error(core::base64::decode_into(bad,empty,policy),1,0);
+            error(core::base64::encode_into(view(bytes,0,1),bad,policy),1,0);
+            error(core::base64::decode_into(view(bytes,0,4),bad,policy),1,0); index+=1;
+        }
+        assert(core::base64::decoded_len(empty,policy).unwrap()==0);
+        assert(core::base64::encode_into(empty,empty,policy).unwrap()==0);
+        assert(core::base64::decode_into(empty,empty,policy).unwrap()==0);
+        // Valid logical nonempty source with null physical backing must not be
+        // touched when encoding rejects capacity or decoding rejects structure.
+        error(core::base64::encode_into(view(bytes,0,1),empty,policy),7,wire_length(1,kind));
+        error(core::base64::decoded_len(view(bytes,0,1),policy),3,0);
+        error(core::base64::decode_into(view(bytes,0,1),empty,policy),3,0); kind+=1;
+    }
+    mark(112);
+}
+fn tail(mapping:ptr,count:i32) -> core::slice::View<u8> {
+    let begin:ptr=mapping+(4094-(count as usize));
+    let bytes:[u8]=core::mem::typed_slice_from_raw_parts<u8>(begin,2+count);
+    return view(bytes,2,count);
+}
+fn guarded_encode(mapping:ptr) {
+    mark(80); let kind:i32=0; let target:[u8;64]=[211;64]; let source:[u8;10]=[251,255,255,102,111,111,98,97,114,0];
+    while(kind<4) {
+        let policy:core::base64::Profile=profile(kind); let count:i32=0;
+        while(count<=10) {
+            let length:i32=wire_length(count,kind);
+            let input:core::slice::View<u8> =tail(mapping,count); reset(input.values,2+count); put_data(input,count); reset(target,64);
+            assert(core::base64::encode_into(input,view(target,3,length),policy).unwrap()==length);
+            check_data(input.values,2+count,2,count); check_wire(target,64,3,count,kind);
+            let output:core::slice::View<u8> =tail(mapping,length); reset(output.values,2+length);
+            assert(core::base64::encode_into(view(source,0,count),output,policy).unwrap()==length);
+            check_wire(output.values,2+length,2,count,kind); check_data(source,10,0,10); count+=1;
+        }
+        kind+=1;
+    }
+    mark(112);
+}
+fn guarded_decode(mapping:ptr) {
+    mark(80); let kind:i32=0; let target:[u8;64]=[211;64]; let source:[u8;64]=[211;64];
+    while(kind<4) {
+        let policy:core::base64::Profile=profile(kind); let count:i32=0;
+        while(count<=10) {
+            let length:i32=wire_length(count,kind);
+            let input:core::slice::View<u8> =tail(mapping,length); reset(input.values,2+length); put_wire(input,count,kind); reset(target,64);
+            assert(core::base64::decoded_len(input,policy).unwrap()==count);
+            assert(core::base64::decode_into(input,view(target,3,count),policy).unwrap()==count);
+            check_wire(input.values,2+length,2,count,kind); check_data(target,64,3,count);
+            let output:core::slice::View<u8> =tail(mapping,count); reset(output.values,2+count); reset(source,64); put_wire(view(source,3,length),count,kind);
+            assert(core::base64::decode_into(view(source,3,length),output,policy).unwrap()==count);
+            check_data(output.values,2+count,2,count); check_wire(source,64,3,count,kind); count+=1;
+        }
+        kind+=1;
+    }
+    mark(112);
+}
+fn guarded_aliases(mapping:ptr) {
+    mark(80); let kind:i32=0;
+    while(kind<4) {
+        let policy:core::base64::Profile=profile(kind); let count:i32=0;
+        while(count<=10) {
+            let length:i32=wire_length(count,kind); let wire:core::slice::View<u8> =tail(mapping,length);
+            let data:core::slice::View<u8> =view(wire.values,2,count);
+            reset(wire.values,2+length); put_data(data,count);
+            if(count>0) {
+                error(core::base64::encode_into(data,view(wire.values,2,length-1),policy),7,length); check_data(wire.values,2+length,2,count);
+            }
+            assert(core::base64::encode_into(data,wire,policy).unwrap()==length); check_wire(wire.values,2+length,2,count,kind);
+            if(count>0) {
+                error(core::base64::decode_into(wire,view(wire.values,2,count-1),policy),7,count); check_wire(wire.values,2+length,2,count,kind);
+            }
+            assert(core::base64::decode_into(wire,data,policy).unwrap()==count); check_decoded_alias(wire.values,2+length,2,count,kind); count+=1;
+        }
+        kind+=1;
+    }
+    mark(112);
+}
+fn main() -> i32 {
+    let mapping:ptr=alloc::allocator::alloc(8192,8); assert(mapping!=0);
+    let protect:[std::linux::Argument;3]=[std::linux::Argument::Address(mapping+4096),std::linux::Argument::Word(4096),std::linux::Argument::Word(0)];
+    assert(std::linux::call(10,core::slice::view<std::linux::Argument>(protect,3).unwrap()).unwrap()==0);
+    let native:[u8;64]=[211;64]; assert(core::mem::slice_stride(native)<0); aliases(native);
+    let words:[i32;17]=[0;17]; let base:ptr=core::mem::i32_array_data_ptr(words);
+    let all:[u8]=core::mem::typed_slice_from_raw_parts<u8>(base,68); reset(all,68);
+    let packed:[u8]=core::mem::typed_slice_from_raw_parts<u8>(base,64); assert(core::mem::slice_stride(packed)==1); aliases(packed);
+    reset(all,68); let unaligned:[u8]=core::mem::typed_slice_from_raw_parts<u8>(base+1,64); assert(core::mem::slice_stride(unaligned)==1); aliases(unaligned);
+    assert(all[0]==211 && all[65]==211 && all[66]==211 && all[67]==211);
+    invalid(); guarded_encode(mapping); guarded_decode(mapping); guarded_aliases(mapping);
+    alloc::allocator::dealloc(mapping,8192,8); mark(68); return 0;
+}

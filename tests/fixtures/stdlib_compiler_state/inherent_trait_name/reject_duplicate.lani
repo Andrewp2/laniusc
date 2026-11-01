@@ -1,0 +1,12 @@
+// Reduced from adding DoubleEndedIterator to existing collection cursors.
+module app::main;
+pub trait Back<T> { pub fn next_back(&self) -> T; }
+struct Cursor { value: i32 }
+impl Cursor {
+    fn borrow(&self) -> &Cursor { return self; }
+    pub fn next_back(&self) -> i32 { return self.value; }
+}
+pub impl Back<i32> for Cursor {
+    pub fn next_back(&self) -> i32 { return self.value; }
+}
+fn main() -> i32 { let cursor: Cursor = Cursor { value: 7 }; return cursor.next_back() - 7; }

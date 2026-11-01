@@ -1,6 +1,9 @@
-// Allocation-free stream contracts and operations. See docs/stdlib-streams.md.
+// Allocation-free stream and positional I/O contracts and operations.
+// See docs/stdlib-streams.md and docs/stdlib-positional-io.md.
 module core::io;
+import core::mem;
 import core::result;
+import core::slice;
 
 pub enum Error {
     InvalidInput,
@@ -20,10 +23,35 @@ pub struct Failure { cause: Error, completed: i32 }
 // A copy can consume input before a later output error. Preserve both counts.
 pub struct CopyFailure { cause: Error, read: u64, written: u64 }
 
+pub enum CopySide { Read, Write, State }
+pub enum CopyStop { Eof, ReadLimit, CallLimit, ReadWouldBlock, WriteWouldBlock }
+// Byte counters are cumulative; calls counts only this step's direct attempts.
+pub struct CopyStep { read: u64, written: u64, calls: u64, stop: CopyStop }
+pub struct CopyStepFailure { cause: Error, read: u64, written: u64, calls: u64, side: CopySide }
+// One active state controls these borrowed endpoints and scratch. Copies are
+// aliases to one transfer, not independently usable cursor forks. Keep all
+// backing alive/disjoint and do not reenter, edit scratch or use endpoints
+// through another alias while driving the copier. begin/end are relative to
+// scratch.start; read-written is the tracked pending length in valid states.
+pub struct Copier<R,W> {
+    reader: &R, writer: &W, scratch: core::slice::View<u8>, begin: i32, end: i32,
+    read: u64, written: u64, active: bool, eof: bool, faulted: bool
+}
+
 pub trait Read {
     // Ok(0) means EOF for nonempty requests. Err means no bytes transferred
     // by this call. Short successful reads are normal.
     pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32, Error>;
+}
+
+// Filling exposes unread bytes without logically consuming them. Empty means
+// EOF for that observation, not a permanent EOF cache. The view is read-only
+// and its borrow ends before another mutating operation on the same reader.
+pub trait BufRead {
+    pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>, Error>;
+    // Success acknowledges exactly count bytes; Err acknowledges none. This
+    // never refills. Negative or excessive counts leave unread bytes intact.
+    pub fn consume(&self, count:i32) -> core::result::Result<i32, Error>;
 }
 
 pub trait Write {
@@ -32,6 +60,48 @@ pub trait Write {
     pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Result<i32, Error>;
     // Drain library buffering; Ok(0) means complete. This is not fsync/close.
     pub fn flush(&self) -> core::result::Result<i32, Error>;
+}
+
+pub enum SeekFrom { Start(u64), Current(i64), End(i64) }
+
+// Success gives the absolute logical position; Start must acknowledge its
+// exact target. Providers define beyond-EOF support and effects on failure.
+// Read/Write are separate bounds. No general rollback guarantee is implied.
+pub trait Seek {
+    pub fn seek(&self, from:SeekFrom) -> core::result::Result<u64,Error>;
+}
+
+// Mathematical u64+signed-i64 admission, including the full i64::MIN domain.
+// Negative magnitude is formed without ever negating i64::MIN itself.
+pub fn offset_position(base:u64, offset:i64) -> core::result::Result<u64,Error> {
+    if (offset < 0) {
+        let shifted:i64 = offset+1;
+        let positive:i64 = -shifted;
+        let magnitude:u64 = positive as u64;
+        magnitude += 1;
+        if (magnitude > base) { return core::result::Err(Error::InvalidInput); }
+        return core::result::Ok(base-magnitude);
+    }
+    let increment:u64 = offset as u64;
+    if (increment > 18446744073709551615-base) {
+        return core::result::Err(Error::InvalidInput);
+    }
+    return core::result::Ok(base+increment);
+}
+
+pub fn stream_position<S>(stream:&S) -> core::result::Result<u64,Error> where S:Seek {
+    return stream.seek(SeekFrom::Current(0));
+}
+
+pub fn rewind<S>(stream:&S) -> core::result::Result<u64,Error> where S:Seek {
+    let moved:core::result::Result<u64,Error> = stream.seek(SeekFrom::Start(0));
+    if (moved.is_err()) {
+        let error:Error = moved.unwrap_err();
+        return core::result::Err(error);
+    }
+    let position:u64 = moved.unwrap();
+    if (position != 0) { return core::result::Err(Error::InvalidCount); }
+    return core::result::Ok(position);
 }
 
 // The physical view must back the claimed range. Indexing checks actual
@@ -93,49 +163,137 @@ pub fn write_all<W>(writer: &W, source: [u8], offset: i32, count: i32)
     return core::result::Ok(completed);
 }
 
-// Copy through caller-owned scratch space until EOF. Does not flush or close.
-pub fn copy<R, W>(reader: &R, writer: &W, scratch: [u8], capacity: i32)
-    -> core::result::Result<u64, CopyFailure> where R: Read, W: Write {
-    if (capacity <= 0) {
-        return core::result::Err(CopyFailure { cause: Error::InvalidInput, read: 0, written: 0 });
+// Admit only logical metadata. Construction touches no backing or provider.
+pub fn copier<R,W>(reader: &R, writer: &W, scratch: core::slice::View<u8>)
+    -> core::result::Result<Copier<R,W>,Error> where R: Read, W: Write {
+    if (scratch.length <= 0 || !valid_range(scratch.start,scratch.length)) {
+        return core::result::Err(Error::InvalidInput);
     }
-    let total: u64 = 0;
-    while (true) {
-        // Reserve counter headroom before consuming another chunk.
-        if (total > 18446744073709551615 - (capacity as u64)) {
-            return core::result::Err(CopyFailure { cause: Error::CountOverflow, read: total, written: total });
-        }
-        let result: core::result::Result<i32, Error> = reader.read(scratch, 0, capacity);
-        if (core::result::is_err(result)) {
-            let error: Error = core::result::unwrap_err(result);
-            if (is_interrupted(error)) { continue; }
-            return core::result::Err(CopyFailure { cause: error, read: total, written: total });
-        }
-        let received: i32 = core::result::unwrap(result);
-        if (received < 0 || received > capacity) {
-            return core::result::Err(CopyFailure { cause: Error::InvalidCount, read: total, written: total });
-        }
-        if (received == 0) { return core::result::Ok(total); }
-        let completed: i32 = 0;
-        while (completed < received) {
-            let sent: core::result::Result<i32, Error> = writer.write(scratch, completed, received - completed);
-            if (core::result::is_err(sent)) {
-                let error: Error = core::result::unwrap_err(sent);
+    let value: Copier<R,W> = Copier {
+        reader: reader, writer: writer, scratch: scratch, begin: 0, end: 0,
+        read: 0, written: 0, active: true, eof: false, faulted: false
+    };
+    return core::result::Ok(value);
+}
+
+pub impl<R,W> Copier<R,W> {
+    pub fn borrow(&self) -> &Copier<R,W> { return self; }
+    pub fn read_count(&self) -> u64 { return self.read; }
+    pub fn written_count(&self) -> u64 { return self.written; }
+    pub fn is_active(&self) -> bool { return self.active; }
+    pub fn is_done(&self) -> bool { return self.eof; }
+    pub fn is_faulted(&self) -> bool { return self.faulted; }
+    // Read-only borrow until the next state operation or caller scratch reuse.
+    // After a malformed success this is last acknowledged bookkeeping only:
+    // a nonconforming provider may already have caused unknown effects.
+    pub fn pending(&self) -> core::slice::View<u8> {
+        return core::slice::View { values: self.scratch.values, start: self.scratch.start + self.begin, length: self.end - self.begin };
+    }
+    // Permanently inactivate without cleanup or discard. Repeated abort keeps
+    // the same span and historical counters/flags; no ownership is transferred.
+    pub fn abort(&self) -> core::slice::View<u8> {
+        self.active = false;
+        return self.pending();
+    }
+    fn stopped(&self, calls: u64, stop: CopyStop) -> core::result::Result<CopyStep,CopyStepFailure> {
+        return core::result::Ok(CopyStep { read: self.read, written: self.written, calls: calls, stop: stop });
+    }
+    fn failed(&self, calls: u64, cause: Error, side: CopySide) -> core::result::Result<CopyStep,CopyStepFailure> {
+        return core::result::Err(CopyStepFailure { cause: cause, read: self.read, written: self.written, calls: calls, side: side });
+    }
+    // Drain pending bytes before new reads, even with zero new-read quota.
+    // Every immediate provider attempt spends a call; only Interrupted retries.
+    // Provider-internal work/blocking time is outside this direct-call bound.
+    pub fn step(&self, read_limit: u64, max_calls: u64)
+        -> core::result::Result<CopyStep,CopyStepFailure> where R: Read, W: Write {
+        if (!self.active) { return self.failed(0,Error::InvalidInput,CopySide::State); }
+        if (self.faulted) { return self.failed(0,Error::InvalidCount,CopySide::State); }
+        if (self.eof) { return self.stopped(0,CopyStop::Eof); }
+        let calls: u64 = 0;
+        let received_here: u64 = 0;
+        while (true) {
+            if (self.begin < self.end) {
+                if (calls == max_calls) { return self.stopped(calls,CopyStop::CallLimit); }
+                let count: i32 = self.end - self.begin;
+                let writer: &W = self.writer;
+                calls += 1;
+                let result: core::result::Result<i32,Error> = writer.write(self.scratch.values,self.scratch.start + self.begin,count);
+                if (result.is_err()) {
+                    let error: Error = result.unwrap_err();
+                    if (is_interrupted(error)) { continue; }
+                    let blocked: bool = match (error) { Error::WouldBlock -> true, _ -> false };
+                    if (blocked) { return self.stopped(calls,CopyStop::WriteWouldBlock); }
+                    return self.failed(calls,error,CopySide::Write);
+                }
+                let written: i32 = result.unwrap();
+                if (written < 0 || written > count) {
+                    self.faulted = true;
+                    return self.failed(calls,Error::InvalidCount,CopySide::Write);
+                }
+                if (written == 0) { return self.failed(calls,Error::WriteZero,CopySide::Write); }
+                self.begin += written;
+                self.written += written as u64;
+                if (self.begin == self.end) { self.begin = 0; self.end = 0; }
+                continue;
+            }
+            if (received_here == read_limit) { return self.stopped(calls,CopyStop::ReadLimit); }
+            if (calls == max_calls) { return self.stopped(calls,CopyStop::CallLimit); }
+            let headroom: u64 = 18446744073709551615 - self.read;
+            if (headroom == 0) { return self.failed(calls,Error::CountOverflow,CopySide::State); }
+            let requested: u64 = self.scratch.length as u64;
+            let remaining: u64 = read_limit - received_here;
+            if (requested > remaining) { requested = remaining; }
+            if (requested > headroom) { requested = headroom; }
+            let count: i32 = requested as i32;
+            let reader: &R = self.reader;
+            calls += 1;
+            let result: core::result::Result<i32,Error> = reader.read(self.scratch.values,self.scratch.start,count);
+            if (result.is_err()) {
+                let error: Error = result.unwrap_err();
                 if (is_interrupted(error)) { continue; }
-                return core::result::Err(CopyFailure { cause: error, read: total + (received as u64), written: total + (completed as u64) });
+                let blocked: bool = match (error) { Error::WouldBlock -> true, _ -> false };
+                if (blocked) { return self.stopped(calls,CopyStop::ReadWouldBlock); }
+                return self.failed(calls,error,CopySide::Read);
             }
-            let count: i32 = core::result::unwrap(sent);
-            if (count < 0 || count > received - completed) {
-                return core::result::Err(CopyFailure { cause: Error::InvalidCount, read: total + (received as u64), written: total + (completed as u64) });
+            let received: i32 = result.unwrap();
+            if (received < 0 || received > count) {
+                self.faulted = true;
+                return self.failed(calls,Error::InvalidCount,CopySide::Read);
             }
-            if (count == 0) {
-                return core::result::Err(CopyFailure { cause: Error::WriteZero, read: total + (received as u64), written: total + (completed as u64) });
-            }
-            completed += count;
+            if (received == 0) { self.eof = true; return self.stopped(calls,CopyStop::Eof); }
+            self.read += received as u64;
+            received_here += received as u64;
+            self.begin = 0;
+            self.end = received;
         }
-        total += received as u64;
+        return self.stopped(calls,CopyStop::Eof);
     }
-    return core::result::Ok(total);
+}
+
+// Blocking convenience over the same engine. It neither flushes nor closes,
+// and has no useful small attempt bound. On return its local recovery state
+// is abandoned; use Copier when unwritten scratch bytes must remain resumable.
+pub fn copy<R,W>(reader: &R, writer: &W, scratch: [u8], capacity: i32)
+    -> core::result::Result<u64,CopyFailure> where R: Read, W: Write {
+    let view: core::slice::View<u8> = core::slice::View { values: scratch, start: 0, length: capacity };
+    let admitted: core::result::Result<Copier<R,W>,Error> = copier<R,W>(reader,writer,view);
+    if (admitted.is_err()) {
+        return core::result::Err(CopyFailure { cause: admitted.unwrap_err(), read: 0, written: 0 });
+    }
+    let state: Copier<R,W> = admitted.unwrap();
+    while (true) {
+        let result: core::result::Result<CopyStep,CopyStepFailure> = state.step(18446744073709551615,18446744073709551615);
+        if (result.is_err()) {
+            let error: CopyStepFailure = result.unwrap_err();
+            return core::result::Err(CopyFailure { cause: error.cause, read: error.read, written: error.written });
+        }
+        let progress: CopyStep = result.unwrap();
+        let complete: bool = match (progress.stop) { CopyStop::Eof -> true, _ -> false };
+        if (complete) { return core::result::Ok(progress.written); }
+        let blocked: bool = match (progress.stop) { CopyStop::ReadWouldBlock -> true, CopyStop::WriteWouldBlock -> true, _ -> false };
+        if (blocked) { return core::result::Err(CopyFailure { cause: Error::WouldBlock, read: progress.read, written: progress.written }); }
+    }
+    return core::result::Ok(state.written_count());
 }
 
 pub struct SliceReader { data: [u8], length: i32, cursor: i32 }
@@ -155,21 +313,57 @@ pub impl SliceReader {
     pub fn borrow(&self) -> &SliceReader { return self; }
     pub fn position(&self) -> i32 { return self.cursor; }
     pub fn remaining(&self) -> i32 { return self.length - self.cursor; }
-    pub fn seek(&self, position: i32) -> core::result::Result<i32, Error> {
-        if (position < 0 || position > self.length) { return core::result::Err(Error::InvalidInput); }
-        self.cursor = position;
-        return core::result::Ok(position);
-    }
 }
 
 pub impl SliceWriter {
     pub fn borrow(&self) -> &SliceWriter { return self; }
     pub fn position(&self) -> i32 { return self.cursor; }
     pub fn remaining(&self) -> i32 { return self.length - self.cursor; }
-    pub fn seek(&self, position: i32) -> core::result::Result<i32, Error> {
-        if (position < 0 || position > self.length) { return core::result::Err(Error::InvalidInput); }
-        self.cursor = position;
-        return core::result::Ok(position);
+}
+
+// Memory cursor bounds are checked without backing access or cursor mutation.
+// Public fields can be forged, so validate state before signed arithmetic.
+fn slice_seek_target(length:i32, cursor:i32, from:SeekFrom) -> core::result::Result<u64,Error> {
+    if (cursor < 0 || length < cursor) { return core::result::Err(Error::InvalidInput); }
+    let cursor_wide:u64 = cursor as u64;
+    let length_wide:u64 = length as u64;
+    let moved:core::result::Result<u64,Error> = match (from) {
+        Start(position) -> core::result::Ok(position),
+        Current(offset) -> offset_position(cursor_wide,offset),
+        End(offset) -> offset_position(length_wide,offset)
+    };
+    if (moved.is_err()) {
+        let error:Error = moved.unwrap_err();
+        return core::result::Err(error);
+    }
+    let target:u64 = moved.unwrap();
+    if (target > length_wide) { return core::result::Err(Error::InvalidInput); }
+    return core::result::Ok(target);
+}
+
+pub impl Seek for SliceReader {
+    pub fn seek(&self, from:SeekFrom) -> core::result::Result<u64,Error> {
+        let moved:core::result::Result<u64,Error> = slice_seek_target(self.length,self.cursor,from);
+        if (moved.is_err()) {
+            let error:Error = moved.unwrap_err();
+            return core::result::Err(error);
+        }
+        let target:u64 = moved.unwrap();
+        self.cursor = target as i32;
+        return core::result::Ok(target);
+    }
+}
+
+pub impl Seek for SliceWriter {
+    pub fn seek(&self, from:SeekFrom) -> core::result::Result<u64,Error> {
+        let moved:core::result::Result<u64,Error> = slice_seek_target(self.length,self.cursor,from);
+        if (moved.is_err()) {
+            let error:Error = moved.unwrap_err();
+            return core::result::Err(error);
+        }
+        let target:u64 = moved.unwrap();
+        self.cursor = target as i32;
+        return core::result::Ok(target);
     }
 }
 
@@ -206,5 +400,399 @@ pub impl Write for SliceWriter {
     pub fn flush(&self) -> core::result::Result<i32, Error> {
         // Writes are already in the caller's buffer; no pending bytes exist.
         return core::result::Ok(0);
+    }
+}
+
+pub impl BufRead for SliceReader {
+    pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>, Error> {
+        if (self.cursor < 0 || self.length < self.cursor) {
+            return core::result::Err(Error::InvalidInput);
+        }
+        let bytes:core::slice::View<u8> = core::slice::View {
+            values:self.data, start:self.cursor, length:self.length-self.cursor
+        };
+        return core::result::Ok(bytes);
+    }
+    pub fn consume(&self, count:i32) -> core::result::Result<i32, Error> {
+        if (self.cursor < 0 || self.length < self.cursor) {
+            return core::result::Err(Error::InvalidInput);
+        }
+        if (count < 0 || count > self.length-self.cursor) {
+            return core::result::Err(Error::InvalidInput);
+        }
+        self.cursor += count;
+        return core::result::Ok(count);
+    }
+}
+
+// Explicit-offset operations leave the source/writer's shared cursor alone.
+// As with Read/Write, successful counts are in 0..=count and errors confirm no
+// bytes for that call. A nonempty read returning zero reports EOF to callers.
+// Physical backing and lifetime of the claimed array range remain obligations.
+pub trait ReadAt {
+    pub fn read_at(&self,destination:[u8],offset:i32,count:i32,position:u64)
+        -> core::result::Result<i32,Error>;
+}
+pub trait WriteAt {
+    pub fn write_at(&self,source:[u8],offset:i32,count:i32,position:u64)
+        -> core::result::Result<i32,Error>;
+}
+
+// Both the start and exclusive end fit the signed 64-bit positional domain.
+// Check before casting a negative count or subtracting an out-of-domain start.
+pub fn valid_position(position:u64,count:i32) -> bool {
+    if(count<0 || position>9223372036854775807) { return false; }
+    return (count as u64)<=9223372036854775807-position;
+}
+
+// Every trait call spends an attempt, including Interrupted. Only Interrupted
+// is retried; the budget bounds calls, not their execution time. Completion
+// makes no extra call. Failure reports only the confirmed successful prefix.
+pub fn read_exact_at<R>(reader:&R,destination:[u8],offset:i32,count:i32,
+    position:u64,max_attempts:i32) -> core::result::Result<i32,Failure>
+    where R:ReadAt {
+    if(max_attempts<0 || !valid_range(offset,count) || !valid_position(position,count)) {
+        return core::result::Err(Failure { cause:Error::InvalidInput,completed:0 });
+    }
+    let completed:i32=0;
+    let attempts:i32=0;
+    while(completed<count) {
+        if(attempts>=max_attempts) {
+            return core::result::Err(Failure { cause:Error::LimitExceeded,completed:completed });
+        }
+        attempts+=1;
+        let result:core::result::Result<i32,Error> =reader.read_at(destination,offset+completed,count-completed,position+(completed as u64));
+        if(result.is_err()) {
+            let error:Error=result.unwrap_err();
+            if(is_interrupted(error)) { continue; }
+            return core::result::Err(Failure { cause:error,completed:completed });
+        }
+        let received:i32=result.unwrap();
+        if(received<0 || received>count-completed) {
+            return core::result::Err(Failure { cause:Error::InvalidCount,completed:completed });
+        }
+        if(received==0) {
+            return core::result::Err(Failure { cause:Error::UnexpectedEof,completed:completed });
+        }
+        completed+=received;
+    }
+    return core::result::Ok(completed);
+}
+
+// Prior confirmed writes remain on failure. No flush, close, rollback,
+// transaction or crash-durability promise is implied by successful completion.
+pub fn write_all_at<W>(writer:&W,source:[u8],offset:i32,count:i32,
+    position:u64,max_attempts:i32) -> core::result::Result<i32,Failure>
+    where W:WriteAt {
+    if(max_attempts<0 || !valid_range(offset,count) || !valid_position(position,count)) {
+        return core::result::Err(Failure { cause:Error::InvalidInput,completed:0 });
+    }
+    let completed:i32=0;
+    let attempts:i32=0;
+    while(completed<count) {
+        if(attempts>=max_attempts) {
+            return core::result::Err(Failure { cause:Error::LimitExceeded,completed:completed });
+        }
+        attempts+=1;
+        let result:core::result::Result<i32,Error> =writer.write_at(source,offset+completed,count-completed,position+(completed as u64));
+        if(result.is_err()) {
+            let error:Error=result.unwrap_err();
+            if(is_interrupted(error)) { continue; }
+            return core::result::Err(Failure { cause:error,completed:completed });
+        }
+        let sent:i32=result.unwrap();
+        if(sent<0 || sent>count-completed) {
+            return core::result::Err(Failure { cause:Error::InvalidCount,completed:completed });
+        }
+        if(sent==0) {
+            return core::result::Err(Failure { cause:Error::WriteZero,completed:completed });
+        }
+        completed+=sent;
+    }
+    return core::result::Ok(completed);
+}
+
+// Binary delimiter operations include the delimiter in confirmed progress.
+// See docs/stdlib-delimited-io.md for byte/call limits and provider obligations.
+pub enum DelimiterEnd { Delimiter, Eof, Limit }
+pub struct Delimited { completed:u64, ending:DelimiterEnd }
+pub struct DelimiterFailure { cause:Error, copied:i32, consumed:u64 }
+
+// The same state machine serves copying and discarding. Destination backing
+// is used only when copying=true; source/output must then be disjoint. Native
+// indexing retains both byte strides. View lifetimes end before consume.
+fn delimiter_engine<B>(reader:&B, delimiter:u8, destination:[u8], offset:i32,
+    byte_limit:u64, max_calls:i32, copying:bool)
+    -> core::result::Result<Delimited,DelimiterFailure> where B:BufRead {
+    if (max_calls < 0) {
+        let failure:DelimiterFailure = DelimiterFailure { cause:Error::InvalidInput, copied:0, consumed:0 };
+        return core::result::Err(failure);
+    }
+    let consumed:u64 = 0;
+    let copied:i32 = 0;
+    let calls:i32 = 0;
+    while (consumed < byte_limit) {
+        if (calls >= max_calls) {
+            let failure:DelimiterFailure = DelimiterFailure { cause:Error::LimitExceeded, copied:copied, consumed:consumed };
+            return core::result::Err(failure);
+        }
+        calls += 1;
+        let filled:core::result::Result<core::slice::View<u8>,Error> = reader.fill_buf();
+        if (filled.is_err()) {
+            let error:Error = filled.unwrap_err();
+            if (is_interrupted(error)) { continue; }
+            let failure:DelimiterFailure = DelimiterFailure { cause:error, copied:copied, consumed:consumed };
+            return core::result::Err(failure);
+        }
+        let available:core::slice::View<u8> = filled.unwrap();
+        // Admit all successful metadata even for empty views or an exhausted
+        // consume budget. No backing access precedes these logical checks.
+        if (!valid_range(available.start, available.length)) {
+            let failure:DelimiterFailure = DelimiterFailure { cause:Error::InvalidCount, copied:copied, consumed:consumed };
+            return core::result::Err(failure);
+        }
+        if (available.length == 0) {
+            let done:Delimited = Delimited { completed:consumed, ending:DelimiterEnd::Eof };
+            return core::result::Ok(done);
+        }
+        // Reserve the consume attempt before any scanning or destination copy.
+        // A successful fill may have read ahead while consuming nothing here.
+        if (calls >= max_calls) {
+            let failure:DelimiterFailure = DelimiterFailure { cause:Error::LimitExceeded, copied:copied, consumed:consumed };
+            return core::result::Err(failure);
+        }
+        let remaining:u64 = byte_limit-consumed;
+        let amount:i32 = available.length;
+        let amount_wide:u64 = amount as u64;
+        if (amount_wide > remaining) { amount = remaining as i32; }
+        let selected:i32 = 0;
+        let found:bool = false;
+        while (selected < amount && !found) {
+            let byte:u8 = available.values[available.start+selected];
+            selected += 1;
+            if (copying) {
+                destination[offset+copied] = byte;
+                copied += 1;
+            }
+            if (byte == delimiter) { found = true; }
+        }
+        calls += 1;
+        let acknowledged:core::result::Result<i32,Error> = reader.consume(selected);
+        if (acknowledged.is_err()) {
+            // Copied bytes remain visible, but Err acknowledges no consumption.
+            // In particular, Interrupted from consume is never retried.
+            let error:Error = acknowledged.unwrap_err();
+            let failure:DelimiterFailure = DelimiterFailure { cause:error, copied:copied, consumed:consumed };
+            return core::result::Err(failure);
+        }
+        let accepted:i32 = acknowledged.unwrap();
+        if (accepted != selected) {
+            // A nonconforming provider's actual state is unspecified. Record
+            // only earlier exact acknowledgements, without implying rollback.
+            let failure:DelimiterFailure = DelimiterFailure { cause:Error::InvalidCount, copied:copied, consumed:consumed };
+            return core::result::Err(failure);
+        }
+        // selected<=remaining, so even a u64::MAX byte limit cannot overflow.
+        consumed += selected as u64;
+        if (found) {
+            let done:Delimited = Delimited { completed:consumed, ending:DelimiterEnd::Delimiter };
+            return core::result::Ok(done);
+        }
+    }
+    // Reaching the bound performs no extra EOF/delimiter observation.
+    let done:Delimited = Delimited { completed:consumed, ending:DelimiterEnd::Limit };
+    return core::result::Ok(done);
+}
+
+pub fn read_until<B>(reader:&B, delimiter:u8, destination:[u8], offset:i32,
+    count:i32, max_calls:i32) -> core::result::Result<Delimited,DelimiterFailure>
+    where B:BufRead {
+    if (!valid_range(offset,count)) {
+        let failure:DelimiterFailure = DelimiterFailure { cause:Error::InvalidInput, copied:0, consumed:0 };
+        return core::result::Err(failure);
+    }
+    let byte_limit:u64 = count as u64;
+    return delimiter_engine(reader,delimiter,destination,offset,byte_limit,max_calls,true);
+}
+
+pub fn skip_until<B>(reader:&B, delimiter:u8, byte_limit:u64, max_calls:i32)
+    -> core::result::Result<Delimited,DelimiterFailure> where B:BufRead {
+    // A private stack placeholder avoids requiring any destination from the
+    // caller. The engine's copying=false path never reads or writes it.
+    let unused:[u8;1] = [0];
+    return delimiter_engine(reader,delimiter,unused,0,byte_limit,max_calls,false);
+}
+
+// Borrowed forwarding adapters own no source or buffer. Keep one active
+// handle, all providers and their backing alive; copied handles share sources.
+// Buffered views expire before any adapter/provider mutation, including a
+// quota reset. These adapters never close, destroy, seek or retry a provider.
+pub struct Take<R> { inner: &R, remaining: u64, faulted: bool }
+pub struct Chain<A,B> { first: &A, second: &B, first_done: bool, faulted: bool }
+
+// Construction is inert. Read and BufRead are independent conditional bounds.
+pub fn take<R>(inner: &R, limit: u64) -> Take<R> {
+    return Take { inner: inner, remaining: limit, faulted: false };
+}
+
+pub fn chain<A,B>(first: &A, second: &B) -> Chain<A,B> {
+    return Chain { first: first, second: second, first_done: false, faulted: false };
+}
+
+pub impl<R> Take<R> {
+    pub fn borrow(&self) -> &Take<R> { return self; }
+    pub fn limit(&self) -> u64 { return self.remaining; }
+    pub fn is_faulted(&self) -> bool { return self.faulted; }
+    pub fn set_limit(&self, limit: u64) -> core::result::Result<u64,Error> {
+        if (self.faulted) { return core::result::Err(Error::InvalidCount); }
+        self.remaining = limit;
+        return core::result::Ok(limit);
+    }
+}
+
+pub impl<A,B> Chain<A,B> {
+    pub fn borrow(&self) -> &Chain<A,B> { return self; }
+    pub fn is_first_done(&self) -> bool { return self.first_done; }
+    pub fn is_faulted(&self) -> bool { return self.faulted; }
+}
+
+pub impl<R> Read for Take<R> where R: Read {
+    pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32,Error> {
+        if (self.faulted) { return core::result::Err(Error::InvalidCount); }
+        if (!valid_range(offset,count)) { return core::result::Err(Error::InvalidInput); }
+        if (count == 0 || self.remaining == 0) { return core::result::Ok(0); }
+        let requested: i32 = count;
+        // Only narrow the quota when it is smaller than a valid i32 count.
+        if (self.remaining < (count as u64)) { requested = self.remaining as i32; }
+        let inner: &R = self.inner;
+        let received: core::result::Result<i32,Error> = inner.read(destination,offset,requested);
+        if (received.is_err()) { return received; }
+        let actual: i32 = received.unwrap();
+        if (actual < 0 || actual > requested) {
+            self.faulted = true;
+            return core::result::Err(Error::InvalidCount);
+        }
+        // EOF spends nothing and is not cached. Broken-provider effects are
+        // not rolled back, and only validated successful counts spend quota.
+        self.remaining -= actual as u64;
+        return core::result::Ok(actual);
+    }
+}
+
+pub impl<R> BufRead for Take<R> where R: BufRead {
+    pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>,Error> {
+        if (self.faulted) { return core::result::Err(Error::InvalidCount); }
+        if (self.remaining == 0) {
+            let empty: ptr = 0;
+            let values: [u8] = core::mem::typed_slice_from_raw_parts<u8>(empty,0);
+            return core::result::Ok(core::slice::View { values: values, start: 0, length: 0 });
+        }
+        let inner: &R = self.inner;
+        let filled: core::result::Result<core::slice::View<u8>,Error> = inner.fill_buf();
+        if (filled.is_err()) { return filled; }
+        let view: core::slice::View<u8> = filled.unwrap();
+        // Validate the full provider range before limiting exposure. Preserve
+        // values/start and the actual physical descriptor, including stride.
+        if (!valid_range(view.start,view.length)) {
+            self.faulted = true;
+            return core::result::Err(Error::InvalidCount);
+        }
+        if (self.remaining < (view.length as u64)) { view.length = self.remaining as i32; }
+        return core::result::Ok(view);
+    }
+    pub fn consume(&self, count: i32) -> core::result::Result<i32,Error> {
+        if (self.faulted) { return core::result::Err(Error::InvalidCount); }
+        if (count < 0) { return core::result::Err(Error::InvalidInput); }
+        if ((count as u64) > self.remaining) { return core::result::Err(Error::InvalidInput); }
+        if (count == 0) { return core::result::Ok(0); }
+        let inner: &R = self.inner;
+        let consumed: core::result::Result<i32,Error> = inner.consume(count);
+        if (consumed.is_err()) { return consumed; }
+        if (consumed.unwrap() != count) {
+            self.faulted = true;
+            return core::result::Err(Error::InvalidCount);
+        }
+        self.remaining -= count as u64;
+        return core::result::Ok(count);
+    }
+}
+
+pub impl<A,B> Read for Chain<A,B> where A: Read, B: Read {
+    pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32,Error> {
+        if (self.faulted) { return core::result::Err(Error::InvalidCount); }
+        if (!valid_range(offset,count)) { return core::result::Err(Error::InvalidInput); }
+        if (count == 0) { return core::result::Ok(0); }
+        if (!self.first_done) {
+            let first: &A = self.first;
+            let received: core::result::Result<i32,Error> = first.read(destination,offset,count);
+            if (received.is_err()) { return received; }
+            let actual: i32 = received.unwrap();
+            if (actual < 0 || actual > count) {
+                self.faulted = true;
+                return core::result::Err(Error::InvalidCount);
+            }
+            if (actual > 0) { return core::result::Ok(actual); }
+            // This actual first EOF commits the handoff even if the second
+            // provider errors. A short positive read never reaches second.
+            self.first_done = true;
+        }
+        let second: &B = self.second;
+        let received: core::result::Result<i32,Error> = second.read(destination,offset,count);
+        if (received.is_err()) { return received; }
+        let actual: i32 = received.unwrap();
+        if (actual < 0 || actual > count) {
+            self.faulted = true;
+            return core::result::Err(Error::InvalidCount);
+        }
+        // Second EOF is observational; future operations still consult it.
+        return core::result::Ok(actual);
+    }
+}
+
+pub impl<A,B> BufRead for Chain<A,B> where A: BufRead, B: BufRead {
+    pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>,Error> {
+        if (self.faulted) { return core::result::Err(Error::InvalidCount); }
+        if (!self.first_done) {
+            let first: &A = self.first;
+            let filled: core::result::Result<core::slice::View<u8>,Error> = first.fill_buf();
+            if (filled.is_err()) { return filled; }
+            let view: core::slice::View<u8> = filled.unwrap();
+            if (!valid_range(view.start,view.length)) {
+                self.faulted = true;
+                return core::result::Err(Error::InvalidCount);
+            }
+            if (view.length > 0) { return core::result::Ok(view); }
+            self.first_done = true;
+        }
+        let second: &B = self.second;
+        let filled: core::result::Result<core::slice::View<u8>,Error> = second.fill_buf();
+        if (filled.is_err()) { return filled; }
+        let view: core::slice::View<u8> = filled.unwrap();
+        if (!valid_range(view.start,view.length)) {
+            self.faulted = true;
+            return core::result::Err(Error::InvalidCount);
+        }
+        return core::result::Ok(view);
+    }
+    pub fn consume(&self, count: i32) -> core::result::Result<i32,Error> {
+        if (self.faulted) { return core::result::Err(Error::InvalidCount); }
+        if (count < 0) { return core::result::Err(Error::InvalidInput); }
+        if (count == 0) { return core::result::Ok(0); }
+        // Consumption does not refill or discover EOF. Read and BufRead use
+        // this same committed selection state, without a last-fill cache.
+        let consumed: core::result::Result<i32,Error> = core::result::Ok(0);
+        if (self.first_done) {
+            let second: &B = self.second;
+            consumed = second.consume(count);
+        } else {
+            let first: &A = self.first;
+            consumed = first.consume(count);
+        }
+        if (consumed.is_err()) { return consumed; }
+        if (consumed.unwrap() != count) {
+            self.faulted = true;
+            return core::result::Err(Error::InvalidCount);
+        }
+        return core::result::Ok(count);
     }
 }

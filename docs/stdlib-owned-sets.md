@@ -1,10 +1,25 @@
 # Generic owned sets
 
 `alloc::hash_set::HashSet<T>` and `alloc::tree_set::TreeSet<T>` own independent
-resizable table storage. HashSet requires lawful `Hash<T>` and `Eq<T>` keys;
-TreeSet requires a lawful total `Ord<T>`. Equal keys must hash equally, and the
-relations must stay stable while a key is stored. Hash iteration order is
+resizable table storage. Insertion and same-key operations use lawful `Hash<T>`
+and `Eq<T>` keys for HashSet and a lawful total `Ord<T>` for TreeSet.
+Borrowed point queries instead use the bounds below. Equal keys must hash
+equally, and the relations must stay stable while a key is stored. Hash iteration order is
 unspecified. Tree cursors visit keys in order.
+
+## Borrowed point queries
+
+Both sets add `contains_by<Q,P>`, `get_by<Q,P>` and `remove_by<Q,P>` under the
+[borrowed lookup contract](stdlib-borrowed-lookup.md). Hash queries require Q
+hashing and `Mapper<Pair<T,Q>,bool>`; tree queries require `Comparator<T,Q>`.
+The stored element is always the first policy operand. A getter borrows the
+stored representative; removal returns that representative and transfers its
+cleanup authority. The query is never substituted, stored or destroyed.
+`alloc::string::TextKey` permits a Text query of stored Strings without an
+owned query copy. All sixteen map/set methods pass the nine-group library
+acceptance and migrated application on native Linux x86_64 CPU output. Earlier
+set receipts below do not establish the new
+signatures. Ordered bounds/ranges and insertion retain their existing T APIs.
 
 ## Representatives and ownership
 

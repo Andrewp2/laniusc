@@ -1,0 +1,238 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+
+// Fill actions: positive = maximum visible chunk, zero = observed EOF;
+// -1 Interrupted, -2 WouldBlock, -3 Host, -4 AllocationFailed;
+// -10/-11/-12 malformed metadata, -14 valid empty MAX start,
+// -15 valid nonempty metadata with inaccessible backing (budget tripwire).
+// Consume actions: zero = exact acknowledgement; -1..-4 errors;
+// -5/-6/-7 negative/excessive/short acknowledgements with unspecified state.
+struct Script {
+    data:[u8], length:i32, cursor:i32, fill_actions:[i32], consume_actions:[i32],
+    fills:i32, consumes:i32, events:[i32;24], used:i32
+}
+fn script(data:[u8],length:i32,fills:[i32],consumes:[i32]) -> Script {
+    return Script { data:data,length:length,cursor:0,fill_actions:fills,consume_actions:consumes,
+        fills:0,consumes:0,events:[-99;24],used:0 };
+}
+impl Script {
+    fn borrow(&self) -> &Script { return self; }
+    fn record(&self,event:i32) { assert(self.used<24); self.events[self.used]=event; self.used+=1; }
+}
+fn error(action:i32) -> core::io::Error {
+    if (action==-1) { return core::io::Error::Interrupted; }
+    if (action==-2) { return core::io::Error::WouldBlock; }
+    if (action==-3) { return core::io::Error::Host(-90210); }
+    assert(action==-4); return core::io::Error::AllocationFailed;
+}
+pub impl core::io::BufRead for Script {
+    pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>,core::io::Error> {
+        assert(self.fills<12); self.record(1);
+        let action:i32=self.fill_actions[self.fills]; self.fills+=1;
+        if (action<=-1 && action>=-4) { return core::result::Err(error(action)); }
+        let nowhere:ptr=0; let unread:[u8]=core::mem::typed_slice_from_raw_parts<u8>(nowhere,0);
+        if (action==-10) { return core::result::Ok(core::slice::View { values:unread,start:-1,length:0 }); }
+        if (action==-11) { return core::result::Ok(core::slice::View { values:unread,start:0,length:-1 }); }
+        if (action==-12) { return core::result::Ok(core::slice::View { values:unread,start:2147483647,length:1 }); }
+        if (action==-14) { return core::result::Ok(core::slice::View { values:unread,start:2147483647,length:0 }); }
+        if (action==-15) { return core::result::Ok(core::slice::View { values:unread,start:0,length:1 }); }
+        assert(action>=0); let amount:i32=action;
+        if (amount>self.length-self.cursor) { amount=self.length-self.cursor; }
+        return core::result::Ok(core::slice::View { values:self.data,start:self.cursor,length:amount });
+    }
+    pub fn consume(&self,count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(self.consumes<12 && count>0 && count<=self.length-self.cursor); self.record(100+count);
+        let action:i32=self.consume_actions[self.consumes]; self.consumes+=1;
+        if (action<=-1 && action>=-4) { return core::result::Err(error(action)); }
+        if (action==-5) { return core::result::Ok(-1); }
+        if (action==-6) { return core::result::Ok(count+1); }
+        if (action==-7) { return core::result::Ok(0); }
+        assert(action==0); self.cursor+=count; return core::result::Ok(count);
+    }
+}
+fn cause(error:core::io::Error) -> i32 {
+    return match(error) {
+        core::io::Error::InvalidInput -> 1, core::io::Error::LimitExceeded -> 2,
+        core::io::Error::InvalidCount -> 3, core::io::Error::Interrupted -> 4,
+        core::io::Error::WouldBlock -> 5, core::io::Error::AllocationFailed -> 6,
+        core::io::Error::Host(code) -> code, _ -> 99
+    };
+}
+fn failed(result:core::result::Result<core::io::Delimited,core::io::DelimiterFailure>,expected:i32,copied:i32,consumed:u64) {
+    assert(result.is_err()); let failure:core::io::DelimiterFailure=result.unwrap_err();
+    assert(cause(failure.cause)==expected && failure.copied==copied && failure.consumed==consumed);
+}
+fn done(result:core::result::Result<core::io::Delimited,core::io::DelimiterFailure>,completed:u64,ending:i32) {
+    assert(result.is_ok()); let answer:core::io::Delimited=result.unwrap();
+    let tag:i32=match(answer.ending) { core::io::DelimiterEnd::Delimiter -> 1,core::io::DelimiterEnd::Eof -> 2,core::io::DelimiterEnd::Limit -> 3 };
+    assert(answer.completed==completed && tag==ending);
+}
+fn trace(reader:&Script,expected:[i32],count:i32) {
+    assert(reader.used==count); let i:i32=0;
+    while (i<count) { assert(reader.events[i]==expected[i]); i+=1; }
+}
+fn untouched(data:[u8],length:i32) { let i:i32=0; while(i<length) { assert(data[i]==199); i+=1; } }
+
+fn binary_layouts_limits_and_resumption() {
+    let stack_source:[u8;8]=[128,0,255,10,13,77,88,99]; let stack_output:[u8;8]=[199;8];
+    let source_words:[i32;2]=[0;2]; let output_words:[i32;2]=[0;2];
+    let packed_source:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(source_words),8);
+    let packed_output:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(output_words),8);
+    assert(core::mem::slice_stride(stack_source)<0 && core::mem::slice_stride(stack_output)<0);
+    assert(core::mem::slice_stride(packed_source)==1 && core::mem::slice_stride(packed_output)==1);
+    let chunks:[i32;12]=[3;12]; let acknowledgements:[i32;12]=[0;12]; let mode:i32=0;
+    while(mode<2) {
+        let source:[u8]=stack_source; let output:[u8]=packed_output;
+        if(mode==1) { source=packed_source; output=stack_output; }
+        let i:i32=0; while(i<8) { source[i]=stack_source[i]; output[i]=199; i+=1; }
+        let reader:Script=script(source,6,chunks,acknowledgements);
+        done(core::io::read_until<Script>(reader.borrow(),0,output,2,4,2),2,1);
+        assert(reader.cursor==2 && output[2]==128 && output[3]==0);
+        done(core::io::skip_until<Script>(reader.borrow(),10,1,2),1,3);
+        assert(reader.cursor==3);
+        done(core::io::skip_until<Script>(reader.borrow(),10,18446744073709551615,2),1,1);
+        assert(reader.cursor==4);
+        done(core::io::read_until<Script>(reader.borrow(),42,output,2,4,3),2,2);
+        assert(reader.cursor==6 && output[2]==13 && output[3]==77);
+        assert(output[0]==199 && output[1]==199 && output[4]==199 && output[5]==199 && output[6]==199 && output[7]==199);
+        let events:[i32;9]=[1,102,1,101,1,101,1,102,1]; trace(reader.borrow(),events,9);
+        assert(source[0]==128 && source[1]==0 && source[2]==255 && source[3]==10 && source[4]==13 && source[5]==77 && source[6]==88 && source[7]==99);
+        mode+=1;
+    }
+    let output:[u8;8]=[199;8]; let exact:Script=script(stack_source,6,chunks,acknowledgements);
+    done(core::io::read_until<Script>(exact.borrow(),0,output,1,2,2),2,1);
+    assert(exact.cursor==2 && exact.fills==1 && exact.consumes==1 && output[0]==199 && output[3]==199);
+    let limited:Script=script(stack_source,6,chunks,acknowledgements);
+    done(core::io::read_until<Script>(limited.borrow(),42,output,1,2,2),2,3);
+    assert(limited.cursor==2 && limited.fills==1 && limited.consumes==1);
+}
+
+fn zero_invalid_and_call_budgets() {
+    let nowhere:ptr=0; let unread:[u8]=core::mem::typed_slice_from_raw_parts<u8>(nowhere,0);
+    let chunks:[i32;12]=[2;12]; let acknowledgements:[i32;12]=[0;12];
+    let never:Script=script(unread,2147483647,chunks,acknowledgements);
+    failed(core::io::read_until<Script>(never.borrow(),0,unread,-1,0,0),1,0,0);
+    failed(core::io::read_until<Script>(never.borrow(),0,unread,0,-1,2),1,0,0);
+    failed(core::io::read_until<Script>(never.borrow(),0,unread,2147483647,1,2),1,0,0);
+    failed(core::io::read_until<Script>(never.borrow(),0,unread,0,0,-1),1,0,0);
+    failed(core::io::skip_until<Script>(never.borrow(),0,0,-1),1,0,0);
+    done(core::io::read_until<Script>(never.borrow(),0,unread,2147483647,0,0),0,3);
+    done(core::io::skip_until<Script>(never.borrow(),0,0,0),0,3);
+    failed(core::io::read_until<Script>(never.borrow(),0,unread,0,2147483647,0),2,0,0);
+    failed(core::io::skip_until<Script>(never.borrow(),0,18446744073709551615,0),2,0,0);
+    assert(never.used==0 && never.fills==0 && never.consumes==0);
+    let source:[u8;4]=[11,0,128,255]; let output:[u8;8]=[199;8]; let budget:i32=0;
+    while(budget<=2) {
+        let read:Script=script(source,4,chunks,acknowledgements);
+        let skipped:Script=script(source,4,chunks,acknowledgements);
+        let reading:core::result::Result<core::io::Delimited,core::io::DelimiterFailure> =core::io::read_until<Script>(read.borrow(),0,output,2,4,budget);
+        let skipping:core::result::Result<core::io::Delimited,core::io::DelimiterFailure> =core::io::skip_until<Script>(skipped.borrow(),0,4,budget);
+        if(budget<2) {
+            failed(reading,2,0,0); failed(skipping,2,0,0); untouched(output,8);
+            assert(read.fills==budget && skipped.fills==budget && read.consumes==0 && skipped.consumes==0);
+        } else {
+            done(reading,2,1); done(skipping,2,1);
+            let events:[i32;2]=[1,102]; trace(read.borrow(),events,2); trace(skipped.borrow(),events,2);
+            assert(output[2]==11 && output[3]==0 && output[1]==199 && output[4]==199);
+        }
+        budget+=1;
+    }
+}
+
+fn metadata_before_eof_and_consume_budget() {
+    let nowhere:ptr=0; let unread:[u8]=core::mem::typed_slice_from_raw_parts<u8>(nowhere,0);
+    let acknowledgements:[i32;12]=[0;12]; let mode:i32=-15;
+    while(mode<=-10) {
+        if(mode!=-13) {
+            let actions:[i32;12]=[mode;12]; let output:[u8;8]=[199;8];
+            let read:Script=script(unread,1,actions,acknowledgements); let skipped:Script=script(unread,1,actions,acknowledgements);
+            let reading:core::result::Result<core::io::Delimited,core::io::DelimiterFailure> =core::io::read_until<Script>(read.borrow(),0,output,2,2,1);
+            let skipping:core::result::Result<core::io::Delimited,core::io::DelimiterFailure> =core::io::skip_until<Script>(skipped.borrow(),0,2,1);
+            if(mode==-14) { done(reading,0,2); done(skipping,0,2); }
+            else { let expected:i32=3; if(mode==-15) { expected=2; } failed(reading,expected,0,0); failed(skipping,expected,0,0); }
+            assert(read.fills==1 && skipped.fills==1 && read.consumes==0 && skipped.consumes==0); untouched(output,8);
+        }
+        mode+=1;
+    }
+    let source:[u8;2]=[11,0]; let eof_then_bytes:[i32;12]=[0,2,2,2,2,2,2,2,2,2,2,2];
+    let reader:Script=script(source,2,eof_then_bytes,acknowledgements); let output:[u8;4]=[199;4];
+    done(core::io::read_until<Script>(reader.borrow(),0,output,1,2,1),0,2);
+    done(core::io::read_until<Script>(reader.borrow(),0,output,1,2,2),2,1);
+    assert(reader.fills==2 && reader.consumes==1 && reader.cursor==2 && output[0]==199 && output[1]==11 && output[2]==0 && output[3]==199);
+}
+
+fn fill_retry_errors_and_prior_progress() {
+    let source:[u8;4]=[11,12,128,0]; let acknowledgements:[i32;12]=[0;12]; let action:i32=-4;
+    while(action<=-1) {
+        let actions:[i32;12]=[2,action,2,0,0,0,0,0,0,0,0,0];
+        let reading:Script=script(source,4,actions,acknowledgements); let skipping:Script=script(source,4,actions,acknowledgements);
+        let output:[u8;8]=[199;8];
+        let copied:core::result::Result<core::io::Delimited,core::io::DelimiterFailure> =core::io::read_until<Script>(reading.borrow(),0,output,2,4,5);
+        let skipped:core::result::Result<core::io::Delimited,core::io::DelimiterFailure> =core::io::skip_until<Script>(skipping.borrow(),0,4,5);
+        if(action==-1) {
+            done(copied,4,1); done(skipped,4,1); let events:[i32;5]=[1,102,1,1,102]; trace(reading.borrow(),events,5); trace(skipping.borrow(),events,5);
+            assert(output[4]==128 && output[5]==0 && reading.cursor==4 && skipping.cursor==4);
+        } else {
+            let expected:i32=cause(error(action)); failed(copied,expected,2,2); failed(skipped,expected,0,2);
+            let events:[i32;3]=[1,102,1]; trace(reading.borrow(),events,3); trace(skipping.borrow(),events,3);
+            assert(output[4]==199 && output[5]==199 && reading.cursor==2 && skipping.cursor==2);
+        }
+        assert(output[0]==199 && output[1]==199 && output[2]==11 && output[3]==12 && output[6]==199 && output[7]==199); action+=1;
+    }
+    let interrupted:[i32;12]=[-1;12]; let output:[u8;8]=[199;8]; let blocked:Script=script(source,4,interrupted,acknowledgements);
+    failed(core::io::read_until<Script>(blocked.borrow(),0,output,2,4,2),2,0,0);
+    assert(blocked.fills==2 && blocked.consumes==0); untouched(output,8);
+    let last_fill:[i32;12]=[-1,2,2,2,2,2,2,2,2,2,2,2]; let exhausted:Script=script(source,4,last_fill,acknowledgements);
+    failed(core::io::read_until<Script>(exhausted.borrow(),0,output,2,4,2),2,0,0);
+    assert(exhausted.fills==2 && exhausted.consumes==0); untouched(output,8);
+    let prior:[i32;12]=[2,-1,2,2,2,2,2,2,2,2,2,2]; let partial:Script=script(source,4,prior,acknowledgements);
+    failed(core::io::read_until<Script>(partial.borrow(),0,output,2,4,3),2,2,2);
+    assert(partial.fills==2 && partial.consumes==1 && partial.cursor==2 && output[2]==11 && output[3]==12 && output[4]==199);
+}
+
+fn copied_and_consumed_are_distinct() {
+    let source:[u8;4]=[11,12,128,0]; let chunks:[i32;12]=[2;12]; let action:i32=-7;
+    while(action<=-1) {
+        let acknowledgements:[i32;12]=[0,action,0,0,0,0,0,0,0,0,0,0]; let output:[u8;8]=[199;8];
+        let read:Script=script(source,4,chunks,acknowledgements); let skipped:Script=script(source,4,chunks,acknowledgements);
+        let expected:i32=3; if(action>=-4) { expected=cause(error(action)); }
+        failed(core::io::read_until<Script>(read.borrow(),0,output,2,4,12),expected,4,2);
+        failed(core::io::skip_until<Script>(skipped.borrow(),0,4,12),expected,0,2);
+        let events:[i32;4]=[1,102,1,102]; trace(read.borrow(),events,4); trace(skipped.borrow(),events,4);
+        assert(read.fills==2 && read.consumes==2 && skipped.fills==2 && skipped.consumes==2);
+        assert(output[0]==199 && output[1]==199 && output[2]==11 && output[3]==12 && output[4]==128 && output[5]==0 && output[6]==199 && output[7]==199);
+        if(action>=-4) {
+            assert(read.cursor==2 && skipped.cursor==2);
+            done(core::io::read_until<Script>(read.borrow(),0,output,4,2,2),2,1);
+            done(core::io::skip_until<Script>(skipped.borrow(),0,2,2),2,1);
+            assert(read.cursor==4 && skipped.cursor==4 && read.consumes==3 && skipped.consumes==3);
+        }
+        // Invalid success counts intentionally make no rollback/retry claim.
+        action+=1;
+    }
+}
+
+fn slice_reader_protocol_checks() {
+    let source:[u8;4]=[11,0,128,255]; let reader:core::io::SliceReader=core::io::slice_reader(source,4).unwrap();
+    let initial:core::slice::View<u8> =reader.fill_buf().unwrap();
+    assert(initial.start==0 && initial.length==4 && initial.values[0]==11 && initial.values[3]==255 && reader.position()==0);
+    let negative:core::result::Result<i32,core::io::Error> =reader.consume(-1);
+    let excessive:core::result::Result<i32,core::io::Error> =reader.consume(5);
+    assert(cause(negative.unwrap_err())==1 && cause(excessive.unwrap_err())==1 && reader.position()==0);
+    assert(reader.consume(0).unwrap()==0 && reader.position()==0);
+    assert(reader.consume(2).unwrap()==2 && reader.position()==2);
+    let remaining:core::slice::View<u8> =reader.fill_buf().unwrap();
+    assert(remaining.start==2 && remaining.length==2 && remaining.values[remaining.start]==128);
+    let output:[u8;4]=[199;4]; done(core::io::read_until<core::io::SliceReader>(reader.borrow(),255,output,1,2,2),2,1);
+    assert(reader.position()==4 && reader.remaining()==0 && output[0]==199 && output[1]==128 && output[2]==255 && output[3]==199);
+    done(core::io::skip_until<core::io::SliceReader>(reader.borrow(),0,18446744073709551615,1),0,2);
+    assert(reader.consume(0).unwrap()==0 && reader.position()==4);
+}
+
+fn main() -> i32 {
+    binary_layouts_limits_and_resumption(); zero_invalid_and_call_budgets(); metadata_before_eof_and_consume_budget();
+    fill_retry_errors_and_prior_progress(); copied_and_consumed_are_distinct(); slice_reader_protocol_checks(); return 0;
+}
