@@ -2454,7 +2454,15 @@ every scalar style with chomping, anchors and aliases under an expansion
 limit, comments, multiple documents) into `ext::json_tree` with the core
 schema. It agrees with PyYAML 6.0.1 on 87 hand-written and 3,000 generated
 documents, and with hand-written expectations on 32 documents that YAML 1.1
-reads differently and 68 error and limit cases. [`core::float_decimal`](stdlib-float-decimal.md)
+reads differently and 68 error and limit cases. Its scanner skips comments
+and literal block lines with `core::slice::memchr_from`.
+[`ext::yaml_writer`](extended-yaml.md#writing) writes trees as block-style
+YAML, quoting only strings some YAML 1.1 or 1.2 reader could misread, and
+[`ext::toml_writer`](extended-toml-writer.md) writes them as TOML 1.0 with
+tables, arrays of tables, inline tables and the tree's exact number
+spellings. Round trips agree on 3,320 trees through PyYAML `safe_load` and
+`ext::yaml`, and on 3,014 trees through Python `tomllib`, plus 11 TOML writer
+error cases. [`core::float_decimal`](stdlib-float-decimal.md)
 formats shortest decimals with Schubfach, which is exact with no fallback, in
 about 0.6 to 0.8 µs per value. It parses with an Eisel-Lemire fast path
 before its exact big-integer path, in about 0.7 to 0.8 µs per value. It
