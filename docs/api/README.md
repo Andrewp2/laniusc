@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **284 modules**, **14567 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **285 modules**, **14633 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -295,6 +295,7 @@ Inventory: **284 modules**, **14567 declaration/member entries**. Counts include
 | [ext::unicode_words](ext/unicode_words.md) | [source](../../extended/ext/unicode_words.lani#L3) | 18 | Source inventory | [extended-unicode-words](../extended-unicode-words.md) |
 | [ext::uri](ext/uri.md) | [source](../../extended/ext/uri.lani#L3) | 33 | Source inventory | [extended-uri](../extended-uri.md) |
 | [ext::uri_resolve](ext/uri_resolve.md) | [source](../../extended/ext/uri_resolve.lani#L3) | 8 | Source inventory | [extended-uri-resolve](../extended-uri-resolve.md) |
+| [ext::url](ext/url.md) | [source](../../extended/ext/url.lani#L5) | 66 | Source inventory | [extended-url](../extended-url.md) |
 | [ext::url_client](ext/url_client.md) | [source](../../extended/ext/url_client.lani#L3) | 37 | Source inventory | [extended-url-client](../extended-url-client.md), [extended-fetch-url](../extended-fetch-url.md), [library-url-client-plan](../library-url-client-plan.md) |
 | [ext::url_connect](ext/url_connect.md) | [source](../../extended/ext/url_connect.lani#L3) | 63 | Source inventory | [extended-url-client](../extended-url-client.md), [library-url-client-plan](../library-url-client-plan.md), [stdlib-resolve](../stdlib-resolve.md) |
 | [ext::url_tls](ext/url_tls.md) | [source](../../extended/ext/url_tls.lani#L3) | 40 | Source inventory | [extended-url-client](../extended-url-client.md), [extended-fetch-url](../extended-fetch-url.md), [extended-https-client](../extended-https-client.md), [library-url-client-plan](../library-url-client-plan.md) |

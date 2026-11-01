@@ -78,8 +78,10 @@ not imply a usable network port. For example, `//01.2.3.4` is a registered name,
 and `//host:99999999999999999999` is syntactically accepted.
 
 This parser supplies syntax and component boundaries. Scheme policy, DNS and
-IDNA rules, decoded text validation, WHATWG URL processing, relative resolution,
-normalization and network operations belong to their respective layers.
+IDNA rules, decoded text validation, relative resolution, normalization and
+network operations belong to their respective layers. Browser-compatible
+WHATWG URL parsing, with a base and owned serialization, is
+[`ext::url`](extended-url.md).
 
 [Owned reference resolution and recomposition](extended-uri-resolve.md) live in
 `ext::uri_resolve`. [Percent coding](extended-percent.md) is a separate explicit
