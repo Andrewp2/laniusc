@@ -2,6 +2,7 @@
 // blocks. Caller-owned disjoint buffers; no allocation and no host services.
 // See docs/extended-deflate.md for ownership, limits and compression policy.
 module ext::deflate;
+import core::mem;
 import core::result;
 import core::slice;
 
@@ -90,56 +91,339 @@ impl Writer {
     }
 }
 
-// Reset scratch for each pass. Search exactly the most recent matching hash,
-// verify its bytes, and insert every consumed position that has three bytes.
-fn fixed_pass(input: core::slice::View<u8>, scratch: core::slice::View<i32>, output: core::slice::View<u8>, writing: bool, final_block: bool) -> u64 {
+// Raw memory helpers for packed (stride +1) bytes and packed i32 scratch.
+// Raw u64 views run downward: element k of words(base, at, n) is the word
+// at byte at+8*(n-1-k), so one view serves a whole run.
+fn data(view: core::slice::View<u8>) -> ptr { return core::mem::i32_slice_data_ptr(view.values)+(view.start as usize); }
+fn packed(view: core::slice::View<u8>) -> bool { return core::mem::slice_stride(view.values) == 1; }
+fn words(base: ptr, at: i32, n: i32) -> [u64] { return core::mem::slice_from_raw_parts(base+(at as usize)+(((n-1) << 3) as usize),n); }
+// Copy count bytes between disjoint views, by word when both are packed.
+fn copy_bytes(to: core::slice::View<u8>, at: i32, from: core::slice::View<u8>, source: i32, count: i32) {
     let index: i32 = 0;
-    while (index < 32768) { scratch.values[scratch.start+index] = -1; index += 1; }
-    let writer: Writer = Writer { output: output, writing: writing, position: 0, pending: 0, width: 0, total: 0 };
-    let header: i32 = 2; if (final_block) { header = 3; }
-    writer.bits(header,3); // BTYPE=01, with the selected BFINAL bit.
+    if (count >= 8 && packed(to) && packed(from)) {
+        let n: i32 = count >> 3; let a: [u64] = words(data(to),at,n); let b: [u64] = words(data(from),source,n); let k: i32 = 0;
+        while (k < n) { a[k] = b[k]; k += 1; }
+        index = n << 3;
+    }
+    let tv: [u8] = to.values; let fv: [u8] = from.values; let t0: i32 = to.start+at; let f0: i32 = from.start+source;
+    while (index < count) { tv[t0+index] = fv[f0+index]; index += 1; }
+}
+// Every scratch entry to -1, a word (two entries) at a time when packed.
+fn clear_scratch(scratch: core::slice::View<i32>) {
+    let index: i32 = 0; let values: [i32] = scratch.values; let start: i32 = scratch.start;
+    if (core::mem::slice_stride(values) == 4) {
+        let n: i32 = 16384; let base: ptr = core::mem::i32_slice_data_ptr(values)+((start << 2) as usize);
+        let all: [u64] = core::mem::slice_from_raw_parts(base+(((n-1) << 3) as usize),n); let k: i32 = 0;
+        while (k < n) { all[k] = 18446744073709551615; k += 1; }
+        return;
+    }
+    while (index < 32768) { values[start+index] = -1; index += 1; }
+}
+// Fixed-code tables: code bits are stored reversed, ready for LSB-first
+// packing. literal[s] = code << 4 | width for symbols 0..256; length[l] =
+// (code | extra value << code width) << 5 | total width; distance codes are
+// indexed by d-1 below 256 and by 256 + (d-1) >> 7 above.
+fn fixed_code(symbol: i32) -> i32 {
+    let value: i32 = 0; let width: i32 = symbol_width(symbol);
+    if (symbol < 144) { value = symbol+48; }
+    else { if (symbol < 256) { value = symbol+256; }
+    else { if (symbol < 280) { value = symbol-256; }
+    else { value = symbol-88; } } }
+    return (reverse(value,width) << 4) | width;
+}
+fn distance_base(symbol: i32) -> i32 { if (symbol < 4) { return symbol+1; } return ((2+(symbol & 1)) << ((symbol >> 1)-1))+1; }
+fn distance_extra(symbol: i32) -> i32 { if (symbol < 4) { return 0; } return (symbol >> 1)-1; }
+
+// One fixed-Huffman block over input, starting from fresh match history.
+// Search exactly the most recent matching hash, verify its bytes, and insert
+// every consumed position that has three bytes. Returns the bit total; once
+// that exceeds limit the pass stops early and returns a larger value. When
+// writing, output receives every completed byte (limit/8 bytes at most).
+fn fixed_pass(input: core::slice::View<u8>, scratch: core::slice::View<i32>, output: core::slice::View<u8>, writing: bool, final_block: bool, limit: u64) -> u64 {
+    clear_scratch(scratch);
+    let literal: [i32;257] = [0;257]; let lengths: [i32;259] = [0;259]; let near: [i32;512] = [0;512];
+    let index: i32 = 0;
+    while (index < 257) { let code: i32 = fixed_code(index); literal[index] = code; index += 1; }
+    index = 3;
+    while (index <= 258) {
+        let code: Code = length_code(index); let bits: i32 = fixed_code(code.symbol);
+        lengths[index] = (((bits >> 4) | (code.value << (bits & 15))) << 5) | ((bits & 15)+code.width); index += 1;
+    }
+    let symbol: i32 = 0;
+    while (symbol < 30) {
+        let first: i32 = distance_base(symbol); let last: i32 = first+(1 << distance_extra(symbol))-1; let d: i32 = first;
+        while (d <= last && d <= 256) { near[d-1] = symbol; d += 1; }
+        if (last > 256) { let slot: i32 = (first-1) >> 7; while (slot <= (last-1) >> 7) { near[256+slot] = symbol; slot += 1; } }
+        symbol += 1;
+    }
+    let reversed: [i32;30] = [0;30]; symbol = 0;
+    while (symbol < 30) { let code: i32 = reverse(symbol,5); reversed[symbol] = code; symbol += 1; }
+    let n: i32 = input.length; let fast: bool = packed(input) && n > 0;
+    let bytes: [u8] = input.values; let at: i32 = input.start; let base: ptr = 0;
+    if (fast) { base = data(input); bytes = core::mem::typed_slice_from_raw_parts<u8>(base,n); at = 0; }
+    let table: [i32] = scratch.values; let slot0: i32 = scratch.start;
+    let out: [u8] = output.values; let o0: i32 = output.start;
+    let acc: u64 = 2; let count: i32 = 3; if (final_block) { acc = 3; } // BTYPE=01 and BFINAL.
+    let flushed: u64 = 0;
+    // x, y, z are the bytes at position, position+1 and position+2.
+    let x: i32 = 0; let y: i32 = 0; let z: i32 = 0;
+    if (n > 0) { x = bytes[at] as i32; } if (n > 1) { y = bytes[at+1] as i32; } if (n > 2) { z = bytes[at+2] as i32; }
     let position: i32 = 0;
-    while (position < input.length) {
-        let length: i32 = 0; let distance: i32 = 0;
-        if (input.length-position >= 3) {
-            let candidate: i32 = scratch.values[scratch.start+hash(input,position)];
+    while (position < n) {
+        let length: i32 = 0; let distance: i32 = 0; let key: i32 = 0; let triple: bool = n-position >= 3;
+        if (triple) {
+            key = (x*63001+y*251+z) & 32767; // ((x*251+y)*251+z) mod 32768
+            let candidate: i32 = table[slot0+key];
             if (candidate >= 0 && position-candidate <= 32768) {
                 distance = position-candidate;
-                let maximum: i32 = input.length-position; if (maximum > 258) { maximum = 258; }
-                while (length < maximum && byte(input,candidate+length) == byte(input,position+length)) { length += 1; }
+                let maximum: i32 = n-position; if (maximum > 258) { maximum = 258; }
+                let from: i32 = at+candidate; let to: i32 = at+position;
+                if ((bytes[from] as i32) == x && (bytes[from+1] as i32) == y && (bytes[from+2] as i32) == z) {
+                    length = 3;
+                    while (length < 11 && length < maximum && bytes[from+length] == bytes[to+length]) { length += 1; }
+                    if (fast && length == 11 && maximum-length >= 8) {
+                        // Whole words while they agree, then bytes.
+                        let span: i32 = (maximum-length) >> 3; let a: [u64] = words(base,candidate+length,span); let c: [u64] = words(base,position+length,span); let k: i32 = span-1;
+                        while (k >= 0 && a[k] == c[k]) { k -= 1; length += 8; }
+                    }
+                    while (length < maximum && bytes[from+length] == bytes[to+length]) { length += 1; }
+                }
+            }
+        }
+        let item: i32 = 0; let dsym: i32 = 0;
+        if (length >= 3) {
+            item = lengths[length];
+            if (distance <= 256) { dsym = near[distance-1]; } else { dsym = near[256+((distance-1) >> 7)]; }
+            let cost: i32 = (item & 31)+5+distance_extra(dsym);
+            let literal_cost: i32 = 0; index = 0;
+            while (index < length && literal_cost <= cost) { literal_cost += literal[bytes[at+position+index] as i32] & 15; index += 1; }
+            if (cost >= literal_cost) { length = 0; }
+        }
+        if (length >= 3) {
+            acc = acc | (((item >> 5) as u64) << (count as u64)); count += item & 31;
+            acc = acc | (((reversed[dsym] | ((distance-distance_base(dsym)) << 5)) as u64) << (count as u64)); count += 5+distance_extra(dsym);
+        } else {
+            let code: i32 = literal[x];
+            acc = acc | (((code >> 4) as u64) << (count as u64)); count += code & 15;
+        }
+        if (count >= 32) {
+            if (flushed*8+(count as u64) > limit) { return limit+1; }
+            if (writing) {
+                let o: i32 = o0+(flushed as i32);
+                out[o] = (acc & 255) as u8; out[o+1] = ((acc >> 8) & 255) as u8; out[o+2] = ((acc >> 16) & 255) as u8; out[o+3] = ((acc >> 24) & 255) as u8;
+            }
+            acc = acc >> 32; count -= 32; flushed += 4;
+        }
+        // Insert every consumed position that has three bytes.
+        if (triple) { table[slot0+key] = position; }
+        if (length < 3) {
+            position += 1; x = y; y = z; if (position+2 < n) { z = bytes[at+position+2] as i32; }
+        } else {
+            let end: i32 = position+length; let stop: i32 = end; if (stop > n-2) { stop = n-2; }
+            position += 1; x = y; y = z;
+            while (position < stop) {
+                z = bytes[at+position+2] as i32;
+                table[slot0+((x*63001+y*251+z) & 32767)] = position;
+                position += 1; x = y; y = z;
+            }
+            position = end;
+            if (position < n) { x = bytes[at+position] as i32; } if (position+1 < n) { y = bytes[at+position+1] as i32; } if (position+2 < n) { z = bytes[at+position+2] as i32; }
+        }
+    }
+    // End of block (7 zero bits), then for a nonfinal block an empty stored
+    // block whose 3-bit header precedes byte alignment.
+    let total: u64 = flushed*8+(count as u64)+7;
+    if (!final_block) { total += 3; total += (8-(total%8))%8; total += 32; }
+    if (total > limit) { return limit+1; }
+    if (writing) {
+        let o: i32 = o0+(flushed as i32);
+        while (count >= 8) { out[o] = (acc & 255) as u8; acc = acc >> 8; count -= 8; o += 1; }
+        count += 7; if (!final_block) { count += 3; }
+        while (count > 0) { out[o] = (acc & 255) as u8; acc = acc >> 8; count -= 8; o += 1; }
+        if (!final_block) { out[o] = 0; out[o+1] = 0; out[o+2] = 255; out[o+3] = 255; }
+    }
+    return total;
+}
+// One streaming block (at most 32768 bytes) over packed input and output.
+// It makes the same choices as fixed_pass and writes the same bits, with
+// cheaper bookkeeping: a scratch entry holds position | (x << 8 | y) << 15
+// for the bytes x, y, z at that position. A slot is keyed by the hash, and
+// for fixed x and y the hash's low 15 bits determine z, so an entry whose
+// tag matches has the same three bytes. Output goes out a word at a time.
+fn bytes_words(base: ptr, units: i32) -> [u64] { if (units == 0) { return core::mem::slice_from_raw_parts(base,0); } return words(base,0,units); }
+fn block_pass(input: core::slice::View<u8>, scratch: core::slice::View<i32>, output: core::slice::View<u8>, final_block: bool, limit: i32) -> u64 {
+    clear_scratch(scratch);
+    let literal: [i32;257] = [0;257]; let lengths: [i32;259] = [0;259]; let near: [i32;512] = [0;512];
+    // Bit-reversed bytes, then each fixed code from them in O(1).
+    let flip: [i32;256] = [0;256]; let index: i32 = 1;
+    while (index < 256) { let half: i32 = flip[index >> 1]; flip[index] = (half >> 1) | ((index & 1) << 7); index += 1; }
+    index = 0;
+    while (index < 144) { let code: i32 = flip[index+48]; literal[index] = (code << 4) | 8; index += 1; }
+    while (index < 256) { let code: i32 = (flip[index] << 1) | 1; literal[index] = (code << 4) | 9; index += 1; }
+    literal[256] = 7;
+    // Lengths: symbol, base and extra width advance with the length.
+    let symbol: i32 = 257; let first: i32 = 3; let extra: i32 = 0;
+    index = 3;
+    while (index <= 258) {
+        if (index == 258) { symbol = 285; first = 258; extra = 0; }
+        else { if (index >= first+(1 << extra)) { first += 1 << extra; symbol += 1; if (symbol >= 265) { extra = (symbol-261) >> 2; } } }
+        let bits: i32 = 0; let width: i32 = 7;
+        if (symbol < 280) { bits = flip[symbol-256] >> 1; } else { bits = flip[symbol-88]; width = 8; }
+        lengths[index] = ((bits | ((index-first) << width)) << 5) | (width+extra); index += 1;
+    }
+    symbol = 0;
+    while (symbol < 30) {
+        let low: i32 = distance_base(symbol); let span: i32 = distance_extra(symbol); let last: i32 = low+(1 << span)-1;
+        let entry: i32 = (flip[symbol] >> 3) | (span << 5) | (low << 9); let d: i32 = low;
+        while (d <= last && d <= 256) { near[d-1] = entry; d += 1; }
+        if (last > 256) { let slot: i32 = (low-1) >> 7; while (slot <= (last-1) >> 7) { near[256+slot] = entry; slot += 1; } }
+        symbol += 1;
+    }
+    let n: i32 = input.length; let base: ptr = data(input);
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(base,n);
+    let table: [i32] = scratch.values; let slot0: i32 = scratch.start;
+    let obase: ptr = data(output); let units: i32 = output.length >> 3; let sink: [u64] = words(obase,0,units);
+    let acc: u64 = 2; let count: i32 = 3; if (final_block) { acc = 3; } // BTYPE=01 and BFINAL.
+    let flushed: i32 = 0; let low: u64 = 0;
+    let x: i32 = bytes[0] as i32; let y: i32 = bytes[1] as i32; let z: i32 = bytes[2] as i32;
+    // Whole input words (element k holds bytes 8*(units_in-1-k) onward);
+    // word compares need position+16 <= room.
+    let units_in: i32 = n >> 3; let room: i32 = (units_in << 3)-8; let whole: [u64] = bytes_words(base,units_in);
+    // Below reach, current is the word holding the last z loaded, shifted so z is its low byte.
+    let reach: i32 = units_in << 3; let current: u64 = 0; if (units_in > 0) { current = whole[units_in-1] >> 16; }
+    let triples: i32 = n-2; let position: i32 = 0;
+    let entry: i32 = -1;
+    while (position < n) {
+        if (position < triples) {
+            let tag: i32 = (x << 8) | y; let key: i32 = slot0+((x*63001+y*251+z) & 32767);
+            entry = table[key]; table[key] = position | (tag << 15);
+            // An empty slot holds -1, whose shifted value is never a tag.
+            if ((entry >> 15) != tag) {
+                // A literal with no candidate: the common case.
+                let code: i32 = literal[x];
+                acc = acc | (((code >> 4) as u64) << (count as u64)); count += code & 15;
+                if (count >= 32) {
+                    if (flushed*8+count > limit) { return (limit as u64)+1; }
+                    if ((flushed & 4) != 0) { sink[units-1-(flushed >> 3)] = low | (acc << 32); } else { low = acc & 4294967295; }
+                    acc = acc >> 32; count -= 32; flushed += 4;
+                }
+                position += 1; x = y; y = z;
+                let ahead: i32 = position+2;
+                if (ahead < reach) {
+                    if ((ahead & 7) == 0) { current = whole[units_in-1-(ahead >> 3)]; } else { current = current >> 8; }
+                    z = (current & 255) as i32;
+                } else { if (ahead < n) { z = bytes[ahead] as i32; } }
+                continue;
+            }
+        }
+        let length: i32 = 0; let distance: i32 = 0; let item: i32 = 0; let dist: i32 = 0;
+        if (position < triples) {
+            {
+                let candidate: i32 = entry & 32767; distance = position-candidate;
+                let maximum: i32 = n-position; if (maximum > 258) { maximum = 258; }
+                length = 3;
+                // Compare 8 bytes at a time: an unaligned word is two of the
+                // block's whole words, shifted together.
+                let stop: i32 = maximum; if (stop > room-position) { stop = room-position; } let open: bool = true;
+                // A quarter of matches end at three bytes: test the fourth alone.
+                if (maximum == 3 || bytes[candidate+3] != bytes[position+3]) { open = false; stop = 0; }
+                while (length+8 <= stop) {
+                    let from: i32 = candidate+length; let to: i32 = position+length;
+                    let left: u64 = whole[units_in-1-(from >> 3)]; let shift: i32 = (from & 7) << 3;
+                    if (shift != 0) { left = (left >> (shift as u64)) | (whole[units_in-2-(from >> 3)] << ((64-shift) as u64)); }
+                    let right: u64 = whole[units_in-1-(to >> 3)]; shift = (to & 7) << 3;
+                    if (shift != 0) { right = (right >> (shift as u64)) | (whole[units_in-2-(to >> 3)] << ((64-shift) as u64)); }
+                    let differ: u64 = left ^ right;
+                    if (differ != 0) {
+                        if ((differ & 4294967295) == 0) { differ = differ >> 32; length += 4; }
+                        if ((differ & 65535) == 0) { differ = differ >> 16; length += 2; }
+                        if ((differ & 255) == 0) { length += 1; }
+                        open = false; break;
+                    }
+                    length += 8;
+                }
+                if (open) { while (length < maximum && bytes[candidate+length] == bytes[position+length]) { length += 1; } }
+                item = lengths[length];
+                if (distance <= 256) { dist = near[distance-1]; } else { dist = near[256+((distance-1) >> 7)]; }
+                // The literal alternative costs 8 or 9 bits a byte and the
+                // largest match 31 bits, so only a three-byte match can lose:
+                // exactly when its cost reaches its three literals.
+                if (length == 3) {
+                    let cost: i32 = (item & 31)+5+((dist >> 5) & 15);
+                    if (cost >= 24+((x+112) >> 8)+((y+112) >> 8)+((z+112) >> 8)) { length = 0; }
+                }
             }
         }
         if (length >= 3) {
-            let code: Code = length_code(length); let dist: Code = distance_code(distance);
-            let cost: i32 = symbol_width(code.symbol)+code.width+5+dist.width;
-            let literal_cost: i32 = 0; index = 0;
-            while (index < length && literal_cost <= cost) { literal_cost += symbol_width(byte(input,position+index)); index += 1; }
-            if (cost >= literal_cost) { length = 0; }
+            // Length code and extra bits, then distance code and extra bits:
+            // at most 13 + 18 = 31 bits in one field.
+            let field: i32 = (item >> 5) | (((dist & 31) | ((distance-(dist >> 9)) << 5)) << (item & 31));
+            acc = acc | ((field as u32 as u64) << (count as u64)); count += (item & 31)+5+((dist >> 5) & 15);
+        } else {
+            let code: i32 = literal[x];
+            acc = acc | (((code >> 4) as u64) << (count as u64)); count += code & 15;
         }
-        let consumed: i32 = 1;
-        if (length >= 3) {
-            let code: Code = length_code(length); let dist: Code = distance_code(distance);
-            writer.symbol(code.symbol); writer.bits(code.value,code.width);
-            writer.bits(reverse(dist.symbol,5),5); writer.bits(dist.value,dist.width);
-            consumed = length;
-        } else { writer.symbol(byte(input,position)); }
-        let end: i32 = position+consumed;
-        while (position < end) {
-            if (input.length-position >= 3) { scratch.values[scratch.start+hash(input,position)] = position; }
-            position += 1;
+        if (count >= 32) {
+            if (flushed*8+count > limit) { return (limit as u64)+1; }
+            if ((flushed & 4) != 0) { sink[units-1-(flushed >> 3)] = low | (acc << 32); } else { low = acc & 4294967295; }
+            acc = acc >> 32; count -= 32; flushed += 4;
+        }
+        if (length < 3) {
+            position += 1; x = y; y = z; if (position+2 < n) { z = bytes[position+2] as i32; }
+            if (position+2 < reach) { current = whole[units_in-1-((position+2) >> 3)] >> ((((position+2) & 7) << 3) as u64); }
+        } else {
+            let end: i32 = position+length; let stop: i32 = end; if (stop > triples) { stop = triples; }
+            position += 1; x = y; y = z;
+            // Six positions per unaligned word: their triples lie inside it.
+            if (position+6 <= stop && position < room) {
+                while (position+6 <= stop && position < room) {
+                    let word: u64 = whole[units_in-1-(position >> 3)]; let shift: i32 = (position & 7) << 3;
+                    if (shift != 0) { word = (word >> (shift as u64)) | (whole[units_in-2-(position >> 3)] << ((64-shift) as u64)); }
+                    let step: i32 = 0; let rest: u64 = word;
+                    while (step < 6) {
+                        let b0: i32 = (rest & 255) as i32; let b1: i32 = ((rest >> 8) & 255) as i32; let b2: i32 = ((rest >> 16) & 255) as i32;
+                        table[slot0+((b0*63001+b1*251+b2) & 32767)] = (position+step) | (((b0 << 8) | b1) << 15);
+                        rest = rest >> 8; step += 1;
+                    }
+                    position += 6; x = (rest & 255) as i32; y = ((rest >> 8) & 255) as i32;
+                }
+                if (position+1 < reach) { current = whole[units_in-1-((position+1) >> 3)] >> ((((position+1) & 7) << 3) as u64); }
+            }
+            while (position < stop) {
+                let ahead: i32 = position+2;
+                if (ahead < reach) {
+                    if ((ahead & 7) == 0) { current = whole[units_in-1-(ahead >> 3)]; } else { current = current >> 8; }
+                    z = (current & 255) as i32;
+                } else { z = bytes[ahead] as i32; }
+                table[slot0+((x*63001+y*251+z) & 32767)] = position | (((x << 8) | y) << 15);
+                position += 1; x = y; y = z;
+            }
+            if (stop == end) {
+                // x and y already hold the bytes at end and end+1.
+                let ahead: i32 = position+2;
+                if (ahead < reach) {
+                    if ((ahead & 7) == 0) { current = whole[units_in-1-(ahead >> 3)]; } else { current = current >> 8; }
+                    z = (current & 255) as i32;
+                } else { if (ahead < n) { z = bytes[ahead] as i32; } }
+            } else {
+                position = end;
+                if (position < n) { x = bytes[position] as i32; } if (position+1 < n) { y = bytes[position+1] as i32; } if (position+2 < n) { z = bytes[position+2] as i32; }
+                if (position+2 < reach) { current = whole[units_in-1-((position+2) >> 3)] >> ((((position+2) & 7) << 3) as u64); }
+            }
         }
     }
-    writer.symbol(256);
-    if (!final_block) {
-        // Empty nonfinal stored block: its header precedes byte alignment.
-        // Measurement does not update Writer.width, so derive padding from
-        // the bit total, exactly as for the writing pass.
-        writer.bits(0,3);
-        let padding: i32 = ((8-(writer.total%8))%8) as i32;
-        writer.bits(0,padding); writer.bits(0,16); writer.bits(65535,16);
-    }
-    writer.finish(); return writer.total;
+    let total: i32 = flushed*8+count+7;
+    if (!final_block) { total += 3; total += (8-(total%8))%8; total += 32; }
+    if (total > limit) { return (limit as u64)+1; }
+    let out: [u8] = core::mem::typed_slice_from_raw_parts<u8>(obase,output.length); let o: i32 = flushed;
+    if ((flushed & 4) != 0) { o -= 4; while (o < flushed) { out[o] = (low & 255) as u8; low = low >> 8; o += 1; } }
+    while (count >= 8) { out[o] = (acc & 255) as u8; acc = acc >> 8; count -= 8; o += 1; }
+    count += 7; if (!final_block) { count += 3; }
+    while (count > 0) { out[o] = (acc & 255) as u8; acc = acc >> 8; count -= 8; o += 1; }
+    if (!final_block) { out[o] = 0; out[o+1] = 0; out[o+2] = 255; out[o+3] = 255; }
+    return total as u64;
 }
+const UNLIMITED: u64 = 9223372036854775807;
 fn stored_len(length: i32) -> u64 {
     let blocks: u64 = ((length as u64)+65534)/65535; if (blocks == 0) { blocks = 1; }
     return (length as u64)+blocks*5;
@@ -152,7 +436,7 @@ fn checked_size(fixed: u64, stored: u64) -> core::result::Result<i32, Error> {
 pub fn encoded_len(input: core::slice::View<u8>, scratch: core::slice::View<i32>) -> core::result::Result<i32, Error> {
     if (!valid_bytes(input) || !valid_scratch(scratch)) { return core::result::Err(Error::Bounds); }
     if (scratch.length < scratch_len()) { return core::result::Err(Error::ScratchTooSmall(scratch_len())); }
-    let fixed: u64 = fixed_pass(input,scratch,input,false,true);
+    let fixed: u64 = fixed_pass(input,scratch,input,false,true,UNLIMITED);
     return checked_size(fixed,stored_len(input.length));
 }
 fn stored_into(input: core::slice::View<u8>, output: core::slice::View<u8>, final_block: bool) {
@@ -167,8 +451,7 @@ fn stored_into(input: core::slice::View<u8>, output: core::slice::View<u8>, fina
         let complement: i32 = 65535-count;
         output.values[output.start+target+3] = (complement & 255) as u8;
         output.values[output.start+target+4] = (complement >> 8) as u8;
-        target += 5; let end: i32 = position+count;
-        while (position < end) { output.values[output.start+target] = input.values[input.start+position]; position += 1; target += 1; }
+        target += 5; copy_bytes(output,target,input,position,count); position += count; target += count;
         if (last) { return; }
     }
 }
@@ -178,13 +461,13 @@ fn stored_into(input: core::slice::View<u8>, output: core::slice::View<u8>, fina
 pub fn encode_into(input: core::slice::View<u8>, output: core::slice::View<u8>, scratch: core::slice::View<i32>) -> core::result::Result<i32, Error> {
     if (!valid_bytes(input) || !valid_bytes(output) || !valid_scratch(scratch)) { return core::result::Err(Error::Bounds); }
     if (scratch.length < scratch_len()) { return core::result::Err(Error::ScratchTooSmall(scratch_len())); }
-    let fixed: u64 = fixed_pass(input,scratch,input,false,true); let stored: u64 = stored_len(input.length);
+    let fixed: u64 = fixed_pass(input,scratch,input,false,true,UNLIMITED); let stored: u64 = stored_len(input.length);
     let measured: core::result::Result<i32, Error> = checked_size(fixed,stored);
     if (core::result::is_err(measured)) { return core::result::Err(core::result::unwrap_err(measured)); }
     let size: i32 = core::result::unwrap(measured);
     if (output.length < size) { return core::result::Err(Error::Capacity(size)); }
     if (stored < (fixed+7)/8) { stored_into(input,output,true); }
-    else { fixed_pass(input,scratch,output,true,true); }
+    else { fixed_pass(input,scratch,output,true,true,UNLIMITED); }
     return core::result::Ok(size);
 }
 
@@ -216,11 +499,14 @@ pub impl Encoder {
     // history; measurement includes the nonfinal fixed-block alignment cost.
     fn prepare(&self, final_block: bool) {
         let input: core::slice::View<u8> = core::slice::View { values: self.block.values, start: self.block.start, length: self.buffered };
-        let fixed: u64 = fixed_pass(input,self.scratch,self.pending,false,final_block);
+        // One writing pass: it stops once fixed output would exceed stored,
+        // which is exactly when the stored form is selected.
         let stored: u64 = stored_len(input.length);
+        let fixed: u64 = 0;
+        if (input.length >= 3 && packed(input) && packed(self.pending)) { fixed = block_pass(input,self.scratch,self.pending,final_block,(stored*8) as i32); }
+        else { fixed = fixed_pass(input,self.scratch,self.pending,true,final_block,stored*8); }
         let size: u64 = (fixed+7)/8;
-        if (stored < size) { size = stored; stored_into(input,self.pending,final_block); }
-        else { fixed_pass(input,self.scratch,self.pending,true,final_block); }
+        if (fixed > stored*8) { size = stored; stored_into(input,self.pending,final_block); }
         // Stored form bounds every selected representation by 32768+5 bytes.
         self.buffered = 0; self.front = 0; self.back = size as i32;
         self.final_block = final_block;
@@ -234,10 +520,8 @@ pub impl Encoder {
         let read: i32 = 0; let written: i32 = 0;
         while (true) {
             // Publish confirmed pending bytes before admitting any new input.
-            while (self.front < self.back && written < output.length) {
-                output.values[output.start+written] = self.pending.values[self.pending.start+self.front];
-                self.front += 1; written += 1;
-            }
+            let publish: i32 = self.back-self.front; if (publish > output.length-written) { publish = output.length-written; }
+            copy_bytes(output,written,self.pending,self.front,publish); self.front += publish; written += publish;
             if (self.front < self.back) {
                 return core::result::Ok(Step { read: read, written: written, status: Status::NeedOutput });
             }
@@ -248,11 +532,7 @@ pub impl Encoder {
             }
             let count: i32 = input.length-read;
             if (count > input_buffer_len()-self.buffered) { count = input_buffer_len()-self.buffered; }
-            let index: i32 = 0;
-            while (index < count) {
-                self.block.values[self.block.start+self.buffered+index] = input.values[input.start+read+index];
-                index += 1;
-            }
+            copy_bytes(self.block,self.buffered,input,read,count);
             self.buffered += count; read += count;
             if (self.buffered == input_buffer_len()) {
                 // Even the last full block is nonfinal; finalization emits a
