@@ -151,6 +151,21 @@ uint member_name_token(uint member_node)
         ? argument_token - 1u : INVALID;
 }
 
+// The `?` of `value?`. This pass runs before postfix spans are trimmed, so
+// the try's span still covers its continuation and the empty tail anchored
+// at the following token: `token_end - 1` would be the next operator, which
+// is also the anchor of a binary tail such as `* 5` in `value? * 5`. The
+// continuation starts immediately after the `?`.
+uint try_question_token(uint try_node)
+{
+    if (!valid_node(try_node) || node_kind[try_node] != PROD_POSTFIX_TRY)
+        return INVALID;
+    uint continuation = direct_child(try_node);
+    uint continuation_token = valid_node(continuation) ? hir_token_pos[continuation] : INVALID;
+    return continuation_token != INVALID && continuation_token > hir_token_pos[try_node]
+        ? continuation_token - 1u : INVALID;
+}
+
 bool direct_expression_kind(uint kind)
 {
     return kind == HIR_CALL_EXPR || kind == HIR_INDEX_EXPR || kind == HIR_MEMBER_EXPR ||
@@ -214,6 +229,9 @@ uint anchor_for(uint node)
     uint member_token = kind == HIR_MEMBER_EXPR ? member_name_token(node) : INVALID;
     if (member_token != INVALID)
         token_end = member_token + 1u;
+    uint question_token = kind == HIR_TRY_EXPR ? try_question_token(node) : INVALID;
+    if (question_token != INVALID)
+        token_end = question_token + 1u;
     uint left = hir_expr_record[node * 4u + 1u];
     uint left_end = valid_node(left) ? hir_token_end[left] : INVALID;
     uint operator_token = canonical_hir_operator_anchor(

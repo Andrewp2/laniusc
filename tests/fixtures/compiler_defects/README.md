@@ -13,8 +13,8 @@ one should become a passing regression test once its defect is fixed.
 
 | File | Defect | Expected | Actual |
 | --- | --- | --- | --- |
-| `question_comparison.lani` | `?` inside a comparison: `if (three()? != 3)` | exit 0 | exit 1 (silent miscompile) |
-| `i64_view_writes.lani` | `words[2] = 5` through `typed_slice_from_raw_parts<i64>(base, 4)` over a local `[i32; 8]` | exit 5 | exit 0: the store is lost (silent miscompile) |
+| `question_comparison.lani` (removed) | `?` inside a comparison: `if (three()? != 3)` | exit 0 | **fixed**: the operator after `?` was dropped; now `tests/codegen_x86.rs` `x86_try_operand_keeps_the_following_binary_operator` |
+| `i64_view_writes.lani` (removed) | `words[2] = 5` through `typed_slice_from_raw_parts<i64>(base, 4)` over a local `[i32; 8]` | — | **not a defect**: raw `[i64]` views descend (element i at `base - 8 * i`, as `core::mem` documents), so the store landed below the array; now `tests/codegen_x86.rs` `x86_i64_raw_views_store_at_descending_word_addresses` |
 | `u64_cast_literal.lani` | `4000000000 as u64` | compiles, exit 4 | **fixed 2026-10-31**: was LNC0069 "invalid integer literal" (the literal was checked as i32 before the cast); now exits 4 |
 | `u64_cast_literal_forms.lani` | literal casts to u32/u64/i64 at their extremes, plus `-1 as u32`, `-1 as u64`, `300 as u8`, `(3 + 4) as u64`, `3 as f64` | exit 0 | exit 0 since the fix |
 | `u64_stack_carry.lani` | performance: u64 values and every expression temporary live in stack slots | exit 10, carry and temporaries in registers | exit 10. Before 2026-10-31: 0.42 s, all u64 values in slots. 64-bit declarations are now register-eligible (`decl_slots_scatter.slang`, `allocation_words.slang`), which brings it to 0.31 s. Temporaries still take slots, and `>> 32` still range-checks its constant amount at run time. The asm excerpt is in the file |
