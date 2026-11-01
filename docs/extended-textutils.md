@@ -125,7 +125,10 @@ The output is the same as the single-process sort.
 - Translation runs eight bytes at a time when the changed bytes form at most
   four ASCII runs with one offset each, two words at a time where possible.
   Other sets use a table.
-- `-d` and `-s` remove bytes eight at a time with a log-step compaction.
+- `-d` and `-s` remove bytes eight at a time. A word's dropped lanes are
+  gathered into a byte by one multiply, which indexes a 256-entry table of
+  the three masks that close the gaps. When deleting alone, the kept bytes
+  are tested instead if they form fewer runs (as with `-c`).
 
 ## wc
 
@@ -190,9 +193,9 @@ is user plus system time, summed over sort's workers and GNU's threads.
 | `text-cut --complement -f2` | big.txt | 194 | 103 | 1.87 | 193 | 103 | 1.88 |
 | `text-cut -f1,3 --output-delimiter=:` | big.txt | 195 | 100 | 1.95 | 195 | 100 | 1.95 |
 | `text-tr a-z A-Z` | big.txt | 39 | 32 | 1.21 | 38 | 31 | 1.22 |
-| `text-tr -d 0-9` | big.txt | 151 | 64 | 2.36 | 150 | 63 | 2.38 |
+| `text-tr -d 0-9` | big.txt | 181 | 94 | 1.92 | 179 | 92 | 1.95 |
 | `text-tr -s ' '` | big.txt | 98 | 79 | 1.25 | 98 | 78 | 1.25 |
-| `text-tr -cd 'a-z\n'` | big.txt | 205 | 94 | 2.18 | 196 | 88 | 2.23 |
+| `text-tr -cd 'a-z\n'` | big.txt | 203 | 105 | 1.92 | 190 | 99 | 1.93 |
 | `text-tr '\t' ,` | big.txt | 52 | 44 | 1.19 | 51 | 41 | 1.24 |
 | `text-wc` | big.txt | 91 | 633 | 0.14 | 91 | 632 | 0.14 |
 | `text-wc -l` | big.txt | 31 | 14 | 2.22 | 29 | 13 | 2.26 |
@@ -200,12 +203,16 @@ is user plus system time, summed over sort's workers and GNU's threads.
 | `text-wc -L` | big.txt | 570 | 564 | 1.01 | 570 | 563 | 1.01 |
 | `text-wc -m` | big.txt | 1 | 2 | 0.78 | 1 | 1 | 0.74 |
 
-Four modes are over 2x GNU's wall time:
+The two `tr -d` rows were measured later, at a higher load, after the
+gap-closing masks moved into a table. Two modes are over 2x GNU's wall
+time:
 
-- `tr -d` and `tr -cd`. Removing bytes eight at a time takes several dozen
-  operations per word, and every local lives on the stack.
-- `wc -l` (31 ms against 14 ms). GNU counts LFs with AVX2.
-- `uniq -f1`, which is at 2.0.
+- `wc -l` (31 ms against 14 ms). GNU counts LFs with AVX2. Here each
+  word load spends most of its instructions on the slice header and the
+  bounds check, so the count waits on the x86 backend keeping slice
+  headers in registers.
+- `uniq -f1`, at 2.0 to 2.3. The field skip adds about 50 ns a line,
+  most of it the same per-access cost.
 
 Every other mode is within 2x. `text-wc` and `text-wc -w` count words
 eight bytes at a time and are about seven times as fast as GNU. On

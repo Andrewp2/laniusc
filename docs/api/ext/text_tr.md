@@ -323,7 +323,7 @@ pub fn state() -> State
 
 ### function: translate
 
-[Source line 449](../../../extended/ext/text_tr.lani#L449)
+[Source line 450](../../../extended/ext/text_tr.lani#L450)
 
 ```lanius
 pub fn translate(p: &Plan, v: core::slice::View<u8>) -> core::result::Result<i32, ext::text_lines::Error>
@@ -331,7 +331,7 @@ pub fn translate(p: &Plan, v: core::slice::View<u8>) -> core::result::Result<i32
 
 ### function: filter
 
-[Source line 575](../../../extended/ext/text_tr.lani#L575)
+[Source line 576](../../../extended/ext/text_tr.lani#L576)
 
 ```lanius
 pub fn filter(p: &Plan, st: &State, v: core::slice::View<u8>, o: &ext::text_lines::Out) -> core::result::Result<i32, ext::text_lines::Error>
@@ -339,7 +339,7 @@ pub fn filter(p: &Plan, st: &State, v: core::slice::View<u8>, o: &ext::text_line
 
 ### function: message
 
-[Source line 768](../../../extended/ext/text_tr.lani#L768)
+[Source line 780](../../../extended/ext/text_tr.lani#L780)
 
 ```lanius
 pub fn message(e: Error) -> core::slice::View<u8>
