@@ -100,10 +100,13 @@ pub impl BigUint {
         let work: u64 = (self.limbs.len() as u64)*(other.limbs.len() as u64); if (work > limits.max_work) { return core::result::Err(Error::WorkLimit); }
         if (self.is_zero() || other.is_zero()) { return core::result::Ok(zero()); }
         let count: i32 = self.limbs.len()+other.limbs.len(); if (count-1 > limits.max_limbs) { return core::result::Err(Error::LimbLimit); } if (count > limits.max_limbs) { count = limits.max_limbs; }
-        if (count == self.limbs.len()+other.limbs.len() && self.limbs.len() >= KARATSUBA_THRESHOLD && other.limbs.len() >= KARATSUBA_THRESHOLD) {
+        let longest: i32 = self.limbs.len(); if (other.limbs.len() > longest) { longest = other.limbs.len(); } let scratch: i64 = workspace_limbs(longest);
+        // Karatsuba needs one workspace within max_limbs; otherwise schoolbook.
+        if (count == self.limbs.len()+other.limbs.len() && self.limbs.len() >= KARATSUBA_THRESHOLD && other.limbs.len() >= KARATSUBA_THRESHOLD && scratch <= limits.max_limbs as i64 && scratch <= limits.max_work as i64) {
             let wide: core::result::Result<BigUint,Error> = fresh(count,limits); if (wide.is_err()) { return wide; } let product: BigUint = wide.unwrap();
-            let done: core::result::Result<i32,Error> = kmul_into(product.borrow(),0,self,0,self.limbs.len(),other,0,other.limbs.len(),limits);
-            if (done.is_err()) { product.destroy(); return core::result::Err(done.unwrap_err()); } product.normalize(); return core::result::Ok(product);
+            let space: core::result::Result<BigUint,Error> = fresh(scratch as i32,limits); if (space.is_err()) { product.destroy(); return space; } let workspace: BigUint = space.unwrap();
+            kmul_into(product.borrow(),0,count,self,0,self.limbs.len(),other,0,other.limbs.len(),workspace.borrow(),0);
+            workspace.destroy(); product.normalize(); return core::result::Ok(product);
         }
         let made: core::result::Result<BigUint,Error> = fresh(count,limits); if (made.is_err()) { return made; } let out: BigUint = made.unwrap(); let i: i32 = 0;
         while (i < self.limbs.len()) {
@@ -129,67 +132,62 @@ pub impl BigUint {
         while (i < count) { let wide: u64 = (self.get(i+whole) as u64)|((self.get(i+whole+1) as u64) << 32); out.put(i,(wide >> shift) as u32); i += 1; } out.normalize(); return core::result::Ok(out);
     }
 }
-// Karatsuba over limb windows. out[at..] += x[xf..xf+xc] * y[yf..yf+yc]; the
-// caller sizes out for the whole accumulated sum, so carries stay inside it.
-// Every temporary is at most the top-level product size (2k+2 <= n+3 <= n+m
-// because both top operands have >= KARATSUBA_THRESHOLD limbs).
+// Karatsuba over limb windows in one caller-owned workspace. kmul_into adds
+// x[xf..xf+xc]*y[yf..yf+yc] into out[at..end); that window holds the whole sum,
+// so carries never leave it. A balanced node of n limbs (k = ceil(n/2)) keeps
+// z0[2k], z2[2k], x0+x1[k+1], y0+y1[k+1] and z1[2k+2] in ws[wf..wf+8k+4] and
+// hands the rest to its children, which run one at a time. Unbalanced nodes
+// split only the longer operand and need no storage of their own.
+fn workspace_limbs(n: i32) -> i64 { let total: i64 = 0; let size: i32 = n; while (size >= KARATSUBA_THRESHOLD) { let k: i32 = (size+1)/2; total += 8*(k as i64)+4; size = k+1; } return total; }
 fn used(x: &BigUint, from: i32, count: i32) -> i32 { let n: i32 = count; let xs: [u32] = x.limbs.as_slice(); while (n > 0 && xs[from+n-1] == 0) { n -= 1; } return n; }
-fn add_window(out: &BigUint, at: i32, src: &BigUint, from: i32, count: i32) {
+fn clear_window(out: &BigUint, at: i32, count: i32) { let os: [u32] = out.limbs.as_slice(); let index: i32 = 0; while (index < count) { os[at+index] = 0; index += 1; } }
+fn add_window(out: &BigUint, at: i32, end: i32, src: &BigUint, from: i32, count: i32) {
     let carry: u64 = 0; let index: i32 = 0; let os: [u32] = out.limbs.as_slice(); let ss: [u32] = src.limbs.as_slice();
     while (index < count) { let wide: u64 = (os[at+index] as u64)+(ss[from+index] as u64)+carry; os[at+index] = wide as u32; carry = wide >> 32; index += 1; }
-    let position: i32 = at+count; let end: i32 = out.limbs.len();
+    let position: i32 = at+count;
     while (carry != 0 && position < end) { let wide: u64 = (os[position] as u64)+carry; os[position] = wide as u32; carry = wide >> 32; position += 1; }
 }
-// out -= src, where out >= src numerically.
-fn sub_window(out: &BigUint, src: &BigUint) {
-    let borrow: u64 = 0; let index: i32 = 0; let os: [u32] = out.limbs.as_slice(); let ss: [u32] = src.limbs.as_slice(); let count: i32 = src.limbs.len(); let end: i32 = out.limbs.len();
-    while ((index < count || borrow != 0) && index < end) {
-        let left: u64 = os[index] as u64; let right: u64 = borrow; if (index < count) { right += ss[index] as u64; }
-        os[index] = (left+BASE-right) as u32; borrow = 0; if (left < right) { borrow = 1; } index += 1;
+// out[at..end) -= src[from..from+count), where the window value is >= src.
+fn sub_window(out: &BigUint, at: i32, end: i32, src: &BigUint, from: i32, count: i32) {
+    let borrow: u64 = 0; let index: i32 = 0; let os: [u32] = out.limbs.as_slice(); let ss: [u32] = src.limbs.as_slice();
+    while ((index < count || borrow != 0) && at+index < end) {
+        let left: u64 = os[at+index] as u64; let right: u64 = borrow; if (index < count) { right += ss[from+index] as u64; }
+        os[at+index] = (left+BASE-right) as u32; borrow = 0; if (left < right) { borrow = 1; } index += 1;
     }
 }
-fn kmul_into(out: &BigUint, at: i32, x: &BigUint, xf: i32, xc: i32, y: &BigUint, yf: i32, yc: i32, limits: Limits) -> core::result::Result<i32,Error> {
+fn kmul_into(out: &BigUint, at: i32, end: i32, x: &BigUint, xf: i32, xc: i32, y: &BigUint, yf: i32, yc: i32, ws: &BigUint, wf: i32) {
     let xl: i32 = used(x,xf,xc); let yl: i32 = used(y,yf,yc);
-    if (xl == 0 || yl == 0) { return core::result::Ok(0); }
-    if (xl < yl) { return kmul_into(out,at,y,yf,yl,x,xf,xl,limits); }
+    if (xl == 0 || yl == 0) { return; }
+    if (xl < yl) { kmul_into(out,at,end,y,yf,yl,x,xf,xl,ws,wf); return; }
     if (yl < KARATSUBA_THRESHOLD) {
-        let i: i32 = 0;
+        let i: i32 = 0; let xs: [u32] = x.limbs.as_slice(); let ys: [u32] = y.limbs.as_slice(); let os: [u32] = out.limbs.as_slice();
         while (i < yl) {
-            let factor: u64 = y.get(yf+i) as u64;
+            let factor: u64 = ys[yf+i] as u64;
             if (factor != 0) {
-                let carry: u64 = 0; let j: i32 = 0; let xs: [u32] = x.limbs.as_slice(); let os: [u32] = out.limbs.as_slice(); let base: i32 = at+i; let source: i32 = xf;
+                let carry: u64 = 0; let j: i32 = 0; let base: i32 = at+i;
                 // factor*x_j + out + carry <= (B-1)^2 + 2(B-1) = B^2-1.
-                while (j < xl) { let wide: u64 = factor*(xs[source+j] as u64)+(os[base+j] as u64)+carry; os[base+j] = wide as u32; carry = wide >> 32; j += 1; }
-                let position: i32 = base+xl; let end: i32 = out.limbs.len();
+                while (j < xl) { let wide: u64 = factor*(xs[xf+j] as u64)+(os[base+j] as u64)+carry; os[base+j] = wide as u32; carry = wide >> 32; j += 1; }
+                let position: i32 = base+xl;
                 while (carry != 0 && position < end) { let wide: u64 = (os[position] as u64)+carry; os[position] = wide as u32; carry = wide >> 32; position += 1; }
             }
             i += 1;
         }
-        return core::result::Ok(0);
+        return;
     }
     let k: i32 = (xl+1)/2;
-    if (yl <= k) {
-        // Unbalanced: split only the longer operand.
-        let low: core::result::Result<i32,Error> = kmul_into(out,at,x,xf,k,y,yf,yl,limits); if (low.is_err()) { return low; }
-        return kmul_into(out,at+k,x,xf+k,xl-k,y,yf,yl,limits);
-    }
-    let made_low: core::result::Result<BigUint,Error> = fresh(2*k,limits); if (made_low.is_err()) { return core::result::Err(made_low.unwrap_err()); } let z0: BigUint = made_low.unwrap();
-    let step: core::result::Result<i32,Error> = kmul_into(z0.borrow(),0,x,xf,k,y,yf,k,limits); if (step.is_err()) { z0.destroy(); return step; }
-    let made_high: core::result::Result<BigUint,Error> = fresh((xl-k)+(yl-k),limits); if (made_high.is_err()) { z0.destroy(); return core::result::Err(made_high.unwrap_err()); } let z2: BigUint = made_high.unwrap();
-    step = kmul_into(z2.borrow(),0,x,xf+k,xl-k,y,yf+k,yl-k,limits); if (step.is_err()) { z2.destroy(); z0.destroy(); return step; }
-    let made_sx: core::result::Result<BigUint,Error> = fresh(k+1,limits); if (made_sx.is_err()) { z2.destroy(); z0.destroy(); return core::result::Err(made_sx.unwrap_err()); } let sx: BigUint = made_sx.unwrap();
-    add_window(sx.borrow(),0,x,xf,k); add_window(sx.borrow(),0,x,xf+k,xl-k);
-    let made_sy: core::result::Result<BigUint,Error> = fresh(k+1,limits); if (made_sy.is_err()) { sx.destroy(); z2.destroy(); z0.destroy(); return core::result::Err(made_sy.unwrap_err()); } let sy: BigUint = made_sy.unwrap();
-    add_window(sy.borrow(),0,y,yf,k); add_window(sy.borrow(),0,y,yf+k,yl-k);
-    let made_mid: core::result::Result<BigUint,Error> = fresh(2*k+2,limits); if (made_mid.is_err()) { sy.destroy(); sx.destroy(); z2.destroy(); z0.destroy(); return core::result::Err(made_mid.unwrap_err()); } let z1: BigUint = made_mid.unwrap();
-    step = kmul_into(z1.borrow(),0,sx.borrow(),0,k+1,sy.borrow(),0,k+1,limits); sy.destroy(); sx.destroy();
-    if (step.is_err()) { z1.destroy(); z2.destroy(); z0.destroy(); return step; }
+    if (yl <= k) { kmul_into(out,at,end,x,xf,k,y,yf,yl,ws,wf); kmul_into(out,at+k,end,x,xf+k,xl-k,y,yf,yl,ws,wf); return; }
+    let z0: i32 = wf; let z2: i32 = wf+2*k; let sx: i32 = wf+4*k; let sy: i32 = wf+5*k+1; let z1: i32 = wf+6*k+2; let child: i32 = wf+8*k+4;
+    clear_window(ws,wf,8*k+4);
+    kmul_into(ws,z0,z0+2*k,x,xf,k,y,yf,k,ws,child);
+    kmul_into(ws,z2,z2+2*k,x,xf+k,xl-k,y,yf+k,yl-k,ws,child);
+    add_window(ws,sx,sx+k+1,x,xf,k); add_window(ws,sx,sx+k+1,x,xf+k,xl-k);
+    add_window(ws,sy,sy+k+1,y,yf,k); add_window(ws,sy,sy+k+1,y,yf+k,yl-k);
+    kmul_into(ws,z1,z1+2*k+2,ws,sx,k+1,ws,sy,k+1,ws,child);
     // (x0+x1)(y0+y1) - x0*y0 - x1*y1 = x0*y1 + x1*y0 >= 0.
-    sub_window(z1.borrow(),z0.borrow()); sub_window(z1.borrow(),z2.borrow());
-    add_window(out,at,z0.borrow(),0,used(z0.borrow(),0,z0.limbs.len()));
-    add_window(out,at+k,z1.borrow(),0,used(z1.borrow(),0,z1.limbs.len()));
-    add_window(out,at+2*k,z2.borrow(),0,used(z2.borrow(),0,z2.limbs.len()));
-    z1.destroy(); z2.destroy(); z0.destroy(); return core::result::Ok(0);
+    sub_window(ws,z1,z1+2*k+2,ws,z0,2*k); sub_window(ws,z1,z1+2*k+2,ws,z2,2*k);
+    add_window(out,at,end,ws,z0,used(ws,z0,2*k));
+    add_window(out,at+k,end,ws,z1,used(ws,z1,2*k+2));
+    add_window(out,at+2*k,end,ws,z2,used(ws,z2,2*k));
 }
 // Largest g with radix^g < 2^32.
 fn chunk_digits(radix: i32) -> i32 { let g: i32 = 0; let power: u64 = 1; while (power*(radix as u64) <= MASK) { power = power*(radix as u64); g += 1; } return g; }
