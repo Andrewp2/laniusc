@@ -1,6 +1,8 @@
-// curl-like HTTP/1.1 client over ext::http_agent: fetches each URL in turn
-// through one keep-alive pool, optionally following redirects, sending a
-// fixed (-d) or streamed chunked (-T) body, and reporting pool statistics.
+// curl-like HTTP client over ext::http_agent: fetches each URL in turn
+// through one keep-alive pool (HTTP/2 when an https origin negotiates it,
+// unless --http1.1), optionally following redirects, sending a fixed (-d) or
+// streamed (-T) body, and reporting pool statistics. --parallel fetches all
+// URLs at once with Agent.fetch_all (multiplexed over HTTP/2, no redirects).
 module app::main;
 import alloc::vec;
 import core::io;
@@ -59,7 +61,8 @@ fn code(e: ext::http_agent::Error) -> i32 {
         ext::http_agent::Error::Parse(p) -> 8, ext::http_agent::Error::TooLarge -> 63, ext::http_agent::Error::TooManyRedirects(n) -> 47,
         ext::http_agent::Error::BadLocation -> 3, ext::http_agent::Error::UnreplayableBody(s) -> 65, ext::http_agent::Error::UnexpectedUpgrade -> 8,
         ext::http_agent::Error::Source(i) -> 26, ext::http_agent::Error::AllocationFailed -> 27, ext::http_agent::Error::Clock -> 2,
-        ext::http_agent::Error::Tls(t) -> match(t.cause) { ext::openssl_tls::Cause::Verification -> 60, ext::openssl_tls::Cause::PeerCertificate -> 60, _ -> 35 }
+        ext::http_agent::Error::Tls(t) -> match(t.cause) { ext::openssl_tls::Cause::Verification -> 60, ext::openssl_tls::Cause::PeerCertificate -> 60, _ -> 35 },
+        ext::http_agent::Error::Http2(h) -> 16
     };
 }
 fn name(e: ext::http_agent::Error) -> core::slice::View<u8> {
@@ -73,13 +76,14 @@ fn name(e: ext::http_agent::Error) -> core::slice::View<u8> {
         ext::http_agent::Error::UnreplayableBody(s) -> literal("redirect needs the streamed body again",38), ext::http_agent::Error::UnexpectedUpgrade -> literal("unexpected upgrade",18),
         ext::http_agent::Error::Source(i) -> literal("upload read error",17), ext::http_agent::Error::AllocationFailed -> literal("out of memory",13),
         ext::http_agent::Error::Clock -> literal("clock error",11),
-        ext::http_agent::Error::Tls(t) -> match(t.cause) { ext::openssl_tls::Cause::Verification -> literal("certificate verification failed",31), ext::openssl_tls::Cause::PeerCertificate -> literal("certificate verification failed",31), _ -> literal("TLS error",9) }
+        ext::http_agent::Error::Tls(t) -> match(t.cause) { ext::openssl_tls::Cause::Verification -> literal("certificate verification failed",31), ext::openssl_tls::Cause::PeerCertificate -> literal("certificate verification failed",31), _ -> literal("TLS error",9) },
+        ext::http_agent::Error::Http2(h) -> literal("HTTP/2 error",12)
     };
 }
 fn report(r: &ext::http_agent::Response) -> bool {
     let line: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); let reused: i32 = 0; let kept: i32 = 0; if (r.reused) { reused = 1; } if (r.kept) { kept = 1; }
     let ok: bool = field(line.borrow(),"response status=",16,r.status) && field(line.borrow()," redirects=",11,r.redirects) && field(line.borrow()," reused=",8,reused)
-        && field(line.borrow()," kept=",6,kept) && field(line.borrow()," bytes=",7,r.body().len()) && put(line.borrow()," url=",5) && push(line.borrow(),r.url()) && put(line.borrow(),"\n",1);
+        && field(line.borrow()," kept=",6,kept) && field(line.borrow()," version=",9,r.version()) && field(line.borrow()," bytes=",7,r.body().len()) && put(line.borrow()," url=",5) && push(line.borrow(),r.url()) && put(line.borrow(),"\n",1);
     ok = ok && write_to(2,line.as_view()); line.destroy(); return ok;
 }
 fn totals(agent: &ext::http_agent::Agent) -> bool {
@@ -87,12 +91,13 @@ fn totals(agent: &ext::http_agent::Agent) -> bool {
     let ok: bool = field(line.borrow(),"pool connections=",17,s.connections) && field(line.borrow()," reused=",8,s.reused) && field(line.borrow()," requests=",10,s.requests)
         && field(line.borrow()," redirects=",11,s.redirects) && field(line.borrow()," retries=",9,s.retries) && field(line.borrow()," stale=",7,s.stale)
         && field(line.borrow()," evicted=",9,s.evicted) && field(line.borrow()," expired=",9,s.expired) && field(line.borrow()," early=",7,s.early)
+        && field(line.borrow()," http2=",7,s.http2) && field(line.borrow()," sessions=",10,agent.sessions())
         && field(line.borrow()," idle=",6,agent.idle()) && put(line.borrow(),"\n",1);
     ok = ok && write_to(2,line.as_view()); line.destroy(); return ok;
 }
 fn usage() -> i32 {
     say("Usage: http-curl [-X METHOD] [-H 'Name: value']... [-d DATA | -T FILE|-] [-L] [--max-redirs N] [-i] [-I] [-f] [--max-time MS]\n",126);
-    say("       [--cacert FILE] [--no-https]\n",36);
+    say("       [--cacert FILE] [--no-https] [--http1.1] [--parallel]\n",60);
     say("       [--max-idle-per-host N] [--max-idle N] [--idle-timeout MS] [--max-uses N] [--preconnect N] [--pause MS] [--no-retry] [--stats] URL...\n",141);
     return 2;
 }
@@ -103,12 +108,34 @@ fn open_upload(path: core::slice::View<u8>) -> core::option::Option<std::file::F
     return core::option::Some(opened.unwrap());
 }
 
+// --parallel: every URL through Agent.fetch_all, then the results in order.
+fn all(agent: &ext::http_agent::Agent, verb: core::slice::View<u8>, urls: core::slice::View<core::slice::View<u8>>, headers: core::slice::View<ext::http::Field>, data: core::option::Option<core::slice::View<u8>>, stats: bool, heads: bool, fail: bool) -> i32 {
+    let body: core::slice::View<u8> = literal("",0); if (data.is_some()) { body = data.unwrap(); }
+    let requests: alloc::vec::Vec<ext::http_agent::Request> = alloc::vec::new<ext::http_agent::Request>(); let i: i32 = 0;
+    while (i < urls.len()) { if (requests.try_push(ext::http_agent::Request { method: verb, url: urls.get(i).unwrap(), headers: headers, body: body }).is_err()) { requests.destroy(); return 27; } i += 1; }
+    let results: alloc::vec::Vec<core::result::Result<ext::http_agent::Response,ext::http_agent::Error>> = alloc::vec::new<core::result::Result<ext::http_agent::Response,ext::http_agent::Error>>();
+    agent.fetch_all(requests.as_view(),results.borrow());
+    let status: i32 = 0; i = 0;
+    while (i < results.len()) {
+        let got: core::result::Result<ext::http_agent::Response,ext::http_agent::Error> = results.at(i); i += 1;
+        if (got.is_err()) { if (status == 0) { let e = got.unwrap_err(); say("http-curl: ",11); write_to(2,name(e)); say("\n",1); status = code(e); } continue; }
+        let r: ext::http_agent::Response = got.unwrap();
+        if (status == 0) {
+            if (stats) { report(r.borrow()); }
+            if (fail && r.status >= 400) { say("http-curl: HTTP error\n",22); status = 22; }
+            if (status == 0 && heads && !write_to(1,r.head())) { status = 23; }
+            if (status == 0 && !write_to(1,r.body())) { status = 23; }
+        }
+        r.destroy();
+    }
+    results.destroy(); requests.destroy(); return status;
+}
 fn run(args: std::args::Arguments) -> i32 {
     let options: ext::http_agent::Options = ext::http_agent::default_options(); options.follow_redirects = false;
     let headers: alloc::vec::Vec<ext::http::Field> = alloc::vec::new<ext::http::Field>(); let urls: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new<core::slice::View<u8>>();
     let method: core::option::Option<core::slice::View<u8>> = core::option::None(); let data: core::option::Option<core::slice::View<u8>> = core::option::None();
     let upload: core::option::Option<core::slice::View<u8>> = core::option::None();
-    let include: bool = false; let head_only: bool = false; let fail: bool = false; let stats: bool = false; let pause: i32 = 0; let preconnect: i32 = 0;
+    let include: bool = false; let head_only: bool = false; let fail: bool = false; let stats: bool = false; let pause: i32 = 0; let preconnect: i32 = 0; let parallel: bool = false;
     let i: i32 = 0;
     while (i < args.len()) {
         let a: core::slice::View<u8> = args.get(i).unwrap(); i += 1;
@@ -119,6 +146,8 @@ fn run(args: std::args::Arguments) -> i32 {
         if (eq(a,"--stats",7)) { stats = true; continue; }
         if (eq(a,"--no-retry",10)) { options.retry_stale = false; continue; }
         if (eq(a,"--no-https",10)) { options.https = false; continue; }
+        if (eq(a,"--http1.1",9)) { options.http2 = false; continue; }
+        if (eq(a,"--parallel",10)) { parallel = true; continue; }
         if (a.len() > 0 && byte(a,0) == 45) {
             if (i >= args.len()) { headers.destroy(); urls.destroy(); return usage(); }
             let v: core::slice::View<u8> = args.get(i).unwrap(); i += 1; let n: i32 = number(v);
@@ -145,7 +174,7 @@ fn run(args: std::args::Arguments) -> i32 {
         }
         urls.try_push(a);
     }
-    if (urls.len() == 0 || (data.is_some() && upload.is_some())) { headers.destroy(); urls.destroy(); return usage(); }
+    if (urls.len() == 0 || (data.is_some() && upload.is_some()) || (parallel && upload.is_some())) { headers.destroy(); urls.destroy(); return usage(); }
     let verb: core::slice::View<u8> = literal("GET",3);
     if (head_only) { verb = literal("HEAD",4); } if (data.is_some()) { verb = literal("POST",4); } if (upload.is_some()) { verb = literal("PUT",3); }
     if (method.is_some()) { verb = method.unwrap(); }
@@ -157,6 +186,7 @@ fn run(args: std::args::Arguments) -> i32 {
         if (warmed.is_err()) { let e = warmed.unwrap_err(); say("http-curl: ",11); write_to(2,name(e)); say("\n",1); status = code(e); }
     }
     let u: i32 = 0; let clock = std::clock::native();
+    if (status == 0 && parallel) { status = all(agent.borrow(),verb,urls.as_view(),headers.as_view(),data,stats,include || head_only,fail); u = urls.len(); }
     while (status == 0 && u < urls.len()) {
         if (u > 0 && pause > 0) { clock.pause_ms(pause); }
         let body: core::slice::View<u8> = literal("",0); if (data.is_some()) { body = data.unwrap(); }

@@ -47,11 +47,11 @@ work on native Linux x86_64/glibc with libatomic:
 - `std::parallel`: chunked `for_each`, `map`, ordered `reduce`, `scan` and
   stable `merge_sort` over shared arrays.
 - `std::par`: stable and unstable sorts, `map`, ordered `reduce` and
-  `scan` as stolen tasks on a `std::steal` pool. The sorts sort runs with
-  `core::slice` pdqsort or the stable sort, then merge them in parallel at
-  merge-path splits. A Python model oracle covers 3,600 runs with 0
-  mismatches, including non-commutative scans. On 10M i64 keys, 8 workers take 1.1–1.7 s, against 7.1–9.2 s
-  for single-threaded pdqsort.
+  `scan` as stolen tasks on a `std::steal` pool. The sorts keep one forked crew
+  for all phases, sort runs with a direct-comparison introsort or merge
+  sort, then merge them in parallel at merge-path splits. A Python model oracle covers 3,600 runs with 0
+  mismatches, including non-commutative scans. On 10M i64 keys, 8 workers take 387–392 ms, against 638–699 ms
+  for C++ `std::sort` at -O2.
 
 The stress fixture keeps exact invariants: 1,600,000 atomic adds; 400,000
 locked increments; 1 initializer among 16 racers; 200 barrier leaders; and
@@ -139,7 +139,8 @@ original API/source scope.
 The preceding
 [resumable compression encoder](extended-streaming-deflate.md) adds fixed
 32 KiB blocks, retained pending output and u64 raw/zlib/gzip limits over shared
-block helpers. The [file compressor](extended-compress-file.md) uses fixed
+block helpers. Its [packed fast pass](extended-streaming-deflate.md#packed-fast-pass)
+encodes gzip at 50–54 MB/s against 3.5–3.8 MB/s before, with byte-identical output. The [file compressor](extended-compress-file.md) uses fixed
 workspace and NoReplace publication. All five library groups and five
 application groups/99 native cases pass, including the 112-case chunk/block
 model and nine reached application allocation denials. This finite native
@@ -2264,7 +2265,7 @@ functional70, malformed45, slowloris12, conditional23 and concurrent39 on the
 event server plus four sequential groups, with exact server counters. TLS,
 threads, multipart ranges and allocation-failure coverage remain open.
 
-The [HTTP/1.1 client agent](extended-http-agent.md) (`ext::http_agent`) is a
+The [HTTP client agent](extended-http-agent.md) (`ext::http_agent`) is a
 synchronous `http://` and verified `https://` client over the same codec,
 `ext::http_url`, `ext::url_connect` and `ext::tls_stream`. It pools
 keep-alive cleartext and TLS connections per scheme, host and port under
@@ -2276,7 +2277,22 @@ response. The curl-like sample passes Python `http.server` oracle groups
 pool18, redirect29, upload10 and broken21, plus https17 against Python `ssl`
 origins with locally generated test certificates, with exact counters.
 Its `dial` opens an unpooled connection for protocols that take over after
-an HTTP/1.1 upgrade.
+an HTTP/1.1 upgrade. Over https it offers `h2` by ALPN and runs requests to
+an origin that selects it as streams of one [HTTP/2](extended-http2.md)
+connection; `fetch_all` multiplexes them. That h2 group (21 cases) runs
+against libnghttp2's server session over TLS.
+
+[HTTP/2](extended-http2.md) is three I/O-free modules:
+[`ext::hpack`](extended-hpack.md) (RFC 7541 with the canonical Huffman code,
+checked against the RFC Appendix C examples and both ways against
+libnghttp2's HPACK: rfc 8, nghttp2 3 and malformed 17 cases over 3,175
+blocks), `ext::http2_frame` (frame parsing with the RFC's size, stream and
+padding rules, SETTINGS checks, and writers that split HEADERS into
+CONTINUATION), and the `ext::http2` client engine (stream multiplexing under
+the peer's concurrency limit, flow control both ways, SETTINGS, PING,
+GOAWAY, RST_STREAM and response validation). The engine passes 17 cases
+against libnghttp2's server session and 46 against hand-built frames for
+every connection and stream error it must detect.
 
 The [WebSocket client](extended-websocket-client.md) (`ext::websocket_client`)
 uses `dial` for `ws://` and verified `wss://` URLs and the canonical

@@ -43,6 +43,42 @@ static PIPELINE_CACHE_PERSIST_LOCK: Mutex<()> = Mutex::new(());
 /// A tmp file older than this was left by a process that stopped mid-write.
 const PIPELINE_CACHE_STALE_TMP: Duration = Duration::from_secs(10 * 60);
 static GLOBAL_DEVICE: OnceLock<Result<GpuDevice, GpuDeviceInitializationError>> = OnceLock::new();
+
+// Uncaptured device errors (an out-of-memory buffer creation and the invalid
+// bind groups that follow it). Work recorded after one does not run, so a
+// compile that saw one has no trustworthy result.
+static UNCAPTURED_ERROR_COUNT: AtomicU64 = AtomicU64::new(0);
+static FIRST_UNCAPTURED_ERROR: Mutex<Option<String>> = Mutex::new(None);
+
+fn record_uncaptured_error(error: &wgpu::Error) {
+    UNCAPTURED_ERROR_COUNT.fetch_add(1, Ordering::AcqRel);
+    if let Ok(mut slot) = FIRST_UNCAPTURED_ERROR.lock()
+        && slot.is_none()
+    {
+        let text = match error {
+            // The Display text omits the resource; its debug form names it.
+            wgpu::Error::OutOfMemory { .. } => {
+                let detail = format!("{error:?}");
+                match detail.rsplit_once("label: \"").and_then(|(_, rest)| rest.split_once('"')) {
+                    Some((label, _)) if !label.is_empty() => format!("out of GPU memory creating `{label}`"),
+                    _ => "out of GPU memory".to_string(),
+                }
+            }
+            _ => error.to_string(),
+        };
+        *slot = Some(text.lines().next().unwrap_or("").chars().take(240).collect());
+    }
+}
+
+/// The number of uncaptured device errors so far in this process.
+pub fn uncaptured_error_count() -> u64 {
+    UNCAPTURED_ERROR_COUNT.load(Ordering::Acquire)
+}
+
+/// Takes the first uncaptured error recorded since the last call.
+pub fn take_first_uncaptured_error() -> Option<String> {
+    FIRST_UNCAPTURED_ERROR.lock().ok().and_then(|mut slot| slot.take())
+}
 /// Global GPU device/queue resource shared across compiler subsystems.
 pub struct GpuDevice {
     instance: wgpu::Instance,
@@ -449,6 +485,7 @@ fn create_context() -> Result<GpuDevice, GpuDeviceInitializationError> {
 
     device.on_uncaptured_error(Arc::new(|e| {
         eprintln!("[wgpu uncaptured] {e:?}");
+        record_uncaptured_error(&e);
     }));
     device.set_device_lost_callback(|reason, message| {
         eprintln!("[wgpu device lost] reason={reason:?} message={message}");

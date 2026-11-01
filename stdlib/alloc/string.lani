@@ -187,13 +187,12 @@ fn joined_length(parts: core::slice::View<core::text::Text>, separator: core::te
 }
 
 // Caller reserved sufficient capacity. Text is already valid UTF-8.
+// The caller reserved room, so the bulk append cannot allocate; a source
+// inside the old storage stays readable while it is copied.
 fn append_reserved(bytes: alloc::vec::Vec<u8>, text: core::text::Text) -> alloc::vec::Vec<u8> {
     let result: alloc::vec::Vec<u8> = bytes;
-    let index: i32 = 0;
-    while (index < text.byte_len()) {
-        core::result::unwrap(result.try_push(core::option::unwrap(text.byte_at(index))));
-        index += 1;
-    }
+    let source: core::slice::View<u8> = core::slice::View { values: text.bytes, start: text.start, length: text.byte_len() };
+    core::result::unwrap(result.try_extend(source));
     return result;
 }
 

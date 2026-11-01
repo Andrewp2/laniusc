@@ -1,9 +1,12 @@
-// HTTP/1.1 client agent over ext::http framing: a keep-alive connection pool
+// HTTP client agent over ext::http framing: a keep-alive connection pool
 // keyed by host and port with idle-count, idle-time and per-connection use
 // limits; redirect following with a hop limit and RFC 9110 method rules; and
 // fixed (Content-Length) or streamed (chunked) request bodies. http:// and
 // https:// (verified TLS through ext::tls_stream, pooled like cleartext);
-// resolution and connection setup come from ext::url_connect.
+// resolution and connection setup come from ext::url_connect. https://
+// offers HTTP/2 by ALPN; an origin that selects h2 gets one ext::http2
+// connection that every later request to it shares as streams, and
+// fetch_all runs requests to such an origin concurrently.
 module ext::http_agent;
 import alloc::vec;
 import core::io;
@@ -13,7 +16,9 @@ import core::option;
 import core::result;
 import core::slice;
 import core::time;
+import ext::hpack;
 import ext::http;
+import ext::http2;
 import ext::http_url;
 import ext::openssl_tls;
 import ext::tls_stream;
@@ -29,20 +34,22 @@ pub enum Error {
     Connect(ext::url_connect::Cause), Io(core::io::Error), Timeout, Truncated(i32),
     Parse(ext::http::Error), TooLarge, TooManyRedirects(i32), BadLocation,
     UnreplayableBody(i32), UnexpectedUpgrade, Source(core::io::Error), AllocationFailed, Clock,
-    Tls(ext::openssl_tls::Error)
+    Tls(ext::openssl_tls::Error), Http2(ext::http2::Error)
 }
 pub struct Options {
     limits: ext::http::Limits, url: ext::http_url::Limits, connect: ext::url_connect::Options,
     max_idle_per_host: i32, max_idle_total: i32, idle_timeout_ms: i32, max_uses: i32,
     follow_redirects: bool, max_redirects: i32, timeout_ms: i32, chunk_bytes: i32,
     max_informational: i32, retry_stale: bool,
-    https: bool, trust: ext::openssl_tls::Trust, tls: ext::openssl_tls::Limits
+    https: bool, trust: ext::openssl_tls::Trust, tls: ext::openssl_tls::Limits, http2: bool
 }
 // connections: opened; reused: pooled checkouts; requests: exchanges sent
 // (including retries and redirect hops); stale: pooled connections found
 // closed or readable at checkout; evicted: closed by the idle-count limits;
-// expired: closed by idle time; early: uploads cut short by a final response.
-pub struct Stats { connections: i32, reused: i32, requests: i32, redirects: i32, retries: i32, stale: i32, evicted: i32, expired: i32, early: i32 }
+// expired: closed by idle time; early: uploads cut short by a final response;
+// http2: connections that negotiated HTTP/2 (also counted in connections).
+// A request on an HTTP/2 connection that was already open counts as reused.
+pub struct Stats { connections: i32, reused: i32, requests: i32, redirects: i32, retries: i32, stale: i32, evicted: i32, expired: i32, early: i32, http2: i32 }
 pub struct Request { method: core::slice::View<u8>, url: core::slice::View<u8>, headers: core::slice::View<ext::http::Field>, body: core::slice::View<u8> }
 // One connection: the socket alone, or a TLS stream that owns it (socket is
 // then a copy used only for readiness polls). Every stream operation writes
@@ -50,11 +57,18 @@ pub struct Request { method: core::slice::View<u8>, url: core::slice::View<u8>, 
 struct Conn { socket: std::socket::Socket, secure: bool, tls: core::option::Option<ext::tls_stream::Stream> }
 impl Conn { fn borrow(&self) -> &Conn { return self; } }
 struct Idle { conn: Conn, host: alloc::vec::Vec<u8>, port: u16, expires: core::time::Deadline, uses: i32, stamp: u64 }
-struct Lease { conn: Conn, uses: i32, reused: bool }
+struct Lease { conn: Conn, uses: i32, reused: bool, h2: bool }
 struct Failure { error: Error, retryable: bool }
-pub struct Agent { options: Options, pool: alloc::vec::Vec<Idle>, stats: Stats, stamp: u64, active: bool, context: core::option::Option<ext::openssl_tls::Context> }
+// One HTTP/2 connection (ALPN h2) to an https origin, shared by every request
+// to that origin while it stays open.
+struct H2 { conn: Conn, engine: ext::http2::Connection, host: alloc::vec::Vec<u8>, port: u16, expires: core::time::Deadline, uses: i32 }
+struct Member { index: i32, url: ext::http_url::Url, id: i32 }
+pub struct Agent { options: Options, pool: alloc::vec::Vec<Idle>, sessions: alloc::vec::Vec<H2>, stats: Stats, stamp: u64, active: bool, context: core::option::Option<ext::openssl_tls::Context> }
 // One manual owner. wire holds the received bytes: the raw final head, then a
 // fixed or close-delimited body in place; a chunked body is decoded apart.
+// version is 10 or 11, or 20 for HTTP/2, whose wire holds the response fields
+// as "name: value" CRLF lines (lowercase names, no status line) and then the
+// body.
 pub struct Response { status: i32, version: i32, wire: alloc::vec::Vec<u8>, head_length: i32, body_start: i32, body_length: i32, decoded: alloc::vec::Vec<u8>, chunked: bool, method: alloc::vec::Vec<u8>, url: alloc::vec::Vec<u8>, limits: ext::http::Limits, redirects: i32, reused: bool, kept: bool, hint_ms: i32, active: bool }
 // The body source of a request without a streamed body.
 struct NoBody { unused: i32 }
@@ -67,7 +81,7 @@ pub fn default_options() -> Options {
     return Options { limits: ext::http::default_limits(), url: ext::http_url::default_limits(), connect: ext::url_connect::default_options(),
         max_idle_per_host: 4, max_idle_total: 16, idle_timeout_ms: 15000, max_uses: 100, follow_redirects: true, max_redirects: 10,
         timeout_ms: 30000, chunk_bytes: 16384, max_informational: 8, retry_stale: true,
-        https: true, trust: ext::openssl_tls::Trust::DefaultPaths, tls: ext::openssl_tls::default_limits() };
+        https: true, trust: ext::openssl_tls::Trust::DefaultPaths, tls: ext::openssl_tls::default_limits(), http2: true };
 }
 fn options_valid(o: Options) -> bool {
     return o.max_idle_per_host >= 0 && o.max_idle_total >= 0 && o.idle_timeout_ms >= 0 && o.max_uses >= 1 && o.max_redirects >= 0
@@ -76,8 +90,8 @@ fn options_valid(o: Options) -> bool {
 }
 pub fn agent(options: Options) -> core::result::Result<Agent,Error> {
     if (!options_valid(options)) { return core::result::Err(Error::InvalidRequest); }
-    let stats: Stats = Stats { connections: 0, reused: 0, requests: 0, redirects: 0, retries: 0, stale: 0, evicted: 0, expired: 0, early: 0 };
-    return core::result::Ok(Agent { options: options, pool: alloc::vec::new<Idle>(), stats: stats, stamp: 0, active: true, context: core::option::None() });
+    let stats: Stats = Stats { connections: 0, reused: 0, requests: 0, redirects: 0, retries: 0, stale: 0, evicted: 0, expired: 0, early: 0, http2: 0 };
+    return core::result::Ok(Agent { options: options, pool: alloc::vec::new<Idle>(), sessions: alloc::vec::new<H2>(), stats: stats, stamp: 0, active: true, context: core::option::None() });
 }
 
 fn literal(s: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(s),n); return core::slice::view<u8>(raw,n).unwrap(); }
@@ -167,6 +181,29 @@ fn receive(conn: &Conn, space: core::slice::View<u8>, deadline: core::time::Dead
     if (r.is_err()) { let e: core::io::Error = stream_error(s.borrow(),r.unwrap_err()); conn.tls = core::option::Some(s); return core::result::Err(e); }
     conn.tls = core::option::Some(s); return r;
 }
+// Wait for at least one byte from a TLS connection into space. Ok(0) is a
+// clean EOF (close_notify); Truncated(0) an EOF without it.
+fn tls_receive(conn: &Conn, space: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<i32,Error> {
+    while (true) {
+        let s: ext::tls_stream::Stream = conn.tls.unwrap();
+        let got: core::result::Result<i32,core::io::Error> = s.try_read(space.values,space.start,space.len());
+        let writing: bool = s.wants_write(); let failure: core::io::Error = core::io::Error::Host(71);
+        if (got.is_err()) { failure = stream_error(s.borrow(),got.unwrap_err()); }
+        conn.tls = core::option::Some(s);
+        if (got.is_ok()) { return core::result::Ok(got.unwrap()); }
+        let blocked: bool = match (got.unwrap_err()) { core::io::Error::WouldBlock -> true, _ -> false };
+        if (!blocked) {
+            if (unclean(failure)) { return core::result::Err(Error::Truncated(0)); }
+            if (timed_out(failure)) { return core::result::Err(Error::Timeout); }
+            return core::result::Err(Error::Io(failure));
+        }
+        let waited: core::result::Result<std::socket::Ready,core::io::Error> = conn.socket.wait_until(true,writing,deadline);
+        if (waited.is_err()) { return core::result::Err(Error::Io(waited.unwrap_err())); }
+        if (waited.unwrap().timed_out) { return core::result::Err(Error::Timeout); }
+    }
+    return core::result::Err(Error::Timeout);
+}
+fn io_failure(e: core::io::Error) -> Error { if (timed_out(e)) { return Error::Timeout; } if (unclean(e)) { return Error::Truncated(0); } return Error::Io(e); }
 // Close a connection; TLS sends close_notify first when it can do so quickly.
 fn close_conn(conn: &Conn) {
     if (!conn.secure) { conn.socket.close(); return; }
@@ -396,6 +433,202 @@ fn transact<R>(agent: &Agent, conn: &Conn, head: core::slice::View<u8>, source: 
     return core::result::Ok(r);
 }
 
+// ---- HTTP/2 ----
+impl H2 {
+    fn borrow(&self) -> &H2 { return self; }
+    // Send what the engine queued.
+    fn flush_out(&self, deadline: core::time::Deadline) -> core::result::Result<i32,core::io::Error> {
+        let out: core::slice::View<u8> = self.engine.output(); let n: i32 = out.len();
+        if (n == 0) { return core::result::Ok(0); }
+        let sent: core::result::Result<i32,core::io::Error> = send_all(self.conn.borrow(),out,deadline);
+        if (sent.is_err()) { return sent; }
+        self.engine.sent(n); return core::result::Ok(n);
+    }
+    fn reached(&self, id: i32, floor: i32, until_sent: bool) -> bool {
+        if (id < 0) { return self.engine.active_streams() < floor; }
+        let open: bool = match (self.engine.state(id)) { ext::http2::State::Open -> true, _ -> false };
+        return !open || (until_sent && self.engine.unsent(id) == 0);
+    }
+    // Drive I/O until stream id is finished (or, with until_sent, until its
+    // queued body is all framed), or for id < 0 until fewer than floor
+    // streams are open. Err is a transport failure.
+    fn pump(&self, id: i32, floor: i32, until_sent: bool, scratch: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<i32,Error> {
+        while (true) {
+            // A peer that closes right after its last response (with GOAWAY)
+            // may reset the connection under our final WINDOW_UPDATE or
+            // acknowledgement; what was received still stands.
+            let flushed: core::result::Result<i32,core::io::Error> = self.flush_out(deadline);
+            if (flushed.is_err() && !self.reached(id,floor,until_sent)) { return core::result::Err(io_failure(flushed.unwrap_err())); }
+            if (!self.engine.is_open() || self.reached(id,floor,until_sent)) { return core::result::Ok(0); }
+            let got: core::result::Result<i32,Error> = tls_receive(self.conn.borrow(),scratch,deadline);
+            if (got.is_err()) { return got; }
+            let n: i32 = got.unwrap(); if (n == 0) { return core::result::Err(Error::Truncated(0)); }
+            let fed: core::result::Result<i32,ext::http2::Error> = self.engine.feed(part(scratch,0,n));
+        }
+        return core::result::Ok(0);
+    }
+    // Take in what an idle connection has to say (SETTINGS, PING, GOAWAY)
+    // without waiting. False when the connection is gone.
+    fn poll(&self, scratch: core::slice::View<u8>, deadline: core::time::Deadline) -> bool {
+        while (self.engine.is_open()) {
+            let s: ext::tls_stream::Stream = self.conn.tls.unwrap();
+            let got: core::result::Result<i32,core::io::Error> = s.try_read(scratch.values,scratch.start,scratch.len());
+            self.conn.tls = core::option::Some(s);
+            if (got.is_err()) { return match (got.unwrap_err()) { core::io::Error::WouldBlock -> true, _ -> false }; }
+            let n: i32 = got.unwrap(); if (n == 0) { return false; }
+            let fed: core::result::Result<i32,ext::http2::Error> = self.engine.feed(part(scratch,0,n));
+            if (self.flush_out(deadline).is_err()) { return false; }
+        }
+        return false;
+    }
+    // GOAWAY(NO_ERROR) when it can be sent quickly, then close.
+    fn close(&self) {
+        let soon: core::result::Result<core::time::Deadline,Error> = deadline_ms(200);
+        if (self.engine.is_open() && soon.is_ok()) {
+            let s: ext::tls_stream::Stream = self.conn.tls.unwrap(); let renewed: bool = s.renew(stream_limits(),soon.unwrap()).is_ok(); self.conn.tls = core::option::Some(s);
+            if (renewed && self.engine.goaway(0)) { let flushed: core::result::Result<i32,core::io::Error> = self.flush_out(soon.unwrap()); }
+        }
+        close_conn(self.conn.borrow()); self.engine.destroy(); self.host.destroy();
+    }
+}
+fn h2_header(fields: &alloc::vec::Vec<ext::hpack::Header>, name: core::slice::View<u8>, value: core::slice::View<u8>) -> bool {
+    return fields.try_push(ext::hpack::Header { name: name, value: value, never_indexed: false }).is_ok();
+}
+// Request fields: the pseudo-fields, the caller's fields with lowercase
+// names (stored in store) and content-length on the rules of write_head.
+fn h2_fields(fields: &alloc::vec::Vec<ext::hpack::Header>, store: &alloc::vec::Vec<u8>, method: core::slice::View<u8>, url: &ext::http_url::Url, headers: core::slice::View<ext::http::Field>, body: i32, streaming: bool) -> bool {
+    let ok: bool = true; let i: i32 = 0;
+    while (ok && i < headers.len()) {
+        let f: ext::http::Field = headers.get(i).unwrap(); let k: i32 = 0;
+        while (ok && k < f.name.len()) { ok = store.try_push(lower(byte(f.name,k))).is_ok(); k += 1; }
+        i += 1;
+    }
+    let length_at: i32 = store.len(); let length: bool = !streaming && (body > 0 || is(method,"POST",4) || is(method,"PUT",3) || is(method,"PATCH",5));
+    if (length) { ok = ok && push_number(store,body); }
+    if (!ok) { return false; }
+    // store no longer grows, so views into it stay valid.
+    let raw: core::slice::View<u8> = store.as_view();
+    ok = h2_header(fields,literal(":method",7),method) && h2_header(fields,literal(":scheme",7),literal("https",5))
+        && h2_header(fields,literal(":authority",10),url.authority().unwrap()) && h2_header(fields,literal(":path",5),url.target().unwrap());
+    let at: i32 = 0; i = 0;
+    while (ok && i < headers.len()) { let f: ext::http::Field = headers.get(i).unwrap(); ok = h2_header(fields,part(raw,at,at+f.name.len()),f.value); at += f.name.len(); i += 1; }
+    if (ok && length) { ok = h2_header(fields,literal("content-length",14),part(raw,length_at,store.len())); }
+    return ok;
+}
+// The first field named name among "name: value" CRLF lines.
+fn h2_lookup(head: core::slice::View<u8>, name: core::slice::View<u8>) -> core::option::Option<core::slice::View<u8>> {
+    let i: i32 = 0;
+    while (i < head.len()) {
+        let start: i32 = i; while (i < head.len() && byte(head,i) != 58) { i += 1; }
+        let end: i32 = i; i += 2; let from: i32 = i;
+        while (i + 1 < head.len() && !(byte(head,i) == 13 && byte(head,i+1) == 10)) { i += 1; }
+        if (i + 1 >= head.len()) { return core::option::None(); }
+        let to: i32 = i; i += 2;
+        if (same_case(part(head,start,end),name)) { return core::option::Some(part(head,from,to)); }
+    }
+    return core::option::None();
+}
+fn h2_error(e: ext::http2::Error) -> Error {
+    return match (e.cause) { ext::http2::Cause::Limit -> Error::TooLarge, ext::http2::Cause::InvalidRequest -> Error::InvalidHeader, ext::http2::Cause::AllocationFailed -> Error::AllocationFailed, _ -> Error::Http2(e) };
+}
+// A finished stream as a Response (see Response for the HTTP/2 layout).
+fn h2_response(engine: &ext::http2::Connection, id: i32, method: core::slice::View<u8>, limits: ext::http::Limits, reused: bool) -> core::result::Result<Response,Error> {
+    let wire: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); let copy: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+    let ok: bool = true; let i: i32 = 0; let n: i32 = engine.field_count(id);
+    while (ok && i < n) { let f: ext::hpack::Header = engine.field(id,i); ok = push(wire.borrow(),f.name) && put(wire.borrow(),": ",2) && push(wire.borrow(),f.value) && put(wire.borrow(),"\r\n",2); i += 1; }
+    let head_length: i32 = wire.len(); let body: core::slice::View<u8> = engine.body(id);
+    ok = ok && push(wire.borrow(),body) && push(copy.borrow(),method);
+    if (!ok) { wire.destroy(); copy.destroy(); return core::result::Err(Error::AllocationFailed); }
+    return core::result::Ok(Response { status: engine.status(id), version: 20, wire: wire, head_length: head_length, body_start: head_length, body_length: body.len(),
+        decoded: alloc::vec::new<u8>(), chunked: false, method: copy, url: alloc::vec::new<u8>(), limits: limits,
+        redirects: 0, reused: reused, kept: true, hint_ms: -1, active: true });
+}
+fn h2_open(state: ext::http2::State) -> bool { return match (state) { ext::http2::State::Open -> true, _ -> false }; }
+// After an exchange on session index: keep it for later requests, or close
+// it when it is failing, draining or past the agent's reuse limits.
+fn settle(agent: &Agent, index: i32, h: H2, keep: bool) -> bool {
+    let o: Options = agent.options;
+    let ok: bool = keep && h.engine.is_open() && !h.engine.goaway_received() && h.uses < o.max_uses && o.max_idle_per_host > 0 && o.max_idle_total > 0 && o.idle_timeout_ms > 0;
+    if (ok) { let expires: core::result::Result<core::time::Deadline,Error> = deadline_ms(o.idle_timeout_ms); if (expires.is_ok()) { h.expires = expires.unwrap(); } else { ok = false; } }
+    agent.sessions.set(index,h);
+    if (!ok) { agent.drop_session(index); }
+    return ok;
+}
+// One request as a stream on HTTP/2 session index. A stream the server
+// refused (REFUSED_STREAM, or above a GOAWAY's last stream) is retryable, as
+// is an idempotent request on a reused connection that failed before any
+// response, under retry_stale; neither once a streamed body was read.
+fn over_h2<R>(agent: &Agent, index: i32, url: &ext::http_url::Url, method: core::slice::View<u8>, headers: core::slice::View<ext::http::Field>, body: core::slice::View<u8>, source: &R, streaming: bool, reused: bool, deadline: core::time::Deadline) -> core::result::Result<Response,Failure> where R: core::io::Read {
+    let o: Options = agent.options;
+    let made: core::result::Result<alloc::vec::Vec<u8>,Error> = bytes(16384);
+    if (made.is_err()) { return core::result::Err(Failure { error: Error::AllocationFailed, retryable: false }); }
+    let scratch: alloc::vec::Vec<u8> = made.unwrap();
+    let fields: alloc::vec::Vec<ext::hpack::Header> = alloc::vec::new<ext::hpack::Header>(); let store: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+    let built: bool = h2_fields(fields.borrow(),store.borrow(),method,url,headers,body.len(),streaming);
+    let h: H2 = agent.sessions.at(index); h.uses += 1;
+    let started: core::result::Result<i32,ext::http2::Error> = core::result::Err(ext::http2::Error { cause: ext::http2::Cause::AllocationFailed, code: 0, stream: 0 });
+    if (built) { started = h.engine.start(fields.as_view(),!streaming && body.len() == 0,is(method,"HEAD",4)); }
+    fields.destroy(); store.destroy();
+    if (started.is_err()) {
+        scratch.destroy(); let e: ext::http2::Error = started.unwrap_err();
+        let retry: bool = match (e.cause) { ext::http2::Cause::Busy -> true, ext::http2::Cause::Closed -> true, _ -> false };
+        let error: Error = h2_error(e); let limit: bool = match (e.cause) { ext::http2::Cause::Limit -> true, _ -> false }; if (limit) { error = Error::InvalidHeader; }
+        settle(agent,index,h,!retry); return core::result::Err(Failure { error: error, retryable: retry });
+    }
+    let id: i32 = started.unwrap(); let used: bool = false; let broken: bool = false;
+    let failure: core::option::Option<Error> = core::option::None();
+    if (!streaming && body.len() > 0) {
+        let queued: core::result::Result<i32,ext::http2::Error> = h.engine.send_data(id,body,true);
+        if (queued.is_err()) { failure = core::option::Some(h2_error(queued.unwrap_err())); }
+    }
+    if (streaming) {
+        let room: core::result::Result<alloc::vec::Vec<u8>,Error> = bytes(o.chunk_bytes);
+        if (room.is_err()) { failure = core::option::Some(Error::AllocationFailed); }
+        else {
+            let chunk: alloc::vec::Vec<u8> = room.unwrap();
+            while (true) {
+                let pumped: core::result::Result<i32,Error> = h.pump(id,0,true,scratch.as_view(),deadline);
+                if (pumped.is_err()) { failure = core::option::Some(pumped.unwrap_err()); broken = true; break; }
+                if (!h2_open(h.engine.state(id))) { break; }
+                let got: core::result::Result<i32,core::io::Error> = fill<R>(source,chunk.as_view(),0,o.chunk_bytes);
+                if (got.is_err()) { failure = core::option::Some(Error::Source(got.unwrap_err())); break; }
+                used = true; let n: i32 = got.unwrap();
+                let queued: core::result::Result<i32,ext::http2::Error> = h.engine.send_data(id,part(chunk.as_view(),0,n),n == 0);
+                if (queued.is_err() || n == 0) { break; }
+            }
+            chunk.destroy();
+        }
+    }
+    if (failure.is_none()) {
+        let pumped: core::result::Result<i32,Error> = h.pump(id,0,false,scratch.as_view(),deadline);
+        if (pumped.is_err()) { failure = core::option::Some(pumped.unwrap_err()); broken = true; }
+    }
+    scratch.destroy();
+    let result: core::result::Result<Response,Failure> = core::result::Err(Failure { error: Error::InvalidRequest, retryable: false });
+    if (failure.is_some()) {
+        let retry: bool = broken && reused && !used && o.retry_stale && idempotent(method) && h.engine.status(id) == 0;
+        result = core::result::Err(Failure { error: failure.unwrap(), retryable: retry });
+    } else {
+        let state: ext::http2::State = h.engine.state(id);
+        let done: bool = match (state) { ext::http2::State::Done -> true, _ -> false };
+        if (done) {
+            let r: core::result::Result<Response,Error> = h2_response(h.engine.borrow(),id,method,o.limits,reused);
+            if (r.is_err()) { result = core::result::Err(Failure { error: r.unwrap_err(), retryable: false }); } else { result = core::result::Ok(r.unwrap()); }
+        } else {
+            let e: ext::http2::Error = h.engine.stream_error(id);
+            let refused: bool = match (e.cause) { ext::http2::Cause::Refused -> true, _ -> false };
+            let closed: bool = match (e.cause) { ext::http2::Cause::Closed -> true, _ -> false };
+            if (h2_open(state)) { closed = true; e = ext::http2::Error { cause: ext::http2::Cause::Closed, code: 0, stream: id }; }
+            let retry: bool = !used && (refused || (closed && reused && o.retry_stale && idempotent(method)));
+            result = core::result::Err(Failure { error: h2_error(e), retryable: retry });
+        }
+    }
+    h.engine.release(id);
+    let kept: bool = settle(agent,index,h,!broken);
+    if (result.is_ok() && !kept) { let r: Response = result.unwrap(); r.kept = false; result = core::result::Ok(r); }
+    return result;
+}
+
 // One hop: lease a connection, exchange, then pool or close it. A request
 // whose pooled connection turns out dead before any response byte is retried
 // once on a new connection when it is idempotent and its body is replayable.
@@ -404,23 +637,44 @@ fn exchange<R>(agent: &Agent, url: &ext::http_url::Url, method: core::slice::Vie
     let head: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
     let close: bool = o.max_idle_per_host == 0 || o.max_idle_total == 0;
     if (!write_head(head.borrow(),method,url,headers,body.len(),streaming,close) || (!streaming && !push(head.borrow(),body))) { head.destroy(); return core::result::Err(Error::AllocationFailed); }
-    let attempt: i32 = 0;
+    let attempt: i32 = 0; let offer: bool = o.http2 && https(url);
     while (true) {
         let deadline: core::result::Result<core::time::Deadline,Error> = deadline_ms(o.timeout_ms);
         if (deadline.is_err()) { head.destroy(); return core::result::Err(deadline.unwrap_err()); }
-        let leased: core::result::Result<Lease,Error> = agent.acquire(url,attempt > 0,deadline.unwrap());
-        if (leased.is_err()) { head.destroy(); return core::result::Err(leased.unwrap_err()); }
-        let lease: Lease = leased.unwrap(); agent.stats.requests += 1;
-        let done: core::result::Result<Response,Failure> = transact<R>(agent,lease.conn.borrow(),head.as_view(),source,streaming,method,deadline.unwrap());
-        if (done.is_err()) {
-            let f: Failure = done.unwrap_err(); close_conn(lease.conn.borrow());
-            if (lease.reused && attempt == 0 && o.retry_stale && f.retryable && idempotent(method)) { agent.stats.retries += 1; attempt += 1; continue; }
+        // An open HTTP/2 connection to the origin first, then the pool or a
+        // new connection, which may negotiate HTTP/2.
+        let index: i32 = -1; let fresh: bool = true;
+        if (offer) { index = agent.session_for(url.host().unwrap(),url.port().unwrap(),deadline.unwrap()); fresh = index < 0; }
+        if (index < 0) {
+            let leased: core::result::Result<Lease,Error> = agent.acquire(url,attempt > 0,deadline.unwrap(),offer);
+            if (leased.is_err()) { head.destroy(); return core::result::Err(leased.unwrap_err()); }
+            let lease: Lease = leased.unwrap();
+            if (lease.h2) {
+                let opened: core::result::Result<i32,Error> = agent.open_session(url.host().unwrap(),url.port().unwrap(),lease.conn);
+                if (opened.is_err()) { head.destroy(); return core::result::Err(opened.unwrap_err()); }
+                index = opened.unwrap();
+            } else {
+                agent.stats.requests += 1;
+                let done: core::result::Result<Response,Failure> = transact<R>(agent,lease.conn.borrow(),head.as_view(),source,streaming,method,deadline.unwrap());
+                if (done.is_err()) {
+                    let f: Failure = done.unwrap_err(); close_conn(lease.conn.borrow());
+                    if (lease.reused && attempt == 0 && o.retry_stale && f.retryable && idempotent(method)) { agent.stats.retries += 1; attempt += 1; continue; }
+                    head.destroy(); return core::result::Err(f.error);
+                }
+                let r: Response = done.unwrap(); r.reused = lease.reused;
+                if (r.kept && lease.uses + 1 < o.max_uses) { agent.release(url.host().unwrap(),url.port().unwrap(),lease.conn,lease.uses + 1,r.hint_ms); }
+                else { r.kept = false; close_conn(lease.conn.borrow()); }
+                head.destroy(); return core::result::Ok(r);
+            }
+        }
+        agent.stats.requests += 1; if (!fresh) { agent.stats.reused += 1; }
+        let over: core::result::Result<Response,Failure> = over_h2<R>(agent,index,url,method,headers,body,source,streaming,!fresh,deadline.unwrap());
+        if (over.is_err()) {
+            let f: Failure = over.unwrap_err();
+            if (attempt == 0 && f.retryable) { agent.stats.retries += 1; attempt += 1; continue; }
             head.destroy(); return core::result::Err(f.error);
         }
-        let r: Response = done.unwrap(); r.reused = lease.reused;
-        if (r.kept && lease.uses + 1 < o.max_uses) { agent.release(url.host().unwrap(),url.port().unwrap(),lease.conn,lease.uses + 1,r.hint_ms); }
-        else { r.kept = false; close_conn(lease.conn.borrow()); }
-        head.destroy(); return core::result::Ok(r);
+        head.destroy(); return core::result::Ok(over.unwrap());
     }
     head.destroy(); return core::result::Err(Error::InvalidRequest);
 }
@@ -530,8 +784,160 @@ pub impl Agent {
     pub fn borrow(&self) -> &Agent { return self; }
     pub fn stats(&self) -> Stats { return self.stats; }
     pub fn idle(&self) -> i32 { return self.pool.len(); }
+    // Open HTTP/2 connections.
+    pub fn sessions(&self) -> i32 { return self.sessions.len(); }
     pub fn fetch(&self, request: Request) -> core::result::Result<Response,Error> { let none: NoBody = NoBody { unused: 0 }; return run<NoBody>(self,request,none.borrow(),false); }
     fn close_idle(&self, i: i32) { let e: Idle = self.pool.at(i); close_conn(e.conn.borrow()); e.host.destroy(); self.pool.remove(i); }
+    fn drop_session(&self, i: i32) { let h: H2 = self.sessions.at(i); h.close(); self.sessions.remove(i); }
+    // An open HTTP/2 connection to host and port that can take a stream now,
+    // or -1, dropping expired, closed and draining ones on the way.
+    fn session_for(&self, host: core::slice::View<u8>, port: u16, deadline: core::time::Deadline) -> i32 {
+        let now: core::result::Result<core::time::Instant,Error> = now_instant();
+        let made: core::result::Result<alloc::vec::Vec<u8>,Error> = bytes(16384); if (made.is_err()) { return -1; }
+        let scratch: alloc::vec::Vec<u8> = made.unwrap();
+        let i: i32 = self.sessions.len() - 1;
+        while (i >= 0) {
+            let h: H2 = self.sessions.at(i);
+            if (now.is_ok() && h.engine.active_streams() == 0 && h.expires.is_expired(now.unwrap())) { self.drop_session(i); self.stats.expired += 1; }
+            else {
+                if (h.port == port && same_case(h.host.as_view(),host)) {
+                    let s: ext::tls_stream::Stream = h.conn.tls.unwrap(); let renewed: bool = s.renew(stream_limits(),deadline).is_ok(); h.conn.tls = core::option::Some(s);
+                    let alive: bool = renewed && h.poll(scratch.as_view(),deadline);
+                    self.sessions.set(i,h);
+                    if (alive && h.engine.can_start()) { scratch.destroy(); return i; }
+                    if (!alive) { self.drop_session(i); self.stats.stale += 1; }
+                    else { if (h.engine.active_streams() == 0) { self.drop_session(i); } }
+                }
+            }
+            i -= 1;
+        }
+        scratch.destroy(); return -1;
+    }
+    // Start HTTP/2 on a connection that negotiated h2; returns its index.
+    fn open_session(&self, host: core::slice::View<u8>, port: u16, conn: Conn) -> core::result::Result<i32,Error> {
+        let o: Options = self.options; let eo: ext::http2::Options = ext::http2::default_options();
+        eo.body_bytes = o.limits.body_bytes; eo.hpack.list_bytes = o.limits.head_bytes;
+        let made: core::result::Result<ext::http2::Connection,ext::http2::Error> = ext::http2::client(eo);
+        let expires: core::result::Result<core::time::Deadline,Error> = deadline_ms(o.idle_timeout_ms);
+        let copy: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+        if (made.is_err() || expires.is_err() || !push(copy.borrow(),host)) {
+            copy.destroy(); close_conn(conn.borrow()); if (made.is_ok()) { let e: ext::http2::Connection = made.unwrap(); e.destroy(); }
+            if (expires.is_err()) { return core::result::Err(expires.unwrap_err()); } return core::result::Err(Error::AllocationFailed);
+        }
+        let h: H2 = H2 { conn: conn, engine: made.unwrap(), host: copy, port: port, expires: expires.unwrap(), uses: 0 };
+        if (self.sessions.try_push(h).is_err()) { h.close(); return core::result::Err(Error::AllocationFailed); }
+        self.stats.http2 += 1; return core::result::Ok(self.sessions.len() - 1);
+    }
+    // Fetch every request, appending one result per request to results in
+    // order, and return how many succeeded (-1 if results cannot grow).
+    // Requests to an https origin that negotiates HTTP/2 run concurrently as
+    // streams of its one connection, up to the server's stream limit; the
+    // rest are fetched one at a time as fetch does. Redirects are returned
+    // as responses, not followed. Each origin's streams share one timeout.
+    pub fn fetch_all(&self, requests: core::slice::View<Request>, results: &alloc::vec::Vec<core::result::Result<Response,Error>>) -> i32 {
+        let base: i32 = results.len(); let n: i32 = requests.len(); let i: i32 = 0;
+        let done: alloc::vec::Vec<bool> = alloc::vec::new<bool>();
+        while (i < n) { if (results.try_push(core::result::Err(Error::InvalidRequest)).is_err() || done.try_push(false).is_err()) { done.destroy(); return -1; } i += 1; }
+        let follow: bool = self.options.follow_redirects; self.options.follow_redirects = false;
+        if (self.active && self.options.http2 && self.options.https) { i = 0; while (i < n) { if (!done.at(i)) { self.multiplex(requests,i,done.borrow(),results,base); } i += 1; } }
+        i = 0; while (i < n) { if (!done.at(i)) { results.set(base + i,self.fetch(requests.get(i).unwrap())); } i += 1; }
+        self.options.follow_redirects = follow; done.destroy();
+        let ok: i32 = 0; i = 0; while (i < n) { if (results.at(base + i).is_ok()) { ok += 1; } i += 1; }
+        return ok;
+    }
+    // Run requests first.. that share the origin of requests[first] as
+    // concurrent streams, when that origin speaks HTTP/2. Requests it cannot
+    // finish (not HTTP/2, refused, connection lost before starting) stay
+    // undone for fetch.
+    fn multiplex(&self, requests: core::slice::View<Request>, first: i32, done: &alloc::vec::Vec<bool>, results: &alloc::vec::Vec<core::result::Result<Response,Error>>, base: i32) {
+        let o: Options = self.options; let r0: Request = requests.get(first).unwrap();
+        if (check_request(r0).is_err()) { return; }
+        let parsed: core::result::Result<ext::http_url::Url,ext::http_url::Error> = ext::http_url::parse(r0.url,o.url); if (parsed.is_err()) { return; }
+        let u0: ext::http_url::Url = parsed.unwrap(); if (!https(u0.borrow())) { u0.destroy(); return; }
+        let deadline: core::result::Result<core::time::Deadline,Error> = deadline_ms(o.timeout_ms); if (deadline.is_err()) { u0.destroy(); return; }
+        let index: i32 = self.session_for(u0.host().unwrap(),u0.port().unwrap(),deadline.unwrap()); let reused: bool = index >= 0;
+        if (index < 0) {
+            let leased: core::result::Result<Lease,Error> = self.acquire(u0.borrow(),false,deadline.unwrap(),true);
+            if (leased.is_err()) { u0.destroy(); return; }
+            let l: Lease = leased.unwrap();
+            if (!l.h2) { self.release(u0.host().unwrap(),u0.port().unwrap(),l.conn,l.uses,-1); u0.destroy(); return; }
+            let opened: core::result::Result<i32,Error> = self.open_session(u0.host().unwrap(),u0.port().unwrap(),l.conn);
+            if (opened.is_err()) { u0.destroy(); return; }
+            index = opened.unwrap();
+        }
+        // The batch: request indexes, parsed URLs and stream ids (-1 until
+        // started, -2 once finished).
+        let members: alloc::vec::Vec<Member> = alloc::vec::new<Member>();
+        if (members.try_push(Member { index: first, url: u0, id: -1 }).is_err()) { u0.destroy(); members.destroy(); return; }
+        let j: i32 = first + 1;
+        while (j < requests.len()) {
+            let rj: Request = requests.get(j).unwrap();
+            if (!done.at(j) && check_request(rj).is_ok()) {
+                let pj: core::result::Result<ext::http_url::Url,ext::http_url::Error> = ext::http_url::parse(rj.url,o.url);
+                if (pj.is_ok()) {
+                    let uj: ext::http_url::Url = pj.unwrap();
+                    let mine: bool = https(uj.borrow()) && uj.port().unwrap() == u0.port().unwrap() && same_case(uj.host().unwrap(),u0.host().unwrap());
+                    if (!mine || members.try_push(Member { index: j, url: uj, id: -1 }).is_err()) { uj.destroy(); }
+                }
+            }
+            j += 1;
+        }
+        let made: core::result::Result<alloc::vec::Vec<u8>,Error> = bytes(16384);
+        let h: H2 = self.sessions.at(index); let next: i32 = 0; let broken: bool = false; let failure: Error = Error::InvalidRequest;
+        if (made.is_err()) { broken = true; failure = Error::AllocationFailed; }
+        let scratch: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); if (made.is_ok()) { scratch = made.unwrap(); }
+        while (!broken) {
+            while (next < members.len() && h.engine.can_start()) {
+                let mb: Member = members.at(next); let k: i32 = mb.index; let rq: Request = requests.get(k).unwrap();
+                let fields: alloc::vec::Vec<ext::hpack::Header> = alloc::vec::new<ext::hpack::Header>(); let store: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+                let started: core::result::Result<i32,ext::http2::Error> = core::result::Err(ext::http2::Error { cause: ext::http2::Cause::AllocationFailed, code: 0, stream: 0 });
+                if (h2_fields(fields.borrow(),store.borrow(),rq.method,mb.url.borrow(),rq.headers,rq.body.len(),false)) { started = h.engine.start(fields.as_view(),rq.body.len() == 0,is(rq.method,"HEAD",4)); }
+                fields.destroy(); store.destroy();
+                if (started.is_err()) {
+                    let e: ext::http2::Error = started.unwrap_err(); let error: Error = h2_error(e);
+                    let limit: bool = match (e.cause) { ext::http2::Cause::Limit -> true, _ -> false }; if (limit) { error = Error::InvalidHeader; }
+                    results.set(base + k,core::result::Err(error)); done.set(k,true); mb.id = -2; members.set(next,mb); next += 1; continue;
+                }
+                let id: i32 = started.unwrap(); mb.id = id; members.set(next,mb); self.stats.requests += 1; h.uses += 1;
+                if (reused || next > 0) { self.stats.reused += 1; }
+                if (rq.body.len() > 0) { let queued: core::result::Result<i32,ext::http2::Error> = h.engine.send_data(id,rq.body,true); }
+                next += 1;
+            }
+            let k: i32 = 0;
+            while (k < next) {
+                let mb: Member = members.at(k); let id: i32 = mb.id;
+                if (id >= 0 && !h2_open(h.engine.state(id))) {
+                    let m: i32 = mb.index; let rq: Request = requests.get(m).unwrap();
+                    let finished: bool = match (h.engine.state(id)) { ext::http2::State::Done -> true, _ -> false };
+                    if (finished) {
+                        let r: core::result::Result<Response,Error> = h2_response(h.engine.borrow(),id,rq.method,o.limits,reused || k > 0);
+                        if (r.is_ok()) { let resp: Response = r.unwrap(); if (!push(resp.url.borrow(),rq.url)) { resp.destroy(); r = core::result::Err(Error::AllocationFailed); } else { r = core::result::Ok(resp); } }
+                        results.set(base + m,r); done.set(m,true);
+                    } else {
+                        let e: ext::http2::Error = h.engine.stream_error(id);
+                        let refused: bool = match (e.cause) { ext::http2::Cause::Refused -> true, _ -> false };
+                        if (!refused) { results.set(base + m,core::result::Err(h2_error(e))); done.set(m,true); }
+                    }
+                    h.engine.release(id); mb.id = -2; members.set(k,mb);
+                }
+                k += 1;
+            }
+            if (!h.engine.is_open()) { break; }
+            let open: i32 = h.engine.active_streams();
+            if (open == 0 && (next >= members.len() || !h.engine.can_start())) { break; }
+            if (open > 0) {
+                let pumped: core::result::Result<i32,Error> = h.pump(-1,open,false,scratch.as_view(),deadline.unwrap());
+                if (pumped.is_err()) { broken = true; failure = pumped.unwrap_err(); }
+            }
+        }
+        // Streams cut off by a lost connection fail with its error.
+        let k: i32 = 0;
+        while (k < next) { let mb: Member = members.at(k); if (mb.id >= 0) { results.set(base + mb.index,core::result::Err(failure)); done.set(mb.index,true); h.engine.release(mb.id); } k += 1; }
+        scratch.destroy();
+        settle(self,index,h,!broken);
+        k = 0; while (k < members.len()) { let mb: Member = members.at(k); mb.url.destroy(); k += 1; }
+        members.destroy();
+    }
     // Pooled connection for scheme, host and port, dropping expired and stale
     // ones on the way.
     fn checkout(&self, secure: bool, host: core::slice::View<u8>, port: u16, deadline: core::time::Deadline) -> core::option::Option<Idle> {
@@ -571,12 +977,13 @@ pub impl Agent {
         if (made.is_err()) { return core::result::Err(Error::Tls(made.unwrap_err())); }
         self.context = core::option::Some(made.unwrap()); return core::result::Ok(0);
     }
-    fn acquire(&self, url: &ext::http_url::Url, fresh: bool, deadline: core::time::Deadline) -> core::result::Result<Lease,Error> {
+    // A pooled or new connection; offer asks a new https connection for h2.
+    fn acquire(&self, url: &ext::http_url::Url, fresh: bool, deadline: core::time::Deadline, offer: bool) -> core::result::Result<Lease,Error> {
         let secure: bool = https(url);
         if (!fresh) {
             // checkout renews a TLS stream's budget and deadline.
             let idle: core::option::Option<Idle> = self.checkout(secure,url.host().unwrap(),url.port().unwrap(),deadline);
-            if (idle.is_some()) { let e: Idle = idle.unwrap(); self.stats.reused += 1; return core::result::Ok(Lease { conn: e.conn, uses: e.uses, reused: true }); }
+            if (idle.is_some()) { let e: Idle = idle.unwrap(); self.stats.reused += 1; return core::result::Ok(Lease { conn: e.conn, uses: e.uses, reused: true, h2: false }); }
         }
         let identity: ext::openssl_tls::Identity = ext::openssl_tls::Identity::Ip(url.host().unwrap());
         if (secure) {
@@ -591,9 +998,12 @@ pub impl Agent {
         let socket: std::socket::Socket = made.unwrap().transport;
         // Heads and bodies go out in separate sends; Nagle would hold the second.
         socket.set_nodelay(true); self.stats.connections += 1;
-        if (!secure) { return core::result::Ok(Lease { conn: plain(socket), uses: 0, reused: false }); }
+        if (!secure) { return core::result::Ok(Lease { conn: plain(socket), uses: 0, reused: false, h2: false }); }
         let context: ext::openssl_tls::Context = self.context.unwrap();
-        let adopted: core::result::Result<ext::tls_stream::Stream,ext::tls_stream::Failure> = ext::tls_stream::adopt_connected_with_context_until(socket,context.borrow(),identity,stream_limits(),deadline);
+        let protocols: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+        if (offer && (protocols.try_push(2 as u8).is_err() || !put(protocols.borrow(),"h2",2) || protocols.try_push(8 as u8).is_err() || !put(protocols.borrow(),"http/1.1",8))) { protocols.destroy(); socket.close(); return core::result::Err(Error::AllocationFailed); }
+        let adopted: core::result::Result<ext::tls_stream::Stream,ext::tls_stream::Failure> = ext::tls_stream::adopt_connected_with_alpn_until(socket,context.borrow(),identity,protocols.as_view(),stream_limits(),deadline);
+        protocols.destroy();
         if (adopted.is_err()) {
             return core::result::Err(match (adopted.unwrap_err().cause) {
                 ext::tls_stream::Cause::Tls(t) -> Error::Tls(t), ext::tls_stream::Cause::Timeout -> Error::Timeout,
@@ -601,7 +1011,12 @@ pub impl Agent {
                 ext::tls_stream::Cause::Clock(c) -> Error::Clock, _ -> Error::Io(core::io::Error::Host(71))
             });
         }
-        return core::result::Ok(Lease { conn: Conn { socket: socket, secure: true, tls: core::option::Some(adopted.unwrap()) }, uses: 0, reused: false });
+        let stream: ext::tls_stream::Stream = adopted.unwrap(); let h2: bool = false;
+        if (offer) {
+            let name: core::result::Result<alloc::vec::Vec<u8>,Error> = bytes(8);
+            if (name.is_ok()) { let chosen: alloc::vec::Vec<u8> = name.unwrap(); let n: i32 = stream.selected_protocol(chosen.as_view()); h2 = n == 2 && is(part(chosen.as_view(),0,2),"h2",2); chosen.destroy(); }
+        }
+        return core::result::Ok(Lease { conn: Conn { socket: socket, secure: true, tls: core::option::Some(stream) }, uses: 0, reused: false, h2: h2 });
     }
     fn oldest(&self, secure: bool, host: core::option::Option<core::slice::View<u8>>, port: u16) -> i32 {
         let best: i32 = -1; let i: i32 = 0;
@@ -627,7 +1042,8 @@ pub impl Agent {
         if (self.pool.try_push(Idle { conn: conn, host: copy, port: port, expires: expires.unwrap(), uses: uses, stamp: self.stamp }).is_err()) { copy.destroy(); close_conn(conn.borrow()); }
     }
     // Open count new connections to url's origin and park them, subject to
-    // the idle limits. Returns the number of pooled connections afterwards.
+    // the idle limits; an origin that negotiates HTTP/2 gets one connection.
+    // Returns the number of pooled and HTTP/2 connections afterwards.
     pub fn preconnect(&self, url: core::slice::View<u8>, count: i32) -> core::result::Result<i32,Error> {
         if (!self.active || count < 0) { return core::result::Err(Error::InvalidRequest); }
         let parsed: core::result::Result<ext::http_url::Url,ext::http_url::Error> = ext::http_url::parse(url,self.options.url);
@@ -638,29 +1054,37 @@ pub impl Agent {
         if (deadline.is_err()) { u.destroy(); held.destroy(); return core::result::Err(deadline.unwrap_err()); }
         let i: i32 = 0;
         while (i < count) {
-            let lease: core::result::Result<Lease,Error> = self.acquire(u.borrow(),true,deadline.unwrap());
+            let lease: core::result::Result<Lease,Error> = self.acquire(u.borrow(),true,deadline.unwrap(),self.options.http2 && https(u.borrow()));
             if (lease.is_err()) { failure = core::option::Some(lease.unwrap_err()); break; }
-            let conn: Conn = lease.unwrap().conn;
+            let l: Lease = lease.unwrap(); let conn: Conn = l.conn;
+            // One HTTP/2 connection carries every request to the origin.
+            if (l.h2) { let opened: core::result::Result<i32,Error> = self.open_session(u.host().unwrap(),u.port().unwrap(),conn); if (opened.is_err()) { failure = core::option::Some(opened.unwrap_err()); } break; }
             if (held.try_push(conn).is_err()) { close_conn(conn.borrow()); failure = core::option::Some(Error::AllocationFailed); break; }
             i += 1;
         }
         i = 0; while (i < held.len()) { let c: Conn = held.at(i); if (failure.is_some()) { close_conn(c.borrow()); } else { self.release(u.host().unwrap(),u.port().unwrap(),c,0,-1); } i += 1; }
         held.destroy(); u.destroy();
         if (failure.is_some()) { return core::result::Err(failure.unwrap()); }
-        return core::result::Ok(self.pool.len());
+        return core::result::Ok(self.pool.len() + self.sessions.len());
     }
     // A fresh connection to url's origin, outside the pool (see Connection).
     pub fn dial(&self, url: &ext::http_url::Url, deadline: core::time::Deadline) -> core::result::Result<Connection,Error> {
         if (!self.active) { return core::result::Err(Error::InvalidRequest); }
         if (https(url) && !self.options.https) { return core::result::Err(Error::UnsupportedScheme); }
-        let lease: core::result::Result<Lease,Error> = self.acquire(url,true,deadline);
+        let lease: core::result::Result<Lease,Error> = self.acquire(url,true,deadline,false);
         if (lease.is_err()) { return core::result::Err(lease.unwrap_err()); }
         return core::result::Ok(Connection { conn: lease.unwrap().conn, active: true });
     }
-    // Close every pooled connection; the agent stays usable unless finished.
-    pub fn clear(&self) -> i32 { let n: i32 = self.pool.len(); while (self.pool.len() > 0) { self.close_idle(self.pool.len() - 1); } return n; }
+    // Close every pooled and HTTP/2 connection (HTTP/2 with GOAWAY); the agent
+    // stays usable unless finished.
+    pub fn clear(&self) -> i32 {
+        let n: i32 = self.pool.len() + self.sessions.len();
+        while (self.pool.len() > 0) { self.close_idle(self.pool.len() - 1); }
+        while (self.sessions.len() > 0) { self.drop_session(self.sessions.len() - 1); }
+        return n;
+    }
     pub fn close(&self) -> bool {
-        if (!self.active) { return false; } self.clear(); self.pool.destroy(); self.active = false;
+        if (!self.active) { return false; } self.clear(); self.pool.destroy(); self.sessions.destroy(); self.active = false;
         if (self.context.is_some()) { let context: ext::openssl_tls::Context = self.context.unwrap(); context.destroy(); self.context = core::option::None(); }
         return true;
     }
@@ -701,24 +1125,7 @@ pub impl Connection {
             if (got.is_err()) { let e: core::io::Error = got.unwrap_err(); if (timed_out(e)) { return core::result::Err(Error::Timeout); } return core::result::Err(Error::Io(e)); }
             return core::result::Ok(got.unwrap());
         }
-        while (true) {
-            let s: ext::tls_stream::Stream = self.conn.tls.unwrap();
-            let got: core::result::Result<i32,core::io::Error> = s.try_read(space.values,space.start,space.len());
-            let writing: bool = s.wants_write(); let failure: core::io::Error = core::io::Error::Host(71);
-            if (got.is_err()) { failure = stream_error(s.borrow(),got.unwrap_err()); }
-            self.conn.tls = core::option::Some(s);
-            if (got.is_ok()) { return core::result::Ok(got.unwrap()); }
-            let blocked: bool = match (got.unwrap_err()) { core::io::Error::WouldBlock -> true, _ -> false };
-            if (!blocked) {
-                if (unclean(failure)) { return core::result::Err(Error::Truncated(0)); }
-                if (timed_out(failure)) { return core::result::Err(Error::Timeout); }
-                return core::result::Err(Error::Io(failure));
-            }
-            let waited: core::result::Result<std::socket::Ready,core::io::Error> = self.conn.socket.wait_until(true,writing,deadline);
-            if (waited.is_err()) { return core::result::Err(Error::Io(waited.unwrap_err())); }
-            if (waited.unwrap().timed_out) { return core::result::Err(Error::Timeout); }
-        }
-        return core::result::Err(Error::Timeout);
+        return tls_receive(self.conn.borrow(),space,deadline);
     }
     // Close the transport; graceful sends TLS close_notify first.
     pub fn close(&self, graceful: bool) -> bool {
@@ -734,8 +1141,10 @@ pub impl Response {
     pub fn status(&self) -> i32 { return self.status; }
     pub fn body(&self) -> core::slice::View<u8> { if (self.chunked) { return self.decoded.as_view(); } return part(self.wire.as_view(),self.body_start,self.body_start+self.body_length); }
     pub fn head(&self) -> core::slice::View<u8> { return part(self.wire.as_view(),0,self.head_length); }
+    pub fn version(&self) -> i32 { return self.version; }
     pub fn url(&self) -> core::slice::View<u8> { return self.url.as_view(); }
     pub fn header(&self, name: core::slice::View<u8>) -> core::option::Option<core::slice::View<u8>> {
+        if (self.version == 20) { return h2_lookup(self.head(),name); }
         let parsed: core::result::Result<ext::http::Head,ext::http::Error> = ext::http::parse_response_head(self.head(),self.method.as_view(),self.limits);
         if (parsed.is_err()) { return core::option::None(); }
         let found: core::option::Option<ext::http::Field> = parsed.unwrap().lookup(name); if (found.is_none()) { return core::option::None(); }

@@ -3,6 +3,7 @@ use std::path::Path;
 use crate::{
     cli::{common::CliError, output::CliEmission},
     compiler::{
+        CompileError,
         EntrySourceRoots,
         NativeLinkOptions,
         compile_entry_to_wasm_with_source_roots,
@@ -34,6 +35,29 @@ pub(super) fn compile_native(
     ))
 }
 
+/// `check` runs the frontend alone, whose trait solver selects only concrete
+/// impls: generic impl heads (`impl<T> Tr for S<T>`) are selected by the
+/// whole-program admission that only a build runs. So a call bound that
+/// check finds no impl for is settled by building and discarding the output,
+/// which also reports the build's label instead of the frontend's.
+pub(super) fn check_with_build_fallback(
+    check: impl FnOnce() -> Result<(), CompileError>,
+    build: impl FnOnce() -> Result<Vec<u8>, CompileError>,
+) -> Result<(), CompileError> {
+    match check() {
+        Err(CompileError::Diagnostic(diagnostic))
+            if diagnostic.code == "LNC0008"
+                && diagnostic
+                    .primary_label
+                    .as_ref()
+                    .is_some_and(|label| label.message == "no matching impl satisfies this call") =>
+        {
+            build().map(|_| ())
+        }
+        result => result,
+    }
+}
+
 /// Compiles or checks one entry file using explicit source roots.
 pub(super) fn compile_source_root(
     input: &Path,
@@ -42,8 +66,11 @@ pub(super) fn compile_source_root(
     emit: &str,
 ) -> Result<CliEmission, CliError> {
     if check_only {
-        pollster::block_on(type_check_entry_with_source_roots(input, roots))
-            .map_err(CliError::from_compile_error)?;
+        check_with_build_fallback(
+            || pollster::block_on(type_check_entry_with_source_roots(input, roots)),
+            || pollster::block_on(compile_entry_to_x86_64_with_source_roots(input, roots)),
+        )
+        .map_err(CliError::from_compile_error)?;
         Ok(CliEmission::Bytes(Vec::new()))
     } else if emit == "wasm" {
         Ok(CliEmission::Bytes(
@@ -66,8 +93,11 @@ pub(super) fn compile_stdlib_root(
     emit: &str,
 ) -> Result<CliEmission, CliError> {
     if check_only {
-        pollster::block_on(type_check_entry_with_stdlib(input, stdlib_root))
-            .map_err(CliError::from_compile_error)?;
+        check_with_build_fallback(
+            || pollster::block_on(type_check_entry_with_stdlib(input, stdlib_root)),
+            || pollster::block_on(compile_entry_to_x86_64_with_stdlib(input, stdlib_root)),
+        )
+        .map_err(CliError::from_compile_error)?;
         Ok(CliEmission::Bytes(Vec::new()))
     } else if emit == "wasm" {
         Ok(CliEmission::Bytes(
@@ -89,8 +119,11 @@ pub(super) fn compile_single_file(
     emit: &str,
 ) -> Result<CliEmission, CliError> {
     if check_only {
-        pollster::block_on(type_check_source_with_gpu_from_path(input))
-            .map_err(CliError::from_compile_error)?;
+        check_with_build_fallback(
+            || pollster::block_on(type_check_source_with_gpu_from_path(input)),
+            || pollster::block_on(compile_source_to_x86_64_with_gpu_codegen_from_path(input)),
+        )
+        .map_err(CliError::from_compile_error)?;
         Ok(CliEmission::Bytes(Vec::new()))
     } else if emit == "wasm" {
         Ok(CliEmission::Bytes(

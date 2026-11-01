@@ -267,16 +267,56 @@ fn tally(progress: &Progress, n: u64, diagnostic: &Diagnostic) -> i32 {
     if (progress.selected > 18446744073709551615 - n || diagnostic.line > 18446744073709551615 - n) { return fail(diagnostic,2,5); }
     progress.selected += n; diagnostic.line += n; return 0;
 }
-fn gap(bytes: [u8], from: i32, to: i32, options: Options, progress: &Progress, output: &Output, diagnostic: &Diagnostic) -> i32 {
+// Selects (for --invert) the n records of bytes[from, to), which a scan
+// found valid and not matching; to is a record start. Without -n the block
+// is one copy or one direct write; with -n each record gets its number on
+// the way.
+fn gap(bytes: [u8], from: i32, to: i32, n: u64, options: Options, progress: &Progress, output: &Output, diagnostic: &Diagnostic) -> i32 {
+    if (options.count) { return tally(progress,n,diagnostic); }
+    diagnostic.stage = 4; diagnostic.offset = 0;
+    if (options.numbers) { return numbered(bytes,from,to,progress,output,diagnostic); }
+    if (progress.selected > 18446744073709551615 - n || diagnostic.line > 18446744073709551615 - n) { return fail(diagnostic,2,5); }
+    // A block of 4 KiB or more is written straight from the input buffer.
+    if (to - from >= 4096) {
+        if (output.used > 0 && !flush(output)) { return fail(diagnostic,3,7); }
+        if (!write_range(core::mem::i32_slice_data_ptr(bytes),from,to - from)) { return fail(diagnostic,3,7); }
+    } else { let status: i32 = put(output,bytes,from,to - from,diagnostic); if (status != 0) { return status; } }
+    progress.selected += n; diagnostic.line += n; return 0;
+}
+// "N:record\n" for each record of bytes[from, to), N from diagnostic.line,
+// in one loop: the line number advances by one increment with carry in the
+// digits kept in front of the output area.
+fn numbered(bytes: [u8], from: i32, to: i32, progress: &Progress, output: &Output, diagnostic: &Diagnostic) -> i32 {
+    let status: i32 = reserve(output,0,diagnostic); if (status != 0) { return status; }
+    let target: [u8] = output.bytes.as_slice(); let at: i32 = 32 + output.used;
     let position: i32 = from;
     while (position < to) {
-        let newline: i32 = core::search::find_byte(bytes,position,to,10);
-        diagnostic.stage = 3; diagnostic.offset = 0;
-        let status: i32 = emit(bytes,position,newline,true,options,progress,output,diagnostic); if (status != 0) { return status; }
-        if (diagnostic.line == 18446744073709551615) { return fail(diagnostic,2,5); } diagnostic.line += 1;
+        let newline: i32 = core::search::find_byte(bytes,position,to,10); let length: i32 = newline + 1 - position;
+        if (progress.selected == 18446744073709551615) { output.used = at - 32; return fail(diagnostic,2,5); } progress.selected += 1;
+        if (at + 21 + length > 65568) { output.used = at - 32; if (!flush(output)) { return fail(diagnostic,3,7); } at = 32; }
+        let value: u64 = diagnostic.line;
+        if (output.width > 0 && value == output.number + 1) {
+            let i: i32 = 19; let carrying: bool = true;
+            while (carrying) {
+                if (i < 20 - output.width) { target[i] = 49; output.width += 1; carrying = false; }
+                else { if (target[i] == 57) { target[i] = 48; i -= 1; } else { let digit: u8 = target[i] + 1; target[i] = digit; carrying = false; } }
+            }
+        } else {
+            let d: i32 = 20; let rest: u64 = value;
+            while (d == 20 || rest > 0) { d -= 1; target[d] = (48 + rest % 10) as u8; rest = rest / 10; }
+            output.width = 20 - d;
+        }
+        output.number = value;
+        let k: i32 = 20 - output.width; while (k < 20) { target[at] = target[k]; at += 1; k += 1; }
+        target[at] = 58; at += 1;
+        if (length > 65536 - 21) {
+            output.used = at - 32; if (!flush(output)) { return fail(diagnostic,3,7); } at = 32;
+            if (!write_range(core::mem::i32_slice_data_ptr(bytes),position,length)) { return fail(diagnostic,3,7); }
+        } else { copy(bytes,position,target,at,length); at += length; }
+        if (diagnostic.line == 18446744073709551615) { output.used = at - 32; return fail(diagnostic,2,5); } diagnostic.line += 1;
         position = newline + 1;
     }
-    return 0;
+    output.used = at - 32; return 0;
 }
 fn records(regex: &ext::regex::Regex, matcher: &Matcher, options: Options, output: &Output, diagnostic: &Diagnostic) -> i32 {
     let storage: [i32;64] = [0;64]; let needle: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),256);
@@ -330,9 +370,7 @@ fn records(regex: &ext::regex::Regex, matcher: &Matcher, options: Options, outpu
                 if (skipped < 0) { break; }
                 if (options.invert) {
                     // The records between hits lack the literal: all selected.
-                    let selected: i32 = 0;
-                    if (options.count) { selected = tally(progress.borrow(),skipped as u64,diagnostic); }
-                    else { selected = gap(bytes,position,first,options,progress.borrow(),output,diagnostic); }
+                    let selected: i32 = gap(bytes,position,first,skipped as u64,options,progress.borrow(),output,diagnostic);
                     if (selected != 0) { buffer.destroy(); return selected; }
                 } else {
                     if (diagnostic.line > 18446744073709551615 - (skipped as u64)) { buffer.destroy(); return fail(diagnostic,2,5); } diagnostic.line += skipped as u64;
@@ -366,9 +404,7 @@ fn records(regex: &ext::regex::Regex, matcher: &Matcher, options: Options, outpu
                 let scan: ext::regex::LineScan = matcher.dfa.match_lines(bytes,position,region);
                 if (options.invert) {
                     // Every record before scan.start was searched and missed.
-                    let status: i32 = 0;
-                    if (options.count) { status = tally(progress.borrow(),scan.lines as u64,diagnostic); }
-                    else { status = gap(bytes,position,scan.start,options,progress.borrow(),output,diagnostic); }
+                    let status: i32 = gap(bytes,position,scan.start,scan.lines as u64,options,progress.borrow(),output,diagnostic);
                     if (status != 0) { buffer.destroy(); return status; }
                 } else {
                     if (diagnostic.line > 18446744073709551615 - (scan.lines as u64)) { buffer.destroy(); return fail(diagnostic,2,5); } diagnostic.line += scan.lines as u64;

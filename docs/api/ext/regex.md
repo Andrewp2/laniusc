@@ -861,7 +861,7 @@ complete: bool
 
 ### struct: Dfa
 
-[Source line 1384](../../../extended/ext/regex.lani#L1384)
+[Source line 1464](../../../extended/ext/regex.lani#L1464)
 
 ```lanius
 pub struct Dfa
@@ -869,7 +869,7 @@ pub struct Dfa
 
 #### field: set
 
-[Source line 1384](../../../extended/ext/regex.lani#L1384)
+[Source line 1464](../../../extended/ext/regex.lani#L1464)
 
 ```lanius
 set: PrefixSet
@@ -877,7 +877,7 @@ set: PrefixSet
 
 #### field: cost
 
-[Source line 1384](../../../extended/ext/regex.lani#L1384)
+[Source line 1464](../../../extended/ext/regex.lani#L1464)
 
 ```lanius
 cost: i64
@@ -885,7 +885,7 @@ cost: i64
 
 #### field: limit
 
-[Source line 1384](../../../extended/ext/regex.lani#L1384)
+[Source line 1464](../../../extended/ext/regex.lani#L1464)
 
 ```lanius
 limit: i64
@@ -893,7 +893,7 @@ limit: i64
 
 ### struct: LineScan
 
-[Source line 1395](../../../extended/ext/regex.lani#L1395)
+[Source line 1475](../../../extended/ext/regex.lani#L1475)
 
 ```lanius
 pub struct LineScan
@@ -901,7 +901,7 @@ pub struct LineScan
 
 #### field: start
 
-[Source line 1395](../../../extended/ext/regex.lani#L1395)
+[Source line 1475](../../../extended/ext/regex.lani#L1475)
 
 ```lanius
 start: i32
@@ -909,7 +909,7 @@ start: i32
 
 #### field: lines
 
-[Source line 1395](../../../extended/ext/regex.lani#L1395)
+[Source line 1475](../../../extended/ext/regex.lani#L1475)
 
 ```lanius
 lines: i32
@@ -917,7 +917,7 @@ lines: i32
 
 #### field: status
 
-[Source line 1395](../../../extended/ext/regex.lani#L1395)
+[Source line 1475](../../../extended/ext/regex.lani#L1475)
 
 ```lanius
 status: i32
@@ -983,7 +983,7 @@ pub fn search_set() -> PrefixSet
 
 ### function: dfa
 
-[Source line 1396](../../../extended/ext/regex.lani#L1396)
+[Source line 1476](../../../extended/ext/regex.lani#L1476)
 
 ```lanius
 pub fn dfa(regex: &Regex) -> Result<Dfa, Error>
@@ -1463,9 +1463,9 @@ pub fn finish(&self) -> Result<i32, Error>
 pub fn run(&self, input: Input, start: i32) -> PrefixRun
 ```
 
-### impl at line 1403
+### impl at line 1483
 
-[Source line 1403](../../../extended/ext/regex.lani#L1403)
+[Source line 1483](../../../extended/ext/regex.lani#L1483)
 
 ```lanius
 pub impl Dfa
@@ -1473,7 +1473,7 @@ pub impl Dfa
 
 #### method: borrow
 
-[Source line 1404](../../../extended/ext/regex.lani#L1404)
+[Source line 1484](../../../extended/ext/regex.lani#L1484)
 
 ```lanius
 pub fn borrow(&self) -> &Dfa
@@ -1481,7 +1481,7 @@ pub fn borrow(&self) -> &Dfa
 
 #### method: destroy
 
-[Source line 1405](../../../extended/ext/regex.lani#L1405)
+[Source line 1485](../../../extended/ext/regex.lani#L1485)
 
 ```lanius
 pub fn destroy(&self)
@@ -1489,7 +1489,7 @@ pub fn destroy(&self)
 
 #### method: cache_resets
 
-[Source line 1406](../../../extended/ext/regex.lani#L1406)
+[Source line 1486](../../../extended/ext/regex.lani#L1486)
 
 ```lanius
 pub fn cache_resets(&self) -> i32
@@ -1497,7 +1497,7 @@ pub fn cache_resets(&self) -> i32
 
 #### method: is_match_with
 
-[Source line 1417](../../../extended/ext/regex.lani#L1417)
+[Source line 1497](../../../extended/ext/regex.lani#L1497)
 
 ```lanius
 pub fn is_match_with(&self, regex: &Regex, input: Input, start: i32, scratch: &Workspace) -> Result<bool, Error>
@@ -1505,7 +1505,7 @@ pub fn is_match_with(&self, regex: &Regex, input: Input, start: i32, scratch: &W
 
 #### method: find_span_with
 
-[Source line 1425](../../../extended/ext/regex.lani#L1425)
+[Source line 1505](../../../extended/ext/regex.lani#L1505)
 
 ```lanius
 pub fn find_span_with(&self, regex: &Regex, input: Input, start: i32, scratch: &Workspace) -> Result<Option<Span>, Error>
@@ -1513,7 +1513,7 @@ pub fn find_span_with(&self, regex: &Regex, input: Input, start: i32, scratch: &
 
 #### method: match_lines
 
-[Source line 1440](../../../extended/ext/regex.lani#L1440)
+[Source line 1520](../../../extended/ext/regex.lani#L1520)
 
 ```lanius
 pub fn match_lines(&self, bytes: [u8], from: i32, to: i32) -> LineScan
@@ -1521,7 +1521,7 @@ pub fn match_lines(&self, bytes: [u8], from: i32, to: i32) -> LineScan
 
 #### method: is_match_input
 
-[Source line 1446](../../../extended/ext/regex.lani#L1446)
+[Source line 1526](../../../extended/ext/regex.lani#L1526)
 
 ```lanius
 pub fn is_match_input(&self, regex: &Regex, checked: Input) -> Result<bool, Error>
@@ -1529,7 +1529,7 @@ pub fn is_match_input(&self, regex: &Regex, checked: Input) -> Result<bool, Erro
 
 #### method: is_match
 
-[Source line 1452](../../../extended/ext/regex.lani#L1452)
+[Source line 1532](../../../extended/ext/regex.lani#L1532)
 
 ```lanius
 pub fn is_match(&self, regex: &Regex, text: core::text::Text) -> Result<bool, Error>
@@ -1537,7 +1537,7 @@ pub fn is_match(&self, regex: &Regex, text: core::text::Text) -> Result<bool, Er
 
 #### method: find_span
 
-[Source line 1458](../../../extended/ext/regex.lani#L1458)
+[Source line 1538](../../../extended/ext/regex.lani#L1538)
 
 ```lanius
 pub fn find_span(&self, regex: &Regex, text: core::text::Text) -> Result<Option<Span>, Error>

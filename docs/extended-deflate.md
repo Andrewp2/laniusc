@@ -120,7 +120,11 @@ matches also have constant cost. Longer accepted matches consume their compared
 span. Length/distance coding has a fixed bounded number of steps. There is
 no recursive search or attacker-controlled chain length. `encoded_len` performs
 one pass. `encode_into` measures then emits, with another matching pass for
-fixed output or a copying pass for stored output.
+fixed output or a copying pass for stored output. On packed input the matcher
+keeps the three lookahead bytes in registers, compares matches a word at a
+time and takes literal, length and distance codes from per-pass tables. The
+streaming encoder's [packed fast pass](extended-streaming-deflate.md#packed-fast-pass)
+produces the same bits for each 32 KiB block in a single pass.
 
 ## Executable evidence
 

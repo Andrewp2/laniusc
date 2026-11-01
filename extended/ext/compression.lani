@@ -64,9 +64,19 @@ fn crc_fast(w: core::slice::View<i32>, at: i32, state: u32, view: core::slice::V
     while (index < to) { current = (t[base+(((current ^ (view.values[view.start+index] as u32)) & 255) as i32)] as u32) ^ (current >> 8); index += 1; }
     return current;
 }
+// CRC32 (unfinished state) over count bytes: slicing-by-8 with tables built
+// on the stack for large packed spans, per bit otherwise.
+fn crc_bytes(state: u32, view: core::slice::View<u8>, from: i32, count: i32) -> u32 {
+    if (count >= 2048 && core::mem::slice_stride(view.values) == 1) {
+        let words: [i32;2048] = [0;2048]; let tables: core::slice::View<i32> = core::slice::View { values: words, start: 0, length: 2048 };
+        crc_tables(tables,0); return crc_fast(tables,0,state,view,from,from+count);
+    }
+    let current: u32 = state; let index: i32 = 0;
+    while (index < count) { current = core::crc32::update_byte(current,byte(view,from+index)); index += 1; }
+    return current;
+}
 fn crc(view: core::slice::View<u8>) -> u32 {
-    let state: u32 = core::crc32::INITIAL; let index: i32 = 0;
-    while (index < view.length) { state = core::crc32::update_byte(state,byte(view,index)); index += 1; } return core::crc32::finish(state);
+    return core::crc32::finish(crc_bytes(core::crc32::INITIAL,view,0,view.length));
 }
 fn put_little32(view: core::slice::View<u8>, start: i32, value: u32) {
     view.values[view.start+start] = (value & 255) as u8; view.values[view.start+start+1] = ((value >> 8) & 255) as u8;
@@ -177,8 +187,7 @@ fn encode_account_body(state: &Encoder, call: &Call, read: i32, written: i32) {
         state.checksum = core::result::unwrap(core::adler32::update(state.checksum,part(call.input,call.read,call.read+read)));
     }
     if (state.kind == 2) {
-        let index: i32 = 0;
-        while (index < read) { state.checksum = core::crc32::update_byte(state.checksum,byte(call.input,call.read+index)); index += 1; }
+        state.checksum = crc_bytes(state.checksum,call.input,call.read,read);
     }
     call.read += read; state.read_total += read as u64;
     call.written += written; state.written_total += written as u64;
