@@ -944,6 +944,27 @@ discarded Match owners. Its fixed-capacity/owner, consumer and real-application
 gates pass across the selected finite receipts. This completes that increment;
 the rest of the family scope above stays open.
 
+## Known compiler issues
+
+- **LNC0008 primary label points into the standard library.** With the
+  laniusc build used for the ordered-navigation receipts (lang, built
+  2026-10-28), every unsatisfied-trait-bound rejection labels
+  `stdlib/core/slice.lani:899` (the `selection_engine<T,Natural<T>>` call in
+  `select_nth_unstable`) instead of the user call that lacks the bound. The
+  diagnostic code is still LNC0008. Reproduction:
+
+  ```sh
+  laniusc check --diagnostic-format json --stdlib-root stdlib \
+    tests/fixtures/stdlib_borrowed_lookup/direct/negative_tree_set_reversed_comparator.lani
+  ```
+
+  Expected primary label: the fixture line containing `rejected_lookup_bound`.
+  Affected: the label assertions of
+  `tests/stdlib_borrowed_lookup_execution.rs` (thirteen negative fixtures) and
+  `tests/stdlib_ordered_navigation_execution.rs` (four negative fixtures).
+  The library APIs and their bounds are unaffected; no library workaround is
+  applied.
+
 ## Current work
 
 The [ordered navigation increment](stdlib-ordered-navigation.md) gives
@@ -957,7 +978,7 @@ descent, one front check and the upper descent, and nothing allocates. The
 48-case independent model passes 10,565 commands, checking 12,032 policy
 calls as lawful descents and 44,427 two-ended pulls, with nine corruption
 controls rejected and two deliberately broken engines failing. The contract
-fixture passes exact call counts, interval edges and 17 matched allocations;
+fixture passes exact call counts, interval edges and unchanged owner fields;
 four capability rejections report LNC0008. These native receipts use the
 prebuilt compiler; the two registered tests type-check and await a full run.
 Range removal/splitting and an application consumer remain.

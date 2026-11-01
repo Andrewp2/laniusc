@@ -142,8 +142,8 @@ Fixtures are under `tests/fixtures/stdlib_ordered_navigation`; see the
 [direct](../tests/fixtures/stdlib_ordered_navigation/direct/README.md) and
 [model](../tests/fixtures/stdlib_ordered_navigation/model/README.md) guides.
 Two registered tests drive them:
-`tests/stdlib_ordered_navigation_execution.rs` (contracts under strace plus
-four capability rejections) and
+`tests/stdlib_ordered_navigation_execution.rs` (contracts plus four
+capability rejections) and
 `tests/stdlib_ordered_navigation_model_execution.rs`.
 
 The receipts below came from the prebuilt `laniusc` command-line compiler
@@ -175,9 +175,12 @@ the values below.
   fails, zero for an empty map or two Unbounded ends), Included/Excluded
   equal points, reversed bounds, two-ended pulls, full-domain i32 intervals
   including MAX, InvalidRange precedence, TreeSet forms, and TextPrefix
-  families over owned String sets and maps with neighbor queries. Under
-  `strace -e trace=all` the process makes exactly 17 mmap allocations, frees
-  each one and has no other host effect.
+  families over owned String sets and maps with neighbor queries. The
+  fixture checks in-program that navigation leaves every owner field
+  (storage pointer, capacity, used/length, root, free list) unchanged and
+  that all twelve String owners are released exactly once. No tracer runs;
+  an earlier one-time trace of the first fixture revision saw 17 mmap
+  allocations, each released.
 - **Capability rejections.** Four fixtures (missing comparator, query-first
   comparator, `range_bounds` without Ord, `last_at_most` without Ord) all
   fail with LNC0008. With the prebuilt compiler their primary label points to

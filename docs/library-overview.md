@@ -8,8 +8,8 @@ Navigation policies may denote a contiguous Equal run of several keys, so
 `alloc::string::TextPrefix` traverses String prefix families. Exact call
 sequences are specified, and nothing allocates. The independent 48-case model
 checks 12,032 policy calls as lawful descents and 44,427 two-ended pulls; the
-contract fixture checks exact call counts, interval edges and 17 matched
-allocations. Native receipts use the prebuilt compiler; the two registered
+contract fixture checks exact call counts, interval edges and unchanged
+owner fields. Native receipts use the prebuilt compiler; the two registered
 Rust tests type-check and await a full test-binary run.
 The preceding
 [borrowed collection lookup](stdlib-borrowed-lookup.md) adds sixteen point

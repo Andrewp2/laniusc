@@ -29,6 +29,10 @@ fn key(entry:core::option::Option<alloc::tree_map::Entry<i32,i32>>) -> i32 {
     if(entry.is_none()) { return -1; }
     let item:alloc::tree_map::Entry<i32,i32> = entry.unwrap(); assert(item.value==item.key*3); return item.key;
 }
+// Navigation never edits or reallocates: every owner field is unchanged.
+fn same_map<K,V>(map:&alloc::tree_map::TreeMap<K,V>,storage:ptr,reserved:i32,used:i32,length:i32,root:i32,free:i32) -> bool {
+    return map.storage==storage && map.reserved==reserved && map.used==used && map.length==length && map.root==root && map.free==free;
+}
 // Forward sum and count, then fused exhaustion at both ends.
 fn drain(cursor:&alloc::tree_map::Cursor<i32,i32>) -> i32 {
     let total:i32=0; let count:i32=0;
@@ -46,6 +50,7 @@ fn exact_calls() {
     let empty:alloc::tree_map::Cursor<i32,i32> = map.range_bounds_by<Probe,Counting>(included(0,0),included(9,1),policy.borrow());
     assert(empty.is_empty() && policy.calls==0);
     let i:i32=0; while(i<15) { assert(map.try_insert(i,i*3).unwrap().is_none()); i+=1; }
+    let storage:ptr=map.storage; let used:i32=map.used; let root:i32=map.root; let free:i32=map.free;
     assert(key(map.lower_bound_by<Probe,Counting>(probe(7,0),policy.borrow()))==7 && policy.calls==4);
     policy.reset(); assert(key(map.upper_bound_by<Probe,Counting>(probe(7,0),policy.borrow()))==8 && policy.calls==4);
     policy.reset(); assert(key(map.last_at_most_by<Probe,Counting>(probe(7,0),policy.borrow()))==7 && policy.calls==4);
@@ -80,7 +85,7 @@ fn exact_calls() {
     assert(cursor.next().is_none() && cursor.next_back().is_none() && cursor.is_empty());
     // Same-key navigation agrees, including misses at both ends.
     assert(key(map.last_at_most(100))==14 && key(map.last_below(100))==14 && map.last_at_most(-1).is_none() && key(map.last_below(1))==0);
-    assert(map.len()==15 && map.capacity()==15);
+    assert(map.len()==15 && map.capacity()==15 && same_map<i32,i32>(map.borrow(),storage,15,used,15,root,free));
     map.destroy();
 }
 fn full_domain() {
@@ -125,6 +130,7 @@ fn prefixes() {
         map.try_insert(alloc::string::from_text(text(words,starts[at],lengths[at])).unwrap(),at).unwrap(); i+=1;
     }
     let prefix:alloc::string::TextPrefix=alloc::string::TextPrefix {};
+    let map_storage:ptr=map.storage; let map_root:i32=map.root; let set_state:alloc::tree_map::KeyStorage=set.state;
     let app:core::text::Text=text(words,2,3);
     let family:alloc::tree_set::Cursor<alloc::string::String> = set.range_bounds_by<core::text::Text,alloc::string::TextPrefix>(core::range::Bound::Included(app),core::range::Bound::Included(app),prefix.borrow());
     assert(same(family.next().unwrap(),words,2,3) && same(family.next_back().unwrap(),words,10,5) && same(family.next().unwrap(),words,5,5) && family.next().is_none());
@@ -142,9 +148,13 @@ fn prefixes() {
     let after:alloc::tree_map::Cursor<alloc::string::String,i32> = map.range_bounds_by<core::text::Text,alloc::string::TextPrefix>(core::range::Bound::Excluded(a),core::range::Bound::Unbounded,prefix.borrow());
     let entry:alloc::tree_map::Entry<alloc::string::String,i32> = after.next().unwrap(); assert(entry.value==5 && same(entry.key,words,18,6) && after.next().is_none());
     let ap:alloc::tree_map::Entry<alloc::string::String,i32> = map.lower_bound_by<core::text::Text,alloc::string::TextPrefix>(app,prefix.borrow()).unwrap(); assert(ap.value==1);
-    // Removal transfers representatives; release each owner once.
-    while(!set.is_empty()) { let owned:alloc::string::String=set.pop_first().unwrap(); owned.destroy(); }
-    while(!map.is_empty()) { let owned:alloc::tree_map::Entry<alloc::string::String,i32> = map.pop_last().unwrap(); owned.key.destroy(); }
-    set.destroy(); map.destroy();
+    assert(same_map<alloc::string::String,i32>(map.borrow(),map_storage,6,6,6,map_root,-1));
+    assert(set.state.storage==set_state.storage && set.state.root==set_state.root && set.state.length==6 && set.state.used==6);
+    // Removal transfers representatives; release each owner exactly once.
+    let released:i32=0;
+    while(!set.is_empty()) { let owned:alloc::string::String=set.pop_first().unwrap(); assert(owned.capacity()>0); owned.destroy(); released+=1; }
+    while(!map.is_empty()) { let owned:alloc::tree_map::Entry<alloc::string::String,i32> = map.pop_last().unwrap(); assert(owned.key.capacity()>0); owned.key.destroy(); released+=1; }
+    assert(released==12);
+    set.destroy(); map.destroy(); assert(set.state.reserved==0 && map.capacity()==0);
 }
 fn main() -> i32 { exact_calls(); full_domain(); prefixes(); return 0; }

@@ -5,7 +5,7 @@ Driven by `tests/stdlib_ordered_navigation_execution.rs`; the contract guide is
 
 | Fixture | Checks |
 | --- | --- |
-| `contracts.lani` | Exact policy calls on a perfect 15-key AVL tree, all bound kinds, equal and reversed points, two-ended pulls, full-domain i32 intervals, InvalidRange, TreeSet forms and TextPrefix families over owned Strings. Run under strace: exactly 17 allocations, each released, and no other host effect. |
+| `contracts.lani` | Exact policy calls on a perfect 15-key AVL tree, all bound kinds, equal and reversed points, two-ended pulls, full-domain i32 intervals, InvalidRange, TreeSet forms and TextPrefix families over owned Strings. In-program checks: navigation leaves every owner field unchanged, and all twelve String owners are released exactly once. |
 | `negative_tree_map_missing_comparator.lani` | `last_below_by` without `Comparator<K,Q>` on an empty map |
 | `negative_tree_set_reversed_comparator.lani` | `range_bounds_by` with a query-first `Comparator<Q,T>` |
 | `negative_tree_map_range_bounds_without_ord.lani` | `range_bounds` for a key without `Ord` |
