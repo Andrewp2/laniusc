@@ -15,21 +15,21 @@ open Lanius.Faithful.SelfRep
 
 theorem fn_text_assert : prog.funcs[1940]? = some (src_text_assert 374 531) := get_of_drop at_text_assert
 theorem np_text_assert : prims.isPrim 1940 = false := by decide +kernel
-theorem fn_assert_arg : prog.funcs[1941]? = some (src_assert_arg 103 1510 2046) := get_of_drop at_assert_arg
+theorem fn_assert_arg : prog.funcs[1941]? = some (src_assert_arg 103 1512 2046) := get_of_drop at_assert_arg
 theorem np_assert_arg : prims.isPrim 1941 = false := by decide +kernel
 theorem fn_discard_of : prog.funcs[1942]? = some (src_discard_of) := get_of_drop at_discard_of
 theorem np_discard_of : prims.isPrim 1942 = false := by decide +kernel
-theorem fn_is_try_call : prog.funcs[1943]? = some (src_is_try_call 144 147 1599 1656 1659 1681 2047) := get_of_drop at_is_try_call
+theorem fn_is_try_call : prog.funcs[1943]? = some (src_is_try_call 144 147 1602 1657 1660 1682 2047) := get_of_drop at_is_try_call
 theorem np_is_try_call : prims.isPrim 1943 = false := by decide +kernel
 theorem fn_try_stmt : prog.funcs[1944]? = some (src_try_stmt 2031) := get_of_drop at_try_stmt
 theorem np_try_stmt : prims.isPrim 1944 = false := by decide +kernel
-theorem fn_try_call_of : prog.funcs[1945]? = some (src_try_call_of 56 147 566 1131 1420 1676 2048) := get_of_drop at_try_call_of
+theorem fn_try_call_of : prog.funcs[1945]? = some (src_try_call_of 56 147 566 1131 1423 1677 2048) := get_of_drop at_try_call_of
 theorem np_try_call_of : prims.isPrim 1945 = false := by decide +kernel
-theorem fn_match_named : prog.funcs[1946]? = some (src_match_named 56 1481 1496 1808 2049 2050 2051 2052 2053) := get_of_drop at_match_named
+theorem fn_match_named : prog.funcs[1946]? = some (src_match_named 56 1483 1498 1808 2049 2050 2051 2052 2053) := get_of_drop at_match_named
 theorem np_match_named : prims.isPrim 1946 = false := by decide +kernel
 theorem fn_find_bind : prog.funcs[1947]? = some (src_find_bind 2054 2055) := get_of_drop at_find_bind
 theorem np_find_bind : prims.isPrim 1947 = false := by decide +kernel
-theorem fn_wide_read : prog.funcs[1948]? = some (src_wide_read 287 1280 1387 2056) := get_of_drop at_wide_read
+theorem fn_wide_read : prog.funcs[1948]? = some (src_wide_read 287 1282 1390 2056) := get_of_drop at_wide_read
 theorem np_wide_read : prims.isPrim 1948 = false := by decide +kernel
 theorem fn_wide_digits : prog.funcs[1949]? = some (src_wide_digits 2057) := get_of_drop at_wide_digits
 theorem np_wide_digits : prims.isPrim 1949 = false := by decide +kernel
@@ -41,7 +41,7 @@ theorem fn_single_of_mini_selfhost_Token : prog.funcs[1952]? = some (src_single_
 theorem np_single_of_mini_selfhost_Token : prims.isPrim 1952 = false := by decide +kernel
 theorem fn_trees_tokens : prog.funcs[1953]? = some (src_trees_tokens 103 533 1860 1953 2058) := get_of_drop at_trees_tokens
 theorem np_trees_tokens : prims.isPrim 1953 = false := by decide +kernel
-theorem fn_typed_literal : prog.funcs[1954]? = some (src_typed_literal 287 1283 2059 2060 2061 2062 2063 2064 2065) := get_of_drop at_typed_literal
+theorem fn_typed_literal : prog.funcs[1954]? = some (src_typed_literal 287 1285 2059 2060 2061 2062 2063 2064 2065) := get_of_drop at_typed_literal
 theorem np_typed_literal : prims.isPrim 1954 = false := by decide +kernel
 theorem fn_char_escape : prog.funcs[1955]? = some (src_char_escape 76 2066 2067) := get_of_drop at_char_escape
 theorem np_char_escape : prims.isPrim 1955 = false := by decide +kernel
@@ -49,11 +49,11 @@ theorem fn_char_close : prog.funcs[1956]? = some (src_char_close 76 2068) := get
 theorem np_char_close : prims.isPrim 1956 = false := by decide +kernel
 theorem fn_char_tail : prog.funcs[1957]? = some (src_char_tail 76 2069) := get_of_drop at_char_tail
 theorem np_char_tail : prims.isPrim 1957 = false := by decide +kernel
-theorem fn_fl_add : prog.funcs[1958]? = some (src_fl_add 1669 1958 1964 2070 2071 2072 2073) := get_of_drop at_fl_add
+theorem fn_fl_add : prog.funcs[1958]? = some (src_fl_add 1670 1958 1964 2070 2071 2072 2073) := get_of_drop at_fl_add
 theorem np_fl_add : prims.isPrim 1958 = false := by decide +kernel
 theorem fn_fl_mul10 : prog.funcs[1959]? = some (src_fl_mul10 1958 2071) := get_of_drop at_fl_mul10
 theorem np_fl_mul10 : prims.isPrim 1959 = false := by decide +kernel
-theorem fn_fl_of_nat : prog.funcs[1960]? = some (src_fl_of_nat 56 1669 1960 2071 2074 2075) := get_of_drop at_fl_of_nat
+theorem fn_fl_of_nat : prog.funcs[1960]? = some (src_fl_of_nat 56 1670 1960 2071 2074 2075) := get_of_drop at_fl_of_nat
 theorem np_fl_of_nat : prims.isPrim 1960 = false := by decide +kernel
 theorem fn_fl_frac_at : prog.funcs[1961]? = some (src_fl_frac_at 75 374 1863 1864 1865 1866) := get_of_drop at_fl_frac_at
 theorem np_fl_frac_at : prims.isPrim 1961 = false := by decide +kernel
@@ -72,15 +72,15 @@ theorem fn_single_of_bool : prog.funcs[1968]? = some (src_single_of_bool 2089) :
 theorem np_single_of_bool : prims.isPrim 1968 = false := by decide +kernel
 theorem fn_stride_of_local : prog.funcs[1969]? = some (src_stride_of_local 1843) := get_of_drop at_stride_of_local
 theorem np_stride_of_local : prims.isPrim 1969 = false := by decide +kernel
-theorem fn_is_type_owner : prog.funcs[1970]? = some (src_is_type_owner 1496 1533 2090 2091) := get_of_drop at_is_type_owner
+theorem fn_is_type_owner : prog.funcs[1970]? = some (src_is_type_owner 1498 1546 2090 2091) := get_of_drop at_is_type_owner
 theorem np_is_type_owner : prims.isPrim 1970 = false := by decide +kernel
 theorem fn_is_some_index : prog.funcs[1971]? = some (src_is_some_index) := get_of_drop at_is_some_index
 theorem np_is_some_index : prims.isPrim 1971 = false := by decide +kernel
 theorem fn_find_fn : prog.funcs[1972]? = some (src_find_fn 255 2092) := get_of_drop at_find_fn
 theorem np_find_fn : prims.isPrim 1972 = false := by decide +kernel
-theorem fn_eff_free : prog.funcs[1973]? = some (src_eff_free 56 1140 1324 1697 1730 1795 1879 1880 1974 2093 2094) := get_of_drop at_eff_free
+theorem fn_eff_free : prog.funcs[1973]? = some (src_eff_free 56 1140 1326 1698 1731 1795 1879 1880 1974 2093 2094) := get_of_drop at_eff_free
 theorem np_eff_free : prims.isPrim 1973 = false := by decide +kernel
-theorem fn_param_expects : prog.funcs[1974]? = some (src_param_expects 866 1334 1335 1977) := get_of_drop at_param_expects
+theorem fn_param_expects : prog.funcs[1974]? = some (src_param_expects 866 1336 1337 1977) := get_of_drop at_param_expects
 theorem np_param_expects : prims.isPrim 1974 = false := by decide +kernel
 theorem fn_eff_called : prog.funcs[1975]? = some (src_eff_called 1986 2095 2096 2097) := get_of_drop at_eff_called
 theorem np_eff_called : prims.isPrim 1975 = false := by decide +kernel
@@ -90,11 +90,11 @@ theorem fn_param_patterns : prog.funcs[1977]? = some (src_param_patterns 146 147
 theorem np_param_patterns : prims.isPrim 1977 = false := by decide +kernel
 theorem fn_eff_inferred : prog.funcs[1978]? = some (src_eff_inferred 2095 2099) := get_of_drop at_eff_inferred
 theorem np_eff_inferred : prims.isPrim 1978 = false := by decide +kernel
-theorem fn_eff_args_bound : prog.funcs[1979]? = some (src_eff_args_bound 56 103 1126 1324 1510 1795 1845 1979 2036 2100 2101 2102 2103 2104) := get_of_drop at_eff_args_bound
+theorem fn_eff_args_bound : prog.funcs[1979]? = some (src_eff_args_bound 56 103 1126 1326 1512 1795 1845 1979 2036 2100 2101 2102 2103 2104) := get_of_drop at_eff_args_bound
 theorem np_eff_args_bound : prims.isPrim 1979 = false := by decide +kernel
-theorem fn_ret_binds : prog.funcs[1980]? = some (src_ret_binds 1729 2105 2106) := get_of_drop at_ret_binds
+theorem fn_ret_binds : prog.funcs[1980]? = some (src_ret_binds 1730 2105 2106) := get_of_drop at_ret_binds
 theorem np_ret_binds : prims.isPrim 1980 = false := by decide +kernel
-theorem fn_impl_fit : prog.funcs[1981]? = some (src_impl_fit 1730 2106 2107) := get_of_drop at_impl_fit
+theorem fn_impl_fit : prog.funcs[1981]? = some (src_impl_fit 1731 2106 2107) := get_of_drop at_impl_fit
 theorem np_impl_fit : prims.isPrim 1981 = false := by decide +kernel
 theorem fn_unique_found : prog.funcs[1982]? = some (src_unique_found) := get_of_drop at_unique_found
 theorem np_unique_found : prims.isPrim 1982 = false := by decide +kernel
@@ -102,26 +102,26 @@ theorem fn_no_method : prog.funcs[1983]? = some (src_no_method 255 859 1981 1983
 theorem np_no_method : prims.isPrim 1983 = false := by decide +kernel
 theorem fn_field_value : prog.funcs[1984]? = some (src_field_value 1140 1792 1985 2109) := get_of_drop at_field_value
 theorem np_field_value : prims.isPrim 1984 = false := by decide +kernel
-theorem fn_eff_local : prog.funcs[1985]? = some (src_eff_local 1673 2110) := get_of_drop at_eff_local
+theorem fn_eff_local : prog.funcs[1985]? = some (src_eff_local 1674 2110) := get_of_drop at_eff_local
 theorem np_eff_local : prims.isPrim 1985 = false := by decide +kernel
-theorem fn_effs_tys : prog.funcs[1986]? = some (src_effs_tys 403 1126 1442 1807 1986) := get_of_drop at_effs_tys
+theorem fn_effs_tys : prog.funcs[1986]? = some (src_effs_tys 403 1126 1445 1807 1986) := get_of_drop at_effs_tys
 theorem np_effs_tys : prims.isPrim 1986 = false := by decide +kernel
 theorem fn_named_inferred : prog.funcs[1987]? = some (src_named_inferred 603) := get_of_drop at_named_inferred
 theorem np_named_inferred : prims.isPrim 1987 = false := by decide +kernel
-theorem fn_match_tys : prog.funcs[1988]? = some (src_match_tys 56 103 599 1729 2111) := get_of_drop at_match_tys
+theorem fn_match_tys : prog.funcs[1988]? = some (src_match_tys 56 103 599 1730 2111) := get_of_drop at_match_tys
 theorem np_match_tys : prims.isPrim 1988 = false := by decide +kernel
 theorem fn_imported_variants_at : prog.funcs[1989]? = some (src_imported_variants_at 864 1802 1890 2112) := get_of_drop at_imported_variants_at
 theorem np_imported_variants_at : prims.isPrim 1989 = false := by decide +kernel
 theorem np_boxed_of_mini_selfhost_List_mini_selfhost_VariantAt : prims.isPrim 1990 = true := by decide +kernel
-theorem fn_variant_of_decl : prog.funcs[1992]? = some (src_variant_of_decl 1574) := get_of_drop at_variant_of_decl
+theorem fn_variant_of_decl : prog.funcs[1992]? = some (src_variant_of_decl 1577) := get_of_drop at_variant_of_decl
 theorem np_variant_of_decl : prims.isPrim 1992 = false := by decide +kernel
 theorem fn_local_ty : prog.funcs[1993]? = some (src_local_ty) := get_of_drop at_local_ty
 theorem np_local_ty : prims.isPrim 1993 = false := by decide +kernel
 theorem fn_field_ty : prog.funcs[1994]? = some (src_field_ty 914 915) := get_of_drop at_field_ty
 theorem np_field_ty : prims.isPrim 1994 = false := by decide +kernel
-theorem fn_bare_int : prog.funcs[1995]? = some (src_bare_int 287 1384 1393 1995) := get_of_drop at_bare_int
+theorem fn_bare_int : prog.funcs[1995]? = some (src_bare_int 287 1387 1396 1995) := get_of_drop at_bare_int
 theorem np_bare_int : prims.isPrim 1995 = false := by decide +kernel
-theorem fn_fn_inst_ret : prog.funcs[1996]? = some (src_fn_inst_ret 866 908 1138 1321 1335 2105) := get_of_drop at_fn_inst_ret
+theorem fn_fn_inst_ret : prog.funcs[1996]? = some (src_fn_inst_ret 866 908 1138 1323 1337 2105) := get_of_drop at_fn_inst_ret
 theorem np_fn_inst_ret : prims.isPrim 1996 = false := by decide +kernel
 theorem fn_index_elem : prog.funcs[1997]? = some (src_index_elem 893) := get_of_drop at_index_elem
 theorem np_index_elem : prims.isPrim 1997 = false := by decide +kernel
@@ -131,7 +131,7 @@ theorem fn_result_ty : prog.funcs[1999]? = some (src_result_ty) := get_of_drop a
 theorem np_result_ty : prims.isPrim 1999 = false := by decide +kernel
 theorem fn_arm_binders : prog.funcs[2000]? = some (src_arm_binders 246 1061 2000 2114) := get_of_drop at_arm_binders
 theorem np_arm_binders : prims.isPrim 2000 = false := by decide +kernel
-theorem fn_arm_values : prog.funcs[2001]? = some (src_arm_values 1324 1325 2001 2114) := get_of_drop at_arm_values
+theorem fn_arm_values : prog.funcs[2001]? = some (src_arm_values 1326 1327 2001 2114) := get_of_drop at_arm_values
 theorem np_arm_values : prims.isPrim 2001 = false := by decide +kernel
 theorem fn_match_order : prog.funcs[2002]? = some (src_match_order 2009 2115) := get_of_drop at_match_order
 theorem np_match_order : prims.isPrim 2002 = false := by decide +kernel
@@ -159,7 +159,7 @@ theorem fn_arm_stmt : prog.funcs[2013]? = some (src_arm_stmt 2130) := get_of_dro
 theorem np_arm_stmt : prims.isPrim 2013 = false := by decide +kernel
 theorem fn_bound_scope : prog.funcs[2014]? = some (src_bound_scope) := get_of_drop at_bound_scope
 theorem np_bound_scope : prims.isPrim 2014 = false := by decide +kernel
-theorem fn_let_body_of : prog.funcs[2015]? = some (src_let_body_of 56 144 147 1618 1703 1704 2131 2132 2133) := get_of_drop at_let_body_of
+theorem fn_let_body_of : prog.funcs[2015]? = some (src_let_body_of 56 144 147 1621 1704 1705 2131 2132 2133) := get_of_drop at_let_body_of
 theorem np_let_body_of : prims.isPrim 2015 = false := by decide +kernel
 theorem fn_call_path_head : prog.funcs[2017]? = some (src_call_path_head 147 385 585 1781 1782 1784 1939 2134 2135) := get_of_drop at_call_path_head
 theorem np_call_path_head : prims.isPrim 2017 = false := by decide +kernel
@@ -171,21 +171,21 @@ theorem fn_index_let_head : prog.funcs[2020]? = some (src_index_let_head) := get
 theorem np_index_let_head : prims.isPrim 2020 = false := by decide +kernel
 theorem fn_struct_head : prog.funcs[2021]? = some (src_struct_head) := get_of_drop at_struct_head
 theorem np_struct_head : prims.isPrim 2021 = false := by decide +kernel
-theorem fn_pure_list : prog.funcs[2022]? = some (src_pure_list 1126 1290 1291 1673 2022) := get_of_drop at_pure_list
+theorem fn_pure_list : prog.funcs[2022]? = some (src_pure_list 1126 1292 1293 1674 2022) := get_of_drop at_pure_list
 theorem np_pure_list : prims.isPrim 2022 = false := by decide +kernel
 theorem fn_variant_let_head : prog.funcs[2023]? = some (src_variant_let_head) := get_of_drop at_variant_let_head
 theorem np_variant_let_head : prims.isPrim 2023 = false := by decide +kernel
 theorem fn_match_let_head : prog.funcs[2024]? = some (src_match_let_head) := get_of_drop at_match_let_head
 theorem np_match_let_head : prims.isPrim 2024 = false := by decide +kernel
-theorem fn_pure_arms : prog.funcs[2025]? = some (src_pure_arms 503 1126 1297 1298 1673 2025) := get_of_drop at_pure_arms
+theorem fn_pure_arms : prog.funcs[2025]? = some (src_pure_arms 503 1126 1299 1300 1674 2025) := get_of_drop at_pure_arms
 theorem np_pure_arms : prims.isPrim 2025 = false := by decide +kernel
-theorem fn_is_try_method : prog.funcs[2026]? = some (src_is_try_method 144 147 1599 1601 1656 1657 1659 1681 1765 2047) := get_of_drop at_is_try_method
+theorem fn_is_try_method : prog.funcs[2026]? = some (src_is_try_method 144 147 1237 1602 1604 1657 1658 1660 1682 2047) := get_of_drop at_is_try_method
 theorem np_is_try_method : prims.isPrim 2026 = false := by decide +kernel
-theorem fn_try_method_of : prog.funcs[2027]? = some (src_try_method_of 56 147 566 1131 1420 1678 2048) := get_of_drop at_try_method_of
+theorem fn_try_method_of : prog.funcs[2027]? = some (src_try_method_of 56 147 566 1131 1423 1679 2048) := get_of_drop at_try_method_of
 theorem np_try_method_of : prims.isPrim 2027 = false := by decide +kernel
-theorem fn_is_try_local : prog.funcs[2028]? = some (src_is_try_local 144 147 1656 2047) := get_of_drop at_is_try_local
+theorem fn_is_try_local : prog.funcs[2028]? = some (src_is_try_local 144 147 1657 2047) := get_of_drop at_is_try_local
 theorem np_is_try_local : prims.isPrim 2028 = false := by decide +kernel
-theorem fn_try_local_of : prog.funcs[2029]? = some (src_try_local_of 56 147 566 1131 1420 1603 2136) := get_of_drop at_try_local_of
+theorem fn_try_local_of : prog.funcs[2029]? = some (src_try_local_of 56 147 566 1131 1423 1606 2136) := get_of_drop at_try_local_of
 theorem np_try_local_of : prims.isPrim 2029 = false := by decide +kernel
 theorem fn_pure_inferred : prog.funcs[2030]? = some (src_pure_inferred) := get_of_drop at_pure_inferred
 theorem np_pure_inferred : prims.isPrim 2030 = false := by decide +kernel
@@ -193,9 +193,9 @@ theorem fn_try_rest : prog.funcs[2031]? = some (src_try_rest 1139 1140 2137) := 
 theorem np_try_rest : prims.isPrim 2031 = false := by decide +kernel
 theorem fn_stmt_unless : prog.funcs[2032]? = some (src_stmt_unless) := get_of_drop at_stmt_unless
 theorem np_stmt_unless : prims.isPrim 2032 = false := by decide +kernel
-theorem fn_arm_body_of : prog.funcs[2033]? = some (src_arm_body_of 56 147 1441 2012 2138) := get_of_drop at_arm_body_of
+theorem fn_arm_body_of : prog.funcs[2033]? = some (src_arm_body_of 56 147 1444 2012 2138) := get_of_drop at_arm_body_of
 theorem np_arm_body_of : prims.isPrim 2033 = false := by decide +kernel
-theorem fn_set_try_or_eval : prog.funcs[2034]? = some (src_set_try_or_eval 1420 1481 1510 2040 2139) := get_of_drop at_set_try_or_eval
+theorem fn_set_try_or_eval : prog.funcs[2034]? = some (src_set_try_or_eval 1423 1483 1512 2040 2139) := get_of_drop at_set_try_or_eval
 theorem np_set_try_or_eval : prims.isPrim 2034 = false := by decide +kernel
 theorem fn_checked_stmt : prog.funcs[2035]? = some (src_checked_stmt) := get_of_drop at_checked_stmt
 theorem np_checked_stmt : prims.isPrim 2035 = false := by decide +kernel
@@ -211,13 +211,13 @@ theorem fn_set_eval_of : prog.funcs[2040]? = some (src_set_eval_of 2019 2143) :=
 theorem np_set_eval_of : prims.isPrim 2040 = false := by decide +kernel
 theorem fn_compound_eff : prog.funcs[2041]? = some (src_compound_eff 1777 1779 2144 2145 2146) := get_of_drop at_compound_eff
 theorem np_compound_eff : prims.isPrim 2041 = false := by decide +kernel
-theorem fn_compound_field_eval : prog.funcs[2042]? = some (src_compound_field_eval 1510 2035 2036 2037 2038 2041) := get_of_drop at_compound_field_eval
+theorem fn_compound_field_eval : prog.funcs[2042]? = some (src_compound_field_eval 1512 2035 2036 2037 2038 2041) := get_of_drop at_compound_field_eval
 theorem np_compound_field_eval : prims.isPrim 2042 = false := by decide +kernel
 theorem fn_free_shifted : prog.funcs[2043]? = some (src_free_shifted) := get_of_drop at_free_shifted
 theorem np_free_shifted : prims.isPrim 2043 = false := by decide +kernel
 theorem fn_shift_of : prog.funcs[2044]? = some (src_shift_of 287 2147 2148 2149) := get_of_drop at_shift_of
 theorem np_shift_of : prims.isPrim 2044 = false := by decide +kernel
-theorem fn_exprs_of : prog.funcs[2045]? = some (src_exprs_of 103 1290 1550 2045 2150) := get_of_drop at_exprs_of
+theorem fn_exprs_of : prog.funcs[2045]? = some (src_exprs_of 103 1292 1563 2045 2150) := get_of_drop at_exprs_of
 theorem np_exprs_of : prims.isPrim 2045 = false := by decide +kernel
 theorem fn_assert_of : prog.funcs[2046]? = some (src_assert_of) := get_of_drop at_assert_of
 theorem np_assert_of : prims.isPrim 2046 = false := by decide +kernel
@@ -225,11 +225,11 @@ theorem fn_p_postfix_try : prog.funcs[2047]? = some (src_p_postfix_try) := get_o
 theorem np_p_postfix_try : prims.isPrim 2047 = false := by decide +kernel
 theorem fn_tried_call : prog.funcs[2048]? = some (src_tried_call 1807 2151) := get_of_drop at_tried_call
 theorem np_tried_call : prims.isPrim 2048 = false := by decide +kernel
-theorem fn_param_spelling : prog.funcs[2049]? = some (src_param_spelling 1062 1533 1879 2152) := get_of_drop at_param_spelling
+theorem fn_param_spelling : prog.funcs[2049]? = some (src_param_spelling 1062 1546 1879 2152) := get_of_drop at_param_spelling
 theorem np_param_spelling : prims.isPrim 2049 = false := by decide +kernel
-theorem fn_bind_ty : prog.funcs[2050]? = some (src_bind_ty 1481 1947 2052 2153) := get_of_drop at_bind_ty
+theorem fn_bind_ty : prog.funcs[2050]? = some (src_bind_ty 1483 1947 2052 2153) := get_of_drop at_bind_ty
 theorem np_bind_ty : prims.isPrim 2050 = false := by decide +kernel
-theorem fn_bare_prim : prog.funcs[2051]? = some (src_bare_prim 1533 1879 2154) := get_of_drop at_bare_prim
+theorem fn_bare_prim : prog.funcs[2051]? = some (src_bare_prim 1546 1879 2154) := get_of_drop at_bare_prim
 theorem np_bare_prim : prims.isPrim 2051 = false := by decide +kernel
 theorem fn_same_or_none : prog.funcs[2052]? = some (src_same_or_none) := get_of_drop at_same_or_none
 theorem np_same_or_none : prims.isPrim 2052 = false := by decide +kernel
@@ -244,19 +244,19 @@ theorem fn_wide_of : prog.funcs[2057]? = some (src_wide_of 2157 2158 2159 2160) 
 theorem np_wide_of : prims.isPrim 2057 = false := by decide +kernel
 theorem fn_concat_of_mini_selfhost_Token : prog.funcs[2058]? = some (src_concat_of_mini_selfhost_Token 158 1035 2058) := get_of_drop at_concat_of_mini_selfhost_Token
 theorem np_concat_of_mini_selfhost_Token : prims.isPrim 2058 = false := by decide +kernel
-theorem fn_uint_in_range : prog.funcs[2059]? = some (src_uint_in_range 1477) := get_of_drop at_uint_in_range
+theorem fn_uint_in_range : prog.funcs[2059]? = some (src_uint_in_range 1479) := get_of_drop at_uint_in_range
 theorem np_uint_in_range : prims.isPrim 2059 = false := by decide +kernel
 theorem fn_null_const : prog.funcs[2060]? = some (src_null_const) := get_of_drop at_null_const
 theorem np_null_const : prims.isPrim 2060 = false := by decide +kernel
-theorem fn_sint_const : prog.funcs[2061]? = some (src_sint_const 1283 1526) := get_of_drop at_sint_const
+theorem fn_sint_const : prog.funcs[2061]? = some (src_sint_const 1285 1539) := get_of_drop at_sint_const
 theorem np_sint_const : prims.isPrim 2061 = false := by decide +kernel
 theorem fn_negated_int : prog.funcs[2062]? = some (src_negated_int) := get_of_drop at_negated_int
 theorem np_negated_int : prims.isPrim 2062 = false := by decide +kernel
-theorem fn_negated_float : prog.funcs[2063]? = some (src_negated_float 287 1401 2161) := get_of_drop at_negated_float
+theorem fn_negated_float : prog.funcs[2063]? = some (src_negated_float 287 1404 2161) := get_of_drop at_negated_float
 theorem np_negated_float : prims.isPrim 2063 = false := by decide +kernel
 theorem fn_neg_sint_const : prog.funcs[2064]? = some (src_neg_sint_const 2061) := get_of_drop at_neg_sint_const
 theorem np_neg_sint_const : prims.isPrim 2064 = false := by decide +kernel
-theorem fn_float_typed : prog.funcs[2065]? = some (src_float_typed 1401) := get_of_drop at_float_typed
+theorem fn_float_typed : prog.funcs[2065]? = some (src_float_typed 1404) := get_of_drop at_float_typed
 theorem np_float_typed : prims.isPrim 2065 = false := by decide +kernel
 theorem fn_char_close_opt : prog.funcs[2066]? = some (src_char_close_opt 1956) := get_of_drop at_char_close_opt
 theorem np_char_close_opt : prims.isPrim 2066 = false := by decide +kernel
@@ -266,7 +266,7 @@ theorem fn_char_end : prog.funcs[2068]? = some (src_char_end) := get_of_drop at_
 theorem np_char_end : prims.isPrim 2068 = false := by decide +kernel
 theorem fn_char_tail_at : prog.funcs[2069]? = some (src_char_tail_at 56 75 105 1956 1957) := get_of_drop at_char_tail_at
 theorem np_char_tail_at : prims.isPrim 2069 = false := by decide +kernel
-theorem fn_fl_carry_out : prog.funcs[2070]? = some (src_fl_carry_out 1669 1968) := get_of_drop at_fl_carry_out
+theorem fn_fl_carry_out : prog.funcs[2070]? = some (src_fl_carry_out 1670 1968) := get_of_drop at_fl_carry_out
 theorem np_fl_carry_out : prims.isPrim 2070 = false := by decide +kernel
 theorem fn_cons_of_bool : prog.funcs[2071]? = some (src_cons_of_bool 2089) := get_of_drop at_cons_of_bool
 theorem np_cons_of_bool : prims.isPrim 2071 = false := by decide +kernel
@@ -292,13 +292,13 @@ theorem fn_fl_ratio_ok : prog.funcs[2082]? = some (src_fl_ratio_ok 2080 2083 208
 theorem np_fl_ratio_ok : prims.isPrim 2082 = false := by decide +kernel
 theorem fn_fl_shl : prog.funcs[2083]? = some (src_fl_shl 56 2071 2083) := get_of_drop at_fl_shl
 theorem np_fl_shl : prims.isPrim 2083 = false := by decide +kernel
-theorem fn_fl_divmod : prog.funcs[2084]? = some (src_fl_divmod 1669 1964 2084 2163) := get_of_drop at_fl_divmod
+theorem fn_fl_divmod : prog.funcs[2084]? = some (src_fl_divmod 1670 1964 2084 2163) := get_of_drop at_fl_divmod
 theorem np_fl_divmod : prims.isPrim 2084 = false := by decide +kernel
-theorem fn_fl_less : prog.funcs[2085]? = some (src_fl_less 1669 1964 2085 2164) := get_of_drop at_fl_less
+theorem fn_fl_less : prog.funcs[2085]? = some (src_fl_less 1670 1964 2085 2164) := get_of_drop at_fl_less
 theorem np_fl_less : prims.isPrim 2085 = false := by decide +kernel
 theorem fn_fl_odd : prog.funcs[2086]? = some (src_fl_odd) := get_of_drop at_fl_odd
 theorem np_fl_odd : prims.isPrim 2086 = false := by decide +kernel
-theorem fn_fl_round_up : prog.funcs[2087]? = some (src_fl_round_up 1669 1958) := get_of_drop at_fl_round_up
+theorem fn_fl_round_up : prog.funcs[2087]? = some (src_fl_round_up 1670 1958) := get_of_drop at_fl_round_up
 theorem np_fl_round_up : prims.isPrim 2087 = false := by decide +kernel
 theorem fn_fl_to_nat : prog.funcs[2088]? = some (src_fl_to_nat 75 105 1964 2081 2088) := get_of_drop at_fl_to_nat
 theorem np_fl_to_nat : prims.isPrim 2088 = false := by decide +kernel
@@ -309,7 +309,7 @@ theorem fn_is_owner_at : prog.funcs[2091]? = some (src_is_owner_at 154 1062 1101
 theorem np_is_owner_at : prims.isPrim 2091 = false := by decide +kernel
 theorem fn_find_fn_at : prog.funcs[2092]? = some (src_find_fn_at 75 859 864 1972) := get_of_drop at_find_fn_at
 theorem np_find_fn_at : prims.isPrim 2092 = false := by decide +kernel
-theorem fn_explicit_inst : prog.funcs[2093]? = some (src_explicit_inst 338 401 1132 1498 2166) := get_of_drop at_explicit_inst
+theorem fn_explicit_inst : prog.funcs[2093]? = some (src_explicit_inst 338 401 1132 1500 2166) := get_of_drop at_explicit_inst
 theorem np_explicit_inst : prims.isPrim 2093 = false := by decide +kernel
 theorem fn_checked_effs : prog.funcs[2094]? = some (src_checked_effs) := get_of_drop at_checked_effs
 theorem np_checked_effs : prims.isPrim 2094 = false := by decide +kernel
@@ -319,25 +319,25 @@ theorem fn_infer_eff : prog.funcs[2096]? = some (src_infer_eff 2167 2168) := get
 theorem np_infer_eff : prims.isPrim 2096 = false := by decide +kernel
 theorem fn_concat_of_mini_selfhost_MEff : prog.funcs[2097]? = some (src_concat_of_mini_selfhost_MEff 1126 1140 2097) := get_of_drop at_concat_of_mini_selfhost_MEff
 theorem np_concat_of_mini_selfhost_MEff : prims.isPrim 2097 = false := by decide +kernel
-theorem fn_patterns_of : prog.funcs[2098]? = some (src_patterns_of 96 103 1421 2098 2169) := get_of_drop at_patterns_of
+theorem fn_patterns_of : prog.funcs[2098]? = some (src_patterns_of 96 103 1424 2098 2169) := get_of_drop at_patterns_of
 theorem np_patterns_of : prims.isPrim 2098 = false := by decide +kernel
-theorem fn_inst_bound : prog.funcs[2099]? = some (src_inst_bound 1731 1845 1986 2106 2170 2171) := get_of_drop at_inst_bound
+theorem fn_inst_bound : prog.funcs[2099]? = some (src_inst_bound 1732 1845 1986 2106 2170 2171) := get_of_drop at_inst_bound
 theorem np_inst_bound : prims.isPrim 2099 = false := by decide +kernel
 theorem fn_checked_bound : prog.funcs[2100]? = some (src_checked_bound) := get_of_drop at_checked_bound
 theorem np_checked_bound : prims.isPrim 2100 = false := by decide +kernel
-theorem fn_arg_expected : prog.funcs[2101]? = some (src_arg_expected 1321 1335 1845) := get_of_drop at_arg_expected
+theorem fn_arg_expected : prog.funcs[2101]? = some (src_arg_expected 1323 1337 1845) := get_of_drop at_arg_expected
 theorem np_arg_expected : prims.isPrim 2101 = false := by decide +kernel
-theorem fn_eff_arg_next : prog.funcs[2102]? = some (src_eff_arg_next 56 1324 1979 2103 2104) := get_of_drop at_eff_arg_next
+theorem fn_eff_arg_next : prog.funcs[2102]? = some (src_eff_arg_next 56 1326 1979 2103 2104) := get_of_drop at_eff_arg_next
 theorem np_eff_arg_next : prims.isPrim 2102 = false := by decide +kernel
-theorem fn_cons_bound : prog.funcs[2103]? = some (src_cons_bound 1325) := get_of_drop at_cons_bound
+theorem fn_cons_bound : prog.funcs[2103]? = some (src_cons_bound 1327) := get_of_drop at_cons_bound
 theorem np_cons_bound : prims.isPrim 2103 = false := by decide +kernel
-theorem fn_bind_arg : prog.funcs[2104]? = some (src_bind_arg 1729 1807 1900 2106) := get_of_drop at_bind_arg
+theorem fn_bind_arg : prog.funcs[2104]? = some (src_bind_arg 1730 1807 1900 2106) := get_of_drop at_bind_arg
 theorem np_bind_arg : prims.isPrim 2104 = false := by decide +kernel
-theorem fn_ret_pattern : prog.funcs[2105]? = some (src_ret_pattern 144 147 1318) := get_of_drop at_ret_pattern
+theorem fn_ret_pattern : prog.funcs[2105]? = some (src_ret_pattern 144 147 1320) := get_of_drop at_ret_pattern
 theorem np_ret_pattern : prims.isPrim 2105 = false := by decide +kernel
-theorem fn_callee_env : prog.funcs[2106]? = some (src_callee_env 246 403 1335) := get_of_drop at_callee_env
+theorem fn_callee_env : prog.funcs[2106]? = some (src_callee_env 246 403 1337) := get_of_drop at_callee_env
 theorem np_callee_env : prims.isPrim 2106 = false := by decide +kernel
-theorem fn_fit_ty : prog.funcs[2107]? = some (src_fit_ty 56 144 146 147 1424 1425 1430 1433 1843 2107 2172) := get_of_drop at_fit_ty
+theorem fn_fit_ty : prog.funcs[2107]? = some (src_fit_ty 56 144 146 147 1427 1428 1433 1436 1843 2107 2172) := get_of_drop at_fit_ty
 theorem np_fit_ty : prims.isPrim 2107 = false := by decide +kernel
 theorem fn_is_misfit : prog.funcs[2108]? = some (src_is_misfit) := get_of_drop at_is_misfit
 theorem np_is_misfit : prims.isPrim 2108 = false := by decide +kernel
@@ -359,7 +359,7 @@ theorem np_cons_eff_arm : prims.isPrim 2117 = false := by decide +kernel
 theorem fn_eff_arm : prog.funcs[2118]? = some (src_eff_arm 56 144 146 147 229 385 2125 2126 2127 2128 2176) := get_of_drop at_eff_arm
 theorem np_eff_arm : prims.isPrim 2118 = false := by decide +kernel
 theorem np_boxed_of_mini_selfhost_List_mini_selfhost_VariantTy : prims.isPrim 2119 = true := by decide +kernel
-theorem fn_match_stmt_head : prog.funcs[2120]? = some (src_match_stmt_head 1420 1985 2178) := get_of_drop at_match_stmt_head
+theorem fn_match_stmt_head : prog.funcs[2120]? = some (src_match_stmt_head 1423 1985 2178) := get_of_drop at_match_stmt_head
 theorem np_match_stmt_head : prims.isPrim 2120 = false := by decide +kernel
 theorem fn_or_known : prog.funcs[2121]? = some (src_or_known) := get_of_drop at_or_known
 theorem np_or_known : prims.isPrim 2121 = false := by decide +kernel
@@ -371,13 +371,13 @@ theorem fn_arms_in_order : prog.funcs[2124]? = some (src_arms_in_order 2180 2182
 theorem np_arms_in_order : prims.isPrim 2124 = false := by decide +kernel
 theorem fn_p_pattern_ident : prog.funcs[2125]? = some (src_p_pattern_ident) := get_of_drop at_p_pattern_ident
 theorem np_p_pattern_ident : prims.isPrim 2125 = false := by decide +kernel
-theorem fn_arm_named : prog.funcs[2126]? = some (src_arm_named 859 1537 2184) := get_of_drop at_arm_named
+theorem fn_arm_named : prog.funcs[2126]? = some (src_arm_named 859 1550 2184) := get_of_drop at_arm_named
 theorem np_arm_named : prims.isPrim 2126 = false := by decide +kernel
 theorem fn_p_pattern_plain : prog.funcs[2127]? = some (src_p_pattern_plain) := get_of_drop at_p_pattern_plain
 theorem np_p_pattern_plain : prims.isPrim 2127 = false := by decide +kernel
 theorem fn_binders_of : prog.funcs[2128]? = some (src_binders_of 103 229 599 2185) := get_of_drop at_binders_of
 theorem np_binders_of : prims.isPrim 2128 = false := by decide +kernel
-theorem fn_arm_block_of : prog.funcs[2129]? = some (src_arm_block_of 144 147 1656 2186) := get_of_drop at_arm_block_of
+theorem fn_arm_block_of : prog.funcs[2129]? = some (src_arm_block_of 144 147 1657 2186) := get_of_drop at_arm_block_of
 theorem np_arm_block_of : prims.isPrim 2129 = false := by decide +kernel
 theorem fn_arm_binder : prog.funcs[2130]? = some (src_arm_binder 76 1139) := get_of_drop at_arm_binder
 theorem np_arm_binder : prims.isPrim 2130 = false := by decide +kernel
@@ -393,19 +393,19 @@ theorem fn_slice_head : prog.funcs[2135]? = some (src_slice_head 295) := get_of_
 theorem np_slice_head : prims.isPrim 2135 = false := by decide +kernel
 theorem fn_tried_local : prog.funcs[2136]? = some (src_tried_local 2151) := get_of_drop at_tried_local
 theorem np_tried_local : prims.isPrim 2136 = false := by decide +kernel
-theorem fn_try_payload : prog.funcs[2137]? = some (src_try_payload 1324 1792) := get_of_drop at_try_payload
+theorem fn_try_payload : prog.funcs[2137]? = some (src_try_payload 1326 1792) := get_of_drop at_try_payload
 theorem np_try_payload : prims.isPrim 2137 = false := by decide +kernel
-theorem fn_inner_match_of : prog.funcs[2138]? = some (src_inner_match_of 56 144 1618 1818 1819 1820 1835) := get_of_drop at_inner_match_of
+theorem fn_inner_match_of : prog.funcs[2138]? = some (src_inner_match_of 56 144 1621 1818 1819 1820 1835) := get_of_drop at_inner_match_of
 theorem np_inner_match_of : prims.isPrim 2138 = false := by decide +kernel
 theorem fn_try_set : prog.funcs[2139]? = some (src_try_set 1139 2031) := get_of_drop at_try_set
 theorem np_try_set : prims.isPrim 2139 = false := by decide +kernel
-theorem fn_set_field_eff : prog.funcs[2140]? = some (src_set_field_eff 1673) := get_of_drop at_set_field_eff
+theorem fn_set_field_eff : prog.funcs[2140]? = some (src_set_field_eff 1674) := get_of_drop at_set_field_eff
 theorem np_set_field_eff : prims.isPrim 2140 = false := by decide +kernel
 theorem fn_eff_acts : prog.funcs[2141]? = some (src_eff_acts 1126 1127 2141 2188) := get_of_drop at_eff_acts
 theorem np_eff_acts : prims.isPrim 2141 = false := by decide +kernel
-theorem fn_set_index_eff : prog.funcs[2142]? = some (src_set_index_eff 1673 2189) := get_of_drop at_set_index_eff
+theorem fn_set_index_eff : prog.funcs[2142]? = some (src_set_index_eff 1674 2189) := get_of_drop at_set_index_eff
 theorem np_set_index_eff : prims.isPrim 2142 = false := by decide +kernel
-theorem fn_set_eff : prog.funcs[2143]? = some (src_set_eff 1673) := get_of_drop at_set_eff
+theorem fn_set_eff : prog.funcs[2143]? = some (src_set_eff 1674) := get_of_drop at_set_eff
 theorem np_set_eff : prims.isPrim 2143 = false := by decide +kernel
 theorem fn_p_assign_div : prog.funcs[2144]? = some (src_p_assign_div) := get_of_drop at_p_assign_div
 theorem np_p_assign_div : prims.isPrim 2144 = false := by decide +kernel
@@ -421,25 +421,25 @@ theorem fn_is_usize : prog.funcs[2149]? = some (src_is_usize) := get_of_drop at_
 theorem np_is_usize : prims.isPrim 2149 = false := by decide +kernel
 theorem fn_cons_expr : prog.funcs[2150]? = some (src_cons_expr 2199) := get_of_drop at_cons_expr
 theorem np_cons_expr : prims.isPrim 2150 = false := by decide +kernel
-theorem fn_tried_of : prog.funcs[2151]? = some (src_tried_of 154 1101 1271 1808 2200 2201) := get_of_drop at_tried_of
+theorem fn_tried_of : prog.funcs[2151]? = some (src_tried_of 154 1101 1273 1808 2200 2201) := get_of_drop at_tried_of
 theorem np_tried_of : prims.isPrim 2151 = false := by decide +kernel
 theorem fn_param_named : prog.funcs[2152]? = some (src_param_named) := get_of_drop at_param_named
 theorem np_param_named : prims.isPrim 2152 = false := by decide +kernel
 theorem fn_cons_of_mini_selfhost_Bind : prog.funcs[2153]? = some (src_cons_of_mini_selfhost_Bind 2202) := get_of_drop at_cons_of_mini_selfhost_Bind
 theorem np_cons_of_mini_selfhost_Bind : prims.isPrim 2153 = false := by decide +kernel
-theorem fn_prim_if : prog.funcs[2154]? = some (src_prim_if 1575) := get_of_drop at_prim_if
+theorem fn_prim_if : prog.funcs[2154]? = some (src_prim_if 1578) := get_of_drop at_prim_if
 theorem np_prim_if : prims.isPrim 2154 = false := by decide +kernel
-theorem fn_match_same_decl : prog.funcs[2155]? = some (src_match_same_decl 56 1732) := get_of_drop at_match_same_decl
+theorem fn_match_same_decl : prog.funcs[2155]? = some (src_match_same_decl 56 1733) := get_of_drop at_match_same_decl
 theorem np_match_same_decl : prims.isPrim 2155 = false := by decide +kernel
 theorem fn_wide_i32 : prog.funcs[2157]? = some (src_wide_i32) := get_of_drop at_wide_i32
 theorem np_wide_i32 : prims.isPrim 2157 = false := by decide +kernel
 theorem fn_wide_uint : prog.funcs[2158]? = some (src_wide_uint 2059) := get_of_drop at_wide_uint
 theorem np_wide_uint : prims.isPrim 2158 = false := by decide +kernel
-theorem fn_wide_isize : prog.funcs[2159]? = some (src_wide_isize 56 75 1283) := get_of_drop at_wide_isize
+theorem fn_wide_isize : prog.funcs[2159]? = some (src_wide_isize 56 75 1285) := get_of_drop at_wide_isize
 theorem np_wide_isize : prims.isPrim 2159 = false := by decide +kernel
-theorem fn_wide_sint : prog.funcs[2160]? = some (src_wide_sint 56 75 1283 1475) := get_of_drop at_wide_sint
+theorem fn_wide_sint : prog.funcs[2160]? = some (src_wide_sint 56 75 1285 1477) := get_of_drop at_wide_sint
 theorem np_wide_sint : prims.isPrim 2160 = false := by decide +kernel
-theorem fn_negate_some : prog.funcs[2161]? = some (src_negate_some 1283) := get_of_drop at_negate_some
+theorem fn_negate_some : prog.funcs[2161]? = some (src_negate_some 1285) := get_of_drop at_negate_some
 theorem np_negate_some : prims.isPrim 2161 = false := by decide +kernel
 theorem fn_fl_exp_sign_at : prog.funcs[2162]? = some (src_fl_exp_sign_at 374 2203) := get_of_drop at_fl_exp_sign_at
 theorem np_fl_exp_sign_at : prims.isPrim 2162 = false := by decide +kernel
@@ -451,7 +451,7 @@ theorem fn_explicit_checked : prog.funcs[2166]? = some (src_explicit_checked) :=
 theorem np_explicit_checked : prims.isPrim 2166 = false := by decide +kernel
 theorem fn_infer_inst : prog.funcs[2167]? = some (src_infer_inst 401 403 866 1977 1988 2106 2205) := get_of_drop at_infer_inst
 theorem np_infer_inst : prims.isPrim 2167 = false := by decide +kernel
-theorem fn_infer_args : prog.funcs[2168]? = some (src_infer_args 401 403 866 1731 1977 1988 2106 2170) := get_of_drop at_infer_args
+theorem fn_infer_args : prog.funcs[2168]? = some (src_infer_args 401 403 866 1732 1977 1988 2106 2170) := get_of_drop at_infer_args
 theorem np_infer_args : prims.isPrim 2168 = false := by decide +kernel
 theorem fn_cons_tree : prog.funcs[2169]? = some (src_cons_tree 2206) := get_of_drop at_cons_tree
 theorem np_cons_tree : prims.isPrim 2169 = false := by decide +kernel
@@ -465,7 +465,7 @@ theorem fn_nested_order : prog.funcs[2174]? = some (src_nested_order 2123 2208) 
 theorem np_nested_order : prims.isPrim 2174 = false := by decide +kernel
 theorem fn_cons_of_mini_selfhost_EffArm : prog.funcs[2175]? = some (src_cons_of_mini_selfhost_EffArm 2209) := get_of_drop at_cons_of_mini_selfhost_EffArm
 theorem np_cons_of_mini_selfhost_EffArm : prims.isPrim 2175 = false := by decide +kernel
-theorem fn_eff_arm_bound : prog.funcs[2176]? = some (src_eff_arm_bound 56 1510 2210 2211) := get_of_drop at_eff_arm_bound
+theorem fn_eff_arm_bound : prog.funcs[2176]? = some (src_eff_arm_bound 56 1512 2210 2211) := get_of_drop at_eff_arm_bound
 theorem np_eff_arm_bound : prims.isPrim 2176 = false := by decide +kernel
 theorem fn_match_stmt_if : prog.funcs[2178]? = some (src_match_stmt_if) := get_of_drop at_match_stmt_if
 theorem np_match_stmt_if : prims.isPrim 2178 = false := by decide +kernel
@@ -481,7 +481,7 @@ theorem fn_arms_exact : prog.funcs[2183]? = some (src_arms_exact 2220 2221 2222)
 theorem np_arms_exact : prims.isPrim 2183 = false := by decide +kernel
 theorem fn_arm_prefix : prog.funcs[2184]? = some (src_arm_prefix 401 585 864 866) := get_of_drop at_arm_prefix
 theorem np_arm_prefix : prims.isPrim 2184 = false := by decide +kernel
-theorem fn_binder_of : prog.funcs[2185]? = some (src_binder_of 56 144 147 154 566 1062 1420 1423 1661 2125 2127 2128 2223 2224 2225) := get_of_drop at_binder_of
+theorem fn_binder_of : prog.funcs[2185]? = some (src_binder_of 56 144 147 154 566 1062 1423 1426 1662 2125 2127 2128 2223 2224 2225) := get_of_drop at_binder_of
 theorem np_binder_of : prims.isPrim 2185 = false := by decide +kernel
 theorem fn_p_arm_block : prog.funcs[2186]? = some (src_p_arm_block) := get_of_drop at_p_arm_block
 theorem np_p_arm_block : prims.isPrim 2186 = false := by decide +kernel
@@ -489,7 +489,7 @@ theorem fn_alloc_shifted : prog.funcs[2187]? = some (src_alloc_shifted) := get_o
 theorem np_alloc_shifted : prims.isPrim 2187 = false := by decide +kernel
 theorem fn_effs_act : prog.funcs[2188]? = some (src_effs_act 1126 2141 2188) := get_of_drop at_effs_act
 theorem np_effs_act : prims.isPrim 2188 = false := by decide +kernel
-theorem fn_set_index_pure : prog.funcs[2189]? = some (src_set_index_pure 1673) := get_of_drop at_set_index_pure
+theorem fn_set_index_pure : prog.funcs[2189]? = some (src_set_index_pure 1674) := get_of_drop at_set_index_pure
 theorem np_set_index_pure : prims.isPrim 2189 = false := by decide +kernel
 theorem fn_p_assign_add : prog.funcs[2190]? = some (src_p_assign_add) := get_of_drop at_p_assign_add
 theorem np_p_assign_add : prims.isPrim 2190 = false := by decide +kernel
@@ -509,7 +509,7 @@ theorem fn_p_assign_shr : prog.funcs[2197]? = some (src_p_assign_shr) := get_of_
 theorem np_p_assign_shr : prims.isPrim 2197 = false := by decide +kernel
 theorem fn_shift_of_u64 : prog.funcs[2198]? = some (src_shift_of_u64 56 75 105 2198) := get_of_drop at_shift_of_u64
 theorem np_shift_of_u64 : prims.isPrim 2198 = false := by decide +kernel
-theorem fn_cons_expr_tail : prog.funcs[2199]? = some (src_cons_expr_tail 1291) := get_of_drop at_cons_expr_tail
+theorem fn_cons_expr_tail : prog.funcs[2199]? = some (src_cons_expr_tail 1293) := get_of_drop at_cons_expr_tail
 theorem np_cons_expr_tail : prims.isPrim 2199 = false := by decide +kernel
 theorem fn_tried_if : prog.funcs[2200]? = some (src_tried_if 2226) := get_of_drop at_tried_if
 theorem np_tried_if : prims.isPrim 2200 = false := by decide +kernel
@@ -518,13 +518,13 @@ theorem np_is_try_enum : prims.isPrim 2201 = false := by decide +kernel
 theorem np_boxed_of_mini_selfhost_List_mini_selfhost_Bind : prims.isPrim 2202 = true := by decide +kernel
 theorem fn_fl_exp_first : prog.funcs[2203]? = some (src_fl_exp_first 76 2237) := get_of_drop at_fl_exp_first
 theorem np_fl_exp_first : prims.isPrim 2203 = false := by decide +kernel
-theorem fn_fl_sub : prog.funcs[2204]? = some (src_fl_sub 1669 1964 2071 2072 2164 2204) := get_of_drop at_fl_sub
+theorem fn_fl_sub : prog.funcs[2204]? = some (src_fl_sub 1670 1964 2071 2072 2164 2204) := get_of_drop at_fl_sub
 theorem np_fl_sub : prims.isPrim 2204 = false := by decide +kernel
-theorem fn_infer_ret : prog.funcs[2205]? = some (src_infer_ret 1729 1731 2105 2106 2170) := get_of_drop at_infer_ret
+theorem fn_infer_ret : prog.funcs[2205]? = some (src_infer_ret 1730 1732 2105 2106 2170) := get_of_drop at_infer_ret
 theorem np_infer_ret : prims.isPrim 2205 = false := by decide +kernel
 theorem fn_cons_tree_tail : prog.funcs[2206]? = some (src_cons_tree_tail 139) := get_of_drop at_cons_tree_tail
 theorem np_cons_tree_tail : prims.isPrim 2206 = false := by decide +kernel
-theorem fn_fit_named : prog.funcs[2207]? = some (src_fit_named 56 1481 1496 1808 2049 2050 2051 2238 2239 2240) := get_of_drop at_fit_named
+theorem fn_fit_named : prog.funcs[2207]? = some (src_fit_named 56 1483 1498 1808 2049 2050 2051 2238 2239 2240) := get_of_drop at_fit_named
 theorem np_fit_named : prims.isPrim 2207 = false := by decide +kernel
 theorem fn_no_block : prog.funcs[2208]? = some (src_no_block 103 147 2208 2241 2242 2243) := get_of_drop at_no_block
 theorem np_no_block : prims.isPrim 2208 = false := by decide +kernel
@@ -561,7 +561,7 @@ theorem fn_any_variant : prog.funcs[2224]? = some (src_any_variant 257 1062 2224
 theorem np_any_variant : prims.isPrim 2224 = false := by decide +kernel
 theorem fn_cons_binder : prog.funcs[2225]? = some (src_cons_binder 374) := get_of_drop at_cons_binder
 theorem np_cons_binder : prims.isPrim 2225 = false := by decide +kernel
-theorem fn_tried_shape : prog.funcs[2226]? = some (src_tried_shape 1412 1887 2255 2256 2257) := get_of_drop at_tried_shape
+theorem fn_tried_shape : prog.funcs[2226]? = some (src_tried_shape 1415 1887 2255 2256 2257) := get_of_drop at_tried_shape
 theorem np_tried_shape : prims.isPrim 2226 = false := by decide +kernel
 theorem fn_text_core : prog.funcs[2227]? = some (src_text_core 374 531) := get_of_drop at_text_core
 theorem np_text_core : prims.isPrim 2227 = false := by decide +kernel
@@ -593,13 +593,13 @@ theorem fn_and_known : prog.funcs[2241]? = some (src_and_known) := get_of_drop a
 theorem np_and_known : prims.isPrim 2241 = false := by decide +kernel
 theorem fn_not_known : prog.funcs[2242]? = some (src_not_known) := get_of_drop at_not_known
 theorem np_not_known : prims.isPrim 2242 = false := by decide +kernel
-theorem fn_block_value : prog.funcs[2243]? = some (src_block_value 56 144 147 544 1584 1585 1586 1588 1590 1596 1656 2186 2243) := get_of_drop at_block_value
+theorem fn_block_value : prog.funcs[2243]? = some (src_block_value 56 144 147 544 1587 1588 1589 1591 1593 1599 1657 2186 2243) := get_of_drop at_block_value
 theorem np_block_value : prims.isPrim 2243 = false := by decide +kernel
 theorem fn_diverge_eff : prog.funcs[2245]? = some (src_diverge_eff 2260) := get_of_drop at_diverge_eff
 theorem np_diverge_eff : prims.isPrim 2245 = false := by decide +kernel
-theorem fn_is_binder_pat : prog.funcs[2246]? = some (src_is_binder_pat 144 147 1661 2125 2127 2261) := get_of_drop at_is_binder_pat
+theorem fn_is_binder_pat : prog.funcs[2246]? = some (src_is_binder_pat 144 147 1662 2125 2127 2261) := get_of_drop at_is_binder_pat
 theorem np_is_binder_pat : prims.isPrim 2246 = false := by decide +kernel
-theorem fn_is_wild_arm : prog.funcs[2247]? = some (src_is_wild_arm 144 147 1661 2125 2127 2262) := get_of_drop at_is_wild_arm
+theorem fn_is_wild_arm : prog.funcs[2247]? = some (src_is_wild_arm 144 147 1662 2125 2127 2262) := get_of_drop at_is_wild_arm
 theorem np_is_wild_arm : prims.isPrim 2247 = false := by decide +kernel
 theorem fn_names_some : prog.funcs[2248]? = some (src_names_some 1912 2248 2263) := get_of_drop at_names_some
 theorem np_names_some : prims.isPrim 2248 = false := by decide +kernel
@@ -667,7 +667,7 @@ theorem fn_wild_binders : prog.funcs[2279]? = some (src_wild_binders 75 96 139 5
 theorem np_wild_binders : prims.isPrim 2279 = false := by decide +kernel
 theorem fn_fit_args_next : prog.funcs[2280]? = some (src_fit_args_next 56 2273) := get_of_drop at_fit_args_next
 theorem np_fit_args_next : prims.isPrim 2280 = false := by decide +kernel
-theorem fn_fit_arg : prog.funcs[2281]? = some (src_fit_arg 56 144 147 1580 2107) := get_of_drop at_fit_arg
+theorem fn_fit_arg : prog.funcs[2281]? = some (src_fit_arg 56 144 147 1583 2107) := get_of_drop at_fit_arg
 theorem np_fit_arg : prims.isPrim 2281 = false := by decide +kernel
 theorem fn_nest_use : prog.funcs[2282]? = some (src_nest_use 2285 2286) := get_of_drop at_nest_use
 theorem np_nest_use : prims.isPrim 2282 = false := by decide +kernel
@@ -697,7 +697,7 @@ theorem fn_column_arms : prog.funcs[2294]? = some (src_column_arms 96 103 2285 2
 theorem np_column_arms : prims.isPrim 2294 = false := by decide +kernel
 theorem fn_wild_inner : prog.funcs[2295]? = some (src_wild_inner 2296 2299 2300 2301) := get_of_drop at_wild_inner
 theorem np_wild_inner : prims.isPrim 2295 = false := by decide +kernel
-theorem fn_nest_arm : prog.funcs[2296]? = some (src_nest_arm 139 144 147 235 545 813 819 1618 2302 2303 2304) := get_of_drop at_nest_arm
+theorem fn_nest_arm : prog.funcs[2296]? = some (src_nest_arm 139 144 147 235 545 813 819 1621 2302 2303 2304) := get_of_drop at_nest_arm
 theorem np_nest_arm : prims.isPrim 2296 = false := by decide +kernel
 theorem fn_column_arm : prog.funcs[2297]? = some (src_column_arm 2292 2305 2306 2307) := get_of_drop at_column_arm
 theorem np_column_arm : prims.isPrim 2297 = false := by decide +kernel
@@ -713,13 +713,13 @@ theorem fn_replace_at : prog.funcs[2302]? = some (src_replace_at 56 96 103 139 2
 theorem np_replace_at : prims.isPrim 2302 = false := by decide +kernel
 theorem fn_hidden_pat : prog.funcs[2303]? = some (src_hidden_pat 96 139 235 545 2125 2127 2310) := get_of_drop at_hidden_pat
 theorem np_hidden_pat : prims.isPrim 2303 = false := by decide +kernel
-theorem fn_hidden_expr : prog.funcs[2304]? = some (src_hidden_expr 96 139 235 545 1599 1659 2310) := get_of_drop at_hidden_expr
+theorem fn_hidden_expr : prog.funcs[2304]? = some (src_hidden_expr 96 139 235 545 1602 1660 2310) := get_of_drop at_hidden_expr
 theorem np_hidden_expr : prims.isPrim 2304 = false := by decide +kernel
 theorem fn_column_fit : prog.funcs[2305]? = some (src_column_fit 2206) := get_of_drop at_column_fit
 theorem np_column_fit : prims.isPrim 2305 = false := by decide +kernel
 theorem fn_row_fits : prog.funcs[2306]? = some (src_row_fits 75 103 2306 2311) := get_of_drop at_row_fits
 theorem np_row_fits : prims.isPrim 2306 = false := by decide +kernel
-theorem fn_column_sub : prog.funcs[2307]? = some (src_column_sub 147 1661 2246 2312 2313 2314) := get_of_drop at_column_sub
+theorem fn_column_sub : prog.funcs[2307]? = some (src_column_sub 147 1662 2246 2312 2313 2314) := get_of_drop at_column_sub
 theorem np_column_sub : prims.isPrim 2307 = false := by decide +kernel
 theorem fn_covered_use : prog.funcs[2308]? = some (src_covered_use 147 2296 2315 2316) := get_of_drop at_covered_use
 theorem np_covered_use : prims.isPrim 2308 = false := by decide +kernel
@@ -727,7 +727,7 @@ theorem fn_covers_decl : prog.funcs[2309]? = some (src_covers_decl 2317) := get_
 theorem np_covers_decl : prims.isPrim 2309 = false := by decide +kernel
 theorem fn_hidden_path : prog.funcs[2310]? = some (src_hidden_path 2318 2319) := get_of_drop at_hidden_path
 theorem np_hidden_path : prims.isPrim 2310 = false := by decide +kernel
-theorem fn_col_fits : prog.funcs[2311]? = some (src_col_fits 147 1661 2246 2320) := get_of_drop at_col_fits
+theorem fn_col_fits : prog.funcs[2311]? = some (src_col_fits 147 1662 2246 2320) := get_of_drop at_col_fits
 theorem np_col_fits : prims.isPrim 2311 = false := by decide +kernel
 theorem fn_quiet_sub : prog.funcs[2312]? = some (src_quiet_sub 2321) := get_of_drop at_quiet_sub
 theorem np_quiet_sub : prims.isPrim 2312 = false := by decide +kernel
@@ -753,7 +753,7 @@ theorem fn_mentions : prog.funcs[2322]? = some (src_mentions 56 103 859 1042 212
 theorem np_mentions : prims.isPrim 2322 = false := by decide +kernel
 theorem fn_appended_use : prog.funcs[2323]? = some (src_appended_use 545 1042 2296) := get_of_drop at_appended_use
 theorem np_appended_use : prims.isPrim 2323 = false := by decide +kernel
-theorem fn_col_quiet : prog.funcs[2324]? = some (src_col_quiet 147 1661 2313) := get_of_drop at_col_quiet
+theorem fn_col_quiet : prog.funcs[2324]? = some (src_col_quiet 147 1662 2313) := get_of_drop at_col_quiet
 theorem np_col_quiet : prims.isPrim 2324 = false := by decide +kernel
 theorem fn_covers_all : prog.funcs[2325]? = some (src_covers_all 503 2241 2325 2327) := get_of_drop at_covers_all
 theorem np_covers_all : prims.isPrim 2325 = false := by decide +kernel

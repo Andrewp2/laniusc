@@ -348,6 +348,30 @@ def exStructParts (fuel : Nat) (cx : XCx) (fields : List XField) (values : List 
     | [] => []
     | fd :: rest => exStructPart fd (exExpr (fuel - 1) cx (values.getD 0 (XE.eBad txErrStruct)) env fd.ty) :: exStructParts (fuel - 1) cx rest (exTailEs values) env
 termination_by fuel
+/-- A shift amount's value: a literal, or a literal cast to the shifted value's type (`bits >> (8 as u32)`, whose amount the front end reads at u32, where a bare 8 would be an i32). -/
+def exAmountValue (e : XE) : Option Nat :=
+  match e with
+  | .eInt n => some n
+  | .eBool b => none
+  | .eName path => none
+  | .eCall path args => none
+  | .eMethod recv name args => none
+  | .eField recv name => none
+  | .eStruct name names values => none
+  | .eBinary op l r => none
+  | .eNot x => none
+  | .eCast x t => exIntValue x
+  | .eMatch x arms => none
+  | .eArm path binders body => none
+  | .sBlock stmts => none
+  | .sLet name t v => none
+  | .sAssign place v => none
+  | .sCall x => none
+  | .sMatch x => none
+  | .sReturn v => none
+  | .sIf c a b has => none
+  | .eBad why => none
+termination_by fuel
 def exBinary (fuel : Nat) (cx : XCx) (op : List Nat) (l : XE) (r : XE) (env : List XBind) (expected : XTy) : XTm :=
   if fuel = 0 then
     exFail txErrFuel
@@ -364,7 +388,7 @@ def exBinary (fuel : Nat) (cx : XCx) (op : List Nat) (l : XE) (r : XE) (env : Li
         else
           if exSame op txOpShr then
             let width : Nat := exShiftWidth ty
-            match exIntValue r with
+            match exAmountValue r with
             | none => exFail txErrOp
             | some k => exErrIf (decide (width = 0) || decide (width ≤ k)) txErrOp (exLeanInfix txLeanShr (exExpr (fuel - 1) cx l env ty) (exTm (exDecimal k) 1024 ty) ty)
           else

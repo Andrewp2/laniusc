@@ -704,15 +704,17 @@ pub fn compile_funcs(arities: List<Arity>, funcs: List<Func>) -> core::option::O
 // its arguments to just below the return address it pushes, which is where
 // the callee's prologue puts its parameter slots.
 
-// Little-endian bytes of a 32-bit field.
+// Little-endian bytes of a 32-bit field. A shift amount is cast to the
+// value's type: a bare one is an i32, which the pure semantics' check does
+// not take for an unsigned value.
 pub fn le32(value: i32) -> List<u8> {
     let bits: u32 = value as u32;
-    return cons(bits as u8, cons((bits >> 8) as u8, cons((bits >> 16) as u8, single((bits >> 24) as u8))));
+    return cons(bits as u8, cons((bits >> (8 as u32)) as u8, cons((bits >> (16 as u32)) as u8, single((bits >> (24 as u32)) as u8))));
 }
 
 // Little-endian bytes of a 64-bit field.
 pub fn le64(value: u64) -> List<u8> {
-    return cons(value as u8, cons((value >> 8) as u8, cons((value >> 16) as u8, cons((value >> 24) as u8, cons((value >> 32) as u8, cons((value >> 40) as u8, cons((value >> 48) as u8, single((value >> 56) as u8))))))));
+    return cons(value as u8, cons((value >> (8 as u64)) as u8, cons((value >> (16 as u64)) as u8, cons((value >> (24 as u64)) as u8, cons((value >> (32 as u64)) as u8, cons((value >> (40 as u64)) as u8, cons((value >> (48 as u64)) as u8, single((value >> (56 as u64)) as u8))))))));
 }
 
 // rbp-relative displacement of a frame slot.
@@ -7466,7 +7468,7 @@ pub fn page_up(n: usize) -> usize {
 
 pub fn le16(value: usize) -> List<u8> {
     let bits: u64 = value as u64;
-    return cons(bits as u8, single((bits >> 8) as u8));
+    return cons(bits as u8, single((bits >> (8 as u64)) as u8));
 }
 
 pub fn le64n(value: usize) -> List<u8> {

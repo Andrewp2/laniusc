@@ -459,14 +459,18 @@ pub fn opens_block(tokens: List<Token>) -> bool {
 }
 
 // Whether the validator accepts production prod for a node whose tokens
-// begin with `tokens`: not a method's type arguments (the subset has none,
-// and they make the grammar ambiguous, as in `x.f < a > (b)`); a statement
-// that begins with `{` is a block statement, never an expression statement
-// (as in Rust: `{ a } - b;` is a block, then `-b;`); and a path segment `x`
-// or `x<...>` only as generic_path_at says.
+// begin with `tokens`: a statement that begins with `{` is a block
+// statement, never an expression statement (as in Rust: `{ a } - b;` is a
+// block, then `-b;`); a path segment `x` or `x<...>` only as generic_path_at
+// says; and a method's type arguments `.f<...>` only as generic_open says of
+// the tokens from the `<` on (laniusc's rule for a member's `<`, as for a
+// path's: `x.f < a > (b)` is a call with type arguments).
 pub fn picks(prod: usize, tokens: List<Token>) -> bool {
     if (prod == p_member_type_args_some()) {
-        return false;
+        return generic_open(tokens);
+    }
+    if (prod == p_member_type_args_none()) {
+        return !generic_open(tokens);
     }
     if (prod == p_block_stmt()) {
         return opens_block(tokens);
@@ -10925,11 +10929,13 @@ pub fn operand_want(op: SrcOp, want: core::option::Option<SrcType>, a: core::opt
     return either_ty(either_ty(a, b), want);
 }
 
-// A shift's amount has a type of its own; a bare amount takes the shifted
-// value's type.
+// A shift's amount has a type of its own, never the shifted value's; a bare
+// amount (literals only: a constant reads as a literal of its type) is i32,
+// as laniusc types it (and Rust): `(1 as u32) << ((0 - 6) / 4 & 7)` shifts
+// by 7, and `a << (200 + 59)` with `a: u8` by 259, an invalid shift.
 pub fn amount_want(op: SrcOp, want: core::option::Option<SrcType>, a: core::option::Option<SrcType>, b: core::option::Option<SrcType>) -> core::option::Option<SrcType> {
     if (shift_op(op)) {
-        return either_ty(b, either_ty(a, want));
+        return either_ty(b, Some(I32));
     }
     return operand_want(op, want, a, b);
 }

@@ -27,9 +27,8 @@ import grammar_table  # noqa: E402
 B = 80
 MASK = (1 << B) - 1
 SHR, GT = 2, 1
-# Mirrors Unique.lean's `ruledOut` and the pair `picks` decides.
-RULED_OUT = {298}
-PICKED_PAIRS = {(48, 49), (84, 85)}
+# Mirrors Unique.lean's `pickedPair`: the pairs `picks` decides.
+PICKED_PAIRS = {(48, 49), (84, 85), (297, 298)}
 
 
 def grammar():
@@ -110,7 +109,7 @@ def common_prefix(r, s):
 def certificate():
     rules, nonterms = grammar()
     n = len(nonterms)
-    allowed = [k for k in range(len(rules)) if k not in RULED_OUT]
+    allowed = list(range(len(rules)))
     kinds = sorted({x[1] for k in allowed for x in rules[k][1] if x[0] == 'T'} - {13, 44})
     code = {13: GT, 44: SHR}
     for i, kind in enumerate(kinds):

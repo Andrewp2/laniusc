@@ -65,9 +65,11 @@ theorem proof_opens_block {prog : SrcProgram} {prims : Prims} {ix_opens_block ix
   simp only [src_opens_block] at h
   faithful [Lanius.Mini.opensBlock]
 
-theorem proof_picks {prog : SrcProgram} {prims : Prims} {ix_picks ix_p_path_ident ix_p_member_type_args_some ix_p_block_stmt ix_opens_block ix_p_expr_stmt ix_generic_path_at ix_p_path_ident_args : Nat} (fn : prog.funcs[ix_picks]? = some (src_picks ix_p_path_ident ix_p_member_type_args_some ix_p_block_stmt ix_opens_block ix_p_expr_stmt ix_generic_path_at ix_p_path_ident_args)) (np : prims.isPrim ix_picks = false)
+theorem proof_picks {prog : SrcProgram} {prims : Prims} {ix_picks ix_p_path_ident ix_p_member_type_args_some ix_generic_open ix_p_member_type_args_none ix_p_block_stmt ix_opens_block ix_p_expr_stmt ix_generic_path_at ix_p_path_ident_args : Nat} (fn : prog.funcs[ix_picks]? = some (src_picks ix_p_path_ident ix_p_member_type_args_some ix_generic_open ix_p_member_type_args_none ix_p_block_stmt ix_opens_block ix_p_expr_stmt ix_generic_path_at ix_p_path_ident_args)) (np : prims.isPrim ix_picks = false)
     (ext_p_path_ident : Certified (∀ {n : Nat}, Stmt_p_path_ident prog prims ix_p_path_ident n))
     (ext_p_member_type_args_some : Certified (∀ {n : Nat}, Stmt_p_member_type_args_some prog prims ix_p_member_type_args_some n))
+    (ext_generic_open : Certified (∀ {n : Nat}, Stmt_generic_open prog prims ix_generic_open n))
+    (ext_p_member_type_args_none : Certified (∀ {n : Nat}, Stmt_p_member_type_args_none prog prims ix_p_member_type_args_none n))
     (ext_p_block_stmt : Certified (∀ {n : Nat}, Stmt_p_block_stmt prog prims ix_p_block_stmt n))
     (ext_opens_block : Certified (∀ {n : Nat}, Stmt_opens_block prog prims ix_opens_block n))
     (ext_p_expr_stmt : Certified (∀ {n : Nat}, Stmt_p_expr_stmt prog prims ix_p_expr_stmt n))
