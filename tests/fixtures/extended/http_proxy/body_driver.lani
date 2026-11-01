@@ -1,0 +1,62 @@
+// ext::http_body driver: argument 1 is the framing ("fixed:N", "chunked"
+// or "close"), argument 2 the piece size. Stdin is fed in pieces of that
+// size; content goes to stdout, and the last line on stderr is
+// "done consumed=C content=N", "open consumed=C content=N" (EOF before the
+// end) or "error KIND".
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::http_body;
+import std::args;
+import std::io;
+import std::stream;
+
+fn number(v: core::slice::View<u8>, from: i32) -> i64 { let n: i64 = 0; let i: i32 = from; while (i < v.len()) { n = n * 10 + (v.values[v.start + i] as i64 - 48); i += 1; } return n; }
+fn literal(s: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(s),n); return core::slice::view<u8>(raw,n).unwrap(); }
+fn put_number(out: &alloc::vec::Vec<u8>, value: i64) { if (value >= 10) { put_number(out, value / 10); } out.try_push((48 + value % 10) as u8); }
+fn write_to(sink: std::stream::Descriptor, bytes: core::slice::View<u8>) -> bool { if (bytes.len() == 0) { return true; } return core::io::write_all(sink.borrow(), bytes.values, bytes.start, bytes.len()).is_ok(); }
+fn report(line: str, n: i32, consumed: i64, content: u64) -> i32 {
+    let out: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); out.try_extend(literal(line, n));
+    out.try_extend(literal(" consumed=", 10)); put_number(out.borrow(), consumed);
+    out.try_extend(literal(" content=", 9)); put_number(out.borrow(), content as i64); out.try_push(10);
+    write_to(std::stream::stderr(), out.as_view()); out.destroy(); return 0;
+}
+fn main() -> i32 {
+    let captured = std::args::snapshot(1, 4, 64); if (captured.is_err()) { return 2; }
+    let args = captured.unwrap(); if (args.len() < 2) { return 2; }
+    let kind: core::slice::View<u8> = args.get(0).unwrap(); let piece: i32 = number(args.get(1).unwrap(), 0) as i32;
+    let f: ext::http_body::Framer = ext::http_body::until_close();
+    if (kind.values[kind.start] == 102) { f = ext::http_body::fixed(number(kind, 6) as u64); }
+    if (kind.values[kind.start] == 99 && kind.values[kind.start + 1] == 104) { f = ext::http_body::chunked(64, 256); }
+    let input: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); input.try_resize(65536, 0);
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let consumed: i64 = 0;
+    while (!f.is_done()) {
+        let got = source.read(input.as_slice(), 0, piece); if (got.is_err()) { return 3; }
+        let n: i32 = got.unwrap();
+        if (n == 0) {
+            let end = f.finish();
+            if (end.is_err()) { return report("open", 4, consumed, f.content()); }
+            break;
+        }
+        let at: i32 = 0;
+        while (at < n && !f.is_done()) {
+            let s = f.advance(core::slice::View { values: input.as_slice(), start: at, length: n - at });
+            if (s.is_err()) {
+                let e: ext::http_body::Error = s.unwrap_err();
+                let name: core::slice::View<u8> = match (e) { ext::http_body::Error::Malformed -> literal("error malformed\n", 16), ext::http_body::Error::Limit -> literal("error limit\n", 12), _ -> literal("error truncated\n", 16) };
+                write_to(std::stream::stderr(), name); return 0;
+            }
+            let st: ext::http_body::Step = s.unwrap();
+            if (!write_to(std::stream::stdout(), core::slice::View { values: input.as_slice(), start: at + st.data_start, length: st.data_length })) { return 4; }
+            at += st.consumed; consumed += st.consumed as i64;
+            if (st.consumed == 0 && !st.done) { return 5; }
+        }
+    }
+    report("done", 4, consumed, f.content());
+    input.destroy();
+    return 0;
+}

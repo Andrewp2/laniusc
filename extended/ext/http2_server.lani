@@ -23,10 +23,13 @@ import ext::http2_frame;
 // receive windows. max_frame: the MAX_FRAME_SIZE we accept. max_streams:
 // MAX_CONCURRENT_STREAMS. body_bytes: per-request body limit (larger bodies
 // get 413). block_bytes: one assembled header block. max_requests: streams
-// accepted on the connection before a graceful GOAWAY.
-pub struct Options { hpack: ext::hpack::Limits, encoder_table_bytes: i32, stream_window: i32, connection_window: i32, max_frame: i32, max_streams: i32, body_bytes: i32, block_bytes: i32, max_requests: i32 }
+// accepted on the connection before a graceful GOAWAY. stream_bodies:
+// hand out a request once its header section arrives; the application
+// reads its body as it comes with body and consume, and the stream window
+// is credited only for consumed bytes (body_bytes does not apply).
+pub struct Options { hpack: ext::hpack::Limits, encoder_table_bytes: i32, stream_window: i32, connection_window: i32, max_frame: i32, max_streams: i32, body_bytes: i32, block_bytes: i32, max_requests: i32, stream_bodies: bool }
 pub fn default_options() -> Options {
-    return Options { hpack: ext::hpack::default_limits(), encoder_table_bytes: 4096, stream_window: 1048576, connection_window: 4194304, max_frame: 16384, max_streams: 100, body_bytes: 1048576, block_bytes: 65536, max_requests: 1000 };
+    return Options { hpack: ext::hpack::default_limits(), encoder_table_bytes: 4096, stream_window: 1048576, connection_window: 4194304, max_frame: 16384, max_streams: 100, body_bytes: 1048576, block_bytes: 65536, max_requests: 1000, stream_bodies: false };
 }
 
 const LARGEST_WINDOW: i64 = 2147483647;
@@ -42,7 +45,7 @@ struct Stream {
     send_window: i64, receive_window: i64, unacknowledged: i64,
     content_length: i64, received: i64, pseudo: i32, trailers_from: i32,
     method: i32, scheme: i32, authority: i32, path: i32,
-    fields: alloc::vec::Vec<u8>, slots: alloc::vec::Vec<i32>, body: alloc::vec::Vec<u8>,
+    fields: alloc::vec::Vec<u8>, slots: alloc::vec::Vec<i32>, body: alloc::vec::Vec<u8>, body_taken: i32,
     pending: alloc::vec::Vec<u8>, pending_sent: i32, pending_end: bool
 }
 pub struct Connection {
@@ -200,7 +203,7 @@ pub impl Connection {
         if (open_before && !open_after) { self.open_count -= 1; }
         if (!open_before && open_after) { self.open_count += 1; }
         self.states.set(index, state);
-        if (state == READY) { self.queue.try_push(self.ids.at(index)); }
+        if (state == READY && !self.options.stream_bodies) { self.queue.try_push(self.ids.at(index)); }
     }
     fn is_open_at(&self, index: i32) -> bool { let st: i32 = self.states.at(index); return st == RECEIVING || st == READY; }
     // Keep a freed stream's buffers (up to 32 sets of at most 16 KiB each)
@@ -389,12 +392,14 @@ pub impl Connection {
         s.receive_window -= length;
         if (s.receive_window < 0) { self.reset(index, ext::http2::Cause::Protocol, ext::http2_frame::FLOW_CONTROL_ERROR); return; }
         let d: ext::http2_frame::Data = ext::http2_frame::data(frame);
-        if (s.body.len() + d.data.length > self.options.body_bytes) { self.streams.set(index, s); self.auto_reply(index, 413); return; }
+        if (!self.options.stream_bodies && s.body.len() + d.data.length > self.options.body_bytes) { self.streams.set(index, s); self.auto_reply(index, 413); return; }
         if (s.body.try_extend(d.data).is_err()) { self.streams.set(index, s); self.reset(index, ext::http2::Cause::AllocationFailed, ext::http2_frame::INTERNAL_ERROR); return; }
         s.received += d.data.length as i64;
         if (s.content_length >= 0 && s.received > s.content_length) { self.streams.set(index, s); self.reset(index, ext::http2::Cause::Malformed, ext::http2_frame::PROTOCOL_ERROR); return; }
-        if (!d.end_stream) {
-            s.unacknowledged += length;
+        // Streaming credits data when consumed; padding is credited now.
+        let credit: i64 = length; if (self.options.stream_bodies) { credit = length - d.data.length as i64; }
+        if (!d.end_stream && credit > 0) {
+            s.unacknowledged += credit;
             if (s.unacknowledged * 2 >= self.options.stream_window as i64) { ext::http2_frame::write_window_update(self.out.borrow(), s.id, s.unacknowledged as i32); s.receive_window += s.unacknowledged; s.unacknowledged = 0; }
         }
         self.streams.set(index, s);
@@ -459,7 +464,7 @@ pub impl Connection {
             send_window: self.peer_window, receive_window: window, unacknowledged: 0,
             content_length: -1, received: 0, pseudo: 0, trailers_from: -1,
             method: -1, scheme: -1, authority: -1, path: -1,
-            fields: alloc::vec::new<u8>(), slots: alloc::vec::new<i32>(), body: alloc::vec::new<u8>(),
+            fields: alloc::vec::new<u8>(), slots: alloc::vec::new<i32>(), body: alloc::vec::new<u8>(), body_taken: 0,
             pending: alloc::vec::new<u8>(), pending_sent: 0, pending_end: false };
         let reused: core::option::Option<Stream> = self.spare.pop();
         if (reused.is_some()) { let r: Stream = reused.unwrap(); s.fields = r.fields; s.slots = r.slots; s.body = r.body; s.pending = r.pending; }
@@ -476,6 +481,7 @@ pub impl Connection {
         if (self.block_self_dependent) { self.reset(index, ext::http2::Cause::Protocol, ext::http2_frame::PROTOCOL_ERROR); return; }
         if (limited) { self.auto_reply(index, 431); return; }
         if (!self.store_fields(index, true)) { return; }
+        if (self.options.stream_bodies) { self.queue.try_push(id); }
         if (self.block_end_stream) { self.end_remote(index); }
     }
     // Copy the decoded fields into the stream. A request section has its
@@ -656,7 +662,9 @@ pub impl Connection {
         while (self.queue.len() > 0) {
             let id: i32 = self.queue.at(0); self.queue.remove(0);
             let index: i32 = self.find(id);
-            if (index < 0 || self.states.at(index) != READY || self.taken.at(index)) { continue; }
+            if (index < 0 || self.taken.at(index)) { continue; }
+            let st: i32 = self.states.at(index);
+            if (st != READY && !(self.options.stream_bodies && st == RECEIVING)) { continue; }
             let s: Stream = self.streams.at(index); if (s.responded) { continue; }
             self.taken.set(index, true);
             return core::option::Some(id);
@@ -688,7 +696,25 @@ pub impl Connection {
         while (i < n) { let f: ext::hpack::Header = self.field(id, i); if (same(f.name, name)) { return core::option::Some(f.value); } i += 1; }
         return core::option::None();
     }
-    pub fn body(&self, id: i32) -> core::slice::View<u8> { let index: i32 = self.find(id); if (index < 0) { return text("", 0); } let s: Stream = self.streams.at(index); return s.body.as_view(); }
+    // The request body received so far, less what consume dropped.
+    pub fn body(&self, id: i32) -> core::slice::View<u8> { let index: i32 = self.find(id); if (index < 0) { return text("", 0); } let s: Stream = self.streams.at(index); return part(s.body.as_slice(), s.body_taken, s.body.len() - s.body_taken); }
+    // True once the client ended the request (END_STREAM).
+    pub fn body_finished(&self, id: i32) -> bool { let index: i32 = self.find(id); if (index < 0) { return false; } let s: Stream = self.streams.at(index); return s.remote_closed; }
+    // With stream_bodies: drop the first count body bytes and credit them
+    // to the stream's window (WINDOW_UPDATE once half the window is due).
+    pub fn consume(&self, id: i32, count: i32) -> bool {
+        let index: i32 = self.find(id); if (index < 0) { return false; }
+        let s: Stream = self.streams.at(index);
+        if (count < 0 || count > s.body.len() - s.body_taken) { return false; }
+        s.body_taken += count;
+        if (s.body_taken == s.body.len()) { s.body.clear(); s.body_taken = 0; }
+        if (s.body_taken > 65536 && s.body_taken * 2 > s.body.len()) { shift(s.body.borrow(), s.body_taken); s.body_taken = 0; }
+        if (self.options.stream_bodies && !s.remote_closed && self.is_open_at(index)) {
+            s.unacknowledged += count as i64;
+            if (s.unacknowledged * 2 >= self.options.stream_window as i64) { ext::http2_frame::write_window_update(self.out.borrow(), s.id, s.unacknowledged as i32); s.receive_window += s.unacknowledged; s.unacknowledged = 0; }
+        }
+        self.streams.set(index, s); return true;
+    }
     pub fn state(&self, id: i32) -> ext::http2::State {
         let index: i32 = self.find(id); if (index < 0) { return ext::http2::State::Failed; }
         let st: i32 = self.states.at(index);

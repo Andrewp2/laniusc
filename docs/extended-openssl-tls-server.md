@@ -91,8 +91,21 @@ are not admitted.
 
 This server profile loads one credential pair per factory call. It offers no
 SNI-based credential selection, application verification/password callbacks,
-ALPN negotiation, optional client certificates, live credential mutation or
-foreign-thread entry. Native OpenSSL configuration and session-resumption
+optional client certificates, live credential mutation or foreign-thread
+entry.
+
+`ServerContext.set_alpn(protocols)` accepts application protocols
+(RFC 7301 3.2). The list is in wire form, the same as `Session.set_alpn`,
+most preferred first. A Lanius function serves as OpenSSL's
+`SSL_CTX_set_alpn_select_cb` callback. It picks the server's most
+preferred protocol that the client offers. With no overlap it returns
+`SSL_TLSEXT_ERR_NOACK`, and the handshake proceeds without ALPN. The list
+applies to handshakes that start after the call. `destroy()` unhooks the
+callback before it frees the list. Sessions that still retain the native
+context then negotiate without ALPN and never read freed memory.
+`Session.selected_protocol` reports the choice on the server too. Tests:
+`tests/extended_http_proxy_execution.rs` (the TLS proxy and service
+oracles). Native OpenSSL configuration and session-resumption
 behavior are not replaced by a custom TLS implementation. Broader server and
 certificate-trust policy remains separate work.
 

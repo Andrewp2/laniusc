@@ -68,8 +68,8 @@ def make_root(base):
 
 
 class Server:
-    def __init__(self, exe, root, extra):
-        args = [exe, root, "127.0.0.1:0", "--accept-timeout", "1500"] + extra
+    def __init__(self, exe, root, extra, accept=1500):
+        args = [exe, root, "127.0.0.1:0", "--accept-timeout", str(accept)] + extra
         if MODE["sequential"]:
             args.append("--sequential")
         self.proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -574,7 +574,10 @@ def concurrent(exe, base):
     huge = bytes(range(256)) * (32 * 4096)  # 32 MiB
     with open(os.path.join(root, "huge.bin"), "wb") as f:
         f.write(huge)
-    srv = Server(exe, root, ["--head-timeout", "1500", "--idle-timeout", "1500", "--max-connections", "128"])
+    # The slow reader (step 3) is still draining kernel buffers after the
+    # server has retired its connection; a longer quiet period keeps the
+    # server up until step 4 connects.
+    srv = Server(exe, root, ["--head-timeout", "1500", "--idle-timeout", "1500", "--max-connections", "128"], accept=4000)
     port = srv.port
     cases = 0
     errors = []

@@ -165,9 +165,9 @@ part before `?`, so the `Router` applies unchanged.
 
 `H2Connection` is the sequential driver: it serves one connection at a
 time, like `accept_until`/`next_request`. The event server below
-multiplexes h2c connections on its loop instead. HTTP/2 over TLS waits on C
-callback support for ALPN selection; see
-[HTTP/2 server](extended-http2-server.md#http2-over-tls).
+multiplexes h2c connections on its loop instead. HTTP/2 over TLS (ALPN
+`h2`) runs on the event server through `ext::http_service_tls`; see
+[HTTPS with ALPN](#https-with-alpn-exthttp_service_tls).
 
 ### h2c on the event server
 
@@ -214,6 +214,26 @@ The slot's deadline depends on what it is waiting for:
 A slot also closes when the connection is finished, meaning a GOAWAY went
 either way and every stream ended, or when the peer closes. Its queued
 requests are dropped with it.
+
+## HTTPS with ALPN (`ext::http_service_tls`)
+
+```lanius
+pub fn server(listener: &std::socket::Socket, options: Options, max_connections: i32, context: ext::openssl_tls::ServerContext, h2: bool) -> Result<TlsServer,Error>;
+pub impl TlsServer { next_ready, request, take, put, h2_request, h2_header, h2_respond, stats, tls_stats, active, close }
+```
+
+`TlsServer` serves exactly like the event Server, over TLS. With `h2` and
+an ALPN list on the context (`ext::tls_clients::alpn_protocols`), clients
+that select `h2` are served as HTTP/2 streams, and every other client as
+HTTP/1.1. The Server does no TLS itself. `wrap_clients()` hands each
+connection's socket I/O to a transport through
+[`ext::client_transport`](extended-http-proxy.md#tls-and-alpn), and
+`ext::tls_clients` does the handshakes, records and close_notify on the
+Server's loop. To fit a transport, `next_ready` is now `pop_ready` plus
+`poll_round`, which waits once. Programs link OpenSSL
+(`--native-link --native-library ssl --native-library crypto`). The
+[reverse proxy](extended-http-proxy.md) in the same family uses the same
+transport.
 
 ## Requests and keep-alive
 
@@ -456,8 +476,9 @@ by other heavy jobs.
 
 ## Limits of this version
 
-- **Threads and TLS:** one thread, no TLS. HTTP/2 is prior-knowledge h2c
-  only, on both the sequential driver and the event server.
+- **Threads and TLS:** one thread. TLS (with ALPN h2) is available on the
+  event server only, through `ext::http_service_tls`. The sequential driver
+  serves only prior-knowledge h2c.
 - **Memory:** a connection uses up to `buffer_bytes` plus the decoded body,
   and the event server's `max_connections` is the only cap on the total.
 - **Write deadline:** the event server's write deadline applies to the whole
