@@ -9,12 +9,14 @@ import core::mem;
 import core::result;
 import core::slice;
 
-pub enum Error { Bounds, LimbLimit, WorkLimit, OutputLimit, AllocationFailed, InvalidRadix, InvalidDigit, Empty, Underflow, DivisionByZero, Overflow }
+pub enum Error { Bounds, LimbLimit, WorkLimit, OutputLimit, AllocationFailed, InvalidRadix, InvalidDigit, Empty, Underflow, DivisionByZero, Overflow, NegativeExponent }
 pub struct Limits { max_limbs: i32, max_work: u64, max_output: i32 }
 pub struct BigUint { limbs: alloc::vec::Vec<u32> }
 pub struct DivRem { quotient: BigUint, remainder: BigUint }
 const BASE: u64 = 4294967296;
 const MASK: u64 = 4294967295;
+// Operands with at least this many significant limbs on both sides use Karatsuba.
+pub const KARATSUBA_THRESHOLD: i32 = 32;
 pub fn default_limits() -> Limits { return Limits { max_limbs: 1048576, max_work: 100000000, max_output: 1048576 }; }
 pub fn zero() -> BigUint { return BigUint { limbs: alloc::vec::new() }; }
 fn valid(limits: Limits) -> bool { return limits.max_limbs >= 0 && limits.max_limbs <= 536870911 && limits.max_output >= 0; }
@@ -98,6 +100,11 @@ pub impl BigUint {
         let work: u64 = (self.limbs.len() as u64)*(other.limbs.len() as u64); if (work > limits.max_work) { return core::result::Err(Error::WorkLimit); }
         if (self.is_zero() || other.is_zero()) { return core::result::Ok(zero()); }
         let count: i32 = self.limbs.len()+other.limbs.len(); if (count-1 > limits.max_limbs) { return core::result::Err(Error::LimbLimit); } if (count > limits.max_limbs) { count = limits.max_limbs; }
+        if (count == self.limbs.len()+other.limbs.len() && self.limbs.len() >= KARATSUBA_THRESHOLD && other.limbs.len() >= KARATSUBA_THRESHOLD) {
+            let wide: core::result::Result<BigUint,Error> = fresh(count,limits); if (wide.is_err()) { return wide; } let product: BigUint = wide.unwrap();
+            let done: core::result::Result<i32,Error> = kmul_into(product.borrow(),0,self,0,self.limbs.len(),other,0,other.limbs.len(),limits);
+            if (done.is_err()) { product.destroy(); return core::result::Err(done.unwrap_err()); } product.normalize(); return core::result::Ok(product);
+        }
         let made: core::result::Result<BigUint,Error> = fresh(count,limits); if (made.is_err()) { return made; } let out: BigUint = made.unwrap(); let i: i32 = 0;
         while (i < self.limbs.len()) {
             let carry: u64 = 0; let j: i32 = 0;
@@ -121,6 +128,67 @@ pub impl BigUint {
         let made: core::result::Result<BigUint,Error> = fresh(count,limits); if (made.is_err()) { return made; } let out: BigUint = made.unwrap(); let i: i32 = 0;
         while (i < count) { let wide: u64 = (self.get(i+whole) as u64)|((self.get(i+whole+1) as u64) << 32); out.put(i,(wide >> shift) as u32); i += 1; } out.normalize(); return core::result::Ok(out);
     }
+}
+// Karatsuba over limb windows. out[at..] += x[xf..xf+xc] * y[yf..yf+yc]; the
+// caller sizes out for the whole accumulated sum, so carries stay inside it.
+// Every temporary is at most the top-level product size (2k+2 <= n+3 <= n+m
+// because both top operands have >= KARATSUBA_THRESHOLD limbs).
+fn used(x: &BigUint, from: i32, count: i32) -> i32 { let n: i32 = count; while (n > 0 && x.get(from+n-1) == 0) { n -= 1; } return n; }
+fn add_window(out: &BigUint, at: i32, src: &BigUint, from: i32, count: i32) {
+    let carry: u64 = 0; let index: i32 = 0;
+    while (index < count) { let wide: u64 = (out.get(at+index) as u64)+(src.get(from+index) as u64)+carry; out.put(at+index,wide as u32); carry = wide >> 32; index += 1; }
+    let position: i32 = at+count;
+    while (carry != 0 && position < out.limbs.len()) { let wide: u64 = (out.get(position) as u64)+carry; out.put(position,wide as u32); carry = wide >> 32; position += 1; }
+}
+// out -= src, where out >= src numerically.
+fn sub_window(out: &BigUint, src: &BigUint) {
+    let borrow: u64 = 0; let index: i32 = 0;
+    while ((index < src.limbs.len() || borrow != 0) && index < out.limbs.len()) {
+        let left: u64 = out.get(index) as u64; let right: u64 = (src.get(index) as u64)+borrow; out.put(index,(left+BASE-right) as u32); borrow = 0; if (left < right) { borrow = 1; } index += 1;
+    }
+}
+fn kmul_into(out: &BigUint, at: i32, x: &BigUint, xf: i32, xc: i32, y: &BigUint, yf: i32, yc: i32, limits: Limits) -> core::result::Result<i32,Error> {
+    let xl: i32 = used(x,xf,xc); let yl: i32 = used(y,yf,yc);
+    if (xl == 0 || yl == 0) { return core::result::Ok(0); }
+    if (xl < yl) { return kmul_into(out,at,y,yf,yl,x,xf,xl,limits); }
+    if (yl < KARATSUBA_THRESHOLD) {
+        let i: i32 = 0;
+        while (i < yl) {
+            let factor: u64 = y.get(yf+i) as u64;
+            if (factor != 0) {
+                let carry: u64 = 0; let j: i32 = 0;
+                // factor*x_j + out + carry <= (B-1)^2 + 2(B-1) = B^2-1.
+                while (j < xl) { let wide: u64 = factor*(x.get(xf+j) as u64)+(out.get(at+i+j) as u64)+carry; out.put(at+i+j,wide as u32); carry = wide >> 32; j += 1; }
+                let position: i32 = at+i+xl;
+                while (carry != 0 && position < out.limbs.len()) { let wide: u64 = (out.get(position) as u64)+carry; out.put(position,wide as u32); carry = wide >> 32; position += 1; }
+            }
+            i += 1;
+        }
+        return core::result::Ok(0);
+    }
+    let k: i32 = (xl+1)/2;
+    if (yl <= k) {
+        // Unbalanced: split only the longer operand.
+        let low: core::result::Result<i32,Error> = kmul_into(out,at,x,xf,k,y,yf,yl,limits); if (low.is_err()) { return low; }
+        return kmul_into(out,at+k,x,xf+k,xl-k,y,yf,yl,limits);
+    }
+    let made_low: core::result::Result<BigUint,Error> = fresh(2*k,limits); if (made_low.is_err()) { return core::result::Err(made_low.unwrap_err()); } let z0: BigUint = made_low.unwrap();
+    let step: core::result::Result<i32,Error> = kmul_into(z0.borrow(),0,x,xf,k,y,yf,k,limits); if (step.is_err()) { z0.destroy(); return step; }
+    let made_high: core::result::Result<BigUint,Error> = fresh((xl-k)+(yl-k),limits); if (made_high.is_err()) { z0.destroy(); return core::result::Err(made_high.unwrap_err()); } let z2: BigUint = made_high.unwrap();
+    step = kmul_into(z2.borrow(),0,x,xf+k,xl-k,y,yf+k,yl-k,limits); if (step.is_err()) { z2.destroy(); z0.destroy(); return step; }
+    let made_sx: core::result::Result<BigUint,Error> = fresh(k+1,limits); if (made_sx.is_err()) { z2.destroy(); z0.destroy(); return core::result::Err(made_sx.unwrap_err()); } let sx: BigUint = made_sx.unwrap();
+    add_window(sx.borrow(),0,x,xf,k); add_window(sx.borrow(),0,x,xf+k,xl-k);
+    let made_sy: core::result::Result<BigUint,Error> = fresh(k+1,limits); if (made_sy.is_err()) { sx.destroy(); z2.destroy(); z0.destroy(); return core::result::Err(made_sy.unwrap_err()); } let sy: BigUint = made_sy.unwrap();
+    add_window(sy.borrow(),0,y,yf,k); add_window(sy.borrow(),0,y,yf+k,yl-k);
+    let made_mid: core::result::Result<BigUint,Error> = fresh(2*k+2,limits); if (made_mid.is_err()) { sy.destroy(); sx.destroy(); z2.destroy(); z0.destroy(); return core::result::Err(made_mid.unwrap_err()); } let z1: BigUint = made_mid.unwrap();
+    step = kmul_into(z1.borrow(),0,sx.borrow(),0,k+1,sy.borrow(),0,k+1,limits); sy.destroy(); sx.destroy();
+    if (step.is_err()) { z1.destroy(); z2.destroy(); z0.destroy(); return step; }
+    // (x0+x1)(y0+y1) - x0*y0 - x1*y1 = x0*y1 + x1*y0 >= 0.
+    sub_window(z1.borrow(),z0.borrow()); sub_window(z1.borrow(),z2.borrow());
+    add_window(out,at,z0.borrow(),0,used(z0.borrow(),0,z0.limbs.len()));
+    add_window(out,at+k,z1.borrow(),0,used(z1.borrow(),0,z1.limbs.len()));
+    add_window(out,at+2*k,z2.borrow(),0,used(z2.borrow(),0,z2.limbs.len()));
+    z1.destroy(); z2.destroy(); z0.destroy(); return core::result::Ok(0);
 }
 fn digit(byte: u8) -> i32 { if (byte >= 48 && byte <= 57) { return (byte-48) as i32; } if (byte >= 65 && byte <= 90) { return (byte-65) as i32+10; } if (byte >= 97 && byte <= 122) { return (byte-97) as i32+10; } return 36; }
 pub fn parse(input: core::slice::View<u8>, radix: i32, limits: Limits) -> core::result::Result<BigUint,Error> {
@@ -153,6 +221,15 @@ pub impl BigUint {
 fn division_work(left: i32, right: i32) -> u64 {
     if (left < right) { return left as u64; }
     return 8*((left as u64)+(right as u64)+1)+4*(((left-right+1) as u64)*(right as u64));
+}
+fn mul_mod_work(left: &BigUint, right: &BigUint, modulus: &BigUint) -> u64 {
+    return (left.limbs.len() as u64)*(right.limbs.len() as u64)+division_work(left.limbs.len()+right.limbs.len(),modulus.limbs.len());
+}
+fn mul_mod(left: &BigUint, right: &BigUint, modulus: &BigUint, limits: Limits) -> core::result::Result<BigUint,Error> {
+    if (mul_mod_work(left,right,modulus) > limits.max_work) { return core::result::Err(Error::WorkLimit); }
+    let product: core::result::Result<BigUint,Error> = left.mul(right,limits); if (product.is_err()) { return product; } let value: BigUint = product.unwrap();
+    let divided: core::result::Result<DivRem,Error> = value.div_rem(modulus,limits); value.destroy(); if (divided.is_err()) { return core::result::Err(divided.unwrap_err()); }
+    let pair: DivRem = divided.unwrap(); pair.quotient.destroy(); return core::result::Ok(pair.remainder);
 }
 pub impl BigUint {
     pub fn div_rem(&self, other: &BigUint, limits: Limits) -> core::result::Result<DivRem,Error> {
@@ -249,6 +326,29 @@ pub impl BigUint {
             let divided: core::result::Result<DivRem,Error> = a.div_rem(b.borrow(),budget); if (divided.is_err()) { a.destroy(); b.destroy(); return core::result::Err(divided.unwrap_err()); } budget.max_work -= cost;
             let pair: DivRem = divided.unwrap(); pair.quotient.destroy(); a.destroy(); a = b; b = pair.remainder;
         } b.destroy(); return core::result::Ok(a);
+    }
+    // Left-to-right square and multiply, reducing after every product. The
+    // remaining work budget covers each product and each Knuth reduction.
+    pub fn mod_pow(&self, exponent: &BigUint, modulus: &BigUint, limits: Limits) -> core::result::Result<BigUint,Error> {
+        if (!valid(limits)) { return core::result::Err(Error::Bounds); } if (modulus.is_zero()) { return core::result::Err(Error::DivisionByZero); }
+        let reduced: core::result::Result<DivRem,Error> = self.div_rem(modulus,limits); if (reduced.is_err()) { return core::result::Err(reduced.unwrap_err()); }
+        let pair: DivRem = reduced.unwrap(); pair.quotient.destroy(); let base: BigUint = pair.remainder; let budget: Limits = limits;
+        budget.max_work -= division_work(self.limbs.len(),modulus.limbs.len());
+        let out: BigUint = zero();
+        if (modulus.limbs.len() != 1 || modulus.get(0) != 1) { let one: core::result::Result<BigUint,Error> = from_u64(1,limits); if (one.is_err()) { base.destroy(); return one; } out = one.unwrap(); }
+        let bit: u64 = exponent.bit_length();
+        while (bit > 0) {
+            bit -= 1;
+            let cost: u64 = mul_mod_work(out.borrow(),out.borrow(),modulus);
+            let squared: core::result::Result<BigUint,Error> = mul_mod(out.borrow(),out.borrow(),modulus,budget); if (squared.is_err()) { out.destroy(); base.destroy(); return squared; }
+            budget.max_work -= cost; out.destroy(); out = squared.unwrap();
+            if (exponent.bit(bit)) {
+                let cost_base: u64 = mul_mod_work(out.borrow(),base.borrow(),modulus);
+                let multiplied: core::result::Result<BigUint,Error> = mul_mod(out.borrow(),base.borrow(),modulus,budget); if (multiplied.is_err()) { out.destroy(); base.destroy(); return multiplied; }
+                budget.max_work -= cost_base; out.destroy(); out = multiplied.unwrap();
+            }
+        }
+        base.destroy(); return core::result::Ok(out);
     }
     pub fn value_hash(&self) -> u32 {
         let state: u32 = core::hash::FNV1A_OFFSET_BASIS; let index: i32 = 0;

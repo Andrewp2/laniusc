@@ -10,6 +10,11 @@ import alloc::big_uint;
 pub struct BigInt { negative: bool, magnitude: alloc::big_uint::BigUint }
 pub struct DivRem { quotient: BigInt, remainder: BigInt }
 
+// -(magnitude - value), consuming value.
+fn signed_sub(magnitude: &alloc::big_uint::BigUint, value: alloc::big_uint::BigUint, limits: alloc::big_uint::Limits) -> core::result::Result<BigInt, alloc::big_uint::Error> {
+    let difference: core::result::Result<alloc::big_uint::BigUint, alloc::big_uint::Error> = magnitude.sub(value.borrow(), limits); value.destroy();
+    return signed(difference, true);
+}
 pub fn zero() -> BigInt { return owned(false, alloc::big_uint::zero()); }
 fn owned(negative: bool, magnitude: alloc::big_uint::BigUint) -> BigInt {
     return BigInt { negative: negative && !magnitude.is_zero(), magnitude: magnitude };
@@ -85,6 +90,20 @@ pub impl BigInt {
     }
     pub fn mul(&self, other: &BigInt, limits: alloc::big_uint::Limits) -> core::result::Result<BigInt, alloc::big_uint::Error> { return signed(self.magnitude.mul(other.magnitude.borrow(), limits), self.negative != other.negative); }
     pub fn pow(&self, exponent: u32, limits: alloc::big_uint::Limits) -> core::result::Result<BigInt, alloc::big_uint::Error> { return signed(self.magnitude.pow(exponent, limits), self.negative && (exponent & 1) != 0); }
+    // Python pow(a, e, m) semantics: e >= 0, m != 0, and a nonzero result
+    // takes the modulus sign, so 0 <= r < m or m < r <= 0.
+    pub fn mod_pow(&self, exponent: &BigInt, modulus: &BigInt, limits: alloc::big_uint::Limits) -> core::result::Result<BigInt, alloc::big_uint::Error> {
+        if (exponent.negative) { return core::result::Err(alloc::big_uint::Error::NegativeExponent); }
+        let reduced: core::result::Result<alloc::big_uint::BigUint, alloc::big_uint::Error> = self.magnitude.mod_pow(exponent.magnitude.borrow(), modulus.magnitude.borrow(), limits);
+        if (core::result::is_err(reduced)) { return core::result::Err(core::result::unwrap_err(reduced)); }
+        let value: alloc::big_uint::BigUint = core::result::unwrap(reduced);
+        if (self.negative && exponent.magnitude.bit(0) && !value.is_zero()) {
+            let flipped: core::result::Result<alloc::big_uint::BigUint, alloc::big_uint::Error> = modulus.magnitude.sub(value.borrow(), limits); value.destroy();
+            if (core::result::is_err(flipped)) { return core::result::Err(core::result::unwrap_err(flipped)); } value = core::result::unwrap(flipped);
+        }
+        if (modulus.negative && !value.is_zero()) { return signed_sub(modulus.magnitude.borrow(), value, limits); }
+        return core::result::Ok(owned(false, value));
+    }
     pub fn gcd(&self, other: &BigInt, limits: alloc::big_uint::Limits) -> core::result::Result<BigInt, alloc::big_uint::Error> { return signed(self.magnitude.gcd(other.magnitude.borrow(), limits), false); }
     // Truncation toward zero: a=q*b+r, abs(r)<abs(b), nonzero r has sign(a).
     // The result owns both fields. Transfer each once, or destroy the result.
