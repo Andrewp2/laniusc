@@ -7,24 +7,35 @@ DUMP is the Lean file faithful_dump.py wrote (`Lanius.Faithful.Self`, with
 DUMP.meta next to it), REP the SelfProg.lean faithful_certs.py wrote (for
 the prims). OUTDIR (default: DUMP's directory) gets
 
-  SelfPureBase.lean  the prims, the functions `outside` the pure fragment
+  SelfPureTab.lean   the prims, the functions `outside` the pure fragment
                      (the driver `app::main`, and `size_of` and
                      `typed_slice_from_storage`, which only the prims call),
-                     the program's declarations `decls`, and two tables
-                     checked once: the box structs (`boxElem_self`) and the
-                     callees' signatures in blocks (`callTy_self`), so the
-                     per-function checks do not walk the function list;
-  SelfPure<k>.lean   for N functions each (default 100): `pure<i> :
-                     PureFunc prog prims outside src<i> = true` for each pure
-                     function (`pureFunc_fast` and `decide +kernel` of
-                     `stmtOkC`, Sim/CheckFast.lean), and `part<k>`/`chunk<k>`:
-                     `FuncOk` of each of them. The chunks import only
-                     SelfPureBase, so they build in parallel;
-  SelfDecls.lean     `prog.decls = decls`, computed once (`declareProgram` is
-                     slow to reduce);
-  SelfPrims.lean     `PrimsOk prog prims`, from SelfDecls;
-  SelfPure.lean      `selfPure : PureProg prog SelfRep.prims outside` and
+                     the program's declarations `decls`, and two tables: the
+                     box structs (`boxPairs`) and the functions' signatures in
+                     blocks (`sigBlocks`). It imports no function's body;
+  SelfOk<g>.lean     for the functions of some SelfSrc modules (by a hash of
+                     the module's name, so a function's edit rebuilds one of
+                     them): `fok<i> : FuncOk sp prims outside i f` for any
+                     program `sp` with those tables' boxes and signatures
+                     (`pureFunc_fast` and `decide +kernel` of `stmtOkC`,
+                     Sim/CheckFast.lean);
+  SelfDecl<k>.lean   `declareFuncs` of functions kN to kN + N - 1, from the
+                     declarations before them to those after (`declsStep`,
+                     Sim/DeclStep.lean), in one kernel check;
+  SelfPureBase.lean  that the self program has the tables' boxes and
+                     signatures (`boxElem_self`, `callTy_self`);
+  SelfDecls.lean     `prog.decls = decls`, the SelfDecl steps chained along
+                     SelfProg's tails;
+  SelfPrimTab.lean   the facts about the prims' types that only the tables
+                     decide (`wordElement`, their layout);
+  SelfPrims.lean     `PrimsOk prog prims`;
+  SelfPure.lean      the `fok`s in chunks of N (default 100), and
+                     `selfPure : PureProg prog SelfRep.prims outside` and
                      `selfPrims : PrimsOk prog SelfRep.prims`.
+
+Only the SelfOk and SelfDecl files read the functions' bodies, so an edit of
+one function rechecks its group and its run, and the files that put the
+facts together.
 
 All proofs are `decide +kernel` or `rfl`. A file is only rewritten when its
 text changes. The generator also runs a Python copy of `PureFunc` and stops
@@ -36,11 +47,13 @@ outside, and computes `declareProgram`'s declarations in its order.
 import os
 import re
 import sys
+import zlib
 
 PRIM_NAMES = ('mini::selfhost::boxed', 'mini::selfhost::unbox')
 OUTSIDE_PREFIXES = ('app::', 'core::mem::size_of', 'core::mem::typed_slice_from_storage')
 ROOTS = ('mini::selfhost::compile_source', 'mini::selfhost::front_end_files')
 NS = 'Lanius.Faithful.SelfPure'
+GROUPS = 24  # files of per-function checks, each the functions of some SelfSrc modules
 BLOCK = 41  # functions per block of `sigBlocks`: about the square root of their number
 
 
@@ -531,11 +544,15 @@ class Declarer:
                 self.ty(t)
 
     def run(self):
+        # counts[i]: the structs and enums declared before function i.
+        self.counts = []
         for f in self.prog.funcs:
+            self.counts.append((len(self.order_s), len(self.order_e)))
             for _, t in f['params']:
                 self.ty(t)
             self.ty(f['ret'])
             self.stmt(f['body'])
+        self.counts.append((len(self.order_s), len(self.order_e)))
         return self
 
 
@@ -638,79 +655,141 @@ def main(argv):
     def comment_list(ids):
         return ''.join(f'  -- {i} {names[i]}\n' for i in ids)
 
-    written = []
-    base = (f'import Lanius.Faithful.Gen.Self\nimport Lanius.Faithful.Sim.ProgOk\nimport Lanius.Faithful.Sim.CheckFast\n\n{HEADER}\n'
-            f'namespace {NS}\n\nopen Lanius.Mini\nopen Lanius.Faithful\nopen Lanius.Faithful.Self\n\n'
+    # Each function's term in SelfProg (`abbrev src<i> : SrcFunc := src_<key> ARGS`)
+    # and the module that defines `src_<key>`.
+    rhs = {int(i): t.strip() for i, t in re.findall(r'^abbrev src(\d+) : SrcFunc := (.*)$', text, re.M)}
+    home = {}
+    gen_dir = os.path.dirname(os.path.abspath(rep))
+    for name in sorted(os.listdir(gen_dir)):
+        if name.startswith('SelfSrc') and name.endswith('.lean'):
+            with open(os.path.join(gen_dir, name)) as f:
+                for k in re.findall(r'^def src_(\S+)', f.read(), re.M):
+                    home[k] = name[:-5]
+    assert all(keys[i] in home for i in range(prog.n)), 'a function without its SelfSrc module'
+    groups = {}
+    for i in range(prog.n):
+        groups.setdefault(zlib.crc32(home[keys[i]].encode()) % GROUPS, []).append(i)
+
+    open_lines = 'open Lanius.Mini\nopen Lanius.Faithful\nopen Lanius.Faithful.Self\n\n'
+    total_s, total_e = decl.counts[-1]
+
+    def at(i):
+        """`declAt decls a b` before function i: the declarations not yet made dropped."""
+        ns, ne = decl.counts[i]
+        return total_s - ns, total_e - ne
+
+    tab = (f'import Lanius.Faithful.Gen.SelfTypes\nimport Lanius.Faithful.Sim.CheckFast\n'
+           f'import Lanius.Faithful.Sim.DeclStep\n\n{HEADER}\n'
+           f'namespace {NS}\n\n{open_lines}'
+           'noncomputable section\n\n'
+           '/-- The prims, as SelfRep has them. -/\n'
+           f'def prims : Prims :=\n  {{ boxed := {prims["boxed"]},\n    unbox := {prims["unbox"]} }}\n\n'
+           '/-- The functions outside the pure fragment: the driver, and the helpers\n'
+           'only the prims call. -/\n'
+           'def outside : List Nat := [\n' +
+           ''.join(f'  {i}{"," if k + 1 < len(outside) else ""} -- {names[i]}\n' for k, i in enumerate(outside)) +
+           ']\n\n'
+           '/-- The program\'s declarations, as `declareProgram` gives them. -/\n'
+           'def decls : SrcDecls where\n  structs := [\n' +
+           ',\n'.join(f'    {{ id := {i}, fields := {lean_list(decl.structs[i])} }}' for i in reversed(decl.order_s)) +
+           ']\n  enums := [\n' +
+           ',\n'.join(f'    {{ id := {i}, variants := [{", ".join(lean_list(v) for v in decl.enums[i])}] }}'
+                      for i in reversed(decl.order_e)) +
+           ']\n\n'
+           '/-- `boxPair` of each `boxed` prim. -/\n'
+           'def boxPairs : List (Option (Nat × SrcType)) := [\n' +
+           ',\n'.join(f'  some ({prog.type_id(prog.funcs[i]["ret"])}, {lean_ty(prog.funcs[i]["params"][0][1])})'
+                      if len(prog.funcs[i]['params']) == 1 else '  none' for i in prims['boxed']) +
+           ']\n\n'
+           '/-- The `sigEntries` of the functions, in blocks. -/\n'
+           'def sigBlocks : List (Nat × List SigEntry) := [\n' +
+           ',\n'.join(f'  ({min(prog.n, lo + BLOCK) - lo}, [' +
+                      ', '.join('none' if i in outside else
+                                f'some ({lean_list([t for _, t in prog.funcs[i]["params"]])}, '
+                                f'{lean_ty(prog.funcs[i]["ret"])})'
+                                for i in range(lo, min(prog.n, lo + BLOCK))) + '])'
+                      for lo in range(0, prog.n, BLOCK)) +
+           ']\n\nend\n\n'
+           'theorem sigBlocks_len : blocksLen sigBlocks = true := by decide +kernel\n\n'
+           'theorem sigBlocks_outside : noneAt 0 (sigBlocks.map Prod.snd).flatten = outside := by decide +kernel\n\n'
+           f'end {NS}\n')
+    write(os.path.join(outdir, 'SelfPureTab.lean'), tab)
+
+    base = (f'import Lanius.Faithful.Gen.Self\nimport Lanius.Faithful.Gen.SelfPureTab\n\n{HEADER}\n'
+            f'namespace {NS}\n\n{open_lines}'
             '-- `boxPair prog` looks the prims up in the function list.\n'
             'set_option maxRecDepth 100000\n\n'
-            '/-- The prims, as SelfRep has them. -/\n'
-            f'def prims : Prims :=\n  {{ boxed := {prims["boxed"]},\n    unbox := {prims["unbox"]} }}\n\n'
-            '/-- The functions outside the pure fragment: the driver, and the helpers\n'
-            'only the prims call. -/\n'
-            'def outside : List Nat := [\n' +
-            ''.join(f'  {i}{"," if k + 1 < len(outside) else ""} -- {names[i]}\n' for k, i in enumerate(outside)) +
-            ']\n\n'
-            '/-- The program\'s declarations, as `declareProgram` gives them. -/\n'
-            'def decls : SrcDecls where\n  structs := [\n' +
-            ',\n'.join(f'    {{ id := {i}, fields := {lean_list(decl.structs[i])} }}' for i in reversed(decl.order_s)) +
-            ']\n  enums := [\n' +
-            ',\n'.join(f'    {{ id := {i}, variants := [{", ".join(lean_list(v) for v in decl.enums[i])}] }}'
-                       for i in reversed(decl.order_e)) +
-            ']\n\n'
-            '/-- `boxPair` of each `boxed` prim. -/\n'
-            'def boxPairs : List (Option (Nat × SrcType)) := [\n' +
-            ',\n'.join(f'  some ({prog.type_id(prog.funcs[i]["ret"])}, {lean_ty(prog.funcs[i]["params"][0][1])})'
-                        if len(prog.funcs[i]['params']) == 1 else '  none' for i in prims['boxed']) +
-            ']\n\n'
             'theorem boxPairs_same : pairsSame (prims.boxed.map (boxPair prog)) boxPairs = true := by decide +kernel\n\n'
             'theorem boxElem_self : boxElem prog prims = lookupBox boxPairs := boxElem_eq boxPairs_same\n\n'
-            '/-- The `sigEntries` of the functions, in blocks. -/\n'
-            'def sigBlocks : List (Nat × List SigEntry) := [\n' +
-            ',\n'.join(f'  ({min(prog.n, lo + BLOCK) - lo}, [' +
-                        ', '.join('none' if i in outside else
-                                  f'some ({lean_list([t for _, t in prog.funcs[i]["params"]])}, '
-                                  f'{lean_ty(prog.funcs[i]["ret"])})'
-                                  for i in range(lo, min(prog.n, lo + BLOCK))) + '])'
-                        for lo in range(0, prog.n, BLOCK)) +
-            ']\n\n'
-            'theorem sigBlocks_len : blocksLen sigBlocks = true := by decide +kernel\n\n'
             'theorem sigBlocks_fit : entriesFit prog.funcs (sigBlocks.map Prod.snd).flatten = true := by decide +kernel\n\n'
-            'theorem sigBlocks_outside : noneAt 0 (sigBlocks.map Prod.snd).flatten = outside := by decide +kernel\n\n'
             'theorem callTy_self : callTy prog outside = sigCall (blockGet sigBlocks) :=\n'
             '  callTy_eq_blocks sigBlocks_len sigBlocks_fit sigBlocks_outside\n\n'
             f'end {NS}\n')
     write(os.path.join(outdir, 'SelfPureBase.lean'), base)
 
-    parts = []
-    for k, lo in enumerate(range(0, prog.n, chunk)):
-        hi = min(prog.n, lo + chunk)
-        lines = [f'import Lanius.Faithful.Gen.SelfPureBase\n\n{HEADER}\nnamespace {NS}\n\n'
-                 'open Lanius.Mini\nopen Lanius.Faithful\nopen Lanius.Faithful.Self\n\n']
-        proofs = []
-        for i in range(lo, hi):
+    # One file per group of SelfSrc modules: each function's `FuncOk`, for any
+    # program with the tables' prims and signatures.
+    for g in range(GROUPS):
+        members = groups.get(g, [])
+        mods = sorted({home[keys[i]] for i in members})
+        lines = [f'import Lanius.Faithful.Gen.SelfPureTab\n' +
+                 ''.join(f'import Lanius.Faithful.Gen.{m}\n' for m in mods) +
+                 f'\n{HEADER}\nnamespace {NS}\n\n{open_lines}'
+                 'set_option linter.unusedVariables false\n\n']
+        for i in members:
             if i in prim_set:
-                proofs.append(('funcOk_prim (by decide +kernel)', f' -- {i} {names[i]}, a prim'))
+                ok = 'funcOk_prim (by decide +kernel)'
             elif i in outside:
-                proofs.append(('funcOk_outside (by decide +kernel)', f' -- {i} {names[i]}, outside'))
+                ok = 'funcOk_outside (by decide +kernel)'
             else:
-                lines.append(f'/-- {names[i]} -/\ntheorem pure{i} : PureFunc prog prims outside src{i} = true :=\n'
-                             '  pureFunc_fast boxElem_self callTy_self (by decide +kernel)\n\n')
-                proofs.append((f'funcOk_pure pure{i}', ''))
-        lines.append(f'def part{k} : List SrcFunc := [{", ".join(f"src{i}" for i in range(lo, hi))}]\n\n')
-        body = ''.join(f'  funcsOk_cons ({p}) <|{c}\n' for p, c in proofs)
-        lines.append(f'theorem chunk{k} : FuncsOk prog prims outside {lo} part{k} :=\n{body}  funcsOk_nil\n\n'
-                     f'end {NS}\n')
-        write(os.path.join(outdir, f'SelfPure{k}.lean'), ''.join(lines))
-        parts.append((k, lo, hi))
+                ok = 'funcOk_pure (pureFunc_fast hb hc (by decide +kernel))'
+            lines.append(f'/-- {names[i]} -/\n'
+                         f'theorem fok{i} {{sp : SrcProgram}} (hb : boxElem sp prims = lookupBox boxPairs)\n'
+                         f'    (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :\n'
+                         f'    FuncOk sp prims outside {i} ({rhs[i]}) :=\n  {ok}\n\n')
+        lines.append(f'end {NS}\n')
+        write(os.path.join(outdir, f'SelfOk{g}.lean'), ''.join(lines))
+    oks = ''.join(f'import Lanius.Faithful.Gen.SelfOk{g}\n' for g in range(GROUPS))
 
-    decls_mod = (f'import Lanius.Faithful.Gen.SelfPureBase\n\n{HEADER}\nnamespace {NS}\n\n'
-                 'open Lanius.Mini\nopen Lanius.Faithful\nopen Lanius.Faithful.Self\n\n'
-                 'theorem decls_same : declsSame prog.decls decls = true := by decide +kernel\n\n'
-                 'theorem prog_decls : prog.decls = decls := declsSame_eq decls_same\n\n'
-                 f'end {NS}\n')
-    write(os.path.join(outdir, 'SelfDecls.lean'), decls_mod)
+    # `prog.decls`: `declareFuncs` of each run of `chunk` functions (one kernel
+    # check, which shares its work across the run's functions), chained along
+    # SelfProg's tails.
+    parts = [(k, lo, min(prog.n, lo + chunk)) for k, lo in enumerate(range(0, prog.n, chunk))]
+    tail = [f'tail_{keys[i]}' for i in range(prog.n)] + ['tail_end']
+    for k, lo, hi in parts:
+        mods = sorted({home[keys[i]] for i in range(lo, hi)})
+        a, b = at(lo)
+        a2, b2 = at(hi)
+        write(os.path.join(outdir, f'SelfDecl{k}.lean'),
+              'import Lanius.Faithful.Gen.SelfPureTab\n' +
+              ''.join(f'import Lanius.Faithful.Gen.{m}\n' for m in mods) +
+              f'\n{HEADER}\nnamespace {NS}\n\n{open_lines}'
+              f'/-- `declareFuncs` of functions {lo} to {hi - 1}. -/\n'
+              f'theorem dchunk{k} : declsStep [{", ".join(f"({rhs[i]})" for i in range(lo, hi))}]\n'
+              f'    decls {a} {b} {a2} {b2} = true := by decide +kernel\n\n'
+              f'end {NS}\n')
+    dl = ['import Lanius.Faithful.Gen.Self\n' + ''.join(f'import Lanius.Faithful.Gen.SelfDecl{k}\n' for k, _, _ in parts) +
+          f'\n{HEADER}\nnamespace {NS}\n\n{open_lines}'
+          '-- The tails unfold one function at a time.\n'
+          'set_option maxRecDepth 100000\n\n'
+          f'theorem dt{len(parts)} : declareFuncs tail_end (declAt decls 0 0) = some decls := by\n'
+          '  rw [declAt_zero]; rfl\n\n']
+    for k, lo, hi in reversed(parts):
+        a, b = at(lo)
+        dl.append(f'theorem dt{k} : declareFuncs {tail[lo]} (declAt decls {a} {b}) = some decls := by\n'
+                  f'  rw [show {tail[lo]} = [{", ".join(f"({rhs[i]})" for i in range(lo, hi))}] ++ {tail[hi]} from rfl]\n'
+                  f'  exact declareFuncs_append (declsStep_eq dchunk{k}) dt{k + 1}\n\n')
+    a, b = at(0)
+    dl.append(f'theorem decls_start : declAt decls {a} {b} = ⟨[], []⟩ := by\n'
+              '  unfold declAt\n'
+              f'  rw [List.drop_eq_nil_of_le (by decide +kernel : decls.structs.length ≤ {a}),\n'
+              f'    List.drop_eq_nil_of_le (by decide +kernel : decls.enums.length ≤ {b})]\n\n'
+              'theorem prog_decls : prog.decls = decls :=\n'
+              '  decls_of_funcs (by rw [← decls_start]; exact dt0)\n\n'
+              f'end {NS}\n')
+    write(os.path.join(outdir, 'SelfDecls.lean'), ''.join(dl))
 
-    # The prims' templates.
+    # The prims' templates; the facts about their types are the tables' own.
     def boxed_args(i):
         f, body = prog.funcs[i], prog.src_text[i]
         so = re.search(r'letCall 39 \(SrcType\.uint \(UintTy\.usize\)\) (\d+) \[\]', body)
@@ -731,37 +810,49 @@ def main(argv):
     def look(i):
         return f'get_of_drop Lanius.Faithful.SelfCert.at_{keys[i]}'
 
-    plines = [f'import Lanius.Faithful.Gen.SelfDecls\nimport Lanius.Faithful.Gen.SelfLook\n\n{HEADER}\nnamespace {NS}\n\n'
-              'open Lanius.Mini\nopen Lanius.Faithful\nopen Lanius.Faithful.Self\n\n'
+    ptab = [f'import Lanius.Faithful.Gen.SelfPureTab\n\n{HEADER}\nnamespace {NS}\n\n{open_lines}']
+    plines = [f'import Lanius.Faithful.Gen.SelfDecls\nimport Lanius.Faithful.Gen.SelfLook\n'
+              f'import Lanius.Faithful.Gen.SelfPureBase\nimport Lanius.Faithful.Gen.SelfPrimTab\n\n{HEADER}\n'
+              f'namespace {NS}\n\n{open_lines}'
               '-- `prog.funcs[i]?` from SelfLook\'s `at_` (`rfl` would unfold the function list\n'
               '-- one function at a time).\n'
               'set_option maxRecDepth 100000\n\n']
     boxed_names, unbox_names = [], []
     for i in prims['boxed']:
         t, tid, so, sl, pa = boxed_args(i)
+        ptab.append(f'theorem word{i} : wordElement decls {t} = true := by decide +kernel\n\n'
+                    f'theorem words{i} : (NativeLayout.valueWords? (declsCore decls) ({t}).toCore).isSome = true := by\n'
+                    '  decide +kernel\n\n')
         plines.append(f'/-- {names[i]} -/\ntheorem boxed{i} : BoxedAt prog prims {i} :=\n'
                       f'  ⟨{t}, {tid}, {so}, {sl}, {pa}, {look(i)}, {look(so)},\n'
                       f'    {look(sl)}, {look(pa)},\n'
-                      f'    by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,\n'
-                      f'    by rw [prog_decls]; decide +kernel⟩\n\n')
+                      f'    by rw [prog_decls]; exact word{i}, by rw [boxElem_self]; rfl,\n'
+                      f'    by rw [prog_decls]; exact words{i}⟩\n\n')
         boxed_names.append(f'boxed{i}')
     for i in prims['unbox']:
         t, tid, sl = unbox_args(i)
+        ptab.append(f'theorem word{i} : wordElement decls {t} = true := by decide +kernel\n\n')
         plines.append(f'/-- {names[i]} -/\ntheorem unbox{i} : UnboxAt prog prims {i} :=\n'
                       f'  ⟨{t}, {tid}, {sl}, {look(i)}, {look(sl)},\n'
-                      f'    by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩\n\n')
+                      f'    by rw [prog_decls]; exact word{i}, by rw [boxElem_self]; rfl⟩\n\n')
         unbox_names.append(f'unbox{i}')
+    ptab.append(f'end {NS}\n')
+    write(os.path.join(outdir, 'SelfPrimTab.lean'), ''.join(ptab))
     plines.append(f'theorem primsOk : PrimsOk prog prims :=\n  ⟨{forall(boxed_names)},\n  {forall(unbox_names)}⟩\n\n'
                   f'end {NS}\n')
     write(os.path.join(outdir, 'SelfPrims.lean'), ''.join(plines))
 
-    agg = ([f'import Lanius.Faithful.Gen.SelfRep\nimport Lanius.Faithful.Gen.SelfPrims\n'] +
-           [f'import Lanius.Faithful.Gen.SelfPure{k}\n' for k, _, _ in parts] +
-           [f'\n{HEADER}\nnamespace {NS}\n\nopen Lanius.Mini\nopen Lanius.Faithful\nopen Lanius.Faithful.Self\n\n'
-            '-- `rfl` and the chunks\' numbering unfold the function list one function at a time.\n'
-            'set_option maxRecDepth 100000\n\n'
-            f'theorem funcs_parts : prog.funcs = {" ++ (".join(f"part{k}" for k, _, _ in parts)}{")" * (len(parts) - 1)} := rfl\n\n'
-            'theorem funcsOk : FuncsOk prog prims outside 0 prog.funcs := by\n  rw [funcs_parts]\n  exact\n'])
+    agg = [f'import Lanius.Faithful.Gen.SelfRep\nimport Lanius.Faithful.Gen.SelfPrims\n{oks}\n{HEADER}\n'
+           f'namespace {NS}\n\n{open_lines}'
+           '-- `rfl` and the chunks\' numbering unfold the function list one function at a time.\n'
+           'set_option maxRecDepth 100000\n\n']
+    for k, lo, hi in parts:
+        agg.append(f'def part{k} : List SrcFunc := [{", ".join(f"src{i}" for i in range(lo, hi))}]\n\n'
+                   f'theorem chunk{k} : FuncsOk prog prims outside {lo} part{k} :=\n' +
+                   ''.join(f'  funcsOk_cons (fok{i} boxElem_self callTy_self) <|\n' for i in range(lo, hi)) +
+                   '  funcsOk_nil\n\n')
+    agg.append(f'theorem funcs_parts : prog.funcs = {" ++ (".join(f"part{k}" for k, _, _ in parts)}{")" * (len(parts) - 1)} := rfl\n\n'
+               'theorem funcsOk : FuncsOk prog prims outside 0 prog.funcs := by\n  rw [funcs_parts]\n  exact\n')
     expr = f'chunk{parts[-1][0]}'
     for k, lo, hi in reversed(parts[:-1]):
         expr = f'funcsOk_append chunk{k} ({expr})'
@@ -775,9 +866,13 @@ def main(argv):
                '#print axioms selfPure\n#print axioms selfPrims\n\n'
                f'end {NS}\n')
     write(os.path.join(outdir, 'SelfPure.lean'), ''.join(agg))
+    # The chunk files the checks were in before the groups.
+    for name in os.listdir(outdir):
+        if re.fullmatch(r'SelfPure\d+\.lean', name):
+            os.remove(os.path.join(outdir, name))
 
     print(f'{prog.n} functions: {prog.n - len(outside) - len(prim_set)} pure, {len(prim_set)} prims, '
-          f'{len(outside)} outside; {len(parts)} chunks; {len(seen)} reached from the roots; '
+          f'{len(outside)} outside; {len(parts)} chunks, {GROUPS} groups; {len(seen)} reached from the roots; '
           f'{len(decl.order_s)} structs, {len(decl.order_e)} enums declared')
     return 0
 
