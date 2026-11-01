@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **305 modules**, **15887 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **306 modules**, **16004 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -323,6 +323,7 @@ Inventory: **305 modules**, **15887 declaration/member entries**. Counts include
 | [ext::websocket_upgrade](ext/websocket_upgrade.md) | [source](../../extended/ext/websocket_upgrade.lani#L3) | 95 | Source inventory | [extended-websocket-upgrade](../extended-websocket-upgrade.md), [extended-websocket-stream](../extended-websocket-stream.md), [extended-websocket-once](../extended-websocket-once.md), [extended-websocket](../extended-websocket.md), [extended-websocket-echo](../extended-websocket-echo.md) |
 | [ext::weighted_statistics](ext/weighted_statistics.md) | [source](../../extended/ext/weighted_statistics.lani#L4) | 63 | Source inventory | [extended-weighted-statistics](../extended-weighted-statistics.md), [extended-statistics](../extended-statistics.md), [extended-sample-moments](../extended-sample-moments.md) |
 | [ext::x509](ext/x509.md) | [source](../../extended/ext/x509.lani#L3) | 141 | Source inventory | [extended-x509](../extended-x509.md), [extended-certificate-info](../extended-certificate-info.md) |
+| [ext::xz](ext/xz.md) | [source](../../extended/ext/xz.lani#L4) | 117 | Source inventory | [extended-xz](../extended-xz.md) |
 | [ext::zip](ext/zip.md) | [source](../../extended/ext/zip.lani#L2) | 82 | Source inventory | [extended-zip](../extended-zip.md), [extended-fetch-many](../extended-fetch-many.md) |
 
 ## Support and implementation data
