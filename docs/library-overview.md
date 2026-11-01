@@ -2368,10 +2368,11 @@ Its structural writer emits the `ext::json` byte policy. The streaming
 `json` on 2,237 cases, and [csv-to-json](../sample_programs/csv_to_json.lani)
 agrees with Python `csv` on 550 RFC 4180 cases. `TokenReader` pulls tokens
 from any `core::io::Read` source, and `Writer.flush_to` streams output to any
-`core::io::Write` sink. [`core::float_decimal`](stdlib-float-decimal.md) now
-tries Eisel-Lemire parsing and Grisu3 shortest formatting before its exact
-big-integer path. It agrees with Python `float()` and `repr()` on 4.8 million
-generated values, about 15 to 24 times faster on typical values.
+`core::io::Write` sink. [`core::float_decimal`](stdlib-float-decimal.md)
+formats shortest decimals with Schubfach, which is exact with no fallback, in
+about 0.6 to 0.8 µs per value. It parses with an Eisel-Lemire fast path
+before its exact big-integer path, in about 0.7 to 0.8 µs per value. It
+agrees with Python `float()` and `repr()` on 4.8 million generated values.
 [`ext::toml`](extended-toml.md) agrees with Python `tomllib` on 1,754
 hand-written, generated and mutated documents. The only differences are by
 policy: TOML 1.1-only syntax, and integers outside i64.
