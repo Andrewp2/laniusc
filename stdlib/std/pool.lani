@@ -1,0 +1,374 @@
+// Thread pools over std::pthread: a typed task pool with a work queue, a
+// scoped spawn that joins before it returns, and parallel map, reduce and
+// scan on threads.
+//
+// Lanius has no indirect calls, so a thread runs one fixed entry: a
+// non-generic `fn (ptr) -> ptr`. Generic work is reached through a one-line
+// entry that names the types, the same pattern as std::par's crew_entry:
+//
+//   fn workers(arg: ptr) -> ptr { return std::pool::serve<Job>(arg); }
+//   fn squares(arg: ptr) -> ptr { return std::pool::map_entry<i64, i64, Square>(arg); }
+//
+// Pool<T> holds `workers` threads that each run `serve<T>`: receive a T from
+// a std::channel::Ring<T>, call T::run, count it done. T is a plain value
+// (often an enum of job kinds) that implements Task.
+//
+// map, reduce and scan start workers - 1 threads for the call, the caller
+// works as the last one, and every thread is joined before the call returns.
+// Each thread takes grain-sized chunks from a shared atomic counter. The
+// mapper or folder is copied by value into the call's control block, so it
+// must be a plain value too.
+// Linux x86_64; link with --native-link --native-library atomic.
+// See docs/stdlib-threads.md.
+module std::pool;
+import alloc::allocator;
+import core::iter;
+import core::function;
+import core::mem;
+import core::option;
+import core::result;
+import std::atomic;
+import std::channel;
+import std::parallel;
+import std::pthread;
+import std::sync;
+
+pub enum Error { InvalidInput, Thread(std::pthread::Error), Channel(std::channel::Error) }
+
+pub trait Task {
+    // Run one job. The pool adds the results; see Pool::total.
+    pub fn run(&self) -> i64;
+}
+
+fn cell(at: ptr) -> std::atomic::Atomic64 { return std::atomic::at64(at); }
+fn get(at: ptr) -> u64 { return cell(at).load(std::atomic::Load::Acquire); }
+fn set(at: ptr, value: u64) { cell(at).store(value, std::atomic::Store::Release); }
+fn pget(at: ptr) -> ptr { let view: [ptr] = core::mem::typed_slice_from_raw_parts<ptr>(at, 1); return view[0]; }
+fn pset(at: ptr, value: ptr) { let view: [ptr] = core::mem::typed_slice_from_raw_parts<ptr>(at, 1); view[0] = value; }
+fn iget(at: ptr) -> i64 { let view: [i64] = core::mem::typed_slice_from_raw_parts<i64>(at, 1); return view[0]; }
+fn iset(at: ptr, value: i64) { let view: [i64] = core::mem::typed_slice_from_raw_parts<i64>(at, 1); view[0] = value; }
+fn zero(at: ptr, bytes: usize) { let w: usize = 0; while (w < bytes) { iset(at + w, 0); w += 8; } }
+fn storage_bytes<T>(count: i32) -> usize {
+    let bytes: usize = (count as usize) * core::mem::size_of<T>();
+    if (bytes < 8) { return 8; }
+    return bytes;
+}
+
+// ---- Scoped spawn ----
+
+// Run entry(args + i * stride) on `count` threads (1 .. 1024) and join every
+// one before returning, so the threads may use anything the caller owns.
+// Returns how many threads ran. If a spawn fails, the threads already
+// started are joined and the error is returned.
+pub fn scoped(entry: ptr, args: ptr, count: i32, stride: usize) -> core::result::Result<i32, Error> {
+    if (count < 1 || count > 1024) { return core::result::Err(Error::InvalidInput); }
+    let ids: ptr = alloc::allocator::alloc((count as usize) * 8, 8);
+    let started: i32 = 0;
+    let failure: core::option::Option<std::pthread::Error> = core::option::None();
+    while (started < count) {
+        let made: core::result::Result<std::pthread::Thread, std::pthread::Error> = std::pthread::spawn(entry, args + (started as usize) * stride);
+        if (made.is_err()) { failure = core::option::Some(made.unwrap_err()); break; }
+        iset(ids + (started as usize) * 8, made.unwrap().id() as i64);
+        started += 1;
+    }
+    let i: i32 = 0;
+    while (i < started) { std::pthread::join_id(iget(ids + (i as usize) * 8) as u64); i += 1; }
+    alloc::allocator::dealloc(ids, (count as usize) * 8, 8);
+    if (core::option::is_some(failure)) { return core::result::Err(Error::Thread(core::option::unwrap(failure))); }
+    return core::result::Ok(started);
+}
+
+// ---- Task pool ----
+//
+// Control block: 0 ring handle, 8 workers, 16 thread ids, 64 submitted,
+// 128 completed, 136 result total, 192 done epoch (u32), 200 waiters.
+const POOL_BLOCK: usize = 256;
+pub struct Pool<T> { block: ptr }
+
+// Start `workers` (1 .. 256) threads running `entry`, which must be
+// `fn (arg: ptr) -> ptr { return std::pool::serve<T>(arg); }` for this T.
+// `capacity` (a power of two) bounds the work queue; submit blocks while it
+// is full.
+pub fn pool<T>(workers: i32, capacity: i32, entry: ptr) -> core::result::Result<Pool<T>, Error> where T: Task {
+    if (workers < 1 || workers > 256) { return core::result::Err(Error::InvalidInput); }
+    let ring: core::result::Result<std::channel::Ring<T>, std::channel::Error> = std::channel::ring<T>(capacity, 1, workers);
+    if (ring.is_err()) { return core::result::Err(Error::Channel(ring.unwrap_err())); }
+    let block: ptr = alloc::allocator::alloc(POOL_BLOCK, 8);
+    zero(block, POOL_BLOCK);
+    let ids: ptr = alloc::allocator::alloc((workers as usize) * 8, 8);
+    pset(block, ring.unwrap().handle()); iset(block + 8, workers as i64); pset(block + 16, ids);
+    cell(block + 64).fetch_add(0, std::atomic::Ordering::SeqCst);
+    let w: i32 = 0;
+    while (w < workers) {
+        let made: core::result::Result<std::pthread::Thread, std::pthread::Error> = std::pthread::spawn(entry, block);
+        if (made.is_err()) {
+            // Stop and join the workers already running.
+            iset(block + 8, w as i64);
+            let partial: Pool<T> = Pool { block: block };
+            partial.shutdown();
+            return core::result::Err(Error::Thread(made.unwrap_err()));
+        }
+        iset(ids + (w as usize) * 8, made.unwrap().id() as i64);
+        w += 1;
+    }
+    return core::result::Ok(Pool { block: block });
+}
+
+// A worker's loop: run tasks until the pool shuts down.
+pub fn serve<T>(arg: ptr) -> ptr where T: Task {
+    let ring: std::channel::Ring<T> = std::channel::ring_at<T>(pget(arg));
+    while (true) {
+        let got: core::result::Result<T, std::channel::RecvError> = ring.recv();
+        if (got.is_err()) { break; }
+        let task: T = got.unwrap();
+        let result: i64 = task.run();
+        cell(arg + 136).fetch_add(result as u64, std::atomic::Ordering::SeqCst);
+        cell(arg + 128).fetch_add(1, std::atomic::Ordering::SeqCst);
+        if (cell(arg + 200).load(std::atomic::Load::Relaxed) != 0) {
+            std::atomic::at32(arg + 192).fetch_add(1, std::atomic::Ordering::SeqCst);
+            std::sync::futex_wake_private(arg + 192, 2147483647);
+        }
+    }
+    ring.close_receiver();
+    return arg;
+}
+
+pub impl<T> Pool<T> {
+    pub fn borrow(&self) -> &Pool<T> { return self; }
+    pub fn workers(&self) -> i32 { return iget(self.block + 8) as i32; }
+    fn ring(&self) -> std::channel::Ring<T> { return std::channel::ring_at<T>(pget(self.block)); }
+    // Queue one task; blocks while the queue is full. Only the pool's owner
+    // thread may submit.
+    pub fn submit(&self, task: T) -> core::result::Result<i32, Error> {
+        cell(self.block + 64).fetch_add(1, std::atomic::Ordering::SeqCst);
+        let sent: core::result::Result<i32, std::channel::SendError<T>> = self.ring().send(task);
+        if (sent.is_err()) {
+            cell(self.block + 64).fetch_sub(1, std::atomic::Ordering::SeqCst);
+            return core::result::Err(Error::Channel(std::channel::Error::NoEndpoint));
+        }
+        return core::result::Ok(0);
+    }
+    pub fn submitted(&self) -> i64 { return get(self.block + 64) as i64; }
+    pub fn completed(&self) -> i64 { return get(self.block + 128) as i64; }
+    // The sum of every finished task's run() result.
+    pub fn total(&self) -> i64 { return get(self.block + 136) as i64; }
+    // Block until every submitted task has finished.
+    pub fn wait(&self) -> core::result::Result<i32, Error> {
+        while (true) {
+            if (get(self.block + 128) == get(self.block + 64)) { return core::result::Ok(0); }
+            let seen: u32 = std::atomic::at32(self.block + 192).load(std::atomic::Load::Acquire);
+            cell(self.block + 200).fetch_add(1, std::atomic::Ordering::SeqCst);
+            if (get(self.block + 128) == get(self.block + 64)) {
+                cell(self.block + 200).fetch_sub(1, std::atomic::Ordering::SeqCst);
+                return core::result::Ok(0);
+            }
+            std::sync::futex_wait_private(self.block + 192, seen);
+            cell(self.block + 200).fetch_sub(1, std::atomic::Ordering::SeqCst);
+        }
+        return core::result::Ok(0);
+    }
+    // Finish the queued tasks, stop and join the workers, free the pool.
+    pub fn shutdown(&self) {
+        let ring: std::channel::Ring<T> = self.ring();
+        ring.close_sender();
+        let workers: i32 = iget(self.block + 8) as i32;
+        let ids: ptr = pget(self.block + 16);
+        let w: i32 = 0;
+        while (w < workers) { std::pthread::join_id(iget(ids + (w as usize) * 8) as u64); w += 1; }
+        ring.destroy();
+        alloc::allocator::dealloc(ids, (workers as usize) * 8, 8);
+        alloc::allocator::dealloc(self.block, POOL_BLOCK, 8);
+    }
+}
+
+// ---- Parallel map, reduce and scan ----
+//
+// Call block: 0 input storage, 8 length, 16 output storage, 24 grain,
+// 32 tasks, 40 pass, 48 partials storage, 64 next chunk (own line),
+// 128 the mapper or folder (copied by value).
+const CALL_BLOCK: usize = 128;
+
+fn grain_for(length: i32, workers: i32, grain: i32) -> i32 {
+    if (grain > 0) { return grain; }
+    let auto: i32 = length / (workers * 8);
+    if (auto < 2048) { return 2048; }
+    return auto;
+}
+fn call_block<F>(input: ptr, length: i32, output: ptr, grain: i32, function: F) -> ptr {
+    let block: ptr = alloc::allocator::alloc(CALL_BLOCK + storage_bytes<F>(1), 8);
+    zero(block, CALL_BLOCK);
+    pset(block, input); iset(block + 8, length as i64); pset(block + 16, output); iset(block + 24, grain as i64);
+    let tasks: i32 = 0;
+    if (length > 0) { tasks = (length - 1) / grain + 1; }
+    iset(block + 32, tasks as i64);
+    let slot: [F] = core::mem::typed_slice_from_storage<F>(block + CALL_BLOCK, 1); slot[0] = function;
+    cell(block + 64).fetch_add(0, std::atomic::Ordering::SeqCst);
+    return block;
+}
+fn free_call<F>(block: ptr) { alloc::allocator::dealloc(block, CALL_BLOCK + storage_bytes<F>(1), 8); }
+fn function_of<F>(block: ptr) -> F { let slot: [F] = core::mem::typed_slice_from_storage<F>(block + CALL_BLOCK, 1); return slot[0]; }
+// The next chunk index, or -1 when every chunk is taken.
+fn next_chunk(block: ptr) -> i32 {
+    let chunk: i64 = cell(block + 64).fetch_add(1, std::atomic::Ordering::SeqCst) as i64;
+    if (chunk >= iget(block + 32)) { return -1; }
+    return chunk as i32;
+}
+// Run `entry` on workers - 1 threads and `work` on the caller: the caller
+// side is the generic function itself, called directly.
+fn crew_start(workers: i32, entry: ptr, block: ptr, ids: ptr) -> i32 {
+    let started: i32 = 0;
+    while (started < workers - 1) {
+        let made: core::result::Result<std::pthread::Thread, std::pthread::Error> = std::pthread::spawn(entry, block);
+        if (made.is_err()) { break; }
+        iset(ids + (started as usize) * 8, made.unwrap().id() as i64);
+        started += 1;
+    }
+    return started;
+}
+fn crew_join(started: i32, ids: ptr) {
+    let i: i32 = 0;
+    while (i < started) { std::pthread::join_id(iget(ids + (i as usize) * 8) as u64); i += 1; }
+}
+fn crew_run_check(workers: i32) -> bool { return workers >= 1 && workers <= 256; }
+
+fn map_work<T, U, M>(block: ptr) where M: core::function::Mapper<T, U> {
+    let length: i32 = iget(block + 8) as i32;
+    let grain: i32 = iget(block + 24) as i32;
+    let source: [T] = core::mem::typed_slice_from_storage<T>(pget(block), length);
+    let target: [U] = core::mem::typed_slice_from_storage<U>(pget(block + 16), length);
+    let mapper: M = function_of<M>(block);
+    let chunk: i32 = next_chunk(block);
+    while (chunk >= 0) {
+        let i: i32 = chunk * grain; let end: i32 = i + grain; if (end > length) { end = length; }
+        while (i < end) { let mapped: U = mapper.apply(source[i]); target[i] = mapped; i += 1; }
+        chunk = next_chunk(block);
+    }
+}
+// The thread entry for map: `fn e(arg: ptr) -> ptr { return std::pool::map_entry<T, U, M>(arg); }`
+pub fn map_entry<T, U, M>(arg: ptr) -> ptr where M: core::function::Mapper<T, U> { map_work<T, U, M>(arg); return arg; }
+
+// output[i] = mapper.apply(input[i]) on `workers` threads (the caller is one).
+// grain <= 0 picks length / (8 * workers), at least 2048. Returns the chunk count.
+pub fn map<T, U, M>(workers: i32, input: std::parallel::Shared<T>, output: std::parallel::Shared<U>, mapper: M, grain: i32, entry: ptr) -> core::result::Result<i32, Error> where M: core::function::Mapper<T, U> {
+    if (!crew_run_check(workers) || output.len() != input.len()) { return core::result::Err(Error::InvalidInput); }
+    let length: i32 = input.len();
+    let block: ptr = call_block<M>(input.storage(), length, output.storage(), grain_for(length, workers, grain), mapper);
+    let ids: ptr = alloc::allocator::alloc((workers as usize) * 8, 8);
+    let started: i32 = crew_start(workers, entry, block, ids);
+    map_work<T, U, M>(block);
+    crew_join(started, ids);
+    let tasks: i32 = iget(block + 32) as i32;
+    alloc::allocator::dealloc(ids, (workers as usize) * 8, 8);
+    free_call<M>(block);
+    return core::result::Ok(tasks);
+}
+
+fn reduce_work<T, A, F>(block: ptr) where F: core::iter::Folder<A, T> {
+    let length: i32 = iget(block + 8) as i32;
+    let grain: i32 = iget(block + 24) as i32;
+    let tasks: i32 = iget(block + 32) as i32;
+    let source: [T] = core::mem::typed_slice_from_storage<T>(pget(block), length);
+    let sums: [A] = core::mem::typed_slice_from_storage<A>(pget(block + 48), tasks);
+    // The identity is stored in the output word: one A at block + 16's storage.
+    let identity_view: [A] = core::mem::typed_slice_from_storage<A>(pget(block + 16), 1);
+    let identity: A = identity_view[0];
+    let fold: F = function_of<F>(block);
+    let chunk: i32 = next_chunk(block);
+    while (chunk >= 0) {
+        let i: i32 = chunk * grain; let end: i32 = i + grain; if (end > length) { end = length; }
+        let acc: A = identity;
+        while (i < end) { acc = fold.apply(acc, source[i]); i += 1; }
+        sums[chunk] = acc;
+        chunk = next_chunk(block);
+    }
+}
+// The thread entry for reduce: `std::pool::reduce_entry<T, A, F>(arg)`.
+pub fn reduce_entry<T, A, F>(arg: ptr) -> ptr where F: core::iter::Folder<A, T> { reduce_work<T, A, F>(arg); return arg; }
+
+// Fold each chunk from identity with `fold`, then combine the chunk results
+// in index order with `combine` on the caller: combine must be associative
+// with unit identity, not necessarily commutative.
+pub fn reduce<T, A, F, C>(workers: i32, input: std::parallel::Shared<T>, identity: A, fold: F, combine: &C, grain: i32, entry: ptr) -> core::result::Result<A, Error>
+    where F: core::iter::Folder<A, T>, C: core::iter::Folder<A, A> {
+    if (!crew_run_check(workers)) { return core::result::Err(Error::InvalidInput); }
+    let length: i32 = input.len();
+    let unit: ptr = alloc::allocator::alloc(storage_bytes<A>(1), 8);
+    let unit_view: [A] = core::mem::typed_slice_from_storage<A>(unit, 1); unit_view[0] = identity;
+    let block: ptr = call_block<F>(input.storage(), length, unit, grain_for(length, workers, grain), fold);
+    let tasks: i32 = iget(block + 32) as i32;
+    let partials: ptr = alloc::allocator::alloc(storage_bytes<A>(tasks), 8);
+    pset(block + 48, partials);
+    let ids: ptr = alloc::allocator::alloc((workers as usize) * 8, 8);
+    let started: i32 = crew_start(workers, entry, block, ids);
+    reduce_work<T, A, F>(block);
+    crew_join(started, ids);
+    let sums: [A] = core::mem::typed_slice_from_storage<A>(partials, tasks);
+    let total: A = identity; let k: i32 = 0;
+    while (k < tasks) { total = combine.apply(total, sums[k]); k += 1; }
+    alloc::allocator::dealloc(ids, (workers as usize) * 8, 8);
+    alloc::allocator::dealloc(partials, storage_bytes<A>(tasks), 8);
+    alloc::allocator::dealloc(unit, storage_bytes<A>(1), 8);
+    free_call<F>(block);
+    return core::result::Ok(total);
+}
+
+fn scan_work<T, C>(block: ptr) where C: core::iter::Folder<T, T> {
+    let length: i32 = iget(block + 8) as i32;
+    let grain: i32 = iget(block + 24) as i32;
+    let tasks: i32 = iget(block + 32) as i32;
+    let pass: i64 = iget(block + 40);
+    let values: [T] = core::mem::typed_slice_from_storage<T>(pget(block), length);
+    let sums: [T] = core::mem::typed_slice_from_storage<T>(pget(block + 48), tasks);
+    let identity_view: [T] = core::mem::typed_slice_from_storage<T>(pget(block + 16), 1);
+    let identity: T = identity_view[0];
+    let combine: C = function_of<C>(block);
+    let chunk: i32 = next_chunk(block);
+    while (chunk >= 0) {
+        let i: i32 = chunk * grain; let end: i32 = i + grain; if (end > length) { end = length; }
+        if (pass == 1) {
+            let acc: T = identity;
+            while (i < end) { acc = combine.apply(acc, values[i]); i += 1; }
+            sums[chunk] = acc;
+        } else {
+            let acc: T = sums[chunk];
+            while (i < end) { acc = combine.apply(acc, values[i]); values[i] = acc; i += 1; }
+        }
+        chunk = next_chunk(block);
+    }
+}
+// The thread entry for scan: `std::pool::scan_entry<T, C>(arg)`.
+pub fn scan_entry<T, C>(arg: ptr) -> ptr where C: core::iter::Folder<T, T> { scan_work<T, C>(arg); return arg; }
+
+// In-place inclusive scan: data[i] becomes the combination of data[0..=i] in
+// index order. Pass 1 folds each chunk; the caller turns the chunk totals
+// into exclusive prefixes; pass 2 rescans each chunk from its prefix. Each
+// pass is one crew. Returns the chunk count.
+pub fn scan<T, C>(workers: i32, data: std::parallel::Shared<T>, identity: T, combine: C, grain: i32, entry: ptr) -> core::result::Result<i32, Error> where C: core::iter::Folder<T, T> {
+    if (!crew_run_check(workers)) { return core::result::Err(Error::InvalidInput); }
+    let length: i32 = data.len();
+    let unit: ptr = alloc::allocator::alloc(storage_bytes<T>(1), 8);
+    let unit_view: [T] = core::mem::typed_slice_from_storage<T>(unit, 1); unit_view[0] = identity;
+    let block: ptr = call_block<C>(data.storage(), length, unit, grain_for(length, workers, grain), combine);
+    let tasks: i32 = iget(block + 32) as i32;
+    let partials: ptr = alloc::allocator::alloc(storage_bytes<T>(tasks), 8);
+    pset(block + 48, partials);
+    let ids: ptr = alloc::allocator::alloc((workers as usize) * 8, 8);
+    let pass: i64 = 1;
+    while (pass <= 2) {
+        iset(block + 40, pass); set(block + 64, 0);
+        let started: i32 = crew_start(workers, entry, block, ids);
+        scan_work<T, C>(block);
+        crew_join(started, ids);
+        if (pass == 1) {
+            let sums: [T] = core::mem::typed_slice_from_storage<T>(partials, tasks);
+            let running: T = identity; let k: i32 = 0;
+            while (k < tasks) { let total: T = sums[k]; sums[k] = running; running = combine.apply(running, total); k += 1; }
+        }
+        pass += 1;
+    }
+    alloc::allocator::dealloc(ids, (workers as usize) * 8, 8);
+    alloc::allocator::dealloc(partials, storage_bytes<T>(tasks), 8);
+    alloc::allocator::dealloc(unit, storage_bytes<T>(1), 8);
+    free_call<C>(block);
+    return core::result::Ok(tasks);
+}

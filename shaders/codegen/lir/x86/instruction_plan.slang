@@ -174,9 +174,10 @@ void plan_restore_registers(uint mask, uint first_slot)
     }
 }
 
-// The shared 58-byte body of an overlapping-safe qword copy from [RDX] to
+// An overlapping-safe qword copy from [RDX] to
 // [RAX], downward-growing words; the caller has already pushed RDI and RSI.
-// The copy runs backward (DF=1) only when the two ranges overlap with the
+// Four or more words take a shared 58-byte `rep movsq` body. It runs
+// backward (DF=1) only when the two ranges overlap with the
 // destination above the source (0 <= RAX - RDX < 8 * words). Disjoint
 // copies always run forward: a DF=1 `rep movsq` is a slow microcoded loop
 // (3-4x on Zen 3), and a disjoint copy took it whenever the destination
@@ -184,6 +185,27 @@ void plan_restore_registers(uint mask, uint first_slot)
 // temporary does on a thread stack mapped below the heap.
 void plan_memmove_tail(uint words)
 {
+    // One to three words: load every word into RCX, RDI and RSI, then store
+    // them all. That is overlap-safe without a direction test, and it avoids
+    // `rep movsq`'s start-up cost (about 30 cycles on Zen 3), which made a
+    // one-word enum or record copy cost more than the work around it.
+    if (words <= 3u)
+    {
+        // ModRM for word 0, 1, 2: mov rcx/rdi/rsi, [rdx + d8] (0x4a, 0x7a,
+        // 0x72) and mov [rax + d8], rcx/rdi/rsi (0x48, 0x78, 0x70); d8 = -8 * word.
+        for (uint word = 0u; word < words; word += 1u)
+        {
+            uint load = word == 0u ? 0x4au : word == 1u ? 0x7au : 0x72u;
+            plan_bytes(4u, 0x8b48u | (load << 16u) | (((0u - word * 8u) & 0xffu) << 24u));
+        }
+        for (uint word = 0u; word < words; word += 1u)
+        {
+            uint store = word == 0u ? 0x48u : word == 1u ? 0x78u : 0x70u;
+            plan_bytes(4u, 0x8948u | (store << 16u) | (((0u - word * 8u) & 0xffu) << 24u));
+        }
+        plan_bytes(2u, 0x5f5eu); // pop rsi; pop rdi
+        return;
+    }
     uint offset = 0u - (words - 1u) * 8u;
     plan_bytes(3u, 0xc18948u); // mov rcx, rax
     plan_bytes(3u, 0xd12948u); // sub rcx, rdx

@@ -74,6 +74,15 @@ uint x86_parameter_copy_bytes(TargetLirFunction target,
             slot += storage;
             continue;
         }
+        if (!packed && words <= 3u)
+        {
+            // Source load, destination LEA, home update, then per word
+            // mov rcx,[rsi+d8]; mov [rdi+d8],rcx (safety_emit's prologue).
+            bytes += 2u * x86_stack64_operand_bytes(home) +
+                x86_stack64_operand_bytes(base_slot) + words * 8u;
+            slot += storage;
+            continue;
+        }
         // Source load, destination LEA, home update, optional native-word
         // address adjustment, immediate count, and REP MOVS.
         bytes += 2u * x86_stack64_operand_bytes(home) +

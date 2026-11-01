@@ -102,6 +102,21 @@ void emit_prologue(inout uint cursor, TargetLirFunction function,
             copy_slot += storage;
             continue;
         }
+        if (!packed && words <= 3u)
+        {
+            // A fresh frame slot never overlaps the incoming value: copy one
+            // to three words through RCX (no `rep movsq` start-up cost).
+            for (uint word = 0u; word < words; word++)
+            {
+                uint disp = (0u - word * 8u) & 0xffu;
+                emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu); emit_u8(cursor, 0x4eu);
+                emit_u8(cursor, disp); // mov rcx,[rsi-word*8]
+                emit_u8(cursor, 0x48u); emit_u8(cursor, 0x89u); emit_u8(cursor, 0x4fu);
+                emit_u8(cursor, disp); // mov [rdi-word*8],rcx
+            }
+            copy_slot += storage;
+            continue;
+        }
         if (!packed && words > 1u)
         {
             // Native values descend by words. Move from each lowest address
