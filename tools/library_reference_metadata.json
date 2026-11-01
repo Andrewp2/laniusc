@@ -1890,6 +1890,11 @@
         "docs/extended-certificate-info.md"
       ]
     },
+    "ext::xxhash": {
+      "guides": [
+        "docs/extended-zstd.md"
+      ]
+    },
     "ext::xz": {
       "guides": [
         "docs/extended-xz.md"
@@ -1908,6 +1913,11 @@
     "ext::zip_stream": {
       "guides": [
         "docs/extended-zip-stream.md"
+      ]
+    },
+    "ext::zstd": {
+      "guides": [
+        "docs/extended-zstd.md"
       ]
     },
     "std::cli": {
