@@ -339,3 +339,16 @@ fn exit_and_trap_on_a_worker_thread_end_the_process() {
         assert_eq!(output.status.code(), Some(status), "{mode}: {output:?}");
     }
 }
+
+// The runtime allocator under std::pthread: 1, 4 and 16 threads churning
+// tagged alloc/realloc/dealloc steps, blocks freed by a thread other than the
+// one that allocated them, and 1,000 sequential spawn/join pairs that allocate.
+#[test]
+fn pthread_bodies_allocate_and_free_across_threads() {
+    let program = native("tests/fixtures/stdlib_execution/concurrency/thread_alloc.lani", "thread_alloc");
+    let text = run(&program, None);
+    assert!(!text.contains("FAIL"), "{text}");
+    for line in ["churn.1 0\n", "churn.4 0\n", "churn.16 0\n", "cross.taken 40000\n", "cross.bad 0\n", "cross.main 2000\n", "spawn.pairs 1000\n"] {
+        assert!(text.contains(line), "{line:?} missing from {text}");
+    }
+}

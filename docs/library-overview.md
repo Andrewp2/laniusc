@@ -1,7 +1,13 @@
 # Standard and extended library overview
 
-The full library goal remains open. The current increment replaces the
-native runtime's allocator, which made every allocation its own `mmap`, with a
+The full library goal remains open. The current increment makes the runtime
+allocator [thread-safe](runtime-allocator.md#threads), so `std::pthread`
+bodies may allocate and free. Each thread, keyed by its `%fs:0` thread
+pointer, gets its own pool, and there is no lock on the hot path. Blocks freed
+on another thread flow back through shared per-class lists, so a
+producer/consumer pair passing 1.9 GB of messages grows resident memory by
+about 1 MiB. Single-thread allocation is as fast as before, within noise.
+The preceding increment replaces the native runtime's allocator, which made every allocation its own `mmap`, with a
 [pooling allocator](runtime-allocator.md): power-of-two classes up to 32 KiB
 in 1 MiB arenas, free lists per class, and direct `mmap` above that.
 Allocating and freeing 1,000 bytes drops from 6.3 µs to 0.19 µs,
