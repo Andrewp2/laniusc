@@ -1,0 +1,14 @@
+// Fixed 2026-10-31: before the fix this compiled, but the untyped Option from
+// `it.next()` passed to a nongeneric parameter died with SIGILL (exit 132).
+// Expected: exit 12.
+module app::main;
+import core::iter;
+import core::option;
+pub struct Count { n: i32 }
+pub impl Count { pub fn borrow(&self) -> &Count { return self; } }
+pub impl core::iter::Iterator<i32> for Count {
+    pub fn next(&self) -> core::option::Option<i32> { return core::option::Option::Some(6); }
+}
+fn take(o: core::option::Option<i32>) -> i32 { return core::option::unwrap_or(o, 9); }
+fn first<I>(it: &I) -> i32 where I: core::iter::Iterator<i32> { let x = it.next(); return take(x) + core::option::unwrap_or(it.next(), 0); }
+fn main() -> i32 { let c: Count = Count { n: 0 }; return first<Count>(c.borrow()); }
