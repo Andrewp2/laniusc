@@ -45,7 +45,7 @@ pub fn parse_frame(input: core::slice::View<u8>, receiver: Role, limits: Limits)
     if (tag == 126) { if (input.len() < 4) { return core::result::Err(Error::Incomplete(input.len())); } length = ((byte(input,2) as u64)<<8)|(byte(input,3) as u64); pos=4; if (length < 126) { return core::result::Err(Error::Protocol(2)); } }
     if (tag == 127) { if (input.len() < 10) { return core::result::Err(Error::Incomplete(input.len())); } if ((byte(input,2)&128) != 0) { return core::result::Err(Error::Protocol(2)); } length=0; let i: i32 = 2; while (i < 10) { length=(length<<8)|(byte(input,i) as u64); i += 1; } pos=10; if (length < 65536) { return core::result::Err(Error::Protocol(2)); } }
     if (length > (limits.frame_bytes as u64)) { return core::result::Err(Error::Limit(pos)); }
-    let mask: [u8;4] = [0;4]; if (masked) { if (input.len()-pos < 4) { return core::result::Err(Error::Incomplete(input.len())); } let i: i32=0; while (i<4) { mask[i]=byte(input,pos+i); i+=1; } pos+=4; }
+    let mask: [u8;4] = [0;4]; if (masked) { if (input.len()-pos < 4) { return core::result::Err(Error::Incomplete(input.len())); } let i: i32=0; while (i<4) { let stored: u8=byte(input,pos+i); mask[i]=stored; i+=1; } pos+=4; }
     let count: i32=length as i32; if (count > input.len()-pos) { return core::result::Err(Error::Incomplete(input.len())); }
     return core::result::Ok(Frame { fin: fin, opcode: opcode, masked: masked, mask: mask, payload: part(input,pos,pos+count), consumed: pos+count });
 }
@@ -211,7 +211,7 @@ fn http_error(error:ext::http::Error) -> Error { return match(error) { ext::http
 fn valid_key(key:core::slice::View<u8>) -> bool {
     if(!valid(key) || key.len()!=24) { return false; }
     let copied:[u8;24]=[0;24]; let i:i32=0;
-    while(i<24) { copied[i]=byte(key,i); i+=1; }
+    while(i<24) { let stored:u8=byte(key,i); copied[i]=stored; i+=1; }
     let bytes:core::slice::View<u8> =core::slice::View { values:copied,start:0,length:24 };
     let decoded:core::result::Result<i32,core::base64::Error> =core::base64::decoded_len(bytes,core::base64::Profile::Standard);
     if(decoded.is_err()) { return false; }
@@ -221,7 +221,7 @@ fn valid_key(key:core::slice::View<u8>) -> bool {
 pub fn key_into(nonce:core::slice::View<u8>, destination:core::slice::View<u8>) -> core::result::Result<i32,Error> {
     if(!valid(nonce) || !valid(destination) || nonce.len()!=16) { return core::result::Err(Error::Bounds); } if(destination.len()<24) { return core::result::Err(Error::Capacity); }
     let raw:[u8;16]=[0;16]; let encoded:[u8;24]=[0;24]; let i:i32=0;
-    while(i<16) { raw[i]=byte(nonce,i); i+=1; }
+    while(i<16) { let stored:u8=byte(nonce,i); raw[i]=stored; i+=1; }
     let source:core::slice::View<u8> =core::slice::View { values:raw,start:0,length:16 };
     let output:core::slice::View<u8> =core::slice::View { values:encoded,start:0,length:24 };
     let converted:core::result::Result<i32,core::base64::Error> =core::base64::encode_into(source,output,core::base64::Profile::Standard);
@@ -265,7 +265,7 @@ pub fn encode_request(start_line:core::slice::View<u8>, fields:core::slice::View
 fn valid_accept(value:core::slice::View<u8>) -> bool {
     if (!valid(value) || value.len()!=28) { return false; }
     let copied:[u8;28]=[0;28]; let i:i32=0;
-    while (i<28) { copied[i]=byte(value,i); i+=1; }
+    while (i<28) { let stored:u8=byte(value,i); copied[i]=stored; i+=1; }
     let bytes:core::slice::View<u8> =core::slice::View { values:copied,start:0,length:28 };
     let decoded:core::result::Result<i32,core::base64::Error> =core::base64::decoded_len(bytes,core::base64::Profile::Standard);
     if(decoded.is_err()) { return false; }

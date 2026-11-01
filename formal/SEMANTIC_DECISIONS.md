@@ -1467,7 +1467,9 @@ laniusc reads it or not read (frontend cases `reject_for_write`,
   never ends) before it traps, and the reading traps first. Such a store is
   not read (`AssignTargetR.indexEval`); a value without calls traps or not
   the same way in both orders (Core does not tell traps apart), and a call
-  in the index is read. Programs write `let t = f(); s[i] = t;`.
+  in the index is read. Programs write `let t = f(); s[i] = t;`. The quick
+  gate's `store-rule` step (formal/tools/store_rule.py, a port of this rule
+  to the source text) names any such store in stdlib/ and extended/.
 - A module that declares nothing the front end counts. laniusc's module
   table holds every file's `module` item, and an import whose whole path is
   a module imports the module (modules/05_resolve_imports.slang). The front

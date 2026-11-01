@@ -122,7 +122,7 @@ fn construct(workspace: core::slice::View<i32>, start: i32, count: i32, counts: 
     let left: i32 = 1; index = 1;
     while (index <= 15) { left = left*2-entry(workspace,counts+index); if (left < 0) { return -1; } index += 1; }
     let offsets: [i32;16] = [0;16]; index = 1;
-    while (index < 15) { offsets[index+1] = offsets[index]+entry(workspace,counts+index); index += 1; }
+    while (index < 15) { let stored: i32 = offsets[index]+entry(workspace,counts+index); offsets[index+1] = stored; index += 1; }
     index = 0;
     while (index < count) {
         let size: i32 = entry(workspace,start+index);
