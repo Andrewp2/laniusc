@@ -1,0 +1,141 @@
+// Side-by-side ext::lexer (combined DFA) against ext::lexer_vm (the previous
+// per-rule Pike probes, copied verbatim). Binary cases on stdin; see oracle.py.
+// Case: u32 mode, rules, input bytes, max_steps, max_tokens, max_calls,
+// max_work (u32, in thousands), regex max_work (u32), then per rule u32 id, skip, length,
+// pattern bytes; then the input. Mode 0 writes "A <trace>\nB <trace>\n";
+// mode 1 runs only the new lexer and mode 2 only the old one, writing the
+// token count.
+module app::main;
+import alloc::vec;
+import core::decimal;
+import core::io;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::lexer;
+import ext::lexer_vm;
+import ext::regex;
+import std::stream;
+
+struct Out { bytes: alloc::vec::Vec<u8>, used: i32 }
+impl Out {
+    fn borrow(&self) -> &Out { return self; }
+    fn flush(&self) {
+        let sink = std::stream::stdout(); let data = self.bytes.as_slice();
+        let unused = core::io::write_all(sink.borrow(), data, 0, self.used); self.used = 0;
+    }
+    fn byte(&self, value: u8) { if (self.used >= 4194000) { self.flush(); } let data = self.bytes.as_slice(); data[self.used] = value; self.used += 1; }
+    fn int(&self, value: i64) {
+        if (self.used >= 4194000) { self.flush(); }
+        let data = self.bytes.as_slice(); let wrote = core::decimal::format_i64(data, self.used, 32, value);
+        if (wrote.is_ok()) { self.used += wrote.unwrap(); }
+    }
+}
+fn word(bytes: [u8], at: i32) -> i32 {
+    return ((bytes[at] as u32) | ((bytes[at + 1] as u32) << 8) | ((bytes[at + 2] as u32) << 16) | ((bytes[at + 3] as u32) << 24)) as i32;
+}
+fn regex_kind(error: ext::regex::Error) -> i64 {
+    return match (error) {
+        ext::regex::Error::Syntax(_) -> 1, ext::regex::Error::Unsupported(_) -> 2, ext::regex::Error::Limit(_) -> 3,
+        ext::regex::Error::AllocationFailed -> 4, ext::regex::Error::Bounds -> 5, ext::regex::Error::InvalidUtf8(_) -> 6,
+        ext::regex::Error::WorkLimit -> 7, ext::regex::Error::WorkspaceTooSmall -> 8
+    };
+}
+fn error_new(out: &Out, error: ext::lexer::Error) {
+    let kind: i64 = match (error) { ext::lexer::Error::Bounds -> 1, ext::lexer::Error::InvalidLimits -> 2, ext::lexer::Error::RuleLimit -> 3, ext::lexer::Error::PatternLimit(_) -> 4, ext::lexer::Error::StateLimit(_) -> 5, ext::lexer::Error::InputLimit -> 6, ext::lexer::Error::AllocationFailed -> 7, ext::lexer::Error::Pattern(_,_) -> 8, ext::lexer::Error::Input(_) -> 9, ext::lexer::Error::Workspace(_) -> 10, ext::lexer::Error::Search(_,_,_) -> 11, ext::lexer::Error::NoMatch(_) -> 12, ext::lexer::Error::EmptyMatch(_,_) -> 13, ext::lexer::Error::StepLimit(_) -> 14, ext::lexer::Error::TokenLimit(_) -> 15, ext::lexer::Error::SearchCallLimit(_,_) -> 16, ext::lexer::Error::SearchWorkLimit(_,_) -> 17 };
+    let a: i64 = match (error) { ext::lexer::Error::Bounds -> 0, ext::lexer::Error::InvalidLimits -> 0, ext::lexer::Error::RuleLimit -> 0, ext::lexer::Error::PatternLimit(x) -> x as i64, ext::lexer::Error::StateLimit(x) -> x as i64, ext::lexer::Error::InputLimit -> 0, ext::lexer::Error::AllocationFailed -> 0, ext::lexer::Error::Pattern(x,_) -> x as i64, ext::lexer::Error::Input(_) -> 0, ext::lexer::Error::Workspace(_) -> 0, ext::lexer::Error::Search(x,y,_) -> (x as i64) * 100000000 + (y as i64), ext::lexer::Error::NoMatch(x) -> x as i64, ext::lexer::Error::EmptyMatch(x,_) -> x as i64, ext::lexer::Error::StepLimit(x) -> x as i64, ext::lexer::Error::TokenLimit(x) -> x as i64, ext::lexer::Error::SearchCallLimit(x,_) -> x as i64, ext::lexer::Error::SearchWorkLimit(x,_) -> x as i64 };
+    let b: i64 = match (error) { ext::lexer::Error::Bounds -> 0, ext::lexer::Error::InvalidLimits -> 0, ext::lexer::Error::RuleLimit -> 0, ext::lexer::Error::PatternLimit(_) -> 0, ext::lexer::Error::StateLimit(_) -> 0, ext::lexer::Error::InputLimit -> 0, ext::lexer::Error::AllocationFailed -> 0, ext::lexer::Error::Pattern(_,e) -> regex_kind(e), ext::lexer::Error::Input(e) -> regex_kind(e), ext::lexer::Error::Workspace(e) -> regex_kind(e), ext::lexer::Error::Search(_,_,e) -> regex_kind(e), ext::lexer::Error::NoMatch(_) -> 0, ext::lexer::Error::EmptyMatch(_,y) -> y as i64, ext::lexer::Error::StepLimit(_) -> 0, ext::lexer::Error::TokenLimit(_) -> 0, ext::lexer::Error::SearchCallLimit(_,y) -> y as i64, ext::lexer::Error::SearchWorkLimit(_,y) -> y as i64 };
+    out.byte(69); out.int(kind); out.byte(58); out.int(a); out.byte(44); out.int(b);
+}
+fn error_old(out: &Out, error: ext::lexer_vm::Error) {
+    let kind: i64 = match (error) { ext::lexer_vm::Error::Bounds -> 1, ext::lexer_vm::Error::InvalidLimits -> 2, ext::lexer_vm::Error::RuleLimit -> 3, ext::lexer_vm::Error::PatternLimit(_) -> 4, ext::lexer_vm::Error::StateLimit(_) -> 5, ext::lexer_vm::Error::InputLimit -> 6, ext::lexer_vm::Error::AllocationFailed -> 7, ext::lexer_vm::Error::Pattern(_,_) -> 8, ext::lexer_vm::Error::Input(_) -> 9, ext::lexer_vm::Error::Workspace(_) -> 10, ext::lexer_vm::Error::Search(_,_,_) -> 11, ext::lexer_vm::Error::NoMatch(_) -> 12, ext::lexer_vm::Error::EmptyMatch(_,_) -> 13, ext::lexer_vm::Error::StepLimit(_) -> 14, ext::lexer_vm::Error::TokenLimit(_) -> 15, ext::lexer_vm::Error::SearchCallLimit(_,_) -> 16, ext::lexer_vm::Error::SearchWorkLimit(_,_) -> 17 };
+    let a: i64 = match (error) { ext::lexer_vm::Error::Bounds -> 0, ext::lexer_vm::Error::InvalidLimits -> 0, ext::lexer_vm::Error::RuleLimit -> 0, ext::lexer_vm::Error::PatternLimit(x) -> x as i64, ext::lexer_vm::Error::StateLimit(x) -> x as i64, ext::lexer_vm::Error::InputLimit -> 0, ext::lexer_vm::Error::AllocationFailed -> 0, ext::lexer_vm::Error::Pattern(x,_) -> x as i64, ext::lexer_vm::Error::Input(_) -> 0, ext::lexer_vm::Error::Workspace(_) -> 0, ext::lexer_vm::Error::Search(x,y,_) -> (x as i64) * 100000000 + (y as i64), ext::lexer_vm::Error::NoMatch(x) -> x as i64, ext::lexer_vm::Error::EmptyMatch(x,_) -> x as i64, ext::lexer_vm::Error::StepLimit(x) -> x as i64, ext::lexer_vm::Error::TokenLimit(x) -> x as i64, ext::lexer_vm::Error::SearchCallLimit(x,_) -> x as i64, ext::lexer_vm::Error::SearchWorkLimit(x,_) -> x as i64 };
+    let b: i64 = match (error) { ext::lexer_vm::Error::Bounds -> 0, ext::lexer_vm::Error::InvalidLimits -> 0, ext::lexer_vm::Error::RuleLimit -> 0, ext::lexer_vm::Error::PatternLimit(_) -> 0, ext::lexer_vm::Error::StateLimit(_) -> 0, ext::lexer_vm::Error::InputLimit -> 0, ext::lexer_vm::Error::AllocationFailed -> 0, ext::lexer_vm::Error::Pattern(_,e) -> regex_kind(e), ext::lexer_vm::Error::Input(e) -> regex_kind(e), ext::lexer_vm::Error::Workspace(e) -> regex_kind(e), ext::lexer_vm::Error::Search(_,_,e) -> regex_kind(e), ext::lexer_vm::Error::NoMatch(_) -> 0, ext::lexer_vm::Error::EmptyMatch(_,y) -> y as i64, ext::lexer_vm::Error::StepLimit(_) -> 0, ext::lexer_vm::Error::TokenLimit(_) -> 0, ext::lexer_vm::Error::SearchCallLimit(_,y) -> y as i64, ext::lexer_vm::Error::SearchWorkLimit(_,y) -> y as i64 };
+    out.byte(69); out.int(kind); out.byte(58); out.int(a); out.byte(44); out.int(b);
+}
+fn usage(out: &Out, steps: i32, tokens: i32, calls: i32, reserved: i64) {
+    out.byte(32); out.byte(85); out.int(steps as i64); out.byte(44); out.int(tokens as i64); out.byte(44); out.int(calls as i64); out.byte(44); out.int(reserved);
+}
+fn run_new(out: &Out, rules: core::slice::View<ext::lexer::Rule>, options: ext::regex::Options, input: core::text::Text, limits: ext::lexer::ScanLimits, trace: bool) -> i64 {
+    let made = ext::lexer::compile(rules, options, ext::lexer::default_build_limits());
+    if (made.is_err()) { if (trace) { error_new(out, made.unwrap_err()); } return -1; }
+    let lexer = made.unwrap(); let count: i64 = 0;
+    let scanned = lexer.scan(input, limits);
+    if (scanned.is_err()) { if (trace) { error_new(out, scanned.unwrap_err()); } lexer.destroy(); return -1; }
+    let cursor = scanned.unwrap();
+    while (true) {
+        let next = cursor.next();
+        if (next.is_err()) { if (trace) { error_new(out, next.unwrap_err()); } break; }
+        let found = next.unwrap(); if (found.is_none()) { if (trace) { out.byte(46); } break; }
+        let token = found.unwrap(); count += 1;
+        if (trace) { out.int(token.id as i64); out.byte(64); out.int(token.span.start as i64); out.byte(45); out.int(token.span.end as i64); out.byte(59); }
+    }
+    let used = cursor.usage(); if (trace) { usage(out, used.steps, used.tokens, used.calls, used.reserved_work); out.byte(32); out.byte(82); out.int(lexer.prefix.cache_resets() as i64); }
+    cursor.destroy(); lexer.destroy();
+    return count;
+}
+fn run_old(out: &Out, rules: core::slice::View<ext::lexer_vm::Rule>, options: ext::regex::Options, input: core::text::Text, limits: ext::lexer_vm::ScanLimits, trace: bool) -> i64 {
+    let made = ext::lexer_vm::compile(rules, options, ext::lexer_vm::default_build_limits());
+    if (made.is_err()) { if (trace) { error_old(out, made.unwrap_err()); } return -1; }
+    let lexer = made.unwrap(); let count: i64 = 0;
+    let scanned = lexer.scan(input, limits);
+    if (scanned.is_err()) { if (trace) { error_old(out, scanned.unwrap_err()); } lexer.destroy(); return -1; }
+    let cursor = scanned.unwrap();
+    while (true) {
+        let next = cursor.next();
+        if (next.is_err()) { if (trace) { error_old(out, next.unwrap_err()); } break; }
+        let found = next.unwrap(); if (found.is_none()) { if (trace) { out.byte(46); } break; }
+        let token = found.unwrap(); count += 1;
+        if (trace) { out.int(token.id as i64); out.byte(64); out.int(token.span.start as i64); out.byte(45); out.int(token.span.end as i64); out.byte(59); }
+    }
+    let used = cursor.usage(); if (trace) { usage(out, used.steps, used.tokens, used.calls, used.reserved_work); }
+    cursor.destroy(); lexer.destroy();
+    return count;
+}
+fn main() -> i32 {
+    let reader: std::stream::Descriptor = std::stream::stdin();
+    let storage: alloc::vec::Vec<u8> = alloc::vec::new(); let out_storage: alloc::vec::Vec<u8> = alloc::vec::new();
+    let new_rules: alloc::vec::Vec<ext::lexer::Rule> = alloc::vec::new(); let old_rules: alloc::vec::Vec<ext::lexer_vm::Rule> = alloc::vec::new();
+    if (storage.try_resize(4194304, 0).is_err() || out_storage.try_resize(4194304, 0).is_err()) { return 4; }
+    let out = Out { bytes: out_storage, used: 0 };
+    let bytes: [u8] = storage.as_slice();
+    while (true) {
+        let count = reader.read(bytes, 0, 1); if (count.is_err()) { return 3; } if (count.unwrap() == 0) { break; }
+        if (core::io::read_exact(reader.borrow(), bytes, 1, 35).is_err()) { return 3; }
+        let mode: i32 = word(bytes, 0); let rule_count: i32 = word(bytes, 4); let input_length: i32 = word(bytes, 8);
+        let new_limits = ext::lexer::default_scan_limits(); let old_limits = ext::lexer_vm::default_scan_limits();
+        new_limits.max_steps = word(bytes, 12); new_limits.max_tokens = word(bytes, 16); new_limits.max_calls = word(bytes, 20); new_limits.max_work = (word(bytes, 24) as i64) * 1000;
+        old_limits.max_steps = word(bytes, 12); old_limits.max_tokens = word(bytes, 16); old_limits.max_calls = word(bytes, 20); old_limits.max_work = (word(bytes, 24) as i64) * 1000;
+        let options = ext::regex::options(); options.max_work = word(bytes, 28); options.multiline = word(bytes, 32) != 0;
+        let at: i32 = 36; new_rules.clear(); old_rules.clear(); let i: i32 = 0;
+        while (i < rule_count) {
+            if (core::io::read_exact(reader.borrow(), bytes, at, 12).is_err()) { return 3; }
+            let id: i32 = word(bytes, at); let skip: bool = word(bytes, at + 4) != 0; let length: i32 = word(bytes, at + 8);
+            if (core::io::read_exact(reader.borrow(), bytes, at + 12, length).is_err()) { return 3; }
+            let pattern = core::text::from_utf8_unchecked(bytes, at + 12, length);
+            let unused = new_rules.try_push(ext::lexer::Rule { id: id, pattern: pattern, skip: skip });
+            let unused2 = old_rules.try_push(ext::lexer_vm::Rule { id: id, pattern: pattern, skip: skip });
+            at += 12 + length; i += 1;
+        }
+        if (input_length > 0 && core::io::read_exact(reader.borrow(), bytes, at, input_length).is_err()) { return 3; }
+        let input = core::text::from_utf8_unchecked(bytes, at, input_length);
+        if (mode == 0) {
+            out.byte(65); out.byte(32); let unused3 = run_new(out.borrow(), new_rules.as_view(), options, input, new_limits, true); out.byte(10);
+            out.byte(66); out.byte(32); let unused4 = run_old(out.borrow(), old_rules.as_view(), options, input, old_limits, true); out.byte(10);
+        } else { if (mode == 3) {
+            // Raw combined-DFA probe loop without the lexer cursor, for timing.
+            let made = ext::lexer::compile(new_rules.as_view(), options, ext::lexer::default_build_limits());
+            let lexer = made.unwrap(); let checked = ext::regex::input(input).unwrap(); let pos: i32 = 0; let steps: i64 = 0;
+            while (pos < input_length) { let r = lexer.prefix.run(checked, pos); if (r.end <= pos) { break; } pos = r.end; steps += 1; }
+            out.int(steps); out.byte(10); lexer.destroy();
+        } else {
+            let tokens: i64 = 0;
+            if (mode == 1) { tokens = run_new(out.borrow(), new_rules.as_view(), options, input, new_limits, false); }
+            else { tokens = run_old(out.borrow(), old_rules.as_view(), options, input, old_limits, false); }
+            out.int(tokens); out.byte(10);
+        } }
+    }
+    out.flush();
+    return 0;
+}
