@@ -718,3 +718,201 @@ pub impl Matches {
     }
     pub fn destroy(&self) { self.search.destroy(); }
 }
+
+// Combined anchored longest-prefix matcher over several assertion-free
+// programs: one lazily built DFA whose states are epsilon-closed PC sets.
+// Every cache vector has a fixed length set by finish(), so copies of a
+// PrefixSet alias one cache and nothing reallocates after construction.
+// meta: [state count, pool used, closure generation, reset pending, resets].
+pub struct PrefixSet {
+    code: alloc::vec::Vec<Inst>, terms: alloc::vec::Vec<Term>, rule_of: alloc::vec::Vec<i32>, dot: alloc::vec::Vec<bool>,
+    entries: alloc::vec::Vec<i32>, meta: alloc::vec::Vec<i32>, set_start: alloc::vec::Vec<i32>, set_len: alloc::vec::Vec<i32>,
+    accept: alloc::vec::Vec<i32>, trans: alloc::vec::Vec<i32>, pool: alloc::vec::Vec<i32>, table: alloc::vec::Vec<i32>,
+    work: alloc::vec::Vec<i32>, mark: alloc::vec::Vec<i32>, stack: alloc::vec::Vec<i32>, capacity: i32, pool_capacity: i32
+}
+// end/rule are the furthest accepting boundary and the lowest rule accepting
+// there (-1 when none); scalars counts consumed scalars until every rule died.
+// complete is false when the state cache filled; the caller must not use it.
+pub struct PrefixRun { end: i32, rule: i32, scalars: i32, complete: bool }
+pub fn prefix_set() -> PrefixSet {
+    return PrefixSet { code: alloc::vec::new(), terms: alloc::vec::new(), rule_of: alloc::vec::new(), dot: alloc::vec::new(),
+        entries: alloc::vec::new(), meta: alloc::vec::new(), set_start: alloc::vec::new(), set_len: alloc::vec::new(),
+        accept: alloc::vec::new(), trans: alloc::vec::new(), pool: alloc::vec::new(), table: alloc::vec::new(),
+        work: alloc::vec::new(), mark: alloc::vec::new(), stack: alloc::vec::new(), capacity: 0, pool_capacity: 0 };
+}
+fn incomplete() -> PrefixRun { return PrefixRun { end: -1, rule: -1, scalars: 0, complete: false }; }
+pub impl Regex {
+    // True when the program has an assertion, which the combined DFA omits.
+    pub fn has_assertion(&self) -> bool {
+        let code: [Inst] = self.code.as_slice(); let i: i32 = 0;
+        while (i < self.code.len()) { if (code[i].op >= 4 && code[i].op <= 9) { return true; } i += 1; }
+        return false;
+    }
+    // Upper bound on VM ticks per input boundary of one search: every PC once
+    // in closure and once as a thread, plus every class term once.
+    pub fn boundary_cost(&self) -> i64 {
+        let code: [Inst] = self.code.as_slice(); let i: i32 = 0; let total: i64 = 1;
+        while (i < self.code.len()) { total += 2; if (code[i].op == 2) { total += (code[i].b - code[i].a) as i64; } i += 1; }
+        return total;
+    }
+}
+pub impl PrefixSet {
+    pub fn borrow(&self) -> &PrefixSet { return self; }
+    pub fn rule_count(&self) -> i32 { return self.entries.len(); }
+    // Cache rebuilds so far, including the first; observation only.
+    pub fn cache_resets(&self) -> i32 { if (self.meta.len() < 5) { return 0; } return self.meta.at(4); }
+    pub fn destroy(&self) {
+        self.code.destroy(); self.terms.destroy(); self.rule_of.destroy(); self.dot.destroy(); self.entries.destroy();
+        self.meta.destroy(); self.set_start.destroy(); self.set_len.destroy(); self.accept.destroy(); self.trans.destroy();
+        self.pool.destroy(); self.table.destroy(); self.work.destroy(); self.mark.destroy(); self.stack.destroy();
+        self.capacity = 0; self.pool_capacity = 0;
+    }
+    // Append one assertion-free program as rule `rule`. Call before finish().
+    pub fn add(&self, rule: i32, regex: &Regex) -> Result<i32, Error> {
+        if (regex.has_assertion() || self.capacity != 0) { return Err(Error::Unsupported(0)); }
+        let base: i32 = self.code.len(); let term_base: i32 = self.terms.len();
+        if (self.code.try_reserve(regex.code.len()).is_err() || self.rule_of.try_reserve(regex.code.len()).is_err() || self.terms.try_reserve(regex.terms.len()).is_err()) { return Err(Error::AllocationFailed); }
+        let code: [Inst] = regex.code.as_slice(); let i: i32 = 0;
+        while (i < regex.code.len()) {
+            let inst: Inst = code[i];
+            if (inst.op != 13) { inst.x += base; }
+            if (inst.op == 11) { inst.y += base; }
+            if (inst.op == 2) { inst.a += term_base; inst.b += term_base; }
+            if (self.code.try_push(inst).is_err() || self.rule_of.try_push(rule).is_err()) { return Err(Error::AllocationFailed); }
+            i += 1;
+        }
+        let terms: [Term] = regex.terms.as_slice(); i = 0;
+        while (i < regex.terms.len()) { if (self.terms.try_push(terms[i]).is_err()) { return Err(Error::AllocationFailed); } i += 1; }
+        if (self.entries.try_push(regex.entry + base).is_err()) { return Err(Error::AllocationFailed); }
+        while (self.dot.len() <= rule) { if (self.dot.try_push(false).is_err()) { return Err(Error::AllocationFailed); } }
+        let unused = self.dot.set(rule, regex.config.dot_matches_newline);
+        return Ok(base);
+    }
+    // Allocate the fixed lazy-DFA cache.
+    pub fn finish(&self) -> Result<i32, Error> {
+        let pcs: i32 = self.code.len(); let states: i32 = pcs * 4;
+        if (states < 64) { states = 64; } if (states > 1024) { states = 1024; }
+        self.capacity = states; self.pool_capacity = states * 8 + pcs * 2;
+        if (self.meta.try_resize(5, 0).is_err() || self.set_start.try_resize(states, 0).is_err() || self.set_len.try_resize(states, 0).is_err()
+            || self.accept.try_resize(states, -1).is_err() || self.trans.try_resize(states * 128, -2).is_err() || self.pool.try_resize(self.pool_capacity, 0).is_err()
+            || self.table.try_resize(states * 2, 0).is_err() || self.work.try_resize(pcs + 1, 0).is_err() || self.mark.try_resize(pcs + 1, 0).is_err()
+            || self.stack.try_resize(pcs + 1, 0).is_err()) { return Err(Error::AllocationFailed); }
+        let meta = self.meta.as_slice(); meta[3] = 1;
+        return Ok(states);
+    }
+    fn reset(&self) {
+        let meta = self.meta.as_slice(); let trans = self.trans.as_slice(); let table = self.table.as_slice();
+        let used: i32 = meta[0] * 128; let i: i32 = 0;
+        while (i < used) { trans[i] = -2; i += 1; }
+        i = 0; while (i < self.capacity * 2) { table[i] = 0; i += 1; }
+        meta[0] = 0; meta[1] = 0; meta[3] = 0; meta[4] += 1;
+    }
+    fn next_generation(&self) -> i32 {
+        let meta = self.meta.as_slice();
+        if (meta[2] >= 2147483000) { let mark = self.mark.as_slice(); let i: i32 = 0; while (i < self.code.len()) { mark[i] = 0; i += 1; } meta[2] = 0; }
+        meta[2] += 1; return meta[2];
+    }
+    // Add the epsilon closure of pc to work[count..]; returns the new count.
+    fn close(&self, pc: i32, generation: i32, count: i32) -> i32 {
+        let code: [Inst] = self.code.as_slice(); let mark = self.mark.as_slice(); let stack = self.stack.as_slice(); let work = self.work.as_slice();
+        let total: i32 = count; let pending: i32 = 0;
+        if (mark[pc] == generation) { return total; }
+        mark[pc] = generation; stack[0] = pc; pending = 1;
+        while (pending > 0) {
+            pending -= 1; let cursor: i32 = stack[pending]; let inst: Inst = code[cursor];
+            if (inst.op == 10 || inst.op == 12) {
+                if (mark[inst.x] != generation) { mark[inst.x] = generation; stack[pending] = inst.x; pending += 1; }
+            } else { if (inst.op == 11) {
+                if (mark[inst.y] != generation) { mark[inst.y] = generation; stack[pending] = inst.y; pending += 1; }
+                if (mark[inst.x] != generation) { mark[inst.x] = generation; stack[pending] = inst.x; pending += 1; }
+            } else { work[total] = cursor; total += 1; } }
+        }
+        return total;
+    }
+    fn consumes(&self, inst: Inst, scalar: u32, dot: bool) -> bool {
+        if (inst.op == 1) { return scalar == inst.a as u32; }
+        if (inst.op == 3) { return scalar != 10 || dot; }
+        if (inst.op != 2) { return false; }
+        let terms: [Term] = self.terms.as_slice(); let i: i32 = inst.a; let found: bool = false;
+        while (i < inst.b && !found) {
+            let term: Term = terms[i]; let matches: bool = scalar >= term.low && scalar <= term.high;
+            if (term.property != 0) { matches = property_matches(term.property, scalar); }
+            if (term.negated) { matches = !matches; }
+            found = matches; i += 1;
+        }
+        if (inst.flag) { return !found; }
+        return found;
+    }
+    // Find or insert the state for work[0..count] (sorted here). -1 for the
+    // empty set, -3 when the cache is full.
+    fn intern(&self, count: i32) -> i32 {
+        if (count == 0) { return -1; }
+        let work = self.work.as_slice(); let i: i32 = 1;
+        while (i < count) { let v: i32 = work[i]; let j: i32 = i - 1; while (j >= 0 && work[j] > v) { work[j + 1] = work[j]; j -= 1; } work[j + 1] = v; i += 1; }
+        let buckets: i32 = self.capacity * 2; let h: i32 = count % buckets; i = 0;
+        while (i < count) { h = (h * 31 + work[i] + 1) % buckets; i += 1; }
+        let table = self.table.as_slice(); let set_start = self.set_start.as_slice(); let set_len = self.set_len.as_slice(); let pool = self.pool.as_slice();
+        while (table[h] != 0) {
+            let s: i32 = table[h] - 1;
+            if (set_len[s] == count) {
+                let same: bool = true; i = 0;
+                while (same && i < count) { if (pool[set_start[s] + i] != work[i]) { same = false; } i += 1; }
+                if (same) { return s; }
+            }
+            h += 1; if (h == buckets) { h = 0; }
+        }
+        let meta = self.meta.as_slice();
+        if (meta[0] == self.capacity || meta[1] > self.pool_capacity - count) { meta[3] = 1; return -3; }
+        let id: i32 = meta[0]; set_start[id] = meta[1]; set_len[id] = count;
+        let code: [Inst] = self.code.as_slice(); let rule_of = self.rule_of.as_slice(); let best: i32 = -1; i = 0;
+        while (i < count) {
+            pool[meta[1] + i] = work[i];
+            if (code[work[i]].op == 13 && (best < 0 || rule_of[work[i]] < best)) { best = rule_of[work[i]]; }
+            i += 1;
+        }
+        let accept = self.accept.as_slice(); accept[id] = best;
+        meta[0] += 1; meta[1] += count; table[h] = id + 1;
+        return id;
+    }
+    fn start_state(&self) -> i32 {
+        let generation: i32 = self.next_generation(); let entries = self.entries.as_slice(); let count: i32 = 0; let i: i32 = 0;
+        while (i < self.entries.len()) { count = self.close(entries[i], generation, count); i += 1; }
+        return self.intern(count);
+    }
+    fn step(&self, state: i32, scalar: u32) -> i32 {
+        let generation: i32 = self.next_generation();
+        let set_start = self.set_start.as_slice(); let set_len = self.set_len.as_slice(); let pool = self.pool.as_slice();
+        let code: [Inst] = self.code.as_slice(); let rule_of = self.rule_of.as_slice(); let dot = self.dot.as_slice();
+        let count: i32 = 0; let i: i32 = 0; let first: i32 = set_start[state]; let length: i32 = set_len[state];
+        while (i < length) {
+            let pc: i32 = pool[first + i]; let inst: Inst = code[pc];
+            if (self.consumes(inst, scalar, dot[rule_of[pc]])) { count = self.close(inst.x, generation, count); }
+            i += 1;
+        }
+        return self.intern(count);
+    }
+    // Anchored longest prefix over every added rule from a scalar boundary.
+    pub fn run(&self, input: Input, start: i32) -> PrefixRun {
+        if (self.capacity == 0 || self.entries.is_empty()) { return incomplete(); }
+        let meta = self.meta.as_slice();
+        if (meta[3] != 0) { self.reset(); if (self.start_state() != 0) { meta[3] = 1; return incomplete(); } }
+        let text = input.text; let trans = self.trans.as_slice(); let accept = self.accept.as_slice();
+        let state: i32 = 0; let position: i32 = start; let best_end: i32 = -1; let best_rule: i32 = -1; let scalars: i32 = 0;
+        while (true) {
+            let a: i32 = accept[state]; if (a >= 0) { best_end = position; best_rule = a; }
+            if (position >= text.length) { break; }
+            let byte: u8 = text.bytes[text.start + position]; let next: i32 = -1; let width: i32 = 1;
+            if (byte < 128) {
+                next = trans[state * 128 + (byte as i32)];
+                if (next == -2) { next = self.step(state, byte as u32); if (next == -3) { return incomplete(); } trans[state * 128 + (byte as i32)] = next; }
+            } else {
+                let scalar: u32 = core::option::unwrap_or(text.scalar_at_byte(position), 4294967295);
+                width = core::utf8::encoded_len_or(scalar, 1) as i32;
+                next = self.step(state, scalar); if (next == -3) { return incomplete(); }
+            }
+            if (next < 0) { break; }
+            state = next; position += width; scalars += 1;
+        }
+        return PrefixRun { end: best_end, rule: best_rule, scalars: scalars, complete: true };
+    }
+}
