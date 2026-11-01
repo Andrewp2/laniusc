@@ -88,6 +88,15 @@ fn valid_options(o: Options) -> bool {
 }
 // A server connection with its SETTINGS and connection WINDOW_UPDATE
 // already queued in output(); the client preface is expected first in feed.
+// Room for n more items. try_reserve is exact, so grow to at least twice
+// the capacity: repeated appends then reallocate O(log n) times, not once each.
+fn reserve_more<T>(v: &alloc::vec::Vec<T>, n: i32) -> bool {
+    if (n <= v.capacity() - v.len()) { return true; }
+    let target: i32 = v.len() + n; let doubled: i32 = 16;
+    if (v.capacity() < 536870912) { doubled = v.capacity() * 2; if (doubled < 16) { doubled = 16; } }
+    if (doubled > target && v.try_reserve(doubled - v.len()).is_ok()) { return true; }
+    return v.try_reserve(n).is_ok();
+}
 pub fn server(options: Options) -> core::result::Result<Connection,ext::http2::Error> {
     if (!valid_options(options)) { return core::result::Err(error(ext::http2::Cause::InvalidRequest, 0, 0)); }
     let made_decoder = ext::hpack::decoder(options.hpack); if (made_decoder.is_err()) { return core::result::Err(error(ext::http2::Cause::InvalidRequest, 0, 0)); }
@@ -456,8 +465,8 @@ pub impl Connection {
         if (reused.is_some()) { let r: Stream = reused.unwrap(); s.fields = r.fields; s.slots = r.slots; s.body = r.body; s.pending = r.pending; }
         // Reserve every parallel slot first so the pushes below cannot fail
         // halfway and leave the arrays out of step.
-        let room: bool = self.reserve_slot() && self.streams.try_reserve(1).is_ok() && self.ids.try_reserve(1).is_ok()
-            && self.states.try_reserve(1).is_ok() && self.taken.try_reserve(1).is_ok() && self.queue.try_reserve(1).is_ok();
+        let room: bool = self.reserve_slot() && reserve_more(self.streams.borrow(), 1) && reserve_more(self.ids.borrow(), 1)
+            && reserve_more(self.states.borrow(), 1) && reserve_more(self.taken.borrow(), 1) && reserve_more(self.queue.borrow(), 1);
         if (!room) { s.fields.destroy(); s.slots.destroy(); s.body.destroy(); s.pending.destroy(); self.fail(ext::http2::Cause::AllocationFailed, ext::http2_frame::INTERNAL_ERROR); return; }
         self.streams.try_push(s); self.ids.try_push(id); self.states.try_push(FAILED); self.taken.try_push(false);
         self.place(id, self.streams.len() - 1); self.set_state(self.streams.len() - 1, RECEIVING);
@@ -588,6 +597,18 @@ pub impl Connection {
         let s: Stream = self.streams.at(index);
         if (self.states.at(index) == FAILED) { return core::result::Err(s.error); }
         if (!s.responded || s.local_closed || s.pending_end) { return core::result::Err(error(ext::http2::Cause::InvalidRequest, 0, id)); }
+        // Nothing queued and the windows allow it all: frame it straight
+        // into the output instead of copying it into the stream first.
+        let n: i64 = data.length as i64;
+        if (s.pending.len() == s.pending_sent && data.length <= self.peer_max_frame && n <= s.send_window && n <= self.send_window) {
+            let flags: i32 = 0; if (end) { flags = ext::http2_frame::END_STREAM; }
+            if (!ext::http2_frame::write_frame(self.out.borrow(), ext::http2_frame::DATA, flags, s.id, data)) { return core::result::Err(self.fail(ext::http2::Cause::AllocationFailed, ext::http2_frame::INTERNAL_ERROR)); }
+            s.send_window -= n; self.send_window -= n;
+            if (end) { s.local_closed = true; s.pending.clear(); s.pending_sent = 0; }
+            self.streams.set(index, s);
+            if (end) { self.settle(index); }
+            return core::result::Ok(data.length);
+        }
         if (s.pending.try_extend(data).is_err() || (self.senders.index_of(id) < 0 && self.senders.try_push(id).is_err())) { return core::result::Err(error(ext::http2::Cause::AllocationFailed, 0, id)); }
         s.pending_end = end; self.streams.set(index, s);
         self.flush();

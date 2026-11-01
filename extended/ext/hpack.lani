@@ -75,6 +75,15 @@ fn huffman_lengths() -> [u8] { return text("000000000000000000000000000000000000
 fn code_of(symbol: i32) -> i64 { return hex(huffman_codes(), symbol * 10, 8); }
 fn bits_of(symbol: i32) -> i32 { return hex(huffman_codes(), symbol * 10 + 8, 2) as i32; }
 
+// Room for n more items. try_reserve is exact, so grow to at least twice
+// the capacity: repeated appends then reallocate O(log n) times, not once each.
+fn reserve_more<T>(v: &alloc::vec::Vec<T>, n: i32) -> bool {
+    if (n <= v.capacity() - v.len()) { return true; }
+    let target: i32 = v.len() + n; let doubled: i32 = 16;
+    if (v.capacity() < 536870912) { doubled = v.capacity() * 2; if (doubled < 16) { doubled = 16; } }
+    if (doubled > target && v.try_reserve(doubled - v.len()).is_ok()) { return true; }
+    return v.try_reserve(n).is_ok();
+}
 // Bytes the Huffman code needs for value.
 pub fn huffman_length(value: core::slice::View<u8>) -> i32 {
     let bits: i64 = 0; let i: i32 = 0;
@@ -85,7 +94,7 @@ pub fn huffman_length(value: core::slice::View<u8>) -> i32 {
 pub fn huffman_encode(value: core::slice::View<u8>, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32,Error> {
     if (!valid(value)) { return core::result::Err(Error::Bounds); }
     let need: i32 = huffman_length(value);
-    if (out.try_reserve(need).is_err()) { return core::result::Err(Error::AllocationFailed); }
+    if (!reserve_more(out, need)) { return core::result::Err(Error::AllocationFailed); }
     let accumulator: u64 = 0; let held: i32 = 0; let i: i32 = 0;
     while (i < value.length) {
         let symbol: i32 = value.values[value.start + i] as i32;
@@ -131,7 +140,7 @@ pub fn huffman_decode(input: core::slice::View<u8>, out: &alloc::vec::Vec<u8>, m
 pub fn encode_integer(value: i32, prefix: i32, flags: i32, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32,Error> {
     if (value < 0 || prefix < 1 || prefix > 8) { return core::result::Err(Error::Bounds); }
     let mask: i32 = (1 << prefix) - 1;
-    if (out.try_reserve(6).is_err()) { return core::result::Err(Error::AllocationFailed); }
+    if (!reserve_more(out, 6)) { return core::result::Err(Error::AllocationFailed); }
     if (value < mask) { out.try_push((flags | value) as u8); return core::result::Ok(1); }
     out.try_push((flags | mask) as u8); let rest: i32 = value - mask; let written: i32 = 1;
     while (rest >= 128) { out.try_push(((rest & 127) | 128) as u8); rest = rest >> 7; written += 1; }
