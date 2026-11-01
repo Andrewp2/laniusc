@@ -42,6 +42,7 @@ StructuredBuffer<uint> call_dependency_local_index;
 StructuredBuffer<uint> method_decl_receiver_ref_tag;
 StructuredBuffer<uint> method_decl_receiver_ref_payload;
 StructuredBuffer<uint> method_decl_receiver_mode;
+StructuredBuffer<uint> method_call_receiver_hir;
 StructuredBuffer<uint> method_decl_param_offset;
 StructuredBuffer<uint> method_call_receiver_ref_tag;
 StructuredBuffer<uint> method_call_receiver_ref_payload;
@@ -128,6 +129,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
                     method_decl_receiver_ref_payload[declaration]);
                 actual = uint2(method_call_receiver_ref_tag[owner], method_call_receiver_ref_payload[owner]);
             }
+            // A path through a bare generic type, `W::wrap(9)`, names the
+            // declaration's symbolic application: it binds no parameter, so
+            // the arguments and result context infer the impl's.
+            if (method_call_receiver_hir[token] == INVALID && actual.x == 3u &&
+                actual.y < min(mutable_type_capacity(), gParams.n_tokens) &&
+                type_instance_decl_token[actual.y] == actual.y) return;
             run = true;
         }
         else

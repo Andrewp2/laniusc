@@ -1,6 +1,6 @@
-# Language ergonomics: item imports, `?`, local inference, block arms
+# Language ergonomics: item imports, `?`, local inference, block arms, path calls
 
-Four features shorten ordinary Lanius code without adding hidden behavior.
+Five features shorten ordinary Lanius code without adding hidden behavior.
 Each section states what the feature does, what it refuses, and the
 decision behind it. Tests: `tests/language_ergonomics_execution.rs`, fixtures
 in `tests/fixtures/language/`.
@@ -138,3 +138,35 @@ Implementation:
 - Codegen needs no change: rows are scheduled by token position, so the
   block's statements fall between the arm's test and its end.
 
+
+## Methods called through a type's path
+
+`Type::method(receiver, args...)` calls any method of the type, the way
+`receiver.method(args...)` does: a `self` or `&self` method takes its
+receiver as the first argument. `S::get(s, 1)`, `S::peek(r, 2)` with
+`r: &S`, `TotalF32::to_bits(t)` from the standard library, and `T::tw(x, 3)`
+through a bound `T: Tw<T>` all work.
+
+- The path form never adjusts the receiver. A `&self` method needs a `&S`
+  argument (`S::peek(s.borrow(), 2)`; Lanius has no `&expr`), and passing
+  `s` itself is `LNC0006`, as is any other wrong type. A missing argument
+  is `LNC0027`.
+- A bare generic type infers its parameters from the arguments and the
+  result context: `let w: W<i32> = W::wrap(9);`, `W::get(w)`. A parameter
+  that nothing determines is `LNC0006`; `W<i32>::make()` names it.
+- Not yet: a bare imported generic type, `Option::is_some(o)`, is `LNC0005`;
+  write `Option<i32>::is_some(o)` (generics backlog b19).
+
+Decision: the path form is plain function-call syntax with the receiver
+spelled out, so it neither autoreferences nor dereferences. That keeps
+`Type::method` usable as an unambiguous name for one method when several
+types or traits share it.
+
+Implementation: methods/07 and 07a offer self members to path calls,
+methods/02b types the syntactic self parameter row from the impl root,
+dependencies/07b and 08 type an imported method's receiver argument from its
+impl root (behind one reference for `&self`), and calls/03d binds no
+parameter from a bare generic qualifier. Fixtures:
+`tests/fixtures/compiler_defects/b14_path_self_method_*.lani`,
+`b19_stdlib_path_self_method.lani`, `generic_impl_path_inference.lani`, and
+`tests/fixtures/generics_matrix/p82_imported_type_path_self_method/`.

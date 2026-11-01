@@ -131,6 +131,7 @@ static const uint TY_STRUCT_BASE = 4096u;
 static const uint TY_GENERIC_BASE = 8192u;
 
 static const uint TYPE_REF_INVALID = 0u;
+static const uint TY_BORROWED_SELF = 0x40000000u; // dependencies/07b
 static const uint TYPE_REF_SCALAR = 1u;
 static const uint TYPE_REF_GENERIC_PARAM = 2u;
 static const uint TYPE_REF_INSTANCE = 3u;
@@ -317,6 +318,13 @@ void collect_row_argument(uint row)
             : uint2(actual_tag, actual_payload), spare);
         if (step == 0u) pattern = id;
         else actual = id;
+    }
+    // A path call's imported &self receiver row is the impl root, which the
+    // argument reaches through exactly one reference (dependencies/07b).
+    if (type == TY_BORROWED_SELF && ct_is_resolved(actual))
+    {
+        if (ct_kind(actual) != CT_KIND_REF) { record_error(error_token, ERR_ASSIGN_MISMATCH, 0u); return; }
+        actual = ct_arg(actual, 0u);
     }
     // The slots a pattern uses do not depend on the argument: they size its
     // claim spans before any argument type is known.
