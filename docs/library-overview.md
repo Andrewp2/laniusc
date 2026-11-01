@@ -2298,6 +2298,18 @@ GOAWAY, RST_STREAM and response validation). The engine passes 17 cases
 against libnghttp2's server session and 46 against hand-built frames for
 every connection and stream error it must detect.
 
+The [HTTP/2 server engine](extended-http2-server.md) (`ext::http2_server`) is
+the I/O-free server side. It reads the client preface, enforces
+MAX_CONCURRENT_STREAMS by refusing extra streams, validates request
+pseudo-fields and fields, buffers bodies under flow control, answers 413 and
+431 itself, and sends responses within the client's windows.
+[`ext::http_service`](extended-http-service.md#http2-h2c) hands connections
+that open with the preface to it (prior-knowledge h2c) and keeps serving
+HTTP/1.1 on the same listener. A libnghttp2 client session through ctypes
+passes 6 session cases and 18 malformed-frame cases, both against the engine
+over a pipe and against the service over TCP. HTTP/2 over TLS waits on C
+callback support for OpenSSL's ALPN selection.
+
 The [WebSocket client](extended-websocket-client.md) (`ext::websocket_client`)
 uses `dial` for `ws://` and verified `wss://` URLs and the canonical
 `ext::websocket` frame engine in the client role. It validates the opening
