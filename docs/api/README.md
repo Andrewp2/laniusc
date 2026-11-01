@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **312 modules**, **16307 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **313 modules**, **16399 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -188,7 +188,7 @@ Inventory: **312 modules**, **16307 declaration/member entries**. Counts include
 | [std::rlimit](std/rlimit.md) | [source](../../stdlib/std/rlimit.lani#L5) | 37 | Source inventory | [stdlib-rlimit](../stdlib-rlimit.md) |
 | [std::scope](std/scope.md) | [source](../../stdlib/std/scope.lani#L14) | 65 | Source inventory | [stdlib-scope](../stdlib-scope.md), [memory-scoped-stacks-design](../memory-scoped-stacks-design.md) |
 | [std::signal](std/signal.md) | [source](../../stdlib/std/signal.lani#L6) | 105 | Source inventory | [stdlib-signals](../stdlib-signals.md) |
-| [std::socket](std/socket.md) | [source](../../stdlib/std/socket.lani#L3) | 122 | Source inventory | [stdlib-sockets](../stdlib-sockets.md), [stdlib-unix-streams](../stdlib-unix-streams.md), [stdlib-unix-request](../stdlib-unix-request.md) |
+| [std::socket](std/socket.md) | [source](../../stdlib/std/socket.lani#L3) | 124 | Source inventory | [stdlib-sockets](../stdlib-sockets.md), [stdlib-unix-streams](../stdlib-unix-streams.md), [stdlib-unix-request](../stdlib-unix-request.md) |
 | [std::steal](std/steal.md) | [source](../../stdlib/std/steal.lani#L9) | 41 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
 | [std::stream](std/stream.md) | [source](../../stdlib/std/stream.lani#L3) | 16 | Source inventory | [stdlib-streams](../stdlib-streams.md) |
 | [std::sync](std/sync.md) | [source](../../stdlib/std/sync.lani#L7) | 102 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
@@ -255,6 +255,7 @@ Inventory: **312 modules**, **16307 declaration/member entries**. Counts include
 | [ext::higher_statistics](ext/higher_statistics.md) | [source](../../extended/ext/higher_statistics.lani#L5) | 29 | Source inventory | [extended-higher-statistics](../extended-higher-statistics.md), [extended-statistics](../extended-statistics.md), [extended-sample-moments](../extended-sample-moments.md) |
 | [ext::host_name](ext/host_name.md) | [source](../../extended/ext/host_name.lani#L3) | 7 | Source inventory | [extended-http-url](../extended-http-url.md), [extended-url-client](../extended-url-client.md) |
 | [ext::http](ext/http.md) | [source](../../extended/ext/http.lani#L2) | 108 | Source inventory | [extended-http](../extended-http.md), [extended-http-cursor](../extended-http-cursor.md) |
+| [ext::http_agent](ext/http_agent.md) | [source](../../extended/ext/http_agent.lani#L6) | 90 | Source inventory | [extended-http-agent](../extended-http-agent.md), [extended-http](../extended-http.md), [extended-url-client](../extended-url-client.md) |
 | [ext::http_batch](ext/http_batch.md) | [source](../../extended/ext/http_batch.lani#L2) | 84 | Source inventory | [extended-http-batch](../extended-http-batch.md), [extended-http-batch-testing](../extended-http-batch-testing.md), [extended-fetch-many](../extended-fetch-many.md), [extended-https-batch](../extended-https-batch.md) |
 | [ext::http_client](ext/http_client.md) | [source](../../extended/ext/http_client.lani#L2) | 169 | Source inventory | [extended-http-client](../extended-http-client.md), [extended-http-exchange-testing](../extended-http-exchange-testing.md), [extended-http-batch](../extended-http-batch.md), [extended-fetch-many](../extended-fetch-many.md), [extended-https-client](../extended-https-client.md), [extended-https-batch](../extended-https-batch.md), [extended-http-protocol-testing](../extended-http-protocol-testing.md), [extended-url-client](../extended-url-client.md) |
 | [ext::http_server](ext/http_server.md) | [source](../../extended/ext/http_server.lani#L2) | 236 | Source inventory | [extended-http-server](../extended-http-server.md), [library-server-concurrency-plan](../library-server-concurrency-plan.md), [extended-https-server-exchange](../extended-https-server-exchange.md), [library-server-contract](../library-server-contract.md) |

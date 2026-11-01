@@ -1020,8 +1020,9 @@ make no callback; short transfers advance both array/file coordinates.
 Interrupted calls spend attempts, and every failure retains only confirmed
 progress. A call quota is separate from callback duration or a host deadline.
 
-The `std::file_ops` File adapter stages at most 1024 bytes through stack
-storage and makes one pread64/pwrite64 transfer after status validation.
+The `std::file_ops` File adapter reads packed (stride 1) destinations with one
+direct pread64 and no status probe. Writes and other layouts stage at most 1024
+bytes through stack storage and make one transfer after status validation.
 Read bytes publish only after a valid count. It leaves the shared cursor
 unchanged, rejects O_DIRECT and rejects O_APPEND for nonempty writes.
 Manual owner/backing and descriptor/status stability remain caller duties;
@@ -2214,6 +2215,16 @@ ETag/Last-Modified conditional requests passes Python loopback oracle groups
 functional70, malformed45, slowloris12, conditional23 and concurrent39 on the
 event server plus four sequential groups, with exact server counters. TLS,
 threads, multipart ranges and allocation-failure coverage remain open.
+
+The [HTTP/1.1 client agent](extended-http-agent.md) (`ext::http_agent`) is a
+synchronous cleartext client over the same codec, `ext::http_url` and
+`ext::url_connect`. It pools keep-alive connections per host and port under
+idle-count, idle-time and use limits, discards stale ones and retries an
+idempotent request once on a fresh connection. It follows redirects with a
+hop limit, RFC 9110 method rules and cross-origin credential stripping, and
+sends fixed or chunked streamed bodies, stopping an upload on an early final
+response. The curl-like sample passes Python `http.server` oracle groups
+pool18, redirect29, upload10 and broken21 with exact counters.
 
 [Resumable cleartext HTTP exchanges](extended-http-client.md) expose owned
 Prepared request staging and caller-driven Exchange steps. At `480432e8`,
