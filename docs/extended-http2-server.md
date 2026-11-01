@@ -204,18 +204,37 @@ checks every body:
 
 It then checks the server's counters (`connections=200 h2=100
 requests=4000 errors=0`, with a peak of at least 100 connections). On the
-3070 laptop, under load from other jobs, typical runs were:
+3070 laptop, under load from other jobs, four rounds against one server
+process (`/proc` CPU times of the server per phase) gave:
 
-| Phase | Wall time | Rate | Server CPU |
-| --- | --- | --- | --- |
-| h2c | 0.49–0.58 s | 3,500–4,100 req/s | 0.49 s |
-| HTTP/1.1 | 0.16–0.20 s | 10,000–12,000 req/s | 0.17 s |
+| Phase | Wall time | Rate | Server CPU | Page faults |
+| --- | --- | --- | --- | --- |
+| h2c | 0.22–0.35 s | 5,700–9,100 req/s | 0.23–0.29 s | 15,700 |
+| HTTP/1.1 | 0.22–0.28 s | 7,100–9,300 req/s | 0.22–0.24 s | 4,500 |
 
-A request costs the server about three times as much CPU over HTTP/2 as
-over HTTP/1.1, about 245 µs against 85 µs. The engine copies its stream
-records on every access and scans them linearly, and shifts its input and
-output buffers byte by byte. Those are the first places to optimize. The
-Python client side also costs more for h2c: 0.34 s of CPU against 0.12 s. With the shared `lcc` compiler build of 1 November 14:00, the `tcp`
-programs still fail their first receive with EFAULT on unpatched `lang`,
-even after S8's fe60937c2 was merged. The runs above used a stdlib whose
-`socket.lani` passes `word(0)` instead of `address(null())`.
+A request now costs the server about as much over HTTP/2 as over
+HTTP/1.1, 115–145 µs against 110–120 µs. Before this round h2c took
+0.91 s of server CPU per phase (0.62 s of it system time) against 0.30 s.
+The CPU went to memory, not to scanning: every allocation in the current
+runtime is its own `mmap` and page fault and every release a `munmap`, and
+h2c made about 31 allocations per request. Its system time followed the
+63,000 page faults per phase. The fixes, in order of effect:
+
+- `Vec::try_reserve` reserves exactly, so `ext::http2_frame`, `ext::hpack`
+  and the engine's stream arrays reallocated (and copied) on each frame,
+  each integer and each stream. They now reserve with doubling.
+- The engine keeps the response header list and encoded block between
+  responses, reserves a request section in one step, recycles the buffers
+  of freed streams (up to 32 sets of at most 16 KiB each), and frames a
+  response body that fits the flow-control windows straight into the
+  output instead of copying it into the stream first.
+- The event server sends a connection's responses together once its
+  queued requests are answered (one `send` for 20 responses instead of 20)
+  and pops its ready queue by index instead of shifting it.
+- Streams are found through an open-addressed table, with their states
+  in parallel arrays, and buffer shifts use `core::slice::copy_within`.
+  These changed little on their own.
+
+The remaining h2c page faults are mostly the two buffers each new stream
+reserves for its fields and the per-connection engine setup. The Python
+client side still costs more for h2c (about 0.21 s against 0.14 s).
