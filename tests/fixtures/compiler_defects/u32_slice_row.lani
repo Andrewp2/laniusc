@@ -16,6 +16,14 @@ import core::result;
 // test goes through setl/movzbl/store/load/test/je: about 100 instructions,
 // 70 of them with a memory operand, per limb, and the carry chain passes
 // through several store-to-load forwards.
+// After the temporary allocator (same day): 0.29 s, 2.9 ns per limb. The
+// descriptor copies, temporary spills, `>> 32` range check and setl chain are
+// gone; what is left per access is
+//   mov %r11d,%ecx; mov -0x78(%rbp),%eax; cmp %eax,%ecx; jb ok; ...syscall
+//   mov -0x70(%rbp),%rax; mov -0x80(%rbp),%rcx; mov %r11d,%edx
+//   imul %rcx,%rdx; add %rdx,%rax; cmp $0x1,%rcx; jne wide; load (%rax)
+// plus `factor` reloaded from -0x98(%rbp) and reg-to-reg move chains, about
+// 60 instructions per limb.
 fn row(xs: [u32], os: [u32], n: i32, factor: u64) -> u64 {
     let carry: u64 = 0;
     let j: i32 = 0;

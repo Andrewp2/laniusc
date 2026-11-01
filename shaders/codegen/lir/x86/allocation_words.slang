@@ -1,8 +1,10 @@
 import native_value_layout;
 import primitive_types;
-// Computes spill storage independently for every scheduled OptIR node. The
-// subsequent global prefix scan turns these widths into deterministic,
-// function-relative stack offsets; no invocation walks a function.
+// Assigns value locations and spill widths for every scheduled OptIR node.
+// One invocation per function walks its schedule (positions are contiguous
+// per function) and linear-scans general-purpose registers over the values'
+// [definition, last use] intervals; see walk_function. The subsequent global
+// prefix scan turns the spill widths into function-relative stack offsets.
 
 import codegen.lowering_ir;
 import codegen.optimization_ir;
@@ -38,8 +40,16 @@ StructuredBuffer<uint> x86_live_by_semantic;
 StructuredBuffer<uint> x86_last_use_by_semantic;
 StructuredBuffer<X86FunctionRegisterAnalysis>
     x86_register_analysis_by_function;
+StructuredBuffer<uint> x86_position_by_semantic;
+StructuredBuffer<uint> x86_function_start;
+StructuredBuffer<uint> x86_function_end;
+StructuredBuffer<uint> semantic_lir_param_total;
+StructuredBuffer<SemanticLirParam> semantic_lir_params;
+StructuredBuffer<uint> semantic_lir_local_total;
+StructuredBuffer<SemanticLirLocal> semantic_lir_locals;
 RWStructuredBuffer<uint> x86_location_by_semantic;
 RWStructuredBuffer<uint> x86_stack_words_by_position;
+RWStructuredBuffer<uint> x86_saved_gpr_mask_by_function;
 
 static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -95,41 +105,13 @@ bool interval_crosses_call(uint position, uint last, uint total)
     return false;
 }
 
-uint available_caller_lane(uint function_id, uint rank,
-                           out uint available_count)
+// The location every value gets independently of register pressure: INVALID
+// for a stack home, RAX for a value returned at once, or an XMM register.
+// `gpr` is set when the value may instead take a general-purpose register,
+// which walk_function decides.
+uint parallel_register_location(uint row, uint position, uint total, out bool gpr)
 {
-    uint reserved = 0u;
-    bool has_call =
-        x86_register_analysis_by_function[function_id].first_call != INVALID;
-    if (!has_call)
-    {
-        SemanticLirFunction function = semantic_lir_functions[function_id];
-        // Parameters always have ABI homes. Conservatively reserve homes for
-        // the first six locals as well; dead declarations can reduce this mask
-        // in a later, independently parallel declaration analysis.
-        uint declaration_count = min(6u,
-            function.param_count + function.local_count);
-        for (uint ordinal = 0u; ordinal < declaration_count; ordinal += 1u)
-        {
-            uint physical = x86_caller_declaration_register(ordinal);
-            if (physical >= 8u && physical <= 11u)
-                reserved |= 1u << (physical - 8u);
-        }
-    }
-
-    uint selected = INVALID;
-    available_count = 0u;
-    for (uint lane = 0u; lane < 4u; lane += 1u)
-    {
-        if ((reserved & (1u << lane)) != 0u) continue;
-        if (available_count == rank) selected = lane;
-        available_count += 1u;
-    }
-    return selected;
-}
-
-uint parallel_register_location(uint row, uint position, uint total)
-{
+    gpr = false;
     OptIrNodeCore core = opt_ir_core[row];
     uint op = opt_ir_op(core);
     if (!produces_scalar_value(op)) return INVALID;
@@ -206,19 +188,8 @@ uint parallel_register_location(uint row, uint position, uint total)
         return x86_xmm_location(position & 7u);
     }
 
-    if (!scalar_gpr_result(core)) return INVALID;
-    uint available_count;
-    available_caller_lane(function_id, 0u, available_count);
-    if (available_count == 0u || last - position >= available_count)
-        return INVALID;
-    // The length guard bounds this local inspection to at most three
-    // positions. No invocation performs a function-sized interval walk.
-    if (interval_crosses_call(position, last, total)) return INVALID;
-    uint rank = position % available_count;
-    uint ignored_count;
-    uint lane = available_caller_lane(function_id, rank, ignored_count);
-    return lane == INVALID ? INVALID :
-        X86_LOCATION_REGISTER | (8u + lane);
+    gpr = scalar_gpr_result(core);
+    return INVALID;
 }
 
 uint aggregate_copy_word_count(uint row, uint total, uint function_total)
@@ -310,6 +281,285 @@ uint spill_word_count(uint row, uint total, uint function_total)
     return produces_scalar_value(op) ? 1u : 0u;
 }
 
+// ---- Linear-scan general-purpose registers, one invocation per function ----
+//
+// Temporaries may use R8-R11 (caller-saved) and RBX, R12-R14 (callee-saved;
+// R15 holds the host-runtime stack pointer). RAX, RCX and RDX stay emitter
+// scratch and RDI/RSI belong to copies and call arguments. Declarations are
+// placed later by decl_slots_scatter, which gives ordinals 0..5 RDI, RSI,
+// R10, R11, R8, R9 in a call-free function and ordinals 0..3 RBX, R12-R14
+// otherwise; the registers those ordinals can take are reserved here.
+//
+// A value holds its register over [definition, last use]. Two rules keep
+// that sound across control flow:
+// * Loops. At the target t of a back edge from s, every register still
+//   holding a value defined before t stays held until s, because the value
+//   is read again on the next iteration.
+// * Calls. In a function with calls, a value whose interval contains a call
+//   or a back-edge target (and so may be extended over a loop that calls)
+//   takes a callee-saved register or a stack home.
+
+static const uint TEMP_CALLER_REGISTERS = 0x0f00u; // R8-R11
+static const uint TEMP_CALLEE_REGISTERS = (1u << 3u) | (1u << 12u) |
+    (1u << 13u) | (1u << 14u);
+// Preference order, one nibble per register from the low end: R8-R11, RBX,
+// R12-R14. Caller-saved registers come first: they need no prologue save and
+// keep small leaf functions inlinable.
+static const uint TEMP_REGISTER_ORDER = 0xedc3ba98u;
+static const uint NEAR_MASK = 0xffffu;
+// decl_slots_scatter looks at most this many locals for a register slot.
+static const uint LOCAL_SLOT_SCAN_LIMIT = 256u;
+
+struct RegisterEnds
+{
+    // One past each register's current interval; free at p when <= p.
+    uint rbx;
+    uint r8;
+    uint r9;
+    uint r10;
+    uint r11;
+    uint r12;
+    uint r13;
+    uint r14;
+};
+
+uint register_end(RegisterEnds ends, uint physical)
+{
+    return physical == 3u ? ends.rbx : physical == 8u ? ends.r8 :
+        physical == 9u ? ends.r9 : physical == 10u ? ends.r10 :
+        physical == 11u ? ends.r11 : physical == 12u ? ends.r12 :
+        physical == 13u ? ends.r13 : ends.r14;
+}
+
+void set_register_end(inout RegisterEnds ends, uint physical, uint end)
+{
+    if (physical == 3u) ends.rbx = end;
+    else if (physical == 8u) ends.r8 = end;
+    else if (physical == 9u) ends.r9 = end;
+    else if (physical == 10u) ends.r10 = end;
+    else if (physical == 11u) ends.r11 = end;
+    else if (physical == 12u) ends.r12 = end;
+    else if (physical == 13u) ends.r13 = end;
+    else ends.r14 = end;
+}
+
+uint held_until(uint end, uint label, uint until)
+{
+    return end > label ? max(end, until) : end;
+}
+
+// A back edge from `source` reaches `label`: keep every value live at the
+// label in its register through the whole loop.
+void hold_over_loop(inout RegisterEnds ends, uint label, uint source)
+{
+    uint until = source + 1u;
+    ends.rbx = held_until(ends.rbx, label, until);
+    ends.r8 = held_until(ends.r8, label, until);
+    ends.r9 = held_until(ends.r9, label, until);
+    ends.r10 = held_until(ends.r10, label, until);
+    ends.r11 = held_until(ends.r11, label, until);
+    ends.r12 = held_until(ends.r12, label, until);
+    ends.r13 = held_until(ends.r13, label, until);
+    ends.r14 = held_until(ends.r14, label, until);
+}
+
+uint free_register(RegisterEnds ends, uint allowed, uint position)
+{
+    for (uint index = 0u; index < 8u; index += 1u)
+    {
+        uint physical = (TEMP_REGISTER_ORDER >> (index * 4u)) & 0xfu;
+        if ((allowed & (1u << physical)) != 0u &&
+            register_end(ends, physical) <= position)
+            return physical;
+    }
+    return INVALID;
+}
+
+// The same type test decl_slots_scatter applies to declaration homes.
+bool declaration_register_type(uint type_id)
+{
+    return type_id == 1u || type_id == 2u || type_id == 3u ||
+        type_id == 4u || type_id == 6u || type_id == 8u ||
+        type_id == 9u || type_id == 10u || type_id == 16u || type_id == 17u;
+}
+
+uint declaration_register(uint ordinal, bool has_call)
+{
+    return has_call ? (ordinal == 0u ? 3u : 11u + ordinal)
+        : x86_caller_declaration_register(ordinal);
+}
+
+// Register slots (declaration ordinals for the RDI, RSI, R10, R11, R8, R9 or
+// RBX, R12-R14 sequences) that decl_slots_scatter may give this function's
+// declarations: a register-typed parameter keeps its own ordinal unless a
+// hidden result pointer or a (data, length, stride) parameter keeps every
+// parameter on the stack, and register-typed locals take the remaining slots
+// in order. decl_slots_scatter applies the same rule (local_register_slot).
+uint declaration_register_mask(SemanticLirFunction function, bool has_call)
+{
+    uint limit = has_call ? 4u : 6u;
+    uint param_total = semantic_lir_param_total[0u];
+    uint local_total = semantic_lir_local_total[0u];
+    if (function.param_start + function.param_count > param_total ||
+        function.local_start + function.local_count > local_total)
+        return 0xffffu;
+    bool stack_parameters = function.result_word_count > 2u;
+    for (uint ordinal = 0u; ordinal < function.param_count; ordinal += 1u)
+        if (x86_abi_param_width(semantic_lir_params[function.param_start + ordinal]) > 1u)
+            stack_parameters = true;
+    uint slots = 0u;
+    if (!stack_parameters)
+        for (uint ordinal = 0u; ordinal < min(function.param_count, limit); ordinal += 1u)
+            if (declaration_register_type(
+                    semantic_lir_params[function.param_start + ordinal].type_id))
+                slots |= 1u << ordinal;
+    uint cursor = 0u;
+    uint scanned = min(function.local_count, LOCAL_SLOT_SCAN_LIMIT);
+    for (uint index = 0u; index < scanned; index += 1u)
+    {
+        if (!declaration_register_type(
+                semantic_lir_locals[function.local_start + index].type_id))
+            continue;
+        while (cursor < limit && (slots & (1u << cursor)) != 0u) cursor += 1u;
+        if (cursor >= limit) break;
+        slots |= 1u << cursor;
+        cursor += 1u;
+    }
+    uint mask = 0u;
+    for (uint slot = 0u; slot < limit; slot += 1u)
+        if ((slots & (1u << slot)) != 0u)
+            mask |= 1u << declaration_register(slot, has_call);
+    return mask;
+}
+
+bool control_label(uint op)
+{
+    return op == SEMANTIC_LIR_OP_BLOCK_BEGIN || op == SEMANTIC_LIR_OP_LOOP_BEGIN ||
+        op == SEMANTIC_LIR_OP_CONTROL_END || op == SEMANTIC_LIR_OP_ELSE;
+}
+
+// The row a branch jumps to, as the x86 branch lowering reads it.
+uint branch_target(uint op, OptIrNodeOperands operands)
+{
+    if (op == SEMANTIC_LIR_OP_IF_BEGIN) return operands.b;
+    if (op == SEMANTIC_LIR_OP_BRANCH_IF) return operands.c;
+    if (op == SEMANTIC_LIR_OP_BRANCH || op == SEMANTIC_LIR_OP_ELSE) return operands.a;
+    return INVALID;
+}
+
+uint near_distance(uint from, uint to)
+{
+    return to == INVALID || to - from >= NEAR_MASK ? NEAR_MASK : to - from;
+}
+
+// True when an event `distance` positions after `position` lies before
+// `last` (or at it when `inclusive`); saturated distances count as inside.
+bool event_inside(uint position, uint distance, uint last, bool inclusive)
+{
+    if (distance == NEAR_MASK) return last - position >= NEAR_MASK;
+    return inclusive ? position + distance <= last : position + distance < last;
+}
+
+void walk_function(uint function_id, uint start, uint end, uint total,
+                   uint function_total)
+{
+    // Backward pass. Each non-label row's location word temporarily holds the
+    // distances to the next call and the next back-edge target after it; a
+    // back-edge target's word holds the farthest position that jumps back
+    // to it. The forward pass replaces every one of these words.
+    bool sound = true;
+    uint next_call = INVALID;
+    uint next_target = INVALID;
+    for (uint cursor = end; cursor > start; )
+    {
+        cursor -= 1u;
+        uint row = semantic_schedule_order[cursor];
+        if (row >= total || function_for_node(row) != function_id) continue;
+        uint op = opt_ir_op(opt_ir_core[row]);
+        uint target = branch_target(op, opt_ir_operands[row]);
+        if (target < total)
+        {
+            uint target_position = x86_position_by_semantic[target];
+            if (target_position <= cursor)
+            {
+                if (target_position < start || target_position == cursor ||
+                    function_for_node(target) != function_id ||
+                    !control_label(opt_ir_op(opt_ir_core[target])))
+                    sound = false;
+                else
+                {
+                    uint prior = x86_location_by_semantic[target];
+                    x86_location_by_semantic[target] =
+                        prior == INVALID ? cursor : max(prior, cursor);
+                }
+            }
+        }
+        if (control_label(op))
+        {
+            if (x86_location_by_semantic[row] != INVALID) next_target = cursor;
+        }
+        else
+            x86_location_by_semantic[row] = near_distance(cursor, next_call) |
+                (near_distance(cursor, next_target) << 16u);
+        if (semantic_lir_is_call(op)) next_call = cursor;
+    }
+
+    bool has_call =
+        x86_register_analysis_by_function[function_id].first_call != INVALID;
+    uint reserved = declaration_register_mask(
+        semantic_lir_functions[function_id], has_call);
+    uint caller_free = TEMP_CALLER_REGISTERS & ~reserved;
+    uint callee_free = TEMP_CALLEE_REGISTERS & ~reserved;
+    RegisterEnds ends;
+    ends.rbx = 0u; ends.r8 = 0u; ends.r9 = 0u; ends.r10 = 0u;
+    ends.r11 = 0u; ends.r12 = 0u; ends.r13 = 0u; ends.r14 = 0u;
+    uint saved = 0u;
+
+    for (uint position = start; position < end; position += 1u)
+    {
+        uint row = semantic_schedule_order[position];
+        if (row >= total || function_for_node(row) != function_id) continue;
+        uint op = opt_ir_op(opt_ir_core[row]);
+        uint pending = x86_location_by_semantic[row];
+        uint location = INVALID;
+        uint words = 0u;
+        if (control_label(op))
+        {
+            if (pending != INVALID) hold_over_loop(ends, position, pending);
+        }
+        if (x86_live_by_semantic[row] != 0u)
+        {
+            bool gpr;
+            location = parallel_register_location(row, position, total, gpr);
+            if (gpr && sound && !control_label(op))
+            {
+                uint last = x86_last_use_by_semantic[row];
+                bool crosses = event_inside(position, pending & NEAR_MASK, last, false);
+                bool loops = event_inside(position, pending >> 16u, last, true);
+                uint allowed = has_call && (crosses || loops)
+                    ? callee_free : caller_free | callee_free;
+                uint physical = free_register(ends, allowed, position);
+                if (physical != INVALID)
+                {
+                    set_register_end(ends, physical, last + 1u);
+                    if ((TEMP_CALLEE_REGISTERS & (1u << physical)) != 0u)
+                        saved |= 1u << physical;
+                    location = X86_LOCATION_REGISTER | physical;
+                }
+            }
+            if (location == INVALID)
+                words = spill_word_count(row, total, function_total);
+        }
+        x86_location_by_semantic[row] = location;
+        x86_stack_words_by_position[position] = words;
+    }
+    if (saved != 0u)
+    {
+        uint ignored;
+        InterlockedOr(x86_saved_gpr_mask_by_function[function_id], saved, ignored);
+    }
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -318,12 +568,23 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint total = min(gParams.semantic_capacity, opt_ir_total[0u]);
     if (position >= total) return;
     uint row = semantic_schedule_order[position];
+    uint function_total = min(gParams.function_capacity,
+        semantic_lir_function_total[0u]);
+    uint function_id = row < total ? function_for_node(row) : INVALID;
+    if (function_id < function_total)
+    {
+        // The invocation at the function's first position places all of it.
+        uint start = x86_function_start[function_id];
+        uint end = min(x86_function_end[function_id], total);
+        if (start == position && start < end)
+            walk_function(function_id, start, end, total, function_total);
+        return;
+    }
     uint words = 0u;
     if (row < total && x86_live_by_semantic[row] != 0u)
     {
-        uint function_total = min(gParams.function_capacity,
-            semantic_lir_function_total[0u]);
-        uint location = parallel_register_location(row, position, total);
+        bool gpr;
+        uint location = parallel_register_location(row, position, total, gpr);
         if (location != INVALID)
             x86_location_by_semantic[row] = location;
         else
