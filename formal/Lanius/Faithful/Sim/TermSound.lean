@@ -134,8 +134,8 @@ theorem EnvOk.bindAll {B : Nat} {as : List (Nat × SizeCls)} {bs : List (Nat × 
   | nil => exact fun h => h
   | cons hab _ ih => exact fun h => ih (h.cons' hab)
 
-theorem EnvOk.refine {B : Nat} {A : AEnv} {E : Env} (h : EnvOk B A E) {x : Nat}
-    (hx : ∀ v, E.get? x = some v → ∃ n, v = .unsigned .usize n ∧ n ≠ 0) : EnvOk B (A.refine x) E := by
+theorem EnvOk.refine {B : Nat} {A : AEnv} {E : Env} (h : EnvOk B A E) {x k : Nat}
+    (hx : ∀ v, E.get? x = some v → ∃ n, v = .unsigned .usize n ∧ k ≤ n) : EnvOk B (A.refine x k) E := by
   unfold AEnv.refine
   split
   · rename_i le
@@ -171,8 +171,8 @@ theorem part_holds {B : Nat} {c : SizeCls} {w v : Value} (hw : c.holds B w) (lt 
   | unk => trivial
   | le => simp only [SizeCls.part, SizeCls.holds] at hw ⊢; omega
   | lt => simp only [SizeCls.part, SizeCls.holds] at hw ⊢; omega
-  | nz => simp only [SizeCls.part, SizeCls.holds] at hw ⊢; omega
-  | one => trivial
+  | ge _ => simp only [SizeCls.part, SizeCls.holds] at hw ⊢; omega
+  | lit _ => trivial
 
 theorem fieldOf_lt {w : Value} {i : Nat} {v : Value} (h : fieldOf w i = some v) : sizeOf v < sizeOf w := by
   cases w with
@@ -196,8 +196,8 @@ theorem exprCls_holds {B : Nat} {A : AEnv} {E : Env} (h : EnvOk B A E) :
     simp only [exprCls]
     split
     · rename_i hc
-      obtain ⟨rfl, h1⟩ := hc
-      simp only [SizeCls.holds, UintTy.toCore, h1]
+      subst hc
+      simp only [SizeCls.holds, UintTy.toCore]
     · trivial
   | .int _, _, _ | .boolean _, _, _ | .negate _, _, _ | .not _, _, _ | .apply _ _ _, _, _
   | .cast _ _, _, _ | .null, _, _ | .char _, _, _ | .float _ _, _, _ => trivial
@@ -257,48 +257,88 @@ theorem match_binds {B : Nat} {c : SizeCls} {v : Value} (hv : c.holds B v) {id k
 
 theorem equal_zero_false {l w : Value}
     (h : (evalBinaryValue target .equal l (.unsigned .usize 0)).toOption = some w) (hb : asBool w = some false) :
-    ∃ n, l = .unsigned .usize n ∧ n ≠ 0 := by
+    ∃ n, l = .unsigned .usize n ∧ 1 ≤ n := by
   cases l with
   | unsigned t n =>
     cases t <;> simp [evalBinaryValue, scalarEqual, Except.toOption] at h <;> subst h <;>
-      simp_all [asBool]
+      simp_all [asBool] <;> omega
   | unit | boolean _ | signed _ _ | f32Bits _ | f64Bits _ | character _ | string _
   | pointer _ | array _ | slice _ _ _ _ _ | rawSlice _ _ _ | «structure» _ _ | enumeration _ _ _
   | reference _ _ _ =>
     simp [evalBinaryValue, scalarEqual, Except.toOption] at h
 
+theorem less_false {l w : Value} {k : Nat}
+    (h : (evalBinaryValue target .less l (.unsigned .usize k)).toOption = some w) (hb : asBool w = some false) :
+    ∃ n, l = .unsigned .usize n ∧ k ≤ n := by
+  cases l with
+  | unsigned t n =>
+    cases t with
+    | usize =>
+      simp only [evalBinaryValue, beq_self_eq_true, ↓reduceIte, evalUnsignedBinary, Except.toOption,
+        Option.some.injEq] at h
+      subst h
+      simp only [asBool, Option.some.injEq, decide_eq_false_iff_not, Nat.not_lt] at hb
+      exact ⟨n, rfl, hb⟩
+    | u8 | u16 | u32 | u64 =>
+      simp [evalBinaryValue, Semantics.evalShiftBy, Except.toOption] at h
+  | signed _ _ =>
+    simp [evalBinaryValue, Semantics.evalShiftBy, Except.toOption] at h
+  | unit | boolean _ | f32Bits _ | f64Bits _ | character _ | string _
+  | pointer _ | array _ | slice _ _ _ _ _ | rawSlice _ _ _ | «structure» _ _ | enumeration _ _ _
+  | reference _ _ _ =>
+    simp [evalBinaryValue, Except.toOption] at h
+
 theorem localOf_some {e : SrcExpr} {x : Nat} (h : localOf e = some x) : e = .local x := by
   cases e <;> simp_all [localOf]
 
-theorem isUsizeLit_zero {e : SrcExpr} (h : isUsizeLit 0 e = true) : e = .unsigned .usize 0 := by
+theorem usizeLit_some {e : SrcExpr} {k : Nat} (h : usizeLit e = some k) :
+    ∃ v : BitVec 64, e = .unsigned .usize v ∧ v.toNat = k := by
   cases e with
   | unsigned t v =>
-    simp only [isUsizeLit, Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] at h
-    obtain ⟨rfl, hv⟩ := h
-    have : v = 0 := BitVec.eq_of_toNat_eq (by simpa using hv)
-    rw [this]
+    simp only [usizeLit] at h
+    split at h
+    · rename_i ht
+      simp only [Option.some.injEq] at h
+      exact ⟨v, by rw [ht], h⟩
+    · simp at h
   | int _ | boolean _ | «local» _ | field _ _ | negate _ | not _ | apply _ _ _ | cast _ _ | null
-  | char _ | float _ _ => simp [isUsizeLit] at h
+  | char _ | float _ _ => simp [usizeLit] at h
 
-/-- A guard `x == 0` that is false leaves `x` a nonzero `usize`. -/
-theorem guard_nz {E : Env} {c : SrcExpr} {x : Nat} {w : Value} (hg : guardVar c = some x)
+/-- A guard that failed bounds its local below. -/
+theorem guard_ge {E : Env} {c : SrcExpr} {x k : Nat} {w : Value} (hg : guardVar c = some (x, k))
     (hc : pexpr E c = some w) (hb : asBool w = some false) :
-    ∀ v, E.get? x = some v → ∃ n, v = .unsigned .usize n ∧ n ≠ 0 := by
+    ∀ v, E.get? x = some v → ∃ n, v = .unsigned .usize n ∧ k ≤ n := by
   intro v hv
   cases c with
   | apply op l r =>
     simp only [guardVar] at hg
-    split at hg
-    · rename_i hop
-      simp only [Bool.and_eq_true, decide_eq_true_eq] at hop
-      obtain ⟨rfl, hr⟩ := hop
-      have hl := localOf_some hg
-      subst hl
-      have hr' := isUsizeLit_zero hr
-      subst hr'
-      simp only [pexpr, applyOp, binary, SrcOp.toCore, hv, Option.bind_some] at hc
-      exact equal_zero_false (by simpa [UintTy.toCore] using hc) hb
-    · simp at hg
+    cases hr : usizeLit r with
+    | none => simp [hr] at hg
+    | some k' =>
+      obtain ⟨bv, rfl, hbv⟩ := usizeLit_some hr
+      simp only [hr] at hg
+      cases hl : localOf l with
+      | none => simp [hl] at hg
+      | some y =>
+        have := localOf_some hl
+        subst this
+        simp only [hl, Option.map_some] at hg
+        by_cases he : op = .equal ∧ k' = 0
+        · rw [if_pos he] at hg
+          obtain ⟨rfl, rfl⟩ := he
+          simp only [Option.some.injEq, Prod.mk.injEq] at hg
+          obtain ⟨rfl, rfl⟩ := hg
+          simp only [pexpr, applyOp, binary, SrcOp.toCore, hv, UintTy.toCore, hbv, Option.bind_some] at hc
+          exact equal_zero_false hc hb
+        · rw [if_neg he] at hg
+          by_cases hlt : op = .less
+          · subst hlt
+            simp only [↓reduceIte, Option.some.injEq, Prod.mk.injEq] at hg
+            obtain ⟨rfl, rfl⟩ := hg
+            simp only [pexpr, applyOp, binary, SrcOp.toCore, hv, UintTy.toCore, hbv, Option.bind_some] at hc
+            exact less_false hc hb
+          · rw [if_neg hlt] at hg
+            simp at hg
   | int _ | boolean _ | unsigned _ _ | «local» _ | field _ _ | negate _ | not _ | cast _ _ | null
   | char _ | float _ _ => simp [guardVar] at hg
 
@@ -382,14 +422,14 @@ theorem after_ok {B : Nat} {A : AEnv} {E : Env} (h : EnvOk B A E) (call : Calls)
   | «if» c a b =>
     simp only [AEnv.after]
     split
-    · rename_i x hg
+    · rename_i x k hg
       split
       · rename_i never
         simp only [pstmt, Option.bind_eq_some_iff] at hs
         obtain ⟨cv, ⟨w, hw, hb⟩, hs⟩ := hs
         cases cv with
         | true => exact absurd hs (neverNext_sound call a E never)
-        | false => exact h.refine (guard_nz hg hw hb)
+        | false => exact h.refine (guard_ge hg hw hb)
       · exact h
     · exact h
   | nop | «let» _ _ _ _ | letStruct _ _ _ _ | letCall _ _ _ _ _ | letEnum _ _ _ _ _
@@ -422,13 +462,13 @@ theorem usize_subtract (a b : Nat) :
   simp [evalBinaryValue, evalUnsignedBinary, Semantics.wrapUnsigned, Semantics.unsignedModulus, target,
     Core.UnsignedIntTy.bits, hw]
 
-theorem usize_sub_one {n : Nat} (hn : n ≠ 0) : ∃ r, r < n ∧
-    evalBinaryValue target .subtract (.unsigned .usize n) (.unsigned .usize 1) = .ok (.unsigned .usize r) :=
-  ⟨_, by omega, usize_subtract n 1⟩
+theorem usize_sub {n d : Nat} (h1 : 1 ≤ d) (hd : d ≤ n) : ∃ r, r < n ∧
+    evalBinaryValue target .subtract (.unsigned .usize n) (.unsigned .usize d) = .ok (.unsigned .usize r) :=
+  ⟨_, by omega, usize_subtract n d⟩
 
-/-- A decrement of a nonzero `usize` by 1 gives a smaller value. -/
-theorem dec_lt {sp : SrcProgram} {prims : Prims} {c : Nat} (hd : DecOk sp prims c) {m n : Nat} {v : Value}
-    (hn : n ≠ 0) (h : pcall sp prims m c [.unsigned .usize n, .unsigned .usize 1] = some v) :
+/-- A decrement of a `usize` by at least 1 and at most itself gives a smaller value. -/
+theorem dec_lt {sp : SrcProgram} {prims : Prims} {c : Nat} (hd : DecOk sp prims c) {m n d : Nat} {v : Value}
+    (h1 : 1 ≤ d) (hdn : d ≤ n) (h : pcall sp prims m c [.unsigned .usize n, .unsigned .usize d] = some v) :
     sizeOf v < sizeOf (Value.unsigned .usize n) := by
   obtain ⟨np, f, a, b, panic, hf, hids, hab, hbody⟩ := hd
   cases m with
@@ -441,10 +481,11 @@ theorem dec_lt {sp : SrcProgram} {prims : Prims} {c : Nat} (hd : DecOk sp prims 
     simp only [Bool.false_eq_true, ↓reduceIte, List.length_cons, List.length_nil] at h
     rw [paramEnv, paramBindings_ids, hids, hbody] at h
     have hba : (b == a) = false := by simp [Ne.symm hab]
-    obtain ⟨r, hr, hsub⟩ := usize_sub_one hn
+    obtain ⟨r, hr, hsub⟩ := usize_sub h1 hdn
+    have hgt : decide (d > n) = false := by simp; omega
     simp [pstmt, pexpr, Env.bindAll, Env.get?, hba, applyOp, binary, SrcOp.toCore, usize_greater,
-      hsub, Except.toOption, asBool] at h
-    simp only [hn, ↓reduceIte, Option.bind, Done.then, doneValue, Option.some.injEq] at h
+      hsub, Except.toOption, asBool, hgt] at h
+    simp only [Option.bind, Done.then, doneValue, Option.some.injEq] at h
     subst h
     exact sizeOf_unsigned_lt hr
 
@@ -452,7 +493,7 @@ theorem dec_lt {sp : SrcProgram} {prims : Prims} {c : Nat} (hd : DecOk sp prims 
 decrements decrement. -/
 structure OracleOk (prims : Prims) (T : TermInfo) (call : Calls) : Prop where
   prim : ∀ c vs v, prims.isPrim c = true → call c vs = some v → single vs = some v
-  dec : ∀ c ∈ T.decs, ∀ n v, n ≠ 0 → call c [.unsigned .usize n, .unsigned .usize 1] = some v →
+  dec : ∀ c ∈ T.decs, ∀ n d v, 1 ≤ d → d ≤ n → call c [.unsigned .usize n, .unsigned .usize d] = some v →
     sizeOf v < sizeOf (Value.unsigned .usize n)
 
 theorem oracleOk_pcall {sp : SrcProgram} {prims : Prims} {T : TermInfo} (hD : ∀ c ∈ T.decs, DecOk sp prims c)
@@ -462,7 +503,7 @@ theorem oracleOk_pcall {sp : SrcProgram} {prims : Prims} {T : TermInfo} (hD : �
     cases m with
     | zero => simp [pcall] at hv
     | succ m => simpa [pcall, hp] using hv
-  dec := fun c hc _ _ hn hv => dec_lt (hD c hc) hn hv
+  dec := fun c hc _ _ _ h1 hdn hv => dec_lt (hD c hc) h1 hdn hv
 
 theorem callCls_holds {prims : Prims} {T : TermInfo} {call : Calls} {B : Nat} (ho : OracleOk prims T call)
     {c : Nat} {cs : List SizeCls} {vs : List Value} (hr : ListRel (SizeCls.holds B) cs vs) {v : Value}
@@ -492,16 +533,22 @@ theorem callCls_holds {prims : Prims} {T : TermInfo} {call : Calls} {B : Nat} (h
           | nil =>
             rename_i a va b vb
             simp only
-            split
-            · rename_i hab
-              obtain ⟨rfl, rfl⟩ := hab
-              obtain ⟨hle, n, rfl, hn⟩ := ha
-              simp only [SizeCls.holds] at hb
-              subst hb
-              have := ho.dec c (List.contains_iff_mem.mp hdec) n v hn h
-              simp only [SizeCls.holds]
-              omega
-            · trivial
+            cases a with
+            | ge k =>
+              cases b with
+              | lit d =>
+                simp only [decCls]
+                split
+                · rename_i hd
+                  obtain ⟨hle, n, rfl, hkn⟩ := ha
+                  simp only [SizeCls.holds] at hb
+                  subst hb
+                  have := ho.dec c (List.contains_iff_mem.mp hdec) n d v hd.1 (by omega) h
+                  simp only [SizeCls.holds]
+                  omega
+                · trivial
+              | unk | le | lt | ge _ => trivial
+            | unk | le | lt | lit _ => trivial
           | cons _ _ => trivial
     · trivial
 
@@ -564,6 +611,64 @@ theorem ListRel.getD {B : Nat} {cs : List SizeCls} {vs : List Value} (r : ListRe
 section
 variable {sp : SrcProgram} {prims : Prims} {T : TermInfo} {me : TermAnn} {B : Nat}
 
+theorem foldr_max_le {B : Nat} : ∀ {l : List Nat}, (∀ x ∈ l, x ≤ B) → l.foldr max 0 ≤ B
+  | [], _ => Nat.zero_le _
+  | x :: l, h => by
+    simp only [List.foldr_cons]
+    have := foldr_max_le (l := l) fun y hy => h y (List.mem_cons_of_mem _ hy)
+    have := h x List.mem_cons_self
+    omega
+
+theorem foldr_max_lt {B : Nat} : ∀ {l : List Nat}, l ≠ [] → (∀ x ∈ l, x < B) → l.foldr max 0 < B
+  | [], ne, _ => absurd rfl ne
+  | x :: l, _, h => by
+    simp only [List.foldr_cons]
+    have hx := h x List.mem_cons_self
+    cases l with
+    | nil => simp only [List.foldr_nil]; omega
+    | cons y l =>
+      have := foldr_max_lt (l := y :: l) (by simp) fun z hz => h z (List.mem_cons_of_mem _ hz)
+      omega
+
+theorem le_foldr_max {x : Nat} : ∀ {l : List Nat}, x ∈ l → x ≤ l.foldr max 0
+  | [], hx => by simp at hx
+  | y :: l, hx => by
+    simp only [List.foldr_cons]
+    rcases List.mem_cons.mp hx with rfl | hx
+    · omega
+    · have := le_foldr_max hx
+      omega
+
+theorem argAt_le {B : Nat} {cs : List SizeCls} {vs : List Value} (r : ListRel (SizeCls.holds B) cs vs) (p : Nat)
+    (h : (cs.getD p .unk).isLe = true) : argAt vs p ≤ B := by
+  rcases r.getD p with hu | ⟨v, hv, hk⟩
+  · rw [hu] at h; simp [SizeCls.isLe] at h
+  · unfold argAt
+    rw [hv]
+    dsimp only
+    revert h hk
+    cases cs.getD p .unk with
+    | lt => intro _ hk; exact Nat.le_of_lt hk
+    | le => intro _ hk; exact hk
+    | ge _ => intro _ hk; exact hk.1
+    | unk => intro h; simp [SizeCls.isLe] at h
+    | lit _ => intro h; simp [SizeCls.isLe] at h
+
+theorem argAt_lt {B : Nat} {cs : List SizeCls} {vs : List Value} (r : ListRel (SizeCls.holds B) cs vs) (p : Nat)
+    (h : (cs.getD p .unk).isLt = true) : argAt vs p < B := by
+  rcases r.getD p with hu | ⟨v, hv, hk⟩
+  · rw [hu] at h; simp [SizeCls.isLt] at h
+  · unfold argAt
+    rw [hv]
+    dsimp only
+    revert h hk
+    cases cs.getD p .unk with
+    | lt => intro _ hk; exact hk
+    | le => intro h; simp [SizeCls.isLt] at h
+    | ge _ => intro h; simp [SizeCls.isLt] at h
+    | unk => intro h; simp [SizeCls.isLt] at h
+    | lit _ => intro h; simp [SizeCls.isLt] at h
+
 theorem callSettles
     (IH : ∀ c a vs, T.ann c = some a → Below me B a (argSize a.pos vs) → Settles sp prims c vs)
     {c : Nat} {cs : List SizeCls} {vs : List Value} (hc : callOk prims T me c cs = true)
@@ -580,26 +685,21 @@ theorem callSettles
       rcases hc with lt | ⟨eq, hd⟩
       · exact Or.inl lt
       · refine Or.inr ⟨eq, ?_⟩
-        rcases hr.getD a.pos with hu | ⟨v, hv, hk⟩
-        · rw [hu] at hd; simp [descends] at hd
-        · unfold argSize
-          rw [hv]
-          dsimp only
-          revert hd hk
-          cases cs.getD a.pos .unk with
-          | lt => intro _ hk; exact Or.inl hk
-          | le =>
-            intro hd hk
-            simp only [descends, decide_eq_true_eq] at hd
-            simp only [SizeCls.holds] at hk
-            omega
-          | nz =>
-            intro hd hk
-            simp only [descends, decide_eq_true_eq] at hd
-            simp only [SizeCls.holds] at hk
-            omega
-          | unk => intro hd; simp [descends] at hd
-          | one => intro hd; simp [descends] at hd
+        unfold descends at hd
+        simp only [Bool.or_eq_true, Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
+          List.all_eq_true, List.mem_map, forall_exists_index, and_imp, forall_apply_eq_imp_iff₂,
+          decide_eq_true_eq] at hd
+        unfold argSize
+        rcases hd with ⟨ne, hlt⟩ | ⟨sub, hle⟩
+        · left
+          refine foldr_max_lt (by simpa using ne) ?_
+          simp only [List.mem_map, forall_exists_index, and_imp, forall_apply_eq_imp_iff₂]
+          exact fun p hp => argAt_lt hr p (hlt p hp)
+        · have : (a.pos.map (argAt vs)).foldr max 0 ≤ B := by
+            refine foldr_max_le ?_
+            simp only [List.mem_map, forall_exists_index, and_imp, forall_apply_eq_imp_iff₂]
+            exact fun p hp => argAt_le hr p (hle p hp)
+          omega
 
 mutual
 theorem eff_evConst (hD : ∀ c ∈ T.decs, DecOk sp prims c)
@@ -758,7 +858,7 @@ theorem stmt_evConst :
           revert hc2
           cases hg : guardVar condition with
           | none => exact fun hc2 => ihb h hc2
-          | some x => exact fun hc2 => ihb (h.refine (guard_nz hg hcv hb)) hc2
+          | some xk => exact fun hc2 => ihb (h.refine (guard_ge hg hcv hb)) hc2
   | letEval id _ value body ih =>
     intro A E h hc
     simp only [chkStmt, Bool.and_eq_true] at hc
@@ -812,15 +912,16 @@ theorem ListRel.of_getElem {α β : Type} {R : α → β → Prop} :
     .cons (h 0 (by simp) (by simp))
       (ListRel.of_getElem (by simpa using len) fun i h1 h2 => h (i + 1) (Nat.succ_lt_succ h1) (Nat.succ_lt_succ h2))
 
-theorem initCls_holds (pos : Nat) (vs : List Value) :
+theorem initCls_holds (pos : List Nat) (vs : List Value) :
     ListRel (SizeCls.holds (argSize pos vs)) (initCls pos vs.length) vs := by
   refine ListRel.of_getElem (by simp [initCls]) fun i h1 h2 => ?_
   simp only [initCls, List.getElem_map, List.getElem_range]
   split
   · rename_i hi
-    subst hi
-    simp only [SizeCls.holds, argSize, List.getElem?_eq_getElem h2]
-    exact Nat.le_refl _
+    have : argAt vs i = sizeOf vs[i] := by simp only [argAt, List.getElem?_eq_getElem h2]
+    simp only [SizeCls.holds, argSize]
+    rw [← this]
+    exact le_foldr_max (List.mem_map_of_mem hi)
   · trivial
 
 theorem zip_rel {B : Nat} {cs : List SizeCls} {vs : List Value} (r : ListRel (SizeCls.holds B) cs vs) :
@@ -837,18 +938,27 @@ theorem EnvOk.nil (B : Nat) (E : Env) : EnvOk B [] E := by
   intro x c v ha
   simp [AEnv.get?] at ha
 
-theorem lookup_mem {c : Nat} {a : TermAnn} : ∀ {l : List (Nat × TermAnn)}, l.lookup c = some a → (c, a) ∈ l
-  | [], h => by simp [List.lookup] at h
-  | (k, b) :: l, h => by
-    simp only [List.lookup] at h
-    split at h
-    · rename_i hk
+theorem find_mem {c : Nat} {a : TermAnn} : ∀ {t : ATree}, t.find c = some a → (c, a) ∈ t.toList
+  | .leaf, h => by simp [ATree.find] at h
+  | .node l k b r, h => by
+    simp only [ATree.toList]
+    simp only [ATree.find] at h
+    cases hk : Nat.beq c k with
+    | true =>
+      rw [hk] at h
       simp only [Option.some.injEq] at h
       subst h
-      simp only [beq_iff_eq] at hk
-      subst hk
-      exact List.mem_cons_self
-    · exact List.mem_cons_of_mem _ (lookup_mem h)
+      rw [Nat.eq_of_beq_eq_true hk]
+      exact List.mem_append_right _ List.mem_cons_self
+    | false =>
+      rw [hk] at h
+      cases hl : Nat.blt c k with
+      | true =>
+        rw [hl] at h
+        exact List.mem_append_left _ (find_mem h)
+      | false =>
+        rw [hl] at h
+        exact List.mem_append_right _ (List.mem_cons_of_mem _ (find_mem h))
 
 /-- **Pure calls settle.** Under `TermOk`, a call of an annotated function
 on any arguments has a fuel past which `pcall` gives one answer. -/
@@ -884,7 +994,7 @@ theorem pcall_complete {sp : SrcProgram} {prims : Prims} {T : TermInfo} (hT : Te
     | some f =>
       by_cases hl : vs.length = f.params.length
       · have hchk : chkFn prims T a f = true :=
-          ((hT.fns (c, a) (lookup_mem ha)).resolve_left (by simpa using hp)) f hf
+          ((hT.fns (c, a) (find_mem ha)).resolve_left (by simpa using hp)) f hf
         have henv : EnvOk (argSize a.pos vs)
             (AEnv.bindAll [] ((paramIds f.params).zip (initCls a.pos f.params.length)))
             (paramEnv f.params vs) := by
@@ -950,8 +1060,8 @@ theorem AllDecs.mem {sp : SrcProgram} {prims : Prims} :
     · exact hq
     · exact AllDecs.mem h c hc
 
-theorem termOk_of {sp : SrcProgram} {prims : Prims} {T : TermInfo} (hd : AllDecs sp prims T.decs)
-    (hf : AllFns sp prims T T.anns) : TermOk sp prims T :=
-  ⟨hd.mem, hf.mem⟩
+theorem termOk_of {sp : SrcProgram} {prims : Prims} {T : TermInfo} {l : List (Nat × TermAnn)}
+    (hd : AllDecs sp prims T.decs) (he : T.anns = l) (hf : AllFns sp prims T l) : TermOk sp prims T :=
+  ⟨hd.mem, he ▸ hf.mem⟩
 
 end Lanius.Faithful.Termination

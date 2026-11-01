@@ -10,28 +10,31 @@ there is a fuel past which `pcall` gives one answer (`pcall_complete`,
 
 The check is the size-change argument of a recursive descent, with an
 annotation per function (`TermAnn`, generated and untrusted): a rank, the
-position of a designated argument, and a subrank. A call `c(vs)` is measured
-by `(rank c, sizeOf vs[pos c], sub c)`, lexicographically, and every call a
+positions of its designated arguments, and a subrank. A call `c(vs)` is
+measured by `(rank c, size, sub c)`, lexicographically, where `size` is the
+largest `sizeOf` of its designated arguments (`argSize`), and every call a
 checked body makes must be smaller than the call being run:
 
 * to a function of a lower rank (a callee in an earlier strongly connected
   component of the call graph), with any arguments;
-* in the same rank, with the callee's designated argument strictly smaller
-  than the caller's (`lt`), or no larger (`le`) and a lower subrank.
+* in the same rank, with each of the callee's designated arguments strictly
+  smaller than the caller's size (`lt`), or no larger (`le`) and a lower
+  subrank.
 
 What is smaller is a class of each local's value against the size `B` of the
-caller's designated argument (`SizeCls`), which the check follows through the
-body (`AEnv`), from `le` for the designated parameter. A field of a value no
+caller's designated arguments (`SizeCls`), which the check follows through the
+body (`AEnv`), from `le` for the designated parameters. A field of a value no
 larger than `B`, and the payload of an enum matched on one, are smaller
 (structural descent through `match` and fields). `boxed` and `unbox` are the
 identity, so they keep their argument's class (descent through a `Box`).
-After `if x == 0 { .. } ` that does not go on, or in its `else`, `x` is a
-nonzero `usize` (`nz`), and a call of a decrement function (`DecOk`, the
-prelude's `minus`, checked once) on such an `x` and `1` gives a smaller value
-(counted-down fuel and counters).
+After `if x == 0 { .. }` or `if x < k { .. }` that does not go on, or in its
+`else`, `x` is a `usize` of at least 1 or `k` (`ge`), and a call of a
+decrement function (`DecOk`, the prelude's `minus`, checked once) on such an
+`x` and a literal from 1 to that bound gives a smaller value (counted-down
+fuel and counters).
 
-Prims, the designated position and the subrank are only read by the check;
-the soundness proof never trusts them. -/
+The annotations are only read by the check; the soundness proof never
+trusts them. -/
 
 namespace Lanius.Faithful.Termination
 
@@ -39,27 +42,27 @@ open Lanius.Mini
 open Lanius.Core (Value)
 
 /-- What the check knows of a value, against the size `B` of the designated
-argument of the call being run: nothing, no larger, smaller, no larger and a
-nonzero `usize`, or the `usize` 1. -/
+arguments of the call being run: nothing, no larger, smaller, no larger and a
+`usize` of at least `k`, or the `usize` `k`. -/
 inductive SizeCls where
   | unk
   | le
   | lt
-  | nz
-  | one
+  | ge (k : Nat)
+  | lit (k : Nat)
   deriving DecidableEq, Repr
 
 def SizeCls.holds (B : Nat) : SizeCls → Value → Prop
   | .unk, _ => True
   | .le, v => sizeOf v ≤ B
   | .lt, v => sizeOf v < B
-  | .nz, v => sizeOf v ≤ B ∧ ∃ n, v = .unsigned .usize n ∧ n ≠ 0
-  | .one, v => v = .unsigned .usize 1
+  | .ge k, v => sizeOf v ≤ B ∧ ∃ n, v = .unsigned .usize n ∧ k ≤ n
+  | .lit k, v => v = .unsigned .usize k
 
 /-- The class of a field or payload value of a value of this class. -/
 def SizeCls.part : SizeCls → SizeCls
-  | .le | .lt | .nz => .lt
-  | .unk | .one => .unk
+  | .le | .lt | .ge _ => .lt
+  | .unk | .lit _ => .unk
 
 /-- Classes of locals, the newest binding first, as `Env`. -/
 abbrev AEnv := List (Nat × SizeCls)
@@ -72,53 +75,90 @@ def AEnv.bindAll (A : AEnv) (bindings : List (Nat × SizeCls)) : AEnv :=
 
 def AEnv.cls (A : AEnv) (id : Nat) : SizeCls := (A.get? id).getD .unk
 
-/-- After a guard `x == 0` failed: `x`, if no larger, is a nonzero `usize`. -/
-def AEnv.refine (A : AEnv) (x : Nat) : AEnv :=
-  if A.cls x = .le then (x, .nz) :: A else A
+/-- After a guard failed that bounds `x` below by `k`: `x`, if no larger, is a
+`usize` of at least `k`. -/
+def AEnv.refine (A : AEnv) (x k : Nat) : AEnv :=
+  if A.cls x = .le then (x, .ge k) :: A else A
 
-/-- A function's place in the order: its rank, the position of its
-designated argument, and its subrank. -/
+/-- A function's place in the order: its rank, the positions of its
+designated arguments, and its subrank. -/
 structure TermAnn where
   rank : Nat
-  pos : Nat
+  pos : List Nat
   sub : Nat
   deriving DecidableEq, Repr
 
-/-- The annotations of the checked functions, and the decrement functions. -/
+/-- A search tree of annotations keyed by function index, so the kernel finds
+an annotation in a logarithmic number of literal comparisons. -/
+inductive ATree where
+  | leaf
+  | node (l : ATree) (k : Nat) (a : TermAnn) (r : ATree)
+  deriving Repr
+
+def ATree.find (c : Nat) : ATree → Option TermAnn
+  | .leaf => none
+  | .node l k a r =>
+    match Nat.beq c k with
+    | true => some a
+    | false =>
+      match Nat.blt c k with
+      | true => find c l
+      | false => find c r
+
+def ATree.toList : ATree → List (Nat × TermAnn)
+  | .leaf => []
+  | .node l k a r => l.toList ++ (k, a) :: r.toList
+
+/-- The annotations of the checked functions, and the decrement functions.
+The tree need not be ordered: the soundness proof uses only that `find`
+returns an entry of the tree. -/
 structure TermInfo where
-  anns : List (Nat × TermAnn)
+  tab : ATree
   decs : List Nat
   deriving Repr
 
-def TermInfo.ann (T : TermInfo) (c : Nat) : Option TermAnn := T.anns.lookup c
+def TermInfo.anns (T : TermInfo) : List (Nat × TermAnn) := T.tab.toList
 
-/-- The size of a call's designated argument. -/
-noncomputable def argSize (pos : Nat) (vs : List Value) : Nat :=
-  match vs[pos]? with
+def TermInfo.ann (T : TermInfo) (c : Nat) : Option TermAnn := T.tab.find c
+
+/-- The size of an argument. -/
+noncomputable def argAt (vs : List Value) (p : Nat) : Nat :=
+  match vs[p]? with
   | some v => sizeOf v
   | none => 0
 
-/-- The `usize` literal `k`. -/
-def isUsizeLit (k : Nat) : SrcExpr → Bool
-  | .unsigned t v => decide (t = .usize) && v.toNat == k
+/-- The size of a call: the largest of its designated arguments. -/
+noncomputable def argSize (pos : List Nat) (vs : List Value) : Nat :=
+  (pos.map (argAt vs)).foldr max 0
+
+/-- A `usize` literal. -/
+def usizeLit : SrcExpr → Option Nat
+  | .unsigned t v => if t = .usize then some v.toNat else none
   | .int _ | .boolean _ | .local _ | .field _ _ | .negate _ | .not _ | .apply _ _ _ | .cast _ _
-  | .null | .char _ | .float _ _ => false
+  | .null | .char _ | .float _ _ => none
 
 def localOf : SrcExpr → Option Nat
   | .local x => some x
   | .int _ | .boolean _ | .unsigned _ _ | .field _ _ | .negate _ | .not _ | .apply _ _ _
   | .cast _ _ | .null | .char _ | .float _ _ => none
 
-/-- `x == 0` on a `usize` local `x`. -/
-def guardVar : SrcExpr → Option Nat
-  | .apply op l r => if op = .equal && isUsizeLit 0 r then localOf l else none
+/-- A local `x` and a `k`: `x == 0` (`k = 1`) or `x < k`, whose failure
+bounds `x` below by `k`. -/
+def guardVar : SrcExpr → Option (Nat × Nat)
+  | .apply op l r =>
+    match usizeLit r with
+    | some k =>
+      if op = .equal ∧ k = 0 then (localOf l).map (·, 1)
+      else if op = .less then (localOf l).map (·, k)
+      else none
+    | none => none
   | .int _ | .boolean _ | .unsigned _ _ | .local _ | .field _ _ | .negate _ | .not _ | .cast _ _
   | .null | .char _ | .float _ _ => none
 
 def exprCls (A : AEnv) : SrcExpr → SizeCls
   | .local x => A.cls x
   | .field x _ => (A.cls x).part
-  | .unsigned t v => if t = .usize ∧ v.toNat = 1 then .one else .unk
+  | .unsigned t v => if t = .usize then .lit v.toNat else .unk
   | .int _ | .boolean _ | .negate _ | .not _ | .apply _ _ _ | .cast _ _ | .null | .char _
   | .float _ _ => .unk
 
@@ -160,11 +200,11 @@ def neverNext : SrcStmt → Bool
   | .unreachable _ _ => true
 
 /-- What is known after a statement that went on to the next one: after
-`if x == 0 { a } else { b }` with an `a` that does not go on, `x` is nonzero. -/
+`if x < k { a } else { b }` with an `a` that does not go on, `x ≥ k`. -/
 def AEnv.after (A : AEnv) : SrcStmt → AEnv
   | .if c a _ =>
     match guardVar c with
-    | some x => if neverNext a then A.refine x else A
+    | some (x, k) => if neverNext a then A.refine x k else A
     | none => A
   | .nop | .let _ _ _ _ | .letStruct _ _ _ _ | .letCall _ _ _ _ _ | .letEnum _ _ _ _ _
   | .letMatch _ _ _ _ _ _ | .set _ _ | .setField _ _ _ | .setCall _ _ _ | .then _ _ | .while _ _
@@ -174,20 +214,31 @@ def AEnv.after (A : AEnv) : SrcStmt → AEnv
   | .setFieldEval _ _ _ | .returnUnit | .assert _ | .break | .continue | .matchArm _ _ _ _ _ _ _ _
   | .unreachable _ _ => A
 
-/-- A same-rank call descends: its designated argument is smaller, or no
+def SizeCls.isLt : SizeCls → Bool
+  | .lt => true
+  | .unk | .le | .ge _ | .lit _ => false
+
+def SizeCls.isLe : SizeCls → Bool
+  | .lt | .le | .ge _ => true
+  | .unk | .lit _ => false
+
+/-- A same-rank call descends: its designated arguments are smaller, or no
 larger with a lower subrank. -/
-def descends : SizeCls → Bool → Bool
-  | .lt, _ => true
-  | .le, lower => lower
-  | .nz, lower => lower
-  | .unk, _ => false
-  | .one, _ => false
+def descends (ks : List SizeCls) (lower : Bool) : Bool :=
+  (!ks.isEmpty && ks.all SizeCls.isLt) || (lower && ks.all SizeCls.isLe)
+
+/-- A decrement's value: smaller, for a `usize` of at least `k` and a literal
+from 1 to `k`. -/
+def decCls : SizeCls → SizeCls → SizeCls
+  | .ge k, .lit d => if 1 ≤ d ∧ d ≤ k then .lt else .unk
+  | .ge _, .unk | .ge _, .le | .ge _, .lt | .ge _, .ge _ => .unk
+  | .unk, _ | .le, _ | .lt, _ | .lit _, _ => .unk
 
 section
 variable (prims : Prims) (T : TermInfo) (me : TermAnn)
 
 /-- The class of a call's value: a prim's is its argument's, a decrement's
-of a nonzero `x` and `1` is smaller. -/
+by a literal within the bound of its first argument is smaller. -/
 def callCls (c : Nat) (cs : List SizeCls) : SizeCls :=
   if prims.isPrim c then
     match cs with
@@ -196,7 +247,7 @@ def callCls (c : Nat) (cs : List SizeCls) : SizeCls :=
     | _ :: _ :: _ => .unk
   else if T.decs.contains c then
     match cs with
-    | [a, b] => if a = .nz ∧ b = .one then .lt else .unk
+    | [a, b] => decCls a b
     | [] => .unk
     | [_] => .unk
     | _ :: _ :: _ :: _ => .unk
@@ -209,7 +260,8 @@ def callOk (c : Nat) (cs : List SizeCls) : Bool :=
     match T.ann c with
     | none => false
     | some a => decide (a.rank < me.rank) ||
-        (decide (a.rank = me.rank) && descends (cs.getD a.pos .unk) (decide (a.sub < me.sub)))
+        (decide (a.rank = me.rank) &&
+          descends (a.pos.map fun p => cs.getD p .unk) (decide (a.sub < me.sub)))
 
 mutual
 def effCls (A : AEnv) : SrcEff → SizeCls
@@ -274,7 +326,7 @@ def chkStmt (A : AEnv) : SrcStmt → Bool
   | .if condition thenBranch elseBranch =>
       chkStmt A thenBranch &&
         chkStmt (match guardVar condition with
-          | some x => A.refine x
+          | some (x, k) => A.refine x k
           | none => A) elseBranch
   | .while _ _ => true
   | .return _ => true
@@ -302,9 +354,9 @@ def chkStmt (A : AEnv) : SrcStmt → Bool
   | .matchArm _ _ _ _ _ _ _ _ => true
   | .unreachable _ _ => true
 
-/-- The classes of a call's parameters: its designated one no larger. -/
-def initCls (pos n : Nat) : List SizeCls :=
-  (List.range n).map fun i => if i = pos then .le else .unk
+/-- The classes of a call's parameters: its designated ones no larger. -/
+def initCls (pos : List Nat) (n : Nat) : List SizeCls :=
+  (List.range n).map fun i => if i ∈ pos then .le else .unk
 
 def paramIds (params : List SrcParam) : List Nat := params.map (·.id)
 
