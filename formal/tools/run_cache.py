@@ -2,9 +2,9 @@
 
 A cached value is stored under a hash of everything it depends on, so it is
 reused across runs and workdirs and never goes stale: laniusc's parse of a
-file depends only on the file's bytes and the laniusc binary (its shaders
-and parse tables are built into it), a laniusc build on the source, the
-binary and the stdlib. Failures are never stored.
+file depends only on the file's bytes and laniusc's front end
+(parser_digest), a laniusc build on the source, the binary and the stdlib.
+Failures are never stored.
 """
 
 import hashlib
@@ -261,6 +261,107 @@ def lani_digest(entry, roots):
     return h.hexdigest()
 
 
+# The parts of a laniusc build its parser's output depends on: the kernels
+# of the front end (under the artifact root the binary loads them from at
+# run time) and the host code that drives them, with the grammar tables
+# built into the binary.
+FRONT_KERNELS = ('lexer', 'parser', 'scan', 'radix', 'readback')
+FRONT_SOURCES = ('/crates/laniusc-compiler/src/lexer/', '/crates/laniusc-compiler/src/parser/',
+                 '/crates/laniusc-compiler/src/gpu/', '/crates/laniusc-compiler/src/shader_artifacts.rs',
+                 '/tables/', '/Cargo.lock')
+_parser_digests = {}
+
+
+def parser_digest(laniusc):
+    """What laniusc's parse trees and tokens depend on, so that a rebuild
+    that leaves the front end alone keeps the stored parses: the bytes of
+    the front end's kernels (FRONT_KERNELS: .spv and .reflect.json) in the
+    artifact root the binary reads (LANIUS_SHADER_ARTIFACT_ROOT, else its
+    build's), and of the front end's sources (FRONT_SOURCES: lexer, parser
+    and GPU runtime code, the grammar tables, the locked crates) as the
+    build's dep-info (laniusc.d) lists them. The sources are taken only
+    when none is newer than the binary, so they are what it was built from,
+    and that digest is stored under the binary's: a checkout edited since
+    the build (a merge before the rebuild) finds it there. Without either
+    (or for a binary without dep-info, such as a pin's wrapper) the digest
+    is the whole binary's, as before."""
+    real = os.path.realpath(laniusc)
+    st = os.stat(real)
+    memo = (real, st.st_mtime_ns, st.st_size, os.environ.get('LANIUS_SHADER_ARTIFACT_ROOT'))
+    if memo not in _parser_digests:
+        binary = file_digest(real)
+        sources = front_sources_digest(real, st)
+        k = key('front-sources', binary)
+        if sources is None:
+            hit = load('front', k)
+            sources = hit['sources'] if hit else None
+        elif load('front', k) is None:
+            store('front', k, dict(sources=sources))
+        kernels = front_kernels_digest(real) if sources else None
+        _parser_digests[memo] = ('front ' + key(sources, kernels)) if kernels else 'binary ' + binary
+    return _parser_digests[memo]
+
+
+def front_sources_digest(real, st):
+    """The digest of the front end's sources the binary real was built from
+    (parser_digest), or None when its dep-info is missing or a source is
+    newer than it."""
+    dep = real + '.d'
+    try:
+        if abs(os.stat(dep).st_mtime_ns - st.st_mtime_ns) > 60 * 10**9:
+            return None
+        with open(real, 'rb') as f:
+            if f.read(4) != b'\x7fELF':
+                return None
+        text = open(dep).read()
+    except OSError:
+        return None
+    # dep-info: "target: dep dep ..." (a space in a path is escaped as "\ ")
+    deps = text.split(':', 1)[1].replace('\\ ', '\0').split() if ':' in text else []
+    deps = sorted({d.replace('\0', ' ') for d in deps})
+    front = [d for d in deps if any(m in d if m.endswith('/') else d.endswith(m) for m in FRONT_SOURCES)]
+    if not any(d.endswith('/parse_tables.bin') for d in front) or not any('/src/parser/' in d for d in front):
+        return None
+    h = hashlib.sha256(b'front sources 1\0')
+    for d in front:
+        if not os.path.isfile(d):
+            continue
+        if os.stat(d).st_mtime_ns > st.st_mtime_ns:
+            return None
+        rel = d[d.index('/crates/'):] if '/crates/' in d else d[d.rindex('/tables/'):] if '/tables/' in d else os.path.basename(d)
+        h.update(f'{rel}\0{file_digest(d)}\0'.encode())
+    return h.hexdigest()
+
+
+def front_kernels_digest(real):
+    """The digest of the front end's kernels in the artifact root the binary
+    real loads (parser_digest), or None when there are none."""
+    profile = os.path.basename(os.path.dirname(real))
+    shaders = os.environ.get('LANIUS_SHADER_ARTIFACT_ROOT') or os.path.join(
+        os.path.dirname(os.path.dirname(real)), 'laniusc-shader-artifacts', profile, 'shaders')
+    h = hashlib.sha256(b'front kernels 1\0')
+    count = 0
+    for top in FRONT_KERNELS:
+        for d, dirs, files in sorted(os.walk(os.path.join(shaders, top))):
+            dirs.sort()
+            for name in sorted(files):
+                if name.endswith(('.spv', '.reflect.json')):
+                    path = os.path.join(d, name)
+                    h.update(f'{os.path.relpath(path, shaders)}\0{file_digest(path)}\0'.encode())
+                    count += 1
+    return h.hexdigest() if count else None
+
+
+# Callbacks that release heavy's GPU lane (a resident parse server holds
+# it): laniusc_build calls them first, as lcc and heavy queue for the lane.
+GPU_RELEASE = []
+
+
+def release_gpu():
+    for release in GPU_RELEASE:
+        release()
+
+
 LCC = os.path.join(ROOT, 'target/claude-work/bin/lcc')
 LCC_LANIUSC = '/home/andrew-peterson/code/laniusc/target/release/laniusc'
 
@@ -289,6 +390,7 @@ def laniusc_build(argv, laniusc, entry, exe, roots):
     hit = load_file('build', k)
     if hit is not None:
         return hit, None
+    release_gpu()
     if os.path.exists(exe):
         os.remove(exe)
     fast = lcc_argv(laniusc, entry, exe, roots)
