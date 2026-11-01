@@ -39,7 +39,7 @@ stopping at the computations the theorems are about (`compileSource`,
 `linkObjects`, `elfFile`, `sourceProgramFiles`, `compileWords`,
 `frontEndWords` and the self program `Lanius.Faithful.Self.prog`, which are
 not trusted, section 10), with each one's type and body:
-definitions `0c187d1f00ec73fe` (4,230 constants). This covers Core's
+definitions `f950e2e25e9b910c` (4,230 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). `trusted_check.py` writes each
 constant's own hash to its work directory's `definitions.txt`, to find which
@@ -859,7 +859,7 @@ obligation on the x86 state below from what Linux does. Trusted about Linux:
     `X86/Machine/Io.lean`), and changes no memory;
   - returns rdx in rax, leaves the next instruction's address in rcx and
     rip, an unknown value in r11 (where Linux saves RFLAGS), and every other
-    register and RFLAGS as they were.
+    register, the xmm registers and RFLAGS as they were (`State.syscalled`).
 
   So it is trusted that fds 1 and 2 are open for writing when the process
   starts, that a write to them never fails, blocks forever or is partial

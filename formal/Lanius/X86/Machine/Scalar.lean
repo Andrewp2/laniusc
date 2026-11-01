@@ -725,8 +725,8 @@ def writeBytes (memory : Memory) (address : Address) (bytes : List UInt8) : Memo
 
 /-- The state after a `syscall` that returned `result`, leaving `memory` and
 `io`: Linux's `syscall` entry and `sysret` leave rcx at the next instruction,
-every other register but r11 and the flags as they were. r11 holds RFLAGS;
-the model leaves it unknown (`r11`). -/
+every other register but r11, the xmm registers and the flags as they were.
+r11 holds RFLAGS; the model leaves it unknown (`r11`). -/
 def State.syscalled (before : State) (result r11 : BitVec 64) (memory : Memory) (io : Io) : State where
   registers := fun register =>
     if register = 0 then result
@@ -736,6 +736,7 @@ def State.syscalled (before : State) (result r11 : BitVec 64) (memory : Memory) 
   rip := before.rip + 2
   memory := memory
   flags := before.flags
+  xmm := before.xmm
   io := io
 
 /-- What Linux does at a `syscall`, given that the process's standard output
