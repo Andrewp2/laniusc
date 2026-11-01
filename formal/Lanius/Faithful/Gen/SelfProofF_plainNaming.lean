@@ -277,15 +277,6 @@ theorem proof_plain_naming {prog : SrcProgram} {prims : Prims} {ix_plain_naming 
   simp only [src_plain_naming] at h
   faithful [Lanius.Mini.plainNaming]
 
-theorem proof_plain_use {prog : SrcProgram} {prims : Prims} {ix_plain_use : Nat} (fn : prog.funcs[ix_plain_use]? = some (src_plain_use)) (np : prims.isPrim ix_plain_use = false) {n : Nat} :
-    Stmt_plain_use prog prims ix_plain_use n := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_plain_use] at h
-  faithful [Lanius.Mini.plainUse]
-
 theorem proof_quiet_use {prog : SrcProgram} {prims : Prims} {ix_quiet_use ix_appended_use : Nat} (fn : prog.funcs[ix_quiet_use]? = some (src_quiet_use ix_appended_use)) (np : prims.isPrim ix_quiet_use = false)
     (ext_appended_use : Certified (∀ {n : Nat}, Stmt_appended_use prog prims ix_appended_use n)) {n : Nat} :
     Stmt_quiet_use prog prims ix_quiet_use n := by
@@ -307,6 +298,15 @@ theorem step_replace_at {prog : SrcProgram} {prims : Prims} {ix_replace_at ix_mi
   rw [pcall_succ np fn] at h
   simp only [src_replace_at] at h
   faithful [Lanius.Mini.replaceAt]
+
+theorem proof_shadow_if {prog : SrcProgram} {prims : Prims} {ix_shadow_if : Nat} (fn : prog.funcs[ix_shadow_if]? = some (src_shadow_if)) (np : prims.isPrim ix_shadow_if = false) {n : Nat} :
+    Stmt_shadow_if prog prims ix_shadow_if n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_shadow_if] at h
+  faithful [Lanius.Mini.shadowIf]
 
 theorem proof_text_hidden {prog : SrcProgram} {prims : Prims} {ix_text_hidden ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_hidden]? = some (src_text_hidden ix_single_of_usize)) (np : prims.isPrim ix_text_hidden = false)
     (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :

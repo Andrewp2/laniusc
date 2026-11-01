@@ -754,12 +754,14 @@ replies, pass as direct runs on native Linux x86_64.
 
 The [URL guide](extended-url.md) adds `ext::url`, the WHATWG URL Standard
 basic URL parser and serializer with an optional base. It returns an owned
-href with spans for every getter, plus the host kind and origin. Non-ASCII and
-`xn--` domains fail with an explicit `UnsupportedIdna` instead of an
-approximation. The contracts program and the
-[url-parse](extended-url.md#application-url-parse) cli25 and whatwg9174
-groups pass as direct runs on native Linux x86_64. The whatwg group compares
-every getter with Node.js's WHATWG URL over a fixed generated corpus.
+href with spans for every getter, plus the host kind and origin. The
+[IDNA guide](extended-idna.md) adds `ext::idna`, UTS #46 ToASCII with Punycode
+over a table derived from the vendored Unicode 17 UCD, which `ext::url` uses
+for internationalized hosts; a ZWNJ that needs Joining_Type data returns
+`UnsupportedIdna`. The contracts program and the
+[url-parse](extended-url.md#application-url-parse) cli25, whatwg9174,
+idna46060 and table1111937 groups pass as direct runs on native Linux x86_64,
+comparing every getter, and every scalar's IDNA behaviour, with Node.js.
 
 **Shared random-source budgets.**
 

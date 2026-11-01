@@ -22,7 +22,7 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_block_value (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → RepCTree x1 v1 →
-    (RepOption 300 RepBool) (Lanius.Mini.blockValue x0 x1) w
+    (RepOption 292 RepBool) (Lanius.Mini.blockValue x0 x1) w
 
 abbrev Stmt_nested_used (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.CTree} {x1 : Option Lanius.Mini.ArmsUse} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 128 RepCTree) x0 v0 → (RepOption 304 RepArmsUse) x1 v1 →

@@ -1,0 +1,352 @@
+// UTS #46 IDNA processing for URL hosts (domain to ASCII), with RFC 3492
+// Punycode. The mapping table is derived from the Unicode 17 UCD
+// (ext::idna_data) and NFC comes from ext::unicode_normalize. Options are
+// those of the WHATWG URL Standard: nontransitional, CheckHyphens false,
+// CheckBidi and CheckJoiners true, STD3 rules and DNS lengths off. Label and
+// Bidi checks follow the behaviour of Node.js's URL. See docs/extended-idna.md.
+module ext::idna;
+import alloc::vec;
+import core::result;
+import core::slice;
+import core::text;
+import core::unicode;
+import ext::idna_data;
+import ext::unicode_normalize;
+
+pub enum Status { Valid, Mapped, Ignored, Deviation, Disallowed }
+// Disallowed(scalar): a disallowed scalar in the input. InvalidAce: an
+// "xn--" label that is not ASCII, decodes to ASCII or nothing, or does not
+// survive mapping and NFC unchanged. UnsupportedJoiner: a ZERO WIDTH
+// NON-JOINER whose CONTEXTJ rule needs Joining_Type data this module lacks.
+pub enum Error { Bounds, TooLong, InvalidUtf8, Disallowed(u32), InvalidPunycode, InvalidAce, LeadingMark, Joiner, Bidi, UnsupportedJoiner, Normalization, AllocationFailed }
+// Longest non-ASCII domain (UTF-8 bytes) that is processed.
+pub const MAX_DOMAIN_BYTES: i32 = 16384;
+
+const OK: i32 = 0; const E_MARK: i32 = 1; const E_JOINER: i32 = 2; const E_BIDI: i32 = 3; const E_UNSUPPORTED: i32 = 4;
+const B_L: u32 = 0; const B_R: u32 = 1; const B_AL: u32 = 2; const B_EN: u32 = 3; const B_ES: u32 = 4; const B_ET: u32 = 5; const B_AN: u32 = 6;
+const B_CS: u32 = 7; const B_NSM: u32 = 8; const B_BN: u32 = 9; const B_ON: u32 = 13;
+const WORK: u64 = 1099511627776;
+
+fn byte(view: core::slice::View<u8>, index: i32) -> u32 { return view.values[view.start + index] as u32; }
+
+// The scalar's UTS #46 status (code points above U+10FFFF are disallowed).
+pub fn status(value: u32) -> Status {
+    if (value > 1114111) { return Status::Disallowed; }
+    let s: u32 = ext::idna_data::status(ext::idna_data::find(value));
+    if (s == 0) { return Status::Valid; } if (s == 1) { return Status::Mapped; } if (s == 2) { return Status::Ignored; }
+    if (s == 3) { return Status::Deviation; } return Status::Disallowed;
+}
+fn raw_status(value: u32) -> u32 { if (value > 1114111 || (value >= 55296 && value <= 57343)) { return 4; } return ext::idna_data::status(ext::idna_data::find(value)); }
+fn bidi(value: u32) -> u32 { return ext::idna_data::bidi(ext::idna_data::find(value)); }
+fn push(out: &alloc::vec::Vec<u32>, value: u32) -> bool { return out.try_push(value).is_ok(); }
+fn put(out: &alloc::vec::Vec<u8>, value: u32) -> bool { return out.try_push(value as u8).is_ok(); }
+
+// Appends the scalar's mapping (nontransitional: deviations stay). Result
+// code 0, 1 (disallowed) or 2 (allocation failure).
+fn map_into(value: u32, out: &alloc::vec::Vec<u32>) -> i32 {
+    if (value > 1114111) { return 1; }
+    let record: i32 = ext::idna_data::find(value); let s: u32 = ext::idna_data::status(record);
+    if (s == 4) { return 1; }
+    if (s == 2) { return 0; }
+    if (s == 1) {
+        let length: u32 = ext::idna_data::length(record); let target: u32 = ext::idna_data::value(record);
+        if (length == 1) { if (!push(out,target + (value - ext::idna_data::start(record)))) { return 2; } return 0; }
+        let i: u32 = 0;
+        while (i < length) { if (!push(out,ext::idna_data::pooled((target + i) as i32))) { return 2; } i += 1; }
+        return 0;
+    }
+    if (!push(out,value)) { return 2; }
+    return 0;
+}
+// Strict UTF-8 to scalars; false on malformed input.
+fn decode_utf8(view: core::slice::View<u8>, out: &alloc::vec::Vec<u32>) -> i32 {
+    let i: i32 = 0;
+    while (i < view.length) {
+        let b: u32 = byte(view,i);
+        if (b < 128) { if (!push(out,b)) { return 2; } i += 1; continue; }
+        let need: i32 = 0; let low: u32 = 128; let high: u32 = 191; let value: u32 = 0;
+        if (b >= 194 && b <= 223) { need = 1; value = b & 31; }
+        if (b >= 224 && b <= 239) { need = 2; value = b & 15; if (b == 224) { low = 160; } if (b == 237) { high = 159; } }
+        if (b >= 240 && b <= 244) { need = 3; value = b & 7; if (b == 240) { low = 144; } if (b == 244) { high = 143; } }
+        if (need == 0 || view.length - i <= need) { return 1; }
+        let k: i32 = 1;
+        while (k <= need) {
+            let next: u32 = byte(view,i+k);
+            if (next < 128 || next > 191 || (k == 1 && (next < low || next > high))) { return 1; }
+            value = (value << 6) | (next & 63); k += 1;
+        }
+        if (!push(out,value)) { return 2; }
+        i += need + 1;
+    }
+    return 0;
+}
+fn encode_utf8(values: &alloc::vec::Vec<u32>, start: i32, end: i32, out: &alloc::vec::Vec<u8>) -> bool {
+    out.clear(); let i: i32 = start; let ok: bool = true;
+    while (i < end) {
+        let c: u32 = values.at(i);
+        if (c < 128) { ok = ok && put(out,c); }
+        else { if (c < 2048) { ok = ok && put(out,192 | (c >> 6)) && put(out,128 | (c & 63)); }
+        else { if (c < 65536) { ok = ok && put(out,224 | (c >> 12)) && put(out,128 | ((c >> 6) & 63)) && put(out,128 | (c & 63)); }
+        else { ok = ok && put(out,240 | (c >> 18)) && put(out,128 | ((c >> 12) & 63)) && put(out,128 | ((c >> 6) & 63)) && put(out,128 | (c & 63)); } } }
+        i += 1;
+    }
+    return ok;
+}
+fn ascii(values: &alloc::vec::Vec<u32>, start: i32, end: i32) -> bool {
+    let i: i32 = start; while (i < end) { if (values.at(i) >= 128) { return false; } i += 1; }
+    return true;
+}
+
+// Punycode (RFC 3492) parameters.
+fn adapt(delta_in: i64, points: i64, first: bool) -> i64 {
+    let delta: i64 = delta_in; if (first) { delta = delta / 700; } else { delta = delta / 2; }
+    delta += delta / points; let k: i64 = 0;
+    while (delta > 455) { delta = delta / 35; k += 36; }
+    return k + (36 * delta) / (delta + 38);
+}
+fn threshold(k: i64, bias: i64) -> i64 { if (k <= bias) { return 1; } if (k >= bias + 26) { return 26; } return k - bias; }
+fn digit_value(c: u32) -> i64 {
+    if (c >= 97 && c <= 122) { return (c - 97) as i64; } if (c >= 65 && c <= 90) { return (c - 65) as i64; }
+    if (c >= 48 && c <= 57) { return (c - 22) as i64; } return -1;
+}
+fn digit_char(d: i64) -> u32 { if (d < 26) { return (d + 97) as u32; } return (d + 22) as u32; }
+
+// Decode the Punycode in values[start, end) (no "xn--") into out.
+fn decode_punycode(values: &alloc::vec::Vec<u32>, start: i32, end: i32, out: &alloc::vec::Vec<u32>) -> i32 {
+    let limit: i64 = 4294967295; let delimiter: i32 = -1; let i: i32 = start;
+    while (i < end) { if (values.at(i) == 45) { delimiter = i; } i += 1; }
+    let p: i32 = start;
+    if (delimiter > start) {
+        i = start; while (i < delimiter) { if (values.at(i) >= 128) { return 1; } if (!push(out,values.at(i))) { return 2; } i += 1; }
+        p = delimiter + 1;
+    }
+    let n: i64 = 128; let index: i64 = 0; let bias: i64 = 72;
+    while (p < end) {
+        let old: i64 = index; let w: i64 = 1; let k: i64 = 36;
+        while (true) {
+            if (p >= end) { return 1; }
+            let d: i64 = digit_value(values.at(p)); p += 1;
+            if (d < 0 || d > (limit - index) / w) { return 1; }
+            index += d * w;
+            let t: i64 = threshold(k,bias);
+            if (d < t) { break; }
+            if (w > limit / (36 - t)) { return 1; }
+            w = w * (36 - t); k += 36;
+        }
+        let count: i64 = (out.len() + 1) as i64;
+        bias = adapt(index - old,count,old == 0);
+        if (index / count > limit - n) { return 1; }
+        n += index / count; index = index % count;
+        if (n > 1114111 || (n >= 55296 && n <= 57343)) { return 1; }
+        if (out.try_insert(index as i32,n as u32).is_err()) { return 2; }
+        index += 1;
+    }
+    return 0;
+}
+// Append the Punycode of values[start, end) (no "xn--") to out.
+fn encode_punycode(values: &alloc::vec::Vec<u32>, start: i32, end: i32, out: &alloc::vec::Vec<u8>) -> i32 {
+    let limit: i64 = 4294967295; let basic: i64 = 0; let i: i32 = start; let total: i64 = (end - start) as i64;
+    while (i < end) { if (values.at(i) < 128) { if (!put(out,values.at(i))) { return 2; } basic += 1; } i += 1; }
+    if (basic > 0) { if (!put(out,45)) { return 2; } }
+    let n: i64 = 128; let delta: i64 = 0; let bias: i64 = 72; let handled: i64 = basic;
+    while (handled < total) {
+        let m: i64 = 1114112; i = start;
+        while (i < end) { let c: i64 = values.at(i) as i64; if (c >= n && c < m) { m = c; } i += 1; }
+        if ((m - n) > (limit - delta) / (handled + 1)) { return 1; }
+        delta += (m - n) * (handled + 1); n = m; i = start;
+        while (i < end) {
+            let c: i64 = values.at(i) as i64;
+            if (c < n) { delta += 1; if (delta > limit) { return 1; } }
+            if (c == n) {
+                let q: i64 = delta; let k: i64 = 36;
+                while (true) {
+                    let t: i64 = threshold(k,bias);
+                    if (q < t) { break; }
+                    if (!put(out,digit_char(t + (q - t) % (36 - t)))) { return 2; }
+                    q = (q - t) / (36 - t); k += 36;
+                }
+                if (!put(out,digit_char(q))) { return 2; }
+                bias = adapt(delta,handled + 1,handled == basic); delta = 0; handled += 1;
+            }
+            i += 1;
+        }
+        delta += 1; n += 1;
+    }
+    return 0;
+}
+// Public Punycode codecs over scalars and ASCII bytes.
+pub fn punycode_decode(input: core::slice::View<u8>, out: &alloc::vec::Vec<u32>) -> core::result::Result<i32, Error> {
+    if (input.start < 0 || input.length < 0 || input.start > 2147483647 - input.length) { return core::result::Err(Error::Bounds); }
+    let values: alloc::vec::Vec<u32> = alloc::vec::new(); let i: i32 = 0;
+    while (i < input.length) { if (!push(values.borrow(),byte(input,i))) { values.destroy(); return core::result::Err(Error::AllocationFailed); } i += 1; }
+    out.clear(); let code: i32 = decode_punycode(values.borrow(),0,values.len(),out); values.destroy();
+    if (code == 1) { return core::result::Err(Error::InvalidPunycode); } if (code == 2) { return core::result::Err(Error::AllocationFailed); }
+    return core::result::Ok(out.len());
+}
+pub fn punycode_encode(input: core::slice::View<u32>, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32, Error> {
+    if (input.start < 0 || input.length < 0 || input.start > 2147483647 - input.length) { return core::result::Err(Error::Bounds); }
+    let values: alloc::vec::Vec<u32> = alloc::vec::new();
+    if (values.try_extend(input).is_err()) { return core::result::Err(Error::AllocationFailed); }
+    let i: i32 = 0; while (i < values.len()) { if (values.at(i) > 1114111) { values.destroy(); return core::result::Err(Error::InvalidPunycode); } i += 1; }
+    out.clear(); let code: i32 = encode_punycode(values.borrow(),0,values.len(),out); values.destroy();
+    if (code == 1) { return core::result::Err(Error::InvalidPunycode); } if (code == 2) { return core::result::Err(Error::AllocationFailed); }
+    return core::result::Ok(out.len());
+}
+
+// NFC of values[start, end) into out (scalars). Result code 0, 2 (allocation)
+// or 3 (normalizer failure).
+fn nfc(values: &alloc::vec::Vec<u32>, start: i32, end: i32, out: &alloc::vec::Vec<u32>, check: &alloc::vec::Vec<u8>) -> i32 {
+    out.clear();
+    if (!encode_utf8(values,start,end,check)) { return 2; }
+    let text: core::text::Text = core::text::from_utf8_unchecked(check.as_slice(),0,check.len());
+    let quick: core::result::Result<ext::unicode_normalize::QuickCheck, ext::unicode_normalize::Error> = ext::unicode_normalize::quick_check(text,ext::unicode_normalize::Form::Nfc,WORK);
+    if (quick.is_err()) { return 3; }
+    let yes: bool = match (quick.unwrap()) { ext::unicode_normalize::QuickCheck::Yes -> true, _ -> false };
+    if (yes) {
+        let k: i32 = start; while (k < end) { if (!push(out,values.at(k))) { return 2; } k += 1; }
+        return 0;
+    }
+    let needed: core::result::Result<i32, ext::unicode_normalize::Error> = ext::unicode_normalize::scratch_len(text,ext::unicode_normalize::Form::Nfc,WORK);
+    if (needed.is_err()) { return 3; }
+    let scratch: alloc::vec::Vec<u32> = alloc::vec::new();
+    if (scratch.try_resize(needed.unwrap(),0 as u32).is_err()) { return 2; }
+    // measure leaves the normalized scalars in scratch's prefix.
+    let measured: core::result::Result<ext::unicode_normalize::Normalized, ext::unicode_normalize::Error> = ext::unicode_normalize::measure(text,ext::unicode_normalize::Form::Nfc,scratch.as_view(),WORK);
+    if (measured.is_err()) { scratch.destroy(); return 3; }
+    let count: i32 = measured.unwrap().scalars; let k: i32 = 0;
+    while (k < count) { if (!push(out,scratch.at(k))) { scratch.destroy(); return 2; } k += 1; }
+    scratch.destroy();
+    return 0;
+}
+
+// Label validity: leading mark, CONTEXTJ and the per-label Bidi rule.
+fn validate(values: &alloc::vec::Vec<u32>, start: i32, end: i32) -> i32 {
+    if (start == end) { return OK; }
+    let gc: u32 = core::unicode::general_category(values.at(start));
+    if (gc == core::unicode::GC_MN || gc == core::unicode::GC_MC || gc == core::unicode::GC_ME) { return E_MARK; }
+    let i: i32 = start;
+    while (i < end) {
+        let c: u32 = values.at(i);
+        if (c == 8204 || c == 8205) {
+            let virama: bool = i > start && core::unicode::canonical_combining_class(values.at(i - 1)) == 9;
+            if (!virama) {
+                if (c == 8205) { return E_JOINER; }
+                // ZWNJ needs a joining (L or D) scalar before and an (R or D)
+                // after, skipping transparent ones. ASCII scalars and the label
+                // edges never join, so those cases fail definitively.
+                if (i == start || i + 1 == end || values.at(i - 1) < 128 || values.at(i + 1) < 128) { return E_JOINER; }
+                return E_UNSUPPORTED;
+            }
+        }
+        i += 1;
+    }
+    // One pass finds the last non-NSM scalar and whether the label is RTL.
+    let last: i32 = start - 1; let rtl: bool = false; i = start;
+    while (i < end) {
+        let d: u32 = bidi(values.at(i));
+        if (d != B_NSM) { last = i; }
+        if (d == B_R || d == B_AL || d == B_AN) { rtl = true; }
+        i += 1;
+    }
+    if (last < start) { return E_BIDI; }
+    if (!rtl) { return OK; }
+    let first: u32 = bidi(values.at(start));
+    if (first == B_L) {
+        i = start;
+        while (i <= last) {
+            let d: u32 = bidi(values.at(i));
+            if (!(d == B_L || d == B_EN || d == B_ES || d == B_CS || d == B_ET || d == B_ON || d == B_BN || d == B_NSM)) { return E_BIDI; }
+            i += 1;
+        }
+        let tail: u32 = bidi(values.at(last)); if (tail != B_L && tail != B_EN) { return E_BIDI; }
+        return OK;
+    }
+    if (first != B_R && first != B_AL) { return E_BIDI; }
+    let en: bool = false; let an: bool = false; i = start;
+    while (i <= last) {
+        let d: u32 = bidi(values.at(i));
+        if (d == B_EN) { if (an) { return E_BIDI; } en = true; }
+        if (d == B_AN) { if (en) { return E_BIDI; } an = true; }
+        if (!(d == B_R || d == B_AL || d == B_AN || d == B_EN || d == B_ES || d == B_CS || d == B_ET || d == B_ON || d == B_BN || d == B_NSM)) { return E_BIDI; }
+        i += 1;
+    }
+    let tail: u32 = bidi(values.at(last));
+    if (tail != B_R && tail != B_AL && tail != B_AN && tail != B_EN) { return E_BIDI; }
+    return OK;
+}
+fn label_error(code: i32) -> Error {
+    if (code == E_MARK) { return Error::LeadingMark; } if (code == E_JOINER) { return Error::Joiner; }
+    if (code == E_UNSUPPORTED) { return Error::UnsupportedJoiner; } return Error::Bidi;
+}
+struct Work { scalars: alloc::vec::Vec<u32>, mapped: alloc::vec::Vec<u32>, labels: alloc::vec::Vec<u32>, decoded: alloc::vec::Vec<u32>, again: alloc::vec::Vec<u32>, bytes: alloc::vec::Vec<u8> }
+impl Work {
+    fn borrow(&self) -> &Work { return self; }
+    fn destroy(&self) { self.scalars.destroy(); self.mapped.destroy(); self.labels.destroy(); self.decoded.destroy(); self.again.destroy(); self.bytes.destroy(); }
+}
+fn fail(work: &Work, error: Error) -> core::result::Result<i32, Error> { work.destroy(); return core::result::Err(error); }
+
+// UTS #46 ToASCII as used for URL hosts; writes the ASCII domain to out.
+// An all-ASCII domain is only lowercased: like Node.js, its "xn--" labels are
+// not decoded or checked. Empty labels (and a trailing dot) are kept.
+pub fn to_ascii(domain: core::slice::View<u8>, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32, Error> {
+    if (domain.start < 0 || domain.length < 0 || domain.start > 2147483647 - domain.length) { return core::result::Err(Error::Bounds); }
+    out.clear(); let i: i32 = 0; let plain: bool = true;
+    while (i < domain.length) { if (byte(domain,i) >= 128) { plain = false; } i += 1; }
+    if (plain) {
+        i = 0;
+        while (i < domain.length) {
+            let c: u32 = byte(domain,i); if (c >= 65 && c <= 90) { c += 32; }
+            if (!put(out,c)) { return core::result::Err(Error::AllocationFailed); }
+            i += 1;
+        }
+        return core::result::Ok(out.len());
+    }
+    if (domain.length > MAX_DOMAIN_BYTES) { return core::result::Err(Error::TooLong); }
+    let work = Work { scalars: alloc::vec::new(), mapped: alloc::vec::new(), labels: alloc::vec::new(), decoded: alloc::vec::new(), again: alloc::vec::new(), bytes: alloc::vec::new() };
+    let code: i32 = decode_utf8(domain,work.scalars.borrow());
+    if (code == 1) { return fail(work.borrow(),Error::InvalidUtf8); } if (code == 2) { return fail(work.borrow(),Error::AllocationFailed); }
+    i = 0;
+    while (i < work.scalars.len()) {
+        code = map_into(work.scalars.at(i),work.mapped.borrow());
+        if (code == 1) { let bad: u32 = work.scalars.at(i); return fail(work.borrow(),Error::Disallowed(bad)); }
+        if (code == 2) { return fail(work.borrow(),Error::AllocationFailed); }
+        i += 1;
+    }
+    code = nfc(work.mapped.borrow(),0,work.mapped.len(),work.labels.borrow(),work.bytes.borrow());
+    if (code == 2) { return fail(work.borrow(),Error::AllocationFailed); } if (code == 3) { return fail(work.borrow(),Error::Normalization); }
+    let values: &alloc::vec::Vec<u32> = work.labels.borrow(); let n: i32 = values.len(); let start: i32 = 0; i = 0;
+    while (i <= n) {
+        if (i < n && values.at(i) != 46) { i += 1; continue; }
+        let end: i32 = i;
+        if (end - start >= 4 && values.at(start) == 120 && values.at(start + 1) == 110 && values.at(start + 2) == 45 && values.at(start + 3) == 45) {
+            if (!ascii(values,start,end)) { return fail(work.borrow(),Error::InvalidAce); }
+            let k: i32 = start; while (k < end) { if (!put(out,values.at(k))) { return fail(work.borrow(),Error::AllocationFailed); } k += 1; }
+            work.decoded.clear();
+            code = decode_punycode(values,start + 4,end,work.decoded.borrow());
+            if (code == 1) { return fail(work.borrow(),Error::InvalidPunycode); } if (code == 2) { return fail(work.borrow(),Error::AllocationFailed); }
+            let count: i32 = work.decoded.len();
+            if (ascii(work.decoded.borrow(),0,count)) { return fail(work.borrow(),Error::InvalidAce); }
+            k = 0;
+            while (k < count) { let s: u32 = raw_status(work.decoded.at(k)); if (s != 0 && s != 3) { return fail(work.borrow(),Error::InvalidAce); } k += 1; }
+            code = nfc(work.decoded.borrow(),0,count,work.again.borrow(),work.bytes.borrow());
+            if (code == 2) { return fail(work.borrow(),Error::AllocationFailed); } if (code == 3) { return fail(work.borrow(),Error::Normalization); }
+            if (work.again.len() != count) { return fail(work.borrow(),Error::InvalidAce); }
+            k = 0; while (k < count) { if (work.again.at(k) != work.decoded.at(k)) { return fail(work.borrow(),Error::InvalidAce); } k += 1; }
+            code = validate(work.decoded.borrow(),0,count);
+            if (code != OK) { return fail(work.borrow(),label_error(code)); }
+        } else {
+            if (ascii(values,start,end)) {
+                let k: i32 = start; while (k < end) { if (!put(out,values.at(k))) { return fail(work.borrow(),Error::AllocationFailed); } k += 1; }
+            } else {
+                code = validate(values,start,end);
+                if (code != OK) { return fail(work.borrow(),label_error(code)); }
+                if (!put(out,120) || !put(out,110) || !put(out,45) || !put(out,45)) { return fail(work.borrow(),Error::AllocationFailed); }
+                code = encode_punycode(values,start,end,out);
+                if (code == 1) { return fail(work.borrow(),Error::InvalidPunycode); } if (code == 2) { return fail(work.borrow(),Error::AllocationFailed); }
+            }
+        }
+        if (i < n) { if (!put(out,46)) { return fail(work.borrow(),Error::AllocationFailed); } }
+        start = i + 1; i += 1;
+    }
+    work.destroy(); return core::result::Ok(out.len());
+}

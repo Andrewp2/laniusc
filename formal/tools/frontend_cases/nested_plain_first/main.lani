@@ -1,0 +1,47 @@
+module app::main;
+
+// V's first arm is plain and a later one nested: the plain arm matches every
+// value of V, so laniusc never runs the later ones. The front end reads the
+// plain arm as V's.
+enum Color { Red, Green, Blue }
+enum Num { Val(i32), Nothing }
+enum Outer { In(Num), Out }
+enum Slot { Has(Color), Empty }
+
+fn f(o: Outer) -> i32 {
+    return match (o) {
+        Outer::In(n) -> 5,
+        Outer::In(Num::Val(x)) -> x,
+        Outer::Out -> 200,
+    };
+}
+
+// The nested arm for Has is never run; Empty takes the wildcard.
+fn g(s: Slot) -> i32 {
+    return match (s) {
+        Slot::Has(c) -> 1,
+        Slot::Has(Color::Green) -> 2,
+        _ -> 3,
+    };
+}
+
+// In a match statement.
+fn h(o: Outer) -> i32 {
+    match (o) {
+        Outer::In(n) -> { return 6; },
+        Outer::In(Num::Nothing) -> { return 7; },
+        Outer::Out -> { return 8; },
+    };
+}
+
+fn main() -> i32 {
+    if (f(Outer::In(Num::Val(7))) != 5) { return 1; }
+    if (f(Outer::In(Num::Nothing)) != 5) { return 2; }
+    if (f(Outer::Out) != 200) { return 3; }
+    if (g(Slot::Has(Color::Green)) != 1) { return 4; }
+    if (g(Slot::Has(Color::Red)) != 1) { return 5; }
+    if (g(Slot::Empty) != 3) { return 6; }
+    if (h(Outer::In(Num::Nothing)) != 6) { return 7; }
+    if (h(Outer::Out) != 8) { return 8; }
+    return 0;
+}

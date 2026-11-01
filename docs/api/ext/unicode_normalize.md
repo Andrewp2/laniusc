@@ -219,7 +219,7 @@ pub fn maximum_decomposition_depth(form: Form) -> i32
 
 ### function: scratch_len
 
-[Source line 103](../../../extended/ext/unicode_normalize.lani#L103)
+[Source line 107](../../../extended/ext/unicode_normalize.lani#L107)
 
 ```lanius
 pub fn scratch_len(input: core::text::Text, form: Form, work_limit: u64) -> core::result::Result<i32, Error>
@@ -227,7 +227,7 @@ pub fn scratch_len(input: core::text::Text, form: Form, work_limit: u64) -> core
 
 ### function: measure
 
-[Source line 193](../../../extended/ext/unicode_normalize.lani#L193)
+[Source line 289](../../../extended/ext/unicode_normalize.lani#L289)
 
 ```lanius
 pub fn measure(input: core::text::Text, form: Form, scratch: core::slice::View<u32>, work_limit: u64) -> core::result::Result<Normalized, Error>
@@ -235,7 +235,7 @@ pub fn measure(input: core::text::Text, form: Form, scratch: core::slice::View<u
 
 ### function: normalize_into
 
-[Source line 200](../../../extended/ext/unicode_normalize.lani#L200)
+[Source line 296](../../../extended/ext/unicode_normalize.lani#L296)
 
 ```lanius
 pub fn normalize_into(input: core::text::Text, form: Form, output: core::slice::View<u8>, scratch: core::slice::View<u32>, work_limit: u64) -> core::result::Result<Normalized, Error>
@@ -243,7 +243,7 @@ pub fn normalize_into(input: core::text::Text, form: Form, output: core::slice::
 
 ### function: is_normalized
 
-[Source line 222](../../../extended/ext/unicode_normalize.lani#L222)
+[Source line 318](../../../extended/ext/unicode_normalize.lani#L318)
 
 ```lanius
 pub fn is_normalized(input: core::text::Text, form: Form, scratch: core::slice::View<u32>, work_limit: u64) -> core::result::Result<bool, Error>
@@ -251,7 +251,7 @@ pub fn is_normalized(input: core::text::Text, form: Form, scratch: core::slice::
 
 ### function: quick_check
 
-[Source line 283](../../../extended/ext/unicode_normalize.lani#L283)
+[Source line 379](../../../extended/ext/unicode_normalize.lani#L379)
 
 ```lanius
 pub fn quick_check(input: core::text::Text, form: Form, work_limit: u64) -> core::result::Result<QuickCheck, Error>
@@ -259,7 +259,7 @@ pub fn quick_check(input: core::text::Text, form: Form, work_limit: u64) -> core
 
 ### function: normalize_quick_into
 
-[Source line 293](../../../extended/ext/unicode_normalize.lani#L293)
+[Source line 389](../../../extended/ext/unicode_normalize.lani#L389)
 
 ```lanius
 pub fn normalize_quick_into(input: core::text::Text, form: Form, output: core::slice::View<u8>, scratch: core::slice::View<u32>, work_limit: u64) -> core::result::Result<Normalized, Error>
@@ -267,7 +267,7 @@ pub fn normalize_quick_into(input: core::text::Text, form: Form, output: core::s
 
 ### function: is_normalized_quick
 
-[Source line 324](../../../extended/ext/unicode_normalize.lani#L324)
+[Source line 420](../../../extended/ext/unicode_normalize.lani#L420)
 
 ```lanius
 pub fn is_normalized_quick(input: core::text::Text, form: Form, scratch: core::slice::View<u32>, work_limit: u64) -> core::result::Result<bool, Error>

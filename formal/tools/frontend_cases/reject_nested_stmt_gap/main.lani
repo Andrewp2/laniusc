@@ -1,0 +1,17 @@
+module app::main;
+
+// No arm covers In(Nothing): the inner match statement on In's payload names
+// one of Num's two variants, and there is no wildcard, so it is rejected.
+enum Num { Val(i32), Nothing }
+enum Outer { In(Num), Out }
+
+fn f(o: Outer) -> i32 {
+    match (o) {
+        Outer::In(Num::Val(x)) -> { return x; },
+        Outer::Out -> { return 200; },
+    };
+}
+
+fn main() -> i32 {
+    return f(Outer::In(Num::Val(7)));
+}

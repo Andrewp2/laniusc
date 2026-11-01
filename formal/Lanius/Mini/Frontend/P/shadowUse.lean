@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Mini.Frontend.Types
+import Lanius.Mini.Frontend.P.anyNested
 import Lanius.Mini.Frontend.P.isUnderscore
 import Lanius.Mini.Frontend.P.plainNaming
 
@@ -11,11 +12,22 @@ set_option linter.unusedVariables false
 
 namespace Lanius.Mini
 
+def shadowUse (a : CTree) (n : Option Bool) : Option ArmUse :=
+  match n with
+  | none => none
+  | some b => shadowIf a b
+
+/-- V's first arm a is plain: it is V's arm. It matches every value of V, so laniusc never runs V's later arms; they are allowed when one of them is nested (laniusc accepts them), and are not read. -/
+def plainUse (fuel : Nat) (env : FrontEnv) (a : CTree) (more : List CTree) : Option ArmUse :=
+  match more with
+  | [] => some ({ arm := a, used := false } : ArmUse)
+  | b :: others => shadowUse a (anyNested fuel env more)
+
 def nestedOrPlain (fuel : Nat) (env : FrontEnv) (v : VariantTy) (a : CTree) (more : List CTree) (rows : List CTree) (w : Option CTree) (n : Bool) : Option ArmUse :=
   if n then
     nestUse fuel env v a rows w
   else
-    plainUse a more
+    plainUse fuel env a more
 
 def rowsUse (fuel : Nat) (env : FrontEnv) (v : VariantTy) (a : CTree) (more : List CTree) (rows : List CTree) (w : Option CTree) (nested : Option Bool) : Option ArmUse :=
   match nested with

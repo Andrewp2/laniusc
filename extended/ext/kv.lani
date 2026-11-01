@@ -41,8 +41,8 @@ fn allocate(store: &Store, count: i32, size: i32) -> bool {
     if (core::result::is_err(bytes.try_resize(size,0))) { return false; } return true;
 }
 fn append(store: &Store, at: i32, key: core::slice::View<u8>, value: core::slice::View<u8>) -> i32 {
-    let destination: [u8] = store.bytes.as_slice(); let i: i32 = 0; while (i < key.length) { destination[at+i] = byte(key,i); i += 1; }
-    let start: i32 = at+key.length; i = 0; while (i < value.length) { destination[start+i] = byte(value,i); i += 1; }
+    let destination: [u8] = store.bytes.as_slice(); let i: i32 = 0; while (i < key.length) { let stored: u8 = byte(key,i); destination[at+i] = stored; i += 1; }
+    let start: i32 = at+key.length; i = 0; while (i < value.length) { let stored: u8 = byte(value,i); destination[start+i] = stored; i += 1; }
     let records: &alloc::vec::Vec<Record> = store.records.borrow(); core::result::unwrap(records.try_push(Record { key: at, key_len: key.length, value: start, value_len: value.length })); return start+value.length;
 }
 fn replacement(store: &Store, selected: Position, key: core::slice::View<u8>, value: core::slice::View<u8>, remove: bool, size: i32, budget: &Budget) -> core::result::Result<Store,Error> {
@@ -100,7 +100,7 @@ pub fn encode(store: &Store, max_output: i32, max_work: u64) -> core::result::Re
     if ((size as u64)*3+(store.len() as u64) > max_work) { return core::result::Err(Error::WorkLimit); }
     let result: alloc::vec::Vec<u8> = alloc::vec::new(); let resized: core::result::Result<i32,alloc::vec::Error> = result.try_resize(size as i32,0); if (core::result::is_err(resized)) { result.destroy(); return core::result::Err(Error::AllocationFailed); }
     let bytes: [u8] = result.as_slice(); put32(bytes,0,1229865292); put32(bytes,4,168646219); put32(bytes,8,1); put32(bytes,12,store.len() as u32); put32(bytes,16,(size-28) as u32);
-    let at: i32 = 24; let index: i32 = 0; while (index < store.len()) { let item: Entry = core::result::unwrap(store.entry(index)); put32(bytes,at,item.key.length as u32); put32(bytes,at+4,item.value.length as u32); at += 8; let i: i32 = 0; while (i < item.key.length) { bytes[at] = byte(item.key,i); at += 1; i += 1; } i = 0; while (i < item.value.length) { bytes[at] = byte(item.value,i); at += 1; i += 1; } index += 1; }
+    let at: i32 = 24; let index: i32 = 0; while (index < store.len()) { let item: Entry = core::result::unwrap(store.entry(index)); put32(bytes,at,item.key.length as u32); put32(bytes,at+4,item.value.length as u32); at += 8; let i: i32 = 0; while (i < item.key.length) { let stored: u8 = byte(item.key,i); bytes[at] = stored; at += 1; i += 1; } i = 0; while (i < item.value.length) { let stored: u8 = byte(item.value,i); bytes[at] = stored; at += 1; i += 1; } index += 1; }
     assert(at == (size as i32)-4); put32(bytes,at,checksum(result.as_view(),at)); return core::result::Ok(result);
 }
 pub fn decode(input: core::slice::View<u8>, limits: Limits) -> core::result::Result<Store,Error> {
