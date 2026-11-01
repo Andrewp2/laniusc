@@ -316,3 +316,13 @@ fn uring_checks_and_batched_cat_and_copy_are_exact() {
     assert_eq!(String::from_utf8(output.stderr).unwrap(), format!("uring_cat: {}: errno 2\n", missing.display()));
     fs::remove_dir_all(scratch.path()).unwrap();
 }
+
+// std::pthread: parallel sums against the serial sum, a Mutex-guarded
+// counter, a bounded Condvar queue and 1,000 sequential spawn/join pairs.
+#[test]
+fn pthread_sum_counter_queue_and_join_are_exact() {
+    let program = native("tests/fixtures/stdlib_execution/concurrency/threads.lani", "threads");
+    let text = run(&program, None);
+    assert!(!text.contains("FAIL"), "{text}");
+    assert!(text.contains("counter 160000\n") && text.contains("join.pairs 1000\n") && text.contains("queue.taken 40000\n"), "{text}");
+}
