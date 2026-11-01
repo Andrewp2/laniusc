@@ -69,6 +69,21 @@ uint dependency_type(uint t)
     return root < count ? ct_dependency_state(root) : CT_UNKNOWN;
 }
 
+// Whether dependency type node `root` is the signature root of its own
+// declaration, the application whose operands are its parameters.
+bool dependency_declaration_root(uint root)
+{
+    uint count = dependency_type_count();
+    if (root >= count) return false;
+    uint base = root * 9u;
+    if (dependency_type_word(base) != 3u) return false;
+    uint declaration = dependency_find_declaration(dependency_type_word(base + 1u),
+        dependency_type_word(base + 8u), dependency_type_word(base + 2u));
+    if (declaration >= dependency_declaration_count()) return false;
+    uint signature = dependency_declaration_word(declaration * 14u + 7u);
+    return signature < count && canonical_type_roots[signature] == root;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -131,10 +146,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
             }
             // A path through a bare generic type, `W::wrap(9)`, names the
             // declaration's symbolic application: it binds no parameter, so
-            // the arguments and result context infer the impl's.
-            if (method_call_receiver_hir[token] == INVALID && actual.x == 3u &&
-                actual.y < min(mutable_type_capacity(), gParams.n_tokens) &&
-                type_instance_decl_token[actual.y] == actual.y) return;
+            // the arguments and result context infer the impl's. A local one
+            // is the declaration token's row; an imported one is the
+            // declaration's signature root (dependencies/14).
+            if (method_call_receiver_hir[token] == INVALID &&
+                (actual.x == 3u ? actual.y < min(mutable_type_capacity(), gParams.n_tokens) &&
+                    type_instance_decl_token[actual.y] == actual.y
+                 : actual.x == 5u && dependency_declaration_root(actual.y))) return;
             run = true;
         }
         else

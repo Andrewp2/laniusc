@@ -110,13 +110,22 @@ pub struct Tokenizer {
     start: u64, is_key: bool, escape_start: u64, hex_count: i32, hex_value: i32,
     high: i32, high_start: u64, phase: i32, literal: i32, literal_index: i32,
     utf8_width: u32, utf8_used: u32, utf8_start: u64, first: u8, second: u8, third: u8,
+    // Token text: text holds chars_cap bytes, chars caches its as_slice(),
+    // and the first chars_used are the text. Open containers: stack holds
+    // levels_cap bytes, levels caches its as_slice(), the first count are the
+    // kinds (1 array, 2 object), and top caches the innermost (0 at the root).
+    chars: [u8], chars_used: i32, chars_cap: i32, levels: [u8], count: i32, levels_cap: i32, top: u8,
+    // The error of the last advance() that returned -1.
+    last: Error,
 }
 
 pub fn tokenizer(options: Options) -> core::result::Result<Tokenizer, Error> {
     if (options.max_depth < 0 || options.max_string_bytes < 0 || options.max_number_bytes < 0) {
         return core::result::Err(error(ErrorKind::InvalidOptions, 0));
     }
-    return core::result::Ok(Tokenizer { options: options, text: alloc::vec::new(), stack: alloc::vec::new(),
+    let text: alloc::vec::Vec<u8> = alloc::vec::new(); let stack: alloc::vec::Vec<u8> = alloc::vec::new();
+    return core::result::Ok(Tokenizer { options: options, text: text, stack: stack,
+        chars: text.as_slice(), chars_used: 0, chars_cap: 0, levels: stack.as_slice(), count: 0, levels_cap: 0, top: 0, last: error(ErrorKind::Bounds, 0),
         failure: core::option::None(), offset: 0, tokens: 0,
         expect: 0, lex: 0, tag: 0, ready: false, finished: false, flag: false,
         start: 0, is_key: false, escape_start: 0, hex_count: 0, hex_value: 0,
@@ -137,7 +146,7 @@ pub impl Tokenizer {
     pub fn tokens_read(&self) -> u64 { return self.tokens; }
     pub fn has_token(&self) -> bool { return self.ready; }
     // Container depth after the ready token; a root scalar has depth zero.
-    pub fn depth(&self) -> i32 { return self.stack.len(); }
+    pub fn depth(&self) -> i32 { return self.count; }
     pub fn is_complete(&self) -> bool { return self.finished; }
     pub fn token(&self) -> core::option::Option<Token> {
         if (!self.ready) { return core::option::None(); }
@@ -154,7 +163,7 @@ pub impl Tokenizer {
     // the next nonempty feed, reset or destroy.
     pub fn text(&self) -> core::result::Result<core::text::Text, Error> {
         if (!self.ready || self.tag < 4 || self.tag > 6) { return core::result::Err(error(ErrorKind::Bounds, self.offset)); }
-        return core::result::Ok(core::text::from_utf8_unchecked(self.text.as_slice(), 0, self.text.len()));
+        return core::result::Ok(core::text::from_utf8_unchecked(self.chars, 0, self.chars_used));
     }
     fn fail(&self, kind: ErrorKind, at: u64) -> i32 {
         self.failure = core::option::Some(error(kind, at)); self.ready = false;
@@ -162,37 +171,56 @@ pub impl Tokenizer {
     }
     fn emit(&self, tag: i32) { self.tag = tag; self.ready = true; self.tokens += 1; }
     fn after_value(&self) {
-        if (self.stack.is_empty()) { self.expect = 7; } else { self.expect = 6; }
+        if (self.count == 0) { self.expect = 7; } else { self.expect = 6; }
+    }
+    // Room for need text bytes in total; grows geometrically, at least 64.
+    fn reserve_text(&self, need: i32) -> bool {
+        if (need <= self.chars_cap) { return true; }
+        let target: i32 = need;
+        if (self.chars_cap <= 1073741823 && self.chars_cap * 2 > target) { target = self.chars_cap * 2; }
+        if (target < 64) { target = 64; }
+        if (self.text.try_resize(target, 0).is_err()) { return false; }
+        self.chars = self.text.as_slice(); self.chars_cap = target;
+        return true;
     }
     fn push_text(&self, byte: u8, limit: i32, kind: ErrorKind) -> i32 {
-        if (self.text.len() >= limit) { return self.fail(kind, self.start); }
-        if (core::result::is_err(self.text.try_push(byte))) { return self.fail(ErrorKind::AllocationFailed, self.offset); }
+        let used: i32 = self.chars_used;
+        if (used >= limit) { return self.fail(kind, self.start); }
+        if (used == self.chars_cap && !self.reserve_text(used + 1)) { return self.fail(ErrorKind::AllocationFailed, self.offset); }
+        self.chars[used] = byte; self.chars_used = used + 1;
         return 0;
     }
     fn push_scalar(&self, scalar: u32) -> i32 {
         let width: u32 = core::utf8::encoded_len_or(scalar, 0);
-        if ((width as i32) > self.options.max_string_bytes - self.text.len()) { return self.fail(ErrorKind::StringLimit, self.start); }
-        let index: u32 = 0;
+        if ((width as i32) > self.options.max_string_bytes - self.chars_used) { return self.fail(ErrorKind::StringLimit, self.start); }
+        if (!self.reserve_text(self.chars_used + (width as i32))) { return self.fail(ErrorKind::AllocationFailed, self.offset); }
+        let index: u32 = 0; let chars: [u8] = self.chars;
         while (index < width) {
-            if (core::result::is_err(self.text.try_push(core::utf8::encoded_byte_or(scalar, index, 0)))) {
-                return self.fail(ErrorKind::AllocationFailed, self.offset);
-            }
-            index += 1;
+            let encoded: u8 = core::utf8::encoded_byte_or(scalar, index, 0);
+            chars[self.chars_used] = encoded; self.chars_used += 1; index += 1;
         }
         return 0;
     }
     fn open(&self, kind: u8, tag: i32, next: i32) -> i32 {
-        if (self.stack.len() >= self.options.max_depth) { return self.fail(ErrorKind::DepthLimit, self.offset); }
-        if (core::result::is_err(self.stack.try_push(kind))) { return self.fail(ErrorKind::AllocationFailed, self.offset); }
+        let count: i32 = self.count;
+        if (count >= self.options.max_depth) { return self.fail(ErrorKind::DepthLimit, self.offset); }
+        if (count == self.levels_cap) {
+            let grown: i32 = 16; if (self.levels_cap >= 8) { grown = self.levels_cap * 2; }
+            if (self.levels_cap > 1073741823 || self.stack.try_resize(grown, 0).is_err()) { return self.fail(ErrorKind::AllocationFailed, self.offset); }
+            self.levels = self.stack.as_slice(); self.levels_cap = grown;
+        }
+        self.levels[count] = kind; self.count = count + 1; self.top = kind;
         self.start = self.offset; self.expect = next; self.emit(tag);
         return 1;
     }
     fn close(&self, tag: i32) -> i32 {
-        self.stack.pop(); self.start = self.offset; self.after_value(); self.emit(tag);
+        let count: i32 = self.count - 1; self.count = count;
+        self.top = 0; if (count > 0) { self.top = self.levels[count - 1]; }
+        self.start = self.offset; self.after_value(); self.emit(tag);
         return 1;
     }
     fn begin_value(&self, byte: u8) -> i32 {
-        self.text.clear(); self.start = self.offset;
+        self.chars_used = 0; self.start = self.offset;
         if (byte == 123) { return self.open(2, 0, 3); }
         if (byte == 91) { return self.open(1, 2, 2); }
         if (byte == 34) { self.lex = 1; self.is_key = false; return 0; }
@@ -281,6 +309,67 @@ pub impl Tokenizer {
         self.lex = 3; self.hex_count = 0; self.hex_value = 0;
         return 0;
     }
+    // Appends source[from, from + run) to the token text; false (nothing
+    // changed) when the room cannot be reserved.
+    fn append_text(&self, source: [u8], from: i32, run: i32) -> bool {
+        let used: i32 = self.chars_used;
+        if (run > 2147483647 - used || !self.reserve_text(used + run)) { return false; }
+        let chars: [u8] = self.chars; let to: i32 = used; let index: i32 = from; let stop: i32 = from + run;
+        while (index < stop) { chars[to] = source[index]; to += 1; index += 1; }
+        self.chars_used = to;
+        return true;
+    }
+    // Longest prefix of source[from, from + available) that step() would
+    // take one byte at a time without a state change, capped by limit and the
+    // offset range: string body bytes (no quote, backslash or control, UTF-8
+    // sequences complete and valid) when lex is 1, digits when lex is 6.
+    fn plain_run(&self, source: [u8], from: i32, available: i32, limit: i32) -> i32 {
+        let most: i32 = available; if (most > limit) { most = limit; }
+        let left: u64 = 18446744073709551615 - self.offset;
+        if ((most as u64) > left) { most = left as i32; }
+        let index: i32 = from; let stop: i32 = from + most;
+        if (self.lex == 6) {
+            while (index < stop) { let byte: u8 = source[index]; if (byte < 48 || byte > 57) { break; } index += 1; }
+            return index - from;
+        }
+        while (index < stop) {
+            let byte: u8 = source[index];
+            if (byte < 128) {
+                if (byte < 32 || byte == 34 || byte == 92) { break; }
+                index += 1; continue;
+            }
+            let width: i32 = core::utf8::sequence_len_or(byte, 0) as i32;
+            if (width < 2 || width > stop - index) { break; }
+            let second: u8 = source[index + 1]; let third: u8 = 0; let fourth: u8 = 0;
+            if (width > 2) { third = source[index + 2]; }
+            if (width > 3) { fourth = source[index + 3]; }
+            if (core::utf8::decode_or(byte, second, third, fourth, width as u32, 4294967295) == 4294967295) { break; }
+            index += width;
+        }
+        return index - from;
+    }
+    // Bytes the fast paths took from source[from, ...): whitespace between
+    // tokens, string body runs and number digit runs. 0 leaves the byte to step().
+    fn fast(&self, source: [u8], from: i32, available: i32) -> i32 {
+        let lex: i32 = self.lex;
+        if (lex == 0) {
+            let index: i32 = from; let stop: i32 = from + available;
+            let left: u64 = 18446744073709551615 - self.offset;
+            if ((available as u64) > left) { stop = from + (left as i32); }
+            while (index < stop && space(source[index])) { index += 1; }
+            return index - from;
+        }
+        let run: i32 = 0;
+        if (lex == 1 && self.utf8_used == 0) {
+            run = self.plain_run(source, from, available, self.options.max_string_bytes - self.chars_used);
+        } else {
+            if (lex == 6 && (self.phase == 3 || self.phase == 5 || self.phase == 8)) {
+                run = self.plain_run(source, from, available, self.options.max_number_bytes - self.chars_used);
+            }
+        }
+        if (run <= 0 || !self.append_text(source, from, run)) { return 0; }
+        return run;
+    }
     // 0 consumed, 1 consumed and token ready, 2 token ready without consuming
     // byte (a number delimiter), -1 failed.
     fn step(&self, byte: u8) -> i32 {
@@ -306,8 +395,7 @@ pub impl Tokenizer {
             if (byte != 58) { return self.fail(ErrorKind::UnexpectedByte, self.offset); }
             self.expect = 1; return 0;
         }
-        let top: u8 = 0;
-        if (!self.stack.is_empty()) { top = self.stack.at(self.stack.len() - 1); }
+        let top: u8 = self.top;
         if (self.expect == 6) {
             if (byte == 44) { if (top == 2) { self.expect = 4; } else { self.expect = 1; } return 0; }
             if (byte == 93 && top == 1) { return self.close(3); }
@@ -317,7 +405,7 @@ pub impl Tokenizer {
         if (self.expect == 3 || self.expect == 4) {
             if (byte == 125 && self.expect == 3) { return self.close(1); }
             if (byte != 34) { return self.fail(ErrorKind::UnexpectedByte, self.offset); }
-            self.text.clear(); self.start = self.offset; self.lex = 1; self.is_key = true;
+            self.chars_used = 0; self.start = self.offset; self.lex = 1; self.is_key = true;
             return 0;
         }
         if (self.expect == 2 && byte == 93) { return self.close(3); }
@@ -330,20 +418,43 @@ pub impl Tokenizer {
         if (!core::io::valid_range(start, count)) { return core::result::Err(error(ErrorKind::Bounds, self.offset)); }
         if (count == 0) { return core::result::Ok(Progress { consumed: 0, token: false }); }
         if (self.finished) { return core::result::Err(error(ErrorKind::Finished, self.offset)); }
+        let consumed: i32 = self.drive(source, start, count);
+        if (consumed < 0) { return core::result::Err(core::option::unwrap(self.failure)); }
+        return core::result::Ok(Progress { consumed: consumed, token: self.ready });
+    }
+    // feed() without the Result: the bytes consumed, with has_token() telling
+    // whether a token is ready, or -1 where feed() returns Err (that error is
+    // last_error()).
+    pub fn advance(&self, source: [u8], start: i32, count: i32) -> i32 {
+        if (core::option::is_some(self.failure)) { self.last = core::option::unwrap(self.failure); return -1; }
+        if (!core::io::valid_range(start, count)) { self.last = error(ErrorKind::Bounds, self.offset); return -1; }
+        if (count == 0) { return 0; }
+        if (self.finished) { self.last = error(ErrorKind::Finished, self.offset); return -1; }
+        let consumed: i32 = self.drive(source, start, count);
+        if (consumed < 0) { self.last = core::option::unwrap(self.failure); }
+        return consumed;
+    }
+    pub fn last_error(&self) -> Error { return self.last; }
+    // The byte loop of feed(): bytes consumed, or -1 with failure set.
+    fn drive(&self, source: [u8], start: i32, count: i32) -> i32 {
         self.ready = false;
         let consumed: i32 = 0;
         while (consumed < count) {
             if (self.offset == 18446744073709551615) {
-                self.fail(ErrorKind::OffsetOverflow, self.offset);
-                return core::result::Err(core::option::unwrap(self.failure));
+                self.fail(ErrorKind::OffsetOverflow, self.offset); return -1;
+            }
+            let byte: u8 = source[start + consumed]; let lex: i32 = self.lex;
+            if ((lex == 0 && space(byte)) || (lex == 1 && byte >= 32 && byte != 34 && byte != 92) || (lex == 6 && byte >= 48 && byte <= 57)) {
+                let run: i32 = self.fast(source, start + consumed, count - consumed);
+                if (run > 0) { consumed += run; self.offset += run as u64; continue; }
             }
             let outcome: i32 = self.step(source[start + consumed]);
-            if (outcome < 0) { return core::result::Err(core::option::unwrap(self.failure)); }
-            if (outcome == 2) { return core::result::Ok(Progress { consumed: consumed, token: true }); }
+            if (outcome < 0) { return -1; }
+            if (outcome == 2) { return consumed; }
             consumed += 1; self.offset += 1;
-            if (outcome == 1) { return core::result::Ok(Progress { consumed: consumed, token: true }); }
+            if (outcome == 1) { return consumed; }
         }
-        return core::result::Ok(Progress { consumed: consumed, token: false });
+        return consumed;
     }
     // Explicit EOF. Returns true only when EOF completes a root number token.
     pub fn finish(&self) -> core::result::Result<bool, Error> {
@@ -363,7 +474,7 @@ pub impl Tokenizer {
     }
     // Retain buffer capacities; clear state, counters, error and EOF.
     pub fn reset(&self) {
-        self.text.clear(); self.stack.clear(); self.failure = core::option::None();
+        self.chars_used = 0; self.count = 0; self.top = 0; self.failure = core::option::None();
         self.offset = 0; self.tokens = 0; self.expect = 0; self.lex = 0; self.tag = 0;
         self.ready = false; self.finished = false; self.flag = false; self.start = 0;
         self.is_key = false; self.escape_start = 0; self.hex_count = 0; self.hex_value = 0;
@@ -373,6 +484,7 @@ pub impl Tokenizer {
     pub fn destroy(&self) {
         self.text.destroy(); self.stack.destroy();
         self.text = alloc::vec::new(); self.stack = alloc::vec::new();
+        self.chars = self.text.as_slice(); self.chars_cap = 0; self.levels = self.stack.as_slice(); self.levels_cap = 0;
         self.reset();
     }
 }
@@ -763,7 +875,7 @@ pub impl Writer {
         if (tag == 1) { return self.end_object(); }
         if (tag == 2) { return self.begin_array(); }
         if (tag == 3) { return self.end_array(); }
-        let view: core::text::Text = core::text::from_utf8_unchecked(source.text.as_slice(), 0, source.text.len());
+        let view: core::text::Text = core::text::from_utf8_unchecked(source.chars, 0, source.chars_used);
         if (tag == 4) { return self.key(view); }
         if (tag == 5) { return self.string(view); }
         if (tag == 6) { return self.scalar(view, 1); }
@@ -817,11 +929,12 @@ pub enum StreamError { Json(Error), Io(core::io::Error) }
 // reader, tokenizer and scratch; keep them alive and unshared while driving it.
 pub struct TokenReader<R> {
     reader: &R, tokens: &Tokenizer, scratch: core::slice::View<u8>, begin: i32, end: i32, eof: bool, reads: u64,
+    failure: StreamError,
 }
 pub fn token_reader<R>(reader: &R, tokens: &Tokenizer, scratch: core::slice::View<u8>)
     -> core::result::Result<TokenReader<R>, Error> where R: core::io::Read {
     if (scratch.length <= 0 || !core::io::valid_range(scratch.start, scratch.length)) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
-    let value: TokenReader<R> = TokenReader { reader: reader, tokens: tokens, scratch: scratch, begin: 0, end: 0, eof: false, reads: 0 };
+    let value: TokenReader<R> = TokenReader { reader: reader, tokens: tokens, scratch: scratch, begin: 0, end: 0, eof: false, reads: 0, failure: StreamError::Json(error(ErrorKind::Bounds, 0)) };
     return core::result::Ok(value);
 }
 pub impl<R> TokenReader<R> {
@@ -862,4 +975,23 @@ pub impl<R> TokenReader<R> {
         }
         return core::result::Ok(false);
     }
+    // next() without the Result: 1 token ready, 0 the document ended and EOF
+    // validated it, -1 failed (the error next() returns is last_error()).
+    pub fn advance(&self) -> i32 where R: core::io::Read {
+        while (true) {
+            if (self.begin < self.end) {
+                let consumed: i32 = self.tokens.advance(self.scratch.values, self.scratch.start + self.begin, self.end - self.begin);
+                if (consumed < 0) { self.failure = StreamError::Json(self.tokens.last_error()); return -1; }
+                self.begin += consumed;
+                if (self.tokens.has_token()) { return 1; }
+                continue;
+            }
+            let step = self.next();
+            if (step.is_err()) { self.failure = step.unwrap_err(); return -1; }
+            if (step.unwrap()) { return 1; }
+            return 0;
+        }
+        return 0;
+    }
+    pub fn last_error(&self) -> StreamError { return self.failure; }
 }

@@ -66,7 +66,8 @@ public void method_candidate_offer(inout MethodCandidate summary, MethodCandidat
         (candidate.callable_kind != METHOD_CALLABLE_LOCAL &&
          candidate.callable_kind != METHOD_CALLABLE_DEPENDENCY) ||
         candidate.local_index == 0xffffffffu || candidate.matched_ref_tag < 1u ||
-        candidate.matched_ref_tag > 3u || candidate.matched_ref_payload == 0xffffffffu ||
+        (candidate.matched_ref_tag > 3u && candidate.matched_ref_tag != 5u) ||
+        candidate.matched_ref_payload == 0xffffffffu ||
         candidate.receiver_mode > 2u ||
         (candidate.callable_kind == METHOD_CALLABLE_LOCAL &&
          (candidate.library_id != 0xffffffffu || candidate.unit_id != 0xffffffffu)) ||
