@@ -53,7 +53,7 @@ def crt_bytes():
     text, arrays = literal_arrays(SHADER.with_name("crt_entry.slang"))
     ELF.check(set(arrays) == {"crt_entry_bytes"}, "unsupported CRT literal table")
     data = arrays["crt_entry_bytes"]
-    ELF.check(len(data) == 225 and "X86_CRT_ENTRY_CALL_OFFSET = 181u;" in text,
+    ELF.check(len(data) == 233 and "X86_CRT_ENTRY_CALL_OFFSET = 189u;" in text,
               "unsupported CRT entry profile")
     return data
 
@@ -63,7 +63,7 @@ def _partition(inspected, source_ranges, runtime_ranges, crt=None):
     image, loads = inspected["image"], inspected["loads"]
     instructions, ends = inspected["runtime_instructions"], inspected["runtime_instruction_ends"]
     bridge = crt_bytes() if crt is None else crt
-    ELF.check(len(bridge) == 225 and bridge[181:186] == b"\xe8\0\0\0\0",
+    ELF.check(len(bridge) == 233 and bridge[189:194] == b"\xe8\0\0\0\0",
               "unsupported exact CRT bridge")
     wrapper = bytes.fromhex("4989e7e80000000089c7b8e70000000f05")
     source = [(name, address, size) for name, address, size in inspected["functions"]
