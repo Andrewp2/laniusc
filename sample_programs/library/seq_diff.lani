@@ -1,6 +1,6 @@
 // diff -u style tool over ext::seqdiff and ext::unidiff; --word-diff, --char-diff
 // (git's --word-diff-regex=.) and --stat follow git diff --no-index output.
-// usage: seq-diff [-U N] [--myers|--patience|--xdiff] [--word-diff|--char-diff|--stat[=W[,N[,C]]]] OLD NEW
+// usage: seq-diff [-U N] [--myers|--patience|--xdiff|--histogram] [--word-diff|--char-diff|--stat[=W[,N[,C]]]] OLD NEW
 // Exit 0 identical, 1 different, 2 usage/limits/I/O failure.
 module app::main;
 import alloc::io;
@@ -82,7 +82,10 @@ fn run(old_name: core::slice::View<u8>, new_name: core::slice::View<u8>, context
     if (core::result::is_err(split)) { first.destroy(); second.destroy(); return report(core::result::unwrap_err(split)); }
     let lines: ext::seqdiff::Split = core::result::unwrap(split);
     let status: i32 = 0;
-    let made: core::result::Result<ext::seqdiff::Script, ext::seqdiff::Error> = ext::seqdiff::diff_split(lines.borrow(), algorithm, limits);
+    // --histogram follows git diff --histogram, indent heuristic included.
+    let git: bool = match (algorithm) { ext::seqdiff::Algorithm::Histogram -> true, _ -> false };
+    let made: core::result::Result<ext::seqdiff::Script, ext::seqdiff::Error> = core::result::Err(ext::seqdiff::Error::Bounds);
+    if (git) { made = ext::seqdiff::diff_split_indent(lines.borrow(), algorithm, limits); } else { made = ext::seqdiff::diff_split(lines.borrow(), algorithm, limits); }
     if (core::result::is_err(made)) {
         status = report(core::result::unwrap_err(made));
     }
@@ -146,6 +149,7 @@ fn main() -> i32 {
         let arg: core::slice::View<u8> = core::option::unwrap(arguments.get(i));
         if (same(arg, literal("--patience", 10))) { algorithm = ext::seqdiff::Algorithm::Patience; chosen = true; }
         else { if (same(arg, literal("--xdiff", 7))) { algorithm = ext::seqdiff::Algorithm::Xdiff; chosen = true; }
+        else { if (same(arg, literal("--histogram", 11))) { algorithm = ext::seqdiff::Algorithm::Histogram; chosen = true; }
         else { if (same(arg, literal("--word-diff", 11)) || same(arg, literal("--word-diff=plain", 17))) { mode = 1; }
         else { if (same(arg, literal("--char-diff", 11)) || same(arg, literal("--word-diff-regex=.", 19))) { mode = 2; }
         else { if (same(arg, literal("--stat", 6))) { mode = 3; }
@@ -156,13 +160,13 @@ fn main() -> i32 {
             let parsed: core::result::Result<u64, core::decimal::ParseError> = core::decimal::parse_u64_range(v.values, v.start, v.len());
             if (core::result::is_err(parsed) || core::result::unwrap(parsed) > 1000000 as u64) { ok = false; } else { context = core::result::unwrap(parsed) as i32; }
         }
-        else { if (count < 2) { names[count] = arg; count += 1; } else { ok = false; } } } } } } } } }
+        else { if (count < 2) { names[count] = arg; count += 1; } else { ok = false; } } } } } } } } } }
         i += 1;
     }
     // git-format outputs default to git's alignment.
     if (mode != 0 && !chosen) { algorithm = ext::seqdiff::Algorithm::Xdiff; }
     let status: i32 = 2;
-    if (!ok || count != 2) { status = complain("usage: seq-diff [-U N] [--myers|--patience|--xdiff] [--word-diff|--char-diff|--stat[=W[,N[,C]]]] OLD NEW\n", 105); }
+    if (!ok || count != 2) { status = complain("usage: seq-diff [-U N] [--myers|--patience|--xdiff|--histogram] [--word-diff|--char-diff|--stat[=W[,N[,C]]]] OLD NEW\n", 117); }
     else { status = run(names[0], names[1], context, algorithm, mode, stat); }
     arguments.destroy(); return status;
 }

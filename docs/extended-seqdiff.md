@@ -28,6 +28,8 @@ their byte-line API, strict application and saved-trace Myers.
 | `line_starts(bytes, limits)` | byte view | `Vec<i32>` of line offsets (one more entry than lines), the lines `split_lines` finds without hashes or records |
 | `copy_bytes(target, view)` | raw target with room | copies the view's bytes, 8 at a time from packed storage |
 | `xdiff_classes(a, b, limits)` | non-negative ids | git's xdiff alignment (`Algorithm::Xdiff`; see [word diff and diffstat](extended-wordiff.md)) |
+| `histogram_classes(a, b, limits)` | non-negative ids | git's `--histogram` alignment (`Algorithm::Histogram`) |
+| `diff_split_indent(split, algorithm, limits)` | `Split` | for `Xdiff` and `Histogram`, the script `git diff` gives: compaction with git's default indent heuristic over the line text |
 
 `a` and `b` are `core::slice::View<T>`. `Line { bytes, hash }` caches a hash
 of its bytes, read as little-endian 8-byte words (the last one zero-padded),
@@ -62,6 +64,23 @@ once in both ranges, takes the longest increasing run of their positions
 (patience sorting, `O(k log k)`), and uses those items as anchors. It then
 repeats on the gaps between anchors. A gap with no unique common item falls back
 to Myers, as git does. Patience scripts are valid but not always minimal.
+
+**Histogram.** `histogram_classes` ports git 2.43's `xhistogram.c` with lines
+numbered from 1, as there. Each step indexes the old range by class: one record
+chain per hash bucket, and each record holds its class's earliest occurrence,
+an occurrence chain and a count. Then, for every new line, it extends each
+matching occurrence into a common run. It keeps the longest run whose rarest
+line is rarest (the lowest count), and recurses on both sides of that run. A
+range whose common lines all occur more than 64 times falls back to xdiff on
+that range without compaction (`xdl_fall_back_diff`), with the range's lines
+renumbered densely. Git reports an error when a bucket chain holds 64
+classes; this port falls back to xdiff instead. Bucket order and ties match
+git because the buckets hash git's class ids: dense, first-occurrence order
+over old then new, as `split_classify` assigns them, under `XDL_HASHLONG`
+(`(v + (v >> b)) & (2^b - 1)`). Compaction (`xdl_change_compact`) follows the
+recursion, and `diff_split_indent` adds git's indent heuristic: a group that
+can slide, and matches no change on the other side, is placed at the split
+with the best indentation score within 100 lines.
 
 **Hunks.** `hunks(script, context)` returns `Vec<Hunk { before, before_count,
 after, after_count, first, count }>`. `first` and `count` give the hunk's slice
@@ -162,7 +181,7 @@ for strict application.
 ## Sample programs
 
 ```sh
-seq-diff [-U N] [--myers|--patience|--xdiff] OLD NEW   # exit 0 same, 1 differ, 2 error
+seq-diff [-U N] [--myers|--patience|--xdiff|--histogram] OLD NEW   # exit 0 same, 1 differ, 2 error
 seq-patch [-F N] [--max-offset N] BASE PATCH    # exit 0 applied, 1 rejects, 2 error
 ```
 
@@ -170,7 +189,9 @@ seq-patch [-F N] [--max-offset N] BASE PATCH    # exit 0 applied, 1 rejects, 2 e
 (`-i PATCH`, with GNU or `--git`/`--3way` semantics); see
 [multi-file patches](extended-patchset.md).
 
-`seq-diff` writes `--- OLD` / `+++ NEW` and the hunks to stdout. Its git-format
+`seq-diff` writes `--- OLD` / `+++ NEW` and the hunks to stdout.
+`--histogram` gives the hunks of `git diff --histogram`, including git's
+default indent heuristic. Hunk headers carry no function-name text. Its git-format
 `--word-diff`, `--char-diff` and `--stat` modes are described in
 [word diff and diffstat](extended-wordiff.md). `seq-patch`
 writes the patched file to stdout and one GNU-worded line per hunk to stderr,
@@ -197,6 +218,28 @@ checkers:
    from a few repeated lines, where several positions can match.
 5. **Scale:** 2,000-, 20,000- and 100,000-line pairs round-trip, and their edit
    length equals GNU `diff --minimal`'s.
+
+`tests/fixtures/extended/histogram_oracle.py SEQ_DIFF WORKDIR [PAIRS]` checks
+`seq-diff --histogram [-U N]` against `git diff --no-index --histogram`. It
+compares exact bytes from the first hunk header on, and the exit status. git
+runs with its indent heuristic pinned on. A global attributes file gives every
+path a diff driver whose `xfuncname` never matches, so git's hunk headers carry
+no function name. Receipt for 4,000 pairs (seed 20261101, 15 s), every group
+agreeing:
+
+| group | pairs | different | identical bytes and status |
+| --- | ---: | ---: | ---: |
+| distinct lines, small edits | 1,002 | 830 | 1,002 |
+| a few repeated values | 1,002 | 863 | 1,002 |
+| indented code blocks with blank lines | 1,000 | 990 | 1,000 |
+| two to four values, each over 64 times (xdiff fallback) | 332 | 332 | 332 |
+| unique lines among heavy repeats | 332 | 332 | 332 |
+| 200-600 lines, many edits | 332 | 332 | 332 |
+
+The oracle catches errors in both special paths. With git's indent heuristic
+switched off, 65 of 600 pairs differ. With the fallback disabled in a build,
+49 of 50 heavy pairs differ. The registered test
+(`tests/extended_wordiff_execution.rs`) runs 1,200 pairs.
 
 Receipt for the 1,000-pair run (generated pairs over four line dictionaries,
 including NUL, CRLF, non-UTF-8 bytes, diff-control-looking lines, missing final
@@ -245,13 +288,30 @@ files, quieter machine):
 | --- | ---: | ---: | --- |
 | read | 15 ms | 2 ms | `seq-diff` sizes each buffer from the file length plus `read_to_end`'s 64 KiB window, so the buffer never regrows (growth copied byte by byte) |
 | split + classify | 37 + 35 ms | 26 ms | `split_classify`: one pass per file; LFs found 8 bytes at a time; lines hashed from words and hash-consed at once; lines kept as `i32` offsets, not six-word `Line` records |
-| Myers | 22 ms | 22 ms | unchanged |
+| Myers | 22 ms | 22 ms | unchanged here; see the Myers row below |
 | xdiff | 50 ms | 21 ms | kept records written to presized slots instead of two `try_push` per record; script written into counted slots; one workspace allocation instead of twelve |
 | render | 2.4 ms | 2.2 ms | `write_unified_split` reads lines from offsets; steps read from the slice, not through `step()` results |
 | word diff render | 63 ms | ~45 ms | no `Vec<Line>` materialized (`write_word_diff_split`); per group one workspace in `xdiff_classes`, one table allocation in `classify_lines` and a reserved word vector |
 
 Allocations are system calls (each `Vec` allocation maps fresh memory), so
 the per-group allocation count, not the arithmetic, dominated word diff.
+
+A second pass on the default mode measured 41 ms against git's 33-35 ms on a
+quieter machine (best of 20, interleaved; 1.2×, from 1.29×). Phases, best of
+9:
+
+| phase | before | now | change |
+| --- | ---: | ---: | --- |
+| table setup | 4.2 ms | 0.7 ms | one raw buffer: slots filled with -1 eight bytes at a time, one four-int record per class (a probe touches one record, not four arrays) |
+| scan, first file | 21 ms | 12 ms | hash and line compare inlined in the scan loop (calls with many arguments are costly); the record layout above |
+| scan, second file | 14 ms | 7 ms | the same |
+| Myers engine setup | 2.3 ms | 0.3 ms | match table and frontier rows in one unfilled raw buffer (rows are initialized lazily); only the match table is filled, eight bytes at a time |
+| Myers run | 28.7 ms | 14 ms | the bisection keeps its work budget in locals instead of calling `sd_charge` per diagonal; each diagonal reads one new frontier value (its neighbour carries over); a snake has one bound per step |
+
+The first two rows were measured at high load (load average about 15), the
+rest at about 8. The Myers run is the minimal algorithm's `D²` diagonal walk,
+at about 6 ns per diagonal. `seq-diff --histogram` takes 55-60 ms against
+35-41 ms for `git diff --histogram`.
 
 The code generator still limits loops. Every value goes through the stack,
 each element access emits a bounds check, constants are reloaded, and loop
