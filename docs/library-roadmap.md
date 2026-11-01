@@ -583,6 +583,26 @@ opaque sections and executes above one resident unit, while source snapshots
 and global metadata remain resident. TCP/UDP,
 OS entropy and noncryptographic CRC/Adler/FNV are also available.
 
+## Known compiler issues
+
+Defects found by library agents on 2026-10-31. Reproductions live in
+[`tests/fixtures/compiler_defects/`](../tests/fixtures/compiler_defects/README.md);
+each is a complete program compiled with `--stdlib-root stdlib --source-root
+extended`.
+
+| Defect | Reproduction | Expected | Actual | Workaround |
+| --- | --- | --- | --- | --- |
+| `?` inside a comparison | `question_comparison.lani`: `if (three()? != 3) { return Ok(1); } return Ok(0);` with `three()` returning `Ok(3)` | exit 0 | exit 1, silently | bind first: `let v: i32 = three()?; if (v != 3)` |
+| Lost stores through a multi-element `[i64]` raw view | `i64_view_writes.lani`: `let words: [i64] = typed_slice_from_raw_parts<i64>(i32_array_data_ptr(storage), 4); words[2] = 5; return storage[4];` over a local `[i32; 8]` | exit 5 | exit 0, silently | one word per helper call, as `std::linux::store_word` does |
+| LNC0069 on `4000000000 as u64` | `u64_cast_literal.lani`: `let value: u64 = 4000000000 as u64;` | compiles; exit 4 | "invalid integer literal": the literal is range-checked as i32 before the cast | write the literal where u64 is expected without a cast |
+| Untyped `let` of a generic trait-method result | `untyped_generic_trait_result.lani`: `let got = reader.read(bytes, 0, 1);` with `R: core::io::Read`, then `unwrap(got)` | compiles; exit 1 on one stdin byte | LNC0006 "type mismatch" at the unwrap; reported elsewhere as LNC0027 "call resolution failed" | annotate the `let` type |
+| LNC0047, nested match on a generic enum bound in an outer arm | reported; `candidate_nested_generic_match.lani` and four other shapes compile correctly | compiles | not reproduced | — |
+| LNC0016 on a long file without a `module` line | reported; `candidate_missing_module_long.lani` (401 functions) and 3,000-line variants compile correctly | compiles | not reproduced | add a `module` line |
+| LNC0008 labels pointing at `core/slice.lani:899` | reported; `candidate_slice_select_label.lani` and concrete/generic `select_nth_unstable` calls compile correctly | the label names the caller | not reproduced | — |
+
+The two silent miscompiles are the most dangerous: they produce wrong values
+with no diagnostic. `ext::pax`/`tgz` code avoids both shapes.
+
 ## Completion requirements
 
 - Public APIs perform their documented work. Unsupported operations fail
