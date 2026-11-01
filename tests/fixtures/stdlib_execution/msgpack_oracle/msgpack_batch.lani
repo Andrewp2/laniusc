@@ -1,0 +1,139 @@
+// Batch driver for ext::msgpack. Each stdin line is one MessagePack value in
+// hex. argv: MODE CHUNK DEPTH ITEMS STRINGS. MODE copy re-encodes the decoded
+// events with the Writer (shortest formats), check decodes in canonical mode,
+// seq decodes a concatenated stream and prints the root count. Input is fed
+// CHUNK bytes at a time. Each line prints the output hex, "ok", "roots N",
+// "error KIND OFFSET" (decoder) or "werror KIND OFFSET" (writer).
+module app::main;
+import alloc::vec;
+import core::io;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::msgpack;
+import std::args;
+import std::stream;
+
+struct Batch { mode: i32, chunk: i32, options: ext::msgpack::Options, out: alloc::vec::Vec<u8>, line: alloc::vec::Vec<u8>, data: alloc::vec::Vec<u8>, failed: bool }
+
+fn hex_value(byte: u8) -> u8 { if (byte >= 97) { return byte - 87; } if (byte >= 65) { return byte - 55; } return byte - 48; }
+fn hex_digit(value: u8) -> u8 { if (value < 10) { return value + 48; } return value + 87; }
+
+impl Batch {
+    fn borrow(&self) -> &Batch { return self; }
+    fn push(&self, byte: u8) { if (self.out.try_push(byte).is_err()) { self.failed = true; } }
+    fn push_text(&self, text: core::text::Text) { let i: i32 = 0; while (i < text.length) { self.push(text.bytes[text.start + i]); i += 1; } }
+    fn push_number(&self, value: u64) {
+        let digits: [u8; 24] = [0; 24]; let count: i32 = 0;
+        if (value == 0) { digits[0] = 48; count = 1; }
+        while (value > 0) { digits[count] = ((value % 10) as u8) + 48; value = value / 10; count += 1; }
+        while (count > 0) { count -= 1; self.push(digits[count]); }
+    }
+    fn push_error(&self, writer: bool, failure: ext::msgpack::Error) {
+        if (writer) { self.push(119); }
+        self.push(101); self.push(114); self.push(114); self.push(111); self.push(114); self.push(32);
+        self.push_text(ext::msgpack::kind_name(failure.kind)); self.push(32); self.push_number(failure.offset);
+    }
+    fn flush(&self) {
+        let target: std::stream::Descriptor = std::stream::stdout();
+        if (core::io::write_all<std::stream::Descriptor>(target.borrow(), self.out.as_slice(), 0, self.out.len()).is_err()) { self.failed = true; }
+        self.out.clear();
+    }
+    fn finish_line(&self) {
+        self.data.clear();
+        let i: i32 = 0;
+        while (i + 1 < self.line.len()) {
+            if (self.data.try_push(hex_value(self.line.at(i)) * 16 + hex_value(self.line.at(i + 1))).is_err()) { self.failed = true; }
+            i += 2;
+        }
+        self.line.clear();
+        self.run();
+        self.push(10);
+        if (self.out.len() > 65536) { self.flush(); }
+    }
+    fn run(&self) {
+        let options: ext::msgpack::Options = self.options;
+        if (self.mode == 2) { options.canonical = true; }
+        if (self.mode == 3) { options.sequence = true; }
+        let made = ext::msgpack::decoder(options);
+        if (made.is_err()) { self.failed = true; return; }
+        let decoder: ext::msgpack::Decoder = made.unwrap();
+        let writer_options: ext::msgpack::WriterOptions = ext::msgpack::default_writer_options();
+        writer_options.max_depth = options.max_depth + 1;
+        let built = ext::msgpack::writer(writer_options);
+        if (built.is_err()) { self.failed = true; decoder.destroy(); return; }
+        let writer: ext::msgpack::Writer = built.unwrap();
+        let fed: i32 = 0; let total: i32 = self.data.len();
+        while (true) {
+            let step: core::result::Result<bool, ext::msgpack::Error> = decoder.next();
+            if (step.is_err()) { self.push_error(false, step.unwrap_err()); decoder.destroy(); writer.destroy(); return; }
+            if (step.unwrap()) {
+                if (self.mode == 0) {
+                    let wrote: core::result::Result<i32, ext::msgpack::Error> = writer.event(decoder.event());
+                    if (wrote.is_err()) { self.push_error(true, wrote.unwrap_err()); decoder.destroy(); writer.destroy(); return; }
+                }
+                continue;
+            }
+            if (fed == total) { if (decoder.is_complete()) { break; } decoder.finish(); continue; }
+            let count: i32 = self.chunk; if (count > total - fed) { count = total - fed; }
+            let pushed: core::result::Result<i32, ext::msgpack::Error> = decoder.feed(self.data.as_slice(), fed, count);
+            if (pushed.is_err()) { self.push_error(false, pushed.unwrap_err()); decoder.destroy(); writer.destroy(); return; }
+            fed += count;
+        }
+        if (self.mode == 2) { self.push(111); self.push(107); }
+        if (self.mode == 3) { self.push(114); self.push(111); self.push(111); self.push(116); self.push(115); self.push(32); self.push_number(decoder.roots_read()); }
+        if (self.mode == 0) {
+            let output: core::slice::View<u8> = writer.output();
+            let j: i32 = 0;
+            while (j < output.length) { let b: u8 = output.values[output.start + j]; self.push(hex_digit(b >> 4)); self.push(hex_digit(b & 15)); j += 1; }
+        }
+        decoder.destroy(); writer.destroy();
+    }
+}
+
+fn number(view: core::slice::View<u8>) -> u64 {
+    let value: u64 = 0; let i: i32 = 0;
+    while (i < view.length) { value = value * 10 + ((view.values[view.start + i] - 48) as u64); i += 1; }
+    return value;
+}
+
+fn main() -> i32 {
+    let captured = std::args::snapshot(1, 5, 256);
+    if (captured.is_err()) { return 1; }
+    let arguments = captured.unwrap();
+    if (arguments.len() != 5) { arguments.destroy(); return 1; }
+    let view: core::slice::View<u8> = core::option::unwrap(arguments.get(0));
+    let mode: i32 = -1; let first: u8 = view.values[view.start];
+    if (first == 99 && view.values[view.start + 1] == 111) { mode = 0; }
+    if (first == 99 && view.values[view.start + 1] == 97) { mode = 1; }
+    if (first == 99 && view.values[view.start + 1] == 104) { mode = 2; }
+    if (first == 115) { mode = 3; }
+    let options: ext::msgpack::Options = ext::msgpack::default_options();
+    let chunk: i32 = number(core::option::unwrap(arguments.get(1))) as i32;
+    options.max_depth = number(core::option::unwrap(arguments.get(2))) as i32;
+    options.max_items = number(core::option::unwrap(arguments.get(3)));
+    options.max_string_bytes = number(core::option::unwrap(arguments.get(4))) as i32;
+    arguments.destroy();
+    if (mode < 0 || chunk <= 0) { return 1; }
+    let batch: Batch = Batch { mode: mode, chunk: chunk, options: options, out: alloc::vec::new(), line: alloc::vec::new(), data: alloc::vec::new(), failed: false };
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let buffer: [u8; 4096] = [0; 4096];
+    while (!batch.failed) {
+        let received = source.read(buffer, 0, 4096);
+        if (received.is_err()) { if (core::io::is_interrupted(received.unwrap_err())) { continue; } return 3; }
+        let count: i32 = received.unwrap();
+        if (count == 0) { break; }
+        let i: i32 = 0;
+        while (i < count) {
+            let byte: u8 = buffer[i];
+            if (byte == 10) { batch.finish_line(); } else { if (batch.line.try_push(byte).is_err()) { batch.failed = true; } }
+            i += 1;
+        }
+    }
+    if (batch.line.len() > 0) { batch.finish_line(); }
+    batch.flush();
+    batch.out.destroy(); batch.line.destroy(); batch.data.destroy();
+    if (batch.failed) { return 3; }
+    return 0;
+}
