@@ -222,7 +222,7 @@ pub fn punycode_encode(input: core::slice::View<u32>, out: &alloc::vec::Vec<u8>)
 
 ### function: to_ascii
 
-[Source line 282](../../../extended/ext/idna.lani#L282)
+[Source line 291](../../../extended/ext/idna.lani#L291)
 
 ```lanius
 pub fn to_ascii(domain: core::slice::View<u8>, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32, Error>

@@ -26,7 +26,7 @@ Direct source imports; this is not a package-resolution or transitive dependency
 
 ### constant: RECORDS
 
-[Source line 49](../../../extended/ext/idna_data.lani#L49)
+[Source line 61](../../../extended/ext/idna_data.lani#L61)
 
 ```lanius
 pub const RECORDS: i32 = 6946;
@@ -34,7 +34,7 @@ pub const RECORDS: i32 = 6946;
 
 ### constant: POOL
 
-[Source line 50](../../../extended/ext/idna_data.lani#L50)
+[Source line 62](../../../extended/ext/idna_data.lani#L62)
 
 ```lanius
 pub const POOL: i32 = 3159;
@@ -44,7 +44,7 @@ pub const POOL: i32 = 3159;
 
 ### function: find
 
-[Source line 52](../../../extended/ext/idna_data.lani#L52)
+[Source line 67](../../../extended/ext/idna_data.lani#L67)
 
 ```lanius
 pub fn find(value: u32) -> i32
@@ -52,7 +52,7 @@ pub fn find(value: u32) -> i32
 
 ### function: start
 
-[Source line 60](../../../extended/ext/idna_data.lani#L60)
+[Source line 77](../../../extended/ext/idna_data.lani#L77)
 
 ```lanius
 pub fn start(record: i32) -> u32
@@ -60,7 +60,7 @@ pub fn start(record: i32) -> u32
 
 ### function: status
 
-[Source line 61](../../../extended/ext/idna_data.lani#L61)
+[Source line 78](../../../extended/ext/idna_data.lani#L78)
 
 ```lanius
 pub fn status(record: i32) -> u32
@@ -68,7 +68,7 @@ pub fn status(record: i32) -> u32
 
 ### function: bidi
 
-[Source line 62](../../../extended/ext/idna_data.lani#L62)
+[Source line 79](../../../extended/ext/idna_data.lani#L79)
 
 ```lanius
 pub fn bidi(record: i32) -> u32
@@ -76,7 +76,7 @@ pub fn bidi(record: i32) -> u32
 
 ### function: value
 
-[Source line 63](../../../extended/ext/idna_data.lani#L63)
+[Source line 80](../../../extended/ext/idna_data.lani#L80)
 
 ```lanius
 pub fn value(record: i32) -> u32
@@ -84,7 +84,7 @@ pub fn value(record: i32) -> u32
 
 ### function: length
 
-[Source line 64](../../../extended/ext/idna_data.lani#L64)
+[Source line 81](../../../extended/ext/idna_data.lani#L81)
 
 ```lanius
 pub fn length(record: i32) -> u32
@@ -92,7 +92,7 @@ pub fn length(record: i32) -> u32
 
 ### function: pooled
 
-[Source line 65](../../../extended/ext/idna_data.lani#L65)
+[Source line 82](../../../extended/ext/idna_data.lani#L82)
 
 ```lanius
 pub fn pooled(index: i32) -> u32

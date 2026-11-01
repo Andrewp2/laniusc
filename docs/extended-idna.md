@@ -58,8 +58,8 @@ through a later step. `.` is a label separator, not a label character, so
 U+2024, U+2488 and similar scalars are disallowed.
 
 The generated [`ext::idna_data`](../extended/ext/idna_data.lani) holds 6,946
-records and 3,159 pooled scalars, about 140 KB of source. Each record covers a
-range of scalars and gives:
+records, 3,159 pooled scalars and a 4,352-entry block index, about 160 KB of
+source. Each record covers a range of scalars and gives:
 
 - the status
 - the Bidi_Class, from `UnicodeData.txt`
@@ -139,14 +139,22 @@ close the gap.
 
 ## Cost
 
-Mapping uses a binary search over the records. Punycode and NFC are linear in
-practice. For example, 2,000 `bücher.example` hosts plus one 16 KB host parse
-in 0.8 s through url-parse.
+Mapping searches the records between the ones covering the start of the
+scalar's 256-scalar block and the next block, from a generated block index.
+NFC runs only when the quick check is not `Yes`, and takes the normalized
+scalars from `measure`'s scratch. Punycode, NFC and validation are linear in
+practice; the normalizer's canonical ordering is O(n log n) on long
+combining runs (see the [normalization guide](extended-unicode-normalize.md#work-and-space-bounds)).
+Through url-parse, each of these 16 KB hosts parses in tens of milliseconds:
 
-The normalizer's canonical reordering is an insertion sort. A hostile
-16 KB run of combining marks in reverse canonical order is the worst case:
-`a` + 4,000 × U+0301 + 4,000 × U+0316 takes about 4.7 s. Node takes a few
-milliseconds.
+| Host | Time |
+| --- | --- |
+| `a` + 4,000 × U+0301 + 4,000 × U+0316 (reverse canonical order) | 45 ms |
+| `a` + 4,000 × U+0316 + 4,000 × U+0301 (already in order) | 41 ms |
+| 8,000 × `é` | 30 ms |
+| 16,000 × `a` (ASCII, lowercased only) | 14 ms |
+
+The reverse-order host took 4.7 s when ordering was an insertion sort.
 
 ## Verification
 
