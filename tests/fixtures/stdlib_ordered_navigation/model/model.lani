@@ -73,6 +73,7 @@ pub impl core::ordering::Comparator<Key,Band> for Policy {
         return core::ordering::Equal;
     }
 }
+fn emit_bool_word(value:bool,output:&Output) { if(value) { output.word(1); } else { output.word(0); } }
 fn signed(word:u64) -> i32 { return word as i64 as i32; }
 fn key_bound(kind:u64,value:u64,stamp:u64) -> core::range::Bound<Key> {
     let key:Key=Key { identity:signed(value),stamp:stamp };
@@ -165,6 +166,28 @@ fn map_command(owner:&alloc::tree_map::TreeMap<Key,u64>,policy:&Policy,words:[u6
     }
     if(op==7) { output.word(owner.len() as u64); let all:alloc::tree_map::Cursor<Key,u64> = owner.iter(); pull_map(all.borrow(),0,output); return; }
     if(op==8) { owner.clear(); output.word(0); return; }
+    if(op>=9 && op<=13) {
+        let before:i32=owner.capacity();
+        if(op==9 || op==10) {
+            let removed:i32=0; let failed:bool=false;
+            if(op==9) {
+                let result:core::result::Result<i32,alloc::tree_map::Error> = owner.remove_range(key_bound(words[1],words[2],0),key_bound(words[3],words[4],0));
+                if(result.is_err()) { failed=true; } else { removed=result.unwrap(); }
+            } else {
+                removed=owner.remove_range_by<Band,Policy>(band_bound(words[1]&3,words[2],words[3],0),band_bound((words[1]>>2)&3,words[4],words[5],1),policy);
+            }
+            output.word(RESULT); if(failed) { output.word(1); return; }
+            output.word(0); output.word(removed as u64); emit_bool_word(owner.capacity()==before,output); return;
+        }
+        let moved:core::result::Result<alloc::tree_map::TreeMap<Key,u64>,alloc::tree_map::Error> = core::result::Err(alloc::tree_map::Error::InvalidRange);
+        if(op==11) { moved=owner.try_extract_range(key_bound(words[1],words[2],0),key_bound(words[3],words[4],0)); }
+        if(op==12) { moved=owner.try_extract_range_by<Band,Policy>(band_bound(words[1]&3,words[2],words[3],0),band_bound((words[1]>>2)&3,words[4],words[5],1),policy); }
+        if(op==13) { moved=owner.try_split_off(Key { identity:signed(words[1]),stamp:0 }); }
+        output.word(RESULT); if(moved.is_err()) { output.word(1); return; }
+        let taken:alloc::tree_map::TreeMap<Key,u64> = moved.unwrap();
+        output.word(0); output.word(taken.len() as u64); emit_bool_word(taken.capacity()==taken.len(),output); emit_bool_word(owner.capacity()==before,output);
+        let all:alloc::tree_map::Cursor<Key,u64> = taken.iter(); pull_map(all.borrow(),0,output); taken.destroy(); return;
+    }
     assert(false);
 }
 fn set_command(owner:&alloc::tree_set::TreeSet<Key>,policy:&Policy,words:[u64;8],output:&Output) {
@@ -204,6 +227,28 @@ fn set_command(owner:&alloc::tree_set::TreeSet<Key>,policy:&Policy,words:[u64;8]
     }
     if(op==7) { output.word(owner.len() as u64); let all:alloc::tree_set::Cursor<Key> = owner.iter(); pull_set(all.borrow(),0,output); return; }
     if(op==8) { owner.clear(); output.word(0); return; }
+    if(op>=9 && op<=13) {
+        let before:i32=owner.capacity();
+        if(op==9 || op==10) {
+            let removed:i32=0; let failed:bool=false;
+            if(op==9) {
+                let result:core::result::Result<i32,alloc::tree_map::Error> = owner.remove_range(key_bound(words[1],words[2],0),key_bound(words[3],words[4],0));
+                if(result.is_err()) { failed=true; } else { removed=result.unwrap(); }
+            } else {
+                removed=owner.remove_range_by<Band,Policy>(band_bound(words[1]&3,words[2],words[3],0),band_bound((words[1]>>2)&3,words[4],words[5],1),policy);
+            }
+            output.word(RESULT); if(failed) { output.word(1); return; }
+            output.word(0); output.word(removed as u64); emit_bool_word(owner.capacity()==before,output); return;
+        }
+        let moved:core::result::Result<alloc::tree_set::TreeSet<Key>,alloc::tree_map::Error> = core::result::Err(alloc::tree_map::Error::InvalidRange);
+        if(op==11) { moved=owner.try_extract_range(key_bound(words[1],words[2],0),key_bound(words[3],words[4],0)); }
+        if(op==12) { moved=owner.try_extract_range_by<Band,Policy>(band_bound(words[1]&3,words[2],words[3],0),band_bound((words[1]>>2)&3,words[4],words[5],1),policy); }
+        if(op==13) { moved=owner.try_split_off(Key { identity:signed(words[1]),stamp:0 }); }
+        output.word(RESULT); if(moved.is_err()) { output.word(1); return; }
+        let taken:alloc::tree_set::TreeSet<Key> = moved.unwrap();
+        output.word(0); output.word(taken.len() as u64); emit_bool_word(taken.capacity()==taken.len(),output); emit_bool_word(owner.capacity()==before,output);
+        let all:alloc::tree_set::Cursor<Key> = taken.iter(); pull_set(all.borrow(),0,output); taken.destroy(); return;
+    }
     assert(false);
 }
 fn main() -> i32 {

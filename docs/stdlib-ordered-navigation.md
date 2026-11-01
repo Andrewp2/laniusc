@@ -1,12 +1,14 @@
 # Ordered navigation and bounded ranges
 
 TreeMap and TreeSet answer predecessor queries, accept heterogeneous queries
-for every ordered bound, and traverse intervals whose ends can each be
-included, excluded or absent. Sixteen methods and one value type,
-`core::range::Bound<T>`, make up this increment. It completes the
+for every ordered bound, traverse intervals whose ends can each be included,
+excluded or absent, and remove, extract or split off such intervals. Sixteen
+navigation methods, ten interval edit methods and one value type,
+`core::range::Bound<T>`, make up this work. It completes the
 "heterogeneous ordered bounds and ranges" item that the
 [borrowed point-lookup guide](stdlib-borrowed-lookup.md) left separate.
-All searches reuse the existing AVL storage and cursors; nothing allocates.
+All searches reuse the existing AVL storage and cursors and allocate nothing;
+only a nonempty extraction allocates, once.
 
 ## Methods
 
@@ -139,14 +141,56 @@ policy, because one prefix can match several keys; use `TextKey` with
 `get_by` and the other point methods. Matching is exact bytes, with no case
 folding, normalization or locale collation.
 
+## Range removal, extraction and split_off
+
+| Owner | Method | Result |
+| --- | --- | --- |
+| TreeMap and TreeSet | `remove_range(lower: Bound<K>, upper: Bound<K>)` | `Result<i32, Error>`: entries removed |
+| TreeMap and TreeSet | `remove_range_by<Q,P>(lower: Bound<Q>, upper: Bound<Q>, policy)` | `i32` |
+| TreeMap and TreeSet | `try_extract_range(lower: Bound<K>, upper: Bound<K>)` | `Result<TreeMap<K,V>, Error>` (sets: `Result<TreeSet<T>, Error>`) |
+| TreeMap and TreeSet | `try_extract_range_by<Q,P>(lower: Bound<Q>, upper: Bound<Q>, policy)` | Same |
+| TreeMap and TreeSet | `try_split_off(at: K)` | Keys `>= at` move to the result; smaller keys stay |
+
+Each method selects exactly the entries that `range_bounds` or
+`range_bounds_by` with the same arguments would traverse, with the same
+bounds, the same InvalidRange rule and the same policy calls; no further
+policy or `Ord` call follows. `try_split_off(at)` is
+`try_extract_range(Included(at), Unbounded)`.
+
+**Removal** deletes the selected entries from the back of the interval
+towards its front and returns how many it removed. Like `clear`, it discards
+keys and values shallowly and runs no destructor, so use it only when the
+removed entries own nothing, or extract them instead. It never allocates or
+frees: capacity is retained and freed nodes join the free list for later
+inserts. Removal costs O(k log n) for k removed entries.
+
+**Extraction** counts the interval, allocates one new owner of exactly that
+capacity, copies the entries into it in order, links them as a balanced tree
+in O(k), and only then removes them from the source. The new owner receives
+the cleanup authority of every moved key and value, which the source gives
+up; each nested owner is released exactly once by whichever owner holds it
+last. An empty interval allocates nothing and returns an empty owner with
+capacity 0. Failure is `Err(AllocationFailed)`, `Err(CapacityOverflow)` or,
+for same-key bounds with upper strictly below lower, `Err(InvalidRange)`; every
+failure leaves the source, its capacity, storage and cursors unchanged. The
+source keeps its capacity after a successful extraction.
+
+```lani
+let upper: alloc::tree_map::TreeMap<i32, u64> = map.try_split_off(1000).unwrap();
+let removed: i32 = map.remove_range(core::range::Bound::Excluded(10), core::range::Bound::Unbounded).unwrap();
+```
+
+A successful removal or extraction is an edit and invalidates cursors of the
+source. Policies follow the navigation rules above.
+
 ## Evidence
 
 Fixtures are under `tests/fixtures/stdlib_ordered_navigation`; see the
 [direct](../tests/fixtures/stdlib_ordered_navigation/direct/README.md) and
 [model](../tests/fixtures/stdlib_ordered_navigation/model/README.md) guides.
 Two registered tests drive them:
-`tests/stdlib_ordered_navigation_execution.rs` (contracts plus four
-capability rejections) and
+`tests/stdlib_ordered_navigation_execution.rs` (contracts, interval edits and
+four capability rejections) and
 `tests/stdlib_ordered_navigation_model_execution.rs`.
 
 The receipts below came from the prebuilt `laniusc` command-line compiler
@@ -159,20 +203,25 @@ the values below.
 - **Model.** 48 cases and 10,565 commands over TreeMap and TreeSet with
   i32-identity keys, including the i32 extremes and a reset/clear in the
   middle of cases. The oracle (a Python dict, sorted per query, with no tree)
-  checks 1,174 same-key and 1,363 policy navigations, 982 same-key ranges
-  (344 reversed InvalidRange) and 2,042 policy ranges, 44,427 cursor pulls
-  of which 12,807 come from the back, and 6,652 snapshot entries. All 16
-  navigation hit/miss routes and all 36 bound-kind/empty range routes occur;
-  142 navigations use an Equal run of more than one key. Each of the 12,032
-  policy calls (2,982 descents and 1,066 front checks) is checked as a lawful
-  descent: every visited key is stored, each step narrows an open interval in
-  the direction its answer implies, the final interval holds no stored key,
-  the visit count respects the AVL bound, and one unchanged tree has one root.
-  Nine host-only corruption controls (unstored, dropped, swapped, repeated
-  and mis-roled calls; swapped, missing and re-stamped range items; truncated
-  output) are each rejected. The native process and oracle take 0.90 s.
-  Two deliberately broken engines (strict upper search accepting Equal; the
-  front check removed) both fail the model, one by assertion and one by trap.
+  checks 1,005 same-key and 1,188 policy navigations, 815 same-key ranges
+  (295 reversed InvalidRange) and 1,726 policy ranges, 20,923 cursor pulls
+  of which 5,637 come from the back, and 2,878 snapshot entries. It also
+  checks 329 range removals (1,601 entries) and 278 extractions and splits
+  (1,106 entries): the removed count, the extracted entries in order, the
+  remaining source, and the capacity rules (source capacity unchanged,
+  extracted capacity exact, zero when empty). All 16 navigation hit/miss
+  routes and all 36 bound-kind/empty range routes occur; 49 navigations use
+  an Equal run of more than one key. Each of the 7,592 policy calls (2,467
+  descents and 799 front checks), including those of removal and extraction,
+  is checked as a lawful descent: every visited key is stored, each step
+  narrows an open interval in the direction its answer implies, the final
+  interval holds no stored key, the visit count respects the AVL bound, and
+  one unchanged tree has one root. Nine host-only corruption controls
+  (unstored, dropped, swapped, repeated and mis-roled calls; swapped, missing
+  and re-stamped range items; truncated output) are each rejected.
+  Three deliberately broken engines (strict upper search accepting Equal; the
+  front check removed; removal stepping to the predecessor after each removal
+  instead of before it) all fail the model.
 - **Contracts.** Exact call counts on the perfect 15-key tree (four per
   descent, nine for a nonempty bounded range, five when the front check
   fails, zero for an empty map or two Unbounded ends), Included/Excluded
@@ -184,6 +233,20 @@ the values below.
   that all twelve String owners are released exactly once. No tracer runs;
   an earlier one-time trace of the first fixture revision saw 17 mmap
   allocations, each released.
+- **Interval edits.** `edits.lani` builds a 40,000-entry map and set, then
+  lowers its own RLIMIT_AS soft limit to 1 MiB through `prlimit64`. The
+  runtime allocator still serves small requests from memory it already
+  holds, so the fixture first shows that a fresh 20,000-node owner is refused
+  and then attempts only extractions of at least that size: range, policy
+  range and split_off extraction all return AllocationFailed and leave every
+  owner field and the full contents unchanged. In the same phase an empty
+  extraction succeeds with capacity 0, reversed bounds give InvalidRange
+  before anything else, and same-key and policy removals and navigation
+  succeed with storage and capacity unchanged. After the limit is restored,
+  extractions and splits of maps and sets have exact capacities and
+  contents, the source keeps its capacity and refills without growth, a
+  split owner accepts inserts and navigation, and eight String values moved
+  across an extraction are each released exactly once. 0.96 s natively.
 - **Capability rejections.** Four fixtures (missing comparator, query-first
   comparator, `range_bounds` without Ord, `last_at_most` without Ord) all
   fail with LNC0008. With the prebuilt compiler their primary label points to

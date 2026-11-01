@@ -84,7 +84,8 @@ class Checker:
         self.root = None    # root identity while the tree is unchanged
         self.stats = dict(cases=0, commands=0, navigations=0, policy_navigations=0, ranges=0,
                           policy_ranges=0, invalid_ranges=0, pulls=0, back_pulls=0, policy_calls=0,
-                          descents=0, checks=0, empty_ranges=0, equal_runs=0, snapshot_entries=0)
+                          descents=0, checks=0, empty_ranges=0, equal_runs=0, snapshot_entries=0,
+                          removals=0, removed_entries=0, extractions=0, extracted_entries=0)
         self.routes = set()
         self.call_groups = []    # word offsets of each operation's CALL records
         self.pull_items = []     # word offsets of found range-pull records
@@ -222,7 +223,7 @@ def generate(rng):
                 stamp += 1
                 actions.append((1, identity, stamp))
         for step in range(150):
-            choice = rng.randrange(100)
+            choice = rng.randrange(118)
             point = rng.randint(-span - 3, span + 3)
             if number % 6 == 5 and rng.randrange(4) == 0:
                 point = rng.choice((I32_MIN, I32_MAX, I32_MAX - 1, I32_MIN + 1, 0))
@@ -251,11 +252,80 @@ def generate(rng):
                 actions.append((6, kinds, point, clamp(point + lw), ul, clamp(ul + uw), rng.getrandbits(64)))
             elif choice < 99:
                 actions.append((7,))
-            else:
+            elif choice < 100:
                 actions.append((8,))
+            elif choice < 104 or 106 <= choice < 108:
+                other = clamp(point + rng.randint(-2, max(2, span // 12)))
+                actions.append((9 if choice < 104 else 11, rng.randrange(3), point, rng.randrange(3), other))
+            elif choice < 110:
+                lw, uw = rng.choice((0, 2, span // 16)), rng.choice((0, 2, span // 16))
+                ul = clamp(point + rng.randint(-3, max(3, span // 12)))
+                kinds = rng.randrange(3) | (rng.randrange(3) << 2)
+                actions.append((10 if choice < 106 else 12, kinds, point, clamp(point + lw), ul, clamp(ul + uw)))
+            elif choice < 112:
+                actions.append((13, point) if rng.randrange(4) == 0 else (7,))
+            else:
+                stamp += 1
+                actions.append((1, point, stamp))
         actions.append((7,))
         cases.append(actions)
     return cases
+
+
+def range_by_calls(c, kinds, llow, lhigh, ulow, uhigh):
+    """Check one range_bounds_by call sequence; return the model items."""
+    lk, uk = kinds & 3, (kinds >> 2) & 3
+    calls = c.calls()
+    lower_calls = [i for i, role in calls if role == 0]
+    upper_calls = [i for i, role in calls if role == 1]
+    if calls != [(i, 0) for i in lower_calls] + [(i, 1) for i in upper_calls]:
+        fail("lower-bound calls must precede upper-bound calls")
+    keys = c.keys()
+    if lk == UNBOUNDED:
+        if lower_calls:
+            fail("unbounded lower consulted the policy")
+        front = keys[0] if keys else None
+    else:
+        front = c.descent(lower_calls, 0 if lk == INCLUDED else 1, llow, lhigh)
+        if front != expected_navigation(keys, 0 if lk == INCLUDED else 1, llow, lhigh):
+            fail("range front differs from model")
+    items = [k for k in keys if in_bounds(k, (lk, llow, lhigh), (uk, ulow, uhigh))]
+    if front is None or uk == UNBOUNDED:
+        if upper_calls:
+            fail("upper bound consulted without a found front or with no bound")
+    else:
+        if not upper_calls or upper_calls[0] != front:
+            fail("upper bound must first check the found front entry")
+        c.stats["checks"] += 1
+        inside = accepts(2 if uk == INCLUDED else 3, band_order(front, ulow, uhigh))
+        if not inside:
+            if len(upper_calls) != 1:
+                fail("failed front check continued into an upper descent")
+        else:
+            back = c.descent(upper_calls[1:], 2 if uk == INCLUDED else 3, ulow, uhigh)
+            if back is None or back != items[-1]:
+                fail("range back differs from model")
+    c.routes.add(("range_by", lk, uk, bool(items)))
+    return items
+
+
+def apply_removal(c, items, extracted):
+    r = c.r
+    if extracted:
+        r.expect(len(items), "extracted length")
+        r.expect(1, "extracted owner has exact capacity")
+        r.expect(1, "source capacity retained")
+        check_pulls(c, items, 0)
+        c.stats["extractions"] += 1
+        c.stats["extracted_entries"] += len(items)
+    else:
+        r.expect(len(items), "removed count")
+        r.expect(1, "source capacity retained")
+        c.stats["removals"] += 1
+        c.stats["removed_entries"] += len(items)
+    for k in items:
+        del c.contents[k]
+    c.changed()
 
 
 def check(cases, data):
@@ -326,42 +396,33 @@ def check(cases, data):
                 continue
             if op == 6:
                 _, kinds, llow, lhigh, ulow, uhigh, mask = action
-                lk, uk = kinds & 3, (kinds >> 2) & 3
-                calls = c.calls()
-                lower_calls = [i for i, role in calls if role == 0]
-                upper_calls = [i for i, role in calls if role == 1]
-                if calls != [(i, 0) for i in lower_calls] + [(i, 1) for i in upper_calls]:
-                    fail("lower-bound calls must precede upper-bound calls")
-                keys = c.keys()
-                if lk == UNBOUNDED:
-                    if lower_calls:
-                        fail("unbounded lower consulted the policy")
-                    front = keys[0] if keys else None
-                else:
-                    front = c.descent(lower_calls, 0 if lk == INCLUDED else 1, llow, lhigh)
-                    if front != expected_navigation(keys, 0 if lk == INCLUDED else 1, llow, lhigh):
-                        fail("range front differs from model")
-                items = [k for k in keys if in_bounds(k, (lk, llow, lhigh), (uk, ulow, uhigh))]
-                if front is None or uk == UNBOUNDED:
-                    if upper_calls:
-                        fail("upper bound consulted without a found front or with no bound")
-                else:
-                    if not upper_calls or upper_calls[0] != front:
-                        fail("upper bound must first check the found front entry")
-                    c.stats["checks"] += 1
-                    inside = accepts(2 if uk == INCLUDED else 3, band_order(front, ulow, uhigh))
-                    if not inside:
-                        if len(upper_calls) != 1:
-                            fail("failed front check continued into an upper descent")
-                    else:
-                        back = c.descent(upper_calls[1:], 2 if uk == INCLUDED else 3, ulow, uhigh)
-                        if back is None or back != items[-1]:
-                            fail("range back differs from model")
+                items = range_by_calls(c, kinds, llow, lhigh, ulow, uhigh)
                 r.expect(RESULT, "policy range marker")
                 check_pulls(c, items, mask)
                 c.stats["policy_ranges"] += 1
                 c.stats["empty_ranges"] += not items
-                c.routes.add(("range_by", lk, uk, bool(items)))
+                continue
+            if op in (9, 11):
+                _, lk, lv, uk, uv = action
+                r.expect(RESULT, "range edit marker")
+                if lk != UNBOUNDED and uk != UNBOUNDED and uv < lv:
+                    r.expect(1, "reversed same-key range edit")
+                    c.stats["invalid_ranges"] += 1
+                    continue
+                r.expect(0, "accepted range edit")
+                apply_removal(c, [k for k in c.keys() if in_bounds(k, (lk, lv, lv), (uk, uv, uv))], op == 11)
+                continue
+            if op in (10, 12):
+                _, kinds, llow, lhigh, ulow, uhigh = action
+                items = range_by_calls(c, kinds, llow, lhigh, ulow, uhigh)
+                r.expect(RESULT, "policy range edit marker")
+                r.expect(0, "policy range edit status")
+                apply_removal(c, items, op == 12)
+                continue
+            if op == 13:
+                at = action[1]
+                r.expect(RESULT, "split marker"); r.expect(0, "split status")
+                apply_removal(c, [k for k in c.keys() if k >= at], True)
                 continue
             if op == 7:
                 r.expect(len(c.contents), "length")
@@ -412,8 +473,10 @@ def corruptions(clean, data):
     g = groups[len(groups) // 2]
     yield "unstored visited key", patched([(g[0] + 1, absent)])
     yield "dropped final descent call", patched(drop=g[-1])
-    yield "swapped descent calls", patched([(g[0] + 1, words[g[1] + 1]), (g[0] + 2, words[g[1] + 2]),
-                                            (g[1] + 1, words[g[0] + 1]), (g[1] + 2, words[g[0] + 2])])
+    same_role = [h for h in groups if len(h) >= 3 and words[h[0] + 3] == words[h[1] + 3] == words[h[2] + 3] == 0]
+    h = same_role[len(same_role) // 2]
+    yield "swapped descent calls", patched([(h[0] + 1, words[h[1] + 1]), (h[0] + 2, words[h[1] + 2]),
+                                            (h[1] + 1, words[h[0] + 1]), (h[1] + 2, words[h[0] + 2])])
     yield "repeated descent call", patched(insert=(g[-1] + 4, words[g[-1]:g[-1] + 4]))
     yield "wrong call role", patched([(g[0] + 3, 1 - words[g[0] + 3] if words[g[0] + 3] < 2 else 0)])
     a, b = adjacent[len(adjacent) // 2]

@@ -163,6 +163,32 @@ pub impl<T> TreeSet<T> {
         if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); }
         return core::result::Ok(Cursor { state: core::result::unwrap(result) });
     }
+    // Range removal discards elements shallowly (like clear) and returns the
+    // count; extraction transfers them to a new exact-capacity set. Errors
+    // leave this set unchanged. See TreeMap.remove_range/try_extract_range.
+    pub fn remove_range(&self, lower: core::range::Bound<T>, upper: core::range::Bound<T>) -> core::result::Result<i32, alloc::tree_map::Error> where T: core::cmp::Ord<T> {
+        return alloc::tree_map::key_remove_range<T>(self.state.borrow(), lower, upper);
+    }
+    pub fn remove_range_by<Q,P>(&self, lower: core::range::Bound<Q>, upper: core::range::Bound<Q>, policy:&P) -> i32
+        where P:core::ordering::Comparator<T,Q> {
+        return alloc::tree_map::key_remove_range_by<T,Q,P>(self.state.borrow(), lower, upper, policy);
+    }
+    pub fn try_extract_range(&self, lower: core::range::Bound<T>, upper: core::range::Bound<T>) -> core::result::Result<TreeSet<T>, alloc::tree_map::Error> where T: core::cmp::Ord<T> {
+        let result: core::result::Result<alloc::tree_map::KeyStorage, alloc::tree_map::Error> = alloc::tree_map::key_extract_range<T>(self.state.borrow(), lower, upper);
+        if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); }
+        return core::result::Ok(TreeSet { state: core::result::unwrap(result) });
+    }
+    pub fn try_extract_range_by<Q,P>(&self, lower: core::range::Bound<Q>, upper: core::range::Bound<Q>, policy:&P) -> core::result::Result<TreeSet<T>, alloc::tree_map::Error>
+        where P:core::ordering::Comparator<T,Q> {
+        let result: core::result::Result<alloc::tree_map::KeyStorage, alloc::tree_map::Error> = alloc::tree_map::key_extract_range_by<T,Q,P>(self.state.borrow(), lower, upper, policy);
+        if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); }
+        return core::result::Ok(TreeSet { state: core::result::unwrap(result) });
+    }
+    // Elements at least `at` move to the returned set; smaller ones stay.
+    pub fn try_split_off(&self, at: T) -> core::result::Result<TreeSet<T>, alloc::tree_map::Error> where T: core::cmp::Ord<T> {
+        let rest: core::range::Bound<T> = core::range::Bound::Unbounded;
+        return self.try_extract_range(core::range::Bound::Included(at), rest);
+    }
     // Same call sequence as TreeMap.range_bounds_by; disjoint bounds are empty.
     pub fn range_bounds_by<Q,P>(&self, lower: core::range::Bound<Q>, upper: core::range::Bound<Q>, policy:&P) -> Cursor<T>
         where P:core::ordering::Comparator<T,Q> {

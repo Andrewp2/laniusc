@@ -342,6 +342,72 @@ pub impl<K, V> TreeMap<K, V> {
         let policy:NaturalKey<K> = NaturalKey {};
         return core::result::Ok(self.range_bounds_by<K,NaturalKey<K>>(lower,upper,policy.borrow()));
     }
+    // Range removal and extraction. A span is a range cursor's front/back.
+    fn span_count(&self, span: Cursor<K, V>) -> i32 {
+        let walk: Cursor<K, V> = span; let count: i32 = 0;
+        while (walk.next().is_some()) { count += 1; }
+        return count;
+    }
+    // Remove from the back of the span towards its front. Removing an entry
+    // can move only its in-order successor's item, which lies above the span,
+    // so each precomputed predecessor index stays valid.
+    fn remove_span(&self, span: Cursor<K, V>, count: i32) {
+        let current: i32 = span.back; let left: i32 = count;
+        while (left > 0) {
+            let previous: i32 = -1;
+            if (left > 1) { previous = adjacent(self.nodes(), current, true); }
+            self.remove_at(current); current = previous; left -= 1;
+        }
+    }
+    // Move every span entry, in order, into a new exact-capacity owner.
+    // Allocation precedes any change; Err leaves this map untouched.
+    fn extract_span(&self, span: Cursor<K, V>) -> core::result::Result<TreeMap<K, V>, Error> {
+        let count: i32 = self.span_count(span);
+        let moved: TreeMap<K, V> = new();
+        if (count == 0) { return core::result::Ok(moved); }
+        let reserved: core::result::Result<i32, Error> = moved.try_reserve(count);
+        if (reserved.is_err()) { return core::result::Err(reserved.unwrap_err()); }
+        let target: [Node<K, V>] = moved.nodes(); let walk: Cursor<K, V> = span; let index: i32 = 0;
+        while (index < count) {
+            let item: Entry<K, V> = walk.next().unwrap();
+            target[index] = Node { item: item, left: -1, right: -1, parent: -1, height: 1, next_free: -1 }; index += 1;
+        }
+        moved.length = count; moved.link_sorted();
+        self.remove_span(span, count);
+        return core::result::Ok(moved);
+    }
+    // Remove every entry inside both bounds and return how many. Like clear,
+    // removed keys and values are discarded shallowly with no destructor; use
+    // try_extract_range when they own nested resources. Capacity is retained
+    // and nothing allocates. Policy calls are exactly those of range_bounds_by.
+    pub fn remove_range_by<Q,P>(&self, lower:core::range::Bound<Q>, upper:core::range::Bound<Q>, policy:&P) -> i32
+        where P:core::ordering::Comparator<K,Q> {
+        let span: Cursor<K, V> = self.range_bounds_by<Q,P>(lower,upper,policy);
+        let count: i32 = self.span_count(span); self.remove_span(span, count); return count;
+    }
+    pub fn remove_range(&self, lower:core::range::Bound<K>, upper:core::range::Bound<K>) -> core::result::Result<i32, Error> where K: core::cmp::Ord<K> {
+        let span: core::result::Result<Cursor<K, V>, Error> = self.range_bounds(lower,upper);
+        if (span.is_err()) { return core::result::Err(span.unwrap_err()); }
+        let count: i32 = self.span_count(span.unwrap()); self.remove_span(span.unwrap(), count); return core::result::Ok(count);
+    }
+    // Transfer every entry inside both bounds, with its cleanup authority, to
+    // a new owner of exactly that capacity (no allocation when empty). Err
+    // (AllocationFailed, CapacityOverflow, or InvalidRange for reversed
+    // same-key bounds) leaves this map, its capacity and cursors unchanged.
+    pub fn try_extract_range_by<Q,P>(&self, lower:core::range::Bound<Q>, upper:core::range::Bound<Q>, policy:&P) -> core::result::Result<TreeMap<K, V>, Error>
+        where P:core::ordering::Comparator<K,Q> {
+        return self.extract_span(self.range_bounds_by<Q,P>(lower,upper,policy));
+    }
+    pub fn try_extract_range(&self, lower:core::range::Bound<K>, upper:core::range::Bound<K>) -> core::result::Result<TreeMap<K, V>, Error> where K: core::cmp::Ord<K> {
+        let span: core::result::Result<Cursor<K, V>, Error> = self.range_bounds(lower,upper);
+        if (span.is_err()) { return core::result::Err(span.unwrap_err()); }
+        return self.extract_span(span.unwrap());
+    }
+    // Keys at least `at` move to the returned owner; smaller keys stay.
+    pub fn try_split_off(&self, at: K) -> core::result::Result<TreeMap<K, V>, Error> where K: core::cmp::Ord<K> {
+        let rest: core::range::Bound<K> = core::range::Bound::Unbounded;
+        return self.try_extract_range(core::range::Bound::Included(at), rest);
+    }
     pub fn try_reserve(&self, additional: i32) -> core::result::Result<i32, Error> {
         if (additional < 0) { return core::result::Err(Error::InvalidCapacity); }
         if (additional > capacity_limit<K, V>() - self.length) { return core::result::Err(Error::CapacityOverflow); }
@@ -741,4 +807,27 @@ pub fn key_range_bounds_by<T,Q,P>(owner: &KeyStorage, lower: core::range::Bound<
     where P: core::ordering::Comparator<T,Q> {
     let map: TreeMap<T, KeyUnit> = key_view<T>(owner);
     return key_cursor<T>(map.range_bounds_by<Q,P>(lower, upper, policy));
+}
+// Range removal/extraction bridges for TreeSet.
+fn key_moved<T>(result: core::result::Result<TreeMap<T, KeyUnit>, Error>) -> core::result::Result<KeyStorage, Error> {
+    if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); }
+    let state: KeyStorage = key_storage<T>(); key_update<T>(state.borrow(), core::result::unwrap(result)); return core::result::Ok(state);
+}
+pub fn key_remove_range<T>(owner: &KeyStorage, lower: core::range::Bound<T>, upper: core::range::Bound<T>) -> core::result::Result<i32, Error> where T: core::cmp::Ord<T> {
+    let map: TreeMap<T, KeyUnit> = key_view<T>(owner);
+    let result: core::result::Result<i32, Error> = map.remove_range(lower, upper); key_update<T>(owner, map); return result;
+}
+pub fn key_remove_range_by<T,Q,P>(owner: &KeyStorage, lower: core::range::Bound<Q>, upper: core::range::Bound<Q>, policy: &P) -> i32
+    where P: core::ordering::Comparator<T,Q> {
+    let map: TreeMap<T, KeyUnit> = key_view<T>(owner);
+    let count: i32 = map.remove_range_by<Q,P>(lower, upper, policy); key_update<T>(owner, map); return count;
+}
+pub fn key_extract_range<T>(owner: &KeyStorage, lower: core::range::Bound<T>, upper: core::range::Bound<T>) -> core::result::Result<KeyStorage, Error> where T: core::cmp::Ord<T> {
+    let map: TreeMap<T, KeyUnit> = key_view<T>(owner);
+    let result: core::result::Result<TreeMap<T, KeyUnit>, Error> = map.try_extract_range(lower, upper); key_update<T>(owner, map); return key_moved<T>(result);
+}
+pub fn key_extract_range_by<T,Q,P>(owner: &KeyStorage, lower: core::range::Bound<Q>, upper: core::range::Bound<Q>, policy: &P) -> core::result::Result<KeyStorage, Error>
+    where P: core::ordering::Comparator<T,Q> {
+    let map: TreeMap<T, KeyUnit> = key_view<T>(owner);
+    let result: core::result::Result<TreeMap<T, KeyUnit>, Error> = map.try_extract_range_by<Q,P>(lower, upper, policy); key_update<T>(owner, map); return key_moved<T>(result);
 }
