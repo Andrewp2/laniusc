@@ -1,0 +1,2 @@
+{ params := [{ id := 0, ty := (.enum 0 []) }], ret := .i32, body := (.returnEval (.eMatch (.ePure (.local 0)) (.enum 0 []) .i32 [] [])) }
+{ params := [], ret := .i32, body := (.return (.int 0)) }
