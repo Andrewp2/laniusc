@@ -2181,6 +2181,13 @@ Optional modules use the [`extended` source root](../extended/README.md).
 have earlier normalizer, generated round-trip and allocation-failure receipts
 scoped to their recorded sources. The current JSON streaming normalizer's
 acceptance status is recorded separately above.
+[`ext::json_stream`](extended-json-stream.md) tokenizes JSON from byte chunks
+of any size without a document. It validates UTF-8, rejects lone surrogates,
+keeps exact number spelling and reports typed errors with u64 byte offsets.
+Its structural writer emits the `ext::json` byte policy. The streaming
+[jq-lite](../sample_programs/jq_lite.lani) path query agrees with strict Python
+`json` on 2,237 cases, and [csv-to-json](../sample_programs/csv_to_json.lani)
+agrees with Python `csv` on 550 RFC 4180 cases.
 [Reusable CSV records and bounded stream writing](extended-csv-write.md)
 share the canonical encoder, preflight the complete record and retain exact
 accepted-prefix progress. The [column rewrite program](extended-csv-rewrite.md)

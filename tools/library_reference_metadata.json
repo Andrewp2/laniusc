@@ -968,7 +968,8 @@
       "guides": [
         "docs/extended-csv.md",
         "docs/extended-csv-write.md",
-        "docs/extended-csv-rewrite.md"
+        "docs/extended-csv-rewrite.md",
+        "docs/extended-json-stream.md"
       ],
       "note": "Reusable record construction, complete preflight and the shared canonical encoding cursor execute through the GPU compiler on Linux x86_64. Staged growth preserves contents, capacities and borrowed views on allocation failure, including self-alias append. Legacy materializing encoders share the same quoting cursor; their focused regression groups pass."
     },
@@ -2062,6 +2063,12 @@
       "guides": [
         "docs/stdlib-development.md"
       ]
+    },
+    "ext::json_stream": {
+      "guides": [
+        "docs/extended-json-stream.md"
+      ],
+      "note": "Byte-fed RFC 8259 tokenizer (one token per feed, arbitrary chunk splits, incremental UTF-8 validation, lone-surrogate rejection, exact number spelling, typed errors with u64 offsets, depth/string/number limits) and a structural writer emitting the ext::json compact byte policy. Native Linux x86_64 binaries from the GPU compiler agree with strict Python json on 2,237 jq-lite/bytewise cases and with Python csv on 550 csv-to-json cases; the cargo registration was not run in this session."
     }
   }
 }
