@@ -960,8 +960,9 @@ def parse_with_laniusc(heavy, laniusc, lani_path, workdir):
 
 
 def parse_plain(heavy, laniusc, lani_path, workdir):
-    """laniusc's tree and tokens of one file (cached by its bytes and laniusc)."""
-    k = run_cache.key(run_cache.file_digest(laniusc), open(lani_path, 'rb').read())
+    """laniusc's tree and tokens of one file (cached by its bytes and
+    laniusc's front end, run_cache.parser_digest)."""
+    k = run_cache.key(run_cache.parser_digest(laniusc), open(lani_path, 'rb').read())
     hit = run_cache.load('parse', k)
     if hit is None:
         # One parse of a file at a time across processes (two gates often
@@ -1019,17 +1020,42 @@ class ParseServer:
     """One resident `laniusc daemon` for every parse of a run, in a server
     process (serve_parses) that heavy runs in its GPU lane: the GPU start-up
     is paid once, not once per file. Started at the first parse the cache
-    misses and stopped (close) before the Lean check, so it holds the GPU
+    misses and stopped (close) before the Lean check, before any other use
+    of the lane (run_cache.release_gpu: a laniusc build, a whole-program
+    capture) and after IDLE seconds without a parse, so it holds the GPU
     only while there are files to parse. A file it gives no tree for is
-    parsed by a one-shot compile. Only this script's own runs turn it on
-    (main): a caller that also runs laniusc through heavy (stdlib_oracle.py)
-    would wait for the GPU lane the server holds."""
+    parsed by a one-shot compile. Off unless a script turns it on (enable):
+    this one's main, and the stdlib_oracle-based gate steps."""
     proc = None
     enabled = False
+    IDLE = 3.0
+
+    def __init__(self):
+        import threading
+        self.lock = threading.RLock()
+        self.timer = None
+        run_cache.GPU_RELEASE.append(self.close)
+
+    def enable(self):
+        self.enabled = True
 
     def parse(self, heavy, laniusc, lani_path, workdir):
         if not self.enabled:
             return None
+        with self.lock:
+            if self.timer is not None:
+                self.timer.cancel()
+                self.timer = None
+            try:
+                return self.parse_locked(heavy, laniusc, lani_path, workdir)
+            finally:
+                if self.proc is not None:
+                    import threading
+                    self.timer = threading.Timer(self.IDLE, self.close)
+                    self.timer.daemon = True
+                    self.timer.start()
+
+    def parse_locked(self, heavy, laniusc, lani_path, workdir):
         if self.proc is None:
             server = os.path.join(workdir, 'parse_server')
             os.makedirs(server, exist_ok=True)
@@ -1050,13 +1076,17 @@ class ParseServer:
             return None
 
     def close(self):
-        if self.proc is not None:
-            try:
-                self.proc.stdin.close()
-            except OSError:
-                pass
-            self.proc.wait()
-            self.proc = None
+        with self.lock:
+            if self.timer is not None:
+                self.timer.cancel()
+                self.timer = None
+            if self.proc is not None:
+                try:
+                    self.proc.stdin.close()
+                except OSError:
+                    pass
+                self.proc.wait()
+                self.proc = None
 
 
 PARSE_SERVER = ParseServer()
@@ -1557,7 +1587,7 @@ def run_cases(args, cases_dir):
 def main():
     if sys.argv[1:2] == ['--parse-server']:
         return serve_parses(*sys.argv[2:4])
-    PARSE_SERVER.enabled = True
+    PARSE_SERVER.enable()
     parser = argparse.ArgumentParser()
     parser.add_argument('workdir')
     parser.add_argument('--count', type=int, default=100)

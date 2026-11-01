@@ -89,6 +89,7 @@ def run_extract(arguments, check):
 
 
 def main(argv):
+    stdlib_oracle.front.PARSE_SERVER.enable()
     parser = argparse.ArgumentParser()
     parser.add_argument('--check', action='store_true')
     parser.add_argument('--work', default='target/claude-work/lani_extract')
