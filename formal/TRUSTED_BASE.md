@@ -529,6 +529,8 @@ unique. Trusted:
     same way (`StmtOrder`, arms may be blocks), the inner match read as a
     match statement on h (`ArmsStmtR.inner`), and so are a let's match's
     (`LetArmsR.inner`; a value arm's value is not that bare match node).
+    When V's first arm is plain and a later one nested, the plain arm is
+    V's arm and the later ones are not read (`VariantArm.shadow`).
     SEMANTIC_DECISIONS "Nested patterns";
   - (F11b) a payload pattern binds a name only when no enum of the program
     has a variant so spelled (`BindersR`'s `NoVariant`): laniusc reads one

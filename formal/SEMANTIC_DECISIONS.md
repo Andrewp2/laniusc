@@ -1390,9 +1390,16 @@ its value. The inner match is read again, nested or not.
   a binder spelled as the first arm's (`row_fits`), so each arm matches
   exactly when its pattern at j does, and its value sees the same names
   (bound to the same payload fields, with the first arm's ids). Arms that
-  differ off column j, or a plain arm before a nested one for the same
-  variant, are not read; laniusc accepts them, so these are readings the
-  front end leaves out.
+  differ off column j are not read; laniusc accepts them, so this is a
+  reading the front end leaves out.
+- (F11b) When V's first arm is plain and a later one for V is nested
+  (`In(n) -> 5, In(Num::Val(x)) -> x`), the plain arm is V's arm
+  (`VariantArm.shadow`): it matches every value of V, so laniusc never runs
+  the later ones, and they are not read. laniusc type-checks them, so a
+  program whose never-run arm is ill-typed is read here and rejected there;
+  the meaning of a program both accept is the same. Without a nested arm
+  for V, a second arm for V is still rejected, as without nesting. Case
+  nested_plain_first (laniusc runs it alike).
 - At column j the last arm may be a binder; it matches everything there,
   so it is read as `_` when its value spells no token as that name
   (`Mentions`), and otherwise not read (case reject_nested_binder).

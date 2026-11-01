@@ -547,6 +547,11 @@ inductive VariantArm (env : FrontEnv) (owner : TypeDecl) (init : List CTree) (w 
     CTree → Bool → Prop
   | wild {x : CTree} : Rows owner v.name init [] → w = some x → VariantArm env owner init w v (wildArmFor x v) true
   | plain {a : CTree} : Rows owner v.name init [a] → ¬Nested env a → VariantArm env owner init w v a false
+  /-- V's first arm a is plain and a later one nested: a matches every value
+  of V, so the later arms never run (laniusc accepts them); they are not
+  read. -/
+  | shadow {a : CTree} {more : List CTree} : Rows owner v.name init (a :: more) → ¬Nested env a →
+      (∃ b ∈ more, Nested env b) → VariantArm env owner init w v a false
   | nested {a p : CTree} {more pa base ins : List CTree} {j : Nat} {ty : Ty} {u : Bool} :
       Rows owner v.name init (a :: more) → RowPats a pa → firstNested env pa 0 = some j → pa[j]? = some p →
       v.payload[j]? = some ty → ColumnArms env pa j (a :: more) base → InnerTail env pa j ty base w ins u →
@@ -571,16 +576,34 @@ theorem variantArm_unique {env : FrontEnv} {owner : TypeDecl} {init : List CTree
   | wild r e => cases h₂ with
     | wild _ e' => rw [e] at e'; cases e'; exact ⟨rfl, rfl⟩
     | plain r' _ => cases rows_unique r r'
+    | shadow r' _ _ => cases rows_unique r r'
     | nested r' _ _ _ _ _ _ => cases rows_unique r r'
   | plain r nn => cases h₂ with
     | wild r' _ => cases rows_unique r r'
     | plain r' _ => cases rows_unique r r'; exact ⟨rfl, rfl⟩
+    | shadow r' _ sb =>
+      cases rows_unique r r'
+      obtain ⟨_, mb, _⟩ := sb
+      cases mb
+    | nested r' rp fn _ _ _ _ =>
+      cases rows_unique r r'
+      exact (nn ⟨_, rp, firstNested_some fn⟩).elim
+  | shadow r nn sb => cases h₂ with
+    | wild r' _ => cases rows_unique r r'
+    | plain r' _ =>
+      cases rows_unique r r'
+      obtain ⟨_, mb, _⟩ := sb
+      cases mb
+    | shadow r' _ _ => cases rows_unique r r'; exact ⟨rfl, rfl⟩
     | nested r' rp fn _ _ _ _ =>
       cases rows_unique r r'
       exact (nn ⟨_, rp, firstNested_some fn⟩).elim
   | nested r rp fn pj vj ca it => cases h₂ with
     | wild r' _ => cases rows_unique r r'
     | plain r' nn =>
+      cases rows_unique r r'
+      exact (nn ⟨_, rp, firstNested_some fn⟩).elim
+    | shadow r' nn _ =>
       cases rows_unique r r'
       exact (nn ⟨_, rp, firstNested_some fn⟩).elim
     | nested r' rp' fn' pj' vj' ca' it' =>
@@ -662,7 +685,21 @@ theorem variantArm_sound {fuel : Nat} {env : FrontEnv} {owner : TypeDecl} {init 
           subst en
           unfold plainUse at h
           cases more with
-          | cons _ _ => simp at h
+          | cons b others =>
+            simp only at h
+            unfold shadowUse at h
+            cases ha : anyNested fuel env (b :: others) with
+            | none => rw [ha] at h; simp at h
+            | some n =>
+              rw [ha] at h
+              simp only at h
+              unfold shadowIf at h
+              split at h
+              · rename_i e
+                simp only [Option.some.injEq] at h
+                subst h
+                exact .shadow rows (fun nn => by cases (armNested_sound hn).1 nn) ((anyNested_sound ha).2 e)
+              · cases h
           | nil =>
             simp only [Option.some.injEq] at h
             subst h

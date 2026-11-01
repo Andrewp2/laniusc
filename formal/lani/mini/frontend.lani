@@ -6954,10 +6954,27 @@ pub fn nest_use(fuel: usize, env: FrontEnv, v: VariantTy, a: CTree, rows: List<C
     };
 }
 
-pub fn plain_use(a: CTree, more: List<CTree>) -> core::option::Option<ArmUse> {
+pub fn shadow_if(a: CTree, n: bool) -> core::option::Option<ArmUse> {
+    if (n) {
+        return Some(ArmUse { arm: a, used: false });
+    }
+    return None;
+}
+
+pub fn shadow_use(a: CTree, n: core::option::Option<bool>) -> core::option::Option<ArmUse> {
+    return match (n) {
+        None -> None,
+        Some(b) -> shadow_if(a, b),
+    };
+}
+
+// V's first arm a is plain: it is V's arm. It matches every value of V, so
+// laniusc never runs V's later arms; they are allowed when one of them is
+// nested (laniusc accepts them), and are not read.
+pub fn plain_use(fuel: usize, env: FrontEnv, a: CTree, more: List<CTree>) -> core::option::Option<ArmUse> {
     return match (more) {
         Nil -> Some(ArmUse { arm: a, used: false }),
-        Cons(b, others) -> None,
+        Cons(b, others) -> shadow_use(a, any_nested(fuel, env, more)),
     };
 }
 
@@ -6965,7 +6982,7 @@ pub fn nested_or_plain(fuel: usize, env: FrontEnv, v: VariantTy, a: CTree, more:
     if (n) {
         return nest_use(fuel, env, v, a, rows, w);
     }
-    return plain_use(a, more);
+    return plain_use(fuel, env, a, more);
 }
 
 pub fn rows_use(fuel: usize, env: FrontEnv, v: VariantTy, a: CTree, more: List<CTree>, rows: List<CTree>, w: core::option::Option<CTree>, nested: core::option::Option<bool>) -> core::option::Option<ArmUse> {
