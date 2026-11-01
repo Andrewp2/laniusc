@@ -326,7 +326,9 @@ generated triples, `seq-merge` matches `git merge-file` and `git merge-file
 --diff3` byte for byte on all 4,000 (xdiff alignment), and GNU `diff3 -m` on
 all 2,000 distinct-line and 1,863 of 2,000 repeated-line triples. On a 1.6 MB
 input, `seq-merge` takes 99 ms against git's 83 ms, and `seq-patch` takes
-10 ms against GNU `patch`'s 9.5 ms.
+10 ms against GNU `patch`'s 9.5 ms. `seq-diff --histogram` ports git's
+histogram diff, with its indent heuristic and xdiff fallback, and matches
+`git diff --histogram` on all 4,000 generated pairs.
 
 [Runtime format strings and owned formatting](stdlib-format-strings.md) add
 typed positional/named arguments, scalar fill/alignment/truncation, signed radix
@@ -728,8 +730,8 @@ comparison with `set*`/`movzbl` and spills it before testing, and spills every
 `+= 1` before reloading it. Nothing is hoisted out of the loop.
 `core::u32::wrapping_mul` and trait methods such as `T::eq` and `T::hash` are
 calls, not inlined code. A byte loop that also hashes costs 9-14 ns/byte. `seq-diff` now reads
-8-byte words and hash-conses lines in one pass. It takes 59-70 ms on a 1.6 MB
-pair where `git diff --no-index` takes 43 ms
+8-byte words and hash-conses lines in one pass. It takes 41 ms on a 1.6 MB
+pair where `git diff --no-index` takes 33-35 ms
 ([seqdiff speed notes](extended-seqdiff.md)).
 
 ## Completion requirements

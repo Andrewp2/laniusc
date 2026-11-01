@@ -70,3 +70,34 @@ fn seq_diff_word_and_stat_match_git() {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+// Generated pairs (distinct, repeated, indented code, >64-repeat fallback
+// ranges, mixed and large): seq-diff --histogram output and status equal
+// git diff --no-index --histogram from the first hunk header on.
+#[test]
+fn seq_diff_histogram_matches_git() {
+    if !available("git") || !available("python3") {
+        eprintln!("skipping: git and python3 are required");
+        return;
+    }
+    let diff = build("seq_diff_histogram", "sample_programs/library/seq_diff.lani");
+    let work = common::TempArtifact::new("laniusc_wordiff", "histogram", None);
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let output = common::process_output_with_timeout(
+        "histogram oracle",
+        Command::new("python3")
+            .arg("-I")
+            .arg(root.join("tests/fixtures/extended/histogram_oracle.py"))
+            .arg(diff.path())
+            .arg(work.path())
+            .arg("1200"),
+        Duration::from_secs(240),
+    );
+    let _ = std::fs::remove_dir_all(work.path());
+    assert!(
+        output.status.success() && output.stdout.ends_with(b"failures: 0\n"),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
