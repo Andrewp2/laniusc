@@ -1,7 +1,7 @@
 module
 
 public import Lanius.Mini.Frontend.Types
-import Lanius.Mini.Frontend.P.divergeArm
+import Lanius.Mini.Frontend.P.bindsOfTys
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.fnInstRet
 import Lanius.Mini.Frontend.P.ifEff
@@ -62,6 +62,7 @@ def inferred (x : MEff) : Bool :=
   | .xMatch s ety t bs vs => false
   | .xDivide op l r => false
   | .xStride sl => true
+  | .xArraySlice e sl => true
   | .xHost id args => true
 
 def untypedIf (ok : Bool) (t : Ty) (h : LetHead) : Option Untyped :=

@@ -39,11 +39,22 @@ stopping at the computations the theorems are about (`compileSource`,
 `linkObjects`, `elfFile`, `sourceProgramFiles`, `compileWords`,
 `frontEndWords` and the self program `Lanius.Faithful.Self.prog`, which are
 not trusted, section 10), with each one's type and body:
-definitions `a784f30fce5c9322` (4443 constants). This covers Core's
+definitions `6415d962ec6a970a` (4,475 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
-modules keeps its hash. The last change of the hash (11-01, merge of
+modules keeps its hash. The last change of the hash (11-01, F11b, merged
+with the review-fixes restatement and rfront's `u16` views,
+`a784f30fce5c9322`): an array local passed at a `[T]` parameter is
+`SrcEff.arraySlice T x`, whose meaning is Core's `arrayToSlice T (local x)`
+(`SrcEff.toCore`), read by `argView`/`argViews` in `EffInfer.plain`,
+`EffNamed.explicit` and `EffArgs.arg` (`MEff.xArraySlice`,
+`EffTy.arraySlice`, `EffClosed.arraySlice`, `LitEff.arraySlice`); the
+compiler does not lower it yet; and the reading of a method call with type
+arguments `x.m<T, ..>(..)`: `MethodBinds` binds m's own type parameters to
+the written types after the receiver's binds, used by `EffR.method`,
+`EffChain.method` and `MethodEff`, and `MethodForm` and `TryMethodForm`
+allow the type arguments (section 4). Before that (11-01, merge of
 review-fixes into lang): it combines lang's `u16` views
 (`b8d2e28d6f544c42`) and review-fixes' restatement of review finding 5's
 first reason (`adcfd7afcaf25cbd`), which did not change each other's
@@ -380,7 +391,7 @@ the statements, so a reader has to agree that each one says what is intended:
 
 | definition | file | says |
 |---|---|---|
-| `SrcProgram.toCore` and the `toCore` of each construct | `Mini/Source.lean` | which Core program a source program *is*: each construct is the Core construct of the same name (`Null` is Core's literal `.pointer 0`), and functions are numbered by position, then the host functions (`hostFuncs`, ids 2^32 up). A literal (`EStruct`, `LetStruct`) means `SrcType.literal`: Core's array value `.array T vs` at an array type `[T; N]`, and a struct value otherwise |
+| `SrcProgram.toCore` and the `toCore` of each construct | `Mini/Source.lean` | which Core program a source program *is*: each construct is the Core construct of the same name (`Null` is Core's literal `.pointer 0`), and functions are numbered by position, then the host functions (`hostFuncs`, ids 2^32 up). A literal (`EStruct`, `LetStruct`) means `SrcType.literal`: Core's array value `.array T vs` at an array type `[T; N]`, and a struct value otherwise. `ArraySlice(T, x)` is Core's `arrayToSlice T (local x)` |
 | `FieldsHold`, `SrcType.HoldsAt` | `Mini/Source.lean` | how a Core value sits in 64-bit slots: an `i32` is zero-extended, a `bool` is 1/0, a struct is its fields in order, an enum is a tag then its payload, a pointer is its address, an array `[T; N]` is its N elements in order, as a struct of N fields of type T, a float is its bits |
 | `startState`, `State.Fresh`, `HeapCorr`, `outputOf` | `Mini/SourceCorrect.lean`, `Mini/HeapCorr.lean` | Core's start state for a standard input (empty heap, the world with that input); a state with no live cells; the mini heap representing Core's heap and world (standard output and error are `outputOf 1` and `outputOf 2` of the mini heap's trace, the bytes its writes put on fds 1 and 2, no open files, the same standard input) |
 | `Returned`, `HeapAt`, `StackAt`, `Contract`, `Scratch`, `InHeap` | `Mini/Simulation.lean` | the calling convention and what "returns" means (section 8) |
@@ -627,7 +638,10 @@ when it is right; a stale cache entry is rejected, never used. Trusted:
   - `x.m(args)` (`x` any value) and `T::m(args)` (`T` a type parameter, or
     a primitive type as in `i32::hash(v)`) call
     the method `m` of the one `impl` whose type matches the receiver's type,
-    with `self` (by value) the receiver;
+    with `self` (by value) the receiver; `x.m<T, ..>(args)` binds m's own
+    type parameters to the written types in order, after the impl's binds
+    from the receiver, instead of inferring them (`MethodBinds`, F11b; a
+    count other than m's parameters rejects);
   - a `match` has one arm per variant of its scrutinee's enum, in any order,
     and its arms are listed in variant order (only one runs, so their order
     has no effect);
@@ -796,6 +810,10 @@ when it is right; a stale cache entry is rejected, never used. Trusted:
     operands expect the type of whichever operand has one.
 
   - `slice_stride(x)` of a slice local x is `EStride(x)`;
+  - (F11b) a call's argument at a parameter of type `[T]` that is an array
+    local of element type T is `ArraySlice(T, x)` (`argView`), Core's
+    `arrayToSlice T x`, so the callee's writes reach the array, as in
+    laniusc; an array local of another element type rejects;
   - `return slice_from_raw_parts(p, n);` in a function whose result is a
     slice is a slice local (named by the offset of `slice_from_raw_parts`)
     and its return;

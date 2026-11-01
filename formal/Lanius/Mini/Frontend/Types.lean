@@ -262,6 +262,8 @@ inductive MEff where
   | xDivide : SrcDivOp → MEff → MEff → MEff
   /-- slice_stride(x) of a slice local x -/
   | xStride : Nat → MEff
+  /-- the array local x as a slice of its elements, of this element type (Core's array-to-slice): an array argument at a slice parameter -/
+  | xArraySlice : Ty → Nat → MEff
   /-- a call of the host service with this Core function id (see extern_func): only an extern's instance has one -/
   | xHost : Nat → (List MEff) → MEff
   deriving Repr

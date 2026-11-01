@@ -389,6 +389,8 @@ class Checker:
             return left
         if c == 'eStride':
             raise Impure('stride')
+        if c == 'arraySlice':
+            raise Impure('array slice')
         raise ValueError(c)
 
     def stmt(self, ret, tenv, s):
@@ -509,7 +511,7 @@ class LiveChecker:
             self.eff(a[0])
         elif c == 'eCast':
             self.eff(a[1])
-        elif c in ('eIndex', 'eStride'):
+        elif c in ('eIndex', 'eStride', 'arraySlice'):
             raise Dead(c)
         elif c == 'eStruct':
             for x in a[1][1]:
@@ -657,7 +659,7 @@ class Declarer:
 
     def eff_types(self, e):
         c, a = ctor(e)
-        if c in ('ePure', 'eStride'):
+        if c in ('ePure', 'eStride', 'arraySlice'):
             return []
         if c == 'eCall':
             return [t for x in a[1][1] for t in self.eff_types(x)]

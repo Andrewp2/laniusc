@@ -540,6 +540,34 @@ theorem index_trap_state {slice : Nat} {index : SrcExpr}
     exact index_trap_grows (fun r => by rw [index.eval_state r]; exact Grows.refl _)
       (fun r => by rw [index.trap_state r]; exact Grows.refl _) run
 
+theorem evalPlace_readLocal_trap {id : Nat}
+    (run : Semantics.evalPlace k P st .read (.local id) = .trapped r st') : st' = st := by
+  cases k with
+  | zero => simp [Semantics.evalPlace] at run
+  | succ k =>
+    simp only [Semantics.evalPlace] at run
+    repeat' split at run
+    all_goals first
+      | (simp only [Semantics.Outcome.trapped.injEq] at run; exact run.2.symm)
+      | simp at run
+
+/-- Making an array local's slice that traps changes nothing. -/
+theorem arraySlice_trap_state {element : Core.Ty} {array : Nat}
+    (run : evalExpr k P st (.arrayToSlice element (.local array)) = .trapped r st') : st' = st := by
+  cases k with
+  | zero => simp [evalExpr] at run
+  | succ k =>
+    simp only [evalExpr, Semantics.expressionPlace?] at run
+    split at run
+    all_goals first
+      | (rename_i placeRun
+         first
+           | (have := Lanius.Mini.evalPlace_readLocal placeRun; subst this)
+           | (have := evalPlace_readLocal_trap placeRun; subst this)
+         simp only [Semantics.Outcome.trapped.injEq] at run
+         exact run.2.symm)
+      | simp at run
+
 theorem stride_trap_state {slice : Nat}
     (run : evalExpr k P st (.intrinsic .sliceStride (.local slice)) = .trapped r st') : st' = st := by
   cases k with
@@ -871,6 +899,10 @@ theorem eff_trap_step {k : Nat} (ih : GrowsBelow sp (k + 1)) (ihT : GrowsBelowT 
   | eStride slice =>
     simp only [SrcEff.toCore] at run
     rw [stride_trap_state run]
+    exact Grows.refl _
+  | arraySlice element array =>
+    simp only [SrcEff.toCore] at run
+    rw [arraySlice_trap_state run]
     exact Grows.refl _
   | eStruct ty fields =>
     simp only [SrcEff.toCore] at run

@@ -494,8 +494,12 @@ argument tokens; the verified compiler's validator checks it (`picks`).
 A method's `<` (`x.f<T>(..)`, ambiguous in the same way: `x.f < a > (b)`)
 opens type arguments by the same rule, from the `<` on (decided 10-31, F11b;
 before, a file with one was rejected, which rejected `alloc::vec` and every
-program importing it). The reader does not yet read a call with them, so
-such a call is still outside the subset, but the rest of its file is read.
+program importing it). The reader reads such a call as the call without
+them, with the method's own type parameters bound to the written types in
+order, after the binds the receiver's type gives the impl, instead of
+inferring them (`MethodBinds`; a count other than the method's type
+parameters rejects; decided 11-01, F11b). A field (`x.f`) with type
+arguments rejects.
 A statement that begins with `{` is a block statement, never an
 expression statement (decided 10-30, F4), as in Rust: `{ a } - b;` is the
 block `{ a }` and then `-b;`. Its lets scope over the block only
@@ -621,8 +625,15 @@ Core's array, held by value:
   is read as `slice[i] = v` is (`SetIndex`) and lowered as the effectful
   form (`lower_set_index_any`). The front end reads v at the element type
   (`index_elem`), so `bytes[i] = 48` is a `u8` store.
-- Not yet: an array passed where a slice is
-  expected (Core's coercion of `[T; N]` to `[T]`), `for` over an array,
+- An array local passed as a call's argument at a `[T]` parameter, its
+  element type T, is read as `ArraySlice(T, a)`, Core's `arrayToSlice`
+  of the local, so the callee's writes reach the array, as laniusc's do
+  (decided 11-01, F11b; before, the reading passed the array by value,
+  which disagreed with laniusc in `core::utf16_bytes`). An array local of
+  another element type rejects. The compiler does not lower it yet
+  (`SrcEff.eval` rejects it), so such a program is read but not compiled.
+- Not yet: an array other than a local passed where a slice is
+  expected, `for` over an array,
   `==` of arrays, `core::mem::i32_array_data_ptr`, a length that names a
   constant, and arrays of floats (no element layout for float slices yet;
   an array of floats is held by value and should work, but is untested).

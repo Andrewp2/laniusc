@@ -56,8 +56,10 @@ they are, never edited.
    laniusc's binary alike; its wrappers go in harness binaries of their own
    that make one call per run. Every other call reads from /dev/null.
    A wrapper laniusc fails to build with its own code-generation error
-   (LNC0057) is listed as not compared; any other laniusc rejection of a
-   program the verified compiler compiles is a disagreement.
+   (LNC0057), or refuses because its program declares C externs, which
+   laniusc links only with --native-link (LNC0017), is listed as not
+   compared; any other laniusc rejection of a program the verified
+   compiler compiles is a disagreement.
 
 The front end gives no reason for a rejection, so for each target it does
 not read, WORKDIR/unread.txt lists the constructs, in the target or in the
@@ -1746,7 +1748,8 @@ def main():
 
     print(f'output: {written} bytes written alike to stdout and stderr', file=sys.stderr)
     if unbuilt:
-        print(f'not compared, laniusc fails to generate code (LNC0057): {len(unbuilt)} targets: '
+        print(f'not compared, laniusc fails to generate code (LNC0057) or to link C externs (LNC0017): '
+              f'{len(unbuilt)} targets: '
               f'{", ".join(sorted(unbuilt))}', file=sys.stderr)
     print(f'time: parse {parse_s:.0f} s, runAll {compile_s:.0f} s, native {native_s:.0f} s, '
           f'laniusc {time.time() - began - parse_s - compile_s - native_s:.0f} s',
@@ -1868,9 +1871,11 @@ def laniusc_chunk(args, workdir, chunk, start):
         return out
     if exe is None:
         open(os.path.join(workdir, f'harness{start}.error'), 'w').write(error)
-        # LNC0057 is laniusc's own failure while generating code, not a
-        # rejection of the program: there is nothing to compare.
-        tag = 'laniusc fails' if 'LNC0057' in error else 'laniusc rejects it'
+        # LNC0057 is laniusc's own failure while generating code, and
+        # LNC0017 its refusal to build a program that declares C externs
+        # without native linking, not a rejection of the program: there is
+        # nothing to compare.
+        tag = 'laniusc fails' if 'LNC0057' in error or 'LNC0017' in error else 'laniusc rejects it'
         return [[(tag, b'', b'')] * len(chunk[0]['calls'])]
     got = iter(run_calls(exe, sum(len(p['calls']) for p in chunk), workdir,
                          [data for p in chunk for data in p['stdin']] if single else None))

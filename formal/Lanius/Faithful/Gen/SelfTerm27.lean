@@ -63,76 +63,76 @@ theorem ok_e_match_closed : FnOk prog prims info (1270, ⟨0, [], 0⟩) :=
 theorem ok_e_divide_closed : FnOk prog prims info (1271, ⟨0, [], 0⟩) :=
   fnOk_of fn_e_divide_closed (by decide +kernel)
 
-theorem ok_enum_src : FnOk prog prims info (1274, ⟨0, [], 0⟩) :=
+theorem ok_e_array_slice_closed : FnOk prog prims info (1272, ⟨0, [], 0⟩) :=
+  fnOk_of fn_e_array_slice_closed (by decide +kernel)
+
+theorem ok_enum_src : FnOk prog prims info (1275, ⟨0, [], 0⟩) :=
   fnOk_of fn_enum_src (by decide +kernel)
 
-theorem ok_lower_variants : FnOk prog prims info (1275, ⟨14, [0], 0⟩) :=
+theorem ok_lower_variants : FnOk prog prims info (1276, ⟨14, [0], 0⟩) :=
   fnOk_of fn_lower_variants (by decide +kernel)
 
-theorem ok_payload_tys : FnOk prog prims info (1276, ⟨13, [], 0⟩) :=
+theorem ok_payload_tys : FnOk prog prims info (1277, ⟨13, [], 0⟩) :=
   fnOk_of fn_payload_tys (by decide +kernel)
 
-theorem ok_struct_src : FnOk prog prims info (1277, ⟨0, [], 0⟩) :=
+theorem ok_struct_src : FnOk prog prims info (1278, ⟨0, [], 0⟩) :=
   fnOk_of fn_struct_src (by decide +kernel)
 
-theorem ok_lower_tys : FnOk prog prims info (1278, ⟨14, [0], 0⟩) :=
+theorem ok_lower_tys : FnOk prog prims info (1279, ⟨14, [0], 0⟩) :=
   fnOk_of fn_lower_tys (by decide +kernel)
 
-theorem ok_wide_left : FnOk prog prims info (1279, ⟨1, [0], 0⟩) :=
+theorem ok_wide_left : FnOk prog prims info (1280, ⟨1, [0], 0⟩) :=
   fnOk_of fn_wide_left (by decide +kernel)
 
-theorem ok_wide_left_exprs : FnOk prog prims info (1280, ⟨2, [0], 0⟩) :=
+theorem ok_wide_left_exprs : FnOk prog prims info (1281, ⟨2, [0], 0⟩) :=
   fnOk_of fn_wide_left_exprs (by decide +kernel)
 
-theorem ok_wide_left_arms : FnOk prog prims info (1281, ⟨2, [0], 0⟩) :=
+theorem ok_wide_left_arms : FnOk prog prims info (1282, ⟨2, [0], 0⟩) :=
   fnOk_of fn_wide_left_arms (by decide +kernel)
 
-theorem ok_wide_left_eff : FnOk prog prims info (1282, ⟨2, [0], 0⟩) :=
+theorem ok_wide_left_eff : FnOk prog prims info (1283, ⟨2, [0], 0⟩) :=
   fnOk_of fn_wide_left_eff (by decide +kernel)
 
-theorem ok_int_at : FnOk prog prims info (1284, ⟨3, [], 0⟩) :=
+theorem ok_int_at : FnOk prog prims info (1285, ⟨3, [], 0⟩) :=
   fnOk_of fn_int_at (by decide +kernel)
 
-theorem ok_wide_value : FnOk prog prims info (1285, ⟨2, [], 0⟩) :=
+theorem ok_wide_value : FnOk prog prims info (1286, ⟨2, [], 0⟩) :=
   fnOk_of fn_wide_value (by decide +kernel)
 
-theorem ok_neg_wide_at : FnOk prog prims info (1286, ⟨2, [], 0⟩) :=
+theorem ok_neg_wide_at : FnOk prog prims info (1287, ⟨2, [], 0⟩) :=
   fnOk_of fn_neg_wide_at (by decide +kernel)
 
-theorem ok_neg_least : FnOk prog prims info (1287, ⟨3, [], 0⟩) :=
+theorem ok_neg_least : FnOk prog prims info (1288, ⟨3, [], 0⟩) :=
   fnOk_of fn_neg_least (by decide +kernel)
 
-theorem ok_operand_want : FnOk prog prims info (1289, ⟨1, [], 0⟩) :=
+theorem ok_operand_want : FnOk prog prims info (1290, ⟨1, [], 0⟩) :=
   fnOk_of fn_operand_want (by decide +kernel)
 
-theorem ok_known_expr : FnOk prog prims info (1290, ⟨3, [1], 0⟩) :=
+theorem ok_known_expr : FnOk prog prims info (1291, ⟨3, [1], 0⟩) :=
   fnOk_of fn_known_expr (by decide +kernel)
 
-theorem ok_amount_want : FnOk prog prims info (1291, ⟨2, [], 0⟩) :=
+theorem ok_amount_want : FnOk prog prims info (1292, ⟨2, [], 0⟩) :=
   fnOk_of fn_amount_want (by decide +kernel)
 
-theorem ok_wide_at : FnOk prog prims info (1292, ⟨2, [], 0⟩) :=
+theorem ok_wide_at : FnOk prog prims info (1293, ⟨2, [], 0⟩) :=
   fnOk_of fn_wide_at (by decide +kernel)
 
-theorem ok_float_want : FnOk prog prims info (1293, ⟨2, [], 0⟩) :=
+theorem ok_float_want : FnOk prog prims info (1294, ⟨2, [], 0⟩) :=
   fnOk_of fn_float_want (by decide +kernel)
 
-theorem ok_empty_of_mini_selfhost_SrcExpr : FnOk prog prims info (1295, ⟨0, [], 0⟩) :=
+theorem ok_empty_of_mini_selfhost_SrcExpr : FnOk prog prims info (1296, ⟨0, [], 0⟩) :=
   fnOk_of fn_empty_of_mini_selfhost_SrcExpr (by decide +kernel)
 
-theorem ok_cons_of_mini_selfhost_SrcExpr : FnOk prog prims info (1296, ⟨0, [], 0⟩) :=
+theorem ok_cons_of_mini_selfhost_SrcExpr : FnOk prog prims info (1297, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_SrcExpr (by decide +kernel)
 
-theorem ok_first_src : FnOk prog prims info (1297, ⟨3, [], 0⟩) :=
+theorem ok_first_src : FnOk prog prims info (1298, ⟨3, [], 0⟩) :=
   fnOk_of fn_first_src (by decide +kernel)
 
-theorem ok_rest_src : FnOk prog prims info (1298, ⟨0, [], 0⟩) :=
+theorem ok_rest_src : FnOk prog prims info (1299, ⟨0, [], 0⟩) :=
   fnOk_of fn_rest_src (by decide +kernel)
 
-theorem ok_repeat_src : FnOk prog prims info (1299, ⟨1, [1], 0⟩) :=
-  fnOk_of fn_repeat_src (by decide +kernel)
-
 theorem chunk27 : AllFns prog prims info part27 :=
-  ⟨ok_spelled0, ok_cons_of_mini_selfhost_SrcParam, ok_slice_type, ok_close_named, ok_array_type, ok_inst_index_at, ok_e_call_closed, ok_close_effs, ok_e_apply_closed, ok_e_neg_closed, ok_e_not_closed, ok_e_cast_closed, ok_e_index_closed, ok_e_struct_closed, ok_e_variant_closed, ok_e_match_closed, ok_e_divide_closed, ok_enum_src, ok_lower_variants, ok_payload_tys, ok_struct_src, ok_lower_tys, ok_wide_left, ok_wide_left_exprs, ok_wide_left_arms, ok_wide_left_eff, ok_int_at, ok_wide_value, ok_neg_wide_at, ok_neg_least, ok_operand_want, ok_known_expr, ok_amount_want, ok_wide_at, ok_float_want, ok_empty_of_mini_selfhost_SrcExpr, ok_cons_of_mini_selfhost_SrcExpr, ok_first_src, ok_rest_src, ok_repeat_src, trivial⟩
+  ⟨ok_spelled0, ok_cons_of_mini_selfhost_SrcParam, ok_slice_type, ok_close_named, ok_array_type, ok_inst_index_at, ok_e_call_closed, ok_close_effs, ok_e_apply_closed, ok_e_neg_closed, ok_e_not_closed, ok_e_cast_closed, ok_e_index_closed, ok_e_struct_closed, ok_e_variant_closed, ok_e_match_closed, ok_e_divide_closed, ok_e_array_slice_closed, ok_enum_src, ok_lower_variants, ok_payload_tys, ok_struct_src, ok_lower_tys, ok_wide_left, ok_wide_left_exprs, ok_wide_left_arms, ok_wide_left_eff, ok_int_at, ok_wide_value, ok_neg_wide_at, ok_neg_least, ok_operand_want, ok_known_expr, ok_amount_want, ok_wide_at, ok_float_want, ok_empty_of_mini_selfhost_SrcExpr, ok_cons_of_mini_selfhost_SrcExpr, ok_first_src, ok_rest_src, trivial⟩
 
 end Lanius.Faithful.SelfTerm
