@@ -122,12 +122,14 @@ elements untouched.
 
 ## Shared engines, storage and cost
 
-The selected sort is an iterative heapsort: build a max heap, exchange the
-root with the last live element, shrink and sift down. The algorithm family
-is described by the [NIST heapsort reference](https://xlinux.nist.gov/dads/HTML/heapSort.html).
-It sorts in place without allocation or recursive stack growth. Bounds use
-subtraction-based midpoints; heap traversal checks child existence before
-doubling an `i32` index.
+The selected sort is now [pattern-defeating quicksort](stdlib-sort-algorithms.md),
+with the earlier iterative heapsort (build a max heap, exchange the root with
+the last live element, shrink and sift down; see the
+[NIST heapsort reference](https://xlinux.nist.gov/dads/HTML/heapSort.html)) as
+its worst-case fallback. It sorts in place without allocation; pending ranges
+use a fixed 40-entry index stack. Bounds use subtraction-based midpoints; heap
+traversal checks child existence before doubling an `i32` index. A stable
+run-adaptive merge sort with caller scratch is described in the same guide.
 
 | Algorithm | Worst-case comparator calls | Auxiliary storage |
 | --- | --- | --- |

@@ -1,6 +1,10 @@
 # Standard and extended library overview
 
-The full library goal remains open. The current increment adds inline
+The full library goal remains open. The current increment makes
+`core::slice` sorting adaptive: [pattern-defeating quicksort](stdlib-sort-algorithms.md)
+for unstable sorts and a run-adaptive stable merge sort with galloping over
+caller scratch. Both are checked against Python `sorted`, with recorded
+comparison counts and timings. The preceding increment adds inline
 fixed-capacity containers ([ring buffer and inline string](stdlib-inline-containers.md))
 and a fixed-capacity [LRU cache](stdlib-lru-cache.md) with O(1) expected
 operations, no allocation after construction and exact eviction order; one
