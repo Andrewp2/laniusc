@@ -1180,11 +1180,78 @@ class Parser:
                 cands.append(row['production'])
         self.gt, self.shr = codes['Gt'], codes['Shr']
         self.start = meta['start']
+        self.code = codes
+        # The validator's one reading (frontend.lani's picks): the production
+        # ids it names, by its functions' names.
+        front = open(os.path.join(run_cache.ROOT, 'formal/lani/mini/frontend.lani')).read()
+
+        def prod(name):
+            return int(re.search(r'fn %s\(\) -> usize \{\s*return (\d+);' % name, front).group(1))
+        self.p_member_args, self.p_block, self.p_expr_stmt, self.p_ident, self.p_ident_args = (
+            prod(n) for n in ('p_member_type_args_some', 'p_block_stmt', 'p_expr_stmt',
+                              'p_path_ident', 'p_path_ident_args'))
 
     def tokens(self, dump_line):
         """The token kinds of one `file` line of runAll's dump."""
         toks = dump_line.split(' file ', 1)[1].split('|')[0].split()
         return [int(t.split(':')[0]) for t in toks]
+
+    def generic_path_at(self, at, m):
+        """frontend.lani's generic_path_at over the tokens at(0), ..., at(m - 1)."""
+        c = self.code
+        stop = {c['OrOr'], c['EqEq'], c['NotEqual'], c['Le'], c['Ge']}
+        opens, closes = {c['LParen'], c['LBracket'], c['LBrace']}, {c['RParen'], c['RBracket'], c['RBrace']}
+
+        def tail(j):
+            return j < m and (at(j) in (c['LParen'], c['LBrace']) or
+                              (at(j) == c['Colon'] and j + 1 < m and at(j + 1) == c['Colon']))
+        if m < 2 or at(1) != c['Lt']:
+            return False
+        j, angles, nest = 2, 1, 0
+        while j < m:
+            k = at(j)
+            j += 1
+            if k in stop:
+                return False
+            if k in opens:
+                nest += 1
+            elif k in closes:
+                if nest == 0:
+                    return False
+                nest -= 1
+            elif nest:
+                continue
+            elif k == c['Semicolon']:
+                return False
+            elif k == c['Lt']:
+                angles += 1
+            elif k == self.gt:
+                if angles < 2:
+                    return tail(j)
+                angles -= 1
+            elif k == self.shr:
+                if angles == 2:
+                    return tail(j)
+                if angles < 2:
+                    return False
+                angles -= 2
+        return False
+
+    def picks(self, p, kinds, pos):
+        """frontend.lani's picks: whether the validator accepts production p
+        for a node whose tokens begin at pos."""
+        if p not in (self.p_member_args, self.p_block, self.p_expr_stmt, self.p_ident, self.p_ident_args):
+            return True
+        i, half = pos
+
+        def at(j):
+            return self.gt if half and j == 0 else kinds[i + j]
+        m = len(kinds) - i
+        if p == self.p_member_args:
+            return False
+        if p in (self.p_block, self.p_expr_stmt):
+            return (m > 0 and at(0) == self.code['LBrace']) == (p == self.p_block)
+        return self.generic_path_at(at, m) == (p == self.p_ident_args)
 
     def parse(self, kinds):
         """(prods, parents) of the file with these token kinds, or None.
@@ -1231,7 +1298,7 @@ class Parser:
                     cands = []
                     for k in ([gt] if half else [-1] if i >= n else [kinds[i], gt] if kinds[i] == shr else [kinds[i]]):
                         for p in pred.get((name, k), ()):
-                            if p not in cands:
+                            if p not in cands and self.picks(p, kinds, pos):
                                 cands.append(p)
                     if not cands:
                         ok = False
@@ -1282,8 +1349,12 @@ class Verified:
         none, todo = [], []
         for b in bases:
             text = open(b + '.lani', 'rb').read()
+            # Keyed by the tables, this parser and the validator's picks.
             k = run_cache.key('fuzz-parse', run_cache.file_digest(os.path.join(run_cache.ROOT, 'tables',
-                                                                               'parse_tables.meta.json')), text)
+                                                                               'parse_tables.meta.json')),
+                              run_cache.file_digest(os.path.abspath(__file__)),
+                              run_cache.file_digest(os.path.join(run_cache.ROOT, 'formal/lani/mini/frontend.lani')),
+                              text)
             hit = run_cache.load('cpu-parse', k)
             if hit is not None:
                 so.write_tree(b, (hit['prods'], hit['parents']))
@@ -1343,6 +1414,16 @@ class Verified:
 # ---------------------------------------------------------------- laniusc
 
 LCC = 'target/claude-work/bin/lcc'
+
+
+def lcc_laniusc():
+    """The laniusc binary behind lcc's daemon (the main checkout's), else this checkout's."""
+    try:
+        text = open(LCC).read()
+        home = re.search(r"^HOME = '([^']+)'", text, re.M).group(1)
+        return home + re.search(r"^LANIUSC = HOME \+ '([^']+)'", text, re.M).group(1)
+    except (OSError, AttributeError):
+        return 'target/release/laniusc'
 
 
 def gap(reason):
@@ -1639,7 +1720,8 @@ def main():
     parser.add_argument('--first', type=int, default=0, help='the first program number')
     parser.add_argument('--program', nargs='+', help='compare these files instead of generated programs')
     parser.add_argument('--bin', default='formal/.lake/build/bin', help="the directory of runAll and srcDump")
-    parser.add_argument('--laniusc', default='target/release/laniusc')
+    parser.add_argument('--laniusc', default=lcc_laniusc(),
+                        help="the laniusc lcc compiles with (it keys laniusc's build cache)")
     parser.add_argument('--deadline', type=float, default=240, help='seconds from the start: minimizing stops before')
     parser.add_argument('--budget', type=float, default=180,
                         help='seconds from the start: laniusc builds no more programs after')
@@ -1651,7 +1733,7 @@ def main():
         run_cache.no_core_dumps()
     except ValueError:
         pass  # the hard limit is already 0
-    so.RUN_ALL = os.path.join(args.bin, 'runAll')
+    so.RUN_ALL = run_cache.RUN_ALL = os.path.join(args.bin, 'runAll')
     so.SRC_DUMP = os.path.join(args.bin, 'srcDump')
     if args.bin == 'formal/.lake/build/bin':
         so.build_run_all()
