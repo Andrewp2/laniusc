@@ -198,7 +198,7 @@ theorem copy_loop_spec (target : P.target = Target.x86_64) (kind : ElemKind P T 
       obtain ⟨h'', stored, readBack, written⟩ :=
         stores xs[k] (List.getElem_mem _) (st h k) h base room readable effect.unique
       rw [slotEq] at written
-      have assign := StableExpr.assignRaw (before := st h k) (indexed := st h k) (ready := st h k)
+      have assign := StableExpr.assignRaw (nb := kind.notByte) (before := st h k) (indexed := st h k) (ready := st h k)
         (heap := h'') (sourceId := dst) (dstAt h k) (StableExpr.local (idxAt h k)) km
         (elementAddress kind km) (show (st h k).i32ArrayViews = [] from noViews) readStable stored
       have bodyRun : RunsStmt P (st h k)

@@ -173,12 +173,17 @@ theorem elementAddress {P : Program} {T : Ty} {size p cap i : Nat} (kind : ElemK
       · simpa only [viewAddr, elemBase, slotLo, slotIndex, i32Ty, ne, reduceCtorEq, false_or,
           if_false] using address
 
+/-- A vector element is never a byte of a byte view. -/
+theorem ElemKind.notByte {P : Program} {T : Ty} {size : Nat} (kind : ElemKind P T size) : isByte T = false := by
+  cases kind <;> rfl
+
 theorem readRawSliceIndex_elem {P : Program} {T : Ty} {size p cap i : Nat} (st : State)
     (kind : ElemKind P T size) (inside : i < cap) :
     readRawSliceIndex P st T (viewAddr T size p cap) cap i =
       readNativeValue NativeLayout.maxDepth P st.heap T (elemBase T size p cap i) := by
   simp only [readRawSliceIndex, Nat.not_le_of_lt inside, if_false, elementAddress kind inside]
-  rfl
+  show readRawElement P st.heap T _ = _
+  simp only [readRawElement, kind.notByte, Bool.false_eq_true, ↓reduceIte]
 
 theorem ReadsWithin.refl (h : Heap) (lo n : Nat) : ReadsWithin h h lo n :=
   fun _ _ _ _ _ read => read

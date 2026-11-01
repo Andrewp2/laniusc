@@ -35,7 +35,7 @@ theorem mapRawNominalSlice_of_block (count : Nat) (positive : 0 < count)
     (Nat.mul_pos (Nat.mul_pos positive width) (by decide)) aligned (by decide) alignment (by omega)
   have nonnegative : ¬((count : Int) < 0) := Int.not_lt_of_ge (Int.natCast_nonneg count)
   cases element <;> simp at nominal
-  all_goals simp [mapRawNominalSlice, nonnegative, layout, Nat.ne_of_gt width,
+  all_goals simp [mapRawNominalSlice, isByte, nonnegative, layout, Nat.ne_of_gt width,
     Nat.ne_of_gt positive, Int.toNat_natCast, Nat.not_lt_of_ge room, checked]
 
 /-- Construct a raw slice from its allocation metadata, without assuming a

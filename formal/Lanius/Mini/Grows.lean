@@ -69,6 +69,7 @@ import all Lanius.Mini.Compiler.P.storeType
 import all Lanius.Mini.Compiler.P.lowerSlice
 import all Lanius.Mini.Compiler.P.indexOf
 import all Lanius.Mini.Compiler.P.elementAddress
+import all Lanius.Mini.Compiler.P.storeWordElement
 import all Lanius.Mini.Compiler.P.lowerLoadType
 import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.storeEvalWord
@@ -682,6 +683,18 @@ theorem evalPlace_field {P : Core.Program} {k : Nat} {st : State} {id index : Na
            exact ⟨rfl, by first | rfl | exact raw⟩)
     all_goals simp at run
 
+/-- A raw store keeps the heap's size: a byte view's byte or a native value. -/
+theorem writeRawNative_next {P : Core.Program} {st : State} {place : Semantics.ResolvedPlace} {ty : Core.Ty}
+    {a : Nat} {v : Value} {h' : Memory.Heap} (stored : Semantics.writeRawNative P st place ty a v = .ok h') :
+    h'.nextAddress = st.heap.nextAddress := by
+  simp only [Semantics.writeRawNative] at stored
+  split at stored
+  · simp only [Semantics.storeRawByte] at stored
+    split at stored
+    · exact storeBytes_next stored
+    · simp at stored
+  · exact writeNativeValue_next _ stored
+
 /-- `place = e` on a local or a field of one, where evaluating `e` grows. -/
 theorem assign_grows {P : Core.Program} {k : Nat} {st : State} {place : Core.Place} {e : Core.Expr}
     {u : Value} {st' : State}
@@ -722,7 +735,7 @@ theorem assign_grows {P : Core.Program} {k : Nat} {st : State} {place : Core.Pla
           simp only [synced, ite_self, Semantics.Outcome.done.injEq] at run
           obtain ⟨-, rfl⟩ := run
           exact ⟨views2, by rw [show heap3.nextAddress = afterValue.heap.nextAddress from
-            writeNativeValue_next _ stored]; exact next2⟩
+            writeRawNative_next stored]; exact next2⟩
         · simp at run
     all_goals simp at run
   all_goals simp at run
@@ -766,7 +779,7 @@ theorem assign_grows_eff {P : Core.Program} {k : Nat} {st : State} {place : Core
           simp only [synced, ite_self, Semantics.Outcome.done.injEq] at run
           obtain ⟨-, rfl⟩ := run
           exact ⟨views2, by rw [show heap3.nextAddress = afterValue.heap.nextAddress from
-            writeNativeValue_next _ stored]; exact Nat.le_trans next1 next2⟩
+            writeRawNative_next stored]; exact Nat.le_trans next1 next2⟩
         · simp at run
     all_goals simp at run
   all_goals simp at run

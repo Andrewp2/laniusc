@@ -39,11 +39,17 @@ stopping at the computations the theorems are about (`compileSource`,
 `linkObjects`, `elfFile`, `sourceProgramFiles`, `compileWords`,
 `frontEndWords` and the self program `Lanius.Faithful.Self.prog`, which are
 not trusted, section 10), with each one's type and body:
-definitions `d54e951f9f541623` (4,330 constants). This covers Core's
+definitions `ae2828a08ce798fa` (4,341 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
-modules keeps its hash. The last change of the hash (10-31, F11b): the
+modules keeps its hash. The last change of the hash (10-31): Core's byte
+views (SEMANTIC_DECISIONS "Byte views"): a raw slice of `u8` is one byte
+per element at `pointer + i` (`isByte`, `rawSliceElementAddress?`,
+`NativeLayout.elementStride?` and `words?`), `mapRawNominalSlice` checks its
+bytes, a read loads one byte (`readRawElement`) and a write stores one
+(`storeRawByte`, `writeRawNative`, chosen by `ResolvedPlace.rawByte`), and
+`RawNominalSliceElement.byte` types it. Before that (10-31, F11b): the
 reading of patterns: a payload name spelled like a variant is never a
 binder (`BindersR`'s `NoVariant`), match statements and lets' matches read
 nested arms (`StmtOrder`, `NestedRows`, `ArmsStmtR.inner`,

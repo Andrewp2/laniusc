@@ -1543,3 +1543,31 @@ laniusc reads it or not read (frontend cases `reject_for_write`,
   directory (`--source-root`, more than once); the stdlib oracle's `--root
   DIR` adds such a root and makes its modules the targets, which is the
   full-tier gate step `extended`.
+
+## Byte views (decided 10-31)
+
+Core's raw slices had no `u8` element: `slice_from_raw_parts` of a `u8`
+pointer trapped `typeMismatch`, so the verified compiler lowered no function
+with a `[u8]` or `View<u8>` slice. A raw slice of `u8` is now a byte view,
+in laniusc's layout (point 2 of "Addressed locals"): element `i` is the one
+byte at `pointer + i`.
+
+- `isByte` marks the element type `u8`. `NativeLayout.elementStride?` is 1,
+  `rawSliceElementAddress?` is `address + index`, and a `[u8]` value is the
+  usual 3 words (pointer, length, padding).
+- `mapRawNominalSlice` of a byte view checks `length` bytes from `pointer`
+  inside one live block (`checkRange`, alignment 1); a length of 0 needs no
+  block, as for the other raw slices; a negative length traps
+  `rawMemoryBounds`.
+- A read of element `i` loads the one byte (`readRawElement`), not the
+  4-byte word a `u8` struct field or local takes in native layout; a write
+  stores the value's one byte (`storeRawByte`, any other value is
+  `typeMismatch`). The place says so: `ResolvedPlace.rawByte`, set by
+  `evalPlace` on a byte view's element and false everywhere else, picks the
+  store (`writeRawNative`).
+- `typedSliceFromRawParts` types a byte view (`RawNominalSliceElement.byte`)
+  beside the declared structs and enums.
+
+The verified compiler lowers `s[i]` of a byte view to a bounds check and a
+zero-extending byte load (`LoadByte`, `movzx`), and `s[i] = v` to a byte
+store (`StoreByte`, `mov byte`) after the same check; `slice_stride` is 1.

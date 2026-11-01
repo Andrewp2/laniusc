@@ -78,7 +78,7 @@ theorem map_inv {P : Core.Program} {s s' : State} {T : Core.Ty} {a : Nat} {n : I
     dsimp only at h
     split at h
     · simp at h
-    simp only [Bool.not_true, Bool.false_eq_true, if_false] at h
+    simp only [Semantics.isByte, Bool.not_true, Bool.false_eq_true, if_false, ↓reduceIte] at h
     split at h
     · simp at h
     rename_i w hw

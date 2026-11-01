@@ -876,6 +876,17 @@ theorem eff_index (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some
       simp only [Option.some.injEq] at ok
       subst ok
       exact ⟨i, _, indexOk, kind, rfl⟩
+    split at ok
+    · split at ok
+      · simp at ok
+      rename_i i indexOk
+      simp only [evalLoadByte] at ok
+      split at ok
+      case isFalse => simp at ok
+      rename_i kind
+      simp only [Option.some.injEq] at ok
+      subst ok
+      exact ⟨i, _, indexOk, kind, rfl⟩
     · split at ok
       · simp at ok
       rename_i i indexOk
@@ -1722,14 +1733,15 @@ theorem setIndex_value_done {iv : Value} {st1 : State} {pos at_ : Nat} {right : 
   rw [base] at hout
   simp only [idxRun, posOk, lt, if_true, decide_true, located, eRun, Semantics.evalAssignValue,
     Semantics.assignOpBinary?, Semantics.writeResolvedPlaceNative] at hout
-  cases stored : Semantics.writeNativeValue NativeLayout.maxDepth P st2 st2.heap element at_ right with
+  generalize stored : Semantics.writeRawNative P st2 _ element at_ right = w at hout
+  cases w with
   | error r =>
-    simp only [stored, bind, Except.bind] at hout
-    exact .inr ⟨r, hout.symm, writeNativeValue_undef _ _ _ _ _ _ _ views r stored⟩
+    simp only [bind, Except.bind] at hout
+    exact .inr ⟨r, hout.symm, writeRawNative_undef _ _ _ _ _ _ views r stored⟩
   | ok heap =>
-    simp only [stored, bind, Except.bind, pure, Except.pure, Semantics.syncI32ViewsFromHeap, views,
+    simp only [bind, Except.bind, pure, Except.pure, Semantics.syncI32ViewsFromHeap, views,
       Semantics.syncI32ViewsFromHeapFrom, ite_self] at hout
-    exact .inl ⟨_, hout.symm, writeNativeValue_next _ stored⟩
+    exact .inl ⟨_, hout.symm, writeRawNative_next stored⟩
 
 /-- Core's `array[idx] = e` on an array local whose index traps traps. -/
 theorem arraySet_idx_trap {vs : List Value} {r : Lanius.Trap} {s : State}
@@ -1863,6 +1875,20 @@ theorem stops_setIndexEval (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.fun
       · simp at ok
       rename_i w valueOk
       simp only [storeEval] at ok
+      split at ok
+      case isFalse => simp at ok
+      rename_i cond
+      simp only [Bool.and_eq_true] at cond
+      simp only [Option.some.injEq] at ok
+      exact ⟨i, w, _, indexOk, valueOk, cond.1, ok.symm⟩
+    split at ok
+    · split at ok
+      · simp at ok
+      rename_i i indexOk
+      split at ok
+      · simp at ok
+      rename_i w valueOk
+      simp only [storeEvalByte] at ok
       split at ok
       case isFalse => simp at ok
       rename_i cond

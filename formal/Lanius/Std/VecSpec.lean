@@ -279,7 +279,7 @@ theorem trySet_spec (inst : VecInstance P T ids) (kind : ElemKind P T size) {cal
     store B B.heap base room (by rw [slotEq, hB]; exact readable) (by rw [hB]; exact unique)
   rw [slotEq, hB] at effect
   have nv : B.i32ArrayViews = [] := frame.views.trans noViews
-  have assign := StableExpr.assignRaw (before := B) (indexed := B) (ready := B) (heap := h')
+  have assign := StableExpr.assignRaw (nb := kind.notByte) (before := B) (indexed := B) (ready := B) (heap := h')
     (sourceId := 3) src (StableExpr.local idx) hcap (elementAddress kind hcap) nv (StableExpr.local xv) stored
   let C : State := { B with heap := h' }
   have body : RunsStmt P B (.sequence (.expression (.assign .set (.index (.local 3) (.local 1)) (.local 2)))

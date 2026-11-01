@@ -29,10 +29,11 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_lower_slice {prog : SrcProgram} {prims : Prims} {ix_lower_slice ix_single_of_mini_selfhost_Expr ix_boxed_of_mini_selfhost_List_mini_selfhost_Expr ix_SrcType_is_i32 ix_word_element ix_within_layout : Nat} (fn : prog.funcs[ix_lower_slice]? = some (src_lower_slice ix_single_of_mini_selfhost_Expr ix_boxed_of_mini_selfhost_List_mini_selfhost_Expr ix_SrcType_is_i32 ix_word_element ix_within_layout)) (np : prims.isPrim ix_lower_slice = false)
+theorem proof_lower_slice {prog : SrcProgram} {prims : Prims} {ix_lower_slice ix_single_of_mini_selfhost_Expr ix_boxed_of_mini_selfhost_List_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_uint ix_word_element ix_within_layout : Nat} (fn : prog.funcs[ix_lower_slice]? = some (src_lower_slice ix_single_of_mini_selfhost_Expr ix_boxed_of_mini_selfhost_List_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_uint ix_word_element ix_within_layout)) (np : prims.isPrim ix_lower_slice = false)
     (ext_single_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_Expr prog prims ix_single_of_mini_selfhost_Expr n))
     (ext_boxed_of_mini_selfhost_List_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_mini_selfhost_Expr prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_Expr n))
     (ext_SrcType_is_i32 : Certified (∀ {n : Nat}, Stmt_SrcType_is_i32 prog prims ix_SrcType_is_i32 n))
+    (ext_SrcType_is_uint : Certified (∀ {n : Nat}, Stmt_SrcType_is_uint prog prims ix_SrcType_is_uint n))
     (ext_word_element : Certified (∀ {n : Nat}, Stmt_word_element prog prims ix_word_element n))
     (ext_within_layout : Certified (∀ {n : Nat}, Stmt_within_layout prog prims ix_within_layout n)) {n : Nat} :
     Stmt_lower_slice prog prims ix_lower_slice n := by
