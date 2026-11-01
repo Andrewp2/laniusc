@@ -2276,6 +2276,12 @@
       ],
       "note": "RFC 6902 JSON Patch and RFC 7386 JSON Merge Patch over ext::json_tree, returning a new tree and leaving the document unchanged on failure. Native binaries from lcc agree with a Python model on 6,450 RFC-example, error-kind and generated cases."
     },
+    "ext::json_schema": {
+      "guides": [
+        "docs/extended-json-schema.md"
+      ],
+      "note": "JSON Schema draft 2020-12 validation (core, applicator and validation vocabularies; pattern via ext::regex; local $ref and $defs) over ext::json_tree, with exact decimal numeric keywords and depth/work limits. Native binaries from lcc agree with a Python model on 246 hand-written specification cases, 92 error/limit cases and 10,000 generated schema/instance pairs."
+    },
     "ext::json_stream": {
       "guides": [
         "docs/extended-json-stream.md"

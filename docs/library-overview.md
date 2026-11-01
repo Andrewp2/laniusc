@@ -2420,7 +2420,12 @@ from any `core::io::Read` source, and `Writer.flush_to` streams output to any
 [`ext::json_pointer` and `ext::json_patch`](extended-json-patch.md) apply
 RFC 6901 pointers, RFC 6902 patches and RFC 7386 merge patches to
 `ext::json_tree` documents atomically. They agree with a Python model on
-6,450 RFC-example, error and generated cases. [`core::float_decimal`](stdlib-float-decimal.md)
+6,450 RFC-example, error and generated cases.
+[`ext::json_schema`](extended-json-schema.md) validates `ext::json_tree`
+documents against JSON Schema 2020-12 (core, applicator and validation
+vocabularies, `pattern` through `ext::regex`, local `$ref`). It agrees with a
+Python model on 246 hand-written specification cases, 92 error and limit
+cases and 10,000 generated schema/instance pairs. [`core::float_decimal`](stdlib-float-decimal.md)
 formats shortest decimals with Schubfach, which is exact with no fallback, in
 about 0.6 to 0.8 µs per value. It parses with an Eisel-Lemire fast path
 before its exact big-integer path, in about 0.7 to 0.8 µs per value. It

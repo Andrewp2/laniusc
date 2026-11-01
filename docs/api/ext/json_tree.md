@@ -14,7 +14,7 @@ Mutable JSON document arena read with ext::json_stream (exact number spelling, d
 
 - [extended-json-patch](../../extended-json-patch.md)
 
-Declaration counts: enum: 2; field: 25; function: 7; impl: 1; method: 25; struct: 3; variant: 20.
+Declaration counts: enum: 2; field: 25; function: 12; impl: 1; method: 25; struct: 3; variant: 20.
 
 ## Declared imports
 
@@ -483,9 +483,49 @@ pub fn parse(source: [u8], start: i32, count: i32, limits: Limits) -> core::resu
 pub fn numbers_equal(left: core::text::Text, right: core::text::Text) -> bool
 ```
 
+### function: number_compare
+
+[Source line 474](../../../extended/ext/json_tree.lani#L474)
+
+```lanius
+pub fn number_compare(left: core::text::Text, right: core::text::Text) -> i32
+```
+
+### function: number_is_integer
+
+[Source line 499](../../../extended/ext/json_tree.lani#L499)
+
+```lanius
+pub fn number_is_integer(text: core::text::Text) -> bool
+```
+
+### function: number_count
+
+[Source line 505](../../../extended/ext/json_tree.lani#L505)
+
+```lanius
+pub fn number_count(text: core::text::Text, limit: i64) -> i64
+```
+
+### function: number_digits
+
+[Source line 519](../../../extended/ext/json_tree.lani#L519)
+
+```lanius
+pub fn number_digits(text: core::text::Text) -> i32
+```
+
+### function: number_is_multiple
+
+[Source line 526](../../../extended/ext/json_tree.lani#L526)
+
+```lanius
+pub fn number_is_multiple(value: core::text::Text, divisor: core::text::Text) -> bool
+```
+
 ### function: equal
 
-[Source line 510](../../../extended/ext/json_tree.lani#L510)
+[Source line 579](../../../extended/ext/json_tree.lani#L579)
 
 ```lanius
 pub fn equal(left: &Tree, a: i32, right: &Tree, b: i32) -> bool
