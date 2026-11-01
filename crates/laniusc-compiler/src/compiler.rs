@@ -197,6 +197,23 @@ impl CompileError {
                 CompileError::Diagnostic(_) => {}
             }
         }
+        // Kernels are read from disk at run time. When a rebuild has replaced
+        // them under this binary, every failure (a raw phase error or a source
+        // diagnostic the other kernels produced) is an artifact of that pairing.
+        if let Some(problem) = crate::shader_artifacts::kernel_pairing_problem() {
+            let reported = match self {
+                CompileError::Diagnostic(diagnostic) => {
+                    format!("{} {}", diagnostic.code, diagnostic.message)
+                }
+                _ => "an internal phase error".to_string(),
+            };
+            return Diagnostic::error("LNC0057", "compiler kernels changed under this binary")
+                .with_note(problem)
+                .with_note(format!("this compile reported {reported}, which may not be about the source"))
+                .with_help(
+                    "rerun once the build finishes, or run a binary pinned to its kernels (tools/pin_laniusc.py)",
+                );
+        }
         match self {
             CompileError::Diagnostic(diagnostic) => diagnostic.clone(),
             CompileError::GpuFrontend(_) => compiler_execution_failed_diagnostic(
