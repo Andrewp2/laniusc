@@ -20,6 +20,13 @@ they are, never edited.
    error enum with payloads, a struct holding one): the wrapper returns its
    tag or one scalar leaf, through one helper per level. A type named by an
    item import (`import core::result::Result;`) is the imported module's.
+   A parameter may also be a slice or a `core::slice::View` of u8 or i32
+   (SLICE_ELEMS); a target with one may return unit. The wrapper takes the
+   slice's shape (n, and a view's start and length) in one word and its
+   contents in up to SLICE_WORDS u64 words, allocates storage and fills a
+   slice of n elements (core::mem::typed_slice_from_storage), and each such
+   argument's contents after the call are a result part of their own (sK, a
+   hash of the n elements), so a write through the slice is compared too.
 2. Each testable target gets a program of its own: a first file, the module
    app::main, holding one wrapper `w` that takes scalar arguments (an
    Option as a flag and a payload), calls the target and returns an i32 (a
@@ -337,6 +344,11 @@ def resolve(mods, module, t, subst):
         return subst[t]
     if t in SCALARS or t in ('unit', '!'):
         return t
+    m = re.match(r'^\[\s*([^;]+?)\s*\]$', t)
+    if m:
+        # A slice of u8 or i32 (an argument: the wrapper builds it, SLICES).
+        inner = resolve(mods, module, m.group(1), subst)
+        return f'slice:{inner}' if inner in SLICE_ELEMS else None
     m = re.match(r'^\[\s*(.+?)\s*;\s*(\d+)\s*\]$', t)
     if m:
         # An array of scalars, by its written type `[T; N]`: its leaves are
@@ -362,6 +374,9 @@ def resolve(mods, module, t, subst):
             path = home
     if name in mods[path].aliases and not targs:
         return resolve(mods, path, mods[path].aliases[name], {})
+    if (path, name) == ('core::slice', 'View') and len(targs) == 1:
+        inner = resolve(mods, module, targs[0], subst)
+        return f'view:{inner}' if inner in SLICE_ELEMS else None
     if name in mods[path].structs and not targs:
         return resolve_struct(mods, path, name)
     if name in mods[path].enums:
@@ -439,6 +454,10 @@ def leaves(ty, path=''):
 
 
 def type_text(ty):
+    if ty.startswith('slice:'):
+        return f'[{ty[6:]}]'
+    if ty.startswith('view:'):
+        return f'core::slice::View<{ty[5:]}>'
     for prefix in ('struct:', 'enum:'):
         if ty.startswith(prefix):
             return ty[len(prefix):]
@@ -453,6 +472,9 @@ def struct_value(ty, names):
 
 
 def struct_modules(ty):
+    if ty.startswith(('slice:', 'view:')):
+        # the wrapper allocates the slice's storage and views it
+        return {'alloc::allocator', 'core::mem'} | ({'core::slice'} if ty.startswith('view:') else set())
     if ty.startswith('enum:'):
         home, vs = ENUMS[ty]
         return {home.rsplit('::', 1)[0]} | {m for _, ps in vs for p in ps for m in struct_modules(p)}
@@ -512,14 +534,17 @@ def targets(mods, wanted):
         subst = {g: 'i32' for g in fn['generics']}
         params = [(p, resolve(mods, t.module, ty, subst)) for p, ty in fn['params']]
         ret = resolve(mods, t.module, fn['ret'], subst)
-        bad = [ty for (p, ty), (_, orig) in zip(params, fn['params']) if not testable(ty)]
-        if ret in ('unit', '!'):
+        bad = [ty for (p, ty), (_, orig) in zip(params, fn['params']) if not argument(ty)]
+        sliced = any(sliced_type(ty) for _, ty in params)
+        if ret == 'unit' and sliced and not bad:
+            pass  # its effect on the slices is the result
+        elif ret in ('unit', '!'):
             t.why = 'result ' + fn['ret']
         elif not (testable(ret) or (ret or '').startswith('enum:')):
             t.why = 'type ' + fn['ret']
-        elif bad or any(not testable(ty) for _, ty in params):
-            t.why = 'type ' + next(orig for (p, ty), (_, orig) in zip(params, fn['params']) if not testable(ty))
-        elif sum(arg_words(ty) for _, ty in params) > 6:
+        elif bad or any(not argument(ty) for _, ty in params):
+            t.why = 'type ' + next(orig for (p, ty), (_, orig) in zip(params, fn['params']) if not argument(ty))
+        elif content_words(params) < 1:
             t.why = 'more than six argument words'
         else:
             t.params, t.ret = params, ret
@@ -527,10 +552,130 @@ def targets(mods, wanted):
 
 
 def arg_words(ty):
-    """How many wrapper parameters an argument of the type takes."""
+    """How many wrapper parameters an argument of the type takes (a slice or
+    view: its shape word, its contents' words aside)."""
     if ty.startswith('Option<'):
         return 2
+    if sliced_type(ty):
+        return 1
     return len(leaves(ty))
+
+
+# Slices and views of these are arguments (not results): the wrapper takes a
+# shape word, n | start << 8 | length << 16, and up to SLICE_WORDS u64 words
+# of contents, little-endian (8 u8 or 2 i32 to a word); allocates storage for
+# them (core::mem::typed_slice_from_storage), fills the first n elements and,
+# for a view, views start and length of them. The slices' contents after the
+# call are results of their own (part sK: a hash of all n elements).
+SLICE_ELEMS = ('u8', 'i32')
+SLICE_WORDS = 3
+
+
+def sliced_type(ty):
+    return (ty or '').startswith(('slice:', 'view:'))
+
+
+def argument(ty):
+    return testable(ty) or sliced_type(ty)
+
+
+def content_words(params):
+    """How many content words each slice argument gets, within the six
+    argument words (6 when there is none)."""
+    n = sum(1 for _, ty in params if sliced_type(ty))
+    free = 6 - sum(arg_words(ty) for _, ty in params)
+    if not n:
+        return 6 if free >= 0 else 0
+    return min(SLICE_WORDS, free // n)
+
+
+def slice_capacity(ty, words):
+    return words * (8 if ty.endswith(':u8') else 2)
+
+
+def result_parts(t):
+    """The parts a target's program returns, one wrapper each."""
+    return ([] if t.ret == 'unit' else results_of(t.ret)) + \
+        [f's{k}' for k, (_, ty) in enumerate(t.params) if sliced_type(ty)]
+
+
+def slice_setup(k, ty, words):
+    """The wrapper's statements that build slice argument k (s{k}, and v{k} for a view)."""
+    elem = ty.split(':')[1]
+    cap = slice_capacity(ty, words)
+    per = 8 if elem == 'u8' else 2
+    lines = [f'    let n{k}: i32 = a{k}m & 255;',
+             f'    let p{k}: ptr = alloc::allocator::alloc(({8 * cap} as usize), (8 as usize));',
+             f'    let s{k}: [{elem}] = core::mem::typed_slice_from_storage<{elem}>(p{k}, n{k});',
+             f'    let i{k}: i32 = 0;', f'    while (i{k} < n{k}) {{', f'        let w{k}: u64 = a{k}c0;']
+    lines += [f'        if (i{k} >= {per * j}) {{ w{k} = a{k}c{j}; }}' for j in range(1, words)]
+    lines.append(f'        let b{k}: u64 = ((i{k} % {per}) * {64 // per}) as u64;')
+    lines.append(f'        s{k}[i{k}] = ((w{k} >> b{k}) & 255) as u8;' if elem == 'u8' else
+                 f'        s{k}[i{k}] = ((w{k} >> b{k}) as i32);')
+    lines += [f'        i{k} += 1;', '    }']
+    if ty.startswith('view:'):
+        lines.append(f'    let v{k}: core::slice::View<{elem}> = core::slice::View {{ values: s{k}, '
+                     f'start: (a{k}m >> 8) & 255, length: (a{k}m >> 16) & 255 }};')
+    return lines
+
+
+def slice_hash_lines(k, ty):
+    """The wrapper's statements that return a hash of slice k's n elements."""
+    elem = ty.split(':')[1]
+    e = f'(s{k}[j] as u64)' if elem == 'u8' else f'(((s{k}[j] as i64) + 2147483648) as u64)'
+    return ['    let h: u64 = 0;', '    let j: i32 = 0;', f'    while (j < n{k}) {{', f'        let e: u64 = {e};',
+            '        h = (h * 31 + e) % 1000000007;', '        j += 1;', '    }', '    let t: i32 = (h as i32);',
+            '    return t;']
+
+
+SLICE_TEXT = b'0123456789abcdefxyzABCDEFXYZ.:/-+_ ,;=%[]\n\r\t' + bytes([0, 0xc3, 0xa9, 0xe2, 0x82, 0xac, 0xff, 0x80])
+
+
+def gen_slice(rng, ty, words):
+    """(shape word, content words) of a slice or view argument."""
+    cap = slice_capacity(ty, words)
+    n = rng.choice([0, 1, 2, 3, cap, cap, rng.randint(0, cap), rng.randint(0, cap)])
+    if ty.endswith(':u8'):
+        mode = rng.random()
+        values = [rng.randrange(256) if mode < 0.35 else rng.choice(SLICE_TEXT) if mode < 0.85
+                  else rng.choice([0, 1, 255, 48]) for _ in range(n)]
+        # a run of one text byte, or digits, now and then
+        if mode >= 0.85 and n and rng.random() < 0.5:
+            values = [rng.choice(b'0123456789')] * n
+        bits, mask = 8, 255
+    else:
+        values = [gen_arg(rng, 'i32') for _ in range(n)]
+        bits, mask = 32, 2 ** 32 - 1
+    per = 64 // bits
+    content = [sum(((values[j * per + b] if j * per + b < n else 0) & mask) << (bits * b) for b in range(per))
+               for j in range(words)]
+    start = length = 0
+    if ty.startswith('view:'):
+        if rng.random() < 0.9:
+            start = rng.randint(0, n)
+            length = rng.randint(0, n - start)
+        else:
+            start, length = rng.randint(0, cap), rng.randint(0, cap)
+    return n | start << 8 | length << 16, content
+
+
+def gen_call(rng, p, handles, sleeps):
+    """One argument tuple for a program's wrapper parameters."""
+    t = p['target']
+    words = content_words(t.params)
+    out = []
+    for name, ty in p['wparams']:
+        m = re.match(r'^a(\d+)(m|c(\d+))$', name)
+        if m and sliced_type(t.params[int(m.group(1))][1]):
+            if m.group(2) == 'm':
+                shape, content = gen_slice(rng, t.params[int(m.group(1))][1], words)
+                out.append(shape)
+            else:
+                out.append(content[int(m.group(3))])
+            continue
+        out.append(rng.choice((1, 2)) if name in handles else rng.choice(SLEEP_MS) if name in sleeps
+                   else gen_arg(rng, ty))
+    return out
 
 
 def results_of(ret):
@@ -670,8 +815,13 @@ def wrapper_text(mods, t, part):
     lines.append('')
     lines += t.decls + ([''] if t.decls else [])
     wparams, setup, args = [], [], []
+    words = content_words(t.params)
     for k, (p, ty) in enumerate(t.params):
-        if ty.startswith('Option<'):
+        if sliced_type(ty):
+            wparams += [(f'a{k}m', 'i32')] + [(f'a{k}c{j}', 'u64') for j in range(words)]
+            setup += slice_setup(k, ty, words)
+            args.append(f'v{k}' if ty.startswith('view:') else f's{k}')
+        elif ty.startswith('Option<'):
             inner = ty[7:-1]
             wparams += [(f'a{k}s', 'bool'), (f'a{k}', inner)]
             setup += [f'    let o{k}: core::option::Option<{inner}> = None();',
@@ -719,6 +869,13 @@ def wrapper_text(mods, t, part):
         targs = f'<{t.targs or ", ".join("i32" for _ in fn["generics"])}>' if fn['generics'] else ''
         call = f'{t.module}::{fn["name"]}{targs}({", ".join(args)})'
     sig = ', '.join(f'{p}: {ty}' for p, ty in wparams)
+    if re.match(r'^s\d+$', part):
+        # The contents of slice argument k after the call.
+        k = int(part[1:])
+        lines += [f'fn w({sig}) -> i32 {{'] + setup
+        lines.append(f'    {call};' if t.ret == 'unit' else f'    let r: {ret} = {call};')
+        lines += slice_hash_lines(k, t.params[k][1]) + ['}']
+        return '\n'.join(lines) + '\n', wparams
     if t.ret in FLOATS:
         # The float itself is the result; its bits are what the image returns.
         lines += [f'fn w({sig}) -> {t.ret} {{'] + setup + [f'    let r: {t.ret} = {call};', '    return r;', '}']
@@ -1450,7 +1607,7 @@ def main():
     for t in all_targets:
         if t.params is None:
             continue
-        for part in results_of(t.ret):
+        for part in result_parts(t):
             k = len(programs)
             text, wparams = wrapper_text(mods, t, part)
             base = os.path.join(workdir, f'p{k}')
@@ -1526,9 +1683,7 @@ def main():
         # A sleep's count is a few milliseconds or negative, so that a call
         # ends well inside its timeout.
         sleeps = {f'a{k}' for k, (name, ty) in enumerate(p['target'].params) if name == 'milliseconds' and ty == 'i32'}
-        p['calls'] = [[rng.choice((1, 2)) if name in handles else rng.choice(SLEEP_MS) if name in sleeps
-                       else gen_arg(rng, ty) for name, ty in p['wparams']]
-                      for _ in range(args.calls if types else 1)]
+        p['calls'] = [gen_call(rng, p, handles, sleeps) for _ in range(args.calls if types else 1)]
         high = p['target'].ret in FLOATS and p['part'] == 'hi'
         p['reads'] = reads_stdin(mods, p)
         p['stdin'] = [gen_stdin(args.seed, k, i) if p['reads'] else b'' for i in range(len(p['calls']))]
