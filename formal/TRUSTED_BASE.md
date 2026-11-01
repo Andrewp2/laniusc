@@ -39,11 +39,18 @@ stopping at the computations the theorems are about (`compileSource`,
 `linkObjects`, `elfFile`, `sourceProgramFiles`, `compileWords`,
 `frontEndWords` and the self program `Lanius.Faithful.Self.prog`, which are
 not trusted, section 10), with each one's type and body:
-definitions `00ba64a17b5ef7a2` (4,341 constants). This covers Core's
+definitions `431183db33e4afe3` (4,343 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
-modules keeps its hash. The last change of the hash (10-31, merge of rfront's byte views with F11b's reading changes; neither changed the other's definitions): Core's byte
+modules keeps its hash. The last change of the hash (11-01, rfront): Core's
+`u16` views (SEMANTIC_DECISIONS "`u16` views"): a raw slice of `u16` is a
+word view in laniusc's layout, one descending 8-byte word per element
+(`rawSliceElementAddress?` and `mapRawNominalSlice` take it as they take a
+struct or enum, `NativeLayout.elementStride?` is -8 and `words?` of a
+`[u16]` is 3), and `RawNominalSliceElement.word16` types it. Before that
+(10-31, merge of rfront's byte views with F11b's reading changes; neither
+changed the other's definitions): Core's byte
 views (SEMANTIC_DECISIONS "Byte views"): a raw slice of `u8` is one byte
 per element at `pointer + i` (`isByte`, `rawSliceElementAddress?`,
 `NativeLayout.elementStride?` and `words?`), `mapRawNominalSlice` checks its

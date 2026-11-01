@@ -16,10 +16,10 @@ open Lanius.Semantics (State Completion evalExpr evalExprs evalPlace execStmt Re
 
 /-- An empty raw view of a word element type. -/
 theorem map_empty {P : Core.Program} {s : State} {T : Core.Ty} {a w : Nat}
-    (kind : (∃ id, T = .structure id) ∨ ∃ id, T = .enumeration id) (hw : NativeLayout.valueWords? P T = some w)
+    (kind : (∃ id, T = .structure id) ∨ (∃ id, T = .enumeration id) ∨ T = .scalar (.unsigned .u16)) (hw : NativeLayout.valueWords? P T = some w)
     (pos : 0 < w) : mapRawNominalSlice P s T a 0 = .done (.rawSlice T a 0) s := by
   have nz : (w == 0) = false := by simp only [beq_eq_false_iff_ne]; omega
-  rcases kind with ⟨id, rfl⟩ | ⟨id, rfl⟩ <;> simp [mapRawNominalSlice, hw, nz]
+  rcases kind with ⟨id, rfl⟩ | ⟨id, rfl⟩ | rfl <;> simp [mapRawNominalSlice, hw, nz]
 
 section
 variable {sp : SrcProgram} {st : State}
@@ -85,7 +85,7 @@ theorem sizeOf_call_fwd {t : SrcType} {w : Nat} {callee : Nat} (found : sp.funcs
 
 /-- A one-element raw view of a word element type, over a range that checks. -/
 theorem map_single {P : Core.Program} {s : State} {T : Core.Ty} {A w : Nat}
-    (kind : (∃ id, T = .structure id) ∨ ∃ id, T = .enumeration id) (hw : NativeLayout.valueWords? P T = some w)
+    (kind : (∃ id, T = .structure id) ∨ (∃ id, T = .enumeration id) ∨ T = .scalar (.unsigned .u16)) (hw : NativeLayout.valueWords? P T = some w)
     (pos : 0 < w) (big : 8 * w ≤ A + 8) (ranged : s.heap.checkRange (A + 8 - 8 * w) (8 * w) 8 = .ok ()) :
     mapRawNominalSlice P s T A 1 = .done (.rawSlice T A 1) s := by
   have nz : (w == 0) = false := by simp only [beq_eq_false_iff_ne]; omega
@@ -94,7 +94,7 @@ theorem map_single {P : Core.Program} {s : State} {T : Core.Ty} {A w : Nat}
   have fits : ¬ (A + NativeLayout.wordBytes < 8 * w) := by simp only [NativeLayout.wordBytes]; omega
   have one : (Int.toNat 1 == 0) = false := rfl
   have ranged' : s.heap.checkRange (A + 8 - 8 * w) (8 * w) NativeLayout.wordBytes = .ok () := ranged
-  rcases kind with ⟨id, rfl⟩ | ⟨id, rfl⟩ <;>
+  rcases kind with ⟨id, rfl⟩ | ⟨id, rfl⟩ | rfl <;>
   · unfold mapRawNominalSlice
     simp only [show ¬ ((1 : Int) < 0) by decide, if_false, Bool.not_true, Bool.false_eq_true, hw, nz, one,
       bytes, fits, show A + NativeLayout.wordBytes - 8 * w = A + 8 - 8 * w from rfl, ranged']
@@ -346,12 +346,15 @@ theorem boxed_live {boxes : Boxes} {t : SrcType} {id sizeOf slice panic w : Nat}
     rw [heap4, show a + 8 * w - 8 + 8 - 8 * w = a by aomega]
     exact fun i lt => ⟨0, zeros i lt⟩
   obtain ⟨after, write, -, region⟩ := spec q4 q4.heap (a + 8 * w - 8) (by aomega) readable (heap4 ▸ unique1)
-  have written : Semantics.writeResolvedPlaceNative sp.toCore q4 { rb with value := none, raw := some (t.toCore,
-      a + 8 * w - 8) } x = .ok { q4 with heap := after } := by
-    simp only [Semantics.writeResolvedPlaceNative, write]
+  have nb : Semantics.isByte t.toCore = false := wordElement_notByte el
+  have written : Semantics.writeResolvedPlaceNative sp.toCore q4
+      { rb with value := none, raw := some (t.toCore, a + 8 * w - 8), rawByte := Semantics.isByte t.toCore } x =
+        .ok { q4 with heap := after } := by
+    simp only [Semantics.writeResolvedPlaceNative, Semantics.writeRawNative, nb, Bool.false_eq_true, ↓reduceIte, write]
     rfl
-  have synced : (if ({ rb with value := none, raw := some (t.toCore, a + 8 * w - 8) } : ResolvedPlace).viewFreeRootWrite x
-      then .ok { q4 with heap := after } else match ({ rb with value := none, raw := some (t.toCore, a + 8 * w - 8) } :
+  have synced : (if ({ rb with value := none, raw := some (t.toCore, a + 8 * w - 8), rawByte := Semantics.isByte t.toCore } :
+        ResolvedPlace).viewFreeRootWrite x
+      then .ok { q4 with heap := after } else match ({ rb with value := none, raw := some (t.toCore, a + 8 * w - 8), rawByte := Semantics.isByte t.toCore } :
         ResolvedPlace).raw with
       | none => Semantics.syncI32ViewsToHeap { q4 with heap := after }
       | some _ => Semantics.syncI32ViewsFromHeap { q4 with heap := after }) = .ok { q4 with heap := after } := by
@@ -428,7 +431,8 @@ theorem unbox_live {boxes : Boxes} {t : SrcType} {id slice : Nat} {values ps : L
   have heap1 : (s1.bindLocal 39 (.rawSlice t.toCore (a + 8 * w - 8) 1)).heap = st.heap := same.heap.trans heap0
   have readE : Semantics.readRawSliceIndex sp.toCore (s1.bindLocal 39 (.rawSlice t.toCore (a + 8 * w - 8) 1))
       t.toCore (a + 8 * w - 8) 1 0 = .ok y := by
-    simp only [Semantics.readRawSliceIndex, show ¬ (0 ≥ 1) by decide, if_false, elementAddress_zero kind wv pos]
+    simp only [Semantics.readRawSliceIndex, show ¬ (0 ≥ 1) by decide, if_false, elementAddress_zero kind wv pos,
+      Semantics.readRawElement, wordElement_notByte el, Bool.false_eq_true, ↓reduceIte]
     rw [heap1]
     exact read
   have idxE := index_fwd (local_fwd view1) (value_fwd (.signed .i32 0))

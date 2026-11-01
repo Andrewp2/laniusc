@@ -4609,12 +4609,13 @@ pub fn word_variants(decls: SrcDecls, variants: List<List<SrcType>>) -> bool {
 }
 // extract: mutual end
 
-// A raw slice element of words: a struct or an enum of a word type.
+// A raw slice element of words: a struct or an enum of a word type, or a
+// u16 (one word, laniusc's layout of a [u16]).
 pub fn word_element(decls: SrcDecls, element: SrcType) -> bool {
     return match (element) {
         I32 -> false,
         Bool -> false,
-        Uint(kind) -> false,
+        Uint(kind) -> element.is_uint(Uint16),
         Struct(id, fields) -> word_type(decls, element),
         Enum(id, variants) -> word_type(decls, element),
         Ptr -> false,

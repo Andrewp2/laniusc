@@ -1574,3 +1574,37 @@ byte at `pointer + i`.
 The verified compiler lowers `s[i]` of a byte view to a bounds check and a
 zero-extending byte load (`LoadByte`, `movzx`), and `s[i] = v` to a byte
 store (`StoreByte`, `mov byte`) after the same check; `slice_stride` is 1.
+
+## `u16` views (decided 11-01)
+
+Core's raw slices had no `u16` element (`slice_from_raw_parts` of a `u16`
+pointer trapped `typeMismatch`), so the verified compiler lowered no
+function with a `[u16]`, among them `core::utf16`'s, which
+`core::utf16_bytes` and `core::transcode` call. The request was a two-byte
+packed view, but laniusc does not lay `[u16]` out that way:
+`stdlib/core/mem.lani` packs only `i32` (stride +4) and `u8` (+1), and every
+other scalar is one descending 8-byte word. Measured with laniusc:
+`slice_stride` of `typed_slice_from_storage<u16>(p, 2)` is -8, and so is the
+stride of a `[u16; 2]` local passed as a `[u16]`. A packed view would make
+Core disagree with laniusc on every `[u16]` built from storage, so a raw
+slice of `u16` is a word view, as point 2 of "Addressed locals" says for
+every scalar but `i32` and `u8`:
+
+- `NativeLayout.elementStride?` of `u16` is -8 (its one native word) and a
+  `[u16]` value is the usual 3 words. `rawSliceElementAddress?` is the
+  struct and enum rule with one word: element `i`'s word is at
+  `pointer - 8 * i`.
+- `mapRawNominalSlice` checks the view's words in one live block, as for a
+  struct or enum view.
+- An element is read and written as a `u16` value is everywhere else in
+  native layout (`readNativeValue`, `writeNativeValue`: the word's low 4
+  bytes, a value above 65535 is `typeMismatch`); it is not a byte view
+  (`isByte` stays `u8` only).
+- `typedSliceFromRawParts` types it (`RawNominalSliceElement.word16`).
+
+The verified compiler lowers it on the word-element path (`word_element`
+accepts `u16`): `s[i]` is a bounds check and a 32-bit load at
+`pointer - 8 * i`, `s[i] = v` a 32-bit store there after the same check,
+and `slice_stride` is -8. The other one-word scalars (`u32`, `u64`, `i64`,
+`bool`, `char`, `ptr`, ...) have the same layout in laniusc and are later
+work.

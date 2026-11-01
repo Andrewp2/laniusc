@@ -22,6 +22,8 @@ def parameterContext (parameters : List (VarId × Ty)) : Context :=
     raw-slice intrinsic. Packed i32 slices use their separate constructor. -/
 inductive RawNominalSliceElement (program : Program) : Ty → Prop where
   | byte : RawNominalSliceElement program (.scalar (.unsigned .u8))
+  /-- A `u16` element is one native word, as laniusc lays it out. -/
+  | word16 : RawNominalSliceElement program (.scalar (.unsigned .u16))
   | structureType (id : TypeId) (declaration : StructDecl)
       (found : program.structure? id = some declaration) :
       RawNominalSliceElement program (.structure id)
