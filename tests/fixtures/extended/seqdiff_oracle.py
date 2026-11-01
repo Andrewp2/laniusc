@@ -174,6 +174,7 @@ def main():
                     fail("seq_patch on GNU diff " + flag, a, b, g)
                 bump("GNU diff %s applied by seq_patch" % flag)
     fuzz_cases(rng)
+    ambiguous_fuzz_cases(rng)
     scale_cases(rng)
     for k in sorted(counts):
         print("%6d  %s" % (counts[k], k))
@@ -224,6 +225,36 @@ def fuzz_cases(rng):
                 bump("offset/fuzz F%d cases with rejected hunks" % fuzz)
             if orc == 0 and oout == b"".join(b):
                 bump("offset/fuzz F%d reproduced target" % fuzz)
+
+
+def ambiguous_fuzz_cases(rng):
+    """Offset/fuzz over repeated lines, where several positions can match."""
+    for case in range(max(40, CASES // 3)):
+        d = rng.choice(DICTS[:2])
+        a = [rng.choice(d) for _ in range(rng.randint(10, 60))]
+        b = list(a)
+        for _ in range(rng.randint(1, 4)):
+            at = rng.randint(0, len(b) - 1)
+            b[at:at + 1] = [rng.choice(d) for _ in range(rng.randint(0, 2))]
+        write(A, b"".join(a))
+        write(B, b"".join(b))
+        diff = run([SEQ_DIFF, A, B]).stdout
+        if not diff:
+            continue
+        write(P, diff)
+        base = list(a)
+        base[0:0] = [rng.choice(d) for _ in range(rng.randint(0, 4))]
+        for _ in range(rng.randint(0, 2)):
+            base[rng.randint(0, len(base) - 1)] = rng.choice(d)
+        write(A, b"".join(base))
+        for fuzz in (0, 2):
+            grc, gout, gfail = gnu_patch(A, P, fuzz)
+            orc, oout, ofail = ours_patch(A, P, fuzz)
+            if gfail != ofail or gout != oout or (grc == 0) != (orc == 0):
+                fail("ambiguous offset/fuzz differs from GNU patch -F%d" % fuzz, b"".join(base), b"".join(b), diff)
+            bump("ambiguous offset/fuzz F%d agrees with GNU patch (output+rejects)" % fuzz)
+            if ofail:
+                bump("ambiguous offset/fuzz F%d cases with rejected hunks" % fuzz)
 
 
 def scale_cases(rng):

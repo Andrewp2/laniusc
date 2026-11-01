@@ -139,7 +139,8 @@ checkers:
    `-U5` output.
 4. **Offset and fuzz:** over files of distinct lines, bases with lines prepended, context lines edited, or
    blocks deleted give the same output bytes and the same rejected-hunk sets as
-   GNU `patch -F0` and `-F2`.
+   GNU `patch -F0` and `-F2`. A second group repeats this over files built
+   from a few repeated lines, where several positions can match.
 5. **Scale:** 2,000-, 20,000- and 100,000-line pairs round-trip, and their edit
    length equals GNU `diff --minimal`'s.
 
@@ -158,11 +159,13 @@ LF and empty files), seed 20261031:
 | GNU diff -u / -U0 / -U5 output applied exactly by seq-patch | 878 each |
 | offset/fuzz cases agreeing with GNU patch -F0 (output and rejects) | 333 (135 with rejects) |
 | offset/fuzz cases agreeing with GNU patch -F2 (output and rejects) | 333 (77 with rejects) |
+| repeated-line offset/fuzz cases agreeing with GNU patch -F0 | 328 (129 with rejects) |
+| repeated-line offset/fuzz cases agreeing with GNU patch -F2 | 328 (53 with rejects) |
 | scale pairs, both algorithms, edit length == GNU --minimal | 3 sizes × 2 |
 
 The registered Rust test runs the same oracle with 200 pairs. The 1,000-pair
 receipt above came from running the two compiled tools directly
-(`seqdiff_oracle.py SEQ_DIFF SEQ_PATCH WORKDIR 1000`) in 45 s; nearly all of
+(`seqdiff_oracle.py SEQ_DIFF SEQ_PATCH WORKDIR 1000`) in 43 s; nearly all of
 that time is process startup and the Python LCS.
 
 **Speed.** The 100,000-line (1.6 MB) scale pair takes 0.85 s with Myers and

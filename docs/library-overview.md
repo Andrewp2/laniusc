@@ -491,8 +491,8 @@ patience, groups context hunks, and writes, parses and applies unified diffs wit
 GNU-style offset/fuzz and typed per-hunk rejects. Across 1,000 generated pairs,
 the `seq-diff`/`seq-patch` tools give 878/878 minimal Myers edit lengths against
 an O(N·M) LCS, 878/878 GNU and native round trips, 878/878 real GNU `diff -u`
-applications and 333/333 offset/fuzz agreements with GNU `patch` at `-F0` and
-`-F2`.
+applications and 333/333 distinct-line plus 328/328 repeated-line offset/fuzz
+agreements with GNU `patch` at `-F0` and `-F2`.
 
 The preceding [reusable regex-workspace increment](library-regex-workspace-plan.md) is
 implemented and passes the selected Workspace/Search, regex, lexer,

@@ -264,7 +264,7 @@ applier with typed per-hunk reject reasons. The `seq-diff`/`seq-patch` tools
 pass 1,000 generated pairs: 878 Myers edit lengths equal an O(N·M) LCS, GNU
 `patch` and `seq-patch` reproduce every target, `seq-patch` applies real GNU
 `diff -u`/`-U0`/`-U5` output, and 333 offset/fuzz cases match GNU `patch`
-output and rejects at `-F0` and `-F2`. Multi-file patch orchestration, reverse
+output and rejects at `-F0` and `-F2` (328 more over repeated-line files). Multi-file patch orchestration, reverse
 application, `.rej` files and word/character granularities remain.
 
 [Runtime format strings and owned formatting](stdlib-format-strings.md) add
