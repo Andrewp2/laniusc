@@ -2331,9 +2331,12 @@ indices. Its Python-precedence calculator sample agrees with CPython `ast` on
 The [regex differential oracle](extended-regex-oracle.md) runs the real
 `find_iter`, template-replacement and grep programs against CPython `re` on
 seeded grammar-generated patterns from the shared subset. Five seeds agree on
-60,025 find/capture cases, 5,000 replacements and 5,000 grep runs, and five
+60,025 find/capture cases (with named groups), 5,000 replacements, 5,000 grep
+runs and 15,000 capture-free lazy-DFA `is_match`/`find` cases, and five
 pathological inputs finish in about 0.2 s. It found, and the engine now fixes,
 a lazy counted-repetition priority error (`(?:a|aab){0,2}?b` on `aabb`).
+The DFA lets `text_grep` count assertion-free patterns on a 0.9 MB corpus in
+0.15–0.23 s instead of 3–3.8 s.
 
 [Regex splitting and replacement](extended-regex-text.md) now reuse canonical
 Search with one lazily acquired workspace. Borrowed split fields, independent
