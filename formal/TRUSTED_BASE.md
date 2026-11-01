@@ -39,14 +39,15 @@ stopping at the computations the theorems are about (`compileSource`,
 `linkObjects`, `elfFile`, `sourceProgramFiles`, `compileWords`,
 `frontEndWords` and the self program `Lanius.Faithful.Self.prog`, which are
 not trusted, section 10), with each one's type and body:
-definitions `8bd813e2f8863a05` (4,321 constants). This covers Core's
+definitions `3122c415b55d5c87` (4,321 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
-modules keeps its hash. The last change of the hash (10-31): the self-host
-theorems state the reason for a fault (`SelfFaults`, `selfRun`, review
-finding 5), `compileSource_behaviour_rawFree` brings in `RawFree`, and the
-front end's review fixes changed the reading. `trusted_check.py` writes each constant's own hash to
+modules keeps its hash. The last change of the hash (10-31): the lexer
+(`Lanius/Compiler/Lexer*.lean`, `Tokens.lean`) and the reading became Lean
+`module`s, so a function's matcher is its own (`OneTokenResult.shift.match_1`)
+rather than shared with a derived `Repr` instance's; no definition's meaning
+changed. `trusted_check.py` writes each constant's own hash to
 its work directory's `definitions.txt`, to find which one changed.
 
 ### Processes (`Lanius/Mini/Process.lean`)

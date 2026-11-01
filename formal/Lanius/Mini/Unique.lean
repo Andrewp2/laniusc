@@ -1,5 +1,11 @@
-import Lanius.Mini.FrontSpec
+module
 
+public import Lanius.Mini.FrontSpec
+import all Lanius.Mini.Frontend.P.genericOpen
+import all Lanius.Mini.Frontend.P.grammarPart13
+import all Lanius.Mini.Frontend.P.shrFirst
+
+@[expose] public section
 /-! # One reading (roadmap step V4)
 
 At most one tree for `file` is `Picked` for a file's tokens, so the tree the
@@ -250,9 +256,9 @@ theorem compat_map {hi lo : Nat} (f : Nat → Nat) :
       | nil => simp at hr
       | cons x r => simp at hr; simp [hr]
 
-theorem shrFirst_kind (t : Token) : (shrFirst t).kind = 13 := rfl
+theorem shrFirst_kind (t : Token) : (shrFirst t).kind = 13 := by rfl
 
-theorem shrSecond_kind (t : Token) : (shrSecond t).kind = 13 := rfl
+theorem shrSecond_kind (t : Token) : (shrSecond t).kind = 13 := by rfl
 
 /-- What reads a token sequence that begins with a `>`'s second half begins
 with that token. -/

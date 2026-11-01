@@ -1,5 +1,19 @@
-import Lanius.Mini.Reading.Close
+module
 
+public import Lanius.Mini.Reading.Close
+import all Lanius.Mini.Compiler.P.arithShiftRight
+import all Lanius.Mini.Frontend.P.closeFuncs
+import all Lanius.Mini.Frontend.P.distinct
+import all Lanius.Mini.Frontend.P.firstSrc
+import all Lanius.Mini.Frontend.P.flExpFirst
+import all Lanius.Mini.Frontend.P.funcsOnto
+import all Lanius.Mini.Frontend.P.negWideI32
+import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.sintAt
+import all Lanius.Mini.Frontend.P.wideLeftStmt
+import all Lanius.Mini.Frontend.P.wideOf
+
+@[expose] public section
 /-! # The reading, V8e: integer literals at their expected types
 
 `LitExpr locals want e e'`: the closed expression `e` with each integer

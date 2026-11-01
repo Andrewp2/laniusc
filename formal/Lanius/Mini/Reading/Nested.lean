@@ -1,5 +1,27 @@
-import Lanius.Mini.Reading.LetHeads
+module
 
+public import Lanius.Mini.Reading.LetHeads
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.arithShiftRight
+import all Lanius.Mini.Frontend.P.anyNested
+import all Lanius.Mini.Frontend.P.armsOf
+import all Lanius.Mini.Frontend.P.consBinder
+import all Lanius.Mini.Frontend.P.consTreeTail
+import all Lanius.Mini.Frontend.P.hasKids
+import all Lanius.Mini.Frontend.P.isEmptyUsize
+import all Lanius.Mini.Frontend.P.isUnderscore
+import all Lanius.Mini.Frontend.P.namesSome
+import all Lanius.Mini.Frontend.P.nestedOrPlain
+import all Lanius.Mini.Frontend.P.nestedUsed
+import all Lanius.Mini.Frontend.P.noBlock
+import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.noTrees
+import all Lanius.Mini.Frontend.P.plainNaming
+import all Lanius.Mini.Frontend.P.repeatEff
+import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.variantArm
+
+@[expose] public section
 /-! # The reading, F11: nested patterns
 
 A match expression with a nested arm, one whose payload patterns are not all
