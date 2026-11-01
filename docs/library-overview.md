@@ -6,6 +6,10 @@ The full library goal remains open. The current increment adds
 `try_extend_from_slice`, `copy_from_slice`, `swap_with_slice`, `fill` and
 `swap` on `alloc::vec::Vec`. Packed byte runs move eight bytes at a time:
 a 4 KiB copy runs 5x faster than the element loop and a fill 38x faster.
+`alloc::string`, `alloc::io`, `core::io`, `core::buffered`, `core::utf8_view`,
+`std::io_utf8` and `std::io_line` now [call them](stdlib-slice-bulk.md#callers)
+instead of per-byte loops, and UTF-8 validation skips ASCII eight bytes at a
+time: 7x to 57x on string and buffered-I/O paths, 37x on `Utf8View` edits.
 The preceding increment makes `core::slice` sorting adaptive: [pattern-defeating quicksort](stdlib-sort-algorithms.md)
 for unstable sorts and a run-adaptive stable merge sort with galloping over
 caller scratch. Both are checked against Python `sorted`, with recorded

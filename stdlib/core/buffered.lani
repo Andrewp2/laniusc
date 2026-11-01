@@ -150,8 +150,8 @@ pub impl<R> core::io::Read for Reader<R> where R: core::io::Read {
         if (core::result::is_err(filled)) { return core::result::Err(core::result::unwrap_err(filled)); }
         let amount: i32 = self.end - self.start;
         if (amount > count) { amount = count; }
-        let bytes: [u8] = self.buffer.values; let index: i32 = 0;
-        while (index < amount) { destination[offset + index] = bytes[self.buffer.start + self.start + index]; index += 1; }
+        core::slice::copy_nonoverlapping_range(destination, offset + amount, offset,
+            self.buffer.values, self.buffer.start + self.end, self.buffer.start + self.start, amount);
         self.start += amount;
         if (self.start == self.end) { self.start = 0; self.end = 0; }
         return core::result::Ok(amount);
@@ -275,8 +275,8 @@ pub impl<W> core::io::Write for Writer<W> where W: core::io::Write {
         }
         let amount: i32 = self.buffer.length - self.end;
         if (amount > count) { amount = count; }
-        let bytes: [u8] = self.buffer.values; let index: i32 = 0;
-        while (index < amount) { bytes[self.buffer.start + self.end + index] = source[offset + index]; index += 1; }
+        core::slice::copy_nonoverlapping_range(self.buffer.values, self.buffer.start + self.buffer.length,
+            self.buffer.start + self.end, source, offset + amount, offset, amount);
         self.end += amount;
         return core::result::Ok(amount);
     }

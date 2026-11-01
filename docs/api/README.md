@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **327 modules**, **17499 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **327 modules**, **17504 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -75,7 +75,7 @@ Inventory: **327 modules**, **17499 declaration/member entries**. Counts include
 | [core::runtime](core/runtime.md) | [source](../../stdlib/core/runtime.lani#L15) | 113 | Source inventory | [library-host-prerequisites](../library-host-prerequisites.md), [library-host-operation-support](../library-host-operation-support.md) |
 | [core::search](core/search.md) | [source](../../stdlib/core/search.lani#L13) | 8 | Source inventory | [stdlib-search](../stdlib-search.md) |
 | [core::set](core/set.md) | [source](../../stdlib/core/set.lani#L4) | 24 | Source inventory | [stdlib-fixed-capacity](../stdlib-fixed-capacity.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md) |
-| [core::slice](core/slice.md) | [source](../../stdlib/core/slice.lani#L11) | 128 | Source inventory | [stdlib-slice-views](../stdlib-slice-views.md), [stdlib-slice](../stdlib-slice.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-exact-size-iterators](../stdlib-exact-size-iterators.md), [stdlib-slice-ordering](../stdlib-slice-ordering.md), [stdlib-sort-rows](../stdlib-sort-rows.md), [stdlib-slice-selection](../stdlib-slice-selection.md), [stdlib-select-value](../stdlib-select-value.md), [stdlib-slice-segmentation](../stdlib-slice-segmentation.md), [stdlib-sort-algorithms](../stdlib-sort-algorithms.md) |
+| [core::slice](core/slice.md) | [source](../../stdlib/core/slice.lani#L11) | 131 | Source inventory | [stdlib-slice-views](../stdlib-slice-views.md), [stdlib-slice](../stdlib-slice.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-exact-size-iterators](../stdlib-exact-size-iterators.md), [stdlib-slice-ordering](../stdlib-slice-ordering.md), [stdlib-sort-rows](../stdlib-sort-rows.md), [stdlib-slice-selection](../stdlib-slice-selection.md), [stdlib-select-value](../stdlib-select-value.md), [stdlib-slice-segmentation](../stdlib-slice-segmentation.md), [stdlib-sort-algorithms](../stdlib-sort-algorithms.md) |
 | [core::target](core/target.md) | [source](../../stdlib/core/target.lani#L6) | 37 | Source inventory | [library-host-prerequisites](../library-host-prerequisites.md), [library-host-operation-support](../library-host-operation-support.md) |
 | [core::text](core/text.md) | [source](../../stdlib/core/text.lani#L4) | 118 | Source inventory | [stdlib-text](../stdlib-text.md), [stdlib-text-composition](../stdlib-text-composition.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-text-split-iterators](../stdlib-text-split-iterators.md), [stdlib-bidirectional-text](../stdlib-bidirectional-text.md), [stdlib-text-replacement](../stdlib-text-replacement.md), [stdlib-literal-rewrite](../stdlib-literal-rewrite.md), [stdlib-ordered-navigation](../stdlib-ordered-navigation.md) |
 | [core::time](core/time.md) | [source](../../stdlib/core/time.lani#L4) | 118 | Source inventory | [stdlib-time](../stdlib-time.md) |
@@ -167,7 +167,7 @@ Inventory: **327 modules**, **17499 declaration/member entries**. Counts include
 | [std::io_binary](std/io_binary.md) | [source](../../stdlib/std/io_binary.lani#L2) | 6 | Source inventory | **Unregistered** |
 | [std::io_binary_wide_i64](std/io_binary_wide_i64.md) | [source](../../stdlib/std/io_binary_wide_i64.lani#L2) | 2 | Source inventory | **Unregistered** |
 | [std::io_binary_wide_u64](std/io_binary_wide_u64.md) | [source](../../stdlib/std/io_binary_wide_u64.lani#L2) | 2 | Source inventory | **Unregistered** |
-| [std::io_byte](std/io_byte.md) | [source](../../stdlib/std/io_byte.lani#L3) | 3 | Source inventory | **Unregistered** |
+| [std::io_byte](std/io_byte.md) | [source](../../stdlib/std/io_byte.lani#L4) | 5 | Source inventory | **Unregistered** |
 | [std::io_checked](std/io_checked.md) | [source](../../stdlib/std/io_checked.lani#L3) | 5 | Source inventory | **Unregistered** |
 | [std::io_decimal](std/io_decimal.md) | [source](../../stdlib/std/io_decimal.lani#L5) | 20 | Source inventory | **Unregistered** |
 | [std::io_hex](std/io_hex.md) | [source](../../stdlib/std/io_hex.lani#L2) | 9 | Source inventory | **Unregistered** |

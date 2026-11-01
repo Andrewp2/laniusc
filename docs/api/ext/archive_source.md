@@ -22,7 +22,7 @@ Declaration counts: enum: 2; field: 18; function: 4; impl: 1; method: 9; struct:
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
 - [alloc::vec::Vec](../alloc/vec.md) (item: struct) · [declaration](../../../stdlib/alloc/vec.lani#L19) · [source](../../../extended/ext/archive_source.lani#L4)
-- [alloc::vec::with_capacity](../alloc/vec.md) (item: function) · [declaration](../../../stdlib/alloc/vec.lani#L33) · [source](../../../extended/ext/archive_source.lani#L5)
+- [alloc::vec::with_capacity](../alloc/vec.md) (item: function) · [declaration](../../../stdlib/alloc/vec.lani#L28) · [source](../../../extended/ext/archive_source.lani#L5)
 - [core::mem](../core/mem.md) · [source](../../../extended/ext/archive_source.lani#L6)
 - [core::option::Option](../core/option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../extended/ext/archive_source.lani#L7)
 - [core::option::Some](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L15) · [source](../../../extended/ext/archive_source.lani#L8)
