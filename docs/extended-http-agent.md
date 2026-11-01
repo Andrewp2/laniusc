@@ -528,6 +528,22 @@ http2-agent-h2 cases=21 connections=23 requests=43
 The https group runs in about 3 seconds, the whole oracle in about 12, and
 the HTTP/2 group in about 4.
 
+`tests/extended_agent_fetch_execution.rs` runs
+[`fetch_oracle.py`](../tests/fixtures/extended/http_agent/fetch_oracle.py)
+against the `agent-fetch` sample:
+
+| Group | Cases | Covers |
+| --- | --- | --- |
+| http | 12 | Python `http.server`: a 3 MB file to `-o`, keep-alive across three URLs, a 20 MiB file past the 16 MiB buffered limit under 16 MiB peak RSS (GNU `time`), a 5 MB chunked body in uneven chunks with extensions and a trailer, directory redirects with and without `-L` and `--max-redirs 0`, `-f`, HEAD with `-D -` and `-D FILE`, chunked upload and fixed POST, `--max-time` mid-body, a refused connect, a closed stdout pipe (exit 23), std::cli errors and `--help` |
+| h2 | 6 | libnghttp2 over TLS: 5 MB and 17 MiB bodies through stream flow control, three streams on one connection, a redirect, RST_STREAM, a closed stdout pipe |
+| proxy | 4 | `ext::http_proxy`: fixed, chunked and close-delimited bodies with keep-alive; the TLS front end over HTTP/2 and over HTTP/1.1 (`--no-http2`) |
+
+```text
+agent-fetch-http cases=12
+agent-fetch-h2 cases=6
+agent-fetch-proxy cases=4
+```
+
 ## Limits of this version
 
 - TLS has no session resumption, client certificates or option to disable
