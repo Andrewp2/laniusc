@@ -282,6 +282,13 @@ uint checked_literal_context(uint literal)
                 continue;
             }
         }
+        // A match without a declared context passes on its own receiver's:
+        // climb on from the match, e.g. when it is itself an arm result.
+        if (mode == QUERY_MATCH)
+        {
+            mode = QUERY_OPERAND; current = query;
+            continue;
+        }
         mode = QUERY_OPERAND;
         uint parent = compact_hir_expr_parent[current];
         if (!valid_hir(parent) || parent == current) return peer;
