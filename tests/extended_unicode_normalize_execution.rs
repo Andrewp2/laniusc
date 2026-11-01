@@ -43,7 +43,7 @@ fn normalization_bounds_capacity_work_utf8_and_atomicity_without_allocation() {
     let trace = common::TempArtifact::new("laniusc_unicode_normalize", "trace", None);
     let output = common::short_process_output_with_timeout(
         "normalization contracts",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([

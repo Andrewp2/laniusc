@@ -71,7 +71,7 @@ def injection(item):
 
 
 def command(executable, trace, rules, args=()):
-    values = ["strace", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096",
+    values = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096",
               "-e", "signal=none", "-e", "trace=" + ledger.TRACE, "-o", str(trace)]
     for item in rules:
         values += ["-e", "inject=" + injection(item)]

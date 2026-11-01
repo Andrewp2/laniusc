@@ -46,7 +46,7 @@ def run(executable, directory, trace, *, fault=0, abort=False, close_fault=None)
         peer.preludes = (prelude, prelude)
     with ControlledPool(directory, [peer], 1, expected_failure=abort) as pool:
         port = pool.servers[0].listener.getsockname()[1]
-        command = ["strace", "--kill-on-exit", "-qq", "-i", "-s", "96", "-o", str(trace),
+        command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-i", "-s", "96", "-o", str(trace),
                    "-e", "trace=mmap,munmap,openat,open,close,socket,connect,getsockopt,getpeername,sendto,recvfrom,poll,shutdown,clock_gettime,read,write"]
         if close_fault is not None:
             command += ["-e", "inject=close:error=EIO:when=%d" % close_fault]

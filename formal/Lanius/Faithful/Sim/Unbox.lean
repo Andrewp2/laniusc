@@ -44,9 +44,9 @@ open Lanius.Semantics (State Completion evalExpr evalExprs execStmt restoreLocal
 
 /-- Element 0 of a view whose word 0 is the storage's last word. -/
 theorem elementAddress_zero {P : Core.Program} {T : Core.Ty} {a w : Nat}
-    (kind : (∃ id, T = .structure id) ∨ ∃ id, T = .enumeration id) (words : NativeLayout.valueWords? P T = some w)
+    (kind : (∃ id, T = .structure id) ∨ (∃ id, T = .enumeration id) ∨ T = .scalar (.unsigned .u16)) (words : NativeLayout.valueWords? P T = some w)
     (pos : 0 < w) : Semantics.rawSliceElementAddress? P T (a + 8 * w - 8) 0 = .ok (a + 8 * w - 8) := by
-  rcases kind with ⟨id, rfl⟩ | ⟨id, rfl⟩ <;>
+  rcases kind with ⟨id, rfl⟩ | ⟨id, rfl⟩ | rfl <;>
   · simp only [Semantics.rawSliceElementAddress?, words, NativeLayout.elementBase?]
     rw [if_neg (by
       simp only [NativeLayout.wordBytes, Bool.or_eq_true, beq_iff_eq]
@@ -57,10 +57,10 @@ theorem elementAddress_zero {P : Core.Program} {T : Core.Ty} {a w : Nat}
     rfl
 
 theorem raw_read_zero {P : Core.Program} {s : State} {T : Core.Ty} {a w : Nat} {v : Value}
-    (kind : (∃ id, T = .structure id) ∨ ∃ id, T = .enumeration id) (words : NativeLayout.valueWords? P T = some w)
+    (kind : (∃ id, T = .structure id) ∨ (∃ id, T = .enumeration id) ∨ T = .scalar (.unsigned .u16)) (words : NativeLayout.valueWords? P T = some w)
     (pos : 0 < w) (h : Semantics.readRawSliceIndex P s T (a + 8 * w - 8) 1 0 = .ok v) :
     readNativeValue NativeLayout.maxDepth P s.heap T (a + 8 * w - 8) = .ok v := by
-  have nb : Semantics.isByte T = false := by rcases kind with ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> rfl
+  have nb : Semantics.isByte T = false := by rcases kind with ⟨_, rfl⟩ | ⟨_, rfl⟩ | rfl <;> rfl
   simp only [Semantics.readRawSliceIndex, show ¬ (0 ≥ 1) by decide, if_false,
     elementAddress_zero kind words pos, Semantics.readRawElement, nb, Bool.false_eq_true, ↓reduceIte] at h
   exact h

@@ -81,7 +81,7 @@ fn set_contracts_generic_widths_and_explicit_key_owners_execute() {
     let trace = common::TempArtifact::new("laniusc_owned_sets", "owner_trace", None);
     let output = common::short_process_output_with_timeout(
         "set owner keys",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap"])
@@ -263,7 +263,7 @@ fn every_set_allocation_failure_is_atomic_and_releases_partial_storage() {
     let exe = fixture("owned_sets_failure");
     let trace = common::TempArtifact::new("laniusc_owned_sets", "failure_trace", None);
     let traced = |when: Option<usize>| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())

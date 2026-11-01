@@ -1,0 +1,317 @@
+// Streaming ZIP records (APPNOTE 6.3) with u64 offsets: end of central
+// directory with ZIP64, central and local headers, ZIP64 and timestamp
+// extras, and data descriptors. ext::zip parses and encodes whole archives
+// held in one view; this module reads and writes one record at a time, so
+// archives of any size stream through fixed buffers. Borrowed views only:
+// no allocation, no host services, no compression and no extraction
+// policy. See docs/extended-zip-stream.md.
+module ext::zip_stream;
+import core::result;
+import core::slice;
+
+pub enum Error { Bounds, Truncated, Signature, Corrupt, Zip64, OutputTooSmall }
+
+pub const LOCAL_LEN: i32 = 30;
+pub const CENTRAL_LEN: i32 = 46;
+pub const END_LEN: i32 = 22;
+pub const LOCATOR_LEN: i32 = 20;
+pub const ZIP64_END_LEN: i32 = 56;
+pub const STORED: i32 = 0;
+pub const DEFLATED: i32 = 8;
+// General-purpose flags: encrypted, data descriptor follows, UTF-8 names.
+pub const FLAG_ENCRYPTED: i32 = 1;
+pub const FLAG_DESCRIPTOR: i32 = 8;
+pub const FLAG_UTF8: i32 = 2048;
+const LOCAL_SIG: u64 = 67324752;
+const CENTRAL_SIG: u64 = 33639248;
+const END_SIG: u64 = 101010256;
+const ZIP64_END_SIG: u64 = 101075792;
+const LOCATOR_SIG: u64 = 117853008;
+const DESCRIPTOR_SIG: u64 = 134695760;
+const MAX32: u64 = 4294967295;
+const MAX16: u64 = 65535;
+
+// The archive tail that must be searched for the end record: the record,
+// a 65535-byte comment and the ZIP64 locator before it.
+pub fn end_search_len() -> i32 { return END_LEN+65535+LOCATOR_LEN; }
+
+fn valid(view: core::slice::View<u8>) -> bool { return view.start >= 0 && view.length >= 0; }
+fn byte(view: core::slice::View<u8>, at: i32) -> u64 { return view.values[view.start+at] as u64; }
+fn le16(view: core::slice::View<u8>, at: i32) -> u64 { return byte(view,at) | (byte(view,at+1) << 8); }
+fn le32(view: core::slice::View<u8>, at: i32) -> u64 { return le16(view,at) | (le16(view,at+2) << 16); }
+fn le64(view: core::slice::View<u8>, at: i32) -> u64 { return le32(view,at) | (le32(view,at+4) << 32); }
+fn put8(view: core::slice::View<u8>, at: i32, value: u64) { view.values[view.start+at] = (value & 255) as u8; }
+fn put16(view: core::slice::View<u8>, at: i32, value: u64) { put8(view,at,value); put8(view,at+1,value >> 8); }
+fn put32(view: core::slice::View<u8>, at: i32, value: u64) { put16(view,at,value); put16(view,at+2,value >> 16); }
+fn put64(view: core::slice::View<u8>, at: i32, value: u64) { put32(view,at,value); put32(view,at+4,value >> 32); }
+fn copy(to: core::slice::View<u8>, at: i32, from: core::slice::View<u8>) {
+    let index: i32 = 0;
+    while (index < from.length) { let value: u8 = from.values[from.start+index]; to.values[to.start+at+index] = value; index += 1; }
+}
+
+// ---------------------------------------------------------------- reading
+// entries, central directory size and offset; end_offset is where the
+// classic end record starts, and zip64_offset the ZIP64 end record's
+// offset when the locator before it names one (has_zip64).
+pub struct End { entries: u64, central_offset: u64, central_size: u64, end_offset: u64, comment_length: i32, has_zip64: bool, zip64_offset: u64 }
+
+// tail holds the archive's last tail.length bytes and starts at absolute
+// offset tail_offset. The last end record whose comment reaches exactly the
+// end of the archive is chosen. Multi-disk archives, and a central
+// directory that does not end exactly where the end records begin (data
+// prepended to the archive, as in self-extractors), are Corrupt.
+pub fn find_end(tail: core::slice::View<u8>, tail_offset: u64) -> core::result::Result<End,Error> {
+    if (!valid(tail)) { return core::result::Err(Error::Bounds); }
+    if (tail.length < END_LEN) { return core::result::Err(Error::Truncated); }
+    let at: i32 = tail.length-END_LEN;
+    while (at >= 0) {
+        if (le32(tail,at) == END_SIG && (le16(tail,at+20) as i32) == tail.length-END_LEN-at) {
+            let end: End = End {
+                entries: le16(tail,at+10), central_size: le32(tail,at+12), central_offset: le32(tail,at+16),
+                end_offset: tail_offset+(at as u64), comment_length: le16(tail,at+20) as i32, has_zip64: false, zip64_offset: 0
+            };
+            if (at >= LOCATOR_LEN && le32(tail,at-LOCATOR_LEN) == LOCATOR_SIG) {
+                let locator: i32 = at-LOCATOR_LEN;
+                if (le32(tail,locator+4) != 0 || le32(tail,locator+16) > 1) { return core::result::Err(Error::Corrupt); }
+                end.has_zip64 = true; end.zip64_offset = le64(tail,locator+8);
+                let limit: u64 = end.end_offset-(LOCATOR_LEN as u64);
+                if (limit < (ZIP64_END_LEN as u64) || end.zip64_offset > limit-(ZIP64_END_LEN as u64)) { return core::result::Err(Error::Zip64); }
+            } else {
+                if (le16(tail,at+4) != 0 || le16(tail,at+6) != 0 || le16(tail,at+8) != le16(tail,at+10)) { return core::result::Err(Error::Corrupt); }
+                if (end.entries == MAX16 || end.central_size == MAX32 || end.central_offset == MAX32) { return core::result::Err(Error::Zip64); }
+                if (end.central_offset+end.central_size != end.end_offset) { return core::result::Err(Error::Corrupt); }
+            }
+            return core::result::Ok(end);
+        }
+        at -= 1;
+    }
+    return core::result::Err(Error::Signature);
+}
+// record is the ZIP64 end record (at least its 56 fixed bytes) read from
+// end.zip64_offset; its counts and offsets replace the classic ones.
+pub fn read_zip64_end(end: End, record: core::slice::View<u8>) -> core::result::Result<End,Error> {
+    if (!valid(record)) { return core::result::Err(Error::Bounds); }
+    if (record.length < ZIP64_END_LEN) { return core::result::Err(Error::Truncated); }
+    if (le32(record,0) != ZIP64_END_SIG) { return core::result::Err(Error::Zip64); }
+    // The record ends at the locator; its size field counts from byte 12.
+    if (le64(record,4) != end.end_offset-(LOCATOR_LEN as u64)-end.zip64_offset-12 || le32(record,16) != 0 || le32(record,20) != 0 || le64(record,24) != le64(record,32)) { return core::result::Err(Error::Corrupt); }
+    let result: End = end;
+    result.entries = le64(record,32); result.central_size = le64(record,40); result.central_offset = le64(record,48);
+    if (result.central_offset > end.zip64_offset || result.central_size != end.zip64_offset-result.central_offset) { return core::result::Err(Error::Corrupt); }
+    return core::result::Ok(result);
+}
+
+// One central directory header. Name, extra and comment are offsets into the
+// directory view; next is the offset of the following header. ZIP64 extra
+// values replace the 32-bit fields that hold 0xffffffff.
+pub struct Entry {
+    version_made: i32, version_needed: i32, flags: i32, method: i32, dos_time: i32, dos_date: i32,
+    crc: u32, compressed: u64, size: u64, local_offset: u64, internal: i32, external: u32,
+    name_start: i32, name_length: i32, extra_start: i32, extra_length: i32, comment_length: i32, next: i32
+}
+pub fn central_entry(directory: core::slice::View<u8>, at: i32) -> core::result::Result<Entry,Error> {
+    if (!valid(directory) || at < 0) { return core::result::Err(Error::Bounds); }
+    if (at > directory.length-CENTRAL_LEN) { return core::result::Err(Error::Truncated); }
+    if (le32(directory,at) != CENTRAL_SIG) { return core::result::Err(Error::Signature); }
+    let names: i32 = le16(directory,at+28) as i32; let extras: i32 = le16(directory,at+30) as i32; let comments: i32 = le16(directory,at+32) as i32;
+    if (names+extras+comments > directory.length-at-CENTRAL_LEN) { return core::result::Err(Error::Truncated); }
+    if (le16(directory,at+34) != 0) { return core::result::Err(Error::Corrupt); }
+    let entry: Entry = Entry {
+        version_made: le16(directory,at+4) as i32, version_needed: le16(directory,at+6) as i32, flags: le16(directory,at+8) as i32,
+        method: le16(directory,at+10) as i32, dos_time: le16(directory,at+12) as i32, dos_date: le16(directory,at+14) as i32,
+        crc: le32(directory,at+16) as u32, compressed: le32(directory,at+20), size: le32(directory,at+24),
+        local_offset: le32(directory,at+42), internal: le16(directory,at+36) as i32, external: le32(directory,at+38) as u32,
+        name_start: at+CENTRAL_LEN, name_length: names, extra_start: at+CENTRAL_LEN+names, extra_length: extras,
+        comment_length: comments, next: at+CENTRAL_LEN+names+extras+comments
+    };
+    let extra: core::slice::View<u8> = core::slice::View { values: directory.values, start: directory.start+entry.extra_start, length: extras };
+    let found: core::result::Result<Sizes,Error> = zip64_extra(extra,entry.size == MAX32,entry.compressed == MAX32,entry.local_offset == MAX32);
+    if (core::result::is_err(found)) { return core::result::Err(core::result::unwrap_err(found)); }
+    let sizes: Sizes = core::result::unwrap(found);
+    if (entry.size == MAX32) { entry.size = sizes.size; }
+    if (entry.compressed == MAX32) { entry.compressed = sizes.compressed; }
+    if (entry.local_offset == MAX32) { entry.local_offset = sizes.offset; }
+    return core::result::Ok(entry);
+}
+struct Sizes { size: u64, compressed: u64, offset: u64 }
+// The ZIP64 extra (id 1) lists only the fields marked 0xffffffff, in the
+// order size, compressed size, local header offset. A missing needed
+// field, or extra data that does not tile into id/length records, is Zip64.
+fn zip64_extra(extra: core::slice::View<u8>, want_size: bool, want_compressed: bool, want_offset: bool) -> core::result::Result<Sizes,Error> {
+    let sizes: Sizes = Sizes { size: 0, compressed: 0, offset: 0 };
+    let needed: i32 = 0; if (want_size) { needed += 8; } if (want_compressed) { needed += 8; } if (want_offset) { needed += 8; }
+    let at: i32 = 0; let found: bool = false;
+    while (at+4 <= extra.length) {
+        let id: u64 = le16(extra,at); let length: i32 = le16(extra,at+2) as i32;
+        if (length > extra.length-at-4) { return core::result::Err(Error::Corrupt); }
+        if (id == 1 && !found) {
+            found = true;
+            if (length < needed) { return core::result::Err(Error::Zip64); }
+            let field: i32 = at+4;
+            if (want_size) { sizes.size = le64(extra,field); field += 8; }
+            if (want_compressed) { sizes.compressed = le64(extra,field); field += 8; }
+            if (want_offset) { sizes.offset = le64(extra,field); }
+        }
+        at += 4+length;
+    }
+    if (needed > 0 && !found) { return core::result::Err(Error::Zip64); }
+    return core::result::Ok(sizes);
+}
+
+// A local header's fixed part (bytes holds at least LOCAL_LEN bytes). Its
+// name and extra follow; header_length is the whole header, so the data
+// starts header_length bytes after the header's offset.
+pub struct Local { version_needed: i32, flags: i32, method: i32, crc: u32, compressed: u64, size: u64, name_length: i32, extra_length: i32, header_length: i32 }
+pub fn local_header(bytes: core::slice::View<u8>) -> core::result::Result<Local,Error> {
+    if (!valid(bytes)) { return core::result::Err(Error::Bounds); }
+    if (bytes.length < LOCAL_LEN) { return core::result::Err(Error::Truncated); }
+    if (le32(bytes,0) != LOCAL_SIG) { return core::result::Err(Error::Signature); }
+    let names: i32 = le16(bytes,26) as i32; let extras: i32 = le16(bytes,28) as i32;
+    return core::result::Ok(Local {
+        version_needed: le16(bytes,4) as i32, flags: le16(bytes,6) as i32, method: le16(bytes,8) as i32,
+        crc: le32(bytes,14) as u32, compressed: le32(bytes,18), size: le32(bytes,22),
+        name_length: names, extra_length: extras, header_length: LOCAL_LEN+names+extras
+    });
+}
+
+// ---------------------------------------------------------------- writing
+// One member as written: method STORED or DEFLATED, DOS time and date,
+// external attributes (Unix mode << 16 for a Unix creator), and whether its
+// local header carries a ZIP64 extra (needed when the data may reach 4 GiB).
+// mtime (Unix seconds) also goes into an extended-timestamp extra (0x5455)
+// when 0 <= mtime < 2^31; set it to -1 for none.
+pub struct Member { name: core::slice::View<u8>, method: i32, dos_time: i32, dos_date: i32, external: u32, zip64: bool, utf8: bool, mtime: i64 }
+fn timestamp_len(member: Member) -> i32 { if (member.mtime >= 0 && member.mtime < 2147483648) { return 9; } return 0; }
+fn put_timestamp(output: core::slice::View<u8>, at: i32, member: Member) {
+    if (timestamp_len(member) > 0) { put16(output,at,21589); put16(output,at+2,5); put8(output,at+4,1); put32(output,at+5,member.mtime as u64); }
+}
+// Version made by: Unix (3) and APPNOTE 4.5.
+pub const MADE_BY_UNIX: i32 = 813;
+fn needed(member: Member, zip64: bool) -> u64 { if (zip64) { return 45; } if (member.method == DEFLATED) { return 20; } return 10; }
+fn flags(member: Member) -> u64 { let value: u64 = FLAG_DESCRIPTOR as u64; if (member.utf8) { value = value | (FLAG_UTF8 as u64); } return value; }
+
+fn local_extra(member: Member) -> i32 { let extra: i32 = timestamp_len(member); if (member.zip64) { extra += 20; } return extra; }
+pub fn local_len(member: Member) -> i32 { return LOCAL_LEN+member.name.length+local_extra(member); }
+// The local header defers crc and sizes to the data descriptor (flag 8);
+// a ZIP64 member's header has 0xffffffff sizes and a zeroed ZIP64 extra.
+pub fn write_local(output: core::slice::View<u8>, member: Member) -> core::result::Result<i32,Error> {
+    if (!valid(output) || !valid(member.name) || member.name.length > 65535) { return core::result::Err(Error::Bounds); }
+    let length: i32 = local_len(member); if (output.length < length) { return core::result::Err(Error::OutputTooSmall); }
+    put32(output,0,LOCAL_SIG); put16(output,4,needed(member,member.zip64)); put16(output,6,flags(member)); put16(output,8,member.method as u64);
+    put16(output,10,member.dos_time as u64); put16(output,12,member.dos_date as u64); put32(output,14,0);
+    let size: u64 = 0; if (member.zip64) { size = MAX32; }
+    put32(output,18,size); put32(output,22,size); put16(output,26,member.name.length as u64);
+    put16(output,28,local_extra(member) as u64);
+    copy(output,LOCAL_LEN,member.name);
+    let at: i32 = LOCAL_LEN+member.name.length;
+    if (member.zip64) { put16(output,at,1); put16(output,at+2,16); put64(output,at+4,0); put64(output,at+12,0); at += 20; }
+    put_timestamp(output,at,member);
+    return core::result::Ok(length);
+}
+pub fn descriptor_len(zip64: bool) -> i32 { if (zip64) { return 24; } return 16; }
+// Signature, crc, then 4-byte sizes, or 8-byte sizes after a ZIP64 header.
+pub fn write_descriptor(output: core::slice::View<u8>, crc: u32, compressed: u64, size: u64, zip64: bool) -> core::result::Result<i32,Error> {
+    if (!valid(output)) { return core::result::Err(Error::Bounds); }
+    if (!zip64 && (compressed >= MAX32 || size >= MAX32)) { return core::result::Err(Error::Zip64); }
+    let length: i32 = descriptor_len(zip64); if (output.length < length) { return core::result::Err(Error::OutputTooSmall); }
+    put32(output,0,DESCRIPTOR_SIG); put32(output,4,crc as u64);
+    if (zip64) { put64(output,8,compressed); put64(output,16,size); } else { put32(output,8,compressed); put32(output,12,size); }
+    return core::result::Ok(length);
+}
+// A value moves to the ZIP64 extra when it is 4 GiB - 1 or more, or when
+// the member is ZIP64 (then all three do).
+fn big(member: Member, value: u64) -> bool { return member.zip64 || value >= MAX32; }
+fn central_extra(member: Member, compressed: u64, size: u64, offset: u64) -> i32 {
+    let count: i32 = 0; if (big(member,size)) { count += 8; } if (big(member,compressed)) { count += 8; } if (big(member,offset)) { count += 8; }
+    if (count == 0) { return 0; } return 4+count;
+}
+pub fn central_len(member: Member, compressed: u64, size: u64, offset: u64) -> i32 { return CENTRAL_LEN+member.name.length+central_extra(member,compressed,size,offset)+timestamp_len(member); }
+pub fn write_central(output: core::slice::View<u8>, member: Member, crc: u32, compressed: u64, size: u64, offset: u64) -> core::result::Result<i32,Error> {
+    if (!valid(output) || !valid(member.name) || member.name.length > 65535) { return core::result::Err(Error::Bounds); }
+    let length: i32 = central_len(member,compressed,size,offset); if (output.length < length) { return core::result::Err(Error::OutputTooSmall); }
+    let extra: i32 = central_extra(member,compressed,size,offset);
+    put32(output,0,CENTRAL_SIG); put16(output,4,MADE_BY_UNIX as u64); put16(output,6,needed(member,member.zip64 || extra > 0));
+    put16(output,8,flags(member)); put16(output,10,member.method as u64); put16(output,12,member.dos_time as u64); put16(output,14,member.dos_date as u64);
+    put32(output,16,crc as u64);
+    let field: u64 = compressed; if (big(member,field)) { field = MAX32; } put32(output,20,field);
+    field = size; if (big(member,field)) { field = MAX32; } put32(output,24,field);
+    put16(output,28,member.name.length as u64); put16(output,30,(extra+timestamp_len(member)) as u64); put16(output,32,0); put16(output,34,0); put16(output,36,0);
+    put32(output,38,member.external as u64);
+    field = offset; if (big(member,field)) { field = MAX32; } put32(output,42,field);
+    copy(output,CENTRAL_LEN,member.name);
+    if (extra > 0) {
+        let at: i32 = CENTRAL_LEN+member.name.length; put16(output,at,1); put16(output,at+2,(extra-4) as u64); at += 4;
+        if (big(member,size)) { put64(output,at,size); at += 8; }
+        if (big(member,compressed)) { put64(output,at,compressed); at += 8; }
+        if (big(member,offset)) { put64(output,at,offset); }
+    }
+    put_timestamp(output,CENTRAL_LEN+member.name.length+extra,member);
+    return core::result::Ok(length);
+}
+fn end_needs_zip64(entries: u64, central_offset: u64, central_size: u64) -> bool { return entries >= MAX16 || central_offset >= MAX32 || central_size >= MAX32; }
+pub fn end_len(entries: u64, central_offset: u64, central_size: u64, force_zip64: bool) -> i32 {
+    if (force_zip64 || end_needs_zip64(entries,central_offset,central_size)) { return ZIP64_END_LEN+LOCATOR_LEN+END_LEN; } return END_LEN;
+}
+// The end records for a directory of entries headers at central_offset;
+// the ZIP64 end record and locator come first when any value needs them.
+pub fn write_end(output: core::slice::View<u8>, entries: u64, central_offset: u64, central_size: u64, force_zip64: bool) -> core::result::Result<i32,Error> {
+    if (!valid(output)) { return core::result::Err(Error::Bounds); }
+    let length: i32 = end_len(entries,central_offset,central_size,force_zip64); if (output.length < length) { return core::result::Err(Error::OutputTooSmall); }
+    let at: i32 = 0;
+    if (length > END_LEN) {
+        put32(output,0,ZIP64_END_SIG); put64(output,4,44); put16(output,12,MADE_BY_UNIX as u64); put16(output,14,45);
+        put32(output,16,0); put32(output,20,0); put64(output,24,entries); put64(output,32,entries); put64(output,40,central_size); put64(output,48,central_offset);
+        put32(output,56,LOCATOR_SIG); put32(output,60,0); put64(output,64,central_offset+central_size); put32(output,72,1);
+        at = ZIP64_END_LEN+LOCATOR_LEN;
+    }
+    let count: u64 = entries; if (count >= MAX16) { count = MAX16; }
+    let size: u64 = central_size; if (size >= MAX32) { size = MAX32; }
+    let offset: u64 = central_offset; if (offset >= MAX32) { offset = MAX32; }
+    put32(output,at,END_SIG); put16(output,at+4,0); put16(output,at+6,0); put16(output,at+8,count); put16(output,at+10,count);
+    put32(output,at+12,size); put32(output,at+16,offset); put16(output,at+20,0);
+    return core::result::Ok(length);
+}
+
+// ---------------------------------------------------------------- DOS time
+// MS-DOS time and date fields for Unix seconds, in UTC. Times before 1980
+// clamp to 1980-01-01 00:00:00 and after 2107 to 2107-12-31 23:59:58.
+pub struct DosTime { time: i32, date: i32 }
+pub fn dos_time(seconds: i64) -> DosTime {
+    if (seconds < 315532800) { return DosTime { time: 0, date: 33 }; }
+    if (seconds >= 4354819200) { return DosTime { time: 48957, date: 65439 }; }
+    let days: i64 = seconds/86400; let rest: i32 = (seconds-days*86400) as i32;
+    // Civil date from days since 1970-01-01 (Howard Hinnant's algorithm).
+    let z: i64 = days+719468; let era: i64 = z/146097; let doe: i64 = z-era*146097;
+    let yoe: i64 = (doe-doe/1460+doe/36524-doe/146096)/365; let doy: i64 = doe-(365*yoe+yoe/4-yoe/100);
+    let mp: i64 = (5*doy+2)/153; let day: i64 = doy-(153*mp+2)/5+1; let month: i64 = mp+3; if (mp >= 10) { month = mp-9; }
+    let year: i64 = yoe+era*400; if (month <= 2) { year += 1; }
+    let hour: i32 = rest/3600; let minute: i32 = (rest/60)%60; let second: i32 = rest%60;
+    return DosTime { time: (hour << 11) | (minute << 5) | (second/2), date: (((year-1980) as i32) << 9) | ((month as i32) << 5) | (day as i32) };
+}
+// Unix seconds (UTC) for DOS time and date fields; a zero month or day
+// reads as 1, as unzip does.
+pub fn unix_seconds(time: i32, date: i32) -> i64 {
+    let year: i64 = 1980+(((date >> 9) & 127) as i64); let month: i64 = ((date >> 5) & 15) as i64; let day: i64 = (date & 31) as i64;
+    if (month == 0) { month = 1; } if (month > 12) { month = 12; } if (day == 0) { day = 1; }
+    let y: i64 = year; if (month <= 2) { y -= 1; }
+    let era: i64 = y/400; let yoe: i64 = y-era*400; let mp: i64 = month+9; if (month > 2) { mp = month-3; }
+    let doy: i64 = (153*mp+2)/5+day-1; let doe: i64 = yoe*365+yoe/4-yoe/100+doy;
+    let days: i64 = era*146097+doe-719468;
+    return days*86400+(((time >> 11) & 31) as i64)*3600+(((time >> 5) & 63) as i64)*60+((time & 31) as i64)*2;
+}
+// The entry's modification time: its extended-timestamp extra when that
+// carries one, otherwise its DOS fields read as UTC.
+pub fn modified(directory: core::slice::View<u8>, entry: Entry) -> i64 {
+    let at: i32 = entry.extra_start; let end: i32 = entry.extra_start+entry.extra_length;
+    if (valid(directory) && entry.extra_start >= 0 && entry.extra_length >= 0 && end <= directory.length) {
+        while (at+4 <= end) {
+            let id: u64 = le16(directory,at); let length: i32 = le16(directory,at+2) as i32;
+            if (length > end-at-4) { break; }
+            if (id == 21589 && length >= 5 && (byte(directory,at+4) & 1) != 0) {
+                let value: u64 = le32(directory,at+5); if (value >= 2147483648) { return (value as i64)-4294967296; } return value as i64;
+            }
+            at += 4+length;
+        }
+    }
+    return unix_seconds(entry.dos_time,entry.dos_date);
+}

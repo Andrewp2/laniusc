@@ -83,7 +83,7 @@ def invoke(executable, certificates, *, version, required=False, missing=False, 
     header, wire_body, body = request(chunked=chunked, expect=expect, early=early)
     with tempfile.TemporaryDirectory(prefix="https_server_exchange_") as directory:
         trace = Path(directory) / "native.trace"
-        command = ["strace", "--kill-on-exit", "-qq", "-i", "-s", "96", "-o", str(trace),
+        command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-i", "-s", "96", "-o", str(trace),
                    "-e", "trace=mmap,munmap,open,openat,close,socket,connect,getsockopt,getpeername,fcntl,sendto,recvfrom,poll,shutdown,clock_gettime,read,write",
                    str(executable), str(fd), str(remote[1]), str(certificates / "valid.pem"),
                    str(certificates / "valid.key"), str(certificates / "root.pem"), str(mode), str(int(required)), "100000"]

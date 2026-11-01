@@ -1,0 +1,249 @@
+// Command-line front end for ext::kv_log, an append-only log store with a
+// hash index (see docs/extended-kv-log.md). Options are parsed by std::cli.
+// usage: kv [-f FILE] [--sync] COMMAND [ARG]...
+//   put KEY [VALUE]   store VALUE (or all of stdin) under KEY
+//   get KEY           print the value; exit 1 when absent
+//   delete KEY        exit 1 when absent
+//   list [-k]         KEY<TAB>VALUE lines in insertion order (-k: keys only)
+//   compact           rewrite the log with live records only
+//   stats             records, truncated tail, file/live/dead bytes
+//   bench [-n N] [-s SIZE]  N buffered puts of SIZE-byte values, one sync,
+//                     then N gets in scattered order; prints rates per second
+// Exit 0 success, 1 key absent, 2 usage or store failure.
+module app::main;
+import alloc::vec;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import core::time;
+import ext::kv_log;
+import std::args;
+import std::clock;
+import std::cli;
+import std::file_ops;
+import std::fs;
+import std::stream;
+
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), count);
+    return core::result::unwrap(core::slice::view(bytes, count));
+}
+fn write_fd(fd: i32, bytes: [u8], count: i32) -> bool {
+    let base: ptr = core::mem::i32_slice_data_ptr(bytes); let sent: i32 = 0;
+    while (sent < count) {
+        let w: i32 = std::fs::write(fd, base + (sent as usize), (count - sent) as usize);
+        if (w == -4) { continue; }
+        if (w <= 0 || w > count - sent) { return false; }
+        sent += w;
+    }
+    return true;
+}
+fn complain(text: str, count: i32) -> i32 { let v: core::slice::View<u8> = literal(text, count); write_fd(2, v.values, count); return 2; }
+fn append(out: &alloc::vec::Vec<u8>, view: core::slice::View<u8>) { if (view.length > 0) { core::result::unwrap(out.try_extend(view)); } }
+fn append_int(out: &alloc::vec::Vec<u8>, value: i64) {
+    if (value < 0) { core::result::unwrap(out.try_push(45)); value = -value; }
+    let buffer: [u8; 24] = [0; 24]; let used: i32 = 0;
+    while (true) { buffer[used] = ((value % 10) as u8) + 48; used += 1; value = value / 10; if (value == 0) { break; } }
+    while (used > 0) { used -= 1; let digit: u8 = buffer[used]; core::result::unwrap(out.try_push(digit)); }
+}
+fn store_error(error: ext::kv_log::Error) -> i32 {
+    let out: alloc::vec::Vec<u8> = alloc::vec::new();
+    append(out.borrow(), literal("kv: ", 4)); append(out.borrow(), ext::kv_log::kind_name(error.kind));
+    if (error.host != 0) { append(out.borrow(), literal(" (errno ", 8)); append_int(out.borrow(), error.host as i64); core::result::unwrap(out.try_push(41)); }
+    core::result::unwrap(out.try_push(10));
+    write_fd(2, out.as_slice(), out.len()); out.destroy();
+    return 2;
+}
+fn number(value: core::option::Option<core::slice::View<u8>>, fallback: i64) -> i64 {
+    if (value.is_none()) { return fallback; }
+    let v: core::slice::View<u8> = value.unwrap();
+    let parsed: core::result::Result<u64, core::decimal::ParseError> = core::decimal::parse_u64_range(v.values, v.start, v.len());
+    if (core::result::is_err(parsed) || core::result::unwrap(parsed) > 100000000 as u64) { return -1; }
+    return core::result::unwrap(parsed) as i64;
+}
+fn read_stdin(out: &alloc::vec::Vec<u8>) -> bool {
+    let buffer: [u8; 65536] = [0; 65536];
+    let source: std::stream::Descriptor = std::stream::stdin();
+    while (true) {
+        let got = source.read(buffer, 0, 65536);
+        if (got.is_err()) { return false; }
+        let n: i32 = got.unwrap();
+        if (n == 0) { return true; }
+        if (out.try_extend(core::slice::View { values: buffer, start: 0, length: n }).is_err()) { return false; }
+    }
+    return true;
+}
+fn now() -> core::time::Instant { return core::result::unwrap(std::clock::monotonic_now()); }
+// "LABEL N in T ms: R/s\n"
+fn rate(out: &alloc::vec::Vec<u8>, label: core::slice::View<u8>, count: i64, start: core::time::Instant) {
+    let nanos: i64 = core::result::unwrap(now().saturating_duration_since(start).as_nanos()) as i64;
+    if (nanos < 1) { nanos = 1; }
+    append(out, label); core::result::unwrap(out.try_push(32)); append_int(out, count);
+    append(out, literal(" in ", 4)); append_int(out, nanos / 1000000); core::result::unwrap(out.try_push(46));
+    let tenths: i64 = (nanos / 100000) % 10; append_int(out, tenths);
+    append(out, literal(" ms: ", 5)); append_int(out, (count * 1000000000) / nanos); append(out, literal("/s\n", 3));
+}
+fn bench_key(key: [u8], index: i64) {
+    key[0] = 107; key[1] = 101; key[2] = 121;
+    let at: i32 = 10; let value: i64 = index;
+    while (at >= 3) { key[at] = ((value % 10) as u8) + 48; value = value / 10; at -= 1; }
+}
+fn bench(store: &ext::kv_log::Store, count: i64, size: i32) -> i32 {
+    let key_bytes: alloc::vec::Vec<u8> = alloc::vec::new();
+    core::result::unwrap(key_bytes.try_resize(11, 0));
+    let key: [u8] = key_bytes.as_slice();
+    let value: alloc::vec::Vec<u8> = alloc::vec::new();
+    core::result::unwrap(value.try_resize(size, 120));
+    let out: alloc::vec::Vec<u8> = alloc::vec::new();
+    let start: core::time::Instant = now();
+    let index: i64 = 0;
+    while (index < count) {
+        bench_key(key, index);
+        let bytes: [u8] = value.as_slice(); if (size >= 4) { bytes[0] = (index & 255) as u8; bytes[1] = ((index >> 8) & 255) as u8; }
+        let put = store.put(core::slice::View { values: key, start: 0, length: 11 }, value.as_view());
+        if (put.is_err()) { value.destroy(); out.destroy(); return store_error(put.unwrap_err()); }
+        index += 1;
+    }
+    let synced = store.sync();
+    if (synced.is_err()) { value.destroy(); out.destroy(); return store_error(synced.unwrap_err()); }
+    rate(out.borrow(), literal("puts", 4), count, start);
+    // Scattered order: stride by a large prime modulo count.
+    let got: alloc::vec::Vec<u8> = alloc::vec::new();
+    start = now(); index = 0; let at: i64 = 0; let missing: i64 = 0;
+    while (index < count) {
+        bench_key(key, at);
+        let read = store.get(core::slice::View { values: key, start: 0, length: 11 }, got.borrow());
+        if (read.is_err()) { value.destroy(); out.destroy(); got.destroy(); return store_error(read.unwrap_err()); }
+        if (!read.unwrap() || got.len() != size) { missing += 1; }
+        at = (at + 1000003) % count; index += 1;
+    }
+    rate(out.borrow(), literal("gets", 4), count, start);
+    if (missing > 0) { append(out.borrow(), literal("missing ", 8)); append_int(out.borrow(), missing); core::result::unwrap(out.try_push(10)); }
+    write_fd(1, out.as_slice(), out.len());
+    value.destroy(); out.destroy(); got.destroy(); key_bytes.destroy();
+    if (missing > 0) { return 2; }
+    return 0;
+}
+
+const PUT: i32 = 1;
+const GET: i32 = 2;
+const DELETE: i32 = 3;
+const LIST: i32 = 4;
+const COMPACT: i32 = 5;
+const STATS: i32 = 6;
+const BENCH: i32 = 7;
+
+fn run(matches: &std::cli::Matches, path: core::slice::View<u8>, sync_every: bool) -> i32 {
+    let command: i32 = matches.command();
+    let options: ext::kv_log::Options = ext::kv_log::default_options();
+    options.sync_every = sync_every;
+    let count: i64 = 100000; let size: i32 = 100;
+    if (command == BENCH) {
+        count = number(matches.value(20), 100000); size = number(matches.value(21), 100) as i32;
+        if (count < 1 || size < 0) { return complain("kv: invalid bench count or size\n", 32); }
+        let parsed = core::path::from_view(path);
+        if (parsed.is_ok()) { let removed = std::file_ops::remove_file_at(std::file_ops::AT_FDCWD, parsed.unwrap()); }
+    }
+    let opened = ext::kv_log::open(path, options);
+    if (opened.is_err()) { return store_error(opened.unwrap_err()); }
+    let store: ext::kv_log::Store = opened.unwrap();
+    let status: i32 = 0;
+    let value: alloc::vec::Vec<u8> = alloc::vec::new();
+    let out: alloc::vec::Vec<u8> = alloc::vec::new();
+    if (command == PUT) {
+        let ok: bool = true;
+        if (matches.operand_count() == 2) { append(value.borrow(), matches.operand(1)); } else { ok = read_stdin(value.borrow()); }
+        if (!ok) { status = complain("kv: cannot read the value from stdin\n", 37); }
+        else {
+            let put = store.put(matches.operand(0), value.as_view());
+            if (put.is_err()) { status = store_error(put.unwrap_err()); }
+        }
+    }
+    if (command == GET) {
+        let got = store.get(matches.operand(0), value.borrow());
+        if (got.is_err()) { status = store_error(got.unwrap_err()); }
+        else { if (got.unwrap()) { if (!write_fd(1, value.as_slice(), value.len())) { status = 2; } } else { status = 1; } }
+    }
+    if (command == DELETE) {
+        let removed = store.delete(matches.operand(0));
+        if (removed.is_err()) { status = store_error(removed.unwrap_err()); }
+        else { if (!removed.unwrap()) { status = 1; } }
+    }
+    if (command == LIST) {
+        let keys_only: bool = matches.present(10);
+        let position: i32 = store.first();
+        while (position >= 0 && status == 0) {
+            append(out.borrow(), store.key(position));
+            if (!keys_only) {
+                core::result::unwrap(out.try_push(9));
+                let read = store.value(position, value.borrow());
+                if (read.is_err()) { status = store_error(read.unwrap_err()); }
+                append(out.borrow(), value.as_view());
+            }
+            core::result::unwrap(out.try_push(10));
+            if (out.len() >= 1048576) { if (!write_fd(1, out.as_slice(), out.len())) { status = 2; } out.clear(); }
+            position = store.next(position);
+        }
+    }
+    if (command == COMPACT) {
+        let done = store.compact();
+        if (done.is_err()) { status = store_error(done.unwrap_err()); }
+    }
+    if (command == STATS) {
+        let recovery: ext::kv_log::Recovery = store.recovery();
+        append(out.borrow(), literal("keys ", 5)); append_int(out.borrow(), store.len() as i64);
+        append(out.borrow(), literal("\nrecords ", 9)); append_int(out.borrow(), recovery.records);
+        append(out.borrow(), literal("\ntruncated ", 11)); append_int(out.borrow(), recovery.truncated);
+        append(out.borrow(), literal("\nfile_bytes ", 12)); append_int(out.borrow(), store.file_bytes());
+        append(out.borrow(), literal("\nlive_bytes ", 12)); append_int(out.borrow(), store.live_bytes());
+        append(out.borrow(), literal("\ndead_bytes ", 12)); append_int(out.borrow(), store.dead_bytes());
+        core::result::unwrap(out.try_push(10));
+    }
+    if (command == BENCH) { status = bench(store.borrow(), count, size); }
+    if (out.len() > 0 && status == 0) { if (!write_fd(1, out.as_slice(), out.len())) { status = 2; } }
+    if (status == 0 || status == 1) {
+        let closed = store.close();
+        if (closed.is_err()) { status = store_error(closed.unwrap_err()); }
+    } else { store.destroy(); }
+    value.destroy(); out.destroy();
+    return status;
+}
+
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1, 64, 1048576);
+    if (core::result::is_err(captured)) { return complain("kv: bad arguments\n", 18); }
+    let arguments: std::args::Arguments = core::result::unwrap(captured);
+    let cli: std::cli::Command = std::cli::command(literal("kv", 2), literal("Read and write an append-only key/value log.", 44));
+    cli.option(1, 102, literal("file", 4), literal("FILE", 4), literal("the log file (default kv.log)", 29));
+    cli.flag(2, 0, literal("sync", 4), literal("fsync after every write", 23));
+    cli.help(99);
+    cli.subcommand(PUT, literal("put", 3), literal("store VALUE (default: stdin) under KEY", 38));
+    cli.operands(literal("KEY [VALUE]", 11), 1, 2); cli.help(99);
+    cli.subcommand(GET, literal("get", 3), literal("print the value of KEY", 22));
+    cli.operands(literal("KEY", 3), 1, 1); cli.help(99);
+    cli.subcommand(DELETE, literal("delete", 6), literal("remove KEY", 10));
+    cli.operands(literal("KEY", 3), 1, 1); cli.help(99);
+    cli.subcommand(LIST, literal("list", 4), literal("print KEY<TAB>VALUE lines in insertion order", 44));
+    cli.flag(10, 107, literal("keys", 4), literal("print keys only", 15)); cli.help(99);
+    cli.subcommand(COMPACT, literal("compact", 7), literal("rewrite the log with live records only", 38)); cli.help(99);
+    cli.subcommand(STATS, literal("stats", 5), literal("print key, record and byte counts", 33)); cli.help(99);
+    cli.subcommand(BENCH, literal("bench", 5), literal("time N puts and N gets", 22));
+    cli.option(20, 110, literal("count", 5), literal("N", 1), literal("operations (default 100000)", 27));
+    cli.option(21, 115, literal("size", 4), literal("SIZE", 4), literal("value bytes (default 100)", 25));
+    cli.help(99);
+    let parsed: core::result::Result<std::cli::Matches, std::cli::Error> = cli.parse(arguments.as_view());
+    if (core::result::is_err(parsed)) { cli.print_error(core::result::unwrap_err(parsed), arguments.as_view()); cli.destroy(); arguments.destroy(); return 2; }
+    let matches: std::cli::Matches = core::result::unwrap(parsed);
+    let status: i32 = 0;
+    if (matches.present(99)) { status = 0; if (!cli.print_help(matches.command())) { status = 2; } }
+    else {
+        let path: core::slice::View<u8> = literal("kv.log", 6);
+        if (matches.present(1)) { path = matches.value(1).unwrap(); }
+        status = run(matches.borrow(), path, matches.present(2));
+    }
+    matches.destroy(); cli.destroy(); arguments.destroy(); return status;
+}

@@ -29,7 +29,7 @@ fn native_endian_literal_vectors_preserve_signed_and_ieee_bits_without_memory_se
     let trace = common::TempArtifact::new("laniusc_native_endian", "memory_trace", None);
     let output = common::process_output_with_timeout(
         "native endian literal bytes, signed values, IEEE payloads and logical admission",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,mremap,munmap,brk", "-e", "signal=none"])

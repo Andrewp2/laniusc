@@ -31,8 +31,8 @@ fn run(name: &str, path: std::path::PathBuf, expected: i32) {
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 fn assert_no_allocator_syscalls(name: &str, bytes: &[u8]) {
-    use std::{os::unix::fs::PermissionsExt, process::Command};
-    if Command::new("strace").arg("-V").output().is_err() {
+    use std::os::unix::fs::PermissionsExt;
+    if crate::common::strace().arg("-V").output().is_err() {
         return;
     }
     let executable = common::TempArtifact::new("fixed_capacity", name, None);
@@ -41,7 +41,7 @@ fn assert_no_allocator_syscalls(name: &str, bytes: &[u8]) {
     let trace = common::TempArtifact::new("fixed_capacity", "allocation_trace", None);
     let output = common::short_process_output_with_timeout(
         format!("{name} no allocation"),
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-e", "trace=brk,mmap,mremap,munmap", "-o"])
             .arg(trace.path())
             .arg(executable.path()),

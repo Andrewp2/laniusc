@@ -2,7 +2,7 @@
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod common;
 
-use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command, time::Duration};
+use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, time::Duration};
 
 fn compile(name: &str) -> Result<Vec<u8>, laniusc_compiler::compiler::CompileError> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -31,7 +31,7 @@ fn checked_slice_ordering_preserves_payloads_and_bounds_without_memory_services(
     let events = common::TempArtifact::new("laniusc_slice_ordering", "allocation_trace", None);
     let output = common::process_output_with_timeout(
         "checked slice metadata, generic payloads, heterogeneous comparison and strided ordering",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(events.path())
             .args(["-e", "trace=mmap,mremap,munmap,brk", "-e", "signal=none"])

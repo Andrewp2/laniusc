@@ -174,8 +174,14 @@ void plan_restore_registers(uint mask, uint first_slot)
     }
 }
 
-// The shared 48-byte body of an overlapping-safe qword copy from [RDX] to
+// The shared 58-byte body of an overlapping-safe qword copy from [RDX] to
 // [RAX], downward-growing words; the caller has already pushed RDI and RSI.
+// The copy runs backward (DF=1) only when the two ranges overlap with the
+// destination above the source (0 <= RAX - RDX < 8 * words). Disjoint
+// copies always run forward: a DF=1 `rep movsq` is a slow microcoded loop
+// (3-4x on Zen 3), and a disjoint copy took it whenever the destination
+// happened to lie above the source, as every element store from a stack
+// temporary does on a thread stack mapped below the heap.
 void plan_memmove_tail(uint words)
 {
     // Up to three words load into RCX, RSI and RDI before any store, which
@@ -192,8 +198,12 @@ void plan_memmove_tail(uint words)
         return;
     }
     uint offset = 0u - (words - 1u) * 8u;
-    // cmp rax, rdx; jbe +18; mov rdi, rax; mov rsi, rdx; mov ecx, words
-    plan_bytes_words(4u, 0x76d03948u, 0xc7894812u, 0xb9d68948u);
+    plan_bytes(3u, 0xc18948u); // mov rcx, rax
+    plan_bytes(3u, 0xd12948u); // sub rcx, rdx
+    plan_bytes_word(3u, 0xf98148u, words * 8u); // cmp rcx, 8 * words
+    // jae +18; mov rdi, rax; mov rsi, rdx; mov ecx, words
+    plan_bytes_word(4u, 0x89481273u, 0xd68948c7u);
+    plan_bytes(1u, 0xb9u);
     // std; rep movsq; cld; jmp +23; lea rdi, [rax + offset]
     plan_bytes_words(4u, words, 0xa548f3fdu, 0x4817ebfcu);
     plan_bytes_word(2u, 0xb88du, offset);

@@ -69,3 +69,8 @@ fn lnc0017_a_payload_after_a_nested_local_variant_has_a_word_offset() {
 fn lnc0006_a_vec_field_taken_out_checks_against_its_element_type() {
     compiles_and_exits_zero("lnc0006_vec_field_take");
 }
+
+#[test]
+fn lnc0057_the_uring_read_window_condition_compiles() {
+    compiles_and_exits_zero("lnc0057_start_and_window_condition");
+}

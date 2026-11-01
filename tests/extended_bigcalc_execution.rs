@@ -348,7 +348,7 @@ fn no_leaks(events: &str) -> usize {
 #[test]
 fn bigcalc_cleans_up_every_observed_allocation_denial_and_io_fault() {
     assert!(
-        Command::new("strace")
+        crate::common::strace()
             .arg("-V")
             .output()
             .unwrap()
@@ -362,7 +362,7 @@ fn bigcalc_cleans_up_every_observed_allocation_denial_and_io_fault() {
     let trace = common::TempArtifact::new("laniusc_bigcalc", "trace", None);
     let expected = oracle(10, input);
     let execute = |injection: Option<&str>, status: i32| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -428,7 +428,7 @@ fn bigcalc_cleans_up_every_observed_allocation_denial_and_io_fault() {
     }
     // strace reports one successful byte without transferring it. write_all
     // must resume at byte 1, and the remainder must reach the descriptor once.
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args([
@@ -448,7 +448,7 @@ fn bigcalc_cleans_up_every_observed_allocation_denial_and_io_fault() {
         .arg(data.path()));
     failure(&output, 6, "io-failure", b"");
     // Failed stderr is still an I/O status, and does not skip owner destruction.
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args([

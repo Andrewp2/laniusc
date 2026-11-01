@@ -697,7 +697,7 @@ theorem effCls_holds (ho : OracleOk prims T call) {A : AEnv} {E : Env} (h : EnvO
     exact callCls_holds ho (effsCls_holds ho h args hvs) hc
   | .eApply _ _ _, _, _ | .eNeg _, _, _ | .eNot _, _, _ | .eCast _ _, _, _ | .eIndex _ _, _, _
   | .eStruct _ _, _, _ | .eVariant _ _ _, _, _ | .eMatch _ _ _ _ _, _, _ | .eDivide _ _ _, _, _
-  | .eStride _, _, _ => by simp only [effCls]; trivial
+  | .eStride _, _, _ | .arraySlice _ _, _, _ => by simp only [effCls]; trivial
 
 theorem effsCls_holds (ho : OracleOk prims T call) {A : AEnv} {E : Env} (h : EnvOk B A E) :
     ∀ (es : List SrcEff) {vs : List Value}, peffs call E es = some vs →
@@ -885,6 +885,9 @@ theorem eff_evConst (hO : ∀ m, OracleOk prims T (pcall sp prims m))
     simp only [peff]
     exact EvConst.pair (binary op.toCore) (eff_evConst hO IH l h hW hc.1) (eff_evConst hO IH r h hW hc.2)
   | .eStride _, A, W, E, _, _, _ => by
+    simp only [peff]
+    exact EvConst.const _
+  | .arraySlice _ _, A, W, E, _, _, _ => by
     simp only [peff]
     exact EvConst.const _
 

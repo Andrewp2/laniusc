@@ -12,7 +12,9 @@ and `https://` URLs. It adds four things to the client stack:
   `core::io::Read` source as `Transfer-Encoding: chunked`;
 - [HTTP/2](#http2) for https origins that select `h2` by ALPN: one
   multiplexed connection per origin, and `fetch_all` to run requests
-  concurrently on it.
+  concurrently on it;
+- [streamed response bodies](#streamed-response-bodies): `fetch_to` writes a
+  body of any size to a `core::io::Write` sink as it arrives.
 
 Response framing comes from the incremental [`ext::http`](extended-http.md)
 cursor, and the final message is checked once by the canonical parser. URLs
@@ -40,6 +42,8 @@ pub struct Request { method: View<u8>, url: View<u8>, headers: View<ext::http::F
 pub fn default_options() -> Options;
 pub fn agent(options: Options) -> Result<Agent,Error>;
 pub fn fetch_stream<R>(agent: &Agent, request: Request, source: &R) -> Result<Response,Error> where R: core::io::Read;
+pub fn fetch_to<W>(agent: &Agent, request: Request, sink: &W) -> Result<Response,Error> where W: core::io::Write;
+pub fn fetch_stream_to<R,W>(agent: &Agent, request: Request, source: &R, sink: &W) -> Result<Response,Error> where R: core::io::Read, W: core::io::Write;
 pub fn resolve(base: View<u8>, location: View<u8>, out: &Vec<u8>) -> bool;
 
 pub impl Agent {
@@ -60,6 +64,7 @@ pub impl Response {
     pub fn header(&self, name: View<u8>) -> Option<View<u8>>;
     pub fn body(&self) -> View<u8>;
     pub fn url(&self) -> View<u8>;
+    pub fn streamed(&self) -> i64;
     pub fn destroy(&self) -> bool;
 }
 pub impl Connection {
@@ -96,6 +101,39 @@ types.
   how many succeeded (see [HTTP/2](#http2)).
 - **`close`** closes every pooled and HTTP/2 connection and releases the
   pool. After it the agent rejects new requests.
+
+### Streamed response bodies
+
+`fetch_to` is `fetch` with the final response's body written to `sink` as
+it arrives, and `fetch_stream_to` is `fetch_stream` with the same. The
+returned `Response` keeps the head (`head()`, `header()`, `status()`,
+`version()`, `url()`), `body()` is empty and `streamed()` is the number of
+body bytes written; it is -1 for a buffered response.
+
+- **HTTP/1.1.** Once the final head is parsed, the body goes through an
+  [`ext::http_body`](extended-http-proxy.md) framer and a buffer of at most
+  64 KiB past the head, for fixed, chunked and close-delimited bodies alike.
+  Chunk extensions and trailers are checked and dropped.
+- **HTTP/2.** The stream's DATA is passed to the sink after each read from
+  the connection, and the engine forgets it
+  (`ext::http2::Connection.take_body`). Flow-control credit is returned as
+  DATA arrives, as for buffered responses.
+- **Limits.** `limits.body_bytes` does not bound a streamed body. Over HTTP/2
+  it bounds the DATA received between two sink writes. The exchange
+  deadline (`timeout_ms`) still covers the whole transfer.
+- **Redirects.** A redirect the agent follows (`follow_redirects`, a
+  redirect status and a `Location`) is read and buffered as usual. The final
+  response, whatever its status, goes to the sink.
+- **Sink errors.** A failed write ends the request with `Sink(error)`. Over
+  HTTP/1.1 the connection is closed; over HTTP/2 the stream is reset with
+  CANCEL and the connection stays open.
+- **Retries.** A stale-connection retry happens only before any response
+  byte arrives, so the sink never sees a body twice. Once bytes have been
+  written, a failure is returned as is, with the sink holding a partial
+  body.
+
+The [`agent-fetch` sample](#fetch-sample) uses `fetch_to` with stdout or a
+file as the sink.
 
 ### Request head
 
@@ -359,6 +397,7 @@ fails with `UnexpectedUpgrade`.
 | `UnexpectedUpgrade` | a `101` response |
 | `Http2(error)` | an HTTP/2 stream or connection error: a reset or GOAWAY from the server, a protocol violation or a malformed response |
 | `Source(error)` | the streamed body's source failed |
+| `Sink(error)` | writing a streamed response body to the sink failed |
 | `AllocationFailed`, `Clock` | resource failures |
 
 A valid 4xx or 5xx response is a successful result; check `status()`.
@@ -410,6 +449,36 @@ The exit codes follow curl:
 | 60 | certificate verification failed |
 | 65 | redirect needs the streamed body again |
 
+## Fetch sample
+
+```text
+agent-fetch [-o FILE] [-X METHOD] [-H 'NAME: VALUE']... [-d DATA | -T FILE|-]
+            [-L] [--max-redirs N] [-m|--max-time MS] [--connect-timeout MS]
+            [-D FILE|-] [-I] [-f] [--cacert FILE] [--no-http2] [--stats] URL...
+```
+
+[`agent_fetch`](../sample_programs/library/agent_fetch.lani) fetches each
+URL in turn through one agent with `fetch_to` (or `fetch_stream_to` with
+`-T`), so every body streams to stdout or to `-o FILE` through a fixed
+buffer, at any size. Options are parsed by [`std::cli`](stdlib-cli.md)
+(GNU `getopt_long` rules: `-oFILE`, `--max-time=MS`, `--` and `--help`).
+It differs from `http-curl` in three ways:
+
+- `--connect-timeout` sets `Options.connect.attempt_timeout` for each
+  connect attempt. `--max-time` is the exchange deadline, transfer included.
+- `-D FILE` writes each final head to FILE after its body; `-` is stderr.
+  For HTTP/2 that is the field lines.
+- `-f` exits 22 after the body has been written (curl's
+  `--fail-with-body`), since the body streams before the status is
+  checked.
+
+`--stats` writes `response status= version= streamed= redirects= reused=
+kept= url=` per URL and one `pool ...` line to stderr. Exit codes are the
+`http-curl` ones, plus 23 for an output write error (`Sink`) and 2 for
+command-line errors. The sample was named `agent-fetch` because
+`sample_programs/library/fetch.lani` (the one-request URL client) and the
+module `ext::http_client` (the one-exchange engine) already exist.
+
 ## Executed evidence
 
 `tests/extended_http_agent_execution.rs` compiles the sample with native
@@ -458,6 +527,22 @@ http2-agent-h2 cases=21 connections=23 requests=43
 
 The https group runs in about 3 seconds, the whole oracle in about 12, and
 the HTTP/2 group in about 4.
+
+`tests/extended_agent_fetch_execution.rs` runs
+[`fetch_oracle.py`](../tests/fixtures/extended/http_agent/fetch_oracle.py)
+against the `agent-fetch` sample:
+
+| Group | Cases | Covers |
+| --- | --- | --- |
+| http | 12 | Python `http.server`: a 3 MB file to `-o`, keep-alive across three URLs, a 20 MiB file past the 16 MiB buffered limit under 16 MiB peak RSS (GNU `time`), a 5 MB chunked body in uneven chunks with extensions and a trailer, directory redirects with and without `-L` and `--max-redirs 0`, `-f`, HEAD with `-D -` and `-D FILE`, chunked upload and fixed POST, `--max-time` mid-body, a refused connect, a closed stdout pipe (exit 23), std::cli errors and `--help` |
+| h2 | 6 | libnghttp2 over TLS: 5 MB and 17 MiB bodies through stream flow control, three streams on one connection, a redirect, RST_STREAM, a closed stdout pipe |
+| proxy | 4 | `ext::http_proxy`: fixed, chunked and close-delimited bodies with keep-alive; the TLS front end over HTTP/2 and over HTTP/1.1 (`--no-http2`) |
+
+```text
+agent-fetch-http cases=12
+agent-fetch-h2 cases=6
+agent-fetch-proxy cases=4
+```
 
 ## Limits of this version
 

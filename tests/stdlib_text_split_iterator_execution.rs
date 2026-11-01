@@ -41,7 +41,7 @@ fn split_cursors_compose_and_preserve_views_without_allocations() {
     let trace = common::TempArtifact::new("laniusc_text_split_iterators", "memory_trace", None);
     let output = common::process_output_with_timeout(
         "Text split cursor contracts",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,mremap,munmap,brk", "-e", "signal=none"])

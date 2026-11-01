@@ -33,7 +33,7 @@ def invoke(*, mode=1, count=1025, layout=0, certificate="valid.pem", key="valid.
     command = [str(EXECUTABLE), str(inherited.fileno()), str(chain), str(private),
                password, str(mode), str(count), str(layout), str(fault)]
     if trace is not None:
-        prefix = ["strace", "-qq", "-o", str(trace), "-e", "trace=mmap,munmap,write"]
+        prefix = ["strace","-E","LANIUS_ALLOC=mmap", "-qq", "-o", str(trace), "-e", "trace=mmap,munmap,write"]
         if fail_at is not None:
             prefix += ["-e", f"inject=mmap:error=ENOMEM:when={fail_at}"]
         command = prefix + command

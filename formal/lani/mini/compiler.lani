@@ -1739,6 +1739,9 @@ pub enum SrcEff {
     EDivide(SrcDivOp, Box<SrcEff>, Box<SrcEff>),
     // slice_stride(slice) of a slice local, an isize
     EStride(usize),
+    // the array local array as a slice of its elements, of type element:
+    // Core's array-to-slice, so a write through it reaches the array
+    ArraySlice(SrcType, usize),
 }
 
 pub enum SrcStmt {
@@ -4193,6 +4196,7 @@ impl SrcEff {
             EMatch(scrutinee, ety, ty, binders, values) -> cons(ety, concat(unbox(scrutinee).types(), effs_types(unbox(values)))),
             EDivide(op, left, right) -> concat(unbox(left).types(), unbox(right).types()),
             EStride(slice) -> empty(),
+            ArraySlice(element, array) -> single(element),
         };
     }
 }
@@ -4610,12 +4614,13 @@ pub fn word_variants(decls: SrcDecls, variants: List<List<SrcType>>) -> bool {
 }
 // extract: mutual end
 
-// A raw slice element of words: a struct or an enum of a word type.
+// A raw slice element of words: a struct or an enum of a word type, or a
+// u16 (one word, laniusc's layout of a [u16]).
 pub fn word_element(decls: SrcDecls, element: SrcType) -> bool {
     return match (element) {
         I32 -> false,
         Bool -> false,
-        Uint(kind) -> false,
+        Uint(kind) -> element.is_uint(Uint16),
         Struct(id, fields) -> word_type(decls, element),
         Enum(id, variants) -> word_type(decls, element),
         Ptr -> false,
@@ -5154,6 +5159,7 @@ impl SrcEff {
             EMatch(scrutinee, ety, ty, binders, values) -> eval_match(slot, ety, ty, unbox(scrutinee).eval(sigs, decls, scope, slot), eval_arms(sigs, decls, scope, slot, match_dst(slot, ety, ty), ty, 0, match_variants(ety), binders, unbox(values)), length(binders), length(unbox(values))),
             EDivide(op, left, right) -> eval_division(op, slot, unbox(left).eval(sigs, decls, scope, slot), unbox(right).eval(sigs, decls, scope, plus(slot, 1))),
             EStride(slice) -> eval_stride(decls, scope, slice, slot),
+            ArraySlice(element, array) -> None,
         };
     }
 }

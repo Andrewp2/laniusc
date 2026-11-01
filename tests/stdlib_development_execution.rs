@@ -155,11 +155,11 @@ fn properties_enforce_bounds_and_benches_measure_completed_work() {
                         .arg(exe.path()),
                 );
                 assert_eq!(output.status.code(), Some(2), "{output:?}");
-                if Command::new("strace").arg("-V").output().is_ok() {
+                if crate::common::strace().arg("-V").output().is_ok() {
                     for when in [1, 2] {
                         let output = common::short_process_output_with_timeout(
                             "native benchmark clock fault",
-                            Command::new("strace")
+                            crate::common::strace()
                                 .args(["-qq", "-e", "trace=clock_gettime", "-e"])
                                 .arg(format!("inject=clock_gettime:error=EIO:when={when}"))
                                 .arg(exe.path()),
@@ -235,7 +235,7 @@ fn report_errors_never_turn_failed_or_incomplete_output_into_success() {
         assert_eq!(output.status.code(), Some(2), "{output:?}");
         // Force zero progress, a short header and an I/O error. Each is an
         // explicit report failure even when the selected test would pass.
-        if Command::new("strace").arg("-V").output().is_ok() {
+        if crate::common::strace().arg("-V").output().is_ok() {
             for injection in [
                 "write:retval=0:when=1",
                 "write:retval=1:when=1",
@@ -243,7 +243,7 @@ fn report_errors_never_turn_failed_or_incomplete_output_into_success() {
             ] {
                 let output = common::short_process_output_with_timeout(
                     injection,
-                    Command::new("strace")
+                    crate::common::strace()
                         .args(["-qq", "-e", "trace=write", "-e"])
                         .arg(format!("inject={injection}"))
                         .arg(exe.path())

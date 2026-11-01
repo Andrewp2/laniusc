@@ -37,7 +37,7 @@ fn wrap_owned_output_preserves_input_and_cleans_up_late_errors() {
     let trace = common::TempArtifact::new("laniusc_text_wrap", "cleanup", None);
     let output = common::short_process_output_with_timeout(
         "wrap ownership contracts",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap"])
@@ -96,7 +96,7 @@ fn text_wrap_real_closed_output_pipes_and_preallocation_signal_failure() {
         } else {
             b"Hello. World!\n".as_slice()
         });
-        let mut command = Command::new("timeout");
+        let mut command = crate::common::traced_timeout();
         command
             .args(["--kill-after=1s", "8s", "strace", "-qq", "-o"])
             .arg(trace.path())

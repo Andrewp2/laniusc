@@ -36,7 +36,7 @@ fn executable(name: &str) -> common::TempArtifact {
 
 fn traced(exe: &common::TempArtifact, fail_at: Option<usize>) -> (Output, String) {
     let trace = common::TempArtifact::new("clone_tree_map", "mapping_trace", None);
-    let mut command = Command::new("timeout");
+    let mut command = crate::common::traced_timeout();
     command
         .args(["--kill-after=1s", "3s", "strace", "-qq", "-o"])
         .arg(trace.path())

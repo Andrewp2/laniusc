@@ -1,7 +1,7 @@
 //! Ordered form bytes: direct preflight, aliases, cursors, and streaming contracts.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod common;
-use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command, time::Duration};
+use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, time::Duration};
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/extended_form").join(name)
@@ -29,7 +29,7 @@ fn execute(name: &str, minimum_allocations: usize, maximum_allocations: usize) {
     let trace = common::TempArtifact::new("laniusc_form", "all_syscalls", None);
     let output = common::process_output_with_timeout(
         "ordered form direct contracts",
-        Command::new("strace").args(["-qq", "-o"]).arg(trace.path())
+        crate::common::strace().args(["-qq", "-o"]).arg(trace.path())
             .args(["-e", "trace=all", "-e", "signal=none"]).arg(executable.path()),
         Duration::from_secs(15),
     );

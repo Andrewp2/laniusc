@@ -89,7 +89,7 @@ def traced(executable, arguments=(), inject=(), expected=0, data=b"", out=b"", c
         inject = [inject]
     with tempfile.TemporaryDirectory(prefix="capture-trace-") as directory:
         path = Path(directory) / "trace"
-        command = ["strace", "-qq", "-o", str(path), "-e", "trace=" + TRACE]
+        command = ["strace","-E","LANIUS_ALLOC=mmap", "-qq", "-o", str(path), "-e", "trace=" + TRACE]
         for item in inject:
             command += ["-e", "inject=" + item]
         descriptors = None

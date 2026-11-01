@@ -170,7 +170,7 @@ class Runner:
             injections=(), admission=False, help_output=False, full_stdout=False):
         directory = self.directory / label; directory.mkdir()
         path = directory / 'input'; path.write_bytes(source)
-        command = ['strace', '--kill-on-exit', '-qq', '-xx', '-s', '16', '-e', 'signal=none',
+        command = ['strace','-E','LANIUS_ALLOC=mmap', '--kill-on-exit', '-qq', '-xx', '-s', '16', '-e', 'signal=none',
                    '-e', 'trace=' + TRACE, '-o', str(directory / 'trace')]
         for call, ordinal, change in injections:
             action = change if change.startswith('retval=') else 'error=' + change

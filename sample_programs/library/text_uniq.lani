@@ -1,0 +1,163 @@
+// GNU uniq under LC_ALL=C over ext::text_uniq.
+// usage: text-uniq [-c] [-d] [-u] [-i] [-f N] [-s N] [-w N] [-z] [-N] [+N]
+//        [INPUT [OUTPUT]]
+// Options and operands follow GNU's order rules ("+N" operands skip bytes,
+// "-N" skips fields, "--" ends options); long options may be abbreviated.
+// -D and --group are not supported. Exit 0, or 1 on a usage error or an
+// input or output that cannot be opened.
+module app::main;
+import alloc::io;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::text_lines;
+import ext::text_uniq;
+import std::args;
+import std::stream;
+
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), count);
+    return core::result::unwrap(core::slice::view(bytes, count));
+}
+fn say(v: core::slice::View<u8>) {
+    let sink: std::stream::Descriptor = std::stream::stderr();
+    let written: core::result::Result<i32, core::io::Failure> = core::io::write_all(sink.borrow(), v.values, v.start, v.len());
+}
+fn complain(text: core::slice::View<u8>) -> i32 { say(literal("text-uniq: ", 11)); say(text); say(literal("\n", 1)); return 1; }
+
+// Long options: index into the list, -1 unknown, -2 ambiguous.
+fn long_index(name: core::slice::View<u8>) -> i32 {
+    let names: core::slice::View<u8> = literal("count,repeated,all-repeated,group,ignore-case,unique,skip-fields,skip-chars,check-chars,zero-terminated,help,version,", 117);
+    let index: i32 = 0; let start: i32 = 0; let i: i32 = 0; let found: i32 = -1; let matches: i32 = 0;
+    while (i < names.length) {
+        if (names.values[i] == 44) {
+            let len: i32 = i - start;
+            if (name.length <= len) {
+                let j: i32 = 0; let ok: bool = true;
+                while (j < name.length && ok) { if (name.values[name.start+j] != names.values[start+j]) { ok = false; } j += 1; }
+                if (ok) { if (name.length == len) { return index; } found = index; matches += 1; }
+            }
+            index += 1; start = i + 1;
+        }
+        i += 1;
+    }
+    if (matches > 1) { return -2; }
+    return found;
+}
+// GNU xstrtoumax with no suffixes: optional white space and '+', then
+// digits only. -1 when invalid; values past u64 are clamped (overflow is
+// reported through `over`).
+struct Number { ok: bool, value: u64, over: bool }
+fn number(v: core::slice::View<u8>) -> Number {
+    let i: i32 = 0; let n: i32 = v.length; let r: Number = Number { ok: false, value: 0, over: false };
+    while (i < n && (v.values[v.start+i] == 32 || (v.values[v.start+i] >= 9 && v.values[v.start+i] <= 13))) { i += 1; }
+    if (i < n && v.values[v.start+i] == 43) { i += 1; }
+    if (i >= n) { return r; }
+    let max: u64 = ext::text_uniq::MAX;
+    while (i < n) {
+        let c: u8 = v.values[v.start+i];
+        if (c < 48 || c > 57) { return r; }
+        let d: u64 = (c - 48) as u64;
+        if (r.value > (max - d) / 10) { r.over = true; r.value = max; } else { if (!r.over) { r.value = r.value * 10 + d; } }
+        i += 1;
+    }
+    r.ok = true; return r;
+}
+
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1, 4096, 1048576);
+    if (core::result::is_err(captured)) { return complain(literal("bad arguments", 13)); }
+    let arguments: std::args::Arguments = core::result::unwrap(captured);
+    let o: ext::text_uniq::Options = ext::text_uniq::default_options();
+    let empty: core::slice::View<u8> = literal("-", 1);
+    let input: core::slice::View<u8> = empty; let output: core::slice::View<u8> = empty; let files: i32 = 0;
+    let plain: bool = false; let i: i32 = 0; let error: i32 = 0; let obsolete: bool = false;
+    // error: 1 usage, 2 extra operand, 3 bad number, 4 unsupported.
+    while (i < arguments.len() && error == 0) {
+        let arg: core::slice::View<u8> = core::option::unwrap(arguments.get(i)); i += 1;
+        if (plain || arg.len() < 2 || arg.values[arg.start] != 45) {
+            if (!plain && arg.len() > 0 && arg.values[arg.start] == 43) {
+                let skip: Number = number(arg);
+                if (skip.ok && !skip.over) { o.skip_chars = skip.value; continue; }
+            }
+            if (files == 2) { error = 2; break; }
+            if (files == 0) { input = arg; } else { output = arg; }
+            files += 1; continue;
+        }
+        let long: bool = false; let opt: i32 = 0; let value: core::slice::View<u8> = empty; let has_value: bool = false;
+        if (arg.values[arg.start+1] == 45) {
+            if (arg.len() == 2) { plain = true; continue; }
+            let eq: i32 = 2; while (eq < arg.len() && arg.values[arg.start+eq] != 61) { eq += 1; }
+            let index: i32 = long_index(core::slice::View { values: arg.values, start: arg.start + 2, length: eq - 2 });
+            if (index < 0) { error = 1; break; }
+            let takes: bool = index == 6 || index == 7 || index == 8;
+            if (eq < arg.len()) {
+                if (!takes && index != 2 && index != 3) { error = 1; break; }
+                value = core::slice::View { values: arg.values, start: arg.start + eq + 1, length: arg.len() - eq - 1 }; has_value = true;
+            } else {
+                if (takes) { if (i >= arguments.len()) { error = 1; break; } value = core::option::unwrap(arguments.get(i)); i += 1; has_value = true; }
+            }
+            opt = match (index) { 0 -> 99, 1 -> 100, 2 -> 68, 3 -> 71, 4 -> 105, 5 -> 117, 6 -> 102, 7 -> 115, 8 -> 119, 9 -> 122, _ -> 63 };
+            long = true;
+        }
+        let j: i32 = 1;
+        while (error == 0) {
+            if (!long) {
+                if (j >= arg.len()) { break; }
+                opt = arg.values[arg.start+j] as i32; j += 1;
+                if (opt == 102 || opt == 115 || opt == 119) {
+                    if (j < arg.len()) { value = core::slice::View { values: arg.values, start: arg.start + j, length: arg.len() - j }; j = arg.len(); }
+                    else { if (i >= arguments.len()) { error = 1; break; } value = core::option::unwrap(arguments.get(i)); i += 1; }
+                }
+            }
+            if (opt >= 48 && opt <= 57) {
+                if (!obsolete) { o.skip_fields = 0; }
+                let d: u64 = (opt - 48) as u64;
+                if (o.skip_fields > (ext::text_uniq::MAX - d) / 10) { o.skip_fields = ext::text_uniq::MAX; } else { o.skip_fields = o.skip_fields * 10 + d; }
+                obsolete = true;
+            } else { if (opt == 99) { o.count = true; }
+            else { if (opt == 100) { o.unique = false; }
+            else { if (opt == 117) { o.repeated = false; }
+            else { if (opt == 105) { o.ignore_case = true; }
+            else { if (opt == 122) { o.eol = 0; }
+            else { if (opt == 102 || opt == 115 || opt == 119) {
+                let parsed: Number = number(value);
+                if (!parsed.ok) { error = 3; break; }
+                if (opt == 102) { o.skip_fields = parsed.value; obsolete = false; }
+                if (opt == 115) { o.skip_chars = parsed.value; }
+                if (opt == 119) { o.check_chars = parsed.value; }
+            }
+            else { if (opt == 68 || opt == 71) { error = 4; break; }
+            else { error = 1; break; } } } } } } } }
+            if (long) { break; }
+        }
+    }
+    if (error == 1) { arguments.destroy(); return complain(literal("invalid usage", 13)); }
+    if (error == 2) { arguments.destroy(); return complain(literal("extra operand", 13)); }
+    if (error == 3) { arguments.destroy(); return complain(literal("invalid number", 14)); }
+    if (error == 4) { arguments.destroy(); return complain(literal("-D and --group are not supported", 32)); }
+    let fd: i32 = ext::text_lines::open_input(input);
+    if (fd < 0) { say(literal("text-uniq: ", 11)); say(input); say(literal(": No such file or directory\n", 28)); arguments.destroy(); return 1; }
+    let ofd: i32 = ext::text_lines::open_output(output);
+    if (ofd < 0) { say(literal("text-uniq: ", 11)); say(output); say(literal(": cannot open for writing\n", 26)); ext::text_lines::close_input(fd); arguments.destroy(); return 1; }
+    let out: ext::text_lines::Out = core::result::unwrap(ext::text_lines::out(ofd, 32768));
+    let u: ext::text_uniq::Uniq = core::result::unwrap(ext::text_uniq::uniq(o));
+    let r: ext::text_lines::Lines = core::result::unwrap(ext::text_lines::lines(fd, 262144));
+    let status: i32 = 0;
+    while (true) {
+        let v: core::slice::View<u8> = ext::text_lines::next_lines(r.borrow(), o.eol, false);
+        if (v.length > 0) {
+            let fed: core::result::Result<i32, ext::text_uniq::Error> = ext::text_uniq::feed(u.borrow(), v, out.borrow());
+            if (core::result::is_err(fed)) { status = complain(literal("allocation failed", 17)); break; }
+        }
+        if (r.finished()) { break; }
+    }
+    if (r.failed) { say(literal("text-uniq: ", 11)); say(input); say(literal(": read error\n", 13)); status = 1; }
+    ext::text_uniq::finish(u.borrow(), out.borrow());
+    if (!ext::text_lines::finish(out.borrow())) { status = 1; }
+    out.destroy(); u.destroy(); r.destroy(); ext::text_lines::close_input(fd); if (ofd > 1) { ext::text_lines::close_input(ofd); }
+    arguments.destroy();
+    return status;
+}

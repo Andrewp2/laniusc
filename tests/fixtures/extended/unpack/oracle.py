@@ -163,7 +163,7 @@ class Cases:
         args = ["--format", fmt, "--root", "out"] + flags(overrides) + ["--", "archive"]
         if arguments is not None:
             args = arguments
-        command = ["strace", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096",
+        command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096",
                    "-e", "signal=none",
                    "-e", "trace=" + TRACE, "-o", str(folder / "syscalls.log"),
                    ]

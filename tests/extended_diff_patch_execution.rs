@@ -216,7 +216,7 @@ fn check_allocation_failures(executable: &std::path::Path, bytes: &[u8]) {
     input.write_bytes(bytes);
     let trace = common::TempArtifact::new("laniusc_diff_patch", "trace", None);
     let traced = |fault: Option<usize>| {
-        let mut command = std::process::Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())

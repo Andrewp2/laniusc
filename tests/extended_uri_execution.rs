@@ -41,7 +41,7 @@ fn numbers(bytes: &[u8]) -> Vec<i32> {
 fn borrowed_uri_contracts_execute_bounds_limits_components_and_aliases() {
     let exe = executable("tests/fixtures/extended/uri_contracts.lani");
     let trace = common::TempArtifact::new("laniusc_uri", "contracts", None);
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args(["-e", "trace=mmap,munmap,open,openat,socket,connect"])
@@ -571,7 +571,7 @@ fn default_length_boundary_and_large_borrowed_parses_allocate_no_storage() {
     let trace = common::TempArtifact::new("laniusc_uri", "limits", None);
     let output = common::process_output_with_timeout(
         "large borrowed URI",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([

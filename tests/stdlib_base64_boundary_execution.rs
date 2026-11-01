@@ -142,7 +142,7 @@ fn checked_base64_respects_exact_aliases_strides_guard_pages_and_atomic_failures
     let trace = common::TempArtifact::new("laniusc_base64_boundary", "all_syscalls", None);
     let output = common::process_output_with_timeout(
         "checked Base64 honest memory boundaries",
-        Command::new("strace")
+        crate::common::strace()
             .args(["--kill-on-exit", "-qq", "-s", "64", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=all", "-e", "signal=none"])

@@ -127,7 +127,9 @@ each, laptop).
 
 For a nonempty write, or a read into a non-packed destination such as a native
 `[u8;N]` array, the adapter reads status with `F_GETFL`, then applies these
-policies before any transfer:
+policies before any transfer (a write from a packed source then issues one
+`pwrite64` straight from the source for the whole length, so a 1 MiB buffer
+flush is two syscalls instead of 2,048):
 
 | Flag | Read | Write |
 | --- | --- | --- |
@@ -140,7 +142,7 @@ append despite an explicit offset when O_APPEND is set; rejecting append
 writes preserves the promised position. Packed stack staging does not supply
 direct-I/O alignment. The adapter does not change either flag.
 
-On that staged path, after status validation there is at most one `pread64`
+On the staged path (non-packed views), after status validation there is at most one `pread64`
 (syscall 17) or `pwrite64` (18), transferring at most 1024 bytes. Write bytes are packed from
 the selected native stride into contiguous stack storage. Reads go to private
 stack storage; only a valid successful count publishes bytes to the selected

@@ -44,7 +44,7 @@ def response(client):
 
 
 def invoke(executable, certificates, trace, mode, version):
-    command = ["strace", "--kill-on-exit", "-qq", "-i", "-s", "96", "-o", str(trace),
+    command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-i", "-s", "96", "-o", str(trace),
                "-e", "trace=mmap,munmap,open,openat,close,socket,bind,listen,accept,accept4,connect,getsockopt,getsockname,getpeername,fcntl,sendto,recvfrom,poll,shutdown,clock_gettime,read,write",
                str(executable), str(certificates / "valid.pem"), str(certificates / "valid.key"), str(mode)]
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)

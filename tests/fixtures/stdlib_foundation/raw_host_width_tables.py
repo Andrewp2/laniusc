@@ -99,6 +99,12 @@ with tempfile.TemporaryDirectory(prefix="lanius_width_assembly_") as folder:
             found += 1
             position += len(expected)
         assert found > 0, "no native runtime in executable"
+    # dealloc and realloc are entries inside the allocator's one array.
+    symbols = subprocess.run(["nm", "-an", obj], check=True, capture_output=True, text=True, timeout=10).stdout
+    entries = {fields[2]: int(fields[0], 16) for fields in map(str.split, symbols.splitlines())
+               if len(fields) == 3 and fields[2] in ("alloc_dealloc", "alloc_realloc")}
+    for label, constant in [("alloc_dealloc", "X86_RUNTIME_DEALLOC_OFFSET"), ("alloc_realloc", "X86_RUNTIME_REALLOC_OFFSET")]:
+        assert constants[constant] == positions["alloc_bytes"] + entries[label], (constant, entries)
     for stem, array in [("runtime_path_ops", "path_ops_bytes"), ("runtime_linux_syscall", "linux_syscall6_bytes")]:
         obj = folder / (stem + ".o")
         output = folder / (stem + ".bin")

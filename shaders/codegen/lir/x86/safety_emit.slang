@@ -149,7 +149,7 @@ void emit_prologue(inout uint cursor, TargetLirFunction function,
 void emit_exit(inout uint cursor, uint code)
 {
     emit_u8(cursor, 0xbfu); emit_u32(cursor, code);
-    emit_u8(cursor, 0xb8u); emit_u32(cursor, 60u);
+    emit_u8(cursor, 0xb8u); emit_u32(cursor, 231u); // exit_group: a trap on any thread ends the process
     emit_u8(cursor, 0x0fu); emit_u8(cursor, 0x05u);
 }
 

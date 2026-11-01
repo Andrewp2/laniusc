@@ -90,14 +90,14 @@ fn wide_random_range_sample_prints_a_value_and_reports_host_failure() {
             .parse()
             .expect("decimal output");
         assert!((2..=12).contains(&value), "{output:?}");
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_ok()
         {
             let failed = common::short_process_output_with_timeout(
                 "wide random range sample host error",
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-e")
                     .arg("trace=getrandom")
@@ -118,7 +118,7 @@ fn wide_random_range_sample_prints_a_value_and_reports_host_failure() {
 fn wide_secure_draws_report_host_failures_on_x86() {
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -142,7 +142,7 @@ fn wide_secure_draws_report_host_failures_on_x86() {
             for injection in ["getrandom:error=EIO:when=1", "getrandom:retval=0:when=1"] {
                 let output = common::short_process_output_with_timeout(
                     format!("{name} {injection}"),
-                    std::process::Command::new("strace")
+                    crate::common::strace()
                         .arg("-qq")
                         .arg("-e")
                         .arg("trace=getrandom")
@@ -163,7 +163,7 @@ fn wide_secure_fill_retries_short_reads_and_bounded_draw_rejects_bias_on_x86() {
     let rejection_bytes = compile_fixture("std_random_wide_rejection");
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -187,7 +187,7 @@ fn wide_secure_fill_retries_short_reads_and_bounded_draw_rejects_bias_on_x86() {
             let exe = executable(bytes, name);
             let output = common::short_process_output_with_timeout(
                 format!("wide random {name}"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-e")
                     .arg("trace=getrandom")

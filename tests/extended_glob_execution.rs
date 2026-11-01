@@ -64,7 +64,7 @@ fn freed(events: &str) -> usize {
 fn compiled_glob_contracts_execute_errors_limits_ownership_and_scratch_bounds() {
     let exe = executable("tests/fixtures/extended/glob_contracts.lani");
     let trace = common::TempArtifact::new("laniusc_glob", "contracts", None);
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args(["-e", "trace=mmap,munmap"])
@@ -478,7 +478,7 @@ fn denied_glob_allocations_release_partial_owners_and_preserve_live_patterns() {
     let exe = executable("tests/fixtures/extended/glob_failure.lani");
     let trace = common::TempArtifact::new("laniusc_glob", "failure", None);
     let execute = |when: Option<usize>| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -510,7 +510,7 @@ fn adversarial_and_repeated_matches_use_fixed_storage_and_bounded_work() {
     for (count, mode) in [(1024, 0), (16383, 0), (4096, 1), (65536, 1)] {
         let output = common::process_output_with_timeout(
             "large glob batch",
-            Command::new("strace")
+            crate::common::strace()
                 .args(["-qq", "-o"])
                 .arg(trace.path())
                 .args([

@@ -761,14 +761,15 @@ theorem zipVariants_eq : ∀ (ns : List Name) (ps : List (List Ty)), zipVariants
 
 /-! ## Let heads -/
 
-/-- `recv.m(args)` with no type arguments, the receiver `self` or a name. -/
+/-- `recv.m(args)` or `recv.m<T, ..>(args)`, the receiver `self` or a name. -/
 def MethodForm (pf : CTree) : Prop :=
   (nodeProd (kid pf 0) = pSelfValue ∨ nodeProd (kid pf 0) = pIdent ∧ nodeProd (kid (kid pf 0) 1) = pIdentPlain) ∧
-    nodeProd (kid pf 1) = pPostfixMember ∧ nodeProd (kid (kid pf 1) 2) = pMemberTypeArgsNone ∧
+    nodeProd (kid pf 1) = pPostfixMember ∧
+    (nodeProd (kid (kid pf 1) 2) = pMemberTypeArgsNone ∨ nodeProd (kid (kid pf 1) 2) = pMemberTypeArgsSome) ∧
     nodeProd (kid (kid pf 1) 3) = pPostfixCall ∧ nodeProd (kid (kid (kid pf 1) 3) 3) = pPostfixEnd
 
 theorem isMethodForm_sound {pf : CTree} (h : isMethodForm pf = true) : MethodForm pf := by
-  simpa [isMethodForm, MethodForm, and_assoc] using h
+  simpa [isMethodForm, memberArgs, MethodForm, and_assoc] using h
 
 /-- The head of `let x: ty = init` that its spelling decides: `init` (through
 wrappers) is a call of the allocator or a raw slice. -/

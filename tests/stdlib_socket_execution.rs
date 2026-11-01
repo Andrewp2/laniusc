@@ -1,6 +1,6 @@
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod common;
-use std::{collections::BTreeSet, os::unix::fs::PermissionsExt, process::Command, time::Duration};
+use std::{collections::BTreeSet, os::unix::fs::PermissionsExt, time::Duration};
 
 fn executable(name: &str) -> common::TempArtifact {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -74,7 +74,7 @@ fn owned_descriptors_retired(trace: &str, failed_close: Option<i32>) -> usize {
 fn run(name: &str) {
     let exe = executable(name);
     let trace = common::TempArtifact::new("laniusc_socket", "trace", None);
-    let output = common::process_output_with_timeout(name, Command::new("strace")
+    let output = common::process_output_with_timeout(name, crate::common::strace()
         .args(["-qq","-o"]).arg(trace.path())
         .args(["-e","trace=socket,accept4,fcntl,close,mmap,munmap,bind,connect,listen,getsockname,getpeername,setsockopt,getsockopt,poll,sendto,recvfrom,shutdown"])
         .arg(exe.path()), Duration::from_secs(8));
@@ -107,7 +107,7 @@ fn internet_connect_eagain_is_preserved_instead_of_inventing_pending_state() {
     let trace = common::TempArtifact::new("laniusc_socket", "connect_fault", None);
     let output = common::process_output_with_timeout(
         "Internet connect EAGAIN",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([
@@ -143,7 +143,7 @@ fn absolute_deadlines_end_repeated_ready_eagain_and_continuous_interrupts() {
         let trace = common::TempArtifact::new("laniusc_socket", "deadline_fault", None);
         let output = common::process_output_with_timeout(
             injection,
-            Command::new("strace")
+            crate::common::strace()
                 .args(["-qq", "-o"])
                 .arg(trace.path())
                 .args(["-e", "trace=socket,accept4,fcntl,close,mmap,munmap,connect,bind,listen,sendto,recvfrom,poll", "-e", injection])
@@ -178,7 +178,7 @@ fn malformed_accept_reply_preserves_primary_error_and_single_cleanup_outcome() {
         (Some("EINTR"), vec!["cleanup", "interrupted"]),
     ] {
         let trace = common::TempArtifact::new("laniusc_socket", "accept_reply", None);
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command.args(["-qq", "-o"]).arg(trace.path()).args([
             "-e",
             "trace=socket,accept4,close,mmap,munmap",

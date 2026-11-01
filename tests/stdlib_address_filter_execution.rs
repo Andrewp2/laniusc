@@ -27,7 +27,7 @@ fn run(exe: &common::TempArtifact, args: &[&str], input: &[u8], injection: Optio
     let data = common::TempArtifact::new("laniusc_address_filter", "stdin", None);
     data.write_bytes(input);
     let trace = common::TempArtifact::new("laniusc_address_filter", "trace", None);
-    let mut c = Command::new("strace");
+    let mut c = crate::common::strace();
     c.args(["-qq", "-o"]).arg(trace.path()).args([
         "-e",
         if injection.is_some() {

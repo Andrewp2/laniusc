@@ -174,7 +174,7 @@ fn execute(
     let source = common::TempArtifact::new("laniusc_entropy_bounded", "input", None);
     source.write_bytes(input);
     let log = common::TempArtifact::new("laniusc_entropy_bounded", "trace", None);
-    let mut command = Command::new("strace");
+    let mut command = crate::common::strace();
     command
         .args(["-qq", "-xx", "-s", "512", "-o"])
         .arg(log.path())

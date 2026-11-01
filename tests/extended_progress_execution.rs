@@ -92,7 +92,7 @@ fn progress_is_atomic_bounded_allocation_free_and_matches_u128_fraction_model() 
     let exe = executable("progress_input");
     let output = common::short_process_output_with_timeout(
         "progress fraction model",
-        std::process::Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([
