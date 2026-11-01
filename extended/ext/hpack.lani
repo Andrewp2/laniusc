@@ -1,0 +1,437 @@
+// HPACK header compression for HTTP/2 (RFC 7541): prefix integers, raw and
+// Huffman string literals, the static table, a bounded dynamic table with
+// eviction, and an encoder and decoder that each own one table.
+// One Decoder and one Encoder belong to one connection direction each.
+module ext::hpack;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+
+pub enum Error { Bounds, InvalidLimits, Integer, Index, Huffman, Truncated, TableSize, SizeUpdate, TooLong, Limit, Failed, AllocationFailed }
+// How a literal field is represented (RFC 7541 section 6.2).
+pub enum Indexing { Incremental, Without, Never }
+// When string literals use the Huffman code: only when shorter, always, never.
+pub enum Huffman { Shortest, Always, Never }
+// A decoded or to-be-encoded field. never_indexed marks a field the peer sent
+// (or the caller wants sent) with the never-indexed representation.
+pub struct Header { name: core::slice::View<u8>, value: core::slice::View<u8>, never_indexed: bool }
+// table_bytes: the dynamic table size this decoder allows (the value
+// advertised as SETTINGS_HEADER_TABLE_SIZE). list_bytes: the decoded header
+// list size limit (RFC 9113 section 6.5.2: name + value + 32 per field).
+// fields: maximum fields per block. string_bytes: maximum one string literal,
+// encoded or decoded.
+pub struct Limits { table_bytes: i32, list_bytes: i32, fields: i32, string_bytes: i32 }
+pub fn default_limits() -> Limits { return Limits { table_bytes: 4096, list_bytes: 65536, fields: 1024, string_bytes: 65536 }; }
+
+pub const DEFAULT_TABLE_BYTES: i32 = 4096;
+pub const STATIC_ENTRIES: i32 = 61;
+const ENTRY_OVERHEAD: i32 = 32;
+const MAX_INTEGER: i64 = 2147483647;
+
+fn valid(view: core::slice::View<u8>) -> bool { return view.start >= 0 && view.length >= 0 && view.start <= 2147483647 - view.length; }
+fn valid_limits(limits: Limits) -> bool {
+    return limits.table_bytes >= 0 && limits.table_bytes <= 16777216 && limits.list_bytes > 0 && limits.list_bytes <= 268435456
+        && limits.fields > 0 && limits.fields <= 1048576 && limits.string_bytes > 0 && limits.string_bytes <= 16777216;
+}
+fn text(value: str, count: i32) -> [u8] { return core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), count); }
+fn hex(bytes: [u8], offset: i32, width: i32) -> i64 {
+    let value: i64 = 0; let at: i32 = offset; let end: i32 = offset + width;
+    while (at < end) { let b: i64 = bytes[at] as i64; value = (value << 4) | ((b & 15) + 9 * (b >> 6)); at += 1; }
+    return value;
+}
+fn part(bytes: [u8], start: i32, count: i32) -> core::slice::View<u8> { return core::slice::View { values: bytes, start: start, length: count }; }
+fn same(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.length != right.length) { return false; }
+    let i: i32 = 0; while (i < left.length) { if (left.values[left.start + i] != right.values[right.start + i]) { return false; } i += 1; }
+    return true;
+}
+
+// RFC 7541 Appendix A. Names and values are concatenated in STATIC_TEXT;
+// STATIC_INDEX holds name offset (3 hex), name length (2) and value length (2).
+fn static_text() -> [u8] { return text(":authority:methodGET:methodPOST:path/:path/index.html:schemehttp:schemehttps:status200:status204:status206:status304:status400:status404:status500accept-charsetaccept-encodinggzip, deflateaccept-languageaccept-rangesacceptaccess-control-allow-originageallowauthorizationcache-controlcontent-dispositioncontent-encodingcontent-languagecontent-lengthcontent-locationcontent-rangecontent-typecookiedateetagexpectexpiresfromhostif-matchif-modified-sinceif-none-matchif-rangeif-unmodified-sincelast-modifiedlinklocationmax-forwardsproxy-authenticateproxy-authorizationrangerefererrefreshretry-afterserverset-cookiestrict-transport-securitytransfer-encodinguser-agentvaryviawww-authenticate", 684); }
+fn static_index() -> [u8] { return text("0000a0000a0703014070401f0501025050b0350704040070504c07030560703060070306a0703074070307e070308807030920e000a00f0d0bc0f000cb0d000d806000de1b000f903000fc05001010d0010e0d0011b130012e100013e100014e0e0015c100016c0d001790c00185060018b040018f0400193060019907001a004001a404001a808001b011001c10d001ce08001d613001e90d001f604001fa08002020c0020e120022013002330500238070023f07002460b0025106002570a00261190027a110028b0a002950400299030029c1000", 427); }
+// The name and value of static index 1..61.
+pub fn static_name(index: i32) -> core::slice::View<u8> {
+    let table: [u8] = static_index(); let at: i32 = (index - 1) * 7;
+    return part(static_text(), hex(table, at, 3) as i32, hex(table, at + 3, 2) as i32);
+}
+pub fn static_value(index: i32) -> core::slice::View<u8> {
+    let table: [u8] = static_index(); let at: i32 = (index - 1) * 7;
+    let offset: i32 = hex(table, at, 3) as i32 + hex(table, at + 3, 2) as i32;
+    return part(static_text(), offset, hex(table, at + 5, 2) as i32);
+}
+
+// RFC 7541 Appendix B. The code is canonical: codes of one length are
+// consecutive in symbol order. HUFFMAN_CODES holds each symbol's code
+// (8 hex) and bit length (2 hex) for symbols 0..256 (256 is EOS).
+// HUFFMAN_ORDER lists symbols sorted by (length, symbol), 3 hex each;
+// HUFFMAN_LENGTHS holds, for lengths 1..30, the symbol count (2 hex), the
+// first code (8 hex) and the offset into HUFFMAN_ORDER (3 hex).
+fn huffman_codes() -> [u8] { return text("00001ff80d007fffd8170fffffe21c0fffffe31c0fffffe41c0fffffe51c0fffffe61c0fffffe71c0fffffe81c00ffffea183ffffffc1e0fffffe91c0fffffea1c3ffffffd1e0fffffeb1c0fffffec1c0fffffed1c0fffffee1c0fffffef1c0ffffff01c0ffffff11c0ffffff21c3ffffffe1e0ffffff31c0ffffff41c0ffffff51c0ffffff61c0ffffff71c0ffffff81c0ffffff91c0ffffffa1c0ffffffb1c0000001406000003f80a000003f90a00000ffa0c00001ff90d0000001506000000f808000007fa0b000003fa0a000003fb0a000000f908000007fb0b000000fa0800000016060000001706000000180600000000050000000105000000020500000019060000001a060000001b060000001c060000001d060000001e060000001f060000005c07000000fb0800007ffc0f000000200600000ffb0c000003fc0a00001ffa0d00000021060000005d070000005e070000005f0700000060070000006107000000620700000063070000006407000000650700000066070000006707000000680700000069070000006a070000006b070000006c070000006d070000006e070000006f07000000700700000071070000007207000000fc080000007307000000fd0800001ffb0d0007fff01300001ffc0d00003ffc0e000000220600007ffd0f00000003050000002306000000040500000024060000000505000000250600000026060000002706000000060500000074070000007507000000280600000029060000002a0600000007050000002b0600000076070000002c06000000080500000009050000002d060000007707000000780700000079070000007a070000007b0700007ffe0f000007fc0b00003ffd0e00001ffd0d0ffffffc1c000fffe614003fffd216000fffe714000fffe814003fffd316003fffd416003fffd516007fffd917003fffd616007fffda17007fffdb17007fffdc17007fffdd17007fffde1700ffffeb18007fffdf1700ffffec1800ffffed18003fffd716007fffe01700ffffee18007fffe117007fffe217007fffe317007fffe417001fffdc15003fffd816007fffe517003fffd916007fffe617007fffe71700ffffef18003fffda16001fffdd15000fffe914003fffdb16003fffdc16007fffe817007fffe917001fffde15007fffea17003fffdd16003fffde1600fffff018001fffdf15003fffdf16007fffeb17007fffec17001fffe015001fffe115003fffe016001fffe215007fffed17003fffe116007fffee17007fffef17000fffea14003fffe216003fffe316003fffe416007ffff017003fffe516003fffe616007ffff11703ffffe01a03ffffe11a000fffeb140007fff113003fffe716007ffff217003fffe81601ffffec1903ffffe21a03ffffe31a03ffffe41a07ffffde1b07ffffdf1b03ffffe51a00fffff11801ffffed190007fff213001fffe31503ffffe61a07ffffe01b07ffffe11b03ffffe71a07ffffe21b00fffff218001fffe415001fffe51503ffffe81a03ffffe91a0ffffffd1c07ffffe31b07ffffe41b07ffffe51b000fffec1400fffff318000fffed14001fffe615003fffe916001fffe715001fffe815007ffff317003fffea16003fffeb1601ffffee1901ffffef1900fffff41800fffff51803ffffea1a007ffff41703ffffeb1a07ffffe61b03ffffec1a03ffffed1a07ffffe71b07ffffe81b07ffffe91b07ffffea1b07ffffeb1b0ffffffe1c07ffffec1b07ffffed1b07ffffee1b07ffffef1b07fffff01b03ffffee1a3fffffff1e", 2570); }
+fn huffman_order() -> [u8] { return text("03003103206106306506906f07307402002502d02e02f03303403503603703803903d04105f06206406606706806c06d06e07007207503a04204304404504604704804904a04b04c04d04e04f05005105205305405505605705906a06b07107607707807907a02602a02c03b05805a02102202802903f02702b07c02303e00002404005b05d07e05e07d03c06007b05c0c30d00800820830a20b80c20e00e20990a10a70ac0b00b10b30d10d80d90e30e50e608108408508608809209a09c0a00a30a40a90aa0ad0b20b50b90ba0bb0bd0be0c40c60e40e80e900108708908a08b08c08d08f09309509609709809b09d09e0a50a60a80ae0af0b40b60b70bc0bf0c50e70ef00908e09009109409f0ab0ce0d70e10ec0ed0c70cf0ea0eb0c00c10c80c90ca0cd0d20d50da0db0ee0f00f20f30ff0cb0cc0d30d40d60dd0de0df0f10f40f50f60f70f80fa0fb0fc0fd0fe00200300400500600700800b00c00e00f01001101201301401501701801901a01b01c01d01e01f07f0dc0f900a00d016100", 771); }
+fn huffman_lengths() -> [u8] { return text("00000000000000000000000000000000000000000000000000000a000000000001a0000001400a200000005c02406000000f804400000001fc04a05000003f804a03000007fa04f0200000ffa0520600001ff80540200003ffc05a0300007ffc05c000000fffe05f000001fffc05f000003fff805f030007fff005f08000fffe60620d001fffdc06a1a003fffd20771d007fffd80910c00ffffea0ae0401ffffec0ba0f03ffffe00be1307ffffde0cd1d0fffffe20e0001ffffffe0fd043ffffffc0fd", 390); }
+fn code_of(symbol: i32) -> i64 { return hex(huffman_codes(), symbol * 10, 8); }
+fn bits_of(symbol: i32) -> i32 { return hex(huffman_codes(), symbol * 10 + 8, 2) as i32; }
+
+// Bytes the Huffman code needs for value.
+pub fn huffman_length(value: core::slice::View<u8>) -> i32 {
+    let bits: i64 = 0; let i: i32 = 0;
+    while (i < value.length) { bits += bits_of(value.values[value.start + i] as i32) as i64; i += 1; }
+    return ((bits + 7) / 8) as i32;
+}
+// Append the Huffman code for value, padded with the EOS prefix (all ones).
+pub fn huffman_encode(value: core::slice::View<u8>, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32,Error> {
+    if (!valid(value)) { return core::result::Err(Error::Bounds); }
+    let need: i32 = huffman_length(value);
+    if (out.try_reserve(need).is_err()) { return core::result::Err(Error::AllocationFailed); }
+    let accumulator: u64 = 0; let held: i32 = 0; let i: i32 = 0;
+    while (i < value.length) {
+        let symbol: i32 = value.values[value.start + i] as i32;
+        accumulator = (accumulator << (bits_of(symbol) as u64)) | (code_of(symbol) as u64); held += bits_of(symbol);
+        while (held >= 8) { held -= 8; out.try_push(((accumulator >> (held as u64)) & 255) as u8); }
+        i += 1;
+    }
+    if (held > 0) { let pad: i32 = 8 - held; accumulator = (accumulator << (pad as u64)) | (((1 as u64) << (pad as u64)) - 1); out.try_push((accumulator & 255) as u8); }
+    return core::result::Ok(need);
+}
+// Append the decoded form of a Huffman-coded string. Fails on EOS in the
+// data, more than 7 bits of padding, or padding that is not all ones.
+pub fn huffman_decode(input: core::slice::View<u8>, out: &alloc::vec::Vec<u8>, maximum: i32) -> core::result::Result<i32,Error> {
+    if (!valid(input) || maximum < 0) { return core::result::Err(Error::Bounds); }
+    let lengths: [u8] = huffman_lengths(); let order: [u8] = huffman_order();
+    let code: i64 = 0; let length: i32 = 0; let produced: i32 = 0; let i: i32 = 0;
+    while (i < input.length) {
+        let byte: i32 = input.values[input.start + i] as i32; let bit: i32 = 7;
+        while (bit >= 0) {
+            code = (code << 1) | (((byte >> bit) & 1) as i64); length += 1;
+            if (length > 30) { return core::result::Err(Error::Huffman); }
+            let row: i32 = (length - 1) * 13;
+            let count: i64 = hex(lengths, row, 2); let first: i64 = hex(lengths, row + 2, 8);
+            if (count > 0 && code >= first && code - first < count) {
+                let slot: i32 = (hex(lengths, row + 10, 3) + code - first) as i32;
+                let symbol: i32 = hex(order, slot * 3, 3) as i32;
+                if (symbol == 256) { return core::result::Err(Error::Huffman); }
+                if (produced >= maximum) { return core::result::Err(Error::TooLong); }
+                if (out.try_push(symbol as u8).is_err()) { return core::result::Err(Error::AllocationFailed); }
+                produced += 1; code = 0; length = 0;
+            }
+            bit -= 1;
+        }
+        i += 1;
+    }
+    // Padding: at most 7 bits, all ones (the most significant bits of EOS).
+    if (length > 7) { return core::result::Err(Error::Huffman); }
+    if (code != ((1 as i64) << (length as i64)) - 1) { return core::result::Err(Error::Huffman); }
+    return core::result::Ok(produced);
+}
+
+// Append value as an N-bit prefix integer whose first byte also carries flags.
+pub fn encode_integer(value: i32, prefix: i32, flags: i32, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32,Error> {
+    if (value < 0 || prefix < 1 || prefix > 8) { return core::result::Err(Error::Bounds); }
+    let mask: i32 = (1 << prefix) - 1;
+    if (out.try_reserve(6).is_err()) { return core::result::Err(Error::AllocationFailed); }
+    if (value < mask) { out.try_push((flags | value) as u8); return core::result::Ok(1); }
+    out.try_push((flags | mask) as u8); let rest: i32 = value - mask; let written: i32 = 1;
+    while (rest >= 128) { out.try_push(((rest & 127) | 128) as u8); rest = rest >> 7; written += 1; }
+    out.try_push(rest as u8);
+    return core::result::Ok(written + 1);
+}
+// Decoded integer and the bytes it used.
+pub struct Integer { value: i32, used: i32 }
+// Decode an N-bit prefix integer at input[0]. Values above 2^31-1 and more
+// than five continuation bytes fail with Integer; a short input with Truncated.
+pub fn decode_integer(input: core::slice::View<u8>, prefix: i32) -> core::result::Result<Integer,Error> {
+    if (!valid(input) || prefix < 1 || prefix > 8) { return core::result::Err(Error::Bounds); }
+    if (input.length == 0) { return core::result::Err(Error::Truncated); }
+    let mask: i32 = (1 << prefix) - 1;
+    let first: i32 = (input.values[input.start] as i32) & mask; let value: i64 = first as i64;
+    if (value < mask as i64) { return core::result::Ok(Integer { value: value as i32, used: 1 }); }
+    let shift: i64 = 0; let i: i32 = 1;
+    while (true) {
+        if (i >= input.length) { return core::result::Err(Error::Truncated); }
+        if (i > 5) { return core::result::Err(Error::Integer); }
+        let byte: i64 = input.values[input.start + i] as i64;
+        value += (byte & 127) << shift; shift += 7; i += 1;
+        if (value > MAX_INTEGER) { return core::result::Err(Error::Integer); }
+        if ((byte & 128) == 0) { break; }
+    }
+    return core::result::Ok(Integer { value: value as i32, used: i });
+}
+
+// Append a string literal, Huffman-coded when mode asks for it.
+pub fn encode_string(value: core::slice::View<u8>, mode: Huffman, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32,Error> {
+    if (!valid(value)) { return core::result::Err(Error::Bounds); }
+    let coded: i32 = huffman_length(value);
+    let use_huffman: bool = match (mode) { Huffman::Always -> true, Huffman::Never -> false, Huffman::Shortest -> coded < value.length };
+    if (use_huffman) {
+        let head = encode_integer(coded, 7, 128, out); if (head.is_err()) { return head; }
+        let body = huffman_encode(value, out); if (body.is_err()) { return body; }
+        return core::result::Ok(head.unwrap() + coded);
+    }
+    let head = encode_integer(value.length, 7, 0, out); if (head.is_err()) { return head; }
+    if (out.try_extend(value).is_err()) { return core::result::Err(Error::AllocationFailed); }
+    return core::result::Ok(head.unwrap() + value.length);
+}
+
+// Dynamic table. Entry bytes are appended to one buffer in insertion order;
+// evicted bytes stay as a dead prefix until compaction. Entries are oldest
+// first from head; dynamic index 1 (HPACK index 62) is the newest.
+struct Entry { offset: i32, name: i32, value: i32 }
+struct Table { bytes: alloc::vec::Vec<u8>, entries: alloc::vec::Vec<Entry>, head: i32, dead: i32, size: i32, capacity: i32 }
+fn table(capacity: i32) -> Table { return Table { bytes: alloc::vec::new<u8>(), entries: alloc::vec::new<Entry>(), head: 0, dead: 0, size: 0, capacity: capacity }; }
+impl Table {
+    fn count(&self) -> i32 { return self.entries.len() - self.head; }
+    fn entry(&self, index: i32) -> Entry { return self.entries.at(self.entries.len() - index); }
+    fn name(&self, index: i32) -> core::slice::View<u8> { let e: Entry = self.entry(index); return part(self.bytes.as_slice(), e.offset, e.name); }
+    fn value(&self, index: i32) -> core::slice::View<u8> { let e: Entry = self.entry(index); return part(self.bytes.as_slice(), e.offset + e.name, e.value); }
+    fn evict(&self) {
+        let e: Entry = self.entries.at(self.head); self.head += 1; self.dead += e.name + e.value; self.size -= e.name + e.value + ENTRY_OVERHEAD;
+        if (self.head == self.entries.len()) { self.entries.clear(); self.bytes.clear(); self.head = 0; self.dead = 0; self.size = 0; }
+    }
+    fn compact(&self) {
+        if (self.dead < 4096 || self.dead * 2 < self.bytes.len()) { return; }
+        let raw: [u8] = self.bytes.as_slice(); let live: i32 = self.bytes.len() - self.dead; let i: i32 = 0;
+        while (i < live) { raw[i] = raw[self.dead + i]; i += 1; }
+        self.bytes.truncate(live);
+        let n: i32 = self.count(); i = 0;
+        while (i < n) { let e: Entry = self.entries.at(self.head + i); e.offset -= self.dead; self.entries.set(i, e); i += 1; }
+        self.entries.truncate(n); self.head = 0; self.dead = 0;
+    }
+    fn resize(&self, capacity: i32) { self.capacity = capacity; while (self.size > self.capacity) { self.evict(); } }
+    // RFC 7541 section 4.4: an entry larger than the table empties it.
+    // name and value must not point into this table.
+    fn add(&self, name: core::slice::View<u8>, value: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        let need: i32 = name.length + value.length + ENTRY_OVERHEAD;
+        if (need > self.capacity) { while (self.count() > 0) { self.evict(); } return core::result::Ok(0); }
+        while (self.size + need > self.capacity) { self.evict(); }
+        self.compact();
+        let offset: i32 = self.bytes.len();
+        if (self.bytes.try_extend(name).is_err() || self.bytes.try_extend(value).is_err()) { self.bytes.truncate(offset); return core::result::Err(Error::AllocationFailed); }
+        if (self.entries.try_push(Entry { offset: offset, name: name.length, value: value.length }).is_err()) { self.bytes.truncate(offset); return core::result::Err(Error::AllocationFailed); }
+        self.size += need;
+        return core::result::Ok(1);
+    }
+    fn destroy(&self) { self.bytes.destroy(); self.entries.destroy(); }
+}
+
+struct Slot { name: i32, name_length: i32, value: i32, value_length: i32, never: bool }
+pub struct Decoder { table: Table, limits: Limits, maximum: i32, out: alloc::vec::Vec<u8>, slots: alloc::vec::Vec<Slot>, failed: bool, active: bool }
+pub fn decoder(limits: Limits) -> core::result::Result<Decoder,Error> {
+    if (!valid_limits(limits)) { return core::result::Err(Error::InvalidLimits); }
+    // The peer's encoder starts at the protocol default of 4096 bytes and may
+    // use it until our SETTINGS arrive, so a smaller table_bytes applies only
+    // after set_maximum (call it when the peer acknowledges SETTINGS).
+    let maximum: i32 = DEFAULT_TABLE_BYTES; if (limits.table_bytes > maximum) { maximum = limits.table_bytes; }
+    return core::result::Ok(Decoder { table: table(DEFAULT_TABLE_BYTES), limits: limits, maximum: maximum, out: alloc::vec::new<u8>(), slots: alloc::vec::new<Slot>(), failed: false, active: true });
+}
+pub impl Decoder {
+    pub fn borrow(&self) -> &Decoder { return self; }
+    pub fn count(&self) -> i32 { return self.slots.len(); }
+    // Field index of the last decoded block; views last until the next decode.
+    pub fn header(&self, index: i32) -> Header {
+        let s: Slot = self.slots.at(index); let raw: [u8] = self.out.as_slice();
+        return Header { name: part(raw, s.name, s.name_length), value: part(raw, s.value, s.value_length), never_indexed: s.never };
+    }
+    pub fn table_size(&self) -> i32 { return self.table.size; }
+    pub fn table_capacity(&self) -> i32 { return self.table.capacity; }
+    pub fn table_entries(&self) -> i32 { return self.table.count(); }
+    pub fn table_name(&self, index: i32) -> core::slice::View<u8> { return self.table.name(index); }
+    pub fn table_value(&self, index: i32) -> core::slice::View<u8> { return self.table.value(index); }
+    // Lower or raise the size this decoder allows, after the peer
+    // acknowledged the SETTINGS change. A table above it is trimmed now.
+    pub fn set_maximum(&self, bytes: i32) -> core::result::Result<i32,Error> {
+        if (bytes < 0 || bytes > 16777216) { return core::result::Err(Error::Bounds); }
+        self.maximum = bytes; if (self.table.capacity > bytes) { self.table.resize(bytes); }
+        return core::result::Ok(bytes);
+    }
+    fn name_at(&self, index: i32) -> core::result::Result<core::slice::View<u8>,Error> {
+        if (index >= 1 && index <= STATIC_ENTRIES) { return core::result::Ok(static_name(index)); }
+        if (index > STATIC_ENTRIES && index - STATIC_ENTRIES <= self.table.count()) { return core::result::Ok(self.table.name(index - STATIC_ENTRIES)); }
+        return core::result::Err(Error::Index);
+    }
+    fn value_at(&self, index: i32) -> core::slice::View<u8> {
+        if (index <= STATIC_ENTRIES) { return static_value(index); }
+        return self.table.value(index - STATIC_ENTRIES);
+    }
+    fn string(&self, input: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        if (input.length == 0) { return core::result::Err(Error::Truncated); }
+        let huffman: bool = (input.values[input.start] & 128) != 0;
+        let length = decode_integer(input, 7); if (length.is_err()) { return core::result::Err(length.unwrap_err()); }
+        let n: Integer = length.unwrap();
+        if (n.value > self.limits.string_bytes) { return core::result::Err(Error::TooLong); }
+        if (n.value > input.length - n.used) { return core::result::Err(Error::Truncated); }
+        let body: core::slice::View<u8> = part(input.values, input.start + n.used, n.value);
+        if (huffman) { let done = huffman_decode(body, self.out.borrow(), self.limits.string_bytes); if (done.is_err()) { return core::result::Err(done.unwrap_err()); } }
+        else { if (self.out.try_extend(body).is_err()) { return core::result::Err(Error::AllocationFailed); } }
+        return core::result::Ok(n.used + n.value);
+    }
+    // Decode one complete header block, replacing the previous output.
+    // Any error but Limit leaves the decoder failed (a connection error,
+    // COMPRESSION_ERROR); TooLong is a string above string_bytes. Limit means
+    // the list exceeded list_bytes or fields:
+    // the whole block was still processed, so the table stays in step, and
+    // the fields that fit are kept.
+    pub fn decode(&self, block: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        if (!self.active || self.failed) { return core::result::Err(Error::Failed); }
+        if (!valid(block)) { return core::result::Err(Error::Bounds); }
+        let result: core::result::Result<i32,Error> = self.decode_block(block);
+        if (result.is_err()) { let e: Error = result.unwrap_err(); let limited: bool = match (e) { Error::Limit -> true, _ -> false }; if (!limited) { self.failed = true; self.out.clear(); self.slots.clear(); } }
+        return result;
+    }
+    fn decode_block(&self, block: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        self.out.clear(); self.slots.clear();
+        let at: i32 = 0; let fields_seen: bool = false; let list: i64 = 0; let over: bool = false;
+        while (at < block.length) {
+            let rest: core::slice::View<u8> = part(block.values, block.start + at, block.length - at);
+            let byte: i32 = rest.values[rest.start] as i32;
+            if ((byte & 224) == 32) {
+                // Dynamic table size update: only before the first field.
+                if (fields_seen) { return core::result::Err(Error::SizeUpdate); }
+                let size = decode_integer(rest, 5); if (size.is_err()) { return core::result::Err(size.unwrap_err()); }
+                let s: Integer = size.unwrap();
+                if (s.value > self.maximum) { return core::result::Err(Error::TableSize); }
+                self.table.resize(s.value); at += s.used; continue;
+            }
+            fields_seen = true;
+            let mark: i32 = self.out.len();
+            let name_start: i32 = mark; let name_length: i32 = 0; let value_start: i32 = 0; let value_length: i32 = 0;
+            let never: bool = false; let index_it: bool = false;
+            if ((byte & 128) != 0) {
+                let index = decode_integer(rest, 7); if (index.is_err()) { return core::result::Err(index.unwrap_err()); }
+                let i: Integer = index.unwrap();
+                if (i.value == 0) { return core::result::Err(Error::Index); }
+                let name = self.name_at(i.value); if (name.is_err()) { return core::result::Err(name.unwrap_err()); }
+                let n: core::slice::View<u8> = name.unwrap(); let v: core::slice::View<u8> = self.value_at(i.value);
+                if (self.out.try_extend(n).is_err() || self.out.try_extend(v).is_err()) { return core::result::Err(Error::AllocationFailed); }
+                name_length = n.length; value_start = mark + n.length; value_length = v.length; at += i.used;
+            } else {
+                let prefix: i32 = 4;
+                if ((byte & 64) != 0) { prefix = 6; index_it = true; }
+                else { never = (byte & 16) != 0; }
+                let index = decode_integer(rest, prefix); if (index.is_err()) { return core::result::Err(index.unwrap_err()); }
+                let i: Integer = index.unwrap(); at += i.used;
+                if (i.value == 0) {
+                    let used = self.string(part(block.values, block.start + at, block.length - at)); if (used.is_err()) { return core::result::Err(used.unwrap_err()); }
+                    at += used.unwrap(); name_length = self.out.len() - mark;
+                } else {
+                    let name = self.name_at(i.value); if (name.is_err()) { return core::result::Err(name.unwrap_err()); }
+                    let n: core::slice::View<u8> = name.unwrap();
+                    if (self.out.try_extend(n).is_err()) { return core::result::Err(Error::AllocationFailed); }
+                    name_length = n.length;
+                }
+                value_start = self.out.len();
+                let used = self.string(part(block.values, block.start + at, block.length - at)); if (used.is_err()) { return core::result::Err(used.unwrap_err()); }
+                at += used.unwrap(); value_length = self.out.len() - value_start;
+            }
+            if (index_it) {
+                let raw: [u8] = self.out.as_slice();
+                let added = self.table.add(part(raw, name_start, name_length), part(raw, value_start, value_length));
+                if (added.is_err()) { return core::result::Err(added.unwrap_err()); }
+            }
+            list += (name_length + value_length + ENTRY_OVERHEAD) as i64;
+            if (over || list > self.limits.list_bytes as i64 || self.slots.len() >= self.limits.fields) { over = true; self.out.truncate(mark); continue; }
+            if (self.slots.try_push(Slot { name: name_start, name_length: name_length, value: value_start, value_length: value_length, never: never }).is_err()) { return core::result::Err(Error::AllocationFailed); }
+        }
+        if (over) { return core::result::Err(Error::Limit); }
+        return core::result::Ok(self.slots.len());
+    }
+    pub fn destroy(&self) -> bool { if (!self.active) { return false; } self.active = false; self.table.destroy(); self.out.destroy(); self.slots.destroy(); return true; }
+}
+
+// The encoder's table capacity is min(peer SETTINGS_HEADER_TABLE_SIZE, own
+// cap). A capacity change is signalled at the start of the next block: the
+// smallest capacity reached since the last block, then the final one.
+pub struct Encoder { table: Table, own: i32, smallest: i32, pending: bool, mode: Huffman, active: bool }
+pub fn encoder(table_bytes: i32) -> core::result::Result<Encoder,Error> {
+    if (table_bytes < 0 || table_bytes > 16777216) { return core::result::Err(Error::InvalidLimits); }
+    let capacity: i32 = DEFAULT_TABLE_BYTES; if (table_bytes < capacity) { capacity = table_bytes; }
+    return core::result::Ok(Encoder { table: table(capacity), own: table_bytes, smallest: capacity, pending: capacity != DEFAULT_TABLE_BYTES, mode: Huffman::Shortest, active: true });
+}
+fn sensitive(name: core::slice::View<u8>, value: core::slice::View<u8>) -> bool {
+    if (same(name, part(text("authorization", 13), 0, 13)) || same(name, part(text("proxy-authorization", 19), 0, 19))) { return true; }
+    // Short cookies are guessable from compressed sizes (RFC 7541 section 7.1.3).
+    return same(name, part(text("cookie", 6), 0, 6)) && value.length < 20;
+}
+pub impl Encoder {
+    pub fn borrow(&self) -> &Encoder { return self; }
+    pub fn set_huffman(&self, mode: Huffman) { self.mode = mode; }
+    pub fn table_size(&self) -> i32 { return self.table.size; }
+    pub fn table_capacity(&self) -> i32 { return self.table.capacity; }
+    pub fn table_entries(&self) -> i32 { return self.table.count(); }
+    // Apply the peer's SETTINGS_HEADER_TABLE_SIZE.
+    pub fn set_peer_maximum(&self, bytes: i32) -> core::result::Result<i32,Error> {
+        if (bytes < 0) { return core::result::Err(Error::Bounds); }
+        let capacity: i32 = bytes; if (self.own < capacity) { capacity = self.own; }
+        if (capacity == self.table.capacity && !self.pending) { return core::result::Ok(capacity); }
+        if (!self.pending) { self.smallest = capacity; } else { if (capacity < self.smallest) { self.smallest = capacity; } }
+        self.pending = true; self.table.resize(capacity);
+        return core::result::Ok(capacity);
+    }
+    // Start a header block: emit any pending table size updates.
+    pub fn start_block(&self, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32,Error> {
+        if (!self.active) { return core::result::Err(Error::Failed); }
+        if (!self.pending) { return core::result::Ok(0); }
+        let written: i32 = 0;
+        if (self.smallest < self.table.capacity) { let w = encode_integer(self.smallest, 5, 32, out); if (w.is_err()) { return w; } written += w.unwrap(); }
+        let w = encode_integer(self.table.capacity, 5, 32, out); if (w.is_err()) { return w; } written += w.unwrap();
+        self.pending = false; self.smallest = self.table.capacity;
+        return core::result::Ok(written);
+    }
+    fn exact(&self, name: core::slice::View<u8>, value: core::slice::View<u8>) -> i32 {
+        let i: i32 = 1; while (i <= STATIC_ENTRIES) { if (same(static_name(i), name) && same(static_value(i), value)) { return i; } i += 1; }
+        i = 1; while (i <= self.table.count()) { if (same(self.table.name(i), name) && same(self.table.value(i), value)) { return STATIC_ENTRIES + i; } i += 1; }
+        return 0;
+    }
+    fn named(&self, name: core::slice::View<u8>) -> i32 {
+        let i: i32 = 1; while (i <= STATIC_ENTRIES) { if (same(static_name(i), name)) { return i; } i += 1; }
+        i = 1; while (i <= self.table.count()) { if (same(self.table.name(i), name)) { return STATIC_ENTRIES + i; } i += 1; }
+        return 0;
+    }
+    // Append one field. Incremental indexing uses an exact table match when
+    // there is one; Without and Never always send a literal value.
+    pub fn encode_field(&self, name: core::slice::View<u8>, value: core::slice::View<u8>, indexing: Indexing, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32,Error> {
+        if (!self.active) { return core::result::Err(Error::Failed); }
+        if (!valid(name) || !valid(value)) { return core::result::Err(Error::Bounds); }
+        let incremental: bool = match (indexing) { Indexing::Incremental -> true, _ -> false };
+        let start: i32 = out.len();
+        if (incremental) { let found: i32 = self.exact(name, value); if (found > 0) { return encode_integer(found, 7, 128, out); } }
+        let prefix: i32 = 4; let flags: i32 = 0;
+        let never: bool = match (indexing) { Indexing::Never -> true, _ -> false };
+        if (incremental) { prefix = 6; flags = 64; }
+        if (never) { flags = 16; }
+        let index: i32 = self.named(name);
+        let head = encode_integer(index, prefix, flags, out); if (head.is_err()) { return head; }
+        if (index == 0) { let n = encode_string(name, self.mode, out); if (n.is_err()) { return n; } }
+        let v = encode_string(value, self.mode, out); if (v.is_err()) { return v; }
+        if (incremental) {
+            // Copy before adding: name or value may point into the table.
+            let copy: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+            if (copy.try_extend(name).is_err() || copy.try_extend(value).is_err()) { copy.destroy(); return core::result::Err(Error::AllocationFailed); }
+            let raw: [u8] = copy.as_slice();
+            let added = self.table.add(part(raw, 0, name.length), part(raw, name.length, value.length)); copy.destroy();
+            if (added.is_err()) { return core::result::Err(added.unwrap_err()); }
+        }
+        return core::result::Ok(out.len() - start);
+    }
+    // Append a complete header block: pending size updates, then each field.
+    // never_indexed fields and credentials (authorization, short cookies)
+    // use the never-indexed form; a field too large for the table is sent
+    // without indexing; everything else is indexed incrementally.
+    pub fn encode(&self, fields: core::slice::View<Header>, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32,Error> {
+        let start: i32 = out.len();
+        let begun = self.start_block(out); if (begun.is_err()) { return begun; }
+        let i: i32 = 0;
+        while (i < fields.length) {
+            let f: Header = fields.values[fields.start + i];
+            let how: Indexing = Indexing::Incremental;
+            if (f.never_indexed || sensitive(f.name, f.value)) { how = Indexing::Never; }
+            else { if (f.name.length + f.value.length + ENTRY_OVERHEAD > self.table.capacity) { how = Indexing::Without; } }
+            let w = self.encode_field(f.name, f.value, how, out); if (w.is_err()) { return w; }
+            i += 1;
+        }
+        return core::result::Ok(out.len() - start);
+    }
+    pub fn destroy(&self) -> bool { if (!self.active) { return false; } self.active = false; self.table.destroy(); return true; }
+}

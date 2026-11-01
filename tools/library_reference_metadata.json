@@ -1219,11 +1219,33 @@
     "ext::http_agent": {
       "guides": [
         "docs/extended-http-agent.md",
+        "docs/extended-http2.md",
         "docs/extended-http.md",
         "docs/extended-url-client.md",
         "docs/extended-openssl-tls.md"
       ],
-      "note": "Synchronous HTTP/1.1 client for http:// and verified https:// over ext::http framing, ext::http_url, ext::url_connect and ext::tls_stream: a keep-alive pool of cleartext and TLS connections keyed by scheme, host and port with per-host/total idle counts, idle time, Keep-Alive hints and use limits, stale probing and one idempotent retry; redirects with a hop limit, 303/301/302/307/308 method rules, RFC 3986 reference resolution and cross-origin Authorization/Cookie stripping; fixed or chunked streamed bodies with early-response handling; unpooled dial connections for HTTP/1.1 upgrades. The curl-like sample passes five oracle groups (pool 18, redirect 29, upload 10, broken 21, https 17 cases against Python ssl origins with locally generated certificates) with exact counters."
+      "note": "Synchronous HTTP/1.1 and HTTP/2 client for http:// and verified https:// over ext::http framing, ext::http_url, ext::url_connect and ext::tls_stream: a keep-alive pool of cleartext and TLS connections keyed by scheme, host and port with per-host/total idle counts, idle time, Keep-Alive hints and use limits, stale probing and one idempotent retry; redirects with a hop limit, 303/301/302/307/308 method rules, RFC 3986 reference resolution and cross-origin Authorization/Cookie stripping; fixed or chunked streamed bodies with early-response handling; unpooled dial connections for HTTP/1.1 upgrades; over https it offers h2 by ALPN and runs requests to an origin that selects it as streams of one ext::http2 connection (reused under the pool's idle, use and GOAWAY rules, refused streams retried once), with fetch_all multiplexing requests per origin. The curl-like sample passes five oracle groups (pool 18, redirect 29, upload 10, broken 21, https 17 cases against Python ssl origins with locally generated certificates) with exact counters, plus an h2 group of 21 cases against libnghttp2's server session over TLS."
+    },
+    "ext::hpack": {
+      "guides": [
+        "docs/extended-hpack.md",
+        "docs/extended-http2.md"
+      ],
+      "note": "RFC 7541 HPACK without I/O: N-bit prefix integers (at most 2^31-1, five continuation bytes), raw and canonical-Huffman string literals with strict padding/EOS checks, the 61-entry static table, a bounded dynamic table with eviction and size updates, a Decoder with table, header-list, field-count and string limits (Limit is non-fatal and keeps the table in step; every other error is final) and an Encoder that signals the smallest and final table size and never-indexes credentials. Passes rfc 8 (Appendix C byte for byte), nghttp2 3 (both directions against libnghttp2's HPACK, 2,512 blocks) and malformed 17 (624 blocks) oracle cases."
+    },
+    "ext::http2_frame": {
+      "guides": [
+        "docs/extended-http2.md"
+      ],
+      "note": "HTTP/2 frame codec (RFC 9113 sections 4 and 6): constants for frame types, flags, error codes and SETTINGS; next() parses one frame with the size, stream-zero, fixed-length and padding rules as connection or stream errors; per-type payload readers (DATA without padding, HEADERS priority and self-dependency, PUSH_PROMISE, RST_STREAM, PING, GOAWAY, WINDOW_UPDATE, SETTINGS with value checks) and writers that split header blocks into HEADERS + CONTINUATION and data into frames of the peer's maximum size. Exercised through the ext::http2 engine oracles."
+    },
+    "ext::http2": {
+      "guides": [
+        "docs/extended-http2.md",
+        "docs/extended-hpack.md",
+        "docs/extended-http-agent.md"
+      ],
+      "note": "I/O-free HTTP/2 client connection engine: the caller sends output() and feeds received bytes. Multiplexes request streams under the smaller of the peer's MAX_CONCURRENT_STREAMS and a local cap, runs flow control both ways (round-robin DATA within windows and frame size, WINDOW_UPDATE at half a window, overflow and violation errors, INITIAL_WINDOW_SIZE deltas), applies and acknowledges SETTINGS (push disabled), answers PING, honours GOAWAY and RST_STREAM (refused streams marked retryable), assembles CONTINUATION and validates responses (one :status, 1xx skipped, 101 rejected, field syntax, connection-specific fields, content-length, trailers). Connection errors send GOAWAY and fail every stream; stream errors send RST_STREAM. Passes 17 cases against libnghttp2's server session and 46 hand-built raw-frame cases."
     },
     "ext::http_service": {
       "guides": [
