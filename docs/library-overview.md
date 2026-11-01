@@ -632,6 +632,20 @@ limits for this or another process. The contracts program and the
 pass as direct runs on native Linux x86_64. The supervisor restarts a crashing
 child with backoff and forwards TERM/INT with a grace kill.
 
+**UDP deadlines and stub DNS resolution.**
+
+`std::socket` adds `send_to_until` and `receive_from_until`. The
+[resolver-config guide](stdlib-resolver-config.md) adds
+`std::resolver_config`, glibc-style resolv.conf parsing (nameservers, search
+list, ndots, timeout, attempts, rotate, edns0, use-vc, no-aaaa) and hosts
+lookups. The [stub-resolver guide](extended-stub-resolver.md) adds
+`ext::stub_resolver`, which resolves through hosts, the search list and the
+nameservers over `ext::dns_client` with ID and question validation and TCP
+fallback, and reports every exchange. The contracts program and the
+[stub-dig](extended-stub-resolver.md#application-stub-dig) cli30/dns42
+groups, run against Python fake DNS servers with malformed and truncated
+replies, pass as direct runs on native Linux x86_64.
+
 **Shared random-source budgets.**
 
 The [draw-budget guide](stdlib-random-budget.md) specifies one borrowed adapter,

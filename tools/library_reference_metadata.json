@@ -1023,6 +1023,12 @@
         "docs/extended-dns-client.md"
       ]
     },
+    "ext::stub_resolver": {
+      "guides": [
+        "docs/extended-stub-resolver.md"
+      ],
+      "note": "No caching and no NSS: hosts content then DNS. Answers own their storage; destroy once. Evidence is finite native Linux x86_64 CPU execution against loopback fake servers."
+    },
     "ext::form": {
       "guides": [
         "docs/extended-form.md"
@@ -1915,6 +1921,12 @@
         "docs/stdlib-signals.md"
       ],
       "note": "No asynchronous handlers: handled signals are blocked and read from a signalfd. Masks are per thread; use from a single-threaded process. Receivers close exactly once. Evidence is finite native Linux x86_64 CPU execution."
+    },
+    "std::resolver_config": {
+      "guides": [
+        "docs/stdlib-resolver-config.md"
+      ],
+      "note": "Lenient glibc-style parsing; unusable lines are counted, not errors. Config owns its lists; destroy once. Evidence is finite native Linux x86_64 CPU execution."
     },
     "std::rlimit": {
       "guides": [

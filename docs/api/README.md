@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **282 modules**, **14465 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **284 modules**, **14567 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -174,9 +174,10 @@ Inventory: **282 modules**, **14465 declaration/member entries**. Counts include
 | [std::random_checked](std/random_checked.md) | [source](../../stdlib/std/random_checked.lani#L5) | 6 | Source inventory | [stdlib-randomness](../stdlib-randomness.md) |
 | [std::random_wide](std/random_wide.md) | [source](../../stdlib/std/random_wide.lani#L3) | 5 | Source inventory | [stdlib-randomness](../stdlib-randomness.md) |
 | [std::resolve](std/resolve.md) | [source](../../stdlib/std/resolve.lani#L4) | 59 | Source inventory | [stdlib-resolve](../stdlib-resolve.md), [stdlib-resolve-host](../stdlib-resolve-host.md) |
+| [std::resolver_config](std/resolver_config.md) | [source](../../stdlib/std/resolver_config.lani#L4) | 42 | Source inventory | [stdlib-resolver-config](../stdlib-resolver-config.md) |
 | [std::rlimit](std/rlimit.md) | [source](../../stdlib/std/rlimit.lani#L5) | 37 | Source inventory | [stdlib-rlimit](../stdlib-rlimit.md) |
 | [std::signal](std/signal.md) | [source](../../stdlib/std/signal.lani#L6) | 105 | Source inventory | [stdlib-signals](../stdlib-signals.md) |
-| [std::socket](std/socket.md) | [source](../../stdlib/std/socket.lani#L3) | 119 | Source inventory | [stdlib-sockets](../stdlib-sockets.md), [stdlib-unix-streams](../stdlib-unix-streams.md), [stdlib-unix-request](../stdlib-unix-request.md) |
+| [std::socket](std/socket.md) | [source](../../stdlib/std/socket.lani#L3) | 122 | Source inventory | [stdlib-sockets](../stdlib-sockets.md), [stdlib-unix-streams](../stdlib-unix-streams.md), [stdlib-unix-request](../stdlib-unix-request.md) |
 | [std::stream](std/stream.md) | [source](../../stdlib/std/stream.lani#L3) | 15 | Source inventory | [stdlib-streams](../stdlib-streams.md) |
 | [std::temp_dir](std/temp_dir.md) | [source](../../stdlib/std/temp_dir.lani#L3) | 88 | Source inventory | [stdlib-temp-directories](../stdlib-temp-directories.md), [stdlib-mktemp-dir](../stdlib-mktemp-dir.md) |
 | [std::temp_file](std/temp_file.md) | [source](../../stdlib/std/temp_file.lani#L4) | 90 | Source inventory | [stdlib-temp-files](../stdlib-temp-files.md), [stdlib-file-operations](../stdlib-file-operations.md) |
@@ -278,6 +279,7 @@ Inventory: **282 modules**, **14465 declaration/member entries**. Counts include
 | [ext::sparse_ops](ext/sparse_ops.md) | [source](../../extended/ext/sparse_ops.lani#L5) | 10 | Source inventory | [extended-sparse](../extended-sparse.md), [extended-sparse-product](../extended-sparse-product.md), [extended-sparse-paths](../extended-sparse-paths.md), [extended-linalg](../extended-linalg.md), [extended-graph-walk](../extended-graph-walk.md) |
 | [ext::sqlite](ext/sqlite.md) | [source](../../extended/ext/sqlite.lani#L3) | 145 | Source inventory | [extended-sqlite](../extended-sqlite.md), [library-native-c](../library-native-c.md), [extended-sqlite-kv](../extended-sqlite-kv.md), [extended-sqlite-allocation](../extended-sqlite-allocation.md) |
 | [ext::statistics](ext/statistics.md) | [source](../../extended/ext/statistics.lani#L4) | 105 | Source inventory | [extended-statistics](../extended-statistics.md), [extended-weighted-statistics](../extended-weighted-statistics.md), [extended-higher-statistics](../extended-higher-statistics.md) |
+| [ext::stub_resolver](ext/stub_resolver.md) | [source](../../extended/ext/stub_resolver.lani#L5) | 57 | Source inventory | [extended-stub-resolver](../extended-stub-resolver.md) |
 | [ext::table](ext/table.md) | [source](../../extended/ext/table.lani#L2) | 27 | Source inventory | [extended-table](../extended-table.md) |
 | [ext::tar](ext/tar.md) | [source](../../extended/ext/tar.lani#L3) | 81 | Source inventory | [extended-tar](../extended-tar.md) |
 | [ext::terminal](ext/terminal.md) | [source](../../extended/ext/terminal.lani#L3) | 15 | Source inventory | [extended-terminal](../extended-terminal.md) |
