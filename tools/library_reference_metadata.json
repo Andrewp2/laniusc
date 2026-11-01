@@ -1697,6 +1697,12 @@
         "docs/extended-uri-resolve.md"
       ]
     },
+    "ext::url": {
+      "guides": [
+        "docs/extended-url.md"
+      ],
+      "note": "WHATWG basic URL parser without state override or UTS #46: non-ASCII and xn-- domains return UnsupportedIdna. A Url owns its href; destroy once. Evidence is finite native Linux x86_64 CPU execution compared with Node.js."
+    },
     "ext::url_client": {
       "guides": [
         "docs/extended-url-client.md",

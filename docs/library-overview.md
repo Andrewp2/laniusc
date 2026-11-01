@@ -743,6 +743,17 @@ fallback, and reports every exchange. The contracts program and the
 groups, run against Python fake DNS servers with malformed and truncated
 replies, pass as direct runs on native Linux x86_64.
 
+**WHATWG URL parsing.**
+
+The [URL guide](extended-url.md) adds `ext::url`, the WHATWG URL Standard
+basic URL parser and serializer with an optional base. It returns an owned
+href with spans for every getter, plus the host kind and origin. Non-ASCII and
+`xn--` domains fail with an explicit `UnsupportedIdna` instead of an
+approximation. The contracts program and the
+[url-parse](extended-url.md#application-url-parse) cli25 and whatwg9174
+groups pass as direct runs on native Linux x86_64. The whatwg group compares
+every getter with Node.js's WHATWG URL over a fixed generated corpus.
+
 **Shared random-source budgets.**
 
 The [draw-budget guide](stdlib-random-budget.md) specifies one borrowed adapter,

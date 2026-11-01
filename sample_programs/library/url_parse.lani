@@ -1,0 +1,133 @@
+// Parse URLs per the WHATWG URL Standard and print their components.
+//   url-parse URL [BASE]   one URL, one "name<TAB>value" line per component
+//   url-parse --batch      stdin lines "INPUT" or "INPUT<TAB>BASE" (escapes
+//                          \t \n \r \\ \xHH); one result line per input line
+// Batch result lines are "ok" plus href, protocol, username, password, host,
+// hostname, port, pathname, search, hash and origin, tab-separated; or
+// "fail<TAB>ERROR"; or "base-fail<TAB>ERROR".
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::url;
+import std::args;
+import std::stream;
+
+fn bytes(value: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),n); return core::slice::view(raw,n).unwrap(); }
+fn equal(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool { if (a.length != b.length) { return false; } let i: i32 = 0; while (i < a.length) { if (a.values[a.start+i] != b.values[b.start+i]) { return false; } i += 1; } return true; }
+fn put(out: &alloc::vec::Vec<u8>, view: core::slice::View<u8>) -> bool { return out.try_extend(view).is_ok(); }
+fn word(out: &alloc::vec::Vec<u8>, value: str, n: i32) -> bool { return put(out,bytes(value,n)); }
+fn error_name(out: &alloc::vec::Vec<u8>, error: ext::url::Error) -> bool {
+    return match (error) {
+        ext::url::Error::Bounds -> word(out,"bounds",6), ext::url::Error::TooLong -> word(out,"too-long",8), ext::url::Error::InvalidUtf8 -> word(out,"invalid-utf8",12),
+        ext::url::Error::AllocationFailed -> word(out,"allocation-failed",17), ext::url::Error::MissingScheme -> word(out,"missing-scheme",14),
+        ext::url::Error::MissingHost -> word(out,"missing-host",12), ext::url::Error::InvalidHost -> word(out,"invalid-host",12),
+        ext::url::Error::InvalidPort -> word(out,"invalid-port",12), ext::url::Error::InvalidIpv4 -> word(out,"invalid-ipv4",12),
+        ext::url::Error::InvalidIpv6 -> word(out,"invalid-ipv6",12), ext::url::Error::UnsupportedIdna -> word(out,"unsupported-idna",16)
+    };
+}
+fn field(out: &alloc::vec::Vec<u8>, name: str, n: i32, value: core::slice::View<u8>, lines: bool) -> bool {
+    if (lines) { word(out,name,n); } word(out,"\t",1); put(out,value); if (lines) { word(out,"\n",1); } return true;
+}
+fn kind_name(kind: ext::url::HostKind) -> core::slice::View<u8> {
+    return match (kind) {
+        ext::url::HostKind::None -> bytes("none",4), ext::url::HostKind::Empty -> bytes("empty",5), ext::url::HostKind::Domain -> bytes("domain",6),
+        ext::url::HostKind::Ipv4 -> bytes("ipv4",4), ext::url::HostKind::Ipv6 -> bytes("ipv6",4), ext::url::HostKind::Opaque -> bytes("opaque",6)
+    };
+}
+// Writes the components; lines selects "name<TAB>value" lines over one row.
+fn components(out: &alloc::vec::Vec<u8>, url: &ext::url::Url, lines: bool) -> bool {
+    field(out,"href",4,url.href(),lines); field(out,"protocol",8,url.protocol(),lines); field(out,"username",8,url.username(),lines);
+    field(out,"password",8,url.password(),lines); field(out,"host",4,url.host(),lines); field(out,"hostname",8,url.hostname(),lines);
+    field(out,"port",4,url.port(),lines); field(out,"pathname",8,url.pathname(),lines); field(out,"search",6,url.search(),lines);
+    field(out,"hash",4,url.hash(),lines);
+    let origin: core::result::Result<alloc::vec::Vec<u8>, ext::url::Error> = url.origin();
+    if (origin.is_err()) { return false; }
+    let text: alloc::vec::Vec<u8> = origin.unwrap(); field(out,"origin",6,text.as_view(),lines); text.destroy();
+    if (lines) { field(out,"kind",4,kind_name(url.host_kind()),lines); }
+    return true;
+}
+fn hex(c: u8) -> i32 { if (c >= 48 && c <= 57) { return (c - 48) as i32; } if (c >= 97 && c <= 102) { return (c - 87) as i32; } if (c >= 65 && c <= 70) { return (c - 55) as i32; } return -1; }
+fn unescape(line: core::slice::View<u8>, out: &alloc::vec::Vec<u8>) -> bool {
+    out.clear(); let i: i32 = 0;
+    while (i < line.length) {
+        let c: u8 = line.values[line.start+i];
+        if (c == 92 && i + 1 < line.length) {
+            let e: u8 = line.values[line.start+i+1]; i += 2;
+            if (e == 116) { c = 9; } else { if (e == 110) { c = 10; } else { if (e == 114) { c = 13; } else { if (e == 92) { c = 92; } else {
+                if (e != 120 || i + 1 >= line.length || hex(line.values[line.start+i]) < 0 || hex(line.values[line.start+i+1]) < 0) { return false; }
+                c = (hex(line.values[line.start+i]) * 16 + hex(line.values[line.start+i+1])) as u8; i += 2;
+            } } } }
+            if (out.try_push(c).is_err()) { return false; }
+        } else {
+            let end: i32 = i; while (end < line.length && line.values[line.start+end] != 92) { end += 1; }
+            if (end == i) { end = i + 1; }
+            if (out.try_extend(core::slice::View { values: line.values, start: line.start + i, length: end - i }).is_err()) { return false; }
+            i = end;
+        }
+    }
+    return true;
+}
+fn one(out: &alloc::vec::Vec<u8>, input: core::slice::View<u8>, base: core::option::Option<core::slice::View<u8>>, lines: bool) -> i32 {
+    let parsed: core::result::Result<ext::url::Url, ext::url::Error> = ext::url::parse(input);
+    if (base.is_some()) {
+        let base_url: core::result::Result<ext::url::Url, ext::url::Error> = ext::url::parse(base.unwrap());
+        if (base_url.is_err()) { word(out,"base-fail\t",10); error_name(out,base_url.unwrap_err()); word(out,"\n",1); return 1; }
+        let b: ext::url::Url = base_url.unwrap(); parsed = ext::url::parse_with_base(input,b.borrow()); b.destroy();
+    }
+    if (parsed.is_err()) { word(out,"fail\t",5); error_name(out,parsed.unwrap_err()); word(out,"\n",1); return 1; }
+    let url: ext::url::Url = parsed.unwrap();
+    if (!lines) { word(out,"ok",2); }
+    let ok: bool = components(out,url.borrow(),lines); url.destroy();
+    if (!lines) { word(out,"\n",1); }
+    if (!ok) { return 3; } return 0;
+}
+fn batch(out: &alloc::vec::Vec<u8>) -> i32 {
+    let source: std::stream::Descriptor = std::stream::stdin(); let words: [i32;256] = [0;256];
+    let chunk: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(words),1024);
+    let all: alloc::vec::Vec<u8> = alloc::vec::new();
+    while (true) {
+        let read: core::result::Result<i32, core::io::Error> = source.read(chunk,0,1024);
+        if (read.is_err()) { if (core::io::is_interrupted(read.unwrap_err())) { continue; } all.destroy(); return 3; }
+        let amount: i32 = read.unwrap(); if (amount == 0) { break; }
+        if (all.try_extend(core::slice::view(chunk,amount).unwrap()).is_err()) { all.destroy(); return 3; }
+    }
+    let text: core::slice::View<u8> = all.as_view(); let first: alloc::vec::Vec<u8> = alloc::vec::new(); let second: alloc::vec::Vec<u8> = alloc::vec::new();
+    let start: i32 = 0; let i: i32 = 0; let status: i32 = 0;
+    while (i < text.length) {
+        if (text.values[text.start+i] == 10) {
+            let line: core::slice::View<u8> = core::slice::View { values: text.values, start: text.start + start, length: i - start };
+            let tab: i32 = 0; while (tab < line.length && line.values[line.start+tab] != 9) { tab += 1; }
+            let head: core::slice::View<u8> = core::slice::View { values: line.values, start: line.start, length: tab };
+            if (!unescape(head,first.borrow())) { status = 2; break; }
+            let base: core::option::Option<core::slice::View<u8>> = core::option::None();
+            if (tab < line.length) {
+                let tail: core::slice::View<u8> = core::slice::View { values: line.values, start: line.start + tab + 1, length: line.length - tab - 1 };
+                if (!unescape(tail,second.borrow())) { status = 2; break; }
+                base = core::option::Some(second.as_view());
+            }
+            if (one(out,first.as_view(),base,false) == 3) { status = 3; break; }
+            start = i + 1;
+        }
+        i += 1;
+    }
+    all.destroy(); first.destroy(); second.destroy(); return status;
+}
+fn main() -> i32 {
+    let captured = std::args::snapshot(1,8,1048576); if (captured.is_err()) { return 2; }
+    let args = captured.unwrap(); let out: alloc::vec::Vec<u8> = alloc::vec::new(); let status: i32 = 2;
+    if (args.len() == 1 && equal(args.get(0).unwrap(),bytes("--batch",7))) { status = batch(out.borrow()); }
+    else {
+        if (args.len() == 1 && !equal(args.get(0).unwrap(),bytes("--help",6))) { status = one(out.borrow(),args.get(0).unwrap(),core::option::None(),true); }
+        else {
+            if (args.len() == 2) { status = one(out.borrow(),args.get(0).unwrap(),args.get(1),true); }
+            else { word(out.borrow(),"Usage: url-parse URL [BASE] | url-parse --batch\n",48); if (args.len() == 1) { status = 0; } }
+        }
+    }
+    let sink = std::stream::stdout(); let view: core::slice::View<u8> = out.as_view();
+    if (view.length > 0 && core::io::write_all(sink.borrow(),view.values,view.start,view.length).is_err()) { status = 3; }
+    out.destroy(); args.destroy(); return status;
+}
