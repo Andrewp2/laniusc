@@ -3,26 +3,36 @@ front of one asyncio upstream (upstream.py): CLIENTS concurrent h2c
 clients (libnghttp2 sessions through ctypes) with REQUESTS multiplexed
 requests each, then CLIENTS concurrent HTTP/1.1 keep-alive clients with
 REQUESTS sequential requests each, and the same HTTP/1.1 phase straight
-to the upstream for comparison. Every body is checked.
+to the upstream for comparison. Every body is checked. With --tls, PROXY
+is tls_main.lani and both proxy phases run over TLS (ALPN h2, then
+http/1.1) with a throwaway certificate; there is no direct phase.
 
-usage: load.py PROXY [CLIENTS] [REQUESTS]
+usage: load.py PROXY [CLIENTS] [REQUESTS] [--tls]
 """
 import os
 import select
 import socket
+import ssl
 import subprocess
 import sys
+import tempfile
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "http2_server"))
 import nghttp2_client as ng  # noqa: E402
+sys.path.insert(0, HERE)
+from tls_oracle_common import certificate, wrapper  # noqa: E402
+
+WOULD_BLOCK = (BlockingIOError, ssl.SSLWantReadError, ssl.SSLWantWriteError)
 
 
-def connect_all(port, n):
+def connect_all(port, n, wrap=None):
     out = []
     for _ in range(n):
         s = socket.create_connection(("127.0.0.1", port), timeout=5)
+        if wrap:
+            s = wrap(s)
         s.setblocking(False)
         out.append(s)
     return out
@@ -31,13 +41,29 @@ def connect_all(port, n):
 def send_some(s, buf):
     try:
         n = s.send(buf)
-    except BlockingIOError:
+    except WOULD_BLOCK:
         return buf
     return buf[n:]
 
 
-def h2_load(port, clients, requests, limit=60.0):
-    socks = connect_all(port, clients)
+def receive(s):
+    """What is readable now; b"" at EOF. A TLS socket may hold decrypted
+    bytes select cannot see, so read until it would block."""
+    data = b""
+    while True:
+        try:
+            piece = s.recv(262144)
+        except WOULD_BLOCK:
+            return data if data else None
+        if not piece:
+            return data
+        data += piece
+        if not isinstance(s, ssl.SSLSocket):
+            return data
+
+
+def h2_load(port, clients, requests, limit=60.0, wrap=None):
+    socks = connect_all(port, clients, wrap)
     sessions, pending, ids = [], [], []
     for k, s in enumerate(socks):
         c = ng.Client()
@@ -63,7 +89,9 @@ def h2_load(port, clients, requests, limit=60.0):
         r, w, _ = select.select(readers, writers, [], 0.5)
         for s in r:
             k = by_fd[s.fileno()]
-            data = s.recv(262144)
+            data = receive(s)
+            if data is None:
+                continue
             if not data:
                 raise AssertionError("h2 client %d: proxy closed early" % k)
             sessions[k].receive(data)
@@ -81,8 +109,8 @@ def h2_load(port, clients, requests, limit=60.0):
     return seconds
 
 
-def h1_load(port, clients, requests, via, limit=60.0):
-    socks = connect_all(port, clients)
+def h1_load(port, clients, requests, via, limit=60.0, wrap=None):
+    socks = connect_all(port, clients, wrap)
     sent, got = [0] * clients, [0] * clients
     inbox, outbox = [b""] * clients, [b""] * clients
     by_fd = {s.fileno(): k for k, s in enumerate(socks)}
@@ -106,7 +134,9 @@ def h1_load(port, clients, requests, via, limit=60.0):
         r, w, _ = select.select(readers, writers, [], 0.5)
         for s in r:
             k = by_fd[s.fileno()]
-            data = s.recv(65536)
+            data = receive(s)
+            if data is None:
+                continue
             if not data:
                 raise AssertionError("h1 client %d: closed early" % k)
             inbox[k] += data
@@ -144,34 +174,49 @@ def peak_rss_kib(pid):
 
 
 def main():
-    exe = sys.argv[1]
-    clients = int(sys.argv[2]) if len(sys.argv) > 2 else 100
-    requests = int(sys.argv[3]) if len(sys.argv) > 3 else 20
+    args = [a for a in sys.argv[1:] if a != "--tls"]
+    tls = "--tls" in sys.argv
+    exe = args[0]
+    clients = int(args[1]) if len(args) > 1 else 100
+    requests = int(args[2]) if len(args) > 2 else 20
+    work = tempfile.TemporaryDirectory()
+    extra, h2_wrap, h1_wrap = [], None, None
+    if tls:
+        cert, key = certificate(work.name)
+        extra, h2_wrap, h1_wrap = [cert, key], wrapper(cert, ["h2"]), wrapper(cert, ["http/1.1"])
     upstream = subprocess.Popen([sys.executable, "-I", os.path.join(HERE, "upstream.py"), "A"], stdout=subprocess.PIPE)
     up_port = int(upstream.stdout.readline())
-    proxy = subprocess.Popen([exe, "1000", str(up_port), str(up_port), "load"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    proxy = subprocess.Popen([exe, "1000", str(up_port), str(up_port), "load"] + extra, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    direct = None
     try:
         port = int(proxy.stdout.readline().decode().rsplit(":", 1)[1])
-        mark = cpu(proxy.pid); h2 = h2_load(port, clients, requests); h2_cpu = cpu(proxy.pid) - mark
-        mark = cpu(proxy.pid); h1 = h1_load(port, clients, requests, b"1.1 lanius"); h1_cpu = cpu(proxy.pid) - mark
+        mark = cpu(proxy.pid); h2 = h2_load(port, clients, requests, wrap=h2_wrap); h2_cpu = cpu(proxy.pid) - mark
+        mark = cpu(proxy.pid); h1 = h1_load(port, clients, requests, b"1.1 lanius", wrap=h1_wrap); h1_cpu = cpu(proxy.pid) - mark
         rss = peak_rss_kib(proxy.pid)
-        direct = h1_load(up_port, clients, requests, b"-")
+        if not tls:
+            direct = h1_load(up_port, clients, requests, b"-")
         out, err = proxy.communicate(timeout=60)
     finally:
         if proxy.poll() is None:
             proxy.kill()
-        upstream.kill()
+        upstream.kill(); work.cleanup()
     if proxy.returncode != 0 or err:
         raise AssertionError(("proxy exit", proxy.returncode, err[-300:]))
     stats = dict(kv.split("=") for kv in out.decode().strip().splitlines()[-1].split())
     total = clients * requests
-    print("load clients=%d requests=%d h2c=%.3fs (%.0f req/s, proxy cpu %.2fs) http1=%.3fs (%.0f req/s, proxy cpu %.2fs) direct http1=%.3fs (%.0f req/s) connects=%s peak_rss=%d KiB"
-          % (clients, requests, h2, total / h2, h2_cpu, h1, total / h1, h1_cpu, direct, total / direct, stats["connects"], rss))
+    if tls:
+        print("load-tls clients=%d requests=%d h2=%.3fs (%.0f req/s, proxy cpu %.2fs) http1=%.3fs (%.0f req/s, proxy cpu %.2fs) connects=%s peak_rss=%d KiB"
+              % (clients, requests, h2, total / h2, h2_cpu, h1, total / h1, h1_cpu, stats["connects"], rss))
+    else:
+        print("load clients=%d requests=%d h2c=%.3fs (%.0f req/s, proxy cpu %.2fs) http1=%.3fs (%.0f req/s, proxy cpu %.2fs) direct http1=%.3fs (%.0f req/s) connects=%s peak_rss=%d KiB"
+              % (clients, requests, h2, total / h2, h2_cpu, h1, total / h1, h1_cpu, direct, total / direct, stats["connects"], rss))
     want = {"clients": 2 * clients, "h2": clients, "requests": 2 * total, "h2_requests": total, "responses": 2 * total, "bad_gateway": 0, "gateway_timeout": 0, "aborted": 0}
+    if tls:
+        want.update({"tls_handshakes": 2 * clients, "tls_h2": clients, "tls_failures": 0})
     for k, v in want.items():
         if int(stats[k]) != v:
             raise AssertionError(("stats", k, stats))
-    print("load-check clients=%d requests=%d proxied=%d h2_requests=%d errors=0" % (clients, requests, 2 * total, total))
+    print("load-check%s clients=%d requests=%d proxied=%d h2_requests=%d errors=0" % ("-tls" if tls else "", clients, requests, 2 * total, total))
 
 
 main()
