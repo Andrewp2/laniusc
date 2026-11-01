@@ -133,15 +133,17 @@ nullable body, which is the documented Pike cycle policy.
 ## Receipts
 
 The receipts are for `extended/ext/regex.lani` SHA256
-`c21ac7a5de9e4047073606d60ac90debe146bf90027fca9c2c640ae79e9edf26`, oracle
+`906bcf3856ced172084e45078e31abf72798a5a547ae2a70ac6cc78687dfcd6e`, oracle
 SHA256 `8751ce9a25df4303cf5c6dbf722184684894aa64b43755f45d4b7faa49dce3c0`,
 `text_grep.lani` SHA256
-`53a845d297f8c390cfe13c6cdc2dbd89374a6880966e80db7a120037f0ea7830` and
+`829b5a6b2b0c6a3794a4515dd7bcea7ce06deafd50e7e0b6877a3d98d701d307` and
 `dfa.lani` SHA256
 `b6112163f8d84bae6d2357e3fd486c1ebdb763f23fc1a22e4831962d1f64b999`, with
 CPython 3.12.3, on native Linux x86_64. Executables were built with
 `target/claude-work/bin/lcc`. Log:
-`target/claude-work/s3/oracle-lines-receipt.log`. The earlier logs
+`target/claude-work/s3/oracle-numbers-receipt.log`. The earlier logs
+`oracle-output-receipt.log` (before the line-scan skip),
+`oracle-lines-receipt.log` (before the output rework),
 `oracle-unicode-receipt.log` (before the line scan and `grep_unicode`),
 `oracle-dfa-assert-receipt.log` (before byte-level transitions and the grep
 prefilter), `oracle-lookbehind-receipt.log` (before assertions in the DFA),

@@ -6,7 +6,9 @@ Each case picks a shape (random, all equal, sorted, reversed, few distinct,
 organ pipe, sawtooth, extremes), a size and a worker count, runs every mode
 of the runner and compares with Python: sorted() for the sorts, a stable
 sort by key for the stable variants (indices must match exactly), the map
-function per element and the wrapping sum plus ordered hash for reduce.
+function per element, the wrapping sum plus ordered hash for reduce, and
+running prefixes for scan (a wrapping u64 sum and the non-commutative
+composition of affine maps mod 1e9+7).
 Prints "cases N mismatches M" and exits 1 on any mismatch.
 """
 import random
@@ -63,6 +65,20 @@ def expect(mode, keys):
         return struct.pack("<%dq" % n, *[keys[i] for i in order]) + struct.pack("<%dI" % n, *order)
     if mode == 4:
         return struct.pack("<%dq" % n, *[(k >> 1) ^ 21845 for k in keys])
+    if mode in (7, 9):
+        out, acc = [], 0
+        for k in keys:
+            acc = (acc + (k & MASK)) & MASK
+            out.append(acc)
+        return struct.pack("<%dQ" % n, *out)
+    if mode == 8:
+        out, a, b = [], 1, 0
+        for k in keys:
+            u = k & MASK
+            ka, kb = u % P, (u >> 20) % P
+            a, b = ka * a % P, (ka * b + kb) % P
+            out += [a, b]
+        return struct.pack("<%dQ" % (2 * n), *out)
     total, h, scale = 0, 0, 1
     for k in keys:
         u = k & MASK
@@ -81,7 +97,7 @@ def main():
         n = rng.choice([0, 1, 2, 3, 7, 64, 255, 1000, 4097, rng.randrange(2, 70000), rng.randrange(65536, 300000)])
         workers = rng.choice([1, 2, 3, 4, 7, 8, 13])
         keys = keys_for(rng, shape, n)
-        for mode in range(7):
+        for mode in range(10):
             got, code = run(runner, mode, workers, keys)
             checked += 1
             if code != 0 or got != expect(mode, keys):

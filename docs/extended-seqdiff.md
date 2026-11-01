@@ -23,6 +23,10 @@ their byte-line API, strict application and saved-trace Myers.
 | `split_lines(bytes, limits)` / `diff_lines(a, b, algorithm, limits)` | `Line` | byte lines, each keeping its LF |
 | `split_classify(a, b, limits)` / `diff_split(split, algorithm, limits)` | two byte views | `Split`: both files' lines and their class ids in one pass; the script `diff_lines` would give |
 | `classify_lines(a, b, limits)` / `myers_classes(a, b, limits)` | `Line` / class ids | the specialized paths `diff_lines` uses |
+| `split_classify3(o, a, b, limits)` / `classify_lines3(o, a, b, limits)` | three byte views / three `Line` views | `Split3` / `Classes3 { base, ours, theirs, count }`: one id space over three inputs (used by [three-way merge](extended-merge3.md)) |
+| `diff_classes(a, b, classes, algorithm, limits)` | ids in `[0, classes)` | the chosen algorithm over class ids |
+| `line_starts(bytes, limits)` | byte view | `Vec<i32>` of line offsets (one more entry than lines), the lines `split_lines` finds without hashes or records |
+| `copy_bytes(target, view)` | raw target with room | copies the view's bytes, 8 at a time from packed storage |
 | `xdiff_classes(a, b, limits)` | non-negative ids | git's xdiff alignment (`Algorithm::Xdiff`; see [word diff and diffstat](extended-wordiff.md)) |
 
 `a` and `b` are `core::slice::View<T>`. `Line { bytes, hash }` caches a hash
@@ -82,6 +86,14 @@ offsets, not `Line` records:
 | `classes` | `Classes` over both sides |
 | `destroy()` | frees offsets and classes; the inputs stay borrowed and must outlive the split |
 
+Later sides are mostly the first side's lines in order. So each later line is
+first compared, word by word, with the first-side line after the last one
+matched. Only when that differs is it hashed and looked up, and a line found
+in the first side moves the guess there. Ids are the same either way, since
+an equal line has the same class. `split_classify3` does the same for three
+inputs, with `Split3 { base, ours, theirs, base_starts, ours_starts,
+theirs_starts, classes }`.
+
 `diff_split(split, algorithm, limits)` diffs the class ids without consuming
 the split. Inputs that are not packed bytes (native `[u8; N]` arrays) go
 through `split_lines` and `classify_lines` with the same results.
@@ -132,6 +144,10 @@ The search follows GNU patch 2.7:
 - A match may not start before the end of the previously applied hunk, and the
   hunk, including fuzzed-away leading context, may not start before line 1.
 - Fuzzed-away context lines keep the base's text.
+
+`apply` locates base lines by offset (`line_starts`), not `Line` records. It
+sums the output size first, then allocates once and copies each unchanged run
+of base lines whole.
 
 Each `HunkReport { index, status, reason, line, offset, fuzz }` has a
 `HunkStatus` of `Exact`, `Offset`, `Fuzzed` or `Rejected`. A rejected hunk's
@@ -220,7 +236,9 @@ output in every mode before and after this work. Wall times are the best of
 | `--stat` | 140 ms | 47-96 ms | 33-61 ms |
 | `--patience` | 216 ms | 141 ms | — |
 
-GNU `diff -u` takes 33 ms. Phase times inside the program (best of 7, both
+GNU `diff -u` takes 33 ms. With the later-side line prediction (see
+`split_classify`), the default unified diff later measured 58 ms against
+git's 45 ms under the same load. Phase times inside the program (best of 7, both
 files, quieter machine):
 
 | phase | before | now | change |

@@ -18,6 +18,7 @@ import ext::unidiff;
 import ext::wordiff;
 import std::args;
 import std::file;
+import std::fs;
 import std::file_ops;
 import std::stream;
 
@@ -32,6 +33,18 @@ fn same(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
 fn complain(text: str, count: i32) -> i32 {
     let sink: std::stream::Descriptor = std::stream::stderr(); let v: core::slice::View<u8> = literal(text, count);
     let written: core::result::Result<i32, core::io::Failure> = core::io::write_all(sink.borrow(), v.values, v.start, v.len()); return 2;
+}
+// Write packed bytes (a Vec<u8>) to stdout straight from their storage:
+// std::stream's Descriptor stages every 1,024 bytes through a copy loop.
+fn write_out(bytes: [u8], count: i32) -> bool {
+    let base: ptr = core::mem::i32_slice_data_ptr(bytes); let sent: i32 = 0;
+    while (sent < count) {
+        let w: i32 = std::fs::write(1, base + (sent as usize), (count - sent) as usize);
+        if (w == -4) { continue; }
+        if (w <= 0 || w > count - sent) { return false; }
+        sent += w;
+    }
+    return true;
 }
 fn read_file(name: core::slice::View<u8>, output: &alloc::io::Buffer) -> bool {
     let checked: core::result::Result<core::path::Path, core::path::Error> = core::path::from_view(name);
@@ -82,7 +95,7 @@ fn run(old_name: core::slice::View<u8>, new_name: core::slice::View<u8>, context
             let bytes: alloc::vec::Vec<u8> = core::result::unwrap(written);
             if (bytes.len() > 0) {
                 status = 1; let sink: std::stream::Descriptor = std::stream::stdout();
-                if (core::result::is_err(core::io::write_all(sink.borrow(), bytes.as_slice(), 0, bytes.len()))) { status = 2; }
+                if (!write_out(bytes.as_slice(), bytes.len())) { status = 2; }
             }
             bytes.destroy();
         }

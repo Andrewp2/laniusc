@@ -23,7 +23,9 @@ Direct source imports; this is not a package-resolution or transitive dependency
 - [core::option](../core/option.md) · [source](../../../extended/ext/unidiff.lani#L6)
 - [core::result](../core/result.md) · [source](../../../extended/ext/unidiff.lani#L7)
 - [core::mem](../core/mem.md) · [source](../../../extended/ext/unidiff.lani#L8)
-- [ext::seqdiff](seqdiff.md) · [source](../../../extended/ext/unidiff.lani#L9)
+- [alloc::io](../alloc/io.md) · [source](../../../extended/ext/unidiff.lani#L9)
+- [core::io](../core/io.md) · [source](../../../extended/ext/unidiff.lani#L10)
+- [ext::seqdiff](seqdiff.md) · [source](../../../extended/ext/unidiff.lani#L11)
 
 ## Types, fields and variants
 
@@ -31,7 +33,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: WriteError
 
-[Source line 11](../../../extended/ext/unidiff.lani#L11)
+[Source line 13](../../../extended/ext/unidiff.lani#L13)
 
 ```lanius
 pub enum WriteError
@@ -39,7 +41,7 @@ pub enum WriteError
 
 #### variant: InvalidLine
 
-[Source line 11](../../../extended/ext/unidiff.lani#L11)
+[Source line 13](../../../extended/ext/unidiff.lani#L13)
 
 ```lanius
 InvalidLine
@@ -47,7 +49,7 @@ InvalidLine
 
 #### variant: InvalidHeader
 
-[Source line 11](../../../extended/ext/unidiff.lani#L11)
+[Source line 13](../../../extended/ext/unidiff.lani#L13)
 
 ```lanius
 InvalidHeader
@@ -55,7 +57,7 @@ InvalidHeader
 
 #### variant: OutputLimit
 
-[Source line 11](../../../extended/ext/unidiff.lani#L11)
+[Source line 13](../../../extended/ext/unidiff.lani#L13)
 
 ```lanius
 OutputLimit
@@ -63,7 +65,7 @@ OutputLimit
 
 #### variant: AllocationFailed
 
-[Source line 11](../../../extended/ext/unidiff.lani#L11)
+[Source line 13](../../../extended/ext/unidiff.lani#L13)
 
 ```lanius
 AllocationFailed
@@ -71,7 +73,7 @@ AllocationFailed
 
 ### enum: ParseKind
 
-[Source line 12](../../../extended/ext/unidiff.lani#L12)
+[Source line 14](../../../extended/ext/unidiff.lani#L14)
 
 ```lanius
 pub enum ParseKind
@@ -79,7 +81,7 @@ pub enum ParseKind
 
 #### variant: MissingHeader
 
-[Source line 12](../../../extended/ext/unidiff.lani#L12)
+[Source line 14](../../../extended/ext/unidiff.lani#L14)
 
 ```lanius
 MissingHeader
@@ -87,7 +89,7 @@ MissingHeader
 
 #### variant: BadHunkHeader
 
-[Source line 12](../../../extended/ext/unidiff.lani#L12)
+[Source line 14](../../../extended/ext/unidiff.lani#L14)
 
 ```lanius
 BadHunkHeader
@@ -95,7 +97,7 @@ BadHunkHeader
 
 #### variant: BadLine
 
-[Source line 12](../../../extended/ext/unidiff.lani#L12)
+[Source line 14](../../../extended/ext/unidiff.lani#L14)
 
 ```lanius
 BadLine
@@ -103,7 +105,7 @@ BadLine
 
 #### variant: BadMarker
 
-[Source line 12](../../../extended/ext/unidiff.lani#L12)
+[Source line 14](../../../extended/ext/unidiff.lani#L14)
 
 ```lanius
 BadMarker
@@ -111,7 +113,7 @@ BadMarker
 
 #### variant: Truncated
 
-[Source line 12](../../../extended/ext/unidiff.lani#L12)
+[Source line 14](../../../extended/ext/unidiff.lani#L14)
 
 ```lanius
 Truncated
@@ -119,7 +121,7 @@ Truncated
 
 #### variant: LineLimit
 
-[Source line 12](../../../extended/ext/unidiff.lani#L12)
+[Source line 14](../../../extended/ext/unidiff.lani#L14)
 
 ```lanius
 LineLimit
@@ -127,7 +129,7 @@ LineLimit
 
 #### variant: AllocationFailed
 
-[Source line 12](../../../extended/ext/unidiff.lani#L12)
+[Source line 14](../../../extended/ext/unidiff.lani#L14)
 
 ```lanius
 AllocationFailed
@@ -135,7 +137,7 @@ AllocationFailed
 
 ### struct: ParseError
 
-[Source line 13](../../../extended/ext/unidiff.lani#L13)
+[Source line 15](../../../extended/ext/unidiff.lani#L15)
 
 ```lanius
 pub struct ParseError
@@ -143,7 +145,7 @@ pub struct ParseError
 
 #### field: kind
 
-[Source line 13](../../../extended/ext/unidiff.lani#L13)
+[Source line 15](../../../extended/ext/unidiff.lani#L15)
 
 ```lanius
 kind: ParseKind
@@ -151,7 +153,7 @@ kind: ParseKind
 
 #### field: offset
 
-[Source line 13](../../../extended/ext/unidiff.lani#L13)
+[Source line 15](../../../extended/ext/unidiff.lani#L15)
 
 ```lanius
 offset: i32
@@ -159,7 +161,7 @@ offset: i32
 
 ### struct: PatchLine
 
-[Source line 15](../../../extended/ext/unidiff.lani#L15)
+[Source line 17](../../../extended/ext/unidiff.lani#L17)
 
 ```lanius
 pub struct PatchLine
@@ -167,7 +169,7 @@ pub struct PatchLine
 
 #### field: kind
 
-[Source line 15](../../../extended/ext/unidiff.lani#L15)
+[Source line 17](../../../extended/ext/unidiff.lani#L17)
 
 ```lanius
 kind: i32
@@ -175,7 +177,7 @@ kind: i32
 
 #### field: bytes
 
-[Source line 15](../../../extended/ext/unidiff.lani#L15)
+[Source line 17](../../../extended/ext/unidiff.lani#L17)
 
 ```lanius
 bytes: core::slice::View<u8>
@@ -183,7 +185,7 @@ bytes: core::slice::View<u8>
 
 ### struct: PatchHunk
 
-[Source line 16](../../../extended/ext/unidiff.lani#L16)
+[Source line 18](../../../extended/ext/unidiff.lani#L18)
 
 ```lanius
 pub struct PatchHunk
@@ -191,7 +193,7 @@ pub struct PatchHunk
 
 #### field: old_start
 
-[Source line 16](../../../extended/ext/unidiff.lani#L16)
+[Source line 18](../../../extended/ext/unidiff.lani#L18)
 
 ```lanius
 old_start: i32
@@ -199,7 +201,7 @@ old_start: i32
 
 #### field: old_count
 
-[Source line 16](../../../extended/ext/unidiff.lani#L16)
+[Source line 18](../../../extended/ext/unidiff.lani#L18)
 
 ```lanius
 old_count: i32
@@ -207,7 +209,7 @@ old_count: i32
 
 #### field: new_start
 
-[Source line 16](../../../extended/ext/unidiff.lani#L16)
+[Source line 18](../../../extended/ext/unidiff.lani#L18)
 
 ```lanius
 new_start: i32
@@ -215,7 +217,7 @@ new_start: i32
 
 #### field: new_count
 
-[Source line 16](../../../extended/ext/unidiff.lani#L16)
+[Source line 18](../../../extended/ext/unidiff.lani#L18)
 
 ```lanius
 new_count: i32
@@ -223,7 +225,7 @@ new_count: i32
 
 #### field: first
 
-[Source line 16](../../../extended/ext/unidiff.lani#L16)
+[Source line 18](../../../extended/ext/unidiff.lani#L18)
 
 ```lanius
 first: i32
@@ -231,7 +233,7 @@ first: i32
 
 #### field: count
 
-[Source line 16](../../../extended/ext/unidiff.lani#L16)
+[Source line 18](../../../extended/ext/unidiff.lani#L18)
 
 ```lanius
 count: i32
@@ -239,7 +241,7 @@ count: i32
 
 #### field: offset
 
-[Source line 16](../../../extended/ext/unidiff.lani#L16)
+[Source line 18](../../../extended/ext/unidiff.lani#L18)
 
 ```lanius
 offset: i32
@@ -247,7 +249,7 @@ offset: i32
 
 #### field: end
 
-[Source line 16](../../../extended/ext/unidiff.lani#L16)
+[Source line 18](../../../extended/ext/unidiff.lani#L18)
 
 ```lanius
 end: i32
@@ -255,7 +257,7 @@ end: i32
 
 ### struct: Patch
 
-[Source line 17](../../../extended/ext/unidiff.lani#L17)
+[Source line 19](../../../extended/ext/unidiff.lani#L19)
 
 ```lanius
 pub struct Patch
@@ -263,7 +265,7 @@ pub struct Patch
 
 #### field: old_name
 
-[Source line 17](../../../extended/ext/unidiff.lani#L17)
+[Source line 19](../../../extended/ext/unidiff.lani#L19)
 
 ```lanius
 old_name: core::slice::View<u8>
@@ -271,7 +273,7 @@ old_name: core::slice::View<u8>
 
 #### field: new_name
 
-[Source line 17](../../../extended/ext/unidiff.lani#L17)
+[Source line 19](../../../extended/ext/unidiff.lani#L19)
 
 ```lanius
 new_name: core::slice::View<u8>
@@ -279,7 +281,7 @@ new_name: core::slice::View<u8>
 
 #### field: hunks
 
-[Source line 17](../../../extended/ext/unidiff.lani#L17)
+[Source line 19](../../../extended/ext/unidiff.lani#L19)
 
 ```lanius
 hunks: alloc::vec::Vec<PatchHunk>
@@ -287,7 +289,7 @@ hunks: alloc::vec::Vec<PatchHunk>
 
 #### field: lines
 
-[Source line 17](../../../extended/ext/unidiff.lani#L17)
+[Source line 19](../../../extended/ext/unidiff.lani#L19)
 
 ```lanius
 lines: alloc::vec::Vec<PatchLine>
@@ -295,7 +297,7 @@ lines: alloc::vec::Vec<PatchLine>
 
 #### field: end
 
-[Source line 17](../../../extended/ext/unidiff.lani#L17)
+[Source line 19](../../../extended/ext/unidiff.lani#L19)
 
 ```lanius
 end: i32
@@ -303,7 +305,7 @@ end: i32
 
 ### struct: ApplyOptions
 
-[Source line 18](../../../extended/ext/unidiff.lani#L18)
+[Source line 20](../../../extended/ext/unidiff.lani#L20)
 
 ```lanius
 pub struct ApplyOptions
@@ -311,7 +313,7 @@ pub struct ApplyOptions
 
 #### field: max_fuzz
 
-[Source line 18](../../../extended/ext/unidiff.lani#L18)
+[Source line 20](../../../extended/ext/unidiff.lani#L20)
 
 ```lanius
 max_fuzz: i32
@@ -319,7 +321,7 @@ max_fuzz: i32
 
 #### field: max_offset
 
-[Source line 18](../../../extended/ext/unidiff.lani#L18)
+[Source line 20](../../../extended/ext/unidiff.lani#L20)
 
 ```lanius
 max_offset: i32
@@ -327,7 +329,7 @@ max_offset: i32
 
 #### field: max_lines
 
-[Source line 18](../../../extended/ext/unidiff.lani#L18)
+[Source line 20](../../../extended/ext/unidiff.lani#L20)
 
 ```lanius
 max_lines: i32
@@ -335,7 +337,7 @@ max_lines: i32
 
 #### field: max_output
 
-[Source line 18](../../../extended/ext/unidiff.lani#L18)
+[Source line 20](../../../extended/ext/unidiff.lani#L20)
 
 ```lanius
 max_output: i32
@@ -343,7 +345,7 @@ max_output: i32
 
 #### field: max_work
 
-[Source line 18](../../../extended/ext/unidiff.lani#L18)
+[Source line 20](../../../extended/ext/unidiff.lani#L20)
 
 ```lanius
 max_work: u64
@@ -351,7 +353,7 @@ max_work: u64
 
 ### enum: HunkStatus
 
-[Source line 20](../../../extended/ext/unidiff.lani#L20)
+[Source line 22](../../../extended/ext/unidiff.lani#L22)
 
 ```lanius
 pub enum HunkStatus
@@ -359,7 +361,7 @@ pub enum HunkStatus
 
 #### variant: Exact
 
-[Source line 20](../../../extended/ext/unidiff.lani#L20)
+[Source line 22](../../../extended/ext/unidiff.lani#L22)
 
 ```lanius
 Exact
@@ -367,7 +369,7 @@ Exact
 
 #### variant: Offset
 
-[Source line 20](../../../extended/ext/unidiff.lani#L20)
+[Source line 22](../../../extended/ext/unidiff.lani#L22)
 
 ```lanius
 Offset
@@ -375,7 +377,7 @@ Offset
 
 #### variant: Fuzzed
 
-[Source line 20](../../../extended/ext/unidiff.lani#L20)
+[Source line 22](../../../extended/ext/unidiff.lani#L22)
 
 ```lanius
 Fuzzed
@@ -383,7 +385,7 @@ Fuzzed
 
 #### variant: Rejected
 
-[Source line 20](../../../extended/ext/unidiff.lani#L20)
+[Source line 22](../../../extended/ext/unidiff.lani#L22)
 
 ```lanius
 Rejected
@@ -391,7 +393,7 @@ Rejected
 
 ### enum: RejectReason
 
-[Source line 21](../../../extended/ext/unidiff.lani#L21)
+[Source line 23](../../../extended/ext/unidiff.lani#L23)
 
 ```lanius
 pub enum RejectReason
@@ -399,7 +401,7 @@ pub enum RejectReason
 
 #### variant: NotRejected
 
-[Source line 21](../../../extended/ext/unidiff.lani#L21)
+[Source line 23](../../../extended/ext/unidiff.lani#L23)
 
 ```lanius
 NotRejected
@@ -407,7 +409,7 @@ NotRejected
 
 #### variant: NoMatch
 
-[Source line 21](../../../extended/ext/unidiff.lani#L21)
+[Source line 23](../../../extended/ext/unidiff.lani#L23)
 
 ```lanius
 NoMatch
@@ -415,7 +417,7 @@ NoMatch
 
 #### variant: Overlap
 
-[Source line 21](../../../extended/ext/unidiff.lani#L21)
+[Source line 23](../../../extended/ext/unidiff.lani#L23)
 
 ```lanius
 Overlap
@@ -423,7 +425,7 @@ Overlap
 
 ### struct: HunkReport
 
-[Source line 23](../../../extended/ext/unidiff.lani#L23)
+[Source line 25](../../../extended/ext/unidiff.lani#L25)
 
 ```lanius
 pub struct HunkReport
@@ -431,7 +433,7 @@ pub struct HunkReport
 
 #### field: index
 
-[Source line 23](../../../extended/ext/unidiff.lani#L23)
+[Source line 25](../../../extended/ext/unidiff.lani#L25)
 
 ```lanius
 index: i32
@@ -439,7 +441,7 @@ index: i32
 
 #### field: status
 
-[Source line 23](../../../extended/ext/unidiff.lani#L23)
+[Source line 25](../../../extended/ext/unidiff.lani#L25)
 
 ```lanius
 status: HunkStatus
@@ -447,7 +449,7 @@ status: HunkStatus
 
 #### field: reason
 
-[Source line 23](../../../extended/ext/unidiff.lani#L23)
+[Source line 25](../../../extended/ext/unidiff.lani#L25)
 
 ```lanius
 reason: RejectReason
@@ -455,7 +457,7 @@ reason: RejectReason
 
 #### field: line
 
-[Source line 23](../../../extended/ext/unidiff.lani#L23)
+[Source line 25](../../../extended/ext/unidiff.lani#L25)
 
 ```lanius
 line: i32
@@ -463,7 +465,7 @@ line: i32
 
 #### field: offset
 
-[Source line 23](../../../extended/ext/unidiff.lani#L23)
+[Source line 25](../../../extended/ext/unidiff.lani#L25)
 
 ```lanius
 offset: i32
@@ -471,7 +473,7 @@ offset: i32
 
 #### field: fuzz
 
-[Source line 23](../../../extended/ext/unidiff.lani#L23)
+[Source line 25](../../../extended/ext/unidiff.lani#L25)
 
 ```lanius
 fuzz: i32
@@ -479,7 +481,7 @@ fuzz: i32
 
 ### enum: ApplyError
 
-[Source line 24](../../../extended/ext/unidiff.lani#L24)
+[Source line 26](../../../extended/ext/unidiff.lani#L26)
 
 ```lanius
 pub enum ApplyError
@@ -487,7 +489,7 @@ pub enum ApplyError
 
 #### variant: InvalidOptions
 
-[Source line 24](../../../extended/ext/unidiff.lani#L24)
+[Source line 26](../../../extended/ext/unidiff.lani#L26)
 
 ```lanius
 InvalidOptions
@@ -495,7 +497,7 @@ InvalidOptions
 
 #### variant: LineLimit
 
-[Source line 24](../../../extended/ext/unidiff.lani#L24)
+[Source line 26](../../../extended/ext/unidiff.lani#L26)
 
 ```lanius
 LineLimit
@@ -503,7 +505,7 @@ LineLimit
 
 #### variant: WorkLimit
 
-[Source line 24](../../../extended/ext/unidiff.lani#L24)
+[Source line 26](../../../extended/ext/unidiff.lani#L26)
 
 ```lanius
 WorkLimit
@@ -511,7 +513,7 @@ WorkLimit
 
 #### variant: OutputLimit
 
-[Source line 24](../../../extended/ext/unidiff.lani#L24)
+[Source line 26](../../../extended/ext/unidiff.lani#L26)
 
 ```lanius
 OutputLimit
@@ -519,7 +521,7 @@ OutputLimit
 
 #### variant: AllocationFailed
 
-[Source line 24](../../../extended/ext/unidiff.lani#L24)
+[Source line 26](../../../extended/ext/unidiff.lani#L26)
 
 ```lanius
 AllocationFailed
@@ -527,7 +529,7 @@ AllocationFailed
 
 ### struct: Applied
 
-[Source line 25](../../../extended/ext/unidiff.lani#L25)
+[Source line 27](../../../extended/ext/unidiff.lani#L27)
 
 ```lanius
 pub struct Applied
@@ -535,7 +537,7 @@ pub struct Applied
 
 #### field: output
 
-[Source line 25](../../../extended/ext/unidiff.lani#L25)
+[Source line 27](../../../extended/ext/unidiff.lani#L27)
 
 ```lanius
 output: alloc::vec::Vec<u8>
@@ -543,7 +545,7 @@ output: alloc::vec::Vec<u8>
 
 #### field: reports
 
-[Source line 25](../../../extended/ext/unidiff.lani#L25)
+[Source line 27](../../../extended/ext/unidiff.lani#L27)
 
 ```lanius
 reports: alloc::vec::Vec<HunkReport>
@@ -551,7 +553,7 @@ reports: alloc::vec::Vec<HunkReport>
 
 #### field: rejected
 
-[Source line 25](../../../extended/ext/unidiff.lani#L25)
+[Source line 27](../../../extended/ext/unidiff.lani#L27)
 
 ```lanius
 rejected: i32
@@ -561,7 +563,7 @@ rejected: i32
 
 ### function: default_options
 
-[Source line 19](../../../extended/ext/unidiff.lani#L19)
+[Source line 21](../../../extended/ext/unidiff.lani#L21)
 
 ```lanius
 pub fn default_options() -> ApplyOptions
@@ -569,7 +571,7 @@ pub fn default_options() -> ApplyOptions
 
 ### function: write_unified
 
-[Source line 72](../../../extended/ext/unidiff.lani#L72)
+[Source line 74](../../../extended/ext/unidiff.lani#L74)
 
 ```lanius
 pub fn write_unified(a: core::slice::View<ext::seqdiff::Line>, b: core::slice::View<ext::seqdiff::Line>, script: &ext::seqdiff::Script, hunks: core::slice::View<ext::seqdiff::Hunk>, old_name: core::slice::View<u8>, new_name: core::slice::View<u8>, max_output: i32) -> core::result::Result<alloc::vec::Vec<u8>, WriteError>
@@ -577,7 +579,7 @@ pub fn write_unified(a: core::slice::View<ext::seqdiff::Line>, b: core::slice::V
 
 ### function: write_unified_split
 
-[Source line 78](../../../extended/ext/unidiff.lani#L78)
+[Source line 80](../../../extended/ext/unidiff.lani#L80)
 
 ```lanius
 pub fn write_unified_split(split: &ext::seqdiff::Split, script: &ext::seqdiff::Script, hunks: core::slice::View<ext::seqdiff::Hunk>, old_name: core::slice::View<u8>, new_name: core::slice::View<u8>, max_output: i32) -> core::result::Result<alloc::vec::Vec<u8>, WriteError>
@@ -585,7 +587,7 @@ pub fn write_unified_split(split: &ext::seqdiff::Split, script: &ext::seqdiff::S
 
 ### function: parse
 
-[Source line 153](../../../extended/ext/unidiff.lani#L153)
+[Source line 155](../../../extended/ext/unidiff.lani#L155)
 
 ```lanius
 pub fn parse(input: core::slice::View<u8>, max_lines: i32) -> core::result::Result<Patch, ParseError>
@@ -593,7 +595,7 @@ pub fn parse(input: core::slice::View<u8>, max_lines: i32) -> core::result::Resu
 
 ### function: apply
 
-[Source line 242](../../../extended/ext/unidiff.lani#L242)
+[Source line 245](../../../extended/ext/unidiff.lani#L245)
 
 ```lanius
 pub fn apply(base: core::slice::View<u8>, patch: &Patch, options: ApplyOptions) -> core::result::Result<Applied, ApplyError>
@@ -601,9 +603,9 @@ pub fn apply(base: core::slice::View<u8>, patch: &Patch, options: ApplyOptions) 
 
 ## Implementation blocks and public methods
 
-### impl at line 203
+### impl at line 205
 
-[Source line 203](../../../extended/ext/unidiff.lani#L203)
+[Source line 205](../../../extended/ext/unidiff.lani#L205)
 
 ```lanius
 pub impl Patch
@@ -611,7 +613,7 @@ pub impl Patch
 
 #### method: borrow
 
-[Source line 204](../../../extended/ext/unidiff.lani#L204)
+[Source line 206](../../../extended/ext/unidiff.lani#L206)
 
 ```lanius
 pub fn borrow(&self) -> &Patch
@@ -619,7 +621,7 @@ pub fn borrow(&self) -> &Patch
 
 #### method: hunk_count
 
-[Source line 205](../../../extended/ext/unidiff.lani#L205)
+[Source line 207](../../../extended/ext/unidiff.lani#L207)
 
 ```lanius
 pub fn hunk_count(&self) -> i32
@@ -627,7 +629,7 @@ pub fn hunk_count(&self) -> i32
 
 #### method: hunk
 
-[Source line 206](../../../extended/ext/unidiff.lani#L206)
+[Source line 208](../../../extended/ext/unidiff.lani#L208)
 
 ```lanius
 pub fn hunk(&self, index: i32) -> core::option::Option<PatchHunk>
@@ -635,7 +637,7 @@ pub fn hunk(&self, index: i32) -> core::option::Option<PatchHunk>
 
 #### method: line
 
-[Source line 207](../../../extended/ext/unidiff.lani#L207)
+[Source line 209](../../../extended/ext/unidiff.lani#L209)
 
 ```lanius
 pub fn line(&self, index: i32) -> core::option::Option<PatchLine>
@@ -643,15 +645,15 @@ pub fn line(&self, index: i32) -> core::option::Option<PatchLine>
 
 #### method: destroy
 
-[Source line 208](../../../extended/ext/unidiff.lani#L208)
+[Source line 210](../../../extended/ext/unidiff.lani#L210)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 350
+### impl at line 379
 
-[Source line 350](../../../extended/ext/unidiff.lani#L350)
+[Source line 379](../../../extended/ext/unidiff.lani#L379)
 
 ```lanius
 pub impl Applied
@@ -659,7 +661,7 @@ pub impl Applied
 
 #### method: borrow
 
-[Source line 351](../../../extended/ext/unidiff.lani#L351)
+[Source line 380](../../../extended/ext/unidiff.lani#L380)
 
 ```lanius
 pub fn borrow(&self) -> &Applied
@@ -667,7 +669,7 @@ pub fn borrow(&self) -> &Applied
 
 #### method: destroy
 
-[Source line 352](../../../extended/ext/unidiff.lani#L352)
+[Source line 381](../../../extended/ext/unidiff.lani#L381)
 
 ```lanius
 pub fn destroy(&self)

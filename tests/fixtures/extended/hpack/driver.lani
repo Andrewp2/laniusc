@@ -1,0 +1,211 @@
+// HPACK driver for oracle.py. Commands on stdin, one per line; byte strings
+// are lowercase hex, "-" for empty:
+//   dec TABLE LIST FIELDS STRING   new decoder with these limits
+//   max N                          decoder set_maximum(N)
+//   d HEX                          decode one block
+//   enc OWN                        new encoder with own table cap OWN
+//   huff always|never|shortest     encoder Huffman mode
+//   peer N                         encoder set_peer_maximum(N)
+//   start                          begin a block with start_block
+//   f NAME VALUE inc|without|never encode_field into the block
+//   a NAME VALUE 0|1               queue a field for encode (1: never_indexed)
+//   e                              finish: encode the queue, or the f block
+//   int PREFIX N | dint PREFIX HEX | hufe HEX | hufd HEX   primitives
+// Output per command: "ok COUNT size S entries E" then "h NAME VALUE N" lines
+// for d; "b HEX size S capacity C entries E" for e; "err NAME" on failure.
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::hpack;
+import std::stream;
+
+fn literal(s: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(s),n); return core::slice::view<u8>(raw,n).unwrap(); }
+fn byte(v: core::slice::View<u8>, i: i32) -> u8 { return v.values[v.start+i]; }
+fn part(v: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> { return v.subview(start,end).unwrap(); }
+fn eq(v: core::slice::View<u8>, s: str, n: i32) -> bool {
+    let w: core::slice::View<u8> = literal(s,n); if (v.len() != n) { return false; }
+    let i: i32 = 0; while (i < n) { if (byte(v,i) != byte(w,i)) { return false; } i += 1; } return true;
+}
+fn write_to(fd: i32, bytes: core::slice::View<u8>) -> bool {
+    let sink: std::stream::Descriptor = std::stream::from_handle(fd); let completed: i32 = 0;
+    while (completed < bytes.len()) {
+        let sent = sink.write(bytes.values,bytes.start + completed,bytes.len() - completed);
+        if (sent.is_err()) { if (core::io::is_interrupted(sent.unwrap_err())) { continue; } return false; }
+        let count: i32 = sent.unwrap(); if (count <= 0) { return false; } completed += count;
+    }
+    return true;
+}
+fn put(out: &alloc::vec::Vec<u8>, s: str, n: i32) -> bool { return out.try_extend(literal(s,n)).is_ok(); }
+fn push_number(out: &alloc::vec::Vec<u8>, value: i32) -> bool {
+    let digits: [u8;12] = [0;12]; let i: i32 = 12; let v: i32 = value; let negative: bool = v < 0; if (negative) { v = 0 - v; }
+    while (true) { i -= 1; digits[i] = (48 + v % 10) as u8; v = v / 10; if (v == 0) { break; } }
+    if (negative && out.try_push(45 as u8).is_err()) { return false; }
+    while (i < 12) { if (out.try_push(digits[i]).is_err()) { return false; } i += 1; }
+    return true;
+}
+fn hex_digit(d: i32) -> u8 { if (d < 10) { return (48 + d) as u8; } return (87 + d) as u8; }
+fn push_hex(out: &alloc::vec::Vec<u8>, v: core::slice::View<u8>) -> bool {
+    if (v.len() == 0) { return put(out,"-",1); }
+    let i: i32 = 0; while (i < v.len()) { let c: i32 = byte(v,i) as i32; if (out.try_push(hex_digit(c >> 4)).is_err() || out.try_push(hex_digit(c & 15)).is_err()) { return false; } i += 1; }
+    return true;
+}
+fn hex_value(c: u8) -> i32 { if (c >= 48 && c <= 57) { return (c - 48) as i32; } if (c >= 97 && c <= 102) { return (c - 87) as i32; } return -1; }
+fn unhex(v: core::slice::View<u8>, out: &alloc::vec::Vec<u8>) -> bool {
+    out.clear(); if (eq(v,"-",1)) { return true; } if (v.len() % 2 != 0) { return false; }
+    let i: i32 = 0;
+    while (i < v.len()) { let a: i32 = hex_value(byte(v,i)); let b: i32 = hex_value(byte(v,i+1)); if (a < 0 || b < 0) { return false; } if (out.try_push((a * 16 + b) as u8).is_err()) { return false; } i += 2; }
+    return true;
+}
+fn number(v: core::slice::View<u8>) -> i32 {
+    if (v.len() == 0 || v.len() > 10) { return -1; } let n: i64 = 0; let i: i32 = 0;
+    while (i < v.len()) { let c: u8 = byte(v,i); if (c < 48 || c > 57) { return -1; } n = n * 10 + ((c - 48) as i64); i += 1; }
+    if (n > 2147483647) { return -1; } return n as i32;
+}
+fn words(line: core::slice::View<u8>, out: &alloc::vec::Vec<core::slice::View<u8>>) {
+    out.clear(); let start: i32 = 0; let i: i32 = 0;
+    while (i < line.len()) { if (byte(line,i) == 32) { out.try_push(part(line,start,i)); start = i + 1; } i += 1; }
+    out.try_push(part(line,start,line.len()));
+}
+fn error_name(e: ext::hpack::Error) -> core::slice::View<u8> {
+    return match (e) {
+        ext::hpack::Error::Bounds -> literal("bounds",6), ext::hpack::Error::InvalidLimits -> literal("invalid-limits",14),
+        ext::hpack::Error::Integer -> literal("integer",7), ext::hpack::Error::Index -> literal("index",5),
+        ext::hpack::Error::Huffman -> literal("huffman",7), ext::hpack::Error::Truncated -> literal("truncated",9),
+        ext::hpack::Error::TableSize -> literal("table-size",10), ext::hpack::Error::SizeUpdate -> literal("size-update",11), ext::hpack::Error::TooLong -> literal("too-long",8),
+        ext::hpack::Error::Limit -> literal("limit",5), ext::hpack::Error::Failed -> literal("failed",6),
+        ext::hpack::Error::AllocationFailed -> literal("allocation",10)
+    };
+}
+fn say_error(out: &alloc::vec::Vec<u8>, e: ext::hpack::Error) { put(out,"err ",4); out.try_extend(error_name(e)); put(out,"\n",1); }
+fn say_table(out: &alloc::vec::Vec<u8>, size: i32, capacity: i32, entries: i32) {
+    put(out," size ",6); push_number(out,size); put(out," capacity ",10); push_number(out,capacity); put(out," entries ",9); push_number(out,entries); put(out,"\n",1);
+}
+fn mode_of(v: core::slice::View<u8>) -> ext::hpack::Indexing {
+    if (eq(v,"never",5)) { return ext::hpack::Indexing::Never; } if (eq(v,"without",7)) { return ext::hpack::Indexing::Without; }
+    return ext::hpack::Indexing::Incremental;
+}
+struct State { decoder: core::option::Option<ext::hpack::Decoder>, encoder: core::option::Option<ext::hpack::Encoder>, block: alloc::vec::Vec<u8>, queued: alloc::vec::Vec<u8>, fields: alloc::vec::Vec<i32>, a: alloc::vec::Vec<u8>, b: alloc::vec::Vec<u8> }
+
+impl State { fn borrow(&self) -> &State { return self; } }
+fn run_line(st: &State, w: core::slice::View<core::slice::View<u8>>, out: &alloc::vec::Vec<u8>) -> bool {
+    let cmd: core::slice::View<u8> = w.get(0).unwrap(); let n: i32 = w.len();
+    if (eq(cmd,"dec",3) && n == 5) {
+        if (st.decoder.is_some()) { let d: ext::hpack::Decoder = st.decoder.unwrap(); d.destroy(); st.decoder = core::option::None(); }
+        let limits: ext::hpack::Limits = ext::hpack::Limits { table_bytes: number(w.get(1).unwrap()), list_bytes: number(w.get(2).unwrap()), fields: number(w.get(3).unwrap()), string_bytes: number(w.get(4).unwrap()) };
+        let made = ext::hpack::decoder(limits); if (made.is_err()) { say_error(out,made.unwrap_err()); return true; }
+        st.decoder = core::option::Some(made.unwrap()); put(out,"ok\n",3); return true;
+    }
+    if (eq(cmd,"max",3) && n == 2) {
+        let d: ext::hpack::Decoder = st.decoder.unwrap(); let r = d.set_maximum(number(w.get(1).unwrap())); st.decoder = core::option::Some(d);
+        if (r.is_err()) { say_error(out,r.unwrap_err()); return true; }
+        put(out,"ok",2); say_table(out,d.table_size(),d.table_capacity(),d.table_entries()); return true;
+    }
+    if (eq(cmd,"d",1) && n == 2) {
+        if (!unhex(w.get(1).unwrap(),st.a.borrow())) { return false; }
+        let d: ext::hpack::Decoder = st.decoder.unwrap(); let r = d.decode(st.a.as_view()); st.decoder = core::option::Some(d);
+        if (r.is_err()) { say_error(out,r.unwrap_err()); }
+        else { put(out,"ok ",3); push_number(out,r.unwrap()); say_table(out,d.table_size(),d.table_capacity(),d.table_entries()); }
+        let i: i32 = 0;
+        while (i < d.count()) {
+            let h: ext::hpack::Header = d.header(i); put(out,"h ",2); push_hex(out,h.name); put(out," ",1); push_hex(out,h.value);
+            if (h.never_indexed) { put(out," 1\n",3); } else { put(out," 0\n",3); } i += 1;
+        }
+        return true;
+    }
+    if (eq(cmd,"enc",3) && n == 2) {
+        if (st.encoder.is_some()) { let e: ext::hpack::Encoder = st.encoder.unwrap(); e.destroy(); st.encoder = core::option::None(); }
+        let made = ext::hpack::encoder(number(w.get(1).unwrap())); if (made.is_err()) { say_error(out,made.unwrap_err()); return true; }
+        st.encoder = core::option::Some(made.unwrap()); st.block.clear(); st.queued.clear(); st.fields.clear(); put(out,"ok\n",3); return true;
+    }
+    if (eq(cmd,"huff",4) && n == 2) {
+        let e: ext::hpack::Encoder = st.encoder.unwrap(); let v: core::slice::View<u8> = w.get(1).unwrap();
+        if (eq(v,"always",6)) { e.set_huffman(ext::hpack::Huffman::Always); } else { if (eq(v,"never",5)) { e.set_huffman(ext::hpack::Huffman::Never); } else { e.set_huffman(ext::hpack::Huffman::Shortest); } }
+        st.encoder = core::option::Some(e); put(out,"ok\n",3); return true;
+    }
+    if (eq(cmd,"peer",4) && n == 2) {
+        let e: ext::hpack::Encoder = st.encoder.unwrap(); let r = e.set_peer_maximum(number(w.get(1).unwrap())); st.encoder = core::option::Some(e);
+        if (r.is_err()) { say_error(out,r.unwrap_err()); return true; }
+        put(out,"ok",2); say_table(out,e.table_size(),e.table_capacity(),e.table_entries()); return true;
+    }
+    if (eq(cmd,"start",5) && n == 1) {
+        let e: ext::hpack::Encoder = st.encoder.unwrap(); st.block.clear(); let r = e.start_block(st.block.borrow()); st.encoder = core::option::Some(e);
+        if (r.is_err()) { say_error(out,r.unwrap_err()); return true; } put(out,"ok\n",3); return true;
+    }
+    if (eq(cmd,"f",1) && n == 4) {
+        if (!unhex(w.get(1).unwrap(),st.a.borrow()) || !unhex(w.get(2).unwrap(),st.b.borrow())) { return false; }
+        let e: ext::hpack::Encoder = st.encoder.unwrap(); let r = e.encode_field(st.a.as_view(),st.b.as_view(),mode_of(w.get(3).unwrap()),st.block.borrow()); st.encoder = core::option::Some(e);
+        if (r.is_err()) { say_error(out,r.unwrap_err()); return true; } put(out,"ok\n",3); return true;
+    }
+    if (eq(cmd,"a",1) && n == 4) {
+        if (!unhex(w.get(1).unwrap(),st.a.borrow()) || !unhex(w.get(2).unwrap(),st.b.borrow())) { return false; }
+        st.fields.try_push(st.queued.len()); st.fields.try_push(st.a.len()); st.queued.try_extend(st.a.as_view());
+        st.fields.try_push(st.b.len()); st.queued.try_extend(st.b.as_view()); let never: i32 = 0; if (eq(w.get(3).unwrap(),"1",1)) { never = 1; }
+        st.fields.try_push(never); put(out,"ok\n",3); return true;
+    }
+    if (eq(cmd,"e",1) && n == 1) {
+        let e: ext::hpack::Encoder = st.encoder.unwrap();
+        if (st.fields.len() > 0) {
+            let list: alloc::vec::Vec<ext::hpack::Header> = alloc::vec::new<ext::hpack::Header>(); let raw: [u8] = st.queued.as_slice(); let i: i32 = 0;
+            while (i < st.fields.len()) {
+                let at: i32 = st.fields.at(i); let nl: i32 = st.fields.at(i+1); let vl: i32 = st.fields.at(i+2);
+                list.try_push(ext::hpack::Header { name: core::slice::View { values: raw, start: at, length: nl }, value: core::slice::View { values: raw, start: at + nl, length: vl }, never_indexed: st.fields.at(i+3) == 1 });
+                i += 4;
+            }
+            st.block.clear(); let r = e.encode(list.as_view(),st.block.borrow()); list.destroy(); st.queued.clear(); st.fields.clear();
+            if (r.is_err()) { st.encoder = core::option::Some(e); say_error(out,r.unwrap_err()); return true; }
+        }
+        st.encoder = core::option::Some(e);
+        put(out,"b ",2); push_hex(out,st.block.as_view()); say_table(out,e.table_size(),e.table_capacity(),e.table_entries()); st.block.clear(); return true;
+    }
+    if (eq(cmd,"int",3) && n == 3) {
+        st.a.clear(); let r = ext::hpack::encode_integer(number(w.get(2).unwrap()),number(w.get(1).unwrap()),0,st.a.borrow());
+        if (r.is_err()) { say_error(out,r.unwrap_err()); return true; } put(out,"b ",2); push_hex(out,st.a.as_view()); put(out,"\n",1); return true;
+    }
+    if (eq(cmd,"dint",4) && n == 3) {
+        if (!unhex(w.get(2).unwrap(),st.a.borrow())) { return false; }
+        let r = ext::hpack::decode_integer(st.a.as_view(),number(w.get(1).unwrap()));
+        if (r.is_err()) { say_error(out,r.unwrap_err()); return true; }
+        put(out,"v ",2); push_number(out,r.unwrap().value); put(out," ",1); push_number(out,r.unwrap().used); put(out,"\n",1); return true;
+    }
+    if (eq(cmd,"hufe",4) && n == 2) {
+        if (!unhex(w.get(1).unwrap(),st.a.borrow())) { return false; }
+        st.b.clear(); let r = ext::hpack::huffman_encode(st.a.as_view(),st.b.borrow());
+        if (r.is_err()) { say_error(out,r.unwrap_err()); return true; } put(out,"b ",2); push_hex(out,st.b.as_view()); put(out,"\n",1); return true;
+    }
+    if (eq(cmd,"hufd",4) && n == 2) {
+        if (!unhex(w.get(1).unwrap(),st.a.borrow())) { return false; }
+        st.b.clear(); let r = ext::hpack::huffman_decode(st.a.as_view(),st.b.borrow(),1048576);
+        if (r.is_err()) { say_error(out,r.unwrap_err()); return true; } put(out,"b ",2); push_hex(out,st.b.as_view()); put(out,"\n",1); return true;
+    }
+    return false;
+}
+fn read_stdin(out: &alloc::vec::Vec<u8>) -> bool {
+    let source = std::stream::stdin(); let scratch: [u8;4096] = [0;4096];
+    while (out.len() < 268435456) {
+        let got = source.read(scratch,0,4096);
+        if (got.is_err()) { if (core::io::is_interrupted(got.unwrap_err())) { continue; } return false; }
+        let n: i32 = got.unwrap(); if (n <= 0) { return true; }
+        if (out.try_extend(core::slice::view<u8>(scratch,n).unwrap()).is_err()) { return false; }
+    }
+    return false;
+}
+fn main() -> i32 {
+    let input: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); if (!read_stdin(input.borrow())) { return 2; }
+    let st: State = State { decoder: core::option::None(), encoder: core::option::None(), block: alloc::vec::new<u8>(), queued: alloc::vec::new<u8>(), fields: alloc::vec::new<i32>(), a: alloc::vec::new<u8>(), b: alloc::vec::new<u8>() };
+    let out: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); let w: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new<core::slice::View<u8>>();
+    let all: core::slice::View<u8> = input.as_view(); let start: i32 = 0; let i: i32 = 0; let status: i32 = 0;
+    while (i < all.len()) {
+        if (byte(all,i) == 10) {
+            if (i > start) { words(part(all,start,i),w.borrow()); if (!run_line(st.borrow(),w.as_view(),out.borrow())) { put(out.borrow(),"bad\n",4); status = 1; } }
+            start = i + 1;
+            if (out.len() > 65536) { write_to(1,out.as_view()); out.clear(); }
+        }
+        i += 1;
+    }
+    write_to(1,out.as_view()); out.destroy(); w.destroy(); input.destroy();
+    return status;
+}

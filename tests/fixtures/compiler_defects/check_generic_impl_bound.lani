@@ -1,0 +1,11 @@
+// `laniusc check` rejected this valid program with LNC0008 "no matching impl
+// satisfies this call" at the `engine<N<i32>>` call; a build compiles it and
+// it exits 3. check's frontend trait solver indexes only concrete impls, and
+// `impl<T> Cmp for N<T>` is generic. Fixed 2026-10-31: check now settles such
+// a bound by building (see README, "check and generic impls").
+module app::main;
+pub trait Cmp { pub fn less(&self) -> bool; }
+pub struct N<T> {}
+pub impl<T> Cmp for N<T> { pub fn less(&self) -> bool { return true; } }
+fn engine<C>(c: C) -> i32 where C: Cmp { if (c.less()) { return 1; } return 0; }
+fn main() -> i32 { let n: N<i32> = N {}; return engine<N<i32>>(n) + 2; }

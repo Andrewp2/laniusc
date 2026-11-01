@@ -46,12 +46,12 @@ work on native Linux x86_64/glibc with libatomic:
   cleanly.
 - `std::parallel`: chunked `for_each`, `map`, ordered `reduce`, `scan` and
   stable `merge_sort` over shared arrays.
-- `std::par`: stable and unstable sorts, `map` and ordered `reduce` as
-  stolen tasks on a `std::steal` pool. The sorts sort runs with
-  `core::slice` pdqsort or the stable sort, then merge them in parallel at
-  merge-path splits. A Python model oracle covers 3,003 runs with 0
-  mismatches. On 10M i64 keys, 8 workers take 1.1–1.7 s, against 7.1–9.2 s
-  for single-threaded pdqsort.
+- `std::par`: stable and unstable sorts, `map`, ordered `reduce` and
+  `scan` as stolen tasks on a `std::steal` pool. The sorts keep one forked crew
+  for all phases, sort runs with a direct-comparison introsort or merge
+  sort, then merge them in parallel at merge-path splits. A Python model oracle covers 3,600 runs with 0
+  mismatches, including non-commutative scans. On 10M i64 keys, 8 workers take 387–392 ms, against 638–699 ms
+  for C++ `std::sort` at -O2.
 
 The stress fixture keeps exact invariants: 1,600,000 atomic adds; 400,000
 locked increments; 1 initializer among 16 racers; 200 barrier leaders; and
@@ -573,6 +573,8 @@ agreements with GNU `patch` at `-F0` and `-F2`. On a 1.6 MB pair, `seq-diff`
 runs within 2× of `git diff --no-index` in every mode (59-70 ms against
 43 ms for the default unified diff). It gets there by splitting and
 hash-consing lines in one word-at-a-time pass (`split_classify`).
+On the same inputs, `seq-patch` runs within 1.1× of GNU `patch` (10 ms) and
+`seq-merge` within 1.2× of `git merge-file` (99 against 83 ms).
 [Three-way merge](extended-merge3.md) (`ext::merge3`, `seq-merge`) aligns with
 the xdiff port. It agrees byte for byte with `git merge-file` and
 `git merge-file --diff3` on all 4,000 generated triples (2,000 distinct-line,
@@ -2258,7 +2260,7 @@ functional70, malformed45, slowloris12, conditional23 and concurrent39 on the
 event server plus four sequential groups, with exact server counters. TLS,
 threads, multipart ranges and allocation-failure coverage remain open.
 
-The [HTTP/1.1 client agent](extended-http-agent.md) (`ext::http_agent`) is a
+The [HTTP client agent](extended-http-agent.md) (`ext::http_agent`) is a
 synchronous `http://` and verified `https://` client over the same codec,
 `ext::http_url`, `ext::url_connect` and `ext::tls_stream`. It pools
 keep-alive cleartext and TLS connections per scheme, host and port under
@@ -2270,7 +2272,22 @@ response. The curl-like sample passes Python `http.server` oracle groups
 pool18, redirect29, upload10 and broken21, plus https17 against Python `ssl`
 origins with locally generated test certificates, with exact counters.
 Its `dial` opens an unpooled connection for protocols that take over after
-an HTTP/1.1 upgrade.
+an HTTP/1.1 upgrade. Over https it offers `h2` by ALPN and runs requests to
+an origin that selects it as streams of one [HTTP/2](extended-http2.md)
+connection; `fetch_all` multiplexes them. That h2 group (21 cases) runs
+against libnghttp2's server session over TLS.
+
+[HTTP/2](extended-http2.md) is three I/O-free modules:
+[`ext::hpack`](extended-hpack.md) (RFC 7541 with the canonical Huffman code,
+checked against the RFC Appendix C examples and both ways against
+libnghttp2's HPACK: rfc 8, nghttp2 3 and malformed 17 cases over 3,175
+blocks), `ext::http2_frame` (frame parsing with the RFC's size, stream and
+padding rules, SETTINGS checks, and writers that split HEADERS into
+CONTINUATION), and the `ext::http2` client engine (stream multiplexing under
+the peer's concurrency limit, flow control both ways, SETTINGS, PING,
+GOAWAY, RST_STREAM and response validation). The engine passes 17 cases
+against libnghttp2's server session and 46 against hand-built frames for
+every connection and stream error it must detect.
 
 The [WebSocket client](extended-websocket-client.md) (`ext::websocket_client`)
 uses `dial` for `ws://` and verified `wss://` URLs and the canonical

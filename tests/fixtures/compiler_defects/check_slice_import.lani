@@ -1,0 +1,8 @@
+// `laniusc check --stdlib-root stdlib` rejected every program importing
+// core::slice with LNC0008 at stdlib/core/slice.lani:899: the
+// `selection_engine<T,Natural<T>>` call needs the generic impl
+// `impl<T> Comparator<T,T> for Natural<T>`. Builds were never affected.
+// Fixed 2026-10-31; check now accepts this and a build exits 3.
+module app::main;
+import core::slice;
+fn main() -> i32 { return 3; }
