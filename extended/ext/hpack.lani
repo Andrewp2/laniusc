@@ -201,10 +201,10 @@ impl Table {
     }
     fn compact(&self) {
         if (self.dead < 4096 || self.dead * 2 < self.bytes.len()) { return; }
-        let raw: [u8] = self.bytes.as_slice(); let live: i32 = self.bytes.len() - self.dead; let i: i32 = 0;
-        while (i < live) { raw[i] = raw[self.dead + i]; i += 1; }
+        let live: i32 = self.bytes.len() - self.dead;
+        core::slice::copy_within(self.bytes.as_slice(), self.bytes.len(), self.dead, self.bytes.len(), 0);
         self.bytes.truncate(live);
-        let n: i32 = self.count(); i = 0;
+        let n: i32 = self.count(); let i: i32 = 0;
         while (i < n) { let e: Entry = self.entries.at(self.head + i); e.offset -= self.dead; self.entries.set(i, e); i += 1; }
         self.entries.truncate(n); self.head = 0; self.dead = 0;
     }
@@ -417,7 +417,7 @@ pub impl Encoder {
         if (incremental) {
             // Copy before adding: name or value may point into the table.
             let copy: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
-            if (copy.try_extend(name).is_err() || copy.try_extend(value).is_err()) { copy.destroy(); return core::result::Err(Error::AllocationFailed); }
+            if (copy.try_reserve(name.length + value.length).is_err() || copy.try_extend(name).is_err() || copy.try_extend(value).is_err()) { copy.destroy(); return core::result::Err(Error::AllocationFailed); }
             let raw: [u8] = copy.as_slice();
             let added = self.table.add(part(raw, 0, name.length), part(raw, name.length, value.length)); copy.destroy();
             if (added.is_err()) { return core::result::Err(added.unwrap_err()); }

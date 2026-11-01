@@ -257,8 +257,8 @@ pub impl Connection {
         return core::result::Ok(false);
     }
     fn compact(&self) {
-        if (self.consumed == 0) { return; } let all: core::slice::View<u8> = self.input.as_view(); let i: i32 = 0; let n: i32 = self.filled - self.consumed;
-        while (i < n) { all.values[all.start+i] = all.values[all.start+self.consumed+i]; i += 1; } self.filled = n; self.consumed = 0;
+        if (self.consumed == 0) { return; } let n: i32 = self.filled - self.consumed;
+        core::slice::copy_within(self.input.as_slice(), self.input.len(), self.consumed, self.filled, 0); self.filled = n; self.consumed = 0;
     }
     fn send_all(&self, data: core::slice::View<u8>) -> core::result::Result<i32,Error> {
         if (self.buffered) { return self.raw(data); }
