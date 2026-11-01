@@ -3,9 +3,14 @@
 // Modes: 0 std::par::sort_unstable, 1 std::par::sort_stable on (key, index),
 // 2 core::slice::sort_unstable, 3 core::slice::sort_stable on (key, index),
 // 4 std::par::map (key >> 1) ^ 21845, 5 std::par::reduce (wrapping sum,
-// ordered polynomial hash), 6 std::parallel::merge_sort (fork per round).
+// ordered polynomial hash), 6 std::parallel::merge_sort (fork per round),
+// 7 std::par::scan wrapping u64 prefix sum, 8 std::par::scan composing affine
+// maps x -> a*x + b mod P (a = key mod P, b = (key >> 20) mod P; not
+// commutative), 9 a sequential wrapping u64 prefix sum. The scan modes use a
+// 997-element grain, so small inputs still split into many tasks.
 // stdout: the n result keys as i64, then for modes 1 and 3 the n original
-// indices as u32; mode 5 writes sum, hash and scale as three u64.
+// indices as u32; mode 5 writes sum, hash and scale as three u64; mode 8
+// writes the n prefix maps as (a, b) u64 pairs.
 // stderr: "ms <milliseconds of the operation alone>".
 module app::main;
 import alloc::allocator;
@@ -34,6 +39,16 @@ struct Mix {}
 impl Mix { pub fn borrow(&self) -> &Mix { return self; } }
 pub impl core::function::Mapper<i64, i64> for Mix { pub fn apply(&self, value: i64) -> i64 { return (value >> 1) ^ 21845; } }
 struct Acc { sum: u64, hash: u64, scale: u64 }
+struct Sum {}
+impl Sum { pub fn borrow(&self) -> &Sum { return self; } }
+pub impl core::iter::Folder<u64, u64> for Sum { pub fn apply(&self, acc: u64, value: u64) -> u64 { return acc + value; } }
+// first then next: x -> next.a * (first.a * x + first.b) + next.b.
+struct Affine { a: u64, b: u64 }
+struct Compose {}
+impl Compose { pub fn borrow(&self) -> &Compose { return self; } }
+pub impl core::iter::Folder<Affine, Affine> for Compose {
+    pub fn apply(&self, first: Affine, next: Affine) -> Affine { return Affine { a: (next.a * first.a) % P, b: (next.a * first.b + next.b) % P }; }
+}
 struct Fold {}
 impl Fold { pub fn borrow(&self) -> &Fold { return self; } }
 pub impl core::iter::Folder<Acc, i64> for Fold {
@@ -100,10 +115,10 @@ fn main() -> i32 {
     }
     let input: [u8] = core::mem::typed_slice_from_raw_parts<u8>(raw, bytes_in);
     let region: std::sync::Region = std::sync::map_shared(((n as usize) + 64) * 48 + 16777216).unwrap();
-    let out_bytes: i32 = n * 12 + 24;
+    let out_bytes: i32 = n * 16 + 24;
     let out: ptr = alloc::allocator::alloc((out_bytes + 64) as usize, 8);
     let output: [u8] = core::mem::typed_slice_from_raw_parts<u8>(out, out_bytes);
-    if (mode < 0 || mode > 6) { return 4; }
+    if (mode < 0 || mode > 9) { return 4; }
     let started: i64 = 0; let elapsed: i64 = 0; let i: i32 = 0;
     let plan: std::par::Plan = std::par::plan(region.borrow(), workers, 65536).unwrap();
     if (mode == 1 || mode == 3) {
@@ -159,6 +174,38 @@ fn main() -> i32 {
         i = 0;
         while (i < n) { put64(output, i * 8, result[i] as u64); i += 1; }
         out_bytes = n * 8;
+    }
+    if (mode == 7 || mode == 9) {
+        let sums: std::parallel::Shared<u64> = std::parallel::shared<u64>(region.borrow(), n).unwrap();
+        let partials: std::parallel::Shared<u64> = std::parallel::shared<u64>(region.borrow(), n / 997 + 2).unwrap();
+        let values: [u64] = sums.view();
+        while (i < n) { values[i] = i64_at(input, i * 8) as u64; i += 1; }
+        let scan_plan: std::par::Plan = std::par::plan(region.borrow(), workers, 997).unwrap();
+        let sum: Sum = Sum {};
+        started = millis();
+        if (mode == 7) { if (std::par::scan(scan_plan, sums, partials, 0, sum.borrow()).is_err()) { return 3; } }
+        else { let acc: u64 = 0; i = 0; while (i < n) { acc = acc + values[i]; values[i] = acc; i += 1; } }
+        elapsed = millis() - started;
+        i = 0;
+        while (i < n) { put64(output, i * 8, values[i]); i += 1; }
+        out_bytes = n * 8;
+    }
+    if (mode == 8) {
+        let maps: std::parallel::Shared<Affine> = std::parallel::shared<Affine>(region.borrow(), n).unwrap();
+        let partials: std::parallel::Shared<Affine> = std::parallel::shared<Affine>(region.borrow(), n / 997 + 2).unwrap();
+        let values: [Affine] = maps.view();
+        while (i < n) {
+            let key: u64 = i64_at(input, i * 8) as u64;
+            values[i] = Affine { a: key % P, b: (key >> 20) % P }; i += 1;
+        }
+        let scan_plan: std::par::Plan = std::par::plan(region.borrow(), workers, 997).unwrap();
+        let compose: Compose = Compose {};
+        started = millis();
+        if (std::par::scan(scan_plan, maps, partials, Affine { a: 1, b: 0 }, compose.borrow()).is_err()) { return 3; }
+        elapsed = millis() - started;
+        i = 0;
+        while (i < n) { put64(output, i * 16, values[i].a); put64(output, i * 16 + 8, values[i].b); i += 1; }
+        out_bytes = n * 16;
     }
     std::io::write_text(2, "ms "); std::io::write_i32(2, elapsed as i32); std::io::write_newline(2);
     return emit(out, out_bytes);

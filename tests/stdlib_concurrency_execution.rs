@@ -191,10 +191,10 @@ fn parallel_grep_matches_fixed_string_grep() {
     }
 }
 
-// std::par sorts, map and reduce against a Rust model of the same modes
+// std::par sorts, map, reduce and scan against a Rust model of the same modes
 // (par_oracle.py runs the larger randomized sweep against Python).
 #[test]
-fn par_sorts_map_and_reduce_match_a_model() {
+fn par_sorts_map_reduce_and_scan_match_a_model() {
     let program = native("tests/fixtures/stdlib_execution/concurrency/par_sort.lani", "par_sort");
     let mut state: u64 = 11;
     let mut shapes: Vec<Vec<i64>> = Vec::new();
@@ -209,7 +209,7 @@ fn par_sorts_map_and_reduce_match_a_model() {
     shapes.push(vec![]);
     shapes.push(vec![-1]);
     for keys in &shapes {
-        for (mode, workers) in [(0u32, 7u32), (1, 8), (2, 1), (3, 1), (4, 3), (5, 8), (6, 4)] {
+        for (mode, workers) in [(0u32, 7u32), (1, 8), (2, 1), (3, 1), (4, 3), (5, 8), (6, 4), (7, 5), (8, 8), (9, 1)] {
             let mut input = Vec::new();
             for word in [mode, workers, keys.len() as u32] { input.extend_from_slice(&word.to_le_bytes()); }
             for key in keys { input.extend_from_slice(&key.to_le_bytes()); }
@@ -233,6 +233,19 @@ fn par_sorts_map_and_reduce_match_a_model() {
                     for &i in &order { expected.extend_from_slice(&i.to_le_bytes()); }
                 }
                 4 => for key in keys { expected.extend_from_slice(&((key >> 1) ^ 21845).to_le_bytes()); },
+                7 | 9 => {
+                    let mut acc = 0u64;
+                    for &key in keys { acc = acc.wrapping_add(key as u64); expected.extend_from_slice(&acc.to_le_bytes()); }
+                }
+                8 => {
+                    let (mut a, mut b) = (1u64, 0u64);
+                    for &key in keys {
+                        let (ka, kb) = ((key as u64) % 1_000_000_007, ((key as u64) >> 20) % 1_000_000_007);
+                        (a, b) = (ka * a % 1_000_000_007, (ka * b + kb) % 1_000_000_007);
+                        expected.extend_from_slice(&a.to_le_bytes());
+                        expected.extend_from_slice(&b.to_le_bytes());
+                    }
+                }
                 _ => {
                     let (mut sum, mut hash, mut scale) = (0u64, 0u64, 1u64);
                     for &key in keys {

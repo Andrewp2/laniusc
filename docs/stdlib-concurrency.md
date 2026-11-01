@@ -210,9 +210,9 @@ claims. The call then returns `Err(Cancelled)` or `Err(Failed(n))`, and the
 outputs are partly written. A cancelled token stays cancelled, so use a
 fresh token for each plan you want to rerun.
 
-## Parallel sorting, map and reduce
+## Parallel sorting, map, reduce and scan
 
-`std::par` runs slice algorithms as tasks on a `std::steal` pool. A
+`std::par` runs sorts, `map`, `reduce` and `scan` as tasks on a `std::steal` pool. A
 `Plan(region, workers, grain)` holds the pool's deques (1,024 tasks per
 worker) and a target task size. Each phase seeds its tasks round-robin over
 the deques, forks the workers, and they pop, steal and run tasks until
@@ -225,6 +225,7 @@ the grain grows to fit.
 | `sort_stable(plan, data, scratch)` | Same shape, but each run uses `core::slice::sort_stable`, with scratch taken from the run's own range of `scratch`. Every merge takes the left run on ties, so equal keys keep their input order |
 | `map(plan, input, output, &mapper)` | `output[i] = mapper.apply(input[i])` in grain-sized stolen tasks. Returns the task count |
 | `reduce(plan, input, partials, identity, &fold, &combine)` | Each task folds its range from `identity` into `partials[task]`. The parent then combines those results in task order, so `combine` must be associative but need not be commutative. `partials` needs `ceil(length / grain)` slots |
+| `scan(plan, data, partials, identity, &combine)` | In-place inclusive scan: `data[i]` becomes the combination of `data[0..=i]` in index order. Pass 1 folds each task's range into `partials[task]`. The parent turns those into exclusive prefixes in task order, and pass 2 rescans each range from its prefix. Same `combine` and `partials` rules as `reduce`. Returns the task count |
 
 Merges are parallel within a round, too. Each pair merge is cut into
 grain-sized output pieces at merge-path (co-rank) boundaries, found by binary
@@ -359,8 +360,12 @@ compares every mode with a Python model:
 
 The shapes are random full-range keys, all-equal keys, sorted, reversed, four
 distinct values, organ pipe, sawtooth, i64 extremes and dense duplicates.
-Sizes run from 0 to 300,000 keys, with 1 to 13 workers. Eight seeds ran
-3,003 mode runs with 0 mismatches.
+The scan modes compare running prefixes: a wrapping u64 sum, and the
+composition of affine maps `x -> a*x + b` mod 1,000,000,007, which is not
+commutative. They use a 997-element grain, so even small inputs split into
+many tasks. Sizes run from 0 to 300,000 keys, with 1 to 13 workers. Eight
+seeds covered every mode: 3,003 runs before `scan` existed and 3,600 runs
+after, with 0 mismatches.
 
 On 10,000,000 random i64 keys, this laptop (16 hardware threads, shared with
 other jobs) timed the operation alone, as the runner measures it:
@@ -384,6 +389,19 @@ file. The whole `std::par` process, including binary decoding and output,
 took 2.4–2.6 s at 8–16 workers. Its output matched GNU's byte for byte once
 converted.
 
+`scan` on the same 10,000,000 keys:
+
+| Scan | Workers | Time |
+| --- | --- | --- |
+| Sequential wrapping u64 prefix sum | 1 | 115 ms |
+| `std::par::scan` u64 sum | 1 / 8 / 16 | 99 / 100 / 127 ms |
+| `std::par::scan` affine composition | 1 / 8 / 16 | 626 / 209 / 197 ms |
+
+The sum is limited by memory bandwidth: two passes over 80 MB give no gain
+from more workers. The affine scan does a few modular multiplies per element
+and runs 3.0x faster at 8 workers. All worker counts produced
+byte-identical output.
+
 The run sorts dominate. At 8 workers they took 943 ms, and each of the five
 merge rounds took 27–39 ms. Single-threaded `core::slice::sort_unstable`
 pays about 19 ns per comparison through `core::ordering::Comparator`
@@ -403,8 +421,9 @@ compiles the four fixtures and four samples through
 - The quicksort prints `sorted 2000000`.
 - The parallel fixture produces its exact lines.
 - The grep matches GNU `grep -F` on generated inputs.
-- Every `par_sort` mode matches a Rust model on random, five-valued,
-  all-equal, sorted, reversed, empty and one-key inputs.
+- Every `par_sort` mode, the scans included, matches a Rust model on
+  random, five-valued, all-equal, sorted, reversed, empty and one-key
+  inputs.
 
 These test wrappers are checked at merge time; this session ran the same
 programs directly.
