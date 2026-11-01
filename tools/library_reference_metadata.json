@@ -1036,6 +1036,11 @@
         "docs/extended-diff.md"
       ]
     },
+    "ext::diffstat": {
+      "guides": [
+        "docs/extended-wordiff.md"
+      ]
+    },
     "ext::discrete_distributions": {
       "guides": [
         "docs/extended-discrete-distributions.md"
@@ -1805,6 +1810,11 @@
         "docs/extended-sample-moments.md"
       ],
       "note": "Portable binary64 nonnegative real-weight summaries with separate population/reliability variance/covariance/stddev, positive-weight count, total weight, stable correction denominator, effective count, correlation and simple fit. Coordinates are validated even at zero weight; zero reports explicit no change. Borrowed equal-length batches are atomic and indexed. All three registered gates pass on Linux x86_64: the initial 13.07-second run covers 1,908 independent Fraction/220-digit Decimal cases, contracts and a separate CPU oracle-control test; the strengthened current contract rerun passes in 6.03 seconds with paired shape/count/late-y-overflow rollback and an empty memory syscall trace. The rerun replaces the older contract receipt. The current real CSV program passes four registered tests/66 cases. Both f64 backing forms are descending, with no positive packed-stride claim. No allocation or host math; manual backing lifetimes, finite-state/gradual-underflow limits and unclaimed broader accuracy, targets and formal proofs remain explicit."
+    },
+    "ext::wordiff": {
+      "guides": [
+        "docs/extended-wordiff.md"
+      ]
     },
     "ext::x509": {
       "guides": [

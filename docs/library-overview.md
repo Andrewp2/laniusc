@@ -565,6 +565,12 @@ agreements with GNU `patch` at `-F0` and `-F2`.
 for byte with `git merge-file`, `git merge-file --diff3` and GNU `diff3 -m` on
 2,000/2,000 distinct-line triples each; repeated-line triples agree on
 1,787-1,800 of 2,000, with equal-cost alignment differences otherwise.
+[Word diff and diffstat](extended-wordiff.md) (`ext::wordiff`, `ext::diffstat`,
+`seq-diff --word-diff|--char-diff|--stat`, `seq-diffstat`) use a port of git's
+xdiff alignment (`Algorithm::Xdiff`). Their output is identical to git 2.43 on
+all 2,040 generated pairs for word diffs, character diffs and `--stat`, on
+1,500 `git diff --stat` reports over generated repositories and on 282
+`diff -ruN` patches.
 
 The preceding [reusable regex-workspace increment](library-regex-workspace-plan.md) is
 implemented and passes the selected Workspace/Search, regex, lexer,
