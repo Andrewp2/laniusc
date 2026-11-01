@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **350 modules**, **18484 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **351 modules**, **18503 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -318,6 +318,7 @@ Inventory: **350 modules**, **18484 declaration/member entries**. Counts include
 | [ext::server_poll](ext/server_poll.md) | [source](../../extended/ext/server_poll.lani#L2) | 199 | Source inventory | [extended-server-poll](../extended-server-poll.md), [library-server-contract](../library-server-contract.md), [library-server-concurrency-plan](../library-server-concurrency-plan.md) |
 | [ext::settings](ext/settings.md) | [source](../../extended/ext/settings.lani#L3) | 118 | Source inventory | [extended-settings](../extended-settings.md) |
 | [ext::settings_env](ext/settings_env.md) | [source](../../extended/ext/settings_env.lani#L3) | 27 | Source inventory | [extended-settings](../extended-settings.md) |
+| [ext::sha1](ext/sha1.md) | [source](../../extended/ext/sha1.lani#L5) | 18 | Source inventory | **Unregistered** |
 | [ext::signal](ext/signal.md) | [source](../../extended/ext/signal.lani#L3) | 47 | Source inventory | [extended-signal](../extended-signal.md) |
 | [ext::sparse](ext/sparse.md) | [source](../../extended/ext/sparse.lani#L3) | 43 | Source inventory | [extended-sparse](../extended-sparse.md), [extended-graph-walk](../extended-graph-walk.md) |
 | [ext::sparse_cg](ext/sparse_cg.md) | [source](../../extended/ext/sparse_cg.lani#L4) | 42 | Source inventory | [extended-sparse-cg](../extended-sparse-cg.md), [extended-graph-diffuse](../extended-graph-diffuse.md) |
@@ -356,7 +357,7 @@ Inventory: **350 modules**, **18484 declaration/member entries**. Counts include
 | [ext::url_connect](ext/url_connect.md) | [source](../../extended/ext/url_connect.lani#L3) | 63 | Source inventory | [extended-url-client](../extended-url-client.md), [library-url-client-plan](../library-url-client-plan.md), [stdlib-resolve](../stdlib-resolve.md) |
 | [ext::url_tls](ext/url_tls.md) | [source](../../extended/ext/url_tls.lani#L3) | 40 | Source inventory | [extended-url-client](../extended-url-client.md), [extended-fetch-url](../extended-fetch-url.md), [extended-https-client](../extended-https-client.md), [library-url-client-plan](../library-url-client-plan.md) |
 | [ext::wave](ext/wave.md) | [source](../../extended/ext/wave.lani#L2) | 38 | Source inventory | [extended-wave](../extended-wave.md) |
-| [ext::websocket](ext/websocket.md) | [source](../../extended/ext/websocket.lani#L3) | 82 | Source inventory | [extended-websocket](../extended-websocket.md), [extended-openssl-websocket](../extended-openssl-websocket.md), [extended-websocket-upgrade-program](../extended-websocket-upgrade-program.md), [extended-websocket-stream](../extended-websocket-stream.md), [extended-websocket-upgrade](../extended-websocket-upgrade.md), [extended-websocket-once](../extended-websocket-once.md), [extended-websocket-echo](../extended-websocket-echo.md) |
+| [ext::websocket](ext/websocket.md) | [source](../../extended/ext/websocket.lani#L3) | 83 | Source inventory | [extended-websocket](../extended-websocket.md), [extended-openssl-websocket](../extended-openssl-websocket.md), [extended-websocket-upgrade-program](../extended-websocket-upgrade-program.md), [extended-websocket-stream](../extended-websocket-stream.md), [extended-websocket-upgrade](../extended-websocket-upgrade.md), [extended-websocket-once](../extended-websocket-once.md), [extended-websocket-echo](../extended-websocket-echo.md) |
 | [ext::websocket_client](ext/websocket_client.md) | [source](../../extended/ext/websocket_client.lani#L6) | 64 | Source inventory | [extended-websocket-client](../extended-websocket-client.md), [extended-websocket](../extended-websocket.md), [extended-http-agent](../extended-http-agent.md), [extended-openssl-websocket](../extended-openssl-websocket.md) |
 | [ext::websocket_stream](ext/websocket_stream.md) | [source](../../extended/ext/websocket_stream.lani#L3) | 59 | Source inventory | [extended-websocket-stream](../extended-websocket-stream.md), [extended-websocket-upgrade](../extended-websocket-upgrade.md), [extended-websocket-once](../extended-websocket-once.md), [extended-websocket](../extended-websocket.md), [extended-websocket-echo](../extended-websocket-echo.md) |
 | [ext::websocket_upgrade](ext/websocket_upgrade.md) | [source](../../extended/ext/websocket_upgrade.lani#L3) | 95 | Source inventory | [extended-websocket-upgrade](../extended-websocket-upgrade.md), [extended-websocket-stream](../extended-websocket-stream.md), [extended-websocket-once](../extended-websocket-once.md), [extended-websocket](../extended-websocket.md), [extended-websocket-echo](../extended-websocket-echo.md) |
@@ -450,4 +451,5 @@ These are discovery/contract-link gaps, not claims that their code is missing or
 - [ext::http_rewrite](ext/http_rewrite.md)
 - [ext::http_service_tls](ext/http_service_tls.md)
 - [ext::openssl_tls_lifecycle](ext/openssl_tls_lifecycle.md)
+- [ext::sha1](ext/sha1.md)
 - [ext::tls_clients](ext/tls_clients.md)
