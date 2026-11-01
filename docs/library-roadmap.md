@@ -309,8 +309,16 @@ applier with typed per-hunk reject reasons. The `seq-diff`/`seq-patch` tools
 pass 1,000 generated pairs: 878 Myers edit lengths equal an O(N·M) LCS, GNU
 `patch` and `seq-patch` reproduce every target, `seq-patch` applies real GNU
 `diff -u`/`-U0`/`-U5` output, and 333 offset/fuzz cases match GNU `patch`
-output and rejects at `-F0` and `-F2` (328 more over repeated-line files). Multi-file patch orchestration, reverse
-application, `.rej` files and word/character granularities remain.
+output and rejects at `-F0` and `-F2` (328 more over repeated-line files).
+[Multi-file patches](extended-patchset.md) now add tree patching with GNU
+`patch` semantics (offset/fuzz, reversed-patch detection with `-t`/`-N`/`-f`/`-R`,
+renames, copies, modes, creation and deletion), `git apply` semantics
+(exact placement, atomic writes) and the `git apply --3way` merge fallback
+through `ext::merge3`. All 5,518 tree and exit-status comparisons against GNU
+`patch` 2.7.6 and git 2.43 over 900 generated repositories agree. Binary
+patches are refused with an error. `.rej` files, `-d`/`-o`/`--dry-run`,
+whitespace options and blob lookup by `index` id (`--base-dir` stands in)
+remain.
 [Three-way merge](extended-merge3.md) adds diff3 chunking with git-style
 zealous/alnum conflict refinement and merge/diff3/GNU marker forms. Over 4,000
 generated triples, `seq-merge` matches `git merge-file`, `git merge-file

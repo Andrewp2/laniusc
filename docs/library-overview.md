@@ -572,6 +572,14 @@ xdiff alignment (`Algorithm::Xdiff`). Their output is identical to git 2.43 on
 all 2,040 generated pairs for word diffs, character diffs and `--stat`, on
 1,500 `git diff --stat` reports over generated repositories and on 282
 `diff -ruN` patches.
+[Multi-file patches](extended-patchset.md) (`ext::patchset`, `seq-patch -i`)
+read git extended headers (renames, copies, modes, creation, deletion,
+binary sections), reverse patches, detect reversed patches as GNU `patch`
+does, place hunks as `git apply` does and fall back to a `git apply --3way`
+merge. On 900 generated repositories patched into seven kinds of mutated
+tree, the resulting trees and exit statuses agree with GNU `patch`
+(`-t`/`-N`/`-f`/`-R`), `git apply` (and `-R`) and `git apply --3way` in all
+5,518 comparisons. Binary patches are refused with an error.
 
 The preceding [reusable regex-workspace increment](library-regex-workspace-plan.md) is
 implemented and passes the selected Workspace/Search, regex, lexer,
