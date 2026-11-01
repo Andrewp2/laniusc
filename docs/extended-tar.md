@@ -70,10 +70,14 @@ Negative or fractional times require a different archive format.
 
 ## Reader contract
 
-`reader_at(input, cursor, full_uname, full_gname)` and `writer_at(output,
-cursor)` resume at a record-aligned offset; `ext::pax` uses them after
-extension headers. The two flags accept an unterminated 32-byte owner field
-when a pax record replaces it; `reader` keeps them false.
+`reader_with(input, cursor, options)` and `writer_at(output, cursor)` resume
+at a record-aligned offset; `ext::pax` uses them after extension headers.
+`ReadOptions { full_uname, full_gname, gnu, headers_only }` (all false from
+`read_options()`, as `reader` uses) accept unterminated 32-byte owner fields,
+old-GNU magic with base-256 numbers, and header-only parsing for streaming
+callers. `Writer.add_header(meta, size)` writes one header and leaves the
+`size` data bytes and padding to the caller. The
+[pax guide](extended-pax.md#library-api) gives the details.
 
 | API | Result |
 | --- | --- |

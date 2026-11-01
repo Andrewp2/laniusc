@@ -12,6 +12,18 @@
         "docs/stdlib-layout.md"
       ]
     },
+    "alloc::big_int": {
+      "guides": [
+        "docs/stdlib-big-integers.md",
+        "docs/stdlib-big-int.md"
+      ]
+    },
+    "alloc::big_uint": {
+      "guides": [
+        "docs/stdlib-big-integers.md",
+        "docs/stdlib-big-uint.md"
+      ]
+    },
     "alloc::binary_heap": {
       "guides": [
         "docs/stdlib-binary-heap.md",
@@ -373,7 +385,8 @@
       "guides": [
         "docs/stdlib-float-decimal.md",
         "docs/stdlib-float-precision.md"
-      ]
+      ],
+      "note": "Eisel-Lemire parsing and Grisu3 shortest formatting run first; when they cannot prove the result, the exact big-integer algorithm decides, so results are unchanged. Native Linux x86_64 batches agree with Python float()/repr() on 4.8M generated values (parse64 2M, parse32 500k, format64 2M, format32 300k), including subnormals, exact midpoints and extremes."
     },
     "core::float_order": {
       "guides": [
@@ -651,6 +664,11 @@
         "docs/library-host-operation-support.md"
       ]
     },
+    "core::search": {
+      "guides": [
+        "docs/stdlib-search.md"
+      ]
+    },
     "core::set": {
       "guides": [
         "docs/stdlib-fixed-capacity.md",
@@ -885,20 +903,17 @@
       ],
       "note": "Allocation-free literal Bash-word measurement/decoding into caller storage. Complete and Prefix modes share one traversal; syntax, logical ranges and capacity are admitted before writes. It preserves non-UTF-8 bytes, supports literal quote/escape concatenation and explicitly rejects expansions/operators outside the documented profile. Pure contracts and a 389-record decoder/reply model execute on native Linux x86_64. This is neither shell evaluation nor the response-file grammar; the separate adapter has finite Bash 5.2/bash-completion 2.11 function and actual PTY insertion acceptance. Other shells and arbitrary expansions are outside this literal profile."
     },
-    "ext::big_int": {
-      "guides": [
-        "docs/extended-big-int.md"
-      ]
-    },
-    "ext::big_uint": {
-      "guides": [
-        "docs/extended-big-uint.md"
-      ]
-    },
     "ext::cbor": {
       "guides": [
-        "docs/extended-cbor.md"
+        "docs/extended-cbor.md",
+        "docs/extended-cbor-stream.md"
       ]
+    },
+    "ext::cbor_stream": {
+      "guides": [
+        "docs/extended-cbor-stream.md"
+      ],
+      "note": "Allocating streaming RFC 8949 codec over ext::cbor events: a chunk-fed Decoder (sticky typed errors with u64 offsets, depth/item/string/input limits, CBOR sequences), EventReader over core::io::Read, and a buffered Writer with flush_to core::io::Write. Optional core deterministic mode (section 4.2.1) rejects or produces non-preferred heads, indefinite lengths, non-shortest floats and unsorted or duplicate keys. Native Linux x86_64 binaries agree with all 81 hand-typed Appendix A rows and an independent Python implementation on 1,500 generated, 3,000 mutated, 2,400 limit and 1,200 sequence cases at four chunk sizes; the cbor-to-json sample agrees on 700 cases. The cargo registrations were not run in this session."
     },
     "ext::cli": {
       "guides": [
@@ -1041,6 +1056,12 @@
       "guides": [
         "docs/extended-dns-client.md"
       ]
+    },
+    "ext::stub_resolver": {
+      "guides": [
+        "docs/extended-stub-resolver.md"
+      ],
+      "note": "No caching and no NSS: hosts content then DNS. Answers own their storage; destroy once. Evidence is finite native Linux x86_64 CPU execution against loopback fake servers."
     },
     "ext::form": {
       "guides": [
@@ -1187,9 +1208,10 @@
     "ext::http_service": {
       "guides": [
         "docs/extended-http-service.md",
-        "docs/extended-http.md"
+        "docs/extended-http.md",
+        "docs/stdlib-event-loop.md"
       ],
-      "note": "Sequential keep-alive HTTP/1.1 service over the ext::http codec: absolute head/body/idle/write deadlines, typed errors with status_for, pipelining, chunked bodies, 100 Continue, a response writer and an id-based router. The static-file sample passes Python loopback oracle groups functional69/malformed42/slowloris12 with exact server counters; one connection is served at a time."
+      "note": "Keep-alive HTTP/1.1 service over the ext::http codec: absolute head/body/idle/write deadlines, typed errors with status_for (400/408/413/431/501/505), pipelining, chunked bodies, 100 Continue, Date, a response writer with file streaming and an id-based router. A one-thread std::event Server multiplexes buffered connections; a sequential driver shares the code. The static-file sample (listings, ranges, ETag/Last-Modified conditional requests) passes nine Python loopback oracle groups with exact server counters."
     },
     "ext::http_url": {
       "guides": [
@@ -1304,6 +1326,11 @@
     "ext::log": {
       "guides": [
         "docs/extended-log.md"
+      ]
+    },
+    "ext::merge3": {
+      "guides": [
+        "docs/extended-merge3.md"
       ]
     },
     "ext::openssl_digest": {
@@ -1554,7 +1581,7 @@
         "docs/extended-toml-streaming.md",
         "docs/extended-toml-normalize.md"
       ],
-      "note": "One constant-storage byte machine serves Document.encoded_len, Document.encoding, owned encode and direct encode_into. The free measure function is replaced by the encoded_len method. W counts emitted bytes, nonroot node visits and fraction scan/trim digits; sizing admits W and the other paths admit 2W for preflight/replay. This changes old owned encode W and encode_into 2W+output-bytes policy. Preflight reports the first exhausted bound in generator order: per-byte output cap precedes byte work, with node/fraction charges where encountered; there is no whole-pass output-over-work precedence. Cursor copies fork replay allowance. Borrowed Encoding implements Read only, with exact fills, inert valid zero requests, metadata rejection before EOF, independent cursor copies and immutable/disjoint backing obligations. Borrowed serialization and direct encode_into allocate no output storage; every returned encode_into error preserves the complete destination. Owned output uses the existing collector, skips allocation for empty output, and cleans partial owners on failure. The linked guides record current runtime acceptance; older parser/corpus/normalizer receipts retain their original source scope. Initial target Linux x86_64 CPU output, with other hosts/device execution/lifetime enforcement/proofs separate.",
+      "note": "One constant-storage byte machine serves Document.encoded_len, Document.encoding, owned encode and direct encode_into. The free measure function is replaced by the encoded_len method. W counts emitted bytes, nonroot node visits and fraction scan/trim digits; sizing admits W and the other paths admit 2W for preflight/replay. This changes old owned encode W and encode_into 2W+output-bytes policy. Preflight reports the first exhausted bound in generator order: per-byte output cap precedes byte work, with node/fraction charges where encountered; there is no whole-pass output-over-work precedence. Cursor copies fork replay allowance. Borrowed Encoding implements Read only, with exact fills, inert valid zero requests, metadata rejection before EOF, independent cursor copies and immutable/disjoint backing obligations. Borrowed serialization and direct encode_into allocate no output storage; every returned encode_into error preserves the complete destination. Owned output uses the existing collector, skips allocation for empty output, and cleans partial owners on failure. The linked guides record current runtime acceptance; older parser/corpus/normalizer receipts retain their original source scope. Initial target Linux x86_64 CPU output, with other hosts/device execution/lifetime enforcement/proofs separate. Python tomllib oracle (2026-10-31): 1,754 edge/generated/mutated documents agree through the normalizer (value equality in order, idempotent output, typed rejections); the only differences are 7 TOML 1.1-only inputs and 2 integers outside i64, both documented policy.",
       "declarations": {
         "encode": "Admit the shared borrowed reader under a 2W serializer budget, then collect independent String output. Empty output allocates nothing; partial output is destroyed on error and document owners are preserved. See the linked streaming guide for execution evidence.",
         "encode_into": "Validate destination metadata, preflight semantic/output limits, check capacity, reserve replay work and fill directly without output allocation. Every returned error preserves the entire destination; source/cursor/destination disjointness is a manual precondition. See the linked streaming guide for execution evidence."
@@ -1562,12 +1589,21 @@
     },
     "ext::unicode_case": {
       "guides": [
-        "docs/extended-unicode-case.md"
+        "docs/extended-unicode-case.md",
+        "docs/extended-unicode-uconv.md"
       ]
     },
     "ext::unicode_case_data": {
       "guides": [
         "docs/extended-unicode-case.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "ext::unicode_case_fast_data": {
+      "guides": [
+        "docs/extended-unicode-case.md",
+        "docs/extended-unicode-uconv.md"
       ],
       "role": "support",
       "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
@@ -1951,6 +1987,11 @@
       "profile": "Unbound host declarations",
       "note": "The direct legacy network service declarations are unbound. Metadata helpers describe that unavailable service; executable owned sockets use std::socket over std::linux separately."
     },
+    "std::parallel": {
+      "guides": [
+        "docs/stdlib-concurrency.md"
+      ]
+    },
     "std::poll": {
       "guides": [
         "docs/stdlib-poll.md"
@@ -1996,6 +2037,12 @@
       ],
       "note": "No asynchronous handlers: handled signals are blocked and read from a signalfd. Masks are per thread; use from a single-threaded process. Receivers close exactly once. Evidence is finite native Linux x86_64 CPU execution."
     },
+    "std::resolver_config": {
+      "guides": [
+        "docs/stdlib-resolver-config.md"
+      ],
+      "note": "Lenient glibc-style parsing; unusable lines are counted, not errors. Config owns its lists; destroy once. Evidence is finite native Linux x86_64 CPU execution."
+    },
     "std::rlimit": {
       "guides": [
         "docs/stdlib-rlimit.md"
@@ -2014,6 +2061,11 @@
         "unix_pair": "Creates two connected unnamed Unix stream endpoints with CLOEXEC and the selected mode. Exact-zero status and two distinct nonnegative descriptors publish both owners together; full-width status checks precede narrowing, and malformed invented outputs grant no authority to close arbitrary integers.",
         "unix_from_owned_handle": "Adopts an exclusively owned live Unix-stream descriptor. Rejects a negative number only; family, type, state and flags are caller preconditions. It does not duplicate the descriptor or set CLOEXEC."
       }
+    },
+    "std::steal": {
+      "guides": [
+        "docs/stdlib-concurrency.md"
+      ]
     },
     "std::stream": {
       "guides": [
@@ -2120,7 +2172,7 @@
       "guides": [
         "docs/extended-json-stream.md"
       ],
-      "note": "Byte-fed RFC 8259 tokenizer (one token per feed, arbitrary chunk splits, incremental UTF-8 validation, lone-surrogate rejection, exact number spelling, typed errors with u64 offsets, depth/string/number limits) and a structural writer emitting the ext::json compact byte policy. Native Linux x86_64 binaries from the GPU compiler agree with strict Python json on 2,237 jq-lite/bytewise cases and with Python csv on 550 csv-to-json cases; the cargo registration was not run in this session."
+      "note": "Byte-fed RFC 8259 tokenizer (one token per feed, arbitrary chunk splits, incremental UTF-8 validation, lone-surrogate rejection, exact number spelling, typed errors with u64 offsets, depth/string/number limits) and a structural writer emitting the ext::json compact byte policy. Native Linux x86_64 binaries from the GPU compiler agree with strict Python json on 2,237 jq-lite/bytewise cases and with Python csv on 550 csv-to-json cases; TokenReader (core::io::Read, caller scratch) and Writer.flush_to (core::io::Write) pass a further 572 streaming cases with 7-byte scratch. The cargo registrations were not run in this session."
     },
     "core::ring": {
       "guides": [
@@ -2139,6 +2191,12 @@
         "docs/stdlib-lru-cache.md"
       ],
       "note": "Fixed-capacity LRU cache: one node arena on intrusive hash-bucket chains (load at most one) and a doubly linked recency list. Only with_capacity allocates; put/get/peek/touch/remove/pop_oldest are O(1) expected and never allocate. Recency changes only through put, get and touch; a full put evicts the oldest entry."
+    },
+    "core::float_tables": {
+      "guides": [
+        "docs/stdlib-float-decimal.md"
+      ],
+      "note": "Generated by tools/generate_float_tables.py: 128-bit powers of five for Eisel-Lemire and 64-bit cached powers of ten for Grisu3."
     }
   }
 }

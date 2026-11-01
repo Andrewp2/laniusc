@@ -89,8 +89,16 @@ The work budget starts afresh for each regex search; it is not a total process
 instruction count. Input scanning, UTF-8 validation, and native I/O are outside
 that budget. The line limit bounds input storage per record. The process may
 consume an unlimited number of records, retaining one geometrically growing
-buffer and one compiled regex. Provider scratch is created and released for each
-search. Spare line capacity and regex scratch mean these limits do not specify a
+buffer and one compiled regex. An assertion-free pattern also gets one
+capture-free [lazy DFA](extended-regex.md#capture-free-dfa-matching), which
+answers each record exactly as the VM would. VM scratch is created and released
+only for a search the DFA cannot decide, or for patterns with assertions. On a
+915,606-byte, 25,000-line corpus, `-c` searches for `zzz`, `abs`, `max\(`,
+`(min|max)\([^)]*,`, `9{3,}` and `[0-9]+ *\*\* *[0-9]+` dropped from
+3.0–3.8 s to 0.15–0.23 s each, with identical counts and `-n` output. The
+assertion pattern `^ *1` still takes about 3 s on the VM. These are wall times
+on a loaded laptop. Allocation-failure receipts below predate the DFA, which
+adds fixed cache allocations. Spare line capacity and regex scratch mean these limits do not specify a
 total memory limit. The input is read in 1024-byte chunks; a UTF-8 sequence may
 cross a read boundary safely because validation happens after record assembly.
 

@@ -58,6 +58,10 @@ fn json_stream_bytewise_feeds_and_writer_contracts() {
     oracle("jq_lite", "writer", contracts(), "jq-lite-writer cases=1 agree=1 ");
 }
 #[test]
+fn json_stream_token_reader_and_flushing_writer_stream_through_small_buffers() {
+    oracle("jq_lite", "stream", contracts(), "jq-lite-stream cases=572 agree=572 ");
+}
+#[test]
 fn csv_to_json_agrees_with_python_csv() {
     oracle("csv_to_json", "rfc", csv_to_json(), "csv-to-json-rfc cases=48 agree=48");
     oracle("csv_to_json", "generated", csv_to_json(), "csv-to-json-generated cases=502 agree=502");

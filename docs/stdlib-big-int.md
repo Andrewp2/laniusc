@@ -1,9 +1,9 @@
 # Signed arbitrary precision integers
 
-`ext::big_int` provides owned signed integers over `ext::big_uint`. All
+`alloc::big_int` provides owned signed integers over `alloc::big_uint`. All
 magnitude storage, arithmetic and digit conversion come from the unsigned
 provider. `BigInt` adds a sign and keeps zero nonnegative. It has no fixed
-numeric width; `ext::big_uint::Limits` bounds memory, work and text output.
+numeric width; `alloc::big_uint::Limits` bounds memory, work and text output.
 
 ## Ownership and errors
 
@@ -19,11 +19,11 @@ that owner to zero; a shallow copy must not be destroyed again.
 those owners later. Do not destroy the pair after transferring either field.
 Every failing division destroys all partial results before returning.
 
-Fallible functions return `core::result::Result<T, ext::big_uint::Error>` and
-take `ext::big_uint::Limits`. They propagate the provider's errors:
+Fallible functions return `core::result::Result<T, alloc::big_uint::Error>` and
+take `alloc::big_uint::Limits`. They propagate the provider's errors:
 `Bounds`, `LimbLimit`, `WorkLimit`, `OutputLimit`, `AllocationFailed`,
-`InvalidRadix`, `InvalidDigit`, `Empty`, `Underflow`, `DivisionByZero`, and
-`Overflow`. Valid signed subtraction never returns `Underflow`. Negative
+`InvalidRadix`, `InvalidDigit`, `Empty`, `Underflow`, `DivisionByZero`,
+`Overflow`, `NegativeExponent` (no longer returned by this module) and `NotInvertible`. Valid signed subtraction never returns `Underflow`. Negative
 integers and oversized magnitudes return `Overflow` when converted to `u64`.
 
 ## Public API
@@ -52,6 +52,8 @@ Methods:
 | `div_rem_euclid(other, limits)` | Euclidean quotient and remainder |
 | `pow(exponent: u32, limits)` | Exact power; `0^0` is `1` |
 | `gcd(other, limits)` | Nonnegative greatest common divisor; `gcd(0,0)` is zero |
+| `mod_pow(exponent, modulus, limits)` | Python `pow(a, e, m)`: a nonzero result has the modulus sign; a negative exponent inverts first (`NotInvertible` when impossible); zero modulus is `DivisionByZero` |
+| `mod_inverse(modulus, limits)` | Python `pow(a, -1, m)`; `NotInvertible` when `gcd(a, m) != 1` |
 | `shl(bits: u64, limits)`, `shr(bits: u64, limits)` | Exact left shift; arithmetic right shift |
 | `bit_and`, `bit_or`, `bit_xor` | Binary infinite two's complement operations, with `other, limits` |
 | `bit_not(limits)` | Infinite two's complement complement |

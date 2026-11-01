@@ -1,6 +1,6 @@
 # Arbitrary precision nonnegative integers
 
-`ext::big_uint` stores normalized little endian `u32` limbs in an owned
+`alloc::big_uint` stores normalized little endian `u32` limbs in an owned
 `alloc::vec::Vec<u32>`. Zero has no limbs. The highest limb of a nonzero value
 is nonzero. There is no fixed numerical width; allocation, explicit limits,
 and the vector's addressable capacity bound a calculation.
@@ -14,11 +14,11 @@ allocation. A destroyed owner becomes zero and repeated destruction of that
 same owner is harmless; stale copies of an owner remain invalid.
 
 ```lanius
-import ext::big_uint;
-let limits: ext::big_uint::Limits = ext::big_uint::default_limits();
-let a: ext::big_uint::BigUint = ext::big_uint::from_u64(18446744073709551615,limits).unwrap();
-let square: ext::big_uint::BigUint = a.mul(a.borrow(),limits).unwrap();
-let pair: ext::big_uint::DivRem = square.div_rem(a.borrow(),limits).unwrap();
+import alloc::big_uint;
+let limits: alloc::big_uint::Limits = alloc::big_uint::default_limits();
+let a: alloc::big_uint::BigUint = alloc::big_uint::from_u64(18446744073709551615,limits).unwrap();
+let square: alloc::big_uint::BigUint = a.mul(a.borrow(),limits).unwrap();
+let pair: alloc::big_uint::DivRem = square.div_rem(a.borrow(),limits).unwrap();
 assert(pair.quotient.compare(a.borrow()) == 0 && pair.remainder.is_zero());
 pair.destroy(); square.destroy(); a.destroy();
 ```
@@ -39,12 +39,14 @@ owners separately. Do not destroy the aggregate after transferring a field.
 | `compare(other)` | Negative, zero, or positive numerical order |
 | `to_u64()` | Exact conversion, or `Overflow` |
 | `try_clone(limits)` | Independent owned copy |
-| `add`, `sub`, `mul` | Independent arithmetic results; subtraction rejects underflow |
+| `add`, `sub`, `mul` | Independent arithmetic results; subtraction rejects underflow; `mul` uses Karatsuba when both operands have at least `KARATSUBA_THRESHOLD` (32) limbs |
 | `div_rem` | Euclidean unsigned quotient and remainder, `a = q*b+r`, `r < b` |
 | `shl(bits: u64, limits)`, `shr(bits: u64, limits)` | Exact logical shifts; arbitrary excessive right shifts return zero |
 | `bit_and`, `bit_or`, `bit_xor` | Zero extended unsigned bit operations |
 | `pow(exponent: u32, limits)` | Exponentiation by squaring; `0^0 = 1` |
 | `gcd(other, limits)` | Euclidean GCD; `gcd(0,0) = 0` |
+| `mod_inverse(modulus, limits)` | `x` in `[0, modulus)` with `self*x ≡ 1`; `NotInvertible` when `gcd != 1`; zero modulus is `DivisionByZero`; modulus one gives zero |
+| `mod_pow(exponent, modulus, limits)` | `self^exponent mod modulus` in `[0, modulus)`; zero modulus is `DivisionByZero`; modulus one gives zero |
 | `format_radix(radix, limits)` | Owned lowercase ASCII digits, without sign, prefix, separator, or terminator |
 | `format_into(output, radix, limits)` | Stages owned formatting then copies into caller storage; returns bytes written |
 | `value_hash()` | FNV-1a over the normalized little endian limb bytes |
@@ -73,6 +75,8 @@ Limb storage is reserved exactly or within its declared bound. Division alone
 uses one additional temporary guard limb, so its dividend scratch may have
 `max_limbs+1` limbs. Each temporary vector is bounded independently; the limit
 is not a total live memory quota. The allocator can deny any request.
+Karatsuba multiplication's single workspace is the exception: it may reach
+`8*max_limbs+64` limbs (about eight times the longer operand).
 The vector's capacity derived from its target element layout is also checked;
 a smaller physical capacity is reported as `LimbLimit`.
 
@@ -88,7 +92,7 @@ a budget across multiple calls must account for that separately.
 
 Errors are `Bounds`, `LimbLimit`, `WorkLimit`, `OutputLimit`,
 `AllocationFailed`, `InvalidRadix`, `InvalidDigit`, `Empty`, `Underflow`,
-`DivisionByZero`, and `Overflow`. Failed construction destroys its partial
+`DivisionByZero`, `Overflow`, `NegativeExponent` (no library operation returns it any more; kept for callers), and `NotInvertible`. Failed construction destroys its partial
 owner. Failed arithmetic destroys its temporary owners and preserves both
 operands, including when they refer to the same owner.
 
@@ -110,9 +114,14 @@ The `qhat*v[i]+borrow` product is below `B^2`; the refinement comparison forms
 `rhat*B+next` only while `rhat < B`. The saturated estimate case avoids dividing
 a pair whose quotient would require another limb. The normalized remainder
 is shifted back after all quotient positions are processed. Complexity is
-`O((N-M+1)*M)` for division of `N` limbs by `M` limbs; multiplication is
-`O(N*M)`. Parsing and general radix formatting use basecase methods and can
-take quadratic work for long inputs.
+`O((N-M+1)*M)` for division of `N` limbs by `M` limbs. Multiplication is
+`O(N*M)` below the Karatsuba threshold and `O(N^1.585)` above it; its work
+charge stays the conservative `N*M`. Division uses Burnikel-Ziegler above
+1,024-limb divisors. Radix conversion is linear for power-of-two radices and
+divide and conquer for large values in other radices; small values fold `g`
+digits per pass (`radix^g < 2^32`). Work charges keep the basecase bounds. See the
+[big integer guide](stdlib-big-integers.md) for the Karatsuba workspace
+and bounds.
 
 The derivation follows the official Go `math/big` long division explanation:
 [Guess and Check, Scaling Inputs, and Refining Guesses](https://go.dev/src/math/big/natdiv.go).

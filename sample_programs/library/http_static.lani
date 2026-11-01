@@ -123,36 +123,66 @@ fn listing(conn: &ext::http_service::Connection, root: i32, rel: core::slice::Vi
     if (!ok) { out.destroy(); return conn.respond(500,literal("text/plain",10),literal("Internal Server Error",21)); }
     let sent = conn.respond(200,literal("text/html; charset=utf-8",24),out.as_view()); out.destroy(); totals.ok += 1; return sent;
 }
-fn serve_file(conn: &ext::http_service::Connection, request: &ext::http_service::Request, file: &std::file::File, size: u64, name: core::slice::View<u8>, totals: &Totals) -> core::result::Result<i32,ext::http_service::Error> {
+// Strong validator from size and modification time: "size-seconds-nanos" in hex.
+fn push_hex(out: &alloc::vec::Vec<u8>, value: u64) -> bool {
+    let table: core::slice::View<u8> = literal("0123456789abcdef",16); let digits: [u8;16] = [0;16]; let n: i32 = 0; let v: u64 = value;
+    while (true) { digits[15-n] = byte(table,(v % 16) as i32); n += 1; v = v / 16; if (v == 0) { break; } }
+    return push(out,core::slice::view_range<u8>(digits,16-n,n).unwrap());
+}
+fn etag_into(out: &alloc::vec::Vec<u8>, meta: std::file_ops::Metadata) -> bool {
+    return push(out,literal("\"",1)) && push_hex(out,meta.length.bytes) && push(out,literal("-",1)) && push_hex(out,meta.times.modified.seconds as u64) && push(out,literal("-",1)) && push_hex(out,meta.times.modified.nanoseconds as u64) && push(out,literal("\"",1));
+}
+fn trim(v: core::slice::View<u8>) -> core::slice::View<u8> { let a: i32 = 0; let b: i32 = v.len(); while (a < b && (byte(v,a) == 32 || byte(v,a) == 9)) { a += 1; } while (b > a && (byte(v,b-1) == 32 || byte(v,b-1) == 9)) { b -= 1; } return part(v,a,b); }
+// If-None-Match uses weak comparison (RFC 9110 13.1.2): W/ prefixes are ignored.
+fn none_match(value: core::slice::View<u8>, etag: core::slice::View<u8>) -> bool {
+    if (eq(trim(value),"*",1)) { return true; }
+    let i: i32 = 0;
+    while (i <= value.len()) {
+        let start: i32 = i; while (i < value.len() && byte(value,i) != 44) { i += 1; }
+        let item: core::slice::View<u8> = trim(part(value,start,i)); i += 1;
+        if (item.len() > 2 && byte(item,0) == 87 && byte(item,1) == 47) { item = part(item,2,item.len()); }
+        if (ext::http_service::same(item,etag)) { return true; }
+    }
+    return false;
+}
+fn http_date(out: &alloc::vec::Vec<u8>, seconds: i64) -> bool { let date: [u8;29] = [0;29]; if (!ext::http_service::format_http_date(seconds,date)) { return false; } return push(out,core::slice::view<u8>(date,29).unwrap()); }
+// Consumes file: it is streamed by the connection or closed here.
+fn serve_file(conn: &ext::http_service::Connection, request: &ext::http_service::Request, file: std::file::File, meta: std::file_ops::Metadata, name: core::slice::View<u8>, totals: &Totals) -> core::result::Result<i32,ext::http_service::Error> {
+    let size: u64 = meta.length.bytes; let mtime: i64 = meta.times.modified.seconds;
+    let tag: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); let modified: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+    if (!etag_into(tag.borrow(),meta) || !http_date(modified.borrow(),mtime)) { tag.destroy(); modified.destroy(); file.close(); return conn.respond(500,literal("text/plain",10),literal("Internal Server Error",21)); }
+    let etag: core::slice::View<u8> = tag.as_view();
+    // RFC 9110 13.2.2: If-None-Match, else If-Modified-Since (GET/HEAD only reach here).
+    let not_modified: bool = false; let inm = request.header(literal("if-none-match",13));
+    if (inm.is_some()) { not_modified = none_match(inm.unwrap(),etag); }
+    else { let ims = request.header(literal("if-modified-since",17)); if (ims.is_some()) { let t: i64 = ext::http_service::parse_http_date(ims.unwrap()); not_modified = t >= 0 && mtime <= t; } }
     let span: Span = Span { kind: 0, first: 0, last: 0 }; let range = request.header(literal("range",5));
-    if (range.is_some()) { span = parse_range(range.unwrap(),size); }
-    if (span.kind == 2) {
-        let a = conn.begin(416); if (a.is_err()) { return a; } let line: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
-        if (!push(line.borrow(),literal("bytes */",8)) || !push_number(line.borrow(),size)) { line.destroy(); return core::result::Err(ext::http_service::Error::AllocationFailed); }
-        let b = conn.header(literal("Content-Range",13),line.as_view()); line.destroy(); if (b.is_err()) { return b; } totals.partial += 1; return conn.end_head(0);
+    if (range.is_some() && !not_modified) {
+        let honored: bool = true; let ifr = request.header(literal("if-range",8));
+        if (ifr.is_some()) { let v: core::slice::View<u8> = trim(ifr.unwrap()); if (v.len() > 0 && byte(v,0) == 34) { honored = ext::http_service::same(v,etag); } else { honored = ext::http_service::parse_http_date(v) == mtime; } }
+        if (honored) { span = parse_range(range.unwrap(),size); }
     }
-    let first: u64 = 0; let length: u64 = size; let status: i32 = 200;
-    if (span.kind == 1) { first = span.first; length = span.last - span.first + 1; status = 206; }
-    let a = conn.begin(status); if (a.is_err()) { return a; }
-    let b = conn.header(literal("Content-Type",12),content_type(name)); if (b.is_err()) { return b; }
-    let c = conn.header(literal("Accept-Ranges",13),literal("bytes",5)); if (c.is_err()) { return c; }
-    if (status == 206) {
-        let line: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
-        let built: bool = push(line.borrow(),literal("bytes ",6)) && push_number(line.borrow(),span.first) && push(line.borrow(),literal("-",1)) && push_number(line.borrow(),span.last) && push(line.borrow(),literal("/",1)) && push_number(line.borrow(),size);
-        if (!built) { line.destroy(); return core::result::Err(ext::http_service::Error::AllocationFailed); }
-        let d = conn.header(literal("Content-Range",13),line.as_view()); line.destroy(); if (d.is_err()) { return d; } totals.partial += 1;
-    } else { totals.ok += 1; }
-    let e = conn.end_head(length); if (e.is_err()) { return e; }
-    if (request.is_method(literal("HEAD",4))) { return core::result::Ok(0); }
-    let chunk: [u8;65536] = [0;65536]; let position: u64 = first; let left: u64 = length;
-    while (left > 0) {
-        let want: i32 = 65536; if (left < 65536) { want = left as i32; }
-        let got = std::file_ops::read_at(file,core::slice::view<u8>(chunk,want).unwrap(),position);
-        if (got.is_err() || got.unwrap() <= 0) { conn.set_close(); return core::result::Err(ext::http_service::Error::Truncated); }
-        let n: i32 = got.unwrap(); let w = conn.write_body(core::slice::view<u8>(chunk,n).unwrap()); if (w.is_err()) { return w; }
-        position += n as u64; left -= n as u64;
+    let status: i32 = 200; if (not_modified) { status = 304; } else { if (span.kind == 1) { status = 206; } if (span.kind == 2) { status = 416; } }
+    let r: core::result::Result<i32,ext::http_service::Error> = conn.begin(status);
+    if (r.is_ok()) { r = conn.header(literal("ETag",4),etag); }
+    if (r.is_ok()) { r = conn.header(literal("Last-Modified",13),modified.as_view()); }
+    if (r.is_ok() && status != 304) { r = conn.header(literal("Accept-Ranges",13),literal("bytes",5)); }
+    if (r.is_ok() && status != 304 && status != 416) { r = conn.header(literal("Content-Type",12),content_type(name)); }
+    if (r.is_ok() && (status == 206 || status == 416)) {
+        let line: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); let built: bool = push(line.borrow(),literal("bytes ",6));
+        if (status == 206) { built = built && push_number(line.borrow(),span.first) && push(line.borrow(),literal("-",1)) && push_number(line.borrow(),span.last) && push(line.borrow(),literal("/",1)) && push_number(line.borrow(),size); }
+        else { built = built && push(line.borrow(),literal("*/",2)) && push_number(line.borrow(),size); }
+        if (built) { r = conn.header(literal("Content-Range",13),line.as_view()); } else { r = core::result::Err(ext::http_service::Error::AllocationFailed); }
+        line.destroy();
     }
-    return core::result::Ok(0);
+    tag.destroy(); modified.destroy();
+    if (r.is_err()) { file.close(); return r; }
+    if (status == 304) { totals.ok += 1; file.close(); return conn.end_head_without_body(size); }
+    if (status == 416) { totals.partial += 1; file.close(); return conn.end_head(0); }
+    let first: u64 = 0; let length: u64 = size; if (status == 206) { first = span.first; length = span.last - span.first + 1; totals.partial += 1; } else { totals.ok += 1; }
+    let e = conn.end_head(length); if (e.is_err()) { file.close(); return e; }
+    if (length == 0 || request.is_method(literal("HEAD",4))) { file.close(); return core::result::Ok(0); }
+    return conn.stream_file(file,first,length);
 }
 fn redirect(conn: &ext::http_service::Connection, path: core::slice::View<u8>, query: core::slice::View<u8>) -> core::result::Result<i32,ext::http_service::Error> {
     let a = conn.begin(301); if (a.is_err()) { return a; } let target: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
@@ -180,8 +210,8 @@ fn serve_static(conn: &ext::http_service::Connection, request: &ext::http_servic
         return listing(conn,root,rel,request.path,totals);
     }
     if (regular && ends_with(request.path,"/",1)) { file.close(); totals.missing += 1; return conn.respond(404,literal("text/plain",10),literal("Not Found",9)); }
-    if (regular) { result = serve_file(conn,request,file.borrow(),meta.length.bytes,rel,totals); }
-    else { result = conn.respond(403,literal("text/plain",10),literal("Forbidden",9)); }
+    if (regular) { return serve_file(conn,request,file,meta,rel,totals); }
+    result = conn.respond(403,literal("text/plain",10),literal("Forbidden",9));
     file.close(); return result;
 }
 fn handle(conn: &ext::http_service::Connection, router: &ext::http_service::Router, request: &ext::http_service::Request, root: i32, totals: &Totals) -> core::result::Result<i32,ext::http_service::Error> {
@@ -210,6 +240,31 @@ fn serve_connection(conn: &ext::http_service::Connection, router: &ext::http_ser
     }
     conn.close();
 }
+// Event-driven mode: all connections share one std::event loop. Exits once
+// no connection is active and none arrived within accept_ms.
+fn serve_events(listener: &std::socket::Socket, options: ext::http_service::Options, width: i32, accept_ms: i32, router: &ext::http_service::Router, root: i32, totals: &Totals) -> i32 {
+    let made = ext::http_service::server(listener,options,width); if (made.is_err()) { return 3; }
+    let server: ext::http_service::Server = made.unwrap(); let status: i32 = 0;
+    let now = std::clock::monotonic_now(); if (now.is_err()) { server.close(); return 3; }
+    let quiet = core::time::deadline_after(now.unwrap(),core::time::from_millis(accept_ms as u64)); if (quiet.is_err()) { server.close(); return 3; }
+    let seen: i32 = 0;
+    while (true) {
+        let next = server.next(quiet.unwrap()); if (next.is_err()) { status = 3; break; }
+        let stats: ext::http_service::ServerStats = server.stats();
+        if (stats.connections != seen || server.active() > 0) {
+            seen = stats.connections; let t = std::clock::monotonic_now(); if (t.is_err()) { status = 3; break; }
+            let d = core::time::deadline_after(t.unwrap(),core::time::from_millis(accept_ms as u64)); if (d.is_err()) { status = 3; break; } quiet = d;
+        }
+        let slot = next.unwrap();
+        if (slot.is_none()) { if (server.active() == 0) { break; } continue; }
+        let request: ext::http_service::Request = server.request(slot.unwrap()); let conn: ext::http_service::Connection = server.take(slot.unwrap());
+        totals.requests += 1; handle(conn.borrow(),router,request.borrow(),root,totals);
+        if (server.put(slot.unwrap(),conn).is_err()) { totals.errors += 1; }
+    }
+    let s: ext::http_service::ServerStats = server.stats();
+    totals.connections = s.connections; totals.rejected = s.rejected; totals.timeouts = s.timeouts; totals.idle = s.idle; totals.errors += s.errors;
+    if (server.close().is_err() && status == 0) { status = 3; } return status;
+}
 fn number(v: core::slice::View<u8>) -> i32 { let parsed = core::decimal::parse_u32_range(v.values,v.start,v.len()); if (v.is_empty() || parsed.is_err() || parsed.unwrap() > 2147483647) { return -1; } return parsed.unwrap() as i32; }
 fn summary(t: Totals) -> bool {
     let out: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
@@ -221,11 +276,15 @@ fn summary(t: Totals) -> bool {
     ok = ok && write_output(out.as_view()); out.destroy(); return ok;
 }
 fn run(args: std::args::Arguments) -> i32 {
-    if (args.len() < 2) { write_output(literal("Usage: http-static ROOT ADDRESS [--connections N] [--accept-timeout MS] [--head-timeout MS] [--idle-timeout MS] [--body-timeout MS] [--max-head N] [--max-body N] [--max-requests N]\n",181)); return 2; }
+    if (args.len() < 2) { write_output(literal("Usage: http-static ROOT ADDRESS [--connections N] [--accept-timeout MS] [--head-timeout MS] [--idle-timeout MS] [--body-timeout MS] [--max-head N] [--max-body N] [--max-requests N] [--max-connections N] [--sequential]\n",218)); return 2; }
     let root_view = args.get(0).unwrap(); let endpoint = core::net::parse_socket(args.get(1).unwrap()); if (endpoint.is_err()) { return 2; }
     let options: ext::http_service::Options = ext::http_service::default_options(); let connections: i32 = 1000000; let accept_ms: i32 = 30000; let i: i32 = 2;
-    while (i + 1 < args.len()) {
-        let key = args.get(i).unwrap(); let n: i32 = number(args.get(i+1).unwrap()); i += 2; if (n < 0) { return 2; }
+    let sequential: bool = false; let width: i32 = 64;
+    while (i < args.len()) {
+        let key = args.get(i).unwrap(); if (eq(key,"--sequential",12)) { sequential = true; i += 1; continue; }
+        if (i + 1 >= args.len()) { return 2; }
+        let n: i32 = number(args.get(i+1).unwrap()); i += 2; if (n < 0) { return 2; }
+        if (eq(key,"--max-connections",17)) { if (n < 1 || n > 4096) { return 2; } width = n; continue; }
         if (eq(key,"--connections",13)) { connections = n; continue; } if (eq(key,"--accept-timeout",16)) { accept_ms = n; continue; }
         if (eq(key,"--head-timeout",14)) { options.head_timeout_ms = n; continue; } if (eq(key,"--idle-timeout",14)) { options.idle_timeout_ms = n; continue; }
         if (eq(key,"--body-timeout",14)) { options.body_timeout_ms = n; continue; } if (eq(key,"--max-requests",14)) { options.max_requests = n; continue; }
@@ -249,6 +308,7 @@ fn run(args: std::args::Arguments) -> i32 {
     let routed: bool = router.add(literal("POST",4),literal("/echo",5),false,2).is_ok() && router.add(literal("GET",3),literal("/healthz",8),false,3).is_ok() && router.add(literal("GET",3),literal("/",1),true,1).is_ok();
     if (!routed) { router.destroy(); listener.close(); root_file.close(); return 4; }
     let totals: Totals = Totals { connections: 0, requests: 0, rejected: 0, timeouts: 0, idle: 0, errors: 0, ok: 0, partial: 0, missing: 0 }; let status: i32 = 0;
+    if (!sequential) { status = serve_events(listener.borrow(),options,width,accept_ms,router.borrow(),root,totals.borrow()); connections = 0; }
     while (totals.connections < connections) {
         let now = std::clock::monotonic_now(); if (now.is_err()) { status = 3; break; }
         let wait = core::time::deadline_after(now.unwrap(),core::time::from_millis(accept_ms as u64)); if (wait.is_err()) { status = 3; break; }

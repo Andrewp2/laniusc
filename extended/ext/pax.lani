@@ -11,7 +11,7 @@ import ext::tar;
 pub enum Error { Tar(ext::tar::Error), Bounds, InvalidHeader, InvalidRecord, InvalidNumber, UnsupportedKey, MisplacedExtension, GlobalLimit, SizeMismatch, OutputTooSmall, Finished }
 pub struct Overrides { path: core::slice::View<u8>, has_path: bool, link_name: core::slice::View<u8>, has_link: bool, uname: core::slice::View<u8>, has_uname: bool, gname: core::slice::View<u8>, has_gname: bool, uid: u64, has_uid: bool, gid: u64, has_gid: bool, mtime: u64, mtime_nanos: u32, has_mtime: bool, size: u64, has_size: bool }
 pub struct Entry { header: ext::tar::Entry, path: core::slice::View<u8>, has_path: bool, link_name: core::slice::View<u8>, uname: core::slice::View<u8>, gname: core::slice::View<u8>, uid: u64, gid: u64, mtime: u64, mtime_nanos: u32, offset: i32 }
-pub struct Reader { input: core::slice::View<u8>, cursor: i32, ended: bool, global: Overrides, globals: i32 }
+pub struct Reader { input: core::slice::View<u8>, cursor: i32, ended: bool, global: Overrides, globals: i32, options: ext::tar::ReadOptions }
 pub struct Writer { output: core::slice::View<u8>, cursor: i32, ended: bool }
 
 fn valid(view: core::slice::View<u8>) -> bool { return view.start >= 0 && view.length >= 0 && view.start <= 2147483647-view.length; }
@@ -54,11 +54,14 @@ fn checksum(header: core::slice::View<u8>) -> u64 {
     while (index < 512) { if (index >= 148 && index < 156) { total += 32; } else { total += byte(header,index) as u64; } index += 1; } return total;
 }
 // Validate an x/g header (checksum, ustar magic) and return its record size.
-fn extension_size(header: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+fn extension_size(header: core::slice::View<u8>, gnu: bool) -> core::result::Result<i32,Error> {
     let stored: core::result::Result<u64,Error> = octal_field(header,148,8,262143);
     if (core::result::is_err(stored)) { return core::result::Err(core::result::unwrap_err(stored)); }
     if (core::result::unwrap(stored) != checksum(header)) { return core::result::Err(Error::Tar(ext::tar::Error::InvalidChecksum)); }
-    if (byte(header,257) != 117 || byte(header,258) != 115 || byte(header,259) != 116 || byte(header,260) != 97 || byte(header,261) != 114 || byte(header,262) != 0 || byte(header,263) != 48 || byte(header,264) != 48) { return core::result::Err(Error::Tar(ext::tar::Error::UnsupportedFormat)); }
+    let ustar: bool = byte(header,257) == 117 && byte(header,258) == 115 && byte(header,259) == 116 && byte(header,260) == 97 && byte(header,261) == 114;
+    let posix: bool = ustar && byte(header,262) == 0 && byte(header,263) == 48 && byte(header,264) == 48;
+    let old_gnu: bool = gnu && ustar && byte(header,262) == 32 && byte(header,263) == 32 && byte(header,264) == 0;
+    if (!posix && !old_gnu) { return core::result::Err(Error::Tar(ext::tar::Error::UnsupportedFormat)); }
     let size: core::result::Result<u64,Error> = octal_field(header,124,12,2147483647);
     if (core::result::is_err(size)) { return core::result::Err(core::result::unwrap_err(size)); }
     return core::result::Ok(core::result::unwrap(size) as i32);
@@ -139,9 +142,28 @@ pub fn apply_records(records: core::slice::View<u8>, target: &Overrides) -> core
     } return core::result::Ok(count);
 }
 
-pub fn reader(input: core::slice::View<u8>) -> core::result::Result<Reader,Error> {
+pub fn reader(input: core::slice::View<u8>) -> core::result::Result<Reader,Error> { return reader_with(input,ext::tar::read_options()); }
+// options.gnu also accepts GNU ././@LongLink names (L) and link targets (K).
+// options.headers_only parses headers whose member data the caller streams.
+pub fn reader_with(input: core::slice::View<u8>, options: ext::tar::ReadOptions) -> core::result::Result<Reader,Error> {
     if (!valid(input)) { return core::result::Err(Error::Bounds); }
-    return core::result::Ok(Reader { input: input, cursor: 0, ended: false, global: empty_overrides(input), globals: 0 });
+    return core::result::Ok(Reader { input: input, cursor: 0, ended: false, global: empty_overrides(input), globals: 0, options: options });
+}
+fn extension_flag(flag: u8, gnu: bool) -> bool { return flag == 120 || flag == 103 || (gnu && (flag == 76 || flag == 75)); }
+// For streaming readers: None for a member or zero header, else the number of
+// extension data bytes (before padding) that follow this 512-byte header.
+pub fn extension_data_len(header: core::slice::View<u8>, options: ext::tar::ReadOptions) -> core::result::Result<core::option::Option<i32>,Error> {
+    if (!valid(header) || header.length != 512) { return core::result::Err(Error::Bounds); }
+    if (!extension_flag(byte(header,156),options.gnu) || zeros(header,0,512)) { return core::result::Ok(core::option::None()); }
+    let sized: core::result::Result<i32,Error> = extension_size(header,options.gnu);
+    if (core::result::is_err(sized)) { return core::result::Err(core::result::unwrap_err(sized)); }
+    return core::result::Ok(core::option::Some(core::result::unwrap(sized)));
+}
+// GNU long-name data is the name followed by NUL padding.
+fn long_value(records: core::slice::View<u8>) -> core::result::Result<core::slice::View<u8>,Error> {
+    let end: i32 = 0; while (end < records.length && byte(records,end) != 0) { end += 1; }
+    if (end == 0 || !zeros(records,end,records.length)) { return core::result::Err(Error::InvalidRecord); }
+    return core::result::Ok(window(records,0,end));
 }
 pub impl Entry {
     pub fn path_len(&self) -> i32 { if (self.has_path) { return self.path.length; } return self.header.path_len(); }
@@ -163,13 +185,13 @@ pub impl Reader {
         if (!valid(self.input) || self.cursor < 0 || self.cursor > self.input.length || self.cursor % 512 != 0) { return core::result::Err(Error::Bounds); }
         if (self.ended) { return core::result::Ok(core::option::None()); }
         let global: Overrides = self.global; let local: Overrides = self.global; let globals: i32 = self.globals;
-        let pending: bool = false; let start: i32 = self.cursor; let cursor: i32 = self.cursor;
+        let pending: bool = false; let long_name: bool = false; let long_link: bool = false; let start: i32 = self.cursor; let cursor: i32 = self.cursor;
         while (self.input.length-cursor >= 512) {
             let header: core::slice::View<u8> = window(self.input,cursor,cursor+512);
             let flag: u8 = byte(header,156);
-            if ((flag != 120 && flag != 103) || zeros(header,0,512)) { break; }
-            if (pending) { return core::result::Err(Error::MisplacedExtension); }
-            let sized: core::result::Result<i32,Error> = extension_size(header);
+            if (!extension_flag(flag,self.options.gnu) || zeros(header,0,512)) { break; }
+            if ((flag == 120 && pending) || (flag == 103 && (pending || long_name || long_link)) || (flag == 76 && long_name) || (flag == 75 && long_link)) { return core::result::Err(Error::MisplacedExtension); }
+            let sized: core::result::Result<i32,Error> = extension_size(header,flag == 76 || flag == 75);
             if (core::result::is_err(sized)) { return core::result::Err(core::result::unwrap_err(sized)); }
             let size: i32 = core::result::unwrap(sized); let padding: i32 = (512-size%512)%512; let available: i32 = self.input.length-cursor-512;
             if (size > available || padding > available-size) { return core::result::Err(Error::Tar(ext::tar::Error::UnexpectedEof)); }
@@ -182,20 +204,27 @@ pub impl Reader {
                 if (core::result::is_err(applied)) { return core::result::Err(core::result::unwrap_err(applied)); }
                 local = global; globals += 1;
             } else {
+              if (flag == 76 || flag == 75) {
+                let named: core::result::Result<core::slice::View<u8>,Error> = long_value(records);
+                if (core::result::is_err(named)) { return core::result::Err(core::result::unwrap_err(named)); }
+                if (flag == 76) { local.path = core::result::unwrap(named); local.has_path = true; long_name = true; }
+                else { local.link_name = core::result::unwrap(named); local.has_link = true; long_link = true; }
+              } else {
                 let applied: core::result::Result<i32,Error> = apply_records(records,local.borrow());
                 if (core::result::is_err(applied)) { return core::result::Err(core::result::unwrap_err(applied)); }
                 pending = true;
+              }
             }
             cursor = data_start+size+padding;
         }
-        let opened: core::result::Result<ext::tar::Reader,ext::tar::Error> = ext::tar::reader_at(self.input,cursor,local.has_uname,local.has_gname);
+        let opened: core::result::Result<ext::tar::Reader,ext::tar::Error> = ext::tar::reader_with(self.input,cursor,ext::tar::ReadOptions { full_uname: local.has_uname, full_gname: local.has_gname, gnu: self.options.gnu, headers_only: self.options.headers_only });
         if (core::result::is_err(opened)) { return core::result::Err(tar_error(core::result::unwrap_err(opened))); }
         let inner: ext::tar::Reader = core::result::unwrap(opened);
         let parsed: core::result::Result<core::option::Option<ext::tar::Entry>,ext::tar::Error> = inner.next();
         if (core::result::is_err(parsed)) { return core::result::Err(tar_error(core::result::unwrap_err(parsed))); }
         let item: core::option::Option<ext::tar::Entry> = core::result::unwrap(parsed);
         if (core::option::is_none(item)) {
-            if (pending) { return core::result::Err(Error::MisplacedExtension); }
+            if (pending || long_name || long_link) { return core::result::Err(Error::MisplacedExtension); }
             self.global = global; self.globals = globals; self.cursor = inner.position(); self.ended = true; return core::result::Ok(core::option::None());
         }
         let header: ext::tar::Entry = core::option::unwrap(item);
@@ -248,15 +277,19 @@ fn shorten(view: core::slice::View<u8>, limit: i32) -> core::slice::View<u8> { i
 pub fn writer(output: core::slice::View<u8>) -> core::result::Result<Writer,Error> {
     if (!valid(output)) { return core::result::Err(Error::Bounds); } return core::result::Ok(Writer { output: output, cursor: 0, ended: false });
 }
+// Bytes add_header writes: any extension header plus the 512-byte member header.
+pub fn header_len(meta: ext::tar::Metadata) -> core::result::Result<i32,Error> {
+    let total: core::result::Result<i32,Error> = member_len(meta,0); if (core::result::is_err(total)) { return total; } return core::result::Ok(core::result::unwrap(total));
+}
 // Bytes needed for one member, including any extension header and padding.
 pub fn member_len(meta: ext::tar::Metadata, data_len: i32) -> core::result::Result<i32,Error> {
     if (!valid(meta.path) || !valid(meta.link_name) || !valid(meta.uname) || !valid(meta.gname) || data_len < 0) { return core::result::Err(Error::Bounds); }
-    let records: i32 = extension_len(meta);
+    let records: i32 = records_len(meta);
     let total: u64 = 512 + ((data_len as u64 + 511)/512)*512;
     if (records > 0) { total += 512 + ((records as u64 + 511)/512)*512; }
     if (total > 2147483647) { return core::result::Err(Error::Tar(ext::tar::Error::CapacityOverflow)); } return core::result::Ok(total as i32);
 }
-fn extension_len(meta: ext::tar::Metadata) -> i32 {
+fn records_len(meta: ext::tar::Metadata) -> i32 {
     let total: i32 = 0;
     if (!fits_ustar(meta.path)) { total += record_len(4,meta.path.length); }
     if (meta.link_name.length > 100) { total += record_len(8,meta.link_name.length); }
@@ -273,11 +306,19 @@ pub impl Writer {
     // Plain ustar when every field fits; otherwise one x header precedes it.
     // Failure keeps the cursor; bytes after it are then unspecified.
     pub fn add(&self, meta: ext::tar::Metadata, data: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        if (!valid(data)) { return core::result::Err(Error::Bounds); } return self.member(meta,data,data.length,true);
+    }
+    // Extension header (when needed) and member header for `size` data bytes;
+    // the caller then supplies the data and zero padding to a 512-byte record.
+    pub fn add_header(&self, meta: ext::tar::Metadata, size: i32) -> core::result::Result<i32,Error> {
+        if (size < 0) { return core::result::Err(Error::Bounds); } let empty: core::slice::View<u8> = meta.path; empty.length = 0; return self.member(meta,empty,size,false);
+    }
+    fn member(&self, meta: ext::tar::Metadata, data: core::slice::View<u8>, size: i32, with_data: bool) -> core::result::Result<i32,Error> {
         if (!valid(self.output) || self.cursor < 0 || self.cursor > self.output.length || self.cursor % 512 != 0 || !valid(meta.path) || !valid(meta.link_name) || !valid(meta.uname) || !valid(meta.gname) || !valid(data)) { return core::result::Err(Error::Bounds); }
         if (self.ended) { return core::result::Err(Error::Finished); }
         if (meta.path.length == 0 || has_nul(meta.path) || has_nul(meta.link_name) || has_nul(meta.uname) || has_nul(meta.gname)) { return core::result::Err(Error::Tar(ext::tar::Error::InvalidName)); }
         if (meta.path.length > 1048576 || meta.link_name.length > 1048576 || meta.uname.length > 1048576 || meta.gname.length > 1048576) { return core::result::Err(Error::Tar(ext::tar::Error::PathTooLong)); }
-        let records: i32 = extension_len(meta); let at: i32 = self.cursor;
+        let records: i32 = records_len(meta); let at: i32 = self.cursor;
         if (records > 0) {
             let extension: i32 = 512+records+(512-records%512)%512;
             if (extension > self.output.length-self.cursor) { return core::result::Err(Error::Tar(ext::tar::Error::OutputTooSmall)); }
@@ -300,7 +341,8 @@ pub impl Writer {
         let opened: core::result::Result<ext::tar::Writer,ext::tar::Error> = ext::tar::writer_at(self.output,at);
         if (core::result::is_err(opened)) { return core::result::Err(tar_error(core::result::unwrap_err(opened))); }
         let inner: ext::tar::Writer = core::result::unwrap(opened);
-        let added: core::result::Result<i32,ext::tar::Error> = inner.add(reduced,data);
+        let added: core::result::Result<i32,ext::tar::Error> = inner.add_header(reduced,size);
+        if (with_data) { added = inner.add(reduced,data); }
         if (core::result::is_err(added)) { return core::result::Err(tar_error(core::result::unwrap_err(added))); }
         self.cursor = core::result::unwrap(added); return core::result::Ok(self.cursor);
     }

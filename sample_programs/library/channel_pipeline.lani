@@ -16,7 +16,7 @@ const MAPPERS: i32 = 3;
 
 fn disconnected(error: std::channel::RecvError) -> bool { return match (error) { std::channel::RecvError::Disconnected -> true, _ -> false }; }
 
-fn mapper(input: std::channel::Receiver, output: std::channel::Sender) -> i32 {
+fn mapper(input: std::channel::Receiver<u64>, output: std::channel::Sender<u64>) -> i32 {
     while (true) {
         let got: core::result::Result<u64, std::channel::RecvError> = input.recv();
         if (got.is_err()) { input.close(); output.close(); if (disconnected(got.unwrap_err())) { return 0; } return 1; }
@@ -26,7 +26,7 @@ fn mapper(input: std::channel::Receiver, output: std::channel::Sender) -> i32 {
     return 3;
 }
 
-fn summer(input: std::channel::Receiver, count: std::atomic::Atomic64, total: std::atomic::Atomic64) -> i32 {
+fn summer(input: std::channel::Receiver<u64>, count: std::atomic::Atomic64, total: std::atomic::Atomic64) -> i32 {
     let seen: u64 = 0; let sum: u64 = 0;
     while (true) {
         let got: core::result::Result<u64, std::channel::RecvError> = input.recv();
@@ -43,16 +43,16 @@ fn summer(input: std::channel::Receiver, count: std::atomic::Atomic64, total: st
 
 fn main() -> i32 {
     let region: std::sync::Region = std::sync::map_shared(65536).unwrap();
-    let numbers: std::channel::Channel = std::channel::bounded(region.borrow(), 32).unwrap();
-    let squares: std::channel::Channel = std::channel::bounded(region.borrow(), 32).unwrap();
+    let numbers: std::channel::Channel<u64> = std::channel::bounded<u64>(region.borrow(), 32).unwrap();
+    let squares: std::channel::Channel<u64> = std::channel::bounded<u64>(region.borrow(), 32).unwrap();
     let count: std::atomic::Atomic64 = std::atomic::at64(region.allocate(8).unwrap());
     let total: std::atomic::Atomic64 = std::atomic::at64(region.allocate(8).unwrap());
-    let emit: std::channel::Sender = numbers.open_sender().unwrap();
-    let take: std::channel::Receiver = numbers.open_receiver().unwrap();
-    let put: std::channel::Sender = squares.open_sender().unwrap();
+    let emit: std::channel::Sender<u64> = numbers.open_sender().unwrap();
+    let take: std::channel::Receiver<u64> = numbers.open_receiver().unwrap();
+    let put: std::channel::Sender<u64> = squares.open_sender().unwrap();
     let w: i32 = 1;
     while (w < MAPPERS) { numbers.open_receiver().unwrap(); squares.open_sender().unwrap(); w += 1; }
-    let collect: std::channel::Receiver = squares.open_receiver().unwrap();
+    let collect: std::channel::Receiver<u64> = squares.open_receiver().unwrap();
     let pool: std::worker::Pool = std::worker::pool(MAPPERS + 1).unwrap();
     w = 0;
     while (w <= MAPPERS) {

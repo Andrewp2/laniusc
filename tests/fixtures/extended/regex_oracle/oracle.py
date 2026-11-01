@@ -1,6 +1,6 @@
 """Differential oracle: ext::regex programs against CPython `re`.
 
-usage: python3 -I oracle.py INPUT_EXE REPLACE_EXE GREP_EXE [--seed N] [--patterns N]
+usage: python3 -I oracle.py INPUT_EXE REPLACE_EXE GREP_EXE [--dfa DFA_EXE] [--seed N] [--patterns N]
 
 INPUT_EXE is tests/fixtures/extended_library/regex_input.lani (find_iter with
 captures over a binary case stream), REPLACE_EXE is
@@ -41,6 +41,7 @@ LITERALS = [("a", "a")] * 6 + [("b", "b")] * 5 + [("c", "c")] * 2 + [
 ]
 CLASS_TERMS = ["a", "b", "c", "é", "1", "_", ".", " ", "a-c", "0-9", "A-Z",
                "é-🙂", r"\d", r"\w", r"\s", r"\D", r"\W", r"\S", r"\n"]
+NAMES = ["n", "word", "x_", "Key", "_g"]
 SHORTHANDS = [r"\d", r"\w", r"\s", r"\D", r"\W", r"\S"]
 QUANTIFIERS = ["?", "*", "+", "{2}", "{1,2}", "{0,2}", "{2,}", "??", "*?",
                "+?", "{1,2}?", "{0,3}?", "{2,}?", "{1}", "{0}"]
@@ -51,6 +52,7 @@ class Gen:
         self.rng = rng
         self.multiline = multiline
         self.groups = 0
+        self.names = []
 
     def assertion(self):
         kind = self.rng.choice(["^", "$", r"\A", r"\z", r"\b", r"\B"])
@@ -91,6 +93,13 @@ class Gen:
             self.groups += 1
         lan, py, nullable = self.expr(depth - 1)
         if capture:
+            # Some captures are named, in either Lanius spelling; Python only
+            # has (?P<name>...). Names stay unique within a pattern.
+            if self.rng.random() < 0.35:
+                name = self.rng.choice(NAMES) + str(len(self.names))
+                self.names.append(name)
+                opener = self.rng.choice(["(?P<", "(?<"]) + name + ">"
+                return opener + lan + ")", "(?P<" + name + ">" + py + ")", nullable, True
             return "(" + lan + ")", "(" + py + ")", nullable, True
         return "(?:" + lan + ")", "(?:" + py + ")", nullable, True
 
@@ -163,6 +172,11 @@ def canonical(q, t):
         position = m.end() + (m.start() == m.end())
 
 
+def names(q):
+    by_group = {v: k for k, v in q.groupindex.items()}
+    return "|" + ",".join(by_group.get(g, "-") for g in range(1, q.groups + 1))
+
+
 def describe(q, t):
     out = ""
     for m in canonical(q, t):
@@ -197,13 +211,13 @@ def find_iter_surface(exe, rng, count):
         cases.append((lan, py, t, 0))
         expected.append(describe(re.compile(py, re.ASCII), t))
     for _ in range(count):
-        flags = (1 if rng.random() < 0.25 else 0) | (2 if rng.random() < 0.25 else 0)
+        flags = (1 if rng.random() < 0.25 else 0) | (2 if rng.random() < 0.25 else 0) | 4
         lan, py = pattern(rng, flags & 1)
         q = re.compile(py, re.ASCII | (re.M if flags & 1 else 0) | (re.S if flags & 2 else 0))
         for _ in range(4):
             t = text(rng, 1 if r"\B" in lan else 0)
             cases.append((lan, py, t, flags))
-            expected.append(describe(q, t))
+            expected.append(describe(q, t) + names(q))
     payload = b"".join(header(lan, t, flags) for lan, _, t, flags in cases)
     result = run([exe], payload, timeout=120)
     actual = result.stdout.decode().split("\n")[:-1]
@@ -213,13 +227,61 @@ def find_iter_surface(exe, rng, count):
         return 0, len(cases), [("harness", result.returncode)]
     failures = [(cases[i], expected[i], actual[i])
                 for i in range(len(cases)) if expected[i] != actual[i]]
-    matched = sum(e != "N" for e in expected)
+    named = sum(any(c not in "-," for c in e.split("|", 1)[1]) for e in expected if "|" in e)
+    matched = sum(not e.startswith("N") for e in expected)
     multi = sum(e.count("M") > 1 for e in expected)
     unset = sum("/-" in e for e in expected)
     grouped = sum("/" in e for e in expected)
     print(f"  find_iter_captures coverage: {count} generated patterns, {len(PINNED)} pinned, {matched} cases with a match, "
           f"{multi} with several matches, {grouped} with capture groups, "
-          f"{unset} with an unset group")
+          f"{unset} with an unset group, {named} with named groups")
+    return len(cases) - len(failures), len(cases), failures
+
+
+def header_work(lan, t, flags, work):
+    p, b = lan.encode(), t.encode()
+    return struct.pack("<9I", len(p), len(b), flags, 4096, 16, work, 64, 1000, 65536) + p + b
+
+
+def dfa_surface(exe, rng, count):
+    """ext::regex::Dfa is_match/find_span, one-shot and reusable, against Python
+    and the VM. A tenth of cases use a tiny per-search work budget, so the DFA
+    must fall back exactly; those compare the DFA with the VM only."""
+    cases, expected = [], []
+    for _ in range(count):
+        flags = (1 if rng.random() < 0.25 else 0) | (2 if rng.random() < 0.25 else 0)
+        lan, py = pattern(rng, flags & 1)
+        q = re.compile(py, re.ASCII | (re.M if flags & 1 else 0) | (re.S if flags & 2 else 0))
+        # CPython backtracks exponentially on long inputs under quantified
+        # groups, so 400-scalar inputs go only to patterns without them.
+        longest = 400 if not re.search(r"\)[*+?{]", py) else 40
+        t = text(rng, 1 if r"\B" in lan else 0, rng.choice([10, 40, longest]))
+        work = rng.choice([1, 20, 200]) if rng.random() < 0.1 else 10_000_000
+        m = q.search(t)
+        b = "0" if m is None else "1"
+        span = "N" if m is None else f"{byte_offset(t, m.start())},{byte_offset(t, m.end())}"
+        cases.append((lan, t, flags, work))
+        expected.append(None if work != 10_000_000 else f"{b} {b} {span} {span} {span}{b}")
+    payload = b"".join(header_work(lan, t, flags, work) for lan, t, flags, work in cases)
+    result = run([exe], payload, timeout=120)
+    actual = result.stdout.decode().split("\n")[:-1]
+    if result.returncode != 0 or len(actual) != len(cases):
+        print(f"dfa harness failed: status {result.returncode}, {len(actual)}/{len(cases)} lines")
+        return 0, len(cases), [("harness", result.returncode)]
+    failures, built, budget = [], 0, 0
+    for case, want, got in zip(cases, expected, actual):
+        body, kind = got.rsplit(" ", 1)
+        built += kind == "D"
+        if want is None:
+            budget += 1
+            dm, vm, ds, vs, again = body.split(" ")
+            ok = dm == vm and ds == vs and again == vs + vm
+        else:
+            ok = body == want
+        if not ok:
+            failures.append((case, want, got))
+    print(f"  dfa_match_find coverage: {built} with a Dfa, {len(cases) - built} assertion patterns on the VM, "
+          f"{budget} with a tiny work budget")
     return len(cases) - len(failures), len(cases), failures
 
 
@@ -330,6 +392,9 @@ def main():
         i = args.index("--seed"); seed = int(args[i + 1]); del args[i:i + 2]
     if "--patterns" in args:
         i = args.index("--patterns"); patterns = int(args[i + 1]); del args[i:i + 2]
+    dfa_exe = None
+    if "--dfa" in args:
+        i = args.index("--dfa"); dfa_exe = args[i + 1]; del args[i:i + 2]
     input_exe, replace_exe, grep_exe = args
     print(f"python {sys.version.split()[0]} seed {seed}")
     total_failures = 0
@@ -340,6 +405,10 @@ def main():
     ]:
         agree, total, failures = surface(exe, random.Random(f"{seed}:{name}"), count)
         report(name, agree, total, failures)
+        total_failures += total - agree
+    if dfa_exe:
+        agree, total, failures = dfa_surface(dfa_exe, random.Random(f"{seed}:dfa"), patterns)
+        report("dfa_match_find", agree, total, failures)
         total_failures += total - agree
     for name, surface, exe in [("linear_time", linear_surface, input_exe)]:
         agree, total, failures = surface(exe)

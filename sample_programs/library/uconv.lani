@@ -9,7 +9,6 @@
 // line is not in the form, reporting its 1-based number on stderr.
 // Exit 0 success, 1 check failed, 2 arguments/invalid UTF-8/limit, 3 I/O, 4 allocation.
 module app::main;
-import alloc::io;
 import alloc::vec;
 import core::decimal;
 import core::fmt;
@@ -27,7 +26,9 @@ import std::stream;
 
 struct Options { transform: i32, check: bool, input: i32, help: bool }
 impl Options { fn borrow(&self) -> &Options { return self; } }
-struct State { output: alloc::vec::Vec<u8>, scratch: alloc::vec::Vec<u32>, sink: alloc::vec::Vec<u8>, used: i32, failed: bool, fast: i32, slow: i32 }
+// [pending, pending_end) of input is already in the form; it is written in
+// one piece, straight from the input, before any later output.
+struct State { output: alloc::vec::Vec<u8>, scratch: alloc::vec::Vec<u32>, sink: alloc::vec::Vec<u8>, used: i32, failed: bool, fast: i32, slow: i32, input: [u8], pending: i32, pending_end: i32 }
 impl State {
     fn borrow(&self) -> &State { return self; }
     fn flush(&self) {
@@ -36,7 +37,15 @@ impl State {
         if (core::result::is_err(core::io::write_all(out.borrow(), self.sink.as_slice(), 0, self.used))) { self.failed = true; }
         self.used = 0;
     }
+    fn emit(&self) {
+        if (self.pending_end <= self.pending) { return; }
+        self.flush();
+        let out: std::stream::Descriptor = std::stream::stdout();
+        if (!self.failed && core::result::is_err(core::io::write_all(out.borrow(), self.input, self.pending, self.pending_end - self.pending))) { self.failed = true; }
+        self.pending = self.pending_end;
+    }
     fn write(&self, data: [u8], start: i32, count: i32) {
+        self.emit();
         if (count > 65536) { self.flush(); let out: std::stream::Descriptor = std::stream::stdout();
             if (!self.failed && core::result::is_err(core::io::write_all(out.borrow(), data, start, count))) { self.failed = true; } return; }
         if (self.used + count > 65536) { self.flush(); }
@@ -93,14 +102,15 @@ fn ensure_scalars(buffer: &alloc::vec::Vec<u32>, count: i32) -> bool {
     if (core::result::is_err(buffer.try_reserve(count - buffer.len()))) { return false; }
     return core::result::is_ok(buffer.try_resize(count, 0));
 }
-// Returns 0 written, 1 not normalized (check), 2 limit, 4 allocation.
+// Returns 0 written, 1 not normalized (check), 2 limit, 4 allocation, or
+// 5: already in the form, so the caller extends the pending input run.
 fn line(input: core::text::Text, options: Options, state: &State) -> i32 {
     let work: u64 = 1000000000 as u64;
     if (options.transform < 4) {
         let form: ext::unicode_normalize::Form = form_of(options.transform);
         let quick: ext::unicode_normalize::QuickCheck = core::result::unwrap(ext::unicode_normalize::quick_check(input, form, work));
         let yes: bool = match (quick) { ext::unicode_normalize::QuickCheck::Yes -> true, _ -> false };
-        if (yes) { state.fast += 1; if (!options.check) { state.write(input.bytes, input.start, input.length); } return 0; }
+        if (yes) { state.fast += 1; return 5; }
         state.slow += 1;
         let required: core::result::Result<i32, ext::unicode_normalize::Error> = ext::unicode_normalize::scratch_len(input, form, work);
         if (core::result::is_err(required)) { return 2; }
@@ -128,14 +138,13 @@ fn line(input: core::text::Text, options: Options, state: &State) -> i32 {
     state.write(state.output.as_slice(), 0, core::result::unwrap(done).bytes);
     return 0;
 }
-fn run(buffer: &alloc::io::Buffer, options: Options) -> i32 {
-    let data: [u8] = buffer.as_bytes(); let total: i32 = buffer.len();
+fn run(data: [u8], total: i32, options: Options) -> i32 {
     let checked: core::result::Result<core::text::Text, core::text::Error> = core::text::from_utf8(data, total);
     if (core::result::is_err(checked)) {
         let offset: i32 = match (core::result::unwrap_err(checked)) { core::text::Error::InvalidUtf8(at) -> at, _ -> -1 };
         say_number("uconv: invalid-utf8 byte=", 25, offset as i64); return 2;
     }
-    let state: State = State { output: alloc::vec::new<u8>(), scratch: alloc::vec::new<u32>(), sink: alloc::vec::new<u8>(), used: 0, failed: false, fast: 0, slow: 0 };
+    let state: State = State { output: alloc::vec::new<u8>(), scratch: alloc::vec::new<u32>(), sink: alloc::vec::new<u8>(), used: 0, failed: false, fast: 0, slow: 0, input: data, pending: 0, pending_end: 0 };
     if (!ensure_bytes(state.sink.borrow(), 65536)) { return 4; }
     let status: i32 = 0; let start: i32 = 0; let number: i64 = 1;
     while (start < total && status == 0) {
@@ -145,9 +154,13 @@ fn run(buffer: &alloc::io::Buffer, options: Options) -> i32 {
         if (result == 1) { say_number("uconv: not-normalized line=", 27, number); status = 1; }
         if (result == 2) { say("uconv: resource-limit\n", 22); status = 2; }
         if (result == 4) { say("uconv: allocation-failure\n", 26); status = 4; }
-        if (status == 0 && end < total && !options.check) { state.write(data, end, 1); }
+        let next: i32 = end;
+        if (end < total) { next = end + 1; }
+        if (result == 5) { if (!options.check) { state.pending_end = next; } }
+        else { if (status == 0 && end < total && !options.check) { state.write(data, end, 1); } state.pending = next; state.pending_end = next; }
         start = end + 1; number += 1;
     }
+    if (status == 0) { state.emit(); }
     state.flush();
     if (status == 0 && state.failed) { say("uconv: io-failure\n", 18); status = 3; }
     state.output.destroy(); state.scratch.destroy(); state.sink.destroy();
@@ -199,16 +212,34 @@ fn process(arguments: std::args::Arguments) -> i32 {
         if (core::result::is_err(core::io::write_all(sink.borrow(), usage.values, usage.start, usage.len()))) { return 3; }
         return 0;
     }
-    let buffer: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(options.input));
+    // Read straight into a doubling Vec: each Descriptor read fills the
+    // free tail directly, so input costs one copy per byte (linear).
+    let buffer: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+    let used: i32 = 0; let status: i32 = 0;
     let source: std::stream::Descriptor = std::stream::stdin();
-    let copied: core::result::Result<u64, core::io::CopyFailure> = std::stream::copy(source.borrow(), buffer.borrow());
-    if (core::result::is_err(copied)) {
-        let failure: core::io::CopyFailure = core::result::unwrap_err(copied); buffer.destroy();
-        let status: i32 = match (failure.cause) { core::io::Error::LimitExceeded -> 2, core::io::Error::AllocationFailed -> 4, _ -> 3 };
-        if (status == 2) { say("uconv: resource-limit\n", 22); } else { say("uconv: input-failure\n", 21); }
-        return status;
+    while (status == 0) {
+        if (used == buffer.len()) {
+            let grow: i32 = 65536;
+            if (buffer.len() > grow) { grow = buffer.len(); }
+            if (grow > options.input + 1 - used) { grow = options.input + 1 - used; }
+            if (grow <= 0) { status = 2; break; }
+            if (!ensure_bytes(buffer.borrow(), used + grow)) { status = 4; break; }
+        }
+        let got: core::result::Result<i32, core::io::Error> = source.read(buffer.as_slice(), used, buffer.len() - used);
+        if (core::result::is_err(got)) {
+            if (!core::io::is_interrupted(core::result::unwrap_err(got))) { status = 3; }
+        } else {
+            let count: i32 = core::result::unwrap(got);
+            if (count == 0) { break; }
+            used += count;
+            if (used > options.input) { status = 2; }
+        }
     }
-    let status: i32 = run(buffer.borrow(), options); buffer.destroy(); return status;
+    if (status == 2) { say("uconv: resource-limit\n", 22); }
+    if (status == 3) { say("uconv: input-failure\n", 21); }
+    if (status == 4) { say("uconv: allocation-failure\n", 26); }
+    if (status == 0) { status = run(buffer.as_slice(), used, options); }
+    buffer.destroy(); return status;
 }
 fn main() -> i32 {
     let captured: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1, 16, 4096);

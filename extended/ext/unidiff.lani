@@ -56,21 +56,28 @@ fn ud_label_ok(v: core::slice::View<u8>) -> bool {
     if (v.length <= 0) { return false; } let i: i32 = 0;
     while (i < v.length) { let b: u8 = v.values[v.start+i]; if (b == 0 || b == 10 || b == 13) { return false; } i += 1; } return true;
 }
-fn ud_lines_ok(lines: core::slice::View<ext::seqdiff::Line>) -> bool {
-    let i: i32 = 0;
-    while (i < lines.length) {
-        let v: core::slice::View<u8> = lines.values[lines.start+i].bytes; if (v.length == 0) { return false; }
-        let j: i32 = 0; while (j < v.length - 1) { if (v.values[v.start+j] == 10) { return false; } j += 1; }
-        if (i + 1 < lines.length && v.values[v.start+v.length-1] != 10) { return false; }
-        i += 1;
-    }
-    return true;
+fn ud_line_ok(lines: core::slice::View<ext::seqdiff::Line>, i: i32) -> bool {
+    let v: core::slice::View<u8> = lines.values[lines.start+i].bytes; if (v.length == 0) { return false; }
+    let j: i32 = 0; while (j < v.length - 1) { if (v.values[v.start+j] == 10) { return false; } j += 1; }
+    return i + 1 == lines.length || v.values[v.start+v.length-1] == 10;
 }
-
 // Write one file's unified diff. Identical inputs (no hunks) give empty output.
 pub fn write_unified(a: core::slice::View<ext::seqdiff::Line>, b: core::slice::View<ext::seqdiff::Line>, script: &ext::seqdiff::Script, hunks: core::slice::View<ext::seqdiff::Hunk>, old_name: core::slice::View<u8>, new_name: core::slice::View<u8>, max_output: i32) -> core::result::Result<alloc::vec::Vec<u8>, WriteError> {
     if (!ud_label_ok(old_name) || !ud_label_ok(new_name)) { return core::result::Err(WriteError::InvalidHeader); }
-    if (!ud_lines_ok(a) || !ud_lines_ok(b) || a.length != script.before_len() || b.length != script.after_len()) { return core::result::Err(WriteError::InvalidLine); }
+    if (a.length != script.before_len() || b.length != script.after_len()) { return core::result::Err(WriteError::InvalidLine); }
+    // Only emitted lines must be valid file lines (checked as they are written).
+    let h0: i32 = 0;
+    while (h0 < hunks.length) {
+        let hk: ext::seqdiff::Hunk = hunks.values[hunks.start+h0]; let at0: i32 = hk.first;
+        while (at0 < hk.first + hk.count) {
+            let st: ext::seqdiff::Edit = core::result::unwrap(script.step(at0));
+            let ok: bool = true;
+            if (st.kind == 2) { ok = ud_line_ok(b, st.after); } else { ok = ud_line_ok(a, st.before); }
+            if (!ok) { return core::result::Err(WriteError::InvalidLine); }
+            at0 += 1;
+        }
+        h0 += 1;
+    }
     let o: Out = Out { bytes: alloc::vec::new(), limit: max_output, failed: false, full: false };
     if (hunks.length == 0) { return core::result::Ok(o.bytes); }
     ud_text(o.borrow(), "--- ", 4); ud_bytes(o.borrow(), old_name); ud_text(o.borrow(), "\n+++ ", 5); ud_bytes(o.borrow(), new_name); ud_byte(o.borrow(), 10);

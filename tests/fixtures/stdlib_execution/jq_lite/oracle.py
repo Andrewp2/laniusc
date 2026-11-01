@@ -6,7 +6,7 @@ are rejected, and any decoded lone surrogate rejects the document. Numbers
 keep their source spelling and objects keep ordered duplicate pairs.
 
 usage: oracle.py GROUP EXECUTABLE   (GROUP: suite, generated, mutations, paths, chunks, errors,
-                                     bytewise and writer take json_stream_contracts)
+                                     bytewise, stream and writer take json_stream_contracts)
 """
 import json
 import random
@@ -410,6 +410,28 @@ def main():
                 tally.agree += 1
             else:
                 tally.failures.append((data[:40], want, code, out, err))
+    elif group == 'stream':
+        # json_stream_contracts.lani "big": TokenReader with 7-byte scratch and
+        # Writer.flush_to every 32 buffered bytes. Output is complete only on success.
+        inputs = [(n, d) for n, d in SUITE] + [('gen%d' % i, rand_doc(rng)) for i in range(150)]
+        inputs += [('mut%d' % i, mutate(rng, rand_doc(rng))) for i in range(150)]
+        for name, data in inputs:
+            try:
+                want = (render(reference(data)) + '\n').encode('utf-8')
+            except (ValueError, RecursionError):
+                want = None
+            proc = subprocess.run([exe, 'big'], input=data, capture_output=True, timeout=20)
+            tally.cases += 1
+            if want is None:
+                tally.rejected += 1
+                ok = proc.returncode == 2
+            else:
+                tally.accepted += 1
+                ok = proc.returncode == 0 and proc.stdout == want
+            if ok:
+                tally.agree += 1
+            else:
+                tally.failures.append((name, data[:80], want, proc.returncode, proc.stdout[:120]))
     elif group == 'bytewise':
         # EXECUTABLE is tests/fixtures/extended/json_stream_contracts.lani:
         # one byte per feed, every token copied through the writer.

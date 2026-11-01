@@ -155,7 +155,7 @@ fn barriers(region: &std::sync::Region) -> i32 {
 // increase; shared per-sender counts and sequence sums prove no loss or
 // duplication. Consumers end on Disconnected after every producer closes.
 fn channels(region: &std::sync::Region, producers: i32, consumers: i32, messages: i64, capacity: i32) -> i32 {
-    let queue: std::channel::Channel = std::channel::bounded(region, capacity).unwrap();
+    let queue: std::channel::Channel<u64> = std::channel::bounded<u64>(region, capacity).unwrap();
     let counts: ptr = region.allocate(16 * 8).unwrap();
     let sums: ptr = region.allocate(16 * 8).unwrap();
     let disorder: std::atomic::Atomic64 = std::atomic::at64(cell(region));
@@ -163,8 +163,8 @@ fn channels(region: &std::sync::Region, producers: i32, consumers: i32, messages
     let pool: std::worker::Pool = std::worker::pool(producers + consumers).unwrap();
     // Register every endpoint before any worker that uses one exists. The
     // handles are identical copies; the shared counts carry the ownership.
-    let tx: std::channel::Sender = queue.open_sender().unwrap();
-    let rx: std::channel::Receiver = queue.open_receiver().unwrap();
+    let tx: std::channel::Sender<u64> = queue.open_sender().unwrap();
+    let rx: std::channel::Receiver<u64> = queue.open_receiver().unwrap();
     let w: i32 = 1;
     while (w < producers) { queue.open_sender().unwrap(); w += 1; }
     w = 1;
@@ -229,11 +229,11 @@ fn channels(region: &std::sync::Region, producers: i32, consumers: i32, messages
     return 0;
 }
 
-fn send_error(result: core::result::Result<i32, std::channel::SendError>) -> i32 {
+fn send_error(result: core::result::Result<i32, std::channel::SendError<u64>>) -> i32 {
     if (result.is_ok()) { return 0; }
     return match (result.unwrap_err()) { std::channel::SendError::Full(v) -> 1, std::channel::SendError::Disconnected(v) -> 2, std::channel::SendError::TimedOut(v) -> 3, std::channel::SendError::Sync(e) -> 4 };
 }
-fn returned(result: core::result::Result<i32, std::channel::SendError>) -> u64 {
+fn returned(result: core::result::Result<i32, std::channel::SendError<u64>>) -> u64 {
     return match (result.unwrap_err()) { std::channel::SendError::Full(v) -> v, std::channel::SendError::Disconnected(v) -> v, std::channel::SendError::TimedOut(v) -> v, std::channel::SendError::Sync(e) -> 0 };
 }
 fn recv_error(result: core::result::Result<u64, std::channel::RecvError>) -> i32 {
@@ -243,25 +243,25 @@ fn recv_error(result: core::result::Result<u64, std::channel::RecvError>) -> i32
 
 // Single-process edges: try, timeouts and both disconnect directions.
 fn edges(region: &std::sync::Region) -> i32 {
-    let queue: std::channel::Channel = std::channel::bounded(region, 2).unwrap();
+    let queue: std::channel::Channel<u64> = std::channel::bounded<u64>(region, 2).unwrap();
     let rx0: core::result::Result<u64, std::channel::RecvError> = queue.open_receiver().unwrap().try_recv();
     if (recv_error(rx0) != 2) { return 1; }
-    let tx: std::channel::Sender = queue.open_sender().unwrap();
-    let rx: std::channel::Receiver = queue.open_receiver().unwrap();
+    let tx: std::channel::Sender<u64> = queue.open_sender().unwrap();
+    let rx: std::channel::Receiver<u64> = queue.open_receiver().unwrap();
     if (recv_error(rx.try_recv()) != 1) { return 2; }
     if (recv_error(rx.recv_timeout_ms(20)) != 3) { return 3; }
     if (send_error(tx.try_send(5)) != 0 || send_error(tx.try_send(6)) != 0) { return 4; }
-    let full: core::result::Result<i32, std::channel::SendError> = tx.try_send(7);
+    let full: core::result::Result<i32, std::channel::SendError<u64>> = tx.try_send(7);
     if (send_error(full) != 1 || returned(full) != 7) { return 5; }
-    let late: core::result::Result<i32, std::channel::SendError> = tx.send_timeout_ms(8, 20);
+    let late: core::result::Result<i32, std::channel::SendError<u64>> = tx.send_timeout_ms(8, 20);
     if (send_error(late) != 3 || returned(late) != 8) { return 6; }
     if (rx.recv().unwrap() != 5) { return 7; }
     // One receiver opened above for the probe is still registered: close both.
     if (rx.close().unwrap() != 1 || rx.close().unwrap() != 0 || rx.close().is_ok()) { return 8; }
-    let gone: core::result::Result<i32, std::channel::SendError> = tx.send(9);
+    let gone: core::result::Result<i32, std::channel::SendError<u64>> = tx.send(9);
     if (send_error(gone) != 2 || returned(gone) != 9) { return 9; }
     // Messages sent before the last sender closes are still delivered.
-    let reopened: std::channel::Receiver = queue.open_receiver().unwrap();
+    let reopened: std::channel::Receiver<u64> = queue.open_receiver().unwrap();
     if (tx.close().unwrap() != 0) { return 10; }
     if (reopened.recv().unwrap() != 6) { return 11; }
     if (recv_error(reopened.recv()) != 2 || recv_error(reopened.recv_timeout_ms(5)) != 2) { return 12; }

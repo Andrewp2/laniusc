@@ -5,7 +5,8 @@ usage: python3 -I tgz_oracle.py TGZ COMPRESS_BYTES WORKDIR [--quick]
 Every generated case is deterministic (seeded). Prints one count line per
 group and exits nonzero on any disagreement.
 """
-import gzip, hashlib, io, os, random, shutil, stat, subprocess, sys, tarfile, zlib
+import gzip, hashlib, io, os, random, resource, shutil, stat, subprocess, sys, tarfile, zlib
+GNU_TAR = shutil.which("tar")
 
 TGZ, CODEC, WORK = sys.argv[1:4]
 QUICK = "--quick" in sys.argv
@@ -160,6 +161,12 @@ def make_tree(root, rng, case):
             h.write(data)
         os.chmod(full, rng.choice([0o644, 0o600, 0o755, 0o640]))
         names.append(f)
+    for _ in range(rng.randrange(0, 3)):
+        if names:
+            first = rng.choice(names)
+            link = os.path.join(rng.choice(dirs), "hl_" + name())
+            if not os.path.lexists(os.path.join(root, link)) and len(link.encode()) < 600:
+                os.link(os.path.join(root, first), os.path.join(root, link))
     if names and rng.random() < 0.6:
         target = os.path.basename(rng.choice(names))
         if rng.random() < 0.3:
@@ -179,11 +186,22 @@ def snapshot(root):
             if stat.S_ISLNK(st.st_mode):
                 out[rel] = ("l", os.readlink(full))
             elif stat.S_ISDIR(st.st_mode):
-                out[rel] = ("d",)
+                out[rel] = ("d", stat.S_IMODE(st.st_mode), int(st.st_mtime))
             else:
                 with open(full, "rb") as h:
-                    out[rel] = ("f", hashlib.sha256(h.read()).hexdigest(), stat.S_IMODE(st.st_mode))
+                    out[rel] = ("f", hashlib.sha256(h.read()).hexdigest(), stat.S_IMODE(st.st_mode), int(st.st_mtime))
     return out
+
+
+def groups(root, prefix=""):
+    seen = {}
+    for base, ds, fs in os.walk(root):
+        for n in fs:
+            full = os.path.join(base, n)
+            st = os.lstat(full)
+            if stat.S_ISREG(st.st_mode) and st.st_nlink > 1:
+                seen.setdefault(st.st_ino, []).append(prefix + os.path.relpath(full, root))
+    return sorted(tuple(sorted(v)) for v in seen.values() if len(v) > 1)
 
 
 def members(path):
@@ -193,10 +211,21 @@ def members(path):
             if m.issym():
                 out[m.name] = ("l", m.linkname)
             elif m.isdir():
-                out[m.name] = ("d",)
+                out[m.name] = ("d", m.mode, int(m.mtime))
             else:
-                out[m.name] = ("f", hashlib.sha256(t.extractfile(m).read()).hexdigest(), m.mode)
+                # Hard links resolve to their target's data and metadata.
+                target = t.getmember(m.linkname) if m.islnk() else m
+                out[m.name] = ("f", hashlib.sha256(t.extractfile(m).read()).hexdigest(), target.mode, int(target.mtime))
     return out
+
+
+def tar_groups(path):
+    linked = {}
+    with tarfile.open(path, "r:*") as t:
+        for m in t:
+            if m.islnk():
+                linked.setdefault(m.linkname, {m.linkname}).add(m.name)
+    return sorted(tuple(sorted(v)) for v in linked.values())
 
 
 def tar_group(rng):
@@ -207,7 +236,9 @@ def tar_group(rng):
         src = os.path.join(base, "src")
         make_tree(os.path.join(src, "top"), rng, case)
         expected = {("top/" + k): v for k, v in snapshot(os.path.join(src, "top")).items()}
-        expected["top"] = ("d",)
+        st = os.stat(os.path.join(src, "top"))
+        expected["top"] = ("d", stat.S_IMODE(st.st_mode), int(st.st_mtime))
+        expected_groups = groups(os.path.join(src, "top"), "top/")
         # Lanius create -> Python tarfile read.
         for gz in (False, True):
             archive = os.path.join(base, "lanius.tar" + (".gz" if gz else ""))
@@ -220,7 +251,7 @@ def tar_group(rng):
             except Exception as e:
                 fail(f"tarfile rejected lanius case={case}: {e}")
                 continue
-            if got == expected:
+            if got == expected and tar_groups(archive) == expected_groups:
                 bump("tar: Lanius create -> Python tarfile" + (" (gzip)" if gz else ""))
             else:
                 fail(f"tarfile view differs case={case} gz={gz}: {sorted(set(got) ^ set(expected))[:4]}")
@@ -246,17 +277,11 @@ def tar_group(rng):
                 out = os.path.join(base, f"out-{label}-{int(gz)}")
                 os.makedirs(out)
                 code, _, err = run([TGZ, "-xf", archive, "-C", out])
-                if fmt == tarfile.GNU_FORMAT:
-                    if code == 2 and os.listdir(out) == []:
-                        bump("tar: GNU-format archive rejected before extraction")
-                    else:
-                        fail(f"gnu archive rc={code} case={case}")
-                    continue
                 if code != 0:
                     fail(f"tgz extract {label} gz={gz} case={case} rc={code} {err!r}")
                     continue
                 got = {k: v for k, v in snapshot(out).items()}
-                if got == expected:
+                if got == expected and groups(out) == expected_groups:
                     bump(f"tar: Python {label} create -> Lanius extract" + (" (gzip)" if gz else ""))
                 else:
                     fail(f"extract differs {label} gz={gz} case={case}: {sorted(set(got) ^ set(expected))[:4]}")
@@ -264,10 +289,33 @@ def tar_group(rng):
         out = os.path.join(base, "out-self")
         os.makedirs(out)
         code, _, _ = run([TGZ, "-xzf", os.path.join(base, "lanius.tar.gz"), "-C", out])
-        if code == 0 and snapshot(out) == expected:
+        if code == 0 and snapshot(out) == expected and groups(out) == expected_groups:
             bump("tar: Lanius create -> Lanius extract")
         else:
             fail(f"self round trip case={case}")
+        # GNU tar as a second oracle: its gnu/pax/ustar output -> tgz, and tgz -> GNU tar.
+        if GNU_TAR:
+            for fmt in ("gnu", "pax", "ustar"):
+                for gz in (False, True):
+                    archive = os.path.join(base, f"gnu-{fmt}.tar" + (".gz" if gz else ""))
+                    code, _, err = run([GNU_TAR, "--format=" + fmt, "-c" + ("z" if gz else "") + "f", archive, "-C", src, "top"])
+                    if code != 0:
+                        bump(f"tar: GNU tar {fmt} cannot represent tree (skipped)")
+                        continue
+                    out = os.path.join(base, f"out-gnu-{fmt}-{int(gz)}")
+                    os.makedirs(out)
+                    code, _, err = run([TGZ, "-xf", archive, "-C", out])
+                    if code == 0 and snapshot(out) == expected and groups(out) == expected_groups:
+                        bump(f"tar: GNU tar {fmt} create -> Lanius extract" + (" (gzip)" if gz else ""))
+                    else:
+                        fail(f"gnu tar {fmt} gz={gz} case={case} rc={code} {err!r}")
+            out = os.path.join(base, "out-by-gnu")
+            os.makedirs(out)
+            code, _, err = run([GNU_TAR, "-xpzf", os.path.join(base, "lanius.tar.gz"), "-C", out])
+            if code == 0 and snapshot(out) == expected and groups(out) == expected_groups:
+                bump("tar: Lanius create -> GNU tar extract")
+            else:
+                fail(f"gnu tar extract of lanius case={case} rc={code} {err!r}")
         shutil.rmtree(base)
     # Global pax header and explicit pax records written by Python.
     base = os.path.join(WORK, "global")
@@ -416,7 +464,95 @@ def corrupt_group(rng):
     shutil.rmtree(base)
 
 
+def stream_group():
+    """A tgz pipeline over a 96 MiB tree must not hold the archive or a member."""
+    base = os.path.join(WORK, "stream")
+    shutil.rmtree(base, ignore_errors=True)
+    os.makedirs(os.path.join(base, "src", "big"))
+    os.makedirs(os.path.join(base, "out"))
+    block = random.Random(7).randbytes(1 << 20)
+    with open(os.path.join(base, "src", "big", "a.bin"), "wb") as h:
+        for i in range(64):
+            h.write(block)
+    with open(os.path.join(base, "src", "big", "b.txt"), "wb") as h:
+        h.write(b"lanius streaming\n" * (2 << 20))
+    del block
+    # Measure from a fresh, small interpreter so forked children do not
+    # inherit this process's resident pages.
+    probe = """
+import resource, subprocess, sys
+tgz, src, out = sys.argv[1:]
+create = subprocess.Popen([tgz, "-czf", "-", "-C", src, "big"], stdout=subprocess.PIPE)
+extract = subprocess.Popen([tgz, "-xzf", "-", "-C", out], stdin=create.stdout)
+create.stdout.close()
+print(extract.wait(timeout=240), create.wait(timeout=240), resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss)
+"""
+    measured = subprocess.run([sys.executable, "-I", "-c", probe, TGZ, os.path.join(base, "src"), os.path.join(base, "out")], capture_output=True, text=True, timeout=280)
+    a, b, peak = (int(x) for x in measured.stdout.split())
+    rc = (a, b)
+    same = snapshot(os.path.join(base, "src")) == snapshot(os.path.join(base, "out"))
+    print(f"stream: 96 MiB pipeline rc={rc} peak child RSS {peak} KiB")
+    if rc == (0, 0) and same and peak < 32768:
+        bump("stream: 96 MiB czf | xzf pipeline under 32 MiB RSS")
+    else:
+        fail(f"stream pipeline rc={rc} same={same} peak={peak}")
+    shutil.rmtree(base)
+
+
+def guard_group():
+    base = os.path.join(WORK, "guard")
+    shutil.rmtree(base, ignore_errors=True)
+    outside = os.path.join(base, "outside")
+    os.makedirs(outside)
+    with open(os.path.join(outside, "keep"), "wb") as h:
+        h.write(b"keep")
+    def archive(entries):
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w", format=tarfile.PAX_FORMAT) as t:
+            for name, kind, value in entries:
+                info = tarfile.TarInfo(name)
+                if kind == "f":
+                    info.size = len(value)
+                    t.addfile(info, io.BytesIO(value))
+                else:
+                    info.type = tarfile.SYMTYPE if kind == "l" else tarfile.LNKTYPE
+                    info.linkname = value
+                    t.addfile(info)
+        path = os.path.join(base, "g.tar")
+        with open(path, "wb") as h:
+            h.write(buf.getvalue())
+        return path
+    def untouched():
+        return os.listdir(outside) == ["keep"] and open(os.path.join(outside, "keep"), "rb").read() == b"keep"
+    cases = [
+        ("existing symlinked parent", [("evil/x", "f", b"x")], lambda out: os.symlink(outside, os.path.join(out, "evil")), 2),
+        ("existing symlink leaf is replaced, not followed", [("keep", "f", b"new")], lambda out: os.symlink(os.path.join(outside, "keep"), os.path.join(out, "keep")), 0),
+        ("archive symlink then member through it", [("s", "l", "../outside"), ("s/x", "f", b"x")], None, 2),
+        ("hard link through a symlinked parent", [("s", "l", "../outside"), ("h", "h", "s/keep")], None, 2),
+        ("hard link to a member", [("a", "f", b"data"), ("b", "h", "a")], None, 0),
+    ]
+    for label, entries, prepare, status in cases:
+        out = os.path.join(base, "out")
+        shutil.rmtree(out, ignore_errors=True)
+        os.makedirs(out)
+        if prepare:
+            prepare(out)
+        code, _, _ = run([TGZ, "-xf", archive(entries), "-C", out])
+        ok = code == status and untouched()
+        if ok and status == 0 and label.startswith("existing"):
+            ok = not os.path.islink(os.path.join(out, "keep")) and open(os.path.join(out, "keep"), "rb").read() == b"new"
+        if ok and label == "hard link to a member":
+            ok = os.stat(os.path.join(out, "a")).st_ino == os.stat(os.path.join(out, "b")).st_ino
+        if ok:
+            bump("guard: " + label)
+        else:
+            fail(f"guard {label} rc={code}")
+    shutil.rmtree(base)
+
+
 rng = random.Random(20261031)
+stream_group()
+guard_group()
 codec_group(rng)
 tar_group(rng)
 corrupt_group(rng)

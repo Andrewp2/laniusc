@@ -10,10 +10,11 @@ import core::mem;
 import core::result;
 import core::slice;
 import std::linux;
+import std::sync;
 
 pub const MAX_WORKERS: i32 = 1024;
 
-pub enum Error { InvalidCapacity, Full, Destroyed, NotSpawned, AlreadyJoined, Unjoined, Host(i32) }
+pub enum Error { InvalidCapacity, Full, Destroyed, NotSpawned, AlreadyJoined, Unjoined, TimedOut, Host(i32) }
 pub enum Role { Parent(i32), Child(i32) }
 pub enum Exit { Code(i32), Signal(i32) }
 // joined workers, how many did not exit with code 0, and the first of those.
@@ -92,6 +93,55 @@ pub impl Pool {
             if (!again) { return core::result::Err(error); }
         }
         return core::result::Err(Error::Host(22));
+    }
+    // Like join, but Err(TimedOut) once deadline passes with the worker still
+    // running; it stays unjoined. Polls every millisecond.
+    pub fn join_until(&self, index: i32, deadline: std::sync::Deadline) -> core::result::Result<Exit, Error> {
+        if (!self.live) { return core::result::Err(Error::Destroyed); }
+        if (index < 0 || index >= self.count) { return core::result::Err(Error::NotSpawned); }
+        let pid: i64 = load_i64(self.slot(index));
+        if (pid < 0) { return core::result::Err(Error::AlreadyJoined); }
+        let storage: [i32; 2] = [0; 2];
+        let status: ptr = core::mem::i32_array_data_ptr(storage);
+        let nowhere: ptr = 0;
+        while (true) {
+            let args: [std::linux::Argument; 4] = [word_arg(pid), std::linux::Argument::Address(status), word_arg(1), std::linux::Argument::Address(nowhere)];
+            let done: core::result::Result<i64, std::linux::Error> = std::linux::call(61, core::slice::view(args, 4).unwrap());
+            if (done.is_ok() && done.unwrap() == pid) {
+                store_i64(self.slot(index), 0 - pid);
+                self.joined += 1;
+                return core::result::Ok(decode(storage[0]));
+            }
+            if (done.is_err()) {
+                let error: Error = host(done.unwrap_err());
+                let again: bool = match (error) { Error::Host(code) -> code == 4, _ -> false };
+                if (!again) { return core::result::Err(error); }
+            }
+            let past: core::result::Result<bool, std::sync::Error> = std::sync::is_past(deadline);
+            if (past.is_err() || past.unwrap()) { return core::result::Err(Error::TimedOut); }
+            let interval: [i32; 4] = [0; 4];
+            let span: ptr = core::mem::i32_array_data_ptr(interval);
+            store_i64(span, 0); store_i64(span + 8, 1000000);
+            let pause: [std::linux::Argument; 2] = [std::linux::Argument::Address(span), std::linux::Argument::Address(nowhere)];
+            std::linux::call(35, core::slice::view(pause, 2).unwrap());
+        }
+        return core::result::Err(Error::TimedOut);
+    }
+    // Send signal to every unjoined worker (for example 9, SIGKILL, after a
+    // cooperative cancellation deadline). Workers still need joining.
+    pub fn signal_all(&self, signal: i32) -> core::result::Result<i32, Error> {
+        let index: i32 = 0; let sent: i32 = 0;
+        while (index < self.count) {
+            let pid: i64 = load_i64(self.slot(index));
+            if (pid > 0) {
+                let args: [std::linux::Argument; 2] = [word_arg(pid), word_arg(signal as i64)];
+                let done: core::result::Result<i64, std::linux::Error> = std::linux::call(62, core::slice::view(args, 2).unwrap());
+                if (done.is_err()) { return core::result::Err(host(done.unwrap_err())); }
+                sent += 1;
+            }
+            index += 1;
+        }
+        return core::result::Ok(sent);
     }
     // Join every unjoined worker in spawn order; stops at the first host error.
     pub fn join_all(&self) -> core::result::Result<Summary, Error> {

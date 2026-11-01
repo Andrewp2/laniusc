@@ -121,7 +121,7 @@ fn run(convert: &Convert) -> i32 {
     }
     let closed = convert.out.end_array();
     if (closed.is_err()) { return json_status(closed.unwrap_err()); }
-    if (!put(target, convert.out.output())) { return 3; }
+    if (convert.out.flush_to<std::stream::Descriptor>(target.borrow()).is_err()) { return 3; }
     if (!put(target, literal("\n", 1))) { return 3; }
     return 0;
 }
