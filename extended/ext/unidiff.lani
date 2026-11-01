@@ -237,25 +237,44 @@ pub fn apply(base: core::slice::View<u8>, patch: &Patch, options: ApplyOptions) 
         let expected: i32 = declared + last_offset;
         let found: bool = false; let overlap: bool = false; let fuzz: i32 = 0; let ptop: i32 = -1; let pbot: i32 = -1; let pos: i32 = 0; let top: i32 = 0; let bot: i32 = 0;
         let span: i32 = n + olen + 1; if (options.max_offset < span) { span = options.max_offset; }
+        // GNU rule: with unequal leading/trailing context, the shorter side is
+        // anchored to the start (hunk at line 1) or end of the file until fuzz
+        // covers the difference.
+        let context: i32 = lead; if (trail > context) { context = trail; }
         while (!found && fuzz <= options.max_fuzz) {
-            top = fuzz; if (top > lead) { top = lead; } bot = fuzz; if (bot > trail) { bot = trail; }
-            // A larger fuzz that drops no further context repeats the same search.
-            let delta: i32 = 0; if (fuzz > 0 && top == ptop && bot == pbot) { delta = span + 1; }
-            ptop = top; pbot = bot;
-            while (!found && delta <= span) {
-                let sign: i32 = 0;
-                while (!found && sign < 2) {
-                    if (sign == 0 || delta > 0) {
-                        let at: i32 = expected + delta; if (sign == 1) { at = expected - delta; }
-                        if (ud_matches(bv, ov, at, top, bot, w.borrow())) {
-                            if (at + top >= min_pos) { found = true; pos = at; } else { overlap = true; }
-                        }
+            top = fuzz + lead - context; bot = fuzz + trail - context;
+            // Leading and trailing context cannot both fall short of `context`.
+            let anchored: bool = false; let at_start: bool = false;
+            if (top < 0) { top = 0; if (hunk.old_start <= 1) { anchored = true; at_start = true; } }
+            if (bot < 0) { bot = 0; anchored = true; }
+            if (anchored) {
+                // Start anchor tries position 0; end anchor tries n - olen.
+                if (fuzz == 0 || top != ptop || bot != pbot) {
+                    let at: i32 = n - olen; if (at_start) { at = 0; }
+                    let reach: i32 = at - expected; if (reach < 0) { reach = 0 - reach; }
+                    if (reach <= options.max_offset && ud_matches(bv, ov, at, top, bot, w.borrow())) {
+                        if (at + top >= min_pos) { found = true; pos = at; } else { overlap = true; }
                     }
-                    sign += 1;
                 }
-                if (w.used > w.max) { return ud_apply_fail(old, lines, places, reports, ApplyError::WorkLimit); }
-                delta += 1;
+            } else {
+                // A larger fuzz that drops no further context repeats the same search.
+                let delta: i32 = 0; if (fuzz > 0 && top == ptop && bot == pbot) { delta = span + 1; }
+                while (!found && delta <= span) {
+                    let sign: i32 = 0;
+                    while (!found && sign < 2) {
+                        if (sign == 0 || delta > 0) {
+                            let at: i32 = expected + delta; if (sign == 1) { at = expected - delta; }
+                            if (ud_matches(bv, ov, at, top, bot, w.borrow())) {
+                                if (at + top >= min_pos) { found = true; pos = at; } else { overlap = true; }
+                            }
+                        }
+                        sign += 1;
+                    }
+                    if (w.used > w.max) { return ud_apply_fail(old, lines, places, reports, ApplyError::WorkLimit); }
+                    delta += 1;
+                }
             }
+            ptop = top; pbot = bot;
             if (!found) { fuzz += 1; }
         }
         if (found) {
