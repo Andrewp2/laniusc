@@ -15,7 +15,7 @@ open Lanius.Faithful.SelfCert
 theorem ok_try_stmt : FnOk prog prims info (1947, ⟨3, [], 0⟩) :=
   fnOk_of fn_try_stmt (by decide +kernel)
 
-theorem ok_try_call_of : FnOk prog prims info (1948, ⟨31, [], 0⟩) :=
+theorem ok_try_call_of : FnOk prog prims info (1948, ⟨30, [], 0⟩) :=
   fnOk_of fn_try_call_of (by decide +kernel)
 
 theorem ok_match_named : FnOk prog prims info (1949, ⟨10, [0], 0⟩) :=
@@ -96,7 +96,7 @@ theorem ok_is_some_index : FnOk prog prims info (1974, ⟨0, [], 0⟩) :=
 theorem ok_find_fn : FnOk prog prims info (1975, ⟨2, [0], 0⟩) :=
   fnOk_of fn_find_fn (by decide +kernel)
 
-theorem ok_eff_free : FnOk prog prims info (1976, ⟨30, [0], 0⟩) :=
+theorem ok_eff_free : FnOk prog prims info (1976, ⟨29, [0], 0⟩) :=
   fnOk_of fn_eff_free (by decide +kernel)
 
 theorem ok_param_expects : FnOk prog prims info (1977, ⟨12, [], 0⟩) :=
@@ -108,13 +108,13 @@ theorem ok_eff_called : FnOk prog prims info (1978, ⟨18, [], 0⟩) :=
 theorem ok_skip_expects : FnOk prog prims info (1979, ⟨1, [], 0⟩) :=
   fnOk_of fn_skip_expects (by decide +kernel)
 
-theorem ok_param_patterns : FnOk prog prims info (1980, ⟨6, [], 0⟩) :=
+theorem ok_param_patterns : FnOk prog prims info (1980, ⟨5, [], 0⟩) :=
   fnOk_of fn_param_patterns (by decide +kernel)
 
 theorem ok_eff_inferred : FnOk prog prims info (1981, ⟨19, [], 0⟩) :=
   fnOk_of fn_eff_inferred (by decide +kernel)
 
-theorem ok_eff_args_bound : FnOk prog prims info (1982, ⟨30, [0], 0⟩) :=
+theorem ok_eff_args_bound : FnOk prog prims info (1982, ⟨29, [0], 0⟩) :=
   fnOk_of fn_eff_args_bound (by decide +kernel)
 
 theorem ok_ret_binds : FnOk prog prims info (1983, ⟨11, [], 0⟩) :=

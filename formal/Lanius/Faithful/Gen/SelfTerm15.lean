@@ -114,7 +114,7 @@ theorem ok_field_payload : FnOk prog prims info (750, ⟨0, [], 0⟩) :=
 theorem ok_lower_arm_value : FnOk prog prims info (751, ⟨12, [], 0⟩) :=
   fnOk_of fn_lower_arm_value (by decide +kernel)
 
-theorem ok_get_of_usize : FnOk prog prims info (756, ⟨2, [0], 0⟩) :=
+theorem ok_get_of_usize : FnOk prog prims info (756, ⟨1, [0], 0⟩) :=
   fnOk_of fn_get_of_usize (by decide +kernel)
 
 theorem ok_lx_one_first : FnOk prog prims info (757, ⟨15, [], 0⟩) :=

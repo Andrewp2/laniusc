@@ -840,8 +840,8 @@ unless these are assumed:
 - **The prelude table** (`PRELUDE_FNS`, `PRELUDE_TYPES` in `extract.py`,
   and the same table in `extract.lani`). Assumed: `boxed` and `unbox` are
   the identity, `plus`/`times`/`minus` are `Nat` `+`/`*`/`-` on every run
-  that returns (they panic instead of wrapping, and `minus` panics when
-  `b > a`), and `max_of` is `max`. The prelude bodies are the only code
+  that returns (`plus` and `times` panic instead of wrapping; `minus`
+  returns 0 when `b > a`, as `Nat` `-` does), and `max_of` is `max`. The prelude bodies are the only code
   that touches raw memory (`alloc`, `typed_slice_from_storage`).
 - **laniusc and the Lanius runtime** (allocation, panics, stack depth) on
   this program.
