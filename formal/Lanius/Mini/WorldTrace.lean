@@ -205,7 +205,7 @@ heap's bytes as they were, and 1 in `slot`. -/
 theorem hostByte_exec {mp : Program} {d : Nat} {E : Env} {H : Heap} (slot : Nat) (pos : 0 < H.top)
     (which : E slot = 1 ∨ E slot = 2) :
     ∃ E' H', Exec mp d E H (hostByteCode slot) (.normal E' H') ∧ (∀ j < slot, E' j = E j) ∧ E' slot = 1 ∧
-      H'.bytes = H.bytes ∧ H'.cursor = H.cursor ∧ H'.limit = H.limit ∧ H'.top = H.top ∧
+      H'.bytes = H.bytes ∧ H'.cursor = H.cursor ∧ H'.limit = H.limit ∧ H'.top = H.top ∧ H'.fsp = H.fsp ∧
       H'.io.trace = H.io.trace ++ [Event.write (E slot).toNat [lowByte (E (slot + 1))]] ∧ H'.io.input = H.io.input ∧
       H'.io.monotonic = H.io.monotonic ∧ H'.io.realtime = H.io.realtime ∧ H'.io.entropy = H.io.entropy := by
   have cond : (Expr.binary .u64 .or (.compare .u64 .eq (.var slot) (.lit 1))
@@ -235,7 +235,7 @@ theorem hostByte_exec {mp : Program} {d : Nat} {E : Env} {H : Heap} (slot : Nat)
   have s5 : Exec mp d E2 H3 (.assign slot (.lit 1)) (.normal (E2.set slot ((Expr.lit 1).eval E2)) H3) := .assign
   have saved : E2 (slot + 2) = BitVec.ofNat 64 (H.bytes 0).toNat := by simp [E2, E1, set_get, Expr.eval]
   refine ⟨_, _, .ifTrue cond (.seq s1 (.seq s2 (.seq s3 (.seq s4 s5)))), ?_, by simp [set_get, Expr.eval], ?_,
-    rfl, rfl, rfl, ?_, rfl, rfl, rfl, rfl⟩
+    rfl, rfl, rfl, rfl, ?_, rfl, rfl, rfl, rfl⟩
   · intro j lt
     simp only [E2, E1, set_get]
     rw [if_neg (by omega), if_neg (by omega), if_neg (by omega)]

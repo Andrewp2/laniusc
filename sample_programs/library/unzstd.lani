@@ -1,0 +1,224 @@
+// unzstd / zstdcat over streaming ext::zstd: decode .zst files (all frames,
+// skipping skippable ones) through fixed 128 KiB buffers plus the window
+// each frame asks for. FILE.zst becomes FILE (kept: like zstd, the input is
+// not removed; -f overwrites); no FILE or "-" decodes standard input to
+// standard output; -c (or running as zstdcat) writes to standard output; -t
+// tests only; --memory raises the window limit. A failed decode removes its
+// partial output file.
+// Exit 2: arguments, existing output or invalid data; 3: I/O; 4: allocation.
+module app::main;
+
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import ext::zstd;
+import std::args;
+import std::cli;
+import std::file;
+import std::file_ops;
+import std::filesystem;
+import std::fs;
+import std::stream;
+
+const CHUNK: i32 = 131072;
+enum Error { Usage, Suffix, Exists, Data, Window, Io, Allocation }
+struct Options { stdout: bool, test: bool, force: bool, help: bool, memory: i32 }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Work { input: alloc::vec::Vec<u8>, output: alloc::vec::Vec<u8>, workspace: alloc::vec::Vec<i32>, stage: alloc::vec::Vec<u8>, literals: alloc::vec::Vec<u8>, window: alloc::vec::Vec<u8>, name: core::slice::View<u8>, detail: ext::zstd::Error }
+impl Work { fn borrow(&self) -> &Work { return self; } }
+
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(bytes,count));
+}
+fn at(view: core::slice::View<u8>, index: i32) -> u8 { return core::option::unwrap(view.get(index)); }
+fn sub(view: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> { return core::result::unwrap(view.subview(start,end)); }
+fn say(message: core::slice::View<u8>) { let sink: std::stream::Descriptor = std::stream::stderr(); core::io::write_all(sink.borrow(),message.values,message.start,message.len()); }
+fn detail(error: ext::zstd::Error) -> core::slice::View<u8> {
+    return match (error) {
+        ext::zstd::Error::Bounds -> literal("bad buffers",11), ext::zstd::Error::Truncated -> literal("truncated input",15),
+        ext::zstd::Error::Magic -> literal("not in zstd format",18), ext::zstd::Error::FrameHeader -> literal("bad frame header",16),
+        ext::zstd::Error::Dictionary -> literal("needs a dictionary",18), ext::zstd::Error::WindowTooLarge -> literal("window too large",16),
+        ext::zstd::Error::BlockType -> literal("bad block type",14), ext::zstd::Error::BlockSize -> literal("bad block size",14),
+        ext::zstd::Error::Literals -> literal("bad literals",12), ext::zstd::Error::Huffman -> literal("bad Huffman data",16),
+        ext::zstd::Error::Fse -> literal("bad FSE table",13), ext::zstd::Error::Sequences -> literal("bad sequences",13),
+        ext::zstd::Error::Offset -> literal("bad match offset",16), ext::zstd::Error::ContentSize -> literal("wrong content size",18),
+        ext::zstd::Error::Checksum -> literal("checksum mismatch",17), ext::zstd::Error::Failed -> literal("decoder failure",15)
+    };
+}
+fn failed(work: &Work, error: Error) -> i32 {
+    say(literal("unzstd: ",8)); if (work.name.len() > 0) { say(work.name); say(literal(": ",2)); }
+    let text: core::slice::View<u8> = match (error) {
+        Error::Usage -> literal("invalid arguments",17),
+        Error::Suffix -> literal("unknown suffix (expected .zst)",30),
+        Error::Exists -> literal("output exists (use -f)",22),
+        Error::Data -> detail(work.detail),
+        Error::Window -> detail(work.detail),
+        Error::Io -> literal("I/O failed",10),
+        Error::Allocation -> literal("allocation failed",17)
+    };
+    say(text); say(literal("\n",1));
+    let status: i32 = match (error) { Error::Io -> 3, Error::Allocation -> 4, _ -> 2 };
+    return status;
+}
+fn path_of(bytes: core::slice::View<u8>) -> core::result::Result<core::path::Path,Error> {
+    let made: core::result::Result<core::path::Path,core::path::Error> = core::path::from_view(bytes);
+    if (core::result::is_err(made)) { return core::result::Err(Error::Usage); } return core::result::Ok(core::result::unwrap(made));
+}
+fn base(view: core::slice::View<u8>) -> ptr { return core::mem::i32_slice_data_ptr(view.values)+(view.start as usize); }
+fn write_fd(fd: i32, bytes: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    let done: i32 = 0;
+    while (done < bytes.len()) {
+        let put: i32 = std::fs::write(fd,base(bytes)+(done as usize),(bytes.len()-done) as usize);
+        if (put == -4) { continue; }
+        if (put <= 0) { return core::result::Err(Error::Io); }
+        done += put;
+    }
+    return core::result::Ok(done);
+}
+fn read_fd(fd: i32, into: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    while (true) {
+        let got: i32 = std::fs::read(fd,base(into),into.len() as usize);
+        if (got >= 0 && got <= into.len()) { return core::result::Ok(got); }
+        if (got != -4) { return core::result::Err(Error::Io); }
+    } return core::result::Err(Error::Io);
+}
+fn handle(file: std::file::File) -> i32 { return core::option::unwrap(file.raw_handle()); }
+fn close_fd(fd: i32) { if (fd > 2) { let file: std::file::File = core::result::unwrap(std::file::from_owned_handle(fd)); file.close(); } }
+fn exists(path: core::path::Path) -> core::result::Result<bool,Error> {
+    let meta: std::file_ops::Metadata = std::file_ops::empty_metadata();
+    let queried: core::result::Result<i32,core::io::Error> = std::file_ops::metadata_into(path,false,meta.borrow());
+    if (core::result::is_err(queried)) {
+        let missing: bool = match (core::result::unwrap_err(queried)) { core::io::Error::Host(code) -> code == 2, _ -> false };
+        if (missing) { return core::result::Ok(false); } return core::result::Err(Error::Io);
+    }
+    return core::result::Ok(true);
+}
+
+fn work() -> core::result::Result<Work,Error> {
+    let w: Work = Work { input: alloc::vec::new(), output: alloc::vec::new(), workspace: alloc::vec::new(), stage: alloc::vec::new(), literals: alloc::vec::new(), window: alloc::vec::new(), name: literal("",0), detail: ext::zstd::Error::Failed };
+    let ok: bool = core::result::is_ok(w.input.try_resize(CHUNK,0)) && core::result::is_ok(w.output.try_resize(CHUNK,0)) && core::result::is_ok(w.workspace.try_resize(ext::zstd::workspace_len(),0))
+        && core::result::is_ok(w.stage.try_resize(ext::zstd::stage_len(),0)) && core::result::is_ok(w.literals.try_resize(ext::zstd::literals_len(),0));
+    if (!ok) { destroy(w.borrow()); return core::result::Err(Error::Allocation); }
+    return core::result::Ok(w);
+}
+fn destroy(w: &Work) { w.input.destroy(); w.output.destroy(); w.workspace.destroy(); w.stage.destroy(); w.literals.destroy(); w.window.destroy(); }
+fn data(w: &Work, error: ext::zstd::Error) -> Error {
+    w.detail = error;
+    return match (error) { ext::zstd::Error::WindowTooLarge -> Error::Window, ext::zstd::Error::Bounds -> Error::Allocation, _ -> Error::Data };
+}
+// Decode every frame from fd_in to fd_out (no output when fd_out < 0).
+fn decode(options: Options, w: &Work, fd_in: i32, fd_out: i32) -> core::result::Result<i32,Error> {
+    let made: core::result::Result<ext::zstd::Decoder,ext::zstd::Error> = ext::zstd::decoder(w.workspace.as_view(),w.stage.as_view(),w.literals.as_view(),ext::zstd::Limits { max_window: options.memory });
+    if (core::result::is_err(made)) { return core::result::Err(data(w,core::result::unwrap_err(made))); }
+    let d: ext::zstd::Decoder = core::result::unwrap(made);
+    let pos: i32 = 0; let len: i32 = 0; let eof: bool = false;
+    while (true) {
+        if (pos == len && !eof) { len = read_fd(fd_in,w.input.as_view())?; pos = 0; if (len == 0) { eof = true; } }
+        let stepped: core::result::Result<ext::zstd::Step,ext::zstd::Error> = d.borrow().step(sub(w.input.as_view(),pos,len),w.output.as_view(),eof);
+        if (core::result::is_err(stepped)) { return core::result::Err(data(w,core::result::unwrap_err(stepped))); }
+        let progress: ext::zstd::Step = core::result::unwrap(stepped); pos += progress.read;
+        if (fd_out >= 0 && progress.written > 0) { write_fd(fd_out,sub(w.output.as_view(),0,progress.written))?; }
+        let status: i32 = match (progress.status) { ext::zstd::Status::Done -> 1, ext::zstd::Status::NeedWindow -> 2, ext::zstd::Status::NeedInput -> 0, ext::zstd::Status::NeedOutput -> 0 };
+        if (status == 1) { return core::result::Ok(0); }
+        if (status == 2) {
+            let want: i32 = d.borrow().window_len();
+            if (w.window.len() < want) { w.window.destroy(); w.window = alloc::vec::new(); if (core::result::is_err(w.window.try_resize(want,0))) { return core::result::Err(Error::Allocation); } }
+            let given: core::result::Result<bool,ext::zstd::Error> = d.borrow().set_window(w.window.as_view());
+            if (core::result::is_err(given)) { return core::result::Err(Error::Allocation); }
+        }
+    } return core::result::Ok(0);
+}
+fn is_dash(name: core::slice::View<u8>) -> bool { return name.len() == 1 && at(name,0) == 45; }
+// FILE.zst or FILE.zstd -> FILE; anything else has no output name.
+fn stem(name: core::slice::View<u8>) -> i32 {
+    let n: i32 = name.len();
+    if (n > 4 && at(name,n-4) == 46 && at(name,n-3) == 122 && at(name,n-2) == 115 && at(name,n-1) == 116) { return n-4; }
+    if (n > 5 && at(name,n-5) == 46 && at(name,n-4) == 122 && at(name,n-3) == 115 && at(name,n-2) == 116 && at(name,n-1) == 100) { return n-5; }
+    return -1;
+}
+fn one(options: Options, w: &Work, name: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    w.name = name;
+    let fd_in: i32 = 0;
+    if (!is_dash(name)) {
+        let opened: core::result::Result<std::file::File,core::io::Error> = std::file::open(path_of(name)?,std::file::OpenMode::Read);
+        if (core::result::is_err(opened)) { return core::result::Err(Error::Io); } fd_in = handle(core::result::unwrap(opened));
+    }
+    if (options.test || options.stdout || is_dash(name)) {
+        let fd_out: i32 = 1; if (options.test) { fd_out = -1; }
+        let result: core::result::Result<i32,Error> = decode(options,w,fd_in,fd_out); close_fd(fd_in); return result;
+    }
+    let cut: i32 = stem(name); if (cut < 0) { close_fd(fd_in); return core::result::Err(Error::Suffix); }
+    let target: core::path::Path = path_of(sub(name,0,cut))?;
+    let present: core::result::Result<bool,Error> = exists(target);
+    if (core::result::is_err(present)) { close_fd(fd_in); return core::result::Err(Error::Io); }
+    if (core::result::unwrap(present) && !options.force) { close_fd(fd_in); return core::result::Err(Error::Exists); }
+    let created: core::result::Result<std::file::File,core::io::Error> = std::file::open(target,std::file::OpenMode::Create);
+    if (core::result::is_err(created)) { close_fd(fd_in); return core::result::Err(Error::Io); }
+    let fd_out: i32 = handle(core::result::unwrap(created));
+    let result: core::result::Result<i32,Error> = decode(options,w,fd_in,fd_out); close_fd(fd_in); close_fd(fd_out);
+    if (core::result::is_err(result)) { std::filesystem::remove_file(target); }
+    return result;
+}
+fn apply(options: &Options, id: i32, value: core::option::Option<core::slice::View<u8>>) -> bool {
+    if (id == 7) {
+        // --memory MiB: 1-1024.
+        let text: core::slice::View<u8> = core::option::unwrap(value); let mib: i32 = 0; let k: i32 = 0;
+        if (text.len() == 0 || text.len() > 4) { return false; }
+        while (k < text.len()) { let digit: i32 = (at(text,k) as i32)-48; if (digit < 0 || digit > 9) { return false; } mib = mib*10+digit; k += 1; }
+        if (mib < 1 || mib > 1024) { return false; }
+        options.memory = mib << 20; return true;
+    }
+    if (id == 1) { options.stdout = true; } if (id == 2) { options.test = true; } if (id == 3) { options.force = true; } if (id == 9) { options.help = true; }
+    return true;
+}
+fn arguments(values: std::args::Arguments) -> i32 {
+    let none: Work = Work { input: alloc::vec::new(), output: alloc::vec::new(), workspace: alloc::vec::new(), stage: alloc::vec::new(), literals: alloc::vec::new(), window: alloc::vec::new(), name: literal("",0), detail: ext::zstd::Error::Failed };
+    let all: core::slice::View<core::slice::View<u8>> = values.as_view();
+    // Running as zstdcat implies -c.
+    let program: core::slice::View<u8> = core::option::unwrap(all.get(0)); let n: i32 = program.len(); let cat: bool = false;
+    if (n >= 7) { let tail: core::slice::View<u8> = sub(program,n-7,n); cat = at(tail,0) == 122 && at(tail,1) == 115 && at(tail,2) == 116 && at(tail,3) == 100 && at(tail,4) == 99 && at(tail,5) == 97 && at(tail,6) == 116 && (n == 7 || at(program,n-8) == 47); }
+    let cli: std::cli::Command = std::cli::command(literal("unzstd",6), literal("Decompress zstd (.zst) files; zstdcat writes to standard output.",64));
+    cli.flag(1, 99, literal("stdout",6), literal("write to standard output",24));
+    cli.flag(2, 116, literal("test",4), literal("test integrity without writing",30));
+    cli.flag(3, 102, literal("force",5), literal("overwrite existing output files",31));
+    cli.flag(4, 100, literal("decompress",10), literal("decompress (the default)",24));
+    cli.flag(5, 107, literal("keep",4), literal("keep input files (the default)",30));
+    cli.flag(6, 113, literal("quiet",5), literal("no effect",9));
+    cli.option(7, 77, literal("memory",6), literal("MIB",3), literal("accept windows up to MIB mebibytes (1-1024, default 128)",56));
+    cli.help(9);
+    cli.operands(literal("FILE",4), 0, -1);
+    let parsed: core::result::Result<std::cli::Matches,std::cli::Error> = cli.parse(core::result::unwrap(all.subview(1,all.len())));
+    if (core::result::is_err(parsed)) { cli.print_error(core::result::unwrap_err(parsed), values.as_view()); cli.destroy(); return 2; }
+    let matches: std::cli::Matches = core::result::unwrap(parsed);
+    let options: Options = Options { stdout: cat, test: false, force: false, help: false, memory: ext::zstd::default_limits().max_window };
+    let index: i32 = 0; let usable: bool = true;
+    while (index < matches.occurrences() && usable) { usable = apply(options.borrow(), matches.occurrence_id(index), matches.occurrence_value(index)); index += 1; }
+    if (!usable) { matches.destroy(); cli.destroy(); return failed(none.borrow(),Error::Usage); }
+    if (options.help) { let ok: bool = cli.print_help(-1); matches.destroy(); cli.destroy(); if (!ok) { return failed(none.borrow(),Error::Io); } return 0; }
+    let names: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new(); let valid: bool = true;
+    index = 0;
+    while (index < matches.operand_count() && valid) { valid = core::result::is_ok(names.try_push(matches.operand(index))); index += 1; }
+    matches.destroy(); cli.destroy();
+    if (!valid) { names.destroy(); return failed(none.borrow(),Error::Allocation); }
+    if (names.len() == 0) { if (core::result::is_err(names.try_push(literal("-",1)))) { names.destroy(); return failed(none.borrow(),Error::Allocation); } }
+    let made: core::result::Result<Work,Error> = work();
+    if (core::result::is_err(made)) { names.destroy(); return failed(none.borrow(),Error::Allocation); }
+    let w: Work = core::result::unwrap(made); let status: i32 = 0;
+    index = 0;
+    while (index < names.len()) {
+        let name: core::slice::View<u8> = core::option::unwrap(names.get(index));
+        let result: core::result::Result<i32,Error> = one(options,w.borrow(),name);
+        if (core::result::is_err(result)) { let code: i32 = failed(w.borrow(),core::result::unwrap_err(result)); if (code > status) { status = code; } }
+        index += 1;
+    }
+    destroy(w.borrow()); names.destroy(); return status;
+}
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(0,256,65536);
+    if (core::result::is_err(captured)) { say(literal("unzstd: cannot capture arguments\n",33)); return 2; }
+    let values: std::args::Arguments = core::result::unwrap(captured); let status: i32 = arguments(values); values.destroy(); return status;
+}

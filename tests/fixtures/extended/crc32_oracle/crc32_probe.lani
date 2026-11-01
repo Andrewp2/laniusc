@@ -1,0 +1,47 @@
+// crc32_probe SPLIT OFFSET LENGTH [OFFSET LENGTH...] < DATA
+// Reads DATA (at most 16 MiB) and prints, per pair, the CRC-32 of
+// DATA[OFFSET..OFFSET+LENGTH) computed with ext::compression.crc32_update
+// over consecutive pieces of SPLIT bytes, as 8 hex digits per line.
+module app::main;
+import alloc::vec;
+import core::crc32;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::compression;
+import std::args;
+import std::fs;
+
+fn number(text: core::slice::View<u8>) -> i32 {
+    let value: i32 = 0; let index: i32 = 0;
+    while (index < text.length) { value = value*10+((text.values[text.start+index] as i32)-48); index += 1; }
+    return value;
+}
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,4096,65536);
+    if (core::result::is_err(captured)) { return 2; }
+    let values: std::args::Arguments = core::result::unwrap(captured);
+    let data: alloc::vec::Vec<u8> = alloc::vec::new(); if (core::result::is_err(data.try_resize(16777216,0))) { return 4; }
+    let base: ptr = core::mem::i32_slice_data_ptr(data.as_view().values); let size: i32 = 0;
+    while (size < 16777216) { let got: i32 = std::fs::read(0,base+(size as usize),(16777216-size) as usize); if (got <= 0) { break; } size += got; }
+    let split: i32 = number(core::option::unwrap(values.get(0)));
+    let line: alloc::vec::Vec<u8> = alloc::vec::new(); line.try_resize(9,10); let text: core::slice::View<u8> = line.as_view();
+    let pair: i32 = 1;
+    while (pair+1 < values.len()) {
+        let offset: i32 = number(core::option::unwrap(values.get(pair))); let length: i32 = number(core::option::unwrap(values.get(pair+1))); pair += 2;
+        if (offset < 0 || length < 0 || offset+length > size || split <= 0) { return 2; }
+        let state: u32 = core::crc32::INITIAL; let at: i32 = offset;
+        while (at < offset+length) {
+            let end: i32 = at+split; if (end > offset+length) { end = offset+length; }
+            state = ext::compression::crc32_update(state,core::result::unwrap(data.as_view().subview(at,end))); at = end;
+        }
+        let crc: u32 = core::crc32::finish(state); let digit: i32 = 0;
+        while (digit < 8) {
+            let nibble: u32 = (crc >> ((28-4*digit) as u32)) & 15; let ch: u8 = (nibble as u8)+48; if (nibble >= 10) { ch = (nibble as u8)+87; }
+            text.values[text.start+digit] = ch; digit += 1;
+        }
+        std::fs::write(1,core::mem::i32_slice_data_ptr(text.values),9);
+    }
+    return 0;
+}
