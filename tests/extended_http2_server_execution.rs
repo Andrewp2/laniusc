@@ -34,6 +34,11 @@ fn service() -> &'static common::TempArtifact {
     EXE.get_or_init(|| build("tests/fixtures/extended/http2_server/h2c_service.lani", "service"))
 }
 
+fn events() -> &'static common::TempArtifact {
+    static EXE: OnceLock<common::TempArtifact> = OnceLock::new();
+    EXE.get_or_init(|| build("tests/fixtures/extended/http2_server/h2c_events.lani", "events"))
+}
+
 // The client is libnghttp2's client session (through ctypes); hand-built
 // frames cover the protocol violations nghttp2 will not produce.
 fn oracle(mode: &str, exe: &common::TempArtifact, expected: &str) {
@@ -59,4 +64,33 @@ fn http2_server_engine_against_nghttp2_client_and_raw_frames() {
 #[test]
 fn http_service_serves_prior_knowledge_h2c_and_http1_on_one_listener() {
     oracle("tcp", service(), "http2-server-h2c nghttp2=6 raw=18 http1=1");
+}
+
+#[test]
+fn event_server_serves_h2c_and_http1_on_one_loop() {
+    oracle("tcp", events(), "http2-server-h2c nghttp2=6 raw=18 http1=1");
+}
+
+// 100 concurrent h2c clients with 20 multiplexed requests each, then 100
+// HTTP/1.1 keep-alive clients with 20 requests each, on one event loop.
+// Timings are printed; the counters and every body are checked.
+#[test]
+fn event_server_load_100_h2c_clients_against_http1() {
+    let out = common::process_output_with_timeout(
+        "HTTP/2 event-server load test",
+        Command::new("python3")
+            .arg("-I")
+            .arg(root().join("tests/fixtures/extended/http2_server/load.py"))
+            .arg(events().path())
+            .arg("100")
+            .arg("20"),
+        Duration::from_secs(150),
+    );
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert_eq!(
+        text.lines().last(),
+        Some("load-check clients=100 requests=20 connections=200 h2=100 requests=4000 errors=0"),
+        "{text}"
+    );
 }
