@@ -20,6 +20,10 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
+abbrev Stmt_arm_body_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 231 RepLocal) x2 v2 → RepCTree x3 v3 →
+    (RepOption 245 RepMStmt) (Lanius.Mini.armBodyOf x0 x1 x2 x3) w
+
 abbrev Stmt_block_arms_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Option (List Lanius.Mini.CTree)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepOption 81 (RepList 82 RepCTree)) x1 v1 →
     RepBool (Lanius.Mini.blockArmsOf x0 x1) w
@@ -52,6 +56,14 @@ abbrev Stmt_func_ret (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.MParams} {x3 : Option Lanius.Mini.RetTy} {x4 : Lanius.Mini.CTree} {x5 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → RepMParams x2 v2 → (RepOption 221 RepRetTy) x3 v3 → RepCTree x4 v4 → RepCTree x5 v5 →
     (RepOption 200 RepMFunc) (Lanius.Mini.funcRet x0 x1 x2 x3 x4 x5) w
 
+abbrev Stmt_inner_let_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.Local} {x4 : Lanius.Mini.MStmt} {x5 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 231 RepLocal) x2 v2 → RepLocal x3 v3 → RepMStmt x4 v4 → RepCTree x5 v5 →
+    (RepOption 245 RepMStmt) (Lanius.Mini.innerLetOf x0 x1 x2 x3 x4 x5) w
+
+abbrev Stmt_inner_match_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 231 RepLocal) x2 v2 → RepCTree x3 v3 →
+    (RepOption 245 RepMStmt) (Lanius.Mini.innerMatchOf x0 x1 x2 x3) w
+
 abbrev Stmt_is_block_match (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → RepCTree x1 v1 →
     RepBool (Lanius.Mini.isBlockMatch x0 x1) w
@@ -63,6 +75,10 @@ abbrev Stmt_let_arm_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
 abbrev Stmt_let_arms_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.MatchStmt} {x4 : Lanius.Mini.Local} {x5 : Lanius.Mini.MStmt} {x6 : Nat} {x7 : List Lanius.Mini.VariantTy} {x8 : List Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 v6 v7 v8 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 231 RepLocal) x2 v2 → RepMatchStmt x3 v3 → RepLocal x4 v4 → RepMStmt x5 v5 → RepNat x6 v6 → (RepList 278 RepVariantTy) x7 v7 → (RepList 82 RepCTree) x8 v8 →
     (RepOption 245 RepMStmt) (Lanius.Mini.letArmsOf x0 x1 x2 x3 x4 x5 x6 x7 x8) w
+
+abbrev Stmt_let_body_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.Local} {x4 : Lanius.Mini.MStmt} {x5 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 231 RepLocal) x2 v2 → RepLocal x3 v3 → RepMStmt x4 v4 → RepCTree x5 v5 →
+    (RepOption 245 RepMStmt) (Lanius.Mini.letBodyOf x0 x1 x2 x3 x4 x5) w
 
 abbrev Stmt_let_first (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.CTree} {x4 : List Lanius.Mini.CTree} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 231 RepLocal) x2 v2 → RepCTree x3 v3 → (RepList 82 RepCTree) x4 v4 →

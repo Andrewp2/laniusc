@@ -55,6 +55,18 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
+theorem step_arm_body_of {prog : SrcProgram} {prims : Prims} {ix_arm_body_of ix_minus ix_kid ix_block_of ix_arm_block_list ix_inner_match_of : Nat} (fn : prog.funcs[ix_arm_body_of]? = some (src_arm_body_of ix_minus ix_kid ix_block_of ix_arm_block_list ix_inner_match_of)) (np : prims.isPrim ix_arm_body_of = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
+    (ext_arm_block_list : Certified (∀ {n : Nat}, Stmt_arm_block_list prog prims ix_arm_block_list n)) {n : Nat}
+    (ih_block_of : Certified (Stmt_block_of prog prims ix_block_of n))
+    (ih_inner_match_of : Certified (Stmt_inner_match_of prog prims ix_inner_match_of n)) :
+    Stmt_arm_body_of prog prims ix_arm_body_of (n + 1) := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rw [pcall_succ np fn] at h
+  simp only [src_arm_body_of] at h
+  faithful [Lanius.Mini.armBodyOf]
+
 theorem proof_block_arms_of {prog : SrcProgram} {prims : Prims} {ix_block_arms_of ix_some_block_arm ix_value_arms : Nat} (fn : prog.funcs[ix_block_arms_of]? = some (src_block_arms_of ix_some_block_arm ix_value_arms)) (np : prims.isPrim ix_block_arms_of = false)
     (ext_some_block_arm : Certified (∀ {n : Nat}, Stmt_some_block_arm prog prims ix_some_block_arm n))
     (ext_value_arms : Certified (∀ {n : Nat}, Stmt_value_arms prog prims ix_value_arms n)) {n : Nat} :
@@ -143,6 +155,32 @@ theorem proof_func_ret {prog : SrcProgram} {prims : Prims} {ix_func_ret ix_func_
   simp only [src_func_ret] at h
   faithful [Lanius.Mini.funcRet]
 
+theorem step_inner_let_of {prog : SrcProgram} {prims : Prims} {ix_inner_let_of ix_minus ix_match_stmt_parts ix_stmt_arms ix_match_stmt_value ix_let_arms_of : Nat} (fn : prog.funcs[ix_inner_let_of]? = some (src_inner_let_of ix_minus ix_match_stmt_parts ix_stmt_arms ix_match_stmt_value ix_let_arms_of)) (np : prims.isPrim ix_inner_let_of = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_match_stmt_parts : Certified (∀ {n : Nat}, Stmt_match_stmt_parts prog prims ix_match_stmt_parts n))
+    (ext_stmt_arms : Certified (∀ {n : Nat}, Stmt_stmt_arms prog prims ix_stmt_arms n))
+    (ext_match_stmt_value : Certified (∀ {n : Nat}, Stmt_match_stmt_value prog prims ix_match_stmt_value n)) {n : Nat}
+    (ih_let_arms_of : Certified (Stmt_let_arms_of prog prims ix_let_arms_of n)) :
+    Stmt_inner_let_of prog prims ix_inner_let_of (n + 1) := by
+  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
+  rw [pcall_succ np fn] at h
+  simp only [src_inner_let_of] at h
+  faithful [Lanius.Mini.innerLetOf]
+
+theorem step_inner_match_of {prog : SrcProgram} {prims : Prims} {ix_inner_match_of ix_minus ix_node_prod ix_p_match_expr ix_match_stmt_parts ix_stmt_arms ix_match_stmt_value ix_match_arms_of : Nat} (fn : prog.funcs[ix_inner_match_of]? = some (src_inner_match_of ix_minus ix_node_prod ix_p_match_expr ix_match_stmt_parts ix_stmt_arms ix_match_stmt_value ix_match_arms_of)) (np : prims.isPrim ix_inner_match_of = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
+    (ext_p_match_expr : Certified (∀ {n : Nat}, Stmt_p_match_expr prog prims ix_p_match_expr n))
+    (ext_match_stmt_parts : Certified (∀ {n : Nat}, Stmt_match_stmt_parts prog prims ix_match_stmt_parts n))
+    (ext_stmt_arms : Certified (∀ {n : Nat}, Stmt_stmt_arms prog prims ix_stmt_arms n))
+    (ext_match_stmt_value : Certified (∀ {n : Nat}, Stmt_match_stmt_value prog prims ix_match_stmt_value n)) {n : Nat}
+    (ih_match_arms_of : Certified (Stmt_match_arms_of prog prims ix_match_arms_of n)) :
+    Stmt_inner_match_of prog prims ix_inner_match_of (n + 1) := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rw [pcall_succ np fn] at h
+  simp only [src_inner_match_of] at h
+  faithful [Lanius.Mini.innerMatchOf]
+
 theorem proof_is_block_match {prog : SrcProgram} {prims : Prims} {ix_is_block_match ix_list_items ix_kid ix_match_init ix_block_arms_of : Nat} (fn : prog.funcs[ix_is_block_match]? = some (src_is_block_match ix_list_items ix_kid ix_match_init ix_block_arms_of)) (np : prims.isPrim ix_is_block_match = false)
     (ext_list_items : Certified (∀ {n : Nat}, Stmt_list_items prog prims ix_list_items n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
@@ -156,18 +194,14 @@ theorem proof_is_block_match {prog : SrcProgram} {prims : Prims} {ix_is_block_ma
   simp only [src_is_block_match] at h
   faithful [Lanius.Mini.isBlockMatch]
 
-theorem step_let_arm_of {prog : SrcProgram} {prims : Prims} {ix_let_arm_of ix_minus ix_kid ix_block_of ix_let_of ix_let_head_or_eval ix_arm_binding ix_arm_block_list ix_arm_stmt ix_bound_scope ix_local_id_of ix_local_ty_of : Nat} (fn : prog.funcs[ix_let_arm_of]? = some (src_let_arm_of ix_minus ix_kid ix_block_of ix_let_of ix_let_head_or_eval ix_arm_binding ix_arm_block_list ix_arm_stmt ix_bound_scope ix_local_id_of ix_local_ty_of)) (np : prims.isPrim ix_let_arm_of = false)
+theorem step_let_arm_of {prog : SrcProgram} {prims : Prims} {ix_let_arm_of ix_minus ix_block_of ix_arm_binding ix_arm_block_list ix_arm_stmt ix_bound_scope ix_let_body_of : Nat} (fn : prog.funcs[ix_let_arm_of]? = some (src_let_arm_of ix_minus ix_block_of ix_arm_binding ix_arm_block_list ix_arm_stmt ix_bound_scope ix_let_body_of)) (np : prims.isPrim ix_let_arm_of = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
-    (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
-    (ext_let_of : Certified (∀ {n : Nat}, Stmt_let_of prog prims ix_let_of n))
-    (ext_let_head_or_eval : Certified (∀ {n : Nat}, Stmt_let_head_or_eval prog prims ix_let_head_or_eval n))
     (ext_arm_binding : Certified (∀ {n : Nat}, Stmt_arm_binding prog prims ix_arm_binding n))
     (ext_arm_block_list : Certified (∀ {n : Nat}, Stmt_arm_block_list prog prims ix_arm_block_list n))
     (ext_arm_stmt : Certified (∀ {n : Nat}, Stmt_arm_stmt prog prims ix_arm_stmt n))
-    (ext_bound_scope : Certified (∀ {n : Nat}, Stmt_bound_scope prog prims ix_bound_scope n))
-    (ext_local_id_of : Certified (∀ {n : Nat}, Stmt_local_id_of prog prims ix_local_id_of n))
-    (ext_local_ty_of : Certified (∀ {n : Nat}, Stmt_local_ty_of prog prims ix_local_ty_of n)) {n : Nat}
-    (ih_block_of : Certified (Stmt_block_of prog prims ix_block_of n)) :
+    (ext_bound_scope : Certified (∀ {n : Nat}, Stmt_bound_scope prog prims ix_bound_scope n)) {n : Nat}
+    (ih_block_of : Certified (Stmt_block_of prog prims ix_block_of n))
+    (ih_let_body_of : Certified (Stmt_let_body_of prog prims ix_let_body_of n)) :
     Stmt_let_arm_of prog prims ix_let_arm_of (n + 1) := by
   intro x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 w h r0 r1 r2 r3 r4 r5 r6 r7 r8 r9
   rw [pcall_succ np fn] at h
@@ -186,6 +220,22 @@ theorem step_let_arms_of {prog : SrcProgram} {prims : Prims} {ix_let_arms_of ix_
   rw [pcall_succ np fn] at h
   simp only [src_let_arms_of] at h
   faithful [Lanius.Mini.letArmsOf]
+
+theorem step_let_body_of {prog : SrcProgram} {prims : Prims} {ix_let_body_of ix_minus ix_node_prod ix_kid ix_p_match_expr ix_let_of ix_let_head_or_eval ix_inner_let_of ix_local_id_of ix_local_ty_of : Nat} (fn : prog.funcs[ix_let_body_of]? = some (src_let_body_of ix_minus ix_node_prod ix_kid ix_p_match_expr ix_let_of ix_let_head_or_eval ix_inner_let_of ix_local_id_of ix_local_ty_of)) (np : prims.isPrim ix_let_body_of = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
+    (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
+    (ext_p_match_expr : Certified (∀ {n : Nat}, Stmt_p_match_expr prog prims ix_p_match_expr n))
+    (ext_let_of : Certified (∀ {n : Nat}, Stmt_let_of prog prims ix_let_of n))
+    (ext_let_head_or_eval : Certified (∀ {n : Nat}, Stmt_let_head_or_eval prog prims ix_let_head_or_eval n))
+    (ext_local_id_of : Certified (∀ {n : Nat}, Stmt_local_id_of prog prims ix_local_id_of n))
+    (ext_local_ty_of : Certified (∀ {n : Nat}, Stmt_local_ty_of prog prims ix_local_ty_of n)) {n : Nat}
+    (ih_inner_let_of : Certified (Stmt_inner_let_of prog prims ix_inner_let_of n)) :
+    Stmt_let_body_of prog prims ix_let_body_of (n + 1) := by
+  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
+  rw [pcall_succ np fn] at h
+  simp only [src_let_body_of] at h
+  faithful [Lanius.Mini.letBodyOf]
 
 theorem step_let_first {prog : SrcProgram} {prims : Prims} {ix_let_first ix_minus ix_node_prod ix_kid ix_kid_token ix_member ix_ty_of ix_fresh_id ix_cons_of_mini_selfhost_Local ix_stmts_of ix_p_let_type ix_p_let_init ix_is_block_match ix_let_match_of ix_let_of ix_let_head_or_eval ix_p_let_type_none ix_untyped_head ix_let_body : Nat} (fn : prog.funcs[ix_let_first]? = some (src_let_first ix_minus ix_node_prod ix_kid ix_kid_token ix_member ix_ty_of ix_fresh_id ix_cons_of_mini_selfhost_Local ix_stmts_of ix_p_let_type ix_p_let_init ix_is_block_match ix_let_match_of ix_let_of ix_let_head_or_eval ix_p_let_type_none ix_untyped_head ix_let_body)) (np : prims.isPrim ix_let_first = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
@@ -212,11 +262,11 @@ theorem step_let_first {prog : SrcProgram} {prims : Prims} {ix_let_first ix_minu
   simp only [src_let_first] at h
   faithful [Lanius.Mini.letFirst]
 
-theorem step_let_match_of {prog : SrcProgram} {prims : Prims} {ix_let_match_of ix_minus ix_match_init ix_match_stmt_parts ix_match_stmt_arms ix_match_stmt_value ix_let_arms_of : Nat} (fn : prog.funcs[ix_let_match_of]? = some (src_let_match_of ix_minus ix_match_init ix_match_stmt_parts ix_match_stmt_arms ix_match_stmt_value ix_let_arms_of)) (np : prims.isPrim ix_let_match_of = false)
+theorem step_let_match_of {prog : SrcProgram} {prims : Prims} {ix_let_match_of ix_minus ix_match_init ix_match_stmt_parts ix_stmt_arms ix_match_stmt_value ix_let_arms_of : Nat} (fn : prog.funcs[ix_let_match_of]? = some (src_let_match_of ix_minus ix_match_init ix_match_stmt_parts ix_stmt_arms ix_match_stmt_value ix_let_arms_of)) (np : prims.isPrim ix_let_match_of = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_match_init : Certified (∀ {n : Nat}, Stmt_match_init prog prims ix_match_init n))
     (ext_match_stmt_parts : Certified (∀ {n : Nat}, Stmt_match_stmt_parts prog prims ix_match_stmt_parts n))
-    (ext_match_stmt_arms : Certified (∀ {n : Nat}, Stmt_match_stmt_arms prog prims ix_match_stmt_arms n))
+    (ext_stmt_arms : Certified (∀ {n : Nat}, Stmt_stmt_arms prog prims ix_stmt_arms n))
     (ext_match_stmt_value : Certified (∀ {n : Nat}, Stmt_match_stmt_value prog prims ix_match_stmt_value n)) {n : Nat}
     (ih_let_arms_of : Certified (Stmt_let_arms_of prog prims ix_let_arms_of n)) :
     Stmt_let_match_of prog prims ix_let_match_of (n + 1) := by
@@ -225,13 +275,12 @@ theorem step_let_match_of {prog : SrcProgram} {prims : Prims} {ix_let_match_of i
   simp only [src_let_match_of] at h
   faithful [Lanius.Mini.letMatchOf]
 
-theorem step_match_arm_of {prog : SrcProgram} {prims : Prims} {ix_match_arm_of ix_minus ix_block_of ix_arm_binding ix_arm_block_list ix_arm_stmt ix_bound_scope : Nat} (fn : prog.funcs[ix_match_arm_of]? = some (src_match_arm_of ix_minus ix_block_of ix_arm_binding ix_arm_block_list ix_arm_stmt ix_bound_scope)) (np : prims.isPrim ix_match_arm_of = false)
+theorem step_match_arm_of {prog : SrcProgram} {prims : Prims} {ix_match_arm_of ix_minus ix_arm_binding ix_arm_stmt ix_bound_scope ix_arm_body_of : Nat} (fn : prog.funcs[ix_match_arm_of]? = some (src_match_arm_of ix_minus ix_arm_binding ix_arm_stmt ix_bound_scope ix_arm_body_of)) (np : prims.isPrim ix_match_arm_of = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_arm_binding : Certified (∀ {n : Nat}, Stmt_arm_binding prog prims ix_arm_binding n))
-    (ext_arm_block_list : Certified (∀ {n : Nat}, Stmt_arm_block_list prog prims ix_arm_block_list n))
     (ext_arm_stmt : Certified (∀ {n : Nat}, Stmt_arm_stmt prog prims ix_arm_stmt n))
     (ext_bound_scope : Certified (∀ {n : Nat}, Stmt_bound_scope prog prims ix_bound_scope n)) {n : Nat}
-    (ih_block_of : Certified (Stmt_block_of prog prims ix_block_of n)) :
+    (ih_arm_body_of : Certified (Stmt_arm_body_of prog prims ix_arm_body_of n)) :
     Stmt_match_arm_of prog prims ix_match_arm_of (n + 1) := by
   intro x0 x1 x2 x3 x4 x5 x6 x7 v0 v1 v2 v3 v4 v5 v6 v7 w h r0 r1 r2 r3 r4 r5 r6 r7
   rw [pcall_succ np fn] at h
@@ -251,10 +300,10 @@ theorem step_match_arms_of {prog : SrcProgram} {prims : Prims} {ix_match_arms_of
   simp only [src_match_arms_of] at h
   faithful [Lanius.Mini.matchArmsOf]
 
-theorem step_match_stmt_of {prog : SrcProgram} {prims : Prims} {ix_match_stmt_of ix_minus ix_match_stmt_parts ix_match_stmt_arms ix_match_stmt_value ix_match_primary ix_match_arms_of : Nat} (fn : prog.funcs[ix_match_stmt_of]? = some (src_match_stmt_of ix_minus ix_match_stmt_parts ix_match_stmt_arms ix_match_stmt_value ix_match_primary ix_match_arms_of)) (np : prims.isPrim ix_match_stmt_of = false)
+theorem step_match_stmt_of {prog : SrcProgram} {prims : Prims} {ix_match_stmt_of ix_minus ix_match_stmt_parts ix_stmt_arms ix_match_stmt_value ix_match_primary ix_match_arms_of : Nat} (fn : prog.funcs[ix_match_stmt_of]? = some (src_match_stmt_of ix_minus ix_match_stmt_parts ix_stmt_arms ix_match_stmt_value ix_match_primary ix_match_arms_of)) (np : prims.isPrim ix_match_stmt_of = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_match_stmt_parts : Certified (∀ {n : Nat}, Stmt_match_stmt_parts prog prims ix_match_stmt_parts n))
-    (ext_match_stmt_arms : Certified (∀ {n : Nat}, Stmt_match_stmt_arms prog prims ix_match_stmt_arms n))
+    (ext_stmt_arms : Certified (∀ {n : Nat}, Stmt_stmt_arms prog prims ix_stmt_arms n))
     (ext_match_stmt_value : Certified (∀ {n : Nat}, Stmt_match_stmt_value prog prims ix_match_stmt_value n))
     (ext_match_primary : Certified (∀ {n : Nat}, Stmt_match_primary prog prims ix_match_primary n)) {n : Nat}
     (ih_match_arms_of : Certified (Stmt_match_arms_of prog prims ix_match_arms_of n)) :

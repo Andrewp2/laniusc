@@ -72,7 +72,7 @@ class Oracle:
     def flush(self):
         if not self.queue:
             return
-        payload = b"".join(struct.pack("<BIII", 1 if fmt == "lzma" else 0, step_in, step_out, len(data)) + data
+        payload = b"".join(struct.pack("<BIII", fmt if isinstance(fmt, int) else (1 if fmt == "lzma" else 0), step_in, step_out, len(data)) + data
                            for fmt, data, step_in, step_out, _ in self.queue)
         started = time.monotonic()
         done = subprocess.run([self.binary, "batch"], input=payload, capture_output=True, timeout=240)
@@ -166,6 +166,70 @@ def loose(fmt, data):
         return lzma.decompress(data, format=lzma.FORMAT_XZ if fmt == "xz" else lzma.FORMAT_ALONE)
     except lzma.LZMAError:
         return None
+
+
+def encoder_group(oracle, sets, rng, quick, xz):
+    """ext::xz.Encoder: every output must be identical under all step sizes,
+    decode exactly with Python lzma, xz -t, and xz-bytes itself."""
+    extra = [("runs3m", (b"x" * 700000 + rng.randbytes(5000)) * 4 + b"tail"),
+             ("rand-then-text", rng.randbytes(90000) + b"lorem ipsum dolor " * 9000),
+             ("window-edge0", (rng.randbytes(3000) * 200)[:524288 + 273]),
+             ("window-edge1", (rng.randbytes(40000) * 60)[:2097152 - 1]),
+             ("binary-ish", bytes((i * 7 + (i >> 9)) & 255 for i in range(400000))),
+             # Long rep runs skip hashing across several level-0 window slides.
+             ("zeros2.4m", bytes(2400000) + rng.randbytes(3000) + bytes(5000))]
+    cases = [item for item in sets + extra if not (quick and len(item[1]) > 2500000)]
+    outputs = {}
+    for name, plain in cases:
+        for level in range(4):
+            if level >= 2 and len(plain) > 2700000 and quick:
+                continue
+            steps = [(65536, 65536)]
+            if len(plain) <= 5000:
+                steps += [(1, 1), (7, 3), (4096, 5)]
+            elif len(plain) <= 300000:
+                steps += [(1000, 77), (65536, 333)]
+            for step_in, step_out in steps:
+                def keep(code, out, key=(name, level), label=f"{name}/e{level}/{step_in}x{step_out}"):
+                    if code != 0:
+                        oracle.fail("encode/" + label, f"exit {code}")
+                    else:
+                        outputs.setdefault(key, []).append(out)
+                oracle.submit(16 + level, plain, step_in, step_out, keep)
+    oracle.flush()
+    sizes = {}
+    for name, plain in cases:
+        for level in range(4):
+            got = outputs.get((name, level))
+            if not got:
+                continue
+            if any(out != got[0] for out in got):
+                oracle.fail(f"encode/{name}/e{level}", "output depends on step sizes")
+                continue
+            oracle.bump("encoder: identical under all step sizes", len(got))
+            stream = got[0]
+            try:
+                python_ok = strict_xz(stream) == plain
+            except Exception:
+                python_ok = False
+            if python_ok:
+                oracle.bump("encoder: Python lzma decodes exactly")
+            else:
+                oracle.fail(f"encode/{name}/e{level}", "Python lzma does not reproduce the input")
+            if xz:
+                done = subprocess.run([xz, "-t", "-qq"], input=stream, capture_output=True, timeout=60)
+                if done.returncode == 0:
+                    oracle.bump("encoder: xz -t accepts")
+                else:
+                    oracle.fail(f"encode/{name}/e{level}", f"xz -t rc {done.returncode}")
+            oracle.expect_ok("encoder: xz-bytes decodes exactly", f"{name}/e{level}", "xz", stream, plain,
+                             ((65536, 65536), (3, 5)) if len(plain) <= 5000 else ((65536, 65536),))
+            sizes[level] = sizes.get(level, 0) + len(stream)
+    if xz:
+        reference = sum(len(subprocess.run([xz, "-1", "-c"], input=plain, capture_output=True).stdout) for name, plain in cases)
+        total = sum(len(plain) for _, plain in cases)
+        print("  encoder sizes on the generated sets (" + f"{total / 1e6:.1f} MB): " +
+              ", ".join(f"e{level} {size}" for level, size in sorted(sizes.items())) + f", xz -1 {reference}", file=sys.stderr)
 
 
 def datasets(rng, quick):
@@ -307,6 +371,8 @@ def main():
                         oracle.fail(f"filter/{name}", f"exit {code}")
                 oracle.submit("xz", stream, 65536, 65536, judge)
 
+    mark("encoder")
+    encoder_group(oracle, sets, rng, quick, xz)
     mark("concatenation")
     # Concatenation and stream padding.
     pieces = [lzma.compress(p, check=c) for (_, p), c in zip(sets[:8], [0, 1, 4, 0, 1, 4, 0, 1])]

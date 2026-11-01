@@ -1418,9 +1418,16 @@ its value. The inner match is read again, nested or not.
   a binder spelled as the first arm's (`row_fits`), so each arm matches
   exactly when its pattern at j does, and its value sees the same names
   (bound to the same payload fields, with the first arm's ids). Arms that
-  differ off column j, or a plain arm before a nested one for the same
-  variant, are not read; laniusc accepts them, so these are readings the
-  front end leaves out.
+  differ off column j are not read; laniusc accepts them, so this is a
+  reading the front end leaves out.
+- (F11b) When V's first arm is plain and a later one for V is nested
+  (`In(n) -> 5, In(Num::Val(x)) -> x`), the plain arm is V's arm
+  (`VariantArm.shadow`): it matches every value of V, so laniusc never runs
+  the later ones, and they are not read. laniusc type-checks them, so a
+  program whose never-run arm is ill-typed is read here and rejected there;
+  the meaning of a program both accept is the same. Without a nested arm
+  for V, a second arm for V is still rejected, as without nesting. Case
+  nested_plain_first (laniusc runs it alike).
 - At column j the last arm may be a binder; it matches everything there,
   so it is read as `_` when its value spells no token as that name
   (`Mentions`), and otherwise not read (case reject_nested_binder).
@@ -1437,11 +1444,54 @@ its value. The inner match is read again, nested or not.
   inner match's scrutinee is h.
 - A match statement reads block arms; a nested match expression may have
   no arm whose value is a block (`BlockValue`), so the two readings never
-  overlap. Nested arms in match statements and lets' matches are not read.
+  overlap.
+- (F11b) A match statement with a nested arm is read the same way
+  (`stmt_arm_order`, `StmtOrder`), its arms' values blocks: the nested arm
+  `V(h) -> match (h) { p -> { .. }, .. }` is read as a match statement on h
+  inside V's arm (`ArmsStmtR.inner`), its closer the arm's `->` token, so
+  every inner arm leaves the match as a block arm does. laniusc runs such
+  a statement as written (case nested_match_stmt runs alike); an inner
+  match that names some of h's variants and has no wildcard is rejected
+  (case reject_nested_stmt_gap). A block arm's value is never the bare
+  match node `nest_arm` builds (`armBlockR_noMatch`), so the two arm
+  readings never overlap.
+- (F11b) A let's match with a block arm and a nested arm, `let x: t = match
+  (s) { V(Some(y)) -> y, V(None) -> { return 0; }, .. }`, is read the same
+  way (`LetArmsR.inner`): the inner match is read as the let's match on h,
+  its value arms binding x and running the rest, its block arms leaving. A
+  value arm's value is never the bare match node (a written `match` sits
+  under its expression levels; `LetArmsR.value` requires it), so the value
+  and inner readings never overlap. Case nested_let_match (laniusc runs it
+  alike).
 - Every arm but a last wildcard must name a variant, as without nesting.
 - Determinism: whether some arm is nested decides the branch; the arms
   naming a variant, their patterns, the column and the inner arms are each
-  determined by the tree (`nestedOrder_unique`, `matchOrder_unique`).
+  determined by the tree (`nestedOrder_unique`, `matchOrder_unique`,
+  `stmtOrder_unique`).
+
+## Payload names that are variants (decided 10-31, F11b)
+
+laniusc reads a payload pattern whose name resolves to a variant as a check
+of that payload, not a binder: `match_payload_binding`
+(`shaders/codegen/lir/semantic/local_mark.slang`) binds a payload pattern
+only when its resolved declaration is no variant, and
+`shaders/codegen/lir/semantic/match_reference.slang` lowers one that names a
+variant as a check of the payload's discriminant. So with `import
+core::option;`, `Some(None) -> 1` matches only `Some(None)` (laniusc runs
+`Some(Some(7))` past it). The front end once bound such a name: a payload
+binder had only to be spelled unlike the module's own types, aliases,
+constants and variants (`module_globals`), so an imported variant's bare
+name was a binder and the arm read as `Some(_) -> 1`, a wrong reading.
+
+Now a payload pattern spelled like a variant of any enum of the program is
+never a binder (`any_variant`; `BindersR`'s `NoVariant`). This covers every
+name laniusc resolves to a variant (its own module's, an imported module's,
+an item import's, or one the payload's type gives), and more: a payload name
+spelled like some variant nowhere visible is not read either, a reading the
+front end leaves out. Such a pattern is a nested pattern, read as the check
+it is (SEMANTIC_DECISIONS "Nested patterns"; cases bare_variant_payload,
+reject_bare_variant, which was misread). Variants are spelled with a capital
+letter in the stdlib and `extended/`, so no binder there is affected.
 
 ## Front end review fixes (decided 10-31)
 

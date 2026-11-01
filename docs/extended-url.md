@@ -38,8 +38,10 @@ override. That covers:
   An `@` inside the userinfo is encoded. A port above 65535 fails, and a
   scheme's default port is dropped.
 - **Hosts.**
-  - Special hosts are percent-decoded, ASCII-lowercased and checked for
-    forbidden domain code points.
+  - Special hosts are percent-decoded and converted with domain to ASCII:
+    [`ext::idna`](extended-idna.md) lowercases an all-ASCII domain and runs
+    UTS #46 ToASCII (mapping, NFC, Punycode, label and Bidi checks) on any
+    other. The result is checked for forbidden domain code points.
   - A host ending in a number goes to the IPv4 parser, which accepts decimal,
     octal, `0x` hex and one to four parts.
   - Bracketed IPv6 is parsed and serialized in compressed form, including an
@@ -55,17 +57,16 @@ override. That covers:
 - **Origins.** `origin()` returns the ASCII origin. For `blob:` URLs it is the
   inner http(s) URL's origin.
 
-## Not implemented: IDNA
+## Internationalized hosts
 
-This module does not implement UTS #46 mapping or Punycode. A special host
-that contains a non-ASCII code point after percent-decoding fails with
-`UnsupportedIdna`, and so does any label beginning with `xn--`. ASCII
-hostnames are complete: lowercasing and the forbidden code point check are
-all UTS #46 does to them. The parser does not guess. In particular, no host
-silently comes out different from the one a browser would produce.
-
-Non-ASCII text elsewhere in a URL is fully supported: in the path, query,
-fragment, userinfo and opaque hosts.
+`http://Bücher.example/` becomes `http://xn--bcher-kva.example/`, with the
+options the URL Standard sets: nontransitional processing (`ß`, `ς` and the
+joiners stay), no hyphen or DNS-length checks, and Bidi and joiner checks on.
+[The IDNA guide](extended-idna.md) covers the table, the processing steps and
+where `ext::idna` follows Node.js rather than the letter of UTS #46. A domain
+that fails processing returns `InvalidIdna`. The one unimplemented rule is the
+ZERO WIDTH NON-JOINER context that needs Joining_Type data. Those few hosts
+return `UnsupportedIdna`.
 
 ## Input
 
@@ -101,7 +102,11 @@ Error meanings:
 - `MissingHost`: an empty special host, or credentials with no host after them.
 - `InvalidHost`, `InvalidPort`, `InvalidIpv4`, `InvalidIpv6`: the named
   component is invalid.
-- `UnsupportedIdna`: see above.
+- `InvalidIdna`: the host fails UTS #46 processing: a disallowed scalar,
+  invalid Punycode or `xn--` label, a leading mark, a joiner or Bidi rule, a
+  non-ASCII domain over 16,384 bytes, or a domain that maps to nothing.
+- `UnsupportedIdna`: a ZERO WIDTH NON-JOINER whose rule needs Joining_Type
+  data; see the [IDNA guide](extended-idna.md).
 
 Validation errors that the standard does not treat as failures are not
 reported.
@@ -146,7 +151,7 @@ The random URLs combine:
 - 21 schemes and 10 separators
 - credentials
 - 76 hosts: IPv4 forms, IPv6 compression and failures, percent escapes,
-  forbidden code points, and IDNA inputs
+  forbidden code points, and internationalized hosts
 - 14 ports
 - 34 paths: dot segments, drive letters, backslashes and non-ASCII
 - queries and fragments
@@ -159,10 +164,27 @@ For each case it requires one of two results:
 
 It then parses every href Node produced a second time, on both sides.
 
-Cases containing non-ASCII or `xn--` are tagged. In those cases an
-`unsupported-idna` failure is accepted in place of Node's result: about 50
-cases where Node succeeds, and about 40 where it fails. Untagged cases must
-match exactly. The group runs in about 2 seconds.
+Every case must match exactly. The group runs in about 2 seconds.
+
+The **idna group** (46,060 checks, about 8 seconds) does the same for
+internationalized hosts:
+
+- 177 hand-picked UTS #46 cases
+- 3,000 seeded random hosts drawn from Latin, Greek, Cyrillic, Hebrew,
+  Arabic, Devanagari, CJK, Hangul, compatibility forms, marks, ignored,
+  deviation and disallowed scalars, emoji and random `xn--` labels, some
+  percent-encoded
+- the first 60 hand-picked hosts under https, file, ws, a non-special
+  scheme and a scheme-relative reference
+- every 89th Unicode scalar in three label contexts
+
+Hrefs are reparsed as in the whatwg group. Three kinds of Node.js behaviour
+are counted as divergences rather than failures; the
+[IDNA guide](extended-idna.md#nodejs-divergences) gives the exact rules. A
+ZERO WIDTH NON-JOINER case may return `unsupported-idna` (8 of them).
+
+The **table group** (1,111,937 checks, about 9 seconds) compares every
+scalar of the generated table with Node; see the IDNA guide.
 
 The **cli group** checks:
 
@@ -182,12 +204,17 @@ API directly:
 - reuse of a cloned base
 - span partitioning
 - `Bounds`, `TooLong` and the other error variants
+- `ext::idna` statuses, the RFC 3492 Punycode sample, round trips and every
+  `ext::idna::Error`
 
 Receipts are from direct runs on native Linux x86_64:
 
 - the contracts program exits 0
 - `oracle.py whatwg` reports `url-whatwg cases=9174`
+- `oracle.py idna` reports `url-idna cases=46060`
+- `oracle.py table` reports `url-table cases=1111937`
 - `oracle.py cli` reports `url-cli cases=25`
 
 [`tests/extended_url_execution.rs`](../tests/extended_url_execution.rs) wraps
-the same three checks. It skips the whatwg group when Node is not installed.
+the same checks, plus `generate_idna.py --check`. It skips the Node groups
+when Node is not installed.

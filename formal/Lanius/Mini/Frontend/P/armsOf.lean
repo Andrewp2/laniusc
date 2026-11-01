@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Mini.Frontend.Types
+import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Frontend.P.consBinder
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isEmptyUsize
@@ -29,11 +30,11 @@ def armsOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (owner : TypeDecl)
     | [] => none
     | a :: more => consArm (armOf fuel env scope owner v a) (armsOf fuel env scope owner rest more)
 
-/-- A payload pattern that binds a name, as binder_of reads one: a plain one-segment name that is no global's. -/
+/-- A payload pattern that binds a name, as binder_of reads one: a plain one-segment name that is no global's and no variant's. -/
 def binderNameOk (env : FrontEnv) (name : Option (List Nat)) : Bool :=
   match name with
   | none => false
-  | some n => !(member env.globals n)
+  | some n => !(member env.globals n) && !(anyVariant env.decls.types n)
 
 def isBinderPat (env : FrontEnv) (p : CTree) : Bool :=
   decide (nodeProd p = (195)) && decide (nodeProd (kid p 1) = (199)) && binderNameOk env (pathName (kid p 0))
