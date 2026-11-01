@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **304 modules**, **15712 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **305 modules**, **15865 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -221,7 +221,8 @@ Inventory: **304 modules**, **15712 declaration/member entries**. Counts include
 | [ext::archive_source](ext/archive_source.md) | [source](../../extended/ext/archive_source.lani#L3) | 52 | Source inventory | [extended-archive-source](../extended-archive-source.md), [extended-unpack](../extended-unpack.md) |
 | [ext::audio](ext/audio.md) | [source](../../extended/ext/audio.lani#L2) | 44 | Source inventory | [extended-audio](../extended-audio.md) |
 | [ext::bash_words](ext/bash_words.md) | [source](../../extended/ext/bash_words.lani#L4) | 22 | Source inventory | [extended-cli-complete](../extended-cli-complete.md), [library-completion-plan](../library-completion-plan.md) |
-| [ext::cbor](ext/cbor.md) | [source](../../extended/ext/cbor.lani#L4) | 64 | Source inventory | [extended-cbor](../extended-cbor.md) |
+| [ext::cbor](ext/cbor.md) | [source](../../extended/ext/cbor.lani#L4) | 64 | Source inventory | [extended-cbor](../extended-cbor.md), [extended-cbor-stream](../extended-cbor-stream.md) |
+| [ext::cbor_stream](ext/cbor_stream.md) | [source](../../extended/ext/cbor_stream.lani#L8) | 153 | Source inventory | [extended-cbor-stream](../extended-cbor-stream.md) |
 | [ext::cli](ext/cli.md) | [source](../../extended/ext/cli.lani#L3) | 63 | Source inventory | [extended-cli](../extended-cli.md), [extended-cli-commands](../extended-cli-commands.md), [extended-cli-response](../extended-cli-response.md), [extended-cli-complete](../extended-cli-complete.md) |
 | [ext::cli_bash](ext/cli_bash.md) | [source](../../extended/ext/cli_bash.lani#L4) | 24 | Source inventory | [extended-cli-complete](../extended-cli-complete.md), [library-completion-plan](../library-completion-plan.md) |
 | [ext::cli_commands](ext/cli_commands.md) | [source](../../extended/ext/cli_commands.lani#L5) | 66 | Source inventory | [extended-cli-commands](../extended-cli-commands.md), [extended-cli-response](../extended-cli-response.md), [extended-cli-complete](../extended-cli-complete.md) |
