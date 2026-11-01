@@ -1,6 +1,6 @@
-// Open defect: a bound on an imported generic trait (I: core::iter::Iterator<i32>)
-// still leaves an untyped `let x = it.next();` without a type; the unwrap_or
-// reports LNC0006. `let x: core::option::Option<i32>` works. Expected: exit 6.
+// Fixed 2026-10-31: with a bound on an imported generic trait
+// (I: core::iter::Iterator<i32>), an untyped `let x = it.next();` had no type
+// and the unwrap_or reported LNC0006. It now types as Option<i32>. Expected: exit 6.
 module app::main;
 import core::iter;
 import core::option;

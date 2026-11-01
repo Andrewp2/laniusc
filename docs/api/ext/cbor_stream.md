@@ -14,7 +14,7 @@ Allocating streaming RFC 8949 codec over ext::cbor events: a chunk-fed Decoder (
 
 - [extended-cbor-stream](../../extended-cbor-stream.md)
 
-Declaration counts: enum: 2; field: 54; function: 10; impl: 4; method: 50; struct: 6; variant: 27.
+Declaration counts: enum: 2; field: 61; function: 10; impl: 4; method: 54; struct: 6; variant: 27.
 
 ## Declared imports
 
@@ -363,7 +363,7 @@ sequence: bool
 
 ### struct: Decoder
 
-[Source line 163](../../../extended/ext/cbor_stream.lani#L163)
+[Source line 171](../../../extended/ext/cbor_stream.lani#L171)
 
 ```lanius
 pub struct Decoder
@@ -371,7 +371,7 @@ pub struct Decoder
 
 #### field: options
 
-[Source line 164](../../../extended/ext/cbor_stream.lani#L164)
+[Source line 172](../../../extended/ext/cbor_stream.lani#L172)
 
 ```lanius
 options: Options
@@ -379,87 +379,127 @@ options: Options
 
 #### field: buf
 
-[Source line 164](../../../extended/ext/cbor_stream.lani#L164)
+[Source line 172](../../../extended/ext/cbor_stream.lani#L172)
 
 ```lanius
 buf: alloc::vec::Vec<u8>
 ```
 
+#### field: data
+
+[Source line 172](../../../extended/ext/cbor_stream.lani#L172)
+
+```lanius
+data: [u8]
+```
+
 #### field: begin
 
-[Source line 164](../../../extended/ext/cbor_stream.lani#L164)
+[Source line 172](../../../extended/ext/cbor_stream.lani#L172)
 
 ```lanius
 begin: i32
 ```
 
+#### field: end
+
+[Source line 172](../../../extended/ext/cbor_stream.lani#L172)
+
+```lanius
+end: i32
+```
+
 #### field: base
 
-[Source line 164](../../../extended/ext/cbor_stream.lani#L164)
+[Source line 172](../../../extended/ext/cbor_stream.lani#L172)
 
 ```lanius
 base: u64
 ```
 
-#### field: kinds
+#### field: depth
 
-[Source line 165](../../../extended/ext/cbor_stream.lani#L165)
+[Source line 173](../../../extended/ext/cbor_stream.lani#L173)
 
 ```lanius
-kinds: alloc::vec::Vec<u8>
+depth: i32
 ```
 
-#### field: remaining
+#### field: kind
 
-[Source line 165](../../../extended/ext/cbor_stream.lani#L165)
+[Source line 173](../../../extended/ext/cbor_stream.lani#L173)
 
 ```lanius
-remaining: alloc::vec::Vec<u64>
+kind: u8
 ```
 
-#### field: odd
+#### field: left
 
-[Source line 165](../../../extended/ext/cbor_stream.lani#L165)
+[Source line 173](../../../extended/ext/cbor_stream.lani#L173)
 
 ```lanius
-odd: alloc::vec::Vec<u8>
+left: u64
 ```
 
-#### field: bytes
+#### field: half
 
-[Source line 165](../../../extended/ext/cbor_stream.lani#L165)
+[Source line 173](../../../extended/ext/cbor_stream.lani#L173)
 
 ```lanius
-bytes: alloc::vec::Vec<u64>
+half: u8
 ```
 
-#### field: key_start
+#### field: chunked
 
-[Source line 166](../../../extended/ext/cbor_stream.lani#L166)
+[Source line 173](../../../extended/ext/cbor_stream.lani#L173)
 
 ```lanius
-key_start: alloc::vec::Vec<u64>
+chunked: u64
 ```
 
-#### field: prev_at
+#### field: key_at
 
-[Source line 166](../../../extended/ext/cbor_stream.lani#L166)
+[Source line 173](../../../extended/ext/cbor_stream.lani#L173)
 
 ```lanius
-prev_at: alloc::vec::Vec<i32>
+key_at: u64
 ```
 
-#### field: prev_len
+#### field: key_from
 
-[Source line 166](../../../extended/ext/cbor_stream.lani#L166)
+[Source line 173](../../../extended/ext/cbor_stream.lani#L173)
 
 ```lanius
-prev_len: alloc::vec::Vec<i32>
+key_from: i32
+```
+
+#### field: key_len
+
+[Source line 173](../../../extended/ext/cbor_stream.lani#L173)
+
+```lanius
+key_len: i32
+```
+
+#### field: frames
+
+[Source line 174](../../../extended/ext/cbor_stream.lani#L174)
+
+```lanius
+frames: alloc::vec::Vec<u64>
+```
+
+#### field: stack
+
+[Source line 174](../../../extended/ext/cbor_stream.lani#L174)
+
+```lanius
+stack: [u64]
 ```
 
 #### field: keys
 
-[Source line 166](../../../extended/ext/cbor_stream.lani#L166)
+[Source line 174](../../../extended/ext/cbor_stream.lani#L174)
 
 ```lanius
 keys: alloc::vec::Vec<u8>
@@ -467,7 +507,7 @@ keys: alloc::vec::Vec<u8>
 
 #### field: items
 
-[Source line 167](../../../extended/ext/cbor_stream.lani#L167)
+[Source line 175](../../../extended/ext/cbor_stream.lani#L175)
 
 ```lanius
 items: u64
@@ -475,7 +515,7 @@ items: u64
 
 #### field: roots
 
-[Source line 167](../../../extended/ext/cbor_stream.lani#L167)
+[Source line 175](../../../extended/ext/cbor_stream.lani#L175)
 
 ```lanius
 roots: u64
@@ -483,7 +523,7 @@ roots: u64
 
 #### field: root_done
 
-[Source line 167](../../../extended/ext/cbor_stream.lani#L167)
+[Source line 175](../../../extended/ext/cbor_stream.lani#L175)
 
 ```lanius
 root_done: bool
@@ -491,23 +531,31 @@ root_done: bool
 
 #### field: finished
 
-[Source line 167](../../../extended/ext/cbor_stream.lani#L167)
+[Source line 175](../../../extended/ext/cbor_stream.lani#L175)
 
 ```lanius
 finished: bool
 ```
 
-#### field: failure
+#### field: failed
 
-[Source line 167](../../../extended/ext/cbor_stream.lani#L167)
+[Source line 175](../../../extended/ext/cbor_stream.lani#L175)
 
 ```lanius
-failure: core::option::Option<Error>
+failed: bool
+```
+
+#### field: failure
+
+[Source line 175](../../../extended/ext/cbor_stream.lani#L175)
+
+```lanius
+failure: Error
 ```
 
 #### field: current
 
-[Source line 168](../../../extended/ext/cbor_stream.lani#L168)
+[Source line 176](../../../extended/ext/cbor_stream.lani#L176)
 
 ```lanius
 current: ext::cbor::Event
@@ -515,7 +563,7 @@ current: ext::cbor::Event
 
 #### field: current_at
 
-[Source line 168](../../../extended/ext/cbor_stream.lani#L168)
+[Source line 176](../../../extended/ext/cbor_stream.lani#L176)
 
 ```lanius
 current_at: u64
@@ -523,7 +571,7 @@ current_at: u64
 
 #### field: ready
 
-[Source line 168](../../../extended/ext/cbor_stream.lani#L168)
+[Source line 176](../../../extended/ext/cbor_stream.lani#L176)
 
 ```lanius
 ready: bool
@@ -531,7 +579,7 @@ ready: bool
 
 ### enum: StreamError
 
-[Source line 416](../../../extended/ext/cbor_stream.lani#L416)
+[Source line 466](../../../extended/ext/cbor_stream.lani#L466)
 
 ```lanius
 pub enum StreamError
@@ -539,7 +587,7 @@ pub enum StreamError
 
 #### variant: Cbor
 
-[Source line 416](../../../extended/ext/cbor_stream.lani#L416)
+[Source line 466](../../../extended/ext/cbor_stream.lani#L466)
 
 ```lanius
 Cbor(Error)
@@ -547,7 +595,7 @@ Cbor(Error)
 
 #### variant: Io
 
-[Source line 416](../../../extended/ext/cbor_stream.lani#L416)
+[Source line 466](../../../extended/ext/cbor_stream.lani#L466)
 
 ```lanius
 Io(core::io::Error)
@@ -555,7 +603,7 @@ Io(core::io::Error)
 
 ### struct: EventReader
 
-[Source line 419](../../../extended/ext/cbor_stream.lani#L419)
+[Source line 469](../../../extended/ext/cbor_stream.lani#L469)
 
 ```lanius
 pub struct EventReader<R>
@@ -563,7 +611,7 @@ pub struct EventReader<R>
 
 #### field: reader
 
-[Source line 419](../../../extended/ext/cbor_stream.lani#L419)
+[Source line 469](../../../extended/ext/cbor_stream.lani#L469)
 
 ```lanius
 reader: &R
@@ -571,7 +619,7 @@ reader: &R
 
 #### field: decoder
 
-[Source line 419](../../../extended/ext/cbor_stream.lani#L419)
+[Source line 469](../../../extended/ext/cbor_stream.lani#L469)
 
 ```lanius
 decoder: &Decoder
@@ -579,7 +627,7 @@ decoder: &Decoder
 
 #### field: scratch
 
-[Source line 419](../../../extended/ext/cbor_stream.lani#L419)
+[Source line 469](../../../extended/ext/cbor_stream.lani#L469)
 
 ```lanius
 scratch: core::slice::View<u8>
@@ -587,7 +635,7 @@ scratch: core::slice::View<u8>
 
 #### field: eof
 
-[Source line 419](../../../extended/ext/cbor_stream.lani#L419)
+[Source line 469](../../../extended/ext/cbor_stream.lani#L469)
 
 ```lanius
 eof: bool
@@ -595,15 +643,23 @@ eof: bool
 
 #### field: reads
 
-[Source line 419](../../../extended/ext/cbor_stream.lani#L419)
+[Source line 469](../../../extended/ext/cbor_stream.lani#L469)
 
 ```lanius
 reads: u64
 ```
 
+#### field: failure
+
+[Source line 469](../../../extended/ext/cbor_stream.lani#L469)
+
+```lanius
+failure: StreamError
+```
+
 ### struct: Writer
 
-[Source line 455](../../../extended/ext/cbor_stream.lani#L455)
+[Source line 514](../../../extended/ext/cbor_stream.lani#L514)
 
 ```lanius
 pub struct Writer
@@ -611,7 +667,7 @@ pub struct Writer
 
 #### field: options
 
-[Source line 456](../../../extended/ext/cbor_stream.lani#L456)
+[Source line 515](../../../extended/ext/cbor_stream.lani#L515)
 
 ```lanius
 options: WriterOptions
@@ -619,7 +675,7 @@ options: WriterOptions
 
 #### field: out
 
-[Source line 456](../../../extended/ext/cbor_stream.lani#L456)
+[Source line 515](../../../extended/ext/cbor_stream.lani#L515)
 
 ```lanius
 out: alloc::vec::Vec<u8>
@@ -627,7 +683,7 @@ out: alloc::vec::Vec<u8>
 
 #### field: kinds
 
-[Source line 457](../../../extended/ext/cbor_stream.lani#L457)
+[Source line 516](../../../extended/ext/cbor_stream.lani#L516)
 
 ```lanius
 kinds: alloc::vec::Vec<u8>
@@ -635,7 +691,7 @@ kinds: alloc::vec::Vec<u8>
 
 #### field: known
 
-[Source line 457](../../../extended/ext/cbor_stream.lani#L457)
+[Source line 516](../../../extended/ext/cbor_stream.lani#L516)
 
 ```lanius
 known: alloc::vec::Vec<u8>
@@ -643,7 +699,7 @@ known: alloc::vec::Vec<u8>
 
 #### field: declared
 
-[Source line 457](../../../extended/ext/cbor_stream.lani#L457)
+[Source line 516](../../../extended/ext/cbor_stream.lani#L516)
 
 ```lanius
 declared: alloc::vec::Vec<u64>
@@ -651,7 +707,7 @@ declared: alloc::vec::Vec<u64>
 
 #### field: count
 
-[Source line 457](../../../extended/ext/cbor_stream.lani#L457)
+[Source line 516](../../../extended/ext/cbor_stream.lani#L516)
 
 ```lanius
 count: alloc::vec::Vec<u64>
@@ -659,7 +715,7 @@ count: alloc::vec::Vec<u64>
 
 #### field: start
 
-[Source line 458](../../../extended/ext/cbor_stream.lani#L458)
+[Source line 517](../../../extended/ext/cbor_stream.lani#L517)
 
 ```lanius
 start: alloc::vec::Vec<i32>
@@ -667,7 +723,7 @@ start: alloc::vec::Vec<i32>
 
 #### field: mark_base
 
-[Source line 458](../../../extended/ext/cbor_stream.lani#L458)
+[Source line 517](../../../extended/ext/cbor_stream.lani#L517)
 
 ```lanius
 mark_base: alloc::vec::Vec<i32>
@@ -675,7 +731,7 @@ mark_base: alloc::vec::Vec<i32>
 
 #### field: marks
 
-[Source line 458](../../../extended/ext/cbor_stream.lani#L458)
+[Source line 517](../../../extended/ext/cbor_stream.lani#L517)
 
 ```lanius
 marks: alloc::vec::Vec<i32>
@@ -683,7 +739,7 @@ marks: alloc::vec::Vec<i32>
 
 #### field: order
 
-[Source line 459](../../../extended/ext/cbor_stream.lani#L459)
+[Source line 518](../../../extended/ext/cbor_stream.lani#L518)
 
 ```lanius
 order: alloc::vec::Vec<i32>
@@ -691,7 +747,7 @@ order: alloc::vec::Vec<i32>
 
 #### field: spare
 
-[Source line 459](../../../extended/ext/cbor_stream.lani#L459)
+[Source line 518](../../../extended/ext/cbor_stream.lani#L518)
 
 ```lanius
 spare: alloc::vec::Vec<i32>
@@ -699,7 +755,7 @@ spare: alloc::vec::Vec<i32>
 
 #### field: swap
 
-[Source line 459](../../../extended/ext/cbor_stream.lani#L459)
+[Source line 518](../../../extended/ext/cbor_stream.lani#L518)
 
 ```lanius
 swap: alloc::vec::Vec<u8>
@@ -707,7 +763,7 @@ swap: alloc::vec::Vec<u8>
 
 #### field: roots
 
-[Source line 460](../../../extended/ext/cbor_stream.lani#L460)
+[Source line 519](../../../extended/ext/cbor_stream.lani#L519)
 
 ```lanius
 roots: u64
@@ -715,7 +771,7 @@ roots: u64
 
 #### field: flushed
 
-[Source line 460](../../../extended/ext/cbor_stream.lani#L460)
+[Source line 519](../../../extended/ext/cbor_stream.lani#L519)
 
 ```lanius
 flushed: u64
@@ -723,7 +779,7 @@ flushed: u64
 
 #### field: pending
 
-[Source line 460](../../../extended/ext/cbor_stream.lani#L460)
+[Source line 519](../../../extended/ext/cbor_stream.lani#L519)
 
 ```lanius
 pending: i32
@@ -731,7 +787,7 @@ pending: i32
 
 #### field: failure
 
-[Source line 460](../../../extended/ext/cbor_stream.lani#L460)
+[Source line 519](../../../extended/ext/cbor_stream.lani#L519)
 
 ```lanius
 failure: core::option::Option<Error>
@@ -739,7 +795,7 @@ failure: core::option::Option<Error>
 
 #### field: head
 
-[Source line 460](../../../extended/ext/cbor_stream.lani#L460)
+[Source line 519](../../../extended/ext/cbor_stream.lani#L519)
 
 ```lanius
 head: [u8; 9]
@@ -805,7 +861,7 @@ pub fn widen_f32(bits: u32) -> u64
 
 ### function: decoder
 
-[Source line 171](../../../extended/ext/cbor_stream.lani#L171)
+[Source line 179](../../../extended/ext/cbor_stream.lani#L179)
 
 ```lanius
 pub fn decoder(options: Options) -> core::result::Result<Decoder, Error>
@@ -813,7 +869,7 @@ pub fn decoder(options: Options) -> core::result::Result<Decoder, Error>
 
 ### function: event_reader
 
-[Source line 420](../../../extended/ext/cbor_stream.lani#L420)
+[Source line 470](../../../extended/ext/cbor_stream.lani#L470)
 
 ```lanius
 pub fn event_reader<R>(reader: &R, decoder: &Decoder, scratch: core::slice::View<u8>)
@@ -822,7 +878,7 @@ pub fn event_reader<R>(reader: &R, decoder: &Decoder, scratch: core::slice::View
 
 ### function: writer
 
-[Source line 462](../../../extended/ext/cbor_stream.lani#L462)
+[Source line 521](../../../extended/ext/cbor_stream.lani#L521)
 
 ```lanius
 pub fn writer(options: WriterOptions) -> core::result::Result<Writer, Error>
@@ -830,9 +886,9 @@ pub fn writer(options: WriterOptions) -> core::result::Result<Writer, Error>
 
 ## Implementation blocks and public methods
 
-### impl at line 180
+### impl at line 189
 
-[Source line 180](../../../extended/ext/cbor_stream.lani#L180)
+[Source line 189](../../../extended/ext/cbor_stream.lani#L189)
 
 ```lanius
 pub impl Decoder
@@ -840,7 +896,7 @@ pub impl Decoder
 
 #### method: borrow
 
-[Source line 181](../../../extended/ext/cbor_stream.lani#L181)
+[Source line 190](../../../extended/ext/cbor_stream.lani#L190)
 
 ```lanius
 pub fn borrow(&self) -> &Decoder
@@ -848,7 +904,7 @@ pub fn borrow(&self) -> &Decoder
 
 #### method: depth
 
-[Source line 182](../../../extended/ext/cbor_stream.lani#L182)
+[Source line 191](../../../extended/ext/cbor_stream.lani#L191)
 
 ```lanius
 pub fn depth(&self) -> i32
@@ -856,7 +912,7 @@ pub fn depth(&self) -> i32
 
 #### method: byte_offset
 
-[Source line 184](../../../extended/ext/cbor_stream.lani#L184)
+[Source line 193](../../../extended/ext/cbor_stream.lani#L193)
 
 ```lanius
 pub fn byte_offset(&self) -> u64
@@ -864,7 +920,7 @@ pub fn byte_offset(&self) -> u64
 
 #### method: bytes_received
 
-[Source line 185](../../../extended/ext/cbor_stream.lani#L185)
+[Source line 194](../../../extended/ext/cbor_stream.lani#L194)
 
 ```lanius
 pub fn bytes_received(&self) -> u64
@@ -872,7 +928,7 @@ pub fn bytes_received(&self) -> u64
 
 #### method: items_read
 
-[Source line 186](../../../extended/ext/cbor_stream.lani#L186)
+[Source line 195](../../../extended/ext/cbor_stream.lani#L195)
 
 ```lanius
 pub fn items_read(&self) -> u64
@@ -880,7 +936,7 @@ pub fn items_read(&self) -> u64
 
 #### method: roots_read
 
-[Source line 187](../../../extended/ext/cbor_stream.lani#L187)
+[Source line 196](../../../extended/ext/cbor_stream.lani#L196)
 
 ```lanius
 pub fn roots_read(&self) -> u64
@@ -888,7 +944,7 @@ pub fn roots_read(&self) -> u64
 
 #### method: has_event
 
-[Source line 188](../../../extended/ext/cbor_stream.lani#L188)
+[Source line 197](../../../extended/ext/cbor_stream.lani#L197)
 
 ```lanius
 pub fn has_event(&self) -> bool
@@ -896,7 +952,7 @@ pub fn has_event(&self) -> bool
 
 #### method: event
 
-[Source line 191](../../../extended/ext/cbor_stream.lani#L191)
+[Source line 200](../../../extended/ext/cbor_stream.lani#L200)
 
 ```lanius
 pub fn event(&self) -> ext::cbor::Event
@@ -904,7 +960,7 @@ pub fn event(&self) -> ext::cbor::Event
 
 #### method: event_offset
 
-[Source line 192](../../../extended/ext/cbor_stream.lani#L192)
+[Source line 201](../../../extended/ext/cbor_stream.lani#L201)
 
 ```lanius
 pub fn event_offset(&self) -> u64
@@ -912,7 +968,7 @@ pub fn event_offset(&self) -> u64
 
 #### method: is_complete
 
-[Source line 193](../../../extended/ext/cbor_stream.lani#L193)
+[Source line 202](../../../extended/ext/cbor_stream.lani#L202)
 
 ```lanius
 pub fn is_complete(&self) -> bool
@@ -920,7 +976,7 @@ pub fn is_complete(&self) -> bool
 
 #### method: feed
 
-[Source line 218](../../../extended/ext/cbor_stream.lani#L218)
+[Source line 226](../../../extended/ext/cbor_stream.lani#L226)
 
 ```lanius
 pub fn feed(&self, source: [u8], start: i32, count: i32) -> core::result::Result<i32, Error>
@@ -928,7 +984,7 @@ pub fn feed(&self, source: [u8], start: i32, count: i32) -> core::result::Result
 
 #### method: finish
 
-[Source line 233](../../../extended/ext/cbor_stream.lani#L233)
+[Source line 243](../../../extended/ext/cbor_stream.lani#L243)
 
 ```lanius
 pub fn finish(&self)
@@ -936,7 +992,7 @@ pub fn finish(&self)
 
 #### method: reset
 
-[Source line 234](../../../extended/ext/cbor_stream.lani#L234)
+[Source line 244](../../../extended/ext/cbor_stream.lani#L244)
 
 ```lanius
 pub fn reset(&self)
@@ -944,7 +1000,7 @@ pub fn reset(&self)
 
 #### method: destroy
 
-[Source line 241](../../../extended/ext/cbor_stream.lani#L241)
+[Source line 251](../../../extended/ext/cbor_stream.lani#L251)
 
 ```lanius
 pub fn destroy(&self)
@@ -952,15 +1008,31 @@ pub fn destroy(&self)
 
 #### method: next
 
-[Source line 310](../../../extended/ext/cbor_stream.lani#L310)
+[Source line 322](../../../extended/ext/cbor_stream.lani#L322)
 
 ```lanius
 pub fn next(&self) -> core::result::Result<bool, Error>
 ```
 
-### impl at line 426
+#### method: last_error
 
-[Source line 426](../../../extended/ext/cbor_stream.lani#L426)
+[Source line 329](../../../extended/ext/cbor_stream.lani#L329)
+
+```lanius
+pub fn last_error(&self) -> Error
+```
+
+#### method: advance
+
+[Source line 333](../../../extended/ext/cbor_stream.lani#L333)
+
+```lanius
+pub fn advance(&self) -> i32
+```
+
+### impl at line 476
+
+[Source line 476](../../../extended/ext/cbor_stream.lani#L476)
 
 ```lanius
 pub impl<R> EventReader<R>
@@ -968,7 +1040,7 @@ pub impl<R> EventReader<R>
 
 #### method: borrow
 
-[Source line 427](../../../extended/ext/cbor_stream.lani#L427)
+[Source line 477](../../../extended/ext/cbor_stream.lani#L477)
 
 ```lanius
 pub fn borrow(&self) -> &EventReader<R>
@@ -976,7 +1048,7 @@ pub fn borrow(&self) -> &EventReader<R>
 
 #### method: read_calls
 
-[Source line 428](../../../extended/ext/cbor_stream.lani#L428)
+[Source line 478](../../../extended/ext/cbor_stream.lani#L478)
 
 ```lanius
 pub fn read_calls(&self) -> u64
@@ -984,15 +1056,31 @@ pub fn read_calls(&self) -> u64
 
 #### method: next
 
-[Source line 431](../../../extended/ext/cbor_stream.lani#L431)
+[Source line 481](../../../extended/ext/cbor_stream.lani#L481)
 
 ```lanius
 pub fn next(&self) -> core::result::Result<bool, StreamError> where R: core::io::Read
 ```
 
-### impl at line 471
+#### method: last_error
 
-[Source line 471](../../../extended/ext/cbor_stream.lani#L471)
+[Source line 487](../../../extended/ext/cbor_stream.lani#L487)
+
+```lanius
+pub fn last_error(&self) -> StreamError
+```
+
+#### method: advance
+
+[Source line 490](../../../extended/ext/cbor_stream.lani#L490)
+
+```lanius
+pub fn advance(&self) -> i32 where R: core::io::Read
+```
+
+### impl at line 530
+
+[Source line 530](../../../extended/ext/cbor_stream.lani#L530)
 
 ```lanius
 pub impl Writer
@@ -1000,7 +1088,7 @@ pub impl Writer
 
 #### method: borrow
 
-[Source line 472](../../../extended/ext/cbor_stream.lani#L472)
+[Source line 531](../../../extended/ext/cbor_stream.lani#L531)
 
 ```lanius
 pub fn borrow(&self) -> &Writer
@@ -1008,7 +1096,7 @@ pub fn borrow(&self) -> &Writer
 
 #### method: len
 
-[Source line 473](../../../extended/ext/cbor_stream.lani#L473)
+[Source line 532](../../../extended/ext/cbor_stream.lani#L532)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -1016,7 +1104,7 @@ pub fn len(&self) -> i32
 
 #### method: depth
 
-[Source line 474](../../../extended/ext/cbor_stream.lani#L474)
+[Source line 533](../../../extended/ext/cbor_stream.lani#L533)
 
 ```lanius
 pub fn depth(&self) -> i32
@@ -1024,7 +1112,7 @@ pub fn depth(&self) -> i32
 
 #### method: roots_written
 
-[Source line 475](../../../extended/ext/cbor_stream.lani#L475)
+[Source line 534](../../../extended/ext/cbor_stream.lani#L534)
 
 ```lanius
 pub fn roots_written(&self) -> u64
@@ -1032,7 +1120,7 @@ pub fn roots_written(&self) -> u64
 
 #### method: is_complete
 
-[Source line 476](../../../extended/ext/cbor_stream.lani#L476)
+[Source line 535](../../../extended/ext/cbor_stream.lani#L535)
 
 ```lanius
 pub fn is_complete(&self) -> bool
@@ -1040,7 +1128,7 @@ pub fn is_complete(&self) -> bool
 
 #### method: output
 
-[Source line 478](../../../extended/ext/cbor_stream.lani#L478)
+[Source line 537](../../../extended/ext/cbor_stream.lani#L537)
 
 ```lanius
 pub fn output(&self) -> core::slice::View<u8>
@@ -1048,7 +1136,7 @@ pub fn output(&self) -> core::slice::View<u8>
 
 #### method: unsigned
 
-[Source line 541](../../../extended/ext/cbor_stream.lani#L541)
+[Source line 600](../../../extended/ext/cbor_stream.lani#L600)
 
 ```lanius
 pub fn unsigned(&self, value: u64) -> core::result::Result<i32, Error>
@@ -1056,7 +1144,7 @@ pub fn unsigned(&self, value: u64) -> core::result::Result<i32, Error>
 
 #### method: negative
 
-[Source line 543](../../../extended/ext/cbor_stream.lani#L543)
+[Source line 602](../../../extended/ext/cbor_stream.lani#L602)
 
 ```lanius
 pub fn negative(&self, value: u64) -> core::result::Result<i32, Error>
@@ -1064,7 +1152,7 @@ pub fn negative(&self, value: u64) -> core::result::Result<i32, Error>
 
 #### method: integer
 
-[Source line 544](../../../extended/ext/cbor_stream.lani#L544)
+[Source line 603](../../../extended/ext/cbor_stream.lani#L603)
 
 ```lanius
 pub fn integer(&self, value: i64) -> core::result::Result<i32, Error>
@@ -1072,7 +1160,7 @@ pub fn integer(&self, value: i64) -> core::result::Result<i32, Error>
 
 #### method: simple
 
-[Source line 548](../../../extended/ext/cbor_stream.lani#L548)
+[Source line 607](../../../extended/ext/cbor_stream.lani#L607)
 
 ```lanius
 pub fn simple(&self, value: u8) -> core::result::Result<i32, Error>
@@ -1080,7 +1168,7 @@ pub fn simple(&self, value: u8) -> core::result::Result<i32, Error>
 
 #### method: boolean
 
-[Source line 552](../../../extended/ext/cbor_stream.lani#L552)
+[Source line 611](../../../extended/ext/cbor_stream.lani#L611)
 
 ```lanius
 pub fn boolean(&self, value: bool) -> core::result::Result<i32, Error>
@@ -1088,7 +1176,7 @@ pub fn boolean(&self, value: bool) -> core::result::Result<i32, Error>
 
 #### method: null
 
-[Source line 553](../../../extended/ext/cbor_stream.lani#L553)
+[Source line 612](../../../extended/ext/cbor_stream.lani#L612)
 
 ```lanius
 pub fn null(&self) -> core::result::Result<i32, Error>
@@ -1096,7 +1184,7 @@ pub fn null(&self) -> core::result::Result<i32, Error>
 
 #### method: undefined
 
-[Source line 554](../../../extended/ext/cbor_stream.lani#L554)
+[Source line 613](../../../extended/ext/cbor_stream.lani#L613)
 
 ```lanius
 pub fn undefined(&self) -> core::result::Result<i32, Error>
@@ -1104,7 +1192,7 @@ pub fn undefined(&self) -> core::result::Result<i32, Error>
 
 #### method: float16
 
-[Source line 566](../../../extended/ext/cbor_stream.lani#L566)
+[Source line 625](../../../extended/ext/cbor_stream.lani#L625)
 
 ```lanius
 pub fn float16(&self, bits: u32) -> core::result::Result<i32, Error>
@@ -1112,7 +1200,7 @@ pub fn float16(&self, bits: u32) -> core::result::Result<i32, Error>
 
 #### method: float32
 
-[Source line 571](../../../extended/ext/cbor_stream.lani#L571)
+[Source line 630](../../../extended/ext/cbor_stream.lani#L630)
 
 ```lanius
 pub fn float32(&self, bits: u32) -> core::result::Result<i32, Error>
@@ -1120,7 +1208,7 @@ pub fn float32(&self, bits: u32) -> core::result::Result<i32, Error>
 
 #### method: float64
 
-[Source line 575](../../../extended/ext/cbor_stream.lani#L575)
+[Source line 634](../../../extended/ext/cbor_stream.lani#L634)
 
 ```lanius
 pub fn float64(&self, bits: u64) -> core::result::Result<i32, Error>
@@ -1128,7 +1216,7 @@ pub fn float64(&self, bits: u64) -> core::result::Result<i32, Error>
 
 #### method: bytes
 
-[Source line 600](../../../extended/ext/cbor_stream.lani#L600)
+[Source line 659](../../../extended/ext/cbor_stream.lani#L659)
 
 ```lanius
 pub fn bytes(&self, value: core::slice::View<u8>) -> core::result::Result<i32, Error>
@@ -1136,7 +1224,7 @@ pub fn bytes(&self, value: core::slice::View<u8>) -> core::result::Result<i32, E
 
 #### method: text
 
-[Source line 602](../../../extended/ext/cbor_stream.lani#L602)
+[Source line 661](../../../extended/ext/cbor_stream.lani#L661)
 
 ```lanius
 pub fn text(&self, value: core::text::Text) -> core::result::Result<i32, Error>
@@ -1144,7 +1232,7 @@ pub fn text(&self, value: core::text::Text) -> core::result::Result<i32, Error>
 
 #### method: text_bytes
 
-[Source line 603](../../../extended/ext/cbor_stream.lani#L603)
+[Source line 662](../../../extended/ext/cbor_stream.lani#L662)
 
 ```lanius
 pub fn text_bytes(&self, value: core::slice::View<u8>) -> core::result::Result<i32, Error>
@@ -1152,7 +1240,7 @@ pub fn text_bytes(&self, value: core::slice::View<u8>) -> core::result::Result<i
 
 #### method: begin_array
 
-[Source line 628](../../../extended/ext/cbor_stream.lani#L628)
+[Source line 687](../../../extended/ext/cbor_stream.lani#L687)
 
 ```lanius
 pub fn begin_array(&self) -> core::result::Result<i32, Error>
@@ -1160,7 +1248,7 @@ pub fn begin_array(&self) -> core::result::Result<i32, Error>
 
 #### method: begin_array_len
 
-[Source line 629](../../../extended/ext/cbor_stream.lani#L629)
+[Source line 688](../../../extended/ext/cbor_stream.lani#L688)
 
 ```lanius
 pub fn begin_array_len(&self, count: u64) -> core::result::Result<i32, Error>
@@ -1168,7 +1256,7 @@ pub fn begin_array_len(&self, count: u64) -> core::result::Result<i32, Error>
 
 #### method: begin_map
 
-[Source line 630](../../../extended/ext/cbor_stream.lani#L630)
+[Source line 689](../../../extended/ext/cbor_stream.lani#L689)
 
 ```lanius
 pub fn begin_map(&self) -> core::result::Result<i32, Error>
@@ -1176,7 +1264,7 @@ pub fn begin_map(&self) -> core::result::Result<i32, Error>
 
 #### method: begin_map_len
 
-[Source line 632](../../../extended/ext/cbor_stream.lani#L632)
+[Source line 691](../../../extended/ext/cbor_stream.lani#L691)
 
 ```lanius
 pub fn begin_map_len(&self, count: u64) -> core::result::Result<i32, Error>
@@ -1184,7 +1272,7 @@ pub fn begin_map_len(&self, count: u64) -> core::result::Result<i32, Error>
 
 #### method: begin_bytes
 
-[Source line 633](../../../extended/ext/cbor_stream.lani#L633)
+[Source line 692](../../../extended/ext/cbor_stream.lani#L692)
 
 ```lanius
 pub fn begin_bytes(&self) -> core::result::Result<i32, Error>
@@ -1192,7 +1280,7 @@ pub fn begin_bytes(&self) -> core::result::Result<i32, Error>
 
 #### method: begin_text
 
-[Source line 634](../../../extended/ext/cbor_stream.lani#L634)
+[Source line 693](../../../extended/ext/cbor_stream.lani#L693)
 
 ```lanius
 pub fn begin_text(&self) -> core::result::Result<i32, Error>
@@ -1200,7 +1288,7 @@ pub fn begin_text(&self) -> core::result::Result<i32, Error>
 
 #### method: tag
 
-[Source line 636](../../../extended/ext/cbor_stream.lani#L636)
+[Source line 695](../../../extended/ext/cbor_stream.lani#L695)
 
 ```lanius
 pub fn tag(&self, number: u64) -> core::result::Result<i32, Error>
@@ -1208,7 +1296,7 @@ pub fn tag(&self, number: u64) -> core::result::Result<i32, Error>
 
 #### method: end
 
-[Source line 716](../../../extended/ext/cbor_stream.lani#L716)
+[Source line 775](../../../extended/ext/cbor_stream.lani#L775)
 
 ```lanius
 pub fn end(&self) -> core::result::Result<i32, Error>
@@ -1216,7 +1304,7 @@ pub fn end(&self) -> core::result::Result<i32, Error>
 
 #### method: event
 
-[Source line 751](../../../extended/ext/cbor_stream.lani#L751)
+[Source line 810](../../../extended/ext/cbor_stream.lani#L810)
 
 ```lanius
 pub fn event(&self, value: ext::cbor::Event) -> core::result::Result<i32, Error>
@@ -1224,7 +1312,7 @@ pub fn event(&self, value: ext::cbor::Event) -> core::result::Result<i32, Error>
 
 #### method: clear
 
-[Source line 776](../../../extended/ext/cbor_stream.lani#L776)
+[Source line 835](../../../extended/ext/cbor_stream.lani#L835)
 
 ```lanius
 pub fn clear(&self)
@@ -1232,7 +1320,7 @@ pub fn clear(&self)
 
 #### method: destroy
 
-[Source line 781](../../../extended/ext/cbor_stream.lani#L781)
+[Source line 840](../../../extended/ext/cbor_stream.lani#L840)
 
 ```lanius
 pub fn destroy(&self)
@@ -1240,15 +1328,15 @@ pub fn destroy(&self)
 
 #### method: stable_len
 
-[Source line 790](../../../extended/ext/cbor_stream.lani#L790)
+[Source line 849](../../../extended/ext/cbor_stream.lani#L849)
 
 ```lanius
 pub fn stable_len(&self) -> i32
 ```
 
-### impl at line 804
+### impl at line 863
 
-[Source line 804](../../../extended/ext/cbor_stream.lani#L804)
+[Source line 863](../../../extended/ext/cbor_stream.lani#L863)
 
 ```lanius
 pub impl Writer
@@ -1256,7 +1344,7 @@ pub impl Writer
 
 #### method: flush_to
 
-[Source line 805](../../../extended/ext/cbor_stream.lani#L805)
+[Source line 864](../../../extended/ext/cbor_stream.lani#L864)
 
 ```lanius
 pub fn flush_to<W>(&self, sink: &W) -> core::result::Result<i32, core::io::Failure> where W: core::io::Write

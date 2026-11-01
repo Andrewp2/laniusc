@@ -1,0 +1,15 @@
+// A bound whose trait argument is the caller's own parameter,
+// I: core::iter::Iterator<T>: `let x = it.next();` types as Option<T>. Expected: exit 3.
+module app::main;
+import core::iter;
+import core::option;
+pub struct Count { n: i32 }
+pub impl Count { pub fn borrow(&self) -> &Count { return self; } }
+pub impl core::iter::Iterator<i32> for Count {
+    pub fn next(&self) -> core::option::Option<i32> { return core::option::Option::Some(6); }
+}
+fn has<T, I>(it: &I) -> bool where I: core::iter::Iterator<T> {
+    let x = it.next();
+    return core::option::is_some(x);
+}
+fn main() -> i32 { let c: Count = Count { n: 0 }; if (has<i32, Count>(c.borrow())) { return 3; } return 0; }

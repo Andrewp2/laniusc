@@ -1,0 +1,7 @@
+// Diagnostic defect: with the stray line from README.md inserted into a copy
+// of stdlib/core/float_decimal.lani, compiling this program reports LNC0008
+// at stdlib/core/result.lani:93 instead of LNC0016 at the stray line.
+// Unmodified, it compiles and exits 0.
+module app::main;
+import core::float_decimal;
+fn main() -> i32 { return core::float_decimal::scratch_len() - 864; }

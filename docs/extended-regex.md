@@ -474,6 +474,61 @@ per rule. In unanchored mode an empty set is a live state, since a later
 boundary (after an LF, say) can satisfy `^` again. [`ext::lexer`](extended-lexer.md#combined-dfa-matching) owns the only
 current consumer and its acceptance evidence.
 
+### Byte-level transitions and Unicode classes
+
+Classes, `\p{..}`, `\P{..}` and the Unicode shorthands already ran on the
+DFA; it steps whole scalars. Its transition cache is now keyed by bytes, as in
+`regex-automata`, but filled lazily rather than compiled ahead of time from
+UTF-8 byte-range automata. Each state has 256 byte entries. An ASCII byte
+leads to the next state. A lead byte of a longer sequence leads to a partial:
+the base state, the bits decoded so far, and the number of continuation bytes
+still needed. Each partial has 64 entries, one per continuation byte, that
+lead to the next partial or, on the last byte, to the state that `step` gives
+for the whole scalar. So a (state, UTF-8 prefix) pair is computed once, and
+later inputs follow cached byte entries. Partials live in a fixed arena of
+twice the state capacity. When it is full, the scalar is stepped without
+caching, and the answer is unchanged. A cache reset clears partials with the
+states. The dialect has no case-insensitive mode, so there is no case folding
+to compile. On a 1.3 MB file of mixed scripts, `\p{Lu}` with `text_grep -c`
+went from 1110 ms to 147 ms. GNU `grep -P` takes 9 ms, and the oracle's
+`dfa_unicode` surface checks the results.
+
+### Line scanning
+
+`Dfa.match_lines(bytes, from, to) -> LineScan` searches every record of
+`bytes[from, to)` in one pass, as if `is_match` ran on each record by
+itself. A record ends at LF, at a CR just before LF (both are excluded from
+the record), or at `to`. After each LF the DFA starts again in its start state,
+so `^`, `$`, `\A` and `\z` hold per record. ASCII bytes need no check. Each
+non-ASCII sequence is validated when the scan reaches it, before the
+byte-level partials read it. The scan stops at the first record that matches
+(`status` 1) or that it cannot decide (`status` 2). A record is undecided when
+the cache fills, when the VM could reach `WorkLimit` on it (`(record bytes +
+2) * boundary_cost > max_work`), or when it is invalid UTF-8 up to the point
+reached. With `status` 0 no record matched and `start` is `to`. `lines`
+counts the LFs before `start`. A matching record was validated only up to
+its match, so the caller checks the rest before using it. The caller
+guarantees that `to` is at most the slice length and that `from` is a record
+start. `Dfa.is_match_input(&Regex, Input)` is `is_match` for text the caller
+has already validated, and `ext::regex::input_unchecked(Text)` builds that
+`Input` without another pass. Passing invalid text through it is a caller
+error.
+
+### Required literal
+
+`Regex.required_literal(out, capacity) -> Result<i32, Error>` writes to `out`
+the UTF-8 bytes of a literal that every match contains, and returns their
+length. It can return 0, which means there is no such literal or the program
+has more than 2048 PCs. A literal PC is required when the accepting PC cannot
+be reached from the entry without passing it. The result is the longest run
+of required literals linked only by jumps, saves and assertions, truncated to
+`capacity` bytes. `Regex.literal_length()` returns the pattern's UTF-8 length
+when the pattern is a single literal (only literals, saves and jumps lead to
+the match), else -1. When it equals the `required_literal` length, a text
+matches exactly when it contains those bytes. `AllocationFailed` is the only
+error. [`text_grep`](extended-text-grep.md#literal-prefilter) uses both, with
+`core::search`, to skip records.
+
 ### Differential oracle and lazy counted repetition
 
 The [regex differential oracle](extended-regex-oracle.md) compares

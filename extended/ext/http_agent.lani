@@ -1,8 +1,9 @@
 // HTTP/1.1 client agent over ext::http framing: a keep-alive connection pool
 // keyed by host and port with idle-count, idle-time and per-connection use
 // limits; redirect following with a hop limit and RFC 9110 method rules; and
-// fixed (Content-Length) or streamed (chunked) request bodies. Cleartext
-// http:// only; resolution and connection setup come from ext::url_connect.
+// fixed (Content-Length) or streamed (chunked) request bodies. http:// and
+// https:// (verified TLS through ext::tls_stream, pooled like cleartext);
+// resolution and connection setup come from ext::url_connect.
 module ext::http_agent;
 import alloc::vec;
 import core::io;
@@ -14,6 +15,8 @@ import core::slice;
 import core::time;
 import ext::http;
 import ext::http_url;
+import ext::openssl_tls;
+import ext::tls_stream;
 import ext::uri;
 import ext::url_connect;
 import std::clock;
@@ -25,13 +28,15 @@ pub enum Error {
     InvalidRequest, InvalidHeader, Url(ext::http_url::ErrorKind), UnsupportedScheme,
     Connect(ext::url_connect::Cause), Io(core::io::Error), Timeout, Truncated(i32),
     Parse(ext::http::Error), TooLarge, TooManyRedirects(i32), BadLocation,
-    UnreplayableBody(i32), UnexpectedUpgrade, Source(core::io::Error), AllocationFailed, Clock
+    UnreplayableBody(i32), UnexpectedUpgrade, Source(core::io::Error), AllocationFailed, Clock,
+    Tls(ext::openssl_tls::Error)
 }
 pub struct Options {
     limits: ext::http::Limits, url: ext::http_url::Limits, connect: ext::url_connect::Options,
     max_idle_per_host: i32, max_idle_total: i32, idle_timeout_ms: i32, max_uses: i32,
     follow_redirects: bool, max_redirects: i32, timeout_ms: i32, chunk_bytes: i32,
-    max_informational: i32, retry_stale: bool
+    max_informational: i32, retry_stale: bool,
+    https: bool, trust: ext::openssl_tls::Trust, tls: ext::openssl_tls::Limits
 }
 // connections: opened; reused: pooled checkouts; requests: exchanges sent
 // (including retries and redirect hops); stale: pooled connections found
@@ -39,10 +44,15 @@ pub struct Options {
 // expired: closed by idle time; early: uploads cut short by a final response.
 pub struct Stats { connections: i32, reused: i32, requests: i32, redirects: i32, retries: i32, stale: i32, evicted: i32, expired: i32, early: i32 }
 pub struct Request { method: core::slice::View<u8>, url: core::slice::View<u8>, headers: core::slice::View<ext::http::Field>, body: core::slice::View<u8> }
-struct Idle { socket: std::socket::Socket, host: alloc::vec::Vec<u8>, port: u16, expires: core::time::Deadline, uses: i32, stamp: u64 }
-struct Lease { socket: std::socket::Socket, uses: i32, reused: bool }
+// One connection: the socket alone, or a TLS stream that owns it (socket is
+// then a copy used only for readiness polls). Every stream operation writes
+// the updated stream back into tls.
+struct Conn { socket: std::socket::Socket, secure: bool, tls: core::option::Option<ext::tls_stream::Stream> }
+impl Conn { fn borrow(&self) -> &Conn { return self; } }
+struct Idle { conn: Conn, host: alloc::vec::Vec<u8>, port: u16, expires: core::time::Deadline, uses: i32, stamp: u64 }
+struct Lease { conn: Conn, uses: i32, reused: bool }
 struct Failure { error: Error, retryable: bool }
-pub struct Agent { options: Options, pool: alloc::vec::Vec<Idle>, stats: Stats, stamp: u64, active: bool }
+pub struct Agent { options: Options, pool: alloc::vec::Vec<Idle>, stats: Stats, stamp: u64, active: bool, context: core::option::Option<ext::openssl_tls::Context> }
 // One manual owner. wire holds the received bytes: the raw final head, then a
 // fixed or close-delimited body in place; a chunked body is decoded apart.
 pub struct Response { status: i32, version: i32, wire: alloc::vec::Vec<u8>, head_length: i32, body_start: i32, body_length: i32, decoded: alloc::vec::Vec<u8>, chunked: bool, method: alloc::vec::Vec<u8>, url: alloc::vec::Vec<u8>, limits: ext::http::Limits, redirects: i32, reused: bool, kept: bool, hint_ms: i32, active: bool }
@@ -56,7 +66,8 @@ pub impl core::io::Read for NoBody {
 pub fn default_options() -> Options {
     return Options { limits: ext::http::default_limits(), url: ext::http_url::default_limits(), connect: ext::url_connect::default_options(),
         max_idle_per_host: 4, max_idle_total: 16, idle_timeout_ms: 15000, max_uses: 100, follow_redirects: true, max_redirects: 10,
-        timeout_ms: 30000, chunk_bytes: 16384, max_informational: 8, retry_stale: true };
+        timeout_ms: 30000, chunk_bytes: 16384, max_informational: 8, retry_stale: true,
+        https: true, trust: ext::openssl_tls::Trust::DefaultPaths, tls: ext::openssl_tls::default_limits() };
 }
 fn options_valid(o: Options) -> bool {
     return o.max_idle_per_host >= 0 && o.max_idle_total >= 0 && o.idle_timeout_ms >= 0 && o.max_uses >= 1 && o.max_redirects >= 0
@@ -66,7 +77,7 @@ fn options_valid(o: Options) -> bool {
 pub fn agent(options: Options) -> core::result::Result<Agent,Error> {
     if (!options_valid(options)) { return core::result::Err(Error::InvalidRequest); }
     let stats: Stats = Stats { connections: 0, reused: 0, requests: 0, redirects: 0, retries: 0, stale: 0, evicted: 0, expired: 0, early: 0 };
-    return core::result::Ok(Agent { options: options, pool: alloc::vec::new<Idle>(), stats: stats, stamp: 0, active: true });
+    return core::result::Ok(Agent { options: options, pool: alloc::vec::new<Idle>(), stats: stats, stamp: 0, active: true, context: core::option::None() });
 }
 
 fn literal(s: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(s),n); return core::slice::view<u8>(raw,n).unwrap(); }
@@ -113,6 +124,57 @@ fn deadline_ms(ms: i32) -> core::result::Result<core::time::Deadline,Error> {
 fn timed_out(e: core::io::Error) -> bool { return match(e) { core::io::Error::Host(n) -> n == 110, _ -> false }; }
 // EPIPE or ECONNRESET: the peer is gone.
 fn reset(e: core::io::Error) -> bool { return match(e) { core::io::Error::Host(n) -> n == 32 || n == 104, _ -> false }; }
+
+// Per-exchange TLS stream budget; the exchange deadline is the real bound.
+fn stream_limits() -> ext::tls_stream::Limits {
+    return ext::tls_stream::Limits { io_calls: 1099511627776, tls_calls: 1099511627776, read_bytes: 1099511627776, written_bytes: 1099511627776 };
+}
+fn plain(socket: std::socket::Socket) -> Conn { return Conn { socket: socket, secure: false, tls: core::option::None() }; }
+// A failed stream's cause as an I/O error: timeouts as ETIMEDOUT, a reset or
+// broken pipe under TLS as ECONNRESET/EPIPE, anything else as EPROTO, and an
+// unauthenticated TCP EOF (no close_notify) as EIO, which receive reports
+// separately.
+fn stream_error(s: &ext::tls_stream::Stream, fallback: core::io::Error) -> core::io::Error {
+    let f: core::option::Option<ext::tls_stream::Failure> = s.last_failure(); if (f.is_none()) { return fallback; }
+    return match(f.unwrap().cause) {
+        ext::tls_stream::Cause::Timeout -> core::io::Error::Host(110), ext::tls_stream::Cause::Io(e) -> e,
+        ext::tls_stream::Cause::Tls(t) -> tls_io(t), _ -> fallback
+    };
+}
+fn tls_io(t: ext::openssl_tls::Error) -> core::io::Error {
+    if (t.system == 32 || t.system == 104) { return core::io::Error::Host(t.system); }
+    return match(t.cause) { ext::openssl_tls::Cause::Truncated -> core::io::Error::Host(5), _ -> core::io::Error::Host(71) };
+}
+fn unclean(e: core::io::Error) -> bool { return match(e) { core::io::Error::Host(n) -> n == 5, _ -> false }; }
+fn send_all(conn: &Conn, data: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<i32,core::io::Error> {
+    if (!conn.secure) { return send_plain(conn.socket,data,deadline); }
+    let s: ext::tls_stream::Stream = conn.tls.unwrap(); let done: i32 = 0;
+    while (done < data.len()) {
+        let w: core::result::Result<i32,core::io::Error> = s.write(data.values,data.start+done,data.len()-done);
+        if (w.is_err()) { let e: core::io::Error = stream_error(s.borrow(),w.unwrap_err()); conn.tls = core::option::Some(s); return core::result::Err(e); }
+        let n: i32 = w.unwrap(); if (n <= 0) { conn.tls = core::option::Some(s); return core::result::Err(core::io::Error::WriteZero); } done += n;
+    }
+    let f: core::result::Result<i32,core::io::Error> = s.flush();
+    if (f.is_err()) { let e: core::io::Error = stream_error(s.borrow(),f.unwrap_err()); conn.tls = core::option::Some(s); return core::result::Err(e); }
+    conn.tls = core::option::Some(s); return core::result::Ok(done);
+}
+// Ok(0) is a clean EOF (TCP FIN, or TLS close_notify); Err(EIO) under TLS is
+// an unauthenticated EOF.
+fn receive(conn: &Conn, space: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<i32,core::io::Error> {
+    if (!conn.secure) { return conn.socket.receive_until(space,deadline); }
+    let s: ext::tls_stream::Stream = conn.tls.unwrap();
+    let r: core::result::Result<i32,core::io::Error> = s.read(space.values,space.start,space.len());
+    if (r.is_err()) { let e: core::io::Error = stream_error(s.borrow(),r.unwrap_err()); conn.tls = core::option::Some(s); return core::result::Err(e); }
+    conn.tls = core::option::Some(s); return r;
+}
+// Close a connection; TLS sends close_notify first when it can do so quickly.
+fn close_conn(conn: &Conn) {
+    if (!conn.secure) { conn.socket.close(); return; }
+    let s: ext::tls_stream::Stream = conn.tls.unwrap();
+    let soon: core::result::Result<core::time::Deadline,Error> = deadline_ms(200);
+    if (soon.is_ok() && s.renew(stream_limits(),soon.unwrap()).is_ok()) { s.shutdown(); }
+    s.close(); conn.tls = core::option::Some(s);
+}
 fn bytes(n: i32) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
     let made: core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> = alloc::vec::with_capacity<u8>(n); if (made.is_err()) { return core::result::Err(Error::AllocationFailed); }
     // Only bytes written by the host or a copy are read back.
@@ -167,7 +229,7 @@ fn check_request(request: Request) -> core::result::Result<bool,Error> {
     return core::result::Ok(true);
 }
 
-fn send_all(socket: std::socket::Socket, data: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<i32,core::io::Error> {
+fn send_plain(socket: std::socket::Socket, data: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<i32,core::io::Error> {
     let done: i32 = 0;
     while (done < data.len()) {
         let sent: core::result::Result<i32,core::io::Error> = socket.send_until(part(data,done,data.len()),deadline);
@@ -216,12 +278,15 @@ fn parse_failure(e: ext::http::Error, received: i32) -> core::result::Result<Res
 
 // Read one final response, skipping informational ones. Framing comes from
 // the incremental cursor; the final prefix is parsed canonically once.
-fn read_response(o: Options, socket: std::socket::Socket, method: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<Response,Failure> {
+fn read_response(o: Options, conn: &Conn, method: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<Response,Failure> {
     let cap: i64 = (o.limits.head_bytes as i64) * 2 + (o.limits.body_bytes as i64) * 2 + 65536; if (cap > 1073741824) { cap = 1073741824; }
     let made: core::result::Result<ext::http::Cursor,ext::http::Error> = ext::http::cursor(ext::http::CursorMode::Response,o.limits,cap as i32,4611686018427387904);
     if (made.is_err()) { return failed(Error::Parse(made.unwrap_err()),0); }
     let cur: ext::http::Cursor = made.unwrap();
     let input: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); let filled: i32 = 0; let received: i32 = 0; let eof: bool = false; let informational: i32 = 0;
+    // TLS EOF without close_notify: framing may finish, but nothing may be
+    // delimited by it.
+    let unauthenticated: bool = false;
     while (true) {
         let scanned: core::result::Result<ext::http::Scan,ext::http::Error> = cur.advance(part(input.as_view(),0,filled),method,eof);
         if (scanned.is_err()) { input.destroy(); return parse_failure(scanned.unwrap_err(),received); }
@@ -240,7 +305,8 @@ fn read_response(o: Options, socket: std::socket::Socket, method: core::slice::V
             if (eof) { input.destroy(); return failed(Error::Truncated(received),received); }
             if (!room(input.borrow(),filled,cap as i32)) { input.destroy(); return failed(Error::TooLarge,received); }
             let space: core::slice::View<u8> = part(input.as_view(),filled,input.len());
-            let got: core::result::Result<i32,core::io::Error> = socket.receive_until(space,deadline);
+            let got: core::result::Result<i32,core::io::Error> = receive(conn,space,deadline);
+            if (got.is_err() && conn.secure && unclean(got.unwrap_err())) { eof = true; unauthenticated = true; continue; }
             if (got.is_err()) { input.destroy(); let e: core::io::Error = got.unwrap_err(); if (timed_out(e)) { return failed(Error::Timeout,received); } return failed(Error::Io(e),received); }
             let n: i32 = got.unwrap(); if (n < 0 || n > space.len()) { input.destroy(); return failed(Error::Io(core::io::Error::InvalidCount),received); }
             if (n == 0) { eof = true; } filled += n; received += n;
@@ -267,6 +333,7 @@ fn read_response(o: Options, socket: std::socket::Socket, method: core::slice::V
         let decoded: alloc::vec::Vec<u8> = body.unwrap();
         if (chunked) { ext::http::decode_into(m,decoded.as_view()); }
         let close: bool = match(m.head.kind) { ext::http::BodyKind::Close -> true, ext::http::BodyKind::Tunnel -> true, _ -> false };
+        if (close && unauthenticated) { copy.destroy(); decoded.destroy(); input.destroy(); return failed(Error::Truncated(received),received); }
         let kept: bool = !eof && !close && filled == consumed && reusable(m.head);
         let r: Response = Response { status: m.head.status, version: m.head.version, wire: input, head_length: m.head.raw.len(), body_start: m.encoded_body.start - window.start,
             body_length: m.decoded_length, decoded: decoded, chunked: chunked, method: copy, url: alloc::vec::new<u8>(), limits: o.limits,
@@ -278,13 +345,16 @@ fn read_response(o: Options, socket: std::socket::Socket, method: core::slice::V
 
 // One request on one connection. A streamed body goes out as chunks; a final
 // response that arrives first ends the upload and the connection.
-fn transact<R>(agent: &Agent, socket: std::socket::Socket, head: core::slice::View<u8>, source: &R, streaming: bool, method: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<Response,Failure> where R: core::io::Read {
+fn transact<R>(agent: &Agent, conn: &Conn, head: core::slice::View<u8>, source: &R, streaming: bool, method: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<Response,Failure> where R: core::io::Read {
     let o: Options = agent.options;
-    let sent: core::result::Result<i32,core::io::Error> = send_all(socket,head,deadline);
+    let sent: core::result::Result<i32,core::io::Error> = send_all(conn,head,deadline);
     let early: bool = false; let used: bool = false;
     if (sent.is_err()) {
         let e: core::io::Error = sent.unwrap_err();
         if (timed_out(e)) { return failed(Error::Timeout,1); }
+        // A failed TLS stream is closed, so no early response can be read;
+        // a reset before anything was answered stays retryable.
+        if (conn.secure && reset(e)) { return failed(Error::Io(e),0); }
         if (!reset(e)) { return failed(Error::Io(e),1); }
         early = true;
     }
@@ -293,8 +363,12 @@ fn transact<R>(agent: &Agent, socket: std::socket::Socket, head: core::slice::Vi
         if (made.is_err()) { return failed(Error::AllocationFailed,1); }
         let chunk: alloc::vec::Vec<u8> = made.unwrap(); let all: core::slice::View<u8> = chunk.as_view();
         while (true) {
-            let ready: core::result::Result<std::socket::Ready,core::io::Error> = socket.wait_ms(true,false,0);
-            if (ready.is_ok() && !ready.unwrap().timed_out) { early = true; agent.stats.early += 1; break; }
+            // Under TLS a readable socket may hold only session tickets, so
+            // early responses are detected by cleartext connections only.
+            if (!conn.secure) {
+                let ready: core::result::Result<std::socket::Ready,core::io::Error> = conn.socket.wait_ms(true,false,0);
+                if (ready.is_ok() && !ready.unwrap().timed_out) { early = true; agent.stats.early += 1; break; }
+            }
             let got: core::result::Result<i32,core::io::Error> = fill<R>(source,all,10,o.chunk_bytes);
             if (got.is_err()) { chunk.destroy(); return failed(Error::Source(got.unwrap_err()),1); }
             used = true;
@@ -306,17 +380,17 @@ fn transact<R>(agent: &Agent, socket: std::socket::Socket, head: core::slice::Vi
                 while (j < k) { let d: i32 = (n >> (4 * (k - 1 - j))) & 15; let c: u8 = (48 + d) as u8; if (d >= 10) { c = (87 + d) as u8; } all.values[all.start+start+j] = c; j += 1; }
                 all.values[all.start+8] = 13; all.values[all.start+9] = 10; all.values[all.start+10+n] = 13; all.values[all.start+11+n] = 10; end = 12 + n;
             }
-            let out: core::result::Result<i32,core::io::Error> = send_all(socket,part(all,start,end),deadline);
+            let out: core::result::Result<i32,core::io::Error> = send_all(conn,part(all,start,end),deadline);
             if (out.is_err()) {
                 let e: core::io::Error = out.unwrap_err(); if (timed_out(e)) { chunk.destroy(); return failed(Error::Timeout,1); }
-                if (!reset(e)) { chunk.destroy(); return failed(Error::Io(e),1); }
+                if (!reset(e) || conn.secure) { chunk.destroy(); return failed(Error::Io(e),1); }
                 early = true; agent.stats.early += 1; break;
             }
             if (n == 0) { break; }
         }
         chunk.destroy();
     }
-    let got: core::result::Result<Response,Failure> = read_response(o,socket,method,deadline);
+    let got: core::result::Result<Response,Failure> = read_response(o,conn,method,deadline);
     if (got.is_err()) { let f: Failure = got.unwrap_err(); return core::result::Err(Failure { error: f.error, retryable: f.retryable && !used }); }
     let r: Response = got.unwrap(); if (early) { r.kept = false; }
     return core::result::Ok(r);
@@ -337,15 +411,15 @@ fn exchange<R>(agent: &Agent, url: &ext::http_url::Url, method: core::slice::Vie
         let leased: core::result::Result<Lease,Error> = agent.acquire(url,attempt > 0,deadline.unwrap());
         if (leased.is_err()) { head.destroy(); return core::result::Err(leased.unwrap_err()); }
         let lease: Lease = leased.unwrap(); agent.stats.requests += 1;
-        let done: core::result::Result<Response,Failure> = transact<R>(agent,lease.socket,head.as_view(),source,streaming,method,deadline.unwrap());
+        let done: core::result::Result<Response,Failure> = transact<R>(agent,lease.conn.borrow(),head.as_view(),source,streaming,method,deadline.unwrap());
         if (done.is_err()) {
-            let f: Failure = done.unwrap_err(); lease.socket.close();
+            let f: Failure = done.unwrap_err(); close_conn(lease.conn.borrow());
             if (lease.reused && attempt == 0 && o.retry_stale && f.retryable && idempotent(method)) { agent.stats.retries += 1; attempt += 1; continue; }
             head.destroy(); return core::result::Err(f.error);
         }
         let r: Response = done.unwrap(); r.reused = lease.reused;
-        if (r.kept && lease.uses + 1 < o.max_uses) { agent.release(url.host().unwrap(),url.port().unwrap(),lease.socket,lease.uses + 1,r.hint_ms); }
-        else { r.kept = false; lease.socket.close(); }
+        if (r.kept && lease.uses + 1 < o.max_uses) { agent.release(url.host().unwrap(),url.port().unwrap(),lease.conn,lease.uses + 1,r.hint_ms); }
+        else { r.kept = false; close_conn(lease.conn.borrow()); }
         head.destroy(); return core::result::Ok(r);
     }
     head.destroy(); return core::result::Err(Error::InvalidRequest);
@@ -419,7 +493,7 @@ fn run<R>(agent: &Agent, request: Request, source: &R, streaming: bool) -> core:
     if (parsed.is_err()) { current.destroy(); headers.destroy(); return core::result::Err(Error::Url(parsed.unwrap_err().kind)); }
     let url: ext::http_url::Url = parsed.unwrap();
     while (true) {
-        if (https(url.borrow())) { url.destroy(); current.destroy(); headers.destroy(); return core::result::Err(Error::UnsupportedScheme); }
+        if (https(url.borrow()) && !o.https) { url.destroy(); current.destroy(); headers.destroy(); return core::result::Err(Error::UnsupportedScheme); }
         let got: core::result::Result<Response,Error> = exchange<R>(agent,url.borrow(),method,headers.as_view(),body,source,upload);
         if (got.is_err()) { url.destroy(); current.destroy(); headers.destroy(); return got; }
         let r: Response = got.unwrap();
@@ -457,60 +531,100 @@ pub impl Agent {
     pub fn stats(&self) -> Stats { return self.stats; }
     pub fn idle(&self) -> i32 { return self.pool.len(); }
     pub fn fetch(&self, request: Request) -> core::result::Result<Response,Error> { let none: NoBody = NoBody { unused: 0 }; return run<NoBody>(self,request,none.borrow(),false); }
-    fn close_idle(&self, i: i32) { let e: Idle = self.pool.at(i); e.socket.close(); e.host.destroy(); self.pool.remove(i); }
-    // Pooled connection for host:port, dropping expired and stale ones on the way.
-    fn checkout(&self, host: core::slice::View<u8>, port: u16) -> core::option::Option<Idle> {
+    fn close_idle(&self, i: i32) { let e: Idle = self.pool.at(i); close_conn(e.conn.borrow()); e.host.destroy(); self.pool.remove(i); }
+    // Pooled connection for scheme, host and port, dropping expired and stale
+    // ones on the way.
+    fn checkout(&self, secure: bool, host: core::slice::View<u8>, port: u16, deadline: core::time::Deadline) -> core::option::Option<Idle> {
         let now: core::result::Result<core::time::Instant,Error> = now_instant();
         let i: i32 = self.pool.len() - 1;
         while (i >= 0) { if (now.is_ok() && self.pool.at(i).expires.is_expired(now.unwrap())) { self.close_idle(i); self.stats.expired += 1; } i -= 1; }
         i = self.pool.len() - 1;
         while (i >= 0) {
             let e: Idle = self.pool.at(i);
-            if (e.port == port && same_case(e.host.as_view(),host)) {
+            if (e.conn.secure == secure && e.port == port && same_case(e.host.as_view(),host)) {
                 self.pool.remove(i);
-                // An idle HTTP/1.1 connection has nothing to say: readable means EOF or junk.
-                let probe: core::result::Result<std::socket::Ready,core::io::Error> = e.socket.wait_ms(true,false,0);
-                if (probe.is_ok() && probe.unwrap().timed_out) { e.host.destroy(); return core::option::Some(e); }
-                e.socket.close(); e.host.destroy(); self.stats.stale += 1;
+                // An idle HTTP/1.1 connection has nothing to say: readable means
+                // EOF, a TLS close_notify or junk.
+                let probe: core::result::Result<std::socket::Ready,core::io::Error> = e.conn.socket.wait_ms(true,false,0);
+                let alive: bool = probe.is_ok() && probe.unwrap().timed_out;
+                if (secure && probe.is_ok()) {
+                    // Under TLS, readable may be just post-handshake session tickets.
+                    let s: ext::tls_stream::Stream = e.conn.tls.unwrap();
+                    let renewed: core::result::Result<i32,ext::tls_stream::Failure> = s.renew(stream_limits(),deadline);
+                    if (renewed.is_err()) { alive = false; }
+                    else {
+                        if (!alive) { let idle: core::result::Result<bool,ext::tls_stream::Failure> = s.idle_probe(); alive = idle.is_ok() && idle.unwrap(); }
+                    }
+                    e.conn.tls = core::option::Some(s);
+                }
+                if (alive) { e.host.destroy(); return core::option::Some(e); }
+                close_conn(e.conn.borrow()); e.host.destroy(); self.stats.stale += 1;
             }
             i -= 1;
         }
         return core::option::None();
     }
+    // The verified client context, created at the first https:// use.
+    fn tls_context(&self) -> core::result::Result<i32,Error> {
+        if (self.context.is_some()) { return core::result::Ok(0); }
+        let made: core::result::Result<ext::openssl_tls::Context,ext::openssl_tls::Error> = ext::openssl_tls::new(self.options.trust,self.options.tls);
+        if (made.is_err()) { return core::result::Err(Error::Tls(made.unwrap_err())); }
+        self.context = core::option::Some(made.unwrap()); return core::result::Ok(0);
+    }
     fn acquire(&self, url: &ext::http_url::Url, fresh: bool, deadline: core::time::Deadline) -> core::result::Result<Lease,Error> {
+        let secure: bool = https(url);
         if (!fresh) {
-            let idle: core::option::Option<Idle> = self.checkout(url.host().unwrap(),url.port().unwrap());
-            if (idle.is_some()) { let e: Idle = idle.unwrap(); self.stats.reused += 1; return core::result::Ok(Lease { socket: e.socket, uses: e.uses, reused: true }); }
+            // checkout renews a TLS stream's budget and deadline.
+            let idle: core::option::Option<Idle> = self.checkout(secure,url.host().unwrap(),url.port().unwrap(),deadline);
+            if (idle.is_some()) { let e: Idle = idle.unwrap(); self.stats.reused += 1; return core::result::Ok(Lease { conn: e.conn, uses: e.uses, reused: true }); }
+        }
+        let identity: ext::openssl_tls::Identity = ext::openssl_tls::Identity::Ip(url.host().unwrap());
+        if (secure) {
+            let ready: core::result::Result<i32,Error> = self.tls_context(); if (ready.is_err()) { return core::result::Err(ready.unwrap_err()); }
+            let dns: bool = match (url.host_kind().unwrap()) { ext::http_url::HostKind::Dns -> true, _ -> false };
+            if (dns) { identity = ext::openssl_tls::Identity::Dns(url.host().unwrap()); }
+            let admitted: core::result::Result<i32,ext::openssl_tls::Error> = self.context.unwrap().validate_identity(identity);
+            if (admitted.is_err()) { return core::result::Err(Error::Tls(admitted.unwrap_err())); }
         }
         let made: core::result::Result<ext::url_connect::Connection,ext::url_connect::Failure> = ext::url_connect::connect_until(url,self.options.connect,deadline);
         if (made.is_err()) { return core::result::Err(Error::Connect(made.unwrap_err().cause)); }
         let socket: std::socket::Socket = made.unwrap().transport;
         // Heads and bodies go out in separate sends; Nagle would hold the second.
         socket.set_nodelay(true); self.stats.connections += 1;
-        return core::result::Ok(Lease { socket: socket, uses: 0, reused: false });
+        if (!secure) { return core::result::Ok(Lease { conn: plain(socket), uses: 0, reused: false }); }
+        let context: ext::openssl_tls::Context = self.context.unwrap();
+        let adopted: core::result::Result<ext::tls_stream::Stream,ext::tls_stream::Failure> = ext::tls_stream::adopt_connected_with_context_until(socket,context.borrow(),identity,stream_limits(),deadline);
+        if (adopted.is_err()) {
+            return core::result::Err(match (adopted.unwrap_err().cause) {
+                ext::tls_stream::Cause::Tls(t) -> Error::Tls(t), ext::tls_stream::Cause::Timeout -> Error::Timeout,
+                ext::tls_stream::Cause::Io(e) -> Error::Io(e), ext::tls_stream::Cause::AllocationFailed -> Error::AllocationFailed,
+                ext::tls_stream::Cause::Clock(c) -> Error::Clock, _ -> Error::Io(core::io::Error::Host(71))
+            });
+        }
+        return core::result::Ok(Lease { conn: Conn { socket: socket, secure: true, tls: core::option::Some(adopted.unwrap()) }, uses: 0, reused: false });
     }
-    fn oldest(&self, host: core::option::Option<core::slice::View<u8>>, port: u16) -> i32 {
+    fn oldest(&self, secure: bool, host: core::option::Option<core::slice::View<u8>>, port: u16) -> i32 {
         let best: i32 = -1; let i: i32 = 0;
         while (i < self.pool.len()) {
             let e: Idle = self.pool.at(i);
-            let mine: bool = host.is_none() || (e.port == port && same_case(e.host.as_view(),host.unwrap()));
+            let mine: bool = host.is_none() || (e.conn.secure == secure && e.port == port && same_case(e.host.as_view(),host.unwrap()));
             if (mine && (best < 0 || e.stamp < self.pool.at(best).stamp)) { best = i; }
             i += 1;
         }
         return best;
     }
     // Park a reusable connection, evicting the oldest per host, then overall.
-    fn release(&self, host: core::slice::View<u8>, port: u16, socket: std::socket::Socket, uses: i32, hint_ms: i32) {
+    fn release(&self, host: core::slice::View<u8>, port: u16, conn: Conn, uses: i32, hint_ms: i32) {
         let o: Options = self.options; let ms: i32 = o.idle_timeout_ms; if (hint_ms >= 0 && hint_ms < ms) { ms = hint_ms; }
-        if (o.max_idle_per_host == 0 || o.max_idle_total == 0 || ms == 0) { socket.close(); return; }
+        if (o.max_idle_per_host == 0 || o.max_idle_total == 0 || ms == 0) { close_conn(conn.borrow()); return; }
         let count: i32 = 0; let i: i32 = 0;
-        while (i < self.pool.len()) { let e: Idle = self.pool.at(i); if (e.port == port && same_case(e.host.as_view(),host)) { count += 1; } i += 1; }
-        if (count >= o.max_idle_per_host) { self.close_idle(self.oldest(core::option::Some(host),port)); self.stats.evicted += 1; }
-        if (self.pool.len() >= o.max_idle_total) { self.close_idle(self.oldest(core::option::None(),port)); self.stats.evicted += 1; }
+        while (i < self.pool.len()) { let e: Idle = self.pool.at(i); if (e.conn.secure == conn.secure && e.port == port && same_case(e.host.as_view(),host)) { count += 1; } i += 1; }
+        if (count >= o.max_idle_per_host) { self.close_idle(self.oldest(conn.secure,core::option::Some(host),port)); self.stats.evicted += 1; }
+        if (self.pool.len() >= o.max_idle_total) { self.close_idle(self.oldest(conn.secure,core::option::None(),port)); self.stats.evicted += 1; }
         let copy: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); let expires: core::result::Result<core::time::Deadline,Error> = deadline_ms(ms);
-        if (!push(copy.borrow(),host) || expires.is_err()) { copy.destroy(); socket.close(); return; }
+        if (!push(copy.borrow(),host) || expires.is_err()) { copy.destroy(); close_conn(conn.borrow()); return; }
         self.stamp += 1;
-        if (self.pool.try_push(Idle { socket: socket, host: copy, port: port, expires: expires.unwrap(), uses: uses, stamp: self.stamp }).is_err()) { copy.destroy(); socket.close(); }
+        if (self.pool.try_push(Idle { conn: conn, host: copy, port: port, expires: expires.unwrap(), uses: uses, stamp: self.stamp }).is_err()) { copy.destroy(); close_conn(conn.borrow()); }
     }
     // Open count new connections to url's origin and park them, subject to
     // the idle limits. Returns the number of pooled connections afterwards.
@@ -518,25 +632,101 @@ pub impl Agent {
         if (!self.active || count < 0) { return core::result::Err(Error::InvalidRequest); }
         let parsed: core::result::Result<ext::http_url::Url,ext::http_url::Error> = ext::http_url::parse(url,self.options.url);
         if (parsed.is_err()) { return core::result::Err(Error::Url(parsed.unwrap_err().kind)); }
-        let u: ext::http_url::Url = parsed.unwrap(); if (https(u.borrow())) { u.destroy(); return core::result::Err(Error::UnsupportedScheme); }
-        let held: alloc::vec::Vec<std::socket::Socket> = alloc::vec::new<std::socket::Socket>(); let failure: core::option::Option<Error> = core::option::None();
+        let u: ext::http_url::Url = parsed.unwrap(); if (https(u.borrow()) && !self.options.https) { u.destroy(); return core::result::Err(Error::UnsupportedScheme); }
+        let held: alloc::vec::Vec<Conn> = alloc::vec::new<Conn>(); let failure: core::option::Option<Error> = core::option::None();
         let deadline: core::result::Result<core::time::Deadline,Error> = deadline_ms(self.options.timeout_ms);
         if (deadline.is_err()) { u.destroy(); held.destroy(); return core::result::Err(deadline.unwrap_err()); }
         let i: i32 = 0;
         while (i < count) {
             let lease: core::result::Result<Lease,Error> = self.acquire(u.borrow(),true,deadline.unwrap());
             if (lease.is_err()) { failure = core::option::Some(lease.unwrap_err()); break; }
-            if (held.try_push(lease.unwrap().socket).is_err()) { failure = core::option::Some(Error::AllocationFailed); break; }
+            let conn: Conn = lease.unwrap().conn;
+            if (held.try_push(conn).is_err()) { close_conn(conn.borrow()); failure = core::option::Some(Error::AllocationFailed); break; }
             i += 1;
         }
-        i = 0; while (i < held.len()) { if (failure.is_some()) { held.at(i).close(); } else { self.release(u.host().unwrap(),u.port().unwrap(),held.at(i),0,-1); } i += 1; }
+        i = 0; while (i < held.len()) { let c: Conn = held.at(i); if (failure.is_some()) { close_conn(c.borrow()); } else { self.release(u.host().unwrap(),u.port().unwrap(),c,0,-1); } i += 1; }
         held.destroy(); u.destroy();
         if (failure.is_some()) { return core::result::Err(failure.unwrap()); }
         return core::result::Ok(self.pool.len());
     }
+    // A fresh connection to url's origin, outside the pool (see Connection).
+    pub fn dial(&self, url: &ext::http_url::Url, deadline: core::time::Deadline) -> core::result::Result<Connection,Error> {
+        if (!self.active) { return core::result::Err(Error::InvalidRequest); }
+        if (https(url) && !self.options.https) { return core::result::Err(Error::UnsupportedScheme); }
+        let lease: core::result::Result<Lease,Error> = self.acquire(url,true,deadline);
+        if (lease.is_err()) { return core::result::Err(lease.unwrap_err()); }
+        return core::result::Ok(Connection { conn: lease.unwrap().conn, active: true });
+    }
     // Close every pooled connection; the agent stays usable unless finished.
     pub fn clear(&self) -> i32 { let n: i32 = self.pool.len(); while (self.pool.len() > 0) { self.close_idle(self.pool.len() - 1); } return n; }
-    pub fn close(&self) -> bool { if (!self.active) { return false; } self.clear(); self.pool.destroy(); self.active = false; return true; }
+    pub fn close(&self) -> bool {
+        if (!self.active) { return false; } self.clear(); self.pool.destroy(); self.active = false;
+        if (self.context.is_some()) { let context: ext::openssl_tls::Context = self.context.unwrap(); context.destroy(); self.context = core::option::None(); }
+        return true;
+    }
+}
+
+// A connection to an http:// or https:// URL's origin, opened exactly like the
+// agent's own (resolution, ordered connect attempts, verified TLS from the
+// agent's trust options) but outside the pool, for protocols that take over
+// the connection after an HTTP/1.1 upgrade, such as WebSocket. One owner;
+// close it once. Each call has its own absolute deadline.
+pub struct Connection { conn: Conn, active: bool }
+pub impl Connection {
+    pub fn borrow(&self) -> &Connection { return self; }
+    pub fn is_secure(&self) -> bool { return self.conn.secure; }
+    pub fn is_open(&self) -> bool { return self.active; }
+    fn renewed(&self, deadline: core::time::Deadline) -> core::result::Result<i32,Error> {
+        if (!self.active) { return core::result::Err(Error::InvalidRequest); }
+        if (!self.conn.secure) { return core::result::Ok(0); }
+        let s: ext::tls_stream::Stream = self.conn.tls.unwrap(); let renewed: core::result::Result<i32,ext::tls_stream::Failure> = s.renew(stream_limits(),deadline);
+        self.conn.tls = core::option::Some(s);
+        if (renewed.is_err()) { return core::result::Err(Error::Io(stream_error(s.borrow(),core::io::Error::Host(71)))); }
+        return core::result::Ok(0);
+    }
+    // Send all of data. A TLS failure is final.
+    pub fn send(&self, data: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<i32,Error> {
+        let ready: core::result::Result<i32,Error> = self.renewed(deadline); if (ready.is_err()) { return ready; }
+        let sent: core::result::Result<i32,core::io::Error> = send_all(self.conn.borrow(),data,deadline);
+        if (sent.is_err()) { let e: core::io::Error = sent.unwrap_err(); if (timed_out(e)) { return core::result::Err(Error::Timeout); } return core::result::Err(Error::Io(e)); }
+        return core::result::Ok(sent.unwrap());
+    }
+    // Wait for at least one byte into space. Ok(0) is a clean EOF (TCP FIN, or
+    // TLS close_notify); Truncated(0) is a TLS EOF without close_notify.
+    // Timeout leaves the connection usable, under TLS too.
+    pub fn receive(&self, space: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<i32,Error> {
+        let ready: core::result::Result<i32,Error> = self.renewed(deadline); if (ready.is_err()) { return ready; }
+        if (!self.conn.secure) {
+            let got: core::result::Result<i32,core::io::Error> = self.conn.socket.receive_until(space,deadline);
+            if (got.is_err()) { let e: core::io::Error = got.unwrap_err(); if (timed_out(e)) { return core::result::Err(Error::Timeout); } return core::result::Err(Error::Io(e)); }
+            return core::result::Ok(got.unwrap());
+        }
+        while (true) {
+            let s: ext::tls_stream::Stream = self.conn.tls.unwrap();
+            let got: core::result::Result<i32,core::io::Error> = s.try_read(space.values,space.start,space.len());
+            let writing: bool = s.wants_write(); let failure: core::io::Error = core::io::Error::Host(71);
+            if (got.is_err()) { failure = stream_error(s.borrow(),got.unwrap_err()); }
+            self.conn.tls = core::option::Some(s);
+            if (got.is_ok()) { return core::result::Ok(got.unwrap()); }
+            let blocked: bool = match (got.unwrap_err()) { core::io::Error::WouldBlock -> true, _ -> false };
+            if (!blocked) {
+                if (unclean(failure)) { return core::result::Err(Error::Truncated(0)); }
+                if (timed_out(failure)) { return core::result::Err(Error::Timeout); }
+                return core::result::Err(Error::Io(failure));
+            }
+            let waited: core::result::Result<std::socket::Ready,core::io::Error> = self.conn.socket.wait_until(true,writing,deadline);
+            if (waited.is_err()) { return core::result::Err(Error::Io(waited.unwrap_err())); }
+            if (waited.unwrap().timed_out) { return core::result::Err(Error::Timeout); }
+        }
+        return core::result::Err(Error::Timeout);
+    }
+    // Close the transport; graceful sends TLS close_notify first.
+    pub fn close(&self, graceful: bool) -> bool {
+        if (!self.active) { return false; } self.active = false;
+        if (graceful) { close_conn(self.conn.borrow()); return true; }
+        if (self.conn.secure) { let s: ext::tls_stream::Stream = self.conn.tls.unwrap(); s.close(); self.conn.tls = core::option::Some(s); } else { self.conn.socket.close(); }
+        return true;
+    }
 }
 
 pub impl Response {
