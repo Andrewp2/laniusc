@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **282 modules**, **14278 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **283 modules**, **14288 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -283,7 +283,7 @@ Inventory: **282 modules**, **14278 declaration/member entries**. Counts include
 | [ext::timezone](ext/timezone.md) | [source](../../extended/ext/timezone.lani#L3) | 80 | Source inventory | [extended-timezone](../extended-timezone.md) |
 | [ext::tls_stream](ext/tls_stream.md) | [source](../../extended/ext/tls_stream.lani#L3) | 66 | Source inventory | [extended-https-fetch](../extended-https-fetch.md), [extended-openssl-tls](../extended-openssl-tls.md), [extended-https-server](../extended-https-server.md), [extended-openssl-tls-server](../extended-openssl-tls-server.md), [extended-openssl-mutual-tls](../extended-openssl-mutual-tls.md), [extended-https-mutual-tls](../extended-https-mutual-tls.md) |
 | [ext::toml](ext/toml.md) | [source](../../extended/ext/toml.lani#L2) | 93 | Source inventory | [extended-toml](../extended-toml.md), [extended-toml-streaming](../extended-toml-streaming.md), [extended-toml-normalize](../extended-toml-normalize.md) |
-| [ext::unicode_case](ext/unicode_case.md) | [source](../../extended/ext/unicode_case.lani#L4) | 21 | Source inventory | [extended-unicode-case](../extended-unicode-case.md) |
+| [ext::unicode_case](ext/unicode_case.md) | [source](../../extended/ext/unicode_case.lani#L4) | 21 | Source inventory | [extended-unicode-case](../extended-unicode-case.md), [extended-unicode-uconv](../extended-unicode-uconv.md) |
 | [ext::unicode_graphemes](ext/unicode_graphemes.md) | [source](../../extended/ext/unicode_graphemes.lani#L3) | 18 | Source inventory | [extended-unicode-graphemes](../extended-unicode-graphemes.md) |
 | [ext::unicode_lines](ext/unicode_lines.md) | [source](../../extended/ext/unicode_lines.lani#L3) | 37 | Source inventory | [extended-unicode-lines](../extended-unicode-lines.md) |
 | [ext::unicode_lines_wrap](ext/unicode_lines_wrap.md) | [source](../../extended/ext/unicode_lines_wrap.lani#L3) | 32 | Source inventory | [extended-text-wrap](../extended-text-wrap.md) |
@@ -329,6 +329,7 @@ Inventory: **282 modules**, **14278 declaration/member entries**. Counts include
 | [ext::statistics_scaling](ext/statistics_scaling.md) | [source](../../extended/ext/statistics_scaling.lani#L5) | 6 | Source inventory | [extended-weighted-statistics](../extended-weighted-statistics.md), [extended-higher-statistics](../extended-higher-statistics.md) |
 | [ext::terminal_data](ext/terminal_data.md) | [source](../../extended/ext/terminal_data.lani#L6) | 1 | Source inventory | [extended-terminal](../extended-terminal.md) |
 | [ext::unicode_case_data](ext/unicode_case_data.md) | [source](../../extended/ext/unicode_case_data.lani#L7) | 12 | Source inventory | [extended-unicode-case](../extended-unicode-case.md) |
+| [ext::unicode_case_fast_data](ext/unicode_case_fast_data.md) | [source](../../extended/ext/unicode_case_fast_data.lani#L7) | 10 | Source inventory | [extended-unicode-case](../extended-unicode-case.md), [extended-unicode-uconv](../extended-unicode-uconv.md) |
 | [ext::unicode_graphemes_data](ext/unicode_graphemes_data.md) | [source](../../extended/ext/unicode_graphemes_data.lani#L7) | 1 | Source inventory | [extended-unicode-graphemes](../extended-unicode-graphemes.md) |
 | [ext::unicode_lines_data](ext/unicode_lines_data.md) | [source](../../extended/ext/unicode_lines_data.lani#L7) | 1 | Source inventory | [extended-unicode-lines](../extended-unicode-lines.md) |
 | [ext::unicode_normalize_data](ext/unicode_normalize_data.md) | [source](../../extended/ext/unicode_normalize_data.lani#L6) | 12 | Source inventory | [extended-unicode-normalize](../extended-unicode-normalize.md) |

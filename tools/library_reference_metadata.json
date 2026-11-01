@@ -1521,12 +1521,21 @@
     },
     "ext::unicode_case": {
       "guides": [
-        "docs/extended-unicode-case.md"
+        "docs/extended-unicode-case.md",
+        "docs/extended-unicode-uconv.md"
       ]
     },
     "ext::unicode_case_data": {
       "guides": [
         "docs/extended-unicode-case.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "ext::unicode_case_fast_data": {
+      "guides": [
+        "docs/extended-unicode-case.md",
+        "docs/extended-unicode-uconv.md"
       ],
       "role": "support",
       "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."

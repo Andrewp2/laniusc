@@ -89,7 +89,7 @@ fn python_unicodedata_oracle_agrees_on_every_code_point_and_generated_strings() 
     let report = String::from_utf8_lossy(&output.stdout);
     assert_eq!(output.status.code(), Some(0), "{report}\n{}", String::from_utf8_lossy(&output.stderr));
     assert!(report.contains("defects: 0"), "{report}");
-    for generator in ["generate_properties.py", "generate_quick_check.py", "generate_normalization.py"] {
+    for generator in ["generate_properties.py", "generate_quick_check.py", "generate_normalization.py", "generate_case_fast.py"] {
         let check = common::short_process_output_with_timeout(
             generator,
             Command::new("python3")
