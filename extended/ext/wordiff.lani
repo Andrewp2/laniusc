@@ -74,6 +74,9 @@ pub fn split_words(text: core::slice::View<u8>, mode: Mode, limits: ext::seqdiff
     if (text.start < 0 || text.length < 0 || limits.max_items < 0) { return core::result::Err(Error::InvalidInput); }
     let chars: bool = match (mode) { Mode::Chars -> true, Mode::Words -> false };
     let out: alloc::vec::Vec<ext::seqdiff::Line> = alloc::vec::new(); let i: i32 = 0; let n: i32 = text.length;
+    // One reservation for typical groups (each growth is an allocation).
+    let guess: i32 = n / 2 + 1; if (chars) { guess = n + 1; } if (guess > 1024) { guess = 1024; } if (guess > limits.max_items) { guess = limits.max_items; }
+    if (core::result::is_err(out.try_reserve(guess))) { return core::result::Err(Error::AllocationFailed); }
     while (i < n) {
         let c: u8 = text.values[text.start+i];
         let end: i32 = i;
@@ -174,11 +177,29 @@ fn wd_func_len(v: core::slice::View<u8>) -> i32 {
     return len;
 }
 
+// The writer's line source: Line records, or a split's offsets.
+struct Lines { a: core::slice::View<ext::seqdiff::Line>, b: core::slice::View<ext::seqdiff::Line>, by_split: bool, na: i32, nb: i32 }
+impl Lines { fn borrow(&self) -> &Lines { return self; } }
+fn wd_get(l: &Lines, split: &ext::seqdiff::Split, side: i32, i: i32) -> core::slice::View<u8> {
+    if (l.by_split) { if (side == 0) { return split.before_line(i); } return split.after_line(i); }
+    if (side == 0) { return l.a.values[l.a.start+i].bytes; } return l.b.values[l.b.start+i].bytes;
+}
 // Write one file's word diff: `--- `/`+++ ` headers, then each hunk's header and
 // its lines with changed words marked [-old-] and {+new+}. Identical inputs give
 // empty output. Hunks come from ext::seqdiff::hunks over a line script.
 pub fn write_word_diff(a: core::slice::View<ext::seqdiff::Line>, b: core::slice::View<ext::seqdiff::Line>, script: &ext::seqdiff::Script, hunks: core::slice::View<ext::seqdiff::Hunk>, old_name: core::slice::View<u8>, new_name: core::slice::View<u8>, options: Options) -> core::result::Result<alloc::vec::Vec<u8>, Error> {
-    if (a.length != script.before_len() || b.length != script.after_len() || options.max_output < 0) { return core::result::Err(Error::InvalidInput); }
+    let none: ext::seqdiff::Split = ext::seqdiff::empty_split();
+    let l: Lines = Lines { a: a, b: b, by_split: false, na: a.length, nb: b.length };
+    return wd_write(l.borrow(), none.borrow(), script, hunks, old_name, new_name, options);
+}
+// The same output for the lines of an ext::seqdiff::split_classify result.
+pub fn write_word_diff_split(split: &ext::seqdiff::Split, script: &ext::seqdiff::Script, hunks: core::slice::View<ext::seqdiff::Hunk>, old_name: core::slice::View<u8>, new_name: core::slice::View<u8>, options: Options) -> core::result::Result<alloc::vec::Vec<u8>, Error> {
+    let none: alloc::vec::Vec<ext::seqdiff::Line> = alloc::vec::new();
+    let l: Lines = Lines { a: none.as_view(), b: none.as_view(), by_split: true, na: split.before_len(), nb: split.after_len() };
+    return wd_write(l.borrow(), split, script, hunks, old_name, new_name, options);
+}
+fn wd_write(l: &Lines, split: &ext::seqdiff::Split, script: &ext::seqdiff::Script, hunks: core::slice::View<ext::seqdiff::Hunk>, old_name: core::slice::View<u8>, new_name: core::slice::View<u8>, options: Options) -> core::result::Result<alloc::vec::Vec<u8>, Error> {
+    if (l.na != script.before_len() || l.nb != script.after_len() || options.max_output < 0) { return core::result::Err(Error::InvalidInput); }
     let o: Out = Out { bytes: alloc::vec::new(), limit: options.max_output, failed: false, full: false, error: Error::AllocationFailed };
     if (hunks.length == 0) { return core::result::Ok(o.bytes); }
     wd_text(o.borrow(), "--- ", 4); wd_bytes(o.borrow(), old_name); wd_text(o.borrow(), "\n+++ ", 5); wd_bytes(o.borrow(), new_name); wd_byte(o.borrow(), 10);
@@ -186,23 +207,23 @@ pub fn write_word_diff(a: core::slice::View<ext::seqdiff::Line>, b: core::slice:
     let func_line: i32 = -1; let func_len: i32 = 0; let previous: i32 = -1; let h: i32 = 0;
     while (h < hunks.length && !o.failed) {
         let hunk: ext::seqdiff::Hunk = hunks.values[hunks.start+h];
-        if (hunk.first < 0 || hunk.count < 0 || hunk.first + hunk.count > script.len() || hunk.before < 0 || hunk.before > a.length) { wd_fail(o.borrow(), Error::InvalidInput); break; }
+        if (hunk.first < 0 || hunk.count < 0 || hunk.first + hunk.count > script.len() || hunk.before < 0 || hunk.before > l.na) { wd_fail(o.borrow(), Error::InvalidInput); break; }
         if (options.function_names) {
-            let l: i32 = hunk.before - 1;
-            while (l > previous && l >= 0) { let len: i32 = wd_func_len(a.values[a.start+l].bytes); if (len >= 0) { func_line = l; func_len = len; break; } l -= 1; }
+            let k: i32 = hunk.before - 1;
+            while (k > previous && k >= 0) { let len: i32 = wd_func_len(wd_get(l, split, 0, k)); if (len >= 0) { func_line = k; func_len = len; break; } k -= 1; }
             previous = hunk.before - 1;
         }
         wd_text(o.borrow(), "@@ -", 4); wd_range(o.borrow(), hunk.before, hunk.before_count); wd_text(o.borrow(), " +", 2); wd_range(o.borrow(), hunk.after, hunk.after_count); wd_text(o.borrow(), " @@", 3);
-        if (func_line >= 0 && func_len > 0) { wd_byte(o.borrow(), 32); wd_bytes(o.borrow(), wd_sub(a.values[a.start+func_line].bytes, 0, func_len)); }
+        if (func_line >= 0 && func_len > 0) { wd_byte(o.borrow(), 32); wd_bytes(o.borrow(), wd_sub(wd_get(l, split, 0, func_line), 0, func_len)); }
         wd_byte(o.borrow(), 10);
         let at: i32 = hunk.first;
         while (at < hunk.first + hunk.count && !o.failed) {
             let step: ext::seqdiff::Edit = core::result::unwrap(script.step(at));
-            if (step.kind == 2) { wd_append_line(o.borrow(), plus.borrow(), b.values[b.start+step.after].bytes); }
-            else { if (step.kind == 1) { wd_append_line(o.borrow(), minus.borrow(), a.values[a.start+step.before].bytes); }
+            if (step.kind == 2) { wd_append_line(o.borrow(), plus.borrow(), wd_get(l, split, 1, step.after)); }
+            else { if (step.kind == 1) { wd_append_line(o.borrow(), minus.borrow(), wd_get(l, split, 0, step.before)); }
             else {
                 wd_flush(o.borrow(), minus.borrow(), plus.borrow(), options);
-                let v: core::slice::View<u8> = a.values[a.start+step.before].bytes; wd_bytes(o.borrow(), v);
+                let v: core::slice::View<u8> = wd_get(l, split, 0, step.before); wd_bytes(o.borrow(), v);
                 if (v.length == 0 || v.values[v.start+v.length-1] != 10) { wd_byte(o.borrow(), 10); }
             } }
             at += 1;

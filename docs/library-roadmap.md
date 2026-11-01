@@ -726,8 +726,9 @@ and a word load. It also stores the constant 10 to the stack, materializes each
 comparison with `set*`/`movzbl` and spills it before testing, and spills every
 `+= 1` before reloading it. Nothing is hoisted out of the loop.
 `core::u32::wrapping_mul` and trait methods such as `T::eq` and `T::hash` are
-calls, not inlined code. A byte loop that also hashes costs 9-14 ns/byte. That is why
-`seq-diff` spends 0.14 s on a 1.6 MB pair where GNU diff spends 0.02 s
+calls, not inlined code. A byte loop that also hashes costs 9-14 ns/byte. `seq-diff` now reads
+8-byte words and hash-conses lines in one pass. It takes 59-70 ms on a 1.6 MB
+pair where `git diff --no-index` takes 43 ms
 ([seqdiff speed notes](extended-seqdiff.md)).
 
 ## Completion requirements
@@ -2758,7 +2759,14 @@ borrowed point lookup has the current increment above.
   collision models and allocation failures. String and all integer widths
   implement hashing. Production HashSet now shares this engine through its
   owner-state boundary; the earlier nested wrapper is retained separately as
-  a compiler reproduction.
+  a compiler reproduction. The table now probes SwissTable-style: eight
+  control bytes per u64 group word matched with SWAR, a multiplicative spread
+  of the key hash, and a one-multiply u64 hash. At one million keys, lookups
+  are 1.6-3.5 times faster, and the dense-i32 lookups after half the keys are
+  removed went from not finishing in four minutes to 258 ms. A 219,000-operation
+  deletion-heavy model matches a Python dict word for word. C++
+  `unordered_map` is still 2-11 times faster, mostly because of generated-code
+  overheads that the guide lists.
 - Binary heap: [`alloc::binary_heap`](stdlib-binary-heap.md) executes min/max
   queues, linear bulk construction, root replacement, allocation-safe reserve,
   shrink, clone, aliased extension and sorted ownership transfer. Five test

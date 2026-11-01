@@ -67,14 +67,30 @@ void main(uint3 dtid: SV_DispatchThreadID)
         call_dependency_library_id[token],
         call_dependency_unit_id[token],
         call_dependency_local_index[token]);
-    if (declaration >= dependency_declaration_count()) return;
+    uint actual = max(compact_hir_payload[call].c, call_arg_row_count[call]);
+    if (declaration >= dependency_declaration_count())
+    {
+        // A method's portable rows hold its explicit parameters. A dotted
+        // call's receiver consumes a typed first one; a path call passes a
+        // self method's receiver as an extra first argument.
+        uint method = dependency_find_method(call_dependency_library_id[token],
+            call_dependency_unit_id[token], call_dependency_local_index[token]);
+        if (method >= dependency_member_count()) return;
+        bool dotted = compact_hir_core[compact_hir_payload[call].a].kind == HIR_MEMBER_EXPR;
+        uint expected = dependency_method_parameter_count(method);
+        if (dotted && expected != 0u && dependency_method_parameter_type(method, 0u) != INVALID)
+            expected -= 1u;
+        if (!dotted && dependency_method_implicit_self(method)) expected += 1u;
+        if (actual != expected)
+            record_min_token_error(status, token, ERR_CALL_MISMATCH, CALL_MISMATCH_ARITY);
+        return;
+    }
     uint signature = dependency_declaration_word(declaration * DECL_WORDS + 7u);
     if (signature >= dependency_type_count()) return;
     uint signature_base = signature * TYPE_WORDS;
     if (dependency_type_word(signature_base) != INTERFACE_TYPE_FUNCTION) return;
     uint edge_count = dependency_type_word(signature_base + 4u);
     if (edge_count == 0u) return;
-    uint actual = max(compact_hir_payload[call].c, call_arg_row_count[call]);
     if (actual != edge_count - 1u)
         record_min_token_error(
             status, token, ERR_CALL_MISMATCH, CALL_MISMATCH_ARITY);

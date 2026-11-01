@@ -1,0 +1,39 @@
+// A path through a bare generic type, `W::wrap(5)` and `W::get(w)` on
+// `impl<T> W<T>`, infers the impl's T from the arguments and the result
+// context, like `W<i32>::wrap(5)`. Exits 0 when compiled correctly.
+module app::main;
+
+struct W<T> { v: T }
+
+impl<T> W<T> {
+    fn get(self) -> T {
+        return self.v;
+    }
+
+    fn wrap(v: T) -> W<T> {
+        return W { v: v };
+    }
+
+    fn peek(&self) -> T {
+        return self.v;
+    }
+
+    fn borrow(&self) -> &W<T> {
+        return self;
+    }
+}
+
+struct P { a: i32, b: i32 }
+
+fn main() -> i32 {
+    let x: i32 = W::get(W::wrap(5));
+    if (x != 5) { return 1; }
+    let w: W<P> = W::wrap(P { a: 3, b: 4 });
+    let p: P = W::get(w);
+    if (p.b != 4) { return 2; }
+    let u: W<u64> = W::wrap(7);
+    if (W::peek(u.borrow()) != 7) { return 3; }
+    let b: bool = W::get(W::wrap(true));
+    if (!b) { return 4; }
+    return 0;
+}

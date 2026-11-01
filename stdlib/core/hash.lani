@@ -75,10 +75,12 @@ pub impl Hash<u8> for u8 {
 pub impl Hash<u16> for u16 {
     pub fn hash(value: u16) -> u32 { return hash_u16(value); }
 }
+// Fold the high word into the low one (a bijection), multiply by an odd
+// constant (another), and keep the product's well-mixed high word.
 pub impl Hash<u64> for u64 {
     pub fn hash(value: u64) -> u32 {
-        let state: u32 = fnv1a_word_le(FNV1A_OFFSET_BASIS, value as u32);
-        return fnv1a_word_le(state, (value >> 32) as u32);
+        let mixed: u64 = (value ^ (value >> 32)) * 18397679294719823053;
+        return (mixed >> 32) as u32;
     }
 }
 pub impl Hash<i64> for i64 {
