@@ -435,7 +435,7 @@ fn each_denied_allocation_releases_workspace_and_preserves_inputs_and_prior_resu
     let exe = executable("tests/fixtures/extended/uri_resolve_failure.lani");
     let trace = common::TempArtifact::new("laniusc_uri_resolve", "failure", None);
     let execute = |when: Option<usize>| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -467,7 +467,7 @@ fn large_dot_paths_compact_with_fixed_allocations_and_final_output_limits() {
     for count in [1024, 16384, 262144] {
         let output = common::process_output_with_timeout(
             "large linear URI resolution",
-            Command::new("strace")
+            crate::common::strace()
                 .args(["-qq", "-o"])
                 .arg(trace.path())
                 .args([

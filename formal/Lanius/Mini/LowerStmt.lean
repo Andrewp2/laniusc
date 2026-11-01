@@ -3185,25 +3185,30 @@ theorem mapRawNominalSlice_inv {P : Core.Program} {st : State} {element : Core.T
 theorem slice_kind {ds : SrcDecls} {element : SrcType}
     (cond : (element.isI32 || element.isUint .uint8 || wordElement ds element) = true) :
     element = .i32 ∨ element = .uint .uint8 ∨ (∃ sid fields, element = .struct sid fields) ∨
-      ∃ eid variants, element = .enum eid variants := by
+      (∃ eid variants, element = .enum eid variants) ∨ element = .uint .uint16 := by
   cases element with
   | i32 => exact .inl rfl
-  | uint kind => exact .inr (.inl (SrcType.eq_of_isUint (by simpa [SrcType.isI32, wordElement] using cond)))
+  | uint kind =>
+    have c : (SrcType.uint kind).isUint .uint8 = true ∨ (SrcType.uint kind).isUint .uint16 = true := by
+      simpa [SrcType.isI32, wordElement] using cond
+    rcases c with c | c
+    · exact .inr (.inl (SrcType.eq_of_isUint c))
+    · exact .inr (.inr (.inr (.inr (SrcType.eq_of_isUint c))))
   | struct sid fields => exact .inr (.inr (.inl ⟨sid, fields, rfl⟩))
-  | enum eid variants => exact .inr (.inr (.inr ⟨eid, variants, rfl⟩))
+  | enum eid variants => exact .inr (.inr (.inr (.inl ⟨eid, variants, rfl⟩)))
   | bool | ptr | slice | array | unit | isize | char | float | sint =>
     simp [SrcType.isI32, SrcType.isUint, wordElement] at cond
 
 /-- What Core's `slice_from_raw_parts` of an accepted element type did. -/
 theorem sliceFrom_inv {P : Core.Program} {k : Nat} {st : State} {element : SrcType}
     (kind : element = .i32 ∨ element = .uint .uint8 ∨ (∃ sid fields, element = .struct sid fields) ∨
-      ∃ eid variants, element = .enum eid variants) {p l : Core.Expr}
+      (∃ eid variants, element = .enum eid variants) ∨ element = .uint .uint16) {p l : Core.Expr}
     {v : Value} {st1 : State} (run : evalExpr (k + 1) P st (element.sliceFrom p l) = .done v st1) :
     ∃ a afterPointer n afterLength len heap, evalExpr k P st p = .done (.pointer a) afterPointer ∧
       evalExpr k P afterPointer l = .done (.signed .i32 n) afterLength ∧
       v = .rawSlice element.toCore a len ∧ st1 = { afterLength with heap } ∧
       (∀ hp, HeapCorr afterLength.heap afterLength.world hp → HeapCorr heap afterLength.world hp) ∧ len = n.toNat ∧ 0 ≤ n := by
-  rcases kind with rfl | rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩
+  rcases kind with rfl | rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩ | rfl
   all_goals
     simp only [SrcType.sliceFrom, evalExpr] at run
     split at run
@@ -4070,7 +4075,7 @@ theorem loadElement_sound {sp : SrcProgram} {mp : Program} {hp : Heap} {st : Sta
       (env bslot).toNat - pos * (8 * element.size) :=
     elementBase_eval posEq small fits
   have nb : Semantics.isByte element.toCore = false := by
-    revert hel; cases element <;> simp [wordElement, SrcType.toCore, Semantics.isByte]
+    exact wordElement_notByte hel
   simp only [Semantics.readRawElement, nb, Bool.false_eq_true, ↓reduceIte] at read
   exact exec_loadType hc tail element (wordElement_wordType hel) below (Nat.zero_le _)
     ⟨_, by rw [baseEval, Nat.sub_zero]; exact read⟩
@@ -4529,7 +4534,7 @@ theorem stmt_setIndex_word {slice : Nat} {index value : SrcExpr} {b : Binding} {
     have posEq := index_toNat kind holdsI posOk
     obtain ⟨-, flat, -⟩ := lowerValue_sound corr (SrcProgram.target_toCore sp) vOk valueRun
     have nb : Semantics.isByte element.toCore = false := by
-      revert hel; cases element <;> simp [wordElement, SrcType.toCore, Semantics.isByte]
+      exact wordElement_notByte hel
     simp only [Semantics.writeRawNative, nb, Bool.false_eq_true, ↓reduceIte] at stored
     obtain ⟨hp', exec, hc'⟩ := storeElement_sound (mp := mp) hc hel posEq located stored flat ok bound
     exact ⟨fresh, ⟨fun _ _ => rfl, Nat.le_refl _⟩, 0, _, exec, .next (corr.cells_congr rfl fun _ _ => rfl) hc'⟩

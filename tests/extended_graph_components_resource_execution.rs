@@ -246,7 +246,7 @@ fn run(
     let input = common::TempArtifact::new("laniusc_graph_components_resources", "input", None);
     input.write_bytes([mode | if failure.is_some() { 16 } else { 0 }]);
     let trace = common::TempArtifact::new("laniusc_graph_components_resources", "trace", None);
-    let mut command = Command::new("strace");
+    let mut command = crate::common::strace();
     command
         .args(["--kill-on-exit", "-qq", "-s", "64", "-o"])
         .arg(trace.path())

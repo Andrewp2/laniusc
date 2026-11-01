@@ -194,7 +194,6 @@ fn text_grep_preserves_records_reports_errors_and_enforces_bounds() {
     );
     for args in [
         vec![],
-        vec!["a", "b"],
         vec!["--bad", "a"],
         vec!["--max-line", "a"],
         vec!["--max-line=-1", "a"],
@@ -208,6 +207,14 @@ fn text_grep_preserves_records_reports_errors_and_enforces_bounds() {
     ] {
         failure(&invoke(exe, &args, b""), 2, "invalid-arguments", b"");
     }
+    // Operands after the pattern are files; a missing one is reported with
+    // its path and the status is 2.
+    failure(
+        &invoke(exe, &["a", "text-grep-missing-operand"], b""),
+        2,
+        "text-grep-missing-operand: io-failure stage=input",
+        b"",
+    );
     failure(
         &invoke(exe, &vec!["-c"; 65], b""),
         2,
@@ -360,7 +367,7 @@ fn text_grep_releases_owners_at_every_observed_allocation_and_io_fault() {
     let expected = "1:aaé\r\n3:éa".as_bytes();
     let trace = common::TempArtifact::new("laniusc_text_grep", "trace", None);
     let execute = |fault: Option<&str>| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -449,7 +456,7 @@ fn text_grep_releases_owners_at_every_observed_allocation_and_io_fault() {
         .arg(exe.path())
         .arg(input.path()));
     failure(&output, 3, "io-failure stage=output", b"");
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args([

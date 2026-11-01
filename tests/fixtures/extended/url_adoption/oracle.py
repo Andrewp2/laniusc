@@ -132,7 +132,7 @@ def invoke(executable, directory, mode, target=None):
     listener.bind(("127.0.0.1", 0))
     listener.listen(2)
     listener.settimeout(3)
-    command = ["strace", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-e", "signal=none",
+    command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-e", "signal=none",
                "-e", "trace=all", "-o", str(trace)]
     if target:
         command += ["-e", "inject=close:error=EIO:when=%d" % target["ordinal"]]

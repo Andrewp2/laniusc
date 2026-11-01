@@ -44,7 +44,7 @@ fn allocator_syscall_failures_return_null_and_preserve_storage_on_x86() {
             assert_eq!(normal.status.code(), Some(1), "{name}: {normal:?}");
             assert!(normal.stdout.is_empty() && normal.stderr.is_empty());
 
-            if std::process::Command::new("strace")
+            if crate::common::strace()
                 .arg("-V")
                 .output()
                 .is_err()
@@ -54,7 +54,7 @@ fn allocator_syscall_failures_return_null_and_preserve_storage_on_x86() {
             let trace = common::TempArtifact::new("laniusc_allocator_failure", "trace", None);
             let injected = common::short_process_output_with_timeout(
                 format!("{name} injected {syscall} failure"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-o")
                     .arg(trace.path())

@@ -143,7 +143,7 @@ class Session:
         self.records = []
         self.wire = self.body = b''
         self.trace = Path(directory) / 'trace'
-        command = ['strace', '--kill-on-exit', '-qq', '-xx', '-s', '4096', '-o', str(self.trace), '-e', 'signal=none', '-e', 'trace=' + TRACE]
+        command = ['strace','-E','LANIUS_ALLOC=mmap', '--kill-on-exit', '-qq', '-xx', '-s', '4096', '-o', str(self.trace), '-e', 'signal=none', '-e', 'trace=' + TRACE]
         for expression in ([] if fault is None else ([fault] if isinstance(fault, str) else fault)):
             command += ['-e', 'inject=' + expression]
         command += [EXE, '127.0.0.1:' + str(self.listener.getsockname()[1]), str(mode), str(timeout), str(quota), str(work), str(raw_cap), str(body_cap), str(interims)]

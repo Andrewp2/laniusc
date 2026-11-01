@@ -123,7 +123,7 @@ fn portable_time_contracts_and_clock_simulation_execute_without_host_services() 
     ] {
         let exe = executable(fixture);
         let trace = common::TempArtifact::new("laniusc_time", "pure_trace", None);
-        let output = run(Command::new("strace")
+        let output = run(crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([
@@ -227,7 +227,7 @@ fn native_clocks_preserve_timespecs_errors_and_deadline_waits() {
     let exe = executable("tests/fixtures/stdlib_host/clock_native.lani");
     let trace = common::TempArtifact::new("laniusc_time", "native_trace", None);
     let invoke = |mode: &str, faults: &[String], code: u64| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -399,7 +399,7 @@ fn scheduled_ticks_report_absolute_deadlines_and_propagate_failures() {
         assert!(output.stdout.is_empty() && output.stderr.is_empty());
     }
     let invoke = |args: &[&str], fault: Option<String>, code: i32| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command.args(["-qq", "-o"]).arg(trace.path()).args([
             "-e",
             "trace=mmap,munmap,clock_gettime,nanosleep,write",
@@ -455,7 +455,7 @@ fn time_keys_compose_with_collections_and_large_batches_keep_precision() {
     for (mode, count) in [(0, 0), (0, 1048576), (1, 128)] {
         let output = common::process_output_with_timeout(
             "time batch",
-            Command::new("strace")
+            crate::common::strace()
                 .args(["-qq", "-o"])
                 .arg(trace.path())
                 .args([

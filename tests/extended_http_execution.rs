@@ -52,7 +52,7 @@ fn allocations(events: &str) -> usize {
 fn http_borrowed_heads_framing_chunks_strides_limits_and_checked_encoders_execute() {
     let exe = executable("tests/fixtures/extended/http_contracts.lani");
     let trace = common::TempArtifact::new("laniusc_http", "trace", None);
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args(["-e", "trace=mmap,munmap,open,openat,socket,connect"])
@@ -74,7 +74,7 @@ fn http_encoder_releases_staging_on_every_allocation_failure() {
     let exe = executable("tests/fixtures/extended/http_failure.lani");
     let trace = common::TempArtifact::new("laniusc_http", "failure", None);
     let execute = |injection: Option<String>, status| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -101,7 +101,7 @@ fn http_encoder_releases_staging_on_every_allocation_failure() {
 fn http_encoder_preflights_caps_and_uses_one_exact_allocation_per_valid_message() {
     let exe = executable("tests/fixtures/extended/http_encoder_preflight.lani");
     let trace = common::TempArtifact::new("laniusc_http", "preflight", None);
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args(["-e", "trace=mmap,munmap,open,openat,socket,connect"])

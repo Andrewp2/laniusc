@@ -114,7 +114,7 @@ class Runner:
         self.directory=Path(tempfile.mkdtemp(prefix=f'toml-normalize-streaming-{group}-'));self.count=0
     def run(self,name,data=b'',expected=b'',*,args=(),status=0,error=None,injections=(),input_cap=16777216,preflight=False,help_mode=False,closed_stdout=False,compact=False):
         args=[os.fsencode(x) for x in args];d=self.directory/name;d.mkdir();source=d/'input';source.write_bytes(data)
-        command=['strace','--kill-on-exit','-qq','-xx','-s','64' if compact else '256','-e','signal=none','-e','trace='+TRACE,'-o',str(d/'trace')]
+        command=['strace','-E','LANIUS_ALLOC=mmap','--kill-on-exit','-qq','-xx','-s','64' if compact else '256','-e','signal=none','-e','trace='+TRACE,'-o',str(d/'trace')]
         for call,position,failure in injections:
             action=failure if failure.startswith('retval=') else 'error='+failure
             command+=['-e',f'inject={call}:{action}:when={position}']

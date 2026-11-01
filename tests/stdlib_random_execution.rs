@@ -49,7 +49,7 @@ fn raw_secure_u32_traps_on_host_failure_on_x86() {
         let normal =
             common::run_x86_64_elf_output("random_raw_scalar", "random_raw_scalar", &bytes);
         assert!(matches!(normal.status.code(), Some(0 | 1)), "{normal:?}");
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -60,7 +60,7 @@ fn raw_secure_u32_traps_on_host_failure_on_x86() {
         for injection in ["getrandom:error=EIO:when=1", "getrandom:retval=2:when=1"] {
             let output = common::signal_process_output_with_timeout(
                 format!("raw random scalar {injection}"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-e")
                     .arg("trace=getrandom")
@@ -130,7 +130,7 @@ fn std_random_secure_u32_or_handles_host_failure_on_x86() {
 
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -141,7 +141,7 @@ fn std_random_secure_u32_or_handles_host_failure_on_x86() {
         for injection in ["getrandom:error=EIO:when=1", "getrandom:retval=0:when=1"] {
             let output = common::short_process_output_with_timeout(
                 format!("checked secure random {injection}"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-e")
                     .arg("trace=getrandom")
@@ -166,7 +166,7 @@ fn std_random_fill_secure_exact_handles_host_failure_on_x86() {
 
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -177,7 +177,7 @@ fn std_random_fill_secure_exact_handles_host_failure_on_x86() {
         for injection in ["getrandom:error=EIO:when=1", "getrandom:retval=0:when=1"] {
             let output = common::short_process_output_with_timeout(
                 format!("secure fill {injection}"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-e")
                     .arg("trace=getrandom")
@@ -203,7 +203,7 @@ fn std_random_checked_retries_short_host_reads_on_x86() {
 
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -217,7 +217,7 @@ fn std_random_checked_retries_short_host_reads_on_x86() {
             let executable = write_executable(bytes, name);
             let output = common::short_process_output_with_timeout(
                 format!("short secure read {name}"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-e")
                     .arg("trace=getrandom")
@@ -265,7 +265,7 @@ fn std_random_secure_u32_below_handles_failure_and_rejection_on_x86() {
 
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -276,7 +276,7 @@ fn std_random_secure_u32_below_handles_failure_and_rejection_on_x86() {
         for injection in ["getrandom:error=EIO:when=1", "getrandom:retval=0:when=1"] {
             let output = common::short_process_output_with_timeout(
                 format!("bounded random {injection}"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-e")
                     .arg("trace=getrandom")
@@ -291,7 +291,7 @@ fn std_random_secure_u32_below_handles_failure_and_rejection_on_x86() {
         let rejection = write_executable(&rejection_bytes, "std_random_below_rejection");
         let output = common::short_process_output_with_timeout(
             "bounded random rejection",
-            std::process::Command::new("strace")
+            crate::common::strace()
                 .arg("-qq")
                 .arg("-e")
                 .arg("trace=getrandom")
@@ -348,7 +348,7 @@ fn std_random_inclusive_ranges_handle_forced_draws_and_failures_on_x86() {
         let bytes = compile_fixture(name);
         #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
         {
-            if std::process::Command::new("strace")
+            if crate::common::strace()
                 .arg("-V")
                 .output()
                 .is_err()
@@ -358,7 +358,7 @@ fn std_random_inclusive_ranges_handle_forced_draws_and_failures_on_x86() {
             let executable = write_executable(&bytes, name);
             let output = common::short_process_output_with_timeout(
                 format!("inclusive random {name}"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-e")
                     .arg("trace=getrandom")
@@ -395,7 +395,7 @@ fn std_random_shuffle_i32_swaps_and_reports_host_failure_on_x86() {
 
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -405,7 +405,7 @@ fn std_random_shuffle_i32_swaps_and_reports_host_failure_on_x86() {
         let swap = write_executable(&swap_bytes, "std_random_shuffle_swap");
         let output = common::short_process_output_with_timeout(
             "forced random shuffle swap",
-            std::process::Command::new("strace")
+            crate::common::strace()
                 .arg("-qq")
                 .arg("-e")
                 .arg("trace=getrandom")
@@ -420,7 +420,7 @@ fn std_random_shuffle_i32_swaps_and_reports_host_failure_on_x86() {
         for injection in ["getrandom:error=EIO:when=1", "getrandom:retval=0:when=1"] {
             let output = common::short_process_output_with_timeout(
                 format!("random shuffle {injection}"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-e")
                     .arg("trace=getrandom")

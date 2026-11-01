@@ -98,10 +98,10 @@ class Runner:
         if budget:
             call,errors,calls=budget
             schedule=f"1..{errors}" if interruption_schedule is None else interruption_schedule
-            command=["strace","--kill-on-exit","-qq","-c","-e","trace="+call,"-e",
+            command=["strace","-E","LANIUS_ALLOC=mmap","--kill-on-exit","-qq","-c","-e","trace="+call,"-e",
                      f"inject={call}:error=EINTR:when={schedule}","-o",str(prefix.with_suffix(".trace")),*command]
         elif trace:
-            wrapper=["strace","--kill-on-exit","-qq","-s","32","-e","signal=none","-e","trace="+TRACE,
+            wrapper=["strace","-E","LANIUS_ALLOC=mmap","--kill-on-exit","-qq","-s","32","-e","signal=none","-e","trace="+TRACE,
                      "-o",str(prefix.with_suffix(".trace"))]
             for call,ordinal,failure in injections: wrapper += ["-e",f"inject={call}:error={failure}:when={ordinal}"]
             command=[*wrapper,*command]

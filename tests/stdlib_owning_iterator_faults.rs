@@ -98,7 +98,7 @@ fn run(
     denied: usize,
 ) -> Ledger {
     let trace = common::TempArtifact::new("laniusc_owning_iterator", "trace", None);
-    let mut command = Command::new("strace");
+    let mut command = crate::common::strace();
     command
         .args(["-qq", "-o"])
         .arg(trace.path())

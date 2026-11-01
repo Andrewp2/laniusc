@@ -14,7 +14,7 @@ from constructor_ledger import analyze, controls
 
 
 def invoke(executable, certificates, trace, mode, target=None):
-    command = ["strace", "--kill-on-exit", "-qq", "-i", "-s", "96", "-o", str(trace),
+    command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-i", "-s", "96", "-o", str(trace),
                "-e", "trace=mmap,munmap,open,openat,close,socket,bind,listen,accept,accept4,connect,getsockopt,getsockname,getpeername,fcntl,sendto,recvfrom,poll,shutdown,clock_gettime,read,write"]
     if target is not None:
         command += ["-e", f"inject=mmap:error=ENOMEM:when={target['ordinal']}"]

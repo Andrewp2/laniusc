@@ -130,7 +130,7 @@ fn signed_full_width_binary_io_reports_host_failures_on_x86() {
     let read_bytes = compile_fixture("std_io_binary_wide_i64_read");
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -146,7 +146,7 @@ fn signed_full_width_binary_io_reports_host_failures_on_x86() {
         ] {
             let output = common::short_process_output_with_timeout(
                 format!("signed wide binary write {injection}"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-e")
                     .arg("trace=write")
@@ -170,7 +170,7 @@ fn signed_full_width_binary_io_reports_host_failures_on_x86() {
         ] {
             let output = common::short_process_output_with_timeout(
                 format!("signed wide binary read {injection}"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-e")
                     .arg("trace=read")

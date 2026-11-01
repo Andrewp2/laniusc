@@ -293,7 +293,7 @@ fn json_check_rejects_invalid_schema_instance_duplicate_keys_and_resource_limits
     }
     let schema = file(br#"{"$defs":{"unused":{"type":3}}}"#);
     let trace = common::TempArtifact::new("laniusc_json_check", "early_schema", None);
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args(["-e", "trace=mmap,munmap,open,openat,close,read"])
@@ -431,7 +431,7 @@ fn json_check_releases_owners_on_every_observed_allocation_and_host_io_failure()
     let data = file("{\"port\":443,\"ratio\":1.25,\"text\":\"é🙂\"}".as_bytes());
     let trace = common::TempArtifact::new("laniusc_json_check", "trace", None);
     let execute = |injection: Option<&str>, status| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -469,7 +469,7 @@ fn json_check_releases_owners_on_every_observed_allocation_and_host_io_failure()
         execute(Some(&format!("{syscall}:error=EIO:when=1")), 3);
     }
     for fault in ["write:error=EIO:when=1", "write:retval=0:when=1"] {
-        let output = run(Command::new("strace")
+        let output = run(crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap,write", "-e"])
@@ -482,7 +482,7 @@ fn json_check_releases_owners_on_every_observed_allocation_and_host_io_failure()
     // The normal validator is quiet; diagnostic output is its ordinary write
     // path. Failure to report a violation becomes I/O status 3 after cleanup.
     schema.write_bytes(b"false");
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args([

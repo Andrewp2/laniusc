@@ -161,7 +161,7 @@ fn trace_run(exe: &common::TempArtifact, op: u8, failure: Option<usize>) -> Stri
     let input = common::TempArtifact::new("laniusc_decimal", "allocation_op", None);
     input.write_bytes([op]);
     let trace = common::TempArtifact::new("laniusc_decimal", "allocation_trace", None);
-    let mut command = Command::new("strace");
+    let mut command = crate::common::strace();
     command
         .args(["-qq", "-o"])
         .arg(trace.path())

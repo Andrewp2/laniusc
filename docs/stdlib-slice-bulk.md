@@ -149,9 +149,11 @@ change:
 | `Utf8View` insert and remove at the front of 64 KiB | 2,027.5 | 54.7 | 37x |
 | `std::io_utf8::write_bytes` (4 MiB) | 2,019.0 | 1.3 | 1,500x |
 
-`read_line` allocates a fresh owner per record, and the global allocator now
-dominates it: allocating and freeing a 1,000-byte `Vec<u8>` costs about
-6.4 µs, against 3.2 µs per line for the reusable `read_line_into`.
+`read_line` allocates a fresh owner per record. With the old allocator
+(one `mmap` per allocation), allocating and freeing a 1,000-byte `Vec<u8>`
+cost about 6.4 µs, against 3.2 µs per line for the reusable `read_line_into`.
+The [pooling runtime allocator](runtime-allocator.md) brings the pair down to
+0.19 µs, and the `read_line` row above to 187–193 ms.
 
 ## Verification
 

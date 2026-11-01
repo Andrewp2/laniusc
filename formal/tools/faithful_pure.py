@@ -31,9 +31,18 @@ the prims). OUTDIR (default: DUMP's directory) gets
   SelfPrims.lean     `PrimsOk prog prims`;
   SelfPure.lean      the `fok`s in chunks of N (default 100), and
                      `selfPure : PureProg prog SelfRep.prims outside` and
-                     `selfPrims : PrimsOk prog SelfRep.prims`.
+                     `selfPrims : PrimsOk prog SelfRep.prims`;
+  SelfLiveTab.lean   the functions `pcall_live` (Sim/Live.lean) leaves out:
+                     `liveBad`, those that can fail other than at a call (the
+                     prelude's `panic`) and those that call them, but for
+                     `liveWrap`, the prelude's `plus` and `times`, which
+                     SelfPanics.lean replaces by wrapping arithmetic;
+  SelfLiveOk<g>.lean `lok<i> : LiveOk prims outside liveBad i f` for the
+                     functions of SelfOk<g> but `liveWrap` (`decide +kernel`
+                     of `LiveFn`);
+  SelfLiveAll.lean   the `lok`s in SelfPure's chunks, and `livesOk`.
 
-Only the SelfOk and SelfDecl files read the functions' bodies, so an edit of
+Only the SelfOk, SelfLiveOk and SelfDecl files read the functions' bodies, so an edit of
 one function rechecks its group and its run, and the files that put the
 facts together.
 
@@ -53,6 +62,8 @@ PRIM_NAMES = ('mini::selfhost::boxed', 'mini::selfhost::unbox')
 OUTSIDE_PREFIXES = ('app::', 'core::mem::size_of', 'core::mem::typed_slice_from_storage')
 ROOTS = ('mini::selfhost::compile_source', 'mini::selfhost::front_end_files')
 NS = 'Lanius.Faithful.SelfPure'
+# The prelude's checked arithmetic, which SelfPanics.lean replaces by the operator.
+LIVE_WRAP = ('mini::selfhost::plus', 'mini::selfhost::times')
 GROUPS = 24  # files of per-function checks, each the functions of some SelfSrc modules
 BLOCK = 41  # functions per block of `sigBlocks`: about the square root of their number
 
@@ -434,6 +445,161 @@ class Checker:
         self.stmt(f['ret'], tenv, f['body'])
 
 
+# ---------------------------------------------------------------- LiveFn, in Python
+
+class Dead(Exception):
+    pass
+
+
+def bv_int(term, bits):
+    """The signed value of a `BitVec bits` literal."""
+    v = term[1]
+    return v - (1 << bits) if v >= 1 << (bits - 1) else v
+
+
+class LiveChecker:
+    """A copy of Sim/Live.lean's `LiveFn bad`, raising the reason it fails."""
+
+    def __init__(self, prog, bad):
+        self.prog, self.bad = prog, bad
+
+    def shift_ok(self, e):
+        c, a = ctor(e)
+        if c != 'cast' or ctor(a[0])[0] != 'uint' or ctor(a[1])[0] != 'int':
+            return False
+        n = bv_int(ctor(a[1])[1][0], 32)
+        return 0 <= n < WIDTH[ctor(ctor(a[0])[1][0])[0]]
+
+    def expr(self, e):
+        c, a = ctor(e)
+        if c == 'apply':
+            self.expr(a[1])
+            self.expr(a[2])
+            if ctor(a[0])[0] in ('shiftLeft', 'shiftRight') and not self.shift_ok(a[2]):
+                raise Dead('shift by other than a constant below the width')
+        elif c in ('negate', 'not'):
+            self.expr(a[0])
+        elif c == 'cast':
+            self.expr(a[1])
+
+    def divisor(self, e):
+        c, a = ctor(e)
+        if c == 'ePure':
+            k, b = ctor(a[0])
+            if k == 'int':
+                n = bv_int(b[0], 32)
+                return n != 0 and n != -1
+            if k == 'unsigned':
+                return b[1][1] != 0
+        return False
+
+    def eff(self, e):
+        c, a = ctor(e)
+        if c == 'ePure':
+            self.expr(a[0])
+        elif c == 'eCall':
+            if a[0][1] in self.bad:
+                raise Dead(f'calls {a[0][1]}')
+            for x in a[1][1]:
+                self.eff(x)
+        elif c == 'eApply':
+            if ctor(a[0])[0] in ('shiftLeft', 'shiftRight'):
+                raise Dead('shift of effects')
+            self.eff(a[1])
+            self.eff(a[2])
+        elif c in ('eNeg', 'eNot'):
+            self.eff(a[0])
+        elif c == 'eCast':
+            self.eff(a[1])
+        elif c in ('eIndex', 'eStride', 'arraySlice'):
+            raise Dead(c)
+        elif c == 'eStruct':
+            for x in a[1][1]:
+                self.eff(x)
+        elif c == 'eVariant':
+            for x in a[2][1]:
+                self.eff(x)
+        elif c == 'eMatch':
+            self.eff(a[0])
+            for x in a[4][1]:
+                self.eff(x)
+            ety = self.prog.node(self.prog.type_of(a[1]))
+            if ety[0] != 'enum' or len(ety[2]) != len(a[3][1]):
+                raise Dead('match without an arm for every variant')
+        elif c == 'eDivide':
+            self.eff(a[1])
+            if not self.divisor(a[2]):
+                raise Dead('division by other than a constant but 0 and -1')
+        else:
+            raise ValueError(c)
+
+    def stmt(self, unit, s):
+        c, a = ctor(s)
+        if c == 'nop':
+            return
+        if c == 'returnUnit':
+            if not unit:
+                raise Dead('`return;` with a value')
+            return
+        if c == 'let':
+            self.expr(a[2])
+            return self.stmt(unit, a[3])
+        if c == 'letStruct':
+            for x in a[2][1]:
+                self.expr(x)
+            return self.stmt(unit, a[3])
+        if c == 'letCall':
+            if a[2][1] in self.bad:
+                raise Dead(f'calls {a[2][1]}')
+            for x in a[3][1]:
+                self.expr(x)
+            return self.stmt(unit, a[4])
+        if c == 'letEnum':
+            for x in a[3][1]:
+                self.expr(x)
+            return self.stmt(unit, a[4])
+        if c == 'then':
+            self.stmt(unit, a[0])
+            return self.stmt(unit, a[1])
+        if c == 'if':
+            self.expr(a[0])
+            self.stmt(unit, a[1])
+            return self.stmt(unit, a[2])
+        if c == 'return':
+            return self.expr(a[0])
+        if c == 'letEval':
+            self.eff(a[2])
+            return self.stmt(unit, a[3])
+        if c == 'ifEval':
+            self.eff(a[0])
+            self.stmt(unit, a[1])
+            return self.stmt(unit, a[2])
+        if c in ('returnEval', 'discard'):
+            return self.eff(a[0])
+        raise Dead(f'statement `{c}`')
+
+    def never_next(self, s):
+        c, a = ctor(s)
+        if c in ('nop', 'discard', 'assert'):
+            return False
+        if c in ('let', 'letStruct', 'letEval'):
+            return self.never_next(a[3])
+        if c in ('letCall', 'letEnum'):
+            return self.never_next(a[4])
+        if c == 'then':
+            return self.never_next(a[0]) or self.never_next(a[1])
+        if c in ('if', 'ifEval'):
+            return self.never_next(a[1]) and self.never_next(a[2])
+        return True
+
+    def check(self, i):
+        f = self.prog.funcs[i]
+        unit = self.prog.node(f['ret']) == ('unit',)
+        self.stmt(unit, f['body'])
+        if not unit and not self.never_next(f['body']):
+            raise Dead('can end without a value')
+
+
 # ---------------------------------------------------------------- calls and declarations
 
 def walk(term):
@@ -636,8 +802,10 @@ def modulize(name, text):
                      ['', '@[expose] public section'] + lines[k:])
 
 
-def write(path, text):
-    if not text.startswith('module'):
+def write(path, text, module=True):
+    """Write text to path unless it is there already; as a `module` (`modulize`)
+    unless `module` is false."""
+    if module and not text.startswith('module'):
         text = modulize(os.path.basename(path)[:-5], text)
     try:
         with open(path) as f:
@@ -946,6 +1114,73 @@ def main(argv):
                '#print axioms selfPure\n#print axioms selfPrims\n\n'
                f'end {NS}\n')
     write(os.path.join(outdir, 'SelfPure.lean'), ''.join(agg))
+    # `pcall_live`'s checks: `liveBad`, the functions that can fail other than
+    # at a call and those that call them, but for the wrapped ones.
+    wrap = [i for i in range(prog.n) if names[i] in LIVE_WRAP]
+    assert len(wrap) == len(LIVE_WRAP), wrap
+    bad = set()
+    while True:
+        live = LiveChecker(prog, bad)
+        why = {}
+        for i in range(prog.n):
+            if i in prim_set or i in outside or i in wrap:
+                continue
+            try:
+                live.check(i)
+            except Dead as e:
+                why[i] = str(e)
+        if set(why) == bad:
+            break
+        bad = set(why)
+    for i in sorted(bad):
+        if i in seen:
+            print(f'not live: {i} {names[i]}: {why[i]}', file=sys.stderr)
+    # The SelfLive files are not modules: they import Sim/Live.lean, which
+    # imports the termination check (Sim/Term*.lean), and those are not.
+    write(os.path.join(outdir, 'SelfLiveTab.lean'),
+          f'import Lanius.Faithful.Sim.Live\n\n{HEADER}\nnamespace {NS}\n\n'
+          '/-- The functions that can fail other than at a call, and those that call them. -/\n'
+          'def liveBad : List Nat := [\n' +
+          ''.join(f'  {i}{"," if k + 1 < len(bad) else ""} -- {names[i]}: {why[i]}\n'
+                  for k, i in enumerate(sorted(bad))) +
+          ']\n\n'
+          '/-- The prelude\'s `plus` and `times`, which SelfPanics.lean wraps. -/\n'
+          f'def liveWrap : List Nat := {wrap}\n\n'
+          f'def ixPlus : Nat := {wrap[0]}\n\n'
+          f'def ixTimes : Nat := {wrap[1]}\n\n'
+          f'end {NS}\n', module=False)
+    for g in range(GROUPS):
+        members = [i for i in groups.get(g, []) if i not in wrap]
+        mods = sorted({home[keys[i]] for i in members})
+        lines = [f'import Lanius.Faithful.Gen.SelfPureTab\nimport Lanius.Faithful.Gen.SelfLiveTab\n' +
+                 ''.join(f'import Lanius.Faithful.Gen.{m}\n' for m in mods) +
+                 f'\n{HEADER}\nnamespace {NS}\n\n{open_lines}'
+                 'open Lanius.Faithful.Termination\n\n']
+        for i in members:
+            lines.append(f'/-- {names[i]} -/\n'
+                         f'theorem lok{i} : LiveOk prims outside liveBad {i} ({rhs[i]}) := by decide +kernel\n\n')
+        lines.append(f'end {NS}\n')
+        write(os.path.join(outdir, f'SelfLiveOk{g}.lean'), ''.join(lines), module=False)
+    la = ['import Lanius.Faithful.Gen.SelfPure\n' +
+          ''.join(f'import Lanius.Faithful.Gen.SelfLiveOk{g}\n' for g in range(GROUPS)) +
+          f'\n{HEADER}\nnamespace {NS}\n\n{open_lines}'
+          'open Lanius.Faithful.Termination\n\n'
+          'set_option maxRecDepth 100000\n\n']
+    for k, lo, hi in parts:
+        la.append(f'theorem lchunk{k} : LivesOk prims outside liveBad liveWrap {lo} part{k} :=\n' +
+                  ''.join(f'  livesOk_cons (.inl (by decide +kernel)) <|\n' if i in wrap else
+                          f'  livesOk_cons (.inr lok{i}) <|\n' for i in range(lo, hi)) +
+                  '  livesOk_nil\n\n')
+    expr = f'lchunk{parts[-1][0]}'
+    for k, lo, hi in reversed(parts[:-1]):
+        expr = f'livesOk_append lchunk{k} ({expr})'
+    la.append('/-- Every function of the self program but the prims, those `outside`, those in\n'
+              '`liveBad` and those in `liveWrap` passes `LiveFn liveBad`. -/\n'
+              'theorem livesOk : LivesOk prims outside liveBad liveWrap 0 prog.funcs := by\n'
+              f'  rw [funcs_parts]\n  exact\n    {expr}\n\n'
+              f'end {NS}\n')
+    write(os.path.join(outdir, 'SelfLiveAll.lean'), ''.join(la), module=False)
+
     # The chunk files the checks were in before the groups.
     for name in os.listdir(outdir):
         if re.fullmatch(r'SelfPure\d+\.lean', name):

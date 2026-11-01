@@ -565,11 +565,13 @@ def arg_words(ty):
 
 # Slices and views of these are arguments (not results): the wrapper takes a
 # shape word, n | start << 8 | length << 16, and up to SLICE_WORDS u64 words
-# of contents, little-endian (8 u8 or 2 i32 to a word); allocates storage for
+# of contents, little-endian (8 u8, 4 u16 or 2 i32 to a word); allocates storage for
 # them (core::mem::typed_slice_from_storage), fills the first n elements and,
 # for a view, views start and length of them. The slices' contents after the
 # call are results of their own (part sK: a hash of all n elements).
-SLICE_ELEMS = ('u8', 'i32')
+SLICE_ELEMS = ('u8', 'u16', 'i32')
+# Elements of each slice element type in one content word.
+SLICE_PER = {'u8': 8, 'u16': 4, 'i32': 2}
 SLICE_WORDS = 3
 
 
@@ -592,7 +594,7 @@ def content_words(params):
 
 
 def slice_capacity(ty, words):
-    return words * (8 if ty.endswith(':u8') else 2)
+    return words * SLICE_PER[ty.split(':')[1]]
 
 
 def result_parts(t):
@@ -605,7 +607,7 @@ def slice_setup(k, ty, words):
     """The wrapper's statements that build slice argument k (s{k}, and v{k} for a view)."""
     elem = ty.split(':')[1]
     cap = slice_capacity(ty, words)
-    per = 8 if elem == 'u8' else 2
+    per = SLICE_PER[elem]
     lines = [f'    let n{k}: i32 = a{k}m & 255;',
              f'    let p{k}: ptr = alloc::allocator::alloc(({8 * cap} as usize), (8 as usize));',
              f'    let s{k}: [{elem}] = core::mem::typed_slice_from_storage<{elem}>(p{k}, n{k});',
@@ -613,6 +615,7 @@ def slice_setup(k, ty, words):
     lines += [f'        if (i{k} >= {per * j}) {{ w{k} = a{k}c{j}; }}' for j in range(1, words)]
     lines.append(f'        let b{k}: u64 = ((i{k} % {per}) * {64 // per}) as u64;')
     lines.append(f'        s{k}[i{k}] = ((w{k} >> b{k}) & 255) as u8;' if elem == 'u8' else
+                 f'        s{k}[i{k}] = ((w{k} >> b{k}) & 65535) as u16;' if elem == 'u16' else
                  f'        s{k}[i{k}] = ((w{k} >> b{k}) as i32);')
     lines += [f'        i{k} += 1;', '    }']
     if ty.startswith('view:'):
@@ -624,7 +627,7 @@ def slice_setup(k, ty, words):
 def slice_hash_lines(k, ty):
     """The wrapper's statements that return a hash of slice k's n elements."""
     elem = ty.split(':')[1]
-    e = f'(s{k}[j] as u64)' if elem == 'u8' else f'(((s{k}[j] as i64) + 2147483648) as u64)'
+    e = f'(s{k}[j] as u64)' if elem in ('u8', 'u16') else f'(((s{k}[j] as i64) + 2147483648) as u64)'
     return ['    let h: u64 = 0;', '    let j: i32 = 0;', f'    while (j < n{k}) {{', f'        let e: u64 = {e};',
             '        h = (h * 31 + e) % 1000000007;', '        j += 1;', '    }', '    let t: i32 = (h as i32);',
             '    return t;']
@@ -645,6 +648,13 @@ def gen_slice(rng, ty, words):
         if mode >= 0.85 and n and rng.random() < 0.5:
             values = [rng.choice(b'0123456789')] * n
         bits, mask = 8, 255
+    elif ty.endswith(':u16'):
+        # code units: ASCII, other BMP scalars, surrogates (paired or not) and the edges
+        mode = rng.random()
+        values = [rng.randrange(65536) if mode < 0.3 else rng.choice(b'0123456789az .') if mode < 0.55
+                  else rng.choice([0xd800, 0xdbff, 0xdc00, 0xdfff, 0xd83d, 0xde00]) if mode < 0.8
+                  else rng.choice([0, 1, 0x7f, 0x80, 0x7ff, 0x800, 0xfffd, 0xffff]) for _ in range(n)]
+        bits, mask = 16, 65535
     else:
         values = [gen_arg(rng, 'i32') for _ in range(n)]
         bits, mask = 32, 2 ** 32 - 1

@@ -34,7 +34,7 @@ fn execute(name: &str, allocating: bool) {
     let trace = common::TempArtifact::new("laniusc_owned_delimited", "all_syscalls", None);
     let output = common::process_output_with_timeout(
         "owned delimiter native contracts",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=all", "-e", "signal=none"])

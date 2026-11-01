@@ -506,7 +506,7 @@ fn allocation_denial_releases_every_temporary_on_decode_encode_and_late_filter_e
         input.write_bytes(frame(&[c]));
         let trace = common::TempArtifact::new("laniusc_png", "trace", None);
         let run_trace = |fail: Option<usize>| {
-            let mut cmd = Command::new("strace");
+            let mut cmd = crate::common::strace();
             cmd.args(["-qq", "-o"])
                 .arg(trace.path())
                 .args(["-e", "trace=mmap,munmap"]);

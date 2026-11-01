@@ -418,7 +418,7 @@ fn expr_calc_releases_owners_at_each_allocation_failure_and_io_fault() {
     let expected = format!("1\n{}", "-42\n".repeat(400)).into_bytes();
     let trace = common::TempArtifact::new("laniusc_expr_calc", "trace", None);
     let execute = |injection: Option<&str>, status: i32| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -479,7 +479,7 @@ fn expr_calc_releases_owners_at_each_allocation_failure_and_io_fault() {
         execute(Some(&format!("write:retval=0:when={when}")), 6);
         execute(Some(&format!("write:error=EINTR:when={when}")), 0);
     }
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args([
@@ -492,7 +492,7 @@ fn expr_calc_releases_owners_at_each_allocation_failure_and_io_fault() {
         .stdin(Stdio::from(std::fs::File::open(data.path()).unwrap())));
     success(&output, &expected[1..]);
     no_leaks(&std::fs::read_to_string(trace.path()).unwrap());
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args([
@@ -506,7 +506,7 @@ fn expr_calc_releases_owners_at_each_allocation_failure_and_io_fault() {
     assert_eq!(output.status.code(), Some(6), "{output:?}");
     no_leaks(&std::fs::read_to_string(trace.path()).unwrap());
     let bad = file(b"1+2\n1/0\n");
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args(["-e", "trace=mmap,munmap"])

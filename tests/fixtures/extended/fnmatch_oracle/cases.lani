@@ -1,0 +1,53 @@
+// Test-only batch transport for ext::fnmatch. stdin holds cases until EOF,
+// each three little-endian u32 words (flags, pattern bytes, name bytes) and
+// then the pattern and the name. stdout gets one byte per case: 0 for a
+// match, 1 for no match, E for an error.
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::fnmatch;
+import std::fs;
+fn word(bytes: [u8], at: i32) -> i32 {
+    return ((bytes[at] as u32) | ((bytes[at + 1] as u32) << 8) | ((bytes[at + 2] as u32) << 16) | ((bytes[at + 3] as u32) << 24)) as i32;
+}
+fn write_all(base: ptr, count: i32) -> bool {
+    let done: i32 = 0;
+    while (done < count) {
+        let sent: i32 = std::fs::write(1, base + (done as usize), (count - done) as usize);
+        if (sent == -4) { continue; }
+        if (sent <= 0) { return false; }
+        done += sent;
+    }
+    return true;
+}
+fn main() -> i32 {
+    let input: alloc::vec::Vec<u8> = alloc::vec::new(); let length: i32 = 0;
+    while (true) {
+        if (input.len() < length + 65536) { core::result::unwrap(input.try_resize(length + 65536, 0)); }
+        let count: i32 = std::fs::read(0, input.storage + (length as usize), 65536 as usize);
+        if (count == -4) { continue; }
+        if (count < 0) { return 3; }
+        if (count == 0) { break; }
+        length += count;
+    }
+    let bytes: [u8] = input.as_slice();
+    let output: alloc::vec::Vec<u8> = alloc::vec::new(); core::result::unwrap(output.try_resize(length / 12 + 1, 0));
+    let out: [u8] = output.as_slice(); let cases: i32 = 0; let at: i32 = 0;
+    while (at + 12 <= length) {
+        let flags: i32 = word(bytes, at); let pattern_length: i32 = word(bytes, at + 4); let name_length: i32 = word(bytes, at + 8);
+        at += 12;
+        if (pattern_length < 0 || name_length < 0 || pattern_length > length - at || name_length > length - at - pattern_length) { return 2; }
+        let pattern: core::slice::View<u8> = core::slice::View { values: bytes, start: at, length: pattern_length };
+        let name: core::slice::View<u8> = core::slice::View { values: bytes, start: at + pattern_length, length: name_length };
+        let result: core::result::Result<bool, ext::fnmatch::Error> = ext::fnmatch::matches(pattern, name, flags);
+        let answer: u8 = 69;
+        if (core::result::is_ok(result)) { answer = 49; if (core::result::unwrap(result)) { answer = 48; } }
+        out[cases] = answer; cases += 1;
+        at += pattern_length + name_length;
+    }
+    if (at != length) { return 2; }
+    if (!write_all(output.storage, cases)) { return 3; }
+    return 0;
+}

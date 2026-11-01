@@ -65,7 +65,7 @@ def run(executable):
                 case = directory / f"b{backend}-f{flavor}-m{mode}"
                 case.mkdir()
                 trace = case / "syscalls.log"
-                command = ["strace", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-e", "signal=none",
+                command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-e", "signal=none",
                            "-e", "trace=" + OWNERS.TRACE, "-o", str(trace), str(Path(executable).resolve())]
                 (case / "command.txt").write_text(repr(command) + "\n")
                 request = struct.pack("<3I", backend, flavor, mode)

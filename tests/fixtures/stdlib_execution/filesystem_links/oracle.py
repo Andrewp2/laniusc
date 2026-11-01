@@ -286,7 +286,7 @@ class Suite:
         if layout == 2:
             initial[3:3 + len(first)] = first
         trace = directory / "syscalls.log"
-        command = ["strace", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "16384", "-e", "signal=none",
+        command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "16384", "-e", "signal=none",
                    "-e", "trace=" + TRACE, "-o", str(trace)]
         if injection:
             fault = NAMES[op] + (":error=" + injection["error"] if "error" in injection else ":retval=" + str(injection["retval"]))

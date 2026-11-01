@@ -121,7 +121,7 @@ fn observed_effects(events: &str) {
 fn outcome_composition_keeps_real_owner_identity_and_cleanup_without_phase_host_calls() {
     let executable = executable();
     let trace = common::TempArtifact::new("laniusc_outcome_memory", "trace", None);
-    let mut command = Command::new("strace");
+    let mut command = crate::common::strace();
     command
         .args(["-qq", "-s", "64", "-o"])
         .arg(trace.path())

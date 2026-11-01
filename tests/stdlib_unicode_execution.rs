@@ -219,7 +219,7 @@ fn invalid_inputs_output_atomicity_view_strides_and_no_allocation_execute() {
     let trace = common::TempArtifact::new("laniusc_unicode", "trace", None);
     let output = common::process_output_with_timeout(
         "Unicode pure native contracts",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([

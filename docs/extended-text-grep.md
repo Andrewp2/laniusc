@@ -1,9 +1,13 @@
 # UTF-8 text search
 
-`sample_programs/library/text_grep.lani` filters stdin with one compiled
-[regular expression](extended-regex.md). It composes `ext::regex`, `ext::cli`,
-`std::args`, `std::stream`, checked `core::text`, `core::fmt`, and an owned,
-reusable `alloc::vec` input buffer. Production search and I/O run in Lanius.
+`sample_programs/library/text_grep.lani` filters stdin, files or directory
+trees with one compiled [regular expression](extended-regex.md). It composes
+`ext::regex`, `ext::cli`, `std::args`, `std::stream`, checked `core::text`,
+`core::fmt`, and an owned, reusable `alloc::vec` input buffer. File operands
+and `-r` add `std::directory`, `std::file_ops`, [`ext::fnmatch`](extended-fnmatch.md)
+and [`ext::gitignore`](extended-gitignore.md); see
+[Files and recursive search](#files-and-recursive-search). Production search
+and I/O run in Lanius.
 
 Build and run from the repository root:
 
@@ -69,8 +73,15 @@ options are used. Each logical record is searched independently.
 | `--max-states N` | 4096 | Maximum compiled regex states. Accepted range 4–65536. |
 | `--max-groups N` | 16 | Maximum explicit capture groups; group zero is additional. Accepted range 0–128. |
 | `--max-work N` | 10000000 | Work budget for each record search. Accepted range 1–2147483647. |
+| `--recursive`, `-r` | false | Search directory operands, or `.` when there is none, recursively. |
+| `--include GLOB` | | Search only files whose name matches GLOB (repeatable). |
+| `--exclude GLOB` | | Skip files whose name matches GLOB (repeatable). |
+| `--exclude-dir GLOB` | | Do not enter directories whose name matches GLOB (repeatable). |
+| `--gitignore` | false | With `-r`, skip what the `.gitignore` files of the walked tree ignore, and `.git` directories. |
 | `--help`, `-h` | | Write usage and exit. |
 
+With file operands or `-r`, `--max-line` defaults to 67108864 and
+`--max-work` to 2147483647, since whole files are in memory.
 Long options accept `--name N` and `--name=N`; short flags may be combined.
 Options and the pattern may be intermixed until `--`. Repeated flags remain
 enabled; the last repeated numeric value wins. Numeric values are unsigned
@@ -170,7 +181,9 @@ records, which brings in dense literal hits and long line scans. Seeds
 output rework (`text-grep-output-receipt.log`) and after the skip and numbered
 blocks (`text-grep-numbers-receipt.log`) and after the counting scan
 (`text-grep-count-receipt.log`) and after the word-wise literal search
-(`text-grep-pair-receipt.log`), tiny build included. A build with a 3-state DFA
+(`text-grep-pair-receipt.log`) and after the file and recursive modes, which
+moved the record loop into a shared `block` function
+(`text-grep-recursive-scan-receipt.log`), tiny build included. A build with a 3-state DFA
 cache and 2 partials gave 800/800 on seeds 20261031 and 7, which forces the
 undecided-record path (log `target/claude-work/s3/text-grep-scan-receipt.log`).
 
@@ -330,6 +343,112 @@ GNU `grep -P`:
 | `日\p{L}` | 832 | 106 | 84 | 5 |
 | `[^\p{L}\s]` | 1583 | 130 | 72 | 8 |
 
+## Files and recursive search
+
+```sh
+text-grep [OPTIONS] PATTERN FILE...
+text-grep -r [--include GLOB] [--exclude GLOB] [--exclude-dir GLOB] [--gitignore] PATTERN [DIR|FILE...]
+```
+
+Operands after the pattern are files, and the output matches GNU grep 3.11
+(`grep -E` in a UTF-8 locale) byte for byte. Each file is read whole into
+one reused buffer and searched with the same scan as stdin. Records,
+`-v`, `-n` and `-c` are as above, except where GNU grep differs:
+
+- Output lines get a `PATH:` prefix when there is more than one operand or a
+  directory is walked. A single file operand gets none. `-c` writes
+  `PATH:COUNT` for every file searched, including counts of 0.
+- An unterminated last record is written with a LF.
+- A file with a NUL byte is binary. NUL then also ends records, nothing of
+  the file is written, and `text-grep: PATH: binary file matches` goes to
+  stderr when a record was selected. Without `-c` the search of that file
+  stops at the first selected record.
+- A file with invalid UTF-8 and no NUL is searched record by record. A
+  record with encoding errors matches when one of its valid pieces does,
+  each piece being searched as a record of its own. Selected records with
+  errors are counted but not written, and they get the same stderr line at
+  the end of the file. Valid selected records are written as usual.
+- `-v` with an empty pattern exits 1 without reading anything.
+- A directory operand without `-r` is reported as `is-a-directory` and the
+  search goes on.
+
+With `-r` and no operand the walk starts at `.` and names are shown without
+`./`. The walk goes depth first, in the order the filesystem returns the
+entries, as GNU grep's `fts` walk does, so the output order is the same.
+Symbolic links and special files below the starting point are skipped, as
+in GNU grep's `-r`; symbolic links named on the command line are followed.
+
+`--include`, `--exclude` and `--exclude-dir` match with
+[`ext::fnmatch`](extended-fnmatch.md) and flags 0. In the walk they apply to
+the base name. For command-line operands a glob matches the whole operand or
+the part after any `/`. For files the last matching `--include` or
+`--exclude` decides. A file that matches none is skipped when the first of
+these options is an `--include`. `--exclude-dir` never applies to the
+implicit `.`. These are GNU grep's rules.
+
+`--gitignore` is not a GNU option. It reads the `.gitignore` file of each
+directory as the walk enters it and applies [git's rules](extended-gitignore.md):
+deeper files and later lines win, ignored directories are not entered, and
+`.git` directories are skipped. Only files inside the walked tree are read,
+not `.git/info/exclude`, the global excludes file or `.gitignore` files
+above the starting directory. A `.gitignore` that cannot be read is
+reported like any unreadable file, and none of its rules apply.
+
+When the required literal of the pattern occurs nowhere in a file, and no
+record could exceed `--max-line` or reach the work bound, the file is not
+validated or split into records at all; it has no match. This is most files
+of a typical search, and it took the repository search for an absent word
+from 1.15 s to 0.39 s user time.
+
+Failures reading one file, opening it or reading a directory are reported
+with the path, for example `text-grep: src/a.c: io-failure stage=input
+byte=0`, and the search goes on; the exit status is then 2. An allocation
+failure (status 4) or an output failure (status 3) ends the whole search.
+
+### Comparison with GNU grep
+
+`tests/fixtures/extended/text_grep_recursive/compare.py` runs both programs
+and requires the same stdout bytes, exit status and stderr lines (without
+the program name, so `PATH: binary file matches` lines must agree too).
+
+```sh
+W=target/claude-work/s3
+python3 -I tests/fixtures/extended/text_grep_recursive/compare.py "$W/text_grep" tree . --exclude-dir target
+python3 -I tests/fixtures/extended/text_grep_recursive/compare.py "$W/text_grep" generated --count 400 --seed N
+```
+
+`tree` searches the repository (12,654 files, 273 MB without `target/`) for
+6 patterns under 6 option sets: plain, `-n`, `-c`, `-v -c`,
+`--include='*.md' -n` and `--exclude-dir=tests --exclude='*.rs' -c`. All 36
+runs were identical. `generated` builds random trees with nested
+directories, symbolic links (to `.`, `..`, files and missing targets), NUL,
+Latin-1 and CRLF files, file names with spaces, and `.gitignore` files. It
+runs `-r` under 12 option sets mixing `-n`, `-c`, `-v`, repeated
+`--include`/`--exclude`, a `--exclude` that overrides an `--include`, and
+`--exclude-dir`, with patterns including the empty one. Seeds 20261101, 1 and
+2 gave 400/400 each. The same command checks `--gitignore` against git
+itself (see [.gitignore rules](extended-gitignore.md#verification)); it
+agreed in 231/231, 253/253 and 246/246 cases. Log:
+`target/claude-work/s3/text-grep-recursive-receipt.log`.
+
+Timings on the repository tree with `--exclude-dir=target`, second of two
+runs, output to a file (GNU grep stops at the first match when stdout is
+`/dev/null`), on the laptop at load average 26–35:
+
+| Search | text_grep user | GNU grep user | text_grep wall | GNU grep wall |
+| --- | ---: | ---: | ---: | ---: |
+| `-r the` | 1.30 s | 0.33 s | 1.97 s | 0.84 s |
+| `-r -n the` | 1.27 s | 0.37 s | 1.95 s | 0.68 s |
+| `-r -c '\bmatch\b'` | 1.10 s | 0.27 s | 1.51 s | 0.66 s |
+| `-r -c zzqqxx` (absent) | 0.39 s | 0.10 s | 0.68 s | 0.31 s |
+
+System time is about the same for both (0.2–0.3 s). The walk alone (12,654
+files and 1,535 directories) costs about 0.13 s user. Most of the rest is
+UTF-8 validation of every byte of every file that contains the literal: GNU
+grep checks encoding only in the lines it outputs. `--gitignore` over the
+same tree (without `--exclude-dir`, the root `.gitignore` ignores `target/`)
+took 1.59 s user. Log: `target/claude-work/s3/grep-recursive-timings.log`.
+
 ## Exit status and failures
 
 | Status | Meaning |
@@ -397,7 +516,26 @@ patterns on `aaé\r\nnope\néa` with `-n`:
 | `nope` with `-v` | prefilter, numbered gap blocks | 31 | 31/31 | 2 × EIO, EINTR | 1 × EIO, 0, EINTR, short |
 | `[nx][o][p][e]` with `-v` | line scan, numbered gap blocks | 34 | 34/34 | 2 × EIO, EINTR | 1 × EIO, 0, EINTR, short |
 
-All 291 runs, including `/dev/full` and the failed diagnostic, give the
+Two more rows search a tree (`a`, `sub/b`, `ignored` with that input and a
+`.gitignore` naming `ignored`) from its parent directory:
+
+| Arguments | mmap = munmap | Allocation failures (status 4) | Read faults | Stdout write faults |
+| --- | ---: | ---: | ---: | ---: |
+| `-r -n --gitignore é tree` | 39 | 39/39 | 8 × EIO, EINTR | 1 × EIO, 0, EINTR, short |
+| `-r -c --include=[ab] a tree` | 38 | 38/38 | 4 × EIO, EINTR | 1 × EIO, 0, EINTR, short |
+
+A failed read there must give status 2 and one `text-grep: tree/...:
+io-failure stage=input` line, and stdout may only lose the lines of that
+file (or, when the `.gitignore` read fails, gain those of `ignored`). The
+first version of these rows found 16 failures: an allocation failure while
+collecting file operands or globs was reported as `invalid-arguments`
+(status 2), and every early return after argument parsing (a regex that
+failed to compile, for one) left the operand and glob lists mapped. Both
+lists are now owned by `process` and released on every path, and a failed
+push is status 4. A directory buffer that cannot be allocated is status 4
+too, not an unreadable directory.
+
+All 402 runs, including `/dev/full` and the failed diagnostic, give the
 documented status, diagnostic and stdout prefix, and leave the map unchanged.
 The DFA path maps fewer regions because it never creates per-record VM
 scratch. The single stdout write is the buffered output. The DFA's
@@ -406,7 +544,8 @@ mappings. The fixed output area saves two compared with the growing
 buffer it replaced. Before the fix above,
 failures 8 through 21 of the DFA pattern were silently absorbed: the search
 fell back to the VM and exited 0. Log:
-`target/claude-work/s3/text-grep-faults-pair-receipt.log`. The `(?:a|é)+` row goes through the line scan.
+`target/claude-work/s3/text-grep-faults-recursive-receipt.log` (the stdin
+rows alone: `text-grep-faults-pair-receipt.log`). The `(?:a|é)+` row goes through the line scan.
 
 ```sh
 W=target/claude-work/s3

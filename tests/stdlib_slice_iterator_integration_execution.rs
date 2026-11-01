@@ -29,7 +29,7 @@ fn slice_cursors_compose_with_generic_views_native_stride_and_fixed_containers()
     let trace = common::TempArtifact::new("laniusc_slice_iterator", "allocation_trace", None);
     let output = common::process_output_with_timeout(
         "raw slice cursor contracts",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap"])

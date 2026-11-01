@@ -195,7 +195,7 @@ class Runner:
         command = [self.executable, *map(str, arguments)]
         trace = prefix.with_suffix(".trace")
         if no_network:
-            command = ["strace", "-qq", "-f", "-o", str(trace), "-e", "trace=network", *command]
+            command = ["strace","-E","LANIUS_ALLOC=mmap", "-qq", "-f", "-o", str(trace), "-e", "trace=network", *command]
         start = time.monotonic()
         if input_directory:
             descriptor = os.open(self.directory, os.O_RDONLY | os.O_DIRECTORY)

@@ -63,7 +63,7 @@ fn traced(
     let data = common::TempArtifact::new("laniusc_numeric_migration", "input", None);
     data.write_bytes(input);
     let trace = common::TempArtifact::new("laniusc_numeric_migration", "trace", None);
-    let mut command = Command::new("timeout");
+    let mut command = crate::common::traced_timeout();
     command.args(["3s", "strace"]);
     command
         .args(["-qq", "-o"])
@@ -310,7 +310,7 @@ fn native_owned_numeric_stdout_pipe_failures_release_every_allocation() {
             let input = common::TempArtifact::new("laniusc_numeric_pipe", "input", None);
             input.write_bytes(b"1\n2\n1\n");
             let trace = common::TempArtifact::new("laniusc_numeric_pipe", "trace", None);
-            let mut command = Command::new("timeout");
+            let mut command = crate::common::traced_timeout();
             command
                 .args(["--kill-after=1s", "3s", "strace", "-qq", "-o"])
                 .arg(trace.path())

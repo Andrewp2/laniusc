@@ -26,7 +26,7 @@ fn execute(name: &str) {
     let trace = common::TempArtifact::new("laniusc_copy", "all_syscalls", None);
     let output = common::process_output_with_timeout(
         "pure resumable copy contracts",
-        Command::new("strace").args(["-qq", "-o"]).arg(trace.path())
+        crate::common::strace().args(["-qq", "-o"]).arg(trace.path())
             .args(["-e", "trace=all", "-e", "signal=none"]).arg(executable.path()),
         Duration::from_secs(15),
     );

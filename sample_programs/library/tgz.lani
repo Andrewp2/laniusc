@@ -12,7 +12,6 @@ import core::option;
 import core::path;
 import core::result;
 import core::slice;
-import ext::cli;
 import ext::compression;
 import ext::deflate;
 import ext::inflate;
@@ -20,6 +19,7 @@ import ext::pax;
 import ext::tar;
 import ext::xz;
 import std::args;
+import std::cli;
 import std::directory;
 import std::file;
 import std::file_ops;
@@ -559,42 +559,46 @@ fn create(options: Options, operands: alloc::vec::Vec<core::slice::View<u8>>) ->
     state.destroy(); output.destroy(); close_fd(fd); return result;
 }
 
-fn apply(options: &Options, item: ext::cli::Occurrence) -> bool {
-    if (item.id >= 1 && item.id <= 3) { if (options.mode != 0) { return false; } options.mode = item.id; return true; }
-    if (item.id == 4) { if (options.xz) { return false; } options.gzip = true; return true; }
-    if (item.id == 7) { if (options.gzip) { return false; } options.xz = true; return true; }
-    if (item.id == 8) { options.help = true; return true; }
-    let value: core::slice::View<u8> = core::option::unwrap(item.value).bytes;
-    if (item.id == 5) { if (options.has_archive || value.is_empty()) { return false; } options.archive = value; options.has_archive = true; return true; }
-    if (item.id == 6) { if (options.has_directory || value.is_empty()) { return false; } options.directory = value; options.has_directory = true; return true; }
-    if (item.id == 9) { if (value.length != 1 || value.values[value.start] < 48 || value.values[value.start] > 51) { return false; } options.level = (value.values[value.start] as i32)-48; return true; }
+// Applies one parsed option in argument order; false for a conflicting or
+// invalid combination (two modes, -z with -J, a repeated -f or -C).
+fn apply(options: &Options, id: i32, value: core::option::Option<core::slice::View<u8>>) -> bool {
+    if (id >= 1 && id <= 3) { if (options.mode != 0) { return false; } options.mode = id; return true; }
+    if (id == 4) { if (options.xz) { return false; } options.gzip = true; return true; }
+    if (id == 7) { if (options.gzip) { return false; } options.xz = true; return true; }
+    if (id == 8) { options.help = true; return true; }
+    let text: core::slice::View<u8> = core::option::unwrap(value);
+    if (id == 5) { if (options.has_archive || text.is_empty()) { return false; } options.archive = text; options.has_archive = true; return true; }
+    if (id == 6) { if (options.has_directory || text.is_empty()) { return false; } options.directory = text; options.has_directory = true; return true; }
+    if (id == 9) { if (text.length != 1 || text.values[text.start] < 48 || text.values[text.start] > 51) { return false; } options.level = (text.values[text.start] as i32)-48; return true; }
     return false;
 }
 fn arguments(values: std::args::Arguments) -> i32 {
-    let specs: [ext::cli::Spec;9] = [
-        ext::cli::Spec { id: 1, long: literal("create",6), short: 99, arity: ext::cli::Arity::Flag },
-        ext::cli::Spec { id: 2, long: literal("extract",7), short: 120, arity: ext::cli::Arity::Flag },
-        ext::cli::Spec { id: 3, long: literal("list",4), short: 116, arity: ext::cli::Arity::Flag },
-        ext::cli::Spec { id: 4, long: literal("gzip",4), short: 122, arity: ext::cli::Arity::Flag },
-        ext::cli::Spec { id: 5, long: literal("file",4), short: 102, arity: ext::cli::Arity::Required },
-        ext::cli::Spec { id: 6, long: literal("directory",9), short: 67, arity: ext::cli::Arity::Required },
-        ext::cli::Spec { id: 7, long: literal("xz",2), short: 74, arity: ext::cli::Arity::Flag },
-        ext::cli::Spec { id: 8, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag },
-        ext::cli::Spec { id: 9, long: literal("level",5), short: 76, arity: ext::cli::Arity::Required }
-    ];
-    let schema: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,9)); let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(values.as_view(),schema,ext::cli::Ordering::Intermixed));
+    let cli: std::cli::Command = std::cli::command(literal("tgz",3), literal("Create (-c), extract (-x) or list (-t) tar archives, gzip (-z) or xz (-J) compressed.",85));
+    cli.flag(1, 99, literal("create",6), literal("create a new archive from PATHs",31));
+    cli.flag(2, 120, literal("extract",7), literal("extract files from an archive",29));
+    cli.flag(3, 116, literal("list",4), literal("list the contents of an archive",31));
+    cli.flag(4, 122, literal("gzip",4), literal("filter the archive through gzip",31));
+    cli.flag(7, 74, literal("xz",2), literal("filter the archive through xz",29));
+    cli.option(5, 102, literal("file",4), literal("ARCHIVE",7), literal("use archive file ARCHIVE (- for standard input or output)",57));
+    cli.option(6, 67, literal("directory",9), literal("DIR",3), literal("change to DIR before creating or extracting",43));
+    cli.option(9, 76, literal("level",5), literal("N",1), literal("gzip compression level 0-3 when creating",40));
+    cli.help(8);
+    cli.operands(literal("PATH",4), 0, -1);
+    let parsed: core::result::Result<std::cli::Matches,std::cli::Error> = cli.parse(values.as_view());
+    if (core::result::is_err(parsed)) { cli.print_error(core::result::unwrap_err(parsed), values.as_view()); cli.destroy(); return 2; }
+    let matches: std::cli::Matches = core::result::unwrap(parsed);
     let options: Options = Options { mode: 0, gzip: false, xz: false, archive: literal("",0), has_archive: false, directory: literal("",0), has_directory: false, help: false, level: 0 };
+    let index: i32 = 0; let valid: bool = true;
+    while (index < matches.occurrences() && valid) { valid = apply(options.borrow(), matches.occurrence_id(index), matches.occurrence_value(index)); index += 1; }
+    if (valid && options.help) {
+        let ok: bool = cli.print_help(-1); matches.destroy(); cli.destroy();
+        if (!ok) { return failed(Error::Io); } return 0;
+    }
     let operands: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new();
-    while (true) {
-        let parsed: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next(); if (core::result::is_err(parsed)) { operands.destroy(); return failed(Error::Usage); }
-        let next: core::option::Option<ext::cli::Event> = core::result::unwrap(parsed); if (core::option::is_none(next)) { break; }
-        let valid: bool = match (core::option::unwrap(next)) { ext::cli::Event::Option(item) -> apply(options.borrow(),item), ext::cli::Event::Operand(item) -> core::result::is_ok(operands.try_push(item.bytes)) };
-        if (!valid) { operands.destroy(); return failed(Error::Usage); }
-    }
-    if (options.help) {
-        operands.destroy(); let usage: core::slice::View<u8> = literal("Usage: tgz (-c|-x|-t) [-z [-L 0-3]|-J] -f ARCHIVE|- [-C DIR] [PATH...]\n",71);
-        if (core::result::is_err(write_fd(1,usage))) { return failed(Error::Io); } return 0;
-    }
+    index = 0;
+    while (index < matches.operand_count() && valid) { valid = core::result::is_ok(operands.try_push(matches.operand(index))); index += 1; }
+    matches.destroy(); cli.destroy();
+    if (!valid) { operands.destroy(); return failed(Error::Usage); }
     // A level applies only to gzip output.
     if (options.mode == 0 || !options.has_archive || (options.mode != 1 && operands.len() != 0) || (options.level != 0 && (options.mode != 1 || !options.gzip))) { operands.destroy(); return failed(Error::Usage); }
     let result: core::result::Result<i32,Error> = core::result::Ok(0);

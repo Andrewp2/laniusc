@@ -53,7 +53,7 @@ fn raw_signed_integer_reader_returns_fallback_on_host_read_error_on_x86() {
 
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -65,7 +65,7 @@ fn raw_signed_integer_reader_returns_fallback_on_host_read_error_on_x86() {
         let trace = common::TempArtifact::new("laniusc_read_i32", "read_trace", None);
         let output = common::short_process_output_with_timeout(
             "raw read_i32 injected host error",
-            std::process::Command::new("strace")
+            crate::common::strace()
                 .arg("-qq")
                 .arg("-o")
                 .arg(trace.path())

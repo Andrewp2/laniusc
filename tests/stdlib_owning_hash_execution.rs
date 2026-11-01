@@ -32,7 +32,7 @@ fn executable(name: &str) -> common::TempArtifact {
 
 fn traced(exe: &common::TempArtifact, refuse_after_setup: bool) -> (Output, String) {
     let trace = common::TempArtifact::new("owning_hash", "mapping_trace", None);
-    let mut command = Command::new("timeout");
+    let mut command = crate::common::traced_timeout();
     command
         .args(["--kill-after=1s", "3s", "strace", "-qq", "-o"])
         .arg(trace.path())

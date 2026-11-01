@@ -5,12 +5,14 @@
 no I/O and links no native code. It reuses [`ext::hpack`](extended-hpack.md),
 `ext::http2_frame`, and `ext::http2`'s `Error`, `Cause`, `State` and field
 checks. [`ext::http_service`](extended-http-service.md#http2-h2c) runs it
-over plain TCP for prior-knowledge `h2c`.
+over plain TCP for prior-knowledge `h2c`, `ext::http_service_tls` over TLS
+with ALPN `h2`, and the [reverse proxy](extended-http-proxy.md) in front of
+HTTP/1.1 upstreams.
 
 ## Engine
 
 ```lanius
-pub struct Options { hpack: ext::hpack::Limits, encoder_table_bytes: i32, stream_window: i32, connection_window: i32, max_frame: i32, max_streams: i32, body_bytes: i32, block_bytes: i32, max_requests: i32 }
+pub struct Options { hpack: ext::hpack::Limits, encoder_table_bytes: i32, stream_window: i32, connection_window: i32, max_frame: i32, max_streams: i32, body_bytes: i32, block_bytes: i32, max_requests: i32, stream_bodies: bool }
 pub fn default_options() -> Options;
 pub fn server(options: Options) -> Result<Connection,ext::http2::Error>;
 
@@ -28,6 +30,8 @@ pub impl Connection {
     pub fn field(&self, id: i32, i: i32) -> ext::hpack::Header;
     pub fn header(&self, id: i32, name: View<u8>) -> Option<View<u8>>;
     pub fn body(&self, id: i32) -> View<u8>;
+    pub fn body_finished(&self, id: i32) -> bool;
+    pub fn consume(&self, id: i32, count: i32) -> bool;
     pub fn respond(&self, id: i32, status: i32, fields: View<ext::hpack::Header>, end_stream: bool) -> Result<i32,ext::http2::Error>;
     pub fn send_data(&self, id: i32, data: View<u8>, end: bool) -> Result<i32,ext::http2::Error>;
     pub fn unsent(&self, id: i32) -> i32;
@@ -133,16 +137,30 @@ connection errors send GOAWAY with the code and fail every stream:
 Stream errors send RST_STREAM. Unknown frame types and PRIORITY are
 ignored.
 
+## Streamed request bodies
+
+With `stream_bodies` (default false) a request is queued at its HEADERS
+instead of at END_STREAM, and `body_bytes` no longer bounds it. `body(id)`
+returns the bytes received and not yet consumed. `consume(id, count)` drops
+them and returns their flow-control credit, sending WINDOW_UPDATE once half
+the window is due. `body_finished(id)` reports END_STREAM. The window then
+limits how far a client gets ahead of the application. The
+[reverse proxy](extended-http-proxy.md) relays HTTP/2 uploads this way.
+
 ## HTTP/2 over TLS
 
-There is no TLS server path yet. A TLS server selects `h2` with
-`SSL_CTX_set_alpn_select_cb`, and OpenSSL has no server-side ALPN without
-that callback. Lanius cannot yet define a C callback: the grammar has no
-function types or function addresses (see
-[library-concurrency-dependencies.md](library-concurrency-dependencies.md)).
-The engine needs no changes for TLS. A TLS driver can feed it from
-`ext::tls_stream` the way `ext::http_agent` drives the client engine, once
-ALPN selection is possible.
+`ext::http_service_tls` serves the event Server over TLS. A client that
+selects `h2` by ALPN gets this engine. Any other client gets HTTP/1.1.
+Server-side ALPN is `ext::openssl_tls::ServerContext.set_alpn`. Its
+`SSL_CTX_set_alpn_select_cb` callback is an ordinary Lanius function
+(a C callback). The engine itself needs no changes for TLS. See
+[TLS and ALPN](extended-http-proxy.md#tls-and-alpn) for the transport
+layer that the proxy and the service share. The service passes
+`tests/fixtures/extended/http2_server/tls_oracle.py` with
+`http-service-tls cases=8 handshakes=3 h2=1 requests=40`, using
+libnghttp2 and Python `ssl` clients: 30 multiplexed streams, a 150 KB
+upload, 2 MB downloads, HTTP/1.1 keep-alive and pipelining,
+close_notify, no-ALPN fallback, and a dropped plain-HTTP client.
 
 ## Executed evidence
 
@@ -236,5 +254,11 @@ h2c made about 31 allocations per request. Its system time followed the
   These changed little on their own.
 
 The remaining h2c page faults are mostly the two buffers each new stream
-reserves for its fields and the per-connection engine setup. The Python
+reserves for its fields and the per-connection engine setup.
+The [pooling runtime allocator](runtime-allocator.md) since reuses those
+blocks. With the same binary run pooled and with `LANIUS_ALLOC=mmap`, the h2c
+phase drops from 0.19–0.23 s to 0.10–0.11 s, and server CPU for both phases
+from 0.40–0.45 s to 0.24–0.26 s. Under heavier machine load, server system
+time drops from 0.34–0.38 s to 0.09 s and minor faults from 20,430 to about
+1,450. The Python
 client side still costs more for h2c (about 0.21 s against 0.14 s).

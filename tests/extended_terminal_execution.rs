@@ -202,7 +202,7 @@ fn width_policy_vectors_unicode_property_intervals_and_long_clusters_allocate_no
     let exe = executable("terminal_input");
     let output = common::process_output_with_timeout(
         "terminal width corpus",
-        std::process::Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([

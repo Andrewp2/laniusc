@@ -4334,7 +4334,7 @@ def tail_core_mem_size_of_of_mini_selfhost_SrcType : List SrcFunc :=
 def tail_within_layout : List SrcFunc :=
   src_within_layout 75 165 166 168 476 477 :: tail_core_mem_size_of_of_mini_selfhost_SrcType
 def tail_word_element : List SrcFunc :=
-  src_word_element 475 :: tail_within_layout
+  src_word_element 313 475 :: tail_within_layout
 def tail_SrcType_is_uint : List SrcFunc :=
   src_SrcType_is_uint 474 :: tail_word_element
 def tail_SrcType_is_i32 : List SrcFunc :=
@@ -5284,7 +5284,7 @@ abbrev src310 : SrcFunc := src_is_one
 abbrev src311 : SrcFunc := src_boxed_of_mini_selfhost_Expr 50 472 473
 abbrev src312 : SrcFunc := src_SrcType_is_i32
 abbrev src313 : SrcFunc := src_SrcType_is_uint 474
-abbrev src314 : SrcFunc := src_word_element 475
+abbrev src314 : SrcFunc := src_word_element 313 475
 abbrev src315 : SrcFunc := src_within_layout 75 165 166 168 476 477
 abbrev src316 : SrcFunc := src_core_mem_size_of_of_mini_selfhost_SrcType
 abbrev src317 : SrcFunc := src_is_array_local

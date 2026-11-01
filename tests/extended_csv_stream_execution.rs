@@ -251,7 +251,7 @@ fn streaming_csv_transfers_records_and_reuses_buffers_without_allocating() {
     let contract_trace = common::TempArtifact::new("laniusc_csv_stream", "contract_trace", None);
     let output = common::short_process_output_with_timeout(
         "CSV stream ownership",
-        std::process::Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(contract_trace.path())
             .args(["-e", "trace=mmap,munmap"])
@@ -267,7 +267,7 @@ fn streaming_csv_transfers_records_and_reuses_buffers_without_allocating() {
     let trace = common::TempArtifact::new("laniusc_csv_stream", "reuse_trace", None);
     let output = common::process_output_with_timeout(
         "CSV reuse",
-        std::process::Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap,write"])
@@ -293,7 +293,7 @@ fn streaming_csv_cleans_up_and_resets_after_every_failed_allocation() {
     let exe = executable("csv_stream_allocation_failure");
     let trace = common::TempArtifact::new("laniusc_csv_stream", "fault_trace", None);
     let run = |when: Option<usize>| {
-        let mut command = std::process::Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())

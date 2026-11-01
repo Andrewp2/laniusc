@@ -2119,6 +2119,151 @@ fn cli_lsp_serve_returns_document_diagnostics_for_opened_source() {
     assert!(diagnostic["range"]["end"]["character"].is_number());
 }
 
+/// A cold GPU compiler plus a `core::slice` closure and a generic-impl build
+/// fallback take longer than the protocol-only tests.
+const CLI_LSP_STDLIB_TIMEOUT: Duration = Duration::from_secs(240);
+
+fn repo_path(relative: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative)
+}
+
+/// Opens each `(uri, text)` document, pulls its diagnostics in order, and
+/// returns the diagnostic items per document.
+fn lsp_stdlib_session_items(
+    initialize_params: serde_json::Value,
+    documents: &[(String, String)],
+) -> Vec<Vec<serde_json::Value>> {
+    let mut child = Command::new(laniusc_bin())
+        .arg("lsp")
+        .arg("serve")
+        .arg("--stdio")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn laniusc lsp serve --stdio");
+    {
+        let stdin = child.stdin.as_mut().expect("LSP child should expose stdin");
+        write_lsp_message(
+            stdin,
+            &serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": initialize_params
+            }),
+        );
+        for (index, (uri, text)) in documents.iter().enumerate() {
+            write_lsp_message(
+                stdin,
+                &serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "method": "textDocument/didOpen",
+                    "params": {
+                        "textDocument": {
+                            "uri": uri,
+                            "languageId": "lanius",
+                            "version": 1,
+                            "text": text
+                        }
+                    }
+                }),
+            );
+            write_lsp_message(
+                stdin,
+                &serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": 100 + index,
+                    "method": "textDocument/diagnostic",
+                    "params": { "textDocument": { "uri": uri } }
+                }),
+            );
+        }
+        write_lsp_message(
+            stdin,
+            &serde_json::json!({ "jsonrpc": "2.0", "id": 2, "method": "shutdown" }),
+        );
+        write_lsp_message(stdin, &serde_json::json!({ "jsonrpc": "2.0", "method": "exit" }));
+    }
+    let output =
+        child_output_with_timeout("laniusc lsp serve --stdio", child, CLI_LSP_STDLIB_TIMEOUT);
+    assert!(
+        output.status.success(),
+        "lsp serve should exit cleanly\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let responses = parse_lsp_responses(&output.stdout);
+    (0..documents.len())
+        .map(|index| {
+            let response = responses
+                .iter()
+                .find(|response| response["id"] == 100 + index)
+                .unwrap_or_else(|| panic!("diagnostic response {index} should be present"));
+            response["result"]["items"]
+                .as_array()
+                .unwrap_or_else(|| panic!("diagnostic response {index} should have items: {response}"))
+                .clone()
+        })
+        .collect()
+}
+
+fn file_document(relative: &str) -> (String, String) {
+    let path = repo_path(relative);
+    let text = std::fs::read_to_string(&path).expect("read LSP fixture document");
+    (format!("file://{}", path.display()), text)
+}
+
+#[test]
+fn cli_lsp_serve_checks_stdlib_importers_with_the_configured_stdlib_root() {
+    let unsaved_uri = "file:///nonexistent-lsp-dir/unsaved_slice.lani".to_string();
+    let error_document = file_document("tests/fixtures/lsp/slice_import_type_error.lani");
+    let items = lsp_stdlib_session_items(
+        serde_json::json!({
+            "processId": null,
+            "rootUri": null,
+            "capabilities": {},
+            "initializationOptions": {
+                "stdlibRoot": repo_path("stdlib").display().to_string()
+            }
+        }),
+        &[
+            file_document("tests/fixtures/compiler_defects/check_slice_import.lani"),
+            file_document("tests/fixtures/compiler_defects/check_generic_impl_bound.lani"),
+            error_document.clone(),
+            // Unsaved text is checked, not a file on disk.
+            (unsaved_uri.clone(), error_document.1.clone()),
+        ],
+    );
+
+    assert!(items[0].is_empty(), "core::slice importer: {:?}", items[0]);
+    assert!(items[1].is_empty(), "generic impl bound: {:?}", items[1]);
+    for (index, uri) in [(2, &error_document.0), (3, &unsaved_uri)] {
+        assert_eq!(items[index].len(), 1, "type error document: {:?}", items[index]);
+        let diagnostic = &items[index][0];
+        assert_ne!(diagnostic["code"], "LNC0010", "the import should resolve");
+        assert_eq!(
+            diagnostic["data"]["primary_label"]["path"],
+            uri.strip_prefix("file://").expect("file URI")
+        );
+        assert_eq!(diagnostic["range"]["start"]["line"], 5);
+    }
+}
+
+#[test]
+fn cli_lsp_serve_finds_the_stdlib_in_the_workspace_root() {
+    let items = lsp_stdlib_session_items(
+        serde_json::json!({
+            "processId": null,
+            "rootUri": format!("file://{}", repo_path("").display()),
+            "capabilities": {}
+        }),
+        &[file_document("tests/fixtures/compiler_defects/check_slice_import.lani")],
+    );
+
+    assert!(items[0].is_empty(), "core::slice importer: {:?}", items[0]);
+}
+
 #[test]
 fn cli_lsp_serve_rejects_unopened_document_diagnostic_without_compiling_source() {
     let mut child = Command::new(laniusc_bin())
@@ -3038,12 +3183,12 @@ fn assert_lsp_document_diagnostics_metadata(value: &serde_json::Value) {
     assert_eq!(value["report_kind"], "full");
     assert_eq!(value["document_scope"], "open-document-text");
     assert_eq!(value["publish_diagnostics"], false);
-    assert_eq!(value["inter_file_dependencies"], false);
+    assert_eq!(value["inter_file_dependencies"], true);
     assert_eq!(value["workspace_diagnostics"], false);
     assert_eq!(value["result_id_supported"], false);
     assert_eq!(value["source_scanning"], false);
     assert_eq!(value["source_root_loading"], false);
-    assert_eq!(value["stdlib_root_loading"], false);
+    assert_eq!(value["stdlib_root_loading"], true);
     assert_eq!(value["source_compilation"], true);
     assert_eq!(value["gpu_device_creation"], true);
     assert_eq!(value["target_codegen"], false);
@@ -3057,13 +3202,17 @@ fn assert_lsp_workspace_metadata(value: &serde_json::Value) {
     assert_eq!(value["file_operations"], false);
     assert_eq!(value["workspace_diagnostics"], false);
     assert_eq!(value["source_root_loading"], false);
-    assert_eq!(value["stdlib_root_loading"], false);
+    assert_eq!(value["stdlib_root_loading"], true);
+    assert_eq!(value["stdlib_root_option"], "initializationOptions.stdlibRoot");
     assert_eq!(
         value["open_document_scope"],
         "explicit textDocument/didOpen documents only"
     );
-    assert_eq!(value["initialize_root_uri"], "ignored");
-    assert_eq!(value["initialize_workspace_folders"], "ignored");
+    assert_eq!(value["initialize_root_uri"], "stdlib-root fallback");
+    assert_eq!(
+        value["initialize_workspace_folders"],
+        "stdlib-root fallback (first folder)"
+    );
 }
 
 fn assert_lsp_claim_boundaries(value: &serde_json::Value) {
@@ -3101,7 +3250,6 @@ fn assert_lsp_claim_boundaries(value: &serde_json::Value) {
         vec![
             "no workspace diagnostics",
             "no source-root loading",
-            "no stdlib-root loading",
             "no local LSP latency artifacts",
             "not a release artifact",
         ]

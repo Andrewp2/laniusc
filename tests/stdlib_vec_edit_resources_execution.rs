@@ -232,7 +232,7 @@ fn run(executable: &common::TempArtifact) -> (Vec<u8>, Effects, Duration) {
     let started = Instant::now();
     let output = common::process_output_with_timeout(
         "owned vector edit resource lifecycle",
-        Command::new("strace")
+        crate::common::strace()
             .args(["--kill-on-exit", "-qq", "-s", "64", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=all", "-e", "signal=none"])

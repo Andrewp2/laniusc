@@ -69,7 +69,7 @@ fn vector_contracts_execute_edits_generic_values_and_zero_sized_storage() {
     }
     let exe = fixture("alloc_vec_zero_sized");
     let trace = common::TempArtifact::new("laniusc_alloc_vec", "zero_sized_trace", None);
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args([
@@ -92,7 +92,7 @@ fn every_vector_allocation_failure_preserves_contents_capacity_and_views() {
     let exe = fixture("alloc_vec_failure");
     let trace = common::TempArtifact::new("laniusc_alloc_vec", "failure_trace", None);
     let execute = |when: Option<usize>| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())

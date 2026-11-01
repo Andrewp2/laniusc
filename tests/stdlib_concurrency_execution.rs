@@ -209,7 +209,7 @@ fn par_sorts_map_reduce_and_scan_match_a_model() {
     shapes.push(vec![]);
     shapes.push(vec![-1]);
     for keys in &shapes {
-        for (mode, workers) in [(0u32, 7u32), (1, 8), (2, 1), (3, 1), (4, 3), (5, 8), (6, 4), (7, 5), (8, 8), (9, 1)] {
+        for (mode, workers) in [(0u32, 7u32), (1, 8), (2, 1), (3, 1), (4, 3), (5, 8), (6, 4), (7, 5), (8, 8), (9, 1), (10, 8), (11, 8)] {
             let mut input = Vec::new();
             for word in [mode, workers, keys.len() as u32] { input.extend_from_slice(&word.to_le_bytes()); }
             for key in keys { input.extend_from_slice(&key.to_le_bytes()); }
@@ -221,12 +221,12 @@ fn par_sorts_map_reduce_and_scan_match_a_model() {
             assert_eq!(output.status.code(), Some(0), "mode {mode}");
             let mut expected = Vec::new();
             match mode {
-                0 | 2 | 6 => {
+                0 | 2 | 6 | 10 => {
                     let mut sorted = keys.clone();
                     sorted.sort();
                     for key in sorted { expected.extend_from_slice(&key.to_le_bytes()); }
                 }
-                1 | 3 => {
+                1 | 3 | 11 => {
                     let mut order: Vec<u32> = (0..keys.len() as u32).collect();
                     order.sort_by_key(|&i| keys[i as usize]);
                     for &i in &order { expected.extend_from_slice(&keys[i as usize].to_le_bytes()); }
@@ -315,4 +315,14 @@ fn uring_checks_and_batched_cat_and_copy_are_exact() {
     assert!(output.stdout == [fs::read(&files[2]).unwrap(), fs::read(&files[6]).unwrap()].concat());
     assert_eq!(String::from_utf8(output.stderr).unwrap(), format!("uring_cat: {}: errno 2\n", missing.display()));
     fs::remove_dir_all(scratch.path()).unwrap();
+}
+
+// std::pthread: parallel sums against the serial sum, a Mutex-guarded
+// counter, a bounded Condvar queue and 1,000 sequential spawn/join pairs.
+#[test]
+fn pthread_sum_counter_queue_and_join_are_exact() {
+    let program = native("tests/fixtures/stdlib_execution/concurrency/threads.lani", "threads");
+    let text = run(&program, None);
+    assert!(!text.contains("FAIL"), "{text}");
+    assert!(text.contains("counter 160000\n") && text.contains("join.pairs 1000\n") && text.contains("queue.taken 40000\n"), "{text}");
 }

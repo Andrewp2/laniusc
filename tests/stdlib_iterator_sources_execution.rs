@@ -40,7 +40,7 @@ fn source_shapes_aliases_lazy_stepping_and_one_owner_release_execute() {
     let trace = common::TempArtifact::new("laniusc_iterator_sources", "owner_trace", None);
     let output = common::process_output_with_timeout(
         "iterator sources, compound items and shallow owner aliases",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap"])

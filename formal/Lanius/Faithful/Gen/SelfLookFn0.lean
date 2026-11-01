@@ -544,7 +544,7 @@ theorem fn_SrcType_is_i32 : prog.funcs[312]? = some (src_SrcType_is_i32) := get_
 theorem np_SrcType_is_i32 : prims.isPrim 312 = false := by decide +kernel
 theorem fn_SrcType_is_uint : prog.funcs[313]? = some (src_SrcType_is_uint 474) := get_of_drop at_SrcType_is_uint
 theorem np_SrcType_is_uint : prims.isPrim 313 = false := by decide +kernel
-theorem fn_word_element : prog.funcs[314]? = some (src_word_element 475) := get_of_drop at_word_element
+theorem fn_word_element : prog.funcs[314]? = some (src_word_element 313 475) := get_of_drop at_word_element
 theorem np_word_element : prims.isPrim 314 = false := by decide +kernel
 theorem fn_within_layout : prog.funcs[315]? = some (src_within_layout 75 165 166 168 476 477) := get_of_drop at_within_layout
 theorem np_within_layout : prims.isPrim 315 = false := by decide +kernel
