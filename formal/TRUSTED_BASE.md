@@ -39,8 +39,7 @@ stopping at the computations the theorems are about (`compileSource`,
 `linkObjects`, `elfFile`, `sourceProgramFiles`, `compileWords`,
 `frontEndWords` and the self program `Lanius.Faithful.Self.prog`, which are
 not trusted, section 10), with each one's type and body:
-definitions `98cb6979ed8c0f5d` (4,414 constants). This covers Core's
-definitions `8884a4fe6100bebe` (4,341 constants). This covers Core's
+definitions `da057f9f0d2562a7` (4,414 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
@@ -52,9 +51,8 @@ modules keeps its hash. The last change of the hash (11-01, review finding
 cost semantics `qcall` (`Faithful/Cost.lean`), the pure semantics it
 shares with `pcall` (`Faithful/Pure.lean`), `boxCost`
 (`Faithful/Fwd/Prim.lean`) and the prim table `prims`
-(`Faithful/Gen/SelfPureTab.lean`); no existing definition changed. Before
-that (11-01): the lexer
-modules keeps its hash. The last change of the hash (11-01): Core's
+(`Faithful/Gen/SelfPureTab.lean`); no existing definition changed; merged with F12's module conversion,
+which changes no definition's meaning. Before that (11-01, F12): Core's
 semantics, the x86 model, the memory model and the self program's
 simulation became Lean `module`s, so their auxiliary definitions (matchers,
 `_proof_N`) are named per module: the same constants, with 18 hashes that
