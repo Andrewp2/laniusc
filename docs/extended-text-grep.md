@@ -142,8 +142,34 @@ the record-at-a-time scan.
 `tests/fixtures/extended/text_grep_scan/compare.py` checks that against a
 build from before the change on generated inputs. The inputs mix multibyte
 scalars, CR, NUL, invalid UTF-8, records over 64 KiB, `-v`, `-n`, `-c`, small
-`--max-line` and small `--max-work`. Seeds 20261031, 1 and 2 gave 1500/1500
-identical runs (log `target/claude-work/s3/text-grep-scan-receipt.log`).
+`--max-line` and small `--max-work`. A third of the inputs have 3,000
+records, which brings in dense literal hits and long line scans. Seeds
+20261031, 1 and 2 gave 1,500/1,500 identical runs. A build with a 3-state DFA
+cache and 2 partials gave 800/800 on seeds 20261031 and 7, which forces the
+undecided-record path (log `target/claude-work/s3/text-grep-scan-receipt.log`).
+
+Patterns with no required literal use the
+[line scan](extended-regex.md#line-scanning): `Dfa.match_lines` runs over the
+whole region in one pass and stops only at a record that matches or that it
+cannot decide. text_grep checks the rest of a matching record, emits it, and
+resumes after its LF. An undecided record goes through the per-record path,
+which runs the VM or reports the UTF-8 error at its exact offset. With
+`--invert`, the records the scan passed over are the ones selected. The
+literal path also switches to the line scan for the rest of a region when hit
+records come denser than one per 256 bytes (after 32 hits), unless the
+pattern is a pure literal. Each hit record it still handles goes through
+`match_lines` on that record alone.
+
+The between-hit pass is the SWAR loop that was asked for. It tests two 8-byte
+words at a time for any high bit, so all-ASCII words skip the scalar
+validator. For newlines it computes `((w ^ 0x0a..0a) + 0x7f..7f) & 0x80..80`,
+which marks the bytes that are not LF. On an ASCII word this has no carries
+between lanes, so it is exact. The marks add up in byte lanes and are folded
+every 255 words, which costs less than a popcount or multiply per word. Only a
+word with a high bit goes byte by byte through `core::utf8`. Matching records
+used to be validated twice, once by text_grep and once byte-wise inside
+`Dfa.is_match`. They now go through `Dfa.is_match_input`, so the matcher does
+not check them again.
 
 The table compares GNU grep 3.11 (`-E`, `en_US.UTF-8`) with text_grep on
 S4's 48,770,754-byte, 814,590-line Rust-heavy corpus. Times are best of three
@@ -151,19 +177,27 @@ wall times in ms, with stdout written to a file. Every row's output (`-c`
 count, or the `-n` listing) is byte-identical to GNU's. "Before" is the build
 from the assertion commit above, which used 1024-byte reads, a matcher run
 on every record and one write per record. The laptop had other work running
-(load 10–19). Logs: `target/claude-work/s3/grep-prefilter-timings.log` and
-`grep-unicode-timings.log`.
+(load 10–19). Logs: `target/claude-work/s3/grep-lines-timings.log` (this
+table), `grep-prefilter-timings.log` (prefilter build), `grep-unicode-timings.log`
+and `grep-unicode-lines-timings.log`.
 
 | Pattern | Before `-c` | `-c` | `-n` | GNU `-c` | GNU `-n` |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `zzzz` (no match) | 5176 | 68 | 69 | 11 | 18 |
-| `core::result::Result` (8,682 lines) | 5035 | 140 | 165 | 17 | 31 |
-| `fn main` | 5024 | 109 | 134 | 32 | 47 |
-| `the` | 5552 | 272 | 473 | 69 | 100 |
-| `^\s*//` | 4835 | 114 | 142 | 30 | 42 |
-| `\bResult<` | 5066 | 110 | 131 | 16 | 28 |
-| `fn [a-z_]+_main\(` | 4717 | 85 | 84 | 15 | 23 |
-| `[0-9]+$` (no required literal) | | 1583 | 1690 | 44 | 57 |
+| `zzzz` (no match) | 5176 | 64 | 63 | 8 | 15 |
+| `core::result::Result` (8,682 lines) | 5035 | 132 | 141 | 15 | 24 |
+| `fn main` | 5024 | 99 | 102 | 29 | 36 |
+| `the` | 5552 | 210 | 426 | 54 | 90 |
+| `^\s*//` | 4835 | 88 | 113 | 24 | 34 |
+| `\bResult<` | 5066 | 87 | 108 | 14 | 24 |
+| `fn [a-z_]+_main\(` | 4717 | 78 | 76 | 13 | 20 |
+| `[0-9]+$` (no required literal) | 1771 | 543 | 542 | 37 | 49 |
+| `a.c` (literal `a` on most lines) | 1224 | 538 | 618 | 73 | 91 |
+
+For `[0-9]+$` and `a.c`, "Before" is the prefilter build before the line
+scan, which ran the DFA record by record. With `-v -c`, `[0-9]+$` went from
+1414 ms to 663 ms (GNU 48 ms). `-v -n` writes 800,000 numbered lines and
+takes 1737 ms (GNU 177 ms), mostly formatting output. Log:
+`target/claude-work/s3/grep-lines-timings.log`.
 
 The no-match scan is now close to the cost of `core::search` itself. A
 program that only reads the corpus and calls `core::search::find` in a loop
@@ -171,17 +205,17 @@ takes 30 ms for `zzzz` and 100–110 ms for `core::result::Result`; the rest of
 text_grep's time is the validating line count. The `core::result::Result`
 search is slower because `find` picks its two probe bytes by rank, and here
 both are the adjacent `::` at offsets 4 and 5. Every `::` in Rust text then
-costs a full compare. Patterns with no required literal, such as `[0-9]+$`,
-still run the DFA on every record, at about 32 ns per byte. On the 1.3 MB
+costs a full compare; S4 is changing that choice. The line scan runs at
+about 11 ns per byte. On the 1.3 MB
 mixed-script file `target/claude-work/s3/unicode_lines.txt`, compared with
 GNU `grep -P`:
 
-| Pattern | Before `-c` | `-c` | `-n` | GNU `-P -c` |
+| Pattern | Before `-c` | Prefilter build `-c` | Line scan `-c` | GNU `-P -c` |
 | --- | ---: | ---: | ---: | ---: |
-| `\p{Lu}` | 1110 | 147 | 142 | 9 |
-| `\p{L}+ \p{N}` | 1329 | 153 | 143 | 8 |
-| `日\p{L}` | 832 | 145 | 166 | 5 |
-| `[^\p{L}\s]` | 1583 | 197 | 203 | 13 |
+| `\p{Lu}` | 1110 | 141 | 73 | 9 |
+| `\p{L}+ \p{N}` | 1329 | 141 | 73 | 8 |
+| `日\p{L}` | 832 | 106 | 84 | 5 |
+| `[^\p{L}\s]` | 1583 | 130 | 72 | 8 |
 
 ## Exit status and failures
 
@@ -256,7 +290,7 @@ mappings than before because of the output buffer, the DFA's partial-state
 tables and `required_literal`'s three temporary vectors. Before the fix above,
 failures 8 through 21 of the DFA pattern were silently absorbed: the search
 fell back to the VM and exited 0. Log:
-`target/claude-work/s3/text-grep-faults-unicode-receipt.log`.
+`target/claude-work/s3/text-grep-faults-lines-receipt.log`. The `(?:a|é)+` row now goes through the line scan.
 
 ```sh
 W=target/claude-work/s3

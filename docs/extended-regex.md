@@ -493,6 +493,27 @@ to compile. On a 1.3 MB file of mixed scripts, `\p{Lu}` with `text_grep -c`
 went from 1110 ms to 147 ms. GNU `grep -P` takes 9 ms, and the oracle's
 `dfa_unicode` surface checks the results.
 
+### Line scanning
+
+`Dfa.match_lines(bytes, from, to) -> LineScan` searches every record of
+`bytes[from, to)` in one pass, as if `is_match` ran on each record by
+itself. A record ends at LF, at a CR just before LF (both are excluded from
+the record), or at `to`. After each LF the DFA starts again in its start state,
+so `^`, `$`, `\A` and `\z` hold per record. ASCII bytes need no check. Each
+non-ASCII sequence is validated when the scan reaches it, before the
+byte-level partials read it. The scan stops at the first record that matches
+(`status` 1) or that it cannot decide (`status` 2). A record is undecided when
+the cache fills, when the VM could reach `WorkLimit` on it (`(record bytes +
+2) * boundary_cost > max_work`), or when it is invalid UTF-8 up to the point
+reached. With `status` 0 no record matched and `start` is `to`. `lines`
+counts the LFs before `start`. A matching record was validated only up to
+its match, so the caller checks the rest before using it. The caller
+guarantees that `to` is at most the slice length and that `from` is a record
+start. `Dfa.is_match_input(&Regex, Input)` is `is_match` for text the caller
+has already validated, and `ext::regex::input_unchecked(Text)` builds that
+`Input` without another pass. Passing invalid text through it is a caller
+error.
+
 ### Required literal
 
 `Regex.required_literal(out, capacity) -> Result<i32, Error>` writes to `out`
