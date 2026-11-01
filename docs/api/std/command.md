@@ -15,8 +15,9 @@ Process-group creation is explicit. Group signaling requires the confirmed origi
 - [stdlib-command](../../stdlib-command.md)
 - [stdlib-command-groups](../../stdlib-command-groups.md)
 - [stdlib-run-group](../../stdlib-run-group.md)
+- [stdlib-host-clocks](../../stdlib-host-clocks.md)
 
-Declaration counts: enum: 8; field: 38; function: 4; impl: 2; method: 19; struct: 8; variant: 43.
+Declaration counts: enum: 8; field: 38; function: 4; impl: 2; method: 20; struct: 8; variant: 43.
 
 ## Declared imports
 
@@ -791,7 +792,7 @@ Unknown(UnknownStart)
 
 ### struct: Environment
 
-[Source line 280](../../../stdlib/std/command.lani#L280)
+[Source line 292](../../../stdlib/std/command.lani#L292)
 
 ```lanius
 pub struct Environment
@@ -799,7 +800,7 @@ pub struct Environment
 
 #### field: bytes
 
-[Source line 280](../../../stdlib/std/command.lani#L280)
+[Source line 292](../../../stdlib/std/command.lani#L292)
 
 ```lanius
 bytes: alloc::vec::Vec<i32>
@@ -807,7 +808,7 @@ bytes: alloc::vec::Vec<i32>
 
 #### field: values
 
-[Source line 280](../../../stdlib/std/command.lani#L280)
+[Source line 292](../../../stdlib/std/command.lani#L292)
 
 ```lanius
 values: alloc::vec::Vec<core::slice::View<u8>>
@@ -833,7 +834,7 @@ pub fn spawn(request: Request) -> core::result::Result<Spawn,Failure>
 
 ### function: request
 
-[Source line 277](../../../stdlib/std/command.lani#L277)
+[Source line 289](../../../stdlib/std/command.lani#L289)
 
 ```lanius
 pub fn request(program: core::slice::View<u8>, arguments: core::slice::View<core::slice::View<u8>>, environment: core::slice::View<core::slice::View<u8>>) -> Request
@@ -841,7 +842,7 @@ pub fn request(program: core::slice::View<u8>, arguments: core::slice::View<core
 
 ### function: snapshot_environment
 
-[Source line 291](../../../stdlib/std/command.lani#L291)
+[Source line 303](../../../stdlib/std/command.lani#L303)
 
 ```lanius
 pub fn snapshot_environment(limits: Limits) -> core::result::Result<Environment,Failure>
@@ -953,9 +954,17 @@ pub fn try_wait(&self) -> core::result::Result<core::option::Option<ExitStatus>,
 pub fn try_observe_exit(&self) -> core::result::Result<core::option::Option<ExitStatus>,Failure>
 ```
 
+#### method: observe_exit
+
+[Source line 207](../../../stdlib/std/command.lani#L207)
+
+```lanius
+pub fn observe_exit(&self) -> core::result::Result<ExitStatus,Failure>
+```
+
 #### method: wait
 
-[Source line 236](../../../stdlib/std/command.lani#L236)
+[Source line 248](../../../stdlib/std/command.lani#L248)
 
 ```lanius
 pub fn wait(&self) -> core::result::Result<ExitStatus,Failure>
@@ -963,7 +972,7 @@ pub fn wait(&self) -> core::result::Result<ExitStatus,Failure>
 
 #### method: signal
 
-[Source line 241](../../../stdlib/std/command.lani#L241)
+[Source line 253](../../../stdlib/std/command.lani#L253)
 
 ```lanius
 pub fn signal(&self, signal: i32) -> core::result::Result<i32,Failure>
@@ -971,7 +980,7 @@ pub fn signal(&self, signal: i32) -> core::result::Result<i32,Failure>
 
 #### method: signal_group
 
-[Source line 247](../../../stdlib/std/command.lani#L247)
+[Source line 259](../../../stdlib/std/command.lani#L259)
 
 ```lanius
 pub fn signal_group(&self, signal: i32) -> core::result::Result<i32,Failure>
@@ -979,7 +988,7 @@ pub fn signal_group(&self, signal: i32) -> core::result::Result<i32,Failure>
 
 #### method: cancel_group_and_wait
 
-[Source line 260](../../../stdlib/std/command.lani#L260)
+[Source line 272](../../../stdlib/std/command.lani#L272)
 
 ```lanius
 pub fn cancel_group_and_wait(&self) -> core::result::Result<ExitStatus,Failure>
@@ -987,15 +996,15 @@ pub fn cancel_group_and_wait(&self) -> core::result::Result<ExitStatus,Failure>
 
 #### method: cancel_and_wait
 
-[Source line 272](../../../stdlib/std/command.lani#L272)
+[Source line 284](../../../stdlib/std/command.lani#L284)
 
 ```lanius
 pub fn cancel_and_wait(&self) -> core::result::Result<ExitStatus,Failure>
 ```
 
-### impl at line 281
+### impl at line 293
 
-[Source line 281](../../../stdlib/std/command.lani#L281)
+[Source line 293](../../../stdlib/std/command.lani#L293)
 
 ```lanius
 pub impl Environment
@@ -1003,7 +1012,7 @@ pub impl Environment
 
 #### method: as_view
 
-[Source line 282](../../../stdlib/std/command.lani#L282)
+[Source line 294](../../../stdlib/std/command.lani#L294)
 
 ```lanius
 pub fn as_view(&self) -> core::slice::View<core::slice::View<u8>>
@@ -1011,7 +1020,7 @@ pub fn as_view(&self) -> core::slice::View<core::slice::View<u8>>
 
 #### method: destroy
 
-[Source line 283](../../../stdlib/std/command.lani#L283)
+[Source line 295](../../../stdlib/std/command.lani#L295)
 
 ```lanius
 pub fn destroy(&self)

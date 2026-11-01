@@ -1,0 +1,204 @@
+// Run one command and report elapsed steady time, suspend-inclusive time and
+// the child's exact CPU time, read from its process CPU clock while it is
+// observed but still unreaped. `--clocks` reports every named clock instead.
+module app::main;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import core::time;
+import std::args;
+import std::command;
+import std::host_clocks;
+import std::signal;
+import std::stream;
+
+struct Options { first: i32, json: bool, clocks: bool, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Report { pid: i32, code: i32, signal: i32, real: u64, boot: u64, cpu: u64, own: u64, start: core::time::SystemTime }
+impl Report { fn borrow(&self) -> &Report { return self; } }
+fn bytes(value: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),n); return core::slice::view(raw,n).unwrap(); }
+fn text(value: str, n: i32) -> core::text::Text { let raw = bytes(value,n); return core::text::from_utf8_unchecked(raw.values,raw.start,raw.length); }
+fn equal(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool { if (a.length != b.length) { return false; } let i: i32 = 0; while (i < a.length) { if (a.values[a.start+i] != b.values[b.start+i]) { return false; } i += 1; } return true; }
+fn parse(args: std::args::Arguments, options: &Options) -> bool {
+    let index: i32 = 0; let seen: u32 = 0;
+    while (index < args.len()) {
+        let value = args.get(index).unwrap();
+        if (equal(value,bytes("--",2))) { index += 1; break; }
+        if (value.length == 0 || value.values[value.start] != 45 || equal(value,bytes("-",1))) { break; }
+        let id: i32 = 0;
+        if (equal(value,bytes("--format",8))) { id = 1; } if (equal(value,bytes("--clocks",8))) { id = 2; } if (equal(value,bytes("--help",6))) { id = 3; }
+        if (id == 0) { return false; } let bit: u32 = (1 as u32) << id; if ((seen & bit) != 0) { return false; } seen |= bit;
+        if (id == 2) { options.clocks = true; index += 1; continue; }
+        if (id == 3) { options.help = true; index += 1; continue; }
+        if (index+1 >= args.len()) { return false; } let format = args.get(index+1).unwrap();
+        if (equal(format,bytes("json",4))) { options.json = true; } else { if (equal(format,bytes("tsv",3))) { options.json = false; } else { return false; } }
+        index += 2;
+    }
+    options.first = index;
+    if (options.help) { return args.len() == 1; }
+    if (options.clocks) { return index == args.len(); }
+    return index < args.len();
+}
+fn publish(raw: [u8], count: i32, error: bool) -> bool {
+    let sink = std::stream::stdout(); if (error) { sink = std::stream::stderr(); }
+    return core::io::write_all(sink.borrow(),raw,0,count).is_ok();
+}
+fn fail(reason: str, n: i32, errno: i32) -> i32 {
+    let raw: [u8;160] = [0;160]; let out = core::fmt::buffer(raw,0,160).unwrap();
+    out.write_text(text("time-command: ",14)); out.write_text(text(reason,n)); out.write_text(text(" errno=",7)); out.write_signed(errno as i64,core::fmt::decimal()); out.write_text(text("\n",1));
+    publish(raw,out.finish().unwrap(),true); return 125;
+}
+fn clock_errno(error: std::host_clocks::Error) -> i32 { return match (error) { std::host_clocks::Error::Host(code) -> code, _ -> 0 }; }
+fn nanos(span: core::time::Duration) -> u64 { let total: core::result::Result<u64, core::time::Error> = span.as_nanos(); if (total.is_err()) { return 18446744073709551615; } return total.unwrap(); }
+// Field order is fixed; TSV prints "-" where JSON prints null.
+fn field(out: &core::fmt::Formatter, json: bool, first: bool, name: str, n: i32) {
+    if (json) { if (first) { out.write_text(text("{\"",2)); } else { out.write_text(text(",\"",2)); } out.write_text(text(name,n)); out.write_text(text("\":",2)); }
+    else { if (!first) { out.write_text(text("\t",1)); } }
+}
+fn optional(out: &core::fmt::Formatter, json: bool, value: i32) {
+    if (value >= 0) { out.write_signed(value as i64,core::fmt::decimal()); } else { if (json) { out.write_text(text("null",4)); } else { out.write_text(text("-",1)); } }
+}
+fn word(out: &core::fmt::Formatter, json: bool, value: str, n: i32) {
+    if (json) { out.write_text(text("\"",1)); } out.write_text(text(value,n)); if (json) { out.write_text(text("\"",1)); }
+}
+fn emit(report: &Report, json: bool) -> bool {
+    let raw: [u8;640] = [0;640]; let out = core::fmt::buffer(raw,0,640).unwrap();
+    if (!json) { out.write_text(text("pid\tstatus\tcode\tsignal\treal_ns\tboot_ns\tcpu_ns\tself_cpu_ns\tstart_unix_sec\tstart_unix_nsec\n",89)); }
+    field(out.borrow(),json,true,"pid",3); out.write_signed(report.pid as i64,core::fmt::decimal());
+    field(out.borrow(),json,false,"status",6); if (report.code >= 0) { word(out.borrow(),json,"exited",6); } else { word(out.borrow(),json,"signaled",8); }
+    field(out.borrow(),json,false,"code",4); optional(out.borrow(),json,report.code);
+    field(out.borrow(),json,false,"signal",6); optional(out.borrow(),json,report.signal);
+    field(out.borrow(),json,false,"real_ns",7); out.write_unsigned(report.real,core::fmt::decimal());
+    field(out.borrow(),json,false,"boot_ns",7); out.write_unsigned(report.boot,core::fmt::decimal());
+    field(out.borrow(),json,false,"cpu_ns",6); out.write_unsigned(report.cpu,core::fmt::decimal());
+    field(out.borrow(),json,false,"self_cpu_ns",11); out.write_unsigned(report.own,core::fmt::decimal());
+    field(out.borrow(),json,false,"start_unix_sec",14); out.write_signed(report.start.seconds,core::fmt::decimal());
+    field(out.borrow(),json,false,"start_unix_nsec",15); out.write_unsigned(report.start.nanos as u64,core::fmt::decimal());
+    if (json) { out.write_text(text("}",1)); } out.write_text(text("\n",1));
+    let finished: core::result::Result<i32, core::fmt::Error> = out.finish(); if (finished.is_err()) { return false; }
+    return publish(raw,finished.unwrap(),true);
+}
+fn steady(clock: std::host_clocks::Clock, report: &Report) -> core::result::Result<core::time::Instant, i32> {
+    let read: core::result::Result<core::time::Instant, std::host_clocks::Error> = std::host_clocks::instant(clock);
+    if (read.is_err()) { return core::result::Err(clock_errno(read.unwrap_err())); } return core::result::Ok(read.unwrap());
+}
+// The child is observed (a zombie, PID still reserved for it) when its CPU
+// clock is read; only then is it reaped. Every path reaps before returning.
+fn measure(child: std::command::Child, options: Options, report: &Report, mono: core::time::Instant, boot: core::time::Instant) -> i32 {
+    report.pid = child.id().unwrap_or(0);
+    let observed: core::result::Result<std::command::ExitStatus, std::command::Failure> = child.observe_exit();
+    let mono_end = steady(std::host_clocks::Clock::Monotonic,report); let boot_end = steady(std::host_clocks::Clock::Boottime,report);
+    let cpu: core::result::Result<core::time::Duration, std::host_clocks::Error> = std::host_clocks::cpu_time(std::host_clocks::Clock::ProcessCpuOf(report.pid));
+    let reaped: core::result::Result<std::command::ExitStatus, std::command::Failure> = child.wait();
+    if (observed.is_err()) { return fail("observe failed",14,observed.unwrap_err().errno); }
+    if (reaped.is_err()) { return fail("reap failed",11,reaped.unwrap_err().errno); }
+    if (mono_end.is_err()) { return fail("monotonic clock failed",22,mono_end.unwrap_err()); }
+    if (boot_end.is_err()) { return fail("boottime clock failed",21,boot_end.unwrap_err()); }
+    if (cpu.is_err()) { return fail("child CPU clock failed",22,clock_errno(cpu.unwrap_err())); }
+    let own: core::result::Result<core::time::Duration, std::host_clocks::Error> = std::host_clocks::cpu_time(std::host_clocks::Clock::ProcessCpu);
+    if (own.is_err()) { return fail("own CPU clock failed",20,clock_errno(own.unwrap_err())); }
+    let status: std::command::ExitStatus = reaped.unwrap(); let result: i32 = 125;
+    if (status.code.is_some()) { report.code = status.code.unwrap(); result = report.code; }
+    else { if (status.signal.is_none()) { return fail("unrecognized status",19,0); } report.signal = status.signal.unwrap(); result = 128 + report.signal; }
+    report.real = nanos(mono_end.unwrap().saturating_duration_since(mono)); report.boot = nanos(boot_end.unwrap().saturating_duration_since(boot));
+    report.cpu = nanos(cpu.unwrap()); report.own = nanos(own.unwrap());
+    if (!emit(report,options.json)) { return 125; }
+    return result;
+}
+fn launch(args: std::args::Arguments, options: Options) -> i32 {
+    let captured = std::command::snapshot_environment(std::command::default_limits()); if (captured.is_err()) { return fail("environment snapshot failed",27,captured.unwrap_err().errno); }
+    let environment = captured.unwrap();
+    let all = args.as_view(); let tail: core::slice::View<core::slice::View<u8>> = core::slice::View { values: all.values, start: all.start+options.first, length: all.length-options.first };
+    let request = std::command::request(args.get(options.first).unwrap(),tail,environment.as_view()); request.search = std::command::Search::EnvironmentPath;
+    let report = Report { pid: 0, code: -1, signal: -1, real: 0, boot: 0, cpu: 0, own: 0, start: core::time::unix_epoch() };
+    let wall: core::result::Result<core::time::SystemTime, std::host_clocks::Error> = std::host_clocks::timestamp(std::host_clocks::Clock::Realtime);
+    if (wall.is_err()) { environment.destroy(); return fail("realtime clock failed",21,clock_errno(wall.unwrap_err())); }
+    report.start = wall.unwrap();
+    let mono = steady(std::host_clocks::Clock::Monotonic,report.borrow()); let boot = steady(std::host_clocks::Clock::Boottime,report.borrow());
+    if (mono.is_err() || boot.is_err()) { environment.destroy(); return fail("steady clock failed",19,0); }
+    let spawned = std::command::spawn(request); environment.destroy();
+    if (spawned.is_err()) { return fail("spawn failed",12,spawned.unwrap_err().errno); }
+    return match (spawned.unwrap()) {
+        std::command::Spawn::Child(child) -> measure(child,options,report.borrow(),mono.unwrap(),boot.unwrap()),
+        std::command::Spawn::Unknown(value) -> unknown(value),
+        std::command::Spawn::Failed(value) -> rejected(value)
+    };
+}
+fn unknown(value: std::command::UnknownStart) -> i32 {
+    let child: std::command::Child = value.child; child.cancel_and_wait();
+    return fail("startup unknown",15,value.failure.errno);
+}
+fn rejected(value: std::command::FailedStart) -> i32 {
+    let errno: i32 = value.failure.errno; fail("cannot execute",14,errno);
+    if (errno == 2 || errno == 20) { return 127; } return 126;
+}
+fn clock_name(index: i32) -> std::host_clocks::Clock {
+    if (index == 0) { return std::host_clocks::Clock::Realtime; } if (index == 1) { return std::host_clocks::Clock::RealtimeCoarse; } if (index == 2) { return std::host_clocks::Clock::Tai; }
+    if (index == 3) { return std::host_clocks::Clock::Monotonic; } if (index == 4) { return std::host_clocks::Clock::MonotonicRaw; } if (index == 5) { return std::host_clocks::Clock::MonotonicCoarse; }
+    if (index == 6) { return std::host_clocks::Clock::Boottime; } if (index == 7) { return std::host_clocks::Clock::ProcessCpu; } return std::host_clocks::Clock::ThreadCpu;
+}
+fn write_name(out: &core::fmt::Formatter, json: bool, index: i32) {
+    if (index == 0) { word(out,json,"realtime",8); } if (index == 1) { word(out,json,"realtime_coarse",15); } if (index == 2) { word(out,json,"tai",3); }
+    if (index == 3) { word(out,json,"monotonic",9); } if (index == 4) { word(out,json,"monotonic_raw",13); } if (index == 5) { word(out,json,"monotonic_coarse",16); }
+    if (index == 6) { word(out,json,"boottime",8); } if (index == 7) { word(out,json,"process_cpu",11); } if (index == 8) { word(out,json,"thread_cpu",10); }
+}
+// Readings are signed seconds plus nanoseconds from each clock's own origin.
+fn reading(clock: std::host_clocks::Clock) -> core::result::Result<core::time::SystemTime, std::host_clocks::Error> {
+    return match (std::host_clocks::kind(clock)) {
+        std::host_clocks::Kind::Wall -> std::host_clocks::timestamp(clock),
+        std::host_clocks::Kind::Steady -> steady_reading(clock),
+        std::host_clocks::Kind::Cpu -> cpu_reading(clock)
+    };
+}
+fn steady_reading(clock: std::host_clocks::Clock) -> core::result::Result<core::time::SystemTime, std::host_clocks::Error> {
+    let read = std::host_clocks::instant(clock); if (read.is_err()) { return core::result::Err(read.unwrap_err()); }
+    let span: core::time::Duration = read.unwrap().saturating_duration_since(core::time::instant(core::time::zero()));
+    return core::result::Ok(core::time::SystemTime { seconds: span.seconds as i64, nanos: span.nanos });
+}
+fn cpu_reading(clock: std::host_clocks::Clock) -> core::result::Result<core::time::SystemTime, std::host_clocks::Error> {
+    let read = std::host_clocks::cpu_time(clock); if (read.is_err()) { return core::result::Err(read.unwrap_err()); }
+    let span: core::time::Duration = read.unwrap(); return core::result::Ok(core::time::SystemTime { seconds: span.seconds as i64, nanos: span.nanos });
+}
+fn clocks(options: Options) -> i32 {
+    let raw: [u8;1536] = [0;1536]; let out = core::fmt::buffer(raw,0,1536).unwrap(); let json: bool = options.json;
+    if (!json) { out.write_text(text("clock\tkind\tresolution_ns\tsec\tnsec\n",34)); }
+    let index: i32 = 0;
+    while (index < 9) {
+        let clock: std::host_clocks::Clock = clock_name(index);
+        let resolution: core::result::Result<core::time::Duration, std::host_clocks::Error> = std::host_clocks::resolution(clock);
+        if (resolution.is_err()) { return fail("clock resolution failed",23,clock_errno(resolution.unwrap_err())); }
+        let value: core::result::Result<core::time::SystemTime, std::host_clocks::Error> = reading(clock);
+        if (value.is_err()) { return fail("clock read failed",17,clock_errno(value.unwrap_err())); }
+        field(out.borrow(),json,true,"clock",5); write_name(out.borrow(),json,index);
+        field(out.borrow(),json,false,"kind",4);
+        match (std::host_clocks::kind(clock)) { std::host_clocks::Kind::Wall -> word(out.borrow(),json,"wall",4), std::host_clocks::Kind::Steady -> word(out.borrow(),json,"steady",6), std::host_clocks::Kind::Cpu -> word(out.borrow(),json,"cpu",3) };
+        field(out.borrow(),json,false,"resolution_ns",13); out.write_unsigned(nanos(resolution.unwrap()),core::fmt::decimal());
+        field(out.borrow(),json,false,"sec",3); out.write_signed(value.unwrap().seconds,core::fmt::decimal());
+        field(out.borrow(),json,false,"nsec",4); out.write_unsigned(value.unwrap().nanos as u64,core::fmt::decimal());
+        if (json) { out.write_text(text("}",1)); } out.write_text(text("\n",1));
+        index += 1;
+    }
+    let finished: core::result::Result<i32, core::fmt::Error> = out.finish(); if (finished.is_err()) { return fail("report too large",16,0); }
+    if (!publish(raw,finished.unwrap(),false)) { return fail("write failed",12,0); }
+    return 0;
+}
+fn process(args: std::args::Arguments) -> i32 {
+    let options = Options { first: 0, json: true, clocks: false, help: false };
+    if (!parse(args,options.borrow())) { fail("invalid arguments; see --help",29,0); return 125; }
+    if (options.help) {
+        let usage: str = "Usage: time-command [--format json|tsv] -- PROGRAM [ARG...]\n       time-command [--format json|tsv] --clocks\n";
+        if (!publish(core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(usage),109),109,false)) { return 125; } return 0;
+    }
+    if (options.clocks) { return clocks(options); }
+    return launch(args,options);
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 125; }
+    let captured = std::args::snapshot(1,4096,1048576);
+    if (captured.is_err()) { return fail("argument snapshot failed",24,0); }
+    let args = captured.unwrap(); let result: i32 = process(args); args.destroy(); return result;
+}
