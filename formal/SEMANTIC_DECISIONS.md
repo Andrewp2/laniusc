@@ -853,9 +853,12 @@ loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
   the input a run consumed is what it was given minus what is left, so the
   trace stays the list of writes.
 - **`Syscall.read` at the mini level.** `[0, address, count]` with count at
-  most `maxTransfer` delivers `input.take count` at `address` (`writeAll`)
-  and drops count bytes, returning how many came; the delivered range must
-  lie in the heap (nothing is checked when no byte comes). The x86 code is
+  most `maxTransfer` delivers the bytes the kernel's read does
+  (`Io.readBytes count`: from 1 to count or all that are left, at most the
+  next of `readLimits` plus one, 0 only when count is 0 or the input is
+  used up) at `address` (`writeAll`) and drops them (`Io.afterRead`),
+  returning how many came; the delivered range must lie in the heap
+  (nothing is checked when no byte comes). The x86 code is
   `sysSpec` with `mov eax, 0` (`Syscall.linux`), the kernel's `read`
   (TRUSTED_BASE.md section 8).
 - **`read_stdin(ptr, len)` (host id 2^32 + 3).** Core's meaning
@@ -865,8 +868,11 @@ loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
   stdlib's `extern "lanius_std" fn read_stdin` as the host call
   (`hostExtern`, case `host_read`). The verified compiler lowers it to a
   loop (`host_read_code`): a chunk of at most `maxTransfer` bytes, read;
-  pointer, count and total moved past what came; and the loop ends when a
-  read comes back short, since the input is then used up. Proved against
+  pointer, count and total moved past what came; and the loop ends when
+  none are left to ask for or a read delivers none, since the input is then
+  used up. A short read, as a pipe or terminal gives, does not end it
+  (until 10-31 it did, and a short read lost the rest: review finding 3).
+  Proved for every schedule of read lengths against
   Core (`hostRead_exec`, `LowerEval.host_read`): the stored bytes are
   Core's, the input left is Core's, and the result is Core's count.
 - **The oracle gives each reading call its own input.** The stdlib oracle

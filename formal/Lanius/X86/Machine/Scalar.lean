@@ -747,9 +747,12 @@ that no signal arrives (TRUSTED_BASE.md section 8):
   from rsi writes all of them, an event on the trace, and returns their
   count.
 - `read` (rax 0) from fd 0 (rdi) of at most `maxTransfer` bytes (rdx) to rsi
-  delivers the next of them that standard input holds, as many as asked for
-  or all that are left, stores them from rsi on, and returns their count
-  (standard input is a regular file, or a stream that delivers like one).
+  delivers the next bytes standard input holds, stores them from rsi on, and
+  returns their count: any count from 1 to as many as asked for or all that
+  are left, as a pipe or a terminal may deliver, and 0 only when none were
+  asked for or none are left. How many each read delivers is a stream fixed
+  before the run (`Io.readLimits`, `Io.readBytes_any`), so that a theorem
+  about every stream is one about every way the reads may come.
 - `poll` (rax 7) of no fds (rdi 0, rsi 0) with a timeout (rdx) below 2^31
   milliseconds waits out the timeout and returns 0, changing nothing else.
 - `clock_gettime` (rax 228) of `CLOCK_REALTIME` or `CLOCK_MONOTONIC` (rdi 0
@@ -768,9 +771,9 @@ inductive Kernel (before : State) : State → Prop where
           [.write (before.registers 7).toNat (bytesAt before.memory (before.registers 6) (before.registers 2).toNat)] })
   | read (number : before.registers 0 = 0) (fd : before.registers 7 = 0)
       (count : (before.registers 2).toNat ≤ maxTransfer) (r11 : BitVec 64) :
-      Kernel before (before.syscalled (BitVec.ofNat 64 (before.io.input.take (before.registers 2).toNat).length) r11
-        (writeBytes before.memory (before.registers 6) (before.io.input.take (before.registers 2).toNat))
-        { before.io with input := before.io.input.drop (before.registers 2).toNat })
+      Kernel before (before.syscalled (BitVec.ofNat 64 (before.io.readBytes (before.registers 2).toNat).length) r11
+        (writeBytes before.memory (before.registers 6) (before.io.readBytes (before.registers 2).toNat))
+        (before.io.afterRead (before.registers 2).toNat))
   | poll (number : before.registers 0 = 7) (fds : before.registers 7 = 0) (nfds : before.registers 6 = 0)
       (timeout : (before.registers 2).toNat < 2 ^ 31) (r11 : BitVec 64) :
       Kernel before (before.syscalled 0 r11 before.memory before.io)
