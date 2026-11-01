@@ -71,23 +71,24 @@ fn seq_diff_word_and_stat_match_git() {
     );
 }
 
-// Generated pairs (distinct, repeated, indented code, >64-repeat fallback
-// ranges, mixed and large): seq-diff --histogram output and status equal
-// git diff --no-index --histogram from the first hunk header on.
+// Generated pairs (distinct, repeated, indented code, C-like functions,
+// >64-repeat fallback ranges, mixed and large): seq-diff's default, --histogram
+// and -W output and status equal plain git diff --no-index (indent heuristic,
+// hunk-header function names) from the first hunk header on.
 #[test]
-fn seq_diff_histogram_matches_git() {
+fn seq_diff_matches_git_diff() {
     if !available("git") || !available("python3") {
         eprintln!("skipping: git and python3 are required");
         return;
     }
-    let diff = build("seq_diff_histogram", "sample_programs/library/seq_diff.lani");
-    let work = common::TempArtifact::new("laniusc_wordiff", "histogram", None);
+    let diff = build("seq_diff_git", "sample_programs/library/seq_diff.lani");
+    let work = common::TempArtifact::new("laniusc_wordiff", "gitdiff", None);
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let output = common::process_output_with_timeout(
-        "histogram oracle",
+        "git diff oracle",
         Command::new("python3")
             .arg("-I")
-            .arg(root.join("tests/fixtures/extended/histogram_oracle.py"))
+            .arg(root.join("tests/fixtures/extended/git_diff_oracle.py"))
             .arg(diff.path())
             .arg(work.path())
             .arg("1200"),

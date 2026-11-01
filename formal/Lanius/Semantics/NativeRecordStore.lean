@@ -1,5 +1,8 @@
-import Lanius.Semantics.NativeStore
+module
 
+public import Lanius.Semantics.NativeStore
+
+@[expose] public section
 namespace Lanius.Semantics
 
 open Lanius.Core Lanius.Memory

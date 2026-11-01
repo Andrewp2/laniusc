@@ -1,6 +1,26 @@
-import Lanius.Mini.Reading.Lower
-import Lanius.Mini.Reading.Exprs
+module
 
+public import Lanius.Mini.Reading.Lower
+public import Lanius.Mini.Reading.Exprs
+import all Lanius.Mini.Frontend.P.collect
+import all Lanius.Mini.Frontend.P.consTreeTail
+import all Lanius.Mini.Frontend.P.findConst
+import all Lanius.Mini.Frontend.P.floatTyped
+import all Lanius.Mini.Frontend.P.hasKids
+import all Lanius.Mini.Frontend.P.isEmptyUsize
+import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.noTrees
+import all Lanius.Mini.Frontend.P.paramGoals
+import all Lanius.Mini.Frontend.P.pickTy
+import all Lanius.Mini.Frontend.P.repeatEff
+import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.textSelf
+import all Lanius.Mini.Frontend.P.tryLet
+import all Lanius.Mini.Frontend.P.typeDeclAt
+import all Lanius.Mini.Frontend.P.variantIn
+import all Lanius.Mini.Frontend.P.wideOf
+
+@[expose] public section
 /-! # The reading, V8d: expression types and type arguments
 
 `ExprTy decls scope e t`: the type type arguments are inferred from for the

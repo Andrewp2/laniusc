@@ -1,5 +1,8 @@
-import Lanius.Faithful.Sim.Func
+module
 
+public import Lanius.Faithful.Sim.Func
+
+@[expose] public section
 /-! # Core calls of pure functions mean their pure calls
 
 A call Core completes, of a function of a program whose functions the purity

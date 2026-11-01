@@ -1,5 +1,8 @@
-import Std.Tactic
+module
 
+public import Std.Tactic
+
+@[expose] public section
 namespace Lanius.X86
 
 /-- Four bytes in increasing memory-address order, not host-native storage. -/

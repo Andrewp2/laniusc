@@ -451,14 +451,7 @@ pub impl String {
     pub fn equals(&self, other: String) -> bool {
         let length: i32 = self.bytes.len();
         if (length != other.bytes.len()) { return false; }
-        let left: [u8] = self.bytes.as_slice();
-        let right: [u8] = other.bytes.as_slice();
-        let index: i32 = 0;
-        while (index < length) {
-            if (left[index] != right[index]) { return false; }
-            index += 1;
-        }
-        return true;
+        return core::slice::memcmp(self.bytes.as_slice(), other.bytes.as_slice(), length) == 0;
     }
 
     // Total lexicographic order of UTF-8 bytes (also Unicode scalar order).
@@ -469,12 +462,8 @@ pub impl String {
         let right_len: i32 = other.bytes.len();
         let common: i32 = left_len;
         if (right_len < common) { common = right_len; }
-        let index: i32 = 0;
-        while (index < common) {
-            if (left[index] < right[index]) { return -1; }
-            if (left[index] > right[index]) { return 1; }
-            index += 1;
-        }
+        let order: i32 = core::slice::memcmp(left, right, common);
+        if (order != 0) { return order; }
         if (left_len < right_len) { return -1; }
         if (left_len > right_len) { return 1; }
         return 0;
@@ -483,28 +472,14 @@ pub impl String {
     pub fn starts_with(&self, prefix: String) -> bool {
         let count: i32 = prefix.bytes.len();
         if (count > self.bytes.len()) { return false; }
-        let bytes: [u8] = self.bytes.as_slice();
-        let pattern: [u8] = prefix.bytes.as_slice();
-        let index: i32 = 0;
-        while (index < count) {
-            if (bytes[index] != pattern[index]) { return false; }
-            index += 1;
-        }
-        return true;
+        return core::slice::memcmp(self.bytes.as_slice(), prefix.bytes.as_slice(), count) == 0;
     }
 
     pub fn ends_with(&self, suffix: String) -> bool {
         let count: i32 = suffix.bytes.len();
         let length: i32 = self.bytes.len();
         if (count > length) { return false; }
-        let bytes: [u8] = self.bytes.as_slice();
-        let pattern: [u8] = suffix.bytes.as_slice();
-        let index: i32 = 0;
-        while (index < count) {
-            if (bytes[length - count + index] != pattern[index]) { return false; }
-            index += 1;
-        }
-        return true;
+        return core::slice::memcmp_range(self.bytes.as_slice(), length - count, suffix.bytes.as_slice(), 0, count) == 0;
     }
 
     // An independent copy of the half-open byte range. Both endpoints must
@@ -520,12 +495,8 @@ pub impl String {
         let allocated: core::result::Result<alloc::vec::Vec<u8>, alloc::vec::Error> = alloc::vec::with_capacity(count);
         if (core::result::is_err(allocated)) { return core::result::Err(Error::AllocationFailed); }
         let copy: alloc::vec::Vec<u8> = core::result::unwrap(allocated);
-        let bytes: [u8] = self.bytes.as_slice();
-        let index: i32 = start;
-        while (index < end) {
-            core::result::unwrap(copy.try_push(bytes[index]));
-            index += 1;
-        }
+        // Reserved exactly count bytes, so the bulk append cannot allocate.
+        core::result::unwrap(copy.try_extend(core::slice::View { values: self.bytes.as_slice(), start: start, length: count }));
         return core::result::Ok(String { bytes: copy });
     }
 
@@ -544,11 +515,7 @@ pub impl String {
         let needed: i32 = retained + count;
         let old: [u8] = self.bytes.as_slice();
         if (count == 0) {
-            let index: i32 = end;
-            while (index < length) {
-                old[start + (index - end)] = old[index];
-                index += 1;
-            }
+            core::slice::copy_within(old, length, end, length, start);
             core::result::unwrap(self.bytes.truncate(needed));
             return core::result::Ok(needed);
         }
@@ -557,11 +524,10 @@ pub impl String {
         let allocated: core::result::Result<alloc::vec::Vec<u8>, alloc::vec::Error> = alloc::vec::with_capacity(capacity);
         if (core::result::is_err(allocated)) { return core::result::Err(Error::AllocationFailed); }
         let fresh: alloc::vec::Vec<u8> = core::result::unwrap(allocated);
-        let index: i32 = 0;
-        while (index < start) { core::result::unwrap(fresh.try_push(old[index])); index += 1; }
+        // capacity >= needed, so none of these bulk appends can allocate.
+        core::result::unwrap(fresh.try_extend(core::slice::View { values: old, start: 0, length: start }));
         core::result::unwrap(fresh.try_extend(replacement.bytes.as_view()));
-        index = end;
-        while (index < length) { core::result::unwrap(fresh.try_push(old[index])); index += 1; }
+        core::result::unwrap(fresh.try_extend(core::slice::View { values: old, start: end, length: length - end }));
         self.bytes.destroy();
         self.bytes = fresh;
         return core::result::Ok(needed);
@@ -585,8 +551,7 @@ pub impl String {
         while (start < end && core::u8::is_ascii_whitespace(bytes[start])) { start += 1; }
         while (end > start && core::u8::is_ascii_whitespace(bytes[end - 1])) { end -= 1; }
         let count: i32 = end - start;
-        let index: i32 = 0;
-        while (index < count) { bytes[index] = bytes[start + index]; index += 1; }
+        core::slice::copy_within(bytes, end, start, end, 0);
         core::result::unwrap(self.bytes.truncate(count));
         return count;
     }

@@ -1,0 +1,7 @@
+﻿// Diagnostic defect, fixed 2026-11-01: this file starts with a UTF-8
+// byte-order mark (bytes EF BB BF). laniusc reported LNC0046 "tokenization
+// fails at this byte" at 1:1. It still rejects the file with LNC0046, now
+// labeled "this file starts with a UTF-8 byte-order mark" with help to save
+// the file without one. Without the mark it compiles and exits 0.
+module app::main;
+fn main() -> i32 { return 0; }

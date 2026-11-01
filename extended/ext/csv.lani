@@ -37,8 +37,12 @@ struct Span { start: i32, length: i32 }
 pub struct Record { bytes: alloc::vec::Vec<u8>, fields: alloc::vec::Vec<Span> }
 // Borrowed canonical bytes; never destroy row through this inactive descriptor.
 // Keep the Record live and unchanged until this cursor and its copies end.
-pub struct Encoding { row: Record, column: i32, offset: i32, phase: i32, remaining_bytes: u64 }
-pub struct Table { rows: alloc::vec::Vec<Record> }
+// row may be a Table's packed storage: spans base..base+fields are its fields.
+pub struct Encoding { row: Record, base: i32, fields: i32, column: i32, offset: i32, phase: i32, remaining_bytes: u64 }
+// Rows are packed: bytes holds every field's bytes, spans their absolute
+// ranges, and each TableRow its first span and field count.
+struct TableRow { first: i32, count: i32 }
+pub struct Table { bytes: alloc::vec::Vec<u8>, spans: alloc::vec::Vec<Span>, rows: alloc::vec::Vec<TableRow> }
 pub struct Progress { consumed: i32, record: bool }
 pub struct Decoder {
     current: Record, options: Options, failure: core::option::Option<Error>,
@@ -171,7 +175,7 @@ pub impl Record {
         let length = self.encoded_len();
         if (length.is_err()) { return core::result::Err(length.unwrap_err()); }
         let borrowed: Record = Record { bytes: self.bytes, fields: self.fields };
-        return core::result::Ok(Encoding { row: borrowed, column: 0, offset: 0, phase: 0, remaining_bytes: length.unwrap() });
+        return core::result::Ok(Encoding { row: borrowed, base: 0, fields: self.fields.len(), column: 0, offset: 0, phase: 0, remaining_bytes: length.unwrap() });
     }
     pub fn field_count(&self) -> i32 { return self.fields.len(); }
     pub fn byte_len(&self) -> i32 { return self.bytes.len(); }
@@ -205,30 +209,9 @@ pub impl Encoding {
     // Byte cursor shared by materialized and streaming encoding. Exhaustion
     // is fused; cursor copies have independent positions and borrow one row.
     pub fn next(&self) -> core::option::Option<u8> {
-        if (self.remaining_bytes == 0) { return core::option::None(); }
-        let byte: u8 = 0;
-        while (true) {
-            if (self.phase == 0) { byte = 34; self.phase = 1; break; }
-            if (self.phase == 1) {
-                let field: core::text::Text = self.row.field(self.column).unwrap();
-                if (self.offset < field.length) {
-                    byte = field.bytes[field.start + self.offset]; self.offset += 1;
-                    if (byte == 34) { self.phase = 2; }
-                    break;
-                }
-                self.phase = 3;
-            }
-            else { if (self.phase == 2) { byte = 34; self.phase = 1; break; }
-            else { if (self.phase == 3) { byte = 34; self.phase = 4; break; }
-            else { if (self.phase == 4) {
-                self.column += 1; self.offset = 0;
-                if (self.column < self.row.field_count()) { byte = 44; self.phase = 0; }
-                else { byte = 13; self.phase = 5; }
-                break;
-            }
-            else { byte = 10; self.phase = 6; break; } } } }
-        }
-        self.remaining_bytes -= 1; return core::option::Some(byte);
+        let one: [u8; 1] = [0];
+        if (self.fill(one, 0, 1) == 0) { return core::option::None(); }
+        return core::option::Some(one[0]);
     }
     // Writes the next min(limit, remaining()) bytes to target[at...] and
     // returns that count: the same bytes and final cursor as that many
@@ -237,10 +220,10 @@ pub impl Encoding {
         let want: i32 = limit;
         if (want <= 0 || self.remaining_bytes == 0) { return 0; }
         if ((want as u64) > self.remaining_bytes) { want = self.remaining_bytes as i32; }
-        let bytes: [u8] = self.row.bytes.as_slice(); let fields: i32 = self.row.fields.len();
+        let bytes: [u8] = self.row.bytes.as_slice(); let fields: i32 = self.fields; let base: i32 = self.base;
         let phase: i32 = self.phase; let column: i32 = self.column; let offset: i32 = self.offset;
         let first: i32 = 0; let length: i32 = 0;
-        if (column < fields) { let span: Span = self.row.fields.at(column); first = span.start; length = span.length; }
+        if (column < fields) { let span: Span = self.row.fields.at(base + column); first = span.start; length = span.length; }
         let to: i32 = at; let stop: i32 = at + want;
         while (to < stop) {
             if (phase == 1) {
@@ -260,7 +243,7 @@ pub impl Encoding {
             else { if (phase == 4) {
                 column += 1; offset = 0;
                 if (column < fields) {
-                    let span: Span = self.row.fields.at(column); first = span.start; length = span.length;
+                    let span: Span = self.row.fields.at(base + column); first = span.start; length = span.length;
                     target[to] = 44; phase = 0;
                 } else { target[to] = 13; phase = 5; }
             }
@@ -361,6 +344,56 @@ pub impl Decoder {
         }
         return true;
     }
+    // Field bytes from source[from, from + available) that step() would push
+    // one at a time in mode 1 or 2 without failing: printable ASCII other
+    // than the quote (and comma when unquoted), CR and LF inside quotes, and
+    // complete valid UTF-8 sequences. They are appended in one step, within
+    // the field, record and offset limits; returns how many (0 leaves
+    // everything to step(), -1 after a failed reservation).
+    fn plain_run(&self, source: [u8], from: i32, available: i32) -> i32 {
+        let length: i32 = self.current.bytes.len();
+        let room: i32 = self.options.max_field_bytes - (length - self.field_start);
+        if (self.options.max_record_bytes - length < room) { room = self.options.max_record_bytes - length; }
+        let limit: i32 = available; if (limit > room) { limit = room; }
+        if (limit <= 0) { return 0; }
+        let left: u64 = 18446744073709551615 - self.offset;
+        if ((limit as u64) > left) { limit = left as i32; }
+        let quoted: bool = self.mode == 2;
+        let index: i32 = from; let stop: i32 = from + limit;
+        while (index < stop) {
+            let byte: u8 = source[index];
+            if (byte >= 32 && byte < 127) {
+                if (byte == 34 || (byte == 44 && !quoted)) { break; }
+                index += 1; continue;
+            }
+            if (byte < 128) {
+                if (quoted && (byte == 13 || byte == 10)) { index += 1; continue; }
+                break;
+            }
+            let width: i32 = core::utf8::sequence_len_or(byte, 0) as i32;
+            if (width < 2 || width > stop - index) { break; }
+            let second: u8 = source[index + 1]; let third: u8 = 0; let fourth: u8 = 0;
+            if (width > 2) { third = source[index + 2]; }
+            if (width > 3) { fourth = source[index + 3]; }
+            if (core::utf8::decode_or(byte, second, third, fourth, width as u32, 4294967295) == 4294967295) { break; }
+            index += width;
+        }
+        let run: i32 = index - from;
+        if (run == 0) { return 0; }
+        // Grow as run single-byte pushes would, in one reservation.
+        let capacity: i32 = self.current.bytes.capacity(); let needed: i32 = length + run;
+        if (needed > capacity) {
+            let target: i32 = capacity;
+            while (target < needed) {
+                if (target > 1073741823) { target = 2147483647; } else { target = target * 2; if (target < 4) { target = 4; } }
+            }
+            // A failed reservation is AllocationFailed, as for a single push:
+            // allocation errors are sticky and never retried in smaller steps.
+            if (core::result::is_err(self.current.bytes.try_reserve(target - length))) { self.fail(Error::AllocationFailed); return -1; }
+        }
+        core::result::unwrap(self.current.bytes.try_extend(core::slice::View { values: source, start: from, length: run }));
+        return run;
+    }
     // Modes: 0 field start, 1 unquoted, 2 quoted, 3 after closing quote.
     fn step(&self, byte: u8) -> bool {
         if (self.cr_pending) {
@@ -416,6 +449,11 @@ pub impl Decoder {
                 self.fail(Error::LimitExceeded(self.offset));
                 return core::result::Err(core::option::unwrap(self.failure));
             }
+            if ((self.mode == 1 || self.mode == 2) && !self.cr_pending && self.utf8_used == 0) {
+                let run: i32 = self.plain_run(source, start + consumed, count - consumed);
+                if (run < 0) { return core::result::Err(core::option::unwrap(self.failure)); }
+                if (run > 0) { consumed += run; self.offset += run as u64; continue; }
+            }
             if (!self.step(source[start + consumed])) { return core::result::Err(core::option::unwrap(self.failure)); }
             consumed += 1; self.offset += 1;
             if (self.ready) { return core::result::Ok(Progress { consumed: consumed, record: true }); }
@@ -455,31 +493,92 @@ pub impl Table {
     pub fn row_count(&self) -> i32 { return self.rows.len(); }
     pub fn field_count(&self, index: i32) -> core::option::Option<i32> {
         if (index < 0 || index >= self.rows.len()) { return core::option::None(); }
-        let row: Record = self.rows.at(index);
-        return core::option::Some(row.field_count());
+        let row: TableRow = self.rows.at(index);
+        return core::option::Some(row.count);
     }
     pub fn field(&self, row_index: i32, field_index: i32) -> core::result::Result<core::text::Text, Error> {
         if (row_index < 0 || row_index >= self.rows.len()) { return core::result::Err(Error::Bounds); }
-        let row: Record = self.rows.at(row_index);
-        return row.field(field_index);
+        let row: TableRow = self.rows.at(row_index);
+        if (field_index < 0 || field_index >= row.count) { return core::result::Err(Error::Bounds); }
+        let span: Span = self.spans.at(row.first + field_index);
+        return core::result::Ok(core::text::from_utf8_unchecked(self.bytes.as_slice(), span.start, span.length));
     }
     pub fn try_field(&self, row_index: i32, field_index: i32) -> core::result::Result<alloc::string::String, Error> {
-        if (row_index < 0 || row_index >= self.rows.len()) { return core::result::Err(Error::Bounds); }
-        let row: Record = self.rows.at(row_index);
-        return row.try_field(field_index);
+        let view: core::result::Result<core::text::Text, Error> = self.field(row_index, field_index);
+        if (core::result::is_err(view)) { return core::result::Err(core::result::unwrap_err(view)); }
+        let copied: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_text(core::result::unwrap(view));
+        if (core::result::is_err(copied)) { return core::result::Err(string_error(core::result::unwrap_err(copied))); }
+        return core::result::Ok(core::result::unwrap(copied));
     }
-    fn collect(&self, decoder: &Decoder) -> bool {
-        let row: Record = core::option::unwrap(decoder.take_record());
-        if (core::result::is_err(self.rows.try_push(row))) { row.destroy(); return false; }
+    // Copies a decoded record into the packed storage. All three vectors
+    // grow geometrically before any is changed, so false leaves the table
+    // unchanged.
+    fn collect(&self, record: &Record) -> bool {
+        let length: i32 = record.bytes.len(); let count: i32 = record.fields.len();
+        let base: i32 = self.bytes.len(); let first: i32 = self.spans.len();
+        if (!reserve_bytes(self.bytes.borrow(), length) || !reserve_spans(self.spans.borrow(), count) || !reserve_rows(self.rows.borrow(), 1)) { return false; }
+        core::result::unwrap(self.bytes.try_extend(record.bytes.as_view()));
+        let index: i32 = 0;
+        while (index < count) {
+            let span: Span = record.fields.at(index);
+            core::result::unwrap(self.spans.try_push(Span { start: base + span.start, length: span.length }));
+            index += 1;
+        }
+        core::result::unwrap(self.rows.try_push(TableRow { first: first, count: count }));
         return true;
     }
-    pub fn destroy(&self) {
-        let index: i32 = 0;
-        while (index < self.rows.len()) {
-            let row: Record = self.rows.at(index); row.destroy(); index += 1;
+    // A cursor over one row, borrowing the packed storage.
+    fn row_encoding(&self, index: i32) -> Encoding {
+        let row: TableRow = self.rows.at(index); let data: [u8] = self.bytes.as_slice();
+        let total: u64 = 0; let column: i32 = 0;
+        while (column < row.count) {
+            let span: Span = self.spans.at(row.first + column);
+            total += 3 + (span.length as u64);
+            let at: i32 = span.start; let stop: i32 = span.start + span.length;
+            while (at < stop) { if (data[at] == 34) { total += 1; } at += 1; }
+            column += 1;
         }
-        self.rows.destroy(); self.rows = alloc::vec::new();
+        if (row.count > 0) { total += 1; }
+        let borrowed: Record = Record { bytes: self.bytes, fields: self.spans };
+        return Encoding { row: borrowed, base: row.first, fields: row.count, column: 0, offset: 0, phase: 0, remaining_bytes: total };
     }
+    pub fn destroy(&self) {
+        self.bytes.destroy(); self.spans.destroy(); self.rows.destroy();
+        self.bytes = alloc::vec::new(); self.spans = alloc::vec::new(); self.rows = alloc::vec::new();
+    }
+}
+// Room for additional more entries, doubling (at least 64) when it grows.
+fn reserve_bytes(values: &alloc::vec::Vec<u8>, additional: i32) -> bool {
+    let length: i32 = values.len();
+    if (additional > 2147483647 - length) { return false; }
+    let target: i32 = grown_capacity(values.capacity(), length + additional);
+    if (target <= values.capacity()) { return true; }
+    return core::result::is_ok(values.try_reserve(target - length));
+}
+fn reserve_spans(values: &alloc::vec::Vec<Span>, additional: i32) -> bool {
+    let length: i32 = values.len();
+    let maximum: i32 = (2147483647 / core::mem::size_of<Span>()) as i32;
+    if (additional > maximum - length) { return false; }
+    let target: i32 = grown_capacity(values.capacity(), length + additional);
+    if (target > maximum) { target = maximum; }
+    if (target <= values.capacity()) { return true; }
+    return core::result::is_ok(values.try_reserve(target - length));
+}
+fn reserve_rows(values: &alloc::vec::Vec<TableRow>, additional: i32) -> bool {
+    let length: i32 = values.len();
+    let maximum: i32 = (2147483647 / core::mem::size_of<TableRow>()) as i32;
+    if (additional > maximum - length) { return false; }
+    let target: i32 = grown_capacity(values.capacity(), length + additional);
+    if (target > maximum) { target = maximum; }
+    if (target <= values.capacity()) { return true; }
+    return core::result::is_ok(values.try_reserve(target - length));
+}
+fn grown_capacity(capacity: i32, needed: i32) -> i32 {
+    if (needed <= capacity) { return capacity; }
+    let target: i32 = needed;
+    if (capacity <= 1073741823 && capacity * 2 > target) { target = capacity * 2; }
+    if (target < 64) { target = 64; }
+    return target;
 }
 fn parse_failed(table: Table, decoder: Decoder, error: Error) -> core::result::Result<Table, Error> {
     table.destroy(); decoder.destroy(); return core::result::Err(error);
@@ -491,19 +590,18 @@ pub fn parse_bytes(source: [u8], offset: i32, count: i32, options: Options) -> c
     let made: core::result::Result<Decoder, Error> = decoder(options);
     if (core::result::is_err(made)) { return core::result::Err(core::result::unwrap_err(made)); }
     let parser: Decoder = core::result::unwrap(made);
-    let rows: alloc::vec::Vec<Record> = alloc::vec::new();
-    let table: Table = Table { rows: rows };
+    let table: Table = Table { bytes: alloc::vec::new(), spans: alloc::vec::new(), rows: alloc::vec::new() };
     let index: i32 = 0;
     while (index < count) {
         let step: core::result::Result<Progress, Error> = parser.feed(source, offset + index, count - index);
         if (core::result::is_err(step)) { return parse_failed(table, parser, core::result::unwrap_err(step)); }
         let progress: Progress = core::result::unwrap(step);
         index += progress.consumed;
-        if (progress.record && !table.collect(parser.borrow())) { return parse_failed(table, parser, Error::AllocationFailed); }
+        if (progress.record && !table.collect(parser.current.borrow())) { return parse_failed(table, parser, Error::AllocationFailed); }
     }
     let ended: core::result::Result<bool, Error> = parser.finish();
     if (core::result::is_err(ended)) { return parse_failed(table, parser, core::result::unwrap_err(ended)); }
-    if (core::result::unwrap(ended) && !table.collect(parser.borrow())) { return parse_failed(table, parser, Error::AllocationFailed); }
+    if (core::result::unwrap(ended) && !table.collect(parser.current.borrow())) { return parse_failed(table, parser, Error::AllocationFailed); }
     parser.destroy(); return core::result::Ok(table);
 }
 pub fn parse(input: alloc::string::String, options: Options) -> core::result::Result<Table, Error> {
@@ -525,7 +623,9 @@ impl Encoder {
     fn record(&self, row: Record) -> bool {
         let made = row.encoding();
         if (made.is_err()) { self.error = made.unwrap_err(); return false; }
-        let cursor: Encoding = made.unwrap();
+        return self.cursor(made.unwrap());
+    }
+    fn cursor(&self, cursor: Encoding) -> bool {
         let used: i32 = self.output.byte_len();
         if (cursor.remaining() > (2147483647 - used) as u64) { self.error = Error::CapacityOverflow; return false; }
         let needed: i32 = used + (cursor.remaining() as i32);
@@ -560,7 +660,7 @@ pub fn encode(table: Table) -> core::result::Result<alloc::string::String, Error
     let writer: Encoder = Encoder { output: alloc::string::new(), error: Error::AllocationFailed };
     let index: i32 = 0;
     while (index < table.rows.len()) {
-        if (!writer.record(table.rows.at(index))) { writer.output.destroy(); return core::result::Err(writer.error); }
+        if (!writer.cursor(table.row_encoding(index))) { writer.output.destroy(); return core::result::Err(writer.error); }
         index += 1;
     }
     return core::result::Ok(writer.output);

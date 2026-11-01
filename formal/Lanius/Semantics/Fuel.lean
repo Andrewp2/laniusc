@@ -1,7 +1,10 @@
-import Lanius.Semantics
-import Lean.Elab.Tactic
-import Lean.Elab.Tactic.Split
+module
 
+public import Lanius.Semantics
+public meta import Lean.Elab.Tactic
+public meta import Lean.Elab.Tactic.Split
+
+@[expose] public section
 namespace Lanius.Semantics
 
 open Lanius.Core
@@ -44,7 +47,7 @@ private structure FuelStep (fuel : Nat) : Prop where
     (execStmt fuel program state statement).Refines (execStmt (fuel + 1) program state statement)
 
 open Lean Meta Elab Tactic in
-private def recursiveEntries : Array (Name × Name × Nat) := #[
+private meta def recursiveEntries : Array (Name × Name × Nat) := #[
   (``evalExpr, ``FuelStep.expression, 4), (``evalExprs, ``FuelStep.expressions, 4),
   (``evalMatchArms, ``FuelStep.matching, 5), (``evalPlace, ``FuelStep.place, 5),
   (``execForValues, ``FuelStep.valuesLoop, 6), (``execForRange, ``FuelStep.rangeLoop, 8),
@@ -53,7 +56,7 @@ private def recursiveEntries : Array (Name × Name × Nat) := #[
 open Lean Meta Elab Tactic in
 /-- Transport recursive outcomes using the mutual induction hypothesis before
     splitting the evaluator's remaining, fuel-independent branches. -/
-private partial def solveFuelStep (ih : Ident) : TacticM Unit := withMainContext do
+private meta partial def solveFuelStep (ih : Ident) : TacticM Unit := withMainContext do
     let goal ← getMainGoal
     let target ← instantiateMVars (← goal.getType)
     unless target.isAppOfArity ``Outcome.Refines 3 do throwError "expected an outcome refinement"

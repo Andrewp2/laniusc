@@ -530,7 +530,7 @@ def main():
         if not t.get('fixpoint'):
             words = read_words(os.path.join(batch, f'in{runnable.index(k)}.words'))
             stdins[k] = b''.join((x & 0xffffffff).to_bytes(4, 'little') for x in [len(words), room] + words)
-    exe_digest = run_cache.file_digest(exe)
+    exe_digest = run_cache.file_digest(exe) if cases else None
 
     def laniusc_on(data):
         # (a run of the same binary on the same input is stored; a timeout is not)

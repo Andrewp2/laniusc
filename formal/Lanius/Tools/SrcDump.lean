@@ -144,7 +144,9 @@ def describe (files : List FileInput) : Option (List String) := do
     let c ← collectFiles fuel rest ({ decls := f.decls, modules := [f.home] } : Collected)
     let m ← monoLoop fuel fuel c.decls (rootInsts f.decls.fns 0) [] 0
     let seeds := seedInsts f.decls.types 0
-    let types ← typeTable fuel c.decls seeds (seedTys seeds ++ funcsTys m.funcs)
+    -- As the front end builds it (`typeTableMore`): the table from the seeds
+    -- holds most types the functions mention, which are then passed over.
+    let types ← typeTableMore fuel c.decls (typeTable fuel c.decls seeds (seedTys seeds)) (funcsTys m.funcs)
     let args (ts : List Ty) := if ts.isEmpty then "-" else ",".intercalate (ts.map (tyName c.decls))
     let fns := (List.range m.table.length).zip m.table |>.map fun (i, inst) =>
       match c.decls.fns[inst.decl]? with

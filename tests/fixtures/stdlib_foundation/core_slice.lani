@@ -2,7 +2,9 @@
 // Every core::slice function through one generic checker over four ordered
 // values, for every integer width, char, total float keys, both
 // wide integers and a user record with its own Eq and Ord. Then bool views,
-// f32 NaN and signed zero, and saturating sums for each SaturatingAdd impl.
+// f32 NaN and signed zero, saturating sums for each SaturatingAdd impl, and
+// the bulk copy, swap, fill and byte search and comparison functions
+// (tests/fixtures/stdlib_slice_bulk checks those against reference loops).
 // Exits 0. On a failure it prints 100 * row + the failing check and exits
 // with the row.
 module app::main;
@@ -313,6 +315,21 @@ fn sum_checks() -> i32 {
     return 0;
 }
 
+fn bulk_checks() -> i32 {
+    let a: [u8; 6] = [1, 2, 3, 4, 5, 6]; let b: [u8; 6] = [0; 6];
+    if (!core::slice::copy_from_slice(b, 6, a, 6) || b[5] != 6 || core::slice::copy_from_slice(b, 6, a, 5)) { return 1; }
+    if (!core::slice::fill_range(b, 6, 1, 4, 9) || b[0] != 1 || b[1] != 9 || b[3] != 9 || b[4] != 5) { return 2; }
+    if (core::slice::fill_range(b, 6, 4, 3, 0) || core::slice::fill_range(b, 6, 0, 7, 0)) { return 3; }
+    if (!core::slice::swap_with_slice(a, 6, b, 6) || a[1] != 9 || b[1] != 2 || core::slice::swap_with_slice(a, 6, b, 4)) { return 4; }
+    if (core::slice::memchr(a, 6, 9) != 1 || core::slice::memchr(a, 6, 7) != -1 || core::slice::memchr(a, 0, 1) != -1) { return 5; }
+    if (core::slice::memcmp(a, b, 6) != 1 || core::slice::memcmp(b, a, 6) != -1 || core::slice::memcmp(a, b, 1) != 0) { return 6; }
+    if (core::slice::memchr_from(a, 2, 6, 6) != 5 || core::slice::memchr_from(a, 2, 6, 9) != 2 || core::slice::memchr_from(a, 4, 6, 9) != -1 || core::slice::memchr_from(a, -1, 6, 9) != -1) { return 7; }
+    if (core::slice::memcmp_range(a, 4, b, 4, 2) != 0 || core::slice::memcmp_range(a, 0, b, 1, 1) != -1 || core::slice::memcmp_range(a, -1, b, 0, 2) != 0) { return 8; }
+    let c: [u8; 4] = [65, 200, 66, 67];
+    if (core::slice::ascii_run_end(c, 0, 4) != 1 || core::slice::ascii_run_end(c, 2, 4) != 4 || core::slice::ascii_run_end(c, 3, 3) != 3) { return 9; }
+    return 0;
+}
+
 fn main() -> i32 {
     let i8_a: i8 = -128;
     let i8_b: i8 = -1;
@@ -350,7 +367,7 @@ fn main() -> i32 {
     let usize_b: usize = 1;
     let usize_c: usize = 64;
     let usize_d: usize = 4096;
-    let checks: [i32; 18] = [
+    let checks: [i32; 19] = [
         row(1, slice_checks(-2147483648, -1, 0, 2147483647)),
         row(2, slice_checks(i8_a, i8_b, i8_c, i8_d)),
         row(3, slice_checks(i16_a, i16_b, i16_c, i16_d)),
@@ -372,9 +389,10 @@ fn main() -> i32 {
         row(16, bool_checks()),
         row(17, float_checks()),
         row(18, sum_checks()),
+        row(19, bulk_checks()),
     ];
     let index: i32 = 0;
-    while (index < 18) {
+    while (index < 19) {
         if (checks[index] != 0) { return checks[index]; }
         index += 1;
     }

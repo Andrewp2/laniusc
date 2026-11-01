@@ -109,7 +109,9 @@ window. Both alternatives represent every input byte and have a final block.
 This whole-input policy does not emit dynamic Huffman trees, choose blocks
 independently for mixed data or accept preset dictionaries. The separate
 [streaming policy](extended-streaming-deflate.md#deterministic-block-policy)
-chooses each 32 KiB block independently and retains state across calls.
+chooses each 32 KiB block independently and retains state across calls. Its opt-in
+[dynamic Huffman levels](extended-streaming-deflate.md#dynamic-huffman-levels)
+emit dynamic trees.
 Ordinary DEFLATE decoders can read
 the resulting streams; the decoder has broader block support than this encoder
 needs to emit.

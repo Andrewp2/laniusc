@@ -1,6 +1,7 @@
-// Diagnostic defect: with the stray line from README.md inserted into a copy
-// of stdlib/core/float_decimal.lani, compiling this program reports LNC0008
-// at stdlib/core/result.lani:93 instead of LNC0016 at the stray line.
+// Diagnostic defect, fixed 2026-11-01: with the stray line from README.md
+// inserted into a copy of stdlib/core/float_decimal.lani, compiling this
+// program reported LNC0008 at stdlib/core/result.lani:93 instead of LNC0016
+// at the stray line. It now reports LNC0016 at the stray `let`.
 // Unmodified, it compiles and exits 0.
 module app::main;
 import core::float_decimal;

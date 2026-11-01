@@ -91,6 +91,17 @@ def codec_group(rng):
                         fail(f"python decoded mismatch {fmt} len={len(item)}")
                 except Exception as e:
                     fail(f"python rejected lanius {fmt} len={len(item)}: {e}")
+            # Opt-in dynamic Huffman levels; level 0 is the default above.
+            for level in (1, 2, 3):
+                code, out, err = run([CODEC, "--format", fmt, "--level", str(level)], item)
+                try:
+                    ok = code == 0 and py_decode(out, fmt) == item
+                except Exception:
+                    ok = False
+                if ok:
+                    bump(f"encode: Lanius level {level} -> Python " + fmt)
+                else:
+                    fail(f"lanius level {level} {fmt} len={len(item)} rc={code} {err!r}")
             for level, strategy in configs:
                 stream = py_encode(item, fmt, level, strategy)
                 code, out, err = run([CODEC, "-d", "--format", fmt], stream)
@@ -500,7 +511,7 @@ def corrupt_group(rng):
     shutil.rmtree(base)
 
 
-def stream_group(flag="z", blocks=64, limit=32768):
+def stream_group(flag="z", blocks=64, limit=32768, level=0):
     """A tgz pipeline over a large tree must not hold the archive or a member."""
     base = os.path.join(WORK, "stream")
     shutil.rmtree(base, ignore_errors=True)
@@ -517,17 +528,19 @@ def stream_group(flag="z", blocks=64, limit=32768):
     # inherit this process's resident pages.
     probe = """
 import resource, subprocess, sys
-tgz, src, out, flag = sys.argv[1:]
-create = subprocess.Popen([tgz, "-c" + flag + "f", "-", "-C", src, "big"], stdout=subprocess.PIPE)
+tgz, src, out, flag, level = sys.argv[1:]
+extra = ["-L", level] if level != "0" else []
+create = subprocess.Popen([tgz, "-c" + flag + "f", "-", "-C", src, "big"] + extra, stdout=subprocess.PIPE)
 extract = subprocess.Popen([tgz, "-x" + flag + "f", "-", "-C", out], stdin=create.stdout)
 create.stdout.close()
 print(extract.wait(timeout=240), create.wait(timeout=240), resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss)
 """
-    measured = subprocess.run([sys.executable, "-I", "-c", probe, TGZ, os.path.join(base, "src"), os.path.join(base, "out"), flag], capture_output=True, text=True, timeout=280)
+    measured = subprocess.run([sys.executable, "-I", "-c", probe, TGZ, os.path.join(base, "src"), os.path.join(base, "out"), flag, str(level)], capture_output=True, text=True, timeout=280)
     a, b, peak = (int(x) for x in measured.stdout.split())
     rc = (a, b)
     same = snapshot(os.path.join(base, "src")) == snapshot(os.path.join(base, "out"))
-    label = f"stream: {blocks + 34} MiB c{flag}f | x{flag}f pipeline under {limit // 1024} MiB RSS"
+    shown = f" -L {level}" if level else ""
+    label = f"stream: {blocks + 34} MiB c{flag}f{shown} | x{flag}f pipeline under {limit // 1024} MiB RSS"
     print(f"{label}: rc={rc} peak child RSS {peak} KiB")
     if rc == (0, 0) and same and peak < limit:
         bump(label)
@@ -589,6 +602,7 @@ def guard_group():
 
 rng = random.Random(20261031)
 stream_group()
+stream_group("z", 64, 32768, 2)
 stream_group("J", 16, 49152)
 guard_group()
 codec_group(rng)

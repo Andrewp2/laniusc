@@ -1,7 +1,10 @@
-import Lanius.Semantics
-import Lanius.Memory.Allocation
-import Lanius.Semantics.NativeStore
+module
 
+public import Lanius.Semantics
+public import Lanius.Memory.Allocation
+public import Lanius.Semantics.NativeStore
+
+@[expose] public section
 namespace Lanius.Semantics
 
 open Lanius.Core Lanius.Memory

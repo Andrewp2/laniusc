@@ -296,11 +296,33 @@ fn histogram_checks() -> i32 {
     return 0;
 }
 
+// -W hunks and git hunk-header function names (expected bytes from git diff --no-index).
+fn function_checks() -> i32 {
+    let limits: ext::seqdiff::Limits = ext::seqdiff::default_limits();
+    let a: core::slice::View<u8> = literal("int a()\n{\n\tx = 1;\n}\n\nint b()\n{\n\ty = 2;\n}\n", 41);
+    let b: core::slice::View<u8> = literal("int a()\n{\n\tx = 1;\n}\n\nint b()\n{\n\ty = 3;\n}\n", 41);
+    let sp: ext::seqdiff::Split = core::result::unwrap(ext::seqdiff::split_classify(a, b, limits));
+    let s: ext::seqdiff::Script = core::result::unwrap(ext::seqdiff::diff_split_indent(sp.borrow(), ext::seqdiff::Algorithm::Xdiff, limits));
+    let fh: alloc::vec::Vec<ext::seqdiff::Hunk> = core::result::unwrap(ext::seqdiff::function_hunks(sp.borrow(), s.borrow(), 1));
+    if (fh.len() != 1) { return 88; }
+    let h: ext::seqdiff::Hunk = core::option::unwrap(fh.get(0));
+    if (h.before != 5 || h.before_count != 4 || h.after != 5 || h.after_count != 4 || h.count != 5) { return 89; }
+    let wide: alloc::vec::Vec<u8> = core::result::unwrap(ext::unidiff::write_unified_split_funcnames(sp.borrow(), s.borrow(), fh.as_view(), literal("a", 1), literal("b", 1), 4096));
+    if (!same(wide.as_view(), literal("--- a\n+++ b\n@@ -6,4 +6,4 @@ int a()\n int b()\n {\n-\ty = 2;\n+\ty = 3;\n }\n", 69))) { return 90; }
+    let ph: alloc::vec::Vec<ext::seqdiff::Hunk> = core::result::unwrap(ext::seqdiff::hunks(s.borrow(), 1));
+    let plain: alloc::vec::Vec<u8> = core::result::unwrap(ext::unidiff::write_unified_split_funcnames(sp.borrow(), s.borrow(), ph.as_view(), literal("a", 1), literal("b", 1), 4096));
+    if (!same(plain.as_view(), literal("--- a\n+++ b\n@@ -7,3 +7,3 @@ int b()\n {\n-\ty = 2;\n+\ty = 3;\n }\n", 60))) { return 91; }
+    if (core::result::is_ok(ext::seqdiff::function_hunks(sp.borrow(), s.borrow(), -1))) { return 92; }
+    wide.destroy(); plain.destroy(); fh.destroy(); ph.destroy(); s.destroy(); sp.destroy();
+    return 0;
+}
+
 fn main() -> i32 {
     let status: i32 = generic_checks(); if (status != 0) { return status; }
     status = hunk_and_text_checks(); if (status != 0) { return status; }
     status = overlap_check(); if (status != 0) { return status; }
     status = split_checks(); if (status != 0) { return status; }
     status = histogram_checks(); if (status != 0) { return status; }
+    status = function_checks(); if (status != 0) { return status; }
     return parse_checks();
 }

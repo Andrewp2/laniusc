@@ -1,0 +1,32 @@
+// Regression guard for ptr_zero_local.lani: a null pointer reaching its reader
+// through a return, a struct field, an Option, an assignment, a copy and an
+// enum payload, each after calls that leave stack addresses in freed slots.
+// Expected exit 12: every one of the twelve checks sees a null pointer.
+module app::main;
+import core::option;
+enum A { W(i64), P(ptr) }
+struct S { a: i64, p: ptr }
+fn word(value: i64) -> A { return A::W(value); }
+fn noise() -> i32 { let a: A = word(5); let b: A = word(6); let c: A = word(7); return 0; }
+fn isnull(p: ptr) -> i32 { if (p == 0) { return 1; } return 0; }
+fn ret0() -> ptr { return 0; }
+fn retlet() -> ptr { let v: ptr = 0; return v; }
+fn retif(f: bool) -> ptr { if (f) { return 0; } let v: ptr = 0; return v; }
+fn mk() -> S { let z: ptr = 0; return S { a: 1, p: z }; }
+fn opt() -> core::option::Option<ptr> { let z: ptr = 0; return core::option::Some(z); }
+fn main() -> i32 {
+    let n: i32 = 0;
+    noise(); n += isnull(ret0());
+    noise(); n += isnull(retlet());
+    noise(); n += isnull(retif(true));
+    noise(); n += isnull(retif(false));
+    noise(); let s: S = mk(); n += isnull(s.p);
+    let p: ptr = ret0(); noise(); n += isnull(p);
+    let q: ptr = 0; noise(); q = 0; n += isnull(q);
+    let r: ptr = retlet(); let c: ptr = r; noise(); n += isnull(c);
+    noise(); let e: A = A::P(retlet()); n += match (e) { A::P(x) -> isnull(x), _ -> 0 };
+    noise(); let o: core::option::Option<ptr> = opt(); n += isnull(o.unwrap());
+    let t: S = mk(); t.p = retlet(); noise(); n += isnull(t.p);
+    noise(); n += isnull(0);
+    return n;
+}

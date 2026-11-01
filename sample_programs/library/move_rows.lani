@@ -187,6 +187,32 @@ fn stage(rows:&Vec<ext::csv::Record>) -> Result<alloc::io::Buffer,Failure> {
     if(written!=length || (output.len() as u64)!=length) { output.destroy(); return Err(Failure::Invariant); }
     return Ok(output);
 }
+// Move the decoder's completed record into rows; false if it cannot be kept.
+fn keep(rows:&Vec<ext::csv::Record>,parser:&ext::csv::Decoder) -> bool {
+    let taken:Option<ext::csv::Record> = parser.take_record(); if(taken.is_none()) { return false; }
+    let record:ext::csv::Record=taken.unwrap();
+    if(rows.try_push(record).is_err()) { record.destroy(); return false; }
+    return true;
+}
+// A packed ext::csv::Table owns no per-row records, so decode owned records
+// directly. Returns the only cleanup owner of every record on success.
+fn parse_rows(source:[u8],count:i32,dialect:ext::csv::Options) -> Result<Vec<ext::csv::Record>,Failure> {
+    let made=ext::csv::decoder(dialect);
+    if(made.is_err()) { return Err(csv_failure(made.unwrap_err())); }
+    let parser:ext::csv::Decoder=made.unwrap();
+    let rows:Vec<ext::csv::Record> = alloc::vec::new();
+    let index:i32=0;
+    while(index<count) {
+        let step=parser.feed(source,index,count-index);
+        if(step.is_err()) { let error=csv_failure(step.unwrap_err()); parser.destroy(); destroy_rows(rows); return Err(error); }
+        let progress:ext::csv::Progress=step.unwrap(); index+=progress.consumed;
+        if(progress.record && !keep(rows.borrow(),parser.borrow())) { parser.destroy(); destroy_rows(rows); return Err(Failure::Allocation); }
+    }
+    let ended=parser.finish();
+    if(ended.is_err()) { let error=csv_failure(ended.unwrap_err()); parser.destroy(); destroy_rows(rows); return Err(error); }
+    if(ended.unwrap() && !keep(rows.borrow(),parser.borrow())) { parser.destroy(); destroy_rows(rows); return Err(Failure::Allocation); }
+    parser.destroy(); return Ok(rows);
+}
 fn prepare(selection:Selection) -> Result<alloc::io::Buffer,Failure> {
     let source=std::stream::stdin();
     let collected=alloc::io::read_to_end<std::stream::Descriptor>(source.borrow(),
@@ -198,11 +224,9 @@ fn prepare(selection:Selection) -> Result<alloc::io::Buffer,Failure> {
     let input:Vec<u8> = collected.unwrap();
     let dialect=ext::csv::default_options();
     dialect.max_records=MAX_ROWS; dialect.max_fields=64; dialect.max_field_bytes=8192; dialect.max_record_bytes=65536;
-    let parsed=ext::csv::parse_bytes(input.as_slice(),0,input.len(),dialect); input.destroy();
-    if(parsed.is_err()) { return Err(csv_failure(parsed.unwrap_err())); }
-    let table:ext::csv::Table=parsed.unwrap();
-    // Reset the actual table row descriptor before its now-empty destruction.
-    let rows:Vec<ext::csv::Record> = table.rows.take(); table.destroy();
+    let parsed=parse_rows(input.as_slice(),input.len(),dialect); input.destroy();
+    if(parsed.is_err()) { return Err(parsed.unwrap_err()); }
+    let rows:Vec<ext::csv::Record> = parsed.unwrap();
     let moved=relocate(rows,selection);
     if(moved.is_err()) { return Err(moved.unwrap_err()); }
     let ordered:Vec<ext::csv::Record> = moved.unwrap(); let output=stage(ordered.borrow());

@@ -6,6 +6,8 @@ HTTP/2 (RFC 9113) comes in three layers:
 - `ext::http2_frame`: the frame codec;
 - `ext::http2`: a client connection engine without I/O, which multiplexes
   request streams over one connection.
+- [`ext::http2_server`](extended-http2-server.md): the server engine, also
+  without I/O, which `ext::http_service` runs for prior-knowledge h2c.
 
 [`ext::http_agent`](extended-http-agent.md#http2) runs the engine over
 verified TLS connections that select `h2` by ALPN, so `fetch` and

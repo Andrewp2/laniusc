@@ -223,14 +223,11 @@ fn delimited_engine<B>(reader: &B, delimiter: u8, bytes: &alloc::vec::Vec<u8>, b
         }
         let amount: i32 = available.length;
         if (amount > remaining) { amount = remaining; }
-        let selected: i32 = 0;
+        let selected: i32 = amount;
         let found: bool = false;
         let window: [u8] = available.values; let first: i32 = available.start;
-        while (selected < amount && !found) {
-            let byte: u8 = window[first+selected];
-            selected += 1;
-            if (byte == delimiter) { found = true; }
-        }
+        let hit: i32 = core::slice::memchr_from(window, first, first + amount, delimiter);
+        if (hit >= 0) { selected = hit - first + 1; found = true; }
         let reserved: core::result::Result<i32,alloc::vec::Error> = reserve_read(bytes,selected,cap);
         if (reserved.is_err()) {
             let error: alloc::vec::Error = reserved.unwrap_err();

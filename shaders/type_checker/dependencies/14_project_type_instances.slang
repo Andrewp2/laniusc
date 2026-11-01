@@ -41,6 +41,7 @@ StructuredBuffer<uint> compact_field_count;
 StructuredBuffer<HirField> compact_fields;
 StructuredBuffer<uint> type_decl_hir_node_by_token;
 StructuredBuffer<uint> declaration_generic_arity;
+StructuredBuffer<uint> resolved_value_status;
 StructuredBuffer<uint> dependency_declaration_constant_arity;
 StructuredBuffer<uint> declaration_field_count;
 RWStructuredBuffer<uint> type_instance_kind;
@@ -133,6 +134,25 @@ void main(uint3 dtid: SV_DispatchThreadID)
         type_instance_head_token[leaf_token] = leaf_token;
         type_instance_arg_start[leaf_token] = INVALID;
         type_instance_arg_count[leaf_token] = 0u;
+    }
+    // A bare generic qualifier of an associated method, `Option::is_some(o)`,
+    // names the declaration's own application, as a local bare qualifier
+    // does (modules/10k). Its operands are the declaration's parameters,
+    // which calls/03d leaves to the call's arguments and context. Variants
+    // (resolved values) keep their own payload inference.
+    if (qualified_value && type_instance_kind[leaf_token] != TYPE_INSTANCE_NAMED &&
+        declaration_generic_arity[declaration_i] != 0u &&
+        compact_path_type_arg_ranges[leaf_token].count == 0u &&
+        resolved_value_status[path_i] != 0u)
+    {
+        uint signature = dependency_declaration_word(declaration_i * DECL_WORDS + 7u);
+        uint root = signature < dependency_type_count() ? canonical_type_roots[signature] : INVALID;
+        if (root >= dependency_type_count()) return;
+        type_expr_ref_tag[owner_token] = 5u;
+        type_expr_ref_payload[owner_token] = root;
+        type_expr_ref_tag[leaf_token] = 5u;
+        type_expr_ref_payload[leaf_token] = root;
+        return;
     }
     if (type_instance_kind[leaf_token] != TYPE_INSTANCE_NAMED) return;
     if (type_instance_arg_count[leaf_token] != declaration_generic_arity[declaration_i])

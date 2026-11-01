@@ -108,21 +108,9 @@ fn write_codes(values: [i32], len: i32, to_stderr: bool) -> bool {
     if (!core::utf8::codes_are_valid(values, len)) {
         return false;
     }
-    let index: i32 = 0;
-    while (index<len) {
-        let code: i32 = values[index];
-        if (to_stderr) {
-            if (!std::io_byte::write_stderr_byte(code)) {
-                return false;
-            }
-        } else {
-            if (!std::io_byte::write_stdout_byte(code)) {
-                return false;
-            }
-        }
-        index += 1;
-    }
-    return true;
+    let handle: i32 = 1;
+    if (to_stderr) { handle = 2; }
+    return std::io_byte::write_code_view(handle, values, len);
 }
 
 pub fn write_stdout_codes(values: [i32], len: i32) -> bool {
@@ -141,22 +129,9 @@ fn write_bytes(values: [u8], len: i32, to_stderr: bool) -> bool {
     if (!core::utf8::bytes_are_valid(values, len)) {
         return false;
     }
-    let index: i32 = 0;
-    while (index < len) {
-        let byte: u8 = values[index];
-        let code: i32 = byte as i32;
-        if (to_stderr) {
-            if (!std::io_byte::write_stderr_byte(code)) {
-                return false;
-            }
-        } else {
-            if (!std::io_byte::write_stdout_byte(code)) {
-                return false;
-            }
-        }
-        index += 1;
-    }
-    return true;
+    let handle: i32 = 1;
+    if (to_stderr) { handle = 2; }
+    return std::io_byte::write_byte_view(handle, values, len);
 }
 
 pub fn write_stdout_bytes(values: [u8], len: i32) -> bool {

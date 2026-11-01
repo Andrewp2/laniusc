@@ -1488,3 +1488,97 @@ pub fn hunks(script: &Script, context: i32) -> core::result::Result<alloc::vec::
     }
     return core::result::Ok(out);
 }
+
+// git's function lines (xdiff def_ff): a line that starts with an ASCII letter, '_' or '$'.
+fn sd_func_line(v: core::slice::View<u8>) -> bool {
+    if (v.length == 0) { return false; }
+    let c: u8 = v.values[v.start];
+    return (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 95 || c == 36;
+}
+// Only spaces, tabs, CR and LF.
+fn sd_blank_line(v: core::slice::View<u8>) -> bool {
+    let j: i32 = 0;
+    while (j < v.length) { let c: u8 = v.values[v.start+j]; if (!(c == 32 || c == 9 || c == 10 || c == 13)) { return false; } j += 1; }
+    return true;
+}
+// xdiff get_func_line over the old side: the first function line from `start`
+// toward `limit` (exclusive), or -1.
+fn sd_find_func(split: &Split, start: i32, limit: i32) -> i32 {
+    let n: i32 = split.before_len(); let step: i32 = 1; if (start > limit) { step = -1; }
+    let l: i32 = start;
+    while (l != limit && l >= 0 && l < n) { if (sd_func_line(split.before_line(l))) { return l; } l += step; }
+    return -1;
+}
+// git diff -W (--function-context) hunks: like `hunks`, but each hunk also
+// shows the whole function around its changes, as xdiff's XDL_EMIT_FUNCCONTEXT
+// does. A function starts at a function line (see sd_func_line) together with
+// the non-blank lines just above it and runs to the blank lines before the next
+// one. Changes whose functions touch or overlap share one hunk.
+pub fn function_hunks(split: &Split, script: &Script, context: i32) -> core::result::Result<alloc::vec::Vec<Hunk>, Error> {
+    if (context < 0 || context > 1073741822) { return core::result::Err(Error::InvalidLimits); }
+    let n1: i32 = split.before_len(); let n2: i32 = split.after_len();
+    if (n1 != script.before_len() || n2 != script.after_len()) { return core::result::Err(Error::Bounds); }
+    let steps: [Edit] = script.steps.as_slice(); let total: i32 = script.steps.len();
+    // Five ints per change: first step, i1, chg1, i2, chg2.
+    let ch: alloc::vec::Vec<i32> = alloc::vec::new(); let failed: bool = false;
+    let s: i32 = 0;
+    while (s < total && !failed) {
+        if (steps[s].kind == 0) { s += 1; }
+        else {
+            let st: i32 = s; let d: i32 = 0; let ins: i32 = 0;
+            while (s < total && steps[s].kind != 0) { if (steps[s].kind == 1) { d += 1; } else { ins += 1; } s += 1; }
+            let first: Edit = steps[st];
+            if (core::result::is_err(ch.try_push(st)) || core::result::is_err(ch.try_push(first.before)) || core::result::is_err(ch.try_push(d)) || core::result::is_err(ch.try_push(first.after)) || core::result::is_err(ch.try_push(ins))) { failed = true; }
+        }
+    }
+    let out: alloc::vec::Vec<Hunk> = alloc::vec::new();
+    if (failed) { ch.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let c5: [i32] = ch.as_slice(); let nc: i32 = ch.len() / 5; let gap: i32 = 2 * context;
+    let c: i32 = 0;
+    while (c < nc && !failed) {
+        let e: i32 = c;
+        while (e + 1 < nc && c5[5*(e+1)+1] - (c5[5*e+1] + c5[5*e+2]) <= gap) { e += 1; }
+        let ci1: i32 = c5[5*c+1]; let ci2: i32 = c5[5*c+3];
+        let s1: i32 = ci1 - context; if (s1 < 0) { s1 = 0; }
+        let s2: i32 = ci2 - context; if (s2 < 0) { s2 = 0; }
+        // A change appended at the end needs no more context when it adds a function.
+        let whole: bool = false; let a1: i32 = ci1;
+        if (a1 >= n1) {
+            let j: i32 = ci2;
+            while (j < n2 && !whole) { if (sd_func_line(split.after_line(j))) { whole = true; } j += 1; }
+            a1 = n1 - 1;
+        }
+        if (!whole) {
+            let fs1: i32 = sd_find_func(split, a1, -1);
+            while (fs1 > 0 && !sd_blank_line(split.before_line(fs1 - 1)) && !sd_func_line(split.before_line(fs1 - 1))) { fs1 -= 1; }
+            if (fs1 < 0) { fs1 = 0; }
+            if (fs1 < s1) { s2 = s2 - (s1 - fs1); if (s2 < 0) { s2 = 0; } s1 = fs1; }
+        }
+        let e1: i32 = 0; let e2: i32 = 0; let more: bool = true;
+        while (more) {
+            let end1: i32 = c5[5*e+1] + c5[5*e+2]; let end2: i32 = c5[5*e+3] + c5[5*e+4];
+            let lctx: i32 = context; if (n1 - end1 < lctx) { lctx = n1 - end1; } if (n2 - end2 < lctx) { lctx = n2 - end2; }
+            e1 = end1 + lctx; e2 = end2 + lctx;
+            let fe1: i32 = sd_find_func(split, end1, n1);
+            while (fe1 > 0 && sd_blank_line(split.before_line(fe1 - 1))) { fe1 -= 1; }
+            if (fe1 < 0) { fe1 = n1; }
+            if (fe1 > e1) { e2 = e2 + (fe1 - e1); if (e2 > n2) { e2 = n2; } e1 = fe1; }
+            more = false;
+            if (e + 1 < nc) {
+                let l: i32 = c5[5*(e+1)+1]; if (l > n1 - 1) { l = n1 - 1; }
+                if (l - context <= e1 || sd_find_func(split, l, e1) < 0) { e += 1; more = true; }
+            }
+        }
+        // Context lines are equal steps, so step indices follow line numbers.
+        let first: i32 = c5[5*c] - (ci1 - s1);
+        let last: i32 = c5[5*e] + c5[5*e+2] + c5[5*e+4] + (e1 - (c5[5*e+1] + c5[5*e+2]));
+        if (first < 0 || last > total || first > last) { failed = true; }
+        else {
+            if (core::result::is_err(out.try_push(Hunk { before: s1, before_count: e1 - s1, after: s2, after_count: e2 - s2, first: first, count: last - first }))) { failed = true; }
+        }
+        c = e + 1;
+    }
+    ch.destroy();
+    if (failed) { out.destroy(); return core::result::Err(Error::AllocationFailed); }
+    return core::result::Ok(out);
+}

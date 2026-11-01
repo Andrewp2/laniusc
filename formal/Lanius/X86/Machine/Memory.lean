@@ -1,5 +1,8 @@
-import Lanius.X86.Machine.State
+module
 
+public import Lanius.X86.Machine.State
+
+@[expose] public section
 namespace Lanius.X86.Machine
 
 /-- The little-endian 32-bit memory operand used by scalar frame loads. -/

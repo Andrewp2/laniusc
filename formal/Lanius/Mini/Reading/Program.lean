@@ -1,5 +1,14 @@
-import Lanius.Mini.Reading.Lits
+module
 
+public import Lanius.Mini.Reading.Lits
+import all Lanius.Mini.Compiler.P.arithShiftRight
+import all Lanius.Mini.Frontend.P.collect
+import all Lanius.Mini.Frontend.P.funcsOnto
+import all Lanius.Mini.Frontend.P.rootInsts
+import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.wideLeftStmt
+
+@[expose] public section
 /-! # The reading, V8f: the program
 
 `Reading roots p`: the source program `p` read from the parse trees of

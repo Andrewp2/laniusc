@@ -8503,6 +8503,8 @@ fn lowering_compiler_graph_builder(
                 PassAccess::read("semantic_schedule_order", schedule_order),
                 PassAccess::read("opt_ir_source_hir", opt_source_hir),
                 PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
+                PassAccess::read("compact_hir_core", hir_core),
+                PassAccess::read("semantic_lir_functions", semantic_functions),
                 PassAccess::write(
                     "x86_position_by_semantic",
                     x86_position_by_semantic.unwrap(),
@@ -9192,6 +9194,8 @@ fn lowering_compiler_graph_builder(
             PassAccess::read("semantic_lir_string_total", semantic_string_total),
             PassAccess::read("semantic_lir_function_total", semantic_function_total),
             PassAccess::read("semantic_lir_functions", semantic_functions),
+            PassAccess::read("semantic_lir_params", semantic_params),
+            PassAccess::read("compact_hir_core", hir_core),
             PassAccess::read("x86_live_by_semantic", x86_live_by_semantic.unwrap()),
             PassAccess::read("x86_value_by_semantic", x86_value_by_semantic.unwrap()),
             PassAccess::read("x86_select_by_semantic", x86_select_by_semantic.unwrap()),

@@ -45,7 +45,7 @@ theorem ok_text_allocator : FnOk prog prims info (1874, ⟨1, [], 0⟩) :=
 theorem ok_text_dealloc : FnOk prog prims info (1875, ⟨1, [], 0⟩) :=
   fnOk_of fn_text_dealloc (by decide +kernel)
 
-theorem ok_stride_of_postfix : FnOk prog prims info (1876, ⟨7, [], 0⟩) :=
+theorem ok_stride_of_postfix : FnOk prog prims info (1876, ⟨6, [], 0⟩) :=
   fnOk_of fn_stride_of_postfix (by decide +kernel)
 
 theorem ok_args_segment : FnOk prog prims info (1877, ⟨1, [], 0⟩) :=
@@ -60,13 +60,13 @@ theorem ok_builtin_path : FnOk prog prims info (1879, ⟨3, [], 0⟩) :=
 theorem ok_is_fn_path : FnOk prog prims info (1880, ⟨9, [], 0⟩) :=
   fnOk_of fn_is_fn_path (by decide +kernel)
 
-theorem ok_eff_fn_path : FnOk prog prims info (1881, ⟨30, [0], 0⟩) :=
+theorem ok_eff_fn_path : FnOk prog prims info (1881, ⟨29, [0], 0⟩) :=
   fnOk_of fn_eff_fn_path (by decide +kernel)
 
 theorem ok_no_trees : FnOk prog prims info (1882, ⟨0, [], 0⟩) :=
   fnOk_of fn_no_trees (by decide +kernel)
 
-theorem ok_eff_infer : FnOk prog prims info (1883, ⟨30, [0], 0⟩) :=
+theorem ok_eff_infer : FnOk prog prims info (1883, ⟨29, [0], 0⟩) :=
   fnOk_of fn_eff_infer (by decide +kernel)
 
 theorem ok_find_method_at : FnOk prog prims info (1884, ⟨13, [3], 1⟩) :=
@@ -87,13 +87,13 @@ theorem ok_eff_slice_local : FnOk prog prims info (1888, ⟨2, [], 0⟩) :=
 theorem ok_same_decl_args : FnOk prog prims info (1889, ⟨0, [], 0⟩) :=
   fnOk_of fn_same_decl_args (by decide +kernel)
 
-theorem ok_get_of_mini_selfhost_List_mini_selfhost_Ty : FnOk prog prims info (1890, ⟨2, [0], 0⟩) :=
+theorem ok_get_of_mini_selfhost_List_mini_selfhost_Ty : FnOk prog prims info (1890, ⟨1, [0], 0⟩) :=
   fnOk_of fn_get_of_mini_selfhost_List_mini_selfhost_Ty (by decide +kernel)
 
 theorem ok_decl_inst : FnOk prog prims info (1891, ⟨18, [], 0⟩) :=
   fnOk_of fn_decl_inst (by decide +kernel)
 
-theorem ok_get_of_mini_selfhost_List_mini_selfhost_CTree : FnOk prog prims info (1892, ⟨2, [0], 0⟩) :=
+theorem ok_get_of_mini_selfhost_List_mini_selfhost_CTree : FnOk prog prims info (1892, ⟨1, [0], 0⟩) :=
   fnOk_of fn_get_of_mini_selfhost_List_mini_selfhost_CTree (by decide +kernel)
 
 theorem ok_imported_variants : FnOk prog prims info (1893, ⟨4, [1], 0⟩) :=

@@ -39,37 +39,37 @@ theorem ok_cons_tree_tail : FnOk prog prims info (2209, ⟨1, [], 0⟩) :=
 theorem ok_fit_named : FnOk prog prims info (2210, ⟨10, [0], 0⟩) :=
   fnOk_of fn_fit_named (by decide +kernel)
 
-theorem ok_no_block : FnOk prog prims info (2211, ⟨5, [1], 0⟩) :=
+theorem ok_no_block : FnOk prog prims info (2211, ⟨4, [1], 0⟩) :=
   fnOk_of fn_no_block (by decide +kernel)
 
 theorem ok_arm_eff : FnOk prog prims info (2213, ⟨17, [], 0⟩) :=
   fnOk_of fn_arm_eff (by decide +kernel)
 
-theorem ok_diverge_arm : FnOk prog prims info (2214, ⟨7, [], 0⟩) :=
+theorem ok_diverge_arm : FnOk prog prims info (2214, ⟨6, [], 0⟩) :=
   fnOk_of fn_diverge_arm (by decide +kernel)
 
-theorem ok_all_binders : FnOk prog prims info (2215, ⟨7, [1], 0⟩) :=
+theorem ok_all_binders : FnOk prog prims info (2215, ⟨6, [1], 0⟩) :=
   fnOk_of fn_all_binders (by decide +kernel)
 
-theorem ok_wild_alone : FnOk prog prims info (2216, ⟨7, [], 0⟩) :=
+theorem ok_wild_alone : FnOk prog prims info (2216, ⟨6, [], 0⟩) :=
   fnOk_of fn_wild_alone (by decide +kernel)
 
 theorem ok_cons_wild : FnOk prog prims info (2217, ⟨1, [], 0⟩) :=
   fnOk_of fn_cons_wild (by decide +kernel)
 
-theorem ok_all_name_some : FnOk prog prims info (2218, ⟨8, [3], 0⟩) :=
+theorem ok_all_name_some : FnOk prog prims info (2218, ⟨7, [3], 0⟩) :=
   fnOk_of fn_all_name_some (by decide +kernel)
 
 theorem ok_nested_used : FnOk prog prims info (2219, ⟨2, [], 0⟩) :=
   fnOk_of fn_nested_used (by decide +kernel)
 
-theorem ok_variant_arms : FnOk prog prims info (2220, ⟨24, [3], 0⟩) :=
+theorem ok_variant_arms : FnOk prog prims info (2220, ⟨23, [3], 0⟩) :=
   fnOk_of fn_variant_arms (by decide +kernel)
 
-theorem ok_uses_wild : FnOk prog prims info (2221, ⟨8, [2], 0⟩) :=
+theorem ok_uses_wild : FnOk prog prims info (2221, ⟨7, [2], 0⟩) :=
   fnOk_of fn_uses_wild (by decide +kernel)
 
-theorem ok_arms_or_wild : FnOk prog prims info (2222, ⟨9, [2], 0⟩) :=
+theorem ok_arms_or_wild : FnOk prog prims info (2222, ⟨8, [2], 0⟩) :=
   fnOk_of fn_arms_or_wild (by decide +kernel)
 
 theorem ok_length_of_mini_selfhost_CTree : FnOk prog prims info (2223, ⟨2, [0], 0⟩) :=
@@ -78,7 +78,7 @@ theorem ok_length_of_mini_selfhost_CTree : FnOk prog prims info (2223, ⟨2, [0]
 theorem ok_length_of_mini_selfhost_VariantTy : FnOk prog prims info (2224, ⟨2, [0], 0⟩) :=
   fnOk_of fn_length_of_mini_selfhost_VariantTy (by decide +kernel)
 
-theorem ok_arms_by_variant : FnOk prog prims info (2225, ⟨8, [2], 0⟩) :=
+theorem ok_arms_by_variant : FnOk prog prims info (2225, ⟨7, [2], 0⟩) :=
   fnOk_of fn_arms_by_variant (by decide +kernel)
 
 theorem ok_is_some_name : FnOk prog prims info (2226, ⟨0, [], 0⟩) :=

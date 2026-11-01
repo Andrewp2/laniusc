@@ -1,7 +1,13 @@
-import Lanius.Compiler.LexerCanonical
-import Lanius.Mini.Frontend
-import Lanius.Mini.Compiler
+module
 
+public import Lanius.Compiler.LexerCanonical
+public import Lanius.Mini.Frontend
+public import Lanius.Mini.Compiler
+import all Lanius.Mini.Frontend.P.grammarPart13
+import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.wideLeftStmt
+
+@[expose] public section
 /-! The tokens the front end validates against: the Lean lexer's
 (`Lanius.Compiler.Lexer.lexCanonical`), as `Token`s with laniusc's token kind
 codes, and the front end from source bytes and laniusc's parse tree. -/

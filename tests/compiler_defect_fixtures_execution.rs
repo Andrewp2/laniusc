@@ -51,6 +51,11 @@ fn bare_generic_type_path_infers_the_impl_parameters() {
 }
 
 #[test]
+fn bare_imported_generic_type_path_calls_its_self_methods() {
+    compiles_and_exits_zero("b19_bare_imported_generic_path");
+}
+
+#[test]
 fn lnc0005_a_variant_named_inside_a_pattern_is_matched_not_declared() {
     compiles_and_exits_zero("lnc0005_nested_variant_pattern");
 }
@@ -58,4 +63,9 @@ fn lnc0005_a_variant_named_inside_a_pattern_is_matched_not_declared() {
 #[test]
 fn lnc0017_a_payload_after_a_nested_local_variant_has_a_word_offset() {
     compiles_and_exits_zero("lnc0017_payload_after_nested_variant");
+}
+
+#[test]
+fn lnc0006_a_vec_field_taken_out_checks_against_its_element_type() {
+    compiles_and_exits_zero("lnc0006_vec_field_take");
 }

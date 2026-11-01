@@ -1574,3 +1574,25 @@ byte at `pointer + i`.
 The verified compiler lowers `s[i]` of a byte view to a bounds check and a
 zero-extending byte load (`LoadByte`, `movzx`), and `s[i] = v` to a byte
 store (`StoreByte`, `mov byte`) after the same check; `slice_stride` is 1.
+
+## The prelude's `minus` truncates (decided 11-01, review finding 5)
+
+The self program's prelude (`compiler.lani`, `frontend.lani`) had `minus(a,
+b)` panic when `b > a` ("used only where a >= b", which nothing checked).
+It now returns 0 there, which is Lean's truncated `Nat` subtraction, the
+meaning the extraction gives it (`PRELUDE_FNS`: `-`). So no run of the self
+program can stop at a `minus`, and the 287 `minus` calls the compile makes
+are no longer places its pure meaning can fail. `plus` and `times` still
+panic on a result past `2 ^ 64`: `usize` has no room for it and Lean's
+`Nat` has, so they are where the self program and its Lean definitions can
+part (`selfCompiler_reason`'s "no pure cost"). `extract.lani`'s and
+`mut_pilot.lani`'s own preludes are unchanged; their Lean meaning is the
+same `-` either way.
+
+With it, `wide_digit` (`frontend.lani`) returns `None` before the multiply
+that would pass `2 ^ 64` (`acc > 1844674407370955161`, or equal with a digit
+above 5). Before, it checked `acc` only on the next digit, so a 20-digit
+literal such as `99999999999999999999` panicked in `times` or `plus` where
+Lean's `wideDecimal` gave `none`; the self-built compiler then faulted on
+any source with such a literal instead of returning -1. `wideDecimal` gives
+the same answers as before.

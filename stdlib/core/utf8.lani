@@ -1,6 +1,7 @@
 // Allocation-free UTF-8 scalar codec and validation of caller-backed [i32]
 // byte-code views. Borrowed string storage is not accessed by this module.
 module core::utf8;
+import core::slice;
 fn to_byte(value: u32) -> u8 {
     let narrowed: u8 = value as u8;
     return narrowed;
@@ -193,6 +194,12 @@ fn count_byte_scalars_or_negative_one(values: [u8], len: i32) -> i32 {
     let count: i32 = 0;
     while (index < len) {
         let first: u8 = values[index];
+        // Skip a long ASCII run eight bytes at a time; each byte is a scalar.
+        if (first < 128 && len - index >= 16) {
+            let run: i32 = core::slice::ascii_run_end(values, index, len);
+            count += run - index; index = run;
+            continue;
+        }
         let width: u32 = sequence_len_or(first, 0);
         if (width == 0) {
             return -1;

@@ -1,6 +1,9 @@
-import Lanius.X86.Machine.Scalar
-import Lanius.X86.Machine.AluEncoding
+module
 
+public import Lanius.X86.Machine.Scalar
+public import Lanius.X86.Machine.AluEncoding
+
+@[expose] public section
 namespace Lanius.X86.Machine
 
 open Lanius.X86

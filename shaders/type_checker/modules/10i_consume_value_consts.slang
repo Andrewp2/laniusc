@@ -1,4 +1,5 @@
 import primitive_types;
+import hir_records;
 // GPU HIR-qualified constant value consumer.
 //
 // Scheduling contract:
@@ -32,6 +33,8 @@ StructuredBuffer<uint> resolved_value_decl;
 StructuredBuffer<uint> resolved_value_status;
 StructuredBuffer<uint> decl_kind;
 StructuredBuffer<uint> decl_name_token;
+StructuredBuffer<uint> decl_hir_node;
+StructuredBuffer<HirRange> compact_generic_param_ranges;
 StructuredBuffer<uint> module_value_path_call_head;
 StructuredBuffer<uint> call_fn_index;
 StructuredBuffer<uint> resolved_dependency_value_metadata;
@@ -53,6 +56,7 @@ static const uint PATH_RESOLVE_STATUS_OK = 0u;
 static const uint PATH_RESOLVE_STATUS_UNRESOLVED_DECL = 6u;
 
 static const uint HIR_ITEM_KIND_CONST = 3u;
+static const uint HIR_ITEM_KIND_FN = 4u;
 static const uint HIR_ITEM_KIND_ENUM_VARIANT = 9u;
 static const uint IMPORTED_GENERIC_UNIT_VARIANT = 11u;
 static const uint IMPORTED_PAYLOAD_VARIANT = 10u;
@@ -145,6 +149,21 @@ void main(uint3 dtid: SV_DispatchThreadID)
         decl_i < gParams.n_hir_nodes ? decl_name_token[decl_i] : INVALID;
     if (segment_count == 1u && visible != INVALID && visible != resolved_decl_name)
     {
+        module_value_path_status[owner_token] = INVALID;
+        return;
+    }
+
+    // A function named as a value is its C-callable address, a `ptr`
+    // (docs/language-ergonomics.md, "C callbacks"). The semantic projection
+    // lowers the name to the address of a System V entry for the function.
+    if (decl_i < gParams.n_hir_nodes && decl_kind[decl_i] == HIR_ITEM_KIND_FN &&
+        resolved_decl_name < gParams.n_tokens && decl_hir_node[decl_i] < gParams.n_hir_nodes &&
+        compact_generic_param_ranges[decl_hir_node[decl_i]].count == 0u)
+    {
+        visible_decl[owner_token] = resolved_decl_name;
+        visible_type[owner_token] = SCALAR_PTR;
+        type_expr_ref_tag[owner_token] = 1u;
+        type_expr_ref_payload[owner_token] = SCALAR_PTR;
         module_value_path_status[owner_token] = INVALID;
         return;
     }
