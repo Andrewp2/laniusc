@@ -39,11 +39,17 @@ stopping at the computations the theorems are about (`compileSource`,
 `linkObjects`, `elfFile`, `sourceProgramFiles`, `compileWords`,
 `frontEndWords` and the self program `Lanius.Faithful.Self.prog`, which are
 not trusted, section 10), with each one's type and body:
-definitions `00ba64a17b5ef7a2` (4,341 constants). This covers Core's
+definitions `3dedf99d3116eb68` (4,347 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
-modules keeps its hash. The last change of the hash (10-31, merge of rfront's byte views with F11b's reading changes; neither changed the other's definitions): Core's byte
+modules keeps its hash. The last change of the hash (11-01, F11b): the
+reading of a method call with type arguments `x.m<T, ..>(..)`: `MethodBinds`
+binds m's own type parameters to the written types after the receiver's
+binds, used by `EffR.method`, `EffChain.method` and `MethodEff`, and
+`MethodForm` and `TryMethodForm` allow the type arguments (section 4).
+Before that (10-31, merge of rfront's byte views with F11b's reading
+changes; neither changed the other's definitions): Core's byte
 views (SEMANTIC_DECISIONS "Byte views"): a raw slice of `u8` is one byte
 per element at `pointer + i` (`isByte`, `rawSliceElementAddress?`,
 `NativeLayout.elementStride?` and `words?`), `mapRawNominalSlice` checks its
@@ -544,7 +550,10 @@ unique. Trusted:
   - `x.m(args)` (`x` any value) and `T::m(args)` (`T` a type parameter, or
     a primitive type as in `i32::hash(v)`) call
     the method `m` of the one `impl` whose type matches the receiver's type,
-    with `self` (by value) the receiver;
+    with `self` (by value) the receiver; `x.m<T, ..>(args)` binds m's own
+    type parameters to the written types in order, after the impl's binds
+    from the receiver, instead of inferring them (`MethodBinds`, F11b; a
+    count other than m's parameters rejects);
   - a `match` has one arm per variant of its scrutinee's enum, in any order,
     and its arms are listed in variant order (only one runs, so their order
     has no effect);

@@ -30,6 +30,19 @@ theorem effArmsR_named {env : FrontEnv} : ∀ {scope : List Local} {expected : O
     | unit _ ps an _ _ _ _ => exact ⟨_, ps, an⟩
     | payload _ ps an _ _ _ _ _ _ => exact ⟨_, ps, an⟩
 
+theorem methodBinds_unique {env : FrontEnv} {fd : FnDecl} {start : List Bind} {targs : CTree} {a b : List Bind}
+    (h₁ : MethodBinds env fd start targs a) (h₂ : MethodBinds env fd start targs b) : a = b := by
+  rcases h₁ with ⟨n, rfl⟩ | ⟨n, gs, ts, it, at_, z⟩
+  · rcases h₂ with ⟨_, rfl⟩ | ⟨n', _⟩
+    · rfl
+    · exact (n' n).elim
+  · rcases h₂ with ⟨n', _⟩ | ⟨_, gs', ts', it', at', z'⟩
+    · exact (n n').elim
+    · cases items_unique it it'
+      cases argsTy_unique at_ at'
+      rw [z] at z'
+      exact Option.some.inj z'
+
 section
 variable {env : FrontEnv}
 
@@ -114,11 +127,11 @@ theorem effR_unique : ∀ {scope : List Local} {expected : Option Ty} {c : CTree
     | pure p => exact pure_agree p nd (.pathCall pp p0 p01 p1 p13 pc)
     | pathCall _ _ _ _ _ pc' => exact ih1 pc'
     | _ => eff_clash
-  | _, _, _, _, .method pp mf lo it mfor fd inf, nd, vn, _, h₂ => by
+  | _, _, _, _, .method pp mf lo it mfor fd mb inf, nd, vn, _, h₂ => by
     have ih1 := fun {y} k' => effInfer_unique inf nd vn (y := y) k'
     cases h₂ with
-    | pure p => exact pure_agree p nd (.method pp mf lo it mfor fd inf)
-    | method _ _ lo' it' mfor' fd' inf' =>
+    | pure p => exact pure_agree p nd (.method pp mf lo it mfor fd mb inf)
+    | method _ _ lo' it' mfor' fd' mb' inf' =>
       have e := localOf_unique lo lo'
       subst e
       have e := items_unique it it'
@@ -127,6 +140,7 @@ theorem effR_unique : ∀ {scope : List Local} {expected : Option Ty} {c : CTree
       subst e
       rw [fd] at fd'
       cases fd'
+      cases methodBinds_unique mb mb'
       exact ih1 inf'
     | _ => eff_clash
   | _, E, _, _, .index pp p0 p01 p1 p13 lo k, nd, vn, _, h₂ => by
@@ -286,11 +300,11 @@ theorem effChain_unique : ∀ {scope : List Local} {expected : Option Ty} {a : M
     cases h₂ with
     | done _ => rfl
     | _ => eff_clash
-  | _, _, _, _, _, .method pm pn pc it et mfor fd inf ch, nd, vn, _, h₂ => by
+  | _, _, _, _, _, .method pm pn pc it et mfor fd mb inf ch, nd, vn, _, h₂ => by
     have ih1 := fun {y} k' => effInfer_unique inf nd vn (y := y) k'
     have ih2 := fun {y} k' => effChain_unique ch nd vn (y := y) k'
     cases h₂ with
-    | method _ _ _ it' et' mfor' fd' inf' ch' =>
+    | method _ _ _ it' et' mfor' fd' mb' inf' ch' =>
       have e := items_unique it it'
       subst e
       have e := effTy_unique et et'
@@ -299,6 +313,7 @@ theorem effChain_unique : ∀ {scope : List Local} {expected : Option Ty} {a : M
       subst e
       rw [fd] at fd'
       cases fd'
+      cases methodBinds_unique mb mb'
       have e := ih1 inf'
       subst e
       exact ih2 ch'

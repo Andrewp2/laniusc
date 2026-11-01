@@ -494,8 +494,12 @@ argument tokens; the verified compiler's validator checks it (`picks`).
 A method's `<` (`x.f<T>(..)`, ambiguous in the same way: `x.f < a > (b)`)
 opens type arguments by the same rule, from the `<` on (decided 10-31, F11b;
 before, a file with one was rejected, which rejected `alloc::vec` and every
-program importing it). The reader does not yet read a call with them, so
-such a call is still outside the subset, but the rest of its file is read.
+program importing it). The reader reads such a call as the call without
+them, with the method's own type parameters bound to the written types in
+order, after the binds the receiver's type gives the impl, instead of
+inferring them (`MethodBinds`; a count other than the method's type
+parameters rejects; decided 11-01, F11b). A field (`x.f`) with type
+arguments rejects.
 A statement that begins with `{` is a block statement, never an
 expression statement (decided 10-30, F4), as in Rust: `{ a } - b;` is the
 block `{ a }` and then `-b;`. Its lets scope over the block only

@@ -5863,12 +5863,18 @@ pub fn is_fn_path(env: FrontEnv, s: Split) -> bool {
     return is_type_owner(env, s.home, s.name) || is_some_index(find_fn(env.decls.fns, path_module(env, s.home, s.name), s.name, 0));
 }
 
-// A postfix `recv.m(args)` (recv a local, no further postfix).
+// A method's type arguments, written (`.m<T>`) or not.
+pub fn member_args(p: usize) -> bool {
+    return p == p_member_type_args_none() || p == p_member_type_args_some();
+}
+
+// A postfix `recv.m(args)` or `recv.m<T, ..>(args)` (recv a local, no
+// further postfix).
 pub fn is_method_form(pf: CTree) -> bool {
     let primary: CTree = kid(pf, 0);
     let tail: CTree = kid(pf, 1);
     let call: CTree = kid(tail, 3);
-    return (node_prod(primary) == p_self_value() || (node_prod(primary) == p_ident() && node_prod(kid(primary, 1)) == p_ident_plain())) && node_prod(tail) == p_postfix_member() && node_prod(kid(tail, 2)) == p_member_type_args_none() && node_prod(call) == p_postfix_call() && node_prod(kid(call, 3)) == p_postfix_end();
+    return (node_prod(primary) == p_self_value() || (node_prod(primary) == p_ident() && node_prod(kid(primary, 1)) == p_ident_plain())) && node_prod(tail) == p_postfix_member() && member_args(node_prod(kid(tail, 2))) && node_prod(call) == p_postfix_call() && node_prod(kid(call, 3)) == p_postfix_end();
 }
 
 // A postfix `path(args)` (no further postfix).
@@ -5950,7 +5956,7 @@ pub fn is_try_method(pf: CTree) -> bool {
     let primary: CTree = kid(pf, 0);
     let tail: CTree = kid(pf, 1);
     let call: CTree = kid(tail, 3);
-    return (node_prod(primary) == p_self_value() || (node_prod(primary) == p_ident() && node_prod(kid(primary, 1)) == p_ident_plain())) && node_prod(tail) == p_postfix_member() && node_prod(kid(tail, 2)) == p_member_type_args_none() && node_prod(call) == p_postfix_call() && node_prod(kid(call, 3)) == p_postfix_try() && node_prod(kid(kid(call, 3), 1)) == p_postfix_end();
+    return (node_prod(primary) == p_self_value() || (node_prod(primary) == p_ident() && node_prod(kid(primary, 1)) == p_ident_plain())) && node_prod(tail) == p_postfix_member() && member_args(node_prod(kid(tail, 2))) && node_prod(call) == p_postfix_call() && node_prod(kid(call, 3)) == p_postfix_try() && node_prod(kid(kid(call, 3), 1)) == p_postfix_end();
 }
 
 // core::result::Result { Ok, Err } or core::option::Option { Some, None }.
@@ -7620,6 +7626,41 @@ pub fn diverge_arm(decls: Decls, expected: core::option::Option<Ty>, x: core::op
     };
 }
 
+// The method's own type parameters names bound to ts, after start: none
+// when their numbers differ.
+pub fn binds_zip(names: List<List<usize>>, ts: List<Ty>, start: List<Bind>) -> core::option::Option<List<Bind>> {
+    return match (names) {
+        Nil -> match (ts) {
+            Nil -> Some(start),
+            Cons(t, trest) -> None,
+        },
+        Cons(n, rest) -> match (ts) {
+            Nil -> None,
+            Cons(t, trest) -> binds_zip(unbox(rest), unbox(trest), cons(Bind { name: n, ty: t }, start)),
+        },
+    };
+}
+
+pub fn binds_of_tys(names: List<List<usize>>, ts: core::option::Option<List<Ty>>, start: List<Bind>) -> core::option::Option<List<Bind>> {
+    return match (ts) {
+        None -> None,
+        Some(x) -> binds_zip(names, x, start),
+    };
+}
+
+// A method call's bindings: the impl's, from the receiver's type (start),
+// then, with type arguments `.m<T, ..>`, the method's own parameters bound
+// to them in order.
+pub fn method_binds(fuel: usize, env: FrontEnv, fd: FnDecl, start: List<Bind>, targs: CTree) -> core::option::Option<List<Bind>> {
+    if (node_prod(targs) == p_member_type_args_none()) {
+        return Some(start);
+    }
+    return match (list_items(fuel, targs)) {
+        None -> None,
+        Some(gs) -> binds_of_tys(fd.params, args_tys(fuel, env, gs), start),
+    };
+}
+
 // extract: mutual begin
 // The effectful expression a node of the expression grammar denotes, its
 // value stored at type expected when that is known: the pure expression
@@ -7766,15 +7807,18 @@ pub fn eff_step(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::
         return None;
     }
     let f: usize = minus(fuel, 1);
-    if (node_prod(tail) == p_postfix_member() && node_prod(kid(tail, 2)) == p_member_type_args_none()) {
+    if (node_prod(tail) == p_postfix_member() && member_args(node_prod(kid(tail, 2)))) {
         let next: CTree = kid(tail, 3);
         if (node_prod(next) == p_postfix_call()) {
             return match (list_items(f, kid(next, 1))) {
                 None -> None,
-                Some(items) -> eff_chain(f, env, scope, expected, eff_found(f, env, scope, step_expected(expected, kid(next, 3)), method_of_ty(f, env, eff_ty(f, env, scope, x), kid_token(tail, 1).text), single(x), items), kid(next, 3)),
+                Some(items) -> eff_chain(f, env, scope, expected, eff_found_with(f, env, scope, step_expected(expected, kid(next, 3)), method_of_ty(f, env, eff_ty(f, env, scope, x), kid_token(tail, 1).text), kid(tail, 2), single(x), items), kid(next, 3)),
             };
         }
-        return eff_chain(f, env, scope, expected, field_of_ty(env, x, eff_ty(f, env, scope, x), kid_token(tail, 1).text), next);
+        if (node_prod(kid(tail, 2)) == p_member_type_args_none()) {
+            return eff_chain(f, env, scope, expected, field_of_ty(env, x, eff_ty(f, env, scope, x), kid_token(tail, 1).text), next);
+        }
+        return None;
     }
     if (node_prod(tail) == p_postfix_index()) {
         return eff_chain(f, env, scope, expected, x_index_of(eff_slice_local(scope, x), eff_of(f, env, scope, None, kid(tail, 1))), kid(tail, 3));
@@ -8029,6 +8073,30 @@ pub fn eff_found(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core:
     };
 }
 
+pub fn eff_bound(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, d: usize, fd: FnDecl, binds: core::option::Option<List<Bind>>, pre: List<MEff>, items: List<CTree>) -> core::option::Option<MEff> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (binds) {
+        None -> None,
+        Some(bs) -> eff_infer(minus(fuel, 1), env, scope, expected, d, fd, bs, pre, items),
+    };
+}
+
+// eff_found with the call's type arguments node (member_type_args_opt).
+pub fn eff_found_with(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, found: core::option::Option<Found>, targs: CTree, pre: List<MEff>, items: List<CTree>) -> core::option::Option<MEff> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (found) {
+        None -> None,
+        Some(x) -> match (get(env.decls.fns, x.decl)) {
+            None -> None,
+            Some(fd) -> eff_bound(minus(fuel, 1), env, scope, expected, x.decl, fd, method_binds(minus(fuel, 1), env, fd, x.binds, targs), pre, items),
+        },
+    };
+}
+
 // `x.m(args)`: `T::m(x, args)` for x's type T.
 pub fn eff_method(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, pf: CTree) -> core::option::Option<MEff> {
     if (fuel == 0) {
@@ -8039,7 +8107,7 @@ pub fn eff_method(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core
         None -> None,
         Some(x) -> match (list_items(fuel, kid(kid(tail, 3), 1))) {
             None -> None,
-            Some(items) -> eff_found(minus(fuel, 1), env, scope, expected, find_method(fuel, env.decls, env.decls.fns, 0, kid_token(tail, 1).text, x.ty), single(XPure(Local(x.id))), items),
+            Some(items) -> eff_found_with(minus(fuel, 1), env, scope, expected, find_method(fuel, env.decls, env.decls.fns, 0, kid_token(tail, 1).text, x.ty), kid(tail, 2), single(XPure(Local(x.id))), items),
         },
     };
 }

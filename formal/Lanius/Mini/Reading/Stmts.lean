@@ -80,17 +80,19 @@ theorem isTryCall_sound {pf : CTree} (h : isTryCall pf = true) : TryCallForm pf 
 
 theorem effMethod_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {expected : Option Ty} {pf : CTree}
     {x : MEff} (h : effMethod fuel env scope expected pf = some x) : MethodEff env scope expected pf x :=
-  (effSound fuel).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1 h
+  (effSound fuel).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1 h
 
-/-- `x.m(args)?` with no further postfix, x a plain name or `self`. -/
+/-- `x.m(args)?` or `x.m<T, ..>(args)?` with no further postfix, x a plain
+name or `self`. -/
 def TryMethodForm (pf : CTree) : Prop :=
   (nodeProd (kid pf 0) = pSelfValue ∨ (nodeProd (kid pf 0) = pIdent ∧ nodeProd (kid (kid pf 0) 1) = pIdentPlain)) ∧
-    nodeProd (kid pf 1) = pPostfixMember ∧ nodeProd (kid (kid pf 1) 2) = pMemberTypeArgsNone ∧
+    nodeProd (kid pf 1) = pPostfixMember ∧
+    (nodeProd (kid (kid pf 1) 2) = pMemberTypeArgsNone ∨ nodeProd (kid (kid pf 1) 2) = pMemberTypeArgsSome) ∧
     nodeProd (kid (kid pf 1) 3) = pPostfixCall ∧ nodeProd (kid (kid (kid pf 1) 3) 3) = pPostfixTry ∧
     nodeProd (kid (kid (kid (kid pf 1) 3) 3) 1) = pPostfixEnd
 
 theorem isTryMethod_sound {pf : CTree} (h : isTryMethod pf = true) : TryMethodForm pf := by
-  simpa [isTryMethod, TryMethodForm, and_assoc] using h
+  simpa [isTryMethod, memberArgs, TryMethodForm, and_assoc] using h
 
 /-- `op?`: op's type st is a `core::result::Result` or `core::option::Option`
 and the function returns the same enum with the same failure payload. -/

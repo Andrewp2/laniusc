@@ -76,7 +76,7 @@ theorem chain_member {env : FrontEnv} {scope : List Local} {p tail : CTree} {e :
   subst el
   cases ch with
   | done _ => expr_clash
-  | method _ _ _ _ _ _ _ _ _ => expr_clash
+  | method _ _ _ _ _ _ _ _ _ _ => expr_clash
   | field _ _ _ ty fi₂ ch' =>
     cases ty with
     | pure et =>
@@ -185,7 +185,7 @@ theorem pure_agree : ∀ {env : FrontEnv} {scope : List Local} {c : CTree} {e : 
     cases h₂ with
     | pure p => rw [exprR_unique p h₁]
     | primary _ _ k₂ => exact pure_agree k nd k₂
-    | method _ mf _ _ _ _ _ =>
+    | method _ mf _ _ _ _ _ _ =>
       obtain ⟨_, m1, _⟩ := mf
       expr_clash
     | chainLocal _ cf _ _ => exact absurd pe cf.1
@@ -194,7 +194,7 @@ theorem pure_agree : ∀ {env : FrontEnv} {scope : List Local} {c : CTree} {e : 
   | _, _, _, _, h₁@(.member pp pm mb), nd, _, _, h₂ => by
     cases h₂ with
     | pure p => rw [exprR_unique p h₁]
-    | method _ mf _ _ _ _ _ =>
+    | method _ mf _ _ _ _ _ _ =>
       obtain ⟨_, _, _, m3, _⟩ := mf
       obtain ⟨_, te, _⟩ := mb
       expr_clash

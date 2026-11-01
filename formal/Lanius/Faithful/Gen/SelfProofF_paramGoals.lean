@@ -256,10 +256,10 @@ theorem proof_impl_args {prog : SrcProgram} {prims : Prims} {ix_impl_args ix_lis
   simp only [src_impl_args] at h
   faithful [Lanius.Mini.implArgs]
 
-theorem proof_impl_fit {prog : SrcProgram} {prims : Prims} {ix_impl_fit ix_empty_of_mini_selfhost_Bind ix_callee_env ix_fit_ty : Nat} (fn : prog.funcs[ix_impl_fit]? = some (src_impl_fit ix_empty_of_mini_selfhost_Bind ix_callee_env ix_fit_ty)) (np : prims.isPrim ix_impl_fit = false)
+theorem proof_impl_fit {prog : SrcProgram} {prims : Prims} {ix_impl_fit ix_empty_of_mini_selfhost_Bind ix_fit_ty ix_callee_env : Nat} (fn : prog.funcs[ix_impl_fit]? = some (src_impl_fit ix_empty_of_mini_selfhost_Bind ix_fit_ty ix_callee_env)) (np : prims.isPrim ix_impl_fit = false)
     (ext_empty_of_mini_selfhost_Bind : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Bind prog prims ix_empty_of_mini_selfhost_Bind n))
-    (ext_callee_env : Certified (∀ {n : Nat}, Stmt_callee_env prog prims ix_callee_env n))
-    (ext_fit_ty : Certified (∀ {n : Nat}, Stmt_fit_ty prog prims ix_fit_ty n)) {n : Nat} :
+    (ext_fit_ty : Certified (∀ {n : Nat}, Stmt_fit_ty prog prims ix_fit_ty n))
+    (ext_callee_env : Certified (∀ {n : Nat}, Stmt_callee_env prog prims ix_callee_env n)) {n : Nat} :
     Stmt_impl_fit prog prims ix_impl_fit n := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
   rcases n with _ | n
@@ -306,12 +306,12 @@ theorem proof_impl_where {prog : SrcProgram} {prims : Prims} {ix_impl_where ix_n
   simp only [src_impl_where] at h
   faithful [Lanius.Mini.implWhere]
 
-theorem proof_infer_inst {prog : SrcProgram} {prims : Prims} {ix_infer_inst ix_no_names ix_empty_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_List_usize ix_param_patterns ix_match_tys ix_callee_env ix_infer_ret : Nat} (fn : prog.funcs[ix_infer_inst]? = some (src_infer_inst ix_no_names ix_empty_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_List_usize ix_param_patterns ix_match_tys ix_callee_env ix_infer_ret)) (np : prims.isPrim ix_infer_inst = false)
+theorem proof_infer_inst {prog : SrcProgram} {prims : Prims} {ix_infer_inst ix_no_names ix_empty_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_List_usize ix_match_tys ix_param_patterns ix_callee_env ix_infer_ret : Nat} (fn : prog.funcs[ix_infer_inst]? = some (src_infer_inst ix_no_names ix_empty_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_List_usize ix_match_tys ix_param_patterns ix_callee_env ix_infer_ret)) (np : prims.isPrim ix_infer_inst = false)
     (ext_no_names : Certified (∀ {n : Nat}, Stmt_no_names prog prims ix_no_names n))
     (ext_empty_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Ty prog prims ix_empty_of_mini_selfhost_Ty n))
     (ext_concat_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_List_usize prog prims ix_concat_of_mini_selfhost_List_usize n))
-    (ext_param_patterns : Certified (∀ {n : Nat}, Stmt_param_patterns prog prims ix_param_patterns n))
     (ext_match_tys : Certified (∀ {n : Nat}, Stmt_match_tys prog prims ix_match_tys n))
+    (ext_param_patterns : Certified (∀ {n : Nat}, Stmt_param_patterns prog prims ix_param_patterns n))
     (ext_callee_env : Certified (∀ {n : Nat}, Stmt_callee_env prog prims ix_callee_env n))
     (ext_infer_ret : Certified (∀ {n : Nat}, Stmt_infer_ret prog prims ix_infer_ret n)) {n : Nat} :
     Stmt_infer_inst prog prims ix_infer_inst n := by
@@ -322,11 +322,11 @@ theorem proof_infer_inst {prog : SrcProgram} {prims : Prims} {ix_infer_inst ix_n
   simp only [src_infer_inst] at h
   faithful [Lanius.Mini.inferInst]
 
-theorem proof_infer_ret {prog : SrcProgram} {prims : Prims} {ix_infer_ret ix_match_ty ix_bound_or_none ix_ret_pattern ix_callee_env ix_inst_from : Nat} (fn : prog.funcs[ix_infer_ret]? = some (src_infer_ret ix_match_ty ix_bound_or_none ix_ret_pattern ix_callee_env ix_inst_from)) (np : prims.isPrim ix_infer_ret = false)
+theorem proof_infer_ret {prog : SrcProgram} {prims : Prims} {ix_infer_ret ix_match_ty ix_bound_or_none ix_callee_env ix_ret_pattern ix_inst_from : Nat} (fn : prog.funcs[ix_infer_ret]? = some (src_infer_ret ix_match_ty ix_bound_or_none ix_callee_env ix_ret_pattern ix_inst_from)) (np : prims.isPrim ix_infer_ret = false)
     (ext_match_ty : Certified (∀ {n : Nat}, Stmt_match_ty prog prims ix_match_ty n))
     (ext_bound_or_none : Certified (∀ {n : Nat}, Stmt_bound_or_none prog prims ix_bound_or_none n))
-    (ext_ret_pattern : Certified (∀ {n : Nat}, Stmt_ret_pattern prog prims ix_ret_pattern n))
     (ext_callee_env : Certified (∀ {n : Nat}, Stmt_callee_env prog prims ix_callee_env n))
+    (ext_ret_pattern : Certified (∀ {n : Nat}, Stmt_ret_pattern prog prims ix_ret_pattern n))
     (ext_inst_from : Certified (∀ {n : Nat}, Stmt_inst_from prog prims ix_inst_from n)) {n : Nat} :
     Stmt_infer_ret prog prims ix_infer_ret n := by
   intro x0 x1 x2 x3 x4 x5 x6 v0 v1 v2 v3 v4 v5 v6 w h r0 r1 r2 r3 r4 r5 r6

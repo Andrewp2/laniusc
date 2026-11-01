@@ -372,31 +372,31 @@ theorem pure1791 : PureFunc prog prims outside src1791 = true :=
 theorem pure1792 : PureFunc prog prims outside src1792 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::eff_found -/
+/-- mini::selfhost::member_args -/
 theorem pure1793 : PureFunc prog prims outside src1793 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::find_method -/
+/-- mini::selfhost::eff_found_with -/
 theorem pure1794 : PureFunc prog prims outside src1794 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::single<mini::selfhost::MEff> -/
+/-- mini::selfhost::find_method -/
 theorem pure1795 : PureFunc prog prims outside src1795 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::eff_step -/
+/-- mini::selfhost::single<mini::selfhost::MEff> -/
 theorem pure1796 : PureFunc prog prims outside src1796 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::find_const_at -/
+/-- mini::selfhost::eff_step -/
 theorem pure1797 : PureFunc prog prims outside src1797 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::has_tys -/
+/-- mini::selfhost::find_const_at -/
 theorem pure1798 : PureFunc prog prims outside src1798 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::known_args -/
+/-- mini::selfhost::has_tys -/
 theorem pure1799 : PureFunc prog prims outside src1799 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 

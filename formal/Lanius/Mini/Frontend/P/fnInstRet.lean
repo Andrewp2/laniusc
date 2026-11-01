@@ -185,11 +185,15 @@ def isTypeOwner (env : FrontEnv) (front : List (List Nat)) (name : List Nat) : B
 def isFnPath (env : FrontEnv) (s : Split) : Bool :=
   isTypeOwner env s.home s.name || isSomeIndex (findFn env.decls.fns (pathModule env s.home s.name) s.name 0)
 
-/-- A postfix `recv.m(args)` (recv a local, no further postfix). -/
+/-- A method's type arguments, written (`.m<T>`) or not. -/
+def memberArgs (p : Nat) : Bool :=
+  decide (p = (297)) || decide (p = (298))
+
+/-- A postfix `recv.m(args)` or `recv.m<T, ..>(args)` (recv a local, no further postfix). -/
 def isMethodForm (pf : CTree) : Bool :=
   let primary : CTree := kid pf 0
   let tail : CTree := kid pf 1
   let call : CTree := kid tail 3
-  (decide (nodeProd primary = (174)) || decide (nodeProd primary = (173)) && decide (nodeProd (kid primary 1) = (274))) && decide (nodeProd tail = (163)) && decide (nodeProd (kid tail 2) = (297)) && decide (nodeProd call = (161)) && decide (nodeProd (kid call 3) = (164))
+  (decide (nodeProd primary = (174)) || decide (nodeProd primary = (173)) && decide (nodeProd (kid primary 1) = (274))) && decide (nodeProd tail = (163)) && memberArgs (nodeProd (kid tail 2)) && decide (nodeProd call = (161)) && decide (nodeProd (kid call 3) = (164))
 
 end Lanius.Mini

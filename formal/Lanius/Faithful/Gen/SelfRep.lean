@@ -866,7 +866,7 @@ inductive RepFlDiv : Lanius.Mini.FlDiv → Value → Prop where
 
 inductive RepArgsBound : Lanius.Mini.ArgsBound → Value → Prop where
   | c0 {x0 : List Lanius.Mini.MEff} {x1 : List Lanius.Mini.Bind} {v0 v1 : Value} :
-      (RepList 228 RepMEff) x0 v0 → (RepList 264 RepBind) x1 v1 → RepArgsBound (Lanius.Mini.ArgsBound.mk x0 x1) (.structure 298 [v0, v1])
+      (RepList 228 RepMEff) x0 v0 → (RepList 264 RepBind) x1 v1 → RepArgsBound (Lanius.Mini.ArgsBound.mk x0 x1) (.structure 300 [v0, v1])
 
 inductive RepWildSplit : Lanius.Mini.WildSplit → Value → Prop where
   | c0 {x0 : List Lanius.Mini.CTree} {x1 : Lanius.Mini.CTree} {v0 v1 : Value} :
@@ -1220,10 +1220,10 @@ attribute [rep_rule] RepArmsUse.c0 RepArmUse.c0
 @[pure_rule] theorem ty351_typeId : ty351.typeId = 293 := rfl
 @[pure_rule] theorem ty353_typeId : ty353.typeId = 295 := rfl
 @[pure_rule] theorem ty355_typeId : ty355.typeId = 296 := rfl
-@[pure_rule] theorem ty356_typeId : ty356.typeId = 298 := rfl
-@[pure_rule] theorem ty357_typeId : ty357.typeId = 297 := rfl
-@[pure_rule] theorem ty358_typeId : ty358.typeId = 299 := rfl
+@[pure_rule] theorem ty356_typeId : ty356.typeId = 297 := rfl
+@[pure_rule] theorem ty357_typeId : ty357.typeId = 298 := rfl
 @[pure_rule] theorem ty359_typeId : ty359.typeId = 300 := rfl
+@[pure_rule] theorem ty360_typeId : ty360.typeId = 299 := rfl
 @[pure_rule] theorem ty362_typeId : ty362.typeId = 301 := rfl
 @[pure_rule] theorem ty363_typeId : ty363.typeId = 303 := rfl
 @[pure_rule] theorem ty364_typeId : ty364.typeId = 302 := rfl
