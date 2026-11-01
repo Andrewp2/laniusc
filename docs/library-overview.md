@@ -493,6 +493,10 @@ the `seq-diff`/`seq-patch` tools give 878/878 minimal Myers edit lengths against
 an O(N·M) LCS, 878/878 GNU and native round trips, 878/878 real GNU `diff -u`
 applications and 333/333 distinct-line plus 328/328 repeated-line offset/fuzz
 agreements with GNU `patch` at `-F0` and `-F2`.
+[Three-way merge](extended-merge3.md) (`ext::merge3`, `seq-merge`) agrees byte
+for byte with `git merge-file`, `git merge-file --diff3` and GNU `diff3 -m` on
+2,000/2,000 distinct-line triples each; repeated-line triples agree on
+1,787-1,800 of 2,000, with equal-cost alignment differences otherwise.
 
 The preceding [reusable regex-workspace increment](library-regex-workspace-plan.md) is
 implemented and passes the selected Workspace/Search, regex, lexer,
