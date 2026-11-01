@@ -517,6 +517,17 @@ unique. Trusted:
   - a `match` has one arm per variant of its scrutinee's enum, in any order,
     and its arms are listed in variant order (only one runs, so their order
     has no effect);
+  - (F11) a match expression with a nested arm (`Ok(Some(x))`) is read as
+    nested matches (`MatchOrder`, `NestedOrder`, `Reading/Nested.lean`):
+    variant V's arm is `V(b, .., h, ..) -> match (h) { p -> value, .. }`,
+    the arms naming V in order matched on the first arm's first column j
+    that is not a binder, every other column a binder spelled as the first
+    arm's, a binder at j in the last arm read as `_` when its value spells
+    no token as its name (`Mentions`), then the outer wildcard unless no
+    value of V reaches it (an inner `_`, or `Covers`) and only when its
+    value spells none of the first arm's other binders (`ColsQuiet`); h is
+    the binder spelled `[0]`, which no source can spell. No arm's value is
+    a block (`BlockValue`). SEMANTIC_DECISIONS "Nested patterns";
   - `x.f` is `Field` when `x` is a local, and otherwise the call of the
     projection `fn(v: T) -> F { return v.f; }` on `x`, an instance numbered
     like any other;

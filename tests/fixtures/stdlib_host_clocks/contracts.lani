@@ -1,0 +1,105 @@
+// Self-checking named-clock contracts: ids, kinds, readings, CPU clocks and
+// absolute waits. Exit 0 means every assertion held.
+module app::main;
+import core::result;
+import core::slice;
+import core::time;
+import std::clock;
+import std::host_clocks;
+import std::linux;
+
+fn is_error(result: core::result::Result<core::time::Instant, std::host_clocks::Error>, code: i32) -> bool {
+    if (result.is_ok()) { return false; } return error_code(result.unwrap_err()) == code;
+}
+fn error_code(error: std::host_clocks::Error) -> i32 {
+    return match (error) {
+        std::host_clocks::Error::Host(code) -> code, std::host_clocks::Error::InvalidProcess -> 1000,
+        std::host_clocks::Error::WrongKind -> 1001, std::host_clocks::Error::Unsupported -> 1002,
+        std::host_clocks::Error::InvalidTimestamp -> 1003, std::host_clocks::Error::InvalidStatus -> 1004,
+        std::host_clocks::Error::ClockReversed -> 1005
+    };
+}
+fn id(clock: std::host_clocks::Clock) -> i64 { return std::host_clocks::id(clock).unwrap(); }
+fn now(clock: std::host_clocks::Clock) -> core::time::Instant { return std::host_clocks::instant(clock).unwrap(); }
+fn cpu(clock: std::host_clocks::Clock) -> core::time::Duration { return std::host_clocks::cpu_time(clock).unwrap(); }
+fn spin(rounds: i32) -> i64 { let total: i64 = 0; let index: i32 = 0; while (index < rounds) { total += (index as i64) * 3 + 1; index += 1; } return total; }
+fn getpid() -> i32 {
+    let none: [std::linux::Argument;0] = []; return std::linux::call(39,core::slice::view(none,0).unwrap()).unwrap() as i32;
+}
+fn after(base: core::time::Instant, milliseconds: u64) -> core::time::Instant { return base.checked_add(core::time::from_millis(milliseconds)).unwrap(); }
+fn main() -> i32 {
+    // Linux clockid_t values, including the process CPU clock encoding.
+    assert(id(std::host_clocks::Clock::Realtime) == 0 && id(std::host_clocks::Clock::Monotonic) == 1 && id(std::host_clocks::Clock::ProcessCpu) == 2 && id(std::host_clocks::Clock::ThreadCpu) == 3);
+    assert(id(std::host_clocks::Clock::MonotonicRaw) == 4 && id(std::host_clocks::Clock::RealtimeCoarse) == 5 && id(std::host_clocks::Clock::MonotonicCoarse) == 6 && id(std::host_clocks::Clock::Boottime) == 7 && id(std::host_clocks::Clock::Tai) == 11);
+    assert(id(std::host_clocks::Clock::ProcessCpuOf(1)) == -14 && id(std::host_clocks::Clock::ProcessCpuOf(4194304)) == -33554438);
+    let bad: [i32;4] = [0,-1,4194305,-2147483648]; let index: i32 = 0;
+    while (index < 4) {
+        let made: core::result::Result<i64, std::host_clocks::Error> = std::host_clocks::id(std::host_clocks::Clock::ProcessCpuOf(bad[index]));
+        assert(made.is_err() && error_code(made.unwrap_err()) == 1000);
+        let read: core::result::Result<core::time::Duration, std::host_clocks::Error> = std::host_clocks::cpu_time(std::host_clocks::Clock::ProcessCpuOf(bad[index]));
+        assert(read.is_err() && error_code(read.unwrap_err()) == 1000); index += 1;
+    }
+    // Kind checks precede host calls.
+    let wall: core::result::Result<core::time::SystemTime, std::host_clocks::Error> = std::host_clocks::timestamp(std::host_clocks::Clock::Monotonic);
+    assert(wall.is_err() && error_code(wall.unwrap_err()) == 1001);
+    assert(is_error(std::host_clocks::instant(std::host_clocks::Clock::Realtime),1001) && is_error(std::host_clocks::instant(std::host_clocks::Clock::ProcessCpu),1001));
+    let wrong_cpu: core::result::Result<core::time::Duration, std::host_clocks::Error> = std::host_clocks::cpu_time(std::host_clocks::Clock::Boottime);
+    assert(wrong_cpu.is_err() && error_code(wrong_cpu.unwrap_err()) == 1001);
+    let base: core::time::Instant = now(std::host_clocks::Clock::Monotonic);
+    assert(is_error(std::host_clocks::sleep_until_instant(std::host_clocks::Clock::MonotonicRaw,base),1002) && is_error(std::host_clocks::sleep_until_instant(std::host_clocks::Clock::MonotonicCoarse,base),1002));
+    assert(is_error(std::host_clocks::sleep_until_instant(std::host_clocks::Clock::Realtime,base),1001));
+    let coarse_wait: core::result::Result<core::time::SystemTime, std::host_clocks::Error> = std::host_clocks::sleep_until_timestamp(std::host_clocks::Clock::RealtimeCoarse,core::time::unix_epoch());
+    assert(coarse_wait.is_err() && error_code(coarse_wait.unwrap_err()) == 1002);
+    let steady_wait: core::result::Result<core::time::SystemTime, std::host_clocks::Error> = std::host_clocks::sleep_until_timestamp(std::host_clocks::Clock::Boottime,core::time::unix_epoch());
+    assert(steady_wait.is_err() && error_code(steady_wait.unwrap_err()) == 1001);
+    // Ordered reads: boottime includes suspend time; coarse clocks lag fine ones.
+    let mono: core::time::Instant = now(std::host_clocks::Clock::Monotonic); let boot: core::time::Instant = now(std::host_clocks::Clock::Boottime);
+    assert(boot.compare(mono) >= 0 && mono.compare(base) >= 0);
+    let coarse: core::time::Instant = now(std::host_clocks::Clock::MonotonicCoarse); let fine: core::time::Instant = now(std::host_clocks::Clock::Monotonic);
+    assert(coarse.compare(fine) <= 0);
+    let raw: core::time::Instant = now(std::host_clocks::Clock::MonotonicRaw); assert(raw.ticks.seconds > 0 || raw.ticks.nanos > 0);
+    let wall_coarse: core::time::SystemTime = std::host_clocks::timestamp(std::host_clocks::Clock::RealtimeCoarse).unwrap();
+    let wall_fine: core::time::SystemTime = std::host_clocks::timestamp(std::host_clocks::Clock::Realtime).unwrap();
+    let native: core::time::SystemTime = std::clock::system_now().unwrap();
+    assert(wall_coarse.compare(wall_fine) <= 0 && wall_fine.compare(native) <= 0 && wall_fine.seconds > 1700000000);
+    let tai: core::time::SystemTime = std::host_clocks::timestamp(std::host_clocks::Clock::Tai).unwrap(); assert(tai.seconds >= wall_fine.seconds);
+    // CPU clocks: thread <= process for this single-threaded program; the
+    // pid-named clock of this process falls between two process readings.
+    let first: core::time::Duration = cpu(std::host_clocks::Clock::ProcessCpu);
+    assert(spin(20000000) > 0);
+    let thread: core::time::Duration = cpu(std::host_clocks::Clock::ThreadCpu);
+    let middle: core::time::Duration = cpu(std::host_clocks::Clock::ProcessCpu);
+    let named: core::time::Duration = cpu(std::host_clocks::Clock::ProcessCpuOf(getpid()));
+    let last: core::time::Duration = cpu(std::host_clocks::Clock::ProcessCpu);
+    assert(middle.compare(first) > 0 && thread.compare(middle) <= 0 && named.compare(middle) >= 0 && named.compare(last) <= 0);
+    let absent: core::result::Result<core::time::Duration, std::host_clocks::Error> = std::host_clocks::cpu_time(std::host_clocks::Clock::ProcessCpuOf(4194304));
+    assert(absent.is_err() && error_code(absent.unwrap_err()) == 22);
+    // Resolutions are positive and below one second for every named clock.
+    let clocks: [std::host_clocks::Clock;9] = [std::host_clocks::Clock::Realtime,std::host_clocks::Clock::RealtimeCoarse,std::host_clocks::Clock::Tai,std::host_clocks::Clock::Monotonic,std::host_clocks::Clock::MonotonicRaw,std::host_clocks::Clock::MonotonicCoarse,std::host_clocks::Clock::Boottime,std::host_clocks::Clock::ProcessCpu,std::host_clocks::Clock::ThreadCpu];
+    index = 0;
+    while (index < 9) { let span: core::time::Duration = std::host_clocks::resolution(clocks[index]).unwrap(); assert(span.seconds == 0 && span.nanos > 0); index += 1; }
+    // Absolute waits wake at or after the target and report the observed time.
+    let start: core::time::Instant = now(std::host_clocks::Clock::Monotonic); let target: core::time::Instant = after(start,20);
+    let woke: core::time::Instant = std::host_clocks::sleep_until_instant(std::host_clocks::Clock::Monotonic,target).unwrap();
+    assert(woke.compare(target) >= 0 && woke.compare(after(start,2000)) < 0);
+    let boot_start: core::time::Instant = now(std::host_clocks::Clock::Boottime); let boot_target: core::time::Instant = after(boot_start,15);
+    let boot_woke: core::time::Instant = std::host_clocks::sleep_until_instant(std::host_clocks::Clock::Boottime,boot_target).unwrap();
+    assert(boot_woke.compare(boot_target) >= 0 && boot_woke.compare(after(boot_start,2000)) < 0);
+    // A past target returns the first reading without waiting.
+    let past: core::time::Instant = std::host_clocks::sleep_until_instant(std::host_clocks::Clock::Monotonic,start).unwrap(); assert(past.compare(woke) >= 0);
+    let wall_start: core::time::SystemTime = std::host_clocks::timestamp(std::host_clocks::Clock::Realtime).unwrap();
+    let wall_target: core::time::SystemTime = wall_start.checked_add(core::time::from_millis(10)).unwrap();
+    let wall_woke: core::time::SystemTime = std::host_clocks::sleep_until_timestamp(std::host_clocks::Clock::Realtime,wall_target).unwrap(); assert(wall_woke.compare(wall_target) >= 0);
+    let tai_start: core::time::SystemTime = std::host_clocks::timestamp(std::host_clocks::Clock::Tai).unwrap();
+    let tai_target: core::time::SystemTime = tai_start.checked_add(core::time::from_millis(5)).unwrap();
+    let tai_woke: core::time::SystemTime = std::host_clocks::sleep_until_timestamp(std::host_clocks::Clock::Tai,tai_target).unwrap(); assert(tai_woke.compare(tai_target) >= 0);
+    let epoch: core::time::SystemTime = std::host_clocks::sleep_until_timestamp(std::host_clocks::Clock::Realtime,core::time::unix_epoch()).unwrap(); assert(epoch.compare(wall_woke) >= 0);
+    // Boottime as a std::clock::Monotonic provider for the shared deadline waits.
+    let clock: std::host_clocks::Boottime = std::host_clocks::boottime();
+    let invalid: core::result::Result<i32, std::clock::Error> = clock.pause_ms(-1); assert(invalid.is_err());
+    assert(clock.pause_ms(0).unwrap() == 0 && clock.pause_ms(3).unwrap() == 3);
+    let generic_start: core::time::Instant = now(std::host_clocks::Clock::Boottime);
+    let generic: core::time::Instant = std::clock::sleep_for(clock.borrow(),core::time::from_millis(12)).unwrap();
+    assert(generic.compare(after(generic_start,12)) >= 0 && generic.compare(after(generic_start,2000)) < 0);
+    return 0;
+}

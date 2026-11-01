@@ -1,0 +1,179 @@
+// Named Linux x86_64 clocks over raw clock_gettime/clock_getres/clock_nanosleep.
+// No allocation. See docs/stdlib-host-clocks.md.
+module std::host_clocks;
+import core::mem;
+import core::result;
+import core::slice;
+import core::time;
+import std::clock;
+import std::linux;
+
+// Wall clocks read signed Unix-style timestamps; steady clocks read
+// nonnegative instants from a boot-relative origin; CPU clocks read consumed
+// CPU time. ProcessCpuOf names another process's whole-process CPU clock.
+pub enum Clock { Realtime, RealtimeCoarse, Tai, Monotonic, MonotonicRaw, MonotonicCoarse, Boottime, ProcessCpu, ThreadCpu, ProcessCpuOf(i32) }
+pub enum Kind { Wall, Steady, Cpu }
+// WrongKind and Unsupported are decided before any host call. Host keeps the
+// positive Linux errno; EINVAL for ProcessCpuOf usually means no such process.
+pub enum Error { Host(i32), InvalidProcess, WrongKind, Unsupported, InvalidTimestamp, InvalidStatus, ClockReversed }
+
+pub const PID_LIMIT: i32 = 4194304;
+
+pub fn kind(clock: Clock) -> Kind {
+    return match (clock) {
+        Clock::Realtime -> Kind::Wall, Clock::RealtimeCoarse -> Kind::Wall, Clock::Tai -> Kind::Wall,
+        Clock::Monotonic -> Kind::Steady, Clock::MonotonicRaw -> Kind::Steady, Clock::MonotonicCoarse -> Kind::Steady, Clock::Boottime -> Kind::Steady,
+        Clock::ProcessCpu -> Kind::Cpu, Clock::ThreadCpu -> Kind::Cpu, Clock::ProcessCpuOf(pid) -> Kind::Cpu
+    };
+}
+fn is_kind(clock: Clock, wanted: i32) -> bool {
+    let actual: i32 = match (kind(clock)) { Kind::Wall -> 0, Kind::Steady -> 1, Kind::Cpu -> 2 };
+    return actual == wanted;
+}
+// Linux clockid_t. A process CPU clock is ((~pid) << 3) | CPUCLOCK_SCHED.
+pub fn id(clock: Clock) -> core::result::Result<i64, Error> {
+    let value: i64 = match (clock) {
+        Clock::Realtime -> 0, Clock::Monotonic -> 1, Clock::ProcessCpu -> 2, Clock::ThreadCpu -> 3,
+        Clock::MonotonicRaw -> 4, Clock::RealtimeCoarse -> 5, Clock::MonotonicCoarse -> 6, Clock::Boottime -> 7,
+        Clock::Tai -> 11, Clock::ProcessCpuOf(pid) -> process_id(pid)
+    };
+    if (value == -1) { return core::result::Err(Error::InvalidProcess); }
+    return core::result::Ok(value);
+}
+fn process_id(pid: i32) -> i64 {
+    if (pid < 1 || pid > PID_LIMIT) { return -1; }
+    return (0 - (pid as i64) - 1) * 8 + 2;
+}
+fn linux_error(error: std::linux::Error) -> Error {
+    return match (error) { std::linux::Error::System(code) -> Error::Host(code), _ -> Error::InvalidStatus };
+}
+// One syscall on a 16-byte timespec; the clock id must already be validated.
+fn transfer(number: i64, clock: i64, flags: i64, words: [i32]) -> core::result::Result<i64, Error> {
+    let arguments: [std::linux::Argument;4] = [std::linux::Argument::Word(clock),std::linux::Argument::Word(flags),std::linux::Argument::Address(core::mem::i32_slice_data_ptr(words)),std::linux::Argument::Word(0)];
+    let count: i32 = 4; if (number != 230) { arguments[1] = std::linux::Argument::Address(core::mem::i32_slice_data_ptr(words)); count = 2; }
+    let result: core::result::Result<i64, std::linux::Error> = std::linux::call(number,core::slice::view(arguments,count).unwrap());
+    if (result.is_err()) { return core::result::Err(linux_error(result.unwrap_err())); }
+    if (result.unwrap() != 0) { return core::result::Err(Error::InvalidStatus); }
+    return core::result::Ok(0);
+}
+fn seconds_of(words: [i32]) -> i64 { return (((words[1] as u32) as u64) << 32 | ((words[0] as u32) as u64)) as i64; }
+fn query(number: i64, clock: Clock) -> core::result::Result<core::time::SystemTime, Error> {
+    let made: core::result::Result<i64, Error> = id(clock);
+    if (made.is_err()) { return core::result::Err(made.unwrap_err()); }
+    let words: [i32;4] = [0;4]; words[2] = -1;
+    let done: core::result::Result<i64, Error> = transfer(number,made.unwrap(),0,words);
+    if (done.is_err()) { return core::result::Err(done.unwrap_err()); }
+    if (words[3] != 0 || words[2] < 0 || words[2] >= 1000000000) { return core::result::Err(Error::InvalidTimestamp); }
+    return core::result::Ok(core::time::SystemTime { seconds: seconds_of(words), nanos: words[2] as u32 });
+}
+fn nonnegative(reading: core::result::Result<core::time::SystemTime, Error>) -> core::result::Result<core::time::Duration, Error> {
+    if (reading.is_err()) { return core::result::Err(reading.unwrap_err()); }
+    let value: core::time::SystemTime = reading.unwrap();
+    if (value.seconds < 0) { return core::result::Err(Error::InvalidTimestamp); }
+    return core::result::Ok(core::time::Duration { seconds: value.seconds as u64, nanos: value.nanos });
+}
+
+// Wall clocks only. A legitimate pre-epoch reading is a successful value.
+pub fn timestamp(clock: Clock) -> core::result::Result<core::time::SystemTime, Error> {
+    if (!is_kind(clock,0)) { return core::result::Err(Error::WrongKind); }
+    return query(228,clock);
+}
+// Steady clocks only. Compare instants only from the same clock.
+pub fn instant(clock: Clock) -> core::result::Result<core::time::Instant, Error> {
+    if (!is_kind(clock,1)) { return core::result::Err(Error::WrongKind); }
+    let span: core::result::Result<core::time::Duration, Error> = nonnegative(query(228,clock));
+    if (span.is_err()) { return core::result::Err(span.unwrap_err()); }
+    return core::result::Ok(core::time::instant(span.unwrap()));
+}
+// CPU clocks only: consumed CPU time since the process or thread started.
+pub fn cpu_time(clock: Clock) -> core::result::Result<core::time::Duration, Error> {
+    if (!is_kind(clock,2)) { return core::result::Err(Error::WrongKind); }
+    return nonnegative(query(228,clock));
+}
+// Any clock. The kernel's reported granularity, not a precision guarantee.
+pub fn resolution(clock: Clock) -> core::result::Result<core::time::Duration, Error> {
+    return nonnegative(query(229,clock));
+}
+
+// Absolute kernel waits: clock_nanosleep(TIMER_ABSTIME). Only clocks the
+// kernel can wait on are accepted; others return Unsupported without a call.
+// EINTR retries the same absolute target, so interruption never shifts it.
+fn waitable(clock: Clock) -> bool {
+    return match (clock) { Clock::Realtime -> true, Clock::Tai -> true, Clock::Monotonic -> true, Clock::Boottime -> true, _ -> false };
+}
+fn absolute(clock: Clock, seconds: i64, nanos: u32) -> core::result::Result<i64, Error> {
+    let made: core::result::Result<i64, Error> = id(clock);
+    if (made.is_err()) { return core::result::Err(made.unwrap_err()); }
+    let words: [i32;4] = [0;4];
+    let bits: u64 = seconds as u64; words[0] = ((bits & 4294967295) as u32) as i32; words[1] = ((bits >> 32) as u32) as i32; words[2] = nanos as i32;
+    while (true) {
+        let done: core::result::Result<i64, Error> = transfer(230,made.unwrap(),1,words);
+        if (done.is_ok()) { return done; }
+        let interrupted: bool = match (done.unwrap_err()) { Error::Host(code) -> code == 4, _ -> false };
+        if (!interrupted) { return done; }
+    }
+    return core::result::Err(Error::InvalidStatus);
+}
+// Monotonic or Boottime. Returns the instant observed after waking, never one
+// before the target; a reading that precedes the target is InvalidStatus.
+pub fn sleep_until_instant(clock: Clock, target: core::time::Instant) -> core::result::Result<core::time::Instant, Error> {
+    if (!is_kind(clock,1)) { return core::result::Err(Error::WrongKind); }
+    if (!waitable(clock)) { return core::result::Err(Error::Unsupported); }
+    let before: core::result::Result<core::time::Instant, Error> = instant(clock);
+    if (before.is_err()) { return before; }
+    if (before.unwrap().compare(target) >= 0) { return before; }
+    let span: core::time::Duration = target.saturating_duration_since(core::time::instant(core::time::zero()));
+    // A target beyond the signed timespec range cannot be passed to the kernel.
+    let limit: i64 = 9223372036854775807;
+    if (span.seconds > limit as u64) { return core::result::Err(Error::InvalidTimestamp); }
+    let slept: core::result::Result<i64, Error> = absolute(clock,span.seconds as i64,span.nanos);
+    if (slept.is_err()) { return core::result::Err(slept.unwrap_err()); }
+    let after: core::result::Result<core::time::Instant, Error> = instant(clock);
+    if (after.is_err()) { return after; }
+    let now: core::time::Instant = after.unwrap();
+    if (now.compare(before.unwrap()) < 0) { return core::result::Err(Error::ClockReversed); }
+    if (now.compare(target) < 0) { return core::result::Err(Error::InvalidStatus); }
+    return core::result::Ok(now);
+}
+// Realtime or Tai. The wait follows wall-clock changes; the observed timestamp
+// after waking is returned. A target at or before the current reading returns
+// without waiting; a negative target with a later pre-epoch clock is EINVAL.
+pub fn sleep_until_timestamp(clock: Clock, target: core::time::SystemTime) -> core::result::Result<core::time::SystemTime, Error> {
+    if (!is_kind(clock,0)) { return core::result::Err(Error::WrongKind); }
+    if (!waitable(clock)) { return core::result::Err(Error::Unsupported); }
+    let before: core::result::Result<core::time::SystemTime, Error> = timestamp(clock);
+    if (before.is_err()) { return before; }
+    if (before.unwrap().compare(target) >= 0) { return before; }
+    let slept: core::result::Result<i64, Error> = absolute(clock,target.seconds,target.nanos);
+    if (slept.is_err()) { return core::result::Err(slept.unwrap_err()); }
+    let after: core::result::Result<core::time::SystemTime, Error> = timestamp(clock);
+    if (after.is_err()) { return after; }
+    // Wall clocks may be set backwards while waiting; report what was read.
+    return after;
+}
+
+// Suspend-aware std::clock::Monotonic provider: CLOCK_BOOTTIME continues across
+// system suspend, unlike std::clock::NativeClock's CLOCK_MONOTONIC.
+pub struct Boottime {}
+pub fn boottime() -> Boottime { return Boottime {}; }
+pub impl Boottime { pub fn borrow(&self) -> &Boottime { return self; } }
+fn clock_error(error: Error) -> std::clock::Error {
+    return match (error) { Error::Host(code) -> std::clock::Error::Host(code), Error::InvalidTimestamp -> std::clock::Error::InvalidTimestamp, Error::ClockReversed -> std::clock::Error::ClockReversed, _ -> std::clock::Error::InvalidStatus };
+}
+pub impl std::clock::Monotonic for Boottime {
+    pub fn now(&self) -> core::result::Result<core::time::Instant, std::clock::Error> {
+        let read: core::result::Result<core::time::Instant, Error> = instant(Clock::Boottime);
+        if (read.is_err()) { return core::result::Err(clock_error(read.unwrap_err())); }
+        return core::result::Ok(read.unwrap());
+    }
+    // One relative clock_nanosleep on CLOCK_BOOTTIME; EINTR is Host(4), which
+    // std::clock's waits retry against their original deadline.
+    pub fn pause_ms(&self, milliseconds: i32) -> core::result::Result<i32, std::clock::Error> {
+        if (milliseconds < 0) { return core::result::Err(std::clock::Error::InvalidDuration); }
+        if (milliseconds == 0) { return core::result::Ok(0); }
+        let words: [i32;4] = [0;4]; words[0] = milliseconds / 1000; words[2] = (milliseconds % 1000) * 1000000;
+        let done: core::result::Result<i64, Error> = transfer(230,7,0,words);
+        if (done.is_err()) { return core::result::Err(clock_error(done.unwrap_err())); }
+        return core::result::Ok(milliseconds);
+    }
+}

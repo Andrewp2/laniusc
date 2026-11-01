@@ -3,7 +3,6 @@ module
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Compiler.P.arithShiftRight
 import Lanius.Mini.Compiler.P.matchVariants
-import Lanius.Mini.Frontend.P.armsOf
 import Lanius.Mini.Frontend.P.callParts
 import Lanius.Mini.Frontend.P.collect
 import Lanius.Mini.Frontend.P.consBinder
@@ -20,7 +19,7 @@ import Lanius.Mini.Frontend.P.isPathCall
 import Lanius.Mini.Frontend.P.itemOf
 import Lanius.Mini.Frontend.P.joinInsts
 import Lanius.Mini.Frontend.P.matchTysOrNone
-import Lanius.Mini.Frontend.P.namesSome
+import Lanius.Mini.Frontend.P.noBlock
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.noTrees
 import Lanius.Mini.Frontend.P.paramGoals
@@ -433,7 +432,7 @@ def effArmsOrdered (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected 
   if fuel = 0 then
     none
   else
-    match armsInOrder fuel owner variants arms with
+    match matchOrder fuel env owner variants arms with
     | none => none
     | some os => effArms (fuel - 1) env scope expected owner variants os
 /-- Arm k is variant k. -/

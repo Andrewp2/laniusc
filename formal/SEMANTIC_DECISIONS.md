@@ -1364,6 +1364,67 @@ arms after it are read as before.
   written; a wildcard value arm then copies the statements after the let
   into each variant it stands for.
 
+## Enums with no variants (decided 10-31, F11)
+
+An enum with no variants (`enum Never {}`, as `core::clone_values::Infallible`)
+needs nothing new in the front end: it is a type with no values, so a
+`Result<T, Never>` is always `Ok`, and the arm of its error still binds its
+payload (case empty_enum). A match on a value of it has no arms; the front
+end reads it (`ArmsOrder` with no variants and no arms), but `compileSource`
+rejects it, since Core has no match with no arms and the lowering would need
+one that traps (case empty_match, `compile_rejects`). No reachable code can
+run such a match, so this leaves out no behavior a program can show.
+
+The 14 `core::clone_values` targets were unread for a reason in the oracle,
+not the front end: its wrapper wrote the trait method's result at the
+instance type (`Result<bool, E>`) where laniusc checks the generic helper
+first (`Result<T, E>`), and wrote the trait's type arguments unqualified from
+the wrapper's module (LNC0006). `stdlib_oracle.py`'s `wrapper_text` writes
+both as laniusc names them; 12 of the 14 now compile, 240 calls agree.
+
+## Nested patterns (decided 10-31, F11)
+
+A match expression with a nested arm, one whose payload patterns are not all
+plain binders (`Ok(Some(x))`, `Pair(Bar::X(a), b)`, `Err(m::E::V(n))`), is
+read as nested matches (`match_order`, `MatchOrder`, `NestedOrder` in
+`Reading/Nested`). Module-qualified patterns need nothing new: an arm's path
+may already be `V`, `E::V`, `m::V` or `m::E::V` (`ArmNamed`). Variant V's arm
+is the wildcard's when no arm names V, V's one written arm when that is
+plain, and otherwise `V(b, .., h, ..) -> match (h) { p -> value, .., _ ->
+w }`: the arms naming V, in order, matched on the first arm's first column
+j that is not a binder; each gives the inner match its pattern p at j and
+its value. The inner match is read again, nested or not.
+
+- laniusc runs the first arm that matches. The arms naming V are kept in
+  order in the inner match, and every other column of each of them must be
+  a binder spelled as the first arm's (`row_fits`), so each arm matches
+  exactly when its pattern at j does, and its value sees the same names
+  (bound to the same payload fields, with the first arm's ids). Arms that
+  differ off column j, or a plain arm before a nested one for the same
+  variant, are not read; laniusc accepts them, so these are readings the
+  front end leaves out.
+- At column j the last arm may be a binder; it matches everything there,
+  so it is read as `_` when its value spells no token as that name
+  (`Mentions`), and otherwise not read (case reject_nested_binder).
+- The outer wildcard, if any, is added as the inner match's last arm,
+  unless an inner arm is `_` already or the inner arms name every variant
+  of h's enum with plain binders (`Covers`): then no value of V reaches it.
+  In the inner match the first arm's other binders are in scope, where the
+  wildcard's value was written without them, so it is added only when its
+  value spells none of their names (`ColsQuiet`; case
+  reject_nested_capture). The wildcard must still be used somewhere, a
+  variant's arm or an inner arm, so that its value is read.
+- h is a binder no source can spell (the one byte 0), its id the position
+  of the first arm's pattern at j, checked fresh like any binder's. The
+  inner match's scrutinee is h.
+- A match statement reads block arms; a nested match expression may have
+  no arm whose value is a block (`BlockValue`), so the two readings never
+  overlap. Nested arms in match statements and lets' matches are not read.
+- Every arm but a last wildcard must name a variant, as without nesting.
+- Determinism: whether some arm is nested decides the branch; the arms
+  naming a variant, their patterns, the column and the inner arms are each
+  determined by the tree (`nestedOrder_unique`, `matchOrder_unique`).
+
 ## Oracle comparisons of laniusc's programs and `extended/` (decided 10-31, F11)
 
 - Traps agree as traps: laniusc's checked traps exit 101 (bounds), 102

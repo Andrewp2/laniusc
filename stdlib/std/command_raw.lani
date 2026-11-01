@@ -36,6 +36,10 @@ pub fn get_group(pid: i32) -> i64 { return word(121,pid as i64,0,0); }
 pub fn observe_exit(pid: i32, info: ptr) -> i64 {
     return invoke(247,std::linux::Argument::Word(1),std::linux::Argument::Word(pid as i64),std::linux::Argument::Address(info),std::linux::Argument::Word(16777221));
 }
+// Blocking waitid(P_PID,pid,info,WEXITED|WNOWAIT,NULL): one call; EINTR is -4.
+pub fn observe_exit_blocking(pid: i32, info: ptr) -> i64 {
+    return invoke(247,std::linux::Argument::Word(1),std::linux::Argument::Word(pid as i64),std::linux::Argument::Address(info),std::linux::Argument::Word(16777220));
+}
 pub fn wait(pid: i32, status: ptr, nonblocking: bool) -> i64 { if (nonblocking) { return pointer(61,pid as i64,status,1); } let n: i64 = -4; while (n == -4) { n = pointer(61,pid as i64,status,0); } return n; }
 pub fn change_dir(path: ptr) -> i64 { return invoke(80,std::linux::Argument::Address(path),std::linux::Argument::Word(0),std::linux::Argument::Word(0),std::linux::Argument::Word(0)); }
 pub fn execute(path: ptr, argv: ptr, env: ptr) -> i64 { return invoke(59,std::linux::Argument::Address(path),std::linux::Argument::Address(argv),std::linux::Argument::Address(env),std::linux::Argument::Word(0)); }
