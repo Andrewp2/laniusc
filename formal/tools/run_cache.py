@@ -202,3 +202,114 @@ def run_lean(lean_path, memory='6G'):
     if run.returncode == 0 and digest:
         store('lean', k, dict(stdout=run.stdout))
     return run
+
+
+def lani_digest(entry, roots):
+    """A digest of the source files a laniusc build of entry reads: entry and,
+    transitively, every file an `import a::b::c;` in one of them can resolve
+    to in a root (a/b/c.lani for the module, a/b.lani for an item of it),
+    each as its bytes or as absent (by root index and relative path, so
+    copies of the same roots agree). laniusc reads only that closure of an
+    entry's imports (its source-root loader), so this is the key a build
+    needs instead of a digest of every root; the import lines are found
+    anywhere in the text, comments too, so the set over-approximates."""
+    import re
+    roots = [os.path.abspath(r) for r in roots]
+    h = hashlib.sha256()
+    seen, todo = set(), [('entry', os.path.abspath(entry))]
+    while todo:
+        label, path = todo.pop()
+        if label in seen:
+            continue
+        seen.add(label)
+        h.update(label.encode() + b'\0' + file_digest(path).encode() + b'\0')
+        text = open(path, encoding='utf-8', errors='replace').read()
+        bare = re.sub(r'//[^\n]*|/\*.*?\*/', ' ', text, flags=re.S)
+        names = set()
+        for t in (text, bare):
+            names.update(re.sub(r'\s', '', m) for m in re.findall(r'\bimport\s+(\w+(?:\s*::\s*\w+)*)\s*;', t))
+        for name in sorted(names):
+            parts = name.split('::')
+            for rel in sorted({'/'.join(parts) + '.lani', '/'.join(parts[:-1]) + '.lani'} - {'.lani'}):
+                for i, r in enumerate(roots):
+                    candidate = os.path.join(r, rel)
+                    if os.path.isfile(candidate):
+                        todo.append((f'{i}:{rel}', candidate))
+                    else:
+                        h.update(f'absent {i}:{rel}\0'.encode())
+    return h.hexdigest()
+
+
+LCC = os.path.join(ROOT, 'target/claude-work/bin/lcc')
+LCC_LANIUSC = '/home/andrew-peterson/code/laniusc/target/release/laniusc'
+
+
+def lcc_argv(laniusc, entry, exe, roots):
+    """The command that builds exe from entry through lcc, the client of one
+    resident laniusc daemon shared by every checkout (a warm compile takes
+    tens of milliseconds, a one-shot laniusc seconds of GPU start-up), or
+    None when lcc is missing, builds another laniusc binary, or would be
+    given more than one source root besides the stdlib (roots[-1])."""
+    if not os.path.exists(LCC) or len(roots) > 2 or not os.path.exists(LCC_LANIUSC):
+        return None
+    if os.path.realpath(laniusc) != os.path.realpath(LCC_LANIUSC):
+        return None
+    return [LCC, '--stdlib-root', roots[-1]] + [a for r in roots[:-1] for a in ('--source-root', r)] + ['-o', exe, entry]
+
+
+def laniusc_build(argv, laniusc, entry, exe, roots):
+    """Build exe from entry with these source roots (the stdlib last), unless
+    a build with the same laniusc binary and sources is stored: through lcc
+    when it can (lcc_argv), else (or when lcc fails) by argv, a one-shot
+    laniusc command. The stored binary's path and None, or None and the
+    command's result when it fails."""
+    import subprocess
+    k = key('build', file_digest(laniusc), lani_digest(entry, roots))
+    hit = load_file('build', k)
+    if hit is not None:
+        return hit, None
+    if os.path.exists(exe):
+        os.remove(exe)
+    fast = lcc_argv(laniusc, entry, exe, roots)
+    run = subprocess.run(fast, capture_output=True, text=True) if fast else None
+    if run is None or (run.returncode != 0 and 'LNC' not in run.stderr) or (run.returncode == 0 and not os.path.exists(exe)):
+        # lcc itself failed (not laniusc's diagnostic): the one-shot command
+        if os.path.exists(exe):
+            os.remove(exe)
+        run = subprocess.run(argv, capture_output=True, text=True)
+    if run.returncode != 0 or not os.path.exists(exe):
+        return None, run
+    return store_file('build', k, exe), None
+
+
+RUN_ALL = os.path.join(FORMAL, '.lake/build/bin/runAll')
+
+
+def run_all(manifest, prefix=(), timeout=None):
+    """runAll (prefix, such as a systemd-run cap, before it) on a manifest,
+    its stdout cached by runAll's binary and each line with the bytes of the
+    files its bases name (BASE.lani, .prods, .parents); a manifest with an
+    `elf` line, which writes a file, is always run. Returns an object with
+    returncode, stdout and stderr (only a run that exits 0 is stored)."""
+    import subprocess
+    import types
+    lines = [line for line in open(manifest).read().split('\n') if line]
+    parts = [file_digest(RUN_ALL)]
+    cacheable = True
+    for line in lines:
+        words = line.split(' ')
+        if words[0] not in ('compile', 'dump', 'diag', 'validate', 'names'):
+            cacheable = False
+            break
+        parts.append(line)
+        for b in words[2:]:
+            for suffix in ('.lani', '.prods', '.parents'):
+                parts.append(file_digest(b + suffix) if os.path.exists(b + suffix) else 'absent')
+    k = key(*parts) if cacheable else None
+    hit = load('run_all', k) if k else None
+    if hit is not None:
+        return types.SimpleNamespace(returncode=0, stdout=hit['stdout'], stderr='')
+    run = subprocess.run([*prefix, RUN_ALL, manifest], capture_output=True, text=True, timeout=timeout)
+    if run.returncode == 0 and k:
+        store('run_all', k, dict(stdout=run.stdout))
+    return run

@@ -33,6 +33,10 @@ lean_exe srcDump where
 lean_exe floatTest where
   root := `Lanius.Tools.FloatTest
 
+/-- The x86 model's decode and execute, compiled, for formal/tools/x86_model_test.py. -/
+lean_exe x86ModelTest where
+  root := `Lanius.Tools.X86ModelTest
+
 /-- The top theorems' axioms and statement hashes, for formal/tools/trusted_check.py. -/
 lean_exe topAxioms where
   root := `Lanius.Tools.TopAxioms
