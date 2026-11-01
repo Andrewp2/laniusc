@@ -1719,6 +1719,20 @@ six smaller constructor/arithmetic/propagation controls execute. No individual
 operator or aggregate shape has been isolated as the cause, and ordinary `?`
 support is not declared unavailable. Compiler repair remains separate work.
 
+**pax archives and tgz.** [`ext::pax`](extended-pax.md) adds POSIX pax `x`/`g`
+extension headers over `ext::tar` (long paths and links, long owner names,
+large IDs, fractional mtimes), allocation-free like the ustar layer. The
+[`tgz` program](../sample_programs/library/tgz.lani) creates, lists and
+extracts gzip or plain archives from real directory trees, validating the
+whole archive and rejecting unsafe paths before touching the filesystem. A
+seeded Python oracle (`tests/fixtures/extended/tgz_oracle.py`) passes 3,090
+cases with 0 failures against `zlib`, `gzip` and `tarfile`: 216 Lanius
+encodes and 1,512 decodes of Python's stored/fixed/dynamic streams, 600
+corrupted codec streams, 464 tar tree comparisons in both directions, 120
+GNU-format rejections and 176 corrupted or unsafe archive rejections. The
+oracle ran directly against `target/release/laniusc` executables on native
+Linux x86_64; its cargo wrapper `tests/extended_tgz_execution.rs` was not run.
+
 **Accepted bounded archive increment.**
 
 The new production code is Lanius over the existing TAR/ZIP engines,

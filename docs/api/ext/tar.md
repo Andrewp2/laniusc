@@ -11,8 +11,9 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 ## Contract and evidence guides
 
 - [extended-tar](../../extended-tar.md)
+- [extended-pax](../../extended-pax.md)
 
-Declaration counts: enum: 2; field: 32; function: 3; impl: 3; method: 10; struct: 4; variant: 27.
+Declaration counts: enum: 2; field: 34; function: 5; impl: 3; method: 10; struct: 4; variant: 27.
 
 ## Declared imports
 
@@ -515,6 +516,22 @@ cursor: i32
 ended: bool
 ```
 
+#### field: full_uname
+
+[Source line 13](../../../extended/ext/tar.lani#L13)
+
+```lanius
+full_uname: bool
+```
+
+#### field: full_gname
+
+[Source line 13](../../../extended/ext/tar.lani#L13)
+
+```lanius
+full_gname: bool
+```
+
 ### struct: Writer
 
 [Source line 14](../../../extended/ext/tar.lani#L14)
@@ -565,19 +582,35 @@ pub fn metadata(path: core::slice::View<u8>, kind: Kind) -> Metadata
 pub fn reader(input: core::slice::View<u8>) -> core::result::Result<Reader,Error>
 ```
 
+### function: reader_at
+
+[Source line 68](../../../extended/ext/tar.lani#L68)
+
+```lanius
+pub fn reader_at(input: core::slice::View<u8>, cursor: i32, full_uname: bool, full_gname: bool) -> core::result::Result<Reader,Error>
+```
+
 ### function: writer
 
-[Source line 148](../../../extended/ext/tar.lani#L148)
+[Source line 154](../../../extended/ext/tar.lani#L154)
 
 ```lanius
 pub fn writer(output: core::slice::View<u8>) -> core::result::Result<Writer,Error>
 ```
 
+### function: writer_at
+
+[Source line 158](../../../extended/ext/tar.lani#L158)
+
+```lanius
+pub fn writer_at(output: core::slice::View<u8>, cursor: i32) -> core::result::Result<Writer,Error>
+```
+
 ## Implementation blocks and public methods
 
-### impl at line 65
+### impl at line 71
 
-[Source line 65](../../../extended/ext/tar.lani#L65)
+[Source line 71](../../../extended/ext/tar.lani#L71)
 
 ```lanius
 pub impl Entry
@@ -585,7 +618,7 @@ pub impl Entry
 
 #### method: path_len
 
-[Source line 66](../../../extended/ext/tar.lani#L66)
+[Source line 72](../../../extended/ext/tar.lani#L72)
 
 ```lanius
 pub fn path_len(&self) -> i32
@@ -593,15 +626,15 @@ pub fn path_len(&self) -> i32
 
 #### method: copy_path
 
-[Source line 67](../../../extended/ext/tar.lani#L67)
+[Source line 73](../../../extended/ext/tar.lani#L73)
 
 ```lanius
 pub fn copy_path(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error>
 ```
 
-### impl at line 76
+### impl at line 82
 
-[Source line 76](../../../extended/ext/tar.lani#L76)
+[Source line 82](../../../extended/ext/tar.lani#L82)
 
 ```lanius
 pub impl Reader
@@ -609,7 +642,7 @@ pub impl Reader
 
 #### method: position
 
-[Source line 77](../../../extended/ext/tar.lani#L77)
+[Source line 83](../../../extended/ext/tar.lani#L83)
 
 ```lanius
 pub fn position(&self) -> i32
@@ -617,7 +650,7 @@ pub fn position(&self) -> i32
 
 #### method: is_finished
 
-[Source line 78](../../../extended/ext/tar.lani#L78)
+[Source line 84](../../../extended/ext/tar.lani#L84)
 
 ```lanius
 pub fn is_finished(&self) -> bool
@@ -625,15 +658,15 @@ pub fn is_finished(&self) -> bool
 
 #### method: next
 
-[Source line 80](../../../extended/ext/tar.lani#L80)
+[Source line 86](../../../extended/ext/tar.lani#L86)
 
 ```lanius
 pub fn next(&self) -> core::result::Result<core::option::Option<Entry>,Error>
 ```
 
-### impl at line 151
+### impl at line 161
 
-[Source line 151](../../../extended/ext/tar.lani#L151)
+[Source line 161](../../../extended/ext/tar.lani#L161)
 
 ```lanius
 pub impl Writer
@@ -641,7 +674,7 @@ pub impl Writer
 
 #### method: position
 
-[Source line 152](../../../extended/ext/tar.lani#L152)
+[Source line 162](../../../extended/ext/tar.lani#L162)
 
 ```lanius
 pub fn position(&self) -> i32
@@ -649,7 +682,7 @@ pub fn position(&self) -> i32
 
 #### method: is_finished
 
-[Source line 153](../../../extended/ext/tar.lani#L153)
+[Source line 163](../../../extended/ext/tar.lani#L163)
 
 ```lanius
 pub fn is_finished(&self) -> bool
@@ -657,7 +690,7 @@ pub fn is_finished(&self) -> bool
 
 #### method: rebind
 
-[Source line 155](../../../extended/ext/tar.lani#L155)
+[Source line 165](../../../extended/ext/tar.lani#L165)
 
 ```lanius
 pub fn rebind(&self, output: core::slice::View<u8>) -> core::result::Result<bool,Error>
@@ -665,7 +698,7 @@ pub fn rebind(&self, output: core::slice::View<u8>) -> core::result::Result<bool
 
 #### method: add
 
-[Source line 160](../../../extended/ext/tar.lani#L160)
+[Source line 170](../../../extended/ext/tar.lani#L170)
 
 ```lanius
 pub fn add(&self, meta: Metadata, data: core::slice::View<u8>) -> core::result::Result<i32,Error>
@@ -673,7 +706,7 @@ pub fn add(&self, meta: Metadata, data: core::slice::View<u8>) -> core::result::
 
 #### method: finish
 
-[Source line 193](../../../extended/ext/tar.lani#L193)
+[Source line 203](../../../extended/ext/tar.lani#L203)
 
 ```lanius
 pub fn finish(&self) -> core::result::Result<i32,Error>

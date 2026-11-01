@@ -423,6 +423,7 @@ corrupt_group(rng)
 total = 0
 for key in sorted(counts):
     print(f"{counts[key]:6d}  {key}")
-    total += counts[key]
+    if "(skipped)" not in key:
+        total += counts[key]
 print(f"{total:6d}  total agreeing cases; {len(failures)} failures")
 sys.exit(1 if failures else 0)

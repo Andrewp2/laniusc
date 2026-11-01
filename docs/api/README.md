@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **281 modules**, **14271 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **282 modules**, **14344 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -259,6 +259,7 @@ Inventory: **281 modules**, **14271 declaration/member entries**. Counts include
 | [ext::openssl_websocket](ext/openssl_websocket.md) | [source](../../extended/ext/openssl_websocket.lani#L4) | 10 | Source inventory | [extended-openssl-websocket](../extended-openssl-websocket.md), [extended-websocket](../extended-websocket.md), [extended-websocket-upgrade-program](../extended-websocket-upgrade-program.md), [library-native-c](../library-native-c.md) |
 | [ext::parse](ext/parse.md) | [source](../../extended/ext/parse.lani#L3) | 68 | Source inventory | [extended-parse](../extended-parse.md) |
 | [ext::patch](ext/patch.md) | [source](../../extended/ext/patch.lani#L2) | 32 | Source inventory | [extended-patch](../extended-patch.md) |
+| [ext::pax](ext/pax.md) | [source](../../extended/ext/pax.lani#L4) | 69 | Source inventory | [extended-pax](../extended-pax.md) |
 | [ext::percent](ext/percent.md) | [source](../../extended/ext/percent.lani#L5) | 11 | Source inventory | [extended-percent](../extended-percent.md) |
 | [ext::png](ext/png.md) | [source](../../extended/ext/png.lani#L2) | 30 | Source inventory | [extended-png](../extended-png.md) |
 | [ext::progress](ext/progress.md) | [source](../../extended/ext/progress.lani#L2) | 15 | Source inventory | [extended-progress](../extended-progress.md) |
@@ -278,7 +279,7 @@ Inventory: **281 modules**, **14271 declaration/member entries**. Counts include
 | [ext::sqlite_statement](ext/sqlite_statement.md) | [source](../../extended/ext/sqlite_statement.lani#L12) | 22 | Source inventory | [state-machines-design](../state-machines-design.md) |
 | [ext::statistics](ext/statistics.md) | [source](../../extended/ext/statistics.lani#L4) | 105 | Source inventory | [extended-statistics](../extended-statistics.md), [extended-weighted-statistics](../extended-weighted-statistics.md), [extended-higher-statistics](../extended-higher-statistics.md) |
 | [ext::table](ext/table.md) | [source](../../extended/ext/table.lani#L2) | 27 | Source inventory | [extended-table](../extended-table.md) |
-| [ext::tar](ext/tar.md) | [source](../../extended/ext/tar.lani#L3) | 81 | Source inventory | [extended-tar](../extended-tar.md) |
+| [ext::tar](ext/tar.md) | [source](../../extended/ext/tar.lani#L3) | 85 | Source inventory | [extended-tar](../extended-tar.md), [extended-pax](../extended-pax.md) |
 | [ext::terminal](ext/terminal.md) | [source](../../extended/ext/terminal.lani#L3) | 15 | Source inventory | [extended-terminal](../extended-terminal.md) |
 | [ext::timezone](ext/timezone.md) | [source](../../extended/ext/timezone.lani#L3) | 80 | Source inventory | [extended-timezone](../extended-timezone.md) |
 | [ext::tls_stream](ext/tls_stream.md) | [source](../../extended/ext/tls_stream.lani#L3) | 66 | Source inventory | [extended-https-fetch](../extended-https-fetch.md), [extended-openssl-tls](../extended-openssl-tls.md), [extended-https-server](../extended-https-server.md), [extended-openssl-tls-server](../extended-openssl-tls-server.md), [extended-openssl-mutual-tls](../extended-openssl-mutual-tls.md), [extended-https-mutual-tls](../extended-https-mutual-tls.md) |
