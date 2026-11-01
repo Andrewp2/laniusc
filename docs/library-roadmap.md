@@ -477,6 +477,13 @@ I/O-free `ext::http2` client engine, which passes 17 cases against
 libnghttp2's server session and 46 hand-built protocol-violation and
 edge cases. Python's `h2`/`hpack` and `nghttpd` are not installed, so
 libnghttp2 through ctypes is the independent peer.
+The [HTTP/2 server engine](extended-http2-server.md) (`ext::http2_server`)
+is its I/O-free counterpart, and [`ext::http_service`](extended-http-service.md#http2-h2c)
+runs it for prior-knowledge h2c beside HTTP/1.1 on one listener. A
+libnghttp2 client session through ctypes passes 6 session cases and 18
+malformed-frame cases, both against the engine over a pipe and against the
+service over TCP. HTTP/2 over TLS waits on C callback support, which
+OpenSSL's server-side ALPN selection needs.
 
 The [WebSocket client](extended-websocket-client.md) (`ext::websocket_client`)
 connects to `ws://` and verified `wss://` URLs through the agent's new

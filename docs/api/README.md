@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **322 modules**, **17189 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **323 modules**, **17308 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -259,12 +259,13 @@ Inventory: **322 modules**, **17189 declaration/member entries**. Counts include
 | [ext::http](ext/http.md) | [source](../../extended/ext/http.lani#L2) | 108 | Source inventory | [extended-http](../extended-http.md), [extended-http-cursor](../extended-http-cursor.md) |
 | [ext::http2](ext/http2.md) | [source](../../extended/ext/http2.lani#L10) | 102 | Source inventory | [extended-http2](../extended-http2.md), [extended-hpack](../extended-hpack.md), [extended-http-agent](../extended-http-agent.md) |
 | [ext::http2_frame](ext/http2_frame.md) | [source](../../extended/ext/http2_frame.lani#L5) | 96 | Source inventory | [extended-http2](../extended-http2.md) |
+| [ext::http2_server](ext/http2_server.md) | [source](../../extended/ext/http2_server.lani#L11) | 88 | Source inventory | **Unregistered** |
 | [ext::http_agent](ext/http_agent.md) | [source](../../extended/ext/http_agent.lani#L10) | 113 | Source inventory | [extended-http-agent](../extended-http-agent.md), [extended-http2](../extended-http2.md), [extended-http](../extended-http.md), [extended-url-client](../extended-url-client.md), [extended-openssl-tls](../extended-openssl-tls.md) |
 | [ext::http_batch](ext/http_batch.md) | [source](../../extended/ext/http_batch.lani#L2) | 84 | Source inventory | [extended-http-batch](../extended-http-batch.md), [extended-http-batch-testing](../extended-http-batch-testing.md), [extended-fetch-many](../extended-fetch-many.md), [extended-https-batch](../extended-https-batch.md) |
 | [ext::http_client](ext/http_client.md) | [source](../../extended/ext/http_client.lani#L2) | 169 | Source inventory | [extended-http-client](../extended-http-client.md), [extended-http-exchange-testing](../extended-http-exchange-testing.md), [extended-http-batch](../extended-http-batch.md), [extended-fetch-many](../extended-fetch-many.md), [extended-https-client](../extended-https-client.md), [extended-https-batch](../extended-https-batch.md), [extended-http-protocol-testing](../extended-http-protocol-testing.md), [extended-url-client](../extended-url-client.md) |
 | [ext::http_server](ext/http_server.md) | [source](../../extended/ext/http_server.lani#L2) | 236 | Source inventory | [extended-http-server](../extended-http-server.md), [library-server-concurrency-plan](../library-server-concurrency-plan.md), [extended-https-server-exchange](../extended-https-server-exchange.md), [library-server-contract](../library-server-contract.md) |
 | [ext::http_server_poll](ext/http_server_poll.md) | [source](../../extended/ext/http_server_poll.lani#L2) | 27 | Source inventory | [extended-server-poll](../extended-server-poll.md), [library-server-contract](../library-server-contract.md) |
-| [ext::http_service](ext/http_service.md) | [source](../../extended/ext/http_service.lani#L5) | 145 | Source inventory | [extended-http-service](../extended-http-service.md), [extended-http](../extended-http.md), [stdlib-event-loop](../stdlib-event-loop.md) |
+| [ext::http_service](ext/http_service.md) | [source](../../extended/ext/http_service.lani#L7) | 176 | Source inventory | [extended-http-service](../extended-http-service.md), [extended-http](../extended-http.md), [stdlib-event-loop](../stdlib-event-loop.md) |
 | [ext::http_url](ext/http_url.md) | [source](../../extended/ext/http_url.lani#L3) | 50 | Source inventory | [extended-http-url](../extended-http-url.md), [extended-url-client](../extended-url-client.md), [library-url-client-plan](../library-url-client-plan.md) |
 | [ext::https_batch](ext/https_batch.md) | [source](../../extended/ext/https_batch.lani#L2) | 5 | Source inventory | [extended-https-batch](../extended-https-batch.md), [extended-https-client](../extended-https-client.md), [extended-https-batch-testing](../extended-https-batch-testing.md), [extended-http-batch](../extended-http-batch.md) |
 | [ext::https_client](ext/https_client.md) | [source](../../extended/ext/https_client.lani#L3) | 80 | Source inventory | [extended-https-client](../extended-https-client.md), [extended-https-batch](../extended-https-batch.md), [extended-https-batch-testing](../extended-https-batch-testing.md), [extended-openssl-tls](../extended-openssl-tls.md), [extended-url-client](../extended-url-client.md) |
@@ -414,4 +415,5 @@ These are discovery/contract-link gaps, not claims that their code is missing or
 - [std::io_hex_wide_u64](std/io_hex_wide_u64.md)
 - [std::io_line](std/io_line.md)
 - [std::io_utf8](std/io_utf8.md)
+- [ext::http2_server](ext/http2_server.md)
 - [ext::openssl_tls_lifecycle](ext/openssl_tls_lifecycle.md)
