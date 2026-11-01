@@ -33,6 +33,8 @@ pub fn from_utf8_range(bytes: [u8], offset: i32, count: i32) -> core::result::Re
     let index: i32 = 0;
     while (index < count) {
         let first: u8 = bytes[offset + index];
+        // ASCII is a complete one-byte sequence; skip the general decoder.
+        if (first < 128) { index += 1; continue; }
         let width: u32 = core::utf8::sequence_len_or(first, 0);
         if (width == 0 || (width as i32) > count - index) {
             return core::result::Err(Error::InvalidUtf8(index));
