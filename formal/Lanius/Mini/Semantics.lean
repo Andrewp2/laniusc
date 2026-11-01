@@ -334,9 +334,10 @@ def Heap.writeAll (heap : Heap) (address : Nat) (bytes : List UInt8) : Heap :=
 (`Lanius.X86.Machine.Kernel`), with addresses heap offsets. `write(fd,
 address, count)` to fd 1 or 2 of at most `maxTransfer` bytes inside the heap
 appends them to the trace and returns the count. `read(0, address, count)`
-of at most `maxTransfer` bytes takes the next `count` bytes of the input, or
-all that are left, stores them from `address` on (inside the heap), and
-returns how many. `poll(0, 0, timeout)` with a timeout below 2^31 (a
+of at most `maxTransfer` bytes takes the next bytes of the input the kernel's
+`read` delivers (`Io.readBytes`: from 1 to `count` or all that are left, 0
+only when `count` is 0 or none are left), stores them from `address` on
+(inside the heap), and returns how many. `poll(0, 0, timeout)` with a timeout below 2^31 (a
 nonnegative `int`) polls no fd: it returns 0 and changes nothing.
 `clock_gettime(clock, address, _)` of clock 0 or 1 with a reading left
 stores it as a `struct timespec` from `address` on (inside the heap) and
@@ -352,11 +353,11 @@ def Syscall.run : Syscall → List (BitVec 64) → Heap → Option (BitVec 64 ×
     else none
   | .read, [fd, address, count], heap =>
     if fd = 0 ∧ count.toNat ≤ Lanius.X86.Machine.maxTransfer ∧
-        (heap.io.input.take count.toNat = [] ∨
-          address.toNat + (heap.io.input.take count.toNat).length ≤ heap.top) then
-      some (BitVec.ofNat 64 (heap.io.input.take count.toNat).length,
-        { heap.writeAll address.toNat (heap.io.input.take count.toNat) with
-          io := { heap.io with input := heap.io.input.drop count.toNat } })
+        (heap.io.readBytes count.toNat = [] ∨
+          address.toNat + (heap.io.readBytes count.toNat).length ≤ heap.top) then
+      some (BitVec.ofNat 64 (heap.io.readBytes count.toNat).length,
+        { heap.writeAll address.toNat (heap.io.readBytes count.toNat) with
+          io := heap.io.afterRead count.toNat })
     else none
   | .poll, [fds, nfds, timeout], heap =>
     if fds = 0 ∧ nfds = 0 ∧ timeout.toNat < 2 ^ 31 then some (0, heap) else none

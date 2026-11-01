@@ -697,10 +697,21 @@ def wrapper_text(mods, t, part):
         itype = type_text(resolve(mods, t.module, t.impl_type, {}))
         tparams = ', '.join(f'{p}: {"T" if ty == t.impl_type else written(rty)}'
                             for (p, ty), (_, rty) in zip(fn['params'], t.params))
-        hret = 'T' if fn['ret'] == t.impl_type else written(t.ret)
+        # The method's result with the impl type as T, as laniusc checks the
+        # generic helper before any instance (`Result<T, E>`, not `Result<bool, E>`).
+        hret = 'T' if fn['ret'] == t.impl_type else re.sub(rf'\b{re.escape(t.impl_type)}\b', 'T', written(t.ret)) \
+            if re.search(rf'\b{re.escape(t.impl_type)}\b', fn['ret']) else written(t.ret)
         trait = re.sub(rf'\b{t.impl_type}\b', 'T', t.trait)
         if '::' not in re.match(r'[\w:]+', t.trait).group(0):
             trait = f'{trait_home(mods, t).rsplit("::", 1)[0]}::{trait}'
+        m = re.match(r'^([\w:]+)<(.*)>$', trait)
+        if m:
+            # The trait's type arguments as the wrapper's module names them
+            # (`Infallible` of the target's module is written qualified).
+            targs = [a.strip() for a in split_top(m.group(2))]
+            trait = m.group(1) + '<' + ', '.join(
+                a if a == 'T' or resolve(mods, t.module, a, {}) is None else written(resolve(mods, t.module, a, {}))
+                for a in targs) + '>'
         lines += [f'fn oracle_helper<T>({tparams}) -> {hret} where T: {trait} {{',
                   f'    return T::{fn["name"]}({", ".join(p for p, _ in fn["params"])});', '}', '']
         call = f'oracle_helper<{itype}>({", ".join(args)})'

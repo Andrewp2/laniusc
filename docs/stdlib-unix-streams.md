@@ -100,8 +100,8 @@ does not establish execution of every entry.
 | `connect(endpoint)` | `Result<i32,Error>`; one connect, acknowledges only exact-zero completion |
 | `accept(nonblocking)` | `Result<UnixStream,Error>`; explicit child mode and CLOEXEC; no peer-address decoding |
 | `shutdown(direction)` | `Result<i32,Error>`; Read/Write/Both shutdown without closing |
-| `send(input)` | `Result<i32,Error>`; one staged transfer of at most 1,024 bytes |
-| `receive(output)` | `Result<i32,Error>`; one staged transfer/EOF, confirmed prefix only |
+| `send(input)` | `Result<i32,Error>`; one transfer; whole packed views go direct, others stage at most 1,024 bytes |
+| `receive(output)` | `Result<i32,Error>`; one transfer/EOF, confirmed prefix only |
 | `wait_ms(readable,writable,milliseconds)` | `Result<Ready,Error>`; one poll, 0 probe/-1 indefinite |
 | `wait_until(readable,writable,deadline)` | `Result<Ready,Error>`; readiness under one absolute deadline |
 | `send_until(input,deadline)` | `Result<i32,Error>`; immediate attempt, then deadline-bounded readiness/retry |
@@ -148,8 +148,8 @@ distinguishes AF_UNIX EAGAIN and leaves failed socket state unspecified.
 
 ## Transfer, readiness and failure
 
-Send/receive share the IP stream's private descriptor engines: packed 1,024-byte
-stack staging, complete logical View admission and full-width count guards.
+Send/receive share the IP stream's private descriptor engines: packed (stride 1)
+views pass straight to the host, other layouts use 1,024-byte stack staging, complete logical View admission and full-width count guards.
 No library operation allocates heap storage. Send uses MSG_NOSIGNAL; receive
 copies only a valid confirmed prefix after checking the host result. Errors
 and rejected logical metadata leave output unchanged, even if a real host

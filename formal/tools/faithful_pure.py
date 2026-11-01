@@ -576,6 +576,9 @@ def main(argv):
     m = re.search(r'def (?:_root_\.Lanius\.Faithful\.SelfRep\.)?prims : Prims :=\s*\{\s*boxed := \[([\d, ]*)\],\s*unbox := \[([\d, ]*)\]\s*\}', text)
     prims = {k: [int(x) for x in m.group(j).split(',') if x.strip()] for j, k in ((1, 'boxed'), (2, 'unbox'))}
     prim_set = set(prims['boxed']) | set(prims['unbox'])
+    # Each function's name in SelfProg (`abbrev src<i> := src_<key> ..`), for
+    # SelfLook's `at_<key> : prog.funcs.drop <i> = ..`.
+    keys = {int(i): k for i, k in re.findall(r'^abbrev src(\d+) : SrcFunc := src_(\S+)', text, re.M)}
 
     prog = Program(dump)
     assert len(names) == prog.n, (len(names), prog.n)
@@ -638,6 +641,8 @@ def main(argv):
     written = []
     base = (f'import Lanius.Faithful.Gen.Self\nimport Lanius.Faithful.Sim.ProgOk\nimport Lanius.Faithful.Sim.CheckFast\n\n{HEADER}\n'
             f'namespace {NS}\n\nopen Lanius.Mini\nopen Lanius.Faithful\nopen Lanius.Faithful.Self\n\n'
+            '-- `boxPair prog` looks the prims up in the function list.\n'
+            'set_option maxRecDepth 100000\n\n'
             '/-- The prims, as SelfRep has them. -/\n'
             f'def prims : Prims :=\n  {{ boxed := {prims["boxed"]},\n    unbox := {prims["unbox"]} }}\n\n'
             '/-- The functions outside the pure fragment: the driver, and the helpers\n'
@@ -723,22 +728,28 @@ def main(argv):
             return 'fun _ h => nomatch h'
         return f'List.forall_mem_cons.2 ⟨{items[0]},\n    {forall(items[1:])}⟩'
 
-    plines = [f'import Lanius.Faithful.Gen.SelfDecls\n\n{HEADER}\nnamespace {NS}\n\n'
+    def look(i):
+        return f'get_of_drop Lanius.Faithful.SelfCert.at_{keys[i]}'
+
+    plines = [f'import Lanius.Faithful.Gen.SelfDecls\nimport Lanius.Faithful.Gen.SelfLook\n\n{HEADER}\nnamespace {NS}\n\n'
               'open Lanius.Mini\nopen Lanius.Faithful\nopen Lanius.Faithful.Self\n\n'
-              '-- `rfl` on `prog.funcs[i]?` unfolds the function list one function at a time.\n'
+              '-- `prog.funcs[i]?` from SelfLook\'s `at_` (`rfl` would unfold the function list\n'
+              '-- one function at a time).\n'
               'set_option maxRecDepth 100000\n\n']
     boxed_names, unbox_names = [], []
     for i in prims['boxed']:
         t, tid, so, sl, pa = boxed_args(i)
         plines.append(f'/-- {names[i]} -/\ntheorem boxed{i} : BoxedAt prog prims {i} :=\n'
-                      f'  ⟨{t}, {tid}, {so}, {sl}, {pa}, rfl, rfl, rfl, rfl,\n'
+                      f'  ⟨{t}, {tid}, {so}, {sl}, {pa}, {look(i)}, {look(so)},\n'
+                      f'    {look(sl)}, {look(pa)},\n'
                       f'    by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,\n'
                       f'    by rw [prog_decls]; decide +kernel⟩\n\n')
         boxed_names.append(f'boxed{i}')
     for i in prims['unbox']:
         t, tid, sl = unbox_args(i)
         plines.append(f'/-- {names[i]} -/\ntheorem unbox{i} : UnboxAt prog prims {i} :=\n'
-                      f'  ⟨{t}, {tid}, {sl}, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩\n\n')
+                      f'  ⟨{t}, {tid}, {sl}, {look(i)}, {look(sl)},\n'
+                      f'    by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩\n\n')
         unbox_names.append(f'unbox{i}')
     plines.append(f'theorem primsOk : PrimsOk prog prims :=\n  ⟨{forall(boxed_names)},\n  {forall(unbox_names)}⟩\n\n'
                   f'end {NS}\n')

@@ -1,0 +1,35 @@
+// A literal directly under `as T` takes T when T is a 32- or 64-bit integer.
+// A negated literal under an unsigned T, a narrow T and an arithmetic operand
+// keep i32, so -1 as u32 and 300 as u8 still wrap. Expected: exit 0; each
+// nonzero exit names the failed check.
+module app::main;
+fn main() -> i32 {
+    let big: u64 = 4000000000 as u64;
+    let top: u64 = 18446744073709551615 as u64;
+    let imax: i64 = 9223372036854775807 as i64;
+    let imin: i64 = -9223372036854775808 as i64;
+    let word: u32 = 4294967295 as u32;
+    let paren: u64 = (4000000000) as u64;
+    let wrap32: u32 = -1 as u32;
+    let wrap64: u64 = -1 as u64;
+    let neg: i64 = -5 as i64;
+    let narrow: u8 = 300 as u8;
+    let sum: u64 = (3 + 4) as u64;
+    let small: u64 = 7 as u64;
+    let hex: u64 = 0xFFFF_FFFF_FFFF as u64;
+    let f: f64 = 3 as f64;
+    if (big / 1000000000 != 4) { return 1; }
+    if (top % 10 != 5 || top / 10000000000000000000 != 1) { return 2; }
+    if (imax % 10 != 7 || imax <= 9000000000000000000 as i64) { return 3; }
+    if (imin >= 0 - 9000000000000000000 as i64) { return 4; }
+    if (word % 10 != 5 || word < 4000000000 as u32) { return 5; }
+    if (paren != big) { return 6; }
+    if (wrap32 != word) { return 7; }
+    if (wrap64 != top) { return 8; }
+    if (neg + 5 != 0) { return 9; }
+    if (narrow != 44) { return 10; }
+    if (sum != small) { return 11; }
+    if (hex != 281474976710655 as u64) { return 12; }
+    if (f != 3.0) { return 13; }
+    return 0;
+}

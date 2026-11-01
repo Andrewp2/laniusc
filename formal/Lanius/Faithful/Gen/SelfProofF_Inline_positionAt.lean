@@ -10,12 +10,11 @@ public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pEnumTypeParam
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pModTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_positionAt
-public import Lanius.Faithful.Gen.SelfStmtF_collectedWith
+public import Lanius.Faithful.Gen.SelfStmtF_collect
 public import Lanius.Faithful.Gen.SelfStmtF_distinct
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
-public import Lanius.Faithful.Gen.SelfStmtF_methodsOf
 public import Lanius.Faithful.Gen.SelfStmtF_moduleOr
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_noTrees
@@ -58,14 +57,6 @@ theorem step_collect_file_next {prog : SrcProgram} {prims : Prims} {ix_collect_f
   rw [pcall_succ np fn] at h
   simp only [src_collect_file_next] at h
   faithful [Lanius.Mini.Inline.collectFileNext]
-
-theorem step_collect_next {prog : SrcProgram} {prims : Prims} {ix_collect_next ix_collect : Nat} (fn : prog.funcs[ix_collect_next]? = some (src_collect_next ix_collect)) (np : prims.isPrim ix_collect_next = false) {n : Nat}
-    (ih_collect : Certified (Stmt_collect prog prims ix_collect n)) :
-    Stmt_collect_next prog prims ix_collect_next (n + 1) := by
-  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
-  rw [pcall_succ np fn] at h
-  simp only [src_collect_next] at h
-  faithful [Lanius.Mini.Inline.collectNext]
 
 theorem step_const_name_at {prog : SrcProgram} {prims : Prims} {ix_const_name_at ix_same_spellings ix_const_names_in ix_cons_of_mini_selfhost_List_usize : Nat} (fn : prog.funcs[ix_const_name_at]? = some (src_const_name_at ix_same_spellings ix_const_names_in ix_cons_of_mini_selfhost_List_usize)) (np : prims.isPrim ix_const_name_at = false)
     (ext_same_spellings : Certified (∀ {n : Nat}, Stmt_same_spellings prog prims ix_same_spellings n))

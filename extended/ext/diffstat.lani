@@ -1,0 +1,384 @@
+// Diffstat in git's --stat form, from scripts or from unified diffs.
+// See docs/extended-wordiff.md.
+module ext::diffstat;
+import alloc::vec;
+import core::slice;
+import core::option;
+import core::result;
+import core::mem;
+import ext::seqdiff;
+
+pub enum Error { InvalidInput, Unsupported, FileLimit, OutputLimit, AllocationFailed }
+// name_start/name_length index Stats.names; the name is printed as stored.
+pub struct FileStat { name_start: i32, name_length: i32, added: i32, deleted: i32, interesting: bool }
+pub struct Stats { files: alloc::vec::Vec<FileStat>, names: alloc::vec::Vec<u8> }
+// width: total columns (git's 80 when stdout is not a terminal); name_width,
+// graph_width: caps, 0 for none; count: files listed, 0 for all.
+pub struct StatOptions { width: i32, name_width: i32, graph_width: i32, count: i32, max_output: i32 }
+pub struct Counts { added: i32, deleted: i32 }
+pub fn default_stat_options() -> StatOptions { return StatOptions { width: 80, name_width: 0, graph_width: 0, count: 0, max_output: 268435456 }; }
+pub impl StatOptions { pub fn borrow(&self) -> &StatOptions { return self; } }
+pub fn new_stats() -> Stats { return Stats { files: alloc::vec::new(), names: alloc::vec::new() }; }
+
+pub impl Stats {
+    pub fn borrow(&self) -> &Stats { return self; }
+    pub fn len(&self) -> i32 { return self.files.len(); }
+    pub fn get(&self, index: i32) -> core::option::Option<FileStat> { if (index < 0 || index >= self.files.len()) { return core::option::None; } return core::option::Some(self.files.as_slice()[index]); }
+    pub fn name(&self, index: i32) -> core::slice::View<u8> {
+        let f: FileStat = self.files.as_slice()[index];
+        return core::slice::View { values: self.names.as_slice(), start: f.name_start, length: f.name_length };
+    }
+    pub fn destroy(&self) { self.files.destroy(); self.names.destroy(); self.files = alloc::vec::new(); self.names = alloc::vec::new(); }
+}
+
+// Added and deleted line counts of a script.
+pub fn count_script(script: &ext::seqdiff::Script) -> Counts {
+    let steps: [ext::seqdiff::Edit] = script.steps.as_slice(); let n: i32 = script.steps.len(); let added: i32 = 0; let deleted: i32 = 0; let i: i32 = 0;
+    while (i < n) { let k: i32 = steps[i].kind; if (k == 1) { deleted += 1; } if (k == 2) { added += 1; } i += 1; }
+    return Counts { added: added, deleted: deleted };
+}
+
+fn ds_push(out: &alloc::vec::Vec<u8>, byte: u8) -> bool { return core::result::is_ok(out.try_push(byte)); }
+fn ds_text(out: &alloc::vec::Vec<u8>, text: str, count: i32) -> bool {
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text), count);
+    let i: i32 = 0; while (i < count) { if (!ds_push(out, raw[i])) { return false; } i += 1; } return true;
+}
+fn ds_sub(v: core::slice::View<u8>, from: i32, to: i32) -> core::slice::View<u8> { return core::slice::View { values: v.values, start: v.start + from, length: to - from }; }
+fn ds_at(v: core::slice::View<u8>, i: i32) -> i32 { if (i < 0 || i >= v.length) { return -1; } return v.values[v.start+i] as i32; }
+
+// git quote_c_style with core.quotePath: control bytes, '"', '\\', DEL and
+// bytes above 0x7f need quoting.
+fn ds_needs_quote(v: core::slice::View<u8>) -> bool {
+    let i: i32 = 0; while (i < v.length) { let c: i32 = v.values[v.start+i] as i32; if (c < 32 || c == 34 || c == 92 || c >= 127) { return true; } i += 1; } return false;
+}
+fn ds_quote(out: &alloc::vec::Vec<u8>, v: core::slice::View<u8>) -> bool {
+    if (!ds_needs_quote(v)) { return core::result::is_ok(out.try_extend(v)); }
+    let ok: bool = ds_push(out, 34); let i: i32 = 0;
+    while (i < v.length && ok) {
+        let c: i32 = v.values[v.start+i] as i32; let e: i32 = 0;
+        if (c == 7) { e = 97; } if (c == 8) { e = 98; } if (c == 9) { e = 116; } if (c == 10) { e = 110; }
+        if (c == 11) { e = 118; } if (c == 12) { e = 102; } if (c == 13) { e = 114; } if (c == 34) { e = 34; } if (c == 92) { e = 92; }
+        if (e != 0) { ok = ds_push(out, 92) && ds_push(out, e as u8); }
+        else { if (c < 32 || c >= 127) { ok = ds_push(out, 92) && ds_push(out, (48 + c / 64) as u8) && ds_push(out, (48 + (c / 8) % 8) as u8) && ds_push(out, (48 + c % 8) as u8); }
+        else { ok = ds_push(out, c as u8); } }
+        i += 1;
+    }
+    return ok && ds_push(out, 34);
+}
+// git pprint_rename: common directory prefix and suffix go outside braces,
+// as in "dir/{a => b}/file"; names that need quoting become "A" => "B".
+fn ds_rename(out: &alloc::vec::Vec<u8>, a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool {
+    if (ds_needs_quote(a) || ds_needs_quote(b)) { return ds_quote(out, a) && ds_text(out, " => ", 4) && ds_quote(out, b); }
+    let pfx: i32 = 0; let i: i32 = 0;
+    while (i < a.length && i < b.length && ds_at(a, i) == ds_at(b, i)) { if (ds_at(a, i) == 47) { pfx = i + 1; } i += 1; }
+    // Walk back from the terminating positions (both "NUL" when equal-length tails match).
+    let oa: i32 = a.length; let ob: i32 = b.length; let sfx: i32 = 0; let adjust: i32 = 0; if (pfx > 0) { adjust = 1; }
+    while (pfx - adjust <= oa && pfx - adjust <= ob) {
+        let ca: i32 = 0; if (oa < a.length) { ca = ds_at(a, oa); }
+        let cb: i32 = 0; if (ob < b.length) { cb = ds_at(b, ob); }
+        if (ca != cb) { break; }
+        if (ca == 47) { sfx = a.length - oa; }
+        oa -= 1; ob -= 1;
+    }
+    let amid: i32 = a.length - pfx - sfx; if (amid < 0) { amid = 0; }
+    let bmid: i32 = b.length - pfx - sfx; if (bmid < 0) { bmid = 0; }
+    let ok: bool = true;
+    if (pfx + sfx > 0) { ok = core::result::is_ok(out.try_extend(ds_sub(a, 0, pfx))) && ds_push(out, 123); }
+    ok = ok && core::result::is_ok(out.try_extend(ds_sub(a, pfx, pfx + amid))) && ds_text(out, " => ", 4) && core::result::is_ok(out.try_extend(ds_sub(b, pfx, pfx + bmid)));
+    if (pfx + sfx > 0) { ok = ok && ds_push(out, 125) && core::result::is_ok(out.try_extend(ds_sub(a, a.length - sfx, a.length))); }
+    return ok;
+}
+fn ds_add(stats: &Stats, start: i32, added: i32, deleted: i32, ok: bool) -> core::result::Result<i32, Error> {
+    if (!ok) { return core::result::Err(Error::AllocationFailed); }
+    let entry: FileStat = FileStat { name_start: start, name_length: stats.names.len() - start, added: added, deleted: deleted, interesting: true };
+    if (core::result::is_err(stats.files.try_push(entry))) { return core::result::Err(Error::AllocationFailed); }
+    return core::result::Ok(stats.files.len() - 1);
+}
+// Add a file whose name is already in print form (quoted when needed).
+pub fn add_file(stats: &Stats, name: core::slice::View<u8>, added: i32, deleted: i32) -> core::result::Result<i32, Error> {
+    if (added < 0 || deleted < 0 || name.length < 0) { return core::result::Err(Error::InvalidInput); }
+    let start: i32 = stats.names.len(); return ds_add(stats, start, added, deleted, core::result::is_ok(stats.names.try_extend(name)));
+}
+// Add a file compared under two raw paths, named as git does: the quoted path
+// when both are equal, else the rename form.
+pub fn add_pair(stats: &Stats, old_path: core::slice::View<u8>, new_path: core::slice::View<u8>, added: i32, deleted: i32) -> core::result::Result<i32, Error> {
+    if (added < 0 || deleted < 0 || old_path.length < 0 || new_path.length < 0) { return core::result::Err(Error::InvalidInput); }
+    let start: i32 = stats.names.len(); let same: bool = old_path.length == new_path.length; let i: i32 = 0;
+    while (same && i < old_path.length) { if (ds_at(old_path, i) != ds_at(new_path, i)) { same = false; } i += 1; }
+    let ok: bool = false;
+    if (same) { ok = ds_quote(stats.names.borrow(), old_path); } else { ok = ds_rename(stats.names.borrow(), old_path, new_path); }
+    return ds_add(stats, start, added, deleted, ok);
+}
+
+// ---------------------------------------------------------------- writing
+fn ds_width(v: core::slice::View<u8>, from: i32) -> i32 { let n: i32 = 0; let i: i32 = from; while (i < v.length) { let c: i32 = v.values[v.start+i] as i32; if (c < 128 || c >= 192) { n += 1; } i += 1; } return n; }
+fn ds_digits(value: i32) -> i32 { let n: i32 = 1; let v: i32 = value; while (v >= 10) { v /= 10; n += 1; } return n; }
+fn ds_number(out: &alloc::vec::Vec<u8>, value: i32, width: i32) -> bool {
+    let ok: bool = true; let pad: i32 = width - ds_digits(value); while (pad > 0 && ok) { ok = ds_push(out, 32); pad -= 1; }
+    let digits: [u8;10] = [0;10]; let count: i32 = 0; let v: i32 = value;
+    if (v == 0) { return ok && ds_push(out, 48); }
+    while (v > 0) { digits[count] = (48 + v % 10) as u8; count += 1; v /= 10; }
+    while (count > 0 && ok) { count -= 1; ok = ds_push(out, digits[count]); } return ok;
+}
+fn ds_repeat(out: &alloc::vec::Vec<u8>, byte: u8, count: i32) -> bool { let i: i32 = 0; while (i < count) { if (!ds_push(out, byte)) { return false; } i += 1; } return true; }
+fn ds_scale(it: i32, width: i32, max_change: i32) -> i32 { if (it == 0) { return 0; } return 1 + ((it as i64) * ((width - 1) as i64) / (max_change as i64)) as i32; }
+fn ds_shown(f: FileStat) -> bool { return f.interesting || f.added + f.deleted != 0; }
+
+// The " name | N +++--" lines and the summary line, following git's show_stats.
+pub fn write_stat(stats: &Stats, options: StatOptions) -> core::result::Result<alloc::vec::Vec<u8>, Error> {
+    if (options.width < 0 || options.name_width < 0 || options.graph_width < 0 || options.count < 0 || options.max_output < 0) { return core::result::Err(Error::InvalidInput); }
+    let out: alloc::vec::Vec<u8> = alloc::vec::new(); let files: [FileStat] = stats.files.as_slice(); let nr: i32 = stats.files.len();
+    if (nr == 0) { return core::result::Ok(out); }
+    let names: core::slice::View<u8> = core::slice::View { values: stats.names.as_slice(), start: 0, length: stats.names.len() };
+    let count: i32 = options.count; if (count == 0) { count = nr; }
+    let max_len: i32 = 0; let max_change: i32 = 0; let i: i32 = 0;
+    while (i < count && i < nr) {
+        let f: FileStat = files[i];
+        if (f.added > 2147483647 - f.deleted) { out.destroy(); return core::result::Err(Error::InvalidInput); }
+        if (!ds_shown(f)) { count += 1; }
+        else {
+            let len: i32 = ds_width(ds_sub(names, f.name_start, f.name_start + f.name_length), 0); if (len > max_len) { max_len = len; }
+            if (f.added + f.deleted > max_change) { max_change = f.added + f.deleted; }
+        }
+        i += 1;
+    }
+    count = i;
+    let width: i32 = options.width; let number_width: i32 = ds_digits(max_change);
+    if (width < 16 + 6 + number_width) { width = 16 + 6 + number_width; }
+    let graph_width: i32 = max_change;
+    if (options.graph_width > 0 && options.graph_width < graph_width) { graph_width = options.graph_width; }
+    let name_width: i32 = max_len; if (options.name_width > 0 && options.name_width < max_len) { name_width = options.name_width; }
+    if (name_width + number_width + 6 + graph_width > width) {
+        if (graph_width > width * 3 / 8 - number_width - 6) { graph_width = width * 3 / 8 - number_width - 6; if (graph_width < 6) { graph_width = 6; } }
+        if (options.graph_width > 0 && graph_width > options.graph_width) { graph_width = options.graph_width; }
+        if (name_width > width - number_width - 6 - graph_width) { name_width = width - number_width - 6 - graph_width; }
+        else { graph_width = width - number_width - 6 - name_width; }
+    }
+    let ok: bool = true; i = 0;
+    while (i < count && ok) {
+        let f: FileStat = files[i];
+        if (ds_shown(f)) {
+            let name: core::slice::View<u8> = ds_sub(names, f.name_start, f.name_start + f.name_length);
+            let from: i32 = 0; let len: i32 = name_width; let name_len: i32 = ds_width(name, 0); let dots: bool = false;
+            if (name_width < name_len) {
+                dots = true; len -= 3; if (len < 0) { len = 0; }
+                while (name_len > len) { from += 1; while (from < name.length && ds_at(name, from) >= 128 && ds_at(name, from) < 192) { from += 1; } name_len -= 1; }
+                let s: i32 = from; while (s < name.length && ds_at(name, s) != 47) { s += 1; } if (s < name.length) { from = s; }
+            }
+            let padding: i32 = len - ds_width(name, from); if (padding < 0) { padding = 0; }
+            let add: i32 = f.added; let del: i32 = f.deleted;
+            if (graph_width <= max_change) {
+                let total: i32 = ds_scale(add + del, graph_width, max_change);
+                if (total < 2 && add > 0 && del > 0) { total = 2; }
+                if (add < del) { add = ds_scale(add, graph_width, max_change); del = total - add; }
+                else { del = ds_scale(del, graph_width, max_change); add = total - del; }
+            }
+            ok = ds_push(out.borrow(), 32);
+            if (dots) { ok = ok && ds_text(out.borrow(), "...", 3); }
+            ok = ok && core::result::is_ok(out.try_extend(ds_sub(name, from, name.length))) && ds_repeat(out.borrow(), 32, padding) && ds_text(out.borrow(), " | ", 3) && ds_number(out.borrow(), f.added + f.deleted, number_width);
+            if (f.added + f.deleted > 0) { ok = ok && ds_push(out.borrow(), 32); }
+            ok = ok && ds_repeat(out.borrow(), 43, add) && ds_repeat(out.borrow(), 45, del) && ds_push(out.borrow(), 10);
+        }
+        i += 1;
+    }
+    let total_files: i32 = nr; let adds: i64 = 0; let dels: i64 = 0; let extra: bool = false; i = 0;
+    while (i < nr && ok) {
+        let f: FileStat = files[i];
+        if (!ds_shown(f)) { total_files -= 1; }
+        else {
+            adds += f.added as i64; dels += f.deleted as i64;
+            if (i >= count && !extra) { ok = ds_text(out.borrow(), " ...\n", 5); extra = true; }
+        }
+        i += 1;
+    }
+    if (adds > 2147483647 || dels > 2147483647) { out.destroy(); return core::result::Err(Error::InvalidInput); }
+    if (ok) { ok = ds_summary(out.borrow(), total_files, adds as i32, dels as i32); }
+    if (!ok) { out.destroy(); return core::result::Err(Error::AllocationFailed); }
+    if (out.len() > options.max_output) { out.destroy(); return core::result::Err(Error::OutputLimit); }
+    return core::result::Ok(out);
+}
+fn ds_summary(out: &alloc::vec::Vec<u8>, files: i32, insertions: i32, deletions: i32) -> bool {
+    if (files == 0) { return ds_text(out, " 0 files changed\n", 17); }
+    let ok: bool = ds_push(out, 32) && ds_number(out, files, 0);
+    if (files == 1) { ok = ok && ds_text(out, " file changed", 13); } else { ok = ok && ds_text(out, " files changed", 14); }
+    if (insertions > 0 || deletions == 0) {
+        ok = ok && ds_text(out, ", ", 2) && ds_number(out, insertions, 0);
+        if (insertions == 1) { ok = ok && ds_text(out, " insertion(+)", 13); } else { ok = ok && ds_text(out, " insertions(+)", 14); }
+    }
+    if (deletions > 0 || insertions == 0) {
+        ok = ok && ds_text(out, ", ", 2) && ds_number(out, deletions, 0);
+        if (deletions == 1) { ok = ok && ds_text(out, " deletion(-)", 12); } else { ok = ok && ds_text(out, " deletions(-)", 13); }
+    }
+    return ok && ds_push(out, 10);
+}
+
+// ---------------------------------------------------------------- parsing
+fn ds_starts(v: core::slice::View<u8>, pos: i32, text: str, count: i32) -> bool {
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text), count);
+    if (pos + count > v.length) { return false; }
+    let i: i32 = 0; while (i < count) { if (v.values[v.start+pos+i] != raw[i]) { return false; } i += 1; } return true;
+}
+// Header path: up to TAB or line end (a CR before LF is dropped).
+fn ds_path(v: core::slice::View<u8>, from: i32, end: i32) -> core::slice::View<u8> {
+    let stop: i32 = from; while (stop < end && ds_at(v, stop) != 9 && ds_at(v, stop) != 10) { stop += 1; }
+    if (stop > from && ds_at(v, stop - 1) == 13 && stop == end - 1) { stop -= 1; }
+    return ds_sub(v, from, stop);
+}
+// Offset after `strip` leading components (inside the quotes of a quoted name),
+// or 0 when the path has fewer components.
+fn ds_cut(p: core::slice::View<u8>, strip: i32) -> i32 {
+    let at: i32 = 0; if (ds_at(p, 0) == 34) { at = 1; }
+    let k: i32 = 0; let cut: i32 = at;
+    while (k < strip) { let s: i32 = cut; while (s < p.length && ds_at(p, s) != 47) { s += 1; } if (s >= p.length) { return 0; } cut = s + 1; k += 1; }
+    if (cut == at) { return 0; } return cut;
+}
+// Decode a C-style quoted name ("..." with \" \\ \t \n \ooo and the other
+// single-letter escapes, as git and GNU diff write them) into out.
+fn ds_unquote(out: &alloc::vec::Vec<u8>, p: core::slice::View<u8>) -> bool {
+    let i: i32 = 1; let end: i32 = p.length - 1; if (end < 1 || ds_at(p, end) != 34) { return false; }
+    while (i < end) {
+        let c: i32 = ds_at(p, i); let v: i32 = c;
+        if (c == 92) {
+            i += 1; let e: i32 = ds_at(p, i);
+            if (e >= 48 && e <= 55) {
+                v = 0; let d: i32 = 0;
+                while (d < 3 && i < end && ds_at(p, i) >= 48 && ds_at(p, i) <= 55) { v = v * 8 + ds_at(p, i) - 48; i += 1; d += 1; }
+                i -= 1; if (v > 255) { return false; }
+            }
+            else {
+                v = e;
+                if (e == 97) { v = 7; } if (e == 98) { v = 8; } if (e == 116) { v = 9; } if (e == 110) { v = 10; }
+                if (e == 118) { v = 11; } if (e == 102) { v = 12; } if (e == 114) { v = 13; }
+                if (e < 0) { return false; }
+            }
+        }
+        if (!ds_push(out, v as u8)) { return false; }
+        i += 1;
+    }
+    return true;
+}
+// Append p without its first `strip` components in git's print form: quoted
+// names are decoded, then quoted again exactly when git would quote them.
+fn ds_put_stripped(out: &alloc::vec::Vec<u8>, p: core::slice::View<u8>, strip: i32) -> bool {
+    if (ds_at(p, 0) != 34) { return ds_quote(out, ds_sub(p, ds_cut(p, strip), p.length)); }
+    let raw: alloc::vec::Vec<u8> = alloc::vec::new();
+    let ok: bool = ds_unquote(raw.borrow(), p);
+    if (ok) { let v: core::slice::View<u8> = raw.as_view(); ok = ds_quote(out, ds_sub(v, ds_cut(v, strip), v.length)); }
+    raw.destroy(); return ok;
+}
+fn ds_same_stripped(a: core::slice::View<u8>, b: core::slice::View<u8>, strip: i32) -> bool {
+    let ca: i32 = ds_cut(a, strip); let cb: i32 = ds_cut(b, strip);
+    if (ds_at(a, 0) == 34 || ds_at(b, 0) == 34) { return false; }
+    if (a.length - ca != b.length - cb) { return false; }
+    let i: i32 = 0; while (i < a.length - ca) { if (ds_at(a, ca + i) != ds_at(b, cb + i)) { return false; } i += 1; } return true;
+}
+fn ds_is_null(p: core::slice::View<u8>) -> bool { return p.length == 9 && ds_starts(p, 0, "/dev/null", 9); }
+struct Section { open: bool, git: bool, diff_from: i32, diff_end: i32, old_from: i32, old_end: i32, new_from: i32, new_end: i32, ren_from: i32, ren_from_end: i32, ren_to: i32, ren_to_end: i32, added: i32, deleted: i32, hunks: i32 }
+impl Section { fn borrow(&self) -> &Section { return self; } }
+fn ds_open(s: &Section, git: bool) {
+    s.open = true; s.git = git; s.diff_from = -1; s.old_from = -1; s.new_from = -1; s.ren_from = -1; s.ren_to = -1; s.added = 0; s.deleted = 0; s.hunks = 0;
+}
+// Name a section: rename lines, else the new path (old for deletions), else the diff --git line.
+fn ds_close(stats: &Stats, text: core::slice::View<u8>, s: &Section, strip: i32) -> core::result::Result<i32, Error> {
+    s.open = false;
+    let k: i32 = strip; if (k < 0) { k = 0; if (s.git) { k = 1; } }
+    let start: i32 = stats.names.len();
+    if (s.ren_from >= 0 && s.ren_to >= 0) {
+        let a: core::slice::View<u8> = ds_path(text, s.ren_from, s.ren_from_end); let b: core::slice::View<u8> = ds_path(text, s.ren_to, s.ren_to_end);
+        if (ds_at(a, 0) == 34 || ds_at(b, 0) == 34) {
+            let ok: bool = core::result::is_ok(stats.names.try_extend(a)) && ds_text(stats.names.borrow(), " => ", 4) && core::result::is_ok(stats.names.try_extend(b));
+            return ds_add(stats, start, s.added, s.deleted, ok);
+        }
+        return ds_add(stats, start, s.added, s.deleted, ds_rename(stats.names.borrow(), a, b));
+    }
+    if (s.new_from >= 0) { let p: core::slice::View<u8> = ds_path(text, s.new_from, s.new_end); if (!ds_is_null(p)) { return ds_add(stats, start, s.added, s.deleted, ds_put_stripped(stats.names.borrow(), p, k)); } }
+    if (s.old_from >= 0) { let p: core::slice::View<u8> = ds_path(text, s.old_from, s.old_end); if (!ds_is_null(p)) { return ds_add(stats, start, s.added, s.deleted, ds_put_stripped(stats.names.borrow(), p, k)); } }
+    if (s.diff_from >= 0) {
+        // "diff --git a/P b/P" with no ---/+++ lines: both halves must agree.
+        let line: core::slice::View<u8> = ds_path(text, s.diff_from, s.diff_end); let n: i32 = line.length;
+        if (ds_at(line, 0) == 34) {
+            // Quoted: "a/P" "b/P"; take the second name.
+            let q: i32 = 1; while (q < n && ds_at(line, q) != 34) { if (ds_at(line, q) == 92) { q += 1; } q += 1; }
+            if (q + 2 < n && ds_at(line, q + 1) == 32) { return ds_add(stats, start, s.added, s.deleted, ds_put_stripped(stats.names.borrow(), ds_sub(line, q + 2, n), k)); }
+            return core::result::Err(Error::InvalidInput);
+        }
+        if (n >= 3 && (n - 1) % 2 == 0 && ds_at(line, (n - 1) / 2) == 32) {
+            let half: i32 = (n - 1) / 2; let first: core::slice::View<u8> = ds_sub(line, 0, half); let second: core::slice::View<u8> = ds_sub(line, half + 1, n);
+            if (ds_same_stripped(first, second, k)) { return ds_add(stats, start, s.added, s.deleted, ds_put_stripped(stats.names.borrow(), second, k)); }
+        }
+    }
+    return core::result::Err(Error::InvalidInput);
+}
+struct Cursor { pos: i32 }
+impl Cursor { fn borrow(&self) -> &Cursor { return self; } }
+// Parse "start[,count]" at c.pos; returns the count (1 when omitted) or -1.
+fn ds_count(v: core::slice::View<u8>, c: &Cursor, end: i32) -> i32 {
+    let i: i32 = c.pos; let any: bool = false;
+    while (i < end && ds_at(v, i) >= 48 && ds_at(v, i) <= 57) { i += 1; any = true; }
+    if (!any) { return -1; }
+    if (ds_at(v, i) != 44) { c.pos = i; return 1; }
+    i += 1; let value: i32 = 0; any = false;
+    while (i < end && ds_at(v, i) >= 48 && ds_at(v, i) <= 57) { if (value > 214748363) { return -1; } value = value * 10 + ds_at(v, i) - 48; i += 1; any = true; }
+    if (!any) { return -1; }
+    c.pos = i; return value;
+}
+// Count added and deleted lines per file section of a unified diff (git,
+// diff -u or diff -ru output). strip: leading path components to drop from
+// ---/+++ names; -1 drops one for "diff --git" sections and none otherwise.
+// Binary sections are Unsupported (git prints their byte sizes).
+pub fn parse_patch(text: core::slice::View<u8>, strip: i32, max_files: i32) -> core::result::Result<Stats, Error> {
+    if (text.start < 0 || text.length < 0 || max_files < 0) { return core::result::Err(Error::InvalidInput); }
+    let stats: Stats = new_stats();
+    let s: Section = Section { open: false, git: false, diff_from: -1, diff_end: 0, old_from: -1, old_end: 0, new_from: -1, new_end: 0, ren_from: -1, ren_from_end: 0, ren_to: -1, ren_to_end: 0, added: 0, deleted: 0, hunks: 0 };
+    let pos: i32 = 0; let old_left: i32 = 0; let new_left: i32 = 0; let failure: i32 = 0; let closing: Error = Error::InvalidInput;
+    while (pos < text.length && failure == 0) {
+        let end: i32 = pos; while (end < text.length && ds_at(text, end) != 10) { end += 1; } if (end < text.length) { end += 1; }
+        if (old_left > 0 || new_left > 0) {
+            let c: i32 = ds_at(text, pos);
+            if (c == 32 || c == 10) { old_left -= 1; new_left -= 1; }
+            else { if (c == 45) { old_left -= 1; s.deleted += 1; }
+            else { if (c == 43) { new_left -= 1; s.added += 1; }
+            else { if (c != 92) { failure = 1; } } } }
+            if (old_left < 0 || new_left < 0) { failure = 1; }
+        }
+        else {
+            let starts_section: bool = ds_starts(text, pos, "diff ", 5);
+            let old_header: bool = ds_starts(text, pos, "--- ", 4);
+            if (starts_section || (old_header && s.open && (s.hunks > 0 || s.new_from >= 0))) {
+                if (s.open) { let r: core::result::Result<i32, Error> = ds_close(stats.borrow(), text, s.borrow(), strip); if (core::result::is_err(r)) { failure = 2; closing = core::result::unwrap_err(r); } }
+            }
+            if (failure == 0 && (starts_section || ((old_header || ds_starts(text, pos, "+++ ", 4)) && !s.open))) {
+                if (stats.files.len() >= max_files) { failure = 3; }
+                ds_open(s.borrow(), ds_starts(text, pos, "diff --git ", 11));
+                if (s.git) { s.diff_from = pos + 11; s.diff_end = end; }
+            }
+            if (failure == 0 && s.open) {
+                if (old_header) { s.old_from = pos + 4; s.old_end = end; }
+                if (ds_starts(text, pos, "+++ ", 4)) { s.new_from = pos + 4; s.new_end = end; }
+                if (s.git && ds_starts(text, pos, "rename from ", 12)) { s.ren_from = pos + 12; s.ren_from_end = end; }
+                if (s.git && ds_starts(text, pos, "rename to ", 10)) { s.ren_to = pos + 10; s.ren_to_end = end; }
+                if (ds_starts(text, pos, "Binary files ", 13) || ds_starts(text, pos, "GIT binary patch", 16)) { failure = 4; }
+                if (ds_starts(text, pos, "@@ -", 4)) {
+                    let cur: Cursor = Cursor { pos: pos + 4 };
+                    let oc: i32 = ds_count(text, cur.borrow(), end);
+                    if (oc < 0 || !ds_starts(text, cur.pos, " +", 2)) { failure = 1; }
+                    else {
+                        cur.pos += 2; let nc: i32 = ds_count(text, cur.borrow(), end);
+                        if (nc < 0) { failure = 1; } else { old_left = oc; new_left = nc; s.hunks += 1; }
+                    }
+                }
+            }
+        }
+        pos = end;
+    }
+    if (failure == 0 && (old_left > 0 || new_left > 0)) { failure = 1; }
+    if (failure == 0 && s.open) { let r: core::result::Result<i32, Error> = ds_close(stats.borrow(), text, s.borrow(), strip); if (core::result::is_err(r)) { failure = 2; closing = core::result::unwrap_err(r); } }
+    if (failure != 0) {
+        stats.destroy();
+        if (failure == 3) { return core::result::Err(Error::FileLimit); }
+        if (failure == 4) { return core::result::Err(Error::Unsupported); }
+        if (failure == 2) { return core::result::Err(closing); }
+        return core::result::Err(Error::InvalidInput);
+    }
+    return core::result::Ok(stats);
+}

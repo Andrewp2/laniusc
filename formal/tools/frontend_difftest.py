@@ -66,6 +66,7 @@ def inputs_digest(workdir):
 import run_cache  # noqa: E402
 oracle.EFFECTS = False  # set in main: effectful expressions, except with --generic
 oracle.NESTED = False  # nested struct fields: the oracle's, not yet the front end tests'
+oracle.INDEX_VALUE_CALLS = False  # the front end rejects s[i] = value when value can act
 
 HEAVY = 'target/claude-work/bin/heavy'
 UINT_LEAN = oracle.UINT_LEAN

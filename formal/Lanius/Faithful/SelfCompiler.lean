@@ -8,11 +8,13 @@ the driver `w(input, words, output, room)`. A binary `B` with
 `compileSource prog = some B` is the self-built verified compiler.
 `selfCompiler_outcome` is about its machine code for `w`, entered with the
 words of source files at `selfInput` and `room` output words after them
-(`selfStart`, `selfHeap`): it faults (every run that stops, stops at a fault:
-out of stack or heap, or a checked trap), or it returns, deterministically,
+(`selfStart`, `selfHeap`): it faults (every run that stops, stops at a
+fault), only when Core's run of `w` fails at every fuel (diverges, stops at a
+checked trap, or runs out of heap) or completes with the stack window too
+small (`SelfFaults`), or it returns, deterministically,
 -1 when `compileText` rejects the files, and otherwise the length of the
 words of `compileText`'s binary, with those words in the output view. The
-theorem joins `driver_files` (V1, V5) with `compileSource_outcome_from` (V2),
+theorem joins `driver_files` (V1, V5) with `compileSource_outcome_reason` (V2),
 and `driver_safe` (V7b) rules out the run of `w` Core traps undefinedly in.
 
 What this leaves to trust about the native self-built compiler: that its
@@ -63,6 +65,10 @@ def selfHeap (W : List (BitVec 32)) (room limit : Nat) : Heap :=
 /-- `w`'s arguments as Core values. -/
 def selfArgs (W : List (BitVec 32)) (room : Nat) : List Value :=
   [.pointer selfInput, .signed .i32 W.length, .pointer (selfOutput W), .signed .i32 room]
+
+/-- Core's run of `w` on them, at fuel `fuel`. -/
+def selfRun (W : List (BitVec 32)) (room fuel : Nat) :=
+  Semantics.evalExpr fuel prog.toCore (selfStart W room) (.call 0 ((selfArgs W room).map Core.Expr.value))
 
 /-- `w`'s arguments as slots. -/
 def selfBits (W : List (BitVec 32)) (room : Nat) : List (BitVec 64) :=
@@ -274,6 +280,16 @@ def SelfOutput (binary : Option Binary) (W : List (BitVec 32)) (s s' : State) : 
 
 /-! ## The self-built verified compiler -/
 
+/-- How the self-built verified compiler's run of `w` on `files` may fault
+(review finding 5): it faults, and either Core's run of `w` fails at every
+fuel (it diverges, stops at a checked trap, or ends with the heap past
+`limit`), or Core's run completes within `limit` and the stack `window` is
+below what the compiled run needs. -/
+def SelfFaults (files : List SourceFile) (room limit window : Nat) (B : Binary) (s : State) : Prop :=
+  ((∀ fuel, Failing limit (selfRun (filesWords files) room fuel)) ∧ Faults s) ∨
+  ∃ fuel v final depth, selfRun (filesWords files) room fuel = .done v final ∧
+    final.heap.nextAddress ≤ limit ∧ window < B.stackNeed depth ∧ Faults s
+
 theorem filesWords_pos (files : List SourceFile) : 0 < (filesWords files).length := by
   simp [filesWords]
 
@@ -281,9 +297,10 @@ theorem filesWords_pos (files : List SourceFile) : 0 < (filesWords files).length
 binary the verified compiler makes of its own source (`prog`), and enter its
 code for `w` by a near call with the words of source `files` in the input
 view and `room` words of output view after them (`selfHeap`, `selfBits`),
-any stack window and any heap limit past them. Then the run faults (every
-run of it that stops, stops at a fault), or it returns, deterministically,
-with `compileText files`'s answer (`SelfOutput`). -/
+any stack window and any heap limit past them. Then the run faults, only
+when Core's run of `w` fails at every fuel or completes with the stack
+window short (`SelfFaults`), or it returns, deterministically, with
+`compileText files`'s answer (`SelfOutput`). -/
 theorem selfCompiler_outcome {B : Binary} (compiled : compileSource prog = some B) {files : List SourceFile}
     (fit : FilesFit files) (wordsLt : (filesWords files).length < 2 ^ 31) {room limit : Nat} (roomLt : room < 2 ^ 31)
     (enough : selfNext (filesWords files) room ≤ limit) (small : limit < 2 ^ 62)
@@ -296,14 +313,16 @@ theorem selfCompiler_outcome {B : Binary} (compiled : compileSource prog = some 
     (params : ∀ k (bound : k < (selfBits (filesWords files) room).length),
       read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = (selfBits (filesWords files) room)[k])
     (heapAt : HeapAt window s (selfHeap (filesWords files) room limit)) (stack : StackAt B.guard window s) :
-    Faults s ∨
+    SelfFaults files room limit window B s ∨
     ∃ n s' results after, Steps n s s' ∧ Det n s s' ∧ Returned window s s' results after ∧
       SelfOutput (compileText files) (filesWords files) s s' := by
   have nonempty := filesWords_pos files
-  rcases compileSource_outcome_from compiled fn_w (args_hold wordsLt roomLt) rfl start_fresh
+  rcases compileSource_outcome_reason compiled fn_w (args_hold wordsLt roomLt) rfl start_fresh
       (start_corr nonempty small) enough s imageBase window bounded loaded apart imageHeap entry params heapAt stack with
-    faults | ⟨fuel, v, final, runs, fits, results, after, holds, len, corr, n, s', run, det, ret⟩ | undefined
-  · exact .inl faults
+    ⟨fails, faults⟩ | ⟨fuel, v, final, depth, runs, fits, short, faults⟩ |
+      ⟨fuel, v, final, runs, fits, results, after, holds, len, corr, n, s', run, det, ret⟩ | undefined
+  · exact .inl (.inl ⟨fails, faults⟩)
+  · exact .inl (.inr ⟨fuel, v, final, depth, runs, fits, short, faults⟩)
   · refine .inr ⟨n, s', results, after, run, det, ret, ?_⟩
     have result := driver_files fit (start_inv nonempty) (by have := small; simp only [selfHeap] at fits; addr_omega)
       wordsLt roomLt (start_reads wordsLt) start_readable runs

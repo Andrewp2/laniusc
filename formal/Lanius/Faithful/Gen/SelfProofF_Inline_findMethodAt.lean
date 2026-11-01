@@ -13,20 +13,20 @@ public import Lanius.Faithful.Gen.SelfStmtF_Inline_pExpr
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pModTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pPathMore
 public import Lanius.Faithful.Gen.SelfStmtF_blockArmsOf
-public import Lanius.Faithful.Gen.SelfStmtF_compoundOf
 public import Lanius.Faithful.Gen.SelfStmtF_consBinder
 public import Lanius.Faithful.Gen.SelfStmtF_consTreeTail
 public import Lanius.Faithful.Gen.SelfStmtF_effNamedTys
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
 public import Lanius.Faithful.Gen.SelfStmtF_floatTyped
+public import Lanius.Faithful.Gen.SelfStmtF_forRange
 public import Lanius.Faithful.Gen.SelfStmtF_freshId
+public import Lanius.Faithful.Gen.SelfStmtF_funcsOnto
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_intLiteral
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_lxBlockEnd
 public import Lanius.Faithful.Gen.SelfStmtF_lxSpaceEnd
 public import Lanius.Faithful.Gen.SelfStmtF_lxSymbolStart
-public import Lanius.Faithful.Gen.SelfStmtF_monoLoop
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_noTrees
 public import Lanius.Faithful.Gen.SelfStmtF_paramGoals
@@ -214,12 +214,11 @@ theorem step_lx_space_run_at {prog : SrcProgram} {prims : Prims} {ix_lx_space_ru
   simp only [src_lx_space_run_at] at h
   faithful [Lanius.Mini.Inline.lxSpaceRunAt]
 
-theorem step_mono_next {prog : SrcProgram} {prims : Prims} {ix_mono_next ix_plus ix_mono_loop ix_add_insts ix_stmt_calls ix_concat_of_mini_selfhost_MFunc ix_single_of_mini_selfhost_MFunc : Nat} (fn : prog.funcs[ix_mono_next]? = some (src_mono_next ix_plus ix_mono_loop ix_add_insts ix_stmt_calls ix_concat_of_mini_selfhost_MFunc ix_single_of_mini_selfhost_MFunc)) (np : prims.isPrim ix_mono_next = false)
+theorem step_mono_next {prog : SrcProgram} {prims : Prims} {ix_mono_next ix_plus ix_mono_loop ix_add_insts ix_stmt_calls ix_cons_of_mini_selfhost_MFunc : Nat} (fn : prog.funcs[ix_mono_next]? = some (src_mono_next ix_plus ix_mono_loop ix_add_insts ix_stmt_calls ix_cons_of_mini_selfhost_MFunc)) (np : prims.isPrim ix_mono_next = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_add_insts : Certified (∀ {n : Nat}, Stmt_add_insts prog prims ix_add_insts n))
     (ext_stmt_calls : Certified (∀ {n : Nat}, Stmt_stmt_calls prog prims ix_stmt_calls n))
-    (ext_concat_of_mini_selfhost_MFunc : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_MFunc prog prims ix_concat_of_mini_selfhost_MFunc n))
-    (ext_single_of_mini_selfhost_MFunc : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_MFunc prog prims ix_single_of_mini_selfhost_MFunc n)) {n : Nat}
+    (ext_cons_of_mini_selfhost_MFunc : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_MFunc prog prims ix_cons_of_mini_selfhost_MFunc n)) {n : Nat}
     (ih_mono_loop : Certified (Stmt_mono_loop prog prims ix_mono_loop n)) :
     Stmt_mono_next prog prims ix_mono_next (n + 1) := by
   intro x0 x1 x2 x3 x4 x5 x6 v0 v1 v2 v3 v4 v5 v6 w h r0 r1 r2 r3 r4 r5 r6

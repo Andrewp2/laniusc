@@ -42,11 +42,11 @@ fn m3_matches(script: &ext::seqdiff::Script, count: i32) -> core::result::Result
 fn m3_push(out: &alloc::vec::Vec<Chunk>, c: Chunk) -> bool { return core::result::is_ok(out.try_push(c)); }
 
 // Split a conflict at the lines its two sides share (git's zealous refinement).
-fn m3_refine<T>(a: core::slice::View<T>, b: core::slice::View<T>, c: Chunk, out: &alloc::vec::Vec<Chunk>, limits: ext::seqdiff::Limits) -> core::result::Result<i32, Error> where T: core::cmp::Eq<T> {
+fn m3_refine<T>(a: core::slice::View<T>, b: core::slice::View<T>, c: Chunk, out: &alloc::vec::Vec<Chunk>, algorithm: ext::seqdiff::Algorithm, limits: ext::seqdiff::Limits) -> core::result::Result<i32, Error> where T: core::cmp::Eq<T>, T: core::hash::Hash<T> {
     if (c.a1 == c.a0 || c.b1 == c.b0) { if (!m3_push(out, c)) { return core::result::Err(Error::AllocationFailed); } return core::result::Ok(1); }
     let sa: core::slice::View<T> = core::slice::View { values: a.values, start: a.start + c.a0, length: c.a1 - c.a0 };
     let sb: core::slice::View<T> = core::slice::View { values: b.values, start: b.start + c.b0, length: c.b1 - c.b0 };
-    let made: core::result::Result<ext::seqdiff::Script, ext::seqdiff::Error> = ext::seqdiff::myers(sa, sb, limits);
+    let made: core::result::Result<ext::seqdiff::Script, ext::seqdiff::Error> = ext::seqdiff::diff(sa, sb, algorithm, limits);
     if (core::result::is_err(made)) { return core::result::Err(m3_error(core::result::unwrap_err(made))); }
     let s: ext::seqdiff::Script = core::result::unwrap(made);
     let count: i32 = 0; let i: i32 = 0; let ok: bool = true;
@@ -68,12 +68,17 @@ fn m3_refine<T>(a: core::slice::View<T>, b: core::slice::View<T>, c: Chunk, out:
     return core::result::Ok(count);
 }
 
-// Classic diff3 chunking over Myers matchings of base->ours and base->theirs.
+// Classic diff3 chunking over matchings of base->ours and base->theirs, aligned
+// with git's xdiff (as git merge-file does).
 pub fn merge3<T>(o: core::slice::View<T>, a: core::slice::View<T>, b: core::slice::View<T>, level: Level, limits: ext::seqdiff::Limits) -> core::result::Result<Merge, Error> where T: core::cmp::Eq<T>, T: core::hash::Hash<T> {
-    let first: core::result::Result<ext::seqdiff::Script, ext::seqdiff::Error> = ext::seqdiff::diff(o, a, ext::seqdiff::Algorithm::Myers, limits);
+    return merge3_with(o, a, b, level, ext::seqdiff::Algorithm::Xdiff, limits);
+}
+// merge3 with an explicit alignment for the side diffs and conflict refinement.
+pub fn merge3_with<T>(o: core::slice::View<T>, a: core::slice::View<T>, b: core::slice::View<T>, level: Level, algorithm: ext::seqdiff::Algorithm, limits: ext::seqdiff::Limits) -> core::result::Result<Merge, Error> where T: core::cmp::Eq<T>, T: core::hash::Hash<T> {
+    let first: core::result::Result<ext::seqdiff::Script, ext::seqdiff::Error> = ext::seqdiff::diff(o, a, algorithm, limits);
     if (core::result::is_err(first)) { return core::result::Err(m3_error(core::result::unwrap_err(first))); }
     let sa: ext::seqdiff::Script = core::result::unwrap(first);
-    let second: core::result::Result<ext::seqdiff::Script, ext::seqdiff::Error> = ext::seqdiff::diff(o, b, ext::seqdiff::Algorithm::Myers, limits);
+    let second: core::result::Result<ext::seqdiff::Script, ext::seqdiff::Error> = ext::seqdiff::diff(o, b, algorithm, limits);
     if (core::result::is_err(second)) { sa.destroy(); return core::result::Err(m3_error(core::result::unwrap_err(second))); }
     let sb: ext::seqdiff::Script = core::result::unwrap(second);
     let ma: core::result::Result<alloc::vec::Vec<i32>, Error> = m3_matches(sa.borrow(), o.length); sa.destroy();
@@ -110,7 +115,7 @@ pub fn merge3<T>(o: core::slice::View<T>, a: core::slice::View<T>, b: core::slic
     while (i < raw.len()) {
         let c: Chunk = raw.as_slice()[i];
         if (c.kind == 4) {
-            let r: core::result::Result<i32, Error> = m3_refine(a, b, c, refined.borrow(), limits);
+            let r: core::result::Result<i32, Error> = m3_refine(a, b, c, refined.borrow(), algorithm, limits);
             if (core::result::is_err(r)) { raw.destroy(); refined.destroy(); return core::result::Err(core::result::unwrap_err(r)); }
         } else { if (!m3_push(refined.borrow(), c)) { raw.destroy(); refined.destroy(); return core::result::Err(Error::AllocationFailed); } }
         i += 1;
@@ -159,7 +164,10 @@ fn m3_simplify(a: core::slice::View<ext::seqdiff::Line>, m: &Merge, alnum: bool)
 
 // Merge byte lines. Zealous levels refine and rejoin conflicts like git merge-file.
 pub fn merge_lines(o: core::slice::View<ext::seqdiff::Line>, a: core::slice::View<ext::seqdiff::Line>, b: core::slice::View<ext::seqdiff::Line>, level: Level, limits: ext::seqdiff::Limits) -> core::result::Result<Merge, Error> {
-    let made: core::result::Result<Merge, Error> = merge3(o, a, b, level, limits);
+    return merge_lines_with(o, a, b, level, ext::seqdiff::Algorithm::Xdiff, limits);
+}
+pub fn merge_lines_with(o: core::slice::View<ext::seqdiff::Line>, a: core::slice::View<ext::seqdiff::Line>, b: core::slice::View<ext::seqdiff::Line>, level: Level, algorithm: ext::seqdiff::Algorithm, limits: ext::seqdiff::Limits) -> core::result::Result<Merge, Error> {
+    let made: core::result::Result<Merge, Error> = merge3_with(o, a, b, level, algorithm, limits);
     if (core::result::is_err(made)) { return made; }
     let m: Merge = core::result::unwrap(made);
     let simplify: i32 = match (level) { Level::Eager -> 0, Level::Zealous -> 1, Level::ZealousAlnum -> 2 };

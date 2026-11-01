@@ -28,10 +28,6 @@ abbrev Stmt_collect_file_next (prog : SrcProgram) (prims : Prims) (ix n : Nat) :
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Collected} {x2 : Option Lanius.Mini.FileDecls} {x3 : List Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepCollected x1 v1 → (RepOption 101 RepFileDecls) x2 v2 → (RepList 82 RepCTree) x3 v3 →
     (RepOption 132 RepCollected) (Lanius.Mini.Inline.collectFileNext x0 x1 x2 x3) w
 
-abbrev Stmt_collect_next (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : List (List Nat)} {x2 : Option Lanius.Mini.Decls} {x3 : List Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → (RepList 31 (RepList 25 RepNat)) x1 v1 → (RepOption 164 RepDecls) x2 v2 → (RepList 82 RepCTree) x3 v3 →
-    (RepOption 164 RepDecls) (Lanius.Mini.Inline.collectNext x0 x1 x2 x3) w
-
 abbrev Stmt_const_name_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.ConstDecl} {x1 : List Lanius.Mini.ConstDecl} {x2 : List (List Nat)} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepConstDecl x0 v0 → (RepList 112 RepConstDecl) x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 →
     (RepList 31 (RepList 25 RepNat)) (Lanius.Mini.Inline.constNameAt x0 x1 x2) w

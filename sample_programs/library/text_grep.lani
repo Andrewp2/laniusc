@@ -69,14 +69,16 @@ fn record(line: core::slice::View<u8>, terminated: bool, regex: &ext::regex::Reg
     if (!write_part(line)) { return fail(diagnostic,3,7); }
     if (terminated && !write_part(literal("\n",1))) { return fail(diagnostic,3,7); } return 0;
 }
-// An assertion-free pattern gets a capture-free lazy DFA; its cache allocation
-// failing just leaves the VM path, as before.
+// An assertion-free pattern gets a capture-free lazy DFA. Only Unsupported
+// (a pattern with assertions) leaves the VM path; a failed cache allocation
+// is an allocation failure like any other, reported at the pattern stage.
 struct Matcher { dfa: ext::regex::Dfa, ready: bool }
 impl Matcher { fn borrow(&self) -> &Matcher { return self; } }
 fn search(regex: &ext::regex::Regex, options: Options, diagnostic: &Diagnostic) -> i32 {
     let built = ext::regex::dfa(regex);
     let matcher: Matcher = Matcher { dfa: ext::regex::Dfa { set: ext::regex::prefix_set(), cost: 0, limit: 0 }, ready: false };
     if (core::result::is_ok(built)) { matcher.dfa = core::result::unwrap(built); matcher.ready = true; }
+    else { let error: ext::regex::Error = core::result::unwrap_err(built); let unsupported: bool = match (error) { ext::regex::Error::Unsupported(at) -> true, _ -> false }; if (!unsupported) { return regex_error(error,diagnostic); } }
     let status: i32 = scan(regex, matcher.borrow(), options, diagnostic);
     matcher.dfa.destroy(); return status;
 }

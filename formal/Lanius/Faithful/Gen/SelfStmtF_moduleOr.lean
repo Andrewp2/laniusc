@@ -68,9 +68,9 @@ abbrev Stmt_join_decls (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
   ∀ {x0 : Lanius.Mini.Decls} {x1 : Option Lanius.Mini.Decls} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepDecls x0 v0 → (RepOption 164 RepDecls) x1 v1 →
     (RepOption 164 RepDecls) (Lanius.Mini.joinDecls x0 x1) w
 
-abbrev Stmt_method_decl (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : List (List Nat)} {x2 : List (List Nat)} {x3 : Lanius.Mini.CTree} {x4 : Lanius.Mini.CTree} {x5 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → (RepList 31 (RepList 25 RepNat)) x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → RepCTree x3 v3 → RepCTree x4 v4 → RepCTree x5 v5 →
-    (RepOption 201 RepFnDecl) (Lanius.Mini.methodDecl x0 x1 x2 x3 x4 x5) w
+abbrev Stmt_module_decls (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Option (List (List Nat))} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 138 (RepList 31 (RepList 25 RepNat))) x0 v0 →
+    (RepOption 164 RepDecls) (Lanius.Mini.moduleDecls x0) w
 
 abbrev Stmt_module_path (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepList 82 RepCTree) x1 v1 →
