@@ -1,0 +1,5 @@
+module a;
+
+pub fn b() -> i32 {
+    return 1;
+}

@@ -1,6 +1,14 @@
 # Standard and extended library overview
 
-The full library goal remains open. The current
+The full library goal remains open. The current increment makes
+`core::slice` sorting adaptive: [pattern-defeating quicksort](stdlib-sort-algorithms.md)
+for unstable sorts and a run-adaptive stable merge sort with galloping over
+caller scratch. Both are checked against Python `sorted`, with recorded
+comparison counts and timings. The preceding increment adds inline
+fixed-capacity containers ([ring buffer and inline string](stdlib-inline-containers.md))
+and a fixed-capacity [LRU cache](stdlib-lru-cache.md) with O(1) expected
+operations, no allocation after construction and exact eviction order; one
+Python-reference model checks 11,346 commands. The preceding
 [ordered navigation increment](stdlib-ordered-navigation.md) adds predecessor
 searches, heterogeneous lower/upper/predecessor bounds and `Bound`-based
 intervals to TreeMap and TreeSet: sixteen methods plus `core::range::Bound`.
@@ -553,10 +561,17 @@ the `seq-diff`/`seq-patch` tools give 878/878 minimal Myers edit lengths against
 an O(N·M) LCS, 878/878 GNU and native round trips, 878/878 real GNU `diff -u`
 applications and 333/333 distinct-line plus 328/328 repeated-line offset/fuzz
 agreements with GNU `patch` at `-F0` and `-F2`.
-[Three-way merge](extended-merge3.md) (`ext::merge3`, `seq-merge`) agrees byte
-for byte with `git merge-file`, `git merge-file --diff3` and GNU `diff3 -m` on
-2,000/2,000 distinct-line triples each; repeated-line triples agree on
-1,787-1,800 of 2,000, with equal-cost alignment differences otherwise.
+[Three-way merge](extended-merge3.md) (`ext::merge3`, `seq-merge`) aligns with
+the xdiff port. It agrees byte for byte with `git merge-file` and
+`git merge-file --diff3` on all 4,000 generated triples (2,000 distinct-line,
+2,000 repeated-line), and with GNU `diff3 -m` on 2,000/2,000 distinct-line and
+1,863/2,000 repeated-line triples.
+[Word diff and diffstat](extended-wordiff.md) (`ext::wordiff`, `ext::diffstat`,
+`seq-diff --word-diff|--char-diff|--stat`, `seq-diffstat`) use a port of git's
+xdiff alignment (`Algorithm::Xdiff`). Their output is identical to git 2.43 on
+all 2,040 generated pairs for word diffs, character diffs and `--stat`, on
+1,500 `git diff --stat` reports over generated repositories and on 282
+`diff -ruN` patches.
 
 The preceding [reusable regex-workspace increment](library-regex-workspace-plan.md) is
 implemented and passes the selected Workspace/Search, regex, lexer,
@@ -648,8 +663,10 @@ the `NegativeExponent` error. Radix 2-36 parsing and formatting fold
 `radix^g < 2^32` digits per pass. The [bc calculator](stdlib-bc.md) evaluates
 infix expressions over stdin; its Python oracle checked 9,526 values and 103
 diagnostics across six radices on native Linux x86_64, including operands that
-straddle the threshold, zero, negatives and division by zero. Karatsuba runs in
-one preallocated workspace; subquadratic radix conversion remains.
+straddle the threshold, zero, negatives and division by zero (now 9,735 values
+and 326 diagnostics with modular inverses). Karatsuba runs in one workspace;
+Burnikel-Ziegler division and divide-and-conquer/power-of-two conversion make
+million-digit operations pass a separate oracle at 12-38x Python's time.
 
 **Checked native varints.**
 
@@ -1006,8 +1023,9 @@ make no callback; short transfers advance both array/file coordinates.
 Interrupted calls spend attempts, and every failure retains only confirmed
 progress. A call quota is separate from callback duration or a host deadline.
 
-The `std::file_ops` File adapter stages at most 1024 bytes through stack
-storage and makes one pread64/pwrite64 transfer after status validation.
+The `std::file_ops` File adapter reads packed (stride 1) destinations with one
+direct pread64 and no status probe. Writes and other layouts stage at most 1024
+bytes through stack storage and make one transfer after status validation.
 Read bytes publish only after a valid count. It leaves the shared cursor
 unchanged, rejects O_DIRECT and rejects O_APPEND for nonempty writes.
 Manual owner/backing and descriptor/status stability remain caller duties;
@@ -2201,6 +2219,16 @@ functional70, malformed45, slowloris12, conditional23 and concurrent39 on the
 event server plus four sequential groups, with exact server counters. TLS,
 threads, multipart ranges and allocation-failure coverage remain open.
 
+The [HTTP/1.1 client agent](extended-http-agent.md) (`ext::http_agent`) is a
+synchronous cleartext client over the same codec, `ext::http_url` and
+`ext::url_connect`. It pools keep-alive connections per host and port under
+idle-count, idle-time and use limits, discards stale ones and retries an
+idempotent request once on a fresh connection. It follows redirects with a
+hop limit, RFC 9110 method rules and cross-origin credential stripping, and
+sends fixed or chunked streamed bodies, stopping an upload on an early final
+response. The curl-like sample passes Python `http.server` oracle groups
+pool18, redirect29, upload10 and broken21 with exact counters.
+
 [Resumable cleartext HTTP exchanges](extended-http-client.md) expose owned
 Prepared request staging and caller-driven Exchange steps. At `480432e8`,
 all five direct [Exchange groups](extended-http-exchange-testing.md) passed
@@ -2326,6 +2354,11 @@ string and input limits. It agrees with all 81 hand-typed Appendix A rows and
 an independent Python implementation on 8,100 generated, mutated, limit and
 sequence cases at four chunk sizes; the
 [cbor-to-json](../sample_programs/cbor_to_json.lani) sample agrees on 700.
+[`ext::msgpack`](extended-msgpack.md) streams MessagePack the same way, with
+optional canonical-header and timestamp checks. It agrees with the installed
+Python `msgpack` package and an independent model on 8,174 format-table,
+generated, mutated, limit and stream cases; the two-way
+[msgpack-json](../sample_programs/msgpack_json.lani) sample agrees on 900.
 [Reusable CSV records and bounded stream writing](extended-csv-write.md)
 share the canonical encoder, preflight the complete record and retain exact
 accepted-prefix progress. The [column rewrite program](extended-csv-rewrite.md)
@@ -2345,11 +2378,12 @@ The [regex differential oracle](extended-regex-oracle.md) runs the real
 `find_iter`, template-replacement and grep programs against CPython `re` on
 seeded grammar-generated patterns from the shared subset. Five seeds agree on
 60,025 find/capture cases (with named groups), 5,000 replacements, 5,000 grep
-runs and 15,000 capture-free lazy-DFA `is_match`/`find` cases, and five
+runs, 13,853 fixed-width lookbehind cases and 15,000 capture-free lazy-DFA `is_match`/`find` cases, and five
 pathological inputs finish in about 0.2 s. It found, and the engine now fixes,
 a lazy counted-repetition priority error (`(?:a|aab){0,2}?b` on `aabb`).
-The DFA lets `text_grep` count assertion-free patterns on a 0.9 MB corpus in
-0.15–0.23 s instead of 3–3.8 s.
+The DFA, which carries `^ $ \A \z \b \B` as look-behind bits and delayed
+accepts in its states, lets `text_grep` count any lookbehind-free pattern on a
+0.9 MB corpus in about 0.1–0.2 s instead of 2.3–3.8 s.
 
 [Regex splitting and replacement](extended-regex-text.md) now reuse canonical
 Search with one lazily acquired workspace. Borrowed split fields, independent
@@ -2367,7 +2401,7 @@ eager span workspace, reused during token selection; terminal calls can release
 it. All six current groups pass: owner/admission/contracts, 576 model cases,
 63 explicit tables and all 30 reached OOM positions. The earlier 120-position
 receipt retains its preceding per-probe scope. A combined lazy DFA over the
-assertion-free rules now runs each step once, with VM fallback for assertions,
+lookbehind-free rules now runs each step once, with VM fallback for lookbehind,
 a full cache or a possible work limit. Its traces are byte-identical to the
 frozen per-rule lexer on 30,000 generated cases, and it is about 40 times
 faster on an 18-rule corpus. Competing patterns can rescan

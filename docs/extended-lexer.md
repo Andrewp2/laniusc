@@ -268,7 +268,8 @@ Results are identical to probing each rule, including errors, their order and
 `Usage`. A rule is still probed with the Pike VM, in index order, when any of
 these holds:
 
-- it contains an assertion (`^ $ \A \z \b \B`), which the DFA omits;
+- it contains lookbehind, which the DFA omits (other assertions are DFA
+  state; see [Assertions in the DFA](extended-regex.md#assertions-in-the-dfa));
 - the DFA cache filled during this step;
 - the VM could reach `WorkLimit`. The DFA proves it cannot when
   `(scanned scalars + 2) * boundary_cost <= Options.max_work`.
@@ -316,6 +317,12 @@ the step can produce: Search/WorkLimit 72–98 per seed, NoMatch, EmptyMatch,
 StepLimit, TokenLimit, SearchCallLimit and SearchWorkLimit. Log:
 `target/claude-work/s3/lexer-dfa-receipt.log`, for `lexer.lani` SHA256
 `d965dd80...` and `regex.lani` SHA256 `5aac5dd9...`.
+
+After assertions became DFA state, rules with `^` or `\b` join the combined
+DFA. The same five seeds again give 6,000/6,000 identical traces each, with
+147, 124, 135, 125 and 134 cases rebuilding the cache, in 7.9–8.4 s per seed.
+Log: `target/claude-work/s3/lexer-dfa-assert-receipt.log`, for `lexer.lani`
+SHA256 `c72015c1...` and `regex.lani` SHA256 `baac3207...`.
 
 The timings below lex a 915,606-byte corpus of 25,000 generated expression
 lines into 236,378 tokens with one cursor, with a per-search VM budget of

@@ -60,7 +60,8 @@ fn regex_find_replace_and_grep_agree_with_python_re_on_generated_patterns() {
         "dfa_match_find 3000/3000",
         "replace_template 1000/1000",
         "grep_filter 1000/1000",
-        "linear_time 5/5",
+        "lookbehind_find 2728/2728",
+        "linear_time 6/6",
         "disagreements 0",
     ] {
         assert!(report.lines().any(|l| l == line), "missing {line:?} in\n{report}");

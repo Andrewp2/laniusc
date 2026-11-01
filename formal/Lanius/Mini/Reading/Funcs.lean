@@ -349,8 +349,15 @@ inductive MonoR (decls : Decls) : List Inst → List MFunc → Nat → Mono → 
       table[i]? = some inst → ReadInst decls inst mf →
       MonoR decls (addInsts table (stmtCalls mf.body)) (done ++ [mf]) (i + 1) r → MonoR decls table done i r
 
+theorem funcsOnto_eq : ∀ (fs acc : List MFunc), funcsOnto fs acc = fs.reverse ++ acc
+  | [], acc => rfl
+  | f :: rest, acc => by
+    rw [funcsOnto, funcsOnto_eq rest (f :: acc)]
+    simp
+
+/-- `done` is the functions read so far, the last first. -/
 theorem monoLoop_sound {rfuel : Nat} {decls : Decls} : ∀ {fuel : Nat} {table : List Inst} {done : List MFunc} {i : Nat}
-    {r : Mono}, monoLoop fuel rfuel decls table done i = some r → MonoR decls table done i r
+    {r : Mono}, monoLoop fuel rfuel decls table done i = some r → MonoR decls table done.reverse i r
   | 0, _, _, _, _, h => by unfold monoLoop at h; simp at h
   | f + 1, table, done, i, r, h => by
     unfold monoLoop at h
@@ -360,6 +367,7 @@ theorem monoLoop_sound {rfuel : Nat} {decls : Decls} : ∀ {fuel : Nat} {table :
       rw [hi] at h
       simp only [Option.some.injEq] at h
       subst h
+      rw [funcsOnto_eq, List.append_nil]
       exact .done hi
     | some inst =>
       rw [hi] at h
@@ -369,7 +377,9 @@ theorem monoLoop_sound {rfuel : Nat} {decls : Decls} : ∀ {fuel : Nat} {table :
       | some mf =>
         rw [hm] at h
         simp only at h
-        exact .step hi (readInst_sound hm) (monoLoop_sound h)
+        have step := monoLoop_sound h
+        rw [List.reverse_cons] at step
+        exact .step hi (readInst_sound hm) step
 
 /-- The type instances the types `ts` need, appended to `table` in the
 order they are first needed. -/

@@ -88,7 +88,7 @@ fn read_next(bytes: [u8], len: i32, offset: i32,
                 status: core::utf16::STATUS_SHORT, scalar: 0, next: offset,
             };
         }
-        units[1] = read_unit(bytes, len, offset + 2, big_endian);
+        let stored1 = read_unit(bytes, len, offset + 2, big_endian); units[1] = stored1;
         unit_len = 2;
     }
     let decoded: core::utf16::Utf16Decode =

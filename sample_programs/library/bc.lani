@@ -44,7 +44,7 @@ fn peek(p: &Parser) -> i32 { skip(p); if (p.pos >= p.line.len()) { return -1; } 
 fn peek2(p: &Parser) -> i32 { if (p.pos+1 >= p.line.len()) { return -1; } return byte(p.line,p.pos+1) as i32; }
 fn fail(p: &Parser, kind: i32, at: i32) -> core::result::Result<alloc::big_int::BigInt,i32> { p.error = kind; p.at = at; return core::result::Err(kind); }
 fn code(error: alloc::big_uint::Error) -> i32 {
-    return match (error) { alloc::big_uint::Error::LimbLimit -> 6, alloc::big_uint::Error::WorkLimit -> 7, alloc::big_uint::Error::OutputLimit -> 8, alloc::big_uint::Error::AllocationFailed -> 9, alloc::big_uint::Error::DivisionByZero -> 3, alloc::big_uint::Error::NegativeExponent -> 4, alloc::big_uint::Error::InvalidDigit -> 2, _ -> 1 };
+    return match (error) { alloc::big_uint::Error::LimbLimit -> 6, alloc::big_uint::Error::WorkLimit -> 7, alloc::big_uint::Error::OutputLimit -> 8, alloc::big_uint::Error::AllocationFailed -> 9, alloc::big_uint::Error::DivisionByZero -> 3, alloc::big_uint::Error::NegativeExponent -> 4, alloc::big_uint::Error::InvalidDigit -> 2, alloc::big_uint::Error::NotInvertible -> 16, _ -> 1 };
 }
 fn checked(p: &Parser, value: core::result::Result<alloc::big_int::BigInt,alloc::big_uint::Error>, at: i32) -> core::result::Result<alloc::big_int::BigInt,i32> {
     if (core::result::is_err(value)) { return fail(p,code(core::result::unwrap_err(value)),at); }
@@ -63,11 +63,11 @@ fn is_name(p: &Parser, start: i32, end: i32, name: str, length: i32) -> bool {
     while (index < length) { if (byte(p.line,start+index) != byte(expected,index)) { return false; } index += 1; } return true;
 }
 fn expect(p: &Parser, value: i32) -> bool { if (peek(p) != value) { p.error = 1; p.at = p.pos; return false; } p.pos += 1; return true; }
-// name(args...): gcd(a,b), abs(a), modpow(a,e,m).
+// name(args...): gcd(a,b), abs(a), modpow(a,e,m), modinv(a,m).
 fn call(p: &Parser) -> core::result::Result<alloc::big_int::BigInt,i32> {
     let start: i32 = p.pos; while (p.pos < p.line.len() && lower(byte(p.line,p.pos))) { p.pos += 1; } let end: i32 = p.pos;
     let kind: i32 = 0; let arity: i32 = 0;
-    if (is_name(p,start,end,"abs",3)) { kind = 1; arity = 1; } if (is_name(p,start,end,"gcd",3)) { kind = 2; arity = 2; } if (is_name(p,start,end,"modpow",6)) { kind = 3; arity = 3; }
+    if (is_name(p,start,end,"abs",3)) { kind = 1; arity = 1; } if (is_name(p,start,end,"gcd",3)) { kind = 2; arity = 2; } if (is_name(p,start,end,"modpow",6)) { kind = 3; arity = 3; } if (is_name(p,start,end,"modinv",6)) { kind = 4; arity = 2; }
     if (kind == 0) { return fail(p,14,start); }
     if (!expect(p,40)) { return core::result::Err(1); }
     if (p.depth >= p.max_depth) { return fail(p,10,start); } p.depth += 1;
@@ -83,7 +83,7 @@ fn call(p: &Parser) -> core::result::Result<alloc::big_int::BigInt,i32> {
     }
     if (!expect(p,41)) { c.destroy(); b.destroy(); a.destroy(); return core::result::Err(1); } p.depth -= 1;
     let result: core::result::Result<alloc::big_int::BigInt,alloc::big_uint::Error> = core::result::Err(alloc::big_uint::Error::Bounds);
-    if (kind == 1) { result = a.abs(p.limits); } if (kind == 2) { result = a.gcd(b.borrow(),p.limits); } if (kind == 3) { result = a.mod_pow(b.borrow(),c.borrow(),p.limits); }
+    if (kind == 1) { result = a.abs(p.limits); } if (kind == 2) { result = a.gcd(b.borrow(),p.limits); } if (kind == 3) { result = a.mod_pow(b.borrow(),c.borrow(),p.limits); } if (kind == 4) { result = a.mod_inverse(b.borrow(),p.limits); }
     c.destroy(); b.destroy(); a.destroy(); return checked(p,result,start);
 }
 fn primary(p: &Parser) -> core::result::Result<alloc::big_int::BigInt,i32> {
@@ -177,7 +177,7 @@ fn write_error(report: &Report, kind: i32, at: i32) -> bool {
     if (kind == 9) { format.write_text(text("allocation-failure",18)); } if (kind == 10) { format.write_text(text("nesting-limit",13)); }
     if (kind == 11) { format.write_text(text("invalid-shift",13)); } if (kind == 12) { format.write_text(text("line-limit",10)); }
     if (kind == 13) { format.write_text(text("io-failure",10)); } if (kind == 14) { format.write_text(text("unknown-function",16)); }
-    if (kind == 15) { format.write_text(text("invalid-arguments",17)); }
+    if (kind == 15) { format.write_text(text("invalid-arguments",17)); } if (kind == 16) { format.write_text(text("not-invertible",14)); }
     if (report.line != 0) { format.write_text(text(" line=",6)); format.write_unsigned(report.line,core::fmt::decimal()); }
     if (report.argument >= 0) { format.write_text(text(" argument=",10)); format.write_signed(report.argument as i64,core::fmt::decimal()); }
     if (at >= 0) { format.write_text(text(" byte=",6)); format.write_signed(at as i64,core::fmt::decimal()); }
@@ -262,7 +262,7 @@ fn process(arguments: std::args::Arguments, report: &Report) -> i32 {
         if (!valid) { write_error(report,15,-1); return 2; }
     }
     if (options.help) {
-        let usage: core::slice::View<u8> = literal("Usage: bc [--ibase N] [--obase N] [--max-limbs N] [--max-work N] [--max-output N] [--max-line N]\nstdin: one integer expression per line; operators | & << >> + - * / % ^, unary -, ( ), abs gcd modpow, quit\n",205);
+        let usage: core::slice::View<u8> = literal("Usage: bc [--ibase N] [--obase N] [--max-limbs N] [--max-work N] [--max-output N] [--max-line N]\nstdin: one integer expression per line; operators | & << >> + - * / % ^, unary -, ( ), abs gcd modpow modinv, quit\n",212);
         let sink: std::stream::Descriptor = std::stream::stdout(); if (!write_bytes(sink,usage)) { return 3; } return 0;
     }
     report.argument = -1; return calculate(options,report);

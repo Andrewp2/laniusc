@@ -1,0 +1,162 @@
+// Scripted contracts for the ext::msgpack Writer, timestamps, flushing and
+// the EventReader. Prints one line per check: "NAME HEX" or "NAME error KIND OFFSET".
+module app::main;
+import alloc::vec;
+import core::f64;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::msgpack;
+import std::stream;
+
+struct Log { out: alloc::vec::Vec<u8> }
+fn hex_digit(value: u8) -> u8 { if (value < 10) { return value + 48; } return value + 87; }
+impl Log {
+    fn borrow(&self) -> &Log { return self; }
+    fn byte(&self, value: u8) { core::result::unwrap(self.out.try_push(value)); }
+    fn text(&self, value: core::text::Text) { let i: i32 = 0; while (i < value.length) { self.byte(value.bytes[value.start + i]); i += 1; } }
+    fn name(&self, value: str, count: i32) {
+        let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value), count);
+        let i: i32 = 0; while (i < count) { self.byte(bytes[i]); i += 1; }
+        self.byte(32);
+    }
+    fn number(&self, value: u64) {
+        let digits: [u8; 24] = [0; 24]; let count: i32 = 0;
+        if (value == 0) { digits[0] = 48; count = 1; }
+        while (value > 0) { digits[count] = ((value % 10) as u8) + 48; value = value / 10; count += 1; }
+        while (count > 0) { count -= 1; self.byte(digits[count]); }
+    }
+    fn view(&self, data: core::slice::View<u8>) {
+        let i: i32 = 0;
+        while (i < data.length) { let b: u8 = data.values[data.start + i]; self.byte(hex_digit(b >> 4)); self.byte(hex_digit(b & 15)); i += 1; }
+    }
+    fn failure(&self, cause: ext::msgpack::Error) {
+        self.byte(101); self.byte(114); self.byte(114); self.byte(111); self.byte(114); self.byte(32);
+        self.text(ext::msgpack::kind_name(cause.kind)); self.byte(32); self.number(cause.offset);
+    }
+    fn result(&self, step: core::result::Result<i32, ext::msgpack::Error>, writer: &ext::msgpack::Writer) {
+        if (step.is_err()) { self.failure(step.unwrap_err()); } else { self.view(writer.output()); }
+        self.byte(10);
+    }
+}
+
+fn fresh() -> ext::msgpack::Writer { return core::result::unwrap(ext::msgpack::writer(ext::msgpack::default_writer_options())); }
+fn chain(a: core::result::Result<i32, ext::msgpack::Error>, b: core::result::Result<i32, ext::msgpack::Error>) -> core::result::Result<i32, ext::msgpack::Error> {
+    if (a.is_err()) { return a; } return b;
+}
+
+fn writer_checks(log: &Log) {
+    let bytes: [u8; 300] = [0; 300];
+    let n: i32 = 0; while (n < 300) { bytes[n] = (n % 256) as u8; n += 1; }
+    let w: ext::msgpack::Writer = fresh();
+    log.name("integers", 8); log.result(chain(w.begin_array_len(6), chain(w.integer(-1), chain(w.integer(-33), chain(w.integer(127), chain(w.integer(128), chain(w.integer(-9223372036854775807 - 1), w.unsigned(18446744073709551615))))))), w.borrow()); w.destroy();
+    w = fresh(); log.name("floats", 6); log.result(chain(w.begin_array_len(2), chain(w.float32(1069547520), w.float64(core::f64::to_bits(1.5)))), w.borrow()); w.destroy();
+    w = fresh(); log.name("bin_header", 10); log.result(w.bin(core::slice::View { values: bytes, start: 0, length: 256 }), w.borrow());
+    let shown: core::slice::View<u8> = w.output(); w.destroy();
+    w = fresh(); log.name("ext_fixed", 9); log.result(chain(w.begin_array_len(3), chain(w.ext(5, core::slice::View { values: bytes, start: 1, length: 4 }), chain(w.ext(-128, core::slice::View { values: bytes, start: 1, length: 3 }), w.ext(1, core::slice::View { values: bytes, start: 1, length: 0 })))), w.borrow()); w.destroy();
+    w = fresh(); log.name("timestamps", 10);
+    log.result(chain(w.begin_array_len(4), chain(w.timestamp(1, 0), chain(w.timestamp(1, 5), chain(w.timestamp(17179869184, 0), w.timestamp(-5, 999999999))))), w.borrow()); w.destroy();
+    w = fresh(); log.name("timestamp_range", 15); log.result(w.timestamp(0, 1000000000), w.borrow()); w.destroy();
+    w = fresh(); log.name("patched", 7);
+    let s = w.begin_map(); n = 0;
+    while (n < 16) { s = chain(s, chain(w.unsigned(n as u64), w.begin_array())); s = chain(s, w.end()); n += 1; }
+    log.result(chain(s, w.end()), w.borrow()); w.destroy();
+    w = fresh(); log.name("count_short", 11); log.result(chain(w.begin_array_len(2), chain(w.nil(), w.end())), w.borrow());
+    log.name("count_ok", 8); log.result(chain(w.nil(), w.end()), w.borrow()); w.destroy();
+    w = fresh(); log.name("count_long", 10); log.result(chain(w.begin_map_len(1), chain(w.nil(), chain(w.nil(), w.nil()))), w.borrow()); w.destroy();
+    w = fresh(); log.name("odd_map", 7); log.result(chain(w.begin_map(), chain(w.nil(), w.end())), w.borrow()); w.destroy();
+    w = fresh(); log.name("end_root", 8); log.result(w.end(), w.borrow()); w.destroy();
+    let bad: [u8; 2] = [195, 40];
+    w = fresh(); log.name("str_utf8", 8); log.result(w.str_bytes(core::slice::View { values: bad, start: 0, length: 2 }), w.borrow()); w.destroy();
+    w = fresh(); log.name("stream_roots", 12); log.result(chain(w.nil(), w.boolean(true)), w.borrow()); w.destroy();
+    let o: ext::msgpack::WriterOptions = ext::msgpack::default_writer_options(); o.max_depth = 1;
+    w = core::result::unwrap(ext::msgpack::writer(o)); log.name("depth_limit", 11); log.result(chain(w.begin_array(), w.begin_array()), w.borrow()); w.destroy();
+    o = ext::msgpack::default_writer_options(); o.max_output_bytes = 2;
+    w = core::result::unwrap(ext::msgpack::writer(o)); log.name("output_limit", 12); log.result(chain(w.nil(), w.unsigned(128)), w.borrow()); w.destroy();
+    let stamp: [u8; 12] = [59, 154, 201, 255, 255, 255, 255, 255, 255, 255, 255, 251];
+    let decoded = ext::msgpack::timestamp(core::slice::View { values: stamp, start: 0, length: 12 });
+    log.name("timestamp_decode", 16);
+    let t: ext::msgpack::Timestamp = decoded.unwrap();
+    if (t.seconds < 0) { log.byte(45); log.number((-t.seconds) as u64); } else { log.number(t.seconds as u64); }
+    log.byte(32); log.number(t.nanoseconds as u64); log.byte(10);
+}
+
+// 3000 elements written into an unknown-length array of known-length maps,
+// flushed after each: nothing is stable until the outer array ends.
+fn flush_checks(log: &Log) {
+    let storage: alloc::vec::Vec<u8> = alloc::vec::new(); core::result::unwrap(storage.try_resize(65536, 0));
+    let sink: core::io::SliceWriter = core::result::unwrap(core::io::slice_writer(storage.as_slice(), 65536));
+    let flushed: ext::msgpack::Writer = fresh(); let whole: ext::msgpack::Writer = fresh();
+    core::result::unwrap(flushed.begin_array_len(3000)); core::result::unwrap(whole.begin_array_len(3000));
+    let calls: u64 = 0; let index: u64 = 0; let held: i32 = 0;
+    while (index < 3000) {
+        core::result::unwrap(chain(flushed.begin_map(), chain(flushed.unsigned(index), chain(flushed.integer(-(index as i64)), flushed.end()))));
+        core::result::unwrap(chain(whole.begin_map(), chain(whole.unsigned(index), chain(whole.integer(-(index as i64)), whole.end()))));
+        let sent = flushed.flush_to<core::io::SliceWriter>(sink.borrow());
+        if (sent.is_err()) { log.name("flush_failed", 12); log.byte(10); return; }
+        if (sent.unwrap() > 0) { calls += 1; }
+        if (flushed.len() > held) { held = flushed.len(); }
+        index += 1;
+    }
+    core::result::unwrap(flushed.end()); core::result::unwrap(whole.end());
+    let expected: core::slice::View<u8> = whole.output();
+    let same: bool = sink.position() == expected.length;
+    let i: i32 = 0;
+    while (same && i < expected.length) { if (storage.at(i) != expected.values[expected.start + i]) { same = false; } i += 1; }
+    log.name("flush", 5); log.number(expected.length as u64); log.byte(32); log.number(calls); log.byte(32); log.number(held as u64); log.byte(32);
+    if (same) { log.name("same", 4); } else { log.name("differ", 6); }
+    log.out.pop(); log.byte(10);
+    let pinned: ext::msgpack::Writer = fresh();
+    core::result::unwrap(chain(pinned.begin_array(), chain(pinned.nil(), pinned.nil())));
+    log.name("pinned", 6); log.number(pinned.stable_len() as u64); log.byte(32);
+    core::result::unwrap(pinned.end()); log.number(pinned.stable_len() as u64); log.byte(32); log.view(pinned.output()); log.byte(10);
+    flushed.destroy(); whole.destroy(); pinned.destroy(); storage.destroy();
+}
+
+fn reader_checks(log: &Log) {
+    let input: [u8; 11] = [146, 165, 104, 101, 108, 108, 111, 130, 161, 97, 1];
+    let source: core::io::SliceReader = core::result::unwrap(core::io::slice_reader(input, 11));
+    let decoder: ext::msgpack::Decoder = core::result::unwrap(ext::msgpack::decoder(ext::msgpack::default_options()));
+    let scratch: [u8; 3] = [0; 3];
+    let reader: ext::msgpack::EventReader<core::io::SliceReader> = core::result::unwrap(ext::msgpack::event_reader<core::io::SliceReader>(source.borrow(), decoder.borrow(), core::result::unwrap(core::slice::view(scratch, 3))));
+    let events: u64 = 0;
+    log.name("reader", 6);
+    while (true) {
+        let step = reader.next();
+        if (step.is_err()) {
+            let cause: ext::msgpack::Error = match (step.unwrap_err()) { ext::msgpack::StreamError::Pack(e) -> e, ext::msgpack::StreamError::Io(e) -> ext::msgpack::Error { kind: ext::msgpack::ErrorKind::Bounds, offset: 0 } };
+            log.number(events); log.byte(32); log.failure(cause); break;
+        }
+        if (!step.unwrap()) { log.number(events); break; }
+        events += 1;
+    }
+    log.byte(32); log.number(reader.read_calls()); log.byte(10);
+    decoder.destroy();
+    let d: ext::msgpack::Decoder = core::result::unwrap(ext::msgpack::decoder(ext::msgpack::default_options()));
+    let one: [u8; 1] = [0];
+    log.name("feed_after_finish", 17); d.finish();
+    let fed = d.feed(one, 0, 1);
+    if (fed.is_err()) { log.failure(fed.unwrap_err()); } log.byte(10);
+    d.destroy();
+    let limited: ext::msgpack::Options = ext::msgpack::default_options(); limited.max_input = 2;
+    d = core::result::unwrap(ext::msgpack::decoder(limited));
+    let three: [u8; 3] = [205, 1, 0];
+    log.name("input_limit", 11);
+    fed = d.feed(three, 0, 3);
+    if (fed.is_err()) { log.failure(fed.unwrap_err()); } log.byte(10);
+    d.destroy();
+}
+
+fn main() -> i32 {
+    let log: Log = Log { out: alloc::vec::new() };
+    writer_checks(log.borrow());
+    flush_checks(log.borrow());
+    reader_checks(log.borrow());
+    let target: std::stream::Descriptor = std::stream::stdout();
+    if (core::io::write_all<std::stream::Descriptor>(target.borrow(), log.out.as_slice(), 0, log.out.len()).is_err()) { return 3; }
+    log.out.destroy();
+    return 0;
+}

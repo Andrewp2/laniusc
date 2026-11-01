@@ -2,9 +2,9 @@ module
 
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Compiler.P.Lists_empty
-import Lanius.Mini.Frontend.P.armsOf
 import Lanius.Mini.Frontend.P.consTreeTail
 import Lanius.Mini.Frontend.P.fnInstRet
+import Lanius.Mini.Frontend.P.noBlock
 import Lanius.Mini.Frontend.P.projectionRet
 import Lanius.Mini.Frontend.P.purePart
 import Lanius.Mini.Frontend.P.repeatEff

@@ -63,7 +63,7 @@ fn python_integer_oracle_across_karatsuba_threshold_radices_and_errors() {
         "{stdout}{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(stdout.contains("checked 9526 values and 103 diagnostics across 6 radices"), "{stdout}");
+    assert!(stdout.contains("checked 9735 values and 326 diagnostics across 6 radices"), "{stdout}");
 }
 
 #[test]

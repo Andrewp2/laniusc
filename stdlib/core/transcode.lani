@@ -127,7 +127,7 @@ pub fn utf16_to_utf8(source: [u16], source_len: i32,
         let width: u32 = core::utf8::encoded_len_or(scalar, 0);
         let index: u32 = 0;
         while (index < width) {
-            destination[written] = core::utf8::encoded_byte_or(scalar, index, 0);
+            let stored1 = core::utf8::encoded_byte_or(scalar, index, 0); destination[written] = stored1;
             written += 1;
             index += 1;
         }
@@ -244,7 +244,7 @@ fn utf16_bytes_to_utf8(source: [u8], source_len: i32,
         let width: u32 = core::utf8::encoded_len_or(scalar, 0);
         let index: u32 = 0;
         while (index < width) {
-            destination[written] = core::utf8::encoded_byte_or(scalar, index, 0);
+            let stored2 = core::utf8::encoded_byte_or(scalar, index, 0); destination[written] = stored2;
             written += 1;
             index += 1;
         }
