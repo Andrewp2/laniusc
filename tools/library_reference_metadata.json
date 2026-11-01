@@ -1930,6 +1930,11 @@
         "unix_from_owned_handle": "Adopts an exclusively owned live Unix-stream descriptor. Rejects a negative number only; family, type, state and flags are caller preconditions. It does not duplicate the descriptor or set CLOEXEC."
       }
     },
+    "std::steal": {
+      "guides": [
+        "docs/stdlib-concurrency.md"
+      ]
+    },
     "std::stream": {
       "guides": [
         "docs/stdlib-streams.md"

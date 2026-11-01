@@ -100,3 +100,38 @@ fn parallel_word_count_matches_a_sequential_oracle() {
         assert_eq!(run(&program, Some(path.path().to_path_buf())), format!("{lines} {words} {}\n", input.len()), "size {size}");
     }
 }
+
+#[test]
+fn struct_payloads_and_work_stealing_keep_exact_counts() {
+    let steal = native("tests/fixtures/stdlib_execution/concurrency/steal.lani", "steal");
+    let expected = "struct-channel-received 80000 80000\n\
+                    struct-channel-torn-fifo-violations 0 0\n\
+                    steal-tree-workers-tasks 1 524287\n\
+                    steal-tree-leaves-once-overflow 262144 0\n\
+                    steal-tree-workers-tasks 8 524287\n\
+                    steal-tree-leaves-once-overflow 262144 0\n\
+                    steal-seeded-tasks-sum-exact 20000 1\n";
+    for _ in 0..3 {
+        let mut command = Command::new(steal.path());
+        command.stdin(Stdio::null());
+        let output = common::process_output_with_timeout("work-stealing stress", &mut command, Duration::from_secs(60));
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert_eq!(String::from_utf8(output.stdout).unwrap(), expected);
+        // Scheduling-dependent steal counts go to stderr; the program itself
+        // fails unless the 8-worker groups stole at least once.
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(stderr.contains("steal-tree stolen 0 busy-workers 1\n"), "{stderr}");
+        assert!(stderr.contains("steal-seeded stolen "), "{stderr}");
+    }
+}
+
+#[test]
+fn parallel_quicksort_sorts_a_permutation() {
+    let program = native("sample_programs/library/parallel_quicksort.lani", "quicksort");
+    let mut command = Command::new(program.path());
+    command.stdin(Stdio::null());
+    let output = common::process_output_with_timeout("parallel quicksort", &mut command, Duration::from_secs(60));
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(output.stdout, b"sorted 2000000\n");
+    assert!(String::from_utf8(output.stderr).unwrap().starts_with("tasks "));
+}

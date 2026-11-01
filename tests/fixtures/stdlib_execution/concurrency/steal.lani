@@ -1,0 +1,205 @@
+// Generic struct channel payloads and work-stealing queues under many
+// workers, with exact invariants. Exit 0 only when every invariant held.
+// Steal counts depend on scheduling and are printed on a separate line.
+module app::main;
+import core::result;
+import std::atomic;
+import std::channel;
+import std::io;
+import std::steal;
+import std::sync;
+import std::worker;
+
+struct Packet { sender: i32, sequence: i64, check: i64, tag: u8 }
+struct Span { lo: i64, hi: i64 }
+
+fn line(label: str, a: i32, b: i32) {
+    std::io::write_text(1, label); std::io::write_text(1, " "); std::io::write_i32(1, a);
+    std::io::write_text(1, " "); std::io::write_i32(1, b); std::io::write_newline(1);
+}
+fn is_child(role: std::worker::Role) -> bool { return match (role) { std::worker::Role::Child(index) -> true, std::worker::Role::Parent(index) -> false }; }
+fn index_of(role: std::worker::Role) -> i32 { return match (role) { std::worker::Role::Child(index) -> index, std::worker::Role::Parent(index) -> index }; }
+fn joined_clean(pool: &std::worker::Pool) -> bool {
+    let summary: core::result::Result<std::worker::Summary, std::worker::Error> = pool.join_all();
+    if (summary.is_err()) { return false; }
+    pool.destroy();
+    return summary.unwrap().failed == 0;
+}
+fn check_of(sender: i32, sequence: i64) -> i64 { return sequence * 31 + (sender as i64) * 1000003; }
+fn tag_of(sequence: i64) -> u8 { return (sequence % 251) as u8; }
+
+// 8 producers x 10000 four-field records through capacity 3 to 4 consumers.
+// A torn record would break check/tag; FIFO is checked per sender.
+fn records(region: &std::sync::Region) -> i32 {
+    let queue: std::channel::Channel<Packet> = std::channel::bounded<Packet>(region, 3).unwrap();
+    let received: std::atomic::Atomic64 = std::atomic::at64(region.allocate(8).unwrap());
+    let torn: std::atomic::Atomic64 = std::atomic::at64(region.allocate(8).unwrap());
+    let disorder: std::atomic::Atomic64 = std::atomic::at64(region.allocate(8).unwrap());
+    let tx: std::channel::Sender<Packet> = queue.open_sender().unwrap();
+    let rx: std::channel::Receiver<Packet> = queue.open_receiver().unwrap();
+    let w: i32 = 1;
+    while (w < 8) { queue.open_sender().unwrap(); w += 1; }
+    w = 1;
+    while (w < 4) { queue.open_receiver().unwrap(); w += 1; }
+    let pool: std::worker::Pool = std::worker::pool(12).unwrap();
+    w = 0;
+    while (w < 12) {
+        let role: std::worker::Role = pool.spawn().unwrap();
+        if (is_child(role)) {
+            let me: i32 = index_of(role);
+            if (me < 8) {
+                let k: i64 = 0;
+                while (k < 10000) {
+                    let packet: Packet = Packet { sender: me, sequence: k, check: check_of(me, k), tag: tag_of(k) };
+                    if (tx.send(packet).is_err()) { return std::worker::finish(40); }
+                    k += 1;
+                }
+                tx.close();
+                return std::worker::finish(0);
+            }
+            let last: [i64; 8] = [-1; 8];
+            let count: i64 = 0; let bad: i64 = 0; let late: i64 = 0;
+            while (true) {
+                let got: core::result::Result<Packet, std::channel::RecvError> = rx.recv();
+                if (got.is_err()) {
+                    received.fetch_add(count as u64, std::atomic::Ordering::Relaxed);
+                    torn.fetch_add(bad as u64, std::atomic::Ordering::Relaxed);
+                    disorder.fetch_add(late as u64, std::atomic::Ordering::Relaxed);
+                    rx.close();
+                    return std::worker::finish(0);
+                }
+                let packet: Packet = got.unwrap();
+                if (packet.sender < 0 || packet.sender >= 8) { bad += 1; }
+                else {
+                    if (packet.check != check_of(packet.sender, packet.sequence) || packet.tag != tag_of(packet.sequence)) { bad += 1; }
+                    if (packet.sequence <= last[packet.sender]) { late += 1; }
+                    last[packet.sender] = packet.sequence;
+                }
+                count += 1;
+            }
+            return std::worker::finish(43);
+        }
+        w += 1;
+    }
+    if (!joined_clean(pool.borrow())) { return 1; }
+    line("struct-channel-received", 80000, received.load(std::atomic::Load::SeqCst) as i32);
+    line("struct-channel-torn-fifo-violations", torn.load(std::atomic::Load::SeqCst) as i32, disorder.load(std::atomic::Load::SeqCst) as i32);
+    if (received.load(std::atomic::Load::SeqCst) != 80000 || torn.load(std::atomic::Load::SeqCst) != 0 || disorder.load(std::atomic::Load::SeqCst) != 0) { return 2; }
+    return 0;
+}
+
+// Binary task tree over [0, 2^18): every span wider than one pushes both
+// halves. Exactly 2^19 - 1 tasks; each leaf marks its own flag once.
+fn tree(region: &std::sync::Region, workers: i32) -> i32 {
+    let leaves: i64 = 262144;
+    let queues: std::steal::Queues<Span> = std::steal::queues<Span>(region, workers, 256).unwrap();
+    let flags: ptr = region.allocate((leaves as usize) * 8).unwrap();
+    let total: std::atomic::Atomic64 = std::atomic::at64(region.allocate(8).unwrap());
+    let overflow: std::atomic::Atomic64 = std::atomic::at64(region.allocate(8).unwrap());
+    queues.push(0, Span { lo: 0, hi: leaves }).unwrap();
+    let pool: std::worker::Pool = std::worker::pool(workers).unwrap();
+    let w: i32 = 0;
+    while (w < workers) {
+        let role: std::worker::Role = pool.spawn().unwrap();
+        if (is_child(role)) {
+            let me: i32 = index_of(role);
+            while (true) {
+                let next: std::steal::Next<Span> = queues.next(me).unwrap();
+                let finished: bool = match (next) { std::steal::Next::Finished -> true, std::steal::Next::Task(span) -> false };
+                if (finished) { return std::worker::finish(0); }
+                let span: Span = match (next) { std::steal::Next::Task(span) -> span, std::steal::Next::Finished -> Span { lo: 0, hi: 0 } };
+                if (span.hi - span.lo == 1) {
+                    std::atomic::at64(flags + (span.lo as usize) * 8).fetch_add(1, std::atomic::Ordering::Relaxed);
+                    total.fetch_add(span.lo as u64, std::atomic::Ordering::Relaxed);
+                } else {
+                    let middle: i64 = span.lo + (span.hi - span.lo) / 2;
+                    if (queues.push(me, Span { lo: span.lo, hi: middle }).is_err()) { overflow.fetch_add(1, std::atomic::Ordering::Relaxed); }
+                    if (queues.push(me, Span { lo: middle, hi: span.hi }).is_err()) { overflow.fetch_add(1, std::atomic::Ordering::Relaxed); }
+                }
+                if (queues.done(me).is_err()) { return std::worker::finish(50); }
+            }
+            return std::worker::finish(51);
+        }
+        w += 1;
+    }
+    if (!joined_clean(pool.borrow())) { return 1; }
+    let executed: u64 = 0; let stolen: u64 = 0; let busy: i32 = 0; w = 0;
+    while (w < workers) {
+        let stats: std::steal::Stats = queues.stats(w);
+        executed += stats.executed; stolen += stats.stolen;
+        if (stats.executed > 0) { busy += 1; }
+        w += 1;
+    }
+    let once: i64 = 0; let i: i64 = 0;
+    while (i < leaves) { if (std::atomic::at64(flags + (i as usize) * 8).load(std::atomic::Load::Relaxed) == 1) { once += 1; } i += 1; }
+    line("steal-tree-workers-tasks", workers, executed as i32);
+    line("steal-tree-leaves-once-overflow", once as i32, overflow.load(std::atomic::Load::SeqCst) as i32);
+    std::io::write_text(2, "steal-tree stolen "); std::io::write_i32(2, stolen as i32); std::io::write_text(2, " busy-workers "); std::io::write_i32(2, busy); std::io::write_newline(2);
+    if (executed != 524287 || once != leaves || overflow.load(std::atomic::Load::SeqCst) != 0) { return 2; }
+    if (total.load(std::atomic::Load::SeqCst) != 34359607296) { return 3; }
+    if (queues.pending_count() != 0 || queues.done(0).is_ok()) { return 4; }
+    if (workers > 1 && stolen == 0) { return 5; }
+    return 0;
+}
+
+// 20000 flat tasks all seeded on worker 0: every other worker can only
+// steal. Each task adds its index; the sum and count must be exact, and the
+// first push past capacity must return the task.
+fn seeded(region: &std::sync::Region) -> i32 {
+    let queues: std::steal::Queues<Span> = std::steal::queues<Span>(region, 8, 20000).unwrap();
+    let sum: std::atomic::Atomic64 = std::atomic::at64(region.allocate(8).unwrap());
+    let i: i64 = 0;
+    while (i < 20000) { queues.push(0, Span { lo: i, hi: i + 1 }).unwrap(); i += 1; }
+    let full: core::result::Result<i32, std::steal::PushError<Span>> = queues.push(0, Span { lo: 7, hi: 9 });
+    if (full.is_ok()) { return 1; }
+    let rejected: std::steal::PushError<Span> = full.unwrap_err();
+    let back: i64 = match (rejected) { std::steal::PushError::Full(span) -> span.hi, _ -> -1 };
+    if (back != 9) { return 1; }
+    let pool: std::worker::Pool = std::worker::pool(8).unwrap();
+    let w: i32 = 0;
+    while (w < 8) {
+        let role: std::worker::Role = pool.spawn().unwrap();
+        if (is_child(role)) {
+            let me: i32 = index_of(role);
+            while (true) {
+                let next: std::steal::Next<Span> = queues.next(me).unwrap();
+                let task: i64 = match (next) { std::steal::Next::Task(span) -> span.lo, std::steal::Next::Finished -> -1 };
+                if (task < 0) { return std::worker::finish(0); }
+                // A little work per task, so stealing has time to matter.
+                let spin: i64 = 0; let acc: i64 = task;
+                while (spin < 2000) { acc = (acc * 1103515245 + 12345) % 2147483648; spin += 1; }
+                if (acc < 0) { return std::worker::finish(52); }
+                sum.fetch_add(task as u64, std::atomic::Ordering::Relaxed);
+                if (queues.done(me).is_err()) { return std::worker::finish(53); }
+            }
+            return std::worker::finish(54);
+        }
+        w += 1;
+    }
+    if (!joined_clean(pool.borrow())) { return 2; }
+    let executed: u64 = 0; let stolen: u64 = 0; let thieves: i32 = 0; w = 0;
+    while (w < 8) {
+        let stats: std::steal::Stats = queues.stats(w);
+        executed += stats.executed; stolen += stats.stolen;
+        if (w > 0 && stats.stolen > 0) { thieves += 1; }
+        w += 1;
+    }
+    let exact: i32 = 0; if (sum.load(std::atomic::Load::SeqCst) == 199990000) { exact = 1; }
+    line("steal-seeded-tasks-sum-exact", executed as i32, exact);
+    std::io::write_text(2, "steal-seeded stolen "); std::io::write_i32(2, stolen as i32); std::io::write_text(2, " thieves "); std::io::write_i32(2, thieves); std::io::write_newline(2);
+    if (executed != 20000 || sum.load(std::atomic::Load::SeqCst) != 199990000) { return 3; }
+    // Worker 0 owns every seeded task; the rest ran only stolen ones.
+    if (stolen != executed - queues.stats(0).executed) { return 4; }
+    if (thieves == 0) { return 5; }
+    return 0;
+}
+
+fn main() -> i32 {
+    let region: std::sync::Region = std::sync::map_shared(16777216).unwrap();
+    let status: i32 = records(region.borrow());
+    if (status == 0) { status = tree(region.borrow(), 1); if (status != 0) { status += 10; } }
+    if (status == 0) { status = tree(region.borrow(), 8); if (status != 0) { status += 20; } }
+    if (status == 0) { status = seeded(region.borrow()); if (status != 0) { status += 30; } }
+    if (region.unmap().is_err() && status == 0) { status = 99; }
+    return status;
+}

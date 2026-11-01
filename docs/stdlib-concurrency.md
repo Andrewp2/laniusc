@@ -1,7 +1,7 @@
 # Workers, atomics, synchronization and channels
 
-`std::atomic`, `std::sync`, `std::channel` and `std::worker` run parallel
-work on Linux x86_64/glibc. Programs must be native-linked with libatomic:
+`std::atomic`, `std::sync`, `std::channel`, `std::steal` and `std::worker`
+run parallel work on Linux x86_64/glibc. Programs must be native-linked with libatomic:
 
 ```sh
 target/release/laniusc --native-link --native-library atomic --stdlib-root stdlib \
@@ -101,8 +101,12 @@ while holding a lock leaves it locked. Condvar and barrier sequences are
 
 ## Bounded MPMC channel
 
-`std::channel::bounded(region, capacity)` stores a FIFO ring of `u64`
-messages, with capacity 1 to 1,048,576, in the Region. One futex mutex orders
+`std::channel::bounded<T>(region, capacity)` stores a FIFO ring of `T`
+messages, with capacity 1 to 1,048,576, in the Region. `T` is copied by
+value into Region storage, so it must be a plain value: scalars, enums, and
+records or arrays of them. A pointer or owner inside `T` means something to
+the receiver only if it points into a shared Region; a heap owner would name
+the sender's private copy. One futex mutex orders
 every operation. That gives three guarantees:
 
 - No message is lost or duplicated.
@@ -126,6 +130,32 @@ copies every handle, so the counts are what carry ownership:
   queue is empty and every sender has closed.
 
 A channel with no registered sender reports `Disconnected` at once.
+
+## Work-stealing queues
+
+`std::steal::queues<T>(region, workers, capacity)` gives each of up to 1,024
+workers its own bounded deque of up to 1,048,576 tasks in the Region, each
+guarded by its own futex mutex:
+
+- `push(me, task)` adds to the bottom of `me`'s deque. A full deque returns
+  `PushError::Full(task)`, so the caller can run that task inline.
+- `next(me)` pops `me`'s newest task (LIFO). If that deque is empty, it
+  steals the oldest task (FIFO) from the next nonempty deque after `me`.
+- `done(me)` marks one taken task complete. `Err(NotPending)` if no task was
+  pending.
+
+A task is pending from `push` until `done`. Push children before calling
+`done` for their parent, so the pending count can reach zero only when all
+work has finished. `next` then returns `Finished` to every worker. An idle
+worker reads a wake epoch before scanning and sleeps on that epoch's futex
+only after the scan finds nothing. A push after the read changes the epoch,
+so the sleep cannot miss it. The last `done` wakes every sleeper.
+
+`stats(w)` reports how many tasks worker `w` executed and how many it stole.
+Seed tasks with `push` before spawning. A seeded task may go on any deque; a
+running worker pushes only to its own. The deque mutex orders a task's
+Region writes before the thief that takes it. The deques are lock-based, not
+a lock-free Chase–Lev design.
 
 ## Samples
 
@@ -153,6 +183,15 @@ The pipeline shuts down stage by stage through disconnection. It prints
 `200000 666700000`, which matches a Python oracle, in 0.71 s. Before
 `Condvar::has_waiters` let channels skip idle wake syscalls, the same run
 took 2.45 s.
+
+[`parallel_quicksort.lani`](../sample_programs/library/parallel_quicksort.lani)
+sorts 2,000,000 pseudo-random `i64` values in a Region with eight workers.
+Each task partitions its span, pushes the smaller side and keeps the larger
+one; spans of at most 4,096 values sort sequentially. The parent then checks
+that the values are ordered and are a permutation of the input (sum and xor
+unchanged), and prints `sorted 2000000`. One run executed 848 tasks with 242
+steals. The whole program, including generation and checking, took 0.25 s
+with eight workers and 0.80 s with one. Twenty runs passed.
 
 ## Stress receipts
 
@@ -184,14 +223,47 @@ runs all passed in the session that wrote this guide:
 | Channel pipeline | 20 |
 | Word count on the 11 MB file | 20 |
 
+[`steal.lani`](../tests/fixtures/stdlib_execution/concurrency/steal.lani)
+covers struct payloads and work stealing; 20 of 20 runs passed:
+
+| Group | Workers and load | Exact result |
+| --- | --- | --- |
+| Four-field record channel, capacity 3 | 8 producers x 10,000 to 4 consumers | 80,000 received; 0 torn records (a checksum field and a tag per record); 0 FIFO violations |
+| Binary task tree over 2^18 leaves | 1 worker | 524,287 tasks; every leaf ran exactly once; 0 deque overflows; leaf sum 34,359,607,296 |
+| Same tree | 8 workers | Same exact counts; at least one steal is required (535, 271, 209 and 567 in four runs) |
+| 20,000 tasks seeded on worker 0 | 8 workers | 20,000 tasks; index sum 199,990,000; full-deque push returns its task; steals equal tasks run by workers 1–7 (17,403 to 18,203 per run, all seven stealing) |
+
+Steal counts vary with scheduling and go to stderr; stdout holds only the
+exact lines.
+
 [`tests/stdlib_concurrency_execution.rs`](../tests/stdlib_concurrency_execution.rs)
-compiles the stress fixture and both samples through
-`compile_entry_to_x86_64_with_native_link`. It then makes three checks:
+compiles both fixtures and the three samples through
+`compile_entry_to_x86_64_with_native_link`, then checks:
 
 - Three stress runs produce the exact summary lines.
 - The pipeline output matches a computed sum of squares.
 - The word count matches a sequential oracle on generated inputs of 0, 1,
   65,535, 65,536, 65,537 and 3,000,000 bytes.
+- Three runs of the stealing fixture produce its exact lines.
+- The quicksort prints `sorted 2000000`.
+
+These test wrappers are checked at merge time; this session ran the same
+programs directly.
+
+## Compiler limitation found
+
+A `match` on a generic enum bound by an outer `match` arm fails with
+`LNC0047`, "generic type instantiation reached a compiler boundary":
+
+```lani
+enum Wrap<T> { Full(T), Other }
+struct Span { lo: i64 }
+let r: core::result::Result<i32, Wrap<Span>> = core::result::Err(Wrap::Full(Span { lo: 3 }));
+let v: i64 = match (r) { core::result::Err(e) -> match (e) { Wrap::Full(s) -> s.lo, _ -> -1 }, core::result::Ok(x) -> -2 };
+```
+
+Matching `r.unwrap_err()` directly compiles and returns 3. The stealing
+fixture uses that form.
 
 ## Not provided
 
@@ -199,8 +271,9 @@ compiles the stress fixture and both samples through
   checked callback entry.
 - Thread-local storage, cancellation and join deadlines.
 - Robust or owner-checked locks, and fairness or starvation bounds.
-- Generic channel payloads; messages are `u64` words. Larger values go in
-  Region storage, with indices sent over the channel.
+- Channel or task payloads that own private memory; payloads are copied by
+  value.
+- Lock-free deques, and task priorities or affinity.
 - Sharing heap owners, files or sockets between workers. These are private
   snapshots after `spawn`, and closing a descriptor in one worker leaves the
   others' copies open.

@@ -139,6 +139,9 @@ pub fn mutex(region: &Region) -> core::result::Result<Mutex, Error> {
     if (at.is_err()) { return core::result::Err(at.unwrap_err()); }
     return core::result::Ok(Mutex { state: at.unwrap() });
 }
+// A Mutex over a caller-chosen zeroed, 8-aligned shared word, for arrays of
+// locks laid out by another module. The word must be used only by this Mutex.
+pub fn mutex_at(state: ptr) -> Mutex { return Mutex { state: state }; }
 pub impl Mutex {
     pub fn borrow(&self) -> &Mutex { return self; }
     fn word(&self) -> std::atomic::Atomic32 { return std::atomic::at32(self.state); }

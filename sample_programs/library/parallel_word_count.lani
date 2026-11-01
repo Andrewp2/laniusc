@@ -34,7 +34,7 @@ fn count(input: [u8], start: i64, end: i64) -> u64 {
     return (lines << 32) | words;
 }
 
-fn work(input: [u8], length: i64, jobs: std::channel::Receiver, results: std::channel::Sender) -> i32 {
+fn work(input: [u8], length: i64, jobs: std::channel::Receiver<u64>, results: std::channel::Sender<u64>) -> i32 {
     while (true) {
         let job: core::result::Result<u64, std::channel::RecvError> = jobs.recv();
         if (job.is_err()) {
@@ -64,12 +64,12 @@ fn main() -> i32 {
     }
     let input: [u8] = core::mem::typed_slice_from_raw_parts<u8>(data, length as i32);
     let job_count: i64 = (length + CHUNK - 1) / CHUNK;
-    let jobs: std::channel::Channel = std::channel::bounded(region.borrow(), 16).unwrap();
-    let results: std::channel::Channel = std::channel::bounded(region.borrow(), 1025).unwrap();
-    let job_tx: std::channel::Sender = jobs.open_sender().unwrap();
-    let result_rx: std::channel::Receiver = results.open_receiver().unwrap();
-    let job_rx: std::channel::Receiver = jobs.open_receiver().unwrap();
-    let result_tx: std::channel::Sender = results.open_sender().unwrap();
+    let jobs: std::channel::Channel<u64> = std::channel::bounded<u64>(region.borrow(), 16).unwrap();
+    let results: std::channel::Channel<u64> = std::channel::bounded<u64>(region.borrow(), 1025).unwrap();
+    let job_tx: std::channel::Sender<u64> = jobs.open_sender().unwrap();
+    let result_rx: std::channel::Receiver<u64> = results.open_receiver().unwrap();
+    let job_rx: std::channel::Receiver<u64> = jobs.open_receiver().unwrap();
+    let result_tx: std::channel::Sender<u64> = results.open_sender().unwrap();
     let w: i32 = 1;
     while (w < WORKERS) { jobs.open_receiver().unwrap(); results.open_sender().unwrap(); w += 1; }
     let pool: std::worker::Pool = std::worker::pool(WORKERS).unwrap();
