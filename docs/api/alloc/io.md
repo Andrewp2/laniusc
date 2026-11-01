@@ -18,18 +18,19 @@ Buffer retains its atomic Write-sink contract. Whole-input Read collectors retai
 - [stdlib-owned-delimited](../../stdlib-owned-delimited.md)
 - [stdlib-line-report](../../stdlib-line-report.md)
 
-Declaration counts: enum: 2; field: 21; function: 7; impl: 6; method: 19; struct: 6; variant: 8.
+Declaration counts: enum: 2; field: 21; function: 7; impl: 6; method: 21; struct: 6; variant: 8.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
 - [core::io](../core/io.md) · [source](../../../stdlib/alloc/io.lani#L4)
-- [core::option](../core/option.md) · [source](../../../stdlib/alloc/io.lani#L5)
-- [core::result](../core/result.md) · [source](../../../stdlib/alloc/io.lani#L6)
-- [core::slice](../core/slice.md) · [source](../../../stdlib/alloc/io.lani#L7)
-- [alloc::string](string.md) · [source](../../../stdlib/alloc/io.lani#L8)
-- [alloc::vec](vec.md) · [source](../../../stdlib/alloc/io.lani#L9)
+- [core::mem](../core/mem.md) · [source](../../../stdlib/alloc/io.lani#L5)
+- [core::option](../core/option.md) · [source](../../../stdlib/alloc/io.lani#L6)
+- [core::result](../core/result.md) · [source](../../../stdlib/alloc/io.lani#L7)
+- [core::slice](../core/slice.md) · [source](../../../stdlib/alloc/io.lani#L8)
+- [alloc::string](string.md) · [source](../../../stdlib/alloc/io.lani#L9)
+- [alloc::vec](vec.md) · [source](../../../stdlib/alloc/io.lani#L10)
 
 ## Types, fields and variants
 
@@ -37,7 +38,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: ReadLimits
 
-[Source line 13](../../../stdlib/alloc/io.lani#L13)
+[Source line 14](../../../stdlib/alloc/io.lani#L14)
 
 ```lanius
 pub struct ReadLimits
@@ -45,7 +46,7 @@ pub struct ReadLimits
 
 #### field: max_bytes
 
-[Source line 13](../../../stdlib/alloc/io.lani#L13)
+[Source line 14](../../../stdlib/alloc/io.lani#L14)
 
 ```lanius
 max_bytes: i32
@@ -53,7 +54,7 @@ max_bytes: i32
 
 #### field: max_calls
 
-[Source line 13](../../../stdlib/alloc/io.lani#L13)
+[Source line 14](../../../stdlib/alloc/io.lani#L14)
 
 ```lanius
 max_calls: u64
@@ -61,7 +62,7 @@ max_calls: u64
 
 ### enum: ReadError
 
-[Source line 14](../../../stdlib/alloc/io.lani#L14)
+[Source line 15](../../../stdlib/alloc/io.lani#L15)
 
 ```lanius
 pub enum ReadError
@@ -69,7 +70,7 @@ pub enum ReadError
 
 #### variant: InvalidLimits
 
-[Source line 15](../../../stdlib/alloc/io.lani#L15)
+[Source line 16](../../../stdlib/alloc/io.lani#L16)
 
 ```lanius
 InvalidLimits
@@ -77,7 +78,7 @@ InvalidLimits
 
 #### variant: CallLimit
 
-[Source line 16](../../../stdlib/alloc/io.lani#L16)
+[Source line 17](../../../stdlib/alloc/io.lani#L17)
 
 ```lanius
 CallLimit
@@ -85,7 +86,7 @@ CallLimit
 
 #### variant: ByteLimit
 
-[Source line 17](../../../stdlib/alloc/io.lani#L17)
+[Source line 18](../../../stdlib/alloc/io.lani#L18)
 
 ```lanius
 ByteLimit
@@ -93,7 +94,7 @@ ByteLimit
 
 #### variant: Io
 
-[Source line 18](../../../stdlib/alloc/io.lani#L18)
+[Source line 19](../../../stdlib/alloc/io.lani#L19)
 
 ```lanius
 Io(core::io::Error)
@@ -101,7 +102,7 @@ Io(core::io::Error)
 
 #### variant: Storage
 
-[Source line 19](../../../stdlib/alloc/io.lani#L19)
+[Source line 20](../../../stdlib/alloc/io.lani#L20)
 
 ```lanius
 Storage(alloc::vec::Error)
@@ -109,7 +110,7 @@ Storage(alloc::vec::Error)
 
 #### variant: Text
 
-[Source line 20](../../../stdlib/alloc/io.lani#L20)
+[Source line 21](../../../stdlib/alloc/io.lani#L21)
 
 ```lanius
 Text(alloc::string::Error)
@@ -117,7 +118,7 @@ Text(alloc::string::Error)
 
 ### struct: ReadFailure
 
-[Source line 22](../../../stdlib/alloc/io.lani#L22)
+[Source line 23](../../../stdlib/alloc/io.lani#L23)
 
 ```lanius
 pub struct ReadFailure
@@ -125,7 +126,7 @@ pub struct ReadFailure
 
 #### field: cause
 
-[Source line 23](../../../stdlib/alloc/io.lani#L23)
+[Source line 24](../../../stdlib/alloc/io.lani#L24)
 
 ```lanius
 cause: ReadError
@@ -133,7 +134,7 @@ cause: ReadError
 
 #### field: bytes
 
-[Source line 24](../../../stdlib/alloc/io.lani#L24)
+[Source line 25](../../../stdlib/alloc/io.lani#L25)
 
 ```lanius
 bytes: alloc::vec::Vec<u8>
@@ -141,7 +142,7 @@ bytes: alloc::vec::Vec<u8>
 
 #### field: calls
 
-[Source line 25](../../../stdlib/alloc/io.lani#L25)
+[Source line 26](../../../stdlib/alloc/io.lani#L26)
 
 ```lanius
 calls: u64
@@ -149,7 +150,7 @@ calls: u64
 
 #### field: extra
 
-[Source line 26](../../../stdlib/alloc/io.lani#L26)
+[Source line 27](../../../stdlib/alloc/io.lani#L27)
 
 ```lanius
 extra: core::option::Option<u8>
@@ -157,7 +158,7 @@ extra: core::option::Option<u8>
 
 ### enum: ReadEnding
 
-[Source line 145](../../../stdlib/alloc/io.lani#L145)
+[Source line 146](../../../stdlib/alloc/io.lani#L146)
 
 ```lanius
 pub enum ReadEnding
@@ -165,7 +166,7 @@ pub enum ReadEnding
 
 #### variant: Delimiter
 
-[Source line 145](../../../stdlib/alloc/io.lani#L145)
+[Source line 146](../../../stdlib/alloc/io.lani#L146)
 
 ```lanius
 Delimiter
@@ -173,7 +174,7 @@ Delimiter
 
 #### variant: Eof
 
-[Source line 145](../../../stdlib/alloc/io.lani#L145)
+[Source line 146](../../../stdlib/alloc/io.lani#L146)
 
 ```lanius
 Eof
@@ -181,7 +182,7 @@ Eof
 
 ### struct: ReadBytes
 
-[Source line 146](../../../stdlib/alloc/io.lani#L146)
+[Source line 147](../../../stdlib/alloc/io.lani#L147)
 
 ```lanius
 pub struct ReadBytes
@@ -189,7 +190,7 @@ pub struct ReadBytes
 
 #### field: bytes
 
-[Source line 147](../../../stdlib/alloc/io.lani#L147)
+[Source line 148](../../../stdlib/alloc/io.lani#L148)
 
 ```lanius
 bytes: alloc::vec::Vec<u8>
@@ -197,7 +198,7 @@ bytes: alloc::vec::Vec<u8>
 
 #### field: ending
 
-[Source line 147](../../../stdlib/alloc/io.lani#L147)
+[Source line 148](../../../stdlib/alloc/io.lani#L148)
 
 ```lanius
 ending: ReadEnding
@@ -205,7 +206,7 @@ ending: ReadEnding
 
 #### field: calls
 
-[Source line 147](../../../stdlib/alloc/io.lani#L147)
+[Source line 148](../../../stdlib/alloc/io.lani#L148)
 
 ```lanius
 calls: u64
@@ -213,7 +214,7 @@ calls: u64
 
 #### field: consumed
 
-[Source line 147](../../../stdlib/alloc/io.lani#L147)
+[Source line 148](../../../stdlib/alloc/io.lani#L148)
 
 ```lanius
 consumed: u64
@@ -221,7 +222,7 @@ consumed: u64
 
 ### struct: ReadLine
 
-[Source line 149](../../../stdlib/alloc/io.lani#L149)
+[Source line 150](../../../stdlib/alloc/io.lani#L150)
 
 ```lanius
 pub struct ReadLine
@@ -229,7 +230,7 @@ pub struct ReadLine
 
 #### field: text
 
-[Source line 150](../../../stdlib/alloc/io.lani#L150)
+[Source line 151](../../../stdlib/alloc/io.lani#L151)
 
 ```lanius
 text: alloc::string::String
@@ -237,7 +238,7 @@ text: alloc::string::String
 
 #### field: ending
 
-[Source line 150](../../../stdlib/alloc/io.lani#L150)
+[Source line 151](../../../stdlib/alloc/io.lani#L151)
 
 ```lanius
 ending: ReadEnding
@@ -245,7 +246,7 @@ ending: ReadEnding
 
 #### field: calls
 
-[Source line 150](../../../stdlib/alloc/io.lani#L150)
+[Source line 151](../../../stdlib/alloc/io.lani#L151)
 
 ```lanius
 calls: u64
@@ -253,7 +254,7 @@ calls: u64
 
 #### field: consumed
 
-[Source line 150](../../../stdlib/alloc/io.lani#L150)
+[Source line 151](../../../stdlib/alloc/io.lani#L151)
 
 ```lanius
 consumed: u64
@@ -261,7 +262,7 @@ consumed: u64
 
 ### struct: BufferedReadFailure
 
-[Source line 152](../../../stdlib/alloc/io.lani#L152)
+[Source line 153](../../../stdlib/alloc/io.lani#L153)
 
 ```lanius
 pub struct BufferedReadFailure
@@ -269,7 +270,7 @@ pub struct BufferedReadFailure
 
 #### field: cause
 
-[Source line 153](../../../stdlib/alloc/io.lani#L153)
+[Source line 154](../../../stdlib/alloc/io.lani#L154)
 
 ```lanius
 cause: ReadError
@@ -277,7 +278,7 @@ cause: ReadError
 
 #### field: bytes
 
-[Source line 153](../../../stdlib/alloc/io.lani#L153)
+[Source line 154](../../../stdlib/alloc/io.lani#L154)
 
 ```lanius
 bytes: alloc::vec::Vec<u8>
@@ -285,7 +286,7 @@ bytes: alloc::vec::Vec<u8>
 
 #### field: calls
 
-[Source line 153](../../../stdlib/alloc/io.lani#L153)
+[Source line 154](../../../stdlib/alloc/io.lani#L154)
 
 ```lanius
 calls: u64
@@ -293,7 +294,7 @@ calls: u64
 
 #### field: consumed
 
-[Source line 153](../../../stdlib/alloc/io.lani#L153)
+[Source line 154](../../../stdlib/alloc/io.lani#L154)
 
 ```lanius
 consumed: u64
@@ -301,7 +302,7 @@ consumed: u64
 
 #### field: ending
 
-[Source line 154](../../../stdlib/alloc/io.lani#L154)
+[Source line 155](../../../stdlib/alloc/io.lani#L155)
 
 ```lanius
 ending: core::option::Option<ReadEnding>
@@ -309,7 +310,7 @@ ending: core::option::Option<ReadEnding>
 
 ### struct: Buffer
 
-[Source line 290](../../../stdlib/alloc/io.lani#L290)
+[Source line 291](../../../stdlib/alloc/io.lani#L291)
 
 ```lanius
 pub struct Buffer
@@ -317,7 +318,7 @@ pub struct Buffer
 
 #### field: bytes
 
-[Source line 290](../../../stdlib/alloc/io.lani#L290)
+[Source line 291](../../../stdlib/alloc/io.lani#L291)
 
 ```lanius
 bytes: alloc::vec::Vec<u8>
@@ -325,7 +326,7 @@ bytes: alloc::vec::Vec<u8>
 
 #### field: maximum
 
-[Source line 290](../../../stdlib/alloc/io.lani#L290)
+[Source line 291](../../../stdlib/alloc/io.lani#L291)
 
 ```lanius
 maximum: i32
@@ -335,7 +336,7 @@ maximum: i32
 
 ### function: default_read_limits
 
-[Source line 29](../../../stdlib/alloc/io.lani#L29)
+[Source line 30](../../../stdlib/alloc/io.lani#L30)
 
 ```lanius
 pub fn default_read_limits() -> ReadLimits
@@ -345,7 +346,7 @@ Returns the 16 MiB / 65,536-call profile without allocation or Read calls.
 
 ### function: read_to_end
 
-[Source line 120](../../../stdlib/alloc/io.lani#L120)
+[Source line 121](../../../stdlib/alloc/io.lani#L121)
 
 ```lanius
 pub fn read_to_end<R>(reader: &R, limits: ReadLimits)
@@ -356,7 +357,7 @@ Borrows a Read-only provider and returns exactly confirmed bytes only after actu
 
 ### function: read_to_string
 
-[Source line 128](../../../stdlib/alloc/io.lani#L128)
+[Source line 129](../../../stdlib/alloc/io.lani#L129)
 
 ```lanius
 pub fn read_to_string<R>(reader: &R, limits: ReadLimits)
@@ -367,7 +368,7 @@ Uses the same bounded collection engine, observes EOF before validating UTF-8, a
 
 ### function: read_until
 
-[Source line 265](../../../stdlib/alloc/io.lani#L265)
+[Source line 266](../../../stdlib/alloc/io.lani#L266)
 
 ```lanius
 pub fn read_until<B>(reader: &B, delimiter: u8, limits: ReadLimits)
@@ -378,7 +379,7 @@ Requires only BufRead; returns a fresh delimiter-inclusive Vec record or retaine
 
 ### function: read_line
 
-[Source line 270](../../../stdlib/alloc/io.lani#L270)
+[Source line 271](../../../stdlib/alloc/io.lani#L271)
 
 ```lanius
 pub fn read_line<B>(reader: &B, limits: ReadLimits)
@@ -389,7 +390,7 @@ Uses the same owned binary engine with LF, preserving LF/CR/NUL. Only successful
 
 ### function: new
 
-[Source line 292](../../../stdlib/alloc/io.lani#L292)
+[Source line 293](../../../stdlib/alloc/io.lani#L293)
 
 ```lanius
 pub fn new() -> Buffer
@@ -397,7 +398,7 @@ pub fn new() -> Buffer
 
 ### function: with_limit
 
-[Source line 297](../../../stdlib/alloc/io.lani#L297)
+[Source line 298](../../../stdlib/alloc/io.lani#L298)
 
 ```lanius
 pub fn with_limit(maximum: i32) -> core::result::Result<Buffer, core::io::Error>
@@ -405,9 +406,9 @@ pub fn with_limit(maximum: i32) -> core::result::Result<Buffer, core::io::Error>
 
 ## Implementation blocks and public methods
 
-### impl at line 33
+### impl at line 34
 
-[Source line 33](../../../stdlib/alloc/io.lani#L33)
+[Source line 34](../../../stdlib/alloc/io.lani#L34)
 
 ```lanius
 pub impl ReadFailure
@@ -415,7 +416,7 @@ pub impl ReadFailure
 
 #### method: borrow
 
-[Source line 34](../../../stdlib/alloc/io.lani#L34)
+[Source line 35](../../../stdlib/alloc/io.lani#L35)
 
 ```lanius
 pub fn borrow(&self) -> &ReadFailure
@@ -423,15 +424,15 @@ pub fn borrow(&self) -> &ReadFailure
 
 #### method: destroy
 
-[Source line 37](../../../stdlib/alloc/io.lani#L37)
+[Source line 38](../../../stdlib/alloc/io.lani#L38)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 157
+### impl at line 158
 
-[Source line 157](../../../stdlib/alloc/io.lani#L157)
+[Source line 158](../../../stdlib/alloc/io.lani#L158)
 
 ```lanius
 pub impl ReadBytes
@@ -439,7 +440,7 @@ pub impl ReadBytes
 
 #### method: borrow
 
-[Source line 158](../../../stdlib/alloc/io.lani#L158)
+[Source line 159](../../../stdlib/alloc/io.lani#L159)
 
 ```lanius
 pub fn borrow(&self) -> &ReadBytes
@@ -447,15 +448,15 @@ pub fn borrow(&self) -> &ReadBytes
 
 #### method: destroy
 
-[Source line 159](../../../stdlib/alloc/io.lani#L159)
+[Source line 160](../../../stdlib/alloc/io.lani#L160)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 161
+### impl at line 162
 
-[Source line 161](../../../stdlib/alloc/io.lani#L161)
+[Source line 162](../../../stdlib/alloc/io.lani#L162)
 
 ```lanius
 pub impl ReadLine
@@ -463,7 +464,7 @@ pub impl ReadLine
 
 #### method: borrow
 
-[Source line 162](../../../stdlib/alloc/io.lani#L162)
+[Source line 163](../../../stdlib/alloc/io.lani#L163)
 
 ```lanius
 pub fn borrow(&self) -> &ReadLine
@@ -471,15 +472,15 @@ pub fn borrow(&self) -> &ReadLine
 
 #### method: destroy
 
-[Source line 163](../../../stdlib/alloc/io.lani#L163)
+[Source line 164](../../../stdlib/alloc/io.lani#L164)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 165
+### impl at line 166
 
-[Source line 165](../../../stdlib/alloc/io.lani#L165)
+[Source line 166](../../../stdlib/alloc/io.lani#L166)
 
 ```lanius
 pub impl BufferedReadFailure
@@ -487,7 +488,7 @@ pub impl BufferedReadFailure
 
 #### method: borrow
 
-[Source line 166](../../../stdlib/alloc/io.lani#L166)
+[Source line 167](../../../stdlib/alloc/io.lani#L167)
 
 ```lanius
 pub fn borrow(&self) -> &BufferedReadFailure
@@ -495,15 +496,15 @@ pub fn borrow(&self) -> &BufferedReadFailure
 
 #### method: destroy
 
-[Source line 169](../../../stdlib/alloc/io.lani#L169)
+[Source line 170](../../../stdlib/alloc/io.lani#L170)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 303
+### impl at line 304
 
-[Source line 303](../../../stdlib/alloc/io.lani#L303)
+[Source line 304](../../../stdlib/alloc/io.lani#L304)
 
 ```lanius
 pub impl Buffer
@@ -511,7 +512,7 @@ pub impl Buffer
 
 #### method: borrow
 
-[Source line 304](../../../stdlib/alloc/io.lani#L304)
+[Source line 305](../../../stdlib/alloc/io.lani#L305)
 
 ```lanius
 pub fn borrow(&self) -> &Buffer
@@ -519,7 +520,7 @@ pub fn borrow(&self) -> &Buffer
 
 #### method: len
 
-[Source line 305](../../../stdlib/alloc/io.lani#L305)
+[Source line 306](../../../stdlib/alloc/io.lani#L306)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -527,7 +528,7 @@ pub fn len(&self) -> i32
 
 #### method: capacity
 
-[Source line 306](../../../stdlib/alloc/io.lani#L306)
+[Source line 307](../../../stdlib/alloc/io.lani#L307)
 
 ```lanius
 pub fn capacity(&self) -> i32
@@ -535,7 +536,7 @@ pub fn capacity(&self) -> i32
 
 #### method: limit
 
-[Source line 307](../../../stdlib/alloc/io.lani#L307)
+[Source line 308](../../../stdlib/alloc/io.lani#L308)
 
 ```lanius
 pub fn limit(&self) -> i32
@@ -543,7 +544,7 @@ pub fn limit(&self) -> i32
 
 #### method: as_bytes
 
-[Source line 308](../../../stdlib/alloc/io.lani#L308)
+[Source line 309](../../../stdlib/alloc/io.lani#L309)
 
 ```lanius
 pub fn as_bytes(&self) -> [u8]
@@ -551,7 +552,7 @@ pub fn as_bytes(&self) -> [u8]
 
 #### method: try_reserve
 
-[Source line 310](../../../stdlib/alloc/io.lani#L310)
+[Source line 311](../../../stdlib/alloc/io.lani#L311)
 
 ```lanius
 pub fn try_reserve(&self, capacity: i32) -> core::result::Result<i32, core::io::Error>
@@ -559,7 +560,7 @@ pub fn try_reserve(&self, capacity: i32) -> core::result::Result<i32, core::io::
 
 #### method: try_clone
 
-[Source line 318](../../../stdlib/alloc/io.lani#L318)
+[Source line 319](../../../stdlib/alloc/io.lani#L319)
 
 ```lanius
 pub fn try_clone(&self) -> core::result::Result<Buffer, core::io::Error>
@@ -567,23 +568,39 @@ pub fn try_clone(&self) -> core::result::Result<Buffer, core::io::Error>
 
 #### method: clear
 
-[Source line 325](../../../stdlib/alloc/io.lani#L325)
+[Source line 326](../../../stdlib/alloc/io.lani#L326)
 
 ```lanius
 pub fn clear(&self)
 ```
 
+#### method: reserve_raw
+
+[Source line 333](../../../stdlib/alloc/io.lani#L333)
+
+```lanius
+pub fn reserve_raw(&self, count: i32) -> core::result::Result<ptr, core::io::Error>
+```
+
+#### method: commit_raw
+
+[Source line 346](../../../stdlib/alloc/io.lani#L346)
+
+```lanius
+pub fn commit_raw(&self, count: i32) -> core::result::Result<i32, core::io::Error>
+```
+
 #### method: destroy
 
-[Source line 327](../../../stdlib/alloc/io.lani#L327)
+[Source line 351](../../../stdlib/alloc/io.lani#L351)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 333
+### impl at line 357
 
-[Source line 333](../../../stdlib/alloc/io.lani#L333)
+[Source line 357](../../../stdlib/alloc/io.lani#L357)
 
 ```lanius
 pub impl core::io::Write for Buffer
@@ -591,7 +608,7 @@ pub impl core::io::Write for Buffer
 
 #### method: write
 
-[Source line 334](../../../stdlib/alloc/io.lani#L334)
+[Source line 358](../../../stdlib/alloc/io.lani#L358)
 
 ```lanius
 pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error>
@@ -599,7 +616,7 @@ pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Resu
 
 #### method: flush
 
-[Source line 365](../../../stdlib/alloc/io.lani#L365)
+[Source line 390](../../../stdlib/alloc/io.lani#L390)
 
 ```lanius
 pub fn flush(&self) -> core::result::Result<i32, core::io::Error>

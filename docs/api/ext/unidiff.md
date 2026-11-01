@@ -569,7 +569,7 @@ pub fn default_options() -> ApplyOptions
 
 ### function: write_unified
 
-[Source line 71](../../../extended/ext/unidiff.lani#L71)
+[Source line 65](../../../extended/ext/unidiff.lani#L65)
 
 ```lanius
 pub fn write_unified(a: core::slice::View<ext::seqdiff::Line>, b: core::slice::View<ext::seqdiff::Line>, script: &ext::seqdiff::Script, hunks: core::slice::View<ext::seqdiff::Hunk>, old_name: core::slice::View<u8>, new_name: core::slice::View<u8>, max_output: i32) -> core::result::Result<alloc::vec::Vec<u8>, WriteError>
@@ -577,7 +577,7 @@ pub fn write_unified(a: core::slice::View<ext::seqdiff::Line>, b: core::slice::V
 
 ### function: parse
 
-[Source line 126](../../../extended/ext/unidiff.lani#L126)
+[Source line 133](../../../extended/ext/unidiff.lani#L133)
 
 ```lanius
 pub fn parse(input: core::slice::View<u8>, max_lines: i32) -> core::result::Result<Patch, ParseError>
@@ -585,7 +585,7 @@ pub fn parse(input: core::slice::View<u8>, max_lines: i32) -> core::result::Resu
 
 ### function: apply
 
-[Source line 213](../../../extended/ext/unidiff.lani#L213)
+[Source line 220](../../../extended/ext/unidiff.lani#L220)
 
 ```lanius
 pub fn apply(base: core::slice::View<u8>, patch: &Patch, options: ApplyOptions) -> core::result::Result<Applied, ApplyError>
@@ -593,9 +593,9 @@ pub fn apply(base: core::slice::View<u8>, patch: &Patch, options: ApplyOptions) 
 
 ## Implementation blocks and public methods
 
-### impl at line 176
+### impl at line 183
 
-[Source line 176](../../../extended/ext/unidiff.lani#L176)
+[Source line 183](../../../extended/ext/unidiff.lani#L183)
 
 ```lanius
 pub impl Patch
@@ -603,7 +603,7 @@ pub impl Patch
 
 #### method: borrow
 
-[Source line 177](../../../extended/ext/unidiff.lani#L177)
+[Source line 184](../../../extended/ext/unidiff.lani#L184)
 
 ```lanius
 pub fn borrow(&self) -> &Patch
@@ -611,7 +611,7 @@ pub fn borrow(&self) -> &Patch
 
 #### method: hunk_count
 
-[Source line 178](../../../extended/ext/unidiff.lani#L178)
+[Source line 185](../../../extended/ext/unidiff.lani#L185)
 
 ```lanius
 pub fn hunk_count(&self) -> i32
@@ -619,7 +619,7 @@ pub fn hunk_count(&self) -> i32
 
 #### method: hunk
 
-[Source line 179](../../../extended/ext/unidiff.lani#L179)
+[Source line 186](../../../extended/ext/unidiff.lani#L186)
 
 ```lanius
 pub fn hunk(&self, index: i32) -> core::option::Option<PatchHunk>
@@ -627,7 +627,7 @@ pub fn hunk(&self, index: i32) -> core::option::Option<PatchHunk>
 
 #### method: line
 
-[Source line 180](../../../extended/ext/unidiff.lani#L180)
+[Source line 187](../../../extended/ext/unidiff.lani#L187)
 
 ```lanius
 pub fn line(&self, index: i32) -> core::option::Option<PatchLine>
@@ -635,15 +635,15 @@ pub fn line(&self, index: i32) -> core::option::Option<PatchLine>
 
 #### method: destroy
 
-[Source line 181](../../../extended/ext/unidiff.lani#L181)
+[Source line 188](../../../extended/ext/unidiff.lani#L188)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 321
+### impl at line 328
 
-[Source line 321](../../../extended/ext/unidiff.lani#L321)
+[Source line 328](../../../extended/ext/unidiff.lani#L328)
 
 ```lanius
 pub impl Applied
@@ -651,7 +651,7 @@ pub impl Applied
 
 #### method: borrow
 
-[Source line 322](../../../extended/ext/unidiff.lani#L322)
+[Source line 329](../../../extended/ext/unidiff.lani#L329)
 
 ```lanius
 pub fn borrow(&self) -> &Applied
@@ -659,7 +659,7 @@ pub fn borrow(&self) -> &Applied
 
 #### method: destroy
 
-[Source line 323](../../../extended/ext/unidiff.lani#L323)
+[Source line 330](../../../extended/ext/unidiff.lani#L330)
 
 ```lanius
 pub fn destroy(&self)

@@ -21,9 +21,11 @@ their byte-line API, strict application and saved-trace Myers.
 | `classify(a, b, limits)` | `Eq<T>` and `Hash<T>` | `Classes { before, after, count }`: dense ids, equal items share one id |
 | `patience_classes(a, b, classes, limits)` | ids in `[0, classes)` | patience script |
 | `split_lines(bytes, limits)` / `diff_lines(a, b, algorithm, limits)` | `Line` | byte lines, each keeping its LF |
+| `classify_lines(a, b, limits)` / `myers_classes(a, b, limits)` | `Line` / class ids | the specialized paths `diff_lines` uses |
 
-`a` and `b` are `core::slice::View<T>`. `Line { bytes }` implements `Eq`
-(exact byte equality) and `Hash` (FNV-1a), so files go through the same generic
+`a` and `b` are `core::slice::View<T>`. `Line { bytes, hash }` caches its FNV-1a hash; build
+lines with `split_lines` or `line(bytes)` so the two agree. It implements `Eq`
+(hash, then exact bytes) and `Hash`, so files go through the same generic
 path as caller types; a caller type supplies its own `Eq`/`Hash` impls, and the
 contract fixture uses a struct whose equality ignores one field. Hashes only
 choose buckets; `Eq` decides every class.
@@ -168,10 +170,28 @@ receipt above came from running the two compiled tools directly
 (`seqdiff_oracle.py SEQ_DIFF SEQ_PATCH WORKDIR 1000`) in 43 s; nearly all of
 that time is process startup and the Python LCS.
 
-**Speed.** The 100,000-line (1.6 MB) scale pair takes 0.85 s with Myers and
-1.0 s with patience; GNU diff takes 0.05 s. Reading the 1.6 MB base through
-`std::stream::copy` alone takes about 0.24 s, so per-byte code generation
-dominates both I/O and line hashing. Comparisons themselves are on class ids.
+**Speed.** On the 100,000-line (1.6 MB) scale pair, `seq-diff` went from 0.85 s
+to 0.14 s wall (0.11 s user; best of 7 on a loaded machine). Patience takes
+0.25 s, and GNU `diff -u` takes 0.02 s on the same pair and load. Phase timings
+inside the program (best of 7, both files) changed as follows:
+
+| phase | before | after | change |
+| --- | ---: | ---: | --- |
+| read | 370 ms | 18 ms | `File.read_to_end` / `std::stream::read_to_end` read straight into `alloc::io::Buffer` storage (`reserve_raw`/`commit_raw`), not through 1,024-byte staging copies, the copier state machine and one `try_push` per byte in `Buffer.write` (which now copies into slots) |
+| split | 47 ms | 25-49 ms | one pass that also hashes; slots are written directly with no per-line `try_push` |
+| classify | 118 ms | 44 ms | `classify_lines`: hash cached in `Line`; inline compare; no trait calls or per-item pushes |
+| Myers | 41 ms | 26 ms | class-id specialization (`==` on hoisted arrays instead of `T::eq` calls); frontier rows reset lazily per round instead of O(N+M) per bisection; script presized |
+| hunks + write | 23 ms | 4 ms | the writer validates only emitted lines instead of scanning both files |
+
+The remaining gap is code generation. A plain loop that counts LF bytes in a
+`[u8]` (`tests/fixtures/extended/perf/byte_loop_repro.lani`, 0.50 s for 160 M bytes) costs 2.8 ns/byte,
+against 0.8 ns for `gcc -O0` on `byte_loop_repro.c` and under 0.1 ns for `gcc -O2`. A loop that also
+hashes costs 9-14 ns/byte. Each element access reloads the slice's fields from
+the stack, emits a bounds check, multiplies the index by the slice's runtime
+stride, and branches on stride 1. Every temporary is spilled and reloaded,
+loop invariants are not hoisted, and `core::u32::wrapping_mul` is a call rather
+than inline code. A 3.2 MB pass therefore costs 10-30 ms, so `seq-diff` cannot
+come within 2× of GNU through library changes alone.
 
 Verified execution is x86_64 Linux output from the GPU compiler. Other targets
 have not been verified.
