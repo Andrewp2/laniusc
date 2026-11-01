@@ -140,7 +140,9 @@ completion has a mini derivation with the same result.
 
 Core keeps a function's locals in cells that it allocates above every cell of
 its callers. `frame` maps a mini slot to the cell of the binding that owns it;
-`Keeps base` says the cells below `base` (the callers') are untouched. -/
+`Keeps places base` says the cells below `base` (the callers') are untouched,
+except the places' cells: a callee may write a caller's array through the
+slice it was passed. -/
 
 namespace Lanius.Mini
 
@@ -160,26 +162,32 @@ exist (so a struct write has nothing to synchronize). -/
 def _root_.Lanius.Semantics.State.Fresh (st : State) : Prop :=
   (∀ c ∈ st.cells, c.id < st.nextCell) ∧ st.i32ArrayViews = []
 
-/-- `st'` grew from `st` and left the cells below `base` alone. -/
-structure Keeps (base : Nat) (st st' : State) : Prop where
-  cells : ∀ c < base, st'.cellEntry? c = st.cellEntry? c
+/-- `st'` grew from `st` and left the cells below `base` alone, except
+those `moved` names. `Keeps [] base` keeps every cell below `base`. -/
+structure Keeps (moved : List Addressed) (base : Nat) (st st' : State) : Prop where
+  cells : ∀ c < base, (∀ x ∈ moved, x.cell ≠ c) → st'.cellEntry? c = st.cellEntry? c
   next : st.nextCell ≤ st'.nextCell
 
-theorem Keeps.refl (base : Nat) (st : State) : Keeps base st st := ⟨fun _ _ => rfl, Nat.le_refl _⟩
+theorem Keeps.refl (base : Nat) (st : State) : Keeps places base st st := ⟨fun _ _ _ => rfl, Nat.le_refl _⟩
 
-theorem Keeps.trans {base : Nat} {a b c : State} (first : Keeps base a b) (second : Keeps base b c) :
-    Keeps base a c :=
-  ⟨fun cell below => (second.cells cell below).trans (first.cells cell below),
+theorem Keeps.trans {base : Nat} {a b c : State} (first : Keeps places base a b) (second : Keeps places base b c) :
+    Keeps places base a c :=
+  ⟨fun cell below apart => (second.cells cell below apart).trans (first.cells cell below apart),
     Nat.le_trans first.next second.next⟩
 
-theorem Keeps.lower {base low : Nat} {st st' : State} (keeps : Keeps base st st') (le : low ≤ base) :
-    Keeps low st st' :=
+theorem Keeps.lower {base low : Nat} {st st' : State} (keeps : Keeps places base st st') (le : low ≤ base) :
+    Keeps places low st st' :=
   ⟨fun c below => keeps.cells c (Nat.lt_of_lt_of_le below le), keeps.next⟩
+
+/-- Keeping every cell keeps those the places do not name. -/
+theorem Keeps.any {base : Nat} {st st' : State} (keeps : Keeps [] base st st') : Keeps places base st st' :=
+  ⟨fun c below _ => keeps.cells c below (fun _ mem => by simp at mem), keeps.next⟩
 
 /-- Core cells the places name, below `base`, kept: the places still hold. -/
 theorem FrameCorr.keeps {base : Nat} {st st' : State} {hp : Heap} (fc : FrameCorr places st hp)
-    (keeps : Keeps base st st') (under : ∀ x ∈ places, x.cell < base) : FrameCorr places st' hp :=
-  fc.congr (fun x mem => keeps.cells x.cell (under x mem)) (fun _ _ _ _ => rfl) (Nat.le_refl _) rfl rfl
+    (keeps : Keeps [] base st st') (under : ∀ x ∈ places, x.cell < base) : FrameCorr places st' hp :=
+  fc.congr (fun x mem => keeps.cells x.cell (under x mem) (fun _ mem => by simp at mem)) (fun _ _ _ _ => rfl)
+    (Nat.le_refl _) rfl rfl
 
 theorem cellEntry_mem {st : State} {c : Nat} {e : Cell} (found : st.cellEntry? c = some e) :
     e ∈ st.cells ∧ e.id = c := by
@@ -206,7 +214,7 @@ theorem FrameCorr.below {st : State} {hp : Heap} (fc : FrameCorr places st hp) (
 /-- After an evaluation, which keeps every cell that existed: the places
 still hold. -/
 theorem FrameCorr.after {st st' : State} {hp : Heap} (fc : FrameCorr places st hp) (fresh : st.Fresh)
-    (keeps : Keeps st.nextCell st st') : FrameCorr places st' hp :=
+    (keeps : Keeps [] st.nextCell st st') : FrameCorr places st' hp :=
   fc.keeps keeps (fc.below fresh)
 
 theorem bindLocal_entry {st : State} {c : Nat} (below : c < st.nextCell) (id : Nat) (v : Value) :
@@ -237,8 +245,8 @@ theorem bindLocal_fresh {st : State} (fresh : st.Fresh) (id : Nat) (v : Value) :
   · exact Nat.lt_succ_self _
 
 theorem bindLocal_keeps {st : State} {base : Nat} (le : base ≤ st.nextCell) (id : Nat) (v : Value) :
-    Keeps base st (st.bindLocal id v) :=
-  ⟨fun _ below => bindLocal_entry (Nat.lt_of_lt_of_le below le) id v,
+    Keeps places base st (st.bindLocal id v) :=
+  ⟨fun _ below _ => bindLocal_entry (Nat.lt_of_lt_of_le below le) id v,
     Nat.le_succ _⟩
 
 theorem find_replaceCell (cells : List Cell) (target c : Nat) (v : Value) :
@@ -379,7 +387,7 @@ theorem Layout.mono {scope frame base next} (fr : Layout scope frame base next) 
 
 theorem Corr.env_congr {scope frame st env env'} (corr : Corr places scope frame st env)
     (agree : ScopeAgree scope env env') : Corr places scope frame st env' :=
-  ⟨corr.locals, fun b mem => by
+  ⟨corr.locals, corr.apart, fun b mem => by
     obtain ⟨v, entry, holds⟩ := corr.values b mem
     exact ⟨v, entry, holds.congr (agree b mem)⟩⟩
 
@@ -387,25 +395,32 @@ theorem Corr.cells_congr {scope frame st env} {st' : State} (corr : Corr places 
     (locals : st'.locals = st.locals)
     (cells : ∀ b ∈ scope, st'.cellEntry? (frame b.slot) = st.cellEntry? (frame b.slot)) :
     Corr places scope frame st' env :=
-  ⟨locals.trans corr.locals, fun b mem => by rw [cells b mem]; exact corr.values b mem⟩
+  ⟨locals.trans corr.locals, corr.apart, fun b mem => by rw [cells b mem]; exact corr.values b mem⟩
 
 theorem Corr.keeps {scope frame st env} {st' : State} (corr : Corr places scope frame st env)
-    (fresh : st.Fresh) (keeps : Keeps st.nextCell st st') (locals : st'.locals = st.locals) :
+    (fresh : st.Fresh) (keeps : Keeps places st.nextCell st st') (locals : st'.locals = st.locals) :
     Corr places scope frame st' env :=
-  corr.cells_congr locals fun b mem => keeps.cells _ (corr.below fresh b mem)
+  corr.cells_congr locals fun b mem => keeps.cells _ (corr.below fresh b mem) fun x xmem => corr.apart x xmem b mem
 
 theorem Corr.push {scope frame st env base next} (corr : Corr places scope frame st env)
     (fr : Layout scope frame base next) (fresh : st.Fresh) {env' : Env}
     (agree : ScopeAgree scope env env') {id : Nat} {ty : SrcType} {v : Value}
-    (holds : ty.HoldsAt places v env' next) :
+    (holds : ty.HoldsAt places v env' next) (under : ∀ x ∈ places, x.cell < st.nextCell) :
     Corr places (⟨id, next, ty⟩ :: scope) (upd frame next st.nextCell) (st.bindLocal id v) env' := by
   have same := upd_scope fr st.nextCell
-  refine ⟨?_, ?_⟩
+  refine ⟨?_, ?_, ?_⟩
   · simp only [State.bindLocal, State.bindCell, List.map_cons, corr.locals, upd, if_pos]
     congr 1
     apply List.map_congr_left
     intro b mem
     rw [← upd, same b mem]
+  · intro x xmem b mem
+    simp only [List.mem_cons] at mem
+    rcases mem with rfl | mem
+    · simp only [upd, if_pos]
+      exact Nat.ne_of_lt (under x xmem)
+    · rw [same b mem]
+      exact corr.apart x xmem b mem
   · intro b mem
     simp only [List.mem_cons] at mem
     rcases mem with rfl | mem
@@ -423,7 +438,9 @@ theorem Corr.pop {scope frame base next id ty cell st env} {st' : State}
     (fr : Layout scope frame base next) (locals : st'.locals = scope.map fun b => (b.id, frame b.slot))
     (cells : st'.cells = st.cells) : Corr places scope frame st' env := by
   have same := upd_scope fr cell
-  refine ⟨locals, fun b mem => ?_⟩
+  refine ⟨locals, fun x xmem b mem => ?_, fun b mem => ?_⟩
+  · have := corr.apart x xmem b (List.mem_cons_of_mem _ mem)
+    rwa [same b mem] at this
   obtain ⟨w, entry, holds⟩ := corr.values b (List.mem_cons_of_mem _ mem)
   rw [same b mem] at entry
   refine ⟨w, ?_, holds⟩
@@ -880,8 +897,8 @@ theorem prefix_guards {scope frame st env} {prog : Core.Program} (corr : Corr pl
 
 theorem restore_fresh {caller st : State} (fresh : st.Fresh) : (restoreLocals caller st).Fresh := fresh
 
-theorem restore_keeps (base : Nat) (caller st : State) : Keeps base st (restoreLocals caller st) :=
-  ⟨fun _ _ => rfl, Nat.le_refl _⟩
+theorem restore_keeps (base : Nat) (caller st : State) : Keeps places base st (restoreLocals caller st) :=
+  ⟨fun _ _ _ => rfl, Nat.le_refl _⟩
 
 theorem FrameCorr.restoreLocals {st : State} {hp : Heap} (fc : FrameCorr places st hp) (caller : State) :
     FrameCorr places (restoreLocals caller st) hp :=
@@ -892,22 +909,22 @@ theorem entry_corr (env : Env) (base : Nat) :
     ∀ (params : List SrcParam) {values : List Value} {k : Nat} {scope : List Binding}
       {frame : Nat → Nat} {st : State},
       FieldsHold places (paramTypes params) values env k → paramsValid params = true →
-      base ≤ st.nextCell → st.Fresh →
+      base ≤ st.nextCell → (∀ x ∈ places, x.cell < base) → st.Fresh →
       Corr places scope frame st env → Layout scope frame base k →
       ∃ frame', Corr places (paramScope params k scope) frame' (st.bindLocals (paramBindings params values)) env ∧
         Layout (paramScope params k scope) frame' base (k + paramsSize params) ∧
         (st.bindLocals (paramBindings params values)).Fresh ∧
-        Keeps base st (st.bindLocals (paramBindings params values)) := by
+        Keeps [] base st (st.bindLocals (paramBindings params values)) := by
   intro params
   induction params with
   | nil =>
-    intro values k scope frame st holds _ _ fresh corr fr
+    intro values k scope frame st holds _ _ _ fresh corr fr
     cases holds
     simp only [paramScope, paramBindings, List.map_nil, List.zip_nil_left, State.bindLocals,
       List.foldl_nil, paramsSize, Nat.add_zero]
     exact ⟨frame, corr, fr, fresh, Keeps.refl _ _⟩
   | cons p ps ih =>
-    intro values k scope frame st holds valid le fresh corr fr
+    intro values k scope frame st holds valid le under fresh corr fr
     simp only [paramTypes] at holds
     cases holds with
     | cons holdsHead holdsRest =>
@@ -919,9 +936,10 @@ theorem entry_corr (env : Env) (base : Nat) :
     rw [bindEq]
     simp only [paramScope]
     have pushed := corr.push fr fresh (env' := env) (fun _ _ _ _ => rfl) (id := p.id) holdsHead
+      (fun x mem => Nat.lt_of_lt_of_le (under x mem) le)
     have frPushed := fr.push (corr.below fresh) le p.id valid.1
     obtain ⟨frame', corr', fr', fresh', keeps'⟩ := ih holdsRest valid.2
-      (Nat.le_trans le (Nat.le_succ _)) (bindLocal_fresh fresh p.id v) pushed frPushed
+      (Nat.le_trans le (Nat.le_succ _)) under (bindLocal_fresh fresh p.id v) pushed frPushed
     refine ⟨frame', corr', ?_, fresh', (bindLocal_keeps le p.id v).trans keeps'⟩
     simpa [paramsSize, Nat.add_assoc] using fr'
 
@@ -952,7 +970,7 @@ inductive Matches (places : List Addressed) (ret : SrcType) (scope : List Bindin
 derivation from `env` and `hp` with a matching outcome. -/
 abbrev Simulates (places : List Addressed) (mp : Program) (hp : Heap) (ret : SrcType) (scope : List Binding) (frame : Nat → Nat)
     (base : Nat) (st : State) (env : Env) (stmt : Stmt) (c : Completion) (st' : State) : Prop :=
-  st'.Fresh ∧ Keeps base st st' ∧ ∃ d out, Exec mp d env hp stmt out ∧ Matches places ret scope frame st' c out
+  st'.Fresh ∧ Keeps places base st st' ∧ ∃ d out, Exec mp d env hp stmt out ∧ Matches places ret scope frame st' c out
 
 /-- A statement after a check that passes. -/
 theorem Simulates.checked {mp : Program} {hp : Heap} {ret : SrcType} {scope : List Binding} {frame : Nat → Nat}
@@ -988,14 +1006,14 @@ theorem body_sound {sp : SrcProgram} {mp : Program}
       (paramBindings f.params values)) f.body.toCore = .done c completed)
     (result : CallResult f.ret c v)
     (bound : completed.heap.nextAddress ≤ hp.limit) :
-    completed.Fresh ∧ Keeps st.nextCell st completed ∧
+    completed.Fresh ∧ Keeps places st.nextCell st completed ∧
       ∃ d rs hp', mp.Returns d callee bits hp rs hp' ∧ f.ret.HoldsAt places v (Func.entry rs) 0 ∧
         rs.length = f.ret.size ∧ HeapCorr completed.heap completed.world hp' ∧ FrameCorr places completed hp' := by
   obtain ⟨g, gFound, gOk⟩ := lowerFuncs_get lowered found
   obtain ⟨gParams, _, valid, inside, b, bodyOk, tail⟩ := lowerFunc_some gOk
   obtain ⟨frame, corr, fr, fresh0, keeps0⟩ := entry_corr (Func.entry bits) st.nextCell f.params
     (k := 0) (scope := []) (frame := fun _ => 0) (st := { st with locals := [] }) holds valid
-    (Nat.le_refl _) fresh ⟨rfl, fun _ mem => by simp at mem⟩
+    (Nat.le_refl _) under fresh ⟨rfl, fun _ _ _ mem => by simp at mem, fun _ mem => by simp at mem⟩
     ⟨fun _ mem => by simp at mem, fun _ mem => by simp at mem, fun _ mem => by simp at mem,
       fun _ mem => by simp at mem, fun _ mem => by simp at mem⟩
   rw [Nat.zero_add] at fr
@@ -1004,10 +1022,11 @@ theorem body_sound {sp : SrcProgram} {mp : Program}
     exact hc
   obtain ⟨freshDone, keepsDone, d, out, exec, agree⟩ :=
     ih (hp := hp) bodyOk corr fr fresh0 keeps0.next hc0
-      (fc.congr (fun x mem => keeps0.cells x.cell (under x mem)) (fun _ _ _ _ => rfl) (Nat.le_refl _) rfl rfl)
-      under run bound
-  have keeps : Keeps st.nextCell st completed :=
-    ⟨fun c below => (keepsDone.cells c below).trans (keeps0.cells c below), Nat.le_trans keeps0.next keepsDone.next⟩
+      (fc.congr (fun x mem => keeps0.cells x.cell (under x mem) fun _ m => by simp at m) (fun _ _ _ _ => rfl)
+        (Nat.le_refl _) rfl rfl) under run bound
+  have keeps : Keeps places st.nextCell st completed :=
+    ⟨fun c below apart => (keepsDone.cells c below apart).trans (keeps0.cells c below fun _ mem => by simp at mem),
+      Nat.le_trans keeps0.next keepsDone.next⟩
   have arity : bits.length = g.params := by rw [gParams, bitsLen]
   have returns : ∀ {rs hp'}, Exec mp d (Func.entry bits) hp b (.returned rs hp') →
       Exec mp d (Func.entry bits) hp g.body (.returned rs hp') := by
@@ -1056,7 +1075,7 @@ theorem call_sound {sp : SrcProgram} {mp : Program}
     {args : List SrcExpr} {ty : SrcType} {es : List Expr} (ok : lowerCall (sigs sp.funcs) scope callee args ty = some es) {v : Value} {st' : State}
     (run : evalExpr (fuel + 1) sp.toCore st (.call callee (args.map SrcExpr.toCore)) = .done v st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
-    st'.Fresh ∧ Keeps st.nextCell st st' ∧ st'.locals = st.locals ∧ 0 < ty.size ∧
+    st'.Fresh ∧ Keeps places st.nextCell st st' ∧ st'.locals = st.locals ∧ 0 < ty.size ∧
       ∃ d rs hp', ty.HoldsAt places v (Func.entry rs) 0 ∧ rs.length = ty.size ∧ HeapCorr st'.heap st'.world hp' ∧
         FrameCorr places st' hp' ∧ ∀ target, Exec mp d env hp (.call target ty.size callee es) (.normal (env.setMany target rs) hp') := by
   obtain ⟨f, values, afterArgs, completed, c, argsRun, found, _, bodyRun, result, rfl⟩ := call_inv (lowerCall_inside ok) run
@@ -1171,7 +1190,7 @@ theorem Corr.assign {scope frame st env base next} (corr : Corr places scope fra
     (outside : ∀ j, j < b.slot ∨ b.slot + b.ty.size ≤ j → env' j = env j)
     (holds : b.ty.HoldsAt places rv env' b.slot) :
     Corr places scope frame { st with cells := Semantics.replaceCell st.cells (frame b.slot) rv } env' := by
-  refine ⟨corr.locals, fun a mem => ?_⟩
+  refine ⟨corr.locals, corr.apart, fun a mem => ?_⟩
   rw [assigned_entry]
   by_cases same : frame a.slot = frame b.slot
   · have := fr.inj a mem b bmem same
@@ -1188,8 +1207,8 @@ theorem Corr.assign {scope frame st env base next} (corr : Corr places scope fra
     · omega
 
 theorem assigned_keeps {base cell : Nat} (above : base ≤ cell) (st : State) (rv : Value) :
-    Keeps base st { st with cells := Semantics.replaceCell st.cells cell rv } :=
-  ⟨fun c below => by rw [assigned_entry, if_neg (by cell_omega)], Nat.le_refl _⟩
+    Keeps places base st { st with cells := Semantics.replaceCell st.cells cell rv } :=
+  ⟨fun c below _ => by rw [assigned_entry, if_neg (by cell_omega)], Nat.le_refl _⟩
 
 /-- The mini environment after `assignFrom slot xs`. -/
 def Env.setFrom (env : Env) : Nat → List Expr → Env
@@ -1677,13 +1696,13 @@ theorem let_tail {sp : SrcProgram} {mp : Program} {fuel : Nat} (ih : StmtSound s
     (run : Semantics.restoreOutcomeLocals st
       (execStmt fuel sp.toCore (st.bindLocal id v) body.toCore) = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
-    st'.Fresh ∧ Keeps base st st' ∧
+    st'.Fresh ∧ Keeps places base st st' ∧
       ∃ d out, Exec mp d env' hp bstmt out ∧ Matches places ret scope frame st' c out := by
   cases bodyRun : execStmt fuel sp.toCore (st.bindLocal id v) body.toCore with
   | done c' st'' =>
     simp only [bodyRun, Semantics.restoreOutcomeLocals, Semantics.Outcome.done.injEq] at run
     obtain ⟨rfl, rfl⟩ := run
-    have pushed := corr.push fr fresh agree (id := id) holds
+    have pushed := corr.push fr fresh agree (id := id) holds fun x mem => Nat.lt_of_lt_of_le (under x mem) le
     have frPushed := fr.push (corr.below fresh) le id sized
     obtain ⟨fresh'', keeps'', d, out, exec, matched⟩ :=
       ih (hp := hp) bodyOk pushed frPushed (bindLocal_fresh fresh id v)
@@ -1706,17 +1725,24 @@ theorem let_tail {sp : SrcProgram} {mp : Program} {fuel : Nat} (ih : StmtSound s
 match binder names a payload slot of the scrutinee. -/
 theorem Corr.alias {scope frame st env} (corr : Corr places scope frame st env) (fresh : st.Fresh)
     {j : Nat} (away : ∀ b ∈ scope, b.slot ≠ j) (id : Nat) {ty : SrcType} {v : Value}
-    (holds : ty.HoldsAt places v env j) :
+    (holds : ty.HoldsAt places v env j) (under : ∀ x ∈ places, x.cell < st.nextCell) :
     Corr places (⟨id, j, ty⟩ :: scope) (upd frame j st.nextCell) (st.bindLocal id v) env := by
   have same : ∀ b ∈ scope, upd frame j st.nextCell b.slot = frame b.slot := fun b mem => by
     simp only [upd]
     rw [if_neg (away b mem)]
-  refine ⟨?_, ?_⟩
+  refine ⟨?_, ?_, ?_⟩
   · simp only [State.bindLocal, State.bindCell, List.map_cons, corr.locals, upd, if_pos]
     congr 1
     apply List.map_congr_left
     intro b mem
     rw [← upd, same b mem]
+  · intro x xmem b mem
+    simp only [List.mem_cons] at mem
+    rcases mem with rfl | mem
+    · simp only [upd, if_pos]
+      exact Nat.ne_of_lt (under x xmem)
+    · rw [same b mem]
+      exact corr.apart x xmem b mem
   · intro b mem
     simp only [List.mem_cons] at mem
     rcases mem with rfl | mem
@@ -1737,11 +1763,11 @@ theorem armScope_corr :
       {scope s' : List Binding} {frame : Nat → Nat} {st : State} {env : Env},
       armScope binders types slot scope = some s' → FieldsHold places types vs env slot →
       (∀ b ∈ scope, b.slot < slot ∨ slot + sizes types ≤ b.slot) →
-      Corr places scope frame st env → st.Fresh →
+      Corr places scope frame st env → st.Fresh → (∀ x ∈ places, x.cell < st.nextCell) →
       ∃ frame', Corr places s' frame' (st.bindLocals (binders.zip vs)) env ∧
         (st.bindLocals (binders.zip vs)).Fresh ∧
-        Keeps st.nextCell st (st.bindLocals (binders.zip vs)) ∧ binders.length = vs.length
-  | [], types, vs, slot, scope, s', frame, st, env, ok, holds, _, corr, fresh => by
+        Keeps [] st.nextCell st (st.bindLocals (binders.zip vs)) ∧ binders.length = vs.length
+  | [], types, vs, slot, scope, s', frame, st, env, ok, holds, _, corr, fresh, under => by
     cases types with
     | cons => simp [armScope] at ok
     | nil =>
@@ -1749,7 +1775,7 @@ theorem armScope_corr :
       subst ok
       cases holds
       exact ⟨frame, corr, fresh, Keeps.refl _ _, rfl⟩
-  | binder :: rest, types, vs, slot, scope, s', frame, st, env, ok, holds, clear, corr, fresh => by
+  | binder :: rest, types, vs, slot, scope, s', frame, st, env, ok, holds, clear, corr, fresh, under => by
     cases types with
     | nil => simp [armScope] at ok
     | cons f more =>
@@ -1763,7 +1789,7 @@ theorem armScope_corr :
         have pushed := corr.alias fresh (j := slot) (fun b mem => by
           have := clear b mem
           simp only [sizes] at this
-          omega) binder head
+          omega) binder head under
         obtain ⟨frame', corr', fresh', keeps', len⟩ := armScope_corr rest ok tail (fun b mem => by
             simp only [List.mem_cons] at mem
             rcases mem with rfl | mem
@@ -1773,6 +1799,7 @@ theorem armScope_corr :
             · have := clear b mem
               simp only [sizes] at this
               omega) pushed (bindLocal_fresh fresh binder v)
+            (fun x mem => Nat.lt_succ_of_lt (under x mem))
         exact ⟨frame', corr', fresh', (bindLocal_keeps (Nat.le_refl _) binder v).trans
           (keeps'.lower (Nat.le_succ _)), by simp [len]⟩
       · simp at ok
@@ -1833,7 +1860,7 @@ theorem sizes_le_maxSize_of_mem : ∀ {variants : List (List SrcType)} {fs : Lis
 /-- The tag tests pick the arm Core picks, and it stores that arm's value. -/
 theorem lowerArms_sound {P : Core.Program} {mp : Program} {hp : Heap} (target : P.target = .x86_64)
     {scope frame st env} (corr : Corr places scope frame st env) (fresh : st.Fresh)
-    {slot dst eid : Nat} {ty : SrcType} (slots : ∀ b ∈ scope, b.slot + b.ty.size ≤ dst) :
+    (under : ∀ x ∈ places, x.cell < st.nextCell) {slot dst eid : Nat} {ty : SrcType} (slots : ∀ b ∈ scope, b.slot + b.ty.size ≤ dst) :
     ∀ (arms : List SrcArm) {variants : List (List SrcType)} {k kv : Nat} {stmt : Stmt} {fuel : Nat}
       {fs : List SrcType} {vs : List Value} {v : Value} {st' : State},
       lowerArms scope slot dst ty k variants arms = some stmt → arms.length = variants.length →
@@ -1841,7 +1868,7 @@ theorem lowerArms_sound {P : Core.Program} {mp : Program} {hp : Heap} (target : 
       (∀ fs ∈ variants, slot + 1 + sizes fs ≤ dst) → k ≤ kv → variants[kv - k]? = some fs → kv < 2 ^ 64 →
       env slot = BitVec.ofNat 64 kv → FieldsHold places fs vs env (slot + 1) →
       Semantics.evalMatchArms fuel P st (.enumeration eid kv vs) (coreArms eid k arms) = .done v st' →
-      st'.Fresh ∧ Keeps st.nextCell st st' ∧ st'.locals = st.locals ∧
+      st'.Fresh ∧ Keeps [] st.nextCell st st' ∧ st'.locals = st.locals ∧
         ∃ xs, FlatValue places ty v env xs ∧ Insens xs dst ∧
           ∀ d, Exec mp d env hp stmt (.normal (env.setFrom dst xs) hp) := by
   intro arms
@@ -1871,7 +1898,7 @@ theorem lowerArms_sound {P : Core.Program} {mp : Program} {hp : Heap} (target : 
           · simp at valueOk
           rename_i s' scopeOk
           obtain ⟨frame', corr', fresh', keeps', blen⟩ := armScope_corr arm.binders scopeOk payload
-            (clear _ (List.mem_cons_self ..)) corr fresh
+            (clear _ (List.mem_cons_self ..)) corr fresh under
           simp only [beq_self_eq_true, Bool.and_self, ↓reduceIte, matchBinds _ _ blen] at run
           cases armRun : evalExpr fuel P (st.bindLocals (arm.binders.zip vs)) arm.value.toCore with
           | done w st2 =>
@@ -2297,9 +2324,9 @@ theorem stmt_letMatch (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {scr
         have kvLt : kv < variants.length := (List.getElem?_eq_some_iff.mp fsFound).1
         have kvBound : kv < 2 ^ 64 := Nat.lt_trans kvLt (by omega)
         obtain ⟨fresh1, keeps1, locals1, xs, flat, insens, mexec⟩ :=
-          lowerArms_sound (mp := mp) (SrcProgram.target_toCore sp) corr fresh fr.slots arms matchOk len
+          lowerArms_sound (mp := mp) (SrcProgram.target_toCore sp) corr fresh (fc.below fresh) fr.slots arms matchOk len
             clear room (Nat.zero_le _) (by simpa using fsFound) kvBound tag payload matchRun
-        have corr1 := corr.keeps fresh keeps1 locals1
+        have corr1 := corr.keeps fresh keeps1.any locals1
         have hc1 : HeapCorr st1.heap st1.world hp := by
           rw [(matchArms_same arms eid 0 matchRun).1, matchArms_world arms eid 0 matchRun]; exact hc
         obtain ⟨fresh', keeps', d, out, exec, matched⟩ :=
@@ -2307,7 +2334,7 @@ theorem stmt_letMatch (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {scr
             sized (env' := env.setFrom next xs)
             (fr.agree fun j below => setFrom_outside xs next env j (.inl below))
             (flat.store insens) hc1 (fc.after fresh keeps1) under run bound
-        exact ⟨fresh', (keeps1.lower le).trans keeps', d, out, .seq (mexec d) exec, matched⟩
+        exact ⟨fresh', (keeps1.any.lower le).trans keeps', d, out, .seq (mexec d) exec, matched⟩
   all_goals simp at run
 
 theorem restore_heap (caller st : State) : (Semantics.restoreLocals caller st).heap = st.heap := rfl
@@ -2457,7 +2484,7 @@ theorem stmt_matchArm (below : ∀ m ≤ fuel, StmtSound sp mp m) {scrutinee enu
     rcases shape with ⟨u, rfl, _⟩ | ⟨u, _, s', scopeOk, _⟩
     · cases payload
       simp [u, Semantics.matchPatterns]
-    · obtain ⟨_, _, _, _, blen⟩ := armScope_corr [binder] scopeOk payload clear corr fresh
+    · obtain ⟨_, _, _, _, blen⟩ := armScope_corr [binder] scopeOk payload clear corr fresh (fc.below fresh)
       rcases pvs with _ | ⟨pv, _ | ⟨pv', more⟩⟩
       · simp at blen
       · simp [u, Semantics.matchPatterns, Semantics.matchPattern]
@@ -2493,7 +2520,7 @@ theorem stmt_matchArm (below : ∀ m ≤ fuel, StmtSound sp mp m) {scrutinee enu
     · simp only [u, ↓reduceIte] at hthen
       subst hthen
       simp only [armBodyScope, u, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at bodyOk
-      obtain ⟨frame', corr', fresh', keeps', blen⟩ := armScope_corr [binder] scopeOk payload clear corr fresh
+      obtain ⟨frame', corr', fresh', keeps', blen⟩ := armScope_corr [binder] scopeOk payload clear corr fresh (fc.below fresh)
       have mb : Semantics.matchPatterns [.bind binder] pvs = some ([binder].zip pvs) :=
         matchBinds [binder] pvs blen
       rcases fuel with _ | f1
@@ -2517,15 +2544,15 @@ theorem stmt_matchArm (below : ∀ m ≤ fuel, StmtSound sp mp m) {scrutinee enu
           obtain ⟨rfl, flat, vshape⟩ := lowerValue_sound corr' (SrcProgram.target_toCore sp) valueOk armRun
           have slots' := armScope_slots [binder] scopeOk fr.slots room
           have insens : Insens vs next := Insens.below fun x mem => vshape.below slots' x mem
-          have keeps1 := keeps'.trans (restore_keeps st.nextCell st _)
-          have corr1 := corr.keeps fresh keeps1 rfl
+          have keeps1 : Keeps [] st.nextCell st _ := keeps'.trans (restore_keeps st.nextCell st _)
+          have corr1 := corr.keeps fresh keeps1.any rfl
           obtain ⟨fresh'', keeps'', d, out, exec, matched⟩ :=
             let_tail (below _ (Nat.le_succ _)) (hp := hp) bodyOk corr1 fr (restore_fresh fresh')
               (Nat.le_trans le keeps1.next) sized (env' := env.setFrom next vs)
               (fr.agree fun j below => setFrom_outside vs next env j (.inl below))
               (flat.store insens) (by rw [restore_heap, restore_world, (bindLocals_same _ st).1, bindLocals_world]; exact hc)
               (fc.after fresh keeps1) under run bound
-          exact ⟨fresh'', (keeps1.lower le).trans keeps'', d, out,
+          exact ⟨fresh'', (keeps1.any.lower le).trans keeps'', d, out,
             .ifTrue test (assignFrom_exec vs next exec), matched⟩
         | trapped =>
           simp only [SrcExpr.toCore] at armRun
@@ -3117,7 +3144,7 @@ theorem stmt_setByte {pointer offset value : SrcExpr}
           have low : lowByte (xv.eval env) = UInt8.ofNat bv := by
             simp only [lowByte, BitVec.toNat_setWidth, hbv]
             rw [Nat.mod_eq_of_lt lt]
-          refine ⟨fresh, ⟨fun _ _ => rfl, Nat.le_refl _⟩, 0, _, .storeByte (Nat.lt_of_lt_of_le room hc.topped),
+          refine ⟨fresh, ⟨fun _ _ _ => rfl, Nat.le_refl _⟩, 0, _, .storeByte (Nat.lt_of_lt_of_le room hc.topped),
             .next (corr.cells_congr rfl fun _ _ => rfl) ?_
               ((fc.write_low room).congr (fun _ _ => rfl) (fun _ _ _ _ => rfl) (Nat.le_refl _) rfl rfl)⟩
           rw [address, low]
@@ -3171,7 +3198,7 @@ theorem stmt_free {pointer size : SrcExpr} {shift : Nat}
         · rename_i heap' freed
           simp only [Semantics.Outcome.done.injEq] at valueRun
           obtain ⟨-, rfl⟩ := valueRun
-          exact ⟨fresh, ⟨fun _ _ => rfl, Nat.le_refl _⟩, 0, _, .skip,
+          exact ⟨fresh, ⟨fun _ _ _ => rfl, Nat.le_refl _⟩, 0, _, .skip,
             .next (corr.cells_congr rfl fun _ _ => rfl) (hc.dealloc freed) (fc.withHeap _)⟩
         · simp at valueRun
       all_goals simp at valueRun
@@ -3723,7 +3750,7 @@ theorem stmt_setIndex_i32 {slice : Nat} {index value : SrcExpr} {b : Binding} {e
         (Expr.binary Word.u64 BinOp.mul t.expr (Expr.lit 4))).eval env).toNat + MemWidth.m32.bytes ≤
         hp.limit := by
       rw [address]; simp only [MemWidth.bytes]; addr_omega
-    refine ⟨fresh, ⟨fun _ _ => rfl, Nat.le_refl _⟩, 0, _, .storeWord (Nat.le_trans room hc.topped),
+    refine ⟨fresh, ⟨fun _ _ _ => rfl, Nat.le_refl _⟩, 0, _, .storeWord (Nat.le_trans room hc.topped),
       .next (corr.cells_congr rfl fun _ _ => rfl) ?_
         ((fc.writeLE_low room).congr (fun _ _ => rfl) (fun _ _ _ _ => rfl) (Nat.le_refl _) rfl rfl)⟩
     rw [address]
@@ -3922,7 +3949,7 @@ theorem stmt_setIndex_u8 {slice : Nat} {index value : SrcExpr} {b : Binding} {el
       rw [Nat.mod_eq_of_lt (by addr_omega)]
     have room : ((Expr.binary Word.u64 BinOp.add (Expr.var b.slot) t.expr).eval env).toNat < hp.limit := by
       rw [address]; addr_omega
-    refine ⟨fresh, ⟨fun _ _ => rfl, Nat.le_refl _⟩, 0, _, .storeByte (Nat.lt_of_lt_of_le room hc.topped),
+    refine ⟨fresh, ⟨fun _ _ _ => rfl, Nat.le_refl _⟩, 0, _, .storeByte (Nat.lt_of_lt_of_le room hc.topped),
       .next (corr.cells_congr rfl fun _ _ => rfl) ?_
         ((fc.write_low room).congr (fun _ _ => rfl) (fun _ _ _ _ => rfl) (Nat.le_refl _) rfl rfl)⟩
     have low : lowByte (xv.eval env) = UInt8.ofNat (xv.eval env).toNat := by
@@ -4604,7 +4631,7 @@ theorem stmt_setIndex_word {slice : Nat} {index value : SrcExpr} {b : Binding} {
       exact wordElement_notByte hel
     simp only [Semantics.writeRawNative, nb, Bool.false_eq_true, ↓reduceIte] at stored
     obtain ⟨hp', exec, hc', low⟩ := storeElement_sound (mp := mp) hc hel posEq located stored flat ok bound
-    exact ⟨fresh, ⟨fun _ _ => rfl, Nat.le_refl _⟩, 0, _, exec, .next (corr.cells_congr rfl fun _ _ => rfl) hc'
+    exact ⟨fresh, ⟨fun _ _ _ => rfl, Nat.le_refl _⟩, 0, _, exec, .next (corr.cells_congr rfl fun _ _ => rfl) hc'
       ((fc.lowOnly low).congr (fun _ _ => rfl) (fun _ _ _ _ => rfl) (Nat.le_refl _) rfl rfl)⟩
   all_goals simp at run
 

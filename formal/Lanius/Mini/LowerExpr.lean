@@ -133,6 +133,8 @@ open Lanius.Semantics (State evalExpr)
 given by `frame`, and every binding's cell holds a value its slot represents. -/
 structure Corr (places : List Addressed) (scope : List Binding) (frame : Nat → Nat) (st : State) (env : Env) : Prop where
   locals : st.locals = scope.map fun b => (b.id, frame b.slot)
+  /-- The scope's cells are not the places' (the caller's arrays). -/
+  apart : ∀ x ∈ places, ∀ b ∈ scope, x.cell ≠ frame b.slot
   values : ∀ b ∈ scope, ∃ v, st.cellEntry? (frame b.slot) = some ⟨frame b.slot, some v⟩ ∧
     b.ty.HoldsAt places v env b.slot
 

@@ -527,7 +527,7 @@ theorem args_split (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = som
     (propagate : ∀ j reason s, evalExprs j sp.toCore st (SrcEff.toCoreList args) = .trapped reason s →
       ∃ j' s', whole j' = .trapped reason s' ∧ s'.heap.nextAddress = s.heap.nextAddress) :
     (∃ d, Stops mp d env hp ea.stmt n) ∨ ∃ k vs st1, evalExprs k sp.toCore st (SrcEff.toCoreList args) = .done vs st1 ∧
-      st1.heap.nextAddress ≤ hp.limit ∧ st1.Fresh ∧ Keeps st.nextCell st st1 ∧ st1.locals = st.locals ∧
+      st1.heap.nextAddress ≤ hp.limit ∧ st1.Fresh ∧ Keeps places st.nextCell st st1 ∧ st1.locals = st.locals ∧
       ∃ d env' hp', Exec mp d env hp ea.stmt (.normal env' hp') ∧ (∀ j < slot, env' j = env j) ∧
         FieldsHold places ea.types vs env' slot ∧ HeapCorr st1.heap st1.world hp' ∧ FrameCorr places st1 hp' := by
   by_cases done : Completes hp.limit fun k => evalExprs k sp.toCore st (SrcEff.toCoreList args)
@@ -1301,7 +1301,7 @@ theorem arms_stops {dst eid : Nat} {ty : SrcType} {scope : List Binding} {slot :
       simp only [Nat.sub_self, List.getElem?_cons_zero, Option.some.injEq] at found
       subst found
       obtain ⟨frame', corr', fr', fresh', keeps', blen'⟩ :=
-        armScope_layout bs scopeOk payload (fr.mono (Nat.le_succ _)) corr fresh
+        armScope_layout bs scopeOk payload (fr.mono (Nat.le_succ _)) corr fresh (fc.below fresh)
       have armFails : EFails sp hp.limit (st.bindLocals (bs.zip vs)) value.toCore := fun k => by
         have := fails (k + 1)
         simp only [SrcEff.coreArms, Semantics.evalMatchArms, Semantics.matchPattern, beq_self_eq_true,
@@ -1569,7 +1569,7 @@ theorem stops_setFieldEval (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.fun
     ⟨d, stops⟩ | ⟨k, rv, st2, valueRun, bound, fresh2, keeps2, locals2, -⟩
   · exact ⟨d, .seqFirst stops⟩
   have entry2 : st2.cellEntry? (frame b.slot) = some ⟨frame b.slot, some (.structure sid vs)⟩ := by
-    rw [keeps2.cells _ (corr.below fresh b bmem)]; exact entry
+    rw [keeps2.cells _ (corr.below fresh b bmem) fun x xm => corr.apart x xm b bmem]; exact entry
   obtain ⟨k', st3, run, heap⟩ := field_assign_progress_eff corr found entry got valueRun fresh2.2 entry2
   exact (fails.not_done (k := k' + 1) (c := .next) (st' := st3) (by simp only [execStmt, run])
     (by rw [heap]; exact bound)).elim
@@ -1953,7 +1953,7 @@ theorem stops_setIndexEval_array (lowered : lowerFuncs (sigs sp.funcs) sp.decls 
     ⟨d, stops⟩ | ⟨j, right, st2, valueRun, bound2, fresh2, keeps2, -⟩
   · exact ⟨_, Stops.after exec1 (Stops.check fun _ => .seqFirst stops)⟩
   · have entry2 : st2.cellEntry? (frame b.slot) = some ⟨frame b.slot, some (.array vs)⟩ := by
-      rw [(keeps1.chain keeps2).cells _ (corr.below fresh b bmem)]; exact entry
+      rw [(keeps1.chain keeps2).cells _ (corr.below fresh b bmem) fun x xm => corr.apart x xm b bmem]; exact entry
     have run := arraySet_done fresh2.2 (placeAt (k + j)) (value_after indexRun (by omega)) posOk lt
       (value_after valueRun (by omega)) entry2
     exact (efails1.not_done run bound2).elim

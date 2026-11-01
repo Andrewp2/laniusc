@@ -581,19 +581,20 @@ theorem EFails.callBody {L : Nat} {st : State} {callee : Nat} {args : List Core.
 
 /-- A callee's frame: its parameters in correspondence with the mini entry. -/
 theorem callee_frame (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {callee : Nat}
-    {f : SrcFunc} (found : sp.funcs[callee]? = some f) {st : State} (fresh : st.Fresh) {values : List Value}
+    {f : SrcFunc} (found : sp.funcs[callee]? = some f) {st : State} (fresh : st.Fresh)
+    (under : ∀ x ∈ places, x.cell < st.nextCell) {values : List Value}
     {bits : List (BitVec 64)} (holds : FieldsHold places (paramTypes f.params) values (Func.entry bits) 0) :
     ∃ g b frame, mp.funcs[callee]? = some g ∧ g.params = paramsSize f.params ∧
       f.body.lower (sigs sp.funcs) sp.decls f.ret (paramScope f.params 0 []) (paramsSize f.params) = some b ∧
       unitTail f.ret (some b) = some g.body ∧
       Corr places (paramScope f.params 0 []) frame (calleeState f values st) (Func.entry bits) ∧
       Layout (paramScope f.params 0 []) frame st.nextCell (paramsSize f.params) ∧
-      (calleeState f values st).Fresh ∧ Keeps st.nextCell ({ st with locals := [] } : State) (calleeState f values st) := by
+      (calleeState f values st).Fresh ∧ Keeps [] st.nextCell ({ st with locals := [] } : State) (calleeState f values st) := by
   obtain ⟨g, gFound, gOk⟩ := lowerFuncs_get lowered found
   obtain ⟨gParams, _, valid, inside, b, bodyOk, tail⟩ := lowerFunc_some gOk
   obtain ⟨frame, corr, fr, fresh0, keeps0⟩ := entry_corr (Func.entry bits) st.nextCell f.params
     (k := 0) (scope := []) (frame := fun _ => 0) (st := { st with locals := [] }) holds valid
-    (Nat.le_refl _) fresh ⟨rfl, fun _ mem => by simp at mem⟩
+    (Nat.le_refl _) under fresh ⟨rfl, fun _ _ _ mem => by simp at mem, fun _ mem => by simp at mem⟩
     ⟨fun _ mem => by simp at mem, fun _ mem => by simp at mem, fun _ mem => by simp at mem,
       fun _ mem => by simp at mem, fun _ mem => by simp at mem⟩
   rw [Nat.zero_add] at fr
@@ -609,12 +610,13 @@ theorem body_shapes (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = so
     (run : execStmt j sp.toCore (calleeState f values st) f.body.toCore = .done c completed)
     (bound : completed.heap.nextAddress ≤ hp.limit) :
     (c = .next ∧ f.ret = .unit) ∨ (∃ v, c = .returned (some v)) ∨ (c = .returned none ∧ f.ret = .unit) := by
-  obtain ⟨g, b, frame, -, -, bodyOk, -, corr, fr, fresh0, keeps0⟩ := callee_frame lowered found fresh holds
+  obtain ⟨g, b, frame, -, -, bodyOk, -, corr, fr, fresh0, keeps0⟩ := callee_frame lowered found fresh (fc.below fresh) holds
   have hc0 : HeapCorr (calleeState f values st).heap (calleeState f values st).world hp := by
     rw [(bindLocals_same _ _).1, bindLocals_world]
     exact hc
   obtain ⟨-, -, _, _, _, matched⟩ := stmt_sound lowered j (hp := hp) bodyOk corr fr fresh0 keeps0.next hc0
-    (fc.congr (fun x mem => keeps0.cells x.cell (fc.below fresh x mem)) (fun _ _ _ _ => rfl) (Nat.le_refl _) rfl rfl)
+    (fc.congr (fun x mem => keeps0.cells x.cell (fc.below fresh x mem) fun _ m => by simp at m) (fun _ _ _ _ => rfl)
+      (Nat.le_refl _) rfl rfl)
     (fc.below fresh) run bound
   cases matched with
   | next =>
@@ -648,7 +650,7 @@ theorem callee_stops (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = s
     (fails : EFails sp hp.limit st (.call callee args)) :
     ∃ d g, mp.funcs[callee]? = some g ∧ bits.length = g.params ∧ Stops mp d (Func.entry bits) hp g.body n := by
   obtain ⟨g, b, frame, gFound, gParams, bodyOk, tail, corr, fr, fresh0, keeps0⟩ :=
-    callee_frame lowered found fresh holds
+    callee_frame lowered found fresh (fc.below fresh) holds
   have hc0 : HeapCorr (calleeState f values afterArgs).heap (calleeState f values afterArgs).world hp := by
     rw [(bindLocals_same _ _).1, bindLocals_world]
     exact hc
@@ -659,7 +661,8 @@ theorem callee_stops (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = s
     rw [(bindLocals_same _ _).1]
     exact within
   obtain ⟨d, stops⟩ := prev f.body bodyOk corr fr fresh0 keeps0.next hc0
-    (fc.congr (fun x mem => keeps0.cells x.cell (fc.below fresh x mem)) (fun _ _ _ _ => rfl) (Nat.le_refl _) rfl rfl)
+    (fc.congr (fun x mem => keeps0.cells x.cell (fc.below fresh x mem) fun _ m => by simp at m) (fun _ _ _ _ => rfl)
+      (Nat.le_refl _) rfl rfl)
     (fc.below fresh) within0 bodyFails
   refine ⟨d, g, gFound, by rw [gParams, bitsLen], ?_⟩
   simp only [unitTail] at tail
@@ -778,7 +781,7 @@ section Matches
 /-- The arm Core picks either stops at its guard or has a value. -/
 theorem lowerArms_progress {P : Core.Program} {mp : Program} {hp : Heap} (target : P.target = .x86_64)
     {scope frame st env} (corr : Corr places scope frame st env) (fresh : st.Fresh)
-    {slot dst eid : Nat} {ty : SrcType} {n : Nat} :
+    (under : ∀ x ∈ places, x.cell < st.nextCell) {slot dst eid : Nat} {ty : SrcType} {n : Nat} :
     ∀ (arms : List SrcArm) {variants : List (List SrcType)} {k kv : Nat} {stmt : Stmt}
       {fs : List SrcType} {vs : List Value},
       lowerArms scope slot dst ty k variants arms = some stmt → arms.length = variants.length →
@@ -822,7 +825,7 @@ theorem lowerArms_progress {P : Core.Program} {mp : Program} {hp : Heap} (target
           · simp at valueOk
           rename_i s' scopeOk
           obtain ⟨frame', corr', -, -, blen⟩ := armScope_corr arm.binders scopeOk payload
-            (clear _ (List.mem_cons_self ..)) corr fresh
+            (clear _ (List.mem_cons_self ..)) corr fresh under
           rw [scopeOk] at g
           obtain ⟨j, w, armRun⟩ := lowerValue_progress corr' target valueOk g
           refine .inr ⟨j, w, Semantics.restoreLocals st (st.bindLocals (arm.binders.zip vs)), ?_⟩
@@ -1140,7 +1143,7 @@ theorem let_stops {body : SrcStmt} (ih : SrcStops sp mp n body) {ret : SrcType} 
     (within : st.heap.nextAddress ≤ hp.limit)
     (fails : Fails sp hp.limit (st.bindLocal id v) body.toCore) :
     ∃ d, Stops mp d env' hp bstmt n :=
-  ih (hp := hp) bodyOk (corr.push fr fresh agree holds) (fr.push (corr.below fresh) le id sized)
+  ih (hp := hp) bodyOk (corr.push fr fresh agree holds fun x mem => Nat.lt_of_lt_of_le (under x mem) le) (fr.push (corr.below fresh) le id sized)
     (bindLocal_fresh fresh id v) (Nat.le_trans le (Nat.le_succ _)) hc (fc.keeps (bindLocal_keeps le id v) under)
     under within fails
 
@@ -1649,7 +1652,7 @@ theorem stops_letMatch {id : Nat} {ty : SrcType} {scrutinee enumId : Nat} {arms 
   | @enum _ _ kv fs vs _ _ fsFound tag payload =>
   have kvLt : kv < variants.length := (List.getElem?_eq_some_iff.mp fsFound).1
   have kvBound : kv < 2 ^ 64 := Nat.lt_trans kvLt (by omega)
-  rcases lowerArms_progress (mp := mp) (hp := hp) (n := n) (eid := eid) (SrcProgram.target_toCore sp) corr fresh arms
+  rcases lowerArms_progress (mp := mp) (hp := hp) (n := n) (eid := eid) (SrcProgram.target_toCore sp) corr fresh (fc.below fresh) arms
       matchOk len clear (Nat.zero_le _) (by simpa using fsFound) kvBound tag payload with
     ⟨d, stops⟩ | ⟨f, v, st1, armsRun⟩
   · exact ⟨d, .seqFirst stops⟩
@@ -1667,9 +1670,9 @@ theorem stops_letMatch {id : Nat} {ty : SrcType} {scrutinee enumId : Nat} {arms 
       simp only [lr]
       exact armsRun
     obtain ⟨fresh1, keeps1, locals1, xs, flat, insens, mexec⟩ :=
-      lowerArms_sound (mp := mp) (hp := hp) (SrcProgram.target_toCore sp) corr fresh fr.slots arms matchOk len
+      lowerArms_sound (mp := mp) (hp := hp) (SrcProgram.target_toCore sp) corr fresh (fc.below fresh) fr.slots arms matchOk len
         clear room (Nat.zero_le _) (by simpa using fsFound) kvBound tag payload armsRun
-    have corr1 := corr.keeps fresh keeps1 locals1
+    have corr1 := corr.keeps fresh keeps1.any locals1
     have heap1 := (matchArms_same arms eid 0 armsRun).1
     have hc1 : HeapCorr st1.heap st1.world hp := by rw [heap1, matchArms_world arms eid 0 armsRun]; exact hc
     simp only [SrcStmt.toCore] at fails
@@ -1729,7 +1732,7 @@ theorem stops_matchArm {scrutinee enumId variant binder : Nat} {binds : Bool} {t
     rcases shape with ⟨u, rfl, _⟩ | ⟨u, _, s', scopeOk, _⟩
     · cases payload
       simp [u, Semantics.matchPatterns]
-    · obtain ⟨_, _, _, _, blen⟩ := armScope_corr [binder] scopeOk payload clear corr fresh
+    · obtain ⟨_, _, _, _, blen⟩ := armScope_corr [binder] scopeOk payload clear corr fresh (fc.below fresh)
       rcases pvs with _ | ⟨pv, _ | ⟨pv', more⟩⟩
       · simp at blen
       · simp [u, Semantics.matchPatterns, Semantics.matchPattern]
@@ -1766,7 +1769,7 @@ theorem stops_matchArm {scrutinee enumId variant binder : Nat} {binds : Bool} {t
     · simp only [u, ↓reduceIte] at hthen
       subst hthen
       simp only [armBodyScope, u, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at bodyOk
-      obtain ⟨frame', corr', fresh', keeps', blen⟩ := armScope_corr [binder] scopeOk payload clear corr fresh
+      obtain ⟨frame', corr', fresh', keeps', blen⟩ := armScope_corr [binder] scopeOk payload clear corr fresh (fc.below fresh)
       obtain ⟨pv, rfl⟩ : ∃ pv, pvs = [pv] := by
         rcases pvs with _ | ⟨pv, _ | ⟨pv', more⟩⟩
         · simp at blen
@@ -1779,8 +1782,8 @@ theorem stops_matchArm {scrutinee enumId variant binder : Nat} {binds : Bool} {t
       have fails' := branch.letBody initRun
       have slots' := armScope_slots [binder] scopeOk fr.slots room
       have insens : Insens vs next := Insens.below fun x mem => vshape.below slots' x mem
-      have keeps1 := keeps'.trans (restore_keeps st.nextCell st _)
-      have corr1 := corr.keeps fresh keeps1 rfl
+      have keeps1 : Keeps [] st.nextCell st _ := keeps'.trans (restore_keeps st.nextCell st _)
+      have corr1 := corr.keeps fresh keeps1.any rfl
       obtain ⟨d, stops⟩ := let_stops ih1 bodyOk corr1 fr (restore_fresh fresh') (Nat.le_trans le keeps1.next)
         sized (env' := env.setFrom next vs) (fr.agree fun j below => setFrom_outside vs next env j (.inl below))
         (flat.store insens) (by rw [restore_heap, (bindLocals_same _ st).1]; exact hc) (fc.after fresh keeps1) under
