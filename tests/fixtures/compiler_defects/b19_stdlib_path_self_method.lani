@@ -1,0 +1,20 @@
+// b19: self methods of stdlib types called through the type's path take the
+// receiver as their first argument: `TotalF32::to_bits(t)` (self),
+// `Descriptor::raw_handle(d.borrow())` (&self) and `Option<i32>::is_some(o)`.
+// Exits 0 when compiled correctly.
+module app::main;
+
+import core::float_order;
+import core::option;
+import std::stream;
+
+fn main() -> i32 {
+    let t: TotalF32 = core::float_order::from_f32(1.5);
+    if (TotalF32::to_bits(t) != t.to_bits()) { return 1; }
+    let d: Descriptor = std::stream::from_handle(42);
+    if (Descriptor::raw_handle(d.borrow()) != 42) { return 2; }
+    let o: Option<i32> = Option::Some(42);
+    if (!Option<i32>::is_some(o)) { return 3; }
+    if (Option<i32>::unwrap_or(o, 7) != 42) { return 4; }
+    return 0;
+}

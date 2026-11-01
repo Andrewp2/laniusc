@@ -94,6 +94,7 @@ RWStructuredBuffer<uint> call_result_instance;
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
+static const uint TY_BORROWED_SELF = 0x40000000u; // dependencies/07b
 
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_INDEX_EXPR = 20u;
@@ -352,7 +353,15 @@ void emit_argument_claims(uint arg_row)
                     semantic_argument_mode_by_hir[node] = kind == 4u ? 3u : kind == 3u ? 2u : 1u;
                 }
             }
-            else if (step == 1u) actual = id;
+            else if (step == 1u)
+            {
+                actual = id;
+                // A path call's imported &self receiver row is the impl root,
+                // which the argument reaches through one reference
+                // (dependencies/07b).
+                if (call_param_row_type[param] == TY_BORROWED_SELF)
+                    actual = ct_is_resolved(id) && ct_kind(id) == CT_KIND_REF ? ct_arg(id, 0u) : CT_UNKNOWN;
+            }
             else if (ct_kind(id) == CT_KIND_SLICE && ct_kind(actual) == CT_KIND_ARRAY &&
                 ct_arg(id, 0u) == ct_arg(actual, 0u))
                 actual = id;

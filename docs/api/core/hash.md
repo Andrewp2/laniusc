@@ -108,7 +108,7 @@ pub fn hash_u16(value: u16) -> u32
 
 ### function: fnv1a_step
 
-[Source line 94](../../../stdlib/core/hash.lani#L94)
+[Source line 96](../../../stdlib/core/hash.lani#L96)
 
 ```lanius
 pub fn fnv1a_step(state: u32, value: u8) -> u32
@@ -116,7 +116,7 @@ pub fn fnv1a_step(state: u32, value: u8) -> u32
 
 ### function: hash_wide_u64
 
-[Source line 112](../../../stdlib/core/hash.lani#L112)
+[Source line 114](../../../stdlib/core/hash.lani#L114)
 
 ```lanius
 pub fn hash_wide_u64(value: core::wide_u64::WideU64) -> u32
@@ -124,7 +124,7 @@ pub fn hash_wide_u64(value: core::wide_u64::WideU64) -> u32
 
 ### function: hash_wide_i64
 
-[Source line 117](../../../stdlib/core/hash.lani#L117)
+[Source line 119](../../../stdlib/core/hash.lani#L119)
 
 ```lanius
 pub fn hash_wide_i64(value: core::wide_i64::WideI64) -> u32
@@ -132,7 +132,7 @@ pub fn hash_wide_i64(value: core::wide_i64::WideI64) -> u32
 
 ### function: fnv1a_bytes_or
 
-[Source line 124](../../../stdlib/core/hash.lani#L124)
+[Source line 126](../../../stdlib/core/hash.lani#L126)
 
 ```lanius
 pub fn fnv1a_bytes_or(values: [u8], len: i32, fallback: u32) -> u32
@@ -286,9 +286,9 @@ pub impl Hash<u16> for u16
 pub fn hash(value: u16) -> u32
 ```
 
-### impl at line 78
+### impl at line 80
 
-[Source line 78](../../../stdlib/core/hash.lani#L78)
+[Source line 80](../../../stdlib/core/hash.lani#L80)
 
 ```lanius
 pub impl Hash<u64> for u64
@@ -296,15 +296,15 @@ pub impl Hash<u64> for u64
 
 #### method: hash
 
-[Source line 79](../../../stdlib/core/hash.lani#L79)
+[Source line 81](../../../stdlib/core/hash.lani#L81)
 
 ```lanius
 pub fn hash(value: u64) -> u32
 ```
 
-### impl at line 84
+### impl at line 86
 
-[Source line 84](../../../stdlib/core/hash.lani#L84)
+[Source line 86](../../../stdlib/core/hash.lani#L86)
 
 ```lanius
 pub impl Hash<i64> for i64
@@ -312,15 +312,15 @@ pub impl Hash<i64> for i64
 
 #### method: hash
 
-[Source line 85](../../../stdlib/core/hash.lani#L85)
+[Source line 87](../../../stdlib/core/hash.lani#L87)
 
 ```lanius
 pub fn hash(value: i64) -> u32
 ```
 
-### impl at line 87
+### impl at line 89
 
-[Source line 87](../../../stdlib/core/hash.lani#L87)
+[Source line 89](../../../stdlib/core/hash.lani#L89)
 
 ```lanius
 pub impl Hash<usize> for usize
@@ -328,15 +328,15 @@ pub impl Hash<usize> for usize
 
 #### method: hash
 
-[Source line 88](../../../stdlib/core/hash.lani#L88)
+[Source line 90](../../../stdlib/core/hash.lani#L90)
 
 ```lanius
 pub fn hash(value: usize) -> u32
 ```
 
-### impl at line 90
+### impl at line 92
 
-[Source line 90](../../../stdlib/core/hash.lani#L90)
+[Source line 92](../../../stdlib/core/hash.lani#L92)
 
 ```lanius
 pub impl Hash<isize> for isize
@@ -344,7 +344,7 @@ pub impl Hash<isize> for isize
 
 #### method: hash
 
-[Source line 91](../../../stdlib/core/hash.lani#L91)
+[Source line 93](../../../stdlib/core/hash.lani#L93)
 
 ```lanius
 pub fn hash(value: isize) -> u32

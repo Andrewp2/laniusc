@@ -639,11 +639,26 @@ pub fn max_or<T>(values: [T], len: i32, fallback: T) -> T where T: core::cmp::Or
 // Shared ordering engines take an admitted logical View. Ordinary indexing
 // retains its native stride, including negative strides. These functions do
 // not establish physical backing, lifetime or freedom from interfering aliases.
+// The sort engines ask only "is left strictly before right". Natural order
+// answers with one T::lt call; a caller Comparator is adapted once per sort
+// and called once per question, so `_by` comparison counts are unchanged.
+// Building and testing an Ordering costs about three times a direct lt.
+trait Less<T> { fn less(&self,left:T,right:T) -> bool; }
+struct NaturalLess<T> {}
+impl<T> NaturalLess<T> { fn borrow(&self) -> &NaturalLess<T> { return self; } }
+impl<T> Less<T> for NaturalLess<T> where T:core::cmp::Ord<T> {
+    fn less(&self,left:T,right:T) -> bool { return T::lt(left,right); }
+}
+struct ComparatorLess<T,C> { comparator:&C }
+impl<T,C> ComparatorLess<T,C> { fn borrow(&self) -> &ComparatorLess<T,C> { return self; } }
+impl<T,C> Less<T> for ComparatorLess<T,C> where C:core::ordering::Comparator<T,T> {
+    fn less(&self,left:T,right:T) -> bool { return core::ordering::is_less(self.comparator.compare(left,right)); }
+}
 fn is_sorted_engine<T,C>(values:View<T>,comparator:&C) -> bool
-    where C:core::ordering::Comparator<T,T> {
+    where C:Less<T> {
     let index: i32 = 1;
     while (index < values.length) {
-        if (core::ordering::is_less(comparator.compare(values.values[values.start+index],values.values[values.start+index-1]))) {
+        if (comparator.less(values.values[values.start+index],values.values[values.start+index-1])) {
             return false;
         }
         index += 1;
@@ -652,17 +667,17 @@ fn is_sorted_engine<T,C>(values:View<T>,comparator:&C) -> bool
 }
 
 fn sift_down_by<T,C>(values:View<T>,heap_len:i32,start:i32,comparator:&C)
-    where C:core::ordering::Comparator<T,T> {
+    where C:Less<T> {
     let root: i32 = start;
     // A left child exists before doubling root, so neither child arithmetic
     // nor the admitted view's start+relative-index addition can overflow.
     while (root < heap_len / 2) {
         let child: i32 = root * 2 + 1;
         let largest: i32 = root;
-        if (core::ordering::is_less(comparator.compare(values.values[values.start+largest],values.values[values.start+child]))) {
+        if (comparator.less(values.values[values.start+largest],values.values[values.start+child])) {
             largest = child;
         }
-        if (child + 1 < heap_len && core::ordering::is_less(comparator.compare(values.values[values.start+largest],values.values[values.start+child+1]))) {
+        if (child + 1 < heap_len && comparator.less(values.values[values.start+largest],values.values[values.start+child+1])) {
             largest = child + 1;
         }
         if (largest == root) {
@@ -676,7 +691,7 @@ fn sift_down_by<T,C>(values:View<T>,heap_len:i32,start:i32,comparator:&C)
 }
 
 fn sort_engine<T,C>(values:View<T>,comparator:&C) -> i32
-    where C:core::ordering::Comparator<T,T> {
+    where C:Less<T> {
     let start: i32 = values.length / 2;
     while (start > 0) {
         start -= 1;
@@ -875,7 +890,8 @@ fn partition_lt_engine<T,K,C>(values:View<T>,pivot:K,comparator:&C) -> i32
 pub fn sort_unstable_by<T,C>(values:View<T>,comparator:&C) -> core::result::Result<i32,ViewError>
     where C:core::ordering::Comparator<T,T> {
     if(!view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
-    return core::result::Ok(pdq_engine<T,C>(values,comparator));
+    let less:ComparatorLess<T,C> = ComparatorLess { comparator:comparator };
+    return core::result::Ok(pdq_engine<T,ComparatorLess<T,C>>(values,less.borrow()));
 }
 // Select one zero-based rank and partition its surroundings without sorting
 // either side. The returned one-element View aliases its exact stored slot.
@@ -903,7 +919,8 @@ pub fn select_nth_unstable<T>(values:View<T>,nth:i32) -> core::result::Result<Vi
 pub fn is_sorted_by<T,C>(values:View<T>,comparator:&C) -> core::result::Result<bool,ViewError>
     where C:core::ordering::Comparator<T,T> {
     if(!view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
-    return core::result::Ok(is_sorted_engine<T,C>(values,comparator));
+    let less:ComparatorLess<T,C> = ComparatorLess { comparator:comparator };
+    return core::result::Ok(is_sorted_engine<T,ComparatorLess<T,C>>(values,less.borrow()));
 }
 // Each query requires all Less, then Equal, then Greater classes. Bounds may
 // equal length; no scan is made to validate this ordering precondition.
@@ -941,14 +958,14 @@ pub fn partition_lt_by<T,K,C>(values:View<T>,pivot:K,comparator:&C) -> core::res
 // and delegate to the same engines. Physical backing remains a precondition.
 pub fn is_sorted<T>(values:[T],len:i32) -> bool where T:core::cmp::Ord<T> {
     let selected:View<T> =View { values:values,start:0,length:nonnegative_len(len) };
-    let comparator:core::ordering::Natural<T> =core::ordering::Natural {};
-    return is_sorted_engine<T,core::ordering::Natural<T>>(selected,comparator.borrow());
+    let less:NaturalLess<T> = NaturalLess {};
+    return is_sorted_engine<T,NaturalLess<T>>(selected,less.borrow());
 }
 // In-place ascending pattern-defeating quicksort; not stable. Return count.
 pub fn sort<T>(values:[T],len:i32) -> i32 where T:core::cmp::Ord<T> {
     let selected:View<T> =View { values:values,start:0,length:nonnegative_len(len) };
-    let comparator:core::ordering::Natural<T> =core::ordering::Natural {};
-    return pdq_engine<T,core::ordering::Natural<T>>(selected,comparator.borrow());
+    let less:NaturalLess<T> = NaturalLess {};
+    return pdq_engine<T,NaturalLess<T>>(selected,less.borrow());
 }
 // Nondecreasing input; first not-Less or first Greater, respectively.
 pub fn lower_bound<T>(values:[T],len:i32,needle:T) -> i32 where T:core::cmp::Ord<T> {
@@ -1005,14 +1022,14 @@ pub fn sum<T>(values: [T], len: i32, initial: T) -> T where T: core::ops::Satura
 // reversed-then-repaired and few-distinct inputs take near-linear work. Every
 // scan is index-guarded, so an inconsistent comparator cannot leave the range.
 // Stable straight insertion of [low+1,high) into the growing sorted prefix.
-fn insertion_range<T,C>(values:View<T>,low:i32,high:i32,comparator:&C) where C:core::ordering::Comparator<T,T> {
+fn insertion_range<T,C>(values:View<T>,low:i32,high:i32,comparator:&C) where C:Less<T> {
     let index:i32 = low+1;
     while(index<high) {
         let item:T = values.values[values.start+index];
-        if(core::ordering::is_less(comparator.compare(item,values.values[values.start+index-1]))) {
+        if(comparator.less(item,values.values[values.start+index-1])) {
             values.values[values.start+index] = values.values[values.start+index-1];
             let hole:i32 = index-1;
-            while(hole>low && core::ordering::is_less(comparator.compare(item,values.values[values.start+hole-1]))) {
+            while(hole>low && comparator.less(item,values.values[values.start+hole-1])) {
                 values.values[values.start+hole] = values.values[values.start+hole-1]; hole-=1;
             }
             values.values[values.start+hole] = item;
@@ -1022,15 +1039,15 @@ fn insertion_range<T,C>(values:View<T>,low:i32,high:i32,comparator:&C) where C:c
 }
 // Insertion sort that gives up after moving more than eight elements in
 // total; the range is a permutation of its input either way.
-fn partial_insertion<T,C>(values:View<T>,low:i32,high:i32,comparator:&C) -> bool where C:core::ordering::Comparator<T,T> {
+fn partial_insertion<T,C>(values:View<T>,low:i32,high:i32,comparator:&C) -> bool where C:Less<T> {
     let moved:i32 = 0;
     let index:i32 = low+1;
     while(index<high) {
         let item:T = values.values[values.start+index];
-        if(core::ordering::is_less(comparator.compare(item,values.values[values.start+index-1]))) {
+        if(comparator.less(item,values.values[values.start+index-1])) {
             values.values[values.start+index] = values.values[values.start+index-1];
             let hole:i32 = index-1;
-            while(hole>low && core::ordering::is_less(comparator.compare(item,values.values[values.start+hole-1]))) {
+            while(hole>low && comparator.less(item,values.values[values.start+hole-1])) {
                 values.values[values.start+hole] = values.values[values.start+hole-1]; hole-=1;
             }
             values.values[values.start+hole] = item;
@@ -1041,10 +1058,10 @@ fn partial_insertion<T,C>(values:View<T>,low:i32,high:i32,comparator:&C) -> bool
     }
     return true;
 }
-fn sort2_at<T,C>(values:View<T>,first:i32,second:i32,comparator:&C) where C:core::ordering::Comparator<T,T> {
-    if(core::ordering::is_less(comparator.compare(values.values[values.start+second],values.values[values.start+first]))) { selection_swap<T>(values,first,second); }
+fn sort2_at<T,C>(values:View<T>,first:i32,second:i32,comparator:&C) where C:Less<T> {
+    if(comparator.less(values.values[values.start+second],values.values[values.start+first])) { selection_swap<T>(values,first,second); }
 }
-fn sort3_at<T,C>(values:View<T>,first:i32,second:i32,third:i32,comparator:&C) where C:core::ordering::Comparator<T,T> {
+fn sort3_at<T,C>(values:View<T>,first:i32,second:i32,third:i32,comparator:&C) where C:Less<T> {
     sort2_at<T,C>(values,first,second,comparator);
     sort2_at<T,C>(values,second,third,comparator);
     sort2_at<T,C>(values,first,second,comparator);
@@ -1052,19 +1069,19 @@ fn sort3_at<T,C>(values:View<T>,first:i32,second:i32,third:i32,comparator:&C) wh
 // Pivot at low. Elements Less than it end left of the returned position, the
 // rest right. `swapped` reports whether any exchange was needed.
 struct PartitionResult { pivot:i32, swapped:bool }
-fn partition_right_at<T,C>(values:View<T>,low:i32,high:i32,comparator:&C) -> PartitionResult where C:core::ordering::Comparator<T,T> {
+fn partition_right_at<T,C>(values:View<T>,low:i32,high:i32,comparator:&C) -> PartitionResult where C:Less<T> {
     let pivot:T = values.values[values.start+low];
     // [low+1,first) are Less than the pivot; [last,high) are not.
     let first:i32 = low+1;
-    while(first<high && core::ordering::is_less(comparator.compare(values.values[values.start+first],pivot))) { first+=1; }
+    while(first<high && comparator.less(values.values[values.start+first],pivot)) { first+=1; }
     let last:i32 = high;
-    while(last>first && !core::ordering::is_less(comparator.compare(values.values[values.start+last-1],pivot))) { last-=1; }
+    while(last>first && !comparator.less(values.values[values.start+last-1],pivot)) { last-=1; }
     let swapped:bool = first<last;
     while(first<last) {
         selection_swap<T>(values,first,last-1);
         first+=1; last-=1;
-        while(first<last && core::ordering::is_less(comparator.compare(values.values[values.start+first],pivot))) { first+=1; }
-        while(last>first && !core::ordering::is_less(comparator.compare(values.values[values.start+last-1],pivot))) { last-=1; }
+        while(first<last && comparator.less(values.values[values.start+first],pivot)) { first+=1; }
+        while(last>first && !comparator.less(values.values[values.start+last-1],pivot)) { last-=1; }
     }
     let position:i32 = first-1;
     values.values[values.start+low] = values.values[values.start+position];
@@ -1074,25 +1091,25 @@ fn partition_right_at<T,C>(values:View<T>,low:i32,high:i32,comparator:&C) -> Par
 // Pivot at low. Elements not Greater than it end at or left of the returned
 // position; used when the pivot equals the predecessor of the range, so the
 // whole equal run is finished at once.
-fn partition_left_at<T,C>(values:View<T>,low:i32,high:i32,comparator:&C) -> i32 where C:core::ordering::Comparator<T,T> {
+fn partition_left_at<T,C>(values:View<T>,low:i32,high:i32,comparator:&C) -> i32 where C:Less<T> {
     let pivot:T = values.values[values.start+low];
     // [low+1,first) are not Greater than the pivot; [last,high) are Greater.
     let first:i32 = low+1;
-    while(first<high && !core::ordering::is_less(comparator.compare(pivot,values.values[values.start+first]))) { first+=1; }
+    while(first<high && !comparator.less(pivot,values.values[values.start+first])) { first+=1; }
     let last:i32 = high;
-    while(last>first && core::ordering::is_less(comparator.compare(pivot,values.values[values.start+last-1]))) { last-=1; }
+    while(last>first && comparator.less(pivot,values.values[values.start+last-1])) { last-=1; }
     while(first<last) {
         selection_swap<T>(values,first,last-1);
         first+=1; last-=1;
-        while(first<last && !core::ordering::is_less(comparator.compare(pivot,values.values[values.start+first]))) { first+=1; }
-        while(last>first && core::ordering::is_less(comparator.compare(pivot,values.values[values.start+last-1]))) { last-=1; }
+        while(first<last && !comparator.less(pivot,values.values[values.start+first])) { first+=1; }
+        while(last>first && comparator.less(pivot,values.values[values.start+last-1])) { last-=1; }
     }
     let position:i32 = first-1;
     values.values[values.start+low] = values.values[values.start+position];
     values.values[values.start+position] = pivot;
     return position;
 }
-fn heapsort_range<T,C>(values:View<T>,low:i32,high:i32,comparator:&C) where C:core::ordering::Comparator<T,T> {
+fn heapsort_range<T,C>(values:View<T>,low:i32,high:i32,comparator:&C) where C:Less<T> {
     let part:View<T> = View { values:values.values,start:values.start+low,length:high-low };
     sort_engine<T,C>(part,comparator);
 }
@@ -1125,7 +1142,7 @@ fn break_patterns<T>(values:View<T>,low:i32,pivot:i32,high:i32) {
         }
     }
 }
-fn pdq_engine<T,C>(values:View<T>,comparator:&C) -> i32 where C:core::ordering::Comparator<T,T> {
+fn pdq_engine<T,C>(values:View<T>,comparator:&C) -> i32 where C:Less<T> {
     let n:i32 = values.length;
     if(n<2) { return n; }
     // Pending ranges: the larger side of each split is pushed and the smaller
@@ -1154,7 +1171,7 @@ fn pdq_engine<T,C>(values:View<T>,comparator:&C) -> i32 where C:core::ordering::
             } else {
                 sort3_at<T,C>(values,low+half,low,high-1,comparator);
             }
-            if(!leftmost && !core::ordering::is_less(comparator.compare(values.values[values.start+low-1],values.values[values.start+low]))) {
+            if(!leftmost && !comparator.less(values.values[values.start+low-1],values.values[values.start+low])) {
                 // Equal to the predecessor: finish the equal run, keep the rest.
                 low = partition_left_at<T,C>(values,low,high,comparator)+1;
             } else {
@@ -1202,8 +1219,8 @@ fn pdq_engine<T,C>(values:View<T>,comparator:&C) -> i32 where C:core::ordering::
 }
 pub fn sort_unstable<T>(values:View<T>) -> core::result::Result<i32,ViewError> where T:core::cmp::Ord<T> {
     if(!view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
-    let comparator:core::ordering::Natural<T> = core::ordering::Natural {};
-    return core::result::Ok(pdq_engine<T,core::ordering::Natural<T>>(values,comparator.borrow()));
+    let less:NaturalLess<T> = NaturalLess {};
+    return core::result::Ok(pdq_engine<T,NaturalLess<T>>(values,less.borrow()));
 }
 
 // ---- Stable run-adaptive merge sort ----
@@ -1221,27 +1238,27 @@ fn reverse_range<T>(values:View<T>,low:i32,high:i32) {
     let left:i32 = low; let right:i32 = high-1;
     while(left<right) { selection_swap<T>(values,left,right); left+=1; right-=1; }
 }
-fn count_run<T,C>(values:View<T>,low:i32,high:i32,comparator:&C) -> i32 where C:core::ordering::Comparator<T,T> {
+fn count_run<T,C>(values:View<T>,low:i32,high:i32,comparator:&C) -> i32 where C:Less<T> {
     if(low+1>=high) { return high; }
     let end:i32 = low+2;
-    if(core::ordering::is_less(comparator.compare(values.values[values.start+low+1],values.values[values.start+low]))) {
-        while(end<high && core::ordering::is_less(comparator.compare(values.values[values.start+end],values.values[values.start+end-1]))) { end+=1; }
+    if(comparator.less(values.values[values.start+low+1],values.values[values.start+low])) {
+        while(end<high && comparator.less(values.values[values.start+end],values.values[values.start+end-1])) { end+=1; }
         reverse_range<T>(values,low,end);
     } else {
-        while(end<high && !core::ordering::is_less(comparator.compare(values.values[values.start+end],values.values[values.start+end-1]))) { end+=1; }
+        while(end<high && !comparator.less(values.values[values.start+end],values.values[values.start+end-1])) { end+=1; }
     }
     return end;
 }
 // Insert [sorted_end,high) into the sorted prefix [low,sorted_end), each item
 // after every equal item already placed.
-fn binary_insertion<T,C>(values:View<T>,low:i32,sorted_end:i32,high:i32,comparator:&C) where C:core::ordering::Comparator<T,T> {
+fn binary_insertion<T,C>(values:View<T>,low:i32,sorted_end:i32,high:i32,comparator:&C) where C:Less<T> {
     let index:i32 = sorted_end;
     while(index<high) {
         let item:T = values.values[values.start+index];
         let left:i32 = low; let right:i32 = index;
         while(left<right) {
             let middle:i32 = left+(right-left)/2;
-            if(core::ordering::is_less(comparator.compare(item,values.values[values.start+middle]))) { right=middle; } else { left=middle+1; }
+            if(comparator.less(item,values.values[values.start+middle])) { right=middle; } else { left=middle+1; }
         }
         let hole:i32 = index;
         while(hole>left) { values.values[values.start+hole] = values.values[values.start+hole-1]; hole-=1; }
@@ -1250,10 +1267,10 @@ fn binary_insertion<T,C>(values:View<T>,low:i32,sorted_end:i32,high:i32,comparat
     }
 }
 // Count of leading elements of [base,base+count) that are not Greater than key.
-fn gallop_right<T,C>(values:View<T>,key:T,base:i32,count:i32,comparator:&C) -> i32 where C:core::ordering::Comparator<T,T> {
-    if(count==0 || core::ordering::is_less(comparator.compare(key,values.values[values.start+base]))) { return 0; }
+fn gallop_right<T,C>(values:View<T>,key:T,base:i32,count:i32,comparator:&C) -> i32 where C:Less<T> {
+    if(count==0 || comparator.less(key,values.values[values.start+base])) { return 0; }
     let previous:i32 = 0; let offset:i32 = 1;
-    while(offset<count && !core::ordering::is_less(comparator.compare(key,values.values[values.start+base+offset]))) {
+    while(offset<count && !comparator.less(key,values.values[values.start+base+offset])) {
         previous = offset;
         if(offset>=count/2) { offset = count; } else { offset = offset*2+1; }
     }
@@ -1261,15 +1278,15 @@ fn gallop_right<T,C>(values:View<T>,key:T,base:i32,count:i32,comparator:&C) -> i
     let left:i32 = previous+1; let right:i32 = offset;
     while(left<right) {
         let middle:i32 = left+(right-left)/2;
-        if(core::ordering::is_less(comparator.compare(key,values.values[values.start+base+middle]))) { right=middle; } else { left=middle+1; }
+        if(comparator.less(key,values.values[values.start+base+middle])) { right=middle; } else { left=middle+1; }
     }
     return left;
 }
 // Count of leading elements of [base,base+count) that are Less than key.
-fn gallop_left<T,C>(values:View<T>,key:T,base:i32,count:i32,comparator:&C) -> i32 where C:core::ordering::Comparator<T,T> {
-    if(count==0 || !core::ordering::is_less(comparator.compare(values.values[values.start+base],key))) { return 0; }
+fn gallop_left<T,C>(values:View<T>,key:T,base:i32,count:i32,comparator:&C) -> i32 where C:Less<T> {
+    if(count==0 || !comparator.less(values.values[values.start+base],key)) { return 0; }
     let previous:i32 = 0; let offset:i32 = 1;
-    while(offset<count && core::ordering::is_less(comparator.compare(values.values[values.start+base+offset],key))) {
+    while(offset<count && comparator.less(values.values[values.start+base+offset],key)) {
         previous = offset;
         if(offset>=count/2) { offset = count; } else { offset = offset*2+1; }
     }
@@ -1277,16 +1294,16 @@ fn gallop_left<T,C>(values:View<T>,key:T,base:i32,count:i32,comparator:&C) -> i3
     let left:i32 = previous+1; let right:i32 = offset;
     while(left<right) {
         let middle:i32 = left+(right-left)/2;
-        if(core::ordering::is_less(comparator.compare(values.values[values.start+base+middle],key))) { left=middle+1; } else { right=middle; }
+        if(comparator.less(values.values[values.start+base+middle],key)) { left=middle+1; } else { right=middle; }
     }
     return left;
 }
 // Count of trailing elements of [base,base+count) that are Greater than key,
 // searched exponentially from the right end.
-fn suffix_greater<T,C>(values:View<T>,key:T,base:i32,count:i32,comparator:&C) -> i32 where C:core::ordering::Comparator<T,T> {
-    if(count==0 || !core::ordering::is_less(comparator.compare(key,values.values[values.start+base+count-1]))) { return 0; }
+fn suffix_greater<T,C>(values:View<T>,key:T,base:i32,count:i32,comparator:&C) -> i32 where C:Less<T> {
+    if(count==0 || !comparator.less(key,values.values[values.start+base+count-1])) { return 0; }
     let previous:i32 = 0; let offset:i32 = 1;
-    while(offset<count && core::ordering::is_less(comparator.compare(key,values.values[values.start+base+count-1-offset]))) {
+    while(offset<count && comparator.less(key,values.values[values.start+base+count-1-offset])) {
         previous = offset;
         if(offset>=count/2) { offset = count; } else { offset = offset*2+1; }
     }
@@ -1294,15 +1311,15 @@ fn suffix_greater<T,C>(values:View<T>,key:T,base:i32,count:i32,comparator:&C) ->
     let left:i32 = previous+1; let right:i32 = offset;
     while(left<right) {
         let middle:i32 = left+(right-left)/2;
-        if(core::ordering::is_less(comparator.compare(key,values.values[values.start+base+count-1-middle]))) { left=middle+1; } else { right=middle; }
+        if(comparator.less(key,values.values[values.start+base+count-1-middle])) { left=middle+1; } else { right=middle; }
     }
     return left;
 }
 // Count of trailing elements of [base,base+count) that are not Less than key.
-fn suffix_not_less<T,C>(values:View<T>,key:T,base:i32,count:i32,comparator:&C) -> i32 where C:core::ordering::Comparator<T,T> {
-    if(count==0 || core::ordering::is_less(comparator.compare(values.values[values.start+base+count-1],key))) { return 0; }
+fn suffix_not_less<T,C>(values:View<T>,key:T,base:i32,count:i32,comparator:&C) -> i32 where C:Less<T> {
+    if(count==0 || comparator.less(values.values[values.start+base+count-1],key)) { return 0; }
     let previous:i32 = 0; let offset:i32 = 1;
-    while(offset<count && !core::ordering::is_less(comparator.compare(values.values[values.start+base+count-1-offset],key))) {
+    while(offset<count && !comparator.less(values.values[values.start+base+count-1-offset],key)) {
         previous = offset;
         if(offset>=count/2) { offset = count; } else { offset = offset*2+1; }
     }
@@ -1310,7 +1327,7 @@ fn suffix_not_less<T,C>(values:View<T>,key:T,base:i32,count:i32,comparator:&C) -
     let left:i32 = previous+1; let right:i32 = offset;
     while(left<right) {
         let middle:i32 = left+(right-left)/2;
-        if(!core::ordering::is_less(comparator.compare(values.values[values.start+base+count-1-middle],key))) { left=middle+1; } else { right=middle; }
+        if(!comparator.less(values.values[values.start+base+count-1-middle],key)) { left=middle+1; } else { right=middle; }
     }
     return left;
 }
@@ -1327,7 +1344,7 @@ const MIN_GALLOP: i32 = 7;
 // item Less than the first left item and the last left item Greater than
 // every right item (merge_runs trims to this). Returns the adapted gallop
 // threshold.
-fn merge_low<T,C>(values:View<T>,scratch:View<T>,start:i32,middle:i32,end:i32,threshold:i32,comparator:&C) -> i32 where C:core::ordering::Comparator<T,T> {
+fn merge_low<T,C>(values:View<T>,scratch:View<T>,start:i32,middle:i32,end:i32,threshold:i32,comparator:&C) -> i32 where C:Less<T> {
     let left_count:i32 = middle-start; let right_count:i32 = end-middle;
     copy_range<T>(values,start,scratch,0,left_count);
     let gallop:i32 = threshold;
@@ -1340,7 +1357,7 @@ fn merge_low<T,C>(values:View<T>,scratch:View<T>,start:i32,middle:i32,end:i32,th
         let left_wins:i32 = 0; let right_wins:i32 = 0;
         let straight:bool = true;
         while(straight && finish==0) {
-            if(core::ordering::is_less(comparator.compare(values.values[values.start+right],scratch.values[scratch.start+left]))) {
+            if(comparator.less(values.values[values.start+right],scratch.values[scratch.start+left])) {
                 values.values[values.start+output] = values.values[values.start+right]; output+=1; right+=1; right_count-=1;
                 right_wins+=1; left_wins=0;
                 if(right_count==0) { finish = 1; } else { if(right_wins>=gallop) { straight = false; } }
@@ -1390,7 +1407,7 @@ fn merge_low<T,C>(values:View<T>,scratch:View<T>,start:i32,middle:i32,end:i32,th
     return gallop;
 }
 // Mirror of merge_low with the right run in scratch, back to front.
-fn merge_high<T,C>(values:View<T>,scratch:View<T>,start:i32,middle:i32,end:i32,threshold:i32,comparator:&C) -> i32 where C:core::ordering::Comparator<T,T> {
+fn merge_high<T,C>(values:View<T>,scratch:View<T>,start:i32,middle:i32,end:i32,threshold:i32,comparator:&C) -> i32 where C:Less<T> {
     let left_count:i32 = middle-start; let right_count:i32 = end-middle;
     copy_range<T>(values,middle,scratch,0,right_count);
     let gallop:i32 = threshold;
@@ -1403,7 +1420,7 @@ fn merge_high<T,C>(values:View<T>,scratch:View<T>,start:i32,middle:i32,end:i32,t
         let left_wins:i32 = 0; let right_wins:i32 = 0;
         let straight:bool = true;
         while(straight && finish==0) {
-            if(core::ordering::is_less(comparator.compare(scratch.values[scratch.start+right],values.values[values.start+left]))) {
+            if(comparator.less(scratch.values[scratch.start+right],values.values[values.start+left])) {
                 values.values[values.start+output] = values.values[values.start+left]; output-=1; left-=1; left_count-=1;
                 left_wins+=1; right_wins=0;
                 if(left_count==0) { finish = 1; } else { if(left_wins>=gallop) { straight = false; } }
@@ -1457,7 +1474,7 @@ fn merge_high<T,C>(values:View<T>,scratch:View<T>,start:i32,middle:i32,end:i32,t
 // Merge adjacent sorted runs [low,middle) and [middle,high). Galloping first
 // skips the left prefix and right suffix already in place; the smaller
 // remainder goes to scratch.
-fn merge_runs<T,C>(values:View<T>,scratch:View<T>,low:i32,middle:i32,high:i32,threshold:i32,comparator:&C) -> i32 where C:core::ordering::Comparator<T,T> {
+fn merge_runs<T,C>(values:View<T>,scratch:View<T>,low:i32,middle:i32,high:i32,threshold:i32,comparator:&C) -> i32 where C:Less<T> {
     let start:i32 = low+gallop_right<T,C>(values,values.values[values.start+middle],low,middle-low,comparator);
     if(start==middle) { return threshold; }
     let end:i32 = high-suffix_not_less<T,C>(values,values.values[values.start+middle-1],middle,high-middle,comparator);
@@ -1470,7 +1487,7 @@ fn min_run_length(length:i32) -> i32 {
     while(rest>=32) { carry = carry | (rest&1); rest = rest/2; }
     return rest+carry;
 }
-fn stable_engine<T,C>(values:View<T>,scratch:View<T>,comparator:&C) -> i32 where C:core::ordering::Comparator<T,T> {
+fn stable_engine<T,C>(values:View<T>,scratch:View<T>,comparator:&C) -> i32 where C:Less<T> {
     let n:i32 = values.length;
     if(n<2) { return n; }
     if(n<=20) {
@@ -1536,9 +1553,12 @@ pub fn sort_stable_by<T,C>(values:View<T>,scratch:View<T>,comparator:&C) -> core
     where C:core::ordering::Comparator<T,T> {
     if(!view_valid<T>(values) || !view_valid<T>(scratch)) { return core::result::Err(ViewError::Bounds); }
     if(scratch.length<values.length/2) { return core::result::Err(ViewError::InvalidSize); }
-    return core::result::Ok(stable_engine<T,C>(values,scratch,comparator));
+    let less:ComparatorLess<T,C> = ComparatorLess { comparator:comparator };
+    return core::result::Ok(stable_engine<T,ComparatorLess<T,C>>(values,scratch,less.borrow()));
 }
 pub fn sort_stable<T>(values:View<T>,scratch:View<T>) -> core::result::Result<i32,ViewError> where T:core::cmp::Ord<T> {
-    let comparator:core::ordering::Natural<T> = core::ordering::Natural {};
-    return sort_stable_by<T,core::ordering::Natural<T>>(values,scratch,comparator.borrow());
+    if(!view_valid<T>(values) || !view_valid<T>(scratch)) { return core::result::Err(ViewError::Bounds); }
+    if(scratch.length<values.length/2) { return core::result::Err(ViewError::InvalidSize); }
+    let less:NaturalLess<T> = NaturalLess {};
+    return core::result::Ok(stable_engine<T,NaturalLess<T>>(values,scratch,less.borrow()));
 }
