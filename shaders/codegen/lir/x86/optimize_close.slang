@@ -6,6 +6,8 @@ import codegen.lowering_ir;
 import codegen.optimization_ir;
 import codegen.lir.optimization.execution_owner;
 import codegen.lir.optimization.ssa_sparse_work;
+import codegen.lir.x86.common;
+import primitive_types;
 import atomics;
 
 struct Params
@@ -33,6 +35,7 @@ StructuredBuffer<SemanticLirAggregateElement>
     semantic_lir_aggregate_elements;
 StructuredBuffer<uint> x86_position_by_semantic;
 StructuredBuffer<X86DeclarationAnalysis> x86_decl_analysis_by_token;
+StructuredBuffer<X86ValueAnalysis> x86_value_by_semantic;
 RWStructuredBuffer<uint> x86_last_use_by_semantic;
 RWStructuredBuffer<uint> x86_live_by_semantic;
 RWStructuredBuffer<uint> x86_liveness_work_state;
@@ -78,6 +81,46 @@ bool fusible_comparison(uint row, uint total, uint function_id)
         type_id != 7u && type_id != 15u;
 }
 
+// Which operand of a binary or comparison scatter encodes as an immediate
+// (1: left, 2: right, 0: neither), mirroring its BINARY, COMPARE,
+// COMPARE_BRANCH_FALSE and SELECT_STORE rules. That constant then needs no
+// register or emitted row of its own.
+uint immediate_operand(uint op, OptIrNodeCore core, uint left_row, uint right_row,
+                       uint total)
+{
+    bool lk = left_row < total && x86_value_by_semantic[left_row].known != 0u;
+    bool rk = right_row < total && x86_value_by_semantic[right_row].known != 0u;
+    uint left = lk ? x86_value_by_semantic[left_row].value : 0u;
+    uint right = rk ? x86_value_by_semantic[right_row].value : 0u;
+    uint type_id = core.type_id;
+    uint width = 0u;
+    bool right_width = right_row < total &&
+        x86_width_immediate_operand(type_id, opt_ir_core[right_row],
+            opt_ir_operands[right_row], x86_value_by_semantic[right_row], width);
+    if (op == SEMANTIC_LIR_OP_COMPARE)
+    {
+        if (x86_semantic_type_is_aggregate(core)) return 0u;
+        if ((lk || rk) && x86_integer_immediate_operation(SEMANTIC_LIR_OP_COMPARE, type_id,
+                rk ? right : left))
+            return rk ? 2u : 1u;
+        return right_width && scalar_is_wide_integer(type_id) ? 2u : 0u;
+    }
+    if (rk && (x86_constant_divisor_kind(op, type_id, right) != X86_CONSTANT_DIVISOR_NONE ||
+               x86_integer_immediate_operation(op, type_id, right)))
+        return 2u;
+    uint amount = 0u;
+    if (right_row < total && scalar_is_wide_integer(type_id) &&
+        (op == SEMANTIC_LIR_OP_SHIFT_LEFT || op == SEMANTIC_LIR_OP_SHIFT_RIGHT) &&
+        x86_constant_shift_amount(opt_ir_core[right_row], opt_ir_operands[right_row],
+            x86_value_by_semantic[right_row], amount) && amount <= 63u)
+        return 2u;
+    if (!rk && lk && x86_integer_immediate_commutative(op) &&
+        x86_integer_immediate_operation(op, type_id, left))
+        return 1u;
+    if (right_width && x86_width_immediate_operation(op)) return 2u;
+    return 0u;
+}
+
 void admit_dependencies(uint row, uint total)
 {
     if (!opt_ir_node_is_executable(row, total)) return;
@@ -114,8 +157,9 @@ void admit_dependencies(uint row, uint total)
              op == SEMANTIC_LIR_OP_LOGICAL_AND ||
              op == SEMANTIC_LIR_OP_LOGICAL_OR)
     {
-        admit(operands.a, position, total, function_id);
-        admit(operands.b, position, total, function_id);
+        uint immediate = immediate_operand(op, core, operands.a, operands.b, total);
+        if (immediate != 1u) admit(operands.a, position, total, function_id);
+        if (immediate != 2u) admit(operands.b, position, total, function_id);
     }
     else if (op == SEMANTIC_LIR_OP_NEGATE ||
              op == SEMANTIC_LIR_OP_LOGICAL_NOT ||
@@ -150,8 +194,10 @@ void admit_dependencies(uint row, uint total)
         if (fusible_comparison(condition, total, function_id))
         {
             OptIrNodeOperands comparison = opt_ir_operands[condition];
-            admit(comparison.a, position, total, function_id);
-            admit(comparison.b, position, total, function_id);
+            uint immediate = immediate_operand(SEMANTIC_LIR_OP_COMPARE,
+                opt_ir_core[condition], comparison.a, comparison.b, total);
+            if (immediate != 1u) admit(comparison.a, position, total, function_id);
+            if (immediate != 2u) admit(comparison.b, position, total, function_id);
         }
         else admit(condition, position, total, function_id);
     }

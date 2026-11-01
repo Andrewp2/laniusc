@@ -102,6 +102,24 @@ void emit_prologue(inout uint cursor, TargetLirFunction function,
             copy_slot += storage;
             continue;
         }
+        if (!packed && words <= X86_PARAMETER_MOVE_WORDS)
+        {
+            // A small native value moves word by word through RAX (free
+            // here: every incoming argument has been saved). Words descend
+            // from the first-word addresses in RSI and RDI.
+            for (uint word = 0u; word < words; word++)
+            {
+                uint displacement = 0u - word * 8u;
+                emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu);
+                if (word == 0u) emit_u8(cursor, 0x06u); // mov rax, [rsi]
+                else { emit_u8(cursor, 0x46u); emit_u8(cursor, displacement & 0xffu); }
+                emit_u8(cursor, 0x48u); emit_u8(cursor, 0x89u);
+                if (word == 0u) emit_u8(cursor, 0x07u); // mov [rdi], rax
+                else { emit_u8(cursor, 0x47u); emit_u8(cursor, displacement & 0xffu); }
+            }
+            copy_slot += storage;
+            continue;
+        }
         if (!packed && words > 1u)
         {
             // Native values descend by words. Move from each lowest address

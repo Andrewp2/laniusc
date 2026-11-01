@@ -157,6 +157,41 @@ bool x86_integer_immediate_operation(uint semantic_op, uint type_id,
         semantic_op == SEMANTIC_LIR_OP_COMPARE;
 }
 
+// The constant amount of a shift operand row: a known i32-class constant or
+// a CONST_I64 whose high word is zero.
+bool x86_constant_shift_amount(OptIrNodeCore core, OptIrNodeOperands operands,
+                               X86ValueAnalysis value, out uint amount)
+{
+    amount = value.value;
+    if (value.known != 0u) return true;
+    amount = operands.a;
+    return opt_ir_op(core) == SEMANTIC_LIR_OP_CONST_I64 && operands.b == 0u;
+}
+
+// A binary or comparison operand usable as the imm32 of a 64-bit (sign-
+// extended) or 8/16-bit (normalized afterwards) integer body: a known
+// i32-class constant, or a CONST_I64 whose value fits a signed 32 bits.
+bool x86_width_immediate_operand(uint type_id, OptIrNodeCore core,
+                                 OptIrNodeOperands operands, X86ValueAnalysis value,
+                                 out uint immediate)
+{
+    immediate = value.value;
+    bool wide = scalar_is_wide_integer(type_id);
+    if (!wide && !scalar_is_narrow_integer(type_id)) return false;
+    if (value.known != 0u) return !wide || immediate < 0x80000000u;
+    immediate = operands.a;
+    return opt_ir_op(core) == SEMANTIC_LIR_OP_CONST_I64 &&
+        ((operands.b == 0u && immediate < 0x80000000u) ||
+         (operands.b == 0xffffffffu && immediate >= 0x80000000u));
+}
+
+bool x86_width_immediate_operation(uint semantic_op)
+{
+    return semantic_op == SEMANTIC_LIR_OP_ADD || semantic_op == SEMANTIC_LIR_OP_SUB ||
+        semantic_op == SEMANTIC_LIR_OP_MUL || semantic_op == SEMANTIC_LIR_OP_BIT_AND ||
+        semantic_op == SEMANTIC_LIR_OP_BIT_OR || semantic_op == SEMANTIC_LIR_OP_BIT_XOR;
+}
+
 bool x86_integer_immediate_commutative(uint semantic_op)
 {
     return semantic_op == SEMANTIC_LIR_OP_ADD ||

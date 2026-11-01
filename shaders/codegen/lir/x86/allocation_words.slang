@@ -70,7 +70,8 @@ bool scalar_gpr_result(OptIrNodeCore core)
     return op == SEMANTIC_LIR_OP_COMPARE || core.type_id == 1u ||
         core.type_id == 2u || core.type_id == 3u || core.type_id == 4u ||
         core.type_id == 6u || core.type_id == 8u || core.type_id == 9u ||
-        core.type_id == 10u || core.type_id == 16u || core.type_id == 17u;
+        core.type_id == 10u || core.type_id == 16u || core.type_id == 17u ||
+        (core.type_id >= 11u && core.type_id <= 14u);
 }
 
 bool produces_float_value(uint op)
@@ -379,8 +380,8 @@ uint free_register(RegisterEnds ends, uint allowed, uint position)
 bool declaration_register_type(uint type_id)
 {
     return type_id == 1u || type_id == 2u || type_id == 3u ||
-        type_id == 4u || type_id == 6u || type_id == 8u ||
-        type_id == 9u || type_id == 10u || type_id == 16u || type_id == 17u;
+        type_id == 4u || type_id == 6u || (type_id >= 8u && type_id <= 14u) ||
+        type_id == 16u || type_id == 17u;
 }
 
 uint declaration_register(uint ordinal, bool has_call)
@@ -391,10 +392,13 @@ uint declaration_register(uint ordinal, bool has_call)
 
 // Register slots (declaration ordinals for the RDI, RSI, R10, R11, R8, R9 or
 // RBX, R12-R14 sequences) that decl_slots_scatter may give this function's
-// declarations: a register-typed parameter keeps its own ordinal unless a
-// hidden result pointer or a (data, length, stride) parameter keeps every
-// parameter on the stack, and register-typed locals take the remaining slots
-// in order. decl_slots_scatter applies the same rule (local_register_slot).
+// declarations. A register-typed parameter keeps its own ordinal unless a
+// hidden result pointer or a (data, length, stride) parameter shifts the
+// incoming registers; then the first two take slots 2 and 3. Register-typed
+// locals take the remaining slots in order. decl_slots_scatter applies the
+// same rule (parameter_register_slot, local_register_slot). In a function
+// with calls a declaration read only before the first call uses the
+// call-free register of its slot, so both registers of each slot are held.
 uint declaration_register_mask(SemanticLirFunction function, bool has_call)
 {
     uint limit = has_call ? 4u : 6u;
@@ -403,16 +407,21 @@ uint declaration_register_mask(SemanticLirFunction function, bool has_call)
     if (function.param_start + function.param_count > param_total ||
         function.local_start + function.local_count > local_total)
         return 0xffffu;
-    bool stack_parameters = function.result_word_count > 2u;
+    bool shifted = function.result_word_count > 2u;
     for (uint ordinal = 0u; ordinal < function.param_count; ordinal += 1u)
         if (x86_abi_param_width(semantic_lir_params[function.param_start + ordinal]) > 1u)
-            stack_parameters = true;
+            shifted = true;
     uint slots = 0u;
-    if (!stack_parameters)
-        for (uint ordinal = 0u; ordinal < min(function.param_count, limit); ordinal += 1u)
-            if (declaration_register_type(
-                    semantic_lir_params[function.param_start + ordinal].type_id))
-                slots |= 1u << ordinal;
+    uint shifted_slot = 2u;
+    for (uint ordinal = 0u; ordinal < min(function.param_count, LOCAL_SLOT_SCAN_LIMIT); ordinal += 1u)
+    {
+        if (!declaration_register_type(
+                semantic_lir_params[function.param_start + ordinal].type_id))
+            continue;
+        if (!shifted && ordinal < limit) slots |= 1u << ordinal;
+        if (shifted && shifted_slot < 4u) slots |= 1u << shifted_slot;
+        shifted_slot += 1u;
+    }
     uint cursor = 0u;
     uint scanned = min(function.local_count, LOCAL_SLOT_SCAN_LIMIT);
     for (uint index = 0u; index < scanned; index += 1u)
@@ -428,7 +437,8 @@ uint declaration_register_mask(SemanticLirFunction function, bool has_call)
     uint mask = 0u;
     for (uint slot = 0u; slot < limit; slot += 1u)
         if ((slots & (1u << slot)) != 0u)
-            mask |= 1u << declaration_register(slot, has_call);
+            mask |= (1u << declaration_register(slot, has_call)) |
+                (has_call ? 1u << x86_caller_declaration_register(slot) : 0u);
     return mask;
 }
 

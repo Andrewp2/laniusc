@@ -49,7 +49,9 @@ uint value_location(uint semantic_row)
     uint allocated = x86_location_by_semantic[semantic_row];
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_VALUE_GET &&
         (core.type_id == 1u || core.type_id == 2u || core.type_id == 3u ||
-         core.type_id == 4u || core.type_id == 6u || core.type_id == 8u))
+         core.type_id == 4u || core.type_id == 6u || core.type_id == 8u ||
+         (core.type_id >= 9u && core.type_id <= 14u) || core.type_id == 16u ||
+         core.type_id == 17u))
     {
         uint declaration = opt_ir_operands[semantic_row].a;
         if (declaration < gParams.token_capacity)

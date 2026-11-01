@@ -152,6 +152,32 @@ bool direct_i32_constant(uint semantic_row, uint semantic_count,
     return analysis.known != 0u;
 }
 
+// A constant below the bit width of `type_id`'s shifts, at `row` or behind
+// one conversion, or a mask `x & c` with such a constant c: the shift needs
+// no range guard. The guard's limit is the same (bits - 1, i32 for 0 bits).
+bool bounded_constant(uint row, uint semantic_count, uint limit)
+{
+    uint amount;
+    return row < semantic_count &&
+        x86_constant_shift_amount(opt_ir_core[row], opt_ir_operands[row],
+            x86_value_by_semantic[row], amount) && amount <= limit;
+}
+
+bool bounded_shift_amount(uint row, uint semantic_count, uint type_id)
+{
+    uint bits = scalar_integer_bits(type_id);
+    uint limit = bits == 0u ? 31u : bits - 1u;
+    if (row >= semantic_count) return false;
+    if (opt_ir_op(opt_ir_core[row]) == SEMANTIC_LIR_OP_CONVERT)
+        row = opt_ir_operands[row].a;
+    if (bounded_constant(row, semantic_count, limit)) return true;
+    if (row >= semantic_count || opt_ir_op(opt_ir_core[row]) != SEMANTIC_LIR_OP_BIT_AND)
+        return false;
+    OptIrNodeOperands mask = opt_ir_operands[row];
+    return bounded_constant(mask.a, semantic_count, limit) ||
+        bounded_constant(mask.b, semantic_count, limit);
+}
+
 bool single_word_compare_operands(uint left, uint right, uint semantic_count)
 {
     if (left >= semantic_count || right >= semantic_count) return false;
@@ -1219,6 +1245,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
             args.a, semantic_count, left);
         bool right_constant = direct_i32_constant(
             args.b, semantic_count, immediate);
+        uint shift_amount = 0u;
+        bool shift_amount_known = args.b < semantic_count &&
+            (semantic_op == SEMANTIC_LIR_OP_SHIFT_LEFT ||
+             semantic_op == SEMANTIC_LIR_OP_SHIFT_RIGHT) &&
+            x86_constant_shift_amount(opt_ir_core[args.b], opt_ir_operands[args.b],
+                x86_value_by_semantic[args.b], shift_amount);
         if (left_constant && right_constant &&
             x86_fold_integer_binary(semantic_op, source.type_id, args.c,
                 left, immediate, folded))
@@ -1259,18 +1291,29 @@ void main(uint3 dtid: SV_DispatchThreadID)
             c = swap ? left : immediate;
             metadata |= X86_LIR_METADATA_IMMEDIATE;
         }
-        // A 64-bit shift by a 32-bit constant below 64 cannot trap: emit
+        // A 64-bit shift by a constant below 64 cannot trap: emit
         // `shl/shr/sar rax, imm8` (plan_specialized) without the range guard.
-        else if (op != X86_LIR_OP_IMM_I32 && right_constant && immediate <= 63u &&
-                 scalar_is_wide_integer(source.type_id) &&
+        else if (op != X86_LIR_OP_IMM_I32 && shift_amount_known && shift_amount <= 63u &&
+                 scalar_is_wide_integer(source.type_id))
+        {
+            c = shift_amount;
+            metadata |= X86_LIR_METADATA_IMMEDIATE;
+        }
+        // 64-bit and 8/16-bit add, sub, mul and bitwise operations with a
+        // constant right operand that fits imm32 (plan_specialized).
+        else if (op != X86_LIR_OP_IMM_I32 && x86_width_immediate_operation(semantic_op) &&
                  args.b < semantic_count &&
-                 !scalar_is_wide_integer(opt_ir_core[args.b].type_id) &&
-                 (semantic_op == SEMANTIC_LIR_OP_SHIFT_LEFT ||
-                  semantic_op == SEMANTIC_LIR_OP_SHIFT_RIGHT))
+                 x86_width_immediate_operand(source.type_id, opt_ir_core[args.b],
+                     opt_ir_operands[args.b], x86_value_by_semantic[args.b], immediate))
         {
             c = immediate;
             metadata |= X86_LIR_METADATA_IMMEDIATE;
         }
+        if (op == X86_LIR_OP_BINARY && (metadata & X86_LIR_METADATA_IMMEDIATE) == 0u &&
+            (semantic_op == SEMANTIC_LIR_OP_SHIFT_LEFT ||
+             semantic_op == SEMANTIC_LIR_OP_SHIFT_RIGHT) &&
+            bounded_shift_amount(args.b, semantic_count, source.type_id))
+            metadata |= X86_LIR_METADATA_BOUNDED_SHIFT;
     }
     else if (op == X86_LIR_OP_COMPARE)
     {
@@ -1305,6 +1348,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
             a = swap ? x86_swapped_compare_predicate(args.c) : args.c;
             b = swap ? args.b : args.a;
             c = swap ? left : immediate;
+            metadata |= X86_LIR_METADATA_IMMEDIATE;
+        }
+        else if (!aggregate_compare && scalar_is_wide_integer(source.type_id) &&
+                 args.b < semantic_count &&
+                 x86_width_immediate_operand(source.type_id, opt_ir_core[args.b],
+                     opt_ir_operands[args.b], x86_value_by_semantic[args.b], immediate))
+        {
+            c = immediate;
             metadata |= X86_LIR_METADATA_IMMEDIATE;
         }
         if (source.type_id == SEMANTIC_LIR_TY_POINTER && args.b < gParams.semantic_capacity &&
@@ -1382,16 +1433,24 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 x86_integer_immediate_operation(
                     SEMANTIC_LIR_OP_COMPARE, compare_core.type_id,
                     right_constant ? immediate : left);
+            // A 64-bit integer compared with a constant that fits a signed
+            // 32 bits uses `cmp rax, imm32` (plan_specialized).
+            uint width_immediate = 0u;
+            bool width_compare = !immediate_compare && !aggregate_compare &&
+                scalar_is_wide_integer(compare_core.type_id) && compare.b < semantic_count &&
+                x86_width_immediate_operand(compare_core.type_id, opt_ir_core[compare.b],
+                    opt_ir_operands[compare.b], x86_value_by_semantic[compare.b], width_immediate);
             op = X86_LIR_OP_COMPARE_BRANCH_FALSE;
             a = immediate_compare && left_constant
                 ? compare.b : compare.a;
             b = immediate_compare
-                ? (right_constant ? immediate : left) : compare.b;
+                ? (right_constant ? immediate : left)
+                : width_compare ? width_immediate : compare.b;
             c = opt_ir_op(source) == SEMANTIC_LIR_OP_IF_BEGIN
                 ? args.c : 0u;
             metadata = (compare_core.type_id & 0xffu) |
                 (aggregate_compare ? X86_LIR_METADATA_AGGREGATE : 0u);
-            if (immediate_compare)
+            if (immediate_compare || width_compare)
                 metadata |= X86_LIR_METADATA_IMMEDIATE;
             local_ordinal = immediate_compare && left_constant
                 ? x86_swapped_compare_predicate(compare.c) : compare.c;
