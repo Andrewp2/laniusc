@@ -178,17 +178,43 @@ def tools_digest(script):
     return run_cache.key(*parts)
 
 
+BUILT = ('runAll', 'extract', 'floatTest', 'x86ModelTest', 'srcDump', 'topAxioms')
+
+
+def build_stamp():
+    """The size and time of every Lean source and Lake file in formal/ and of
+    the built executables: when it is the one a successful build left, the
+    build would be a no-op (Lake's own check takes about 10 s)."""
+    parts = []
+    for d, dirs, files in os.walk(run_cache.FORMAL):
+        dirs[:] = sorted(x for x in dirs if x not in ('.lake', '__pycache__'))
+        for name in sorted(files):
+            if name.endswith('.lean') or name in ('lean-toolchain', 'lake-manifest.json'):
+                st = os.stat(os.path.join(d, name))
+                parts.append(f'{os.path.relpath(os.path.join(d, name), run_cache.FORMAL)} {st.st_size} {st.st_mtime_ns}')
+    for exe in BUILT:
+        path = os.path.join(run_cache.FORMAL, '.lake/build/bin', exe)
+        st = os.stat(path) if os.path.exists(path) else None
+        parts.append(f'{exe} {st and st.st_size} {st and st.st_mtime_ns}')
+    return run_cache.key(run_cache.FORMAL, *parts)
+
+
 def build():
-    """Build what the tests run (a no-op when it is current)."""
+    """Build what the tests run (a no-op when it is current, skipped when
+    build_stamp is that of the last successful build here)."""
+    stamp = build_stamp()
+    if run_cache.load('gate-build', stamp) is not None:
+        return
     env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
     with run_cache.lean_lock():
         run = subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
-                              'lake', 'build', 'runAll', 'extract', 'floatTest', 'x86ModelTest', 'srcDump', 'topAxioms', 'LaniusMini', 'Lanius.Mini.FrontLex',
+                              'lake', 'build', *BUILT, 'LaniusMini', 'Lanius.Mini.FrontLex',
                               'Lanius.Mini.MutPilotCorrect', 'Lanius.Machines.SqliteStatementCorrect',
                               'Lanius.Machines.TlsLifecycleCorrect', 'Lanius.Machines.RunLowering'],
                              cwd=run_cache.FORMAL, env=env, capture_output=True, text=True)
     if run.returncode != 0:
         raise SystemExit('lake build failed:\n' + run.stdout[-3000:] + run.stderr[-3000:])
+    run_cache.store('gate-build', build_stamp(), {})
 
 
 JOB_GB = 8  # memory a step needs available to start beside another

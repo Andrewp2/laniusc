@@ -291,9 +291,23 @@ class Module:
 
 
 def load_modules(top=None):
-    """The modules below top (default STDLIB, read when called), by name."""
+    """The modules below top (default STDLIB, read when called), by name
+    (cached by the tree's path and bytes)."""
+    import pickle
+    top = os.path.abspath(top or STDLIB)
+    k = run_cache.key('modules', top, run_cache.tree_digest(top), run_cache.file_digest(os.path.abspath(__file__)))
+    cached = run_cache.path_of('modules', k, '.pkl')
+    if os.path.exists(cached):
+        with open(cached, 'rb') as f:
+            return pickle.load(f)
+    mods = load_modules_uncached(top)
+    run_cache.write_bytes(cached, pickle.dumps(mods))
+    return mods
+
+
+def load_modules_uncached(top):
     mods = {}
-    for root, _, names in os.walk(top or STDLIB):
+    for root, _, names in os.walk(top):
         for name in sorted(names):
             if name.endswith('.lani'):
                 m = Module(os.path.join(root, name))
@@ -879,9 +893,16 @@ def parse_wrappers(laniusc, texts, workdir, batch_bytes=1 << 16):
 
 def parse_stdlib_file(laniusc, lani_path, workdir):
     """laniusc's tree of a stdlib file: with its import lines blanked (one
-    cached laniusc run), else as parse_tree finds it."""
+    cached laniusc run, and the tree with the imports spliced back cached
+    too), else as parse_tree finds it."""
+    k = run_cache.key('spliced', run_cache.file_digest(laniusc), open(lani_path, 'rb').read(),
+                      run_cache.file_digest(front.__file__))
+    hit = run_cache.load('parse', k)
+    if hit is not None:
+        return hit['prods'], hit['parents']
     try:
         prods, parents, _ = front.parse_with_laniusc(HEAVY, laniusc, lani_path, workdir)
+        run_cache.store('parse', k, dict(prods=prods, parents=parents))
         return prods, parents
     except (SystemExit, OSError, IndexError):
         return parse_tree(laniusc, lani_path, workdir)
@@ -950,6 +971,12 @@ class Native(oracle.Native):
         self.base = ctypes.addressof(ctypes.c_char.from_buffer(self.code))
         self.heap = mmap.mmap(-1, self.HEAP, flags=private, prot=mmap.PROT_READ | mmap.PROT_WRITE)
         self.heap_base = ctypes.addressof(ctypes.c_char.from_buffer(self.heap))
+
+    def zero_heap(self):
+        """Zero the heap (in a forked child): dropping a private mapping's
+        pages reads as zeros, and only the pages a call touches are mapped
+        again, where writing all of a large heap faults in every page."""
+        self.heap.madvise(mmap.MADV_DONTNEED)
 
     def load(self, entries, image, arity):
         self.code[0:len(image)] = image
@@ -1022,7 +1049,7 @@ def native_call(native, args, types, high=False, stdin_path=os.devnull):
         os.dup2(given, 0)
         os.close(given)
         signal.alarm(2)
-        native.heap[0:native.HEAP] = bytes(native.HEAP)
+        native.zero_heap()
         value = native.fn(*[slot(a, t) for a, t in zip(args, types)])
         os.write(w, str(oracle.i32(value >> 32 if high else value)).encode())
         os._exit(0)
@@ -1079,7 +1106,7 @@ class NativeCalls:
             os.dup2(given, 0)
             os.close(given)
             signal.alarm(2)
-            native.heap[0:native.HEAP] = bytes(native.HEAP)
+            native.zero_heap()
             value = native.fn(*[slot(a, t) for a, t in zip(args, types)])
             os.write(w, str(oracle.i32(value >> 32 if high else value)).encode())
             os._exit(0)
@@ -1609,20 +1636,14 @@ def build(args, workdir, name, text, roots=None):
     roots = SOURCE_ROOTS if roots is None else roots
     lani_path = os.path.join(workdir, name + '.lani')
     open(lani_path, 'w').write(text)
-    k = run_cache.key('build', run_cache.file_digest(args.laniusc), run_cache.lani_digest(lani_path, roots + [STDLIB]))
-    hit = run_cache.load_file('build', k)
-    if hit is not None:
-        return hit, ''
     exe = os.path.join(workdir, name)
-    if os.path.exists(exe):
-        os.remove(exe)
-    built = subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
-                            HEAVY, '-t', '20', args.laniusc, '--stdlib-root', STDLIB,
-                            *source_root_args(roots), '-o', exe, lani_path],
-                           capture_output=True, text=True)
-    if built.returncode != 0 or not os.path.exists(exe):
-        return None, built.stdout[-2000:] + built.stderr[-2000:]
-    return run_cache.store_file('build', k, exe), ''
+    built, failed = run_cache.laniusc_build(
+        ['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
+         HEAVY, '-t', '20', args.laniusc, '--stdlib-root', STDLIB, *source_root_args(roots), '-o', exe, lani_path],
+        args.laniusc, lani_path, exe, roots + [STDLIB])
+    if built is None:
+        return None, failed.stdout[-2000:] + failed.stderr[-2000:]
+    return built, ''
 
 
 def run_calls(exe, n, workdir, stdins=None):

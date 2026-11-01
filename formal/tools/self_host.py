@@ -186,17 +186,22 @@ def parse_image(status):
     """compileSource's (entries, image) from runAll's status line, or None when rejected."""
     if not status.startswith('image'):
         return None
-    entries_s, image_s = re.match(r'image \[(.*?)\] \[(.*?)\]$', status).groups()
-    entries = [int(x) for x in entries_s.split(',')] if entries_s else []
-    image = [int(x) for x in image_s.split(',')] if image_s else []
+    # (by position, not a regular expression: the self image's line is 50 MB)
+    if not (status.startswith('image [') and status.endswith(']')):
+        raise ValueError(f'bad image line: {status[:80]}')
+    mid = status.index('] [', 7)
+    entries_s, image_s = status[7:mid], status[mid + 3:-1]
+    entries = list(map(int, entries_s.split(','))) if entries_s else []
+    image = list(bytes(map(int, image_s.split(',')))) if image_s else []
     return entries, image
 
 
 def pack(image):
     """The image's bytes four to a word, little-endian, the last word padded
     with zeros (`pack_rounds` in compiler.lani), as signed words."""
+    import struct
     padded = bytes(image) + bytes(-len(image) % 4)
-    return [int.from_bytes(padded[i:i + 4], 'little', signed=True) for i in range(0, len(padded), 4)]
+    return list(struct.unpack(f'<{len(padded) // 4}i', padded))
 
 
 def unpack(words, count):
@@ -525,9 +530,21 @@ def main():
         if not t.get('fixpoint'):
             words = read_words(os.path.join(batch, f'in{runnable.index(k)}.words'))
             stdins[k] = b''.join((x & 0xffffffff).to_bytes(4, 'little') for x in [len(words), room] + words)
+    exe_digest = run_cache.file_digest(exe)
+
+    def laniusc_on(data):
+        # (a run of the same binary on the same input is stored; a timeout is not)
+        k = run_cache.key('laniusc-driver-run', exe_digest, data)
+        hit = run_cache.load('run', k)
+        if hit is not None:
+            return hit['got']
+        got = run_laniusc(exe, data, args.timeout, None, None)
+        if got != 'timeout':
+            run_cache.store('run', k, dict(got=got))
+        return got
+
     with concurrent.futures.ThreadPoolExecutor(max(1, min(8, (os.cpu_count() or 2) // 2))) as pool:
-        laniusc_got = dict(zip(stdins, pool.map(lambda data: run_laniusc(exe, data, args.timeout, None, None),
-                                                stdins.values())))
+        laniusc_got = dict(zip(stdins, pool.map(laniusc_on, stdins.values())))
 
     problems, agree, notes = [], 0, []
     for k, t in enumerate(tests):

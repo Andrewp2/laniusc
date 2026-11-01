@@ -240,11 +240,29 @@ def lani_digest(entry, roots):
     return h.hexdigest()
 
 
+LCC = os.path.join(ROOT, 'target/claude-work/bin/lcc')
+LCC_LANIUSC = '/home/andrew-peterson/code/laniusc/target/release/laniusc'
+
+
+def lcc_argv(laniusc, entry, exe, roots):
+    """The command that builds exe from entry through lcc, the client of one
+    resident laniusc daemon shared by every checkout (a warm compile takes
+    tens of milliseconds, a one-shot laniusc seconds of GPU start-up), or
+    None when lcc is missing, builds another laniusc binary, or would be
+    given more than one source root besides the stdlib (roots[-1])."""
+    if not os.path.exists(LCC) or len(roots) > 2 or not os.path.exists(LCC_LANIUSC):
+        return None
+    if os.path.realpath(laniusc) != os.path.realpath(LCC_LANIUSC):
+        return None
+    return [LCC, '--stdlib-root', roots[-1]] + [a for r in roots[:-1] for a in ('--source-root', r)] + ['-o', exe, entry]
+
+
 def laniusc_build(argv, laniusc, entry, exe, roots):
-    """Run a laniusc build command (argv, which writes exe from entry with
-    these source roots) unless one with the same binary and sources is
-    stored: the stored binary's path and None, or None and the command's
-    result when it fails."""
+    """Build exe from entry with these source roots (the stdlib last), unless
+    a build with the same laniusc binary and sources is stored: through lcc
+    when it can (lcc_argv), else (or when lcc fails) by argv, a one-shot
+    laniusc command. The stored binary's path and None, or None and the
+    command's result when it fails."""
     import subprocess
     k = key('build', file_digest(laniusc), lani_digest(entry, roots))
     hit = load_file('build', k)
@@ -252,7 +270,13 @@ def laniusc_build(argv, laniusc, entry, exe, roots):
         return hit, None
     if os.path.exists(exe):
         os.remove(exe)
-    run = subprocess.run(argv, capture_output=True, text=True)
+    fast = lcc_argv(laniusc, entry, exe, roots)
+    run = subprocess.run(fast, capture_output=True, text=True) if fast else None
+    if run is None or (run.returncode != 0 and 'LNC' not in run.stderr) or (run.returncode == 0 and not os.path.exists(exe)):
+        # lcc itself failed (not laniusc's diagnostic): the one-shot command
+        if os.path.exists(exe):
+            os.remove(exe)
+        run = subprocess.run(argv, capture_output=True, text=True)
     if run.returncode != 0 or not os.path.exists(exe):
         return None, run
     return store_file('build', k, exe), None
