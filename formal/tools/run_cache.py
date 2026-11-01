@@ -193,9 +193,11 @@ def olean_digest(text):
     return h.hexdigest()
 
 
-def run_lean(lean_path, memory='6G'):
+def run_lean(lean_path, memory='6G', outputs=()):
     """`lake env lean` on a file, under a memory cap, cached by the file's text
     and the .olean files it imports (only a run that exits 0 is stored).
+    outputs: files the run writes; they are stored with the entry and written
+    back on a hit, so a hit never leaves another run's files in place.
     Returns an object with returncode, stdout and stderr."""
     import subprocess
     import types
@@ -203,7 +205,14 @@ def run_lean(lean_path, memory='6G'):
     digest = olean_digest(text)
     k = key(digest or '', text)
     hit = load('lean', k) if digest else None
+    if hit is not None and outputs and 'files' not in hit:
+        hit = None
+    for path in outputs:
+        if os.path.exists(path):
+            os.remove(path)
     if hit is not None:
+        for path, body in hit.get('files', {}).items():
+            open(path, 'w').write(body)
         return types.SimpleNamespace(returncode=0, stdout=hit['stdout'], stderr='')
     env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
     with lean_lock():
@@ -211,7 +220,8 @@ def run_lean(lean_path, memory='6G'):
                               'MemorySwapMax=0', 'lake', 'env', 'lean', os.path.abspath(lean_path)], cwd=FORMAL,
                              env=env, capture_output=True, text=True)
     if run.returncode == 0 and digest:
-        store('lean', k, dict(stdout=run.stdout))
+        files = {path: open(path).read() for path in outputs if os.path.exists(path)}
+        store('lean', k, dict(stdout=run.stdout, files=files) if outputs else dict(stdout=run.stdout))
     return run
 
 

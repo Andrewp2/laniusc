@@ -1474,6 +1474,7 @@ def run_cases(args, cases_dir):
     os.makedirs(workdir, exist_ok=True)
     lean = [LEAN_HEAD]
     checks = []
+    outputs = []
     for case in sorted(os.listdir(cases_dir)):
         src = os.path.join(cases_dir, case)
         if not os.path.isdir(src):
@@ -1494,14 +1495,16 @@ def run_cases(args, cases_dir):
                 open(base + '.prods', 'w').write(' '.join(map(str, prods)))
                 open(base + '.parents', 'w').write(' '.join(map(str, parents)))
                 bases.append(base)
+                outputs.append(base + '.leantokens')
             out = os.path.join(out_dir, kind + '.out')
+            outputs += [out, out + '.compile']
             lean.append(f'#eval checkFiles [{", ".join(chr(34) + b + chr(34) for b in bases)}] "{out}"')
         checks.append((case, out_dir, os.path.exists(os.path.join(src, 'reject'))))
     lean_path = os.path.join(workdir, 'cases_check.lean')
     lean.append(f'-- inputs {inputs_digest(workdir)}')
     open(lean_path, 'w').write('\n'.join(lean) + '\n')
     PARSE_SERVER.close()
-    run = run_cache.run_lean(lean_path)
+    run = run_cache.run_lean(lean_path, outputs=outputs)
     if run.returncode != 0:
         raise SystemExit('lean failed:\n' + run.stdout[-4000:] + run.stderr[-4000:])
     problems = unchecked = 0
