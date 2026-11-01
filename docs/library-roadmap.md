@@ -241,6 +241,11 @@ empty input needs none. All six current groups pass owner/admission/contracts,
 576 model cases, 63 explicit tables and all 30 reached OOM positions. The older
 120-OOM receipt describes the per-probe implementation. Competing patterns can
 rescan suffixes, so input, search-call and reserved-work limits remain explicit.
+A [combined lazy DFA](extended-lexer.md#combined-dfa-matching) over all
+assertion-free rules now replaces the per-rule probes whenever it is provably
+identical. Side by side with the frozen per-rule lexer, it produces
+byte-identical token/error/usage traces on 30,000/30,000 generated cases. On
+an 18-rule, 0.9 MB corpus it cuts lexing from 11.8–17.2 s to 0.31–0.40 s.
 The [CSV-rules lexer application](extended-lex-scan.md) composes CSV decoding,
 compiled rules, borrowed tokens, hash counters and staged bounded output. Its
 five current native groups pass both modes over 124 independent grammar inputs,

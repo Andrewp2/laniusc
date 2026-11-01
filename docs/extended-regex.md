@@ -385,6 +385,17 @@ This dependency is scoped to the new module shape; earlier module migrations
 and their question-mark execution receipts remain separate evidence. No compiler
 change or reduced regex capability is part of this adaptation.
 
+### Combined prefix sets
+
+`prefix_set()`, `PrefixSet.add(rule, &Regex)`, `finish()` and
+`run(Input, start) -> PrefixRun` provide one anchored longest-prefix DFA over
+several assertion-free programs. A `PrefixRun` reports the furthest accepting
+end, the lowest rule accepting there, the scalars scanned, and `complete`.
+`complete` is false when the fixed cache filled, and the caller must then use
+the VM. `Regex.has_assertion()` and `Regex.boundary_cost()` support exact VM
+fallback. [`ext::lexer`](extended-lexer.md#combined-dfa-matching) owns the only
+current consumer and its acceptance evidence.
+
 ### Differential oracle and lazy counted repetition
 
 The [regex differential oracle](extended-regex-oracle.md) compares

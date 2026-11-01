@@ -2145,7 +2145,11 @@ regex engine and validates each input once. Each nonempty cursor now owns one
 eager span workspace, reused during token selection; terminal calls can release
 it. All six current groups pass: owner/admission/contracts, 576 model cases,
 63 explicit tables and all 30 reached OOM positions. The earlier 120-position
-receipt retains its preceding per-probe scope. Competing patterns can rescan
+receipt retains its preceding per-probe scope. A combined lazy DFA over the
+assertion-free rules now runs each step once, with VM fallback for assertions,
+a full cache or a possible work limit. Its traces are byte-identical to the
+frozen per-rule lexer on 30,000 generated cases, and it is about 40 times
+faster on an 18-rule corpus. Competing patterns can rescan
 input; neither reusable scratch nor these receipts establish whole-input
 linear time.
 The [CSV-rules lexer program](extended-lex-scan.md) emits staged token spans or

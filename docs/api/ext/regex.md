@@ -18,7 +18,7 @@ One ordered Pike engine now supports reusable fixed-capacity Workspace storage a
 - [extended-lexer](../../extended-lexer.md)
 - [library-regex-workspace-plan](../../library-regex-workspace-plan.md)
 
-Declaration counts: enum: 1; field: 53; function: 4; impl: 5; method: 37; struct: 10; variant: 8.
+Declaration counts: enum: 1; field: 74; function: 5; impl: 7; method: 46; struct: 12; variant: 8.
 
 ## Declared imports
 
@@ -618,6 +618,190 @@ max_work: i32
 failed: bool
 ```
 
+### struct: PrefixSet
+
+[Source line 727](../../../extended/ext/regex.lani#L727)
+
+```lanius
+pub struct PrefixSet
+```
+
+#### field: code
+
+[Source line 728](../../../extended/ext/regex.lani#L728)
+
+```lanius
+code: alloc::vec::Vec<Inst>
+```
+
+#### field: terms
+
+[Source line 728](../../../extended/ext/regex.lani#L728)
+
+```lanius
+terms: alloc::vec::Vec<Term>
+```
+
+#### field: rule_of
+
+[Source line 728](../../../extended/ext/regex.lani#L728)
+
+```lanius
+rule_of: alloc::vec::Vec<i32>
+```
+
+#### field: dot
+
+[Source line 728](../../../extended/ext/regex.lani#L728)
+
+```lanius
+dot: alloc::vec::Vec<bool>
+```
+
+#### field: entries
+
+[Source line 729](../../../extended/ext/regex.lani#L729)
+
+```lanius
+entries: alloc::vec::Vec<i32>
+```
+
+#### field: meta
+
+[Source line 729](../../../extended/ext/regex.lani#L729)
+
+```lanius
+meta: alloc::vec::Vec<i32>
+```
+
+#### field: set_start
+
+[Source line 729](../../../extended/ext/regex.lani#L729)
+
+```lanius
+set_start: alloc::vec::Vec<i32>
+```
+
+#### field: set_len
+
+[Source line 729](../../../extended/ext/regex.lani#L729)
+
+```lanius
+set_len: alloc::vec::Vec<i32>
+```
+
+#### field: accept
+
+[Source line 730](../../../extended/ext/regex.lani#L730)
+
+```lanius
+accept: alloc::vec::Vec<i32>
+```
+
+#### field: trans
+
+[Source line 730](../../../extended/ext/regex.lani#L730)
+
+```lanius
+trans: alloc::vec::Vec<i32>
+```
+
+#### field: pool
+
+[Source line 730](../../../extended/ext/regex.lani#L730)
+
+```lanius
+pool: alloc::vec::Vec<i32>
+```
+
+#### field: table
+
+[Source line 730](../../../extended/ext/regex.lani#L730)
+
+```lanius
+table: alloc::vec::Vec<i32>
+```
+
+#### field: work
+
+[Source line 731](../../../extended/ext/regex.lani#L731)
+
+```lanius
+work: alloc::vec::Vec<i32>
+```
+
+#### field: mark
+
+[Source line 731](../../../extended/ext/regex.lani#L731)
+
+```lanius
+mark: alloc::vec::Vec<i32>
+```
+
+#### field: stack
+
+[Source line 731](../../../extended/ext/regex.lani#L731)
+
+```lanius
+stack: alloc::vec::Vec<i32>
+```
+
+#### field: capacity
+
+[Source line 731](../../../extended/ext/regex.lani#L731)
+
+```lanius
+capacity: i32
+```
+
+#### field: pool_capacity
+
+[Source line 731](../../../extended/ext/regex.lani#L731)
+
+```lanius
+pool_capacity: i32
+```
+
+### struct: PrefixRun
+
+[Source line 736](../../../extended/ext/regex.lani#L736)
+
+```lanius
+pub struct PrefixRun
+```
+
+#### field: end
+
+[Source line 736](../../../extended/ext/regex.lani#L736)
+
+```lanius
+end: i32
+```
+
+#### field: rule
+
+[Source line 736](../../../extended/ext/regex.lani#L736)
+
+```lanius
+rule: i32
+```
+
+#### field: scalars
+
+[Source line 736](../../../extended/ext/regex.lani#L736)
+
+```lanius
+scalars: i32
+```
+
+#### field: complete
+
+[Source line 736](../../../extended/ext/regex.lani#L736)
+
+```lanius
+complete: bool
+```
+
 ## Free functions and extern declarations
 
 ### function: options
@@ -650,6 +834,14 @@ pub fn compile(pattern: core::text::Text, config: Options) -> core::result::Resu
 
 ```lanius
 pub fn workspace(states: i32, groups: i32) -> Result<Workspace,Error>
+```
+
+### function: prefix_set
+
+[Source line 737](../../../extended/ext/regex.lani#L737)
+
+```lanius
+pub fn prefix_set() -> PrefixSet
 ```
 
 ## Implementation blocks and public methods
@@ -988,4 +1180,92 @@ pub fn next(&self) -> Result<Option<Match>,Error>
 
 ```lanius
 pub fn destroy(&self)
+```
+
+### impl at line 744
+
+[Source line 744](../../../extended/ext/regex.lani#L744)
+
+```lanius
+pub impl Regex
+```
+
+#### method: has_assertion
+
+[Source line 746](../../../extended/ext/regex.lani#L746)
+
+```lanius
+pub fn has_assertion(&self) -> bool
+```
+
+#### method: boundary_cost
+
+[Source line 753](../../../extended/ext/regex.lani#L753)
+
+```lanius
+pub fn boundary_cost(&self) -> i64
+```
+
+### impl at line 759
+
+[Source line 759](../../../extended/ext/regex.lani#L759)
+
+```lanius
+pub impl PrefixSet
+```
+
+#### method: borrow
+
+[Source line 760](../../../extended/ext/regex.lani#L760)
+
+```lanius
+pub fn borrow(&self) -> &PrefixSet
+```
+
+#### method: rule_count
+
+[Source line 761](../../../extended/ext/regex.lani#L761)
+
+```lanius
+pub fn rule_count(&self) -> i32
+```
+
+#### method: cache_resets
+
+[Source line 763](../../../extended/ext/regex.lani#L763)
+
+```lanius
+pub fn cache_resets(&self) -> i32
+```
+
+#### method: destroy
+
+[Source line 764](../../../extended/ext/regex.lani#L764)
+
+```lanius
+pub fn destroy(&self)
+```
+
+#### method: add
+
+[Source line 771](../../../extended/ext/regex.lani#L771)
+
+```lanius
+pub fn add(&self, rule: i32, regex: &Regex) -> Result<i32, Error>
+```
+
+#### method: finish
+
+[Source line 792](../../../extended/ext/regex.lani#L792)
+
+```lanius
+pub fn finish(&self) -> Result<i32, Error>
+```
+
+#### method: run
+
+[Source line 895](../../../extended/ext/regex.lani#L895)
+
+```lanius
+pub fn run(&self, input: Input, start: i32) -> PrefixRun
 ```

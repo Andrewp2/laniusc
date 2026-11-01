@@ -1,6 +1,6 @@
 #!/bin/bash
 # Copy extended/ext plus the frozen VM lexer into one source root and compile the comparator.
-cd /home/andrew-peterson/code/laniusc-wt/s3 || exit 1
+cd "$(dirname "$0")/../../../.." || exit 1
 W=${W:-$PWD/target/claude-work/s3}
 rm -rf $W/combined; mkdir -p $W/combined/ext
 cp extended/ext/*.lani tests/fixtures/extended/lexer_dfa/root/ext/lexer_vm.lani $W/combined/ext/
