@@ -2048,15 +2048,17 @@ pass across separate receipts; the supervisor covers 53 cases.
 Descendants can escape a group, and deadlines do not guarantee kernel-stuck
 processes become reapable; these APIs do not provide process-tree containment.
 
-The [sequential HTTP/1.1 service](extended-http-service.md) (`ext::http_service`)
+The [HTTP/1.1 service](extended-http-service.md) (`ext::http_service`)
 reads keep-alive and pipelined requests through the `ext::http` codec under
-absolute head/body/idle/write deadlines, maps typed errors to 400/408/413/431/501,
-sends 100 Continue, and provides a response writer and an id-based router. The
-static-file sample with listings and single byte ranges passes Python loopback
-oracle groups functional69, malformed42 and slowloris12, with exact server
-connection/request/rejection/timeout counters. It serves one connection at a
-time; concurrent keep-alive service, conditional requests and multipart ranges
-remain open.
+absolute head/body/idle/write deadlines, maps typed errors to
+400/408/413/431/501/505, sends 100 Continue and Date, and provides a response
+writer with file streaming and an id-based router. A one-thread `std::event`
+server multiplexes many buffered connections, and a sequential driver shares
+the same code. The static-file sample with listings, single byte ranges and
+ETag/Last-Modified conditional requests passes Python loopback oracle groups
+functional70, malformed45, slowloris12, conditional23 and concurrent39 on the
+event server plus four sequential groups, with exact server counters. TLS,
+threads, multipart ranges and allocation-failure coverage remain open.
 
 [Resumable cleartext HTTP exchanges](extended-http-client.md) expose owned
 Prepared request staging and caller-driven Exchange steps. At `480432e8`,

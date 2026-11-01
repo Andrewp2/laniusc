@@ -43,26 +43,39 @@ fn oracle(group: &str) -> String {
     String::from_utf8(out.stdout).unwrap()
 }
 
-#[test]
-fn http_service_static_files_listings_ranges_keepalive_pipelining_and_chunked_echo() {
-    assert_eq!(
-        oracle("functional").trim(),
-        "http-service-functional cases=69 connections=9 requests=76 rejected=0 timeouts=0"
-    );
+fn group(name: &str, expected: &str) {
+    assert_eq!(oracle(name).trim(), format!("http-service-{name} {expected}"));
 }
 
 #[test]
-fn http_service_rejects_malformed_framing_and_limits_with_typed_statuses() {
-    assert_eq!(
-        oracle("malformed").trim(),
-        "http-service-malformed cases=42 connections=42 requests=2 rejected=38 timeouts=0"
-    );
+fn http_service_event_server_static_files_listings_ranges_keepalive_and_chunked_echo() {
+    group("functional", "cases=70 connections=9 requests=77 rejected=0 timeouts=0");
 }
 
 #[test]
-fn http_service_absolute_head_body_and_idle_deadlines_bound_slowloris_clients() {
-    assert_eq!(
-        oracle("slowloris").trim(),
-        "http-service-slowloris cases=12 connections=13 requests=7 rejected=5 timeouts=5"
-    );
+fn http_service_event_server_rejects_malformed_framing_limits_and_versions() {
+    group("malformed", "cases=45 connections=45 requests=2 rejected=41 timeouts=0");
+}
+
+#[test]
+fn http_service_event_server_absolute_deadlines_bound_slowloris_without_queueing() {
+    group("slowloris", "cases=12 connections=13 requests=7 rejected=5 timeouts=5");
+}
+
+#[test]
+fn http_service_event_server_conditional_requests_and_validators() {
+    group("conditional", "cases=23 connections=1 requests=23 rejected=0 timeouts=0");
+}
+
+#[test]
+fn http_service_event_server_concurrent_clients_slowloris_slow_reader_and_idle_peers() {
+    group("concurrent", "cases=39 connections=78 requests=254 rejected=8 timeouts=8");
+}
+
+#[test]
+fn http_service_sequential_driver_matches_functional_malformed_slowloris_and_conditional() {
+    group("functional-seq", "cases=70 connections=9 requests=77 rejected=0 timeouts=0");
+    group("malformed-seq", "cases=45 connections=45 requests=2 rejected=41 timeouts=0");
+    group("slowloris-seq", "cases=12 connections=13 requests=7 rejected=5 timeouts=5");
+    group("conditional-seq", "cases=23 connections=1 requests=23 rejected=0 timeouts=0");
 }

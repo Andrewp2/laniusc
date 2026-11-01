@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **285 modules**, **14527 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **285 modules**, **14572 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -244,7 +244,7 @@ Inventory: **285 modules**, **14527 declaration/member entries**. Counts include
 | [ext::http_client](ext/http_client.md) | [source](../../extended/ext/http_client.lani#L2) | 169 | Source inventory | [extended-http-client](../extended-http-client.md), [extended-http-exchange-testing](../extended-http-exchange-testing.md), [extended-http-batch](../extended-http-batch.md), [extended-fetch-many](../extended-fetch-many.md), [extended-https-client](../extended-https-client.md), [extended-https-batch](../extended-https-batch.md), [extended-http-protocol-testing](../extended-http-protocol-testing.md), [extended-url-client](../extended-url-client.md) |
 | [ext::http_server](ext/http_server.md) | [source](../../extended/ext/http_server.lani#L2) | 236 | Source inventory | [extended-http-server](../extended-http-server.md), [library-server-concurrency-plan](../library-server-concurrency-plan.md), [extended-https-server-exchange](../extended-https-server-exchange.md), [library-server-contract](../library-server-contract.md) |
 | [ext::http_server_poll](ext/http_server_poll.md) | [source](../../extended/ext/http_server_poll.lani#L2) | 27 | Source inventory | [extended-server-poll](../extended-server-poll.md), [library-server-contract](../library-server-contract.md) |
-| [ext::http_service](ext/http_service.md) | [source](../../extended/ext/http_service.lani#L4) | 100 | Source inventory | [extended-http-service](../extended-http-service.md), [extended-http](../extended-http.md) |
+| [ext::http_service](ext/http_service.md) | [source](../../extended/ext/http_service.lani#L5) | 145 | Source inventory | [extended-http-service](../extended-http-service.md), [extended-http](../extended-http.md), [stdlib-event-loop](../stdlib-event-loop.md) |
 | [ext::http_url](ext/http_url.md) | [source](../../extended/ext/http_url.lani#L3) | 50 | Source inventory | [extended-http-url](../extended-http-url.md), [extended-url-client](../extended-url-client.md), [library-url-client-plan](../library-url-client-plan.md) |
 | [ext::https_batch](ext/https_batch.md) | [source](../../extended/ext/https_batch.lani#L2) | 5 | Source inventory | [extended-https-batch](../extended-https-batch.md), [extended-https-client](../extended-https-client.md), [extended-https-batch-testing](../extended-https-batch-testing.md), [extended-http-batch](../extended-http-batch.md) |
 | [ext::https_client](ext/https_client.md) | [source](../../extended/ext/https_client.lani#L3) | 80 | Source inventory | [extended-https-client](../extended-https-client.md), [extended-https-batch](../extended-https-batch.md), [extended-https-batch-testing](../extended-https-batch-testing.md), [extended-openssl-tls](../extended-openssl-tls.md), [extended-url-client](../extended-url-client.md) |
