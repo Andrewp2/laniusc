@@ -200,14 +200,26 @@ pub impl Child {
     // Observe terminal status without consuming it. Keep the unreaped leader
     // anchor for group cancellation while descendants still hold pipe ends.
     // cached remains exclusively the already-reaped status cache.
-    pub fn try_observe_exit(&self) -> core::result::Result<core::option::Option<ExitStatus>,Failure> {
+    pub fn try_observe_exit(&self) -> core::result::Result<core::option::Option<ExitStatus>,Failure> { return self.observe(false); }
+    // Blocking form: waitid(WEXITED|WNOWAIT) retried on EINTR, leaving the
+    // terminated child unreaped so its PID still names it (for example for a
+    // CPU-clock read) until wait/try_wait performs the final reap.
+    pub fn observe_exit(&self) -> core::result::Result<ExitStatus,Failure> {
+        let observed: core::result::Result<core::option::Option<ExitStatus>,Failure> = self.observe(true);
+        if (observed.is_err()) { return core::result::Err(observed.unwrap_err()); }
+        if (observed.unwrap().is_none()) { return core::result::Err(failure(Error::Host,Stage::Wait,5)); }
+        return core::result::Ok(observed.unwrap().unwrap());
+    }
+    fn observe(&self, blocking: bool) -> core::result::Result<core::option::Option<ExitStatus>,Failure> {
         if (self.cached.is_some()) { return core::result::Ok(self.cached); }
         if (self.pid <= 0) { return core::result::Err(failure(Error::LostChild,Stage::Wait,10)); }
         if (self.observed.is_some()) { return core::result::Ok(self.observed); }
         // Native Linux x86_64 siginfo_t: 128 bytes, child pid at byte16,
         // status at byte24, si_code at byte8. Initialize the no-event sentinel.
         let info: [i32;32] = [0;32];
-        let n: i64 = std::command_raw::observe_exit(self.pid,core::mem::i32_array_data_ptr(info));
+        let n: i64 = -4;
+        if (blocking) { while (n == -4) { n = std::command_raw::observe_exit_blocking(self.pid,core::mem::i32_array_data_ptr(info)); } }
+        else { n = std::command_raw::observe_exit(self.pid,core::mem::i32_array_data_ptr(info)); }
         if (n < 0) {
             if (n == -10) { self.pid = 0; self.group_confirmed = false; self.observed = core::option::None(); return core::result::Err(failure(Error::LostChild,Stage::Wait,10)); }
             return core::result::Err(host(Stage::Wait,n));

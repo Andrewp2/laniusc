@@ -579,6 +579,20 @@ Cartesian repetition across every type/layout. Historical codec receipts keep
 their original API/source scope; the accepted profile is native Linux x86_64
 CPU output, with broader library/target/lifetime work open.
 
+**Named host clocks and child CPU time.**
+
+The [host-clock guide](stdlib-host-clocks.md) adds `std::host_clocks`: nine
+named Linux clocks plus other-process CPU clocks, typed by kind (wall
+timestamps, steady instants, CPU durations), clock resolutions, absolute
+`clock_nanosleep` waits that keep their target across EINTR, and a Boottime
+`std::clock::Monotonic` provider for suspend-inclusive deadlines. A blocking
+non-reaping `std::command::Child::observe_exit()` lets the
+[time-command](stdlib-host-clocks.md#application-time-command) program read a
+child's exact final CPU time before reaping it. The self-checking contracts
+program and the cli50/timing21/clocks48 oracle groups pass as direct runs of the
+compiled programs on native Linux x86_64; two existing command-group oracles
+pass after the observation change.
+
 **Shared random-source budgets.**
 
 The [draw-budget guide](stdlib-random-budget.md) specifies one borrowed adapter,

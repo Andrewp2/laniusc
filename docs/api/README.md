@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **277 modules**, **14125 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **279 modules**, **14218 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -27,6 +27,7 @@ Inventory: **277 modules**, **14125 declaration/member entries**. Counts include
 | [core::bits](core/bits.md) | [source](../../stdlib/core/bits.lani#L2) | 42 | Source inventory | [stdlib-boolean-bits](../stdlib-boolean-bits.md) |
 | [core::bitset](core/bitset.md) | [source](../../stdlib/core/bitset.lani#L5) | 59 | Source inventory | [stdlib-bitset-owned](../stdlib-bitset-owned.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md) |
 | [core::bool](core/bool.md) | [source](../../stdlib/core/bool.lani#L3) | 10 | Source inventory | [stdlib-boolean-bits](../stdlib-boolean-bits.md) |
+| [core::buffered](core/buffered.md) | [source](../../stdlib/core/buffered.lani#L4) | 57 | Source inventory | **Unregistered** |
 | [core::calendar](core/calendar.md) | [source](../../stdlib/core/calendar.lani#L4) | 158 | Source inventory | [stdlib-calendar](../stdlib-calendar.md) |
 | [core::char](core/char.md) | [source](../../stdlib/core/char.lani#L2) | 19 | Source inventory | [stdlib-unicode](../stdlib-unicode.md) |
 | [core::clone](core/clone.md) | [source](../../stdlib/core/clone.lani#L3) | 4 | Source inventory | [stdlib-clone](../stdlib-clone.md), [stdlib-clone-values](../stdlib-clone-values.md) |
@@ -103,7 +104,7 @@ Inventory: **277 modules**, **14125 declaration/member entries**. Counts include
 | [alloc::arena](alloc/arena.md) | [source](../../stdlib/alloc/arena.lani#L3) | 49 | Source inventory | [stdlib-arena](../stdlib-arena.md), [stdlib-layout](../stdlib-layout.md) |
 | [alloc::binary_heap](alloc/binary_heap.md) | [source](../../stdlib/alloc/binary_heap.lani#L4) | 54 | Source inventory | [stdlib-binary-heap](../stdlib-binary-heap.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-heap-iterators](../stdlib-heap-iterators.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md), [stdlib-owning-heap](../stdlib-owning-heap.md), [stdlib-exact-size-iterators](../stdlib-exact-size-iterators.md) |
 | [alloc::bitset](alloc/bitset.md) | [source](../../stdlib/alloc/bitset.lani#L4) | 55 | Source inventory | [stdlib-bitset-owned](../stdlib-bitset-owned.md) |
-| [alloc::buffered](alloc/buffered.md) | [source](../../stdlib/alloc/buffered.lani#L4) | 54 | Source inventory | [stdlib-buffered](../stdlib-buffered.md), [stdlib-format-write](../stdlib-format-write.md), [stdlib-delimited-io](../stdlib-delimited-io.md), [stdlib-select-records](../stdlib-select-records.md), [stdlib-seek](../stdlib-seek.md), [stdlib-reverse-records](../stdlib-reverse-records.md) |
+| [alloc::buffered](alloc/buffered.md) | [source](../../stdlib/alloc/buffered.lani#L4) | 49 | Source inventory | [stdlib-buffered](../stdlib-buffered.md), [stdlib-format-write](../stdlib-format-write.md), [stdlib-delimited-io](../stdlib-delimited-io.md), [stdlib-select-records](../stdlib-select-records.md), [stdlib-seek](../stdlib-seek.md), [stdlib-reverse-records](../stdlib-reverse-records.md) |
 | [alloc::clone](alloc/clone.md) | [source](../../stdlib/alloc/clone.lani#L2) | 8 | Source inventory | [stdlib-clone](../stdlib-clone.md), [stdlib-owning-iterators](../stdlib-owning-iterators.md) |
 | [alloc::clone_binary_heap](alloc/clone_binary_heap.md) | [source](../../stdlib/alloc/clone_binary_heap.lani#L4) | 10 | Source inventory | [stdlib-clone-binary-heap](../stdlib-clone-binary-heap.md), [stdlib-owning-heap](../stdlib-owning-heap.md) |
 | [alloc::clone_deque](alloc/clone_deque.md) | [source](../../stdlib/alloc/clone_deque.lani#L4) | 9 | Source inventory | [stdlib-clone-deque](../stdlib-clone-deque.md) |
@@ -132,7 +133,7 @@ Inventory: **277 modules**, **14125 declaration/member entries**. Counts include
 | [std::args_checked](std/args_checked.md) | [source](../../stdlib/std/args_checked.lani#L7) | 3 | Source inventory | [stdlib-process-context](../stdlib-process-context.md) |
 | [std::atomic_file](std/atomic_file.md) | [source](../../stdlib/std/atomic_file.lani#L4) | 104 | Source inventory | [stdlib-atomic-files](../stdlib-atomic-files.md), [stdlib-temp-files](../stdlib-temp-files.md), [extended-kv](../extended-kv.md) |
 | [std::clock](std/clock.md) | [source](../../stdlib/std/clock.lani#L2) | 21 | Source inventory | [stdlib-time](../stdlib-time.md) |
-| [std::command](std/command.md) | [source](../../stdlib/std/command.lani#L3) | 122 | Source inventory | [stdlib-command](../stdlib-command.md), [stdlib-command-groups](../stdlib-command-groups.md), [stdlib-run-group](../stdlib-run-group.md) |
+| [std::command](std/command.md) | [source](../../stdlib/std/command.lani#L3) | 123 | Source inventory | [stdlib-command](../stdlib-command.md), [stdlib-command-groups](../stdlib-command-groups.md), [stdlib-run-group](../stdlib-run-group.md), [stdlib-host-clocks](../stdlib-host-clocks.md) |
 | [std::command_capture](std/command_capture.md) | [source](../../stdlib/std/command_capture.lani#L3) | 84 | Source inventory | [stdlib-command-capture](../stdlib-command-capture.md), [stdlib-command-groups](../stdlib-command-groups.md), [stdlib-run-group](../stdlib-run-group.md) |
 | [std::directory](std/directory.md) | [source](../../stdlib/std/directory.lani#L2) | 63 | Source inventory | [stdlib-directory](../stdlib-directory.md) |
 | [std::entropy](std/entropy.md) | [source](../../stdlib/std/entropy.lani#L2) | 26 | Source inventory | [stdlib-randomness](../stdlib-randomness.md), [stdlib-entropy-bounded](../stdlib-entropy-bounded.md) |
@@ -151,6 +152,7 @@ Inventory: **277 modules**, **14125 declaration/member entries**. Counts include
 | [std::fs](std/fs.md) | [source](../../stdlib/std/fs.lani#L5) | 105 | Source inventory | [stdlib-filesystem](../stdlib-filesystem.md) |
 | [std::gpu](std/gpu.md) | [source](../../stdlib/std/gpu.lani#L6) | 60 | Unbound host declarations | [library-remaining-api-audit](../library-remaining-api-audit.md), [library-host-prerequisites](../library-host-prerequisites.md) |
 | [std::host](std/host.md) | [source](../../stdlib/std/host.lani#L5) | 23 | Metadata only | [library-remaining-api-audit](../library-remaining-api-audit.md), [library-host-prerequisites](../library-host-prerequisites.md) |
+| [std::host_clocks](std/host_clocks.md) | [source](../../stdlib/std/host_clocks.lani#L3) | 39 | Source inventory | [stdlib-host-clocks](../stdlib-host-clocks.md), [stdlib-time](../stdlib-time.md) |
 | [std::io](std/io.md) | [source](../../stdlib/std/io.lani#L3) | 78 | Source inventory | [stdlib-checked-sample-migration](../stdlib-checked-sample-migration.md), [library-remaining-api-audit](../library-remaining-api-audit.md) |
 | [std::io_binary](std/io_binary.md) | [source](../../stdlib/std/io_binary.lani#L2) | 6 | Source inventory | **Unregistered** |
 | [std::io_binary_wide_i64](std/io_binary_wide_i64.md) | [source](../../stdlib/std/io_binary_wide_i64.lani#L2) | 2 | Source inventory | **Unregistered** |
@@ -315,7 +317,7 @@ Inventory: **277 modules**, **14125 declaration/member entries**. Counts include
 
 | Module | Source | Entries | Profile | Contract guides |
 | --- | --- | ---: | --- | --- |
-| [std::command_raw](std/command_raw.md) | [source](../../stdlib/std/command_raw.lani#L2) | 16 | Source inventory | [stdlib-command](../stdlib-command.md), [stdlib-command-groups](../stdlib-command-groups.md), [stdlib-run-group](../stdlib-run-group.md) |
+| [std::command_raw](std/command_raw.md) | [source](../../stdlib/std/command_raw.lani#L2) | 17 | Source inventory | [stdlib-command](../stdlib-command.md), [stdlib-command-groups](../stdlib-command-groups.md), [stdlib-run-group](../stdlib-run-group.md) |
 
 ### `ext`
 
@@ -340,6 +342,7 @@ These are discovery/contract-link gaps, not claims that their code is missing or
 - [core::array_u8_4](core/array_u8_4.md)
 - [core::binary_wide_i64](core/binary_wide_i64.md)
 - [core::binary_wide_u64](core/binary_wide_u64.md)
+- [core::buffered](core/buffered.md)
 - [core::hex_wide_i64](core/hex_wide_i64.md)
 - [core::hex_wide_u64](core/hex_wide_u64.md)
 - [core::ops](core/ops.md)
