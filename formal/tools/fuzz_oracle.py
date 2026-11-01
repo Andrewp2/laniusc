@@ -49,8 +49,9 @@ a program is still compared (each was found by this fuzzer; the programs are
 in target/claude-work/fuzz/found/):
 - Store order. For `a[i] = v` with i past the end, Core checks the bound
   before it evaluates v (SEMANTIC_DECISIONS.md, "Traps in compiled code");
-  laniusc evaluates v first, so v's output appears before laniusc's trap.
-  A store whose index may be past the end gets a literal value.
+  laniusc evaluates v first, as Rust does, so v's output (or v's own trap)
+  comes before laniusc's trap. Such a program is counted as known
+  (store_order_known), not as a disagreement.
 - Constant traps. laniusc rejects a constant divisor of zero and a constant
   index past the end at compile time (KNOWN_REJECTS); Core traps when the
   program runs. Divisors and indexes that may trap are computed.
@@ -546,7 +547,9 @@ class Gen:
 
     @staticmethod
     def anchored(text):
-        return not re.fullmatch(r'\(?-?\d+\)?', text)
+        # A name, a call or a cast decides the type; literals alone, as in
+        # `(15 & 89)`, do not (laniusc types them from no sibling in Err(..)).
+        return re.search(r'[A-Za-z_]', text) is not None
 
     def bool_expr(self, s, d, anchor=False):
         atoms = self.atoms(s, 'bool')
@@ -750,8 +753,9 @@ class Gen:
         et, size = array_parts(vt)
         i = self.index(s, size)
         # Past the end, Core traps before it evaluates the value and laniusc
-        # after (the docstring's store order): a value with no output keeps the two alike.
-        v = self.lit(et) if self.wild else self.expr(s, et, self.depth)
+        # after (the docstring's store order, counted as known); a literal
+        # value half the time keeps the rest of such a program compared.
+        v = self.lit(et) if self.wild and self.chance(0.5) else self.expr(s, et, self.depth)
         return [ind + f'{n}[{i}] = {v};']
 
     def s_emit(self, s, d, ind):
@@ -1371,8 +1375,9 @@ class Laniusc:
         self.builds = 0
         self.build_s = 0.0
 
-    def build(self, name, text):
-        """The binary, or None and laniusc's error."""
+    def build(self, name, text, stop=None):
+        """The binary, or None and laniusc's error (None and None when the
+        compile is still waiting, mostly for the shared GPU, at stop)."""
         k = run_cache.key(run_cache.file_digest(self.args.laniusc), run_cache.tree_digest(so.STDLIB), text)
         hit = run_cache.load_file('build', k)
         if hit is not None:
@@ -1383,8 +1388,13 @@ class Laniusc:
         open(lani, 'w').write(text)
         if os.path.exists(exe):
             os.remove(exe)
-        run = subprocess.run([LCC, '--stdlib-root', so.STDLIB, '-o', exe, lani], capture_output=True, text=True,
-                             timeout=120)
+        wait = 120 if stop is None else max(1.0, min(120, stop - time.time()))
+        try:
+            run = subprocess.run([LCC, '--stdlib-root', so.STDLIB, '-o', exe, lani], capture_output=True,
+                                 text=True, timeout=wait)
+        except subprocess.TimeoutExpired:
+            self.build_s += time.time() - began
+            return None, None
         self.builds += 1
         self.build_s += time.time() - began
         if run.returncode != 0 or not os.path.exists(exe):
@@ -1399,7 +1409,11 @@ class Laniusc:
             if stop is not None and time.time() > stop:
                 out.append(('skipped', ''))
                 continue
-            exe, error = self.build(f'{tag}{k}', text)
+            exe, error = self.build(f'{tag}{k}', text, stop)
+            if exe is None and error is None:
+                stop = time.time()  # the GPU is busy past the budget: skip the rest
+                out.append(('skipped', ''))
+                continue
             out.append(('rejects', error) if exe is None else ('ran', po.run([exe])))
         return out
 
@@ -1420,8 +1434,8 @@ def agree(want, have):
 # the verified compiler) compiles it and traps when it runs there. Such
 # programs are counted as known, neither agreeing nor disagreeing.
 KNOWN_REJECTS = [
-    ('unsupported x86 zero divisor', 'a constant divisor of zero'),
-    ('unsupported x86 array index bounds', 'a constant index past the end of an array'),
+    ('unsupported x86 zero divisor', 'laniusc rejecting a constant divisor of zero (KNOWN_REJECTS)'),
+    ('unsupported x86 array index bounds', 'laniusc rejecting a constant index past the end of an array (KNOWN_REJECTS)'),
 ]
 
 
@@ -1432,18 +1446,38 @@ def known_reject(error):
     return None
 
 
-def verdict(v, l):
+STORE_ORDER = 'an out-of-bounds store whose value laniusc evaluates first (store_order_known)'
+INDEXED_STORE = re.compile(r'\]\s*=[^=]')
+
+
+def store_order_known(text, want, have):
+    """Whether two runs differ only as the store order would make them
+    (SEMANTIC_DECISIONS.md, "Traps in compiled code"): both trap, the
+    program stores through an index, and the verified compiler's output is
+    where laniusc's starts (laniusc evaluated the value first, then trapped,
+    perhaps at a trap of the value's own)."""
+    return (want[0] in po.VERIFIED_TRAPS and have[0] in po.LANIUSC_TRAPS and
+            INDEXED_STORE.search(text) is not None and
+            have[1].startswith(want[1]) and have[2].startswith(want[2]))
+
+
+def verdict(v, l, text):
     """How the two compilers' outcomes compare: None when they agree or
-    either does not compile it, 'known' for a KNOWN_REJECTS rejection,
+    either does not compile it, ('known', what) for a known difference,
     else a short kind."""
     if v[0] != 'elf' or l[0] == 'skipped':
         return None
     if l[0] == 'rejects':
-        if known_reject(l[1]):
-            return 'known'
-        return 'laniusc fails' if 'LNC0057' in l[1] else 'laniusc rejects'
+        what = known_reject(l[1])
+        if what:
+            return ('known', what)
+        # The diagnostic without its place, so that minimizing keeps it.
+        return ('laniusc fails' if 'LNC0057' in l[1] else 'laniusc rejects') + \
+            ': ' + l[1].split(' at line ')[0][:200]
     want = po.run([v[1]])
-    return None if agree(want, l[1]) else 'differ'
+    if agree(want, l[1]):
+        return None
+    return ('known', STORE_ORDER) if store_order_known(text, want, l[1]) else 'differ'
 
 
 def shown(r):
@@ -1459,7 +1493,7 @@ def evaluate(verified, laniusc, texts, tag):
     lout = [None] * len(texts)
     for k, l in zip(ok, ls):
         lout[k] = l
-    return [(v, l, verdict(v, l) if l else None) for v, l in zip(vs, lout)]
+    return [(v, l, verdict(v, l, t) if l else None) for v, l, t in zip(vs, lout, texts)]
 
 
 # ---------------------------------------------------------------- minimizing
@@ -1521,11 +1555,14 @@ class Minimizer:
         self.rounds += 1
         self.tests += len(texts)
         rs = evaluate(self.verified, self.laniusc, texts, f'm{self.rounds}_')
-        for text, r in zip(texts, rs):
-            if r[2] == self.kind:
+        # A program needs its main: without one, runAll is given no entry
+        # (a harness artifact, not the verified compiler's output).
+        keep = [r[2] == self.kind and 'fn main(' in text for text, r in zip(texts, rs)]
+        for text, r, k in zip(texts, rs, keep):
+            if k:
                 self.outcome[text] = (r[0], r[1], po.run([r[0][1]]))
         self.last = time.time() - began
-        return [r[2] == self.kind for r in rs]
+        return keep
 
     def run(self, text):
         """The smallest program found by removing units, depth by depth (top
@@ -1654,12 +1691,11 @@ def main():
         ran = po.run([vs[k][1]])
         traps += ran[0] in po.VERIFIED_TRAPS
         lines_out += ran[1].count(b'\n') + ran[2].count(b'\n')
-        kind = verdict(vs[k], l)
+        kind = verdict(vs[k], l, texts[k])
         if kind is None:
             agreed += 1
-        elif kind == 'known':
-            what = known_reject(l[1])
-            known[what] = known.get(what, 0) + 1
+        elif isinstance(kind, tuple):
+            known[kind[1]] = known.get(kind[1], 0) + 1
         else:
             found.append(dict(k=k, id=ids[k], kind=kind, text=texts[k], want=po.run([vs[k][1]]), have=l))
     run_s = time.time() - t0
@@ -1710,7 +1746,7 @@ def main():
              (f'; {skipped} not built by laniusc, past --budget' if skipped else ''),
              'not compiled by the verified compiler, by the gap srcDump names:'] + \
         [f'  {n} {r}' for r, n in sorted(reasons.items(), key=lambda x: (-x[1], x[0]))]
-    lines += [f'known: laniusc rejects {n} for {what} (KNOWN_REJECTS)' for what, n in sorted(known.items())]
+    lines += [f'known: {n} for {what}' for what, n in sorted(known.items())]
     lines += report
     lines.append(f'{len(found)} disagreements')
     print('\n'.join(lines))
