@@ -1,0 +1,98 @@
+// Direct ext::pratt contracts: table conflicts, powers, event order, error
+// token indices and fixed capacity. Exit 0 on success, else the failed check.
+module app::main;
+import alloc::vec;
+import core::option;
+import core::result;
+import core::slice;
+import ext::pratt;
+
+const NUM: i32 = 0; const PLUS: i32 = 1; const STAR: i32 = 2; const POW: i32 = 3; const MINUS: i32 = 4;
+const BANG: i32 = 5; const OPEN: i32 = 6; const CLOSE: i32 = 7; const COMMA: i32 = 8; const NAME: i32 = 9;
+
+fn tokens(kinds: [i32], count: i32, out: &alloc::vec::Vec<ext::pratt::Token>) -> core::slice::View<ext::pratt::Token> {
+    out.clear(); let i: i32 = 0;
+    while (i < count) { let unused = out.try_push(ext::pratt::Token { kind: kinds[i], start: i, end: i + 1 }); i += 1; }
+    return out.as_view();
+}
+// Encode events as role*1000 + kind*10 + arity, compared with the expected list.
+fn same(p: &ext::pratt::Parser, expected: [i32], count: i32) -> bool {
+    if (p.event_count() != count) { return false; }
+    let i: i32 = 0;
+    while (i < count) {
+        let e: ext::pratt::Event = p.event(i).unwrap();
+        if (e.role * 1000 + e.kind * 10 + e.arity != expected[i]) { return false; }
+        i += 1;
+    }
+    return true;
+}
+fn error_token(result: core::result::Result<i32, ext::pratt::Error>) -> i32 {
+    if (result.is_ok()) { return -100; }
+    return match (result.unwrap_err()) {
+        ext::pratt::Error::ExpectedOperand(at) -> 1000 + at, ext::pratt::Error::ExpectedOperator(at) -> 2000 + at,
+        ext::pratt::Error::UnexpectedEnd(at) -> 3000 + at, ext::pratt::Error::Unmatched(at) -> 4000 + at,
+        ext::pratt::Error::Unclosed(at) -> 5000 + at, ext::pratt::Error::MisplacedSeparator(at) -> 6000 + at,
+        ext::pratt::Error::UnknownToken(at) -> 7000 + at, ext::pratt::Error::WorkspaceTooSmall -> 8000,
+        ext::pratt::Error::Bounds -> 8001, _ -> -1
+    };
+}
+fn main() -> i32 {
+    let made = ext::pratt::table(10); if (made.is_err()) { return 1; }
+    let t: ext::pratt::Table = made.unwrap();
+    if (t.atom(NUM).is_err() || t.atom(NAME).is_err() || t.infix(PLUS, 1, 2).is_err() || t.infix(STAR, 3, 4).is_err()
+        || t.infix(POW, 6, 5).is_err() || t.prefix(MINUS, 5).is_err() || t.infix(MINUS, 1, 2).is_err()
+        || t.postfix(BANG, 7).is_err() || t.group(OPEN, CLOSE).is_err() || t.call(OPEN, CLOSE, COMMA, 9).is_err()) { return 2; }
+    // Conflicts and invalid arguments leave the table unchanged.
+    if (t.atom(MINUS).is_ok() || t.postfix(PLUS, 3).is_ok() || t.infix(NUM, 0, 1).is_ok() || t.prefix(STAR, 1000001).is_ok()
+        || t.atom(10).is_ok() || t.atom(-1).is_ok() || t.group(NUM, CLOSE).is_ok() || ext::pratt::table(0).is_ok()) { return 3; }
+    let made_p = ext::pratt::parser(8); if (made_p.is_err()) { return 4; }
+    let p: ext::pratt::Parser = made_p.unwrap();
+    let buffer: alloc::vec::Vec<ext::pratt::Token> = alloc::vec::new();
+    // 1 + 2 * 3 ** 4 ** 5 -> postfix with right-associative POW.
+    let a: [i32; 9] = [NUM, PLUS, NUM, STAR, NUM, POW, NUM, POW, NUM];
+    if (p.parse(t.borrow(), tokens(a, 9, buffer.borrow())).is_ok()) { return 5; }
+    if (error_token(p.parse(t.borrow(), tokens(a, 9, buffer.borrow()))) != 8000 || p.event_count() != 0) { return 6; }
+    let a7: [i32; 7] = [NUM, PLUS, NUM, STAR, NUM, POW, NUM];
+    if (p.parse(t.borrow(), tokens(a7, 7, buffer.borrow())).unwrap() != 7) { return 7; }
+    let e7b: [i32; 7] = [0, 0, 0, 0, 2032, 2022, 2012];
+    if (!same(p.borrow(), e7b, 7)) { return 8; }
+    // - 2 ! * 3 : postfix binds tighter than prefix (7 > 5), then STAR.
+    let b: [i32; 5] = [MINUS, NUM, BANG, STAR, NUM];
+    let unused = p.parse(t.borrow(), tokens(b, 5, buffer.borrow()));
+    let eb: [i32; 5] = [0, 3051, 1041, 0, 2022];
+    if (!same(p.borrow(), eb, 5)) { return 9; }
+    // f ( ) and f ( 1 , ( 2 ) ) : CALL arity 0 and 2; groups emit nothing.
+    let c: [i32; 3] = [NAME, OPEN, CLOSE];
+    let unused2 = p.parse(t.borrow(), tokens(c, 3, buffer.borrow()));
+    let ec: [i32; 2] = [90, 4060];
+    if (!same(p.borrow(), ec, 2)) { return 10; }
+    let d: [i32; 8] = [NAME, OPEN, NUM, COMMA, OPEN, NUM, CLOSE, CLOSE];
+    let unused3 = p.parse(t.borrow(), tokens(d, 8, buffer.borrow()));
+    let ed: [i32; 4] = [90, 0, 0, 4062];
+    if (!same(p.borrow(), ed, 4)) { return 11; }
+    // Error kinds carry the offending token index.
+    let f1: [i32; 2] = [NUM, NUM];
+    if (error_token(p.parse(t.borrow(), tokens(f1, 2, buffer.borrow()))) != 2001) { return 12; }
+    let f2: [i32; 2] = [NUM, PLUS];
+    if (error_token(p.parse(t.borrow(), tokens(f2, 2, buffer.borrow()))) != 3002) { return 13; }
+    let f3: [i32; 3] = [OPEN, NUM, NUM];
+    if (error_token(p.parse(t.borrow(), tokens(f3, 3, buffer.borrow()))) != 2002) { return 14; }
+    let f4: [i32; 2] = [OPEN, NUM];
+    if (error_token(p.parse(t.borrow(), tokens(f4, 2, buffer.borrow()))) != 5000) { return 15; }
+    let f5: [i32; 2] = [NUM, CLOSE];
+    if (error_token(p.parse(t.borrow(), tokens(f5, 2, buffer.borrow()))) != 4001) { return 16; }
+    let f6: [i32; 3] = [NUM, COMMA, NUM];
+    if (error_token(p.parse(t.borrow(), tokens(f6, 3, buffer.borrow()))) != 6001) { return 17; }
+    let f7: [i32; 2] = [OPEN, CLOSE];
+    if (error_token(p.parse(t.borrow(), tokens(f7, 2, buffer.borrow()))) != 1001) { return 18; }
+    let f8: [i32; 1] = [12];
+    if (error_token(p.parse(t.borrow(), tokens(f8, 1, buffer.borrow()))) != 7000) { return 19; }
+    let f9: [i32; 1] = [NUM];
+    if (error_token(p.parse(t.borrow(), tokens(f9, 0, buffer.borrow()))) != 3000 || p.event_count() != 0) { return 20; }
+    // The parser stays reusable after errors; a destroyed one reports WorkspaceTooSmall.
+    if (p.parse(t.borrow(), tokens(f9, 1, buffer.borrow())).unwrap() != 1) { return 21; }
+    p.destroy();
+    if (error_token(p.parse(t.borrow(), tokens(f9, 1, buffer.borrow()))) != 8000) { return 22; }
+    t.destroy(); buffer.destroy();
+    return 0;
+}
