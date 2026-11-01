@@ -1,5 +1,9 @@
-import Lanius.Mini.Reading.Det.Arms
+module
 
+public import Lanius.Mini.Reading.Det.Arms
+import all Lanius.Mini.Compiler.P.arithShiftRight
+
+@[expose] public section
 /-! # Determinism: a match expression's arm order
 
 `MatchOrder` gives one list: its branches are told apart by whether some arm

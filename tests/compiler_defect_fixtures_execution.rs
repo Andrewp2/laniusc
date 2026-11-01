@@ -51,6 +51,11 @@ fn bare_generic_type_path_infers_the_impl_parameters() {
 }
 
 #[test]
+fn bare_imported_generic_type_path_calls_its_self_methods() {
+    compiles_and_exits_zero("b19_bare_imported_generic_path");
+}
+
+#[test]
 fn lnc0005_a_variant_named_inside_a_pattern_is_matched_not_declared() {
     compiles_and_exits_zero("lnc0005_nested_variant_pattern");
 }

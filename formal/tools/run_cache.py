@@ -61,6 +61,15 @@ class lean_lock:
 SLICE = '--slice=lean.slice'
 
 
+def lake_current(target, env):
+    """Whether lake's target is built and current (`lake build --no-build`,
+    which builds nothing), so that a caller need not wait for a Lean slot
+    only to find the target up to date."""
+    import subprocess
+    return subprocess.run(['lake', 'build', '--no-build', target], cwd=FORMAL, env=env,
+                          capture_output=True).returncode == 0
+
+
 def available_gb():
     with open('/proc/meminfo') as f:
         for line in f:

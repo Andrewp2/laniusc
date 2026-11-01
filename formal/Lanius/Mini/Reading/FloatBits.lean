@@ -1,6 +1,16 @@
-import Lanius.Mini.Reading.Types
-import Lanius.IEEE
+module
 
+public import Lanius.Mini.Reading.Types
+public import Lanius.IEEE
+import all Lanius.Mini.Frontend.P.flDecimal
+import all Lanius.Mini.Frontend.P.flLog2Or0
+import all Lanius.Mini.Frontend.P.flNatHalf
+import all Lanius.Mini.Frontend.P.flRoundUp
+import all Lanius.Mini.Frontend.P.intLiteral
+import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.typeDeclAt
+
+@[expose] public section
 /-! # The reading: a float literal's rounding
 
 The front end rounds a decimal literal `m * 10^e` to binary32 and binary64

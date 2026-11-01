@@ -1,7 +1,12 @@
 # Standard and extended library overview
 
-The full library goal remains open. The current increment makes
-`core::slice` sorting adaptive: [pattern-defeating quicksort](stdlib-sort-algorithms.md)
+The full library goal remains open. The current increment adds
+[bulk slice and vector operations](stdlib-slice-bulk.md): `copy_from_slice`,
+`swap_with_slice`, `fill_range`, `memchr` and `memcmp` in `core::slice`, and
+`try_extend_from_slice`, `copy_from_slice`, `swap_with_slice`, `fill` and
+`swap` on `alloc::vec::Vec`. Packed byte runs move eight bytes at a time:
+a 4 KiB copy runs 5x faster than the element loop and a fill 38x faster.
+The preceding increment makes `core::slice` sorting adaptive: [pattern-defeating quicksort](stdlib-sort-algorithms.md)
 for unstable sorts and a run-adaptive stable merge sort with galloping over
 caller scratch. Both are checked against Python `sorted`, with recorded
 comparison counts and timings. The preceding increment adds inline
@@ -574,10 +579,14 @@ agreements with GNU `patch` at `-F0` and `-F2`. On a 1.6 MB pair, `seq-diff`
 runs within 2× of `git diff --no-index` in every mode (59-70 ms against
 43 ms for the default unified diff). It gets there by splitting and
 hash-consing lines in one word-at-a-time pass (`split_classify`).
-`seq-diff --histogram` matches `git diff --histogram` byte for byte on 4,000
-generated pairs. The comparison covers git's indent heuristic and its xdiff
-fallback for lines repeated more than 64 times. The default Myers diff runs
-within 1.2× of git (41 against 34 ms).
+`seq-diff`'s default output, `--histogram` and `-W`/`--function-context` match
+plain `git diff --no-index` byte for byte on all 4,000 generated pairs in each
+mode, from the first hunk header on. The comparison covers git's indent
+heuristic, its hunk-header function names, its whole-function context and the
+histogram's xdiff fallback for lines repeated more than 64 times. `--myers`
+still gives minimal diffs. The Myers diff ran within 1.2× of git (41 against
+34 ms), and the git-style default runs at 1.2× too (79 against 67 ms under
+heavy load).
 On the same inputs, `seq-patch` runs within 1.1× of GNU `patch` (10 ms) and
 `seq-merge` within 1.2× of `git merge-file` (99 against 83 ms).
 [Three-way merge](extended-merge3.md) (`ext::merge3`, `seq-merge`) aligns with
@@ -2294,6 +2303,20 @@ GOAWAY, RST_STREAM and response validation). The engine passes 17 cases
 against libnghttp2's server session and 46 against hand-built frames for
 every connection and stream error it must detect.
 
+The [HTTP/2 server engine](extended-http2-server.md) (`ext::http2_server`) is
+the I/O-free server side. It reads the client preface, enforces
+MAX_CONCURRENT_STREAMS by refusing extra streams, validates request
+pseudo-fields and fields, buffers bodies under flow control, answers 413 and
+431 itself, and sends responses within the client's windows.
+[`ext::http_service`](extended-http-service.md#http2-h2c) hands connections
+that open with the preface to it (prior-knowledge h2c) and keeps serving
+HTTP/1.1 on the same listener. The event server multiplexes h2c
+connections on its loop as well, and a load test of 100 concurrent h2c
+clients against 100 HTTP/1.1 clients checks every body and counter. A libnghttp2 client session through ctypes
+passes 6 session cases and 18 malformed-frame cases, both against the engine
+over a pipe and against the service over TCP. HTTP/2 over TLS waits on C
+callback support for OpenSSL's ALPN selection.
+
 The [WebSocket client](extended-websocket-client.md) (`ext::websocket_client`)
 uses `dial` for `ws://` and verified `wss://` URLs and the canonical
 `ext::websocket` frame engine in the client role. It validates the opening
@@ -2412,7 +2435,11 @@ Its structural writer emits the `ext::json` byte policy. The streaming
 `json` on 2,237 cases, and [csv-to-json](../sample_programs/csv_to_json.lani)
 agrees with Python `csv` on 550 RFC 4180 cases. `TokenReader` pulls tokens
 from any `core::io::Read` source, and `Writer.flush_to` streams output to any
-`core::io::Write` sink. [`core::float_decimal`](stdlib-float-decimal.md)
+`core::io::Write` sink.
+[`ext::json_pointer` and `ext::json_patch`](extended-json-patch.md) apply
+RFC 6901 pointers, RFC 6902 patches and RFC 7386 merge patches to
+`ext::json_tree` documents atomically. They agree with a Python model on
+6,450 RFC-example, error and generated cases. [`core::float_decimal`](stdlib-float-decimal.md)
 formats shortest decimals with Schubfach, which is exact with no fallback, in
 about 0.6 to 0.8 µs per value. It parses with an Eisel-Lemire fast path
 before its exact big-integer path, in about 0.7 to 0.8 µs per value. It
@@ -2464,10 +2491,11 @@ accepts in its states, lets `text_grep` count any lookbehind-free pattern on a
 0.9 MB corpus in about 0.1–0.2 s instead of 2.3–3.8 s. Its transitions are
 cached per byte, with partial states for UTF-8 prefixes, so `\p{Lu}` on a
 1.3 MB mixed-script file takes 147 ms instead of 1110 ms. `text_grep` also
-searches for the pattern's required literal with `core::search` across each
-64 KiB read and runs the matcher only on the records that contain it. On
-S4's 49 MB corpus a no-match scan takes 68 ms instead of 5.2 s, against GNU
-grep's 11 ms; patterns with a literal take 85–272 ms with `-c`
+searches for the pattern's required literal across each 64 KiB read, eight
+candidate starts per word step, and runs the matcher only on the records that
+contain it. On S4's 49 MB corpus a no-match scan takes 56 ms instead of 5.2 s,
+against GNU grep's 9 ms; patterns with a literal take 57–100 ms with `-c`
+(`the`, 150,582 matching lines, takes 100 ms against GNU's 54)
 ([timings](extended-text-grep.md#literal-prefilter)). Patterns without one
 run `Dfa.match_lines` over each whole block, restarting at every record, so
 `[0-9]+$` takes 0.54 s instead of 1.8 s.

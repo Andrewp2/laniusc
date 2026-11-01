@@ -1,0 +1,133 @@
+// Batch driver for oracle.py. Each stdin line is MODE TAB NODES TAB DOC TAB
+// ARG. MODE P applies JSON Patch ARG, M applies merge patch ARG, G evaluates
+// the pointer in the JSON string ARG. DOC and ARG are parsed with the default
+// limits; the operation runs with max_nodes NODES (0 keeps the default).
+// Each line prints "ok JSON" or "err KIND OPERATION" (plus the offset for
+// InvalidPointer), and "mutated" when DOC changed.
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import core::text;
+import ext::json_patch;
+import ext::json_pointer;
+import ext::json_stream;
+import ext::json_tree;
+import std::stream;
+
+fn append(out: &alloc::vec::Vec<u8>, bytes: [u8], start: i32, length: i32) {
+    core::result::unwrap(out.try_extend(core::slice::View { values: bytes, start: start, length: length }));
+}
+fn append_text(out: &alloc::vec::Vec<u8>, text: core::text::Text) { append(out, text.bytes, text.start, text.length); }
+fn append_str(out: &alloc::vec::Vec<u8>, value: str, count: i32) {
+    append(out, core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value), count), 0, count);
+}
+fn append_int(out: &alloc::vec::Vec<u8>, value: i64) {
+    if (value < 0) { core::result::unwrap(out.try_push(45)); value = -value; }
+    let buffer: [u8; 20] = [0; 20]; let used: i32 = 0;
+    while (true) { buffer[used] = ((value % 10) as u8) + 48; used += 1; value = value / 10; if (value == 0) { break; } }
+    while (used > 0) { used -= 1; let digit: u8 = buffer[used]; core::result::unwrap(out.try_push(digit)); }
+}
+fn report(out: &alloc::vec::Vec<u8>, error: ext::json_tree::Error) {
+    append_str(out, "err ", 4); append_text(out, ext::json_tree::kind_name(error.kind));
+    core::result::unwrap(out.try_push(32)); append_int(out, error.operation as i64);
+    let pointer: bool = match (error.kind) { ext::json_tree::ErrorKind::InvalidPointer -> true, _ -> false };
+    if (pointer) { core::result::unwrap(out.try_push(32)); append_int(out, error.offset as i64); }
+}
+fn emit(out: &alloc::vec::Vec<u8>, tree: &ext::json_tree::Tree, node: i32, writer: &ext::json_stream::Writer) {
+    writer.clear();
+    if (tree.write(node, writer).is_err()) { append_str(out, "err Output -1", 13); return; }
+    append_str(out, "ok ", 3);
+    let written: core::slice::View<u8> = writer.output();
+    append(out, written.values, written.start, written.length);
+}
+fn same_output(writer: &ext::json_stream::Writer, saved: &alloc::vec::Vec<u8>) -> bool {
+    let written: core::slice::View<u8> = writer.output();
+    if (written.length != saved.len()) { return false; }
+    let bytes: [u8] = saved.as_slice(); let index: i32 = 0;
+    while (index < written.length) { if (written.values[written.start + index] != bytes[index]) { return false; } index += 1; }
+    return true;
+}
+fn number(bytes: [u8], start: i32, stop: i32) -> i32 {
+    let value: i32 = 0; let index: i32 = start;
+    while (index < stop) { value = value * 10 + ((bytes[index] - 48) as i32); index += 1; }
+    return value;
+}
+
+fn finish(out: &alloc::vec::Vec<u8>, writer: &ext::json_stream::Writer, result: core::result::Result<ext::json_tree::Tree, ext::json_tree::Error>) {
+    if (result.is_err()) { report(out, result.unwrap_err()); return; }
+    let tree: ext::json_tree::Tree = result.unwrap();
+    emit(out, tree.borrow(), tree.root(), writer); tree.destroy();
+}
+// One case; fields are [start, stop) ranges of line bytes.
+fn run(out: &alloc::vec::Vec<u8>, writer: &ext::json_stream::Writer, saved: &alloc::vec::Vec<u8>, bytes: [u8], mode: u8, nodes: i32,
+       doc_start: i32, doc_stop: i32, arg_start: i32, arg_stop: i32) {
+    let limits: ext::json_tree::Limits = ext::json_tree::default_limits();
+    let parsed = ext::json_tree::parse(bytes, doc_start, doc_stop - doc_start, limits);
+    if (parsed.is_err()) { report(out, parsed.unwrap_err()); return; }
+    let document: ext::json_tree::Tree = parsed.unwrap();
+    let second = ext::json_tree::parse(bytes, arg_start, arg_stop - arg_start, limits);
+    if (second.is_err()) { report(out, second.unwrap_err()); document.destroy(); return; }
+    let argument: ext::json_tree::Tree = second.unwrap();
+    writer.clear();
+    core::result::unwrap(document.write(document.root(), writer));
+    saved.clear();
+    let before: core::slice::View<u8> = writer.output();
+    append(saved, before.values, before.start, before.length);
+    let run_limits: ext::json_tree::Limits = ext::json_tree::default_limits();
+    if (nodes > 0) { run_limits.max_nodes = nodes; }
+    if (mode == 71) {
+        if (argument.code(argument.root()) != 4) { append_str(out, "err InvalidPatch -1", 19); }
+        else {
+            let made = ext::json_pointer::parse(argument.text(argument.root()));
+            if (made.is_err()) { report(out, made.unwrap_err()); }
+            else {
+                let pointer: ext::json_pointer::Pointer = made.unwrap();
+                let found = ext::json_pointer::get(document.borrow(), pointer.borrow());
+                if (found.is_err()) { report(out, found.unwrap_err()); } else { emit(out, document.borrow(), found.unwrap(), writer); }
+                pointer.destroy();
+            }
+        }
+    } else {
+        if (mode == 77) { finish(out, writer, ext::json_patch::merge(document.borrow(), argument.borrow(), run_limits)); }
+        else { finish(out, writer, ext::json_patch::apply(document.borrow(), argument.borrow(), run_limits)); }
+    }
+    writer.clear();
+    core::result::unwrap(document.write(document.root(), writer));
+    if (!same_output(writer, saved)) { append_str(out, " mutated", 8); }
+    document.destroy(); argument.destroy();
+}
+
+fn main() -> i32 {
+    let data: alloc::vec::Vec<u8> = alloc::vec::new();
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let buffer: [u8; 65536] = [0; 65536];
+    while (true) {
+        let got = source.read(buffer, 0, 65536);
+        if (got.is_err()) { return 3; }
+        let n: i32 = got.unwrap();
+        if (n == 0) { break; }
+        core::result::unwrap(data.try_extend(core::slice::View { values: buffer, start: 0, length: n }));
+    }
+    let made = ext::json_stream::writer(1048576, 1073741824);
+    if (made.is_err()) { return 4; }
+    let writer: ext::json_stream::Writer = made.unwrap();
+    let out: alloc::vec::Vec<u8> = alloc::vec::new(); let saved: alloc::vec::Vec<u8> = alloc::vec::new();
+    let bytes: [u8] = data.as_slice(); let total: i32 = data.len(); let at: i32 = 0;
+    while (at < total) {
+        let stop: i32 = at;
+        while (stop < total && bytes[stop] != 10) { stop += 1; }
+        // Tab positions: after MODE, after NODES, after DOC.
+        let first: i32 = at; while (first < stop && bytes[first] != 9) { first += 1; }
+        let second: i32 = first + 1; while (second < stop && bytes[second] != 9) { second += 1; }
+        let third: i32 = second + 1; while (third < stop && bytes[third] != 9) { third += 1; }
+        if (third >= stop) { return 2; }
+        run(out.borrow(), writer.borrow(), saved.borrow(), bytes, bytes[at], number(bytes, first + 1, second), second + 1, third, third + 1, stop);
+        core::result::unwrap(out.try_push(10));
+        at = stop + 1;
+    }
+    if (core::io::write_all<std::stream::Descriptor>(std::stream::stdout().borrow(), out.as_slice(), 0, out.len()).is_err()) { return 3; }
+    return 0;
+}

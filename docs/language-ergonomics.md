@@ -153,9 +153,9 @@ through a bound `T: Tw<T>` all work.
   is `LNC0027`.
 - A bare generic type infers its parameters from the arguments and the
   result context: `let w: W<i32> = W::wrap(9);`, `W::get(w)`. A parameter
-  that nothing determines is `LNC0006`; `W<i32>::make()` names it.
-- Not yet: a bare imported generic type, `Option::is_some(o)`, is `LNC0005`;
-  write `Option<i32>::is_some(o)` (generics backlog b19).
+  that nothing determines is `LNC0006`; `W<i32>::make()` names it. The same
+  holds for an imported generic type: `Option::is_some(o)`,
+  `Option::unwrap_or(o, 7)` and `Result::unwrap(r)`.
 
 Decision: the path form is plain function-call syntax with the receiver
 spelled out, so it neither autoreferences nor dereferences. That keeps
@@ -166,7 +166,10 @@ Implementation: methods/07 and 07a offer self members to path calls,
 methods/02b types the syntactic self parameter row from the impl root,
 dependencies/07b and 08 type an imported method's receiver argument from its
 impl root (behind one reference for `&self`), and calls/03d binds no
-parameter from a bare generic qualifier. Fixtures:
-`tests/fixtures/compiler_defects/b14_path_self_method_*.lani`,
+parameter from a bare generic qualifier. A bare imported generic qualifier
+names its declaration's own application, an external canonical type
+(dependencies/14), which only dependencies/15a matches against impl roots.
+Fixtures: `tests/fixtures/compiler_defects/b14_path_self_method_*.lani`,
 `b19_stdlib_path_self_method.lani`, `generic_impl_path_inference.lani`, and
-`tests/fixtures/generics_matrix/p82_imported_type_path_self_method/`.
+`tests/fixtures/generics_matrix/p82_imported_type_path_self_method/` and
+`p83_bare_imported_type_path_self_method.lani`.

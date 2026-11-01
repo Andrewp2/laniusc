@@ -27,7 +27,7 @@ Direct source imports; this is not a package-resolution or transitive dependency
 - [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/cli_complete.lani#L8)
 - [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/cli_complete.lani#L9)
 - [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/cli_complete.lani#L10)
-- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L24) · [source](../../../extended/ext/cli_complete.lani#L11)
+- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L25) · [source](../../../extended/ext/cli_complete.lani#L11)
 - [ext::cli](cli.md) · [source](../../../extended/ext/cli_complete.lani#L12)
 - [ext::cli_commands](cli_commands.md) · [source](../../../extended/ext/cli_complete.lani#L13)
 

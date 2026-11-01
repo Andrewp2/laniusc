@@ -40,6 +40,8 @@ the same strict choices as `ext::json`:
 ```text
 json_stream::tokenizer(options: Options) -> Result<Tokenizer, Error>
 Tokenizer.feed(bytes: [u8], start: i32, count: i32) -> Result<Progress, Error>
+Tokenizer.advance(bytes, start, count) -> i32   // feed() without the Result
+Tokenizer.last_error() -> Error
 Tokenizer.finish() -> Result<bool, Error>
 Tokenizer.token() -> Option<Token>
 Tokenizer.text() -> Result<Text, Error>
@@ -66,6 +68,19 @@ or a multibyte UTF-8 sequence. An empty feed is not EOF and changes nothing.
 After the source ends, call `finish`. It returns true only when EOF completes
 a root number, which is then the ready token. Repeated `finish` returns false.
 Nonempty input after a successful `finish` is `Finished`.
+
+`advance` is `feed` without the `Result`: it returns the bytes consumed and
+`has_token()` tells whether a token is ready, or it returns -1 where `feed`
+returns `Err`, and that error is `last_error()`.
+
+The tokenizer keeps its token text and container stack in cached slices that
+grow geometrically, and takes whitespace between tokens, string bodies
+(no quote, backslash or control byte; complete valid UTF-8) and number digit
+runs in one step each. Bytes that could change state, fail or reach a limit
+still go one at a time, so tokens, offsets and errors are unchanged. On a
+7.4 MB array of 100,000 four-key records, tokenizing alone went from 0.87 s
+to 0.54 s (1.02 s to 0.67 s for the 12.3 MB indented form), and `jq_lite .`
+from 1.24 s to 0.67 s (minimum of 3 interleaved runs, 2026-11-01).
 
 Errors are sticky until `reset`, and partial tokens are never exposed.
 Earlier tokens may already have been delivered, so a consumer that must not
@@ -95,9 +110,14 @@ The writer adds OutputLimit and InvalidPlacement.
 json_stream::token_reader<R>(reader: &R, tokens: &Tokenizer, scratch: View<u8>)
     -> Result<TokenReader<R>, Error>          // R: core::io::Read
 TokenReader.next() -> Result<bool, StreamError>
+TokenReader.advance() -> i32        // 1 token, 0 end, -1 failed
+TokenReader.last_error() -> StreamError
 TokenReader.read_calls() -> u64
 StreamError = Json(Error) | Io(core::io::Error)
 ```
+
+`advance` is `next` without the `Result`: 1 for `Ok(true)`, 0 for
+`Ok(false)`, and -1 for `Err`, whose error is `last_error()`. `jq_lite` uses it.
 
 `next` feeds buffered bytes and reads more into the caller's scratch as
 needed. `Ok(true)` means the borrowed tokenizer holds a ready token, which you

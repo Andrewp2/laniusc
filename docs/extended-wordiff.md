@@ -134,13 +134,14 @@ max_output })` follows git's `show_stats`:
 ## Tools
 
 ```sh
-seq-diff [-U N] [--myers|--patience|--xdiff] [--word-diff|--char-diff|--stat[=W[,N[,C]]]] OLD NEW
+seq-diff [-U N] [-W|--function-context] [--xdiff|--histogram|--myers|--patience] [--word-diff|--char-diff|--stat[=W[,N[,C]]]] OLD NEW
 seq-diffstat [-p N] [--stat=W[,N[,C]]] [PATCH]
 ```
 
 `--word-diff` (also `--word-diff=plain`), `--char-diff` (also
 `--word-diff-regex=.`) and `--stat` match `git diff --no-index` with the same
-options. These modes align lines with `--xdiff` unless an algorithm is given.
+options. Like seq-diff's default unified output, these modes align lines with
+git's xdiff and its indent heuristic unless another algorithm is given.
 Word diffs print `--- OLD`/`+++ NEW` instead of git's `diff --git` and `index`
 lines; everything from the first hunk on is git's output. `seq-diffstat` reads
 PATCH or stdin and prints what `git diff --stat` prints for the same change.

@@ -30,6 +30,7 @@ their byte-line API, strict application and saved-trace Myers.
 | `xdiff_classes(a, b, limits)` | non-negative ids | git's xdiff alignment (`Algorithm::Xdiff`; see [word diff and diffstat](extended-wordiff.md)) |
 | `histogram_classes(a, b, limits)` | non-negative ids | git's `--histogram` alignment (`Algorithm::Histogram`) |
 | `diff_split_indent(split, algorithm, limits)` | `Split` | for `Xdiff` and `Histogram`, the script `git diff` gives: compaction with git's default indent heuristic over the line text |
+| `function_hunks(split, script, context)` | `Split` and its script | the hunks of `git diff -W` (`--function-context`): each change's whole function is shown |
 
 `a` and `b` are `core::slice::View<T>`. `Line { bytes, hash }` caches a hash
 of its bytes, read as little-endian 8-byte words (the last one zero-padded),
@@ -88,6 +89,17 @@ of script steps. Each hunk keeps up to `context` equal steps on each side, and
 two changes separated by at most `2*context` equal steps share a hunk, as in
 GNU diff.
 
+**Function context.** `function_hunks(split, script, context)` ports xdiff's
+`XDL_EMIT_FUNCCONTEXT`. A function line is one that starts with an ASCII
+letter, `_` or `$` (git's default rule). Each hunk starts at the function line
+at or above its first change, moved up over the non-blank lines just above it.
+It ends before the blank lines that precede the next function line below its
+last change, or at the end of the file. A change appended at the end of the old
+file that adds a function line keeps plain context. Changes that a hunk's
+function reaches, or that have no function line between them, join that hunk.
+As in git, the hunks can have unequal leading and trailing context, so GNU
+`patch` may reject them; they are for reading.
+
 **Split and classify in one pass.** `split_classify(a, b, limits)` reads each
 input once. It finds LFs eight bytes at a time, with an exact zero-byte test
 on `word ^ 0x0A0A…`. Each line is hashed from 8-byte words as soon as it ends,
@@ -128,7 +140,12 @@ frees every temporary buffer.
 
 `write_unified(a, b, script, hunks, old_name, new_name, max_output)` produces
 GNU `diff -u` hunk syntax. `write_unified_split(split, script, hunks, ...)`
-writes the same bytes from a `Split`'s lines. A count of one is omitted (`-3` rather than `-3,1`),
+writes the same bytes from a `Split`'s lines.
+`write_unified_split_funcnames(split, script, hunks, ...)` adds git's hunk-header
+function names: after `@@ ... @@` comes a space and the nearest function line
+above the hunk's first line, searching no further up than the previous hunk's
+first line, cut to 80 bytes (newline included) with trailing whitespace
+removed. A hunk without one repeats the previous hunk's name. A count of one is omitted (`-3` rather than `-3,1`),
 and an empty range names the line before it (`-4,0`). An incomplete final line
 gets `\ No newline at end of file`. With no hunks the output is empty. Labels
 must be nonempty and contain no NUL, CR or LF. Lines must be LF-terminated
@@ -181,7 +198,7 @@ for strict application.
 ## Sample programs
 
 ```sh
-seq-diff [-U N] [--myers|--patience|--xdiff|--histogram] OLD NEW   # exit 0 same, 1 differ, 2 error
+seq-diff [-U N] [-W|--function-context] [--xdiff|--histogram|--myers|--patience] OLD NEW   # exit 0 same, 1 differ, 2 error
 seq-patch [-F N] [--max-offset N] BASE PATCH    # exit 0 applied, 1 rejects, 2 error
 ```
 
@@ -189,9 +206,13 @@ seq-patch [-F N] [--max-offset N] BASE PATCH    # exit 0 applied, 1 rejects, 2 e
 (`-i PATCH`, with GNU or `--git`/`--3way` semantics); see
 [multi-file patches](extended-patchset.md).
 
-`seq-diff` writes `--- OLD` / `+++ NEW` and the hunks to stdout.
-`--histogram` gives the hunks of `git diff --histogram`, including git's
-default indent heuristic. Hunk headers carry no function-name text. Its git-format
+`seq-diff` writes `--- OLD` / `+++ NEW` and the hunks to stdout. From the first
+hunk header on, its default output (also `--xdiff`) is that of plain
+`git diff --no-index`: git's xdiff alignment, its default indent heuristic and
+its hunk-header function names. `--histogram` gives `git diff --histogram`, and
+`-W`/`--function-context` gives `git diff -W` with either alignment.
+`--myers` gives a minimal diff and `--patience` a patience diff; both print bare
+GNU-style `@@ ... @@` headers. Its git-format
 `--word-diff`, `--char-diff` and `--stat` modes are described in
 [word diff and diffstat](extended-wordiff.md). `seq-patch`
 writes the patched file to stdout and one GNU-worded line per hunk to stderr,
@@ -209,7 +230,8 @@ checkers:
 
 1. **Minimality:** the Myers edit length equals an O(N·M) Python LCS distance.
 2. **Round trip:** GNU `patch` and `seq-patch` turn the base into the target
-   using our diffs (Myers at -U3 plus a random -U0/1/5, and patience).
+   using our diffs (Myers at -U3 plus a random -U0/1/5, patience, and the
+   git-style default at -U3).
 3. **Interoperability:** `seq-patch` applies real GNU `diff -a -u`, `-U0` and
    `-U5` output.
 4. **Offset and fuzz:** over files of distinct lines, bases with lines prepended, context lines edited, or
@@ -219,27 +241,35 @@ checkers:
 5. **Scale:** 2,000-, 20,000- and 100,000-line pairs round-trip, and their edit
    length equals GNU `diff --minimal`'s.
 
-`tests/fixtures/extended/histogram_oracle.py SEQ_DIFF WORKDIR [PAIRS]` checks
-`seq-diff --histogram [-U N]` against `git diff --no-index --histogram`. It
-compares exact bytes from the first hunk header on, and the exit status. git
-runs with its indent heuristic pinned on. A global attributes file gives every
-path a diff driver whose `xfuncname` never matches, so git's hunk headers carry
-no function name. Receipt for 4,000 pairs (seed 20261101, 15 s), every group
-agreeing:
+`tests/fixtures/extended/git_diff_oracle.py SEQ_DIFF WORKDIR [PAIRS]` checks
+seq-diff against plain `git diff --no-index` in three modes per pair: the
+default (every fourth pair as `--xdiff`), `--histogram`, and `-W` or
+`--function-context` (30% of them with `--histogram`), each with a random `-U`
+on 30% of pairs. It compares exact bytes from the first hunk header on, and the
+exit status. git runs with an empty global configuration, so its defaults
+apply: the indent heuristic and default function names. Receipt for 4,000 pairs
+(seed 20261101, 12,000 comparisons, 96 s on a loaded machine), every one
+agreeing. Each cell is pairs / pairs that differ / pairs with a named hunk
+header / pairs with identical bytes and status; "wider" counts pairs whose `-W`
+output differs from the default output:
 
-| group | pairs | different | identical bytes and status |
-| --- | ---: | ---: | ---: |
-| distinct lines, small edits | 1,002 | 830 | 1,002 |
-| a few repeated values | 1,002 | 863 | 1,002 |
-| indented code blocks with blank lines | 1,000 | 990 | 1,000 |
-| two to four values, each over 64 times (xdiff fallback) | 332 | 332 | 332 |
-| unique lines among heavy repeats | 332 | 332 | 332 |
-| 200-600 lines, many edits | 332 | 332 | 332 |
+| group | default | `--histogram` | `-W` | wider |
+| --- | ---: | ---: | ---: | ---: |
+| distinct lines, small edits | 804 / 664 / 221 / 804 | 804 / 664 / 221 / 804 | 804 / 664 / 221 / 804 | 1 |
+| a few repeated values | 802 / 687 / 361 / 802 | 802 / 687 / 359 / 802 | 802 / 687 / 353 / 802 | 80 |
+| indented code blocks with blank lines | 798 / 796 / 552 / 798 | 798 / 796 / 552 / 798 | 798 / 796 / 332 / 798 | 470 |
+| C-like functions (comments, long and odd first bytes) | 798 / 728 / 462 / 798 | 798 / 728 / 462 / 798 | 798 / 728 / 363 / 798 | 289 |
+| two to four values, each over 64 times (xdiff fallback) | 266 / 266 / 255 / 266 | 266 / 266 / 255 / 266 | 266 / 266 / 255 / 266 | 80 |
+| unique lines among heavy repeats | 266 / 265 / 265 / 266 | 266 / 265 / 265 / 266 | 266 / 265 / 265 / 266 | 111 |
+| 200-600 lines, many edits | 266 / 266 / 266 / 266 | 266 / 266 / 266 / 266 | 266 / 266 / 266 / 266 | 1 |
 
-The oracle catches errors in both special paths. With git's indent heuristic
-switched off, 65 of 600 pairs differ. With the fallback disabled in a build,
-49 of 50 heavy pairs differ. The registered test
-(`tests/extended_wordiff_execution.rs`) runs 1,200 pairs.
+The oracle catches errors in the special paths. With git's indent heuristic
+switched off, 65 of 600 histogram pairs differ. With the histogram fallback
+disabled in a build, 49 of 50 heavy pairs differ. A build that cuts function
+names at 81 bytes fails 78 of 1,200 pairs, and one without the appended-function
+rule of `-W` fails 11. The registered test
+(`tests/extended_wordiff_execution.rs`) runs 1,200 pairs. The 1.6 MB pair is
+also identical to git in the default and `-W` modes.
 
 Receipt for the 1,000-pair run (generated pairs over four line dictionaries,
 including NUL, CRLF, non-UTF-8 bytes, diff-control-looking lines, missing final
@@ -253,6 +283,7 @@ LF and empty files), seed 20261031:
 | seq-patch reproduced target from our Myers -U3 diff | 878 |
 | extra-context round trips -U0 / -U1 / -U5 (both patch tools) | 285 / 292 / 301 |
 | patience valid (≥ LCS) and reproduced by both tools | 878 (867 also minimal) |
+| default (git xdiff, function names) -U3 reproduced by both tools | 878 |
 | GNU diff -u / -U0 / -U5 output applied exactly by seq-patch | 878 each |
 | offset/fuzz cases agreeing with GNU patch -F0 (output and rejects) | 333 (135 with rejects) |
 | offset/fuzz cases agreeing with GNU patch -F2 (output and rejects) | 333 (77 with rejects) |
@@ -312,6 +343,11 @@ The first two rows were measured at high load (load average about 15), the
 rest at about 8. The Myers run is the minimal algorithm's `D²` diagonal walk,
 at about 6 ns per diagonal. `seq-diff --histogram` takes 55-60 ms against
 35-41 ms for `git diff --histogram`.
+
+The tables above measured the earlier Myers default. The default is now the
+git-style xdiff mode with the indent heuristic and function names. At a load
+average of about 15, best of 15, it took 79 ms against 67 ms for plain
+`git diff --no-index` (1.2×). `--myers` took 76 ms and `-W` 78 ms in the same run.
 
 The code generator still limits loops. Every value goes through the stack,
 each element access emits a bounds check, constants are reloaded, and loop

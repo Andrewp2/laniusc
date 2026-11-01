@@ -12,7 +12,7 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 
 - [extended-seqdiff](../../extended-seqdiff.md)
 
-Declaration counts: enum: 5; field: 31; function: 5; impl: 2; method: 7; struct: 7; variant: 23.
+Declaration counts: enum: 5; field: 31; function: 6; impl: 2; method: 7; struct: 7; variant: 23.
 
 ## Declared imports
 
@@ -585,9 +585,17 @@ pub fn write_unified(a: core::slice::View<ext::seqdiff::Line>, b: core::slice::V
 pub fn write_unified_split(split: &ext::seqdiff::Split, script: &ext::seqdiff::Script, hunks: core::slice::View<ext::seqdiff::Hunk>, old_name: core::slice::View<u8>, new_name: core::slice::View<u8>, max_output: i32) -> core::result::Result<alloc::vec::Vec<u8>, WriteError>
 ```
 
+### function: write_unified_split_funcnames
+
+[Source line 89](../../../extended/ext/unidiff.lani#L89)
+
+```lanius
+pub fn write_unified_split_funcnames(split: &ext::seqdiff::Split, script: &ext::seqdiff::Script, hunks: core::slice::View<ext::seqdiff::Hunk>, old_name: core::slice::View<u8>, new_name: core::slice::View<u8>, max_output: i32) -> core::result::Result<alloc::vec::Vec<u8>, WriteError>
+```
+
 ### function: parse
 
-[Source line 155](../../../extended/ext/unidiff.lani#L155)
+[Source line 181](../../../extended/ext/unidiff.lani#L181)
 
 ```lanius
 pub fn parse(input: core::slice::View<u8>, max_lines: i32) -> core::result::Result<Patch, ParseError>
@@ -595,7 +603,7 @@ pub fn parse(input: core::slice::View<u8>, max_lines: i32) -> core::result::Resu
 
 ### function: apply
 
-[Source line 245](../../../extended/ext/unidiff.lani#L245)
+[Source line 271](../../../extended/ext/unidiff.lani#L271)
 
 ```lanius
 pub fn apply(base: core::slice::View<u8>, patch: &Patch, options: ApplyOptions) -> core::result::Result<Applied, ApplyError>
@@ -603,9 +611,9 @@ pub fn apply(base: core::slice::View<u8>, patch: &Patch, options: ApplyOptions) 
 
 ## Implementation blocks and public methods
 
-### impl at line 205
+### impl at line 231
 
-[Source line 205](../../../extended/ext/unidiff.lani#L205)
+[Source line 231](../../../extended/ext/unidiff.lani#L231)
 
 ```lanius
 pub impl Patch
@@ -613,7 +621,7 @@ pub impl Patch
 
 #### method: borrow
 
-[Source line 206](../../../extended/ext/unidiff.lani#L206)
+[Source line 232](../../../extended/ext/unidiff.lani#L232)
 
 ```lanius
 pub fn borrow(&self) -> &Patch
@@ -621,7 +629,7 @@ pub fn borrow(&self) -> &Patch
 
 #### method: hunk_count
 
-[Source line 207](../../../extended/ext/unidiff.lani#L207)
+[Source line 233](../../../extended/ext/unidiff.lani#L233)
 
 ```lanius
 pub fn hunk_count(&self) -> i32
@@ -629,7 +637,7 @@ pub fn hunk_count(&self) -> i32
 
 #### method: hunk
 
-[Source line 208](../../../extended/ext/unidiff.lani#L208)
+[Source line 234](../../../extended/ext/unidiff.lani#L234)
 
 ```lanius
 pub fn hunk(&self, index: i32) -> core::option::Option<PatchHunk>
@@ -637,7 +645,7 @@ pub fn hunk(&self, index: i32) -> core::option::Option<PatchHunk>
 
 #### method: line
 
-[Source line 209](../../../extended/ext/unidiff.lani#L209)
+[Source line 235](../../../extended/ext/unidiff.lani#L235)
 
 ```lanius
 pub fn line(&self, index: i32) -> core::option::Option<PatchLine>
@@ -645,15 +653,15 @@ pub fn line(&self, index: i32) -> core::option::Option<PatchLine>
 
 #### method: destroy
 
-[Source line 210](../../../extended/ext/unidiff.lani#L210)
+[Source line 236](../../../extended/ext/unidiff.lani#L236)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 379
+### impl at line 405
 
-[Source line 379](../../../extended/ext/unidiff.lani#L379)
+[Source line 405](../../../extended/ext/unidiff.lani#L405)
 
 ```lanius
 pub impl Applied
@@ -661,7 +669,7 @@ pub impl Applied
 
 #### method: borrow
 
-[Source line 380](../../../extended/ext/unidiff.lani#L380)
+[Source line 406](../../../extended/ext/unidiff.lani#L406)
 
 ```lanius
 pub fn borrow(&self) -> &Applied
@@ -669,7 +677,7 @@ pub fn borrow(&self) -> &Applied
 
 #### method: destroy
 
-[Source line 381](../../../extended/ext/unidiff.lani#L381)
+[Source line 407](../../../extended/ext/unidiff.lani#L407)
 
 ```lanius
 pub fn destroy(&self)

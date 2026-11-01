@@ -224,7 +224,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         method_call_name_id[token] == INVALID) return;
     uint tag = method_call_source_ref_tag[token];
     uint payload = method_call_source_ref_payload[token];
-    if (tag == 0u || payload == INVALID) return;
+    // An external canonical receiver (a bare imported generic qualifier,
+    // dependencies/14) has no local rows; dependencies/15a collects its methods.
+    if (tag == 0u || tag == 5u || payload == INVALID) return;
     MethodCandidate summary = method_candidate[token];
     bool dotted = method_call_receiver_hir[token] != INVALID;
     uint wildcard = method_lookup_bucket(method_receiver_wildcard_head(),

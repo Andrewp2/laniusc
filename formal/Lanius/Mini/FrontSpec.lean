@@ -1,5 +1,15 @@
-import Lanius.Mini.FrontLex
+module
 
+public import Lanius.Mini.FrontLex
+import all Lanius.Mini.Compiler.P.arithShiftRight
+import all Lanius.Mini.Frontend.P.genericOpen
+import all Lanius.Mini.Frontend.P.grammarPart13
+import all Lanius.Mini.Frontend.P.isEmptyUsize
+import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.wideLeftStmt
+
+@[expose] public section
 /-! # The front end by translation validation (roadmap step 8)
 
 What `validateTree` (extracted from `formal/lani/mini/frontend.lani`) establishes

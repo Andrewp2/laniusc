@@ -74,15 +74,34 @@ fn ud_get(l: &Lines, split: &ext::seqdiff::Split, side: i32, i: i32) -> core::sl
 pub fn write_unified(a: core::slice::View<ext::seqdiff::Line>, b: core::slice::View<ext::seqdiff::Line>, script: &ext::seqdiff::Script, hunks: core::slice::View<ext::seqdiff::Hunk>, old_name: core::slice::View<u8>, new_name: core::slice::View<u8>, max_output: i32) -> core::result::Result<alloc::vec::Vec<u8>, WriteError> {
     let none: ext::seqdiff::Split = ext::seqdiff::empty_split();
     let l: Lines = Lines { a: a, b: b, by_split: false, na: a.length, nb: b.length };
-    return ud_write(l.borrow(), none.borrow(), script, hunks, old_name, new_name, max_output);
+    return ud_write(l.borrow(), none.borrow(), script, hunks, old_name, new_name, max_output, false);
 }
 // The same output for the lines of a split_classify result.
 pub fn write_unified_split(split: &ext::seqdiff::Split, script: &ext::seqdiff::Script, hunks: core::slice::View<ext::seqdiff::Hunk>, old_name: core::slice::View<u8>, new_name: core::slice::View<u8>, max_output: i32) -> core::result::Result<alloc::vec::Vec<u8>, WriteError> {
     let none: alloc::vec::Vec<ext::seqdiff::Line> = alloc::vec::new();
     let l: Lines = Lines { a: none.as_view(), b: none.as_view(), by_split: true, na: split.before_len(), nb: split.after_len() };
-    return ud_write(l.borrow(), split, script, hunks, old_name, new_name, max_output);
+    return ud_write(l.borrow(), split, script, hunks, old_name, new_name, max_output, false);
 }
-fn ud_write(l: &Lines, split: &ext::seqdiff::Split, script: &ext::seqdiff::Script, hunks: core::slice::View<ext::seqdiff::Hunk>, old_name: core::slice::View<u8>, new_name: core::slice::View<u8>, max_output: i32) -> core::result::Result<alloc::vec::Vec<u8>, WriteError> {
+// write_unified_split with git's hunk-header function names: after `@@ ... @@`,
+// the nearest line above the hunk (not above the previous hunk's start) that
+// starts with an ASCII letter, '_' or '$', cut to 80 bytes with trailing
+// whitespace removed; a hunk with none repeats the previous name.
+pub fn write_unified_split_funcnames(split: &ext::seqdiff::Split, script: &ext::seqdiff::Script, hunks: core::slice::View<ext::seqdiff::Hunk>, old_name: core::slice::View<u8>, new_name: core::slice::View<u8>, max_output: i32) -> core::result::Result<alloc::vec::Vec<u8>, WriteError> {
+    let none: alloc::vec::Vec<ext::seqdiff::Line> = alloc::vec::new();
+    let l: Lines = Lines { a: none.as_view(), b: none.as_view(), by_split: true, na: split.before_len(), nb: split.after_len() };
+    return ud_write(l.borrow(), split, script, hunks, old_name, new_name, max_output, true);
+}
+// xdiff def_ff: the header length of a function line, or -1.
+fn ud_sub(v: core::slice::View<u8>, count: i32) -> core::slice::View<u8> { return core::slice::View { values: v.values, start: v.start, length: count }; }
+fn ud_func_len(v: core::slice::View<u8>) -> i32 {
+    if (v.length == 0) { return -1; }
+    let c: u8 = v.values[v.start];
+    if (!((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 95 || c == 36)) { return -1; }
+    let len: i32 = v.length; if (len > 80) { len = 80; }
+    while (len > 0) { let t: u8 = v.values[v.start+len-1]; if (t == 32 || t == 9 || t == 10 || t == 13) { len -= 1; } else { break; } }
+    return len;
+}
+fn ud_write(l: &Lines, split: &ext::seqdiff::Split, script: &ext::seqdiff::Script, hunks: core::slice::View<ext::seqdiff::Hunk>, old_name: core::slice::View<u8>, new_name: core::slice::View<u8>, max_output: i32, names: bool) -> core::result::Result<alloc::vec::Vec<u8>, WriteError> {
     if (!ud_label_ok(old_name) || !ud_label_ok(new_name)) { return core::result::Err(WriteError::InvalidHeader); }
     if (l.na != script.before_len() || l.nb != script.after_len()) { return core::result::Err(WriteError::InvalidLine); }
     let steps: [ext::seqdiff::Edit] = script.steps.as_slice(); let total: i32 = script.len();
@@ -103,10 +122,17 @@ fn ud_write(l: &Lines, split: &ext::seqdiff::Split, script: &ext::seqdiff::Scrip
     let o: Out = Out { bytes: alloc::vec::new(), limit: max_output, failed: false, full: false };
     if (hunks.length == 0) { return core::result::Ok(o.bytes); }
     ud_text(o.borrow(), "--- ", 4); ud_bytes(o.borrow(), old_name); ud_text(o.borrow(), "\n+++ ", 5); ud_bytes(o.borrow(), new_name); ud_byte(o.borrow(), 10);
-    let h: i32 = 0;
+    let h: i32 = 0; let func_line: i32 = -1; let func_len: i32 = 0; let previous: i32 = -1;
     while (h < hunks.length && !o.failed) {
         let hunk: ext::seqdiff::Hunk = hunks.values[hunks.start+h];
-        ud_text(o.borrow(), "@@ -", 4); ud_range(o.borrow(), hunk.before, hunk.before_count); ud_text(o.borrow(), " +", 2); ud_range(o.borrow(), hunk.after, hunk.after_count); ud_text(o.borrow(), " @@\n", 4);
+        if (names) {
+            let k: i32 = hunk.before - 1; if (k >= l.na) { k = l.na - 1; }
+            while (k > previous && k >= 0) { let len: i32 = ud_func_len(ud_get(l, split, 0, k)); if (len >= 0) { func_line = k; func_len = len; break; } k -= 1; }
+            previous = hunk.before - 1;
+        }
+        ud_text(o.borrow(), "@@ -", 4); ud_range(o.borrow(), hunk.before, hunk.before_count); ud_text(o.borrow(), " +", 2); ud_range(o.borrow(), hunk.after, hunk.after_count); ud_text(o.borrow(), " @@", 3);
+        if (func_line >= 0 && func_len > 0) { ud_byte(o.borrow(), 32); ud_bytes(o.borrow(), ud_sub(ud_get(l, split, 0, func_line), func_len)); }
+        ud_byte(o.borrow(), 10);
         let at: i32 = hunk.first;
         while (at < hunk.first + hunk.count && !o.failed) {
             let step: ext::seqdiff::Edit = steps[at];
