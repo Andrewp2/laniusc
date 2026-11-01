@@ -1,6 +1,10 @@
 # Standard and extended library overview
 
-The full library goal remains open. The current
+The full library goal remains open. The current increment adds inline
+fixed-capacity containers ([ring buffer and inline string](stdlib-inline-containers.md))
+and a fixed-capacity [LRU cache](stdlib-lru-cache.md) with O(1) expected
+operations, no allocation after construction and exact eviction order; one
+Python-reference model checks 11,346 commands. The preceding
 [ordered navigation increment](stdlib-ordered-navigation.md) adds predecessor
 searches, heterogeneous lower/upper/predecessor bounds and `Bound`-based
 intervals to TreeMap and TreeSet: sixteen methods plus `core::range::Bound`.

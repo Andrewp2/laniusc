@@ -833,7 +833,8 @@
       "guides": [
         "docs/stdlib-fixed-capacity.md",
         "docs/stdlib-cursor-integration.md",
-        "docs/stdlib-iterator-transfer.md"
+        "docs/stdlib-iterator-transfer.md",
+        "docs/stdlib-inline-containers.md"
       ]
     },
     "ext::archive_extract": {
@@ -2119,6 +2120,24 @@
         "docs/extended-json-stream.md"
       ],
       "note": "Byte-fed RFC 8259 tokenizer (one token per feed, arbitrary chunk splits, incremental UTF-8 validation, lone-surrogate rejection, exact number spelling, typed errors with u64 offsets, depth/string/number limits) and a structural writer emitting the ext::json compact byte policy. Native Linux x86_64 binaries from the GPU compiler agree with strict Python json on 2,237 jq-lite/bytewise cases and with Python csv on 550 csv-to-json cases; the cargo registration was not run in this session."
+    },
+    "core::ring": {
+      "guides": [
+        "docs/stdlib-inline-containers.md"
+      ],
+      "note": "Inline fixed-capacity ring buffer over [T; N]: O(1) push/pop at both ends, overwrite pushes that return the evicted opposite end, O(1) discard, two-run as_views and in-place make_contiguous. No allocation; an empty ring restarts at slot 0."
+    },
+    "core::inline_string": {
+      "guides": [
+        "docs/stdlib-inline-containers.md"
+      ],
+      "note": "Inline fixed-capacity UTF-8 string over [u8; N]. All-or-nothing text/scalar pushes, boundary-respecting truncating push, scalar pop and checked truncate keep the bytes valid UTF-8. No allocation."
+    },
+    "alloc::lru": {
+      "guides": [
+        "docs/stdlib-lru-cache.md"
+      ],
+      "note": "Fixed-capacity LRU cache: one node arena on intrusive hash-bucket chains (load at most one) and a doubly linked recency list. Only with_capacity allocates; put/get/peek/touch/remove/pop_oldest are O(1) expected and never allocate. Recency changes only through put, get and touch; a full put evicts the oldest entry."
     }
   }
 }
