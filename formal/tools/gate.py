@@ -147,7 +147,10 @@ def inputs():
         + run_cache.tree_digest(os.path.join(run_cache.FORMAL, 'Lanius')),
         'lani': run_cache.tree_digest(os.path.join(run_cache.FORMAL, 'lani')),
         'tools': run_cache.tree_digest(os.path.join(ROOT, T)),
-        'laniusc': run_cache.file_digest(LANIUSC),
+        # laniusc loads its kernels at run time from the shader artifacts its
+        # build compiled from shaders/, so a shader-only change can leave the
+        # binary byte-identical: key on both.
+        'laniusc': run_cache.file_digest(LANIUSC) + run_cache.tree_digest(os.path.join(ROOT, 'shaders')),
         'stdlib': run_cache.tree_digest(os.path.join(ROOT, 'stdlib')),
         'programs': run_cache.tree_digest(os.path.join(ROOT, 'tests/fixtures'))
         + run_cache.tree_digest(os.path.join(ROOT, 'sample_programs')),
