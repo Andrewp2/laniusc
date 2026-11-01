@@ -151,9 +151,9 @@ Short options group, so `tgz -czf out.tgz dir` and `tgz -xzf in.tgz -C dir`
 work. `-c` creates from `PATH...` (relative to `-C DIR` when given), `-x`
 extracts into `DIR` (default `.`) and `-t` lists one raw member path per line.
 `-f -` means stdout for create and stdin for reading. `-z` gzip-encodes on
-create; `-J` writes xz, but as stored (uncompressed) LZMA2 chunks with a
-CRC64 check, since there is no LZMA encoder yet: the archive is valid xz that
-any decoder reads, and it is slightly larger than the tar. Reading detects the
+create; `-J` writes xz through the [LZMA2 encoder](extended-xz.md#encoder)
+at level 2 (2 MiB dictionary, CRC64 check), which compresses the docs/stdlib
+tree to the same size as `xz -1` at about an eighth of its speed. Reading detects the
 gzip magic `1f 8b` and the xz magic `fd 37 7a 58 5a 00` and decodes whether
 or not `-z`/`-J` is given; xz archives from `xz`, `tar -J` and Python
 `tarfile` (any preset, CRC32/CRC64/no check, several blocks or streams) are
@@ -235,7 +235,7 @@ Python 3.12's `zlib`, `gzip`, `lzma` and `tarfile` and GNU tar 1.35, using one
 fixed seed. It is registered as `tests/extended_tgz_execution.rs`, which
 compiles both programs and runs the oracle. On 2026-10-31 the oracle ran
 directly against executables compiled through `target/claude-work/bin/lcc` and
-passed with **4,159 agreeing cases and 0 failures in 102 s**, 690 of them xz. The cargo
+passed with **4,160 agreeing cases and 0 failures in 137 s**, 691 of them xz. The cargo
 wrapper itself was not run. The xz decoder's own oracle is in
 [extended-xz.md](extended-xz.md#oracle-evidence).
 
@@ -252,7 +252,7 @@ wrapper itself was not run. The xz decoder's own oracle is in
 | Python pax / GNU-format / ustar create, tgz extracts the identical tree, modes, mtimes and hard links (plain + gzip + xz each) | 180 / 180 / 51 |
 | GNU tar `--format=pax` / `gnu` / `ustar` create, tgz extracts the identical tree (plain + gzip + xz each) | 180 / 180 / 36 |
 | tgz create, tgz extract (gzip / xz) | 60 / 60 |
-| 96 MiB `-czf - \| -xzf -` pipeline identical and under 32 MiB RSS | 1 |
+| 98 MiB `-czf - \| -xzf -` pipeline identical and under 32 MiB RSS (11.2 MiB); 50 MiB `-cJf - \| -xJf -` under 48 MiB (22.2 MiB) | 1 / 1 |
 | Destination guard: symlinked parent refused, symlink leaf replaced without following, archive `s -> ../outside` then `s/x` refused, hard link through a symlink refused, hard link to a member shares the inode | 5 |
 | Python global pax header with a 300-byte path, 40-byte uname and fractional mtime; hand-built pax records | 1 / 1 |
 | Tar header byte flips rejected (21 also rejected by Python, 19 Python tolerates) | 40 |
@@ -271,7 +271,7 @@ hard links across directories and symlinks with targets over 100 bytes (pax
 accepts damaged data blocks, short files, `..`/absolute members and pax records
 this reader rejects.
 
-Zlib preset dictionaries, an LZMA encoder for `-cJ`, GNU sparse and
+Zlib preset dictionaries, an `-cJ` level option, GNU sparse and
 multivolume archives, ownership restoration, symlink times and archives over
 2 GiB remain open.
 
