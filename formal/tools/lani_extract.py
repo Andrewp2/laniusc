@@ -31,6 +31,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import stdlib_oracle  # noqa: E402
 import run_cache  # noqa: E402
+import cert_trees  # noqa: E402
 
 PROGRAMS = {
     'compiler': ('formal/lani/mini/compiler.lani', 'Lanius.Mini.Compiler'),
@@ -66,15 +67,19 @@ def prepare(name, work):
     source, module = PROGRAMS[name]
     base = os.path.join(work, name)
     shutil.copyfile(source, base + '.lani')
-    if not stdlib_oracle.parse_checked(LANIUSC, base, work):
-        return 1, 'laniusc gives no tree'
-    trees = []
+    bases, trees = [base], []
     for path in re.findall(r'^// extract: external begin \S+ from (\S+)$', open(source).read(), re.M):
         ext = os.path.join(work, 'ext_' + re.sub(r'[^A-Za-z0-9]', '_', path))
         shutil.copyfile(path, ext + '.lani')
-        if not stdlib_oracle.parse_checked(LANIUSC, ext, work):
-            return 1, f'laniusc gives no tree of {path}'
+        bases.append(ext)
         trees += ['--tree', f'{path}={ext}']
+    # Validated trees (cert_trees), laniusc's only where needed.
+    ok = cert_trees.write(bases, work, LANIUSC)
+    if base not in ok:
+        return 1, 'no tree the validator accepts'
+    for b in bases[1:]:
+        if b not in ok:
+            return 1, f'no tree the validator accepts of {b}'
     return trees + [source, base, source, module, 'formal', 'formal']
 
 
