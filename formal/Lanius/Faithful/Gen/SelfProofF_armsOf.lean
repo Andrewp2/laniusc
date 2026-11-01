@@ -4,8 +4,10 @@ public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_armsOf
 public import Lanius.Faithful.Gen.SelfStmt2
+public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pPathMore
 public import Lanius.Faithful.Gen.SelfStmtF_armsOf
+public import Lanius.Faithful.Gen.SelfStmtF_consBinder
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
@@ -65,8 +67,10 @@ theorem proof_arm_nested {prog : SrcProgram} {prims : Prims} {ix_arm_nested ix_n
   simp only [src_arm_nested] at h
   faithful [Lanius.Mini.armNested]
 
-theorem proof_binder_name_ok {prog : SrcProgram} {prims : Prims} {ix_binder_name_ok ix_member : Nat} (fn : prog.funcs[ix_binder_name_ok]? = some (src_binder_name_ok ix_member)) (np : prims.isPrim ix_binder_name_ok = false)
-    (ext_member : Certified (∀ {n : Nat}, Stmt_member prog prims ix_member n)) {n : Nat} :
+theorem proof_binder_name_ok {prog : SrcProgram} {prims : Prims} {ix_binder_name_ok ix_field_types_Decls_of_mini_selfhost_Decls ix_member ix_any_variant : Nat} (fn : prog.funcs[ix_binder_name_ok]? = some (src_binder_name_ok ix_field_types_Decls_of_mini_selfhost_Decls ix_member ix_any_variant)) (np : prims.isPrim ix_binder_name_ok = false)
+    (ext_field_types_Decls_of_mini_selfhost_Decls : Certified (∀ {n : Nat}, Stmt_field_types_Decls_of_mini_selfhost_Decls prog prims ix_field_types_Decls_of_mini_selfhost_Decls n))
+    (ext_member : Certified (∀ {n : Nat}, Stmt_member prog prims ix_member n))
+    (ext_any_variant : Certified (∀ {n : Nat}, Stmt_any_variant prog prims ix_any_variant n)) {n : Nat} :
     Stmt_binder_name_ok prog prims ix_binder_name_ok n := by
   intro x0 x1 v0 v1 w h r0 r1
   rcases n with _ | n

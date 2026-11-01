@@ -57,7 +57,7 @@ public import Lanius.Mini.Frontend.P.namesSome
 public import Lanius.Mini.Frontend.P.armsOf
 public import Lanius.Mini.Frontend.P.anyNested
 public import Lanius.Mini.Frontend.P.plainNaming
-public import Lanius.Mini.Frontend.P.nestedOrPlain
+public import Lanius.Mini.Frontend.P.shadowUse
 public import Lanius.Mini.Frontend.P.variantArm
 public import Lanius.Mini.Frontend.P.nestedUsed
 public import Lanius.Mini.Frontend.P.noBlock

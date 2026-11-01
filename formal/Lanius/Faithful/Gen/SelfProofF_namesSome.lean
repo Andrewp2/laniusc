@@ -66,12 +66,12 @@ theorem proof_arms_in_order {prog : SrcProgram} {prims : Prims} {ix_arms_in_orde
   simp only [src_arms_in_order] at h
   faithful [Lanius.Mini.armsInOrder]
 
-theorem step_arms_or_wild {prog : SrcProgram} {prims : Prims} {ix_arms_or_wild ix_empty_of_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy ix_arms_naming ix_cons_tree_tail ix_wild_arm_for : Nat} (fn : prog.funcs[ix_arms_or_wild]? = some (src_arms_or_wild ix_empty_of_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy ix_arms_or_wild ix_arms_naming ix_cons_tree_tail ix_wild_arm_for)) (np : prims.isPrim ix_arms_or_wild = false)
+theorem step_arms_or_wild {prog : SrcProgram} {prims : Prims} {ix_arms_or_wild ix_empty_of_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy ix_cons_tree_tail ix_arms_naming ix_wild_arm_for : Nat} (fn : prog.funcs[ix_arms_or_wild]? = some (src_arms_or_wild ix_empty_of_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy ix_cons_tree_tail ix_arms_or_wild ix_arms_naming ix_wild_arm_for)) (np : prims.isPrim ix_arms_or_wild = false)
     (ext_empty_of_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_CTree prog prims ix_empty_of_mini_selfhost_CTree n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy n))
-    (ext_arms_naming : Certified (∀ {n : Nat}, Stmt_arms_naming prog prims ix_arms_naming n))
     (ext_cons_tree_tail : Certified (∀ {n : Nat}, Stmt_cons_tree_tail prog prims ix_cons_tree_tail n))
+    (ext_arms_naming : Certified (∀ {n : Nat}, Stmt_arms_naming prog prims ix_arms_naming n))
     (ext_wild_arm_for : Certified (∀ {n : Nat}, Stmt_wild_arm_for prog prims ix_wild_arm_for n)) {n : Nat}
     (ih_arms_or_wild : Certified (Stmt_arms_or_wild prog prims ix_arms_or_wild n)) :
     Stmt_arms_or_wild prog prims ix_arms_or_wild (n + 1) := by

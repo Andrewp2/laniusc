@@ -254,7 +254,7 @@ fn resize_area(source: View, target: View, shape: AreaShape, rows: [ResizeSum], 
         let cached: i32 = -1; let outer: i32 = 0;
         while (outer < shape.target_outer) {
             let local: i32 = 0;
-            while (local < count) { rows[tile+local] = resize_zero(); local += 1; }
+            while (local < count) { let stored: ResizeSum = resize_zero(); rows[tile+local] = stored; local += 1; }
             let left: u64 = (outer as u64)*(shape.source_outer as u64);
             let right: u64 = ((outer as u64)+1)*(shape.source_outer as u64);
             let first: i32 = (left/(shape.target_outer as u64)) as i32;
@@ -270,7 +270,7 @@ fn resize_area(source: View, target: View, shape: AreaShape, rows: [ResizeSum], 
                 let overlap: u64 = resize_overlap(left,right,pixel,shape.target_outer);
                 local = 0;
                 while (local < count) {
-                    rows[tile+local] = resize_add(rows[tile+local],rows[local],overlap); local += 1;
+                    let stored: ResizeSum = resize_add(rows[tile+local],rows[local],overlap); rows[tile+local] = stored; local += 1;
                 }
                 pixel += 1;
             }

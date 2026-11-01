@@ -26,7 +26,8 @@ fn error_name(out: &alloc::vec::Vec<u8>, error: ext::url::Error) -> bool {
         ext::url::Error::AllocationFailed -> word(out,"allocation-failed",17), ext::url::Error::MissingScheme -> word(out,"missing-scheme",14),
         ext::url::Error::MissingHost -> word(out,"missing-host",12), ext::url::Error::InvalidHost -> word(out,"invalid-host",12),
         ext::url::Error::InvalidPort -> word(out,"invalid-port",12), ext::url::Error::InvalidIpv4 -> word(out,"invalid-ipv4",12),
-        ext::url::Error::InvalidIpv6 -> word(out,"invalid-ipv6",12), ext::url::Error::UnsupportedIdna -> word(out,"unsupported-idna",16)
+        ext::url::Error::InvalidIpv6 -> word(out,"invalid-ipv6",12), ext::url::Error::UnsupportedIdna -> word(out,"unsupported-idna",16),
+        ext::url::Error::InvalidIdna -> word(out,"invalid-idna",12)
     };
 }
 fn field(out: &alloc::vec::Vec<u8>, name: str, n: i32, value: core::slice::View<u8>, lines: bool) -> bool {
