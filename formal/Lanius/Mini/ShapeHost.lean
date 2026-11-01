@@ -23,7 +23,45 @@ returned value of the service's result shape. -/
 def HostOk (P : Core.Program) (s : HostService) : Lanius.World.EffectResult → Prop
   | .typeMismatch _ _ => False
   | .returned v _ _ => Shape P v s.returnType
+  | .trapped r _ _ => r ≠ .typeMismatch
   | _ => True
+
+/-! ## Heap byte errors are not `typeMismatch` -/
+
+theorem loadByte_ne {heap : Memory.Heap} {p o : Nat} {r : Lanius.Trap} (h : heap.loadByte p o = .error r) :
+    r ≠ .typeMismatch := by
+  simp only [Memory.Heap.loadByte] at h
+  repeat' split at h
+  all_goals (try split at h)
+  all_goals (cases h <;> decide)
+
+theorem storeByte_ne {heap : Memory.Heap} {p o : Nat} {b : UInt8} {r : Lanius.Trap}
+    (h : heap.storeByte p o b = .error r) : r ≠ .typeMismatch := by
+  simp only [Memory.Heap.storeByte] at h
+  repeat' split at h
+  all_goals (try split at h)
+  all_goals (cases h <;> decide)
+
+theorem loadBytesFrom_ne {heap : Memory.Heap} {p : Nat} :
+    ∀ {o n : Nat} {r : Lanius.Trap}, Memory.loadBytesFrom heap p o n = .error r → r ≠ .typeMismatch
+  | _, 0, _, h => by cases h
+  | o, n + 1, r, h => by
+    simp only [Memory.loadBytesFrom] at h
+    split at h
+    · cases h; exact loadByte_ne (by assumption)
+    · split at h
+      · cases h; exact loadBytesFrom_ne (by assumption)
+      · cases h
+
+theorem storeBytesFrom_ne {p : Nat} :
+    ∀ {heap : Memory.Heap} {o : Nat} {bytes : List UInt8} {r : Lanius.Trap},
+      Memory.storeBytesFrom heap p o bytes = .error r → r ≠ .typeMismatch
+  | _, _, [], _, h => by cases h
+  | heap, o, b :: rest, r, h => by
+    simp only [Memory.storeBytesFrom] at h
+    split at h
+    · cases h; exact storeByte_ne (by assumption)
+    · exact storeBytesFrom_ne h
 
 theorem shapes_two {P : Core.Program} {args : List Value} {a b : Ty} (h : Shapes P args [a, b]) :
     ∃ x y, args = [x, y] ∧ Shape P x a ∧ Shape P y b := by
@@ -57,6 +95,10 @@ theorem host_ok {P : Core.Program} {heap : Memory.Heap} {world : Lanius.World.St
     repeat' split
   all_goals (try (rename_i heq; repeat' split at heq))
   all_goals simp_all [HostOk, i32Result_shape, HostService.returnType]
-  all_goals (rename_i heq; obtain ⟨rfl, -⟩ := heq; exact i32Result_shape P _)
+  all_goals first
+    | (rename_i heq; obtain ⟨rfl, -⟩ := heq; exact i32Result_shape P _)
+    | (rename_i heq; exact loadBytesFrom_ne heq)
+    | (rename_i heq; exact storeBytesFrom_ne heq)
+    | skip
 
 end Lanius.Mini
