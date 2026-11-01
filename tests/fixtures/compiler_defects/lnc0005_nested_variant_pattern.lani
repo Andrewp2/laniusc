@@ -1,0 +1,34 @@
+// LNC0005 "unresolved identifier": a variant named inside another pattern
+// (`Ok(V5(p))`, `Some(None)`) was declared as a match binder, because its
+// pattern node spans only the name token. A later pattern or expression
+// spelling the same variant outside that arm then found an out-of-scope
+// declaration. A nested pattern with payloads of its own, or one whose path
+// resolves to a variant, is now matched, not declared. Found by
+// formal/tools/fuzz_oracle.py. Exits 0.
+module app::main;
+import core::option;
+import core::result;
+enum E4 { V5(i32), V6 }
+fn opt(o: core::option::Option<core::option::Option<u8>>) -> i32 {
+    return (match (o) { Some(Some(x)) -> (x as i32), Some(None) -> 3, None -> 4 });
+}
+fn main() -> i32 {
+    let v: i32 = 3;
+    let l6: E4 = V5(v);
+    let l9: core::result::Result<E4, u8> = Ok(l6);
+    // A payload variant nested in an imported variant, then bare at the top.
+    let a: i32 = (match (l9) { Ok(V5(p)) -> p, _ -> 1 });
+    let b: i32 = (match (l6) { V5(q) -> (q + a), V6 -> 2 });
+    // A unit variant nested, then the same unit variant constructed.
+    let u: core::result::Result<E4, u8> = Ok(V6);
+    let c: i32 = (match (u) { Ok(V6) -> 10, _ -> 11 });
+    let d: E4 = V6;
+    let e: i32 = (match (d) { V5(r) -> r, V6 -> 20 });
+    // Imported unit and payload variants nested, then bare.
+    let w: core::option::Option<u8> = Some(6);
+    let f: i32 = opt(Some(w));
+    let g: i32 = opt(Some(None));
+    let h: i32 = opt(None);
+    if (a != 3 || b != 6 || c != 10 || e != 20 || f != 6 || g != 3 || h != 4) { return 1; }
+    return 0;
+}
