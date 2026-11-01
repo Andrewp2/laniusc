@@ -340,8 +340,6 @@ def malformed(exe, base):
     for data, code in MALFORMED:
         got, _ = raw(port, data)
         TALLY["rejected"] += 1
-        if code == 413 and b"Content-Length: 2000000" not in data:
-            pass
         st = statuses(got)
         check(st == [code], "%r -> %r" % (data[:60], st))
         check(b"Connection: close" in got, "close %r" % data[:40])
