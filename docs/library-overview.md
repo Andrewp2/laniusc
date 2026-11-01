@@ -674,6 +674,19 @@ exactly that process. The contracts program and the
 groups, which tee two children's output with timestamps and kill them on a
 timeout, pass as direct runs on native Linux x86_64.
 
+**Signals, resource limits and supervision.**
+
+The [signals guide](stdlib-signals.md) extends `std::signal` with sets of
+signals 1..64, the calling thread's block mask and pending set, action
+queries, and signalfd receivers that `std::event` can watch. `handle()` and
+`restore()` make a set synchronously handled and undo it. `std::command`
+children get a cleared block mask by default. The
+[resource-limit guide](stdlib-rlimit.md) adds `std::rlimit`, typed prlimit64
+limits for this or another process. The contracts program and the
+[supervise](stdlib-signals.md#application-supervise) cli50/supervise97 groups
+pass as direct runs on native Linux x86_64. The supervisor restarts a crashing
+child with backoff and forwards TERM/INT with a grace kill.
+
 **Shared random-source budgets.**
 
 The [draw-budget guide](stdlib-random-budget.md) specifies one borrowed adapter,

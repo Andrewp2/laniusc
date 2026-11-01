@@ -1991,7 +1991,14 @@
     "std::signal": {
       "guides": [
         "docs/stdlib-signals.md"
-      ]
+      ],
+      "note": "No asynchronous handlers: handled signals are blocked and read from a signalfd. Masks are per thread; use from a single-threaded process. Receivers close exactly once. Evidence is finite native Linux x86_64 CPU execution."
+    },
+    "std::rlimit": {
+      "guides": [
+        "docs/stdlib-rlimit.md"
+      ],
+      "note": "prlimit64 for getrlimit/setrlimit/prlimit; soft <= hard is checked before the call. An unprivileged hard-limit reduction is permanent. Evidence is finite native Linux x86_64 CPU execution."
     },
     "std::socket": {
       "guides": [

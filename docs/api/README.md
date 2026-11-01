@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **295 modules**, **15201 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **296 modules**, **15333 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -135,7 +135,7 @@ Inventory: **295 modules**, **15201 declaration/member entries**. Counts include
 | [std::atomic_file](std/atomic_file.md) | [source](../../stdlib/std/atomic_file.lani#L4) | 104 | Source inventory | [stdlib-atomic-files](../stdlib-atomic-files.md), [stdlib-temp-files](../stdlib-temp-files.md), [extended-kv](../extended-kv.md) |
 | [std::channel](std/channel.md) | [source](../../stdlib/std/channel.lani#L6) | 49 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
 | [std::clock](std/clock.md) | [source](../../stdlib/std/clock.lani#L2) | 21 | Source inventory | [stdlib-time](../stdlib-time.md) |
-| [std::command](std/command.md) | [source](../../stdlib/std/command.lani#L3) | 146 | Source inventory | [stdlib-command](../stdlib-command.md), [stdlib-command-groups](../stdlib-command-groups.md), [stdlib-run-group](../stdlib-run-group.md), [stdlib-host-clocks](../stdlib-host-clocks.md), [stdlib-child-usage](../stdlib-child-usage.md) |
+| [std::command](std/command.md) | [source](../../stdlib/std/command.lani#L3) | 150 | Source inventory | [stdlib-command](../stdlib-command.md), [stdlib-command-groups](../stdlib-command-groups.md), [stdlib-run-group](../stdlib-run-group.md), [stdlib-host-clocks](../stdlib-host-clocks.md), [stdlib-child-usage](../stdlib-child-usage.md) |
 | [std::command_capture](std/command_capture.md) | [source](../../stdlib/std/command_capture.lani#L3) | 84 | Source inventory | [stdlib-command-capture](../stdlib-command-capture.md), [stdlib-command-groups](../stdlib-command-groups.md), [stdlib-run-group](../stdlib-run-group.md) |
 | [std::directory](std/directory.md) | [source](../../stdlib/std/directory.lani#L2) | 63 | Source inventory | [stdlib-directory](../stdlib-directory.md) |
 | [std::entropy](std/entropy.md) | [source](../../stdlib/std/entropy.lani#L2) | 26 | Source inventory | [stdlib-randomness](../stdlib-randomness.md), [stdlib-entropy-bounded](../stdlib-entropy-bounded.md) |
@@ -176,8 +176,9 @@ Inventory: **295 modules**, **15201 declaration/member entries**. Counts include
 | [std::random_checked](std/random_checked.md) | [source](../../stdlib/std/random_checked.lani#L5) | 6 | Source inventory | [stdlib-randomness](../stdlib-randomness.md) |
 | [std::random_wide](std/random_wide.md) | [source](../../stdlib/std/random_wide.lani#L3) | 5 | Source inventory | [stdlib-randomness](../stdlib-randomness.md) |
 | [std::resolve](std/resolve.md) | [source](../../stdlib/std/resolve.lani#L4) | 59 | Source inventory | [stdlib-resolve](../stdlib-resolve.md), [stdlib-resolve-host](../stdlib-resolve-host.md) |
+| [std::rlimit](std/rlimit.md) | [source](../../stdlib/std/rlimit.lani#L5) | 37 | Source inventory | [stdlib-rlimit](../stdlib-rlimit.md) |
 | [std::scope](std/scope.md) | [source](../../stdlib/std/scope.lani#L14) | 65 | Source inventory | [stdlib-scope](../stdlib-scope.md), [memory-scoped-stacks-design](../memory-scoped-stacks-design.md) |
-| [std::signal](std/signal.md) | [source](../../stdlib/std/signal.lani#L3) | 14 | Source inventory | [stdlib-signals](../stdlib-signals.md) |
+| [std::signal](std/signal.md) | [source](../../stdlib/std/signal.lani#L6) | 105 | Source inventory | [stdlib-signals](../stdlib-signals.md) |
 | [std::socket](std/socket.md) | [source](../../stdlib/std/socket.lani#L3) | 119 | Source inventory | [stdlib-sockets](../stdlib-sockets.md), [stdlib-unix-streams](../stdlib-unix-streams.md), [stdlib-unix-request](../stdlib-unix-request.md) |
 | [std::stream](std/stream.md) | [source](../../stdlib/std/stream.lani#L3) | 15 | Source inventory | [stdlib-streams](../stdlib-streams.md) |
 | [std::sync](std/sync.md) | [source](../../stdlib/std/sync.lani#L7) | 91 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
