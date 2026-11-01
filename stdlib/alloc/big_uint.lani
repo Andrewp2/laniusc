@@ -539,7 +539,28 @@ fn parse_dc(c: &Ctx, input: core::slice::View<u8>, from: i32, count: i32, radix:
     let value: BigUint = keep(c,scaled.add(rest.borrow(),c.limits)); scaled.destroy(); rest.destroy(); return value;
 }
 fn conversion_work(digits: u64, radix: i32, limbs: u64) -> u64 { return (digits/(chunk_digits(radix) as u64)+1)*(limbs+1)+digits; }
+// log2(radix) for power-of-two radices, else 0.
+fn radix_shift(radix: i32) -> i32 { if (radix == 2) { return 1; } if (radix == 4) { return 2; } if (radix == 8) { return 3; } if (radix == 16) { return 4; } if (radix == 32) { return 5; } return 0; }
+// Power-of-two radices pack bits directly: linear time in the digit count.
+fn parse_bits(input: core::slice::View<u8>, radix: i32, limits: Limits) -> core::result::Result<BigUint,Error> {
+    let shift: i32 = radix_shift(radix); let index: i32 = 0;
+    while (index < input.length) { if (digit(input.values[input.start+index]) >= radix) { return core::result::Err(Error::InvalidDigit); } index += 1; }
+    let skip: i32 = 0; while (skip < input.length && input.values[input.start+skip] == 48) { skip += 1; }
+    let bits: u64 = ((input.length-skip) as u64)*(shift as u64); let count: u64 = (bits+31)/32;
+    if (count > limits.max_limbs as u64) { return core::result::Err(Error::LimbLimit); }
+    let made: core::result::Result<BigUint,Error> = fresh(count as i32,limits); if (made.is_err()) { return made; } let out: BigUint = made.unwrap();
+    let os: [u32] = out.limbs.as_slice(); let position: u64 = 0; index = input.length;
+    while (index > skip) {
+        index -= 1; let value: u64 = digit(input.values[input.start+index]) as u64; let limb: i32 = (position/32) as i32; let offset: u64 = position%32;
+        os[limb] = os[limb] | ((value << offset) as u32); if (offset+(shift as u64) > 32) { os[limb+1] = os[limb+1] | ((value >> (32-offset)) as u32); }
+        position += shift as u64;
+    }
+    out.normalize(); return core::result::Ok(out);
+}
 pub fn parse(input: core::slice::View<u8>, radix: i32, limits: Limits) -> core::result::Result<BigUint,Error> {
+    if (radix_shift(radix) != 0 && input.length > PARSE_DC_DIGITS && valid(limits) && input.start >= 0 && input.start <= 2147483647-input.length) {
+        if ((input.length as u64) > limits.max_work) { return core::result::Err(Error::WorkLimit); } return parse_bits(input,radix,limits);
+    }
     if (input.length <= PARSE_DC_DIGITS || !valid(limits) || radix < 2 || radix > 36 || input.start < 0 || input.start > 2147483647-input.length) { return parse_basic(input,radix,limits); }
     let index: i32 = 0; while (index < input.length) { if (digit(input.values[input.start+index]) >= radix) { return core::result::Err(Error::InvalidDigit); } index += 1; }
     let digit_bits: u64 = 1; while ((1 << digit_bits) < (radix as u64)) { digit_bits += 1; }
@@ -564,6 +585,7 @@ pub impl BigUint {
     }
     pub fn format_radix(&self, radix: i32, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
         if (self.limbs.len() <= CONVERSION_THRESHOLD || !valid(limits) || radix < 2 || radix > 36 || limits.max_output == 0) { return self.format_basic(radix,limits); }
+        if (radix_shift(radix) != 0) { return self.format_bits(radix,limits); }
         let digit_bits: u64 = 0; let radix_power: i32 = radix; while (radix_power > 1) { digit_bits += 1; radix_power = radix_power >> 1; }
         let digits: u64 = self.bit_length()/digit_bits+1;
         if (conversion_work(digits,radix,self.limbs.len() as u64) > limits.max_work) { return core::result::Err(Error::WorkLimit); }
@@ -574,6 +596,21 @@ pub impl BigUint {
         if (output.try_reserve(reserve as i32).is_err()) { flag(c,Error::AllocationFailed); }
         emit(c,output.borrow(),self,top,0,radix,powers.borrow()); destroy_powers(powers);
         if (c.failed) { output.destroy(); return core::result::Err(c.error); } return core::result::Ok(output);
+    }
+    // Power-of-two radix: read digits straight from the bits, most significant first.
+    fn format_bits(&self, radix: i32, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+        let shift: u64 = radix_shift(radix) as u64; let count: u64 = (self.bit_length()+shift-1)/shift;
+        if ((self.limbs.len() as u64) > limits.max_work) { return core::result::Err(Error::WorkLimit); }
+        if (count > limits.max_output as u64) { return core::result::Err(Error::OutputLimit); }
+        let output: alloc::vec::Vec<u8> = alloc::vec::new(); if (output.try_reserve(count as i32).is_err()) { return core::result::Err(Error::AllocationFailed); }
+        let xs: [u32] = self.limbs.as_slice(); let length: i32 = self.limbs.len(); let index: u64 = count;
+        while (index > 0) {
+            index -= 1; let position: u64 = index*shift; let limb: i32 = (position/32) as i32; let offset: u64 = position%32;
+            let wide: u64 = (xs[limb] as u64) >> offset; if (offset+shift > 32 && limb+1 < length) { wide = wide | ((xs[limb+1] as u64) << (32-offset)); }
+            let value: u32 = (wide & ((1 << shift)-1)) as u32; let byte: u8 = (value+48) as u8; if (value >= 10) { byte = (value+87) as u8; }
+            if (output.try_push(byte).is_err()) { output.destroy(); return core::result::Err(Error::AllocationFailed); }
+        }
+        return core::result::Ok(output);
     }
     // Inverse of self modulo modulus by the extended Euclidean algorithm over
     // magnitudes: r_i is congruent to (-1)^(i+1) * u_i * self.
