@@ -178,6 +178,43 @@ replacement before releasing the original allocation.
 | Sorted construction, clone, nonempty shrink | O(n) |
 | Clear | O(1), without element destruction |
 
+Lookup walks the tree with `K::lt` and reads one node per level from an
+untyped view of the node storage. Insertion and removal stop rebalancing at
+the first ancestor whose height is unchanged after its repair; above that
+node no balance factor changes.
+
+## Performance at one million keys
+
+[`bench.lani`](../tests/fixtures/stdlib_tree_map_perf/bench.lani) runs the
+[hash map benchmark](stdlib-hash-collections.md#performance-at-one-million-keys)
+keys and phases on this map, and
+[`bench.cpp`](../tests/fixtures/stdlib_tree_map_perf/bench.cpp) runs them on
+`std::map` (g++ -O2). Best of three interleaved rounds on 2026-10-31 on the
+development laptop, in milliseconds, at load average 17-19:
+
+| Phase | before | after | C++ |
+| --- | ---: | ---: | ---: |
+| u64 insert | 2930 | 860 | 106 |
+| u64 hit | 642 | 347 | 51 |
+| u64 miss | 641 | 314 | 50 |
+| u64 remove half | 1908 | 539 | 83 |
+| u64 half hit | 624 | 351 | 205 |
+| u64 remove rest | 1571 | 466 | 75 |
+| i32 insert | 3086 | 1029 | 86 |
+| i32 hit | 703 | 349 | 50 |
+| i32 miss | 588 | 213 | 11 |
+| i32 remove half | 1872 | 525 | 53 |
+| i32 half hit | 669 | 342 | 102 |
+| i32 remove rest | 1635 | 467 | 48 |
+
+Before, lookup went through the `NaturalKey` comparator, which builds an
+`Ordering` for every node, each node view came from
+`typed_slice_from_storage` (about 23 ns for its stride probe), and
+rebalancing always climbed to the root. A lookup step, about 20 levels deep
+at a million keys, now costs about 17 ns, against about 2.5 ns for `std::map`. The gap comes from
+the same backend costs as the hash map's: each node is copied through
+memory and every value round-trips through the stack.
+
 The old `std::map` was removed after its repository callers migrated to checked
 `alloc::hash_map` owners and explicit order vectors where their output needs
 first-seen order. See [collection migration](stdlib-legacy-collections.md).

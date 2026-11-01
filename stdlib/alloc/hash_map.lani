@@ -401,7 +401,9 @@ pub impl<K, V> HashMap<K, V> {
             set_control(control, index, 128);
         }
         self.length -= 1;
-        if (self.length == 0) { self.clear(); }
+        // Reset leftover tombstones when the map empties; skip the O(buckets)
+        // pass when none are left, so emptying and refilling stays O(1).
+        if (self.length == 0 && self.occupied > 0) { self.clear(); }
         return core::option::Some(removed);
     }
     pub fn iter(&self) -> Iter<K, V> {

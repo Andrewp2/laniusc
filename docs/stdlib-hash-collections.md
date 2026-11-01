@@ -221,6 +221,23 @@ stack. On a cache-resident 1,024-key map, a hit costs about 50 ns and a miss
 about 27 ns. Hits at one million keys add a cache miss on the cell. Python and C++ also gain from this benchmark's order: they store entries
 in insertion order, so in-order lookups touch memory sequentially.
 
+Insert stays above the 1.2x-of-Python goal: a rerun at load average 17-19
+measured 414-458 ms against Python's 313-393 ms for u64 keys and 464-535 ms
+against 210-222 ms for i32 keys. Timing parts of one insert at one million
+keys puts about 80 ns in hashing and probing, about 100 ns in the random
+writes to the cell and its control byte, and 35-45 ns in the caller's
+`unwrap().is_none()` on the returned `Result<Option<V>>`. Doubling the table
+costs 40-85 ms in all, part of it page faults on the new allocation. Insert
+already hashes once: the cell caches its hash and rehash reuses it. Four
+changes made no measurable difference or a worse one: presizing growth,
+inserting directly into the new table during rehash, a word-copy rehash, and
+a compact layout that separated entries from a slot index (clone became
+about 2x slower). The rest of the gap is the backend cost described above.
+
+`remove` clears leftover tombstones when the map empties only if some
+remain. Emptying and refilling a map therefore stays O(1) per operation
+instead of scanning every bucket at each empty point.
+
 [`model.lani`](../tests/fixtures/stdlib_hash_map_perf/model.lani) and its
 [`oracle.py`](../tests/fixtures/stdlib_hash_map_perf/oracle.py) check five
 seeded histories (219,000 operations: 92,116 inserts, 93,885 removes, 32,999
