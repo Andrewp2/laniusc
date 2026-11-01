@@ -188,7 +188,7 @@ pub impl Reader {
             }
             cursor = data_start+size+padding;
         }
-        let opened: core::result::Result<ext::tar::Reader,ext::tar::Error> = ext::tar::reader_at(self.input,cursor);
+        let opened: core::result::Result<ext::tar::Reader,ext::tar::Error> = ext::tar::reader_at(self.input,cursor,local.has_uname,local.has_gname);
         if (core::result::is_err(opened)) { return core::result::Err(tar_error(core::result::unwrap_err(opened))); }
         let inner: ext::tar::Reader = core::result::unwrap(opened);
         let parsed: core::result::Result<core::option::Option<ext::tar::Entry>,ext::tar::Error> = inner.next();

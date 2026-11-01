@@ -10,7 +10,7 @@ pub enum Error { Bounds, UnexpectedEof, MissingFooter, InvalidChecksum, Unsuppor
 pub enum Kind { Regular, HardLink, SymbolicLink, CharacterDevice, BlockDevice, Directory, Fifo, Contiguous }
 pub struct Metadata { path: core::slice::View<u8>, link_name: core::slice::View<u8>, uname: core::slice::View<u8>, gname: core::slice::View<u8>, kind: Kind, mode: u32, uid: u64, gid: u64, mtime: u64, dev_major: u64, dev_minor: u64 }
 pub struct Entry { name: core::slice::View<u8>, prefix: core::slice::View<u8>, link_name: core::slice::View<u8>, uname: core::slice::View<u8>, gname: core::slice::View<u8>, data: core::slice::View<u8>, kind: Kind, mode: u32, uid: u64, gid: u64, size: u64, mtime: u64, dev_major: u64, dev_minor: u64, offset: i32 }
-pub struct Reader { input: core::slice::View<u8>, cursor: i32, ended: bool }
+pub struct Reader { input: core::slice::View<u8>, cursor: i32, ended: bool, full_uname: bool, full_gname: bool }
 pub struct Writer { output: core::slice::View<u8>, cursor: i32, ended: bool }
 
 fn valid(view: core::slice::View<u8>) -> bool { return view.start >= 0 && view.length >= 0 && view.start <= 2147483647-view.length; }
@@ -60,11 +60,13 @@ pub fn metadata(path: core::slice::View<u8>, kind: Kind) -> Metadata {
     return Metadata { path: path, link_name: empty, uname: empty, gname: empty, kind: kind, mode: mode, uid: 0, gid: 0, mtime: 0, dev_major: 0, dev_minor: 0 };
 }
 pub fn reader(input: core::slice::View<u8>) -> core::result::Result<Reader,Error> {
-    if (!valid(input)) { return core::result::Err(Error::Bounds); } return core::result::Ok(Reader { input: input, cursor: 0, ended: false });
+    if (!valid(input)) { return core::result::Err(Error::Bounds); } return core::result::Ok(Reader { input: input, cursor: 0, ended: false, full_uname: false, full_gname: false });
 }
-// Resume reading at a record-aligned offset (used by ext::pax after extension headers).
-pub fn reader_at(input: core::slice::View<u8>, cursor: i32) -> core::result::Result<Reader,Error> {
-    if (!valid(input) || cursor < 0 || cursor > input.length || cursor % 512 != 0) { return core::result::Err(Error::Bounds); } return core::result::Ok(Reader { input: input, cursor: cursor, ended: false });
+// Resume reading at a record-aligned offset (used by ext::pax after extension
+// headers). full_uname/full_gname accept an unterminated 32-byte name field,
+// which pax writers such as Python tarfile emit when a pax record replaces it.
+pub fn reader_at(input: core::slice::View<u8>, cursor: i32, full_uname: bool, full_gname: bool) -> core::result::Result<Reader,Error> {
+    if (!valid(input) || cursor < 0 || cursor > input.length || cursor % 512 != 0) { return core::result::Err(Error::Bounds); } return core::result::Ok(Reader { input: input, cursor: cursor, ended: false, full_uname: full_uname, full_gname: full_gname });
 }
 pub impl Entry {
     pub fn path_len(&self) -> i32 { if (self.prefix.length == 0) { return self.name.length; } return self.prefix.length+1+self.name.length; }
@@ -105,8 +107,8 @@ pub impl Reader {
         let name: core::result::Result<core::slice::View<u8>,Error> = string_field(header,0,100,false);
         let prefix: core::result::Result<core::slice::View<u8>,Error> = string_field(header,345,155,false);
         let link: core::result::Result<core::slice::View<u8>,Error> = string_field(header,157,100,false);
-        let uname: core::result::Result<core::slice::View<u8>,Error> = string_field(header,265,32,true);
-        let gname: core::result::Result<core::slice::View<u8>,Error> = string_field(header,297,32,true);
+        let uname: core::result::Result<core::slice::View<u8>,Error> = string_field(header,265,32,!self.full_uname);
+        let gname: core::result::Result<core::slice::View<u8>,Error> = string_field(header,297,32,!self.full_gname);
         if (core::result::is_err(name)) { return core::result::Err(core::result::unwrap_err(name)); }
         if (core::result::is_err(prefix)) { return core::result::Err(core::result::unwrap_err(prefix)); }
         if (core::result::is_err(link)) { return core::result::Err(core::result::unwrap_err(link)); }
