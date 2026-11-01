@@ -1,9 +1,9 @@
 // Prevalidated CSV report streamed through bounded format scratch and buffering.
 // Accepted on x86_64 Linux native ELF via the GPU compiler; see docs/stdlib-format-report.md.
 module app::main;
-import alloc::buffered;
 import alloc::io;
 import alloc::vec;
+import core::buffered;
 import core::decimal;
 import core::f64;
 import core::float_decimal;
@@ -112,7 +112,7 @@ fn prepare(table: ext::csv::Table) -> core::result::Result<alloc::vec::Vec<Row>,
 fn write_status(failure: core::format::WriteFailure) -> i32 {
     return match (failure.cause) { core::format::WriteError::Io(error) -> 3, core::format::WriteError::IoLimit -> 7, core::format::WriteError::Format(error) -> 7 };
 }
-fn publish(rows: &alloc::vec::Vec<Row>, writer: &alloc::buffered::Writer<std::stream::Descriptor>) -> i32 {
+fn publish(rows: &alloc::vec::Vec<Row>, writer: &core::buffered::Writer<std::stream::Descriptor>) -> i32 {
     let storage: [i32;2] = [0;2];
     let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),7);
     let scratch: core::slice::View<u8> = core::slice::view(bytes,7).unwrap();
@@ -121,24 +121,24 @@ fn publish(rows: &alloc::vec::Vec<Row>, writer: &alloc::buffered::Writer<std::st
     let policy: core::format::WriteLimits = core::format::WriteLimits { format: limits(), max_io_calls: 4096 };
     let empty: [core::format::Argument;0] = [];
     let no_values: core::slice::View<core::format::Argument> = core::slice::view(empty,0).unwrap();
-    let header: core::result::Result<i32,core::format::WriteFailure> = core::format::write<alloc::buffered::Writer<std::stream::Descriptor>>(text("name\tquantity\tunit_price\tamount\n",32),no_values,named,writer,scratch,policy);
+    let header: core::result::Result<i32,core::format::WriteFailure> = core::format::write<core::buffered::Writer<std::stream::Descriptor>>(text("name\tquantity\tunit_price\tamount\n",32),no_values,named,writer,scratch,policy);
     if (header.is_err()) { return write_status(header.unwrap_err()); }
     let index: i32 = 0;
     while (index < rows.len()) {
         let row: Row = rows.at(index);
         let values: [core::format::Argument;4] = [core::format::Argument::Text(row.name),core::format::Argument::Signed(row.quantity),core::format::Argument::F64(row.price),core::format::Argument::F64(row.amount)];
         let positional: core::slice::View<core::format::Argument> = core::slice::view(values,4).unwrap();
-        let written: core::result::Result<i32,core::format::WriteFailure> = core::format::write<alloc::buffered::Writer<std::stream::Descriptor>>(row_pattern(),positional,named,writer,scratch,policy);
+        let written: core::result::Result<i32,core::format::WriteFailure> = core::format::write<core::buffered::Writer<std::stream::Descriptor>>(row_pattern(),positional,named,writer,scratch,policy);
         if (written.is_err()) { return write_status(written.unwrap_err()); }
         index += 1;
     }
     let values: [core::format::Argument;1] = [core::format::Argument::Unsigned(rows.len() as u64)];
     let positional: core::slice::View<core::format::Argument> = core::slice::view(values,1).unwrap();
-    let footer: core::result::Result<i32,core::format::WriteFailure> = core::format::write<alloc::buffered::Writer<std::stream::Descriptor>>(text("rows={0}\n",9),positional,named,writer,scratch,policy);
+    let footer: core::result::Result<i32,core::format::WriteFailure> = core::format::write<core::buffered::Writer<std::stream::Descriptor>>(text("rows={0}\n",9),positional,named,writer,scratch,policy);
     if (footer.is_err()) { return write_status(footer.unwrap_err()); }
     return 0;
 }
-fn finish(writer: &alloc::buffered::Writer<std::stream::Descriptor>) -> i32 {
+fn finish(writer: &core::buffered::Writer<std::stream::Descriptor>) -> i32 {
     let attempts: i32 = 0;
     while (attempts < 64) {
         attempts += 1;
@@ -161,13 +161,14 @@ fn report(input: &alloc::io::Buffer) -> i32 {
     if (prepared.is_err()) { let status: i32 = prepared.unwrap_err(); table.destroy(); return status; }
     let rows: alloc::vec::Vec<Row> = prepared.unwrap();
     let sink: std::stream::Descriptor = std::stream::stdout();
-    let made: core::result::Result<alloc::buffered::Writer<std::stream::Descriptor>,core::io::Error> = alloc::buffered::writer<std::stream::Descriptor>(sink.borrow(),17);
-    if (made.is_err()) { rows.destroy(); table.destroy(); return io_status(made.unwrap_err()); }
-    let writer: alloc::buffered::Writer<std::stream::Descriptor> = made.unwrap();
+    // Keep the caller's storage live through publication, finish and discard.
+    let storage: [u8;17] = [0;17];
+    let buffer: core::slice::View<u8> = core::slice::view(storage,17).unwrap();
+    let writer: core::buffered::Writer<std::stream::Descriptor> = core::buffered::writer<std::stream::Descriptor>(sink.borrow(),buffer).unwrap();
     let status: i32 = publish(rows.borrow(),writer.borrow());
     if (status == 0) { status = finish(writer.borrow()); }
-    // A failed drain retains pending bytes. Discard them and release the
-    // writer buffer; never replay an already accepted formatted prefix.
+    // A failed drain retains pending bytes. Abandon them before the caller's
+    // storage expires; never replay an already accepted formatted prefix.
     if (writer.is_active()) { writer.discard(); }
     rows.destroy(); table.destroy();
     return status;

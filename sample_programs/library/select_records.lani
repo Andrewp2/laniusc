@@ -1,7 +1,7 @@
 // Select binary records through the public buffered delimiter protocol.
 module app::main;
-import alloc::buffered;
 import alloc::io;
+import core::buffered;
 import core::decimal;
 import core::io;
 import core::mem;
@@ -67,15 +67,15 @@ fn input_status(error:core::io::Error) -> i32 {
         _ -> 3
     };
 }
-fn eof(reader:&alloc::buffered::Reader<Input>, delimiter:u8) -> i32 {
+fn eof(reader:&core::buffered::Reader<Input>, delimiter:u8) -> i32 {
     let scratch:[u8;1] = [0;1];
-    let read:Result<core::io::Delimited,core::io::DelimiterFailure> = core::io::read_until<alloc::buffered::Reader<Input>>(reader,delimiter,scratch,0,1,16384);
+    let read:Result<core::io::Delimited,core::io::DelimiterFailure> = core::io::read_until<core::buffered::Reader<Input>>(reader,delimiter,scratch,0,1,16384);
     if (read.is_err()) { return input_status(read.unwrap_err().cause); }
     let progress:core::io::Delimited = read.unwrap();
     if (progress.completed != 0) { return 2; }
     return match(progress.ending) { core::io::DelimiterEnd::Eof -> 0, _ -> 6 };
 }
-fn select(reader:&alloc::buffered::Reader<Input>, delimiter:u8, every:u64, output:&alloc::io::Buffer) -> i32 {
+fn select(reader:&core::buffered::Reader<Input>, delimiter:u8, every:u64, output:&alloc::io::Buffer) -> i32 {
     let records:u64 = 0; let total:u64 = 0; let current:u64 = 0;
     let scratch:[u8;1024] = [0;1024];
     while(true) {
@@ -89,9 +89,9 @@ fn select(reader:&alloc::buffered::Reader<Input>, delimiter:u8, every:u64, outpu
         if (selected && (maximum > 1024)) { maximum = 1024; }
         let read:Result<core::io::Delimited,core::io::DelimiterFailure> = core::result::Err(core::io::DelimiterFailure { cause:core::io::Error::InvalidInput,copied:0,consumed:0 });
         if (selected) {
-            read = core::io::read_until<alloc::buffered::Reader<Input>>(reader,delimiter,scratch,0,maximum as i32,16384);
+            read = core::io::read_until<core::buffered::Reader<Input>>(reader,delimiter,scratch,0,maximum as i32,16384);
         } else {
-            read = core::io::skip_until<alloc::buffered::Reader<Input>>(reader,delimiter,maximum,16384);
+            read = core::io::skip_until<core::buffered::Reader<Input>>(reader,delimiter,maximum,16384);
         }
         // A failure may have copied more than it consumed. Never append its
         // scratch prefix or retry it; the complete staged output is discarded.
@@ -120,8 +120,10 @@ fn select(reader:&alloc::buffered::Reader<Input>, delimiter:u8, every:u64, outpu
 fn run(delimiter:u8, every:u64) -> i32 {
     let source = std::stream::stdin();
     let input = Input { inner:source.borrow(),calls:0,bytes:0 };
-    let made:Result<alloc::buffered::Reader<Input>,core::io::Error> = alloc::buffered::reader<Input>(input.borrow(),4096);
-    if (made.is_err()) { return input_status(made.unwrap_err()); } let reader = made.unwrap();
+    // This storage outlives the reader; the View preserves its logical stride.
+    let storage:[u8;4096] = [0;4096];
+    let buffer:View<u8> = core::slice::view(storage,4096).unwrap();
+    let reader:core::buffered::Reader<Input> = core::buffered::reader<Input>(input.borrow(),buffer).unwrap();
     let created:Result<alloc::io::Buffer,core::io::Error> = alloc::io::with_limit(1048576);
     if (created.is_err()) { reader.discard(); return 6; } let output = created.unwrap();
     let status:i32 = select(reader.borrow(),delimiter,every,output.borrow());

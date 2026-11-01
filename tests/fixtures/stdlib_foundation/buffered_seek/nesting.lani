@@ -60,17 +60,17 @@ fn main() -> i32 {
     assert(target[0]==1 && target[1]==2 && target[2]==3 && target[3]==4 && target[4]==0);
     output.log=0;
     assert(core::io::stream_position(outer_writer.borrow()).unwrap()==2 && output.log==335 && output.writes==3);
-    // Transfer the actual outer allocation through Parts and explicitly
-    // rebuild its sole cleanup authority. Aliases are inspected, never freed.
+    // Transfer the actual outer allocation through Parts and restore its
+    // sole cleanup authority. The factory consumes and empties actual Parts.
     assert(outer_reader.seek(core::io::SeekFrom::Start(0)).unwrap()==0);
     assert(outer_reader.fill_buf().unwrap().len()==3 && outer_reader.consume(1).unwrap()==1);
     let parts=outer_reader.take_parts().unwrap();
     let owned:ptr=parts.buffer.storage;
     assert(parts.start==1 && parts.length==2 && parts.bytes().get(0).unwrap()==22);
-    let rebuilt:alloc::buffered::Reader<alloc::buffered::Reader<fixture::peer::Stream>> =alloc::buffered::Reader {
-        inner:parts.inner,buffer:parts.buffer,start:parts.start,end:parts.start+parts.length,active:true,faulted:false
-    };
-    parts.buffer=alloc::vec::new(); parts.start=0; parts.length=0;
+    let restored:core::result::Result<alloc::buffered::Reader<alloc::buffered::Reader<fixture::peer::Stream>>,core::io::Error> =alloc::buffered::reader_from_parts<alloc::buffered::Reader<fixture::peer::Stream>>(parts.borrow());
+    assert(restored.is_ok());
+    let rebuilt:alloc::buffered::Reader<alloc::buffered::Reader<fixture::peer::Stream>> =restored.unwrap();
+    assert(parts.buffer.len()==0 && parts.start==0 && parts.length==0 && !parts.faulted);
     assert(rebuilt.buffer.storage==owned && outer_reader.capacity()==0 && !outer_reader.is_active());
     assert(fixture::peer::error_is(outer_reader.seek(core::io::SeekFrom::Start(0)).unwrap_err(),4));
     input.log=0;

@@ -1,0 +1,44 @@
+module fixture::probe;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+pub struct Reply { kind:i32,ok:bool,amount:i32,position:u64 }
+pub struct Event { kind:i32,offset:i32,count:i32,stride:isize,payload:u64,absolute:u64,delta:i64 }
+pub fn guard() -> Event { return Event { kind:77,offset:88,count:99,stride:111,payload:222,absolute:333,delta:444 }; }
+pub fn ok(kind:i32,amount:i32) -> Reply { return Reply { kind:kind,ok:true,amount:amount,position:0 }; }
+pub fn fail(kind:i32,code:i32) -> Reply { return Reply { kind:kind,ok:false,amount:code,position:0 }; }
+pub fn moved(kind:i32,position:u64) -> Reply { return Reply { kind:kind,ok:true,amount:0,position:position }; }
+pub fn error(code:i32) -> core::io::Error { return match(code) { 1 -> core::io::Error::Interrupted,2 -> core::io::Error::WouldBlock,3 -> core::io::Error::InvalidCount,4 -> core::io::Error::InvalidInput,5 -> core::io::Error::WriteZero,6 -> core::io::Error::UnexpectedEof,7 -> core::io::Error::CountOverflow,8 -> core::io::Error::LimitExceeded,9 -> core::io::Error::AllocationFailed,_ -> core::io::Error::Host(99), }; }
+pub fn cause(value:core::io::Error) -> i32 { return match(value) { core::io::Error::Interrupted -> 1,core::io::Error::WouldBlock -> 2,core::io::Error::InvalidCount -> 3,core::io::Error::InvalidInput -> 4,core::io::Error::WriteZero -> 5,core::io::Error::UnexpectedEof -> 6,core::io::Error::CountOverflow -> 7,core::io::Error::LimitExceeded -> 8,core::io::Error::AllocationFailed -> 9,core::io::Error::Host(n) -> n-89, }; }
+pub struct Probe { data:[u8],length:i32,position:u64,replies:[Reply],limit:i32,calls:i32,events:[Event] }
+pub fn probe(data:[u8],length:i32,replies:[Reply],limit:i32,events:[Event]) -> Probe { return Probe { data:data,length:length,position:0,replies:replies,limit:limit,calls:0,events:events }; }
+pub impl Probe {
+    pub fn borrow(&self) -> &Probe { return self; }
+    fn record(&self,kind:i32,offset:i32,count:i32,stride:isize,payload:u64,absolute:u64,delta:i64) -> Reply { assert(self.calls<self.limit && self.calls<32); let response:Reply=self.replies[self.calls]; assert(response.kind==kind); self.events[self.calls]=Event { kind:kind,offset:offset,count:count,stride:stride,payload:payload,absolute:absolute,delta:delta }; self.calls+=1; return response; }
+    pub fn tail(&self) { let i:i32=self.calls; while(i<32) { let item:Event=self.events[i]; assert(item.kind==77 && item.offset==88 && item.count==99 && item.stride==111 && item.payload==222 && item.absolute==333 && item.delta==444); i+=1; } }
+}
+pub impl core::io::Read for Probe {
+    pub fn read(&self,destination:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(count>0 && core::io::valid_range(offset,count)); let response:Reply=self.record(1,offset,count,core::mem::slice_stride(destination),0,self.position,0);
+        if(!response.ok) { return core::result::Err(error(response.amount)); } let amount:i32=response.amount;
+        if(amount>=0 && amount<=count) { assert(self.position<=self.length as u64 && (amount as u64)<=self.length as u64-self.position); let i:i32=0; while(i<amount) { destination[offset+i]=self.data[(self.position as i32)+i]; i+=1; } self.position+=amount as u64; }
+        return core::result::Ok(amount);
+    }
+}
+pub impl core::io::Write for Probe {
+    pub fn write(&self,source:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(count>0 && count<=8 && core::io::valid_range(offset,count)); let payload:u64=0; let i:i32=0; while(i<count) { payload|=(source[offset+i] as u64)<<(i*8); i+=1; }
+        let response:Reply=self.record(2,offset,count,core::mem::slice_stride(source),payload,self.position,0); if(!response.ok) { return core::result::Err(error(response.amount)); } let amount:i32=response.amount;
+        if(amount>=0 && amount<=count) { assert(self.position<=self.length as u64 && (amount as u64)<=self.length as u64-self.position); i=0; while(i<amount) { self.data[(self.position as i32)+i]=source[offset+i]; i+=1; } self.position+=amount as u64; }
+        return core::result::Ok(amount);
+    }
+    pub fn flush(&self) -> core::result::Result<i32,core::io::Error> { let zero:isize=0; let response:Reply=self.record(3,0,0,zero,0,self.position,0); if(!response.ok) { return core::result::Err(error(response.amount)); } return core::result::Ok(response.amount); }
+}
+fn absolute(from:core::io::SeekFrom) -> u64 { return match(from) { core::io::SeekFrom::Start(value) -> value,_ -> 0, }; }
+fn delta(from:core::io::SeekFrom) -> i64 { return match(from) { core::io::SeekFrom::Current(value) -> value,core::io::SeekFrom::End(value) -> value,_ -> 0, }; }
+pub impl core::io::Seek for Probe {
+    pub fn seek(&self,from:core::io::SeekFrom) -> core::result::Result<u64,core::io::Error> { let kind:i32=match(from) { core::io::SeekFrom::Start(_) -> 4,core::io::SeekFrom::Current(_) -> 5,core::io::SeekFrom::End(_) -> 6, }; let zero:isize=0; let response:Reply=self.record(kind,0,0,zero,0,absolute(from),delta(from)); if(!response.ok) { return core::result::Err(error(response.amount)); } self.position=response.position; return core::result::Ok(response.position); }
+}
+pub fn event(peer:&Probe,index:i32,kind:i32,offset:i32,count:i32,stride:isize,payload:u64,absolute:u64,delta:i64) { assert(index<peer.calls); let e:Event=peer.events[index]; assert(e.kind==kind && e.offset==offset && e.count==count && e.stride==stride && e.payload==payload && e.absolute==absolute && e.delta==delta); }
+pub fn bytes(view:core::slice::View<u8>,start:i32,length:i32,payload:u64) { assert(view.start==start && view.length==length && length<=8); let i:i32=0; while(i<length) { assert(view.values[start+i]==((payload>>(i*8)) as u8)); i+=1; } }

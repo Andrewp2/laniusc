@@ -18,7 +18,8 @@ HELP = (b"Usage: select_records DELIMITER EVERY\n"
         b"Use a 4096-byte buffered reader and 1024-byte scratch; stage all output through EOF.\n"
         b"8192 input/output attempts, 16384 provider calls per helper. Sole --help or -h bypasses input.\n")
 ERROR = b"select_records: operation failed\n"
-COUNTS = {"model": 33, "limits": 8, "cli": 33, "io": 17}
+COUNTS = {"model": 33, "limits": 8, "cli": 33}
+IO_FIXED = 13
 
 
 def records(data, delimiter):
@@ -70,6 +71,19 @@ def events(text):
     return result
 
 
+def allocation_requests(found):
+    return [item["args"] for item in found if item["name"] == "mmap"]
+
+
+def caller_reader_requests(baseline, argv_only):
+    """Same-shaped argv capture ends before the reader is ever constructed."""
+    assert not any(item["name"] == "read" for item in argv_only)
+    first_read = next(index for index, item in enumerate(baseline) if item["name"] == "read")
+    assert allocation_requests(baseline[:first_read]) == allocation_requests(argv_only), \
+        "reader construction allocated beyond the matched argv capture"
+    return first_read
+
+
 class Runner:
     def __init__(self, executable, mode):
         self.executable = str(Path(executable).resolve())
@@ -78,6 +92,7 @@ class Runner:
         assert int.from_bytes(header[16:18], "little") == 2 and int.from_bytes(header[18:20], "little") == 62
         self.directory = Path(tempfile.mkdtemp(prefix=f"select-records-{mode}-"))
         self.count = 0
+        self.reached_allocations = 0
 
     def run(self, name, arguments=(), data=b"", *, status=0, output=b"", trace=False, injection=None,
             read_error=False, closed_stdout=False, diagnostic=True, budget=None, preflight=False):
@@ -160,7 +175,8 @@ def model(r):
     r.model("maximum-record-count", b"\n" * RECORD_CAP, every=65536)
     huge = b"x" * 15 + b"\n"
     found = r.model("maximum-input-sparse-selection", huge * RECORD_CAP, every=65536, trace=True)
-    assert len([item for item in found if item["name"] == "mmap"]) <= 4, "sparse skips retained source-sized backing"
+    assert all(int(item["args"].split(",")[1]) < RECORD_CAP
+               for item in found if item["name"] == "mmap"), "sparse skips retained source-sized backing"
     r.model("maximum-input-all-selected", huge * RECORD_CAP, every=1)
     rng = random.Random(0x5E1EC7)
     for index in range(4):
@@ -206,23 +222,25 @@ def io(r):
     args = ["10", "2"]
     wanted = select_records(data)
     baseline = r.run("baseline", args, data, output=wanted, trace=True)
+    # The rejected cadence has the same argument count and byte lengths. It
+    # completes the same argv capture but never enters reader construction.
+    argv_only = r.run("argv-only-baseline", ["10", "0"], status=2, trace=True, preflight=True)
+    first_read = caller_reader_requests(baseline, argv_only)
     maps = [item for item in baseline if item["name"] == "mmap"]
-    first_read = next(index for index, item in enumerate(baseline) if item["name"] == "read")
-    reader_map = next(item for item in reversed(baseline[:first_read]) if item["name"] == "mmap")
     output_maps = [item for item in baseline[first_read + 1:] if item["name"] == "mmap"]
-    selected = [maps[0], maps[1], reader_map, output_maps[0], output_maps[-1]]
-    assert len({item["ordinal"] for item in selected}) == 5
+    assert output_maps, "nonempty selected output must reach staging storage"
+    assert int(output_maps[-1]["args"].split(",")[1]) > int(output_maps[0]["args"].split(",")[1]), \
+        "representative must reach staging growth"
     eof = next(item for item in baseline if item["name"] == "read" and item["answer"] == "0")
     first_output = next(index for index, item in enumerate(baseline) if item["name"] == "write" and item["args"].startswith("1,"))
     assert baseline.index(eof) < first_output
-    reader_address = reader_map["answer"]
-    assert next(index for index, item in enumerate(baseline) if item["name"] == "munmap" and item["args"].split(",")[0] == reader_address) < first_output
     assert not any(item["name"] == "mmap" for item in baseline[baseline.index(eof) + 1:])
-    for old in selected:
+    for old in maps:
         ordinal = old["ordinal"]
         actual = r.run(f"owner-oom-{ordinal}", args, data, status=4, trace=True, injection=("mmap", ordinal, "ENOMEM"))
-        fault = next(item for item in actual if item["name"] == "mmap" and item["ordinal"] == ordinal)
-        assert fault["args"] == old["args"]
+        assert allocation_requests(actual) == allocation_requests(baseline)[:ordinal], \
+            ("allocation denial diverged from reached baseline prefix", ordinal)
+        r.reached_allocations += 1
     r.run("stdin-directory", args, status=3, trace=True, read_error=True)
     r.run("closed-data-stdout", args, data, status=5, trace=True, closed_stdout=True)
     r.run("closed-help-stdout", ["--help"], status=5, trace=True, closed_stdout=True)
@@ -237,6 +255,7 @@ def io(r):
     r.run("signal-setup-eio", args, status=5, trace=True, injection=("rt_sigaction", 1, "EIO"), diagnostic=False)
     r.run("input-attempt-cap", args, status=2, budget="read")
     r.run("output-attempt-cap", args, data, status=5, budget="write")
+    assert r.count == IO_FIXED + r.reached_allocations
 
 
 def controls():
@@ -268,7 +287,15 @@ def controls():
     try: events(trace.split("munmap")[0])
     except AssertionError: pass
     else: raise AssertionError("missing release accepted")
-    print(f"select-records CPU controls=8; native cases={sum(COUNTS.values())}")
+    argv_trace = events(trace)
+    input_trace = events(trace.replace("munmap", 'read(0, "", 1024) = 0\nmunmap'))
+    assert caller_reader_requests(input_trace, argv_trace) == 1
+    allocated_reader = events(trace.replace("munmap", 'mmap(NULL, 4096, X, Y, -1, 0) = 0x2000\n'
+                                            'read(0, "", 1024) = 0\nmunmap(0x2000, 4096) = 0\nmunmap'))
+    try: caller_reader_requests(allocated_reader, argv_trace)
+    except AssertionError: pass
+    else: raise AssertionError("added reader allocation accepted")
+    print(f"select-records CPU controls=9; native cases={sum(COUNTS.values()) + IO_FIXED}+A")
 
 
 if __name__ == "__main__":
@@ -278,5 +305,9 @@ if __name__ == "__main__":
         mode, executable = sys.argv[1:]
         runner = Runner(executable, mode)
         {"model": model, "limits": limits, "cli": cli, "io": io}[mode](runner)
-        assert runner.count == COUNTS[mode], (mode, runner.count)
-        print(f"select-records-{mode} cases={runner.count} evidence={runner.directory}")
+        if mode == "io":
+            assert runner.count == IO_FIXED + runner.reached_allocations
+            print(f"select-records-{mode} cases={runner.count} reached_allocations={runner.reached_allocations} evidence={runner.directory}")
+        else:
+            assert runner.count == COUNTS[mode], (mode, runner.count)
+            print(f"select-records-{mode} cases={runner.count} evidence={runner.directory}")
