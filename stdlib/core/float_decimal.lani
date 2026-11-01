@@ -206,6 +206,10 @@ fn grisu(absolute: u64, fraction_bits: i32, bias: i32, fraction_mask: u64) -> Sh
         while (divisor*10 <= integrals) { divisor *= 10; kappa += 1; }
     }
     let coefficient: u64 = 0; let count: i32 = 0; let decimal: i32 = 0-core::float_tables::cached_decimal(index);
+    // Every integral step's rest is at least fractionals, so when that is
+    // already outside the unsafe interval no integral digit can stop the
+    // generation: take the whole integral part as the first kappa digits.
+    if (fractionals >= unsafe_interval) { coefficient = integrals; count = kappa; kappa = 0; }
     while (kappa > 0) {
         let quotient: u64 = integrals/divisor; coefficient = coefficient*10+quotient; count += 1; integrals = integrals-quotient*divisor; kappa -= 1;
         let rest: u64 = (integrals << shift)+fractionals;
@@ -216,10 +220,14 @@ fn grisu(absolute: u64, fraction_bits: i32, bias: i32, fraction_mask: u64) -> Sh
         // divisor <= 10^9 < 2^32, where (n * 3435973837) >> 35 == n / 10.
         divisor = (divisor*3435973837) >> 35;
     }
-    while (count < 19) {
-        fractionals *= 10; unit *= 10; unsafe_interval *= 10;
-        coefficient = coefficient*10+(fractionals >> shift); count += 1; fractionals = fractionals & (one-1); kappa -= 1;
+    // Fractional digits; step k scales unit by 10^k, so it is computed only
+    // at the end. kappa runs from 0 down to count-19.
+    let mask: u64 = one-1; let last: i32 = count-19;
+    while (kappa > last) {
+        fractionals *= 10; unsafe_interval *= 10;
+        coefficient = coefficient*10+(fractionals >> shift); fractionals = fractionals & mask; kappa -= 1;
         if (fractionals < unsafe_interval) {
+            unit = power10(0-kappa);
             let result: Shortest = weed(coefficient,(too_high-scaled_f)*unit,unsafe_interval,fractionals,one,unit);
             result.exponent = decimal+kappa; return result;
         }

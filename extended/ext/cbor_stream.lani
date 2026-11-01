@@ -382,7 +382,7 @@ pub impl Decoder {
             if (chunks) { self.stop(ErrorKind::ChunkType, at); return -1; }
             if (self.items >= self.options.max_items) { self.stop(ErrorKind::ItemLimit, at); return -1; }
             if (self.depth >= self.options.max_depth) { self.stop(ErrorKind::DepthLimit, at); return -1; }
-            self.note_start(at);
+            if (self.options.deterministic) { self.note_start(at); }
             if (!self.push_frame((major + 9) as u8, NO_KEY, at)) { return -1; }
             self.items += 1; self.begin = begin + 1;
             let opened: ext::cbor::Event = ext::cbor::Event::BeginMap;
@@ -421,7 +421,7 @@ pub impl Decoder {
                     if (self.items >= self.options.max_items) { self.stop(ErrorKind::ItemLimit, at); return -1; }
                     if (self.depth >= self.options.max_depth) { self.stop(ErrorKind::DepthLimit, at); return -1; }
                     self.items += 1;
-                    self.note_start(at);
+                    if (self.options.deterministic) { self.note_start(at); }
                     self.begin = data_start;
                     let count: u64 = argument; if (major == 6) { count = 1; }
                     if (!self.push_frame(major as u8, count, at)) { return -1; }
@@ -456,7 +456,7 @@ pub impl Decoder {
             }
         }
         self.items += 1;
-        self.note_start(at);
+        if (self.options.deterministic) { self.note_start(at); }
         if (!self.complete()) { return -1; }
         self.current = event; self.current_at = at; self.ready = true;
         return 1;

@@ -116,7 +116,11 @@ unshared while driving the reader.
 json_stream::writer(max_depth: i32, max_output_bytes: i32) -> Result<Writer, Error>
 Writer.begin_object(), end_object(), begin_array(), end_array()
 Writer.key(text), string(text), number(text), boolean(value), null()
+Writer.number_unchecked(text)     // number() without the grammar check
 Writer.token(&Tokenizer)          // copy the ready token
+Writer.fast_begin_object(), fast_end_object(), fast_begin_array(), fast_end_array() -> bool
+Writer.fast_key(bytes, start, length), fast_string(...), fast_number_unchecked(...) -> bool
+Writer.fast_null() -> bool, fast_f64(value: f64, scratch: View<u32>) -> bool
 Writer.next_document()            // JSON Lines: LF, then accept another root
 Writer.output() -> View<u8>, output_text() -> Text, len(), depth(), is_complete()
 Writer.flush_to<W>(sink: &W) -> Result<i32, core::io::Failure>   // W: core::io::Write
@@ -132,6 +136,27 @@ spelling. An `InvalidNumber` offset is relative to that Text. If
 `max_output_bytes` or an allocation failure stops a write partway, the output
 is truncated back to its previous length and the call returns `OutputLimit`
 or `AllocationFailed`.
+
+`number_unchecked` writes its Text as given. Use it only for text that is
+already one RFC 8259 number, such as decimal digits or the shortest spelling
+of a finite float.
+
+The `fast_` methods are for hot loops. Each one takes the common path of the
+method with the same name and returns a bool instead of a `Result`. `true`
+means the token was written exactly as the `Result` method would have written
+it. `false` means nothing was written: call the `Result` method from the same
+state to get its outcome. That call may still succeed through the general
+path, for example when the text needs escapes or UTF-8 checking, or it may
+report the error. `fast_key`, `fast_string` and `fast_number_unchecked` take
+the bytes directly, so the caller builds no Text. `fast_f64` formats a finite
+value straight into the output with
+`core::float_decimal::format_f64_into`, so the output is the same as
+`number_unchecked` of that spelling. It declines NaN and the infinities,
+which have no JSON number, and it needs `core::float_decimal::scratch_len()`
+words of scratch. A `Result` return costs about 100 instructions in the
+current native code, against about 8 for a bool, so a converter that tries
+the fast form first and falls back to the `Result` form gets the same output
+and errors at a fraction of the cost.
 
 `flush_to` writes the buffered bytes with `core::io::write_all` and drops
 them. Structure state is kept, so a document of any size can stream through a

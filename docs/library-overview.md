@@ -2315,6 +2315,9 @@ string and input limits. It agrees with all 81 hand-typed Appendix A rows and
 an independent Python implementation on 8,100 generated, mutated, limit and
 sequence cases at four chunk sizes; the
 [cbor-to-json](../sample_programs/cbor_to_json.lani) sample agrees on 700.
+cbor-to-json converts a 4.66 MB document in 0.49 s, 5.7 times faster than
+before the S5 speed work, using the decoder's and JSON writer's `Result`-free
+fast paths.
 [`ext::msgpack`](extended-msgpack.md) streams MessagePack the same way, with
 optional canonical-header and timestamp checks. It agrees with the installed
 Python `msgpack` package and an independent model on 8,174 format-table,

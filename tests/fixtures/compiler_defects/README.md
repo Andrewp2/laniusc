@@ -27,3 +27,40 @@ shapes also compiled correctly: generic-function and user-enum nested matches,
 `select_nth_unstable<T>`, and 3,000-line, import-first and struct/enum/impl-heavy
 files without `module`. The agent that hit each of those diagnostics should
 replace its candidate with the failing program.
+
+## Performance defects
+
+These programs compute the right result, but the generated code is far slower
+than it should be. Each one should become a timing or instruction-count check
+once its defect is fixed.
+
+| File | Defect | Expected | Actual |
+| --- | --- | --- | --- |
+| `slice_byte_copy_cost.lani` | `target[at + index] = source[start + index]` loop over `[u8]` parameters | about 5–8 instructions per byte; 64 MiB in under 0.1 s | 62 instructions per byte; 64 MiB in 0.42 s on the laptop (exit 7 either way) |
+
+To read the loop, disassemble the binary. The output is a static ELF without
+symbols, loaded at 0x400000:
+
+```sh
+objdump -D -b binary -m i386:x86-64 --adjust-vma=0x400000 target/claude-work/defect
+```
+
+Each loop iteration of `copy` executes 62 instructions:
+
+- The two slice descriptors (pointer, length, stride) are copied into fresh
+  stack temporaries for every index expression. That is 12 `mov`s per
+  iteration.
+- Each access computes `base + index * stride` with an `imul`, then branches
+  at run time on `stride == 1` to choose a byte or word load or store, even
+  though the element type is `u8`.
+- The loop condition is materialized as a bool (`setl`, `movzbl`, a store, a
+  reload and `test`) before the branch.
+- Every value goes through a stack slot. There is no register allocation
+  across statements, and dead stores are kept.
+
+The same costs apply to every `[T]` index in library code. They are why the
+S5 byte loops in ext::cbor_stream and ext::json_stream cost about 60–140
+instructions per byte, and why a `Result` return and check costs about
+100 instructions against about 8 for a `bool` return. The S5 fast paths
+(`Writer.fast_*`, `Decoder.advance`) work around the Result cost; only the
+compiler can fix the per-byte cost.

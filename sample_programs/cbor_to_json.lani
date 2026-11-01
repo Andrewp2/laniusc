@@ -47,7 +47,6 @@ fn base64_digit(value: u8) -> u8 {
 
 impl Convert {
     fn borrow(&self) -> &Convert { return self; }
-    fn text_of(&self) -> core::text::Text { return core::text::from_utf8_unchecked(self.text.as_slice(), 0, self.text.len()); }
     fn at_key(&self) -> bool { return self.key == 1; }
     // A complete value or key was written in the enclosing container.
     fn completed(&self) { if (self.container == 2) { self.key = 1 - self.key; } }
@@ -61,10 +60,16 @@ impl Convert {
         }
         return true;
     }
-    fn emit(&self, text: core::text::Text, key: bool) -> bool {
-        if (key) { return self.wrote(self.out.key(text)); }
-        return self.wrote(self.out.string(text));
+    // A key or string from bytes[start, start+length); the writer's fast
+    // forms first, and the Result forms when those decline.
+    fn emit(&self, bytes: [u8], start: i32, length: i32, key: bool) -> bool {
+        if (key) { return self.out.fast_key(bytes, start, length) || self.wrote(self.out.key(core::text::from_utf8_unchecked(bytes, start, length))); }
+        return self.out.fast_string(bytes, start, length) || self.wrote(self.out.string(core::text::from_utf8_unchecked(bytes, start, length)));
     }
+    fn plain_number(&self, bytes: [u8], start: i32, length: i32) -> bool {
+        return self.out.fast_number_unchecked(bytes, start, length) || self.wrote(self.out.number_unchecked(core::text::from_utf8_unchecked(bytes, start, length)));
+    }
+    fn null(&self) -> bool { return self.out.fast_null() || self.wrote(self.out.null()); }
     // Integers: n, or -1 - n when negative, as decimal digits in `number`.
     fn integer(&self, value: u64, negative: bool) -> bool {
         let digits: [u8] = self.number.values; let low: i32 = 40;
@@ -79,9 +84,8 @@ impl Convert {
             if (carry) { low -= 1; digits[low] = 49; }
             low -= 1; digits[low] = 45;
         }
-        let spelled: core::text::Text = core::text::from_utf8_unchecked(digits, low, 40 - low);
         let ok: bool = true;
-        if (self.key == 1) { ok = self.emit(spelled, true); } else { ok = self.wrote(self.out.number(spelled)); }
+        if (self.key == 1) { ok = self.emit(digits, low, 40 - low, true); } else { ok = self.plain_number(digits, low, 40 - low); }
         if (ok) { self.completed(); }
         return ok;
     }
@@ -109,25 +113,26 @@ impl Convert {
     }
     fn string(&self, data: core::slice::View<u8>, text: bool, key: bool) -> bool {
         let ok: bool = true;
-        if (text) { ok = self.emit(core::text::from_utf8_unchecked(data.values, data.start, data.length), key); }
-        else { if (!self.base64(data)) { return false; } ok = self.emit(self.text_of(), key); }
+        if (text) { ok = self.emit(data.values, data.start, data.length, key); }
+        else { if (!self.base64(data)) { return false; } ok = self.emit(self.text.as_slice(), 0, self.text.len(), key); }
         if (ok) { self.completed(); }
         return ok;
     }
     fn float(&self, bits: u64) -> bool {
         let ok: bool = true;
-        if (((bits >> 52) & 2047) == 2047) { ok = self.wrote(self.out.null()); }
+        if (((bits >> 52) & 2047) == 2047) { ok = self.null(); }
         else {
+            if (self.out.fast_f64(core::f64::from_bits(bits), self.scratch)) { self.completed(); return true; }
             let written = core::float_decimal::format_f64_into(core::f64::from_bits(bits), self.number, self.scratch, core::float_decimal::default_format_work());
             if (written.is_err()) { self.failure = 4; return false; }
-            ok = self.wrote(self.out.number(core::text::from_utf8_unchecked(self.number.values, 0, written.unwrap())));
+            ok = self.plain_number(self.number.values, 0, written.unwrap());
         }
         if (ok) { self.completed(); }
         return ok;
     }
     fn simple(&self, value: u8) -> bool {
         let ok: bool = true;
-        if (value == 20 || value == 21) { ok = self.wrote(self.out.boolean(value == 21)); } else { ok = self.wrote(self.out.null()); }
+        if (value == 20 || value == 21) { ok = self.wrote(self.out.boolean(value == 21)); } else { ok = self.null(); }
         if (ok) { self.completed(); }
         return ok;
     }
@@ -146,8 +151,8 @@ impl Convert {
         if (kind != 3) { self.container = kind; self.key = 0; if (kind == 2) { self.key = 1; } }
         return true;
     }
-    fn array(&self) -> bool { if (!self.wrote(self.out.begin_array())) { return false; } return self.open(1); }
-    fn object(&self) -> bool { if (!self.wrote(self.out.begin_object())) { return false; } return self.open(2); }
+    fn array(&self) -> bool { if (!self.out.fast_begin_array() && !self.wrote(self.out.begin_array())) { return false; } return self.open(1); }
+    fn object(&self) -> bool { if (!self.out.fast_begin_object() && !self.wrote(self.out.begin_object())) { return false; } return self.open(2); }
     fn chunked(&self, kind: u8) -> bool { self.chunks.clear(); return self.open(kind); }
     fn close(&self) -> bool {
         let kind: u8 = self.kind;
@@ -157,8 +162,8 @@ impl Convert {
         if (kind == 3) { return true; }
         self.container = (packed >> 3) & 7; self.key = packed >> 6;
         let ok: bool = true;
-        if (kind == 1) { ok = self.wrote(self.out.end_array()); }
-        if (kind == 2) { ok = self.wrote(self.out.end_object()); }
+        if (kind == 1) { ok = self.out.fast_end_array() || self.wrote(self.out.end_array()); }
+        if (kind == 2) { ok = self.out.fast_end_object() || self.wrote(self.out.end_object()); }
         if (kind == 4 || kind == 5) {
             let joined: core::slice::View<u8> = self.chunks.as_view();
             ok = self.string(joined, kind == 5, self.key == 1);
