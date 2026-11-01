@@ -256,8 +256,61 @@ def h1_group(exe):
     print("http-proxy-h1 cases=%d requests=%d connects=%d reused=%d retries=%d" % (cases, stats["requests"], stats["connects"], stats["reused"], stats["retries"]))
 
 
+def unused_port():
+    s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()
+    return port
+
+
+def errors_group(exe):
+    up_a, port_a = start_upstream("A")
+    proxy, port = start_proxy(exe, port_a, port_a)
+    cases = 0
+    try:
+        # An upstream that closes without answering: 502, and the client
+        # connection stays usable.
+        c = H1(port); c.send(b"GET /drop HTTP/1.1\r\nHost: t\r\n\r\n"); r = c.response()
+        check(r.status == 502 and r.header(b"connection") == b"keep-alive", ("drop", r.status, r.headers))
+        c.send(b"GET /echo HTTP/1.1\r\nHost: t\r\n\r\n"); check(c.response().status == 200, "after 502"); c.close(); cases += 1
+        # No response head within response_timeout_ms (800 ms): 504.
+        started = time.monotonic(); r = get(port, b"/slow-head"); took = time.monotonic() - started
+        check(r.status == 504 and 0.6 < took < 1.4, ("slow head", r.status, took)); cases += 1
+        # A body that stops: the client connection closes after io_timeout_ms.
+        c = H1(port); c.send(b"GET /stall HTTP/1.1\r\nHost: t\r\n\r\n")
+        while b"\r\n\r\n" not in c.buf:
+            c.fill()
+        started = time.monotonic(); check(c.closed(5), "stall closed"); took = time.monotonic() - started
+        check(len(c.buf.split(b"\r\n\r\n", 1)[1]) <= 1000 and took < 2.5, ("stall", took)); c.close(); cases += 1
+        # Malformed, oversized and unsupported heads; a slow head.
+        for wire, want in [(b"GET / HTTP/1.1\r\nHost: a\r\nBad Header\r\n\r\n", (400,)),
+                           (b"GET / HTTP/1.1\r\nHost: a\r\nX-Big: " + b"x" * 20000 + b"\r\n\r\n", (431,)),
+                           (b"GET / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: gzip\r\n\r\n", (501,)),
+                           (b"GET / HTTP/1.1\r\nHost: a\r\nContent-Length: 1\r\nContent-Length: 2\r\n\r\n", (400,)),
+                           (b"GET / HTTP/1.1\r\nHost: a\r\n", (408,))]:
+            c = H1(port); c.send(wire); r = c.response()
+            check(r.status in want and r.header(b"connection") == b"close" and c.closed(), ("bad head", wire[:40], r.status)); c.close(); cases += 1
+        # A malformed chunked request body ends both connections.
+        c = H1(port); c.send(b"POST /upload HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\nzz\r\n")
+        check(c.closed(), "bad chunk closes"); c.close(); cases += 1
+        # A client that disconnects mid-upload leaves the proxy serving.
+        c = H1(port); c.send(b"POST /upload HTTP/1.1\r\nHost: t\r\nContent-Length: 1000000\r\n\r\n" + b"x" * 5000); time.sleep(0.2); c.close()
+        check(get(port, b"/echo").status == 200, "after abandoned upload"); cases += 1
+        # An idle client is closed after idle_timeout_ms (1500 ms).
+        c = H1(port); started = time.monotonic(); check(c.closed(4), "idle closed"); took = time.monotonic() - started
+        check(1.2 < took < 2.5, ("idle", took)); c.close(); cases += 1
+    finally:
+        stats = stop_proxy(proxy)
+    # A refused upstream connection: 502.
+    dead, dead_port = start_proxy(exe, unused_port(), port_a)
+    try:
+        r = get(dead_port, b"/echo"); check(r.status == 502, ("refused", r.status)); cases += 1
+    finally:
+        dead_stats = stop_proxy(dead); up_a.kill()
+    check(stats["bad_gateway"] == 1 and stats["gateway_timeout"] == 1 and stats["rejected"] == 5 and stats["aborted"] >= 2 and dead_stats["bad_gateway"] == 1, ("stats", stats, dead_stats))
+    print("http-proxy-errors cases=%d bad_gateway=%d gateway_timeout=%d rejected=%d" % (cases, stats["bad_gateway"] + dead_stats["bad_gateway"], stats["gateway_timeout"], stats["rejected"]))
+
+
 def main():
     group, exe = sys.argv[1], sys.argv[2]
-    {"h1": h1_group}[group](exe)
+    {"h1": h1_group, "errors": errors_group}[group](exe)
 
 main()
