@@ -47,11 +47,11 @@ work on native Linux x86_64/glibc with libatomic:
 - `std::parallel`: chunked `for_each`, `map`, ordered `reduce`, `scan` and
   stable `merge_sort` over shared arrays.
 - `std::par`: stable and unstable sorts, `map`, ordered `reduce` and
-  `scan` as stolen tasks on a `std::steal` pool. The sorts sort runs with
-  `core::slice` pdqsort or the stable sort, then merge them in parallel at
-  merge-path splits. A Python model oracle covers 3,600 runs with 0
-  mismatches, including non-commutative scans. On 10M i64 keys, 8 workers take 1.1–1.7 s, against 7.1–9.2 s
-  for single-threaded pdqsort.
+  `scan` as stolen tasks on a `std::steal` pool. The sorts keep one forked crew
+  for all phases, sort runs with a direct-comparison introsort or merge
+  sort, then merge them in parallel at merge-path splits. A Python model oracle covers 3,600 runs with 0
+  mismatches, including non-commutative scans. On 10M i64 keys, 8 workers take 387–392 ms, against 638–699 ms
+  for C++ `std::sort` at -O2.
 
 The stress fixture keeps exact invariants: 1,600,000 atomic adds; 400,000
 locked increments; 1 initializer among 16 racers; 200 barrier leaders; and
