@@ -234,7 +234,7 @@ pub fn map<T, U, M>(plan: Plan, input: std::parallel::Shared<T>, output: std::pa
             let task: Job = next_job(plan, me);
             while (task.kind >= 0) {
                 let i: i32 = task.a0;
-                while (i < task.a1) { target[i] = mapper.apply(source[i]); i += 1; }
+                while (i < task.a1) { let mapped: U = mapper.apply(source[i]); target[i] = mapped; i += 1; }
                 plan.queues.done(me);
                 task = next_job(plan, me);
             }
