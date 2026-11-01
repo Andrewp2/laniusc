@@ -46,7 +46,7 @@ def matrix():
 
 
 def execute(trace, fail=None, calls='mmap,munmap'):
-    command = ['strace', '-qq', '-o', str(trace), '-e', 'trace=' + calls]
+    command = ['strace','-E','LANIUS_ALLOC=mmap', '-qq', '-o', str(trace), '-e', 'trace=' + calls]
     if fail is not None:
         command += ['-e', f'inject=mmap:error=ENOMEM:when={fail}']
     command.append(EXE)

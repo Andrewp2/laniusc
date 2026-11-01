@@ -142,7 +142,7 @@ class Runner:
         if existing:destination.write_bytes(old)
         if setup:setup(d)
         before=destination.lstat() if destination.exists() or destination.is_symlink() else None
-        command=['strace','--kill-on-exit','-qq','-xx','-s','256','-e','signal=none','-e','trace='+','.join(x for x in CALLS.split(',') if not large or x not in ('read','write') or (trace_reads and x=='read')),'-o',str(d/'trace')]
+        command=['strace','-E','LANIUS_ALLOC=mmap','--kill-on-exit','-qq','-xx','-s','256','-e','signal=none','-e','trace='+','.join(x for x in CALLS.split(',') if not large or x not in ('read','write') or (trace_reads and x=='read')),'-o',str(d/'trace')]
         for call,ordinal,failure in injections:command+=['-e',f'inject={call}:error={failure}:when={ordinal}']
         command+=[self.exe,*(args if args is not None else ['--format',format,'input.bin','out/result'])]
         (d/'command').write_text(repr(command)+'\n')

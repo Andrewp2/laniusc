@@ -225,7 +225,7 @@ class Suite:
         directory = self.directory / ("%02d-" % self.count + label)
         directory.mkdir()
         trace, native = directory / "syscalls.log", directory / "resolver.log"
-        command = ["strace", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "65536", "-e", "signal=none", "-e", "trace=all", "-o", str(trace)]
+        command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "65536", "-e", "signal=none", "-e", "trace=all", "-o", str(trace)]
         if injection:
             command += ["-e", "inject=close:error=EIO:when=%d" % injection[1]]
         command.append(str(self.executable))

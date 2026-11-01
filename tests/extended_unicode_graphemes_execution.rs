@@ -151,7 +151,7 @@ fn every_official_unicode_17_grapheme_vector_and_long_contexts_execute_without_a
     let trace = common::TempArtifact::new("laniusc_unicode_graphemes", "noalloc", None);
     let output = common::process_output_with_timeout(
         "official Unicode 17 grapheme corpus and long contexts",
-        std::process::Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([

@@ -292,7 +292,7 @@ def failures(directory):
 
 def trace_allocations(path, args, data=b"", fail_at=None):
     trace = path.parent/'allocations.trace'
-    command=['strace','-qq','-i','-o',os.fspath(trace),'-e','trace=mmap,munmap']
+    command=['strace','-E','LANIUS_ALLOC=mmap','-qq','-i','-o',os.fspath(trace),'-e','trace=mmap,munmap']
     if fail_at is not None:
         command += ['-e',f'inject=mmap:error=ENOMEM:when={fail_at}']
     command += [EXE] + [os.fsencode(arg) for arg in args]

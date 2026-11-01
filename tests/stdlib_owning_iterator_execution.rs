@@ -88,7 +88,7 @@ fn traced(
     timeout: u64,
 ) -> (Output, String) {
     let trace = common::TempArtifact::new("laniusc_owning_iterator", name, None);
-    let mut command = Command::new("strace");
+    let mut command = crate::common::strace();
     command
         .args(["-qq", "-o"])
         .arg(trace.path())

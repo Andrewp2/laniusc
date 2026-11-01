@@ -1,7 +1,7 @@
 module
 
 public import Lanius.Mini.Reading.Det.Agree
-import all Lanius.Mini.Frontend.P.callParts
+import all Lanius.Mini.Frontend.P.projection
 import all Lanius.Mini.Frontend.P.shrFirst
 import all Lanius.Mini.Frontend.P.tryLet
 
@@ -99,6 +99,7 @@ theorem effTy_unique {decls : Decls} {scope : List Local} :
     | divideRight _ r' => exact effTy_unique r r'
   | _, _, _, .stride, h₂ => by cases h₂; rfl
   | _, _, _, .host, h₂ => by cases h₂; rfl
+  | _, _, _, .arraySlice, h₂ => by cases h₂; rfl
 
 theorem effTys_unique {decls : Decls} {scope : List Local} {xs : List MEff} {a b : List Ty}
     (h₁ : ListRel (EffTy decls scope) xs a) (h₂ : ListRel (EffTy decls scope) xs b) : a = b :=

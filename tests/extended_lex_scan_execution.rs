@@ -480,7 +480,7 @@ fn trace_paths(
     io: bool,
 ) -> (Output, String) {
     let trace = common::TempArtifact::new("lex_scan", "trace", None);
-    let mut command = Command::new("strace");
+    let mut command = crate::common::strace();
     command
         .args(["--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-o"])
         .arg(trace.path())
@@ -602,7 +602,7 @@ fn all_reached_application_ooms_close_rules_and_release_every_mapping_before_pub
 #[test]
 fn scripted_production_io_helpers_bound_partial_progress_interruptions_and_eof_probes() {
     let trace = common::TempArtifact::new("lex_scan", "io_trace", None);
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-o"])
         .arg(trace.path())
         .args(["-e", "trace=mmap,munmap"])

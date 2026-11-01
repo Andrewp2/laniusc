@@ -332,7 +332,7 @@ fn websocket_cli_allocation_and_io_failures_release_owners_and_stage_output() {
     let data = input(&wire);
     let trace = common::TempArtifact::new("laniusc_websocket_wire", "trace", None);
     let execute = |fault: Option<String>, code, file_mode: bool| {
-        let mut c = Command::new("strace");
+        let mut c = crate::common::strace();
         c.args(["-qq", "-o"]).arg(trace.path()).args([
             "-e",
             "trace=mmap,munmap,read,write,open,openat,close,socket,connect",

@@ -213,7 +213,7 @@ fn arena_words_releases_all_owners_on_every_observed_allocation_read_and_write_f
     let expected = python_model(&bytes);
     let data = input(&bytes);
     let execute = |injection: Option<&str>, status| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())

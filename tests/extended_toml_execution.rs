@@ -351,7 +351,7 @@ fn every_observed_allocation_denial_and_partial_syntax_failure_release_owners() 
     let trace = common::TempArtifact::new("laniusc_toml", "allocation_trace", None);
     let baseline = common::process_output_with_timeout(
         "TOML allocation baseline",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap"])
@@ -372,7 +372,7 @@ fn every_observed_allocation_denial_and_partial_syntax_failure_release_owners() 
     for when in 1..=allocation_count {
         let output = common::process_output_with_timeout(
             "TOML individual allocation denial",
-            Command::new("strace")
+            crate::common::strace()
                 .args(["-qq", "-o"])
                 .arg(trace.path())
                 .args(["-e", "trace=mmap,munmap", "-e"])
@@ -419,7 +419,7 @@ fn every_observed_allocation_denial_and_partial_syntax_failure_release_owners() 
         input.write_bytes(frame);
         let output = common::process_output_with_timeout(
             "TOML partial syntax cleanup",
-            Command::new("strace")
+            crate::common::strace()
                 .args(["-qq", "-o"])
                 .arg(trace.path())
                 .args(["-e", "trace=mmap,munmap"])

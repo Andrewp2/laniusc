@@ -90,10 +90,10 @@ class Runner:
         prefix = self.directory / name
         command = [self.executable, *arguments]
         if budget:
-            command = ["strace", "--kill-on-exit", "-qq", "-c", "-e", "trace=" + budget,
+            command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-c", "-e", "trace=" + budget,
                        "-e", f"inject={budget}:error=EINTR:when=1..8192", "-o", str(prefix.with_suffix(".trace")), *command]
         elif trace:
-            traced = ["strace", "--kill-on-exit", "-qq", "-s", "64", "-e", "signal=none",
+            traced = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-s", "64", "-e", "signal=none",
                       "-e", "trace=read,write,mmap,munmap,mremap,brk,rt_sigaction",
                       "-o", str(prefix.with_suffix(".trace"))]
             if injection:

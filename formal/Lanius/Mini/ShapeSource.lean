@@ -41,6 +41,7 @@ mutual
     | .eMatch scrutinee _ _ _ values => scrutinee.rawFree && SrcEff.rawFreeList values
     | .eDivide _ a b => a.rawFree && b.rawFree
     | .eStride _ => false
+    | .arraySlice _ _ => false
   termination_by structural e
 
   def SrcEff.rawFreeList (es : List SrcEff) : Bool :=
@@ -124,6 +125,7 @@ mutual
       simp only [SrcEff.toCore, ExprFrag, SrcEff.toCore_frag a h]
     | .eIndex _ _ => simp [SrcEff.rawFree] at h
     | .eStride _ => simp [SrcEff.rawFree] at h
+    | .arraySlice _ _ => simp [SrcEff.rawFree] at h
     | .eStruct ty fields =>
       simp only [SrcEff.rawFree] at h
       simp only [SrcEff.toCore]; exact literal_frag ty (SrcEff.toCoreList_frag fields h)

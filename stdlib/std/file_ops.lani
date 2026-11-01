@@ -262,6 +262,14 @@ pub fn write_at(file:&File,source:View<u8>,position:u64) -> Result<i32,Error> {
     if(source.length==0) { return Ok(0); }
     let status:i32=status_flags(file)?;
     if((status&16384)!=0 || (status&1024)!=0) { return Err(Error::InvalidInput); }
+    if(core::mem::slice_stride(source.values)==1) {
+        // Packed bytes are contiguous: one pwrite straight from them.
+        let direct:ptr=core::mem::i32_slice_data_ptr(source.values)+source.start;
+        let call_args:[std::linux::Argument;4]=[std::linux::Argument::Word(got),std::linux::Argument::Address(direct),std::linux::Argument::Word(source.length as i64),std::linux::Argument::Word(position as i64)];
+        let moved:i64=call(18,view(call_args,4).unwrap())?;
+        if(moved<0 || moved>(source.length as i64)) { return Err(Error::InvalidCount); }
+        return Ok(moved as i32);
+    }
     let amount:i32=source.length;
     if(amount>POSITIONAL_CHUNK_BYTES) { amount=POSITIONAL_CHUNK_BYTES; }
     let storage:[i32;256]=[0;256];

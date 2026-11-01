@@ -81,7 +81,7 @@ fn ledger(executable: &Path, trace: &Path, baseline: Option<(&Path, usize)>) -> 
 fn regex_split_replace_preserve_utf8_views_exact_progress_budgets_and_owned_output() {
     let file = executable("contracts.lani");
     let trace = common::TempArtifact::new("laniusc_regex_text", "contracts_trace", None);
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-xx", "-i", "-s", "4096", "-o"])
         .arg(trace.path())
         .args(["-e", "trace=mmap,munmap"])
@@ -95,7 +95,7 @@ fn regex_split_replace_preserve_utf8_views_exact_progress_budgets_and_owned_outp
 fn regex_text_lazy_admission_uses_one_span_or_capture_workspace_without_per_match_owners() {
     let file = executable("lazy.lani");
     let trace = common::TempArtifact::new("laniusc_regex_text", "lazy_trace", None);
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-xx", "-i", "-s", "4096", "-o"])
         .arg(trace.path())
         .args(["-e", "trace=mmap,munmap,write"])
@@ -419,7 +419,7 @@ fn every_reached_regex_text_allocation_failure_releases_exact_owners_and_preserv
     let trace = common::TempArtifact::new("laniusc_regex_text", "allocation_trace", None);
     let baseline = common::TempArtifact::new("laniusc_regex_text", "baseline_trace", None);
     let execute = |failure: Option<usize>| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-xx", "-i", "-s", "4096", "-o"])
             .arg(trace.path())
@@ -480,7 +480,7 @@ fn program_run_bound(
     let input = common::TempArtifact::new("laniusc_regex_text", "program_input", None);
     input.write_bytes(bytes);
     let trace = common::TempArtifact::new("laniusc_regex_text", "program_trace", None);
-    let mut command = Command::new("strace");
+    let mut command = crate::common::strace();
     command
         .args(["-qq", "-xx", "-i", "-s", "4096", "-o"])
         .arg(trace.path())

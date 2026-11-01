@@ -158,7 +158,7 @@ fn heap_iterator_string_aliases_release_only_explicit_owners() {
     let trace = common::TempArtifact::new("laniusc_heap_iterator", "owner_trace", None);
     let output = common::process_output_with_timeout(
         "heap iterator String aliases and explicit owner releases",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap"])

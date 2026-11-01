@@ -98,6 +98,7 @@ import all Lanius.Mini.Frontend.P.armsOf
 import all Lanius.Mini.Frontend.P.assertClosed
 import all Lanius.Mini.Frontend.P.blockArmsOf
 import all Lanius.Mini.Frontend.P.callParts
+import all Lanius.Mini.Frontend.P.projection
 import all Lanius.Mini.Frontend.P.closeFuncs
 import all Lanius.Mini.Frontend.P.collect
 import all Lanius.Mini.Frontend.P.compoundEval
@@ -108,8 +109,10 @@ import all Lanius.Mini.Frontend.P.consTreeTail
 import all Lanius.Mini.Frontend.P.consTys
 import all Lanius.Mini.Frontend.P.distinct
 import all Lanius.Mini.Frontend.P.divergeArm
+import all Lanius.Mini.Frontend.P.bindsOfTys
 import all Lanius.Mini.Frontend.P.eDivideClosed
 import all Lanius.Mini.Frontend.P.eIndexClosed
+import all Lanius.Mini.Frontend.P.eStructClosed
 import all Lanius.Mini.Frontend.P.effNamedTys
 import all Lanius.Mini.Frontend.P.externBody
 import all Lanius.Mini.Frontend.P.fieldTyAt

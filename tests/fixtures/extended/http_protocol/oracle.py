@@ -20,7 +20,7 @@ def main(executable):
     with tempfile.TemporaryDirectory(prefix="lanius-http-protocol-") as directory:
         trace = pathlib.Path(directory) / "syscalls"
         result = subprocess.run(
-            ["strace", "--kill-on-exit", "-qq", "-o", str(trace), "-e",
+            ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-o", str(trace), "-e",
              "trace=mmap,munmap,socket,connect,poll,sendto,recvfrom,shutdown,close",
              executable],
             stdin=subprocess.DEVNULL, capture_output=True, timeout=20,

@@ -33,7 +33,7 @@ fn execute(file: &common::TempArtifact, input: &[u8]) -> Vec<u64> {
     let trace = common::TempArtifact::new("laniusc_der", "trace", None);
     let output = common::process_output_with_timeout(
         "DER zero-allocation native execution",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,mremap,munmap,brk", "-e", "signal=none"])

@@ -101,7 +101,7 @@ fn freed(events: &str) -> usize {
 fn schema_validation_and_borrowed_parser_execute_without_allocation() {
     let exe = executable("tests/fixtures/extended/cli_contracts.lani");
     let trace = common::TempArtifact::new("laniusc_cli", "schema_trace", None);
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args([
@@ -121,7 +121,7 @@ fn host_snapshots_preserve_raw_bytes_check_limits_and_release_failed_allocations
     let exe = executable("tests/fixtures/stdlib_host/args_snapshot.lani");
     let trace = common::TempArtifact::new("laniusc_cli", "snapshot_trace", None);
     for when in 0..=2 {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -148,7 +148,7 @@ fn empty_arguments_and_executable_inclusion_have_independent_storage() {
     let exe = executable("tests/fixtures/stdlib_host/args_snapshot_empty.lani");
     let trace = common::TempArtifact::new("laniusc_cli", "empty_snapshot_trace", None);
     for when in 0..=3 {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -174,7 +174,7 @@ fn large_argument_lists_parse_without_allocating_after_snapshot() {
         let trace = common::TempArtifact::new("laniusc_cli", "workload_trace", None);
         let output = common::process_output_with_timeout(
             "CLI large list",
-            Command::new("strace")
+            crate::common::strace()
                 .args(["-qq", "-o"])
                 .arg(trace.path())
                 .args([
@@ -524,7 +524,7 @@ fn checksum_failures_close_files_free_snapshots_and_preserve_output_prefixes() {
     let expected = format!("{:08x}\n", crc32(&bytes)).into_bytes();
     let trace = common::TempArtifact::new("laniusc_cli", "checksum_fault_trace", None);
     let execute = |injection: Option<String>, status: i32| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -593,7 +593,7 @@ fn checksum_failures_close_files_free_snapshots_and_preserve_output_prefixes() {
     execute(Some("close:error=EINTR:when=1".into()), 3);
     execute(Some("write:retval=0:when=1".into()), 3);
     // No argument snapshot allocations and no input-sized allocations on stdin.
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args([

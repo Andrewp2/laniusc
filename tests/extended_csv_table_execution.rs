@@ -134,7 +134,7 @@ fn csv_table_frees_every_owner_on_allocation_and_io_failure() {
     input.write_bytes(b"a,b\nc,d\n");
     let trace = common::TempArtifact::new("laniusc_csv_table", "trace", None);
     let command = |fault: Option<String>| {
-        let mut cmd = std::process::Command::new("strace");
+        let mut cmd = crate::common::strace();
         cmd.args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap,read,write"]);

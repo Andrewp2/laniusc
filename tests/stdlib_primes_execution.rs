@@ -189,7 +189,7 @@ fn primes_releases_owners_on_all_observed_allocation_and_write_failures() {
     let trace = common::TempArtifact::new("laniusc_primes", "trace", None);
     let expected = b"2\n3\n5\n7\n11\n13\n17\n19\n23\n29\n31\n";
     let execute = |fault: Option<&str>| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -241,7 +241,7 @@ fn primes_releases_owners_on_all_observed_allocation_and_write_failures() {
         3,
         "io-failure",
     );
-    let diagnostic = run(Command::new("strace")
+    let diagnostic = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args([

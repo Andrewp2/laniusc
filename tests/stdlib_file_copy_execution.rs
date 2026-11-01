@@ -208,7 +208,7 @@ impl Harness {
         injection: Option<&str>,
     ) -> Outcome {
         self.runs.set(self.runs.get() + 1);
-        let mut command = Command::new("timeout");
+        let mut command = crate::common::traced_timeout();
         command
             .args(["--kill-after=1s", "5s", "strace", "-qq", "-o"])
             .arg(self.trace.path())

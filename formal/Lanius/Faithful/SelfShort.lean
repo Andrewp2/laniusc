@@ -1,11 +1,13 @@
 import Lanius.Faithful.SelfHost
 import Lanius.Faithful.SelfLive
+import Lanius.Faithful.SelfPanics
 
 /-! # Why Core's run of `w` fails (review #5, piece (c))
 
 `selfCompiler_outcome` lets the self-built verified compiler fault when
 Core's run of `w` fails at every fuel. `failing_short` says why that
-happens: the cost semantics gives the pure compile no value at any fuel, or
+happens: the cost semantics gives the pure compile no value at any fuel,
+which with `plus` and `times` wrapping has one (`SelfPanics`), or
 the output room is shorter than the binary's words, or the heap limit is
 short, `limit < selfNext W room + h` for every cost `h` that `selfCost`
 gives (`SelfShort`).
@@ -29,11 +31,12 @@ open Lanius.Faithful.SelfHost
 /-- Why Core's run of `w` on the words `W` of `files`, with `room` output
 words and heap limit `limit`, may fail at every fuel: the pure compile has no
 cost at any fuel (`selfCost`: `oracle_read`'s `cons` calls, `grammar()`,
-`front_end_words` and `compile_words`), or `compileText files`'s binary has
+`front_end_words` and `compile_words`) because `plus` or `times` panics
+(`SelfPanics`: with the two wrapping, it has a value), or `compileText files`'s binary has
 more words than `room`, or it has a cost and the heap limit is short, below
 `selfNext W room + h` for every cost `h` it has. -/
 def SelfShort (files : List SourceFile) (room limit : Nat) : Prop :=
-  (∀ N, selfCost N (filesWords files) = none) ∨
+  SelfPanics.SelfPanics (filesWords files) ∨
   (∃ ws, binaryWords (compileText files) = some ws ∧ room < ws.length) ∨
   ((∃ N h, selfCost N (filesWords files) = some h) ∧
     ∀ N h, selfCost N (filesWords files) = some h → limit < selfNext (filesWords files) room + h)
@@ -72,7 +75,7 @@ theorem failing_short {files : List SourceFile} (fit : FilesFit files)
     · refine .inr (.inl ?_)
       refine Classical.byContradiction fun none => fits fun ws words => ?_
       exact Nat.le_of_not_lt fun lt => none ⟨ws, words, lt⟩
-  · refine .inl fun N => ?_
+  · refine .inl (SelfPanics.selfPanics fun N => ?_)
     cases cost : selfCost N (filesWords files) with
     | none => rfl
     | some h => exact absurd ⟨N, h, cost⟩ costs
@@ -81,8 +84,9 @@ theorem failing_short {files : List SourceFile} (fit : FilesFit files)
 
 /-- How the self-built verified compiler's run of `w` on `files` may fault,
 with the reason: it faults, and either Core's run of `w` fails at every fuel
-for one of `SelfShort`'s reasons (no pure cost, the room short, or the heap
-limit below `selfNext W room + h` for every cost `h`), or Core's run completes
+for one of `SelfShort`'s reasons (no pure cost, because `plus` or `times`
+panics; the room short; or the heap limit below `selfNext W room + h` for
+every cost `h`), or Core's run completes
 within `limit` and the stack `window` is below what the compiled run needs. -/
 def SelfFaultReason (files : List SourceFile) (room limit window : Nat) (B : Binary) (s : State) : Prop :=
   ((∀ fuel, Failing limit (selfRun (filesWords files) room fuel)) ∧ SelfShort files room limit ∧ Faults s) ∨
@@ -99,8 +103,8 @@ theorem faults_reason {files : List SourceFile} {B : Binary} {s : State} (fit : 
 
 /-- **The self-built verified compiler, with why it faults.**
 `selfCompiler_outcome`, where a fault because Core's run of `w` fails at
-every fuel comes with `SelfShort`'s reason: the pure compile has no cost,
-or the output room is short, or the heap limit is short,
+every fuel comes with `SelfShort`'s reason: the pure compile has no cost
+because `plus` or `times` panics, or the output room is short, or the heap limit is short,
 `limit < selfNext W room + h` for every cost `h` of `selfCost`. -/
 theorem selfCompiler_reason {B : Binary} (compiled : compileSource prog = some B) {files : List SourceFile}
     (fit : FilesFit files) (wordsLt : (filesWords files).length < 2 ^ 31) {room limit : Nat} (roomLt : room < 2 ^ 31)

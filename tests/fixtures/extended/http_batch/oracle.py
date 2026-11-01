@@ -278,7 +278,7 @@ def run(executable, jobs, config=None, schedule="ordinary", trace=None, faults=(
     peers = Peers(jobs, config.concurrency, schedule).start()
     command = [executable]
     if trace:
-        command = ["strace", "--kill-on-exit", "-qq", "-i", "-o", trace, "-e",
+        command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-i", "-o", trace, "-e",
                    "trace=mmap,munmap,socket,close,connect,getsockopt,getpeername,sendto,recvfrom,poll,shutdown,clock_gettime,read,write",
                    *[item for fault in faults for item in ("-e", "inject=" + fault)], *command]
     process = None

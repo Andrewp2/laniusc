@@ -239,7 +239,7 @@ fn invoke_sink(
     let data = common::TempArtifact::new("laniusc_tcp_exchange", "input", None);
     data.write_bytes(input);
     let trace = common::TempArtifact::new("laniusc_tcp_exchange", "trace", None);
-    let mut command = Command::new("timeout");
+    let mut command = crate::common::traced_timeout();
     command.args(["--kill-after=1s", "12s", "strace"]);
     command.args(["-qq","-o"]).arg(trace.path()).args(["-e","trace=socket,connect,fcntl,getsockopt,getpeername,shutdown,sendto,recvfrom,poll,clock_gettime,rt_sigaction,read,write,mmap,munmap,close"]);
     if let Some(inject) = inject {

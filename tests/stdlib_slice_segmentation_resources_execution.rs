@@ -236,7 +236,7 @@ fn run(
     nested: bool,
 ) -> (Vec<u8>, Effects) {
     let trace = common::TempArtifact::new("laniusc_slice_segmentation_resources", "trace", None);
-    let mut command = Command::new("strace");
+    let mut command = crate::common::strace();
     command
         .args(["--kill-on-exit", "-qq", "-s", "64", "-o"])
         .arg(trace.path())

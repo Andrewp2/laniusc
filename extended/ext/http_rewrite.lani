@@ -1,0 +1,258 @@
+// Header rewriting for a reverse proxy (RFC 9110 7.6). Requests and
+// responses are re-framed for the next hop: hop-by-hop fields (the fixed
+// list and any field the Connection header nominates) are dropped,
+// Content-Length / Transfer-Encoding are written from the body framing,
+// X-Forwarded-For gains the client address, X-Forwarded-Proto is added
+// when absent, and Via gains this proxy's entry. HTTP/2 requests become
+// HTTP/1.1 heads (Host from :authority, cookies joined with "; "), and
+// HTTP/1.1 responses become lowercase HTTP/2 field lists. No I/O.
+module ext::http_rewrite;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::slice;
+import ext::hpack;
+import ext::http;
+
+// client: the client's address text; via: this proxy's pseudonym; proto:
+// the scheme the client used ("http").
+pub struct Forward { client: core::slice::View<u8>, via: core::slice::View<u8>, proto: core::slice::View<u8> }
+// Body framing for the next hop: a length, chunked, or none at all.
+pub const CHUNKED: i64 = -1;
+pub const NO_BODY: i64 = -2;
+
+fn literal(s: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(s), n); return core::slice::View { values: raw, start: 0, length: n }; }
+fn lower(c: u8) -> u8 { if (c >= 65 && c <= 90) { return c + 32; } return c; }
+fn is(name: core::slice::View<u8>, s: str, n: i32) -> bool { return ext::http::equal_name(name, literal(s, n)); }
+fn ows(c: u8) -> bool { return c == 32 || c == 9; }
+// True when the comma-separated value lists name (case-insensitive).
+pub fn lists(value: core::slice::View<u8>, name: core::slice::View<u8>) -> bool {
+    let i: i32 = 0; let n: i32 = value.len();
+    while (i < n) {
+        while (i < n && (ows(value.values[value.start + i]) || value.values[value.start + i] == 44)) { i += 1; }
+        let start: i32 = i; while (i < n && value.values[value.start + i] != 44) { i += 1; }
+        let end: i32 = i; while (end > start && ows(value.values[value.start + end - 1])) { end -= 1; }
+        if (end > start && ext::http::equal_name(core::slice::View { values: value.values, start: value.start + start, length: end - start }, name)) { return true; }
+    }
+    return false;
+}
+// The fixed hop-by-hop fields (RFC 9110 7.6.1).
+pub fn hop_by_hop(name: core::slice::View<u8>) -> bool {
+    return hop_kind(kind(name));
+}
+// Hop-by-hop, or nominated by one of head's Connection fields.
+pub fn drops(head: ext::http::Head, name: core::slice::View<u8>) -> bool {
+    if (hop_by_hop(name)) { return true; }
+    let cursor: ext::http::Fields = head.headers();
+    while (true) {
+        let next: core::option::Option<ext::http::Field> = cursor.next(); if (next.is_none()) { return false; }
+        let f: ext::http::Field = next.unwrap();
+        if (is(f.name, "connection", 10) && lists(f.value, name)) { return true; }
+    }
+    return false;
+}
+
+// Field kinds, told apart by length and first byte before one name compare.
+const K_OTHER: i32 = 0;
+const K_CONNECTION: i32 = 1;
+const K_PROXY_CONNECTION: i32 = 2;
+const K_KEEP_ALIVE: i32 = 3;
+const K_TE: i32 = 4;
+const K_TRANSFER_ENCODING: i32 = 5;
+const K_UPGRADE: i32 = 6;
+const K_CONTENT_LENGTH: i32 = 7;
+const K_EXPECT: i32 = 8;
+const K_FORWARDED_FOR: i32 = 9;
+const K_VIA: i32 = 10;
+const K_FORWARDED_PROTO: i32 = 11;
+const K_HOST: i32 = 12;
+const K_COOKIE: i32 = 13;
+fn kind(name: core::slice::View<u8>) -> i32 {
+    let n: i32 = name.len(); if (n < 2 || n > 17) { return K_OTHER; }
+    let c: u8 = lower(name.values[name.start]);
+    if (n == 10 && c == 99 && is(name, "connection", 10)) { return K_CONNECTION; }
+    if (n == 16 && c == 112 && is(name, "proxy-connection", 16)) { return K_PROXY_CONNECTION; }
+    if (n == 10 && c == 107 && is(name, "keep-alive", 10)) { return K_KEEP_ALIVE; }
+    if (n == 2 && c == 116 && is(name, "te", 2)) { return K_TE; }
+    if (n == 17 && c == 116 && is(name, "transfer-encoding", 17)) { return K_TRANSFER_ENCODING; }
+    if (n == 7 && c == 117 && is(name, "upgrade", 7)) { return K_UPGRADE; }
+    if (n == 14 && c == 99 && is(name, "content-length", 14)) { return K_CONTENT_LENGTH; }
+    if (n == 6 && c == 101 && is(name, "expect", 6)) { return K_EXPECT; }
+    if (n == 15 && c == 120 && is(name, "x-forwarded-for", 15)) { return K_FORWARDED_FOR; }
+    if (n == 3 && c == 118 && is(name, "via", 3)) { return K_VIA; }
+    if (n == 17 && c == 120 && is(name, "x-forwarded-proto", 17)) { return K_FORWARDED_PROTO; }
+    if (n == 4 && c == 104 && is(name, "host", 4)) { return K_HOST; }
+    if (n == 6 && c == 99 && is(name, "cookie", 6)) { return K_COOKIE; }
+    return K_OTHER;
+}
+fn hop_kind(k: i32) -> bool { return k >= K_CONNECTION && k <= K_UPGRADE; }
+
+// One message's Connection-nominated names, gathered in one pass: the
+// values of its first two Connection fields (more falls back to a scan),
+// and which forwarding fields it carries.
+struct Tokens { first: core::slice::View<u8>, second: core::slice::View<u8>, count: i32, forwarded_for: bool, via: bool, proto: bool }
+fn connection_tokens(head: ext::http::Head) -> Tokens {
+    let t: Tokens = Tokens { first: literal("", 0), second: literal("", 0), count: 0, forwarded_for: false, via: false, proto: false };
+    let cursor: ext::http::Fields = head.headers();
+    while (true) {
+        let next: core::option::Option<ext::http::Field> = cursor.next(); if (next.is_none()) { break; }
+        let f: ext::http::Field = next.unwrap(); let k: i32 = kind(f.name);
+        if (k == K_CONNECTION) { if (t.count == 0) { t.first = f.value; } if (t.count == 1) { t.second = f.value; } t.count += 1; }
+        if (k == K_FORWARDED_FOR && f.value.len() > 0) { t.forwarded_for = true; }
+        if (k == K_VIA && f.value.len() > 0) { t.via = true; }
+        if (k == K_FORWARDED_PROTO) { t.proto = true; }
+    }
+    return t;
+}
+// drops(head, name) for a field of the given kind, with head's tokens.
+fn dropped(head: ext::http::Head, t: Tokens, name: core::slice::View<u8>, k: i32) -> bool {
+    if (hop_kind(k)) { return true; }
+    if (t.count == 0) { return false; }
+    if (t.count > 2) { return drops(head, name); }
+    if (name.len() <= t.first.len() && lists(t.first, name)) { return true; }
+    return t.count == 2 && name.len() <= t.second.len() && lists(t.second, name);
+}
+
+fn put(out: &alloc::vec::Vec<u8>, v: core::slice::View<u8>) -> bool { return out.try_extend(v).is_ok(); }
+fn put_str(out: &alloc::vec::Vec<u8>, s: str, n: i32) -> bool { return out.try_extend(literal(s, n)).is_ok(); }
+fn put_number(out: &alloc::vec::Vec<u8>, value: i64) -> bool {
+    let digits: [u8;20] = [0;20]; let n: i32 = 0; let v: i64 = value;
+    if (v == 0) { return out.try_push(48).is_ok(); }
+    while (v > 0) { let d: u8 = (48 + v % 10) as u8; digits[n] = d; n += 1; v = v / 10; }
+    while (n > 0) { n -= 1; if (out.try_push(digits[n]).is_err()) { return false; } }
+    return true;
+}
+fn field(out: &alloc::vec::Vec<u8>, name: core::slice::View<u8>, value: core::slice::View<u8>) -> bool {
+    return put(out, name) && put_str(out, ": ", 2) && put(out, value) && put_str(out, "\r\n", 2);
+}
+fn framing(out: &alloc::vec::Vec<u8>, length: i64) -> bool {
+    if (length == CHUNKED) { return put_str(out, "Transfer-Encoding: chunked\r\n", 28); }
+    if (length >= 0) { return put_str(out, "Content-Length: ", 16) && put_number(out, length) && put_str(out, "\r\n", 2); }
+    return true;
+}
+// Every value of the fields named name, joined with ", ", then ", " tail
+// (or just tail): the merged X-Forwarded-For or Via line.
+fn merged(out: &alloc::vec::Vec<u8>, head: ext::http::Head, label: str, n: i32, tail_a: core::slice::View<u8>, tail_b: core::slice::View<u8>, present: bool) -> bool {
+    let name: core::slice::View<u8> = literal(label, n);
+    if (!put(out, name) || !put_str(out, ": ", 2)) { return false; }
+    let cursor: ext::http::Fields = head.headers();
+    while (present) {
+        let next: core::option::Option<ext::http::Field> = cursor.next(); if (next.is_none()) { break; }
+        let f: ext::http::Field = next.unwrap();
+        if (ext::http::equal_name(f.name, name) && f.value.len() > 0) { if (!put(out, f.value) || !put_str(out, ", ", 2)) { return false; } }
+    }
+    return put(out, tail_a) && put(out, tail_b) && put_str(out, "\r\n", 2);
+}
+fn version_token(version: i32) -> core::slice::View<u8> { if (version == 10) { return literal("1.0 ", 4); } return literal("1.1 ", 4); }
+fn framing_length(head: ext::http::Head) -> i64 {
+    return match (head.kind) { ext::http::BodyKind::Fixed -> head.content_length as i64, ext::http::BodyKind::Chunked -> CHUNKED, _ -> NO_BODY };
+}
+
+// The upstream request head for an HTTP/1.x request.
+pub fn request_head(out: &alloc::vec::Vec<u8>, head: ext::http::Head, forward: Forward) -> bool {
+    if (!put(out, head.method) || !put_str(out, " ", 1) || !put(out, head.target) || !put_str(out, " HTTP/1.1\r\n", 11)) { return false; }
+    let t: Tokens = connection_tokens(head);
+    let cursor: ext::http::Fields = head.headers();
+    while (true) {
+        let next: core::option::Option<ext::http::Field> = cursor.next(); if (next.is_none()) { break; }
+        let f: ext::http::Field = next.unwrap(); let k: i32 = kind(f.name);
+        if (k == K_CONTENT_LENGTH || k == K_EXPECT || k == K_FORWARDED_FOR || k == K_VIA || dropped(head, t, f.name, k)) { continue; }
+        if (!field(out, f.name, f.value)) { return false; }
+    }
+    if (!framing(out, framing_length(head))) { return false; }
+    if (!merged(out, head, "X-Forwarded-For", 15, forward.client, literal("", 0), t.forwarded_for)) { return false; }
+    if (!t.proto && !field(out, literal("X-Forwarded-Proto", 17), forward.proto)) { return false; }
+    return merged(out, head, "Via", 3, version_token(head.version), forward.via, t.via) && put_str(out, "\r\n", 2);
+}
+
+// The client response head for an HTTP/1.x upstream response. A body-less
+// response (HEAD, 304) keeps the upstream Content-Length.
+pub fn response_head(out: &alloc::vec::Vec<u8>, head: ext::http::Head, keep_alive: bool, forward: Forward) -> bool {
+    if (!put_str(out, "HTTP/1.1 ", 9) || !put_number(out, head.status as i64) || !put_str(out, " ", 1) || !put(out, head.reason) || !put_str(out, "\r\n", 2)) { return false; }
+    let empty: bool = match (head.kind) { ext::http::BodyKind::Empty -> true, _ -> false };
+    let t: Tokens = connection_tokens(head);
+    let cursor: ext::http::Fields = head.headers();
+    while (true) {
+        let next: core::option::Option<ext::http::Field> = cursor.next(); if (next.is_none()) { break; }
+        let f: ext::http::Field = next.unwrap(); let k: i32 = kind(f.name);
+        if (k == K_VIA || (k == K_CONTENT_LENGTH && !empty) || dropped(head, t, f.name, k)) { continue; }
+        if (!field(out, f.name, f.value)) { return false; }
+    }
+    if (!framing(out, framing_length(head))) { return false; }
+    if (!merged(out, head, "Via", 3, version_token(head.version), forward.via, t.via)) { return false; }
+    if (keep_alive) { return put_str(out, "Connection: keep-alive\r\n\r\n", 26); }
+    return put_str(out, "Connection: close\r\n\r\n", 21);
+}
+
+// The upstream request head for an HTTP/2 request with the given regular
+// fields; length is the body framing (a content-length, CHUNKED or NO_BODY).
+pub fn h2_request_head(out: &alloc::vec::Vec<u8>, method: core::slice::View<u8>, path: core::slice::View<u8>, authority: core::slice::View<u8>, fields: core::slice::View<ext::hpack::Header>, length: i64, forward: Forward) -> bool {
+    if (!put(out, method) || !put_str(out, " ", 1) || !put(out, path) || !put_str(out, " HTTP/1.1\r\n", 11)) { return false; }
+    let host: bool = false; let proto: bool = false; let cookies: i32 = 0; let i: i32 = 0;
+    while (i < fields.len()) {
+        let f: ext::hpack::Header = fields.values[fields.start + i]; i += 1; let k: i32 = kind(f.name);
+        if (k == K_HOST) { host = true; }
+        if (k == K_FORWARDED_PROTO) { proto = true; }
+        if (k == K_COOKIE) { cookies += 1; continue; }
+        if (hop_kind(k) || k == K_CONTENT_LENGTH || k == K_EXPECT || k == K_FORWARDED_FOR || k == K_VIA) { continue; }
+        if (!field(out, f.name, f.value)) { return false; }
+    }
+    if (!host && authority.len() > 0 && !field(out, literal("Host", 4), authority)) { return false; }
+    if (cookies > 0) {
+        // HTTP/2 may split Cookie into several fields; HTTP/1.1 wants one (RFC 9113 8.2.3).
+        if (!put_str(out, "Cookie: ", 8)) { return false; }
+        let first: bool = true; i = 0;
+        while (i < fields.len()) {
+            let f: ext::hpack::Header = fields.values[fields.start + i]; i += 1;
+            if (kind(f.name) != K_COOKIE) { continue; }
+            if (!first && !put_str(out, "; ", 2)) { return false; }
+            if (!put(out, f.value)) { return false; } first = false;
+        }
+        if (!put_str(out, "\r\n", 2)) { return false; }
+    }
+    if (!framing(out, length)) { return false; }
+    if (!put_str(out, "X-Forwarded-For: ", 17)) { return false; }
+    i = 0;
+    while (i < fields.len()) { let f: ext::hpack::Header = fields.values[fields.start + i]; i += 1; if (f.value.len() > 0 && kind(f.name) == K_FORWARDED_FOR) { if (!put(out, f.value) || !put_str(out, ", ", 2)) { return false; } } }
+    if (!put(out, forward.client) || !put_str(out, "\r\n", 2)) { return false; }
+    if (!proto && !field(out, literal("X-Forwarded-Proto", 17), forward.proto)) { return false; }
+    if (!put_str(out, "Via: ", 5)) { return false; }
+    i = 0;
+    while (i < fields.len()) { let f: ext::hpack::Header = fields.values[fields.start + i]; i += 1; if (f.value.len() > 0 && kind(f.name) == K_VIA) { if (!put(out, f.value) || !put_str(out, ", ", 2)) { return false; } } }
+    return put_str(out, "2 ", 2) && put(out, forward.via) && put_str(out, "\r\n\r\n", 4);
+}
+
+// HTTP/2 response fields for an HTTP/1.x upstream response: lowercase
+// names, hop-by-hop and framing fields dropped (a fixed or body-less
+// response keeps Content-Length), Via merged. Names and values are copied
+// into scratch, which is cleared first; the views in fields borrow it.
+pub fn h2_response_fields(head: ext::http::Head, fields: &alloc::vec::Vec<ext::hpack::Header>, scratch: &alloc::vec::Vec<u8>, forward: Forward) -> bool {
+    fields.clear(); scratch.clear();
+    // Reserve everything up front so the views below stay put.
+    if (scratch.try_reserve(head.raw.len() + forward.via.len() + 16).is_err()) { return false; }
+    let keep_length: bool = match (head.kind) { ext::http::BodyKind::Fixed -> true, ext::http::BodyKind::Empty -> true, _ -> false };
+    let t: Tokens = connection_tokens(head);
+    let cursor: ext::http::Fields = head.headers();
+    while (true) {
+        let next: core::option::Option<ext::http::Field> = cursor.next(); if (next.is_none()) { break; }
+        let f: ext::http::Field = next.unwrap(); let k: i32 = kind(f.name);
+        if (k == K_VIA || (k == K_CONTENT_LENGTH && !keep_length) || dropped(head, t, f.name, k)) { continue; }
+        let at: i32 = scratch.len(); let k: i32 = 0;
+        while (k < f.name.len()) { scratch.try_push(lower(f.name.values[f.name.start + k])); k += 1; }
+        scratch.try_extend(f.value);
+        let raw: [u8] = scratch.as_slice();
+        let h: ext::hpack::Header = ext::hpack::Header { name: core::slice::View { values: raw, start: at, length: f.name.len() }, value: core::slice::View { values: raw, start: at + f.name.len(), length: f.value.len() }, never_indexed: false };
+        if (fields.try_push(h).is_err()) { return false; }
+    }
+    let at: i32 = scratch.len();
+    let c2: ext::http::Fields = head.headers();
+    while (t.via) {
+        let next: core::option::Option<ext::http::Field> = c2.next(); if (next.is_none()) { break; }
+        let f: ext::http::Field = next.unwrap();
+        if (f.value.len() > 0 && kind(f.name) == K_VIA) { scratch.try_extend(f.value); scratch.try_extend(literal(", ", 2)); }
+    }
+    scratch.try_extend(version_token(head.version)); scratch.try_extend(forward.via);
+    let raw: [u8] = scratch.as_slice();
+    let via: ext::hpack::Header = ext::hpack::Header { name: literal("via", 3), value: core::slice::View { values: raw, start: at, length: scratch.len() - at }, never_indexed: false };
+    return fields.try_push(via).is_ok();
+}

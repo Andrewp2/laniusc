@@ -75,6 +75,11 @@ fn crc_bytes(state: u32, view: core::slice::View<u8>, from: i32, count: i32) -> 
     while (index < count) { current = core::crc32::update_byte(current,byte(view,from+index)); index += 1; }
     return current;
 }
+// CRC-32 (IEEE, as in gzip and zip) continued over bytes: begin with
+// core::crc32::INITIAL and end with core::crc32::finish.
+pub fn crc32_update(state: u32, bytes: core::slice::View<u8>) -> u32 {
+    if (bytes.start < 0 || bytes.length < 0) { return state; } return crc_bytes(state,bytes,0,bytes.length);
+}
 fn crc(view: core::slice::View<u8>) -> u32 {
     return core::crc32::finish(crc_bytes(core::crc32::INITIAL,view,0,view.length));
 }

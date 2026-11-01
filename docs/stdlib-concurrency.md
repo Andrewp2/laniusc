@@ -241,7 +241,84 @@ search. Every worker therefore shares even the last round, which merges the
 two halves of the whole array. `scratch` must be as long as `data`; if the
 round count is odd, a parallel copy moves the result back. Errors are
 `InvalidPlan`, `LengthMismatch`, `Failed` (a worker exited nonzero or work
-was left pending), `Steal`, `Sync` and `Worker`.
+was left pending), `Steal`, `Sync`, `Worker` and `Thread`.
+
+### Threaded sorts
+
+`sort_unstable_threads(plan, data, scratch, entry)` and
+`sort_stable_threads(...)` run the same phases with a crew of `workers - 1`
+[`std::pthread`](stdlib-threads.md) threads instead of forked children. The
+threads share the caller's address space, so nothing is forked and nothing
+is copied. A thread's start routine must be a non-generic `fn (ptr) -> ptr`,
+so the caller passes a one-line entry for its element type:
+
+```lani
+fn key_crew(arg: ptr) -> ptr { return std::par::crew_entry<i64>(arg); }
+std::par::sort_unstable_threads(plan, keys, spare, key_crew).unwrap();
+```
+
+The entry must instantiate `crew_entry` with the `T` of that sort. Each
+worker's record (plan, data, scratch, index) sits in the plan's crew area.
+The crew threads start once per sort and are all joined before it returns.
+`par_sort.lani` modes 10 and 11 run these two sorts. The model oracle now
+covers 12 modes, 4,320 runs over 8 seeds, with 0 mismatches.
+
+Fork and thread crews on 10M i64 keys, in ms, at 8 workers, interleaved.
+The load average was 24–27 from other jobs, so read the ranges, not single
+runs:
+
+| Sort | Forked crew | Thread crew |
+| --- | --- | --- |
+| unstable, i64 | 504–964 | 469–541 |
+| stable, (key, index) records | 1,996–2,335 | 2,968–3,779 |
+
+On 2M keys, again in ms, the two crews are equal at 1 worker. From 2
+workers up, the unstable thread sort is 8–15% faster and the stable thread
+sort is 1.4–1.5x slower:
+
+| Workers | Unstable, fork | Unstable, threads | Stable, fork | Stable, threads |
+| --- | --- | --- | --- | --- |
+| 1 | 324 | 352 | 1,396 | 1,391 |
+| 2 | 250 | 226 | 764 | 1,080 |
+| 4 | 130 | 120 | 567 | 790 |
+| 8 | 74 | 63 | 301 | 463 |
+
+Those stable numbers were measured before a code generation fix. The
+slowdown was user time: 18–19 s of CPU against 11.7 s forked. It came from
+the direction of record copies, not from contention. laniusc copies a
+multi-word value with `rep movsq` (`plan_memmove_tail` in
+`shaders/codegen/lir/x86/instruction_plan.slang`). It used to run the copy
+backward, with DF=1, whenever the destination address was above the
+source. On this machine's Zen 3, a DF=1 `rep movsq` is a slow microcoded
+loop. Every element store `b[i] = x` copies from a stack temporary into the
+array:
+
+- A forked child runs on the main stack, which sits above every mmap, so
+  its stores always copied forward.
+- A glibc thread stack is an mmap. When it lands below the data, every
+  record store went backward.
+
+The probes in `target/claude-work/s4/thr` (`crew.lani`, `solo.lani` and
+`sweep.lani`) showed this. One thread ran 3.7x slower than one forked
+child, so contention was ruled out. Sweeping `spawn_with_stack` sizes, a
+two-word record copy took 85–150 ms when the stack was mapped above the
+data and 360–470 ms when it was mapped below, with a step wherever glibc
+started placing stacks under the data region. i64 copies don't go through
+`rep movsq` and stayed flat. The copy now runs backward only when the two
+ranges really overlap (0 ≤ dst − src < 8 × words); disjoint copies always
+run forward.
+
+After the fix, sorting 10M (key, index) records at 8 workers with load
+17–27 took this much user time, in seconds:
+
+| Crew | Before | After |
+| --- | --- | --- |
+| Forked, mode 1 | 11.7–12.0 | 11.2–11.7 |
+| Threads, mode 11 | 17.2–20.2 | 11.3–12.3 |
+
+The stack-size sweep is now flat at 116–176 ms. The par oracle gave 1,440
+runs (seed 2, 120 cases, 12 modes) with 0 mismatches on the fixed compiler.
+The forked sorts stay the default.
 
 ## Samples
 

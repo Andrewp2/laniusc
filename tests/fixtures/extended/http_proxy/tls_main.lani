@@ -1,0 +1,84 @@
+// proxy_main.lani behind TLS (ext::http_proxy_tls): the same arguments
+// and profiles, then the certificate chain and private key files. ALPN
+// offers h2 and http/1.1. Prints the listening address first and the
+// counters, TLS ones included, last.
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import ext::http_proxy;
+import ext::http_proxy_tls;
+import ext::tls_clients;
+import ext::openssl_tls;
+import std::args;
+import std::clock;
+import std::socket;
+import std::stream;
+
+fn literal(s: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(s),n); return core::slice::view<u8>(raw,n).unwrap(); }
+fn write_output(bytes: core::slice::View<u8>) -> bool { let sink: std::stream::Descriptor = std::stream::stdout(); return core::io::write_all(sink.borrow(), bytes.values, bytes.start, bytes.len()).is_ok(); }
+fn number(v: core::slice::View<u8>) -> i32 { let n: i32 = 0; let i: i32 = 0; while (i < v.len()) { let d: i32 = v.values[v.start + i] as i32 - 48; if (d < 0 || d > 9) { return n; } n = n * 10 + d; i += 1; } return n; }
+fn put(out: &alloc::vec::Vec<u8>, label: str, n: i32, value: i32) {
+    out.try_extend(literal(label, n));
+    if (value < 0) { out.try_push(45); value = -value; }
+    let digits: [u8;12] = [0;12]; let k: i32 = 0; if (value == 0) { digits[0] = 48; k = 1; }
+    while (value > 0) { let d: u8 = (48 + value % 10) as u8; digits[k] = d; k += 1; value = value / 10; }
+    while (k > 0) { k -= 1; out.try_push(digits[k]); }
+}
+fn upstream(port: i32) -> core::net::SocketAddr { return core::net::SocketAddr::V4(core::net::SocketAddrV4 { address: core::net::ipv4(127,0,0,1), port: port as u16 }); }
+fn main() -> i32 {
+    let captured = std::args::snapshot(1, 8, 1024); if (captured.is_err()) { return 2; }
+    let args = captured.unwrap(); if (args.len() < 6) { return 2; }
+    let quiet: i32 = number(args.get(0).unwrap()); let a: i32 = number(args.get(1).unwrap()); let b: i32 = number(args.get(2).unwrap());
+    let profile: core::slice::View<u8> = args.get(3).unwrap();
+    let endpoint = core::net::parse_socket(literal("127.0.0.1:0", 11)); if (endpoint.is_err()) { return 2; }
+    let opened = std::socket::create(std::socket::Family::Ipv4, std::socket::Kind::Tcp, true); if (opened.is_err()) { return 3; }
+    let listener = opened.unwrap(); listener.set_option(std::socket::Setting::ReuseAddress, 1);
+    if (listener.bind(endpoint.unwrap()).is_err() || listener.listen(512).is_err()) { listener.close(); return 3; }
+    let o: ext::http_proxy::Options = ext::http_proxy::default_options();
+    if (profile.values[profile.start] == 116) {
+        o.connect_timeout_ms = 500; o.response_timeout_ms = 800; o.io_timeout_ms = 1000; o.head_timeout_ms = 600; o.idle_timeout_ms = 1500; o.pool_idle_ms = 3000; o.buffer_bytes = 16384; o.upstream_connections = 4; o.max_idle = 4;
+    }
+    let nothing: core::slice::View<u8> = literal("", 0);
+    let context = ext::openssl_tls::new_server(args.get(4).unwrap(), args.get(5).unwrap(), nothing, ext::openssl_tls::ClientAuthentication::Unauthenticated, ext::openssl_tls::default_limits());
+    if (context.is_err()) { listener.close(); return 7; }
+    let ctx: ext::openssl_tls::ServerContext = context.unwrap();
+    let alpn: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); ext::tls_clients::alpn_protocols(alpn.borrow(), true);
+    if (ctx.set_alpn(alpn.as_view()).is_err()) { listener.close(); return 7; }
+    alpn.destroy();
+    let made = ext::http_proxy_tls::proxy(listener.borrow(), o, 512, ctx); if (made.is_err()) { listener.close(); return 4; }
+    let p: ext::http_proxy_tls::TlsProxy = made.unwrap();
+    p.add_upstream(upstream(a)); let second = p.add_upstream(upstream(b)); p.route(literal("/b/", 3), second.unwrap());
+    let actual = listener.local_addr(); if (actual.is_err()) { return 3; }
+    let startup: [u8;96] = [0;96]; let formatted = actual.unwrap().format_into(core::slice::view(startup, 95).unwrap()); if (formatted.is_err()) { return 3; }
+    let length = formatted.unwrap(); startup[length] = 10; if (!write_output(core::slice::view(startup, length + 1).unwrap())) { return 5; }
+    let status: i32 = 0;
+    let last = std::clock::monotonic_now(); if (last.is_err()) { return 3; }
+    let quiet_since: core::time::Instant = last.unwrap();
+    while (true) {
+        let now = std::clock::monotonic_now(); if (now.is_err()) { status = 3; break; }
+        let wait = core::time::deadline_after(now.unwrap(), core::time::from_millis(100)); if (wait.is_err()) { status = 3; break; }
+        let got = p.poll(wait.unwrap()); if (got.is_err()) { status = 6; break; }
+        let after = std::clock::monotonic_now(); if (after.is_err()) { status = 3; break; }
+        if (p.active() > 0) { quiet_since = after.unwrap(); continue; }
+        let limit = core::time::deadline_after(quiet_since, core::time::from_millis(quiet as u64)); if (limit.is_err()) { status = 3; break; }
+        if (limit.unwrap().is_expired(after.unwrap())) { break; }
+    }
+    let st: ext::http_proxy::Stats = p.stats();
+    let line: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+    put(line.borrow(), "clients=", 8, st.clients); put(line.borrow(), " h2=", 4, st.h2_clients); put(line.borrow(), " requests=", 10, st.requests);
+    put(line.borrow(), " h2_requests=", 13, st.h2_requests); put(line.borrow(), " responses=", 11, st.responses); put(line.borrow(), " connects=", 10, st.upstream_connects);
+    put(line.borrow(), " reused=", 8, st.reused); put(line.borrow(), " retries=", 9, st.retries); put(line.borrow(), " bad_gateway=", 13, st.bad_gateway);
+    put(line.borrow(), " gateway_timeout=", 17, st.gateway_timeout); put(line.borrow(), " rejected=", 10, st.rejected); put(line.borrow(), " aborted=", 9, st.aborted);
+    put(line.borrow(), " peak=", 6, st.peak_clients);
+    let ts: ext::tls_clients::Stats = p.tls_stats();
+    put(line.borrow(), " tls_handshakes=", 16, ts.handshakes); put(line.borrow(), " tls_h2=", 8, ts.h2); put(line.borrow(), " tls_failures=", 14, ts.failures); put(line.borrow(), " tls_truncated=", 15, ts.truncated); line.try_push(10);
+    write_output(line.as_view()); line.destroy();
+    p.close(); ctx.destroy(); listener.close();
+    return status;
+}

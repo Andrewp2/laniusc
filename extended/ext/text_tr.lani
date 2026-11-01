@@ -1,0 +1,790 @@
+// GNU `tr` under LC_ALL=C: translate, delete (-d) and squeeze (-s) bytes,
+// with -c (complement SET1) and -t (truncate SET1). SETs use GNU's syntax:
+// backslash escapes (\\ \a \b \f \n \r \t \v and up to three octal digits),
+// ranges c1-c2, [:class:], [=c=] and [c*n] / [c*] repeats, with GNU's
+// validation rules and error cases. Translation runs eight bytes at a time
+// when the changed bytes form at most four ASCII runs with one offset each.
+// See docs/extended-textutils.md.
+module ext::text_tr;
+import alloc::io;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::text_lines;
+
+pub enum Error {
+    MissingOperand, ExtraOperand, MissingClassName, MissingEquivChar, InvalidClass, EquivNotSingle,
+    InvalidRepeat, ReverseRange, RepeatInSet1, TwoRepeats, RepeatNotTranslating, EquivInSet2,
+    ClassInSet2, Misaligned, EmptySet2, Set2EndsWithClass, ComplementClass, LimitExceeded, AllocationFailed
+}
+pub struct Options { complement: bool, delete: bool, squeeze: bool, truncate: bool }
+pub fn default_options() -> Options { return Options { complement: false, delete: false, squeeze: false, truncate: false }; }
+
+// Spec elements: kind 0 byte a, 1 range a..b, 2 class a, 3 [=a=], 4 a repeated count times (0: [a*]).
+struct Elem { kind: i32, a: i32, b: i32, count: i64 }
+struct Spec { elems: alloc::vec::Vec<Elem>, length: i64, indefinite: i32, indefinite_at: i32, has_class: bool, restricted: bool, has_equiv: bool }
+impl Spec { fn borrow(&self) -> &Spec { return self; } fn destroy(&self) { self.elems.destroy(); } }
+// get_next state: element index, position (-1 new element, -2 not started), last case class (0 none, 1 lower, 2 upper).
+struct Cursor { at: i32, state: i64, cls: i32 }
+impl Cursor { fn borrow(&self) -> &Cursor { return self; } }
+fn tr_cursor() -> Cursor { return Cursor { at: 0, state: -2, cls: 0 }; }
+
+// Class ids: alnum alpha blank cntrl digit graph lower print punct space upper xdigit.
+const LOWER: i32 = 6;
+const UPPER: i32 = 10;
+fn tr_member(cls: i32, c: i32) -> bool {
+    let digit: bool = c >= 48 && c <= 57; let up: bool = c >= 65 && c <= 90; let lo: bool = c >= 97 && c <= 122;
+    if (cls == 0) { return digit || up || lo; }
+    if (cls == 1) { return up || lo; }
+    if (cls == 2) { return c == 32 || c == 9; }
+    if (cls == 3) { return c < 32 || c == 127; }
+    if (cls == 4) { return digit; }
+    if (cls == 5) { return c > 32 && c < 127; }
+    if (cls == 6) { return lo; }
+    if (cls == 7) { return c >= 32 && c < 127; }
+    if (cls == 8) { return c > 32 && c < 127 && !(digit || up || lo); }
+    if (cls == 9) { return c == 32 || (c >= 9 && c <= 13); }
+    if (cls == 10) { return up; }
+    return digit || (c >= 65 && c <= 70) || (c >= 97 && c <= 102);
+}
+fn tr_class_size(cls: i32) -> i64 { let n: i64 = 0; let c: i32 = 0; while (c < 256) { if (tr_member(cls, c)) { n += 1; } c += 1; } return n; }
+
+fn tr_next(s: &Spec, c: &Cursor) -> i32 {
+    c.cls = 0;
+    if (c.state == -2) { c.at = 0; c.state = -1; }
+    while (true) {
+        if (c.at >= s.elems.len()) { return -1; }
+        let e: Elem = core::option::unwrap(s.elems.get(c.at));
+        if (e.kind == 0 || e.kind == 3) { c.at += 1; c.state = -1; return e.a; }
+        if (e.kind == 1) {
+            if (c.state == -1) { c.state = e.a as i64; } else { c.state += 1; }
+            let r: i32 = c.state as i32; if (r == e.b) { c.at += 1; c.state = -1; } return r;
+        }
+        if (e.kind == 2) {
+            if (e.a == LOWER) { c.cls = 1; } if (e.a == UPPER) { c.cls = 2; }
+            if (c.state == -1) { let k: i32 = 0; while (k < 256 && !tr_member(e.a, k)) { k += 1; } c.state = k as i64; }
+            let r: i32 = c.state as i32; let k: i32 = r + 1; while (k < 256 && !tr_member(e.a, k)) { k += 1; }
+            if (k < 256) { c.state = k as i64; } else { c.at += 1; c.state = -1; }
+            return r;
+        }
+        if (e.count == 0) { c.at += 1; c.state = -1; continue; }
+        if (c.state == -1) { c.state = 0; }
+        c.state += 1; if (c.state == e.count) { c.at += 1; c.state = -1; }
+        return e.a;
+    }
+    return -1;
+}
+fn tr_skip(c: &Cursor) { c.at += 1; c.state = -1; }
+
+// ------------------------------------------------------------------ parsing
+struct Quoted { ch: alloc::vec::Vec<i32>, esc: alloc::vec::Vec<i32> }
+impl Quoted {
+    fn borrow(&self) -> &Quoted { return self; }
+    fn len(&self) -> i32 { return self.ch.len(); }
+    fn c(&self, i: i32) -> i32 { return self.ch.as_slice()[i]; }
+    fn escaped(&self, i: i32) -> bool { return self.esc.as_slice()[i] != 0; }
+    fn is(&self, i: i32, value: i32) -> bool { return i < self.ch.len() && self.ch.as_slice()[i] == value && self.esc.as_slice()[i] == 0; }
+    fn destroy(&self) { self.ch.destroy(); self.esc.destroy(); }
+}
+fn tr_octal(c: i32) -> i32 { if (c >= 48 && c <= 55) { return c - 48; } return -1; }
+// GNU unquote: escapes become bytes flagged as escaped.
+fn tr_unquote(v: core::slice::View<u8>) -> Quoted {
+    let q: Quoted = Quoted { ch: alloc::vec::new(), esc: alloc::vec::new() };
+    let n: i32 = v.length; let i: i32 = 0;
+    while (i < n) {
+        let c: i32 = v.values[v.start+i] as i32; let flagged: i32 = 0;
+        if (c == 92) {
+            flagged = 1;
+            if (i + 1 >= n) { c = 92; flagged = 0; }
+            else {
+                let d: i32 = v.values[v.start+i+1] as i32; i += 1;
+                if (d == 92) { c = 92; } else { if (d == 97) { c = 7; } else { if (d == 98) { c = 8; } else { if (d == 102) { c = 12; }
+                else { if (d == 110) { c = 10; } else { if (d == 114) { c = 13; } else { if (d == 116) { c = 9; } else { if (d == 118) { c = 11; }
+                else { if (tr_octal(d) >= 0) {
+                    c = tr_octal(d);
+                    if (i + 1 < n && tr_octal(v.values[v.start+i+1] as i32) >= 0) {
+                        c = 8 * c + tr_octal(v.values[v.start+i+1] as i32); i += 1;
+                        if (i + 1 < n && tr_octal(v.values[v.start+i+1] as i32) >= 0 && 8 * c + tr_octal(v.values[v.start+i+1] as i32) < 256) { c = 8 * c + tr_octal(v.values[v.start+i+1] as i32); i += 1; }
+                    }
+                } else { c = d; } } } } } } } } }
+            }
+        }
+        let a: core::result::Result<i32, alloc::vec::Error> = q.ch.try_push(c); let b: core::result::Result<i32, alloc::vec::Error> = q.esc.try_push(flagged);
+        i += 1;
+    }
+    return q;
+}
+fn tr_push(s: &Spec, kind: i32, a: i32, b: i32, count: i64) -> bool { return core::result::is_ok(s.elems.try_push(Elem { kind: kind, a: a, b: b, count: count })); }
+fn tr_class_id(q: &Quoted, at: i32, len: i32) -> i32 {
+    let names: str = "alnumalphablankcntrldigitgraphlowerprintpunctspaceupperxdigit";
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(names), 61);
+    let id: i32 = 0;
+    while (id < 12) {
+        let off: i32 = id * 5; let size: i32 = 5; if (id == 11) { size = 6; }
+        if (size == len) {
+            let k: i32 = 0; let same: bool = true;
+            while (k < len) { if (q.c(at + k) != raw[off+k] as i32) { same = false; } k += 1; }
+            if (same) { return id; }
+        }
+        id += 1;
+    }
+    return -1;
+}
+fn tr_closing(q: &Quoted, start: i32, delim: i32) -> i32 {
+    let i: i32 = start;
+    while (i < q.len() - 1) { if (q.c(i) == delim && q.c(i+1) == 93 && !q.escaped(i) && !q.escaped(i+1)) { return i; } i += 1; }
+    return -1;
+}
+fn tr_star_digits_close(q: &Quoted, at: i32) -> bool {
+    if (!q.is(at, 42)) { return false; }
+    let i: i32 = at + 1;
+    while (i < q.len()) { let c: i32 = q.c(i); if (!(c >= 48 && c <= 57) || q.escaped(i)) { return q.is(i, 93); } i += 1; }
+    return false;
+}
+// [c*n] at start (the c): 0 with the element pushed and *close set, -1 no
+// match, -2 an invalid count.
+struct Repeat { code: i32, close: i32 }
+fn tr_repeat(q: &Quoted, start: i32, s: &Spec) -> Repeat {
+    if (!q.is(start + 1, 42)) { return Repeat { code: -1, close: 0 }; }
+    let i: i32 = start + 2;
+    while (i < q.len() && !q.escaped(i)) {
+        if (q.c(i) == 93) {
+            let count: i64 = 0; let digits: i32 = i - start - 2;
+            if (digits > 0) {
+                let base: i64 = 10; if (q.c(start + 2) == 48) { base = 8; }
+                let k: i32 = start + 2;
+                while (k < i) {
+                    let d: i64 = (q.c(k) - 48) as i64;
+                    if (d < 0 || d >= base || count > 100000000000000) { return Repeat { code: -2, close: 0 }; }
+                    count = count * base + d; k += 1;
+                }
+            }
+            if (!tr_push(s, 4, q.c(start), 0, count)) { return Repeat { code: -2, close: 0 }; }
+            return Repeat { code: 0, close: i };
+        }
+        i += 1;
+    }
+    return Repeat { code: -1, close: 0 };
+}
+fn tr_parse(v: core::slice::View<u8>) -> core::result::Result<Spec, Error> {
+    let s: Spec = Spec { elems: alloc::vec::new(), length: 0, indefinite: 0, indefinite_at: -1, has_class: false, restricted: false, has_equiv: false };
+    let q: Quoted = tr_unquote(v); let n: i32 = q.len(); let i: i32 = 0; let error: i32 = -1;
+    while (i + 2 < n && error < 0) {
+        let done: bool = false;
+        if (q.is(i, 91)) {
+            let tried: bool = false;
+            if (q.is(i + 1, 58) || q.is(i + 1, 61)) {
+                let delim: i32 = q.c(i + 1); let close: i32 = tr_closing(q.borrow(), i + 2, delim);
+                if (close >= 0) {
+                    let len: i32 = close - (i + 2);
+                    if (len == 0) { if (delim == 58) { error = 2; } else { error = 3; } }
+                    else {
+                        if (delim == 58) {
+                            let id: i32 = tr_class_id(q.borrow(), i + 2, len);
+                            if (id >= 0) { let p: bool = tr_push(s.borrow(), 2, id, 0, 0); i = close + 2; done = true; }
+                            else { if (!tr_star_digits_close(q.borrow(), i + 2)) { error = 4; } }
+                        } else {
+                            if (len == 1) { let p: bool = tr_push(s.borrow(), 3, q.c(i + 2), 0, 0); i = close + 2; done = true; }
+                            else { if (!tr_star_digits_close(q.borrow(), i + 2)) { error = 5; } }
+                        }
+                    }
+                }
+            }
+            if (!done && error < 0) {
+                let r: Repeat = tr_repeat(q.borrow(), i + 1, s.borrow());
+                if (r.code == 0) { i = r.close + 1; done = true; }
+                if (r.code == -2) { error = 6; }
+            }
+        }
+        if (!done && error < 0) {
+            if (q.is(i + 1, 45)) {
+                if (q.c(i) > q.c(i + 2)) { error = 7; }
+                else { let p: bool = tr_push(s.borrow(), 1, q.c(i), q.c(i + 2), 0); i += 3; }
+            } else { let p: bool = tr_push(s.borrow(), 0, q.c(i), 0, 0); i += 1; }
+        }
+    }
+    while (i < n && error < 0) { let p: bool = tr_push(s.borrow(), 0, q.c(i), 0, 0); i += 1; }
+    q.destroy();
+    if (error >= 0) {
+        s.destroy();
+        if (error == 2) { return core::result::Err(Error::MissingClassName); }
+        if (error == 3) { return core::result::Err(Error::MissingEquivChar); }
+        if (error == 4) { return core::result::Err(Error::InvalidClass); }
+        if (error == 5) { return core::result::Err(Error::EquivNotSingle); }
+        if (error == 6) { return core::result::Err(Error::InvalidRepeat); }
+        return core::result::Err(Error::ReverseRange);
+    }
+    // get_spec_stats
+    let k: i32 = 0;
+    while (k < s.elems.len()) {
+        let e: Elem = core::option::unwrap(s.elems.get(k));
+        if (e.kind == 0 || e.kind == 3) { s.length += 1; if (e.kind == 3) { s.has_equiv = true; } }
+        if (e.kind == 1) { s.length += (e.b - e.a + 1) as i64; }
+        if (e.kind == 2) { s.has_class = true; if (e.a != LOWER && e.a != UPPER) { s.restricted = true; } s.length += tr_class_size(e.a); }
+        if (e.kind == 4) { if (e.count == 0) { s.indefinite += 1; s.indefinite_at = k; } else { s.length += e.count; } }
+        k += 1;
+    }
+    return core::result::Ok(s);
+}
+// Members of a spec: flags[c] = 1.
+fn tr_members(s: &Spec, flags: [i32], at: i32) -> i32 {
+    let c: Cursor = tr_cursor(); let n: i32 = 0; let i: i32 = 0;
+    while (i < 256) { flags[at+i] = 0; i += 1; }
+    while (true) { let ch: i32 = tr_next(s, c.borrow()); if (ch < 0) { break; } if (flags[at+ch] == 0) { n += 1; } flags[at+ch] = 1; }
+    return n;
+}
+fn tr_set_count(s: &Spec, e: Elem, at: i32) { let a: core::result::Result<Elem, alloc::vec::Error> = s.elems.set(at, e); }
+fn tr_homogeneous(s: &Spec) -> bool {
+    let c: Cursor = tr_cursor(); let b: i32 = tr_next(s, c.borrow()); if (b < 0) { return false; }
+    while (true) { let x: i32 = tr_next(s, c.borrow()); if (x < 0) { return true; } if (x != b) { return false; } }
+    return true;
+}
+// validate_case_classes: case classes in SET2 must line up with case
+// classes in SET1; each aligned pair counts as one element.
+fn tr_case_classes(s1: &Spec, s2: &Spec, complement: bool) -> bool {
+    if (complement || !s2.has_class) { return true; }
+    let n_upper: i64 = 26; let n_lower: i64 = 26;
+    let a: Cursor = tr_cursor(); let b: Cursor = tr_cursor(); let c1: i32 = 0; let c2: i32 = 0; let new1: bool = true; let new2: bool = true;
+    while (c1 != -1 && c2 != -1) {
+        c1 = tr_next(s1, a.borrow()); let k1: i32 = a.cls; c2 = tr_next(s2, b.borrow()); let k2: i32 = b.cls;
+        if (new2 && k2 != 0 && !(new1 && k1 != 0)) { return false; }
+        if (k2 != 0) {
+            tr_skip(a.borrow()); tr_skip(b.borrow());
+            if (k1 == 2) { s1.length -= n_upper - 1; } else { s1.length -= n_lower - 1; }
+            if (k2 == 2) { s2.length -= n_upper - 1; } else { s2.length -= n_lower - 1; }
+        }
+        new1 = a.state == -1; new2 = b.state == -1;
+    }
+    return true;
+}
+
+// The table: map (0..255), delete flags (256..511), squeeze flags (512..767).
+pub struct Plan { mem: alloc::io::Buffer, t: [i32], translate: bool, delete: bool, squeeze: bool }
+pub impl Plan {
+    pub fn borrow(&self) -> &Plan { return self; }
+    pub fn destroy(&self) { self.mem.destroy(); }
+    pub fn map(&self, c: i32) -> i32 { return self.t[c]; }
+    pub fn deletes(&self, c: i32) -> bool { return self.t[256+c] != 0; }
+    pub fn squeezes(&self, c: i32) -> bool { return self.t[512+c] != 0; }
+}
+fn tr_fail(s1: &Spec, s2: &Spec, e: Error) -> core::result::Result<Plan, Error> { s1.destroy(); s2.destroy(); return core::result::Err(e); }
+// Build the byte table for `count` SETs (1 or 2) with GNU's operand and
+// validation rules.
+pub fn plan(set1: core::slice::View<u8>, set2: core::slice::View<u8>, count: i32, o: Options) -> core::result::Result<Plan, Error> {
+    let both: i32 = 0; if (o.delete == o.squeeze) { both = 1; }
+    let most: i32 = 2; if (o.delete && !o.squeeze) { most = 1; }
+    if (count < 1 + both) { return core::result::Err(Error::MissingOperand); }
+    if (count > most) { return core::result::Err(Error::ExtraOperand); }
+    let translating: bool = count == 2 && !o.delete;
+    let p1: core::result::Result<Spec, Error> = tr_parse(set1);
+    if (core::result::is_err(p1)) { return core::result::Err(core::result::unwrap_err(p1)); }
+    let s1: Spec = core::result::unwrap(p1);
+    let s2: Spec = Spec { elems: alloc::vec::new(), length: 0, indefinite: 0, indefinite_at: -1, has_class: false, restricted: false, has_equiv: false };
+    if (count == 2) {
+        let p2: core::result::Result<Spec, Error> = tr_parse(set2);
+        if (core::result::is_err(p2)) { s1.destroy(); return core::result::Err(core::result::unwrap_err(p2)); }
+        s2 = core::result::unwrap(p2);
+    }
+    let made: core::result::Result<alloc::io::Buffer, core::io::Error> = alloc::io::with_limit(3080);
+    if (core::result::is_err(made)) { return tr_fail(s1.borrow(), s2.borrow(), Error::AllocationFailed); }
+    let mem: alloc::io::Buffer = core::result::unwrap(made);
+    let raw: core::result::Result<ptr, core::io::Error> = mem.reserve_raw(3080);
+    if (core::result::is_err(raw)) { mem.destroy(); return tr_fail(s1.borrow(), s2.borrow(), Error::AllocationFailed); }
+    let t: [i32] = core::mem::typed_slice_from_raw_parts<i32>(core::result::unwrap(raw), 770);
+    let plan: Plan = Plan { mem: mem, t: t, translate: translating, delete: o.delete, squeeze: o.squeeze };
+    // validate
+    if (s1.indefinite > 0) { plan.destroy(); return tr_fail(s1.borrow(), s2.borrow(), Error::RepeatInSet1); }
+    if (o.complement) { s1.length = (256 - tr_members(s1.borrow(), t, 256)) as i64; }
+    if (count == 2) {
+        if (s1.length >= s2.length && s2.indefinite == 1) {
+            let e: Elem = core::option::unwrap(s2.elems.get(s2.indefinite_at)); e.count = s1.length - s2.length;
+            tr_set_count(s2.borrow(), e, s2.indefinite_at); s2.length = s1.length;
+        }
+        if (s2.indefinite > 1) { plan.destroy(); return tr_fail(s1.borrow(), s2.borrow(), Error::TwoRepeats); }
+        if (translating) {
+            if (s2.has_equiv) { plan.destroy(); return tr_fail(s1.borrow(), s2.borrow(), Error::EquivInSet2); }
+            if (s2.restricted) { plan.destroy(); return tr_fail(s1.borrow(), s2.borrow(), Error::ClassInSet2); }
+            if (!tr_case_classes(s1.borrow(), s2.borrow(), o.complement)) { plan.destroy(); return tr_fail(s1.borrow(), s2.borrow(), Error::Misaligned); }
+            if (s1.length > s2.length && !o.truncate) {
+                if (s2.length == 0) { plan.destroy(); return tr_fail(s1.borrow(), s2.borrow(), Error::EmptySet2); }
+                let last: Elem = core::option::unwrap(s2.elems.get(s2.elems.len() - 1)); let fill: i32 = last.a;
+                if (last.kind == 1) { fill = last.b; }
+                if (last.kind == 2) { plan.destroy(); return tr_fail(s1.borrow(), s2.borrow(), Error::Set2EndsWithClass); }
+                let pushed: bool = tr_push(s2.borrow(), 4, fill, 0, s1.length - s2.length); s2.length = s1.length;
+            }
+            if (o.complement && s1.has_class && !(s2.length == s1.length && tr_homogeneous(s2.borrow()))) { plan.destroy(); return tr_fail(s1.borrow(), s2.borrow(), Error::ComplementClass); }
+        } else {
+            if (s2.indefinite > 0) { plan.destroy(); return tr_fail(s1.borrow(), s2.borrow(), Error::RepeatNotTranslating); }
+        }
+    }
+    let i: i32 = 0; while (i < 768) { t[i] = 0; i += 1; }
+    i = 0; while (i < 256) { t[i] = i; i += 1; }
+    if (translating) {
+        if (o.complement) {
+            let in1: i32 = tr_members(s1.borrow(), t, 256); let b: Cursor = tr_cursor(); let c: i32 = 0;
+            while (c < 256) { if (t[256+c] == 0) { let ch: i32 = tr_next(s2.borrow(), b.borrow()); if (ch < 0) { break; } t[c] = ch; } c += 1; }
+            i = 0; while (i < 256) { t[256+i] = 0; i += 1; }
+        } else {
+            let a: Cursor = tr_cursor(); let b: Cursor = tr_cursor();
+            while (true) {
+                let c1: i32 = tr_next(s1.borrow(), a.borrow()); let c2: i32 = tr_next(s2.borrow(), b.borrow());
+                if (a.cls == 1 && b.cls == 2) { let k: i32 = 97; while (k <= 122) { t[k] = k - 32; k += 1; } }
+                else { if (a.cls == 2 && b.cls == 1) { let k: i32 = 65; while (k <= 90) { t[k] = k + 32; k += 1; } }
+                else { if (c1 < 0 || c2 < 0) { break; } t[c1] = c2; } }
+                if (b.cls != 0) { tr_skip(a.borrow()); tr_skip(b.borrow()); }
+            }
+        }
+        if (o.squeeze) { let n: i32 = tr_members(s2.borrow(), t, 512); }
+    } else {
+        if (o.delete) {
+            let n: i32 = tr_members(s1.borrow(), t, 256);
+            if (o.complement) { i = 0; while (i < 256) { t[256+i] = 1 - t[256+i]; i += 1; } }
+            if (o.squeeze) { let m: i32 = tr_members(s2.borrow(), t, 512); }
+        } else {
+            let n: i32 = tr_members(s1.borrow(), t, 512);
+            if (o.complement) { i = 0; while (i < 256) { t[512+i] = 1 - t[512+i]; i += 1; } }
+        }
+    }
+    s1.destroy(); s2.destroy();
+    return core::result::Ok(plan);
+}
+
+// ------------------------------------------------------------------ apply
+// Squeeze state across chunks: the previous output byte, or -1.
+pub struct State { last: i32 }
+pub impl State { pub fn borrow(&self) -> &State { return self; } }
+pub fn state() -> State { return State { last: -1 }; }
+
+// Byte runs [lo, hi] on one side of 128 that one word test finds: each run's
+// bytes shift by one offset (kind 0) or become one byte (kind 1). Five u64
+// per run: a, b (y + a reaches bit 7 from lo up, y + b past hi), the value
+// (offset or byte, in every lane), kind and side (HIGH for bytes from 128 up).
+struct Runs { n: i32, mem: alloc::io::Buffer, r: [u64], ok: bool }
+impl Runs { fn borrow(&self) -> &Runs { return self; } fn destroy(&self) { self.mem.destroy(); } }
+fn tr_new_runs() -> Runs {
+    let mem: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(512));
+    let p: ptr = core::result::unwrap(mem.reserve_raw(512));
+    return Runs { n: 0, mem: mem, r: core::mem::typed_slice_from_storage<u64>(p, 60), ok: true };
+}
+fn tr_add_run(rs: &Runs, lo: i32, hi: i32, value: i32, kind: i32) {
+    if (rs.n == 12) { rs.ok = false; return; }
+    let ones: u64 = ext::text_lines::ONES; let base: i32 = 0; let side: u64 = 0;
+    if (lo >= 128) { base = 128; side = ext::text_lines::HIGH; }
+    let k: i32 = rs.n * 5;
+    rs.r[k] = ((128 - (lo - base)) as u64) * ones; rs.r[k+1] = ((127 - (hi - base)) as u64) * ones; rs.r[k+2] = ((value & 255) as u64) * ones;
+    rs.r[k+3] = kind as u64; rs.r[k+4] = side; rs.n += 1;
+}
+// Runs of the map (translation), preferring the longer of an offset run and
+// a one-byte run. With `fold`, only a..z are scanned and only offset runs are
+// made: the caller tests case-folded bytes, so each run also covers A..Z.
+fn tr_runs(p: &Plan, fold: bool) -> Runs {
+    let rs: Runs = tr_new_runs(); let t: [i32] = p.t; let c: i32 = 0; let end: i32 = 256;
+    if (fold) { c = 97; end = 123; }
+    while (c < end && rs.ok) {
+        if (t[c] == c) { c += 1; continue; }
+        let limit: i32 = 128; if (c >= 128) { limit = 256; } if (fold) { limit = 123; }
+        let d: i32 = (t[c] - c + 256) % 256; let e1: i32 = c;
+        while (e1 + 1 < limit && t[e1+1] != e1 + 1 && (t[e1+1] - (e1 + 1) + 256) % 256 == d) { e1 += 1; }
+        let e2: i32 = c; if (!fold) { while (e2 + 1 < limit && t[e2+1] == t[c]) { e2 += 1; } }
+        if (e2 > e1) { tr_add_run(rs.borrow(), c, e2, t[c], 1); c = e2 + 1; } else { tr_add_run(rs.borrow(), c, e1, d, 0); c = e1 + 1; }
+    }
+    return rs;
+}
+// Whether the map changes only letters and shifts each upper-case letter
+// by the same offset as its lower-case partner.
+fn tr_foldable(t: [i32]) -> bool {
+    let c: i32 = 0; let any: bool = false;
+    while (c < 256) {
+        let letter: bool = (c >= 65 && c <= 90) || (c >= 97 && c <= 122);
+        if (t[c] != c) { any = true; if (!letter) { return false; } }
+        if (c >= 97 && c <= 122) { if ((t[c] - c + 256) % 256 != (t[c-32] - (c - 32) + 256) % 256) { return false; } }
+        c += 1;
+    }
+    return any;
+}
+// Runs of the bytes flagged in t[at..at+256].
+fn tr_flag_runs(p: &Plan, at: i32) -> Runs {
+    let rs: Runs = tr_new_runs(); let t: [i32] = p.t; let c: i32 = 0;
+    while (c < 256 && rs.ok) {
+        if (t[at+c] == 0) { c += 1; continue; }
+        let limit: i32 = 128; if (c >= 128) { limit = 256; }
+        let e: i32 = c; while (e + 1 < limit && t[at+e+1] != 0) { e += 1; }
+        tr_add_run(rs.borrow(), c, e, 0, 1); c = e + 1;
+    }
+    return rs;
+}
+// Runs of the bytes the map does not send to `value`.
+fn tr_other_runs(p: &Plan, value: i32) -> Runs {
+    let rs: Runs = tr_new_runs(); let t: [i32] = p.t; let c: i32 = 0;
+    while (c < 256 && rs.ok) {
+        if (t[c] == value) { c += 1; continue; }
+        let limit: i32 = 128; if (c >= 128) { limit = 256; }
+        let e: i32 = c; while (e + 1 < limit && t[e+1] != value) { e += 1; }
+        tr_add_run(rs.borrow(), c, e, 0, 1); c = e + 1;
+    }
+    return rs;
+}
+fn tr_one_slot(s: Slots) -> bool { return s.ok && s.high == 0 && s.a1 == 0 && s.b1 == 0 && s.a2 == 0 && s.b2 == 0; }
+// The tests of one group of runs (one kind and value): up to three runs
+// below 128 and one from 128 up. Unused slots never match (y + 0 ^ y + 0).
+// k is ALL for a one-byte group; vk and va are the value for each kind.
+struct Slots { ok: bool, a0: u64, b0: u64, a1: u64, b1: u64, a2: u64, b2: u64, ah: u64, bh: u64, k: u64, vk: u64, va: u64, high: i32 }
+fn tr_slots(rs: &Runs, any: bool, kind: u64, value: u64) -> Slots {
+    let s: Slots = Slots { ok: true, a0: 0, b0: 0, a1: 0, b1: 0, a2: 0, b2: 0, ah: 0, bh: 0, k: 0, vk: 0, va: value, high: 0 };
+    if (kind != 0) { s.k = ext::text_lines::ALL; s.vk = value; s.va = 0; }
+    let r: [u64] = rs.r; let i: i32 = 0; let low: i32 = 0;
+    while (i < rs.n) {
+        let q: i32 = i * 5; i += 1;
+        if (!any && (r[q+3] != kind || r[q+2] != value)) { continue; }
+        if (r[q+4] != 0) { if (s.high == 1) { s.ok = false; } s.ah = r[q]; s.bh = r[q+1]; s.high = 1; continue; }
+        if (low == 0) { s.a0 = r[q]; s.b0 = r[q+1]; } else { if (low == 1) { s.a1 = r[q]; s.b1 = r[q+1]; } else { if (low == 2) { s.a2 = r[q]; s.b2 = r[q+1]; } else { s.ok = false; } } }
+        low += 1;
+    }
+    return s;
+}
+// Translate v in place.
+pub fn translate(p: &Plan, v: core::slice::View<u8>) -> core::result::Result<i32, ext::text_lines::Error> {
+    let made: core::result::Result<ext::text_lines::Words, ext::text_lines::Error> = ext::text_lines::words(v);
+    if (core::result::is_err(made)) { return core::result::Err(core::result::unwrap_err(made)); }
+    let w: ext::text_lines::Words = core::result::unwrap(made);
+    let n: i32 = v.length; let t: [i32] = p.t; let from: i32 = 0;
+    let folding: bool = tr_foldable(t); let rs: Runs = tr_runs(p, folding);
+    if (rs.n > 0 && ext::text_lines::packed(v)) {
+        let ws: [u64] = w.words; let nw: i32 = w.nw; let base: i32 = nw - 1; let r: [u64] = rs.r;
+        let low: u64 = ext::text_lines::LOW7; let high: u64 = ext::text_lines::HIGH;
+        let fold: u64 = 0; if (folding) { fold = 2314885530818453536; }
+        let j: i32 = 0;
+        // Groups of runs by kind and value: two at most for the word paths.
+        let groups: i32 = 1; let kind2: u64 = 0; let value2: u64 = 0; let q: i32 = 5;
+        while (q < rs.n * 5) {
+            if (r[q+3] != r[3] || r[q+2] != r[2]) {
+                if (groups == 1) { groups = 2; kind2 = r[q+3]; value2 = r[q+2]; } else { if (r[q+3] != kind2 || r[q+2] != value2) { groups = 3; } }
+            }
+            q += 5;
+        }
+        let g1: Slots = tr_slots(rs.borrow(), false, r[3], r[2]); let g2: Slots = tr_slots(rs.borrow(), false, kind2, value2);
+        if (rs.ok && rs.n == 1 && r[3] == 0 && r[4] == 0 && !folding) {
+            let a0: u64 = r[0]; let b0: u64 = r[1]; let d0: u64 = r[2];
+            // One offset run that is an XOR on each of its bytes (case changes).
+            let lo: i32 = 128 - ((a0 & 255) as i32); let hi: i32 = 127 - ((b0 & 255) as i32);
+            let k: i32 = lo; let flip: i32 = k ^ t[k]; let xor: bool = true;
+            while (k <= hi) { if ((k ^ flip) != t[k]) { xor = false; } k += 1; }
+            if (xor) {
+                let f: u64 = flip as u64; let n2: i32 = nw - 1;
+                while (j < n2) {
+                    let x0: u64 = ws[base-j]; let x1: u64 = ws[base-j-1];
+                    let y0: u64 = x0 & low; let y1: u64 = x1 & low;
+                    let m0: u64 = (((((y0 + a0) ^ (y0 + b0)) | x0) ^ x0) & high) >> 7; let m1: u64 = (((((y1 + a0) ^ (y1 + b0)) | x1) ^ x1) & high) >> 7;
+                    ws[base-j] = x0 ^ (m0 * f); ws[base-j-1] = x1 ^ (m1 * f); j += 2;
+                }
+            }
+            while (j < nw) {
+                let x: u64 = ws[base-j]; let y: u64 = x & low;
+                let d: u64 = (((((((y + a0) ^ (y + b0)) | x) ^ x) & high) >> 7) * 255) & d0;
+                ws[base-j] = ((x & low) + (d & low)) ^ ((x ^ d) & high); j += 1;
+            }
+        } else {
+            // One one-byte group whose other bytes form one run below 128:
+            // test those instead (complemented sets such as `tr -c a-z .`).
+            let inv: u64 = 0; let gi: Slots = g1;
+            if (rs.ok && groups == 1 && r[3] != 0 && !folding && !tr_one_slot(g1)) {
+                let other: Runs = tr_other_runs(p, (r[2] & 255) as i32); let go: Slots = tr_slots(other.borrow(), true, 0, 0);
+                if (other.ok && tr_one_slot(go)) { inv = ext::text_lines::ALL; gi = go; gi.k = g1.k; gi.vk = g1.vk; gi.va = g1.va; }
+                other.destroy();
+            }
+            if (rs.ok && groups == 1 && tr_one_slot(gi)) {
+                let a0: u64 = gi.a0; let b0: u64 = gi.b0; let k1: u64 = gi.k; let vk: u64 = gi.vk; let va: u64 = gi.va; let n2: i32 = nw - 1;
+                while (j < n2) {
+                    let x0: u64 = ws[base-j]; let x1: u64 = ws[base-j-1]; let y0: u64 = (x0 & low) | fold; let y1: u64 = (x1 & low) | fold;
+                    let m0: u64 = ((((((((y0 + a0) ^ (y0 + b0)) | x0) ^ x0) & high) >> 7) * 255) ^ inv);
+                    let m1: u64 = ((((((((y1 + a0) ^ (y1 + b0)) | x1) ^ x1) & high) >> 7) * 255) ^ inv);
+                    let p0: u64 = (x0 ^ (x0 & (m0 & k1))) | (m0 & vk); let d0: u64 = m0 & va;
+                    let p1: u64 = (x1 ^ (x1 & (m1 & k1))) | (m1 & vk); let d1: u64 = m1 & va;
+                    ws[base-j] = ((p0 & low) + (d0 & low)) ^ ((p0 ^ d0) & high); ws[base-j-1] = ((p1 & low) + (d1 & low)) ^ ((p1 ^ d1) & high); j += 2;
+                }
+            }
+            if (rs.ok && groups == 2 && tr_one_slot(g1) && tr_one_slot(g2)) {
+                let a0: u64 = g1.a0; let b0: u64 = g1.b0; let c0: u64 = g2.a0; let e0: u64 = g2.b0;
+                let k1: u64 = g1.k; let vk1: u64 = g1.vk; let va1: u64 = g1.va; let k2: u64 = g2.k; let vk2: u64 = g2.vk; let va2: u64 = g2.va;
+                let n2: i32 = nw - 1;
+                while (j < n2) {
+                    let x: u64 = ws[base-j]; let z: u64 = ws[base-j-1]; let y: u64 = (x & low) | fold; let u: u64 = (z & low) | fold;
+                    let m1: u64 = (((((((y + a0) ^ (y + b0)) | x) ^ x) & high) >> 7) * 255); let m2: u64 = (((((((y + c0) ^ (y + e0)) | x) ^ x) & high) >> 7) * 255);
+                    let n1: u64 = (((((((u + a0) ^ (u + b0)) | z) ^ z) & high) >> 7) * 255); let q2: u64 = (((((((u + c0) ^ (u + e0)) | z) ^ z) & high) >> 7) * 255);
+                    let x2: u64 = (x ^ (x & ((m1 & k1) | (m2 & k2)))) | (m1 & vk1) | (m2 & vk2); let ad: u64 = (m1 & va1) | (m2 & va2);
+                    let z2: u64 = (z ^ (z & ((n1 & k1) | (q2 & k2)))) | (n1 & vk1) | (q2 & vk2); let az: u64 = (n1 & va1) | (q2 & va2);
+                    ws[base-j] = ((x2 & low) + (ad & low)) ^ ((x2 ^ ad) & high); ws[base-j-1] = ((z2 & low) + (az & low)) ^ ((z2 ^ az) & high); j += 2;
+                }
+                while (j < nw) {
+                    let x: u64 = ws[base-j]; let y: u64 = (x & low) | fold;
+                    let m1: u64 = (((((((y + a0) ^ (y + b0)) | x) ^ x) & high) >> 7) * 255); let m2: u64 = (((((((y + c0) ^ (y + e0)) | x) ^ x) & high) >> 7) * 255);
+                    let x2: u64 = (x ^ (x & ((m1 & k1) | (m2 & k2)))) | (m1 & vk1) | (m2 & vk2); let ad: u64 = (m1 & va1) | (m2 & va2);
+                    ws[base-j] = ((x2 & low) + (ad & low)) ^ ((x2 ^ ad) & high); j += 1;
+                }
+            }
+            if (rs.ok && groups == 1 && g1.ok) {
+                let a0: u64 = g1.a0; let b0: u64 = g1.b0; let a1: u64 = g1.a1; let b1: u64 = g1.b1; let a2: u64 = g1.a2; let b2: u64 = g1.b2;
+                let ah: u64 = g1.ah; let bh: u64 = g1.bh; let k1: u64 = g1.k; let vk: u64 = g1.vk; let va: u64 = g1.va;
+                while (j < nw) {
+                    let x: u64 = ws[base-j]; let y: u64 = x & low; let yf: u64 = y | fold;
+                    let l: u64 = ((yf + a0) ^ (yf + b0)) | ((yf + a1) ^ (yf + b1)) | ((yf + a2) ^ (yf + b2));
+                    let h: u64 = ((y + ah) ^ (y + bh)) & x;
+                    let m: u64 = (((((l | x) ^ x) | h) & high) >> 7) * 255;
+                    let x2: u64 = (x ^ (x & (m & k1))) | (m & vk); let ad: u64 = m & va;
+                    ws[base-j] = ((x2 & low) + (ad & low)) ^ ((x2 ^ ad) & high); j += 1;
+                }
+            } else {
+                if (rs.ok && groups == 2 && g1.ok && g2.ok && g1.high == 0 && g2.high == 0) {
+                    let a0: u64 = g1.a0; let b0: u64 = g1.b0; let a1: u64 = g1.a1; let b1: u64 = g1.b1; let a2: u64 = g1.a2; let b2: u64 = g1.b2;
+                    let c0: u64 = g2.a0; let e0: u64 = g2.b0; let c1: u64 = g2.a1; let e1: u64 = g2.b1; let c2: u64 = g2.a2; let e2: u64 = g2.b2;
+                    let k1: u64 = g1.k; let vk1: u64 = g1.vk; let va1: u64 = g1.va; let k2: u64 = g2.k; let vk2: u64 = g2.vk; let va2: u64 = g2.va;
+                    while (j < nw) {
+                        let x: u64 = ws[base-j]; let y: u64 = (x & low) | fold;
+                        let l1: u64 = ((y + a0) ^ (y + b0)) | ((y + a1) ^ (y + b1)) | ((y + a2) ^ (y + b2));
+                        let l2: u64 = ((y + c0) ^ (y + e0)) | ((y + c1) ^ (y + e1)) | ((y + c2) ^ (y + e2));
+                        let m1: u64 = (((((l1 | x) ^ x) & high) >> 7) * 255); let m2: u64 = (((((l2 | x) ^ x) & high) >> 7) * 255);
+                        let sm: u64 = (m1 & k1) | (m2 & k2);
+                        let x2: u64 = (x ^ (x & sm)) | (m1 & vk1) | (m2 & vk2); let ad: u64 = (m1 & va1) | (m2 & va2);
+                        ws[base-j] = ((x2 & low) + (ad & low)) ^ ((x2 ^ ad) & high); j += 1;
+                    }
+                } else {
+                    // Any map: eight table lookups per word, in registers.
+                    while (j < nw) {
+                        let x: u64 = ws[base-j];
+                        let o: u64 = (t[(x & 255) as i32] as u64) | ((t[((x >> 8) & 255) as i32] as u64) << 8) | ((t[((x >> 16) & 255) as i32] as u64) << 16) | ((t[((x >> 24) & 255) as i32] as u64) << 24)
+                            | ((t[((x >> 32) & 255) as i32] as u64) << 32) | ((t[((x >> 40) & 255) as i32] as u64) << 40) | ((t[((x >> 48) & 255) as i32] as u64) << 48) | ((t[(x >> 56) as i32] as u64) << 56);
+                        ws[base-j] = o; j += 1;
+                    }
+                }
+            }
+        }
+        from = nw * 8;
+    }
+    if (rs.n > 0 || !rs.ok) { let i: i32 = from; while (i < n) { v.values[v.start+i] = t[v.values[v.start+i] as i32] as u8; i += 1; } }
+    rs.destroy(); w.destroy();
+    return core::result::Ok(0);
+}
+
+// Delete and/or squeeze (after translating when the plan translates),
+// writing the surviving bytes to o. Each word's dropped bytes are found with
+// word tests; a word without one is copied whole, and the kept stretches of
+// any other word are copied a stretch at a time.
+pub fn filter(p: &Plan, st: &State, v: core::slice::View<u8>, o: &ext::text_lines::Out) -> core::result::Result<i32, ext::text_lines::Error> {
+    if (p.translate) { let tx: core::result::Result<i32, ext::text_lines::Error> = translate(p, v); if (core::result::is_err(tx)) { return tx; } }
+    let made: core::result::Result<ext::text_lines::Words, ext::text_lines::Error> = ext::text_lines::words(v);
+    if (core::result::is_err(made)) { return core::result::Err(core::result::unwrap_err(made)); }
+    let w: ext::text_lines::Words = core::result::unwrap(made);
+    let n: i32 = v.length; let t: [i32] = p.t; let last: i32 = st.last;
+    let dr: Runs = tr_flag_runs(p, 256); let sr: Runs = tr_flag_runs(p, 512);
+    let del: Slots = tr_slots(dr.borrow(), true, 0, 0); let sq: Slots = tr_slots(sr.borrow(), true, 0, 0);
+    dr.destroy(); sr.destroy();
+    let deleting: bool = p.delete; let squeezing: bool = p.squeeze;
+    let fast: bool = dr.ok && sr.ok && del.ok && sq.ok && ext::text_lines::packed(v);
+    let low: u64 = ext::text_lines::LOW7; let high: u64 = ext::text_lines::HIGH; let ones: u64 = ext::text_lines::ONES;
+    let da0: u64 = del.a0; let db0: u64 = del.b0; let da1: u64 = del.a1; let db1: u64 = del.b1; let da2: u64 = del.a2; let db2: u64 = del.b2; let dah: u64 = del.ah; let dbh: u64 = del.bh;
+    let sa0: u64 = sq.a0; let sb0: u64 = sq.b0; let sa1: u64 = sq.a1; let sb1: u64 = sq.b1; let sa2: u64 = sq.a2; let sb2: u64 = sq.b2; let sah: u64 = sq.ah; let sbh: u64 = sq.bh;
+    let ws: [u64] = w.words; let nw: i32 = w.nw; let base: i32 = nw - 1;
+    let acc: u64 = o.acc; let fill: i32 = o.fill; let at: i32 = o.at; let cap: i32 = o.cap; let wv: [u64] = o.w;
+    let j: i32 = 0;
+    let dsmall: bool = tr_one_slot(del); let ssmall: bool = tr_one_slot(sq);
+    while (j <= nw) {
+        if (fast && j < nw && deleting != squeezing) {
+            // Every whole word: copied as is when it keeps every byte,
+            // otherwise its gaps are closed in three steps (each kept byte
+            // moves down by the count of dropped bytes below it, one bit of
+            // that count at a time; no two bytes ever meet).
+            let ff: u64 = (fill * 8) as u64; let back: u64 = (64 - ff) & 63; let keep: u64 = 0; if (fill != 0) { keep = ext::text_lines::ALL; }
+            while (j + 1 < nw) {
+                // Two words at a time while both are whole.
+                let x0: u64 = ws[base-j]; let x1: u64 = ws[base-j-1]; let y0: u64 = x0 & low; let y1: u64 = x1 & low; let dm0: u64 = 0; let dm1: u64 = 0;
+                if (deleting) {
+                    let l0: u64 = (y0 + da0) ^ (y0 + db0); let l1: u64 = (y1 + da0) ^ (y1 + db0); let h0: u64 = 0; let h1: u64 = 0;
+                    if (!dsmall) {
+                        l0 = l0 | ((y0 + da1) ^ (y0 + db1)) | ((y0 + da2) ^ (y0 + db2)); h0 = ((y0 + dah) ^ (y0 + dbh)) & x0;
+                        l1 = l1 | ((y1 + da1) ^ (y1 + db1)) | ((y1 + da2) ^ (y1 + db2)); h1 = ((y1 + dah) ^ (y1 + dbh)) & x1;
+                    }
+                    dm0 = (((l0 | x0) ^ x0) | h0) & high; dm1 = (((l1 | x1) ^ x1) | h1) & high;
+                } else {
+                    let prev: u64 = x0 << 8; if (last >= 0) { prev = prev | (last as u64); } else { prev = prev | ((x0 & 255) ^ 255); }
+                    let e0: u64 = x0 ^ prev; let e1: u64 = x1 ^ ((x1 << 8) | (x0 >> 56));
+                    let same0: u64 = ((((e0 & low) + low) | e0) & high) ^ high; let same1: u64 = ((((e1 & low) + low) | e1) & high) ^ high;
+                    if ((same0 | same1) != 0) {
+                        let l0: u64 = (y0 + sa0) ^ (y0 + sb0); let l1: u64 = (y1 + sa0) ^ (y1 + sb0); let h0: u64 = 0; let h1: u64 = 0;
+                        if (!ssmall) {
+                            l0 = l0 | ((y0 + sa1) ^ (y0 + sb1)) | ((y0 + sa2) ^ (y0 + sb2)); h0 = ((y0 + sah) ^ (y0 + sbh)) & x0;
+                            l1 = l1 | ((y1 + sa1) ^ (y1 + sb1)) | ((y1 + sa2) ^ (y1 + sb2)); h1 = ((y1 + sah) ^ (y1 + sbh)) & x1;
+                        }
+                        dm0 = (((l0 | x0) ^ x0) | h0) & same0; dm1 = (((l1 | x1) ^ x1) | h1) & same1;
+                    }
+                    last = (x1 >> 56) as i32;
+                }
+                j += 2;
+                if ((dm0 | dm1) == 0) {
+                    if (at + 1 >= cap) { o.acc = acc; o.fill = 0; o.at = at; ext::text_lines::spill(o); at = o.at; cap = o.cap; wv = o.w; }
+                    let w0: u64 = acc | (x0 << ff); let w1: u64 = ((x0 >> back) & keep) | (x1 << ff);
+                    wv[cap-1-at] = w0; wv[cap-2-at] = w1; at += 2; acc = (x1 >> back) & keep;
+                    continue;
+                }
+                let a1: u64 = dm0 >> 7; let b1: u64 = dm1 >> 7; let ia: u64 = a1 * ones; let ib: u64 = b1 * ones;
+                let ka: u64 = (a1 * 255) ^ ext::text_lines::ALL; let kb: u64 = (b1 * 255) ^ ext::text_lines::ALL;
+                let ea: u64 = (ia - a1) & ka; let eb: u64 = (ib - b1) & kb; let xa: u64 = x0 & ka; let xb: u64 = x1 & kb;
+                let ma: u64 = (ea & ones) * 255; let mb: u64 = (eb & ones) * 255;
+                let ta: u64 = xa & ma; let tb: u64 = xb & mb; xa = (xa ^ ta) | (ta >> 8); xb = (xb ^ tb) | (tb >> 8);
+                ta = ea & ma; tb = eb & mb; ea = (ea ^ ta) | (ta >> 8); eb = (eb ^ tb) | (tb >> 8);
+                ma = ((ea >> 1) & ones) * 255; mb = ((eb >> 1) & ones) * 255;
+                ta = xa & ma; tb = xb & mb; xa = (xa ^ ta) | (ta >> 16); xb = (xb ^ tb) | (tb >> 16);
+                ta = ea & ma; tb = eb & mb; ea = (ea ^ ta) | (ta >> 16); eb = (eb ^ tb) | (tb >> 16);
+                ma = ((ea >> 2) & ones) * 255; mb = ((eb >> 2) & ones) * 255;
+                ta = xa & ma; tb = xb & mb; xa = (xa ^ ta) | (ta >> 32); xb = (xb ^ tb) | (tb >> 32);
+                let k0: i32 = 8 - ((ia >> 56) as i32); let kk: i32 = 8 - ((ib >> 56) as i32);
+                // Append xa (k0 bytes, 0..8) then xb (kk bytes).
+                if (k0 > 0) {
+                    acc = acc | (xa << ff); fill += k0;
+                    if (fill >= 8) {
+                        if (at == cap) { o.acc = acc; o.fill = 0; o.at = at; ext::text_lines::spill(o); at = o.at; cap = o.cap; wv = o.w; }
+                        wv[cap-1-at] = acc; at += 1; fill -= 8;
+                        if (fill == 0) { acc = 0; } else { acc = xa >> (((k0 - fill) * 8) as u64); }
+                    }
+                    ff = (fill * 8) as u64;
+                }
+                if (kk > 0) {
+                    acc = acc | (xb << ff); fill += kk;
+                    if (fill >= 8) {
+                        if (at == cap) { o.acc = acc; o.fill = 0; o.at = at; ext::text_lines::spill(o); at = o.at; cap = o.cap; wv = o.w; }
+                        wv[cap-1-at] = acc; at += 1; fill -= 8;
+                        if (fill == 0) { acc = 0; } else { acc = xb >> (((kk - fill) * 8) as u64); }
+                    }
+                    ff = (fill * 8) as u64;
+                }
+                back = (64 - ff) & 63; keep = 0; if (fill != 0) { keep = ext::text_lines::ALL; }
+            }
+            while (j < nw) {
+                let x: u64 = ws[base-j]; let y: u64 = x & low; let dm: u64 = 0; j += 1;
+                if (deleting) {
+                    let l: u64 = (y + da0) ^ (y + db0); let h: u64 = 0;
+                    if (!dsmall) { l = l | ((y + da1) ^ (y + db1)) | ((y + da2) ^ (y + db2)); h = ((y + dah) ^ (y + dbh)) & x; }
+                    dm = (((l | x) ^ x) | h) & high;
+                } else {
+                    let prev: u64 = x << 8; if (last >= 0) { prev = prev | (last as u64); } else { prev = prev | ((x & 255) ^ 255); }
+                    let e: u64 = x ^ prev; let same: u64 = ((((e & low) + low) | e) & high) ^ high;
+                    if (same != 0) {
+                        let l: u64 = (y + sa0) ^ (y + sb0); let h: u64 = 0;
+                        if (!ssmall) { l = l | ((y + sa1) ^ (y + sb1)) | ((y + sa2) ^ (y + sb2)); h = ((y + sah) ^ (y + sbh)) & x; }
+                        dm = (((l | x) ^ x) | h) & same;
+                    }
+                    last = (x >> 56) as i32;
+                }
+                if (dm == 0) {
+                    if (at == cap) { o.acc = acc; o.fill = 0; o.at = at; ext::text_lines::spill(o); at = o.at; cap = o.cap; wv = o.w; }
+                    let word: u64 = acc | (x << ff); wv[cap-1-at] = word; at += 1; acc = (x >> back) & keep;
+                    continue;
+                }
+                let d1: u64 = dm >> 7; let incl: u64 = d1 * ones; let km: u64 = (d1 * 255) ^ ext::text_lines::ALL;
+                let e: u64 = (incl - d1) & km; let xs: u64 = x & km;
+                let m1: u64 = (e & ones) * 255; let xm: u64 = xs & m1; xs = (xs ^ xm) | (xm >> 8); let em: u64 = e & m1; e = (e ^ em) | (em >> 8);
+                let m2: u64 = ((e >> 1) & ones) * 255; xm = xs & m2; xs = (xs ^ xm) | (xm >> 16); em = e & m2; e = (e ^ em) | (em >> 16);
+                let m4: u64 = ((e >> 2) & ones) * 255; xm = xs & m4; xs = (xs ^ xm) | (xm >> 32);
+                let k: i32 = 8 - ((incl >> 56) as i32);
+                if (k > 0) {
+                    acc = acc | (xs << ff); fill += k;
+                    if (fill >= 8) {
+                        if (at == cap) { o.acc = acc; o.fill = 0; o.at = at; ext::text_lines::spill(o); at = o.at; cap = o.cap; wv = o.w; }
+                        wv[cap-1-at] = acc; at += 1; fill -= 8;
+                        if (fill == 0) { acc = 0; } else { acc = xs >> (((k - fill) * 8) as u64); }
+                    }
+                    ff = (fill * 8) as u64; back = (64 - ff) & 63; keep = 0; if (fill != 0) { keep = ext::text_lines::ALL; }
+                }
+            }
+            if (j == nw && j * 8 == n) { break; }
+        }
+        let x: u64 = w.tail; let lanes: i32 = n - nw * 8; if (j < nw) { x = ws[base-j]; lanes = 8; }
+        j += 1;
+        if (lanes == 0) { continue; }
+        let slow: bool = !(fast && lanes == 8);
+        let dm: u64 = 0;
+        if (!slow) {
+            let y: u64 = x & low;
+            if (deleting) {
+                let l: u64 = ((y + da0) ^ (y + db0)) | ((y + da1) ^ (y + db1)) | ((y + da2) ^ (y + db2));
+                dm = ((((l | x) ^ x) | (((y + dah) ^ (y + dbh)) & x)) & high);
+            }
+            if (squeezing) {
+                if (dm != 0) { slow = true; }
+                else {
+                    let prev: u64 = x << 8; if (last >= 0) { prev = prev | (last as u64); } else { prev = prev | ((x & 255) ^ 255); }
+                    let e: u64 = x ^ prev; let same: u64 = ((((e & low) + low) | e) & high) ^ high;
+                    let l: u64 = ((y + sa0) ^ (y + sb0)) | ((y + sa1) ^ (y + sb1)) | ((y + sa2) ^ (y + sb2));
+                    dm = ((((l | x) ^ x) | (((y + sah) ^ (y + sbh)) & x)) & high) & same;
+                    last = (x >> 56) as i32;
+                }
+            }
+        }
+        if (!slow) {
+            // Close the gaps in three steps: each kept byte moves down by
+            // the count of dropped bytes below it, one bit of that count at
+            // a time (no two bytes ever meet).
+            let d1: u64 = dm >> 7; let incl: u64 = d1 * ones; let km: u64 = (d1 * 255) ^ ext::text_lines::ALL;
+            let e: u64 = (incl - d1) & km; let xs: u64 = x & km;
+            let m1: u64 = (e & ones) * 255; let xm: u64 = xs & m1; xs = (xs ^ xm) | (xm >> 8); let em: u64 = e & m1; e = (e ^ em) | (em >> 8);
+            let m2: u64 = ((e >> 1) & ones) * 255; xm = xs & m2; xs = (xs ^ xm) | (xm >> 16); em = e & m2; e = (e ^ em) | (em >> 16);
+            let m4: u64 = ((e >> 2) & ones) * 255; xm = xs & m4; xs = (xs ^ xm) | (xm >> 32);
+            let k: i32 = 8 - ((incl >> 56) as i32);
+            if (k > 0) {
+                acc = acc | (xs << ((fill * 8) as u64)); fill += k;
+                if (fill >= 8) {
+                    if (at == cap) { o.acc = acc; o.fill = 0; o.at = at; ext::text_lines::spill(o); at = o.at; cap = o.cap; wv = o.w; }
+                    wv[cap-1-at] = acc; at += 1; fill -= 8;
+                    if (fill == 0) { acc = 0; } else { acc = xs >> (((k - fill) * 8) as u64); }
+                }
+            }
+            continue;
+        }
+        let sh: u64 = 0; let stop: u64 = (lanes * 8) as u64;
+        while (sh < stop) {
+            let c: i32 = ((x >> sh) & 255) as i32; sh += 8;
+            if (deleting && t[256+c] != 0) { continue; }
+            if (squeezing && c == last && t[512+c] != 0) { continue; }
+            last = c;
+            acc = acc | ((c as u64) << ((fill * 8) as u64)); fill += 1;
+            if (fill == 8) {
+                if (at == cap) { o.acc = acc; o.fill = 0; o.at = at; ext::text_lines::spill(o); at = o.at; cap = o.cap; wv = o.w; }
+                wv[cap-1-at] = acc; at += 1; acc = 0; fill = 0;
+            }
+        }
+    }
+    o.acc = acc; o.fill = fill; o.at = at;
+    st.last = last; w.destroy();
+    return core::result::Ok(0);
+}
+
+// GNU's message for each error.
+fn tr_text(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), count);
+    return core::slice::View { values: bytes, start: 0, length: count };
+}
+pub fn message(e: Error) -> core::slice::View<u8> {
+    return match (e) {
+        Error::MissingOperand -> tr_text("missing operand", 15),
+        Error::ExtraOperand -> tr_text("extra operand", 13),
+        Error::MissingClassName -> tr_text("missing character class name '[::]'", 35),
+        Error::MissingEquivChar -> tr_text("missing equivalence class character '[==]'", 42),
+        Error::InvalidClass -> tr_text("invalid character class", 23),
+        Error::EquivNotSingle -> tr_text("equivalence class operand must be a single character", 52),
+        Error::InvalidRepeat -> tr_text("invalid repeat count in [c*n] construct", 39),
+        Error::ReverseRange -> tr_text("range-endpoints are in reverse collating sequence order", 55),
+        Error::RepeatInSet1 -> tr_text("the [c*] repeat construct may not appear in string1", 51),
+        Error::TwoRepeats -> tr_text("only one [c*] repeat construct may appear in string2", 52),
+        Error::RepeatNotTranslating -> tr_text("the [c*] construct may appear in string2 only when translating", 62),
+        Error::EquivInSet2 -> tr_text("[=c=] expressions may not appear in string2 when translating", 60),
+        Error::ClassInSet2 -> tr_text("when translating, the only character classes that may appear in string2 are 'upper' and 'lower'", 95),
+        Error::Misaligned -> tr_text("misaligned [:upper:] and/or [:lower:] construct", 47),
+        Error::EmptySet2 -> tr_text("when not truncating set1, string2 must be non-empty", 51),
+        Error::Set2EndsWithClass -> tr_text("when translating with string1 longer than string2, the latter string must not end with a character class", 104),
+        Error::ComplementClass -> tr_text("when translating with complemented character classes, string2 must map all characters in the domain to one", 106),
+        Error::LimitExceeded -> tr_text("set too large", 13),
+        Error::AllocationFailed -> tr_text("allocation failed", 17)
+    };
+}

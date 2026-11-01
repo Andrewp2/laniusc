@@ -66,7 +66,7 @@ fn length_changes_preserve_offsets_and_expose_zero_filled_extensions() {
     fs::write(directory.path().join("input"), [0, 128, 255, 97, 98, 99]).unwrap();
     let trace = common::TempArtifact::new("laniusc_resize", "contracts-trace", None);
     checked(
-        &run(Command::new("strace")
+        &run(crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=ftruncate,close,mmap,munmap"])
@@ -129,7 +129,7 @@ fn resize_errors_are_not_retried_and_success_requires_a_zero_result() {
         (Some("ftruncate:retval=1:when=1"), 196),
     ] {
         fs::write(&input, [0, 128, 255, 97, 98, 99]).unwrap();
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())

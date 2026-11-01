@@ -132,7 +132,7 @@ def run(executable, directory, peers, config=None, schedule="ordinary", *,
                str(directory / (client + ".pem")),
                str(directory / ("client-chain.key" if client == "client-chain-full" else client + ".key"))]
     if trace is not None:
-        command = ["strace", "--kill-on-exit", "-qq", "-i", "-s", "96", "-o", str(trace),
+        command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-i", "-s", "96", "-o", str(trace),
                    "-e", "trace=mmap,munmap,openat,open,close,socket,connect,getsockopt,getpeername,sendto,recvfrom,poll,shutdown,clock_gettime,read,write",
                    *[part for fault in faults for part in ("-e", "inject=" + fault)], *command]
     with pool_type(directory, peers, config.concurrency, schedule, expected_failure) as pool:

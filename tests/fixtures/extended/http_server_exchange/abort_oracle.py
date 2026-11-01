@@ -143,7 +143,7 @@ def invoke(executable, target=None):
     evidence = Evidence("abort-cleanup-fault" if target is not None else "abort-cleanup-success")
     peer = None
     trace = evidence.directory / "syscalls.log"
-    command = ["strace", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-o", str(trace),
+    command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-o", str(trace),
                "-e", "signal=none", "-e", "trace=" + TRACE]
     if target is not None:
         command += ["-e", "inject=close:error=EIO:when=%d" % target["ordinal"]]

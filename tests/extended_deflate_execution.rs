@@ -46,7 +46,7 @@ fn encoded_mode(cases: &[Vec<u8>], trace: bool, encode_only: bool) -> Vec<Vec<u8
     packet.write_bytes(&bytes);
     let trace_file = common::TempArtifact::new("laniusc_deflate", "allocation_trace", None);
     let mut command = if trace {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command.args(["-qq", "-o"]).arg(trace_file.path()).args([
             "-e",
             "trace=mmap,munmap,brk",
@@ -156,7 +156,7 @@ fn contracts_execute_strides_offsets_guards_bounds_and_atomic_capacity_failures_
     let trace = common::TempArtifact::new("laniusc_deflate", "contracts_trace", None);
     let output = common::process_output_with_timeout(
         "deflate contracts",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([

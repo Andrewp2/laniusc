@@ -228,7 +228,7 @@ fn core_formatting_runs_without_allocating() {
     let trace = common::TempArtifact::new("laniusc_format_strings", "core_trace", None);
     let output = common::process_output_with_timeout(
         "allocation free format",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([
@@ -260,7 +260,7 @@ fn owned_allocation_failures_free_intermediates_and_empty_or_invalid_formats_all
         let trace = common::TempArtifact::new("laniusc_format_strings", "allocation_trace", None);
         let output = common::process_output_with_timeout(
             "failed owned format",
-            Command::new("strace")
+            crate::common::strace()
                 .args(["-qq", "-o"])
                 .arg(trace.path())
                 .args(["-e", "trace=mmap,munmap", "-e"])
@@ -297,7 +297,7 @@ fn owned_allocation_failures_free_intermediates_and_empty_or_invalid_formats_all
         let trace = common::TempArtifact::new("laniusc_format_strings", "empty_trace", None);
         let output = common::process_output_with_timeout(
             "empty or invalid owned format",
-            Command::new("strace")
+            crate::common::strace()
                 .args(["-qq", "-o"])
                 .arg(trace.path())
                 .args([

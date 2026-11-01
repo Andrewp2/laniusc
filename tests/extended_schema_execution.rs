@@ -810,7 +810,7 @@ fn schema_validation_is_allocation_free_on_strided_scratch_and_compilation_clean
     let exe = executable("contracts");
     let output = common::process_output_with_timeout(
         "schema contracts trace",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap,write"])
@@ -848,7 +848,7 @@ fn schema_validation_is_allocation_free_on_strided_scratch_and_compilation_clean
     let fault = executable("allocation_failure");
     let baseline = common::process_output_with_timeout(
         "schema allocation baseline",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap,write"])
@@ -864,7 +864,7 @@ fn schema_validation_is_allocation_free_on_strided_scratch_and_compilation_clean
     for nth in 1..=count {
         let output = common::process_output_with_timeout(
             "schema mmap failure",
-            Command::new("strace")
+            crate::common::strace()
                 .args(["-qq", "-o"])
                 .arg(trace.path())
                 .args([

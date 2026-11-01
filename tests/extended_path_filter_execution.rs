@@ -190,7 +190,7 @@ fn path_filter_releases_owners_on_every_allocation_and_io_failure() {
     let data = [vec![b'x'; 2500], vec![0], b"tail\0".to_vec()].concat();
     let file = input(&data);
     let execute = |injection: Option<&str>, status| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())

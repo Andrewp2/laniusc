@@ -78,7 +78,7 @@ fn freed(events: &str) -> usize {
 fn typed_facade_preserves_native_values_replacement_limits_and_borrows() {
     let exe = executable("tests/fixtures/extended/settings_contracts.lani");
     let trace = common::TempArtifact::new("laniusc_settings", "contracts", None);
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args(["-e", "trace=mmap,munmap,write"])
@@ -114,7 +114,7 @@ fn settings_application_releases_every_allocation_and_acquired_file_on_failure()
     toml.write_bytes(b"host='toml'\nport=82\nenabled=true\n[nested]\nx='value'\n");
     let trace = common::TempArtifact::new("laniusc_settings", "faults", None);
     let execute = |injection: Option<String>, status| {
-        let mut c = Command::new("strace");
+        let mut c = crate::common::strace();
         c.args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap,open,openat,close,read,write"]);
@@ -169,7 +169,7 @@ fn settings_application_releases_every_allocation_and_acquired_file_on_failure()
         (vec!["--max-input", "1"], None, 6),
         (vec!["--max-nodes", "1"], None, 6),
     ] {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -189,7 +189,7 @@ fn settings_application_releases_every_allocation_and_acquired_file_on_failure()
     }
     toml.write_bytes(b"x=\n");
     let out = run(clean(
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap,open,openat,close,read,write"])
@@ -212,7 +212,7 @@ fn settings_io_retries_interruption_and_partial_output_and_reports_host_failure(
         ("write:retval=1:when=1", 0),
     ] {
         let out = run(clean(
-            Command::new("strace")
+            crate::common::strace()
                 .args(["-qq", "-o"])
                 .arg(trace.path())
                 .args(["-e", "trace=mmap,munmap,write", "-e"])
@@ -250,7 +250,7 @@ fn settings_io_retries_interruption_and_partial_output_and_reports_host_failure(
     assert_eq!(out.status.code(), Some(5));
     assert_eq!(out.stderr, b"settings_inspect: error\n");
     let out = run(clean(
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([
@@ -271,7 +271,7 @@ fn settings_io_retries_interruption_and_partial_output_and_reports_host_failure(
 fn explicit_environment_adapter_preserves_types_absence_and_limits() {
     let exe = executable("tests/fixtures/extended/settings_env_contracts.lani");
     let trace = common::TempArtifact::new("laniusc_settings", "environment", None);
-    let out = run(Command::new("strace")
+    let out = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args(["-e", "trace=mmap,munmap"])
@@ -294,7 +294,7 @@ fn closed_output_pipes_and_signal_setup_failure_preserve_cleanup_and_status() {
     for closed_stderr in [false, true] {
         let (reader, writer) = std::io::pipe().unwrap();
         drop(reader);
-        let mut command = Command::new("timeout");
+        let mut command = crate::common::traced_timeout();
         command
             .args(["--kill-after=1s", "5s", "strace", "-qq", "-o"])
             .arg(trace.path())
@@ -326,7 +326,7 @@ fn closed_output_pipes_and_signal_setup_failure_preserve_cleanup_and_status() {
         assert!(events.find("rt_sigaction(").unwrap() < events.find("mmap(").unwrap());
     }
     let out = run(clean(
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([

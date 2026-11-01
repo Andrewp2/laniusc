@@ -4,6 +4,8 @@
 // --myers (minimal) and --patience print bare GNU-style hunk headers. --word-diff,
 // --char-diff (git's --word-diff-regex=.) and --stat also follow git.
 // usage: seq-diff [-U N] [-W|--function-context] [--xdiff|--histogram|--myers|--patience] [--word-diff|--char-diff|--stat[=W[,N[,C]]]] OLD NEW
+// Options are parsed by std::cli (GNU getopt_long rules: -U3, --unified=3,
+// unique prefixes such as --hist); see --help.
 // Exit 0 identical, 1 different, 2 usage/limits/I/O failure.
 module app::main;
 import alloc::io;
@@ -20,6 +22,7 @@ import ext::seqdiff;
 import ext::unidiff;
 import ext::wordiff;
 import std::args;
+import std::cli;
 import std::file;
 import std::fs;
 import std::file_ops;
@@ -145,34 +148,57 @@ fn stat_values(v: core::slice::View<u8>, from: i32, stat: &ext::diffstat::StatOp
     }
     return true;
 }
-fn starts(arg: core::slice::View<u8>, prefix: core::slice::View<u8>) -> bool { return arg.len() >= prefix.len() && same(core::result::unwrap(core::slice::view_range(arg.values, arg.start, prefix.len())), prefix); }
 fn main() -> i32 {
     let captured: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1, 32, 16384);
     if (core::result::is_err(captured)) { return complain("seq-diff: bad arguments\n", 24); }
     let arguments: std::args::Arguments = core::result::unwrap(captured);
+    let cli: std::cli::Command = std::cli::command(literal("seq-diff", 8), literal("Compare OLD and NEW line by line in unified diff format.", 56));
+    cli.option(1, 85, literal("unified", 7), literal("NUM", 3), literal("output NUM (default 3) lines of context", 39));
+    cli.flag(2, 87, literal("function-context", 16), literal("show whole functions as context (git -W)", 40));
+    cli.flag(3, 0, literal("xdiff", 5), literal("git's default algorithm (default)", 33));
+    cli.flag(4, 0, literal("histogram", 9), literal("git's histogram algorithm", 25));
+    cli.flag(5, 0, literal("myers", 5), literal("minimal Myers diff, GNU hunk headers", 36));
+    cli.flag(6, 0, literal("patience", 8), literal("patience diff, GNU hunk headers", 31));
+    cli.optional(7, 0, literal("word-diff", 9), literal("plain", 5), literal("show changed words (only the plain mode)", 40));
+    cli.option(8, 0, literal("word-diff-regex", 15), literal("REGEX", 5), literal("only '.': show changed characters", 33));
+    cli.flag(9, 0, literal("char-diff", 9), literal("show changed characters", 23));
+    cli.optional(10, 0, literal("stat", 4), literal("W[,N[,C]]", 9), literal("show a diffstat: width, name width, count", 41));
+    cli.help(11);
+    cli.operands(literal("OLD NEW", 7), 2, 2);
+    let parsed: core::result::Result<std::cli::Matches, std::cli::Error> = cli.parse(arguments.as_view());
+    if (core::result::is_err(parsed)) { cli.print_error(core::result::unwrap_err(parsed), arguments.as_view()); cli.destroy(); arguments.destroy(); return 2; }
+    let matches: std::cli::Matches = core::result::unwrap(parsed);
     let context: i32 = 3; let algorithm: ext::seqdiff::Algorithm = ext::seqdiff::Algorithm::Xdiff; let mode: i32 = 0; let function: bool = false; let stat: ext::diffstat::StatOptions = ext::diffstat::default_stat_options();
-    let names: [core::slice::View<u8>;2] = [literal("", 0); 2]; let count: i32 = 0; let ok: bool = true; let i: i32 = 0;
-    while (i < arguments.len() && ok) {
-        let arg: core::slice::View<u8> = core::option::unwrap(arguments.get(i));
-        if (same(arg, literal("--patience", 10))) { algorithm = ext::seqdiff::Algorithm::Patience; }
-        else { if (same(arg, literal("--xdiff", 7))) { algorithm = ext::seqdiff::Algorithm::Xdiff; }
-        else { if (same(arg, literal("--histogram", 11))) { algorithm = ext::seqdiff::Algorithm::Histogram; }
-        else { if (same(arg, literal("--word-diff", 11)) || same(arg, literal("--word-diff=plain", 17))) { mode = 1; }
-        else { if (same(arg, literal("--char-diff", 11)) || same(arg, literal("--word-diff-regex=.", 19))) { mode = 2; }
-        else { if (same(arg, literal("--stat", 6))) { mode = 3; }
-        else { if (starts(arg, literal("--stat=", 7))) { mode = 3; ok = stat_values(arg, 7, stat.borrow()); }
-        else { if (same(arg, literal("--myers", 7))) { algorithm = ext::seqdiff::Algorithm::Myers; }
-        else { if (same(arg, literal("--function-context", 18)) || same(arg, literal("-W", 2))) { function = true; }
-        else { if (same(arg, literal("-U", 2)) && i + 1 < arguments.len()) {
-            i += 1; let v: core::slice::View<u8> = core::option::unwrap(arguments.get(i));
-            let parsed: core::result::Result<u64, core::decimal::ParseError> = core::decimal::parse_u64_range(v.values, v.start, v.len());
-            if (core::result::is_err(parsed) || core::result::unwrap(parsed) > 1000000 as u64) { ok = false; } else { context = core::result::unwrap(parsed) as i32; }
+    let ok: bool = true; let help: bool = false; let i: i32 = 0;
+    // Options apply in argument order, so a later algorithm or mode wins.
+    while (i < matches.occurrences() && ok) {
+        let id: i32 = matches.occurrence_id(i);
+        let value: core::option::Option<core::slice::View<u8>> = matches.occurrence_value(i);
+        if (id == 1) {
+            let v: core::slice::View<u8> = core::option::unwrap(value);
+            let number: core::result::Result<u64, core::decimal::ParseError> = core::decimal::parse_u64_range(v.values, v.start, v.len());
+            if (core::result::is_err(number) || core::result::unwrap(number) > 1000000 as u64) { ok = false; } else { context = core::result::unwrap(number) as i32; }
         }
-        else { if (count < 2) { names[count] = arg; count += 1; } else { ok = false; } } } } } } } } } } }
+        if (id == 2) { function = true; }
+        if (id == 3) { algorithm = ext::seqdiff::Algorithm::Xdiff; }
+        if (id == 4) { algorithm = ext::seqdiff::Algorithm::Histogram; }
+        if (id == 5) { algorithm = ext::seqdiff::Algorithm::Myers; }
+        if (id == 6) { algorithm = ext::seqdiff::Algorithm::Patience; }
+        if (id == 7) { mode = 1; if (value.is_some() && !same(value.unwrap(), literal("plain", 5))) { ok = false; } }
+        if (id == 8) { mode = 2; if (!same(core::option::unwrap(value), literal(".", 1))) { ok = false; } }
+        if (id == 9) { mode = 2; }
+        if (id == 10) {
+            mode = 3;
+            if (value.is_some()) { ok = stat_values(value.unwrap(), 0, stat.borrow()); }
+        }
+        if (id == 11) { help = true; }
         i += 1;
     }
     let status: i32 = 2;
-    if (!ok || count != 2) { status = complain("usage: seq-diff [-U N] [-W|--function-context] [--xdiff|--histogram|--myers|--patience] [--word-diff|--char-diff|--stat[=W[,N[,C]]]] OLD NEW\n", 141); }
-    else { status = run(names[0], names[1], context, algorithm, mode, stat, function); }
-    arguments.destroy(); return status;
+    if (help) { status = 0; if (!cli.print_help(-1)) { status = 2; } }
+    else {
+        if (!ok) { status = complain("seq-diff: invalid option value\nTry 'seq-diff --help' for more information.\n", 75); }
+        else { status = run(matches.operand(0), matches.operand(1), context, algorithm, mode, stat, function); }
+    }
+    matches.destroy(); cli.destroy(); arguments.destroy(); return status;
 }

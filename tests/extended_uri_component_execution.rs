@@ -164,7 +164,7 @@ fn uri_component_releases_all_owners_on_allocation_and_output_failures() {
     let text = "%41".repeat(2500);
     let expected = vec![b'A'; 2500];
     let execute = |injection: Option<&str>, status| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())

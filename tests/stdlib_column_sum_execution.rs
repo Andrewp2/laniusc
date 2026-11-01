@@ -127,7 +127,7 @@ fn run(
     let data = common::TempArtifact::new("laniusc_column_sum", "stdin", None);
     data.write_bytes(input);
     let trace = common::TempArtifact::new("laniusc_column_sum", "trace", None);
-    let mut command = Command::new("timeout");
+    let mut command = crate::common::traced_timeout();
     command
         .args(["--kill-after=1s", "5s", "strace", "-qq", "-o"])
         .arg(trace.path())

@@ -243,7 +243,7 @@ fn copying_and_appending_borrowed_text_preserve_owners_on_allocation_failure() {
     let exe = executable("alloc_text_failure");
     let trace = common::TempArtifact::new("laniusc_text", "trace", None);
     let run = |when: Option<usize>| {
-        let mut command = std::process::Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())

@@ -70,7 +70,7 @@ fn text_sentences_real_closed_output_pipes_and_preallocation_signal_failure() {
         } else {
             b"Hello. World!\n".as_slice()
         });
-        let mut command = Command::new("timeout");
+        let mut command = crate::common::traced_timeout();
         command
             .args(["--kill-after=1s", "8s", "strace", "-qq", "-o"])
             .arg(trace.path())

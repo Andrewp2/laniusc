@@ -48,7 +48,7 @@ fn run(
 ) -> Run {
     let events = common::TempArtifact::new("laniusc_sparse_product", "trace", None);
     let input = common::TempArtifact::new("laniusc_sparse_product", "operation", None);
-    let mut command = Command::new("strace");
+    let mut command = crate::common::strace();
     command.args(["-qq", "-o"]).arg(events.path()).args([
         "-e",
         "trace=mmap,mremap,munmap,brk",

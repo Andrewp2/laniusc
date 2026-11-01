@@ -148,7 +148,7 @@ fn observed(events: &str, phases: usize, expected_exit: i32) -> Profile {
 
 fn run(file: &common::TempArtifact, fault: Option<usize>, phases: usize) -> Profile {
     let trace = common::TempArtifact::new("laniusc_buffered_seek", "trace", None);
-    let mut command = Command::new("strace");
+    let mut command = crate::common::strace();
     command
         .args(["-qq", "-s", "64", "-o"])
         .arg(trace.path())

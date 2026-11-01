@@ -24,7 +24,7 @@ fn byte(view: core::slice::View<u8>, at: i32) -> u8 { return core::option::unwra
 fn part(view: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> { return core::result::unwrap(view.subview(start,end)); }
 fn literal(value: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(raw,count)); }
 fn lower(value: u8) -> u8 { if (value >= 65 && value <= 90) { return value+32; } return value; }
-pub fn equal_name(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool { if (!valid(left) || !valid(right) || left.len() != right.len()) { return false; } let i: i32 = 0; while (i < left.len()) { if (lower(byte(left,i)) != lower(byte(right,i))) { return false; } i += 1; } return true; }
+pub fn equal_name(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool { if (left.len() != right.len() || !valid(left) || !valid(right)) { return false; } let i: i32 = 0; while (i < left.len()) { if (lower(byte(left,i)) != lower(byte(right,i))) { return false; } i += 1; } return true; }
 fn exact(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool { if (left.len() != right.len()) { return false; } let i: i32 = 0; while (i < left.len()) { if (byte(left,i) != byte(right,i)) { return false; } i += 1; } return true; }
 fn named(value: core::slice::View<u8>, name: str, count: i32) -> bool { return equal_name(value,literal(name,count)); }
 fn digit(value: u8) -> bool { return value >= 48 && value <= 57; }

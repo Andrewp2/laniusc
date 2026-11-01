@@ -218,7 +218,7 @@ fn traced(exe: &common::TempArtifact, name: &str) -> String {
     let trace = common::TempArtifact::new("laniusc_collection_iterator", name, None);
     let output = common::process_output_with_timeout(
         name,
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap"])
