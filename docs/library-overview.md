@@ -33,6 +33,20 @@ owner fields, and the interval-edit fixture shows under an in-program
 RLIMIT_AS denial that failed extraction leaves the source unchanged. Native receipts use the prebuilt compiler; the two registered
 Rust tests type-check and await a full test-binary run.
 The [concurrency increment](stdlib-concurrency.md) adds four modules for parallel
+The [`std::pthread`](stdlib-threads.md) increment runs native threads
+through `pthread_create`/`pthread_join`, with Lanius functions as C entries.
+Threads coordinate with std::sync's futex Mutex and Condvar. Its fixture
+checks parallel sums against the serial sum, an exact Mutex counter, a
+Condvar queue and 1,000 spawn/join pairs. `std::par` adds thread-crew sorts
+that pass the same model oracle.
+The [`std::uring`](stdlib-uring.md) increment drives io_uring through raw
+syscalls (setup, ring mmaps, enter). It adds read, write, readv, writev,
+openat, close, accept, recv and send operations, linked SQEs, and completion
+backpressure that keeps the CQ from overflowing. `Ring::transfer` is a
+batched copy engine. The `uring_cat` and `uring_copy` samples match GNU
+`cat` and `cp` on a 97-case oracle per seed. A 512 MiB file goes to a new
+file in 131 ms with overlapped positional writes, against 169 ms for GNU
+`cat`.
 The [`core::search`](stdlib-search.md) increment adds SWAR byte scans and a
 rarest-byte substring prefilter, used by `Text::find` and the parallel
 grep. A budgeted Two-Way (Crochemore–Perrin) fallback keeps the worst case
@@ -1595,6 +1609,14 @@ NSS, pooling/keepalive and broader connected WebSocket policies remain open;
 the generic borrowed client handoff has its separate acceptance above.
 
 **Accepted command completion.**
+
+[`std::cli`](stdlib-cli.md) parses arguments declaratively with GNU
+`getopt_long` rules: unique long-option prefixes, `-abc` clusters, `--opt=value`
+and `--opt value`, optional values, `--`, operand counts and subcommands. It
+generates `--help` text and prints glibc's messages (`unrecognized option
+'--x'`, `option '--co' is ambiguous; possibilities: ...`). It agrees with a
+Python model, itself checked against Python `getopt`, on 6,026 generated and
+fixed cases and 7 help texts. The `tgz` and `seq-diff` samples use it.
 
 [Portable completion and the Bash adapter](extended-cli-complete.md) separate
 three allocation-free modules from host behavior. `ext::cli_complete` reuses

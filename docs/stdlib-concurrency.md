@@ -241,7 +241,55 @@ search. Every worker therefore shares even the last round, which merges the
 two halves of the whole array. `scratch` must be as long as `data`; if the
 round count is odd, a parallel copy moves the result back. Errors are
 `InvalidPlan`, `LengthMismatch`, `Failed` (a worker exited nonzero or work
-was left pending), `Steal`, `Sync` and `Worker`.
+was left pending), `Steal`, `Sync`, `Worker` and `Thread`.
+
+### Threaded sorts
+
+`sort_unstable_threads(plan, data, scratch, entry)` and
+`sort_stable_threads(...)` run the same phases with a crew of `workers - 1`
+[`std::pthread`](stdlib-threads.md) threads instead of forked children. The
+threads share the caller's address space, so nothing is forked and nothing
+is copied. A thread's start routine must be a non-generic `fn (ptr) -> ptr`,
+so the caller passes a one-line entry for its element type:
+
+```lani
+fn key_crew(arg: ptr) -> ptr { return std::par::crew_entry<i64>(arg); }
+std::par::sort_unstable_threads(plan, keys, spare, key_crew).unwrap();
+```
+
+The entry must instantiate `crew_entry` with the `T` of that sort. Each
+worker's record (plan, data, scratch, index) sits in the plan's crew area.
+The crew threads start once per sort and are all joined before it returns.
+`par_sort.lani` modes 10 and 11 run these two sorts. The model oracle now
+covers 12 modes, 4,320 runs over 8 seeds, with 0 mismatches.
+
+Fork and thread crews on 10M i64 keys, in ms, at 8 workers, interleaved.
+The load average was 24–27 from other jobs, so read the ranges, not single
+runs:
+
+| Sort | Forked crew | Thread crew |
+| --- | --- | --- |
+| unstable, i64 | 504–964 | 469–541 |
+| stable, (key, index) records | 1,996–2,335 | 2,968–3,779 |
+
+On 2M keys, again in ms, the two crews are equal at 1 worker. From 2
+workers up, the unstable thread sort is 8–15% faster and the stable thread
+sort is 1.4–1.5x slower:
+
+| Workers | Unstable, fork | Unstable, threads | Stable, fork | Stable, threads |
+| --- | --- | --- | --- | --- |
+| 1 | 324 | 352 | 1,396 | 1,391 |
+| 2 | 250 | 226 | 764 | 1,080 |
+| 4 | 130 | 120 | 567 | 790 |
+| 8 | 74 | 63 | 301 | 463 |
+
+The stable slowdown is user time: 18–19 s of CPU against 11.7 s forked,
+with fewer page faults (127k against 243k). Both crews run the same code on
+the same shared arrays, so the extra cycles look like threads contending on
+something processes keep private while sorting two-word records. A probe of
+record-returning calls (`target/claude-work/s4/thr/scale.lani`) gave exact
+results and showed no record-specific slowdown, so the cause is still open.
+The forked sorts stay the default.
 
 ## Samples
 

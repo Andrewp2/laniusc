@@ -202,6 +202,9 @@ pub fn condvar(region: &Region) -> core::result::Result<Condvar, Error> {
     let base: ptr = at.unwrap();
     return core::result::Ok(Condvar { sequence: base, waiters: base + 8 });
 }
+// A Condvar over two caller-chosen zeroed words at words and words + 8
+// (16 bytes, 8-aligned), e.g. for threads that rebuild it from a pointer.
+pub fn condvar_at(words: ptr) -> Condvar { return Condvar { sequence: words, waiters: words + 8 }; }
 pub impl Condvar {
     pub fn borrow(&self) -> &Condvar { return self; }
     fn word(&self) -> std::atomic::Atomic32 { return std::atomic::at32(self.sequence); }

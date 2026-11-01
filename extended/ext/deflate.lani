@@ -648,7 +648,7 @@ fn level_slide(e: &Encoder) {
 fn level_hash(four: u64) -> i32 { return (((four*2654435761) & 4294967295) >> 17) as i32; }
 fn level_insert(e: &Encoder, bytes: [u8], at: i32) {
     let w: [i32] = e.scratch.values; let s0: i32 = e.scratch.start;
-    let four: u64 = ((bytes[at] as u64) << 24) | ((bytes[at+1] as u64) << 16) | ((bytes[at+2] as u64) << 8) | (bytes[at+3] as u64);
+    let four: u64 = (bytes[at] as u64) | ((bytes[at+1] as u64) << 8) | ((bytes[at+2] as u64) << 16) | ((bytes[at+3] as u64) << 24);
     let key: i32 = s0+HEAD+level_hash(four); let position: i32 = e.origin+at;
     let old: i32 = w[key]; w[s0+PREV+(position & 32767)] = old; w[key] = position;
 }
@@ -683,33 +683,28 @@ fn level_block(e: &Encoder, begin: i32, end: i32, final_block: bool) {
     let lf: [i32;286] = [0;286]; let df: [i32;30] = [0;30]; let bits: i32 = 0; let count: i32 = 0;
     let origin: i32 = e.origin; let chain: i32 = e.chain; let lazy: i32 = e.lazy; let nice: i32 = e.nice; let good: i32 = e.good;
     let p: i32 = begin; let prev_len: i32 = 2; let prev_dist: i32 = 0; let held: bool = false; let held_byte: i32 = 0;
-    // Before position p, t holds bytes p..p+2; the loop shifts in p+3, so
-    // t holds the four hashed bytes (byte p highest) and h is their hash.
-    // Absolute positions start at 32768, so an empty head (-1) is always
-    // out of range.
-    let t: u64 = ((bytes[begin] as u64) << 16) | ((bytes[begin+1] as u64) << 8) | (bytes[begin+2] as u64);
+    // Each position's hash comes from its own unaligned word load, so no
+    // rolling state chains one position to the next (in the generated code a
+    // loop-carried value costs a store and reload per operation). Absolute
+    // positions start at 32768, so an empty head (-1) is always out of range.
     let h: i32 = 0;
     let hashing: i32 = end-3; let here: i32 = origin+p;
     while (p < end) {
-        let cur_len: i32 = 2; let cur_dist: i32 = 0;
+        let cur_len: i32 = 2; let cur_dist: i32 = 0; let literal: i32 = 0;
         if (p < hashing) {
-            let next_byte: i32 = (t & 255) as i32;
-            t = ((t << 8) | (bytes[p+3] as u64)) & 4294967295; h = (((t*2654435761) & 4294967295) >> 17) as i32;
+            let pq: i32 = p >> 3; let wsh: i32 = (p & 7) << 3;
+            let wp: u64 = whole[units-1-pq];
+            if (wsh != 0) { wp = (wp >> (wsh as u64)) | (whole[units-2-pq] << ((64-wsh) as u64)); }
+            literal = (wp & 255) as i32;
+            h = (((wp*2654435761) & 4294967295) >> 17) as i32;
             let c: i32 = w[s0+h]; w[s0+PREV+(here & 32767)] = c; w[s0+h] = here;
             let limit: i32 = here-32768;
             if (c > limit && (prev_len < lazy || lazy == 0)) {
                 let best: i32 = prev_len; let left: i32 = chain; if (prev_len >= good) { left = left >> 2; }
-                let scan_end: i32 = next_byte; if (best > 2) { scan_end = bytes[p+best] as i32; }
-                let wp: u64 = 0; let loaded: bool = false;
+                let scan_end: i32 = ((wp >> 16) & 255) as i32; if (best > 2) { scan_end = bytes[p+best] as i32; }
                 while (c > limit && left > 0) {
                     let ci: i32 = c-origin;
                     if ((bytes[ci+best] as i32) == scan_end) {
-                        let pq: i32 = p >> 3; let wsh: i32 = (p & 7) << 3;
-                        if (!loaded) {
-                            wp = whole[units-1-pq];
-                            if (wsh != 0) { wp = (wp >> (wsh as u64)) | (whole[units-2-pq] << ((64-wsh) as u64)); }
-                            loaded = true;
-                        }
                         let maximum: i32 = end-p; if (maximum > 258) { maximum = 258; }
                         // Word compare; past maximum only stale bytes remain.
                         let length: i32 = 0; let probe: u64 = wp;
@@ -744,8 +739,7 @@ fn level_block(e: &Encoder, begin: i32, end: i32, final_block: bool) {
                     if (best == 3 && cur_dist > 4096) { cur_len = 2; cur_dist = 0; }
                 }
             }
-        } else { t = (t << 8) & 4294967295; }
-        // t >> 24 is byte p.
+        } else { literal = bytes[p] as i32; }
         let take: i32 = 0; let take_dist: i32 = 0; let at: i32 = p;
         if (lazy == 0) {
             if (cur_len >= 3) { take = cur_len; take_dist = cur_dist; }
@@ -755,33 +749,33 @@ fn level_block(e: &Encoder, begin: i32, end: i32, final_block: bool) {
         if (take >= 3) {
             let item: i32 = lengths[take]; let dist: i32 = 0;
             if (take_dist <= 256) { dist = near[take_dist-1]; } else { dist = near[256+((take_dist-1) >> 7)]; }
-            w[s0+SYMBOLS+count] = (take << 16) | take_dist; count += 1;
+            // A match symbol: 1 << 30 | length symbol | extra value << 5 |
+            // distance symbol << 10 | extra value << 15, ready to emit.
+            let packed_match: i32 = 1073741824 | (item & 31) | ((take-(item >> 8)) << 5) | ((dist & 31) << 10) | ((take_dist-(dist >> 9)) << 15);
+            w[s0+SYMBOLS+count] = packed_match; count += 1;
             lf[257+(item & 31)] += 1; df[dist & 31] += 1; bits += ((item >> 5) & 7)+((dist >> 5) & 15);
             // Hash the rest of the match; p itself is already in.
             let next: i32 = at+take; let stop: i32 = next; if (stop > hashing) { stop = hashing; }
-            // New hash bytes come from aligned words, up to eight per load.
+            // Each position's four bytes come from one or two aligned words.
             let r: i32 = p+1; here += 1; let chained: i32 = s0+PREV;
             // Like zlib's fast levels, a match longer than nice skips the
             // positions inside it.
             if (take > nice) { r = stop; }
             while (r < stop) {
-                let ahead: i32 = r+3; let v: u64 = whole[units-1-(ahead >> 3)] >> (((ahead & 7) << 3) as u64);
-                let n: i32 = 8-(ahead & 7); if (n > stop-r) { n = stop-r; }
-                r += n;
-                while (n > 0) {
-                    t = ((t << 8) | (v & 255)) & 4294967295; h = (((t*2654435761) & 4294967295) >> 17) as i32;
-                    let old: i32 = w[s0+h]; w[chained+(here & 32767)] = old; w[s0+h] = here;
-                    v = v >> 8; here += 1; n -= 1;
-                }
+                let rq: i32 = units-1-(r >> 3); let ro: i32 = (r & 7) << 3;
+                let v: u64 = whole[rq] >> (ro as u64);
+                if (ro > 32) { v = v | (whole[rq-1] << ((64-ro) as u64)); }
+                h = (((v*2654435761) & 4294967295) >> 17) as i32;
+                let old: i32 = w[s0+h]; w[chained+(here & 32767)] = old; w[s0+h] = here;
+                r += 1; here += 1;
             }
-            t = ((bytes[next] as u64) << 16) | ((bytes[next+1] as u64) << 8) | (bytes[next+2] as u64);
             here = origin+next; p = next; held = false; prev_len = 2; prev_dist = 0;
         } else {
             if (lazy == 0) {
-                let b: i32 = (t >> 24) as i32; w[s0+SYMBOLS+count] = b; count += 1; lf[b] += 1;
+                let b: i32 = literal; w[s0+SYMBOLS+count] = b; count += 1; lf[b] += 1;
             } else {
                 if (held) { let b: i32 = held_byte; w[s0+SYMBOLS+count] = b; count += 1; lf[b] += 1; }
-                held = true; held_byte = (t >> 24) as i32; prev_len = cur_len; prev_dist = cur_dist;
+                held = true; held_byte = literal; prev_len = cur_len; prev_dist = cur_dist;
             }
             p += 1; here += 1;
         }
@@ -791,7 +785,7 @@ fn level_block(e: &Encoder, begin: i32, end: i32, final_block: bool) {
     index = 0; while (index < 286) { w[s0+LIT_FREQ+index] = lf[index]; index += 1; }
     index = 0; while (index < 30) { w[s0+DIST_FREQ+index] = df[index]; index += 1; }
     if (!final_block) { e.hashed = origin+end-3; }
-    level_code(e,bytes,begin,end,count,bits,lengths,near,final_block);
+    level_code(e,begin,end,count,bits,final_block);
 }
 
 // Huffman code lengths for freq[0..n), at most limit bits, into len[0..n):
@@ -923,7 +917,7 @@ impl Bits {
 }
 
 // Choose dynamic, fixed or stored for the parsed block and write it.
-fn level_code(e: &Encoder, bytes: [u8], begin: i32, end: i32, count: i32, extra_bits: i32, lengths: [i32;259], near: [i32;512], final_block: bool) {
+fn level_code(e: &Encoder, begin: i32, end: i32, count: i32, extra_bits: i32, final_block: bool) {
     let w: [i32] = e.scratch.values; let s0: i32 = e.scratch.start;
     level_lengths(e,LIT_FREQ,286,15,LIT_LEN); level_lengths(e,DIST_FREQ,30,15,DIST_LEN);
     let hlit: i32 = 286; while (hlit > 257 && w[s0+LIT_LEN+hlit-1] == 0) { hlit -= 1; }
@@ -986,13 +980,13 @@ fn level_code(e: &Encoder, bytes: [u8], begin: i32, end: i32, count: i32, extra_
                 let code: i32 = w[s0+LIT_CODE+value]; v = (code >> 4) as u64; width = code & 15;
             } else {
                 // Length then distance, up to 20 + 28 bits.
-                let take: i32 = value >> 16; let distance: i32 = value & 65535;
-                let item: i32 = lengths[take]; let code: i32 = w[s0+LIT_CODE+257+(item & 31)];
-                let field: i32 = (code >> 4) | ((take-(item >> 8)) << (code & 15)); let lw: i32 = (code & 15)+((item >> 5) & 7);
-                let dist: i32 = 0; if (distance <= 256) { dist = near[distance-1]; } else { dist = near[256+((distance-1) >> 7)]; }
-                let dcode: i32 = w[s0+DIST_CODE+(dist & 31)];
-                let dfield: i32 = (dcode >> 4) | ((distance-(dist >> 9)) << (dcode & 15));
-                v = (field as u32 as u64) | ((dfield as u32 as u64) << (lw as u64)); width = lw+(dcode & 15)+((dist >> 5) & 15);
+                let symbol: i32 = value & 31; let code: i32 = w[s0+LIT_CODE+257+symbol];
+                let lx: i32 = 0; if (symbol >= 8 && symbol < 28) { lx = (symbol-4) >> 2; }
+                let field: i32 = (code >> 4) | (((value >> 5) & 31) << (code & 15)); let lw: i32 = (code & 15)+lx;
+                let ds: i32 = (value >> 10) & 31; let dcode: i32 = w[s0+DIST_CODE+ds];
+                let dx: i32 = 0; if (ds >= 4) { dx = (ds >> 1)-1; }
+                let dfield: i32 = (dcode >> 4) | (((value >> 15) & 8191) << (dcode & 15));
+                v = (field as u32 as u64) | ((dfield as u32 as u64) << (lw as u64)); width = lw+(dcode & 15)+dx;
             }
             let total: i32 = bitcount+width;
             if (total < 64) { acc = acc | (v << (bitcount as u64)); bitcount = total; }

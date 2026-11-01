@@ -131,9 +131,10 @@ tests separately cover append growth failure.
 
 ## Ownership and publication
 
-Each parsed Record owns its decoded bytes and field spans; the Table owns the
-row Vec. `table.rows.take()` resets the actual table descriptor before the
-empty Table is destroyed. Nontrivial moves extract the selected block, split
+Each parsed Record owns its decoded bytes and field spans. An `ext::csv`
+Table is packed and owns no per-row Records, so the program decodes with
+`ext::csv::Decoder` and moves each completed record into its row Vec with
+`take_record`. Nontrivial moves extract the selected block, split
 the remainder at the adjusted destination, append the block and append the
 suffix. Successful appends leave donor reservations with no active entries;
 those reservations are explicitly destroyed. Every failure path retires only
