@@ -109,6 +109,8 @@ STEPS = [
     # F11: laniusc's own test programs, a seeded sample of them, run both ways.
     ('programs', ['programs_oracle.py', '{w}', '--sample', '60', '--seed', '{s}'],
      ['lean', 'run_all', 'laniusc', 'stdlib', 'programs', 'extended_all'], False),
+    # Random well-typed programs in the verified compiler's subset, run both ways (fuzz_oracle.py).
+    ('fuzz', ['fuzz_oracle.py', '{w}', '--count', '200', '--seed', '{s}'], ['run_all', 'laniusc', 'stdlib'], False),
     # F11: every extended/ module's testable targets, as stdlib-* tests the stdlib's.
     ('extended', ['stdlib_oracle.py', '{w}', '--root', 'extended', '--seed', '{s}'],
      ['run_all', 'laniusc', 'stdlib', 'extended_all'], False),
