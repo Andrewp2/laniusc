@@ -591,6 +591,46 @@ Cartesian repetition across every type/layout. Historical codec receipts keep
 their original API/source scope; the accepted profile is native Linux x86_64
 CPU output, with broader library/target/lifetime work open.
 
+**Named host clocks and child CPU time.**
+
+The [host-clock guide](stdlib-host-clocks.md) adds `std::host_clocks`: nine
+named Linux clocks plus other-process CPU clocks, typed by kind (wall
+timestamps, steady instants, CPU durations), clock resolutions, absolute
+`clock_nanosleep` waits that keep their target across EINTR, and a Boottime
+`std::clock::Monotonic` provider for suspend-inclusive deadlines. A blocking
+non-reaping `std::command::Child::observe_exit()` lets the
+[time-command](stdlib-host-clocks.md#application-time-command) program read a
+child's exact final CPU time before reaping it. The self-checking contracts
+program and the cli50/timing21/clocks48 oracle groups pass as direct runs of the
+compiled programs on native Linux x86_64; two existing command-group oracles
+pass after the observation change.
+
+**Timers and child resource usage.**
+
+The [timer guide](stdlib-timers.md) adds `std::timer`, a manual timerfd owner
+for one-shot and periodic timers on Monotonic, Boottime, Realtime and the two
+alarm clocks, armed relative, at an absolute instant or timestamp (optionally
+cancel-on-set), with blocking `wait()` and nonblocking `try_wait()` expiration
+counts that include overruns. Alarm clocks join `std::host_clocks`; their
+waits and timers report EPERM without CAP_WAKE_ALARM. The
+[resource-usage guide](stdlib-child-usage.md) adds wait4 reaps with rusage and
+getrusage totals to `std::command`. The timer and usage contracts programs, the
+[timer-ticks](stdlib-timers.md#application-timer-ticks) cli19/ticks138 groups
+and the [child-usage](stdlib-child-usage.md#application-child-usage)
+cli39/usage42 groups pass as direct runs on native Linux x86_64.
+
+**Event loop and process descriptors.**
+
+The [event-loop guide](stdlib-event-loop.md) adds `std::event`, an epoll
+owner that multiplexes pipes, sockets, timerfds and child pidfds with 64-bit
+caller tokens, level-triggered or oneshot interest, millisecond waits and
+EINTR-stable `Deadline` waits through `epoll_pwait2`. `close()` refuses while
+registrations remain. Pidfds report a child's exit before the reap and signal
+exactly that process. The contracts program and the
+[tee-children](stdlib-event-loop.md#application-tee-children) cli56/tee12571
+groups, which tee two children's output with timestamps and kill them on a
+timeout, pass as direct runs on native Linux x86_64.
+
 **Shared random-source budgets.**
 
 The [draw-budget guide](stdlib-random-budget.md) specifies one borrowed adapter,

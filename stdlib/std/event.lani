@@ -1,0 +1,192 @@
+// Linux x86_64 epoll event loop and process descriptors (pidfds). Level-
+// triggered readiness for pipes, sockets, timerfds and pidfds; caller tokens;
+// deadline waits; explicit registration ownership. No allocation.
+// See docs/stdlib-event-loop.md.
+module std::event;
+import core::mem;
+import core::result;
+import core::slice;
+import core::time;
+import std::host_clocks;
+import std::linux;
+
+// StillRegistered(n): close() refused while n registrations remain.
+pub enum Error { Host(i32), Closed, Bounds, StillRegistered(i32), InvalidResult, Clock(std::host_clocks::Error) }
+pub const MAX_EVENTS: i32 = 64;
+const IN: u32 = 1; const PRI: u32 = 2; const OUT: u32 = 4; const ERR: u32 = 8; const HUP: u32 = 16; const RDHUP: u32 = 8192; const ONESHOT: u32 = 1073741824;
+
+// Error and hangup are always reported, whatever the interest.
+pub struct Interest { bits: u32 }
+pub fn readable() -> Interest { return Interest { bits: IN }; }
+pub fn writable() -> Interest { return Interest { bits: OUT }; }
+pub fn read_write() -> Interest { return Interest { bits: IN | OUT }; }
+pub impl Interest {
+    // Also report a peer's write-side shutdown on stream sockets (EPOLLRDHUP).
+    pub fn with_read_closed(&self) -> Interest { return Interest { bits: self.bits | RDHUP }; }
+    pub fn with_priority(&self) -> Interest { return Interest { bits: self.bits | PRI }; }
+    // Report once, then stay registered but silent until modify() rearms it.
+    pub fn oneshot(&self) -> Interest { return Interest { bits: self.bits | ONESHOT }; }
+}
+pub struct Event { token: u64, bits: u32 }
+pub impl Event {
+    pub fn readable(&self) -> bool { return (self.bits & IN) != 0; }
+    pub fn priority(&self) -> bool { return (self.bits & PRI) != 0; }
+    pub fn writable(&self) -> bool { return (self.bits & OUT) != 0; }
+    pub fn error(&self) -> bool { return (self.bits & ERR) != 0; }
+    pub fn hangup(&self) -> bool { return (self.bits & HUP) != 0; }
+    pub fn read_closed(&self) -> bool { return (self.bits & RDHUP) != 0; }
+}
+pub fn empty_event() -> Event { return Event { token: 0, bits: 0 }; }
+
+fn linux_error(error: std::linux::Error) -> Error {
+    return match (error) { std::linux::Error::System(code) -> Error::Host(code), _ -> Error::InvalidResult };
+}
+fn call(number: i64, arguments: [std::linux::Argument], count: i32) -> core::result::Result<i64, Error> {
+    let result: core::result::Result<i64, std::linux::Error> = std::linux::call(number,core::slice::view(arguments,count).unwrap());
+    if (result.is_err()) { return core::result::Err(linux_error(result.unwrap_err())); }
+    return core::result::Ok(result.unwrap());
+}
+fn descriptor(result: core::result::Result<i64, Error>) -> core::result::Result<i32, Error> {
+    if (result.is_err()) { return core::result::Err(result.unwrap_err()); }
+    if (result.unwrap() < 0 || result.unwrap() > 2147483647) { return core::result::Err(Error::InvalidResult); }
+    return core::result::Ok(result.unwrap() as i32);
+}
+fn close_fd(fd: i32) -> core::result::Result<i32, Error> {
+    let arguments: [std::linux::Argument;1] = [std::linux::Argument::Word(fd as i64)];
+    let done: core::result::Result<i64, Error> = call(3,arguments,1);
+    if (done.is_err()) { return core::result::Err(done.unwrap_err()); }
+    return core::result::Ok(0);
+}
+
+pub struct Loop { fd: i32, registered: i32 }
+// epoll_create1(EPOLL_CLOEXEC).
+pub fn create() -> core::result::Result<Loop, Error> {
+    let arguments: [std::linux::Argument;1] = [std::linux::Argument::Word(524288)];
+    let made: core::result::Result<i32, Error> = descriptor(call(291,arguments,1));
+    if (made.is_err()) { return core::result::Err(made.unwrap_err()); }
+    return core::result::Ok(Loop { fd: made.unwrap(), registered: 0 });
+}
+pub impl Loop {
+    pub fn borrow(&self) -> &Loop { return self; }
+    pub fn is_open(&self) -> bool { return self.fd >= 0; }
+    // Registrations added and not yet removed through this owner.
+    pub fn registered(&self) -> i32 { return self.registered; }
+    fn control(&self, operation: i64, fd: i32, bits: u32, token: u64) -> core::result::Result<i32, Error> {
+        if (self.fd < 0) { return core::result::Err(Error::Closed); }
+        if (fd < 0) { return core::result::Err(Error::Bounds); }
+        let event: [i32;3] = [0;3]; event[0] = bits as i32; event[1] = ((token & 4294967295) as u32) as i32; event[2] = ((token >> 32) as u32) as i32;
+        let arguments: [std::linux::Argument;4] = [std::linux::Argument::Word(self.fd as i64),std::linux::Argument::Word(operation),std::linux::Argument::Word(fd as i64),std::linux::Argument::Address(core::mem::i32_array_data_ptr(event))];
+        let done: core::result::Result<i64, Error> = call(233,arguments,4);
+        if (done.is_err()) { return core::result::Err(done.unwrap_err()); }
+        if (done.unwrap() != 0) { return core::result::Err(Error::InvalidResult); }
+        return core::result::Ok(0);
+    }
+    // Register fd with a caller token reported in its events. A second add of
+    // the same open file description is Host(17) (EEXIST); regular files and
+    // directories are Host(1) (EPERM). The loop does not own fd.
+    pub fn add(&self, fd: i32, interest: Interest, token: u64) -> core::result::Result<i32, Error> {
+        let done: core::result::Result<i32, Error> = self.control(1,fd,interest.bits,token);
+        if (done.is_ok()) { self.registered += 1; } return done;
+    }
+    // Replace interest and token; also rearms a oneshot registration.
+    pub fn modify(&self, fd: i32, interest: Interest, token: u64) -> core::result::Result<i32, Error> { return self.control(3,fd,interest.bits,token); }
+    // Deregister before closing fd. An unregistered fd is Host(2) (ENOENT).
+    pub fn remove(&self, fd: i32) -> core::result::Result<i32, Error> {
+        let done: core::result::Result<i32, Error> = self.control(2,fd,0,0);
+        if (done.is_ok()) { self.registered -= 1; } return done;
+    }
+    fn collect(&self, events: core::slice::View<Event>, raw: [i32], count: i64) -> core::result::Result<i32, Error> {
+        if (count < 0 || count > events.length as i64) { return core::result::Err(Error::InvalidResult); }
+        let index: i32 = 0;
+        while (index < count as i32) {
+            let low: u64 = (raw[3*index+1] as u32) as u64; let high: u64 = (raw[3*index+2] as u32) as u64;
+            events.values[events.start+index] = Event { token: (high << 32) | low, bits: raw[3*index] as u32 };
+            index += 1;
+        }
+        return core::result::Ok(count as i32);
+    }
+    fn check(&self, events: core::slice::View<Event>) -> core::result::Result<i32, Error> {
+        if (self.fd < 0) { return core::result::Err(Error::Closed); }
+        if (events.start < 0 || events.length < 1 || events.length > MAX_EVENTS || events.start > 2147483647 - events.length) { return core::result::Err(Error::Bounds); }
+        return core::result::Ok(0);
+    }
+    // One epoll_wait: timeout_ms -1 blocks, 0 polls. Returns the number of
+    // events written to the front of events (0 on timeout). EINTR is Host(4).
+    pub fn wait(&self, events: core::slice::View<Event>, timeout_ms: i32) -> core::result::Result<i32, Error> {
+        let checked: core::result::Result<i32, Error> = self.check(events); if (checked.is_err()) { return checked; }
+        if (timeout_ms < -1) { return core::result::Err(Error::Bounds); }
+        let raw: [i32;192] = [0;192];
+        let arguments: [std::linux::Argument;4] = [std::linux::Argument::Word(self.fd as i64),std::linux::Argument::Address(core::mem::i32_array_data_ptr(raw)),std::linux::Argument::Word(events.length as i64),std::linux::Argument::Word(timeout_ms as i64)];
+        let done: core::result::Result<i64, Error> = call(232,arguments,4);
+        if (done.is_err()) { return core::result::Err(done.unwrap_err()); }
+        return self.collect(events,raw,done.unwrap());
+    }
+    // Wait until at least one event or the CLOCK_MONOTONIC deadline (the
+    // std::clock::monotonic_now origin). Uses epoll_pwait2's nanosecond timeout;
+    // retries EINTR and early wakes against the same deadline; returns 0 only
+    // once the clock has reached the deadline. An expired deadline still polls once.
+    pub fn wait_until(&self, events: core::slice::View<Event>, deadline: core::time::Deadline) -> core::result::Result<i32, Error> {
+        let checked: core::result::Result<i32, Error> = self.check(events); if (checked.is_err()) { return checked; }
+        let raw: [i32;192] = [0;192]; let timeout: [i32;4] = [0;4];
+        while (true) {
+            let read: core::result::Result<core::time::Instant, std::host_clocks::Error> = std::host_clocks::instant(std::host_clocks::Clock::Monotonic);
+            if (read.is_err()) { return core::result::Err(Error::Clock(read.unwrap_err())); }
+            let left: core::time::Duration = deadline.remaining(read.unwrap());
+            let limit: i64 = 9223372036854775807; let seconds: u64 = left.seconds; if (seconds > limit as u64) { seconds = limit as u64; }
+            timeout[0] = ((seconds & 4294967295) as u32) as i32; timeout[1] = ((seconds >> 32) as u32) as i32; timeout[2] = left.nanos as i32;
+            let arguments: [std::linux::Argument;6] = [std::linux::Argument::Word(self.fd as i64),std::linux::Argument::Address(core::mem::i32_array_data_ptr(raw)),std::linux::Argument::Word(events.length as i64),std::linux::Argument::Address(core::mem::i32_array_data_ptr(timeout)),std::linux::Argument::Word(0),std::linux::Argument::Word(8)];
+            let done: core::result::Result<i64, Error> = call(441,arguments,6);
+            if (done.is_err()) {
+                let interrupted: bool = match (done.unwrap_err()) { Error::Host(code) -> code == 4, _ -> false };
+                if (!interrupted) { return core::result::Err(done.unwrap_err()); }
+            } else {
+                if (done.unwrap() != 0 || left.is_zero()) { return self.collect(events,raw,done.unwrap()); }
+            }
+        }
+        return core::result::Err(Error::InvalidResult);
+    }
+    // Refuses while registrations remain, so cleanup stays explicit; the
+    // descriptor is then closed once and never retried.
+    pub fn close(&self) -> core::result::Result<i32, Error> {
+        if (self.fd < 0) { return core::result::Err(Error::Closed); }
+        if (self.registered != 0) { return core::result::Err(Error::StillRegistered(self.registered)); }
+        let fd: i32 = self.fd; self.fd = -1; return close_fd(fd);
+    }
+    // Close even with registrations (the kernel drops them with the loop).
+    pub fn force_close(&self) -> core::result::Result<i32, Error> {
+        if (self.fd < 0) { return core::result::Err(Error::Closed); }
+        let fd: i32 = self.fd; self.fd = -1; self.registered = 0; return close_fd(fd);
+    }
+}
+
+// A process descriptor. Readable once the process has terminated (before it is
+// reaped). Open it for an unreaped child of this process so the PID cannot be
+// reused first; it does not reap. Closing it never affects the process.
+pub struct Pidfd { fd: i32 }
+pub fn pidfd_open(pid: i32) -> core::result::Result<Pidfd, Error> {
+    if (pid < 1 || pid > std::host_clocks::PID_LIMIT) { return core::result::Err(Error::Bounds); }
+    let arguments: [std::linux::Argument;2] = [std::linux::Argument::Word(pid as i64),std::linux::Argument::Word(0)];
+    let made: core::result::Result<i32, Error> = descriptor(call(434,arguments,2));
+    if (made.is_err()) { return core::result::Err(made.unwrap_err()); }
+    return core::result::Ok(Pidfd { fd: made.unwrap() });
+}
+pub impl Pidfd {
+    pub fn borrow(&self) -> &Pidfd { return self; }
+    pub fn raw_fd(&self) -> i32 { return self.fd; }
+    pub fn is_open(&self) -> bool { return self.fd >= 0; }
+    // pidfd_send_signal: targets exactly this process, even after its PID is
+    // reaped and reused (then Host(3), ESRCH). Signal 0 checks existence.
+    pub fn send_signal(&self, signal: i32) -> core::result::Result<i32, Error> {
+        if (self.fd < 0) { return core::result::Err(Error::Closed); }
+        if (signal < 0 || signal > 64) { return core::result::Err(Error::Bounds); }
+        let empty: ptr = 0;
+        let arguments: [std::linux::Argument;4] = [std::linux::Argument::Word(self.fd as i64),std::linux::Argument::Word(signal as i64),std::linux::Argument::Address(empty),std::linux::Argument::Word(0)];
+        let done: core::result::Result<i64, Error> = call(424,arguments,4);
+        if (done.is_err()) { return core::result::Err(done.unwrap_err()); }
+        return core::result::Ok(0);
+    }
+    pub fn close(&self) -> core::result::Result<i32, Error> {
+        if (self.fd < 0) { return core::result::Err(Error::Closed); }
+        let fd: i32 = self.fd; self.fd = -1; return close_fd(fd);
+    }
+}

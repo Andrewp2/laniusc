@@ -1,0 +1,177 @@
+// Linux x86_64 timerfd timers: one-shot or periodic, relative or absolute, on
+// steady, wall and alarm clocks. Manual owner; no allocation.
+// See docs/stdlib-timers.md.
+module std::timer;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import std::host_clocks;
+import std::linux;
+
+// Clock covers kind/support/PID errors from std::host_clocks. WrongMode is a
+// blocking call on a Nonblocking timer or the reverse. Cancelled is ECANCELED
+// after a cancel-on-set wall timer saw a discontinuous clock change.
+pub enum Error { Clock(std::host_clocks::Error), Host(i32), Closed, InvalidSetting, WrongMode, Cancelled, InvalidCount }
+pub enum Mode { Blocking, Nonblocking }
+// remaining is relative even for absolute timers; zero means disarmed.
+// interval zero means one-shot.
+pub struct Setting { remaining: core::time::Duration, interval: core::time::Duration }
+pub struct Timer { fd: i32, clock: std::host_clocks::Clock, blocking: bool }
+
+fn linux_error(error: std::linux::Error) -> Error {
+    return match (error) { std::linux::Error::System(code) -> Error::Host(code), _ -> Error::InvalidCount };
+}
+fn call(number: i64, arguments: [std::linux::Argument], count: i32) -> core::result::Result<i64, Error> {
+    let result: core::result::Result<i64, std::linux::Error> = std::linux::call(number,core::slice::view(arguments,count).unwrap());
+    if (result.is_err()) { return core::result::Err(linux_error(result.unwrap_err())); }
+    return core::result::Ok(result.unwrap());
+}
+// timerfd_create accepts exactly these clocks.
+fn timer_clock(clock: std::host_clocks::Clock) -> bool {
+    return match (clock) {
+        std::host_clocks::Clock::Realtime -> true, std::host_clocks::Clock::Monotonic -> true, std::host_clocks::Clock::Boottime -> true,
+        std::host_clocks::Clock::RealtimeAlarm -> true, std::host_clocks::Clock::BoottimeAlarm -> true, _ -> false
+    };
+}
+// Always TFD_CLOEXEC; Nonblocking adds TFD_NONBLOCK.
+pub fn create(clock: std::host_clocks::Clock, mode: Mode) -> core::result::Result<Timer, Error> {
+    if (!timer_clock(clock)) { return core::result::Err(Error::Clock(std::host_clocks::Error::Unsupported)); }
+    let id: core::result::Result<i64, std::host_clocks::Error> = std::host_clocks::id(clock);
+    if (id.is_err()) { return core::result::Err(Error::Clock(id.unwrap_err())); }
+    let blocking: bool = match (mode) { Mode::Blocking -> true, Mode::Nonblocking -> false };
+    let flags: i64 = 524288; if (!blocking) { flags = flags + 2048; }
+    let arguments: [std::linux::Argument;2] = [std::linux::Argument::Word(id.unwrap()),std::linux::Argument::Word(flags)];
+    let made: core::result::Result<i64, Error> = call(283,arguments,2);
+    if (made.is_err()) { return core::result::Err(made.unwrap_err()); }
+    if (made.unwrap() < 0 || made.unwrap() > 2147483647) { return core::result::Err(Error::InvalidCount); }
+    return core::result::Ok(Timer { fd: made.unwrap() as i32, clock: clock, blocking: blocking });
+}
+fn store(words: [i32], at: i32, seconds: u64, nanos: u32) {
+    words[at] = ((seconds & 4294967295) as u32) as i32; words[at+1] = ((seconds >> 32) as u32) as i32; words[at+2] = nanos as i32; words[at+3] = 0;
+}
+fn representable(span: core::time::Duration) -> bool { let limit: i64 = 9223372036854775807; return span.seconds <= limit as u64 && span.nanos < 1000000000; }
+fn load(words: [i32], at: i32) -> core::result::Result<core::time::Duration, Error> {
+    let seconds: i64 = (((words[at+1] as u32) as u64) << 32 | ((words[at] as u32) as u64)) as i64;
+    if (seconds < 0 || words[at+3] != 0 || words[at+2] < 0 || words[at+2] >= 1000000000) { return core::result::Err(Error::InvalidCount); }
+    return core::result::Ok(core::time::Duration { seconds: seconds as u64, nanos: words[at+2] as u32 });
+}
+// itimerspec: interval timespec at word 0, value timespec at word 4.
+fn decode(words: [i32]) -> core::result::Result<Setting, Error> {
+    let interval: core::result::Result<core::time::Duration, Error> = load(words,0);
+    if (interval.is_err()) { return core::result::Err(interval.unwrap_err()); }
+    let remaining: core::result::Result<core::time::Duration, Error> = load(words,4);
+    if (remaining.is_err()) { return core::result::Err(remaining.unwrap_err()); }
+    return core::result::Ok(Setting { remaining: remaining.unwrap(), interval: interval.unwrap() });
+}
+fn read_u64(words: [i32]) -> u64 { return ((words[1] as u32) as u64) << 32 | ((words[0] as u32) as u64); }
+
+pub impl Setting {
+    pub fn borrow(&self) -> &Setting { return self; }
+    pub fn is_armed(&self) -> bool { return !self.remaining.is_zero(); }
+    pub fn is_periodic(&self) -> bool { return !self.interval.is_zero(); }
+}
+pub impl Timer {
+    pub fn borrow(&self) -> &Timer { return self; }
+    pub fn clock(&self) -> std::host_clocks::Clock { return self.clock; }
+    pub fn is_open(&self) -> bool { return self.fd >= 0; }
+    // For readiness polling only; reading or closing it directly breaks the owner.
+    pub fn raw_fd(&self) -> core::option::Option<i32> { if (self.fd < 0) { return core::option::None(); } return core::option::Some(self.fd); }
+    // timerfd_settime; returns the previous setting. A new setting replaces
+    // the old one and resets the unread expiration count.
+    fn set(&self, flags: i64, value_seconds: u64, value_nanos: u32, interval: core::time::Duration) -> core::result::Result<Setting, Error> {
+        if (self.fd < 0) { return core::result::Err(Error::Closed); }
+        if (!representable(interval)) { return core::result::Err(Error::InvalidSetting); }
+        let next: [i32;8] = [0;8]; let previous: [i32;8] = [0;8];
+        store(next,0,interval.seconds,interval.nanos); store(next,4,value_seconds,value_nanos);
+        let arguments: [std::linux::Argument;4] = [std::linux::Argument::Word(self.fd as i64),std::linux::Argument::Word(flags),std::linux::Argument::Address(core::mem::i32_array_data_ptr(next)),std::linux::Argument::Address(core::mem::i32_array_data_ptr(previous))];
+        let done: core::result::Result<i64, Error> = call(286,arguments,4);
+        if (done.is_err()) { return core::result::Err(done.unwrap_err()); }
+        if (done.unwrap() != 0) { return core::result::Err(Error::InvalidCount); }
+        return decode(previous);
+    }
+    // First expiration after initial (nonzero), then every interval (zero: one-shot).
+    pub fn arm_after(&self, initial: core::time::Duration, interval: core::time::Duration) -> core::result::Result<Setting, Error> {
+        if (initial.is_zero() || !representable(initial)) { return core::result::Err(Error::InvalidSetting); }
+        return self.set(0,initial.seconds,initial.nanos,interval);
+    }
+    // Steady clocks: first expiration at target on this timer's clock. A
+    // target already passed expires asynchronously soon after arming (possibly
+    // after an immediate try_wait) and counts every missed period.
+    pub fn arm_at_instant(&self, target: core::time::Instant, interval: core::time::Duration) -> core::result::Result<Setting, Error> {
+        let kind: i32 = match (std::host_clocks::kind(self.clock)) { std::host_clocks::Kind::Steady -> 1, _ -> 0 };
+        if (kind != 1) { return core::result::Err(Error::Clock(std::host_clocks::Error::WrongKind)); }
+        let span: core::time::Duration = target.saturating_duration_since(core::time::instant(core::time::zero()));
+        if (span.is_zero() || !representable(span)) { return core::result::Err(Error::InvalidSetting); }
+        return self.set(1,span.seconds,span.nanos,interval);
+    }
+    // Wall clocks: first expiration at a positive Unix timestamp. With
+    // cancel_on_set, a discontinuous clock change makes the next wait/try_wait
+    // return Cancelled (the timer stays armed).
+    pub fn arm_at_timestamp(&self, target: core::time::SystemTime, interval: core::time::Duration, cancel_on_set: bool) -> core::result::Result<Setting, Error> {
+        let kind: i32 = match (std::host_clocks::kind(self.clock)) { std::host_clocks::Kind::Wall -> 1, _ -> 0 };
+        if (kind != 1) { return core::result::Err(Error::Clock(std::host_clocks::Error::WrongKind)); }
+        if (target.seconds < 0 || (target.seconds == 0 && target.nanos == 0) || target.nanos >= 1000000000) { return core::result::Err(Error::InvalidSetting); }
+        let flags: i64 = 1; if (cancel_on_set) { flags = 3; }
+        return self.set(flags,target.seconds as u64,target.nanos,interval);
+    }
+    pub fn disarm(&self) -> core::result::Result<Setting, Error> { return self.set(0,0,0,core::time::zero()); }
+    pub fn setting(&self) -> core::result::Result<Setting, Error> {
+        if (self.fd < 0) { return core::result::Err(Error::Closed); }
+        let current: [i32;8] = [0;8];
+        let arguments: [std::linux::Argument;2] = [std::linux::Argument::Word(self.fd as i64),std::linux::Argument::Address(core::mem::i32_array_data_ptr(current))];
+        let done: core::result::Result<i64, Error> = call(287,arguments,2);
+        if (done.is_err()) { return core::result::Err(done.unwrap_err()); }
+        if (done.unwrap() != 0) { return core::result::Err(Error::InvalidCount); }
+        return decode(current);
+    }
+    // One 8-byte read of the expiration count; consumes it.
+    fn read_count(&self) -> core::result::Result<u64, Error> {
+        let words: [i32;2] = [0;2];
+        let arguments: [std::linux::Argument;3] = [std::linux::Argument::Word(self.fd as i64),std::linux::Argument::Address(core::mem::i32_array_data_ptr(words)),std::linux::Argument::Word(8)];
+        let done: core::result::Result<i64, Error> = call(0,arguments,3);
+        if (done.is_err()) {
+            let code: i32 = match (done.unwrap_err()) { Error::Host(value) -> value, _ -> 0 };
+            if (code == 125) { return core::result::Err(Error::Cancelled); }
+            return core::result::Err(done.unwrap_err());
+        }
+        if (done.unwrap() != 8 || read_u64(words) == 0) { return core::result::Err(Error::InvalidCount); }
+        return core::result::Ok(read_u64(words));
+    }
+    // Blocking timers: wait for at least one expiration and return how many
+    // occurred since the last read (overruns included). EINTR is retried; a
+    // disarmed timer blocks until another owner arms it, so callers arm first.
+    pub fn wait(&self) -> core::result::Result<u64, Error> {
+        if (self.fd < 0) { return core::result::Err(Error::Closed); }
+        if (!self.blocking) { return core::result::Err(Error::WrongMode); }
+        while (true) {
+            let count: core::result::Result<u64, Error> = self.read_count();
+            if (count.is_ok()) { return count; }
+            let interrupted: bool = match (count.unwrap_err()) { Error::Host(code) -> code == 4, _ -> false };
+            if (!interrupted) { return count; }
+        }
+        return core::result::Err(Error::InvalidCount);
+    }
+    // Nonblocking timers: None when nothing expired since the last read.
+    // EINTR is returned as Host(4) for the caller's own retry policy.
+    pub fn try_wait(&self) -> core::result::Result<core::option::Option<u64>, Error> {
+        if (self.fd < 0) { return core::result::Err(Error::Closed); }
+        if (self.blocking) { return core::result::Err(Error::WrongMode); }
+        let count: core::result::Result<u64, Error> = self.read_count();
+        if (count.is_ok()) { return core::result::Ok(core::option::Some(count.unwrap())); }
+        let again: bool = match (count.unwrap_err()) { Error::Host(code) -> code == 11, _ -> false };
+        if (again) { return core::result::Ok(core::option::None()); }
+        return core::result::Err(count.unwrap_err());
+    }
+    // Close exactly once. The descriptor is invalidated even if close fails;
+    // close is never retried because the number may already be reused.
+    pub fn close(&self) -> core::result::Result<i32, Error> {
+        if (self.fd < 0) { return core::result::Err(Error::Closed); }
+        let fd: i64 = self.fd as i64; self.fd = -1;
+        let arguments: [std::linux::Argument;1] = [std::linux::Argument::Word(fd)];
+        let done: core::result::Result<i64, Error> = call(3,arguments,1);
+        if (done.is_err()) { return core::result::Err(done.unwrap_err()); }
+        return core::result::Ok(0);
+    }
+}
