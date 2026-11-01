@@ -1341,13 +1341,13 @@ pub impl PrefixSet {
     // Unanchored only. Each record of bytes[from, to) (ended by LF, by CR
     // just before LF, or by to) is searched as its own text from the start
     // state; see Dfa.match_lines.
-    fn scan_lines(&self, bytes: [u8], from: i32, to: i32, cost: i64, limit: i64) -> LineScan {
-        if (self.capacity == 0 || self.entries.is_empty() || !self.unanchored) { return LineScan { start: from, lines: 0, status: 2 }; }
+    fn scan_lines(&self, bytes: [u8], from: i32, to: i32, cost: i64, limit: i64, counting: bool) -> LineScan {
+        if (self.capacity == 0 || self.entries.is_empty() || !self.unanchored) { return LineScan { start: from, lines: 0, matched: 0, status: 2 }; }
         let meta = self.meta.as_slice();
         if (meta[3] != 0) { self.reset(); }
         let trans = self.trans.as_slice(); let accept = self.accept.as_slice(); let ptrans = self.ptrans.as_slice();
         let behind: i32 = 1 & self.look;
-        if (meta[5 + behind] == 0) { let made: i32 = self.start_state(behind); if (made == -3) { return LineScan { start: from, lines: 0, status: 2 }; } meta[5 + behind] = made + 2; }
+        if (meta[5 + behind] == 0) { let made: i32 = self.start_state(behind); if (made == -3) { return LineScan { start: from, lines: 0, matched: 0, status: 2 }; } meta[5 + behind] = made + 2; }
         let first: i32 = meta[5 + behind] - 2;
         // In the start state, words whose bytes all keep it are skipped
         // eight at a time, counting their LFs. Only when no record here can
@@ -1360,7 +1360,7 @@ pub impl PrefixSet {
             below = ((128 - meta[15]) as u64) * 72340172838076673; above = ((127 - meta[16]) as u64) * 72340172838076673;
             one = (meta[15] as u64) * 72340172838076673; two = (meta[16] as u64) * 72340172838076673; three = (meta[17] as u64) * 72340172838076673;
         }
-        let record: i32 = from; let lines: i32 = 0; let position: i32 = from; let state: i32 = first;
+        let record: i32 = from; let lines: i32 = 0; let matched: i32 = 0; let position: i32 = from; let state: i32 = first;
         while (record < to) {
             if (skipping && state == first && to - position >= 8) {
                 let words: i32 = (to - position) / 8;
@@ -1387,13 +1387,19 @@ pub impl PrefixSet {
                     j -= 1;
                 }
                 position += (words - 1 - j) * 8;
-                if (record >= to) { return LineScan { start: to, lines: lines, status: 0 }; }
+                if (record >= to) { return LineScan { start: to, lines: lines, matched: matched, status: 0 }; }
             }
             // A delayed accept: a match ended at the previous boundary.
             if (accept[state * 2] >= 0) {
                 let end: i32 = core::search::find_byte(bytes, position, to, 10); if (end < 0) { end = to; }
-                if (((end - record) as i64 + 2) * cost > limit) { return LineScan { start: record, lines: lines, status: 2 }; }
-                return LineScan { start: record, lines: lines, status: 1 };
+                if (((end - record) as i64 + 2) * cost > limit) { return LineScan { start: record, lines: lines, matched: matched, status: 2 }; }
+                if (!counting) { return LineScan { start: record, lines: lines, matched: matched, status: 1 }; }
+                // Counting: the rest of the record only needs to be valid.
+                if (!valid_rest(bytes, position, end)) { return LineScan { start: record, lines: lines, matched: matched, status: 2 }; }
+                matched += 1;
+                if (end >= to) { return LineScan { start: to, lines: lines, matched: matched, status: 0 }; }
+                lines += 1; position = end + 1; record = position; state = first;
+                continue;
             }
             // Fast run: cached transitions on bytes that are neither LF nor
             // CR, into states without a delayed accept. Anything else (a
@@ -1408,19 +1414,19 @@ pub impl PrefixSet {
             let byte: i32 = 256; if (position < to) { byte = bytes[position] as i32; }
             if (byte == 256 || (byte < 14 && (byte == 10 || (byte == 13 && position + 1 < to && bytes[position + 1] == 10)))) {
                 // End of the record: resolve end of text, then start the next.
-                if (((position - record) as i64 + 2) * cost > limit) { return LineScan { start: record, lines: lines, status: 2 }; }
-                if (self.final_rule(state) >= 0) { return LineScan { start: record, lines: lines, status: 1 }; }
+                if (((position - record) as i64 + 2) * cost > limit) { return LineScan { start: record, lines: lines, matched: matched, status: 2 }; }
+                if (self.final_rule(state) >= 0) { if (!counting) { return LineScan { start: record, lines: lines, matched: matched, status: 1 }; } matched += 1; }
                 if (byte == 13) { position += 1; }
-                if (position >= to) { return LineScan { start: to, lines: lines, status: 0 }; }
+                if (position >= to) { return LineScan { start: to, lines: lines, matched: matched, status: 0 }; }
                 position += 1; lines += 1; record = position; state = first;
             } else {
                 let lead: i32 = position; let width: i32 = 1;
                 if (byte >= 128) {
                     // Every non-ASCII sequence is checked before the partials read it.
                     width = core::utf8::sequence_len_or(byte as u8, 0) as i32;
-                    if (width == 0 || width > to - lead) { return LineScan { start: record, lines: lines, status: 2 }; }
+                    if (width == 0 || width > to - lead) { return LineScan { start: record, lines: lines, matched: matched, status: 2 }; }
                     let checked: core::result::Result<core::text::Text, core::text::Error> = core::text::from_utf8_range(bytes, lead, width);
-                    if (core::result::is_err(checked)) { return LineScan { start: record, lines: lines, status: 2 }; }
+                    if (core::result::is_err(checked)) { return LineScan { start: record, lines: lines, matched: matched, status: 2 }; }
                 }
                 let next: i32 = trans[state * 256 + byte];
                 if (next == -2) {
@@ -1430,7 +1436,7 @@ pub impl PrefixSet {
                         next = self.partial(state, byte, 0, 0);
                         if (next == -5) { cache = false; next = self.step(state, scalar_in(bytes, lead, width)); position = lead + width - 1; }
                     }
-                    if (next == -3) { return LineScan { start: record, lines: lines, status: 2 }; }
+                    if (next == -3) { return LineScan { start: record, lines: lines, matched: matched, status: 2 }; }
                     if (cache) { trans[state * 256 + byte] = next; }
                 }
                 position += 1;
@@ -1444,7 +1450,7 @@ pub impl PrefixSet {
                             follow = self.partial(parts[part * 3], value, parts[part * 3 + 2] - 1, 1);
                             if (follow == -5) { cache = false; follow = self.step(parts[part * 3], scalar_in(bytes, lead, width)); position = lead + width - 1; }
                         }
-                        if (follow == -3) { return LineScan { start: record, lines: lines, status: 2 }; }
+                        if (follow == -3) { return LineScan { start: record, lines: lines, matched: matched, status: 2 }; }
                         if (cache) { ptrans[part * 64 + cont] = follow; }
                     }
                     next = follow; position += 1;
@@ -1452,7 +1458,7 @@ pub impl PrefixSet {
                 state = next;
             }
         }
-        return LineScan { start: to, lines: lines, status: 0 };
+        return LineScan { start: to, lines: lines, matched: matched, status: 0 };
     }
 }
 
@@ -1467,12 +1473,35 @@ fn scalar_in(bytes: [u8], at: i32, width: i32) -> u32 {
     let piece: core::text::Text = core::result::unwrap(core::text::from_utf8_range(bytes, at, width));
     return core::option::unwrap_or(piece.scalar_at_byte(0), 4294967295);
 }
-// Result of Dfa.match_lines. status 0: no record in [from, to) matches and
-// start is to. 1: the record at start matches. 2: the DFA cannot decide the
-// record at start (the cache filled, the VM could reach WorkLimit on it, or it
-// is not valid UTF-8 up to the point reached); search that record on its own.
-// lines counts the LF bytes in [from, start).
-pub struct LineScan { start: i32, lines: i32, status: i32 }
+// Result of Dfa.match_lines and Dfa.count_lines. status 0: the scan reached
+// to, and start is to. 1 (match_lines only): the record at start matches.
+// 2: the DFA cannot decide the record at start (the cache filled, the VM
+// could reach WorkLimit on it, or it is not valid UTF-8); search that record
+// on its own. lines counts the LF bytes in [from, start); matched counts the
+// matching records in [from, start) (always 0 for match_lines).
+pub struct LineScan { start: i32, lines: i32, matched: i32, status: i32 }
+// Whether bytes[from, to) is valid UTF-8; ASCII words go eight bytes at a
+// time. bytes must be packed byte storage, as for Dfa.match_lines.
+fn valid_rest(bytes: [u8], from: i32, to: i32) -> bool {
+    let i: i32 = from;
+    while (i < to) {
+        let words: i32 = (to - i) / 8;
+        if (words > 0) {
+            let view: [u64] = core::mem::typed_slice_from_storage<u64>(core::mem::i32_slice_data_ptr(bytes) + (i as usize), words);
+            let j: i32 = words - 1;
+            while (j >= 0) { if ((view[j] & 9259542123273814144) != 0) { break; } j -= 1; }
+            i += (words - 1 - j) * 8;
+        }
+        while (i < to && bytes[i] < 128) { i += 1; }
+        if (i >= to) { return true; }
+        let width: i32 = core::utf8::sequence_len_or(bytes[i], 0) as i32;
+        if (width == 0 || width > to - i) { return false; }
+        let checked: core::result::Result<core::text::Text, core::text::Error> = core::text::from_utf8_range(bytes, i, width);
+        if (core::result::is_err(checked)) { return false; }
+        i += width;
+    }
+    return true;
+}
 pub fn dfa(regex: &Regex) -> Result<Dfa, Error> {
     if (regex.has_lookbehind()) { return Err(Error::Unsupported(0)); }
     let set = search_set();
@@ -1515,11 +1544,20 @@ pub impl Dfa {
     // \z apply per record. ASCII bytes need no check; each non-ASCII sequence
     // is validated as it is reached. Results equal is_match on each record,
     // record by record, up to the first record that matches or is undecided.
-    // The caller guarantees to <= the slice length and that from is a record
-    // start; from < 0 or from > to is status 2.
+    // The caller guarantees to <= the slice length, that from is a record
+    // start, and that bytes is packed byte storage (a Vec<u8> or other heap
+    // buffer, not a stack array), since the scan reads it eight bytes at a
+    // time; from < 0 or from > to is status 2.
     pub fn match_lines(&self, bytes: [u8], from: i32, to: i32) -> LineScan {
-        if (from < 0 || from > to) { return LineScan { start: from, lines: 0, status: 2 }; }
-        return self.set.scan_lines(bytes, from, to, self.cost, self.limit);
+        if (from < 0 || from > to) { return LineScan { start: from, lines: 0, matched: 0, status: 2 }; }
+        return self.set.scan_lines(bytes, from, to, self.cost, self.limit, false);
+    }
+    // match_lines that does not stop at matching records: it counts them in
+    // matched, validates the rest of each one, and goes on after its LF. It
+    // stops only at an undecided record (status 2) or at to (status 0).
+    pub fn count_lines(&self, bytes: [u8], from: i32, to: i32) -> LineScan {
+        if (from < 0 || from > to) { return LineScan { start: from, lines: 0, matched: 0, status: 2 }; }
+        return self.set.scan_lines(bytes, from, to, self.cost, self.limit, true);
     }
     // is_match on an Input the caller has already validated, so that the
     // DFA path does not check the text again.

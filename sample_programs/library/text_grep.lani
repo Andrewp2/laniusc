@@ -263,6 +263,11 @@ fn scan(regex: &ext::regex::Regex, matcher: &Matcher, options: Options, diagnost
 // Selects (for --invert) every record in bytes[from, to), which match_lines
 // found valid and not matching; to is a record start.
 // --invert --count over n selected records: only the totals move.
+// --count over a block of `lines` records of which `chosen` are selected.
+fn count_block(progress: &Progress, chosen: u64, lines: u64, diagnostic: &Diagnostic) -> i32 {
+    if (progress.selected > 18446744073709551615 - chosen || diagnostic.line > 18446744073709551615 - lines) { return fail(diagnostic,2,5); }
+    progress.selected += chosen; diagnostic.line += lines; return 0;
+}
 fn tally(progress: &Progress, n: u64, diagnostic: &Diagnostic) -> i32 {
     if (progress.selected > 18446744073709551615 - n || diagnostic.line > 18446744073709551615 - n) { return fail(diagnostic,2,5); }
     progress.selected += n; diagnostic.line += n; return 0;
@@ -360,7 +365,23 @@ fn records(regex: &ext::regex::Regex, matcher: &Matcher, options: Options, outpu
         if (filter.length > 0 && region <= options.max_line && ((region as i64) + 2) * filter.cost <= filter.limit) {
             let position: i32 = 0; let hits: i32 = 0;
             let hit: i32 = core::search::find(bytes,0,region,filter.needle,0,filter.length);
-            while (true) {
+            // Counting a pure literal: one validating line count for the
+            // whole region, then only the hits, each skipped to its LF.
+            if (options.count && filter.exact) {
+                let total: i64 = newlines_if_valid(bytes,0,region);
+                if (total >= 0) {
+                    let found: u64 = 0;
+                    while (hit >= 0) {
+                        found += 1; let newline: i32 = core::search::find_byte(bytes,hit,region,10);
+                        hit = core::search::find(bytes,newline + 1,region,filter.needle,0,filter.length);
+                    }
+                    if (options.invert) { found = (total as u64) - found; }
+                    let status: i32 = count_block(progress.borrow(),found,total as u64,diagnostic);
+                    if (status != 0) { buffer.destroy(); return status; }
+                    hit = -1; position = region;
+                }
+            }
+            while (position < region || hit >= 0) {
                 // Hit records denser than one per 256 bytes cost more one by one
                 // than one DFA pass; the line scan below takes the rest.
                 if (!filter.exact && matcher.ready && hits >= 32 && (hits as i64) * 256 > position as i64) { dense = true; break; }
@@ -401,6 +422,21 @@ fn records(regex: &ext::regex::Regex, matcher: &Matcher, options: Options, outpu
         if (matcher.ready && region <= options.max_line && ((start == 0 && filter.length == 0) || dense)) {
             let position: i32 = start;
             while (position < region) {
+                if (options.count) {
+                    // Counting needs no stop at matching records.
+                    let counted: ext::regex::LineScan = matcher.dfa.count_lines(bytes,position,region);
+                    let chosen: u64 = counted.matched as u64; if (options.invert) { chosen = (counted.lines - counted.matched) as u64; }
+                    let status: i32 = count_block(progress.borrow(),chosen,counted.lines as u64,diagnostic);
+                    if (status != 0) { buffer.destroy(); return status; }
+                    position = counted.start;
+                    if (counted.status == 0) { break; }
+                    let newline: i32 = core::search::find_byte(bytes,position,region,10);
+                    status = record(bytes,position,newline,true,regex,matcher,options,progress.borrow(),output,diagnostic);
+                    if (status != 0) { buffer.destroy(); return status; }
+                    if (diagnostic.line == 18446744073709551615) { buffer.destroy(); return fail(diagnostic,2,5); } diagnostic.line += 1;
+                    position = newline + 1;
+                    continue;
+                }
                 let scan: ext::regex::LineScan = matcher.dfa.match_lines(bytes,position,region);
                 if (options.invert) {
                     // Every record before scan.start was searched and missed.
