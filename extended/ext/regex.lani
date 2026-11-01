@@ -1096,7 +1096,7 @@ pub impl PrefixSet {
         if (states < 64) { states = 64; } if (states > 1024) { states = 1024; }
         self.capacity = states; self.pool_capacity = states * 8 + pcs * 2; self.part_capacity = states * 2;
         if (self.parts.try_resize(self.part_capacity * 3, 0).is_err() || self.ptrans.try_resize(self.part_capacity * 64, -2).is_err()) { return Err(Error::AllocationFailed); }
-        if (self.meta.try_resize(14, 0).is_err() || self.set_start.try_resize(states, 0).is_err() || self.set_len.try_resize(states * 2, 0).is_err()
+        if (self.meta.try_resize(18, 0).is_err() || self.set_start.try_resize(states, 0).is_err() || self.set_len.try_resize(states * 2, 0).is_err()
             || self.accept.try_resize(states * 2, -1).is_err() || self.trans.try_resize(states * 256, -2).is_err() || self.pool.try_resize(self.pool_capacity, 0).is_err()
             || self.table.try_resize(states * 2, 0).is_err() || self.work.try_resize(pcs * 2 + 2, 0).is_err() || self.mark.try_resize(pcs + 1, 0).is_err()
             || self.stack.try_resize(pcs + 1, 0).is_err()) { return Err(Error::AllocationFailed); }
@@ -1109,7 +1109,7 @@ pub impl PrefixSet {
         while (i < used) { trans[i] = -2; i += 1; }
         let ptrans = self.ptrans.as_slice(); used = meta[13] * 64; i = 0;
         while (i < used) { ptrans[i] = -2; i += 1; }
-        meta[13] = 0;
+        meta[13] = 0; meta[14] = 0;
         i = 0; while (i < self.capacity * 2) { table[i] = 0; i += 1; }
         i = 5; while (i < 13) { meta[i] = 0; i += 1; }
         meta[0] = 0; meta[1] = 0; meta[3] = 0; meta[4] += 1;
@@ -1306,6 +1306,38 @@ pub impl PrefixSet {
         }
         return PrefixRun { end: best_end, rule: best_rule, scalars: scalars, complete: true };
     }
+    // Skip setup for scan_lines, cached in meta[14..18) until the next
+    // reset. The ASCII bytes other than LF that leave the start state are
+    // either at most three values meta[15..18) (meta[14] = 2) or inside the
+    // range [meta[15], meta[16]] of at most 48 values (meta[14] = 1); -1 when
+    // the start state cannot be skipped. Requires a pattern without
+    // look-behind bits and a start state that does not accept an empty
+    // record and that CR keeps.
+    fn skip_setup(&self, first: i32) {
+        let meta = self.meta.as_slice(); let trans = self.trans.as_slice();
+        meta[14] = -1;
+        if (self.look != 0 || self.final_rule(first) >= 0) { return; }
+        let low: i32 = 127; let high: i32 = 126; let b: i32 = 0; let count: i32 = 0; let values: [i32;3] = [127;3];
+        while (b < 128) {
+            if (b != 10) {
+                let next: i32 = trans[first * 256 + b];
+                if (next == -2) { next = self.step(first, b as u32); if (next == -3) { return; } trans[first * 256 + b] = next; }
+                if (next != first) {
+                    if (b == 13) { return; }
+                    if (low > high) { low = b; high = b; } else { high = b; }
+                    if (count < 3) { values[count] = b; } count += 1;
+                }
+            }
+            b += 1;
+        }
+        if (count <= 3) {
+            meta[15] = values[0]; meta[16] = values[1]; meta[17] = values[2];
+            if (count >= 1) { if (count < 2) { meta[16] = values[0]; } if (count < 3) { meta[17] = values[0]; } }
+            meta[14] = 2; return;
+        }
+        if (high - low >= 48) { return; }
+        meta[15] = low; meta[16] = high; meta[14] = 1;
+    }
     // Unanchored only. Each record of bytes[from, to) (ended by LF, by CR
     // just before LF, or by to) is searched as its own text from the start
     // state; see Dfa.match_lines.
@@ -1317,13 +1349,61 @@ pub impl PrefixSet {
         let behind: i32 = 1 & self.look;
         if (meta[5 + behind] == 0) { let made: i32 = self.start_state(behind); if (made == -3) { return LineScan { start: from, lines: 0, status: 2 }; } meta[5 + behind] = made + 2; }
         let first: i32 = meta[5 + behind] - 2;
+        // In the start state, words whose bytes all keep it are skipped
+        // eight at a time, counting their LFs. Only when no record here can
+        // fail the work bound, so a skipped record is a plain miss.
+        if (meta[14] == 0) { self.skip_setup(first); }
+        let skipping: bool = meta[14] >= 1 && ((to - from) as i64 + 2) * cost <= limit;
+        let ranged: bool = meta[14] == 1;
+        let below: u64 = 0; let above: u64 = 0; let one: u64 = 0; let two: u64 = 0; let three: u64 = 0;
+        if (skipping) {
+            below = ((128 - meta[15]) as u64) * 72340172838076673; above = ((127 - meta[16]) as u64) * 72340172838076673;
+            one = (meta[15] as u64) * 72340172838076673; two = (meta[16] as u64) * 72340172838076673; three = (meta[17] as u64) * 72340172838076673;
+        }
         let record: i32 = from; let lines: i32 = 0; let position: i32 = from; let state: i32 = first;
         while (record < to) {
+            if (skipping && state == first && to - position >= 8) {
+                let words: i32 = (to - position) / 8;
+                let view: [u64] = core::mem::typed_slice_from_storage<u64>(core::mem::i32_slice_data_ptr(bytes) + (position as usize), words);
+                let j: i32 = words - 1;
+                while (j >= 0) {
+                    let w: u64 = view[j];
+                    // A high bit, or a byte in [low, high] or equal to one of
+                    // the three values, stops the skip. On ASCII lanes these
+                    // additions never carry into the next lane.
+                    if ((w & 9259542123273814144) != 0) { break; }
+                    if (ranged) { if (((w + below) & ((w + above) ^ 18446744073709551615) & 9259542123273814144) != 0) { break; } }
+                    else {
+                        let differs: u64 = ((w ^ one) + 9187201950435737471) & ((w ^ two) + 9187201950435737471) & ((w ^ three) + 9187201950435737471);
+                        if ((differs & 9259542123273814144) != 9259542123273814144) { break; }
+                    }
+                    let marks: u64 = ((w ^ 723401728380766730) + 9187201950435737471) & 9259542123273814144;
+                    if (marks != 9259542123273814144) {
+                        let zeros: u64 = (marks ^ 9259542123273814144) >> 7;
+                        lines += ((zeros * 72340172838076673) >> 56) as i32;
+                        let lane: i32 = 7; while (((zeros >> ((lane as u64) * 8)) & 1) == 0) { lane -= 1; }
+                        record = position + (words - 1 - j) * 8 + lane + 1;
+                    }
+                    j -= 1;
+                }
+                position += (words - 1 - j) * 8;
+                if (record >= to) { return LineScan { start: to, lines: lines, status: 0 }; }
+            }
             // A delayed accept: a match ended at the previous boundary.
             if (accept[state * 2] >= 0) {
                 let end: i32 = core::search::find_byte(bytes, position, to, 10); if (end < 0) { end = to; }
                 if (((end - record) as i64 + 2) * cost > limit) { return LineScan { start: record, lines: lines, status: 2 }; }
                 return LineScan { start: record, lines: lines, status: 1 };
+            }
+            // Fast run: cached transitions on bytes that are neither LF nor
+            // CR, into states without a delayed accept. Anything else (a
+            // non-ASCII lead byte has no plain cached state) leaves it for
+            // the general step below.
+            while (position < to) {
+                let b: i32 = bytes[position] as i32; let n: i32 = trans[state * 256 + b];
+                if (b == 10 || b == 13 || n < 0) { break; }
+                if (accept[n * 2] >= 0) { break; }
+                state = n; position += 1;
             }
             let byte: i32 = 256; if (position < to) { byte = bytes[position] as i32; }
             if (byte == 256 || (byte < 14 && (byte == 10 || (byte == 13 && position + 1 < to && bytes[position + 1] == 10)))) {

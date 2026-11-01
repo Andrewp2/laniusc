@@ -509,7 +509,16 @@ reached. With `status` 0 no record matched and `start` is `to`. `lines`
 counts the LFs before `start`. A matching record was validated only up to
 its match, so the caller checks the rest before using it. The caller
 guarantees that `to` is at most the slice length and that `from` is a record
-start. `Dfa.is_match_input(&Regex, Input)` is `is_match` for text the caller
+start. The scan skips over the start state eight bytes at a time when nothing
+can go wrong doing so. The pattern needs no look-behind bits (no `^` and no
+`\b`), the start state must not accept an empty record, and CR must keep it.
+No record in the range may fail the work bound. The ASCII bytes other than LF
+that leave the start state must be at most three values, or lie in a range of
+at most 48. A word with a high bit, or with one of those bytes, goes back to
+the byte loop. Skipped words have their LFs counted, and the last LF in them
+starts the next record. The setup is computed once per cache generation and
+kept in `meta[14..18)`.
+`Dfa.is_match_input(&Regex, Input)` is `is_match` for text the caller
 has already validated, and `ext::regex::input_unchecked(Text)` builds that
 `Input` without another pass. Passing invalid text through it is a caller
 error.

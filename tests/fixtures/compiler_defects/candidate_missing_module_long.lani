@@ -1,5 +1,7 @@
-// CANDIDATE, NOT REPRODUCED: reported LNC0016 on a long file without a
-// `module` line. This 401-function file compiles and exits 0.
+// NOT REPRODUCED, closed 2026-10-31: reported LNC0016 on a long file
+// without a `module` line. This 401-function file compiles and exits 0, as
+// do 2,000- to 20,000-function files with or without `module`. Very large
+// files hit GPU memory limits instead; see README, "GPU out of memory".
 fn helper_0(x: i32) -> i32 { let y: i32 = x + 0; if (y > 1000) { return y - 1000; } return y; }
 fn helper_1(x: i32) -> i32 { let y: i32 = x + 1; if (y > 1000) { return y - 1000; } return y; }
 fn helper_2(x: i32) -> i32 { let y: i32 = x + 2; if (y > 1000) { return y - 1000; } return y; }

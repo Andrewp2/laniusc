@@ -136,10 +136,23 @@ pub impl<K, V> TreeMap<K, V> {
         }
         self.length = count; self.link_sorted(); return core::result::Ok(count);
     }
-    fn nodes(&self) -> [Node<K, V>] { return core::mem::typed_slice_from_storage(self.storage, self.reserved); }
+    // The same view typed_slice_from_storage builds (a node is a record, so
+    // its raw view runs down from the top word), without its stride probe.
+    fn nodes(&self) -> [Node<K, V>] {
+        if (self.reserved == 0) { return slice_from_raw_parts(self.storage, 0); }
+        let top: usize = core::mem::size_of<Node<K, V>>() * (self.reserved as usize) - 8;
+        return slice_from_raw_parts(self.storage + top, self.reserved);
+    }
+    // Natural-key descent: query-first lt, then stored-first lt, the same
+    // calls in the same order as NaturalKey, without building an Ordering.
     fn find(&self, key: K) -> i32 where K: core::cmp::Ord<K> {
-        let policy:NaturalKey<K> = NaturalKey {};
-        return self.find_by<K,NaturalKey<K>>(key,policy.borrow());
+        let nodes: [Node<K, V>] = self.nodes(); let index: i32 = self.root;
+        while (index >= 0) {
+            let node: Node<K, V> = nodes[index];
+            if (K::lt(key, node.item.key)) { index = node.left; }
+            else { if (K::lt(node.item.key, key)) { index = node.right; } else { return index; } }
+        }
+        return -1;
     }
     fn find_by<Q,P>(&self, query:Q, policy:&P) -> i32 where P:core::ordering::Comparator<K,Q> {
         let nodes: [Node<K, V>] = self.nodes(); let index: i32 = self.root;
@@ -161,8 +174,9 @@ pub impl<K, V> TreeMap<K, V> {
         let nodes: [Node<K, V>] = self.nodes(); let node: Node<K, V> = nodes[index]; return core::option::Some(node.item);
     }
     pub fn get(&self, key: K) -> core::option::Option<V> where K: core::cmp::Ord<K> {
-        let found: core::option::Option<Entry<K, V>> = self.get_entry(key);
-        let result: core::option::Option<V> = match (found) { Some(item) -> core::option::Some(item.value), None -> core::option::None() }; return result;
+        let index: i32 = self.find(key);
+        if (index < 0) { return core::option::None(); }
+        let nodes: [Node<K, V>] = self.nodes(); let node: Node<K, V> = nodes[index]; return core::option::Some(node.item.value);
     }
     // Missing keys never call update. A present value is lent exclusively to
     // the mapper, which returns its latest valid descriptor in Pair.first,
@@ -448,9 +462,13 @@ pub impl<K, V> TreeMap<K, V> {
         if (middle >= 0) { let moved: Node<K, V> = nodes[middle]; moved.parent = index; nodes[middle] = moved; }
         self.attach(parent, index, pivot_index); self.refresh(index); self.refresh(pivot_index); return pivot_index;
     }
+    // Walk from the changed node toward the root, stopping once a subtree is
+    // balanced with its previous height: nothing above it can have changed.
+    // (Only insertion and removal call this, each after one local change.)
     fn rebalance(&self, start: i32) {
         let nodes: [Node<K, V>] = self.nodes(); let index: i32 = start;
         while (index >= 0) {
+            let before: Node<K, V> = nodes[index]; let previous: i32 = before.height;
             self.refresh(index); let node: Node<K, V> = nodes[index];
             let balance: i32 = height(nodes, node.left) - height(nodes, node.right); let root: i32 = index;
             if (balance > 1) {
@@ -462,7 +480,9 @@ pub impl<K, V> TreeMap<K, V> {
                 if (height(nodes, child.left) > height(nodes, child.right)) { self.rotate(node.right, false); }
                 root = self.rotate(index, true);
             } }
-            let top: Node<K, V> = nodes[root]; index = top.parent;
+            let top: Node<K, V> = nodes[root];
+            if (top.height == previous) { return; }
+            index = top.parent;
         }
     }
     // An equivalent key replaces both stored key and value, returning the old

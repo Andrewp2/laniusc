@@ -507,6 +507,33 @@ pub impl Writer {
         self.used = at;
         return true;
     }
+    // Writes [comma] quoted, escaped text [colon] for text already checked
+    // as UTF-8, as quoted() writes it; false (nothing committed) for text
+    // over 4096 bytes or when the worst case, six bytes per input byte,
+    // does not fit.
+    fn put_escaped(&self, comma: i32, source: [u8], start: i32, length: i32, colon: bool) -> bool {
+        if (length > 4096) { return false; }
+        let size: i32 = comma + 2 + 6 * length; if (colon) { size += 1; }
+        let used: i32 = self.used;
+        if (size > self.max_output_bytes - used || !self.reserve(used + size)) { return false; }
+        let data: [u8] = self.data; let at: i32 = used;
+        if (comma == 1) { data[at] = 44; at += 1; }
+        data[at] = 34; at += 1;
+        let from: i32 = start; let last: i32 = start + length;
+        while (from < last) {
+            let value: u8 = source[from]; from += 1;
+            if (value >= 32 && value != 34 && value != 92) { data[at] = value; at += 1; continue; }
+            data[at] = 92;
+            if (value >= 32) { data[at + 1] = value; at += 2; continue; }
+            data[at + 1] = 117; data[at + 2] = 48; data[at + 3] = 48;
+            let high: u8 = hex_digit(value / 16); let low: u8 = hex_digit(value % 16);
+            data[at + 4] = high; data[at + 5] = low; at += 6;
+        }
+        data[at] = 34; at += 1;
+        if (colon) { data[at] = 58; at += 1; }
+        self.used = at;
+        return true;
+    }
     fn placed(&self) {
         if (self.top == 0) { self.expect = 6; return; }
         if (self.top == 1) { self.expect = 3; } else { self.expect = 5; }
@@ -608,6 +635,11 @@ pub impl Writer {
         self.used = at + written.unwrap(); self.placed();
         return true;
     }
+    pub fn fast_boolean(&self, value: bool) -> bool {
+        let word: [u8; 5] = [102, 97, 108, 115, 101];
+        if (value) { word[0] = 116; word[1] = 114; word[2] = 117; word[3] = 101; return self.fast_number_unchecked(word, 0, 4); }
+        return self.fast_number_unchecked(word, 0, 5);
+    }
     pub fn fast_null(&self) -> bool {
         let word: [u8; 4] = [110, 117, 108, 108];
         return self.fast_number_unchecked(word, 0, 4);
@@ -666,6 +698,8 @@ pub impl Writer {
         if (self.fast_key(text.bytes, text.start, text.length)) { return core::result::Ok(self.used); }
         let valid = self.checked(text);
         if (valid.is_err()) { return valid; }
+        let expect: i32 = self.expect;
+        if ((expect == 4 || expect == 5) && self.put_escaped(expect - 4, text.bytes, text.start, text.length, true)) { self.expect = 1; return core::result::Ok(self.used); }
         let before: i32 = self.used;
         let placed: i32 = self.place(false, true);
         if (placed == 2) { return core::result::Err(error(ErrorKind::InvalidPlacement, before as u64)); }
@@ -689,6 +723,8 @@ pub impl Writer {
         if (self.fast_string(text.bytes, text.start, text.length)) { return core::result::Ok(self.used); }
         let valid = self.checked(text);
         if (valid.is_err()) { return valid; }
+        let comma: i32 = self.value_comma();
+        if (comma >= 0 && self.put_escaped(comma, text.bytes, text.start, text.length, false)) { self.placed(); return core::result::Ok(self.used); }
         return self.scalar(text, 0);
     }
     // The text must be one complete RFC 8259 number; its spelling is kept.
@@ -710,6 +746,7 @@ pub impl Writer {
         return self.scalar(text, 1);
     }
     pub fn boolean(&self, value: bool) -> core::result::Result<i32, Error> {
+        if (self.fast_boolean(value)) { return core::result::Ok(self.used); }
         if (value) { let word: [u8; 4] = [116, 114, 117, 101]; return self.scalar(core::text::from_utf8_unchecked(word, 0, 4), 1); }
         let word: [u8; 5] = [102, 97, 108, 115, 101]; return self.scalar(core::text::from_utf8_unchecked(word, 0, 5), 1);
     }

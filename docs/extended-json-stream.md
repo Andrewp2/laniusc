@@ -120,7 +120,7 @@ Writer.number_unchecked(text)     // number() without the grammar check
 Writer.token(&Tokenizer)          // copy the ready token
 Writer.fast_begin_object(), fast_end_object(), fast_begin_array(), fast_end_array() -> bool
 Writer.fast_key(bytes, start, length), fast_string(...), fast_number_unchecked(...) -> bool
-Writer.fast_null() -> bool, fast_f64(value: f64, scratch: View<u32>) -> bool
+Writer.fast_null(), fast_boolean(value) -> bool, fast_f64(value: f64, scratch: View<u32>) -> bool
 Writer.next_document()            // JSON Lines: LF, then accept another root
 Writer.output() -> View<u8>, output_text() -> Text, len(), depth(), is_complete()
 Writer.flush_to<W>(sink: &W) -> Result<i32, core::io::Failure>   // W: core::io::Write
@@ -157,6 +157,13 @@ words of scratch. A `Result` return costs about 100 instructions in the
 current native code, against about 8 for a bool, so a converter that tries
 the fast form first and falls back to the `Result` form gets the same output
 and errors at a fraction of the cost.
+
+`key` and `string` whose text needs escapes or holds non-ASCII bytes check it
+once, then write the escaped form in one pass into reserved room when the text
+is at most 4,096 bytes and six bytes per input byte would still fit. Otherwise
+they copy plain runs and escape byte by byte. The output and errors are the
+same either way. The writer already appends into a cached output slice that
+grows geometrically, and keeps open containers in a cached slice.
 
 `flush_to` writes the buffered bytes with `core::io::write_all` and drops
 them. Structure state is kept, so a document of any size can stream through a

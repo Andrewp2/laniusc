@@ -91,6 +91,7 @@ Record.encoding() -> Result<csv::Encoding, csv::Error>
 Encoding.borrow() -> &Encoding
 Encoding.remaining() -> u64
 Encoding.next() -> Option<u8>
+Encoding.fill(target: [u8], at: i32, limit: i32) -> i32
 ```
 
 `encoded_len` allocates nothing. It checks nonnegative vector lengths and
@@ -106,6 +107,12 @@ must also have zero packed bytes.
 exhausted after its last byte; cursor copies advance independently. Keep the
 source record alive and unchanged for their complete use. A cursor is not an
 owner and must never destroy its stored Record descriptor.
+
+`fill` writes the next `min(limit, remaining())` bytes to `target[at..]` and
+returns that count. The bytes and the cursor state afterwards are the same as
+that many `next` calls, but field bytes are copied in runs, so it costs a few
+nanoseconds per byte instead of a call per byte. `write_record` and the
+`csv` table encoder use it. The target must back `at + limit` bytes.
 
 The vector storage pointers and physical allocations must still obey the
 ordinary Vec/Record ownership invariants. Logical checks do not validate

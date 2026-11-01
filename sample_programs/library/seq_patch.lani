@@ -32,6 +32,7 @@ import ext::seqdiff;
 import ext::unidiff;
 import std::args;
 import std::file;
+import std::fs;
 import std::file_ops;
 import std::stream;
 
@@ -46,12 +47,31 @@ fn same(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
 fn emit(v: core::slice::View<u8>) { let sink: std::stream::Descriptor = std::stream::stderr(); let written: core::result::Result<i32, core::io::Failure> = core::io::write_all(sink.borrow(), v.values, v.start, v.len()); }
 fn emit_out(v: core::slice::View<u8>) { let sink: std::stream::Descriptor = std::stream::stdout(); let written: core::result::Result<i32, core::io::Failure> = core::io::write_all(sink.borrow(), v.values, v.start, v.len()); }
 fn complain(text: str, count: i32) -> i32 { emit(literal(text, count)); return 2; }
+// Write packed bytes (a Vec<u8>) to stdout straight from their storage:
+// std::stream's Descriptor stages every 1,024 bytes through a copy loop.
+fn write_out(bytes: [u8], count: i32) -> bool {
+    let base: ptr = core::mem::i32_slice_data_ptr(bytes); let sent: i32 = 0;
+    while (sent < count) {
+        let w: i32 = std::fs::write(1, base + (sent as usize), (count - sent) as usize);
+        if (w == -4) { continue; }
+        if (w <= 0 || w > count - sent) { return false; }
+        sent += w;
+    }
+    return true;
+}
 fn read_file(name: core::slice::View<u8>, output: &alloc::io::Buffer) -> bool {
     let checked: core::result::Result<core::path::Path, core::path::Error> = core::path::from_view(name);
     if (core::result::is_err(checked)) { return false; }
     let opened: core::result::Result<std::file::File, core::io::Error> = std::file::open(core::result::unwrap(checked), std::file::OpenMode::Read);
     if (core::result::is_err(opened)) { return false; }
     let file: std::file::File = core::result::unwrap(opened);
+    // Size the buffer from the file length so the read does not regrow it
+    // (growth copies byte by byte). read_to_end asks for 64 KiB of room per
+    // read and still reads to end of input, whatever the size was.
+    let size: core::result::Result<i64, core::io::Error> = std::file_ops::seek(file.borrow(), 0, std::file_ops::Origin::End);
+    let rewound: core::result::Result<i64, core::io::Error> = std::file_ops::seek(file.borrow(), 0, std::file_ops::Origin::Start);
+    if (core::result::is_err(rewound)) { let ignored: core::result::Result<i32, core::io::Error> = file.close(); return false; }
+    if (core::result::is_ok(size) && core::result::unwrap(size) < 268000000) { let room: core::result::Result<ptr, core::io::Error> = output.reserve_raw((core::result::unwrap(size) as i32) + 65536); }
     let copied: core::result::Result<u64, core::io::Error> = file.read_to_end(output);
     let closed: core::result::Result<i32, core::io::Error> = file.close();
     return core::result::is_ok(copied) && core::result::is_ok(closed);
@@ -66,8 +86,7 @@ fn put_number(out: &alloc::vec::Vec<u8>, number: i32) {
     while (value > 0) { digits[count] = (48 + value % 10) as u8; count += 1; value /= 10; }
     while (count > 0) { count -= 1; let r: core::result::Result<i32, alloc::vec::Error> = out.try_push(digits[count]); }
 }
-fn report(r: ext::unidiff::HunkReport) {
-    let out: alloc::vec::Vec<u8> = alloc::vec::new();
+fn report(out: &alloc::vec::Vec<u8>, r: ext::unidiff::HunkReport) {
     put(out.borrow(), "Hunk #", 6); put_number(out.borrow(), r.index + 1);
     let rejected: bool = match (r.status) { ext::unidiff::HunkStatus::Rejected -> true, _ -> false };
     if (rejected) {
@@ -79,7 +98,7 @@ fn report(r: ext::unidiff::HunkReport) {
         if (r.fuzz > 0) { put(out.borrow(), " with fuzz ", 11); put_number(out.borrow(), r.fuzz); }
         if (r.offset != 0) { put(out.borrow(), " (offset ", 9); put_number(out.borrow(), r.offset); put(out.borrow(), " lines)", 7); }
     }
-    put(out.borrow(), ".\n", 2); emit(out.as_view()); out.destroy();
+    put(out.borrow(), ".\n", 2);
 }
 fn run(base_name: core::slice::View<u8>, patch_name: core::slice::View<u8>, options: ext::unidiff::ApplyOptions) -> i32 {
     let base: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(268435456));
@@ -94,10 +113,12 @@ fn run(base_name: core::slice::View<u8>, patch_name: core::slice::View<u8>, opti
         if (core::result::is_err(applied)) { status = complain("seq-patch: apply failed\n", 24); }
         else {
             let result: ext::unidiff::Applied = core::result::unwrap(applied);
-            let i: i32 = 0; while (i < result.reports.len()) { report(result.reports.as_slice()[i]); i += 1; }
+            // One stderr write for all reports.
+            let log: alloc::vec::Vec<u8> = alloc::vec::new(); let i: i32 = 0;
+            while (i < result.reports.len()) { report(log.borrow(), result.reports.as_slice()[i]); i += 1; }
+            emit(log.as_view()); log.destroy();
             if (result.rejected > 0) { status = 1; }
-            let sink: std::stream::Descriptor = std::stream::stdout();
-            if (core::result::is_err(core::io::write_all(sink.borrow(), result.output.as_slice(), 0, result.output.len()))) { status = 2; }
+            if (!write_out(result.output.as_slice(), result.output.len())) { status = 2; }
             result.destroy();
         }
         patch.destroy();

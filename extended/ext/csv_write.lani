@@ -24,8 +24,7 @@ pub fn write_record<W>(writer: &W, record: &ext::csv::Record, limits: Limits) ->
     let written: u64 = 0; let calls: u64 = 0;
     let scratch: [u8;1024] = [0;1024];
     while (cursor.remaining() > 0) {
-        let length: i32 = 0;
-        while (length < 1024 && cursor.remaining() > 0) { let stored: u8 = cursor.next().unwrap(); scratch[length] = stored; length += 1; }
+        let length: i32 = cursor.fill(scratch, 0, 1024);
         let offset: i32 = 0;
         while (offset < length) {
             if (calls == limits.max_write_calls) { return core::result::Err(Failure { cause: Cause::CallLimit, written: written, write_calls: calls }); }

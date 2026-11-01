@@ -441,6 +441,46 @@ pub impl Session {
         if (!verified) { return 0; }
         return SSL_version(self.handle);
     }
+    // Offer application protocols (RFC 7301) in wire form: each name is a
+    // length byte (1..255) and that many bytes, most preferred first. Only
+    // before the handshake starts; an empty list offers nothing.
+    pub fn set_alpn(&self, protocols: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+        if (!self.is_open()) { return core::result::Err(local(Cause::Closed, Phase::Session)); }
+        let fresh: bool = match (self.state()) { State::Handshake -> true, _ -> false };
+        if (!fresh || self.reading != 0 || self.writing != 0) { return core::result::Err(local(Cause::InvalidState, Phase::Session)); }
+        if (!valid(protocols) || protocols.length > 65535) { return core::result::Err(local(Cause::Bounds, Phase::Session)); }
+        let i: i32 = 0;
+        while (i < protocols.length) {
+            let n: i32 = protocols.values[protocols.start + i] as i32;
+            if (n == 0 || i + 1 + n > protocols.length) { return core::result::Err(local(Cause::Bounds, Phase::Session)); }
+            i += 1 + n;
+        }
+        let allocated = packed(protocols, Phase::Session);
+        if (allocated.is_err()) { return core::result::Err(allocated.unwrap_err()); }
+        let list: Packed = allocated.unwrap();
+        ERR_clear_error();
+        // SSL_set_alpn_protos copies the list and returns 0 on success.
+        let failed: i32 = SSL_set_alpn_protos(self.handle, list.storage, protocols.length as u32);
+        list.destroy();
+        if (failed != 0) { return core::result::Err(queued(Phase::Session, 0, 0, 0)); }
+        return core::result::Ok(0);
+    }
+    // The protocol the server selected, copied into the front of output up
+    // to its length. Returns the selected name's length; 0 means none was
+    // negotiated (or no verified handshake is retained).
+    pub fn selected_protocol(&self, output: core::slice::View<u8>) -> i32 {
+        if (self.negotiated_version() == 0 || self.counts == 0) { return 0; }
+        // counts holds the out-parameters: the name pointer, then its length.
+        zero_count(self.counts); zero_count(self.counts + 8);
+        SSL_get0_alpn_selected(self.handle, self.counts, self.counts + 8);
+        let place: [ptr] = core::mem::typed_slice_from_raw_parts<ptr>(self.counts, 1); let data: ptr = place[0];
+        let sizes: [u32] = core::mem::typed_slice_from_raw_parts<u32>(self.counts + 8, 1); let n: i32 = sizes[0] as i32;
+        zero_count(self.counts); zero_count(self.counts + 8);
+        if (data == 0 || n <= 0) { return 0; }
+        let name: [u8] = core::mem::typed_slice_from_raw_parts<u8>(data, n);
+        let i: i32 = 0; while (i < n && i < output.length) { output.values[output.start + i] = name[i]; i += 1; }
+        return n;
+    }
     // Release only this wrapper's requested read size. Native buffered input
     // remains untouched; read-WANT_WRITE protocol output must first progress.
     pub fn quiesce_read(&self) -> core::result::Result<bool, Error> {
@@ -627,6 +667,8 @@ pub extern "C" fn SSL_set_connect_state(session: ptr);
 pub extern "C" fn SSL_set_accept_state(session: ptr);
 pub extern "C" fn SSL_do_handshake(session: ptr) -> i32;
 pub extern "C" fn SSL_version(session: ptr) -> i32;
+pub extern "C" fn SSL_set_alpn_protos(session: ptr, protocols: ptr, length: u32) -> i32;
+pub extern "C" fn SSL_get0_alpn_selected(session: ptr, data: ptr, length: ptr);
 pub extern "C" fn SSL_get_error(session: ptr, result: i32) -> i32;
 pub extern "C" fn SSL_get_verify_result(session: ptr) -> i64;
 pub extern "C" fn SSL_get0_peer_certificate(session: ptr) -> ptr;

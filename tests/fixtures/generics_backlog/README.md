@@ -8,12 +8,16 @@ Gaps found while writing the generic core::vec, core::set and core::pair
 (2026-10-15). Each probe returns 42 once the feature works; the diagnostic is
 what the current compiler prints. "Blocks" counts the existing per-type
 stdlib modules that a generic replacement cannot cover until the gap closes.
-- b19: a self method of a stdlib type called through the type's path,
-  `Option::is_some(o)` after `import core::option;`. LNC0005 "unresolved
-  identifier" at the path. Local and source-module types take this form
-  since b14 (p82). An imported library's portable parameter rows omit
-  syntactic self, so its path call also needs the receiver row
-  (dependencies/15a, 15b) (found 2026-10-31). Owner: TBD.
+- b19: a self method of a stdlib generic type called through the bare
+  type's path, `Option::is_some(o)` after `import core::option;`. LNC0005
+  "unresolved identifier" at `Option`. The forms around it work since
+  2026-10-31: `Option<i32>::is_some(o)`, the nongeneric
+  `TotalF32::to_bits(t)` and `Descriptor::raw_handle(d.borrow())`, and a local
+  bare `W::get(w)`. A local bare qualifier names its declaration's symbolic
+  application (modules/10k); an imported generic one has no application
+  (dependencies/14 builds only the zero-operand form), so the call publishes
+  no method key. It needs a per-use application whose operands are the
+  declaration's own parameters, and calls/03d must not bind them. Owner: TBD.
 - b16 (Wasm only): a function whose result type is an imported generic
   enum, `fn half(x: i32) -> core::option::Option<i32>`, compiles to a module
   node rejects ("not enough arguments on the stack for local.set"). The same
@@ -45,6 +49,11 @@ Not probes here:
   qualified_enum_variants_bind_qualifier_scope_before_members
   (tests/compiler_generic_types_execution.rs) expects. Present on 656fd44e;
   the test's accepted forms run and return 42.
+- `&expr` is not an expression. References come from methods that return
+  `self` (`value.borrow()`, `frame.borrow_mut()`): the S4 first step of
+  docs/memory-scoped-stacks-design.md chose that for `&mut T` "the way it gets
+  a `&T`", and grammar/lanius.bnf has no address-of expression. So a path call
+  of a `&self` method passes `S::peek(s.borrow(), 2)`. Recorded 2026-10-31.
 - A generic declaration that contains itself by value,
   `struct Node<T> { value: T, next: Node<T> }`, is accepted while nothing
   instantiates it (a compile exits normally). It should be rejected with

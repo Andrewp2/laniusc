@@ -1,20 +1,20 @@
 // Parallel slice algorithms on std::steal work-stealing pools: sort (stable
-// and unstable), map and reduce over std::parallel::Shared arrays.
+// and unstable), map, reduce and scan over std::parallel::Shared arrays.
 // Each phase seeds its tasks across the workers' deques, forks the workers,
 // and they pop, steal and run tasks until the phase is finished.
-// Sorting splits the data into runs, sorts each run with core::slice
-// pdqsort (sort_unstable) or the stable run-adaptive merge sort, then merges
-// pairs of runs round by round. Every merge is itself split into pieces at
+// Sorting splits the data into runs, sorts each run with an introsort
+// (unstable) or a bottom-up merge sort (stable), then merges pairs of runs
+// round by round. Every merge is itself split into pieces at
 // merge-path (co-rank) boundaries, so all workers share each round.
 // Linux x86_64/glibc; link with --native-link --native-library atomic.
-// See docs/stdlib-concurrency.md#parallel-sorting-map-and-reduce.
+// See docs/stdlib-concurrency.md#parallel-sorting-map-reduce-and-scan.
 module std::par;
 import core::cmp;
 import core::function;
 import core::iter;
 import core::mem;
 import core::result;
-import core::slice;
+import std::atomic;
 import std::parallel;
 import std::steal;
 import std::sync;
@@ -26,19 +26,23 @@ pub const DEQUE_CAPACITY: i32 = 1024;
 pub enum Error { InvalidPlan, LengthMismatch, Failed, Steal(std::steal::Error), Sync(std::sync::Error), Worker(std::worker::Error) }
 
 // kind 0 sort run [a0, a1); 1 merge src[a0, a1) with src[b0, b1) into
-// dst[out..); 2 copy src[a0, a1) to dst[a0, a1); 3 map; 4 reduce leaf out.
+// dst[out..); 2 copy src[a0, a1) to dst[a0, a1); 3 map; 4 reduce leaf out;
+// 5 scan pass 1 (range total into out); 6 scan pass 2 (rescan from out).
 // from_scratch selects the source buffer of kinds 1 and 2; stable selects
 // the run sort.
 pub struct Job { kind: i32, from_scratch: bool, stable: bool, a0: i32, a1: i32, b0: i32, b1: i32, out: i32 }
 
-pub struct Plan { workers: i32, grain: i32, queues: std::steal::Queues<Job> }
+// control: a phase counter word (futex) and a stop word for the sort crew.
+pub struct Plan { workers: i32, grain: i32, queues: std::steal::Queues<Job>, control: ptr }
 // grain is the target task size in elements; it is raised as needed so a
 // phase never has more tasks than the deques hold.
 pub fn plan(region: &std::sync::Region, workers: i32, grain: i32) -> core::result::Result<Plan, Error> {
     if (workers <= 0 || workers > MAX_WORKERS || grain <= 0) { return core::result::Err(Error::InvalidPlan); }
     let queues: core::result::Result<std::steal::Queues<Job>, std::steal::Error> = std::steal::queues<Job>(region, workers, DEQUE_CAPACITY);
     if (queues.is_err()) { return core::result::Err(Error::Steal(queues.unwrap_err())); }
-    return core::result::Ok(Plan { workers: workers, grain: grain, queues: queues.unwrap() });
+    let control: core::result::Result<ptr, std::sync::Error> = region.allocate(64);
+    if (control.is_err()) { return core::result::Err(Error::Sync(control.unwrap_err())); }
+    return core::result::Ok(Plan { workers: workers, grain: grain, queues: queues.unwrap(), control: control.unwrap() });
 }
 fn grain_for(plan: Plan, length: i32) -> i32 {
     let limit: i32 = plan.workers * DEQUE_CAPACITY / 2;
@@ -98,14 +102,110 @@ fn co_rank<T>(src: [T], a0: i32, na: i32, b0: i32, nb: i32, d: i32) -> i32 where
     return lo;
 }
 
+// Run sorts. These call T::lt directly: core::slice's sorts go through a
+// core::ordering::Comparator whose compare returns an Ordering value, about
+// three times the cost per comparison in the current native code (see
+// docs/stdlib-concurrency.md), and the run sorts are most of a parallel sort.
+fn floor_log2(value: i32) -> i32 { let bits: i32 = 0; let rest: i32 = value; while (rest > 1) { rest = rest / 2; bits += 1; } return bits; }
+fn swap<T>(v: [T], a: i32, b: i32) { let t: T = v[a]; v[a] = v[b]; v[b] = t; }
+// Straight insertion of [lo+1, hi) into the sorted prefix; stable.
+fn insertion<T>(v: [T], lo: i32, hi: i32) where T: core::cmp::Ord<T> {
+    let i: i32 = lo + 1;
+    while (i < hi) {
+        let x: T = v[i]; let j: i32 = i;
+        while (j > lo) {
+            let before: T = v[j - 1];
+            if (!T::lt(x, before)) { break; }
+            v[j] = before; j -= 1;
+        }
+        v[j] = x; i += 1;
+    }
+}
+fn sift<T>(v: [T], lo: i32, root: i32, count: i32) where T: core::cmp::Ord<T> {
+    let at: i32 = root;
+    while (true) {
+        let child: i32 = 2 * at + 1;
+        if (child >= count) { return; }
+        if (child + 1 < count) { if (T::lt(v[lo + child], v[lo + child + 1])) { child += 1; } }
+        if (!T::lt(v[lo + at], v[lo + child])) { return; }
+        swap(v, lo + at, lo + child); at = child;
+    }
+}
+fn heapsort<T>(v: [T], lo: i32, hi: i32) where T: core::cmp::Ord<T> {
+    let count: i32 = hi - lo; let k: i32 = count / 2;
+    while (k > 0) { k -= 1; sift(v, lo, k, count); }
+    let end: i32 = count;
+    while (end > 1) { end -= 1; swap(v, lo, lo + end); sift(v, lo, 0, end); }
+}
+// Order v[a] <= v[b] <= v[c].
+fn sort3<T>(v: [T], a: i32, b: i32, c: i32) where T: core::cmp::Ord<T> {
+    if (T::lt(v[b], v[a])) { swap(v, a, b); }
+    if (T::lt(v[c], v[b])) { swap(v, b, c); if (T::lt(v[b], v[a])) { swap(v, a, b); } }
+}
+// Hoare partition of [lo, hi), hi - lo >= 3, around a median of three (a
+// ninther above 128 elements). Returns p with lo < p < hi and every element
+// of [lo, p) <= every element of [p, hi). Equal keys stop both scans, so
+// all-equal ranges split in the middle.
+fn partition<T>(v: [T], lo: i32, hi: i32) -> i32 where T: core::cmp::Ord<T> {
+    let mid: i32 = lo + (hi - lo) / 2;
+    if (hi - lo > 128) {
+        let step: i32 = (hi - lo) / 8;
+        sort3(v, lo, lo + step, lo + 2 * step);
+        sort3(v, mid - step, mid, mid + step);
+        sort3(v, hi - 1 - 2 * step, hi - 1 - step, hi - 1);
+        sort3(v, lo + step, mid, hi - 1 - step);
+    } else { sort3(v, lo, mid, hi - 1); }
+    let pivot: T = v[mid];
+    let i: i32 = lo - 1; let j: i32 = hi;
+    while (true) {
+        i += 1; while (T::lt(v[i], pivot)) { i += 1; }
+        j -= 1; while (T::lt(pivot, v[j])) { j -= 1; }
+        if (i >= j) { return j + 1; }
+        swap(v, i, j);
+    }
+    return mid;
+}
+// Introsort: quicksort on the larger side in a loop and recursion on the
+// smaller (depth at most log2 n), insertion below 24 elements, heapsort
+// once budget partitions are spent, so the worst case is O(n log n).
+fn introsort<T>(v: [T], lo: i32, hi: i32, budget: i32) where T: core::cmp::Ord<T> {
+    let low: i32 = lo; let high: i32 = hi; let left: i32 = budget;
+    while (high - low > 24) {
+        if (left == 0) { heapsort(v, low, high); return; }
+        left -= 1;
+        let p: i32 = partition(v, low, high);
+        if (p - low < high - p) { introsort(v, low, p, left); low = p; } else { introsort(v, p, high, left); high = p; }
+    }
+    insertion(v, low, high);
+}
+// Stable merge of a[a0, a1) and a[a1, a2) into b from a0; ties take the left.
+fn merge_runs<T>(a: [T], b: [T], a0: i32, a1: i32, a2: i32) where T: core::cmp::Ord<T> {
+    merge_into(a, b, a0, a1, a1, a2, a0);
+}
+// Stable bottom-up merge sort of d[lo, hi) using s[lo, hi): insertion on
+// 32-element blocks, then rounds that alternate between d and s; a final
+// copy brings an odd round count back to d.
+fn stable_run<T>(d: [T], s: [T], lo: i32, hi: i32) where T: core::cmp::Ord<T> {
+    let block: i32 = 32; let at: i32 = lo;
+    while (at < hi) { let end: i32 = at + block; if (end > hi) { end = hi; } insertion(d, at, end); at = end; }
+    let width: i32 = block; let in_s: bool = false;
+    while (width < hi - lo) {
+        let start: i32 = lo;
+        while (start < hi) {
+            let mid: i32 = start + width; if (mid > hi) { mid = hi; }
+            let end: i32 = start + 2 * width; if (end > hi) { end = hi; }
+            if (in_s) { merge_runs(s, d, start, mid, end); } else { merge_runs(d, s, start, mid, end); }
+            start = end;
+        }
+        in_s = !in_s; width = width * 2;
+    }
+    if (in_s) { let k: i32 = lo; while (k < hi) { d[k] = s[k]; k += 1; } }
+}
+
 fn run_sort_job<T>(task: Job, data: std::parallel::Shared<T>, scratch: std::parallel::Shared<T>) -> i32 where T: core::cmp::Ord<T> {
     let d: [T] = data.view(); let s: [T] = scratch.view();
     if (task.kind == 0) {
-        let run: core::slice::View<T> = core::slice::view_range(d, task.a0, task.a1 - task.a0).unwrap();
-        if (task.stable) {
-            let spare: core::slice::View<T> = core::slice::view_range(s, task.a0, task.a1 - task.a0).unwrap();
-            if (core::slice::sort_stable(run, spare).is_err()) { return 1; }
-        } else { if (core::slice::sort_unstable(run).is_err()) { return 1; } }
+        if (task.stable) { stable_run(d, s, task.a0, task.a1); } else { introsort(d, task.a0, task.a1, 2 * floor_log2(task.a1 - task.a0)); }
         return 0;
     }
     if (task.kind == 1) {
@@ -119,27 +219,52 @@ fn run_sort_job<T>(task: Job, data: std::parallel::Shared<T>, scratch: std::para
     }
     return 2;
 }
-fn sort_phase<T>(plan: Plan, data: std::parallel::Shared<T>, scratch: std::parallel::Shared<T>) -> core::result::Result<i32, Error> where T: core::cmp::Ord<T> {
-    let made: core::result::Result<std::worker::Pool, std::worker::Error> = std::worker::pool(plan.workers);
-    if (made.is_err()) { return core::result::Err(Error::Worker(made.unwrap_err())); }
-    let pool: std::worker::Pool = made.unwrap();
-    let w: i32 = 0;
-    while (w < plan.workers) {
-        let me: i32 = spawn_one(pool.borrow());
-        if (me == -2) { plan.queues.cancel(); break; }
-        if (me >= 0) {
+// A sort keeps one crew across all its phases: the parent is steal worker 0
+// and forks workers - 1 children once (a fork copies the parent's page
+// tables, a few milliseconds each with a large heap). Per phase the parent
+// seeds tasks, bumps the phase word and works as worker 0; a phase is over
+// when next() reports Finished, i.e. nothing is pending. Children run tasks
+// whenever the phase word moves, and exit once the stop word is set.
+fn phase_word(plan: Plan) -> std::atomic::Atomic32 { return std::atomic::at32(plan.control); }
+fn stop_word(plan: Plan) -> std::atomic::Atomic32 { return std::atomic::at32(plan.control + 8); }
+fn crew_member<T>(plan: Plan, me: i32, data: std::parallel::Shared<T>, scratch: std::parallel::Shared<T>) -> i32 where T: core::cmp::Ord<T> {
+    let seen: u32 = 0;
+    while (true) {
+        if (stop_word(plan).load(std::atomic::Load::Acquire) != 0) { return 0; }
+        let now: u32 = phase_word(plan).load(std::atomic::Load::Acquire);
+        if (now == seen) { std::sync::futex_wait(plan.control, seen); }
+        else {
+            seen = now;
             let task: Job = next_job(plan, me);
             while (task.kind >= 0) {
                 let status: i32 = run_sort_job(task, data, scratch);
-                if (status != 0) { plan.queues.cancel(); std::worker::finish(status); return core::result::Err(Error::Failed); }
+                if (status != 0) { plan.queues.cancel(); return status; }
                 plan.queues.done(me);
                 task = next_job(plan, me);
             }
-            std::worker::finish(0); return core::result::Err(Error::Failed);
         }
-        w += 1;
     }
-    return join(plan, pool.borrow());
+    return 0;
+}
+fn crew_phase<T>(plan: Plan, data: std::parallel::Shared<T>, scratch: std::parallel::Shared<T>) -> core::result::Result<i32, Error> where T: core::cmp::Ord<T> {
+    phase_word(plan).fetch_add(1, std::atomic::Ordering::SeqCst);
+    std::sync::futex_wake(plan.control, 2147483647);
+    while (true) {
+        let next: core::result::Result<std::steal::Next<Job>, std::steal::Error> = plan.queues.next(0);
+        if (next.is_err()) { return core::result::Err(Error::Steal(next.unwrap_err())); }
+        let task: Job = match (next.unwrap()) { std::steal::Next::Task(found) -> found, std::steal::Next::Finished -> job(-1, false, false, 0, 0, 0, 0, 0), std::steal::Next::Cancelled -> job(-2, false, false, 0, 0, 0, 0, 0) };
+        if (task.kind == -1) { return core::result::Ok(0); }
+        if (task.kind == -2) { return core::result::Err(Error::Failed); }
+        if (run_sort_job(task, data, scratch) != 0) { plan.queues.cancel(); return core::result::Err(Error::Failed); }
+        plan.queues.done(0);
+    }
+    return core::result::Ok(0);
+}
+fn crew_stop(plan: Plan, pool: &std::worker::Pool) -> core::result::Result<i32, Error> {
+    stop_word(plan).store(1, std::atomic::Store::Release);
+    phase_word(plan).fetch_add(1, std::atomic::Ordering::SeqCst);
+    std::sync::futex_wake(plan.control, 2147483647);
+    return join(plan, pool);
 }
 // Seed the merge of src[a0, a0+na) and src[b0, b0+nb) as pieces of about
 // grain outputs each. Returns the next seed index.
@@ -158,9 +283,31 @@ fn sort_with<T>(plan: Plan, data: std::parallel::Shared<T>, scratch: std::parall
     let length: i32 = data.len();
     if (scratch.len() != length) { return core::result::Err(Error::LengthMismatch); }
     if (length < 2) { return core::result::Ok(0); }
+    phase_word(plan).store(0, std::atomic::Store::Relaxed); stop_word(plan).store(0, std::atomic::Store::Relaxed);
+    let made: core::result::Result<std::worker::Pool, std::worker::Error> = std::worker::pool(plan.workers);
+    if (made.is_err()) { return core::result::Err(Error::Worker(made.unwrap_err())); }
+    let pool: std::worker::Pool = made.unwrap();
+    let w: i32 = 1; let started: bool = true;
+    while (w < plan.workers) {
+        let me: i32 = spawn_one(pool.borrow());
+        if (me == -2) { started = false; break; }
+        if (me >= 0) { std::worker::finish(crew_member(plan, me + 1, data, scratch)); return core::result::Err(Error::Failed); }
+        w += 1;
+    }
+    let sorted: core::result::Result<i32, Error> = core::result::Err(Error::Failed);
+    if (started) { sorted = sort_phases(plan, data, scratch, stable); }
+    let stopped: core::result::Result<i32, Error> = crew_stop(plan, pool.borrow());
+    if (sorted.is_err()) { return sorted; }
+    if (stopped.is_err()) { return stopped; }
+    return sorted;
+}
+fn sort_phases<T>(plan: Plan, data: std::parallel::Shared<T>, scratch: std::parallel::Shared<T>, stable: bool) -> core::result::Result<i32, Error> where T: core::cmp::Ord<T> {
+    let length: i32 = data.len();
     let grain: i32 = grain_for(plan, length);
-    // Runs: four per worker, at least two elements each.
-    let runs: i32 = plan.workers * 4; if (runs > length / 2) { runs = length / 2; } if (runs < 1) { runs = 1; }
+    // Runs: the power of four at or above twice the workers, so there is an
+    // even number of merge rounds and no final copy; at least two elements each.
+    let runs: i32 = 1; while (runs < 2 * plan.workers) { runs = runs * 4; }
+    if (runs > length / 2) { runs = length / 2; } if (runs < 1) { runs = 1; }
     let width: i32 = (length + runs - 1) / runs;
     let r: i32 = 0; let lo: i32 = 0;
     while (lo < length) {
@@ -169,7 +316,7 @@ fn sort_with<T>(plan: Plan, data: std::parallel::Shared<T>, scratch: std::parall
         if (seeded.is_err()) { return seeded; }
         r += 1; lo = hi;
     }
-    let phase: core::result::Result<i32, Error> = sort_phase(plan, data, scratch);
+    let phase: core::result::Result<i32, Error> = crew_phase(plan, data, scratch);
     if (phase.is_err()) { return phase; }
     let rounds: i32 = 1; let in_scratch: bool = false;
     while (width < length) {
@@ -182,7 +329,7 @@ fn sort_with<T>(plan: Plan, data: std::parallel::Shared<T>, scratch: std::parall
             if (seeded.is_err()) { return seeded; }
             index = seeded.unwrap(); start = end;
         }
-        let merged: core::result::Result<i32, Error> = sort_phase(plan, data, scratch);
+        let merged: core::result::Result<i32, Error> = crew_phase(plan, data, scratch);
         if (merged.is_err()) { return merged; }
         in_scratch = !in_scratch; width = width * 2; rounds += 1;
     }
@@ -194,7 +341,7 @@ fn sort_with<T>(plan: Plan, data: std::parallel::Shared<T>, scratch: std::parall
             if (seeded.is_err()) { return seeded; }
             index += 1; at = end;
         }
-        let copied: core::result::Result<i32, Error> = sort_phase(plan, data, scratch);
+        let copied: core::result::Result<i32, Error> = crew_phase(plan, data, scratch);
         if (copied.is_err()) { return copied; }
         rounds += 1;
     }
@@ -291,4 +438,66 @@ pub fn reduce<T, A, F, C>(plan: Plan, input: std::parallel::Shared<T>, partials:
     let total: A = identity; let k: i32 = 0;
     while (k < tasks) { total = combine.apply(total, sums[k]); k += 1; }
     return core::result::Ok(total);
+}
+
+fn scan_phase<T, C>(plan: Plan, data: std::parallel::Shared<T>, partials: std::parallel::Shared<T>, identity: T, combine: &C) -> core::result::Result<i32, Error> where C: core::iter::Folder<T, T> {
+    let made: core::result::Result<std::worker::Pool, std::worker::Error> = std::worker::pool(plan.workers);
+    if (made.is_err()) { return core::result::Err(Error::Worker(made.unwrap_err())); }
+    let pool: std::worker::Pool = made.unwrap();
+    let w: i32 = 0;
+    while (w < plan.workers) {
+        let me: i32 = spawn_one(pool.borrow());
+        if (me == -2) { plan.queues.cancel(); break; }
+        if (me >= 0) {
+            let values: [T] = data.view(); let sums: [T] = partials.view();
+            let task: Job = next_job(plan, me);
+            while (task.kind >= 0) {
+                let i: i32 = task.a0;
+                if (task.kind == 5) {
+                    let acc: T = identity;
+                    while (i < task.a1) { acc = combine.apply(acc, values[i]); i += 1; }
+                    sums[task.out] = acc;
+                } else {
+                    let acc: T = sums[task.out];
+                    while (i < task.a1) { acc = combine.apply(acc, values[i]); values[i] = acc; i += 1; }
+                }
+                plan.queues.done(me);
+                task = next_job(plan, me);
+            }
+            std::worker::finish(0); return core::result::Err(Error::Failed);
+        }
+        w += 1;
+    }
+    return join(plan, pool.borrow());
+}
+// In-place inclusive scan: data[i] becomes the combination of data[0..=i] in
+// index order. combine must be associative with unit identity; it need not
+// be commutative. Pass 1 folds each grain-sized task's range into
+// partials[task]; the parent turns those into exclusive prefixes in task
+// order; pass 2 rescans every range from its prefix. partials needs one T
+// per task, as for reduce. Returns the task count.
+pub fn scan<T, C>(plan: Plan, data: std::parallel::Shared<T>, partials: std::parallel::Shared<T>, identity: T, combine: &C) -> core::result::Result<i32, Error> where C: core::iter::Folder<T, T> {
+    let length: i32 = data.len();
+    let grain: i32 = grain_for(plan, length);
+    let tasks: i32 = 0; if (length > 0) { tasks = (length - 1) / grain + 1; }
+    if (partials.len() < tasks) { return core::result::Err(Error::LengthMismatch); }
+    let pass: i32 = 5;
+    while (pass <= 6) {
+        let index: i32 = 0;
+        while (index < tasks) {
+            let end: i32 = (index + 1) * grain; if (end > length) { end = length; }
+            let seeded: core::result::Result<i32, Error> = seed(plan, index, job(pass, false, false, index * grain, end, 0, 0, index));
+            if (seeded.is_err()) { return seeded; }
+            index += 1;
+        }
+        let ran: core::result::Result<i32, Error> = scan_phase(plan, data, partials, identity, combine);
+        if (ran.is_err()) { return ran; }
+        if (pass == 5) {
+            let sums: [T] = partials.view();
+            let running: T = identity; let k: i32 = 0;
+            while (k < tasks) { let total: T = sums[k]; sums[k] = running; running = combine.apply(running, total); k += 1; }
+        }
+        pass += 1;
+    }
+    return core::result::Ok(tasks);
 }

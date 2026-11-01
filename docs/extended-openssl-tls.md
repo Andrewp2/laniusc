@@ -289,6 +289,16 @@ in the audited native library. It returns zero before handshake completion or
 after destruction. This reports the retained session's version, not remote
 application acceptance or authorization.
 
+ALPN (RFC 7301) is per session. `set_alpn(protocols)` offers a list in wire
+form (each name a length byte of 1 to 255 and that many bytes, most
+preferred first) and is accepted only before the handshake starts
+(`InvalidState` after, `Bounds` for a malformed list). OpenSSL copies the
+list. `selected_protocol(output)` copies the server's choice into the front
+of `output` and returns its length, or 0 when nothing was negotiated or no
+verified handshake is retained. `ext::tls_stream` offers it through
+`adopt_connected_with_alpn_until` and `Stream.selected_protocol`, and
+[`ext::http_agent`](extended-http-agent.md#http2) uses it to select HTTP/2.
+
 `Sent` alone is not a bidirectional clean shutdown. The caller decides whether
 its application framing permits abandonment, or continues to the peer's alert
 under its deadline. The socket remains borrowed throughout.

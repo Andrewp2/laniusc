@@ -26,6 +26,18 @@ fn render(o: str, on: i32, a: str, an: i32, b: str, bn: i32, level: ext::merge3:
     let out: alloc::vec::Vec<u8> = core::result::unwrap(ext::merge3::write_merge(lo.as_view(), la.as_view(), lb.as_view(), m.borrow(), labels, ext::merge3::Format { style: style, gnu_identical: gnu, max_output: 100000 }));
     m.destroy(); lo.destroy(); la.destroy(); lb.destroy(); return out;
 }
+// The same merge through merge_text/write_text_merge (no Line records).
+fn text_render(o: core::slice::View<u8>, a: core::slice::View<u8>, b: core::slice::View<u8>, level: ext::merge3::Level, style: ext::merge3::Style, gnu: bool, max_output: i32) -> core::result::Result<alloc::vec::Vec<u8>, ext::merge3::Error> {
+    let t: ext::merge3::TextMerge = core::result::unwrap(ext::merge3::merge_text(o, a, b, level, ext::seqdiff::Algorithm::Xdiff, ext::seqdiff::default_limits()));
+    let labels: ext::merge3::Labels = ext::merge3::Labels { ours: literal("A", 1), base: literal("O", 1), theirs: literal("B", 1) };
+    let out: core::result::Result<alloc::vec::Vec<u8>, ext::merge3::Error> = ext::merge3::write_text_merge(t.borrow(), labels, ext::merge3::Format { style: style, gnu_identical: gnu, max_output: max_output });
+    t.destroy(); return out;
+}
+fn agrees(o: str, on: i32, a: str, an: i32, b: str, bn: i32, level: ext::merge3::Level, style: ext::merge3::Style, gnu: bool) -> bool {
+    let want: alloc::vec::Vec<u8> = render(o, on, a, an, b, bn, level, style, gnu);
+    let got: alloc::vec::Vec<u8> = core::result::unwrap(text_render(literal(o, on), literal(a, an), literal(b, bn), level, style, gnu, 100000));
+    let ok: bool = same(want.as_view(), got.as_view()); want.destroy(); got.destroy(); return ok;
+}
 fn main() -> i32 {
     let limits: ext::seqdiff::Limits = ext::seqdiff::default_limits();
     // Generic: 2 changed only by ours, 4 only by theirs, 6 by both identically.
@@ -54,5 +66,23 @@ fn main() -> i32 {
     // Clean one-sided merge.
     let clean: alloc::vec::Vec<u8> = render("a\nb\nc\n", 6, "a\nb\nc\n", 6, "a\nB\nc\nd\n", 8, ext::merge3::Level::ZealousAlnum, ext::merge3::Style::Merge, false);
     if (!same(clean.as_view(), literal("a\nB\nc\nd\n", 8))) { return 8; } clean.destroy();
+    // Text merges render exactly as Line merges, packed or not.
+    if (!agrees("a\nb\nc\n", 6, "a\nX\nc\n", 6, "a\nY\nc\n", 6, ext::merge3::Level::ZealousAlnum, ext::merge3::Style::Merge, false)) { return 9; }
+    if (!agrees("a\nb\nc\n", 6, "a\nX\nc\n", 6, "a\nY\nc\n", 6, ext::merge3::Level::Eager, ext::merge3::Style::Diff3, false)) { return 9; }
+    if (!agrees("a\nb\nc\n", 6, "a\nS\nX\nc\n", 8, "a\nS\nY\nc\n", 8, ext::merge3::Level::Zealous, ext::merge3::Style::Merge, false)) { return 9; }
+    if (!agrees("a\nb\n", 4, "a\nX\n", 4, "a\nX\n", 4, ext::merge3::Level::Eager, ext::merge3::Style::Diff3, true)) { return 9; }
+    if (!agrees("a\nb", 3, "a\nX", 3, "a\nY", 3, ext::merge3::Level::Eager, ext::merge3::Style::Merge, false)) { return 9; }
+    if (!agrees("x\n1\n-\n2\n-\n-\n-\n3\n", 16, "x\nA\n-\nB\n-\n-\n-\nC\n", 16, "x\nD\n-\nE\n-\n-\n-\nF\n", 16, ext::merge3::Level::ZealousAlnum, ext::merge3::Style::Merge, false)) { return 9; }
+    let no: [u8;6] = [97,10,98,10,99,10]; let na: [u8;6] = [97,10,88,10,99,10]; let nb: [u8;6] = [97,10,89,10,99,10];
+    let unpacked: alloc::vec::Vec<u8> = core::result::unwrap(text_render(core::slice::View { values: no, start: 0, length: 6 }, core::slice::View { values: na, start: 0, length: 6 }, core::slice::View { values: nb, start: 0, length: 6 }, ext::merge3::Level::ZealousAlnum, ext::merge3::Style::Merge, false, 100000));
+    let want: alloc::vec::Vec<u8> = render("a\nb\nc\n", 6, "a\nX\nc\n", 6, "a\nY\nc\n", 6, ext::merge3::Level::ZealousAlnum, ext::merge3::Style::Merge, false);
+    if (!same(unpacked.as_view(), want.as_view())) { return 10; }
+    // The output limit admits exactly the merge's size.
+    let fits: core::result::Result<alloc::vec::Vec<u8>, ext::merge3::Error> = text_render(literal("a\nb\nc\n", 6), literal("a\nX\nc\n", 6), literal("a\nY\nc\n", 6), ext::merge3::Level::ZealousAlnum, ext::merge3::Style::Merge, false, want.len());
+    if (core::result::is_err(fits)) { return 11; }
+    let short: core::result::Result<alloc::vec::Vec<u8>, ext::merge3::Error> = text_render(literal("a\nb\nc\n", 6), literal("a\nX\nc\n", 6), literal("a\nY\nc\n", 6), ext::merge3::Level::ZealousAlnum, ext::merge3::Style::Merge, false, want.len() - 1);
+    let limited: bool = false; if (core::result::is_err(short)) { limited = match (core::result::unwrap_err(short)) { ext::merge3::Error::OutputLimit -> true, _ -> false }; }
+    if (!limited) { return 11; }
+    unpacked.destroy(); want.destroy(); let f: alloc::vec::Vec<u8> = core::result::unwrap(fits); f.destroy();
     return 0;
 }
