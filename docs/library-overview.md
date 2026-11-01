@@ -607,6 +607,18 @@ getrusage totals to `std::command`. The timer and usage contracts programs, the
 and the [child-usage](stdlib-child-usage.md#application-child-usage)
 cli39/usage42 groups pass as direct runs on native Linux x86_64.
 
+**Event loop and process descriptors.**
+
+The [event-loop guide](stdlib-event-loop.md) adds `std::event`, an epoll
+owner that multiplexes pipes, sockets, timerfds and child pidfds with 64-bit
+caller tokens, level-triggered or oneshot interest, millisecond waits and
+EINTR-stable `Deadline` waits through `epoll_pwait2`. `close()` refuses while
+registrations remain. Pidfds report a child's exit before the reap and signal
+exactly that process. The contracts program and the
+[tee-children](stdlib-event-loop.md#application-tee-children) cli56/tee12571
+groups, which tee two children's output with timestamps and kill them on a
+timeout, pass as direct runs on native Linux x86_64.
+
 **Shared random-source budgets.**
 
 The [draw-budget guide](stdlib-random-budget.md) specifies one borrowed adapter,

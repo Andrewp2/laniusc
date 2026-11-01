@@ -1734,6 +1734,12 @@
         "docs/stdlib-time.md"
       ]
     },
+    "std::event": {
+      "guides": [
+        "docs/stdlib-event-loop.md"
+      ],
+      "note": "Manual epoll and pidfd owners: remove registrations before close, which is refused otherwise; descriptors close exactly once, never retried. Level-triggered unless oneshot. Evidence is finite native Linux x86_64 CPU execution."
+    },
     "std::timer": {
       "guides": [
         "docs/stdlib-timers.md"
