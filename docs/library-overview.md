@@ -2047,6 +2047,16 @@ calibrations/overlap. They use frozen production `cf1347d5...` and probe ELF
 [materializer guide](extended-archive-extraction.md). This selected workflow
 does not complete the full standard or extended library goal.
 
+**Append-only key/value log.**
+
+[`ext::kv_log`](extended-kv-log.md) is an embedded Bitcask-style store. It
+appends CRC-32 records to a single log and keeps a hash index of keys in memory.
+`sync()` is the commit point. Recovery truncates at the first torn or corrupt
+record, and compaction writes a new log and renames it over the old one. A
+Python dict model passes 300 generated op-sequence cases (with simulated crashes
+and exact file bytes) and 600 crash-injection cases (truncation, bit flips,
+garbage, stale compaction file). The `kv` sample is built on `std::cli`.
+
 **Atomic publication and key-value application checkpoint.**
 
 The actual AtomicFile probe passes owner nine, bounds 25, publication six and

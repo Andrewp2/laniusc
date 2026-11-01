@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **333 modules**, **17779 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **334 modules**, **17843 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -284,6 +284,7 @@ Inventory: **333 modules**, **17779 declaration/member entries**. Counts include
 | [ext::json_stream](ext/json_stream.md) | [source](../../extended/ext/json_stream.lani#L5) | 163 | Source inventory | [extended-json-stream](../extended-json-stream.md) |
 | [ext::json_tree](ext/json_tree.md) | [source](../../extended/ext/json_tree.lani#L5) | 89 | Source inventory | [extended-json-patch](../extended-json-patch.md) |
 | [ext::kv](ext/kv.md) | [source](../../extended/ext/kv.lani#L3) | 48 | Source inventory | [extended-kv](../extended-kv.md), [extended-cli-complete](../extended-cli-complete.md) |
+| [ext::kv_log](ext/kv_log.md) | [source](../../extended/ext/kv_log.lani#L6) | 64 | Source inventory | [extended-kv-log](../extended-kv-log.md) |
 | [ext::lexer](ext/lexer.md) | [source](../../extended/ext/lexer.lani#L2) | 80 | Source inventory | [extended-lexer](../extended-lexer.md), [extended-lex-scan](../extended-lex-scan.md), [library-regex-workspace-plan](../library-regex-workspace-plan.md) |
 | [ext::linalg](ext/linalg.md) | [source](../../extended/ext/linalg.lani#L3) | 87 | Source inventory | [extended-linalg](../extended-linalg.md), [extended-sparse](../extended-sparse.md) |
 | [ext::log](ext/log.md) | [source](../../extended/ext/log.lani#L3) | 38 | Source inventory | [extended-log](../extended-log.md) |
