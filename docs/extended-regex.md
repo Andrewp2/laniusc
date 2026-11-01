@@ -184,6 +184,7 @@ POSIX leftmost-longest matching. No implicit normalization or casing occurs.
 | `^`, `$` | Start/end of text; also after/before LF when multiline is true. |
 | `\A`, `\z` | Absolute start/end of text. |
 | `\b`, `\B` | ASCII word boundary and its complement, including EOF/BOF. |
+| `(?<=x)`, `(?<!x)` | Fixed-width lookbehind and its negation: whether `x` matches the scalars just before the current position. See [Lookbehind](#lookbehind). |
 | `\d`, `\D` | ASCII `[0-9]` and complement. |
 | `\s`, `\S` | ASCII HT, LF, FF, CR and space, and complement (VT is excluded). |
 | `\w`, `\W` | ASCII letters, digits and underscore, and complement. |
@@ -235,7 +236,8 @@ RE2/Pike cycle policy.
 Nullable branch priority still matters: `(?:|a)*` and `(?:|a)+` prefer an
 empty match on `a`.
 
-Unsupported constructs return an explicit error: lookaround, backreferences
+Unsupported constructs return an explicit error: lookahead, captures inside
+lookbehind, backreferences
 (including numeric and named forms such as `(?P=name)`), inline flags, possessive
 quantifiers, atomic groups, comments, POSIX named classes, script properties,
 byte-mode `\C`, octal escapes, `\Q...\E`, `\Z`, and unknown alphanumeric
@@ -392,13 +394,39 @@ change or reduced regex capability is part of this adaptation.
 or -1. `Regex.group_name(group) -> Option<Text>` borrows the name from the
 Regex's own copy, and `name_count()` counts the names. A duplicate name, an
 empty name, or a name that starts with a digit is `Syntax` at the name.
-`(?<=` and `(?<!` remain unsupported lookbehind. Template replacement still
-accepts numeric references only.
+Template replacement still accepts numeric references only.
+
+### Lookbehind
+
+`(?<=x)` holds at a position when `x` matches the `w` scalars ending there,
+and `(?<!x)` when it does not. As in Python `re`, every path through `x` must
+consume the same number of scalars `w`: alternatives must have equal widths
+and counted repeats must be exact (`{n}`, or any count of a zero-width body).
+Otherwise compilation returns `Syntax` at the `(`. Fewer than `w` scalars
+before the position fail `(?<=x)` and satisfy `(?<!x)`. The body may contain
+assertions and further lookbehind. It may not contain captures, named or
+numbered; those are `Unsupported` at the group. Lookbehind looks before the
+search start, so `find_from`, `find_iter` and `longest_prefix_from` see the
+preceding text.
+
+Lookbehind runs on the VM only. `has_assertion()` is true for it, so `dfa()`
+returns `Unsupported(0)` and [`ext::lexer`](extended-lexer.md) keeps such a
+rule out of its combined DFA. The body compiles to a separate sub-program of
+at most 256 instructions (`Limit(0)` beyond that). At each position where a
+thread reaches the lookbehind, the VM steps back `w` scalars and runs the
+sub-program forward with a 256-bit set of PCs per scalar. It needs no
+workspace storage and allocates nothing at search time; compilation
+allocates one temporary width table per lookbehind. Every stepped-back scalar
+and visited PC costs one tick of `max_work`. Without nesting, a search costs
+O(n · m · w · m') ticks at most, for input length n, program size m and
+sub-program size m'; each nesting level multiplies by its own w · m'. On
+`(?:(?<=(?:a|a){8})a)+b` over 20,000 `a`s the oracle's harness takes about
+0.2 s, while CPython takes about 30 s.
 
 ### Capture-free DFA matching
 
 `dfa(&Regex) -> Result<Dfa, Error>` builds an unanchored lazy DFA for an
-assertion-free program; a program with `^ $ \A \z \b \B` is
+assertion-free program; a program with `^ $ \A \z \b \B` or lookbehind is
 `Unsupported(0)`. Always pass the same Regex to its methods:
 
 | Dfa method | Contract |

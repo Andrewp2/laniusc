@@ -32,7 +32,7 @@ pub struct Matches { search: Search }
 pub struct Inst { op: i32, x: i32, y: i32, a: i32, b: i32, flag: bool }
 pub struct Term { low: u32, high: u32, property: i32, negated: bool }
 struct Node { op: i32, left: i32, right: i32, a: i32, b: i32, flag: bool }
-struct Parser { text: core::text::Text, position: i32, nodes: alloc::vec::Vec<Node>, terms: alloc::vec::Vec<Term>, config: Options, groups: i32, depth: i32, failed: bool, error: Error, names: alloc::vec::Vec<i32>, name_bytes: alloc::vec::Vec<u8> }
+struct Parser { text: core::text::Text, position: i32, nodes: alloc::vec::Vec<Node>, terms: alloc::vec::Vec<Term>, config: Options, groups: i32, depth: i32, failed: bool, error: Error, names: alloc::vec::Vec<i32>, name_bytes: alloc::vec::Vec<u8>, behind: i32 }
 // Leaf ops: 0 empty, 1 scalar, 2 class, 3 dot, 4 ^, 5 $, 6 \A,
 // 7 \z, 8 \b, 9 \B. AST: 10 concat,11 alternate,12 repeat,13 group.
 // VM: 10 jump,11 split,12 save,13 accept.
@@ -234,16 +234,20 @@ pub impl Parser {
             if (self.peek() == 63) {
                 self.take();
                 let kind: u32 = self.take();
-                // (?P<name>x) and (?<name>x) are named captures; (?<= and (?<! stay unsupported lookbehind.
+                // (?P<name>x) and (?<name>x) are named captures; (?<=x) and (?<!x) are
+                // fixed-width lookbehind.
                 let named: bool = false;
                 if (kind == 80 && self.peek() == 60) { self.take(); named = true; }
-                if (kind == 60 && self.peek() != 61 && self.peek() != 33) { named = true; }
+                if (kind == 60 && (self.peek() == 61 || self.peek() == 33)) { return self.lookbehind(at); }
+                if (kind == 60) { named = true; }
                 if (named) {
+                    if (self.behind > 0) { self.fail(Error::Unsupported(at)); return 0; }
                     if (self.groups >= self.config.max_captures) { self.fail(Error::Limit(at)); return 0; }
                     self.groups += 1; group = self.groups;
                     if (!self.group_name(group)) { return 0; }
                 } else { if (kind != 58) { self.fail(Error::Unsupported(at)); return 0; } }
             } else {
+                if (self.behind > 0) { self.fail(Error::Unsupported(at)); return 0; }
                 if (self.groups >= self.config.max_captures) { self.fail(Error::Limit(at)); return 0; }
                 self.groups += 1; group = self.groups;
             }
@@ -260,6 +264,48 @@ pub impl Parser {
         if (value == 36) { return self.add(simple_node(5)); }
         if (value == 42 || value == 43 || value == 63 || value == 123 || value == 125 || value == 93 || value == 4294967295) { self.fail(Error::Syntax(at)); return 0; }
         return self.add(literal_node(value));
+    }
+    // After `(?<`: `=x)` or `!x)`. The body may not capture, and every path
+    // through it must consume the same number of scalars (Python's rule).
+    // depth was already incremented by atom.
+    fn lookbehind(&self, at: i32) -> i32 {
+        let negated: bool = self.take() == 33; let first: i32 = self.nodes.len();
+        self.behind += 1; let inside: i32 = self.expression(); self.behind -= 1;
+        if (self.take() != 41) { self.fail(Error::Syntax(at)); }
+        self.depth -= 1;
+        if (self.failed) { return 0; }
+        let width: i32 = self.fixed_width(first, inside);
+        if (width == -2) { self.fail(Error::AllocationFailed); return 0; }
+        if (width < 0) { self.fail(Error::Syntax(at)); return 0; }
+        return self.add(Node { op: 14, left: inside, right: 0, a: width, b: 0, flag: negated });
+    }
+    // Width of nodes[root] in scalars when every path has the same width;
+    // -1 when it varies or is unbounded, -2 on allocation failure. Children
+    // precede parents, and every node of the body is in [first, root].
+    fn fixed_width(&self, first: i32, root: i32) -> i32 {
+        let unbounded: i64 = 1000000000; let count: i32 = root - first + 1;
+        let widths: alloc::vec::Vec<i64> = alloc::vec::new();
+        if (widths.try_resize(count * 2, 0).is_err()) { widths.destroy(); return -2; }
+        let w: [i64] = widths.as_slice(); let nodes: [Node] = self.nodes.as_slice(); let i: i32 = 0;
+        while (i < count) {
+            let n: Node = nodes[first + i]; let lo: i64 = 0; let hi: i64 = 0;
+            if (n.op >= 1 && n.op <= 3) { lo = 1; hi = 1; }
+            if (n.op == 10 || n.op == 11) {
+                let l: i32 = (n.left - first) * 2; let r: i32 = (n.right - first) * 2;
+                if (n.op == 10) { lo = w[l] + w[r]; hi = w[l + 1] + w[r + 1]; }
+                else { lo = w[l]; if (w[r] < lo) { lo = w[r]; } hi = w[l + 1]; if (w[r + 1] > hi) { hi = w[r + 1]; } }
+            }
+            if (n.op == 12) {
+                let l: i32 = (n.left - first) * 2;
+                lo = w[l] * n.a as i64;
+                if (n.b < 0) { if (w[l + 1] == 0) { hi = 0; } else { hi = unbounded; } } else { hi = w[l + 1] * n.b as i64; }
+            }
+            if (lo > unbounded) { lo = unbounded; } if (hi > unbounded) { hi = unbounded; }
+            w[i * 2] = lo; w[i * 2 + 1] = hi; i += 1;
+        }
+        let lo: i64 = w[(count - 1) * 2]; let hi: i64 = w[(count - 1) * 2 + 1]; widths.destroy();
+        if (lo != hi || hi >= unbounded) { return -1; }
+        return hi as i32;
     }
     fn number(&self) -> i32 {
         let count: i32 = 0; let digits: i32 = 0;
@@ -345,6 +391,15 @@ pub impl Builder {
                         else { result = self.emit(instruction(11, result, f.saved, 0, 0, false)); }
                     }
                 }
+                // Lookbehind: a separate sub-program [accept, look) ending in op 15,
+                // then op 14 (x next, y sub-program base, a its entry, b width).
+                if (n.op == 14) {
+                    if (f.phase == 0) { f.phase = 1; f.saved = self.emit(instruction(15, 0, 0, 0, 0, false)); self.push(f); self.push(frame(n.left, f.saved)); }
+                    else {
+                        if (self.code.len() - f.saved > 256) { self.failed = true; self.error = Error::Limit(0); }
+                        result = self.emit(instruction(14, f.next, f.saved, result, n.a, n.flag));
+                    }
+                }
                 if (n.op == 13) {
                     if (f.phase == 0) { f.phase = 1; let end: i32 = self.emit(instruction(12, f.next, 0, n.a * 2 + 1, 0, false)); self.push(f); self.push(frame(n.left, end)); }
                     else { result = self.emit(instruction(12, result, 0, n.a * 2, 0, false)); }
@@ -399,7 +454,7 @@ pub fn compile(pattern: core::text::Text, config: Options) -> core::result::Resu
     let checked: core::result::Result<core::text::Text, Error> = validate(pattern);
     if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
     let nodes: alloc::vec::Vec<Node> = alloc::vec::new(); let terms: alloc::vec::Vec<Term> = alloc::vec::new();
-    let parser: Parser = Parser { text: core::result::unwrap(checked), position: 0, nodes: nodes, terms: terms, config: config, groups: 0, depth: 0, failed: false, error: Error::Bounds, names: alloc::vec::new(), name_bytes: alloc::vec::new() };
+    let parser: Parser = Parser { text: core::result::unwrap(checked), position: 0, nodes: nodes, terms: terms, config: config, groups: 0, depth: 0, failed: false, error: Error::Bounds, names: alloc::vec::new(), name_bytes: alloc::vec::new(), behind: 0 };
     let root: i32 = parser.expression();
     if (parser.position != pattern.length) { parser.fail(Error::Syntax(parser.position)); }
     if (parser.failed) { parser.nodes.destroy(); parser.terms.destroy(); parser.names.destroy(); parser.name_bytes.destroy(); return core::result::Err(parser.error); }
@@ -409,7 +464,7 @@ pub fn compile(pattern: core::text::Text, config: Options) -> core::result::Resu
     let all_nodes: [Node] = parser.nodes.as_slice(); let ni: i32 = 0; let allocation_failed: bool = false;
     while (ni < parser.nodes.len() && !allocation_failed) {
         let n: Node = all_nodes[ni]; let prior: [i32] = nullable.as_slice();
-        let yes: bool = n.op == 0 || (n.op >= 4 && n.op <= 9);
+        let yes: bool = n.op == 0 || (n.op >= 4 && n.op <= 9) || n.op == 14;
         if (n.op == 10) { yes = prior[n.left] != 0 && prior[n.right] != 0; }
         if (n.op == 11) { yes = prior[n.left] != 0 || prior[n.right] != 0; }
         if (n.op == 12) { yes = n.a == 0 || prior[n.left] != 0; }
@@ -580,8 +635,11 @@ pub impl Regex {
                 // Captures record past execution only. Span mode skips the
                 // subgroup write, preserving the Save PC, tick and priority.
                 if (inst.op == 12) { if (inst.a < scratch.slots) { temp[inst.a] = position; } cursor = inst.x; continue; }
-                if (inst.op >= 4 && inst.op <= 9) {
-                    if (assertion(inst.op, text, position, self.config.multiline)) { cursor = inst.x; continue; }
+                if ((inst.op >= 4 && inst.op <= 9) || inst.op == 14) {
+                    let holds: bool = false;
+                    if (inst.op == 14) { holds = self.behind(scratch, inst, text, position) != inst.flag; }
+                    else { holds = assertion(inst.op, text, position, self.config.multiline); }
+                    if (holds) { cursor = inst.x; continue; }
                 } else {
                     output[total] = cursor; copy_slots(temp, 0, output_caps, total * scratch.slots, scratch.slots); total += 1;
                 }
@@ -590,6 +648,65 @@ pub impl Regex {
             pending -= 1; cursor = stack[pending]; copy_slots(stack_caps, pending * scratch.slots, temp, 0, scratch.slots);
         }
         return total;
+    }
+    // Whether a lookbehind body matches the `look.b` scalars ending at
+    // `position`. The body is a capture-free sub-program of at most 256 PCs
+    // [look.y, look) with a fixed width, so a bit set per position replaces
+    // thread lists and no workspace storage is needed. Every visited PC and
+    // stepped-back scalar costs one tick of the search's work allowance.
+    fn behind(&self, scratch: &Workspace, look: Inst, text: core::text::Text, position: i32) -> bool {
+        let code: [Inst] = self.code.as_slice(); let base: i32 = look.y;
+        let at: i32 = position; let k: i32 = 0;
+        while (k < look.b) {
+            if (at == 0 || !scratch.tick()) { return false; }
+            at -= 1; while (!text.is_char_boundary(at)) { at -= 1; }
+            k += 1;
+        }
+        let current: [u64; 4] = [0, 0, 0, 0]; let next: [u64; 4] = [0, 0, 0, 0]; let stack: [i32; 256] = [0; 256];
+        let one: u64 = 1; let pending: i32 = 1; stack[0] = look.a; next[(look.a - base) / 64] = one << ((look.a - base) % 64) as u64;
+        let step: i32 = 0;
+        while (!scratch.failed) {
+            let accepted: bool = false;
+            // Epsilon closure at `at`; a PC's bit is set when it is first pushed.
+            while (pending > 0) {
+                pending -= 1; let pc: i32 = stack[pending];
+                if (!scratch.tick()) { return false; }
+                let inst: Inst = code[pc]; let follow: i32 = -1; let other: i32 = -1;
+                if (inst.op == 10 || inst.op == 12) { follow = inst.x; }
+                if (inst.op == 11) { follow = inst.y; other = inst.x; }
+                if (inst.op >= 4 && inst.op <= 9 && assertion(inst.op, text, at, self.config.multiline)) { follow = inst.x; }
+                if (inst.op == 14 && self.behind(scratch, inst, text, at) != inst.flag) { follow = inst.x; }
+                if (inst.op == 15) { accepted = true; }
+                if (follow >= 0) {
+                    let bit: i32 = follow - base; let mask: u64 = one << (bit % 64) as u64;
+                    if ((next[bit / 64] & mask) == 0) { next[bit / 64] = next[bit / 64] | mask; stack[pending] = follow; pending += 1; }
+                }
+                if (other >= 0) {
+                    let bit: i32 = other - base; let mask: u64 = one << (bit % 64) as u64;
+                    if ((next[bit / 64] & mask) == 0) { next[bit / 64] = next[bit / 64] | mask; stack[pending] = other; pending += 1; }
+                }
+            }
+            if (scratch.failed) { return false; }
+            if (step == look.b) { return accepted; }
+            let w: i32 = 0; while (w < 4) { current[w] = next[w]; next[w] = 0; w += 1; }
+            let scalar: u32 = core::option::unwrap_or(text.scalar_at_byte(at), 4294967295);
+            let following: i32 = at + core::utf8::encoded_len_or(scalar, 0) as i32;
+            let bit: i32 = 0;
+            while (bit < 256) {
+                if (current[bit / 64] == 0) { bit += 64; continue; }
+                if ((current[bit / 64] & (one << (bit % 64) as u64)) != 0) {
+                    let inst: Inst = code[base + bit];
+                    if (inst.op >= 1 && inst.op <= 3 && self.consumes(inst, scalar, scratch)) {
+                        let target: i32 = inst.x - base; let mask: u64 = one << (target % 64) as u64;
+                        if ((next[target / 64] & mask) == 0) { next[target / 64] = next[target / 64] | mask; stack[pending] = inst.x; pending += 1; }
+                    }
+                }
+                bit += 1;
+            }
+            if (pending == 0) { return false; }
+            at = following; step += 1;
+        }
+        return false;
     }
     fn consumes(&self, inst: Inst, scalar: u32, scratch: &Workspace) -> bool {
         if (inst.op == 1) { return scalar == inst.a as u32; }
@@ -805,7 +922,7 @@ pub impl Regex {
     // True when the program has an assertion, which the combined DFA omits.
     pub fn has_assertion(&self) -> bool {
         let code: [Inst] = self.code.as_slice(); let i: i32 = 0;
-        while (i < self.code.len()) { if (code[i].op >= 4 && code[i].op <= 9) { return true; } i += 1; }
+        while (i < self.code.len()) { if ((code[i].op >= 4 && code[i].op <= 9) || code[i].op == 14) { return true; } i += 1; }
         return false;
     }
     // Upper bound on VM ticks per input boundary of one search: every PC once
