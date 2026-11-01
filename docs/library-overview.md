@@ -2423,7 +2423,9 @@ searches for the pattern's required literal with `core::search` across each
 64 KiB read and runs the matcher only on the records that contain it. On
 S4's 49 MB corpus a no-match scan takes 68 ms instead of 5.2 s, against GNU
 grep's 11 ms; patterns with a literal take 85–272 ms with `-c`
-([timings](extended-text-grep.md#literal-prefilter)).
+([timings](extended-text-grep.md#literal-prefilter)). Patterns without one
+run `Dfa.match_lines` over each whole block, restarting at every record, so
+`[0-9]+$` takes 0.54 s instead of 1.8 s.
 
 [Regex splitting and replacement](extended-regex-text.md) now reuse canonical
 Search with one lazily acquired workspace. Borrowed split fields, independent
