@@ -131,7 +131,10 @@ let before: core::option::Option<alloc::string::String> =
     words.last_below_by<core::text::Text, alloc::string::TextPrefix>(query, prefix.borrow());
 ```
 
-The empty prefix makes every String Equal. TextPrefix is not a point-lookup
+The empty prefix makes every String Equal. `core::text::TextPrefix` is the
+same policy for stored `Text` keys (`Comparator<Text,Text>`); the
+[sorted word lookup](stdlib-look-words.md) application uses it over borrowed
+input words. TextPrefix is not a point-lookup
 policy, because one prefix can match several keys; use `TextKey` with
 `get_by` and the other point methods. Matching is exact bytes, with no case
 folding, normalization or locale collation.
@@ -190,6 +193,10 @@ the values below.
 - **Regressions.** On these sources, `tree_map_basic`, `tree_map_types`,
   `owned_sets_contracts`, `owned_sets_types`, the three borrowed-lookup direct
   programs and the borrowed-lookup model (unchanged summary) all pass.
+
+The [sorted word lookup](stdlib-look-words.md) application is the real
+consumer: prefix families, neighbors and inclusive Text intervals, with four
+registered groups (126 process cases).
 
 Logs are under `target/claude-work/s1` in the authoring worktree. The finite
 target is native Linux x86_64 CPU output; no GPU-device, other-target,

@@ -1,0 +1,280 @@
+// look(1)-style sorted lookup over the distinct ASCII-whitespace words of
+// UTF-8 stdin. Words stay borrowed Text keys of one input owner.
+//   look_words [--] PREFIX...          every word with each prefix, sorted
+//   look_words --count PREFIX...       COUNT<TAB>PREFIX per prefix
+//   look_words --near PREFIX...        BEFORE<TAB>AFTER: nearest words outside
+//                                      each prefix family (empty when none)
+//   look_words --between LOW HIGH      every word w with LOW <= w <= HIGH
+// Exit 0 success, 2 usage/invalid UTF-8/limit, 3 I/O, 4 allocation failure.
+// All validation, indexing and output sizing precede the first write.
+module app::main;
+import alloc::io;
+import alloc::string;
+import alloc::tree_map;
+import alloc::tree_set;
+import alloc::vec;
+import core::decimal;
+import core::io;
+import core::iter;
+import core::mem;
+import core::option;
+import core::option::Option;
+import core::range;
+import core::result;
+import core::result::Result;
+import core::slice;
+import core::text;
+import core::text::Text;
+import std::args;
+import std::signal;
+import std::stream;
+
+const MAX_ARGUMENTS: i32 = 256;
+const MAX_ARGUMENT_BYTES: i32 = 65536;
+const MAX_INPUT: i32 = 1048576;
+const MAX_READS: u64 = 16384;
+const MAX_WORDS: i32 = 65536;
+const MAX_OUTPUT: i32 = 8388608;
+const MAX_WRITES: i32 = 131072;
+const LIST: i32 = 0;
+const COUNT: i32 = 1;
+const NEAR: i32 = 2;
+const BETWEEN: i32 = 3;
+
+fn vector_status(error:alloc::vec::Error) -> i32 {
+    return match (error) { alloc::vec::Error::AllocationFailed -> 4, _ -> 2 };
+}
+fn read_status(error:alloc::io::ReadError) -> i32 {
+    return match (error) {
+        alloc::io::ReadError::InvalidLimits -> 2,
+        alloc::io::ReadError::CallLimit -> 2,
+        alloc::io::ReadError::ByteLimit -> 2,
+        alloc::io::ReadError::Io(cause) -> match (cause) {
+            core::io::Error::AllocationFailed -> 4,
+            core::io::Error::LimitExceeded -> 2,
+            _ -> 3
+        },
+        alloc::io::ReadError::Storage(cause) -> vector_status(cause),
+        alloc::io::ReadError::Text(cause) -> match (cause) {
+            alloc::string::Error::AllocationFailed -> 4,
+            _ -> 2
+        }
+    };
+}
+
+// The same renderer runs twice: a dry pass sizes the complete output against
+// MAX_OUTPUT, then the real pass stages it through 1 KiB of scratch.
+struct Output { bytes:[u8], used:i32, calls:i32, dry:bool, size:i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) -> i32 {
+        if (self.dry) { return 0; }
+        let sink:std::stream::Descriptor = std::stream::stdout();
+        let sent:i32 = 0;
+        while (sent < self.used) {
+            if (self.calls >= MAX_WRITES) { return 2; }
+            self.calls += 1;
+            let written:Result<i32,core::io::Error> = sink.write(self.bytes,sent,self.used-sent);
+            if (written.is_err()) {
+                if (core::io::is_interrupted(written.unwrap_err())) { continue; }
+                return 3;
+            }
+            let count:i32 = written.unwrap();
+            if (count <= 0 || count > self.used-sent) { return 3; }
+            sent += count;
+        }
+        self.used = 0;
+        return 0;
+    }
+    fn append(&self, bytes:[u8], start:i32, count:i32) -> i32 {
+        if (self.dry) {
+            if (count > MAX_OUTPUT-self.size) { return 2; }
+            self.size += count; return 0;
+        }
+        let copied:i32 = 0;
+        while (copied < count) {
+            if (self.used == 1024) { let status:i32 = self.flush(); if (status != 0) { return status; } }
+            let amount:i32 = 1024-self.used;
+            if (amount > count-copied) { amount = count-copied; }
+            let index:i32 = 0;
+            while (index < amount) { self.bytes[self.used+index] = bytes[start+copied+index]; index += 1; }
+            self.used += amount;
+            copied += amount;
+        }
+        return 0;
+    }
+    fn text(&self, value:Text) -> i32 { return self.append(value.bytes,value.start,value.length); }
+    fn byte(&self, value:u8) -> i32 {
+        let single:[u8;1] = [value];
+        return self.append(single,0,1);
+    }
+}
+
+fn operand(arguments:std::args::Arguments, index:i32) -> Result<Text,i32> {
+    let view:core::slice::View<u8> = arguments.get(index).unwrap();
+    let checked:Result<Text,core::text::Error> = core::text::from_utf8_range(view.values,view.start,view.length);
+    if (checked.is_err()) { return core::result::Err(2); }
+    return core::result::Ok(checked.unwrap());
+}
+
+fn family(words:&alloc::tree_set::TreeSet<Text>, prefix:Text, policy:&core::text::TextPrefix) -> alloc::tree_set::Cursor<Text> {
+    return words.range_bounds_by<Text,core::text::TextPrefix>(core::range::Bound::Included(prefix),core::range::Bound::Included(prefix),policy);
+}
+
+fn emit_cursor(cursor:&alloc::tree_set::Cursor<Text>, output:&Output) -> i32 {
+    while (true) {
+        let selected:Option<Text> = cursor.next();
+        if (selected.is_none()) { return 0; }
+        let status:i32 = output.text(selected.unwrap()); if (status != 0) { return status; }
+        status = output.byte(10); if (status != 0) { return status; }
+    }
+    return 0;
+}
+
+fn emit_optional(value:Option<Text>, output:&Output) -> i32 {
+    if (value.is_none()) { return 0; }
+    return output.text(value.unwrap());
+}
+
+fn render(words:&alloc::tree_set::TreeSet<Text>, operands:&alloc::vec::Vec<Text>, mode:i32, output:&Output) -> i32 {
+    let policy:core::text::TextPrefix = core::text::TextPrefix {};
+    let status:i32 = 0;
+    if (mode == BETWEEN) {
+        let low:Text = operands.at(0); let high:Text = operands.at(1);
+        let range:Result<alloc::tree_set::Cursor<Text>,alloc::tree_map::Error> =
+            words.range_bounds(core::range::Bound::Included(low),core::range::Bound::Included(high));
+        if (range.is_err()) { return 2; }
+        let cursor:alloc::tree_set::Cursor<Text> = range.unwrap();
+        status = emit_cursor(cursor.borrow(),output); if (status != 0) { return status; }
+        return output.flush();
+    }
+    let decimal:[u8;20] = [0;20];
+    let index:i32 = 0;
+    while (index < operands.len()) {
+        let prefix:Text = operands.at(index);
+        if (mode == LIST) {
+            let cursor:alloc::tree_set::Cursor<Text> = family(words,prefix,policy.borrow());
+            status = emit_cursor(cursor.borrow(),output);
+        }
+        if (mode == COUNT) {
+            let cursor:alloc::tree_set::Cursor<Text> = family(words,prefix,policy.borrow());
+            let count:u64 = 0;
+            while (cursor.next().is_some()) { count += 1; }
+            let formatted:Result<i32,core::decimal::FormatError> = core::decimal::format_u64(decimal,0,20,count);
+            if (formatted.is_err()) { return 3; }
+            status = output.append(decimal,0,formatted.unwrap());
+            if (status == 0) { status = output.byte(9); }
+            if (status == 0) { status = output.text(prefix); }
+            if (status == 0) { status = output.byte(10); }
+        }
+        if (mode == NEAR) {
+            status = emit_optional(words.last_below_by<Text,core::text::TextPrefix>(prefix,policy.borrow()),output);
+            if (status == 0) { status = output.byte(9); }
+            if (status == 0) { status = emit_optional(words.upper_bound_by<Text,core::text::TextPrefix>(prefix,policy.borrow()),output); }
+            if (status == 0) { status = output.byte(10); }
+        }
+        if (status != 0) { return status; }
+        index += 1;
+    }
+    return output.flush();
+}
+
+fn same(value:Text, literal:str, count:i32) -> bool {
+    if (value.length != count) { return false; }
+    let bytes:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(literal),count);
+    let index:i32 = 0;
+    while (index < count) { if (value.bytes[value.start+index] != bytes[index]) { return false; } index += 1; }
+    return true;
+}
+
+// Mode from the first argument; every remaining operand must be UTF-8.
+fn parse(arguments:std::args::Arguments, operands:&alloc::vec::Vec<Text>) -> Result<i32,i32> {
+    let count:i32 = arguments.len();
+    if (count == 0) { return core::result::Err(2); }
+    let first:Text = operand(arguments,0)?;
+    let mode:i32 = LIST; let skip:i32 = 0;
+    if (first.length >= 1 && (first.bytes[first.start] as i32) == 45) {
+        skip = 1;
+        if (same(first,"--count",7)) { mode = COUNT; }
+        else { if (same(first,"--near",6)) { mode = NEAR; }
+        else { if (same(first,"--between",9)) { mode = BETWEEN; }
+        else { if (!same(first,"--",2)) { return core::result::Err(2); } } } }
+    }
+    if (mode == BETWEEN && count-skip != 2) { return core::result::Err(2); }
+    if (count-skip == 0) { return core::result::Err(2); }
+    if (operands.try_reserve(count-skip).is_err()) { return core::result::Err(4); }
+    let index:i32 = skip;
+    while (index < count) {
+        let value:Text = operand(arguments,index)?;
+        if (operands.try_push(value).is_err()) { return core::result::Err(4); }
+        index += 1;
+    }
+    if (mode == BETWEEN) {
+        let low:Text = operands.at(0); let high:Text = operands.at(1);
+        if (high.compare(low) < 0) { return core::result::Err(2); }
+    }
+    return core::result::Ok(mode);
+}
+
+fn index_words(words:&alloc::tree_set::TreeSet<Text>, input:Text) -> i32 {
+    let cursor:core::text::SplitAsciiWhitespace = input.split_ascii_whitespace();
+    while (true) {
+        let selected:Option<Text> = cursor.next();
+        if (selected.is_none()) { return 0; }
+        let word:Text = selected.unwrap();
+        // Below the cap one insertion attempt both deduplicates and stores.
+        if (words.len() >= MAX_WORDS && !words.contains(word)) { return 2; }
+        let inserted:Result<Option<Text>,alloc::tree_map::Error> = words.try_insert(word);
+        if (inserted.is_err()) {
+            return match (inserted.unwrap_err()) { alloc::tree_map::Error::AllocationFailed -> 4, _ -> 2 };
+        }
+    }
+    return 0;
+}
+
+fn run(arguments:std::args::Arguments) -> i32 {
+    let operands:alloc::vec::Vec<Text> = alloc::vec::new();
+    let parsed:Result<i32,i32> = parse(arguments,operands.borrow());
+    if (parsed.is_err()) { operands.destroy(); return parsed.unwrap_err(); }
+    let mode:i32 = parsed.unwrap();
+    let source:std::stream::Descriptor = std::stream::stdin();
+    let collected:Result<alloc::string::String,alloc::io::ReadFailure> =
+        alloc::io::read_to_string<std::stream::Descriptor>(source.borrow(),alloc::io::ReadLimits { max_bytes:MAX_INPUT,max_calls:MAX_READS });
+    if (collected.is_err()) {
+        let failure:alloc::io::ReadFailure = collected.unwrap_err();
+        let status:i32 = read_status(failure.cause);
+        failure.destroy(); operands.destroy(); return status;
+    }
+    let input:alloc::string::String = collected.unwrap();
+    let words:alloc::tree_set::TreeSet<Text> = alloc::tree_set::new<Text>();
+    let status:i32 = index_words(words.borrow(),input.as_text());
+    if (status == 0) {
+        let scratch:[u8;1024] = [0;1024];
+        let measure:Output = Output { bytes:scratch,used:0,calls:0,dry:true,size:0 };
+        status = render(words.borrow(),operands.borrow(),mode,measure.borrow());
+        if (status == 0) {
+            let output:Output = Output { bytes:scratch,used:0,calls:0,dry:false,size:0 };
+            status = render(words.borrow(),operands.borrow(),mode,output.borrow());
+        }
+    }
+    // Keys borrow the input and operands borrow the arguments: release the
+    // set and operand vector first, then the input owner.
+    words.destroy(); operands.destroy(); input.destroy();
+    return status;
+}
+
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let captured:Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,MAX_ARGUMENTS,MAX_ARGUMENT_BYTES);
+    if (captured.is_err()) {
+        return match (captured.unwrap_err()) {
+            std::args::Error::AllocationFailed -> 4,
+            std::args::Error::HostRead(index) -> 3,
+            _ -> 2
+        };
+    }
+    let arguments:std::args::Arguments = captured.unwrap();
+    let status:i32 = run(arguments);
+    arguments.destroy();
+    return status;
+}
