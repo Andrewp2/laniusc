@@ -120,7 +120,8 @@ README).
 - 87 fixtures that call the changed functions (vec edit and transfer models,
   sort algorithms, slice segmentation, string, text replacement and
   collection fixtures) give the same results as the previous stdlib, except
-  that four now pass that trapped before. That came from a null-pointer fix
-  in `alloc::vec::new`:
-  [`ptr_literal_store_width.lani`](../tests/fixtures/compiler_defects/ptr_literal_store_width.lani)
-  records the compiler defect, a 32-bit store of `let p: ptr = 0;`.
+  that four now pass that trapped before. They trapped on a nonnull
+  `storage` from `alloc::vec::new`, caused by a 32-bit store of
+  `let p: ptr = 0;`
+  ([`ptr_literal_store_width.lani`](../tests/fixtures/compiler_defects/ptr_literal_store_width.lani)),
+  which the compiler now fixes.
