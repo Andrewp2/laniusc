@@ -1,5 +1,8 @@
-import Lanius.Semantics
+module
 
+public import Lanius.Semantics
+
+@[expose] public section
 namespace Lanius.Semantics
 
 theorem encodeNatLE_succ (width value : Nat) :

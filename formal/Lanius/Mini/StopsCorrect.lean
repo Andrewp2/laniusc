@@ -1,6 +1,23 @@
-import Lanius.Mini.Correct
-import Lanius.Mini.Stops
+module
 
+public import Lanius.Mini.Correct
+public import Lanius.Mini.Stops
+public import Lanius.Mini.Compiler.P.FArith_opcode
+import all Lanius.Mini.Compiler.P.DivOp_size
+import all Lanius.Mini.Compiler.P.FArith_opcode
+import all Lanius.Mini.Compiler.P.FloatTy_rex
+import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.arities
+import all Lanius.Mini.Compiler.P.codeSize
+import all Lanius.Mini.Compiler.P.compileArgs
+import all Lanius.Mini.Compiler.P.imageLimit
+import all Lanius.Mini.Compiler.P.loadAtBytes
+import all Lanius.Mini.Compiler.Types
+public import Lanius.Mini.Compiler.P.arities
+public import Lanius.Mini.Compiler.P.compileArgs
+public import Lanius.Mini.Compiler.P.imageLimit
+
+@[expose] public section
 /-! The compiled code of a run that does not return does not return either.
 A failed allocation reaches the `ud2` after `bump`'s limit test, a division
 by zero or of the least value by -1 raises `#DE`, and every abstract step

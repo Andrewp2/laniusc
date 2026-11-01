@@ -1,5 +1,8 @@
-import Lanius.Memory.Borrow
+module
 
+public import Lanius.Memory.Borrow
+
+@[expose] public section
 namespace Lanius.Memory
 
 private theorem setByte_same (read : bytes[index]? = some byte) : setByte bytes index byte = bytes := by
