@@ -14,7 +14,7 @@ namespace Lanius.Faithful.SelfLive
 
 open Lanius.Mini
 open Lanius.Core (Value)
-open Lanius.Semantics (State Completion evalExpr evalExprs execStmt restoreLocals readRawSliceIndex)
+open Lanius.Semantics (State Completion evalExpr evalExprs execStmt restoreLocals readRawSliceIndex ResolvedPlace)
 open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
@@ -245,5 +245,274 @@ theorem read_live {inp : Nat} {W : List (BitVec 32)} (len : W.length < 2 ^ 64) :
       · rw [hz]; exact heapE ▸ rel
       · rw [heapE]; exact Nat.le_add_right _ _
       · rw [heapE]; exact fr
+
+/-! ## `oracle_write`, `oracle_write_one`, `oracle_put` -/
+
+/-- What `oracle_write(out, ofs, ws)`'s body completes with, when `ws` fits
+in the output room from `ofs`. -/
+def WriteLive (outp room : Nat) (ws : List (BitVec 32)) : Prop :=
+  ∀ {ofs : Nat} {s : State} {lv lp : Value},
+    Inv s → s.heap.Readable outp (room * 4) → VRel prog.toCore boxes s.heap ty1 lv lp → (RepList 0 RepI32) ws lp →
+    ofs + ws.length ≤ room → s.heap.nextAddress ≤ 2 ^ 64 → s.heap.remaining = none →
+    ∃ c completed, Ev (fun k => execStmt k prog.toCore (({ s with locals := [] } : State).bindLocals
+      [(13, .rawSlice i32T outp room), (25, .unsigned .usize ofs), (36, lv)])
+      (src_app_main_oracle_write 4 10).body.toCore) c completed ∧
+      CallResult (.uint .usize) c (.unsigned .usize (ofs + ws.length)) ∧
+      Inv completed ∧ completed.heap.Readable outp (room * 4) ∧
+      completed.heap.nextAddress ≤ s.heap.nextAddress ∧ completed.heap.remaining = none ∧ s.cells <+: completed.cells
+
+theorem write_one_live {outp room : Nat} (roomLt : room < 2 ^ 31) {x : BitVec 32} {rest : List (BitVec 32)}
+    (ih : WriteLive outp room rest) {ofs : Nat} {s : State} {uv up : Value}
+    (inv : Inv s) (readable : s.heap.Readable outp (room * 4))
+    (rel : VRel prog.toCore boxes s.heap ty1 uv up) (rep : (RepList 0 RepI32) rest up)
+    (fits : ofs + (rest.length + 1) ≤ room) (bound : s.heap.nextAddress ≤ 2 ^ 64) (fr : s.heap.remaining = none) :
+    ∃ c completed, Ev (fun k => execStmt k prog.toCore (({ s with locals := [] } : State).bindLocals
+      [(17, .rawSlice i32T outp room), (29, .unsigned .usize ofs), (40, .signed .i32 x.toInt), (48, uv)])
+      (src_app_main_oracle_write_one 3).body.toCore) c completed ∧
+      CallResult (.uint .usize) c (.unsigned .usize (ofs + (rest.length + 1))) ∧
+      Inv completed ∧ completed.heap.Readable outp (room * 4) ∧
+      completed.heap.nextAddress ≤ s.heap.nextAddress ∧ completed.heap.remaining = none ∧ s.cells <+: completed.cells := by
+  generalize hE : ({ s with locals := [] } : State).bindLocals [(17, .rawSlice i32T outp room),
+    (29, .unsigned .usize ofs), (40, .signed .i32 x.toInt), (48, uv)] = E
+  have invE : Inv E := by rw [← hE]; exact Same.start inv _
+  have stepE : Step s E := by rw [← hE]; exact (Step.clear s).trans (Step.bindLocals _ _)
+  have heapE : E.heap = s.heap := by rw [← hE]; rfl
+  have l17 : E.local? 17 = some (.rawSlice i32T outp room) := by
+    rw [← hE]; exact local?_entry inv [] [(29, .unsigned .usize ofs), (40, .signed .i32 x.toInt), (48, uv)] 17 _
+      rfl (by simp)
+  have l29 : E.local? 29 = some (.unsigned .usize ofs) := by
+    rw [← hE]; exact local?_entry inv [(17, .rawSlice i32T outp room)] [(40, .signed .i32 x.toInt), (48, uv)] 29 _
+      rfl (by simp)
+  have l40 : E.local? 40 = some (.signed .i32 x.toInt) := by
+    rw [← hE]; exact local?_entry inv [(17, .rawSlice i32T outp room), (29, .unsigned .usize ofs)] [(48, uv)] 40 _
+      rfl (by simp)
+  have l48 : E.local? 48 = some uv := by
+    rw [← hE]; exact local?_entry inv [(17, .rawSlice i32T outp room), (29, .unsigned .usize ofs),
+      (40, .signed .i32 x.toInt)] [] 48 _ rfl (by simp)
+  simp only [src_app_main_oracle_write_one, SrcStmt.toCore, SrcExpr.toCore, SrcType.toCore, SrcOp.toCore,
+    UintTy.toCore, List.map]
+  -- The rest from `ofs + 1`.
+  have addE : Ev (fun k => evalExpr k prog.toCore E (.binary .add (.local 29)
+      (.value (.unsigned .usize (1#64).toNat)))) (.unsigned .usize (ofs + 1)) E :=
+    binary_fwd (by decide) (by decide) (local_fwd l29) (value_fwd _)
+      (by rw [toCore_target', show (1#64).toNat = 1 from rfl, nat_add (by omega)])
+  obtain ⟨c1, done1, body1, res1, inv1, read1, next1, fr1, cells1⟩ := ih (ofs := ofs + 1) (s := E) invE
+    (heapE ▸ readable) (heapE ▸ rel) rep (by omega) (heapE ▸ bound) (heapE ▸ fr)
+  have call1 := call_fwd (exprs_cons_fwd (local_fwd l17) (exprs_cons_fwd addE (exprs_cons_fwd (local_fwd l48)
+    exprs_nil_fwd))) fn_write rfl body1 res1
+  generalize hv1 : (Value.unsigned .usize (ofs + 1 + rest.length)) = v1 at call1
+  have invR := (inv1.restore E).bindLocal 100 v1
+  have back {id : Nat} {y : Value} (ne : 100 ≠ id) (h : E.local? id = some y) :
+      ((restoreLocals E done1).bindLocal 100 v1).local? id = some y :=
+    local?_bindLocal_other ne _ (local?_prefix (st' := restoreLocals E done1) cells1 rfl h)
+  generalize hR : (restoreLocals E done1).bindLocal 100 v1 = R at invR back
+  have heapR : R.heap = done1.heap := by rw [← hR]; rfl
+  have viewsR : R.i32ArrayViews = [] := invR.views
+  -- `out[ofs] = x`
+  obtain ⟨rb, hrb, baseRun⟩ := place_local_fwd (P := prog.toCore) (back (by decide) l17)
+  have placeRun := place_index_fwd baseRun hrb (local_fwd (back (by decide) l29))
+    (show Semantics.integerIndex (.unsigned .usize ofs) = .ok ofs from rfl) (show ofs < room by omega)
+    (show Semantics.rawSliceElementAddress? prog.toCore i32T outp ofs = .ok (outp + ofs * 4) by
+      simp [Semantics.rawSliceElementAddress?])
+  generalize hr : ({ rb with
+      value := none, raw := some (i32T, outp + ofs * 4), rawByte := Semantics.isByte i32T } :
+    ResolvedPlace) = rp at placeRun
+  have rraw : rp.raw = some (i32T, outp + ofs * 4) := by rw [← hr]
+  have rbyte : rp.rawByte = false := by rw [← hr]; rfl
+  have slot : done1.heap.Readable (outp + ofs * 4) 4 := read1.subrange (start := ofs * 4) (length := 4) (by omega)
+  obtain ⟨heap', stored, bw⟩ := Memory.Heap.storeBytes_of_readable (Semantics.i32Bytes x.toInt) inv1.unique
+    (fun i lt => slot i (by rw [i32Bytes_length] at lt; exact lt))
+  have written : Semantics.writeResolvedPlaceNative prog.toCore R rp (.signed .i32 x.toInt) =
+      .ok { R with heap := heap' } := by
+    simp only [Semantics.writeResolvedPlaceNative, rraw, Semantics.writeRawNative, rbyte, Bool.false_eq_true,
+      if_false, writeNative_i32, heapR, stored]
+    rfl
+  have synced : (if rp.viewFreeRootWrite (.signed .i32 x.toInt) then .ok { R with heap := heap' } else match rp.raw with
+      | none => Semantics.syncI32ViewsToHeap { R with heap := heap' }
+      | some _ => Semantics.syncI32ViewsFromHeap { R with heap := heap' }) = .ok { R with heap := heap' } := by
+    simp only [Semantics.ResolvedPlace.viewFreeRootWrite, rraw, Option.isNone_some, Bool.false_and,
+      Bool.false_eq_true, if_false]
+    exact syncFrom_ok (st := { R with heap := heap' }) viewsR
+  have assignE := expression_fwd (assign_fwd placeRun (local_fwd (back (by decide) l40)) written synced)
+  have l100 : ({ R with heap := heap' } : State).local? 100 = some v1 := by
+    show R.local? 100 = some v1
+    rw [← hR]; exact local?_bindLocal_self (inv1.restore E) 100 v1
+  refine ⟨.returned (some v1), _, letLocal_fwd call1 (by
+      rw [hR]; exact sequence_next_fwd assignE (return_fwd (local_fwd l100))), ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · show _ = v1
+    rw [← hv1]; congr 1; omega
+  · exact Inv.restore _ ⟨viewsR, invR.fresh, bw.below (heapR ▸ invR.below), bw.unique⟩
+  · exact bw.readable read1
+  · show heap'.nextAddress ≤ _
+    rw [bw.frontier]; exact heapE ▸ next1
+  · show heap'.remaining = none
+    rw [bw.budget]; exact fr1
+  · show s.cells <+: R.cells
+    rw [← hR]
+    exact stepE.cells.trans (cells1.trans (Step.bindLocal _ 100 _).cells)
+
+theorem write_live {outp room : Nat} (roomLt : room < 2 ^ 31) : ∀ ws, WriteLive outp room ws := by
+  intro ws
+  induction ws with
+  | nil =>
+    intro ofs s lv lp inv readable rel rep fits bound fr
+    generalize hE : ({ s with locals := [] } : State).bindLocals [(13, .rawSlice i32T outp room),
+      (25, .unsigned .usize ofs), (36, lv)] = E
+    have invE : Inv E := by rw [← hE]; exact Same.start inv _
+    have stepE : Step s E := by rw [← hE]; exact (Step.clear s).trans (Step.bindLocals _ _)
+    have heapE : E.heap = s.heap := by rw [← hE]; rfl
+    have l25 : E.local? 25 = some (.unsigned .usize ofs) := by
+      rw [← hE]; exact local?_entry inv [(13, .rawSlice i32T outp room)] [(36, lv)] 25 _ rfl (by simp)
+    have l36 : E.local? 36 = some lv := by
+      rw [← hE]; exact local?_entry inv [(13, .rawSlice i32T outp room), (25, .unsigned .usize ofs)] [] 36 _ rfl
+        (by simp)
+    cases rep
+    obtain ⟨kk, vs, ps, fs, rfl, hp, hk, rs⟩ := vrel_ty1 rel
+    simp only [Value.enumeration.injEq, true_and] at hp
+    obtain ⟨rfl, rfl⟩ := hp
+    simp only [List.getElem?_cons_zero, Option.some.injEq] at hk
+    subst hk
+    cases rs
+    simp only [src_app_main_oracle_write, SrcStmt.toCore, SrcEff.toCore, SrcEff.toCoreList, SrcEff.coreArms,
+      SrcExpr.toCore, SrcType.typeId, ty1, List.map]
+    refine ⟨.returned (some (.unsigned .usize ofs)), _,
+      return_fwd (match_fwd (local_fwd l36) (arms_hit_fwd (bs := [])
+        (by simp [Semantics.matchPattern, Semantics.matchPatterns]) (local_fwd l25))), by simp [CallResult], invE.restore _, heapE ▸ readable, by rw [← heapE]; exact Nat.le_refl _,
+      heapE ▸ fr, stepE.cells⟩
+  | cons x rest ih =>
+    intro ofs s lv lp inv readable rel rep fits bound fr
+    generalize hE : ({ s with locals := [] } : State).bindLocals [(13, .rawSlice i32T outp room),
+      (25, .unsigned .usize ofs), (36, lv)] = E
+    have invE : Inv E := by rw [← hE]; exact Same.start inv _
+    have stepE : Step s E := by rw [← hE]; exact (Step.clear s).trans (Step.bindLocals _ _)
+    have heapE : E.heap = s.heap := by rw [← hE]; rfl
+    have l13 : E.local? 13 = some (.rawSlice i32T outp room) := by
+      rw [← hE]; exact local?_entry inv [] [(25, .unsigned .usize ofs), (36, lv)] 13 _ rfl (by simp)
+    have l25 : E.local? 25 = some (.unsigned .usize ofs) := by
+      rw [← hE]; exact local?_entry inv [(13, .rawSlice i32T outp room)] [(36, lv)] 25 _ rfl (by simp)
+    have l36 : E.local? 36 = some lv := by
+      rw [← hE]; exact local?_entry inv [(13, .rawSlice i32T outp room), (25, .unsigned .usize ofs)] [] 36 _ rfl
+        (by simp)
+    cases rep with
+    | cons rx rrest =>
+    rename_i vx vxs
+    cases rx
+    obtain ⟨kk, vs, ps, fs, rfl, hp, hk, rs⟩ := vrel_ty1 rel
+    simp only [Value.enumeration.injEq, true_and] at hp
+    obtain ⟨rfl, rfl⟩ := hp
+    simp only [List.getElem?_cons_succ, List.getElem?_cons_zero, Option.some.injEq] at hk
+    subst hk
+    cases rs with
+    | cons rxv rs2 =>
+    cases rs2 with
+    | cons rbox rnil =>
+    cases rnil
+    rename_i xv bv
+    cases rxv with
+    | scalar _ =>
+    simp only [src_app_main_oracle_write, SrcStmt.toCore, SrcEff.toCore, SrcEff.toCoreList, SrcEff.coreArms,
+      SrcExpr.toCore, SrcType.typeId, ty1, List.map]
+    have inv2 := invE.bindLocals [(134, Value.signed .i32 x.toInt), (137, bv)]
+    have step2 : Step s (E.bindLocals [(134, Value.signed .i32 x.toInt), (137, bv)]) :=
+      stepE.trans (Step.bindLocals _ _)
+    have heap2 : (E.bindLocals [(134, Value.signed .i32 x.toInt), (137, bv)]).heap = s.heap :=
+      (bindLocals_same _ _).1.trans heapE
+    have m13 : (E.bindLocals [(134, Value.signed .i32 x.toInt), (137, bv)]).local? 13 =
+        some (.rawSlice i32T outp room) := local?_bindLocals_other _ (by simp) l13
+    have m25 : (E.bindLocals [(134, Value.signed .i32 x.toInt), (137, bv)]).local? 25 =
+        some (.unsigned .usize ofs) := local?_bindLocals_other _ (by simp) l25
+    have m134 : (E.bindLocals [(134, Value.signed .i32 x.toInt), (137, bv)]).local? 134 =
+        some (.signed .i32 x.toInt) := local?_bindLocal_other (by simp) _ (local?_bindLocal_self invE 134 _)
+    have m137 : (E.bindLocals [(134, Value.signed .i32 x.toInt), (137, bv)]).local? 137 = some bv :=
+      local?_bindLocal_self (invE.bindLocal 134 _) 137 bv
+    -- `unbox(rest)`
+    obtain ⟨w, uv, sU, hw, unboxE, relU, invU, stepU, nextU, frU, -⟩ := pure_call_fwd SelfPure.selfPure
+      SelfPure.selfPrims (N := 1) (h := 0) fn_unbox (notOut 10) (exprs_cons_fwd (local_fwd m137) exprs_nil_fwd) inv2
+      (.cons (heap2 ▸ rbox) .nil) (by
+        have nb : 10 ∉ prims.boxed := by decide +kernel
+        simp [ccall, qcall, np_unbox_of_mini_selfhost_List_i32, nb, single])
+      (by rw [heap2]; simpa using bound) (by rw [heap2]; exact fr)
+    obtain rfl := pcall_unbox (n := 0) hw
+    obtain ⟨c1, done1, body1, res1, inv1, read1, next1, fr1, cells1⟩ := write_one_live roomLt ih (x := x) (ofs := ofs)
+      invU (stepU.reads.readable (heap2 ▸ readable)) relU rrest (by simpa using fits)
+      (Nat.le_trans nextU (by rw [heap2]; simpa using bound)) frU
+    have call1 := call_fwd (exprs_cons_fwd (local_fwd m13) (exprs_cons_fwd (local_fwd m25) (exprs_cons_fwd
+      (local_fwd m134) (exprs_cons_fwd unboxE exprs_nil_fwd)))) fn_write_one rfl body1 res1
+    refine ⟨.returned (some (.unsigned .usize (ofs + (rest.length + 1)))), _,
+      return_fwd (match_fwd (local_fwd l36) (arms_skip_fwd (by simp [Semantics.matchPattern])
+        (arms_hit_fwd (by simp [Semantics.matchPattern, Semantics.matchPatterns]) call1))),
+      by simp [CallResult], ((inv1.restore _).restore _).restore _, read1, ?_, fr1, ?_⟩
+    · show done1.heap.nextAddress ≤ _
+      refine Nat.le_trans next1 (Nat.le_trans nextU ?_)
+      rw [heap2]; exact Nat.le_refl _
+    · exact step2.cells.trans (stepU.cells.trans cells1)
+
+
+/-- `oracle_put(out, result)`'s body completes when the result's words fit in
+the output room. -/
+theorem put_live {outp room : Nat} (roomLt : room < 2 ^ 31) {s : State} {rv rp : Value}
+    {r : Option (List (BitVec 32))} (inv : Inv s) (readable : s.heap.Readable outp (room * 4))
+    (rel : VRel prog.toCore boxes s.heap ty3 rv rp) (rep : (RepOption 2 (RepList 0 RepI32)) r rp)
+    (fits : ∀ ws, r = some ws → ws.length ≤ room) (bound : s.heap.nextAddress ≤ 2 ^ 64)
+    (fr : s.heap.remaining = none) :
+    ∃ c completed v, Ev (fun k => execStmt k prog.toCore (({ s with locals := [] } : State).bindLocals
+      [(11, .rawSlice i32T outp room), (23, rv)]) (src_app_main_oracle_put 3).body.toCore) c completed ∧
+      CallResult .i32 c v ∧ completed.heap.nextAddress ≤ s.heap.nextAddress := by
+  generalize hE : ({ s with locals := [] } : State).bindLocals [(11, .rawSlice i32T outp room), (23, rv)] = E
+  have invE : Inv E := by rw [← hE]; exact Same.start inv _
+  have heapE : E.heap = s.heap := by rw [← hE]; rfl
+  have l11 : E.local? 11 = some (.rawSlice i32T outp room) := by
+    rw [← hE]; exact local?_entry inv [] [(23, rv)] 11 _ rfl (by simp)
+  have l23 : E.local? 23 = some rv := by
+    rw [← hE]; exact local?_entry inv [(11, .rawSlice i32T outp room)] [] 23 _ rfl (by simp)
+  simp only [src_app_main_oracle_put, SrcStmt.toCore, SrcEff.toCore, SrcEff.toCoreList, SrcEff.coreArms,
+    SrcExpr.toCore, SrcType.typeId, SrcType.toScalar, SrcOp.toCore, ty3, List.map]
+  obtain ⟨kk, vs, ps, fs, rfl, hp, hk, rs⟩ := vrel_ty3 rel
+  cases rep with
+  | none =>
+    simp only [Value.enumeration.injEq, true_and] at hp
+    obtain ⟨rfl, rfl⟩ := hp
+    simp only [List.getElem?_cons_succ, List.getElem?_cons_zero, Option.some.injEq] at hk
+    subst hk
+    cases rs
+    have minus : Semantics.evalBinaryValue prog.toCore.target .subtract (.signed .i32 (0#32).toInt)
+        (.signed .i32 (1#32).toInt) = .ok (.signed .i32 (-1)) := by
+      rw [toCore_target']
+      simp only [Semantics.evalBinaryValue, beq_self_eq_true, if_true, Semantics.evalSignedBinary]
+      rfl
+    refine ⟨.returned (some (.signed .i32 (-1))), _, _,
+      return_fwd (match_fwd (local_fwd l23) (arms_skip_fwd (by simp [Semantics.matchPattern])
+        (arms_hit_fwd (bs := []) (by simp [Semantics.matchPattern, Semantics.matchPatterns])
+          (binary_fwd (by decide) (by decide) (value_fwd _) (value_fwd _) minus)))), rfl, ?_⟩
+    show E.heap.nextAddress ≤ _
+    rw [heapE]; exact Nat.le_refl _
+  | some rws =>
+    rename_i ws vws
+    simp only [Value.enumeration.injEq, true_and] at hp
+    obtain ⟨rfl, rfl⟩ := hp
+    simp only [List.getElem?_cons_zero, Option.some.injEq] at hk
+    subst hk
+    cases rs with
+    | cons rl rnil =>
+    cases rnil
+    rename_i lv
+    have m11 : (E.bindLocals [(153, lv)]).local? 11 = some (.rawSlice i32T outp room) :=
+      local?_bindLocals_other _ (by simp) l11
+    have m153 : (E.bindLocals [(153, lv)]).local? 153 = some lv := local?_bindLocal_self invE _ _
+    have heap1 : (E.bindLocals [(153, lv)]).heap = s.heap := (bindLocals_same _ _).1.trans heapE
+    have lenLe := fits ws rfl
+    obtain ⟨c1, done1, body1, res1, -, -, next1, -, -⟩ := write_live roomLt ws (ofs := 0) (invE.bindLocals _)
+      (heap1 ▸ readable) (heap1 ▸ rl) rws (by omega) (heap1 ▸ bound) (heap1 ▸ fr)
+    have call1 := call_fwd (exprs_cons_fwd (local_fwd m11) (exprs_cons_fwd (value_fwd (.unsigned .usize 0))
+      (exprs_cons_fwd (local_fwd m153) exprs_nil_fwd))) fn_write rfl body1 res1
+    have castOk : Semantics.evalScalarCast prog.toCore.target (.signed .i32) (.unsigned .usize (0 + ws.length)) =
+        .ok (.signed .i32 ws.length) := by
+      simp only [toCore_target', Semantics.evalScalarCast, Nat.zero_add, Int.ofNat_eq_natCast,
+        SelfDriver.wrap_i32 (show ws.length < 2 ^ 31 by omega)]
+    refine ⟨.returned (some (.signed .i32 ws.length)), _, _,
+      return_fwd (match_fwd (local_fwd l23) (arms_hit_fwd (bs := [(153, lv)])
+        (by simp [Semantics.matchPattern, Semantics.matchPatterns]) (cast_fwd (by simpa only [UintTy.toCore, show (0#64).toNat = 0 from rfl] using call1) castOk))), rfl, ?_⟩
+    show done1.heap.nextAddress ≤ _
+    exact heap1 ▸ next1
 
 end Lanius.Faithful.SelfLive
