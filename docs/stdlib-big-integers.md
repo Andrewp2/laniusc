@@ -176,8 +176,13 @@ laniusc. It is not evidence of GPU kernel arithmetic.
 
   The value patterns are random, all ones, a single top bit, sparse, and a
   top limb of exactly one. Signs are mixed.
-- The existing `tests/extended_big_uint_execution.rs` and
-  `tests/extended_big_int_execution.rs` suites now compile against the
-  `alloc` paths. Their oracle values beyond 4,096 bits (128 limbs) exercise
-  the Karatsuba path. Their allocation-denial cases require `strace` and were
-  not run for this increment.
+- The existing unsigned model oracle in `tests/extended_big_uint_execution.rs`
+  was compiled against the `alloc` path and run directly against
+  `big_uint_model`: it verified all 2,366 cases. Its products have one operand
+  of at most 16 limbs, so they stay on the schoolbook path. Only the
+  squarings inside `pow` (for example `2^4096`) reach Karatsuba. The
+  `big_uint_contracts`, `big_int_contracts`, `big_uint_smoke` and
+  `decimal_arithmetic_contracts` fixtures also exit 0 natively.
+- The allocation-denial suites require `strace` and were not run for this
+  increment. Karatsuba's cleanup on a failed temporary is therefore reviewed
+  but not fault-injected.
