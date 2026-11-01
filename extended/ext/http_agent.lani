@@ -649,11 +649,82 @@ pub impl Agent {
         if (failure.is_some()) { return core::result::Err(failure.unwrap()); }
         return core::result::Ok(self.pool.len());
     }
+    // A fresh connection to url's origin, outside the pool (see Connection).
+    pub fn dial(&self, url: &ext::http_url::Url, deadline: core::time::Deadline) -> core::result::Result<Connection,Error> {
+        if (!self.active) { return core::result::Err(Error::InvalidRequest); }
+        if (https(url) && !self.options.https) { return core::result::Err(Error::UnsupportedScheme); }
+        let lease: core::result::Result<Lease,Error> = self.acquire(url,true,deadline);
+        if (lease.is_err()) { return core::result::Err(lease.unwrap_err()); }
+        return core::result::Ok(Connection { conn: lease.unwrap().conn, active: true });
+    }
     // Close every pooled connection; the agent stays usable unless finished.
     pub fn clear(&self) -> i32 { let n: i32 = self.pool.len(); while (self.pool.len() > 0) { self.close_idle(self.pool.len() - 1); } return n; }
     pub fn close(&self) -> bool {
         if (!self.active) { return false; } self.clear(); self.pool.destroy(); self.active = false;
         if (self.context.is_some()) { let context: ext::openssl_tls::Context = self.context.unwrap(); context.destroy(); self.context = core::option::None(); }
+        return true;
+    }
+}
+
+// A connection to an http:// or https:// URL's origin, opened exactly like the
+// agent's own (resolution, ordered connect attempts, verified TLS from the
+// agent's trust options) but outside the pool, for protocols that take over
+// the connection after an HTTP/1.1 upgrade, such as WebSocket. One owner;
+// close it once. Each call has its own absolute deadline.
+pub struct Connection { conn: Conn, active: bool }
+pub impl Connection {
+    pub fn borrow(&self) -> &Connection { return self; }
+    pub fn is_secure(&self) -> bool { return self.conn.secure; }
+    pub fn is_open(&self) -> bool { return self.active; }
+    fn renewed(&self, deadline: core::time::Deadline) -> core::result::Result<i32,Error> {
+        if (!self.active) { return core::result::Err(Error::InvalidRequest); }
+        if (!self.conn.secure) { return core::result::Ok(0); }
+        let s: ext::tls_stream::Stream = self.conn.tls.unwrap(); let renewed: core::result::Result<i32,ext::tls_stream::Failure> = s.renew(stream_limits(),deadline);
+        self.conn.tls = core::option::Some(s);
+        if (renewed.is_err()) { return core::result::Err(Error::Io(stream_error(s.borrow(),core::io::Error::Host(71)))); }
+        return core::result::Ok(0);
+    }
+    // Send all of data. A TLS failure is final.
+    pub fn send(&self, data: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<i32,Error> {
+        let ready: core::result::Result<i32,Error> = self.renewed(deadline); if (ready.is_err()) { return ready; }
+        let sent: core::result::Result<i32,core::io::Error> = send_all(self.conn.borrow(),data,deadline);
+        if (sent.is_err()) { let e: core::io::Error = sent.unwrap_err(); if (timed_out(e)) { return core::result::Err(Error::Timeout); } return core::result::Err(Error::Io(e)); }
+        return core::result::Ok(sent.unwrap());
+    }
+    // Wait for at least one byte into space. Ok(0) is a clean EOF (TCP FIN, or
+    // TLS close_notify); Truncated(0) is a TLS EOF without close_notify.
+    // Timeout leaves the connection usable, under TLS too.
+    pub fn receive(&self, space: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<i32,Error> {
+        let ready: core::result::Result<i32,Error> = self.renewed(deadline); if (ready.is_err()) { return ready; }
+        if (!self.conn.secure) {
+            let got: core::result::Result<i32,core::io::Error> = self.conn.socket.receive_until(space,deadline);
+            if (got.is_err()) { let e: core::io::Error = got.unwrap_err(); if (timed_out(e)) { return core::result::Err(Error::Timeout); } return core::result::Err(Error::Io(e)); }
+            return core::result::Ok(got.unwrap());
+        }
+        while (true) {
+            let s: ext::tls_stream::Stream = self.conn.tls.unwrap();
+            let got: core::result::Result<i32,core::io::Error> = s.try_read(space.values,space.start,space.len());
+            let writing: bool = s.wants_write(); let failure: core::io::Error = core::io::Error::Host(71);
+            if (got.is_err()) { failure = stream_error(s.borrow(),got.unwrap_err()); }
+            self.conn.tls = core::option::Some(s);
+            if (got.is_ok()) { return core::result::Ok(got.unwrap()); }
+            let blocked: bool = match (got.unwrap_err()) { core::io::Error::WouldBlock -> true, _ -> false };
+            if (!blocked) {
+                if (unclean(failure)) { return core::result::Err(Error::Truncated(0)); }
+                if (timed_out(failure)) { return core::result::Err(Error::Timeout); }
+                return core::result::Err(Error::Io(failure));
+            }
+            let waited: core::result::Result<std::socket::Ready,core::io::Error> = self.conn.socket.wait_until(true,writing,deadline);
+            if (waited.is_err()) { return core::result::Err(Error::Io(waited.unwrap_err())); }
+            if (waited.unwrap().timed_out) { return core::result::Err(Error::Timeout); }
+        }
+        return core::result::Err(Error::Timeout);
+    }
+    // Close the transport; graceful sends TLS close_notify first.
+    pub fn close(&self, graceful: bool) -> bool {
+        if (!self.active) { return false; } self.active = false;
+        if (graceful) { close_conn(self.conn.borrow()); return true; }
+        if (self.conn.secure) { let s: ext::tls_stream::Stream = self.conn.tls.unwrap(); s.close(); self.conn.tls = core::option::Some(s); } else { self.conn.socket.close(); }
         return true;
     }
 }
