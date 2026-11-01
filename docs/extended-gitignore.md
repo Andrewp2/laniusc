@@ -64,6 +64,6 @@ the root `.gitignore` gets two to six more lines. Each case runs
 lists the files git does not ignore with `git ls-files -o --exclude-standard`.
 GNU grep over exactly those files must give the same sorted lines and status
 as `text_grep -r --gitignore`. Seeds 20261101, 1 and 2 with 400 trees each
-agreed in all 231, 253 and 246 gitignore cases; git ignored at least one file
-in 148, 165 and 157 of them. Log:
-`target/claude-work/s3/text-grep-recursive-receipt.log`.
+agreed in all 242, 217 and 246 gitignore cases; git ignored at least one file
+in 164, 134 and 153 of them. Log:
+`target/claude-work/s3/text-grep-speed-recursive-receipt.log`.

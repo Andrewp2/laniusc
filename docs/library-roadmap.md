@@ -80,8 +80,8 @@ included, and agrees with libc through `ctypes` on 3 x 200,000 generated
 cases. [`ext::gitignore`](extended-gitignore.md) applies `.gitignore` rules
 on top of it, and `text_grep -r` with `--include`, `--exclude`,
 `--exclude-dir` and `--gitignore` matches GNU grep 3.11 `-r` on the
-repository tree and 1,200 generated trees, and git's own listing in 730 of
-them.
+repository tree and 1,200 generated trees, and git's own listing in 705 of
+them. It runs `-r the` over the repository in 1.42x GNU grep's time.
 
 [Checked filesystem mutations](stdlib-filesystem.md) provide allocation-free
 creation/removal of one directory, file unlinking and renaming over existing

@@ -27,12 +27,14 @@ fn hint(value:u8) -> std::file_ops::Kind { if(value==8) { return std::file_ops::
 pub fn decode_entry(input:core::slice::View<u8>,offset:i32) -> core::result::Result<Entry,Error> {
     if(!valid(input) || offset<0 || offset>input.len()) { return core::result::Err(Error::Bounds); }
     if(offset%8!=0 || input.len()-offset<24) { return core::result::Err(Error::Malformed(offset)); }
-    let length:i32=integer(input,offset+16,2) as i32; if(length<24 || length%8!=0 || length>input.len()-offset) { return core::result::Err(Error::Malformed(offset+16)); }
-    let end:i32=offset+length; let name_end:i32=offset+19;
-    while(name_end<end && byte(input,name_end)!=0) { if(byte(input,name_end)==47) { return core::result::Err(Error::Malformed(name_end)); } name_end+=1; }
-    if(name_end==end || name_end==offset+19) { return core::result::Err(Error::Malformed(name_end)); }
-    let name:core::slice::View<u8> =core::result::unwrap(input.subview(offset+19,name_end));
-    return core::result::Ok(Entry { name:name,inode:integer(input,offset,8),cookie:integer(input,offset+8,8) as i64,kind:hint(byte(input,offset+18)),consumed:length });
+    let bytes:[u8] =input.values; let at:i32=input.start+offset;
+    let length:i32=(bytes[at+16] as i32)|((bytes[at+17] as i32)<<8); if(length<24 || length%8!=0 || length>input.len()-offset) { return core::result::Err(Error::Malformed(offset+16)); }
+    let end:i32=at+length; let name_end:i32=at+19;
+    while(name_end<end && bytes[name_end]!=0) { if(bytes[name_end]==47) { return core::result::Err(Error::Malformed(name_end-input.start)); } name_end+=1; }
+    if(name_end==end || name_end==at+19) { return core::result::Err(Error::Malformed(name_end-input.start)); }
+    let name:core::slice::View<u8> =core::slice::View { values:bytes,start:at+19,length:name_end-at-19 };
+    let inode:u64=0; let cookie:u64=0; let i:i32=7; while(i>=0) { inode=(inode<<8)|(bytes[at+i] as u64); cookie=(cookie<<8)|(bytes[at+8+i] as u64); i-=1; }
+    return core::result::Ok(Entry { name:name,inode:inode,cookie:cookie as i64,kind:hint(bytes[at+18]),consumed:length });
 }
 fn linux_error(error:std::linux::Error) -> Error { return match(error) { std::linux::Error::System(value)->Error::Io(io_error(value)), _->Error::Bounds }; }
 fn io_error(value:i32) -> core::io::Error { if(value==4) { return core::io::Error::Interrupted; } if(value==11) { return core::io::Error::WouldBlock; } return core::io::Error::Host(value); }

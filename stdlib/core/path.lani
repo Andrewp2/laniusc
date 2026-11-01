@@ -31,9 +31,11 @@ pub struct Ancestors { path: Path, done: bool }
 
 pub fn from_view(bytes: View<u8>) -> Result<Path, Error> {
     if (bytes.start < 0 || bytes.length < 0 || bytes.start > 2147483647 - bytes.length) { return Err(Error::Bounds); }
-    let index: i32 = 0;
-    while (index < bytes.len()) {
-        if (unwrap(bytes.get(index)) == 0) { return Err(Error::Nul(index)); }
+    // Direct indexing: the range was checked above, and the slice index is
+    // bounds-checked as View.get would be.
+    let values: [u8] = bytes.values; let index: i32 = 0; let at: i32 = bytes.start;
+    while (index < bytes.length) {
+        if (values[at + index] == 0) { return Err(Error::Nul(index)); }
         index += 1;
     }
     return Ok(Path { bytes: bytes });

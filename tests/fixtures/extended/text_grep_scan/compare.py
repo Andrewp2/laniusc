@@ -1,6 +1,9 @@
 """Old-versus-new differential test for text_grep's buffered scan.
 
-    python3 -I compare.py OLD_TEXT_GREP NEW_TEXT_GREP [--seed N] [--count N]
+    python3 -I compare.py OLD_TEXT_GREP NEW_TEXT_GREP [--seed N] [--count N] [--from K]
+
+--from K generates the same cases but runs only those from index K on, so
+one seed can be split into commands that each stay short.
 
 OLD is a build from before the 64 KiB buffer, literal prefilter and output
 buffer; NEW is the current build. Each case runs both on the same generated
@@ -54,18 +57,24 @@ def main():
         i = argv.index("--seed"); seed = int(argv[i + 1]); del argv[i:i + 2]
     if "--count" in argv:
         i = argv.index("--count"); count = int(argv[i + 1]); del argv[i:i + 2]
+    first = 0
+    if "--from" in argv:
+        i = argv.index("--from"); first = int(argv[i + 1]); del argv[i:i + 2]
     old, new = argv
     rng = random.Random(seed)
     failures, statuses, large = [], {}, 0
-    for _ in range(count):
+    for index in range(count):
         args, data = case(rng)
+        if index < first:
+            continue
         large += len(data) > 65536
         a = subprocess.run([old, *args], input=data, capture_output=True, timeout=60)
         b = subprocess.run([new, *args], input=data, capture_output=True, timeout=60)
         statuses[b.returncode] = statuses.get(b.returncode, 0) + 1
         if (a.returncode, a.stdout, a.stderr) != (b.returncode, b.stdout, b.stderr):
             failures.append((args, len(data), a.returncode, b.returncode, a.stderr[:80], b.stderr[:80]))
-    print(f"seed {seed}: {count - len(failures)}/{count} identical, {large} inputs over 64 KiB, statuses {dict(sorted(statuses.items()))}")
+    ran = count - first
+    print(f"seed {seed} cases {first}-{count}: {ran - len(failures)}/{ran} identical, {large} inputs over 64 KiB, statuses {dict(sorted(statuses.items()))}")
     for f in failures[:10]:
         print("  mismatch", f)
     return 1 if failures else 0
