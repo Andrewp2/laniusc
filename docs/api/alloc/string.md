@@ -514,7 +514,7 @@ pub fn equals(&self, other: String) -> bool
 
 #### method: compare
 
-[Source line 465](../../../stdlib/alloc/string.lani#L465)
+[Source line 458](../../../stdlib/alloc/string.lani#L458)
 
 ```lanius
 pub fn compare(&self, other: String) -> i32
@@ -522,7 +522,7 @@ pub fn compare(&self, other: String) -> i32
 
 #### method: starts_with
 
-[Source line 483](../../../stdlib/alloc/string.lani#L483)
+[Source line 472](../../../stdlib/alloc/string.lani#L472)
 
 ```lanius
 pub fn starts_with(&self, prefix: String) -> bool
@@ -530,7 +530,7 @@ pub fn starts_with(&self, prefix: String) -> bool
 
 #### method: ends_with
 
-[Source line 496](../../../stdlib/alloc/string.lani#L496)
+[Source line 478](../../../stdlib/alloc/string.lani#L478)
 
 ```lanius
 pub fn ends_with(&self, suffix: String) -> bool
@@ -538,7 +538,7 @@ pub fn ends_with(&self, suffix: String) -> bool
 
 #### method: try_substring
 
-[Source line 512](../../../stdlib/alloc/string.lani#L512)
+[Source line 487](../../../stdlib/alloc/string.lani#L487)
 
 ```lanius
 pub fn try_substring(&self, start: i32, end: i32) -> core::result::Result<String, Error>
@@ -546,7 +546,7 @@ pub fn try_substring(&self, start: i32, end: i32) -> core::result::Result<String
 
 #### method: try_replace_range
 
-[Source line 535](../../../stdlib/alloc/string.lani#L535)
+[Source line 506](../../../stdlib/alloc/string.lani#L506)
 
 ```lanius
 pub fn try_replace_range(&self, start: i32, end: i32, replacement: String) -> core::result::Result<i32, Error>
@@ -554,7 +554,7 @@ pub fn try_replace_range(&self, start: i32, end: i32, replacement: String) -> co
 
 #### method: try_insert
 
-[Source line 570](../../../stdlib/alloc/string.lani#L570)
+[Source line 536](../../../stdlib/alloc/string.lani#L536)
 
 ```lanius
 pub fn try_insert(&self, byte_index: i32, value: String) -> core::result::Result<i32, Error>
@@ -562,7 +562,7 @@ pub fn try_insert(&self, byte_index: i32, value: String) -> core::result::Result
 
 #### method: try_remove_range
 
-[Source line 574](../../../stdlib/alloc/string.lani#L574)
+[Source line 540](../../../stdlib/alloc/string.lani#L540)
 
 ```lanius
 pub fn try_remove_range(&self, start: i32, end: i32) -> core::result::Result<i32, Error>
@@ -570,7 +570,7 @@ pub fn try_remove_range(&self, start: i32, end: i32) -> core::result::Result<i32
 
 #### method: trim_ascii
 
-[Source line 581](../../../stdlib/alloc/string.lani#L581)
+[Source line 547](../../../stdlib/alloc/string.lani#L547)
 
 ```lanius
 pub fn trim_ascii(&self) -> i32
@@ -578,7 +578,7 @@ pub fn trim_ascii(&self) -> i32
 
 #### method: find
 
-[Source line 595](../../../stdlib/alloc/string.lani#L595)
+[Source line 560](../../../stdlib/alloc/string.lani#L560)
 
 ```lanius
 pub fn find(&self, needle: String) -> core::option::Option<i32>
@@ -586,15 +586,15 @@ pub fn find(&self, needle: String) -> core::option::Option<i32>
 
 #### method: destroy
 
-[Source line 602](../../../stdlib/alloc/string.lani#L602)
+[Source line 567](../../../stdlib/alloc/string.lani#L567)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 608
+### impl at line 573
 
-[Source line 608](../../../stdlib/alloc/string.lani#L608)
+[Source line 573](../../../stdlib/alloc/string.lani#L573)
 
 ```lanius
 pub impl core::cmp::Eq<String> for String
@@ -602,7 +602,7 @@ pub impl core::cmp::Eq<String> for String
 
 #### method: eq
 
-[Source line 609](../../../stdlib/alloc/string.lani#L609)
+[Source line 574](../../../stdlib/alloc/string.lani#L574)
 
 ```lanius
 pub fn eq(left: String, right: String) -> bool
@@ -610,15 +610,15 @@ pub fn eq(left: String, right: String) -> bool
 
 #### method: ne
 
-[Source line 610](../../../stdlib/alloc/string.lani#L610)
+[Source line 575](../../../stdlib/alloc/string.lani#L575)
 
 ```lanius
 pub fn ne(left: String, right: String) -> bool
 ```
 
-### impl at line 613
+### impl at line 578
 
-[Source line 613](../../../stdlib/alloc/string.lani#L613)
+[Source line 578](../../../stdlib/alloc/string.lani#L578)
 
 ```lanius
 pub impl core::hash::Hash<String> for String
@@ -626,15 +626,15 @@ pub impl core::hash::Hash<String> for String
 
 #### method: hash
 
-[Source line 614](../../../stdlib/alloc/string.lani#L614)
+[Source line 579](../../../stdlib/alloc/string.lani#L579)
 
 ```lanius
 pub fn hash(value: String) -> u32
 ```
 
-### impl at line 619
+### impl at line 584
 
-[Source line 619](../../../stdlib/alloc/string.lani#L619)
+[Source line 584](../../../stdlib/alloc/string.lani#L584)
 
 ```lanius
 pub impl core::cmp::Ord<String> for String
@@ -642,7 +642,7 @@ pub impl core::cmp::Ord<String> for String
 
 #### method: lt
 
-[Source line 620](../../../stdlib/alloc/string.lani#L620)
+[Source line 585](../../../stdlib/alloc/string.lani#L585)
 
 ```lanius
 pub fn lt(left: String, right: String) -> bool
@@ -650,7 +650,7 @@ pub fn lt(left: String, right: String) -> bool
 
 #### method: le
 
-[Source line 621](../../../stdlib/alloc/string.lani#L621)
+[Source line 586](../../../stdlib/alloc/string.lani#L586)
 
 ```lanius
 pub fn le(left: String, right: String) -> bool
@@ -658,7 +658,7 @@ pub fn le(left: String, right: String) -> bool
 
 #### method: gt
 
-[Source line 622](../../../stdlib/alloc/string.lani#L622)
+[Source line 587](../../../stdlib/alloc/string.lani#L587)
 
 ```lanius
 pub fn gt(left: String, right: String) -> bool
@@ -666,15 +666,15 @@ pub fn gt(left: String, right: String) -> bool
 
 #### method: ge
 
-[Source line 623](../../../stdlib/alloc/string.lani#L623)
+[Source line 588](../../../stdlib/alloc/string.lani#L588)
 
 ```lanius
 pub fn ge(left: String, right: String) -> bool
 ```
 
-### impl at line 626
+### impl at line 591
 
-[Source line 626](../../../stdlib/alloc/string.lani#L626)
+[Source line 591](../../../stdlib/alloc/string.lani#L591)
 
 ```lanius
 pub impl core::cmp::PartialEq<String> for String
@@ -682,7 +682,7 @@ pub impl core::cmp::PartialEq<String> for String
 
 #### method: partial_eq
 
-[Source line 627](../../../stdlib/alloc/string.lani#L627)
+[Source line 592](../../../stdlib/alloc/string.lani#L592)
 
 ```lanius
 pub fn partial_eq(left: String, right: String) -> bool
@@ -690,15 +690,15 @@ pub fn partial_eq(left: String, right: String) -> bool
 
 #### method: partial_ne
 
-[Source line 628](../../../stdlib/alloc/string.lani#L628)
+[Source line 593](../../../stdlib/alloc/string.lani#L593)
 
 ```lanius
 pub fn partial_ne(left: String, right: String) -> bool
 ```
 
-### impl at line 631
+### impl at line 596
 
-[Source line 631](../../../stdlib/alloc/string.lani#L631)
+[Source line 596](../../../stdlib/alloc/string.lani#L596)
 
 ```lanius
 pub impl core::cmp::PartialOrd<String> for String
@@ -706,7 +706,7 @@ pub impl core::cmp::PartialOrd<String> for String
 
 #### method: partial_lt
 
-[Source line 632](../../../stdlib/alloc/string.lani#L632)
+[Source line 597](../../../stdlib/alloc/string.lani#L597)
 
 ```lanius
 pub fn partial_lt(left: String, right: String) -> bool
@@ -714,7 +714,7 @@ pub fn partial_lt(left: String, right: String) -> bool
 
 #### method: partial_le
 
-[Source line 633](../../../stdlib/alloc/string.lani#L633)
+[Source line 598](../../../stdlib/alloc/string.lani#L598)
 
 ```lanius
 pub fn partial_le(left: String, right: String) -> bool
@@ -722,7 +722,7 @@ pub fn partial_le(left: String, right: String) -> bool
 
 #### method: partial_gt
 
-[Source line 634](../../../stdlib/alloc/string.lani#L634)
+[Source line 599](../../../stdlib/alloc/string.lani#L599)
 
 ```lanius
 pub fn partial_gt(left: String, right: String) -> bool
@@ -730,7 +730,7 @@ pub fn partial_gt(left: String, right: String) -> bool
 
 #### method: partial_ge
 
-[Source line 635](../../../stdlib/alloc/string.lani#L635)
+[Source line 600](../../../stdlib/alloc/string.lani#L600)
 
 ```lanius
 pub fn partial_ge(left: String, right: String) -> bool
@@ -738,15 +738,15 @@ pub fn partial_ge(left: String, right: String) -> bool
 
 #### method: partial_cmp
 
-[Source line 636](../../../stdlib/alloc/string.lani#L636)
+[Source line 601](../../../stdlib/alloc/string.lani#L601)
 
 ```lanius
 pub fn partial_cmp(left: String, right: String) -> core::cmp::PartialOrdering
 ```
 
-### impl at line 643
+### impl at line 608
 
-[Source line 643](../../../stdlib/alloc/string.lani#L643)
+[Source line 608](../../../stdlib/alloc/string.lani#L608)
 
 ```lanius
 pub impl core::clone::TryClone<String,Error> for String
@@ -754,15 +754,15 @@ pub impl core::clone::TryClone<String,Error> for String
 
 #### method: try_clone_value
 
-[Source line 644](../../../stdlib/alloc/string.lani#L644)
+[Source line 609](../../../stdlib/alloc/string.lani#L609)
 
 ```lanius
 pub fn try_clone_value(source: String) -> core::result::Result<String,Error>
 ```
 
-### impl at line 646
+### impl at line 611
 
-[Source line 646](../../../stdlib/alloc/string.lani#L646)
+[Source line 611](../../../stdlib/alloc/string.lani#L611)
 
 ```lanius
 pub impl core::clone::Destroy<String> for String
@@ -770,7 +770,7 @@ pub impl core::clone::Destroy<String> for String
 
 #### method: destroy_value
 
-[Source line 647](../../../stdlib/alloc/string.lani#L647)
+[Source line 612](../../../stdlib/alloc/string.lani#L612)
 
 ```lanius
 pub fn destroy_value(owned: String)

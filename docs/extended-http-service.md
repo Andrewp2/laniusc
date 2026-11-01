@@ -163,11 +163,57 @@ Meanwhile it takes in other streams' frames, which stay queued for later
 drains briefly, then closes. `target` is the full `:path` and `path` is the
 part before `?`, so the `Router` applies unchanged.
 
-The h2c driver is sequential: it serves one connection at a time, like
-`accept_until`/`next_request`. On the event server, a connection that opens
-with the preface is closed without a response, because `status_for` maps
-`Http2Preface` to 0. HTTP/2 over TLS waits on C callback support for ALPN
-selection; see [HTTP/2 server](extended-http2-server.md#http2-over-tls).
+`H2Connection` is the sequential driver: it serves one connection at a
+time, like `accept_until`/`next_request`. The event server below
+multiplexes h2c connections on its loop instead. HTTP/2 over TLS waits on C
+callback support for ALPN selection; see
+[HTTP/2 server](extended-http2-server.md#http2-over-tls).
+
+### h2c on the event server
+
+```lanius
+pub struct Ready { slot: i32, stream: i32 }   // stream 0: HTTP/1.1
+pub impl Server {
+    pub fn enable_h2(&self);
+    pub fn next_ready(&self, deadline: core::time::Deadline) -> Result<Option<Ready>,Error>;
+    pub fn h2_request(&self, ready: Ready) -> Result<H2Request,Error>;
+    pub fn h2_header(&self, ready: Ready, name: View<u8>) -> Option<View<u8>>;
+    pub fn h2_respond(&self, ready: Ready, status: i32, content_type: View<u8>, body: View<u8>) -> Result<i32,Error>;
+}
+```
+
+After `enable_h2`, the slot of a connection that opens with the preface
+runs an `ext::http2_server` engine, and `ServerStats.h2_connections` counts
+these slots. Without `enable_h2`, such a connection is closed without a
+response, because `status_for` maps `Http2Preface` to 0.
+
+`next_ready` returns one entry per ready request:
+
+- `stream` 0 is an HTTP/1.1 request, served with `request`, `take` and
+  `put` as before;
+- any other `stream` is an HTTP/2 request on that slot's connection, read
+  with `h2_request` and `h2_header` and answered with `h2_respond`.
+
+`next` keeps its HTTP/1.1-only behaviour and returns
+`Err(InvalidState)` once h2 is enabled.
+
+`h2_respond` queues the whole response in the engine and returns without
+blocking. The next `next_ready` call sends it once no more of that
+connection's requests are queued, so one `send` carries the responses to
+a batch of multiplexed requests. The loop sends DATA as the client's windows and the socket
+allow, and keeps reading other streams' frames meanwhile. It waits for
+writability only while the engine has bytes the socket refused.
+
+The slot's deadline depends on what it is waiting for:
+
+- `write_timeout_ms` while output is pending (an error when it passes);
+- `body_timeout_ms` while streams are open (a timeout);
+- otherwise `idle_timeout_ms`, after which the slot sends GOAWAY(NO_ERROR)
+  and closes.
+
+A slot also closes when the connection is finished, meaning a GOAWAY went
+either way and every stream ended, or when the peer closes. Its queued
+requests are dropped with it.
 
 ## Requests and keep-alive
 
@@ -411,7 +457,7 @@ by other heavy jobs.
 ## Limits of this version
 
 - **Threads and TLS:** one thread, no TLS. HTTP/2 is prior-knowledge h2c
-  on the sequential driver only.
+  only, on both the sequential driver and the event server.
 - **Memory:** a connection uses up to `buffer_bytes` plus the decoded body,
   and the event server's `max_connections` is the only cap on the total.
 - **Write deadline:** the event server's write deadline applies to the whole

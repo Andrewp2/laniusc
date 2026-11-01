@@ -184,14 +184,16 @@ fn utf8_scalar_io_reports_host_failures() {
             (
                 "std_io_utf8_codes_write_error",
                 "write",
-                "write:error=EIO:when=2",
-                b"A".as_slice(),
+                // The whole validated view goes out in one host call.
+                "write:error=EIO:when=1",
+                b"".as_slice(),
             ),
             (
                 "std_io_utf8_bytes_write_error",
                 "write",
-                "write:error=EIO:when=2",
-                b"A".as_slice(),
+                // The whole validated view goes out in one host call.
+                "write:error=EIO:when=1",
+                b"".as_slice(),
             ),
         ] {
             let bytes = compile_fixture(name);

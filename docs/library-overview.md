@@ -6,6 +6,10 @@ The full library goal remains open. The current increment adds
 `try_extend_from_slice`, `copy_from_slice`, `swap_with_slice`, `fill` and
 `swap` on `alloc::vec::Vec`. Packed byte runs move eight bytes at a time:
 a 4 KiB copy runs 5x faster than the element loop and a fill 38x faster.
+`alloc::string`, `alloc::io`, `core::io`, `core::buffered`, `core::utf8_view`,
+`std::io_utf8` and `std::io_line` now [call them](stdlib-slice-bulk.md#callers)
+instead of per-byte loops, and UTF-8 validation skips ASCII eight bytes at a
+time: 7x to 57x on string and buffered-I/O paths, 37x on `Utf8View` edits.
 The preceding increment makes `core::slice` sorting adaptive: [pattern-defeating quicksort](stdlib-sort-algorithms.md)
 for unstable sorts and a run-adaptive stable merge sort with galloping over
 caller scratch. Both are checked against Python `sorted`, with recorded
@@ -55,7 +59,7 @@ work on native Linux x86_64/glibc with libatomic:
   `scan` as stolen tasks on a `std::steal` pool. The sorts keep one forked crew
   for all phases, sort runs with a direct-comparison introsort or merge
   sort, then merge them in parallel at merge-path splits. A Python model oracle covers 3,600 runs with 0
-  mismatches, including non-commutative scans. On 10M i64 keys, 8 workers take 387–392 ms, against 638–699 ms
+  mismatches, including non-commutative scans. On 10M i64 keys, 8 workers take 306–373 ms, against 577–689 ms
   for C++ `std::sort` at -O2.
 
 The stress fixture keeps exact invariants: 1,600,000 atomic adds; 400,000
@@ -2310,7 +2314,9 @@ pseudo-fields and fields, buffers bodies under flow control, answers 413 and
 431 itself, and sends responses within the client's windows.
 [`ext::http_service`](extended-http-service.md#http2-h2c) hands connections
 that open with the preface to it (prior-knowledge h2c) and keeps serving
-HTTP/1.1 on the same listener. A libnghttp2 client session through ctypes
+HTTP/1.1 on the same listener. The event server multiplexes h2c
+connections on its loop as well, and a load test of 100 concurrent h2c
+clients against 100 HTTP/1.1 clients checks every body and counter. A libnghttp2 client session through ctypes
 passes 6 session cases and 18 malformed-frame cases, both against the engine
 over a pipe and against the service over TCP. HTTP/2 over TLS waits on C
 callback support for OpenSSL's ALPN selection.
@@ -2437,7 +2443,18 @@ from any `core::io::Read` source, and `Writer.flush_to` streams output to any
 [`ext::json_pointer` and `ext::json_patch`](extended-json-patch.md) apply
 RFC 6901 pointers, RFC 6902 patches and RFC 7386 merge patches to
 `ext::json_tree` documents atomically. They agree with a Python model on
-6,450 RFC-example, error and generated cases. [`core::float_decimal`](stdlib-float-decimal.md)
+6,450 RFC-example, error and generated cases.
+[`ext::json_schema`](extended-json-schema.md) validates `ext::json_tree`
+documents against JSON Schema 2020-12 (core, applicator and validation
+vocabularies, `pattern` through `ext::regex`, local `$ref`). It agrees with a
+Python model on 246 hand-written specification cases, 92 error and limit
+cases and 10,000 generated schema/instance pairs.
+[`ext::yaml`](extended-yaml.md) reads YAML 1.2 (block and flow collections,
+every scalar style with chomping, anchors and aliases under an expansion
+limit, comments, multiple documents) into `ext::json_tree` with the core
+schema. It agrees with PyYAML 6.0.1 on 87 hand-written and 3,000 generated
+documents, and with hand-written expectations on 32 documents that YAML 1.1
+reads differently and 68 error and limit cases. [`core::float_decimal`](stdlib-float-decimal.md)
 formats shortest decimals with Schubfach, which is exact with no fallback, in
 about 0.6 to 0.8 µs per value. It parses with an Eisel-Lemire fast path
 before its exact big-integer path, in about 0.7 to 0.8 µs per value. It

@@ -486,7 +486,15 @@ Not trusted: laniusc's lexer and parser, and the parse trees they give.
 the production ids in preorder and each node's parent), but the theorems
 mention no tree: they are about the one reading of the texts. A wrong tree
 is rejected, or it is still the parse tree of the same tokens, which is
-unique. Trusted:
+unique. So the trees the certificates and the self program's files are made
+from need not be laniusc's own runs either: `formal/tools/cert_trees.py`
+takes each file's tree from a cache keyed by the file's bytes and the text
+of the extracted definitions `grammar` uses (not laniusc's binary), or from
+an untrusted CPU parser (`fuzz_oracle.Parser`), and asks laniusc only for a
+file neither gives a tree for. Every tree, from any of them, is checked by
+the validator before it is used, and a tree the validator accepts is the
+one parse tree of the tokens (`Lanius.Mini.Unique`), the tree laniusc gives
+when it is right; a stale cache entry is rejected, never used. Trusted:
 
 - **The lexer.** `Lanius.Compiler.Lexer.lexCanonical`
   (`Lanius/Compiler/LexerCanonical.lean`) is the meaning of Lanius's lexical

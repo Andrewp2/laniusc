@@ -1,0 +1,1092 @@
+// YAML 1.2 reader into ext::json_tree trees with the core schema: block and
+// flow collections, plain, quoted and block scalars, anchors and aliases,
+// comments and multiple documents. See docs/extended-yaml.md.
+module ext::yaml;
+import alloc::vec;
+import core::mem;
+import core::result;
+import core::slice;
+import core::text;
+import ext::json_tree;
+
+pub enum ErrorKind {
+    Syntax, InvalidCharacter, InvalidEscape, Unsupported, UnknownAlias, RecursiveAlias, AliasLimit,
+    DuplicateKey, NonScalarKey, NonFinite, InvalidTag, MultipleDocuments, DepthLimit, NodeLimit, AllocationFailed,
+}
+// line and column count from 0 in Unicode scalars; offset is a byte offset
+// from the start of the source range.
+pub struct Error { kind: ErrorKind, line: i32, column: i32, offset: i32 }
+// max_depth bounds collection nesting; max_nodes bounds the tree;
+// max_alias_nodes bounds the nodes that alias expansion copies in total.
+pub struct Limits { max_depth: i32, max_nodes: i32, max_alias_nodes: i32 }
+pub fn default_limits() -> Limits { return Limits { max_depth: 256, max_nodes: 16777216, max_alias_nodes: 1000000 }; }
+
+fn lit(value: str, count: i32) -> core::text::Text {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value), count);
+    return core::text::from_utf8_unchecked(bytes, 0, count);
+}
+pub fn kind_name(kind: ErrorKind) -> core::text::Text {
+    let name: core::text::Text = match (kind) {
+        ErrorKind::Syntax -> lit("Syntax", 6),
+        ErrorKind::InvalidCharacter -> lit("InvalidCharacter", 16),
+        ErrorKind::InvalidEscape -> lit("InvalidEscape", 13),
+        ErrorKind::Unsupported -> lit("Unsupported", 11),
+        ErrorKind::UnknownAlias -> lit("UnknownAlias", 12),
+        ErrorKind::RecursiveAlias -> lit("RecursiveAlias", 14),
+        ErrorKind::AliasLimit -> lit("AliasLimit", 10),
+        ErrorKind::DuplicateKey -> lit("DuplicateKey", 12),
+        ErrorKind::NonScalarKey -> lit("NonScalarKey", 12),
+        ErrorKind::NonFinite -> lit("NonFinite", 9),
+        ErrorKind::InvalidTag -> lit("InvalidTag", 10),
+        ErrorKind::MultipleDocuments -> lit("MultipleDocuments", 17),
+        ErrorKind::DepthLimit -> lit("DepthLimit", 10),
+        ErrorKind::NodeLimit -> lit("NodeLimit", 9),
+        ErrorKind::AllocationFailed -> lit("AllocationFailed", 16),
+    };
+    return name;
+}
+fn same_bytes(a: [u8], a_start: i32, b: [u8], b_start: i32, length: i32) -> bool {
+    let index: i32 = 0;
+    while (index < length) { if (a[a_start + index] != b[b_start + index]) { return false; } index += 1; }
+    return true;
+}
+fn is(text: core::text::Text, word: str, count: i32) -> bool {
+    if (text.length != count) { return false; }
+    let other: core::text::Text = lit(word, count);
+    return same_bytes(text.bytes, text.start, other.bytes, other.start, count);
+}
+fn blank(byte: u8) -> bool { return byte == 0 || byte == 32 || byte == 9 || byte == 10 || byte == 13; }
+fn flow_indicator(byte: u8) -> bool { return byte == 44 || byte == 91 || byte == 93 || byte == 123 || byte == 125; }
+fn digit(byte: u8) -> bool { return byte >= 48 && byte <= 57; }
+fn hex_value(byte: u8) -> i32 {
+    if (byte >= 48 && byte <= 57) { return (byte - 48) as i32; }
+    if (byte >= 65 && byte <= 70) { return (byte - 55) as i32; }
+    if (byte >= 97 && byte <= 102) { return (byte - 87) as i32; }
+    return -1;
+}
+
+// Tokens: WORDS words each.
+const T_STREAM_END: i32 = 1; const T_DIRECTIVE: i32 = 2; const T_DOC_START: i32 = 3; const T_DOC_END: i32 = 4;
+const T_BLOCK_SEQ: i32 = 5; const T_BLOCK_MAP: i32 = 6; const T_BLOCK_END: i32 = 7;
+const T_FLOW_SEQ: i32 = 8; const T_FLOW_SEQ_END: i32 = 9; const T_FLOW_MAP: i32 = 10; const T_FLOW_MAP_END: i32 = 11;
+const T_ENTRY: i32 = 12; const T_FLOW_ENTRY: i32 = 13; const T_KEY: i32 = 14; const T_VALUE: i32 = 15;
+const T_ALIAS: i32 = 16; const T_ANCHOR: i32 = 17; const T_TAG: i32 = 18; const T_SCALAR: i32 = 19;
+// Words: kind, a, b, c, line, column, offset. Scalars: value range a/b in
+// the value buffer, c the style (0 plain, 1 single, 2 double, 3 literal,
+// 4 folded). Anchors and aliases: name range a/b in the source. Tags: c is
+// 1 for !!str and 2 for the non-specific "!".
+const WORDS: i32 = 7;
+// Possible simple keys, one per flow level: active, token number, required,
+// index, line, column, offset.
+const KEY_WORDS: i32 = 7;
+
+struct Reader {
+    src: [u8], base: i32, at: i32, end: i32, line: i32, column: i32, index: i32,
+    flow: i32, indent: i32, indents: alloc::vec::Vec<i32>, allow: bool, done: bool,
+    key_store: alloc::vec::Vec<i32>, keys: [i32], key_levels: i32,
+    token_store: alloc::vec::Vec<i32>, toks: [i32], count: i32, token_cap: i32,
+    value_store: alloc::vec::Vec<u8>, vals: [u8], used: i32, value_cap: i32,
+    failed: bool, error: Error,
+    pos: i32, tree: ext::json_tree::Tree, depth: i32, limits: Limits,
+    anchors: alloc::vec::Vec<i32>, open: alloc::vec::Vec<i32>, alias_nodes: i64,
+    numbers: alloc::vec::Vec<u8>, digits: alloc::vec::Vec<u8>, key_stack: alloc::vec::Vec<u8>,
+}
+
+impl Reader {
+    fn borrow(&self) -> &Reader { return self; }
+    fn fail_at(&self, kind: ErrorKind, line: i32, column: i32, offset: i32) -> bool {
+        if (!self.failed) { self.failed = true; self.error = Error { kind: kind, line: line, column: column, offset: offset }; }
+        return false;
+    }
+    fn fail(&self, kind: ErrorKind) -> bool { return self.fail_at(kind, self.line, self.column, self.at - self.base); }
+    fn peek(&self, ahead: i32) -> u8 { if (self.at + ahead < self.end) { return self.src[self.at + ahead]; } return 0; }
+    fn forward(&self) {
+        let byte: u8 = self.src[self.at];
+        self.index += 1;
+        if (byte < 128) {
+            self.at += 1;
+            if (byte == 10 || (byte == 13 && self.peek(0) != 10)) { self.line += 1; self.column = 0; } else { self.column += 1; }
+            return;
+        }
+        let width: i32 = 2;
+        if (byte >= 224) { width = 3; }
+        if (byte >= 240) { width = 4; }
+        let mark: bool = byte == 239 && self.src[self.at + 1] == 187 && self.src[self.at + 2] == 191;
+        self.at += width;
+        if (!mark) { self.column += 1; }
+    }
+    fn advance(&self, bytes: i32) { let stop: i32 = self.at + bytes; while (self.at < stop) { self.forward(); } }
+    fn line_break(&self) -> bool {
+        let byte: u8 = self.peek(0);
+        if (byte == 13) { self.forward(); if (self.peek(0) == 10) { self.forward(); } return true; }
+        if (byte == 10) { self.forward(); return true; }
+        return false;
+    }
+    // "---" or "..." at column 0, followed by a blank.
+    fn separator(&self) -> bool {
+        if (self.column != 0) { return false; }
+        let byte: u8 = self.peek(0);
+        if (byte != 45 && byte != 46) { return false; }
+        return self.peek(1) == byte && self.peek(2) == byte && blank(self.peek(3));
+    }
+
+    // Storage ------------------------------------------------------------------
+
+    fn reserve_tokens(&self, words: i32) -> bool {
+        if (words <= self.token_cap) { return true; }
+        let target: i32 = self.token_cap * 2; if (target < words) { target = words; } if (target < 64 * WORDS) { target = 64 * WORDS; }
+        if (self.token_store.try_resize(target, 0).is_err()) { return self.fail(ErrorKind::AllocationFailed); }
+        self.toks = self.token_store.as_slice(); self.token_cap = target;
+        return true;
+    }
+    fn write_token(&self, at: i32, kind: i32, a: i32, b: i32, c: i32, line: i32, column: i32, offset: i32) {
+        let base: i32 = at * WORDS; let toks: [i32] = self.toks;
+        toks[base] = kind; toks[base + 1] = a; toks[base + 2] = b; toks[base + 3] = c;
+        toks[base + 4] = line; toks[base + 5] = column; toks[base + 6] = offset;
+    }
+    fn emit(&self, kind: i32, a: i32, b: i32, c: i32, line: i32, column: i32, offset: i32) -> bool {
+        if (!self.reserve_tokens((self.count + 1) * WORDS)) { return false; }
+        self.write_token(self.count, kind, a, b, c, line, column, offset); self.count += 1;
+        return true;
+    }
+    fn emit_here(&self, kind: i32) -> bool { return self.emit(kind, 0, 0, 0, self.line, self.column, self.at - self.base); }
+    fn insert_token(&self, at: i32, kind: i32, line: i32, column: i32, offset: i32) -> bool {
+        if (!self.reserve_tokens((self.count + 1) * WORDS)) { return false; }
+        let toks: [i32] = self.toks; let index: i32 = self.count * WORDS - 1;
+        while (index >= at * WORDS) { toks[index + WORDS] = toks[index]; index -= 1; }
+        self.write_token(at, kind, 0, 0, 0, line, column, offset); self.count += 1;
+        return true;
+    }
+    fn reserve_values(&self, need: i32) -> bool {
+        if (need <= self.value_cap) { return true; }
+        let target: i32 = self.value_cap * 2; if (target < need) { target = need; } if (target < 256) { target = 256; }
+        if (self.value_store.try_resize(target, 0).is_err()) { return self.fail(ErrorKind::AllocationFailed); }
+        self.vals = self.value_store.as_slice(); self.value_cap = target;
+        return true;
+    }
+    fn put(&self, byte: u8) -> bool {
+        if (self.used >= self.value_cap && !self.reserve_values(self.used + 1)) { return false; }
+        self.vals[self.used] = byte; self.used += 1;
+        return true;
+    }
+    fn put_source(&self, from: i32, length: i32) -> bool {
+        if (!self.reserve_values(self.used + length)) { return false; }
+        let vals: [u8] = self.vals; let src: [u8] = self.src; let index: i32 = 0;
+        while (index < length) { vals[self.used + index] = src[from + index]; index += 1; }
+        self.used += length;
+        return true;
+    }
+    fn put_code(&self, code: i32) -> bool {
+        if (code < 128) { return self.put(code as u8); }
+        if (code < 2048) { return self.put((192 | (code >> 6)) as u8) && self.put((128 | (code & 63)) as u8); }
+        if (code < 65536) { return self.put((224 | (code >> 12)) as u8) && self.put((128 | ((code >> 6) & 63)) as u8) && self.put((128 | (code & 63)) as u8); }
+        return self.put((240 | (code >> 18)) as u8) && self.put((128 | ((code >> 12) & 63)) as u8) && self.put((128 | ((code >> 6) & 63)) as u8) && self.put((128 | (code & 63)) as u8);
+    }
+    fn put_breaks(&self, count: i32) -> bool {
+        let index: i32 = 0;
+        while (index < count) { if (!self.put(10)) { return false; } index += 1; }
+        return true;
+    }
+
+    // Simple keys and indentation -------------------------------------------
+
+    fn key_base(&self, level: i32) -> i32 {
+        if (level >= self.key_levels) {
+            if (self.key_store.try_resize((level + 1) * KEY_WORDS, 0).is_err()) { self.fail(ErrorKind::AllocationFailed); return -1; }
+            self.keys = self.key_store.as_slice(); self.key_levels = level + 1;
+        }
+        return level * KEY_WORDS;
+    }
+    fn missing_colon(&self, base: i32) -> bool {
+        let keys: [i32] = self.keys;
+        return self.fail_at(ErrorKind::Syntax, keys[base + 4], keys[base + 5], keys[base + 6]);
+    }
+    fn save_key(&self) -> bool {
+        if (!self.allow) { return true; }
+        if (!self.remove_key()) { return false; }
+        let base: i32 = self.key_base(self.flow);
+        if (base < 0) { return false; }
+        let keys: [i32] = self.keys;
+        keys[base] = 1; keys[base + 1] = self.count;
+        keys[base + 2] = 0; if (self.flow == 0 && self.indent == self.column) { keys[base + 2] = 1; }
+        keys[base + 3] = self.index; keys[base + 4] = self.line; keys[base + 5] = self.column; keys[base + 6] = self.at - self.base;
+        return true;
+    }
+    fn remove_key(&self) -> bool {
+        if (self.flow >= self.key_levels) { return true; }
+        let base: i32 = self.flow * KEY_WORDS;
+        if (self.keys[base] == 1) {
+            if (self.keys[base + 2] == 1) { return self.missing_colon(base); }
+            self.keys[base] = 0;
+        }
+        return true;
+    }
+    // Simple keys are limited to one line and 1024 scalars.
+    fn stale_keys(&self) -> bool {
+        let level: i32 = 0;
+        while (level < self.key_levels) {
+            let base: i32 = level * KEY_WORDS;
+            if (self.keys[base] == 1 && (self.keys[base + 4] != self.line || self.index - self.keys[base + 3] > 1024)) {
+                if (self.keys[base + 2] == 1) { return self.missing_colon(base); }
+                self.keys[base] = 0;
+            }
+            level += 1;
+        }
+        return true;
+    }
+    fn unwind(&self, column: i32) -> bool {
+        if (self.flow > 0) { return true; }
+        while (self.indent > column) {
+            let last: i32 = self.indents.len() - 1;
+            self.indent = self.indents.at(last); core::result::unwrap(self.indents.truncate(last));
+            if (!self.emit_here(T_BLOCK_END)) { return false; }
+        }
+        return true;
+    }
+    // 1 when the indentation grew, 0 when not, -1 on failure.
+    fn add_indent(&self, column: i32) -> i32 {
+        if (self.indent >= column) { return 0; }
+        if (self.indents.try_push(self.indent).is_err()) { self.fail(ErrorKind::AllocationFailed); return -1; }
+        self.indent = column;
+        return 1;
+    }
+
+    // Scanning ----------------------------------------------------------------
+
+    fn scan(&self) -> bool {
+        if (self.peek(0) == 239 && self.peek(1) == 187 && self.peek(2) == 191) { self.forward(); }
+        while (!self.done) { if (!self.fetch()) { return false; } }
+        return true;
+    }
+    // Skips spaces, tabs, comments and line breaks. Tabs may separate tokens
+    // within a line but not indent a block-context token.
+    fn to_next_token(&self) -> bool {
+        while (true) {
+            let leading: bool = self.line_head(); let tab: bool = false;
+            while (self.peek(0) == 32 || self.peek(0) == 9) { if (self.peek(0) == 9) { tab = true; } self.forward(); }
+            if (self.peek(0) == 35) { while (self.at < self.end && self.peek(0) != 10 && self.peek(0) != 13) { self.forward(); } }
+            if (self.line_break()) { if (self.flow == 0) { self.allow = true; } continue; }
+            if (leading && tab && self.flow == 0 && self.at < self.end) { return self.fail(ErrorKind::Syntax); }
+            return true;
+        }
+        return true;
+    }
+    fn fetch(&self) -> bool {
+        if (!self.to_next_token() || !self.stale_keys() || !self.unwind(self.column)) { return false; }
+        if (self.at >= self.end) { return self.stream_end(); }
+        let ch: u8 = self.peek(0); let next: u8 = self.peek(1);
+        if (ch == 37 && self.column == 0) { return self.directive(); }
+        if ((ch == 45 || ch == 46) && self.separator()) {
+            if (!self.unwind(-1) || !self.remove_key()) { return false; }
+            self.allow = false;
+            let kind: i32 = T_DOC_END; if (ch == 45) { kind = T_DOC_START; }
+            if (!self.emit_here(kind)) { return false; }
+            self.advance(3); return true;
+        }
+        if (ch == 91 || ch == 123) {
+            if (!self.save_key()) { return false; }
+            self.flow += 1; self.allow = true;
+            let kind: i32 = T_FLOW_SEQ; if (ch == 123) { kind = T_FLOW_MAP; }
+            if (!self.emit_here(kind)) { return false; }
+            self.forward(); return true;
+        }
+        if (ch == 93 || ch == 125) {
+            if (!self.remove_key()) { return false; }
+            if (self.flow > 0) { self.flow -= 1; }
+            self.allow = false;
+            let kind: i32 = T_FLOW_SEQ_END; if (ch == 125) { kind = T_FLOW_MAP_END; }
+            if (!self.emit_here(kind)) { return false; }
+            self.forward(); return true;
+        }
+        if (ch == 44) {
+            self.allow = true;
+            if (!self.remove_key() || !self.emit_here(T_FLOW_ENTRY)) { return false; }
+            self.forward(); return true;
+        }
+        if (ch == 45 && blank(next)) { return self.block_entry(); }
+        if (ch == 63 && (self.flow > 0 || blank(next))) { return self.explicit_key(); }
+        if (ch == 58 && (self.flow > 0 || blank(next))) { return self.value(); }
+        if (ch == 42 || ch == 38) {
+            if (!self.save_key()) { return false; }
+            self.allow = false;
+            return self.anchor(ch == 42);
+        }
+        if (ch == 33) {
+            if (!self.save_key()) { return false; }
+            self.allow = false;
+            return self.tag();
+        }
+        if ((ch == 124 || ch == 62) && self.flow == 0) {
+            self.allow = true;
+            if (!self.remove_key()) { return false; }
+            return self.block_scalar(ch == 62);
+        }
+        if (ch == 39 || ch == 34) {
+            if (!self.save_key()) { return false; }
+            self.allow = false;
+            return self.flow_scalar(ch == 34);
+        }
+        if (self.plain_start(ch, next)) {
+            if (!self.save_key()) { return false; }
+            self.allow = false;
+            return self.plain();
+        }
+        return self.fail(ErrorKind::Syntax);
+    }
+    fn plain_start(&self, ch: u8, next: u8) -> bool {
+        let indicator: bool = ch == 45 || ch == 63 || ch == 58 || ch == 44 || ch == 91 || ch == 93 || ch == 123 || ch == 125
+            || ch == 35 || ch == 38 || ch == 42 || ch == 33 || ch == 124 || ch == 62 || ch == 39 || ch == 34 || ch == 37 || ch == 64 || ch == 96;
+        if (!blank(ch) && !indicator) { return true; }
+        return !blank(next) && (ch == 45 || (self.flow == 0 && (ch == 63 || ch == 58)));
+    }
+    fn stream_end(&self) -> bool {
+        if (!self.unwind(-1) || !self.remove_key()) { return false; }
+        self.allow = false;
+        let level: i32 = 0; while (level < self.key_levels) { self.keys[level * KEY_WORDS] = 0; level += 1; }
+        self.done = true;
+        return self.emit_here(T_STREAM_END);
+    }
+    fn block_entry(&self) -> bool {
+        if (self.flow == 0) {
+            if (!self.allow) { return self.fail(ErrorKind::Syntax); }
+            let grew: i32 = self.add_indent(self.column);
+            if (grew < 0 || (grew == 1 && !self.emit_here(T_BLOCK_SEQ))) { return false; }
+        }
+        self.allow = true;
+        if (!self.remove_key() || !self.emit_here(T_ENTRY)) { return false; }
+        self.forward(); return true;
+    }
+    fn explicit_key(&self) -> bool {
+        if (self.flow == 0) {
+            if (!self.allow) { return self.fail(ErrorKind::Syntax); }
+            let grew: i32 = self.add_indent(self.column);
+            if (grew < 0 || (grew == 1 && !self.emit_here(T_BLOCK_MAP))) { return false; }
+        }
+        self.allow = self.flow == 0;
+        if (!self.remove_key() || !self.emit_here(T_KEY)) { return false; }
+        self.forward(); return true;
+    }
+    fn value(&self) -> bool {
+        let base: i32 = -1;
+        if (self.flow < self.key_levels && self.keys[self.flow * KEY_WORDS] == 1) { base = self.flow * KEY_WORDS; }
+        if (base >= 0) {
+            let keys: [i32] = self.keys; keys[base] = 0;
+            let number: i32 = keys[base + 1]; let line: i32 = keys[base + 4]; let column: i32 = keys[base + 5]; let offset: i32 = keys[base + 6];
+            if (!self.insert_token(number, T_KEY, line, column, offset)) { return false; }
+            if (self.flow == 0) {
+                let grew: i32 = self.add_indent(column);
+                if (grew < 0 || (grew == 1 && !self.insert_token(number, T_BLOCK_MAP, line, column, offset))) { return false; }
+            }
+            self.allow = false;
+        } else {
+            if (self.flow == 0) {
+                if (!self.allow) { return self.fail(ErrorKind::Syntax); }
+                let grew: i32 = self.add_indent(self.column);
+                if (grew < 0 || (grew == 1 && !self.emit_here(T_BLOCK_MAP))) { return false; }
+            }
+            self.allow = self.flow == 0;
+            if (!self.remove_key()) { return false; }
+        }
+        if (!self.emit_here(T_VALUE)) { return false; }
+        self.forward(); return true;
+    }
+    // %YAML 1.x is accepted, %TAG is unsupported, other directives are ignored.
+    fn directive(&self) -> bool {
+        if (!self.unwind(-1) || !self.remove_key()) { return false; }
+        self.allow = false;
+        let line: i32 = self.line; let column: i32 = self.column; let offset: i32 = self.at - self.base;
+        self.forward();
+        let start: i32 = self.at;
+        while (!blank(self.peek(0))) { self.forward(); }
+        let name: core::text::Text = core::text::from_utf8_unchecked(self.src, start, self.at - start);
+        if (is(name, "TAG", 3)) { return self.fail_at(ErrorKind::Unsupported, line, column, offset); }
+        if (is(name, "YAML", 4)) {
+            while (self.peek(0) == 32 || self.peek(0) == 9) { self.forward(); }
+            let major: i32 = 0; let count: i32 = 0;
+            while (digit(self.peek(0))) { if (major < 1000) { major = major * 10 + ((self.peek(0) - 48) as i32); } count += 1; self.forward(); }
+            if (count == 0 || self.peek(0) != 46) { return self.fail(ErrorKind::Syntax); }
+            self.forward(); count = 0;
+            while (digit(self.peek(0))) { count += 1; self.forward(); }
+            if (count == 0 || !blank(self.peek(0))) { return self.fail(ErrorKind::Syntax); }
+            if (major != 1) { return self.fail_at(ErrorKind::Unsupported, line, column, offset); }
+            while (self.peek(0) == 32 || self.peek(0) == 9) { self.forward(); }
+            if (self.peek(0) == 35) { while (self.at < self.end && self.peek(0) != 10 && self.peek(0) != 13) { self.forward(); } }
+            if (self.at < self.end && !self.line_break()) { return self.fail(ErrorKind::Syntax); }
+        } else {
+            while (self.at < self.end && self.peek(0) != 10 && self.peek(0) != 13) { self.forward(); }
+            self.line_break();
+        }
+        return self.emit(T_DIRECTIVE, 0, 0, 0, line, column, offset);
+    }
+    // Anchor and alias names run to a blank or a flow indicator.
+    fn anchor(&self, alias: bool) -> bool {
+        let line: i32 = self.line; let column: i32 = self.column; let offset: i32 = self.at - self.base;
+        self.forward();
+        let start: i32 = self.at;
+        while (!blank(self.peek(0)) && !flow_indicator(self.peek(0))) { self.forward(); }
+        if (self.at == start) { return self.fail(ErrorKind::Syntax); }
+        let kind: i32 = T_ANCHOR; if (alias) { kind = T_ALIAS; }
+        return self.emit(kind, start, self.at - start, 0, line, column, offset);
+    }
+    fn tag(&self) -> bool {
+        let line: i32 = self.line; let column: i32 = self.column; let offset: i32 = self.at - self.base;
+        let start: i32 = self.at;
+        while (!blank(self.peek(0))) { self.forward(); }
+        let text: core::text::Text = core::text::from_utf8_unchecked(self.src, start, self.at - start);
+        let code: i32 = 0;
+        if (is(text, "!", 1)) { code = 2; }
+        if (is(text, "!!str", 5) || is(text, "!<tag:yaml.org,2002:str>", 24)) { code = 1; }
+        if (code == 0) { return self.fail_at(ErrorKind::Unsupported, line, column, offset); }
+        return self.emit(T_TAG, 0, 0, code, line, column, offset);
+    }
+    fn plain(&self) -> bool {
+        let line: i32 = self.line; let column: i32 = self.column; let offset: i32 = self.at - self.base;
+        let start: i32 = self.used; let content: i32 = self.used; let indent: i32 = self.indent + 1;
+        while (true) {
+            if (self.peek(0) == 35) { break; }
+            let length: i32 = 0;
+            while (true) {
+                let ch: u8 = self.peek(length);
+                if (blank(ch)) { break; }
+                if (ch == 58) { let after: u8 = self.peek(length + 1); if (blank(after) || (self.flow > 0 && flow_indicator(after))) { break; } }
+                if (self.flow > 0 && flow_indicator(ch)) { break; }
+                length += 1;
+            }
+            if (length == 0) { break; }
+            self.allow = false;
+            if (!self.put_source(self.at, length)) { return false; }
+            self.advance(length); content = self.used;
+            let spaces: i32 = self.plain_spaces(indent);
+            if (spaces < 0) { return false; }
+            if (spaces == 0 || self.peek(0) == 35 || (self.flow == 0 && self.column < indent)) { break; }
+        }
+        self.used = content;
+        return self.emit(T_SCALAR, start, content - start, 0, line, column, offset);
+    }
+    // Whether only spaces and tabs precede the position on its line.
+    fn line_head(&self) -> bool {
+        let index: i32 = self.at - 1;
+        while (index >= self.base && (self.src[index] == 32 || self.src[index] == 9)) { index -= 1; }
+        return index < self.base || self.src[index] == 10 || self.src[index] == 13;
+    }
+    // Folds the whitespace after a plain scalar run: 1 when more may follow,
+    // 0 when the scalar ends, -1 on failure. In block context a tab before
+    // the indentation column ends the scalar (1.2 indents with spaces only).
+    fn plain_spaces(&self, indent: i32) -> i32 {
+        let start: i32 = self.at;
+        while (self.peek(0) == 32 || self.peek(0) == 9) { self.forward(); }
+        let spaces: i32 = self.at - start;
+        if (self.peek(0) == 10 || self.peek(0) == 13) {
+            self.line_break(); self.allow = true;
+            if (self.separator()) { return 0; }
+            let breaks: i32 = 0;
+            while (self.peek(0) == 32 || self.peek(0) == 9 || self.peek(0) == 10 || self.peek(0) == 13) {
+                if (self.peek(0) == 9 && self.flow == 0 && self.column < indent) { return 0; }
+                if (self.peek(0) == 32 || self.peek(0) == 9) { self.forward(); }
+                else { self.line_break(); breaks += 1; if (self.separator()) { return 0; } }
+            }
+            if (breaks == 0) { if (!self.put(32)) { return -1; } } else { if (!self.put_breaks(breaks)) { return -1; } }
+            return 1;
+        }
+        if (spaces > 0) { if (!self.put_source(start, spaces)) { return -1; } return 1; }
+        return 0;
+    }
+    fn flow_scalar(&self, double: bool) -> bool {
+        let line: i32 = self.line; let column: i32 = self.column; let offset: i32 = self.at - self.base;
+        let quote: u8 = self.peek(0);
+        let start: i32 = self.used;
+        self.forward();
+        if (!self.quoted_text(double)) { return false; }
+        while (self.peek(0) != quote) {
+            if (!self.quoted_spaces() || !self.quoted_text(double)) { return false; }
+        }
+        self.forward();
+        let style: i32 = 1; if (double) { style = 2; }
+        return self.emit(T_SCALAR, start, self.used - start, style, line, column, offset);
+    }
+    fn quoted_text(&self, double: bool) -> bool {
+        while (true) {
+            let length: i32 = 0;
+            while (true) {
+                let ch: u8 = self.peek(length);
+                if (ch == 39 || ch == 34 || ch == 92 || blank(ch)) { break; }
+                length += 1;
+            }
+            if (length > 0) { if (!self.put_source(self.at, length)) { return false; } self.advance(length); }
+            let ch: u8 = self.peek(0);
+            if (!double && ch == 39 && self.peek(1) == 39) { if (!self.put(39)) { return false; } self.advance(2); continue; }
+            if ((double && ch == 39) || (!double && (ch == 34 || ch == 92))) { if (!self.put(ch)) { return false; } self.forward(); continue; }
+            if (double && ch == 92) { if (!self.escape()) { return false; } continue; }
+            return true;
+        }
+        return true;
+    }
+    fn escape(&self) -> bool {
+        let line: i32 = self.line; let column: i32 = self.column; let offset: i32 = self.at - self.base;
+        self.forward();
+        let ch: u8 = self.peek(0);
+        let code: i32 = -1;
+        if (ch == 48) { code = 0; } if (ch == 97) { code = 7; } if (ch == 98) { code = 8; } if (ch == 116 || ch == 9) { code = 9; }
+        if (ch == 110) { code = 10; } if (ch == 118) { code = 11; } if (ch == 102) { code = 12; } if (ch == 114) { code = 13; }
+        if (ch == 101) { code = 27; } if (ch == 32) { code = 32; } if (ch == 34) { code = 34; } if (ch == 47) { code = 47; }
+        if (ch == 92) { code = 92; } if (ch == 78) { code = 133; } if (ch == 95) { code = 160; } if (ch == 76) { code = 8232; } if (ch == 80) { code = 8233; }
+        if (code >= 0) { self.forward(); return self.put_code(code); }
+        if (ch == 120 || ch == 117 || ch == 85) {
+            let width: i32 = 2; if (ch == 117) { width = 4; } if (ch == 85) { width = 8; }
+            self.forward();
+            code = self.hex_digits(width);
+            if (code < 0) { return self.fail_at(ErrorKind::InvalidEscape, line, column, offset); }
+            // A \u high surrogate pairs with a following \u low surrogate.
+            if (width == 4 && code >= 55296 && code <= 56319 && self.peek(0) == 92 && self.peek(1) == 117) {
+                self.advance(2);
+                let low: i32 = self.hex_digits(4);
+                if (low < 56320 || low > 57343) { return self.fail_at(ErrorKind::InvalidEscape, line, column, offset); }
+                code = 65536 + ((code - 55296) << 10) + (low - 56320);
+            }
+            if ((code >= 55296 && code <= 57343) || code > 1114111) { return self.fail_at(ErrorKind::InvalidEscape, line, column, offset); }
+            return self.put_code(code);
+        }
+        if (ch == 10 || ch == 13) {
+            self.line_break();
+            let breaks: i32 = self.quoted_breaks();
+            if (breaks < 0) { return false; }
+            return self.put_breaks(breaks);
+        }
+        return self.fail_at(ErrorKind::InvalidEscape, line, column, offset);
+    }
+    // width hex digits as a value, or -1.
+    fn hex_digits(&self, width: i32) -> i32 {
+        let value: i32 = 0; let index: i32 = 0;
+        while (index < width) {
+            let digit_value: i32 = hex_value(self.peek(0));
+            if (digit_value < 0) { return -1; }
+            if (value > 134217727) { value = 1114112; } else { value = value * 16 + digit_value; }
+            self.forward(); index += 1;
+        }
+        return value;
+    }
+    fn quoted_spaces(&self) -> bool {
+        let start: i32 = self.at;
+        while (self.peek(0) == 32 || self.peek(0) == 9) { self.forward(); }
+        let spaces: i32 = self.at - start;
+        if (self.at >= self.end) { return self.fail(ErrorKind::Syntax); }
+        if (self.peek(0) == 10 || self.peek(0) == 13) {
+            self.line_break();
+            let breaks: i32 = self.quoted_breaks();
+            if (breaks < 0) { return false; }
+            if (breaks == 0) { return self.put(32); }
+            return self.put_breaks(breaks);
+        }
+        return self.put_source(start, spaces);
+    }
+    // Line breaks inside a quoted scalar, or -1 at a document separator.
+    fn quoted_breaks(&self) -> i32 {
+        let breaks: i32 = 0;
+        while (true) {
+            if (self.separator()) { self.fail(ErrorKind::Syntax); return -1; }
+            while (self.peek(0) == 32 || self.peek(0) == 9) { self.forward(); }
+            if (!self.line_break()) { return breaks; }
+            breaks += 1;
+        }
+        return breaks;
+    }
+    // Literal (|) and folded (>) scalars with chomping (+, -) and an
+    // indentation indicator (1-9).
+    fn block_scalar(&self, folded: bool) -> bool {
+        let line: i32 = self.line; let column: i32 = self.column; let offset: i32 = self.at - self.base;
+        let start: i32 = self.used;
+        self.forward();
+        // chomping: 0 clip, 1 keep, 2 strip.
+        let chomping: i32 = 0; let increment: i32 = 0;
+        let ch: u8 = self.peek(0);
+        if (ch == 43 || ch == 45) {
+            chomping = 2; if (ch == 43) { chomping = 1; }
+            self.forward(); ch = self.peek(0);
+            if (digit(ch)) { increment = (ch - 48) as i32; if (increment == 0) { return self.fail(ErrorKind::Syntax); } self.forward(); }
+        } else {
+            if (digit(ch)) {
+                increment = (ch - 48) as i32; if (increment == 0) { return self.fail(ErrorKind::Syntax); }
+                self.forward(); ch = self.peek(0);
+                if (ch == 43 || ch == 45) { chomping = 2; if (ch == 43) { chomping = 1; } self.forward(); }
+            }
+        }
+        if (!blank(self.peek(0))) { return self.fail(ErrorKind::Syntax); }
+        while (self.peek(0) == 32 || self.peek(0) == 9) { self.forward(); }
+        if (self.peek(0) == 35) { while (self.at < self.end && self.peek(0) != 10 && self.peek(0) != 13) { self.forward(); } }
+        if (self.at < self.end && !self.line_break()) { return self.fail(ErrorKind::Syntax); }
+        let minimum: i32 = self.indent + 1; if (minimum < 1) { minimum = 1; }
+        let indent: i32 = 0; let breaks: i32 = 0;
+        if (increment == 0) {
+            let most: i32 = 0;
+            while (self.peek(0) == 32 || self.peek(0) == 10 || self.peek(0) == 13) {
+                if (self.peek(0) != 32) { self.line_break(); breaks += 1; }
+                else { self.forward(); if (self.column > most) { most = self.column; } }
+            }
+            indent = minimum; if (most > indent) { indent = most; }
+        } else {
+            indent = minimum + increment - 1;
+            breaks = self.block_breaks(indent);
+        }
+        let broke: bool = false;
+        while (self.column == indent && self.at < self.end) {
+            if (!self.put_breaks(breaks)) { return false; }
+            let leading: bool = self.peek(0) != 32 && self.peek(0) != 9;
+            let length: i32 = 0;
+            while (self.at + length < self.end && self.peek(length) != 10 && self.peek(length) != 13) { length += 1; }
+            if (!self.put_source(self.at, length)) { return false; }
+            self.advance(length);
+            broke = self.line_break();
+            breaks = self.block_breaks(indent);
+            if (self.column == indent && self.at < self.end) {
+                if (folded && broke && leading && self.peek(0) != 32 && self.peek(0) != 9) {
+                    if (breaks == 0 && !self.put(32)) { return false; }
+                } else {
+                    if (broke && !self.put(10)) { return false; }
+                }
+            } else { break; }
+        }
+        if (chomping != 2 && broke && !self.put(10)) { return false; }
+        if (chomping == 1 && !self.put_breaks(breaks)) { return false; }
+        let style: i32 = 3; if (folded) { style = 4; }
+        return self.emit(T_SCALAR, start, self.used - start, style, line, column, offset);
+    }
+    fn block_breaks(&self, indent: i32) -> i32 {
+        let breaks: i32 = 0;
+        while (self.column < indent && self.peek(0) == 32) { self.forward(); }
+        while (self.peek(0) == 10 || self.peek(0) == 13) {
+            self.line_break(); breaks += 1;
+            while (self.column < indent && self.peek(0) == 32) { self.forward(); }
+        }
+        return breaks;
+    }
+
+    // Parsing -----------------------------------------------------------------
+
+    fn kind(&self) -> i32 { return self.toks[self.pos * WORDS]; }
+    fn word(&self, index: i32) -> i32 { return self.toks[self.pos * WORDS + index]; }
+    fn token_fail(&self, kind: ErrorKind) -> i32 { self.fail_at(kind, self.word(4), self.word(5), self.word(6)); return -1; }
+    fn tree_fail(&self) -> i32 {
+        let kind: ErrorKind = match (self.tree.fault()) { ext::json_tree::ErrorKind::NodeLimit -> ErrorKind::NodeLimit, _ -> ErrorKind::AllocationFailed };
+        return self.token_fail(kind);
+    }
+    fn null_node(&self) -> i32 {
+        let node: i32 = self.tree.new_node(0);
+        if (node < 0) { return self.tree_fail(); }
+        return node;
+    }
+    fn stream(&self, all: bool) -> i32 {
+        let root: i32 = -1; let documents: i32 = 0;
+        let tree: &ext::json_tree::Tree = self.tree.borrow();
+        if (all) { root = tree.new_node(5); if (root < 0) { return self.tree_fail(); } }
+        let implicit: bool = true;
+        while (true) {
+            while (self.kind() == T_DOC_END) { self.pos += 1; implicit = true; }
+            if (self.kind() == T_STREAM_END) { break; }
+            let node: i32 = -1;
+            if (implicit && self.kind() != T_DIRECTIVE && self.kind() != T_DOC_START) { node = self.node(true, false); }
+            else {
+                while (self.kind() == T_DIRECTIVE) { self.pos += 1; }
+                if (self.kind() != T_DOC_START) { return self.token_fail(ErrorKind::Syntax); }
+                self.pos += 1;
+                let kind: i32 = self.kind();
+                if (kind == T_DIRECTIVE || kind == T_DOC_START || kind == T_DOC_END || kind == T_STREAM_END) { node = self.null_node(); }
+                else { node = self.node(true, false); }
+            }
+            if (node < 0) { return -1; }
+            if (all) { tree.insert(root, node, -1); }
+            else { if (documents == 1) { return self.token_fail(ErrorKind::MultipleDocuments); } root = node; }
+            documents += 1;
+            self.anchors.clear();
+            implicit = false;
+            if (self.kind() == T_DOC_END) { self.pos += 1; implicit = true; }
+        }
+        if (root < 0) { root = self.null_node(); }
+        return root;
+    }
+    // A node, detached; block allows block collections, indentless allows a
+    // sequence at the indentation of its mapping key.
+    fn node(&self, block: bool, indentless: bool) -> i32 {
+        if (self.kind() == T_ALIAS) { return self.alias(); }
+        let anchor: i32 = -1; let tag: i32 = 0;
+        if (self.kind() == T_ANCHOR) {
+            anchor = self.pos; self.pos += 1;
+            if (self.kind() == T_TAG) { tag = self.word(3); self.pos += 1; }
+        } else {
+            if (self.kind() == T_TAG) {
+                tag = self.word(3); self.pos += 1;
+                if (self.kind() == T_ANCHOR) { anchor = self.pos; self.pos += 1; }
+            }
+        }
+        let kind: i32 = self.kind();
+        let collection: i32 = 0;
+        if (indentless && kind == T_ENTRY) { collection = 1; }
+        if (kind == T_FLOW_SEQ) { collection = 2; }
+        if (kind == T_FLOW_MAP) { collection = 3; }
+        if (block && kind == T_BLOCK_SEQ) { collection = 4; }
+        if (block && kind == T_BLOCK_MAP) { collection = 5; }
+        if (collection > 0) {
+            if (tag == 1) { return self.token_fail(ErrorKind::InvalidTag); }
+            if (self.depth >= self.limits.max_depth) { return self.token_fail(ErrorKind::DepthLimit); }
+            let code: i32 = 6; if (collection == 1 || collection == 2 || collection == 4) { code = 5; }
+            let node: i32 = self.tree.new_node(code);
+            if (node < 0) { return self.tree_fail(); }
+            if (anchor >= 0 && !self.name(anchor, node)) { return -1; }
+            if (self.open.try_push(node).is_err()) { return self.token_fail(ErrorKind::AllocationFailed); }
+            self.depth += 1;
+            let filled: bool = false;
+            if (collection == 1) { filled = self.indentless_sequence(node); }
+            if (collection == 2) { filled = self.flow_sequence(node); }
+            if (collection == 3) { filled = self.flow_mapping(node); }
+            if (collection == 4) { filled = self.block_sequence(node); }
+            if (collection == 5) { filled = self.block_mapping(node); }
+            self.depth -= 1;
+            core::result::unwrap(self.open.truncate(self.open.len() - 1));
+            if (!filled) { return -1; }
+            return node;
+        }
+        let node: i32 = -1;
+        if (kind == T_SCALAR) { node = self.scalar(tag); }
+        else {
+            if (anchor < 0 && tag == 0) { return self.token_fail(ErrorKind::Syntax); }
+            if (tag == 1) { node = self.tree.new_text(4, lit("", 0)); if (node < 0) { return self.tree_fail(); } }
+            else { node = self.null_node(); }
+        }
+        if (node < 0) { return -1; }
+        if (anchor >= 0 && !self.name(anchor, node)) { return -1; }
+        return node;
+    }
+    // Registers the anchor of token at for node; later anchors of the same
+    // name take precedence.
+    fn name(&self, at: i32, node: i32) -> bool {
+        let base: i32 = at * WORDS;
+        let start: i32 = self.toks[base + 1]; let length: i32 = self.toks[base + 2];
+        if (self.anchors.try_push(start).is_err() || self.anchors.try_push(length).is_err() || self.anchors.try_push(node).is_err()) {
+            self.token_fail(ErrorKind::AllocationFailed); return false;
+        }
+        return true;
+    }
+    fn alias(&self) -> i32 {
+        let start: i32 = self.word(1); let length: i32 = self.word(2);
+        let index: i32 = self.anchors.len() - 3; let target: i32 = -1;
+        while (index >= 0) {
+            if (self.anchors.at(index + 1) == length && same_bytes(self.src, self.anchors.at(index), self.src, start, length)) { target = self.anchors.at(index + 2); break; }
+            index -= 3;
+        }
+        if (target < 0) { return self.token_fail(ErrorKind::UnknownAlias); }
+        let open: i32 = 0;
+        while (open < self.open.len()) { if (self.open.at(open) == target) { return self.token_fail(ErrorKind::RecursiveAlias); } open += 1; }
+        let before: i32 = self.tree.node_count();
+        let copy: i32 = self.tree.copy_node(self.tree.borrow(), target);
+        if (copy < 0) { return self.tree_fail(); }
+        self.alias_nodes += (self.tree.node_count() - before) as i64;
+        if (self.alias_nodes > self.limits.max_alias_nodes as i64) { return self.token_fail(ErrorKind::AliasLimit); }
+        self.pos += 1;
+        return copy;
+    }
+    fn scalar(&self, tag: i32) -> i32 {
+        let text: core::text::Text = core::text::from_utf8_unchecked(self.vals, self.word(1), self.word(2));
+        let style: i32 = self.word(3);
+        let node: i32 = -1;
+        if (style != 0 || tag != 0) { node = self.tree.new_text(4, text); }
+        else {
+            if (is(text, "~", 1) || is(text, "null", 4) || is(text, "Null", 4) || is(text, "NULL", 4)) { node = self.tree.new_node(0); }
+            else {
+                if (is(text, "true", 4) || is(text, "True", 4) || is(text, "TRUE", 4)) { node = self.tree.new_node(2); }
+                else {
+                    if (is(text, "false", 5) || is(text, "False", 5) || is(text, "FALSE", 5)) { node = self.tree.new_node(1); }
+                    else {
+                        let number: i32 = self.number(text);
+                        if (number < 0) { return -1; }
+                        if (number == 2) { return self.token_fail(ErrorKind::NonFinite); }
+                        if (number == 1) { node = self.tree.new_text(3, core::text::from_utf8_unchecked(self.numbers.as_slice(), 0, self.numbers.len())); }
+                        else { node = self.tree.new_text(4, text); }
+                    }
+                }
+            }
+        }
+        if (node < 0) { return self.tree_fail(); }
+        self.pos += 1;
+        return node;
+    }
+    // Core-schema numbers: 0 not a number, 1 a number spelled as JSON in
+    // self.numbers, 2 infinite or NaN, -1 on failure.
+    fn number(&self, text: core::text::Text) -> i32 {
+        let b: [u8] = text.bytes; let s: i32 = text.start; let n: i32 = text.length;
+        if (n == 0) { return 0; }
+        let i: i32 = 0; let negative: bool = false; let signed: bool = false;
+        if (b[s] == 43 || b[s] == 45) { signed = true; negative = b[s] == 45; i = 1; }
+        if (n - i == 4 && b[s + i] == 46) {
+            let rest: core::text::Text = core::text::from_utf8_unchecked(b, s + i + 1, 3);
+            if (is(rest, "inf", 3) || is(rest, "Inf", 3) || is(rest, "INF", 3)) { return 2; }
+            if (!signed && (is(rest, "nan", 3) || is(rest, "NaN", 3) || is(rest, "NAN", 3))) { return 2; }
+        }
+        self.numbers.clear();
+        if (!signed && n > 2 && b[s] == 48 && (b[s + 1] == 111 || b[s + 1] == 120)) {
+            let radix: i32 = 8; if (b[s + 1] == 120) { radix = 16; }
+            let k: i32 = 2;
+            while (k < n) { let v: i32 = hex_value(b[s + k]); if (v < 0 || v >= radix) { return 0; } k += 1; }
+            return self.radix_number(text, radix);
+        }
+        let integer_start: i32 = i;
+        while (i < n && digit(b[s + i])) { i += 1; }
+        let integer_length: i32 = i - integer_start;
+        let fraction_start: i32 = i; let fraction_length: i32 = 0;
+        if (i < n && b[s + i] == 46) { i += 1; fraction_start = i; while (i < n && digit(b[s + i])) { i += 1; } fraction_length = i - fraction_start; }
+        if (integer_length == 0 && fraction_length == 0) { return 0; }
+        let exponent: i32 = -1;
+        if (i < n && (b[s + i] == 101 || b[s + i] == 69)) {
+            i += 1; exponent = i;
+            if (i < n && (b[s + i] == 43 || b[s + i] == 45)) { i += 1; }
+            let digits_at: i32 = i;
+            while (i < n && digit(b[s + i])) { i += 1; }
+            if (i == digits_at) { return 0; }
+        }
+        if (i != n) { return 0; }
+        let ok: bool = true;
+        if (negative) { ok = self.numbers.try_push(45).is_ok(); }
+        let lead: i32 = integer_start;
+        while (lead < integer_start + integer_length - 1 && b[s + lead] == 48) { lead += 1; }
+        if (integer_length == 0) { ok = ok && self.numbers.try_push(48).is_ok(); }
+        while (ok && lead < integer_start + integer_length) { let byte: u8 = b[s + lead]; ok = self.numbers.try_push(byte).is_ok(); lead += 1; }
+        if (fraction_length > 0) {
+            ok = ok && self.numbers.try_push(46).is_ok();
+            let k: i32 = 0;
+            while (ok && k < fraction_length) { let byte: u8 = b[s + fraction_start + k]; ok = self.numbers.try_push(byte).is_ok(); k += 1; }
+        }
+        if (exponent >= 0) {
+            ok = ok && self.numbers.try_push(101).is_ok();
+            let k: i32 = exponent;
+            while (ok && k < n) { let byte: u8 = b[s + k]; ok = self.numbers.try_push(byte).is_ok(); k += 1; }
+        }
+        if (!ok) { self.token_fail(ErrorKind::AllocationFailed); return -1; }
+        return 1;
+    }
+    // 0o and 0x integers in decimal.
+    fn radix_number(&self, text: core::text::Text, radix: i32) -> i32 {
+        self.digits.clear();
+        let k: i32 = 2;
+        while (k < text.length) {
+            let carry: i32 = hex_value(text.bytes[text.start + k]);
+            let d: i32 = 0;
+            while (d < self.digits.len()) {
+                let v: i32 = (self.digits.at(d) as i32) * radix + carry;
+                core::result::unwrap(self.digits.set(d, (v % 10) as u8)); carry = v / 10; d += 1;
+            }
+            while (carry > 0) { if (self.digits.try_push((carry % 10) as u8).is_err()) { self.token_fail(ErrorKind::AllocationFailed); return -1; } carry = carry / 10; }
+            k += 1;
+        }
+        let top: i32 = self.digits.len() - 1;
+        while (top > 0 && self.digits.at(top) == 0) { top -= 1; }
+        if (top < 0) { if (self.numbers.try_push(48).is_err()) { self.token_fail(ErrorKind::AllocationFailed); return -1; } return 1; }
+        while (top >= 0) {
+            let byte: u8 = self.digits.at(top) + 48;
+            if (self.numbers.try_push(byte).is_err()) { self.token_fail(ErrorKind::AllocationFailed); return -1; }
+            top -= 1;
+        }
+        return 1;
+    }
+    // Pushes the JSON text of scalar node onto the key stack.
+    fn push_key(&self, node: i32) -> bool {
+        let code: i32 = self.tree.code(node);
+        let text: core::text::Text = lit("null", 4);
+        if (code == 1) { text = lit("false", 5); }
+        if (code == 2) { text = lit("true", 4); }
+        if (code == 3 || code == 4) { text = self.tree.text(node); }
+        if (code >= 5) { self.token_fail(ErrorKind::NonScalarKey); return false; }
+        if (self.key_stack.try_extend(core::slice::View { values: text.bytes, start: text.start, length: text.length }).is_err()) { self.token_fail(ErrorKind::AllocationFailed); return false; }
+        return true;
+    }
+    // Adds value under the key on top of the key stack (from mark).
+    fn add_member(&self, map: i32, mark: i32, value: i32, line: i32, column: i32, offset: i32) -> bool {
+        let key: core::text::Text = core::text::from_utf8_unchecked(self.key_stack.as_slice(), mark, self.key_stack.len() - mark);
+        if (self.tree.member(map, key) >= 0) { return self.fail_at(ErrorKind::DuplicateKey, line, column, offset); }
+        if (!self.tree.set_key(value, key)) { self.tree_fail(); return false; }
+        self.tree.insert(map, value, -1);
+        core::result::unwrap(self.key_stack.truncate(mark));
+        return true;
+    }
+    fn at_any(&self, a: i32, b: i32, c: i32) -> bool { let kind: i32 = self.kind(); return kind == a || kind == b || kind == c; }
+    // One mapping entry: an optional key node, then an optional value.
+    fn entry(&self, map: i32, block: bool, has_key: bool, key_stops: bool, value_a: i32, value_b: i32, value_c: i32) -> bool {
+        let line: i32 = self.word(4); let column: i32 = self.word(5); let offset: i32 = self.word(6);
+        let key: i32 = -1;
+        if (has_key && !key_stops) { key = self.node(block, block); } else { key = self.null_node(); }
+        if (key < 0) { return false; }
+        let mark: i32 = self.key_stack.len();
+        if (!self.push_key(key)) { return false; }
+        let value: i32 = -1;
+        if (self.kind() == T_VALUE) {
+            self.pos += 1;
+            if (self.at_any(value_a, value_b, value_c)) { value = self.null_node(); } else { value = self.node(block, block); }
+        } else { value = self.null_node(); }
+        if (value < 0) { return false; }
+        return self.add_member(map, mark, value, line, column, offset);
+    }
+    fn block_mapping(&self, map: i32) -> bool {
+        self.pos += 1;
+        while (true) {
+            if (self.kind() == T_KEY) {
+                self.pos += 1;
+                if (!self.entry(map, true, true, self.at_any(T_KEY, T_VALUE, T_BLOCK_END), T_KEY, T_VALUE, T_BLOCK_END)) { return false; }
+                continue;
+            }
+            if (self.kind() == T_BLOCK_END) { self.pos += 1; return true; }
+            self.token_fail(ErrorKind::Syntax); return false;
+        }
+        return true;
+    }
+    fn block_sequence(&self, sequence: i32) -> bool {
+        self.pos += 1;
+        while (true) {
+            if (self.kind() == T_ENTRY) {
+                self.pos += 1;
+                let item: i32 = -1;
+                if (self.kind() == T_ENTRY || self.kind() == T_BLOCK_END) { item = self.null_node(); } else { item = self.node(true, false); }
+                if (item < 0) { return false; }
+                self.tree.insert(sequence, item, -1);
+                continue;
+            }
+            if (self.kind() == T_BLOCK_END) { self.pos += 1; return true; }
+            self.token_fail(ErrorKind::Syntax); return false;
+        }
+        return true;
+    }
+    fn indentless_sequence(&self, sequence: i32) -> bool {
+        while (self.kind() == T_ENTRY) {
+            self.pos += 1;
+            let item: i32 = -1;
+            if (self.kind() == T_ENTRY || self.at_any(T_KEY, T_VALUE, T_BLOCK_END)) { item = self.null_node(); } else { item = self.node(true, false); }
+            if (item < 0) { return false; }
+            self.tree.insert(sequence, item, -1);
+        }
+        return true;
+    }
+    fn flow_sequence(&self, sequence: i32) -> bool {
+        self.pos += 1;
+        let first: bool = true;
+        while (true) {
+            if (self.kind() == T_FLOW_SEQ_END) { self.pos += 1; return true; }
+            if (!first) {
+                if (self.kind() != T_FLOW_ENTRY) { self.token_fail(ErrorKind::Syntax); return false; }
+                self.pos += 1;
+                if (self.kind() == T_FLOW_SEQ_END) { self.pos += 1; return true; }
+            }
+            first = false;
+            if (self.kind() == T_KEY) {
+                // A single-pair mapping.
+                if (self.depth >= self.limits.max_depth) { self.token_fail(ErrorKind::DepthLimit); return false; }
+                let pair: i32 = self.tree.new_node(6);
+                if (pair < 0) { self.tree_fail(); return false; }
+                self.pos += 1;
+                self.depth += 1;
+                let made: bool = self.entry(pair, false, true, self.at_any(T_VALUE, T_FLOW_ENTRY, T_FLOW_SEQ_END), T_FLOW_ENTRY, T_FLOW_SEQ_END, T_FLOW_SEQ_END);
+                self.depth -= 1;
+                if (!made) { return false; }
+                self.tree.insert(sequence, pair, -1);
+                continue;
+            }
+            let item: i32 = self.node(false, false);
+            if (item < 0) { return false; }
+            self.tree.insert(sequence, item, -1);
+        }
+        return true;
+    }
+    fn flow_mapping(&self, map: i32) -> bool {
+        self.pos += 1;
+        let first: bool = true;
+        while (true) {
+            if (self.kind() == T_FLOW_MAP_END) { self.pos += 1; return true; }
+            if (!first) {
+                if (self.kind() != T_FLOW_ENTRY) { self.token_fail(ErrorKind::Syntax); return false; }
+                self.pos += 1;
+                if (self.kind() == T_FLOW_MAP_END) { self.pos += 1; return true; }
+            }
+            first = false;
+            if (self.kind() == T_KEY) {
+                self.pos += 1;
+                if (!self.entry(map, false, true, self.at_any(T_VALUE, T_FLOW_ENTRY, T_FLOW_MAP_END), T_FLOW_ENTRY, T_FLOW_MAP_END, T_FLOW_MAP_END)) { return false; }
+                continue;
+            }
+            // A key without ':' has a null value.
+            let line: i32 = self.word(4); let column: i32 = self.word(5); let offset: i32 = self.word(6);
+            let key: i32 = self.node(false, false);
+            if (key < 0) { return false; }
+            let mark: i32 = self.key_stack.len();
+            if (!self.push_key(key)) { return false; }
+            let value: i32 = self.null_node();
+            if (value < 0 || !self.add_member(map, mark, value, line, column, offset)) { return false; }
+        }
+        return true;
+    }
+    fn destroy(&self) {
+        self.indents.destroy(); self.key_store.destroy(); self.token_store.destroy(); self.value_store.destroy();
+        self.anchors.destroy(); self.open.destroy(); self.numbers.destroy(); self.digits.destroy(); self.key_stack.destroy();
+    }
+}
+
+// The offset of the first byte that is not valid UTF-8 or not a printable
+// YAML character (TAB, LF, CR, U+0020-U+007E, U+0085, U+00A0-U+D7FF,
+// U+E000-U+FFFD, U+10000-U+10FFFF), or -1.
+fn invalid_at(source: [u8], start: i32, end: i32) -> i32 {
+    let at: i32 = start;
+    while (at < end) {
+        let byte: u8 = source[at];
+        if (byte < 128) {
+            if ((byte < 32 && byte != 9 && byte != 10 && byte != 13) || byte == 127) { return at; }
+            at += 1; continue;
+        }
+        let width: i32 = 0; let code: i32 = 0;
+        if (byte >= 194 && byte <= 223) { width = 2; code = (byte & 31) as i32; }
+        if (byte >= 224 && byte <= 239) { width = 3; code = (byte & 15) as i32; }
+        if (byte >= 240 && byte <= 244) { width = 4; code = (byte & 7) as i32; }
+        if (width == 0 || at + width > end) { return at; }
+        let k: i32 = 1;
+        while (k < width) { let next: u8 = source[at + k]; if ((next & 192) != 128) { return at; } code = (code << 6) | ((next & 63) as i32); k += 1; }
+        if ((width == 3 && code < 2048) || (width == 4 && (code < 65536 || code > 1114111))) { return at; }
+        if ((code >= 128 && code < 160 && code != 133) || (code >= 55296 && code <= 57343) || code == 65534 || code == 65535) { return at; }
+        at += width;
+    }
+    return -1;
+}
+
+fn read(source: [u8], start: i32, count: i32, limits: Limits, all: bool) -> core::result::Result<ext::json_tree::Tree, Error> {
+    let end: i32 = start + count;
+    let bad: i32 = invalid_at(source, start, end);
+    if (bad >= 0) {
+        let line: i32 = 0; let column: i32 = 0; let at: i32 = start;
+        while (at < bad) { let byte: u8 = source[at]; if (byte == 10) { line += 1; column = 0; } else { if ((byte & 192) != 128) { column += 1; } } at += 1; }
+        return core::result::Err(Error { kind: ErrorKind::InvalidCharacter, line: line, column: column, offset: bad - start });
+    }
+    let tree_limits: ext::json_tree::Limits = ext::json_tree::default_limits();
+    tree_limits.max_nodes = limits.max_nodes;
+    let indents: alloc::vec::Vec<i32> = alloc::vec::new(); let key_store: alloc::vec::Vec<i32> = alloc::vec::new();
+    let token_store: alloc::vec::Vec<i32> = alloc::vec::new(); let value_store: alloc::vec::Vec<u8> = alloc::vec::new();
+    let reader: Reader = Reader {
+        src: source, base: start, at: start, end: end, line: 0, column: 0, index: 0,
+        flow: 0, indent: -1, indents: indents, allow: true, done: false,
+        key_store: key_store, keys: key_store.as_slice(), key_levels: 0,
+        token_store: token_store, toks: token_store.as_slice(), count: 0, token_cap: 0,
+        value_store: value_store, vals: value_store.as_slice(), used: 0, value_cap: 0,
+        failed: false, error: Error { kind: ErrorKind::Syntax, line: 0, column: 0, offset: 0 },
+        pos: 0, tree: ext::json_tree::new_tree(tree_limits), depth: 0, limits: limits,
+        anchors: alloc::vec::new(), open: alloc::vec::new(), alias_nodes: 0,
+        numbers: alloc::vec::new(), digits: alloc::vec::new(), key_stack: alloc::vec::new(),
+    };
+    if (!reader.scan()) { let error: Error = reader.error; reader.tree.destroy(); reader.destroy(); return core::result::Err(error); }
+    let root: i32 = reader.stream(all);
+    if (root < 0) { let error: Error = reader.error; reader.tree.destroy(); reader.destroy(); return core::result::Err(error); }
+    let tree: ext::json_tree::Tree = reader.tree;
+    tree.set_root(root);
+    reader.destroy();
+    return core::result::Ok(tree);
+}
+
+// The single document of a YAML stream in source[start, start + count): an
+// empty stream is null, and a second document is MultipleDocuments.
+pub fn load(source: [u8], start: i32, count: i32, limits: Limits) -> core::result::Result<ext::json_tree::Tree, Error> {
+    return read(source, start, count, limits, false);
+}
+// Every document of a YAML stream, as the elements of the root array.
+pub fn load_all(source: [u8], start: i32, count: i32, limits: Limits) -> core::result::Result<ext::json_tree::Tree, Error> {
+    return read(source, start, count, limits, true);
+}

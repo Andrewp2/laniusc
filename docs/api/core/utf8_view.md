@@ -18,13 +18,14 @@ Declaration counts: function: 12.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::utf8](utf8.md) · [source](../../../stdlib/core/utf8_view.lani#L3)
+- [core::slice](slice.md) · [source](../../../stdlib/core/utf8_view.lani#L3)
+- [core::utf8](utf8.md) · [source](../../../stdlib/core/utf8_view.lani#L4)
 
 ## Free functions and extern declarations
 
 ### function: byte_view_equal
 
-[Source line 7](../../../stdlib/core/utf8_view.lani#L7)
+[Source line 8](../../../stdlib/core/utf8_view.lani#L8)
 
 ```lanius
 pub fn byte_view_equal(left: [u8], left_len: i32, right: [u8], right_len: i32) -> bool
@@ -32,7 +33,7 @@ pub fn byte_view_equal(left: [u8], left_len: i32, right: [u8], right_len: i32) -
 
 ### function: byte_view_starts_with
 
-[Source line 26](../../../stdlib/core/utf8_view.lani#L26)
+[Source line 27](../../../stdlib/core/utf8_view.lani#L27)
 
 ```lanius
 pub fn byte_view_starts_with(values: [u8], len: i32, prefix: [u8], prefix_len: i32) -> bool
@@ -40,7 +41,7 @@ pub fn byte_view_starts_with(values: [u8], len: i32, prefix: [u8], prefix_len: i
 
 ### function: byte_view_ends_with
 
-[Source line 41](../../../stdlib/core/utf8_view.lani#L41)
+[Source line 42](../../../stdlib/core/utf8_view.lani#L42)
 
 ```lanius
 pub fn byte_view_ends_with(values: [u8], len: i32, suffix: [u8], suffix_len: i32) -> bool
@@ -48,7 +49,7 @@ pub fn byte_view_ends_with(values: [u8], len: i32, suffix: [u8], suffix_len: i32
 
 ### function: byte_view_compare_or
 
-[Source line 59](../../../stdlib/core/utf8_view.lani#L59)
+[Source line 60](../../../stdlib/core/utf8_view.lani#L60)
 
 ```lanius
 pub fn byte_view_compare_or(
@@ -58,7 +59,7 @@ pub fn byte_view_compare_or(
 
 ### function: byte_view_index_of_bytes_or
 
-[Source line 91](../../../stdlib/core/utf8_view.lani#L91)
+[Source line 92](../../../stdlib/core/utf8_view.lani#L92)
 
 ```lanius
 pub fn byte_view_index_of_bytes_or(
@@ -68,7 +69,7 @@ pub fn byte_view_index_of_bytes_or(
 
 ### function: byte_view_last_index_of_bytes_or
 
-[Source line 116](../../../stdlib/core/utf8_view.lani#L116)
+[Source line 117](../../../stdlib/core/utf8_view.lani#L117)
 
 ```lanius
 pub fn byte_view_last_index_of_bytes_or(
@@ -78,7 +79,7 @@ pub fn byte_view_last_index_of_bytes_or(
 
 ### function: byte_view_index_of_scalar_or
 
-[Source line 142](../../../stdlib/core/utf8_view.lani#L142)
+[Source line 143](../../../stdlib/core/utf8_view.lani#L143)
 
 ```lanius
 pub fn byte_view_index_of_scalar_or(values: [u8], len: i32, needle: u32, fallback: i32) -> i32
@@ -86,7 +87,7 @@ pub fn byte_view_index_of_scalar_or(values: [u8], len: i32, needle: u32, fallbac
 
 ### function: byte_view_last_index_of_scalar_or
 
-[Source line 173](../../../stdlib/core/utf8_view.lani#L173)
+[Source line 174](../../../stdlib/core/utf8_view.lani#L174)
 
 ```lanius
 pub fn byte_view_last_index_of_scalar_or(values: [u8], len: i32, needle: u32, fallback: i32) -> i32
@@ -94,7 +95,7 @@ pub fn byte_view_last_index_of_scalar_or(values: [u8], len: i32, needle: u32, fa
 
 ### function: byte_view_append_scalar_or
 
-[Source line 209](../../../stdlib/core/utf8_view.lani#L209)
+[Source line 210](../../../stdlib/core/utf8_view.lani#L210)
 
 ```lanius
 pub fn byte_view_append_scalar_or(
@@ -104,7 +105,7 @@ pub fn byte_view_append_scalar_or(
 
 ### function: byte_view_insert_scalar_or
 
-[Source line 234](../../../stdlib/core/utf8_view.lani#L234)
+[Source line 235](../../../stdlib/core/utf8_view.lani#L235)
 
 ```lanius
 pub fn byte_view_insert_scalar_or(
@@ -115,7 +116,7 @@ pub fn byte_view_insert_scalar_or(
 
 ### function: byte_view_remove_scalar_or
 
-[Source line 267](../../../stdlib/core/utf8_view.lani#L267)
+[Source line 264](../../../stdlib/core/utf8_view.lani#L264)
 
 ```lanius
 pub fn byte_view_remove_scalar_or(values: [u8], len: i32, scalar_index: i32, fallback: i32) -> i32
@@ -123,7 +124,7 @@ pub fn byte_view_remove_scalar_or(values: [u8], len: i32, scalar_index: i32, fal
 
 ### function: byte_view_replace_scalar_or
 
-[Source line 288](../../../stdlib/core/utf8_view.lani#L288)
+[Source line 281](../../../stdlib/core/utf8_view.lani#L281)
 
 ```lanius
 pub fn byte_view_replace_scalar_or(
