@@ -574,10 +574,14 @@ agreements with GNU `patch` at `-F0` and `-F2`. On a 1.6 MB pair, `seq-diff`
 runs within 2× of `git diff --no-index` in every mode (59-70 ms against
 43 ms for the default unified diff). It gets there by splitting and
 hash-consing lines in one word-at-a-time pass (`split_classify`).
-`seq-diff --histogram` matches `git diff --histogram` byte for byte on 4,000
-generated pairs. The comparison covers git's indent heuristic and its xdiff
-fallback for lines repeated more than 64 times. The default Myers diff runs
-within 1.2× of git (41 against 34 ms).
+`seq-diff`'s default output, `--histogram` and `-W`/`--function-context` match
+plain `git diff --no-index` byte for byte on all 4,000 generated pairs in each
+mode, from the first hunk header on. The comparison covers git's indent
+heuristic, its hunk-header function names, its whole-function context and the
+histogram's xdiff fallback for lines repeated more than 64 times. `--myers`
+still gives minimal diffs. The Myers diff ran within 1.2× of git (41 against
+34 ms), and the git-style default runs at 1.2× too (79 against 67 ms under
+heavy load).
 On the same inputs, `seq-patch` runs within 1.1× of GNU `patch` (10 ms) and
 `seq-merge` within 1.2× of `git merge-file` (99 against 83 ms).
 [Three-way merge](extended-merge3.md) (`ext::merge3`, `seq-merge`) aligns with
@@ -2294,6 +2298,18 @@ GOAWAY, RST_STREAM and response validation). The engine passes 17 cases
 against libnghttp2's server session and 46 against hand-built frames for
 every connection and stream error it must detect.
 
+The [HTTP/2 server engine](extended-http2-server.md) (`ext::http2_server`) is
+the I/O-free server side. It reads the client preface, enforces
+MAX_CONCURRENT_STREAMS by refusing extra streams, validates request
+pseudo-fields and fields, buffers bodies under flow control, answers 413 and
+431 itself, and sends responses within the client's windows.
+[`ext::http_service`](extended-http-service.md#http2-h2c) hands connections
+that open with the preface to it (prior-knowledge h2c) and keeps serving
+HTTP/1.1 on the same listener. A libnghttp2 client session through ctypes
+passes 6 session cases and 18 malformed-frame cases, both against the engine
+over a pipe and against the service over TCP. HTTP/2 over TLS waits on C
+callback support for OpenSSL's ALPN selection.
+
 The [WebSocket client](extended-websocket-client.md) (`ext::websocket_client`)
 uses `dial` for `ws://` and verified `wss://` URLs and the canonical
 `ext::websocket` frame engine in the client role. It validates the opening
@@ -2412,7 +2428,11 @@ Its structural writer emits the `ext::json` byte policy. The streaming
 `json` on 2,237 cases, and [csv-to-json](../sample_programs/csv_to_json.lani)
 agrees with Python `csv` on 550 RFC 4180 cases. `TokenReader` pulls tokens
 from any `core::io::Read` source, and `Writer.flush_to` streams output to any
-`core::io::Write` sink. [`core::float_decimal`](stdlib-float-decimal.md)
+`core::io::Write` sink.
+[`ext::json_pointer` and `ext::json_patch`](extended-json-patch.md) apply
+RFC 6901 pointers, RFC 6902 patches and RFC 7386 merge patches to
+`ext::json_tree` documents atomically. They agree with a Python model on
+6,450 RFC-example, error and generated cases. [`core::float_decimal`](stdlib-float-decimal.md)
 formats shortest decimals with Schubfach, which is exact with no fallback, in
 about 0.6 to 0.8 µs per value. It parses with an Eisel-Lemire fast path
 before its exact big-integer path, in about 0.7 to 0.8 µs per value. It

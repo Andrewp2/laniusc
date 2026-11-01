@@ -2258,6 +2258,24 @@
         "docs/stdlib-development.md"
       ]
     },
+    "ext::json_tree": {
+      "guides": [
+        "docs/extended-json-patch.md"
+      ],
+      "note": "Mutable JSON document arena read with ext::json_stream (exact number spelling, duplicate keys rejected) and written through its Writer; hashed member lookup for objects with 8 or more members; RFC 6902 equality with numeric number comparison."
+    },
+    "ext::json_pointer": {
+      "guides": [
+        "docs/extended-json-patch.md"
+      ],
+      "note": "RFC 6901 pointer parsing (~0/~1, offset of a bad escape), array index rules and evaluation over ext::json_tree."
+    },
+    "ext::json_patch": {
+      "guides": [
+        "docs/extended-json-patch.md"
+      ],
+      "note": "RFC 6902 JSON Patch and RFC 7386 JSON Merge Patch over ext::json_tree, returning a new tree and leaving the document unchanged on failure. Native binaries from lcc agree with a Python model on 6,450 RFC-example, error-kind and generated cases."
+    },
     "ext::json_stream": {
       "guides": [
         "docs/extended-json-stream.md"

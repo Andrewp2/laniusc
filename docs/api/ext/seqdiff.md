@@ -12,7 +12,7 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 
 - [extended-seqdiff](../../extended-seqdiff.md)
 
-Declaration counts: enum: 2; field: 36; function: 22; impl: 7; method: 24; struct: 9; variant: 9.
+Declaration counts: enum: 2; field: 36; function: 23; impl: 7; method: 24; struct: 9; variant: 9.
 
 ## Declared imports
 
@@ -657,6 +657,14 @@ pub fn diff_lines(a: core::slice::View<Line>, b: core::slice::View<Line>, algori
 
 ```lanius
 pub fn hunks(script: &Script, context: i32) -> core::result::Result<alloc::vec::Vec<Hunk>, Error>
+```
+
+### function: function_hunks
+
+[Source line 1517](../../../extended/ext/seqdiff.lani#L1517)
+
+```lanius
+pub fn function_hunks(split: &Split, script: &Script, context: i32) -> core::result::Result<alloc::vec::Vec<Hunk>, Error>
 ```
 
 ## Implementation blocks and public methods

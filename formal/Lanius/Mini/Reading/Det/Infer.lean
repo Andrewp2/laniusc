@@ -1,5 +1,8 @@
-import Lanius.Mini.Reading.Det.Exprs
+module
 
+public import Lanius.Mini.Reading.Det.Exprs
+
+@[expose] public section
 /-! # The reading is deterministic, F1: expression types and type arguments -/
 
 namespace Lanius.Mini.Reading

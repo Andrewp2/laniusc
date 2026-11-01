@@ -45,6 +45,8 @@ LANIUSC = 'target/release/laniusc'
 def build_extract():
     env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'],
                LEAN_NUM_THREADS='3')
+    if run_cache.lake_current('extract', env):
+        return
     with run_cache.lean_lock():
         run = subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
                               'lake', 'build', 'extract'], cwd='formal', env=env, capture_output=True, text=True)
@@ -94,6 +96,9 @@ def main(argv):
     for name in names:
         if name not in PROGRAMS:
             raise SystemExit(f'no program {name}: {", ".join(PROGRAMS)}')
+    # The extractor as the checked-in sources build it: one built before a
+    # merge rejects what the merged extract.lani accepts.
+    build_extract()
     checked = {}
     if args.check:
         # The checks write nothing, so they run at once (the trees first:

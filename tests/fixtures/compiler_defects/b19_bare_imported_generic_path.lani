@@ -1,0 +1,19 @@
+// b19: self methods of imported generic types through the bare type's path:
+// Option::is_some(o), Option::unwrap_or(n, 9) on a None, Result::unwrap(r).
+// The bare qualifier names its declaration's own application. Exits 0.
+module app::main;
+
+import core::option;
+import core::result;
+
+fn main() -> i32 {
+    let o: Option<i32> = Option::Some(42);
+    if (!Option::is_some(o)) { return 1; }
+    if (Option::unwrap_or(o, 7) != 42) { return 2; }
+    let n: Option<u64> = Option::None();
+    if (Option::unwrap_or(n, 9) != 9) { return 3; }
+    if (Option::is_none(o)) { return 4; }
+    let r: Result<i32, u8> = Result::Ok(5);
+    if (Result::unwrap(r) != 5) { return 5; }
+    return 0;
+}

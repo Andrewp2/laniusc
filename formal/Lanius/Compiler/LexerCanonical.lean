@@ -1,5 +1,8 @@
-import Lanius.Compiler.LexerStream
+module
 
+public import Lanius.Compiler.LexerStream
+
+@[expose] public section
 namespace Lanius.Compiler.Lexer
 
 def isTriviaKind : TokenKind → Bool

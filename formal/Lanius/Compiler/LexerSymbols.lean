@@ -1,6 +1,9 @@
-import Lanius.Compiler.Lexer
-import Lanius.Compiler.Tokens
+module
 
+public import Lanius.Compiler.Lexer
+public import Lanius.Compiler.Tokens
+
+@[expose] public section
 namespace Lanius.Compiler.Lexer
 
 structure SymbolRule where

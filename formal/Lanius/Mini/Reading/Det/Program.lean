@@ -1,6 +1,14 @@
-import Lanius.Mini.Reading.Det.Close
-import Lanius.Mini.Reading.Program
+module
 
+public import Lanius.Mini.Reading.Det.Close
+public import Lanius.Mini.Reading.Program
+import all Lanius.Mini.Frontend.P.blockArmsOf
+import all Lanius.Mini.Frontend.P.callParts
+import all Lanius.Mini.Frontend.P.distinct
+import all Lanius.Mini.Frontend.P.moduleOr
+import all Lanius.Mini.Frontend.P.shrFirst
+
+@[expose] public section
 /-! # The reading is deterministic, F1: the program
 
 `reading_unique`: the parse trees of a program's files read as at most one
