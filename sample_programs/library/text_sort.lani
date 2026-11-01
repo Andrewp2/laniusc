@@ -1,0 +1,167 @@
+// GNU sort under LC_ALL=C over ext::text_sort.
+// usage: text-sort [-bfnrsuz] [-t SEP] [-k POS1[,POS2]]... [-o FILE] [FILE...]
+// Options and files may be mixed ("--" ends options) and long options may
+// be abbreviated; -S, -T and --parallel are accepted and ignored. Ordering
+// options d g h i M R V, -c, -m and the other long options are not
+// supported. Without FILE (or with -) it reads standard input. Exit 0, or
+// 2 on a usage error or an unreadable input (nothing is written then).
+module app::main;
+import alloc::io;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::text_lines;
+import ext::text_sort;
+import std::args;
+import std::stream;
+
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), count);
+    return core::result::unwrap(core::slice::view(bytes, count));
+}
+fn say(v: core::slice::View<u8>) {
+    let sink: std::stream::Descriptor = std::stream::stderr();
+    let written: core::result::Result<i32, core::io::Failure> = core::io::write_all(sink.borrow(), v.values, v.start, v.len());
+}
+fn complain(text: core::slice::View<u8>) -> i32 { say(literal("text-sort: ", 11)); say(text); say(literal("\n", 1)); return 2; }
+
+// Long options (GNU's full list, so abbreviations are ambiguous where GNU's
+// are): index, -1 unknown, -2 ambiguous.
+fn long_index(name: core::slice::View<u8>) -> i32 {
+    let names: core::slice::View<u8> = literal("ignore-leading-blanks,check,compress-program,debug,dictionary-order,ignore-case,files0-from,general-numeric-sort,ignore-nonprinting,key,merge,month-sort,numeric-sort,human-numeric-sort,version-sort,random-sort,random-source,sort,output,reverse,stable,batch-size,buffer-size,field-separator,temporary-directory,unique,zero-terminated,parallel,help,version,", 355);
+    let index: i32 = 0; let start: i32 = 0; let i: i32 = 0; let found: i32 = -1; let matches: i32 = 0;
+    while (i < names.length) {
+        if (names.values[i] == 44) {
+            let len: i32 = i - start;
+            if (name.length <= len) {
+                let j: i32 = 0; let ok: bool = true;
+                while (j < name.length && ok) { if (name.values[name.start+j] != names.values[start+j]) { ok = false; } j += 1; }
+                if (ok) { if (name.length == len) { return index; } found = index; matches += 1; }
+            }
+            index += 1; start = i + 1;
+        }
+        i += 1;
+    }
+    if (matches > 1) { return -2; }
+    return found;
+}
+fn long_takes(index: i32) -> bool {
+    return index == 2 || index == 6 || index == 9 || index == 16 || index == 17 || index == 18 || index == 21 || index == 22 || index == 23 || index == 24 || index == 27;
+}
+fn same(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.len() != right.len()) { return false; }
+    let i: i32 = 0; while (i < left.len()) { if (left.values[left.start+i] != right.values[right.start+i]) { return false; } i += 1; } return true;
+}
+// Append one byte to a buffer.
+fn push_byte(buf: &alloc::io::Buffer, b: u8) -> bool {
+    let room: core::result::Result<ptr, core::io::Error> = buf.reserve_raw(8);
+    if (core::result::is_err(room)) { return false; }
+    let one: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::result::unwrap(room), 1); one[0] = b;
+    return core::result::is_ok(buf.commit_raw(1));
+}
+
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1, 4096, 1048576);
+    if (core::result::is_err(captured)) { return complain(literal("bad arguments", 13)); }
+    let arguments: std::args::Arguments = core::result::unwrap(captured);
+    let names: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new();
+    let keys: alloc::vec::Vec<ext::text_sort::Key> = alloc::vec::new();
+    let g: ext::text_sort::Key = ext::text_sort::whole_line(false);
+    let o: ext::text_sort::Options = ext::text_sort::default_options();
+    let empty: core::slice::View<u8> = literal("-", 1);
+    let output: core::slice::View<u8> = empty; let has_output: bool = false;
+    let plain: bool = false; let i: i32 = 0; let status: i32 = 0;
+    while (i < arguments.len() && status == 0) {
+        let arg: core::slice::View<u8> = core::option::unwrap(arguments.get(i)); i += 1;
+        if (plain || arg.len() < 2 || arg.values[arg.start] != 45) { let pushed: core::result::Result<i32, alloc::vec::Error> = names.try_push(arg); continue; }
+        let long: bool = false; let opt: i32 = 0; let value: core::slice::View<u8> = empty;
+        if (arg.values[arg.start+1] == 45) {
+            if (arg.len() == 2) { plain = true; continue; }
+            let eq: i32 = 2; while (eq < arg.len() && arg.values[arg.start+eq] != 61) { eq += 1; }
+            let index: i32 = long_index(core::slice::View { values: arg.values, start: arg.start + 2, length: eq - 2 });
+            if (index < 0) { status = complain(literal("unknown or ambiguous option", 27)); break; }
+            if (eq < arg.len()) {
+                if (!long_takes(index) && index != 1) { status = complain(literal("option takes no argument", 24)); break; }
+                value = core::slice::View { values: arg.values, start: arg.start + eq + 1, length: arg.len() - eq - 1 };
+            } else {
+                if (long_takes(index)) {
+                    if (i >= arguments.len()) { status = complain(literal("option requires an argument", 27)); break; }
+                    value = core::option::unwrap(arguments.get(i)); i += 1;
+                }
+            }
+            opt = match (index) { 0 -> 98, 5 -> 102, 9 -> 107, 12 -> 110, 18 -> 111, 19 -> 114, 20 -> 115, 22 -> 83, 23 -> 116, 24 -> 84, 25 -> 117, 26 -> 122, 27 -> 80, _ -> 63 };
+            long = true;
+        }
+        let j: i32 = 1;
+        while (status == 0) {
+            if (!long) {
+                if (j >= arg.len()) { break; }
+                opt = arg.values[arg.start+j] as i32; j += 1;
+                if (opt == 107 || opt == 111 || opt == 83 || opt == 116 || opt == 84 || opt == 121) {
+                    if (j < arg.len()) { value = core::slice::View { values: arg.values, start: arg.start + j, length: arg.len() - j }; j = arg.len(); }
+                    else {
+                        if (i >= arguments.len()) { status = complain(literal("option requires an argument", 27)); break; }
+                        value = core::option::unwrap(arguments.get(i)); i += 1;
+                    }
+                }
+            }
+            if (opt == 98 || opt == 102 || opt == 110 || opt == 114) { let fine: bool = ext::text_sort::global_ordering(opt as u8, g.borrow()); }
+            else { if (opt == 115) { o.stable = true; }
+            else { if (opt == 117) { o.unique = true; }
+            else { if (opt == 122) { o.eol = 0; }
+            else { if (opt == 107) {
+                let parsed: ext::text_sort::ParsedKey = ext::text_sort::parse_key(value);
+                if (!parsed.ok) { status = complain(ext::text_sort::key_message(parsed.error)); break; }
+                let pushed: core::result::Result<i32, alloc::vec::Error> = keys.try_push(parsed.k);
+            }
+            else { if (opt == 116) {
+                if (value.len() == 0) { status = complain(literal("empty tab", 9)); break; }
+                let t: i32 = value.values[value.start] as i32;
+                if (value.len() > 1) {
+                    if (same(value, literal("\\0", 2))) { t = 0; } else { status = complain(literal("multi-character tab", 19)); break; }
+                }
+                if (o.tab >= 0 && o.tab != t) { status = complain(literal("incompatible tabs", 17)); break; }
+                o.tab = t;
+            }
+            else { if (opt == 111) {
+                if (has_output && !same(output, value)) { status = complain(literal("multiple output files specified", 31)); break; }
+                output = value; has_output = true;
+            }
+            else { if (opt == 83 || opt == 84 || opt == 80) { }
+            else { status = complain(literal("unsupported option", 18)); break; } } } } } } } }
+            if (long) { break; }
+        }
+    }
+    if (status != 0) { keys.destroy(); names.destroy(); arguments.destroy(); return status; }
+    if (names.len() == 0) { let pushed: core::result::Result<i32, alloc::vec::Error> = names.try_push(empty); }
+    let text: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(2000000000));
+    i = 0;
+    while (i < names.len()) {
+        let name: core::slice::View<u8> = core::option::unwrap(names.get(i)); i += 1;
+        let fd: i32 = ext::text_lines::open_input(name);
+        if (fd < 0) { say(literal("text-sort: cannot read: ", 24)); say(name); say(literal(": No such file or directory\n", 28)); status = 2; break; }
+        let before: i32 = text.len();
+        if (!ext::text_lines::read_all(fd, text.borrow())) { say(literal("text-sort: read failed: ", 24)); say(name); say(literal("\n", 1)); status = 2; ext::text_lines::close_input(fd); break; }
+        ext::text_lines::close_input(fd);
+        let after: i32 = text.len();
+        if (after > before) {
+            let bytes: [u8] = text.as_bytes();
+            if (bytes[after-1] != o.eol) { if (!push_byte(text.borrow(), o.eol)) { status = complain(literal("allocation failed", 17)); break; } }
+        }
+    }
+    if (status != 0) { text.destroy(); keys.destroy(); names.destroy(); arguments.destroy(); return status; }
+    let levels: alloc::vec::Vec<ext::text_sort::Key> = ext::text_sort::levels(keys.borrow(), g, o);
+    let ofd: i32 = ext::text_lines::open_output(output);
+    if (ofd < 0) { say(literal("text-sort: open failed: ", 24)); say(output); say(literal("\n", 1)); text.destroy(); levels.destroy(); keys.destroy(); names.destroy(); arguments.destroy(); return 2; }
+    let out: ext::text_lines::Out = core::result::unwrap(ext::text_lines::out(ofd, 32768));
+    let view: core::slice::View<u8> = core::slice::View { values: text.as_bytes(), start: 0, length: text.len() };
+    let sorted: core::result::Result<i32, ext::text_sort::Error> = ext::text_sort::sort(view, levels.borrow(), o, out.borrow());
+    if (core::result::is_err(sorted)) { status = complain(literal("sort failed (out of memory or a worker failed)", 46)); }
+    if (!ext::text_lines::finish(out.borrow())) { status = 2; }
+    out.destroy(); if (ofd > 1) { ext::text_lines::close_input(ofd); }
+    text.destroy(); levels.destroy(); keys.destroy(); names.destroy(); arguments.destroy();
+    return status;
+}
