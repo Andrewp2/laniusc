@@ -82,13 +82,13 @@ theorem stmt_live (live : FuncLive sp prims outside cost N) (ret : SrcType) (s :
     ∀ {tenv : TEnv} {env : Env} {st : State} {d : Done} {h : Nat},
       stmtOk sp outside (boxElem sp prims) ret tenv s = true → Inv st →
       EnvRel sp.toCore (boxElem sp prims) st.heap tenv env st →
-      qstmt (qcall sp prims cost N) env s = some (d, h) → st.heap.nextAddress + h ≤ 2 ^ 64 →
+      qstmt (qcall sp prims cost N) env s = some (d, h) → st.heap.nextAddress + h ≤ 2 ^ 64 → st.heap.remaining = none →
       ∃ c st', Ev (fun k => execStmt k sp.toCore st s.toCore) c st' ∧
         DoneRel sp.toCore (boxElem sp prims) st'.heap ret c d ∧ Ran st st' ∧
-        st'.heap.nextAddress ≤ st.heap.nextAddress + h := by
+        st'.heap.nextAddress ≤ st.heap.nextAddress + h ∧ st'.heap.remaining = none := by
   induction s with
   | nop =>
-    intro tenv env st d h ok inv rel hq budget
+    intro tenv env st d h ok inv rel hq budget fr
     have hq' := hq
     simp only [qstmt, Option.some.injEq, Prod.mk.injEq] at hq'
     obtain ⟨rfl, rfl⟩ := hq'
@@ -96,9 +96,9 @@ theorem stmt_live (live : FuncLive sp prims outside cost N) (ret : SrcType) (s :
       simpa only [SrcStmt.toCore] using skip_fwd
     have g : st.heap.nextAddress ≤ st.heap.nextAddress + 0 := by aomega
     obtain ⟨dr, ran⟩ := stmt_rel calls ok inv rel (pstmt_of hq) ev (part g budget)
-    exact ⟨_, _, ev, dr, ran, g⟩
+    exact ⟨_, _, ev, dr, ran, g, fr⟩
   | «let» id ty value body ih =>
-    intro tenv env st d h ok inv rel hq budget
+    intro tenv env st d h ok inv rel hq budget fr
     have ok' := ok
     simp only [stmtOk] at ok'
     split at ok'
@@ -108,15 +108,15 @@ theorem stmt_live (live : FuncLive sp prims outside cost N) (ret : SrcType) (s :
       obtain ⟨pv, hpv, hb⟩ := hq'
       obtain ⟨v, evv⟩ := expr_live (toCore_target sp) tenv env value ht rel hpv
       have r := expr_rel ht rel hpv evv
-      obtain ⟨c, s2, evb, -, -, g⟩ := ih ok' (inv.bindLocal id v) (rel.bind inv r) hb budget
+      obtain ⟨c, s2, evb, -, -, g, fg⟩ := ih ok' (inv.bindLocal id v) (rel.bind inv r) hb budget fr
       have ev : Ev (fun k => execStmt k sp.toCore st (SrcStmt.let id ty value body).toCore) c
           (restoreLocals st s2) := by
         simpa only [SrcStmt.toCore] using letLocal_fwd (ty := ty.toCore) evv evb
       obtain ⟨dr, ran⟩ := stmt_rel calls ok inv rel (pstmt_of hq) ev (part g budget)
-      exact ⟨_, _, ev, dr, ran, g⟩
+      exact ⟨_, _, ev, dr, ran, g, fg⟩
     · simp at ok'
   | letStruct id ty fields body ih =>
-    intro tenv env st d h ok inv rel hq budget
+    intro tenv env st d h ok inv rel hq budget fr
     have ok' := ok
     simp only [stmtOk] at ok'
     split at ok'
@@ -130,16 +130,16 @@ theorem stmt_live (live : FuncLive sp prims outside cost N) (ret : SrcType) (s :
       obtain ⟨vs, evs⟩ := exprs_live (toCore_target sp) tenv env fields hts rel hps
       have r : VRel sp.toCore (boxElem sp prims) st.heap (.struct sid ts) (.structure sid vs) (.structure sid ps) :=
         .struct hbx (exprs_rel hts rel hps evs)
-      obtain ⟨c, s2, evb, -, -, g⟩ := ih ok' (inv.bindLocal id _) (rel.bind inv r) hb budget
+      obtain ⟨c, s2, evb, -, -, g, fg⟩ := ih ok' (inv.bindLocal id _) (rel.bind inv r) hb budget fr
       have ev : Ev (fun k => execStmt k sp.toCore st (SrcStmt.letStruct id (.struct sid ts) fields body).toCore) c
           (restoreLocals st s2) := by
         simpa only [SrcStmt.toCore, SrcType.literal] using
           letLocal_fwd (ty := (SrcType.struct sid ts).toCore) (struct_fwd (id := sid) evs) evb
       obtain ⟨dr, ran⟩ := stmt_rel calls ok inv rel (pstmt_of hq) ev (part g budget)
-      exact ⟨_, _, ev, dr, ran, g⟩
+      exact ⟨_, _, ev, dr, ran, g, fg⟩
     · simp at ok'
   | letCall id ty callee args body ih =>
-    intro tenv env st d h ok inv rel hq budget
+    intro tenv env st d h ok inv rel hq budget fr
     have ok' := ok
     simp only [stmtOk] at ok'
     split at ok'
@@ -155,13 +155,13 @@ theorem stmt_live (live : FuncLive sp prims outside cost N) (ret : SrcType) (s :
       obtain ⟨vs, evs⟩ := exprs_live (toCore_target sp) tenv env args hts rel hps
       have rs := exprs_rel hts rel hps evs
       have len : vs.length = f.params.length := by simpa using rs.length.1
-      obtain ⟨compl, completed, v, evb, result, g1⟩ := live found notOut len inv rs hc (part (by aomega) budget)
+      obtain ⟨compl, completed, v, evb, result, g1, f1⟩ := live found notOut len inv rs hc (part (by aomega) budget) fr
       have evc := call_fwd evs found len evb result
       obtain ⟨rw, invc, stepc⟩ := call_rel calls found notOut len inv rs hc evb result (part (by aomega) budget)
       have inv1 : Inv (restoreLocals st completed) := invc.restore st
       have rel1 := rel.step (stepc.restore st) rfl
-      obtain ⟨c, s2, evb2, -, -, g2⟩ := ih ok' (inv1.bindLocal id v) (rel1.bind inv1 rw) hb
-        (part (show completed.heap.nextAddress + h2 ≤ st.heap.nextAddress + (h1 + h2) by aomega) budget)
+      obtain ⟨c, s2, evb2, -, -, g2, f2⟩ := ih ok' (inv1.bindLocal id v) (rel1.bind inv1 rw) hb
+        (part (show completed.heap.nextAddress + h2 ≤ st.heap.nextAddress + (h1 + h2) by aomega) budget) f1
       have ev : Ev (fun k => execStmt k sp.toCore st (SrcStmt.letCall id ty callee args body).toCore) c
           (restoreLocals (restoreLocals st completed) s2) := by
         simpa only [SrcStmt.toCore] using letLocal_fwd (ty := ty.toCore) evc evb2
@@ -171,10 +171,10 @@ theorem stmt_live (live : FuncLive sp prims outside cost N) (ret : SrcType) (s :
         have g2' : s2.heap.nextAddress ≤ completed.heap.nextAddress + h2 := g2
         aomega
       obtain ⟨dr, ran⟩ := stmt_rel calls ok inv rel (pstmt_of hq) ev (part g budget)
-      exact ⟨_, _, ev, dr, ran, g⟩
+      exact ⟨_, _, ev, dr, ran, g, f2⟩
     · simp at ok'
   | letEnum id ty variant payload body ih =>
-    intro tenv env st d h ok inv rel hq budget
+    intro tenv env st d h ok inv rel hq budget fr
     have ok' := ok
     simp only [stmtOk] at ok'
     split at ok'
@@ -189,37 +189,37 @@ theorem stmt_live (live : FuncLive sp prims outside cost N) (ret : SrcType) (s :
       have r : VRel sp.toCore (boxElem sp prims) st.heap (.enum eid variants) (.enumeration eid variant vs)
           (.enumeration eid variant ps) := .enum hk (exprs_rel hts rel hps evs)
       simp only [SrcType.typeId] at hb
-      obtain ⟨c, s2, evb, -, -, g⟩ := ih ok' (inv.bindLocal id _) (rel.bind inv r) hb budget
+      obtain ⟨c, s2, evb, -, -, g, fg⟩ := ih ok' (inv.bindLocal id _) (rel.bind inv r) hb budget fr
       have ev : Ev (fun k => execStmt k sp.toCore st
           (SrcStmt.letEnum id (.enum eid variants) variant payload body).toCore) c (restoreLocals st s2) := by
         simpa only [SrcStmt.toCore, SrcType.typeId] using
           letLocal_fwd (ty := (SrcType.enum eid variants).toCore) (enum_fwd (id := eid) (variant := variant) evs) evb
       obtain ⟨dr, ran⟩ := stmt_rel calls ok inv rel (pstmt_of hq) ev (part g budget)
-      exact ⟨_, _, ev, dr, ran, g⟩
+      exact ⟨_, _, ev, dr, ran, g, fg⟩
     · simp at ok'
   | letMatch => intro tenv env st d h ok; simp [stmtOk] at ok
   | set => intro tenv env st d h ok; simp [stmtOk] at ok
   | setField => intro tenv env st d h ok; simp [stmtOk] at ok
   | setCall => intro tenv env st d h ok; simp [stmtOk] at ok
   | «then» first second ih1 ih2 =>
-    intro tenv env st d h ok inv rel hq budget
+    intro tenv env st d h ok inv rel hq budget fr
     have ok' := ok
     simp only [stmtOk, Bool.and_eq_true] at ok'
     have hq' := hq
     simp only [qstmt] at hq'
     obtain ⟨d1, h1, h2, hq1, hrest, rfl⟩ := qthen_some hq'
-    obtain ⟨c1, s1, ev1, dr1, ran1, g1⟩ := ih1 ok'.1 inv rel hq1 (part (by aomega) budget)
+    obtain ⟨c1, s1, ev1, dr1, ran1, g1, f1⟩ := ih1 ok'.1 inv rel hq1 (part (by aomega) budget) fr
     cases d1 with
     | next =>
       obtain rfl := dr1.next_inv
       simp only [Done.qthen] at hrest
-      obtain ⟨c, s2, ev2, -, -, g2⟩ := ih2 ok'.2 ran1.inv (rel.step ran1.step ran1.locals) hrest
-        (part (by aomega) budget)
+      obtain ⟨c, s2, ev2, -, -, g2, f2⟩ := ih2 ok'.2 ran1.inv (rel.step ran1.step ran1.locals) hrest
+        (part (by aomega) budget) f1
       have ev : Ev (fun k => execStmt k sp.toCore st (SrcStmt.then first second).toCore) c s2 := by
         simpa only [SrcStmt.toCore] using sequence_next_fwd ev1 ev2
       have g : s2.heap.nextAddress ≤ st.heap.nextAddress + (h1 + h2) := by aomega
       obtain ⟨dr, ran⟩ := stmt_rel calls ok inv rel (pstmt_of hq) ev (part g budget)
-      exact ⟨_, _, ev, dr, ran, g⟩
+      exact ⟨_, _, ev, dr, ran, g, f2⟩
     | ret value =>
       simp only [Done.qthen, Option.some.injEq, Prod.mk.injEq] at hrest
       obtain ⟨rfl, rfl⟩ := hrest
@@ -230,11 +230,11 @@ theorem stmt_live (live : FuncLive sp prims outside cost N) (ret : SrcType) (s :
           simpa only [SrcStmt.toCore] using sequence_ret_fwd (b := second.toCore) ev1
         have g : s1.heap.nextAddress ≤ st.heap.nextAddress + (h1 + 0) := by aomega
         obtain ⟨dr, ran⟩ := stmt_rel calls ok inv rel (pstmt_of hq) ev (part g budget)
-        exact ⟨_, _, ev, dr, ran, g⟩
+        exact ⟨_, _, ev, dr, ran, g, f1⟩
       | breakLoop => exact dr1.elim
       | continueLoop => exact dr1.elim
   | «if» condition thenBranch elseBranch ih1 ih2 =>
-    intro tenv env st d h ok inv rel hq budget
+    intro tenv env st d h ok inv rel hq budget fr
     have ok' := ok
     simp only [stmtOk, Bool.and_eq_true] at ok'
     obtain ⟨⟨hc, ok1⟩, ok2⟩ := ok'
@@ -249,23 +249,23 @@ theorem stmt_live (live : FuncLive sp prims outside cost N) (ret : SrcType) (s :
     cases b' with
     | true =>
       simp only [if_true] at hbr
-      obtain ⟨c, s2, ev2, -, -, g⟩ := ih1 ok1 inv rel hbr budget
+      obtain ⟨c, s2, ev2, -, -, g, fg⟩ := ih1 ok1 inv rel hbr budget fr
       have ev : Ev (fun k => execStmt k sp.toCore st (SrcStmt.if condition thenBranch elseBranch).toCore) c s2 := by
         simp only [SrcStmt.toCore]
         exact if_fwd evc (by simpa using ev2)
       obtain ⟨dr, ran⟩ := stmt_rel calls ok inv rel (pstmt_of hq) ev (part g budget)
-      exact ⟨_, _, ev, dr, ran, g⟩
+      exact ⟨_, _, ev, dr, ran, g, fg⟩
     | false =>
       simp only [Bool.false_eq_true, if_false] at hbr
-      obtain ⟨c, s2, ev2, -, -, g⟩ := ih2 ok2 inv rel hbr budget
+      obtain ⟨c, s2, ev2, -, -, g, fg⟩ := ih2 ok2 inv rel hbr budget fr
       have ev : Ev (fun k => execStmt k sp.toCore st (SrcStmt.if condition thenBranch elseBranch).toCore) c s2 := by
         simp only [SrcStmt.toCore]
         exact if_fwd evc (by simpa using ev2)
       obtain ⟨dr, ran⟩ := stmt_rel calls ok inv rel (pstmt_of hq) ev (part g budget)
-      exact ⟨_, _, ev, dr, ran, g⟩
+      exact ⟨_, _, ev, dr, ran, g, fg⟩
   | «while» => intro tenv env st d h ok; simp [stmtOk] at ok
   | «return» value =>
-    intro tenv env st d h ok inv rel hq budget
+    intro tenv env st d h ok inv rel hq budget fr
     have ok' := ok
     simp only [stmtOk] at ok'
     split at ok'
@@ -280,7 +280,7 @@ theorem stmt_live (live : FuncLive sp prims outside cost N) (ret : SrcType) (s :
         simpa only [SrcStmt.toCore] using return_fwd evv
       have g : st.heap.nextAddress ≤ st.heap.nextAddress + 0 := by aomega
       obtain ⟨dr, ran⟩ := stmt_rel calls ok inv rel (pstmt_of hq) ev (part g budget)
-      exact ⟨_, _, ev, dr, ran, g⟩
+      exact ⟨_, _, ev, dr, ran, g, fr⟩
     · simp at ok'
   | letAlloc => intro tenv env st d h ok; simp [stmtOk] at ok
   | letLoad => intro tenv env st d h ok; simp [stmtOk] at ok
@@ -290,7 +290,7 @@ theorem stmt_live (live : FuncLive sp prims outside cost N) (ret : SrcType) (s :
   | letIndex => intro tenv env st d h ok; simp [stmtOk] at ok
   | setIndex => intro tenv env st d h ok; simp [stmtOk] at ok
   | letEval id ty value body ih =>
-    intro tenv env st d h ok inv rel hq budget
+    intro tenv env st d h ok inv rel hq budget fr
     have ok' := ok
     simp only [stmtOk] at ok'
     split at ok'
@@ -298,10 +298,10 @@ theorem stmt_live (live : FuncLive sp prims outside cost N) (ret : SrcType) (s :
       have hq' := hq
       simp only [qstmt] at hq'
       obtain ⟨pv, h1, h2, hpv, hb, rfl⟩ := qthen_some hq'
-      obtain ⟨v, s1, ev1, r, ran1, g1⟩ := eff_live calls live value ht inv rel hpv (part (by aomega) budget)
+      obtain ⟨v, s1, ev1, r, ran1, g1, f1⟩ := eff_live calls live value ht inv rel hpv (part (by aomega) budget) fr
       have rel1 := rel.step ran1.step ran1.locals
-      obtain ⟨c, s2, evb, -, -, g2⟩ := ih ok' (ran1.inv.bindLocal id v) (rel1.bind ran1.inv r) hb
-        (part (show s1.heap.nextAddress + h2 ≤ st.heap.nextAddress + (h1 + h2) by aomega) budget)
+      obtain ⟨c, s2, evb, -, -, g2, f2⟩ := ih ok' (ran1.inv.bindLocal id v) (rel1.bind ran1.inv r) hb
+        (part (show s1.heap.nextAddress + h2 ≤ st.heap.nextAddress + (h1 + h2) by aomega) budget) f1
       have ev : Ev (fun k => execStmt k sp.toCore st (SrcStmt.letEval id ty value body).toCore) c
           (restoreLocals s1 s2) := by
         simpa only [SrcStmt.toCore] using letLocal_fwd (ty := ty.toCore) ev1 evb
@@ -310,11 +310,11 @@ theorem stmt_live (live : FuncLive sp prims outside cost N) (ret : SrcType) (s :
         have g2' : s2.heap.nextAddress ≤ s1.heap.nextAddress + h2 := g2
         aomega
       obtain ⟨dr, ran⟩ := stmt_rel calls ok inv rel (pstmt_of hq) ev (part g budget)
-      exact ⟨_, _, ev, dr, ran, g⟩
+      exact ⟨_, _, ev, dr, ran, g, f2⟩
     · simp at ok'
   | setEval => intro tenv env st d h ok; simp [stmtOk] at ok
   | ifEval condition thenBranch elseBranch ih1 ih2 =>
-    intro tenv env st d h ok inv rel hq budget
+    intro tenv env st d h ok inv rel hq budget fr
     have ok' := ok
     simp only [stmtOk, Bool.and_eq_true] at ok'
     obtain ⟨⟨hc, ok1⟩, ok2⟩ := ok'
@@ -322,33 +322,33 @@ theorem stmt_live (live : FuncLive sp prims outside cost N) (ret : SrcType) (s :
     have hq' := hq
     simp only [qstmt] at hq'
     obtain ⟨cv, h1, h2, hcv, hbr, rfl⟩ := qthen_some hq'
-    obtain ⟨v, s1, ev1, r, ran1, g1⟩ := eff_live calls live condition htc inv rel hcv (part (by aomega) budget)
+    obtain ⟨v, s1, ev1, r, ran1, g1, f1⟩ := eff_live calls live condition htc inv rel hcv (part (by aomega) budget) fr
     obtain ⟨rfl, b, rfl⟩ : cv = v ∧ ∃ b, v = .boolean b := r.scalar_ty rfl
     simp only [asBool, Option.bind_some] at hbr
     cases b with
     | true =>
       simp only [if_true] at hbr
-      obtain ⟨c, s2, ev2, -, -, g2⟩ := ih1 ok1 ran1.inv (rel.step ran1.step ran1.locals) hbr
-        (part (by aomega) budget)
+      obtain ⟨c, s2, ev2, -, -, g2, f2⟩ := ih1 ok1 ran1.inv (rel.step ran1.step ran1.locals) hbr
+        (part (by aomega) budget) f1
       have ev : Ev (fun k => execStmt k sp.toCore st (SrcStmt.ifEval condition thenBranch elseBranch).toCore) c s2 := by
         simp only [SrcStmt.toCore]
         exact if_fwd ev1 (by simpa using ev2)
       have g : s2.heap.nextAddress ≤ st.heap.nextAddress + (h1 + h2) := by aomega
       obtain ⟨dr, ran⟩ := stmt_rel calls ok inv rel (pstmt_of hq) ev (part g budget)
-      exact ⟨_, _, ev, dr, ran, g⟩
+      exact ⟨_, _, ev, dr, ran, g, f2⟩
     | false =>
       simp only [Bool.false_eq_true, if_false] at hbr
-      obtain ⟨c, s2, ev2, -, -, g2⟩ := ih2 ok2 ran1.inv (rel.step ran1.step ran1.locals) hbr
-        (part (by aomega) budget)
+      obtain ⟨c, s2, ev2, -, -, g2, f2⟩ := ih2 ok2 ran1.inv (rel.step ran1.step ran1.locals) hbr
+        (part (by aomega) budget) f1
       have ev : Ev (fun k => execStmt k sp.toCore st (SrcStmt.ifEval condition thenBranch elseBranch).toCore) c s2 := by
         simp only [SrcStmt.toCore]
         exact if_fwd ev1 (by simpa using ev2)
       have g : s2.heap.nextAddress ≤ st.heap.nextAddress + (h1 + h2) := by aomega
       obtain ⟨dr, ran⟩ := stmt_rel calls ok inv rel (pstmt_of hq) ev (part g budget)
-      exact ⟨_, _, ev, dr, ran, g⟩
+      exact ⟨_, _, ev, dr, ran, g, f2⟩
   | whileEval => intro tenv env st d h ok; simp [stmtOk] at ok
   | returnEval value =>
-    intro tenv env st d h ok inv rel hq budget
+    intro tenv env st d h ok inv rel hq budget fr
     have ok' := ok
     simp only [stmtOk] at ok'
     split at ok'
@@ -358,15 +358,15 @@ theorem stmt_live (live : FuncLive sp prims outside cost N) (ret : SrcType) (s :
       obtain ⟨pv, h1, h2, hpv, last, rfl⟩ := qthen_some hq'
       simp only [Option.some.injEq, Prod.mk.injEq] at last
       obtain ⟨rfl, rfl⟩ := last
-      obtain ⟨v, s1, ev1, -, -, g1⟩ := eff_live calls live value ht inv rel hpv (part (by aomega) budget)
+      obtain ⟨v, s1, ev1, -, -, g1, f1⟩ := eff_live calls live value ht inv rel hpv (part (by aomega) budget) fr
       have ev : Ev (fun k => execStmt k sp.toCore st (SrcStmt.returnEval value).toCore) (.returned (some v)) s1 := by
         simpa only [SrcStmt.toCore] using return_fwd ev1
       have g : s1.heap.nextAddress ≤ st.heap.nextAddress + (h1 + 0) := by aomega
       obtain ⟨dr, ran⟩ := stmt_rel calls ok inv rel (pstmt_of hq) ev (part g budget)
-      exact ⟨_, _, ev, dr, ran, g⟩
+      exact ⟨_, _, ev, dr, ran, g, f1⟩
     · simp at ok'
   | discard value =>
-    intro tenv env st d h ok inv rel hq budget
+    intro tenv env st d h ok inv rel hq budget fr
     have ok' := ok
     simp only [stmtOk, Option.isSome_iff_exists] at ok'
     obtain ⟨t, ht⟩ := ok'
@@ -375,12 +375,12 @@ theorem stmt_live (live : FuncLive sp prims outside cost N) (ret : SrcType) (s :
     obtain ⟨pv, h1, h2, hpv, last, rfl⟩ := qthen_some hq'
     simp only [Option.some.injEq, Prod.mk.injEq] at last
     obtain ⟨rfl, rfl⟩ := last
-    obtain ⟨v, s1, ev1, -, -, g1⟩ := eff_live calls live value ht inv rel hpv (part (by aomega) budget)
+    obtain ⟨v, s1, ev1, -, -, g1, f1⟩ := eff_live calls live value ht inv rel hpv (part (by aomega) budget) fr
     have ev : Ev (fun k => execStmt k sp.toCore st (SrcStmt.discard value).toCore) .next s1 := by
       simpa only [SrcStmt.toCore] using expression_fwd ev1
     have g : s1.heap.nextAddress ≤ st.heap.nextAddress + (h1 + 0) := by aomega
     obtain ⟨dr, ran⟩ := stmt_rel calls ok inv rel (pstmt_of hq) ev (part g budget)
-    exact ⟨_, _, ev, dr, ran, g⟩
+    exact ⟨_, _, ev, dr, ran, g, f1⟩
   | setIndexEval => intro tenv env st d h ok; simp [stmtOk] at ok
   | setFieldEval => intro tenv env st d h ok; simp [stmtOk] at ok
   | «break» => intro tenv env st d h ok; simp [stmtOk] at ok
@@ -388,7 +388,7 @@ theorem stmt_live (live : FuncLive sp prims outside cost N) (ret : SrcType) (s :
   | matchArm => intro tenv env st d h ok; simp [stmtOk] at ok
   | unreachable => intro tenv env st d h ok; simp [stmtOk] at ok
   | returnUnit =>
-    intro tenv env st d h ok inv rel hq budget
+    intro tenv env st d h ok inv rel hq budget fr
     have hq' := hq
     simp only [qstmt, Option.some.injEq, Prod.mk.injEq] at hq'
     obtain ⟨rfl, rfl⟩ := hq'
@@ -396,16 +396,16 @@ theorem stmt_live (live : FuncLive sp prims outside cost N) (ret : SrcType) (s :
       simpa only [SrcStmt.toCore] using returnUnit_fwd
     have g : st.heap.nextAddress ≤ st.heap.nextAddress + 0 := by aomega
     obtain ⟨dr, ran⟩ := stmt_rel calls ok inv rel (pstmt_of hq) ev (part g budget)
-    exact ⟨_, _, ev, dr, ran, g⟩
+    exact ⟨_, _, ev, dr, ran, g, fr⟩
   | «assert» condition =>
-    intro tenv env st d h ok inv rel hq budget
+    intro tenv env st d h ok inv rel hq budget fr
     have ok' := ok
     simp only [stmtOk] at ok'
     have htc := isBoolTy_some ok'
     have hq' := hq
     simp only [qstmt] at hq'
     obtain ⟨cv, h1, h2, hcv, hbr, rfl⟩ := qthen_some hq'
-    obtain ⟨v, s1, ev1, r, -, g1⟩ := eff_live calls live condition htc inv rel hcv (part (by aomega) budget)
+    obtain ⟨v, s1, ev1, r, -, g1, f1⟩ := eff_live calls live condition htc inv rel hcv (part (by aomega) budget) fr
     obtain ⟨rfl, b, rfl⟩ : cv = v ∧ ∃ b, v = .boolean b := r.scalar_ty rfl
     cases b with
     | false => simp [asBool] at hbr
@@ -416,7 +416,7 @@ theorem stmt_live (live : FuncLive sp prims outside cost N) (ret : SrcType) (s :
         simpa only [SrcStmt.toCore] using expression_fwd (assert_fwd ev1)
       have g : s1.heap.nextAddress ≤ st.heap.nextAddress + (h1 + 0) := by aomega
       obtain ⟨dr, ran⟩ := stmt_rel calls ok inv rel (pstmt_of hq) ev (part g budget)
-      exact ⟨_, _, ev, dr, ran, g⟩
+      exact ⟨_, _, ev, dr, ran, g, f1⟩
 
 end
 
