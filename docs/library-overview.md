@@ -50,7 +50,7 @@ work on native Linux x86_64/glibc with libatomic:
   `scan` as stolen tasks on a `std::steal` pool. The sorts keep one forked crew
   for all phases, sort runs with a direct-comparison introsort or merge
   sort, then merge them in parallel at merge-path splits. A Python model oracle covers 3,600 runs with 0
-  mismatches, including non-commutative scans. On 10M i64 keys, 8 workers take 387–392 ms, against 638–699 ms
+  mismatches, including non-commutative scans. On 10M i64 keys, 8 workers take 306–373 ms, against 577–689 ms
   for C++ `std::sort` at -O2.
 
 The stress fixture keeps exact invariants: 1,600,000 atomic adds; 400,000

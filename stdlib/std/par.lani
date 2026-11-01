@@ -82,9 +82,18 @@ fn next_job(plan: Plan, me: i32) -> Job {
 // the left run first.
 fn merge_into<T>(src: [T], dst: [T], a0: i32, a1: i32, b0: i32, b1: i32, out: i32) where T: core::cmp::Ord<T> {
     let i: i32 = a0; let j: i32 = b0; let k: i32 = out;
-    while (i < a1 && j < b1) {
-        if (T::lt(src[j], src[i])) { dst[k] = src[j]; j += 1; } else { dst[k] = src[i]; i += 1; }
-        k += 1;
+    if (i < a1 && j < b1) {
+        // Carry both heads, so each step loads only the replacement.
+        let x: T = src[i]; let y: T = src[j]; let more: bool = true;
+        while (more) {
+            if (T::lt(y, x)) {
+                dst[k] = y; k += 1; j += 1;
+                if (j < b1) { y = src[j]; } else { more = false; }
+            } else {
+                dst[k] = x; k += 1; i += 1;
+                if (i < a1) { x = src[i]; } else { more = false; }
+            }
+        }
     }
     while (i < a1) { dst[k] = src[i]; i += 1; k += 1; }
     while (j < b1) { dst[k] = src[j]; j += 1; k += 1; }
@@ -158,10 +167,11 @@ fn partition<T>(v: [T], lo: i32, hi: i32) -> i32 where T: core::cmp::Ord<T> {
     let pivot: T = v[mid];
     let i: i32 = lo - 1; let j: i32 = hi;
     while (true) {
-        i += 1; while (T::lt(v[i], pivot)) { i += 1; }
-        j -= 1; while (T::lt(pivot, v[j])) { j -= 1; }
+        // Keep the values the scans stop on, so the swap reloads nothing.
+        i += 1; let a: T = v[i]; while (T::lt(a, pivot)) { i += 1; a = v[i]; }
+        j -= 1; let b: T = v[j]; while (T::lt(pivot, b)) { j -= 1; b = v[j]; }
         if (i >= j) { return j + 1; }
-        swap(v, i, j);
+        v[i] = b; v[j] = a;
     }
     return mid;
 }
