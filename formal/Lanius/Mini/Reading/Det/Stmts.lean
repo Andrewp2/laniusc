@@ -785,6 +785,10 @@ theorem matchR_noBlock {env : FrontEnv} {scope : List Local} {E : Option Ty} {m 
   | pure r => exact exprR_noPrim (.inl pm) r
   | «match» _ _ _ _ td en _ it' ord ar _ =>
     cases items_unique it it'
+    rcases ord with ⟨_, ord⟩ | ⟨_, nb, _⟩
+    rotate_left
+    · cases ab with
+      | mk pl pc pe => exact nb a ma ⟨_, pl, pc, pe⟩
     obtain ⟨o, mo, ko⟩ := armsOrder_reaches ((vn _ _ td en).sublist (zipVariants_names _ _)) ord (effArmsR_named ar) ma
     obtain ⟨v, ea, r⟩ := effArmsR_mem ar mo
     cases r with

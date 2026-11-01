@@ -366,6 +366,17 @@ structure WildSplit where
   wild : CTree
   deriving Repr
 
+/-- A variant's arm, and whether it is or holds the wildcard's. -/
+structure ArmUse where
+  arm : CTree
+  used : Bool
+  deriving Repr
+
+structure ArmsUse where
+  arms : List CTree
+  used : Bool
+  deriving Repr
+
 /-- Arguments read so far, and the type parameters they bind. -/
 structure ArgsBound where
   args : List MEff

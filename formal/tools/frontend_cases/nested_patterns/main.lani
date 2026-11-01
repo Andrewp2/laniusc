@@ -1,0 +1,69 @@
+module app::main;
+
+// Nested variant patterns, read as nested matches: a failed inner check
+// falls through to the variant's later arms, then to the wildcard.
+enum Color { Red, Green }
+enum Slot { Has(Color), Empty }
+enum Tree { Top(Slot), Bottom }
+enum Bar { X(i32), Y }
+enum Foo { Pair(Bar, i32), Solo(i32) }
+enum Opt<T> { Some(T), None }
+enum Res<T, E> { Ok(T), Err(E) }
+
+// The last arm binds c, which its value does not spell: it is `_`.
+fn depth(t: Tree) -> i32 {
+    return match (t) {
+        Tree::Top(Slot::Has(Color::Green)) -> 1,
+        Tree::Top(Slot::Has(c)) -> 2,
+        Tree::Top(_) -> 3,
+        _ -> 4,
+    };
+}
+
+// Column 0 is matched on; b is bound as the first arm spells it.
+fn sibling(v: Foo) -> i32 {
+    return match (v) {
+        Foo::Pair(Bar::X(a), b) -> a * 10 + b,
+        Foo::Pair(Bar::Y, b) -> 1000 + b,
+        Foo::Solo(s) -> s,
+    };
+}
+
+fn pick(r: Res<Opt<i32>, i32>) -> i32 {
+    return match (r) {
+        Ok(Some(x)) -> x,
+        Ok(None) -> 100,
+        Err(e) -> 200 + e,
+    };
+}
+
+// The wildcard is the inner match's last arm and Err's arm.
+fn found(r: Res<Opt<i32>, i32>) -> bool {
+    return match (r) { Ok(Some(x)) -> x == 5, _ -> false };
+}
+
+// The wildcard's value may spell an outer local the first arm does not bind.
+fn first_x(v: Foo, b: i32) -> i32 {
+    return match (v) { Foo::Pair(Bar::X(a), k) -> a + k, _ -> b };
+}
+
+fn main() -> i32 {
+    if (depth(Tree::Top(Slot::Has(Color::Green))) != 1) { return 1; }
+    if (depth(Tree::Top(Slot::Has(Color::Red))) != 2) { return 2; }
+    if (depth(Tree::Top(Slot::Empty)) != 3) { return 3; }
+    if (depth(Tree::Bottom) != 4) { return 4; }
+    if (sibling(Foo::Pair(Bar::X(4), 2)) != 42) { return 5; }
+    if (sibling(Foo::Pair(Bar::Y, 3)) != 1003) { return 6; }
+    if (sibling(Foo::Solo(9)) != 9) { return 7; }
+    if (pick(Ok(Some(7))) != 7) { return 8; }
+    if (pick(Ok(None)) != 100) { return 9; }
+    if (pick(Err(5)) != 205) { return 10; }
+    if (!found(Ok(Some(5)))) { return 11; }
+    if (found(Ok(Some(4)))) { return 12; }
+    if (found(Ok(None))) { return 13; }
+    if (found(Err(5))) { return 14; }
+    if (first_x(Foo::Pair(Bar::X(4), 2), 9) != 6) { return 15; }
+    if (first_x(Foo::Pair(Bar::Y, 2), 9) != 9) { return 16; }
+    if (first_x(Foo::Solo(1), 9) != 9) { return 17; }
+    return 0;
+}
