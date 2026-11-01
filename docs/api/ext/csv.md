@@ -17,7 +17,7 @@ Reusable record construction, complete preflight and the shared canonical encodi
 - [extended-csv-rewrite](../../extended-csv-rewrite.md)
 - [extended-json-stream](../../extended-json-stream.md)
 
-Declaration counts: enum: 1; field: 36; function: 7; impl: 4; method: 33; struct: 6; variant: 15.
+Declaration counts: enum: 1; field: 36; function: 7; impl: 4; method: 34; struct: 6; variant: 15.
 
 ## Declared imports
 
@@ -521,7 +521,7 @@ pub fn new() -> Record
 
 ### function: decoder
 
-[Source line 224](../../../extended/ext/csv.lani#L224)
+[Source line 276](../../../extended/ext/csv.lani#L276)
 
 ```lanius
 pub fn decoder(options: Options) -> core::result::Result<Decoder, Error>
@@ -529,7 +529,7 @@ pub fn decoder(options: Options) -> core::result::Result<Decoder, Error>
 
 ### function: parse_bytes
 
-[Source line 437](../../../extended/ext/csv.lani#L437)
+[Source line 489](../../../extended/ext/csv.lani#L489)
 
 ```lanius
 pub fn parse_bytes(source: [u8], offset: i32, count: i32, options: Options) -> core::result::Result<Table, Error>
@@ -537,7 +537,7 @@ pub fn parse_bytes(source: [u8], offset: i32, count: i32, options: Options) -> c
 
 ### function: parse
 
-[Source line 457](../../../extended/ext/csv.lani#L457)
+[Source line 509](../../../extended/ext/csv.lani#L509)
 
 ```lanius
 pub fn parse(input: alloc::string::String, options: Options) -> core::result::Result<Table, Error>
@@ -545,7 +545,7 @@ pub fn parse(input: alloc::string::String, options: Options) -> core::result::Re
 
 ### function: encode_record
 
-[Source line 485](../../../extended/ext/csv.lani#L485)
+[Source line 554](../../../extended/ext/csv.lani#L554)
 
 ```lanius
 pub fn encode_record(record: Record) -> core::result::Result<alloc::string::String, Error>
@@ -553,7 +553,7 @@ pub fn encode_record(record: Record) -> core::result::Result<alloc::string::Stri
 
 ### function: encode
 
-[Source line 490](../../../extended/ext/csv.lani#L490)
+[Source line 559](../../../extended/ext/csv.lani#L559)
 
 ```lanius
 pub fn encode(table: Table) -> core::result::Result<alloc::string::String, Error>
@@ -595,7 +595,7 @@ pub fn encoded_len(&self) -> core::result::Result<u64,Error>
 
 #### method: encoding
 
-[Source line 159](../../../extended/ext/csv.lani#L159)
+[Source line 170](../../../extended/ext/csv.lani#L170)
 
 ```lanius
 pub fn encoding(&self) -> core::result::Result<Encoding,Error>
@@ -603,7 +603,7 @@ pub fn encoding(&self) -> core::result::Result<Encoding,Error>
 
 #### method: field_count
 
-[Source line 165](../../../extended/ext/csv.lani#L165)
+[Source line 176](../../../extended/ext/csv.lani#L176)
 
 ```lanius
 pub fn field_count(&self) -> i32
@@ -611,7 +611,7 @@ pub fn field_count(&self) -> i32
 
 #### method: byte_len
 
-[Source line 166](../../../extended/ext/csv.lani#L166)
+[Source line 177](../../../extended/ext/csv.lani#L177)
 
 ```lanius
 pub fn byte_len(&self) -> i32
@@ -619,7 +619,7 @@ pub fn byte_len(&self) -> i32
 
 #### method: byte_capacity
 
-[Source line 167](../../../extended/ext/csv.lani#L167)
+[Source line 178](../../../extended/ext/csv.lani#L178)
 
 ```lanius
 pub fn byte_capacity(&self) -> i32
@@ -627,7 +627,7 @@ pub fn byte_capacity(&self) -> i32
 
 #### method: field_capacity
 
-[Source line 168](../../../extended/ext/csv.lani#L168)
+[Source line 179](../../../extended/ext/csv.lani#L179)
 
 ```lanius
 pub fn field_capacity(&self) -> i32
@@ -635,7 +635,7 @@ pub fn field_capacity(&self) -> i32
 
 #### method: field
 
-[Source line 169](../../../extended/ext/csv.lani#L169)
+[Source line 180](../../../extended/ext/csv.lani#L180)
 
 ```lanius
 pub fn field(&self, index: i32) -> core::result::Result<core::text::Text, Error>
@@ -643,7 +643,7 @@ pub fn field(&self, index: i32) -> core::result::Result<core::text::Text, Error>
 
 #### method: try_field
 
-[Source line 174](../../../extended/ext/csv.lani#L174)
+[Source line 185](../../../extended/ext/csv.lani#L185)
 
 ```lanius
 pub fn try_field(&self, index: i32) -> core::result::Result<alloc::string::String, Error>
@@ -651,7 +651,7 @@ pub fn try_field(&self, index: i32) -> core::result::Result<alloc::string::Strin
 
 #### method: clear
 
-[Source line 181](../../../extended/ext/csv.lani#L181)
+[Source line 192](../../../extended/ext/csv.lani#L192)
 
 ```lanius
 pub fn clear(&self)
@@ -659,15 +659,15 @@ pub fn clear(&self)
 
 #### method: destroy
 
-[Source line 185](../../../extended/ext/csv.lani#L185)
+[Source line 196](../../../extended/ext/csv.lani#L196)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 191
+### impl at line 202
 
-[Source line 191](../../../extended/ext/csv.lani#L191)
+[Source line 202](../../../extended/ext/csv.lani#L202)
 
 ```lanius
 pub impl Encoding
@@ -675,7 +675,7 @@ pub impl Encoding
 
 #### method: borrow
 
-[Source line 192](../../../extended/ext/csv.lani#L192)
+[Source line 203](../../../extended/ext/csv.lani#L203)
 
 ```lanius
 pub fn borrow(&self) -> &Encoding
@@ -683,7 +683,7 @@ pub fn borrow(&self) -> &Encoding
 
 #### method: remaining
 
-[Source line 193](../../../extended/ext/csv.lani#L193)
+[Source line 204](../../../extended/ext/csv.lani#L204)
 
 ```lanius
 pub fn remaining(&self) -> u64
@@ -691,15 +691,23 @@ pub fn remaining(&self) -> u64
 
 #### method: next
 
-[Source line 196](../../../extended/ext/csv.lani#L196)
+[Source line 207](../../../extended/ext/csv.lani#L207)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<u8>
 ```
 
-### impl at line 235
+#### method: fill
 
-[Source line 235](../../../extended/ext/csv.lani#L235)
+[Source line 236](../../../extended/ext/csv.lani#L236)
+
+```lanius
+pub fn fill(&self, target: [u8], at: i32, limit: i32) -> i32
+```
+
+### impl at line 287
+
+[Source line 287](../../../extended/ext/csv.lani#L287)
 
 ```lanius
 pub impl Decoder
@@ -707,7 +715,7 @@ pub impl Decoder
 
 #### method: borrow
 
-[Source line 236](../../../extended/ext/csv.lani#L236)
+[Source line 288](../../../extended/ext/csv.lani#L288)
 
 ```lanius
 pub fn borrow(&self) -> &Decoder
@@ -715,7 +723,7 @@ pub fn borrow(&self) -> &Decoder
 
 #### method: byte_offset
 
-[Source line 237](../../../extended/ext/csv.lani#L237)
+[Source line 289](../../../extended/ext/csv.lani#L289)
 
 ```lanius
 pub fn byte_offset(&self) -> u64
@@ -723,7 +731,7 @@ pub fn byte_offset(&self) -> u64
 
 #### method: records_read
 
-[Source line 238](../../../extended/ext/csv.lani#L238)
+[Source line 290](../../../extended/ext/csv.lani#L290)
 
 ```lanius
 pub fn records_read(&self) -> i32
@@ -731,7 +739,7 @@ pub fn records_read(&self) -> i32
 
 #### method: has_record
 
-[Source line 239](../../../extended/ext/csv.lani#L239)
+[Source line 291](../../../extended/ext/csv.lani#L291)
 
 ```lanius
 pub fn has_record(&self) -> bool
@@ -739,7 +747,7 @@ pub fn has_record(&self) -> bool
 
 #### method: byte_capacity
 
-[Source line 240](../../../extended/ext/csv.lani#L240)
+[Source line 292](../../../extended/ext/csv.lani#L292)
 
 ```lanius
 pub fn byte_capacity(&self) -> i32
@@ -747,7 +755,7 @@ pub fn byte_capacity(&self) -> i32
 
 #### method: field_capacity
 
-[Source line 241](../../../extended/ext/csv.lani#L241)
+[Source line 293](../../../extended/ext/csv.lani#L293)
 
 ```lanius
 pub fn field_capacity(&self) -> i32
@@ -755,7 +763,7 @@ pub fn field_capacity(&self) -> i32
 
 #### method: field_count
 
-[Source line 242](../../../extended/ext/csv.lani#L242)
+[Source line 294](../../../extended/ext/csv.lani#L294)
 
 ```lanius
 pub fn field_count(&self) -> core::option::Option<i32>
@@ -763,7 +771,7 @@ pub fn field_count(&self) -> core::option::Option<i32>
 
 #### method: field
 
-[Source line 246](../../../extended/ext/csv.lani#L246)
+[Source line 298](../../../extended/ext/csv.lani#L298)
 
 ```lanius
 pub fn field(&self, index: i32) -> core::result::Result<core::text::Text, Error>
@@ -771,7 +779,7 @@ pub fn field(&self, index: i32) -> core::result::Result<core::text::Text, Error>
 
 #### method: take_record
 
-[Source line 252](../../../extended/ext/csv.lani#L252)
+[Source line 304](../../../extended/ext/csv.lani#L304)
 
 ```lanius
 pub fn take_record(&self) -> core::option::Option<Record>
@@ -779,7 +787,7 @@ pub fn take_record(&self) -> core::option::Option<Record>
 
 #### method: feed
 
-[Source line 351](../../../extended/ext/csv.lani#L351)
+[Source line 403](../../../extended/ext/csv.lani#L403)
 
 ```lanius
 pub fn feed(&self, source: [u8], start: i32, count: i32) -> core::result::Result<Progress, Error>
@@ -787,7 +795,7 @@ pub fn feed(&self, source: [u8], start: i32, count: i32) -> core::result::Result
 
 #### method: finish
 
-[Source line 375](../../../extended/ext/csv.lani#L375)
+[Source line 427](../../../extended/ext/csv.lani#L427)
 
 ```lanius
 pub fn finish(&self) -> core::result::Result<bool, Error>
@@ -795,7 +803,7 @@ pub fn finish(&self) -> core::result::Result<bool, Error>
 
 #### method: reset
 
-[Source line 391](../../../extended/ext/csv.lani#L391)
+[Source line 443](../../../extended/ext/csv.lani#L443)
 
 ```lanius
 pub fn reset(&self)
@@ -803,15 +811,15 @@ pub fn reset(&self)
 
 #### method: destroy
 
-[Source line 399](../../../extended/ext/csv.lani#L399)
+[Source line 451](../../../extended/ext/csv.lani#L451)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 402
+### impl at line 454
 
-[Source line 402](../../../extended/ext/csv.lani#L402)
+[Source line 454](../../../extended/ext/csv.lani#L454)
 
 ```lanius
 pub impl Table
@@ -819,7 +827,7 @@ pub impl Table
 
 #### method: row_count
 
-[Source line 403](../../../extended/ext/csv.lani#L403)
+[Source line 455](../../../extended/ext/csv.lani#L455)
 
 ```lanius
 pub fn row_count(&self) -> i32
@@ -827,7 +835,7 @@ pub fn row_count(&self) -> i32
 
 #### method: field_count
 
-[Source line 404](../../../extended/ext/csv.lani#L404)
+[Source line 456](../../../extended/ext/csv.lani#L456)
 
 ```lanius
 pub fn field_count(&self, index: i32) -> core::option::Option<i32>
@@ -835,7 +843,7 @@ pub fn field_count(&self, index: i32) -> core::option::Option<i32>
 
 #### method: field
 
-[Source line 409](../../../extended/ext/csv.lani#L409)
+[Source line 461](../../../extended/ext/csv.lani#L461)
 
 ```lanius
 pub fn field(&self, row_index: i32, field_index: i32) -> core::result::Result<core::text::Text, Error>
@@ -843,7 +851,7 @@ pub fn field(&self, row_index: i32, field_index: i32) -> core::result::Result<co
 
 #### method: try_field
 
-[Source line 414](../../../extended/ext/csv.lani#L414)
+[Source line 466](../../../extended/ext/csv.lani#L466)
 
 ```lanius
 pub fn try_field(&self, row_index: i32, field_index: i32) -> core::result::Result<alloc::string::String, Error>
@@ -851,7 +859,7 @@ pub fn try_field(&self, row_index: i32, field_index: i32) -> core::result::Resul
 
 #### method: destroy
 
-[Source line 424](../../../extended/ext/csv.lani#L424)
+[Source line 476](../../../extended/ext/csv.lani#L476)
 
 ```lanius
 pub fn destroy(&self)
