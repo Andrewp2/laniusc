@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **315 modules**, **16437 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **316 modules**, **16554 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -332,6 +332,7 @@ Inventory: **315 modules**, **16437 declaration/member entries**. Counts include
 | [ext::weighted_statistics](ext/weighted_statistics.md) | [source](../../extended/ext/weighted_statistics.lani#L4) | 63 | Source inventory | [extended-weighted-statistics](../extended-weighted-statistics.md), [extended-statistics](../extended-statistics.md), [extended-sample-moments](../extended-sample-moments.md) |
 | [ext::wordiff](ext/wordiff.md) | [source](../../extended/ext/wordiff.lani#L3) | 18 | Source inventory | [extended-wordiff](../extended-wordiff.md) |
 | [ext::x509](ext/x509.md) | [source](../../extended/ext/x509.lani#L3) | 141 | Source inventory | [extended-x509](../extended-x509.md), [extended-certificate-info](../extended-certificate-info.md) |
+| [ext::xz](ext/xz.md) | [source](../../extended/ext/xz.lani#L4) | 117 | Source inventory | [extended-xz](../extended-xz.md) |
 | [ext::zip](ext/zip.md) | [source](../../extended/ext/zip.lani#L2) | 82 | Source inventory | [extended-zip](../extended-zip.md), [extended-fetch-many](../extended-fetch-many.md) |
 
 ## Support and implementation data

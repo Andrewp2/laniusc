@@ -1918,6 +1918,20 @@ archive rejections, five destination-guard cases and a 96 MiB pipeline under
 32 MiB RSS. The oracle ran directly against `lcc` executables on native Linux
 x86_64; its cargo wrapper `tests/extended_tgz_execution.rs` was not run.
 
+**xz and .lzma.** [`ext::xz`](extended-xz.md) decodes xz (LZMA2; none, CRC32
+and CRC64 checks; multi-block, concatenated and padded streams with index
+verification) and `.lzma` streams incrementally over caller-owned
+probability, staging and dictionary views, with a dictionary that grows on
+demand, and writes xz as stored LZMA2 chunks. `tgz` now detects and reads xz
+archives and writes them with `-J`. A seeded oracle
+(`tests/fixtures/extended/xz_oracle.py`) passes 22,913 cases with 0 failures
+against Python `lzma` and the xz 5.4.6 CLI: 2,268 decodes of valid streams
+under step sizes down to one byte, 20,639 concatenated, truncated,
+bit-flipped or extended streams rejected exactly when a strict Python decode
+rejects them (and decoded identically otherwise) and 6 error-class checks. The tgz
+oracle adds 690 xz archive cases (now 4,159 in total) against Python
+`tarfile` and GNU tar. There is no LZMA encoder yet.
+
 **Accepted bounded archive increment.**
 
 The new production code is Lanius over the existing TAR/ZIP engines,

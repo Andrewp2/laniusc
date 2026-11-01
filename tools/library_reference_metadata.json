@@ -1843,6 +1843,11 @@
         "docs/extended-certificate-info.md"
       ]
     },
+    "ext::xz": {
+      "guides": [
+        "docs/extended-xz.md"
+      ]
+    },
     "ext::zip": {
       "guides": [
         "docs/extended-zip.md",

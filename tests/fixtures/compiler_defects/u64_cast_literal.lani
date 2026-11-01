@@ -1,4 +1,4 @@
-// LNC0069 "invalid integer literal": 4000000000 as u64 is rejected as if the
+// Fixed 2026-10-31: 4000000000 as u64 was rejected with LNC0069 as if the
 // literal were typed i32 before the cast. Expected: compiles, exit 4.
 module app::main;
 fn main() -> i32 {
