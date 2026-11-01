@@ -10,13 +10,19 @@ anonymous `mmap`, so each one also took a page fault, and every release was a
 
 ## Pooled mode (the default)
 
-- Requests of 1 to 32,768 bytes use power-of-two classes from 16 bytes to
-  32 KiB. Blocks are carved from 1 MiB arenas, and each class has its own
+- Requests of 1 to 1,048,576 bytes use power-of-two classes from 16 bytes to
+  1 MiB. Blocks are carved from 2 MiB arenas, and each class has its own
   free list. A freed block goes back on its class list and is never unmapped.
   When an arena runs out, a new one is mapped and the rest of the old one is
   left unused.
 - Larger requests keep one `mmap` each. `dealloc` releases them with
-  `munmap`, and `realloc` between two large sizes uses `mremap`.
+  `munmap`, and `realloc` between two large sizes uses `mremap` with
+  `MREMAP_MAYMOVE`, which grows the mapping in place when the address range
+  after it is free and moves it without copying otherwise.
+- The classes from 64 KiB to 1 MiB (the mid tier) exist so that hash map
+  tables and growing buffers reuse freed blocks instead of paying an `mmap`,
+  page faults and an `munmap` on every growth. A 1 MiB block wastes the rest
+  of its arena when the arena has less than 1 MiB left.
 - `dealloc` and `realloc` pick the class from the size the caller passes, so
   blocks carry no header. Callers must pass the allocation's size, as the API
   already required.
@@ -35,7 +41,7 @@ arena cursor and the arena end. Its address is kept in the upper half of the
 argc word at `[R15 + 4]`, which was unused: the kernel and the CRT bridge
 store argc zero-extended, and every argc reader now loads 32 bits. The value 0
 means not decided yet, 1 means direct mode, and anything else is the state
-page. The first allocation of 32 KiB or less decides.
+page. The first allocation of 1 MiB or less decides.
 
 So allocation now needs the runtime's R15 context, as argument and
 environment access already did (see
@@ -96,7 +102,7 @@ to a direct `mmap` for each allocation and leaks a freed small block rather
 than unmapping an arena sub-range. This is safe and affects only programs with
 more than 1024 live threads.
 
-Large blocks (above 32 KiB) are direct `mmap`/`munmap`/`mremap` on every
+Large blocks (above 1 MiB) are direct `mmap`/`munmap`/`mremap` on every
 thread, with no shared state, as before.
 
 ## Direct mode
@@ -156,15 +162,25 @@ runs at that load (by up to 2x) than between the two allocators.
 The `thread_alloc` fixture (below) runs in about 1.1 to 2.8 s and peaks at
 7 MiB resident.
 
-The hash map spends little time allocating. Its tables grow past 32 KiB
-early, and those allocations stay direct. The other bulk-caller phases, which
+The hash map spends little time allocating. Before the mid tier its tables
+grew past 32 KiB early and those allocations stayed direct; with the mid tier,
+tables up to 1 MiB come from the pool. The other bulk-caller phases, which
 move megabyte buffers, are unchanged.
+
+The mid tier (classes up to 1 MiB, 2 MiB arenas) has passed the CPU harnesses
+below, including sizes up to 1.2 MB, but its benchmark numbers (1M-key u64
+hash map insert, 10M u64 `Vec` push, `read_line`) are not measured yet.
+`Vec` growth cannot use `realloc`: `u64` elements are laid out downward from
+the top of the storage, so their positions depend on the capacity, and
+`Vec::relocate` keeps its typed allocate, copy and free. Hash map rehashing
+re-scatters entries and cannot use `realloc` either. So both still copy on
+growth, and the gain is only the cheaper allocation.
 
 ## Verification
 
 - A CPU harness maps the assembled bytes and calls them with R15 pointing at
   a fake argument vector. It runs 200,000 random alloc, free and realloc
-  operations (1 byte to 70 KB, alignments 1 to 8) in each mode. It tags every
+  operations (1 byte to 1.2 MB, alignments 1 to 8) in each mode. It tags every
   live block and checks that no block is overwritten, that every allocation
   reads as zero and that realloc keeps contents. Two mutations are caught:
   skipping the zeroing on reuse, and the wrong class in `dealloc`.

@@ -58,16 +58,17 @@
 # entries share local branches. DEALLOC/REALLOC offsets are alloc_dealloc and
 # alloc_realloc inside it.
 #
-# Blocks of 1..32768 bytes come from power-of-two classes (16 B .. 32 KiB)
-# carved from 1 MiB arenas, with one free list per class; freed blocks are
+# Blocks of 1..1048576 bytes come from power-of-two classes (16 B .. 1 MiB)
+# carved from 2 MiB arenas, with one free list per class; freed blocks are
 # reused, never unmapped. Larger blocks are one mmap each, freed by munmap and
-# resized by mremap. Callers pass the allocation's size to dealloc/realloc,
+# resized in place by mremap. Callers pass the allocation's size to dealloc/realloc,
 # so no block carries a header. A reused block is zeroed up to its size, so
 # every allocation reads as zero, as a fresh mapping does.
 #
-# The pool state is one MAP_32BIT page: class heads at 0..88, the arena cursor
-# at 96 and its end at 104, per-class free counters at 256..344, and (state
-# page only) shared per-class lists at 512..600 under the lock at 120. Its address lives in the otherwise unused upper
+# The pool state is one MAP_32BIT page: class heads at 0..128 (classes 16 B ..
+# 1 MiB), per-class free counters at 1048..1176, the arena cursor at 2048 and
+# its end at 2056, and (state page only) shared per-class lists at 3024..3152
+# under the lock at 2072. Its address lives in the otherwise unused upper
 # half of the argc word at [R15 + 4] (argc readers load 32 bits): 0 = not
 # decided yet, 1 = direct mode, else the state page. The first small
 # allocation decides, claiming [R15+4] with a 32-bit lock cmpxchg so racing
@@ -78,8 +79,8 @@
 # Thread-safe without locks on the hot path. All threads share R15 (the C
 # entry and crt_entry load the fixed process vector 0x100000000000), so a
 # thread is identified by its thread pointer at fs:0 instead. The state page
-# also holds the creating ("main") thread's fs:0 at 112, a table lock at 120
-# and, from 128, a pointer to a 16 KiB table of (fs:0, pool) for 1024 other
+# also holds the creating ("main") thread's fs:0 at 2064, a table lock at 2072
+# and, from 2080, a pointer to a 16 KiB table of (fs:0, pool) for 1024 other
 # threads. A thread allocates from and frees into its own pool, with no shared
 # writes: a freed block is interchangeable memory of its class, so a foreign
 # free simply joins the freeing thread's own list (blocks migrate, memory
@@ -97,7 +98,7 @@ alloc_entry:
     lea rax, [rsi - 1]
     test rax, rsi
     jnz .Lalloc_null
-    cmp rdi, 32768
+    cmp rdi, 1048576
     ja .Lalloc_direct
     mov eax, dword ptr [r15 + 4]
     cmp eax, 1
@@ -108,13 +109,13 @@ alloc_entry:
     cmp r15, r11
     jne .Lalloc_pool                 # raw mode: state page is the only pool
     mov r9, qword ptr fs:[0]
-    cmp r9, qword ptr [rax + 112]
+    cmp r9, qword ptr [rax + 2064]
     je .Lalloc_pool                  # main thread: state page is its pool
     call .Lresolve_pool              # in RAX = state page; out RAX = pool or 0
     test rax, rax
     jz .Lalloc_direct
 .Lalloc_pool:
-    # RCX = log2(class) - 1 for classes 16 .. 32768; RDX = its list head.
+    # RCX = log2(class) - 1 for classes 16 .. 1048576; RDX = its list head.
     lea rcx, [rdi - 1]
     or rcx, 15
     bsr rcx, rcx
@@ -136,12 +137,12 @@ alloc_entry:
     # Local list empty: adopt the class's shared list (blocks other threads
     # trimmed off their lists) before carving new memory. Lock-free peek.
     mov r8d, dword ptr [r15 + 4]
-    lea r9, [r8 + rcx*8 + 488]
+    lea r9, [r8 + rcx*8 + 3000]
     cmp qword ptr [r9], 0
     je .Lalloc_bump
 .Lalloc_refill_lock:
     mov r10d, 1
-    xchg r10d, dword ptr [r8 + 120]
+    xchg r10d, dword ptr [r8 + 2072]
     test r10d, r10d
     jz .Lalloc_refill_locked
     pause
@@ -149,7 +150,7 @@ alloc_entry:
 .Lalloc_refill_locked:
     mov rsi, qword ptr [r9]
     mov qword ptr [r9], 0
-    mov dword ptr [r8 + 120], 0
+    mov dword ptr [r8 + 2072], 0
     test rsi, rsi
     jz .Lalloc_bump
     mov qword ptr [rdx], rsi
@@ -157,27 +158,27 @@ alloc_entry:
 .Lalloc_bump:
     mov edx, 2
     shl edx, cl
-    mov rsi, qword ptr [rax + 96]
+    mov rsi, qword ptr [rax + 2048]
     lea r8, [rsi + rdx]
-    cmp r8, qword ptr [rax + 104]
+    cmp r8, qword ptr [rax + 2056]
     ja .Lalloc_arena
-    mov qword ptr [rax + 96], r8
+    mov qword ptr [rax + 2048], r8
     mov rax, rsi
     ret
 .Lalloc_arena:
-    # A fresh 1 MiB arena; the rest of the old one is abandoned.
+    # A fresh 2 MiB arena; the rest of the old one is abandoned.
     push rax
     push rdx
-    mov edi, 1048576
+    mov edi, 2097152
     call .Lalloc_direct
     pop rdx
     pop rcx
     test rax, rax
     jz .Lalloc_arena_done
     lea rsi, [rax + rdx]
-    mov qword ptr [rcx + 96], rsi
-    lea rsi, [rax + 1048576]
-    mov qword ptr [rcx + 104], rsi
+    mov qword ptr [rcx + 2048], rsi
+    lea rsi, [rax + 2097152]
+    mov qword ptr [rcx + 2056], rsi
 .Lalloc_arena_done:
     ret
 .Lalloc_init:
@@ -217,7 +218,7 @@ alloc_entry:
     cmp r15, r11
     jne .Lalloc_claim
     mov r9, qword ptr fs:[0]
-    mov qword ptr [rax + 112], r9     # record the creating thread as main
+    mov qword ptr [rax + 2064], r9     # record the creating thread as main
 .Lalloc_claim:
     # Publish the page by claiming [r15+4] (0 -> page); a loser frees its page.
     mov r9, rax
@@ -270,7 +271,7 @@ alloc_entry:
     push rbx
     mov rbx, rax
     mov r9, qword ptr fs:[0]
-    mov r10, qword ptr [rbx + 128]
+    mov r10, qword ptr [rbx + 2080]
     test r10, r10
     jz .Lres_slow
     mov rax, r9
@@ -306,13 +307,13 @@ alloc_entry:
     push rsi
 .Lres_lock:
     mov eax, 1
-    xchg eax, dword ptr [rbx + 120]
+    xchg eax, dword ptr [rbx + 2072]
     test eax, eax
     jz .Lres_locked
     pause
     jmp .Lres_lock
 .Lres_locked:
-    mov r10, qword ptr [rbx + 128]
+    mov r10, qword ptr [rbx + 2080]
     test r10, r10
     jnz .Lres_have
     xor edi, edi
@@ -325,7 +326,7 @@ alloc_entry:
     syscall
     test rax, rax
     js .Lres_unlock_none
-    mov qword ptr [rbx + 128], rax
+    mov qword ptr [rbx + 2080], rax
     mov r10, rax
 .Lres_have:
     mov r9, qword ptr fs:[0]
@@ -370,13 +371,13 @@ alloc_entry:
     mov r9, qword ptr fs:[0]
     mov qword ptr [r11], r9
 .Lres_unlock_ok:
-    mov dword ptr [rbx + 120], 0
+    mov dword ptr [rbx + 2072], 0
     pop rsi
     pop rdi
     pop rbx
     ret
 .Lres_unlock_none:
-    mov dword ptr [rbx + 120], 0
+    mov dword ptr [rbx + 2072], 0
     xor eax, eax
     pop rsi
     pop rdi
@@ -384,7 +385,7 @@ alloc_entry:
     ret
 alloc_dealloc:
     lea rax, [rsi - 1]
-    cmp rax, 32767
+    cmp rax, 1048575
     ja .Lalloc_munmap
     mov eax, dword ptr [r15 + 4]
     cmp eax, 1
@@ -395,7 +396,7 @@ alloc_dealloc:
     cmp r15, r11
     jne .Lalloc_free_pool
     mov r9, qword ptr fs:[0]
-    cmp r9, qword ptr [rax + 112]
+    cmp r9, qword ptr [rax + 2064]
     je .Lalloc_free_pool
     call .Lresolve_pool
     test rax, rax
@@ -411,15 +412,15 @@ alloc_dealloc:
     # Every 256 frees into a class, keep 63 blocks and move the rest to the
     # class's shared list, so blocks freed by a consumer thread flow back to
     # the producer instead of piling up (memory stays bounded by live data).
-    mov r8, qword ptr [rdx + 256]
+    mov r8, qword ptr [rdx + 1048]
     inc r8
-    mov qword ptr [rdx + 256], r8
+    mov qword ptr [rdx + 1048], r8
     cmp r8, 256
     jae .Lalloc_trim
 .Lalloc_free_done:
     ret
 .Lalloc_trim:
-    mov qword ptr [rdx + 256], 0
+    mov qword ptr [rdx + 1048], 0
     mov r8, qword ptr [rdx]
     mov r9d, 63
 .Lalloc_trim_keep:
@@ -441,10 +442,10 @@ alloc_dealloc:
     jmp .Lalloc_trim_tail
 .Lalloc_trim_splice:
     mov eax, dword ptr [r15 + 4]
-    lea r9, [rax + rcx*8 + 488]
+    lea r9, [rax + rcx*8 + 3000]
 .Lalloc_trim_lock:
     mov r8d, 1
-    xchg r8d, dword ptr [rax + 120]
+    xchg r8d, dword ptr [rax + 2072]
     test r8d, r8d
     jz .Lalloc_trim_locked
     pause
@@ -453,7 +454,7 @@ alloc_dealloc:
     mov r8, qword ptr [r9]
     mov qword ptr [r11], r8
     mov qword ptr [r9], r10
-    mov dword ptr [rax + 120], 0
+    mov dword ptr [rax + 2072], 0
     ret
 alloc_realloc:
     test rdi, rdi
@@ -473,10 +474,10 @@ alloc_realloc:
     cmp eax, 1
     jbe .Lalloc_remap
     lea rax, [rsi - 1]
-    cmp rax, 32767
+    cmp rax, 1048575
     jbe .Lalloc_move
     lea rax, [rdx - 1]
-    cmp rax, 32767
+    cmp rax, 1048575
     ja .Lalloc_remap
 .Lalloc_move:
     # A pooled block on either side: allocate, copy the common prefix, free
