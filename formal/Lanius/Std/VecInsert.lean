@@ -136,7 +136,7 @@ theorem shift_up_loop_spec (target : P.target = Target.x86_64) (kind : ElemKind 
       obtain ⟨h'', stored, readBack, written⟩ :=
         stores (xs[cur - 1]'(by omega)) (List.getElem_mem _) (st h cur) h base roomBase readable effect.unique
       rw [slotEq] at written
-      have assign := StableExpr.assignRaw (before := st h cur) (indexed := st h cur) (ready := st h cur)
+      have assign := StableExpr.assignRaw (nb := kind.notByte) (before := st h cur) (indexed := st h cur) (ready := st h cur)
         (heap := h'') (sourceId := items) (itemsAt h cur) (StableExpr.local (idxAt h cur)) curCap
         (elementAddress kind curCap) (show (st h cur).i32ArrayViews = [] from noViews) right stored
       have bodyRun : RunsStmt P (st h cur)
@@ -279,7 +279,7 @@ theorem insertTail_spec (inst : VecInstance P T ids) (kind : ElemKind P T size) 
     · rw [if_neg scalar]; have := kind.size_eight scalar; omega
   obtain ⟨h2, stored, readBack, written⟩ := store W h1 base roomBase readable effect1.unique
   rw [slotEq] at written
-  have assign := StableExpr.assignRaw (before := W) (indexed := W) (ready := W) (heap := h2) (sourceId := 5)
+  have assign := StableExpr.assignRaw (nb := kind.notByte) (before := W) (indexed := W) (ready := W) (heap := h2) (sourceId := 5)
     w5 (StableExpr.local w1) hcap (elementAddress kind hcap) (show W.i32ArrayViews = [] from frame.views.trans noViews)
     (StableExpr.local w2) stored
   let C : State := { W with heap := h2 }

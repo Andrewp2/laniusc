@@ -135,6 +135,7 @@ theorem start_reads (len : W.length < 2 ^ 31) : Reads (selfStart W room) selfInp
       show (selfInput + i * 4 + j - selfInput) % 4 = j by self_omega, List.getD_eq_getElem?_getD,
       List.getElem?_eq_getElem lt, Option.getD_some]
   simp only [Semantics.readRawSliceIndex, show ¬i ≥ W.length by self_omega, if_false, Semantics.rawSliceElementAddress?,
+    Semantics.readRawElement, i32T, Semantics.isByte, Bool.false_eq_true, ↓reduceIte,
     NativeLayout.maxDepth, Semantics.readNativeValue, Semantics.loadNatLE, Memory.Heap.loadBytes,
     Memory.loadBytesFrom, b 0 (by self_omega), b 1 (by self_omega), b 2 (by self_omega), b 3 (by self_omega), bind, Except.bind, pure,
     Except.pure, decode_word, signed_word]
@@ -251,7 +252,8 @@ theorem written_memory {st : Semantics.State} {after : Heap} {memory : Memory} {
   intro i lt
   have read := written i lt
   rw [Nat.zero_add] at read
-  simp only [Semantics.readRawSliceIndex, Semantics.rawSliceElementAddress?, NativeLayout.maxDepth,
+  simp only [Semantics.readRawSliceIndex, Semantics.rawSliceElementAddress?, Semantics.readRawElement, i32T,
+    Semantics.isByte, Bool.false_eq_true, ↓reduceIte, NativeLayout.maxDepth,
     Semantics.readNativeValue, bind, Except.bind, pure, Except.pure] at read
   split at read
   · cases read

@@ -39,7 +39,7 @@ stopping at the computations the theorems are about (`compileSource`,
 `linkObjects`, `elfFile`, `sourceProgramFiles`, `compileWords`,
 `frontEndWords` and the self program `Lanius.Faithful.Self.prog`, which are
 not trusted, section 10), with each one's type and body:
-definitions `f68c11f98aa33a1d` (4,330 constants). This covers Core's
+definitions `f221909910346588` (4,341 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
@@ -47,8 +47,15 @@ modules keeps its hash. The last change of the hash (11-01): the lexer
 (`Lanius/Compiler/Lexer*.lean`, `Tokens.lean`) and the reading became Lean
 `module`s, so a function's matcher is its own (`OneTokenResult.shift.match_1`)
 rather than shared with a derived `Repr` instance's; no definition's meaning
-changed (this hash is that change on top of the F11b ones below). Before
-that (10-31, F11b): `amountWant` reads a bare shift amount at `i32`, as laniusc does, not at
+changed (this hash is that change on top of the ones below). Before that
+(10-31, merge of rfront's byte views with F11b's reading changes; neither changed the other's definitions): Core's byte
+views (SEMANTIC_DECISIONS "Byte views"): a raw slice of `u8` is one byte
+per element at `pointer + i` (`isByte`, `rawSliceElementAddress?`,
+`NativeLayout.elementStride?` and `words?`), `mapRawNominalSlice` checks its
+bytes, a read loads one byte (`readRawElement`) and a write stores one
+(`storeRawByte`, `writeRawNative`, chosen by `ResolvedPlace.rawByte`), and
+`RawNominalSliceElement.byte` types it. Before that (10-31, F11b):
+`amountWant` reads a bare shift amount at `i32`, as laniusc does, not at
 the shifted value's type (section 4). Before that (10-31, F11b): `picks`
 allows a method's type arguments `.f<...>` where `generic_open` holds
 (section 4, "One reading"). Before that (10-31, F11b): the

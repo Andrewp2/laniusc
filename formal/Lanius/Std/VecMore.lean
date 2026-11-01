@@ -372,7 +372,7 @@ theorem trySwapRemove_spec (inst : MoreInstance P T ids g mo) (kind : ElemKind P
     store B B.heap base roomBase (by rw [slotEq, hB]; exact readable) (by rw [hB]; exact unique)
   rw [slotEq, hB] at effect
   have nv : B.i32ArrayViews = [] := frame.views.trans noViews
-  have assign := StableExpr.assignRaw (before := B) (indexed := B) (ready := B) (heap := h')
+  have assign := StableExpr.assignRaw (nb := kind.notByte) (before := B) (indexed := B) (ready := B) (heap := h')
     (sourceId := 2) src (StableExpr.local idx) hcap (elementAddress kind hcap) nv right stored
   let C : State := { B with heap := h' }
   have c0 : C.local? 0 = some vv := v0

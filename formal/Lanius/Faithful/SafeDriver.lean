@@ -229,7 +229,7 @@ theorem write_one_safe {outp room : Nat} (roomLt : room < 2 ^ 31) {x : BitVec 32
   have viewsQ : ((restoreLocals E done3).bindLocal 100 rv).i32ArrayViews = [] := inv3.views
   refine safeS_seq (safeS_expression fun k r s' h bound' => ?_) fun {k s'} h => ?_
   · obtain ⟨rfl, ⟨-, rfl⟩ | ⟨lt, write⟩⟩ := set_raw_trap (P := prog.toCore) (pos := ofs) (base := outp + ofs * 4)
-      viewsQ k17 (known_local k29) k40 (by simp [Semantics.integerIndex])
+      viewsQ (by simp [Semantics.isByte]) k17 (known_local k29) k40 (by simp [Semantics.integerIndex])
       (fun _ => by simp [Semantics.rawSliceElementAddress?]) h
     · rfl
     rw [writeNative_i32] at write

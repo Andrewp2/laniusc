@@ -4793,11 +4793,11 @@ pub fn within_payloads(depth: usize, variants: List<List<SrcType>>) -> bool {
 }
 // extract: mutual end
 
-// A raw slice's one slot: its address. Elements are i32, word structs or
-// word enums within Core's layout limits; Core checks the length when the
-// slice is made and each index against it.
+// A raw slice's one slot: its address. Elements are i32, u8 (a byte view),
+// word structs or word enums within Core's layout limits; Core checks the
+// length when the slice is made and each index against it.
 pub fn lower_slice(decls: SrcDecls, element: SrcType, pointer: core::option::Option<Expr>, length: core::option::Option<Expr>) -> core::option::Option<List<Expr>> {
-    if ((element.is_i32() || word_element(decls, element)) && within_layout(0, element)) {
+    if ((element.is_i32() || element.is_uint(Uint8) || word_element(decls, element)) && within_layout(0, element)) {
         return match (pointer) {
             None -> None,
             Some(p) -> match (length) {
@@ -4840,6 +4840,9 @@ fn element_at(slot: usize, element: SrcType, index: Expr) -> core::option::Optio
     if (element.is_i32()) {
         return Some(Binary(U64, Add, boxed(Var(slot)), boxed(Binary(U64, Mul, boxed(index), boxed(Lit(4))))));
     }
+    if (element.is_uint(Uint8)) {
+        return Some(Binary(U64, Add, boxed(Var(slot)), boxed(index)));
+    }
     return None;
 }
 
@@ -4880,6 +4883,17 @@ pub fn lower_load_word(slot: usize, address: core::option::Option<Expr>, body: c
     };
 }
 
+// slice[index] = value of a byte view: the value's low byte.
+pub fn store_byte_element(b: Binding, element: SrcType, index: core::option::Option<Expr>, scope: List<Binding>, value: SrcExpr) -> core::option::Option<Stmt> {
+    return match (element_address(b, index)) {
+        None -> None,
+        Some(a) -> match (lower_as(scope, value, element)) {
+            None -> None,
+            Some(v) -> Some(Stmt::StoreByte(a, v)),
+        },
+    };
+}
+
 // extract: inline
 fn store_element(b: Binding, element: SrcType, index: core::option::Option<Expr>, scope: List<Binding>, value: SrcExpr) -> core::option::Option<Stmt> {
     return match (element_address(b, index)) {
@@ -4905,6 +4919,9 @@ pub fn store_word_element(b: Binding, element: SrcType, index: core::option::Opt
 pub fn store_any(decls: SrcDecls, b: Binding, element: SrcType, index: core::option::Option<Expr>, scope: List<Binding>, value: SrcExpr) -> core::option::Option<Stmt> {
     if (element.is_i32()) {
         return store_element(b, element, index, scope, value);
+    }
+    if (element.is_uint(Uint8)) {
+        return store_byte_element(b, element, index, scope, value);
     }
     if (word_element(decls, element)) {
         return store_word_element(b, element, index, scope, value);
@@ -4945,6 +4962,9 @@ pub fn lower_let_index(decls: SrcDecls, next: usize, binding: core::option::Opti
     if (ty.is_i32()) {
         return lower_load_word(next, lower_element(binding, ty, index), body);
     }
+    if (ty.is_uint(Uint8)) {
+        return lower_load(next, lower_element(binding, ty, index), body);
+    }
     return lower_load_type(decls, next, binding, ty, index, body);
 }
 
@@ -4966,12 +4986,27 @@ pub fn eval_word_element(decls: SrcDecls, b: Binding, element: SrcType, slot: us
     return None;
 }
 
+// slice[index] of a byte view: the index in slot, then the byte loaded
+// over it.
+pub fn eval_load_byte(b: Binding, slot: usize, i: Evaluated) -> core::option::Option<Evaluated> {
+    if (i.ty.is_i32() || i.ty.is_uint(Usize)) {
+        return Some(Evaluated { stmt: Seq(boxed(i.stmt), boxed(check_then(slot, bounds_guard(b, Var(slot)), Stmt::LoadByte(slot, Binary(U64, Add, boxed(Var(b.slot)), boxed(Var(slot))))))), ty: Uint(Uint8) });
+    }
+    return None;
+}
+
 // slice[index] of a raw slice of i32.
 pub fn eval_element(decls: SrcDecls, b: Binding, element: SrcType, slot: usize, index: core::option::Option<Evaluated>) -> core::option::Option<Evaluated> {
     if (element.is_i32()) {
         return match (index) {
             None -> None,
             Some(i) -> eval_load(b, slot, i),
+        };
+    }
+    if (element.is_uint(Uint8)) {
+        return match (index) {
+            None -> None,
+            Some(i) -> eval_load_byte(b, slot, i),
         };
     }
     return match (index) {
@@ -5085,6 +5120,9 @@ pub fn eval_stride_of(decls: SrcDecls, element: SrcType, slot: usize) -> core::o
     if (element.is_i32()) {
         return Some(Evaluated { stmt: Assign(slot, Lit(4)), ty: Isize });
     }
+    if (element.is_uint(Uint8)) {
+        return Some(Evaluated { stmt: Assign(slot, Lit(1)), ty: Isize });
+    }
     return eval_word_stride(decls, element, slot);
 }
 
@@ -5174,6 +5212,15 @@ pub fn store_eval(b: Binding, slot: usize, i: Evaluated, v: Evaluated) -> core::
     return None;
 }
 
+// The index in slot and its bounds check, then the value in slot + 1 and its
+// low byte stored: a byte view's store.
+pub fn store_eval_byte(b: Binding, slot: usize, i: Evaluated, v: Evaluated) -> core::option::Option<Stmt> {
+    if ((i.ty.is_i32() || i.ty.is_uint(Usize)) && v.ty.is_uint(Uint8)) {
+        return Some(Seq(boxed(i.stmt), boxed(check_then(slot, bounds_guard(b, Var(slot)), Seq(boxed(v.stmt), boxed(Stmt::StoreByte(Binary(U64, Add, boxed(Var(b.slot)), boxed(Var(slot))), Var(plus(slot, 1)))))))));
+    }
+    return None;
+}
+
 // slice[index] = value on a raw slice.
 pub fn store_eval_element(decls: SrcDecls, b: Binding, element: SrcType, slot: usize, index: core::option::Option<Evaluated>, value: core::option::Option<Evaluated>) -> core::option::Option<Stmt> {
     if (element.is_i32()) {
@@ -5182,6 +5229,15 @@ pub fn store_eval_element(decls: SrcDecls, b: Binding, element: SrcType, slot: u
             Some(i) -> match (value) {
                 None -> None,
                 Some(v) -> store_eval(b, slot, i, v),
+            },
+        };
+    }
+    if (element.is_uint(Uint8)) {
+        return match (index) {
+            None -> None,
+            Some(i) -> match (value) {
+                None -> None,
+                Some(v) -> store_eval_byte(b, slot, i, v),
             },
         };
     }

@@ -18,10 +18,12 @@ public import Lanius.Faithful.Gen.SelfStmtC_elementAddress
 public import Lanius.Faithful.Gen.SelfStmtC_elementBase
 public import Lanius.Faithful.Gen.SelfStmtC_guardAnd
 public import Lanius.Faithful.Gen.SelfStmtC_indexOf
+public import Lanius.Faithful.Gen.SelfStmtC_lowerAddress
 public import Lanius.Faithful.Gen.SelfStmtC_lowerCallSig
 public import Lanius.Faithful.Gen.SelfStmtC_lowerLoadType
 public import Lanius.Faithful.Gen.SelfStmtC_matchVariants
 public import Lanius.Faithful.Gen.SelfStmtC_shortCircuit
+public import Lanius.Faithful.Gen.SelfStmtC_storeWordElement
 public import Lanius.Faithful.Gen.SelfStmtC_wordElement
 import all Lanius.Faithful.Gen.SelfSrcC_lowerLoadType
 import all Lanius.Mini.Compiler.P.lowerLoadType
@@ -64,9 +66,11 @@ theorem proof_eval_array_index {prog : SrcProgram} {prims : Prims} {ix_eval_arra
   simp only [src_eval_array_index] at h
   faithful [Lanius.Mini.evalArrayIndex]
 
-theorem proof_eval_element {prog : SrcProgram} {prims : Prims} {ix_eval_element ix_SrcType_is_i32 ix_eval_load ix_eval_word_element : Nat} (fn : prog.funcs[ix_eval_element]? = some (src_eval_element ix_SrcType_is_i32 ix_eval_load ix_eval_word_element)) (np : prims.isPrim ix_eval_element = false)
+theorem proof_eval_element {prog : SrcProgram} {prims : Prims} {ix_eval_element ix_SrcType_is_i32 ix_SrcType_is_uint ix_eval_load ix_eval_load_byte ix_eval_word_element : Nat} (fn : prog.funcs[ix_eval_element]? = some (src_eval_element ix_SrcType_is_i32 ix_SrcType_is_uint ix_eval_load ix_eval_load_byte ix_eval_word_element)) (np : prims.isPrim ix_eval_element = false)
     (ext_SrcType_is_i32 : Certified (∀ {n : Nat}, Stmt_SrcType_is_i32 prog prims ix_SrcType_is_i32 n))
+    (ext_SrcType_is_uint : Certified (∀ {n : Nat}, Stmt_SrcType_is_uint prog prims ix_SrcType_is_uint n))
     (ext_eval_load : Certified (∀ {n : Nat}, Stmt_eval_load prog prims ix_eval_load n))
+    (ext_eval_load_byte : Certified (∀ {n : Nat}, Stmt_eval_load_byte prog prims ix_eval_load_byte n))
     (ext_eval_word_element : Certified (∀ {n : Nat}, Stmt_eval_word_element prog prims ix_eval_word_element n)) {n : Nat} :
     Stmt_eval_element prog prims ix_eval_element n := by
   intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
@@ -89,6 +93,21 @@ theorem proof_eval_index {prog : SrcProgram} {prims : Prims} {ix_eval_index ix_l
   simp only [src_eval_index] at h
   faithful [Lanius.Mini.evalIndex]
 
+theorem proof_eval_load_byte {prog : SrcProgram} {prims : Prims} {ix_eval_load_byte ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_uint ix_bounds_guard : Nat} (fn : prog.funcs[ix_eval_load_byte]? = some (src_eval_load_byte ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_uint ix_bounds_guard)) (np : prims.isPrim ix_eval_load_byte = false)
+    (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
+    (ext_check_then : Certified (∀ {n : Nat}, Stmt_check_then prog prims ix_check_then n))
+    (ext_boxed_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Expr prog prims ix_boxed_of_mini_selfhost_Expr n))
+    (ext_SrcType_is_i32 : Certified (∀ {n : Nat}, Stmt_SrcType_is_i32 prog prims ix_SrcType_is_i32 n))
+    (ext_SrcType_is_uint : Certified (∀ {n : Nat}, Stmt_SrcType_is_uint prog prims ix_SrcType_is_uint n))
+    (ext_bounds_guard : Certified (∀ {n : Nat}, Stmt_bounds_guard prog prims ix_bounds_guard n)) {n : Nat} :
+    Stmt_eval_load_byte prog prims ix_eval_load_byte n := by
+  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_eval_load_byte] at h
+  faithful [Lanius.Mini.evalLoadByte]
+
 theorem proof_eval_pick {prog : SrcProgram} {prims : Prims} {ix_eval_pick ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_uint ix_pick_element : Nat} (fn : prog.funcs[ix_eval_pick]? = some (src_eval_pick ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_uint ix_pick_element)) (np : prims.isPrim ix_eval_pick = false)
     (ext_SrcType_size : Certified (∀ {n : Nat}, Stmt_SrcType_size prog prims ix_SrcType_size n))
     (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
@@ -105,16 +124,16 @@ theorem proof_eval_pick {prog : SrcProgram} {prims : Prims} {ix_eval_pick ix_Src
   simp only [src_eval_pick] at h
   faithful [Lanius.Mini.evalPick]
 
-theorem proof_eval_word_element {prog : SrcProgram} {prims : Prims} {ix_eval_word_element ix_plus ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_assign_from ix_SrcType_is_i32 ix_word_element ix_slot_vars ix_SrcType_is_uint ix_bounds_guard ix_element_base ix_load_type : Nat} (fn : prog.funcs[ix_eval_word_element]? = some (src_eval_word_element ix_plus ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_assign_from ix_SrcType_is_i32 ix_word_element ix_slot_vars ix_SrcType_is_uint ix_bounds_guard ix_element_base ix_load_type)) (np : prims.isPrim ix_eval_word_element = false)
+theorem proof_eval_word_element {prog : SrcProgram} {prims : Prims} {ix_eval_word_element ix_plus ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_assign_from ix_SrcType_is_i32 ix_SrcType_is_uint ix_word_element ix_slot_vars ix_bounds_guard ix_element_base ix_load_type : Nat} (fn : prog.funcs[ix_eval_word_element]? = some (src_eval_word_element ix_plus ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_assign_from ix_SrcType_is_i32 ix_SrcType_is_uint ix_word_element ix_slot_vars ix_bounds_guard ix_element_base ix_load_type)) (np : prims.isPrim ix_eval_word_element = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_SrcType_size : Certified (∀ {n : Nat}, Stmt_SrcType_size prog prims ix_SrcType_size n))
     (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
     (ext_check_then : Certified (∀ {n : Nat}, Stmt_check_then prog prims ix_check_then n))
     (ext_assign_from : Certified (∀ {n : Nat}, Stmt_assign_from prog prims ix_assign_from n))
     (ext_SrcType_is_i32 : Certified (∀ {n : Nat}, Stmt_SrcType_is_i32 prog prims ix_SrcType_is_i32 n))
+    (ext_SrcType_is_uint : Certified (∀ {n : Nat}, Stmt_SrcType_is_uint prog prims ix_SrcType_is_uint n))
     (ext_word_element : Certified (∀ {n : Nat}, Stmt_word_element prog prims ix_word_element n))
     (ext_slot_vars : Certified (∀ {n : Nat}, Stmt_slot_vars prog prims ix_slot_vars n))
-    (ext_SrcType_is_uint : Certified (∀ {n : Nat}, Stmt_SrcType_is_uint prog prims ix_SrcType_is_uint n))
     (ext_bounds_guard : Certified (∀ {n : Nat}, Stmt_bounds_guard prog prims ix_bounds_guard n))
     (ext_element_base : Certified (∀ {n : Nat}, Stmt_element_base prog prims ix_element_base n))
     (ext_load_type : Certified (∀ {n : Nat}, Stmt_load_type prog prims ix_load_type n)) {n : Nat} :
@@ -135,8 +154,10 @@ theorem proof_is_array_local {prog : SrcProgram} {prims : Prims} {ix_is_array_lo
   simp only [src_is_array_local] at h
   faithful [Lanius.Mini.isArrayLocal]
 
-theorem proof_lower_let_index {prog : SrcProgram} {prims : Prims} {ix_lower_let_index ix_SrcType_is_i32 ix_lower_load_word ix_lower_element ix_lower_load_type : Nat} (fn : prog.funcs[ix_lower_let_index]? = some (src_lower_let_index ix_SrcType_is_i32 ix_lower_load_word ix_lower_element ix_lower_load_type)) (np : prims.isPrim ix_lower_let_index = false)
+theorem proof_lower_let_index {prog : SrcProgram} {prims : Prims} {ix_lower_let_index ix_lower_load ix_SrcType_is_i32 ix_SrcType_is_uint ix_lower_load_word ix_lower_element ix_lower_load_type : Nat} (fn : prog.funcs[ix_lower_let_index]? = some (src_lower_let_index ix_lower_load ix_SrcType_is_i32 ix_SrcType_is_uint ix_lower_load_word ix_lower_element ix_lower_load_type)) (np : prims.isPrim ix_lower_let_index = false)
+    (ext_lower_load : Certified (∀ {n : Nat}, Stmt_lower_load prog prims ix_lower_load n))
     (ext_SrcType_is_i32 : Certified (∀ {n : Nat}, Stmt_SrcType_is_i32 prog prims ix_SrcType_is_i32 n))
+    (ext_SrcType_is_uint : Certified (∀ {n : Nat}, Stmt_SrcType_is_uint prog prims ix_SrcType_is_uint n))
     (ext_lower_load_word : Certified (∀ {n : Nat}, Stmt_lower_load_word prog prims ix_lower_load_word n))
     (ext_lower_element : Certified (∀ {n : Nat}, Stmt_lower_element prog prims ix_lower_element n))
     (ext_lower_load_type : Certified (∀ {n : Nat}, Stmt_lower_load_type prog prims ix_lower_load_type n)) {n : Nat} :

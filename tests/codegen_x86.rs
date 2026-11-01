@@ -11593,6 +11593,7 @@ fn main() {
 fn x86_executes_stdlib_helper_from_source_pack() {
     let sources = [
         include_str!("../stdlib/core/cmp.lani"),
+        include_str!("../stdlib/core/function.lani"),
         include_str!("../stdlib/core/panic.lani"),
         include_str!("../stdlib/core/result.lani"),
         include_str!("../stdlib/core/option.lani"),
@@ -11619,6 +11620,7 @@ fn x86_executes_stdlib_helper_from_source_pack() {
 fn x86_executes_stdlib_f32_sqrt_from_source_pack() {
     let sources = [
         include_str!("../stdlib/core/f32.lani"),
+        include_str!("../stdlib/core/function.lani"),
         // core::f32 imports core::mem and core::result (which imports
         // core::cmp and core::panic).
         include_str!("../stdlib/core/mem.lani"),
@@ -11671,6 +11673,7 @@ fn main() {
 fn x86_executes_source_pack_camera_sky_with_stdlib_sqrt() {
     let sources = [
         include_str!("../stdlib/core/f32.lani"),
+        include_str!("../stdlib/core/function.lani"),
         // core::f32 imports core::mem and core::result (which imports
         // core::cmp and core::panic).
         include_str!("../stdlib/core/mem.lani"),
@@ -11981,6 +11984,7 @@ fn x86_executes_raytracer_first_pixel_from_source_pack() {
         include_str!("../stdlib/core/result.lani").to_string(),
         include_str!("../stdlib/core/cmp.lani").to_string(),
         include_str!("../stdlib/core/panic.lani").to_string(),
+        include_str!("../stdlib/core/function.lani").to_string(),
         source,
     ];
     let bytes =
@@ -12004,6 +12008,7 @@ fn x86_executes_raytracer_first_pixel_from_source_pack() {
 fn x86_executes_raytracer_ppm_from_source_pack() {
     let sources = [
         include_str!("../stdlib/core/f32.lani"),
+        include_str!("../stdlib/core/function.lani"),
         // core::f32 imports core::mem and core::result (which imports
         // core::cmp and core::panic).
         include_str!("../stdlib/core/mem.lani"),
@@ -12243,6 +12248,7 @@ fn main() -> i32 {
 fn x86_borrowed_receiver_temporary_holds_imported_option_result() {
     let sources = [
         include_str!("../stdlib/core/cmp.lani"),
+        include_str!("../stdlib/core/function.lani"),
         include_str!("../stdlib/core/panic.lani"),
         include_str!("../stdlib/core/result.lani"),
         include_str!("../stdlib/core/option.lani"),

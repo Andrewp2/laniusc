@@ -5,14 +5,9 @@ public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_elementAddress
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmtC_Inline_lowerSetScalar
-public import Lanius.Faithful.Gen.SelfStmtC_SrcType_size
-public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
+public import Lanius.Faithful.Gen.SelfStmtC_SrcExpr_guard
 public import Lanius.Faithful.Gen.SelfStmtC_elementAddress
-public import Lanius.Faithful.Gen.SelfStmtC_elementBase
-public import Lanius.Faithful.Gen.SelfStmtC_repeatType
 public import Lanius.Faithful.Gen.SelfStmtC_shortCircuit
-public import Lanius.Faithful.Gen.SelfStmtC_storeType
-public import Lanius.Faithful.Gen.SelfStmtC_wordElement
 import all Lanius.Faithful.Gen.SelfSrcC_elementAddress
 import all Lanius.Mini.Compiler.P.elementAddress
 
@@ -64,41 +59,15 @@ theorem proof_lower_load_word {prog : SrcProgram} {prims : Prims} {ix_lower_load
   simp only [src_lower_load_word] at h
   faithful [Lanius.Mini.lowerLoadWord]
 
-theorem proof_lower_set_index_of {prog : SrcProgram} {prims : Prims} {ix_lower_set_index_of ix_element_of ix_store_any : Nat} (fn : prog.funcs[ix_lower_set_index_of]? = some (src_lower_set_index_of ix_element_of ix_store_any)) (np : prims.isPrim ix_lower_set_index_of = false)
-    (ext_element_of : Certified (∀ {n : Nat}, Stmt_element_of prog prims ix_element_of n))
-    (ext_store_any : Certified (∀ {n : Nat}, Stmt_store_any prog prims ix_store_any n)) {n : Nat} :
-    Stmt_lower_set_index_of prog prims ix_lower_set_index_of n := by
+theorem proof_store_byte_element {prog : SrcProgram} {prims : Prims} {ix_store_byte_element ix_lower_as ix_element_address : Nat} (fn : prog.funcs[ix_store_byte_element]? = some (src_store_byte_element ix_lower_as ix_element_address)) (np : prims.isPrim ix_store_byte_element = false)
+    (ext_lower_as : Certified (∀ {n : Nat}, Stmt_lower_as prog prims ix_lower_as n))
+    (ext_element_address : Certified (∀ {n : Nat}, Stmt_element_address prog prims ix_element_address n)) {n : Nat} :
+    Stmt_store_byte_element prog prims ix_store_byte_element n := by
   intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_lower_set_index_of] at h
-  faithful [Lanius.Mini.lowerSetIndexOf]
-
-theorem proof_store_any {prog : SrcProgram} {prims : Prims} {ix_store_any ix_SrcType_is_i32 ix_word_element ix_store_element ix_store_word_element : Nat} (fn : prog.funcs[ix_store_any]? = some (src_store_any ix_SrcType_is_i32 ix_word_element ix_store_element ix_store_word_element)) (np : prims.isPrim ix_store_any = false)
-    (ext_SrcType_is_i32 : Certified (∀ {n : Nat}, Stmt_SrcType_is_i32 prog prims ix_SrcType_is_i32 n))
-    (ext_word_element : Certified (∀ {n : Nat}, Stmt_word_element prog prims ix_word_element n))
-    (ext_store_element : Certified (∀ {n : Nat}, Stmt_store_element prog prims ix_store_element n))
-    (ext_store_word_element : Certified (∀ {n : Nat}, Stmt_store_word_element prog prims ix_store_word_element n)) {n : Nat} :
-    Stmt_store_any prog prims ix_store_any n := by
-  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_store_any] at h
-  faithful [Lanius.Mini.storeAny]
-
-theorem proof_store_word_element {prog : SrcProgram} {prims : Prims} {ix_store_word_element ix_SrcType_size ix_lower_value ix_store_type ix_element_base : Nat} (fn : prog.funcs[ix_store_word_element]? = some (src_store_word_element ix_SrcType_size ix_lower_value ix_store_type ix_element_base)) (np : prims.isPrim ix_store_word_element = false)
-    (ext_SrcType_size : Certified (∀ {n : Nat}, Stmt_SrcType_size prog prims ix_SrcType_size n))
-    (ext_lower_value : Certified (∀ {n : Nat}, Stmt_lower_value prog prims ix_lower_value n))
-    (ext_store_type : Certified (∀ {n : Nat}, Stmt_store_type prog prims ix_store_type n))
-    (ext_element_base : Certified (∀ {n : Nat}, Stmt_element_base prog prims ix_element_base n)) {n : Nat} :
-    Stmt_store_word_element prog prims ix_store_word_element n := by
-  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_store_word_element] at h
-  faithful [Lanius.Mini.storeWordElement]
+  simp only [src_store_byte_element] at h
+  faithful [Lanius.Mini.storeByteElement]
 
 end Lanius.Faithful.SelfCert

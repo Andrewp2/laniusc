@@ -35,6 +35,13 @@ def storeEval (b : Binding) (slot : Nat) (i : Evaluated) (v : Evaluated) : Optio
   else
     none
 
+/-- The index in slot and its bounds check, then the value in slot + 1 and its low byte stored: a byte view's store. -/
+def storeEvalByte (b : Binding) (slot : Nat) (i : Evaluated) (v : Evaluated) : Option Stmt :=
+  if (SrcType.isI32 i.ty || SrcType.isUint i.ty UintTy.usize) && SrcType.isUint v.ty UintTy.uint8 then
+    some (Stmt.seq i.stmt (checkThen slot (boundsGuard b (Expr.var slot)) (Stmt.seq v.stmt (Stmt.storeByte (Expr.binary Word.u64 BinOp.add (Expr.var b.slot) (Expr.var slot)) (Expr.var (slot + 1))))))
+  else
+    none
+
 /-- slice[index] = value on a raw slice. -/
 def storeEvalElement (decls : SrcDecls) (b : Binding) (element : SrcType) (slot : Nat) (index : Option Evaluated) (value : Option Evaluated) : Option Stmt :=
   if SrcType.isI32 element then
@@ -45,12 +52,20 @@ def storeEvalElement (decls : SrcDecls) (b : Binding) (element : SrcType) (slot 
       | none => none
       | some v => storeEval b slot i v
   else
-    match index with
-    | none => none
-    | some i =>
-      match value with
+    if SrcType.isUint element UintTy.uint8 then
+      match index with
       | none => none
-      | some v => storeEvalWord decls b element slot i v
+      | some i =>
+        match value with
+        | none => none
+        | some v => storeEvalByte b slot i v
+    else
+      match index with
+      | none => none
+      | some i =>
+        match value with
+        | none => none
+        | some v => storeEvalWord decls b element slot i v
 
 /-- The value in slot + 1, slot + 2, ... copied over element k of the array whose elements start at slot base when the index in slot is k, by a chain of compares of the index with k .. k + count - 1 (the last unchecked). -/
 def putElement (slot : Nat) (base : Nat) (size : Nat) (k : Nat) (count : Nat) : Stmt :=

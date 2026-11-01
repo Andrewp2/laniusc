@@ -79,7 +79,7 @@ theorem pushStore_spec (inst : VecInstance P T ids) (kind : ElemKind P T size) {
     store B B.heap base roomBase (by rw [slotEq, hB]; exact readable) (by rw [hB]; exact unique)
   rw [slotEq, hB] at effect
   have nv : B.i32ArrayViews = [] := frame.views.trans noViews
-  have assign := StableExpr.assignRaw (before := B) (indexed := B) (ready := B) (heap := h')
+  have assign := StableExpr.assignRaw (nb := kind.notByte) (before := B) (indexed := B) (ready := B) (heap := h')
     (sourceId := 4) (position := xs.length) src (StableExpr.field (fieldId := 1) (StableExpr.local v2) rfl)
     room (elementAddress kind room) nv (StableExpr.local xv) stored
   let C : State := { B with heap := h' }

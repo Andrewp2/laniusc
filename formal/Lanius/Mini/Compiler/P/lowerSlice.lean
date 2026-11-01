@@ -13,9 +13,9 @@ set_option linter.unusedVariables false
 
 namespace Lanius.Mini
 
-/-- A raw slice's one slot: its address. Elements are i32, word structs or word enums within Core's layout limits; Core checks the length when the slice is made and each index against it. -/
+/-- A raw slice's one slot: its address. Elements are i32, u8 (a byte view), word structs or word enums within Core's layout limits; Core checks the length when the slice is made and each index against it. -/
 def lowerSlice (decls : SrcDecls) (element : SrcType) (pointer : Option Expr) (length : Option Expr) : Option (List Expr) :=
-  if (SrcType.isI32 element || wordElement decls element) && withinLayout 0 element then
+  if (SrcType.isI32 element || SrcType.isUint element UintTy.uint8 || wordElement decls element) && withinLayout 0 element then
     match pointer with
     | none => none
     | some p =>

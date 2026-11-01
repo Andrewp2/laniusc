@@ -1157,17 +1157,19 @@ theorem wordElement_kind {ds : SrcDecls} {e : SrcType} (h : wordElement ds e = t
 
 theorem lowerSlice_some {ds : SrcDecls} {element : SrcType} {p l : Option Expr} {xs : List Expr}
     (h : lowerSlice ds element p l = some xs) :
-    (element = .i32 ∨ (∃ id fields, element = .struct id fields) ∨ ∃ id variants, element = .enum id variants) ∧
+    (element = .i32 ∨ element = .uint .uint8 ∨ (∃ id fields, element = .struct id fields) ∨
+        ∃ id variants, element = .enum id variants) ∧
       ∃ x y, p = some x ∧ l = some y := by
   unfold lowerSlice at h
   split at h
   · rename_i cond
-    have kind : element = .i32 ∨ (∃ id fields, element = .struct id fields) ∨
+    have kind : element = .i32 ∨ element = .uint .uint8 ∨ (∃ id fields, element = .struct id fields) ∨
         ∃ id variants, element = .enum id variants := by
       simp only [Bool.and_eq_true, Bool.or_eq_true] at cond
-      rcases cond.1 with c | c
+      rcases cond.1 with (c | c) | c
       · exact .inl (eq_i32 c)
-      · exact .inr (wordElement_kind c)
+      · exact .inr (.inl (eq_uint c))
+      · exact .inr (.inr (wordElement_kind c))
     split at h
     · simp at h
     · split at h
@@ -1633,6 +1635,27 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
               exact .indexSlice (.local inCtx) typedIndex integer
             · simp at h
         · split at h
+          · rename_i isU8
+            split at h
+            · simp at h
+            · rename_i i hi
+              simp only [evalLoadByte] at h
+              split at h
+              · rename_i cond
+                simp only [Option.some.injEq] at h
+                subst h
+                have typedIndex := SrcEff.eval_typed target sigsOk index ok (by simpa [SrcEff.types] using dd) hi
+                have inCtx := (ok slice b found).1
+                have bty : b.ty = .slice element := by cases hb : b.ty <;> simp_all [elementOf]
+                rw [bty, eq_uint isU8] at inCtx
+                have integer : Typing.IntegerTy i.ty.toCore := by
+                  simp only [Bool.or_eq_true] at cond
+                  rcases cond with c | c
+                  · rw [eq_i32 c]; exact .signed _
+                  · rw [eq_uint c]; exact .unsigned _
+                exact .indexSlice (.local inCtx) typedIndex integer
+              · simp at h
+          split at h
           · simp at h
           · rename_i i hi
             obtain ⟨tyEq, cond⟩ := evalWordElement_ty h
@@ -1842,7 +1865,9 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
           · simp only [Option.some.injEq] at h; subst h; rfl
           · split at h
             · simp only [Option.some.injEq] at h; subst h; rfl
-            · simp at h
+            · split at h
+              · simp only [Option.some.injEq] at h; subst h; rfl
+              · simp at h
         rw [tyEq]
         exact .sliceStride (.local inCtx)
 
@@ -2178,9 +2203,12 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
       · simp at h
       · rename_i b hb
         obtain ⟨kind, x, y, hx, hy⟩ := lowerSlice_some hvs
-        rcases kind with rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩
+        rcases kind with rfl | rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩
         · exact .letLocal (.i32SliceFromRawParts (lowerAs_typed target ok hx) (lowerAs_typed target ok hy))
             (SrcStmt.lower_typed target sigsOk body (ok.cons (ty := .slice .i32) (.slice d.1)) d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
+        · exact .letLocal (.typedSliceFromRawParts .byte (lowerAs_typed target ok hx) (lowerAs_typed target ok hy))
+            (SrcStmt.lower_typed target sigsOk body (ok.cons (ty := .slice (.uint .uint8)) (.slice d.1))
+              d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
         · obtain ⟨found, -⟩ := declared_struct d.1
           exact .letLocal (.typedSliceFromRawParts (.structureType sid _ found) (lowerAs_typed target ok hx)
               (lowerAs_typed target ok hy))
@@ -2215,6 +2243,28 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
     simp only [lowerLetIndex] at h
     split at h
     case isFalse =>
+      split at h
+      case isTrue =>
+        simp only [lowerLoad] at h
+        split at h
+        · simp at h
+        · rename_i a ha
+          split at h
+          · simp at h
+          · rename_i b hb
+            unfold lowerElement at ha
+            split at ha
+            · simp at ha
+            · rename_i sb found
+              split at ha
+              · rename_i same
+                obtain ⟨_, i, _, hi⟩ := elementAddress_some ha
+                obtain ⟨T, typedIndex, integer⟩ := lowerIndex_typed target ok hi
+                have inCtx := (ok slice sb found).1
+                rw [same_toCore same] at inCtx
+                exact .letLocal (.indexSlice (.local inCtx) typedIndex integer)
+                  (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
+              · simp at ha
       unfold lowerLoadType at h
       split at h
       · simp at h
@@ -2282,6 +2332,21 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
         simp only [storeAny] at h
         split at h
         case isFalse =>
+          split at h
+          case isTrue =>
+            unfold storeByteElement at h
+            split at h
+            · simp at h
+            · rename_i a ha
+              split at h
+              · simp at h
+              · rename_i v hv
+                obtain ⟨_, i, _, hi⟩ := elementAddress_some ha
+                obtain ⟨T, typedIndex, integer⟩ := lowerIndex_typed target ok hi
+                have inCtx := (ok slice sb found).1
+                rw [elementOf_some he] at inCtx
+                exact .expression (.assign (.indexSlice (.local inCtx) typedIndex integer)
+                  (lowerAs_typed target ok hv) .set)
           split at h
           case isFalse => simp at h
           unfold storeWordElement at h
@@ -2492,6 +2557,31 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
                 exact .expression (.assign (.indexSlice (.local inCtx) typedIndex integer) typedValue .set)
               · simp at h
         · split at h
+          · rename_i isU8
+            split at h
+            · simp at h
+            · rename_i i hi
+              split at h
+              · simp at h
+              · rename_i v hv
+                simp only [storeEvalByte] at h
+                split at h
+                · rename_i cond
+                  simp only [Bool.and_eq_true, Bool.or_eq_true] at cond
+                  have typedIndex := SrcEff.eval_typed target sigsOk index ok
+                    (fun t mem => d t (List.mem_append_left _ mem)) hi
+                  have typedValue := SrcEff.eval_typed target sigsOk value ok
+                    (fun t mem => d t (List.mem_append_right _ mem)) hv
+                  have inCtx := (ok slice sb found).1
+                  rw [elementOf_some he, eq_uint isU8] at inCtx
+                  rw [eq_uint cond.2] at typedValue
+                  have integer : Typing.IntegerTy i.ty.toCore := by
+                    rcases cond.1 with c | c
+                    · rw [eq_i32 c]; exact .signed _
+                    · rw [eq_uint c]; exact .unsigned _
+                  exact .expression (.assign (.indexSlice (.local inCtx) typedIndex integer) typedValue .set)
+                · simp at h
+          split at h
           · simp at h
           · rename_i i hi
             split at h

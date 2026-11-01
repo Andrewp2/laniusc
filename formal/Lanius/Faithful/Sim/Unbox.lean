@@ -29,8 +29,9 @@ theorem raw_read_zero {P : Core.Program} {s : State} {T : Core.Ty} {a w : Nat} {
     (kind : (∃ id, T = .structure id) ∨ ∃ id, T = .enumeration id) (words : NativeLayout.valueWords? P T = some w)
     (pos : 0 < w) (h : Semantics.readRawSliceIndex P s T (a + 8 * w - 8) 1 0 = .ok v) :
     readNativeValue NativeLayout.maxDepth P s.heap T (a + 8 * w - 8) = .ok v := by
+  have nb : Semantics.isByte T = false := by rcases kind with ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> rfl
   simp only [Semantics.readRawSliceIndex, show ¬ (0 ≥ 1) by decide, if_false,
-    elementAddress_zero kind words pos] at h
+    elementAddress_zero kind words pos, Semantics.readRawElement, nb, Bool.false_eq_true, ↓reduceIte] at h
   exact h
 
 section
