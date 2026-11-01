@@ -1,6 +1,6 @@
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod common;
-use std::{os::unix::fs::PermissionsExt, process::Command, time::Duration};
+use std::{os::unix::fs::PermissionsExt, time::Duration};
 fn executable(path: &str) -> common::TempArtifact {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root.join(path);
@@ -48,7 +48,7 @@ fn image_coordinates_views_aliasing_bounds_and_compositing_execute() {
     let trace = common::TempArtifact::new("laniusc_image", "trace", None);
     let output = common::process_output_with_timeout(
         "image contracts",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap"])
@@ -64,7 +64,7 @@ fn every_image_allocation_denial_returns_and_cleans_up_prior_owners() {
     let exe = executable("tests/fixtures/extended/image_allocation_failure.lani");
     let trace = common::TempArtifact::new("laniusc_image", "failure-trace", None);
     let run = |failure: Option<usize>| {
-        let mut cmd = Command::new("strace");
+        let mut cmd = crate::common::strace();
         cmd.args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap"]);

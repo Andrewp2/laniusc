@@ -58,7 +58,7 @@ fn arena_contracts_execute_alignment_stability_lifecycle_zero_bytes_and_errors()
     let trace = common::TempArtifact::new("laniusc_arena", "contracts", None);
     let output = common::process_output_with_timeout(
         "arena contracts",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap"])
@@ -75,7 +75,7 @@ fn typed_arena_storage_executes_primitive_widths_nested_records_enums_and_zero_s
     let trace = common::TempArtifact::new("laniusc_arena", "types", None);
     let output = common::process_output_with_timeout(
         "arena types",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap"])
@@ -92,7 +92,7 @@ fn zero_sized_and_empty_typed_requests_use_no_allocator_even_at_i32_max_count() 
     let trace = common::TempArtifact::new("laniusc_arena", "zero-sized", None);
     let output = common::process_output_with_timeout(
         "arena zero-size",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([
@@ -404,7 +404,7 @@ fn every_observed_chunk_allocation_failure_preserves_stats_views_and_prior_conte
     let exe = fixture("failure");
     let trace = common::TempArtifact::new("laniusc_arena", "failure", None);
     let invoke = |fail: Option<usize>| {
-        let mut c = Command::new("strace");
+        let mut c = crate::common::strace();
         c.args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap"]);
@@ -440,7 +440,7 @@ fn large_batches_amortize_allocator_calls_and_reuse_chunks_after_reset() {
         let trace = common::TempArtifact::new("laniusc_arena", "batch", None);
         let output = common::process_output_with_timeout(
             "arena large batch",
-            Command::new("strace")
+            crate::common::strace()
                 .args(["-qq", "-o"])
                 .arg(trace.path())
                 .args(["-e", "trace=mmap,munmap"])

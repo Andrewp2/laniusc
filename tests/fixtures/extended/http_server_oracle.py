@@ -66,7 +66,7 @@ def reached(path,syscall,ordinal,error=None,delayed=False):
 def start(args=(),family=socket.AF_INET,trace=None,fault=None,stdout=None,artifacts=None):
     address='127.0.0.1:0' if family==socket.AF_INET else '[::1]:0'
     command=[EXE,address,'--timeout','1000','--report',*map(str,args)]
-    if trace:command=['strace','--kill-on-exit','-qq','-i','-s','4096','-o',str(trace),'-e','signal=none','-e','trace='+TRACE_SYSCALLS,*[p for f in (fault if isinstance(fault,list) else [fault]) if f for p in ['-e',f]],*command]
+    if trace:command=['strace','-E','LANIUS_ALLOC=mmap','--kill-on-exit','-qq','-i','-s','4096','-o',str(trace),'-e','signal=none','-e','trace='+TRACE_SYSCALLS,*[p for f in (fault if isinstance(fault,list) else [fault]) if f for p in ['-e',f]],*command]
     p=subprocess.Popen(command,stdout=subprocess.PIPE if stdout is None else stdout,stderr=subprocess.PIPE)
     p.application_command=command;p.application_startup=b''
     if artifacts is not None:(artifacts/'command.txt').write_text(repr(command)+'\n')
@@ -300,7 +300,7 @@ def native():
             fault=None
             if mode=='send':fault='inject=sendto:error=EIO:when=3'
             if mode=='post-close':fault='inject=clock_gettime:error=EIO:when=%d'%post_close
-            command=['strace','-qq','-o',trace,'-e','trace='+TRACE_SYSCALLS]
+            command=['strace','-E','LANIUS_ALLOC=mmap','-qq','-o',trace,'-e','trace='+TRACE_SYSCALLS]
             if fault:command+=['-e',fault]
             result=subprocess.run([*command,EXE,*(['post-close'] if mode=='post-close' else [])],capture_output=True,timeout=4);assert result.returncode==0 and not result.stdout and not result.stderr,result
             _,_,events=resources(trace)

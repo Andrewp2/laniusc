@@ -166,7 +166,7 @@ fn atomic_failures_count_limit_strides_aliases_and_no_allocation() {
     let trace = common::TempArtifact::new("laniusc_statistics", "allocation_trace", None);
     let output = common::process_output_with_timeout(
         "statistics deny every allocation",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([

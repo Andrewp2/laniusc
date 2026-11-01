@@ -247,7 +247,7 @@ fn binary_program_releases_all_buffers_under_allocation_read_write_and_diagnosti
         let file = input(if decode { &encoded.stdout } else { &data });
         let expected = if decode { &data } else { &encoded.stdout };
         let execute = |injection: Option<&str>, status| {
-            let mut command = Command::new("strace");
+            let mut command = crate::common::strace();
             command
                 .args(["-qq", "-o"])
                 .arg(trace.path())

@@ -1,7 +1,7 @@
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod common;
 
-use std::{os::unix::fs::PermissionsExt, process::Command, time::Duration};
+use std::{os::unix::fs::PermissionsExt, time::Duration};
 
 fn executable(path: &str) -> common::TempArtifact {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -29,7 +29,7 @@ fn percent_contracts_execute_native_strides_bounds_atomicity_aliasing_and_sizing
     let trace = common::TempArtifact::new("laniusc_percent", "trace", None);
     let output = common::short_process_output_with_timeout(
         "percent contracts",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([
@@ -219,7 +219,7 @@ fn percent_matches_reference_for_all_bytes_generated_roundtrips_and_every_invali
     let trace = common::TempArtifact::new("laniusc_percent", "model_trace", None);
     let output = common::process_output_with_timeout(
         "percent reference batch",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([

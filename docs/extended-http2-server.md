@@ -236,5 +236,11 @@ h2c made about 31 allocations per request. Its system time followed the
   These changed little on their own.
 
 The remaining h2c page faults are mostly the two buffers each new stream
-reserves for its fields and the per-connection engine setup. The Python
+reserves for its fields and the per-connection engine setup.
+The [pooling runtime allocator](runtime-allocator.md) since reuses those
+blocks. With the same binary run pooled and with `LANIUS_ALLOC=mmap`, the h2c
+phase drops from 0.19–0.23 s to 0.10–0.11 s, and server CPU for both phases
+from 0.40–0.45 s to 0.24–0.26 s. Under heavier machine load, server system
+time drops from 0.34–0.38 s to 0.09 s and minor faults from 20,430 to about
+1,450. The Python
 client side still costs more for h2c (about 0.21 s against 0.14 s).

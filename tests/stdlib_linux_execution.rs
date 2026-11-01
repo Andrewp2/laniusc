@@ -91,7 +91,7 @@ fn native_words_results_and_fifth_sixth_pointer_arguments_execute() {
         // The common timeout helper captures stdout. Redirect after spawning so
         // the native program still receives the seekable read/write descriptor.
         Command::new("sh")
-            .args(["-c", "exec strace -qq -o \"$1\" -e trace=lseek,ftruncate,statx,recvfrom,mmap,munmap \"$2\" 1<> \"$3\"", "linux-argument-abi"])
+            .args(["-c", "exec strace -E LANIUS_ALLOC=mmap -qq -o \"$1\" -e trace=lseek,ftruncate,statx,recvfrom,mmap,munmap \"$2\" 1<> \"$3\"", "linux-argument-abi"])
             .arg(trace.path())
             .arg(exe.path())
             .arg(data.path())
@@ -150,7 +150,7 @@ fn invalid_views_errno_and_interruption_do_not_allocate_or_retry() {
     let exe = fixture("linux_syscall_errors");
     let trace = common::TempArtifact::new("laniusc_linux", "error_trace", None);
     for (injection, status) in [(None, 0), (Some("EINTR"), 4), (Some("EIO"), 5)] {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())

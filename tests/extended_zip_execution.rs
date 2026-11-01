@@ -745,7 +745,7 @@ fn every_observed_writer_and_extractor_allocation_failure_releases_partial_owner
     let exe = executable("tests/fixtures/extended/zip_failure.lani");
     let trace = common::TempArtifact::new("laniusc_zip", "trace", None);
     let invoke = |mode: &str, fail: Option<usize>| {
-        let mut c = Command::new("strace");
+        let mut c = crate::common::strace();
         c.args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap"]);

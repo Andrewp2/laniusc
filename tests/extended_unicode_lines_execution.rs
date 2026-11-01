@@ -53,7 +53,7 @@ fn line_cursor_bounds_utf8_limits_forks_and_mandatory_status_contracts() {
     let trace = common::TempArtifact::new("laniusc_unicode_lines", "noalloc", None);
     let output = common::short_process_output_with_timeout(
         "line cursor contracts",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([

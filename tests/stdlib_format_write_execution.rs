@@ -30,7 +30,7 @@ fn invoke(name: &str, input: Option<&[u8]>) -> (Output, String) {
     let executable = executable(name);
     let trace = common::TempArtifact::new("laniusc_format_write", "trace", None);
     let input_file = common::TempArtifact::new("laniusc_format_write", "input", None);
-    let mut command = Command::new("strace");
+    let mut command = crate::common::strace();
     command
         .args(["-qq", "-o"])
         .arg(trace.path())
@@ -308,7 +308,7 @@ fn single_mib_field_streams_in_constant_space_with_exact_hash_and_call_count() {
     let trace = common::TempArtifact::new("laniusc_format_write", "scale_trace", None);
     for run in 0..3 {
         let mut command = if run == 0 {
-            let mut command = Command::new("strace");
+            let mut command = crate::common::strace();
             command
                 .args(["-qq", "-o"])
                 .arg(trace.path())

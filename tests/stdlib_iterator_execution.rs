@@ -48,7 +48,7 @@ fn cursor_and_adapter_contracts_are_fused_and_allocate_nothing() {
     let trace = common::TempArtifact::new("laniusc_iterator", "allocation_trace", None);
     let result = common::process_output_with_timeout(
         "iterator contracts without allocation",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap"])
@@ -260,7 +260,7 @@ fn shallow_owner_items_and_native_physical_bounds_keep_existing_contracts() {
     let trace = common::TempArtifact::new("laniusc_iterator", "owner_trace", None);
     let result = common::process_output_with_timeout(
         "shallow iterator owner aliases",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap"])

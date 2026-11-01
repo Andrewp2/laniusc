@@ -119,10 +119,10 @@ class Runner:
         prefix=self.directory/name; command=[self.executable,*args]
         if budget:
             maximum=8192 if budget=="read" else 64
-            command=["strace","--kill-on-exit","-qq","-c","-e","trace="+budget,"-e",
+            command=["strace","-E","LANIUS_ALLOC=mmap","--kill-on-exit","-qq","-c","-e","trace="+budget,"-e",
                      f"inject={budget}:error=EINTR:when=1..{maximum}","-o",str(prefix.with_suffix(".trace")),*command]
         elif trace:
-            wrapper=["strace","--kill-on-exit","-qq","-s","32","-e","signal=none","-e","trace="+TRACE,
+            wrapper=["strace","-E","LANIUS_ALLOC=mmap","--kill-on-exit","-qq","-s","32","-e","signal=none","-e","trace="+TRACE,
                      "-o",str(prefix.with_suffix(".trace"))]
             for call,ordinal,failure in injections: wrapper += ["-e",f"inject={call}:error={failure}:when={ordinal}"]
             command=[*wrapper,*command]

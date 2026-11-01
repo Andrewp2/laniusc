@@ -54,7 +54,7 @@ fn table_layout_limits_borrows_and_allocation_cleanup() {
     let exe = executable("table_allocation_failure");
     let trace = common::TempArtifact::new("laniusc_table", "allocations", None);
     for when in 0..=3 {
-        let mut cmd = std::process::Command::new("strace");
+        let mut cmd = crate::common::strace();
         cmd.args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap"]);

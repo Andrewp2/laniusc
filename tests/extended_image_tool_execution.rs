@@ -143,7 +143,7 @@ fn image_tool_every_reached_allocation_failure_releases_owners_and_stages_output
         let source = input(bytes);
         let trace = common::TempArtifact::new("laniusc_image_tool", "allocation-trace", None);
         let execute = |at: Option<usize>, status| {
-            let mut command = Command::new("strace");
+            let mut command = crate::common::strace();
             command
                 .args(["-qq", "-o"])
                 .arg(trace.path())
@@ -203,7 +203,7 @@ fn image_tool_io_failures_interruptions_short_writes_and_failed_diagnostics_clea
     let exe = executable();
     let trace = common::TempArtifact::new("laniusc_image_tool", "io-trace", None);
     let execute = |injections: &[&str], status, args: &[&str]| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())

@@ -128,7 +128,7 @@ class Runner:
         stem = self.directory / f"{self.count:02d}-{name}"
         command = [self.exe, *map(os.fspath, arguments)]
         if trace:
-            command = ["strace", "-qq", "-f", "-s", "512", "-e", "trace=all", "-o", str(stem)+".trace", "--", *command]
+            command = ["strace","-E","LANIUS_ALLOC=mmap", "-qq", "-f", "-s", "512", "-e", "trace=all", "-o", str(stem)+".trace", "--", *command]
         (Path(str(stem)+".command")).write_text(repr(command)+"\n")
         kwargs = dict(stdout=subprocess.PIPE if output is None else output,
                       stderr=subprocess.PIPE, cwd=self.directory, timeout=6,

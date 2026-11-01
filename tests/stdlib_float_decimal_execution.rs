@@ -76,7 +76,7 @@ fn bounds_strides_capacity_atomicity_resources_and_no_allocation_execute() {
     let trace = common::TempArtifact::new("laniusc_float_decimal", "trace", None);
     let result = common::process_output_with_timeout(
         "float decimal contracts",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([

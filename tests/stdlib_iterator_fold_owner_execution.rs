@@ -36,7 +36,7 @@ fn run(mode: u8, denied: Option<usize>) -> (Output, String) {
     let input = common::TempArtifact::new("laniusc_fold_owners", "input", None);
     input.write_bytes([mode]);
     let trace = common::TempArtifact::new("laniusc_fold_owners", "trace", None);
-    let mut command = Command::new("strace");
+    let mut command = crate::common::strace();
     command
         .args(["-qq", "-s", "64", "-o"])
         .arg(trace.path())

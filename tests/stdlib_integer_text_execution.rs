@@ -176,7 +176,7 @@ fn integer_string_construction_and_appends_preserve_owners_under_allocation_fail
     let exe = executable("decimal_string_failure");
     let trace = common::TempArtifact::new("laniusc_integer_text", "allocation_trace", None);
     let run = |when: Option<usize>| {
-        let mut command = std::process::Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -228,7 +228,7 @@ fn native_integer_writers_return_host_errors_and_preserve_the_written_prefix() {
         (4, "error=EINTR", 4),
         (25, "retval=0", 1),
     ] {
-        let mut command = std::process::Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())

@@ -160,7 +160,7 @@ fn csv_report_releases_resources_on_allocation_input_and_io_failures() {
     let input = common::TempArtifact::new("laniusc_report", "fault_input", None);
     let trace = common::TempArtifact::new("laniusc_report", "trace", None);
     let traced = |injection: Option<&str>| {
-        let mut command = std::process::Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())

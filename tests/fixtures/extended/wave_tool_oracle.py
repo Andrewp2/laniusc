@@ -55,7 +55,7 @@ r=run([],src);assert r.returncode==0 and r.stdout==src,(r.returncode,r.stderr)
 # be unmapped by the program before exit, including failures during staging.
 def traced(args,data,inject=None,output=None):
     with tempfile.NamedTemporaryFile() as trace:
-        command=['strace','-qq','-o',trace.name,'-e','trace=mmap,munmap,read,write']
+        command=['strace','-E','LANIUS_ALLOC=mmap','-qq','-o',trace.name,'-e','trace=mmap,munmap,read,write']
         if inject:command += ['-e',inject]
         command += [exe]+args
         r=subprocess.run(command,input=data,stdout=output or subprocess.PIPE,stderr=subprocess.PIPE,timeout=15)

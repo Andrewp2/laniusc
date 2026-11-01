@@ -13,7 +13,7 @@ from resources import analyze, controls
 def invoke(executable, certificates, trace, fault=None):
     parent, inherited = socket.socketpair()
     inherited.setblocking(False)
-    command = ["strace", "--kill-on-exit", "-qq", "-i", "-o", str(trace),
+    command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-i", "-o", str(trace),
                "-e", "trace=mmap,munmap,write"]
     if fault is not None:
         command += ["-e", f"inject=mmap:error=ENOMEM:when={fault['ordinal']}"]

@@ -142,7 +142,7 @@ class Suite:
         directory = self.directory / f"{self.count:03d}-{label}"
         directory.mkdir()
         trace = directory / "native.trace"
-        command = ["strace", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096",
+        command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096",
                    "-o", str(trace), "-e", "trace=all"]
         assert not (denied and injection is not None)
         if denied:

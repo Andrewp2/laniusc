@@ -194,7 +194,7 @@ struct Peer {
 impl Peer {
     fn new(directory: &Directory) -> Self {
         let trace = common::TempArtifact::new("laniusc_flock_process", "trace", None);
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["--kill-on-exit", "-qq", "-o"])
             .arg(trace.path())

@@ -360,7 +360,7 @@ fn text_grep_releases_owners_at_every_observed_allocation_and_io_fault() {
     let expected = "1:aaé\r\n3:éa".as_bytes();
     let trace = common::TempArtifact::new("laniusc_text_grep", "trace", None);
     let execute = |fault: Option<&str>| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -449,7 +449,7 @@ fn text_grep_releases_owners_at_every_observed_allocation_and_io_fault() {
         .arg(exe.path())
         .arg(input.path()));
     failure(&output, 3, "io-failure stage=output", b"");
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args([
