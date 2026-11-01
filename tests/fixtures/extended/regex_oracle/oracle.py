@@ -252,7 +252,10 @@ def dfa_surface(exe, rng, count):
         flags = (1 if rng.random() < 0.25 else 0) | (2 if rng.random() < 0.25 else 0)
         lan, py = pattern(rng, flags & 1)
         q = re.compile(py, re.ASCII | (re.M if flags & 1 else 0) | (re.S if flags & 2 else 0))
-        t = text(rng, 1 if r"\B" in lan else 0, rng.choice([10, 40, 400]))
+        # CPython backtracks exponentially on long inputs under quantified
+        # groups, so 400-scalar inputs go only to patterns without them.
+        longest = 400 if not re.search(r"\)[*+?{]", py) else 40
+        t = text(rng, 1 if r"\B" in lan else 0, rng.choice([10, 40, longest]))
         work = rng.choice([1, 20, 200]) if rng.random() < 0.1 else 10_000_000
         m = q.search(t)
         b = "0" if m is None else "1"
