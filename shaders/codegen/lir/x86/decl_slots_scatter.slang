@@ -31,10 +31,14 @@ bool valid_function(uint function_id)
         semantic_lir_function_total[0u]);
 }
 
+// 64-bit integers (i64 9, u64 10, isize 16, usize 17) share the pointer's
+// full-width GPR moves; every wide-integer body moves through RAX/RCX with
+// the width taken from its metadata, so a register home needs no other form.
 bool scalar_gpr_type(uint type_id)
 {
     return type_id == 1u || type_id == 2u || type_id == 3u ||
-        type_id == 4u || type_id == 6u || type_id == 8u;
+        type_id == 4u || type_id == 6u || type_id == 8u ||
+        type_id == 9u || type_id == 10u || type_id == 16u || type_id == 17u;
 }
 
 uint register_location(uint function_id, uint ordinal, uint type_id,

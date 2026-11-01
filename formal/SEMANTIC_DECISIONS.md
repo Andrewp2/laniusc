@@ -472,6 +472,15 @@ The compiled code checks in Core's order. A store `slice[i] = v` evaluates
 proving `compileSource_stops` found the old order, `v` before the check,
 wrong when `i` is out of bounds and `v` reaches an undefined trap).
 
+This is a known difference from laniusc (recorded 10-31). laniusc evaluates
+`v` first and then checks `i`, which is Rust's order for an assignment (the
+assigned value, then the place). With `i` out of bounds the two compilers
+trap at the same store, but laniusc first runs whatever `v` does: its
+output, or a trap of its own. Core's order stays: the store's check is
+proved to come before any effect of `v`. fuzz_oracle.py counts such a
+program as known (both trap, the verified compiler's output a prefix of
+laniusc's, an indexed store in the program) rather than as a disagreement.
+
 ### `x<` in an expression (decided 10-29)
 
 The grammar gives `a < b > (c)` two trees: a chain of comparisons and a call
