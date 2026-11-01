@@ -17,11 +17,15 @@ one should become a passing regression test once its defect is fixed.
 | `i64_view_writes.lani` (removed) | `words[2] = 5` through `typed_slice_from_raw_parts<i64>(base, 4)` over a local `[i32; 8]` | — | **not a defect**: raw `[i64]` views descend (element i at `base - 8 * i`, as `core::mem` documents), so the store landed below the array; now `tests/codegen_x86.rs` `x86_i64_raw_views_store_at_descending_word_addresses` |
 | `u64_cast_literal.lani` | `4000000000 as u64` | compiles, exit 4 | **fixed 2026-10-31**: was LNC0069 "invalid integer literal" (the literal was checked as i32 before the cast); now exits 4 |
 | `u64_cast_literal_forms.lani` | literal casts to u32/u64/i64 at their extremes, plus `-1 as u32`, `-1 as u64`, `300 as u8`, `(3 + 4) as u64`, `3 as f64` | exit 0 | exit 0 since the fix |
-| `u64_stack_carry.lani` | performance: u64 values and every expression temporary live in stack slots | exit 10, carry and temporaries in registers | exit 10. Before 2026-10-31: 0.42 s, all u64 values in slots. 64-bit declarations are now register-eligible (`decl_slots_scatter.slang`, `allocation_words.slang`), which brings it to 0.31 s. Temporaries still take slots, and `>> 32` still range-checks its constant amount at run time. The asm excerpt is in the file |
-| `u32_slice_row.lani` | performance: the big-integer multiply-add row costs about 13 ns per limb (26 ns under load) instead of about 1 ns | exit 72 in about 0.1 s | exit 72 in 1.34 s. Each slice access copies the three descriptor words into fresh slots, bounds-checks, multiplies by the runtime stride and spills the loaded value. About 100 instructions and 70 memory operands per limb. The asm excerpt is in the file |
+=======
 | `untyped_generic_trait_result.lani` | untyped `let got = reader.read(...)` where `R: core::io::Read` | compiles, exit 1 with one stdin byte | **fixed 2026-10-31**: was LNC0006 "type mismatch" at the later `unwrap` (LNC0027 for `got.unwrap()`, LNC0047 for `w.flush()` and `core::random::Source64::draw`); see [bound trait results](#bound-trait-results) |
 | `bound_trait_result_argument.lani` | the same untyped `got` passed to a nongeneric `Result<i32, core::io::Error>` parameter | exit 1 with one stdin byte | **fixed 2026-10-31**: compiled before, then died with SIGILL (exit 132) |
-| `bound_trait_open_result.lani` | untyped `let x = it.next()` where `I: core::iter::Iterator<i32>` (a result that names the trait's parameter) | compiles, exit 6 | LNC0006 "type mismatch" at the `unwrap_or`; annotating the `let` works |
+| `bound_trait_open_result.lani` | untyped `let x = it.next()` where `I: core::iter::Iterator<i32>` (a result that names the trait's parameter) | compiles, exit 6 | **fixed 2026-10-31**: was LNC0006 "type mismatch" at the `unwrap_or` |
+| `bound_trait_open_param.lani` | the same through `I: core::iter::Iterator<T>` in a generic caller | exit 3 | exit 3 since the fix (was LNC0006) |
+| `bound_trait_open_forms.lani` | `let r = f.try_apply(2, 3 as u8)` where `F: core::iter::TryFolder<i32, u8, bool>` | exit 6 | exit 6 since the fix (was LNC0006) |
+| `bound_trait_open_argument.lani` | the untyped `Option` from `it.next()` passed to a nongeneric parameter | exit 12 | **fixed 2026-10-31**: compiled before, then died with SIGILL (exit 132) |
+| `u64_stack_carry.lani` | performance: u64 values and every expression temporary live in stack slots | exit 10, carry and temporaries in registers | exit 10. Before 2026-10-31: 0.42 s, all u64 values in slots. 64-bit declarations are now register-eligible (`decl_slots_scatter.slang`, `allocation_words.slang`), which brings it to 0.31 s. Temporaries still take slots, and `>> 32` still range-checks its constant amount at run time. The asm excerpt is in the file |
+| `u32_slice_row.lani` | performance: the big-integer multiply-add row costs about 13 ns per limb (26 ns under load) instead of about 1 ns | exit 72 in about 0.1 s | exit 72 in 1.34 s. Each slice access copies the three descriptor words into fresh slots, bounds-checks, multiplies by the runtime stride and spills the loaded value. About 100 instructions and 70 memory operands per limb. The asm excerpt is in the file |
 | `candidate_nested_generic_match.lani` | reported: LNC0047 "type-check execution failed" on a nested match on a generic enum bound in an outer arm | compiles, exit 4 | **not reproduced**: compiles and exits 4 |
 | `candidate_slice_select_label.lani` | reported: LNC0008 "unsatisfied trait bound" labels pointing at `stdlib/core/slice.lani:899` (inside `select_nth_unstable`) instead of the caller | compiles, exit 1 | **not reproduced**: compiles and exits 1 |
 | `candidate_missing_module_long.lani` | reported: LNC0016 "syntax error" on a long file without a `module` line | compiles, exit 0 | **not reproduced**: 401 functions and no `module` line compile and exit 0 |
@@ -79,9 +83,19 @@ requirement except for a closed result, one that names no type or constant
 parameter, such as `Result<i32, core::io::Error>`. Such a result is complete
 without the receiver's environment.
 
-A result that names the trait's parameter, such as `Iterator<T>::next`
-returning `Option<T>`, is still open and still needs the annotation
-(`bound_trait_open_result.lani`).
+A result that names the trait's parameters, such as `Iterator<T>::next`
+returning `Option<T>`, was fixed the same day. The bound's trait arguments
+(`Iterator<i32>`) are already the call's context arguments: the dependency
+bound-member offer (`dependencies/15b_offer_bound_members.slang`) publishes
+them. The materializer now substitutes such a result in that environment
+whenever the call has one. This change grew the kernel from 18,657 to 18,695
+instructions. The before and after builds compiled 84 programs: the 78 above,
+plus five open-result reductions and this fixture. All 50 regular programs
+that compile again produce byte-identical executables, and 16 are rejected by
+both. `bound_trait_open_result`, `bound_trait_open_param` and
+`bound_trait_open_forms` went from LNC0006 to exits 6, 3 and 6.
+`bound_trait_open_argument` went from SIGILL to exit 12. The typed `let`
+control and the closed-result reductions are unchanged.
 
 The kernel grew from 18,463 to 18,657 fully inlined instructions (limit
 40,000; no local arrays). On 2026-10-31 the private compiler built before and
