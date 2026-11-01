@@ -24,15 +24,22 @@ work on native Linux x86_64/glibc with libatomic:
 - `std::sync`: shared `MAP_SHARED` regions, futex waits with monotonic
   deadlines, and Mutex, Condvar, Once, Lazy64 and Barrier, all without
   poisoning.
-- `std::channel`: a bounded MPMC `u64` channel with try, blocking and
-  deadline forms and endpoint-count disconnection.
+- `std::channel`: a bounded MPMC channel of any plain value type, with try,
+  blocking and deadline forms and endpoint-count disconnection.
+- `std::steal`: work-stealing queues, one deque per worker, with
+  pending-count termination and token cancellation that drains the pool
+  cleanly.
+- `std::parallel`: chunked `for_each`, `map`, ordered `reduce`, `scan` and
+  stable `merge_sort` over shared arrays.
 
 The stress fixture keeps exact invariants: 1,600,000 atomic adds; 400,000
 locked increments; 1 initializer among 16 racers; 200 barrier leaders; and
 120,000/80,000/50,000 channel messages at capacity 64/1/7 with no loss,
 duplication or per-sender FIFO violation. Those 50 runs passed, alongside
 20 runs each of a parallel word count matching `wc` and a three-stage
-pipeline. In-process threads remain blocked on checked callback entry, so
+pipeline. The stealing fixture runs a 524,287-task tree with every leaf
+exactly once; a parallel quicksort sorts 2,000,000 values in 0.25 s with
+eight workers, against 0.80 s with one. In-process threads remain blocked on checked callback entry, so
 `std::thread` stays unbound.
 The preceding
 The full library goal remains open. The

@@ -1,0 +1,274 @@
+// Parallel slice operations and cancellation across worker and steal pools,
+// with exact invariants. Exit 0 only when every invariant held. Counts that
+// depend on scheduling are printed to stderr.
+module app::main;
+import core::cmp;
+import core::function;
+import core::iter;
+import core::result;
+import std::atomic;
+import std::io;
+import std::parallel;
+import std::steal;
+import std::sync;
+import std::worker;
+
+const P: i64 = 1000000007;
+const N: i32 = 1000003;
+
+fn line(label: str, a: i32, b: i32) {
+    std::io::write_text(1, label); std::io::write_text(1, " "); std::io::write_i32(1, a);
+    std::io::write_text(1, " "); std::io::write_i32(1, b); std::io::write_newline(1);
+}
+fn note(label: str, a: i32, b: i32) {
+    std::io::write_text(2, label); std::io::write_text(2, " "); std::io::write_i32(2, a);
+    std::io::write_text(2, " "); std::io::write_i32(2, b); std::io::write_newline(2);
+}
+fn fresh(region: &std::sync::Region, workers: i32, chunk: i32) -> std::parallel::Plan {
+    return std::parallel::plan(region, workers, chunk, std::sync::token(region).unwrap()).unwrap();
+}
+fn failed_with(result: core::result::Result<i32, std::parallel::Error>) -> i32 {
+    if (result.is_ok()) { return -1; }
+    return match (result.unwrap_err()) { std::parallel::Error::Failed(code) -> code, std::parallel::Error::Cancelled -> 1000, _ -> -2 };
+}
+
+struct Mark { visits: ptr, stop_at: i32 }
+impl Mark { pub fn borrow(&self) -> &Mark { return self; } }
+pub impl std::parallel::ChunkBody for Mark {
+    pub fn run(&self, start: i32, end: i32) -> i32 {
+        if (self.stop_at >= 0 && start / 4096 == self.stop_at) { return 7; }
+        let i: i32 = start;
+        while (i < end) { std::atomic::at64(self.visits + (i as usize) * 8).fetch_add(1, std::atomic::Ordering::Relaxed); i += 1; }
+        return 0;
+    }
+}
+struct Slow { ran: ptr }
+impl Slow { pub fn borrow(&self) -> &Slow { return self; } }
+pub impl std::parallel::ChunkBody for Slow {
+    pub fn run(&self, start: i32, end: i32) -> i32 {
+        let spin: i64 = 0; let acc: i64 = start as i64;
+        while (spin < 200000) { acc = (acc * 1103515245 + 12345) % 2147483648; spin += 1; }
+        if (acc < 0) { return 9; }
+        std::atomic::at64(self.ran).fetch_add(1, std::atomic::Ordering::Relaxed);
+        return 0;
+    }
+}
+struct Square {}
+impl Square { pub fn borrow(&self) -> &Square { return self; } }
+pub impl core::function::Mapper<i64, i64> for Square { pub fn apply(&self, value: i64) -> i64 { return value * value; } }
+struct Add {}
+impl Add { pub fn borrow(&self) -> &Add { return self; } }
+pub impl core::iter::Folder<i64, i64> for Add { pub fn apply(&self, accumulator: i64, value: i64) -> i64 { return accumulator + value; } }
+// Polynomial hash: associative, not commutative, so chunk order matters.
+struct Poly { hash: i64, scale: i64 }
+struct PolyFold {}
+impl PolyFold { pub fn borrow(&self) -> &PolyFold { return self; } }
+struct PolyJoin {}
+impl PolyJoin { pub fn borrow(&self) -> &PolyJoin { return self; } }
+pub impl core::iter::Folder<Poly, i64> for PolyFold {
+    pub fn apply(&self, accumulator: Poly, value: i64) -> Poly { return Poly { hash: (accumulator.hash * 131 + value % P) % P, scale: (accumulator.scale * 131) % P }; }
+}
+pub impl core::iter::Folder<Poly, Poly> for PolyJoin {
+    pub fn apply(&self, accumulator: Poly, value: Poly) -> Poly { return Poly { hash: (accumulator.hash * value.scale + value.hash) % P, scale: (accumulator.scale * value.scale) % P }; }
+}
+// Sort key only; index records the original position to check stability.
+struct Item { key: i64, index: i64 }
+pub impl core::cmp::Ord<Item> for Item {
+    pub fn lt(left: Item, right: Item) -> bool { return left.key < right.key; }
+    pub fn le(left: Item, right: Item) -> bool { return left.key <= right.key; }
+    pub fn gt(left: Item, right: Item) -> bool { return left.key > right.key; }
+    pub fn ge(left: Item, right: Item) -> bool { return left.key >= right.key; }
+}
+
+fn slices(region: &std::sync::Region) -> i32 {
+    let visits: std::parallel::Shared<i64> = std::parallel::shared<i64>(region, N).unwrap();
+    let mark: Mark = Mark { visits: visits.storage, stop_at: -1 };
+    let ran: i32 = std::parallel::for_each(fresh(region, 8, 4096), N, mark.borrow()).unwrap();
+    let view: [i64] = visits.view(); let once: i32 = 0; let i: i32 = 0;
+    while (i < N) { if (view[i] == 1) { once += 1; } i += 1; }
+    line("for-each-chunks-indices-once", ran, once);
+    if (ran != 245 || once != N) { return 1; }
+
+    let input: std::parallel::Shared<i64> = std::parallel::shared<i64>(region, N).unwrap();
+    let output: std::parallel::Shared<i64> = std::parallel::shared<i64>(region, N).unwrap();
+    let source: [i64] = input.view(); i = 0;
+    while (i < N) { source[i] = i as i64; i += 1; }
+    let square: Square = Square {};
+    std::parallel::map(fresh(region, 8, 1000), input, output, square.borrow()).unwrap();
+    let mapped: [i64] = output.view(); let exact: i32 = 0; i = 0;
+    while (i < N) { if (mapped[i] == (i as i64) * (i as i64)) { exact += 1; } i += 1; }
+    line("map-squares-exact", N, exact);
+    if (exact != N) { return 2; }
+
+    let partials: std::parallel::Shared<i64> = std::parallel::shared<i64>(region, 1024).unwrap();
+    let add: Add = Add {};
+    let total: i64 = std::parallel::reduce(fresh(region, 8, 1000), input, partials, 0, add.borrow(), add.borrow()).unwrap();
+    let poly_parts: std::parallel::Shared<Poly> = std::parallel::shared<Poly>(region, 1024).unwrap();
+    let pf: PolyFold = PolyFold {}; let pj: PolyJoin = PolyJoin {};
+    let hashed: Poly = std::parallel::reduce(fresh(region, 8, 977), output, poly_parts, Poly { hash: 0, scale: 1 }, pf.borrow(), pj.borrow()).unwrap();
+    let serial: Poly = Poly { hash: 0, scale: 1 }; i = 0;
+    while (i < N) { serial = pf.apply(serial, mapped[i]); i += 1; }
+    let ordered: i32 = 0; if (hashed.hash == serial.hash && hashed.scale == serial.scale) { ordered = 1; }
+    let sum_ok: i32 = 0; if (total == 500002500003) { sum_ok = 1; }
+    line("reduce-sum-ok-ordered-hash-ok", sum_ok, ordered);
+    if (total != 500002500003 || ordered != 1) { return 3; }
+
+    i = 0; while (i < N) { source[i] = (i as i64) + 1; i += 1; }
+    std::parallel::scan(fresh(region, 8, 4093), input, partials, 0, add.borrow()).unwrap();
+    exact = 0; i = 0;
+    while (i < N) { let k: i64 = (i as i64) + 1; if (source[i] == k * (k + 1) / 2) { exact += 1; } i += 1; }
+    line("prefix-sum-exact", N, exact);
+    if (exact != N) { return 4; }
+
+    let items: std::parallel::Shared<Item> = std::parallel::shared<Item>(region, N).unwrap();
+    let spare: std::parallel::Shared<Item> = std::parallel::shared<Item>(region, N).unwrap();
+    let values: [Item] = items.view(); let state: i64 = 88172645463325252; let checksum: i64 = 0; i = 0;
+    while (i < N) {
+        state = state ^ (state << 13); state = state ^ (state >> 7); state = state ^ (state << 17);
+        let key: i64 = state % 1000; if (key < 0) { key = 0 - key; }
+        values[i] = Item { key: key, index: i as i64 }; checksum += key; i += 1;
+    }
+    let rounds: i32 = std::parallel::merge_sort(fresh(region, 8, 8192), items, spare).unwrap();
+    let sorted: i32 = 1; let stable: i32 = 1; let after: i64 = values[0].key; i = 1;
+    while (i < N) {
+        if (values[i - 1].key > values[i].key) { sorted = 0; }
+        if (values[i - 1].key == values[i].key && values[i - 1].index >= values[i].index) { stable = 0; }
+        after += values[i].key; i += 1;
+    }
+    line("merge-sort-sorted-stable", sorted, stable);
+    let check_ok: i32 = 0; if (after == checksum) { check_ok = 1; }
+    line("merge-sort-rounds-checksum-ok", rounds, check_ok);
+    if (sorted != 1 || stable != 1 || after != checksum || rounds != 8) { return 5; }
+    return 0;
+}
+
+fn cancellation(region: &std::sync::Region) -> i32 {
+    // A failing chunk cancels the plan: Failed(7), later claims stop.
+    let visits: std::parallel::Shared<i64> = std::parallel::shared<i64>(region, N).unwrap();
+    let mark: Mark = Mark { visits: visits.storage, stop_at: 3 };
+    let plan: std::parallel::Plan = fresh(region, 4, 4096);
+    let code: i32 = failed_with(std::parallel::for_each(plan, N, mark.borrow()));
+    let view: [i64] = visits.view(); let touched: i32 = 0; let twice: i32 = 0; let i: i32 = 0;
+    while (i < N) { if (view[i] != 0) { touched += 1; } if (view[i] > 1) { twice += 1; } i += 1; }
+    line("failing-chunk-code-duplicates", code, twice);
+    note("failing-chunk touched-of", touched, N);
+    if (code != 7 || twice != 0 || touched >= N || !plan.token.is_cancelled()) { return 1; }
+
+    // A deadline cancels slow chunks: Err(Cancelled) well before all ran.
+    let ran: std::atomic::Atomic64 = std::atomic::at64(region.allocate(8).unwrap());
+    let slow: Slow = Slow { ran: ran.address() };
+    let timed: std::parallel::Plan = fresh(region, 4, 1);
+    timed.token.cancel_at(std::sync::deadline_after_ms(40).unwrap());
+    let started: std::sync::Deadline = std::sync::now().unwrap();
+    let outcome: i32 = failed_with(std::parallel::for_each(timed, 100000, slow.borrow()));
+    let ended: std::sync::Deadline = std::sync::now().unwrap();
+    let elapsed: i64 = (ended.seconds - started.seconds) * 1000 + (ended.nanos - started.nanos) / 1000000;
+    let was_cancelled: i32 = 0; if (outcome == 1000) { was_cancelled = 1; }
+    let prompt: i32 = 0; if (elapsed < 2000) { prompt = 1; }
+    line("deadline-for-each-cancelled", was_cancelled, prompt);
+    note("deadline-for-each chunks-ran ms", ran.load(std::atomic::Load::SeqCst) as i32, elapsed as i32);
+    if (outcome != 1000 || elapsed >= 2000 || ran.load(std::atomic::Load::SeqCst) >= 100000) { return 2; }
+    return 0;
+}
+
+struct Span { lo: i64, hi: i64 }
+
+// Unbounded binary task tree; cancelled either by a worker after 20000
+// leaves or by a deadline. Afterwards pushed == executed + discarded and
+// nothing is pending.
+fn steal_cancel(region: &std::sync::Region, by_deadline: bool) -> i32 {
+    let queues: std::steal::Queues<Span> = std::steal::queues<Span>(region, 8, 1024).unwrap();
+    let pushed: std::atomic::Atomic64 = std::atomic::at64(region.allocate(8).unwrap());
+    let leaves: std::atomic::Atomic64 = std::atomic::at64(region.allocate(8).unwrap());
+    let refused: std::atomic::Atomic64 = std::atomic::at64(region.allocate(8).unwrap());
+    let cancels: std::atomic::Atomic64 = std::atomic::at64(region.allocate(8).unwrap());
+    if (by_deadline) { queues.cancel_at(std::sync::deadline_after_ms(30).unwrap()); }
+    queues.push(0, Span { lo: 0, hi: 1099511627776 }).unwrap(); pushed.fetch_add(1, std::atomic::Ordering::Relaxed);
+    let pool: std::worker::Pool = std::worker::pool(8).unwrap();
+    let w: i32 = 0;
+    while (w < 8) {
+        let role: std::worker::Role = pool.spawn().unwrap();
+        let me: i32 = match (role) { std::worker::Role::Child(index) -> index, std::worker::Role::Parent(index) -> -1 };
+        if (me >= 0) {
+            while (true) {
+                let next: std::steal::Next<Span> = queues.next(me).unwrap();
+                let stop: bool = match (next) { std::steal::Next::Task(span) -> false, _ -> true };
+                if (stop) {
+                    let was: bool = match (next) { std::steal::Next::Cancelled -> true, _ -> false };
+                    if (was) { cancels.fetch_add(1, std::atomic::Ordering::Relaxed); }
+                    return std::worker::finish(0);
+                }
+                let span: Span = match (next) { std::steal::Next::Task(span) -> span, _ -> Span { lo: 0, hi: 1 } };
+                if (span.hi - span.lo <= 1024) {
+                    let seen: u64 = leaves.fetch_add(1, std::atomic::Ordering::Relaxed) + 1;
+                    if (!by_deadline && seen == 20000) { queues.cancel().unwrap(); }
+                } else {
+                    let middle: i64 = span.lo + (span.hi - span.lo) / 2;
+                    if (queues.push(me, Span { lo: middle, hi: span.hi }).is_ok()) { pushed.fetch_add(1, std::atomic::Ordering::Relaxed); } else { refused.fetch_add(1, std::atomic::Ordering::Relaxed); }
+                    if (queues.push(me, Span { lo: span.lo, hi: middle }).is_ok()) { pushed.fetch_add(1, std::atomic::Ordering::Relaxed); } else { refused.fetch_add(1, std::atomic::Ordering::Relaxed); }
+                }
+                queues.done(me).unwrap();
+            }
+            return std::worker::finish(1);
+        }
+        w += 1;
+    }
+    let summary: std::worker::Summary = pool.join_all().unwrap();
+    pool.destroy();
+    let executed: u64 = 0; w = 0;
+    while (w < 8) { executed += queues.stats(w).executed; w += 1; }
+    let balanced: i32 = 0;
+    if (pushed.load(std::atomic::Load::SeqCst) == executed + queues.discarded() && queues.pending_count() == 0) { balanced = 1; }
+    let label: str = "steal-cancel-by-worker-balanced-cancelled-workers";
+    if (by_deadline) { label = "steal-cancel-by-deadline-balanced-cancelled-workers"; }
+    line(label, balanced, cancels.load(std::atomic::Load::SeqCst) as i32);
+    note("steal-cancel pushed executed", pushed.load(std::atomic::Load::SeqCst) as i32, executed as i32);
+    note("steal-cancel discarded refused", queues.discarded() as i32, refused.load(std::atomic::Load::SeqCst) as i32);
+    if (summary.failed != 0 || balanced != 1 || cancels.load(std::atomic::Load::SeqCst) != 8) { return 1; }
+    if (!by_deadline && leaves.load(std::atomic::Load::SeqCst) < 20000) { return 2; }
+    return 0;
+}
+
+// join_until times out on a worker blocked on a token, then joins it after
+// cancel; signal_all ends a second blocked worker with SIGKILL.
+fn joins(region: &std::sync::Region) -> i32 {
+    let token: std::sync::Token = std::sync::token(region).unwrap();
+    let pool: std::worker::Pool = std::worker::pool(2).unwrap();
+    let w: i32 = 0;
+    while (w < 2) {
+        let role: std::worker::Role = pool.spawn().unwrap();
+        let me: i32 = match (role) { std::worker::Role::Child(index) -> index, std::worker::Role::Parent(index) -> -1 };
+        if (me >= 0) {
+            let cancelled: bool = token.wait_until(std::sync::deadline_after_ms(10000).unwrap()).unwrap();
+            if (me == 1) { while (true) { token.wait_until(std::sync::deadline_after_ms(10000).unwrap()); } }
+            if (cancelled) { return std::worker::finish(0); }
+            return std::worker::finish(3);
+        }
+        w += 1;
+    }
+    let early: core::result::Result<std::worker::Exit, std::worker::Error> = pool.join_until(0, std::sync::deadline_after_ms(20).unwrap());
+    let timed_out: i32 = 0;
+    if (early.is_err()) { timed_out = match (early.unwrap_err()) { std::worker::Error::TimedOut -> 1, _ -> 0 }; }
+    token.cancel().unwrap();
+    let first: std::worker::Exit = pool.join_until(0, std::sync::deadline_after_ms(5000).unwrap()).unwrap();
+    let clean: i32 = 0; if (std::worker::succeeded(first)) { clean = 1; }
+    let killed: i32 = pool.signal_all(9).unwrap();
+    let second: std::worker::Exit = pool.join(1).unwrap();
+    let signal: i32 = match (second) { std::worker::Exit::Signal(number) -> number, std::worker::Exit::Code(code) -> -1 };
+    pool.destroy();
+    line("join-until-timed-out-then-clean", timed_out, clean);
+    line("signal-all-sent-signal", killed, signal);
+    if (timed_out != 1 || clean != 1 || killed != 1 || signal != 9) { return 1; }
+    return 0;
+}
+
+fn main() -> i32 {
+    let region: std::sync::Region = std::sync::map_shared(134217728).unwrap();
+    let status: i32 = slices(region.borrow());
+    if (status == 0) { status = cancellation(region.borrow()); if (status != 0) { status += 10; } }
+    if (status == 0) { status = steal_cancel(region.borrow(), false); if (status != 0) { status += 20; } }
+    if (status == 0) { status = steal_cancel(region.borrow(), true); if (status != 0) { status += 30; } }
+    if (status == 0) { status = joins(region.borrow()); if (status != 0) { status += 40; } }
+    if (region.unmap().is_err() && status == 0) { status = 99; }
+    return status;
+}

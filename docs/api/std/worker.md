@@ -12,7 +12,7 @@ Layer: `std`. Role: module. Profile: **Source inventory**.
 
 - [stdlib-concurrency](../../stdlib-concurrency.md)
 
-Declaration counts: constant: 1; enum: 3; field: 9; function: 3; impl: 1; method: 7; struct: 2; variant: 11.
+Declaration counts: constant: 1; enum: 3; field: 9; function: 3; impl: 1; method: 9; struct: 2; variant: 12.
 
 ## Declared imports
 
@@ -22,6 +22,7 @@ Direct source imports; this is not a package-resolution or transitive dependency
 - [core::result](../core/result.md) · [source](../../../stdlib/std/worker.lani#L10)
 - [core::slice](../core/slice.md) · [source](../../../stdlib/std/worker.lani#L11)
 - [std::linux](linux.md) · [source](../../../stdlib/std/worker.lani#L12)
+- [std::sync](sync.md) · [source](../../../stdlib/std/worker.lani#L13)
 
 ## Types, fields and variants
 
@@ -29,7 +30,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 16](../../../stdlib/std/worker.lani#L16)
+[Source line 17](../../../stdlib/std/worker.lani#L17)
 
 ```lanius
 pub enum Error
@@ -37,7 +38,7 @@ pub enum Error
 
 #### variant: InvalidCapacity
 
-[Source line 16](../../../stdlib/std/worker.lani#L16)
+[Source line 17](../../../stdlib/std/worker.lani#L17)
 
 ```lanius
 InvalidCapacity
@@ -45,7 +46,7 @@ InvalidCapacity
 
 #### variant: Full
 
-[Source line 16](../../../stdlib/std/worker.lani#L16)
+[Source line 17](../../../stdlib/std/worker.lani#L17)
 
 ```lanius
 Full
@@ -53,7 +54,7 @@ Full
 
 #### variant: Destroyed
 
-[Source line 16](../../../stdlib/std/worker.lani#L16)
+[Source line 17](../../../stdlib/std/worker.lani#L17)
 
 ```lanius
 Destroyed
@@ -61,7 +62,7 @@ Destroyed
 
 #### variant: NotSpawned
 
-[Source line 16](../../../stdlib/std/worker.lani#L16)
+[Source line 17](../../../stdlib/std/worker.lani#L17)
 
 ```lanius
 NotSpawned
@@ -69,7 +70,7 @@ NotSpawned
 
 #### variant: AlreadyJoined
 
-[Source line 16](../../../stdlib/std/worker.lani#L16)
+[Source line 17](../../../stdlib/std/worker.lani#L17)
 
 ```lanius
 AlreadyJoined
@@ -77,15 +78,23 @@ AlreadyJoined
 
 #### variant: Unjoined
 
-[Source line 16](../../../stdlib/std/worker.lani#L16)
+[Source line 17](../../../stdlib/std/worker.lani#L17)
 
 ```lanius
 Unjoined
 ```
 
+#### variant: TimedOut
+
+[Source line 17](../../../stdlib/std/worker.lani#L17)
+
+```lanius
+TimedOut
+```
+
 #### variant: Host
 
-[Source line 16](../../../stdlib/std/worker.lani#L16)
+[Source line 17](../../../stdlib/std/worker.lani#L17)
 
 ```lanius
 Host(i32)
@@ -93,7 +102,7 @@ Host(i32)
 
 ### enum: Role
 
-[Source line 17](../../../stdlib/std/worker.lani#L17)
+[Source line 18](../../../stdlib/std/worker.lani#L18)
 
 ```lanius
 pub enum Role
@@ -101,7 +110,7 @@ pub enum Role
 
 #### variant: Parent
 
-[Source line 17](../../../stdlib/std/worker.lani#L17)
+[Source line 18](../../../stdlib/std/worker.lani#L18)
 
 ```lanius
 Parent(i32)
@@ -109,7 +118,7 @@ Parent(i32)
 
 #### variant: Child
 
-[Source line 17](../../../stdlib/std/worker.lani#L17)
+[Source line 18](../../../stdlib/std/worker.lani#L18)
 
 ```lanius
 Child(i32)
@@ -117,7 +126,7 @@ Child(i32)
 
 ### enum: Exit
 
-[Source line 18](../../../stdlib/std/worker.lani#L18)
+[Source line 19](../../../stdlib/std/worker.lani#L19)
 
 ```lanius
 pub enum Exit
@@ -125,7 +134,7 @@ pub enum Exit
 
 #### variant: Code
 
-[Source line 18](../../../stdlib/std/worker.lani#L18)
+[Source line 19](../../../stdlib/std/worker.lani#L19)
 
 ```lanius
 Code(i32)
@@ -133,7 +142,7 @@ Code(i32)
 
 #### variant: Signal
 
-[Source line 18](../../../stdlib/std/worker.lani#L18)
+[Source line 19](../../../stdlib/std/worker.lani#L19)
 
 ```lanius
 Signal(i32)
@@ -141,7 +150,7 @@ Signal(i32)
 
 ### struct: Summary
 
-[Source line 20](../../../stdlib/std/worker.lani#L20)
+[Source line 21](../../../stdlib/std/worker.lani#L21)
 
 ```lanius
 pub struct Summary
@@ -149,7 +158,7 @@ pub struct Summary
 
 #### field: joined
 
-[Source line 20](../../../stdlib/std/worker.lani#L20)
+[Source line 21](../../../stdlib/std/worker.lani#L21)
 
 ```lanius
 joined: i32
@@ -157,7 +166,7 @@ joined: i32
 
 #### field: failed
 
-[Source line 20](../../../stdlib/std/worker.lani#L20)
+[Source line 21](../../../stdlib/std/worker.lani#L21)
 
 ```lanius
 failed: i32
@@ -165,7 +174,7 @@ failed: i32
 
 #### field: first_failed
 
-[Source line 20](../../../stdlib/std/worker.lani#L20)
+[Source line 21](../../../stdlib/std/worker.lani#L21)
 
 ```lanius
 first_failed: i32
@@ -173,7 +182,7 @@ first_failed: i32
 
 #### field: first_exit
 
-[Source line 20](../../../stdlib/std/worker.lani#L20)
+[Source line 21](../../../stdlib/std/worker.lani#L21)
 
 ```lanius
 first_exit: Exit
@@ -181,7 +190,7 @@ first_exit: Exit
 
 ### struct: Pool
 
-[Source line 37](../../../stdlib/std/worker.lani#L37)
+[Source line 38](../../../stdlib/std/worker.lani#L38)
 
 ```lanius
 pub struct Pool
@@ -189,7 +198,7 @@ pub struct Pool
 
 #### field: table
 
-[Source line 37](../../../stdlib/std/worker.lani#L37)
+[Source line 38](../../../stdlib/std/worker.lani#L38)
 
 ```lanius
 table: ptr
@@ -197,7 +206,7 @@ table: ptr
 
 #### field: capacity
 
-[Source line 37](../../../stdlib/std/worker.lani#L37)
+[Source line 38](../../../stdlib/std/worker.lani#L38)
 
 ```lanius
 capacity: i32
@@ -205,7 +214,7 @@ capacity: i32
 
 #### field: count
 
-[Source line 37](../../../stdlib/std/worker.lani#L37)
+[Source line 38](../../../stdlib/std/worker.lani#L38)
 
 ```lanius
 count: i32
@@ -213,7 +222,7 @@ count: i32
 
 #### field: joined
 
-[Source line 37](../../../stdlib/std/worker.lani#L37)
+[Source line 38](../../../stdlib/std/worker.lani#L38)
 
 ```lanius
 joined: i32
@@ -221,7 +230,7 @@ joined: i32
 
 #### field: live
 
-[Source line 37](../../../stdlib/std/worker.lani#L37)
+[Source line 38](../../../stdlib/std/worker.lani#L38)
 
 ```lanius
 live: bool
@@ -231,7 +240,7 @@ live: bool
 
 ### constant: MAX_WORKERS
 
-[Source line 14](../../../stdlib/std/worker.lani#L14)
+[Source line 15](../../../stdlib/std/worker.lani#L15)
 
 ```lanius
 pub const MAX_WORKERS: i32 = 1024;
@@ -241,7 +250,7 @@ pub const MAX_WORKERS: i32 = 1024;
 
 ### function: finish
 
-[Source line 33](../../../stdlib/std/worker.lani#L33)
+[Source line 34](../../../stdlib/std/worker.lani#L34)
 
 ```lanius
 pub fn finish(status: i32) -> i32
@@ -249,7 +258,7 @@ pub fn finish(status: i32) -> i32
 
 ### function: pool
 
-[Source line 38](../../../stdlib/std/worker.lani#L38)
+[Source line 39](../../../stdlib/std/worker.lani#L39)
 
 ```lanius
 pub fn pool(capacity: i32) -> core::result::Result<Pool, Error>
@@ -257,7 +266,7 @@ pub fn pool(capacity: i32) -> core::result::Result<Pool, Error>
 
 ### function: succeeded
 
-[Source line 53](../../../stdlib/std/worker.lani#L53)
+[Source line 54](../../../stdlib/std/worker.lani#L54)
 
 ```lanius
 pub fn succeeded(exit: Exit) -> bool
@@ -265,9 +274,9 @@ pub fn succeeded(exit: Exit) -> bool
 
 ## Implementation blocks and public methods
 
-### impl at line 55
+### impl at line 56
 
-[Source line 55](../../../stdlib/std/worker.lani#L55)
+[Source line 56](../../../stdlib/std/worker.lani#L56)
 
 ```lanius
 pub impl Pool
@@ -275,7 +284,7 @@ pub impl Pool
 
 #### method: borrow
 
-[Source line 56](../../../stdlib/std/worker.lani#L56)
+[Source line 57](../../../stdlib/std/worker.lani#L57)
 
 ```lanius
 pub fn borrow(&self) -> &Pool
@@ -283,7 +292,7 @@ pub fn borrow(&self) -> &Pool
 
 #### method: len
 
-[Source line 57](../../../stdlib/std/worker.lani#L57)
+[Source line 58](../../../stdlib/std/worker.lani#L58)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -291,7 +300,7 @@ pub fn len(&self) -> i32
 
 #### method: joined
 
-[Source line 58](../../../stdlib/std/worker.lani#L58)
+[Source line 59](../../../stdlib/std/worker.lani#L59)
 
 ```lanius
 pub fn joined(&self) -> i32
@@ -299,7 +308,7 @@ pub fn joined(&self) -> i32
 
 #### method: spawn
 
-[Source line 62](../../../stdlib/std/worker.lani#L62)
+[Source line 63](../../../stdlib/std/worker.lani#L63)
 
 ```lanius
 pub fn spawn(&self) -> core::result::Result<Role, Error>
@@ -307,15 +316,31 @@ pub fn spawn(&self) -> core::result::Result<Role, Error>
 
 #### method: join
 
-[Source line 74](../../../stdlib/std/worker.lani#L74)
+[Source line 75](../../../stdlib/std/worker.lani#L75)
 
 ```lanius
 pub fn join(&self, index: i32) -> core::result::Result<Exit, Error>
 ```
 
+#### method: join_until
+
+[Source line 99](../../../stdlib/std/worker.lani#L99)
+
+```lanius
+pub fn join_until(&self, index: i32, deadline: std::sync::Deadline) -> core::result::Result<Exit, Error>
+```
+
+#### method: signal_all
+
+[Source line 132](../../../stdlib/std/worker.lani#L132)
+
+```lanius
+pub fn signal_all(&self, signal: i32) -> core::result::Result<i32, Error>
+```
+
 #### method: join_all
 
-[Source line 97](../../../stdlib/std/worker.lani#L97)
+[Source line 147](../../../stdlib/std/worker.lani#L147)
 
 ```lanius
 pub fn join_all(&self) -> core::result::Result<Summary, Error>
@@ -323,7 +348,7 @@ pub fn join_all(&self) -> core::result::Result<Summary, Error>
 
 #### method: destroy
 
-[Source line 113](../../../stdlib/std/worker.lani#L113)
+[Source line 163](../../../stdlib/std/worker.lani#L163)
 
 ```lanius
 pub fn destroy(&self) -> core::result::Result<i32, Error>

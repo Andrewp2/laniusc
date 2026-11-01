@@ -1958,6 +1958,11 @@
       "profile": "Unbound host declarations",
       "note": "The direct legacy network service declarations are unbound. Metadata helpers describe that unavailable service; executable owned sockets use std::socket over std::linux separately."
     },
+    "std::parallel": {
+      "guides": [
+        "docs/stdlib-concurrency.md"
+      ]
+    },
     "std::poll": {
       "guides": [
         "docs/stdlib-poll.md"
@@ -2021,6 +2026,11 @@
         "unix_pair": "Creates two connected unnamed Unix stream endpoints with CLOEXEC and the selected mode. Exact-zero status and two distinct nonnegative descriptors publish both owners together; full-width status checks precede narrowing, and malformed invented outputs grant no authority to close arbitrary integers.",
         "unix_from_owned_handle": "Adopts an exclusively owned live Unix-stream descriptor. Rejects a negative number only; family, type, state and flags are caller preconditions. It does not duplicate the descriptor or set CLOEXEC."
       }
+    },
+    "std::steal": {
+      "guides": [
+        "docs/stdlib-concurrency.md"
+      ]
     },
     "std::stream": {
       "guides": [
