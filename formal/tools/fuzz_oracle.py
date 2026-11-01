@@ -27,12 +27,19 @@ alone with --seed S --first k --count 1.
    recursion is on a counter below 16, and a cost bound on calls in loops
    keeps a run short. Most divisors, shift amounts and indexes are made
    safe; a few are left as they come, so the traps are tested too.
+   Integers lean to word boundaries (EDGES: 2^31, 2^32, 2^63, 2^64 and
+   their neighbours), some written with leading zeros to 20 digits or
+   more; one literal in some programs takes a form one compiler or both
+   reject (EDGE_FORMS: hex, octal, binary, `_`, a suffix, past the type's
+   range, 20 to 40 digits), where neither may panic.
 2. The verified compiler: each program is parsed on the CPU (Parser: the
    Lean lexer's tokens from runAll's `dump`, laniusc's LL(1) table; no GPU
    job), the verified validator checks each tree as it checks laniusc's,
    and one runAll manifest compiles every program to a Linux executable
    (`elf`, as programs_oracle.py does). For a program the front end does
-   not read, srcDump says why.
+   not read, srcDump says why. A PANIC line from runAll (a Lean panic, after
+   which the run goes on with a default value) marks its program, found by
+   compiling each alone, as a disagreement whatever laniusc does.
 3. laniusc: each program the verified compiler compiled is built alone
    through target/claude-work/bin/lcc, the resident laniusc (tens of
    milliseconds a build; it holds heavy's GPU lock while it compiles, so
@@ -58,19 +65,11 @@ in target/claude-work/fuzz/found/):
   value calls a function, and the generator writes none; a program that
   still shows the order is counted as known (store_order_known).
 - Bare shift amounts, a verified-compiler reading bug (ROADMAP.md, "Bare
-  shift amounts"; found/bare_amount_*.lani): a computed amount is cast to
-  its own type until it is fixed (BARE_AMOUNTS).
-- Nested bare variants: after a nested pattern names a variant bare
-  (`Ok(V5(p))`, `Some(Some(x))`), laniusc resolved no later bare pattern of
-  it (LNC0005, found/nested_bare_variant.lani, nested_none.lani); inner
-  patterns are written qualified (`core::option::Option::Some`).
-- A payload binder after a nested local variant (`V6(V3(p), q) -> q`):
-  laniusc's x86 backend rejected it (LNC0017, LIR opcode 8;
-  found/nested_cast_lir8.lani), counted as known (KNOWN_REJECTS).
-  Both laniusc bugs are fixed on the fuzz branch (fixtures
-  tests/fixtures/compiler_defects/lnc0005_nested_variant_pattern.lani and
-  lnc0017_payload_after_nested_variant.lani); the two workarounds can go
-  once lcc's laniusc has the fix.
+  shift amounts"; found/bare_amount_*.lani), fixed in bcd36a2b0: amounts
+  are written bare again (BARE_AMOUNTS).
+- Fixed laniusc bugs this generator found keep regression fixtures in
+  tests/fixtures/compiler_defects/ (lnc0005_nested_variant_pattern.lani,
+  lnc0017_payload_after_nested_variant.lani); nothing works around them.
 - Constant traps. laniusc rejects a constant divisor of zero and a constant
   index past the end at compile time (KNOWN_REJECTS); Core traps when the
   program runs. Divisors and indexes that may trap are computed.
@@ -110,9 +109,9 @@ MAX_CANDIDATES = 48
 # A shift amount with no local deciding its type, such as `(K1 % 7) & 31`:
 # laniusc gives it a type of its own (i32 for literals, as Rust does) and the
 # verified front end the shifted value's (amountWant), a reading bug
-# (ROADMAP.md, "Bare shift amounts"). Until it is fixed a computed amount is
-# cast to its own type.
-BARE_AMOUNTS = False
+# (ROADMAP.md, "Bare shift amounts"), fixed in bcd36a2b0. False casts every
+# computed amount to its own type.
+BARE_AMOUNTS = True
 # A call (a function's or method's name, maybe with type arguments, then `(`);
 # variants start with a capital letter.
 CALL = re.compile(r'\b[a-z_]\w*(?:<[^<>()]*>)?\(')
@@ -171,6 +170,14 @@ def result_of(t):
         return None
     a, b = so.split_top(t[len(RESULT):-1])
     return a, b
+
+
+# Word boundaries near which int_value picks values.
+EDGES = [1 << 31, 1 << 32, 1 << 53, 1 << 63, 10 ** 18, 10 ** 19, (1 << 64) - 1]
+# The forms edge_form writes: the verified front end reads none of hex,
+# octal, binary or `_`; neither compiler reads a suffix; the rest are out of
+# the type's range.
+EDGE_FORMS = ['hex', 'octal', 'binary', 'underscore', 'suffix', 'over', 'over-hex', 'wide', 'wide']
 
 
 def bounds(t):
@@ -240,7 +247,11 @@ class Gen:
         # The program's feature weights: each program leans its own way.
         self.w = {k: rng.choice([0.3, 1, 1, 2, 4]) for k in
                   ('arith', 'shift', 'div', 'cast', 'struct', 'enum', 'array', 'match', 'loop', 'try', 'rec', 'nest',
-                   'trait', 'call', 'emit', 'tap')}
+                   'trait', 'call', 'emit', 'tap', 'edge')}
+        # Some programs write one literal in a form the verified front end
+        # does not read (hex, `_`, a suffix) or out of its type's range
+        # (EDGE_FORMS): both compilers should reject it, and neither panic.
+        self.exotic = 1 if rng.random() < 0.06 else 0
         self.taps = {}      # type -> an identity function that writes a tag to stderr first
         self.tags = 0
         self.depth = rng.choice([2, 2, 3, 4])  # how deep a statement's expressions nest
@@ -302,6 +313,10 @@ class Gen:
     def int_value(self, t):
         lo, hi = bounds(t)
         w = INTS[t][0]
+        if self.chance(0.06 * self.w['edge']):
+            # near a word boundary: 2^31, 2^32, 2^63, 2^64 and their neighbours
+            near = [v for e in EDGES for v in (e - 1, e, e + 1, -e, 1 - e) if lo <= v <= hi]
+            return self.rng.choice(near + [lo, hi, lo + 1, hi - 1])
         k = self.rng.randrange(8)
         if k == 0:
             return self.rng.choice([lo, hi, lo + 1, hi - 1])
@@ -318,7 +333,39 @@ class Gen:
         if t == 'bool':
             return self.rng.choice(['true', 'false'])
         v = self.int_value(t) if value is None else value
-        return f'({v})' if v < 0 else str(v)
+        text = str(abs(v))
+        if self.exotic and self.chance(0.05):
+            self.exotic = 0
+            text = self.edge_form(t, abs(v), v < 0)
+        elif self.chance(0.02 * self.w['edge']):
+            # leading zeros, often to 20 digits or more (wide_decimal's path)
+            text = '0' * self.rng.choice([1, 3, 17, 19, 20, 25]) + text
+        return f'(-{text})' if v < 0 else text
+
+    def edge_form(self, t, a, negative):
+        """A literal in a form one compiler or both reject (EDGE_FORMS)."""
+        lo, hi = bounds(t)
+        top = -lo if negative else hi
+        k = self.rng.choice(EDGE_FORMS)
+        if k == 'hex':
+            h = f'{a:x}'
+            return '0x' + '0' * self.rng.choice([0, 0, 5]) + (h.upper() if self.chance(0.5) else h)
+        if k == 'octal':
+            return f'0o{a:o}'
+        if k == 'binary':
+            return f'0b{a:b}'
+        if k == 'underscore':
+            d = str(a)
+            return f'{a:_}' if a >= 1000 else d[0] + '_' + d[1:] if len(d) > 1 else d + '_'
+        if k == 'suffix':
+            return f'{a}{t}'
+        if k == 'over':
+            return str(top + 1)
+        if k == 'over-hex':
+            return f'0x{top + 1:x}'
+        # 'wide': 20 or more digits, past 2^64
+        return str(self.rng.choice([1 << 64, (1 << 64) + 9, 99999999999999999999,
+                                    10 ** self.rng.randrange(20, 40) + self.rng.randrange(10 ** 6)]))
 
     # ------------------------------------------------ expressions
 
@@ -503,9 +550,8 @@ class Gen:
             plain = [(s.fresh('p'), pt) for pt in ps]
             out.append((f'{q}({", ".join(b for b, _ in plain)})', plain))
         for iv, ips in some:
-            # Qualified: after a bare inner `V5(..)` laniusc resolves no later
-            # bare `V5` pattern (LNC0005; found/nested_bare_variant.lani).
-            iq = f'{self.enum_path(ps[j])}::{iv}'
+            # Mostly bare, as written; sometimes qualified.
+            iq = f'{self.enum_path(ps[j])}::{iv}' if self.chance(0.25) else iv
             ib = [(s.fresh('p'), ipt) for ipt in ips]
             cells = [b for b, _ in others]
             cells[j] = f'{iq}({", ".join(b for b, _ in ib)})' if ips else iq
@@ -1445,6 +1491,7 @@ class Verified:
 
     def __init__(self, args, workdir):
         self.args, self.workdir = args, workdir
+        self.panics = []
         self.files = os.path.join(workdir, 'files')
         os.makedirs(self.files, exist_ok=True)
         self.parser = Parser()
@@ -1481,7 +1528,9 @@ class Verified:
         if todo:
             manifest = os.path.join(self.workdir, 'dump.txt')
             open(manifest, 'w').write(''.join(f'dump d{i} {b}\n' for i, (b, _) in enumerate(todo)))
-            out = subprocess.run([so.RUN_ALL, manifest], capture_output=True, text=True, timeout=240).stdout
+            run = subprocess.run([so.RUN_ALL, manifest], capture_output=True, text=True, timeout=240)
+            self.note_panics(run)
+            out = run.stdout
             lines = {line.split(' ', 1)[0]: line for line in out.split('\n') if ' file ' in line}
             for i, (b, k) in enumerate(todo):
                 tree = self.parser.parse(self.parser.tokens(lines[f'd{i}'])) if f'd{i}' in lines else None
@@ -1492,8 +1541,25 @@ class Verified:
                 run_cache.store('cpu-parse', k, dict(prods=tree[0], parents=tree[1]))
         return none
 
+    def note_panics(self, run):
+        """Keep the PANIC lines a runAll run wrote: a Lean panic prints one
+        and the run goes on with a default value."""
+        self.panics += [line.strip() for line in run.stderr.split('\n') if 'PANIC' in line]
+
     def compile(self, texts, tag):
-        """For each text, ('elf', path) or (status, reason)."""
+        """For each text, ('elf', path), ('panic', the PANIC line) or (status, reason)."""
+        self.panics = []
+        out = self.compile_batch(texts, tag)
+        if self.panics:
+            if len(texts) == 1:
+                out = [('panic', self.panics[0])]
+            else:
+                # which: each alone (rare)
+                out = [o if self.compile([t], f'{tag}{k}s')[0][0] != 'panic' else ('panic', self.panics[0])
+                       for k, (t, o) in enumerate(zip(texts, out))]
+        return out
+
+    def compile_batch(self, texts, tag):
         out = [None] * len(texts)
         bases = [os.path.join(self.workdir, f'{tag}{k}') for k in range(len(texts))]
         for b, text in zip(bases, texts):
@@ -1512,6 +1578,7 @@ class Verified:
         manifest = os.path.join(self.workdir, f'{tag}manifest.txt')
         open(manifest, 'w').write('\n'.join(lines) + '\n')
         run = subprocess.run([so.RUN_ALL, manifest], capture_output=True, text=True, timeout=240)
+        self.note_panics(run)
         said = dict(line.split(' ', 1) for line in run.stdout.strip().split('\n') if ' ' in line)
         for k, b in enumerate(bases):
             if out[k] is not None:
@@ -1638,8 +1705,6 @@ def agree(want, have):
 # the verified compiler) compiles it and traps when it runs there. Such
 # programs are counted as known, neither agreeing nor disagreeing.
 KNOWN_REJECTS = [
-    # laniusc's x86 backend lacks a cast of a nested arm's payload binder (found/nested_cast_lir8.lani)
-    ('first unsupported target LIR opcode: 8', 'laniusc rejecting a cast in a nested match arm (KNOWN_REJECTS, LIR opcode 8)'),
     ('unsupported x86 zero divisor', 'laniusc rejecting a constant divisor of zero (KNOWN_REJECTS)'),
     ('unsupported x86 array index bounds', 'laniusc rejecting a constant index past the end of an array (KNOWN_REJECTS)'),
 ]
@@ -1671,8 +1736,13 @@ def verdict(v, l, text):
     """How the two compilers' outcomes compare: None when they agree or
     either does not compile it, ('known', what) for a known difference,
     else a short kind."""
+    if v[0] == 'panic':
+        # Lean's panic message, without the source position that names it
+        return 'the verified compiler panics: ' + re.sub(r'\d+:\d+', '', v[1])[:160]
     if v[0] != 'elf' or l[0] == 'skipped':
         return None
+    if l[0] == 'rejects' and 'panicked at' in l[1]:
+        return 'laniusc panics: ' + l[1][l[1].index('panicked at'):][:160]
     if l[0] == 'rejects':
         what = known_reject(l[1])
         if what:
@@ -1686,6 +1756,11 @@ def verdict(v, l, text):
     return ('known', STORE_ORDER) if store_order_known(text, want, l[1]) else 'differ'
 
 
+def vrun(v):
+    """The verified compiler's run of an outcome: its ELF's, or its panic as stderr."""
+    return po.run([v[1]]) if v[0] == 'elf' else ('panic', b'', v[1].encode())
+
+
 def shown(r):
     code, out, err = r
     return f'exit {code}, stdout {out[:200]!r}, stderr {err[:120]!r}'
@@ -1694,7 +1769,7 @@ def shown(r):
 def evaluate(verified, laniusc, texts, tag):
     """(verified outcome, laniusc outcome, kind) for each text."""
     vs = verified.compile(texts, tag)
-    ok = [k for k, v in enumerate(vs) if v[0] == 'elf']
+    ok = [k for k, v in enumerate(vs) if v[0] in ('elf', 'panic')]
     ls = laniusc.outcomes([texts[k] for k in ok], tag + 'l')
     lout = [None] * len(texts)
     for k, l in zip(ok, ls):
@@ -1766,7 +1841,7 @@ class Minimizer:
         keep = [r[2] == self.kind and 'fn main(' in text for text, r in zip(texts, rs)]
         for text, r, k in zip(texts, rs, keep):
             if k:
-                self.outcome[text] = (r[0], r[1], po.run([r[0][1]]))
+                self.outcome[text] = (r[0], r[1], vrun(r[0]))
         self.last = time.time() - began
         return keep
 
@@ -1878,7 +1953,7 @@ def main():
     t0 = time.time()
     vs = verified.compile(texts, 'p')
     compile_s = time.time() - t0
-    ok = [k for k, v in enumerate(vs) if v[0] == 'elf']
+    ok = [k for k, v in enumerate(vs) if v[0] in ('elf', 'panic')]
     t0 = time.time()
     ls = laniusc.outcomes([texts[k] for k in ok], 'l', began + args.budget)
     laniusc_s = time.time() - t0
@@ -1886,7 +1961,7 @@ def main():
     t0 = time.time()
     found, agreed, reasons = [], 0, {}
     for k, v in enumerate(vs):
-        if v[0] != 'elf':
+        if v[0] not in ('elf', 'panic'):
             r = v[1] if v[0] == 'noparse' else gap(verified.why(os.path.join(workdir, f'p{k}')))
             reasons[r] = reasons.get(r, 0) + 1
             open(os.path.join(workdir, 'unread.txt'), 'a').write(f'{ids[k]}: {v[0]}: {r}\n')
@@ -1895,7 +1970,7 @@ def main():
     for k, l in zip(ok, ls):
         if l[0] == 'skipped':
             continue
-        ran = po.run([vs[k][1]])
+        ran = vrun(vs[k])
         traps += ran[0] in po.VERIFIED_TRAPS
         lines_out += ran[1].count(b'\n') + ran[2].count(b'\n')
         kind = verdict(vs[k], l, texts[k])
@@ -1904,7 +1979,7 @@ def main():
         elif isinstance(kind, tuple):
             known[kind[1]] = known.get(kind[1], 0) + 1
         else:
-            found.append(dict(k=k, id=ids[k], kind=kind, text=texts[k], want=po.run([vs[k][1]]), have=l))
+            found.append(dict(k=k, id=ids[k], kind=kind, text=texts[k], want=vrun(vs[k]), have=l))
     run_s = time.time() - t0
 
     # Confirm each alone, then minimize.
@@ -1928,7 +2003,7 @@ def main():
                 f'// laniusc: {shown(have) if l[0] == "ran" else "rejects: " + repr(have)}\n' + text)
             return want, have, l[0]
 
-        first = (alone[0], alone[1], po.run([alone[0][1]]))
+        first = (alone[0], alone[1], vrun(alone[0]))
         save(f['text'], 'being minimized', first)
         small, outcome, done = f['text'], first, 'not minimized'
         if not args.no_minimize and not args.program:
@@ -1948,7 +2023,9 @@ def main():
     lines = [f'{len(texts)} programs (seed {args.seed}, from {ids[0]}); time: generate {gen_s:.0f} s, '
              f'the verified compiler {compile_s:.0f} s, laniusc {laniusc_s:.0f} s ({laniusc.builds} builds, '
              f'{laniusc.build_s:.0f} s), run {run_s:.0f} s, total {time.time() - began:.0f} s',
-             f'compiled by the verified compiler: {len(ok)}; laniusc rejects {rejected}; both ran alike: {agreed}',
+             f'compiled by the verified compiler: {len(ok)}' +
+             (f' ({sum(1 for k in ok if vs[k][0] == "panic")} with a PANIC)' if any(vs[k][0] == 'panic' for k in ok) else '') +
+             f'; laniusc rejects {rejected}; both ran alike: {agreed}',
              f'of the compiled: {traps} end at a checked trap; {lines_out} lines of output in all' +
              (f'; {skipped} not built by laniusc, past --budget' if skipped else ''),
              'not compiled by the verified compiler, by the gap srcDump names:'] + \
