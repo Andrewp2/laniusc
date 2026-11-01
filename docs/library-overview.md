@@ -527,6 +527,15 @@ the selected increment is accepted on the finite profile below. The accepted
 temporary directories, checked link/readlink and permission operations, and a
 real `mktemp_dir` program. All 13 selected Rust tests pass across separate
 native commands on the profile below; this completes the selected increment.
+[Generic diff and fuzzy patch](extended-seqdiff.md) (`ext::seqdiff`,
+`ext::unidiff`) diffs any `Eq`/`Hash` item sequence with linear-space Myers or
+patience, groups context hunks, and writes, parses and applies unified diffs with
+GNU-style offset/fuzz and typed per-hunk rejects. Across 1,000 generated pairs,
+the `seq-diff`/`seq-patch` tools give 878/878 minimal Myers edit lengths against
+an O(N·M) LCS, 878/878 GNU and native round trips, 878/878 real GNU `diff -u`
+applications and 333/333 distinct-line plus 328/328 repeated-line offset/fuzz
+agreements with GNU `patch` at `-F0` and `-F2`.
+
 The preceding [reusable regex-workspace increment](library-regex-workspace-plan.md) is
 implemented and passes the selected Workspace/Search, regex, lexer,
 regex-text and real-application gates on the native profile below. The preceding

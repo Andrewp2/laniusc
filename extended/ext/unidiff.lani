@@ -1,0 +1,324 @@
+// Unified diff writer, tolerant parser and fuzzy patch applier.
+// See docs/extended-seqdiff.md.
+module ext::unidiff;
+import alloc::vec;
+import core::slice;
+import core::option;
+import core::result;
+import core::mem;
+import ext::seqdiff;
+
+pub enum WriteError { InvalidLine, InvalidHeader, OutputLimit, AllocationFailed }
+pub enum ParseKind { MissingHeader, BadHunkHeader, BadLine, BadMarker, Truncated, LineLimit, AllocationFailed }
+pub struct ParseError { kind: ParseKind, offset: i32 }
+// kind 0 context, 1 deleted, 2 added. bytes keep the LF unless marked.
+pub struct PatchLine { kind: i32, bytes: core::slice::View<u8> }
+pub struct PatchHunk { old_start: i32, old_count: i32, new_start: i32, new_count: i32, first: i32, count: i32, offset: i32, end: i32 }
+pub struct Patch { old_name: core::slice::View<u8>, new_name: core::slice::View<u8>, hunks: alloc::vec::Vec<PatchHunk>, lines: alloc::vec::Vec<PatchLine>, end: i32 }
+pub struct ApplyOptions { max_fuzz: i32, max_offset: i32, max_lines: i32, max_output: i32, max_work: u64 }
+pub fn default_options() -> ApplyOptions { return ApplyOptions { max_fuzz: 2, max_offset: 2147483647, max_lines: 4000000, max_output: 268435456, max_work: 4000000000 }; }
+pub enum HunkStatus { Exact, Offset, Fuzzed, Rejected }
+pub enum RejectReason { NotRejected, NoMatch, Overlap }
+// line: one-based base line where the hunk's old side starts (expected line when rejected).
+pub struct HunkReport { index: i32, status: HunkStatus, reason: RejectReason, line: i32, offset: i32, fuzz: i32 }
+pub enum ApplyError { InvalidOptions, LineLimit, WorkLimit, OutputLimit, AllocationFailed }
+pub struct Applied { output: alloc::vec::Vec<u8>, reports: alloc::vec::Vec<HunkReport>, rejected: i32 }
+
+struct Out { bytes: alloc::vec::Vec<u8>, limit: i32, failed: bool, full: bool }
+impl Out { fn borrow(&self) -> &Out { return self; } }
+fn ud_byte(o: &Out, byte: u8) {
+    if (o.failed) { return; }
+    if (o.bytes.len() >= o.limit) { o.failed = true; o.full = true; return; }
+    if (core::result::is_err(o.bytes.try_push(byte))) { o.failed = true; }
+}
+fn ud_bytes(o: &Out, v: core::slice::View<u8>) {
+    if (o.failed) { return; }
+    if (v.length > o.limit - o.bytes.len()) { o.failed = true; o.full = true; return; }
+    if (core::result::is_err(o.bytes.try_extend(v))) { o.failed = true; }
+}
+fn ud_text(o: &Out, text: str, count: i32) { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text), count); let i: i32 = 0; while (i < count) { ud_byte(o, raw[i]); i += 1; } }
+fn ud_number(o: &Out, number: i32) {
+    let digits: [u8;10] = [0;10]; let count: i32 = 0; let value: i32 = number;
+    if (value == 0) { ud_byte(o, 48); return; }
+    while (value > 0) { digits[count] = (48 + value % 10) as u8; count += 1; value /= 10; }
+    while (count > 0) { count -= 1; ud_byte(o, digits[count]); }
+}
+// GNU range form: start omitted count when it is one; empty ranges name the line before.
+fn ud_range(o: &Out, start: i32, count: i32) {
+    if (count == 0) { ud_number(o, start); ud_text(o, ",0", 2); return; }
+    ud_number(o, start + 1); if (count != 1) { ud_byte(o, 44); ud_number(o, count); }
+}
+fn ud_line(o: &Out, tag: u8, v: core::slice::View<u8>) {
+    ud_byte(o, tag); ud_bytes(o, v);
+    if (v.length == 0 || v.values[v.start+v.length-1] != 10) { ud_text(o, "\n\\ No newline at end of file\n", 29); }
+}
+fn ud_label_ok(v: core::slice::View<u8>) -> bool {
+    if (v.length <= 0) { return false; } let i: i32 = 0;
+    while (i < v.length) { let b: u8 = v.values[v.start+i]; if (b == 0 || b == 10 || b == 13) { return false; } i += 1; } return true;
+}
+fn ud_lines_ok(lines: core::slice::View<ext::seqdiff::Line>) -> bool {
+    let i: i32 = 0;
+    while (i < lines.length) {
+        let v: core::slice::View<u8> = lines.values[lines.start+i].bytes; if (v.length == 0) { return false; }
+        let j: i32 = 0; while (j < v.length - 1) { if (v.values[v.start+j] == 10) { return false; } j += 1; }
+        if (i + 1 < lines.length && v.values[v.start+v.length-1] != 10) { return false; }
+        i += 1;
+    }
+    return true;
+}
+
+// Write one file's unified diff. Identical inputs (no hunks) give empty output.
+pub fn write_unified(a: core::slice::View<ext::seqdiff::Line>, b: core::slice::View<ext::seqdiff::Line>, script: &ext::seqdiff::Script, hunks: core::slice::View<ext::seqdiff::Hunk>, old_name: core::slice::View<u8>, new_name: core::slice::View<u8>, max_output: i32) -> core::result::Result<alloc::vec::Vec<u8>, WriteError> {
+    if (!ud_label_ok(old_name) || !ud_label_ok(new_name)) { return core::result::Err(WriteError::InvalidHeader); }
+    if (!ud_lines_ok(a) || !ud_lines_ok(b) || a.length != script.before_len() || b.length != script.after_len()) { return core::result::Err(WriteError::InvalidLine); }
+    let o: Out = Out { bytes: alloc::vec::new(), limit: max_output, failed: false, full: false };
+    if (hunks.length == 0) { return core::result::Ok(o.bytes); }
+    ud_text(o.borrow(), "--- ", 4); ud_bytes(o.borrow(), old_name); ud_text(o.borrow(), "\n+++ ", 5); ud_bytes(o.borrow(), new_name); ud_byte(o.borrow(), 10);
+    let h: i32 = 0;
+    while (h < hunks.length && !o.failed) {
+        let hunk: ext::seqdiff::Hunk = hunks.values[hunks.start+h];
+        ud_text(o.borrow(), "@@ -", 4); ud_range(o.borrow(), hunk.before, hunk.before_count); ud_text(o.borrow(), " +", 2); ud_range(o.borrow(), hunk.after, hunk.after_count); ud_text(o.borrow(), " @@\n", 4);
+        let at: i32 = hunk.first;
+        while (at < hunk.first + hunk.count && !o.failed) {
+            let step: ext::seqdiff::Edit = core::result::unwrap(script.step(at));
+            if (step.kind == 2) { ud_line(o.borrow(), 43, b.values[b.start+step.after].bytes); }
+            else { if (step.kind == 1) { ud_line(o.borrow(), 45, a.values[a.start+step.before].bytes); } else { ud_line(o.borrow(), 32, a.values[a.start+step.before].bytes); } }
+            at += 1;
+        }
+        h += 1;
+    }
+    if (o.failed) { o.bytes.destroy(); if (o.full) { return core::result::Err(WriteError::OutputLimit); } return core::result::Err(WriteError::AllocationFailed); }
+    return core::result::Ok(o.bytes);
+}
+
+// ---------------------------------------------------------------- parsing
+fn ud_line_end(input: core::slice::View<u8>, pos: i32) -> i32 {
+    let i: i32 = pos; while (i < input.length) { if (input.values[input.start+i] == 10) { return i + 1; } i += 1; } return input.length;
+}
+fn ud_at(input: core::slice::View<u8>, pos: i32) -> i32 { if (pos < 0 || pos >= input.length) { return -1; } return input.values[input.start+pos] as i32; }
+fn ud_starts(input: core::slice::View<u8>, pos: i32, text: str, count: i32) -> bool {
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text), count);
+    if (pos + count > input.length) { return false; }
+    let i: i32 = 0; while (i < count) { if (input.values[input.start+pos+i] != raw[i]) { return false; } i += 1; } return true;
+}
+fn ud_name(input: core::slice::View<u8>, pos: i32, end: i32) -> core::slice::View<u8> {
+    let i: i32 = pos; while (i < end) { let c: u8 = input.values[input.start+i]; if (c == 9 || c == 10) { break; } i += 1; }
+    return core::slice::View { values: input.values, start: input.start+pos, length: i-pos };
+}
+struct Cursor { pos: i32, ok: bool }
+impl Cursor { fn borrow(&self) -> &Cursor { return self; } }
+fn ud_digits(input: core::slice::View<u8>, c: &Cursor) -> i32 {
+    let value: i32 = 0; let any: bool = false;
+    while (true) {
+        let b: i32 = ud_at(input, c.pos);
+        if (b < 48 || b > 57) { break; }
+        if (value > 214748363) { c.ok = false; return 0; }
+        value = value * 10 + (b - 48); c.pos += 1; any = true;
+    }
+    if (!any) { c.ok = false; } return value;
+}
+fn ud_expect(input: core::slice::View<u8>, c: &Cursor, byte: i32) { if (ud_at(input, c.pos) != byte) { c.ok = false; } else { c.pos += 1; } }
+fn ud_parse_fail(p: Patch, kind: ParseKind, offset: i32) -> core::result::Result<Patch, ParseError> { p.hunks.destroy(); p.lines.destroy(); return core::result::Err(ParseError { kind: kind, offset: offset }); }
+
+// Parse the first file section of a unified diff. Lines before `--- `/`+++ `
+// (e.g. `diff -u ...`, `index ...`) are skipped; parsing stops at the first
+// line after the hunks that is not a hunk header and records it in `end`.
+pub fn parse(input: core::slice::View<u8>, max_lines: i32) -> core::result::Result<Patch, ParseError> {
+    let p: Patch = Patch { old_name: core::slice::View { values: input.values, start: input.start, length: 0 }, new_name: core::slice::View { values: input.values, start: input.start, length: 0 }, hunks: alloc::vec::new(), lines: alloc::vec::new(), end: 0 };
+    if (input.length == 0) { return core::result::Ok(p); }
+    let pos: i32 = 0; let found: bool = false;
+    while (pos < input.length && !found) {
+        let next: i32 = ud_line_end(input, pos);
+        if (ud_starts(input, pos, "--- ", 4) && ud_starts(input, next, "+++ ", 4)) {
+            let after: i32 = ud_line_end(input, next);
+            p.old_name = ud_name(input, pos + 4, next); p.new_name = ud_name(input, next + 4, after);
+            pos = after; found = true;
+        } else { pos = next; }
+    }
+    if (!found) { return ud_parse_fail(p, ParseKind::MissingHeader, 0); }
+    while (pos < input.length && ud_starts(input, pos, "@@ -", 4)) {
+        let header: i32 = pos; let c: Cursor = Cursor { pos: pos + 4, ok: true };
+        let os: i32 = ud_digits(input, c.borrow()); let oc: i32 = 1;
+        if (ud_at(input, c.pos) == 44) { c.pos += 1; oc = ud_digits(input, c.borrow()); }
+        ud_expect(input, c.borrow(), 32); ud_expect(input, c.borrow(), 43);
+        let ns: i32 = ud_digits(input, c.borrow()); let nc: i32 = 1;
+        if (ud_at(input, c.pos) == 44) { c.pos += 1; nc = ud_digits(input, c.borrow()); }
+        ud_expect(input, c.borrow(), 32); ud_expect(input, c.borrow(), 64); ud_expect(input, c.borrow(), 64);
+        if (!c.ok || (oc > 0 && os == 0) || (nc > 0 && ns == 0)) { return ud_parse_fail(p, ParseKind::BadHunkHeader, header); }
+        if (oc > max_lines || nc > max_lines) { return ud_parse_fail(p, ParseKind::LineLimit, header); }
+        pos = ud_line_end(input, c.pos);
+        let first: i32 = p.lines.len(); let old_left: i32 = oc; let new_left: i32 = nc;
+        while (old_left > 0 || new_left > 0) {
+            if (pos >= input.length) { return ud_parse_fail(p, ParseKind::Truncated, pos); }
+            let end: i32 = ud_line_end(input, pos); let tag: i32 = ud_at(input, pos); let kind: i32 = -1;
+            let body: core::slice::View<u8> = core::slice::View { values: input.values, start: input.start+pos+1, length: end-pos-1 };
+            if (tag == 32) { kind = 0; }
+            if (tag == 45) { kind = 1; }
+            if (tag == 43) { kind = 2; }
+            // An empty line is an empty context line (trailing-space stripped patches).
+            if (tag == 10) { kind = 0; body = core::slice::View { values: input.values, start: input.start+pos, length: 1 }; }
+            if (kind < 0) { return ud_parse_fail(p, ParseKind::BadLine, pos); }
+            if (kind != 2) { old_left -= 1; } if (kind != 1) { new_left -= 1; }
+            if (old_left < 0 || new_left < 0) { return ud_parse_fail(p, ParseKind::BadLine, pos); }
+            pos = end;
+            if (ud_at(input, pos) == 92) {
+                if (body.length == 0 || body.values[body.start+body.length-1] != 10) { return ud_parse_fail(p, ParseKind::BadMarker, pos); }
+                body.length -= 1; pos = ud_line_end(input, pos);
+            }
+            if (p.lines.len() >= 2147483000) { return ud_parse_fail(p, ParseKind::LineLimit, pos); }
+            if (core::result::is_err(p.lines.try_push(PatchLine { kind: kind, bytes: body }))) { return ud_parse_fail(p, ParseKind::AllocationFailed, pos); }
+        }
+        if (core::result::is_err(p.hunks.try_push(PatchHunk { old_start: os, old_count: oc, new_start: ns, new_count: nc, first: first, count: p.lines.len() - first, offset: header, end: pos }))) { return ud_parse_fail(p, ParseKind::AllocationFailed, pos); }
+    }
+    p.end = pos;
+    return core::result::Ok(p);
+}
+pub impl Patch {
+    pub fn borrow(&self) -> &Patch { return self; }
+    pub fn hunk_count(&self) -> i32 { return self.hunks.len(); }
+    pub fn hunk(&self, index: i32) -> core::option::Option<PatchHunk> { return self.hunks.get(index); }
+    pub fn line(&self, index: i32) -> core::option::Option<PatchLine> { return self.lines.get(index); }
+    pub fn destroy(&self) { self.hunks.destroy(); self.lines.destroy(); self.hunks = alloc::vec::new(); self.lines = alloc::vec::new(); }
+}
+
+// ---------------------------------------------------------------- applying
+fn ud_same(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool {
+    if (a.length != b.length) { return false; }
+    let i: i32 = 0; while (i < a.length) { if (a.values[a.start+i] != b.values[b.start+i]) { return false; } i += 1; } return true;
+}
+struct Work { used: u64, max: u64 }
+impl Work { fn borrow(&self) -> &Work { return self; } }
+// Old side of hunk lines [top, olen-bot) against base starting at pos+top.
+fn ud_matches(base: core::slice::View<ext::seqdiff::Line>, old: core::slice::View<core::slice::View<u8>>, pos: i32, top: i32, bot: i32, w: &Work) -> bool {
+    let olen: i32 = old.length;
+    if (pos + top < 0 || pos + olen - bot > base.length) { return false; }
+    let t: i32 = top;
+    while (t < olen - bot) {
+        let x: core::slice::View<u8> = old.values[old.start+t]; w.used += 1 + (x.length as u64);
+        if (!ud_same(base.values[base.start+pos+t].bytes, x)) { return false; }
+        t += 1;
+    }
+    return true;
+}
+struct Placement { hunk: i32, start: i32, end: i32, top: i32, bot: i32 }
+fn ud_apply_fail(old: alloc::vec::Vec<core::slice::View<u8>>, lines: alloc::vec::Vec<ext::seqdiff::Line>, places: alloc::vec::Vec<Placement>, reports: alloc::vec::Vec<HunkReport>, error: ApplyError) -> core::result::Result<Applied, ApplyError> {
+    old.destroy(); lines.destroy(); places.destroy(); reports.destroy(); return core::result::Err(error);
+}
+
+// Apply every hunk that matches; rejected hunks are reported, not fatal.
+// Each hunk is searched from its declared line plus the previous hunk's
+// offset, nearest first (+1, -1, +2, ...), first without fuzz, then dropping
+// up to `fuzz` leading and trailing context lines, never before the end of
+// the previously applied hunk.
+pub fn apply(base: core::slice::View<u8>, patch: &Patch, options: ApplyOptions) -> core::result::Result<Applied, ApplyError> {
+    if (options.max_fuzz < 0 || options.max_offset < 0 || options.max_lines < 0 || options.max_output < 0) { return core::result::Err(ApplyError::InvalidOptions); }
+    let old: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new(); let places: alloc::vec::Vec<Placement> = alloc::vec::new(); let reports: alloc::vec::Vec<HunkReport> = alloc::vec::new();
+    let split: core::result::Result<alloc::vec::Vec<ext::seqdiff::Line>, ext::seqdiff::Error> = ext::seqdiff::split_lines(base, ext::seqdiff::Limits { max_items: options.max_lines, max_work: options.max_work });
+    if (core::result::is_err(split)) {
+        let error: ApplyError = match (core::result::unwrap_err(split)) { ext::seqdiff::Error::ItemLimit -> ApplyError::LineLimit, ext::seqdiff::Error::AllocationFailed -> ApplyError::AllocationFailed, _ -> ApplyError::InvalidOptions };
+        return ud_apply_fail(old, alloc::vec::new(), places, reports, error);
+    }
+    let lines: alloc::vec::Vec<ext::seqdiff::Line> = core::result::unwrap(split); let bv: core::slice::View<ext::seqdiff::Line> = lines.as_view(); let n: i32 = lines.len();
+    let w: Work = Work { used: base.length as u64, max: options.max_work };
+    let last_offset: i32 = 0; let min_pos: i32 = 0; let rejected: i32 = 0; let h: i32 = 0;
+    let all: [PatchLine] = patch.lines.as_slice();
+    while (h < patch.hunks.len()) {
+        let hunk: PatchHunk = patch.hunks.as_slice()[h];
+        old.clear(); let lead: i32 = 0; let trail: i32 = 0; let seen_change: bool = false; let q: i32 = 0;
+        while (q < hunk.count) {
+            let pl: PatchLine = all[hunk.first+q];
+            if (pl.kind != 2) { if (core::result::is_err(old.try_push(pl.bytes))) { return ud_apply_fail(old, lines, places, reports, ApplyError::AllocationFailed); } }
+            if (pl.kind == 0) { if (!seen_change) { lead += 1; } trail += 1; } else { seen_change = true; trail = 0; }
+            q += 1;
+        }
+        if (!seen_change) { trail = 0; }
+        let ov: core::slice::View<core::slice::View<u8>> = old.as_view(); let olen: i32 = old.len();
+        let declared: i32 = hunk.old_start - 1; if (hunk.old_count == 0) { declared = hunk.old_start; }
+        let expected: i32 = declared + last_offset;
+        let found: bool = false; let overlap: bool = false; let fuzz: i32 = 0; let ptop: i32 = -1; let pbot: i32 = -1; let pos: i32 = 0; let top: i32 = 0; let bot: i32 = 0;
+        let span: i32 = n + olen + 1; if (options.max_offset < span) { span = options.max_offset; }
+        // GNU rule: with unequal leading/trailing context, the shorter side is
+        // anchored to the start (hunk at line 1) or end of the file until fuzz
+        // covers the difference.
+        let context: i32 = lead; if (trail > context) { context = trail; }
+        // As in GNU patch, fuzz never exceeds the hunk's context length.
+        let max_fuzz: i32 = options.max_fuzz; if (context < max_fuzz) { max_fuzz = context; }
+        while (!found && fuzz <= max_fuzz) {
+            top = fuzz + lead - context; bot = fuzz + trail - context;
+            // Leading and trailing context cannot both fall short of `context`.
+            let anchored: bool = false; let at_start: bool = false;
+            if (top < 0) { top = 0; if (hunk.old_start <= 1) { anchored = true; at_start = true; } }
+            if (bot < 0) { bot = 0; anchored = true; }
+            if (anchored) {
+                // Start anchor tries position 0; end anchor tries n - olen.
+                if (fuzz == 0 || top != ptop || bot != pbot) {
+                    let at: i32 = n - olen; if (at_start) { at = 0; }
+                    let reach: i32 = at - expected; if (reach < 0) { reach = 0 - reach; }
+                    if (reach <= options.max_offset && ud_matches(bv, ov, at, top, bot, w.borrow())) {
+                        if (at + top >= min_pos) { found = true; pos = at; } else { overlap = true; }
+                    }
+                }
+            } else {
+                // A larger fuzz that drops no further context repeats the same search.
+                let delta: i32 = 0; if (fuzz > 0 && top == ptop && bot == pbot) { delta = span + 1; }
+                while (!found && delta <= span) {
+                    let sign: i32 = 0;
+                    while (!found && sign < 2) {
+                        if (sign == 0 || delta > 0) {
+                            let at: i32 = expected + delta; if (sign == 1) { at = expected - delta; }
+                            if (ud_matches(bv, ov, at, top, bot, w.borrow())) {
+                                if (at + top >= min_pos) { found = true; pos = at; } else { overlap = true; }
+                            }
+                        }
+                        sign += 1;
+                    }
+                    if (w.used > w.max) { return ud_apply_fail(old, lines, places, reports, ApplyError::WorkLimit); }
+                    delta += 1;
+                }
+            }
+            ptop = top; pbot = bot;
+            if (!found) { fuzz += 1; }
+        }
+        if (found) {
+            let offset: i32 = pos - declared; last_offset = offset;
+            let status: HunkStatus = HunkStatus::Exact;
+            if (offset != 0) { status = HunkStatus::Offset; }
+            if (fuzz > 0) { status = HunkStatus::Fuzzed; }
+            if (core::result::is_err(places.try_push(Placement { hunk: h, start: pos + top, end: pos + olen - bot, top: top, bot: bot })) || core::result::is_err(reports.try_push(HunkReport { index: h, status: status, reason: RejectReason::NotRejected, line: pos + 1, offset: offset, fuzz: fuzz }))) { return ud_apply_fail(old, lines, places, reports, ApplyError::AllocationFailed); }
+            min_pos = pos + olen - bot;
+        } else {
+            let reason: RejectReason = RejectReason::NoMatch; if (overlap) { reason = RejectReason::Overlap; }
+            rejected += 1;
+            if (core::result::is_err(reports.try_push(HunkReport { index: h, status: HunkStatus::Rejected, reason: reason, line: expected + 1, offset: 0, fuzz: 0 }))) { return ud_apply_fail(old, lines, places, reports, ApplyError::AllocationFailed); }
+        }
+        h += 1;
+    }
+    // Build the result: base outside placements, new sides inside.
+    let o: Out = Out { bytes: alloc::vec::new(), limit: options.max_output, failed: false, full: false };
+    let cursor: i32 = 0; let pidx: i32 = 0;
+    while (pidx < places.len() && !o.failed) {
+        let pl: Placement = places.as_slice()[pidx]; let hunk: PatchHunk = patch.hunks.as_slice()[pl.hunk];
+        while (cursor < pl.start) { ud_bytes(o.borrow(), bv.values[bv.start+cursor].bytes); cursor += 1; }
+        // New side, skipping `top` leading and `bot` trailing context lines.
+        let ctx_seen: i32 = 0; let total_new: i32 = 0; let q: i32 = 0;
+        while (q < hunk.count) { if (all[hunk.first+q].kind != 1) { total_new += 1; } q += 1; }
+        let idx: i32 = 0; q = 0;
+        while (q < hunk.count) {
+            let line: PatchLine = all[hunk.first+q];
+            if (line.kind != 1) {
+                if (idx >= pl.top && idx < total_new - pl.bot) { ud_bytes(o.borrow(), line.bytes); }
+                idx += 1;
+            }
+            q += 1;
+        }
+        cursor = pl.end; pidx += 1;
+    }
+    while (cursor < n && !o.failed) { ud_bytes(o.borrow(), bv.values[bv.start+cursor].bytes); cursor += 1; }
+    if (o.failed) { o.bytes.destroy(); let error: ApplyError = ApplyError::AllocationFailed; if (o.full) { error = ApplyError::OutputLimit; } return ud_apply_fail(old, lines, places, reports, error); }
+    old.destroy(); lines.destroy(); places.destroy();
+    return core::result::Ok(Applied { output: o.bytes, reports: reports, rejected: rejected });
+}
+pub impl Applied {
+    pub fn borrow(&self) -> &Applied { return self; }
+    pub fn destroy(&self) { self.output.destroy(); self.reports.destroy(); self.output = alloc::vec::new(); self.reports = alloc::vec::new(); }
+}

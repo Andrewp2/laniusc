@@ -1,0 +1,100 @@
+// diff -u style tool over ext::seqdiff and ext::unidiff.
+// usage: seq-diff [-U N] [--patience] OLD NEW
+// Exit 0 identical, 1 different, 2 usage/limits/I/O failure.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import ext::seqdiff;
+import ext::unidiff;
+import std::args;
+import std::file;
+import std::stream;
+
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), count);
+    return core::result::unwrap(core::slice::view(bytes, count));
+}
+fn same(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.len() != right.len()) { return false; }
+    let i: i32 = 0; while (i < left.len()) { if (left.values[left.start+i] != right.values[right.start+i]) { return false; } i += 1; } return true;
+}
+fn complain(text: str, count: i32) -> i32 {
+    let sink: std::stream::Descriptor = std::stream::stderr(); let v: core::slice::View<u8> = literal(text, count);
+    let written: core::result::Result<i32, core::io::Failure> = core::io::write_all(sink.borrow(), v.values, v.start, v.len()); return 2;
+}
+fn read_file(name: core::slice::View<u8>, output: &alloc::io::Buffer) -> bool {
+    let checked: core::result::Result<core::path::Path, core::path::Error> = core::path::from_view(name);
+    if (core::result::is_err(checked)) { return false; }
+    let opened: core::result::Result<std::file::File, core::io::Error> = std::file::open(core::result::unwrap(checked), std::file::OpenMode::Read);
+    if (core::result::is_err(opened)) { return false; }
+    let file: std::file::File = core::result::unwrap(opened);
+    let copied: core::result::Result<u64, core::io::CopyFailure> = std::stream::copy(file.borrow(), output);
+    let closed: core::result::Result<i32, core::io::Error> = file.close();
+    return core::result::is_ok(copied) && core::result::is_ok(closed);
+}
+fn view_of(buffer: &alloc::io::Buffer) -> core::slice::View<u8> { return core::result::unwrap(core::slice::view(buffer.as_bytes(), buffer.len())); }
+fn run(old_name: core::slice::View<u8>, new_name: core::slice::View<u8>, context: i32, algorithm: ext::seqdiff::Algorithm) -> i32 {
+    let first: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(268435456));
+    let second: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(268435456));
+    if (!read_file(old_name, first.borrow()) || !read_file(new_name, second.borrow())) { first.destroy(); second.destroy(); return complain("seq-diff: cannot read input\n", 28); }
+    let limits: ext::seqdiff::Limits = ext::seqdiff::default_limits();
+    let a: alloc::vec::Vec<ext::seqdiff::Line> = core::result::unwrap(ext::seqdiff::split_lines(view_of(first.borrow()), limits));
+    let b: alloc::vec::Vec<ext::seqdiff::Line> = core::result::unwrap(ext::seqdiff::split_lines(view_of(second.borrow()), limits));
+    let status: i32 = 0;
+    let made: core::result::Result<ext::seqdiff::Script, ext::seqdiff::Error> = ext::seqdiff::diff_lines(a.as_view(), b.as_view(), algorithm, limits);
+    if (core::result::is_err(made)) {
+        status = match (core::result::unwrap_err(made)) {
+            ext::seqdiff::Error::WorkLimit -> complain("seq-diff: work limit\n", 21),
+            ext::seqdiff::Error::ItemLimit -> complain("seq-diff: line limit\n", 21),
+            ext::seqdiff::Error::AllocationFailed -> complain("seq-diff: allocation failed\n", 28),
+            ext::seqdiff::Error::Bounds -> complain("seq-diff: internal bounds\n", 26),
+            ext::seqdiff::Error::InvalidLimits -> complain("seq-diff: invalid limits\n", 25)
+        };
+    }
+    else {
+        let script: ext::seqdiff::Script = core::result::unwrap(made);
+        let grouped: alloc::vec::Vec<ext::seqdiff::Hunk> = core::result::unwrap(ext::seqdiff::hunks(script.borrow(), context));
+        let written: core::result::Result<alloc::vec::Vec<u8>, ext::unidiff::WriteError> = ext::unidiff::write_unified(a.as_view(), b.as_view(), script.borrow(), grouped.as_view(), old_name, new_name, 268435456);
+        if (core::result::is_err(written)) { status = complain("seq-diff: cannot encode\n", 24); }
+        else {
+            let bytes: alloc::vec::Vec<u8> = core::result::unwrap(written);
+            if (bytes.len() > 0) {
+                status = 1; let sink: std::stream::Descriptor = std::stream::stdout();
+                if (core::result::is_err(core::io::write_all(sink.borrow(), bytes.as_slice(), 0, bytes.len()))) { status = 2; }
+            }
+            bytes.destroy();
+        }
+        grouped.destroy(); script.destroy();
+    }
+    a.destroy(); b.destroy(); first.destroy(); second.destroy(); return status;
+}
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1, 32, 16384);
+    if (core::result::is_err(captured)) { return complain("seq-diff: bad arguments\n", 24); }
+    let arguments: std::args::Arguments = core::result::unwrap(captured);
+    let context: i32 = 3; let algorithm: ext::seqdiff::Algorithm = ext::seqdiff::Algorithm::Myers;
+    let names: [core::slice::View<u8>;2] = [literal("", 0); 2]; let count: i32 = 0; let ok: bool = true; let i: i32 = 0;
+    while (i < arguments.len() && ok) {
+        let arg: core::slice::View<u8> = core::option::unwrap(arguments.get(i));
+        if (same(arg, literal("--patience", 10))) { algorithm = ext::seqdiff::Algorithm::Patience; }
+        else { if (same(arg, literal("--myers", 7))) { algorithm = ext::seqdiff::Algorithm::Myers; }
+        else { if (same(arg, literal("-U", 2)) && i + 1 < arguments.len()) {
+            i += 1; let v: core::slice::View<u8> = core::option::unwrap(arguments.get(i));
+            let parsed: core::result::Result<u64, core::decimal::ParseError> = core::decimal::parse_u64_range(v.values, v.start, v.len());
+            if (core::result::is_err(parsed) || core::result::unwrap(parsed) > 1000000 as u64) { ok = false; } else { context = core::result::unwrap(parsed) as i32; }
+        }
+        else { if (count < 2) { names[count] = arg; count += 1; } else { ok = false; } } } }
+        i += 1;
+    }
+    let status: i32 = 2;
+    if (!ok || count != 2) { status = complain("usage: seq-diff [-U N] [--patience] OLD NEW\n", 44); }
+    else { status = run(names[0], names[1], context, algorithm); }
+    arguments.destroy(); return status;
+}

@@ -1,0 +1,109 @@
+// patch style tool over ext::unidiff: applies a unified diff with offset/fuzz.
+// usage: seq-patch [-F N] [--max-offset N] BASE PATCHFILE
+// Writes the patched file to stdout and one report line per hunk to stderr.
+// Exit 0 all hunks applied, 1 some hunk rejected, 2 usage/parse/limits/I/O.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import ext::seqdiff;
+import ext::unidiff;
+import std::args;
+import std::file;
+import std::stream;
+
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), count);
+    return core::result::unwrap(core::slice::view(bytes, count));
+}
+fn same(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.len() != right.len()) { return false; }
+    let i: i32 = 0; while (i < left.len()) { if (left.values[left.start+i] != right.values[right.start+i]) { return false; } i += 1; } return true;
+}
+fn emit(v: core::slice::View<u8>) { let sink: std::stream::Descriptor = std::stream::stderr(); let written: core::result::Result<i32, core::io::Failure> = core::io::write_all(sink.borrow(), v.values, v.start, v.len()); }
+fn complain(text: str, count: i32) -> i32 { emit(literal(text, count)); return 2; }
+fn read_file(name: core::slice::View<u8>, output: &alloc::io::Buffer) -> bool {
+    let checked: core::result::Result<core::path::Path, core::path::Error> = core::path::from_view(name);
+    if (core::result::is_err(checked)) { return false; }
+    let opened: core::result::Result<std::file::File, core::io::Error> = std::file::open(core::result::unwrap(checked), std::file::OpenMode::Read);
+    if (core::result::is_err(opened)) { return false; }
+    let file: std::file::File = core::result::unwrap(opened);
+    let copied: core::result::Result<u64, core::io::CopyFailure> = std::stream::copy(file.borrow(), output);
+    let closed: core::result::Result<i32, core::io::Error> = file.close();
+    return core::result::is_ok(copied) && core::result::is_ok(closed);
+}
+fn view_of(buffer: &alloc::io::Buffer) -> core::slice::View<u8> { return core::result::unwrap(core::slice::view(buffer.as_bytes(), buffer.len())); }
+fn put(out: &alloc::vec::Vec<u8>, text: str, count: i32) { let r: core::result::Result<i32, alloc::vec::Error> = out.try_extend(literal(text, count)); }
+fn put_number(out: &alloc::vec::Vec<u8>, number: i32) {
+    let digits: [u8;11] = [0;11]; let count: i32 = 0; let value: i32 = number;
+    if (value < 0) { put(out, "-", 1); value = 0 - value; }
+    if (value == 0) { put(out, "0", 1); return; }
+    while (value > 0) { digits[count] = (48 + value % 10) as u8; count += 1; value /= 10; }
+    while (count > 0) { count -= 1; let r: core::result::Result<i32, alloc::vec::Error> = out.try_push(digits[count]); }
+}
+fn report(r: ext::unidiff::HunkReport) {
+    let out: alloc::vec::Vec<u8> = alloc::vec::new();
+    put(out.borrow(), "Hunk #", 6); put_number(out.borrow(), r.index + 1);
+    let rejected: bool = match (r.status) { ext::unidiff::HunkStatus::Rejected -> true, _ -> false };
+    if (rejected) {
+        put(out.borrow(), " FAILED at ", 11); put_number(out.borrow(), r.line);
+        let overlap: bool = match (r.reason) { ext::unidiff::RejectReason::Overlap -> true, _ -> false };
+        if (overlap) { put(out.borrow(), " (overlap)", 10); } else { put(out.borrow(), " (no-match)", 11); }
+    } else {
+        put(out.borrow(), " succeeded at ", 14); put_number(out.borrow(), r.line);
+        if (r.fuzz > 0) { put(out.borrow(), " with fuzz ", 11); put_number(out.borrow(), r.fuzz); }
+        if (r.offset != 0) { put(out.borrow(), " (offset ", 9); put_number(out.borrow(), r.offset); put(out.borrow(), " lines)", 7); }
+    }
+    put(out.borrow(), ".\n", 2); emit(out.as_view()); out.destroy();
+}
+fn run(base_name: core::slice::View<u8>, patch_name: core::slice::View<u8>, options: ext::unidiff::ApplyOptions) -> i32 {
+    let base: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(268435456));
+    let text: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(268435456));
+    if (!read_file(base_name, base.borrow()) || !read_file(patch_name, text.borrow())) { base.destroy(); text.destroy(); return complain("seq-patch: cannot read input\n", 29); }
+    let status: i32 = 0;
+    let parsed: core::result::Result<ext::unidiff::Patch, ext::unidiff::ParseError> = ext::unidiff::parse(view_of(text.borrow()), options.max_lines);
+    if (core::result::is_err(parsed)) { status = complain("seq-patch: malformed patch\n", 27); }
+    else {
+        let patch: ext::unidiff::Patch = core::result::unwrap(parsed);
+        let applied: core::result::Result<ext::unidiff::Applied, ext::unidiff::ApplyError> = ext::unidiff::apply(view_of(base.borrow()), patch.borrow(), options);
+        if (core::result::is_err(applied)) { status = complain("seq-patch: apply failed\n", 24); }
+        else {
+            let result: ext::unidiff::Applied = core::result::unwrap(applied);
+            let i: i32 = 0; while (i < result.reports.len()) { report(result.reports.as_slice()[i]); i += 1; }
+            if (result.rejected > 0) { status = 1; }
+            let sink: std::stream::Descriptor = std::stream::stdout();
+            if (core::result::is_err(core::io::write_all(sink.borrow(), result.output.as_slice(), 0, result.output.len()))) { status = 2; }
+            result.destroy();
+        }
+        patch.destroy();
+    }
+    base.destroy(); text.destroy(); return status;
+}
+fn number(v: core::slice::View<u8>) -> i32 {
+    let parsed: core::result::Result<u64, core::decimal::ParseError> = core::decimal::parse_u64_range(v.values, v.start, v.len());
+    if (core::result::is_err(parsed) || core::result::unwrap(parsed) > 2147483647 as u64) { return -1; } return core::result::unwrap(parsed) as i32;
+}
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1, 32, 16384);
+    if (core::result::is_err(captured)) { return complain("seq-patch: bad arguments\n", 25); }
+    let arguments: std::args::Arguments = core::result::unwrap(captured);
+    let options: ext::unidiff::ApplyOptions = ext::unidiff::default_options();
+    let names: [core::slice::View<u8>;2] = [literal("", 0); 2]; let count: i32 = 0; let ok: bool = true; let i: i32 = 0;
+    while (i < arguments.len() && ok) {
+        let arg: core::slice::View<u8> = core::option::unwrap(arguments.get(i));
+        if (same(arg, literal("-F", 2)) && i + 1 < arguments.len()) { i += 1; options.max_fuzz = number(core::option::unwrap(arguments.get(i))); if (options.max_fuzz < 0) { ok = false; } }
+        else { if (same(arg, literal("--max-offset", 12)) && i + 1 < arguments.len()) { i += 1; options.max_offset = number(core::option::unwrap(arguments.get(i))); if (options.max_offset < 0) { ok = false; } }
+        else { if (count < 2) { names[count] = arg; count += 1; } else { ok = false; } } }
+        i += 1;
+    }
+    let status: i32 = 2;
+    if (!ok || count != 2) { status = complain("usage: seq-patch [-F N] [--max-offset N] BASE PATCHFILE\n", 56); }
+    else { status = run(names[0], names[1], options); }
+    arguments.destroy(); return status;
+}
