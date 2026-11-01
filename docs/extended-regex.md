@@ -409,7 +409,7 @@ numbered; those are `Unsupported` at the group. Lookbehind looks before the
 search start, so `find_from`, `find_iter` and `longest_prefix_from` see the
 preceding text.
 
-Lookbehind runs on the VM only. `has_assertion()` is true for it, so `dfa()`
+Lookbehind runs on the VM only. `has_lookbehind()` is true for it, so `dfa()`
 returns `Unsupported(0)` and [`ext::lexer`](extended-lexer.md) keeps such a
 rule out of its combined DFA. The body compiles to a separate sub-program of
 at most 256 instructions (`Limit(0)` beyond that). At each position where a
@@ -425,9 +425,10 @@ sub-program size m'; each nesting level multiplies by its own w · m'. On
 
 ### Capture-free DFA matching
 
-`dfa(&Regex) -> Result<Dfa, Error>` builds an unanchored lazy DFA for an
-assertion-free program; a program with `^ $ \A \z \b \B` or lookbehind is
-`Unsupported(0)`. Always pass the same Regex to its methods:
+`dfa(&Regex) -> Result<Dfa, Error>` builds an unanchored lazy DFA for any
+program without lookbehind; a program with lookbehind is `Unsupported(0)`.
+`^ $ \A \z \b \B` are part of the DFA state; see
+[Assertions in the DFA](#assertions-in-the-dfa). Always pass the same Regex to its methods:
 
 | Dfa method | Contract |
 | --- | --- |
@@ -448,11 +449,29 @@ has a fixed size and is shared by copies.
 
 `prefix_set()`, `PrefixSet.add(rule, &Regex)`, `finish()` and
 `run(Input, start) -> PrefixRun` provide one anchored longest-prefix DFA over
-several assertion-free programs. A `PrefixRun` reports the furthest accepting
+several lookbehind-free programs. A `PrefixRun` reports the furthest accepting
 end, the lowest rule accepting there, the scalars scanned, and `complete`.
 `complete` is false when the fixed cache filled, and the caller must then use
-the VM. `Regex.has_assertion()` and `Regex.boundary_cost()` support exact VM
-fallback. [`ext::lexer`](extended-lexer.md#combined-dfa-matching) owns the only
+the VM. `Regex.has_lookbehind()` and `Regex.boundary_cost()` support exact VM
+fallback; `Regex.has_assertion()` reports any assertion, lookbehind included.
+
+### Assertions in the DFA
+
+The construction follows RE2 and Rust's `regex-automata`. A state is a set of
+PCs plus look-behind bits for its boundary: at start of text (for `^` and
+`\A`), previous scalar is LF (for multiline `^`), and previous scalar is an
+ASCII word scalar (for `\b` and `\B`). Only the bits some rule needs are kept,
+so an assertion-free program has the same states as before. Look-behind
+assertions are decided while the state is built. `$`, `\z`, `\b` and `\B` also
+need the next scalar, so they stay in the set unresolved. A transition on
+scalar c first resolves them with c's facts (LF, word) and records the lowest
+rule accepting at that boundary; the match is reported one scalar late, as a
+delayed accept stored in the next state. End of text resolves with the
+end-of-text fact and is cached per state. `run()` takes the start state's
+look-behind bits from the scalar before `start`, so lexer steps and searches
+from an offset see the real preceding text. Multiline and dot mode are kept
+per rule. In unanchored mode an empty set is a live state, since a later
+boundary (after an LF, say) can satisfy `^` again. [`ext::lexer`](extended-lexer.md#combined-dfa-matching) owns the only
 current consumer and its acceptance evidence.
 
 ### Differential oracle and lazy counted repetition

@@ -2379,8 +2379,9 @@ seeded grammar-generated patterns from the shared subset. Five seeds agree on
 runs, 13,853 fixed-width lookbehind cases and 15,000 capture-free lazy-DFA `is_match`/`find` cases, and five
 pathological inputs finish in about 0.2 s. It found, and the engine now fixes,
 a lazy counted-repetition priority error (`(?:a|aab){0,2}?b` on `aabb`).
-The DFA lets `text_grep` count assertion-free patterns on a 0.9 MB corpus in
-0.15–0.23 s instead of 3–3.8 s.
+The DFA, which carries `^ $ \A \z \b \B` as look-behind bits and delayed
+accepts in its states, lets `text_grep` count any lookbehind-free pattern on a
+0.9 MB corpus in about 0.1–0.2 s instead of 2.3–3.8 s.
 
 [Regex splitting and replacement](extended-regex-text.md) now reuse canonical
 Search with one lazily acquired workspace. Borrowed split fields, independent
@@ -2398,7 +2399,7 @@ eager span workspace, reused during token selection; terminal calls can release
 it. All six current groups pass: owner/admission/contracts, 576 model cases,
 63 explicit tables and all 30 reached OOM positions. The earlier 120-position
 receipt retains its preceding per-probe scope. A combined lazy DFA over the
-assertion-free rules now runs each step once, with VM fallback for assertions,
+lookbehind-free rules now runs each step once, with VM fallback for lookbehind,
 a full cache or a possible work limit. Its traces are byte-identical to the
 frozen per-rule lexer on 30,000 generated cases, and it is about 40 times
 faster on an 18-rule corpus. Competing patterns can rescan

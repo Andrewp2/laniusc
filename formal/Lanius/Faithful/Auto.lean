@@ -128,8 +128,13 @@ def withBudget {α : Type} (x : TacticM α) : TacticM α := do
 
 def closes (tac : TSyntax `tactic) : TacticM Bool := phase s!"close {tac.raw.getKind}" do
   let saved ← saveState
+  let errors := fun (log : MessageLog) => log.toList.filter (·.severity == .error) |>.length
+  let before := errors (← Core.getMessageLog)
   tryCatchRuntimeEx (withBudget do
     evalTactic (← `(tactic| ($tac; done)))
+    -- A step that closes the goal but logged an error (`simp` given a
+    -- constant whose body is not exposed) has failed.
+    if errors (← Core.getMessageLog) > before then throwError "closing step logged an error"
     if faithful.trace.get (← getOptions) then logInfo m!"closed by {tac}"
     if faithful.profile.get (← getOptions) then
       IO.eprintln s!"faithful closed {(toString tac.raw.prettyPrint).take 60 |>.replace "\n" " "}"
@@ -609,7 +614,28 @@ partial def dropMods : TacticM Unit := do
     evalTactic (← `(tactic| rw [Nat.mod_eq_of_lt $fitsStx]))
   if ok then dropMods
 
+/-- Whether `f`'s one equation holds for any arguments and calls `f` again
+(`f x y = .. f ..`, a function on fuel), so that `simp [f]` would unfold it
+without end. -/
+def unfoldsForever (f : Name) : MetaM Bool := do
+  let some eqns ← getEqnsFor? f | return false
+  unless eqns.size == 1 do return false
+  let info ← getConstInfo eqns[0]!
+  forallTelescopeReducing info.type fun _ body => do
+    let some (_, lhs, rhs) := body.eq? | return false
+    return lhs.getAppArgs.all (·.isFVar) && (rhs.find? (·.isConstOf f)).isSome
+
+/-- Close with `simp` and the functions' equations. -/
+def simpEqns (lemmas : Array (TSyntax `Lean.Parser.Tactic.simpLemma)) : TacticM Bool := do
+  if ← closes (← `(tactic| (simp only [$lemmas,*]; rep))) then return true
+  if ← closes (← `(tactic| (simp only [$lemmas,*, *]; rep))) then return true
+  if ← closes (← `(tactic| (simp only [$lemmas,*] at *; rep))) then return true
+  if ← closes (← `(tactic| (simp [$lemmas,*, *, Nat.max_def, Nat.min_def, List.getElem?_cons, List.getD_cons_succ,
+      List.getD_cons_zero]; rep))) then return true
+  closes (← `(tactic| (simp [$lemmas,*, *] at *; rep)))
+
 partial def faithfulLoop (ns : Name) (heads : Array Ident) (fuel : Nat) : TacticM Unit := do
+  let forever ← heads.anyM fun h => unfoldsForever h.getId
   if fuel = 0 then throwError m!"faithful: out of fuel{indentD (MessageData.ofGoal (← getMainGoal))}"
   let mut before : UInt64 := 0
   for _ in [0:faithful.rounds.get (← getOptions)] do
@@ -642,12 +668,23 @@ partial def faithfulLoop (ns : Name) (heads : Array Ident) (fuel : Nat) : Tactic
     -- Or only its call in the goal's Lean side (`unfold` would unfold its
     -- calls in the pure value too).
     if ← closes (← `(tactic| (rw [$(heads[0]!):ident]; simp only [*, ↓reduceIte, BitVec.ofNat_eq_ofNat]; rep))) then return
-    if ← closes (← `(tactic| (simp only [$lemmas,*]; rep))) then return
-    if ← closes (← `(tactic| (simp only [$lemmas,*, *]; rep))) then return
-    if ← closes (← `(tactic| (simp only [$lemmas,*] at *; rep))) then return
-    if ← closes (← `(tactic| (simp [$lemmas,*, *, Nat.max_def, Nat.min_def, List.getElem?_cons, List.getD_cons_succ,
-        List.getD_cons_zero]; rep))) then return
-    if ← closes (← `(tactic| (simp [$lemmas,*, *] at *; rep))) then return
+    -- Its tests against inline constants, which the goal's pure value and
+    -- the hypotheses name and the Lean function has as numbers: unfold them
+    -- everywhere, rewrite the hypotheses with each other (`isLevel p = false`
+    -- and `p = 160` to `isLevel 160 = false`), then unfold the function
+    -- once. Before the steps below, which give
+    -- `simp` the function's equations and, failing on such a branch, each
+    -- spend their whole budget unfolding it again and again.
+    let consts ← inlineConsts
+    if !consts.isEmpty then
+      let cs ← consts.mapM fun n => `(Lean.Parser.Tactic.simpLemma| $(mkIdent n):ident)
+      if ← closes (← `(tactic| (simp only [$cs,*] at *; try simp only [*] at *; unfold $heads*; simp [*]; rep))) then return
+    -- `simp` with the function's equations, which make progress only on
+    -- constructor arguments. An equation for any arguments (a function on
+    -- fuel tested with `if`) `simp` unfolds without end, each step spending
+    -- its whole budget: for such a function they come last, after a split.
+    unless forever do
+      if ← simpEqns lemmas then return
     if ← tryTac (withBudget do
         evalTactic (← `(tactic| simp only [$lemmas,*]))
         unless ← foldInline do throwError "nothing to fold"
@@ -696,6 +733,9 @@ partial def faithfulLoop (ns : Name) (heads : Array Ident) (fuel : Nat) : Tactic
       done := done ++ (← getGoals)
     setGoals done
     return
+  if forever then
+    let lemmas : Array (TSyntax `Lean.Parser.Tactic.simpLemma) ← heads.mapM fun h => `(Lean.Parser.Tactic.simpLemma| $h:ident)
+    if ← simpEqns lemmas then return
   throwError m!"faithful: stuck{indentD (MessageData.ofGoal (← getMainGoal))}"
 
 syntax "faithful" " [" ident,* "]" : tactic

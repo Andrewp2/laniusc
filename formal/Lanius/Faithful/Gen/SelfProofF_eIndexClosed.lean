@@ -11,7 +11,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_allocClosed
 public import Lanius.Faithful.Gen.SelfStmtF_eDivideClosed
 public import Lanius.Faithful.Gen.SelfStmtF_eIndexClosed
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
-public import Lanius.Faithful.Gen.SelfStmtF_monoLoop
+public import Lanius.Faithful.Gen.SelfStmtF_funcsOnto
 import all Lanius.Faithful.Gen.SelfSrcF_eIndexClosed
 import all Lanius.Mini.Frontend.P.eIndexClosed
 

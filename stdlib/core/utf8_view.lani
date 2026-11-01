@@ -221,7 +221,7 @@ pub fn byte_view_append_scalar_or(
     let index: i32 = 0;
     while (index < width) {
         let byte_index: u32 = index as u32;
-        values[len + index] = core::utf8::encoded_byte_or(scalar, byte_index, 0);
+        let stored1 = core::utf8::encoded_byte_or(scalar, byte_index, 0); values[len + index] = stored1;
         index += 1;
     }
     return len + width;
@@ -255,7 +255,7 @@ pub fn byte_view_insert_scalar_or(
     let index: i32 = 0;
     while (index < width) {
         let byte_index: u32 = index as u32;
-        values[at + index] = core::utf8::encoded_byte_or(scalar, byte_index, 0);
+        let stored2 = core::utf8::encoded_byte_or(scalar, byte_index, 0); values[at + index] = stored2;
         index += 1;
     }
     return len + width;
@@ -325,7 +325,7 @@ pub fn byte_view_replace_scalar_or(
     let index: i32 = 0;
     while (index < new_width) {
         let byte_index: u32 = index as u32;
-        values[start + index] = core::utf8::encoded_byte_or(scalar, byte_index, 0);
+        let stored3 = core::utf8::encoded_byte_or(scalar, byte_index, 0); values[start + index] = stored3;
         index += 1;
     }
     return without_old + new_width;

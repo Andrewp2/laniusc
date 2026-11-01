@@ -1,0 +1,15 @@
+module app::main;
+
+// The wildcard's value spells b, which the first arm binds: in the inner
+// match b would be the payload, not the parameter, so the front end rejects
+// the match.
+enum Bar { X(i32), Y }
+enum Foo { Pair(Bar, i32), Solo(i32) }
+
+fn first_x(v: Foo, b: i32) -> i32 {
+    return match (v) { Foo::Pair(Bar::X(a), b) -> a + b, _ -> b };
+}
+
+fn main() -> i32 {
+    return first_x(Foo::Pair(Bar::Y, 2), 9);
+}

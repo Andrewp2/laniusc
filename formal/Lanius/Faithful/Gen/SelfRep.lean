@@ -525,8 +525,8 @@ inductive RepImplDecl : Lanius.Mini.ImplDecl → Value → Prop where
       (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepList 31 (RepList 25 RepNat)) x1 v1 → RepCTree x2 v2 → RepImplDecl (Lanius.Mini.ImplDecl.mk x0 x1 x2) (.structure 122 [v0, v1, v2])
 
 inductive RepDecls : Lanius.Mini.Decls → Value → Prop where
-  | c0 {x0 : List Lanius.Mini.TypeDecl} {x1 : List Lanius.Mini.FnDecl} {x2 : List Lanius.Mini.ConstDecl} {x3 : List Lanius.Mini.ImportDecl} {x4 : List Lanius.Mini.AliasDecl} {x5 : List Lanius.Mini.ImplDecl} {v0 v1 v2 v3 v4 v5 : Value} :
-      (RepList 104 RepTypeDecl) x0 v0 → (RepList 109 RepFnDecl) x1 v1 → (RepList 112 RepConstDecl) x2 v2 → (RepList 115 RepImportDecl) x3 v3 → (RepList 118 RepAliasDecl) x4 v4 → (RepList 121 RepImplDecl) x5 v5 → RepDecls (Lanius.Mini.Decls.mk x0 x1 x2 x3 x4 x5) (.structure 103 [v0, v1, v2, v3, v4, v5])
+  | c0 {x0 : List Lanius.Mini.TypeDecl} {x1 : List Lanius.Mini.FnDecl} {x2 : List Lanius.Mini.ConstDecl} {x3 : List Lanius.Mini.ImportDecl} {x4 : List Lanius.Mini.AliasDecl} {x5 : List Lanius.Mini.ImplDecl} {x6 : List (List (List Nat))} {v0 v1 v2 v3 v4 v5 v6 : Value} :
+      (RepList 104 RepTypeDecl) x0 v0 → (RepList 109 RepFnDecl) x1 v1 → (RepList 112 RepConstDecl) x2 v2 → (RepList 115 RepImportDecl) x3 v3 → (RepList 118 RepAliasDecl) x4 v4 → (RepList 121 RepImplDecl) x5 v5 → (RepList 124 (RepList 31 (RepList 25 RepNat))) x6 v6 → RepDecls (Lanius.Mini.Decls.mk x0 x1 x2 x3 x4 x5 x6) (.structure 103 [v0, v1, v2, v3, v4, v5, v6])
 
 inductive RepFileDecls : Lanius.Mini.FileDecls → Value → Prop where
   | c0 {x0 : List (List Nat)} {x1 : Lanius.Mini.Decls} {v0 v1 : Value} :
@@ -534,7 +534,7 @@ inductive RepFileDecls : Lanius.Mini.FileDecls → Value → Prop where
 
 inductive RepCollected : Lanius.Mini.Collected → Value → Prop where
   | c0 {x0 : Lanius.Mini.Decls} {x1 : List (List (List Nat))} {v0 v1 : Value} :
-      RepDecls x0 v0 → (RepList 125 (RepList 31 (RepList 25 RepNat))) x1 v1 → RepCollected (Lanius.Mini.Collected.mk x0 x1) (.structure 124 [v0, v1])
+      RepDecls x0 v0 → (RepList 124 (RepList 31 (RepList 25 RepNat))) x1 v1 → RepCollected (Lanius.Mini.Collected.mk x0 x1) (.structure 126 [v0, v1])
 
 inductive RepCursor : Lanius.Mini.Cursor → Value → Prop where
   | c0 {x0 : List Nat} {x1 : List Nat} {x2 : List Lanius.Mini.Token} {x3 : Nat} {v0 v1 v2 v3 : Value} :
@@ -872,6 +872,14 @@ inductive RepArgsBound : Lanius.Mini.ArgsBound → Value → Prop where
   | c0 {x0 : List Lanius.Mini.MEff} {x1 : List Lanius.Mini.Bind} {v0 v1 : Value} :
       (RepList 228 RepMEff) x0 v0 → (RepList 264 RepBind) x1 v1 → RepArgsBound (Lanius.Mini.ArgsBound.mk x0 x1) (.structure 299 [v0, v1])
 
+inductive RepArmsUse : Lanius.Mini.ArmsUse → Value → Prop where
+  | c0 {x0 : List Lanius.Mini.CTree} {x1 : Bool} {v0 v1 : Value} :
+      (RepList 82 RepCTree) x0 v0 → RepBool x1 v1 → RepArmsUse (Lanius.Mini.ArmsUse.mk x0 x1) (.structure 305 [v0, v1])
+
+inductive RepArmUse : Lanius.Mini.ArmUse → Value → Prop where
+  | c0 {x0 : Lanius.Mini.CTree} {x1 : Bool} {v0 v1 : Value} :
+      RepCTree x0 v0 → RepBool x1 v1 → RepArmUse (Lanius.Mini.ArmUse.mk x0 x1) (.structure 307 [v0, v1])
+
 attribute [rep_rule] RepUintTy.c0 RepUintTy.c1 RepUintTy.c2 RepUintTy.c3 RepUintTy.c4 RepFloatTy.c0 RepFloatTy.c1 RepSrcType.c0
 attribute [rep_rule] RepSrcType.c1 RepSrcType.c2 RepSrcType.c3 RepSrcType.c4 RepSrcType.c5 RepSrcType.c6 RepSrcType.c7 RepSrcType.c8
 attribute [rep_rule] RepSrcType.c9 RepSrcType.c10 RepSrcType.c11 RepSrcType.c12 RepSrcParam.c0 RepSrcOp.c0 RepSrcOp.c1 RepSrcOp.c2
@@ -913,6 +921,7 @@ attribute [rep_rule] RepTraitRef.c0 RepBoundGoal.c0 RepSplit.c0 RepFlDec.c0 RepA
 attribute [rep_rule] RepLetHead.c1 RepLetHead.c2 RepLetHead.c3 RepLetHead.c4 RepLetHead.c5 RepLetHead.c6 RepLetHead.c7 RepLetHead.c8
 attribute [rep_rule] RepLetHead.c9 RepUntyped.c0 RepBind.c0 RepPathRef.c0 RepVariantAt.c0 RepVariantTy.c0 RepMatchStmt.c0 RepFound.c0
 attribute [rep_rule] RepFit.c0 RepFit.c1 RepFit.c2 RepEffArm.c0 RepWildSplit.c0 RepBound.c0 RepFlDiv.c0 RepArgsBound.c0
+attribute [rep_rule] RepArmsUse.c0 RepArmUse.c0
 
 @[pure_rule] theorem ty0_typeId : ty0.typeId = 1 := rfl
 @[pure_rule] theorem ty1_typeId : ty1.typeId = 0 := rfl
@@ -1035,12 +1044,12 @@ attribute [rep_rule] RepFit.c0 RepFit.c1 RepFit.c2 RepEffArm.c0 RepWildSplit.c0 
 @[pure_rule] theorem ty122_typeId : ty122.typeId = 122 := rfl
 @[pure_rule] theorem ty123_typeId : ty123.typeId = 123 := rfl
 @[pure_rule] theorem ty124_typeId : ty124.typeId = 121 := rfl
-@[pure_rule] theorem ty125_typeId : ty125.typeId = 103 := rfl
-@[pure_rule] theorem ty126_typeId : ty126.typeId = 102 := rfl
-@[pure_rule] theorem ty127_typeId : ty127.typeId = 101 := rfl
-@[pure_rule] theorem ty128_typeId : ty128.typeId = 126 := rfl
-@[pure_rule] theorem ty129_typeId : ty129.typeId = 125 := rfl
-@[pure_rule] theorem ty130_typeId : ty130.typeId = 124 := rfl
+@[pure_rule] theorem ty125_typeId : ty125.typeId = 125 := rfl
+@[pure_rule] theorem ty126_typeId : ty126.typeId = 124 := rfl
+@[pure_rule] theorem ty127_typeId : ty127.typeId = 103 := rfl
+@[pure_rule] theorem ty128_typeId : ty128.typeId = 102 := rfl
+@[pure_rule] theorem ty129_typeId : ty129.typeId = 101 := rfl
+@[pure_rule] theorem ty130_typeId : ty130.typeId = 126 := rfl
 @[pure_rule] theorem ty135_typeId : ty135.typeId = 127 := rfl
 @[pure_rule] theorem ty136_typeId : ty136.typeId = 128 := rfl
 @[pure_rule] theorem ty137_typeId : ty137.typeId = 129 := rfl
@@ -1216,6 +1225,11 @@ attribute [rep_rule] RepFit.c0 RepFit.c1 RepFit.c2 RepEffArm.c0 RepWildSplit.c0 
 @[pure_rule] theorem ty358_typeId : ty358.typeId = 298 := rfl
 @[pure_rule] theorem ty359_typeId : ty359.typeId = 300 := rfl
 @[pure_rule] theorem ty360_typeId : ty360.typeId = 301 := rfl
-@[pure_rule] theorem ty363_typeId : ty363.typeId = 302 := rfl
+@[pure_rule] theorem ty361_typeId : ty361.typeId = 302 := rfl
+@[pure_rule] theorem ty364_typeId : ty364.typeId = 303 := rfl
+@[pure_rule] theorem ty365_typeId : ty365.typeId = 305 := rfl
+@[pure_rule] theorem ty366_typeId : ty366.typeId = 304 := rfl
+@[pure_rule] theorem ty367_typeId : ty367.typeId = 307 := rfl
+@[pure_rule] theorem ty368_typeId : ty368.typeId = 306 := rfl
 
 end Lanius.Faithful.SelfRep

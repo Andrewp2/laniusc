@@ -94,6 +94,10 @@ abbrev Stmt_field_fns_Decls_of_mini_selfhost_Decls (prog : SrcProgram) (prims : 
   ∀ {x0 : Lanius.Mini.Decls} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepDecls x0 v0 →
     (RepList 109 RepFnDecl) (x0.fns) w
 
+abbrev Stmt_get_of_mini_selfhost_CTree (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List Lanius.Mini.CTree} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 82 RepCTree) x0 v0 → RepNat x1 v1 →
+    (RepOption 128 RepCTree) (x0[x1]?) w
+
 abbrev Stmt_get_of_mini_selfhost_Rule (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Rule} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 35 RepRule) x0 v0 → RepNat x1 v1 →
     (RepOption 211 RepRule) (x0[x1]?) w
