@@ -2,7 +2,8 @@
 // milliseconds (exit after that long with no client), upstream port A
 // (every path), upstream port B (paths under /b/), and a profile: "test"
 // uses short timeouts (connect 500 ms, response 800 ms, inactivity
-// 1000 ms, head 600 ms, idle 1500 ms, pooled 3000 ms) and 16 KiB buffers,
+// 1000 ms, head 600 ms, idle 1500 ms, pooled 3000 ms), 16 KiB buffers and
+// at most 4 connections per upstream,
 // "load" the defaults. Prints the listening address first and the
 // counters last.
 module app::main;
@@ -42,7 +43,7 @@ fn main() -> i32 {
     if (listener.bind(endpoint.unwrap()).is_err() || listener.listen(512).is_err()) { listener.close(); return 3; }
     let o: ext::http_proxy::Options = ext::http_proxy::default_options();
     if (profile.values[profile.start] == 116) {
-        o.connect_timeout_ms = 500; o.response_timeout_ms = 800; o.io_timeout_ms = 1000; o.head_timeout_ms = 600; o.idle_timeout_ms = 1500; o.pool_idle_ms = 3000; o.buffer_bytes = 16384;
+        o.connect_timeout_ms = 500; o.response_timeout_ms = 800; o.io_timeout_ms = 1000; o.head_timeout_ms = 600; o.idle_timeout_ms = 1500; o.pool_idle_ms = 3000; o.buffer_bytes = 16384; o.upstream_connections = 4; o.max_idle = 4;
     }
     let made = ext::http_proxy::proxy(listener.borrow(), o, 512); if (made.is_err()) { listener.close(); return 4; }
     let p: ext::http_proxy::Proxy = made.unwrap();

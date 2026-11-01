@@ -446,7 +446,7 @@ def h2_group(exe):
     finally:
         stats = stop_proxy(proxy)
         up_a.kill(); up_b.kill()
-    check(stats["h2"] == 1 and stats["h2_requests"] == 33 and stats["bad_gateway"] == 1 and stats["gateway_timeout"] == 1, ("stats", stats))
+    check(stats["h2"] == 1 and stats["h2_requests"] == 33 and stats["connects"] <= 8 and stats["bad_gateway"] == 1 and stats["gateway_timeout"] == 1, ("stats", stats))
     print("http-proxy-h2 cases=%d requests=%d connects=%d reused=%d" % (cases, stats["h2_requests"], stats["connects"], stats["reused"]))
 
 

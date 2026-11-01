@@ -36,17 +36,18 @@ pub enum Error { Io(core::io::Error), Event(std::event::Error), Clock, Allocatio
 // request head being sent to the response head; io_timeout_ms: a body
 // making no progress either way; head_timeout_ms/idle_timeout_ms: client
 // heads and keep-alive; pool_idle_ms/max_idle: idle upstream connections
-// kept per upstream; max_requests: per client connection; via: this
+// kept per upstream; upstream_connections: open connections per upstream
+// (further requests queue for one); max_requests: per client connection; via: this
 // proxy's Via pseudonym; h2: accept h2c clients; h2_streams and
 // h2_stream_window: their concurrent streams and per-stream window.
-pub struct Options { limits: ext::http::Limits, buffer_bytes: i32, connect_timeout_ms: i32, response_timeout_ms: i32, io_timeout_ms: i32, head_timeout_ms: i32, idle_timeout_ms: i32, pool_idle_ms: i32, max_idle: i32, max_requests: i32, via: core::slice::View<u8>, h2: bool, h2_streams: i32, h2_stream_window: i32 }
+pub struct Options { limits: ext::http::Limits, buffer_bytes: i32, connect_timeout_ms: i32, response_timeout_ms: i32, io_timeout_ms: i32, head_timeout_ms: i32, idle_timeout_ms: i32, pool_idle_ms: i32, max_idle: i32, upstream_connections: i32, max_requests: i32, via: core::slice::View<u8>, h2: bool, h2_streams: i32, h2_stream_window: i32 }
 pub struct Stats { clients: i32, h2_clients: i32, requests: i32, h2_requests: i32, responses: i32, upstream_connects: i32, reused: i32, retries: i32, bad_gateway: i32, gateway_timeout: i32, rejected: i32, aborted: i32, peak_clients: i32 }
 
 struct Client { socket: std::socket::Socket, peer: core::net::SocketAddr, closed: bool, h2: bool, phase: i32, input: alloc::vec::Vec<u8>, filled: i32, output: alloc::vec::Vec<u8>, sent: i32, deadline: core::time::Deadline, keep_alive: bool, requests: i32, exchange: i32, address: alloc::vec::Vec<u8>, streams: alloc::vec::Vec<i32>, interest: u32, eof: bool, shut: bool }
 struct Link { socket: std::socket::Socket, upstream: i32, state: i32, input: alloc::vec::Vec<u8>, filled: i32, output: alloc::vec::Vec<u8>, sent: i32, deadline: core::time::Deadline, exchange: i32, reused: bool, got: bool, interest: u32, eof: bool }
-struct Exchange { active: bool, client: i32, stream: i32, link: i32, upstream: i32, method: alloc::vec::Vec<u8>, head: alloc::vec::Vec<u8>, request: ext::http_body::Framer, req_done: bool, chunk_out: bool, started: bool, response: ext::http_body::Framer, resp_done: bool, reusable: bool, replayable: bool, retried: bool, deadline: core::time::Deadline, waiting: bool }
+struct Exchange { active: bool, client: i32, stream: i32, link: i32, upstream: i32, method: alloc::vec::Vec<u8>, head: alloc::vec::Vec<u8>, request: ext::http_body::Framer, req_done: bool, chunk_out: bool, started: bool, response: ext::http_body::Framer, resp_done: bool, reusable: bool, replayable: bool, retried: bool, deadline: core::time::Deadline, waiting: bool, queued: bool }
 struct Route { prefix: alloc::vec::Vec<u8>, upstream: i32 }
-pub struct Proxy { events: std::event::Loop, listener: std::socket::Socket, listening: bool, options: Options, upstreams: alloc::vec::Vec<core::net::SocketAddr>, routes: alloc::vec::Vec<Route>, clients: alloc::vec::Vec<Client>, engines: alloc::vec::Vec<core::option::Option<ext::http2_server::Connection>>, links: alloc::vec::Vec<Link>, exchanges: alloc::vec::Vec<Exchange>, free_exchanges: alloc::vec::Vec<i32>, idle: alloc::vec::Vec<i32>, active: i32, stats: Stats, now: core::time::Instant, scratch_fields: alloc::vec::Vec<ext::hpack::Header>, scratch: alloc::vec::Vec<u8>, closed: bool }
+pub struct Proxy { events: std::event::Loop, listener: std::socket::Socket, listening: bool, options: Options, upstreams: alloc::vec::Vec<core::net::SocketAddr>, routes: alloc::vec::Vec<Route>, clients: alloc::vec::Vec<Client>, engines: alloc::vec::Vec<core::option::Option<ext::http2_server::Connection>>, links: alloc::vec::Vec<Link>, exchanges: alloc::vec::Vec<Exchange>, free_exchanges: alloc::vec::Vec<i32>, idle: alloc::vec::Vec<i32>, queue: alloc::vec::Vec<i32>, active: i32, stats: Stats, now: core::time::Instant, scratch_fields: alloc::vec::Vec<ext::hpack::Header>, scratch: alloc::vec::Vec<u8>, closed: bool }
 
 // Client phases.
 const C_FREE: i32 = 0;
@@ -71,11 +72,11 @@ fn same(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool { if (a.len(
 
 pub fn default_options() -> Options {
     let limits: ext::http::Limits = ext::http::Limits { head_bytes: 16384, line_bytes: 8192, headers: 100, body_bytes: 2147483647, trailer_bytes: 16384, trailers: 100, chunks: 2147483647 };
-    return Options { limits: limits, buffer_bytes: 65536, connect_timeout_ms: 2000, response_timeout_ms: 10000, io_timeout_ms: 10000, head_timeout_ms: 5000, idle_timeout_ms: 5000, pool_idle_ms: 4000, max_idle: 32, max_requests: 1000, via: literal("lanius", 6), h2: true, h2_streams: 100, h2_stream_window: 65535 };
+    return Options { limits: limits, buffer_bytes: 65536, connect_timeout_ms: 2000, response_timeout_ms: 10000, io_timeout_ms: 10000, head_timeout_ms: 5000, idle_timeout_ms: 5000, pool_idle_ms: 4000, max_idle: 64, upstream_connections: 128, max_requests: 1000, via: literal("lanius", 6), h2: true, h2_streams: 100, h2_stream_window: 65535 };
 }
 fn options_valid(o: Options) -> bool {
     return o.limits.head_bytes > 0 && o.buffer_bytes >= o.limits.head_bytes && o.buffer_bytes <= 16777216 && o.connect_timeout_ms >= 0 && o.response_timeout_ms >= 0
-        && o.io_timeout_ms >= 0 && o.head_timeout_ms >= 0 && o.idle_timeout_ms >= 0 && o.pool_idle_ms >= 0 && o.max_idle >= 0 && o.max_requests > 0 && o.via.len() > 0
+        && o.io_timeout_ms >= 0 && o.head_timeout_ms >= 0 && o.idle_timeout_ms >= 0 && o.pool_idle_ms >= 0 && o.max_idle >= 0 && o.upstream_connections > 0 && o.max_requests > 0 && o.via.len() > 0
         && o.h2_streams > 0 && o.h2_stream_window >= 65535;
 }
 fn now_instant() -> core::result::Result<core::time::Instant,Error> {
@@ -130,7 +131,7 @@ pub fn proxy(listener: &std::socket::Socket, options: Options, max_clients: i32)
     let stats: Stats = Stats { clients: 0, h2_clients: 0, requests: 0, h2_requests: 0, responses: 0, upstream_connects: 0, reused: 0, retries: 0, bad_gateway: 0, gateway_timeout: 0, rejected: 0, aborted: 0, peak_clients: 0 };
     let p: Proxy = Proxy { events: events, listener: std::socket::Socket { handle: fd.unwrap(), domain: listener.domain, datagram: false }, listening: true, options: options,
         upstreams: alloc::vec::new<core::net::SocketAddr>(), routes: alloc::vec::new<Route>(), clients: alloc::vec::new<Client>(), engines: alloc::vec::new<core::option::Option<ext::http2_server::Connection>>(),
-        links: alloc::vec::new<Link>(), exchanges: alloc::vec::new<Exchange>(), free_exchanges: alloc::vec::new<i32>(), idle: alloc::vec::new<i32>(), active: 0, stats: stats, now: now.unwrap(),
+        links: alloc::vec::new<Link>(), exchanges: alloc::vec::new<Exchange>(), free_exchanges: alloc::vec::new<i32>(), idle: alloc::vec::new<i32>(), queue: alloc::vec::new<i32>(), active: 0, stats: stats, now: now.unwrap(),
         scratch_fields: alloc::vec::new<ext::hpack::Header>(), scratch: alloc::vec::new<u8>(), closed: false };
     let i: i32 = 0;
     while (i < max_clients) {
@@ -180,7 +181,7 @@ pub impl Proxy {
         i = 0; while (i < self.exchanges.len()) { let x: Exchange = self.exchanges.at(i); x.method.destroy(); x.head.destroy(); i += 1; }
         i = 0; while (i < self.routes.len()) { let r: Route = self.routes.at(i); r.prefix.destroy(); i += 1; }
         if (self.listening) { let lf: i32 = self.listener.raw_handle().unwrap(); self.events.remove(lf); self.listening = false; }
-        self.clients.destroy(); self.engines.destroy(); self.links.destroy(); self.exchanges.destroy(); self.free_exchanges.destroy(); self.idle.destroy(); self.routes.destroy(); self.upstreams.destroy();
+        self.clients.destroy(); self.engines.destroy(); self.links.destroy(); self.exchanges.destroy(); self.free_exchanges.destroy(); self.idle.destroy(); self.queue.destroy(); self.routes.destroy(); self.upstreams.destroy();
         self.scratch_fields.destroy(); self.scratch.destroy();
         let closed: core::result::Result<i32,std::event::Error> = self.events.close(); if (closed.is_err()) { return core::result::Err(Error::Event(closed.unwrap_err())); }
         return core::result::Ok(0);
@@ -245,13 +246,13 @@ impl Proxy {
     fn new_exchange(&self) -> i32 {
         if (self.free_exchanges.len() > 0) { return self.free_exchanges.pop().unwrap(); }
         let now: core::time::Instant = self.now;
-        let x: Exchange = Exchange { active: false, client: -1, stream: 0, link: -1, upstream: 0, method: alloc::vec::new<u8>(), head: alloc::vec::new<u8>(), request: ext::http_body::empty(), req_done: true, chunk_out: false, started: false, response: ext::http_body::empty(), resp_done: false, reusable: false, replayable: false, retried: false, deadline: core::time::Deadline { instant: now }, waiting: false };
+        let x: Exchange = Exchange { active: false, client: -1, stream: 0, link: -1, upstream: 0, method: alloc::vec::new<u8>(), head: alloc::vec::new<u8>(), request: ext::http_body::empty(), req_done: true, chunk_out: false, started: false, response: ext::http_body::empty(), resp_done: false, reusable: false, replayable: false, retried: false, deadline: core::time::Deadline { instant: now }, waiting: false, queued: false };
         if (self.exchanges.try_push(x).is_err()) { return -1; }
         return self.exchanges.len() - 1;
     }
     fn free_exchange(&self, xi: i32) {
         let x: Exchange = self.exchanges.at(xi); if (!x.active) { return; }
-        x.active = false; x.link = -1; x.client = -1; x.method.clear(); x.head.clear();
+        x.active = false; x.link = -1; x.client = -1; x.queued = false; x.method.clear(); x.head.clear();
         self.exchanges.set(xi, x); self.free_exchanges.try_push(xi);
     }
     // Forget an exchange whose client is going away: its upstream
@@ -427,9 +428,19 @@ impl Proxy {
         let c: Client = self.clients.at(slot);
         return ext::http_rewrite::Forward { client: c.address.as_view(), via: self.options.via, proto: literal("http", 4) };
     }
-    // Bind exchange xi to an upstream connection and queue its head.
+    fn has_idle(&self, upstream: i32) -> bool { let k: i32 = 0; while (k < self.idle.len()) { if (self.links.at(self.idle.at(k)).upstream == upstream) { return true; } k += 1; } return false; }
+    fn busy(&self, upstream: i32) -> i32 { let n: i32 = 0; let i: i32 = 0; while (i < self.links.len()) { let l: Link = self.links.at(i); if (l.upstream == upstream && (l.state == L_BUSY || l.state == L_CONNECTING)) { n += 1; } i += 1; } return n; }
+    // Bind exchange xi to an upstream connection and queue its head; with
+    // upstream_connections in use and none idle, wait in the queue (the
+    // response timeout runs meanwhile).
     fn dispatch(&self, xi: i32) -> bool {
         let x: Exchange = self.exchanges.at(xi);
+        if (!self.has_idle(x.upstream) && self.busy(x.upstream) >= self.options.upstream_connections) {
+            if (!x.queued) { if (self.queue.try_push(xi).is_err()) { return false; } }
+            x.queued = true; x.waiting = true; x.deadline = after(self.now, self.options.response_timeout_ms); self.exchanges.set(xi, x);
+            return true;
+        }
+        x.queued = false; self.exchanges.set(xi, x);
         let li: i32 = self.take_link(x.upstream); if (li < 0) { return false; }
         let l: Link = self.links.at(li); l.exchange = xi;
         if (l.output.try_extend(x.head.as_view()).is_err()) { self.links.set(li, l); self.drop_link(li); return false; }
@@ -926,6 +937,20 @@ impl Proxy {
             i += 1;
         }
     }
+    // Start queued exchanges, oldest first, as connections free up.
+    fn serve_queue(&self) {
+        // Upstreams found full this round (the first 64 ids are remembered).
+        let full: [bool;64] = [false;64]; let k: i32 = 0;
+        while (k < self.queue.len()) {
+            let xi: i32 = self.queue.at(k); let x: Exchange = self.exchanges.at(xi);
+            if (!x.active || !x.queued) { self.queue.remove(k); continue; }
+            if (x.upstream < 64 && full[x.upstream]) { k += 1; continue; }
+            if (!self.has_idle(x.upstream) && self.busy(x.upstream) >= self.options.upstream_connections) { if (x.upstream < 64) { full[x.upstream] = true; } k += 1; continue; }
+            self.queue.remove(k); let slot: i32 = x.client;
+            if (!self.dispatch(xi)) { self.fail(xi, 502); } else { self.drive(xi); }
+            self.after_exchange(slot);
+        }
+    }
     // Run one round of the loop: wait for readiness until deadline (or an
     // earlier internal timeout), handle it, and apply timeouts. Returns the
     // number of readiness events handled.
@@ -950,6 +975,7 @@ impl Proxy {
             self.on_client(event.token as i32, event);
         }
         self.expire();
+        if (self.queue.len() > 0) { self.serve_queue(); }
         return core::result::Ok(n);
     }
 }
