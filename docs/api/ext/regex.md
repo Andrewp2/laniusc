@@ -13,6 +13,7 @@ One ordered Pike engine now supports reusable fixed-capacity Workspace storage a
 ## Contract and evidence guides
 
 - [extended-regex](../../extended-regex.md)
+- [extended-regex-oracle](../../extended-regex-oracle.md)
 - [extended-regex-text](../../extended-regex-text.md)
 - [extended-lexer](../../extended-lexer.md)
 - [library-regex-workspace-plan](../../library-regex-workspace-plan.md)
@@ -459,7 +460,7 @@ negated: bool
 
 ### struct: Workspace
 
-[Source line 401](../../../extended/ext/regex.lani#L401)
+[Source line 402](../../../extended/ext/regex.lani#L402)
 
 ```lanius
 pub struct Workspace
@@ -467,7 +468,7 @@ pub struct Workspace
 
 #### field: current
 
-[Source line 402](../../../extended/ext/regex.lani#L402)
+[Source line 403](../../../extended/ext/regex.lani#L403)
 
 ```lanius
 current: alloc::vec::Vec<i32>
@@ -475,7 +476,7 @@ current: alloc::vec::Vec<i32>
 
 #### field: next
 
-[Source line 402](../../../extended/ext/regex.lani#L402)
+[Source line 403](../../../extended/ext/regex.lani#L403)
 
 ```lanius
 next: alloc::vec::Vec<i32>
@@ -483,7 +484,7 @@ next: alloc::vec::Vec<i32>
 
 #### field: current_caps
 
-[Source line 403](../../../extended/ext/regex.lani#L403)
+[Source line 404](../../../extended/ext/regex.lani#L404)
 
 ```lanius
 current_caps: alloc::vec::Vec<i32>
@@ -491,7 +492,7 @@ current_caps: alloc::vec::Vec<i32>
 
 #### field: next_caps
 
-[Source line 403](../../../extended/ext/regex.lani#L403)
+[Source line 404](../../../extended/ext/regex.lani#L404)
 
 ```lanius
 next_caps: alloc::vec::Vec<i32>
@@ -499,7 +500,7 @@ next_caps: alloc::vec::Vec<i32>
 
 #### field: stack
 
-[Source line 404](../../../extended/ext/regex.lani#L404)
+[Source line 405](../../../extended/ext/regex.lani#L405)
 
 ```lanius
 stack: alloc::vec::Vec<i32>
@@ -507,7 +508,7 @@ stack: alloc::vec::Vec<i32>
 
 #### field: stack_caps
 
-[Source line 404](../../../extended/ext/regex.lani#L404)
+[Source line 405](../../../extended/ext/regex.lani#L405)
 
 ```lanius
 stack_caps: alloc::vec::Vec<i32>
@@ -515,7 +516,7 @@ stack_caps: alloc::vec::Vec<i32>
 
 #### field: seen
 
-[Source line 405](../../../extended/ext/regex.lani#L405)
+[Source line 406](../../../extended/ext/regex.lani#L406)
 
 ```lanius
 seen: alloc::vec::Vec<i32>
@@ -523,7 +524,7 @@ seen: alloc::vec::Vec<i32>
 
 #### field: temporary
 
-[Source line 405](../../../extended/ext/regex.lani#L405)
+[Source line 406](../../../extended/ext/regex.lani#L406)
 
 ```lanius
 temporary: alloc::vec::Vec<i32>
@@ -531,7 +532,7 @@ temporary: alloc::vec::Vec<i32>
 
 #### field: candidate
 
-[Source line 405](../../../extended/ext/regex.lani#L405)
+[Source line 406](../../../extended/ext/regex.lani#L406)
 
 ```lanius
 candidate: alloc::vec::Vec<i32>
@@ -539,7 +540,7 @@ candidate: alloc::vec::Vec<i32>
 
 #### field: states_reserved
 
-[Source line 406](../../../extended/ext/regex.lani#L406)
+[Source line 407](../../../extended/ext/regex.lani#L407)
 
 ```lanius
 states_reserved: i32
@@ -547,7 +548,7 @@ states_reserved: i32
 
 #### field: groups_reserved
 
-[Source line 406](../../../extended/ext/regex.lani#L406)
+[Source line 407](../../../extended/ext/regex.lani#L407)
 
 ```lanius
 groups_reserved: i32
@@ -555,7 +556,7 @@ groups_reserved: i32
 
 #### field: bytes_reserved
 
-[Source line 406](../../../extended/ext/regex.lani#L406)
+[Source line 407](../../../extended/ext/regex.lani#L407)
 
 ```lanius
 bytes_reserved: u64
@@ -563,7 +564,7 @@ bytes_reserved: u64
 
 #### field: active_states
 
-[Source line 407](../../../extended/ext/regex.lani#L407)
+[Source line 408](../../../extended/ext/regex.lani#L408)
 
 ```lanius
 active_states: i32
@@ -571,7 +572,7 @@ active_states: i32
 
 #### field: slots
 
-[Source line 407](../../../extended/ext/regex.lani#L407)
+[Source line 408](../../../extended/ext/regex.lani#L408)
 
 ```lanius
 slots: i32
@@ -579,7 +580,7 @@ slots: i32
 
 #### field: result_groups
 
-[Source line 407](../../../extended/ext/regex.lani#L407)
+[Source line 408](../../../extended/ext/regex.lani#L408)
 
 ```lanius
 result_groups: i32
@@ -587,7 +588,7 @@ result_groups: i32
 
 #### field: matched
 
-[Source line 407](../../../extended/ext/regex.lani#L407)
+[Source line 408](../../../extended/ext/regex.lani#L408)
 
 ```lanius
 matched: bool
@@ -595,7 +596,7 @@ matched: bool
 
 #### field: work
 
-[Source line 408](../../../extended/ext/regex.lani#L408)
+[Source line 409](../../../extended/ext/regex.lani#L409)
 
 ```lanius
 work: i32
@@ -603,7 +604,7 @@ work: i32
 
 #### field: max_work
 
-[Source line 408](../../../extended/ext/regex.lani#L408)
+[Source line 409](../../../extended/ext/regex.lani#L409)
 
 ```lanius
 max_work: i32
@@ -611,7 +612,7 @@ max_work: i32
 
 #### field: failed
 
-[Source line 408](../../../extended/ext/regex.lani#L408)
+[Source line 409](../../../extended/ext/regex.lani#L409)
 
 ```lanius
 failed: bool
@@ -637,7 +638,7 @@ pub fn input(text: core::text::Text) -> core::result::Result<Input, Error>
 
 ### function: compile
 
-[Source line 363](../../../extended/ext/regex.lani#L363)
+[Source line 364](../../../extended/ext/regex.lani#L364)
 
 ```lanius
 pub fn compile(pattern: core::text::Text, config: Options) -> core::result::Result<Regex, Error>
@@ -645,7 +646,7 @@ pub fn compile(pattern: core::text::Text, config: Options) -> core::result::Resu
 
 ### function: workspace
 
-[Source line 413](../../../extended/ext/regex.lani#L413)
+[Source line 414](../../../extended/ext/regex.lani#L414)
 
 ```lanius
 pub fn workspace(states: i32, groups: i32) -> Result<Workspace,Error>
@@ -653,9 +654,9 @@ pub fn workspace(states: i32, groups: i32) -> Result<Workspace,Error>
 
 ## Implementation blocks and public methods
 
-### impl at line 442
+### impl at line 443
 
-[Source line 442](../../../extended/ext/regex.lani#L442)
+[Source line 443](../../../extended/ext/regex.lani#L443)
 
 ```lanius
 pub impl Workspace
@@ -663,7 +664,7 @@ pub impl Workspace
 
 #### method: borrow
 
-[Source line 443](../../../extended/ext/regex.lani#L443)
+[Source line 444](../../../extended/ext/regex.lani#L444)
 
 ```lanius
 pub fn borrow(&self) -> &Workspace
@@ -671,7 +672,7 @@ pub fn borrow(&self) -> &Workspace
 
 #### method: state_capacity
 
-[Source line 444](../../../extended/ext/regex.lani#L444)
+[Source line 445](../../../extended/ext/regex.lani#L445)
 
 ```lanius
 pub fn state_capacity(&self) -> i32
@@ -679,7 +680,7 @@ pub fn state_capacity(&self) -> i32
 
 #### method: group_capacity
 
-[Source line 445](../../../extended/ext/regex.lani#L445)
+[Source line 446](../../../extended/ext/regex.lani#L446)
 
 ```lanius
 pub fn group_capacity(&self) -> i32
@@ -687,7 +688,7 @@ pub fn group_capacity(&self) -> i32
 
 #### method: owned_bytes
 
-[Source line 447](../../../extended/ext/regex.lani#L447)
+[Source line 448](../../../extended/ext/regex.lani#L448)
 
 ```lanius
 pub fn owned_bytes(&self) -> u64
@@ -695,7 +696,7 @@ pub fn owned_bytes(&self) -> u64
 
 #### method: group_count
 
-[Source line 448](../../../extended/ext/regex.lani#L448)
+[Source line 449](../../../extended/ext/regex.lani#L449)
 
 ```lanius
 pub fn group_count(&self) -> i32
@@ -703,7 +704,7 @@ pub fn group_count(&self) -> i32
 
 #### method: work_used
 
-[Source line 450](../../../extended/ext/regex.lani#L450)
+[Source line 451](../../../extended/ext/regex.lani#L451)
 
 ```lanius
 pub fn work_used(&self) -> i32
@@ -711,7 +712,7 @@ pub fn work_used(&self) -> i32
 
 #### method: span
 
-[Source line 451](../../../extended/ext/regex.lani#L451)
+[Source line 452](../../../extended/ext/regex.lani#L452)
 
 ```lanius
 pub fn span(&self, group: i32) -> Option<Span>
@@ -719,15 +720,15 @@ pub fn span(&self, group: i32) -> Option<Span>
 
 #### method: destroy
 
-[Source line 461](../../../extended/ext/regex.lani#L461)
+[Source line 462](../../../extended/ext/regex.lani#L462)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 499
+### impl at line 500
 
-[Source line 499](../../../extended/ext/regex.lani#L499)
+[Source line 500](../../../extended/ext/regex.lani#L500)
 
 ```lanius
 pub impl Regex
@@ -735,7 +736,7 @@ pub impl Regex
 
 #### method: borrow
 
-[Source line 500](../../../extended/ext/regex.lani#L500)
+[Source line 501](../../../extended/ext/regex.lani#L501)
 
 ```lanius
 pub fn borrow(&self) -> &Regex
@@ -743,7 +744,7 @@ pub fn borrow(&self) -> &Regex
 
 #### method: group_count
 
-[Source line 501](../../../extended/ext/regex.lani#L501)
+[Source line 502](../../../extended/ext/regex.lani#L502)
 
 ```lanius
 pub fn group_count(&self) -> i32
@@ -751,7 +752,7 @@ pub fn group_count(&self) -> i32
 
 #### method: state_count
 
-[Source line 502](../../../extended/ext/regex.lani#L502)
+[Source line 503](../../../extended/ext/regex.lani#L503)
 
 ```lanius
 pub fn state_count(&self) -> i32
@@ -759,7 +760,7 @@ pub fn state_count(&self) -> i32
 
 #### method: search_work_limit
 
-[Source line 505](../../../extended/ext/regex.lani#L505)
+[Source line 506](../../../extended/ext/regex.lani#L506)
 
 ```lanius
 pub fn search_work_limit(&self) -> i32
@@ -767,7 +768,7 @@ pub fn search_work_limit(&self) -> i32
 
 #### method: destroy
 
-[Source line 506](../../../extended/ext/regex.lani#L506)
+[Source line 507](../../../extended/ext/regex.lani#L507)
 
 ```lanius
 pub fn destroy(&self)
@@ -775,7 +776,7 @@ pub fn destroy(&self)
 
 #### method: find_with
 
-[Source line 599](../../../extended/ext/regex.lani#L599)
+[Source line 600](../../../extended/ext/regex.lani#L600)
 
 ```lanius
 pub fn find_with(&self, input: Input, start: i32, storage: &Workspace) -> Result<bool,Error>
@@ -783,7 +784,7 @@ pub fn find_with(&self, input: Input, start: i32, storage: &Workspace) -> Result
 
 #### method: longest_prefix_with
 
-[Source line 602](../../../extended/ext/regex.lani#L602)
+[Source line 603](../../../extended/ext/regex.lani#L603)
 
 ```lanius
 pub fn longest_prefix_with(&self, input: Input, start: i32, storage: &Workspace) -> Result<bool,Error>
@@ -791,7 +792,7 @@ pub fn longest_prefix_with(&self, input: Input, start: i32, storage: &Workspace)
 
 #### method: find_span_with
 
-[Source line 605](../../../extended/ext/regex.lani#L605)
+[Source line 606](../../../extended/ext/regex.lani#L606)
 
 ```lanius
 pub fn find_span_with(&self, input: Input, start: i32, storage: &Workspace) -> Result<Option<Span>,Error>
@@ -799,7 +800,7 @@ pub fn find_span_with(&self, input: Input, start: i32, storage: &Workspace) -> R
 
 #### method: longest_prefix_span_with
 
-[Source line 610](../../../extended/ext/regex.lani#L610)
+[Source line 611](../../../extended/ext/regex.lani#L611)
 
 ```lanius
 pub fn longest_prefix_span_with(&self, input: Input, start: i32, storage: &Workspace) -> Result<Option<Span>,Error>
@@ -807,7 +808,7 @@ pub fn longest_prefix_span_with(&self, input: Input, start: i32, storage: &Works
 
 #### method: find_from
 
-[Source line 629](../../../extended/ext/regex.lani#L629)
+[Source line 630](../../../extended/ext/regex.lani#L630)
 
 ```lanius
 pub fn find_from(&self, text: core::text::Text, start: i32) -> Result<Option<Match>,Error>
@@ -815,7 +816,7 @@ pub fn find_from(&self, text: core::text::Text, start: i32) -> Result<Option<Mat
 
 #### method: longest_prefix_in
 
-[Source line 636](../../../extended/ext/regex.lani#L636)
+[Source line 637](../../../extended/ext/regex.lani#L637)
 
 ```lanius
 pub fn longest_prefix_in(&self, input: Input, start: i32) -> Result<Option<Match>,Error>
@@ -823,7 +824,7 @@ pub fn longest_prefix_in(&self, input: Input, start: i32) -> Result<Option<Match
 
 #### method: longest_prefix_from
 
-[Source line 637](../../../extended/ext/regex.lani#L637)
+[Source line 638](../../../extended/ext/regex.lani#L638)
 
 ```lanius
 pub fn longest_prefix_from(&self, text: core::text::Text, start: i32) -> Result<Option<Match>,Error>
@@ -831,7 +832,7 @@ pub fn longest_prefix_from(&self, text: core::text::Text, start: i32) -> Result<
 
 #### method: longest_prefix
 
-[Source line 642](../../../extended/ext/regex.lani#L642)
+[Source line 643](../../../extended/ext/regex.lani#L643)
 
 ```lanius
 pub fn longest_prefix(&self, text: core::text::Text) -> Result<Option<Match>,Error>
@@ -839,7 +840,7 @@ pub fn longest_prefix(&self, text: core::text::Text) -> Result<Option<Match>,Err
 
 #### method: find
 
-[Source line 643](../../../extended/ext/regex.lani#L643)
+[Source line 644](../../../extended/ext/regex.lani#L644)
 
 ```lanius
 pub fn find(&self, text: core::text::Text) -> Result<Option<Match>,Error>
@@ -847,7 +848,7 @@ pub fn find(&self, text: core::text::Text) -> Result<Option<Match>,Error>
 
 #### method: is_match
 
-[Source line 644](../../../extended/ext/regex.lani#L644)
+[Source line 645](../../../extended/ext/regex.lani#L645)
 
 ```lanius
 pub fn is_match(&self, text: core::text::Text) -> Result<bool,Error>
@@ -855,7 +856,7 @@ pub fn is_match(&self, text: core::text::Text) -> Result<bool,Error>
 
 #### method: capture_iter
 
-[Source line 664](../../../extended/ext/regex.lani#L664)
+[Source line 665](../../../extended/ext/regex.lani#L665)
 
 ```lanius
 pub fn capture_iter(&self, input: Input) -> Result<Search,Error>
@@ -863,7 +864,7 @@ pub fn capture_iter(&self, input: Input) -> Result<Search,Error>
 
 #### method: span_iter
 
-[Source line 665](../../../extended/ext/regex.lani#L665)
+[Source line 666](../../../extended/ext/regex.lani#L666)
 
 ```lanius
 pub fn span_iter(&self, input: Input) -> Result<Search,Error>
@@ -871,15 +872,15 @@ pub fn span_iter(&self, input: Input) -> Result<Search,Error>
 
 #### method: find_iter
 
-[Source line 666](../../../extended/ext/regex.lani#L666)
+[Source line 667](../../../extended/ext/regex.lani#L667)
 
 ```lanius
 pub fn find_iter(&self, text: core::text::Text) -> Result<Matches,Error>
 ```
 
-### impl at line 674
+### impl at line 675
 
-[Source line 674](../../../extended/ext/regex.lani#L674)
+[Source line 675](../../../extended/ext/regex.lani#L675)
 
 ```lanius
 pub impl Match
@@ -887,7 +888,7 @@ pub impl Match
 
 #### method: group_count
 
-[Source line 675](../../../extended/ext/regex.lani#L675)
+[Source line 676](../../../extended/ext/regex.lani#L676)
 
 ```lanius
 pub fn group_count(&self) -> i32
@@ -895,7 +896,7 @@ pub fn group_count(&self) -> i32
 
 #### method: span
 
-[Source line 676](../../../extended/ext/regex.lani#L676)
+[Source line 677](../../../extended/ext/regex.lani#L677)
 
 ```lanius
 pub fn span(&self, group: i32) -> Option<Span>
@@ -903,15 +904,15 @@ pub fn span(&self, group: i32) -> Option<Span>
 
 #### method: destroy
 
-[Source line 682](../../../extended/ext/regex.lani#L682)
+[Source line 683](../../../extended/ext/regex.lani#L683)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 684
+### impl at line 685
 
-[Source line 684](../../../extended/ext/regex.lani#L684)
+[Source line 685](../../../extended/ext/regex.lani#L685)
 
 ```lanius
 pub impl Search
@@ -919,7 +920,7 @@ pub impl Search
 
 #### method: borrow
 
-[Source line 685](../../../extended/ext/regex.lani#L685)
+[Source line 686](../../../extended/ext/regex.lani#L686)
 
 ```lanius
 pub fn borrow(&self) -> &Search
@@ -927,7 +928,7 @@ pub fn borrow(&self) -> &Search
 
 #### method: span
 
-[Source line 686](../../../extended/ext/regex.lani#L686)
+[Source line 687](../../../extended/ext/regex.lani#L687)
 
 ```lanius
 pub fn span(&self, group: i32) -> Option<Span>
@@ -935,7 +936,7 @@ pub fn span(&self, group: i32) -> Option<Span>
 
 #### method: group_count
 
-[Source line 687](../../../extended/ext/regex.lani#L687)
+[Source line 688](../../../extended/ext/regex.lani#L688)
 
 ```lanius
 pub fn group_count(&self) -> i32
@@ -943,7 +944,7 @@ pub fn group_count(&self) -> i32
 
 #### method: work_used
 
-[Source line 688](../../../extended/ext/regex.lani#L688)
+[Source line 689](../../../extended/ext/regex.lani#L689)
 
 ```lanius
 pub fn work_used(&self) -> i32
@@ -951,7 +952,7 @@ pub fn work_used(&self) -> i32
 
 #### method: destroy
 
-[Source line 689](../../../extended/ext/regex.lani#L689)
+[Source line 690](../../../extended/ext/regex.lani#L690)
 
 ```lanius
 pub fn destroy(&self)
@@ -959,15 +960,15 @@ pub fn destroy(&self)
 
 #### method: next
 
-[Source line 690](../../../extended/ext/regex.lani#L690)
+[Source line 691](../../../extended/ext/regex.lani#L691)
 
 ```lanius
 pub fn next(&self) -> Result<Option<Span>,Error>
 ```
 
-### impl at line 705
+### impl at line 706
 
-[Source line 705](../../../extended/ext/regex.lani#L705)
+[Source line 706](../../../extended/ext/regex.lani#L706)
 
 ```lanius
 pub impl Matches
@@ -975,7 +976,7 @@ pub impl Matches
 
 #### method: next
 
-[Source line 706](../../../extended/ext/regex.lani#L706)
+[Source line 707](../../../extended/ext/regex.lani#L707)
 
 ```lanius
 pub fn next(&self) -> Result<Option<Match>,Error>
@@ -983,7 +984,7 @@ pub fn next(&self) -> Result<Option<Match>,Error>
 
 #### method: destroy
 
-[Source line 718](../../../extended/ext/regex.lani#L718)
+[Source line 719](../../../extended/ext/regex.lani#L719)
 
 ```lanius
 pub fn destroy(&self)

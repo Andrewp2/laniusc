@@ -2117,6 +2117,13 @@ allocation failures, plus a 4,096-row resource control. The
 [reduced compiler dependencies](library-context-inference-dependencies.md)
 retain original failing expressions beside native passing controls.
 
+The [regex differential oracle](extended-regex-oracle.md) runs the real
+`find_iter`, template-replacement and grep programs against CPython `re` on
+seeded grammar-generated patterns from the shared subset. Five seeds agree on
+60,025 find/capture cases, 5,000 replacements and 5,000 grep runs, and five
+pathological inputs finish in about 0.2 s. It found, and the engine now fixes,
+a lazy counted-repetition priority error (`(?:a|aab){0,2}?b` on `aabb`).
+
 [Regex splitting and replacement](extended-regex-text.md) now reuse canonical
 Search with one lazily acquired workspace. Borrowed split fields, independent
 literal/template outputs and explicit search/output bounds retain their

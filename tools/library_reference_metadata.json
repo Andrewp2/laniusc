@@ -1340,6 +1340,7 @@
     "ext::regex": {
       "guides": [
         "docs/extended-regex.md",
+        "docs/extended-regex-oracle.md",
         "docs/extended-regex-text.md",
         "docs/extended-lexer.md",
         "docs/library-regex-workspace-plan.md"
