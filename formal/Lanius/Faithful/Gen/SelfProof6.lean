@@ -64,16 +64,6 @@ theorem step_concat_of_mini_selfhost_Expr {prog : SrcProgram} {prims : Prims} {i
   simp only [src_concat_of_mini_selfhost_Expr] at h
   faithful []
 
-theorem step_concat_of_mini_selfhost_MFunc {prog : SrcProgram} {prims : Prims} {ix_concat_of_mini_selfhost_MFunc ix_unbox_of_mini_selfhost_List_mini_selfhost_MFunc ix_boxed_of_mini_selfhost_List_mini_selfhost_MFunc : Nat} (fn : prog.funcs[ix_concat_of_mini_selfhost_MFunc]? = some (src_concat_of_mini_selfhost_MFunc ix_unbox_of_mini_selfhost_List_mini_selfhost_MFunc ix_concat_of_mini_selfhost_MFunc ix_boxed_of_mini_selfhost_List_mini_selfhost_MFunc)) (np : prims.isPrim ix_concat_of_mini_selfhost_MFunc = false)
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_MFunc : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_MFunc prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_MFunc n))
-    (ext_boxed_of_mini_selfhost_List_mini_selfhost_MFunc : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_mini_selfhost_MFunc prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_MFunc n)) {n : Nat}
-    (ih_concat_of_mini_selfhost_MFunc : Certified (Stmt_concat_of_mini_selfhost_MFunc prog prims ix_concat_of_mini_selfhost_MFunc n)) :
-    Stmt_concat_of_mini_selfhost_MFunc prog prims ix_concat_of_mini_selfhost_MFunc (n + 1) := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rw [pcall_succ np fn] at h
-  simp only [src_concat_of_mini_selfhost_MFunc] at h
-  faithful []
-
 theorem step_concat_of_mini_selfhost_SrcType {prog : SrcProgram} {prims : Prims} {ix_concat_of_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcType : Nat} (fn : prog.funcs[ix_concat_of_mini_selfhost_SrcType]? = some (src_concat_of_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcType ix_concat_of_mini_selfhost_SrcType)) (np : prims.isPrim ix_concat_of_mini_selfhost_SrcType = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType n))
     (ext_boxed_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcType n)) {n : Nat}

@@ -118,6 +118,25 @@ theorem itemDecls_unique : ∀ {home : ModPath} {item : CTree} {a b : Decls},
     simp only [hx, Bool.true_eq_false, and_false, false_or] at n
     prod_clash
   | _, _, _, _, .none _, .none _ => rfl
+  | _, _, _, _, .type .., .module .. => by prod_clash
+  | _, _, _, _, .module .., .type .. => by prod_clash
+  | _, _, _, _, .fn .., .module .. => by prod_clash
+  | _, _, _, _, .module .., .fn .. => by prod_clash
+  | _, _, _, _, .const .., .module .. => by prod_clash
+  | _, _, _, _, .module .., .const .. => by prod_clash
+  | _, _, _, _, .implInherent .., .module .. => by prod_clash
+  | _, _, _, _, .module .., .implInherent .. => by prod_clash
+  | _, _, _, _, .implTrait .., .module .. => by prod_clash
+  | _, _, _, _, .module .., .implTrait .. => by prod_clash
+  | _, _, _, _, .imports .., .module .. => by prod_clash
+  | _, _, _, _, .module .., .imports .. => by prod_clash
+  | _, _, _, _, .alias .., .module .. => by prod_clash
+  | _, _, _, _, .module .., .alias .. => by prod_clash
+  | _, _, _, _, .host .., .module .. => by prod_clash
+  | _, _, _, _, .module .., .host .. => by prod_clash
+  | _, _, _, _, .none .., .module .. => by prod_clash
+  | _, _, _, _, .module .., .none .. => by prod_clash
+  | _, _, _, _, .module _ s, .module _ s' => by rw [pathSpellings_unique s s']
 
 theorem modulePath_unique : ∀ {items : List CTree} {a b : ModPath}, ModulePath items a → ModulePath items b → a = b
   | _, _, _, .none, .none => rfl

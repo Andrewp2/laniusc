@@ -405,22 +405,25 @@ def aliasDeclAt (home : ModPath) (b : CTree) (ps : List Name) : AliasDecl :=
 
 def _root_.Lanius.Mini.Decls.append (a b : Decls) : Decls :=
   { types := a.types ++ b.types, fns := a.fns ++ b.fns, consts := a.consts ++ b.consts,
-    imports := a.imports ++ b.imports, aliases := a.aliases ++ b.aliases, impls := a.impls ++ b.impls }
+    imports := a.imports ++ b.imports, aliases := a.aliases ++ b.aliases, impls := a.impls ++ b.impls,
+    homes := a.homes ++ b.homes }
 
 def onlyTypes (ts : List TypeDecl) : Decls := { noDecls with types := ts }
 def onlyFns (fs : List FnDecl) : Decls := { noDecls with fns := fs }
 def onlyConsts (cs : List ConstDecl) : Decls := { noDecls with consts := cs }
 def onlyImports (is : List ImportDecl) : Decls := { noDecls with imports := is }
 def onlyAliases (as : List AliasDecl) : Decls := { noDecls with aliases := as }
+def onlyHomes (ms : List ModPath) : Decls := { noDecls with homes := ms }
 
 /-- What an item (`b` is the item it holds, `pub` or not) declares in the
 module `home`: a struct or enum, a function, a constant, the methods of an
 impl block (and a trait impl itself, for the bounds), an import, a type
 alias without a where clause or bounds, or an `extern "lanius_std" fn` of a
 host service (`hostExtern`;
-its tree rearranged by `externTree` to a function's shape). A `module`
-item, another `extern fn`, a trait, an import of another form and an alias
-with a where clause declare nothing. -/
+its tree rearranged by `externTree` to a function's shape), or a `module`
+item's path, a module whatever its file declares (as laniusc's module
+records). Another `extern fn`, a trait, an import of another form and an
+alias with a where clause declare nothing. -/
 inductive ItemDecls (home : ModPath) : CTree → Decls → Prop
   | type {item : CTree} {t : TypeDecl} : (nodeProd (itemBody item) = pStruct ∨ nodeProd (itemBody item) = pEnum) →
       TypeDeclR home (itemBody item) t → ItemDecls home item (onlyTypes [t])
@@ -447,8 +450,10 @@ inductive ItemDecls (home : ModPath) : CTree → Decls → Prop
   | host {item : CTree} {ps : List Name} : nodeProd (itemBody item) = pExternFn →
       hostExtern (itemBody item) = true → TypeParams (kid (itemBody item) 4) ps →
       ItemDecls home item (onlyFns [fnDeclAt home (externTree (itemBody item)) false [] (itemBody item) (itemBody item) ps])
-  | none {item : CTree} : (nodeProd (itemBody item) = pModule ∨
-        (nodeProd (itemBody item) = pImport ∧ nodeProd (kid (itemBody item) 1) ≠ pImportPath) ∨
+  | «module» {item : CTree} {m : ModPath} : nodeProd (itemBody item) = pModule →
+      PathSpellings (kid (kid (itemBody item) 1) 0) (kid (kid (itemBody item) 1) 1) m →
+      ItemDecls home item (onlyHomes [m])
+  | none {item : CTree} : ((nodeProd (itemBody item) = pImport ∧ nodeProd (kid (itemBody item) 1) ≠ pImportPath) ∨
         (nodeProd (itemBody item) = pExternFn ∧ hostExtern (itemBody item) = false) ∨
         nodeProd (itemBody item) = pTrait ∨
         (nodeProd (itemBody item) = pTypeAlias ∧ nodeProd (kid (itemBody item) 3) ≠ pWhereNone)) →
@@ -555,6 +560,16 @@ theorem itemDecls_sound {fuel : Nat} {home : ModPath} {item : CTree} {d : Decls}
       subst h
       exact .host ex.1 ex.2 (typeParams_sound hp)
   rw [if_neg (by simpa using ex)] at h
+  by_cases md : nodeProd (itemBody item) = pModule
+  · rw [if_pos md] at h
+    simp only [moduleDecls] at h
+    cases hp : pathSpellings fuel (kid (kid (itemBody item) 1) 0) (kid (kid (itemBody item) 1) 1) with
+    | none => rw [hp] at h; cases h
+    | some m =>
+      rw [hp, Option.some.injEq] at h
+      subst h
+      exact .module md (pathSpellings_sound hp)
+  rw [if_neg md] at h
   split at h
   · rename_i nd
     rw [Option.some.injEq] at h
@@ -562,12 +577,11 @@ theorem itemDecls_sound {fuel : Nat} {home : ModPath} {item : CTree} {d : Decls}
     refine .none ?_
     simp only [Bool.or_eq_true, decide_eq_true_eq] at nd
     simp only [not_and, Bool.not_eq_true] at im al ex
-    rcases nd with (((m | i) | e) | t) | a
-    · exact .inl m
-    · exact .inr (.inl ⟨i, im i⟩)
-    · exact .inr (.inr (.inl ⟨e, ex e⟩))
-    · exact .inr (.inr (.inr (.inl t)))
-    · exact .inr (.inr (.inr (.inr ⟨a, al a⟩)))
+    rcases nd with ((i | e) | t) | a
+    · exact .inl ⟨i, im i⟩
+    · exact .inr (.inl ⟨e, ex e⟩)
+    · exact .inr (.inr (.inl t))
+    · exact .inr (.inr (.inr ⟨a, al a⟩))
   · cases h
 
 /-! ## Files -/
@@ -622,19 +636,25 @@ theorem append_noDecls (a : Decls) : a.append noDecls = a := by
 
 theorem joinDecls_some (a d : Decls) : joinDecls a (some d) = some (a.append d) := rfl
 
-theorem collect_sound : ∀ {fuel : Nat} {home : ModPath} {items : List CTree} {acc d : Decls},
-    collect fuel home items acc = some d → ∃ e, Collect home items e ∧ d = acc.append e
-  | _, _, [], acc, d, h => by
+theorem collect_sound : ∀ {fuel : Nat} {home : ModPath} {items : List CTree} {d : Decls},
+    collect fuel home items = some d → Collect home items d
+  | _, _, [], d, h => by
     simp only [collect, Option.some.injEq] at h
-    exact ⟨noDecls, .nil, by rw [append_noDecls, ← h]⟩
-  | fuel, home, item :: rest, acc, d, h => by
+    subst h
+    exact .nil
+  | fuel, home, item :: rest, d, h => by
     simp only [collect] at h
     cases hi : itemDecls fuel home item with
-    | none => rw [hi] at h; simp [joinDecls] at h
+    | none => rw [hi] at h; simp [collectFront] at h
     | some x =>
-      rw [hi, joinDecls_some] at h
-      obtain ⟨e, ce, rfl⟩ := collect_sound h
-      exact ⟨x.append e, .cons (itemDecls_sound hi) ce, append_assoc _ _ _⟩
+      rw [hi] at h
+      simp only [collectFront] at h
+      cases hr : collect fuel home rest with
+      | none => rw [hr] at h; simp [joinDecls] at h
+      | some e =>
+        rw [hr, joinDecls_some, Option.some.injEq] at h
+        subst h
+        exact .cons (itemDecls_sound hi) (collect_sound hr)
 
 theorem fileDecls_sound {fuel : Nat} {root : CTree} {f : FileDecls} (h : fileDecls fuel root = some f) :
     FileDeclsR root f := by
@@ -651,14 +671,12 @@ theorem fileDecls_sound {fuel : Nat} {root : CTree} {f : FileDecls} (h : fileDec
       | some m =>
         rw [hm] at h
         simp only [fileCollected] at h
-        cases hc : collect fuel m items noDecls with
+        cases hc : collect fuel m items with
         | none => rw [hc] at h; cases h
         | some d =>
           rw [hc, Option.some.injEq] at h
           subst h
-          obtain ⟨e, ce, rfl⟩ := collect_sound hc
-          rw [noDecls_append]
-          exact ⟨r, items, listItems_sound hi, modulePath_sound hm, ce⟩
+          exact ⟨r, items, listItems_sound hi, modulePath_sound hm, collect_sound hc⟩
   · rw [if_neg r] at h
     cases h
 

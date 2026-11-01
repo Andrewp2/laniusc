@@ -152,7 +152,7 @@ pub fn lookup(host: Host, service: Service, options: Options, limits: Limits) ->
     let bytes: [u8] = core::mem::typed_slice_from_raw_parts(frame,56);
     let index: i32 = 0; while (index < 56) { bytes[index] = 0; index += 1; }
     let hints: [i32] = core::mem::typed_slice_from_raw_parts(frame,4);
-    hints[0] = flags(host,service,options); hints[1] = family_code(options.family); hints[2] = kind_code(options.kind); hints[3] = protocol_code(options.kind);
+    let stored4 = flags(host,service,options); hints[0] = stored4; let stored3 = family_code(options.family); hints[1] = stored3; let stored2 = kind_code(options.kind); hints[2] = stored2; let stored1 = protocol_code(options.kind); hints[3] = stored1;
     let errno_pointer: ptr = __errno_location();
     let errno_cell: [i32] = core::mem::typed_slice_from_raw_parts(errno_pointer,1);
     errno_cell[0] = 0;

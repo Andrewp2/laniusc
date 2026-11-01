@@ -11,9 +11,9 @@ public import Lanius.Faithful.Gen.SelfStmtF_allocClosed
 public import Lanius.Faithful.Gen.SelfStmtF_assertClosed
 public import Lanius.Faithful.Gen.SelfStmtF_eIndexClosed
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
+public import Lanius.Faithful.Gen.SelfStmtF_funcsOnto
 public import Lanius.Faithful.Gen.SelfStmtF_letClosed
 public import Lanius.Faithful.Gen.SelfStmtF_letStructClosed
-public import Lanius.Faithful.Gen.SelfStmtF_monoLoop
 public import Lanius.Faithful.Gen.SelfStmtF_setEvalClosed
 import all Lanius.Faithful.Gen.SelfSrcF_assertClosed
 import all Lanius.Mini.Frontend.P.assertClosed

@@ -52,7 +52,7 @@ fn checked(bytes: core::slice::View<u8>, limits: Limits) -> core::result::Result
     if (!valid(bytes.start,bytes.length)) { return core::result::Err(failure(Error::Bounds,Stage::Validate,0)); } if (bytes.length > limits.max_string || bytes.length > limits.max_bytes) { return core::result::Err(failure(Error::Limit,Stage::Validate,0)); }
     let i: i32 = 0; while (i < bytes.length) { if (at(bytes,i) == 0) { return core::result::Err(failure(Error::Nul,Stage::Validate,0)); } i += 1; } return core::result::Ok(bytes.length);
 }
-fn put(raw: [u8], offset: i32, value: core::slice::View<u8>) -> i32 { let i: i32 = 0; while (i < value.length) { raw[offset+i] = at(value,i); i += 1; } raw[offset+i] = 0; return offset+i+1; }
+fn put(raw: [u8], offset: i32, value: core::slice::View<u8>) -> i32 { let i: i32 = 0; while (i < value.length) { let stored1 = at(value,i); raw[offset+i] = stored1; i += 1; } raw[offset+i] = 0; return offset+i+1; }
 fn prepare(request: Request) -> core::result::Result<Prepared,Failure> {
     let limits: Limits = request.limits; let args = request.arguments; let env = request.environment;
     if (limits.max_args < 0 || limits.max_env < 0 || limits.max_string < 0 || limits.max_bytes < 0 || limits.max_paths < 1 || !valid(args.start,args.length) || !valid(env.start,env.length)) { return core::result::Err(failure(Error::Bounds,Stage::Validate,0)); }
@@ -83,7 +83,7 @@ fn prepare(request: Request) -> core::result::Result<Prepared,Failure> {
     i = 0; while (i < args.length) { std::command_raw::store_pointer(table+(i as usize)*8,base+(offset as usize)); offset = put(raw,offset,args.values[args.start+i]); i += 1; }
     let env_at: i32 = (args.length+1)*8; i = 0; while (i < env.length) { std::command_raw::store_pointer(table+(env_at as usize)+(i as usize)*8,base+(offset as usize)); offset = put(raw,offset,env.values[env.start+i]); i += 1; }
     if (core::option::is_some(request.cwd)) { cwd = offset; offset = put(raw,offset,core::option::unwrap(request.cwd)); }
-    if (search) { let start: i32 = 0; i = 0; while (i <= path.length) { if (i == path.length || at(path,i) == 58) { path_offsets.try_push(offset).unwrap(); let j: i32 = start; while (j < i) { raw[offset] = at(path,j); offset += 1; j += 1; } if (i > start) { raw[offset] = 47; offset += 1; } offset = put(raw,offset,request.program); start = i+1; } i += 1; } }
+    if (search) { let start: i32 = 0; i = 0; while (i <= path.length) { if (i == path.length || at(path,i) == 58) { path_offsets.try_push(offset).unwrap(); let j: i32 = start; while (j < i) { let stored2 = at(path,j); raw[offset] = stored2; offset += 1; j += 1; } if (i > start) { raw[offset] = 47; offset += 1; } offset = put(raw,offset,request.program); start = i+1; } i += 1; } }
     else { path_offsets.try_push(0).unwrap(); } assert(offset as u64 == total);
     return core::result::Ok(Prepared { bytes: bytes, pointers: pointers, paths: path_offsets, cwd: cwd, env_at: env_at });
 }
