@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **285 modules**, **14572 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **285 modules**, **14574 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -176,7 +176,7 @@ Inventory: **285 modules**, **14572 declaration/member entries**. Counts include
 | [std::resolve](std/resolve.md) | [source](../../stdlib/std/resolve.lani#L4) | 59 | Source inventory | [stdlib-resolve](../stdlib-resolve.md), [stdlib-resolve-host](../stdlib-resolve-host.md) |
 | [std::scope](std/scope.md) | [source](../../stdlib/std/scope.lani#L14) | 65 | Source inventory | [stdlib-scope](../stdlib-scope.md), [memory-scoped-stacks-design](../memory-scoped-stacks-design.md) |
 | [std::signal](std/signal.md) | [source](../../stdlib/std/signal.lani#L3) | 14 | Source inventory | [stdlib-signals](../stdlib-signals.md) |
-| [std::socket](std/socket.md) | [source](../../stdlib/std/socket.lani#L3) | 119 | Source inventory | [stdlib-sockets](../stdlib-sockets.md), [stdlib-unix-streams](../stdlib-unix-streams.md), [stdlib-unix-request](../stdlib-unix-request.md) |
+| [std::socket](std/socket.md) | [source](../../stdlib/std/socket.lani#L3) | 121 | Source inventory | [stdlib-sockets](../stdlib-sockets.md), [stdlib-unix-streams](../stdlib-unix-streams.md), [stdlib-unix-request](../stdlib-unix-request.md) |
 | [std::stream](std/stream.md) | [source](../../stdlib/std/stream.lani#L3) | 15 | Source inventory | [stdlib-streams](../stdlib-streams.md) |
 | [std::temp_dir](std/temp_dir.md) | [source](../../stdlib/std/temp_dir.lani#L3) | 88 | Source inventory | [stdlib-temp-directories](../stdlib-temp-directories.md), [stdlib-mktemp-dir](../stdlib-mktemp-dir.md) |
 | [std::temp_file](std/temp_file.md) | [source](../../stdlib/std/temp_file.lani#L4) | 90 | Source inventory | [stdlib-temp-files](../stdlib-temp-files.md), [stdlib-file-operations](../stdlib-file-operations.md) |

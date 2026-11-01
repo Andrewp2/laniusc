@@ -879,8 +879,9 @@ make no callback; short transfers advance both array/file coordinates.
 Interrupted calls spend attempts, and every failure retains only confirmed
 progress. A call quota is separate from callback duration or a host deadline.
 
-The `std::file_ops` File adapter stages at most 1024 bytes through stack
-storage and makes one pread64/pwrite64 transfer after status validation.
+The `std::file_ops` File adapter reads packed (stride 1) destinations with one
+direct pread64 and no status probe. Writes and other layouts stage at most 1024
+bytes through stack storage and make one transfer after status validation.
 Read bytes publish only after a valid count. It leaves the shared cursor
 unchanged, rejects O_DIRECT and rejects O_APPEND for nonempty writes.
 Manual owner/backing and descriptor/status stability remain caller duties;

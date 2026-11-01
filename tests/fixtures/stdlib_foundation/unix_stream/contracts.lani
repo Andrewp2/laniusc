@@ -30,7 +30,7 @@ fn write_exact<W>(stream:&W,bytes:[u8],offset:i32,count:i32) where W:core::io::W
     let completed:i32=0; let calls:i32=0;
     while (completed<count && calls<16) {
         let written:core::result::Result<i32,core::io::Error> =stream.write(bytes,offset+completed,count-completed);
-        let amount:i32=written.unwrap(); assert(amount>0 && amount<=count-completed && amount<=1024); completed+=amount; calls+=1;
+        let amount:i32=written.unwrap(); assert(amount>0 && amount<=count-completed && (amount<=1024 || core::mem::slice_stride(bytes)==1)); completed+=amount; calls+=1;
     }
     assert(completed==count);
     let flushed:core::result::Result<i32,core::io::Error> =stream.flush(); assert(flushed.unwrap()==0);
@@ -39,7 +39,7 @@ fn read_exact<R>(stream:&R,bytes:[u8],offset:i32,count:i32) where R:core::io::Re
     let completed:i32=0; let calls:i32=0;
     while (completed<count && calls<16) {
         let received:core::result::Result<i32,core::io::Error> =stream.read(bytes,offset+completed,count-completed);
-        let amount:i32=received.unwrap(); assert(amount>0 && amount<=count-completed && amount<=1024); completed+=amount; calls+=1;
+        let amount:i32=received.unwrap(); assert(amount>0 && amount<=count-completed && (amount<=1024 || core::mem::slice_stride(bytes)==1)); completed+=amount; calls+=1;
     }
     assert(completed==count);
 }
@@ -98,7 +98,7 @@ fn large_staging_and_write_half_close() {
         if (layout==1) { source=packed; target=native; }
         let index:i32=0; while (index<2058) { source[index]=171; target[index]=211; index+=1; }
         index=0; while (index<2053) { source[3+index]=pattern(index); index+=1; }
-        let sent:i32=first.send(core::slice::view_range<u8>(source,3,2053).unwrap()).unwrap(); assert(sent>0 && sent<=1024);
+        let sent:i32=first.send(core::slice::view_range<u8>(source,3,2053).unwrap()).unwrap(); assert(sent>0 && (core::mem::slice_stride(source)==1 && sent==2053 || core::mem::slice_stride(source)<0 && sent<=1024));
         write_exact<std::socket::UnixStream>(first.borrow(),source,3+sent,2053-sent);
         read_exact<std::socket::UnixStream>(second.borrow(),target,2,2053);
         check_pattern(source,3,2053,171); check_pattern(target,2,2053,211);

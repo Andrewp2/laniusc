@@ -1386,8 +1386,8 @@ borrowed point lookup has the current increment above.
   admit complete array/position spans before callbacks, preserve confirmed
   progress and make no EOF probe after completion. The signed-64-bit exclusive
   end bounds file positions; empty operations and negative budgets have
-  explicit behavior. File adapters preserve the shared cursor, stage at most
-  1024 bytes, check flags before transfer and reject O_DIRECT / write O_APPEND.
+  explicit behavior. File adapters preserve the shared cursor; packed reads go
+  direct, writes and native layouts stage at most 1024 bytes and check flags before transfer and reject O_DIRECT / write O_APPEND.
   Manual owner/backing and stable descriptor/status state remain required.
   Two portable tests pass in 7.01s: one no-service native contract and two
   capability rejections. One selected old stream regression passes in 11.34s

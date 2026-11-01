@@ -214,6 +214,22 @@ pub fn read_at(file:&File,destination:View<u8>,position:u64) -> Result<i32,Error
     }
     let got:i64=descriptor(file)?;
     if(destination.length==0) { return Ok(0); }
+    if(core::mem::slice_stride(destination.values)==1) {
+        // Packed bytes are contiguous: read straight into them, with no
+        // status probe. An O_DIRECT descriptor shows up as EINVAL for an
+        // unaligned span and is then reported as InvalidInput, as before.
+        let direct:ptr=core::mem::i32_slice_data_ptr(destination.values)+destination.start;
+        let call_args:[std::linux::Argument;4]=[std::linux::Argument::Word(got),std::linux::Argument::Address(direct),std::linux::Argument::Word(destination.length as i64),std::linux::Argument::Word(position as i64)];
+        let done=std::linux::call(17,view(call_args,4).unwrap());
+        if(done.is_err()) {
+            let failure:Error=host_error(done.unwrap_err());
+            let einval:bool=match(failure) { Error::Host(n)->n==22, _->false };
+            if(einval) { let flags:i32=status_flags(file)?; if((flags&16384)!=0) { return Err(Error::InvalidInput); } }
+            return Err(failure);
+        }
+        let moved:i64=done.unwrap(); if(moved<0 || moved>(destination.length as i64)) { return Err(Error::InvalidCount); }
+        return Ok(moved as i32);
+    }
     let status:i32=status_flags(file)?;
     if((status&16384)!=0) { return Err(Error::InvalidInput); }
     let amount:i32=destination.length;
