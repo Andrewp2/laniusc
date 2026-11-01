@@ -7,6 +7,7 @@ import core::mem;
 import core::option;
 import core::result;
 import core::slice;
+import ext::idna;
 import ext::url;
 
 fn bytes(value: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),n); return core::slice::view(raw,n).unwrap(); }
@@ -18,7 +19,7 @@ fn error_is(result: core::result::Result<ext::url::Url, ext::url::Error>, code: 
     let found: i32 = match (result.unwrap_err()) {
         ext::url::Error::Bounds -> 1, ext::url::Error::TooLong -> 2, ext::url::Error::InvalidUtf8 -> 3, ext::url::Error::AllocationFailed -> 4,
         ext::url::Error::MissingScheme -> 5, ext::url::Error::MissingHost -> 6, ext::url::Error::InvalidHost -> 7, ext::url::Error::InvalidPort -> 8,
-        ext::url::Error::InvalidIpv4 -> 9, ext::url::Error::InvalidIpv6 -> 10, ext::url::Error::UnsupportedIdna -> 11
+        ext::url::Error::InvalidIpv4 -> 9, ext::url::Error::InvalidIpv6 -> 10, ext::url::Error::UnsupportedIdna -> 11, ext::url::Error::InvalidIdna -> 12
     };
     return found == code;
 }
@@ -29,7 +30,48 @@ fn kind(url: &ext::url::Url) -> i32 {
     };
 }
 
+fn idna_error(domain: core::slice::View<u8>) -> i32 {
+    let out: alloc::vec::Vec<u8> = alloc::vec::new();
+    let result: core::result::Result<i32, ext::idna::Error> = ext::idna::to_ascii(domain,out.borrow()); out.destroy();
+    if (result.is_ok()) { return 0; }
+    return match (result.unwrap_err()) {
+        ext::idna::Error::Bounds -> 1, ext::idna::Error::TooLong -> 2, ext::idna::Error::InvalidUtf8 -> 3, ext::idna::Error::Disallowed(v) -> 1000000 + (v as i32),
+        ext::idna::Error::InvalidPunycode -> 5, ext::idna::Error::InvalidAce -> 6, ext::idna::Error::LeadingMark -> 7, ext::idna::Error::Joiner -> 8,
+        ext::idna::Error::Bidi -> 9, ext::idna::Error::UnsupportedJoiner -> 10, ext::idna::Error::Normalization -> 11, ext::idna::Error::AllocationFailed -> 12
+    };
+}
+fn status_is(value: u32, code: i32) -> bool {
+    let found: i32 = match (ext::idna::status(value)) {
+        ext::idna::Status::Valid -> 0, ext::idna::Status::Mapped -> 1, ext::idna::Status::Ignored -> 2, ext::idna::Status::Deviation -> 3, ext::idna::Status::Disallowed -> 4
+    };
+    return found == code;
+}
+// ext::idna: statuses, the RFC 3492 sample (L), round trips and every error.
+fn idna_contracts() -> i32 {
+    if (!status_is(97,0) || !status_is(65,1) || !status_is(173,2) || !status_is(223,3) || !status_is(65533,4) || !status_is(1114112,4)) { return 40; }
+    let scalars: alloc::vec::Vec<u32> = alloc::vec::new();
+    if (ext::idna::punycode_decode(bytes("3B-ww4c5e180e575a65lsy2b",24),scalars.borrow()).unwrap() != 8) { return 41; }
+    if (scalars.at(0) != 51 || scalars.at(1) != 24180 || scalars.at(2) != 66 || scalars.at(3) != 32068 || scalars.at(7) != 29983) { return 42; }
+    let ascii: alloc::vec::Vec<u8> = alloc::vec::new();
+    if (ext::idna::punycode_encode(scalars.as_view(),ascii.borrow()).unwrap() != 24 || !is(ascii.as_view(),"3B-ww4c5e180e575a65lsy2b",24)) { return 43; }
+    if (ext::idna::punycode_decode(bytes("a-9",3),scalars.borrow()).is_ok() || ext::idna::punycode_decode(bytes("99999999999",11),scalars.borrow()).is_ok()) { return 44; }
+    if (ext::idna::to_ascii(bytes("BÜCHER.ß.。",14),ascii.borrow()).unwrap() != 23 || !is(ascii.as_view(),"xn--bcher-kva.xn--zca..",23)) { return 45; }
+    if (ext::idna::to_ascii(bytes("XN--A.Example",13),ascii.borrow()).unwrap() != 13 || !is(ascii.as_view(),"xn--a.example",13)) { return 46; }
+    if (idna_error(bytes("́a",3)) != 7 || idna_error(bytes("a‍b",5)) != 8 || idna_error(bytes("אa",3)) != 9) { return 47; }
+    if (idna_error(bytes("xn--a.ü",8)) != 6 || idna_error(bytes("xn--zz!.ü",10)) != 5 || idna_error(bytes("︒",3)) != 1065042) { return 48; }
+    if (idna_error(bytes("ب‌ب",7)) != 10 || idna_error(bytes("a‌ب",6)) != 8) { return 49; }
+    let bad: [u8;2] = [195,40]; if (idna_error(core::slice::view(bad,2).unwrap()) != 3) { return 50; }
+    let long: alloc::vec::Vec<u8> = alloc::vec::new(); let i: i32 = 0;
+    while (i < 8192) { long.try_push(195 as u8); long.try_push(169 as u8); i += 1; }
+    if (idna_error(long.as_view()) != 0) { return 51; }
+    long.try_push(97 as u8); if (idna_error(long.as_view()) != 2) { return 52; }
+    if (idna_error(core::slice::View { values: long.as_view().values, start: -1, length: 2 }) != 1) { return 53; }
+    long.destroy(); scalars.destroy(); ascii.destroy();
+    return 0;
+}
+
 fn main() -> i32 {
+    let idna_status: i32 = idna_contracts(); if (idna_status != 0) { return idna_status; }
     // Null and empty query and fragment are distinct; search and hash hide both.
     let a: ext::url::Url = must("http://h/p?#",12);
     if (!a.query().is_some() || a.query().unwrap().length != 0 || !a.fragment().is_some() || a.fragment().unwrap().length != 0) { return 1; }
@@ -71,7 +113,10 @@ fn main() -> i32 {
     if (!error_is(ext::url::parse(core::slice::View { values: raw.values, start: -1, length: 3 }),1)) { return 19; }
     if (!error_is(ext::url::parse(core::slice::View { values: raw.values, start: 0, length: ext::url::MAX_INPUT_BYTES + 1 }),2)) { return 20; }
     if (!error_is(ext::url::parse(bytes("http://h:65536/",15)),8) || !error_is(ext::url::parse(bytes("http://h:1x/",12)),8)) { return 21; }
-    if (!error_is(ext::url::parse(bytes("http://xn--a.b/",15)),11) || !error_is(ext::url::parse(bytes("http://%C3%A9/",14)),11)) { return 22; }
+    if (!error_is(ext::url::parse(bytes("http://ب‌ب/",15)),11) || !error_is(ext::url::parse(bytes("http://︒/",11)),12)) { return 22; }
+    let idn: ext::url::Url = must("http://%C3%A9.xn--zca/",22);
+    if (!is(idn.hostname(),"xn--9ca.xn--zca",15) || kind(idn.borrow()) != 2) { return 27; }
+    idn.destroy();
     if (!error_is(ext::url::parse(bytes("http:",5)),6) || !error_is(ext::url::parse(bytes("http://u@/",10)),6)) { return 23; }
     if (!error_is(ext::url::parse_with_base(bytes("x",1),o.borrow()),5)) { return 24; }
     // The span accessors partition the href.
