@@ -151,7 +151,7 @@ fn csv_normalizer_executes_quoting_unicode_and_error_cases() {
     for when in [1, 2, 3] {
         let output = common::short_process_output_with_timeout(
             "CSV normalizer allocation failure",
-            std::process::Command::new("strace")
+            crate::common::strace()
                 .args(["-qq", "-o"])
                 .arg(trace.path())
                 .args(["-e", "trace=mmap,munmap", "-e"])
@@ -210,7 +210,7 @@ fn csv_frees_partial_results_at_every_allocation_failure() {
     let trace = common::TempArtifact::new("laniusc_csv", "allocations", None);
     let baseline = common::short_process_output_with_timeout(
         "CSV allocations",
-        std::process::Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap"])
@@ -226,7 +226,7 @@ fn csv_frees_partial_results_at_every_allocation_failure() {
     for when in 2..=allocation_count {
         let failed = common::short_process_output_with_timeout(
             "CSV injected allocation failure",
-            std::process::Command::new("strace")
+            crate::common::strace()
                 .args(["-qq", "-o"])
                 .arg(trace.path())
                 .args(["-e", "trace=mmap,munmap", "-e"])

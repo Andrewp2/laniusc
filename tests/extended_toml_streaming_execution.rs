@@ -355,7 +355,7 @@ fn run(
     let input = common::TempArtifact::new("laniusc_toml_streaming", "input", None);
     input.write_bytes([mode.unwrap_or(0)]);
     let trace = common::TempArtifact::new("laniusc_toml_streaming", "trace", None);
-    let mut command = Command::new("strace");
+    let mut command = crate::common::strace();
     command
         .args(["--kill-on-exit", "-qq", "-s", "64", "-o"])
         .arg(trace.path())

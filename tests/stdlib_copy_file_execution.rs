@@ -247,7 +247,7 @@ fn run(
     injection: Option<&str>,
 ) -> NativeRun {
     let trace = common::TempArtifact::new("laniusc_copy_file", "trace", None);
-    let mut command = Command::new("strace");
+    let mut command = crate::common::strace();
     command.args(["-qq", "-o"]).arg(trace.path()).args([
         "-e",
         "trace=openat,fcntl,statx,lseek,ftruncate,read,write,close,mmap,mremap,munmap,rt_sigaction",

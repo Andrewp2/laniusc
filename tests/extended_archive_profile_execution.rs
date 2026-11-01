@@ -48,7 +48,7 @@ fn check(cases: Vec<Case>, no_filesystem: bool) {
     input.write_bytes(request);
     let trace = common::TempArtifact::new("laniusc_archive_profile", "trace", None);
     let mut command = if no_filesystem {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command.args(["-qq", "-o"]).arg(trace.path()).args(["-e", "trace=openat,mkdirat,unlinkat,renameat2,linkat,symlinkat,mknodat,chmod,fchmod,chown,fchown,utimensat"]).arg(executable().path());
         command
     } else { Command::new(executable().path()) };

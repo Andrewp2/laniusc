@@ -120,7 +120,7 @@ def audit(text, mode, complete, target_ordinal=None):
 def invoke(executable, mode, target_ordinal=None):
     directory = Path(tempfile.mkdtemp(prefix=f"server-poll-fault-{mode}-"))
     trace = directory / "trace.txt"
-    command = ["strace", "--kill-on-exit", "-qq", "-xx", "-s", "256", "-o", str(trace), "-e", "trace=mmap,munmap,socket,accept4,close,recvfrom,sendto,poll,read,write"]
+    command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-xx", "-s", "256", "-o", str(trace), "-e", "trace=mmap,munmap,socket,accept4,close,recvfrom,sendto,poll,read,write"]
     if mode:
         command += ["-e", f"inject=poll:error={'EINTR' if mode == 1 else 'EIO'}:when={target_ordinal}"]
     command += [str(executable), str(mode)]

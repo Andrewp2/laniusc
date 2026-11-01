@@ -73,7 +73,7 @@ theorem lok269 : LiveOk prims outside liveBad 269 (src_empty_of_mini_selfhost_Ar
 theorem lok285 : LiveOk prims outside liveBad 285 (src_boxed_of_mini_selfhost_List_mini_selfhost_Expr 50 443 444) := by decide +kernel
 
 /-- mini::selfhost::word_element -/
-theorem lok314 : LiveOk prims outside liveBad 314 (src_word_element 475) := by decide +kernel
+theorem lok314 : LiveOk prims outside liveBad 314 (src_word_element 313 475) := by decide +kernel
 
 /-- mini::selfhost::no_decls -/
 theorem lok381 : LiveOk prims outside liveBad 381 (src_no_decls 547 548 549 550 551 552 553) := by decide +kernel

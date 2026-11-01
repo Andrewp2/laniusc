@@ -1,0 +1,79 @@
+// Batch driver for oracle.py. stdin holds records "MODE NODES ALIASES DEPTH
+// LENGTH\n" followed by LENGTH bytes of YAML. MODE A uses load_all (the
+// array of documents) and S uses load; zero limits keep the defaults. Each
+// record prints one line: "ok JSON" or "err KIND LINE COLUMN".
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import core::text;
+import ext::json_stream;
+import ext::json_tree;
+import ext::yaml;
+import std::stream;
+
+fn append(out: &alloc::vec::Vec<u8>, bytes: [u8], start: i32, length: i32) {
+    core::result::unwrap(out.try_extend(core::slice::View { values: bytes, start: start, length: length }));
+}
+fn append_str(out: &alloc::vec::Vec<u8>, value: str, count: i32) {
+    append(out, core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value), count), 0, count);
+}
+fn append_int(out: &alloc::vec::Vec<u8>, value: i32) {
+    if (value < 0) { core::result::unwrap(out.try_push(45)); value = -value; }
+    let buffer: [u8; 12] = [0; 12]; let used: i32 = 0;
+    while (true) { buffer[used] = ((value % 10) as u8) + 48; used += 1; value = value / 10; if (value == 0) { break; } }
+    while (used > 0) { used -= 1; let digit: u8 = buffer[used]; core::result::unwrap(out.try_push(digit)); }
+}
+fn main() -> i32 {
+    let data: alloc::vec::Vec<u8> = alloc::vec::new();
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let buffer: [u8; 65536] = [0; 65536];
+    while (true) {
+        let got = source.read(buffer, 0, 65536);
+        if (got.is_err()) { return 3; }
+        let n: i32 = got.unwrap();
+        if (n == 0) { break; }
+        core::result::unwrap(data.try_extend(core::slice::View { values: buffer, start: 0, length: n }));
+    }
+    let made = ext::json_stream::writer(1048576, 1073741824);
+    if (made.is_err()) { return 4; }
+    let writer: ext::json_stream::Writer = made.unwrap();
+    let out: alloc::vec::Vec<u8> = alloc::vec::new();
+    let bytes: [u8] = data.as_slice(); let total: i32 = data.len(); let at: i32 = 0;
+    while (at < total) {
+        let all: bool = bytes[at] == 65; at += 2;
+        let fields: [i32; 4] = [0; 4]; let field: i32 = 0;
+        while (bytes[at] != 10) {
+            if (bytes[at] == 32) { field += 1; } else { fields[field] = fields[field] * 10 + ((bytes[at] - 48) as i32); }
+            at += 1;
+        }
+        at += 1;
+        let length: i32 = fields[3];
+        let limits: ext::yaml::Limits = ext::yaml::default_limits();
+        if (fields[0] > 0) { limits.max_nodes = fields[0]; }
+        if (fields[1] > 0) { limits.max_alias_nodes = fields[1]; }
+        if (fields[2] > 0) { limits.max_depth = fields[2]; }
+        let loaded = ext::yaml::load(bytes, at, length, limits);
+        if (all) { loaded = ext::yaml::load_all(bytes, at, length, limits); }
+        if (loaded.is_err()) {
+            let error: ext::yaml::Error = loaded.unwrap_err();
+            append_str(out.borrow(), "err ", 4);
+            let name: core::text::Text = ext::yaml::kind_name(error.kind);
+            append(out.borrow(), name.bytes, name.start, name.length);
+            core::result::unwrap(out.try_push(32)); append_int(out.borrow(), error.line);
+            core::result::unwrap(out.try_push(32)); append_int(out.borrow(), error.column);
+        } else {
+            let tree: ext::json_tree::Tree = loaded.unwrap();
+            writer.clear();
+            if (tree.write(tree.root(), writer.borrow()).is_err()) { append_str(out.borrow(), "err Output", 10); }
+            else { append_str(out.borrow(), "ok ", 3); let view: core::slice::View<u8> = writer.output(); append(out.borrow(), view.values, view.start, view.length); }
+            tree.destroy();
+        }
+        core::result::unwrap(out.try_push(10));
+        at += length;
+    }
+    if (core::io::write_all<std::stream::Descriptor>(std::stream::stdout().borrow(), out.as_slice(), 0, out.len()).is_err()) { return 3; }
+    return 0;
+}

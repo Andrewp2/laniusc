@@ -110,7 +110,7 @@ def traced(executable, args=(), inject=None, expected=0, follow=True, close_erro
     global CASES
     with tempfile.TemporaryDirectory(prefix="lanius-command-trace-") as directory:
         path = Path(directory) / "trace"
-        command = ["strace", "-qq", "-s", "4096", "-o", str(path), "-e", "trace=" + TRACE]
+        command = ["strace","-E","LANIUS_ALLOC=mmap", "-qq", "-s", "4096", "-o", str(path), "-e", "trace=" + TRACE]
         if follow:
             command.append("-f")
         if inject:

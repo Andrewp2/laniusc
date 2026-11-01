@@ -33,10 +33,17 @@ Limits { max_input: i32, max_output: i32, max_members: i32 }
 
 encode(input: View<u8>, format: Format, max_output: i32)
     -> Result<alloc::vec::Vec<u8>, Error>
+encode_level(input: View<u8>, format: Format, max_output: i32, level: i32)
+    -> Result<alloc::vec::Vec<u8>, Error>
 decode(input: View<u8>, format: Format, limits: Limits)
     -> Result<alloc::vec::Vec<u8>, Error>
 default_limits() -> Limits
+crc32_update(state: u32, bytes: View<u8>) -> u32
 ```
+
+`crc32_update` continues the CRC-32 that gzip and ZIP use: start from
+`core::crc32::INITIAL` and finish with `core::crc32::finish`. Packed spans of
+2 KiB or more use slicing-by-8. An invalid view returns `state` unchanged.
 
 The default limits are 16 MiB of compressed input, 64 MiB of decoded output,
 and 1,024 members. The exported constants are `DEFAULT_MAX_INPUT`,
@@ -53,6 +60,11 @@ following gzip header remains an error. Empty gzip input is `Truncated`;
 an encoded empty member is valid.
 
 `encode` limits the complete encoded result, including its header and trailer.
+`encode_level` with level 0 is `encode`. Levels 1-3 run the streaming
+[dynamic Huffman levels](extended-streaming-deflate.md#dynamic-huffman-levels)
+into one buffer sized for the stored-block bound (input plus 5 bytes per
+32 KiB, plus framing), capped at `max_output`, and trim it; another level is
+`Bounds`.
 `decode.max_input` limits all supplied compressed bytes. Its output limit is
 cumulative across members, and each gzip member counts toward `max_members`,
 including members whose decoded output is empty. A positive input bound alone

@@ -42,8 +42,8 @@ fn scalar_byte_io_executes_with_binary_input_and_output() {
             )),
         );
         assert_eq!(output.status.code(), Some(0), "{output:?}");
-        assert_eq!(output.stdout, [0, 255], "{output:?}");
-        assert_eq!(output.stderr, b"A", "{output:?}");
+        assert_eq!(output.stdout, [0, 255, 66, 67, 68], "{output:?}");
+        assert_eq!(output.stderr, [65, 1, 2], "{output:?}");
     }
     #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
     let _ = bytes;
@@ -53,7 +53,7 @@ fn scalar_byte_io_executes_with_binary_input_and_output() {
 fn scalar_byte_io_reports_injected_host_errors() {
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -73,7 +73,7 @@ fn scalar_byte_io_reports_injected_host_errors() {
             let trace = common::TempArtifact::new("laniusc_std_io_byte", "fault_trace", None);
             let output = common::short_process_output_with_timeout(
                 format!("scalar byte {syscall} failure"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-o")
                     .arg(trace.path())
@@ -188,5 +188,5 @@ fn scalar_byte_io_public_functions_have_runtime_cases() {
         );
         count += 1;
     }
-    assert_eq!(count, 3);
+    assert_eq!(count, 5);
 }

@@ -445,7 +445,7 @@ fn http_offline_cli_stages_output_and_releases_resources_on_io_and_allocation_fa
     let file = input(&wire);
     let trace = common::TempArtifact::new("laniusc_http_message", "trace", None);
     let execute = |inject: Option<String>, status, file_mode: bool| {
-        let mut c = Command::new("strace");
+        let mut c = crate::common::strace();
         c.args(["-qq", "-o"]).arg(trace.path()).args([
             "-e",
             "trace=mmap,munmap,read,write,open,openat,close,socket,connect",

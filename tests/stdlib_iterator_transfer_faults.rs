@@ -96,7 +96,7 @@ fn ledger(events: &str) -> Ledger {
 
 fn run(exe: &common::TempArtifact, deque: bool, when: Option<usize>) -> Ledger {
     let trace = common::TempArtifact::new("laniusc_iterator_transfer", "fault_trace", None);
-    let mut command = Command::new("strace");
+    let mut command = crate::common::strace();
     command
         .args(["-qq", "-o"])
         .arg(trace.path())

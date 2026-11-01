@@ -344,13 +344,35 @@ pub async fn compile_source_to_wasm_with_gpu_codegen(src: &str) -> Result<Vec<u8
         .await
 }
 
+/// The frontend check's trait solver selects only concrete impls: generic
+/// impl heads (`impl<T> Tr for S<T>`) are selected by the whole-program
+/// admission that only a build runs. A call bound the frontend finds no impl
+/// for is therefore settled by building and discarding the output, which also
+/// reports the build's label instead of the frontend's. Every other check
+/// result is returned as it is.
+fn frontend_check_missed_generic_impl(result: &Result<(), CompileError>) -> bool {
+    matches!(result, Err(CompileError::Diagnostic(diagnostic))
+        if diagnostic.code == "LNC0008"
+            && diagnostic
+                .primary_label
+                .as_ref()
+                .is_some_and(|label| label.message == "no matching impl satisfies this call"))
+}
+
 /// Type-check one in-memory source string with the process-global frontend GPU
 /// compiler.
 pub async fn type_check_source_with_gpu(src: &str) -> Result<(), CompileError> {
     let src = prepare_source_for_gpu(src)?;
-    global_frontend_gpu_compiler()?
+    let checked = global_frontend_gpu_compiler()?
         .type_check_expanded_source(&src)
+        .await;
+    if !frontend_check_missed_generic_impl(&checked) {
+        return checked;
+    }
+    global_x86_gpu_compiler()?
+        .compile_expanded_source_to_x86_64(&src)
         .await
+        .map(|_| ())
 }
 
 /// Type-check an in-memory source pack with the process-global frontend GPU
@@ -437,9 +459,13 @@ where
     RP: AsRef<Path>,
 {
     let source_pack = load_entry_path_manifest_with_stdlib(entry_path, stdlib_root)?;
-    global_frontend_gpu_compiler()?
+    let checked = global_frontend_gpu_compiler()?
         .type_check_path_manifest(&source_pack)
-        .await
+        .await;
+    if !frontend_check_missed_generic_impl(&checked) {
+        return checked;
+    }
+    compile_path_manifest_to_x86_64(&source_pack).await.map(|_| ())
 }
 
 /// Load an entry file plus one user source root into a source pack and
@@ -453,9 +479,13 @@ where
     RP: AsRef<Path>,
 {
     let source_pack = load_entry_path_manifest_with_source_root(entry_path, source_root)?;
-    global_frontend_gpu_compiler()?
+    let checked = global_frontend_gpu_compiler()?
         .type_check_path_manifest(&source_pack)
-        .await
+        .await;
+    if !frontend_check_missed_generic_impl(&checked) {
+        return checked;
+    }
+    compile_path_manifest_to_x86_64(&source_pack).await.map(|_| ())
 }
 
 /// Load an entry file plus explicit source roots into a source pack and
@@ -468,9 +498,13 @@ where
     EP: AsRef<Path>,
 {
     let source_pack = load_entry_path_manifest_with_source_roots(entry_path, roots)?;
-    global_frontend_gpu_compiler()?
+    let checked = global_frontend_gpu_compiler()?
         .type_check_path_manifest(&source_pack)
-        .await
+        .await;
+    if !frontend_check_missed_generic_impl(&checked) {
+        return checked;
+    }
+    compile_path_manifest_to_x86_64(&source_pack).await.map(|_| ())
 }
 
 /// Read one source file from disk and type-check it with path-labeled
@@ -478,9 +512,14 @@ where
 pub async fn type_check_source_with_gpu_from_path(
     path: impl AsRef<Path>,
 ) -> Result<(), CompileError> {
-    global_frontend_gpu_compiler()?
+    let path = path.as_ref();
+    let checked = global_frontend_gpu_compiler()?
         .type_check_source_from_path(path)
-        .await
+        .await;
+    if !frontend_check_missed_generic_impl(&checked) {
+        return checked;
+    }
+    compile_source_to_x86_64_with_gpu_codegen_from_path(path).await.map(|_| ())
 }
 
 /// Compile an in-memory source pack to WASM with the process-global GPU

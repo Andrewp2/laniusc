@@ -237,6 +237,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
                     semantic_call_target[node] = target;
                     semantic_call_result_type[node] = semantic_value_type[node];
                 }
+                else if (target_hir < count && compact_hir_core[target_hir].kind == 3u &&
+                    (semantic_lir_functions[target].flags & SEMANTIC_FUNCTION_FLAG_EXTERN) == 0u &&
+                    !function_has_generic_environment(target_hir, count))
+                {
+                    // A function named as a value lowers to a zero-argument
+                    // CALL row from a name; the x86 target emits the address of
+                    // a System V entry for it (lir/x86/scatter c_entry_call).
+                    semantic_call_kind[node] = SEMANTIC_CALL_FUNCTION;
+                    semantic_call_target[node] = target;
+                    semantic_call_result_type[node] = semantic_value_type[node];
+                }
             }
         }
     }

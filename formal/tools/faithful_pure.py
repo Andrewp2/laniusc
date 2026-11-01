@@ -724,7 +724,87 @@ class Declarer:
 
 # ---------------------------------------------------------------- Lean text
 
-def write(path, text):
+GEN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Lanius', 'Faithful', 'Gen')
+
+
+def gen_closure(mods):
+    """The generated modules (Gen/) mods import, transitively, with mods."""
+    seen, todo = set(), [m for m in mods if m.startswith('Lanius.Faithful.Gen.')]
+    while todo:
+        m = todo.pop()
+        if m in seen:
+            continue
+        seen.add(m)
+        path = os.path.join(GEN_DIR, m.rsplit('.', 1)[1] + '.lean')
+        if os.path.exists(path):
+            todo += [x for x in re.findall(r'^(?:public )?import (?:all )?(\S+)', open(path).read(), re.M)
+                     if x.startswith('Lanius.Faithful.Gen.')]
+    return sorted(seen)
+
+
+CHECKERS = ('CheckFast', 'Check', 'ProgOk', 'DeclStep', 'Boxed')
+_bodies = []
+
+
+def checker_bodies():
+    """The extracted modules whose bodies the checkers (Sim/CheckFast.lean, ..)
+    unfold (their own `import all`s), which a kernel check of them unfolds too."""
+    if not _bodies:
+        sim = os.path.join(GEN_DIR, '..', 'Sim')
+        found = set()
+        for c in CHECKERS:
+            found |= set(re.findall(r'^import all (\S+)', open(os.path.join(sim, c + '.lean')).read(), re.M))
+        _bodies.append(sorted(found))
+    return _bodies[0]
+
+
+_srcs = {}
+
+
+def src_modules(names):
+    """The generated modules defining `src_X` for X in names."""
+    if not _srcs:
+        for n in sorted(os.listdir(GEN_DIR)):
+            if n.startswith('SelfSrc') and n.endswith('.lean'):
+                for m in re.finditer(r'^(?:def|abbrev) src_(\S+)', open(os.path.join(GEN_DIR, n)).read(), re.M):
+                    _srcs.setdefault(m.group(1), 'Lanius.Faithful.Gen.' + n[:-5])
+    return sorted({_srcs[x] for x in names if x in _srcs})
+
+
+def modulize(name, text):
+    """A legacy file's text as a `module`: its imports public, the bodies its
+    kernel checks unfold imported (`import all`), and the rest in an exposed
+    public section. Only the checks of functions (SelfOk*, SelfDecl<k>,
+    SelfPureBase) unfold the generated sources; a file whose checks are over
+    the tables unfolds the types; the others (SelfDecls, SelfPrims,
+    SelfPure) unfold nothing, so that they depend on the statements below
+    them only."""
+    lines = text.split('\n')
+    k = 0
+    while k < len(lines) and lines[k].startswith('import '):
+        k += 1
+    mods = [line.split()[1] for line in lines[:k]]
+    if re.fullmatch(r'SelfOk\d+|SelfDecl\d+|SelfPureBase', name):
+        bodies = gen_closure(mods) + checker_bodies()
+    elif name == 'SelfDecls':
+        bodies = checker_bodies()
+    elif name == 'SelfPrims':
+        # The prims' own sources (`src_X` of each `at_X` it uses).
+        bodies = src_modules(set(re.findall(r'\bat_([A-Za-z0-9_]+)', text))) + checker_bodies()
+    elif 'decide' in text:
+        bodies = ['Lanius.Faithful.Gen.SelfTypes'] + checker_bodies()
+    else:
+        bodies = []
+    return '\n'.join(['module', ''] + [f'public import {m}' for m in mods] +
+                     [f'import all {m}' for m in bodies] +
+                     ['', '@[expose] public section'] + lines[k:])
+
+
+def write(path, text, module=True):
+    """Write text to path unless it is there already; as a `module` (`modulize`)
+    unless `module` is false."""
+    if module and not text.startswith('module'):
+        text = modulize(os.path.basename(path)[:-5], text)
     try:
         with open(path) as f:
             if f.read() == text:
@@ -1053,6 +1133,8 @@ def main(argv):
     for i in sorted(bad):
         if i in seen:
             print(f'not live: {i} {names[i]}: {why[i]}', file=sys.stderr)
+    # The SelfLive files are not modules: they import Sim/Live.lean, which
+    # imports the termination check (Sim/Term*.lean), and those are not.
     write(os.path.join(outdir, 'SelfLiveTab.lean'),
           f'import Lanius.Faithful.Sim.Live\n\n{HEADER}\nnamespace {NS}\n\n'
           '/-- The functions that can fail other than at a call, and those that call them. -/\n'
@@ -1064,7 +1146,7 @@ def main(argv):
           f'def liveWrap : List Nat := {wrap}\n\n'
           f'def ixPlus : Nat := {wrap[0]}\n\n'
           f'def ixTimes : Nat := {wrap[1]}\n\n'
-          f'end {NS}\n')
+          f'end {NS}\n', module=False)
     for g in range(GROUPS):
         members = [i for i in groups.get(g, []) if i not in wrap]
         mods = sorted({home[keys[i]] for i in members})
@@ -1076,7 +1158,7 @@ def main(argv):
             lines.append(f'/-- {names[i]} -/\n'
                          f'theorem lok{i} : LiveOk prims outside liveBad {i} ({rhs[i]}) := by decide +kernel\n\n')
         lines.append(f'end {NS}\n')
-        write(os.path.join(outdir, f'SelfLiveOk{g}.lean'), ''.join(lines))
+        write(os.path.join(outdir, f'SelfLiveOk{g}.lean'), ''.join(lines), module=False)
     la = ['import Lanius.Faithful.Gen.SelfPure\n' +
           ''.join(f'import Lanius.Faithful.Gen.SelfLiveOk{g}\n' for g in range(GROUPS)) +
           f'\n{HEADER}\nnamespace {NS}\n\n{open_lines}'
@@ -1095,7 +1177,7 @@ def main(argv):
               'theorem livesOk : LivesOk prims outside liveBad liveWrap 0 prog.funcs := by\n'
               f'  rw [funcs_parts]\n  exact\n    {expr}\n\n'
               f'end {NS}\n')
-    write(os.path.join(outdir, 'SelfLiveAll.lean'), ''.join(la))
+    write(os.path.join(outdir, 'SelfLiveAll.lean'), ''.join(la), module=False)
 
     # The chunk files the checks were in before the groups.
     for name in os.listdir(outdir):

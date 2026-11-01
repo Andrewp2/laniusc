@@ -239,7 +239,7 @@ class Suite:
         snapshot = sorted((str(path.relative_to(cwd)), path.read_bytes() if path.is_file() else None)
                           for path in cwd.rglob("*"))
         trace = directory / "syscalls.log"
-        command = ["strace", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096",
+        command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096",
                    "-o", str(trace), "-e", "trace=" + ledger.TRACE]
         if injection is not None:
             command += ["-e", f"inject=mmap:error=ENOMEM:when={injection}"]

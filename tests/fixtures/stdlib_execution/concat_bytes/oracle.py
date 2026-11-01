@@ -104,7 +104,7 @@ class Runner:
     def run(self, name, arguments, *, limit=None, status=0, output=b"", preflight=False,
             injections=(), closed_stdout=False, diagnostic=True, budget=None):
         prefix=self.directory/name
-        command=["strace","--kill-on-exit","-qq","-xx","-s","32","-e","signal=none"]
+        command=["strace","-E","LANIUS_ALLOC=mmap","--kill-on-exit","-qq","-xx","-s","32","-e","signal=none"]
         if budget:
             maximum=16384 if budget=="read" else 4096
             command += ["-c","-e","trace="+budget,"-e",f"inject={budget}:error=EINTR:when=1..{maximum}"]

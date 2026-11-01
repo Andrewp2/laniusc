@@ -1,7 +1,22 @@
-import Lanius.Faithful.SelfFaithful
-import Lanius.Faithful.Sim.Driver
-import Lanius.Mini.TextWords
+module
 
+public import Lanius.Faithful.SelfFaithful
+public import Lanius.Faithful.Sim.Driver
+public import Lanius.Mini.TextWords
+public import Lanius.Mini.Compiler.P.packRound
+public import Lanius.Mini.Frontend.P.distinct
+public import Lanius.Mini.Frontend.P.frontEndWords
+public import Lanius.Mini.Frontend.P.grammarPart13
+public import Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Faithful.Gen.SelfSrcRest
+import all Lanius.Faithful.Gen.SelfSrc2
+import all Lanius.Faithful.Gen.SelfSrc5
+import all Lanius.Faithful.Gen.SelfSrc7
+import all Lanius.Faithful.Gen.SelfSrcC_packRound
+import all Lanius.Faithful.Gen.SelfSrcF_grammarPart13
+import all Lanius.Faithful.Gen.SelfSrcF_frontEndWords
+
+@[expose] public section
 /-! # The self-host driver writes what the extraction computes (roadmap V1)
 
 The self program's entry `w(input, words, output, room)` reads `words` i32
@@ -44,7 +59,7 @@ theorem take_one {α : Type} (W : List α) {lo : Nat} (h : lo < W.length) : (W.d
 theorem fn_read : prog.funcs[1]? = some (src_app_main_oracle_read 1 9) := get_of_drop at_app_main_oracle_read
 
 theorem read_params (a b c d : Value) :
-    paramBindings (src_app_main_oracle_read 1 9).params [a, b, c, d] = [(12, a), (25, b), (36, c), (47, d)] := rfl
+    paramBindings (src_app_main_oracle_read 1 9).params [a, b, c, d] = [(12, a), (25, b), (36, c), (47, d)] := by rfl
 
 theorem callResult_ty1 {c : Completion} {v : Value} (h : CallResult ty1 c v) : c = .returned (some v) := by
   cases c with
@@ -245,10 +260,10 @@ def Written (st : State) (outp room ofs : Nat) (ws : List (BitVec 32)) : Prop :=
   ∀ i (h : i < ws.length), readRawSliceIndex prog.toCore st i32T outp room (ofs + i) = .ok (.signed .i32 (ws[i]).toInt)
 
 theorem write_params (a b c : Value) :
-    paramBindings (src_app_main_oracle_write 4 10).params [a, b, c] = [(13, a), (25, b), (36, c)] := rfl
+    paramBindings (src_app_main_oracle_write 4 10).params [a, b, c] = [(13, a), (25, b), (36, c)] := by rfl
 
 theorem write_one_params (a b c d : Value) :
-    paramBindings (src_app_main_oracle_write_one 3).params [a, b, c, d] = [(17, a), (29, b), (40, c), (48, d)] := rfl
+    paramBindings (src_app_main_oracle_write_one 3).params [a, b, c, d] = [(17, a), (29, b), (40, c), (48, d)] := by rfl
 
 theorem fn_write : prog.funcs[3]? = some (src_app_main_oracle_write 4 10) := get_of_drop at_app_main_oracle_write
 theorem fn_write_one : prog.funcs[4]? = some (src_app_main_oracle_write_one 3) :=
@@ -560,7 +575,7 @@ theorem write_body {outp room : Nat} (roomLt : room < 2 ^ 31) : ∀ ws, WriteSpe
 
 theorem fn_put : prog.funcs[2]? = some (src_app_main_oracle_put 3) := get_of_drop at_app_main_oracle_put
 
-theorem put_params (a b : Value) : paramBindings (src_app_main_oracle_put 3).params [a, b] = [(11, a), (23, b)] := rfl
+theorem put_params (a b : Value) : paramBindings (src_app_main_oracle_put 3).params [a, b] = [(11, a), (23, b)] := by rfl
 
 theorem vrel_ty3 {h : Memory.Heap} {rv rp : Value} (rel : VRel prog.toCore boxes h ty3 rv rp) :
     ∃ k vs ps fs, rv = .enumeration 2 k vs ∧ rp = .enumeration 2 k ps ∧
@@ -693,7 +708,7 @@ theorem put_body {outp room : Nat} (roomLt : room < 2 ^ 31) {k : Nat} {s complet
 theorem fn_w : prog.funcs[0]? = some (src_app_main_w 1 2 5 6 7 8) := get_of_drop at_app_main_w
 
 theorem w_params (a b c d : Value) :
-    paramBindings (src_app_main_w 1 2 5 6 7 8).params [a, b, c, d] = [(2, a), (14, b), (26, c), (39, d)] := rfl
+    paramBindings (src_app_main_w 1 2 5 6 7 8).params [a, b, c, d] = [(2, a), (14, b), (26, c), (39, d)] := by rfl
 
 /-- **The driver.** A run of `w(input, words, output, room)` that completes,
 on an input view reading `W` and an output view of `room` words, returns

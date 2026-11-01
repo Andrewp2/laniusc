@@ -1,0 +1,644 @@
+// zip -c / -x / -t over ext::zip_stream, raw ext::deflate levels and ext::inflate.
+// Creating streams: every member's local header defers its CRC-32 and sizes
+// to a data descriptor, so output may be a pipe (`-f -`). Reading needs a
+// seekable file: the end records and central directory come first, then a
+// verifying pass over every member (local header, method, size and CRC-32)
+// before anything is listed or written. Exit 2: arguments, format, unsafe
+// names, unsupported members or limits; 3: I/O; 4: allocation.
+module app::main;
+import alloc::vec;
+import core::crc32;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import ext::cli;
+import ext::compression;
+import ext::deflate;
+import ext::inflate;
+import ext::zip_stream;
+import std::args;
+import std::directory;
+import std::file;
+import std::file_ops;
+import std::filesystem;
+import std::fs;
+import std::linux;
+import std::stream;
+
+const CHUNK: i32 = 65536;
+// The central directory is held in memory; larger ones are refused.
+const MAX_DIRECTORY: u64 = 536870912;
+// Members this large get ZIP64 local headers: the worst-case deflate
+// expansion of a smaller one stays below 4 GiB.
+const ZIP64_AT: u64 = 3758096384;
+const MAX32: u64 = 4294967295;
+enum Error { Usage, Archive, Unsafe, Unsupported, Compression, Checksum, Limit, Io, Allocation }
+struct Options { mode: i32, archive: core::slice::View<u8>, has_archive: bool, directory: core::slice::View<u8>, has_directory: bool, help: bool, level: i32, has_level: bool, store: bool, zip64: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Directory { start: i32, length: i32, mode: u32, mtime: i64 }
+// One written member, kept for the central directory.
+struct Record { name_start: i32, name_length: i32, method: i32, dos_time: i32, dos_date: i32, external: u32, crc: u32, compressed: u64, size: u64, offset: u64, zip64: bool, utf8: bool, mtime: i64 }
+
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(bytes,count));
+}
+fn at(view: core::slice::View<u8>, index: i32) -> u8 { return core::option::unwrap(view.get(index)); }
+fn sub(view: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> { return core::result::unwrap(view.subview(start,end)); }
+fn report(status: i32, message: core::slice::View<u8>) -> i32 {
+    let sink: std::stream::Descriptor = std::stream::stderr(); core::io::write_all(sink.borrow(),message.values,message.start,message.len()); return status;
+}
+fn failed(error: Error) -> i32 {
+    return match (error) {
+        Error::Usage -> report(2,literal("zip: invalid arguments\n",23)),
+        Error::Archive -> report(2,literal("zip: invalid zip archive\n",25)),
+        Error::Unsafe -> report(2,literal("zip: unsafe member path\n",24)),
+        Error::Unsupported -> report(2,literal("zip: unsupported member\n",24)),
+        Error::Compression -> report(2,literal("zip: invalid deflate data\n",26)),
+        Error::Checksum -> report(2,literal("zip: CRC-32 mismatch\n",21)),
+        Error::Limit -> report(2,literal("zip: size limit exceeded\n",25)),
+        Error::Io -> report(3,literal("zip: I/O failed\n",16)),
+        Error::Allocation -> report(4,literal("zip: allocation failed\n",23))
+    };
+}
+fn format(error: ext::zip_stream::Error) -> Error { return Error::Archive; }
+fn path_of(bytes: core::slice::View<u8>) -> core::result::Result<core::path::Path,Error> {
+    let made: core::result::Result<core::path::Path,core::path::Error> = core::path::from_view(bytes);
+    if (core::result::is_err(made)) { return core::result::Err(Error::Usage); } return core::result::Ok(core::result::unwrap(made));
+}
+fn sized(vector: &alloc::vec::Vec<u8>, length: i32) -> core::result::Result<i32,Error> {
+    if (core::result::is_err(vector.try_resize(length,0))) { return core::result::Err(Error::Allocation); } return core::result::Ok(length);
+}
+fn extend(vector: &alloc::vec::Vec<u8>, bytes: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    if (core::result::is_err(vector.try_extend(bytes))) { return core::result::Err(Error::Allocation); } return core::result::Ok(vector.len());
+}
+// output = base + "/" + name (base may be empty).
+fn join(output: &alloc::vec::Vec<u8>, base: core::slice::View<u8>, name: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    output.clear(); extend(output,base)?;
+    if (base.len() > 0 && name.len() > 0) { if (core::result::is_err(output.try_push(47))) { return core::result::Err(Error::Allocation); } }
+    return extend(output,name);
+}
+fn same(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.len() != right.len()) { return false; }
+    let index: i32 = 0; while (index < left.len()) { if (at(left,index) != at(right,index)) { return false; } index += 1; } return true;
+}
+fn base(view: core::slice::View<u8>) -> ptr { return core::mem::i32_slice_data_ptr(view.values)+(view.start as usize); }
+fn write_fd(fd: i32, bytes: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    if (bytes.len() == 0) { return core::result::Ok(0); }
+    if (core::mem::slice_stride(bytes.values) == 1) {
+        let done: i32 = 0;
+        while (done < bytes.len()) {
+            let put: i32 = std::fs::write(fd,base(bytes)+(done as usize),(bytes.len()-done) as usize);
+            if (put == -4) { continue; }
+            if (put <= 0) { return core::result::Err(Error::Io); }
+            done += put;
+        }
+        return core::result::Ok(done);
+    }
+    let sink: std::stream::Descriptor = std::stream::from_handle(fd);
+    if (core::result::is_err(core::io::write_all(sink.borrow(),bytes.values,bytes.start,bytes.len()))) { return core::result::Err(Error::Io); } return core::result::Ok(bytes.len());
+}
+fn read_fd(fd: i32, into: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    while (true) {
+        let got: i32 = std::fs::read(fd,base(into),into.len() as usize);
+        if (got >= 0 && got <= into.len()) { return core::result::Ok(got); }
+        if (got != -4) { return core::result::Err(Error::Io); }
+    } return core::result::Err(Error::Io);
+}
+// Fill `into` from `position`; returns the byte count (short only at the end).
+fn read_full(file: &std::file::File, into: core::slice::View<u8>, position: u64) -> core::result::Result<i32,Error> {
+    let filled: i32 = 0;
+    while (filled < into.len()) {
+        let got: core::result::Result<i32,core::io::Error> = std::file_ops::read_at(file,sub(into,filled,into.len()),position+(filled as u64));
+        if (core::result::is_err(got)) {
+            let retry: bool = match (core::result::unwrap_err(got)) { core::io::Error::Interrupted -> true, _ -> false };
+            if (retry) { continue; } return core::result::Err(Error::Io);
+        }
+        let count: i32 = core::result::unwrap(got); if (count == 0) { return core::result::Ok(filled); } filled += count;
+    } return core::result::Ok(filled);
+}
+// Indexed stores into a multi-element [i64] view made in the same function
+// as its backing array are lost (compiler defect); store one word per call.
+fn store_word(base: ptr, index: i32, value: i64) -> i32 { let word: [i64] = core::mem::typed_slice_from_raw_parts<i64>(base + (index as usize) * 8, 1); word[0] = value; return 0; }
+// futimens(fd, {UTIME_OMIT, mtime}) through utimensat(2) with a NULL path.
+fn set_mtime(fd: i32, seconds: i64) -> bool {
+    let storage: [i32;8] = [0;8]; let base: ptr = core::mem::i32_array_data_ptr(storage);
+    store_word(base,0,0); store_word(base,1,1073741822); store_word(base,2,seconds); store_word(base,3,0);
+    let arguments: [std::linux::Argument;4] = [std::linux::Argument::Word(fd as i64),std::linux::Argument::Word(0),std::linux::Argument::Address(base),std::linux::Argument::Word(0)];
+    return core::result::is_ok(std::linux::call(280,core::result::unwrap(core::slice::view(arguments,4))));
+}
+fn handle(file: std::file::File) -> i32 { return core::option::unwrap(file.raw_handle()); }
+fn close_fd(fd: i32) { if (fd > 2) { let file: std::file::File = core::result::unwrap(std::file::from_owned_handle(fd)); file.close(); } }
+
+// ---------------------------------------------------------------- filesystem guard
+// 0 missing, 1 directory, 2 symbolic link, 3 anything else. Never follows.
+fn lkind(path: core::path::Path) -> core::result::Result<i32,Error> {
+    let meta: std::file_ops::Metadata = std::file_ops::empty_metadata();
+    let queried: core::result::Result<i32,core::io::Error> = std::file_ops::metadata_into(path,false,meta.borrow());
+    if (core::result::is_err(queried)) {
+        let missing: bool = match (core::result::unwrap_err(queried)) { core::io::Error::Host(code) -> code == 2, _ -> false };
+        if (missing) { return core::result::Ok(0); } return core::result::Err(Error::Io);
+    }
+    return match (std::file_ops::kind(meta.mode)) { std::file_ops::Kind::Directory -> core::result::Ok(1), std::file_ops::Kind::Symlink -> core::result::Ok(2), _ -> core::result::Ok(3) };
+}
+// Every parent of root/name must be a real directory (created when missing);
+// an existing symbolic link or file among them is refused.
+fn make_parents(scratch: &alloc::vec::Vec<u8>, root: core::slice::View<u8>, name: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    let index: i32 = 0;
+    while (index < name.len()) {
+        if (at(name,index) == 47) {
+            join(scratch,root,sub(name,0,index))?; let path: core::path::Path = path_of(scratch.as_view())?;
+            let kind: i32 = lkind(path)?;
+            if (kind == 0) { if (core::result::is_err(std::filesystem::create_dir(path))) { return core::result::Err(Error::Io); } }
+            if (kind >= 2) { return core::result::Err(Error::Unsafe); }
+        } index += 1;
+    } return core::result::Ok(0);
+}
+// Remove a non-directory already at the leaf so nothing is written through it.
+fn clear_leaf(path: core::path::Path) -> core::result::Result<i32,Error> {
+    let kind: i32 = lkind(path)?;
+    if (kind == 1) { return core::result::Err(Error::Unsafe); }
+    if (kind >= 2) { if (core::result::is_err(std::filesystem::remove_file(path))) { return core::result::Err(Error::Io); } }
+    return core::result::Ok(kind);
+}
+// Member names: strip leading "./" and trailing "/"; reject "", "/x", ".",
+// "..", backslashes and NUL.
+fn clean(name: core::slice::View<u8>) -> core::result::Result<core::slice::View<u8>,Error> {
+    let start: i32 = 0; let end: i32 = name.len();
+    while (end - start >= 2 && at(name,start) == 46 && at(name,start+1) == 47) { start += 2; while (start < end && at(name,start) == 47) { start += 1; } }
+    while (end > start && at(name,end-1) == 47) { end -= 1; }
+    if (end == start) { return core::result::Err(Error::Unsafe); }
+    if (at(name,start) == 47) { return core::result::Err(Error::Unsafe); }
+    let component: i32 = start; let index: i32 = start;
+    while (index <= end) {
+        if (index == end || at(name,index) == 47) {
+            let length: i32 = index - component;
+            if (length == 0) { return core::result::Err(Error::Unsafe); }
+            if (length == 2 && at(name,component) == 46 && at(name,component+1) == 46) { return core::result::Err(Error::Unsafe); }
+            if (length == 1 && at(name,component) == 46) { return core::result::Err(Error::Unsafe); }
+            component = index + 1;
+        } else { if (at(name,index) == 0 || at(name,index) == 92) { return core::result::Err(Error::Unsafe); } }
+        index += 1;
+    } return core::result::Ok(sub(name,start,end));
+}
+
+// ---------------------------------------------------------------- reading
+struct Reader { file: std::file::File, end: ext::zip_stream::End, limit: u64, central: alloc::vec::Vec<u8>, input: alloc::vec::Vec<u8>, output: alloc::vec::Vec<u8>, header: alloc::vec::Vec<u8>, history: alloc::vec::Vec<u8>, workspace: alloc::vec::Vec<i32>, decoder: ext::inflate::Decoder,
+    path: alloc::vec::Vec<u8>, link: alloc::vec::Vec<u8>, dir_names: alloc::vec::Vec<u8>, dirs: alloc::vec::Vec<Directory>, offsets: alloc::vec::Vec<u64> }
+impl Reader { fn borrow(&self) -> &Reader { return self; } fn destroy(&self) { self.offsets.destroy(); self.central.destroy(); self.input.destroy(); self.output.destroy(); self.header.destroy(); self.history.destroy(); self.workspace.destroy(); self.path.destroy(); self.link.destroy(); self.dir_names.destroy(); self.dirs.destroy(); } }
+fn reader(file: std::file::File) -> core::result::Result<Reader,Error> {
+    let input: alloc::vec::Vec<u8> = alloc::vec::new(); let output: alloc::vec::Vec<u8> = alloc::vec::new(); let history: alloc::vec::Vec<u8> = alloc::vec::new(); let workspace: alloc::vec::Vec<i32> = alloc::vec::new();
+    let ok: bool = core::result::is_ok(input.try_resize(CHUNK,0)) && core::result::is_ok(output.try_resize(CHUNK,0)) && core::result::is_ok(history.try_resize(32768,0)) && core::result::is_ok(workspace.try_resize(ext::inflate::fast_workspace_len(),0));
+    let made: core::result::Result<ext::inflate::Decoder,ext::inflate::Error> = core::result::Err(ext::inflate::Error::Bounds);
+    if (ok) { made = ext::inflate::decoder(history.as_view(),workspace.as_view(),32768); }
+    if (core::result::is_err(made)) { input.destroy(); output.destroy(); history.destroy(); workspace.destroy(); return core::result::Err(Error::Allocation); }
+    let end: ext::zip_stream::End = ext::zip_stream::End { entries: 0, central_offset: 0, central_size: 0, end_offset: 0, comment_length: 0, has_zip64: false, zip64_offset: 0 };
+    return core::result::Ok(Reader { file: file, end: end, limit: 0, central: alloc::vec::new(), input: input, output: output, header: alloc::vec::new(), history: history, workspace: workspace, decoder: core::result::unwrap(made),
+        path: alloc::vec::new(), link: alloc::vec::new(), dir_names: alloc::vec::new(), dirs: alloc::vec::new(), offsets: alloc::vec::new() });
+}
+// End records, then the whole central directory.
+fn load_directory(r: &Reader) -> core::result::Result<i32,Error> {
+    let measured: core::result::Result<i64,core::io::Error> = std::file_ops::seek(r.file.borrow(),0,std::file_ops::Origin::End);
+    if (core::result::is_err(measured)) { return core::result::Err(Error::Io); }
+    let size: u64 = core::result::unwrap(measured) as u64;
+    let tail: u64 = ext::zip_stream::end_search_len() as u64; if (tail > size) { tail = size; }
+    sized(r.header.borrow(),tail as i32)?;
+    let got: i32 = read_full(r.file.borrow(),r.header.as_view(),size-tail)?; if ((got as u64) != tail) { return core::result::Err(Error::Io); }
+    let found: core::result::Result<ext::zip_stream::End,ext::zip_stream::Error> = ext::zip_stream::find_end(r.header.as_view(),size-tail);
+    if (core::result::is_err(found)) { return core::result::Err(format(core::result::unwrap_err(found))); }
+    let end: ext::zip_stream::End = core::result::unwrap(found); r.limit = end.end_offset;
+    if (end.has_zip64) {
+        sized(r.header.borrow(),ext::zip_stream::ZIP64_END_LEN)?;
+        let loaded: i32 = read_full(r.file.borrow(),r.header.as_view(),end.zip64_offset)?; if (loaded != ext::zip_stream::ZIP64_END_LEN) { return core::result::Err(Error::Archive); }
+        let applied: core::result::Result<ext::zip_stream::End,ext::zip_stream::Error> = ext::zip_stream::read_zip64_end(end,r.header.as_view());
+        if (core::result::is_err(applied)) { return core::result::Err(format(core::result::unwrap_err(applied))); }
+        end = core::result::unwrap(applied); r.limit = end.zip64_offset;
+    }
+    if (end.central_size > MAX_DIRECTORY) { return core::result::Err(Error::Limit); }
+    if (end.entries > end.central_size/(ext::zip_stream::CENTRAL_LEN as u64)) { return core::result::Err(Error::Archive); }
+    sized(r.central.borrow(),end.central_size as i32)?;
+    let read: i32 = read_full(r.file.borrow(),r.central.as_view(),end.central_offset)?; if ((read as u64) != end.central_size) { return core::result::Err(Error::Archive); }
+    r.end = end; return core::result::Ok(0);
+}
+fn entry_at(r: &Reader, offset: i32) -> core::result::Result<ext::zip_stream::Entry,Error> {
+    let parsed: core::result::Result<ext::zip_stream::Entry,ext::zip_stream::Error> = ext::zip_stream::central_entry(r.central.as_view(),offset);
+    if (core::result::is_err(parsed)) { return core::result::Err(format(core::result::unwrap_err(parsed))); }
+    let entry: ext::zip_stream::Entry = core::result::unwrap(parsed);
+    // APPNOTE 6.3 is the newest version read; encryption (flags 1, 64 and
+    // 8192) and patched data (32) are not.
+    if ((entry.flags & 8289) != 0 || (entry.version_needed & 255) > 63) { return core::result::Err(Error::Unsupported); }
+    if (entry.method != ext::zip_stream::STORED && entry.method != ext::zip_stream::DEFLATED) { return core::result::Err(Error::Unsupported); }
+    if (entry.method == ext::zip_stream::STORED && entry.compressed != entry.size) { return core::result::Err(Error::Archive); }
+    return core::result::Ok(entry);
+}
+fn name_of(r: &Reader, entry: ext::zip_stream::Entry) -> core::slice::View<u8> { return sub(r.central.as_view(),entry.name_start,entry.name_start+entry.name_length); }
+// The member's data offset after its local header matches the central one.
+fn data_start(r: &Reader, entry: ext::zip_stream::Entry) -> core::result::Result<u64,Error> {
+    let fixed: u64 = ext::zip_stream::LOCAL_LEN as u64;
+    if (entry.local_offset > r.end.central_offset || r.end.central_offset-entry.local_offset < fixed) { return core::result::Err(Error::Archive); }
+    sized(r.header.borrow(),ext::zip_stream::LOCAL_LEN+entry.name_length)?;
+    let got: i32 = read_full(r.file.borrow(),r.header.as_view(),entry.local_offset)?; if (got != ext::zip_stream::LOCAL_LEN+entry.name_length) { return core::result::Err(Error::Archive); }
+    let parsed: core::result::Result<ext::zip_stream::Local,ext::zip_stream::Error> = ext::zip_stream::local_header(r.header.as_view());
+    if (core::result::is_err(parsed)) { return core::result::Err(format(core::result::unwrap_err(parsed))); }
+    let local: ext::zip_stream::Local = core::result::unwrap(parsed);
+    if (local.method != entry.method || local.name_length != entry.name_length || (local.flags & ext::zip_stream::FLAG_ENCRYPTED) != 0) { return core::result::Err(Error::Archive); }
+    if (!same(sub(r.header.as_view(),ext::zip_stream::LOCAL_LEN,ext::zip_stream::LOCAL_LEN+local.name_length),name_of(r,entry))) { return core::result::Err(Error::Archive); }
+    // Header and data end before the next local header (or the directory):
+    // overlapping members are refused, as zipfile refuses them.
+    let sorted: core::slice::View<u64> = r.offsets.as_view(); let next: i32 = bound(sorted,entry.local_offset,true);
+    if (next != bound(sorted,entry.local_offset,false)+1) { return core::result::Err(Error::Archive); }
+    let limit: u64 = r.end.central_offset; if (next < sorted.length) { limit = sorted.values[sorted.start+next]; }
+    let data: u64 = entry.local_offset+(local.header_length as u64);
+    if (data > limit || entry.compressed > limit-data) { return core::result::Err(Error::Archive); }
+    return core::result::Ok(data);
+}
+// Local header offsets, sorted (heapsort), to find each member's successor.
+fn sift(values: core::slice::View<u64>, start: i32, end: i32) {
+    let root: i32 = start;
+    while (2*root+1 < end) {
+        let child: i32 = 2*root+1;
+        if (child+1 < end && values.values[values.start+child] < values.values[values.start+child+1]) { child += 1; }
+        let parent: u64 = values.values[values.start+root]; let larger: u64 = values.values[values.start+child];
+        if (parent >= larger) { return; }
+        values.values[values.start+root] = larger; values.values[values.start+child] = parent; root = child;
+    }
+}
+fn sort(values: core::slice::View<u64>) {
+    let index: i32 = values.length/2-1; while (index >= 0) { sift(values,index,values.length); index -= 1; }
+    let end: i32 = values.length-1;
+    while (end > 0) { let top: u64 = values.values[values.start]; let last: u64 = values.values[values.start+end]; values.values[values.start] = last; values.values[values.start+end] = top; sift(values,0,end); end -= 1; }
+}
+// The first index whose value exceeds (above) or reaches (!above) value.
+fn bound(values: core::slice::View<u64>, value: u64, above: bool) -> i32 {
+    let low: i32 = 0; let high: i32 = values.length;
+    while (low < high) {
+        let middle: i32 = low+(high-low)/2; let item: u64 = values.values[values.start+middle];
+        if (item < value || (above && item == value)) { low = middle+1; } else { high = middle; }
+    } return low;
+}
+fn collect_offsets(r: &Reader) -> core::result::Result<i32,Error> {
+    let offset: i32 = 0; let count: u64 = 0; r.offsets.clear();
+    while (count < r.end.entries) {
+        let entry: ext::zip_stream::Entry = entry_at(r,offset)?; offset = entry.next; count += 1;
+        if (core::result::is_err(r.offsets.try_push(entry.local_offset))) { return core::result::Err(Error::Allocation); }
+    }
+    sort(r.offsets.as_view()); return core::result::Ok(0);
+}
+// Decode one member, checking its size and CRC-32. Bytes go to fd when
+// fd >= 0, into r.link when fd == -2, and nowhere when fd == -1.
+fn deliver(r: &Reader, bytes: core::slice::View<u8>, fd: i32) -> core::result::Result<i32,Error> {
+    if (fd >= 0) { return write_fd(fd,bytes); }
+    if (fd == -2) { return extend(r.link.borrow(),bytes); } return core::result::Ok(0);
+}
+fn transfer(r: &Reader, entry: ext::zip_stream::Entry, fd: i32) -> core::result::Result<u64,Error> {
+    let position: u64 = data_start(r,entry)?; let state: u32 = core::crc32::INITIAL; let left: u64 = entry.compressed;
+    if (entry.method == ext::zip_stream::STORED) {
+        while (left > 0) {
+            let take: i32 = CHUNK; if ((take as u64) > left) { take = left as i32; }
+            let chunk: core::slice::View<u8> = sub(r.input.as_view(),0,take);
+            let got: i32 = read_full(r.file.borrow(),chunk,position)?; if (got != take) { return core::result::Err(Error::Archive); }
+            state = ext::compression::crc32_update(state,chunk); deliver(r,chunk,fd)?;
+            position += take as u64; left -= take as u64;
+        }
+    } else {
+        if (core::result::is_err(r.decoder.borrow().reset(32768))) { return core::result::Err(Error::Compression); }
+        let produced: u64 = 0; let begin: i32 = 0; let ready: i32 = 0;
+        while (!r.decoder.borrow().is_done()) {
+            if (begin == ready && left > 0) {
+                let take: i32 = CHUNK; if ((take as u64) > left) { take = left as i32; }
+                let got: i32 = read_full(r.file.borrow(),sub(r.input.as_view(),0,take),position)?; if (got != take) { return core::result::Err(Error::Archive); }
+                position += take as u64; left -= take as u64; begin = 0; ready = take;
+            }
+            let stepped: core::result::Result<ext::inflate::Step,ext::inflate::Failure> = r.decoder.borrow().step(sub(r.input.as_view(),begin,ready),r.output.as_view(),left == 0);
+            if (core::result::is_err(stepped)) { return core::result::Err(Error::Compression); }
+            let progress: ext::inflate::Step = core::result::unwrap(stepped); begin += progress.read;
+            if (progress.written > 0) {
+                produced += progress.written as u64; if (produced > entry.size) { return core::result::Err(Error::Archive); }
+                let out: core::slice::View<u8> = sub(r.output.as_view(),0,progress.written);
+                state = ext::compression::crc32_update(state,out); deliver(r,out,fd)?;
+            }
+            if (progress.read == 0 && progress.written == 0 && !r.decoder.borrow().is_done()) { return core::result::Err(Error::Compression); }
+        }
+        // The deflate stream must fill the member's compressed size exactly.
+        if (begin != ready || left != 0) { return core::result::Err(Error::Archive); }
+        if (produced != entry.size) { return core::result::Err(Error::Archive); }
+    }
+    if (core::crc32::finish(state) != entry.crc) { return core::result::Err(Error::Checksum); }
+    return core::result::Ok(entry.size);
+}
+// Unix kinds from the external attributes of a Unix-made member:
+// 1 directory, 2 symbolic link, 3 regular file, 0 anything else.
+fn member_kind(entry: ext::zip_stream::Entry, name: core::slice::View<u8>) -> i32 {
+    let mode: u32 = entry.external >> 16;
+    let directory: bool = name.len() > 0 && at(name,name.len()-1) == 47;
+    if ((entry.version_made >> 8) == 3 && mode != 0) {
+        let kind: u32 = mode & 61440;
+        if (kind == 16384) { return 1; } if (kind == 40960) { return 2; } if (kind == 32768) { if (directory) { return 0; } return 3; } return 0;
+    }
+    if (directory || (entry.external & 16) != 0) { return 1; } return 3;
+}
+fn member_mode(entry: ext::zip_stream::Entry, kind: i32) -> u32 {
+    let mode: u32 = entry.external >> 16;
+    if ((entry.version_made >> 8) == 3 && mode != 0) { return mode & 4095; }
+    if (kind == 1) { return 493; } return 420;
+}
+// Pass 0 verifies every member; pass 1 lists or extracts.
+fn scan(options: Options, r: &Reader, pass: i32) -> core::result::Result<i32,Error> {
+    let root: core::slice::View<u8> = literal(".",1); if (options.has_directory) { root = options.directory; }
+    let offset: i32 = 0; let count: u64 = 0;
+    while (count < r.end.entries) {
+        let entry: ext::zip_stream::Entry = entry_at(r,offset)?; offset = entry.next; count += 1;
+        let name: core::slice::View<u8> = name_of(r,entry);
+        if (pass == 0) {
+            if (options.mode == 2) { clean(name)?; if (member_kind(entry,name) == 0) { return core::result::Err(Error::Unsupported); } }
+            transfer(r,entry,-1)?; continue;
+        }
+        if (options.mode == 3) { write_fd(1,name)?; write_fd(1,literal("\n",1))?; continue; }
+        let member: core::slice::View<u8> = clean(name)?; let kind: i32 = member_kind(entry,name); let mode: u32 = member_mode(entry,kind);
+        let mtime: i64 = ext::zip_stream::modified(r.central.as_view(),entry);
+        make_parents(r.path.borrow(),root,member)?;
+        join(r.path.borrow(),root,member)?; let target: core::path::Path = path_of(r.path.as_view())?;
+        if (kind == 1) {
+            let existing: i32 = lkind(target)?;
+            if (existing >= 2) { return core::result::Err(Error::Unsafe); }
+            if (existing == 0 && core::result::is_err(std::filesystem::create_dir(target))) { return core::result::Err(Error::Io); }
+            let start: i32 = r.dir_names.len(); extend(r.dir_names.borrow(),r.path.as_view())?;
+            if (core::result::is_err(r.dirs.try_push(Directory { start: start, length: r.path.len(), mode: mode, mtime: mtime }))) { return core::result::Err(Error::Allocation); }
+            continue;
+        }
+        clear_leaf(target)?;
+        if (kind == 2) {
+            // Relative targets only; later members never pass through links.
+            if (entry.size == 0 || entry.size > 4096) { return core::result::Err(Error::Unsafe); }
+            r.link.clear(); transfer(r,entry,-2)?;
+            if (at(r.link.as_view(),0) == 47) { return core::result::Err(Error::Unsafe); }
+            if (core::result::is_err(std::file_ops::symlink(path_of(r.link.as_view())?,target))) { return core::result::Err(Error::Io); }
+            continue;
+        }
+        let open: std::file_ops::OpenOptions = std::file_ops::options(); open.access = std::file_ops::Access::Write; open.create = true; open.exclusive = true; open.no_follow = true; open.mode = 384;
+        let created: core::result::Result<std::file::File,core::io::Error> = std::file_ops::open(target,open);
+        if (core::result::is_err(created)) { return core::result::Err(Error::Io); }
+        let file: std::file::File = core::result::unwrap(created);
+        let moved: core::result::Result<u64,Error> = transfer(r,entry,handle(file));
+        let finished: bool = core::result::is_ok(moved) && core::result::is_ok(std::file_ops::set_permissions(file.borrow(),mode & 511)) && set_mtime(handle(file),mtime);
+        let closed: core::result::Result<i32,core::io::Error> = file.close();
+        if (core::result::is_err(moved)) { return core::result::Err(core::result::unwrap_err(moved)); }
+        if (!finished || core::result::is_err(closed)) { return core::result::Err(Error::Io); }
+    }
+    // The directory holds exactly the counted headers.
+    if ((offset as u64) != r.end.central_size) { return core::result::Err(Error::Archive); }
+    return core::result::Ok(count as i32);
+}
+// Directory modes and times last, deepest first, so contents do not disturb them.
+fn finish_directories(r: &Reader) -> core::result::Result<i32,Error> {
+    let index: i32 = r.dirs.len()-1;
+    while (index >= 0) {
+        let item: Directory = r.dirs.at(index); index -= 1;
+        let open: std::file_ops::OpenOptions = std::file_ops::options(); open.directory = true; open.no_follow = true;
+        let opened: core::result::Result<std::file::File,core::io::Error> = std::file_ops::open(path_of(sub(r.dir_names.as_view(),item.start,item.start+item.length))?,open);
+        if (core::result::is_err(opened)) { return core::result::Err(Error::Io); }
+        let file: std::file::File = core::result::unwrap(opened);
+        let ok: bool = core::result::is_ok(std::file_ops::set_permissions(file.borrow(),item.mode & 1023)) && set_mtime(handle(file),item.mtime);
+        let closed: core::result::Result<i32,core::io::Error> = file.close();
+        if (!ok || core::result::is_err(closed)) { return core::result::Err(Error::Io); }
+    } return core::result::Ok(0);
+}
+fn read_archive(options: Options) -> core::result::Result<i32,Error> {
+    // Reading seeks: the central directory is at the end.
+    if (options.archive.len() == 1 && at(options.archive,0) == 45) { return core::result::Err(Error::Usage); }
+    let opened: core::result::Result<std::file::File,core::io::Error> = std::file::open(path_of(options.archive)?,std::file::OpenMode::Read);
+    if (core::result::is_err(opened)) { return core::result::Err(Error::Io); }
+    let file: std::file::File = core::result::unwrap(opened);
+    let made: core::result::Result<Reader,Error> = reader(file); if (core::result::is_err(made)) { file.close(); return core::result::Err(core::result::unwrap_err(made)); }
+    let r: Reader = core::result::unwrap(made);
+    let result: core::result::Result<i32,Error> = load_directory(r.borrow());
+    if (core::result::is_ok(result)) { result = collect_offsets(r.borrow()); }
+    if (core::result::is_ok(result)) { result = scan(options,r.borrow(),0); }
+    if (core::result::is_ok(result)) { result = scan(options,r.borrow(),1); }
+    if (core::result::is_ok(result) && options.mode == 2) { result = finish_directories(r.borrow()); }
+    r.destroy(); file.close(); return result;
+}
+
+// ---------------------------------------------------------------- creating
+struct Writer { fd: i32, offset: u64, level: i32, store: bool, zip64: bool, out: alloc::vec::Vec<u8>, buffer: alloc::vec::Vec<u8>, window: alloc::vec::Vec<u8>, pending: alloc::vec::Vec<u8>, scratch: alloc::vec::Vec<i32>, encoder: ext::deflate::Encoder,
+    header: alloc::vec::Vec<u8>, names: alloc::vec::Vec<u8>, records: alloc::vec::Vec<Record>, path: alloc::vec::Vec<u8>, member: alloc::vec::Vec<u8>, link: alloc::vec::Vec<u8> }
+impl Writer { fn borrow(&self) -> &Writer { return self; } fn destroy(&self) { self.out.destroy(); self.buffer.destroy(); self.window.destroy(); self.pending.destroy(); self.scratch.destroy(); self.header.destroy(); self.names.destroy(); self.records.destroy(); self.path.destroy(); self.member.destroy(); self.link.destroy(); } }
+// Level 0 is the default fixed-block encoder; 1-3 need the level workspaces.
+fn writer(fd: i32, options: Options) -> core::result::Result<Writer,Error> {
+    let out: alloc::vec::Vec<u8> = alloc::vec::new(); let buffer: alloc::vec::Vec<u8> = alloc::vec::new(); let window: alloc::vec::Vec<u8> = alloc::vec::new(); let pending: alloc::vec::Vec<u8> = alloc::vec::new(); let scratch: alloc::vec::Vec<i32> = alloc::vec::new();
+    let level: i32 = 2; if (options.has_level) { level = options.level; }
+    let window_len: i32 = ext::deflate::input_buffer_len(); let pending_len: i32 = ext::deflate::output_buffer_len(); let scratch_len: i32 = ext::deflate::scratch_len();
+    if (level > 0) { window_len = ext::deflate::level_window_len(); pending_len = ext::deflate::level_pending_len(); scratch_len = ext::deflate::level_scratch_len(); }
+    let ok: bool = core::result::is_ok(out.try_resize(CHUNK,0)) && core::result::is_ok(buffer.try_resize(CHUNK,0)) && core::result::is_ok(window.try_resize(window_len,0)) && core::result::is_ok(pending.try_resize(pending_len,0)) && core::result::is_ok(scratch.try_resize(scratch_len,0));
+    let made: core::result::Result<ext::deflate::Encoder,ext::deflate::Error> = core::result::Err(ext::deflate::Error::Bounds);
+    if (ok) { made = ext::deflate::level_encoder(window.as_view(),pending.as_view(),scratch.as_view(),level); }
+    if (core::result::is_err(made)) { out.destroy(); buffer.destroy(); window.destroy(); pending.destroy(); scratch.destroy(); return core::result::Err(Error::Allocation); }
+    return core::result::Ok(Writer { fd: fd, offset: 0, level: level, store: options.store, zip64: options.zip64, out: out, buffer: buffer, window: window, pending: pending, scratch: scratch, encoder: core::result::unwrap(made),
+        header: alloc::vec::new(), names: alloc::vec::new(), records: alloc::vec::new(), path: alloc::vec::new(), member: alloc::vec::new(), link: alloc::vec::new() });
+}
+fn put(w: &Writer, bytes: core::slice::View<u8>) -> core::result::Result<i32,Error> { write_fd(w.fd,bytes)?; w.offset += bytes.len() as u64; return core::result::Ok(bytes.len()); }
+fn as_member(w: &Writer, record: Record) -> ext::zip_stream::Member {
+    return ext::zip_stream::Member { name: sub(w.names.as_view(),record.name_start,record.name_start+record.name_length), method: record.method, dos_time: record.dos_time, dos_date: record.dos_date, external: record.external, zip64: record.zip64, utf8: record.utf8, mtime: record.mtime };
+}
+fn high_bytes(name: core::slice::View<u8>) -> bool { let index: i32 = 0; while (index < name.len()) { if (at(name,index) >= 128) { return true; } index += 1; } return false; }
+// Local header for a member named name; its record is completed by finish().
+fn begin(w: &Writer, name: core::slice::View<u8>, method: i32, mode: u32, mtime: i64, size: u64) -> core::result::Result<Record,Error> {
+    if (name.len() > 65535) { return core::result::Err(Error::Limit); }
+    let start: i32 = w.names.len(); extend(w.names.borrow(),name)?;
+    let time: ext::zip_stream::DosTime = ext::zip_stream::dos_time(mtime);
+    // Directories also carry the MS-DOS directory attribute.
+    let external: u32 = mode << 16; if (name.len() > 0 && at(name,name.len()-1) == 47) { external = external | 16; }
+    let record: Record = Record { name_start: start, name_length: name.len(), method: method, dos_time: time.time, dos_date: time.date, external: external, crc: 0, compressed: 0, size: 0, offset: w.offset,
+        zip64: w.zip64 || size >= ZIP64_AT, utf8: high_bytes(name), mtime: mtime };
+    let member: ext::zip_stream::Member = as_member(w,record);
+    sized(w.header.borrow(),ext::zip_stream::local_len(member))?;
+    let written: core::result::Result<i32,ext::zip_stream::Error> = ext::zip_stream::write_local(w.header.as_view(),member);
+    if (core::result::is_err(written)) { return core::result::Err(Error::Limit); }
+    put(w,w.header.as_view())?; return core::result::Ok(record);
+}
+// Deflate bytes into the archive; returns the compressed byte count.
+fn deflate(w: &Writer, bytes: core::slice::View<u8>, final_input: bool) -> core::result::Result<u64,Error> {
+    let offset: i32 = 0; let total: u64 = 0;
+    while (offset < bytes.len() || final_input) {
+        let stepped: core::result::Result<ext::deflate::Step,ext::deflate::Failure> = w.encoder.borrow().step(sub(bytes,offset,bytes.len()),w.out.as_view(),final_input);
+        if (core::result::is_err(stepped)) { return core::result::Err(Error::Limit); }
+        let progress: ext::deflate::Step = core::result::unwrap(stepped); offset += progress.read;
+        put(w,sub(w.out.as_view(),0,progress.written))?; total += progress.written as u64;
+        if (final_input && w.encoder.borrow().is_done()) { return core::result::Ok(total); }
+        if (progress.read == 0 && progress.written == 0) { return core::result::Err(Error::Limit); }
+    } return core::result::Ok(total);
+}
+fn finish(w: &Writer, record: Record) -> core::result::Result<i32,Error> {
+    sized(w.header.borrow(),ext::zip_stream::descriptor_len(record.zip64))?;
+    let written: core::result::Result<i32,ext::zip_stream::Error> = ext::zip_stream::write_descriptor(w.header.as_view(),record.crc,record.compressed,record.size,record.zip64);
+    if (core::result::is_err(written)) { return core::result::Err(Error::Limit); }
+    put(w,w.header.as_view())?;
+    if (core::result::is_err(w.records.try_push(record))) { return core::result::Err(Error::Allocation); } return core::result::Ok(0);
+}
+// A member whose bytes are already in memory (a symbolic link target).
+fn add_bytes(w: &Writer, name: core::slice::View<u8>, mode: u32, mtime: i64, bytes: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    let record: Record = begin(w,name,ext::zip_stream::STORED,mode,mtime,bytes.len() as u64)?;
+    put(w,bytes)?; record.crc = core::crc32::finish(ext::compression::crc32_update(core::crc32::INITIAL,bytes));
+    record.compressed = bytes.len() as u64; record.size = bytes.len() as u64; return finish(w,record);
+}
+fn add_file(w: &Writer, source: core::path::Path, name: core::slice::View<u8>, mode: u32, mtime: i64, size: u64) -> core::result::Result<i32,Error> {
+    let method: i32 = ext::zip_stream::DEFLATED; if (w.store || size == 0) { method = ext::zip_stream::STORED; }
+    let opened: core::result::Result<std::file::File,core::io::Error> = std::file::open(source,std::file::OpenMode::Read);
+    if (core::result::is_err(opened)) { return core::result::Err(Error::Io); }
+    let input: std::file::File = core::result::unwrap(opened);
+    let began: core::result::Result<Record,Error> = begin(w,name,method,mode,mtime,size);
+    if (core::result::is_err(began)) { input.close(); return core::result::Err(core::result::unwrap_err(began)); }
+    let record: Record = core::result::unwrap(began); let state: u32 = core::crc32::INITIAL; let left: u64 = size; let compressed: u64 = 0;
+    let result: core::result::Result<i32,Error> = core::result::Ok(0);
+    if (method == ext::zip_stream::DEFLATED) { w.encoder.borrow().reset(); }
+    while (left > 0) {
+        let want: i32 = CHUNK; if ((want as u64) > left) { want = left as i32; }
+        let got: core::result::Result<i32,Error> = read_fd(handle(input),sub(w.buffer.as_view(),0,want));
+        if (core::result::is_err(got)) { result = got; break; }
+        let count: i32 = core::result::unwrap(got); if (count == 0) { result = core::result::Err(Error::Io); break; }
+        let chunk: core::slice::View<u8> = sub(w.buffer.as_view(),0,count); state = ext::compression::crc32_update(state,chunk); left -= count as u64;
+        if (method == ext::zip_stream::STORED) {
+            let stored: core::result::Result<i32,Error> = put(w,chunk); if (core::result::is_err(stored)) { result = stored; break; } compressed += count as u64;
+        } else {
+            let packed: core::result::Result<u64,Error> = deflate(w,chunk,false); if (core::result::is_err(packed)) { result = core::result::Err(core::result::unwrap_err(packed)); break; } compressed += core::result::unwrap(packed);
+        }
+    }
+    input.close();
+    if (core::result::is_err(result)) { return result; }
+    if (method == ext::zip_stream::DEFLATED) { let tail: u64 = deflate(w,literal("",0),true)?; compressed += tail; }
+    record.crc = core::crc32::finish(state); record.compressed = compressed; record.size = size; return finish(w,record);
+}
+// Returns true for a directory, whose contents are added next.
+fn add_path(options: Options, w: &Writer, name: core::slice::View<u8>) -> core::result::Result<bool,Error> {
+    let root: core::slice::View<u8> = literal("",0); if (options.has_directory) { root = options.directory; }
+    join(w.path.borrow(),root,name)?; let source: core::path::Path = path_of(w.path.as_view())?;
+    let meta: std::file_ops::Metadata = std::file_ops::empty_metadata();
+    if (core::result::is_err(std::file_ops::metadata_into(source,false,meta.borrow()))) { return core::result::Err(Error::Io); }
+    let kind: std::file_ops::Kind = std::file_ops::kind(meta.mode); let mtime: i64 = meta.times.modified.seconds as i64;
+    let directory: bool = match (kind) { std::file_ops::Kind::Directory -> true, _ -> false };
+    let file: bool = match (kind) { std::file_ops::Kind::Regular -> true, _ -> false };
+    let symbolic: bool = match (kind) { std::file_ops::Kind::Symlink -> true, _ -> false };
+    if (file) { add_file(w,source,name,meta.mode & 65535,mtime,meta.length.bytes as u64)?; return core::result::Ok(false); }
+    if (symbolic) {
+        sized(w.link.borrow(),4096)?;
+        let read: core::result::Result<std::file_ops::LinkRead,core::io::Error> = std::file_ops::read_link_into(source,w.link.as_view());
+        if (core::result::is_err(read)) { return core::result::Err(Error::Io); }
+        let got: std::file_ops::LinkRead = core::result::unwrap(read); if (!got.complete) { return core::result::Err(Error::Limit); }
+        add_bytes(w,name,meta.mode & 65535,mtime,sub(w.link.as_view(),0,got.copied))?; return core::result::Ok(false);
+    }
+    if (!directory) { return core::result::Err(Error::Unsupported); }
+    // Directory names end in one slash.
+    w.member.clear(); extend(w.member.borrow(),name)?; if (core::result::is_err(w.member.try_push(47))) { return core::result::Err(Error::Allocation); }
+    add_bytes(w,w.member.as_view(),meta.mode & 65535,mtime,literal("",0))?; return core::result::Ok(true);
+}
+// Central directory headers in member order, then the end records.
+fn close_archive(w: &Writer) -> core::result::Result<i32,Error> {
+    let start: u64 = w.offset; let index: i32 = 0;
+    while (index < w.records.len()) {
+        let record: Record = w.records.at(index); index += 1; let member: ext::zip_stream::Member = as_member(w,record);
+        sized(w.header.borrow(),ext::zip_stream::central_len(member,record.compressed,record.size,record.offset))?;
+        let written: core::result::Result<i32,ext::zip_stream::Error> = ext::zip_stream::write_central(w.header.as_view(),member,record.crc,record.compressed,record.size,record.offset);
+        if (core::result::is_err(written)) { return core::result::Err(Error::Limit); }
+        put(w,w.header.as_view())?;
+    }
+    let entries: u64 = w.records.len() as u64; let size: u64 = w.offset-start;
+    sized(w.header.borrow(),ext::zip_stream::end_len(entries,start,size,w.zip64))?;
+    let ended: core::result::Result<i32,ext::zip_stream::Error> = ext::zip_stream::write_end(w.header.as_view(),entries,start,size,w.zip64);
+    if (core::result::is_err(ended)) { return core::result::Err(Error::Limit); }
+    put(w,w.header.as_view())?; return core::result::Ok(0);
+}
+// Trees of up to 4M entries (the defaults stop at 65536).
+fn walk_limits() -> std::directory::Limits {
+    return std::directory::Limits { max_depth: 64, max_entries: 4194304, max_path_bytes: 4095, max_bytes: 536870912, max_work: 17179869184, buffer_bytes: 65536 };
+}
+fn create_into(options: Options, operands: alloc::vec::Vec<core::slice::View<u8>>, w: &Writer) -> core::result::Result<i32,Error> {
+    let index: i32 = 0; let copy: alloc::vec::Vec<u8> = alloc::vec::new();
+    while (index < operands.len()) {
+        let name: core::slice::View<u8> = operands.at(index); index += 1;
+        let top: core::slice::View<u8> = name; while (top.len() > 1 && at(top,top.len()-1) == 47) { top = sub(top,0,top.len()-1); }
+        let descend: bool = add_path(options,w,top)?; if (!descend) { continue; }
+        let root: core::slice::View<u8> = literal("",0); if (options.has_directory) { root = options.directory; }
+        join(w.path.borrow(),root,top)?;
+        let walked: core::result::Result<std::directory::Snapshot,std::directory::Error> = std::directory::walk(path_of(w.path.as_view())?,64,walk_limits());
+        if (core::result::is_err(walked)) { return core::result::Err(Error::Io); }
+        let snapshot: std::directory::Snapshot = core::result::unwrap(walked); let row: i32 = 0; let failure: core::option::Option<Error> = core::option::None();
+        let entry: std::directory::WalkEntry = std::directory::empty_entry();
+        while (row < snapshot.len()) {
+            core::result::unwrap(snapshot.entry_into(row,entry.borrow())); row += 1;
+            let joined: core::result::Result<i32,Error> = join(copy.borrow(),top,entry.path);
+            if (core::result::is_err(joined)) { failure = core::option::Some(core::result::unwrap_err(joined)); break; }
+            let added: core::result::Result<bool,Error> = add_path(options,w,copy.as_view());
+            if (core::result::is_err(added)) { failure = core::option::Some(core::result::unwrap_err(added)); break; }
+        }
+        snapshot.destroy();
+        if (core::option::is_some(failure)) { copy.destroy(); return core::result::Err(core::option::unwrap(failure)); }
+    }
+    copy.destroy(); return close_archive(w);
+}
+fn create(options: Options, operands: alloc::vec::Vec<core::slice::View<u8>>) -> core::result::Result<i32,Error> {
+    if (operands.len() == 0) { return core::result::Err(Error::Usage); }
+    let fd: i32 = 1;
+    if (!(options.archive.len() == 1 && at(options.archive,0) == 45)) {
+        let opened: core::result::Result<std::file::File,core::io::Error> = std::file::open(path_of(options.archive)?,std::file::OpenMode::Create);
+        if (core::result::is_err(opened)) { return core::result::Err(Error::Io); } fd = handle(core::result::unwrap(opened));
+    }
+    let made: core::result::Result<Writer,Error> = writer(fd,options); if (core::result::is_err(made)) { close_fd(fd); return core::result::Err(core::result::unwrap_err(made)); }
+    let w: Writer = core::result::unwrap(made);
+    let result: core::result::Result<i32,Error> = create_into(options,operands,w.borrow());
+    w.destroy(); close_fd(fd); return result;
+}
+
+fn apply(options: &Options, item: ext::cli::Occurrence) -> bool {
+    if (item.id >= 1 && item.id <= 3) { if (options.mode != 0) { return false; } options.mode = item.id; return true; }
+    if (item.id == 6) { options.help = true; return true; }
+    if (item.id == 8) { options.store = true; return true; }
+    if (item.id == 9) { options.zip64 = true; return true; }
+    let value: core::slice::View<u8> = core::option::unwrap(item.value).bytes;
+    if (item.id == 4) { if (options.has_archive || value.is_empty()) { return false; } options.archive = value; options.has_archive = true; return true; }
+    if (item.id == 5) { if (options.has_directory || value.is_empty()) { return false; } options.directory = value; options.has_directory = true; return true; }
+    if (item.id == 7) {
+        if (options.has_level || value.length != 1 || value.values[value.start] < 48 || value.values[value.start] > 51) { return false; }
+        options.level = (value.values[value.start] as i32)-48; options.has_level = true; return true;
+    }
+    return false;
+}
+fn arguments(values: std::args::Arguments) -> i32 {
+    let specs: [ext::cli::Spec;9] = [
+        ext::cli::Spec { id: 1, long: literal("create",6), short: 99, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 2, long: literal("extract",7), short: 120, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 3, long: literal("list",4), short: 116, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 4, long: literal("file",4), short: 102, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 5, long: literal("directory",9), short: 67, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 6, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 7, long: literal("level",5), short: 76, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 8, long: literal("store",5), short: 48, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 9, long: literal("zip64",5), short: 0, arity: ext::cli::Arity::Flag }
+    ];
+    let schema: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,9)); let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(values.as_view(),schema,ext::cli::Ordering::Intermixed));
+    let options: Options = Options { mode: 0, archive: literal("",0), has_archive: false, directory: literal("",0), has_directory: false, help: false, level: 2, has_level: false, store: false, zip64: false };
+    let operands: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new();
+    while (true) {
+        let parsed: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next(); if (core::result::is_err(parsed)) { operands.destroy(); return failed(Error::Usage); }
+        let next: core::option::Option<ext::cli::Event> = core::result::unwrap(parsed); if (core::option::is_none(next)) { break; }
+        let valid: bool = match (core::option::unwrap(next)) { ext::cli::Event::Option(item) -> apply(options.borrow(),item), ext::cli::Event::Operand(item) -> core::result::is_ok(operands.try_push(item.bytes)) };
+        if (!valid) { operands.destroy(); return failed(Error::Usage); }
+    }
+    if (options.help) {
+        operands.destroy(); let usage: core::slice::View<u8> = literal("Usage: zip (-c [-L 0-3|-0] [--zip64]|-x|-t) -f ARCHIVE [-C DIR] [PATH...]\n",74);
+        if (core::result::is_err(write_fd(1,usage))) { return failed(Error::Io); } return 0;
+    }
+    // Levels, storing and ZIP64 apply only to creating.
+    let writing: bool = options.has_level || options.store || options.zip64;
+    if (options.mode == 0 || !options.has_archive || (options.mode != 1 && (operands.len() != 0 || writing)) || (options.store && options.has_level)) { operands.destroy(); return failed(Error::Usage); }
+    let result: core::result::Result<i32,Error> = core::result::Ok(0);
+    if (options.mode == 1) { result = create(options,operands); } else { result = read_archive(options); }
+    operands.destroy();
+    if (core::result::is_err(result)) { return failed(core::result::unwrap_err(result)); } return 0;
+}
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,256,65536);
+    if (core::result::is_err(captured)) { return report(2,literal("zip: cannot capture arguments\n",30)); }
+    let values: std::args::Arguments = core::result::unwrap(captured); let status: i32 = arguments(values); values.destroy(); return status;
+}

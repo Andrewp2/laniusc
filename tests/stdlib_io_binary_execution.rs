@@ -63,7 +63,7 @@ fn binary_stream_writer_reports_host_failures_on_x86() {
 
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -79,7 +79,7 @@ fn binary_stream_writer_reports_host_failures_on_x86() {
         ] {
             let output = common::short_process_output_with_timeout(
                 format!("binary write {injection}"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-e")
                     .arg("trace=write")
@@ -181,7 +181,7 @@ fn bounded_binary_stdin_reader_reports_host_failure_on_x86() {
 
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -199,7 +199,7 @@ fn bounded_binary_stdin_reader_reports_host_failure_on_x86() {
         ] {
             let output = common::short_process_output_with_timeout(
                 format!("binary read {injection}"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-e")
                     .arg("trace=read")

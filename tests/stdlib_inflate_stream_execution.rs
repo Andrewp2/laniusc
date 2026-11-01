@@ -1,7 +1,7 @@
 //! Resumable raw and framed decompression with caller-owned workspace.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod common;
-use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command, time::Duration};
+use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, time::Duration};
 fn execute(name: &str) {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root
@@ -24,7 +24,7 @@ fn execute(name: &str) {
     let trace = common::TempArtifact::new("laniusc_inflate_stream", "all_syscalls", None);
     let output = common::process_output_with_timeout(
         "pure resumable decoder contracts",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=all", "-e", "signal=none"])

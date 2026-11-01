@@ -1,0 +1,513 @@
+// Declarative command-line parsing with GNU getopt_long semantics: short
+// options and -abc clusters, long options with unique-prefix abbreviation,
+// --opt=value and --opt value, optional values, -- to end options,
+// operands with counts, subcommands, generated --help text and GNU-style
+// error messages that name the bad argument. See docs/stdlib-cli.md.
+module std::cli;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::stream;
+
+pub enum Arity { Flag, Required, Optional }
+pub enum ErrorKind {
+    UnknownOption, InvalidOption, AmbiguousOption, UnexpectedValue, MissingValue,
+    MissingCommand, UnknownCommand, MissingOperand, ExtraOperand, InvalidSpec, AllocationFailed,
+}
+// argument: the index of the offending element in the parsed arguments, or
+// -1. offset: the byte within it (the option character of a short option).
+// spec: the option's index in definition order, or the command index for
+// UnknownCommand's scope, or -1. scope: -1 for the root, else the subcommand.
+pub struct Error { kind: ErrorKind, argument: i32, offset: i32, spec: i32, scope: i32 }
+
+// scope: -1 for root options, k for subcommand k.
+struct Spec { id: i32, short: u8, long: core::slice::View<u8>, arity: Arity, value_name: core::slice::View<u8>, help: core::slice::View<u8>, scope: i32, is_help: bool }
+struct Sub { id: i32, name: core::slice::View<u8>, help: core::slice::View<u8>, operand: core::slice::View<u8>, minimum: i32, maximum: i32 }
+
+fn lit(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value), count);
+    return core::slice::View { values: bytes, start: 0, length: count };
+}
+fn empty_view() -> core::slice::View<u8> { return lit("", 0); }
+fn at(view: core::slice::View<u8>, index: i32) -> u8 { return view.values[view.start + index]; }
+fn same(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.length != right.length) { return false; }
+    let index: i32 = 0;
+    while (index < left.length) { if (at(left, index) != at(right, index)) { return false; } index += 1; }
+    return true;
+}
+fn starts(whole: core::slice::View<u8>, prefix: core::slice::View<u8>) -> bool {
+    if (prefix.length > whole.length) { return false; }
+    let index: i32 = 0;
+    while (index < prefix.length) { if (at(whole, index) != at(prefix, index)) { return false; } index += 1; }
+    return true;
+}
+fn part(view: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> {
+    return core::slice::View { values: view.values, start: view.start + start, length: end - start };
+}
+fn alphanumeric(value: u8) -> bool { return (value >= 65 && value <= 90) || (value >= 97 && value <= 122) || (value >= 48 && value <= 57); }
+fn is_flag(arity: Arity) -> bool { return match (arity) { Arity::Flag -> true, _ -> false }; }
+fn is_required(arity: Arity) -> bool { return match (arity) { Arity::Required -> true, _ -> false }; }
+
+// The parse result: every option occurrence in argument order, the operands,
+// and the chosen subcommand. Views borrow the parsed arguments.
+pub struct Matches {
+    ids: alloc::vec::Vec<i32>, values: alloc::vec::Vec<core::slice::View<u8>>, has_value: alloc::vec::Vec<bool>,
+    operands: alloc::vec::Vec<core::slice::View<u8>>, operand_index: alloc::vec::Vec<i32>, command: i32,
+}
+pub impl Matches {
+    pub fn borrow(&self) -> &Matches { return self; }
+    // The subcommand id, or -1.
+    pub fn command(&self) -> i32 { return self.command; }
+    pub fn occurrences(&self) -> i32 { return self.ids.len(); }
+    pub fn occurrence_id(&self, index: i32) -> i32 { return self.ids.at(index); }
+    pub fn occurrence_value(&self, index: i32) -> core::option::Option<core::slice::View<u8>> {
+        if (!self.has_value.at(index)) { return core::option::None(); }
+        return core::option::Some(self.values.at(index));
+    }
+    pub fn count(&self, id: i32) -> i32 {
+        let total: i32 = 0; let index: i32 = 0;
+        while (index < self.ids.len()) { if (self.ids.at(index) == id) { total += 1; } index += 1; }
+        return total;
+    }
+    pub fn present(&self, id: i32) -> bool { return self.count(id) > 0; }
+    // The value of the last occurrence of id, if it has one.
+    pub fn value(&self, id: i32) -> core::option::Option<core::slice::View<u8>> {
+        let index: i32 = self.ids.len() - 1;
+        while (index >= 0) { if (self.ids.at(index) == id) { return self.occurrence_value(index); } index -= 1; }
+        return core::option::None();
+    }
+    // The value of the n-th occurrence (from 0) of id, if it has one.
+    pub fn value_at(&self, id: i32, n: i32) -> core::option::Option<core::slice::View<u8>> {
+        let index: i32 = 0; let seen: i32 = 0;
+        while (index < self.ids.len()) {
+            if (self.ids.at(index) == id) { if (seen == n) { return self.occurrence_value(index); } seen += 1; }
+            index += 1;
+        }
+        return core::option::None();
+    }
+    pub fn operand_count(&self) -> i32 { return self.operands.len(); }
+    pub fn operand(&self, index: i32) -> core::slice::View<u8> { return self.operands.at(index); }
+    pub fn destroy(&self) { self.ids.destroy(); self.values.destroy(); self.has_value.destroy(); self.operands.destroy(); self.operand_index.destroy(); }
+}
+
+// A command definition. Options, operands and subcommands are added in
+// order; after subcommand(), option and operand calls apply to that
+// subcommand. Names and help texts are borrowed.
+pub struct Command {
+    name: core::slice::View<u8>, about: core::slice::View<u8>,
+    specs: alloc::vec::Vec<Spec>, subs: alloc::vec::Vec<Sub>,
+    operand: core::slice::View<u8>, minimum: i32, maximum: i32,
+    scope: i32, options_first: bool, help_id: i32, broken: bool,
+}
+
+pub fn command(name: core::slice::View<u8>, about: core::slice::View<u8>) -> Command {
+    return Command { name: name, about: about, specs: alloc::vec::new(), subs: alloc::vec::new(),
+        operand: empty_view(), minimum: 0, maximum: 0, scope: -1, options_first: false, help_id: -1, broken: false };
+}
+
+// The parse state for one run of parse().
+struct Run {
+    args: core::slice::View<core::slice::View<u8>>, index: i32, scope: i32,
+    matches: Matches, error: Error, failed: bool, helped: bool,
+}
+impl Run { fn borrow(&self) -> &Run { return self; } }
+
+pub impl Command {
+    pub fn borrow(&self) -> &Command { return self; }
+    fn add(&self, id: i32, short: u8, long: core::slice::View<u8>, arity: Arity, value_name: core::slice::View<u8>, help: core::slice::View<u8>) {
+        let valid: bool = (short != 0 || long.length > 0) && (short == 0 || alphanumeric(short));
+        let index: i32 = 0;
+        while (index < long.length) { let byte: u8 = at(long, index); if (!alphanumeric(byte) && (index == 0 || byte != 45)) { valid = false; } index += 1; }
+        index = 0;
+        while (index < self.specs.len()) {
+            let other: Spec = self.specs.at(index);
+            if (other.scope == self.scope && ((short != 0 && other.short == short) || (long.length > 0 && same(other.long, long)))) { valid = false; }
+            index += 1;
+        }
+        if (!valid) { self.broken = true; return; }
+        let spec: Spec = Spec { id: id, short: short, long: long, arity: arity, value_name: value_name, help: help, scope: self.scope, is_help: false };
+        if (self.specs.try_push(spec).is_err()) { self.broken = true; }
+    }
+    // short is 0 for none and long is empty for none, but not both.
+    pub fn flag(&self, id: i32, short: u8, long: core::slice::View<u8>, help: core::slice::View<u8>) {
+        self.add(id, short, long, Arity::Flag, empty_view(), help);
+    }
+    pub fn option(&self, id: i32, short: u8, long: core::slice::View<u8>, value_name: core::slice::View<u8>, help: core::slice::View<u8>) {
+        self.add(id, short, long, Arity::Required, value_name, help);
+    }
+    // Optional values are only taken attached: --name=VALUE or -nVALUE.
+    pub fn optional(&self, id: i32, short: u8, long: core::slice::View<u8>, value_name: core::slice::View<u8>, help: core::slice::View<u8>) {
+        self.add(id, short, long, Arity::Optional, value_name, help);
+    }
+    // Registers -h, --help in the current scope; write_help prints it. When it
+// occurs, parse() skips the operand count and subcommand checks so the
+// caller can print help (option errors still come first, as in getopt).
+    pub fn help(&self, id: i32) {
+        let before: i32 = self.specs.len();
+        self.add(id, 104, lit("help", 4), Arity::Flag, empty_view(), lit("display this help and exit", 26));
+        if (self.specs.len() == before) { return; }
+        let spec: Spec = self.specs.at(before); spec.is_help = true;
+        core::result::unwrap(self.specs.set(before, spec));
+        if (self.scope == -1) { self.help_id = id; }
+    }
+    // Operand count for the current scope; maximum -1 means unbounded. The
+    // usage line shows name, [name] when minimum is 0, and ... when unbounded.
+    pub fn operands(&self, name: core::slice::View<u8>, minimum: i32, maximum: i32) {
+        if (minimum < 0 || (maximum >= 0 && maximum < minimum)) { self.broken = true; return; }
+        if (self.scope == -1) { self.operand = name; self.minimum = minimum; self.maximum = maximum; return; }
+        let sub: Sub = self.subs.at(self.scope);
+        sub.operand = name; sub.minimum = minimum; sub.maximum = maximum;
+        core::result::unwrap(self.subs.set(self.scope, sub));
+    }
+    // Stop at the first operand instead of permuting (POSIXLY_CORRECT).
+    pub fn stop_at_operand(&self) { self.options_first = true; }
+    pub fn subcommand(&self, id: i32, name: core::slice::View<u8>, help: core::slice::View<u8>) {
+        let index: i32 = 0;
+        while (index < self.subs.len()) { if (same(self.subs.at(index).name, name)) { self.broken = true; } index += 1; }
+        if (name.length == 0) { self.broken = true; }
+        if (self.subs.try_push(Sub { id: id, name: name, help: help, operand: empty_view(), minimum: 0, maximum: 0 }).is_err()) { self.broken = true; return; }
+        self.scope = self.subs.len() - 1;
+    }
+    pub fn destroy(&self) { self.specs.destroy(); self.subs.destroy(); }
+
+    // Spec index of a short option in scope, or -1.
+    fn find_short(&self, scope: i32, name: u8) -> i32 {
+        let index: i32 = 0;
+        while (index < self.specs.len()) {
+            let spec: Spec = self.specs.at(index);
+            if (spec.scope == scope && spec.short != 0 && spec.short == name) { return index; }
+            index += 1;
+        }
+        return -1;
+    }
+    // Spec index of an exact or unique-prefix long option in scope; -1 if
+    // none, -2 if ambiguous.
+    fn find_long(&self, scope: i32, name: core::slice::View<u8>) -> i32 {
+        let index: i32 = 0; let found: i32 = -1;
+        while (index < self.specs.len()) {
+            let spec: Spec = self.specs.at(index);
+            if (spec.scope == scope && spec.long.length > 0 && starts(spec.long, name)) {
+                if (spec.long.length == name.length) { return index; }
+                if (found == -1) { found = index; } else { found = -2; }
+            }
+            index += 1;
+        }
+        return found;
+    }
+
+    pub fn parse(&self, args: core::slice::View<core::slice::View<u8>>) -> core::result::Result<Matches, Error> {
+        let matches: Matches = Matches { ids: alloc::vec::new(), values: alloc::vec::new(), has_value: alloc::vec::new(), operands: alloc::vec::new(), operand_index: alloc::vec::new(), command: -1 };
+        let run: Run = Run { args: args, index: 0, scope: -1, matches: matches, error: Error { kind: ErrorKind::InvalidSpec, argument: -1, offset: -1, spec: -1, scope: -1 }, failed: false, helped: false };
+        if (self.broken) { run.failed = true; }
+        if (!run.failed) {
+            let has_subs: bool = self.subs.len() > 0;
+            self.scan(run.borrow(), self.options_first || has_subs);
+            if (!run.failed && has_subs && !run.helped) {
+                if (run.index >= args.length) { self.fail(run.borrow(), ErrorKind::MissingCommand, -1, -1, -1); }
+                else {
+                    let word: core::slice::View<u8> = args.values[args.start + run.index];
+                    let sub: i32 = -1; let index: i32 = 0;
+                    while (index < self.subs.len()) { if (same(self.subs.at(index).name, word)) { sub = index; } index += 1; }
+                    if (sub < 0) { self.fail(run.borrow(), ErrorKind::UnknownCommand, run.index, 0, -1); }
+                    else {
+                        run.index += 1; run.scope = sub; run.matches.command = self.subs.at(sub).id;
+                        self.scan(run.borrow(), self.options_first);
+                    }
+                }
+            }
+            if (!run.failed && !run.helped) { self.check_operands(run.borrow()); }
+        }
+        if (run.failed) { run.matches.destroy(); return core::result::Err(run.error); }
+        return core::result::Ok(run.matches);
+    }
+    fn fail(&self, run: &Run, kind: ErrorKind, argument: i32, offset: i32, spec: i32) {
+        if (!run.failed) { run.failed = true; run.error = Error { kind: kind, argument: argument, offset: offset, spec: spec, scope: run.scope }; }
+    }
+    fn record(&self, run: &Run, spec: i32, value: core::slice::View<u8>, has: bool) {
+        let id: i32 = self.specs.at(spec).id;
+        if (self.specs.at(spec).is_help) { run.helped = true; }
+        if (run.matches.ids.try_push(id).is_err() || run.matches.values.try_push(value).is_err() || run.matches.has_value.try_push(has).is_err()) {
+            self.fail(run, ErrorKind::AllocationFailed, -1, -1, -1);
+        }
+    }
+    fn operand(&self, run: &Run, word: core::slice::View<u8>) {
+        if (run.matches.operands.try_push(word).is_err() || run.matches.operand_index.try_push(run.index).is_err()) { self.fail(run, ErrorKind::AllocationFailed, -1, -1, -1); }
+    }
+    // Options and operands of run.scope from run.index. With stop, the first
+    // operand ends the scan (left at run.index for a subcommand name in the
+    // root scope).
+    fn scan(&self, run: &Run, stop: bool) {
+        let args: core::slice::View<core::slice::View<u8>> = run.args;
+        let root_with_subs: bool = run.scope == -1 && self.subs.len() > 0;
+        let ended: bool = false;
+        while (run.index < args.length && !run.failed) {
+            let word: core::slice::View<u8> = args.values[args.start + run.index];
+            if (ended || word.length < 2 || at(word, 0) != 45) {
+                if (root_with_subs) { return; }
+                if (stop) { ended = true; }
+                self.operand(run, word); run.index += 1; continue;
+            }
+            if (at(word, 1) == 45) {
+                if (word.length == 2) { ended = true; run.index += 1; if (root_with_subs) { return; } continue; }
+                self.long_option(run, word);
+            } else { self.short_options(run, word); }
+        }
+    }
+    fn long_option(&self, run: &Run, word: core::slice::View<u8>) {
+        let args: core::slice::View<core::slice::View<u8>> = run.args;
+        let equals: i32 = 2;
+        while (equals < word.length && at(word, equals) != 61) { equals += 1; }
+        let found: i32 = self.find_long(run.scope, part(word, 2, equals));
+        if (found == -1) { self.fail(run, ErrorKind::UnknownOption, run.index, 0, -1); return; }
+        if (found == -2) { self.fail(run, ErrorKind::AmbiguousOption, run.index, 0, -1); return; }
+        let spec: Spec = self.specs.at(found);
+        let argument: i32 = run.index; run.index += 1;
+        if (equals < word.length) {
+            if (is_flag(spec.arity)) { self.fail(run, ErrorKind::UnexpectedValue, argument, equals, found); return; }
+            self.record(run, found, part(word, equals + 1, word.length), true); return;
+        }
+        if (is_required(spec.arity)) {
+            if (run.index >= args.length) { self.fail(run, ErrorKind::MissingValue, argument, 0, found); return; }
+            self.record(run, found, args.values[args.start + run.index], true); run.index += 1; return;
+        }
+        self.record(run, found, empty_view(), false);
+    }
+    fn short_options(&self, run: &Run, word: core::slice::View<u8>) {
+        let args: core::slice::View<core::slice::View<u8>> = run.args;
+        let argument: i32 = run.index; run.index += 1;
+        let offset: i32 = 1;
+        while (offset < word.length && !run.failed) {
+            let found: i32 = self.find_short(run.scope, at(word, offset));
+            if (found < 0) { self.fail(run, ErrorKind::InvalidOption, argument, offset, -1); return; }
+            let spec: Spec = self.specs.at(found);
+            if (is_flag(spec.arity)) { self.record(run, found, empty_view(), false); offset += 1; continue; }
+            if (offset + 1 < word.length) { self.record(run, found, part(word, offset + 1, word.length), true); return; }
+            if (is_required(spec.arity)) {
+                if (run.index >= args.length) { self.fail(run, ErrorKind::MissingValue, argument, offset, found); return; }
+                self.record(run, found, args.values[args.start + run.index], true); run.index += 1; return;
+            }
+            self.record(run, found, empty_view(), false); return;
+        }
+    }
+    fn check_operands(&self, run: &Run) {
+        let minimum: i32 = self.minimum; let maximum: i32 = self.maximum;
+        if (run.scope >= 0) { let sub: Sub = self.subs.at(run.scope); minimum = sub.minimum; maximum = sub.maximum; }
+        let count: i32 = run.matches.operands.len();
+        if (count < minimum) { self.fail(run, ErrorKind::MissingOperand, -1, -1, -1); return; }
+        if (maximum >= 0 && count > maximum) {
+            let found: i32 = run.matches.operand_index.at(maximum);
+            self.fail(run, ErrorKind::ExtraOperand, found, 0, -1);
+        }
+    }
+
+    // GNU-style messages. Each ends with a line feed; usage errors add
+    // "Try 'NAME --help' for more information." when help is registered.
+    pub fn write_error(&self, error: Error, args: core::slice::View<core::slice::View<u8>>, out: &alloc::vec::Vec<u8>) -> bool {
+        let w: Writer = Writer { out: out, ok: true };
+        w.view(self.name); w.text(": ", 2);
+        let word: core::slice::View<u8> = empty_view();
+        if (error.argument >= 0 && error.argument < args.length) { word = args.values[args.start + error.argument]; }
+        let code: i32 = kind_code(error.kind);
+        if (code == 0) { w.text("unrecognized option '", 21); w.view(word); w.byte(39); }
+        if (code == 1) { w.text("invalid option -- '", 19); w.byte(at(word, error.offset)); w.byte(39); }
+        if (code == 2) { w.text("option '", 8); w.view(word); w.text("' is ambiguous; possibilities:", 30); self.possibilities(w.borrow(), error.scope, word); }
+        if (code == 3) { w.text("option '--", 10); w.view(self.specs.at(error.spec).long); w.text("' doesn't allow an argument", 27); }
+        if (code == 4) {
+            let spec: Spec = self.specs.at(error.spec);
+            if (error.offset == 0) { w.text("option '--", 10); w.view(spec.long); w.text("' requires an argument", 22); }
+            else { w.text("option requires an argument -- '", 32); w.byte(spec.short); w.byte(39); }
+        }
+        if (code == 5) { w.text("missing command", 15); }
+        if (code == 6) { w.text("unknown command '", 17); w.view(word); w.byte(39); }
+        if (code == 7) { w.text("missing operand", 15); }
+        if (code == 8) { w.text("extra operand '", 15); w.view(word); w.byte(39); }
+        if (code == 9) { w.text("invalid option definitions", 26); }
+        if (code == 10) { w.text("out of memory", 13); }
+        w.byte(10);
+        if (code < 9 && self.help_id >= 0) { w.text("Try '", 5); w.view(self.name); w.text(" --help' for more information.", 30); w.byte(10); }
+        return w.ok;
+    }
+    fn possibilities(&self, w: &Writer, scope: i32, word: core::slice::View<u8>) {
+        let equals: i32 = 2;
+        while (equals < word.length && at(word, equals) != 61) { equals += 1; }
+        let name: core::slice::View<u8> = part(word, 2, equals);
+        let index: i32 = 0;
+        while (index < self.specs.len()) {
+            let spec: Spec = self.specs.at(index);
+            if (spec.scope == scope && spec.long.length > 0 && starts(spec.long, name)) { w.text(" '--", 4); w.view(spec.long); w.byte(39); }
+            index += 1;
+        }
+    }
+    // The --help text for the root (sub -1) or a subcommand id.
+    pub fn write_help(&self, sub: i32, out: &alloc::vec::Vec<u8>) -> bool {
+        let w: Writer = Writer { out: out, ok: true };
+        let scope: i32 = -1; let index: i32 = 0;
+        while (index < self.subs.len()) { if (self.subs.at(index).id == sub) { scope = index; } index += 1; }
+        w.text("Usage: ", 7); w.view(self.name);
+        let about: core::slice::View<u8> = self.about;
+        let operand: core::slice::View<u8> = self.operand; let minimum: i32 = self.minimum; let maximum: i32 = self.maximum;
+        if (scope >= 0) {
+            let entry: Sub = self.subs.at(scope);
+            w.byte(32); w.view(entry.name); about = entry.help;
+            operand = entry.operand; minimum = entry.minimum; maximum = entry.maximum;
+        }
+        if (self.option_count(scope) > 0) { w.text(" [OPTION]...", 12); }
+        if (scope < 0 && self.subs.len() > 0) { w.text(" COMMAND [ARG]...", 17); }
+        if (maximum != 0 && operand.length > 0) {
+            w.byte(32);
+            if (minimum == 0) { w.byte(91); }
+            w.view(operand);
+            if (minimum == 0) { w.byte(93); }
+            if (maximum < 0) { w.text("...", 3); }
+        }
+        w.byte(10);
+        if (about.length > 0) { w.view(about); w.byte(10); }
+        let column: i32 = self.help_column(scope);
+        if (self.option_count(scope) > 0) {
+            w.text("\nOptions:\n", 10);
+            index = 0;
+            while (index < self.specs.len()) {
+                let spec: Spec = self.specs.at(index);
+                if (spec.scope == scope) {
+                    let width: i32 = self.label(w.borrow(), spec);
+                    self.describe(w.borrow(), spec.help, width, column);
+                }
+                index += 1;
+            }
+        }
+        if (scope < 0 && self.subs.len() > 0) {
+            w.text("\nCommands:\n", 11);
+            index = 0;
+            while (index < self.subs.len()) {
+                let entry: Sub = self.subs.at(index);
+                w.text("  ", 2); w.view(entry.name);
+                self.describe(w.borrow(), entry.help, 2 + entry.name.length, column);
+                index += 1;
+            }
+        }
+        return w.ok;
+    }
+    fn option_count(&self, scope: i32) -> i32 {
+        let total: i32 = 0; let index: i32 = 0;
+        while (index < self.specs.len()) { if (self.specs.at(index).scope == scope) { total += 1; } index += 1; }
+        return total;
+    }
+    fn label_width(&self, spec: Spec) -> i32 {
+        let width: i32 = 6;
+        if (spec.long.length > 0) {
+            width += 2 + spec.long.length;
+            if (!is_flag(spec.arity)) { width += 1 + spec.value_name.length; if (!is_required(spec.arity)) { width += 2; } }
+        } else {
+            width -= 2;
+            if (!is_flag(spec.arity)) { width += 1 + spec.value_name.length; if (!is_required(spec.arity)) { width += 1; } }
+        }
+        return width;
+    }
+    // The description column: two spaces after the widest label, at most 30.
+    fn help_column(&self, scope: i32) -> i32 {
+        let column: i32 = 0; let index: i32 = 0;
+        while (index < self.specs.len()) {
+            let spec: Spec = self.specs.at(index);
+            if (spec.scope == scope) { let width: i32 = self.label_width(spec) + 2; if (width > column) { column = width; } }
+            index += 1;
+        }
+        if (scope < 0) {
+            index = 0;
+            while (index < self.subs.len()) { let width: i32 = self.subs.at(index).name.length + 4; if (width > column) { column = width; } index += 1; }
+        }
+        if (column > 30) { column = 30; }
+        return column;
+    }
+    // "  -s, --long=VALUE", "      --long[=VALUE]", "  -s VALUE" or "  -s[VALUE]"; returns its width.
+    fn label(&self, w: &Writer, spec: Spec) -> i32 {
+        w.text("  ", 2);
+        if (spec.short != 0) { w.byte(45); w.byte(spec.short); if (spec.long.length > 0) { w.text(", ", 2); } }
+        else { w.text("    ", 4); }
+        if (spec.long.length > 0) {
+            w.text("--", 2); w.view(spec.long);
+            if (!is_flag(spec.arity)) {
+                if (is_required(spec.arity)) { w.byte(61); w.view(spec.value_name); }
+                else { w.text("[=", 2); w.view(spec.value_name); w.byte(93); }
+            }
+        } else {
+            if (!is_flag(spec.arity)) {
+                if (is_required(spec.arity)) { w.byte(32); w.view(spec.value_name); }
+                else { w.byte(91); w.view(spec.value_name); w.byte(93); }
+            }
+        }
+        return self.label_width(spec);
+    }
+    // Help text from column; continuation lines of a multi-line help are
+    // indented to the column too. A label at or past the column puts the
+    // text on the next line.
+    fn describe(&self, w: &Writer, help: core::slice::View<u8>, width: i32, column: i32) {
+        if (help.length == 0) { w.byte(10); return; }
+        if (width + 2 > column) { w.byte(10); w.spaces(column); } else { w.spaces(column - width); }
+        let index: i32 = 0;
+        while (index < help.length) {
+            let byte: u8 = at(help, index);
+            w.byte(byte);
+            if (byte == 10 && index + 1 < help.length) { w.spaces(column); }
+            index += 1;
+        }
+        w.byte(10);
+    }
+
+    // Writes the help text to standard output.
+    pub fn print_help(&self, sub: i32) -> bool {
+        let out: alloc::vec::Vec<u8> = alloc::vec::new();
+        let ok: bool = self.write_help(sub, out.borrow()) && flush(1, out.borrow());
+        out.destroy(); return ok;
+    }
+    // Writes the error message to standard error.
+    pub fn print_error(&self, error: Error, args: core::slice::View<core::slice::View<u8>>) -> bool {
+        let out: alloc::vec::Vec<u8> = alloc::vec::new();
+        let ok: bool = self.write_error(error, args, out.borrow()) && flush(2, out.borrow());
+        out.destroy(); return ok;
+    }
+}
+
+fn flush(handle: i32, out: &alloc::vec::Vec<u8>) -> bool {
+    let target: std::stream::Descriptor = std::stream::from_handle(handle);
+    return core::io::write_all<std::stream::Descriptor>(target.borrow(), out.as_slice(), 0, out.len()).is_ok();
+}
+
+struct Writer { out: &alloc::vec::Vec<u8>, ok: bool }
+impl Writer {
+    fn borrow(&self) -> &Writer { return self; }
+    fn byte(&self, value: u8) { if (self.ok && self.out.try_push(value).is_err()) { self.ok = false; } }
+    fn view(&self, value: core::slice::View<u8>) { if (value.length > 0 && self.ok && self.out.try_extend(value).is_err()) { self.ok = false; } }
+    fn text(&self, value: str, count: i32) { self.view(lit(value, count)); }
+    fn spaces(&self, count: i32) { let index: i32 = 0; while (index < count) { self.byte(32); index += 1; } }
+}
+
+// The kind as a stable name for tests and diagnostics.
+fn kind_code(kind: ErrorKind) -> i32 {
+    let code: i32 = match (kind) {
+        ErrorKind::UnknownOption -> 0, ErrorKind::InvalidOption -> 1, ErrorKind::AmbiguousOption -> 2,
+        ErrorKind::UnexpectedValue -> 3, ErrorKind::MissingValue -> 4, ErrorKind::MissingCommand -> 5,
+        ErrorKind::UnknownCommand -> 6, ErrorKind::MissingOperand -> 7, ErrorKind::ExtraOperand -> 8,
+        ErrorKind::InvalidSpec -> 9, ErrorKind::AllocationFailed -> 10,
+    };
+    return code;
+}
+pub fn kind_name(kind: ErrorKind) -> core::slice::View<u8> {
+    let name: core::slice::View<u8> = match (kind) {
+        ErrorKind::UnknownOption -> lit("UnknownOption", 13),
+        ErrorKind::InvalidOption -> lit("InvalidOption", 13),
+        ErrorKind::AmbiguousOption -> lit("AmbiguousOption", 15),
+        ErrorKind::UnexpectedValue -> lit("UnexpectedValue", 15),
+        ErrorKind::MissingValue -> lit("MissingValue", 12),
+        ErrorKind::MissingCommand -> lit("MissingCommand", 14),
+        ErrorKind::UnknownCommand -> lit("UnknownCommand", 14),
+        ErrorKind::MissingOperand -> lit("MissingOperand", 14),
+        ErrorKind::ExtraOperand -> lit("ExtraOperand", 12),
+        ErrorKind::InvalidSpec -> lit("InvalidSpec", 11),
+        ErrorKind::AllocationFailed -> lit("AllocationFailed", 16),
+    };
+    return name;
+}

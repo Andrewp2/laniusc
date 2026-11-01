@@ -1,6 +1,121 @@
-import Lanius.Mini.LowerStmt
-import Lanius.Mini.WorldTrace
+module
 
+public import Lanius.Mini.LowerStmt
+public import Lanius.Mini.WorldTrace
+public import Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.BinOp_folds
+import all Lanius.Mini.Compiler.P.DivOp_size
+import all Lanius.Mini.Compiler.P.Expr_agrees
+import all Lanius.Mini.Compiler.P.FArith_opcode
+import all Lanius.Mini.Compiler.P.FloatTy_rex
+import all Lanius.Mini.Compiler.P.Instr_pieces
+import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.SrcExpr_guard
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.UintTy_isWide
+import all Lanius.Mini.Compiler.P.UintTy_mask
+import all Lanius.Mini.Compiler.P.Word_compute
+import all Lanius.Mini.Compiler.P.Word_narrows
+import all Lanius.Mini.Compiler.P.applyGuard
+import all Lanius.Mini.Compiler.P.arithShiftRight
+import all Lanius.Mini.Compiler.P.arithUint
+import all Lanius.Mini.Compiler.P.arities
+import all Lanius.Mini.Compiler.P.armBodyScope
+import all Lanius.Mini.Compiler.P.armPayload
+import all Lanius.Mini.Compiler.P.armScope
+import all Lanius.Mini.Compiler.P.assignFrom
+import all Lanius.Mini.Compiler.P.binaryConstant
+import all Lanius.Mini.Compiler.P.callAgrees
+import all Lanius.Mini.Compiler.P.codeSize
+import all Lanius.Mini.Compiler.P.compileArgs
+import all Lanius.Mini.Compiler.P.compileModules
+import all Lanius.Mini.Compiler.P.conjunction
+import all Lanius.Mini.Compiler.P.consArgs
+import all Lanius.Mini.Compiler.P.declareFuncs
+import all Lanius.Mini.Compiler.P.declareProgram
+import all Lanius.Mini.Compiler.P.elementAddress
+import all Lanius.Mini.Compiler.P.elementBase
+import all Lanius.Mini.Compiler.P.enumVariants
+import all Lanius.Mini.Compiler.P.equality
+import all Lanius.Mini.Compiler.P.evalDivide
+import all Lanius.Mini.Compiler.P.evalDivideSint
+import all Lanius.Mini.Compiler.P.evalNot
+import all Lanius.Mini.Compiler.P.evalSame
+import all Lanius.Mini.Compiler.P.extentAfter
+import all Lanius.Mini.Compiler.P.floatApply
+import all Lanius.Mini.Compiler.P.guardAnd
+import all Lanius.Mini.Compiler.P.hostRandomCode
+import all Lanius.Mini.Compiler.P.imageLimit
+import all Lanius.Mini.Compiler.P.importOk
+import all Lanius.Mini.Compiler.P.importsOk
+import all Lanius.Mini.Compiler.P.indexOf
+import all Lanius.Mini.Compiler.P.iteThen
+import all Lanius.Mini.Compiler.P.killShared
+import all Lanius.Mini.Compiler.P.leftTrue
+import all Lanius.Mini.Compiler.P.loadAtBytes
+import all Lanius.Mini.Compiler.P.longer
+import all Lanius.Mini.Compiler.P.lowerAddress
+import all Lanius.Mini.Compiler.P.lowerApply
+import all Lanius.Mini.Compiler.P.lowerBody
+import all Lanius.Mini.Compiler.P.lowerCallSig
+import all Lanius.Mini.Compiler.P.lowerLoadType
+import all Lanius.Mini.Compiler.P.lowerLocal
+import all Lanius.Mini.Compiler.P.lowerReturn
+import all Lanius.Mini.Compiler.P.lowerSetCallArgs
+import all Lanius.Mini.Compiler.P.lowerSetValues
+import all Lanius.Mini.Compiler.P.lowerShift
+import all Lanius.Mini.Compiler.P.lowerSlice
+import all Lanius.Mini.Compiler.P.lowerTagged
+import all Lanius.Mini.Compiler.P.matchDst
+import all Lanius.Mini.Compiler.P.matchVariants
+import all Lanius.Mini.Compiler.P.moduleExports
+import all Lanius.Mini.Compiler.P.moduleFirsts
+import all Lanius.Mini.Compiler.P.modulesOk
+import all Lanius.Mini.Compiler.P.render
+import all Lanius.Mini.Compiler.P.repeatType
+import all Lanius.Mini.Compiler.P.shortCircuit
+import all Lanius.Mini.Compiler.P.sigs
+import all Lanius.Mini.Compiler.P.sintToUint
+import all Lanius.Mini.Compiler.P.storeArray
+import all Lanius.Mini.Compiler.P.storeEvalWord
+import all Lanius.Mini.Compiler.P.storeType
+import all Lanius.Mini.Compiler.P.storeWordElement
+import all Lanius.Mini.Compiler.P.structFields
+import all Lanius.Mini.Compiler.P.substAll
+import all Lanius.Mini.Compiler.P.usizeWidth
+import all Lanius.Mini.Compiler.P.widthOf
+import all Lanius.Mini.Compiler.P.wordElement
+import all Lanius.Mini.Compiler.P.wordStride
+import all Lanius.Mini.Compiler.P.wordWidth
+import all Lanius.Mini.Compiler.Types
+public import Lanius.Mini.Compiler.P.SrcExpr_guard
+public import Lanius.Mini.Compiler.P.SrcType_size
+public import Lanius.Mini.Compiler.P.UintTy_half
+public import Lanius.Mini.Compiler.P.UintTy_isWide
+public import Lanius.Mini.Compiler.P.armScope
+public import Lanius.Mini.Compiler.P.consArgs
+public import Lanius.Mini.Compiler.P.elementBase
+public import Lanius.Mini.Compiler.P.evalDivide
+public import Lanius.Mini.Compiler.P.evalDivideSint
+public import Lanius.Mini.Compiler.P.evalNot
+public import Lanius.Mini.Compiler.P.evalSame
+public import Lanius.Mini.Compiler.P.hostRandomCode
+public import Lanius.Mini.Compiler.P.longer
+public import Lanius.Mini.Compiler.P.lowerBody
+public import Lanius.Mini.Compiler.P.lowerCallSig
+public import Lanius.Mini.Compiler.P.lowerLoadType
+public import Lanius.Mini.Compiler.P.lowerLocal
+public import Lanius.Mini.Compiler.P.matchDst
+public import Lanius.Mini.Compiler.P.matchVariants
+public import Lanius.Mini.Compiler.P.shortCircuit
+public import Lanius.Mini.Compiler.P.sigs
+public import Lanius.Mini.Compiler.P.storeArray
+public import Lanius.Mini.Compiler.P.storeEvalWord
+public import Lanius.Mini.Compiler.P.wordElement
+public import Lanius.Mini.Compiler.P.wordStride
+
+@[expose] public section
 /-! Effectful expressions (`SrcEff`): calls anywhere in an expression, in
 Core's evaluation order. `e.eval sigs scope slot` is code that leaves the
 value in the slots from `slot`; `EvalSound` says it represents Core's value.
@@ -1640,10 +1755,9 @@ theorem eval_stride {k slice : Nat} (ok : evalStride sp.decls scope slice slot =
   simp only [Option.some.injEq] at ok
   subst ok
   have wok := wordElement_wordType hel
-  have agg : (∃ id, element.toCore = .structure id) ∨ ∃ id, element.toCore = .enumeration id := by
-    cases element <;> simp_all [wordElement, SrcType.toCore]
+  have agg := wordElement_core hel
   have agg2 := agg
-  rcases agg2 with ⟨id, e⟩ | ⟨id, e⟩ <;>
+  rcases agg2 with ⟨id, e⟩ | ⟨id, e⟩ | e <;>
     (simp only [Semantics.rawSliceStride?, NativeLayout.elementStride?, e] at strideOk; rw [← e] at strideOk)
   all_goals
     cases hwords : NativeLayout.valueWords? sp.toCore element.toCore with
@@ -1652,7 +1766,7 @@ theorem eval_stride {k slice : Nat} (ok : evalStride sp.decls scope slice slot =
     simp only [hwords, Option.some.injEq] at strideOk
     subst strideOk
     rw [NativeLayout.valueWords?, show NativeLayout.maxDepth = 63 + 1 from rfl] at hwords
-    have small := words_le_max agg hwords
+    have small := words_le_max3 agg hwords
     have wEq := wordType_words element wok hwords
     subst wEq
     refine ⟨_, rfl, ?_⟩
@@ -3107,7 +3221,7 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
       simp only [Option.some.injEq] at ok
       subst ok
       have nb : Semantics.isByte element.toCore = false := by
-        revert hel; cases element <;> simp [wordElement, SrcType.toCore, Semantics.isByte]
+        exact wordElement_notByte hel
       simp only [Semantics.writeRawNative, nb, Bool.false_eq_true, ↓reduceIte] at stored
       obtain ⟨hp', exec, hc'⟩ := storeElement_sound (mp := mp) hc2 hel posEq located stored flat sOk bound3
       exact finish exec hc'

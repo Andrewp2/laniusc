@@ -64,7 +64,7 @@ fn hash_map_preserves_entries_and_releases_storage_on_every_allocation_failure()
     let exe = executable("alloc_hash_failure");
     let trace = common::TempArtifact::new("laniusc_hash_map", "trace", None);
     let traced = |when: Option<usize>| {
-        let mut command = std::process::Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -104,7 +104,7 @@ fn hash_map_preserves_entries_and_releases_storage_on_every_allocation_failure()
     let owned = executable("alloc_hash_types");
     let output = common::short_process_output_with_timeout(
         "hash map nested ownership",
-        std::process::Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap"])

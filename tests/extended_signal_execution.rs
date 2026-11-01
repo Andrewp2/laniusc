@@ -38,7 +38,7 @@ fn finite_errors_limits_borrows_and_every_allocation_failure_cleanup() {
     let trace = common::TempArtifact::new("laniusc_signal", "allocations", None);
     let output = common::short_process_output_with_timeout(
         "signal numeric error cleanup",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap"])
@@ -48,7 +48,7 @@ fn finite_errors_limits_borrows_and_every_allocation_failure_cleanup() {
     no_leaks(&std::fs::read_to_string(trace.path()).unwrap());
     let mut count = 0;
     for when in 0..=5 {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())

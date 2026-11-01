@@ -83,7 +83,7 @@ fn owned_files_execute_modes_transfer_reuse_and_byte_paths() {
 
     let exe = fixture("owned_file_path_limit");
     let trace = common::TempArtifact::new("laniusc_owned_file", "path_limit", None);
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args(["-e", "trace=open"])
@@ -130,7 +130,7 @@ fn owned_file_copy_preserves_errno_and_closes_on_every_failure_path() {
         if output_path.exists() {
             std::fs::remove_file(&output_path).unwrap();
         }
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -262,7 +262,7 @@ fn file_concat_executes_binary_large_and_non_utf8_files_and_cleans_up() {
         ("write:error=EIO:when=2", 1024),
         ("close:error=EIO:when=1", first.len()),
     ] {
-        let output = run(Command::new("strace")
+        let output = run(crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=open,close,read,write", "-e"])

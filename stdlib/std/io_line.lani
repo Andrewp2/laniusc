@@ -74,12 +74,8 @@ pub fn write_stdout_lf_line_from_i32(values: [i32], len: i32) -> bool {
     if (!codes_are_bytes(values, len)) {
         return false;
     }
-    let index: i32 = 0;
-    while (index<len) {
-        if (!std::io_byte::write_stdout_byte(values[index])) {
-            return false;
-        }
-        index += 1;
+    if (!std::io_byte::write_code_view(1, values, len)) {
+        return false;
     }
     return std::io_byte::write_stdout_byte(10);
 }
@@ -88,12 +84,8 @@ pub fn write_stderr_lf_line_from_i32(values: [i32], len: i32) -> bool {
     if (!codes_are_bytes(values, len)) {
         return false;
     }
-    let index: i32 = 0;
-    while (index<len) {
-        if (!std::io_byte::write_stderr_byte(values[index])) {
-            return false;
-        }
-        index += 1;
+    if (!std::io_byte::write_code_view(2, values, len)) {
+        return false;
     }
     return std::io_byte::write_stderr_byte(10);
 }

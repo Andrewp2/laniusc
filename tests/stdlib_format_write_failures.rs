@@ -37,7 +37,7 @@ fn preflight() -> &'static common::TempArtifact {
     EXE.get_or_init(|| executable("preflight.lani"))
 }
 fn memory_command(exe: &common::TempArtifact, trace: &common::TempArtifact) -> Command {
-    let mut command = Command::new("strace");
+    let mut command = crate::common::strace();
     command
         .args(["-qq", "-o"])
         .arg(trace.path())
@@ -263,7 +263,7 @@ fn owned_buffered_writer_constructor_oom_and_explicit_finish_retry_release_once(
     for when in [None, Some(1), Some(2)] {
         let trace =
             common::TempArtifact::new("laniusc_format_write_failure", "buffer_memory", None);
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())

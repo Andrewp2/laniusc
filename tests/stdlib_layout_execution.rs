@@ -2,7 +2,7 @@
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod common;
 
-use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command, time::Duration};
+use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, time::Duration};
 
 #[test]
 fn checked_layout_arithmetic_executes_literal_boundaries_without_host_effects() {
@@ -22,7 +22,7 @@ fn checked_layout_arithmetic_executes_literal_boundaries_without_host_effects() 
     let trace = common::TempArtifact::new("laniusc_layout", "all_syscalls", None);
     let output = common::process_output_with_timeout(
         "literal layout arithmetic, forged metadata and error precedence",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=all", "-e", "signal=none"])

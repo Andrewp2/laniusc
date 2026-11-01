@@ -133,7 +133,7 @@ class Cases:
         directory = self.root / ("%03d-" % self.count + label)
         directory.mkdir()
         trace = directory / "syscalls.log"
-        command = ["strace", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-e", "signal=none",
+        command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-e", "signal=none",
                    "-o", str(trace), "-e", "trace=" + ",".join(sorted(CALLS))]
         assert len({item["call"] for item in rules}) == len(rules), "duplicate injection replaces an earlier rule"
         for item in rules:

@@ -22,7 +22,7 @@ REQUEST = b"POST /close HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\n\r\n
 
 def invoke(executable, certificates, trace, version, *, normal=False, target=None):
     parent = None
-    command = ["strace", "--kill-on-exit", "-qq", "-i", "-s", "96", "-o", str(trace),
+    command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-i", "-s", "96", "-o", str(trace),
                "-e", "trace=mmap,munmap,open,openat,close,socket,bind,listen,accept,accept4,connect,getsockopt,getsockname,getpeername,fcntl,sendto,recvfrom,poll,shutdown,clock_gettime,read,write"]
     if target is not None:
         command += ["-e", f"inject=close:error=EIO:when={target['ordinal']}"]

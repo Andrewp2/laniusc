@@ -209,7 +209,7 @@ fn par_sorts_map_reduce_and_scan_match_a_model() {
     shapes.push(vec![]);
     shapes.push(vec![-1]);
     for keys in &shapes {
-        for (mode, workers) in [(0u32, 7u32), (1, 8), (2, 1), (3, 1), (4, 3), (5, 8), (6, 4), (7, 5), (8, 8), (9, 1)] {
+        for (mode, workers) in [(0u32, 7u32), (1, 8), (2, 1), (3, 1), (4, 3), (5, 8), (6, 4), (7, 5), (8, 8), (9, 1), (10, 8), (11, 8)] {
             let mut input = Vec::new();
             for word in [mode, workers, keys.len() as u32] { input.extend_from_slice(&word.to_le_bytes()); }
             for key in keys { input.extend_from_slice(&key.to_le_bytes()); }
@@ -221,12 +221,12 @@ fn par_sorts_map_reduce_and_scan_match_a_model() {
             assert_eq!(output.status.code(), Some(0), "mode {mode}");
             let mut expected = Vec::new();
             match mode {
-                0 | 2 | 6 => {
+                0 | 2 | 6 | 10 => {
                     let mut sorted = keys.clone();
                     sorted.sort();
                     for key in sorted { expected.extend_from_slice(&key.to_le_bytes()); }
                 }
-                1 | 3 => {
+                1 | 3 | 11 => {
                     let mut order: Vec<u32> = (0..keys.len() as u32).collect();
                     order.sort_by_key(|&i| keys[i as usize]);
                     for &i in &order { expected.extend_from_slice(&keys[i as usize].to_le_bytes()); }
@@ -260,4 +260,69 @@ fn par_sorts_map_reduce_and_scan_match_a_model() {
             assert!(output.stdout == expected, "mode {mode} workers {workers} n {}", keys.len());
         }
     }
+}
+
+// std::uring: the fixture's exact checks (backpressure, a 10,000-op stream,
+// short reads, EOF, errors, links, accept/recv/send, transfer), then the cat
+// and copy samples on block-boundary sizes, a pipe and a missing name
+// (uring_oracle.py runs the larger comparison against GNU cat and cp).
+#[test]
+fn uring_checks_and_batched_cat_and_copy_are_exact() {
+    let fixture = native("tests/fixtures/stdlib_execution/concurrency/uring.lani", "uring");
+    let scratch = common::TempArtifact::new("laniusc_concurrency", "uring_dir", None);
+    fs::create_dir_all(scratch.path()).unwrap();
+    let mut command = Command::new(fixture.path());
+    command.arg("checks").arg(scratch.path());
+    let output = common::process_output_with_timeout("uring checks", &mut command, Duration::from_secs(60));
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(output.status.code(), Some(0), "{text}");
+    assert!(!text.contains("FAIL"), "{text}");
+    assert!(text.contains("stream.completed 10000\n") && text.contains("full.cq 16\n"), "{text}");
+
+    let cat = native("sample_programs/library/uring_cat.lani", "uring_cat");
+    let copy = native("sample_programs/library/uring_copy.lani", "uring_copy");
+    let mut state: u64 = 5;
+    let mut files = Vec::new();
+    let mut expected = Vec::new();
+    for (index, size) in [0usize, 1, 4095, 131071, 131072, 131073, 1048577, 2_000_003].into_iter().enumerate() {
+        let bytes: Vec<u8> = (0..size).map(|_| {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            (state >> 56) as u8
+        }).collect();
+        let path = scratch.path().join(format!("f{index}"));
+        fs::write(&path, &bytes).unwrap();
+        expected.extend_from_slice(&bytes);
+        let target = scratch.path().join(format!("c{index}"));
+        fs::write(&target, vec![b'x'; size + 100]).unwrap();
+        let mut command = Command::new(copy.path());
+        command.arg(&path).arg(&target);
+        let output = common::process_output_with_timeout("uring copy", &mut command, Duration::from_secs(60));
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert!(fs::read(&target).unwrap() == bytes, "copy {size}");
+        files.push(path);
+    }
+    let mut command = Command::new(cat.path());
+    command.args(&files);
+    let output = common::process_output_with_timeout("uring cat", &mut command, Duration::from_secs(60));
+    assert_eq!(output.status.code(), Some(0), "{:?}", output.status);
+    assert!(output.stdout == expected);
+    // stdin through "-", and a missing name: skipped, exit 1, one diagnostic.
+    let missing = scratch.path().join("missing");
+    let mut command = Command::new(cat.path());
+    command.arg(&files[2]).arg(&missing).arg("-").stdin(fs::File::open(&files[6]).unwrap());
+    let output = common::process_output_with_timeout("uring cat", &mut command, Duration::from_secs(60));
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stdout == [fs::read(&files[2]).unwrap(), fs::read(&files[6]).unwrap()].concat());
+    assert_eq!(String::from_utf8(output.stderr).unwrap(), format!("uring_cat: {}: errno 2\n", missing.display()));
+    fs::remove_dir_all(scratch.path()).unwrap();
+}
+
+// std::pthread: parallel sums against the serial sum, a Mutex-guarded
+// counter, a bounded Condvar queue and 1,000 sequential spawn/join pairs.
+#[test]
+fn pthread_sum_counter_queue_and_join_are_exact() {
+    let program = native("tests/fixtures/stdlib_execution/concurrency/threads.lani", "threads");
+    let text = run(&program, None);
+    assert!(!text.contains("FAIL"), "{text}");
+    assert!(text.contains("counter 160000\n") && text.contains("join.pairs 1000\n") && text.contains("queue.taken 40000\n"), "{text}");
 }

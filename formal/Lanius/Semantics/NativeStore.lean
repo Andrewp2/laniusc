@@ -1,9 +1,12 @@
-import Lanius.Semantics.NativeEncoding
-import Lanius.Memory.Read
-import Lanius.Memory.StoreSame
-import Lanius.Memory.Footprint
-import Lanius.Semantics.Native.Codec
+module
 
+public import Lanius.Semantics.NativeEncoding
+public import Lanius.Memory.Read
+public import Lanius.Memory.StoreSame
+public import Lanius.Memory.Footprint
+public import Lanius.Semantics.Native.Codec
+
+@[expose] public section
 namespace Lanius.Semantics
 
 open Lanius Lanius.Core Lanius.Memory

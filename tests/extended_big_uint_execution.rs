@@ -147,7 +147,7 @@ fn allocator_denial_at_every_attempt_preserves_inputs_and_releases_all_storage()
     let exe = executable("big_uint_faults");
     let run = |failure: Option<usize>| {
         let trace = common::TempArtifact::new("laniusc_big_uint", "trace", None);
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())

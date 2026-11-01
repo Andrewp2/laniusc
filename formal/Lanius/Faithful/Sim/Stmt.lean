@@ -1,5 +1,8 @@
-import Lanius.Faithful.Sim.EffStep
+module
 
+public import Lanius.Faithful.Sim.EffStep
+
+@[expose] public section
 /-! # Statements
 
 A statement `stmtOk` accepts, that Core completes with fuel `k ≤ N`, ends as

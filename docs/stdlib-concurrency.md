@@ -241,7 +241,55 @@ search. Every worker therefore shares even the last round, which merges the
 two halves of the whole array. `scratch` must be as long as `data`; if the
 round count is odd, a parallel copy moves the result back. Errors are
 `InvalidPlan`, `LengthMismatch`, `Failed` (a worker exited nonzero or work
-was left pending), `Steal`, `Sync` and `Worker`.
+was left pending), `Steal`, `Sync`, `Worker` and `Thread`.
+
+### Threaded sorts
+
+`sort_unstable_threads(plan, data, scratch, entry)` and
+`sort_stable_threads(...)` run the same phases with a crew of `workers - 1`
+[`std::pthread`](stdlib-threads.md) threads instead of forked children. The
+threads share the caller's address space, so nothing is forked and nothing
+is copied. A thread's start routine must be a non-generic `fn (ptr) -> ptr`,
+so the caller passes a one-line entry for its element type:
+
+```lani
+fn key_crew(arg: ptr) -> ptr { return std::par::crew_entry<i64>(arg); }
+std::par::sort_unstable_threads(plan, keys, spare, key_crew).unwrap();
+```
+
+The entry must instantiate `crew_entry` with the `T` of that sort. Each
+worker's record (plan, data, scratch, index) sits in the plan's crew area.
+The crew threads start once per sort and are all joined before it returns.
+`par_sort.lani` modes 10 and 11 run these two sorts. The model oracle now
+covers 12 modes, 4,320 runs over 8 seeds, with 0 mismatches.
+
+Fork and thread crews on 10M i64 keys, in ms, at 8 workers, interleaved.
+The load average was 24–27 from other jobs, so read the ranges, not single
+runs:
+
+| Sort | Forked crew | Thread crew |
+| --- | --- | --- |
+| unstable, i64 | 504–964 | 469–541 |
+| stable, (key, index) records | 1,996–2,335 | 2,968–3,779 |
+
+On 2M keys, again in ms, the two crews are equal at 1 worker. From 2
+workers up, the unstable thread sort is 8–15% faster and the stable thread
+sort is 1.4–1.5x slower:
+
+| Workers | Unstable, fork | Unstable, threads | Stable, fork | Stable, threads |
+| --- | --- | --- | --- | --- |
+| 1 | 324 | 352 | 1,396 | 1,391 |
+| 2 | 250 | 226 | 764 | 1,080 |
+| 4 | 130 | 120 | 567 | 790 |
+| 8 | 74 | 63 | 301 | 463 |
+
+The stable slowdown is user time: 18–19 s of CPU against 11.7 s forked,
+with fewer page faults (127k against 243k). Both crews run the same code on
+the same shared arrays, so the extra cycles look like threads contending on
+something processes keep private while sorting two-word records. A probe of
+record-returning calls (`target/claude-work/s4/thr/scale.lani`) gave exact
+results and showed no record-specific slowdown, so the cause is still open.
+The forked sorts stay the default.
 
 ## Samples
 
@@ -378,50 +426,71 @@ after, with 0 mismatches.
 On 10,000,000 random i64 keys, the laptop (16 hardware threads, shared
 with other agents' jobs) timed the sort alone, as the runner measures it.
 C++ is `g++ 13.3 -O2` on the same binary keys, also timing the sort alone.
-Quiet means a load average below 16; loaded means 16–25, with C++ runs
-interleaved with the Lanius ones.
+Each row is three rounds of a benchmark that waits for a load average
+below 10, then runs the Lanius and C++ binaries interleaved.
 
-| Sort | Workers | Quiet | Loaded |
-| --- | --- | --- | --- |
-| C++ `std::sort` | 1 | 638–699 ms | 682–1,019 ms |
-| C++ `std::stable_sort` | 1 | 775 ms | 859 ms |
-| C++ `__gnu_parallel::sort` (OpenMP) | 8 | 140 ms | 231 ms |
-| `std::par::sort_unstable` | 1 | 1.77 s | |
-| `std::par::sort_unstable` | 8 | 387–392 ms | 611–881 ms |
-| `std::par::sort_unstable` | 16 | 390 ms | 861 ms |
-| `std::par::sort_stable` on (key, index) | 8 | 1.94 s | 1.99 s |
-| `std::par::sort_stable` on (key, index) | 16 | | 1.84 s |
-| `core::slice::sort_unstable` | 1 | 7.1–9.2 s | |
-| `core::slice::sort_stable` on (key, index) | 1 | 27.9 s | |
-| GNU `sort -n --parallel=8` on the same keys as text | 8 | 6.6 s | |
-| GNU `sort -n --parallel=16` | 16 | 4.5 s | |
+| Sort | Workers | Time |
+| --- | --- | --- |
+| C++ `std::sort` | 1 | 577–689 ms |
+| C++ `std::stable_sort` | 1 | 775–859 ms |
+| C++ `__gnu_parallel::sort` (OpenMP) | 8 | 118–179 ms |
+| `std::par::sort_unstable` | 1 | 1.36–1.42 s |
+| `std::par::sort_unstable` | 8 | 306–373 ms |
+| `std::par::sort_unstable` | 16 | 239–369 ms |
+| `std::par::sort_stable` on (key, index) | 8 / 16 | 1.39 / 1.25 s |
+| `core::slice::sort_unstable` | 1 | 7.1–9.2 s |
+| `core::slice::sort_stable` on (key, index) | 1 | 27.9 s |
+| GNU `sort -n --parallel=8` on the same keys as text | 8 | 6.6 s |
 
-At 8 workers `std::par::sort_unstable` takes 0.6 times as long as C++
-`std::sort` when quiet. Under load the worst pairing was 1.3 times. The GNU
-times include parsing and printing 203 MB of text, written to a file. Every
-`std::par` output matched `core::slice`'s byte for byte, and GNU's once
-converted.
+At 8 workers `std::par::sort_unstable` takes about half as long as C++
+`std::sort`. It takes 2.3–2.8 times as long as `__gnu_parallel::sort`. The
+GNU times include parsing and printing 203 MB of text, written to a file.
+Every `std::par` output matched `core::slice`'s byte for byte, and GNU's
+once converted.
 
-Where the time goes, from a timing build at 8 workers with the load average
-near 16 (667–696 ms in all):
+Where the time goes, from a timing build at 8 workers (368–482 ms in all
+with its own printing):
 
 | Step | Time |
 | --- | --- |
 | Forking 7 children, once | 17–18 ms |
-| Run sorts (16 runs of 625,000 keys) | 454–460 ms |
-| Four merge rounds | 33–56 ms each, 165–185 ms in all |
+| Run sorts (16 runs of 625,000 keys) | 256–356 ms |
+| Four merge rounds | 17–31 ms each, 77–92 ms in all |
 | Stop and join | 15–26 ms |
 
-Two changes brought 8 workers from 1.1–1.7 s to under 0.4 s:
+The changes that got here:
 
 - The direct `T::lt` run sort cut the run phase from 943 ms to 314 ms.
-- Keeping one crew saved most of the rest. Forking per phase cost 30–39 ms
-  of fork stagger in every one of the five phases, because each fork copies
-  the page tables of the parent's large input buffers.
+- One crew for all phases removed 30–39 ms of fork stagger per phase. Each
+  fork copies the page tables of the parent's large input buffers.
+- Carrying both merge heads in locals reloads one element per output
+  instead of three. That halved each merge round and cut the stable sort
+  from 1.98 s to 1.39 s at 8 workers.
+- Carrying the stopped scan values into the partition swap made the
+  single-threaded sort about 6% faster.
 
-What is left is per-core speed. Single-threaded, the introsort takes 1.77 s
-against C++'s 0.65 s, about 2.7 times as long. A direct `T::lt` comparison in
-a loop costs about 6 ns in the current native code.
+Two alternatives to the four merge rounds were measured and are not used:
+
+- A single multiway merge. Regular-sample splitters cut the output into
+  pieces, and each piece merges 16 runs through a loser tree. Its merge
+  phase took 135 ms. Four two-way rounds took 165–185 ms then, and take
+  77–92 ms with carried heads. End to end the multiway version took
+  361–645 ms, against 296–392 ms for the four rounds in the same runs.
+  Per level, the tree's local-array traffic costs more than a two-way merge
+  step.
+- A sample sort with 63 splitters, block counts, a stable scatter and
+  splitter-equal buckets. It took 399–545 ms, against 319–378 ms for the
+  four rounds in the same runs. Classifying every key twice (count, then
+  scatter) took 90–100 ms and 120 ms, more than the merges it replaces.
+
+What is left is per-core speed: the run sorts are 70–75% of the time. One
+thread takes 1.36–1.42 s against C++'s 0.6 s. In the generated code, each
+slice access reloads the slice's base, length and stride from the stack,
+checks bounds and multiplies the index by the stride. A loop of two slice
+loads and an `i64` compare costs 4.4 ns per iteration, against 0.74 ns for
+the empty loop. Calling `T::lt` instead of `<` adds only 0.8 ns. Closing the
+gap to `__gnu_parallel::sort` needs cheaper slice access in the compiler,
+not a different parallel decomposition.
 
 `scan` on the same 10,000,000 keys:
 

@@ -87,7 +87,7 @@ fn ledger(trace: &str, messages: bool) -> Ledger {
 
 fn traced(exe: &common::TempArtifact, fail_at: Option<usize>) -> (Output, String) {
     let trace = common::TempArtifact::new("laniusc_clone_hash_map", "trace", None);
-    let mut command = Command::new("strace");
+    let mut command = crate::common::strace();
     command
         .args(["-qq", "-o"])
         .arg(trace.path())

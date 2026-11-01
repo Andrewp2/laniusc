@@ -34,7 +34,7 @@ fn container_contracts_execute_native_strides_selected_views_ownership_and_inval
     let trace = common::TempArtifact::new("laniusc_compression", "contracts", None);
     let output = common::process_output_with_timeout(
         "compression contracts",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap"])
@@ -514,7 +514,7 @@ fn every_observed_allocation_failure_frees_partial_outputs_and_no_result_escapes
         input.write_bytes(frame(std::slice::from_ref(&c)));
         let trace = common::TempArtifact::new("laniusc_compression", "trace", None);
         let run = |inject: Option<usize>| {
-            let mut command = Command::new("strace");
+            let mut command = crate::common::strace();
             command
                 .args(["-qq", "-o"])
                 .arg(trace.path())

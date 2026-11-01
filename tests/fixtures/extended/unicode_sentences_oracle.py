@@ -98,7 +98,7 @@ def run(executable):
     vectors=cases();packet=b''.join(struct.pack('<I',len(s.encode()))+s.encode() for s,e in vectors)
     assert max(len(s.encode()) for s,e in vectors)<=131072
     with tempfile.NamedTemporaryFile() as trace:
-        r=subprocess.run(['strace','-qq','-o',trace.name,'-e','trace=mmap,munmap','-e','inject=mmap:error=ENOMEM:when=1+',executable],input=packet,capture_output=True,timeout=45)
+        r=subprocess.run(['strace','-E','LANIUS_ALLOC=mmap','-qq','-o',trace.name,'-e','trace=mmap,munmap','-e','inject=mmap:error=ENOMEM:when=1+',executable],input=packet,capture_output=True,timeout=45)
         events=Path(trace.name).read_text()
     assert r.returncode==0 and not r.stderr,(r.returncode,r.stderr)
     assert not events,('segmentation attempted allocation',events)

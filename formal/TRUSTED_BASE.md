@@ -39,18 +39,28 @@ stopping at the computations the theorems are about (`compileSource`,
 `linkObjects`, `elfFile`, `sourceProgramFiles`, `compileWords`,
 `frontEndWords` and the self program `Lanius.Faithful.Self.prog`, which are
 not trusted, section 10), with each one's type and body:
-definitions `adcfd7afcaf25cbd` (4,441 constants). This covers Core's
+definitions `a784f30fce5c9322` (4443 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
-modules keeps its hash. The last change of the hash (11-01, review finding
-5, the restatement of the first reason): `SelfShort`'s first reason is
+modules keeps its hash. The last change of the hash (11-01, merge of
+review-fixes into lang): it combines lang's `u16` views
+(`b8d2e28d6f544c42`) and review-fixes' restatement of review finding 5's
+first reason (`adcfd7afcaf25cbd`), which did not change each other's
+definitions. The restatement: `SelfShort`'s first reason is
 `SelfPanics W` (`Faithful/SelfPanics.lean`): no cost at any fuel, and with
 the prelude's `plus` and `times` wrapping the pure compile has a value
 (`compileW`, through `pcall` of `progW`, which is `prog` with those two
 functions' bodies replaced by `wrapAt` and `wrapFunc`,
 `Faithful/Sim/Wrap.lean`, at `ixPlus` and `ixTimes`,
-`Faithful/Gen/SelfLiveTab.lean`). Before that (11-01, review finding
+`Faithful/Gen/SelfLiveTab.lean`). The `u16` views (11-01, merge of
+rfront's `u16` views into lang): Core's `u16` views (SEMANTIC_DECISIONS
+"`u16` views"): a raw slice of `u16` is a word view in laniusc's layout, one
+descending 8-byte word per element (`rawSliceElementAddress?` and
+`mapRawNominalSlice` take it as they take a struct or enum,
+`NativeLayout.elementStride?` is -8 and `words?` of a `[u16]` is 3), and
+`RawNominalSliceElement.word16` types it; the hash before it was
+`da057f9f0d2562a7` (Reviewer A's change kept it). Before that (11-01, review finding
 5 piece (c)): the new top theorems `selfCompiler_reason`,
 `selfHost_fixpoint_reason` and `selfHost_outcome_reason` bring in
 `SelfFaultReason` and `SelfShort` (`Faithful/SelfShort.lean`), `selfCost`,
@@ -58,8 +68,13 @@ functions' bodies replaced by `wrapAt` and `wrapFunc`,
 cost semantics `qcall` (`Faithful/Cost.lean`), the pure semantics it
 shares with `pcall` (`Faithful/Pure.lean`), `boxCost`
 (`Faithful/Fwd/Prim.lean`) and the prim table `prims`
-(`Faithful/Gen/SelfPureTab.lean`); no existing definition changed. Before
-that (11-01): the lexer
+(`Faithful/Gen/SelfPureTab.lean`); no existing definition changed; merged with F12's module conversion,
+which changes no definition's meaning. Before that (11-01, F12): Core's
+semantics, the x86 model, the memory model and the self program's
+simulation became Lean `module`s, so their auxiliary definitions (matchers,
+`_proof_N`) are named per module: the same constants, with 18 hashes that
+differ only in the names of the auxiliaries they mention; no definition's
+meaning changed. Before that (11-01): the lexer
 (`Lanius/Compiler/Lexer*.lean`, `Tokens.lean`) and the reading became Lean
 `module`s, so a function's matcher is its own (`OneTokenResult.shift.match_1`)
 rather than shared with a derived `Repr` instance's; no definition's meaning
@@ -508,7 +523,15 @@ Not trusted: laniusc's lexer and parser, and the parse trees they give.
 the production ids in preorder and each node's parent), but the theorems
 mention no tree: they are about the one reading of the texts. A wrong tree
 is rejected, or it is still the parse tree of the same tokens, which is
-unique. Trusted:
+unique. So the trees the certificates and the self program's files are made
+from need not be laniusc's own runs either: `formal/tools/cert_trees.py`
+takes each file's tree from a cache keyed by the file's bytes and the text
+of the extracted definitions `grammar` uses (not laniusc's binary), or from
+an untrusted CPU parser (`fuzz_oracle.Parser`), and asks laniusc only for a
+file neither gives a tree for. Every tree, from any of them, is checked by
+the validator before it is used, and a tree the validator accepts is the
+one parse tree of the tokens (`Lanius.Mini.Unique`), the tree laniusc gives
+when it is right; a stale cache entry is rejected, never used. Trusted:
 
 - **The lexer.** `Lanius.Compiler.Lexer.lexCanonical`
   (`Lanius/Compiler/LexerCanonical.lean`) is the meaning of Lanius's lexical

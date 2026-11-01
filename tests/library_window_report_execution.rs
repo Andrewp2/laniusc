@@ -148,7 +148,7 @@ fn window_report_releases_owners_on_allocation_validation_and_io_failures() {
     let input = common::TempArtifact::new("laniusc_window", "fault_input", None);
     let trace = common::TempArtifact::new("laniusc_window", "trace", None);
     let traced = |injection: Option<&str>| {
-        let mut command = std::process::Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())

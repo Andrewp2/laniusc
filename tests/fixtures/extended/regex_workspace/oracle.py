@@ -149,7 +149,7 @@ class Suite:
         directory = self.directory / f"{self.count:02d}"
         directory.mkdir()
         trace = directory / "syscalls.log"
-        command = ["strace", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-o", str(trace),
+        command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-o", str(trace),
                    "-e", "trace=" + LEDGER.TRACE]
         if injection is not None:
             command += ["-e", f"inject=mmap:error=ENOMEM:when={injection}"]

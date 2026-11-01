@@ -135,7 +135,7 @@ fn uri_resolve_program_cleans_partial_results_on_allocation_and_output_failures(
         format!("http://example.test/a/c\nhttp://example.test/a/{long}\nhttp://example.test/a/b\n")
             .into_bytes();
     let execute = |injection: Option<&str>, status| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())

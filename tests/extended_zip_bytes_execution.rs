@@ -503,7 +503,7 @@ fn releases_all_owners_under_every_observed_allocation_and_io_failure() {
         checked(&baseline, 0);
         let expected = &baseline.stdout;
         let execute = |injection: Option<&str>, status| {
-            let mut command = Command::new("strace");
+            let mut command = crate::common::strace();
             command
                 .args(["-qq", "-o"])
                 .arg(trace.path())
@@ -567,7 +567,7 @@ fn releases_all_owners_under_every_observed_allocation_and_io_failure() {
     }
     // Even a failed best-effort diagnostic preserves the original format status.
     let file = input(b"malformed archive");
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args([

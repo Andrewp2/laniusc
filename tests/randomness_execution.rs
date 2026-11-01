@@ -130,7 +130,7 @@ impl Reference {
 fn random_contracts_execute_generics_rejection_and_float_boundaries_without_allocation() {
     let exe = executable("tests/fixtures/stdlib_foundation/random_contracts.lani");
     let trace = common::TempArtifact::new("laniusc_randomness", "portable_trace", None);
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args([
@@ -253,7 +253,7 @@ fn os_entropy_preserves_bytes_progress_errors_and_source_sampling() {
     let exe = executable("tests/fixtures/stdlib_host/entropy_contracts.lani");
     let trace = common::TempArtifact::new("laniusc_randomness", "entropy_trace", None);
     let execute = |mode: &str, fault: Option<&str>, error: i32, count: usize| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-xx", "-s", "1024", "-o"])
             .arg(trace.path())
@@ -389,7 +389,7 @@ fn large_generation_sampling_and_shuffle_match_state_without_extra_allocations()
             let mut expected = vec![hash];
             expected.extend(reference.0);
             let allocations = usize::from(mode == 2 && count != 0);
-            let mut command = Command::new("strace");
+            let mut command = crate::common::strace();
             command
                 .args(["-qq", "-o"])
                 .arg(trace.path())
@@ -576,7 +576,7 @@ fn shuffle_program_uses_entropy_only_when_needed_and_cleans_up_every_failure() {
                   status: i32,
                   require_injected: bool| {
         input.write_bytes(bytes);
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())

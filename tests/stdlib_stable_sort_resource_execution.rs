@@ -258,7 +258,7 @@ fn run(
 ) -> (Vec<u8>, Effects) {
     let trace = common::TempArtifact::new("laniusc_stable_sort", "trace", None);
     let input = common::TempArtifact::new("laniusc_stable_sort", "configuration", None);
-    let mut command = Command::new("strace");
+    let mut command = crate::common::strace();
     command
         .args(["--kill-on-exit", "-qq", "-s", "64", "-o"])
         .arg(trace.path())

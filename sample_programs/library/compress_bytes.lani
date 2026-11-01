@@ -14,7 +14,7 @@ import ext::cli;
 import ext::compression;
 import std::args;
 import std::stream;
-struct Options { decode: bool, format: ext::compression::Format, limits: ext::compression::Limits, help: bool }
+struct Options { decode: bool, format: ext::compression::Format, limits: ext::compression::Limits, help: bool, level: i32 }
 impl Options { fn borrow(&self) -> &Options { return self; } }
 fn literal(value: str, count: i32) -> core::slice::View<u8> {
     let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(bytes,count));
@@ -68,7 +68,8 @@ fn apply(options: &Options, item: ext::cli::Occurrence) -> bool {
     if (core::result::is_err(parsed)) { return false; } let value: u64 = core::result::unwrap(parsed); if (value > 2147483647 as u64) { return false; }
     if (item.id == 3) { options.limits.max_input = value as i32; }
     if (item.id == 4) { options.limits.max_output = value as i32; }
-    if (item.id == 5) { options.limits.max_members = value as i32; } return true;
+    if (item.id == 5) { options.limits.max_members = value as i32; }
+    if (item.id == 7) { if (value > 3 as u64) { return false; } options.level = value as i32; } return true;
 }
 fn process(options: Options) -> i32 {
     let input: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(options.limits.max_input)); let source: std::stream::Descriptor = std::stream::stdin();
@@ -77,7 +78,7 @@ fn process(options: Options) -> i32 {
     let bytes: core::slice::View<u8> = core::result::unwrap(core::slice::view(input.as_bytes(),input.len()));
     let converted: core::result::Result<alloc::vec::Vec<u8>,ext::compression::Error> = core::result::Err(ext::compression::Error::Bounds);
     if (options.decode) { converted = ext::compression::decode(bytes,options.format,options.limits); }
-    else { converted = ext::compression::encode(bytes,options.format,options.limits.max_output); }
+    else { converted = ext::compression::encode_level(bytes,options.format,options.limits.max_output,options.level); }
     input.destroy();
     if (core::result::is_err(converted)) { let error: ext::compression::Error = core::result::unwrap_err(converted); return report(codec_status(error),codec_message(error)); }
     let output: alloc::vec::Vec<u8> = core::result::unwrap(converted); let sink: std::stream::Descriptor = std::stream::stdout();
@@ -85,17 +86,18 @@ fn process(options: Options) -> i32 {
     if (core::result::is_err(written)) { return report(3,literal("compress-bytes: output I/O failed\n",34)); } return 0;
 }
 fn arguments(values: std::args::Arguments) -> i32 {
-    let specs: [ext::cli::Spec; 6] = [
+    let specs: [ext::cli::Spec; 7] = [
         ext::cli::Spec { id: 1, long: literal("decompress",10), short: 100, arity: ext::cli::Arity::Flag },
         ext::cli::Spec { id: 2, long: literal("format",6), short: 102, arity: ext::cli::Arity::Required },
         ext::cli::Spec { id: 3, long: literal("max-input",9), short: 0, arity: ext::cli::Arity::Required },
         ext::cli::Spec { id: 4, long: literal("max-output",10), short: 0, arity: ext::cli::Arity::Required },
         ext::cli::Spec { id: 5, long: literal("max-members",11), short: 0, arity: ext::cli::Arity::Required },
-        ext::cli::Spec { id: 6, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag }
+        ext::cli::Spec { id: 6, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 7, long: literal("level",5), short: 108, arity: ext::cli::Arity::Required }
     ];
-    let schema: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,6));
+    let schema: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,7));
     let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(values.as_view(),schema,ext::cli::Ordering::Intermixed));
-    let options: Options = Options { decode: false, format: ext::compression::Format::Gzip, limits: ext::compression::default_limits(), help: false };
+    let options: Options = Options { decode: false, format: ext::compression::Format::Gzip, limits: ext::compression::default_limits(), help: false, level: 0 };
     while (true) {
         let parsed: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next();
         if (core::result::is_err(parsed)) { return report(2,literal("compress-bytes: invalid arguments\n",34)); }
@@ -104,7 +106,7 @@ fn arguments(values: std::args::Arguments) -> i32 {
         if (!valid) { return report(2,literal("compress-bytes: invalid arguments\n",34)); }
     }
     if (options.help) {
-        let usage: core::slice::View<u8> = literal("Usage: compress-bytes [-d] [--format raw|zlib|gzip] [--max-input N] [--max-output N] [--max-members N]\n",103); let sink: std::stream::Descriptor = std::stream::stdout();
+        let usage: core::slice::View<u8> = literal("Usage: compress-bytes [-d] [--format raw|zlib|gzip] [--level 0-3] [--max-input N] [--max-output N] [--max-members N]\n",117); let sink: std::stream::Descriptor = std::stream::stdout();
         if (core::result::is_err(core::io::write_all(sink.borrow(),usage.values,0,usage.len()))) { return report(3,literal("compress-bytes: output I/O failed\n",34)); } return 0;
     } return process(options);
 }

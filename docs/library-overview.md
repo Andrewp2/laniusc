@@ -1,11 +1,23 @@
 # Standard and extended library overview
 
-The full library goal remains open. The current increment adds
+The full library goal remains open. The current increment replaces the
+native runtime's allocator, which made every allocation its own `mmap`, with a
+[pooling allocator](runtime-allocator.md): power-of-two classes up to 32 KiB
+in 1 MiB arenas, free lists per class, and direct `mmap` above that.
+Allocating and freeing 1,000 bytes drops from 6.3 µs to 0.19 µs,
+`alloc::io::read_line` runs 4.5x faster, and the h2c server's system time
+drops from 0.34–0.38 s to 0.09 s. `LANIUS_ALLOC=mmap` restores the old
+syscalls for the failure-injection tests.
+The preceding increment adds
 [bulk slice and vector operations](stdlib-slice-bulk.md): `copy_from_slice`,
 `swap_with_slice`, `fill_range`, `memchr` and `memcmp` in `core::slice`, and
 `try_extend_from_slice`, `copy_from_slice`, `swap_with_slice`, `fill` and
 `swap` on `alloc::vec::Vec`. Packed byte runs move eight bytes at a time:
 a 4 KiB copy runs 5x faster than the element loop and a fill 38x faster.
+`alloc::string`, `alloc::io`, `core::io`, `core::buffered`, `core::utf8_view`,
+`std::io_utf8` and `std::io_line` now [call them](stdlib-slice-bulk.md#callers)
+instead of per-byte loops, and UTF-8 validation skips ASCII eight bytes at a
+time: 7x to 57x on string and buffered-I/O paths, 37x on `Utf8View` edits.
 The preceding increment makes `core::slice` sorting adaptive: [pattern-defeating quicksort](stdlib-sort-algorithms.md)
 for unstable sorts and a run-adaptive stable merge sort with galloping over
 caller scratch. Both are checked against Python `sorted`, with recorded
@@ -29,6 +41,20 @@ owner fields, and the interval-edit fixture shows under an in-program
 RLIMIT_AS denial that failed extraction leaves the source unchanged. Native receipts use the prebuilt compiler; the two registered
 Rust tests type-check and await a full test-binary run.
 The [concurrency increment](stdlib-concurrency.md) adds four modules for parallel
+The [`std::pthread`](stdlib-threads.md) increment runs native threads
+through `pthread_create`/`pthread_join`, with Lanius functions as C entries.
+Threads coordinate with std::sync's futex Mutex and Condvar. Its fixture
+checks parallel sums against the serial sum, an exact Mutex counter, a
+Condvar queue and 1,000 spawn/join pairs. `std::par` adds thread-crew sorts
+that pass the same model oracle.
+The [`std::uring`](stdlib-uring.md) increment drives io_uring through raw
+syscalls (setup, ring mmaps, enter). It adds read, write, readv, writev,
+openat, close, accept, recv and send operations, linked SQEs, and completion
+backpressure that keeps the CQ from overflowing. `Ring::transfer` is a
+batched copy engine. The `uring_cat` and `uring_copy` samples match GNU
+`cat` and `cp` on a 97-case oracle per seed. A 512 MiB file goes to a new
+file in 131 ms with overlapped positional writes, against 169 ms for GNU
+`cat`.
 The [`core::search`](stdlib-search.md) increment adds SWAR byte scans and a
 rarest-byte substring prefilter, used by `Text::find` and the parallel
 grep. A budgeted Two-Way (Crochemore–Perrin) fallback keeps the worst case
@@ -55,7 +81,7 @@ work on native Linux x86_64/glibc with libatomic:
   `scan` as stolen tasks on a `std::steal` pool. The sorts keep one forked crew
   for all phases, sort runs with a direct-comparison introsort or merge
   sort, then merge them in parallel at merge-path splits. A Python model oracle covers 3,600 runs with 0
-  mismatches, including non-commutative scans. On 10M i64 keys, 8 workers take 387–392 ms, against 638–699 ms
+  mismatches, including non-commutative scans. On 10M i64 keys, 8 workers take 306–373 ms, against 577–689 ms
   for C++ `std::sort` at -O2.
 
 The stress fixture keeps exact invariants: 1,600,000 atomic adds; 400,000
@@ -65,8 +91,9 @@ duplication or per-sender FIFO violation. Those 50 runs passed, alongside
 20 runs each of a parallel word count matching `wc` and a three-stage
 pipeline. The stealing fixture runs a 524,287-task tree with every leaf
 exactly once; a parallel quicksort sorts 2,000,000 values in 0.25 s with
-eight workers, against 0.80 s with one. In-process threads remain blocked on checked callback entry, so
-`std::thread` stays unbound.
+eight workers, against 0.80 s with one. C callback entry now exists (a function named as a value,
+[C callbacks](language-ergonomics.md#c-callbacks)) and a fixture starts and joins a pthread running
+Lanius code, but `std::thread` is not yet bound to it.
 The preceding
 The full library goal remains open. The
 [Unicode quick-check and uconv increment](extended-unicode-uconv.md) replaces
@@ -145,7 +172,7 @@ The preceding
 [resumable compression encoder](extended-streaming-deflate.md) adds fixed
 32 KiB blocks, retained pending output and u64 raw/zlib/gzip limits over shared
 block helpers. Its [packed fast pass](extended-streaming-deflate.md#packed-fast-pass)
-encodes gzip at 50–54 MB/s against 3.5–3.8 MB/s before, with byte-identical output. The [file compressor](extended-compress-file.md) uses fixed
+encodes gzip at 50–54 MB/s against 3.5–3.8 MB/s before, with byte-identical output. Opt-in [dynamic Huffman levels](extended-streaming-deflate.md#dynamic-huffman-levels) 1–3 add a sliding window, hash chains, lazy matching and per-block dynamic codes; level 2 comes within 2.9% (docs/stdlib tar) and 6.9% (text tar) of `gzip -6`'s size at 28.7 and 33.8 MB/s. The [file compressor](extended-compress-file.md) uses fixed
 workspace and NoReplace publication. All five library groups and five
 application groups/99 native cases pass, including the 112-case chunk/block
 model and nine reached application allocation denials. This finite native
@@ -1591,6 +1618,14 @@ the generic borrowed client handoff has its separate acceptance above.
 
 **Accepted command completion.**
 
+[`std::cli`](stdlib-cli.md) parses arguments declaratively with GNU
+`getopt_long` rules: unique long-option prefixes, `-abc` clusters, `--opt=value`
+and `--opt value`, optional values, `--`, operand counts and subcommands. It
+generates `--help` text and prints glibc's messages (`unrecognized option
+'--x'`, `option '--co' is ambiguous; possibilities: ...`). It agrees with a
+Python model, itself checked against Python `getopt`, on 6,026 generated and
+fixed cases and 7 help texts. The `tgz` and `seq-diff` samples use it.
+
 [Portable completion and the Bash adapter](extended-cli-complete.md) separate
 three allocation-free modules from host behavior. `ext::cli_complete` reuses
 canonical prefix parsing and command scopes; a Context retains no mutable
@@ -1973,6 +2008,27 @@ oracle adds 691 xz archive cases (now 4,160 in total) against Python
 300 exact decodes by Python, `xz -t` and the Lanius decoder (23,475 cases in
 all).
 
+**Streaming zip.** [`ext::zip_stream`](extended-zip-stream.md) reads and
+writes ZIP records one at a time with u64 offsets: end records with ZIP64,
+central and local headers, ZIP64 and timestamp extras, and data descriptors.
+The [`zip` program](../sample_programs/library/zip.lani) creates archives as
+a stream (to a file or a pipe), with stored or deflated members at levels 0-3
+and optional forced ZIP64. It lists and extracts archives after a full
+verifying pass that checks local headers, overlap, sizes and CRC-32, using
+`tgz`'s path guard. A seeded oracle (`tests/fixtures/extended/zip_oracle.py`)
+passes 8,662 cases with 0 failures against Python `zipfile` and Info-ZIP
+`unzip -t`:
+
+- 120 checks of the sample's archives;
+- 120 checks of `zipfile`'s archives (streamed, forced ZIP64, with comments);
+- 65,600-entry ZIP64 archives in both directions;
+- 26 guard cases;
+- 5,994 truncations rejected;
+- 2,400 bit-flipped archives handled without a signal or hang.
+
+An optional case writes and reads back a 4 GiB member. `ext::compression`
+exports `crc32_update`.
+
 **Accepted bounded archive increment.**
 
 The new production code is Lanius over the existing TAR/ZIP engines,
@@ -2310,10 +2366,49 @@ pseudo-fields and fields, buffers bodies under flow control, answers 413 and
 431 itself, and sends responses within the client's windows.
 [`ext::http_service`](extended-http-service.md#http2-h2c) hands connections
 that open with the preface to it (prior-knowledge h2c) and keeps serving
-HTTP/1.1 on the same listener. A libnghttp2 client session through ctypes
+HTTP/1.1 on the same listener. The event server multiplexes h2c
+connections on its loop as well, and a load test of 100 concurrent h2c
+clients against 100 HTTP/1.1 clients checks every body and counter. A libnghttp2 client session through ctypes
 passes 6 session cases and 18 malformed-frame cases, both against the engine
-over a pipe and against the service over TCP. HTTP/2 over TLS waits on C
-callback support for OpenSSL's ALPN selection.
+over a pipe and against the service over TCP. `ext::http_service_tls`
+serves the event server over TLS. `ext::openssl_tls::ServerContext.set_alpn`
+selects the protocol in a Lanius `SSL_CTX_set_alpn_select_cb` callback:
+`h2` clients get HTTP/2 streams and the others get HTTP/1.1
+(`http-service-tls cases=8`, against libnghttp2 and Python `ssl` clients).
+
+The [reverse proxy](extended-http-proxy.md) (`ext::http_proxy`, with
+`ext::http_body` and `ext::http_rewrite`) is part of the same family.
+
+- **Clients:** HTTP/1.1 and h2c clients, on one `std::event` loop, go to
+  HTTP/1.1 upstreams chosen by path prefix.
+- **Pools:** idle upstream connections are kept per upstream, with idle
+  limits, a connection cap with a queue, and one retry on a stale reused
+  connection.
+- **Headers:** RFC 9110 hop-by-hop removal, plus X-Forwarded-For,
+  X-Forwarded-Proto and Via.
+- **Bodies:** bodies stream both ways through fixed buffers, with
+  backpressure.
+- **Timeouts:** connect, response, inactivity, head and idle timeouts map
+  to 502 and 504.
+- **TLS:** `ext::http_proxy_tls` adds TLS with ALPN h2. Both TLS servers
+  use one transport layer: `ext::tls_clients` over the
+  `ext::client_transport` interface.
+
+Python asyncio upstreams with raw HTTP/1.1, libnghttp2 and `ssl` clients
+pass these groups:
+
+| Group | Cases |
+| --- | --- |
+| body | 151 |
+| rewrite | 11 |
+| h1 | 19 |
+| errors | 12 |
+| h2 | 13 |
+| tls | 13 |
+
+A load test sends 100 h2c clients × 20 requests and 100 HTTP/1.1
+clients × 20 requests through the proxy, plain and over TLS, and checks
+every body.
 
 The [WebSocket client](extended-websocket-client.md) (`ext::websocket_client`)
 uses `dial` for `ws://` and verified `wss://` URLs and the canonical
@@ -2437,7 +2532,26 @@ from any `core::io::Read` source, and `Writer.flush_to` streams output to any
 [`ext::json_pointer` and `ext::json_patch`](extended-json-patch.md) apply
 RFC 6901 pointers, RFC 6902 patches and RFC 7386 merge patches to
 `ext::json_tree` documents atomically. They agree with a Python model on
-6,450 RFC-example, error and generated cases. [`core::float_decimal`](stdlib-float-decimal.md)
+6,450 RFC-example, error and generated cases.
+[`ext::json_schema`](extended-json-schema.md) validates `ext::json_tree`
+documents against JSON Schema 2020-12 (core, applicator and validation
+vocabularies, `pattern` through `ext::regex`, local `$ref`). It agrees with a
+Python model on 246 hand-written specification cases, 92 error and limit
+cases and 10,000 generated schema/instance pairs.
+[`ext::yaml`](extended-yaml.md) reads YAML 1.2 (block and flow collections,
+every scalar style with chomping, anchors and aliases under an expansion
+limit, comments, multiple documents) into `ext::json_tree` with the core
+schema. It agrees with PyYAML 6.0.1 on 87 hand-written and 3,000 generated
+documents, and with hand-written expectations on 32 documents that YAML 1.1
+reads differently and 68 error and limit cases. Its scanner skips comments
+and literal block lines with `core::slice::memchr_from`.
+[`ext::yaml_writer`](extended-yaml.md#writing) writes trees as block-style
+YAML, quoting only strings some YAML 1.1 or 1.2 reader could misread, and
+[`ext::toml_writer`](extended-toml-writer.md) writes them as TOML 1.0 with
+tables, arrays of tables, inline tables and the tree's exact number
+spellings. Round trips agree on 3,320 trees through PyYAML `safe_load` and
+`ext::yaml`, and on 3,014 trees through Python `tomllib`, plus 11 TOML writer
+error cases. [`core::float_decimal`](stdlib-float-decimal.md)
 formats shortest decimals with Schubfach, which is exact with no fallback, in
 about 0.6 to 0.8 µs per value. It parses with an Eisel-Lemire fast path
 before its exact big-integer path, in about 0.7 to 0.8 µs per value. It
@@ -2475,6 +2589,28 @@ atoms, prefix, infix, postfix, grouping and call kinds into postfix events. It
 uses fixed scratch, allocation-free O(n) parsing and typed errors with token
 indices. Its Python-precedence calculator sample agrees with CPython `ast` on
 100,000 generated expressions and 25,000 token-soup lines.
+
+[`ext::fnmatch`](extended-fnmatch.md) matches byte names against shell
+wildcards with glibc's `fnmatch(3)` answers in the C locale, for
+`FNM_PATHNAME`, `FNM_NOESCAPE`, `FNM_PERIOD`, `FNM_LEADING_DIR` and
+`FNM_CASEFOLD`. That includes POSIX bracket classes, `[=x=]`, `[.x.]` and
+glibc's handling of malformed brackets. It backtracks only to the last `*`, so
+it takes at most pattern-times-name steps. It agrees with libc through `ctypes`
+on three seeds of 200,000 generated cases plus 2,304 pinned malformed-bracket
+cases.
+
+[`ext::gitignore`](extended-gitignore.md) decides whether a path is ignored
+under git's `.gitignore` rules: comments, escaped trailing spaces, `!`
+negation, directory-only and anchored patterns, `**` components, and
+deeper-file and later-line precedence, with components matched by
+`ext::fnmatch`. `text_grep` now takes file operands and `-r` with
+`--include`, `--exclude`, `--exclude-dir` and `--gitignore`
+([recursive search](extended-text-grep.md#files-and-recursive-search)). Its
+stdout, status and binary-file messages match GNU grep 3.11 `-r` on 36
+searches of the repository tree and on 1,200 generated trees, and
+`--gitignore` matches the files `git ls-files -o --exclude-standard` lists in
+730 generated trees. It is about 4x GNU grep's user time on the repository,
+mostly because it validates every byte of each file that holds the literal.
 
 The [regex differential oracle](extended-regex-oracle.md) runs the real
 `find_iter`, template-replacement and grep programs against CPython `re` on

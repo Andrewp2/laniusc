@@ -44,7 +44,8 @@ def verify_protection(executable, path, position, original, value, evidence):
     read, written, probes, closes, allocations = 0, 0, 0, 0, 0
     target = None
     try:
-        process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn=traced_child)
+        process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn=traced_child,
+                                   env=dict(os.environ, LANIUS_ALLOC="mmap"))  # one mmap per allocation
         pid, status = os.waitpid(process.pid, 0)
         assert pid == process.pid and os.WIFSTOPPED(status) and os.WSTOPSIG(status) == signal.SIGTRAP, status
         ptrace(0x4200, process.pid, ctypes.c_void_p(0x100001))  # SETOPTIONS EXITKILL|TRACESYSGOOD

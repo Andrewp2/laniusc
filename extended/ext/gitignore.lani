@@ -1,0 +1,131 @@
+// .gitignore rules: parsing one file's lines and deciding whether a path is
+// ignored, with git's precedence (a deeper file over a shallower one, a later
+// line over an earlier one) and its pattern forms: comments, trailing-space
+// trimming, '!' negation, a trailing '/' for directories only, anchoring by a
+// leading or inner '/', and '**' components. Components match with
+// ext::fnmatch (flags 0), so brackets, classes and '\' escapes follow it.
+// The caller walks the tree: it adds each directory's rules when it enters
+// the directory and drops them when it leaves. See docs/extended-gitignore.md.
+module ext::gitignore;
+import alloc::vec;
+import core::result;
+import core::slice;
+import ext::fnmatch;
+
+pub enum Error { Bounds, AllocationFailed }
+// One pattern: text[start, start + length) without '!', the leading '/' and
+// the trailing '/'. base: index in checked paths where paths relative to the
+// rule's directory begin.
+struct Rule { start: i32, length: i32, negated: bool, directory_only: bool, anchored: bool, base: i32 }
+pub struct Rules { text: alloc::vec::Vec<u8>, rules: alloc::vec::Vec<Rule> }
+pub const IGNORED: i32 = 1;
+pub const INCLUDED: i32 = -1;
+pub const UNDECIDED: i32 = 0;
+
+pub fn rules() -> Rules { return Rules { text: alloc::vec::new(), rules: alloc::vec::new() }; }
+fn valid(view: core::slice::View<u8>) -> bool { return view.start >= 0 && view.length >= 0 && view.start <= 2147483647 - view.length; }
+fn at(view: core::slice::View<u8>, index: i32) -> u8 { return view.values[view.start + index]; }
+fn sub(view: core::slice::View<u8>, from: i32, to: i32) -> core::slice::View<u8> { return core::slice::View { values: view.values, start: view.start + from, length: to - from }; }
+// Whether pattern[from, to) contains '/'.
+fn has_slash(view: core::slice::View<u8>, from: i32, to: i32) -> bool {
+    let i: i32 = from; while (i < to) { if (at(view,i) == 47) { return true; } i += 1; } return false;
+}
+fn component_match(pattern: core::slice::View<u8>, name: core::slice::View<u8>) -> bool {
+    let result: core::result::Result<bool, ext::fnmatch::Error> = ext::fnmatch::matches(pattern,name,0);
+    return core::result::is_ok(result) && core::result::unwrap(result);
+}
+// End of the component of view starting at from: the next '/' or the length.
+fn component_end(view: core::slice::View<u8>, from: i32) -> i32 {
+    let i: i32 = from; while (i < view.length && at(view,i) != 47) { i += 1; } return i;
+}
+fn is_globstar(pattern: core::slice::View<u8>, from: i32, to: i32) -> bool { return to - from == 2 && at(pattern,from) == 42 && at(pattern,from + 1) == 42; }
+// Component-wise match of pattern[p..] against path[n..], both at a
+// component start. A whole '**' component takes zero or more path
+// components, or one or more when it ends the pattern. depth bounds the
+// recursion, one level per '**'.
+fn components(pattern: core::slice::View<u8>, p: i32, path: core::slice::View<u8>, n: i32, depth: i32) -> bool {
+    let pi: i32 = p; let ni: i32 = n;
+    while (true) {
+        if (pi > pattern.length) { return ni > path.length; }
+        if (ni > path.length) { return false; }
+        let pe: i32 = component_end(pattern,pi);
+        if (is_globstar(pattern,pi,pe)) {
+            if (pe >= pattern.length) { return true; }
+            if (depth > 64) { return false; }
+            // Zero components, then each later component start.
+            let start: i32 = ni;
+            while (true) {
+                if (components(pattern,pe + 1,path,start,depth + 1)) { return true; }
+                let end: i32 = component_end(path,start); if (end >= path.length) { return false; }
+                start = end + 1;
+            }
+        }
+        let ne: i32 = component_end(path,ni);
+        if (!component_match(sub(pattern,pi,pe),sub(path,ni,ne))) { return false; }
+        pi = pe + 1; ni = ne + 1;
+    }
+    return false;
+}
+pub impl Rules {
+    pub fn borrow(&self) -> &Rules { return self; }
+    pub fn len(&self) -> i32 { return self.rules.len(); }
+    // Appends the rules in the lines of contents (a .gitignore file). Paths
+    // relative to that file's directory begin at index base of the paths
+    // later given to check.
+    pub fn add(&self, contents: core::slice::View<u8>, base: i32) -> core::result::Result<i32, Error> {
+        if (!valid(contents) || base < 0) { return core::result::Err(Error::Bounds); }
+        let line: i32 = 0; let added: i32 = 0;
+        while (line < contents.length) {
+            let end: i32 = line; while (end < contents.length && at(contents,end) != 10) { end += 1; }
+            let next: i32 = end + 1; let from: i32 = line; let to: i32 = end;
+            // Trailing spaces go unless the last one is escaped.
+            while (to > from && at(contents,to - 1) == 32) {
+                let slashes: i32 = 0; let k: i32 = to - 2; while (k >= from && at(contents,k) == 92) { slashes += 1; k -= 1; }
+                if (slashes % 2 == 1) { break; }
+                to -= 1;
+            }
+            if (to > from && at(contents,from) != 35) {
+                let negated: bool = false;
+                if (at(contents,from) == 33) { negated = true; from += 1; }
+                let directory_only: bool = false;
+                if (to > from && at(contents,to - 1) == 47) { directory_only = true; to -= 1; }
+                let anchored: bool = has_slash(contents,from,to);
+                if (to > from && at(contents,from) == 47) { from += 1; }
+                if (to > from) {
+                    let start: i32 = self.text.len();
+                    if (core::result::is_err(self.text.try_extend(sub(contents,from,to)))) { return core::result::Err(Error::AllocationFailed); }
+                    if (core::result::is_err(self.rules.try_push(Rule { start: start, length: to - from, negated: negated, directory_only: directory_only, anchored: anchored, base: base }))) { return core::result::Err(Error::AllocationFailed); }
+                    added += 1;
+                }
+            }
+            line = next;
+        }
+        return core::result::Ok(added);
+    }
+    // Drops the rules added after the first count (a directory left).
+    pub fn truncate(&self, count: i32) {
+        if (count < 0 || count >= self.rules.len()) { return; }
+        let first: Rule = self.rules.at(count);
+        core::result::unwrap(self.text.truncate(first.start)); core::result::unwrap(self.rules.truncate(count));
+    }
+    // IGNORED, INCLUDED (a '!' rule decided) or UNDECIDED for path, a
+    // directory when directory is true. The last matching rule decides.
+    pub fn check(&self, path: core::slice::View<u8>, directory: bool) -> i32 {
+        if (!valid(path)) { return UNDECIDED; }
+        let base_name: i32 = path.length; while (base_name > 0 && at(path,base_name - 1) != 47) { base_name -= 1; }
+        let text: core::slice::View<u8> = self.text.as_view();
+        let index: i32 = self.rules.len() - 1;
+        while (index >= 0) {
+            let rule: Rule = self.rules.at(index); index -= 1;
+            if (rule.directory_only && !directory) { continue; }
+            if (rule.base > path.length) { continue; }
+            let pattern: core::slice::View<u8> = sub(text,rule.start,rule.start + rule.length);
+            let matched: bool = false;
+            if (rule.anchored) { matched = components(pattern,0,sub(path,rule.base,path.length),0,0); }
+            else { if (base_name >= rule.base) { matched = component_match(pattern,sub(path,base_name,path.length)); } }
+            if (matched) { if (rule.negated) { return INCLUDED; } return IGNORED; }
+        }
+        return UNDECIDED;
+    }
+    pub fn destroy(&self) { self.text.destroy(); self.rules.destroy(); }
+}

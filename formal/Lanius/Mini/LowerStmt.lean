@@ -1,8 +1,140 @@
-import Lanius.Mini.CompileCorrect
-import Lanius.Mini.HeapCorr
-import Lanius.Mini.ElementLayout
-import Lanius.Mini.Guard
+module
 
+public import Lanius.Mini.CompileCorrect
+public import Lanius.Mini.HeapCorr
+public import Lanius.Mini.ElementLayout
+public import Lanius.Mini.Guard
+public import Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.BinOp_folds
+import all Lanius.Mini.Compiler.P.DivOp_size
+import all Lanius.Mini.Compiler.P.Expr_agrees
+import all Lanius.Mini.Compiler.P.FArith_opcode
+import all Lanius.Mini.Compiler.P.FloatTy_rex
+import all Lanius.Mini.Compiler.P.Instr_pieces
+import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.SrcExpr_guard
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.UintTy_isWide
+import all Lanius.Mini.Compiler.P.UintTy_mask
+import all Lanius.Mini.Compiler.P.Word_compute
+import all Lanius.Mini.Compiler.P.Word_narrows
+import all Lanius.Mini.Compiler.P.applyGuard
+import all Lanius.Mini.Compiler.P.arithShiftRight
+import all Lanius.Mini.Compiler.P.arithUint
+import all Lanius.Mini.Compiler.P.arities
+import all Lanius.Mini.Compiler.P.armBodyScope
+import all Lanius.Mini.Compiler.P.armPayload
+import all Lanius.Mini.Compiler.P.armScope
+import all Lanius.Mini.Compiler.P.assignFrom
+import all Lanius.Mini.Compiler.P.binaryConstant
+import all Lanius.Mini.Compiler.P.callAgrees
+import all Lanius.Mini.Compiler.P.codeSize
+import all Lanius.Mini.Compiler.P.compileArgs
+import all Lanius.Mini.Compiler.P.compileModules
+import all Lanius.Mini.Compiler.P.conjunction
+import all Lanius.Mini.Compiler.P.consArgs
+import all Lanius.Mini.Compiler.P.declareFuncs
+import all Lanius.Mini.Compiler.P.declareProgram
+import all Lanius.Mini.Compiler.P.elementAddress
+import all Lanius.Mini.Compiler.P.elementBase
+import all Lanius.Mini.Compiler.P.enumVariants
+import all Lanius.Mini.Compiler.P.equality
+import all Lanius.Mini.Compiler.P.evalDivide
+import all Lanius.Mini.Compiler.P.evalDivideSint
+import all Lanius.Mini.Compiler.P.evalNot
+import all Lanius.Mini.Compiler.P.evalSame
+import all Lanius.Mini.Compiler.P.extentAfter
+import all Lanius.Mini.Compiler.P.floatApply
+import all Lanius.Mini.Compiler.P.guardAnd
+import all Lanius.Mini.Compiler.P.hostRandomCode
+import all Lanius.Mini.Compiler.P.imageLimit
+import all Lanius.Mini.Compiler.P.importOk
+import all Lanius.Mini.Compiler.P.importsOk
+import all Lanius.Mini.Compiler.P.indexOf
+import all Lanius.Mini.Compiler.P.iteThen
+import all Lanius.Mini.Compiler.P.killShared
+import all Lanius.Mini.Compiler.P.leftTrue
+import all Lanius.Mini.Compiler.P.loadAtBytes
+import all Lanius.Mini.Compiler.P.longer
+import all Lanius.Mini.Compiler.P.lowerAddress
+import all Lanius.Mini.Compiler.P.lowerApply
+import all Lanius.Mini.Compiler.P.lowerBody
+import all Lanius.Mini.Compiler.P.lowerCallSig
+import all Lanius.Mini.Compiler.P.lowerLoadType
+import all Lanius.Mini.Compiler.P.lowerLocal
+import all Lanius.Mini.Compiler.P.lowerReturn
+import all Lanius.Mini.Compiler.P.lowerSetCallArgs
+import all Lanius.Mini.Compiler.P.lowerSetValues
+import all Lanius.Mini.Compiler.P.lowerShift
+import all Lanius.Mini.Compiler.P.lowerSlice
+import all Lanius.Mini.Compiler.P.lowerTagged
+import all Lanius.Mini.Compiler.P.matchDst
+import all Lanius.Mini.Compiler.P.matchVariants
+import all Lanius.Mini.Compiler.P.moduleExports
+import all Lanius.Mini.Compiler.P.moduleFirsts
+import all Lanius.Mini.Compiler.P.modulesOk
+import all Lanius.Mini.Compiler.P.render
+import all Lanius.Mini.Compiler.P.repeatType
+import all Lanius.Mini.Compiler.P.shortCircuit
+import all Lanius.Mini.Compiler.P.sigs
+import all Lanius.Mini.Compiler.P.sintToUint
+import all Lanius.Mini.Compiler.P.storeArray
+import all Lanius.Mini.Compiler.P.storeEvalWord
+import all Lanius.Mini.Compiler.P.storeType
+import all Lanius.Mini.Compiler.P.storeWordElement
+import all Lanius.Mini.Compiler.P.structFields
+import all Lanius.Mini.Compiler.P.substAll
+import all Lanius.Mini.Compiler.P.usizeWidth
+import all Lanius.Mini.Compiler.P.widthOf
+import all Lanius.Mini.Compiler.P.wordElement
+import all Lanius.Mini.Compiler.P.wordStride
+import all Lanius.Mini.Compiler.P.wordWidth
+import all Lanius.Mini.Compiler.Types
+public import Lanius.Mini.Compiler.P.SrcExpr_guard
+public import Lanius.Mini.Compiler.P.SrcType_size
+public import Lanius.Mini.Compiler.P.UintTy_half
+public import Lanius.Mini.Compiler.P.arithShiftRight
+public import Lanius.Mini.Compiler.P.arithUint
+public import Lanius.Mini.Compiler.P.armBodyScope
+public import Lanius.Mini.Compiler.P.armPayload
+public import Lanius.Mini.Compiler.P.armScope
+public import Lanius.Mini.Compiler.P.assignFrom
+public import Lanius.Mini.Compiler.P.conjunction
+public import Lanius.Mini.Compiler.P.elementAddress
+public import Lanius.Mini.Compiler.P.elementBase
+public import Lanius.Mini.Compiler.P.equality
+public import Lanius.Mini.Compiler.P.floatApply
+public import Lanius.Mini.Compiler.P.guardAnd
+public import Lanius.Mini.Compiler.P.indexOf
+public import Lanius.Mini.Compiler.P.iteThen
+public import Lanius.Mini.Compiler.P.longer
+public import Lanius.Mini.Compiler.P.lowerAddress
+public import Lanius.Mini.Compiler.P.lowerApply
+public import Lanius.Mini.Compiler.P.lowerBody
+public import Lanius.Mini.Compiler.P.lowerCallSig
+public import Lanius.Mini.Compiler.P.lowerLoadType
+public import Lanius.Mini.Compiler.P.lowerLocal
+public import Lanius.Mini.Compiler.P.lowerReturn
+public import Lanius.Mini.Compiler.P.lowerSetCallArgs
+public import Lanius.Mini.Compiler.P.lowerSetValues
+public import Lanius.Mini.Compiler.P.lowerShift
+public import Lanius.Mini.Compiler.P.lowerSlice
+public import Lanius.Mini.Compiler.P.lowerTagged
+public import Lanius.Mini.Compiler.P.matchVariants
+public import Lanius.Mini.Compiler.P.repeatType
+public import Lanius.Mini.Compiler.P.shortCircuit
+public import Lanius.Mini.Compiler.P.sigs
+public import Lanius.Mini.Compiler.P.sintToUint
+public import Lanius.Mini.Compiler.P.storeArray
+public import Lanius.Mini.Compiler.P.storeType
+public import Lanius.Mini.Compiler.P.storeWordElement
+public import Lanius.Mini.Compiler.P.usizeWidth
+public import Lanius.Mini.Compiler.P.wordElement
+public import Lanius.Mini.Compiler.P.wordStride
+public import Lanius.Mini.Compiler.P.wordWidth
+
+@[expose] public section
 /-! Statements and calls: a lowered subset statement that Core runs to
 completion has a mini derivation with the same result.
 
@@ -3053,25 +3185,30 @@ theorem mapRawNominalSlice_inv {P : Core.Program} {st : State} {element : Core.T
 theorem slice_kind {ds : SrcDecls} {element : SrcType}
     (cond : (element.isI32 || element.isUint .uint8 || wordElement ds element) = true) :
     element = .i32 ∨ element = .uint .uint8 ∨ (∃ sid fields, element = .struct sid fields) ∨
-      ∃ eid variants, element = .enum eid variants := by
+      (∃ eid variants, element = .enum eid variants) ∨ element = .uint .uint16 := by
   cases element with
   | i32 => exact .inl rfl
-  | uint kind => exact .inr (.inl (SrcType.eq_of_isUint (by simpa [SrcType.isI32, wordElement] using cond)))
+  | uint kind =>
+    have c : (SrcType.uint kind).isUint .uint8 = true ∨ (SrcType.uint kind).isUint .uint16 = true := by
+      simpa [SrcType.isI32, wordElement] using cond
+    rcases c with c | c
+    · exact .inr (.inl (SrcType.eq_of_isUint c))
+    · exact .inr (.inr (.inr (.inr (SrcType.eq_of_isUint c))))
   | struct sid fields => exact .inr (.inr (.inl ⟨sid, fields, rfl⟩))
-  | enum eid variants => exact .inr (.inr (.inr ⟨eid, variants, rfl⟩))
+  | enum eid variants => exact .inr (.inr (.inr (.inl ⟨eid, variants, rfl⟩)))
   | bool | ptr | slice | array | unit | isize | char | float | sint =>
     simp [SrcType.isI32, SrcType.isUint, wordElement] at cond
 
 /-- What Core's `slice_from_raw_parts` of an accepted element type did. -/
 theorem sliceFrom_inv {P : Core.Program} {k : Nat} {st : State} {element : SrcType}
     (kind : element = .i32 ∨ element = .uint .uint8 ∨ (∃ sid fields, element = .struct sid fields) ∨
-      ∃ eid variants, element = .enum eid variants) {p l : Core.Expr}
+      (∃ eid variants, element = .enum eid variants) ∨ element = .uint .uint16) {p l : Core.Expr}
     {v : Value} {st1 : State} (run : evalExpr (k + 1) P st (element.sliceFrom p l) = .done v st1) :
     ∃ a afterPointer n afterLength len heap, evalExpr k P st p = .done (.pointer a) afterPointer ∧
       evalExpr k P afterPointer l = .done (.signed .i32 n) afterLength ∧
       v = .rawSlice element.toCore a len ∧ st1 = { afterLength with heap } ∧
       (∀ hp, HeapCorr afterLength.heap afterLength.world hp → HeapCorr heap afterLength.world hp) ∧ len = n.toNat ∧ 0 ≤ n := by
-  rcases kind with rfl | rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩
+  rcases kind with rfl | rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩ | rfl
   all_goals
     simp only [SrcType.sliceFrom, evalExpr] at run
     split at run
@@ -3938,7 +4075,7 @@ theorem loadElement_sound {sp : SrcProgram} {mp : Program} {hp : Heap} {st : Sta
       (env bslot).toNat - pos * (8 * element.size) :=
     elementBase_eval posEq small fits
   have nb : Semantics.isByte element.toCore = false := by
-    revert hel; cases element <;> simp [wordElement, SrcType.toCore, Semantics.isByte]
+    exact wordElement_notByte hel
   simp only [Semantics.readRawElement, nb, Bool.false_eq_true, ↓reduceIte] at read
   exact exec_loadType hc tail element (wordElement_wordType hel) below (Nat.zero_le _)
     ⟨_, by rw [baseEval, Nat.sub_zero]; exact read⟩
@@ -4397,7 +4534,7 @@ theorem stmt_setIndex_word {slice : Nat} {index value : SrcExpr} {b : Binding} {
     have posEq := index_toNat kind holdsI posOk
     obtain ⟨-, flat, -⟩ := lowerValue_sound corr (SrcProgram.target_toCore sp) vOk valueRun
     have nb : Semantics.isByte element.toCore = false := by
-      revert hel; cases element <;> simp [wordElement, SrcType.toCore, Semantics.isByte]
+      exact wordElement_notByte hel
     simp only [Semantics.writeRawNative, nb, Bool.false_eq_true, ↓reduceIte] at stored
     obtain ⟨hp', exec, hc'⟩ := storeElement_sound (mp := mp) hc hel posEq located stored flat ok bound
     exact ⟨fresh, ⟨fun _ _ => rfl, Nat.le_refl _⟩, 0, _, exec, .next (corr.cells_congr rfl fun _ _ => rfl) hc'⟩

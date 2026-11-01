@@ -171,7 +171,7 @@ fn run(name: &str, mappings: usize, phases: usize, width: usize, guard: bool) ->
     let trace = common::TempArtifact::new("laniusc_iter_compare_resources", "trace", None);
     let output = common::process_output_with_timeout(
         "iterator comparison finite resource lifecycle",
-        Command::new("strace")
+        crate::common::strace()
             .args(["--kill-on-exit", "-qq", "-s", "64", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=all", "-e", "signal=none"])

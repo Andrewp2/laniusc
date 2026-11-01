@@ -1,7 +1,6 @@
 // Synthetic capacities cover a short known source only, with tiny canaried
 // destinations. This is not evidence of physically huge caller allocations.
 module app::main;
-import alloc::allocator;
 import core::mem;
 import core::result;
 import core::slice;
@@ -38,7 +37,10 @@ fn main() -> i32 {
     // Place the three-byte key immediately before an unreadable page. Huge
     // declared lengths must reject at the finite environment '=' before ever
     // reading a fourth key byte, including the high-word/nonzero-lowword case.
-    let mapping:ptr=alloc::allocator::alloc(8192,8); assert(mapping!=0);
+    // Two pages of its own mapping: pooled allocations are not page-aligned.
+    let nowhere:ptr=0;
+    let map:[std::linux::Argument;6]=[std::linux::Argument::Address(nowhere),std::linux::Argument::Word(8192),std::linux::Argument::Word(3),std::linux::Argument::Word(34),std::linux::Argument::Word(-1),std::linux::Argument::Word(0)];
+    let mapping:ptr=nowhere+(core::result::unwrap(std::linux::call(9,core::result::unwrap(core::slice::view(map,6)))) as usize);
     let key:ptr=mapping+4093; let bytes:[u8]=core::mem::typed_slice_from_raw_parts(key,3); bytes[0]=65; bytes[1]=66; bytes[2]=67;
     let protect:[std::linux::Argument;3]=[std::linux::Argument::Address(mapping+4096),std::linux::Argument::Word(4096),std::linux::Argument::Word(0)];
     assert(core::result::unwrap(std::linux::call(10,core::result::unwrap(core::slice::view(protect,3))))==0);
@@ -48,7 +50,8 @@ fn main() -> i32 {
         destination[0]=204; destination[1]=204;
         assert(std::env::var_read(key,lengths[i],p,1)==-1 && destination[0]==204 && destination[1]==204); i+=1;
     }
-    alloc::allocator::dealloc(mapping,8192,8);
+    let unmap:[std::linux::Argument;2]=[std::linux::Argument::Address(mapping),std::linux::Argument::Word(8192)];
+    assert(core::result::unwrap(std::linux::call(11,core::result::unwrap(core::slice::view(unmap,2))))==0);
     assert(std::process::arg_read(-1,p,4294967296)==-1 && std::env::var_key_read(-1,p,4294967296)==-1);
     return 0;
 }

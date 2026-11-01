@@ -1,0 +1,156 @@
+// Batch driver for oracle.py. stdin holds records of length-prefixed
+// fields ("N:" then N bytes): mode (P parse, H help), help sub id, name,
+// about, operand name, minimum, maximum, stop flag, spec count, sub count,
+// argument count; then per spec: kind (F flag, R required, O optional,
+// H help), scope, id, short byte, long, value name, help; per sub: id, name,
+// help, operand name, minimum, maximum; then the arguments. P prints
+// "ok COMMAND" with " oID" or " oID=N:value" per occurrence and " pN:value"
+// per operand, or "err KIND ARGUMENT OFFSET N" and the N-byte message. H
+// prints "help N" and the N-byte text.
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::cli;
+import std::stream;
+
+struct Input { bytes: [u8], at: i32 }
+impl Input {
+    fn borrow(&self) -> &Input { return self; }
+    fn field(&self) -> core::slice::View<u8> {
+        let length: i32 = 0;
+        while (self.bytes[self.at] != 58) { length = length * 10 + ((self.bytes[self.at] - 48) as i32); self.at += 1; }
+        self.at += 1;
+        let view: core::slice::View<u8> = core::slice::View { values: self.bytes, start: self.at, length: length };
+        self.at += length;
+        return view;
+    }
+    fn number(&self) -> i32 {
+        let view: core::slice::View<u8> = self.field();
+        let value: i32 = 0; let index: i32 = 0; let negative: bool = false;
+        while (index < view.length) {
+            let byte: u8 = view.values[view.start + index];
+            if (byte == 45) { negative = true; } else { value = value * 10 + ((byte - 48) as i32); }
+            index += 1;
+        }
+        if (negative) { return -value; }
+        return value;
+    }
+}
+fn append(out: &alloc::vec::Vec<u8>, view: core::slice::View<u8>) { if (view.length > 0) { core::result::unwrap(out.try_extend(view)); } }
+fn append_str(out: &alloc::vec::Vec<u8>, value: str, count: i32) {
+    append(out, core::slice::View { values: core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value), count), start: 0, length: count });
+}
+fn append_int(out: &alloc::vec::Vec<u8>, value: i32) {
+    if (value < 0) { core::result::unwrap(out.try_push(45)); value = -value; }
+    let buffer: [u8; 12] = [0; 12]; let used: i32 = 0;
+    while (true) { buffer[used] = ((value % 10) as u8) + 48; used += 1; value = value / 10; if (value == 0) { break; } }
+    while (used > 0) { used -= 1; let digit: u8 = buffer[used]; core::result::unwrap(out.try_push(digit)); }
+}
+fn append_field(out: &alloc::vec::Vec<u8>, view: core::slice::View<u8>) {
+    append_int(out, view.length); core::result::unwrap(out.try_push(58)); append(out, view);
+}
+fn main() -> i32 {
+    let data: alloc::vec::Vec<u8> = alloc::vec::new();
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let buffer: [u8; 65536] = [0; 65536];
+    while (true) {
+        let got = source.read(buffer, 0, 65536);
+        if (got.is_err()) { return 3; }
+        let n: i32 = got.unwrap();
+        if (n == 0) { break; }
+        core::result::unwrap(data.try_extend(core::slice::View { values: buffer, start: 0, length: n }));
+    }
+    let out: alloc::vec::Vec<u8> = alloc::vec::new();
+    let text: alloc::vec::Vec<u8> = alloc::vec::new();
+    let args: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new();
+    let input: Input = Input { bytes: data.as_slice(), at: 0 };
+    let total: i32 = data.len();
+    while (input.at < total) {
+        let mode: core::slice::View<u8> = input.field();
+        let help_sub: i32 = input.number();
+        let name: core::slice::View<u8> = input.field(); let about: core::slice::View<u8> = input.field();
+        let operand: core::slice::View<u8> = input.field(); let minimum: i32 = input.number(); let maximum: i32 = input.number();
+        let stop: i32 = input.number(); let specs: i32 = input.number(); let subs: i32 = input.number(); let count: i32 = input.number();
+        let cli: std::cli::Command = std::cli::command(name, about);
+        cli.operands(operand, minimum, maximum);
+        if (stop == 1) { cli.stop_at_operand(); }
+        let kinds: alloc::vec::Vec<u8> = alloc::vec::new(); let scopes: alloc::vec::Vec<i32> = alloc::vec::new();
+        let ids: alloc::vec::Vec<i32> = alloc::vec::new(); let shorts: alloc::vec::Vec<u8> = alloc::vec::new();
+        let longs: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new(); let values: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new();
+        let helps: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new();
+        let index: i32 = 0;
+        while (index < specs) {
+            let kind: core::slice::View<u8> = input.field();
+            core::result::unwrap(kinds.try_push(kind.values[kind.start]));
+            core::result::unwrap(scopes.try_push(input.number())); core::result::unwrap(ids.try_push(input.number()));
+            let short: i32 = input.number(); core::result::unwrap(shorts.try_push(short as u8));
+            core::result::unwrap(longs.try_push(input.field())); core::result::unwrap(values.try_push(input.field()));
+            core::result::unwrap(helps.try_push(input.field()));
+            index += 1;
+        }
+        // Root options first, then each subcommand with its options.
+        let scope: i32 = -1;
+        while (scope < subs) {
+            if (scope >= 0) {
+                let sub_id: i32 = input.number(); let sub_name: core::slice::View<u8> = input.field(); let sub_help: core::slice::View<u8> = input.field();
+                let sub_operand: core::slice::View<u8> = input.field(); let sub_min: i32 = input.number(); let sub_max: i32 = input.number();
+                cli.subcommand(sub_id, sub_name, sub_help);
+                cli.operands(sub_operand, sub_min, sub_max);
+            }
+            index = 0;
+            while (index < specs) {
+                if (scopes.at(index) == scope) {
+                    let kind: u8 = kinds.at(index);
+                    if (kind == 70) { cli.flag(ids.at(index), shorts.at(index), longs.at(index), helps.at(index)); }
+                    if (kind == 82) { cli.option(ids.at(index), shorts.at(index), longs.at(index), values.at(index), helps.at(index)); }
+                    if (kind == 79) { cli.optional(ids.at(index), shorts.at(index), longs.at(index), values.at(index), helps.at(index)); }
+                    if (kind == 72) { cli.help(ids.at(index)); }
+                }
+                index += 1;
+            }
+            scope += 1;
+        }
+        args.clear();
+        index = 0;
+        while (index < count) { core::result::unwrap(args.try_push(input.field())); index += 1; }
+        text.clear();
+        if (mode.values[mode.start] == 72) {
+            cli.write_help(help_sub, text.borrow());
+            append_str(out.borrow(), "help ", 5); append_int(out.borrow(), text.len()); core::result::unwrap(out.try_push(10));
+            append(out.borrow(), text.as_view());
+        } else {
+            let parsed = cli.parse(args.as_view());
+            if (parsed.is_err()) {
+                let error: std::cli::Error = parsed.unwrap_err();
+                cli.write_error(error, args.as_view(), text.borrow());
+                append_str(out.borrow(), "err ", 4); append(out.borrow(), std::cli::kind_name(error.kind));
+                core::result::unwrap(out.try_push(32)); append_int(out.borrow(), error.argument);
+                core::result::unwrap(out.try_push(32)); append_int(out.borrow(), error.offset);
+                core::result::unwrap(out.try_push(32)); append_int(out.borrow(), text.len()); core::result::unwrap(out.try_push(10));
+                append(out.borrow(), text.as_view());
+            } else {
+                let matches: std::cli::Matches = parsed.unwrap();
+                append_str(out.borrow(), "ok ", 3); append_int(out.borrow(), matches.command());
+                index = 0;
+                while (index < matches.occurrences()) {
+                    append_str(out.borrow(), " o", 2); append_int(out.borrow(), matches.occurrence_id(index));
+                    let value: core::option::Option<core::slice::View<u8>> = matches.occurrence_value(index);
+                    if (value.is_some()) { core::result::unwrap(out.try_push(61)); append_field(out.borrow(), value.unwrap()); }
+                    index += 1;
+                }
+                index = 0;
+                while (index < matches.operand_count()) { append_str(out.borrow(), " p", 2); append_field(out.borrow(), matches.operand(index)); index += 1; }
+                core::result::unwrap(out.try_push(10));
+                matches.destroy();
+            }
+        }
+        kinds.destroy(); scopes.destroy(); ids.destroy(); shorts.destroy(); longs.destroy(); values.destroy(); helps.destroy();
+        cli.destroy();
+    }
+    if (core::io::write_all<std::stream::Descriptor>(std::stream::stdout().borrow(), out.as_slice(), 0, out.len()).is_err()) { return 3; }
+    return 0;
+}

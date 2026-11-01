@@ -16,6 +16,7 @@ import core::mem;
 import core::result;
 import std::atomic;
 import std::parallel;
+import std::pthread;
 import std::steal;
 import std::sync;
 import std::worker;
@@ -23,7 +24,7 @@ import std::worker;
 pub const MAX_WORKERS: i32 = 256;
 pub const DEQUE_CAPACITY: i32 = 1024;
 
-pub enum Error { InvalidPlan, LengthMismatch, Failed, Steal(std::steal::Error), Sync(std::sync::Error), Worker(std::worker::Error) }
+pub enum Error { InvalidPlan, LengthMismatch, Failed, Steal(std::steal::Error), Sync(std::sync::Error), Worker(std::worker::Error), Thread(std::pthread::Error) }
 
 // kind 0 sort run [a0, a1); 1 merge src[a0, a1) with src[b0, b1) into
 // dst[out..); 2 copy src[a0, a1) to dst[a0, a1); 3 map; 4 reduce leaf out;
@@ -33,7 +34,10 @@ pub enum Error { InvalidPlan, LengthMismatch, Failed, Steal(std::steal::Error), 
 pub struct Job { kind: i32, from_scratch: bool, stable: bool, a0: i32, a1: i32, b0: i32, b1: i32, out: i32 }
 
 // control: a phase counter word (futex) and a stop word for the sort crew.
-pub struct Plan { workers: i32, grain: i32, queues: std::steal::Queues<Job>, control: ptr }
+// crew: thread ids (one word per worker) then one CREW_SLOT-byte record per
+// worker, for the threaded sorts.
+pub struct Plan { workers: i32, grain: i32, queues: std::steal::Queues<Job>, control: ptr, crew: ptr }
+const CREW_SLOT: usize = 512;
 // grain is the target task size in elements; it is raised as needed so a
 // phase never has more tasks than the deques hold.
 pub fn plan(region: &std::sync::Region, workers: i32, grain: i32) -> core::result::Result<Plan, Error> {
@@ -42,7 +46,9 @@ pub fn plan(region: &std::sync::Region, workers: i32, grain: i32) -> core::resul
     if (queues.is_err()) { return core::result::Err(Error::Steal(queues.unwrap_err())); }
     let control: core::result::Result<ptr, std::sync::Error> = region.allocate(64);
     if (control.is_err()) { return core::result::Err(Error::Sync(control.unwrap_err())); }
-    return core::result::Ok(Plan { workers: workers, grain: grain, queues: queues.unwrap(), control: control.unwrap() });
+    let crew: core::result::Result<ptr, std::sync::Error> = region.allocate((workers as usize) * (8 + CREW_SLOT));
+    if (crew.is_err()) { return core::result::Err(Error::Sync(crew.unwrap_err())); }
+    return core::result::Ok(Plan { workers: workers, grain: grain, queues: queues.unwrap(), control: control.unwrap(), crew: crew.unwrap() });
 }
 fn grain_for(plan: Plan, length: i32) -> i32 {
     let limit: i32 = plan.workers * DEQUE_CAPACITY / 2;
@@ -82,9 +88,18 @@ fn next_job(plan: Plan, me: i32) -> Job {
 // the left run first.
 fn merge_into<T>(src: [T], dst: [T], a0: i32, a1: i32, b0: i32, b1: i32, out: i32) where T: core::cmp::Ord<T> {
     let i: i32 = a0; let j: i32 = b0; let k: i32 = out;
-    while (i < a1 && j < b1) {
-        if (T::lt(src[j], src[i])) { dst[k] = src[j]; j += 1; } else { dst[k] = src[i]; i += 1; }
-        k += 1;
+    if (i < a1 && j < b1) {
+        // Carry both heads, so each step loads only the replacement.
+        let x: T = src[i]; let y: T = src[j]; let more: bool = true;
+        while (more) {
+            if (T::lt(y, x)) {
+                dst[k] = y; k += 1; j += 1;
+                if (j < b1) { y = src[j]; } else { more = false; }
+            } else {
+                dst[k] = x; k += 1; i += 1;
+                if (i < a1) { x = src[i]; } else { more = false; }
+            }
+        }
     }
     while (i < a1) { dst[k] = src[i]; i += 1; k += 1; }
     while (j < b1) { dst[k] = src[j]; j += 1; k += 1; }
@@ -158,10 +173,11 @@ fn partition<T>(v: [T], lo: i32, hi: i32) -> i32 where T: core::cmp::Ord<T> {
     let pivot: T = v[mid];
     let i: i32 = lo - 1; let j: i32 = hi;
     while (true) {
-        i += 1; while (T::lt(v[i], pivot)) { i += 1; }
-        j -= 1; while (T::lt(pivot, v[j])) { j -= 1; }
+        // Keep the values the scans stop on, so the swap reloads nothing.
+        i += 1; let a: T = v[i]; while (T::lt(a, pivot)) { i += 1; a = v[i]; }
+        j -= 1; let b: T = v[j]; while (T::lt(pivot, b)) { j -= 1; b = v[j]; }
         if (i >= j) { return j + 1; }
-        swap(v, i, j);
+        v[i] = b; v[j] = a;
     }
     return mid;
 }
@@ -347,6 +363,73 @@ fn sort_phases<T>(plan: Plan, data: std::parallel::Shared<T>, scratch: std::para
     }
     return core::result::Ok(rounds);
 }
+// Threaded sorts: the same phases with workers - 1 pthreads instead of forked
+// children, so there is no fork and data needs no shared mapping (any memory
+// works; Shared arrays still do). A thread's start routine must be a
+// non-generic function, so the caller supplies one per element type that
+// forwards to crew_entry:
+//   fn sort_i64_crew(arg: ptr) -> ptr { return std::par::crew_entry<i64>(arg); }
+//   std::par::sort_unstable_threads(plan, data, scratch, sort_i64_crew)
+// The entry must instantiate crew_entry with the T of the sort it is passed to.
+struct Crew<T> { plan: Plan, data: std::parallel::Shared<T>, scratch: std::parallel::Shared<T>, me: i32 }
+fn crew_record(plan: Plan, me: i32) -> ptr { return plan.crew + (plan.workers as usize) * 8 + (me as usize) * CREW_SLOT; }
+fn crew_id(plan: Plan, me: i32) -> [u64] { return core::mem::typed_slice_from_raw_parts<u64>(plan.crew + (me as usize) * 8, 1); }
+// A crew thread's body: runs the crew member loop for the record at arg.
+// Returns arg on success and 0 when a task failed.
+pub fn crew_entry<T>(arg: ptr) -> ptr where T: core::cmp::Ord<T> {
+    let record: [Crew<T>] = core::mem::typed_slice_from_storage<Crew<T>>(arg, 1);
+    let crew: Crew<T> = record[0];
+    let nowhere: ptr = 0;
+    if (crew_member(crew.plan, crew.me, crew.data, crew.scratch) != 0) { return nowhere; }
+    return arg;
+}
+fn sort_threads<T>(plan: Plan, data: std::parallel::Shared<T>, scratch: std::parallel::Shared<T>, stable: bool, entry: ptr) -> core::result::Result<i32, Error> where T: core::cmp::Ord<T> {
+    let length: i32 = data.len();
+    if (scratch.len() != length) { return core::result::Err(Error::LengthMismatch); }
+    if (core::mem::size_of<Crew<T>>() > CREW_SLOT) { return core::result::Err(Error::InvalidPlan); }
+    if (length < 2) { return core::result::Ok(0); }
+    phase_word(plan).store(0, std::atomic::Store::Relaxed); stop_word(plan).store(0, std::atomic::Store::Relaxed);
+    let w: i32 = 1; let started: i32 = 1; let failure: core::result::Result<i32, Error> = core::result::Ok(0);
+    while (w < plan.workers) {
+        let at: ptr = crew_record(plan, w);
+        let record: [Crew<T>] = core::mem::typed_slice_from_storage<Crew<T>>(at, 1);
+        let value: Crew<T> = Crew { plan: plan, data: data, scratch: scratch, me: w };
+        record[0] = value;
+        let made: core::result::Result<std::pthread::Thread, std::pthread::Error> = std::pthread::spawn(entry, at);
+        if (made.is_err()) { failure = core::result::Err(Error::Thread(made.unwrap_err())); w = plan.workers; }
+        else {
+            let id: [u64] = crew_id(plan, w);
+            let thread: u64 = made.unwrap().id();
+            id[0] = thread; started += 1; w += 1;
+        }
+    }
+    let sorted: core::result::Result<i32, Error> = failure;
+    if (failure.is_ok()) { sorted = sort_phases(plan, data, scratch, stable); }
+    stop_word(plan).store(1, std::atomic::Store::Release);
+    phase_word(plan).fetch_add(1, std::atomic::Ordering::SeqCst);
+    std::sync::futex_wake(plan.control, 2147483647);
+    let nowhere: ptr = 0;
+    let joined: core::result::Result<i32, Error> = core::result::Ok(0);
+    let j: i32 = 1;
+    while (j < started) {
+        let id: [u64] = crew_id(plan, j);
+        let back: core::result::Result<ptr, std::pthread::Error> = std::pthread::join_id(id[0]);
+        if (back.is_err()) { joined = core::result::Err(Error::Thread(back.unwrap_err())); }
+        else { if (back.unwrap() == nowhere) { joined = core::result::Err(Error::Failed); } }
+        j += 1;
+    }
+    if (sorted.is_err()) { return sorted; }
+    if (joined.is_err()) { return joined; }
+    if (plan.queues.pending_count() != 0) { return core::result::Err(Error::Failed); }
+    return sorted;
+}
+pub fn sort_unstable_threads<T>(plan: Plan, data: std::parallel::Shared<T>, scratch: std::parallel::Shared<T>, entry: ptr) -> core::result::Result<i32, Error> where T: core::cmp::Ord<T> {
+    return sort_threads(plan, data, scratch, false, entry);
+}
+pub fn sort_stable_threads<T>(plan: Plan, data: std::parallel::Shared<T>, scratch: std::parallel::Shared<T>, entry: ptr) -> core::result::Result<i32, Error> where T: core::cmp::Ord<T> {
+    return sort_threads(plan, data, scratch, true, entry);
+}
+
 // Sort data in place; scratch must have data's length. Returns the number
 // of phases (run sort, merge rounds, final copy). Equal keys may reorder.
 pub fn sort_unstable<T>(plan: Plan, data: std::parallel::Shared<T>, scratch: std::parallel::Shared<T>) -> core::result::Result<i32, Error> where T: core::cmp::Ord<T> {

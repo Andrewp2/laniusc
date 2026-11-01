@@ -329,7 +329,7 @@ fn namespace_model_paths_limits_and_sticky_failures_execute() {
     let trace = common::TempArtifact::new("laniusc_archive_plan", "contracts-trace", None);
     let out = common::process_output_with_timeout(
         "archive planner contracts",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-i", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap"])
@@ -470,7 +470,7 @@ fn reserved_storage_allocation_failures_release_partial_plans() {
     let exe = executable("allocations.lani");
     let trace = common::TempArtifact::new("laniusc_archive_plan", "allocation-trace", None);
     let run = |failure: Option<usize>| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-i", "-o"])
             .arg(trace.path())

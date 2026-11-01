@@ -455,7 +455,7 @@ fn allocation_denial_on_mutation_decode_and_serialization_releases_owners_and_pr
         input.write_bytes(frame(&commands));
         let trace = common::TempArtifact::new("laniusc_kv", "trace", None);
         let traced = |fail: Option<usize>| {
-            let mut cmd = Command::new("strace");
+            let mut cmd = crate::common::strace();
             cmd.args(["-qq", "-o"])
                 .arg(trace.path())
                 .args(["-e", "trace=mmap,munmap"]);

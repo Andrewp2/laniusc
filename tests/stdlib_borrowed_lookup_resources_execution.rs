@@ -342,7 +342,7 @@ fn effects(events: &str, stderr: &[u8], layouts: &[Layout]) -> Vec<Cycle> {
 }
 fn run(executable: &common::TempArtifact, expected: &[u8], layouts: &[Layout]) -> Vec<Cycle> {
     let trace = common::TempArtifact::new("laniusc_borrowed_lookup_resources", "trace", None);
-    let mut command = Command::new("strace");
+    let mut command = crate::common::strace();
     command
         .args(["--kill-on-exit", "-qq", "-s", "64", "-o"])
         .arg(trace.path())

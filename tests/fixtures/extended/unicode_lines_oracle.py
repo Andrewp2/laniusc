@@ -23,7 +23,7 @@ for text,ends in extras:cases.append((text,ends,'long/degenerate context'))
 payload=b''.join(struct.pack('<I',len(text.encode()))+text.encode() for text,_,_ in cases)
 with tempfile.TemporaryDirectory() as folder:
     trace=pathlib.Path(folder)/'allocations'
-    command=['strace','-qq','-o',str(trace),'-e','trace=mmap,munmap','-e','inject=mmap:error=ENOMEM:when=1+',sys.argv[1]]
+    command=['strace','-E','LANIUS_ALLOC=mmap','-qq','-o',str(trace),'-e','trace=mmap,munmap','-e','inject=mmap:error=ENOMEM:when=1+',sys.argv[1]]
     result=subprocess.run(command,input=payload,capture_output=True,timeout=40)
     assert trace.read_text()=='','line cursor attempted to allocate'
 assert result.returncode==0 and not result.stderr,(result.returncode,result.stderr)
