@@ -2,7 +2,7 @@
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod common;
 
-use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command, time::Duration};
+use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, time::Duration};
 
 fn compile(name: &str) -> Result<Vec<u8>, laniusc_compiler::compiler::CompileError> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -26,7 +26,7 @@ fn execute(name: &str) {
     let trace = common::TempArtifact::new("laniusc_outcome_composition", "service_trace", None);
     let output = common::process_output_with_timeout(
         name,
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([

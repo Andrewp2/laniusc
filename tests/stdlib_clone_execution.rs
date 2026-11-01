@@ -1,6 +1,6 @@
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod common;
-use std::{collections::BTreeMap, os::unix::fs::PermissionsExt, process::Command};
+use std::{collections::BTreeMap, os::unix::fs::PermissionsExt};
 fn executable(name: &str) -> common::TempArtifact {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root.join(format!("tests/fixtures/stdlib_foundation/{name}.lani"));
@@ -51,7 +51,7 @@ fn ledger(events: &str) -> usize {
 }
 fn run(exe: &common::TempArtifact, when: Option<usize>, expected: Option<i32>) -> (String, usize) {
     let trace = common::TempArtifact::new("laniusc_clone", "trace", None);
-    let mut command = Command::new("strace");
+    let mut command = crate::common::strace();
     command
         .args(["-qq", "-o"])
         .arg(trace.path())

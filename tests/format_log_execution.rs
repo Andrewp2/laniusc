@@ -34,7 +34,7 @@ fn checked(output: &Output, status: i32) {
 fn formatting_composes_custom_types_and_latches_atomic_append_errors_without_allocation() {
     let exe = executable("tests/fixtures/stdlib_foundation/format_contracts.lani");
     let trace = common::TempArtifact::new("laniusc_format_log", "allocations", None);
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args([
@@ -199,7 +199,7 @@ fn quoted_utf8_round_trips_control_bytes_and_generated_scalars() {
 fn logging_encodes_filters_and_transfers_to_memory() {
     let exe = executable("tests/fixtures/extended/log_contracts.lani");
     let trace = common::TempArtifact::new("laniusc_format_log", "log_allocations", None);
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args([
@@ -352,7 +352,7 @@ fn checksum_logging_handles_write_errors_and_releases_owners_under_faults() {
     config.write_bytes(br#"{"log_level":"info"}"#);
     let trace = common::TempArtifact::new("laniusc_format_log", "fault_trace", None);
     let execute = |injection: Option<String>, status: i32| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -416,7 +416,7 @@ fn repeated_logging_reuses_storage_without_allocations_or_stale_fields() {
     let exe = executable("tests/fixtures/extended/log_batch.lani");
     let trace = common::TempArtifact::new("laniusc_format_log", "batch_trace", None);
     for count in [0, 128, 8192] {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())

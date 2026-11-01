@@ -50,7 +50,7 @@ fn injected(args: &[&str], bytes: &[u8], fault: &str) -> (Output, String) {
     let trace = common::TempArtifact::new("laniusc_float_format", "trace", None);
     let output = common::process_output_with_timeout(
         "float-normalize injected I/O",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=read,write,mmap,munmap,brk", "-e", fault])
@@ -68,7 +68,7 @@ fn display_composes_both_float_widths_custom_records_measurement_and_atomic_appe
     let trace = common::TempArtifact::new("laniusc_float_format", "trace", None);
     let output = common::process_output_with_timeout(
         "float Display contracts",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([

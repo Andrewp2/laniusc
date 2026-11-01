@@ -68,7 +68,7 @@ fn heap_contracts_execute_ordering_aliases_generic_payloads_and_zero_sized_value
     }
     let exe = fixture("binary_heap_zero_sized");
     let trace = common::TempArtifact::new("laniusc_heap", "zero_sized_trace", None);
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args([
@@ -231,7 +231,7 @@ fn every_heap_allocation_failure_preserves_contents_capacity_and_views() {
     let exe = fixture("binary_heap_failure");
     let trace = common::TempArtifact::new("laniusc_heap", "failure_trace", None);
     let execute = |when: Option<usize>| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -373,7 +373,7 @@ fn top_scores_program_executes_large_inputs_limits_and_resource_failures() {
     input.write_bytes(&source(17, &values));
     let trace = common::TempArtifact::new("laniusc_heap", "scores_trace", None);
     let traced = |injection: Option<String>, status: i32, prefix: usize| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())

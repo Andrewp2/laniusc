@@ -104,7 +104,7 @@ class Runner:
         prefix = self.directory / name
         command = [self.executable, *arguments]
         if trace:
-            traced = ["strace", "--kill-on-exit", "-qq", "-s", "64", "-e", "signal=none",
+            traced = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-s", "64", "-e", "signal=none",
                       "-e", "trace=read,write,mmap,rt_sigaction", "-o", str(prefix.with_suffix(".trace"))]
             if injection:
                 call, ordinal, error = injection

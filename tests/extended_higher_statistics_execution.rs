@@ -53,7 +53,7 @@ fn higher_moment_errors_are_atomic_and_borrowed_views_need_no_allocation() {
     let trace = common::TempArtifact::new("laniusc_higher_statistics", "trace", None);
     let output = common::process_output_with_timeout(
         "higher moments atomic/count/borrow contracts with all allocations denied",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([

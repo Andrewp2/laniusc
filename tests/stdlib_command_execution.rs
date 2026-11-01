@@ -79,7 +79,7 @@ fn nonblocking_wait_returns_interruption_without_losing_pid_ownership() {
     let child = fixture("command_try_wait_interrupt");
     for (inject, expected) in [(false, 40), (true, 41)] {
         let trace = common::TempArtifact::new("laniusc_command", "try_wait_trace", None);
-        let mut command = Command::new("timeout");
+        let mut command = crate::common::traced_timeout();
         command.args(["--kill-after=1s", "5s"]);
         if inject {
             command

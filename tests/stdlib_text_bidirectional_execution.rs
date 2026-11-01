@@ -1,7 +1,7 @@
 //! Borrowed bidirectional Text: direct execution and capability boundaries.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod common;
-use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command, time::Duration};
+use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, time::Duration};
 fn compile(name: &str) -> Result<Vec<u8>, laniusc_compiler::compiler::CompileError> {
     compile_from("tests/fixtures/stdlib_text_bidirectional/direct", name)
 }
@@ -30,7 +30,7 @@ fn execute_bytes(name: &str, bytes: Vec<u8>) {
     let trace = common::TempArtifact::new("laniusc_text_bidirectional", "all_syscalls", None);
     let output = common::process_output_with_timeout(
         "pure bidirectional Text contracts",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=all", "-e", "signal=none"])

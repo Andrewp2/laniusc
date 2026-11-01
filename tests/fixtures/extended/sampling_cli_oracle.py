@@ -57,7 +57,7 @@ for args in [['operand'],['--seed','1','--seed','2'],['--max-jobs','4097'],['--m
 help=run(b'',['--help']);assert help.returncode==0 and help.stdout.startswith(b'Usage: sample-distribution ') and not help.stderr
 def traced(data,args=(),fault=None,output=None):
     with tempfile.NamedTemporaryFile() as trace:
-        command=['strace','-qq','-o',trace.name,'-e','trace=mmap,munmap,read,write']
+        command=['strace','-E','LANIUS_ALLOC=mmap','-qq','-o',trace.name,'-e','trace=mmap,munmap,read,write']
         if fault:command+=['-e',fault]
         result=subprocess.run(command+[exe,*args],input=data,stdout=output or subprocess.PIPE,stderr=subprocess.PIPE,timeout=15)
         log=pathlib.Path(trace.name).read_text()

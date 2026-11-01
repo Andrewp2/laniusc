@@ -41,7 +41,7 @@ fn typed_consumer_effects_nested_values_and_single_owner_cleanup_execute() {
     let trace = common::TempArtifact::new("laniusc_iterator_consumer", "ownership_trace", None);
     let output = common::process_output_with_timeout(
         "typed iterator consumers",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,mremap,munmap,brk", "-e", "signal=none"])

@@ -53,7 +53,7 @@ class Observation:
         if tls:
             options += ["--max-tls", "20000"]
         self.trace = directory / "syscalls.log"
-        command = ["strace", "--kill-on-exit", "-qq", "-i", "-s", "96",
+        command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-i", "-s", "96",
                    "-o", str(self.trace), "-e", "trace=" + TRACE_CALLS, *arguments, *options]
         (directory / "command.txt").write_text(repr(command) + "\n")
         self.ledger = Ledger(self.trace, pairs, named)

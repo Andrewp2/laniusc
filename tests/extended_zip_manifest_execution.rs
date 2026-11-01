@@ -392,7 +392,7 @@ fn manifest_frees_every_owner_under_all_observed_allocation_and_io_failures() {
     let file = input(&zip);
     let trace = common::TempArtifact::new("laniusc_zip_manifest", "trace", None);
     let execute = |injection: Option<&str>, status| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -452,7 +452,7 @@ fn manifest_frees_every_owner_under_all_observed_allocation_and_io_failures() {
     let at = local + 30 + u16(&corrupt, local + 26) + u16(&corrupt, local + 28);
     corrupt[at] ^= 1;
     let file = input(&corrupt);
-    let out = run(Command::new("strace")
+    let out = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args(["-e", "trace=mmap,munmap"])

@@ -16,7 +16,7 @@ def traced(data,args=(),closed_stdout=False,closed_stderr=False,fault=None):
     stderr=closed_pipe() if closed_stderr else subprocess.PIPE
     try:
         with tempfile.NamedTemporaryFile() as trace:
-            command=['strace','-qq','-o',trace.name,'-e','trace=rt_sigaction,mmap,munmap,openat,read,write']
+            command=['strace','-E','LANIUS_ALLOC=mmap','-qq','-o',trace.name,'-e','trace=rt_sigaction,mmap,munmap,openat,read,write']
             if fault:command+=['-e',fault]
             # restore_signals resets Python's inherited SIGPIPE ignore before
             # exec. The CLI must install its own policy to survive these pipes.

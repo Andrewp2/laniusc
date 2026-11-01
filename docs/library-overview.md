@@ -1,6 +1,14 @@
 # Standard and extended library overview
 
-The full library goal remains open. The current increment adds
+The full library goal remains open. The current increment replaces the
+native runtime's allocator, which made every allocation its own `mmap`, with a
+[pooling allocator](runtime-allocator.md): power-of-two classes up to 32 KiB
+in 1 MiB arenas, free lists per class, and direct `mmap` above that.
+Allocating and freeing 1,000 bytes drops from 6.3 µs to 0.19 µs,
+`alloc::io::read_line` runs 4.5x faster, and the h2c server's system time
+drops from 0.34–0.38 s to 0.09 s. `LANIUS_ALLOC=mmap` restores the old
+syscalls for the failure-injection tests.
+The preceding increment adds
 [bulk slice and vector operations](stdlib-slice-bulk.md): `copy_from_slice`,
 `swap_with_slice`, `fill_range`, `memchr` and `memcmp` in `core::slice`, and
 `try_extend_from_slice`, `copy_from_slice`, `swap_with_slice`, `fill` and

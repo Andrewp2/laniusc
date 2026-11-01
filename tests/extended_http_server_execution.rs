@@ -25,7 +25,7 @@ fn http_server_owned_connection_accept_cleanup_native_admission() {
     let trace = common::TempArtifact::new("laniusc_http_server", "trace", None);
     let out = common::short_process_output_with_timeout(
         "HTTPserveradmission",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=socket,accept4,close,mmap,munmap"])

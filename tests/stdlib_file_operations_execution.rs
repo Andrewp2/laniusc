@@ -109,7 +109,7 @@ fn syscall_errors_remain_distinct_and_close_is_never_retried() {
         (0, "close:error=EINTR:when=1", 104, "close(", 1),
         (4, "close:error=EIO:when=1", 105, "close(", 2),
     ] {
-        let out = run(Command::new("strace")
+        let out = run(crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([
@@ -139,7 +139,7 @@ fn syscall_errors_remain_distinct_and_close_is_never_retried() {
 fn metadata_decoder_and_invalid_paths_are_atomic_before_syscalls() {
     let exe = executable("file_ops_bounds");
     let trace = common::TempArtifact::new("laniusc_file_ops", "bounds", None);
-    let out = run(Command::new("strace")
+    let out = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args(["-e", "trace=openat,statx"])

@@ -80,7 +80,7 @@ fn typed_collection_sinks_preserve_duplicate_payloads_and_owner_lifetimes() {
     let trace = common::TempArtifact::new("laniusc_collection_sink", "contract_memory", None);
     let output = common::process_output_with_timeout(
         "typed collection sinks",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,mremap,munmap,brk", "-e", "signal=none"])
@@ -346,7 +346,7 @@ fn collection_sink_sequences_match_independent_duplicate_and_heap_models() {
     let trace = common::TempArtifact::new("laniusc_collection_sink", "model_memory", None);
     let output = common::process_output_with_timeout(
         "collection sink sequence models",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,mremap,munmap,brk", "-e", "signal=none"])

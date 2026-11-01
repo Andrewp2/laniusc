@@ -49,7 +49,7 @@ def invoke(role=0,mode=1,count=1025,layout=0,credential=None,key=None,password='
     ca=path(trust) if trust!='-' else '-'
     command=[str(EXE),str(inherited.fileno()),path(credential),path(key),password,ca,str(role),str(mode),str(count),str(layout),str(fault),identity]
     if trace:
-        prefix=['strace','-qq','-o',str(trace),'-e','trace=mmap,munmap,write']
+        prefix=['strace','-E','LANIUS_ALLOC=mmap','-qq','-o',str(trace),'-e','trace=mmap,munmap,write']
         if fail_at is not None: prefix += ['-e',f'inject=mmap:error=ENOMEM:when={fail_at}']
         command=prefix+command
     env=os.environ.copy();env['SSL_CERT_FILE']=str(CERTS/'root.pem');env['SSL_CERT_DIR']=str(CERTS/'no-native-directory')

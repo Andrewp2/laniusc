@@ -23,6 +23,25 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// `strace` for trace-based resource tests. The traced program runs with
+/// `LANIUS_ALLOC=mmap`, the runtime's direct allocator mode: every allocation
+/// is its own `mmap` and every release a `munmap`, so allocation ledgers and
+/// `inject=mmap:...:when=N` ordinals count program allocations exactly as
+/// they did before the pooling allocator. Untraced runs use the pools.
+pub fn strace() -> Command {
+    let mut command = Command::new("strace");
+    command.env("LANIUS_ALLOC", "mmap");
+    command
+}
+
+/// `timeout` for a command line that runs `strace`, with the same direct
+/// allocator mode as [`strace`].
+pub fn traced_timeout() -> Command {
+    let mut command = Command::new("timeout");
+    command.env("LANIUS_ALLOC", "mmap");
+    command
+}
+
 use laniusc_compiler::compiler::{
     CompileError,
     compile_source_pack_to_wasm_with_gpu_codegen,

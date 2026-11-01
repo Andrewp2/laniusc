@@ -244,7 +244,7 @@ class Suite:
         request = struct.pack("<3I", backend, flavor, mode)
         (directory / "request.bin").write_bytes(request)
         trace = directory / "syscalls.log"
-        command = ["strace", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-e", "signal=none",
+        command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-e", "signal=none",
                    "-e", "trace=" + TRACE, "-o", str(trace)]
         if point:
             command += ["-e", f"inject=mmap:error=ENOMEM:when={point}"]

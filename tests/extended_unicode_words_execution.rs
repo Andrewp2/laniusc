@@ -171,7 +171,7 @@ fn every_official_unicode_17_word_vector_and_long_contexts_execute_without_alloc
     let trace = common::TempArtifact::new("laniusc_unicode_words", "noalloc", None);
     let output = common::process_output_with_timeout(
         "official Unicode 17 word corpus and long contexts",
-        std::process::Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([

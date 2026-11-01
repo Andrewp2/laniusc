@@ -167,7 +167,7 @@ fn hull_allocation_failure_preserves_input_and_releases_all_temporaries() {
     let exe = executable("geometry_allocation_failure");
     let trace = common::TempArtifact::new("laniusc_geometry", "trace", None);
     let invoke = |failure: Option<usize>| {
-        let mut c = Command::new("strace");
+        let mut c = crate::common::strace();
         c.args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap"]);

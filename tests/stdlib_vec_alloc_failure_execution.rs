@@ -52,7 +52,7 @@ fn vector_allocation_failures_leave_vectors_unchanged_on_x86() {
                 Some(normal_exit),
                 "{name}: {normal:?}"
             );
-            if std::process::Command::new("strace")
+            if crate::common::strace()
                 .arg("-V")
                 .output()
                 .is_err()
@@ -62,7 +62,7 @@ fn vector_allocation_failures_leave_vectors_unchanged_on_x86() {
             let trace = common::TempArtifact::new("laniusc_vec", "trace", None);
             let injected = common::short_process_output_with_timeout(
                 format!("{name} injected {syscall} failure"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-o")
                     .arg(trace.path())

@@ -174,7 +174,7 @@ class Runner:
             arguments = [os.fsdecode(key)]
         directory = self.directory / name; directory.mkdir()
         source = directory / 'input'; source.write_bytes(data)
-        command = ['strace', '--kill-on-exit', '-qq', '-xx', '-s', '16', '-e', 'signal=none',
+        command = ['strace','-E','LANIUS_ALLOC=mmap', '--kill-on-exit', '-qq', '-xx', '-s', '16', '-e', 'signal=none',
                    '-e', 'trace=' + TRACE, '-o', str(directory / 'trace')]
         for call, position, change in injections:
             action = change if change.startswith('retval=') else 'error=' + change

@@ -60,14 +60,14 @@ fn civil_calendar_algebra_and_checked_boundaries_execute() {
                 "{output:?}"
             );
             if name == "calendar_contracts"
-                && std::process::Command::new("strace")
+                && crate::common::strace()
                     .arg("-V")
                     .output()
                     .is_ok()
             {
                 let output = common::short_process_output_with_timeout(
                     "calendar requires no allocator syscalls",
-                    std::process::Command::new("strace")
+                    crate::common::strace()
                         .args(["-qq", "-e", "trace=brk,mmap,mremap"])
                         .arg(exe.path()),
                 );

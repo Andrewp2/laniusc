@@ -264,7 +264,7 @@ fn text_normalize_cleans_up_every_observed_allocation_and_io_failure() {
     let input = file(source.as_bytes());
     let trace = common::TempArtifact::new("laniusc_text_normalize", "trace", None);
     let execute = |fault: Option<&str>| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -353,7 +353,7 @@ fn text_normalize_cleans_up_every_observed_allocation_and_io_failure() {
         .arg(exe.path())
         .arg(input.path()));
     failure(&output, 3, "io-failure stage=output");
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args([

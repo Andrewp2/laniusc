@@ -24,7 +24,7 @@ fn run(path: &str, input: &[u8], no_heap: bool) -> Vec<u8> {
     let data = common::TempArtifact::new("laniusc_net", "input", None);
     data.write_bytes(input);
     let trace = common::TempArtifact::new("laniusc_net", "trace", None);
-    let mut c = Command::new("strace");
+    let mut c = crate::common::strace();
     c.args(["-qq", "-o"])
         .arg(trace.path())
         .args(["-e", "trace=mmap,munmap"]);

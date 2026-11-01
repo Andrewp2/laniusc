@@ -41,7 +41,7 @@ fn trace(executable: &common::TempArtifact) -> (Output, String) {
     let events = common::TempArtifact::new("laniusc_reverse_iterator", "allocations", None);
     let output = common::process_output_with_timeout(
         "bidirectional allocation contracts",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(events.path())
             .args(["-e", "trace=mmap,mremap,munmap,brk", "-e", "signal=none"])

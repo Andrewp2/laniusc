@@ -229,7 +229,7 @@ fn run(data: &[u8], args: &[OsString], inject: &[&str], closed: bool, seconds: &
     let input = common::TempArtifact::new("laniusc_certificate_info", "stdin", None);
     input.write_bytes(data);
     let trace = common::TempArtifact::new("laniusc_certificate_info", "trace", None);
-    let mut command = Command::new("timeout");
+    let mut command = crate::common::traced_timeout();
     command
         .args(["--kill-after=1s", seconds, "strace", "-qq", "-o"])
         .arg(trace.path())

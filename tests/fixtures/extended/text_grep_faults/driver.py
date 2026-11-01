@@ -40,7 +40,9 @@ def main():
         with open(source, "rb") as stdin:
             p = subprocess.run([inj, report_path, syscall, str(when), action, "--", exe, *args],
                                stdin=stdin, stdout=stdout or subprocess.PIPE,
-                               stderr=subprocess.PIPE, timeout=20)
+                               stderr=subprocess.PIPE, timeout=20,
+                               # Direct allocator: each allocation is one observable mmap.
+                               env=dict(os.environ, LANIUS_ALLOC="mmap"))
         report = {}
         for line in open(report_path):
             key, _, value = line.rstrip("\n").partition(" ")
