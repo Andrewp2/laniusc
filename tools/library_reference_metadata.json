@@ -1365,6 +1365,11 @@
         "docs/extended-schema.md"
       ]
     },
+    "ext::seqdiff": {
+      "guides": [
+        "docs/extended-seqdiff.md"
+      ]
+    },
     "ext::server_poll": {
       "guides": [
         "docs/extended-server-poll.md",
@@ -1593,6 +1598,11 @@
       ],
       "role": "support",
       "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "ext::unidiff": {
+      "guides": [
+        "docs/extended-seqdiff.md"
+      ]
     },
     "ext::uri": {
       "guides": [
