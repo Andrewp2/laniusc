@@ -1,0 +1,266 @@
+// text-sed: a sed subset over ext::sed, compared with GNU sed 4.9.
+//   text-sed [-n] [-E|-r] [-s] [-i] [-e SCRIPT]... [SCRIPT] [FILE...]
+// Without -s or -i the files form one stream, as in sed. With -s each file
+// is a separate stream on standard output; -i writes each file's output
+// back to that file (through a new file renamed over it). Exit status: 0,
+// 1 for a bad script or usage, 2 when an input could not be read, 4 for a
+// failure while running or writing; a q or Q exit code otherwise.
+// See docs/extended-sed.md.
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::path;
+import ext::cli;
+import ext::sed;
+import std::args;
+import std::file;
+import std::file_ops;
+import std::fs;
+import std::stream;
+
+struct Settings { quiet: bool, extended: bool, separate: bool, in_place: bool, help: bool, expressions: i32 }
+struct Inputs { script: alloc::vec::Vec<u8>, files: alloc::vec::Vec<ext::cli::Argument> }
+// A file that could not be read, at byte offset at of the joined stream.
+struct Missing { file: i32, at: i32 }
+
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return core::result::unwrap(core::slice::view(bytes,count));
+}
+fn write_fd(fd: i32, values: [u8], start: i32, count: i32) -> bool {
+    let base: ptr = core::mem::i32_slice_data_ptr(values); let done: i32 = 0;
+    while (done < count) {
+        let sent: i32 = std::fs::write(fd, base + ((start + done) as usize), (count - done) as usize);
+        if (sent == -4) { continue; }
+        if (sent <= 0 || sent > count - done) { return false; }
+        done += sent;
+    }
+    return true;
+}
+fn say(value: core::slice::View<u8>) -> bool { return write_fd(2,value.values,value.start,value.length); }
+fn complain(first: core::slice::View<u8>, path: core::slice::View<u8>, last: core::slice::View<u8>) -> bool {
+    return say(literal("text-sed: ",10)) && say(first) && say(path) && say(last);
+}
+fn script_error(error: ext::sed::Error) -> i32 {
+    let at: i32 = match (error) {
+        ext::sed::Error::Syntax(offset) -> offset, ext::sed::Error::UnknownCommand(offset) -> offset, ext::sed::Error::Unterminated(offset) -> offset,
+        ext::sed::Error::Regex(offset) -> offset, ext::sed::Error::Reference(offset) -> offset, ext::sed::Error::Unsupported(offset) -> offset,
+        ext::sed::Error::InvalidUtf8(offset) -> offset, _ -> -1
+    };
+    let reason: core::slice::View<u8> = match (error) {
+        ext::sed::Error::Syntax(offset) -> literal("syntax error\n",13), ext::sed::Error::UnknownCommand(offset) -> literal("unknown command\n",16),
+        ext::sed::Error::Unterminated(offset) -> literal("unterminated command or regex\n",30), ext::sed::Error::Regex(offset) -> literal("invalid regex\n",14),
+        ext::sed::Error::Reference(offset) -> literal("invalid reference on s command's RHS\n",37), ext::sed::Error::Unsupported(offset) -> literal("unsupported\n",12),
+        ext::sed::Error::InvalidUtf8(offset) -> literal("invalid UTF-8\n",14), ext::sed::Error::AllocationFailed -> literal("allocation failure\n",19), _ -> literal("resource limit\n",15)
+    };
+    let shown: alloc::vec::Vec<u8> = alloc::vec::new(); let digits: i32 = 0;
+    if (at >= 0) {
+        let value: i32 = at + 1; let divisor: i32 = 1; while (value / divisor >= 10) { divisor *= 10; }
+        while (divisor > 0) { if (core::result::is_err(shown.try_push((48 + (value / divisor) % 10) as u8))) { break; } divisor /= 10; }
+    }
+    if (at >= 0) { say(literal("text-sed: -e expression, char ",30)); say(shown.as_view()); say(literal(": ",2)); } else { say(literal("text-sed: ",10)); }
+    say(reason); shown.destroy();
+    let allocation: bool = match (error) { ext::sed::Error::AllocationFailed -> true, _ -> false };
+    if (allocation) { return 4; } return 1;
+}
+fn run_error(error: ext::sed::Error) -> i32 {
+    let reason: core::slice::View<u8> = match (error) {
+        ext::sed::Error::InvalidUtf8(offset) -> literal("text-sed: invalid UTF-8 in a line a regex reads\n",48),
+        ext::sed::Error::NoPreviousRegex -> literal("text-sed: no previous regular expression\n",41),
+        ext::sed::Error::WorkLimit -> literal("text-sed: regex work limit\n",27),
+        ext::sed::Error::AllocationFailed -> literal("text-sed: allocation failure\n",29),
+        _ -> literal("text-sed: resource limit\n",25)
+    };
+    say(reason);
+    let script: bool = match (error) { ext::sed::Error::NoPreviousRegex -> true, _ -> false };
+    if (script) { return 1; } return 4;
+}
+// Appends the rest of fd to buffer; false on a read or allocation failure.
+fn read_all(fd: i32, buffer: &alloc::vec::Vec<u8>) -> bool {
+    while (true) {
+        // Doubling growth: copying grows linearly with the file.
+        let more: i32 = 65536; if (buffer.len() > more) { more = buffer.len(); }
+        if (buffer.capacity() - buffer.len() < 65536 && core::result::is_err(buffer.try_reserve(more))) { return false; }
+        let count: i32 = std::fs::read(fd, buffer.storage + (buffer.len() as usize), 65536 as usize);
+        if (count == -4) { continue; }
+        if (count < 0 || count > 65536) { return false; }
+        if (count == 0) { return true; }
+        buffer.length += count;
+    }
+    return true;
+}
+fn is_stdin(path: core::slice::View<u8>) -> bool { return path.length == 1 && path.values[path.start] == 45; }
+// Reads path ("-" is standard input) onto the end of buffer.
+fn read_path(path: core::slice::View<u8>, buffer: &alloc::vec::Vec<u8>) -> bool {
+    if (is_stdin(path)) { return read_all(0,buffer); }
+    let checked = core::path::from_view(path); if (core::result::is_err(checked)) { return false; }
+    let opened = std::file_ops::open(core::result::unwrap(checked),std::file_ops::options());
+    if (core::result::is_err(opened)) { return false; }
+    let file: std::file::File = core::result::unwrap(opened); let fd: i32 = core::option::unwrap(file.raw_handle());
+    let before: i32 = buffer.len(); let ok: bool = read_all(fd,buffer); std::fs::close(fd);
+    if (!ok) { core::result::unwrap(buffer.truncate(before)); }
+    return ok;
+}
+fn flush(output: &alloc::vec::Vec<u8>) -> bool { let ok: bool = write_fd(1,output.as_slice(),0,output.len()); output.clear(); return ok; }
+// One stream of all the files, as sed reads them: a file without a final
+// newline gets one when more input follows. Unreadable files are reported
+// only when sed would have reached them.
+fn stream(program: &ext::sed::Program, run: &ext::sed::Run, settings: Settings, inputs: &Inputs) -> i32 {
+    let buffer: alloc::vec::Vec<u8> = alloc::vec::new(); let missing: alloc::vec::Vec<Missing> = alloc::vec::new();
+    let joins: alloc::vec::Vec<i32> = alloc::vec::new();
+    let i: i32 = 0; let owed: bool = false; let failed: bool = false;
+    while (i < inputs.files.len() && !failed) {
+        let item: ext::cli::Argument = inputs.files.at(i);
+        let before: i32 = buffer.len();
+        if (owed) { if (core::result::is_err(buffer.try_push(10))) { failed = true; break; } }
+        if (!read_path(item.bytes,buffer.borrow())) {
+            core::result::unwrap(buffer.truncate(before));
+            if (core::result::is_err(missing.try_push(Missing { file: i, at: before }))) { failed = true; }
+        } else {
+            if (buffer.len() == before + 1 && owed) { core::result::unwrap(buffer.truncate(before)); }
+            else {
+                if (owed) { if (core::result::is_err(joins.try_push(before))) { failed = true; } owed = false; }
+                if (buffer.len() > before) { owed = buffer.at(buffer.len() - 1) != 10; }
+            }
+        }
+        i += 1;
+    }
+    if (failed) { say(literal("text-sed: allocation failure\n",29)); buffer.destroy(); missing.destroy(); joins.destroy(); return 4; }
+    let output: alloc::vec::Vec<u8> = alloc::vec::new();
+    let done = program.execute_joined(run,buffer.as_view(),joins.as_view(),settings.quiet,output.borrow());
+    joins.destroy();
+    let status: i32 = 0;
+    let k: i32 = 0;
+    while (k < missing.len()) {
+        let entry: Missing = missing.at(k); k += 1;
+        if (entry.at < run.consumed() || (entry.at == run.consumed() && run.looked_past())) { complain(literal("can't read ",11),inputs.files.at(entry.file).bytes,literal(": cannot open or read\n",22)); status = 2; }
+    }
+    if (core::result::is_err(done)) { flush(output.borrow()); status = run_error(core::result::unwrap_err(done)); }
+    else {
+        if (!flush(output.borrow())) { say(literal("text-sed: couldn't write output\n",32)); status = 4; }
+        if (status == 0 && core::result::unwrap(done)) { status = run.exit_status(); }
+    }
+    buffer.destroy(); missing.destroy(); output.destroy(); return status;
+}
+fn temporary_name(path: core::slice::View<u8>, name: &alloc::vec::Vec<u8>) -> bool {
+    name.clear(); return core::result::is_ok(name.try_extend(path)) && core::result::is_ok(name.try_extend(literal(".text-sed~",10)));
+}
+// Writes output over path through a new file beside it.
+fn replace(path: core::slice::View<u8>, output: &alloc::vec::Vec<u8>) -> bool {
+    let target = core::path::from_view(path); if (core::result::is_err(target)) { return false; }
+    let metadata: std::file_ops::Metadata = std::file_ops::empty_metadata();
+    if (core::result::is_err(std::file_ops::metadata_into(core::result::unwrap(target),true,metadata.borrow()))) { return false; }
+    let name: alloc::vec::Vec<u8> = alloc::vec::new();
+    if (!temporary_name(path,name.borrow())) { name.destroy(); return false; }
+    let temporary = core::path::from_view(name.as_view()); if (core::result::is_err(temporary)) { name.destroy(); return false; }
+    let options: std::file_ops::OpenOptions = std::file_ops::options();
+    options.access = std::file_ops::Access::Write; options.create = true; options.exclusive = true; options.mode = metadata.mode & 4095;
+    let opened = std::file_ops::open(core::result::unwrap(temporary),options);
+    if (core::result::is_err(opened)) { name.destroy(); return false; }
+    let file: std::file::File = core::result::unwrap(opened); let fd: i32 = core::option::unwrap(file.raw_handle());
+    let written: bool = write_fd(fd,output.as_slice(),0,output.len());
+    if (written) { written = core::result::is_ok(std::file_ops::set_permissions(file.borrow(),metadata.mode & 4095)); }
+    std::fs::close(fd);
+    if (written) { written = core::result::is_ok(std::file_ops::rename_at(std::file_ops::AT_FDCWD,core::result::unwrap(temporary),std::file_ops::AT_FDCWD,core::result::unwrap(target),std::file_ops::RenamePolicy::Replace)); }
+    if (!written) { let removed = std::file_ops::remove_file_at(std::file_ops::AT_FDCWD,core::result::unwrap(temporary)); }
+    name.destroy(); output.clear(); return written;
+}
+// Each file a stream of its own: -s writes to standard output, -i back to
+// the file. q or Q ends every file.
+fn separate(program: &ext::sed::Program, run: &ext::sed::Run, settings: Settings, inputs: &Inputs) -> i32 {
+    let buffer: alloc::vec::Vec<u8> = alloc::vec::new(); let output: alloc::vec::Vec<u8> = alloc::vec::new();
+    let status: i32 = 0; let i: i32 = 0; let ended: bool = false;
+    while (i < inputs.files.len() && !ended) {
+        let item: ext::cli::Argument = inputs.files.at(i); i += 1;
+        if (settings.in_place && is_stdin(item.bytes)) { complain(literal("couldn't edit ",14),item.bytes,literal(": not a regular file\n",21)); status = 4; continue; }
+        buffer.clear();
+        if (!read_path(item.bytes,buffer.borrow())) { complain(literal("can't read ",11),item.bytes,literal(": cannot open or read\n",22)); if (status == 0) { status = 2; } continue; }
+        run.restart(program); if (settings.in_place) { run.new_output(); }
+        let done = program.execute(run,buffer.as_view(),settings.quiet,output.borrow());
+        if (core::result::is_err(done)) { if (!settings.in_place) { flush(output.borrow()); } buffer.destroy(); output.destroy(); return run_error(core::result::unwrap_err(done)); }
+        ended = core::result::unwrap(done);
+        if (settings.in_place) {
+            if (!replace(item.bytes,output.borrow())) { complain(literal("couldn't edit ",14),item.bytes,literal(": write failed\n",15)); buffer.destroy(); output.destroy(); return 4; }
+        } else {
+            if (!flush(output.borrow())) { say(literal("text-sed: couldn't write output\n",32)); buffer.destroy(); output.destroy(); return 4; }
+        }
+    }
+    buffer.destroy(); output.destroy();
+    if (status == 0 && ended) { status = run.exit_status(); }
+    return status;
+}
+fn option(settings: &Settings, inputs: &Inputs, item: ext::cli::Occurrence) -> i32 {
+    if (item.id == 1) { settings.quiet = true; return 0; } if (item.id == 3 || item.id == 4) { settings.extended = true; return 0; }
+    if (item.id == 5) { settings.separate = true; return 0; } if (item.id == 6) { settings.in_place = true; settings.separate = true; return 0; }
+    if (item.id == 7) { settings.help = true; return 0; }
+    let value: ext::cli::Argument = core::option::unwrap(item.value);
+    if (settings.expressions > 0 && core::result::is_err(inputs.script.try_push(10))) { return 4; }
+    if (core::result::is_err(inputs.script.try_extend(value.bytes))) { return 4; }
+    settings.expressions += 1; return 0;
+}
+fn parsed(arguments: std::args::Arguments, inputs: &Inputs) -> i32 {
+    let specs: [ext::cli::Spec;7] = [
+        ext::cli::Spec { id: 1, long: literal("quiet",5), short: 110, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 2, long: literal("expression",10), short: 101, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 3, long: literal("regexp-extended",15), short: 69, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 4, long: literal("",0), short: 114, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 5, long: literal("separate",8), short: 115, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 6, long: literal("in-place",8), short: 105, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 7, long: literal("help",4), short: 0, arity: ext::cli::Arity::Flag }
+    ];
+    let schema: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,7));
+    let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(arguments.as_view(),schema,ext::cli::Ordering::Intermixed));
+    let settings: Settings = Settings { quiet: false, extended: false, separate: false, in_place: false, help: false, expressions: 0 };
+    while (true) {
+        let event: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next();
+        if (core::result::is_err(event)) { say(literal("text-sed: invalid arguments\n",28)); return 1; }
+        let next: core::option::Option<ext::cli::Event> = core::result::unwrap(event); if (core::option::is_none(next)) { break; }
+        let valid: i32 = match (core::option::unwrap(next)) {
+            ext::cli::Event::Option(value) -> option(settings.borrow(),inputs,value),
+            ext::cli::Event::Operand(value) -> match (inputs.files.try_push(value)) { core::result::Ok(n) -> 0, core::result::Err(e) -> 4 }
+        };
+        if (valid != 0) { say(literal("text-sed: allocation failure\n",29)); return 4; }
+    }
+    if (settings.help) {
+        let usage: core::slice::View<u8> = literal("Usage: text-sed [-n|--quiet] [-E|-r|--regexp-extended] [-s|--separate] [-i|--in-place] [-e SCRIPT|--expression SCRIPT]... [SCRIPT] [FILE...]\n",141);
+        if (!write_fd(1,usage.values,usage.start,usage.length)) { return 4; } return 0;
+    }
+    let first: i32 = 0;
+    if (settings.expressions == 0) {
+        if (inputs.files.len() == 0) { say(literal("text-sed: no script\n",20)); return 1; }
+        if (core::result::is_err(inputs.script.try_extend(inputs.files.at(0).bytes))) { return 4; }
+        first = 1;
+    }
+    let files: alloc::vec::Vec<ext::cli::Argument> = alloc::vec::new(); let k: i32 = first;
+    while (k < inputs.files.len()) { if (core::result::is_err(files.try_push(inputs.files.at(k)))) { files.destroy(); return 4; } k += 1; }
+    inputs.files.destroy(); inputs.files = files;
+    if (inputs.files.len() == 0) {
+        if (settings.in_place) { say(literal("text-sed: no input files\n",25)); return 1; }
+        let dash: ext::cli::Argument = ext::cli::Argument { bytes: literal("-",1), at: ext::cli::Location { argument: -1, byte: -1 } };
+        if (core::result::is_err(inputs.files.try_push(dash))) { return 4; }
+    }
+    let compiled: core::result::Result<ext::sed::Program,ext::sed::Error> = ext::sed::compile(inputs.script.as_view(),settings.extended);
+    if (core::result::is_err(compiled)) { return script_error(core::result::unwrap_err(compiled)); }
+    let program: ext::sed::Program = core::result::unwrap(compiled);
+    let made: core::result::Result<ext::sed::Run,ext::sed::Error> = program.run();
+    if (core::result::is_err(made)) { program.destroy(); return run_error(core::result::unwrap_err(made)); }
+    let run: ext::sed::Run = core::result::unwrap(made);
+    let status: i32 = 0;
+    if (settings.separate) { status = separate(program.borrow(),run.borrow(),settings,inputs); }
+    else { status = stream(program.borrow(),run.borrow(),settings,inputs); }
+    run.destroy(); program.destroy(); return status;
+}
+impl Settings { fn borrow(&self) -> &Settings { return self; } }
+impl Inputs { fn borrow(&self) -> &Inputs { return self; } }
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,4096,1048576);
+    if (core::result::is_err(captured)) { say(literal("text-sed: invalid arguments\n",28)); return 1; }
+    let arguments: std::args::Arguments = core::result::unwrap(captured);
+    let inputs: Inputs = Inputs { script: alloc::vec::new(), files: alloc::vec::new() };
+    let status: i32 = parsed(arguments,inputs.borrow());
+    inputs.script.destroy(); inputs.files.destroy(); arguments.destroy(); return status;
+}

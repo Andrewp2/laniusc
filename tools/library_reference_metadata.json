@@ -1115,6 +1115,11 @@
         "docs/extended-gitignore.md"
       ]
     },
+    "ext::sed": {
+      "guides": [
+        "docs/extended-sed.md"
+      ]
+    },
     "ext::glob": {
       "guides": [
         "docs/extended-glob.md"

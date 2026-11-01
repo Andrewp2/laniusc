@@ -81,7 +81,10 @@ cases. [`ext::gitignore`](extended-gitignore.md) applies `.gitignore` rules
 on top of it, and `text_grep -r` with `--include`, `--exclude`,
 `--exclude-dir` and `--gitignore` matches GNU grep 3.11 `-r` on the
 repository tree and 1,200 generated trees, and git's own listing in 705 of
-them. It runs `-r the` over the repository in 1.42x GNU grep's time.
+them. It runs `-r the` over the repository in 1.42x GNU grep's time. [`ext::sed`](extended-sed.md) and its `text_sed`
+sample run a GNU sed 4.9 subset (`s`, `y`, `p`, `d`, `n`, `q`, `Q`, `=`, blocks,
+all address forms, `-n -e -E -s -i`) and agree with `/usr/bin/sed` on 8,000
+generated scripts.
 
 [Checked filesystem mutations](stdlib-filesystem.md) provide allocation-free
 creation/removal of one directory, file unlinking and renaming over existing
