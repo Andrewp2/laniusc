@@ -152,7 +152,8 @@ scalars, CR, NUL, invalid UTF-8, records over 64 KiB, `-v`, `-n`, `-c`, small
 `--max-line` and small `--max-work`. A third of the inputs have 3,000
 records, which brings in dense literal hits and long line scans. Seeds
 20261031, 1 and 2 gave 1,500/1,500 identical runs, both before and after the
-output rework (`text-grep-output-receipt.log`). A build with a 3-state DFA
+output rework (`text-grep-output-receipt.log`) and after the skip and numbered
+blocks (`text-grep-numbers-receipt.log`, tiny build included). A build with a 3-state DFA
 cache and 2 partials gave 800/800 on seeds 20261031 and 7, which forces the
 undecided-record path (log `target/claude-work/s3/text-grep-scan-receipt.log`).
 
@@ -231,6 +232,37 @@ byte-identical to GNU's.
 compiler from the merged lang branch, so part of every gain may come from
 code generation.
 
+Then the per-line costs were removed (log
+`target/claude-work/s3/grep-numbers-timings.log`):
+
+- **Inverted blocks:** with `--invert`, a run of selected records between
+  matches is handled as one block. With `-c` only its line count, which the
+  8-byte gap pass already has, is added. Without `-n`, a block of 4 KiB or
+  more is written straight from the input buffer, and a smaller block is one
+  word copy. With `-n`, one loop writes "N:" and the record for each line. It
+  increments the stored digits in place, so there is no per-record call into
+  emit, put or the formatter.
+- **Skipping in the line scan:** `Dfa.match_lines` skips over the start state
+  eight bytes at a time (see
+  [Line scanning](extended-regex.md#line-scanning)). This applies when no
+  ASCII byte other than LF leaves the start state except at most three values
+  or a range of at most 48. It counts LFs on the way with the has-zero-byte
+  test and a multiply.
+
+Best of three in ms, before (the output-area build above) / after / GNU:
+
+| Pattern | `-v -n` | `-v` | `-c` |
+| --- | --- | --- | --- |
+| `[0-9]+$` | 746 / 375 / 175 | 1168 / 205 / 201 | 430 / 173 / 44 |
+| `the` | 424 / 360 / 173 | 357 / 231 / 137 | 212 / 202 / 58 |
+| `fn main` | 389 / 289 / 216 | 329 / 128 / 121 | 116 / 119 / 33 |
+| `\bResult<` | 356 / 270 / 153 | 382 / 136 / 165 | 109 / 104 / 17 |
+
+The `-v -n` column comes from a run at load 11–14. The `-v` and `-c` columns
+come from a run at load 17–19, where a repeat of `-v -n` measured 531 / 532 /
+626 / 600 ms against GNU's 196 / 251 / 287 / 298. `-v -n` is 1.3–2.1x GNU at
+the lower load. Every row's output is byte-identical to GNU's.
+
 The no-match scan is now close to the cost of `core::search` itself. A
 program that only reads the corpus and calls `core::search::find` in a loop
 takes 30 ms for `zzzz` and 100–110 ms for `core::result::Result`; the rest of
@@ -303,7 +335,7 @@ also checks `/dev/full` and a failed diagnostic write. It requires `python3` and
 without ptrace. `faultinj.c` in that directory uses seccomp user notification
 to count `mmap`, `munmap`, `read` and `write` calls and to fail the N-th one.
 At exit it compares `/proc/PID/maps` with the map at the first trapped call, so
-an unreleased mapping is a failure. The driver runs the matrix for three
+an unreleased mapping is a failure. The driver runs the matrix for seven
 patterns on `aaé\r\nnope\néa` with `-n`:
 
 | Pattern | Path | mmap = munmap | Allocation failures (status 4) | Read faults | Stdout write faults |
@@ -313,8 +345,10 @@ patterns on `aaé\r\nnope\néa` with `-n`:
 | `(?:a\|é)+` | lazy DFA | 29 | 29/29 | 2 × EIO, EINTR | 1 × EIO, 0, EINTR, short |
 | `a*é` | prefilter, DFA on hit records | 29 | 29/29 | 2 × EIO, EINTR | 1 × EIO, 0, EINTR, short |
 | `é` | prefilter, literal decides | 28 | 28/28 | 2 × EIO, EINTR | 1 × EIO, 0, EINTR, short |
+| `nope` with `-v` | prefilter, numbered gap blocks | 31 | 31/31 | 2 × EIO, EINTR | 1 × EIO, 0, EINTR, short |
+| `[nx][o][p][e]` with `-v` | line scan, numbered gap blocks | 34 | 34/34 | 2 × EIO, EINTR | 1 × EIO, 0, EINTR, short |
 
-All 208 runs, including `/dev/full` and the failed diagnostic, give the
+All 291 runs, including `/dev/full` and the failed diagnostic, give the
 documented status, diagnostic and stdout prefix, and leave the map unchanged.
 The DFA path maps fewer regions because it never creates per-record VM
 scratch. The single stdout write is the buffered output. The DFA's
@@ -323,7 +357,7 @@ mappings. The fixed output area saves two compared with the growing
 buffer it replaced. Before the fix above,
 failures 8 through 21 of the DFA pattern were silently absorbed: the search
 fell back to the VM and exited 0. Log:
-`target/claude-work/s3/text-grep-faults-output-receipt.log`. The `(?:a|é)+` row goes through the line scan.
+`target/claude-work/s3/text-grep-faults-numbers-receipt.log`. The `(?:a|é)+` row goes through the line scan.
 
 ```sh
 W=target/claude-work/s3
