@@ -1,0 +1,37 @@
+module app::main;
+
+// A let's match with a nested arm, block arms and one value arm: the arm
+// `In(h) -> match (h) { .. }` is read as the let's match on In's payload,
+// its value arm binding r and its block arms leaving.
+enum Color { Red, Green, Blue }
+enum Num { Val(i32), Nothing }
+enum Outer { In(Num), Out }
+enum Slot { Has(Color), Empty }
+
+fn f(o: Outer) -> i32 {
+    let r: i32 = match (o) {
+        Outer::In(Num::Val(x)) -> x,
+        Outer::In(Num::Nothing) -> { return 100; },
+        Outer::Out -> { return 200; },
+    };
+    return r + 1;
+}
+
+// The wildcard is the inner match's last arm and Empty's arm.
+fn g(s: Slot) -> i32 {
+    let r: i32 = match (s) {
+        Slot::Has(Color::Green) -> { return 1; },
+        _ -> 2,
+    };
+    return r * 10;
+}
+
+fn main() -> i32 {
+    if (f(Outer::In(Num::Val(7))) != 8) { return 1; }
+    if (f(Outer::In(Num::Nothing)) != 100) { return 2; }
+    if (f(Outer::Out) != 200) { return 3; }
+    if (g(Slot::Has(Color::Green)) != 1) { return 4; }
+    if (g(Slot::Has(Color::Blue)) != 20) { return 5; }
+    if (g(Slot::Empty) != 20) { return 6; }
+    return 0;
+}
