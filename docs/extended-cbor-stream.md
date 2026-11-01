@@ -281,7 +281,8 @@ by side:
 | --- | --- | --- |
 | `cbor_to_json`: a 4.66 MB document of 100,000 four-key records to 7.4 MB of JSON | 2.81 s (4.8 s in the first measurement) | 0.49 s (5.7x) |
 | `cbor_batch check`: a definite array of 1,000,000 zero bytes, including hex parsing in the driver | 0.80 s | 0.34 s |
-| `cbor_batch copy`: preserving re-encoding of the same array | 1.79 s | 1.27 s |
+| `cbor_batch copy`: preserving re-encoding of the same array | 1.79 s | 0.64 s |
+| `cbor_batch canon`: deterministic re-encoding of the same array | 1.10 s, timed with the writer change below | 0.62 s |
 
 After the speed work, `cbor_to_json` costs about 200 ns per small item:
 about 80 ns to decode, and the rest to dispatch and write JSON. A shortest
@@ -302,6 +303,21 @@ changed:
   [the float guide](stdlib-float-decimal.md#algorithms-and-speed). With
   Schubfach, the 4.66 MB document converts in 0.485 s, against 0.532 s with
   the tuned Grisu3.
+- The `Writer` kept six `Vec`s of frame fields and appended every head and
+  string through `Vec.try_extend` or `try_push`. The innermost frame now
+  lives in scalar fields, enclosing frames are saved five words each in a
+  cached `Vec<u64>` slice, deterministic key offsets live in a cached slice,
+  and heads and string bytes are written directly into a cached output slice
+  that grows geometrically. Writer time alone (decode plus `Writer.event`,
+  minus decode), timed side by side:
+
+  | Input | Preserving, before | After | Deterministic, before | After |
+  | --- | ---: | ---: | ---: | ---: |
+  | 1,000,000 zero bytes in a definite array | 0.52 s | 0.10 s | 0.53 s | 0.10 s |
+  | the 4.66 MB record document | 0.91 s | 0.32 s | 1.55 s | 0.46 s |
+  | 1,000,000 one-byte text strings in a definite array | 0.72 s | 0.24 s | 0.74 s | 0.25 s |
+  | 200,000 one-pair maps in a definite array | 0.52 s | 0.13 s | 0.55 s | 0.14 s |
+
 - Byte loops still cost about 60–140 instructions per byte, because every
   slice index copies the slice descriptor and multiplies by a run-time
   stride. This is a compiler defect, recorded in

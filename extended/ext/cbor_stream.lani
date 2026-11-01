@@ -125,17 +125,6 @@ fn widen(bits: u64, exponent_bits: i32, fraction_bits: i32) -> u64 {
     return top | (((exponent - bias + 1023) as u64) << 52) | (fraction << shift);
 }
 
-fn put_head(target: [u8], major: i32, argument: u64) -> i32 {
-    let width: i32 = 1; let additional: i32 = argument as i32;
-    if (argument >= 24) { width = 2; additional = 24; }
-    if (argument > 255) { width = 3; additional = 25; }
-    if (argument > 65535) { width = 5; additional = 26; }
-    if (argument > 4294967295) { width = 9; additional = 27; }
-    target[0] = (major * 32 + additional) as u8;
-    let index: i32 = 1;
-    while (index < width) { target[index] = ((argument >> ((width - index - 1) * 8)) & 255) as u8; index += 1; }
-    return width;
-}
 fn preferred(additional: i32, argument: u64) -> bool {
     if (additional == 24) { return argument >= 24; }
     if (additional == 25) { return argument > 255; }
@@ -510,92 +499,162 @@ pub impl<R> EventReader<R> {
     }
 }
 
-// Writer frame kinds: 1 array, 2 map, 3 tag, 4 chunked bytes, 5 chunked text.
+// Writer frame kinds: 1 array, 2 map, 3 tag, 4 chunked bytes, 5 chunked text;
+// 0 at the root. The innermost frame lives in scalar fields (kind, known,
+// declared, count, begin, base) so the per-item path touches no vector;
+// enclosing frames are saved WFRAME words each in `stack`, a cached view of
+// `frames`. Output bytes live in `data`, a cached view of `out` with `cap`
+// bytes of which `used` are written. Deterministic map item offsets live in
+// `spots`, a cached view of `marks`, with `mark_count` in use.
 pub struct Writer {
-    options: WriterOptions, out: alloc::vec::Vec<u8>,
-    kinds: alloc::vec::Vec<u8>, known: alloc::vec::Vec<u8>, declared: alloc::vec::Vec<u64>, count: alloc::vec::Vec<u64>,
-    start: alloc::vec::Vec<i32>, mark_base: alloc::vec::Vec<i32>, marks: alloc::vec::Vec<i32>,
+    options: WriterOptions, out: alloc::vec::Vec<u8>, data: [u8], used: i32, cap: i32,
+    depth: i32, kind: u8, known: bool, declared: u64, count: u64, begin: i32, base: i32,
+    frames: alloc::vec::Vec<u64>, stack: [u64], stack_cap: i32,
+    marks: alloc::vec::Vec<i32>, spots: [i32], mark_count: i32, mark_cap: i32,
     order: alloc::vec::Vec<i32>, spare: alloc::vec::Vec<i32>, swap: alloc::vec::Vec<u8>,
-    roots: u64, flushed: u64, pending: i32, failure: core::option::Option<Error>, head: [u8; 9],
+    roots: u64, flushed: u64, pending: i32, failed: bool, failure: Error,
 }
+// Words per saved frame in Writer.stack.
+const WFRAME: i32 = 5;
 pub fn writer(options: WriterOptions) -> core::result::Result<Writer, Error> {
     if (options.max_depth < 0 || options.max_output_bytes < 0) { return core::result::Err(error(ErrorKind::InvalidOptions, 0)); }
-    return core::result::Ok(Writer { options: options, out: alloc::vec::new(),
-        kinds: alloc::vec::new(), known: alloc::vec::new(), declared: alloc::vec::new(), count: alloc::vec::new(),
-        start: alloc::vec::new(), mark_base: alloc::vec::new(), marks: alloc::vec::new(),
+    let out: alloc::vec::Vec<u8> = alloc::vec::new(); let frames: alloc::vec::Vec<u64> = alloc::vec::new();
+    let marks: alloc::vec::Vec<i32> = alloc::vec::new();
+    return core::result::Ok(Writer { options: options, out: out, data: out.as_slice(), used: 0, cap: 0,
+        depth: 0, kind: 0, known: false, declared: 0, count: 0, begin: 0, base: 0,
+        frames: frames, stack: frames.as_slice(), stack_cap: 0,
+        marks: marks, spots: marks.as_slice(), mark_count: 0, mark_cap: 0,
         order: alloc::vec::new(), spare: alloc::vec::new(), swap: alloc::vec::new(),
-        roots: 0, flushed: 0, pending: 0, failure: core::option::None(), head: [0; 9] });
+        roots: 0, flushed: 0, pending: 0, failed: false, failure: error(ErrorKind::InvalidOptions, 0) });
+}
+// Encoded head width for an argument: 1, 2, 3, 5 or 9 bytes.
+fn head_width(argument: u64) -> i32 {
+    if (argument < 24) { return 1; }
+    if (argument <= 255) { return 2; }
+    if (argument <= 65535) { return 3; }
+    if (argument <= 4294967295) { return 5; }
+    return 9;
+}
+// Writes a head of the given width at target[at].
+fn head_at(target: [u8], at: i32, major: i32, argument: u64, width: i32) {
+    if (width == 1) { target[at] = (major * 32 + (argument as i32)) as u8; return; }
+    let additional: i32 = 24; if (width == 3) { additional = 25; } if (width == 5) { additional = 26; } if (width == 9) { additional = 27; }
+    target[at] = (major * 32 + additional) as u8;
+    let index: i32 = 1; let shift: i32 = (width - 2) * 8;
+    while (index < width) { target[at + index] = ((argument >> shift) & 255) as u8; index += 1; shift -= 8; }
 }
 
 pub impl Writer {
     pub fn borrow(&self) -> &Writer { return self; }
-    pub fn len(&self) -> i32 { return self.out.len(); }
-    pub fn depth(&self) -> i32 { return self.kinds.len(); }
+    pub fn len(&self) -> i32 { return self.used; }
+    pub fn depth(&self) -> i32 { return self.depth; }
     pub fn roots_written(&self) -> u64 { return self.roots; }
-    pub fn is_complete(&self) -> bool { return self.kinds.len() == 0 && self.roots > 0 && core::option::is_none(self.failure); }
+    pub fn is_complete(&self) -> bool { return self.depth == 0 && self.roots > 0 && !self.failed; }
     // Buffered output; valid until the next writer mutation.
-    pub fn output(&self) -> core::slice::View<u8> { return self.out.as_view(); }
-    fn offset(&self) -> u64 { return self.flushed + (self.out.len() as u64); }
+    pub fn output(&self) -> core::slice::View<u8> { return core::slice::View { values: self.data, start: 0, length: self.used }; }
+    fn offset(&self) -> u64 { return self.flushed + (self.used as u64); }
     fn reject(&self, kind: ErrorKind) -> core::result::Result<i32, Error> { return core::result::Err(error(kind, self.offset())); }
+    fn fail(&self, kind: ErrorKind, at: u64) { self.failure = error(kind, at); self.failed = true; }
     fn poison(&self, kind: ErrorKind, at: u64) -> core::result::Result<i32, Error> {
-        let failure: Error = error(kind, at); self.failure = core::option::Some(failure); return core::result::Err(failure);
+        self.fail(kind, at); return core::result::Err(self.failure);
     }
-    fn room(&self, count: i32) -> bool { return count <= self.options.max_output_bytes - self.out.len(); }
+    fn room(&self, count: i32) -> bool { return count <= self.options.max_output_bytes - self.used; }
+    // Room for need output bytes in total; grows geometrically, at least 64.
+    fn reserve(&self, need: i32) -> bool {
+        if (need <= self.cap) { return true; }
+        let target: i32 = need;
+        if (self.cap <= 1073741823 && self.cap * 2 > target) { target = self.cap * 2; }
+        if (target < 64) { target = 64; }
+        if (self.out.try_resize(target, 0).is_err()) { return false; }
+        self.data = self.out.as_slice(); self.cap = target;
+        return true;
+    }
+    // True when check(string_major) would succeed; clears pending like it.
+    fn placed(&self, string_major: i32) -> bool {
+        if (self.failed) { return false; }
+        self.pending = 0;
+        let kind: u8 = self.kind;
+        if (kind == 0) { return self.roots == 0 || self.options.sequence; }
+        if (kind == 4) { return string_major == 2; }
+        if (kind == 5) { return string_major == 3; }
+        if (!self.known) { return true; }
+        if (kind == 1) { return self.count != self.declared; }
+        if (kind == 2) { return self.count / 2 != self.declared || self.count % 2 != 0; }
+        return true;
+    }
     // Validates placement of one item; string_major is 2 or 3 for strings.
     fn check(&self, string_major: i32) -> core::result::Result<i32, Error> {
-        if (core::option::is_some(self.failure)) { return core::result::Err(core::option::unwrap(self.failure)); }
+        if (self.failed) { return core::result::Err(self.failure); }
         self.pending = 0;
-        let depth: i32 = self.kinds.len();
-        if (depth == 0) {
+        let kind: u8 = self.kind;
+        if (kind == 0) {
             if (self.roots > 0 && !self.options.sequence) { return self.reject(ErrorKind::InvalidPlacement); }
             return core::result::Ok(0);
         }
-        let top: i32 = depth - 1; let kind: u8 = self.kinds.at(top);
         if ((kind == 4 && string_major != 2) || (kind == 5 && string_major != 3)) { return self.reject(ErrorKind::ChunkType); }
-        if (self.known.at(top) == 1) {
-            let used: u64 = self.count.at(top); let limit: u64 = self.declared.at(top);
+        if (self.known) {
+            let used: u64 = self.count; let limit: u64 = self.declared;
             if (kind == 1 && used == limit) { return self.reject(ErrorKind::CountMismatch); }
             if (kind == 2 && used / 2 == limit && used % 2 == 0) { return self.reject(ErrorKind::CountMismatch); }
         }
         return core::result::Ok(0);
     }
     fn mark(&self, at: i32) -> bool {
-        let depth: i32 = self.kinds.len();
-        if (!self.options.deterministic || depth == 0 || self.kinds.at(depth - 1) != 2) { return true; }
-        return self.marks.try_push(at).is_ok();
+        if (self.kind != 2 || !self.options.deterministic) { return true; }
+        let next: i32 = self.mark_count;
+        if (next == self.mark_cap) {
+            let target: i32 = 64; if (self.mark_cap >= 32) { target = self.mark_cap * 2; }
+            if (self.mark_cap > 536870911 || self.marks.try_resize(target, 0).is_err()) { return false; }
+            self.spots = self.marks.as_slice(); self.mark_cap = target;
+        }
+        self.spots[next] = at; self.mark_count = next + 1;
+        return true;
     }
     // One item finished; closes tags whose child is complete.
     fn done(&self) {
         while (true) {
-            let depth: i32 = self.kinds.len();
-            if (depth == 0) { self.roots += 1; return; }
-            let top: i32 = depth - 1;
-            core::result::unwrap(self.count.set(top, self.count.at(top) + 1));
-            if (self.kinds.at(top) != 3) { return; }
+            if (self.depth == 0) { self.roots += 1; return; }
+            self.count += 1;
+            if (self.kind != 3) { return; }
             self.pop_frame(); self.pending += 1;
         }
     }
+    // Save the innermost frame (if any) and open a new one.
+    fn push_frame(&self, kind: u8, known: bool, declared: u64) -> bool {
+        if (self.depth > 0) {
+            let word: i32 = (self.depth - 1) * WFRAME;
+            if (word + WFRAME > self.stack_cap) {
+                let target: i32 = (word + WFRAME) * 2; if (target < 40) { target = 40; }
+                if (word > 536870911 || self.frames.try_resize(target, 0).is_err()) { return false; }
+                self.stack = self.frames.as_slice(); self.stack_cap = target;
+            }
+            let saved: [u64] = self.stack;
+            let flag: u64 = 0; if (self.known) { flag = 256; }
+            saved[word] = (self.kind as u64) | flag; saved[word + 1] = self.declared; saved[word + 2] = self.count;
+            saved[word + 3] = self.begin as u64; saved[word + 4] = self.base as u64;
+        }
+        self.kind = kind; self.known = known; self.declared = declared; self.count = 0;
+        self.begin = self.used; self.base = self.mark_count; self.depth += 1;
+        return true;
+    }
     fn pop_frame(&self) {
-        let top: i32 = self.kinds.len() - 1;
-        core::result::unwrap(self.marks.truncate(self.mark_base.at(top)));
-        self.kinds.pop(); self.known.pop(); self.declared.pop(); self.count.pop(); self.start.pop(); self.mark_base.pop();
-    }
-    fn bytes_out(&self, source: [u8], start: i32, count: i32) -> bool {
-        let view: core::slice::View<u8> = core::slice::View { values: source, start: start, length: count };
-        return self.out.try_extend(view).is_ok();
-    }
-    fn put(&self, major: i32, argument: u64) -> bool {
-        let width: i32 = put_head(self.head, major, argument);
-        return self.bytes_out(self.head, 0, width);
+        self.mark_count = self.base;
+        let depth: i32 = self.depth - 1; self.depth = depth;
+        if (depth == 0) { self.kind = 0; self.known = false; self.declared = 0; self.count = 0; self.begin = 0; self.base = 0; return; }
+        let word: i32 = (depth - 1) * WFRAME; let saved: [u64] = self.stack;
+        let first: u64 = saved[word];
+        self.kind = (first & 255) as u8; self.known = first >= 256; self.declared = saved[word + 1]; self.count = saved[word + 2];
+        self.begin = saved[word + 3] as i32; self.base = saved[word + 4] as i32;
     }
     fn scalar(&self, major: i32, argument: u64) -> core::result::Result<i32, Error> {
-        let placed = self.check(0); if (placed.is_err()) { return placed; }
-        let at: i32 = self.out.len();
-        if (!self.room(put_head(self.head, major, argument))) { return self.reject(ErrorKind::OutputLimit); }
-        if (!self.put(major, argument)) { core::result::unwrap(self.out.truncate(at)); return self.reject(ErrorKind::AllocationFailed); }
-        if (!self.mark(at)) { core::result::unwrap(self.out.truncate(at)); return self.reject(ErrorKind::AllocationFailed); }
+        if (!self.placed(0)) { return self.check(0); }
+        let at: i32 = self.used; let width: i32 = head_width(argument);
+        if (!self.room(width)) { return self.reject(ErrorKind::OutputLimit); }
+        if (at + width > self.cap && !self.reserve(at + width)) { return self.reject(ErrorKind::AllocationFailed); }
+        head_at(self.data, at, major, argument, width); self.used = at + width;
+        if (!self.mark(at)) { self.used = at; return self.reject(ErrorKind::AllocationFailed); }
         self.done();
-        return core::result::Ok(self.out.len() - at);
+        return core::result::Ok(width);
     }
     pub fn unsigned(&self, value: u64) -> core::result::Result<i32, Error> { return self.scalar(0, value); }
     // Encodes -1 - value.
@@ -612,15 +671,18 @@ pub impl Writer {
     pub fn null(&self) -> core::result::Result<i32, Error> { return self.scalar(7, 22); }
     pub fn undefined(&self) -> core::result::Result<i32, Error> { return self.scalar(7, 23); }
     fn float_bits(&self, width: i32, bits: u64) -> core::result::Result<i32, Error> {
-        let placed = self.check(0); if (placed.is_err()) { return placed; }
-        let at: i32 = self.out.len();
+        if (!self.placed(0)) { return self.check(0); }
+        let at: i32 = self.used;
         if (!self.room(1 + width)) { return self.reject(ErrorKind::OutputLimit); }
-        self.head[0] = 249; if (width == 4) { self.head[0] = 250; } if (width == 8) { self.head[0] = 251; }
-        let index: i32 = 0;
-        while (index < width) { self.head[1 + index] = ((bits >> ((width - index - 1) * 8)) & 255) as u8; index += 1; }
-        if (!self.bytes_out(self.head, 0, 1 + width) || !self.mark(at)) { core::result::unwrap(self.out.truncate(at)); return self.reject(ErrorKind::AllocationFailed); }
+        if (at + 1 + width > self.cap && !self.reserve(at + 1 + width)) { return self.reject(ErrorKind::AllocationFailed); }
+        let data: [u8] = self.data;
+        data[at] = 249; if (width == 4) { data[at] = 250; } if (width == 8) { data[at] = 251; }
+        let index: i32 = 1; let shift: i32 = (width - 1) * 8;
+        while (index <= width) { data[at + index] = ((bits >> shift) & 255) as u8; index += 1; shift -= 8; }
+        self.used = at + 1 + width;
+        if (!self.mark(at)) { self.used = at; return self.reject(ErrorKind::AllocationFailed); }
         self.done();
-        return core::result::Ok(self.out.len() - at);
+        return core::result::Ok(1 + width);
     }
     pub fn float16(&self, bits: u32) -> core::result::Result<i32, Error> {
         if (bits > 65535) { return self.reject(ErrorKind::InvalidValue); }
@@ -639,50 +701,53 @@ pub impl Writer {
         return self.float_bits(8, bits);
     }
     fn string(&self, major: i32, source: [u8], start: i32, length: i32) -> core::result::Result<i32, Error> {
-        let placed = self.check(major); if (placed.is_err()) { return placed; }
+        if (!self.placed(major)) { return self.check(major); }
         if (!core::io::valid_range(start, length)) { return self.reject(ErrorKind::Bounds); }
         if (major == 3 && !valid_utf8(source, start, length)) { return self.reject(ErrorKind::InvalidUtf8); }
-        let depth: i32 = self.kinds.len();
-        let chunk: bool = depth > 0 && self.kinds.at(depth - 1) >= 4;
-        let head: bool = !(chunk && self.options.deterministic);
-        let at: i32 = self.out.len();
-        let need: i32 = 0; if (head) { need = put_head(self.head, major, length as u64); }
-        if (length > self.options.max_output_bytes || !self.room(need + length)) { return self.reject(ErrorKind::OutputLimit); }
-        let ok: bool = true;
-        if (head) { ok = self.put(major, length as u64); }
-        if (ok) { ok = self.bytes_out(source, start, length); }
-        if (ok) { ok = self.mark(at); }
-        if (!ok) { core::result::unwrap(self.out.truncate(at)); return self.reject(ErrorKind::AllocationFailed); }
+        let at: i32 = self.used;
+        let need: i32 = 0; if (self.kind < 4 || !self.options.deterministic) { need = head_width(length as u64); }
+        if (length > self.options.max_output_bytes - need || !self.room(need + length)) { return self.reject(ErrorKind::OutputLimit); }
+        let stop: i32 = at + need + length;
+        if (stop > self.cap && !self.reserve(stop)) { return self.reject(ErrorKind::AllocationFailed); }
+        let data: [u8] = self.data;
+        if (need > 0) { head_at(data, at, major, length as u64, need); }
+        let to: i32 = at + need; let from: i32 = start; let last: i32 = start + length;
+        while (from + 4 <= last) {
+            data[to] = source[from]; data[to + 1] = source[from + 1]; data[to + 2] = source[from + 2]; data[to + 3] = source[from + 3];
+            to += 4; from += 4;
+        }
+        while (from < last) { data[to] = source[from]; to += 1; from += 1; }
+        self.used = stop;
+        if (!self.mark(at)) { self.used = at; return self.reject(ErrorKind::AllocationFailed); }
         self.done();
-        return core::result::Ok(self.out.len() - at);
+        return core::result::Ok(stop - at);
     }
     pub fn bytes(&self, value: core::slice::View<u8>) -> core::result::Result<i32, Error> { return self.string(2, value.values, value.start, value.length); }
     // Text must be valid UTF-8; it is checked.
     pub fn text(&self, value: core::text::Text) -> core::result::Result<i32, Error> { return self.string(3, value.bytes, value.start, value.length); }
     pub fn text_bytes(&self, value: core::slice::View<u8>) -> core::result::Result<i32, Error> { return self.string(3, value.values, value.start, value.length); }
     fn open(&self, kind: u8, known: bool, declared: u64, argument: u64) -> core::result::Result<i32, Error> {
-        let placed = self.check(0); if (placed.is_err()) { return placed; }
-        if (self.kinds.len() >= self.options.max_depth) { return self.reject(ErrorKind::DepthLimit); }
-        let at: i32 = self.out.len();
+        if (!self.placed(0)) { return self.check(0); }
+        if (self.depth >= self.options.max_depth) { return self.reject(ErrorKind::DepthLimit); }
+        let at: i32 = self.used;
         let major: i32 = 4; if (kind == 2) { major = 5; } if (kind == 3) { major = 6; } if (kind == 4) { major = 2; } if (kind == 5) { major = 3; }
         let ok: bool = true;
         if (known) {
-            if (!self.room(put_head(self.head, major, argument))) { return self.reject(ErrorKind::OutputLimit); }
-            ok = self.put(major, argument);
+            let width: i32 = head_width(argument);
+            if (!self.room(width)) { return self.reject(ErrorKind::OutputLimit); }
+            ok = at + width <= self.cap || self.reserve(at + width);
+            if (ok) { head_at(self.data, at, major, argument, width); self.used = at + width; }
         } else {
             if (!self.options.deterministic) {
                 if (!self.room(1)) { return self.reject(ErrorKind::OutputLimit); }
-                ok = self.out.try_push((major * 32 + 31) as u8).is_ok();
+                ok = at < self.cap || self.reserve(at + 1);
+                if (ok) { self.data[at] = (major * 32 + 31) as u8; self.used = at + 1; }
             }
         }
         if (ok) { ok = self.mark(at); }
-        let flag: u8 = 0; if (known) { flag = 1; }
-        if (ok) {
-            ok = self.kinds.try_push(kind).is_ok() && self.known.try_push(flag).is_ok() && self.declared.try_push(declared).is_ok() &&
-                self.count.try_push(0).is_ok() && self.start.try_push(self.out.len()).is_ok() && self.mark_base.try_push(self.marks.len()).is_ok();
-        }
+        if (ok) { ok = self.push_frame(kind, known, declared); }
         if (!ok) { return self.poison(ErrorKind::AllocationFailed, (at as u64) + self.flushed); }
-        return core::result::Ok(self.out.len() - at);
+        return core::result::Ok(self.used - at);
     }
     pub fn begin_array(&self) -> core::result::Result<i32, Error> { return self.open(1, false, 0, 0); }
     pub fn begin_array_len(&self, count: u64) -> core::result::Result<i32, Error> { return self.open(1, true, count, count); }
@@ -694,28 +759,26 @@ pub impl Writer {
     // The tag applies to the next item and closes after it.
     pub fn tag(&self, number: u64) -> core::result::Result<i32, Error> { return self.open(3, true, 1, number); }
     fn key_order(&self, left: i32, right: i32, base: i32) -> i32 {
-        let a: i32 = self.marks.at(base + 2 * left); let b: i32 = self.marks.at(base + 2 * right);
-        let data: [u8] = self.out.as_slice();
-        return compare(data, a, self.marks.at(base + 2 * left + 1) - a, data, b, self.marks.at(base + 2 * right + 1) - b);
+        let spots: [i32] = self.spots;
+        let a: i32 = spots[base + 2 * left]; let b: i32 = spots[base + 2 * right];
+        return compare(self.data, a, spots[base + 2 * left + 1] - a, self.data, b, spots[base + 2 * right + 1] - b);
     }
     // Sorts the pairs of the innermost map by encoded key; rejects duplicates.
-    fn sort_map(&self, top: i32) -> bool {
-        let base: i32 = self.mark_base.at(top);
-        let pairs: i32 = (self.marks.len() - base) / 2;
+    fn sort_map(&self) -> bool {
+        let base: i32 = self.base; let spots: [i32] = self.spots;
+        let pairs: i32 = (self.mark_count - base) / 2;
         if (pairs < 2) { return true; }
         let sorted: bool = true; let index: i32 = 1;
         while (index < pairs) {
             let order: i32 = self.key_order(index - 1, index, base);
-            if (order == 0) { self.failure = core::option::Some(error(ErrorKind::DuplicateKey, self.flushed + (self.marks.at(base + 2 * index) as u64))); return false; }
+            if (order == 0) { self.fail(ErrorKind::DuplicateKey, self.flushed + (spots[base + 2 * index] as u64)); return false; }
             if (order > 0) { sorted = false; }
             index += 1;
         }
         if (sorted) { return true; }
-        self.order.clear(); self.spare.clear(); index = 0;
-        while (index < pairs) {
-            if (self.order.try_push(index).is_err() || self.spare.try_push(index).is_err()) { self.failure = core::option::Some(error(ErrorKind::AllocationFailed, self.offset())); return false; }
-            index += 1;
-        }
+        if (self.order.try_resize(pairs, 0).is_err() || self.spare.try_resize(pairs, 0).is_err()) { self.fail(ErrorKind::AllocationFailed, self.offset()); return false; }
+        let order: [i32] = self.order.as_slice(); let spare: [i32] = self.spare.as_slice();
+        index = 0; while (index < pairs) { order[index] = index; index += 1; }
         let width: i32 = 1;
         while (width < pairs) {
             let low: i32 = 0;
@@ -724,86 +787,82 @@ pub impl Writer {
                 let high: i32 = low + 2 * width; if (high > pairs) { high = pairs; }
                 let i: i32 = low; let j: i32 = middle; let k: i32 = low;
                 while (k < high) {
-                    let take_left: bool = j >= high || (i < middle && self.key_order(self.order.at(i), self.order.at(j), base) <= 0);
-                    if (take_left) { core::result::unwrap(self.spare.set(k, self.order.at(i))); i += 1; }
-                    else { core::result::unwrap(self.spare.set(k, self.order.at(j))); j += 1; }
+                    let take_left: bool = j >= high || (i < middle && self.key_order(order[i], order[j], base) <= 0);
+                    if (take_left) { spare[k] = order[i]; i += 1; } else { spare[k] = order[j]; j += 1; }
                     k += 1;
                 }
                 low = high;
             }
             index = 0;
-            while (index < pairs) { core::result::unwrap(self.order.set(index, self.spare.at(index))); index += 1; }
+            while (index < pairs) { order[index] = spare[index]; index += 1; }
             width = width * 2;
         }
         index = 1;
         while (index < pairs) {
-            if (self.key_order(self.order.at(index - 1), self.order.at(index), base) == 0) {
-                let later: i32 = self.order.at(index); if (self.order.at(index - 1) > later) { later = self.order.at(index - 1); }
-                self.failure = core::option::Some(error(ErrorKind::DuplicateKey, self.flushed + (self.marks.at(base + 2 * later) as u64))); return false;
+            if (self.key_order(order[index - 1], order[index], base) == 0) {
+                let later: i32 = order[index]; if (order[index - 1] > later) { later = order[index - 1]; }
+                self.fail(ErrorKind::DuplicateKey, self.flushed + (spots[base + 2 * later] as u64)); return false;
             }
             index += 1;
         }
-        let end: i32 = self.out.len();
-        let region: i32 = self.marks.at(base);
-        self.swap.clear(); index = 0;
+        let end: i32 = self.used;
+        let region: i32 = spots[base];
+        if (self.swap.try_resize(end - region, 0).is_err()) { self.fail(ErrorKind::AllocationFailed, self.offset()); return false; }
+        let data: [u8] = self.data; let copy: [u8] = self.swap.as_slice(); let to: i32 = 0; index = 0;
         while (index < pairs) {
-            let pair: i32 = self.order.at(index);
-            let first: i32 = self.marks.at(base + 2 * pair);
-            let last: i32 = end; if (pair + 1 < pairs) { last = self.marks.at(base + 2 * pair + 2); }
-            if (!self.bytes_swap(first, last - first)) { self.failure = core::option::Some(error(ErrorKind::AllocationFailed, self.offset())); return false; }
+            let pair: i32 = order[index];
+            let from: i32 = spots[base + 2 * pair];
+            let last: i32 = end; if (pair + 1 < pairs) { last = spots[base + 2 * pair + 2]; }
+            while (from < last) { copy[to] = data[from]; to += 1; from += 1; }
             index += 1;
         }
-        let data: [u8] = self.out.as_slice(); let copy: [u8] = self.swap.as_slice(); index = 0;
+        index = 0;
         while (index < end - region) { data[region + index] = copy[index]; index += 1; }
         return true;
     }
-    fn bytes_swap(&self, start: i32, count: i32) -> bool {
-        let view: core::slice::View<u8> = core::slice::View { values: self.out.as_slice(), start: start, length: count };
-        return self.swap.try_extend(view).is_ok();
-    }
-    // Inserts a head at position at, shifting the following bytes.
-    fn insert_head(&self, at: i32, major: i32, argument: u64) -> bool {
-        let width: i32 = put_head(self.head, major, argument);
-        let length: i32 = self.out.len();
-        if (self.out.try_resize(length + width, 0).is_err()) { return false; }
-        let data: [u8] = self.out.as_slice(); let index: i32 = length;
+    // Inserts a head of the given width at position at, shifting the following bytes.
+    fn insert_head(&self, at: i32, major: i32, argument: u64, width: i32) -> bool {
+        let length: i32 = self.used;
+        if (!self.reserve(length + width)) { return false; }
+        let data: [u8] = self.data; let index: i32 = length;
         while (index > at) { index -= 1; data[index + width] = data[index]; }
-        index = 0; while (index < width) { data[at + index] = self.head[index]; index += 1; }
+        head_at(data, at, major, argument, width); self.used = length + width;
         return true;
     }
     // Closes the innermost array, map or chunked string.
     pub fn end(&self) -> core::result::Result<i32, Error> {
-        if (core::option::is_some(self.failure)) { return core::result::Err(core::option::unwrap(self.failure)); }
+        if (self.failed) { return core::result::Err(self.failure); }
         self.pending = 0;
-        let depth: i32 = self.kinds.len();
-        if (depth == 0) { return self.reject(ErrorKind::InvalidPlacement); }
-        let top: i32 = depth - 1; let kind: u8 = self.kinds.at(top); let used: u64 = self.count.at(top);
+        if (self.depth == 0) { return self.reject(ErrorKind::InvalidPlacement); }
+        let kind: u8 = self.kind; let used: u64 = self.count;
         if (kind == 3) { return self.reject(ErrorKind::InvalidPlacement); }
         if (kind == 2 && used % 2 == 1) { return self.reject(ErrorKind::OddMap); }
-        let known: bool = self.known.at(top) == 1;
+        let known: bool = self.known;
         if (known) {
-            let wanted: u64 = self.declared.at(top);
+            let wanted: u64 = self.declared;
             if ((kind == 1 && used != wanted) || (kind == 2 && used / 2 != wanted)) { return self.reject(ErrorKind::CountMismatch); }
         }
-        let at: i32 = self.out.len();
+        let at: i32 = self.used;
         if (self.options.deterministic) {
-            if (kind == 2 && !self.sort_map(top)) { return core::result::Err(core::option::unwrap(self.failure)); }
+            if (kind == 2 && !self.sort_map()) { return core::result::Err(self.failure); }
             if (!known) {
-                let start: i32 = self.start.at(top);
+                let start: i32 = self.begin;
                 let major: i32 = 4; let argument: u64 = used;
                 if (kind == 2) { major = 5; argument = used / 2; }
-                if (kind == 4 || kind == 5) { major = (kind as i32) - 2; argument = (self.out.len() - start) as u64; }
-                if (!self.room(put_head(self.head, major, argument))) { return self.poison(ErrorKind::OutputLimit, self.offset()); }
-                if (!self.insert_head(start, major, argument)) { return self.poison(ErrorKind::AllocationFailed, self.offset()); }
+                if (kind == 4 || kind == 5) { major = (kind as i32) - 2; argument = (self.used - start) as u64; }
+                let width: i32 = head_width(argument);
+                if (!self.room(width)) { return self.poison(ErrorKind::OutputLimit, self.offset()); }
+                if (!self.insert_head(start, major, argument, width)) { return self.poison(ErrorKind::AllocationFailed, self.offset()); }
             }
         } else {
             if (!known) {
                 if (!self.room(1)) { return self.reject(ErrorKind::OutputLimit); }
-                if (self.out.try_push(255).is_err()) { return self.reject(ErrorKind::AllocationFailed); }
+                if (at == self.cap && !self.reserve(at + 1)) { return self.reject(ErrorKind::AllocationFailed); }
+                self.data[at] = 255; self.used = at + 1;
             }
         }
         self.pop_frame(); self.done();
-        return core::result::Ok(self.out.len() - at);
+        return core::result::Ok(self.used - at);
     }
     // Writes one decoder event. End events that close tags are absorbed,
     // because writer tags close after their child.
@@ -832,28 +891,39 @@ pub impl Writer {
         if (self.pending > 0) { self.pending -= 1; return core::result::Ok(0); }
         return self.end();
     }
+    // Retains capacity; forgets output and structure.
     pub fn clear(&self) {
-        self.out.clear(); self.kinds.clear(); self.known.clear(); self.declared.clear(); self.count.clear();
-        self.start.clear(); self.mark_base.clear(); self.marks.clear();
-        self.roots = 0; self.flushed = 0; self.pending = 0; self.failure = core::option::None();
+        self.used = 0; self.depth = 0; self.kind = 0; self.known = false; self.declared = 0; self.count = 0; self.begin = 0; self.base = 0;
+        self.mark_count = 0; self.roots = 0; self.flushed = 0; self.pending = 0; self.failed = false;
     }
     pub fn destroy(&self) {
-        self.out.destroy(); self.kinds.destroy(); self.known.destroy(); self.declared.destroy(); self.count.destroy();
-        self.start.destroy(); self.mark_base.destroy(); self.marks.destroy(); self.order.destroy(); self.spare.destroy(); self.swap.destroy();
-        self.out = alloc::vec::new(); self.kinds = alloc::vec::new(); self.known = alloc::vec::new(); self.declared = alloc::vec::new();
-        self.count = alloc::vec::new(); self.start = alloc::vec::new(); self.mark_base = alloc::vec::new(); self.marks = alloc::vec::new();
+        self.out.destroy(); self.frames.destroy(); self.marks.destroy(); self.order.destroy(); self.spare.destroy(); self.swap.destroy();
+        self.out = alloc::vec::new(); self.frames = alloc::vec::new(); self.marks = alloc::vec::new();
         self.order = alloc::vec::new(); self.spare = alloc::vec::new(); self.swap = alloc::vec::new();
-        self.roots = 0; self.flushed = 0; self.pending = 0; self.failure = core::option::None();
+        self.data = self.out.as_slice(); self.cap = 0; self.stack = self.frames.as_slice(); self.stack_cap = 0;
+        self.spots = self.marks.as_slice(); self.mark_cap = 0;
+        self.clear();
+    }
+    // Whether frame index (0 outermost) pins its bytes: maps sort and unknown
+    // lengths insert a head. The innermost frame is in scalars.
+    fn frame_pins(&self, index: i32) -> bool {
+        if (index == self.depth - 1) { return self.kind == 2 || !self.known; }
+        let first: u64 = self.stack[index * WFRAME];
+        return (first & 255) == 2 || first < 256;
+    }
+    fn frame_begin(&self, index: i32) -> i32 {
+        if (index == self.depth - 1) { return self.begin; }
+        return self.stack[index * WFRAME + 3] as i32;
     }
     // Bytes that no later sort or head insertion can change.
     pub fn stable_len(&self) -> i32 {
-        if (!self.options.deterministic) { return self.out.len(); }
+        if (!self.options.deterministic) { return self.used; }
         let index: i32 = 0;
-        while (index < self.kinds.len()) {
-            if (self.kinds.at(index) == 2 || self.known.at(index) == 0) { return self.start.at(index); }
+        while (index < self.depth) {
+            if (self.frame_pins(index)) { return self.frame_begin(index); }
             index += 1;
         }
-        return self.out.len();
+        return self.used;
     }
 }
 
@@ -864,15 +934,18 @@ pub impl Writer {
     pub fn flush_to<W>(&self, sink: &W) -> core::result::Result<i32, core::io::Failure> where W: core::io::Write {
         let count: i32 = self.stable_len();
         if (count == 0) { return core::result::Ok(0); }
-        let sent: core::result::Result<i32, core::io::Failure> = core::io::write_all<W>(sink, self.out.as_slice(), 0, count);
+        let sent: core::result::Result<i32, core::io::Failure> = core::io::write_all<W>(sink, self.data, 0, count);
         let done: i32 = count;
         if (sent.is_err()) { done = sent.unwrap_err().completed; if (done < 0 || done > count) { done = 0; } }
         if (done > 0) {
-            let bytes: [u8] = self.out.as_slice(); let length: i32 = self.out.len(); let i: i32 = done;
+            let bytes: [u8] = self.data; let length: i32 = self.used; let i: i32 = done;
             while (i < length) { bytes[i - done] = bytes[i]; i += 1; }
-            core::result::unwrap(self.out.truncate(length - done));
-            i = 0; while (i < self.start.len()) { core::result::unwrap(self.start.set(i, self.start.at(i) - done)); i += 1; }
-            i = 0; while (i < self.marks.len()) { core::result::unwrap(self.marks.set(i, self.marks.at(i) - done)); i += 1; }
+            self.used = length - done;
+            if (self.depth > 0) { self.begin -= done; }
+            let saved: [u64] = self.stack;
+            i = 0; while (i + 1 < self.depth) { let slot: i32 = i * WFRAME + 3; saved[slot] = ((saved[slot] as i32) - done) as u64; i += 1; }
+            let spots: [i32] = self.spots;
+            i = 0; while (i < self.mark_count) { spots[i] = spots[i] - done; i += 1; }
             self.flushed += done as u64;
         }
         if (sent.is_err()) { return core::result::Err(sent.unwrap_err()); }
