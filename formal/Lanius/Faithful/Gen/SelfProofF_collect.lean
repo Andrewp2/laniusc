@@ -17,7 +17,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_collect
 public import Lanius.Faithful.Gen.SelfStmtF_distinct
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
-public import Lanius.Faithful.Gen.SelfStmtF_methodsOf
+public import Lanius.Faithful.Gen.SelfStmtF_methodDecl
 public import Lanius.Faithful.Gen.SelfStmtF_moduleOr
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_textSelf
@@ -73,7 +73,7 @@ theorem step_collect_files {prog : SrcProgram} {prims : Prims} {ix_collect_files
   simp only [src_collect_files] at h
   faithful [Lanius.Mini.collectFiles]
 
-theorem proof_collected_with {prog : SrcProgram} {prims : Prims} {ix_collected_with ix_single_of_mini_selfhost_List_mini_selfhost_List_usize ix_field_fns_Decls_of_mini_selfhost_Decls ix_field_types_Decls_of_mini_selfhost_Decls ix_field_aliases_Decls_of_mini_selfhost_Decls ix_concat_of_mini_selfhost_TypeDecl ix_concat_of_mini_selfhost_FnDecl ix_concat_of_mini_selfhost_ConstDecl ix_field_consts_Decls_of_mini_selfhost_Decls ix_concat_of_mini_selfhost_ImportDecl ix_field_imports_Decls_of_mini_selfhost_Decls ix_concat_of_mini_selfhost_AliasDecl ix_concat_of_mini_selfhost_ImplDecl ix_field_impls_Decls_of_mini_selfhost_Decls ix_concat_of_mini_selfhost_List_mini_selfhost_List_usize : Nat} (fn : prog.funcs[ix_collected_with]? = some (src_collected_with ix_single_of_mini_selfhost_List_mini_selfhost_List_usize ix_field_fns_Decls_of_mini_selfhost_Decls ix_field_types_Decls_of_mini_selfhost_Decls ix_field_aliases_Decls_of_mini_selfhost_Decls ix_concat_of_mini_selfhost_TypeDecl ix_concat_of_mini_selfhost_FnDecl ix_concat_of_mini_selfhost_ConstDecl ix_field_consts_Decls_of_mini_selfhost_Decls ix_concat_of_mini_selfhost_ImportDecl ix_field_imports_Decls_of_mini_selfhost_Decls ix_concat_of_mini_selfhost_AliasDecl ix_concat_of_mini_selfhost_ImplDecl ix_field_impls_Decls_of_mini_selfhost_Decls ix_concat_of_mini_selfhost_List_mini_selfhost_List_usize)) (np : prims.isPrim ix_collected_with = false)
+theorem proof_collected_with {prog : SrcProgram} {prims : Prims} {ix_collected_with ix_single_of_mini_selfhost_List_mini_selfhost_List_usize ix_field_fns_Decls_of_mini_selfhost_Decls ix_field_types_Decls_of_mini_selfhost_Decls ix_field_aliases_Decls_of_mini_selfhost_Decls ix_concat_of_mini_selfhost_TypeDecl ix_concat_of_mini_selfhost_FnDecl ix_concat_of_mini_selfhost_ConstDecl ix_field_consts_Decls_of_mini_selfhost_Decls ix_concat_of_mini_selfhost_ImportDecl ix_field_imports_Decls_of_mini_selfhost_Decls ix_concat_of_mini_selfhost_AliasDecl ix_concat_of_mini_selfhost_ImplDecl ix_field_impls_Decls_of_mini_selfhost_Decls ix_concat_of_mini_selfhost_List_mini_selfhost_List_usize ix_field_homes_Decls_of_mini_selfhost_Decls : Nat} (fn : prog.funcs[ix_collected_with]? = some (src_collected_with ix_single_of_mini_selfhost_List_mini_selfhost_List_usize ix_field_fns_Decls_of_mini_selfhost_Decls ix_field_types_Decls_of_mini_selfhost_Decls ix_field_aliases_Decls_of_mini_selfhost_Decls ix_concat_of_mini_selfhost_TypeDecl ix_concat_of_mini_selfhost_FnDecl ix_concat_of_mini_selfhost_ConstDecl ix_field_consts_Decls_of_mini_selfhost_Decls ix_concat_of_mini_selfhost_ImportDecl ix_field_imports_Decls_of_mini_selfhost_Decls ix_concat_of_mini_selfhost_AliasDecl ix_concat_of_mini_selfhost_ImplDecl ix_field_impls_Decls_of_mini_selfhost_Decls ix_concat_of_mini_selfhost_List_mini_selfhost_List_usize ix_field_homes_Decls_of_mini_selfhost_Decls)) (np : prims.isPrim ix_collected_with = false)
     (ext_single_of_mini_selfhost_List_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_List_mini_selfhost_List_usize prog prims ix_single_of_mini_selfhost_List_mini_selfhost_List_usize n))
     (ext_field_fns_Decls_of_mini_selfhost_Decls : Certified (∀ {n : Nat}, Stmt_field_fns_Decls_of_mini_selfhost_Decls prog prims ix_field_fns_Decls_of_mini_selfhost_Decls n))
     (ext_field_types_Decls_of_mini_selfhost_Decls : Certified (∀ {n : Nat}, Stmt_field_types_Decls_of_mini_selfhost_Decls prog prims ix_field_types_Decls_of_mini_selfhost_Decls n))
@@ -87,7 +87,8 @@ theorem proof_collected_with {prog : SrcProgram} {prims : Prims} {ix_collected_w
     (ext_concat_of_mini_selfhost_AliasDecl : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_AliasDecl prog prims ix_concat_of_mini_selfhost_AliasDecl n))
     (ext_concat_of_mini_selfhost_ImplDecl : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_ImplDecl prog prims ix_concat_of_mini_selfhost_ImplDecl n))
     (ext_field_impls_Decls_of_mini_selfhost_Decls : Certified (∀ {n : Nat}, Stmt_field_impls_Decls_of_mini_selfhost_Decls prog prims ix_field_impls_Decls_of_mini_selfhost_Decls n))
-    (ext_concat_of_mini_selfhost_List_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_List_mini_selfhost_List_usize prog prims ix_concat_of_mini_selfhost_List_mini_selfhost_List_usize n)) {n : Nat} :
+    (ext_concat_of_mini_selfhost_List_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_List_mini_selfhost_List_usize prog prims ix_concat_of_mini_selfhost_List_mini_selfhost_List_usize n))
+    (ext_field_homes_Decls_of_mini_selfhost_Decls : Certified (∀ {n : Nat}, Stmt_field_homes_Decls_of_mini_selfhost_Decls prog prims ix_field_homes_Decls_of_mini_selfhost_Decls n)) {n : Nat} :
     Stmt_collected_with prog prims ix_collected_with n := by
   intro x0 x1 v0 v1 w h r0 r1
   rcases n with _ | n

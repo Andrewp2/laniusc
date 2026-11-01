@@ -185,6 +185,15 @@ theorem proof_empty_of_mini_selfhost_ImplDecl {prog : SrcProgram} {prims : Prims
   simp only [src_empty_of_mini_selfhost_ImplDecl] at h
   faithful []
 
+theorem proof_empty_of_mini_selfhost_List_mini_selfhost_List_usize {prog : SrcProgram} {prims : Prims} {ix_empty_of_mini_selfhost_List_mini_selfhost_List_usize : Nat} (fn : prog.funcs[ix_empty_of_mini_selfhost_List_mini_selfhost_List_usize]? = some (src_empty_of_mini_selfhost_List_mini_selfhost_List_usize)) (np : prims.isPrim ix_empty_of_mini_selfhost_List_mini_selfhost_List_usize = false) {n : Nat} :
+    Stmt_empty_of_mini_selfhost_List_mini_selfhost_List_usize prog prims ix_empty_of_mini_selfhost_List_mini_selfhost_List_usize n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_empty_of_mini_selfhost_List_mini_selfhost_List_usize] at h
+  faithful []
+
 theorem proof_empty_of_mini_selfhost_MParam {prog : SrcProgram} {prims : Prims} {ix_empty_of_mini_selfhost_MParam : Nat} (fn : prog.funcs[ix_empty_of_mini_selfhost_MParam]? = some (src_empty_of_mini_selfhost_MParam)) (np : prims.isPrim ix_empty_of_mini_selfhost_MParam = false) {n : Nat} :
     Stmt_empty_of_mini_selfhost_MParam prog prims ix_empty_of_mini_selfhost_MParam n := by
   intro w h
@@ -228,6 +237,15 @@ theorem proof_empty_of_mini_selfhost_VariantAt {prog : SrcProgram} {prims : Prim
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
   simp only [src_empty_of_mini_selfhost_VariantAt] at h
+  faithful []
+
+theorem proof_field_homes_Decls_of_mini_selfhost_Decls {prog : SrcProgram} {prims : Prims} {ix_field_homes_Decls_of_mini_selfhost_Decls : Nat} (fn : prog.funcs[ix_field_homes_Decls_of_mini_selfhost_Decls]? = some (src_field_homes_Decls_of_mini_selfhost_Decls)) (np : prims.isPrim ix_field_homes_Decls_of_mini_selfhost_Decls = false) {n : Nat} :
+    Stmt_field_homes_Decls_of_mini_selfhost_Decls prog prims ix_field_homes_Decls_of_mini_selfhost_Decls n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_field_homes_Decls_of_mini_selfhost_Decls] at h
   faithful []
 
 theorem proof_field_text_Token_of_mini_selfhost_Token {prog : SrcProgram} {prims : Prims} {ix_field_text_Token_of_mini_selfhost_Token : Nat} (fn : prog.funcs[ix_field_text_Token_of_mini_selfhost_Token]? = some (src_field_text_Token_of_mini_selfhost_Token)) (np : prims.isPrim ix_field_text_Token_of_mini_selfhost_Token = false) {n : Nat} :

@@ -3,7 +3,7 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_isMatchStmt
-public import Lanius.Faithful.Gen.SelfStmtF_compoundOf
+public import Lanius.Faithful.Gen.SelfStmtF_forRange
 public import Lanius.Faithful.Gen.SelfStmtF_isMatchStmt
 import all Lanius.Faithful.Gen.SelfSrcF_isMatchStmt
 import all Lanius.Mini.Frontend.P.isMatchStmt

@@ -77,7 +77,7 @@ abbrev Stmt_module_names_ok (prog : SrcProgram) (prims : Prims) (ix n : Nat) : P
     RepBool (Lanius.Mini.moduleNamesOk x0 x1) w
 
 abbrev Stmt_modules_distinct_names (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Decls} {x1 : List (List (List Nat))} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepDecls x0 v0 → (RepList 125 (RepList 31 (RepList 25 RepNat))) x1 v1 →
+  ∀ {x0 : Lanius.Mini.Decls} {x1 : List (List (List Nat))} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepDecls x0 v0 → (RepList 124 (RepList 31 (RepList 25 RepNat))) x1 v1 →
     RepBool (Lanius.Mini.modulesDistinctNames x0 x1) w
 
 abbrev Stmt_no_names (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
