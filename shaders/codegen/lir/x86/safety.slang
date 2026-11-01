@@ -28,16 +28,20 @@ uint x86_safety_guard_bytes(X86LirCore core, X86LirOperands operands,
     {
         uint bytes = rhs_wide ? x86_move64_to_fixed_bytes(locations.b, 1u)
             : x86_move32_to_fixed_bytes(locations.b, 1u);
-        if (core.local_ordinal == SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME)
-            bytes += ((operands.metadata & X86_LIR_METADATA_INDIRECT_ARRAY_PAIR) != 0u
+        bool indirect = (operands.metadata & X86_LIR_METADATA_INDIRECT_ARRAY_PAIR) != 0u;
+        if (core.local_ordinal == SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME && !indirect &&
+            !rhs_wide && x86_location_is_register(locations.length))
+            bytes += x86_location_payload(locations.length) >= 8u ? 3u : 2u;
+        else if (core.local_ordinal == SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME)
+            bytes += (indirect
                 ? x86_move64_to_fixed_bytes(locations.a, 0u) + 3u
                 : x86_move32_to_fixed_bytes(locations.length, 0u)) + (rhs_wide ? 3u : 2u);
         else bytes += rhs_wide ? 8u : 6u;
-        return bytes + 14u;
+        return bytes + 6u; // jae rel32 to the runtime bounds trap
     }
     if (x86_safety_shift(core, operands))
         return (rhs_wide ? x86_move64_to_fixed_bytes(locations.c, 1u)
-            : x86_move32_to_fixed_bytes(locations.c, 1u)) + (rhs_wide ? 18u : 17u);
+            : x86_move32_to_fixed_bytes(locations.c, 1u)) + (rhs_wide ? 10u : 9u);
     if (x86_safety_integer_division(core, operands))
     {
         bool wide = scalar_is_wide_integer(type);

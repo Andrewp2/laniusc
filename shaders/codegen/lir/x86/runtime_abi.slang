@@ -55,7 +55,13 @@ static const uint X86_RUNTIME_PATH_REMOVE_DIR_OFFSET = 1925u;
 static const uint X86_RUNTIME_PATH_RENAME_OFFSET = 1962u;
 static const uint X86_RUNTIME_ASSERT_OFFSET = 2056u;
 static const uint X86_RUNTIME_LINUX_SYSCALL6_OFFSET = 2063u;
-static const uint X86_RUNTIME_LENGTH = 2095u;
+// Out-of-line safety traps: exit(101) for an index outside its bounds, then
+// exit(102) for an out-of-range shift. Guards jump here on failure, so the
+// passing path is a not-taken branch.
+static const uint X86_RUNTIME_TRAP_OFFSET = 2095u;
+static const uint X86_RUNTIME_TRAP_BOUNDS_OFFSET = 2095u;
+static const uint X86_RUNTIME_TRAP_SHIFT_OFFSET = 2107u;
+static const uint X86_RUNTIME_LENGTH = 2119u;
 
 uint x86_runtime_service_offset(uint service)
 {
@@ -633,7 +639,7 @@ uint x86_runtime_byte(uint pos)
         return assert_bytes[pos - X86_RUNTIME_ASSERT_OFFSET];
     }
     // Raw Linux x86-64 syscall bridge; see runtime_linux_syscall.s.
-    if (pos >= X86_RUNTIME_LINUX_SYSCALL6_OFFSET && pos < X86_RUNTIME_LENGTH)
+    if (pos >= X86_RUNTIME_LINUX_SYSCALL6_OFFSET && pos < X86_RUNTIME_TRAP_OFFSET)
     {
         static const uint linux_syscall6_bytes[32] = {
             0x48u, 0x89u, 0xf8u, 0x49u, 0x89u, 0xf3u, 0x49u, 0x8bu,
@@ -642,6 +648,15 @@ uint x86_runtime_byte(uint pos)
             0x20u, 0x4du, 0x8bu, 0x4bu, 0x28u, 0x0fu, 0x05u, 0xc3u,
         };
         return linux_syscall6_bytes[pos - X86_RUNTIME_LINUX_SYSCALL6_OFFSET];
+    }
+    if (pos >= X86_RUNTIME_TRAP_OFFSET && pos < X86_RUNTIME_LENGTH)
+    {
+        static const uint trap_bytes[24] = {
+            0xbfu, 0x65u, 0x00u, 0x00u, 0x00u, 0xb8u, 0x3cu, 0x00u,
+            0x00u, 0x00u, 0x0fu, 0x05u, 0xbfu, 0x66u, 0x00u, 0x00u,
+            0x00u, 0xb8u, 0x3cu, 0x00u, 0x00u, 0x00u, 0x0fu, 0x05u,
+        };
+        return trap_bytes[pos - X86_RUNTIME_TRAP_OFFSET];
     }
     return pos < X86_RUNTIME_LENGTH
         ? print_i32_bytes[pos - X86_RUNTIME_PRINT_I32_OFFSET] : 0u;

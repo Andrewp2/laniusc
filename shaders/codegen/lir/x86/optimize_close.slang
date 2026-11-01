@@ -118,6 +118,11 @@ uint immediate_operand(uint op, OptIrNodeCore core, uint left_row, uint right_ro
         x86_integer_immediate_operation(op, type_id, left))
         return 1u;
     if (right_width && x86_width_immediate_operation(op)) return 2u;
+    uint mask = 0u;
+    if (op == SEMANTIC_LIR_OP_BIT_AND && right_row < total &&
+        x86_zero_extended_mask_operand(type_id, opt_ir_core[right_row],
+            opt_ir_operands[right_row], mask))
+        return 2u;
     return 0u;
 }
 

@@ -239,5 +239,5 @@ uint prologue_bytes(TargetLirFunction target, SemanticLirFunction function, uint
     return (frameless ? 0u : stackless ? 1u :
         4u + (slots + x86_saved_gpr_count(saved_mask) == 0u ? 0u : 7u) +
         x86_saved_gpr_frame_bytes(saved_mask, slots)) +
-        param_store_bytes(target, function, hidden);
+        param_store_bytes(target, function, hidden) + x86_header_load_bytes(saved_mask);
 }

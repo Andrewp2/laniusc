@@ -185,6 +185,18 @@ bool x86_width_immediate_operand(uint type_id, OptIrNodeCore core,
          (operands.b == 0xffffffffu && immediate >= 0x80000000u));
 }
 
+// A 64-bit AND with a constant in 0x80000000..0xffffffff: no sign-extended
+// imm32 encodes it, but the 32-bit `and eax, imm32` (or `mov eax, eax` for
+// 0xffffffff) computes it, since 32-bit results clear the upper half.
+bool x86_zero_extended_mask_operand(uint type_id, OptIrNodeCore core,
+                                    OptIrNodeOperands operands, out uint mask)
+{
+    mask = operands.a;
+    return scalar_is_wide_integer(type_id) &&
+        opt_ir_op(core) == SEMANTIC_LIR_OP_CONST_I64 &&
+        operands.b == 0u && operands.a >= 0x80000000u;
+}
+
 bool x86_width_immediate_operation(uint semantic_op)
 {
     return semantic_op == SEMANTIC_LIR_OP_ADD || semantic_op == SEMANTIC_LIR_OP_SUB ||
@@ -550,4 +562,65 @@ bool float_binary_commutative(uint operation)
 {
     return operation == X86_LIR_BINARY_ADD_FLOAT ||
         operation == X86_LIR_BINARY_MUL_FLOAT;
+}
+
+// Slice header registers. In a function with a loop, the first slice
+// parameter that is never assigned, has no address-taken place and is read
+// keeps its data pointer in RBX, its length in R12 and its stride in R13 for
+// the whole call (in
+// addition to its three-word stack home), so indexed loads and stores and
+// their bounds checks read registers instead of reloading the header.
+// allocation_words chooses the function and reserves both registers
+// (X86_HEADER_CACHE_FLAG in the saved-register mask); decl_slots_scatter then
+// records the parameter's stack home in the mask's high bits; the prologue
+// loads both registers from that home, and the locations pass rewrites the
+// index rows that read it.
+static const uint X86_HEADER_BASE_REGISTER = 3u;
+static const uint X86_HEADER_LENGTH_REGISTER = 12u;
+static const uint X86_HEADER_STRIDE_REGISTER = 13u;
+static const uint X86_HEADER_REGISTERS = (1u << 3u) | (1u << 12u) | (1u << 13u);
+// Declaration slots 0-2 (RBX, R12, R13) in a function with calls.
+static const uint X86_HEADER_CALL_SLOTS = 7u;
+static const uint X86_HEADER_CACHE_FLAG = 1u << 16u;
+static const uint X86_HEADER_HOME_SHIFT = 17u;
+static const uint X86_HEADER_HOME_LIMIT = 0x7fffu;
+
+bool x86_header_parameter(SemanticLirParam param, X86DeclarationAnalysis analysis,
+                          uint4 place_storage)
+{
+    return (param.value_metadata & SEMANTIC_LIR_VALUE_ARRAY_PAIR) != 0u &&
+        analysis.definition == X86_LOCATION_INVALID &&
+        analysis.last_read != 0u && analysis.read_count != 0u &&
+        place_storage.x == 0u;
+}
+
+// The cached header's stack home (word 0), or INVALID.
+uint x86_header_home(uint saved_mask)
+{
+    uint encoded = saved_mask >> X86_HEADER_HOME_SHIFT;
+    return encoded == 0u ? X86_LOCATION_INVALID : encoded - 1u;
+}
+
+// Element types whose runtime views always have stride -8 * words: scalars
+// other than unit, i32 (packed +4 or native -8) and u8 (bytes +1 or native -8).
+bool x86_known_view_stride(uint type_id)
+{
+    return type_id == 2u || (type_id >= 4u && type_id <= 12u) ||
+        (type_id >= 14u && type_id <= 17u);
+}
+
+// Whether an index row's body addresses its element from the view's data
+// word alone (no stride word); see instruction_plan's index bodies.
+bool x86_index_known_stride(uint op, uint metadata)
+{
+    uint integer_type = metadata & 0xffu;
+    bool string = integer_type == SEMANTIC_LIR_TY_STRING;
+    bool aggregate = (metadata & X86_LIR_METADATA_AGGREGATE) != 0u;
+    bool copy = op == X86_LIR_OP_INDEX_STORE &&
+        (metadata & X86_LIR_METADATA_INDEX_AGGREGATE_COPY) != 0u;
+    bool pair_store = op == X86_LIR_OP_INDEX_STORE && !copy &&
+        (string || (metadata & X86_LIR_METADATA_ARRAY_PAIR) != 0u);
+    return op != X86_LIR_OP_INDEX_ADDRESS && !copy && !aggregate &&
+        (string || (pair_store && (metadata & X86_LIR_METADATA_ARRAY_PAIR) != 0u) ||
+         x86_known_view_stride(integer_type));
 }

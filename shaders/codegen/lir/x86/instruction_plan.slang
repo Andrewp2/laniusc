@@ -211,6 +211,24 @@ void plan_memmove_tail(uint words)
 void plan_index_address(X86PlanInput input, uint words, bool known_stride)
 {
     X86LirLocations locations = input.locations;
+    if (input.core.local_ordinal == SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME &&
+        (input.operands.metadata & X86_LIR_METADATA_INDIRECT_ARRAY_PAIR) == 0u &&
+        locations.a == (X86_REG | X86_HEADER_BASE_REGISTER))
+    {
+        // A cached slice header (x86_header_home): data pointer in RBX,
+        // stride in R13. mov edx, index; scale; lea rax, [rbx + rdx]
+        plan_move32(locations.b, X86_REG | 2u);
+        if (known_stride && words == 1u)
+        {
+            plan_bytes(3u, 0xdaf748u); // neg rdx
+            plan_bytes(4u, 0xd3048d48u); // lea rax, [rbx + rdx*8]
+            return;
+        }
+        if (known_stride) plan_bytes_word(3u, 0xd26948u, 0u - words * 8u); // imul rdx, rdx, -stride
+        else plan_bytes(4u, 0xd5af0f49u); // imul rdx, r13
+        plan_bytes(4u, 0x13048d48u); // lea rax, [rbx + rdx]
+        return;
+    }
     plan_move64(locations.a, X86_REG);
     if (input.core.local_ordinal == SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME)
     {
@@ -248,14 +266,6 @@ void plan_index_address(X86PlanInput input, uint words, bool known_stride)
             plan_bytes(4u, 0x08048d48u); // lea rax, [rax + rcx]
         }
     }
-}
-
-// Element types whose runtime views always have stride -8 * words: scalars
-// other than unit, i32 (packed +4 or native -8) and u8 (bytes +1 or native -8).
-bool plan_known_view_stride(uint type_id)
-{
-    return type_id == 2u || (type_id >= 4u && type_id <= 12u) ||
-        (type_id >= 14u && type_id <= 17u);
 }
 
 uint plan_setcc_opcode(uint predicate)
@@ -1091,7 +1101,11 @@ uint plan_specialized(X86PlanInput input)
                 operands.a == X86_LIR_BINARY_SUB_I32 ? 5u : 6u;
             uint body = operands.a == X86_LIR_BINARY_MUL_I32 ? 0xc069u
                 : 0x81u | ((0xc0u | (extension << 3u)) << 8u);
-            if (wide_integer) plan_bytes_word(3u, 0x48u | (body << 8u), operands.c);
+            bool zero_extended = (metadata & X86_LIR_METADATA_ZERO_EXTENDED_MASK) != 0u;
+            if (zero_extended && operands.c == 0xffffffffu)
+                plan_bytes(2u, 0xc089u); // mov eax, eax
+            else if (wide_integer && !zero_extended)
+                plan_bytes_word(3u, 0x48u | (body << 8u), operands.c);
             else plan_bytes_word(2u, body, operands.c);
         }
         else
@@ -1179,10 +1193,21 @@ uint plan_specialized(X86PlanInput input)
         // Scalar loads and stores, strings (two words) and slice-pair stores
         // (three) have the element's own word count; copies and aggregate
         // loads keep the view's stride.
-        bool known_stride = op != X86_LIR_OP_INDEX_ADDRESS && !copy && !aggregate &&
-            (string || (pair_store && (metadata & X86_LIR_METADATA_ARRAY_PAIR) != 0u) ||
-             plan_known_view_stride(integer_type));
-        plan_index_address(input, words, known_stride);
+        bool known_stride = x86_index_known_stride(op, metadata);
+        // A one-word element of a cached slice header (data pointer in RBX)
+        // is at [rbx - index*8]: mov edx, index; neg rdx; then a load uses
+        // [rbx + rdx*8] directly and other bodies take its address.
+        bool header_base = known_stride && words == 1u &&
+            core.local_ordinal == SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME &&
+            locations.a == (X86_REG | X86_HEADER_BASE_REGISTER) &&
+            (metadata & X86_LIR_METADATA_INDIRECT_ARRAY_PAIR) == 0u;
+        bool folded_load = header_base && op == X86_LIR_OP_INDEX_LOAD && !string;
+        if (folded_load)
+        {
+            plan_move32(locations.b, X86_REG | 2u);
+            plan_bytes(3u, 0xdaf748u); // neg rdx
+        }
+        else plan_index_address(input, words, known_stride);
         if (op == X86_LIR_OP_INDEX_ADDRESS) plan_move64(X86_REG, locations.result);
         else if (op == X86_LIR_OP_INDEX_LOAD)
         {
@@ -1197,7 +1222,11 @@ uint plan_specialized(X86PlanInput input)
             {
                 bool f32 = !aggregate && integer_type == X86_LIR_TY_FLOAT;
                 bool packed_load = !aggregate && packed;
-                if (!aggregate && runtime_u8)
+                if (folded_load && runtime_u8)
+                    plan_bytes(4u, 0xd304b60fu); // movzx eax, byte [rbx + rdx*8]
+                else if (folded_load)
+                    plan_prefixed(!packed_load && !f32, 0x48u, 3u, 0xd3048bu); // mov rax, [rbx + rdx*8]
+                else if (!aggregate && runtime_u8)
                     plan_bytes(3u, 0x00b60fu); // movzx eax, byte [rax]
                 else if (!aggregate) plan_prefixed(!packed_load && !f32, 0x48u, 2u, 0x008bu);
                 plan_value_move(is_float, is_float ? f64 : !packed_load, X86_REG, locations.result);

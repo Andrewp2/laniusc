@@ -1,5 +1,6 @@
 import codegen.lowering_ir;
 import codegen.optimization_ir;
+import codegen.lir.x86.common;
 import codegen.lir.x86.location_common;
 import gpu_index;
 
@@ -29,6 +30,9 @@ StructuredBuffer<X86ValueAnalysis> x86_value_by_semantic;
 StructuredBuffer<X86DeclarationAnalysis> x86_decl_analysis_by_token;
 StructuredBuffer<uint> x86_decl_location_by_token;
 StructuredBuffer<X86SelectInfo> x86_select_by_semantic;
+StructuredBuffer<uint> semantic_function_id_by_hir;
+StructuredBuffer<uint> semantic_lir_function_total;
+StructuredBuffer<uint> x86_saved_gpr_mask_by_function;
 RWStructuredBuffer<X86LirLocations> target_lir_locations;
 
 static const uint INVALID = 0xffffffffu;
@@ -261,5 +265,32 @@ void main(uint3 dtid: SV_DispatchThreadID)
     else if (core.op == X86_LIR_OP_BRANCH && operands.a != INVALID)
         locations.a = value_location(operands.a);
 
+    // Index rows of the function's cached slice header name RBX as the view
+    // (instruction_plan then reads the data pointer from RBX and the stride
+    // from R13) and R12 as its length, instead of the header's stack home;
+    // see x86_header_home.
+    bool index_row = (core.op == X86_LIR_OP_INDEX_LOAD ||
+        core.op == X86_LIR_OP_INDEX_STORE || core.op == X86_LIR_OP_INDEX_ADDRESS) &&
+        core.local_ordinal == SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME &&
+        (operands.metadata & X86_LIR_METADATA_INDIRECT_ARRAY_PAIR) == 0u;
+    bool length_row = core.op == X86_LIR_OP_INLINE_RESULT &&
+        (operands.metadata & X86_LIR_METADATA_ARRAY_LEN) != 0u;
+    if ((index_row || length_row) && core.source_hir != INVALID &&
+        (target_lir_flags[page_row] & TARGET_LIR_FLAG_INLINE_CLONE) == 0u)
+    {
+        uint function_id = semantic_function_id_by_hir[core.source_hir];
+        uint home = function_id < semantic_lir_function_total[0u]
+            ? x86_header_home(x86_saved_gpr_mask_by_function[function_id])
+            : X86_LOCATION_INVALID;
+        if (home != X86_LOCATION_INVALID && index_row)
+        {
+            if (locations.length == home + 1u)
+                locations.length = X86_LOCATION_REGISTER | X86_HEADER_LENGTH_REGISTER;
+            if (locations.a == home)
+                locations.a = X86_LOCATION_REGISTER | X86_HEADER_BASE_REGISTER;
+        }
+        if (home != X86_LOCATION_INVALID && length_row && locations.a == home + 1u)
+            locations.a = X86_LOCATION_REGISTER | X86_HEADER_LENGTH_REGISTER;
+    }
     target_lir_locations[page_row] = locations;
 }

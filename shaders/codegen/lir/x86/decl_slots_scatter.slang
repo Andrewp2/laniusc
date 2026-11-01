@@ -147,8 +147,11 @@ bool shifted_parameters(SemanticLirFunction function)
 // the first two register-typed parameters take slots 2 and 3 (R10/R11, or
 // R13/R14 across calls): no incoming argument arrives there, so the
 // right-to-left prologue moves cannot overwrite an argument not yet saved.
-// allocation_words reserves the same slots (declaration_register_mask).
-uint parameter_register_slot(SemanticLirFunction function, uint ordinal, bool has_call)
+// A cached slice header holds slots 0-2 (RBX, R12, R13) across calls, so
+// there only slot 3 is left. allocation_words reserves the same slots
+// (declaration_register_mask).
+uint parameter_register_slot(SemanticLirFunction function, uint ordinal, bool has_call,
+                             bool header)
 {
     uint limit = has_call ? 4u : 6u;
     if (function.param_start + function.param_count > semantic_lir_param_total[0u] ||
@@ -157,7 +160,7 @@ uint parameter_register_slot(SemanticLirFunction function, uint ordinal, bool ha
         return X86_LOCATION_INVALID;
     if (!shifted_parameters(function))
         return ordinal < limit ? ordinal : X86_LOCATION_INVALID;
-    uint slot = 2u;
+    uint slot = header && has_call ? 3u : 2u;
     for (uint prior = 0u; prior < ordinal; prior += 1u)
         if (scalar_gpr_type(semantic_lir_params[function.param_start + prior].type_id))
             slot += 1u;
@@ -167,7 +170,8 @@ uint parameter_register_slot(SemanticLirFunction function, uint ordinal, bool ha
 // The register slot of the function's local at `index`, or INVALID.
 // Register-typed locals take the slots parameters leave free, in order, so
 // a slice parameter or a non-register local does not use up a register.
-uint local_register_slot(SemanticLirFunction function, uint index, bool has_call)
+uint local_register_slot(SemanticLirFunction function, uint index, bool has_call,
+                         bool header)
 {
     uint limit = has_call ? 4u : 6u;
     uint param_total = semantic_lir_param_total[0u];
@@ -176,10 +180,11 @@ uint local_register_slot(SemanticLirFunction function, uint index, bool has_call
         function.param_start + function.param_count > param_total ||
         function.local_start + function.local_count > local_total)
         return X86_LOCATION_INVALID;
-    uint slots = 0u;
+    // Cached slice header registers (RBX, R12, R13) are slots 0-2 with calls.
+    uint slots = header && has_call ? X86_HEADER_CALL_SLOTS : 0u;
     for (uint ordinal = 0u; ordinal < min(function.param_count, LOCAL_SLOT_SCAN_LIMIT); ordinal += 1u)
     {
-        uint slot = parameter_register_slot(function, ordinal, has_call);
+        uint slot = parameter_register_slot(function, ordinal, has_call, header);
         if (slot != X86_LOCATION_INVALID) slots |= 1u << slot;
     }
     uint cursor = 0u;
@@ -196,6 +201,29 @@ uint local_register_slot(SemanticLirFunction function, uint index, bool has_call
         cursor += 1u;
     }
     return X86_LOCATION_INVALID;
+}
+
+// allocation_words' choice (header_parameter): the first slice parameter
+// whose header may stay in registers.
+uint header_parameter(SemanticLirFunction function)
+{
+    if (function.param_start + function.param_count > semantic_lir_param_total[0u])
+        return X86_LOCATION_INVALID;
+    for (uint ordinal = 0u; ordinal < min(function.param_count, LOCAL_SLOT_SCAN_LIMIT); ordinal += 1u)
+    {
+        SemanticLirParam param = semantic_lir_params[function.param_start + ordinal];
+        uint declaration = param.declaration_id;
+        if (declaration < gParams.token_capacity &&
+            x86_header_parameter(param, x86_decl_analysis_by_token[declaration],
+                semantic_place_storage_by_token[declaration]))
+            return function.param_start + ordinal;
+    }
+    return X86_LOCATION_INVALID;
+}
+
+bool header_cached(uint function_id)
+{
+    return (x86_saved_gpr_mask_by_function[function_id] & X86_HEADER_CACHE_FLAG) != 0u;
 }
 
 uint local_payload_words(SemanticLirFunction function)
@@ -262,7 +290,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
             bool shifted = shifted_parameters(function);
             bool has_call =
                 x86_register_analysis_by_function[param.function_id].first_call != 0u;
-            uint register_slot = parameter_register_slot(function, param.ordinal, has_call);
+            uint register_slot = parameter_register_slot(function, param.ordinal, has_call,
+                header_cached(param.function_id));
             x86_decl_location_by_token[param.declaration_id] =
                 assign_declaration(param.function_id, param.ordinal, register_slot,
                     param.type_id, param.declaration_id,
@@ -281,6 +310,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
                     local_payload_words(function) + copy_offset
                 : x86_decl_location_by_token[param.declaration_id];
             publish_place(param.declaration_id, home);
+            uint header_home = x86_decl_location_by_token[param.declaration_id];
+            if (header_cached(param.function_id) && header_parameter(function) == row &&
+                header_home < X86_HEADER_HOME_LIMIT)
+            {
+                uint ignored;
+                InterlockedOr(x86_saved_gpr_mask_by_function[param.function_id],
+                    (header_home + 1u) << X86_HEADER_HOME_SHIFT, ignored);
+            }
         }
     }
 
@@ -298,7 +335,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 x86_register_analysis_by_function[local.function_id].first_call != 0u;
             x86_decl_location_by_token[local.declaration_id] =
                 assign_declaration(local.function_id, ordinal,
-                    local_register_slot(semantic_function, local.ordinal, has_call),
+                    local_register_slot(semantic_function, local.ordinal, has_call,
+                        header_cached(local.function_id)),
                     local.type_id, local.declaration_id,
                     X86_LOCATION_INVALID, false);
             uint4 storage = semantic_place_storage_by_token[local.declaration_id];

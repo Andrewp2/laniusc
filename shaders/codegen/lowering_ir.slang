@@ -1238,6 +1238,9 @@ static const uint X86_LIR_METADATA_NATIVE_C = 0x00080000u;
 // A variable shift whose amount is proven below the operand's bit width (a
 // constant, or a mask `x & c` with c < bits), so it needs no range guard.
 static const uint X86_LIR_METADATA_BOUNDED_SHIFT = 0x00040000u;
+// On an immediate 64-bit BIT_AND (never a shift, so the bit is free there):
+// the 32-bit mask in operand c is zero-extended, not sign-extended.
+static const uint X86_LIR_METADATA_ZERO_EXTENDED_MASK = 0x00040000u;
 
 // Semantic AGGREGATE_NEW metadata. The high bit distinguishes tagged enums;
 // the remaining bits contain the checked variant ordinal.

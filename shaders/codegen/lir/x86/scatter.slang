@@ -1349,6 +1349,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
             c = immediate;
             metadata |= X86_LIR_METADATA_IMMEDIATE;
         }
+        else if (op != X86_LIR_OP_IMM_I32 && semantic_op == SEMANTIC_LIR_OP_BIT_AND &&
+                 args.b < semantic_count &&
+                 x86_zero_extended_mask_operand(source.type_id, opt_ir_core[args.b],
+                     opt_ir_operands[args.b], immediate))
+        {
+            c = immediate;
+            metadata |= X86_LIR_METADATA_IMMEDIATE | X86_LIR_METADATA_ZERO_EXTENDED_MASK;
+        }
         if (op == X86_LIR_OP_BINARY && (metadata & X86_LIR_METADATA_IMMEDIATE) == 0u &&
             (semantic_op == SEMANTIC_LIR_OP_SHIFT_LEFT ||
              semantic_op == SEMANTIC_LIR_OP_SHIFT_RIGHT) &&

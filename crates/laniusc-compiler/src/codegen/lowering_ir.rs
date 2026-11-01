@@ -8685,6 +8685,11 @@ fn lowering_compiler_graph_builder(
                     "x86_saved_gpr_mask_by_function",
                     x86_saved_gpr_mask_by_function.expect("x86 saved-register resource"),
                 ),
+                PassAccess::read(
+                    "x86_decl_analysis_by_token",
+                    x86_decl_analysis_by_token.expect("x86 declaration analysis resource"),
+                ),
+                PassAccess::read("semantic_place_storage_by_token", semantic_place_storage_by_token),
             ],
         })?;
         let x86_stack_scan = x86_stack_scan_resources.expect("x86 stack scan resources");
@@ -9638,6 +9643,12 @@ fn lowering_compiler_graph_builder(
                     "x86_select_by_semantic",
                     x86_select_by_semantic.expect("x86 select resource"),
                 ),
+                PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
+                PassAccess::read("semantic_lir_function_total", semantic_function_total),
+                PassAccess::read(
+                    "x86_saved_gpr_mask_by_function",
+                    x86_saved_gpr_mask_by_function.expect("x86 saved-register resource"),
+                ),
                 PassAccess::write("target_lir_locations", x86_target_locations.unwrap()),
             ],
         })?;
@@ -10001,6 +10012,12 @@ fn lowering_compiler_graph_builder(
                 PassAccess::read(
                     "x86_select_by_semantic",
                     x86_select_by_semantic.expect("x86 select resource"),
+                ),
+                PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
+                PassAccess::read("semantic_lir_function_total", semantic_function_total),
+                PassAccess::read(
+                    "x86_saved_gpr_mask_by_function",
+                    x86_saved_gpr_mask_by_function.expect("x86 saved-register resource"),
                 ),
                 PassAccess::write("target_lir_locations", x86_target_locations.unwrap()),
             ],
