@@ -1610,6 +1610,14 @@ the generic borrowed client handoff has its separate acceptance above.
 
 **Accepted command completion.**
 
+[`std::cli`](stdlib-cli.md) parses arguments declaratively with GNU
+`getopt_long` rules: unique long-option prefixes, `-abc` clusters, `--opt=value`
+and `--opt value`, optional values, `--`, operand counts and subcommands. It
+generates `--help` text and prints glibc's messages (`unrecognized option
+'--x'`, `option '--co' is ambiguous; possibilities: ...`). It agrees with a
+Python model, itself checked against Python `getopt`, on 6,026 generated and
+fixed cases and 7 help texts. The `tgz` and `seq-diff` samples use it.
+
 [Portable completion and the Bash adapter](extended-cli-complete.md) separate
 three allocation-free modules from host behavior. `ext::cli_complete` reuses
 canonical prefix parsing and command scopes; a Context retains no mutable
