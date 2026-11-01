@@ -229,6 +229,22 @@ impl CompileError {
     }
 }
 
+/// A compile during which the GPU reported an error (usually out of memory):
+/// later dispatches did not run, so any result or diagnostic it produced is
+/// discarded in favor of this one.
+pub fn gpu_device_error_diagnostic(errors: u64, first: Option<String>) -> Diagnostic {
+    let mut diagnostic = Diagnostic::error("LNC0057", "GPU device error during compilation")
+        .with_note(format!(
+            "the GPU reported {errors} error(s) during this compile, so its result was discarded"
+        ));
+    if let Some(first) = first {
+        diagnostic = diagnostic.with_note(format!("first error: {first}"));
+    }
+    diagnostic.with_help(
+        "free GPU memory (another GPU job or a resident compiler daemon may hold it) or compile a smaller program",
+    )
+}
+
 fn compiler_execution_failed_diagnostic(
     message: &'static str,
     phase_note: &'static str,

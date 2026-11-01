@@ -17,7 +17,7 @@ one should become a passing regression test once its defect is fixed.
 | `i64_view_writes.lani` (removed) | `words[2] = 5` through `typed_slice_from_raw_parts<i64>(base, 4)` over a local `[i32; 8]` | — | **not a defect**: raw `[i64]` views descend (element i at `base - 8 * i`, as `core::mem` documents), so the store landed below the array; now `tests/codegen_x86.rs` `x86_i64_raw_views_store_at_descending_word_addresses` |
 | `u64_cast_literal.lani` | `4000000000 as u64` | compiles, exit 4 | **fixed 2026-10-31**: was LNC0069 "invalid integer literal" (the literal was checked as i32 before the cast); now exits 4 |
 | `u64_cast_literal_forms.lani` | literal casts to u32/u64/i64 at their extremes, plus `-1 as u32`, `-1 as u64`, `300 as u8`, `(3 + 4) as u64`, `3 as f64` | exit 0 | exit 0 since the fix |
-| `untyped_generic_trait_result.lani` | untyped `let got = reader.read(...)` where `R: core::io::Read` | compiles, exit 1 with one stdin byte | LNC0006 "type mismatch" at the later `unwrap`; the same program with `let got: Result<i32, core::io::Error>` works. The reported variant of this defect was LNC0027 "call resolution failed" |
+| `untyped_generic_trait_result.lani` | untyped `let got = reader.read(...)` where `R: core::io::Read` | compiles, exit 1 with one stdin byte | **fixed 2026-10-31**: was LNC0006 "type mismatch" at the later `unwrap` (LNC0027 for `got.unwrap()`, LNC0047 for `w.flush()` and `core::random::Source64::draw`); see [bound trait results](#bound-trait-results) |
 | `bound_trait_result_argument.lani` | the same untyped `got` passed to a nongeneric `Result<i32, core::io::Error>` parameter | exit 1 with one stdin byte | **fixed 2026-10-31**: compiled before, then died with SIGILL (exit 132) |
 | `bound_trait_open_result.lani` | untyped `let x = it.next()` where `I: core::iter::Iterator<i32>` (a result that names the trait's parameter) | compiles, exit 6 | **fixed 2026-10-31**: was LNC0006 "type mismatch" at the `unwrap_or` |
 | `bound_trait_open_param.lani` | the same through `I: core::iter::Iterator<T>` in a generic caller | exit 3 | exit 3 since the fix (was LNC0006) |
@@ -26,8 +26,10 @@ one should become a passing regression test once its defect is fixed.
 | `u64_stack_carry.lani` | performance: u64 values and every expression temporary live in stack slots | exit 10, carry and temporaries in registers | exit 10 in 0.12 s with no memory operand in the loop. Before 2026-10-31: 0.42 s, all u64 values in slots. 64-bit declarations became register-eligible (0.31 s), then temporaries got a per-function linear-scan allocator over r8-r11, rbx and r12-r14 (`allocation_words.slang`), `>> 32` became an immediate shift and `j < n` a fused compare-branch. Left: register-to-register move chains and dead constant loads (`mov $0x20,%ebx`) |
 | `u32_slice_row.lani` | performance: the big-integer multiply-add row costs about 13 ns per limb (26 ns under load) instead of about 1 ns | exit 72 in about 0.1 s | exit 72 in 0.29 s (2.9 ns per limb, was 1.34 s). Slice parameters are now read in place (no descriptor copies), temporaries stay in registers and the loop test is a fused `cmp; jge`: about 60 instructions per limb. Left: `factor` reloads from its slot each pass, each access still bounds-checks and multiplies by the runtime stride (`imul` plus a stride==1 branch, even for 4-byte elements), and move chains. The asm excerpt is in the file |
 | `candidate_nested_generic_match.lani` | reported: LNC0047 "type-check execution failed" on a nested match on a generic enum bound in an outer arm | compiles, exit 4 | **not reproduced**: compiles and exits 4 |
-| `candidate_slice_select_label.lani` | reported: LNC0008 "unsatisfied trait bound" labels pointing at `stdlib/core/slice.lani:899` (inside `select_nth_unstable`) instead of the caller | compiles, exit 1 | **not reproduced**: compiles and exits 1 |
-| `candidate_missing_module_long.lani` | reported: LNC0016 "syntax error" on a long file without a `module` line | compiles, exit 0 | **not reproduced**: 401 functions and no `module` line compile and exit 0 |
+| `check_slice_select_label.lani` | reported: LNC0008 "unsatisfied trait bound" labels pointing at `stdlib/core/slice.lani:899` (inside `select_nth_unstable`) instead of the caller | `laniusc check` accepts; compiles, exit 1 | **fixed 2026-10-31**: real in `laniusc check` only, which rejected it at `slice.lani:899`; builds were never affected. See [check and generic impls](#check-and-generic-impls) |
+| `check_slice_import.lani` | `laniusc check --stdlib-root stdlib` on any program importing `core::slice` | check accepts; exit 3 | **fixed 2026-10-31**: was LNC0008 at `slice.lani:899` |
+| `check_generic_impl_bound.lani` | `laniusc check` on a call bound met only by a generic impl (`impl<T> Cmp for N<T>`) | check accepts; exit 3 | **fixed 2026-10-31**: was LNC0008 "no matching impl satisfies this call" at the call |
+| `candidate_missing_module_long.lani` | reported: LNC0016 "syntax error" on a long file without a `module` line | compiles, exit 0 | **not reproduced, closed 2026-10-31**: this file and 2,000- to 20,000-function files (up to 2 MB) with or without `module`, CRLF or import-first all compile. Large files fail on GPU memory instead; see [GPU out of memory](#gpu-out-of-memory) |
 | `b14_path_self_method_inherent.lani` | a self method called through its type's path: `S::get(s, 1)`, `S::peek(s.borrow(), 2)` for `&self` | exit 0 | **fixed 2026-10-31**: was LNC0027 "call resolution failed"; registered in `tests/compiler_defect_fixtures_execution.rs` |
 | `b14_path_self_method_bound.lani` | a bound's self member called through the parameter's path, `T::tw(x, 3)` with `T: Tw<T>`, on `i32` and a record | exit 0 | **fixed 2026-10-31**: was LNC0027 "call resolution failed"; registered in `tests/compiler_defect_fixtures_execution.rs` |
 | `b19_stdlib_path_self_method.lani` | self methods of stdlib types through the type's path: `TotalF32::to_bits(t)`, `Descriptor::raw_handle(d.borrow())`, `Option<i32>::is_some(o)` | exit 0 | **fixed 2026-10-31**: was LNC0027 "call resolution failed". The bare `Option::is_some(o)` is still LNC0005 (generics backlog b19) |
@@ -39,12 +41,74 @@ An imported method called with too few arguments, `o.unwrap_or()` on an
 argument until 2026-10-31. dependencies/08c now checks a method's arity as it
 did a function's, and both report LNC0027.
 
-The three candidates are the closest shapes tried from the reports. Six other
-shapes also compiled correctly: generic-function and user-enum nested matches,
-`Option<Result<T, i32>>`, an untyped `let` of `T::lt`, `try_clone`, generic
-`select_nth_unstable<T>`, and 3,000-line, import-first and struct/enum/impl-heavy
-files without `module`. The agent that hit each of those diagnostics should
-replace its candidate with the failing program.
+The nested-match candidate is the closest shape tried from its report. Five
+other shapes also compiled correctly: generic-function and user-enum nested
+matches, `Option<Result<T, i32>>`, an untyped `let` of `T::lt` and
+`try_clone`. The agent that hit that diagnostic should replace the candidate
+with the failing program.
+
+## check and generic impls
+
+`laniusc check` runs only the frontend. Its trait solver indexes concrete
+impls only (`impl_row_has_supported_exact_key` in
+[`02_obligations.slang`](../../../shaders/type_checker/predicates/02_obligations.slang)).
+A generic impl head such as `impl<T> Cmp for N<T>` is selected by the
+whole-program admission that only a build runs. So check rejected every call
+whose bound only a generic impl meets. The rejection was LNC0008 "no matching
+impl satisfies this call". It hit `selection_engine<T,Natural<T>>` in
+`core::slice::select_nth_unstable`, so check rejected every program that
+imports `core::slice` at `stdlib/core/slice.lani:899`. Under the min-token
+rule that false error also replaced the real label of a program with a real
+unsatisfied bound. Builds, and the label tests that compile, were never
+affected.
+
+The fix is in the CLI (`cli/compile/entry.rs`, `check_with_build_fallback`).
+When the frontend check fails with exactly that diagnostic, check builds the
+program for x86-64 and discards the output, then reports what the build
+reports. Every other check result is unchanged, and so is its cost. The
+library functions `type_check_entry_with_*` and the language server still run
+the frontend alone, so they still reject these programs.
+
+Before the fix, check rejected `check_generic_impl_bound.lani`,
+`check_slice_import.lani`, `check_slice_select_label.lani`, seven other
+generic-impl reductions and all 17 negative label fixtures. That covers 13
+in `stdlib_borrowed_lookup/direct` and 4 in
+`stdlib_ordered_navigation`; all 17 were labeled `slice.lani:899`. After the
+fix, the valid programs pass check and the 17 negatives are labeled at their
+`rejected_lookup_bound` or `rejected_navigation_bound` call in the fixture, as
+a build labels them. A
+program that uses a generic impl and also has an earlier type error still
+reports that error.
+
+## GPU out of memory
+
+What large files actually hit is GPU memory. When `create_buffer` runs out of
+memory, wgpu reports the error asynchronously and the dispatches that use the
+buffer do not run. The compiler then read zeroed results and reported a
+wrong diagnostic, usually LNC0017 "missing main entrypoint", even with `main`
+first in the file. Two cases were found on the 8 GB laptop GPU, both with
+2026-10-31 builds:
+
+- One compile of an `import core::result;` file with 16,500 one-line helpers
+  (1.65 MB; 16,000 helpers pass) runs out creating
+  `program_evidence.thread_scratch`. Generate it with
+  `python3 -c 'print("import core::result;"); [print(f"fn helper_{i}(x: i32) -> i32 {{ let y: i32 = x + {i % 97}; if (y > 1000) {{ return y - 1000; }} return y; }}") for i in range(16500)]; print("fn main() -> i32 { return helper_0(3); }")'`.
+- A poisoned daemon. After one 18,000- to 20,000-helper compile without
+  imports (about 2 MB), the daemon's resident buffers stay sized for it.
+  Every later compile with an import then ran out creating
+  `codegen.lowering.arena.2` and reported LNC0017 until the daemon restarted.
+
+The GPU device now counts uncaptured errors and keeps the first message
+(`gpu/device.rs`). A daemon compile that saw an error drops its compiled-unit
+cache and resident job buffers and retries once. If the retry also fails, it
+reports LNC0057 "GPU device error during compilation", naming the resource
+that ran out. A one-shot compile reports the same LNC0057 instead of the
+bogus diagnostic. The poisoned-daemon sequences now recover on the retry.
+
+The compilers built before and after this change compiled the same 84
+programs in one daemon each. The 68 programs that compile give byte-identical
+executables, the other 16 are rejected by both, and the 198 runs of those 68
+match apart from 6 timing lines.
 
 ## Cast-target literals
 
