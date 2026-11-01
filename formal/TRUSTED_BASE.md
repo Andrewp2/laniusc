@@ -283,7 +283,7 @@ the statements, so a reader has to agree that each one says what is intended:
 | `Returned`, `HeapAt`, `StackAt`, `Contract`, `Scratch`, `InHeap` | `Mini/Simulation.lean` | the calling convention and what "returns" means (section 8) |
 | `Below`, `Binary.stackNeed`, `Binary.guard` | `Mini/Frame.lean`, `Mini/Bytes.lean` | the stack window |
 | `Det`, `DataEq`, `Live`, `Faults`, `Fault` | `Mini/StepDet.lean`, `X86/Machine/Scalar.lean` | every run agrees but for flags and does not stop early; a run that stops, stops at an architectural fault (`ud2`, `#DE`) |
-| `undefinedTrap`, `Failing` | `Mini/Fails.lean` | a Core run fails at a fuel when it runs out of fuel, stops at a trap that is not undefined, or completes with the heap past the mini heap's limit; the undefined traps are the raw memory errors and `typeMismatch` |
+| `undefinedTrap`, `Failing` | `Mini/Fails.lean` | a Core run fails at a fuel when it runs out of fuel, stops at a trap that is not undefined, exits (`.exited`), or completes or traps with the heap past the mini heap's limit; the undefined traps are the raw memory errors (`invalidPointer`, `rawMemoryBounds`, `doubleFree`, `allocatorContract`), `typeMismatch`, and the end of a clock's readings or of the secure bytes (`clockExhausted`, `entropyExhausted`) |
 | `Program.Returns`, `Exec` | `Mini/Semantics.lean` | the mini IR's big-step semantics, at a call depth |
 | `Stops`, `Program.Stops` | `Mini/Stops.lean`, `Mini/StopsCorrect.lean` | a mini run that, within `n` ticks (loop iterations and calls), has not finished or has stopped at an allocation past the limit from a cursor within it, or at a division by zero or of the least value by -1 |
 | `Typing.ProgramWellTyped` | `Lanius/Typing.lean` | Core's type system on programs |
@@ -623,9 +623,10 @@ unique. Trusted:
     (`builtinPaths`);
   - `x op= e` is `x = x op e`, and `x.f op= e` is `x.f = x.f op e`, for
     `op` one of `+ - * & | ^`. Core has the compound form itself
-    (`assign .add` and so on, `evalAssignValue`), which evaluates `e` before
-    it reads `x`; for the subset's expressions, which neither trap nor have
-    effects, the two orders give the same value and state;
+    (`assign .add` and so on, `evalAssignValue`), which reads `x` (its
+    place, `evalPlace` in read mode) before it evaluates `e`, as `x = x op
+    e` does; for the subset's expressions, which neither trap nor have
+    effects, the two forms give the same value and state;
   - an expression that calls a function, indexes a slice, divides (`/`,
     `%`), or is a struct literal, variant or `match` is a `SrcEff`, and its
     statement the effectful form (`LetEval`, `SetEval`, `SetFieldEval`,
@@ -807,7 +808,8 @@ theorems the kernel checks, so they are not trusted either way.
   existential: *some* model run `Steps n s s'` returns. `Step` is a relation,
   and it leaves these choices free:
   - AF after AND, OR, XOR and TEST;
-  - every flag after IMUL, NEG and shifts;
+  - every flag after IMUL, NEG, shifts, DIV and IDIV;
+  - r11 after a `syscall` (`Kernel`, where Linux leaves RFLAGS);
   - the byte list it decodes, which may be any list loaded at `rip`.
 
   The CPU's run is generally a different model run from the one the
@@ -821,8 +823,8 @@ theorems the kernel checks, so they are not trusted either way.
       ∀ t, Steps n s t → DataEq s' t ∧ Returned window s t value after
   ```
 
-  `DataEq` is equality of registers, rip and memory, so only RFLAGS may
-  differ. `compileSource_deterministic` and `linked_deterministic` are the
+  `DataEq` is equality of the registers, rip, memory, the xmm registers'
+  low halves and the process side (`io`), so only RFLAGS may differ. `compileSource_deterministic` and `linked_deterministic` are the
   same for `compileSource_correct` and `linked_correct`, and the process
   theorems carry `Det`.
 - **Still assumed.** That the CPU's run is one of the model's runs (section
