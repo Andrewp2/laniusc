@@ -56,9 +56,11 @@ bool produces_scalar_value(uint op)
 bool scalar_gpr_result(OptIrNodeCore core)
 {
     uint op = opt_ir_op(core);
+    // 64-bit integers use full-width moves like pointers; see decl_slots_scatter.
     return op == SEMANTIC_LIR_OP_COMPARE || core.type_id == 1u ||
         core.type_id == 2u || core.type_id == 3u || core.type_id == 4u ||
-        core.type_id == 6u || core.type_id == 8u;
+        core.type_id == 6u || core.type_id == 8u || core.type_id == 9u ||
+        core.type_id == 10u || core.type_id == 16u || core.type_id == 17u;
 }
 
 bool produces_float_value(uint op)
