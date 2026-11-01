@@ -143,12 +143,23 @@ pub impl Record {
             let span: Span = self.fields.at(column);
             if (span.start != offset || span.length < 0 || span.length > self.bytes.len() - offset) { return core::result::Err(Error::Bounds); }
             let field: core::text::Text = core::text::Text { bytes: self.bytes.as_slice(), start: span.start, length: span.length };
-            let checked = checked_field(field,offset as u64);
-            if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
-            let addition: u64 = 2 + (span.length as u64);
+            // One pass for printable ASCII (plus CR and LF), counting quotes;
+            // anything else takes the full check, which reports the error.
+            let data: [u8] = field.bytes; let at: i32 = span.start; let stop: i32 = span.start + span.length; let quotes: u64 = 0;
+            while (at < stop) {
+                let byte: u8 = data[at];
+                if (byte >= 127 || (byte < 32 && byte != 13 && byte != 10)) { break; }
+                if (byte == 34) { quotes += 1; }
+                at += 1;
+            }
+            if (at < stop) {
+                let checked = checked_field(field,offset as u64);
+                if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+                at = span.start; quotes = 0;
+                while (at < stop) { if (data[at] == 34) { quotes += 1; } at += 1; }
+            }
+            let addition: u64 = 2 + (span.length as u64) + quotes;
             if (column > 0) { addition += 1; }
-            let index: i32 = 0;
-            while (index < span.length) { if (field.bytes[field.start + index] == 34) { addition += 1; } index += 1; }
             if (total > 18446744073709551615 - addition) { return core::result::Err(Error::CapacityOverflow); }
             total += addition; offset += span.length; column += 1;
         }
@@ -218,6 +229,47 @@ pub impl Encoding {
             else { byte = 10; self.phase = 6; break; } } } }
         }
         self.remaining_bytes -= 1; return core::option::Some(byte);
+    }
+    // Writes the next min(limit, remaining()) bytes to target[at...] and
+    // returns that count: the same bytes and final cursor as that many
+    // next() calls. Field bytes are copied in runs.
+    pub fn fill(&self, target: [u8], at: i32, limit: i32) -> i32 {
+        let want: i32 = limit;
+        if (want <= 0 || self.remaining_bytes == 0) { return 0; }
+        if ((want as u64) > self.remaining_bytes) { want = self.remaining_bytes as i32; }
+        let bytes: [u8] = self.row.bytes.as_slice(); let fields: i32 = self.row.fields.len();
+        let phase: i32 = self.phase; let column: i32 = self.column; let offset: i32 = self.offset;
+        let first: i32 = 0; let length: i32 = 0;
+        if (column < fields) { let span: Span = self.row.fields.at(column); first = span.start; length = span.length; }
+        let to: i32 = at; let stop: i32 = at + want;
+        while (to < stop) {
+            if (phase == 1) {
+                if (offset < length) {
+                    let from: i32 = first + offset; let end: i32 = first + length;
+                    while (to < stop && from < end) {
+                        let byte: u8 = bytes[from]; target[to] = byte; to += 1; from += 1;
+                        if (byte == 34) { phase = 2; break; }
+                    }
+                    offset = from - first;
+                } else { phase = 3; }
+                continue;
+            }
+            if (phase == 0) { target[to] = 34; phase = 1; }
+            else { if (phase == 2) { target[to] = 34; phase = 1; }
+            else { if (phase == 3) { target[to] = 34; phase = 4; }
+            else { if (phase == 4) {
+                column += 1; offset = 0;
+                if (column < fields) {
+                    let span: Span = self.row.fields.at(column); first = span.start; length = span.length;
+                    target[to] = 44; phase = 0;
+                } else { target[to] = 13; phase = 5; }
+            }
+            else { target[to] = 10; phase = 6; } } } }
+            to += 1;
+        }
+        self.phase = phase; self.column = column; self.offset = offset;
+        self.remaining_bytes -= want as u64;
+        return want;
     }
 }
 
@@ -459,25 +511,42 @@ pub fn parse(input: alloc::string::String, options: Options) -> core::result::Re
 }
 
 struct Encoder { output: alloc::string::String, error: Error }
+// Length of the longest prefix of block[0, count) that ends on a UTF-8
+// sequence boundary.
+fn complete_prefix(block: [u8], count: i32) -> i32 {
+    let lead: i32 = count - 1; let back: i32 = 0;
+    while (lead > 0 && back < 3 && (block[lead] & 192) == 128) { lead -= 1; back += 1; }
+    if (lead < 0) { return count; }
+    let width: i32 = core::utf8::sequence_len_or(block[lead], 1) as i32;
+    if (lead + width > count) { return lead; }
+    return count;
+}
 impl Encoder {
-    fn push(&self, scalar: u32) -> bool {
-        let pushed: core::result::Result<i32, alloc::string::Error> = self.output.try_push_scalar(scalar);
-        if (core::result::is_err(pushed)) { self.error = string_error(core::result::unwrap_err(pushed)); return false; }
-        return true;
-    }
     fn record(&self, row: Record) -> bool {
         let made = row.encoding();
         if (made.is_err()) { self.error = made.unwrap_err(); return false; }
         let cursor: Encoding = made.unwrap();
-        if (cursor.remaining() > (2147483647 - self.output.byte_len()) as u64) { self.error = Error::CapacityOverflow; return false; }
+        let used: i32 = self.output.byte_len();
+        if (cursor.remaining() > (2147483647 - used) as u64) { self.error = Error::CapacityOverflow; return false; }
+        let needed: i32 = used + (cursor.remaining() as i32);
+        let capacity: i32 = self.output.capacity();
+        if (needed > capacity) {
+            let target: i32 = needed;
+            if (capacity <= 1073741823 && capacity * 2 > target) { target = capacity * 2; }
+            let reserved: core::result::Result<i32, alloc::string::Error> = self.output.try_reserve(target);
+            if (core::result::is_err(reserved)) { self.error = string_error(core::result::unwrap_err(reserved)); return false; }
+        }
+        // Encoded blocks are appended whole UTF-8 sequences at a time.
+        let block: [u8; 1024] = [0; 1024]; let kept: i32 = 0;
         while (cursor.remaining() > 0) {
-            let first: u8 = cursor.next().unwrap(); let width: u32 = core::utf8::sequence_len_or(first,0);
-            let second: u8 = 0; let third: u8 = 0; let fourth: u8 = 0;
-            if (width > 1) { second = cursor.next().unwrap(); }
-            if (width > 2) { third = cursor.next().unwrap(); }
-            if (width > 3) { fourth = cursor.next().unwrap(); }
-            let scalar: u32 = core::utf8::decode_or(first,second,third,fourth,width,4294967295);
-            if (!self.push(scalar)) { return false; }
+            let count: i32 = kept + cursor.fill(block, kept, 1024 - kept);
+            let cut: i32 = count;
+            if (cursor.remaining() > 0) { cut = complete_prefix(block, count); }
+            let pushed: core::result::Result<i32, alloc::string::Error> = self.output.try_append_text(core::text::from_utf8_unchecked(block, 0, cut));
+            if (core::result::is_err(pushed)) { self.error = string_error(core::result::unwrap_err(pushed)); return false; }
+            kept = count - cut;
+            let index: i32 = 0;
+            while (index < kept) { let moved: u8 = block[cut + index]; block[index] = moved; index += 1; }
         }
         return true;
     }

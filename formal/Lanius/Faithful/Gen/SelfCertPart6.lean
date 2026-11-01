@@ -87,6 +87,10 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
+theorem cert_p_stmts_more {n : Nat} :
+    Stmt_p_stmts_more prog prims 774 n :=
+  @proof_p_stmts_more prog prims 774 fn_p_stmts_more np_p_stmts_more n
+
 theorem cert_p_stmts_end {n : Nat} :
     Stmt_p_stmts_end prog prims 775 n :=
   @proof_p_stmts_end prog prims 775 fn_p_stmts_end np_p_stmts_end n
@@ -721,8 +725,8 @@ theorem cert_p_where_none {n : Nat} :
   @proof_p_where_none prog prims 575 fn_p_where_none np_p_where_none n
 
 theorem cert_p_enum_type_param {n : Nat} :
-    Stmt_p_enum_type_param prog prims 1245 n :=
-  @proof_p_enum_type_param prog prims 1245 fn_p_enum_type_param np_p_enum_type_param n
+    Stmt_p_enum_type_param prog prims 1247 n :=
+  @proof_p_enum_type_param prog prims 1247 fn_p_enum_type_param np_p_enum_type_param n
 
 theorem certs_param_spellings : ∀ n, (Stmt_param_spellings prog prims 850 n) ∧ (Stmt_param_spelling_at prog prims 1048 n) := by
   intro n
@@ -731,7 +735,7 @@ theorem certs_param_spellings : ∀ n, (Stmt_param_spellings prog prims 850 n) �
     exact ⟨(by intro x0 v0 w h r0; simp [pcall] at h), (by intro x0 x1 v0 v1 w h r0 r1; simp [pcall] at h)⟩
   | succ n ih =>
     obtain ⟨ih_param_spellings, ih_param_spelling_at⟩ := ih
-    exact ⟨@step_param_spellings prog prims 850 103 246 1048 fn_param_spellings np_param_spellings ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_CTree⟩ ⟨@cert_empty_of_mini_selfhost_List_usize⟩ n ⟨ih_param_spelling_at⟩, @step_param_spelling_at prog prims 1048 144 565 566 587 850 1245 fn_param_spelling_at np_param_spelling_at ⟨@cert_node_prod⟩ ⟨@cert_field_text_Token_of_mini_selfhost_Token⟩ ⟨@cert_kid_token⟩ ⟨@cert_cons_name⟩ ⟨@cert_p_enum_type_param⟩ n ⟨ih_param_spellings⟩⟩
+    exact ⟨@step_param_spellings prog prims 850 103 246 1048 fn_param_spellings np_param_spellings ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_CTree⟩ ⟨@cert_empty_of_mini_selfhost_List_usize⟩ n ⟨ih_param_spelling_at⟩, @step_param_spelling_at prog prims 1048 144 565 566 587 850 1247 fn_param_spelling_at np_param_spelling_at ⟨@cert_node_prod⟩ ⟨@cert_field_text_Token_of_mini_selfhost_Token⟩ ⟨@cert_kid_token⟩ ⟨@cert_cons_name⟩ ⟨@cert_p_enum_type_param⟩ n ⟨ih_param_spellings⟩⟩
 
 theorem cert_param_spellings {n : Nat} :
     Stmt_param_spellings prog prims 850 n :=
@@ -739,9 +743,5 @@ theorem cert_param_spellings {n : Nat} :
 theorem cert_param_spelling_at {n : Nat} :
     Stmt_param_spelling_at prog prims 1048 n :=
   (certs_param_spellings n).2
-
-theorem cert_if_unbounded {n : Nat} :
-    Stmt_if_unbounded prog prims 856 n :=
-  @proof_if_unbounded prog prims 856 fn_if_unbounded np_if_unbounded n
 
 end Lanius.Faithful.SelfCert

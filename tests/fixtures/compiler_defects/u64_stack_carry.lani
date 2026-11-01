@@ -16,6 +16,9 @@ module app::main;
 // in rsi, carry in r10 and wide in r8, but every expression temporary still
 // takes a stack slot, `>> 32` still loads 32 from a slot and range-checks it
 // at run time, and `j < n` still goes setl/movzbl/store/load/test/je.
+// After the temporary allocator (same day, 0.12 s): no memory operand in
+// the loop, `shr $0x20,%rax`, `cmp %edi,%r11d; jge`. Left: move chains such
+// as mov %rax,%r12; mov %r12,%r8; mov %r8,%r9 and dead `mov $0x20,%ebx`.
 fn mix(n: i32, factor: u64) -> u64 {
     let carry: u64 = 0;
     let j: i32 = 0;

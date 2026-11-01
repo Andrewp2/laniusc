@@ -1,0 +1,32 @@
+// A bare shift amount is i32, as laniusc types it, never the shifted
+// value's type: (0 - 6) / 4 is -1 at i32, & 7 is 7, so 1 << 7.
+const K: u32 = 3;
+
+fn value() -> i32 {
+    let z: u32 = ((1 as u32) << (((0 - 6) / 4) & 7));
+    return (z as i32);
+}
+
+fn small(a: u8) -> u8 {
+    let z: u8 = (a << (2 + 3));
+    return z;
+}
+
+fn typed(a: u64, n: u8) -> u64 {
+    let x: u64 = a >> n;
+    let y: u64 = a << K;
+    return x + y;
+}
+
+fn main() -> i32 {
+    if (value() != 128) {
+        return 1;
+    }
+    if (small(1) != 32) {
+        return 2;
+    }
+    if (typed(16, 2) != 132) {
+        return 3;
+    }
+    return 0;
+}

@@ -78,3 +78,23 @@ fn broken_servers_map_to_typed_errors_and_curl_exit_codes() {
 fn https_pools_tls_connections_and_follows_scheme_redirects() {
     group("https", "cases=17 connections=22 requests=27");
 }
+
+// HTTP/2 over TLS with ALPN against libnghttp2's server session.
+#[test]
+fn https_negotiates_http2_multiplexes_streams_and_falls_back_to_http11() {
+    let out = common::process_output_with_timeout(
+        "HTTP/2 agent loopback oracle",
+        Command::new("python3")
+            .arg("-I")
+            .arg(root().join("tests/fixtures/extended/http2/agent_oracle.py"))
+            .arg("h2")
+            .arg(client().path()),
+        Duration::from_secs(120),
+    );
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    assert!(out.stderr.is_empty(), "{out:?}");
+    assert_eq!(
+        String::from_utf8(out.stdout).unwrap().trim(),
+        "http2-agent-h2 cases=21 connections=23 requests=43"
+    );
+}

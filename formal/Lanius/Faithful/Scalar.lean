@@ -142,6 +142,18 @@ theorem u64_modulus : unsignedModulus target .u64 = 2 ^ 64 := rfl
   · have : y.toNat ≥ 64 := by omega
     simp [evalBinaryValue, evalUnsignedBinary, h, Core.UnsignedIntTy.bits, this]
 
+/-- A shift by any amount, as a number (a cast literal, `(8 as u64)`). -/
+@[pure_rule] theorem u64_shiftRight_nat (s : Nat) :
+    evalBinaryValue target .shiftRight (.unsigned .u64 x.toNat) (.unsigned .u64 s) =
+      if s < 64 then .ok (.unsigned .u64 (x >>> s).toNat) else .error .invalidShift := by
+  by_cases h : s < 64
+  · have : ¬ (s ≥ 64) := by omega
+    have : x.toNat / 2 ^ s < 2 ^ 64 := Nat.lt_of_le_of_lt (Nat.div_le_self _ _) x.isLt
+    simp [evalBinaryValue, evalUnsignedBinary, Lanius.Semantics.wrapUnsigned, Lanius.Semantics.unsignedModulus,
+      Core.UnsignedIntTy.bits, BitVec.toNat_ushiftRight, Nat.shiftRight_eq_div_pow, Nat.mod_eq_of_lt this, *]
+  · have : s ≥ 64 := by omega
+    simp [evalBinaryValue, evalUnsignedBinary, h, Core.UnsignedIntTy.bits, this]
+
 /-- A literal shift amount is decided. -/
 @[pure_rule] theorem literal_lt (c n : Nat) :
     ((no_index (OfNat.ofNat c : BitVec 64)).toNat < n) = (c % 2 ^ 64 < n) := by
@@ -265,6 +277,15 @@ open Lanius.Semantics (wrapSigned wrapUnsigned wrapUnsignedInt unsignedModulus)
   rw [BitVec.toInt_eq_toNat_cond]
   have := x.isLt
   split <;> omega
+
+/-- `i32 -> u64` (a cast shift amount, `(8 as u64)`): the bits of the
+`i32`'s value modulo 2^64. -/
+@[pure_rule] theorem cast_i32_u64 (x : BitVec 32) :
+    evalScalarCast target (.unsigned .u64) (.signed .i32 x.toInt) =
+      .ok (.unsigned .u64 (BitVec.ofInt 64 x.toInt).toNat) := by
+  simp only [evalScalarCast, wrapUnsignedInt, unsignedModulus, Except.ok.injEq, Value.unsigned.injEq, true_and,
+    BitVec.toNat_ofInt]
+  rfl
 
 /-- `i32 -> u8` and the unsigned types to `u8`: the low byte. -/
 @[pure_rule] theorem cast_i32_u8 (x : BitVec 32) :

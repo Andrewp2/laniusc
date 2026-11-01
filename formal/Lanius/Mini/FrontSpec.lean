@@ -31,8 +31,8 @@ statement:
   argument lists (`Vec<Option<T>>`) that way.
 - `Picked c tokens rest`: `c`'s leaves read the tokens up to `rest`, and
   `picks` allows each node's production at the tokens from that node on: it
-  rules out two productions the subset does not use and chooses between the
-  two readings of `x<` in an expression (`Unique.lean`).
+  chooses between the two readings of `x<` or `.f<` in an expression, and
+  reads a statement that begins with `{` as a block (`Unique.lean`).
 
 `validate_sound`: an accepted tree is a parse tree for `file` that is `Picked`
 for exactly the tokens and whose preorder is exactly laniusc's production list, so

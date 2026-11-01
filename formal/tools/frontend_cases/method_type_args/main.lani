@@ -1,0 +1,26 @@
+struct Cell<T> { v: T }
+
+pub impl<T> Cell<T> {
+    pub fn with<U>(self, u: U) -> U {
+        return u;
+    }
+}
+
+// Never instantiated: the file validates with the method's type arguments
+// in it, though the reader does not read them yet.
+fn never<T>(c: Cell<T>) -> i32 {
+    let r: i32 = c.with<i32>(3);
+    return r;
+}
+
+struct P { a: i32, b: i32 }
+
+fn top(n: i32) -> i32 {
+    let p: P = P { a: n, b: 2 };
+    if (p.a < p.b) {
+        return 1;
+    }
+    let c: bool = p.a < 3 && p.b > 1;
+    let d: bool = p.a < p.b == p.b > n;
+    return p.a;
+}

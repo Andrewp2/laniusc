@@ -5514,6 +5514,34 @@ pub fn ex_struct_parts(fuel: usize, cx: XCx, fields: List<XField>, values: List<
     };
 }
 
+// A shift amount's value: a literal, or a literal cast to the shifted
+// value's type (`bits >> (8 as u32)`, whose amount the front end reads at
+// u32, where a bare 8 would be an i32).
+pub fn ex_amount_value(e: XE) -> core::option::Option<usize> {
+    return match (e) {
+        EInt(n) -> Some(n),
+        EBool(b) -> None,
+        EName(path) -> None,
+        ECall(path, args) -> None,
+        EMethod(recv, name, args) -> None,
+        EField(recv, name) -> None,
+        EStruct(name, names, values) -> None,
+        EBinary(op, l, r) -> None,
+        ENot(x) -> None,
+        ECast(x, t) -> ex_int_value(unbox(x)),
+        EMatch(x, arms) -> None,
+        EArm(path, binders, body) -> None,
+        SBlock(stmts) -> None,
+        SLet(name, t, v) -> None,
+        SAssign(place, v) -> None,
+        SCall(x) -> None,
+        SMatch(x) -> None,
+        SReturn(v) -> None,
+        SIf(c, a, b, has) -> None,
+        EBad(why) -> None,
+    };
+}
+
 pub fn ex_binary(fuel: usize, cx: XCx, op: List<usize>, l: XE, r: XE, env: List<XBind>, expected: XTy) -> XTm {
     if (fuel == 0) {
         return ex_fail(tx_err_fuel());
@@ -5530,7 +5558,7 @@ pub fn ex_binary(fuel: usize, cx: XCx, op: List<usize>, l: XE, r: XE, env: List<
     }
     if (ex_same(op, tx_op_shr())) {
         let width: usize = ex_shift_width(ty);
-        return match (ex_int_value(r)) {
+        return match (ex_amount_value(r)) {
             None -> ex_fail(tx_err_op()),
             Some(k) -> ex_err_if(width == 0 || k >= width, tx_err_op(), ex_lean_infix(tx_lean_shr(), ex_expr(minus(fuel, 1), cx, l, env, ty), ex_tm(ex_decimal(k), 1024, ty), ty)),
         };

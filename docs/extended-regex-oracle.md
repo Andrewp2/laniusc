@@ -13,6 +13,7 @@ cases. The four programs are:
 | `lookbehind_find` | `regex_input.lani` again, on patterns that contain `(?<=...)` or `(?<!...)`, nested or inside generated groups | the same `search` loop; a pattern that Python rejects with "look-behind requires fixed-width pattern" must be a Lanius `Syntax` error |
 | `dfa_match_find` | `tests/fixtures/extended/regex_oracle/dfa.lani`: `Dfa::is_match`, `Dfa::find_span` and the reusable-scratch forms, next to the VM's `is_match` and `find` on the same case | `search` and `Match.span()`, converted to byte offsets |
 | `dfa_unicode` | `dfa.lani` again, on patterns over a mixed-script alphabet (Greek, Cyrillic, CJK, `ß`, `é`, NBSP, emoji, astral `𝔸`, Arabic-Indic digits) with `\p{..}`, `\P{..}`, `\pL`, `\x{..}` and non-ASCII ranges such as `一-龥` and `é-🙂` | the same; each property becomes the explicit class of alphabet scalars in that `unicodedata` category, since `re` has no `\p` |
+| `grep_unicode` | `text_grep.lani` with the `dfa_unicode` patterns on up to 300 records over the same alphabet, some ending in CRLF, with `-v`, `-n`, `-c` | per-record `search` on the record without CR; CR is written back. Records are nonempty for patterns with `\B`, which CPython 3.12 never matches on an empty string |
 
 Another surface, `linear_time`, runs six inputs on which a backtracking
 engine is exponential or quadratic, such as `(?:a?){30}a{30}` on 30 `a`s and
@@ -132,28 +133,31 @@ nullable body, which is the documented Pike cycle policy.
 ## Receipts
 
 The receipts are for `extended/ext/regex.lani` SHA256
-`6fc28e2382bf236528b7bceae5fac74684b422c590bfbcfb34c6c85a236ed587`, oracle
-SHA256 `2f9a8499e00e952f694e982664a0021bd320aee141739400de1fa6bd4a759d20`,
+`906bcf3856ced172084e45078e31abf72798a5a547ae2a70ac6cc78687dfcd6e`, oracle
+SHA256 `8751ce9a25df4303cf5c6dbf722184684894aa64b43755f45d4b7faa49dce3c0`,
 `text_grep.lani` SHA256
-`90375a5c23fcef497c280fe0792f75a600e32a9913aa59999865ce9949d5bc14` and
+`829b5a6b2b0c6a3794a4515dd7bcea7ce06deafd50e7e0b6877a3d98d701d307` and
 `dfa.lani` SHA256
 `b6112163f8d84bae6d2357e3fd486c1ebdb763f23fc1a22e4831962d1f64b999`, with
 CPython 3.12.3, on native Linux x86_64. Executables were built with
 `target/claude-work/bin/lcc`. Log:
-`target/claude-work/s3/oracle-unicode-receipt.log`. The earlier logs
+`target/claude-work/s3/oracle-numbers-receipt.log`. The earlier logs
+`oracle-output-receipt.log` (before the line-scan skip),
+`oracle-lines-receipt.log` (before the output rework),
+`oracle-unicode-receipt.log` (before the line scan and `grep_unicode`),
 `oracle-dfa-assert-receipt.log` (before byte-level transitions and the grep
 prefilter), `oracle-lookbehind-receipt.log` (before assertions in the DFA),
 `oracle-dfa-receipt.log` (before lookbehind) and `oracle-receipt.log` (before
 named groups and the DFA) are in the same directory.
 
-| Seed | find_iter_captures | replace_template | grep_filter | lookbehind_find | dfa_match_find | dfa_unicode | linear_time | Wall time |
-| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 20261031 | 12,005/12,005 | 1,000/1,000 | 1,000/1,000 | 2,728/2,728 | 3,000/3,000 | 1,000/1,000 | 6/6 | 12 s |
-| 1 | 12,005/12,005 | 1,000/1,000 | 1,000/1,000 | 2,737/2,737 | 3,000/3,000 | 1,000/1,000 | 6/6 | 13 s |
-| 2 | 12,005/12,005 | 1,000/1,000 | 1,000/1,000 | 2,809/2,809 | 3,000/3,000 | 1,000/1,000 | 6/6 | 16 s |
-| 3 | 12,005/12,005 | 1,000/1,000 | 1,000/1,000 | 2,812/2,812 | 3,000/3,000 | 1,000/1,000 | 6/6 | 13 s |
-| 4 | 12,005/12,005 | 1,000/1,000 | 1,000/1,000 | 2,767/2,767 | 3,000/3,000 | 1,000/1,000 | 6/6 | 26 s |
-| Total | 60,025/60,025 | 5,000/5,000 | 5,000/5,000 | 13,853/13,853 | 15,000/15,000 | 5,000/5,000 | 30/30 | |
+| Seed | find_iter_captures | replace_template | grep_filter | grep_unicode | lookbehind_find | dfa_match_find | dfa_unicode | linear_time | Wall time |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 20261031 | 12,005/12,005 | 1,000/1,000 | 1,000/1,000 | 1,000/1,000 | 2,728/2,728 | 3,000/3,000 | 1,000/1,000 | 6/6 | 12–13 s |
+| 1 | 12,005/12,005 | 1,000/1,000 | 1,000/1,000 | 1,000/1,000 | 2,737/2,737 | 3,000/3,000 | 1,000/1,000 | 6/6 | 12–13 s |
+| 2 | 12,005/12,005 | 1,000/1,000 | 1,000/1,000 | 1,000/1,000 | 2,809/2,809 | 3,000/3,000 | 1,000/1,000 | 6/6 | 12–13 s |
+| 3 | 12,005/12,005 | 1,000/1,000 | 1,000/1,000 | 1,000/1,000 | 2,812/2,812 | 3,000/3,000 | 1,000/1,000 | 6/6 | 12–13 s |
+| 4 | 12,005/12,005 | 1,000/1,000 | 1,000/1,000 | 1,000/1,000 | 2,767/2,767 | 3,000/3,000 | 1,000/1,000 | 6/6 | 12–13 s |
+| Total | 60,025/60,025 | 5,000/5,000 | 5,000/5,000 | 5,000/5,000 | 13,853/13,853 | 15,000/15,000 | 5,000/5,000 | 30/30 | |
 
 Wall times are from a laptop under load 10 to 19; the same seeds took about
 8.5 s each on a quieter run before this change.
@@ -173,7 +177,9 @@ assertions), the VM path 845 and the tiny budget 1,533. All 5,000
 `dfa_unicode` cases ran through a `Dfa`: 1,392 with assertions and 521 with
 a tiny budget. A build with the partial arena cut to two entries also passed
 `dfa_match_find` and `dfa_unicode` on seeds 20261031 and 7, which covers the
-uncached path. The six pathological inputs
+uncached path. A text_grep built with a 3-state DFA cache and 2 partials
+also passed `grep_filter` and `grep_unicode` on seeds 20261031 and 7, which
+forces the line scan's undecided-record path. The six pathological inputs
 complete in about 0.35 s together; CPython alone takes about 30 s on the
 lookbehind one.
 

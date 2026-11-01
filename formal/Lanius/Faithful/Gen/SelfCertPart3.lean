@@ -472,12 +472,12 @@ theorem cert_element_base {n : Nat} :
   @proof_element_base prog prims 744 105 311 fn_element_base np_element_base ⟨@cert_times⟩ ⟨@cert_boxed_of_mini_selfhost_Expr⟩ n
 
 theorem cert_usize_width {n : Nat} :
-    Stmt_usize_width prog prims 1362 n :=
-  @proof_usize_width prog prims 1362 fn_usize_width np_usize_width n
+    Stmt_usize_width prog prims 1364 n :=
+  @proof_usize_width prog prims 1364 fn_usize_width np_usize_width n
 
 theorem cert_word_width {n : Nat} :
     Stmt_word_width prog prims 1221 n :=
-  @proof_word_width prog prims 1221 1362 fn_word_width np_word_width ⟨@cert_usize_width⟩ n
+  @proof_word_width prog prims 1221 1364 fn_word_width np_word_width ⟨@cert_usize_width⟩ n
 
 theorem cert_width_of {n : Nat} :
     Stmt_width_of prog prims 1013 n :=

@@ -638,7 +638,7 @@ pub fn max_or<T>(values: [T], len: i32, fallback: T) -> T where T: core::cmp::Or
 
 ### function: sort_unstable_by
 
-[Source line 875](../../../stdlib/core/slice.lani#L875)
+[Source line 890](../../../stdlib/core/slice.lani#L890)
 
 ```lanius
 pub fn sort_unstable_by<T,C>(values:View<T>,comparator:&C) -> core::result::Result<i32,ViewError>
@@ -649,7 +649,7 @@ Checked View<T>, Comparator<T,T>. Returns selected length after in-place allocat
 
 ### function: select_nth_unstable_by
 
-[Source line 884](../../../stdlib/core/slice.lani#L884)
+[Source line 900](../../../stdlib/core/slice.lani#L900)
 
 ```lanius
 pub fn select_nth_unstable_by<T,C>(values:View<T>,nth:i32,comparator:&C) -> core::result::Result<View<T>,ViewError>
@@ -660,7 +660,7 @@ Checked View<T> and relative nth under Comparator<T,T>. Revalidates full metadat
 
 ### function: select_nth_unstable
 
-[Source line 893](../../../stdlib/core/slice.lani#L893)
+[Source line 909](../../../stdlib/core/slice.lani#L909)
 
 ```lanius
 pub fn select_nth_unstable<T>(values:View<T>,nth:i32) -> core::result::Result<View<T>,ViewError>
@@ -671,7 +671,7 @@ Checked View<T> and relative nth under Ord<T>. Constructs Natural<T> and invokes
 
 ### function: is_sorted_by
 
-[Source line 903](../../../stdlib/core/slice.lani#L903)
+[Source line 919](../../../stdlib/core/slice.lani#L919)
 
 ```lanius
 pub fn is_sorted_by<T,C>(values:View<T>,comparator:&C) -> core::result::Result<bool,ViewError>
@@ -682,7 +682,7 @@ Checked View<T>, Comparator<T,T>. Returns whether selected elements are nondecre
 
 ### function: lower_bound_by
 
-[Source line 910](../../../stdlib/core/slice.lani#L910)
+[Source line 927](../../../stdlib/core/slice.lani#L927)
 
 ```lanius
 pub fn lower_bound_by<T,K,C>(values:View<T>,needle:K,comparator:&C) -> core::result::Result<i32,ViewError>
@@ -693,7 +693,7 @@ Checked View<T>, Comparator<T,K>. First view-relative index not Less, or length.
 
 ### function: upper_bound_by
 
-[Source line 915](../../../stdlib/core/slice.lani#L915)
+[Source line 932](../../../stdlib/core/slice.lani#L932)
 
 ```lanius
 pub fn upper_bound_by<T,K,C>(values:View<T>,needle:K,comparator:&C) -> core::result::Result<i32,ViewError>
@@ -704,7 +704,7 @@ Checked View<T>, Comparator<T,K>. First view-relative Greater index, or length. 
 
 ### function: binary_search_first_by
 
-[Source line 920](../../../stdlib/core/slice.lani#L920)
+[Source line 937](../../../stdlib/core/slice.lani#L937)
 
 ```lanius
 pub fn binary_search_first_by<T,K,C>(values:View<T>,needle:K,comparator:&C) -> core::result::Result<core::option::Option<i32>,ViewError>
@@ -715,7 +715,7 @@ Checked View<T>, Comparator<T,K>. Returns the first equivalent index as Option<i
 
 ### function: binary_search_last_by
 
-[Source line 926](../../../stdlib/core/slice.lani#L926)
+[Source line 943](../../../stdlib/core/slice.lani#L943)
 
 ```lanius
 pub fn binary_search_last_by<T,K,C>(values:View<T>,needle:K,comparator:&C) -> core::result::Result<core::option::Option<i32>,ViewError>
@@ -726,7 +726,7 @@ Checked View<T>, Comparator<T,K>. Returns the last equivalent index as Option<i3
 
 ### function: partition_lt_by
 
-[Source line 934](../../../stdlib/core/slice.lani#L934)
+[Source line 951](../../../stdlib/core/slice.lani#L951)
 
 ```lanius
 pub fn partition_lt_by<T,K,C>(values:View<T>,pivot:K,comparator:&C) -> core::result::Result<i32,ViewError>
@@ -737,7 +737,7 @@ Checked View<T>, Comparator<T,K>. In-place whole-value permutation with all Less
 
 ### function: is_sorted
 
-[Source line 942](../../../stdlib/core/slice.lani#L942)
+[Source line 959](../../../stdlib/core/slice.lani#L959)
 
 ```lanius
 pub fn is_sorted<T>(values:[T],len:i32) -> bool where T:core::cmp::Ord<T>
@@ -745,7 +745,7 @@ pub fn is_sorted<T>(values:[T],len:i32) -> bool where T:core::cmp::Ord<T>
 
 ### function: sort
 
-[Source line 948](../../../stdlib/core/slice.lani#L948)
+[Source line 965](../../../stdlib/core/slice.lani#L965)
 
 ```lanius
 pub fn sort<T>(values:[T],len:i32) -> i32 where T:core::cmp::Ord<T>
@@ -753,7 +753,7 @@ pub fn sort<T>(values:[T],len:i32) -> i32 where T:core::cmp::Ord<T>
 
 ### function: lower_bound
 
-[Source line 954](../../../stdlib/core/slice.lani#L954)
+[Source line 971](../../../stdlib/core/slice.lani#L971)
 
 ```lanius
 pub fn lower_bound<T>(values:[T],len:i32,needle:T) -> i32 where T:core::cmp::Ord<T>
@@ -761,7 +761,7 @@ pub fn lower_bound<T>(values:[T],len:i32,needle:T) -> i32 where T:core::cmp::Ord
 
 ### function: upper_bound
 
-[Source line 959](../../../stdlib/core/slice.lani#L959)
+[Source line 976](../../../stdlib/core/slice.lani#L976)
 
 ```lanius
 pub fn upper_bound<T>(values:[T],len:i32,needle:T) -> i32 where T:core::cmp::Ord<T>
@@ -769,7 +769,7 @@ pub fn upper_bound<T>(values:[T],len:i32,needle:T) -> i32 where T:core::cmp::Ord
 
 ### function: binary_search_first_or
 
-[Source line 965](../../../stdlib/core/slice.lani#L965)
+[Source line 982](../../../stdlib/core/slice.lani#L982)
 
 ```lanius
 pub fn binary_search_first_or<T>(values:[T],len:i32,needle:T,fallback:i32) -> i32
@@ -778,7 +778,7 @@ pub fn binary_search_first_or<T>(values:[T],len:i32,needle:T,fallback:i32) -> i3
 
 ### function: binary_search_last_or
 
-[Source line 972](../../../stdlib/core/slice.lani#L972)
+[Source line 989](../../../stdlib/core/slice.lani#L989)
 
 ```lanius
 pub fn binary_search_last_or<T>(values:[T],len:i32,needle:T,fallback:i32) -> i32
@@ -787,7 +787,7 @@ pub fn binary_search_last_or<T>(values:[T],len:i32,needle:T,fallback:i32) -> i32
 
 ### function: partition_lt
 
-[Source line 980](../../../stdlib/core/slice.lani#L980)
+[Source line 997](../../../stdlib/core/slice.lani#L997)
 
 ```lanius
 pub fn partition_lt<T>(values:[T],len:i32,pivot:T) -> i32 where T:core::cmp::Ord<T>
@@ -795,7 +795,7 @@ pub fn partition_lt<T>(values:[T],len:i32,pivot:T) -> i32 where T:core::cmp::Ord
 
 ### function: sum
 
-[Source line 989](../../../stdlib/core/slice.lani#L989)
+[Source line 1006](../../../stdlib/core/slice.lani#L1006)
 
 ```lanius
 pub fn sum<T>(values: [T], len: i32, initial: T) -> T where T: core::ops::SaturatingAdd<T>
@@ -803,7 +803,7 @@ pub fn sum<T>(values: [T], len: i32, initial: T) -> T where T: core::ops::Satura
 
 ### function: sort_unstable
 
-[Source line 1203](../../../stdlib/core/slice.lani#L1203)
+[Source line 1220](../../../stdlib/core/slice.lani#L1220)
 
 ```lanius
 pub fn sort_unstable<T>(values:View<T>) -> core::result::Result<i32,ViewError> where T:core::cmp::Ord<T>
@@ -811,7 +811,7 @@ pub fn sort_unstable<T>(values:View<T>) -> core::result::Result<i32,ViewError> w
 
 ### function: sort_stable_by
 
-[Source line 1535](../../../stdlib/core/slice.lani#L1535)
+[Source line 1552](../../../stdlib/core/slice.lani#L1552)
 
 ```lanius
 pub fn sort_stable_by<T,C>(values:View<T>,scratch:View<T>,comparator:&C) -> core::result::Result<i32,ViewError>
@@ -820,7 +820,7 @@ pub fn sort_stable_by<T,C>(values:View<T>,scratch:View<T>,comparator:&C) -> core
 
 ### function: sort_stable
 
-[Source line 1541](../../../stdlib/core/slice.lani#L1541)
+[Source line 1559](../../../stdlib/core/slice.lani#L1559)
 
 ```lanius
 pub fn sort_stable<T>(values:View<T>,scratch:View<T>) -> core::result::Result<i32,ViewError> where T:core::cmp::Ord<T>

@@ -96,6 +96,9 @@ def main(argv):
     for name in names:
         if name not in PROGRAMS:
             raise SystemExit(f'no program {name}: {", ".join(PROGRAMS)}')
+    # The extractor as the checked-in sources build it: one built before a
+    # merge rejects what the merged extract.lani accepts.
+    build_extract()
     checked = {}
     if args.check:
         # The checks write nothing, so they run at once (the trees first:

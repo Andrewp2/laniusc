@@ -39,15 +39,19 @@ stopping at the computations the theorems are about (`compileSource`,
 `linkObjects`, `elfFile`, `sourceProgramFiles`, `compileWords`,
 `frontEndWords` and the self program `Lanius.Faithful.Self.prog`, which are
 not trusted, section 10), with each one's type and body:
-definitions `ee4b08e694b3e079` (4,330 constants). This covers Core's
+definitions `f68c11f98aa33a1d` (4,330 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
-modules keeps its hash. The last change of the hash (10-31): the lexer
+modules keeps its hash. The last change of the hash (11-01): the lexer
 (`Lanius/Compiler/Lexer*.lean`, `Tokens.lean`) and the reading became Lean
 `module`s, so a function's matcher is its own (`OneTokenResult.shift.match_1`)
 rather than shared with a derived `Repr` instance's; no definition's meaning
-changed. Before that (10-31, F11b): the
+changed (this hash is that change on top of the F11b ones below). Before
+that (10-31, F11b): `amountWant` reads a bare shift amount at `i32`, as laniusc does, not at
+the shifted value's type (section 4). Before that (10-31, F11b): `picks`
+allows a method's type arguments `.f<...>` where `generic_open` holds
+(section 4, "One reading"). Before that (10-31, F11b): the
 reading of patterns: a payload name spelled like a variant is never a
 binder (`BindersR`'s `NoVariant`), match statements and lets' matches read
 nested arms (`StmtOrder`, `NestedRows`, `ArmsStmtR.inner`,
@@ -475,8 +479,11 @@ unique. Trusted:
   rule without its 64-token limit; a statement that begins with `{` is a
   block statement (production 84), never an expression statement (85), as
   in Rust, since `{ a } - b;` has both trees; and a method's type arguments
-  (production 298), which the subset does not use and which are ambiguous
-  too (`x.f < a > (b)`), are not allowed.
+  `.f<...>` (production 298, against none, 297), ambiguous too
+  (`x.f < a > (b)`), are read exactly when `generic_open` holds of the
+  tokens from the `<` on, by the same rule as a path segment's (F11b: before,
+  they were not allowed, so laniusc's tree of any file with one, such as
+  `alloc::vec`, was rejected).
   `grammar_unique` (`Mini/ParseUnique.lean`, standard axioms) proves that at
   most one parse tree for `file` is `Picked` for given tokens, from a
   certificate of first and follow sets (two token kinds deep, `>>` read
@@ -633,8 +640,10 @@ unique. Trusted:
     cast of the `u64` literal of its two's complement bits; any other
     rejects the program;
   - a bare literal operand of a shift takes the shifted
-    value's type, or else the shift's expected type, and a bare amount the
-    value's (`amountWant`), as a shift's type is its left operand's;
+    value's type, or else the shift's expected type, as a shift's type is
+    its left operand's, and a bare amount (literals only; a constant reads
+    as a literal of its type) is `i32`, as laniusc types it (`amountWant`;
+    10-31, F11b: it was the value's, a reading bug fuzz_oracle.py found);
   - `&self` is read as `self`: the method takes the impl's
     type by value (`PatternOf.selfRef`, `paramToken`). laniusc's `&self`
     may write the caller's value (`self.n = ..` reaches the caller), so a

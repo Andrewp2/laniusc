@@ -4,41 +4,44 @@
 
 Generated source inventory. Linked guides own runtime and semantic contracts; a listed declaration does not establish executable behavior.
 
-[All modules](../README.md) · [Source](../../../extended/ext/http_agent.lani#L7)
+[All modules](../README.md) · [Source](../../../extended/ext/http_agent.lani#L10)
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-Synchronous HTTP/1.1 client for http:// and verified https:// over ext::http framing, ext::http_url, ext::url_connect and ext::tls_stream: a keep-alive pool of cleartext and TLS connections keyed by scheme, host and port with per-host/total idle counts, idle time, Keep-Alive hints and use limits, stale probing and one idempotent retry; redirects with a hop limit, 303/301/302/307/308 method rules, RFC 3986 reference resolution and cross-origin Authorization/Cookie stripping; fixed or chunked streamed bodies with early-response handling. The curl-like sample passes five oracle groups (pool 18, redirect 29, upload 10, broken 21, https 17 cases against Python ssl origins with locally generated certificates) with exact counters.
+Synchronous HTTP/1.1 and HTTP/2 client for http:// and verified https:// over ext::http framing, ext::http_url, ext::url_connect and ext::tls_stream: a keep-alive pool of cleartext and TLS connections keyed by scheme, host and port with per-host/total idle counts, idle time, Keep-Alive hints and use limits, stale probing and one idempotent retry; redirects with a hop limit, 303/301/302/307/308 method rules, RFC 3986 reference resolution and cross-origin Authorization/Cookie stripping; fixed or chunked streamed bodies with early-response handling; unpooled dial connections for HTTP/1.1 upgrades; over https it offers h2 by ALPN and runs requests to an origin that selects it as streams of one ext::http2 connection (reused under the pool's idle, use and GOAWAY rules, refused streams retried once), with fetch_all multiplexing requests per origin. The curl-like sample passes five oracle groups (pool 18, redirect 29, upload 10, broken 21, https 17 cases against Python ssl origins with locally generated certificates) with exact counters, plus an h2 group of 21 cases against libnghttp2's server session over TLS.
 
 ## Contract and evidence guides
 
 - [extended-http-agent](../../extended-http-agent.md)
+- [extended-http2](../../extended-http2.md)
 - [extended-http](../../extended-http.md)
 - [extended-url-client](../../extended-url-client.md)
 - [extended-openssl-tls](../../extended-openssl-tls.md)
 
-Declaration counts: enum: 1; field: 51; function: 4; impl: 2; method: 14; struct: 5; variant: 18.
+Declaration counts: enum: 1; field: 56; function: 4; impl: 3; method: 24; struct: 6; variant: 19.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/http_agent.lani#L8)
-- [core::io](../core/io.md) · [source](../../../extended/ext/http_agent.lani#L9)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/http_agent.lani#L10)
-- [core::net](../core/net.md) · [source](../../../extended/ext/http_agent.lani#L11)
-- [core::option](../core/option.md) · [source](../../../extended/ext/http_agent.lani#L12)
-- [core::result](../core/result.md) · [source](../../../extended/ext/http_agent.lani#L13)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/http_agent.lani#L14)
-- [core::time](../core/time.md) · [source](../../../extended/ext/http_agent.lani#L15)
-- [ext::http](http.md) · [source](../../../extended/ext/http_agent.lani#L16)
-- [ext::http_url](http_url.md) · [source](../../../extended/ext/http_agent.lani#L17)
-- [ext::openssl_tls](openssl_tls.md) · [source](../../../extended/ext/http_agent.lani#L18)
-- [ext::tls_stream](tls_stream.md) · [source](../../../extended/ext/http_agent.lani#L19)
-- [ext::uri](uri.md) · [source](../../../extended/ext/http_agent.lani#L20)
-- [ext::url_connect](url_connect.md) · [source](../../../extended/ext/http_agent.lani#L21)
-- [std::clock](../std/clock.md) · [source](../../../extended/ext/http_agent.lani#L22)
-- [std::socket](../std/socket.md) · [source](../../../extended/ext/http_agent.lani#L23)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/http_agent.lani#L11)
+- [core::io](../core/io.md) · [source](../../../extended/ext/http_agent.lani#L12)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/http_agent.lani#L13)
+- [core::net](../core/net.md) · [source](../../../extended/ext/http_agent.lani#L14)
+- [core::option](../core/option.md) · [source](../../../extended/ext/http_agent.lani#L15)
+- [core::result](../core/result.md) · [source](../../../extended/ext/http_agent.lani#L16)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/http_agent.lani#L17)
+- [core::time](../core/time.md) · [source](../../../extended/ext/http_agent.lani#L18)
+- [ext::hpack](hpack.md) · [source](../../../extended/ext/http_agent.lani#L19)
+- [ext::http](http.md) · [source](../../../extended/ext/http_agent.lani#L20)
+- [ext::http2](http2.md) · [source](../../../extended/ext/http_agent.lani#L21)
+- [ext::http_url](http_url.md) · [source](../../../extended/ext/http_agent.lani#L22)
+- [ext::openssl_tls](openssl_tls.md) · [source](../../../extended/ext/http_agent.lani#L23)
+- [ext::tls_stream](tls_stream.md) · [source](../../../extended/ext/http_agent.lani#L24)
+- [ext::uri](uri.md) · [source](../../../extended/ext/http_agent.lani#L25)
+- [ext::url_connect](url_connect.md) · [source](../../../extended/ext/http_agent.lani#L26)
+- [std::clock](../std/clock.md) · [source](../../../extended/ext/http_agent.lani#L27)
+- [std::socket](../std/socket.md) · [source](../../../extended/ext/http_agent.lani#L28)
 
 ## Types, fields and variants
 
@@ -46,7 +49,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 27](../../../extended/ext/http_agent.lani#L27)
+[Source line 32](../../../extended/ext/http_agent.lani#L32)
 
 ```lanius
 pub enum Error
@@ -54,7 +57,7 @@ pub enum Error
 
 #### variant: InvalidRequest
 
-[Source line 28](../../../extended/ext/http_agent.lani#L28)
+[Source line 33](../../../extended/ext/http_agent.lani#L33)
 
 ```lanius
 InvalidRequest
@@ -62,7 +65,7 @@ InvalidRequest
 
 #### variant: InvalidHeader
 
-[Source line 28](../../../extended/ext/http_agent.lani#L28)
+[Source line 33](../../../extended/ext/http_agent.lani#L33)
 
 ```lanius
 InvalidHeader
@@ -70,7 +73,7 @@ InvalidHeader
 
 #### variant: Url
 
-[Source line 28](../../../extended/ext/http_agent.lani#L28)
+[Source line 33](../../../extended/ext/http_agent.lani#L33)
 
 ```lanius
 Url(ext::http_url::ErrorKind)
@@ -78,7 +81,7 @@ Url(ext::http_url::ErrorKind)
 
 #### variant: UnsupportedScheme
 
-[Source line 28](../../../extended/ext/http_agent.lani#L28)
+[Source line 33](../../../extended/ext/http_agent.lani#L33)
 
 ```lanius
 UnsupportedScheme
@@ -86,7 +89,7 @@ UnsupportedScheme
 
 #### variant: Connect
 
-[Source line 29](../../../extended/ext/http_agent.lani#L29)
+[Source line 34](../../../extended/ext/http_agent.lani#L34)
 
 ```lanius
 Connect(ext::url_connect::Cause)
@@ -94,7 +97,7 @@ Connect(ext::url_connect::Cause)
 
 #### variant: Io
 
-[Source line 29](../../../extended/ext/http_agent.lani#L29)
+[Source line 34](../../../extended/ext/http_agent.lani#L34)
 
 ```lanius
 Io(core::io::Error)
@@ -102,7 +105,7 @@ Io(core::io::Error)
 
 #### variant: Timeout
 
-[Source line 29](../../../extended/ext/http_agent.lani#L29)
+[Source line 34](../../../extended/ext/http_agent.lani#L34)
 
 ```lanius
 Timeout
@@ -110,7 +113,7 @@ Timeout
 
 #### variant: Truncated
 
-[Source line 29](../../../extended/ext/http_agent.lani#L29)
+[Source line 34](../../../extended/ext/http_agent.lani#L34)
 
 ```lanius
 Truncated(i32)
@@ -118,7 +121,7 @@ Truncated(i32)
 
 #### variant: Parse
 
-[Source line 30](../../../extended/ext/http_agent.lani#L30)
+[Source line 35](../../../extended/ext/http_agent.lani#L35)
 
 ```lanius
 Parse(ext::http::Error)
@@ -126,7 +129,7 @@ Parse(ext::http::Error)
 
 #### variant: TooLarge
 
-[Source line 30](../../../extended/ext/http_agent.lani#L30)
+[Source line 35](../../../extended/ext/http_agent.lani#L35)
 
 ```lanius
 TooLarge
@@ -134,7 +137,7 @@ TooLarge
 
 #### variant: TooManyRedirects
 
-[Source line 30](../../../extended/ext/http_agent.lani#L30)
+[Source line 35](../../../extended/ext/http_agent.lani#L35)
 
 ```lanius
 TooManyRedirects(i32)
@@ -142,7 +145,7 @@ TooManyRedirects(i32)
 
 #### variant: BadLocation
 
-[Source line 30](../../../extended/ext/http_agent.lani#L30)
+[Source line 35](../../../extended/ext/http_agent.lani#L35)
 
 ```lanius
 BadLocation
@@ -150,7 +153,7 @@ BadLocation
 
 #### variant: UnreplayableBody
 
-[Source line 31](../../../extended/ext/http_agent.lani#L31)
+[Source line 36](../../../extended/ext/http_agent.lani#L36)
 
 ```lanius
 UnreplayableBody(i32)
@@ -158,7 +161,7 @@ UnreplayableBody(i32)
 
 #### variant: UnexpectedUpgrade
 
-[Source line 31](../../../extended/ext/http_agent.lani#L31)
+[Source line 36](../../../extended/ext/http_agent.lani#L36)
 
 ```lanius
 UnexpectedUpgrade
@@ -166,7 +169,7 @@ UnexpectedUpgrade
 
 #### variant: Source
 
-[Source line 31](../../../extended/ext/http_agent.lani#L31)
+[Source line 36](../../../extended/ext/http_agent.lani#L36)
 
 ```lanius
 Source(core::io::Error)
@@ -174,7 +177,7 @@ Source(core::io::Error)
 
 #### variant: AllocationFailed
 
-[Source line 31](../../../extended/ext/http_agent.lani#L31)
+[Source line 36](../../../extended/ext/http_agent.lani#L36)
 
 ```lanius
 AllocationFailed
@@ -182,7 +185,7 @@ AllocationFailed
 
 #### variant: Clock
 
-[Source line 31](../../../extended/ext/http_agent.lani#L31)
+[Source line 36](../../../extended/ext/http_agent.lani#L36)
 
 ```lanius
 Clock
@@ -190,15 +193,23 @@ Clock
 
 #### variant: Tls
 
-[Source line 32](../../../extended/ext/http_agent.lani#L32)
+[Source line 37](../../../extended/ext/http_agent.lani#L37)
 
 ```lanius
 Tls(ext::openssl_tls::Error)
 ```
 
+#### variant: Http2
+
+[Source line 37](../../../extended/ext/http_agent.lani#L37)
+
+```lanius
+Http2(ext::http2::Error)
+```
+
 ### struct: Options
 
-[Source line 34](../../../extended/ext/http_agent.lani#L34)
+[Source line 39](../../../extended/ext/http_agent.lani#L39)
 
 ```lanius
 pub struct Options
@@ -206,7 +217,7 @@ pub struct Options
 
 #### field: limits
 
-[Source line 35](../../../extended/ext/http_agent.lani#L35)
+[Source line 40](../../../extended/ext/http_agent.lani#L40)
 
 ```lanius
 limits: ext::http::Limits
@@ -214,7 +225,7 @@ limits: ext::http::Limits
 
 #### field: url
 
-[Source line 35](../../../extended/ext/http_agent.lani#L35)
+[Source line 40](../../../extended/ext/http_agent.lani#L40)
 
 ```lanius
 url: ext::http_url::Limits
@@ -222,7 +233,7 @@ url: ext::http_url::Limits
 
 #### field: connect
 
-[Source line 35](../../../extended/ext/http_agent.lani#L35)
+[Source line 40](../../../extended/ext/http_agent.lani#L40)
 
 ```lanius
 connect: ext::url_connect::Options
@@ -230,7 +241,7 @@ connect: ext::url_connect::Options
 
 #### field: max_idle_per_host
 
-[Source line 36](../../../extended/ext/http_agent.lani#L36)
+[Source line 41](../../../extended/ext/http_agent.lani#L41)
 
 ```lanius
 max_idle_per_host: i32
@@ -238,7 +249,7 @@ max_idle_per_host: i32
 
 #### field: max_idle_total
 
-[Source line 36](../../../extended/ext/http_agent.lani#L36)
+[Source line 41](../../../extended/ext/http_agent.lani#L41)
 
 ```lanius
 max_idle_total: i32
@@ -246,7 +257,7 @@ max_idle_total: i32
 
 #### field: idle_timeout_ms
 
-[Source line 36](../../../extended/ext/http_agent.lani#L36)
+[Source line 41](../../../extended/ext/http_agent.lani#L41)
 
 ```lanius
 idle_timeout_ms: i32
@@ -254,7 +265,7 @@ idle_timeout_ms: i32
 
 #### field: max_uses
 
-[Source line 36](../../../extended/ext/http_agent.lani#L36)
+[Source line 41](../../../extended/ext/http_agent.lani#L41)
 
 ```lanius
 max_uses: i32
@@ -262,7 +273,7 @@ max_uses: i32
 
 #### field: follow_redirects
 
-[Source line 37](../../../extended/ext/http_agent.lani#L37)
+[Source line 42](../../../extended/ext/http_agent.lani#L42)
 
 ```lanius
 follow_redirects: bool
@@ -270,7 +281,7 @@ follow_redirects: bool
 
 #### field: max_redirects
 
-[Source line 37](../../../extended/ext/http_agent.lani#L37)
+[Source line 42](../../../extended/ext/http_agent.lani#L42)
 
 ```lanius
 max_redirects: i32
@@ -278,7 +289,7 @@ max_redirects: i32
 
 #### field: timeout_ms
 
-[Source line 37](../../../extended/ext/http_agent.lani#L37)
+[Source line 42](../../../extended/ext/http_agent.lani#L42)
 
 ```lanius
 timeout_ms: i32
@@ -286,7 +297,7 @@ timeout_ms: i32
 
 #### field: chunk_bytes
 
-[Source line 37](../../../extended/ext/http_agent.lani#L37)
+[Source line 42](../../../extended/ext/http_agent.lani#L42)
 
 ```lanius
 chunk_bytes: i32
@@ -294,7 +305,7 @@ chunk_bytes: i32
 
 #### field: max_informational
 
-[Source line 38](../../../extended/ext/http_agent.lani#L38)
+[Source line 43](../../../extended/ext/http_agent.lani#L43)
 
 ```lanius
 max_informational: i32
@@ -302,7 +313,7 @@ max_informational: i32
 
 #### field: retry_stale
 
-[Source line 38](../../../extended/ext/http_agent.lani#L38)
+[Source line 43](../../../extended/ext/http_agent.lani#L43)
 
 ```lanius
 retry_stale: bool
@@ -310,7 +321,7 @@ retry_stale: bool
 
 #### field: https
 
-[Source line 39](../../../extended/ext/http_agent.lani#L39)
+[Source line 44](../../../extended/ext/http_agent.lani#L44)
 
 ```lanius
 https: bool
@@ -318,7 +329,7 @@ https: bool
 
 #### field: trust
 
-[Source line 39](../../../extended/ext/http_agent.lani#L39)
+[Source line 44](../../../extended/ext/http_agent.lani#L44)
 
 ```lanius
 trust: ext::openssl_tls::Trust
@@ -326,15 +337,23 @@ trust: ext::openssl_tls::Trust
 
 #### field: tls
 
-[Source line 39](../../../extended/ext/http_agent.lani#L39)
+[Source line 44](../../../extended/ext/http_agent.lani#L44)
 
 ```lanius
 tls: ext::openssl_tls::Limits
 ```
 
+#### field: http2
+
+[Source line 44](../../../extended/ext/http_agent.lani#L44)
+
+```lanius
+http2: bool
+```
+
 ### struct: Stats
 
-[Source line 45](../../../extended/ext/http_agent.lani#L45)
+[Source line 52](../../../extended/ext/http_agent.lani#L52)
 
 ```lanius
 pub struct Stats
@@ -342,7 +361,7 @@ pub struct Stats
 
 #### field: connections
 
-[Source line 45](../../../extended/ext/http_agent.lani#L45)
+[Source line 52](../../../extended/ext/http_agent.lani#L52)
 
 ```lanius
 connections: i32
@@ -350,7 +369,7 @@ connections: i32
 
 #### field: reused
 
-[Source line 45](../../../extended/ext/http_agent.lani#L45)
+[Source line 52](../../../extended/ext/http_agent.lani#L52)
 
 ```lanius
 reused: i32
@@ -358,7 +377,7 @@ reused: i32
 
 #### field: requests
 
-[Source line 45](../../../extended/ext/http_agent.lani#L45)
+[Source line 52](../../../extended/ext/http_agent.lani#L52)
 
 ```lanius
 requests: i32
@@ -366,7 +385,7 @@ requests: i32
 
 #### field: redirects
 
-[Source line 45](../../../extended/ext/http_agent.lani#L45)
+[Source line 52](../../../extended/ext/http_agent.lani#L52)
 
 ```lanius
 redirects: i32
@@ -374,7 +393,7 @@ redirects: i32
 
 #### field: retries
 
-[Source line 45](../../../extended/ext/http_agent.lani#L45)
+[Source line 52](../../../extended/ext/http_agent.lani#L52)
 
 ```lanius
 retries: i32
@@ -382,7 +401,7 @@ retries: i32
 
 #### field: stale
 
-[Source line 45](../../../extended/ext/http_agent.lani#L45)
+[Source line 52](../../../extended/ext/http_agent.lani#L52)
 
 ```lanius
 stale: i32
@@ -390,7 +409,7 @@ stale: i32
 
 #### field: evicted
 
-[Source line 45](../../../extended/ext/http_agent.lani#L45)
+[Source line 52](../../../extended/ext/http_agent.lani#L52)
 
 ```lanius
 evicted: i32
@@ -398,7 +417,7 @@ evicted: i32
 
 #### field: expired
 
-[Source line 45](../../../extended/ext/http_agent.lani#L45)
+[Source line 52](../../../extended/ext/http_agent.lani#L52)
 
 ```lanius
 expired: i32
@@ -406,15 +425,23 @@ expired: i32
 
 #### field: early
 
-[Source line 45](../../../extended/ext/http_agent.lani#L45)
+[Source line 52](../../../extended/ext/http_agent.lani#L52)
 
 ```lanius
 early: i32
 ```
 
+#### field: http2
+
+[Source line 52](../../../extended/ext/http_agent.lani#L52)
+
+```lanius
+http2: i32
+```
+
 ### struct: Request
 
-[Source line 46](../../../extended/ext/http_agent.lani#L46)
+[Source line 53](../../../extended/ext/http_agent.lani#L53)
 
 ```lanius
 pub struct Request
@@ -422,7 +449,7 @@ pub struct Request
 
 #### field: method
 
-[Source line 46](../../../extended/ext/http_agent.lani#L46)
+[Source line 53](../../../extended/ext/http_agent.lani#L53)
 
 ```lanius
 method: core::slice::View<u8>
@@ -430,7 +457,7 @@ method: core::slice::View<u8>
 
 #### field: url
 
-[Source line 46](../../../extended/ext/http_agent.lani#L46)
+[Source line 53](../../../extended/ext/http_agent.lani#L53)
 
 ```lanius
 url: core::slice::View<u8>
@@ -438,7 +465,7 @@ url: core::slice::View<u8>
 
 #### field: headers
 
-[Source line 46](../../../extended/ext/http_agent.lani#L46)
+[Source line 53](../../../extended/ext/http_agent.lani#L53)
 
 ```lanius
 headers: core::slice::View<ext::http::Field>
@@ -446,7 +473,7 @@ headers: core::slice::View<ext::http::Field>
 
 #### field: body
 
-[Source line 46](../../../extended/ext/http_agent.lani#L46)
+[Source line 53](../../../extended/ext/http_agent.lani#L53)
 
 ```lanius
 body: core::slice::View<u8>
@@ -454,7 +481,7 @@ body: core::slice::View<u8>
 
 ### struct: Agent
 
-[Source line 55](../../../extended/ext/http_agent.lani#L55)
+[Source line 66](../../../extended/ext/http_agent.lani#L66)
 
 ```lanius
 pub struct Agent
@@ -462,7 +489,7 @@ pub struct Agent
 
 #### field: options
 
-[Source line 55](../../../extended/ext/http_agent.lani#L55)
+[Source line 66](../../../extended/ext/http_agent.lani#L66)
 
 ```lanius
 options: Options
@@ -470,15 +497,23 @@ options: Options
 
 #### field: pool
 
-[Source line 55](../../../extended/ext/http_agent.lani#L55)
+[Source line 66](../../../extended/ext/http_agent.lani#L66)
 
 ```lanius
 pool: alloc::vec::Vec<Idle>
 ```
 
+#### field: sessions
+
+[Source line 66](../../../extended/ext/http_agent.lani#L66)
+
+```lanius
+sessions: alloc::vec::Vec<H2>
+```
+
 #### field: stats
 
-[Source line 55](../../../extended/ext/http_agent.lani#L55)
+[Source line 66](../../../extended/ext/http_agent.lani#L66)
 
 ```lanius
 stats: Stats
@@ -486,7 +521,7 @@ stats: Stats
 
 #### field: stamp
 
-[Source line 55](../../../extended/ext/http_agent.lani#L55)
+[Source line 66](../../../extended/ext/http_agent.lani#L66)
 
 ```lanius
 stamp: u64
@@ -494,7 +529,7 @@ stamp: u64
 
 #### field: active
 
-[Source line 55](../../../extended/ext/http_agent.lani#L55)
+[Source line 66](../../../extended/ext/http_agent.lani#L66)
 
 ```lanius
 active: bool
@@ -502,7 +537,7 @@ active: bool
 
 #### field: context
 
-[Source line 55](../../../extended/ext/http_agent.lani#L55)
+[Source line 66](../../../extended/ext/http_agent.lani#L66)
 
 ```lanius
 context: core::option::Option<ext::openssl_tls::Context>
@@ -510,7 +545,7 @@ context: core::option::Option<ext::openssl_tls::Context>
 
 ### struct: Response
 
-[Source line 58](../../../extended/ext/http_agent.lani#L58)
+[Source line 72](../../../extended/ext/http_agent.lani#L72)
 
 ```lanius
 pub struct Response
@@ -518,7 +553,7 @@ pub struct Response
 
 #### field: status
 
-[Source line 58](../../../extended/ext/http_agent.lani#L58)
+[Source line 72](../../../extended/ext/http_agent.lani#L72)
 
 ```lanius
 status: i32
@@ -526,7 +561,7 @@ status: i32
 
 #### field: version
 
-[Source line 58](../../../extended/ext/http_agent.lani#L58)
+[Source line 72](../../../extended/ext/http_agent.lani#L72)
 
 ```lanius
 version: i32
@@ -534,7 +569,7 @@ version: i32
 
 #### field: wire
 
-[Source line 58](../../../extended/ext/http_agent.lani#L58)
+[Source line 72](../../../extended/ext/http_agent.lani#L72)
 
 ```lanius
 wire: alloc::vec::Vec<u8>
@@ -542,7 +577,7 @@ wire: alloc::vec::Vec<u8>
 
 #### field: head_length
 
-[Source line 58](../../../extended/ext/http_agent.lani#L58)
+[Source line 72](../../../extended/ext/http_agent.lani#L72)
 
 ```lanius
 head_length: i32
@@ -550,7 +585,7 @@ head_length: i32
 
 #### field: body_start
 
-[Source line 58](../../../extended/ext/http_agent.lani#L58)
+[Source line 72](../../../extended/ext/http_agent.lani#L72)
 
 ```lanius
 body_start: i32
@@ -558,7 +593,7 @@ body_start: i32
 
 #### field: body_length
 
-[Source line 58](../../../extended/ext/http_agent.lani#L58)
+[Source line 72](../../../extended/ext/http_agent.lani#L72)
 
 ```lanius
 body_length: i32
@@ -566,7 +601,7 @@ body_length: i32
 
 #### field: decoded
 
-[Source line 58](../../../extended/ext/http_agent.lani#L58)
+[Source line 72](../../../extended/ext/http_agent.lani#L72)
 
 ```lanius
 decoded: alloc::vec::Vec<u8>
@@ -574,7 +609,7 @@ decoded: alloc::vec::Vec<u8>
 
 #### field: chunked
 
-[Source line 58](../../../extended/ext/http_agent.lani#L58)
+[Source line 72](../../../extended/ext/http_agent.lani#L72)
 
 ```lanius
 chunked: bool
@@ -582,7 +617,7 @@ chunked: bool
 
 #### field: method
 
-[Source line 58](../../../extended/ext/http_agent.lani#L58)
+[Source line 72](../../../extended/ext/http_agent.lani#L72)
 
 ```lanius
 method: alloc::vec::Vec<u8>
@@ -590,7 +625,7 @@ method: alloc::vec::Vec<u8>
 
 #### field: url
 
-[Source line 58](../../../extended/ext/http_agent.lani#L58)
+[Source line 72](../../../extended/ext/http_agent.lani#L72)
 
 ```lanius
 url: alloc::vec::Vec<u8>
@@ -598,7 +633,7 @@ url: alloc::vec::Vec<u8>
 
 #### field: limits
 
-[Source line 58](../../../extended/ext/http_agent.lani#L58)
+[Source line 72](../../../extended/ext/http_agent.lani#L72)
 
 ```lanius
 limits: ext::http::Limits
@@ -606,7 +641,7 @@ limits: ext::http::Limits
 
 #### field: redirects
 
-[Source line 58](../../../extended/ext/http_agent.lani#L58)
+[Source line 72](../../../extended/ext/http_agent.lani#L72)
 
 ```lanius
 redirects: i32
@@ -614,7 +649,7 @@ redirects: i32
 
 #### field: reused
 
-[Source line 58](../../../extended/ext/http_agent.lani#L58)
+[Source line 72](../../../extended/ext/http_agent.lani#L72)
 
 ```lanius
 reused: bool
@@ -622,7 +657,7 @@ reused: bool
 
 #### field: kept
 
-[Source line 58](../../../extended/ext/http_agent.lani#L58)
+[Source line 72](../../../extended/ext/http_agent.lani#L72)
 
 ```lanius
 kept: bool
@@ -630,7 +665,7 @@ kept: bool
 
 #### field: hint_ms
 
-[Source line 58](../../../extended/ext/http_agent.lani#L58)
+[Source line 72](../../../extended/ext/http_agent.lani#L72)
 
 ```lanius
 hint_ms: i32
@@ -638,7 +673,31 @@ hint_ms: i32
 
 #### field: active
 
-[Source line 58](../../../extended/ext/http_agent.lani#L58)
+[Source line 72](../../../extended/ext/http_agent.lani#L72)
+
+```lanius
+active: bool
+```
+
+### struct: Connection
+
+[Source line 1098](../../../extended/ext/http_agent.lani#L1098)
+
+```lanius
+pub struct Connection
+```
+
+#### field: conn
+
+[Source line 1098](../../../extended/ext/http_agent.lani#L1098)
+
+```lanius
+conn: Conn
+```
+
+#### field: active
+
+[Source line 1098](../../../extended/ext/http_agent.lani#L1098)
 
 ```lanius
 active: bool
@@ -648,7 +707,7 @@ active: bool
 
 ### function: default_options
 
-[Source line 66](../../../extended/ext/http_agent.lani#L66)
+[Source line 80](../../../extended/ext/http_agent.lani#L80)
 
 ```lanius
 pub fn default_options() -> Options
@@ -656,7 +715,7 @@ pub fn default_options() -> Options
 
 ### function: agent
 
-[Source line 77](../../../extended/ext/http_agent.lani#L77)
+[Source line 91](../../../extended/ext/http_agent.lani#L91)
 
 ```lanius
 pub fn agent(options: Options) -> core::result::Result<Agent,Error>
@@ -664,7 +723,7 @@ pub fn agent(options: Options) -> core::result::Result<Agent,Error>
 
 ### function: resolve
 
-[Source line 448](../../../extended/ext/http_agent.lani#L448)
+[Source line 702](../../../extended/ext/http_agent.lani#L702)
 
 ```lanius
 pub fn resolve(base: core::slice::View<u8>, location: core::slice::View<u8>, out: &alloc::vec::Vec<u8>) -> bool
@@ -672,7 +731,7 @@ pub fn resolve(base: core::slice::View<u8>, location: core::slice::View<u8>, out
 
 ### function: fetch_stream
 
-[Source line 527](../../../extended/ext/http_agent.lani#L527)
+[Source line 781](../../../extended/ext/http_agent.lani#L781)
 
 ```lanius
 pub fn fetch_stream<R>(agent: &Agent, request: Request, source: &R) -> core::result::Result<Response,Error> where R: core::io::Read
@@ -680,9 +739,9 @@ pub fn fetch_stream<R>(agent: &Agent, request: Request, source: &R) -> core::res
 
 ## Implementation blocks and public methods
 
-### impl at line 529
+### impl at line 783
 
-[Source line 529](../../../extended/ext/http_agent.lani#L529)
+[Source line 783](../../../extended/ext/http_agent.lani#L783)
 
 ```lanius
 pub impl Agent
@@ -690,7 +749,7 @@ pub impl Agent
 
 #### method: borrow
 
-[Source line 530](../../../extended/ext/http_agent.lani#L530)
+[Source line 784](../../../extended/ext/http_agent.lani#L784)
 
 ```lanius
 pub fn borrow(&self) -> &Agent
@@ -698,7 +757,7 @@ pub fn borrow(&self) -> &Agent
 
 #### method: stats
 
-[Source line 531](../../../extended/ext/http_agent.lani#L531)
+[Source line 785](../../../extended/ext/http_agent.lani#L785)
 
 ```lanius
 pub fn stats(&self) -> Stats
@@ -706,31 +765,55 @@ pub fn stats(&self) -> Stats
 
 #### method: idle
 
-[Source line 532](../../../extended/ext/http_agent.lani#L532)
+[Source line 786](../../../extended/ext/http_agent.lani#L786)
 
 ```lanius
 pub fn idle(&self) -> i32
 ```
 
+#### method: sessions
+
+[Source line 788](../../../extended/ext/http_agent.lani#L788)
+
+```lanius
+pub fn sessions(&self) -> i32
+```
+
 #### method: fetch
 
-[Source line 533](../../../extended/ext/http_agent.lani#L533)
+[Source line 789](../../../extended/ext/http_agent.lani#L789)
 
 ```lanius
 pub fn fetch(&self, request: Request) -> core::result::Result<Response,Error>
 ```
 
+#### method: fetch_all
+
+[Source line 837](../../../extended/ext/http_agent.lani#L837)
+
+```lanius
+pub fn fetch_all(&self, requests: core::slice::View<Request>, results: &alloc::vec::Vec<core::result::Result<Response,Error>>) -> i32
+```
+
 #### method: preconnect
 
-[Source line 631](../../../extended/ext/http_agent.lani#L631)
+[Source line 1047](../../../extended/ext/http_agent.lani#L1047)
 
 ```lanius
 pub fn preconnect(&self, url: core::slice::View<u8>, count: i32) -> core::result::Result<i32,Error>
 ```
 
+#### method: dial
+
+[Source line 1071](../../../extended/ext/http_agent.lani#L1071)
+
+```lanius
+pub fn dial(&self, url: &ext::http_url::Url, deadline: core::time::Deadline) -> core::result::Result<Connection,Error>
+```
+
 #### method: clear
 
-[Source line 653](../../../extended/ext/http_agent.lani#L653)
+[Source line 1080](../../../extended/ext/http_agent.lani#L1080)
 
 ```lanius
 pub fn clear(&self) -> i32
@@ -738,15 +821,71 @@ pub fn clear(&self) -> i32
 
 #### method: close
 
-[Source line 654](../../../extended/ext/http_agent.lani#L654)
+[Source line 1086](../../../extended/ext/http_agent.lani#L1086)
 
 ```lanius
 pub fn close(&self) -> bool
 ```
 
-### impl at line 661
+### impl at line 1099
 
-[Source line 661](../../../extended/ext/http_agent.lani#L661)
+[Source line 1099](../../../extended/ext/http_agent.lani#L1099)
+
+```lanius
+pub impl Connection
+```
+
+#### method: borrow
+
+[Source line 1100](../../../extended/ext/http_agent.lani#L1100)
+
+```lanius
+pub fn borrow(&self) -> &Connection
+```
+
+#### method: is_secure
+
+[Source line 1101](../../../extended/ext/http_agent.lani#L1101)
+
+```lanius
+pub fn is_secure(&self) -> bool
+```
+
+#### method: is_open
+
+[Source line 1102](../../../extended/ext/http_agent.lani#L1102)
+
+```lanius
+pub fn is_open(&self) -> bool
+```
+
+#### method: send
+
+[Source line 1112](../../../extended/ext/http_agent.lani#L1112)
+
+```lanius
+pub fn send(&self, data: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<i32,Error>
+```
+
+#### method: receive
+
+[Source line 1121](../../../extended/ext/http_agent.lani#L1121)
+
+```lanius
+pub fn receive(&self, space: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<i32,Error>
+```
+
+#### method: close
+
+[Source line 1131](../../../extended/ext/http_agent.lani#L1131)
+
+```lanius
+pub fn close(&self, graceful: bool) -> bool
+```
+
+### impl at line 1139
+
+[Source line 1139](../../../extended/ext/http_agent.lani#L1139)
 
 ```lanius
 pub impl Response
@@ -754,7 +893,7 @@ pub impl Response
 
 #### method: borrow
 
-[Source line 662](../../../extended/ext/http_agent.lani#L662)
+[Source line 1140](../../../extended/ext/http_agent.lani#L1140)
 
 ```lanius
 pub fn borrow(&self) -> &Response
@@ -762,7 +901,7 @@ pub fn borrow(&self) -> &Response
 
 #### method: status
 
-[Source line 663](../../../extended/ext/http_agent.lani#L663)
+[Source line 1141](../../../extended/ext/http_agent.lani#L1141)
 
 ```lanius
 pub fn status(&self) -> i32
@@ -770,7 +909,7 @@ pub fn status(&self) -> i32
 
 #### method: body
 
-[Source line 664](../../../extended/ext/http_agent.lani#L664)
+[Source line 1142](../../../extended/ext/http_agent.lani#L1142)
 
 ```lanius
 pub fn body(&self) -> core::slice::View<u8>
@@ -778,15 +917,23 @@ pub fn body(&self) -> core::slice::View<u8>
 
 #### method: head
 
-[Source line 665](../../../extended/ext/http_agent.lani#L665)
+[Source line 1143](../../../extended/ext/http_agent.lani#L1143)
 
 ```lanius
 pub fn head(&self) -> core::slice::View<u8>
 ```
 
+#### method: version
+
+[Source line 1144](../../../extended/ext/http_agent.lani#L1144)
+
+```lanius
+pub fn version(&self) -> i32
+```
+
 #### method: url
 
-[Source line 666](../../../extended/ext/http_agent.lani#L666)
+[Source line 1145](../../../extended/ext/http_agent.lani#L1145)
 
 ```lanius
 pub fn url(&self) -> core::slice::View<u8>
@@ -794,7 +941,7 @@ pub fn url(&self) -> core::slice::View<u8>
 
 #### method: header
 
-[Source line 667](../../../extended/ext/http_agent.lani#L667)
+[Source line 1146](../../../extended/ext/http_agent.lani#L1146)
 
 ```lanius
 pub fn header(&self, name: core::slice::View<u8>) -> core::option::Option<core::slice::View<u8>>
@@ -802,7 +949,7 @@ pub fn header(&self, name: core::slice::View<u8>) -> core::option::Option<core::
 
 #### method: destroy
 
-[Source line 673](../../../extended/ext/http_agent.lani#L673)
+[Source line 1153](../../../extended/ext/http_agent.lani#L1153)
 
 ```lanius
 pub fn destroy(&self) -> bool

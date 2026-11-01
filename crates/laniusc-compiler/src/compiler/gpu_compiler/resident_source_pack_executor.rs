@@ -172,8 +172,7 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
                     .map_err(source_pack_artifact_store_error)?);
             }
             if self.native_link.is_none() && !native_functions.is_empty() {
-                return Err(CompileError::GpuCodegen(
-                    "C extern declarations require the native linking profile; use --native-link and explicit --native-library inputs".into()));
+                return Err(super::x86_codegen::x86_native_link_required_error(&native_functions));
             }
         }
         let pending = std::mem::take(&mut self.pending_originals);

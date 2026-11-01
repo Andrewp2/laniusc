@@ -18,6 +18,8 @@ import ext::unidiff;
 import ext::wordiff;
 import std::args;
 import std::file;
+import std::fs;
+import std::file_ops;
 import std::stream;
 
 fn literal(value: str, count: i32) -> core::slice::View<u8> {
@@ -32,56 +34,79 @@ fn complain(text: str, count: i32) -> i32 {
     let sink: std::stream::Descriptor = std::stream::stderr(); let v: core::slice::View<u8> = literal(text, count);
     let written: core::result::Result<i32, core::io::Failure> = core::io::write_all(sink.borrow(), v.values, v.start, v.len()); return 2;
 }
+// Write packed bytes (a Vec<u8>) to stdout straight from their storage:
+// std::stream's Descriptor stages every 1,024 bytes through a copy loop.
+fn write_out(bytes: [u8], count: i32) -> bool {
+    let base: ptr = core::mem::i32_slice_data_ptr(bytes); let sent: i32 = 0;
+    while (sent < count) {
+        let w: i32 = std::fs::write(1, base + (sent as usize), (count - sent) as usize);
+        if (w == -4) { continue; }
+        if (w <= 0 || w > count - sent) { return false; }
+        sent += w;
+    }
+    return true;
+}
 fn read_file(name: core::slice::View<u8>, output: &alloc::io::Buffer) -> bool {
     let checked: core::result::Result<core::path::Path, core::path::Error> = core::path::from_view(name);
     if (core::result::is_err(checked)) { return false; }
     let opened: core::result::Result<std::file::File, core::io::Error> = std::file::open(core::result::unwrap(checked), std::file::OpenMode::Read);
     if (core::result::is_err(opened)) { return false; }
     let file: std::file::File = core::result::unwrap(opened);
+    // Size the buffer from the file length so the read does not regrow it
+    // (growth copies byte by byte). read_to_end asks for 64 KiB of room per
+    // read and still reads to end of input, whatever the size was.
+    let size: core::result::Result<i64, core::io::Error> = std::file_ops::seek(file.borrow(), 0, std::file_ops::Origin::End);
+    let rewound: core::result::Result<i64, core::io::Error> = std::file_ops::seek(file.borrow(), 0, std::file_ops::Origin::Start);
+    if (core::result::is_err(rewound)) { let ignored: core::result::Result<i32, core::io::Error> = file.close(); return false; }
+    if (core::result::is_ok(size) && core::result::unwrap(size) < 268000000) { let room: core::result::Result<ptr, core::io::Error> = output.reserve_raw((core::result::unwrap(size) as i32) + 65536); }
     let copied: core::result::Result<u64, core::io::Error> = file.read_to_end(output);
     let closed: core::result::Result<i32, core::io::Error> = file.close();
     return core::result::is_ok(copied) && core::result::is_ok(closed);
 }
 fn view_of(buffer: &alloc::io::Buffer) -> core::slice::View<u8> { return core::result::unwrap(core::slice::view(buffer.as_bytes(), buffer.len())); }
+fn report(e: ext::seqdiff::Error) -> i32 {
+    return match (e) {
+        ext::seqdiff::Error::WorkLimit -> complain("seq-diff: work limit\n", 21),
+        ext::seqdiff::Error::ItemLimit -> complain("seq-diff: line limit\n", 21),
+        ext::seqdiff::Error::AllocationFailed -> complain("seq-diff: allocation failed\n", 28),
+        ext::seqdiff::Error::Bounds -> complain("seq-diff: internal bounds\n", 26),
+        ext::seqdiff::Error::InvalidLimits -> complain("seq-diff: invalid limits\n", 25)
+    };
+}
 fn run(old_name: core::slice::View<u8>, new_name: core::slice::View<u8>, context: i32, algorithm: ext::seqdiff::Algorithm, mode: i32, stat: ext::diffstat::StatOptions) -> i32 {
     let first: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(268435456));
     let second: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(268435456));
     if (!read_file(old_name, first.borrow()) || !read_file(new_name, second.borrow())) { first.destroy(); second.destroy(); return complain("seq-diff: cannot read input\n", 28); }
     let limits: ext::seqdiff::Limits = ext::seqdiff::default_limits();
-    let a: alloc::vec::Vec<ext::seqdiff::Line> = core::result::unwrap(ext::seqdiff::split_lines(view_of(first.borrow()), limits));
-    let b: alloc::vec::Vec<ext::seqdiff::Line> = core::result::unwrap(ext::seqdiff::split_lines(view_of(second.borrow()), limits));
+    let split: core::result::Result<ext::seqdiff::Split, ext::seqdiff::Error> = ext::seqdiff::split_classify(view_of(first.borrow()), view_of(second.borrow()), limits);
+    if (core::result::is_err(split)) { first.destroy(); second.destroy(); return report(core::result::unwrap_err(split)); }
+    let lines: ext::seqdiff::Split = core::result::unwrap(split);
     let status: i32 = 0;
-    let made: core::result::Result<ext::seqdiff::Script, ext::seqdiff::Error> = ext::seqdiff::diff_lines(a.as_view(), b.as_view(), algorithm, limits);
+    let made: core::result::Result<ext::seqdiff::Script, ext::seqdiff::Error> = ext::seqdiff::diff_split(lines.borrow(), algorithm, limits);
     if (core::result::is_err(made)) {
-        status = match (core::result::unwrap_err(made)) {
-            ext::seqdiff::Error::WorkLimit -> complain("seq-diff: work limit\n", 21),
-            ext::seqdiff::Error::ItemLimit -> complain("seq-diff: line limit\n", 21),
-            ext::seqdiff::Error::AllocationFailed -> complain("seq-diff: allocation failed\n", 28),
-            ext::seqdiff::Error::Bounds -> complain("seq-diff: internal bounds\n", 26),
-            ext::seqdiff::Error::InvalidLimits -> complain("seq-diff: invalid limits\n", 25)
-        };
+        status = report(core::result::unwrap_err(made));
     }
     else {
         let script: ext::seqdiff::Script = core::result::unwrap(made);
         let grouped: alloc::vec::Vec<ext::seqdiff::Hunk> = core::result::unwrap(ext::seqdiff::hunks(script.borrow(), context));
-        let written: core::result::Result<alloc::vec::Vec<u8>, i32> = render(a.as_view(), b.as_view(), script.borrow(), grouped.as_view(), old_name, new_name, mode, stat);
+        let written: core::result::Result<alloc::vec::Vec<u8>, i32> = render(lines.borrow(), script.borrow(), grouped.as_view(), old_name, new_name, mode, stat);
         if (core::result::is_err(written)) { status = complain("seq-diff: cannot encode\n", 24); }
         else {
             let bytes: alloc::vec::Vec<u8> = core::result::unwrap(written);
             if (bytes.len() > 0) {
                 status = 1; let sink: std::stream::Descriptor = std::stream::stdout();
-                if (core::result::is_err(core::io::write_all(sink.borrow(), bytes.as_slice(), 0, bytes.len()))) { status = 2; }
+                if (!write_out(bytes.as_slice(), bytes.len())) { status = 2; }
             }
             bytes.destroy();
         }
         grouped.destroy(); script.destroy();
     }
-    a.destroy(); b.destroy(); first.destroy(); second.destroy(); return status;
+    lines.destroy(); first.destroy(); second.destroy(); return status;
 }
 // mode 0 unified, 1 word diff, 2 character diff, 3 diffstat.
-fn render(a: core::slice::View<ext::seqdiff::Line>, b: core::slice::View<ext::seqdiff::Line>, script: &ext::seqdiff::Script, grouped: core::slice::View<ext::seqdiff::Hunk>, old_name: core::slice::View<u8>, new_name: core::slice::View<u8>, mode: i32, stat: ext::diffstat::StatOptions) -> core::result::Result<alloc::vec::Vec<u8>, i32> {
+fn render(lines: &ext::seqdiff::Split, script: &ext::seqdiff::Script, grouped: core::slice::View<ext::seqdiff::Hunk>, old_name: core::slice::View<u8>, new_name: core::slice::View<u8>, mode: i32, stat: ext::diffstat::StatOptions) -> core::result::Result<alloc::vec::Vec<u8>, i32> {
     if (mode == 0) {
-        let u: core::result::Result<alloc::vec::Vec<u8>, ext::unidiff::WriteError> = ext::unidiff::write_unified(a, b, script, grouped, old_name, new_name, 268435456);
+        let u: core::result::Result<alloc::vec::Vec<u8>, ext::unidiff::WriteError> = ext::unidiff::write_unified_split(lines, script, grouped, old_name, new_name, 268435456);
         if (core::result::is_err(u)) { return core::result::Err(1); } return core::result::Ok(core::result::unwrap(u));
     }
     if (mode == 3) {
@@ -94,7 +119,7 @@ fn render(a: core::slice::View<ext::seqdiff::Line>, b: core::slice::View<ext::se
     }
     let options: ext::wordiff::Options = ext::wordiff::default_options(ext::wordiff::Mode::Words);
     if (mode == 2) { options = ext::wordiff::default_options(ext::wordiff::Mode::Chars); }
-    let r: core::result::Result<alloc::vec::Vec<u8>, ext::wordiff::Error> = ext::wordiff::write_word_diff(a, b, script, grouped, old_name, new_name, options);
+    let r: core::result::Result<alloc::vec::Vec<u8>, ext::wordiff::Error> = ext::wordiff::write_word_diff_split(lines, script, grouped, old_name, new_name, options);
     if (core::result::is_err(r)) { return core::result::Err(1); } return core::result::Ok(core::result::unwrap(r));
 }
 // "--stat=W[,N[,C]]" values after the '='.

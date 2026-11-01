@@ -585,16 +585,16 @@ theorem cert_BinOp_bytes {n : Nat} :
   @proof_BinOp_bytes prog prims 958 438 1179 1180 1181 fn_BinOp_bytes np_BinOp_bytes ⟨@cert_concat_of_u8⟩ ⟨@cert_slot_operands⟩ ⟨@cert_Word_rex⟩ ⟨@cert_BinOp_opcode⟩ n
 
 theorem cert_CmpOp_setcc_signed {n : Nat} :
-    Stmt_CmpOp_setcc_signed prog prims 1349 n :=
-  @proof_CmpOp_setcc_signed prog prims 1349 fn_CmpOp_setcc_signed np_CmpOp_setcc_signed n
+    Stmt_CmpOp_setcc_signed prog prims 1351 n :=
+  @proof_CmpOp_setcc_signed prog prims 1351 fn_CmpOp_setcc_signed np_CmpOp_setcc_signed n
 
 theorem cert_CmpOp_setcc_unsigned {n : Nat} :
-    Stmt_CmpOp_setcc_unsigned prog prims 1350 n :=
-  @proof_CmpOp_setcc_unsigned prog prims 1350 fn_CmpOp_setcc_unsigned np_CmpOp_setcc_unsigned n
+    Stmt_CmpOp_setcc_unsigned prog prims 1352 n :=
+  @proof_CmpOp_setcc_unsigned prog prims 1352 fn_CmpOp_setcc_unsigned np_CmpOp_setcc_unsigned n
 
 theorem cert_CmpOp_setcc {n : Nat} :
     Stmt_CmpOp_setcc prog prims 1182 n :=
-  @proof_CmpOp_setcc prog prims 1182 1349 1350 fn_CmpOp_setcc np_CmpOp_setcc ⟨@cert_CmpOp_setcc_signed⟩ ⟨@cert_CmpOp_setcc_unsigned⟩ n
+  @proof_CmpOp_setcc prog prims 1182 1351 1352 fn_CmpOp_setcc np_CmpOp_setcc ⟨@cert_CmpOp_setcc_signed⟩ ⟨@cert_CmpOp_setcc_unsigned⟩ n
 
 theorem cert_slot_compare {n : Nat} :
     Stmt_slot_compare prog prims 959 n :=
@@ -713,32 +713,32 @@ theorem cert_DivOp_bytes {n : Nat} :
   @proof_DivOp_bytes prog prims 973 438 683 684 1179 1180 1185 1186 1187 fn_DivOp_bytes np_DivOp_bytes ⟨@cert_concat_of_u8⟩ ⟨@cert_cons_of_u8⟩ ⟨@cert_single_of_u8⟩ ⟨@cert_slot_operands⟩ ⟨@cert_Word_rex⟩ ⟨@cert_DivOp_extend⟩ ⟨@cert_DivOp_opcode⟩ ⟨@cert_DivOp_result⟩ n
 
 theorem cert_FloatTy_rex {n : Nat} :
-    Stmt_FloatTy_rex prog prims 1449 n :=
-  @proof_FloatTy_rex prog prims 1449 110 684 fn_FloatTy_rex np_FloatTy_rex ⟨@cert_empty_of_u8⟩ ⟨@cert_single_of_u8⟩ n
+    Stmt_FloatTy_rex prog prims 1452 n :=
+  @proof_FloatTy_rex prog prims 1452 110 684 fn_FloatTy_rex np_FloatTy_rex ⟨@cert_empty_of_u8⟩ ⟨@cert_single_of_u8⟩ n
 
 theorem cert_float_operands {n : Nat} :
-    Stmt_float_operands prog prims 1351 n :=
-  @proof_float_operands prog prims 1351 438 683 684 1449 fn_float_operands np_float_operands ⟨@cert_concat_of_u8⟩ ⟨@cert_cons_of_u8⟩ ⟨@cert_single_of_u8⟩ ⟨@cert_FloatTy_rex⟩ n
+    Stmt_float_operands prog prims 1353 n :=
+  @proof_float_operands prog prims 1353 438 683 684 1452 fn_float_operands np_float_operands ⟨@cert_concat_of_u8⟩ ⟨@cert_cons_of_u8⟩ ⟨@cert_single_of_u8⟩ ⟨@cert_FloatTy_rex⟩ n
 
 theorem cert_FloatTy_scalar_prefix {n : Nat} :
-    Stmt_FloatTy_scalar_prefix prog prims 1352 n :=
-  @proof_FloatTy_scalar_prefix prog prims 1352 fn_FloatTy_scalar_prefix np_FloatTy_scalar_prefix n
+    Stmt_FloatTy_scalar_prefix prog prims 1354 n :=
+  @proof_FloatTy_scalar_prefix prog prims 1354 fn_FloatTy_scalar_prefix np_FloatTy_scalar_prefix n
 
 theorem cert_FArith_opcode {n : Nat} :
-    Stmt_FArith_opcode prog prims 1353 n :=
-  @proof_FArith_opcode prog prims 1353 fn_FArith_opcode np_FArith_opcode n
+    Stmt_FArith_opcode prog prims 1355 n :=
+  @proof_FArith_opcode prog prims 1355 fn_FArith_opcode np_FArith_opcode n
 
 theorem cert_float_result {n : Nat} :
-    Stmt_float_result prog prims 1354 n :=
-  @proof_float_result prog prims 1354 438 683 684 1449 fn_float_result np_float_result ⟨@cert_concat_of_u8⟩ ⟨@cert_cons_of_u8⟩ ⟨@cert_single_of_u8⟩ ⟨@cert_FloatTy_rex⟩ n
+    Stmt_float_result prog prims 1356 n :=
+  @proof_float_result prog prims 1356 438 683 684 1452 fn_float_result np_float_result ⟨@cert_concat_of_u8⟩ ⟨@cert_cons_of_u8⟩ ⟨@cert_single_of_u8⟩ ⟨@cert_FloatTy_rex⟩ n
 
 theorem cert_FCmp_predicate {n : Nat} :
-    Stmt_FCmp_predicate prog prims 1355 n :=
-  @proof_FCmp_predicate prog prims 1355 fn_FCmp_predicate np_FCmp_predicate n
+    Stmt_FCmp_predicate prog prims 1357 n :=
+  @proof_FCmp_predicate prog prims 1357 fn_FCmp_predicate np_FCmp_predicate n
 
 theorem cert_FOp_opcode_bytes {n : Nat} :
     Stmt_FOp_opcode_bytes prog prims 1188 n :=
-  @proof_FOp_opcode_bytes prog prims 1188 438 683 684 1180 1351 1352 1353 1354 1355 fn_FOp_opcode_bytes np_FOp_opcode_bytes ⟨@cert_concat_of_u8⟩ ⟨@cert_cons_of_u8⟩ ⟨@cert_single_of_u8⟩ ⟨@cert_Word_rex⟩ ⟨@cert_float_operands⟩ ⟨@cert_FloatTy_scalar_prefix⟩ ⟨@cert_FArith_opcode⟩ ⟨@cert_float_result⟩ ⟨@cert_FCmp_predicate⟩ n
+  @proof_FOp_opcode_bytes prog prims 1188 438 683 684 1180 1353 1354 1355 1356 1357 fn_FOp_opcode_bytes np_FOp_opcode_bytes ⟨@cert_concat_of_u8⟩ ⟨@cert_cons_of_u8⟩ ⟨@cert_single_of_u8⟩ ⟨@cert_Word_rex⟩ ⟨@cert_float_operands⟩ ⟨@cert_FloatTy_scalar_prefix⟩ ⟨@cert_FArith_opcode⟩ ⟨@cert_float_result⟩ ⟨@cert_FCmp_predicate⟩ n
 
 theorem cert_FOp_bytes {n : Nat} :
     Stmt_FOp_bytes prog prims 974 n :=

@@ -20,8 +20,11 @@ EXPECTED = "1:aaé\r\n3:éa".encode()
 # anchors, which are lazy-DFA state; the third has no assertion. The last two
 # take the literal prefilter: a*é runs the DFA on the records containing é,
 # and é alone is decided by the search.
+# The two -v patterns select the same records: between literal hits, and
+# through the line scan's numbered gaps.
 PATTERNS = [("vm", "^(?<!x)(?:a|é)+$"), ("dfa-anchored", "^(?:a|é)+$"), ("dfa", "(?:a|é)+"),
-            ("prefilter", "a*é"), ("literal", "é")]
+            ("prefilter", "a*é"), ("literal", "é"), ("invert-literal", "nope", "-v"),
+            ("invert-scan", "[nx][o][p][e]", "-v")]
 
 
 def main():
@@ -63,8 +66,8 @@ def main():
             check(label + " injected", r["injected"] == ["1"], r)
 
     totals = {}
-    for name, pattern in PATTERNS:
-        args = ["-n", pattern]
+    for name, pattern, *flags in PATTERNS:
+        args = ["-n", *flags, pattern]
         p, r = execute(args)
         clean(name + " baseline", p, r, EXPECTED)
         mmaps, reads = int(r["mmap"][0]), int(r["read"][0])

@@ -67,8 +67,7 @@ bool imported_candidate_matches(uint member, bool dotted, uint actual, out uint 
     receiver_mode = 0u;
     uint base = member * MEMBER_WORDS;
     uint mode = (dependency_member_word(base + 8u) >> 28u) & 3u;
-    // Qualified static calls have no implicit receiver; dotted calls require
-    // one. Ineligible methods must not shadow an applicable deeper candidate.
+    // Qualified calls have no implicit receiver; dotted calls require one. Ineligible methods must not shadow an applicable deeper candidate.
     // A typed first parameter of a dotted call consumes exactly the adjusted
     // receiver value, so it is a second root matched against the same actual;
     // repeated parameters agree by ID across both roots. Only syntactic &self
@@ -90,7 +89,9 @@ bool imported_candidate_matches(uint member, bool dotted, uint actual, out uint 
     uint count_mask;
     if (ct_match<DependencySlots>(slots, pattern0, actual, pattern1, actual1,
         CT_NONE, 0u, false, spare, count_mask) != CT_MATCH_OK) return false;
-    if (!dotted) return mode == 0u || mode == 3u;
+    // A path call names every method: a self method takes its receiver as
+    // the first argument (dependencies/07b), so it has receiver mode 0.
+    if (!dotted) return true;
     if (mode == 0u) return false;
     receiver_mode = mode == 3u ? 1u : mode;
     return true;

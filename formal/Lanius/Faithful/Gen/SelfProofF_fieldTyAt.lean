@@ -71,16 +71,16 @@ theorem proof_assert_of {prog : SrcProgram} {prims : Prims} {ix_assert_of : Nat}
   simp only [src_assert_of] at h
   faithful [Lanius.Mini.assertOf]
 
-theorem proof_assign_target {prog : SrcProgram} {prims : Prims} {ix_assign_target ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_local_of ix_p_postfix_end ix_p_postfix_member ix_p_postfix_index ix_p_member_type_args_none ix_set_or_eval ix_set_field_or_eval ix_set_index_or_eval : Nat} (fn : prog.funcs[ix_assign_target]? = some (src_assign_target ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_local_of ix_p_postfix_end ix_p_postfix_member ix_p_postfix_index ix_p_member_type_args_none ix_set_or_eval ix_set_field_or_eval ix_set_index_or_eval)) (np : prims.isPrim ix_assign_target = false)
+theorem proof_assign_target {prog : SrcProgram} {prims : Prims} {ix_assign_target ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_member_type_args_none ix_local_of ix_p_postfix_end ix_p_postfix_member ix_p_postfix_index ix_set_or_eval ix_set_field_or_eval ix_set_index_or_eval : Nat} (fn : prog.funcs[ix_assign_target]? = some (src_assign_target ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_member_type_args_none ix_local_of ix_p_postfix_end ix_p_postfix_member ix_p_postfix_index ix_set_or_eval ix_set_field_or_eval ix_set_index_or_eval)) (np : prims.isPrim ix_assign_target = false)
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
     (ext_field_text_Token_of_mini_selfhost_Token : Certified (∀ {n : Nat}, Stmt_field_text_Token_of_mini_selfhost_Token prog prims ix_field_text_Token_of_mini_selfhost_Token n))
     (ext_kid_token : Certified (∀ {n : Nat}, Stmt_kid_token prog prims ix_kid_token n))
+    (ext_p_member_type_args_none : Certified (∀ {n : Nat}, Stmt_p_member_type_args_none prog prims ix_p_member_type_args_none n))
     (ext_local_of : Certified (∀ {n : Nat}, Stmt_local_of prog prims ix_local_of n))
     (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n))
     (ext_p_postfix_member : Certified (∀ {n : Nat}, Stmt_p_postfix_member prog prims ix_p_postfix_member n))
     (ext_p_postfix_index : Certified (∀ {n : Nat}, Stmt_p_postfix_index prog prims ix_p_postfix_index n))
-    (ext_p_member_type_args_none : Certified (∀ {n : Nat}, Stmt_p_member_type_args_none prog prims ix_p_member_type_args_none n))
     (ext_set_or_eval : Certified (∀ {n : Nat}, Stmt_set_or_eval prog prims ix_set_or_eval n))
     (ext_set_field_or_eval : Certified (∀ {n : Nat}, Stmt_set_field_or_eval prog prims ix_set_field_or_eval n))
     (ext_set_index_or_eval : Certified (∀ {n : Nat}, Stmt_set_index_or_eval prog prims ix_set_index_or_eval n)) {n : Nat} :

@@ -116,7 +116,7 @@ enum DaemonTransport {
     UnixSocket(PathBuf),
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 struct DaemonRequest {
     #[serde(default)]
     id: Value,
@@ -932,8 +932,39 @@ async fn run_session(
         // phase timer; the session stamps them in profiled jobs.
         let job_timing =
             crate::gpu::timer::GpuJobTimingSession::begin(&compiler.gpu().device, &compiler.gpu().queue);
+        let request_id = request.id.clone();
+        let retry_request = request.clone();
+        let gpu_errors_before = device::uncaptured_error_count();
         let mut response =
             compile_request(&compiler, options, &mut source_pack_cache, request).await;
+        if device::uncaptured_error_count() != gpu_errors_before {
+            // A device error (usually out of memory) stops later dispatches,
+            // so neither this response nor units cached during the job can be
+            // trusted. Buffers sized by an earlier, larger job are the usual
+            // cause: release them and compile once more from scratch.
+            let _ = device::take_first_uncaptured_error();
+            compiler.clear_compiled_unit_cache();
+            compiler.release_resident_job_buffers().await;
+            let retry_errors_before = device::uncaptured_error_count();
+            let retry_started = Instant::now();
+            response =
+                compile_request(&compiler, options, &mut source_pack_cache, retry_request).await;
+            let retry_errors = device::uncaptured_error_count() - retry_errors_before;
+            if retry_errors != 0 {
+                compiler.clear_compiled_unit_cache();
+                compiler.release_resident_job_buffers().await;
+                response = json!({
+                    "schema": DAEMON_SCHEMA,
+                    "id": request_id,
+                    "ok": false,
+                    "elapsed_ms": retry_started.elapsed().as_secs_f64() * 1000.0,
+                    "diagnostic": crate::compiler::gpu_device_error_diagnostic(
+                        retry_errors,
+                        device::take_first_uncaptured_error(),
+                    ),
+                });
+            }
+        }
         // No-op unless LANIUS_DEBUG_DUMP_BUFFERS is set, as in the CLI.
         crate::gpu::passes_core::debug_dump_buffers(
             &compiler.gpu().device,
