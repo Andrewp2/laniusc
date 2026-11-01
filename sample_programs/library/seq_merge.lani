@@ -18,6 +18,8 @@ import ext::seqdiff;
 import ext::merge3;
 import std::args;
 import std::file;
+import std::fs;
+import std::file_ops;
 import std::stream;
 
 fn literal(value: str, count: i32) -> core::slice::View<u8> {
@@ -30,12 +32,31 @@ fn same(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
 }
 fn emit(v: core::slice::View<u8>) { let sink: std::stream::Descriptor = std::stream::stderr(); let written: core::result::Result<i32, core::io::Failure> = core::io::write_all(sink.borrow(), v.values, v.start, v.len()); }
 fn complain(text: str, count: i32) -> i32 { emit(literal(text, count)); return 2; }
+// Write packed bytes (a Vec<u8>) to stdout straight from their storage:
+// std::stream's Descriptor stages every 1,024 bytes through a copy loop.
+fn write_out(bytes: [u8], count: i32) -> bool {
+    let base: ptr = core::mem::i32_slice_data_ptr(bytes); let sent: i32 = 0;
+    while (sent < count) {
+        let w: i32 = std::fs::write(1, base + (sent as usize), (count - sent) as usize);
+        if (w == -4) { continue; }
+        if (w <= 0 || w > count - sent) { return false; }
+        sent += w;
+    }
+    return true;
+}
 fn read_file(name: core::slice::View<u8>, output: &alloc::io::Buffer) -> bool {
     let checked: core::result::Result<core::path::Path, core::path::Error> = core::path::from_view(name);
     if (core::result::is_err(checked)) { return false; }
     let opened: core::result::Result<std::file::File, core::io::Error> = std::file::open(core::result::unwrap(checked), std::file::OpenMode::Read);
     if (core::result::is_err(opened)) { return false; }
     let file: std::file::File = core::result::unwrap(opened);
+    // Size the buffer from the file length so the read does not regrow it
+    // (growth copies byte by byte). read_to_end asks for 64 KiB of room per
+    // read and still reads to end of input, whatever the size was.
+    let size: core::result::Result<i64, core::io::Error> = std::file_ops::seek(file.borrow(), 0, std::file_ops::Origin::End);
+    let rewound: core::result::Result<i64, core::io::Error> = std::file_ops::seek(file.borrow(), 0, std::file_ops::Origin::Start);
+    if (core::result::is_err(rewound)) { let ignored: core::result::Result<i32, core::io::Error> = file.close(); return false; }
+    if (core::result::is_ok(size) && core::result::unwrap(size) < 268000000) { let room: core::result::Result<ptr, core::io::Error> = output.reserve_raw((core::result::unwrap(size) as i32) + 65536); }
     let copied: core::result::Result<u64, core::io::Error> = file.read_to_end(output);
     let closed: core::result::Result<i32, core::io::Error> = file.close();
     return core::result::is_ok(copied) && core::result::is_ok(closed);
@@ -47,28 +68,24 @@ fn run(names: [core::slice::View<u8>;3], labels: ext::merge3::Labels, level: ext
     let theirs: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(268435456));
     if (!read_file(names[0], ours.borrow()) || !read_file(names[1], base.borrow()) || !read_file(names[2], theirs.borrow())) { ours.destroy(); base.destroy(); theirs.destroy(); return complain("seq-merge: cannot read input\n", 29); }
     let limits: ext::seqdiff::Limits = ext::seqdiff::default_limits();
-    let a: alloc::vec::Vec<ext::seqdiff::Line> = core::result::unwrap(ext::seqdiff::split_lines(view_of(ours.borrow()), limits));
-    let o: alloc::vec::Vec<ext::seqdiff::Line> = core::result::unwrap(ext::seqdiff::split_lines(view_of(base.borrow()), limits));
-    let b: alloc::vec::Vec<ext::seqdiff::Line> = core::result::unwrap(ext::seqdiff::split_lines(view_of(theirs.borrow()), limits));
     let status: i32 = 0;
-    let merged: core::result::Result<ext::merge3::Merge, ext::merge3::Error> = ext::merge3::merge_lines_with(o.as_view(), a.as_view(), b.as_view(), level, algorithm, limits);
+    let merged: core::result::Result<ext::merge3::TextMerge, ext::merge3::Error> = ext::merge3::merge_text(view_of(base.borrow()), view_of(ours.borrow()), view_of(theirs.borrow()), level, algorithm, limits);
     if (core::result::is_err(merged)) { status = complain("seq-merge: merge failed\n", 24); }
     else {
-        let m: ext::merge3::Merge = core::result::unwrap(merged);
-        let written: core::result::Result<alloc::vec::Vec<u8>, ext::merge3::Error> = ext::merge3::write_merge(o.as_view(), a.as_view(), b.as_view(), m.borrow(), labels, format);
+        let t: ext::merge3::TextMerge = core::result::unwrap(merged); let m: &ext::merge3::Merge = t.merge.borrow();
+        let written: core::result::Result<alloc::vec::Vec<u8>, ext::merge3::Error> = ext::merge3::write_text_merge(t.borrow(), labels, format);
         if (core::result::is_err(written)) { status = complain("seq-merge: cannot write\n", 24); }
         else {
             let bytes: alloc::vec::Vec<u8> = core::result::unwrap(written);
             let conflicts: i32 = m.conflict_count();
             if (format.gnu_identical) { let i: i32 = 0; while (i < m.len()) { if (core::option::unwrap(m.chunk(i)).kind == 3) { conflicts += 1; } i += 1; } }
             if (conflicts > 0) { status = 1; }
-            let sink: std::stream::Descriptor = std::stream::stdout();
-            if (core::result::is_err(core::io::write_all(sink.borrow(), bytes.as_slice(), 0, bytes.len()))) { status = 2; }
+            if (!write_out(bytes.as_slice(), bytes.len())) { status = 2; }
             bytes.destroy();
         }
-        m.destroy();
+        t.destroy();
     }
-    a.destroy(); o.destroy(); b.destroy(); ours.destroy(); base.destroy(); theirs.destroy(); return status;
+    ours.destroy(); base.destroy(); theirs.destroy(); return status;
 }
 fn main() -> i32 {
     let captured: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1, 32, 16384);

@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **319 modules**, **16855 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **319 modules**, **16887 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -276,7 +276,7 @@ Inventory: **319 modules**, **16855 declaration/member entries**. Counts include
 | [ext::lexer](ext/lexer.md) | [source](../../extended/ext/lexer.lani#L2) | 80 | Source inventory | [extended-lexer](../extended-lexer.md), [extended-lex-scan](../extended-lex-scan.md), [library-regex-workspace-plan](../library-regex-workspace-plan.md) |
 | [ext::linalg](ext/linalg.md) | [source](../../extended/ext/linalg.lani#L3) | 87 | Source inventory | [extended-linalg](../extended-linalg.md), [extended-sparse](../extended-sparse.md) |
 | [ext::log](ext/log.md) | [source](../../extended/ext/log.lani#L3) | 38 | Source inventory | [extended-log](../extended-log.md) |
-| [ext::merge3](ext/merge3.md) | [source](../../extended/ext/merge3.lani#L3) | 44 | Source inventory | [extended-merge3](../extended-merge3.md) |
+| [ext::merge3](ext/merge3.md) | [source](../../extended/ext/merge3.lani#L3) | 52 | Source inventory | [extended-merge3](../extended-merge3.md) |
 | [ext::msgpack](ext/msgpack.md) | [source](../../extended/ext/msgpack.lani#L7) | 139 | Source inventory | [extended-msgpack](../extended-msgpack.md) |
 | [ext::openssl_digest](ext/openssl_digest.md) | [source](../../extended/ext/openssl_digest.lani#L3) | 46 | Source inventory | [extended-openssl-digest](../extended-openssl-digest.md), [library-native-c](../library-native-c.md), [extended-openssl-hash](../extended-openssl-hash.md) |
 | [ext::openssl_tls](ext/openssl_tls.md) | [source](../../extended/ext/openssl_tls.lani#L3) | 185 | Source inventory | [extended-openssl-tls](../extended-openssl-tls.md), [extended-openssl-tls-server](../extended-openssl-tls-server.md), [extended-openssl-mutual-tls](../extended-openssl-mutual-tls.md), [extended-https-mutual-tls](../extended-https-mutual-tls.md), [library-native-c](../library-native-c.md), [extended-https-client](../extended-https-client.md), [extended-https-batch-testing](../extended-https-batch-testing.md) |
@@ -294,7 +294,7 @@ Inventory: **319 modules**, **16855 declaration/member entries**. Counts include
 | [ext::regex_text](ext/regex_text.md) | [source](../../extended/ext/regex_text.lani#L3) | 44 | Source inventory | [extended-regex-text](../extended-regex-text.md), [library-regex-workspace-plan](../library-regex-workspace-plan.md) |
 | [ext::response](ext/response.md) | [source](../../extended/ext/response.lani#L5) | 20 | Source inventory | [extended-cli-response](../extended-cli-response.md), [library-response-files-plan](../library-response-files-plan.md) |
 | [ext::schema](ext/schema.md) | [source](../../extended/ext/schema.lani#L3) | 90 | Source inventory | [extended-schema](../extended-schema.md) |
-| [ext::seqdiff](ext/seqdiff.md) | [source](../../extended/ext/seqdiff.lani#L2) | 82 | Source inventory | [extended-seqdiff](../extended-seqdiff.md) |
+| [ext::seqdiff](ext/seqdiff.md) | [source](../../extended/ext/seqdiff.lani#L2) | 106 | Source inventory | [extended-seqdiff](../extended-seqdiff.md) |
 | [ext::server_poll](ext/server_poll.md) | [source](../../extended/ext/server_poll.lani#L2) | 199 | Source inventory | [extended-server-poll](../extended-server-poll.md), [library-server-contract](../library-server-contract.md), [library-server-concurrency-plan](../library-server-concurrency-plan.md) |
 | [ext::settings](ext/settings.md) | [source](../../extended/ext/settings.lani#L3) | 118 | Source inventory | [extended-settings](../extended-settings.md) |
 | [ext::settings_env](ext/settings_env.md) | [source](../../extended/ext/settings_env.lani#L3) | 27 | Source inventory | [extended-settings](../extended-settings.md) |
