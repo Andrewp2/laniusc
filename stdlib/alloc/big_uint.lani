@@ -52,13 +52,13 @@ impl BigUint {
         return core::result::Ok(self.limbs.len());
     }
     fn mul_add_small(&self, radix: u32, digit: u32, limits: Limits) -> core::result::Result<i32,Error> {
-        let carry: u64 = digit as u64; let index: i32 = 0;
-        while (index < self.limbs.len()) { let wide: u64 = (self.get(index) as u64)*(radix as u64)+carry; self.put(index,wide as u32); carry = wide >> 32; index += 1; }
+        let carry: u64 = digit as u64; let index: i32 = 0; let limbs: [u32] = self.limbs.as_slice(); let count: i32 = self.limbs.len();
+        while (index < count) { let wide: u64 = (limbs[index] as u64)*(radix as u64)+carry; limbs[index] = wide as u32; carry = wide >> 32; index += 1; }
         if (carry != 0) { return self.append(carry as u32,limits); } return core::result::Ok(self.limbs.len());
     }
     fn div_small(&self, divisor: u32) -> u32 {
-        let rem: u64 = 0; let index: i32 = self.limbs.len();
-        while (index > 0) { index -= 1; let wide: u64 = (rem << 32)|(self.get(index) as u64); self.put(index,(wide/(divisor as u64)) as u32); rem = wide%(divisor as u64); }
+        let rem: u64 = 0; let index: i32 = self.limbs.len(); let limbs: [u32] = self.limbs.as_slice(); let wide_divisor: u64 = divisor as u64;
+        while (index > 0) { index -= 1; let wide: u64 = (rem << 32)|(limbs[index] as u64); let q: u64 = wide/wide_divisor; limbs[index] = q as u32; rem = wide-q*wide_divisor; }
         self.normalize(); return rem as u32;
     }
 }
@@ -133,18 +133,19 @@ pub impl BigUint {
 // caller sizes out for the whole accumulated sum, so carries stay inside it.
 // Every temporary is at most the top-level product size (2k+2 <= n+3 <= n+m
 // because both top operands have >= KARATSUBA_THRESHOLD limbs).
-fn used(x: &BigUint, from: i32, count: i32) -> i32 { let n: i32 = count; while (n > 0 && x.get(from+n-1) == 0) { n -= 1; } return n; }
+fn used(x: &BigUint, from: i32, count: i32) -> i32 { let n: i32 = count; let xs: [u32] = x.limbs.as_slice(); while (n > 0 && xs[from+n-1] == 0) { n -= 1; } return n; }
 fn add_window(out: &BigUint, at: i32, src: &BigUint, from: i32, count: i32) {
-    let carry: u64 = 0; let index: i32 = 0;
-    while (index < count) { let wide: u64 = (out.get(at+index) as u64)+(src.get(from+index) as u64)+carry; out.put(at+index,wide as u32); carry = wide >> 32; index += 1; }
-    let position: i32 = at+count;
-    while (carry != 0 && position < out.limbs.len()) { let wide: u64 = (out.get(position) as u64)+carry; out.put(position,wide as u32); carry = wide >> 32; position += 1; }
+    let carry: u64 = 0; let index: i32 = 0; let os: [u32] = out.limbs.as_slice(); let ss: [u32] = src.limbs.as_slice();
+    while (index < count) { let wide: u64 = (os[at+index] as u64)+(ss[from+index] as u64)+carry; os[at+index] = wide as u32; carry = wide >> 32; index += 1; }
+    let position: i32 = at+count; let end: i32 = out.limbs.len();
+    while (carry != 0 && position < end) { let wide: u64 = (os[position] as u64)+carry; os[position] = wide as u32; carry = wide >> 32; position += 1; }
 }
 // out -= src, where out >= src numerically.
 fn sub_window(out: &BigUint, src: &BigUint) {
-    let borrow: u64 = 0; let index: i32 = 0;
-    while ((index < src.limbs.len() || borrow != 0) && index < out.limbs.len()) {
-        let left: u64 = out.get(index) as u64; let right: u64 = (src.get(index) as u64)+borrow; out.put(index,(left+BASE-right) as u32); borrow = 0; if (left < right) { borrow = 1; } index += 1;
+    let borrow: u64 = 0; let index: i32 = 0; let os: [u32] = out.limbs.as_slice(); let ss: [u32] = src.limbs.as_slice(); let count: i32 = src.limbs.len(); let end: i32 = out.limbs.len();
+    while ((index < count || borrow != 0) && index < end) {
+        let left: u64 = os[index] as u64; let right: u64 = borrow; if (index < count) { right += ss[index] as u64; }
+        os[index] = (left+BASE-right) as u32; borrow = 0; if (left < right) { borrow = 1; } index += 1;
     }
 }
 fn kmul_into(out: &BigUint, at: i32, x: &BigUint, xf: i32, xc: i32, y: &BigUint, yf: i32, yc: i32, limits: Limits) -> core::result::Result<i32,Error> {
@@ -156,11 +157,11 @@ fn kmul_into(out: &BigUint, at: i32, x: &BigUint, xf: i32, xc: i32, y: &BigUint,
         while (i < yl) {
             let factor: u64 = y.get(yf+i) as u64;
             if (factor != 0) {
-                let carry: u64 = 0; let j: i32 = 0;
+                let carry: u64 = 0; let j: i32 = 0; let xs: [u32] = x.limbs.as_slice(); let os: [u32] = out.limbs.as_slice(); let base: i32 = at+i; let source: i32 = xf;
                 // factor*x_j + out + carry <= (B-1)^2 + 2(B-1) = B^2-1.
-                while (j < xl) { let wide: u64 = factor*(x.get(xf+j) as u64)+(out.get(at+i+j) as u64)+carry; out.put(at+i+j,wide as u32); carry = wide >> 32; j += 1; }
-                let position: i32 = at+i+xl;
-                while (carry != 0 && position < out.limbs.len()) { let wide: u64 = (out.get(position) as u64)+carry; out.put(position,wide as u32); carry = wide >> 32; position += 1; }
+                while (j < xl) { let wide: u64 = factor*(xs[source+j] as u64)+(os[base+j] as u64)+carry; os[base+j] = wide as u32; carry = wide >> 32; j += 1; }
+                let position: i32 = base+xl; let end: i32 = out.limbs.len();
+                while (carry != 0 && position < end) { let wide: u64 = (os[position] as u64)+carry; os[position] = wide as u32; carry = wide >> 32; position += 1; }
             }
             i += 1;
         }
@@ -190,17 +191,26 @@ fn kmul_into(out: &BigUint, at: i32, x: &BigUint, xf: i32, xc: i32, y: &BigUint,
     add_window(out,at+2*k,z2.borrow(),0,used(z2.borrow(),0,z2.limbs.len()));
     z1.destroy(); z2.destroy(); z0.destroy(); return core::result::Ok(0);
 }
+// Largest g with radix^g < 2^32.
+fn chunk_digits(radix: i32) -> i32 { let g: i32 = 0; let power: u64 = 1; while (power*(radix as u64) <= MASK) { power = power*(radix as u64); g += 1; } return g; }
 fn digit(byte: u8) -> i32 { if (byte >= 48 && byte <= 57) { return (byte-48) as i32; } if (byte >= 65 && byte <= 90) { return (byte-65) as i32+10; } if (byte >= 97 && byte <= 122) { return (byte-97) as i32+10; } return 36; }
 pub fn parse(input: core::slice::View<u8>, radix: i32, limits: Limits) -> core::result::Result<BigUint,Error> {
     if (!valid(limits) || input.start < 0 || input.length < 0 || input.start > 2147483647-input.length) { return core::result::Err(Error::Bounds); }
     if (radix < 2 || radix > 36) { return core::result::Err(Error::InvalidRadix); } if (input.length == 0) { return core::result::Err(Error::Empty); }
     if ((input.length as u64) > limits.max_work) { return core::result::Err(Error::WorkLimit); }
     let index: i32 = 0; while (index < input.length) { if (digit(input.values[input.start+index]) >= radix) { return core::result::Err(Error::InvalidDigit); } index += 1; }
-    let value: BigUint = zero(); let work: u64 = input.length as u64; index = 0;
+    let value: BigUint = zero(); let work: u64 = input.length as u64; index = 0; let group: i32 = chunk_digits(radix);
+    // Reserve the bounded final size once: ceil(log2 radix) bits per digit.
+    let digit_bits: u64 = 1; while ((1 << digit_bits) < (radix as u64)) { digit_bits += 1; }
+    let estimate: u64 = (input.length as u64)*digit_bits/32+1; if (estimate > limits.max_limbs as u64) { estimate = limits.max_limbs as u64; }
+    if (value.limbs.try_reserve(estimate as i32).is_err()) { return core::result::Err(Error::AllocationFailed); }
+    // Each pass folds up to `group` digits: value = value*radix^g + chunk, radix^g < 2^32.
     while (index < input.length) {
         let cost: u64 = (value.limbs.len() as u64)+1; if (cost > limits.max_work-work) { value.destroy(); return core::result::Err(Error::WorkLimit); } work += cost;
-        let added: core::result::Result<i32,Error> = value.mul_add_small(radix as u32,digit(input.values[input.start+index]) as u32,limits);
-        if (added.is_err()) { value.destroy(); return core::result::Err(added.unwrap_err()); } index += 1;
+        let scale: u32 = 1; let chunk: u32 = 0; let taken: i32 = 0;
+        while (taken < group && index < input.length) { scale = scale*(radix as u32); chunk = chunk*(radix as u32)+(digit(input.values[input.start+index]) as u32); taken += 1; index += 1; }
+        let added: core::result::Result<i32,Error> = value.mul_add_small(scale,chunk,limits);
+        if (added.is_err()) { value.destroy(); return core::result::Err(added.unwrap_err()); }
     } return core::result::Ok(value);
 }
 fn bitwise(left: &BigUint, right: &BigUint, kind: i32, limits: Limits) -> core::result::Result<BigUint,Error> {
@@ -260,11 +270,11 @@ pub impl BigUint {
             if (top < vtop) { let pair: u64 = (top << 32)|next; qhat = pair/vtop; rhat = pair%vtop; }
             // Only form rhat*B while rhat < B, avoiding u64 overflow.
             while ((rhat < BASE) && qhat*(divisor.get(n-2) as u64) > (rhat << 32)+(dividend.get(j+n-2) as u64)) { qhat -= 1; rhat += vtop; }
-            let borrow: u64 = 0; index = 0;
+            let borrow: u64 = 0; index = 0; let us: [u32] = dividend.limbs.as_slice(); let vs: [u32] = divisor.limbs.as_slice();
             while (index < n) {
                 // qhat*v_i + prior borrow <= (B-1)^2+B-1 < B^2.
-                let product: u64 = qhat*(divisor.get(index) as u64)+borrow; let low: u64 = product&MASK; let current: u64 = dividend.get(j+index) as u64;
-                dividend.put(j+index,(current+BASE-low) as u32); borrow = product >> 32; if (current < low) { borrow += 1; } index += 1;
+                let product: u64 = qhat*(vs[index] as u64)+borrow; let low: u64 = product&MASK; let current: u64 = us[j+index] as u64;
+                us[j+index] = (current+BASE-low) as u32; borrow = product >> 32; if (current < low) { borrow += 1; } index += 1;
             }
             let current: u64 = dividend.get(j+n) as u64; dividend.put(j+n,(current+BASE-borrow) as u32);
             if (current < borrow) {
@@ -286,11 +296,17 @@ pub impl BigUint {
         let digit_bits: u64 = 0; let radix_power: i32 = radix; while (radix_power > 1) { digit_bits += 1; radix_power = radix_power >> 1; }
         let reserve: u64 = self.bit_length()/digit_bits+1; if (reserve > limits.max_output as u64) { reserve = limits.max_output as u64; }
         if (output.try_reserve(reserve as i32).is_err()) { copy.destroy(); return core::result::Err(Error::AllocationFailed); }
+        let group: i32 = chunk_digits(radix); let divisor: u32 = 1; let g: i32 = 0; while (g < group) { divisor = divisor*(radix as u32); g += 1; }
+        // Each pass divides by radix^g and emits g digits, least significant first;
+        // the most significant chunk stops at its last nonzero digit.
         while (true) {
             let cost: u64 = (copy.limbs.len() as u64)+1; if (cost > limits.max_work-work) { copy.destroy(); output.destroy(); return core::result::Err(Error::WorkLimit); } work += cost;
-            if (output.len() >= limits.max_output) { copy.destroy(); output.destroy(); return core::result::Err(Error::OutputLimit); }
-            let rem: u32 = copy.div_small(radix as u32); let byte: u8 = (rem+48) as u8; if (rem >= 10) { byte = (rem+87) as u8; }
-            if (output.try_push(byte).is_err()) { copy.destroy(); output.destroy(); return core::result::Err(Error::AllocationFailed); }
+            let rem: u32 = copy.div_small(divisor); let emitted: i32 = 0;
+            while (emitted < group && (!copy.is_zero() || rem != 0 || output.len() == 0)) {
+                if (output.len() >= limits.max_output) { copy.destroy(); output.destroy(); return core::result::Err(Error::OutputLimit); }
+                let value: u32 = rem%(radix as u32); rem = rem/(radix as u32); let byte: u8 = (value+48) as u8; if (value >= 10) { byte = (value+87) as u8; }
+                if (output.try_push(byte).is_err()) { copy.destroy(); output.destroy(); return core::result::Err(Error::AllocationFailed); } emitted += 1;
+            }
             if (copy.is_zero()) { break; }
         }
         copy.destroy(); output.reverse(); return core::result::Ok(output);
