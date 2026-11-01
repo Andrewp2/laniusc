@@ -2759,7 +2759,14 @@ borrowed point lookup has the current increment above.
   collision models and allocation failures. String and all integer widths
   implement hashing. Production HashSet now shares this engine through its
   owner-state boundary; the earlier nested wrapper is retained separately as
-  a compiler reproduction.
+  a compiler reproduction. The table now probes SwissTable-style: eight
+  control bytes per u64 group word matched with SWAR, a multiplicative spread
+  of the key hash, and a one-multiply u64 hash. At one million keys, lookups
+  are 1.6-3.5 times faster, and the dense-i32 lookups after half the keys are
+  removed went from not finishing in four minutes to 258 ms. A 219,000-operation
+  deletion-heavy model matches a Python dict word for word. C++
+  `unordered_map` is still 2-11 times faster, mostly because of generated-code
+  overheads that the guide lists.
 - Binary heap: [`alloc::binary_heap`](stdlib-binary-heap.md) executes min/max
   queues, linear bulk construction, root replacement, allocation-safe reserve,
   shrink, clone, aliased extension and sorted ownership transfer. Five test
