@@ -725,8 +725,9 @@ theorem lowerSlice_layout {sp : SrcProgram} {element : SrcType} {p l : Option Ex
   · rename_i cond
     simp only [Bool.and_eq_true, Bool.or_eq_true] at cond
     have ok : wordType sp.decls element = true := by
-      rcases cond.1 with c | c
+      rcases cond.1 with (c | c) | c
       · cases element <;> simp_all [SrcType.isI32, wordType]
+      · cases element <;> simp_all [SrcType.isUint, wordType]
       · exact wordElement_wordType c
     exact wordType_layout element ok cond.2 rfl
   · cases h

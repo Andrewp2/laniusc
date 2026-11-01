@@ -92,7 +92,7 @@ theorem fill_loop_spec (target : P.target = Target.x86_64) (kind : ElemKind P T 
         · rw [if_neg scalar]; have := kind.size_eight scalar; omega
       obtain ⟨h'', stored, readBack, written⟩ := store (st h (start + k)) h base room readable effect.unique
       rw [slotEq] at written
-      have assign := StableExpr.assignRaw (before := st h (start + k)) (indexed := st h (start + k))
+      have assign := StableExpr.assignRaw (nb := kind.notByte) (before := st h (start + k)) (indexed := st h (start + k))
         (ready := st h (start + k)) (heap := h'') (sourceId := dst) (dstAt h (start + k))
         (StableExpr.local (idxAt h (start + k))) km (elementAddress kind km)
         (show (st h (start + k)).i32ArrayViews = [] from noViews) (StableExpr.local (fillAt h (start + k))) stored

@@ -165,4 +165,16 @@ theorem writeNativeValue_undef : ∀ (fuel : Nat) (P : Core.Program) (st : State
     simp only [Semantics.writeNativeValue]
     repeat' undef_step
 
+/-- A raw store: one byte of a byte view, or a native value's words. -/
+theorem writeRawNative_undef (P : Core.Program) (st : State) (place : Semantics.ResolvedPlace) (ty : Core.Ty)
+    (a : Nat) (v : Core.Value) (views : st.i32ArrayViews = []) :
+    UndefErr (Semantics.writeRawNative P st place ty a v) := by
+  simp only [Semantics.writeRawNative]
+  split
+  · simp only [Semantics.storeRawByte]
+    split
+    · exact storeBytes_undef _ _ _
+    · exact UndefErr.error rfl
+  · exact writeNativeValue_undef _ _ _ _ _ _ _ views
+
 end Lanius.Mini

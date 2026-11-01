@@ -18,9 +18,10 @@ def Context.bindAll (context : Context) (bindings : List (VarId × Ty)) : Contex
 def parameterContext (parameters : List (VarId × Ty)) : Context :=
   parameters.foldl (fun context parameter => context.bind parameter.1 parameter.2) Context.empty
 
-/-- A declared nominal element can be viewed through the native raw-slice
-    intrinsic. Packed i32 slices use their separate constructor. -/
+/-- A declared nominal element, or a byte, can be viewed through the typed
+    raw-slice intrinsic. Packed i32 slices use their separate constructor. -/
 inductive RawNominalSliceElement (program : Program) : Ty → Prop where
+  | byte : RawNominalSliceElement program (.scalar (.unsigned .u8))
   | structureType (id : TypeId) (declaration : StructDecl)
       (found : program.structure? id = some declaration) :
       RawNominalSliceElement program (.structure id)

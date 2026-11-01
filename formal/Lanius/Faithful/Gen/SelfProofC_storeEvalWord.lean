@@ -78,9 +78,27 @@ theorem proof_store_eval {prog : SrcProgram} {prims : Prims} {ix_store_eval ix_p
   simp only [src_store_eval] at h
   faithful [Lanius.Mini.storeEval]
 
-theorem proof_store_eval_element {prog : SrcProgram} {prims : Prims} {ix_store_eval_element ix_SrcType_is_i32 ix_store_eval ix_store_eval_word : Nat} (fn : prog.funcs[ix_store_eval_element]? = some (src_store_eval_element ix_SrcType_is_i32 ix_store_eval ix_store_eval_word)) (np : prims.isPrim ix_store_eval_element = false)
+theorem proof_store_eval_byte {prog : SrcProgram} {prims : Prims} {ix_store_eval_byte ix_plus ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_uint ix_bounds_guard : Nat} (fn : prog.funcs[ix_store_eval_byte]? = some (src_store_eval_byte ix_plus ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_uint ix_bounds_guard)) (np : prims.isPrim ix_store_eval_byte = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
+    (ext_check_then : Certified (∀ {n : Nat}, Stmt_check_then prog prims ix_check_then n))
+    (ext_boxed_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Expr prog prims ix_boxed_of_mini_selfhost_Expr n))
     (ext_SrcType_is_i32 : Certified (∀ {n : Nat}, Stmt_SrcType_is_i32 prog prims ix_SrcType_is_i32 n))
+    (ext_SrcType_is_uint : Certified (∀ {n : Nat}, Stmt_SrcType_is_uint prog prims ix_SrcType_is_uint n))
+    (ext_bounds_guard : Certified (∀ {n : Nat}, Stmt_bounds_guard prog prims ix_bounds_guard n)) {n : Nat} :
+    Stmt_store_eval_byte prog prims ix_store_eval_byte n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_store_eval_byte] at h
+  faithful [Lanius.Mini.storeEvalByte]
+
+theorem proof_store_eval_element {prog : SrcProgram} {prims : Prims} {ix_store_eval_element ix_SrcType_is_i32 ix_SrcType_is_uint ix_store_eval ix_store_eval_byte ix_store_eval_word : Nat} (fn : prog.funcs[ix_store_eval_element]? = some (src_store_eval_element ix_SrcType_is_i32 ix_SrcType_is_uint ix_store_eval ix_store_eval_byte ix_store_eval_word)) (np : prims.isPrim ix_store_eval_element = false)
+    (ext_SrcType_is_i32 : Certified (∀ {n : Nat}, Stmt_SrcType_is_i32 prog prims ix_SrcType_is_i32 n))
+    (ext_SrcType_is_uint : Certified (∀ {n : Nat}, Stmt_SrcType_is_uint prog prims ix_SrcType_is_uint n))
     (ext_store_eval : Certified (∀ {n : Nat}, Stmt_store_eval prog prims ix_store_eval n))
+    (ext_store_eval_byte : Certified (∀ {n : Nat}, Stmt_store_eval_byte prog prims ix_store_eval_byte n))
     (ext_store_eval_word : Certified (∀ {n : Nat}, Stmt_store_eval_word prog prims ix_store_eval_word n)) {n : Nat} :
     Stmt_store_eval_element prog prims ix_store_eval_element n := by
   intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5

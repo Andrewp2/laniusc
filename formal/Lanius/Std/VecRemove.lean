@@ -118,7 +118,7 @@ theorem shift_down_loop_spec (target : P.target = Target.x86_64) (kind : ElemKin
       obtain ⟨h'', stored, readBack, written⟩ :=
         stores xs[cur + 1] (List.getElem_mem _) (st h cur) h base room readable effect.unique
       rw [slotEq] at written
-      have assign := StableExpr.assignRaw (before := st h cur) (indexed := st h cur) (ready := st h cur)
+      have assign := StableExpr.assignRaw (nb := kind.notByte) (before := st h cur) (indexed := st h cur) (ready := st h cur)
         (heap := h'') (sourceId := items) (itemsAt h cur) (StableExpr.local (idxAt h cur)) curCap
         (elementAddress kind curCap) (show (st h cur).i32ArrayViews = [] from noViews) right stored
       have bodyRun : RunsStmt P (st h cur)

@@ -52,7 +52,10 @@ namespace Lanius.Mini
   if SrcType.isI32 element then
     some (Expr.binary Word.u64 BinOp.add (Expr.var slot) (Expr.binary Word.u64 BinOp.mul index (Expr.lit 4)))
   else
-    none
+    if SrcType.isUint element UintTy.uint8 then
+      some (Expr.binary Word.u64 BinOp.add (Expr.var slot) index)
+    else
+      none
 
 @[expose] def Inline.checkedElement (b : Binding) (ty : SrcType) (index : Option Expr) : Option Expr :=
   if SrcType.same b.ty (SrcType.slice ty) then

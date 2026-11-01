@@ -3019,9 +3019,19 @@ theorem mapRawNominalSlice_inv {P : Core.Program} {st : State} {element : Core.T
   split at run
   · simp at run
   split at run
+  · split at run
+    · simp only [Semantics.Outcome.done.injEq] at run
+      obtain ⟨rfl, rfl⟩ := run
+      exact ⟨0, st.heap, rfl, rfl, fun _ h => h, by omega, by omega⟩
+    · split at run
+      · simp at run
+      · simp only [Semantics.Outcome.done.injEq] at run
+        obtain ⟨rfl, rfl⟩ := run
+        exact ⟨_, st.heap, rfl, rfl, fun _ h => h, rfl, by omega⟩
+  split at run
   all_goals try (simp at run; done)
   all_goals
-    simp only [Bool.not_true, Bool.false_eq_true, if_false] at run
+    try simp only [Bool.not_true, Bool.false_eq_true, if_false] at run
     split at run
     · simp at run
     try dsimp only at run
@@ -3041,24 +3051,27 @@ theorem mapRawNominalSlice_inv {P : Core.Program} {st : State} {element : Core.T
 
 /-- The element types the slice lowering accepts. -/
 theorem slice_kind {ds : SrcDecls} {element : SrcType}
-    (cond : (element.isI32 || wordElement ds element) = true) :
-    element = .i32 ∨ (∃ sid fields, element = .struct sid fields) ∨ ∃ eid variants, element = .enum eid variants := by
+    (cond : (element.isI32 || element.isUint .uint8 || wordElement ds element) = true) :
+    element = .i32 ∨ element = .uint .uint8 ∨ (∃ sid fields, element = .struct sid fields) ∨
+      ∃ eid variants, element = .enum eid variants := by
   cases element with
   | i32 => exact .inl rfl
-  | struct sid fields => exact .inr (.inl ⟨sid, fields, rfl⟩)
-  | enum eid variants => exact .inr (.inr ⟨eid, variants, rfl⟩)
-  | bool | uint | ptr | slice | array | unit | isize | char | float | sint => simp [SrcType.isI32, wordElement] at cond
+  | uint kind => exact .inr (.inl (SrcType.eq_of_isUint (by simpa [SrcType.isI32, wordElement] using cond)))
+  | struct sid fields => exact .inr (.inr (.inl ⟨sid, fields, rfl⟩))
+  | enum eid variants => exact .inr (.inr (.inr ⟨eid, variants, rfl⟩))
+  | bool | ptr | slice | array | unit | isize | char | float | sint =>
+    simp [SrcType.isI32, SrcType.isUint, wordElement] at cond
 
 /-- What Core's `slice_from_raw_parts` of an accepted element type did. -/
 theorem sliceFrom_inv {P : Core.Program} {k : Nat} {st : State} {element : SrcType}
-    (kind : element = .i32 ∨ (∃ sid fields, element = .struct sid fields) ∨
+    (kind : element = .i32 ∨ element = .uint .uint8 ∨ (∃ sid fields, element = .struct sid fields) ∨
       ∃ eid variants, element = .enum eid variants) {p l : Core.Expr}
     {v : Value} {st1 : State} (run : evalExpr (k + 1) P st (element.sliceFrom p l) = .done v st1) :
     ∃ a afterPointer n afterLength len heap, evalExpr k P st p = .done (.pointer a) afterPointer ∧
       evalExpr k P afterPointer l = .done (.signed .i32 n) afterLength ∧
       v = .rawSlice element.toCore a len ∧ st1 = { afterLength with heap } ∧
       (∀ hp, HeapCorr afterLength.heap afterLength.world hp → HeapCorr heap afterLength.world hp) ∧ len = n.toNat ∧ 0 ≤ n := by
-  rcases kind with rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩
+  rcases kind with rfl | rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩
   all_goals
     simp only [SrcType.sliceFrom, evalExpr] at run
     split at run
@@ -3231,7 +3244,7 @@ theorem eval_index_raw {P : Core.Program} {k : Nat} {st : State} {slice : Nat} {
   all_goals simp at run
 
 theorem stmt_letIndex_i32 (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {slice : Nat}
-    {index : SrcExpr} {body : SrcStmt}
+    {index : SrcExpr} {body : SrcStmt} (tyI32 : ty.isI32 = true)
     (ok : lowerLoadWord next (lowerElement (lookup scope slice) ty (lowerIndex scope index))
       (body.lower (sigs sp.funcs) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size)) = some stmt)
     (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
@@ -3262,7 +3275,7 @@ theorem stmt_letIndex_i32 (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} 
   · simp at addressOk
   rename_i i indexOk
   split at addressOk
-  case isFalse => simp at addressOk
+  case isFalse notI32 => exact absurd tyI32 notI32
   rename_i isI32
   cases ty <;> simp [SrcType.isI32] at isI32
   simp only [Option.some.injEq] at addressOk
@@ -3305,7 +3318,8 @@ theorem stmt_letIndex_i32 (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} 
         obtain ⟨elt, eltOk, read⟩ := except_bind_ok read
         simp only [pure, Except.pure, Except.ok.injEq] at eltOk
         subst eltOk
-        simp only [NativeLayout.maxDepth, Semantics.readNativeValue] at read
+        simp only [Semantics.readRawElement, Semantics.isByte, Bool.false_eq_true, ↓reduceIte, NativeLayout.maxDepth,
+      Semantics.readNativeValue] at read
         obtain ⟨bits, loaded, wrapped⟩ := except_bind_ok read
         simp only [pure, Except.pure, Except.ok.injEq] at wrapped
         subst wrapped
@@ -3359,7 +3373,8 @@ theorem eval_setIndex_raw {P : Core.Program} {k : Nat} {st : State} {slice : Nat
       Semantics.integerIndex iv = .ok pos ∧ pos < length ∧
       Semantics.rawSliceElementAddress? P element address pos = .ok at_ ∧
       evalExpr (k + 2) P st e = .done right st ∧
-      Semantics.writeNativeValue NativeLayout.maxDepth P st st.heap element at_ right = .ok heap ∧
+      Semantics.writeRawNative P st { root, projections := [], value := none, rawByte := Semantics.isByte element }
+        element at_ right = .ok heap ∧
       st' = { st with heap } := by
   rw [evalExpr] at run
   rw [Semantics.evalPlace] at run
@@ -3396,7 +3411,8 @@ theorem eval_setIndex_raw {P : Core.Program} {k : Nat} {st : State} {slice : Nat
           simp only [Semantics.syncI32ViewsFromHeap, views, Semantics.syncI32ViewsFromHeapFrom, ite_self,
             Semantics.Outcome.done.injEq] at run
           obtain ⟨-, rfl⟩ := run
-          exact ⟨iv, pos, at_, right, heap, indexRun, posOk, inside, located, valueRun, stored, by rw [views]⟩
+          exact ⟨iv, pos, at_, right, heap, indexRun, posOk, inside, located, valueRun,
+            by simpa only [Semantics.writeRawNative] using stored, by rw [views]⟩
         · simp at run
       all_goals simp at run
     all_goals simp at placeRun
@@ -3418,7 +3434,7 @@ theorem i32_store_bytes {x : BitVec 64} (bits : x = widen (low x)) :
   split <;> omega
 
 theorem stmt_setIndex_i32 {slice : Nat} {index value : SrcExpr} {b : Binding} {element : SrcType}
-    (found : lookup scope slice = some b) (hElt : elementOf b.ty = some element)
+    (found : lookup scope slice = some b) (hElt : elementOf b.ty = some element) (elementI32 : element.isI32 = true)
     (ok : (match elementAddress b (lowerIndex scope index) with
       | none => none
       | some a =>
@@ -3447,7 +3463,7 @@ theorem stmt_setIndex_i32 {slice : Nat} {index value : SrcExpr} {b : Binding} {e
   · simp at addrOk
   rename_i i indexOk
   split at addrOk
-  case isFalse => simp at addrOk
+  case isFalse notI32 => exact absurd elementI32 notI32
   rename_i isI32
   cases element <;> simp [SrcType.isI32] at isI32
   simp only [Option.some.injEq] at addrOk
@@ -3493,7 +3509,8 @@ theorem stmt_setIndex_i32 {slice : Nat} {index value : SrcExpr} {b : Binding} {e
     obtain ⟨rfl, bitsV⟩ := holdsV
     simp only [Semantics.rawSliceElementAddress?, SrcType.toCore, Except.ok.injEq] at located
     subst located
-    simp only [NativeLayout.maxDepth, Semantics.writeNativeValue, SrcType.toCore] at stored
+    simp only [Semantics.writeRawNative, Semantics.isByte, Bool.false_eq_true, ↓reduceIte, NativeLayout.maxDepth,
+      Semantics.writeNativeValue, SrcType.toCore] at stored
     obtain ⟨hc', inside⟩ := HeapCorr.storeBytesFrom _ 0 hc stored
     have inside := inside (by simp [Semantics.i32Bytes])
     have same := storeBytes_next stored
@@ -3515,6 +3532,203 @@ theorem stmt_setIndex_i32 {slice : Nat} {index value : SrcExpr} {b : Binding} {e
     simp only [MemWidth.bytes]
     rw [writeLE_eq_writeBytes, i32_store_bytes bitsV]
     simpa [Semantics.i32Bytes] using hc'
+  all_goals simp at run
+
+/-- `let x: u8 = slice[index]` of a byte view: the byte loaded into `next`. -/
+theorem stmt_letIndex_u8 (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {slice : Nat}
+    {index : SrcExpr} {body : SrcStmt} (isU8 : ty.isUint .uint8 = true)
+    (ok : lowerLoad next (lowerElement (lookup scope slice) ty (lowerIndex scope index))
+      (body.lower (sigs sp.funcs) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size)) = some stmt)
+    (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp)
+    (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.letIndex id ty slice index body).toCore = .done c st')
+    (bound : st'.heap.nextAddress ≤ hp.limit) :
+    Simulates mp hp ret scope frame base st env
+      (checkThen next (guardAnd (index.guard scope) (indexGuard scope slice index)) stmt) c st' := by
+  have tyEq := SrcType.eq_of_isUint isU8
+  subst tyEq
+  simp only [lowerLoad] at ok
+  split at ok
+  · simp at ok
+  rename_i a addressOk
+  split at ok
+  · simp at ok
+  rename_i bstmt bodyOk
+  simp only [Option.some.injEq] at ok
+  subst ok
+  simp only [lowerElement] at addressOk
+  split at addressOk
+  · simp at addressOk
+  rename_i b found
+  split at addressOk
+  case isFalse => simp at addressOk
+  rename_i same
+  have bty := SrcType.same_eq same
+  simp only [elementAddress, bty, elementOf] at addressOk
+  split at addressOk
+  · simp at addressOk
+  rename_i i indexOk
+  simp [SrcType.isI32, SrcType.isUint] at addressOk
+  subst addressOk
+  simp only [lowerIndex] at indexOk
+  split at indexOk
+  · simp at indexOk
+  rename_i t indexLowered
+  simp only [indexOf] at indexOk
+  split at indexOk
+  case isFalse => simp at indexOk
+  rename_i kind
+  simp only [Option.some.injEq] at indexOk
+  subst indexOk
+  simp only [SrcStmt.toCore, execStmt] at run
+  split at run
+  · rename_i v st1 valueRun
+    cases fuel with
+    | zero => simp [evalExpr] at valueRun
+    | succ k =>
+      cases k with
+      | zero => simp [evalExpr] at valueRun
+      | succ k =>
+        obtain ⟨w, localRun, holdsW⟩ := corr.local found k sp.toCore
+        rw [bty] at holdsW
+        cases holdsW with
+        | @slice _ len _ _ lenSlot _ =>
+        obtain ⟨iv, pos, indexRun, posOk, read⟩ := eval_index_raw localRun valueRun
+        have lt := readRawSliceIndex_lt read
+        refine Simulates.checked (guardAnd_one (index.guard_sound corr (SrcProgram.target_toCore sp) indexLowered indexRun)
+          (indexGuard_one found (x := t.expr) (by simp [lowerIndex, indexLowered, indexOf, kind])
+            (by rw [lenSlot, index_toNat kind (index.lower_sound corr (SrcProgram.target_toCore sp) indexLowered indexRun).2 posOk]
+                exact lt))) ?_
+        obtain ⟨rfl, holdsI⟩ := index.lower_sound corr (SrcProgram.target_toCore sp) indexLowered indexRun
+        have posEq := index_toNat kind holdsI posOk
+        simp only [Semantics.readRawSliceIndex] at read
+        split at read
+        · simp at read
+        simp only [Semantics.rawSliceElementAddress?, SrcType.toCore, UintTy.toCore] at read
+        obtain ⟨elt, eltOk, read⟩ := except_bind_ok read
+        simp only [pure, Except.pure, Except.ok.injEq] at eltOk
+        subst eltOk
+        simp only [Semantics.readRawElement, Semantics.isByte, ↓reduceIte] at read
+        obtain ⟨bits, loaded, wrapped⟩ := except_bind_ok read
+        simp only [pure, Except.pure, Except.ok.injEq] at wrapped
+        subst wrapped
+        obtain ⟨rfl, inside⟩ := hc.loadNatLE loaded
+        have inside := inside (by decide)
+        have tail := tail_bound fresh.2 run bound
+        have small := hc.small
+        have address : ((Expr.binary Word.u64 BinOp.add (Expr.var b.slot) t.expr).eval env).toNat =
+            (env b.slot).toNat + pos := by
+          simp only [Expr.eval, Word.apply, BinOp.apply, BitVec.toNat_add, posEq]
+          rw [Nat.mod_eq_of_lt (by addr_omega)]
+        have room : ((Expr.binary Word.u64 BinOp.add (Expr.var b.slot) t.expr).eval env).toNat < hp.limit := by
+          rw [address]; addr_omega
+        have lt8 := (hp.bytes ((env b.slot).toNat + pos)).toNat_lt
+        obtain ⟨fresh', keeps, d, out, exec, matched⟩ := let_tail ih (ty := .uint .uint8) (st := st1)
+            (env' := env.set next (BitVec.ofNat 64 (hp.bytes
+              ((Expr.binary Word.u64 BinOp.add (Expr.var b.slot) t.expr).eval env).toNat).toNat))
+            (hp := hp) (by simpa [SrcType.size] using bodyOk) corr fr fresh le Nat.one_pos
+            (fr.agree fun j below => by simp only [Env.set]; rw [if_neg (by omega)])
+            (.uint (by
+              simp only [SrcType.Holds, Env.set, ↓reduceIte, address, BitVec.toNat_ofNat, UintTy.toCore,
+                UintTy.width, Heap.readLE]
+              exact ⟨by rw [Nat.mod_eq_of_lt (by omega)]; simp, by rw [Nat.mod_eq_of_lt (by omega)]; exact lt8⟩))
+            hc run bound
+        exact ⟨fresh', keeps, d, out, .seq (.loadByte (Nat.lt_of_lt_of_le room hc.topped)) exec, matched⟩
+  all_goals simp at run
+
+/-- `slice[index] = value` on a byte view: the value's low byte stored. -/
+theorem stmt_setIndex_u8 {slice : Nat} {index value : SrcExpr} {b : Binding} {element : SrcType}
+    (found : lookup scope slice = some b) (hElt : elementOf b.ty = some element)
+    (isU8 : element.isUint .uint8 = true)
+    (ok : storeByteElement b element (lowerIndex scope index) scope value = some stmt)
+    (corr : Corr scope frame st env) (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp)
+    (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.setIndex slice index value).toCore = .done c st')
+    (bound : st'.heap.nextAddress ≤ hp.limit) :
+    Simulates mp hp ret scope frame base st env
+      (checkThen next (guardAnd (guardAnd (index.guard scope) (indexGuard scope slice index)) (value.guard scope)) stmt)
+      c st' := by
+  have eltEq := SrcType.eq_of_isUint isU8
+  subst eltEq
+  unfold storeByteElement at ok
+  split at ok
+  · simp at ok
+  rename_i a addrOk
+  split at ok
+  · simp at ok
+  rename_i xv vOk
+  simp only [Option.some.injEq] at ok
+  subst ok
+  have bty : b.ty = .slice (.uint .uint8) := by
+    cases hty : b.ty <;> simp [elementOf, hty] at hElt
+    rw [hElt]
+  simp only [elementAddress, bty, elementOf] at addrOk
+  split at addrOk
+  · simp at addrOk
+  rename_i i indexOk
+  simp [SrcType.isI32, SrcType.isUint] at addrOk
+  subst addrOk
+  simp only [lowerIndex] at indexOk
+  split at indexOk
+  · simp at indexOk
+  rename_i t indexLowered
+  simp only [indexOf] at indexOk
+  split at indexOk
+  case isFalse => simp at indexOk
+  rename_i kind
+  simp only [Option.some.injEq] at indexOk
+  subst indexOk
+  simp only [SrcStmt.toCore, execStmt] at run
+  split at run
+  · rename_i u st1 assignRun
+    simp only [Semantics.Outcome.done.injEq] at run
+    obtain ⟨rfl, rfl⟩ := run
+    cases fuel with
+    | zero => simp [evalExpr] at assignRun
+    | succ k =>
+    cases k with
+    | zero => simp [evalExpr, Semantics.evalPlace] at assignRun
+    | succ k =>
+    cases k with
+    | zero => simp [evalExpr, Semantics.evalPlace] at assignRun
+    | succ k =>
+    obtain ⟨w, place, holdsW⟩ := corr.readPlace found k sp.toCore
+    rw [bty] at holdsW
+    cases holdsW with
+    | @slice _ len _ _ lenSlot _ =>
+    obtain ⟨iv, pos, at_, right, heap, indexRun, posOk, posLt, located, valueRun, stored, rfl⟩ :=
+      eval_setIndex_raw fresh.2 index.eval_state value.eval_state place assignRun
+    refine Simulates.checked (guardAnd_one (guardAnd_one (index.guard_sound corr (SrcProgram.target_toCore sp) indexLowered indexRun)
+      (indexGuard_one found (x := t.expr) (by simp [lowerIndex, indexLowered, indexOf, kind])
+        (by rw [lenSlot, index_toNat kind (index.lower_sound corr (SrcProgram.target_toCore sp) indexLowered indexRun).2 posOk]
+            exact posLt)))
+      (lowerAs_guard corr (SrcProgram.target_toCore sp) vOk valueRun)) ?_
+    obtain ⟨-, holdsI⟩ := index.lower_sound corr (SrcProgram.target_toCore sp) indexLowered indexRun
+    have posEq := index_toNat kind holdsI posOk
+    obtain ⟨-, holdsV⟩ := lowerAs_sound corr (SrcProgram.target_toCore sp) vOk valueRun
+    obtain ⟨rfl, bitsV⟩ := holdsV
+    simp only [UintTy.width] at bitsV
+    simp only [Semantics.rawSliceElementAddress?, SrcType.toCore, UintTy.toCore, Except.ok.injEq] at located
+    subst located
+    simp only [Semantics.writeRawNative, SrcType.toCore, UintTy.toCore, Semantics.isByte, ↓reduceIte,
+      Semantics.storeRawByte] at stored
+    obtain ⟨hc', inside⟩ := HeapCorr.storeBytesFrom _ 0 hc stored
+    have inside := inside (by simp [Semantics.encodeNatLE])
+    have same := storeBytes_next stored
+    have small := hc.small
+    simp only [Semantics.encodeNatLE, List.length_map, List.length_range, Nat.add_zero] at inside hc'
+    have address : ((Expr.binary Word.u64 BinOp.add (Expr.var b.slot) t.expr).eval env).toNat =
+        (env b.slot).toNat + pos := by
+      simp only [Expr.eval, Word.apply, BinOp.apply, BitVec.toNat_add, posEq]
+      rw [Nat.mod_eq_of_lt (by addr_omega)]
+    have room : ((Expr.binary Word.u64 BinOp.add (Expr.var b.slot) t.expr).eval env).toNat < hp.limit := by
+      rw [address]; addr_omega
+    refine ⟨fresh, ⟨fun _ _ => rfl, Nat.le_refl _⟩, 0, _, .storeByte (Nat.lt_of_lt_of_le room hc.topped),
+      .next (corr.cells_congr rfl fun _ _ => rfl) ?_⟩
+    have low : lowByte (xv.eval env) = UInt8.ofNat (xv.eval env).toNat := by
+      simp only [lowByte, BitVec.toNat_setWidth]
+      rw [Nat.mod_eq_of_lt bitsV]
+    rw [address, low]
+    simpa [List.range_succ, Heap.writeBytes, Nat.mod_eq_of_lt bitsV] using hc'
   all_goals simp at run
 
 /-! ## Struct and enum slices -/
@@ -3723,6 +3937,9 @@ theorem loadElement_sound {sp : SrcProgram} {mp : Program} {hp : Heap} {st : Sta
   have baseEval : ((elementBase bslot element.size i).eval env).toNat =
       (env bslot).toNat - pos * (8 * element.size) :=
     elementBase_eval posEq small fits
+  have nb : Semantics.isByte element.toCore = false := by
+    revert hel; cases element <;> simp [wordElement, SrcType.toCore, Semantics.isByte]
+  simp only [Semantics.readRawElement, nb, Bool.false_eq_true, ↓reduceIte] at read
   exact exec_loadType hc tail element (wordElement_wordType hel) below (Nat.zero_le _)
     ⟨_, by rw [baseEval, Nat.sub_zero]; exact read⟩
 
@@ -4179,6 +4396,9 @@ theorem stmt_setIndex_word {slice : Nat} {index value : SrcExpr} {b : Binding} {
     obtain ⟨-, holdsI⟩ := index.lower_sound corr (SrcProgram.target_toCore sp) indexLowered indexRun
     have posEq := index_toNat kind holdsI posOk
     obtain ⟨-, flat, -⟩ := lowerValue_sound corr (SrcProgram.target_toCore sp) vOk valueRun
+    have nb : Semantics.isByte element.toCore = false := by
+      revert hel; cases element <;> simp [wordElement, SrcType.toCore, Semantics.isByte]
+    simp only [Semantics.writeRawNative, nb, Bool.false_eq_true, ↓reduceIte] at stored
     obtain ⟨hp', exec, hc'⟩ := storeElement_sound (mp := mp) hc hel posEq located stored flat ok bound
     exact ⟨fresh, ⟨fun _ _ => rfl, Nat.le_refl _⟩, 0, _, exec, .next (corr.cells_congr rfl fun _ _ => rfl) hc'⟩
   all_goals simp at run
@@ -4200,8 +4420,12 @@ theorem stmt_letIndex (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {sli
   obtain ⟨stmt, ok, rfl⟩ := ok
   simp only [lowerLetIndex] at ok
   split at ok
-  · exact stmt_letIndex_i32 ih ok corr fr fresh le hc run bound
-  · exact stmt_letIndex_word ih ok corr fr fresh le hc run bound
+  · rename_i tyI32
+    exact stmt_letIndex_i32 ih tyI32 ok corr fr fresh le hc run bound
+  · split at ok
+    · rename_i isU8
+      exact stmt_letIndex_u8 ih isU8 ok corr fr fresh le hc run bound
+    · exact stmt_letIndex_word ih ok corr fr fresh le hc run bound
 
 theorem stmt_setIndex {slice : Nat} {index value : SrcExpr}
     (arrayCase : (SrcStmt.setIndexEval slice (.ePure index) (.ePure value)).lower (sigs sp.funcs) sp.decls ret
@@ -4226,11 +4450,15 @@ theorem stmt_setIndex {slice : Nat} {index value : SrcExpr}
   rename_i element hElt
   simp only [storeAny] at ok
   split at ok
-  · exact stmt_setIndex_i32 found hElt ok corr fresh hc run bound
+  · rename_i elementI32
+    exact stmt_setIndex_i32 found hElt elementI32 ok corr fresh hc run bound
   · split at ok
-    · rename_i _ hel
-      exact stmt_setIndex_word found hElt hel ok corr fresh hc run bound
-    · simp at ok
+    · rename_i _ isU8
+      exact stmt_setIndex_u8 found hElt isU8 ok corr fresh hc run bound
+    · split at ok
+      · rename_i _ _ hel
+        exact stmt_setIndex_word found hElt hel ok corr fresh hc run bound
+      · simp at ok
 
 end Statements
 

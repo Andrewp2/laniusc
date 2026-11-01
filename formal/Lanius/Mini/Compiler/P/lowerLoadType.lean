@@ -13,9 +13,11 @@ import Lanius.Mini.Compiler.P.elementBase
 import Lanius.Mini.Compiler.P.guardAnd
 import Lanius.Mini.Compiler.P.indexOf
 import Lanius.Mini.Compiler.P.loadAtBytes
+import Lanius.Mini.Compiler.P.lowerAddress
 import Lanius.Mini.Compiler.P.lowerCallSig
 import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Compiler.P.shortCircuit
+import Lanius.Mini.Compiler.P.storeWordElement
 import Lanius.Mini.Compiler.P.wordElement
 
 public section
@@ -45,7 +47,10 @@ def lowerLetIndex (decls : SrcDecls) (next : Nat) (binding : Option Binding) (ty
   if SrcType.isI32 ty then
     lowerLoadWord next (lowerElement binding ty index) body
   else
-    lowerLoadType decls next binding ty index body
+    if SrcType.isUint ty UintTy.uint8 then
+      lowerLoad next (lowerElement binding ty index) body
+    else
+      lowerLoadType decls next binding ty index body
 
 def lowerSetIndex (decls : SrcDecls) (binding : Option Binding) (index : Option Expr) (scope : List Binding) (value : SrcExpr) : Option Stmt :=
   match binding with
@@ -59,6 +64,13 @@ def evalWordElement (decls : SrcDecls) (b : Binding) (element : SrcType) (slot :
   else
     none
 
+/-- slice[index] of a byte view: the index in slot, then the byte loaded over it. -/
+def evalLoadByte (b : Binding) (slot : Nat) (i : Evaluated) : Option Evaluated :=
+  if SrcType.isI32 i.ty || SrcType.isUint i.ty UintTy.usize then
+    some ({ stmt := Stmt.seq i.stmt (checkThen slot (boundsGuard b (Expr.var slot)) (Stmt.loadByte slot (Expr.binary Word.u64 BinOp.add (Expr.var b.slot) (Expr.var slot)))), ty := SrcType.uint UintTy.uint8 } : Evaluated)
+  else
+    none
+
 /-- slice[index] of a raw slice of i32. -/
 def evalElement (decls : SrcDecls) (b : Binding) (element : SrcType) (slot : Nat) (index : Option Evaluated) : Option Evaluated :=
   if SrcType.isI32 element then
@@ -66,9 +78,14 @@ def evalElement (decls : SrcDecls) (b : Binding) (element : SrcType) (slot : Nat
     | none => none
     | some i => evalLoad b slot i
   else
-    match index with
-    | none => none
-    | some i => evalWordElement decls b element slot i
+    if SrcType.isUint element UintTy.uint8 then
+      match index with
+      | none => none
+      | some i => evalLoadByte b slot i
+    else
+      match index with
+      | none => none
+      | some i => evalWordElement decls b element slot i
 
 /-- The copy of element k of the array whose elements, size slots each, start at slot base, k the index in slot: it tests the index against k, k + 1, ..., count elements from k, the last one untested. -/
 def pickElement (slot : Nat) (base : Nat) (size : Nat) (k : Nat) (count : Nat) : Stmt :=

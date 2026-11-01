@@ -172,7 +172,7 @@ theorem mapTrySet_found_spec {mid eid : TypeId} {K V : Ty} {fi : MapFindIds}
   have nv : C.i32ArrayViews = [] := (frame2.views.trans frame.views).trans noViews
   obtain ⟨_, rightStable, _⟩ : RunsExpr P C (.structValue eid [.local 1, .local 2]) x C :=
     RunsExpr.structValue (RunsExprs.two (RunsExpr.local' c1) (RunsExpr.local' c2))
-  have assign := StableExpr.assignRaw (before := C) (indexed := C) (ready := C) (heap := h')
+  have assign := StableExpr.assignRaw (nb := kind.notByte) (before := C) (indexed := C) (ready := C) (heap := h')
     (sourceId := 4) src (StableExpr.local c3) inside' (elementAddress kind hcap) nv rightStable stored
   let D : State := { C with heap := h' }
   have body : RunsStmt P C (.sequence (.expression (.assign .set (.index (.local 4) (.local 3))

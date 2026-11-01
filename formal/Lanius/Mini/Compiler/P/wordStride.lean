@@ -42,7 +42,10 @@ def evalStrideOf (decls : SrcDecls) (element : SrcType) (slot : Nat) : Option Ev
   if SrcType.isI32 element then
     some ({ stmt := Stmt.assign slot (Expr.lit 4), ty := SrcType.isize } : Evaluated)
   else
-    evalWordStride decls element slot
+    if SrcType.isUint element UintTy.uint8 then
+      some ({ stmt := Stmt.assign slot (Expr.lit 1), ty := SrcType.isize } : Evaluated)
+    else
+      evalWordStride decls element slot
 
 def evalStride (decls : SrcDecls) (scope : List Binding) (slice : Nat) (slot : Nat) : Option Evaluated :=
   match lookup scope slice with

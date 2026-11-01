@@ -28,6 +28,7 @@ def words? : Nat → Program → Ty → Option Nat
       | .scalar .rawPtr => some 1
       | .scalar .string => some 2
       | .slice (.scalar (.signed .i32)) => some 3
+      | .slice (.scalar (.unsigned .u8)) => some 3
       | .slice (.structure id) =>
           if (program.structure? id).isSome then some 3 else none
       | .slice (.enumeration id) =>
@@ -69,11 +70,12 @@ def elementBase? (highWordPointer index words : Nat) : Option Nat :=
   else some (highWordPointer - index * words * wordBytes)
 
 /-- A raw view's signed byte stride: element i + 1 starts this many bytes
-    after element i. i32 views are packed and run forward; views of structs
-    and enums run down by their native size. -/
+    after element i. i32 and u8 views are packed and run forward (4 and 1
+    bytes); views of structs and enums run down by their native size. -/
 def elementStride? (program : Program) (element : Ty) : Option Int :=
   match element with
   | .scalar (.signed .i32) => some 4
+  | .scalar (.unsigned .u8) => some 1
   | .structure _ | .enumeration _ =>
       match valueWords? program element with
       | some words => some (-((wordBytes * words : Nat) : Int))
