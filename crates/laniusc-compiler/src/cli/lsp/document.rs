@@ -177,7 +177,9 @@ pub(super) fn formatting_edits(source: &str) -> Vec<serde_json::Value> {
 /// Type-checks one open document and returns LSP diagnostic items.
 ///
 /// This is the LSP path that may create a GPU device. It does not load source
-/// roots, compile target bytes, or inspect workspace state.
+/// roots or inspect workspace state. Like `laniusc check`, it builds and
+/// discards x86-64 output only when the frontend check finds no impl for a
+/// call bound, since only a build selects generic impls.
 pub(super) fn diagnostic_items(uri: &str, source: &str) -> Result<Vec<serde_json::Value>, String> {
     match pollster::block_on(type_check_source_with_gpu(source)) {
         Ok(()) => Ok(Vec::new()),
