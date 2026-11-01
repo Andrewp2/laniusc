@@ -79,9 +79,57 @@ def table(name: str, records: list[str], range_table=False):
     return source
 
 
+def chunked(name: str, records: list[str], fn: str) -> tuple[str, int]:
+    width = len(records[0])
+    assert all(len(row) == width for row in records)
+    per = 4000 // width
+    chunks = ["".join(records[at:at+per]) for at in range(0, len(records), per)]
+    source = f"fn {fn}(index: i32) -> [u8] {{\n" + dispatch(chunks, width, per) + "}\n"
+    return source, per
+
+
+BLOCK = 128
+
+
+def two_level(name: str, values: list[int]) -> str:
+    """stage1[cp >> 7] -> block; stage2[block * 128 + (cp & 127)] -> slot;
+    stage3[slot] -> packed value. Three fixed-width reads, no search."""
+    distinct = sorted(set(values))
+    slot = {v: i for i, v in enumerate(distinct)}
+    blocks: dict[tuple[int, ...], int] = {}
+    stage1 = []
+    for b in range(len(values) // BLOCK):
+        key = tuple(slot[v] for v in values[b * BLOCK:(b + 1) * BLOCK])
+        stage1.append(blocks.setdefault(key, len(blocks)))
+    stage2 = [x for key, _ in sorted(blocks.items(), key=lambda kv: kv[1]) for x in key]
+    w1 = len(f"{len(blocks) - 1:X}")
+    w2 = len(f"{len(distinct) - 1:X}")
+    source = NOTICE + f"// Two-level table: {len(stage1)} blocks of {BLOCK} code points, {len(blocks)} distinct\n"
+    source += f"// blocks, {len(distinct)} distinct packed values.\n"
+    source += f"module core::{name};\nimport core::mem;\nimport core::unicode_table;\n\n"
+    parts = []
+    for fn, records in [("first", [f"{x:0{w1}X}" for x in stage1]),
+                        ("second", [f"{x:0{w2}X}" for x in stage2]),
+                        ("third", [f"{x:08X}" for x in distinct])]:
+        text, per = chunked(name, records, fn)
+        source += text
+        parts.append((fn, per, len(records[0])))
+    (f1, p1, w1), (f2, p2, w2), (f3, p3, w3) = parts
+    source += ("// Precondition: value <= 0x10FFFF.\n"
+               "pub fn packed(value: u32) -> u32 {\n"
+               "    let block: i32 = (value >> 7) as i32;\n"
+               f"    let base: u32 = core::unicode_table::hex({f1}(block), (block % {p1}) * {w1}, {w1});\n"
+               "    let index: i32 = ((base << 7) + (value & 127)) as i32;\n"
+               f"    let slot: i32 = core::unicode_table::hex({f2}(index), (index % {p2}) * {w2}, {w2}) as i32;\n"
+               f"    return core::unicode_table::hex({f3}(slot), (slot % {p3}) * {w3}, {w3});\n"
+               "}\n")
+    return source
+
+
 def generate(data: Path):
     size = 0x110000
-    # bits: category[0:5], CCC[5:13], binary flags[13:22], decimal[22:26].
+    # bits: category[0:5], CCC[5:13], binary flags[13:22], decimal[22:26],
+    # mapping presence[26:29] (set below).
     values = [10 << 22] * size
     casing = {}
     for first, last, row in unicode_rows(data):
@@ -126,12 +174,19 @@ def generate(data: Path):
             folds[cp] = mapped
         if status == "T":
             turkic[cp] = mapped
-    properties = [f"{cp:06X}{value:07X}" for cp, value in enumerate(values) if cp == 0 or value != values[cp-1]]
+    # Presence bits let mapping queries skip their point-table searches:
+    # 26 simple mapping/C+S fold record, 27 C+F fold record, 28 Turkic record.
+    for cp in casing:
+        values[cp] |= 1 << 26
+    for cp in folds:
+        values[cp] |= 1 << 27
+    for cp in turkic:
+        values[cp] |= 1 << 28
     scalar = [f"{cp:06X}" + "".join(f"{v:06X}" for v in mapped) for cp, mapped in sorted(casing.items())]
     def fold_records(mapping):
         return [f"{cp:06X}{len(mapped):X}" + "".join(f"{v:06X}" for v in mapped + [0]*(3-len(mapped))) for cp, mapped in sorted(mapping.items())]
     return {
-        "unicode_properties_data.lani": table("unicode_properties_data", properties, True),
+        "unicode_properties_data.lani": two_level("unicode_properties_data", values),
         "unicode_case_data.lani": table("unicode_case_data", scalar),
         "unicode_fold_data.lani": table("unicode_fold_data", fold_records(folds)),
         "unicode_turkic_data.lani": table("unicode_turkic_data", fold_records(turkic)),
