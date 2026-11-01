@@ -5,7 +5,8 @@ documented policy requires: input must decode as strict UTF-8, NaN/Infinity
 are rejected, and any decoded lone surrogate rejects the document. Numbers
 keep their source spelling and objects keep ordered duplicate pairs.
 
-usage: oracle.py GROUP EXECUTABLE   (GROUP: suite, generated, mutations, paths, chunks, errors)
+usage: oracle.py GROUP EXECUTABLE   (GROUP: suite, generated, mutations, paths, chunks, errors,
+                                     bytewise and writer take json_stream_contracts)
 """
 import json
 import random
@@ -409,6 +410,44 @@ def main():
                 tally.agree += 1
             else:
                 tally.failures.append((data[:40], want, code, out, err))
+    elif group == 'bytewise':
+        # EXECUTABLE is tests/fixtures/extended/json_stream_contracts.lani:
+        # one byte per feed, every token copied through the writer.
+        inputs = [(n, d) for n, d in SUITE] + [('gen%d' % i, rand_doc(rng)) for i in range(150)]
+        inputs += [('mut%d' % i, mutate(rng, rand_doc(rng))) for i in range(150)]
+        for name, data in inputs:
+            try:
+                want = (render(reference(data)) + '\n').encode('utf-8')
+            except (ValueError, RecursionError):
+                want = None
+            proc = subprocess.run([exe], input=data, capture_output=True, timeout=20)
+            tally.cases += 1
+            if want is None:
+                tally.rejected += 1
+                ok = proc.returncode == 2 and proc.stdout.startswith(b'error ')
+            else:
+                tally.accepted += 1
+                ok = proc.returncode == 0 and proc.stdout == want
+            if ok:
+                tally.agree += 1
+            else:
+                tally.failures.append((name, data[:80], want, proc.returncode, proc.stdout[:120]))
+        for data, kind, offset in ERRORS:
+            proc = subprocess.run([exe], input=data, capture_output=True, timeout=20)
+            tally.cases += 1
+            tally.rejected += 1
+            if proc.returncode == 2 and proc.stdout == ('error %s %d\n' % (kind, offset)).encode():
+                tally.agree += 1
+            else:
+                tally.failures.append((data[:40], kind, offset, proc.returncode, proc.stdout))
+    elif group == 'writer':
+        proc = subprocess.run([exe, 'writer'], capture_output=True, timeout=20)
+        want = b'{"a\\"b":[-0.5e+3,true,null]}\n"\\u0001\\u000a\x7f"\nwriter ok\n'
+        tally.cases += 1
+        if proc.returncode == 0 and proc.stdout == want:
+            tally.agree += 1
+        else:
+            tally.failures.append(('writer', want, proc.returncode, proc.stdout))
     else:
         raise SystemExit('unknown group ' + group)
     return tally.finish()
