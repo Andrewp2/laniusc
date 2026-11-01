@@ -1,0 +1,149 @@
+// Seeded operation histories on alloc::hash_map, checked by oracle.py against
+// a Python dict. stdout is a stream of little-endian u64 words: one result
+// per operation and the observations of each checkpoint. Profiles are
+// deletion-heavy: small-key churn, grow/drain/regrow, and keys whose hashes
+// all collide or fall into seven classes, so groups fill and tombstones form.
+module app::main;
+import alloc::allocator;
+import alloc::hash_map;
+import core::cmp;
+import core::hash;
+import core::mem;
+import core::option;
+import core::result;
+import std::io;
+
+struct Out { storage: ptr, used: i32 }
+impl Out {
+    fn borrow(&self) -> &Out { return self; }
+    fn flush(&self) {
+        if (self.used > 0) { assert(std::io::write_stdout(self.storage, self.used as usize) == self.used); }
+        self.used = 0;
+    }
+    fn word(&self, value: u64) {
+        if (self.used + 8 > 4096) { self.flush(); }
+        let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(self.storage, 4096);
+        let i: i32 = 0; let v: u64 = value;
+        while (i < 8) { bytes[self.used + i] = (v & 255) as u8; v = v >> 8; i += 1; }
+        self.used += 8;
+    }
+}
+
+// A key whose hash is its value modulo `classes`: few classes, many collisions.
+struct Coll { v: u64, classes: u64 }
+pub impl core::hash::Hash<Coll> for Coll {
+    pub fn hash(value: Coll) -> u32 { return (value.v % value.classes) as u32; }
+}
+pub impl core::cmp::Eq<Coll> for Coll {
+    pub fn eq(left: Coll, right: Coll) -> bool { return left.v == right.v; }
+    pub fn ne(left: Coll, right: Coll) -> bool { return left.v != right.v; }
+}
+trait Word<T> {
+    fn make(base: u64, classes: u64) -> T;
+    fn word(value: T) -> u64;
+}
+impl Word<u64> for u64 {
+    fn make(base: u64, classes: u64) -> u64 { return base * 11400714819323198485 + 1; }
+    fn word(value: u64) -> u64 { return value; }
+}
+impl Word<Coll> for Coll {
+    fn make(base: u64, classes: u64) -> Coll { return Coll { v: base, classes: classes }; }
+    fn word(value: Coll) -> u64 { return value.v; }
+}
+
+struct Rng { state: u64 }
+impl Rng {
+    fn borrow(&self) -> &Rng { return self; }
+    fn next(&self) -> u64 {
+        self.state = self.state * 6364136223846793005 + 1442695040888963407;
+        return self.state >> 33;
+    }
+}
+
+fn digest_word(key: u64, value: u64) -> u64 { return (key * 11400714819323198485) ^ value; }
+fn digest<K>(map: &alloc::hash_map::HashMap<K, u64>) -> u64 where K: Word<K> {
+    let cursor: alloc::hash_map::Iter<K, u64> = map.iter();
+    let sum: u64 = 0; let count: i32 = 0;
+    while (true) {
+        let next: core::option::Option<alloc::hash_map::Entry<K, u64>> = cursor.next();
+        if (next.is_none()) { break; }
+        let entry: alloc::hash_map::Entry<K, u64> = next.unwrap();
+        sum += digest_word(K::word(entry.key), entry.value); count += 1;
+    }
+    assert(count == map.len());
+    return sum;
+}
+fn present(found: core::option::Option<u64>) -> u64 {
+    if (found.is_none()) { return 0; }
+    return found.unwrap() + 1;
+}
+fn removed<K>(found: core::option::Option<alloc::hash_map::Entry<K, u64>>) -> u64 {
+    if (found.is_none()) { return 0; }
+    return found.unwrap().value + 1;
+}
+
+// Each operation draws r, then op = r % 100 against cumulative percentages.
+// The mix changes per third: insert-heavy, remove-heavy, then the given mix.
+fn run<K>(out: &Out, seed: u64, ops: i32, keys: u64, classes: u64, insert: u64, remove: u64)
+    where K: core::hash::Hash<K>, K: core::cmp::Eq<K>, K: Word<K> {
+    let rng: Rng = Rng { state: seed };
+    let map: alloc::hash_map::HashMap<K, u64> = alloc::hash_map::new<K, u64>();
+    let i: i32 = 0;
+    while (i < ops) {
+        let r: u64 = rng.next();
+        let op: u64 = r % 100;
+        let key: K = K::make((r >> 8) % keys, classes);
+        let value: u64 = rng.next();
+        let ins: u64 = insert; let rem: u64 = remove;
+        if (i < ops / 3) { ins = 80; rem = 5; }
+        if (i >= ops / 3 && i < 2 * (ops / 3)) { ins = 10; rem = 80; }
+        if (op < ins) {
+            let previous = map.try_insert(key, value).unwrap();
+            out.word(removed<K>(previous));
+        }
+        if (op >= ins && op < ins + rem) { out.word(removed<K>(map.remove(key))); }
+        if (op >= ins + rem) {
+            out.word(present(map.get(key)));
+            if (map.get_entry(key).is_some()) { out.word(1); } else { out.word(0); }
+        }
+        assert(map.capacity() >= map.len() && map.occupied >= map.length && map.occupied <= map.capacity());
+        if (i % 997 == 0) { out.word(map.len() as u64); out.word(digest<K>(map.borrow())); }
+        if (i % 4999 == 4998) {
+            assert(map.try_shrink_to_fit().is_ok()); assert(map.occupied == map.length);
+            out.word(digest<K>(map.borrow()));
+        }
+        if (i % 7919 == 7918) {
+            let copy: alloc::hash_map::HashMap<K, u64> = map.try_clone().unwrap();
+            assert(copy.len() == map.len()); out.word(digest<K>(copy.borrow())); copy.destroy();
+        }
+        if (i % 6007 == 6006) {
+            // Consume up to 64 entries in table order, then keep the rest.
+            let cursor: alloc::hash_map::IntoIter<K, u64> = map.take_iter();
+            let taken: u64 = 0;
+            while (taken < 64 && !cursor.is_empty()) {
+                let entry: alloc::hash_map::Entry<K, u64> = cursor.next().unwrap();
+                out.word(K::word(entry.key)); out.word(entry.value); taken += 1;
+            }
+            out.word(18446744073709551615);
+            map = cursor.take_remaining();
+            out.word(map.len() as u64);
+        }
+        if (i % 25013 == 25012) { map.clear(); out.word(map.len() as u64); }
+        i += 1;
+    }
+    out.word(map.len() as u64); out.word(digest<K>(map.borrow()));
+    map.destroy();
+}
+
+fn main() -> i32 {
+    let base: ptr = alloc::allocator::alloc(4096, 8);
+    let out: Out = Out { storage: base, used: 0 };
+    run<u64>(out.borrow(), 1, 60000, 3000, 1, 35, 45);
+    run<u64>(out.borrow(), 2, 90000, 60000, 1, 40, 40);
+    run<Coll>(out.borrow(), 3, 9000, 300, 1, 35, 45);
+    run<Coll>(out.borrow(), 4, 30000, 2000, 7, 35, 45);
+    run<Coll>(out.borrow(), 5, 30000, 20000, 1048576, 30, 50);
+    out.flush();
+    alloc::allocator::dealloc(base, 4096, 8);
+    return 0;
+}

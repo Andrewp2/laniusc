@@ -1,0 +1,212 @@
+// Runner for the std::par model oracle (par_oracle.py) and benchmark.
+// stdin: u32 mode, u32 workers, u32 n, then n i64 keys (little endian).
+// Modes: 0 std::par::sort_unstable, 1 std::par::sort_stable on (key, index),
+// 2 core::slice::sort_unstable, 3 core::slice::sort_stable on (key, index),
+// 4 std::par::map (key >> 1) ^ 21845, 5 std::par::reduce (wrapping sum,
+// ordered polynomial hash), 6 std::parallel::merge_sort (fork per round),
+// 7 std::par::scan wrapping u64 prefix sum, 8 std::par::scan composing affine
+// maps x -> a*x + b mod P (a = key mod P, b = (key >> 20) mod P; not
+// commutative), 9 a sequential wrapping u64 prefix sum. The scan modes use a
+// 997-element grain, so small inputs still split into many tasks.
+// stdout: the n result keys as i64, then for modes 1 and 3 the n original
+// indices as u32; mode 5 writes sum, hash and scale as three u64; mode 8
+// writes the n prefix maps as (a, b) u64 pairs.
+// stderr: "ms <milliseconds of the operation alone>".
+module app::main;
+import alloc::allocator;
+import core::cmp;
+import core::function;
+import core::iter;
+import core::mem;
+import core::result;
+import core::slice;
+import std::io;
+import std::par;
+import std::parallel;
+import std::sync;
+
+const P: u64 = 1000000007;
+const B: u64 = 131;
+
+struct Item { key: i64, index: i32 }
+pub impl core::cmp::Ord<Item> for Item {
+    pub fn lt(left: Item, right: Item) -> bool { return left.key < right.key; }
+    pub fn le(left: Item, right: Item) -> bool { return left.key <= right.key; }
+    pub fn gt(left: Item, right: Item) -> bool { return left.key > right.key; }
+    pub fn ge(left: Item, right: Item) -> bool { return left.key >= right.key; }
+}
+struct Mix {}
+impl Mix { pub fn borrow(&self) -> &Mix { return self; } }
+pub impl core::function::Mapper<i64, i64> for Mix { pub fn apply(&self, value: i64) -> i64 { return (value >> 1) ^ 21845; } }
+struct Acc { sum: u64, hash: u64, scale: u64 }
+struct Sum {}
+impl Sum { pub fn borrow(&self) -> &Sum { return self; } }
+pub impl core::iter::Folder<u64, u64> for Sum { pub fn apply(&self, acc: u64, value: u64) -> u64 { return acc + value; } }
+// first then next: x -> next.a * (first.a * x + first.b) + next.b.
+struct Affine { a: u64, b: u64 }
+struct Compose {}
+impl Compose { pub fn borrow(&self) -> &Compose { return self; } }
+pub impl core::iter::Folder<Affine, Affine> for Compose {
+    pub fn apply(&self, first: Affine, next: Affine) -> Affine { return Affine { a: (next.a * first.a) % P, b: (next.a * first.b + next.b) % P }; }
+}
+struct Fold {}
+impl Fold { pub fn borrow(&self) -> &Fold { return self; } }
+pub impl core::iter::Folder<Acc, i64> for Fold {
+    pub fn apply(&self, acc: Acc, value: i64) -> Acc {
+        let v: u64 = value as u64;
+        return Acc { sum: acc.sum + v, hash: (acc.hash * B + v % P) % P, scale: (acc.scale * B) % P };
+    }
+}
+struct Join {}
+impl Join { pub fn borrow(&self) -> &Join { return self; } }
+pub impl core::iter::Folder<Acc, Acc> for Join {
+    pub fn apply(&self, acc: Acc, next: Acc) -> Acc {
+        return Acc { sum: acc.sum + next.sum, hash: (acc.hash * next.scale + next.hash) % P, scale: (acc.scale * next.scale) % P };
+    }
+}
+
+fn u32_at(bytes: [u8], at: i32) -> i32 {
+    return (bytes[at] as i32) | ((bytes[at + 1] as i32) << 8) | ((bytes[at + 2] as i32) << 16) | ((bytes[at + 3] as i32) << 24);
+}
+fn i64_at(bytes: [u8], at: i32) -> i64 {
+    let value: u64 = 0; let k: i32 = 7;
+    while (k >= 0) { value = (value << 8) | (bytes[at + k] as u64); k -= 1; }
+    return value as i64;
+}
+fn put64(bytes: [u8], at: i32, value: u64) {
+    let k: i32 = 0; let v: u64 = value;
+    while (k < 8) { bytes[at + k] = (v & 255) as u8; v = v >> 8; k += 1; }
+}
+fn put32(bytes: [u8], at: i32, value: i32) {
+    bytes[at] = (value & 255) as u8; bytes[at + 1] = ((value >> 8) & 255) as u8;
+    bytes[at + 2] = ((value >> 16) & 255) as u8; bytes[at + 3] = ((value >> 24) & 255) as u8;
+}
+fn emit(data: ptr, length: i32) -> i32 {
+    let at: i32 = 0;
+    while (at < length) {
+        let wrote: i32 = std::io::write_stdout(data + (at as usize), (length - at) as usize);
+        if (wrote <= 0) { return 1; }
+        at += wrote;
+    }
+    return 0;
+}
+fn millis() -> i64 {
+    let now: std::sync::Deadline = std::sync::now().unwrap();
+    return now.seconds * 1000 + now.nanos / 1000000;
+}
+
+fn main() -> i32 {
+    let header: ptr = alloc::allocator::alloc(16, 8);
+    let head: [u8] = core::mem::typed_slice_from_raw_parts<u8>(header, 12);
+    let got: i32 = 0;
+    while (got < 12) {
+        let r: i32 = std::io::read_stdin(header + (got as usize), (12 - got) as usize);
+        if (r <= 0) { return 2; }
+        got += r;
+    }
+    let mode: i32 = u32_at(head, 0); let workers: i32 = u32_at(head, 4); let n: i32 = u32_at(head, 8);
+    let bytes_in: i32 = n * 8;
+    let raw: ptr = alloc::allocator::alloc((bytes_in + 64) as usize, 8);
+    got = 0;
+    while (got < bytes_in) {
+        let r: i32 = std::io::read_stdin(raw + (got as usize), (bytes_in - got) as usize);
+        if (r <= 0) { return 2; }
+        got += r;
+    }
+    let input: [u8] = core::mem::typed_slice_from_raw_parts<u8>(raw, bytes_in);
+    let region: std::sync::Region = std::sync::map_shared(((n as usize) + 64) * 48 + 16777216).unwrap();
+    let out_bytes: i32 = n * 16 + 24;
+    let out: ptr = alloc::allocator::alloc((out_bytes + 64) as usize, 8);
+    let output: [u8] = core::mem::typed_slice_from_raw_parts<u8>(out, out_bytes);
+    if (mode < 0 || mode > 9) { return 4; }
+    let started: i64 = 0; let elapsed: i64 = 0; let i: i32 = 0;
+    let plan: std::par::Plan = std::par::plan(region.borrow(), workers, 65536).unwrap();
+    if (mode == 1 || mode == 3) {
+        let items: std::parallel::Shared<Item> = std::parallel::shared<Item>(region.borrow(), n).unwrap();
+        let spare: std::parallel::Shared<Item> = std::parallel::shared<Item>(region.borrow(), n).unwrap();
+        let values: [Item] = items.view();
+        while (i < n) { values[i] = Item { key: i64_at(input, i * 8), index: i }; i += 1; }
+        started = millis();
+        if (mode == 1) { if (std::par::sort_stable(plan, items, spare).is_err()) { return 3; } }
+        else {
+            let view: core::slice::View<Item> = core::slice::view(values, n).unwrap();
+            let scratch: core::slice::View<Item> = core::slice::view(spare.view(), n).unwrap();
+            if (core::slice::sort_stable(view, scratch).is_err()) { return 3; }
+        }
+        elapsed = millis() - started;
+        i = 0;
+        while (i < n) { put64(output, i * 8, values[i].key as u64); put32(output, n * 8 + i * 4, values[i].index); i += 1; }
+        out_bytes = n * 12;
+    }
+    if (mode == 5) {
+        let keys: std::parallel::Shared<i64> = std::parallel::shared<i64>(region.borrow(), n).unwrap();
+        let partials: std::parallel::Shared<Acc> = std::parallel::shared<Acc>(region.borrow(), workers * 512 + 2).unwrap();
+        let values: [i64] = keys.view();
+        while (i < n) { values[i] = i64_at(input, i * 8); i += 1; }
+        let fold: Fold = Fold {}; let join: Join = Join {};
+        started = millis();
+        let total: core::result::Result<Acc, std::par::Error> = std::par::reduce(plan, keys, partials, Acc { sum: 0, hash: 0, scale: 1 }, fold.borrow(), join.borrow());
+        elapsed = millis() - started;
+        if (total.is_err()) { return 3; }
+        let acc: Acc = total.unwrap();
+        put64(output, 0, acc.sum); put64(output, 8, acc.hash); put64(output, 16, acc.scale);
+        out_bytes = 24;
+    }
+    if (mode == 0 || mode == 2 || mode == 4 || mode == 6) {
+        let keys: std::parallel::Shared<i64> = std::parallel::shared<i64>(region.borrow(), n).unwrap();
+        let spare: std::parallel::Shared<i64> = std::parallel::shared<i64>(region.borrow(), n).unwrap();
+        let values: [i64] = keys.view();
+        while (i < n) { values[i] = i64_at(input, i * 8); i += 1; }
+        let result: [i64] = values;
+        started = millis();
+        if (mode == 0) { if (std::par::sort_unstable(plan, keys, spare).is_err()) { return 3; } }
+        if (mode == 2) { if (core::slice::sort_unstable(core::slice::view(values, n).unwrap()).is_err()) { return 3; } }
+        if (mode == 4) {
+            let mix: Mix = Mix {};
+            if (std::par::map(plan, keys, spare, mix.borrow()).is_err()) { return 3; }
+            result = spare.view();
+        }
+        if (mode == 6) {
+            let old: std::parallel::Plan = std::parallel::plan(region.borrow(), workers, 65536, std::sync::token(region.borrow()).unwrap()).unwrap();
+            if (std::parallel::merge_sort(old, keys, spare).is_err()) { return 3; }
+        }
+        elapsed = millis() - started;
+        i = 0;
+        while (i < n) { put64(output, i * 8, result[i] as u64); i += 1; }
+        out_bytes = n * 8;
+    }
+    if (mode == 7 || mode == 9) {
+        let sums: std::parallel::Shared<u64> = std::parallel::shared<u64>(region.borrow(), n).unwrap();
+        let partials: std::parallel::Shared<u64> = std::parallel::shared<u64>(region.borrow(), n / 997 + 2).unwrap();
+        let values: [u64] = sums.view();
+        while (i < n) { values[i] = i64_at(input, i * 8) as u64; i += 1; }
+        let scan_plan: std::par::Plan = std::par::plan(region.borrow(), workers, 997).unwrap();
+        let sum: Sum = Sum {};
+        started = millis();
+        if (mode == 7) { if (std::par::scan(scan_plan, sums, partials, 0, sum.borrow()).is_err()) { return 3; } }
+        else { let acc: u64 = 0; i = 0; while (i < n) { acc = acc + values[i]; values[i] = acc; i += 1; } }
+        elapsed = millis() - started;
+        i = 0;
+        while (i < n) { put64(output, i * 8, values[i]); i += 1; }
+        out_bytes = n * 8;
+    }
+    if (mode == 8) {
+        let maps: std::parallel::Shared<Affine> = std::parallel::shared<Affine>(region.borrow(), n).unwrap();
+        let partials: std::parallel::Shared<Affine> = std::parallel::shared<Affine>(region.borrow(), n / 997 + 2).unwrap();
+        let values: [Affine] = maps.view();
+        while (i < n) {
+            let key: u64 = i64_at(input, i * 8) as u64;
+            values[i] = Affine { a: key % P, b: (key >> 20) % P }; i += 1;
+        }
+        let scan_plan: std::par::Plan = std::par::plan(region.borrow(), workers, 997).unwrap();
+        let compose: Compose = Compose {};
+        started = millis();
+        if (std::par::scan(scan_plan, maps, partials, Affine { a: 1, b: 0 }, compose.borrow()).is_err()) { return 3; }
+        elapsed = millis() - started;
+        i = 0;
+        while (i < n) { put64(output, i * 16, values[i].a); put64(output, i * 16 + 8, values[i].b); i += 1; }
+        out_bytes = n * 16;
+    }
+    std::io::write_text(2, "ms "); std::io::write_i32(2, elapsed as i32); std::io::write_newline(2);
+    return emit(out, out_bytes);
+}

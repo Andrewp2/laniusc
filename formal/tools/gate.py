@@ -89,7 +89,8 @@ STEPS = [
     ('extract', ['lani_extract.py', '--check', '--work', '{w}'], ['extract', 'lani', 'extended', 'laniusc', 'stdlib'], True),
     # F12: Gen/'s self program is the front end's reading of the current self source text.
     # (it reads srcDump's output, the self sources' trees and Gen/ itself)
-    ('self-current', ['faithful_current.py', '{w}'], ['src_dump', 'gen', 'lani', 'laniusc', 'stdlib'], True),
+    # It also reruns term_gen.lean on the program and compares Gen/SelfTerm*.lean.
+    ('self-current', ['faithful_current.py', '{w}'], ['src_dump', 'gen', 'term', 'lani', 'laniusc', 'stdlib'], True),
     # F13: the top theorems' axioms are the standard three, and each statement is the one TRUSTED_BASE.md lists.
     ('trusted', ['trusted_check.py', '{w}'], ['trusted'], True),
     # The full tier: larger counts and the rest.
@@ -144,6 +145,9 @@ def inputs():
         'float_test': run_cache.file_digest(os.path.join(run_cache.FORMAL, '.lake/build/bin/floatTest')),
         'src_dump': run_cache.file_digest(os.path.join(run_cache.FORMAL, '.lake/build/bin/srcDump')),
         'gen': run_cache.tree_digest(os.path.join(run_cache.FORMAL, 'Lanius/Faithful/Gen')),
+        # What term_gen.lean's output depends on beside Gen/: itself and the check.
+        'term': run_cache.file_digest(os.path.join(run_cache.FORMAL, 'tools/term_gen.lean'))
+        + run_cache.file_digest(os.path.join(run_cache.FORMAL, 'Lanius/Faithful/Sim/Term.lean')),
         'x86_model': run_cache.file_digest(os.path.join(run_cache.FORMAL, '.lake/build/bin/x86ModelTest')),
         'extract': run_cache.file_digest(os.path.join(run_cache.FORMAL, '.lake/build/bin/extract'))
         + run_cache.tree_digest(os.path.join(run_cache.FORMAL, 'Lanius')),

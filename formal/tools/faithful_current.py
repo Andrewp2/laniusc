@@ -12,7 +12,11 @@ pipeline does, under WORKDIR: the files (the driver and the module closure of
 `lake exe srcDump` through faithful_dump.py, then faithful_certs.py and
 faithful_pure.py, and fails unless every generated file is as checked in.
 The one line allowed to differ is the dump's header line naming the files'
-paths. Run from the repository root; `srcDump` must be built (gate.build).
+paths. Then, with that program current, it builds `Lanius.Faithful.Gen.SelfProg`
+and has term_gen.lean write the termination modules (`Gen/SelfTerm*.lean`)
+for TERM_ROOTS, which must be as checked in too: a regeneration of the
+certificates must regenerate them. Run from the repository root; `srcDump`
+must be built (gate.build).
 """
 
 import os
@@ -28,6 +32,23 @@ import stdlib_oracle  # noqa: E402
 GEN = os.path.join(TOOLS, '..', 'Lanius', 'Faithful', 'Gen')
 NS = 'Lanius.Faithful.Self'
 ROOTS = ['front_end_words', 'grammar', 'compile_words']
+# The functions whose pure calls `Gen/SelfTerm.lean` proves settle.
+TERM_ROOTS = ROOTS + ['lex_source', 'validate_files']
+FORMAL = os.path.join(TOOLS, '..')
+
+
+def term_modules(out):
+    """Write the termination modules term_gen.lean makes of the built program to out."""
+    import run_cache
+    env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
+    scope = ['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryMax=4G', '-p',
+             'MemorySwapMax=0']
+    with run_cache.lean_lock():
+        for argv in (['lake', 'build', 'Lanius.Faithful.Sim.Term', 'Lanius.Faithful.Gen.SelfProg'],
+                     ['lake', 'env', 'lean', '--run', 'tools/term_gen.lean', '--out', out] + TERM_ROOTS):
+            run = subprocess.run(scope + argv, cwd=FORMAL, env=env, capture_output=True, text=True)
+            if run.returncode != 0:
+                raise SystemExit(f'{" ".join(argv[:3])} failed:\n' + run.stdout[-3000:] + run.stderr[-3000:])
 
 
 def self_files(workdir, laniusc):
@@ -84,7 +105,21 @@ def main():
               + (f' and {len(differ) - 10} more' if len(differ) > 10 else '')
               + '; regenerate the certificates (target/claude-work/l2/pipeline.sh)')
         return 1
-    print(f'{len(bases)} files, {len(want)} generated files as checked in')
+    term = os.path.join(workdir, 'term')
+    shutil.rmtree(term, ignore_errors=True)
+    os.makedirs(term)
+    term_modules(term)
+    made = sorted(os.listdir(term))
+    have = sorted(n for n in os.listdir(GEN) if n.startswith('SelfTerm'))
+    differ = sorted(set(have) ^ set(made))
+    differ += [n for n in sorted(set(have) & set(made))
+               if open(os.path.join(GEN, n)).read() != open(os.path.join(term, n)).read()]
+    if differ:
+        print(f'Gen/SelfTerm*.lean is not what term_gen.lean makes of the program: {", ".join(differ[:10])}'
+              + '; rerun it (cd formal && lake env lean --run tools/term_gen.lean '
+              + ' '.join(TERM_ROOTS) + ')')
+        return 1
+    print(f'{len(bases)} files, {len(want)} generated files as checked in, {len(made)} of them termination modules')
     return 0
 
 

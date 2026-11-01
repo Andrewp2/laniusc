@@ -50,7 +50,8 @@ because these whole-buffer facades do not return the retained bit/block state.
 These two caller-buffer functions decode complete input without returning
 incremental state. Their shared engine also serves the separate borrowed
 `Decoder`; use that API when calls must resume. The whole-buffer history is
-the caller's output and its tables use 707 local i32 entries, with no separate
+the caller's output and its tables use 8,643 local i32 entries (including the
+[fast-path tables](extended-streaming-inflate.md#table-driven-fast-path)), with no separate
 32 KiB ring allocation. Preset dictionaries remain unsupported. Raw DEFLATE supplies no checksum or
 uncompressed length; container code must validate its own metadata and
 checksums. An invalid source can leave a correctly bounded output prefix.

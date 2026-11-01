@@ -190,3 +190,74 @@ fn parallel_grep_matches_fixed_string_grep() {
         assert_eq!(output.stdout, expected, "{pattern:?}");
     }
 }
+
+// std::par sorts, map, reduce and scan against a Rust model of the same modes
+// (par_oracle.py runs the larger randomized sweep against Python).
+#[test]
+fn par_sorts_map_reduce_and_scan_match_a_model() {
+    let program = native("tests/fixtures/stdlib_execution/concurrency/par_sort.lani", "par_sort");
+    let mut state: u64 = 11;
+    let mut shapes: Vec<Vec<i64>> = Vec::new();
+    let random: Vec<i64> = (0..150_000)
+        .map(|_| { state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407); state as i64 })
+        .collect();
+    shapes.push(random.clone());
+    shapes.push(random.iter().map(|v| v.rem_euclid(5)).collect());
+    shapes.push(vec![42; 70_001]);
+    shapes.push((0..90_000).collect());
+    shapes.push((0..90_000).rev().collect());
+    shapes.push(vec![]);
+    shapes.push(vec![-1]);
+    for keys in &shapes {
+        for (mode, workers) in [(0u32, 7u32), (1, 8), (2, 1), (3, 1), (4, 3), (5, 8), (6, 4), (7, 5), (8, 8), (9, 1)] {
+            let mut input = Vec::new();
+            for word in [mode, workers, keys.len() as u32] { input.extend_from_slice(&word.to_le_bytes()); }
+            for key in keys { input.extend_from_slice(&key.to_le_bytes()); }
+            let path = common::TempArtifact::new("laniusc_concurrency", "par_input", Some("bin"));
+            fs::write(path.path(), &input).unwrap();
+            let mut command = Command::new(program.path());
+            command.stdin(fs::File::open(path.path()).unwrap());
+            let output = common::process_output_with_timeout("par sort", &mut command, Duration::from_secs(60));
+            assert_eq!(output.status.code(), Some(0), "mode {mode}");
+            let mut expected = Vec::new();
+            match mode {
+                0 | 2 | 6 => {
+                    let mut sorted = keys.clone();
+                    sorted.sort();
+                    for key in sorted { expected.extend_from_slice(&key.to_le_bytes()); }
+                }
+                1 | 3 => {
+                    let mut order: Vec<u32> = (0..keys.len() as u32).collect();
+                    order.sort_by_key(|&i| keys[i as usize]);
+                    for &i in &order { expected.extend_from_slice(&keys[i as usize].to_le_bytes()); }
+                    for &i in &order { expected.extend_from_slice(&i.to_le_bytes()); }
+                }
+                4 => for key in keys { expected.extend_from_slice(&((key >> 1) ^ 21845).to_le_bytes()); },
+                7 | 9 => {
+                    let mut acc = 0u64;
+                    for &key in keys { acc = acc.wrapping_add(key as u64); expected.extend_from_slice(&acc.to_le_bytes()); }
+                }
+                8 => {
+                    let (mut a, mut b) = (1u64, 0u64);
+                    for &key in keys {
+                        let (ka, kb) = ((key as u64) % 1_000_000_007, ((key as u64) >> 20) % 1_000_000_007);
+                        (a, b) = (ka * a % 1_000_000_007, (ka * b + kb) % 1_000_000_007);
+                        expected.extend_from_slice(&a.to_le_bytes());
+                        expected.extend_from_slice(&b.to_le_bytes());
+                    }
+                }
+                _ => {
+                    let (mut sum, mut hash, mut scale) = (0u64, 0u64, 1u64);
+                    for &key in keys {
+                        let v = key as u64;
+                        sum = sum.wrapping_add(v);
+                        hash = (hash * 131 + v % 1_000_000_007) % 1_000_000_007;
+                        scale = scale * 131 % 1_000_000_007;
+                    }
+                    for word in [sum, hash, scale] { expected.extend_from_slice(&word.to_le_bytes()); }
+                }
+            }
+            assert!(output.stdout == expected, "mode {mode} workers {workers} n {}", keys.len());
+        }
+    }
+}

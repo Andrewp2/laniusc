@@ -46,6 +46,12 @@ work on native Linux x86_64/glibc with libatomic:
   cleanly.
 - `std::parallel`: chunked `for_each`, `map`, ordered `reduce`, `scan` and
   stable `merge_sort` over shared arrays.
+- `std::par`: stable and unstable sorts, `map`, ordered `reduce` and
+  `scan` as stolen tasks on a `std::steal` pool. The sorts sort runs with
+  `core::slice` pdqsort or the stable sort, then merge them in parallel at
+  merge-path splits. A Python model oracle covers 3,600 runs with 0
+  mismatches, including non-commutative scans. On 10M i64 keys, 8 workers take 1.1–1.7 s, against 7.1–9.2 s
+  for single-threaded pdqsort.
 
 The stress fixture keeps exact invariants: 1,600,000 atomic adds; 400,000
 locked increments; 1 initializer among 16 racers; 200 barrier leaders; and
@@ -227,7 +233,10 @@ above, with its own evidence and remaining broader slice scope.
 The preceding
 [resumable decompression increment](extended-streaming-inflate.md) preserves
 DEFLATE bits, tables, history and pending output across chunks; zlib/gzip framing
-and owned decoding use the same engine. An atomic file decompressor validates
+and owned decoding use the same engine. Its
+[table-driven fast path](extended-streaming-inflate.md#table-driven-fast-path)
+(10-bit primary tables with subtables, a 64-bit bit buffer, word-wide copies)
+decodes gzip at 83–91 MB/s against 6–7 MB/s before. An atomic file decompressor validates
 complete input before publication. Fixed workspace, provisional output and
 per-call final-input promises are explicit. All seven new library tests pass,
 including 1,925 model cases plus 311 reset passes, fixed backing at 2 MiB and
@@ -560,7 +569,12 @@ GNU-style offset/fuzz and typed per-hunk rejects. Across 1,000 generated pairs,
 the `seq-diff`/`seq-patch` tools give 878/878 minimal Myers edit lengths against
 an O(N·M) LCS, 878/878 GNU and native round trips, 878/878 real GNU `diff -u`
 applications and 333/333 distinct-line plus 328/328 repeated-line offset/fuzz
-agreements with GNU `patch` at `-F0` and `-F2`.
+agreements with GNU `patch` at `-F0` and `-F2`. On a 1.6 MB pair, `seq-diff`
+runs within 2× of `git diff --no-index` in every mode (59-70 ms against
+43 ms for the default unified diff). It gets there by splitting and
+hash-consing lines in one word-at-a-time pass (`split_classify`).
+On the same inputs, `seq-patch` runs within 1.1× of GNU `patch` (10 ms) and
+`seq-merge` within 1.2× of `git merge-file` (99 against 83 ms).
 [Three-way merge](extended-merge3.md) (`ext::merge3`, `seq-merge`) aligns with
 the xdiff port. It agrees byte for byte with `git merge-file` and
 `git merge-file --diff3` on all 4,000 generated triples (2,000 distinct-line,
@@ -2393,10 +2407,11 @@ Its structural writer emits the `ext::json` byte policy. The streaming
 `json` on 2,237 cases, and [csv-to-json](../sample_programs/csv_to_json.lani)
 agrees with Python `csv` on 550 RFC 4180 cases. `TokenReader` pulls tokens
 from any `core::io::Read` source, and `Writer.flush_to` streams output to any
-`core::io::Write` sink. [`core::float_decimal`](stdlib-float-decimal.md) now
-tries Eisel-Lemire parsing and Grisu3 shortest formatting before its exact
-big-integer path. It agrees with Python `float()` and `repr()` on 4.8 million
-generated values, about 15 to 24 times faster on typical values.
+`core::io::Write` sink. [`core::float_decimal`](stdlib-float-decimal.md)
+formats shortest decimals with Schubfach, which is exact with no fallback, in
+about 0.6 to 0.8 µs per value. It parses with an Eisel-Lemire fast path
+before its exact big-integer path, in about 0.7 to 0.8 µs per value. It
+agrees with Python `float()` and `repr()` on 4.8 million generated values.
 [`ext::toml`](extended-toml.md) agrees with Python `tomllib` on 1,754
 hand-written, generated and mutated documents. The only differences are by
 policy: TOML 1.1-only syntax, and integers outside i64.
@@ -2448,7 +2463,9 @@ searches for the pattern's required literal with `core::search` across each
 64 KiB read and runs the matcher only on the records that contain it. On
 S4's 49 MB corpus a no-match scan takes 68 ms instead of 5.2 s, against GNU
 grep's 11 ms; patterns with a literal take 85–272 ms with `-c`
-([timings](extended-text-grep.md#literal-prefilter)).
+([timings](extended-text-grep.md#literal-prefilter)). Patterns without one
+run `Dfa.match_lines` over each whole block, restarting at every record, so
+`[0-9]+$` takes 0.54 s instead of 1.8 s.
 
 [Regex splitting and replacement](extended-regex-text.md) now reuse canonical
 Search with one lazily acquired workspace. Borrowed split fields, independent

@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **321 modules**, **17074 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **322 modules**, **17181 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -41,7 +41,7 @@ Inventory: **321 modules**, **17074 declaration/member entries**. Counts include
 | [core::f64](core/f64.md) | [source](../../stdlib/core/f64.lani#L3) | 57 | Source inventory | [stdlib-floats](../stdlib-floats.md) |
 | [core::float_decimal](core/float_decimal.md) | [source](../../stdlib/core/float_decimal.lani#L4) | 36 | Source inventory | [stdlib-float-decimal](../stdlib-float-decimal.md), [stdlib-float-precision](../stdlib-float-precision.md) |
 | [core::float_order](core/float_order.md) | [source](../../stdlib/core/float_order.lani#L4) | 50 | Source inventory | [stdlib-comparison](../stdlib-comparison.md) |
-| [core::float_tables](core/float_tables.md) | [source](../../stdlib/core/float_tables.lani#L4) | 8 | Source inventory | [stdlib-float-decimal](../stdlib-float-decimal.md) |
+| [core::float_tables](core/float_tables.md) | [source](../../stdlib/core/float_tables.lani#L4) | 11 | Source inventory | [stdlib-float-decimal](../stdlib-float-decimal.md) |
 | [core::fmt](core/fmt.md) | [source](../../stdlib/core/fmt.lani#L2) | 67 | Source inventory | [stdlib-formatting](../stdlib-formatting.md) |
 | [core::format](core/format.md) | [source](../../stdlib/core/format.lani#L3) | 41 | Source inventory | [stdlib-format-strings](../stdlib-format-strings.md), [stdlib-format-write](../stdlib-format-write.md) |
 | [core::function](core/function.md) | [source](../../stdlib/core/function.lani#L2) | 4 | Source inventory | [stdlib-lazy-outcomes](../stdlib-lazy-outcomes.md), [stdlib-iterator-adapters](../stdlib-iterator-adapters.md), [stdlib-map-updates](../stdlib-map-updates.md), [stdlib-vec-edit](../stdlib-vec-edit.md), [stdlib-slice-segmentation](../stdlib-slice-segmentation.md) |
@@ -177,6 +177,7 @@ Inventory: **321 modules**, **17074 declaration/member entries**. Counts include
 | [std::io_utf8](std/io_utf8.md) | [source](../../stdlib/std/io_utf8.lani#L3) | 7 | Source inventory | **Unregistered** |
 | [std::linux](std/linux.md) | [source](../../stdlib/std/linux.lani#L4) | 15 | Source inventory | [stdlib-linux](../stdlib-linux.md) |
 | [std::net](std/net.md) | [source](../../stdlib/std/net.lani#L5) | 85 | Unbound host declarations | [library-remaining-api-audit](../library-remaining-api-audit.md), [library-host-prerequisites](../library-host-prerequisites.md) |
+| [std::par](std/par.md) | [source](../../stdlib/std/par.lani#L11) | 28 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
 | [std::parallel](std/parallel.md) | [source](../../stdlib/std/parallel.lani#L10) | 29 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
 | [std::poll](std/poll.md) | [source](../../stdlib/std/poll.lani#L4) | 45 | Source inventory | [stdlib-poll](../stdlib-poll.md) |
 | [std::process](std/process.md) | [source](../../stdlib/std/process.lani#L3) | 66 | Source inventory | [stdlib-process-context](../stdlib-process-context.md) |
@@ -225,7 +226,7 @@ Inventory: **321 modules**, **17074 declaration/member entries**. Counts include
 | [ext::audio](ext/audio.md) | [source](../../extended/ext/audio.lani#L2) | 44 | Source inventory | [extended-audio](../extended-audio.md) |
 | [ext::bash_words](ext/bash_words.md) | [source](../../extended/ext/bash_words.lani#L4) | 22 | Source inventory | [extended-cli-complete](../extended-cli-complete.md), [library-completion-plan](../library-completion-plan.md) |
 | [ext::cbor](ext/cbor.md) | [source](../../extended/ext/cbor.lani#L4) | 64 | Source inventory | [extended-cbor](../extended-cbor.md), [extended-cbor-stream](../extended-cbor-stream.md) |
-| [ext::cbor_stream](ext/cbor_stream.md) | [source](../../extended/ext/cbor_stream.lani#L8) | 164 | Source inventory | [extended-cbor-stream](../extended-cbor-stream.md) |
+| [ext::cbor_stream](ext/cbor_stream.md) | [source](../../extended/ext/cbor_stream.lani#L8) | 174 | Source inventory | [extended-cbor-stream](../extended-cbor-stream.md) |
 | [ext::cli](ext/cli.md) | [source](../../extended/ext/cli.lani#L3) | 63 | Source inventory | [extended-cli](../extended-cli.md), [extended-cli-commands](../extended-cli-commands.md), [extended-cli-response](../extended-cli-response.md), [extended-cli-complete](../extended-cli-complete.md) |
 | [ext::cli_bash](ext/cli_bash.md) | [source](../../extended/ext/cli_bash.lani#L4) | 24 | Source inventory | [extended-cli-complete](../extended-cli-complete.md), [library-completion-plan](../library-completion-plan.md) |
 | [ext::cli_commands](ext/cli_commands.md) | [source](../../extended/ext/cli_commands.lani#L5) | 66 | Source inventory | [extended-cli-commands](../extended-cli-commands.md), [extended-cli-response](../extended-cli-response.md), [extended-cli-complete](../extended-cli-complete.md) |
@@ -233,7 +234,7 @@ Inventory: **321 modules**, **17074 declaration/member entries**. Counts include
 | [ext::cli_help](ext/cli_help.md) | [source](../../extended/ext/cli_help.lani#L5) | 2 | Source inventory | [extended-cli-commands](../extended-cli-commands.md) |
 | [ext::cli_response](ext/cli_response.md) | [source](../../extended/ext/cli_response.lani#L4) | 73 | Source inventory | [extended-cli-response](../extended-cli-response.md), [library-response-files-plan](../library-response-files-plan.md) |
 | [ext::cli_response_files](ext/cli_response_files.md) | [source](../../extended/ext/cli_response_files.lani#L3) | 28 | Source inventory | [extended-cli-response](../extended-cli-response.md), [library-response-files-plan](../library-response-files-plan.md) |
-| [ext::compression](ext/compression.md) | [source](../../extended/ext/compression.lani#L3) | 89 | Source inventory | [extended-compression](../extended-compression.md), [extended-streaming-inflate](../extended-streaming-inflate.md), [extended-decompress-file](../extended-decompress-file.md), [extended-streaming-deflate](../extended-streaming-deflate.md), [extended-compress-file](../extended-compress-file.md) |
+| [ext::compression](ext/compression.md) | [source](../../extended/ext/compression.lani#L3) | 93 | Source inventory | [extended-compression](../extended-compression.md), [extended-streaming-inflate](../extended-streaming-inflate.md), [extended-decompress-file](../extended-decompress-file.md), [extended-streaming-deflate](../extended-streaming-deflate.md), [extended-compress-file](../extended-compress-file.md) |
 | [ext::config](ext/config.md) | [source](../../extended/ext/config.lani#L4) | 47 | Source inventory | [extended-config](../extended-config.md) |
 | [ext::csv](ext/csv.md) | [source](../../extended/ext/csv.lani#L4) | 102 | Source inventory | [extended-csv](../extended-csv.md), [extended-csv-write](../extended-csv-write.md), [extended-csv-rewrite](../extended-csv-rewrite.md), [extended-json-stream](../extended-json-stream.md) |
 | [ext::csv_write](ext/csv_write.md) | [source](../../extended/ext/csv_write.lani#L2) | 17 | Source inventory | [extended-csv-write](../extended-csv-write.md), [extended-csv-rewrite](../extended-csv-rewrite.md) |
@@ -271,14 +272,14 @@ Inventory: **321 modules**, **17074 declaration/member entries**. Counts include
 | [ext::https_server_poll](ext/https_server_poll.md) | [source](../../extended/ext/https_server_poll.lani#L2) | 29 | Source inventory | [extended-server-poll](../extended-server-poll.md), [extended-https-server-exchange](../extended-https-server-exchange.md), [library-server-contract](../library-server-contract.md) |
 | [ext::idna](ext/idna.md) | [source](../../extended/ext/idna.lani#L7) | 24 | Source inventory | [extended-idna](../extended-idna.md) |
 | [ext::image](ext/image.md) | [source](../../extended/ext/image.lani#L2) | 48 | Source inventory | [extended-image](../extended-image.md), [extended-image-resize](../extended-image-resize.md) |
-| [ext::inflate](ext/inflate.md) | [source](../../extended/ext/inflate.lani#L4) | 61 | Source inventory | [extended-inflate](../extended-inflate.md), [extended-streaming-inflate](../extended-streaming-inflate.md) |
+| [ext::inflate](ext/inflate.md) | [source](../../extended/ext/inflate.lani#L4) | 64 | Source inventory | [extended-inflate](../extended-inflate.md), [extended-streaming-inflate](../extended-streaming-inflate.md) |
 | [ext::json](ext/json.md) | [source](../../extended/ext/json.lani#L3) | 90 | Source inventory | [extended-json](../extended-json.md), [extended-json-streaming](../extended-json-streaming.md), [extended-json-normalize](../extended-json-normalize.md) |
 | [ext::json_stream](ext/json_stream.md) | [source](../../extended/ext/json_stream.lani#L5) | 149 | Source inventory | [extended-json-stream](../extended-json-stream.md) |
 | [ext::kv](ext/kv.md) | [source](../../extended/ext/kv.lani#L3) | 48 | Source inventory | [extended-kv](../extended-kv.md), [extended-cli-complete](../extended-cli-complete.md) |
 | [ext::lexer](ext/lexer.md) | [source](../../extended/ext/lexer.lani#L2) | 80 | Source inventory | [extended-lexer](../extended-lexer.md), [extended-lex-scan](../extended-lex-scan.md), [library-regex-workspace-plan](../library-regex-workspace-plan.md) |
 | [ext::linalg](ext/linalg.md) | [source](../../extended/ext/linalg.lani#L3) | 87 | Source inventory | [extended-linalg](../extended-linalg.md), [extended-sparse](../extended-sparse.md) |
 | [ext::log](ext/log.md) | [source](../../extended/ext/log.lani#L3) | 38 | Source inventory | [extended-log](../extended-log.md) |
-| [ext::merge3](ext/merge3.md) | [source](../../extended/ext/merge3.lani#L3) | 44 | Source inventory | [extended-merge3](../extended-merge3.md) |
+| [ext::merge3](ext/merge3.md) | [source](../../extended/ext/merge3.lani#L3) | 52 | Source inventory | [extended-merge3](../extended-merge3.md) |
 | [ext::msgpack](ext/msgpack.md) | [source](../../extended/ext/msgpack.lani#L7) | 139 | Source inventory | [extended-msgpack](../extended-msgpack.md) |
 | [ext::openssl_digest](ext/openssl_digest.md) | [source](../../extended/ext/openssl_digest.lani#L3) | 46 | Source inventory | [extended-openssl-digest](../extended-openssl-digest.md), [library-native-c](../library-native-c.md), [extended-openssl-hash](../extended-openssl-hash.md) |
 | [ext::openssl_tls](ext/openssl_tls.md) | [source](../../extended/ext/openssl_tls.lani#L3) | 189 | Source inventory | [extended-openssl-tls](../extended-openssl-tls.md), [extended-openssl-tls-server](../extended-openssl-tls-server.md), [extended-openssl-mutual-tls](../extended-openssl-mutual-tls.md), [extended-https-mutual-tls](../extended-https-mutual-tls.md), [library-native-c](../library-native-c.md), [extended-https-client](../extended-https-client.md), [extended-https-batch-testing](../extended-https-batch-testing.md) |
@@ -292,11 +293,11 @@ Inventory: **321 modules**, **17074 declaration/member entries**. Counts include
 | [ext::png](ext/png.md) | [source](../../extended/ext/png.lani#L2) | 30 | Source inventory | [extended-png](../extended-png.md) |
 | [ext::pratt](ext/pratt.md) | [source](../../extended/ext/pratt.lani#L3) | 67 | Source inventory | [extended-pratt](../extended-pratt.md) |
 | [ext::progress](ext/progress.md) | [source](../../extended/ext/progress.lani#L2) | 15 | Source inventory | [extended-progress](../extended-progress.md) |
-| [ext::regex](ext/regex.md) | [source](../../extended/ext/regex.lani#L2) | 180 | Source inventory | [extended-regex](../extended-regex.md), [extended-regex-oracle](../extended-regex-oracle.md), [extended-regex-text](../extended-regex-text.md), [extended-lexer](../extended-lexer.md), [library-regex-workspace-plan](../library-regex-workspace-plan.md) |
+| [ext::regex](ext/regex.md) | [source](../../extended/ext/regex.lani#L2) | 187 | Source inventory | [extended-regex](../extended-regex.md), [extended-regex-oracle](../extended-regex-oracle.md), [extended-regex-text](../extended-regex-text.md), [extended-lexer](../extended-lexer.md), [library-regex-workspace-plan](../library-regex-workspace-plan.md) |
 | [ext::regex_text](ext/regex_text.md) | [source](../../extended/ext/regex_text.lani#L3) | 44 | Source inventory | [extended-regex-text](../extended-regex-text.md), [library-regex-workspace-plan](../library-regex-workspace-plan.md) |
 | [ext::response](ext/response.md) | [source](../../extended/ext/response.lani#L5) | 20 | Source inventory | [extended-cli-response](../extended-cli-response.md), [library-response-files-plan](../library-response-files-plan.md) |
 | [ext::schema](ext/schema.md) | [source](../../extended/ext/schema.lani#L3) | 90 | Source inventory | [extended-schema](../extended-schema.md) |
-| [ext::seqdiff](ext/seqdiff.md) | [source](../../extended/ext/seqdiff.lani#L2) | 64 | Source inventory | [extended-seqdiff](../extended-seqdiff.md) |
+| [ext::seqdiff](ext/seqdiff.md) | [source](../../extended/ext/seqdiff.lani#L2) | 106 | Source inventory | [extended-seqdiff](../extended-seqdiff.md) |
 | [ext::server_poll](ext/server_poll.md) | [source](../../extended/ext/server_poll.lani#L2) | 199 | Source inventory | [extended-server-poll](../extended-server-poll.md), [library-server-contract](../library-server-contract.md), [library-server-concurrency-plan](../library-server-concurrency-plan.md) |
 | [ext::settings](ext/settings.md) | [source](../../extended/ext/settings.lani#L3) | 118 | Source inventory | [extended-settings](../extended-settings.md) |
 | [ext::settings_env](ext/settings_env.md) | [source](../../extended/ext/settings_env.lani#L3) | 27 | Source inventory | [extended-settings](../extended-settings.md) |
@@ -322,7 +323,7 @@ Inventory: **321 modules**, **17074 declaration/member entries**. Counts include
 | [ext::unicode_normalize](ext/unicode_normalize.md) | [source](../../extended/ext/unicode_normalize.lani#L5) | 30 | Source inventory | [extended-unicode-normalize](../extended-unicode-normalize.md), [extended-unicode-uconv](../extended-unicode-uconv.md) |
 | [ext::unicode_sentences](ext/unicode_sentences.md) | [source](../../extended/ext/unicode_sentences.lani#L3) | 28 | Source inventory | [extended-unicode-sentences](../extended-unicode-sentences.md) |
 | [ext::unicode_words](ext/unicode_words.md) | [source](../../extended/ext/unicode_words.lani#L3) | 18 | Source inventory | [extended-unicode-words](../extended-unicode-words.md) |
-| [ext::unidiff](ext/unidiff.md) | [source](../../extended/ext/unidiff.lani#L3) | 79 | Source inventory | [extended-seqdiff](../extended-seqdiff.md) |
+| [ext::unidiff](ext/unidiff.md) | [source](../../extended/ext/unidiff.lani#L3) | 80 | Source inventory | [extended-seqdiff](../extended-seqdiff.md) |
 | [ext::uri](ext/uri.md) | [source](../../extended/ext/uri.lani#L3) | 33 | Source inventory | [extended-uri](../extended-uri.md) |
 | [ext::uri_resolve](ext/uri_resolve.md) | [source](../../extended/ext/uri_resolve.lani#L3) | 8 | Source inventory | [extended-uri-resolve](../extended-uri-resolve.md) |
 | [ext::url](ext/url.md) | [source](../../extended/ext/url.lani#L5) | 67 | Source inventory | [extended-url](../extended-url.md) |
@@ -335,7 +336,7 @@ Inventory: **321 modules**, **17074 declaration/member entries**. Counts include
 | [ext::websocket_stream](ext/websocket_stream.md) | [source](../../extended/ext/websocket_stream.lani#L3) | 59 | Source inventory | [extended-websocket-stream](../extended-websocket-stream.md), [extended-websocket-upgrade](../extended-websocket-upgrade.md), [extended-websocket-once](../extended-websocket-once.md), [extended-websocket](../extended-websocket.md), [extended-websocket-echo](../extended-websocket-echo.md) |
 | [ext::websocket_upgrade](ext/websocket_upgrade.md) | [source](../../extended/ext/websocket_upgrade.lani#L3) | 95 | Source inventory | [extended-websocket-upgrade](../extended-websocket-upgrade.md), [extended-websocket-stream](../extended-websocket-stream.md), [extended-websocket-once](../extended-websocket-once.md), [extended-websocket](../extended-websocket.md), [extended-websocket-echo](../extended-websocket-echo.md) |
 | [ext::weighted_statistics](ext/weighted_statistics.md) | [source](../../extended/ext/weighted_statistics.lani#L4) | 63 | Source inventory | [extended-weighted-statistics](../extended-weighted-statistics.md), [extended-statistics](../extended-statistics.md), [extended-sample-moments](../extended-sample-moments.md) |
-| [ext::wordiff](ext/wordiff.md) | [source](../../extended/ext/wordiff.lani#L3) | 18 | Source inventory | [extended-wordiff](../extended-wordiff.md) |
+| [ext::wordiff](ext/wordiff.md) | [source](../../extended/ext/wordiff.lani#L3) | 19 | Source inventory | [extended-wordiff](../extended-wordiff.md) |
 | [ext::x509](ext/x509.md) | [source](../../extended/ext/x509.lani#L3) | 141 | Source inventory | [extended-x509](../extended-x509.md), [extended-certificate-info](../extended-certificate-info.md) |
 | [ext::xz](ext/xz.md) | [source](../../extended/ext/xz.lani#L4) | 168 | Source inventory | [extended-xz](../extended-xz.md) |
 | [ext::zip](ext/zip.md) | [source](../../extended/ext/zip.lani#L2) | 82 | Source inventory | [extended-zip](../extended-zip.md), [extended-fetch-many](../extended-fetch-many.md) |

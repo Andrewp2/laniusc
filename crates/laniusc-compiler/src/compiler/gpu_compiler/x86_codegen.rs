@@ -155,6 +155,31 @@ pub(super) fn x86_link_input_error(
     )
 }
 
+/// A program whose sources declare `extern "C"` functions was compiled without
+/// the native linking profile. This used to escape as a raw codegen error and
+/// render as the generic LNC0057; name the declarations and the missing flags.
+pub(super) fn x86_native_link_required_error(
+    functions: &[crate::compiler::NativeCFunction],
+) -> CompileError {
+    const SHOWN: usize = 4;
+    let mut names: Vec<&str> = functions.iter().map(|function| function.name.as_str()).collect();
+    names.sort_unstable();
+    names.dedup();
+    let mut listed = names.iter().take(SHOWN).map(|name| format!("`{name}`")).collect::<Vec<_>>().join(", ");
+    if names.len() > SHOWN {
+        listed.push_str(&format!(" and {} more", names.len() - SHOWN));
+    }
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0017", "C extern declarations require native linking")
+            .with_primary_label(DiagnosticLabel::primary(
+                PathBuf::from("<source pack link>"), 1, 1, 1, None,
+                "the program declares C functions but was compiled without the native linking profile",
+            ))
+            .with_note(format!("C extern declarations: {listed}"))
+            .with_help("compile with --native-link and an explicit --native-library for each C library (for example --native-library atomic for std::atomic)"),
+    )
+}
+
 pub(super) fn x86_source_pack_link_error(context: &str, error: anyhow::Error) -> CompileError {
     if let Some(missing) = error.downcast_ref::<x86::GpuX86MissingSymbolDefinition>() {
         return CompileError::Diagnostic(
@@ -173,6 +198,25 @@ pub(super) fn x86_source_pack_link_error(context: &str, error: anyhow::Error) ->
 #[cfg(test)]
 mod tests {
     use super::{super::typecheck::CompiledSourcePackObject, *};
+
+    #[test]
+    fn missing_native_link_names_the_c_declarations() {
+        use crate::compiler::{NativeCFunction, NativeCSignature, NativeCType};
+        let function = |name: &str| NativeCFunction {
+            identity: [0, 0, 0],
+            name: name.to_owned(),
+            signature: NativeCSignature { parameters: Vec::new(), result: NativeCType::Void },
+        };
+        let names = ["b", "a", "c", "a", "e", "d", "f"];
+        let functions: Vec<NativeCFunction> = names.iter().map(|name| function(name)).collect();
+        let CompileError::Diagnostic(diagnostic) = x86_native_link_required_error(&functions) else {
+            panic!("structured diagnostic");
+        };
+        assert_eq!(diagnostic.code, "LNC0017");
+        assert!(diagnostic.notes.iter().any(|note| note == "C extern declarations: `a`, `b`, `c`, `d` and 2 more"),
+            "{:?}", diagnostic.notes);
+        assert!(diagnostic.help.as_deref().is_some_and(|help| help.contains("--native-link")));
+    }
 
     #[test]
     fn checked_nominal_recipes_retain_private_public_payloads_without_calls_or_predicates() {
