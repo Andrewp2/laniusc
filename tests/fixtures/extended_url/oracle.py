@@ -7,9 +7,22 @@ random combinations of schemes, credentials, hosts, ports, paths, queries,
 fragments, whitespace and relative references against bases), runs every
 case through Node and through `url-parse --batch`, and requires the same
 href, every component getter and the origin, or failure on both sides. The
-hrefs Node produced are then parsed again on both sides. Cases built from
-non-ASCII or "xn--" host labels are tagged: there ext::url must either match
-Node or report unsupported-idna (it does not implement UTS #46)."""
+hrefs Node produced are then parsed again on both sides.
+
+Mode "idna" does the same for internationalized hosts: hand-picked UTS #46
+cases (mapping, deviations, ignored and disallowed scalars, NFC, Punycode
+and "xn--" labels, Bidi and CONTEXTJ rules, label separators, the length
+limit), seeded random hosts from scripts, compatibility forms and marks, and
+a stride sample of every Unicode scalar in three label contexts.
+
+Node's NFC (ada) does not compose a precomposed LV Hangul syllable with a
+following trailing jamo (U+AC00 U+11A8 stays two scalars instead of
+U+AC01), which Unicode composition requires. A result that differs from
+Node's only in that composition inside "xn--" labels is counted as a known
+Node divergence (see lvt_divergence).
+
+Inputs containing U+200C ZERO WIDTH NON-JOINER are tagged: ext::idna lacks
+Joining_Type data, so there it may report unsupported-idna instead."""
 import json
 import os
 import random
@@ -82,7 +95,6 @@ HOSTS = ["example.com", "EXAMPLE.COM", "a.b.c.", "127.0.0.1", "0x7f.0.0.1", "017
          "", "localhost", "LOCALHOST", "%30x7f.1", "a.b%2ec", "a\u007fb", "a%7Fb", "1.2.3.0x100", "a..b", ".", "..", "a.-b-", "x_y.z",
          "a!$&'()*+,;=b", "%25", "a%2Fb", "a%3ab", "\u00e9xample", "xn--nxasmq6b", "XN--a.com", "a.xn--b", "\uff21\uff22.com", "b\u00fccher.de",
          "%C3%A9", "a\u00adb"]
-IDNA_MARKERS = ["\u00e9", "\u00fc", "\uff21", "\u00ad", "xn--", "XN--", "%C3"]
 PORTS = ["", ":", ":80", ":443", ":21", ":0", ":65535", ":65536", ":0008080", ":8a", ": 80", ":99999999999", ":00", ":-1"]
 PATHS = ["", "/", "/a/b/c", "/a/./b/../c", "/../..", "/a/%2e%2E/b", "/a/.%2e/b", "/./", "/..", "/C:/x", "/C|/x/../..", "/a b", "/a\\b\\..\\c",
          "/\u00e9", "/%zz", "/^`{}|", "//", "/a//b", "/a/..", "/.//p", "/a/.", "/a/%2e", "/a?/b", "/%2F", "/x/\u0000/y", "/\"<>", "/a;b=c",
@@ -131,7 +143,6 @@ EDGES = [
     ("x", "about:blank"), ("#", "about:blank"), ("..", "sc:/a"), ("../..", "non-spec:/.//p"), ("x", "non-spec:/.//p"),
     ("http://h", "not a url"), ("../x", "http://h"), ("?", "file:///a?b"), ("x", "file://localhost/a/b"),
 ]
-IDNA = ("xn--", "XN--", "%C3", "%c3")
 
 
 def generated():
@@ -161,7 +172,7 @@ def generated():
 
 def tagged(text, base):
     items = [text] + ([base] if base is not None else [])
-    return any(any(ord(c) > 127 for c in item) or any(marker in item for marker in IDNA) for item in items)
+    return any("\u200c" in item or "%e2%80%8c" in item.lower() for item in items)
 
 
 def whatwg(exe):
@@ -171,9 +182,48 @@ def whatwg(exe):
     compare(exe, [(want[1], None, idna) for (_, _, idna), want in zip(corpus, expected) if want[0] == "ok"])
 
 
-def compare(exe, corpus):
+skipped = []
+divergences = []
+
+
+def compose_lvt(label):
+    out = []
+    for c in label:
+        if out and 0xAC00 <= ord(out[-1]) <= 0xD7A3 and (ord(out[-1]) - 0xAC00) % 28 == 0 and 0x11A8 <= ord(c) <= 0x11C2:
+            out[-1] = chr(ord(out[-1]) + ord(c) - 0x11A7)
+        else:
+            out.append(c)
+    return "".join(out)
+
+
+def fix_host(host):
+    labels = []
+    for label in host.split("."):
+        if label.startswith("xn--"):
+            decoded = compose_lvt(label[4:].encode().decode("punycode"))
+            label = "xn--" + decoded.encode("punycode").decode()
+        labels.append(label)
+    return ".".join(labels)
+
+
+def lvt_divergence(want, got):
+    """Whether got is want with Node's missing LV+T compositions applied."""
+    hostname = want[6]
+    if "xn--" not in hostname:
+        return False
+    fixed = fix_host(hostname)
+    if fixed == hostname:
+        return False
+    repaired = [field.replace(hostname, fixed) if index in (1, 5, 6, 11) else field for index, field in enumerate(want)]
+    return repaired == got
+
+
+def compare(exe, corpus, stale_check=False):
     expected = reference(corpus)
     actual = ours(exe, corpus)
+    stale = set()
+    if stale_check:
+        stale = stale_scalars(set().union(*(case_scalars(text, want, got) for (text, _, _), want, got in zip(corpus, expected, actual) if want != got)))
     idna_skips = 0
     for (text, base, idna), want, got in zip(corpus, expected, actual):
         label = (text, base)
@@ -184,16 +234,223 @@ def compare(exe, corpus):
             idna_skips += 1
             case(True)
             continue
+        if want != got and stale and case_scalars(text, want, got) & stale:
+            divergences.append(("stale", label))
+            case(True)
+            continue
+        if want[0] == "fail" and got[0] == "ok" and long_ascii_host(got):
+            divergences.append(("long", label))
+            case(True)
+            continue
         if want[0] == "fail":
             case(got[0] == "fail" and len(got) == 2, label, want, got)
             continue
         case(got[0] == "ok" and len(got) == 12, label, want, got)
+        if got != want and lvt_divergence(want, got):
+            divergences.append(("lvt", label))
+            continue
         for index, name in enumerate(FIELDS):
             assert got[index + 1] == want[index + 1], (label, name, want[index + 1], got[index + 1])
     # Unsupported IDNA must stay the exception, not a blanket escape hatch.
     tagged_count = sum(1 for _, _, idna in corpus if idna)
     case(idna_skips <= tagged_count, idna_skips, tagged_count)
+    skipped.append(idna_skips)
     return expected
+
+
+# Node also applies its 16384-byte non-ASCII domain limit to an ASCII domain
+# that it routes through IDNA (one containing "xn-" or an uppercase letter);
+# ext::url limits only non-ASCII domains.
+def long_ascii_host(got):
+    return len(got[6]) > 16384 and all(ord(c) < 0x80 for c in got[6])
+
+
+# Node.js's IDNA (ada 4.0.0) uses current mapping data but older Bidi_Class and
+# General_Category data: scalars assigned since about Unicode 14 behave as
+# Bidi_Class L non-marks (probe flags 1100), and U+1734 and U+1171E keep their
+# pre-14 nonspacing-mark behaviour (1011). A scalar is "stale" when Node's
+# per-scalar probe flags differ from the Unicode 17 prediction and match that
+# shape; a mismatching case that contains one counts as a Node divergence.
+OLD_MARKS = {0x1734, 0x1171E}
+_ucd = []
+
+
+def ucd():
+    if not _ucd:
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../tools/unicode17"))
+        import generate_idna
+        status, mapping, bidi = generate_idna.derive()
+        category, _ = generate_idna.unicode_data()
+        _ucd.extend([status, mapping, bidi, category])
+    return _ucd
+
+
+def predicted_flags(cp):
+    _, _, bidi, category = ucd()
+    b, gc = bidi.get(cp, "L"), category.get(cp, "Cn")
+    rtl = b in ("R", "AL", "AN")
+    alone = not (gc[0] == "M" or b == "NSM") and (not rtl or b in ("R", "AL"))
+    flags = (not rtl, alone, b in ("R", "AL", "AN", "EN", "NSM"), b in ("R", "AL", "AN", "EN", "ES", "CS", "ET", "ON", "BN", "NSM"))
+    return "".join("1" if x else "0" for x in flags)
+
+
+def node_flags(points):
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "idna_table.js")
+    run = subprocess.run([node(), script], input=json.dumps(sorted(points)).encode(), capture_output=True, timeout=120)
+    assert run.returncode == 0, run.stderr[:400]
+    result = {}
+    for line in run.stdout.decode().splitlines():
+        hexa, flags, first = line.split(" ")
+        result[int(hexa, 16)] = (flags, first)
+    return result
+
+
+def stale_scalars(points):
+    status = ucd()[0]
+    points = {cp for cp in points if cp >= 0x80 and status[cp] in (0, 3) and cp not in (0x200C, 0x200D)}
+    if not points:
+        return set()
+    flags = node_flags(points)
+    stale = {cp for cp in points if flags[cp][0] != predicted_flags(cp)}
+    for cp in stale:
+        assert flags[cp][0] == ("1011" if cp in OLD_MARKS else "1100"), (hex(cp), flags[cp], predicted_flags(cp))
+    return stale
+
+
+def decoded(host):
+    out = []
+    for label in host.split("."):
+        try:
+            out.append(label[4:].encode().decode("punycode") if label.startswith("xn--") else label)
+        except UnicodeError:
+            out.append(label)
+    return ".".join(out)
+
+
+def case_scalars(text, want, got):
+    from urllib.parse import unquote
+    items = [text, unquote(text, errors="ignore")]
+    for row in (want, got):
+        if row[0] == "ok":
+            items.append(decoded(row[6]))
+    return {ord(c) for item in items for c in item if ord(c) >= 0x80}
+
+
+IDNA_EDGES = [
+    "bücher.de", "BÜCHER.DE", "ß.de", "ẞ.de", "ς.gr", "Σ.gr", "xn--zca.ü", "XN--ZCA.ü", "xn--a.ü", "xn--.ü",
+    "xn--abc.ü", "xn--u-ccb.ü", "xn--ss-.ü", "xn--55qx5d.ü", "xn--0ca.ü", "xn--xn--a.ü", "xn--a-ecp.ü", "xn--ls8h.ü",
+    "xn--zca", "xn--a", "xn--", "Ⅸ", "。a", "a．b", "a｡b", "a。", "。", "︒", "․", "⒈", "­", "a­b",
+    "­.", "💩.la", "١1", "א1٢", "1a.א", "א.1a", "אב.c", "c.אa", "אa", "aא",
+    "א̀", "א1", "א-", "ا١1", "١٢٣.ar", "ا١", "a١", "́", "á", "́a",
+    "क्‍", "क्‍ष", "a‍b", "‍", "न्‌ष", "a‌b", "‌x", "x‌",
+    "ب‌ب", "ب‌", "بّ‌ب", "１２３", "０ｘ７ｆ.1", "٠.١",
+    "ＡＢ.com", "Ω", "Å", "Å", "Å", "å", "가", "각", "가", "ㄱ", "ﬁ",
+    "㏏", "⑴", "½", "İ", "ı", "İ", "ͅ", "ι", "⁰", "ª", "ⅠⅡ", "�", "￼",
+    "\u0080", "\u009f", "͸", "", "\U000e0001", "\U000e0041", "‎", "‮", "⁦", "؜", "ᅟ", "឴", "᠎",
+    "⁡", "̀", "́", "̓", "̈́", "ʹ", ";", "·", "᠆", "ཱི", "ཱུ", "ཱྀ", " ", "　",
+    " ", "a　b", "＃", "％", "／", "：", "？", "＠", "［", "＼", "℀", "℁", "⩴", "∕",
+    "﹕", "﹖", "١1.א", "א.١1", "א١1", "ا1٢", "ا.1",
+    "%C3%A9", "%c3%a9.COM", "%E2%80%8C", "%ff.com", "%C3", "%C3%A9%2E%C3%BC", "%EF%BC%8E", "%E3%80%82a", "é%2eü",
+    "éxample.com:80", "é.0x7f", "é.1.2", "１２７.0.0.1", "१२३", "é" * 8192, "é" * 8193,
+    "a" * 16382 + "é", "a" * 16383 + "é", "中" * 5461, "中" * 5462, "é." * 100, "é" * 300,
+    "กำ", "ำ", "ༀ", "゙", "ᴕe", "\U0001d15e", "\U0001d7ce", "\U0001f1e6\U0001f1e8", "☃️", "️",
+    "اً", "اً1", "אְ", "אְ1", "ن١۱", "۱ا", "ا۱",
+]
+POOLS = [
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-",
+    "àéîõüßÀÉÎÕÜāĀœŒłŁǄǅǆŉſ",
+    "αβγΑΒςσΣϐϴΐἀᾈᾼ",
+    "абвАБВёЁӀӏԀ",
+    "אבגְִֿװיִשׁ",
+    "ابت١٢۱۲ًّـیىﺍﻵ",
+    "कखि्नष०१ऩक़",
+    "中文字あアガガｶﾞ㌀㋐",
+    "가각ㄱㅏ",
+    "Ａｂ０－．。｡Ⅰ⑴㏏ﬁ½ΩK℀⩴",
+    "̧̣̀́̂̈⃝ཱི̈́ͅ",
+    "­​⁠﻿͏᠋︀‌‍ßς",
+    "�\u0080͸ 　 ‎‮⿰⿾㇯\U000e0041￿",
+    "\U0001f4a9\U0001f600☃️\U0001d400\U0001d7ce\U00010400\U00010428\U0001e900\U0001e922",
+]
+
+
+def unicode_hosts():
+    rng = random.Random(20261101)
+    hosts = []
+    for _ in range(3000):
+        labels = []
+        for _ in range(rng.choice((1, 1, 2, 2, 3, 4))):
+            pools = rng.sample(range(len(POOLS)), rng.choice((1, 1, 2)))
+            label = "".join(rng.choice(POOLS[rng.choice(pools)]) for _ in range(rng.randint(1, 7)))
+            if rng.random() < 0.06:
+                label = "xn--" + "".join(rng.choice("abcdefghijklmnopqrstuvwxyz0123456789-") for _ in range(rng.randint(0, 8)))
+            labels.append(label)
+        host = rng.choice((".", "。", ".")).join(labels)
+        if rng.random() < 0.1:
+            host = "".join("%%%02X" % b for b in host.encode()) if rng.random() < 0.5 else host + "."
+        hosts.append(host)
+    return hosts
+
+
+def idna(exe):
+    corpus = []
+    for host in IDNA_EDGES + unicode_hosts():
+        corpus.append(("http://" + host + "/p", None))
+    for host in IDNA_EDGES[:60]:
+        for scheme in ("https://", "file://", "sc://", "ws://"):
+            corpus.append((scheme + host + "/", None))
+        corpus.append(("//" + host + "/x", "http://h/"))
+    # A stride sample of every non-ASCII scalar, in the same three contexts
+    # the per-scalar table probe (idna_table.js) uses.
+    for cp in range(0x80, 0x110000, 89):
+        if not 0xD800 <= cp <= 0xDFFF:
+            for context in ("x%s", "%s", "א%s"):
+                corpus.append(("http://" + context % chr(cp) + "/", None))
+    corpus = [(text, base, tagged(text, base)) for text, base in corpus]
+    expected = compare(exe, corpus, stale_check=True)
+    compare(exe, [(want[1], None, flag) for (_, _, flag), want in zip(corpus, expected) if want[0] == "ok"], stale_check=True)
+
+
+# The UTS #46 derivation composes with NFC only in these probes ("x" + c).
+COMPOSED_NFC = {0x307: "\u1e8b", 0x308: "\u1e8d", 0x344: "\u1e8d\u0301"}
+FORBIDDEN = set(range(0x21)) | {0x23, 0x25, 0x2F, 0x3A, 0x3C, 0x3E, 0x3F, 0x40, 0x5B, 0x5C, 0x5D, 0x5E, 0x7C, 0x7F}
+STALE_LIMIT = 1296
+
+
+def table(exe):
+    """Every scalar of the generated table against Node's URL host parser:
+    status, mapping (through the hostname of the first probe that parses)
+    and, for valid scalars, the Bidi/mark probe flags predicted from the
+    Unicode 17 UCD. exe is unused: this group checks the derived data."""
+    status, mapping, _, _ = ucd()
+    flags = node_flags([])
+    contexts = [lambda m: "x" + m, lambda m: m, lambda m: "\u05d0" + m, lambda m: "\u05d0" + m + "\u05d0"]
+    stale = 0
+    for cp in range(0x80, 0x110000):
+        if 0xD800 <= cp <= 0xDFFF:
+            continue
+        s = status[cp]
+        if cp not in flags:
+            case(s == 4, hex(cp))
+            continue
+        f, first = flags[cp]
+        if s == 4 or cp in (0x200C, 0x200D) or (s == 1 and any(x in FORBIDDEN for x in mapping[cp])):
+            case(f == "0000", hex(cp), s, f)
+            continue
+        if s == 2:
+            case(f[0] == "1" and first == "x", hex(cp), f, first)
+            continue
+        text = "".join(map(chr, mapping[cp])) if s == 1 else chr(cp)
+        if s != 1 and f != predicted_flags(cp):
+            assert f == ("1011" if cp in OLD_MARKS else "1100"), (hex(cp), f, predicted_flags(cp))
+            stale += 1
+        index = f.find("1")
+        assert index >= 0, (hex(cp), s, f)
+        want = contexts[index](text)
+        if index == 0 and cp in COMPOSED_NFC:
+            want = COMPOSED_NFC[cp]
+        case(decoded(first) == want, hex(cp), s, f, first, want)
+    case(stale <= STALE_LIMIT, stale)
 
 
 def run(exe, *args, stdin=b""):
@@ -218,7 +475,7 @@ def cli(exe):
     for args, line in ((("http://a b/",), b"fail\tinvalid-host\n"), (("http://h:70000/",), b"fail\tinvalid-port\n"),
                        (("http://1.2.3.4.5/",), b"fail\tinvalid-ipv4\n"), (("http://[1::2::3]/",), b"fail\tinvalid-ipv6\n"),
                        (("x",), b"fail\tmissing-scheme\n"), (("http:///",), b"fail\tmissing-host\n"),
-                       (("http://b\u00fccher.de/",), b"fail\tunsupported-idna\n"), (("http://xn--bcher-kva.de/",), b"fail\tunsupported-idna\n"),
+                       (("http://\u0628\u200c\u0628/",), b"fail\tunsupported-idna\n"), (("http://\ufe12/",), b"fail\tinvalid-idna\n"),
                        (("x", "not a url"), b"base-fail\tmissing-scheme\n"), (("x", "sc:opaque"), b"fail\tmissing-scheme\n")):
         out = run(exe, *args)
         case(out.returncode == 1 and out.stdout == line, args, out)
@@ -236,7 +493,7 @@ def cli(exe):
     case(out.returncode == 0 and out.stdout == b"", out)
 
 
-MODES = {"cli": cli, "whatwg": whatwg}
+MODES = {"cli": cli, "whatwg": whatwg, "idna": idna, "table": table}
 
 if __name__ == "__main__":
     mode, exe = sys.argv[1], sys.argv[2]
