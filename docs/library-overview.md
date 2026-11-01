@@ -6,6 +6,10 @@ The full library goal remains open. The current increment adds
 `try_extend_from_slice`, `copy_from_slice`, `swap_with_slice`, `fill` and
 `swap` on `alloc::vec::Vec`. Packed byte runs move eight bytes at a time:
 a 4 KiB copy runs 5x faster than the element loop and a fill 38x faster.
+`alloc::string`, `alloc::io`, `core::io`, `core::buffered`, `core::utf8_view`,
+`std::io_utf8` and `std::io_line` now [call them](stdlib-slice-bulk.md#callers)
+instead of per-byte loops, and UTF-8 validation skips ASCII eight bytes at a
+time: 7x to 57x on string and buffered-I/O paths, 37x on `Utf8View` edits.
 The preceding increment makes `core::slice` sorting adaptive: [pattern-defeating quicksort](stdlib-sort-algorithms.md)
 for unstable sorts and a run-adaptive stable merge sort with galloping over
 caller scratch. Both are checked against Python `sorted`, with recorded
@@ -65,8 +69,9 @@ duplication or per-sender FIFO violation. Those 50 runs passed, alongside
 20 runs each of a parallel word count matching `wc` and a three-stage
 pipeline. The stealing fixture runs a 524,287-task tree with every leaf
 exactly once; a parallel quicksort sorts 2,000,000 values in 0.25 s with
-eight workers, against 0.80 s with one. In-process threads remain blocked on checked callback entry, so
-`std::thread` stays unbound.
+eight workers, against 0.80 s with one. C callback entry now exists (a function named as a value,
+[C callbacks](language-ergonomics.md#c-callbacks)) and a fixture starts and joins a pthread running
+Lanius code, but `std::thread` is not yet bound to it.
 The preceding
 The full library goal remains open. The
 [Unicode quick-check and uconv increment](extended-unicode-uconv.md) replaces
@@ -145,7 +150,7 @@ The preceding
 [resumable compression encoder](extended-streaming-deflate.md) adds fixed
 32 KiB blocks, retained pending output and u64 raw/zlib/gzip limits over shared
 block helpers. Its [packed fast pass](extended-streaming-deflate.md#packed-fast-pass)
-encodes gzip at 50–54 MB/s against 3.5–3.8 MB/s before, with byte-identical output. The [file compressor](extended-compress-file.md) uses fixed
+encodes gzip at 50–54 MB/s against 3.5–3.8 MB/s before, with byte-identical output. Opt-in [dynamic Huffman levels](extended-streaming-deflate.md#dynamic-huffman-levels) 1–3 add a sliding window, hash chains, lazy matching and per-block dynamic codes; level 2 comes within 2.9% (docs/stdlib tar) and 6.9% (text tar) of `gzip -6`'s size at 28.7 and 33.8 MB/s. The [file compressor](extended-compress-file.md) uses fixed
 workspace and NoReplace publication. All five library groups and five
 application groups/99 native cases pass, including the 112-case chunk/block
 model and nine reached application allocation denials. This finite native
@@ -2444,7 +2449,21 @@ RFC 6901 pointers, RFC 6902 patches and RFC 7386 merge patches to
 documents against JSON Schema 2020-12 (core, applicator and validation
 vocabularies, `pattern` through `ext::regex`, local `$ref`). It agrees with a
 Python model on 246 hand-written specification cases, 92 error and limit
-cases and 10,000 generated schema/instance pairs. [`core::float_decimal`](stdlib-float-decimal.md)
+cases and 10,000 generated schema/instance pairs.
+[`ext::yaml`](extended-yaml.md) reads YAML 1.2 (block and flow collections,
+every scalar style with chomping, anchors and aliases under an expansion
+limit, comments, multiple documents) into `ext::json_tree` with the core
+schema. It agrees with PyYAML 6.0.1 on 87 hand-written and 3,000 generated
+documents, and with hand-written expectations on 32 documents that YAML 1.1
+reads differently and 68 error and limit cases. Its scanner skips comments
+and literal block lines with `core::slice::memchr_from`.
+[`ext::yaml_writer`](extended-yaml.md#writing) writes trees as block-style
+YAML, quoting only strings some YAML 1.1 or 1.2 reader could misread, and
+[`ext::toml_writer`](extended-toml-writer.md) writes them as TOML 1.0 with
+tables, arrays of tables, inline tables and the tree's exact number
+spellings. Round trips agree on 3,320 trees through PyYAML `safe_load` and
+`ext::yaml`, and on 3,014 trees through Python `tomllib`, plus 11 TOML writer
+error cases. [`core::float_decimal`](stdlib-float-decimal.md)
 formats shortest decimals with Schubfach, which is exact with no fallback, in
 about 0.6 to 0.8 µs per value. It parses with an Eisel-Lemire fast path
 before its exact big-integer path, in about 0.7 to 0.8 µs per value. It

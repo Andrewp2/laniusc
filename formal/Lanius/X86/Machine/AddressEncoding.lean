@@ -1,5 +1,8 @@
-import Lanius.X86.Machine.ControlEncoding
+module
 
+public import Lanius.X86.Machine.ControlEncoding
+
+@[expose] public section
 namespace Lanius.X86.Machine
 
 open Lanius.X86

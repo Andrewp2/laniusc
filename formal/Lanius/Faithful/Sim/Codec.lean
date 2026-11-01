@@ -1,7 +1,10 @@
-import Lanius.Semantics.NativeRecordStore
-import Lanius.Mini.ElementLayout
-import Lanius.Faithful.Sim.Rel
+module
 
+public import Lanius.Semantics.NativeRecordStore
+public import Lanius.Mini.ElementLayout
+public import Lanius.Faithful.Sim.Rel
+
+@[expose] public section
 /-! # Native stores of the scalars and of enums
 
 Core writes a word scalar as its little-endian bytes and reads them back

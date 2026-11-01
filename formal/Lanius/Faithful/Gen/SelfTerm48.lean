@@ -63,37 +63,37 @@ theorem ok_match_tys_or_none : FnOk prog prims info (2174, ⟨12, [], 0⟩) :=
 theorem ok_fit_path : FnOk prog prims info (2175, ⟨10, [0], 0⟩) :=
   fnOk_of fn_fit_path (by decide +kernel)
 
-theorem ok_nested_order : FnOk prog prims info (2177, ⟨27, [], 0⟩) :=
+theorem ok_nested_order : FnOk prog prims info (2177, ⟨26, [], 0⟩) :=
   fnOk_of fn_nested_order (by decide +kernel)
 
 theorem ok_cons_of_mini_selfhost_EffArm : FnOk prog prims info (2178, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_EffArm (by decide +kernel)
 
-theorem ok_eff_arm_bound : FnOk prog prims info (2179, ⟨30, [0], 0⟩) :=
+theorem ok_eff_arm_bound : FnOk prog prims info (2179, ⟨29, [0], 0⟩) :=
   fnOk_of fn_eff_arm_bound (by decide +kernel)
 
 theorem ok_match_stmt_if : FnOk prog prims info (2181, ⟨0, [], 0⟩) :=
   fnOk_of fn_match_stmt_if (by decide +kernel)
 
-theorem ok_pats_nested : FnOk prog prims info (2182, ⟨8, [], 0⟩) :=
+theorem ok_pats_nested : FnOk prog prims info (2182, ⟨7, [], 0⟩) :=
   fnOk_of fn_pats_nested (by decide +kernel)
 
-theorem ok_wild_split : FnOk prog prims info (2183, ⟨8, [0], 0⟩) :=
+theorem ok_wild_split : FnOk prog prims info (2183, ⟨7, [0], 0⟩) :=
   fnOk_of fn_wild_split (by decide +kernel)
 
-theorem ok_nested_with : FnOk prog prims info (2184, ⟨25, [], 0⟩) :=
+theorem ok_nested_with : FnOk prog prims info (2184, ⟨24, [], 0⟩) :=
   fnOk_of fn_nested_with (by decide +kernel)
 
-theorem ok_wild_order : FnOk prog prims info (2185, ⟨10, [], 0⟩) :=
+theorem ok_wild_order : FnOk prog prims info (2185, ⟨9, [], 0⟩) :=
   fnOk_of fn_wild_order (by decide +kernel)
 
-theorem ok_arms_exact : FnOk prog prims info (2186, ⟨9, [], 0⟩) :=
+theorem ok_arms_exact : FnOk prog prims info (2186, ⟨8, [], 0⟩) :=
   fnOk_of fn_arms_exact (by decide +kernel)
 
 theorem ok_arm_prefix : FnOk prog prims info (2187, ⟨2, [], 0⟩) :=
   fnOk_of fn_arm_prefix (by decide +kernel)
 
-theorem ok_binder_of : FnOk prog prims info (2188, ⟨6, [4], 1⟩) :=
+theorem ok_binder_of : FnOk prog prims info (2188, ⟨5, [4], 1⟩) :=
   fnOk_of fn_binder_of (by decide +kernel)
 
 theorem ok_p_arm_block : FnOk prog prims info (2189, ⟨0, [], 0⟩) :=

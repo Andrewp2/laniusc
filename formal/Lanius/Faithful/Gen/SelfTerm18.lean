@@ -21,7 +21,7 @@ theorem ok_join_second : FnOk prog prims info (846, ⟨1, [], 0⟩) :=
 theorem ok_single_of_mini_selfhost_TypeDecl : FnOk prog prims info (847, ⟨0, [], 0⟩) :=
   fnOk_of fn_single_of_mini_selfhost_TypeDecl (by decide +kernel)
 
-theorem ok_struct_decl_of : FnOk prog prims info (848, ⟨7, [], 0⟩) :=
+theorem ok_struct_decl_of : FnOk prog prims info (848, ⟨6, [], 0⟩) :=
   fnOk_of fn_struct_decl_of (by decide +kernel)
 
 theorem ok_enum_decl_of : FnOk prog prims info (849, ⟨1, [], 0⟩) :=
@@ -33,13 +33,13 @@ theorem ok_variants_of : FnOk prog prims info (850, ⟨5, [1], 0⟩) :=
 theorem ok_cons_of_mini_selfhost_FnDecl : FnOk prog prims info (851, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_FnDecl (by decide +kernel)
 
-theorem ok_param_spellings : FnOk prog prims info (852, ⟨5, [0], 0⟩) :=
+theorem ok_param_spellings : FnOk prog prims info (852, ⟨4, [0], 0⟩) :=
   fnOk_of fn_param_spellings (by decide +kernel)
 
 theorem ok_leaf_token : FnOk prog prims info (853, ⟨2, [], 0⟩) :=
   fnOk_of fn_leaf_token (by decide +kernel)
 
-theorem ok_methods_of : FnOk prog prims info (854, ⟨8, [5], 0⟩) :=
+theorem ok_methods_of : FnOk prog prims info (854, ⟨7, [5], 0⟩) :=
   fnOk_of fn_methods_of (by decide +kernel)
 
 theorem ok_with_impl_decl : FnOk prog prims info (855, ⟨1, [], 0⟩) :=
@@ -54,7 +54,7 @@ theorem ok_single_of_mini_selfhost_AliasDecl : FnOk prog prims info (857, ⟨0, 
 theorem ok_if_unbounded : FnOk prog prims info (858, ⟨0, [], 0⟩) :=
   fnOk_of fn_if_unbounded (by decide +kernel)
 
-theorem ok_unbounded : FnOk prog prims info (859, ⟨4, [0], 0⟩) :=
+theorem ok_unbounded : FnOk prog prims info (859, ⟨3, [0], 0⟩) :=
   fnOk_of fn_unbounded (by decide +kernel)
 
 theorem ok_p_extern_abi : FnOk prog prims info (860, ⟨0, [], 0⟩) :=

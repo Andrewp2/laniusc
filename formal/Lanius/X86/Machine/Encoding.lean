@@ -1,14 +1,17 @@
-import Lanius.X86.Machine.AluEncoding
-import Lanius.X86.Machine.ScalarEncoding
-import Lanius.X86.Machine.ControlEncoding
-import Lanius.X86.Machine.RuntimeEncoding
-import Lanius.X86.Machine.AddressEncoding
-import Lanius.X86.Machine.NonDivEncoding
-import Lanius.X86.Machine.DivisionEncoding
-import Lanius.X86.Machine.Scalar
-import Lanius.X86.Control.Decode
-import Lanius.Semantics
+module
 
+public import Lanius.X86.Machine.AluEncoding
+public import Lanius.X86.Machine.ScalarEncoding
+public import Lanius.X86.Machine.ControlEncoding
+public import Lanius.X86.Machine.RuntimeEncoding
+public import Lanius.X86.Machine.AddressEncoding
+public import Lanius.X86.Machine.NonDivEncoding
+public import Lanius.X86.Machine.DivisionEncoding
+public import Lanius.X86.Machine.Scalar
+public import Lanius.X86.Control.Decode
+public import Lanius.Semantics
+
+@[expose] public section
 namespace Lanius.X86.Machine
 
 open Lanius.Semantics

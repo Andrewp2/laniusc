@@ -12,7 +12,7 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Termination
 open Lanius.Faithful.SelfCert
 
-theorem ok_build_checked : FnOk prog prims info (150, ⟨44, [], 0⟩) :=
+theorem ok_build_checked : FnOk prog prims info (150, ⟨43, [], 0⟩) :=
   fnOk_of fn_build_checked (by decide +kernel)
 
 theorem ok_root_insts : FnOk prog prims info (151, ⟨2, [0], 0⟩) :=
@@ -27,7 +27,7 @@ theorem ok_seed_insts : FnOk prog prims info (153, ⟨2, [0], 0⟩) :=
 theorem ok_field_types_Decls_of_mini_selfhost_Decls : FnOk prog prims info (154, ⟨0, [], 0⟩) :=
   fnOk_of fn_field_types_Decls_of_mini_selfhost_Decls (by decide +kernel)
 
-theorem ok_collect_file_next : FnOk prog prims info (155, ⟨14, [3], 1⟩) :=
+theorem ok_collect_file_next : FnOk prog prims info (155, ⟨13, [3], 1⟩) :=
   fnOk_of fn_collect_file_next (by decide +kernel)
 
 theorem ok_optimize_funcs : FnOk prog prims info (159, ⟨9, [0], 0⟩) :=

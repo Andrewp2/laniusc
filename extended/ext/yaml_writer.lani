@@ -1,0 +1,251 @@
+// Writes ext::json_tree values as block-style YAML that YAML 1.1 readers
+// (PyYAML) and YAML 1.2 readers (ext::yaml) read back to the same value.
+// Strings stay plain when no reader could take them for anything else, use
+// a literal block scalar when they span lines, and are double-quoted
+// otherwise. See docs/extended-yaml.md.
+module ext::yaml_writer;
+import alloc::vec;
+import core::mem;
+import core::result;
+import core::slice;
+import core::text;
+import ext::json_tree;
+
+pub enum ErrorKind { AllocationFailed }
+
+// Keys longer than this many bytes use the explicit "? key" form: a quoted
+// key is at most four times longer, which keeps it under the 1024-character
+// limit on implicit keys.
+const LONG_KEY: i32 = 200;
+
+fn width_of(byte: u8) -> i32 {
+    if (byte < 128) { return 1; }
+    if (byte >= 240) { return 4; }
+    if (byte >= 224) { return 3; }
+    return 2;
+}
+fn code_at(bytes: [u8], at: i32, width: i32) -> i32 {
+    let first: i32 = bytes[at] as i32;
+    if (width == 1) { return first; }
+    let code: i32 = first & 31;
+    if (width == 3) { code = first & 15; }
+    if (width == 4) { code = first & 7; }
+    let k: i32 = 1;
+    while (k < width) { code = (code << 6) | ((bytes[at + k] & 63) as i32); k += 1; }
+    return code;
+}
+// Characters that no reader treats as content: C1 controls (with NEL, a
+// YAML 1.1 line break), the Unicode line and paragraph separators (also 1.1
+// line breaks), the byte order mark and the two noncharacters.
+fn special(code: i32) -> bool {
+    return (code >= 128 && code < 160) || code == 8232 || code == 8233 || code == 65279 || code == 65534 || code == 65535;
+}
+fn letter(byte: u8) -> bool { return (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122); }
+fn lower(byte: u8) -> u8 { if (byte >= 65 && byte <= 90) { return byte + 32; } return byte; }
+fn word_is(t: core::text::Text, word: str, count: i32) -> bool {
+    if (t.length != count) { return false; }
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(word), count);
+    let index: i32 = 0;
+    while (index < count) { if (lower(t.bytes[t.start + index]) != bytes[index]) { return false; } index += 1; }
+    return true;
+}
+// Words some YAML 1.1 or 1.2 reader resolves to a boolean or null, in any case.
+fn reserved(t: core::text::Text) -> bool {
+    return word_is(t, "y", 1) || word_is(t, "n", 1) || word_is(t, "yes", 3) || word_is(t, "no", 2)
+        || word_is(t, "on", 2) || word_is(t, "off", 3) || word_is(t, "true", 4) || word_is(t, "false", 5)
+        || word_is(t, "null", 4);
+}
+// Whether t can be written as a plain scalar that every reader takes as
+// this string. The first character is a letter, "_", "/" or non-ASCII, so
+// it is never a number, date, indicator or 1.1 merge or value key.
+fn plain_ok(t: core::text::Text) -> bool {
+    if (t.length == 0) { return false; }
+    let bytes: [u8] = t.bytes; let at: i32 = t.start; let end: i32 = t.start + t.length;
+    let first: u8 = bytes[at];
+    if (!letter(first) && first != 95 && first != 47 && first < 128) { return false; }
+    if (bytes[end - 1] == 32 || reserved(t)) { return false; }
+    let previous: u8 = 0;
+    while (at < end) {
+        let byte: u8 = bytes[at];
+        if (byte < 128) {
+            if (byte < 32 || byte == 127) { return false; }
+            if (byte == 58 && (at + 1 == end || bytes[at + 1] == 32)) { return false; }
+            if (byte == 35 && previous == 32) { return false; }
+            previous = byte; at += 1;
+        } else {
+            let width: i32 = width_of(byte);
+            if (special(code_at(bytes, at, width))) { return false; }
+            previous = byte; at += width;
+        }
+    }
+    return true;
+}
+// Whether t can be a literal block scalar: it spans lines, its first line
+// is not empty and does not start with a space (so the indentation is
+// detected), and every character other than the line feeds is printable
+// and not a tab, carriage return or special character.
+fn literal_ok(t: core::text::Text) -> bool {
+    if (t.length < 2) { return false; }
+    let bytes: [u8] = t.bytes; let at: i32 = t.start; let end: i32 = t.start + t.length;
+    if (bytes[at] == 10 || bytes[at] == 32) { return false; }
+    let lines: bool = false;
+    while (at < end) {
+        let byte: u8 = bytes[at];
+        if (byte < 128) {
+            if (byte == 10) { lines = true; } else { if (byte < 32 || byte == 127) { return false; } }
+            at += 1;
+        } else {
+            let width: i32 = width_of(byte);
+            if (special(code_at(bytes, at, width))) { return false; }
+            at += width;
+        }
+    }
+    return lines;
+}
+fn hex_digit(value: i32) -> u8 { if (value < 10) { return (value + 48) as u8; } return (value + 87) as u8; }
+
+struct Emitter { tree: &ext::json_tree::Tree, out: &alloc::vec::Vec<u8>, ok: bool }
+
+impl Emitter {
+    fn borrow(&self) -> &Emitter { return self; }
+    fn byte(&self, value: u8) { if (self.ok && self.out.try_push(value).is_err()) { self.ok = false; } }
+    fn run(&self, bytes: [u8], start: i32, length: i32) {
+        if (length > 0 && self.ok && self.out.try_extend(core::slice::View { values: bytes, start: start, length: length }).is_err()) { self.ok = false; }
+    }
+    fn text(&self, t: core::text::Text) { self.run(t.bytes, t.start, t.length); }
+    fn word(&self, value: str, count: i32) { self.run(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value), count), 0, count); }
+    fn spaces(&self, count: i32) { let index: i32 = 0; while (index < count) { self.byte(32); index += 1; } }
+    fn escape(&self, letter_byte: u8) { self.byte(92); self.byte(letter_byte); }
+    fn hex(&self, code: i32, digits: i32) {
+        let shift: i32 = (digits - 1) * 4;
+        while (shift >= 0) { self.byte(hex_digit((code >> shift) & 15)); shift -= 4; }
+    }
+    fn quoted(&self, t: core::text::Text) {
+        self.byte(34);
+        let bytes: [u8] = t.bytes; let at: i32 = t.start; let end: i32 = t.start + t.length; let run: i32 = at;
+        while (at < end) {
+            let byte: u8 = bytes[at];
+            if (byte < 128) {
+                if (byte >= 32 && byte != 34 && byte != 92 && byte != 127) { at += 1; continue; }
+                self.run(bytes, run, at - run);
+                if (byte == 34) { self.escape(34); } else {
+                if (byte == 92) { self.escape(92); } else {
+                if (byte == 9) { self.escape(116); } else {
+                if (byte == 10) { self.escape(110); } else {
+                if (byte == 13) { self.escape(114); } else {
+                if (byte == 0) { self.escape(48); } else { self.escape(120); self.hex(byte as i32, 2); } } } } } }
+                at += 1; run = at;
+            } else {
+                let width: i32 = width_of(byte);
+                let code: i32 = code_at(bytes, at, width);
+                if (special(code)) {
+                    self.run(bytes, run, at - run);
+                    if (code < 256) { self.escape(120); self.hex(code, 2); } else { self.escape(117); self.hex(code, 4); }
+                    at += width; run = at;
+                } else { at += width; }
+            }
+        }
+        self.run(bytes, run, end - run);
+        self.byte(34);
+    }
+    // A literal block scalar after "key:" or "-", content indented to column.
+    fn literal(&self, t: core::text::Text, column: i32) {
+        let bytes: [u8] = t.bytes; let end: i32 = t.start + t.length;
+        let trailing: i32 = 0;
+        while (trailing < t.length && bytes[end - 1 - trailing] == 10) { trailing += 1; }
+        self.byte(124);
+        if (trailing == 0) { self.byte(45); }
+        if (trailing > 1) { self.byte(43); }
+        self.byte(10);
+        let at: i32 = t.start;
+        while (at < end) {
+            let stop: i32 = core::slice::memchr_from(bytes, at, end, 10);
+            if (stop < 0) { stop = end; }
+            if (stop > at) { self.spaces(column); self.run(bytes, at, stop - at); }
+            self.byte(10);
+            at = stop + 1;
+        }
+    }
+    fn string(&self, t: core::text::Text, column: i32) {
+        if (plain_ok(t)) { self.text(t); self.byte(10); return; }
+        if (literal_ok(t)) { self.literal(t, column); return; }
+        self.quoted(t); self.byte(10);
+    }
+    // JSON number spellings, written so that YAML 1.1 also reads floats as
+    // floats: an exponent gets a fraction and a sign ("1e3" -> "1.0e+3").
+    fn number(&self, t: core::text::Text) {
+        let bytes: [u8] = t.bytes; let end: i32 = t.start + t.length;
+        let at: i32 = t.start; let dot: bool = false; let exponent: i32 = -1;
+        while (at < end) {
+            let byte: u8 = bytes[at];
+            if (byte == 46) { dot = true; }
+            if (byte == 101 || byte == 69) { exponent = at; break; }
+            at += 1;
+        }
+        if (exponent < 0) { self.text(t); return; }
+        self.run(bytes, t.start, exponent - t.start);
+        if (!dot) { self.word(".0", 2); }
+        self.byte(bytes[exponent]);
+        let rest: i32 = exponent + 1;
+        if (rest < end && bytes[rest] != 43 && bytes[rest] != 45) { self.byte(43); }
+        self.run(bytes, rest, end - rest);
+    }
+    fn key(&self, t: core::text::Text) {
+        if (plain_ok(t)) { self.text(t); } else { self.quoted(t); }
+    }
+    // context: 0 the document root, 1 after "key:", 2 after "-".
+    fn value(&self, node: i32, column: i32, context: i32) {
+        let tree: &ext::json_tree::Tree = self.tree;
+        let code: i32 = tree.code(node);
+        if (code == 5 || code == 6) {
+            if (tree.child_count(node) == 0) {
+                if (context != 0) { self.byte(32); }
+                if (code == 5) { self.word("[]", 2); } else { self.word("{}", 2); }
+                self.byte(10);
+                return;
+            }
+            if (context == 0) { self.block(node, 0, false); return; }
+            if (context == 1) { self.byte(10); self.block(node, column + 2, false); return; }
+            self.byte(32); self.block(node, column + 2, true);
+            return;
+        }
+        if (context != 0) { self.byte(32); }
+        if (code == 0) { self.word("null", 4); self.byte(10); return; }
+        if (code == 1) { self.word("false", 5); self.byte(10); return; }
+        if (code == 2) { self.word("true", 4); self.byte(10); return; }
+        if (code == 3) { self.number(tree.text(node)); self.byte(10); return; }
+        self.string(tree.text(node), column + 2);
+    }
+    // The members of a nonempty collection at column; with inline_first the
+    // first member continues the current line (after "- ").
+    fn block(&self, node: i32, column: i32, inline_first: bool) {
+        let tree: &ext::json_tree::Tree = self.tree;
+        let sequence: bool = tree.code(node) == 5;
+        let child: i32 = tree.first_child(node); let first: bool = true;
+        while (child >= 0 && self.ok) {
+            if (!first || !inline_first) { self.spaces(column); }
+            if (sequence) {
+                self.byte(45); self.value(child, column, 2);
+            } else {
+                let name: core::text::Text = tree.key(child);
+                if (name.length > LONG_KEY) {
+                    self.word("? ", 2); self.quoted(name); self.byte(10);
+                    self.spaces(column); self.byte(58);
+                } else { self.key(name); self.byte(58); }
+                self.value(child, column, 1);
+            }
+            first = false;
+            child = tree.next_sibling(child);
+        }
+    }
+}
+
+// Appends the YAML document for node to out and returns the bytes written.
+// On AllocationFailed, out holds a partial document.
+pub fn write(tree: &ext::json_tree::Tree, node: i32, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32, ErrorKind> {
+    let before: i32 = out.len();
+    let emitter: Emitter = Emitter { tree: tree, out: out, ok: true };
+    emitter.value(node, 0, 0);
+    if (!emitter.ok) { return core::result::Err(ErrorKind::AllocationFailed); }
+    return core::result::Ok(out.len() - before);
+}

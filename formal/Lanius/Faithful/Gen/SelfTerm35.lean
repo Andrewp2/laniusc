@@ -18,31 +18,31 @@ theorem ok_x_neg_of : FnOk prog prims info (1620, ⟨1, [], 0⟩) :=
 theorem ok_x_not_of : FnOk prog prims info (1621, ⟨1, [], 0⟩) :=
   fnOk_of fn_x_not_of (by decide +kernel)
 
-theorem ok_eff_postfix : FnOk prog prims info (1622, ⟨30, [0], 0⟩) :=
+theorem ok_eff_postfix : FnOk prog prims info (1622, ⟨29, [0], 0⟩) :=
   fnOk_of fn_eff_postfix (by decide +kernel)
 
-theorem ok_eff_ident : FnOk prog prims info (1623, ⟨30, [0], 0⟩) :=
+theorem ok_eff_ident : FnOk prog prims info (1623, ⟨29, [0], 0⟩) :=
   fnOk_of fn_eff_ident (by decide +kernel)
 
 theorem ok_p_match_expr : FnOk prog prims info (1624, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_match_expr (by decide +kernel)
 
-theorem ok_eff_match : FnOk prog prims info (1625, ⟨30, [0], 0⟩) :=
+theorem ok_eff_match : FnOk prog prims info (1625, ⟨29, [0], 0⟩) :=
   fnOk_of fn_eff_match (by decide +kernel)
 
 theorem ok_p_array_lit : FnOk prog prims info (1626, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_array_lit (by decide +kernel)
 
-theorem ok_eff_array : FnOk prog prims info (1627, ⟨30, [0], 0⟩) :=
+theorem ok_eff_array : FnOk prog prims info (1627, ⟨29, [0], 0⟩) :=
   fnOk_of fn_eff_array (by decide +kernel)
 
 theorem ok_p_let_stmt : FnOk prog prims info (1628, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_let_stmt (by decide +kernel)
 
-theorem ok_let_first : FnOk prog prims info (1629, ⟨37, [0], 0⟩) :=
+theorem ok_let_first : FnOk prog prims info (1629, ⟨36, [0], 0⟩) :=
   fnOk_of fn_let_first (by decide +kernel)
 
-theorem ok_stmt_of : FnOk prog prims info (1630, ⟨37, [0], 0⟩) :=
+theorem ok_stmt_of : FnOk prog prims info (1630, ⟨36, [0], 0⟩) :=
   fnOk_of fn_stmt_of (by decide +kernel)
 
 theorem ok_then_of : FnOk prog prims info (1631, ⟨1, [], 0⟩) :=

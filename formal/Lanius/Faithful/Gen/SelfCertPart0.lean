@@ -159,7 +159,7 @@ theorem cert_image_words {n : Nat} :
 
 theorem cert_minus {n : Nat} :
     Stmt_minus prog prims 56 n :=
-  @proof_minus prog prims 56 50 fn_minus np_minus ⟨@cert_core_panic_panic⟩ n
+  @proof_minus prog prims 56 fn_minus np_minus n
 
 theorem cert_empty_of_u8 {n : Nat} :
     Stmt_empty_of_u8 prog prims 110 n :=

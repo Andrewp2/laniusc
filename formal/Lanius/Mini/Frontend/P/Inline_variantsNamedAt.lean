@@ -50,10 +50,13 @@ namespace Lanius.Mini
     none
 
 @[expose] def Inline.wideDigit (wb : Nat) (wrest : List Nat) (wacc : Nat) : Option Nat :=
-  if decide (48 ≤ wb) && decide (wb ≤ 57) then
-    wideDecimal wrest (wacc * 10 + (wb - 48))
-  else
+  if decide (1844674407370955161 < wacc) || decide (wacc = 1844674407370955161) && decide (53 < wb) then
     none
+  else
+    if decide (48 ≤ wb) && decide (wb ≤ 57) then
+      wideDecimal wrest (wacc * 10 + (wb - 48))
+    else
+      none
 
 @[expose] def Inline.charEnd (ecode : Nat) (eq : Nat) (emore : List Nat) : Option SrcExpr :=
   if eq = 39 then

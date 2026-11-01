@@ -1310,7 +1310,8 @@ What it does not read yet:
 Lanius: enums, structs, `match`, recursion, `let`, `if`/`return`. A prelude at
 the top of the file holds the only code that touches memory: a generic
 `Box<T>`, the cons list `enum List<T> { Nil, Cons(T, Box<List<T>>) }`, and
-`usize` arithmetic (`plus`, `minus`, `times`) that panics instead of wrapping.
+`usize` arithmetic (`plus`, `times`) that panics instead of wrapping, and a
+`minus` that truncates at 0, as `Nat` subtraction does.
 
 The list operations (`empty`, `single`, `cons`, `concat`, `length`, `get`,
 `get_or`) are ordinary recursive Lanius code after the prelude. Each is

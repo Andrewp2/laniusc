@@ -72,7 +72,7 @@ pub fn write_stdout_lf_line_from_i32(values: [i32], len: i32) -> bool
 
 ### function: write_stderr_lf_line_from_i32
 
-[Source line 87](../../../stdlib/std/io_line.lani#L87)
+[Source line 83](../../../stdlib/std/io_line.lani#L83)
 
 ```lanius
 pub fn write_stderr_lf_line_from_i32(values: [i32], len: i32) -> bool

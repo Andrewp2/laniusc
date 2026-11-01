@@ -1,0 +1,148 @@
+// Timings for the library paths that copy, search or compare bytes, before
+// and after they moved to the core::slice bulk operations. Each phase moves
+// or scans 64 MiB in total, except std::io_utf8 (4 MiB: the old path made one
+// host call per byte, about 40 s for 64 MiB). Text is 1 MiB of ASCII lines of 1,000 bytes
+// (999 letters and a newline), held in a String (packed bytes).
+// stderr: a "module phase" line, then its nanoseconds; every phase's result
+// is checked, and std::io_utf8 output goes to stdout (redirect it to
+// /dev/null: the timings arrive on stderr). Exits 0.
+module app::main;
+import alloc::io;
+import alloc::string;
+import alloc::vec;
+import core::buffered;
+import core::io;
+import core::mem;
+import core::slice;
+import core::time;
+import core::utf8_view;
+import std::clock;
+import std::io;
+import std::io_utf8;
+
+fn now() -> core::time::Instant { return std::clock::monotonic_now().unwrap(); }
+fn since(start: core::time::Instant) -> u64 { return now().duration_since(start).unwrap().as_nanos().unwrap(); }
+fn emit_number(value: u64) {
+    let storage: [i32; 8] = [0; 8]; let base: ptr = core::mem::i32_array_data_ptr(storage);
+    let digits: [u8] = core::mem::typed_slice_from_raw_parts<u8>(base, 24);
+    let n: i32 = 23; let v: u64 = value; digits[n] = 10;
+    if (v == 0) { n -= 1; digits[n] = 48; }
+    while (v > 0) { n -= 1; digits[n] = ((v % 10) as u8) + 48; v = v / 10; }
+    assert(std::io::write_stderr(base + (n as usize), (24 - n) as usize) == 24 - n);
+    assert(storage[5] == storage[5]);
+}
+// Two stderr lines per phase: "module phase", then the nanoseconds.
+fn report(label: str, start: core::time::Instant) {
+    let nanos: u64 = since(start);
+    assert(std::io::write_text(2, label) >= 0); assert(std::io::write_newline(2) >= 0);
+    emit_number(nanos);
+}
+
+const SIZE: i32 = 1048576;
+
+fn text() -> alloc::string::String {
+    let v: alloc::vec::Vec<u8> = alloc::vec::new(); v.try_resize(SIZE, 97).unwrap();
+    let bytes: [u8] = v.as_slice(); let i: i32 = 0;
+    while (i < SIZE) { bytes[i] = (97 + (i % 26)) as u8; if (i % 1000 == 999) { bytes[i] = 10; } i += 1; }
+    let s: alloc::string::String = alloc::string::from_utf8(bytes, SIZE).unwrap(); v.destroy();
+    return s;
+}
+
+fn main() -> i32 {
+    let s: alloc::string::String = text(); let check: i64 = 0;
+    let start: core::time::Instant = now(); let r: i32 = 0;
+    while (r < 64) { let c: alloc::string::String = s.try_substring(0, SIZE).unwrap(); check += c.byte_len() as i64; c.destroy(); r += 1; }
+    report("string substring", start);
+    let copy: alloc::string::String = s.try_substring(0, SIZE).unwrap();
+    let suffix: alloc::string::String = s.try_substring(SIZE / 2, SIZE).unwrap();
+    start = now(); r = 0;
+    while (r < 64) { if (s.equals(copy)) { check += 1; } r += 1; }
+    report("string equals", start);
+    start = now(); r = 0;
+    while (r < 64) { check += s.compare(copy) as i64; r += 1; }
+    report("string compare", start);
+    start = now(); r = 0;
+    while (r < 128) { if (s.ends_with(suffix)) { check += 1; } r += 1; }
+    report("string ends_with", start);
+    let empty: alloc::string::String = alloc::string::new();
+    start = now(); r = 0;
+    while (r < 64) { check += copy.try_replace_range(0, 1, empty).unwrap() as i64; r += 1; }
+    report("string remove_front", start);
+    let one: alloc::string::String = s.try_substring(0, 1).unwrap();
+    start = now(); r = 0;
+    while (r < 64) { check += copy.try_replace_range(0, 1, one).unwrap() as i64; r += 1; }
+    report("string replace_front", start);
+
+    // alloc::io::read_line through a core::buffered Reader over a SliceReader.
+    let backing: [u8] = s.as_bytes();
+    let scratch: alloc::vec::Vec<u8> = alloc::vec::new(); scratch.try_resize(8192, 0).unwrap();
+    start = now(); r = 0;
+    while (r < 64) {
+        let source: core::io::SliceReader = core::io::slice_reader(backing, SIZE).unwrap();
+        let reader: core::buffered::Reader<core::io::SliceReader> = core::buffered::reader(source.borrow(), scratch.as_view()).unwrap();
+        let lines: i32 = 0;
+        while (lines < 1048) {
+            let line: alloc::io::ReadLine = alloc::io::read_line(reader.borrow(), alloc::io::default_read_limits()).unwrap();
+            check += line.text.byte_len() as i64; line.destroy(); lines += 1;
+        }
+        r += 1;
+    }
+    report("io read_line", start);
+
+    // core::io::read_until over the same reader, copying into a 1 KiB window.
+    let window: alloc::vec::Vec<u8> = alloc::vec::new(); window.try_resize(1024, 0).unwrap();
+    start = now(); r = 0;
+    while (r < 64) {
+        let source: core::io::SliceReader = core::io::slice_reader(backing, SIZE).unwrap();
+        let reader: core::buffered::Reader<core::io::SliceReader> = core::buffered::reader(source.borrow(), scratch.as_view()).unwrap();
+        let lines: i32 = 0;
+        while (lines < 1048) {
+            let got: core::io::Delimited = core::io::read_until(reader.borrow(), 10, window.as_slice(), 0, 1024, 16).unwrap();
+            check += got.completed as i64; lines += 1;
+        }
+        r += 1;
+    }
+    report("io read_until", start);
+
+    // core::buffered Reader::read in 4 KiB requests, and a Writer of 100-byte writes into a SliceWriter.
+    let sink: alloc::vec::Vec<u8> = alloc::vec::new(); sink.try_resize(SIZE, 0).unwrap();
+    start = now(); r = 0;
+    while (r < 64) {
+        let source: core::io::SliceReader = core::io::slice_reader(backing, SIZE).unwrap();
+        let reader: core::buffered::Reader<core::io::SliceReader> = core::buffered::reader(source.borrow(), scratch.as_view()).unwrap();
+        let got: i32 = 0;
+        while (got < SIZE) { got += reader.read(sink.as_slice(), got, 4096).unwrap(); }
+        check += sink.at(SIZE - 1) as i64; r += 1;
+    }
+    report("buffered read", start);
+    start = now(); r = 0;
+    while (r < 64) {
+        let target: core::io::SliceWriter = core::io::slice_writer(sink.as_slice(), SIZE).unwrap();
+        let writer: core::buffered::Writer<core::io::SliceWriter> = core::buffered::writer(target.borrow(), scratch.as_view()).unwrap();
+        let put: i32 = 0;
+        while (put < SIZE - 100) { put += writer.write(backing, put, 100).unwrap(); }
+        writer.flush().unwrap(); check += put as i64; r += 1;
+    }
+    report("buffered write", start);
+
+    // core::utf8_view: insert then remove a scalar at the front of 64 KiB, 512 times each.
+    let edit: alloc::vec::Vec<u8> = alloc::vec::new(); edit.try_resize(65540, 0).unwrap();
+    let ev: [u8] = edit.as_slice();
+    core::slice::copy_from_slice(ev, 65536, backing, 65536);
+    let len: i32 = 65536;
+    start = now(); r = 0;
+    while (r < 512) {
+        len = core::utf8_view::byte_view_insert_scalar_or(ev, len, 65540, 0, 233, -1);
+        len = core::utf8_view::byte_view_remove_scalar_or(ev, len, 0, -1);
+        r += 1;
+    }
+    report("utf8_view insert_remove", start); check += len as i64;
+
+    // std::io_utf8 to stdout: 4 MiB of validated bytes.
+    start = now(); r = 0;
+    while (r < 4) { if (std::io_utf8::write_stdout_bytes(backing, SIZE)) { check += 1; } r += 1; }
+    report("io_utf8 write_bytes", start);
+
+    if (check == 0) { return 1; }
+    return 0;
+}

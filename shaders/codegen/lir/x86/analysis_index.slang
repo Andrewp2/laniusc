@@ -2,6 +2,7 @@ import codegen.lowering_ir;
 import codegen.optimization_ir;
 import codegen.lir.optimization.execution_owner;
 import gpu_index;
+import hir_records;
 
 struct Params
 {
@@ -21,6 +22,8 @@ StructuredBuffer<OptIrNodeOperands> opt_ir_operands;
 StructuredBuffer<uint> semantic_schedule_order;
 StructuredBuffer<uint> opt_ir_source_hir;
 StructuredBuffer<uint> semantic_function_id_by_hir;
+StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
 RWStructuredBuffer<uint> x86_position_by_semantic;
 RWStructuredBuffer<uint> x86_last_use_by_semantic;
 RWStructuredBuffer<uint> x86_function_start;
@@ -50,7 +53,15 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (executable && op == SEMANTIC_LIR_OP_CALL && operands.a < gParams.function_capacity)
     {
         uint ignored;
-        InterlockedAdd(x86_direct_call_count_by_function[operands.a], 1u, ignored);
+        // A function named as a value (a CALL row from a name whose callee is
+        // a fn item, lir/x86/scatter c_entry_call) is the address of its C
+        // entry, which keeps the function out of line: count it twice.
+        uint source_kind = compact_hir_core[opt_ir_source_hir[row]].kind;
+        uint callee = semantic_lir_functions[operands.a].hir_function;
+        bool c_entry = (source_kind == 22u || source_kind == 33u) && callee != INVALID &&
+            compact_hir_core[callee].kind == 3u;
+        InterlockedAdd(x86_direct_call_count_by_function[operands.a],
+            c_entry ? 2u : 1u, ignored);
     }
     if (executable &&
         (op == SEMANTIC_LIR_OP_VALUE_GET || op == SEMANTIC_LIR_OP_ADDRESS))

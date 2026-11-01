@@ -39,7 +39,7 @@ stopping at the computations the theorems are about (`compileSource`,
 `linkObjects`, `elfFile`, `sourceProgramFiles`, `compileWords`,
 `frontEndWords` and the self program `Lanius.Faithful.Self.prog`, which are
 not trusted, section 10), with each one's type and body:
-definitions `98cb6979ed8c0f5d` (4,414 constants). This covers Core's
+definitions `da057f9f0d2562a7` (4,414 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
@@ -51,8 +51,13 @@ modules keeps its hash. The last change of the hash (11-01, review finding
 cost semantics `qcall` (`Faithful/Cost.lean`), the pure semantics it
 shares with `pcall` (`Faithful/Pure.lean`), `boxCost`
 (`Faithful/Fwd/Prim.lean`) and the prim table `prims`
-(`Faithful/Gen/SelfPureTab.lean`); no existing definition changed. Before
-that (11-01): the lexer
+(`Faithful/Gen/SelfPureTab.lean`); no existing definition changed; merged with F12's module conversion,
+which changes no definition's meaning. Before that (11-01, F12): Core's
+semantics, the x86 model, the memory model and the self program's
+simulation became Lean `module`s, so their auxiliary definitions (matchers,
+`_proof_N`) are named per module: the same constants, with 18 hashes that
+differ only in the names of the auxiliaries they mention; no definition's
+meaning changed. Before that (11-01): the lexer
 (`Lanius/Compiler/Lexer*.lean`, `Tokens.lean`) and the reading became Lean
 `module`s, so a function's matcher is its own (`OneTokenResult.shift.match_1`)
 rather than shared with a derived `Repr` instance's; no definition's meaning
@@ -835,8 +840,8 @@ unless these are assumed:
 - **The prelude table** (`PRELUDE_FNS`, `PRELUDE_TYPES` in `extract.py`,
   and the same table in `extract.lani`). Assumed: `boxed` and `unbox` are
   the identity, `plus`/`times`/`minus` are `Nat` `+`/`*`/`-` on every run
-  that returns (they panic instead of wrapping, and `minus` panics when
-  `b > a`), and `max_of` is `max`. The prelude bodies are the only code
+  that returns (`plus` and `times` panic instead of wrapping; `minus`
+  returns 0 when `b > a`, as `Nat` `-` does), and `max_of` is `max`. The prelude bodies are the only code
   that touches raw memory (`alloc`, `typed_slice_from_storage`).
 - **laniusc and the Lanius runtime** (allocation, panics, stack depth) on
   this program.
