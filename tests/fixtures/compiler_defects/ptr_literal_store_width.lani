@@ -1,0 +1,19 @@
+// Miscompile: `let empty: ptr = 0;` stores the literal with a 32-bit move
+// (`xor %eax,%eax; mov %eax,-0x8(%rbp)`), and the later 64-bit load keeps
+// whatever the slot's upper half held. After the push, the slot `fresh`
+// uses still holds a stack address's upper half, so `fresh` returns
+// 0x00007ffe00000000 instead of null. Exits 0 when the store is 64-bit,
+// 1 when the stale upper half survives. alloc::vec::new returned such a
+// pointer until it switched to a returned literal (`return 0;` compiles to
+// `xor %eax,%eax; ret`, which clears the whole register).
+module app::main;
+import alloc::vec;
+fn fresh() -> ptr { let empty: ptr = 0; return empty; }
+fn main() -> i32 {
+    let v: alloc::vec::Vec<i32> = alloc::vec::new();
+    v.try_push(1).unwrap();
+    let b: ptr = fresh();
+    // A literal comparison loads 32 bits zero-extended, so it is reliable.
+    if (b == 0) { return 0; }
+    return 1;
+}
