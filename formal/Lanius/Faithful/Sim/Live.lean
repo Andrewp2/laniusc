@@ -518,10 +518,14 @@ theorem unbox_pty {boxes : Boxes} {id : Nat} {t : SrcType} {v : Value} (hb : box
   | struct none _ => simp [hb] at none
   | box hb' hv => rw [hb] at hb'; cases hb'; exact hv
 
-theorem prim_live {sp : SrcProgram} {prims : Prims} (hP : PrimsOk sp prims) {c : Nat} {f : SrcFunc}
-    (hp : prims.isPrim c = true) (hf : sp.funcs[c]? = some f) {vs : List Value}
-    (hvs : PTys (boxElem sp prims) (f.params.map (·.ty)) vs) :
-    ∃ v, single vs = some v ∧ PTy (boxElem sp prims) f.ret v := by
+/-- The prims are the identity from their parameter's type to their return
+type: what `pcall_live` needs of `PrimsOk`. -/
+def PrimsTy (sp : SrcProgram) (prims : Prims) : Prop :=
+  ∀ c f, prims.isPrim c = true → sp.funcs[c]? = some f → ∀ vs,
+    PTys (boxElem sp prims) (f.params.map (·.ty)) vs → ∃ v, single vs = some v ∧ PTy (boxElem sp prims) f.ret v
+
+theorem primsTy_of {sp : SrcProgram} {prims : Prims} (hP : PrimsOk sp prims) : PrimsTy sp prims := by
+  intro c f hp hf vs hvs
   simp only [Prims.isPrim, Bool.or_eq_true, List.contains_iff_mem] at hp
   rcases hp with hb | hu
   · obtain ⟨t, id, _, _, _, hc, -, -, -, -, hbox, -⟩ := hP.1 c hb
@@ -636,7 +640,7 @@ def CallsGood (sp : SrcProgram) (prims : Prims) (T : TermInfo) (me : TermAnn) (B
   ∀ c a vs, T.ann c = some a → Below me B a (argSize a.pos vs) → prims.isPrim c = false →
     outside.contains c = false → bad.contains c = false → GoodCall sp prims c vs
 
-theorem call_live (hP : PrimsOk sp prims) (IH : CallsGood sp prims T me B outside bad)
+theorem call_live (hP : PrimsTy sp prims) (IH : CallsGood sp prims T me B outside bad)
     {W : Wit} (hW : WitOk B W) {c : Nat} {cs : List SizeCls} {vs : List Value}
     (hc : callOk prims T me W c cs = true) (hr0 : ListRel (SizeCls.holds B) cs vs)
     {ts : List SrcType} {t : SrcType} (hct : callTy sp outside c ts = some t)
@@ -655,7 +659,7 @@ theorem call_live (hP : PrimsOk sp prims) (IH : CallsGood sp prims T me B outsid
         rw [typesSame_eq _ same] at hts
         cases hp : prims.isPrim c with
         | true =>
-          obtain ⟨v, hv, rv⟩ := prim_live hP hp hf hts
+          obtain ⟨v, hv, rv⟩ := hP c f hp hf vs hts
           refine ⟨1, v, rv, fun m hm => ?_⟩
           obtain ⟨m, rfl⟩ : ∃ m', m = m' + 1 := ⟨m - 1, by omega⟩
           simp [pcall, hp, hv]
@@ -783,7 +787,7 @@ section
 variable {sp : SrcProgram} {prims : Prims} {T : TermInfo} {me : TermAnn} {B : Nat} {outside bad : List Nat}
 
 mutual
-theorem eff_live (hO : ∀ m, OracleOk prims T (pcall sp prims m)) (hP : PrimsOk sp prims)
+theorem eff_live (hO : ∀ m, OracleOk prims T (pcall sp prims m)) (hP : PrimsTy sp prims)
     (IH : CallsGood sp prims T me B outside bad) :
     ∀ (e : SrcEff) {A : AEnv} {W : Wit} {E : Env} {tenv : TEnv} {t : SrcType}, EnvOk B A E → WitOk B W →
       chkEff prims T me A W e = true → EnvTy (boxElem sp prims) tenv E →
@@ -895,7 +899,7 @@ theorem eff_live (hO : ∀ m, OracleOk prims T (pcall sp prims m)) (hP : PrimsOk
     all_goals simp [divisorOk] at hl
   | .eStride _, A, W, E, tenv, t, _, _, _, _, ht, _ => by simp [effTy] at ht
 
-theorem effs_live (hO : ∀ m, OracleOk prims T (pcall sp prims m)) (hP : PrimsOk sp prims)
+theorem effs_live (hO : ∀ m, OracleOk prims T (pcall sp prims m)) (hP : PrimsTy sp prims)
     (IH : CallsGood sp prims T me B outside bad) :
     ∀ (es : List SrcEff) {A : AEnv} {W : Wit} {E : Env} {tenv : TEnv} {ts : List SrcType}, EnvOk B A E →
       WitOk B W → chkEffs prims T me A W es = true → EnvTy (boxElem sp prims) tenv E →
@@ -915,7 +919,7 @@ theorem effs_live (hO : ∀ m, OracleOk prims T (pcall sp prims m)) (hP : PrimsO
       (eff_live hO hP IH e h hW hc.1 hE het hl.1) (effs_live hO hP IH es h hW hc.2 hE hts hl.2)
       fun a b pa pb => ⟨a :: b, by simp, .cons pa pb⟩
 
-theorem arms_live (hO : ∀ m, OracleOk prims T (pcall sp prims m)) (hP : PrimsOk sp prims)
+theorem arms_live (hO : ∀ m, OracleOk prims T (pcall sp prims m)) (hP : PrimsTy sp prims)
     (IH : CallsGood sp prims T me B outside bad) {c : SizeCls} {v : Value} (hv : c.holds B v)
     {id k : Nat} {payload : List Value} {fs : List SrcType} (hval : v = .enumeration id k payload)
     (hpt : PTys (boxElem sp prims) fs payload) {rty : SrcType} :
@@ -990,7 +994,7 @@ theorem unit_pty {boxes : Boxes} {ret : SrcType} (h : ret.toCore = .unit) : PTy 
 
 section
 variable {sp : SrcProgram} {prims : Prims} {T : TermInfo} {me : TermAnn} {B : Nat} {outside bad : List Nat}
-  (hO : ∀ m, OracleOk prims T (pcall sp prims m)) (hP : PrimsOk sp prims)
+  (hO : ∀ m, OracleOk prims T (pcall sp prims m)) (hP : PrimsTy sp prims)
   (IH : CallsGood sp prims T me B outside bad)
 include hO hP IH
 
@@ -1160,12 +1164,12 @@ end
 
 /-! ## Checked live calls settle to values -/
 
-/-- **Live pure calls have values.** Under `TermOk`, `PrimsOk` and
+/-- **Live pure calls have values.** Under `TermOk`, `PrimsTy` and
 `PureProg`, when every function but the prims, those `outside` and those in
 `bad` passes `LiveFn`, a call of an annotated function of none of these, on
 arguments of its parameters' types, settles to a value of its return type. -/
 theorem pcall_live {sp : SrcProgram} {prims : Prims} {T : TermInfo} {outside bad : List Nat}
-    (hT : TermOk sp prims T) (hP : PrimsOk sp prims) (hPure : PureProg sp prims outside)
+    (hT : TermOk sp prims T) (hP : PrimsTy sp prims) (hPure : PureProg sp prims outside)
     (hL : ∀ c f, sp.funcs[c]? = some f → prims.isPrim c = false → outside.contains c = false →
       bad.contains c = false → LiveFn bad f = true) :
     ∀ c a, T.ann c = some a → prims.isPrim c = false → outside.contains c = false →
@@ -1218,5 +1222,58 @@ theorem pcall_live {sp : SrcProgram} {prims : Prims} {T : TermInfo} {outside bad
   refine ⟨N + 1, v, rv, fun m hm => ?_⟩
   obtain ⟨m, rfl⟩ : ∃ m', m = m' + 1 := ⟨m - 1, by omega⟩
   simp only [pcall, hp, hf, hl, Bool.false_eq_true, ↓reduceIte, hN m (by omega), Option.bind_some, hv]
+
+end Lanius.Faithful.Termination
+
+namespace Lanius.Faithful.Termination
+
+open Lanius.Mini
+open Lanius.Faithful
+
+/-! ## Checking `LiveFn` one function at a time -/
+
+/-- What `pcall_live` asks of function `i`, `f`, as one test. -/
+abbrev LiveOk (prims : Prims) (outside bad : List Nat) (i : Nat) (f : SrcFunc) : Prop :=
+  (prims.isPrim i || outside.contains i || bad.contains i || LiveFn bad f) = true
+
+/-- `LiveOk` of the functions `fs` numbered from `n`, but those in `skip`. -/
+def LivesOk (prims : Prims) (outside bad skip : List Nat) (n : Nat) (fs : List SrcFunc) : Prop :=
+  ∀ j f, fs[j]? = some f → skip.contains (n + j) = true ∨ LiveOk prims outside bad (n + j) f
+
+section
+variable {prims : Prims} {outside bad skip : List Nat}
+
+theorem livesOk_nil {n : Nat} : LivesOk prims outside bad skip n [] :=
+  fun _ _ h => nomatch h
+
+theorem livesOk_cons {n : Nat} {f : SrcFunc} {fs : List SrcFunc}
+    (head : skip.contains n = true ∨ LiveOk prims outside bad n f)
+    (tail : LivesOk prims outside bad skip (n + 1) fs) : LivesOk prims outside bad skip n (f :: fs)
+  | 0, g, h => by
+    rw [List.getElem?_cons_zero, Option.some.injEq] at h
+    subst h
+    exact head
+  | j + 1, g, h => by
+    rw [List.getElem?_cons_succ] at h
+    have := tail j g h
+    rwa [Nat.add_assoc, Nat.add_comm 1 j] at this
+
+theorem livesOk_append {n : Nat} {xs ys : List SrcFunc} (left : LivesOk prims outside bad skip n xs)
+    (right : LivesOk prims outside bad skip (n + xs.length) ys) : LivesOk prims outside bad skip n (xs ++ ys) := by
+  intro j f h
+  by_cases lt : j < xs.length
+  · rw [List.getElem?_append_left lt] at h
+    exact left j f h
+  · have le : xs.length ≤ j := Nat.le_of_not_lt lt
+    rw [List.getElem?_append_right le] at h
+    have := right (j - xs.length) f h
+    rwa [Nat.add_assoc, Nat.add_sub_cancel' le] at this
+
+theorem LiveOk.liveFn {i : Nat} {f : SrcFunc} (h : LiveOk prims outside bad i f) (hp : prims.isPrim i = false)
+    (hout : outside.contains i = false) (hbad : bad.contains i = false) : LiveFn bad f = true := by
+  simp only [LiveOk, hp, hout, hbad, Bool.false_or] at h
+  exact h
+
+end
 
 end Lanius.Faithful.Termination
