@@ -2489,10 +2489,11 @@ accepts in its states, lets `text_grep` count any lookbehind-free pattern on a
 0.9 MB corpus in about 0.1–0.2 s instead of 2.3–3.8 s. Its transitions are
 cached per byte, with partial states for UTF-8 prefixes, so `\p{Lu}` on a
 1.3 MB mixed-script file takes 147 ms instead of 1110 ms. `text_grep` also
-searches for the pattern's required literal with `core::search` across each
-64 KiB read and runs the matcher only on the records that contain it. On
-S4's 49 MB corpus a no-match scan takes 68 ms instead of 5.2 s, against GNU
-grep's 11 ms; patterns with a literal take 85–272 ms with `-c`
+searches for the pattern's required literal across each 64 KiB read, eight
+candidate starts per word step, and runs the matcher only on the records that
+contain it. On S4's 49 MB corpus a no-match scan takes 56 ms instead of 5.2 s,
+against GNU grep's 9 ms; patterns with a literal take 57–100 ms with `-c`
+(`the`, 150,582 matching lines, takes 100 ms against GNU's 54)
 ([timings](extended-text-grep.md#literal-prefilter)). Patterns without one
 run `Dfa.match_lines` over each whole block, restarting at every record, so
 `[0-9]+$` takes 0.54 s instead of 1.8 s.
