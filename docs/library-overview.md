@@ -16,6 +16,13 @@ owner fields, and the interval-edit fixture shows under an in-program
 RLIMIT_AS denial that failed extraction leaves the source unchanged. Native receipts use the prebuilt compiler; the two registered
 Rust tests type-check and await a full test-binary run.
 The [concurrency increment](stdlib-concurrency.md) adds four modules for parallel
+The [`core::search`](stdlib-search.md) increment adds SWAR byte scans and a
+rarest-byte substring prefilter, used by `Text::find` and the parallel
+grep. A budgeted Two-Way (Crochemore–Perrin) fallback keeps the worst case
+at O(n+m). 160,456 generated cases match Python's search results. That is
+eight runs, each adding the same 57 adversarial periodic cases.
+The preceding
+[concurrency increment](stdlib-concurrency.md) adds four modules for parallel
 work on native Linux x86_64/glibc with libatomic:
 
 - `std::worker`: scoped pools of forked worker processes.
@@ -647,8 +654,10 @@ the `NegativeExponent` error. Radix 2-36 parsing and formatting fold
 `radix^g < 2^32` digits per pass. The [bc calculator](stdlib-bc.md) evaluates
 infix expressions over stdin; its Python oracle checked 9,526 values and 103
 diagnostics across six radices on native Linux x86_64, including operands that
-straddle the threshold, zero, negatives and division by zero. Karatsuba runs in
-one preallocated workspace; subquadratic radix conversion remains.
+straddle the threshold, zero, negatives and division by zero (now 9,735 values
+and 326 diagnostics with modular inverses). Karatsuba runs in one workspace;
+Burnikel-Ziegler division and divide-and-conquer/power-of-two conversion make
+million-digit operations pass a separate oracle at 12-38x Python's time.
 
 **Checked native varints.**
 
@@ -2304,6 +2313,14 @@ generated values, about 15 to 24 times faster on typical values.
 [`ext::toml`](extended-toml.md) agrees with Python `tomllib` on 1,754
 hand-written, generated and mutated documents. The only differences are by
 policy: TOML 1.1-only syntax, and integers outside i64.
+[`ext::cbor_stream`](extended-cbor-stream.md) streams CBOR: its decoder takes
+byte chunks of any size, its writer flushes to `core::io::Write`, and both have
+an RFC 8949 core deterministic mode (sorted unique keys, definite lengths,
+shortest exact floats). Errors are typed with u64 offsets under depth, item,
+string and input limits. It agrees with all 81 hand-typed Appendix A rows and
+an independent Python implementation on 8,100 generated, mutated, limit and
+sequence cases at four chunk sizes; the
+[cbor-to-json](../sample_programs/cbor_to_json.lani) sample agrees on 700.
 [Reusable CSV records and bounded stream writing](extended-csv-write.md)
 share the canonical encoder, preflight the complete record and retain exact
 accepted-prefix progress. The [column rewrite program](extended-csv-rewrite.md)
@@ -2322,9 +2339,12 @@ indices. Its Python-precedence calculator sample agrees with CPython `ast` on
 The [regex differential oracle](extended-regex-oracle.md) runs the real
 `find_iter`, template-replacement and grep programs against CPython `re` on
 seeded grammar-generated patterns from the shared subset. Five seeds agree on
-60,025 find/capture cases, 5,000 replacements and 5,000 grep runs, and five
+60,025 find/capture cases (with named groups), 5,000 replacements, 5,000 grep
+runs and 15,000 capture-free lazy-DFA `is_match`/`find` cases, and five
 pathological inputs finish in about 0.2 s. It found, and the engine now fixes,
 a lazy counted-repetition priority error (`(?:a|aab){0,2}?b` on `aabb`).
+The DFA lets `text_grep` count assertion-free patterns on a 0.9 MB corpus in
+0.15–0.23 s instead of 3–3.8 s.
 
 [Regex splitting and replacement](extended-regex-text.md) now reuse canonical
 Search with one lazily acquired workspace. Borrowed split fields, independent

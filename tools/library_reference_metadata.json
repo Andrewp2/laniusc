@@ -664,6 +664,11 @@
         "docs/library-host-operation-support.md"
       ]
     },
+    "core::search": {
+      "guides": [
+        "docs/stdlib-search.md"
+      ]
+    },
     "core::set": {
       "guides": [
         "docs/stdlib-fixed-capacity.md",
@@ -898,8 +903,15 @@
     },
     "ext::cbor": {
       "guides": [
-        "docs/extended-cbor.md"
+        "docs/extended-cbor.md",
+        "docs/extended-cbor-stream.md"
       ]
+    },
+    "ext::cbor_stream": {
+      "guides": [
+        "docs/extended-cbor-stream.md"
+      ],
+      "note": "Allocating streaming RFC 8949 codec over ext::cbor events: a chunk-fed Decoder (sticky typed errors with u64 offsets, depth/item/string/input limits, CBOR sequences), EventReader over core::io::Read, and a buffered Writer with flush_to core::io::Write. Optional core deterministic mode (section 4.2.1) rejects or produces non-preferred heads, indefinite lengths, non-shortest floats and unsorted or duplicate keys. Native Linux x86_64 binaries agree with all 81 hand-typed Appendix A rows and an independent Python implementation on 1,500 generated, 3,000 mutated, 2,400 limit and 1,200 sequence cases at four chunk sizes; the cbor-to-json sample agrees on 700 cases. The cargo registrations were not run in this session."
     },
     "ext::cli": {
       "guides": [

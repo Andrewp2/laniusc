@@ -255,9 +255,12 @@ adjacent matches in one call. Output and exit status matched GNU `grep -F -e` in
 cases crossed seven patterns (including empty, absent and space-containing
 ones) with four inputs: a 7 MB file of 400,000 random lines without a
 trailing newline, a small file with empty lines, the 11 MB word-count file
-and an empty input. Twenty further runs on the 7 MB file were identical. On
-the 11 MB file it takes 0.115 s against GNU grep's 0.012 s: the search is a
-naive byte comparison, and the parallelism does not make up for that.
+and an empty input. Twenty further runs on the 7 MB file were identical. Workers
+now search with [`core::search`](stdlib-search.md) and record per-chunk
+match summaries. The same comparison then passed 133 of 133 cases,
+including a 49 MB text corpus. The search guide records timings against GNU
+grep: 3–7x faster than the first naive version, and still 2–7x slower than
+GNU grep.
 
 ## Stress receipts
 

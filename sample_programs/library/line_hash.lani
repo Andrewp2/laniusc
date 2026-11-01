@@ -1,0 +1,44 @@
+// Line-reading benchmark: alloc::buffered::Reader over stdin + alloc::io::read_line_into
+// with one reused Vec. Compare with tools/line_hash_oracle.py.
+// "lines bytes hash" where a 32-bit FNV-style hash covers each line's bytes plus its length.
+module app::main;
+import alloc::buffered;
+import alloc::io;
+import alloc::string;
+import alloc::vec;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::result;
+import core::text;
+import std::stream;
+fn main() -> i32 {
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let reader: alloc::buffered::Reader<std::stream::Descriptor> = core::result::unwrap(alloc::buffered::reader(source.borrow(), 65536));
+    let limits: alloc::io::ReadLimits = alloc::io::ReadLimits { max_bytes: 16777216, max_calls: 1000000 as u64 };
+    let buffer: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+    let lines: u64 = 0; let total: u64 = 0; let hash: u64 = 2166136; let mask: u64 = 4294967295;
+    while (true) {
+        let got: core::result::Result<alloc::io::LineView, alloc::io::AppendFailure> = alloc::io::read_line_into(reader.borrow(), buffer.borrow(), limits);
+        if (core::result::is_err(got)) { buffer.destroy(); reader.discard(); return 2; }
+        let line: alloc::io::LineView = core::result::unwrap(got);
+        let count: i32 = line.text.length;
+        if (count == 0) { break; }
+        let data: [u8] = buffer.as_slice();
+        let index: i32 = 0;
+        while (index < count) { hash = ((hash ^ (data[index] as u64)) * 16777619) & mask; index += 1; }
+        hash = ((hash ^ (count as u64)) * 16777619) & mask;
+        lines += 1; total += count as u64;
+    }
+    buffer.destroy();
+    reader.discard();
+    let storage: [i32;32] = [0;32];
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage), 128);
+    let format: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes, 0, 128));
+    format.write_unsigned(lines, core::fmt::decimal()); format.write_text(core::text::from_utf8_unchecked(core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(" "), 1), 0, 1));
+    format.write_unsigned(total, core::fmt::decimal()); format.write_text(core::text::from_utf8_unchecked(core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(" "), 1), 0, 1));
+    format.write_unsigned(hash, core::fmt::decimal()); format.write_text(core::text::from_utf8_unchecked(core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr("\n"), 1), 0, 1));
+    let size: i32 = core::result::unwrap(format.finish()); let out: std::stream::Descriptor = std::stream::stdout();
+    core::io::write_all(out.borrow(), bytes, 0, size);
+    return 0;
+}

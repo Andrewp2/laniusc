@@ -93,11 +93,31 @@ pub impl BigInt {
     // Python pow(a, e, m) semantics: e >= 0, m != 0, and a nonzero result
     // takes the modulus sign, so 0 <= r < m or m < r <= 0.
     pub fn mod_pow(&self, exponent: &BigInt, modulus: &BigInt, limits: alloc::big_uint::Limits) -> core::result::Result<BigInt, alloc::big_uint::Error> {
-        if (exponent.negative) { return core::result::Err(alloc::big_uint::Error::NegativeExponent); }
+        if (exponent.negative) {
+            // pow(a, -e, m) = pow(a^-1 mod m, e, m), as in Python.
+            let inverted: core::result::Result<BigInt, alloc::big_uint::Error> = self.mod_inverse(modulus, limits); if (core::result::is_err(inverted)) { return inverted; }
+            let base: BigInt = core::result::unwrap(inverted); let positive: BigInt = owned(false, exponent.magnitude);
+            let raised: core::result::Result<BigInt, alloc::big_uint::Error> = base.mod_pow(positive.borrow(), modulus, limits); base.destroy(); return raised;
+        }
         let reduced: core::result::Result<alloc::big_uint::BigUint, alloc::big_uint::Error> = self.magnitude.mod_pow(exponent.magnitude.borrow(), modulus.magnitude.borrow(), limits);
         if (core::result::is_err(reduced)) { return core::result::Err(core::result::unwrap_err(reduced)); }
         let value: alloc::big_uint::BigUint = core::result::unwrap(reduced);
         if (self.negative && exponent.magnitude.bit(0) && !value.is_zero()) {
+            let flipped: core::result::Result<alloc::big_uint::BigUint, alloc::big_uint::Error> = modulus.magnitude.sub(value.borrow(), limits); value.destroy();
+            if (core::result::is_err(flipped)) { return core::result::Err(core::result::unwrap_err(flipped)); } value = core::result::unwrap(flipped);
+        }
+        if (modulus.negative && !value.is_zero()) { return signed_sub(modulus.magnitude.borrow(), value, limits); }
+        return core::result::Ok(owned(false, value));
+    }
+    // Python pow(a, -1, m): the unique x with a*x = 1 (mod m), 0 <= x < m or
+    // m < x <= 0. NotInvertible when gcd(a, m) != 1; zero modulus DivisionByZero.
+    pub fn mod_inverse(&self, modulus: &BigInt, limits: alloc::big_uint::Limits) -> core::result::Result<BigInt, alloc::big_uint::Error> {
+        if (modulus.is_zero()) { return core::result::Err(alloc::big_uint::Error::DivisionByZero); }
+        let inverse: core::result::Result<alloc::big_uint::BigUint, alloc::big_uint::Error> = self.magnitude.mod_inverse(modulus.magnitude.borrow(), limits);
+        if (core::result::is_err(inverse)) { return core::result::Err(core::result::unwrap_err(inverse)); }
+        let value: alloc::big_uint::BigUint = core::result::unwrap(inverse);
+        // (-a)^-1 = -(a^-1) mod m.
+        if (self.negative && !value.is_zero()) {
             let flipped: core::result::Result<alloc::big_uint::BigUint, alloc::big_uint::Error> = modulus.magnitude.sub(value.borrow(), limits); value.destroy();
             if (core::result::is_err(flipped)) { return core::result::Err(core::result::unwrap_err(flipped)); } value = core::result::unwrap(flipped);
         }
