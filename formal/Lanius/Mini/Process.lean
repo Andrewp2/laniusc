@@ -85,14 +85,14 @@ needs, every stopped run of it is at a fault. -/
 theorem compileSource_contract {sp : SrcProgram} {binary : Binary}
     (compiled : compileSource sp = some binary) {f : Nat} {func : SrcFunc}
     (found : sp.funcs[f]? = some func) {args : List Value} {bits : List (BitVec 64)}
-    (typed : FieldsHold (paramTypes func.params) args (Func.entry bits) 0)
+    (typed : FieldsHold [] (paramTypes func.params) args (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize func.params) {fuel : Nat} {v : Value}
     {final : Semantics.State} {heap : Heap} (start : heap.cursor = 1)
     (zero : ∀ a, 1 ≤ a → heap.bytes a = 0) (small : heap.limit < 2 ^ 62) (silent : heap.io.trace = [])
     (runs : Semantics.evalExpr fuel sp.toCore (startState heap.io) (.call f (args.map Core.Expr.value)) =
       .done v final)
     (fits : final.heap.nextAddress ≤ heap.limit) :
-    ∃ depth results, ∃ after : Heap, func.ret.HoldsAt v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
+    ∃ depth results, ∃ after : Heap, func.ret.HoldsAt [] v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
       final.world.standardOutput = outputOf 1 after.io.trace ∧ final.world.standardError = outputOf 2 after.io.trace ∧
       ∀ imageBase window, Contract binary imageBase (binary.stackNeed depth) window f bits heap results after := by
   obtain ⟨_, _, funcs, lowered, compiledProgram⟩ := compileSource_some compiled
@@ -104,10 +104,10 @@ theorem compileSource_contract {sp : SrcProgram} {binary : Binary}
     rw [found] at found'
     cases found'
     obtain ⟨rfl, rfl⟩ := evalExprs_values argsRun
-    obtain ⟨_, _, depth, results, after, returns, holds, len, hc⟩ :=
+    obtain ⟨_, _, depth, results, after, returns, holds, len, hc, -⟩ :=
       body_sound (mp := { funcs := funcs }) (hp := heap) lowered (stmt_sound lowered k) found
         (startState_fresh _) (HeapCorr.empty start zero small silent)
-        typed bitsLen bodyRun result fits
+        (FrameCorr.nil _ _) (fun _ mem => by simp at mem) typed bitsLen bodyRun result fits
     refine ⟨depth, results, after, holds, len, hc.out, hc.err, fun imageBase window => ?_⟩
     rcases compileOptimized_some compiledProgram with original | ⟨q, accepted, optimized⟩
     · exact compiled_contract original imageBase depth f bits heap results after returns window
@@ -594,14 +594,14 @@ theorem process_exits {sp : SrcProgram} {binary : Binary} {entry stack heap : Na
     {given : Io} (silent : given.trace = []) {fuel : Nat} {v : Value} {final : Semantics.State}
     (runs : Semantics.evalExpr fuel sp.toCore (startState given) (.call entry []) = .done v final)
     (fits : final.heap.nextAddress ≤ heap) :
-    ∃ depth results, ∃ after : Heap, func.ret.HoldsAt v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
+    ∃ depth results, ∃ after : Heap, func.ret.HoldsAt [] v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
       final.world.standardOutput = outputOf 1 after.io.trace ∧ final.world.standardError = outputOf 2 after.io.trace ∧
       ∀ s, Loaded file s → s.io = given →
         (∃ n e, Steps n s e ∧ Det n s e ∧ e.io = after.io ∧
           ∃ code, Exits e code ∧ ∀ w, results.getLast? = some w → code = w) ∨
         (stack - 8 < binary.stackNeed depth ∧ Faults s) := by
   have sz := elfSizes h
-  have typed : FieldsHold (paramTypes func.params) [] (Func.entry []) 0 := by rw [noParams]; exact .nil
+  have typed : FieldsHold [] (paramTypes func.params) [] (Func.entry []) 0 := by rw [noParams]; exact .nil
   have bitsLen : ([] : List (BitVec 64)).length = paramsSize func.params := by rw [noParams]; rfl
   obtain ⟨depth, results, after, holds, len, out, err, contract⟩ := compileSource_contract compiled found typed bitsLen
     (heap := elfHeap heap stack given) rfl (fun _ _ => rfl) (by show heap < 2 ^ 62; have := sz.heap; omega) silent runs fits
@@ -626,13 +626,13 @@ theorem process_behaviour {sp : SrcProgram} {binary : Binary} {entry stack heap 
     {s : State} (loaded : Loaded file s) {m : Nat} {u : State} (run : Steps m s u)
     (stuck : ∀ v, ¬Lanius.X86.Machine.Step u v) (clean : ¬Lanius.X86.Machine.Fault u) :
     (∃ fuel v final, Semantics.evalExpr fuel sp.toCore (startState s.io) (.call entry []) = .done v final ∧
-      final.heap.nextAddress ≤ heap ∧ ∃ results, func.ret.HoldsAt v (Func.entry results) 0 ∧
+      final.heap.nextAddress ≤ heap ∧ ∃ results, func.ret.HoldsAt [] v (Func.entry results) 0 ∧
         results.length = func.ret.size ∧ ∃ code, Exits u code ∧ ∀ w, results.getLast? = some w → code = w) ∨
     ∃ fuel r st, Semantics.evalExpr fuel sp.toCore (startState s.io) (.call entry []) = .trapped r st ∧
       undefinedTrap r = true ∧
       st.heap.nextAddress ≤ heap := by
   have sz := elfSizes h
-  have typed : FieldsHold (paramTypes func.params) [] (Func.entry []) 0 := by rw [noParams]; exact .nil
+  have typed : FieldsHold [] (paramTypes func.params) [] (Func.entry []) 0 := by rw [noParams]; exact .nil
   have bitsLen : ([] : List (BitVec 64)).length = paramsSize func.params := by rw [noParams]; rfl
   obtain ⟨c, -, det, at_⟩ := startup h loaded
   have past : 8 ≤ m := by
@@ -667,7 +667,7 @@ theorem textProcess_exits {files : List SourceFile} {binary : Binary} {entry sta
       ∀ {given : Io}, given.trace = [] → ∀ {fuel : Nat} {v : Value} {final : Semantics.State},
         Semantics.evalExpr fuel sp.toCore (startState given) (.call entry []) = .done v final →
         final.heap.nextAddress ≤ heap →
-        ∃ depth results, ∃ after : Heap, func.ret.HoldsAt v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
+        ∃ depth results, ∃ after : Heap, func.ret.HoldsAt [] v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
           final.world.standardOutput = outputOf 1 after.io.trace ∧
           final.world.standardError = outputOf 2 after.io.trace ∧
           ∀ s, Loaded file s → s.io = given →
@@ -690,7 +690,7 @@ theorem textProcess_behaviour {files : List SourceFile} {binary : Binary} {entry
       ∀ {s : State}, Loaded file s → ∀ {m : Nat} {u : State}, Steps m s u →
         (∀ v, ¬Lanius.X86.Machine.Step u v) → ¬Lanius.X86.Machine.Fault u →
         (∃ fuel v final, Semantics.evalExpr fuel sp.toCore (startState s.io) (.call entry []) = .done v final ∧
-          final.heap.nextAddress ≤ heap ∧ ∃ results, func.ret.HoldsAt v (Func.entry results) 0 ∧
+          final.heap.nextAddress ≤ heap ∧ ∃ results, func.ret.HoldsAt [] v (Func.entry results) 0 ∧
             results.length = func.ret.size ∧ ∃ code, Exits u code ∧ ∀ w, results.getLast? = some w → code = w) ∨
         ∃ fuel r st, Semantics.evalExpr fuel sp.toCore (startState s.io) (.call entry []) = .trapped r st ∧
           undefinedTrap r = true ∧ st.heap.nextAddress ≤ heap := by

@@ -128,7 +128,7 @@ heap the mini heap represents, within its limit. -/
 theorem compileSource_stops_from {sp : SrcProgram} {binary : Binary}
     (compiled : compileSource sp = some binary) {f : Nat} {func : SrcFunc}
     (found : sp.funcs[f]? = some func) {args : List Value} {bits : List (BitVec 64)}
-    (typed : FieldsHold (paramTypes func.params) args (Func.entry bits) 0)
+    (typed : FieldsHold [] (paramTypes func.params) args (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize func.params) {st : Semantics.State} {heap : Heap}
     (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap) (within : st.heap.nextAddress ≤ heap.limit)
     (fails : ∀ fuel, Failing heap.limit (Semantics.evalExpr fuel sp.toCore st (.call f (args.map Core.Expr.value))))
@@ -144,7 +144,7 @@ theorem compileSource_stops_from {sp : SrcProgram} {binary : Binary}
   obtain ⟨returns, _, funcs, lowered, compiledProgram⟩ := compileSource_some compiled
   have stops : ∀ n, ∃ depth, Program.Stops { funcs := funcs } depth f bits heap n := fun n => by
     obtain ⟨d, g, gFound, arity, body⟩ := callee_stops (mp := { funcs := funcs }) lowered returns
-      (stmtStops_all lowered returns n) (evalExprs_values_done args 0) found fresh hc within typed bitsLen fails
+      (stmtStops_all lowered returns n) (evalExprs_values_done args 0) found fresh hc (FrameCorr.nil _ _) within typed bitsLen fails
     exact ⟨d, g, gFound, arity, body⟩
   exact compileOptimized_stops compiledProgram stops s imageBase window bounded loaded apart imageHeap entry params
     heapAt stack
@@ -157,7 +157,7 @@ ends only at a checked fault, or runs forever. -/
 theorem compileSource_stops {sp : SrcProgram} {binary : Binary}
     (compiled : compileSource sp = some binary) {f : Nat} {func : SrcFunc}
     (found : sp.funcs[f]? = some func) {args : List Value} {bits : List (BitVec 64)}
-    (typed : FieldsHold (paramTypes func.params) args (Func.entry bits) 0)
+    (typed : FieldsHold [] (paramTypes func.params) args (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize func.params) {heap : Heap} (start : heap.cursor = 1)
     (zero : ∀ a, 1 ≤ a → heap.bytes a = 0) (small : heap.limit < 2 ^ 62) (silent : heap.io.trace = [])
     (room : 1 ≤ heap.limit)
@@ -201,7 +201,7 @@ gives the results the compiled code returns. -/
 theorem compileSource_behaviour {sp : SrcProgram} {binary : Binary}
     (compiled : compileSource sp = some binary) {f : Nat} {func : SrcFunc}
     (found : sp.funcs[f]? = some func) {args : List Value} {bits : List (BitVec 64)}
-    (typed : FieldsHold (paramTypes func.params) args (Func.entry bits) 0)
+    (typed : FieldsHold [] (paramTypes func.params) args (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize func.params) {heap : Heap} (start : heap.cursor = 1)
     (zero : ∀ a, 1 ≤ a → heap.bytes a = 0) (small : heap.limit < 2 ^ 62) (silent : heap.io.trace = [])
     (room : 1 ≤ heap.limit)
