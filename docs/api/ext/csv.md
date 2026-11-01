@@ -561,7 +561,7 @@ pub fn decoder(options: Options) -> core::result::Result<Decoder, Error>
 
 ### function: parse_bytes
 
-[Source line 585](../../../extended/ext/csv.lani#L585)
+[Source line 588](../../../extended/ext/csv.lani#L588)
 
 ```lanius
 pub fn parse_bytes(source: [u8], offset: i32, count: i32, options: Options) -> core::result::Result<Table, Error>
@@ -569,7 +569,7 @@ pub fn parse_bytes(source: [u8], offset: i32, count: i32, options: Options) -> c
 
 ### function: parse
 
-[Source line 604](../../../extended/ext/csv.lani#L604)
+[Source line 607](../../../extended/ext/csv.lani#L607)
 
 ```lanius
 pub fn parse(input: alloc::string::String, options: Options) -> core::result::Result<Table, Error>
@@ -577,7 +577,7 @@ pub fn parse(input: alloc::string::String, options: Options) -> core::result::Re
 
 ### function: encode_record
 
-[Source line 651](../../../extended/ext/csv.lani#L651)
+[Source line 654](../../../extended/ext/csv.lani#L654)
 
 ```lanius
 pub fn encode_record(record: Record) -> core::result::Result<alloc::string::String, Error>
@@ -585,7 +585,7 @@ pub fn encode_record(record: Record) -> core::result::Result<alloc::string::Stri
 
 ### function: encode
 
-[Source line 656](../../../extended/ext/csv.lani#L656)
+[Source line 659](../../../extended/ext/csv.lani#L659)
 
 ```lanius
 pub fn encode(table: Table) -> core::result::Result<alloc::string::String, Error>
@@ -819,7 +819,7 @@ pub fn take_record(&self) -> core::option::Option<Record>
 
 #### method: feed
 
-[Source line 434](../../../extended/ext/csv.lani#L434)
+[Source line 436](../../../extended/ext/csv.lani#L436)
 
 ```lanius
 pub fn feed(&self, source: [u8], start: i32, count: i32) -> core::result::Result<Progress, Error>
@@ -827,7 +827,7 @@ pub fn feed(&self, source: [u8], start: i32, count: i32) -> core::result::Result
 
 #### method: finish
 
-[Source line 462](../../../extended/ext/csv.lani#L462)
+[Source line 465](../../../extended/ext/csv.lani#L465)
 
 ```lanius
 pub fn finish(&self) -> core::result::Result<bool, Error>
@@ -835,7 +835,7 @@ pub fn finish(&self) -> core::result::Result<bool, Error>
 
 #### method: reset
 
-[Source line 478](../../../extended/ext/csv.lani#L478)
+[Source line 481](../../../extended/ext/csv.lani#L481)
 
 ```lanius
 pub fn reset(&self)
@@ -843,15 +843,15 @@ pub fn reset(&self)
 
 #### method: destroy
 
-[Source line 486](../../../extended/ext/csv.lani#L486)
+[Source line 489](../../../extended/ext/csv.lani#L489)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 489
+### impl at line 492
 
-[Source line 489](../../../extended/ext/csv.lani#L489)
+[Source line 492](../../../extended/ext/csv.lani#L492)
 
 ```lanius
 pub impl Table
@@ -859,7 +859,7 @@ pub impl Table
 
 #### method: row_count
 
-[Source line 490](../../../extended/ext/csv.lani#L490)
+[Source line 493](../../../extended/ext/csv.lani#L493)
 
 ```lanius
 pub fn row_count(&self) -> i32
@@ -867,7 +867,7 @@ pub fn row_count(&self) -> i32
 
 #### method: field_count
 
-[Source line 491](../../../extended/ext/csv.lani#L491)
+[Source line 494](../../../extended/ext/csv.lani#L494)
 
 ```lanius
 pub fn field_count(&self, index: i32) -> core::option::Option<i32>
@@ -875,7 +875,7 @@ pub fn field_count(&self, index: i32) -> core::option::Option<i32>
 
 #### method: field
 
-[Source line 496](../../../extended/ext/csv.lani#L496)
+[Source line 499](../../../extended/ext/csv.lani#L499)
 
 ```lanius
 pub fn field(&self, row_index: i32, field_index: i32) -> core::result::Result<core::text::Text, Error>
@@ -883,7 +883,7 @@ pub fn field(&self, row_index: i32, field_index: i32) -> core::result::Result<co
 
 #### method: try_field
 
-[Source line 503](../../../extended/ext/csv.lani#L503)
+[Source line 506](../../../extended/ext/csv.lani#L506)
 
 ```lanius
 pub fn try_field(&self, row_index: i32, field_index: i32) -> core::result::Result<alloc::string::String, Error>
@@ -891,7 +891,7 @@ pub fn try_field(&self, row_index: i32, field_index: i32) -> core::result::Resul
 
 #### method: destroy
 
-[Source line 542](../../../extended/ext/csv.lani#L542)
+[Source line 545](../../../extended/ext/csv.lani#L545)
 
 ```lanius
 pub fn destroy(&self)
