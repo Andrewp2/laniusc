@@ -89,7 +89,7 @@ pub fn from_view(view: MatrixView, limits: Limits) -> core::result::Result<Matri
     let v: core::result::Result<f64,Error> = checked(view,limits); if (v.is_err()) { return core::result::Err(v.unwrap_err()); }
     let made: core::result::Result<Matrix,Error> = zeros(view.rows,view.cols,limits); if (made.is_err()) { return made; }
     let result: Matrix = made.unwrap(); let target: [f64] = result.data.as_slice(); let i: i32 = 0; let n: i32 = result.data.len();
-    while (i < n) { target[i] = read(view,i/view.cols,i%view.cols); i += 1; }
+    while (i < n) { let stored: f64 = read(view,i/view.cols,i%view.cols); target[i] = stored; i += 1; }
     return core::result::Ok(result);
 }
 pub impl Matrix {

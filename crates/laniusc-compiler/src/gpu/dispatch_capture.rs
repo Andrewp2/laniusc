@@ -13,6 +13,9 @@
 //! docs/cpu-kernel-replay.md); `src/bin/shader_dispatch_replay.rs` and
 //! `crates/vk-hang-probe` replay it on the GPU.
 //!
+//! `LANIUS_DEBUG_CAPTURE_PER_JOB=1` restarts the count at each write, so a
+//! resident daemon captures the k-th dispatch of every job.
+//!
 //! With `LANIUS_DEBUG_OPERATION_LIMIT` the first dispatch of the label that the
 //! limit drops is captured instead (hang debugging): only its inputs exist.
 
@@ -89,6 +92,15 @@ pub(crate) fn capture_pass() -> Option<&'static str> {
 
 fn capture_index() -> u64 {
     crate::gpu::env::env_u64("LANIUS_DEBUG_CAPTURE_INDEX", 0)
+}
+
+/// `LANIUS_DEBUG_CAPTURE_PER_JOB=1`: restart the count of the captured label's
+/// dispatches at each write (a resident daemon writes after every job), so
+/// `LANIUS_DEBUG_CAPTURE_INDEX` picks the k-th dispatch of each job rather than
+/// of the daemon's life.
+fn capture_per_job() -> bool {
+    static PER_JOB: OnceLock<bool> = OnceLock::new();
+    *PER_JOB.get_or_init(|| crate::gpu::env::env_bool_strict("LANIUS_DEBUG_CAPTURE_PER_JOB", false))
 }
 
 fn state() -> std::sync::MutexGuard<'static, CaptureState> {
@@ -398,9 +410,15 @@ pub(crate) fn debug_write_capture(device: &wgpu::Device, queue: &wgpu::Queue) {
 }
 
 fn write_capture(device: &wgpu::Device, queue: &wgpu::Queue, pass: &str) -> anyhow::Result<()> {
-    let selected = state().selected.take();
+    let (selected, seen) = {
+        let mut state = state();
+        let seen = state.seen;
+        if capture_per_job() {
+            state.seen = 0;
+        }
+        (state.selected.take(), seen)
+    };
     let Some(capture) = selected else {
-        let seen = state().seen;
         anyhow::bail!(
             "no dispatch captured ({seen} dispatches of this label went through a capturing dispatch path)"
         );

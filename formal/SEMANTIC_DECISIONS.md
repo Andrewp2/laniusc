@@ -472,6 +472,15 @@ The compiled code checks in Core's order. A store `slice[i] = v` evaluates
 proving `compileSource_stops` found the old order, `v` before the check,
 wrong when `i` is out of bounds and `v` reaches an undefined trap).
 
+This is a known difference from laniusc (recorded 10-31). laniusc evaluates
+`v` first and then checks `i`, which is Rust's order for an assignment (the
+assigned value, then the place). With `i` out of bounds the two compilers
+trap at the same store, but laniusc first runs whatever `v` does: its
+output, or a trap of its own. Core's order stays: the store's check is
+proved to come before any effect of `v`. fuzz_oracle.py counts such a
+program as known (both trap, the verified compiler's output a prefix of
+laniusc's, an indexed store in the program) rather than as a disagreement.
+
 ### `x<` in an expression (decided 10-29)
 
 The grammar gives `a < b > (c)` two trees: a chain of comparisons and a call
@@ -1508,7 +1517,9 @@ laniusc reads it or not read (frontend cases `reject_for_write`,
   never ends) before it traps, and the reading traps first. Such a store is
   not read (`AssignTargetR.indexEval`); a value without calls traps or not
   the same way in both orders (Core does not tell traps apart), and a call
-  in the index is read. Programs write `let t = f(); s[i] = t;`.
+  in the index is read. Programs write `let t = f(); s[i] = t;`. The quick
+  gate's `store-rule` step (formal/tools/store_rule.py, a port of this rule
+  to the source text) names any such store in stdlib/ and extended/.
 - A module that declares nothing the front end counts. laniusc's module
   table holds every file's `module` item, and an import whose whole path is
   a module imports the module (modules/05_resolve_imports.slang). The front

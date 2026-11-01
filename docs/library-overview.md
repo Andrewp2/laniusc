@@ -754,12 +754,14 @@ replies, pass as direct runs on native Linux x86_64.
 
 The [URL guide](extended-url.md) adds `ext::url`, the WHATWG URL Standard
 basic URL parser and serializer with an optional base. It returns an owned
-href with spans for every getter, plus the host kind and origin. Non-ASCII and
-`xn--` domains fail with an explicit `UnsupportedIdna` instead of an
-approximation. The contracts program and the
-[url-parse](extended-url.md#application-url-parse) cli25 and whatwg9174
-groups pass as direct runs on native Linux x86_64. The whatwg group compares
-every getter with Node.js's WHATWG URL over a fixed generated corpus.
+href with spans for every getter, plus the host kind and origin. The
+[IDNA guide](extended-idna.md) adds `ext::idna`, UTS #46 ToASCII with Punycode
+over a table derived from the vendored Unicode 17 UCD, which `ext::url` uses
+for internationalized hosts; a ZWNJ that needs Joining_Type data returns
+`UnsupportedIdna`. The contracts program and the
+[url-parse](extended-url.md#application-url-parse) cli25, whatwg9174,
+idna46060 and table1111937 groups pass as direct runs on native Linux x86_64,
+comparing every getter, and every scalar's IDNA behaviour, with Node.js.
 
 **Shared random-source budgets.**
 
@@ -1915,6 +1917,20 @@ streams), 898 tree comparisons in both directions, 176 corrupted or unsafe
 archive rejections, five destination-guard cases and a 96 MiB pipeline under
 32 MiB RSS. The oracle ran directly against `lcc` executables on native Linux
 x86_64; its cargo wrapper `tests/extended_tgz_execution.rs` was not run.
+
+**xz and .lzma.** [`ext::xz`](extended-xz.md) decodes xz (LZMA2; none, CRC32
+and CRC64 checks; multi-block, concatenated and padded streams with index
+verification) and `.lzma` streams incrementally over caller-owned
+probability, staging and dictionary views, with a dictionary that grows on
+demand, and writes xz as stored LZMA2 chunks. `tgz` now detects and reads xz
+archives and writes them with `-J`. A seeded oracle
+(`tests/fixtures/extended/xz_oracle.py`) passes 22,913 cases with 0 failures
+against Python `lzma` and the xz 5.4.6 CLI: 2,268 decodes of valid streams
+under step sizes down to one byte, 20,639 concatenated, truncated,
+bit-flipped or extended streams rejected exactly when a strict Python decode
+rejects them (and decoded identically otherwise) and 6 error-class checks. The tgz
+oracle adds 690 xz archive cases (now 4,159 in total) against Python
+`tarfile` and GNU tar. There is no LZMA encoder yet.
 
 **Accepted bounded archive increment.**
 

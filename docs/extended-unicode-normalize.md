@@ -122,18 +122,30 @@ The count pass returns insufficient scratch capacity before writing scratch.
 
 Every call accepts an explicit `u64` work budget. The count pass charges one
 unit per input scalar. The normalization pass charges one unit per decoded
-input scalar, one per decomposed scalar emitted, one per ordering iteration,
-one per ordering comparison, and one per composition iteration. Final sizing
+input scalar, one per decomposed scalar emitted, the ordering units below,
+and one per composition iteration. Final sizing
 charges one plus the UTF-8 width per normalized scalar; those width units
 reserve the later output write or comparison. Consequently, `measure` and
 `normalize_into` consume the same work for the same input and form. An empty
 input succeeds with a zero budget and empty views. These units are a stable
 description of this engine's accounting, rather than a CPU cycle estimate.
 
+Canonical ordering sorts each maximal run of nonstarters stably by combining
+class, which gives exactly the result of D109's adjacent exchanges. A run of
+at most 32 scalars uses insertion sorting and charges one unit per ordering
+iteration (every scalar after the first in the decomposition, starters
+included) and one per comparison. A longer run uses an in-place stable
+radix sort: each combining class is packed into bits 24 to 31 of its scalar,
+and every class bit that varies within the run gets a bottom-up stable
+partition whose merges exchange two blocks with three reversals. It charges
+one unit per run scalar, plus, unless the run is already in order, one unit
+per run scalar for each merge level (the base-2 logarithm of the run length,
+rounded up) of each varying bit. Ordering is therefore O(n log n) with at
+most eight varying bits, rather than quadratic: a decomposition of
+`a` + 4,000 × U+0301 + 4,000 × U+0316 orders in about a millisecond.
+
 Static table searches have fixed bounds determined by Unicode 17 table sizes.
-Canonical ordering uses stable insertion sorting and can take quadratic work
-on a hostile combining run. Every comparison consumes budget, so a finite
-caller budget bounds that work. Scratch holds the full decomposition; there
+Scratch holds the full decomposition; there
 is no input-length assumption that normalized UTF-8 must fit in the original
 byte count.
 

@@ -274,7 +274,8 @@ pub impl core::io::Read for Encoding {
         let completed: i32 = 0;
         while (completed < wanted) {
             let byte: core::option::Option<u8> = self.machine.pull();
-            destination[offset + completed] = byte.unwrap();
+            let stored: u8 = byte.unwrap();
+            destination[offset + completed] = stored;
             completed += 1; self.remaining_bytes -= 1;
         }
         return core::result::Ok(completed);
