@@ -71,7 +71,7 @@ pub struct Ring {
     sq_map: ptr, sq_bytes: i64, cq_map: ptr, cq_bytes: i64, sqes: ptr, sqe_bytes: i64,
     sq_head: ptr, sq_tail: ptr, sq_flags: ptr, sq_dropped: ptr, sq_mask: i64, sq_entries: i64,
     cq_head: ptr, cq_tail: ptr, cq_overflow: ptr, cqes: ptr, cq_mask: i64, cq_entries: i64,
-    tail: i64, head: i64, pending: i64, owed: i64, last: ptr, moved: i64,
+    tail: i64, head: i64, pending: i64, owed: i64, last: ptr, moved: i64, scratch: ptr,
 }
 
 fn word(value: i64) -> std::linux::Argument { return std::linux::Argument::Word(value); }
@@ -85,6 +85,8 @@ fn store64(at: ptr, value: i64) { let view: [i64] = core::mem::typed_slice_from_
 fn store_u64(at: ptr, value: u64) { let view: [u64] = core::mem::typed_slice_from_raw_parts<u64>(at, 1); view[0] = value; }
 fn load_u64(at: ptr) -> u64 { let view: [u64] = core::mem::typed_slice_from_raw_parts<u64>(at, 1); return view[0]; }
 fn store_ptr(at: ptr, value: ptr) { let view: [ptr] = core::mem::typed_slice_from_raw_parts<ptr>(at, 1); view[0] = value; }
+// Transfer completion tags: slot, write bit, chunk start, chunk length.
+fn write_tag(slot: i32, start: i64, length: i64) -> u64 { return ((slot as i64) + 256 + start * 512 + length * 68719476736) as u64; }
 fn acquire32(at: ptr) -> i64 { let value: u32 = std::atomic::at32(at).load(std::atomic::Load::Acquire); return (value as i64) & MASK32; }
 fn release32(at: ptr, value: i64) { let low: u32 = (value & MASK32) as u32; std::atomic::at32(at).store(low, std::atomic::Store::Release); }
 
@@ -201,6 +203,14 @@ pub fn setup_with(entries: u32, flags: u32) -> core::result::Result<Ring, Error>
         close_descriptor(fd);
         return core::result::Err(entries_map.unwrap_err());
     }
+    // One private page for transfer's slot table.
+    let scratch: core::result::Result<ptr, Error> = map(4096, -1, 0, 34);
+    if (scratch.is_err()) {
+        unmap(entries_map.unwrap(), sqe_bytes); unmap(sq_map, sq_bytes);
+        if (!single) { unmap(cq_map, cq_bytes); }
+        close_descriptor(fd);
+        return core::result::Err(scratch.unwrap_err());
+    }
     let ring: Ring = Ring {
         fd: fd, features: features, live: true,
         sq_map: sq_map, sq_bytes: sq_bytes, cq_map: cq_map, cq_bytes: cq_bytes, sqes: entries_map.unwrap(), sqe_bytes: sqe_bytes,
@@ -210,7 +220,7 @@ pub fn setup_with(entries: u32, flags: u32) -> core::result::Result<Ring, Error>
         cq_head: cq_map + (load32(p + 80) as usize), cq_tail: cq_map + (load32(p + 84) as usize),
         cq_overflow: cq_map + (load32(p + 96) as usize), cqes: cq_map + (load32(p + 100) as usize),
         cq_mask: load32(cq_map + (load32(p + 88) as usize)), cq_entries: cq_entries,
-        tail: 0, head: 0, pending: 0, owed: 0, last: sq_map, moved: 0,
+        tail: 0, head: 0, pending: 0, owed: 0, last: sq_map, moved: 0, scratch: scratch.unwrap(),
     };
     // Identity SQ index array: slot i always names SQE i.
     let array: ptr = sq_map + (load32(p + 64) as usize);
@@ -394,6 +404,7 @@ pub impl Ring {
         if (!self.live) { return core::result::Err(Error::Closed); }
         self.live = false;
         unmap(self.sqes, self.sqe_bytes);
+        unmap(self.scratch, 4096);
         if (self.cq_map != self.sq_map) { unmap(self.cq_map, self.cq_bytes); }
         unmap(self.sq_map, self.sq_bytes);
         let closed: core::result::Result<i64, std::linux::Error> = close_descriptor(self.fd);
@@ -402,56 +413,64 @@ pub impl Ring {
     }
 
     // Copy input to output through depth buffers of block bytes at buffers
-    // (depth * block bytes, depth <= 64 and <= both ring sizes). The ring
-    // must owe nothing. Positional input (stream false) keeps depth reads in
-    // flight at offsets 0, block, 2*block, ...; stream input (pipes, stdin)
-    // keeps one CURRENT-position read in flight. With output_at >= 0 each
-    // block is written at output_at plus its input offset as soon as it is
-    // read, several writes at once. With output_at CURRENT (streams, O_APPEND
-    // files) blocks are written one at a time, in input order, at the file
-    // position. See cat_output for choosing output_at. Short
-    // reads and short writes are continued; EINTR/EAGAIN results are retried.
-    // Returns the bytes written, or Read(errno)/Write(errno) of the first
-    // failed operation once every operation in flight has completed.
+    // (depth * block bytes; depth <= 64, 2 * depth <= both ring sizes, block
+    // <= 64 MiB). The ring must owe nothing. Positional input (stream false)
+    // keeps up to depth reads in flight at offsets 0, block, 2*block, ...
+    // (one at first, doubling with each full block); stream
+    // input (pipes, stdin) keeps one CURRENT-position read in flight.
+    // With output_at >= 0 every chunk a read returns is written at once at
+    // output_at plus its input offset, so writes overlap reads and each
+    // other. With output_at CURRENT (streams, O_APPEND files) blocks are
+    // written one at a time, in input order, at the file position. See
+    // cat_output for choosing output_at. Short reads and short writes are
+    // continued; EINTR/EAGAIN results are retried. Returns the bytes
+    // written, or Read(errno)/Write(errno) of the first failed operation
+    // once every operation in flight has completed (transferred() then
+    // still counts the bytes written).
     pub fn transfer(&self, input: i32, output: i32, buffers: ptr, block: i32, depth: i32, stream: bool, output_at: i64) -> core::result::Result<i64, Error> {
-        let ordered: bool = output_at < 0;
-        self.moved = 0;
         if (!self.live) { return core::result::Err(Error::Closed); }
-        if (self.owed != 0 || block <= 0 || depth <= 0 || depth > 64 || (depth as i64) > self.sq_entries || (depth as i64) > self.cq_entries) {
+        if (self.owed != 0 || block <= 0 || block > 67108864 || depth <= 0 || depth > 64 || (2 * depth as i64) > self.sq_entries || (2 * depth as i64) > self.cq_entries) {
             return core::result::Err(Error::InvalidInput);
         }
-        // Per slot: 0 free, 1 reading, 2 read and waiting for its write turn,
-        // 3 writing, 4 ended empty (EOF) and waiting for its turn.
-        let state: [i64; 64] = [0; 64];
-        let origin: [i64; 64] = [0; 64];
-        let filled: [i64; 64] = [0; 64];
-        let written: [i64; 64] = [0; 64];
-        let sequence: [i64; 64] = [0; 64];
+        let ordered: bool = output_at < 0;
+        self.moved = 0;
+        // Eight words per slot in the ring's scratch page: state (0 free,
+        // 1 active, 2 read and waiting for its ordered turn, 4 ended empty
+        // and waiting for its turn), input origin, bytes filled, bytes
+        // written, ordered sequence, read in flight, writes in flight.
+        let v: [i64] = core::mem::typed_slice_from_storage<i64>(self.scratch, 512);
+        let z: i32 = 0;
+        while (z < depth * 8) { v[z] = 0; z += 1; }
         let next_offset: i64 = 0;
         let stream_at: i64 = 0;
         let next_sequence: i64 = 0;
         let turn: i64 = 0;
         let writing: bool = false;
         let reading: i64 = 0;
+        // Reads allowed in flight: 1 at first, doubling with each full block,
+        // so a small file costs one read instead of depth.
+        let window: i64 = 1;
         let ended: bool = false;
         let failure: i32 = 0;
         let output_failed: bool = false;
         let total: i64 = 0;
         let active: i64 = 0;
-        let pump: bool = true;
-        while (pump) {
+        let size: usize = block as usize;
+        while (true) {
             // Start reads in free slots while input remains.
             let s: i32 = 0;
             while (s < depth) {
-                let start: bool = state[s] == 0 && !ended && failure == 0;
-                if (start && stream && reading > 0) { start = false; }
+                let f: i32 = s * 8;
+                let start: bool = v[f] == 0 && !ended && failure == 0;
+                // Not `start && reading >= window`: that form stops the compiler
+                // with LNC0057 when uring_copy.lani is built (cat builds).
+                if (reading >= window) { start = false; }
                 if (start) {
-                    state[s] = 1; origin[s] = next_offset; filled[s] = 0; written[s] = 0; sequence[s] = next_sequence;
-                    next_offset += block as i64; next_sequence += 1;
-                    let at: i64 = origin[s];
+                    v[f] = 1; v[f + 1] = next_offset; v[f + 2] = 0; v[f + 3] = 0; v[f + 4] = next_sequence; v[f + 5] = 1; v[f + 6] = 0;
+                    let at: i64 = next_offset;
                     if (stream) { at = CURRENT; }
-                    let buffer: ptr = buffers + (s as usize) * (block as usize);
-                    self.read(input, buffer, block, at, s as u64);
+                    next_offset += block as i64; next_sequence += 1;
+                    self.read(input, buffers + (s as usize) * size, block, at, s as u64);
                     reading += 1; active += 1;
                 }
                 s += 1;
@@ -459,80 +478,88 @@ pub impl Ring {
             // Ordered output: issue the write whose turn it is.
             if (ordered && !writing) {
                 let w: i32 = 0;
-                let looking: bool = true;
-                while (looking && w < depth) {
-                    if (sequence[w] == turn && (state[w] == 2 || state[w] == 4)) {
-                        if (state[w] == 4) { state[w] = 0; turn += 1; w = 0; }
+                while (w < depth) {
+                    let f: i32 = w * 8;
+                    let waiting: bool = v[f] == 2 || v[f] == 4;
+                    if (waiting && v[f + 4] == turn) {
+                        if (v[f] == 4) { v[f] = 0; turn += 1; w = 0; }
                         else {
-                            state[w] = 3; writing = true; active += 1; looking = false;
-                            let buffer: ptr = buffers + (w as usize) * (block as usize);
-                            self.write(output, buffer, filled[w] as i32, CURRENT, (256 + w) as u64);
+                            v[f] = 1; v[f + 6] = 1; writing = true; active += 1;
+                            let c0: i64 = v[f + 3];
+                            let length: i64 = v[f + 2] - c0;
+                            self.write(output, buffers + (w as usize) * size + (c0 as usize), length as i32, CURRENT, write_tag(w, c0, length));
+                            w = depth;
                         }
                     } else { w += 1; }
                 }
             }
-            if (active == 0) { pump = false; }
-            else {
-                let got: core::result::Result<Completion, Error> = self.wait();
-                if (got.is_err()) { return core::result::Err(got.unwrap_err()); }
-                let done: Completion = got.unwrap();
-                let tag: i64 = done.user_data as i64;
-                let slot: i32 = (tag & 255) as i32;
-                let res: i32 = done.result;
-                let buffer: ptr = buffers + (slot as usize) * (block as usize);
-                active -= 1;
-                if (tag < 256) {
-                    if (res == 0 - EINTR || res == 0 - EAGAIN) {
-                        let at: i64 = origin[slot] + filled[slot];
-                        if (stream) { at = CURRENT; }
-                        self.read(input, buffer + (filled[slot] as usize), block - (filled[slot] as i32), at, slot as u64);
-                        active += 1;
-                    } else {
-                        if (res < 0 && failure == 0) { failure = 0 - res; }
-                        if (res > 0) { filled[slot] += res as i64; }
-                        // A stream block's output offset is where its bytes landed.
-                        if (res > 0 && stream) { origin[slot] = stream_at; stream_at += res as i64; }
-                        let more: bool = res > 0 && filled[slot] < (block as i64) && !stream && failure == 0;
-                        if (more) {
-                            // Short positional read: continue the block.
-                            self.read(input, buffer + (filled[slot] as usize), block - (filled[slot] as i32), origin[slot] + filled[slot], slot as u64);
-                            active += 1;
-                        } else {
-                            reading -= 1;
-                            if (res <= 0) { ended = true; }
-                            if (filled[slot] == 0 || failure != 0) {
-                                if (ordered) { state[slot] = 4; } else { state[slot] = 0; }
-                            } else {
-                                if (ordered) { state[slot] = 2; }
-                                else {
-                                    state[slot] = 3; active += 1;
-                                    self.write(output, buffer, filled[slot] as i32, output_at + origin[slot], (256 + slot) as u64);
-                                }
-                            }
+            if (active == 0) { break; }
+            let got: core::result::Result<Completion, Error> = self.wait();
+            if (got.is_err()) { return core::result::Err(got.unwrap_err()); }
+            let done: Completion = got.unwrap();
+            active -= 1;
+            let tag: i64 = done.user_data as i64;
+            let slot: i32 = (tag & 255) as i32;
+            let f: i32 = slot * 8;
+            let res: i32 = done.result;
+            let buffer: ptr = buffers + (slot as usize) * size;
+            let retry: bool = res == 0 - EINTR || res == 0 - EAGAIN;
+            if ((tag & 256) == 0) {
+                if (retry) {
+                    let at: i64 = v[f + 1] + v[f + 2];
+                    if (stream) { at = CURRENT; }
+                    self.read(input, buffer + (v[f + 2] as usize), block - (v[f + 2] as i32), at, slot as u64);
+                    active += 1;
+                } else {
+                    if (res < 0 && failure == 0) { failure = 0 - res; }
+                    let begin: i64 = v[f + 2];
+                    if (res > 0) {
+                        v[f + 2] = begin + (res as i64);
+                        // A stream block's offset is where its bytes landed.
+                        if (stream) { v[f + 1] = stream_at; stream_at += res as i64; }
+                        if (!ordered && failure == 0) {
+                            v[f + 6] = v[f + 6] + 1; active += 1;
+                            self.write(output, buffer + (begin as usize), res, output_at + v[f + 1] + begin, write_tag(slot, begin, res as i64));
                         }
                     }
-                } else {
-                    let retry: bool = res == 0 - EINTR || res == 0 - EAGAIN;
-                    if (res < 0 && !retry && failure == 0) { failure = 0 - res; output_failed = true; }
-                    if (res > 0) { written[slot] += res as i64; total += res as i64; self.moved = total; }
-                    // A zero-byte write of a nonempty rest would loop forever.
-                    if (res == 0 && failure == 0) { failure = 5; output_failed = true; }
-                    let rest: bool = written[slot] < filled[slot] && failure == 0;
-                    if (rest) {
-                        let at: i64 = CURRENT;
-                        if (!ordered) { at = output_at + origin[slot] + written[slot]; }
-                        self.write(output, buffer + (written[slot] as usize), (filled[slot] - written[slot]) as i32, at, (256 + slot) as u64);
+                    if (!stream && v[f + 2] == (block as i64) && window < (depth as i64)) { window = window * 2; }
+                    let more: bool = res > 0 && !stream && v[f + 2] < (block as i64) && failure == 0;
+                    if (more) {
+                        // Short positional read: continue the block.
+                        self.read(input, buffer + (v[f + 2] as usize), block - (v[f + 2] as i32), v[f + 1] + v[f + 2], slot as u64);
                         active += 1;
                     } else {
-                        state[slot] = 0;
-                        if (ordered) { writing = false; turn += 1; }
+                        v[f + 5] = 0; reading -= 1;
+                        if (res <= 0) { ended = true; }
+                        if (ordered) {
+                            if (v[f + 2] > 0 && failure == 0) { v[f] = 2; } else { v[f] = 4; }
+                        }
                     }
                 }
-                // After a failure, ordered slots still waiting will never write.
-                if (failure != 0 && ordered && !writing) {
-                    let f: i32 = 0;
-                    while (f < depth) { if (state[f] == 2 || state[f] == 4) { state[f] = 0; } f += 1; }
+            } else {
+                v[f + 6] = v[f + 6] - 1;
+                let c0: i64 = (tag / 512) & 134217727;
+                let length: i64 = tag / 68719476736;
+                if (!retry && res < 0 && failure == 0) { failure = 0 - res; output_failed = true; }
+                // A zero-byte write of a nonempty chunk would never finish.
+                if (res == 0 && failure == 0) { failure = 5; output_failed = true; }
+                let sent: i64 = 0;
+                if (res > 0) { sent = res as i64; v[f + 3] = v[f + 3] + sent; total += sent; self.moved = total; }
+                if (sent < length && failure == 0) {
+                    let at: i64 = CURRENT;
+                    if (!ordered) { at = output_at + v[f + 1] + c0 + sent; }
+                    v[f + 6] = v[f + 6] + 1; active += 1;
+                    self.write(output, buffer + ((c0 + sent) as usize), (length - sent) as i32, at, write_tag(slot, c0 + sent, length - sent));
+                } else {
+                    if (ordered && v[f + 6] == 0) { writing = false; v[f] = 0; turn += 1; }
                 }
+            }
+            // Positional slots finish when their reads and writes have.
+            if (!ordered && v[f] == 1 && v[f + 5] == 0 && v[f + 6] == 0) { v[f] = 0; }
+            // After a failure, ordered slots still waiting will never write.
+            if (failure != 0 && ordered && !writing) {
+                let q: i32 = 0;
+                while (q < depth) { if (v[q * 8] == 2 || v[q * 8] == 4) { v[q * 8] = 0; } q += 1; }
             }
         }
         if (failure != 0 && output_failed) { return core::result::Err(Error::Write(failure)); }

@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **326 modules**, **17449 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **327 modules**, **17554 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -200,6 +200,7 @@ Inventory: **326 modules**, **17449 declaration/member entries**. Counts include
 | [std::time_checked](std/time_checked.md) | [source](../../stdlib/std/time_checked.lani#L6) | 3 | Source inventory | [stdlib-time](../stdlib-time.md) |
 | [std::time_wide](std/time_wide.md) | [source](../../stdlib/std/time_wide.lani#L4) | 5 | Source inventory | [stdlib-time](../stdlib-time.md) |
 | [std::timer](std/timer.md) | [source](../../stdlib/std/timer.lani#L4) | 36 | Source inventory | [stdlib-timers](../stdlib-timers.md) |
+| [std::uring](std/uring.md) | [source](../../stdlib/std/uring.lani#L10) | 105 | Source inventory | [stdlib-uring](../stdlib-uring.md) |
 | [std::vec](std/vec.md) | [source](../../stdlib/std/vec.lani#L11) | 44 | Protected legacy | [stdlib-legacy-collections](../stdlib-legacy-collections.md), [stdlib-checked-sample-migration](../stdlib-checked-sample-migration.md), [library-dependencies](../library-dependencies.md) |
 | [std::worker](std/worker.md) | [source](../../stdlib/std/worker.lani#L8) | 40 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
 

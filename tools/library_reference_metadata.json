@@ -2211,6 +2211,11 @@
         "docs/stdlib-time.md"
       ]
     },
+    "std::uring": {
+      "guides": [
+        "docs/stdlib-uring.md"
+      ]
+    },
     "std::vec": {
       "guides": [
         "docs/stdlib-legacy-collections.md",
