@@ -2502,6 +2502,19 @@ it takes at most pattern-times-name steps. It agrees with libc through `ctypes`
 on three seeds of 200,000 generated cases plus 2,304 pinned malformed-bracket
 cases.
 
+[`ext::gitignore`](extended-gitignore.md) decides whether a path is ignored
+under git's `.gitignore` rules: comments, escaped trailing spaces, `!`
+negation, directory-only and anchored patterns, `**` components, and
+deeper-file and later-line precedence, with components matched by
+`ext::fnmatch`. `text_grep` now takes file operands and `-r` with
+`--include`, `--exclude`, `--exclude-dir` and `--gitignore`
+([recursive search](extended-text-grep.md#files-and-recursive-search)). Its
+stdout, status and binary-file messages match GNU grep 3.11 `-r` on 36
+searches of the repository tree and on 1,200 generated trees, and
+`--gitignore` matches the files `git ls-files -o --exclude-standard` lists in
+730 generated trees. It is about 4x GNU grep's user time on the repository,
+mostly because it validates every byte of each file that holds the literal.
+
 The [regex differential oracle](extended-regex-oracle.md) runs the real
 `find_iter`, template-replacement and grep programs against CPython `re` on
 seeded grammar-generated patterns from the shared subset. Five seeds agree on
