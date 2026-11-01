@@ -1,0 +1,196 @@
+// RFC 6902 JSON Patch and RFC 7386 JSON Merge Patch over ext::json_tree
+// trees. Both return a new tree and leave the document unchanged, so a
+// failed patch has no effect. See docs/extended-json-patch.md.
+module ext::json_patch;
+import core::mem;
+import core::result;
+import core::text;
+import ext::json_pointer;
+import ext::json_tree;
+
+fn lit(value: str, count: i32) -> core::text::Text {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value), count);
+    return core::text::from_utf8_unchecked(bytes, 0, count);
+}
+fn fail(kind: ext::json_tree::ErrorKind, operation: i32) -> core::result::Result<i32, ext::json_tree::Error> {
+    return core::result::Err(ext::json_tree::failure(kind, operation, 0));
+}
+// The error with this operation index.
+fn at(error: ext::json_tree::Error, operation: i32) -> core::result::Result<i32, ext::json_tree::Error> {
+    return core::result::Err(ext::json_tree::Error { kind: error.kind, operation: operation, offset: error.offset, cause: error.cause });
+}
+fn is(text: core::text::Text, word: core::text::Text) -> bool {
+    if (text.length != word.length) { return false; }
+    let index: i32 = 0;
+    while (index < text.length) { if (text.bytes[text.start + index] != word.bytes[word.start + index]) { return false; } index += 1; }
+    return true;
+}
+
+// Places detached node at path: the root for "", a new or replaced member
+// for an object parent, an insertion (or append for "-" and the length) for
+// an array parent.
+fn add(tree: &ext::json_tree::Tree, path: &ext::json_pointer::Pointer, node: i32, operation: i32) -> core::result::Result<i32, ext::json_tree::Error> {
+    let count: i32 = path.count();
+    if (count == 0) { tree.set_root(node); return core::result::Ok(0); }
+    let found = ext::json_pointer::resolve(tree, path, count - 1);
+    if (found.is_err()) { return at(found.unwrap_err(), operation); }
+    let parent: i32 = found.unwrap();
+    let token: core::text::Text = path.token(count - 1);
+    let code: i32 = tree.code(parent);
+    if (code == 6) {
+        let existing: i32 = tree.member(parent, token);
+        if (existing >= 0) { tree.replace(existing, node); return core::result::Ok(0); }
+        if (!tree.set_key(node, token)) { return fail(ext::json_tree::ErrorKind::AllocationFailed, operation); }
+        tree.insert(parent, node, -1);
+        return core::result::Ok(0);
+    }
+    if (code != 5) { return fail(ext::json_tree::ErrorKind::NotFound, operation); }
+    let position: i64 = ext::json_pointer::array_index(token);
+    let length: i64 = tree.child_count(parent) as i64;
+    if (position == -1) { return fail(ext::json_tree::ErrorKind::InvalidIndex, operation); }
+    if (position == -2 || position == length) { tree.insert(parent, node, -1); return core::result::Ok(0); }
+    if (position > length) { return fail(ext::json_tree::ErrorKind::OutOfRange, operation); }
+    tree.insert(parent, node, tree.child(parent, position as i32));
+    return core::result::Ok(0);
+}
+
+// A string member of an operation as a parsed pointer.
+fn pointer_member(patch: &ext::json_tree::Tree, op: i32, name: core::text::Text, operation: i32) -> core::result::Result<ext::json_pointer::Pointer, ext::json_tree::Error> {
+    let member: i32 = patch.member(op, name);
+    if (member < 0 || patch.code(member) != 4) { return core::result::Err(ext::json_tree::failure(ext::json_tree::ErrorKind::InvalidPatch, operation, 0)); }
+    let parsed = ext::json_pointer::parse(patch.text(member));
+    if (parsed.is_err()) {
+        let error: ext::json_tree::Error = parsed.unwrap_err();
+        return core::result::Err(ext::json_tree::Error { kind: error.kind, operation: operation, offset: error.offset, cause: error.cause });
+    }
+    return parsed;
+}
+
+// Operation names: 1 add, 2 remove, 3 replace, 4 move, 5 copy, 6 test.
+fn operation_code(text: core::text::Text) -> i32 {
+    if (is(text, lit("add", 3))) { return 1; }
+    if (is(text, lit("remove", 6))) { return 2; }
+    if (is(text, lit("replace", 7))) { return 3; }
+    if (is(text, lit("move", 4))) { return 4; }
+    if (is(text, lit("copy", 4))) { return 5; }
+    if (is(text, lit("test", 4))) { return 6; }
+    return 0;
+}
+
+// Checks run in this order: the operation is an object; "op" is a string
+// naming an operation; "path" is a string and a pointer; "value" exists for
+// add, replace and test; "from" is a string and a pointer for move and copy.
+fn apply_one(tree: &ext::json_tree::Tree, patch: &ext::json_tree::Tree, op: i32, operation: i32) -> core::result::Result<i32, ext::json_tree::Error> {
+    if (patch.code(op) != 6) { return fail(ext::json_tree::ErrorKind::InvalidPatch, operation); }
+    let name: i32 = patch.member(op, lit("op", 2));
+    if (name < 0 || patch.code(name) != 4) { return fail(ext::json_tree::ErrorKind::InvalidPatch, operation); }
+    let code: i32 = operation_code(patch.text(name));
+    if (code == 0) { return fail(ext::json_tree::ErrorKind::UnknownOperation, operation); }
+    let parsed = pointer_member(patch, op, lit("path", 4), operation);
+    if (parsed.is_err()) { return core::result::Err(parsed.unwrap_err()); }
+    let path: ext::json_pointer::Pointer = parsed.unwrap();
+    let outcome: core::result::Result<i32, ext::json_tree::Error> = run(tree, patch, op, operation, code, path.borrow());
+    path.destroy();
+    return outcome;
+}
+fn run(tree: &ext::json_tree::Tree, patch: &ext::json_tree::Tree, op: i32, operation: i32, code: i32, path: &ext::json_pointer::Pointer) -> core::result::Result<i32, ext::json_tree::Error> {
+    let value: i32 = -1;
+    if (code == 1 || code == 3 || code == 6) {
+        value = patch.member(op, lit("value", 5));
+        if (value < 0) { return fail(ext::json_tree::ErrorKind::InvalidPatch, operation); }
+    }
+    if (code == 4 || code == 5) {
+        let parsed = pointer_member(patch, op, lit("from", 4), operation);
+        if (parsed.is_err()) { return core::result::Err(parsed.unwrap_err()); }
+        let from: ext::json_pointer::Pointer = parsed.unwrap();
+        let outcome: core::result::Result<i32, ext::json_tree::Error> = relocate(tree, operation, code, from.borrow(), path);
+        from.destroy();
+        return outcome;
+    }
+    if (code == 1) {
+        let node: i32 = tree.copy_node(patch, value);
+        if (node < 0) { return fail(tree.fault(), operation); }
+        return add(tree, path, node, operation);
+    }
+    if (code == 2 && path.count() == 0) { return fail(ext::json_tree::ErrorKind::RemoveRoot, operation); }
+    let found = ext::json_pointer::get(tree, path);
+    if (found.is_err()) { return at(found.unwrap_err(), operation); }
+    let target: i32 = found.unwrap();
+    if (code == 2) { tree.detach(target); return core::result::Ok(0); }
+    if (code == 6) {
+        if (!ext::json_tree::equal(tree, target, patch, value)) { return fail(ext::json_tree::ErrorKind::TestFailed, operation); }
+        return core::result::Ok(0);
+    }
+    let node: i32 = tree.copy_node(patch, value);
+    if (node < 0) { return fail(tree.fault(), operation); }
+    tree.replace(target, node);
+    return core::result::Ok(0);
+}
+// move (code 4) and copy (code 5). A move to its own location does nothing;
+// a move into its own descendant is MoveIntoChild.
+fn relocate(tree: &ext::json_tree::Tree, operation: i32, code: i32, from: &ext::json_pointer::Pointer, path: &ext::json_pointer::Pointer) -> core::result::Result<i32, ext::json_tree::Error> {
+    let found = ext::json_pointer::get(tree, from);
+    if (found.is_err()) { return at(found.unwrap_err(), operation); }
+    let source: i32 = found.unwrap();
+    if (code == 4) {
+        if (from.equals(path)) { return core::result::Ok(0); }
+        if (from.is_proper_prefix(path)) { return fail(ext::json_tree::ErrorKind::MoveIntoChild, operation); }
+        tree.detach(source);
+        return add(tree, path, source, operation);
+    }
+    let node: i32 = tree.copy_node(tree, source);
+    if (node < 0) { return fail(tree.fault(), operation); }
+    return add(tree, path, node, operation);
+}
+
+// Applies the operations of patch (an array) in order to a copy of
+// document. The first failing operation's error has its index.
+pub fn apply(document: &ext::json_tree::Tree, patch: &ext::json_tree::Tree, limits: ext::json_tree::Limits) -> core::result::Result<ext::json_tree::Tree, ext::json_tree::Error> {
+    if (patch.code(patch.root()) != 5) { return core::result::Err(ext::json_tree::failure(ext::json_tree::ErrorKind::InvalidPatch, -1, 0)); }
+    let made = ext::json_tree::copy(document, limits);
+    if (made.is_err()) { return made; }
+    let tree: ext::json_tree::Tree = made.unwrap();
+    let op: i32 = patch.first_child(patch.root()); let operation: i32 = 0;
+    while (op >= 0) {
+        let done = apply_one(tree.borrow(), patch, op, operation);
+        if (done.is_err()) { tree.destroy(); return core::result::Err(done.unwrap_err()); }
+        op = patch.next_sibling(op); operation += 1;
+    }
+    return core::result::Ok(tree);
+}
+
+// RFC 7386 MergePatch(target, patch) into tree: target is a node of tree or
+// -1 (absent). Returns the resulting node, or -1 (see tree.fault()).
+fn merge_node(tree: &ext::json_tree::Tree, target: i32, patch: &ext::json_tree::Tree, value: i32) -> i32 {
+    if (patch.code(value) != 6) { return tree.copy_node(patch, value); }
+    let result: i32 = target;
+    if (result < 0 || tree.code(result) != 6) { result = tree.new_node(6); if (result < 0) { return -1; } }
+    let member: i32 = patch.first_child(value);
+    while (member >= 0) {
+        let key: core::text::Text = patch.key(member);
+        let existing: i32 = tree.member(result, key);
+        if (patch.code(member) == 0) {
+            if (existing >= 0) { tree.detach(existing); }
+        } else {
+            let merged: i32 = merge_node(tree, existing, patch, member);
+            if (merged < 0) { return -1; }
+            if (existing < 0) {
+                if (!tree.set_key(merged, key)) { return -1; }
+                tree.insert(result, merged, -1);
+            } else {
+                if (merged != existing) { tree.replace(existing, merged); }
+            }
+        }
+        member = patch.next_sibling(member);
+    }
+    return result;
+}
+pub fn merge(document: &ext::json_tree::Tree, patch: &ext::json_tree::Tree, limits: ext::json_tree::Limits) -> core::result::Result<ext::json_tree::Tree, ext::json_tree::Error> {
+    let made = ext::json_tree::copy(document, limits);
+    if (made.is_err()) { return made; }
+    let tree: ext::json_tree::Tree = made.unwrap();
+    let root: i32 = merge_node(tree.borrow(), tree.root(), patch, patch.root());
+    if (root < 0) { let kind: ext::json_tree::ErrorKind = tree.fault(); tree.destroy(); return core::result::Err(ext::json_tree::failure(kind, -1, 0)); }
+    tree.set_root(root);
+    return core::result::Ok(tree);
+}

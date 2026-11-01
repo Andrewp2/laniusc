@@ -2416,7 +2416,11 @@ Its structural writer emits the `ext::json` byte policy. The streaming
 `json` on 2,237 cases, and [csv-to-json](../sample_programs/csv_to_json.lani)
 agrees with Python `csv` on 550 RFC 4180 cases. `TokenReader` pulls tokens
 from any `core::io::Read` source, and `Writer.flush_to` streams output to any
-`core::io::Write` sink. [`core::float_decimal`](stdlib-float-decimal.md)
+`core::io::Write` sink.
+[`ext::json_pointer` and `ext::json_patch`](extended-json-patch.md) apply
+RFC 6901 pointers, RFC 6902 patches and RFC 7386 merge patches to
+`ext::json_tree` documents atomically. They agree with a Python model on
+6,450 RFC-example, error and generated cases. [`core::float_decimal`](stdlib-float-decimal.md)
 formats shortest decimals with Schubfach, which is exact with no fallback, in
 about 0.6 to 0.8 µs per value. It parses with an Eisel-Lemire fast path
 before its exact big-integer path, in about 0.7 to 0.8 µs per value. It
