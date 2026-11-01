@@ -592,23 +592,51 @@ def checker_bodies():
     return _bodies[0]
 
 
-def modulize(text):
-    """A legacy file's text as a `module`: its imports public, the bodies of
-    the generated modules below it imported (`import all`) for its kernel
-    checks, and the rest in an exposed public section."""
+_srcs = {}
+
+
+def src_modules(names):
+    """The generated modules defining `src_X` for X in names."""
+    if not _srcs:
+        for n in sorted(os.listdir(GEN_DIR)):
+            if n.startswith('SelfSrc') and n.endswith('.lean'):
+                for m in re.finditer(r'^(?:def|abbrev) src_(\S+)', open(os.path.join(GEN_DIR, n)).read(), re.M):
+                    _srcs.setdefault(m.group(1), 'Lanius.Faithful.Gen.' + n[:-5])
+    return sorted({_srcs[x] for x in names if x in _srcs})
+
+
+def modulize(name, text):
+    """A legacy file's text as a `module`: its imports public, the bodies its
+    kernel checks unfold imported (`import all`), and the rest in an exposed
+    public section. Only the checks of functions (SelfOk*, SelfDecl<k>,
+    SelfPureBase) unfold the generated sources; a file whose checks are over
+    the tables unfolds the types; the others (SelfDecls, SelfPrims,
+    SelfPure) unfold nothing, so that they depend on the statements below
+    them only."""
     lines = text.split('\n')
     k = 0
     while k < len(lines) and lines[k].startswith('import '):
         k += 1
     mods = [line.split()[1] for line in lines[:k]]
+    if re.fullmatch(r'SelfOk\d+|SelfDecl\d+|SelfPureBase', name):
+        bodies = gen_closure(mods) + checker_bodies()
+    elif name == 'SelfDecls':
+        bodies = checker_bodies()
+    elif name == 'SelfPrims':
+        # The prims' own sources (`src_X` of each `at_X` it uses).
+        bodies = src_modules(set(re.findall(r'\bat_([A-Za-z0-9_]+)', text))) + checker_bodies()
+    elif 'decide' in text:
+        bodies = ['Lanius.Faithful.Gen.SelfTypes'] + checker_bodies()
+    else:
+        bodies = []
     return '\n'.join(['module', ''] + [f'public import {m}' for m in mods] +
-                     [f'import all {m}' for m in gen_closure(mods) + checker_bodies()] +
+                     [f'import all {m}' for m in bodies] +
                      ['', '@[expose] public section'] + lines[k:])
 
 
 def write(path, text):
     if not text.startswith('module'):
-        text = modulize(text)
+        text = modulize(os.path.basename(path)[:-5], text)
     try:
         with open(path) as f:
             if f.read() == text:

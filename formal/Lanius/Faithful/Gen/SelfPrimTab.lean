@@ -1,7 +1,6 @@
 module
 
 public import Lanius.Faithful.Gen.SelfPureTab
-import all Lanius.Faithful.Gen.SelfPureTab
 import all Lanius.Faithful.Gen.SelfTypes
 import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.FArith_opcode
