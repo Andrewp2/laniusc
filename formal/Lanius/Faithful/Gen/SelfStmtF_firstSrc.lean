@@ -25,8 +25,8 @@ abbrev Stmt_amount_want (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
     (RepOption 158 RepSrcType) (Lanius.Mini.amountWant x0 x1 x2 x3) w
 
 abbrev Stmt_bound_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Option (List Lanius.Mini.SrcType)} {x2 : List Lanius.Mini.LocalTy} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 25 RepNat) x0 v0 → (RepOption 187 (RepList 73 RepSrcType)) x1 v1 → (RepList 217 RepLocalTy) x2 v2 →
-    (RepList 217 RepLocalTy) (Lanius.Mini.boundTys x0 x1 x2) w
+  ∀ {x0 : List Nat} {x1 : Option (List Lanius.Mini.SrcType)} {x2 : List Lanius.Mini.LocalTy} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 25 RepNat) x0 v0 → (RepOption 187 (RepList 73 RepSrcType)) x1 v1 → (RepList 219 RepLocalTy) x2 v2 →
+    (RepList 219 RepLocalTy) (Lanius.Mini.boundTys x0 x1 x2) w
 
 abbrev Stmt_either_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : Option Lanius.Mini.SrcType} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 158 RepSrcType) x0 v0 → (RepOption 158 RepSrcType) x1 v1 →

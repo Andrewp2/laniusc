@@ -10,6 +10,7 @@ public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_findMethodAt
+public import Lanius.Faithful.Gen.SelfStmtF_consTys
 public import Lanius.Faithful.Gen.SelfStmtF_effNamedTys
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
 public import Lanius.Faithful.Gen.SelfStmtF_flattenTys
@@ -17,6 +18,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_funcsOnto
 public import Lanius.Faithful.Gen.SelfStmtF_joinInsts
 public import Lanius.Faithful.Gen.SelfStmtF_lowerTy
 public import Lanius.Faithful.Gen.SelfStmtF_readInst
+public import Lanius.Faithful.Gen.SelfStmtF_weightAdd
 import all Lanius.Faithful.Gen.SelfSrcF_funcsOnto
 import all Lanius.Mini.Frontend.P.funcsOnto
 
@@ -37,32 +39,29 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_close_named {prog : SrcProgram} {prims : Prims} {ix_close_named ix_minus ix_lower_named ix_get_of_core_option_Option_mini_selfhost_SrcType : Nat} (fn : prog.funcs[ix_close_named]? = some (src_close_named ix_minus ix_lower_named ix_get_of_core_option_Option_mini_selfhost_SrcType)) (np : prims.isPrim ix_close_named = false)
-    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
-    (ext_lower_named : Certified (∀ {n : Nat}, Stmt_lower_named prog prims ix_lower_named n))
-    (ext_get_of_core_option_Option_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_get_of_core_option_Option_mini_selfhost_SrcType prog prims ix_get_of_core_option_Option_mini_selfhost_SrcType n)) {n : Nat} :
-    Stmt_close_named prog prims ix_close_named n := by
-  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+theorem proof_decl_weight {prog : SrcProgram} {prims : Prims} {ix_decl_weight ix_field_tys ix_payload_tys ix_payloads_weight ix_fields_weight : Nat} (fn : prog.funcs[ix_decl_weight]? = some (src_decl_weight ix_field_tys ix_payload_tys ix_payloads_weight ix_fields_weight)) (np : prims.isPrim ix_decl_weight = false)
+    (ext_field_tys : Certified (∀ {n : Nat}, Stmt_field_tys prog prims ix_field_tys n))
+    (ext_payload_tys : Certified (∀ {n : Nat}, Stmt_payload_tys prog prims ix_payload_tys n))
+    (ext_payloads_weight : Certified (∀ {n : Nat}, Stmt_payloads_weight prog prims ix_payloads_weight n))
+    (ext_fields_weight : Certified (∀ {n : Nat}, Stmt_fields_weight prog prims ix_fields_weight n)) {n : Nat} :
+    Stmt_decl_weight prog prims ix_decl_weight n := by
+  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_close_named] at h
-  faithful [Lanius.Mini.closeNamed]
+  simp only [src_decl_weight] at h
+  faithful [Lanius.Mini.declWeight]
 
-theorem step_close_ty {prog : SrcProgram} {prims : Prims} {ix_close_ty ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_unbox_of_mini_selfhost_Ty ix_inst_index ix_slice_type ix_close_named ix_array_type : Nat} (fn : prog.funcs[ix_close_ty]? = some (src_close_ty ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_unbox_of_mini_selfhost_Ty ix_close_ty ix_inst_index ix_slice_type ix_close_named ix_array_type)) (np : prims.isPrim ix_close_ty = false)
-    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Ty prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty n))
-    (ext_unbox_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_Ty prog prims ix_unbox_of_mini_selfhost_Ty n))
-    (ext_inst_index : Certified (∀ {n : Nat}, Stmt_inst_index prog prims ix_inst_index n))
-    (ext_slice_type : Certified (∀ {n : Nat}, Stmt_slice_type prog prims ix_slice_type n))
-    (ext_close_named : Certified (∀ {n : Nat}, Stmt_close_named prog prims ix_close_named n))
-    (ext_array_type : Certified (∀ {n : Nat}, Stmt_array_type prog prims ix_array_type n)) {n : Nat}
-    (ih_close_ty : Certified (Stmt_close_ty prog prims ix_close_ty n)) :
-    Stmt_close_ty prog prims ix_close_ty (n + 1) := by
+theorem proof_fields_weight {prog : SrcProgram} {prims : Prims} {ix_fields_weight ix_weight_add_to ix_tys_weight : Nat} (fn : prog.funcs[ix_fields_weight]? = some (src_fields_weight ix_weight_add_to ix_tys_weight)) (np : prims.isPrim ix_fields_weight = false)
+    (ext_weight_add_to : Certified (∀ {n : Nat}, Stmt_weight_add_to prog prims ix_weight_add_to n))
+    (ext_tys_weight : Certified (∀ {n : Nat}, Stmt_tys_weight prog prims ix_tys_weight n)) {n : Nat} :
+    Stmt_fields_weight prog prims ix_fields_weight n := by
   intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  rcases n with _ | n
+  · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_close_ty] at h
-  faithful [Lanius.Mini.closeTy]
+  simp only [src_fields_weight] at h
+  faithful [Lanius.Mini.fieldsWeight]
 
 theorem step_funcs_onto {prog : SrcProgram} {prims : Prims} {ix_funcs_onto ix_unbox_of_mini_selfhost_List_mini_selfhost_MFunc ix_cons_of_mini_selfhost_MFunc : Nat} (fn : prog.funcs[ix_funcs_onto]? = some (src_funcs_onto ix_funcs_onto ix_unbox_of_mini_selfhost_List_mini_selfhost_MFunc ix_cons_of_mini_selfhost_MFunc)) (np : prims.isPrim ix_funcs_onto = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_MFunc : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_MFunc prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_MFunc n))
@@ -87,6 +86,26 @@ theorem step_funcs_tys {prog : SrcProgram} {prims : Prims} {ix_funcs_tys ix_empt
   rw [pcall_succ np fn] at h
   simp only [src_funcs_tys] at h
   faithful [Lanius.Mini.funcsTys]
+
+theorem proof_inst_weight {prog : SrcProgram} {prims : Prims} {ix_inst_weight ix_get_of_mini_selfhost_TypeDecl ix_decl_weight : Nat} (fn : prog.funcs[ix_inst_weight]? = some (src_inst_weight ix_get_of_mini_selfhost_TypeDecl ix_decl_weight)) (np : prims.isPrim ix_inst_weight = false)
+    (ext_get_of_mini_selfhost_TypeDecl : Certified (∀ {n : Nat}, Stmt_get_of_mini_selfhost_TypeDecl prog prims ix_get_of_mini_selfhost_TypeDecl n))
+    (ext_decl_weight : Certified (∀ {n : Nat}, Stmt_decl_weight prog prims ix_decl_weight n)) {n : Nat} :
+    Stmt_inst_weight prog prims ix_inst_weight n := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_inst_weight] at h
+  faithful [Lanius.Mini.instWeight]
+
+theorem proof_is_none_weight {prog : SrcProgram} {prims : Prims} {ix_is_none_weight : Nat} (fn : prog.funcs[ix_is_none_weight]? = some (src_is_none_weight)) (np : prims.isPrim ix_is_none_weight = false) {n : Nat} :
+    Stmt_is_none_weight prog prims ix_is_none_weight n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_is_none_weight] at h
+  faithful [Lanius.Mini.isNoneWeight]
 
 theorem step_lowered_all {prog : SrcProgram} {prims : Prims} {ix_lowered_all ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Inst ix_empty_of_core_option_Option_mini_selfhost_SrcType ix_cons_of_core_option_Option_mini_selfhost_SrcType ix_lower_named : Nat} (fn : prog.funcs[ix_lowered_all]? = some (src_lowered_all ix_minus ix_lowered_all ix_unbox_of_mini_selfhost_List_mini_selfhost_Inst ix_empty_of_core_option_Option_mini_selfhost_SrcType ix_cons_of_core_option_Option_mini_selfhost_SrcType ix_lower_named)) (np : prims.isPrim ix_lowered_all = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
@@ -114,6 +133,16 @@ theorem step_mono_loop {prog : SrcProgram} {prims : Prims} {ix_mono_loop ix_minu
   simp only [src_mono_loop] at h
   faithful [Lanius.Mini.monoLoop]
 
+theorem proof_named_weight {prog : SrcProgram} {prims : Prims} {ix_named_weight ix_get_of_core_option_Option_usize : Nat} (fn : prog.funcs[ix_named_weight]? = some (src_named_weight ix_get_of_core_option_Option_usize)) (np : prims.isPrim ix_named_weight = false)
+    (ext_get_of_core_option_Option_usize : Certified (∀ {n : Nat}, Stmt_get_of_core_option_Option_usize prog prims ix_get_of_core_option_Option_usize n)) {n : Nat} :
+    Stmt_named_weight prog prims ix_named_weight n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_named_weight] at h
+  faithful [Lanius.Mini.namedWeight]
+
 theorem step_param_tys {prog : SrcProgram} {prims : Prims} {ix_param_tys ix_empty_of_mini_selfhost_Ty ix_cons_of_mini_selfhost_Ty ix_unbox_of_mini_selfhost_List_mini_selfhost_MParam : Nat} (fn : prog.funcs[ix_param_tys]? = some (src_param_tys ix_empty_of_mini_selfhost_Ty ix_cons_of_mini_selfhost_Ty ix_param_tys ix_unbox_of_mini_selfhost_List_mini_selfhost_MParam)) (np : prims.isPrim ix_param_tys = false)
     (ext_empty_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Ty prog prims ix_empty_of_mini_selfhost_Ty n))
     (ext_cons_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_Ty prog prims ix_cons_of_mini_selfhost_Ty n))
@@ -124,6 +153,18 @@ theorem step_param_tys {prog : SrcProgram} {prims : Prims} {ix_param_tys ix_empt
   rw [pcall_succ np fn] at h
   simp only [src_param_tys] at h
   faithful [Lanius.Mini.paramTys]
+
+theorem proof_payloads_weight {prog : SrcProgram} {prims : Prims} {ix_payloads_weight ix_flatten_tys ix_weight_add_to ix_tys_weight : Nat} (fn : prog.funcs[ix_payloads_weight]? = some (src_payloads_weight ix_flatten_tys ix_weight_add_to ix_tys_weight)) (np : prims.isPrim ix_payloads_weight = false)
+    (ext_flatten_tys : Certified (∀ {n : Nat}, Stmt_flatten_tys prog prims ix_flatten_tys n))
+    (ext_weight_add_to : Certified (∀ {n : Nat}, Stmt_weight_add_to prog prims ix_weight_add_to n))
+    (ext_tys_weight : Certified (∀ {n : Nat}, Stmt_tys_weight prog prims ix_tys_weight n)) {n : Nat} :
+    Stmt_payloads_weight prog prims ix_payloads_weight n := by
+  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_payloads_weight] at h
+  faithful [Lanius.Mini.payloadsWeight]
 
 theorem proof_ret_tys {prog : SrcProgram} {prims : Prims} {ix_ret_tys ix_empty_of_mini_selfhost_Ty ix_single_of_mini_selfhost_Ty : Nat} (fn : prog.funcs[ix_ret_tys]? = some (src_ret_tys ix_empty_of_mini_selfhost_Ty ix_single_of_mini_selfhost_Ty)) (np : prims.isPrim ix_ret_tys = false)
     (ext_empty_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Ty prog prims ix_empty_of_mini_selfhost_Ty n))
@@ -147,15 +188,6 @@ theorem step_seed_tys {prog : SrcProgram} {prims : Prims} {ix_seed_tys ix_empty_
   rw [pcall_succ np fn] at h
   simp only [src_seed_tys] at h
   faithful [Lanius.Mini.seedTys]
-
-theorem proof_src_enum_id {prog : SrcProgram} {prims : Prims} {ix_src_enum_id : Nat} (fn : prog.funcs[ix_src_enum_id]? = some (src_src_enum_id)) (np : prims.isPrim ix_src_enum_id = false) {n : Nat} :
-    Stmt_src_enum_id prog prims ix_src_enum_id n := by
-  intro x0 v0 w h r0
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_src_enum_id] at h
-  faithful [Lanius.Mini.srcEnumId]
 
 theorem step_stmt_tys {prog : SrcProgram} {prims : Prims} {ix_stmt_tys ix_empty_of_mini_selfhost_Ty ix_cons_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_Ty ix_single_of_mini_selfhost_Ty ix_unbox_of_mini_selfhost_MStmt ix_eff_named_tys : Nat} (fn : prog.funcs[ix_stmt_tys]? = some (src_stmt_tys ix_empty_of_mini_selfhost_Ty ix_cons_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_Ty ix_stmt_tys ix_single_of_mini_selfhost_Ty ix_unbox_of_mini_selfhost_MStmt ix_eff_named_tys)) (np : prims.isPrim ix_stmt_tys = false)
     (ext_empty_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Ty prog prims ix_empty_of_mini_selfhost_Ty n))
@@ -182,6 +214,20 @@ theorem step_ty_known {prog : SrcProgram} {prims : Prims} {ix_ty_known ix_unbox_
   simp only [src_ty_known] at h
   faithful [Lanius.Mini.tyKnown]
 
+theorem step_ty_weight {prog : SrcProgram} {prims : Prims} {ix_ty_weight ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_unbox_of_mini_selfhost_Ty ix_inst_index ix_weight_add_to ix_weight_array ix_named_weight : Nat} (fn : prog.funcs[ix_ty_weight]? = some (src_ty_weight ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_unbox_of_mini_selfhost_Ty ix_inst_index ix_weight_add_to ix_weight_array ix_ty_weight ix_named_weight)) (np : prims.isPrim ix_ty_weight = false)
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Ty prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty n))
+    (ext_unbox_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_Ty prog prims ix_unbox_of_mini_selfhost_Ty n))
+    (ext_inst_index : Certified (∀ {n : Nat}, Stmt_inst_index prog prims ix_inst_index n))
+    (ext_weight_add_to : Certified (∀ {n : Nat}, Stmt_weight_add_to prog prims ix_weight_add_to n))
+    (ext_weight_array : Certified (∀ {n : Nat}, Stmt_weight_array prog prims ix_weight_array n))
+    (ext_named_weight : Certified (∀ {n : Nat}, Stmt_named_weight prog prims ix_named_weight n)) {n : Nat}
+    (ih_ty_weight : Certified (Stmt_ty_weight prog prims ix_ty_weight n)) :
+    Stmt_ty_weight prog prims ix_ty_weight (n + 1) := by
+  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  rw [pcall_succ np fn] at h
+  simp only [src_ty_weight] at h
+  faithful [Lanius.Mini.tyWeight]
+
 theorem step_type_table {prog : SrcProgram} {prims : Prims} {ix_type_table ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_type_table_next ix_ty_insts : Nat} (fn : prog.funcs[ix_type_table]? = some (src_type_table ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_type_table_next ix_ty_insts)) (np : prims.isPrim ix_type_table = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Ty prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty n))
     (ext_ty_insts : Certified (∀ {n : Nat}, Stmt_ty_insts prog prims ix_ty_insts n)) {n : Nat}
@@ -200,5 +246,66 @@ theorem step_type_table_more {prog : SrcProgram} {prims : Prims} {ix_type_table_
   rw [pcall_succ np fn] at h
   simp only [src_type_table_more] at h
   faithful [Lanius.Mini.typeTableMore]
+
+theorem step_tys_weight {prog : SrcProgram} {prims : Prims} {ix_tys_weight ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_weight_add ix_ty_weight : Nat} (fn : prog.funcs[ix_tys_weight]? = some (src_tys_weight ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_weight_add ix_tys_weight ix_ty_weight)) (np : prims.isPrim ix_tys_weight = false)
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Ty prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty n))
+    (ext_weight_add : Certified (∀ {n : Nat}, Stmt_weight_add prog prims ix_weight_add n))
+    (ext_ty_weight : Certified (∀ {n : Nat}, Stmt_ty_weight prog prims ix_ty_weight n)) {n : Nat}
+    (ih_tys_weight : Certified (Stmt_tys_weight prog prims ix_tys_weight n)) :
+    Stmt_tys_weight prog prims ix_tys_weight (n + 1) := by
+  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  rw [pcall_succ np fn] at h
+  simp only [src_tys_weight] at h
+  faithful [Lanius.Mini.tysWeight]
+
+theorem step_unweighed {prog : SrcProgram} {prims : Prims} {ix_unweighed ix_unbox_of_mini_selfhost_List_mini_selfhost_Inst ix_empty_of_core_option_Option_usize ix_cons_of_core_option_Option_usize : Nat} (fn : prog.funcs[ix_unweighed]? = some (src_unweighed ix_unweighed ix_unbox_of_mini_selfhost_List_mini_selfhost_Inst ix_empty_of_core_option_Option_usize ix_cons_of_core_option_Option_usize)) (np : prims.isPrim ix_unweighed = false)
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_Inst : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Inst prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Inst n))
+    (ext_empty_of_core_option_Option_usize : Certified (∀ {n : Nat}, Stmt_empty_of_core_option_Option_usize prog prims ix_empty_of_core_option_Option_usize n))
+    (ext_cons_of_core_option_Option_usize : Certified (∀ {n : Nat}, Stmt_cons_of_core_option_Option_usize prog prims ix_cons_of_core_option_Option_usize n)) {n : Nat}
+    (ih_unweighed : Certified (Stmt_unweighed prog prims ix_unweighed n)) :
+    Stmt_unweighed prog prims ix_unweighed (n + 1) := by
+  intro x0 v0 w h r0
+  rw [pcall_succ np fn] at h
+  simp only [src_unweighed] at h
+  faithful [Lanius.Mini.unweighed]
+
+theorem proof_weigh_again {prog : SrcProgram} {prims : Prims} {ix_weigh_again ix_inst_weight : Nat} (fn : prog.funcs[ix_weigh_again]? = some (src_weigh_again ix_inst_weight)) (np : prims.isPrim ix_weigh_again = false)
+    (ext_inst_weight : Certified (∀ {n : Nat}, Stmt_inst_weight prog prims ix_inst_weight n)) {n : Nat} :
+    Stmt_weigh_again prog prims ix_weigh_again n := by
+  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_weigh_again] at h
+  faithful [Lanius.Mini.weighAgain]
+
+theorem step_weigh_round {prog : SrcProgram} {prims : Prims} {ix_weigh_round ix_unbox_of_mini_selfhost_List_mini_selfhost_Inst ix_empty_of_core_option_Option_usize ix_weigh_round_at : Nat} (fn : prog.funcs[ix_weigh_round]? = some (src_weigh_round ix_unbox_of_mini_selfhost_List_mini_selfhost_Inst ix_empty_of_core_option_Option_usize ix_weigh_round_at)) (np : prims.isPrim ix_weigh_round = false)
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_Inst : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Inst prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Inst n))
+    (ext_empty_of_core_option_Option_usize : Certified (∀ {n : Nat}, Stmt_empty_of_core_option_Option_usize prog prims ix_empty_of_core_option_Option_usize n)) {n : Nat}
+    (ih_weigh_round_at : Certified (Stmt_weigh_round_at prog prims ix_weigh_round_at n)) :
+    Stmt_weigh_round prog prims ix_weigh_round (n + 1) := by
+  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
+  rw [pcall_succ np fn] at h
+  simp only [src_weigh_round] at h
+  faithful [Lanius.Mini.weighRound]
+
+theorem step_weigh_rounds {prog : SrcProgram} {prims : Prims} {ix_weigh_rounds ix_minus ix_weigh_next ix_weigh_round : Nat} (fn : prog.funcs[ix_weigh_rounds]? = some (src_weigh_rounds ix_minus ix_weigh_next ix_weigh_round)) (np : prims.isPrim ix_weigh_rounds = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_weigh_round : Certified (∀ {n : Nat}, Stmt_weigh_round prog prims ix_weigh_round n)) {n : Nat}
+    (ih_weigh_next : Certified (Stmt_weigh_next prog prims ix_weigh_next n)) :
+    Stmt_weigh_rounds prog prims ix_weigh_rounds (n + 1) := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+  rw [pcall_succ np fn] at h
+  simp only [src_weigh_rounds] at h
+  faithful [Lanius.Mini.weighRounds]
+
+theorem step_weighed_more {prog : SrcProgram} {prims : Prims} {ix_weighed_more ix_unbox_of_mini_selfhost_List_core_option_Option_usize ix_weighed_more_at : Nat} (fn : prog.funcs[ix_weighed_more]? = some (src_weighed_more ix_unbox_of_mini_selfhost_List_core_option_Option_usize ix_weighed_more_at)) (np : prims.isPrim ix_weighed_more = false)
+    (ext_unbox_of_mini_selfhost_List_core_option_Option_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_core_option_Option_usize prog prims ix_unbox_of_mini_selfhost_List_core_option_Option_usize n)) {n : Nat}
+    (ih_weighed_more_at : Certified (Stmt_weighed_more_at prog prims ix_weighed_more_at n)) :
+    Stmt_weighed_more prog prims ix_weighed_more (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_weighed_more] at h
+  faithful [Lanius.Mini.weighedMore]
 
 end Lanius.Faithful.SelfCert

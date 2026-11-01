@@ -14,6 +14,7 @@ import all Lanius.Mini.Frontend.P.externBody
 import all Lanius.Mini.Frontend.P.fieldTyAt
 import all Lanius.Mini.Frontend.P.findConst
 import all Lanius.Mini.Frontend.P.funcsOnto
+import all Lanius.Mini.Frontend.P.allWeighed
 import all Lanius.Mini.Frontend.P.hasKids
 import all Lanius.Mini.Frontend.P.ifNotWrites
 import all Lanius.Mini.Frontend.P.isEmptyUsize

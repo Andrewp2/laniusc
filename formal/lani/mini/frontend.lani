@@ -2714,10 +2714,103 @@ pub fn slice_type(element: core::option::Option<SrcType>) -> core::option::Optio
     };
 }
 
+// ---------------------------------------------------------------- type weights
+
+// A type's weight is at least its slot count (`SrcType::size`) and its
+// node count: a scalar weighs 1, a slice 1 more than its element, an array
+// of n elements 1 + max(n, 1) times its element, a struct 1 more than its
+// fields together, an enum 1 more than all its payloads together. The
+// front end rejects a type heavier than weight_limit(): an array type here,
+// a type instance in types_weighed (decided 11-01, F14). So no slot count,
+// offset or frame size the compiler computes from a type overflows a
+// usize, and lowering a type takes time linear in its weight.
+pub fn weight_limit() -> usize {
+    return 4194304;
+}
+
+pub fn weight_sum(x: usize, y: usize) -> core::option::Option<usize> {
+    if (x > weight_limit() || y > minus(weight_limit(), x)) {
+        return None;
+    }
+    return Some(plus(x, y));
+}
+
+pub fn weight_add_to(x: usize, b: core::option::Option<usize>) -> core::option::Option<usize> {
+    return match (b) {
+        None -> None,
+        Some(y) -> weight_sum(x, y),
+    };
+}
+
+// a + b, none when either is none or past the limit.
+pub fn weight_add(a: core::option::Option<usize>, b: core::option::Option<usize>) -> core::option::Option<usize> {
+    return match (a) {
+        None -> None,
+        Some(x) -> weight_add_to(x, b),
+    };
+}
+
+pub fn weight_times(m: usize, x: usize) -> core::option::Option<usize> {
+    if (m > weight_limit() || x > weight_limit()) {
+        return None;
+    }
+    return weight_sum(1, times(m, x));
+}
+
+// 1 + max(n, 1) * w, none when w is none or past the limit.
+pub fn weight_array(n: usize, w: core::option::Option<usize>) -> core::option::Option<usize> {
+    return match (w) {
+        None -> None,
+        Some(x) -> weight_times(max_of(n, 1), x),
+    };
+}
+
+// extract: mutual begin
+pub fn src_weight(t: SrcType) -> core::option::Option<usize> {
+    return match (t) {
+        I32 -> Some(1),
+        Bool -> Some(1),
+        Uint(k) -> Some(1),
+        Struct(id, fields) -> weight_add_to(1, src_weights(unbox(fields))),
+        Enum(id, variants) -> weight_add_to(1, variant_weights(unbox(variants))),
+        Ptr -> Some(1),
+        Slice(element) -> weight_add_to(1, src_weight(unbox(element))),
+        SrcType::Array(element, length) -> weight_array(length, src_weight(unbox(element))),
+        Unit -> Some(1),
+        Isize -> Some(1),
+        SrcType::Char -> Some(1),
+        SrcType::Float(ft) -> Some(1),
+        Sint(sk) -> Some(1),
+    };
+}
+
+pub fn src_weights(ts: List<SrcType>) -> core::option::Option<usize> {
+    return match (ts) {
+        Nil -> Some(0),
+        Cons(t, rest) -> weight_add(src_weight(t), src_weights(unbox(rest))),
+    };
+}
+
+pub fn variant_weights(vs: List<List<SrcType>>) -> core::option::Option<usize> {
+    return match (vs) {
+        Nil -> Some(0),
+        Cons(v, rest) -> weight_add(src_weights(v), variant_weights(unbox(rest))),
+    };
+}
+// extract: mutual end
+
+// t when its weight is within the limit.
+pub fn weighed(t: SrcType) -> core::option::Option<SrcType> {
+    return match (src_weight(t)) {
+        None -> None,
+        Some(w) -> Some(t),
+    };
+}
+
 pub fn array_type(element: core::option::Option<SrcType>, length: usize) -> core::option::Option<SrcType> {
     return match (element) {
         None -> None,
-        Some(e) -> Some(SrcType::Array(boxed(e), length)),
+        Some(e) -> weighed(SrcType::Array(boxed(e), length)),
     };
 }
 
@@ -10171,6 +10264,168 @@ pub fn lowered_all(fuel: usize, decls: Decls, types: List<Inst>, insts: List<Ins
     };
 }
 
+// The weights of the type instances (see weight_limit), bottom up: each
+// round weighs every instance whose parts are weighed already, reading
+// their weights from the last round's, so a chain of instances each twice
+// the one before is weighed in one round per link and rejected where it
+// passes the limit, not lowered at an exponential cost.
+
+pub fn named_weight(ws: List<core::option::Option<usize>>, i: core::option::Option<usize>) -> core::option::Option<usize> {
+    return match (i) {
+        None -> None,
+        Some(k) -> match (get(ws, k)) {
+            None -> None,
+            Some(w) -> w,
+        },
+    };
+}
+
+// The weight of t, a named type's read from ws (in the table's order):
+// none when one is not weighed yet or past the limit.
+pub fn ty_weight(table: List<Inst>, ws: List<core::option::Option<usize>>, t: Ty) -> core::option::Option<usize> {
+    return match (t) {
+        TyI32 -> Some(1),
+        TyBool -> Some(1),
+        TyUint(k) -> Some(1),
+        TyPtr -> Some(1),
+        TyIsize -> Some(1),
+        TyChar -> Some(1),
+        TyFloat(ft) -> Some(1),
+        TySlice(e) -> weight_add_to(1, ty_weight(table, ws, unbox(e))),
+        TyArray(e, n) -> weight_array(n, ty_weight(table, ws, unbox(e))),
+        TyNamed(d, args) -> named_weight(ws, inst_index(table, Inst { decl: d, args: unbox(args) }, 0)),
+        TySint(k) -> Some(1),
+    };
+}
+
+pub fn tys_weight(table: List<Inst>, ws: List<core::option::Option<usize>>, ts: List<Ty>) -> core::option::Option<usize> {
+    return match (ts) {
+        Nil -> Some(0),
+        Cons(t, rest) -> weight_add(ty_weight(table, ws, t), tys_weight(table, ws, unbox(rest))),
+    };
+}
+
+pub fn fields_weight(table: List<Inst>, ws: List<core::option::Option<usize>>, ts: core::option::Option<List<Ty>>) -> core::option::Option<usize> {
+    return match (ts) {
+        None -> None,
+        Some(xs) -> weight_add_to(1, tys_weight(table, ws, xs)),
+    };
+}
+
+pub fn payloads_weight(table: List<Inst>, ws: List<core::option::Option<usize>>, vs: core::option::Option<List<List<Ty>>>) -> core::option::Option<usize> {
+    return match (vs) {
+        None -> None,
+        Some(xs) -> weight_add_to(1, tys_weight(table, ws, flatten_tys(xs))),
+    };
+}
+
+pub fn decl_weight(fuel: usize, decls: Decls, table: List<Inst>, ws: List<core::option::Option<usize>>, is_enum: bool, x: Inst) -> core::option::Option<usize> {
+    if (is_enum) {
+        return payloads_weight(table, ws, payload_tys(fuel, decls, x.decl, x.args));
+    }
+    return fields_weight(table, ws, field_tys(fuel, decls, x.decl, x.args));
+}
+
+// An instance's weight from its parts' (ws): as lower_decl reads it.
+pub fn inst_weight(fuel: usize, decls: Decls, table: List<Inst>, ws: List<core::option::Option<usize>>, x: Inst) -> core::option::Option<usize> {
+    return match (get(decls.types, x.decl)) {
+        None -> None,
+        Some(t) -> decl_weight(fuel, decls, table, ws, t.is_enum, x),
+    };
+}
+
+pub fn weigh_again(fuel: usize, decls: Decls, table: List<Inst>, ws: List<core::option::Option<usize>>, x: Inst, old: core::option::Option<usize>) -> core::option::Option<usize> {
+    return match (old) {
+        None -> inst_weight(fuel, decls, table, ws, x),
+        Some(w) -> Some(w),
+    };
+}
+
+// One round over the instances xs, the last round's weights olds beside
+// them (all of the last round's weights are ws).
+pub fn weigh_round(fuel: usize, decls: Decls, table: List<Inst>, ws: List<core::option::Option<usize>>, xs: List<Inst>, olds: List<core::option::Option<usize>>) -> List<core::option::Option<usize>> {
+    return match (xs) {
+        Nil -> empty(),
+        Cons(x, rest) -> weigh_round_at(fuel, decls, table, ws, x, unbox(rest), olds),
+    };
+}
+
+// extract: inline
+fn weigh_round_at(afuel: usize, adecls: Decls, atable: List<Inst>, aws: List<core::option::Option<usize>>, ax: Inst, arest: List<Inst>, aolds: List<core::option::Option<usize>>) -> List<core::option::Option<usize>> {
+    return match (aolds) {
+        Nil -> empty(),
+        Cons(aold, amore) -> cons(weigh_again(afuel, adecls, atable, aws, ax, aold), weigh_round(afuel, adecls, atable, aws, arest, unbox(amore))),
+    };
+}
+
+pub fn is_none_weight(w: core::option::Option<usize>) -> bool {
+    return match (w) {
+        None -> true,
+        Some(x) -> false,
+    };
+}
+
+// A weight the next round has that the last did not.
+pub fn weighed_more(olds: List<core::option::Option<usize>>, news: List<core::option::Option<usize>>) -> bool {
+    return match (olds) {
+        Nil -> false,
+        Cons(old, rest) -> weighed_more_at(old, unbox(rest), news),
+    };
+}
+
+// extract: inline
+fn weighed_more_at(mold: core::option::Option<usize>, mrest: List<core::option::Option<usize>>, mnews: List<core::option::Option<usize>>) -> bool {
+    return match (mnews) {
+        Nil -> false,
+        Cons(mfresh, mmore) -> (is_none_weight(mold) && !is_none_weight(mfresh)) || weighed_more(mrest, unbox(mmore)),
+    };
+}
+
+// Rounds until one weighs nothing more (at most one per instance).
+pub fn weigh_rounds(rounds: usize, fuel: usize, decls: Decls, table: List<Inst>, ws: List<core::option::Option<usize>>) -> List<core::option::Option<usize>> {
+    if (rounds == 0) {
+        return ws;
+    }
+    return weigh_next(minus(rounds, 1), fuel, decls, table, ws, weigh_round(fuel, decls, table, ws, table, ws));
+}
+
+// extract: inline
+fn weigh_next(nrounds: usize, nfuel: usize, ndecls: Decls, ntable: List<Inst>, nws: List<core::option::Option<usize>>, nnews: List<core::option::Option<usize>>) -> List<core::option::Option<usize>> {
+    if (weighed_more(nws, nnews)) {
+        return weigh_rounds(nrounds, nfuel, ndecls, ntable, nnews);
+    }
+    return nnews;
+}
+
+pub fn unweighed(xs: List<Inst>) -> List<core::option::Option<usize>> {
+    return match (xs) {
+        Nil -> empty(),
+        Cons(x, rest) -> cons(None, unweighed(unbox(rest))),
+    };
+}
+
+pub fn all_weighed(ws: List<core::option::Option<usize>>) -> bool {
+    return match (ws) {
+        Nil -> true,
+        Cons(w, rest) -> !is_none_weight(w) && all_weighed(unbox(rest)),
+    };
+}
+
+pub fn table_weighed(ts: List<Inst>, fits: bool) -> core::option::Option<List<Inst>> {
+    if (fits) {
+        return Some(ts);
+    }
+    return None;
+}
+
+// The type table when every instance in it is within the weight limit.
+pub fn types_weighed(fuel: usize, decls: Decls, types: core::option::Option<List<Inst>>) -> core::option::Option<List<Inst>> {
+    return match (types) {
+        None -> None,
+        Some(ts) -> table_weighed(ts, all_weighed(weigh_rounds(length(ts), fuel, decls, ts, unweighed(ts)))),
+    };
+}
+
 pub fn close_named(fuel: usize, t: Tables, d: usize, args: List<Ty>, id: core::option::Option<usize>) -> core::option::Option<SrcType> {
     return match (id) {
         None -> lower_named(minus(fuel, 1), t.decls, t.types, d, args),
@@ -11416,7 +11671,7 @@ pub fn build_closed(fuel: usize, decls: Decls, fns: List<Inst>, types: core::opt
 pub fn build_mono(fuel: usize, decls: Decls, seeds: List<Inst>, m: core::option::Option<Mono>) -> core::option::Option<SrcProgram> {
     return match (m) {
         None -> None,
-        Some(x) -> build_closed(fuel, decls, x.table, type_table_more(fuel, decls, type_table(fuel, decls, seeds, seed_tys(seeds)), funcs_tys(x.funcs)), x.funcs),
+        Some(x) -> build_closed(fuel, decls, x.table, types_weighed(fuel, decls, type_table_more(fuel, decls, type_table(fuel, decls, seeds, seed_tys(seeds)), funcs_tys(x.funcs))), x.funcs),
     };
 }
 

@@ -39,12 +39,18 @@ stopping at the computations the theorems are about (`compileSource`,
 `linkObjects`, `elfFile`, `sourceProgramFiles`, `compileWords`,
 `frontEndWords` and the self program `Lanius.Faithful.Self.prog`, which are
 not trusted, section 10), with each one's type and body:
-definitions `a784f30fce5c9322` (4443 constants). This covers Core's
+definitions `feb6c15367fe3046` (4443 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
-modules keeps its hash. The last change of the hash (11-01, merge of
-review-fixes into lang): it combines lang's `u16` views
+modules keeps its hash. The last change of the hash (11-01, F14's type
+weights, SEMANTIC_DECISIONS "Type weights"): only the prim table `prims`
+(`Faithful/Gen/SelfPureTab.lean`) changed, because the front end's new
+weight functions shift the indices of the self program's later
+`boxed` and `unbox` instances. The weight functions themselves (`srcWeight`,
+`typesWeighed`, ...) are the front end's, not trusted. The hash before it was
+`a784f30fce5c9322`. That one (11-01, merge of
+review-fixes into lang) combines lang's `u16` views
 (`b8d2e28d6f544c42`) and review-fixes' restatement of review finding 5's
 first reason (`adcfd7afcaf25cbd`), which did not change each other's
 definitions. The restatement: `SelfShort`'s first reason is

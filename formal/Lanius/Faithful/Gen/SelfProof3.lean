@@ -38,6 +38,10 @@ theorem proof_boxed_of_mini_selfhost_List_core_option_Option_mini_selfhost_SrcTy
     Stmt_boxed_of_mini_selfhost_List_core_option_Option_mini_selfhost_SrcType prog prims ix_boxed_of_mini_selfhost_List_core_option_Option_mini_selfhost_SrcType n :=
   fun h r => prim_cert np h r
 
+theorem proof_boxed_of_mini_selfhost_List_core_option_Option_usize {prog : SrcProgram} {prims : Prims} {ix_boxed_of_mini_selfhost_List_core_option_Option_usize : Nat} (np : prims.isPrim ix_boxed_of_mini_selfhost_List_core_option_Option_usize = true) {n : Nat} :
+    Stmt_boxed_of_mini_selfhost_List_core_option_Option_usize prog prims ix_boxed_of_mini_selfhost_List_core_option_Option_usize n :=
+  fun h r => prim_cert np h r
+
 theorem proof_boxed_of_mini_selfhost_List_mini_selfhost_BoundGoal {prog : SrcProgram} {prims : Prims} {ix_boxed_of_mini_selfhost_List_mini_selfhost_BoundGoal : Nat} (np : prims.isPrim ix_boxed_of_mini_selfhost_List_mini_selfhost_BoundGoal = true) {n : Nat} :
     Stmt_boxed_of_mini_selfhost_List_mini_selfhost_BoundGoal prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_BoundGoal n :=
   fun h r => prim_cert np h r

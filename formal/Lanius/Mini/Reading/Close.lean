@@ -9,7 +9,9 @@ import all Lanius.Mini.Frontend.P.eDivideClosed
 import all Lanius.Mini.Frontend.P.eIndexClosed
 import all Lanius.Mini.Frontend.P.findConst
 import all Lanius.Mini.Frontend.P.flattenTys
+import all Lanius.Mini.Frontend.P.weightAdd
 import all Lanius.Mini.Frontend.P.funcsOnto
+import all Lanius.Mini.Frontend.P.allWeighed
 import all Lanius.Mini.Frontend.P.letClosed
 import all Lanius.Mini.Frontend.P.letStructClosed
 import all Lanius.Mini.Frontend.P.lowerTy
@@ -74,7 +76,7 @@ theorem closeTy_sound {t : Tables} (ok : LoweredOk t) :
       simp only [arrayType] at h
       cases he : closeTy f t e with
       | none => rw [he] at h; cases h
-      | some x => rw [he] at h; cases h; exact .array (closeTy_sound ok he)
+      | some x => rw [he] at h; obtain rfl := weighed_eq h; exact .array (closeTy_sound ok he)
     | tyNamed d args =>
       simp only [closeNamed, Nat.add_sub_cancel] at h
       cases hi : instIndex t.types ⟨d, args⟩ 0 with

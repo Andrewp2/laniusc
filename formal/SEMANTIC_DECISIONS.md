@@ -1630,3 +1630,49 @@ accepts `u16`): `s[i]` is a bounds check and a 32-bit load at
 and `slice_stride` is -8. The other one-word scalars (`u32`, `u64`, `i64`,
 `bool`, `char`, `ptr`, ...) have the same layout in laniusc and are later
 work.
+
+## Type weights (decided 11-01, F14)
+
+The self-built compiler trapped on a 7-line program. A parameter of type
+`[[[i32; 2000000000]; 2000000000]; 2000000000]` has 8 * 10^27 slots, so
+`SrcType::size`'s `times` overflowed a usize (SIGILL in laniusc's build of
+the verified compiler). Lean computed the size in `Nat` and rejected the
+program only later, at `frame_limit`. Structs whose fields double,
+`S_k { a: S_{k-1}, b: S_{k-1} }`, reach 2^64 slots in 64 links. The front
+end now rejects any type heavier than `weight_limit()` (2^22) before the
+compiler sizes it:
+
+- A type's weight is at least its slot count and its node count. A scalar
+  weighs 1, a slice 1 more than its element, `[T; n]` 1 + max(n, 1) times
+  T's weight, a struct 1 more than its fields together, and an enum 1 more
+  than all its payloads together (`src_weight` on source types, `ty_weight`
+  on the front end's types).
+- `array_type` keeps an array type only within the limit (`weighed`). This
+  covers arrays written at a use site.
+- `types_weighed` checks every instance in the type table before the
+  instances are lowered. It works bottom up in rounds: each round weighs the
+  instances whose parts already have weights, so a doubling chain is
+  rejected at its 21st link, not lowered at exponential cost. An instance
+  that never gets a weight (past the limit, or not lowerable) rejects the
+  program.
+- The arithmetic is guarded (`weight_sum`, `weight_times`), so weighing
+  itself cannot overflow. With every type's size at most 2^22, sums of
+  sizes over a function's lets, offsets (`times(8, ...)`) and frame sizes
+  stay far below 2^64 for inputs under 2^31 words.
+
+laniusc fails both programs too, but not cleanly: `LNC0057 compiler
+execution failed` ("a compiler diagnostic gap"). The cap is 4x the
+compiler's `frame_limit` (2^20 slots), and no checked-in program has a
+type near it (the largest arrays are 262144 elements). A type heavier than
+2^22 that fits no frame, for example one behind a slice that is never
+indexed, or a declared but unused struct, was accepted before and is
+rejected now.
+
+Still open: building the type table (`ty_insts`) expands every occurrence
+of an instance, so a doubling chain takes exponential time there, before
+`types_weighed` runs. The front end takes about 1 s at 18 links and about
+60 s at 24, where it rejects, and hangs at 70 links. This is time, not
+overflow: the pure compile still reaches its result at some fuel. A
+visited set in `ty_insts` would make it linear, but the reading's
+`TyInsts` relation is stated over the full expansion, so that change needs
+its own proof.

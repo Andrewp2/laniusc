@@ -139,6 +139,7 @@ import all Lanius.Faithful.Gen.SelfSrcF_Inline_positionAt
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_tLparen
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_tRparen
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_variantsNamedAt
+import all Lanius.Faithful.Gen.SelfSrcF_allWeighed
 import all Lanius.Faithful.Gen.SelfSrcF_allocClosed
 import all Lanius.Faithful.Gen.SelfSrcF_anyNested
 import all Lanius.Faithful.Gen.SelfSrcF_armsNaming
@@ -252,6 +253,7 @@ import all Lanius.Faithful.Gen.SelfSrcF_variantArm
 import all Lanius.Faithful.Gen.SelfSrcF_variantIn
 import all Lanius.Faithful.Gen.SelfSrcF_variantLetHead
 import all Lanius.Faithful.Gen.SelfSrcF_variantOfDecl
+import all Lanius.Faithful.Gen.SelfSrcF_weightAdd
 import all Lanius.Faithful.Gen.SelfSrcF_whileEvalOf
 import all Lanius.Faithful.Gen.SelfSrcF_wideLeftStmt
 import all Lanius.Faithful.Gen.SelfSrcF_wideMarker

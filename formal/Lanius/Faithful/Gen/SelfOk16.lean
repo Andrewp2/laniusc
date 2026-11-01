@@ -223,31 +223,31 @@ theorem fok229 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
 /-- mini::selfhost::mono_loop -/
 theorem fok251 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 251 (src_mono_loop 56 252 397 398 399 400) :=
+    FuncOk sp prims outside 251 (src_mono_loop 56 252 398 399 400 401) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::agrees -/
 theorem fok265 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 265 (src_Func_agrees 263 425) :=
+    FuncOk sp prims outside 265 (src_Func_agrees 263 426) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::unbox<mini::selfhost::SrcExpr> -/
 theorem fok287 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 287 (src_unbox_of_mini_selfhost_SrcExpr 446) :=
+    FuncOk sp prims outside 287 (src_unbox_of_mini_selfhost_SrcExpr 447) :=
   funcOk_prim (by decide +kernel)
 
 /-- mini::selfhost::apply_guard -/
 theorem fok288 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 288 (src_apply_guard 195 447 448 449 450) :=
+    FuncOk sp prims outside 288 (src_apply_guard 195 448 449 450 451) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::get<mini::selfhost::Sig> -/
 theorem fok298 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 298 (src_get_of_mini_selfhost_Sig 56 298 466) :=
+    FuncOk sp prims outside 298 (src_get_of_mini_selfhost_Sig 56 298 467) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::length<mini::selfhost::List<mini::selfhost::SrcType>> -/
@@ -257,369 +257,429 @@ theorem fok349 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::type_table_more -/
-theorem fok393 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok394 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 393 (src_type_table_more 599 600) :=
+    FuncOk sp prims outside 394 (src_type_table_more 605 606) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::type_table -/
-theorem fok394 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok395 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 394 (src_type_table 600 601 602) :=
+    FuncOk sp prims outside 395 (src_type_table 606 607 608) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::seed_tys -/
-theorem fok395 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok396 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 395 (src_seed_tys 395 403 603 604 605) :=
+    FuncOk sp prims outside 396 (src_seed_tys 396 404 609 610 611) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::funcs_tys -/
-theorem fok396 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok397 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 396 (src_funcs_tys 396 403 606 607 608 609 610) :=
+    FuncOk sp prims outside 397 (src_funcs_tys 397 404 612 613 614 615 616) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::funcs_onto -/
-theorem fok400 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok401 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 400 (src_funcs_onto 400 610 613) :=
+    FuncOk sp prims outside 401 (src_funcs_onto 401 616 619) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::concat<mini::selfhost::ImportDecl> -/
-theorem fok410 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok411 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 410 (src_concat_of_mini_selfhost_ImportDecl 410 623 624) :=
+    FuncOk sp prims outside 411 (src_concat_of_mini_selfhost_ImportDecl 411 629 630) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::agrees -/
-theorem fok425 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok426 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 425 (src_Stmt_agrees 281 419 424 425 633 640 641 642 643 644 645 646 647 648 649 650 651 652 653 654 655 656 657 658 659 660 661) :=
+    FuncOk sp prims outside 426 (src_Stmt_agrees 281 420 425 426 639 646 647 648 649 650 651 652 653 654 655 656 657 658 659 660 661 662 663 664 665 666 667) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Sig>> -/
-theorem fok466 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok467 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 466 (src_unbox_of_mini_selfhost_List_mini_selfhost_Sig 220) :=
+    FuncOk sp prims outside 467 (src_unbox_of_mini_selfhost_List_mini_selfhost_Sig 220) :=
   funcOk_prim (by decide +kernel)
 
 /-- mini::selfhost::cons<mini::selfhost::SrcEnumDecl> -/
-theorem fok523 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok524 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 523 (src_cons_of_mini_selfhost_SrcEnumDecl 754) :=
+    FuncOk sp prims outside 524 (src_cons_of_mini_selfhost_SrcEnumDecl 760) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::lowered_all -/
-theorem fok596 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok597 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 596 (src_lowered_all 56 596 605 885 886 887) :=
+    FuncOk sp prims outside 597 (src_lowered_all 56 597 611 891 892 893) :=
+  funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
+
+/-- mini::selfhost::weigh_rounds -/
+theorem fok602 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+    (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
+    FuncOk sp prims outside 602 (src_weigh_rounds 56 900 901) :=
+  funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
+
+/-- mini::selfhost::unweighed -/
+theorem fok604 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+    (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
+    FuncOk sp prims outside 604 (src_unweighed 604 611 902 903) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::param_tys -/
-theorem fok607 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok613 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 607 (src_param_tys 403 603 607 900) :=
+    FuncOk sp prims outside 613 (src_param_tys 404 609 613 912) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::ret_tys -/
-theorem fok608 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok614 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 608 (src_ret_tys 403 893) :=
+    FuncOk sp prims outside 614 (src_ret_tys 404 905) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::stmt_tys -/
-theorem fok609 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok615 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 609 (src_stmt_tys 403 603 606 609 893 901 902) :=
+    FuncOk sp prims outside 615 (src_stmt_tys 404 609 612 615 905 913 914) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::ImportDecl>> -/
-theorem fok624 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok630 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 624 (src_unbox_of_mini_selfhost_List_mini_selfhost_ImportDecl 924) :=
+    FuncOk sp prims outside 630 (src_unbox_of_mini_selfhost_List_mini_selfhost_ImportDecl 936) :=
   funcOk_prim (by decide +kernel)
 
 /-- mini::selfhost::literal -/
-theorem fok636 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok642 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 636 (src_Expr_literal) :=
+    FuncOk sp prims outside 642 (src_Expr_literal) :=
+  funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
+
+/-- mini::selfhost::is_none_weight -/
+theorem fok898 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+    (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
+    FuncOk sp prims outside 898 (src_is_none_weight) :=
+  funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
+
+/-- mini::selfhost::weigh_round -/
+theorem fok901 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+    (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
+    FuncOk sp prims outside 901 (src_weigh_round 611 902 1137) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::ty_known -/
-theorem fok892 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok904 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 892 (src_ty_known 600 892 895 1123) :=
+    FuncOk sp prims outside 904 (src_ty_known 606 904 907 1139) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::single<mini::selfhost::Inst> -/
-theorem fok905 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok917 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 905 (src_single_of_mini_selfhost_Inst 618) :=
+    FuncOk sp prims outside 917 (src_single_of_mini_selfhost_Inst 624) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Fact>> -/
-theorem fok934 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok946 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 934 (src_unbox_of_mini_selfhost_List_mini_selfhost_Fact 1161) :=
+    FuncOk sp prims outside 946 (src_unbox_of_mini_selfhost_List_mini_selfhost_Fact 1177) :=
   funcOk_prim (by decide +kernel)
 
 /-- mini::selfhost::kills -/
-theorem fok937 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok949 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 937 (src_Stmt_kills 281 937 1163 1168 1169 1170) :=
+    FuncOk sp prims outside 949 (src_Stmt_kills 281 949 1179 1184 1185 1186) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::get<mini::selfhost::Rule> -/
-theorem fok1043 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok1055 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1043 (src_get_of_mini_selfhost_Rule 44 56 1043) :=
+    FuncOk sp prims outside 1055 (src_get_of_mini_selfhost_Rule 44 56 1055) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::concat<mini::selfhost::CTree> -/
-theorem fok1045 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok1057 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1045 (src_concat_of_mini_selfhost_CTree 103 235 1045) :=
+    FuncOk sp prims outside 1057 (src_concat_of_mini_selfhost_CTree 103 235 1057) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::empty<mini::selfhost::SrcParam> -/
-theorem fok1073 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok1085 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1073 (src_empty_of_mini_selfhost_SrcParam) :=
-  funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
-
-/-- mini::selfhost::close_ty -/
-theorem fok1075 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
-    (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1075 (src_close_ty 56 600 895 1075 1079 1257 1258 1259) :=
-  funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
-
-/-- mini::selfhost::src_enum_id -/
-theorem fok1082 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
-    (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1082 (src_src_enum_id) :=
+    FuncOk sp prims outside 1085 (src_empty_of_mini_selfhost_SrcParam) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::boxed<mini::selfhost::SrcStmt> -/
-theorem fok1109 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok1121 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1109 (src_boxed_of_mini_selfhost_SrcStmt 50 112 1294) :=
+    FuncOk sp prims outside 1121 (src_boxed_of_mini_selfhost_SrcStmt 50 112 1310) :=
   funcOk_prim (by decide +kernel)
 
-/-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::MEff>> -/
-theorem fok1129 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+/-- mini::selfhost::weighed_more -/
+theorem fok1136 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1129 (src_unbox_of_mini_selfhost_List_mini_selfhost_MEff 1317) :=
+    FuncOk sp prims outside 1136 (src_weighed_more 899 1330) :=
+  funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
+
+/-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::MEff>> -/
+theorem fok1145 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+    (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
+    FuncOk sp prims outside 1145 (src_unbox_of_mini_selfhost_List_mini_selfhost_MEff 1336) :=
   funcOk_prim (by decide +kernel)
 
 /-- mini::selfhost::length<mini::selfhost::Ty> -/
-theorem fok1135 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok1151 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1135 (src_length_of_mini_selfhost_Ty 75 600 1135) :=
+    FuncOk sp prims outside 1151 (src_length_of_mini_selfhost_Ty 75 606 1151) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
-/-- mini::selfhost::close_named -/
-theorem fok1258 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+/-- mini::selfhost::weigh_again -/
+theorem fok1331 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1258 (src_close_named 56 887 1381) :=
+    FuncOk sp prims outside 1331 (src_weigh_again 1438) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::usize_width -/
-theorem fok1367 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok1386 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1367 (src_usize_width) :=
+    FuncOk sp prims outside 1386 (src_usize_width) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::lx_fixed -/
-theorem fok1375 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok1394 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1375 (src_lx_fixed 530 1040 1465 1466) :=
+    FuncOk sp prims outside 1394 (src_lx_fixed 531 1052 1486 1487) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::generic_close -/
-theorem fok1377 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok1396 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1377 (src_generic_close 158 1467) :=
+    FuncOk sp prims outside 1396 (src_generic_close 158 1488) :=
+  funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
+
+/-- mini::selfhost::inst_weight -/
+theorem fok1438 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+    (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
+    FuncOk sp prims outside 1438 (src_inst_weight 1116 1508) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::empty<mini::selfhost::List<mini::selfhost::Ty>> -/
-theorem fok1474 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok1496 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1474 (src_empty_of_mini_selfhost_List_mini_selfhost_Ty) :=
+    FuncOk sp prims outside 1496 (src_empty_of_mini_selfhost_List_mini_selfhost_Ty) :=
+  funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
+
+/-- mini::selfhost::decl_weight -/
+theorem fok1508 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+    (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
+    FuncOk sp prims outside 1508 (src_decl_weight 1167 1292 1570 1571) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::p_contracts_none -/
-theorem fok1511 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok1534 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1511 (src_p_contracts_none) :=
+    FuncOk sp prims outside 1534 (src_p_contracts_none) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::p_contracts_more -/
-theorem fok1512 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok1535 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1512 (src_p_contracts_more) :=
+    FuncOk sp prims outside 1535 (src_p_contracts_more) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::p_requires -/
-theorem fok1513 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok1536 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1513 (src_p_requires) :=
+    FuncOk sp prims outside 1536 (src_p_requires) :=
+  funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
+
+/-- mini::selfhost::payloads_weight -/
+theorem fok1570 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+    (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
+    FuncOk sp prims outside 1570 (src_payloads_weight 1441 1563 1611) :=
+  funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
+
+/-- mini::selfhost::fields_weight -/
+theorem fok1571 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+    (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
+    FuncOk sp prims outside 1571 (src_fields_weight 1563 1611) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::concat<mini::selfhost::BoundGoal> -/
-theorem fok1563 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok1592 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1563 (src_concat_of_mini_selfhost_BoundGoal 1505 1563 1588) :=
+    FuncOk sp prims outside 1592 (src_concat_of_mini_selfhost_BoundGoal 1528 1592 1621) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::cons<mini::selfhost::List<mini::selfhost::Ty>> -/
-theorem fok1578 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok1610 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1578 (src_cons_of_mini_selfhost_List_mini_selfhost_Ty 1635) :=
+    FuncOk sp prims outside 1610 (src_cons_of_mini_selfhost_List_mini_selfhost_Ty 1669) :=
+  funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
+
+/-- mini::selfhost::tys_weight -/
+theorem fok1611 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+    (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
+    FuncOk sp prims outside 1611 (src_tys_weight 606 1608 1611 1670) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::List<mini::selfhost::Ty>>> -/
-theorem fok1635 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
-    (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1635 (src_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty 50 1473 1731) :=
-  funcOk_prim (by decide +kernel)
-
-/-- mini::selfhost::wide_marker -/
 theorem fok1669 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1669 (src_wide_marker 1288) :=
+    FuncOk sp prims outside 1669 (src_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty 50 1495 1766) :=
+  funcOk_prim (by decide +kernel)
+
+/-- mini::selfhost::ty_weight -/
+theorem fok1670 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+    (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
+    FuncOk sp prims outside 1670 (src_ty_weight 606 907 1091 1563 1566 1670 1767) :=
+  funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
+
+/-- mini::selfhost::wide_marker -/
+theorem fok1704 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+    (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
+    FuncOk sp prims outside 1704 (src_wide_marker 1304) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::p_else_none -/
-theorem fok1721 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok1756 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1721 (src_p_else_none) :=
+    FuncOk sp prims outside 1756 (src_p_else_none) :=
+  funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
+
+/-- mini::selfhost::named_weight -/
+theorem fok1767 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+    (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
+    FuncOk sp prims outside 1767 (src_named_weight 1880) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::p_div_tail -/
-theorem fok1779 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok1815 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1779 (src_p_div_tail) :=
+    FuncOk sp prims outside 1815 (src_p_div_tail) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::path_ref -/
-theorem fok1790 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok1826 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1790 (src_path_ref 56 96 144 146 147 566 567 584 585 586 587 1245 1790 1877 1878) :=
+    FuncOk sp prims outside 1826 (src_path_ref 56 96 144 146 147 567 568 585 586 587 588 1261 1826 1914 1915) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::assign_target -/
-theorem fok1841 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok1877 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1841 (src_assign_target 144 147 566 567 1240 1609 1660 1661 1683 1937 1938 1939) :=
+    FuncOk sp prims outside 1877 (src_assign_target 144 147 567 568 1256 1642 1695 1696 1718 1974 1975 1976) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::call_stmt -/
-theorem fok1843 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok1879 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1843 (src_call_stmt 146 147 385 586 1622 1679 1681 1784 1786 1941 1942 1943 1944 1945 1946 1947 1948) :=
+    FuncOk sp prims outside 1879 (src_call_stmt 146 147 385 587 1655 1714 1716 1820 1822 1978 1979 1980 1981 1982 1983 1984 1985) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::cons<mini::selfhost::BoundGoal> -/
-theorem fok1852 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok1889 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1852 (src_cons_of_mini_selfhost_BoundGoal 1588) :=
+    FuncOk sp prims outside 1889 (src_cons_of_mini_selfhost_BoundGoal 1621) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::cons<mini::selfhost::VariantAt> -/
-theorem fok1894 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok1931 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1894 (src_cons_of_mini_selfhost_VariantAt 1993) :=
+    FuncOk sp prims outside 1931 (src_cons_of_mini_selfhost_VariantAt 2030) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::set_field_or_eval -/
-theorem fok1938 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok1975 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1938 (src_set_field_or_eval 1515 1770 2038 2039 2040 2041) :=
+    FuncOk sp prims outside 1975 (src_set_field_or_eval 1538 1806 2075 2076 2077 2078) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::free_of -/
-theorem fok1941 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok1978 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1941 (src_free_of 295 2046 2047) :=
+    FuncOk sp prims outside 1978 (src_free_of 295 2083 2084) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::assert_arg -/
-theorem fok1944 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok1981 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1944 (src_assert_arg 103 1515 2049) :=
+    FuncOk sp prims outside 1981 (src_assert_arg 103 1538 2086) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::discard_of -/
-theorem fok1945 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok1982 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1945 (src_discard_of) :=
+    FuncOk sp prims outside 1982 (src_discard_of) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::single<mini::selfhost::Token> -/
-theorem fok1955 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok1992 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 1955 (src_single_of_mini_selfhost_Token 1038) :=
+    FuncOk sp prims outside 1992 (src_single_of_mini_selfhost_Token 1050) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::struct_head -/
-theorem fok2024 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok2061 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 2024 (src_struct_head) :=
+    FuncOk sp prims outside 2061 (src_struct_head) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::field_ty_at -/
-theorem fok2040 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok2077 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 2040 (src_field_ty_at 916 917) :=
+    FuncOk sp prims outside 2077 (src_field_ty_at 928 929) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::compound_eff -/
-theorem fok2044 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok2081 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 2044 (src_compound_eff 1780 1782 2147 2148 2149) :=
+    FuncOk sp prims outside 2081 (src_compound_eff 1816 1818 2184 2185 2186) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::compound_field_eval -/
-theorem fok2045 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok2082 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 2045 (src_compound_field_eval 1515 2038 2039 2040 2041 2044) :=
+    FuncOk sp prims outside 2082 (src_compound_field_eval 1538 2075 2076 2077 2078 2081) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::free_shifted -/
-theorem fok2046 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok2083 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 2046 (src_free_shifted) :=
+    FuncOk sp prims outside 2083 (src_free_shifted) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::assert_of -/
-theorem fok2049 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok2086 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 2049 (src_assert_of) :=
+    FuncOk sp prims outside 2086 (src_assert_of) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::concat<mini::selfhost::MEff> -/
-theorem fok2100 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok2137 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 2100 (src_concat_of_mini_selfhost_MEff 1129 1143 2100) :=
+    FuncOk sp prims outside 2137 (src_concat_of_mini_selfhost_MEff 1145 1159 2137) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::concat<mini::selfhost::VariantAt> -/
-theorem fok2115 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok2152 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 2115 (src_concat_of_mini_selfhost_VariantAt 1895 1993 2115) :=
+    FuncOk sp prims outside 2152 (src_concat_of_mini_selfhost_VariantAt 1932 2030 2152) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::compound_op -/
-theorem fok2149 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok2186 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 2149 (src_compound_op 2193 2194 2195 2196 2197 2198 2199 2200) :=
+    FuncOk sp prims outside 2186 (src_compound_op 2230 2231 2232 2233 2234 2235 2236 2237) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 /-- mini::selfhost::get<mini::selfhost::CTree> -/
-theorem fok2295 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
+theorem fok2332 {sp : SrcProgram} (hb : boxElem sp prims = lookupBox boxPairs)
     (hc : callTy sp outside = sigCall (blockGet sigBlocks)) :
-    FuncOk sp prims outside 2295 (src_get_of_mini_selfhost_CTree 56 103 2295) :=
+    FuncOk sp prims outside 2332 (src_get_of_mini_selfhost_CTree 56 103 2332) :=
   funcOk_pure (pureFunc_fast hb hc (by decide +kernel))
 
 end Lanius.Faithful.SelfPure

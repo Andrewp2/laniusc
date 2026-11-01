@@ -12,6 +12,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_consTys
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
 public import Lanius.Faithful.Gen.SelfStmtF_flattenTys
 public import Lanius.Faithful.Gen.SelfStmtF_lowerTy
+public import Lanius.Faithful.Gen.SelfStmtF_weightAdd
 import all Lanius.Faithful.Gen.SelfSrcF_lowerTy
 import all Lanius.Mini.Frontend.P.lowerTy
 
