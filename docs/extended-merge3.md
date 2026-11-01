@@ -14,7 +14,16 @@ limits)`) is generic over `T: Eq<T> + Hash<T>`; `o` is
 the base, `a` ours, `b` theirs. `merge_lines(o, a, b, level, limits)` (or `merge_lines_with`)
 specializes it to `ext::seqdiff::Line` and adds git's conflict rejoining. Both
 return `Merge`, with `len()`, `chunk(i) -> Option<Chunk>`, `conflict_count()`
-and `destroy()`.
+and `destroy()`. `merge_lines` classifies the three line sequences once, in one
+id space (`ext::seqdiff::classify_lines3`), and merges the ids. The generic
+`merge3` compares items through `Eq` and `Hash`.
+
+`merge_text(o, a, b, level, algorithm, limits)` merges three byte texts
+directly. It splits and hash-conses all three in one pass
+(`ext::seqdiff::split_classify3`) and returns `TextMerge { lines, merge }`, the
+same chunks `merge_lines_with` gives, over line indices.
+`write_text_merge(text_merge, labels, format)` renders the same bytes as
+`write_merge`. The texts must outlive the `TextMerge`; `destroy()` frees it.
 
 `Chunk { kind, o0, o1, a0, a1, b0, b1 }` covers half-open ranges of the three
 sequences. Its `kind` is one of:
@@ -114,6 +123,22 @@ GNU diff3 runs GNU diff, which has its own preprocessing and tie rules, so 137
 repeated-line triples still place chunk boundaries differently from `diff3 -m`.
 The oracle now fails on any git merge-file disagreement; `--strict-repeated`
 also requires diff3 agreement.
+
+**Speed.** On a 1.6 MB, 100,000-line triple, `seq-merge` takes 99 ms and
+`git merge-file -p` takes 83 ms (best of 10, same load; 1.2×). With `--diff3`,
+the times are 87 and 71 ms. Ours and base are the seqdiff scale pair, and theirs is the base with 300
+random line edits. Both outputs are byte-identical to git's. Before
+this work, the run took 276 ms against 74 ms. The steps:
+
+- `merge_text` reads lines as offsets, with no `Line` records.
+- All three texts are hash-consed in one table, and later sides predict the
+  next base line.
+- The merge and its zealous refinement run on class ids. Each conflict's
+  sides are renumbered densely before their diff.
+- `write_text_merge` sums the output size, allocates once and copies runs of
+  lines whole.
+- `seq-merge` sizes its read buffers from the file length and writes stdout
+  straight from the result.
 
 Verified execution is x86_64 Linux output from the GPU compiler. Other targets
 have not been verified.

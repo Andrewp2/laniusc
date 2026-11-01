@@ -6,6 +6,8 @@ import core::slice;
 import core::option;
 import core::result;
 import core::mem;
+import alloc::io;
+import core::io;
 import ext::seqdiff;
 
 pub enum WriteError { InvalidLine, InvalidHeader, OutputLimit, AllocationFailed }
@@ -216,21 +218,22 @@ fn ud_same(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool {
 struct Work { used: u64, max: u64 }
 impl Work { fn borrow(&self) -> &Work { return self; } }
 // Old side of hunk lines [top, olen-bot) against base starting at pos+top.
-fn ud_matches(base: core::slice::View<ext::seqdiff::Line>, old: core::slice::View<core::slice::View<u8>>, pos: i32, top: i32, bot: i32, w: &Work) -> bool {
+fn ud_matches(base: core::slice::View<u8>, starts: [i32], n: i32, old: core::slice::View<core::slice::View<u8>>, pos: i32, top: i32, bot: i32, w: &Work) -> bool {
     let olen: i32 = old.length;
     // The hunk, dropped leading context included, starts inside the file (GNU
     // patch); dropped trailing context may run past the end.
-    if (pos < 0 || pos + olen - bot > base.length) { return false; }
+    if (pos < 0 || pos + olen - bot > n) { return false; }
     let t: i32 = top;
     while (t < olen - bot) {
         let x: core::slice::View<u8> = old.values[old.start+t]; w.used += 1 + (x.length as u64);
-        if (!ud_same(base.values[base.start+pos+t].bytes, x)) { return false; }
+        let at: i32 = starts[pos+t];
+        if (!ud_same(core::slice::View { values: base.values, start: base.start + at, length: starts[pos+t+1] - at }, x)) { return false; }
         t += 1;
     }
     return true;
 }
 struct Placement { hunk: i32, start: i32, end: i32, top: i32, bot: i32 }
-fn ud_apply_fail(old: alloc::vec::Vec<core::slice::View<u8>>, lines: alloc::vec::Vec<ext::seqdiff::Line>, places: alloc::vec::Vec<Placement>, reports: alloc::vec::Vec<HunkReport>, error: ApplyError) -> core::result::Result<Applied, ApplyError> {
+fn ud_apply_fail(old: alloc::vec::Vec<core::slice::View<u8>>, lines: alloc::vec::Vec<i32>, places: alloc::vec::Vec<Placement>, reports: alloc::vec::Vec<HunkReport>, error: ApplyError) -> core::result::Result<Applied, ApplyError> {
     old.destroy(); lines.destroy(); places.destroy(); reports.destroy(); return core::result::Err(error);
 }
 
@@ -242,12 +245,12 @@ fn ud_apply_fail(old: alloc::vec::Vec<core::slice::View<u8>>, lines: alloc::vec:
 pub fn apply(base: core::slice::View<u8>, patch: &Patch, options: ApplyOptions) -> core::result::Result<Applied, ApplyError> {
     if (options.max_fuzz < 0 || options.max_offset < 0 || options.max_lines < 0 || options.max_output < 0) { return core::result::Err(ApplyError::InvalidOptions); }
     let old: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new(); let places: alloc::vec::Vec<Placement> = alloc::vec::new(); let reports: alloc::vec::Vec<HunkReport> = alloc::vec::new();
-    let split: core::result::Result<alloc::vec::Vec<ext::seqdiff::Line>, ext::seqdiff::Error> = ext::seqdiff::split_lines(base, ext::seqdiff::Limits { max_items: options.max_lines, max_work: options.max_work });
+    let split: core::result::Result<alloc::vec::Vec<i32>, ext::seqdiff::Error> = ext::seqdiff::line_starts(base, ext::seqdiff::Limits { max_items: options.max_lines, max_work: options.max_work });
     if (core::result::is_err(split)) {
         let error: ApplyError = match (core::result::unwrap_err(split)) { ext::seqdiff::Error::ItemLimit -> ApplyError::LineLimit, ext::seqdiff::Error::AllocationFailed -> ApplyError::AllocationFailed, _ -> ApplyError::InvalidOptions };
         return ud_apply_fail(old, alloc::vec::new(), places, reports, error);
     }
-    let lines: alloc::vec::Vec<ext::seqdiff::Line> = core::result::unwrap(split); let bv: core::slice::View<ext::seqdiff::Line> = lines.as_view(); let n: i32 = lines.len();
+    let lines: alloc::vec::Vec<i32> = core::result::unwrap(split); let st: [i32] = lines.as_slice(); let n: i32 = lines.len() - 1;
     let w: Work = Work { used: base.length as u64, max: options.max_work };
     let last_offset: i32 = 0; let min_pos: i32 = 0; let rejected: i32 = 0; let h: i32 = 0;
     let all: [PatchLine] = patch.lines.as_slice();
@@ -283,7 +286,7 @@ pub fn apply(base: core::slice::View<u8>, patch: &Patch, options: ApplyOptions) 
                 if (fuzz == 0 || top != ptop || bot != pbot) {
                     let at: i32 = n - olen; if (at_start) { at = 0; }
                     let reach: i32 = at - expected; if (reach < 0) { reach = 0 - reach; }
-                    if (reach <= options.max_offset && ud_matches(bv, ov, at, top, bot, w.borrow())) {
+                    if (reach <= options.max_offset && ud_matches(base, st, n, ov, at, top, bot, w.borrow())) {
                         if (at + top >= min_pos) { found = true; pos = at; } else { overlap = true; }
                     }
                 }
@@ -295,7 +298,7 @@ pub fn apply(base: core::slice::View<u8>, patch: &Patch, options: ApplyOptions) 
                     while (!found && sign < 2) {
                         if (sign == 0 || delta > 0) {
                             let at: i32 = expected + delta; if (sign == 1) { at = expected - delta; }
-                            if (ud_matches(bv, ov, at, top, bot, w.borrow())) {
+                            if (ud_matches(base, st, n, ov, at, top, bot, w.borrow())) {
                                 if (at + top >= min_pos) { found = true; pos = at; } else { overlap = true; }
                             }
                         }
@@ -322,30 +325,56 @@ pub fn apply(base: core::slice::View<u8>, patch: &Patch, options: ApplyOptions) 
         }
         h += 1;
     }
-    // Build the result: base outside placements, new sides inside.
-    let o: Out = Out { bytes: alloc::vec::new(), limit: options.max_output, failed: false, full: false };
-    let cursor: i32 = 0; let pidx: i32 = 0;
-    while (pidx < places.len() && !o.failed) {
-        let pl: Placement = places.as_slice()[pidx]; let hunk: PatchHunk = patch.hunks.as_slice()[pl.hunk];
-        while (cursor < pl.start) { ud_bytes(o.borrow(), bv.values[bv.start+cursor].bytes); cursor += 1; }
-        // New side, skipping `top` leading and `bot` trailing context lines.
-        let ctx_seen: i32 = 0; let total_new: i32 = 0; let q: i32 = 0;
-        while (q < hunk.count) { if (all[hunk.first+q].kind != 1) { total_new += 1; } q += 1; }
-        let idx: i32 = 0; q = 0;
-        while (q < hunk.count) {
-            let line: PatchLine = all[hunk.first+q];
-            if (line.kind != 1) {
-                if (idx >= pl.top && idx < total_new - pl.bot) { ud_bytes(o.borrow(), line.bytes); }
-                idx += 1;
-            }
-            q += 1;
+    // Build the result: base outside placements, new sides inside. Sizes are
+    // summed first so the output is allocated once; unchanged runs of base
+    // lines are contiguous and copied whole.
+    let total: u64 = 0; let cursor: i32 = 0; let pidx: i32 = 0; let ps: [Placement] = places.as_slice(); let hs: [PatchHunk] = patch.hunks.as_slice();
+    while (pidx <= places.len()) {
+        let stop: i32 = n; if (pidx < places.len()) { stop = ps[pidx].start; }
+        if (stop > cursor) { total += (st[stop] - st[cursor]) as u64; }
+        if (pidx < places.len()) {
+            let pl: Placement = ps[pidx]; let hunk: PatchHunk = hs[pl.hunk];
+            let total_new: i32 = 0; let q: i32 = 0; while (q < hunk.count) { if (all[hunk.first+q].kind != 1) { total_new += 1; } q += 1; }
+            let idx: i32 = 0; q = 0;
+            while (q < hunk.count) { let line: PatchLine = all[hunk.first+q]; if (line.kind != 1) { if (idx >= pl.top && idx < total_new - pl.bot) { total += line.bytes.length as u64; } idx += 1; } q += 1; }
+            cursor = pl.end;
         }
-        cursor = pl.end; pidx += 1;
+        pidx += 1;
     }
-    while (cursor < n && !o.failed) { ud_bytes(o.borrow(), bv.values[bv.start+cursor].bytes); cursor += 1; }
-    if (o.failed) { o.bytes.destroy(); let error: ApplyError = ApplyError::AllocationFailed; if (o.full) { error = ApplyError::OutputLimit; } return ud_apply_fail(old, lines, places, reports, error); }
+    if (total > options.max_output as u64) { return ud_apply_fail(old, lines, places, reports, ApplyError::OutputLimit); }
+    let made: core::result::Result<alloc::io::Buffer, core::io::Error> = alloc::io::with_limit(options.max_output);
+    if (core::result::is_err(made)) { return ud_apply_fail(old, lines, places, reports, ApplyError::AllocationFailed); }
+    let buffer: alloc::io::Buffer = core::result::unwrap(made);
+    let room: core::result::Result<ptr, core::io::Error> = buffer.reserve_raw(total as i32);
+    if (core::result::is_err(room)) { buffer.destroy(); return ud_apply_fail(old, lines, places, reports, ApplyError::AllocationFailed); }
+    let target: ptr = core::result::unwrap(room); let at: usize = 0;
+    cursor = 0; pidx = 0;
+    while (pidx <= places.len()) {
+        let stop: i32 = n; if (pidx < places.len()) { stop = ps[pidx].start; }
+        if (stop > cursor) {
+            let length: i32 = st[stop] - st[cursor];
+            ext::seqdiff::copy_bytes(target + at, core::slice::View { values: base.values, start: base.start + st[cursor], length: length }); at += length as usize;
+        }
+        if (pidx < places.len()) {
+            // New side, skipping `top` leading and `bot` trailing context lines.
+            let pl: Placement = ps[pidx]; let hunk: PatchHunk = hs[pl.hunk];
+            let total_new: i32 = 0; let q: i32 = 0; while (q < hunk.count) { if (all[hunk.first+q].kind != 1) { total_new += 1; } q += 1; }
+            let idx: i32 = 0; q = 0;
+            while (q < hunk.count) {
+                let line: PatchLine = all[hunk.first+q];
+                if (line.kind != 1) {
+                    if (idx >= pl.top && idx < total_new - pl.bot) { ext::seqdiff::copy_bytes(target + at, line.bytes); at += line.bytes.length as usize; }
+                    idx += 1;
+                }
+                q += 1;
+            }
+            cursor = pl.end;
+        }
+        pidx += 1;
+    }
+    let committed: core::result::Result<i32, core::io::Error> = buffer.commit_raw(total as i32);
     old.destroy(); lines.destroy(); places.destroy();
-    return core::result::Ok(Applied { output: o.bytes, reports: reports, rejected: rejected });
+    return core::result::Ok(Applied { output: buffer.bytes, reports: reports, rejected: rejected });
 }
 pub impl Applied {
     pub fn borrow(&self) -> &Applied { return self; }

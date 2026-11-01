@@ -322,10 +322,11 @@ whitespace options and blob lookup by `index` id (`--base-dir` stands in)
 remain.
 [Three-way merge](extended-merge3.md) adds diff3 chunking with git-style
 zealous/alnum conflict refinement and merge/diff3/GNU marker forms. Over 4,000
-generated triples, `seq-merge` matches `git merge-file`, `git merge-file
---diff3` and GNU `diff3 -m` byte for byte on all 2,000 distinct-line triples;
-on repeated-line triples, 1,787-1,800 of 2,000 match and the rest differ by
-equal-cost diff alignment.
+generated triples, `seq-merge` matches `git merge-file` and `git merge-file
+--diff3` byte for byte on all 4,000 (xdiff alignment), and GNU `diff3 -m` on
+all 2,000 distinct-line and 1,863 of 2,000 repeated-line triples. On a 1.6 MB
+input, `seq-merge` takes 99 ms against git's 83 ms, and `seq-patch` takes
+10 ms against GNU `patch`'s 9.5 ms.
 
 [Runtime format strings and owned formatting](stdlib-format-strings.md) add
 typed positional/named arguments, scalar fill/alignment/truncation, signed radix
