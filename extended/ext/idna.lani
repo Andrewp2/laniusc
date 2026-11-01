@@ -199,19 +199,24 @@ fn nfc(values: &alloc::vec::Vec<u32>, start: i32, end: i32, out: &alloc::vec::Ve
     out.clear();
     if (!encode_utf8(values,start,end,check)) { return 2; }
     let text: core::text::Text = core::text::from_utf8_unchecked(check.as_slice(),0,check.len());
+    let quick: core::result::Result<ext::unicode_normalize::QuickCheck, ext::unicode_normalize::Error> = ext::unicode_normalize::quick_check(text,ext::unicode_normalize::Form::Nfc,WORK);
+    if (quick.is_err()) { return 3; }
+    let yes: bool = match (quick.unwrap()) { ext::unicode_normalize::QuickCheck::Yes -> true, _ -> false };
+    if (yes) {
+        let k: i32 = start; while (k < end) { if (!push(out,values.at(k))) { return 2; } k += 1; }
+        return 0;
+    }
     let needed: core::result::Result<i32, ext::unicode_normalize::Error> = ext::unicode_normalize::scratch_len(text,ext::unicode_normalize::Form::Nfc,WORK);
     if (needed.is_err()) { return 3; }
     let scratch: alloc::vec::Vec<u32> = alloc::vec::new();
     if (scratch.try_resize(needed.unwrap(),0 as u32).is_err()) { return 2; }
+    // measure leaves the normalized scalars in scratch's prefix.
     let measured: core::result::Result<ext::unicode_normalize::Normalized, ext::unicode_normalize::Error> = ext::unicode_normalize::measure(text,ext::unicode_normalize::Form::Nfc,scratch.as_view(),WORK);
     if (measured.is_err()) { scratch.destroy(); return 3; }
-    let output: alloc::vec::Vec<u8> = alloc::vec::new();
-    if (output.try_resize(measured.unwrap().bytes,0 as u8).is_err()) { scratch.destroy(); return 2; }
-    let written: core::result::Result<ext::unicode_normalize::Normalized, ext::unicode_normalize::Error> = ext::unicode_normalize::normalize_into(text,ext::unicode_normalize::Form::Nfc,output.as_view(),scratch.as_view(),WORK);
+    let count: i32 = measured.unwrap().scalars; let k: i32 = 0;
+    while (k < count) { if (!push(out,scratch.at(k))) { scratch.destroy(); return 2; } k += 1; }
     scratch.destroy();
-    if (written.is_err()) { output.destroy(); return 3; }
-    let code: i32 = decode_utf8(output.as_view(),out); output.destroy();
-    if (code == 1) { return 3; } return code;
+    return 0;
 }
 
 // Label validity: leading mark, CONTEXTJ and the per-label Bidi rule.
@@ -235,11 +240,15 @@ fn validate(values: &alloc::vec::Vec<u32>, start: i32, end: i32) -> i32 {
         }
         i += 1;
     }
-    let last: i32 = end - 1;
-    while (last >= start && bidi(values.at(last)) == B_NSM) { last -= 1; }
+    // One pass finds the last non-NSM scalar and whether the label is RTL.
+    let last: i32 = start - 1; let rtl: bool = false; i = start;
+    while (i < end) {
+        let d: u32 = bidi(values.at(i));
+        if (d != B_NSM) { last = i; }
+        if (d == B_R || d == B_AL || d == B_AN) { rtl = true; }
+        i += 1;
+    }
     if (last < start) { return E_BIDI; }
-    let rtl: bool = false; i = start;
-    while (i < end) { let d: u32 = bidi(values.at(i)); if (d == B_R || d == B_AL || d == B_AN) { rtl = true; } i += 1; }
     if (!rtl) { return OK; }
     let first: u32 = bidi(values.at(start));
     if (first == B_L) {
