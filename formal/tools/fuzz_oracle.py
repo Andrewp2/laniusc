@@ -61,12 +61,16 @@ in target/claude-work/fuzz/found/):
   shift amounts"; found/bare_amount_*.lani): a computed amount is cast to
   its own type until it is fixed (BARE_AMOUNTS).
 - Nested bare variants: after a nested pattern names a variant bare
-  (`Ok(V5(p))`, `Some(Some(x))`), laniusc resolves no later bare pattern of
-  it (LNC0005, found/nested_bare_variant.lani, nested_none.lani), a laniusc
-  bug; inner patterns are written qualified (`core::option::Option::Some`).
-- A cast of a nested arm's payload binder: laniusc's x86 backend rejects it
-  (LNC0017, LIR opcode 8; found/nested_cast_lir8.lani), a laniusc bug,
-  counted as known (KNOWN_REJECTS).
+  (`Ok(V5(p))`, `Some(Some(x))`), laniusc resolved no later bare pattern of
+  it (LNC0005, found/nested_bare_variant.lani, nested_none.lani); inner
+  patterns are written qualified (`core::option::Option::Some`).
+- A payload binder after a nested local variant (`V6(V3(p), q) -> q`):
+  laniusc's x86 backend rejected it (LNC0017, LIR opcode 8;
+  found/nested_cast_lir8.lani), counted as known (KNOWN_REJECTS).
+  Both laniusc bugs are fixed on the fuzz branch (fixtures
+  tests/fixtures/compiler_defects/lnc0005_nested_variant_pattern.lani and
+  lnc0017_payload_after_nested_variant.lani); the two workarounds can go
+  once lcc's laniusc has the fix.
 - Constant traps. laniusc rejects a constant divisor of zero and a constant
   index past the end at compile time (KNOWN_REJECTS); Core traps when the
   program runs. Divisors and indexes that may trap are computed.

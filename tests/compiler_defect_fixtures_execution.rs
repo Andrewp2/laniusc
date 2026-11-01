@@ -49,3 +49,13 @@ fn b19_stdlib_self_method_called_through_its_type_path() {
 fn bare_generic_type_path_infers_the_impl_parameters() {
     compiles_and_exits_zero("generic_impl_path_inference");
 }
+
+#[test]
+fn lnc0005_a_variant_named_inside_a_pattern_is_matched_not_declared() {
+    compiles_and_exits_zero("lnc0005_nested_variant_pattern");
+}
+
+#[test]
+fn lnc0017_a_payload_after_a_nested_local_variant_has_a_word_offset() {
+    compiles_and_exits_zero("lnc0017_payload_after_nested_variant");
+}
