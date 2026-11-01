@@ -136,6 +136,32 @@ pub fn try_remove<T, const N: usize>(value: &Vec<T, N>, index: i32) -> core::res
     value.length -= 1;
     return core::result::Ok(removed);
 }
+// Remove in O(1) by moving the last element into the hole; order changes.
+pub fn try_swap_remove<T, const N: usize>(value: &Vec<T, N>, index: i32) -> core::result::Result<T, Error> {
+    if (index<0 || index >= value.length) {
+        return core::result::Err(Error::Bounds);
+    }
+    let removed: T = value.items[index];
+    value.length -= 1;
+    value.items[index] = value.items[value.length];
+    return core::result::Ok(removed);
+}
+// Append every element of the view or none; return the new length. Full is
+// checked before any write. The view may alias this vector's own prefix.
+pub fn try_extend_from_view<T, const N: usize>(value: &Vec<T, N>, source: core::slice::View<T>) -> core::result::Result<i32, Error> {
+    let count: usize = N;
+    if (source.length < 0 || (source.length as usize) > count - (value.length as usize)) {
+        return core::result::Err(Error::Full);
+    }
+    let index: i32 = 0;
+    let base: i32 = value.length;
+    while (index<source.length) {
+        value.items[base + index] = source.values[source.start + index];
+        index += 1;
+    }
+    value.length += source.length;
+    return core::result::Ok(value.length);
+}
 pub fn try_swap<T, const N: usize>(value: &Vec<T, N>, left: i32, right: i32) -> core::result::Result<i32, Error> {
     if (left<0 || right<0 || left >= value.length || right >= value.length) {
         return core::result::Err(Error::Bounds);

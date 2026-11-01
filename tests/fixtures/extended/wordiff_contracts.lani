@@ -1,0 +1,121 @@
+// API contracts for ext::wordiff, ext::diffstat and ext::seqdiff::xdiff_classes.
+// Exit 0 or the failing check number.
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::seqdiff;
+import ext::wordiff;
+import ext::diffstat;
+
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), count);
+    return core::result::unwrap(core::slice::view(bytes, count));
+}
+fn same(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.len() != right.len()) { return false; }
+    let i: i32 = 0; while (i < left.len()) { if (left.values[left.start+i] != right.values[right.start+i]) { return false; } i += 1; } return true;
+}
+fn ints(values: [i32], count: i32) -> core::slice::View<i32> { return core::result::unwrap(core::slice::view(values, count)); }
+fn group_is(minus: str, mn: i32, plus: str, pn: i32, mode: ext::wordiff::Mode, expected: str, en: i32) -> bool {
+    let r: core::result::Result<alloc::vec::Vec<u8>, ext::wordiff::Error> = ext::wordiff::write_group(literal(minus, mn), literal(plus, pn), ext::wordiff::default_options(mode));
+    if (core::result::is_err(r)) { return false; }
+    let out: alloc::vec::Vec<u8> = core::result::unwrap(r); let ok: bool = same(out.as_view(), literal(expected, en)); out.destroy(); return ok;
+}
+// Script kinds as digits, most significant first.
+fn kinds(s: &ext::seqdiff::Script) -> i32 { let code: i32 = 0; let i: i32 = 0; while (i < s.len()) { code = code * 10 + core::result::unwrap(s.step(i)).kind; i += 1; } return code; }
+fn file_diff(a: str, an: i32, b: str, bn: i32, mode: ext::wordiff::Mode, expected: str, en: i32) -> bool {
+    let limits: ext::seqdiff::Limits = ext::seqdiff::default_limits();
+    let la: alloc::vec::Vec<ext::seqdiff::Line> = core::result::unwrap(ext::seqdiff::split_lines(literal(a, an), limits));
+    let lb: alloc::vec::Vec<ext::seqdiff::Line> = core::result::unwrap(ext::seqdiff::split_lines(literal(b, bn), limits));
+    let s: ext::seqdiff::Script = core::result::unwrap(ext::seqdiff::diff_lines(la.as_view(), lb.as_view(), ext::seqdiff::Algorithm::Xdiff, limits));
+    let h: alloc::vec::Vec<ext::seqdiff::Hunk> = core::result::unwrap(ext::seqdiff::hunks(s.borrow(), 3));
+    let out: alloc::vec::Vec<u8> = core::result::unwrap(ext::wordiff::write_word_diff(la.as_view(), lb.as_view(), s.borrow(), h.as_view(), literal("a", 1), literal("b", 1), ext::wordiff::default_options(mode)));
+    let ok: bool = same(out.as_view(), literal(expected, en));
+    out.destroy(); h.destroy(); s.destroy(); la.destroy(); lb.destroy(); return ok;
+}
+fn stat_is(stats: &ext::diffstat::Stats, width: i32, name_width: i32, count: i32, expected: str, en: i32) -> bool {
+    let o: ext::diffstat::StatOptions = ext::diffstat::default_stat_options(); o.width = width; o.name_width = name_width; o.count = count;
+    let r: core::result::Result<alloc::vec::Vec<u8>, ext::diffstat::Error> = ext::diffstat::write_stat(stats, o);
+    if (core::result::is_err(r)) { return false; }
+    let out: alloc::vec::Vec<u8> = core::result::unwrap(r); let ok: bool = same(out.as_view(), literal(expected, en)); out.destroy(); return ok;
+}
+fn main() -> i32 {
+    let limits: ext::seqdiff::Limits = ext::seqdiff::default_limits();
+    // Words split on space, TAB, CR and LF; characters skip LF and malformed UTF-8.
+    let w: alloc::vec::Vec<ext::seqdiff::Line> = core::result::unwrap(ext::wordiff::split_words(literal("  foo\tbar\r\nbaz", 14), ext::wordiff::Mode::Words, limits));
+    if (w.len() != 3 || w.as_slice()[1].bytes.start != 6 || w.as_slice()[1].bytes.length != 3 || w.as_slice()[2].bytes.start != 11) { return 1; }
+    w.destroy();
+    let mixed: [u8;9] = [97, 195, 169, 10, 195, 120, 237, 160, 128];
+    let c: alloc::vec::Vec<ext::seqdiff::Line> = core::result::unwrap(ext::wordiff::split_words(core::result::unwrap(core::slice::view(mixed, 9)), ext::wordiff::Mode::Chars, limits));
+    if (c.len() != 3 || c.as_slice()[1].bytes.length != 2 || c.as_slice()[2].bytes.start != 5) { return 2; }
+    c.destroy();
+    // Groups: context and whitespace from the new side; removal-only keeps old spacing.
+    if (!group_is("two\n", 4, "2\n", 2, ext::wordiff::Mode::Words, "[-two-]{+2+}\n", 13)) { return 3; }
+    if (!group_is("  a b c\n", 8, "", 0, ext::wordiff::Mode::Words, "[-  a b c-]\n", 12)) { return 4; }
+    if (!group_is("", 0, "  new line\n", 11, ext::wordiff::Mode::Words, "  {+new line+}\n", 15)) { return 5; }
+    if (!group_is("  a b c\n", 8, "\n", 1, ext::wordiff::Mode::Words, "[-a b c-]\n", 10)) { return 6; }
+    if (!group_is("x y\nz\n", 6, "x  q\nz\n", 7, ext::wordiff::Mode::Words, "x  [-y-]{+q+}\nz\n", 16)) { return 7; }
+    if (!group_is("ab\ncd\n", 6, "ab\n", 3, ext::wordiff::Mode::Words, "ab[-cd-]\n", 9)) { return 8; }
+    if (!group_is("foo bar\n", 8, "foo baz\n", 8, ext::wordiff::Mode::Chars, "foo ba[-r-]{+z+}\n", 17)) { return 9; }
+    // Files: hunk headers carry git's default function line.
+    if (!file_diff("int main\n  foo bar\nx\ny\nz\nw\nq\nr\ndef f\n  a b\n", 43, "int main\n  foo qux\nx\ny\nz\nw\nq\nr\ndef f\n\n", 38, ext::wordiff::Mode::Words,
+        "--- a\n+++ b\n@@ -1,5 +1,5 @@\nint main\n  foo [-bar-]{+qux+}\nx\ny\nz\n@@ -7,4 +7,4 @@ w\nq\nr\ndef f\n[-a b-]\n", 100)) { return 10; }
+    if (!file_diff("same\n", 5, "same\n", 5, ext::wordiff::Mode::Words, "", 0)) { return 11; }
+    if (!file_diff("a\nb", 3, "a\nb\n", 4, ext::wordiff::Mode::Words, "--- a\n+++ b\n@@ -1,2 +1,2 @@\na\nb\n", 32)) { return 12; }
+    // Output limit and invalid input.
+    let small: ext::wordiff::Options = ext::wordiff::default_options(ext::wordiff::Mode::Words); small.max_output = 4;
+    let limited: core::result::Result<alloc::vec::Vec<u8>, ext::wordiff::Error> = ext::wordiff::write_group(literal("one two\n", 8), literal("three\n", 6), small);
+    if (core::result::is_ok(limited)) { return 13; }
+    let kind: i32 = match (core::result::unwrap_err(limited)) { ext::wordiff::Error::OutputLimit -> 1, ext::wordiff::Error::InvalidInput -> 2, ext::wordiff::Error::ItemLimit -> 3, ext::wordiff::Error::WorkLimit -> 4, ext::wordiff::Error::AllocationFailed -> 5 };
+    if (kind != 1) { return 14; }
+    // xdiff: trims, then slides the deletion to its lowest position.
+    let xa: [i32;3] = [1,2,1]; let xb: [i32;1] = [1];
+    let xs: ext::seqdiff::Script = core::result::unwrap(ext::seqdiff::xdiff_classes(ints(xa,3), ints(xb,1), limits));
+    if (kinds(xs.borrow()) != 11 || xs.distance() != 2 || core::result::unwrap(xs.step(1)).before != 1) { return 15; }
+    xs.destroy();
+    // A group aligned with the other side's change: x y x -> y x z keeps "y x".
+    let ya: [i32;3] = [7,8,7]; let yb: [i32;3] = [8,7,9];
+    let ys: ext::seqdiff::Script = core::result::unwrap(ext::seqdiff::xdiff_classes(ints(ya,3), ints(yb,3), limits));
+    if (ys.distance() != 2 || kinds(ys.borrow()) != 1002) { return 16; }
+    ys.destroy();
+    let bad: [i32;1] = [-1];
+    if (core::result::is_ok(ext::seqdiff::xdiff_classes(ints(bad,1), ints(xb,1), limits))) { return 17; }
+    // Diffstat names: rename braces, quoting.
+    let st: ext::diffstat::Stats = ext::diffstat::new_stats(); let acute: [u8;2] = [195, 169];
+    let i0: core::result::Result<i32, ext::diffstat::Error> = ext::diffstat::add_pair(st.borrow(), literal("d/x/f.txt", 9), literal("d/y/f.txt", 9), 3, 1);
+    let i1: core::result::Result<i32, ext::diffstat::Error> = ext::diffstat::add_pair(st.borrow(), literal("a", 1), literal("b", 1), 0, 150);
+    let i2: core::result::Result<i32, ext::diffstat::Error> = ext::diffstat::add_pair(st.borrow(), core::result::unwrap(core::slice::view(acute, 2)), core::result::unwrap(core::slice::view(acute, 2)), 1, 0);
+    if (core::result::is_err(i0) || core::result::is_err(i1) || core::result::is_err(i2)) { return 18; }
+    if (!same(st.name(0), literal("d/{x => y}/f.txt", 16)) || !same(st.name(2), literal("\"\\303\\251\"", 10))) { return 19; }
+    if (!stat_is(st.borrow(), 80, 0, 0,
+        " d/{x => y}/f.txt |   4 +-\n a => b           | 150 -------------------------------------------------------\n \"\\303\\251\"       |   1 +\n 3 files changed, 4 insertions(+), 151 deletions(-)\n", 185)) { return 20; }
+    if (!stat_is(st.borrow(), 40, 8, 1, " ...f.txt | 4 +++-\n ...\n 3 files changed, 4 insertions(+), 151 deletions(-)\n", 76)) { return 21; }
+    st.destroy();
+    // Parsing: git sections with a rename and a mode-only change; plain sections with -p1.
+    let gp: str = "diff --git a/x/old.c b/x/new.c\nsimilarity index 80%\nrename from x/old.c\nrename to x/new.c\n--- a/x/old.c\n+++ b/x/new.c\n@@ -1,2 +1,2 @@\n a\n--- b\n+++ c\ndiff --git a/m b/m\nold mode 100644\nnew mode 100755\n";
+    let parsed: ext::diffstat::Stats = core::result::unwrap(ext::diffstat::parse_patch(literal(gp, 200), -1, 10));
+    if (parsed.len() != 2 || !same(parsed.name(0), literal("x/{old.c => new.c}", 18)) || !same(parsed.name(1), literal("m", 1))) { return 22; }
+    let f0: ext::diffstat::FileStat = core::option::unwrap(parsed.get(0));
+    if (f0.added != 1 || f0.deleted != 1) { return 23; }
+    if (!stat_is(parsed.borrow(), 80, 0, 0, " x/{old.c => new.c} | 2 +-\n m                  | 0\n 2 files changed, 1 insertion(+), 1 deletion(-)\n", 99)) { return 24; }
+    parsed.destroy();
+    let pp: str = "--- old/a b\t2026-01-01\n+++ new/a b\t2026-01-02\n@@ -0,0 +1 @@\n+x\n--- old/c\n+++ new/c\n@@ -1 +0,0 @@\n-y\n";
+    let plain: ext::diffstat::Stats = core::result::unwrap(ext::diffstat::parse_patch(literal(pp, 100), 1, 10));
+    if (plain.len() != 2 || !same(plain.name(0), literal("a b", 3)) || !same(plain.name(1), literal("c", 1))) { return 25; }
+    plain.destroy();
+    // Malformed, binary and file-limit inputs.
+    let short: core::result::Result<ext::diffstat::Stats, ext::diffstat::Error> = ext::diffstat::parse_patch(literal("--- a\n+++ b\n@@ -1,2 +1 @@\n-x\n", 29), 0, 10);
+    if (core::result::is_ok(short)) { return 26; }
+    let bin: core::result::Result<ext::diffstat::Stats, ext::diffstat::Error> = ext::diffstat::parse_patch(literal("diff --git a/p b/p\nBinary files a/p and b/p differ\n", 51), -1, 10);
+    if (core::result::is_ok(bin)) { return 27; }
+    let bk: i32 = match (core::result::unwrap_err(bin)) { ext::diffstat::Error::Unsupported -> 1, ext::diffstat::Error::InvalidInput -> 2, ext::diffstat::Error::FileLimit -> 3, ext::diffstat::Error::OutputLimit -> 4, ext::diffstat::Error::AllocationFailed -> 5 };
+    if (bk != 1) { return 28; }
+    let many: core::result::Result<ext::diffstat::Stats, ext::diffstat::Error> = ext::diffstat::parse_patch(literal(gp, 200), -1, 1);
+    if (core::result::is_ok(many)) { return 29; }
+    let empty: ext::diffstat::Stats = ext::diffstat::new_stats();
+    if (!stat_is(empty.borrow(), 80, 0, 0, "", 0)) { return 30; }
+    return 0;
+}

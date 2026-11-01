@@ -1,0 +1,321 @@
+// Inline Ring/InlineString/Vec additions and the LRU cache, driven by an
+// independent Python reference. stdin: 8-word little-endian commands;
+// stdout: response words, each command's response starting with its opcode.
+module app::main;
+import alloc::allocator;
+import alloc::lru;
+import core::cmp;
+import core::hash;
+import core::inline_string;
+import core::iter;
+import core::mem;
+import core::option;
+import core::pair;
+import core::result;
+import core::ring;
+import core::slice;
+import core::text;
+import core::vec;
+import std::io;
+
+fn read_exact(pointer:ptr,count:i32) -> bool {
+    let done:i32=0;
+    while(done<count) {
+        let got:i32=std::io::read_stdin(pointer+(done as usize),(count-done) as usize);
+        assert(got>=0);
+        if(got==0) { assert(done==0); return false; }
+        done+=got;
+    }
+    return true;
+}
+fn write_all(pointer:ptr,count:i32) {
+    let done:i32=0;
+    while(done<count) {
+        let got:i32=std::io::write_stdout(pointer+(done as usize),(count-done) as usize);
+        assert(got>0); done+=got;
+    }
+}
+fn get64(bytes:[u8],offset:i32) -> u64 {
+    let value:u64=0; let i:i32=0;
+    while(i<8) { value|=(bytes[offset+i] as u64)<<(i*8); i+=1; }
+    return value;
+}
+struct Output { bytes:[u8],pointer:ptr,used:i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { write_all(self.pointer,self.used); self.used=0; }
+    fn word(&self,value:u64) {
+        if(self.used==4096) { self.flush(); }
+        let i:i32=0; while(i<8) { self.bytes[self.used+i]=((value>>(i*8))&255) as u8; i+=1; }
+        self.used+=8;
+    }
+    fn flag(&self,value:bool) { if(value) { self.word(1); } else { self.word(0); } }
+    fn int(&self,value:i32) { self.word(value as i64 as u64); }
+}
+fn signed(word:u64) -> i32 { return word as i64 as i32; }
+// ---- Ring ----
+fn ring_error(error:core::ring::Error) -> u64 { return match(error) { core::ring::Error::Full -> 1, core::ring::Error::Bounds -> 2 }; }
+fn ring_count(result:core::result::Result<i32,core::ring::Error>,output:&Output) {
+    if(result.is_ok()) { output.word(0); output.int(result.unwrap()); } else { output.word(1); output.word(ring_error(result.unwrap_err())); }
+}
+fn option_word(item:core::option::Option<u64>,output:&Output) {
+    if(item.is_some()) { output.word(1); output.word(item.unwrap()); } else { output.word(0); }
+}
+fn view_words(view:core::slice::View<u64>,output:&Output) {
+    output.int(view.length); let i:i32=0;
+    while(i<view.length) { output.word(view.values[view.start+i]); i+=1; }
+}
+// Pull from alternating ends by pattern bits until both ends report None.
+fn pattern_pulls(cursor:&core::ring::Iter<u64>,pattern:u64,limit:i32,output:&Output) {
+    let step:i32=0; let bits:u64=pattern;
+    while(step<limit) {
+        output.word(cursor.remaining_count());
+        if((bits&1)==0) { option_word(cursor.next(),output); } else { option_word(cursor.next_back(),output); }
+        bits=(bits>>1)|((bits&1)<<63); step+=1;
+    }
+}
+fn accept<S>(sink:&S,item:u64) -> core::option::Option<core::ring::Error> where S:core::iter::TrySink<u64,core::ring::Error> { return sink.try_accept(item); }
+fn ring_command<const N: usize>(ring:&core::ring::Ring<u64,N>,words:[u64;8],output:&Output) {
+    let op:u64=words[0];
+    if(op==10) { ring_count(core::ring::try_push_back(ring,words[2]),output); }
+    if(op==11) { ring_count(core::ring::try_push_front(ring,words[2]),output); }
+    if(op==12) { option_word(core::ring::push_back_overwrite(ring,words[2]),output); }
+    if(op==13) { option_word(core::ring::push_front_overwrite(ring,words[2]),output); }
+    if(op==14) { option_word(core::ring::pop_front(ring),output); }
+    if(op==15) { option_word(core::ring::pop_back(ring),output); }
+    if(op==16) { option_word(core::ring::get(ring,signed(words[2])),output); }
+    if(op==17) {
+        let set:core::result::Result<u64,core::ring::Error> = core::ring::try_set(ring,signed(words[2]),words[3]);
+        if(set.is_ok()) { output.word(0); output.word(set.unwrap()); } else { output.word(1); output.word(ring_error(set.unwrap_err())); }
+    }
+    if(op==18) { ring_count(core::ring::discard_front(ring,signed(words[2])),output); }
+    if(op==19) { ring_count(core::ring::discard_back(ring,signed(words[2])),output); }
+    if(op==20) { output.int(core::ring::clear(ring)); }
+    if(op==21) {
+        output.int(core::ring::len(ring)); output.int(core::ring::capacity(ring)); output.int(core::ring::spare(ring));
+        output.flag(core::ring::is_empty(ring)); output.flag(core::ring::is_full(ring));
+        option_word(core::ring::front(ring),output); option_word(core::ring::back(ring),output);
+        let cursor:core::ring::Iter<u64> = core::ring::iter(ring);
+        let item:core::option::Option<u64> = cursor.next();
+        while(item.is_some()) { output.word(item.unwrap()); item=cursor.next(); }
+        output.flag(cursor.next().is_none() && cursor.next_back().is_none());
+        let views:core::pair::Pair<core::slice::View<u64>,core::slice::View<u64>> = core::ring::as_views(ring);
+        view_words(views.first,output); view_words(views.second,output);
+    }
+    if(op==22) { view_words(core::ring::make_contiguous(ring),output); }
+    if(op==23) { let cursor:core::ring::Iter<u64> = core::ring::iter(ring); pattern_pulls(cursor.borrow(),words[2],core::ring::len(ring)+2,output); }
+    if(op==24) {
+        let rejected:core::option::Option<core::ring::Error> = accept<core::ring::Ring<u64,N>>(ring,words[2]);
+        if(rejected.is_some()) { output.word(1); output.word(ring_error(rejected.unwrap())); } else { output.word(0); }
+    }
+}
+// ---- InlineString ----
+fn string_error(error:core::inline_string::Error) -> u64 {
+    return match(error) { core::inline_string::Error::Full -> 1, core::inline_string::Error::Bounds -> 2,
+        core::inline_string::Error::NotCharBoundary -> 3, core::inline_string::Error::InvalidScalar -> 4 };
+}
+fn string_count(result:core::result::Result<i32,core::inline_string::Error>,output:&Output) {
+    if(result.is_ok()) { output.word(0); output.int(result.unwrap()); } else { output.word(1); output.word(string_error(result.unwrap_err())); }
+}
+fn string_snapshot<const N: usize>(value:&core::inline_string::InlineString<N>,output:&Output) {
+    output.int(core::inline_string::len(value)); output.int(core::inline_string::capacity(value)); output.int(core::inline_string::spare(value));
+    output.flag(core::inline_string::is_empty(value)); output.flag(core::inline_string::is_full(value));
+    let text:core::text::Text = core::inline_string::as_text(value);
+    output.int(text.scalar_count());
+    let i:i32=0; while(i<text.byte_len()) { output.word(text.byte_at(i).unwrap() as u64); i+=1; }
+}
+fn string_command<const N: usize>(value:&core::inline_string::InlineString<N>,words:[u64;8],text:core::text::Text,output:&Output) {
+    let op:u64=words[0];
+    if(op==30) { string_count(core::inline_string::try_push_scalar(value,words[2] as u32),output); }
+    if(op==31) { string_count(core::inline_string::try_push_text(value,text),output); }
+    if(op==32) { output.int(core::inline_string::push_text_truncating(value,text)); }
+    if(op==33) {
+        let popped:core::option::Option<u32> = core::inline_string::pop(value);
+        if(popped.is_some()) { output.word(1); output.word(popped.unwrap() as u64); } else { output.word(0); }
+    }
+    if(op==34) { string_count(core::inline_string::truncate(value,signed(words[2])),output); }
+    if(op==35) { output.int(core::inline_string::clear(value)); }
+    if(op==36) { string_snapshot(value,output); }
+    if(op==37) { output.int(core::inline_string::compare(value,text)); output.flag(core::inline_string::equals(value,text)); }
+}
+// ---- Vec additions ----
+fn vec_error(error:core::vec::Error) -> u64 { return match(error) { core::vec::Error::Full -> 1, core::vec::Error::Bounds -> 2 }; }
+fn vec_command(value:&core::vec::Vec<u64,6>,words:[u64;8],output:&Output) {
+    let op:u64=words[0];
+    if(op==40) {
+        let pushed:core::result::Result<i32,core::vec::Error> = core::vec::try_push(value,words[2]);
+        if(pushed.is_ok()) { output.word(0); output.int(pushed.unwrap()); } else { output.word(1); output.word(vec_error(pushed.unwrap_err())); }
+    }
+    if(op==41) {
+        let removed:core::result::Result<u64,core::vec::Error> = core::vec::try_swap_remove(value,signed(words[2]));
+        if(removed.is_ok()) { output.word(0); output.word(removed.unwrap()); } else { output.word(1); output.word(vec_error(removed.unwrap_err())); }
+    }
+    if(op==42) {
+        let values:[u64;5]=[words[3],words[4],words[5],words[6],words[7]];
+        let source:core::slice::View<u64> = core::slice::View { values:values,start:0,length:signed(words[2]) };
+        // Count 100 extends the vector with a view of its own active prefix.
+        if(words[2]==100) { source=core::vec::as_view(value); }
+        let extended:core::result::Result<i32,core::vec::Error> = core::vec::try_extend_from_view(value,source);
+        if(extended.is_ok()) { output.word(0); output.int(extended.unwrap()); } else { output.word(1); output.word(vec_error(extended.unwrap_err())); }
+    }
+    if(op==43) { view_words(core::vec::as_view(value),output); }
+    if(op==44) { option_word(core::vec::pop(value),output); }
+    if(op==45) { output.int(core::vec::clear(value)); }
+}
+// ---- LRU ----
+// Keys count their own hash and equality calls through a shared cell pair.
+struct SpreadKey { id:i32,stamp:u64,counter:ptr }
+struct CollideKey { id:i32,stamp:u64,counter:ptr }
+fn bump(counter:ptr,index:i32) { let cells:[u64]=core::mem::typed_slice_from_storage<u64>(counter,2); cells[index]+=1; }
+trait ModelKey<K> {
+    fn make(id:i32,stamp:u64,counter:ptr) -> K;
+    fn id_of(key:K) -> i32;
+    fn stamp_of(key:K) -> u64;
+}
+pub impl core::cmp::Eq<SpreadKey> for SpreadKey {
+    pub fn eq(left:SpreadKey,right:SpreadKey) -> bool { bump(left.counter,1); return left.id==right.id; }
+    pub fn ne(left:SpreadKey,right:SpreadKey) -> bool { bump(left.counter,1); return left.id!=right.id; }
+}
+// Multiplication by an odd constant is injective on 32 bits.
+pub impl core::hash::Hash<SpreadKey> for SpreadKey {
+    pub fn hash(value:SpreadKey) -> u32 { bump(value.counter,0); return (value.id as u32)*2654435761; }
+}
+impl ModelKey<SpreadKey> for SpreadKey {
+    fn make(id:i32,stamp:u64,counter:ptr) -> SpreadKey { return SpreadKey { id:id,stamp:stamp,counter:counter }; }
+    fn id_of(key:SpreadKey) -> i32 { return key.id; }
+    fn stamp_of(key:SpreadKey) -> u64 { return key.stamp; }
+}
+pub impl core::cmp::Eq<CollideKey> for CollideKey {
+    pub fn eq(left:CollideKey,right:CollideKey) -> bool { bump(left.counter,1); return left.id==right.id; }
+    pub fn ne(left:CollideKey,right:CollideKey) -> bool { bump(left.counter,1); return left.id!=right.id; }
+}
+// Four hash values in all: chains are long and full hashes collide.
+pub impl core::hash::Hash<CollideKey> for CollideKey {
+    pub fn hash(value:CollideKey) -> u32 { bump(value.counter,0); return (value.id as u32)&3; }
+}
+impl ModelKey<CollideKey> for CollideKey {
+    fn make(id:i32,stamp:u64,counter:ptr) -> CollideKey { return CollideKey { id:id,stamp:stamp,counter:counter }; }
+    fn id_of(key:CollideKey) -> i32 { return key.id; }
+    fn stamp_of(key:CollideKey) -> u64 { return key.stamp; }
+}
+fn lru_error(error:alloc::lru::Error) -> u64 {
+    return match(error) { alloc::lru::Error::InvalidCapacity -> 1, alloc::lru::Error::CapacityOverflow -> 2, alloc::lru::Error::AllocationFailed -> 3 };
+}
+fn entry_words<K>(entry:alloc::lru::Entry<K,u64>,output:&Output) where K:ModelKey<K> {
+    output.int(K::id_of(entry.key)); output.word(K::stamp_of(entry.key)); output.word(entry.value);
+}
+fn entry_option<K>(item:core::option::Option<alloc::lru::Entry<K,u64>>,output:&Output) where K:ModelKey<K> {
+    if(item.is_some()) { output.word(1); entry_words<K>(item.unwrap(),output); } else { output.word(0); }
+}
+fn lru_pattern<K>(cursor:&alloc::lru::Cursor<K,u64>,pattern:u64,limit:i32,output:&Output) where K:ModelKey<K> {
+    let step:i32=0; let bits:u64=pattern;
+    while(step<limit) {
+        output.word(cursor.remaining_count());
+        if((bits&1)==0) { entry_option<K>(cursor.next(),output); } else { entry_option<K>(cursor.next_back(),output); }
+        bits=(bits>>1)|((bits&1)<<63); step+=1;
+    }
+}
+fn lru_command<K>(cache:&alloc::lru::LruCache<K,u64>,words:[u64;8],counter:ptr,output:&Output)
+    where K:core::hash::Hash<K>, K:core::cmp::Eq<K>, K:ModelKey<K> {
+    let op:u64=words[0];
+    let key:K = K::make(signed(words[2]),words[3],counter);
+    if(op==50) {
+        let outcome:alloc::lru::Put<K,u64> = cache.put(key,words[4]);
+        let tag:u64 = match(outcome) { alloc::lru::Put::Inserted -> 0, alloc::lru::Put::Replaced(entry) -> 1, alloc::lru::Put::Evicted(entry) -> 2 };
+        output.word(tag);
+        let shown:core::option::Option<alloc::lru::Entry<K,u64>> = match(outcome) {
+            alloc::lru::Put::Replaced(entry) -> core::option::Some(entry), alloc::lru::Put::Evicted(entry) -> core::option::Some(entry), _ -> core::option::None() };
+        if(shown.is_some()) { entry_words<K>(shown.unwrap(),output); }
+    }
+    if(op==51) { option_word(cache.get(key),output); }
+    if(op==52) { option_word(cache.peek(key),output); }
+    if(op==53) { output.flag(cache.contains(key)); }
+    if(op==54) { output.flag(cache.touch(key)); }
+    if(op==55) { entry_option<K>(cache.remove(key),output); }
+    if(op==56) { entry_option<K>(cache.pop_oldest(),output); }
+    if(op==57) { entry_option<K>(cache.oldest(),output); entry_option<K>(cache.newest(),output); }
+    if(op==58) {
+        output.int(cache.len()); output.int(cache.capacity()); output.flag(cache.is_empty()); output.flag(cache.is_full());
+        let cursor:alloc::lru::Cursor<K,u64> = cache.iter();
+        let item:core::option::Option<alloc::lru::Entry<K,u64>> = cursor.next();
+        while(item.is_some()) { entry_words<K>(item.unwrap(),output); item=cursor.next(); }
+        output.flag(cursor.next().is_none() && cursor.next_back().is_none());
+        let back:alloc::lru::Cursor<K,u64> = cache.iter();
+        item=back.next_back();
+        while(item.is_some()) { output.int(K::id_of(item.unwrap().key)); item=back.next_back(); }
+    }
+    if(op==59) { cache.clear(); }
+    if(op==60) { let cursor:alloc::lru::Cursor<K,u64> = cache.iter(); lru_pattern<K>(cursor.borrow(),words[4],cache.len()+2,output); }
+    let cells:[u64]=core::mem::typed_slice_from_storage<u64>(counter,2);
+    output.word(cells[0]); output.word(cells[1]); cells[0]=0; cells[1]=0;
+}
+fn main() -> i32 {
+    let output_storage:[i32;1024]=[0;1024]; let output_pointer:ptr=core::mem::i32_array_data_ptr(output_storage);
+    let output:Output=Output { bytes:core::mem::typed_slice_from_raw_parts<u8>(output_pointer,4096),pointer:output_pointer,used:0 };
+    let input_storage:[i32;16]=[0;16]; let input_pointer:ptr=core::mem::i32_array_data_ptr(input_storage);
+    let input:[u8]=core::mem::typed_slice_from_raw_parts<u8>(input_pointer,64);
+    // Heap cells, so no stack slot reuse can alias the key counters.
+    let counter:ptr=alloc::allocator::alloc(16,8); assert(counter!=0);
+    let cells:[u64]=core::mem::typed_slice_from_storage<u64>(counter,2); cells[0]=0; cells[1]=0;
+    let ring0:core::ring::Ring<u64,0> = core::ring::from_storage<u64,0>([0;0]);
+    let ring1:core::ring::Ring<u64,1> = core::ring::from_storage([0;1]);
+    let ring5:core::ring::Ring<u64,5> = core::ring::from_storage([0;5]);
+    let ring8:core::ring::Ring<u64,8> = core::ring::from_storage([0;8]);
+    let text0:core::inline_string::InlineString<0> = core::inline_string::from_storage<0>([0;0]);
+    let text5:core::inline_string::InlineString<5> = core::inline_string::from_storage([0;5]);
+    let text12:core::inline_string::InlineString<12> = core::inline_string::from_storage([0;12]);
+    let vec6:core::vec::Vec<u64,6> = core::vec::from_storage([0;6]);
+    let spread:alloc::lru::LruCache<SpreadKey,u64> = alloc::lru::with_capacity<SpreadKey,u64>(1).unwrap();
+    let collide:alloc::lru::LruCache<CollideKey,u64> = alloc::lru::with_capacity<CollideKey,u64>(1).unwrap();
+    let kind:u64=0; let commands:u64=0;
+    let text_bytes:[u8;40]=[0;40];
+    while(read_exact(input_pointer,64)) {
+        let words:[u64;8]=[0;8]; let i:i32=0;
+        while(i<8) { words[i]=get64(input,i*8); i+=1; }
+        commands+=1;
+        let op:u64=words[0];
+        output.word(op);
+        if(op==1) {
+            // Reset the cache of one key kind to a valid capacity.
+            kind=words[2];
+            if(kind==0) { spread.destroy(); spread=alloc::lru::with_capacity<SpreadKey,u64>(signed(words[1])).unwrap(); }
+            else { collide.destroy(); collide=alloc::lru::with_capacity<CollideKey,u64>(signed(words[1])).unwrap(); }
+        }
+        if(op==2) {
+            let probe:core::result::Result<alloc::lru::LruCache<SpreadKey,u64>,alloc::lru::Error> = alloc::lru::with_capacity<SpreadKey,u64>(signed(words[1]));
+            if(probe.is_ok()) { let made:alloc::lru::LruCache<SpreadKey,u64> = probe.unwrap(); output.word(0); output.int(made.capacity()); made.destroy(); }
+            else { output.word(1); output.word(lru_error(probe.unwrap_err())); }
+        }
+        if(op>=10 && op<30) {
+            let which:u64=words[1];
+            if(which==0) { ring_command(ring0.borrow(),words,output.borrow()); }
+            if(which==1) { ring_command(ring1.borrow(),words,output.borrow()); }
+            if(which==2) { ring_command(ring5.borrow(),words,output.borrow()); }
+            if(which==3) { ring_command(ring8.borrow(),words,output.borrow()); }
+        }
+        if(op>=30 && op<40) {
+            let count:i32=signed(words[2]);
+            if(op==30 || op==33 || op==34 || op==35 || op==36) { count=0; }
+            let j:i32=0; while(j<count) { text_bytes[j]=((words[3+j/8]>>((j%8)*8))&255) as u8; j+=1; }
+            let text:core::text::Text = core::text::from_utf8_range(text_bytes,0,count).unwrap();
+            let which:u64=words[1];
+            if(op==38) {
+                let made:core::result::Result<core::inline_string::InlineString<12>,core::inline_string::Error> = core::inline_string::try_from_text<12>([0;12],text);
+                if(made.is_ok()) { output.word(0); let owned:core::inline_string::InlineString<12> = made.unwrap(); string_snapshot(owned.borrow(),output.borrow()); }
+                else { output.word(1); output.word(string_error(made.unwrap_err())); }
+            } else {
+                if(which==0) { string_command(text0.borrow(),words,text,output.borrow()); }
+                if(which==1) { string_command(text5.borrow(),words,text,output.borrow()); }
+                if(which==2) { string_command(text12.borrow(),words,text,output.borrow()); }
+            }
+        }
+        if(op>=40 && op<50) { vec_command(vec6.borrow(),words,output.borrow()); }
+        if(op>=50 && op<70) {
+            if(kind==0) { lru_command<SpreadKey>(spread.borrow(),words,counter,output.borrow()); }
+            else { lru_command<CollideKey>(collide.borrow(),words,counter,output.borrow()); }
+        }
+    }
+    spread.destroy(); collide.destroy(); alloc::allocator::dealloc(counter,16,8);
+    output.word(255); output.word(commands); output.flush();
+    return 0;
+}

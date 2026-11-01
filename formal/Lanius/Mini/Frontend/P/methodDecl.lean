@@ -184,23 +184,9 @@ def itemDecls (fuel : Nat) (home : List (List Nat)) (item : CTree) : Option Decl
                     else
                       none
 
-def collect (fuel : Nat) (home : List (List Nat)) (items : List CTree) (acc : Decls) : Option Decls :=
-  match items with
-  | [] => some acc
-  | item :: rest =>
-    let cacc : Option Decls := joinDecls acc (itemDecls fuel home item)
-    match cacc with
-    | none => none
-    | some d => collect fuel home rest d
-
-def fileCollected (home : List (List Nat)) (decls : Option Decls) : Option FileDecls :=
-  match decls with
+def collectFront (first : Option Decls) (rest : Option Decls) : Option Decls :=
+  match first with
   | none => none
-  | some d => some ({ home := home, decls := d } : FileDecls)
-
-def fileItems (fuel : Nat) (home : Option (List (List Nat))) (items : List CTree) : Option FileDecls :=
-  match home with
-  | none => none
-  | some m => fileCollected m (collect fuel m items noDecls)
+  | some d => joinDecls d rest
 
 end Lanius.Mini

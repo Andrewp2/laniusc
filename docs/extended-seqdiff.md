@@ -22,6 +22,7 @@ their byte-line API, strict application and saved-trace Myers.
 | `patience_classes(a, b, classes, limits)` | ids in `[0, classes)` | patience script |
 | `split_lines(bytes, limits)` / `diff_lines(a, b, algorithm, limits)` | `Line` | byte lines, each keeping its LF |
 | `classify_lines(a, b, limits)` / `myers_classes(a, b, limits)` | `Line` / class ids | the specialized paths `diff_lines` uses |
+| `xdiff_classes(a, b, limits)` | non-negative ids | git's xdiff alignment (`Algorithm::Xdiff`; see [word diff and diffstat](extended-wordiff.md)) |
 
 `a` and `b` are `core::slice::View<T>`. `Line { bytes, hash }` caches its FNV-1a hash; build
 lines with `split_lines` or `line(bytes)` so the two agree. It implements `Eq`
@@ -116,11 +117,13 @@ for strict application.
 ## Sample programs
 
 ```sh
-seq-diff [-U N] [--patience] OLD NEW           # exit 0 same, 1 differ, 2 error
+seq-diff [-U N] [--myers|--patience|--xdiff] OLD NEW   # exit 0 same, 1 differ, 2 error
 seq-patch [-F N] [--max-offset N] BASE PATCH    # exit 0 applied, 1 rejects, 2 error
 ```
 
-`seq-diff` writes `--- OLD` / `+++ NEW` and the hunks to stdout. `seq-patch`
+`seq-diff` writes `--- OLD` / `+++ NEW` and the hunks to stdout. Its git-format
+`--word-diff`, `--char-diff` and `--stat` modes are described in
+[word diff and diffstat](extended-wordiff.md). `seq-patch`
 writes the patched file to stdout and one GNU-worded line per hunk to stderr,
 for example `Hunk #2 succeeded at 14 with fuzz 1 (offset 3 lines).` or
 `Hunk #3 FAILED at 20 (no-match).`
@@ -184,8 +187,8 @@ inside the program (best of 7, both files) changed as follows:
 | hunks + write | 23 ms | 4 ms | the writer validates only emitted lines instead of scanning both files |
 
 The remaining gap is code generation. A plain loop that counts LF bytes in a
-`[u8]` (`tests/fixtures/extended/perf/byte_loop_repro.lani`, 0.50 s for 160 M bytes) costs 2.8 ns/byte,
-against 0.8 ns for `gcc -O0` on `byte_loop_repro.c` and under 0.1 ns for `gcc -O2`. A loop that also
+`[u8]` (`tests/fixtures/compiler_defects/byte_loop_codegen.lani`, 0.50 s for 160 M bytes) costs 2.8 ns/byte,
+against 0.8 ns for `gcc -O0` on `byte_loop_codegen.c` and under 0.1 ns for `gcc -O2`. A loop that also
 hashes costs 9-14 ns/byte. Each element access reloads the slice's fields from
 the stack, emits a bounds check, multiplies the index by the slice's runtime
 stride, and branches on stride 1. Every temporary is spilled and reloaded,

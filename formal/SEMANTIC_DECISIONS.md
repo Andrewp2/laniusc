@@ -853,9 +853,12 @@ loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
   the input a run consumed is what it was given minus what is left, so the
   trace stays the list of writes.
 - **`Syscall.read` at the mini level.** `[0, address, count]` with count at
-  most `maxTransfer` delivers `input.take count` at `address` (`writeAll`)
-  and drops count bytes, returning how many came; the delivered range must
-  lie in the heap (nothing is checked when no byte comes). The x86 code is
+  most `maxTransfer` delivers the bytes the kernel's read does
+  (`Io.readBytes count`: from 1 to count or all that are left, at most the
+  next of `readLimits` plus one, 0 only when count is 0 or the input is
+  used up) at `address` (`writeAll`) and drops them (`Io.afterRead`),
+  returning how many came; the delivered range must lie in the heap
+  (nothing is checked when no byte comes). The x86 code is
   `sysSpec` with `mov eax, 0` (`Syscall.linux`), the kernel's `read`
   (TRUSTED_BASE.md section 8).
 - **`read_stdin(ptr, len)` (host id 2^32 + 3).** Core's meaning
@@ -865,8 +868,11 @@ loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
   stdlib's `extern "lanius_std" fn read_stdin` as the host call
   (`hostExtern`, case `host_read`). The verified compiler lowers it to a
   loop (`host_read_code`): a chunk of at most `maxTransfer` bytes, read;
-  pointer, count and total moved past what came; and the loop ends when a
-  read comes back short, since the input is then used up. Proved against
+  pointer, count and total moved past what came; and the loop ends when
+  none are left to ask for or a read delivers none, since the input is then
+  used up. A short read, as a pipe or terminal gives, does not end it
+  (until 10-31 it did, and a short read lost the rest: review finding 3).
+  Proved for every schedule of read lengths against
   Core (`hostRead_exec`, `LowerEval.host_read`): the stored bytes are
   Core's, the input left is Core's, and the result is Core's count.
 - **The oracle gives each reading call its own input.** The stdlib oracle
@@ -1275,15 +1281,25 @@ compilation of what that text means, and gives itself back.
     (`link_onto`, equal to `link_from` by `linkOnto_eq`) instead of
     concatenating whole function images: 5.6 to 5.2 GiB.
 
-  The peak resident set is still at the 4 GiB cap, since 5.2 GiB is
-  allocated. What is left is in each list step: `unbox` copies the node
-  out of its box (for a `List<FnDecl>` node, the whole `FnDecl`), and it
-  and `boxed` build slice headers through `typed_slice_from_storage`. The
-  front end takes 2.3 GiB (`find_fn` walking `decls.fns`, `concat<FnDecl>`),
-  lowering's `concat<Instr>` about 0.7 GiB, and encoding about 1.3 GiB
-  (each byte is a cons cell made by `encode` and copied once by `concat`).
-  Lowering `unbox` without the copy, or a table for the front end's
-  lookups, would take most of it.
+  The front end then built two lists by appending to what it had read so
+  far, so each step copied everything before it: `collect` appended each
+  item's declarations to the file's (each `FnDecl` node copied once per
+  later item), and `mono_loop` appended each function it read to the
+  ones before. `collect` now puts each item's declarations in front of
+  the rest's (`collect_front`; `collect_sound` is now `collect … = some
+  d → Collect home items d`), and `mono_loop` conses each function onto
+  the ones read so far, the last first, and reverses them once at the end
+  (`funcs_onto`, `funcsOnto_eq`; `monoLoop_sound` reads `done.reverse`).
+  The relations `Collect` and `MonoR` are unchanged. The front end's heap
+  went from about 2.1 GiB to 0.7 GiB, and the whole run's from 5.2 to
+  about 3.9 GiB, in the same time (the native run about 110 s). The
+  lookups (`find_fn`, `get`) allocate nothing: `unbox` reads the node
+  through a slice held in slots. The peak resident set is still at the
+  4 GiB cap, since about 3.9 GiB is allocated: what is left is mostly
+  the encoder (each instruction's bytes built as a list and copied once
+  by `concat` onto the rest, and `slot_load`/`slot_store` copying their
+  opcode bytes onto `le32`'s, about 1.5 GiB), lowering's
+  `concat<Instr>` and the validator's facts.
 
 ### The design of writes through references (decided 10-31, F5)
 
@@ -1356,6 +1372,67 @@ arms after it are read as before.
 - A let's match with block arms still needs exactly one value arm as
   written; a wildcard value arm then copies the statements after the let
   into each variant it stands for.
+
+## Enums with no variants (decided 10-31, F11)
+
+An enum with no variants (`enum Never {}`, as `core::clone_values::Infallible`)
+needs nothing new in the front end: it is a type with no values, so a
+`Result<T, Never>` is always `Ok`, and the arm of its error still binds its
+payload (case empty_enum). A match on a value of it has no arms; the front
+end reads it (`ArmsOrder` with no variants and no arms), but `compileSource`
+rejects it, since Core has no match with no arms and the lowering would need
+one that traps (case empty_match, `compile_rejects`). No reachable code can
+run such a match, so this leaves out no behavior a program can show.
+
+The 14 `core::clone_values` targets were unread for a reason in the oracle,
+not the front end: its wrapper wrote the trait method's result at the
+instance type (`Result<bool, E>`) where laniusc checks the generic helper
+first (`Result<T, E>`), and wrote the trait's type arguments unqualified from
+the wrapper's module (LNC0006). `stdlib_oracle.py`'s `wrapper_text` writes
+both as laniusc names them; 12 of the 14 now compile, 240 calls agree.
+
+## Nested patterns (decided 10-31, F11)
+
+A match expression with a nested arm, one whose payload patterns are not all
+plain binders (`Ok(Some(x))`, `Pair(Bar::X(a), b)`, `Err(m::E::V(n))`), is
+read as nested matches (`match_order`, `MatchOrder`, `NestedOrder` in
+`Reading/Nested`). Module-qualified patterns need nothing new: an arm's path
+may already be `V`, `E::V`, `m::V` or `m::E::V` (`ArmNamed`). Variant V's arm
+is the wildcard's when no arm names V, V's one written arm when that is
+plain, and otherwise `V(b, .., h, ..) -> match (h) { p -> value, .., _ ->
+w }`: the arms naming V, in order, matched on the first arm's first column
+j that is not a binder; each gives the inner match its pattern p at j and
+its value. The inner match is read again, nested or not.
+
+- laniusc runs the first arm that matches. The arms naming V are kept in
+  order in the inner match, and every other column of each of them must be
+  a binder spelled as the first arm's (`row_fits`), so each arm matches
+  exactly when its pattern at j does, and its value sees the same names
+  (bound to the same payload fields, with the first arm's ids). Arms that
+  differ off column j, or a plain arm before a nested one for the same
+  variant, are not read; laniusc accepts them, so these are readings the
+  front end leaves out.
+- At column j the last arm may be a binder; it matches everything there,
+  so it is read as `_` when its value spells no token as that name
+  (`Mentions`), and otherwise not read (case reject_nested_binder).
+- The outer wildcard, if any, is added as the inner match's last arm,
+  unless an inner arm is `_` already or the inner arms name every variant
+  of h's enum with plain binders (`Covers`): then no value of V reaches it.
+  In the inner match the first arm's other binders are in scope, where the
+  wildcard's value was written without them, so it is added only when its
+  value spells none of their names (`ColsQuiet`; case
+  reject_nested_capture). The wildcard must still be used somewhere, a
+  variant's arm or an inner arm, so that its value is read.
+- h is a binder no source can spell (the one byte 0), its id the position
+  of the first arm's pattern at j, checked fresh like any binder's. The
+  inner match's scrutinee is h.
+- A match statement reads block arms; a nested match expression may have
+  no arm whose value is a block (`BlockValue`), so the two readings never
+  overlap. Nested arms in match statements and lets' matches are not read.
+- Every arm but a last wildcard must name a variant, as without nesting.
+- Determinism: whether some arm is nested decides the branch; the arms
+  naming a variant, their patterns, the column and the inner arms are each
+  determined by the tree (`nestedOrder_unique`, `matchOrder_unique`).
 
 ## Front end review fixes (decided 10-31)
 

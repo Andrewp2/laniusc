@@ -40,6 +40,7 @@ fn regex_find_replace_and_grep_agree_with_python_re_on_generated_patterns() {
         "regex_replace",
     );
     let grep = executable(&root, "sample_programs/library/text_grep.lani", "text_grep");
+    let dfa = executable(&root, "tests/fixtures/extended/regex_oracle/dfa.lani", "regex_dfa");
     let output = common::process_output_with_timeout(
         "regex Python oracle",
         std::process::Command::new("python3")
@@ -47,16 +48,20 @@ fn regex_find_replace_and_grep_agree_with_python_re_on_generated_patterns() {
             .arg(root.join("tests/fixtures/extended/regex_oracle/oracle.py"))
             .arg(input.path())
             .arg(replace.path())
-            .arg(grep.path()),
+            .arg(grep.path())
+            .arg("--dfa")
+            .arg(dfa.path()),
         Duration::from_secs(120),
     );
     let report = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success(), "{report}\n{output:?}");
     for line in [
         "find_iter_captures 12005/12005",
+        "dfa_match_find 3000/3000",
         "replace_template 1000/1000",
         "grep_filter 1000/1000",
-        "linear_time 5/5",
+        "lookbehind_find 2728/2728",
+        "linear_time 6/6",
         "disagreements 0",
     ] {
         assert!(report.lines().any(|l| l == line), "missing {line:?} in\n{report}");

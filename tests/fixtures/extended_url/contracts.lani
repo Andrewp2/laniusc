@@ -1,0 +1,83 @@
+// ext::url API contracts that the url-parse command line does not show:
+// null versus empty query and fragment, port helpers, host kinds, clones,
+// bounds and length checks. Exits with the number of the first failed check.
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::url;
+
+fn bytes(value: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),n); return core::slice::view(raw,n).unwrap(); }
+fn equal(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool { if (a.length != b.length) { return false; } let i: i32 = 0; while (i < a.length) { if (a.values[a.start+i] != b.values[b.start+i]) { return false; } i += 1; } return true; }
+fn is(a: core::slice::View<u8>, value: str, n: i32) -> bool { return equal(a,bytes(value,n)); }
+fn must(value: str, n: i32) -> ext::url::Url { return ext::url::parse(bytes(value,n)).unwrap(); }
+fn error_is(result: core::result::Result<ext::url::Url, ext::url::Error>, code: i32) -> bool {
+    if (result.is_ok()) { let url: ext::url::Url = result.unwrap(); url.destroy(); return false; }
+    let found: i32 = match (result.unwrap_err()) {
+        ext::url::Error::Bounds -> 1, ext::url::Error::TooLong -> 2, ext::url::Error::InvalidUtf8 -> 3, ext::url::Error::AllocationFailed -> 4,
+        ext::url::Error::MissingScheme -> 5, ext::url::Error::MissingHost -> 6, ext::url::Error::InvalidHost -> 7, ext::url::Error::InvalidPort -> 8,
+        ext::url::Error::InvalidIpv4 -> 9, ext::url::Error::InvalidIpv6 -> 10, ext::url::Error::UnsupportedIdna -> 11
+    };
+    return found == code;
+}
+fn kind(url: &ext::url::Url) -> i32 {
+    return match (url.host_kind()) {
+        ext::url::HostKind::None -> 0, ext::url::HostKind::Empty -> 1, ext::url::HostKind::Domain -> 2, ext::url::HostKind::Ipv4 -> 3,
+        ext::url::HostKind::Ipv6 -> 4, ext::url::HostKind::Opaque -> 5
+    };
+}
+
+fn main() -> i32 {
+    // Null and empty query and fragment are distinct; search and hash hide both.
+    let a: ext::url::Url = must("http://h/p?#",12);
+    if (!a.query().is_some() || a.query().unwrap().length != 0 || !a.fragment().is_some() || a.fragment().unwrap().length != 0) { return 1; }
+    if (a.search().length != 0 || a.hash().length != 0 || !is(a.href_without_fragment(),"http://h/p?",11)) { return 2; }
+    let b: ext::url::Url = must("http://h/p",10);
+    if (b.query().is_some() || b.fragment().is_some() || !is(b.href_without_fragment(),"http://h/p",10)) { return 3; }
+    let c: ext::url::Url = must("https://h:8443/x?q=1#top",24);
+    if (!is(c.query().unwrap(),"q=1",3) || !is(c.fragment().unwrap(),"top",3) || !is(c.search(),"?q=1",4) || !is(c.hash(),"#top",4)) { return 4; }
+    // Ports: the default port is elided and reported as -1.
+    if (c.port_number() != 8443 || c.port_or_default() != 8443 || !is(c.port(),"8443",4) || !is(c.host(),"h:8443",6)) { return 5; }
+    let d: ext::url::Url = must("https://h:443/",14);
+    if (d.port_number() != -1 || d.port_or_default() != 443 || d.port().length != 0 || !is(d.href(),"https://h/",10)) { return 6; }
+    let e: ext::url::Url = must("sc://h:0/",9);
+    if (e.port_number() != 0 || e.port_or_default() != 0 || must("sc://h/",7).port_or_default() != -1) { return 7; }
+    if (ext::url::default_port(bytes("ws",2)) != 80 || ext::url::default_port(bytes("wss",3)) != 443 || ext::url::default_port(bytes("ftp",3)) != 21
+        || ext::url::default_port(bytes("file",4)) != -1 || ext::url::default_port(bytes("HTTP",4)) != -1) { return 8; }
+    // Host kinds, opaque paths and special schemes.
+    if (kind(must("http://[::1]/",13).borrow()) != 4 || kind(must("http://0x7f.1/",14).borrow()) != 3 || kind(must("http://a.b/",11).borrow()) != 2) { return 9; }
+    if (kind(must("sc://a.b/",9).borrow()) != 5 || kind(must("file:///x",9).borrow()) != 1 || kind(must("sc:x",4).borrow()) != 0 || kind(must("sc://",5).borrow()) != 1) { return 10; }
+    let o: ext::url::Url = must("mailto:a@b",10);
+    if (!o.has_opaque_path() || o.is_special() || !is(o.pathname(),"a@b",3) || c.has_opaque_path() || !c.is_special()) { return 11; }
+    // A base can be reused and cloned; the clone outlives the original.
+    let base: ext::url::Url = must("http://u:p@h/a/b?q#f",20);
+    let copy: ext::url::Url = base.try_clone().unwrap(); base.destroy();
+    let r1: ext::url::Url = ext::url::parse_with_base(bytes("../c",4),copy.borrow()).unwrap();
+    let r2: ext::url::Url = ext::url::parse_with_base(bytes("#g",2),copy.borrow()).unwrap();
+    if (!is(r1.href(),"http://u:p@h/c",14) || !is(r2.href(),"http://u:p@h/a/b?q#g",20) || !is(copy.href(),"http://u:p@h/a/b?q#f",20)) { return 12; }
+    if (!is(r1.username(),"u",1) || !is(r1.password(),"p",1)) { return 13; }
+    // Origins.
+    let origin: alloc::vec::Vec<u8> = c.origin().unwrap(); if (!is(origin.as_view(),"https://h:8443",14)) { return 14; } origin.destroy();
+    let opaque_origin: alloc::vec::Vec<u8> = must("file:///x",9).origin().unwrap(); if (!is(opaque_origin.as_view(),"null",4)) { return 15; }
+    // can_parse and errors.
+    if (!ext::url::can_parse(bytes("a:b",3)) || ext::url::can_parse(bytes("b",1)) || ext::url::can_parse(bytes("",0))) { return 16; }
+    let bad: [u8;3] = [104,58,255];
+    if (!error_is(ext::url::parse(core::slice::view(bad,3).unwrap()),3)) { return 17; }
+    let surrogate: [u8;5] = [104,58,237,160,128];
+    if (!error_is(ext::url::parse(core::slice::view(surrogate,5).unwrap()),3)) { return 18; }
+    let raw: core::slice::View<u8> = bytes("http://h/",9);
+    if (!error_is(ext::url::parse(core::slice::View { values: raw.values, start: -1, length: 3 }),1)) { return 19; }
+    if (!error_is(ext::url::parse(core::slice::View { values: raw.values, start: 0, length: ext::url::MAX_INPUT_BYTES + 1 }),2)) { return 20; }
+    if (!error_is(ext::url::parse(bytes("http://h:65536/",15)),8) || !error_is(ext::url::parse(bytes("http://h:1x/",12)),8)) { return 21; }
+    if (!error_is(ext::url::parse(bytes("http://xn--a.b/",15)),11) || !error_is(ext::url::parse(bytes("http://%C3%A9/",14)),11)) { return 22; }
+    if (!error_is(ext::url::parse(bytes("http:",5)),6) || !error_is(ext::url::parse(bytes("http://u@/",10)),6)) { return 23; }
+    if (!error_is(ext::url::parse_with_base(bytes("x",1),o.borrow()),5)) { return 24; }
+    // The span accessors partition the href.
+    let f: ext::url::Url = must("ws://us:pw@[::ffff:1.2.3.4]:81/a?b#c",36);
+    if (!is(f.href(),"ws://us:pw@[::ffff:102:304]:81/a?b#c",36) || !is(f.protocol(),"ws:",3) || !is(f.hostname(),"[::ffff:102:304]",16)) { return 25; }
+    if (!is(f.scheme(),"ws",2) || !is(f.host(),"[::ffff:102:304]:81",19) || !is(f.pathname(),"/a",2)) { return 26; }
+    a.destroy(); b.destroy(); c.destroy(); d.destroy(); e.destroy(); o.destroy(); copy.destroy(); r1.destroy(); r2.destroy(); f.destroy();
+    return 0;
+}

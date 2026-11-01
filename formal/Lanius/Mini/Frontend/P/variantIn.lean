@@ -3,8 +3,8 @@ module
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Compiler.P.callAgrees
 import Lanius.Mini.Compiler.P.matchVariants
+import Lanius.Mini.Frontend.P.collect
 import Lanius.Mini.Frontend.P.distinct
-import Lanius.Mini.Frontend.P.fileDecls
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.itemOf

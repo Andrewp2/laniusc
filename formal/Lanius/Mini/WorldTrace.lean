@@ -348,9 +348,21 @@ theorem hostWrite_exec {mp : Program} {d : Nat} (fd : BitVec 64) (which : fd = 1
 /-! ## The code of `read_stdin` -/
 
 /-- The heap after reading `n` bytes, or all that are left, of its input to
-offset `p`. -/
-def readHeap (H : Heap) (p n : Nat) : Heap :=
-  { H.writeAll p (H.io.input.take n) with io := { H.io with input := H.io.input.drop n } }
+offset `p`, with `limits` the read limits left. -/
+def readHeap (H : Heap) (p n : Nat) (limits : List Nat) : Heap :=
+  { H.writeAll p (H.io.input.take n) with io := { H.io with input := H.io.input.drop n, readLimits := limits } }
+
+theorem take_length_take (l : List UInt8) (k : Nat) : l.take (l.take k).length = l.take k := by
+  rw [List.length_take]
+  rcases Nat.le_total k l.length with h | h
+  · rw [Nat.min_eq_left h]
+  · rw [Nat.min_eq_right h, List.take_of_length_le h, List.take_of_length_le (Nat.le_refl _)]
+
+theorem drop_length_take (l : List UInt8) (k : Nat) : l.drop (l.take k).length = l.drop k := by
+  rw [List.length_take]
+  rcases Nat.le_total k l.length with h | h
+  · rw [Nat.min_eq_left h]
+  · rw [Nat.min_eq_right h, List.drop_eq_nil_of_le h, List.drop_eq_nil_of_le (Nat.le_refl _)]
 
 theorem getD_append_left' (xs ys : List UInt8) (i : Nat) (h : i < xs.length) :
     (xs ++ ys).getD i 0 = xs.getD i 0 := by
@@ -392,37 +404,41 @@ theorem Heap.write_writeAll (H : Heap) (a : Nat) (b : UInt8) (rest : List UInt8)
   · rw [if_neg (by omega), if_neg (by omega), if_neg (by omega)]
 
 /-- A full read of `c` bytes, then of the next `n - c`, is a read of `n`. -/
-theorem readHeap_split (H : Heap) (p : Nat) {c n : Nat} (le : c ≤ n) (full : (H.io.input.take c).length = c) :
-    readHeap (readHeap H p c) (p + c) (n - c) = readHeap H p n := by
+theorem readHeap_split (H : Heap) (p : Nat) {c n : Nat} (le : c ≤ n) (full : (H.io.input.take c).length = c)
+    (first last : List Nat) :
+    readHeap (readHeap H p c first) (p + c) (n - c) last = readHeap H p n last := by
   simp only [readHeap]
   have whole : H.io.input.take c ++ (H.io.input.drop c).take (n - c) = H.io.input.take n := by
     rw [← List.take_add, Nat.add_sub_cancel' le]
   have bytes := Heap.writeAll_append H p (H.io.input.take c) ((H.io.input.drop c).take (n - c))
   rw [full, whole] at bytes
-  rw [show ({ H.writeAll p (H.io.input.take c) with io := { H.io with input := H.io.input.drop c } } : Heap).writeAll
+  rw [show ({ H.writeAll p (H.io.input.take c) with
+        io := { H.io with input := H.io.input.drop c, readLimits := first } } : Heap).writeAll
       (p + c) ((H.io.input.drop c).take (n - c)) =
     { (H.writeAll p (H.io.input.take c)).writeAll (p + c) ((H.io.input.drop c).take (n - c)) with
-      io := { H.io with input := H.io.input.drop c } } from rfl, bytes, List.drop_drop, Nat.add_sub_cancel' le]
+      io := { H.io with input := H.io.input.drop c, readLimits := first } } from rfl, bytes, List.drop_drop,
+    Nat.add_sub_cancel' le]
 
-/-- A short read of `c` bytes used the input up: it is a read of any `n` past it. -/
-theorem readHeap_short (H : Heap) (p : Nat) {c n : Nat} (le : c ≤ n) (short : (H.io.input.take c).length < c) :
-    readHeap H p c = readHeap H p n := by
-  have len : H.io.input.length < c := by simp at short; omega
-  simp only [readHeap, List.take_of_length_le (Nat.le_of_lt len), List.take_of_length_le (by omega : H.io.input.length ≤ n),
-    List.drop_eq_nil_of_le (Nat.le_of_lt len), List.drop_eq_nil_of_le (by omega : H.io.input.length ≤ n)]
+/-- A read of `c` bytes that used the input up is a read of any `n` past it. -/
+theorem readHeap_used (H : Heap) (p : Nat) {c n : Nat} (le : c ≤ n) (used : H.io.input.length ≤ c)
+    (limits : List Nat) : readHeap H p c limits = readHeap H p n limits := by
+  simp only [readHeap, List.take_of_length_le used, List.take_of_length_le (by omega : H.io.input.length ≤ n),
+    List.drop_eq_nil_of_le used, List.drop_eq_nil_of_le (by omega : H.io.input.length ≤ n)]
 
-/-- `Syscall.read` from fd 0 within its bounds. -/
+/-- `Syscall.read` from fd 0 within its bounds: the bytes the kernel's read
+delivers, a read of as many as came. -/
 theorem Syscall.run_read {heap : Heap} {address count : BitVec 64} (small : count.toNat ≤ maxTransfer)
-    (inside : heap.io.input.take count.toNat = [] ∨
-      address.toNat + (heap.io.input.take count.toNat).length ≤ heap.limit) :
+    (inside : heap.io.readBytes count.toNat = [] ∨
+      address.toNat + (heap.io.readBytes count.toNat).length ≤ heap.limit) :
     Syscall.run .read [0, address, count] heap =
-      some (BitVec.ofNat 64 (heap.io.input.take count.toNat).length, readHeap heap address.toNat count.toNat) := by
+      some (BitVec.ofNat 64 (heap.io.readBytes count.toNat).length,
+        readHeap heap address.toNat (heap.io.readBytes count.toNat).length heap.io.readLimits.tail) := by
   rw [Syscall.run, if_pos ⟨rfl, small, inside.imp id fun h => Nat.le_trans h heap.limit_le_top⟩]
-  rfl
+  simp only [readHeap, Io.readBytes, Io.afterRead, take_length_take, drop_length_take]
 
 /-- One turn: a chunk of at most `maxTransfer` bytes asked for, read, the
 pointer, count and total moved past what came, and the count zeroed when
-fewer came than were asked for. -/
+none came. -/
 def readBody (slot : Nat) : Stmt :=
   .seq (.ite (.compare .u64 .lt (.var (slot + 1)) (.lit 2147479552)) (.assign (slot + 3) (.var (slot + 1)))
       (.assign (slot + 3) (.lit 2147479552)))
@@ -430,7 +446,7 @@ def readBody (slot : Nat) : Stmt :=
       (.seq (.assign slot (.binary .u64 .add (.var slot) (.var (slot + 4))))
         (.seq (.assign (slot + 1) (.binary .u64 .sub (.var (slot + 1)) (.var (slot + 4))))
           (.seq (.assign (slot + 2) (.binary .u64 .add (.var (slot + 2)) (.var (slot + 4))))
-            (.ite (.compare .u64 .ne (.var (slot + 4)) (.var (slot + 3))) (.assign (slot + 1) (.lit 0)) .skip)))))
+            (.ite (.compare .u64 .eq (.var (slot + 4)) (.lit 0)) (.assign (slot + 1) (.lit 0)) .skip)))))
 
 theorem hostReadCode_eq (slot : Nat) :
     hostReadCode slot = .seq (.assign (slot + 2) (.lit 0))
@@ -438,12 +454,16 @@ theorem hostReadCode_eq (slot : Nat) :
         (.assign slot (.binary .s32 .add (.var (slot + 2)) (.lit 0)))) := rfl
 
 /-- The loop reads the next `count` bytes of the input, or all that are left,
-to the pointer, adds how many to the total, and keeps the slots below `slot`. -/
+to the pointer, adds how many to the total, and keeps the slots below `slot`.
+A read may deliver fewer bytes than it asked for; the loop asks again for the
+rest until none are left to ask for or a read delivers none, which it does
+only when the input is used up. -/
 theorem readLoop {mp : Program} {d : Nat} (slot : Nat) :
     ∀ (n : Nat) (E : Env) (H : Heap), (E (slot + 1)).toNat = n →
       (H.io.input.take n = [] ∨ (E slot).toNat + (H.io.input.take n).length ≤ H.limit) → H.limit < 2 ^ 62 →
       (E (slot + 2)).toNat + n < 2 ^ 64 →
-      ∃ E', Exec mp d E H (.loop (writeCond slot) (readBody slot)) (.normal E' (readHeap H (E slot).toNat n)) ∧
+      ∃ E' limits, Exec mp d E H (.loop (writeCond slot) (readBody slot))
+          (.normal E' (readHeap H (E slot).toNat n limits)) ∧
         (∀ j < slot, E' j = E j) ∧
         (E' (slot + 2)).toNat = (E (slot + 2)).toNat + (H.io.input.take n).length := by
   intro n
@@ -455,8 +475,8 @@ theorem readLoop {mp : Program} {d : Nat} (slot : Nat) :
       have done : (writeCond slot).eval E = 0 := by
         have : E (slot + 1) = 0 := BitVec.eq_of_toNat_eq (by simpa using count)
         simp [writeCond, Expr.eval, Word.holds, CmpOp.holdsU, this]
-      refine ⟨E, ?_, fun _ _ => rfl, by simp⟩
-      have same : readHeap H (E slot).toNat 0 = H := by
+      refine ⟨E, H.io.readLimits, ?_, fun _ _ => rfl, by simp⟩
+      have same : readHeap H (E slot).toNat 0 H.io.readLimits = H := by
         simp only [readHeap, List.take_zero, List.drop_zero, Heap.writeAll]
         cases H
         simp
@@ -476,19 +496,19 @@ theorem readLoop {mp : Program} {d : Nat} (slot : Nat) :
         · refine ⟨2147479552, maxTransfer, .ifFalse ?_ .assign, by simp [maxTransfer], by simp [maxTransfer],
             by omega, Nat.le_refl _⟩
           exact Classical.byContradiction fun h => lt ((eval_pick E slot).mp h)
-      obtain ⟨g, gdef⟩ : ∃ g, (H.io.input.take c).length = g := ⟨_, rfl⟩
-      have gmin : g = min c H.io.input.length := by rw [← gdef, List.length_take]
+      -- what the read delivers: at most the chunk, none only when the input is used up
+      obtain ⟨g, gdef⟩ : ∃ g, (H.io.readBytes c).length = g := ⟨_, rfl⟩
+      obtain ⟨gc, gleft, gzero⟩ := H.io.readBytes_length c
+      rw [gdef] at gc gleft gzero
       have nmin : (H.io.input.take n).length = min n H.io.input.length := List.length_take
-      have gle : g ≤ c := by omega
       have emptyAll : H.io.input.take n = [] → H.io.input = [] := fun empty => by
         rcases List.take_eq_nil_iff.mp empty with z | e
         · exact absurd z (by omega)
         · exact e
-      have fitC : H.io.input.take c = [] ∨ (E slot).toNat + g ≤ H.limit := by
+      have fitC : H.io.readBytes c = [] ∨ (E slot).toNat + g ≤ H.limit := by
         rcases inside with empty | fit
         · left
-          rw [emptyAll empty]
-          simp
+          simp only [Io.readBytes, emptyAll empty, List.take_nil]
         · right
           omega
       have pg : (E slot).toNat + g < 2 ^ 64 := by
@@ -504,7 +524,7 @@ theorem readLoop {mp : Program} {d : Nat} (slot : Nat) :
       have gnat : gbits.toNat = g := by
         simp only [gbits, BitVec.toNat_ofNat]
         exact Nat.mod_eq_of_lt (by simp [maxTransfer] at cmax; omega)
-      let H1 := readHeap H (E slot).toNat c
+      let H1 := readHeap H (E slot).toNat g H.io.readLimits.tail
       have ran : Syscall.run .read (Expr.evalAll E1 [.lit 0, .var slot, .var (slot + 3)]) H = some (gbits, H1) := by
         have := Syscall.run_read (heap := H) (address := E1 slot) (count := E1 (slot + 3))
           (by rw [e1c, cnat]; exact cmax) (by rw [e1c, cnat, e1p, gdef]; exact fitC)
@@ -526,32 +546,48 @@ theorem readLoop {mp : Program} {d : Nat} (slot : Nat) :
           simp [E5, E4, E3, E2, E1, set_get, Expr.eval, Word.apply, BinOp.apply]
         rw [this, BitVec.toNat_add, gnat, Nat.mod_eq_of_lt (by omega)]
       have e5g : E5 (slot + 4) = gbits := by simp [E5, E4, E3, E2, set_get]
-      have e5c : E5 (slot + 3) = cbits := by simp [E5, E4, E3, E2, E1, set_get]
       have e5keep : ∀ j < slot, E5 j = E j := by
         intro j lt
         simp only [E5, E4, E3, E2, E1, set_get]
         rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega)]
-      have stopEval : (Expr.compare .u64 .ne (.var (slot + 4)) (.var (slot + 3))).eval E5 ≠ 0 ↔ g ≠ c := by
-        rw [show (Expr.compare .u64 .ne (.var (slot + 4)) (.var (slot + 3))).eval E5 =
-          (if Word.holds .u64 .ne (E5 (slot + 4)) (E5 (slot + 3)) then 1 else 0) from rfl, e5g, e5c]
-        constructor
-        · intro h same
-          apply h
-          have : gbits = cbits := BitVec.eq_of_toNat_eq (by rw [gnat, cnat, same])
-          simp [Word.holds, CmpOp.holdsU, this]
-        · intro h
-          have : gbits ≠ cbits := fun e => h (by rw [← gnat, ← cnat, e])
-          simp [Word.holds, CmpOp.holdsU, this]
-      by_cases full : g = c
-      · -- a full chunk: go on with the rest
-        have stay : Exec mp d E5 H1 (.ite (.compare .u64 .ne (.var (slot + 4)) (.var (slot + 3)))
+      have stopEval : (Expr.compare .u64 .eq (.var (slot + 4)) (.lit 0)).eval E5 ≠ 0 ↔ g = 0 := by
+        rw [show (Expr.compare .u64 .eq (.var (slot + 4)) (.lit 0)).eval E5 =
+          (if Word.holds .u64 .eq (E5 (slot + 4)) 0 then 1 else 0) from rfl, e5g]
+        by_cases z : gbits = 0
+        · have : g = 0 := by rw [← gnat, z] <;> rfl
+          simp [Word.holds, CmpOp.holdsU, z, this]
+        · have : g ≠ 0 := fun e => z (BitVec.eq_of_toNat_eq (by rw [gnat, e] <;> rfl))
+          simpa [Word.holds, CmpOp.holdsU, this] using z
+      by_cases nothing : g = 0
+      · -- none came: the input is used up, and the loop ends
+        have used : H.io.input = [] := (gzero nothing).resolve_left (by omega)
+        let E6 := E5.set (slot + 1) ((Expr.lit 0).eval E5)
+        have stop : Exec mp d E5 H1 (.ite (.compare .u64 .eq (.var (slot + 4)) (.lit 0))
+            (.assign (slot + 1) (.lit 0)) .skip) (.normal E6 H1) :=
+          .ifTrue (stopEval.mpr nothing) .assign
+        have body : Exec mp d E H (readBody slot) (.normal E6 H1) :=
+          .seq picked (.seq (.sys ran) (.seq .assign (.seq .assign (.seq .assign stop))))
+        have ended : (writeCond slot).eval E6 = 0 := by
+          simp [writeCond, E6, set_get, Expr.eval, Word.holds, CmpOp.holdsU]
+        refine ⟨E6, H.io.readLimits.tail, ?_, fun j lt => ?_, ?_⟩
+        · rw [← readHeap_used H (E slot).toNat (show g ≤ n by omega) (by rw [used]; exact Nat.zero_le _)
+            H.io.readLimits.tail]
+          exact .loopNext going body (.loopDone ended)
+        · simp only [E6, set_get]
+          rw [if_neg (by omega)]
+          exact e5keep j lt
+        · have : E6 (slot + 2) = E5 (slot + 2) := by simp [E6, set_get]
+          rw [this, e5t, nothing, used]
+          simp
+      · -- some came: go on with the rest
+        have stay : Exec mp d E5 H1 (.ite (.compare .u64 .eq (.var (slot + 4)) (.lit 0))
             (.assign (slot + 1) (.lit 0)) .skip) (.normal E5 H1) :=
-          .ifFalse (Classical.byContradiction fun h => (stopEval.mp h) full) .skip
+          .ifFalse (Classical.byContradiction fun h => nothing (stopEval.mp h)) .skip
         have body : Exec mp d E H (readBody slot) (.normal E5 H1) :=
           .seq picked (.seq (.sys ran) (.seq .assign (.seq .assign (.seq .assign stay))))
-        have h1in : H1.io.input = H.io.input.drop c := rfl
+        have h1in : H1.io.input = H.io.input.drop g := rfl
         have h1lim : H1.limit = H.limit := rfl
-        obtain ⟨E', loop, keep, tot⟩ := ih (n - c) (by omega) E5 H1 (by rw [e5n, full])
+        obtain ⟨E', limits, loop, keep, tot⟩ := ih (n - g) (by omega) E5 H1 e5n
           (by
             rw [e5p, h1in, h1lim]
             rcases inside with empty | fit
@@ -561,34 +597,15 @@ theorem readLoop {mp : Program} {d : Nat} (slot : Nat) :
             · right
               simp only [List.length_take, List.length_drop]
               omega)
-          small (by rw [e5t, full]; omega)
-        refine ⟨E', ?_, fun j lt => (keep j lt).trans (e5keep j lt), ?_⟩
-        · have split := readHeap_split H (E slot).toNat cle (by rw [gdef, full])
+          small (by rw [e5t]; omega)
+        refine ⟨E', limits, ?_, fun j lt => (keep j lt).trans (e5keep j lt), ?_⟩
+        · have split := readHeap_split H (E slot).toNat (show g ≤ n by omega)
+            (by simp only [List.length_take]; omega) H.io.readLimits.tail limits
           rw [← split]
-          have at5 : (E5 slot).toNat = (E slot).toNat + c := by rw [e5p, full]
-          rw [at5] at loop
+          rw [e5p] at loop
           exact .loopNext going body loop
         · rw [tot, e5t, h1in]
           simp only [List.length_take, List.length_drop]
-          omega
-      · -- a short chunk: the input is used up, and the loop ends
-        have short : g < c := by omega
-        let E6 := E5.set (slot + 1) ((Expr.lit 0).eval E5)
-        have stop : Exec mp d E5 H1 (.ite (.compare .u64 .ne (.var (slot + 4)) (.var (slot + 3)))
-            (.assign (slot + 1) (.lit 0)) .skip) (.normal E6 H1) :=
-          .ifTrue (stopEval.mpr full) .assign
-        have body : Exec mp d E H (readBody slot) (.normal E6 H1) :=
-          .seq picked (.seq (.sys ran) (.seq .assign (.seq .assign (.seq .assign stop))))
-        have ended : (writeCond slot).eval E6 = 0 := by
-          simp [writeCond, E6, set_get, Expr.eval, Word.holds, CmpOp.holdsU]
-        refine ⟨E6, ?_, fun j lt => ?_, ?_⟩
-        · rw [← readHeap_short H (E slot).toNat cle (by rw [gdef]; exact short)]
-          exact .loopNext going body (.loopDone ended)
-        · simp only [E6, set_get]
-          rw [if_neg (by omega)]
-          exact e5keep j lt
-        · have : E6 (slot + 2) = E5 (slot + 2) := by simp [E6, set_get]
-          rw [this, e5t, nmin]
           omega
 
 /-- `read_stdin`: the next `count` bytes of the input, or all that are left,
@@ -597,17 +614,18 @@ theorem hostRead_exec {mp : Program} {d : Nat} {E : Env} {H : Heap} (slot : Nat)
     (inside : H.io.input.take (E (slot + 1)).toNat = [] ∨
       (E slot).toNat + (H.io.input.take (E (slot + 1)).toNat).length ≤ H.limit)
     (small : H.limit < 2 ^ 62) :
-    ∃ E', Exec mp d E H (hostReadCode slot) (.normal E' (readHeap H (E slot).toNat (E (slot + 1)).toNat)) ∧
+    ∃ E' limits, Exec mp d E H (hostReadCode slot)
+        (.normal E' (readHeap H (E slot).toNat (E (slot + 1)).toNat limits)) ∧
       (∀ j < slot, E' j = E j) ∧
       E' slot = widen (BitVec.ofNat 32 (H.io.input.take (E (slot + 1)).toNat).length) := by
   let E0 := E.set (slot + 2) ((Expr.lit 0).eval E)
   have e0p : E0 slot = E slot := by simp [E0, set_get]
   have e0n : E0 (slot + 1) = E (slot + 1) := by simp [E0, set_get]
   have e0t : (E0 (slot + 2)).toNat = 0 := by simp [E0, set_get, Expr.eval]
-  obtain ⟨E', loop, keep, tot⟩ := readLoop (mp := mp) (d := d) slot (E (slot + 1)).toNat E0 H
+  obtain ⟨E', limits, loop, keep, tot⟩ := readLoop (mp := mp) (d := d) slot (E (slot + 1)).toNat E0 H
     (by rw [e0n]) (by rw [e0p]; exact inside) small (by rw [e0t]; have := (E (slot + 1)).isLt; omega)
   rw [e0p] at loop
-  refine ⟨E'.set slot ((Expr.binary .s32 .add (.var (slot + 2)) (.lit 0)).eval E'), ?_, ?_, ?_⟩
+  refine ⟨E'.set slot ((Expr.binary .s32 .add (.var (slot + 2)) (.lit 0)).eval E'), limits, ?_, ?_, ?_⟩
   · rw [hostReadCode_eq]
     exact .seq (.assign (env := E)) (.seq loop .assign)
   · intro j lt

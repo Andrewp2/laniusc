@@ -1,7 +1,8 @@
 // Reads search cases from stdin and prints one result line per case:
-// "find rfind count byte text", where byte is find_byte of the needle's first
-// byte (-1 for an empty needle) and text is core::text find on the range
-// (-2 when the haystack range is not valid UTF-8).
+// "find rfind count byte text two_way rtwo_way", where byte is find_byte of
+// the needle's first byte (-1 for an empty needle), text is core::text find
+// on the range (-2 when the range is not valid UTF-8) and the last two call
+// the Two-Way searches directly.
 // Case: u32 hay_len, hay, u32 needle_len, needle, u32 from, u32 to (LE).
 module app::main;
 import alloc::allocator;
@@ -48,7 +49,10 @@ fn main() -> i32 {
             let found: core::option::Option<i32> = range.unwrap().find(pattern.unwrap());
             t = -1; if (found.is_some()) { t = found.unwrap() + from; }
         }
-        put(f); put(r); put(c); put(b); std::io::write_i32(1, t); std::io::write_newline(1);
+        let w: i32 = core::search::find_two_way(bytes, hay + from, hay + to, bytes, needle, needle_len);
+        let rw: i32 = core::search::rfind_two_way(bytes, hay + from, hay + to, bytes, needle, needle_len);
+        if (w >= 0) { w -= hay; } if (rw >= 0) { rw -= hay; }
+        put(f); put(r); put(c); put(b); put(t); put(w); std::io::write_i32(1, rw); std::io::write_newline(1);
     }
     return 0;
 }

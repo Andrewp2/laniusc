@@ -5,9 +5,9 @@ import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.arithShiftRight
 import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Frontend.P.closeFuncs
-import Lanius.Mini.Frontend.P.fileDecls
+import Lanius.Mini.Frontend.P.collect
+import Lanius.Mini.Frontend.P.funcsOnto
 import Lanius.Mini.Frontend.P.isEmptyUsize
-import Lanius.Mini.Frontend.P.monoLoop
 import Lanius.Mini.Frontend.P.negWideI32
 import Lanius.Mini.Frontend.P.rootInsts
 
