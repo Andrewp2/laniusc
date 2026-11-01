@@ -1,0 +1,10 @@
+enum E { A, B }
+machine M on E -> i32 {
+    start S;
+    state S { E::A -> stay with 1, E::B -> stay with 2, }
+}
+fn main() -> i32 {
+    let m: M = m_start();
+    m.__lanius_state = MState::S;
+    return 0;
+}

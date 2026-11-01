@@ -1,0 +1,9 @@
+module app::main;
+
+fn top(n: i32) -> i32 {
+    let p: ptr = alloc::allocator::alloc((32 as usize), (8 as usize));
+    let a: i32 = std::time::monotonic_read(p, (16 as usize));
+    let b: i32 = std::time::system_read(p, (8 as usize));
+    let c: i32 = std::random::fill_secure_bytes(p, (4 as usize));
+    return a + b + c + n;
+}

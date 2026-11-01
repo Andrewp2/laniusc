@@ -9,10 +9,15 @@ public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_attachParent
-public import Lanius.Faithful.Gen.SelfStmtF_buildFiles
+public import Lanius.Faithful.Gen.SelfStmtF_Inline_pBoundTypeArgsAfterCommaMore
+public import Lanius.Faithful.Gen.SelfStmtF_Inline_tLparen
+public import Lanius.Faithful.Gen.SelfStmtF_Inline_tRparen
+public import Lanius.Faithful.Gen.SelfStmtF_frontEndWords
+public import Lanius.Faithful.Gen.SelfStmtF_genericClose
 public import Lanius.Faithful.Gen.SelfStmtF_grammarPart13
 public import Lanius.Faithful.Gen.SelfStmtF_grammarPart8
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
+public import Lanius.Faithful.Gen.SelfStmtF_shrFirst
 import all Lanius.Faithful.Gen.SelfSrcF_grammarPart13
 import all Lanius.Mini.Frontend.P.grammarPart13
 
@@ -52,7 +57,33 @@ theorem step_attach_term {prog : SrcProgram} {prims : Prims} {ix_attach_term ix_
   simp only [src_attach_term] at h
   faithful [Lanius.Mini.Inline.attachTerm]
 
-theorem proof_grammar {prog : SrcProgram} {prims : Prims} {ix_grammar ix_concat_of_mini_selfhost_Rule ix_grammar_part_0 ix_grammar_part_1 ix_grammar_part_2 ix_grammar_part_3 ix_grammar_part_4 ix_grammar_part_5 ix_grammar_part_6 ix_grammar_part_7 ix_grammar_part_8 ix_grammar_part_9 ix_grammar_part_10 ix_grammar_part_11 ix_grammar_part_12 ix_grammar_part_13 ix_grammar_part_14 ix_grammar_part_15 : Nat} (fn : prog.funcs[ix_grammar]? = some (src_grammar ix_concat_of_mini_selfhost_Rule ix_grammar_part_0 ix_grammar_part_1 ix_grammar_part_2 ix_grammar_part_3 ix_grammar_part_4 ix_grammar_part_5 ix_grammar_part_6 ix_grammar_part_7 ix_grammar_part_8 ix_grammar_part_9 ix_grammar_part_10 ix_grammar_part_11 ix_grammar_part_12 ix_grammar_part_13 ix_grammar_part_14 ix_grammar_part_15)) (np : prims.isPrim ix_grammar = false)
+theorem step_generic_close_at {prog : SrcProgram} {prims : Prims} {ix_generic_close_at ix_minus ix_plus ix_t_shr ix_t_gt ix_t_lbrace ix_t_lt ix_generic_close ix_t_oror ix_t_eqeq ix_t_not_equal ix_t_le ix_t_ge ix_t_lparen ix_t_lbracket ix_t_rparen ix_t_rbracket ix_t_rbrace ix_t_semicolon ix_generic_tail : Nat} (fn : prog.funcs[ix_generic_close_at]? = some (src_generic_close_at ix_minus ix_plus ix_t_shr ix_t_gt ix_t_lbrace ix_t_lt ix_generic_close ix_t_oror ix_t_eqeq ix_t_not_equal ix_t_le ix_t_ge ix_t_lparen ix_t_lbracket ix_t_rparen ix_t_rbracket ix_t_rbrace ix_t_semicolon ix_generic_tail)) (np : prims.isPrim ix_generic_close_at = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_t_shr : Certified (∀ {n : Nat}, Stmt_t_shr prog prims ix_t_shr n))
+    (ext_t_gt : Certified (∀ {n : Nat}, Stmt_t_gt prog prims ix_t_gt n))
+    (ext_t_lbrace : Certified (∀ {n : Nat}, Stmt_t_lbrace prog prims ix_t_lbrace n))
+    (ext_t_lt : Certified (∀ {n : Nat}, Stmt_t_lt prog prims ix_t_lt n))
+    (ext_t_oror : Certified (∀ {n : Nat}, Stmt_t_oror prog prims ix_t_oror n))
+    (ext_t_eqeq : Certified (∀ {n : Nat}, Stmt_t_eqeq prog prims ix_t_eqeq n))
+    (ext_t_not_equal : Certified (∀ {n : Nat}, Stmt_t_not_equal prog prims ix_t_not_equal n))
+    (ext_t_le : Certified (∀ {n : Nat}, Stmt_t_le prog prims ix_t_le n))
+    (ext_t_ge : Certified (∀ {n : Nat}, Stmt_t_ge prog prims ix_t_ge n))
+    (ext_t_lparen : Certified (∀ {n : Nat}, Stmt_t_lparen prog prims ix_t_lparen n))
+    (ext_t_lbracket : Certified (∀ {n : Nat}, Stmt_t_lbracket prog prims ix_t_lbracket n))
+    (ext_t_rparen : Certified (∀ {n : Nat}, Stmt_t_rparen prog prims ix_t_rparen n))
+    (ext_t_rbracket : Certified (∀ {n : Nat}, Stmt_t_rbracket prog prims ix_t_rbracket n))
+    (ext_t_rbrace : Certified (∀ {n : Nat}, Stmt_t_rbrace prog prims ix_t_rbrace n))
+    (ext_t_semicolon : Certified (∀ {n : Nat}, Stmt_t_semicolon prog prims ix_t_semicolon n))
+    (ext_generic_tail : Certified (∀ {n : Nat}, Stmt_generic_tail prog prims ix_generic_tail n)) {n : Nat}
+    (ih_generic_close : Certified (Stmt_generic_close prog prims ix_generic_close n)) :
+    Stmt_generic_close_at prog prims ix_generic_close_at (n + 1) := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rw [pcall_succ np fn] at h
+  simp only [src_generic_close_at] at h
+  faithful [Lanius.Mini.Inline.genericCloseAt]
+
+theorem proof_grammar {prog : SrcProgram} {prims : Prims} {ix_grammar ix_concat_of_mini_selfhost_Rule ix_grammar_part_0 ix_grammar_part_1 ix_grammar_part_2 ix_grammar_part_3 ix_grammar_part_4 ix_grammar_part_5 ix_grammar_part_6 ix_grammar_part_7 ix_grammar_part_8 ix_grammar_part_9 ix_grammar_part_10 ix_grammar_part_11 ix_grammar_part_12 ix_grammar_part_13 ix_grammar_part_14 ix_grammar_part_15 ix_grammar_part_16 : Nat} (fn : prog.funcs[ix_grammar]? = some (src_grammar ix_concat_of_mini_selfhost_Rule ix_grammar_part_0 ix_grammar_part_1 ix_grammar_part_2 ix_grammar_part_3 ix_grammar_part_4 ix_grammar_part_5 ix_grammar_part_6 ix_grammar_part_7 ix_grammar_part_8 ix_grammar_part_9 ix_grammar_part_10 ix_grammar_part_11 ix_grammar_part_12 ix_grammar_part_13 ix_grammar_part_14 ix_grammar_part_15 ix_grammar_part_16)) (np : prims.isPrim ix_grammar = false)
     (ext_concat_of_mini_selfhost_Rule : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_Rule prog prims ix_concat_of_mini_selfhost_Rule n))
     (ext_grammar_part_0 : Certified (∀ {n : Nat}, Stmt_grammar_part_0 prog prims ix_grammar_part_0 n))
     (ext_grammar_part_1 : Certified (∀ {n : Nat}, Stmt_grammar_part_1 prog prims ix_grammar_part_1 n))
@@ -69,7 +100,8 @@ theorem proof_grammar {prog : SrcProgram} {prims : Prims} {ix_grammar ix_concat_
     (ext_grammar_part_12 : Certified (∀ {n : Nat}, Stmt_grammar_part_12 prog prims ix_grammar_part_12 n))
     (ext_grammar_part_13 : Certified (∀ {n : Nat}, Stmt_grammar_part_13 prog prims ix_grammar_part_13 n))
     (ext_grammar_part_14 : Certified (∀ {n : Nat}, Stmt_grammar_part_14 prog prims ix_grammar_part_14 n))
-    (ext_grammar_part_15 : Certified (∀ {n : Nat}, Stmt_grammar_part_15 prog prims ix_grammar_part_15 n)) {n : Nat} :
+    (ext_grammar_part_15 : Certified (∀ {n : Nat}, Stmt_grammar_part_15 prog prims ix_grammar_part_15 n))
+    (ext_grammar_part_16 : Certified (∀ {n : Nat}, Stmt_grammar_part_16 prog prims ix_grammar_part_16 n)) {n : Nat} :
     Stmt_grammar prog prims ix_grammar n := by
   intro w h
   rcases n with _ | n
@@ -116,5 +148,18 @@ theorem proof_grammar_part_15 {prog : SrcProgram} {prims : Prims} {ix_grammar_pa
   rw [pcall_succ np fn] at h
   simp only [src_grammar_part_15] at h
   faithful [Lanius.Mini.grammarPart15]
+
+theorem proof_grammar_part_16 {prog : SrcProgram} {prims : Prims} {ix_grammar_part_16 ix_cons_of_mini_selfhost_Rule ix_cons_of_mini_selfhost_Sym ix_empty_of_mini_selfhost_Sym ix_empty_of_mini_selfhost_Rule : Nat} (fn : prog.funcs[ix_grammar_part_16]? = some (src_grammar_part_16 ix_cons_of_mini_selfhost_Rule ix_cons_of_mini_selfhost_Sym ix_empty_of_mini_selfhost_Sym ix_empty_of_mini_selfhost_Rule)) (np : prims.isPrim ix_grammar_part_16 = false)
+    (ext_cons_of_mini_selfhost_Rule : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_Rule prog prims ix_cons_of_mini_selfhost_Rule n))
+    (ext_cons_of_mini_selfhost_Sym : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_Sym prog prims ix_cons_of_mini_selfhost_Sym n))
+    (ext_empty_of_mini_selfhost_Sym : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Sym prog prims ix_empty_of_mini_selfhost_Sym n))
+    (ext_empty_of_mini_selfhost_Rule : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Rule prog prims ix_empty_of_mini_selfhost_Rule n)) {n : Nat} :
+    Stmt_grammar_part_16 prog prims ix_grammar_part_16 n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_grammar_part_16] at h
+  faithful [Lanius.Mini.grammarPart16]
 
 end Lanius.Faithful.SelfCert

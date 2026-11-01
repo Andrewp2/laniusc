@@ -70,9 +70,9 @@ theorem proof_boxed_of_mini_selfhost_Stmt {prog : SrcProgram} {prims : Prims} {i
     Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n :=
   fun h r => prim_cert np h r
 
-theorem step_concat_of_mini_selfhost_Token {prog : SrcProgram} {prims : Prims} {ix_concat_of_mini_selfhost_Token ix_boxed_of_mini_selfhost_List_mini_selfhost_Token ix_unbox_of_mini_selfhost_List_mini_selfhost_Token : Nat} (fn : prog.funcs[ix_concat_of_mini_selfhost_Token]? = some (src_concat_of_mini_selfhost_Token ix_boxed_of_mini_selfhost_List_mini_selfhost_Token ix_unbox_of_mini_selfhost_List_mini_selfhost_Token ix_concat_of_mini_selfhost_Token)) (np : prims.isPrim ix_concat_of_mini_selfhost_Token = false)
-    (ext_boxed_of_mini_selfhost_List_mini_selfhost_Token : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_mini_selfhost_Token prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_Token n))
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_Token : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Token prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Token n)) {n : Nat}
+theorem step_concat_of_mini_selfhost_Token {prog : SrcProgram} {prims : Prims} {ix_concat_of_mini_selfhost_Token ix_unbox_of_mini_selfhost_List_mini_selfhost_Token ix_boxed_of_mini_selfhost_List_mini_selfhost_Token : Nat} (fn : prog.funcs[ix_concat_of_mini_selfhost_Token]? = some (src_concat_of_mini_selfhost_Token ix_unbox_of_mini_selfhost_List_mini_selfhost_Token ix_boxed_of_mini_selfhost_List_mini_selfhost_Token ix_concat_of_mini_selfhost_Token)) (np : prims.isPrim ix_concat_of_mini_selfhost_Token = false)
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_Token : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Token prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Token n))
+    (ext_boxed_of_mini_selfhost_List_mini_selfhost_Token : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_mini_selfhost_Token prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_Token n)) {n : Nat}
     (ih_concat_of_mini_selfhost_Token : Certified (Stmt_concat_of_mini_selfhost_Token prog prims ix_concat_of_mini_selfhost_Token n)) :
     Stmt_concat_of_mini_selfhost_Token prog prims ix_concat_of_mini_selfhost_Token (n + 1) := by
   intro x0 x1 v0 v1 w h r0 r1
@@ -108,6 +108,15 @@ theorem proof_cons_of_mini_selfhost_SrcType {prog : SrcProgram} {prims : Prims} 
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
   simp only [src_cons_of_mini_selfhost_SrcType] at h
+  faithful []
+
+theorem proof_empty_of_i32 {prog : SrcProgram} {prims : Prims} {ix_empty_of_i32 : Nat} (fn : prog.funcs[ix_empty_of_i32]? = some (src_empty_of_i32)) (np : prims.isPrim ix_empty_of_i32 = false) {n : Nat} :
+    Stmt_empty_of_i32 prog prims ix_empty_of_i32 n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_empty_of_i32] at h
   faithful []
 
 theorem proof_empty_of_mini_selfhost_List_mini_selfhost_SrcType {prog : SrcProgram} {prims : Prims} {ix_empty_of_mini_selfhost_List_mini_selfhost_SrcType : Nat} (fn : prog.funcs[ix_empty_of_mini_selfhost_List_mini_selfhost_SrcType]? = some (src_empty_of_mini_selfhost_List_mini_selfhost_SrcType)) (np : prims.isPrim ix_empty_of_mini_selfhost_List_mini_selfhost_SrcType = false) {n : Nat} :

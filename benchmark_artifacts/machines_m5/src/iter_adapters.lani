@@ -1,0 +1,51 @@
+// The same sum through core::iter's adapters: a counting source, `filter`
+// and `map`, as the standard library writes them today.
+import core::iter;
+import core::option;
+const LIMIT: i64 = 200000000;
+
+struct Counter { n: i64, end: i64 }
+impl Counter {
+    fn borrow(&self) -> &Counter { return self; }
+}
+pub impl core::iter::Iterator<i64> for Counter {
+    pub fn next(&self) -> core::option::Option<i64> {
+        if (self.n >= self.end) { return core::option::None(); }
+        let value: i64 = self.n;
+        self.n = self.n + 1;
+        return core::option::Some(value);
+    }
+}
+
+struct Odd {}
+impl Odd {
+    fn borrow(&self) -> &Odd { return self; }
+}
+pub impl core::iter::Mapper<i64, bool> for Odd {
+    pub fn apply(&self, value: i64) -> bool { return value % 2 == 1; }
+}
+
+struct Square {}
+impl Square {
+    fn borrow(&self) -> &Square { return self; }
+}
+pub impl core::iter::Mapper<i64, i64> for Square {
+    pub fn apply(&self, value: i64) -> i64 { return value * value; }
+}
+
+fn main() -> i32 {
+    let counter = Counter { n: 0, end: LIMIT };
+    let odd = Odd {};
+    let square = Square {};
+    let odds = core::iter::filter(counter.borrow(), odd.borrow());
+    let squares = core::iter::map(odds.borrow(), square.borrow());
+    let total: i64 = 0;
+    while (true) {
+        match (squares.next()) {
+            Some(v) -> { total += v; continue; },
+            None -> { break; },
+        };
+    }
+    print(total);
+    return 0;
+}

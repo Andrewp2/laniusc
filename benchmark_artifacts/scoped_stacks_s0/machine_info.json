@@ -1,0 +1,14 @@
+{
+  "schema": "lanius.benchmark-machine.v1",
+  "cpu_model": "AMD Ryzen 9 5900HX with Radeon Graphics",
+  "logical_cpus": "16",
+  "memory_total_bytes": "16094699520",
+  "system": "Linux",
+  "release": "7.0.0-38-generic",
+  "machine": "x86_64",
+  "python": "3.12.3",
+  "laniusc_commit": "a3a9a87f",
+  "lanius_profile": "release",
+  "target": "x86_64 ELF from laniusc --emit x86_64",
+  "timer": "wall clock, 5 runs, run_bench.py; perf is unavailable (perf_event_paranoid 4)"
+}

@@ -107,10 +107,10 @@ uint classify(uint prod)
         prod == PROD_ARRAY_LENGTH_PATH || prod == PROD_CAST_TYPE_PATH)
         return HIR_PATH_EXPR;
     if (prod == PROD_PARAM_NAMED || prod == PROD_PARAM_SELF ||
-        prod == PROD_PARAM_SELF_REF)
+        prod == PROD_PARAM_SELF_REF || prod == PROD_PARAM_SELF_REF_MUT)
         return HIR_PARAM;
     if (prod == PROD_TYPE_IDENT || prod == PROD_TYPE_ARRAY || prod == PROD_TYPE_REF ||
-        prod == PROD_BOUND_TYPE_IDENT || prod == PROD_BOUND_TYPE_REF ||
+        prod == PROD_TYPE_REF_MUT || prod == PROD_BOUND_TYPE_IDENT || prod == PROD_BOUND_TYPE_REF ||
         prod == PROD_TYPE_ARRAY_LEN_NAME || prod == PROD_CAST_TYPE_NAME ||
         prod == PROD_TYPE_NEVER)
         return HIR_TYPE;
@@ -123,7 +123,10 @@ uint classify(uint prod)
         return HIR_LET_STMT;
     if (prod == PROD_RETURN_STMT)
         return HIR_RETURN_STMT;
-    if (prod == PROD_IF_STMT)
+    // A contract clause `requires (cond)` is an `if` with no blocks: the
+    // checker validates its condition like an `if`'s, and lowering traps when
+    // it is false (codegen/lir/semantic/common.slang).
+    if (prod == PROD_IF_STMT || prod == PROD_REQUIRES)
         return HIR_IF_STMT;
     if (prod == PROD_WHILE_STMT)
         return HIR_WHILE_STMT;

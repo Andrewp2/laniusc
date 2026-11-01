@@ -1,0 +1,192 @@
+// The `&mut` extraction pilot (formal/MINI_COMPILER.md, "Exclusive
+// references"). formal/tools/extract.py turns everything after the prelude,
+// except the external section, into formal/Lanius/Mini/MutPilot.lean.
+//
+// A `&mut T` parameter is extracted the way Aeneas translates a mutable
+// borrow: the Lean function takes the value and returns it updated, after
+// the result. Assigning through the parameter rebinds it, and a call that
+// passes it rebinds it to the callee's returned value. The translation is
+// sound because no other argument of a call can reach a `&mut` argument's
+// value: laniusc rejects that call (LNC0006), and extract.py checks it too.
+module mini::mut_pilot;
+import alloc::allocator;
+import core::mem;
+import core::option;
+import core::panic;
+
+// extract: prelude begin
+// Each prelude item has a fixed Lean meaning (see PRELUDE in extract.py).
+// They are the only code that touches memory.
+
+// Box<T> is T.
+pub struct Box<T> { storage: ptr }
+
+pub fn boxed<T>(value: T) -> Box<T> {
+    let size: usize = core::mem::size_of<T>();
+    let storage: ptr = alloc::allocator::alloc(size, 8);
+    if (storage == 0) {
+        core::panic::panic();
+    }
+    let slot: [T] = core::mem::typed_slice_from_storage(storage, 1);
+    slot[0] = value;
+    return Box { storage: storage };
+}
+
+pub fn unbox<T>(value: Box<T>) -> T {
+    let slot: [T] = core::mem::typed_slice_from_storage(value.storage, 1);
+    return slot[0];
+}
+
+// List<T> is List T: Nil is [] and Cons(x, rest) is x :: rest.
+pub enum List<T> { Nil, Cons(T, Box<List<T>>), }
+
+// Nat a + b
+pub fn plus(a: usize, b: usize) -> usize {
+    let sum: usize = a + b;
+    if (a > sum) {
+        core::panic::panic();
+    }
+    return sum;
+}
+
+// Nat a * b
+pub fn times(a: usize, b: usize) -> usize {
+    if (a == 0) {
+        return 0;
+    }
+    let product: usize = a * b;
+    if (product / a != b) {
+        core::panic::panic();
+    }
+    return product;
+}
+
+// Nat a - b, used only where a >= b
+pub fn minus(a: usize, b: usize) -> usize {
+    if (b > a) {
+        core::panic::panic();
+    }
+    return a - b;
+}
+
+// max a b
+pub fn max_of(a: usize, b: usize) -> usize {
+    if (b > a) {
+        return b;
+    }
+    return a;
+}
+// extract: prelude end
+
+// extract: external begin Lanius.Mini.Compiler from formal/lani/mini/compiler.lani
+// The list operations of compiler.lani, which extract.py checks are the same there.
+
+
+pub fn empty<T>() -> List<T> {
+    return Nil;
+}
+
+pub fn single<T>(item: T) -> List<T> {
+    return Cons(item, boxed(Nil));
+}
+
+pub fn cons<T>(item: T, rest: List<T>) -> List<T> {
+    return Cons(item, boxed(rest));
+}
+
+pub fn concat<T>(first: List<T>, second: List<T>) -> List<T> {
+    return match (first) {
+        Nil -> second,
+        Cons(item, rest) -> Cons(item, boxed(concat(unbox(rest), second))),
+    };
+}
+
+pub fn length<T>(items: List<T>) -> usize {
+    return match (items) {
+        Nil -> 0,
+        Cons(item, rest) -> plus(length(unbox(rest)), 1),
+    };
+}
+
+pub fn get<T>(items: List<T>, index: usize) -> core::option::Option<T> {
+    if (index == 0) {
+        return match (items) {
+            Nil -> None,
+            Cons(item, rest) -> Some(item),
+        };
+    }
+    return match (items) {
+        Nil -> None,
+        Cons(item, rest) -> get(unbox(rest), minus(index, 1)),
+    };
+}
+
+pub fn get_or<T>(items: List<T>, index: usize, fallback: T) -> T {
+    if (index == 0) {
+        return match (items) {
+            Nil -> fallback,
+            Cons(item, rest) -> item,
+        };
+    }
+    return match (items) {
+        Nil -> fallback,
+        Cons(item, rest) -> get_or(unbox(rest), minus(index, 1), fallback),
+    };
+}
+// extract: external end
+
+// An account: its balance and how many deposits and withdrawals it has had.
+pub struct Account {
+    balance: u32,
+    moves: u32,
+}
+
+impl Account {
+    fn deposit(&mut self, amount: u32) {
+        self.balance = self.balance + amount;
+        self.moves = self.moves + 1;
+    }
+
+    // Takes `amount` out when the balance covers it.
+    fn withdraw(&mut self, amount: u32) -> bool {
+        if (self.balance < amount) {
+            return false;
+        }
+        self.balance = self.balance - amount;
+        self.moves = self.moves + 1;
+        return true;
+    }
+}
+
+// Moves `amount` from one account to the other when the first covers it.
+pub fn transfer(source: &mut Account, target: &mut Account, amount: u32) -> bool {
+    let moved: bool = source.withdraw(amount);
+    if (!moved) {
+        return false;
+    }
+    target.deposit(amount);
+    return true;
+}
+
+// Two transfers along a chain; the result is the total of the three balances.
+pub fn relay(a: &mut Account, b: &mut Account, c: &mut Account, amount: u32) -> u32 {
+    transfer(a, b, amount);
+    transfer(b, c, amount);
+    return a.balance + b.balance + c.balance;
+}
+
+// A copy of the account after a deposit. The copy is a local, so a `&mut`
+// method may update it; the caller's account is unchanged.
+pub fn paid(account: Account, amount: u32) -> Account {
+    let copy: Account = account;
+    copy.deposit(amount);
+    return copy;
+}
+
+// Each account after a deposit into it.
+pub fn pay_all(accounts: List<Account>, amount: u32) -> List<Account> {
+    return match (accounts) {
+        Nil -> Nil,
+        Cons(head, rest) -> Cons(paid(head, amount), boxed(pay_all(unbox(rest), amount))),
+    };
+}

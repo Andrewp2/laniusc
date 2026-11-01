@@ -20,7 +20,11 @@ def wordElement (decls : SrcDecls) (element : SrcType) : Bool :=
   | .enum id variants => wordType decls element
   | .ptr => false
   | .slice inner => false
+  | .array arrayElement arrayLength => false
   | .unit => false
   | .isize => false
+  | .char => false
+  | .float ft => false
+  | .sint sk => false
 
 end Lanius.Mini

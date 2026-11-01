@@ -1,0 +1,7 @@
+module std::time;
+
+pub type ClockSleepResult = i32;
+
+pub extern "lanius_std" fn monotonic_read(ptr: ptr, len: usize) -> ClockSleepResult;
+
+pub extern "lanius_std" fn system_read(ptr: ptr, len: usize) -> ClockSleepResult;

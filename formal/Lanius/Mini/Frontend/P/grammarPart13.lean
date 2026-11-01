@@ -1,8 +1,10 @@
 module
 
 public import Lanius.Mini.Frontend.Types
+public import Lanius.Mini.Frontend.P.genericClose
 public import Lanius.Mini.Frontend.P.noToken
-import Lanius.Mini.Frontend.P.buildFiles
+public import Lanius.Mini.Frontend.P.shrFirst
+import Lanius.Mini.Frontend.P.frontEndWords
 import Lanius.Mini.Frontend.P.grammarPart8
 
 public section
@@ -20,13 +22,56 @@ def grammarPart13 : List Rule :=
 def grammarPart14 : List Rule :=
   ({ lhs := 131, rhs := [] } : Rule) :: ({ lhs := 132, rhs := Sym.nonterm 130 :: Sym.nonterm 131 :: [] } : Rule) :: ({ lhs := 132, rhs := [] } : Rule) :: ({ lhs := 133, rhs := Sym.term 37 :: Sym.nonterm 134 :: Sym.term 21 :: [] } : Rule) :: ({ lhs := 133, rhs := Sym.term 21 :: [] } : Rule) :: ({ lhs := 38, rhs := Sym.term 25 :: Sym.nonterm 38 :: [] } : Rule) :: ({ lhs := 134, rhs := Sym.nonterm 135 :: [] } : Rule) :: ({ lhs := 135, rhs := Sym.nonterm 136 :: Sym.nonterm 137 :: [] } : Rule) :: ({ lhs := 136, rhs := Sym.term 1 :: [] } : Rule) :: ({ lhs := 137, rhs := Sym.term 38 :: Sym.term 38 :: Sym.nonterm 136 :: Sym.nonterm 137 :: [] } : Rule) :: ({ lhs := 137, rhs := [] } : Rule) :: ({ lhs := 134, rhs := Sym.nonterm 140 :: [] } : Rule) :: ({ lhs := 138, rhs := Sym.nonterm 35 :: Sym.nonterm 37 :: [] } : Rule) :: ({ lhs := 138, rhs := [] } : Rule) :: ({ lhs := 139, rhs := Sym.nonterm 38 :: [] } : Rule) :: ({ lhs := 139, rhs := Sym.nonterm 140 :: [] } : Rule) :: ({ lhs := 140, rhs := Sym.term 2 :: [] } : Rule) :: ({ lhs := 141, rhs := [] } : Rule) :: ({ lhs := 141, rhs := Sym.term 12 :: Sym.nonterm 139 :: Sym.nonterm 29 :: Sym.term 13 :: [] } : Rule) :: ({ lhs := 140, rhs := Sym.term 27 :: Sym.nonterm 142 :: [] } : Rule) :: []
 
-/-- Productions 300 to 317: 300 generic_argument_positive, 301 generic_argument_magnitude_integer, 302 generic_argument_magnitude_float, 303 generic_argument_true, 304 generic_argument_false, 305 generic_argument_char, 306 generic_argument_float, 307 cast, 308 cast_tail, 309 cast_end, 310 cast_type_name, 311 cast_type_path, 312 cast_type_path_ident, 313 cast_type_path_more, 314 cast_type_path_end, 315 type_never, 316 array_repeat, 317 array_repeat_count. -/
+/-- Productions 300 to 319: 300 generic_argument_positive, 301 generic_argument_magnitude_integer, 302 generic_argument_magnitude_float, 303 generic_argument_true, 304 generic_argument_false, 305 generic_argument_char, 306 generic_argument_float, 307 cast, 308 cast_tail, 309 cast_end, 310 cast_type_name, 311 cast_type_path, 312 cast_type_path_ident, 313 cast_type_path_more, 314 cast_type_path_end, 315 type_never, 316 array_repeat, 317 array_repeat_count, 318 postfix_try, 319 distinct_none. -/
 def grammarPart15 : List Rule :=
-  ({ lhs := 140, rhs := Sym.term 6 :: Sym.nonterm 142 :: [] } : Rule) :: ({ lhs := 142, rhs := Sym.term 2 :: [] } : Rule) :: ({ lhs := 142, rhs := Sym.term 33 :: [] } : Rule) :: ({ lhs := 140, rhs := Sym.term 90 :: [] } : Rule) :: ({ lhs := 140, rhs := Sym.term 91 :: [] } : Rule) :: ({ lhs := 140, rhs := Sym.term 34 :: [] } : Rule) :: ({ lhs := 140, rhs := Sym.term 33 :: [] } : Rule) :: ({ lhs := 143, rhs := Sym.nonterm 76 :: Sym.nonterm 144 :: [] } : Rule) :: ({ lhs := 144, rhs := Sym.term 195 :: Sym.nonterm 145 :: Sym.nonterm 144 :: [] } : Rule) :: ({ lhs := 144, rhs := [] } : Rule) :: ({ lhs := 145, rhs := Sym.nonterm 146 :: [] } : Rule) :: ({ lhs := 146, rhs := Sym.nonterm 147 :: Sym.nonterm 148 :: [] } : Rule) :: ({ lhs := 147, rhs := Sym.term 1 :: [] } : Rule) :: ({ lhs := 148, rhs := Sym.term 38 :: Sym.term 38 :: Sym.nonterm 147 :: Sym.nonterm 148 :: [] } : Rule) :: ({ lhs := 148, rhs := [] } : Rule) :: ({ lhs := 38, rhs := Sym.term 19 :: [] } : Rule) :: ({ lhs := 84, rhs := Sym.term 37 :: Sym.nonterm 149 :: [] } : Rule) :: ({ lhs := 149, rhs := Sym.term 2 :: [] } : Rule) :: []
+  ({ lhs := 140, rhs := Sym.term 6 :: Sym.nonterm 142 :: [] } : Rule) :: ({ lhs := 142, rhs := Sym.term 2 :: [] } : Rule) :: ({ lhs := 142, rhs := Sym.term 33 :: [] } : Rule) :: ({ lhs := 140, rhs := Sym.term 90 :: [] } : Rule) :: ({ lhs := 140, rhs := Sym.term 91 :: [] } : Rule) :: ({ lhs := 140, rhs := Sym.term 34 :: [] } : Rule) :: ({ lhs := 140, rhs := Sym.term 33 :: [] } : Rule) :: ({ lhs := 143, rhs := Sym.nonterm 76 :: Sym.nonterm 144 :: [] } : Rule) :: ({ lhs := 144, rhs := Sym.term 195 :: Sym.nonterm 145 :: Sym.nonterm 144 :: [] } : Rule) :: ({ lhs := 144, rhs := [] } : Rule) :: ({ lhs := 145, rhs := Sym.nonterm 146 :: [] } : Rule) :: ({ lhs := 146, rhs := Sym.nonterm 147 :: Sym.nonterm 148 :: [] } : Rule) :: ({ lhs := 147, rhs := Sym.term 1 :: [] } : Rule) :: ({ lhs := 148, rhs := Sym.term 38 :: Sym.term 38 :: Sym.nonterm 147 :: Sym.nonterm 148 :: [] } : Rule) :: ({ lhs := 148, rhs := [] } : Rule) :: ({ lhs := 38, rhs := Sym.term 19 :: [] } : Rule) :: ({ lhs := 84, rhs := Sym.term 37 :: Sym.nonterm 149 :: [] } : Rule) :: ({ lhs := 149, rhs := Sym.term 2 :: [] } : Rule) :: ({ lhs := 78, rhs := Sym.term 39 :: Sym.nonterm 78 :: [] } : Rule) :: ({ lhs := 150, rhs := [] } : Rule) :: []
+
+/-- Productions 320 to 326: 320 distinct_some, 321 contracts_none, 322 contracts_more, 323 requires, 324 type_ref_mut, 325 param_self_ref_mut, 326 arm_block. -/
+def grammarPart16 : List Rule :=
+  ({ lhs := 150, rhs := Sym.term 200 :: [] } : Rule) :: ({ lhs := 151, rhs := [] } : Rule) :: ({ lhs := 151, rhs := Sym.nonterm 152 :: Sym.nonterm 151 :: [] } : Rule) :: ({ lhs := 152, rhs := Sym.term 201 :: Sym.term 4 :: Sym.nonterm 53 :: Sym.term 5 :: [] } : Rule) :: ({ lhs := 38, rhs := Sym.term 25 :: Sym.term 203 :: Sym.nonterm 38 :: [] } : Rule) :: ({ lhs := 35, rhs := Sym.term 25 :: Sym.term 203 :: Sym.term 105 :: [] } : Rule) :: ({ lhs := 82, rhs := Sym.nonterm 40 :: [] } : Rule) :: []
 
 /-- The productions of grammar/lanius.bnf, by production id. -/
 def grammar : List Rule :=
-  grammarPart0 ++ (grammarPart1 ++ (grammarPart2 ++ (grammarPart3 ++ (grammarPart4 ++ (grammarPart5 ++ (grammarPart6 ++ (grammarPart7 ++ (grammarPart8 ++ (grammarPart9 ++ (grammarPart10 ++ (grammarPart11 ++ (grammarPart12 ++ (grammarPart13 ++ (grammarPart14 ++ grammarPart15))))))))))))))
+  grammarPart0 ++ (grammarPart1 ++ (grammarPart2 ++ (grammarPart3 ++ (grammarPart4 ++ (grammarPart5 ++ (grammarPart6 ++ (grammarPart7 ++ (grammarPart8 ++ (grammarPart9 ++ (grammarPart10 ++ (grammarPart11 ++ (grammarPart12 ++ (grammarPart13 ++ (grammarPart14 ++ (grammarPart15 ++ grammarPart16)))))))))))))))
+
+@[expose] def Inline.genericCloseAt (gk : Nat) (grest : List Token) (gangles : Nat) (gnest : Nat) : Bool :=
+  if decide (gk = (18)) || decide (gk = (16)) || decide (gk = (40)) || decide (gk = (14)) || decide (gk = (15)) then
+    false
+  else
+    if decide (gk = (4)) || decide (gk = (20)) || decide (gk = (22)) then
+      genericClose grest gangles (gnest + 1)
+    else
+      if decide (gk = (5)) || decide (gk = (21)) || decide (gk = (23)) then
+        if gnest = 0 then
+          false
+        else
+          genericClose grest gangles (gnest - 1)
+      else
+        if gnest ≠ 0 then
+          genericClose grest gangles gnest
+        else
+          if gk = (37) then
+            false
+          else
+            if gk = (12) then
+              genericClose grest (gangles + 1) 0
+            else
+              if gk = (13) then
+                if gangles < 2 then
+                  genericTail grest
+                else
+                  genericClose grest (gangles - 1) 0
+              else
+                if gk = (44) then
+                  if gangles = 2 then
+                    genericTail grest
+                  else
+                    if gangles < 2 then
+                      false
+                    else
+                      genericClose grest (gangles - 2) 0
+                else
+                  genericClose grest gangles 0
 
 @[expose] def Inline.attachTerm (tg : List Rule) (tfuel : Nat) (tkind : Nat) (tmore : List Sym) (tparent : Nat) (tcur : Cursor) : Option Attached :=
   match tcur.tokens with

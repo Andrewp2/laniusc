@@ -19,6 +19,7 @@ static const uint TK_RBRACKET = 21u;
 static const uint TK_LBRACE = 22u;
 static const uint TK_RBRACE = 23u;
 static const uint TK_AMPERSAND = 25u;
+static const uint TK_MUT = 203u;
 static const uint TK_CALL_LPAREN = 28u;
 static const uint TK_GROUP_LPAREN = 29u;
 static const uint TK_INDEX_LBRACKET = 30u;
@@ -81,7 +82,7 @@ uint bracket_open_kind(uint parser_i, uint count)
     uint previous = raw_kind_at(parser_i - 1u, count);
     if (in_type_alias_rhs_context(parser_i, count))
         return TK_TYPE_ARRAY_LBRACKET;
-    if (previous == TK_COLON || previous == TK_ARROW || previous == TK_AMPERSAND)
+    if (previous == TK_COLON || previous == TK_ARROW || previous == TK_AMPERSAND || previous == TK_MUT)
         return TK_TYPE_ARRAY_LBRACKET;
     return semantic_token_ends_primary(previous) ? TK_INDEX_LBRACKET : TK_ARRAY_LBRACKET;
 }

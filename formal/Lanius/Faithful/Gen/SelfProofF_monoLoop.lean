@@ -49,13 +49,14 @@ theorem proof_close_named {prog : SrcProgram} {prims : Prims} {ix_close_named ix
   simp only [src_close_named] at h
   faithful [Lanius.Mini.closeNamed]
 
-theorem step_close_ty {prog : SrcProgram} {prims : Prims} {ix_close_ty ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_unbox_of_mini_selfhost_Ty ix_inst_index ix_slice_type ix_close_named : Nat} (fn : prog.funcs[ix_close_ty]? = some (src_close_ty ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_unbox_of_mini_selfhost_Ty ix_close_ty ix_inst_index ix_slice_type ix_close_named)) (np : prims.isPrim ix_close_ty = false)
+theorem step_close_ty {prog : SrcProgram} {prims : Prims} {ix_close_ty ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_unbox_of_mini_selfhost_Ty ix_inst_index ix_slice_type ix_close_named ix_array_type : Nat} (fn : prog.funcs[ix_close_ty]? = some (src_close_ty ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_unbox_of_mini_selfhost_Ty ix_close_ty ix_inst_index ix_slice_type ix_close_named ix_array_type)) (np : prims.isPrim ix_close_ty = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Ty prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty n))
     (ext_unbox_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_Ty prog prims ix_unbox_of_mini_selfhost_Ty n))
     (ext_inst_index : Certified (∀ {n : Nat}, Stmt_inst_index prog prims ix_inst_index n))
     (ext_slice_type : Certified (∀ {n : Nat}, Stmt_slice_type prog prims ix_slice_type n))
-    (ext_close_named : Certified (∀ {n : Nat}, Stmt_close_named prog prims ix_close_named n)) {n : Nat}
+    (ext_close_named : Certified (∀ {n : Nat}, Stmt_close_named prog prims ix_close_named n))
+    (ext_array_type : Certified (∀ {n : Nat}, Stmt_array_type prog prims ix_array_type n)) {n : Nat}
     (ih_close_ty : Certified (Stmt_close_ty prog prims ix_close_ty n)) :
     Stmt_close_ty prog prims ix_close_ty (n + 1) := by
   intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
@@ -144,10 +145,11 @@ theorem proof_src_enum_id {prog : SrcProgram} {prims : Prims} {ix_src_enum_id : 
   simp only [src_src_enum_id] at h
   faithful [Lanius.Mini.srcEnumId]
 
-theorem step_stmt_tys {prog : SrcProgram} {prims : Prims} {ix_stmt_tys ix_empty_of_mini_selfhost_Ty ix_cons_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_Ty ix_unbox_of_mini_selfhost_MStmt ix_eff_named_tys : Nat} (fn : prog.funcs[ix_stmt_tys]? = some (src_stmt_tys ix_empty_of_mini_selfhost_Ty ix_cons_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_Ty ix_stmt_tys ix_unbox_of_mini_selfhost_MStmt ix_eff_named_tys)) (np : prims.isPrim ix_stmt_tys = false)
+theorem step_stmt_tys {prog : SrcProgram} {prims : Prims} {ix_stmt_tys ix_empty_of_mini_selfhost_Ty ix_cons_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_Ty ix_single_of_mini_selfhost_Ty ix_unbox_of_mini_selfhost_MStmt ix_eff_named_tys : Nat} (fn : prog.funcs[ix_stmt_tys]? = some (src_stmt_tys ix_empty_of_mini_selfhost_Ty ix_cons_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_Ty ix_stmt_tys ix_single_of_mini_selfhost_Ty ix_unbox_of_mini_selfhost_MStmt ix_eff_named_tys)) (np : prims.isPrim ix_stmt_tys = false)
     (ext_empty_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Ty prog prims ix_empty_of_mini_selfhost_Ty n))
     (ext_cons_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_Ty prog prims ix_cons_of_mini_selfhost_Ty n))
     (ext_concat_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_Ty prog prims ix_concat_of_mini_selfhost_Ty n))
+    (ext_single_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_Ty prog prims ix_single_of_mini_selfhost_Ty n))
     (ext_unbox_of_mini_selfhost_MStmt : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_MStmt prog prims ix_unbox_of_mini_selfhost_MStmt n))
     (ext_eff_named_tys : Certified (∀ {n : Nat}, Stmt_eff_named_tys prog prims ix_eff_named_tys n)) {n : Nat}
     (ih_stmt_tys : Certified (Stmt_stmt_tys prog prims ix_stmt_tys n)) :

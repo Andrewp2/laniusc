@@ -153,6 +153,14 @@ error while preserving previous contents. `LimitExceeded` reports the configured
 limit; `AllocationFailed` reports allocation failure. Appending a view into the
 same buffer works with spare capacity and with growth. Capacity grows
 geometrically within the configured limit.
+Each write is one bulk append: growth allocates the new capacity once, copies
+the existing bytes in one pass, appends the new bytes in order, and only then
+frees the old storage. Allocation sizes, error order and results match the
+earlier byte-by-byte `try_push` loop. Copying 22 MB of stdin into a Buffer
+through `std::stream::copy` took 3.2–3.8 s before this change and 0.37 s
+after. `read_to_end` likewise went from 1.71 s to 0.37 s. Both runs were on
+native Linux x86_64. Reads still pass through the descriptor's 1,024-byte
+packed staging buffer.
 
 Queries are `len`, `capacity`, `limit` and `as_bytes`. `try_reserve` reserves a
 total capacity; `try_clone` returns independent storage with the same limit.

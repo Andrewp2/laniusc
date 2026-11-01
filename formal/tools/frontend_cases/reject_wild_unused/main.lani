@@ -1,0 +1,16 @@
+module app::main;
+
+// A wildcard after arms naming every variant stands for no variant, so the
+// front end would not read its value; it rejects the match.
+enum Shape {
+    Dot,
+    Line(i32),
+}
+
+fn size(s: Shape) -> i32 {
+    return match (s) { Dot -> 0, Line(n) -> n, _ -> 1 };
+}
+
+fn main() -> i32 {
+    return size(Line(3));
+}

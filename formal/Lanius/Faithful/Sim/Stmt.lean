@@ -71,15 +71,16 @@ theorem stmt_sim (calls : ∀ i < N, FuncSim sp prims outside i) (ret : SrcType)
   | letStruct id ty fields body ih =>
     intro k tenv env st c st' le run ok inv rel bound
     obtain ⟨j, v, s1, s2, rfl, vrun, brun, rfl⟩ := letLocal_inv run
-    obtain ⟨i, vs, rfl, frun, rfl⟩ := structValue_inv vrun
-    have e := evalExprs_state fields frun
-    subst s1
     simp only [stmtOk] at ok
     split at ok
     · rename_i t ht
       simp only [Option.bind_eq_some_iff] at ht
       obtain ⟨ts, hts, hs⟩ := ht
       obtain ⟨sid, rfl, hb, rfl⟩ := structTy_some hs
+      simp only [SrcType.literal] at vrun
+      obtain ⟨i, vs, rfl, frun, rfl⟩ := structValue_inv vrun
+      have e := evalExprs_state fields frun
+      subst s1
       obtain ⟨ps, hps, rs⟩ := exprs_sim (toCore_target sp) tenv env fields frun hts rel
       have r : VRel sp.toCore (boxElem sp prims) st.heap (.struct sid ts) (.structure sid vs) (.structure sid ps) :=
         .struct hb rs
@@ -90,8 +91,17 @@ theorem stmt_sim (calls : ∀ i < N, FuncSim sp prims outside i) (ret : SrcType)
   | letCall id ty callee args body ih =>
     intro k tenv env st c st' le run ok inv rel bound
     obtain ⟨j, v, s1, s2, rfl, vrun, brun, rfl⟩ := letLocal_inv run
+    have inside : callee < sp.funcs.length := by
+      simp only [stmtOk] at ok
+      split at ok
+      · rename_i t ht
+        simp only [Option.bind_eq_some_iff] at ht
+        obtain ⟨ts, hts, hc⟩ := ht
+        obtain ⟨-, f', found', -, -⟩ := callTy_some hc
+        exact inside_of found'
+      · simp at ok
     obtain ⟨i, f, values, afterArgs, completed, cc, rfl, argsRun, found, len, bodyRun, result, rfl⟩ :=
-      call_inv' vrun
+      call_inv' inside vrun
     have e := evalExprs_state args argsRun
     subst afterArgs
     simp only [stmtOk] at ok
@@ -158,8 +168,9 @@ theorem stmt_sim (calls : ∀ i < N, FuncSim sp prims outside i) (ret : SrcType)
       | ret value => exact ⟨.ret value, by simp only [pstmt, hd1, Option.bind_some, Done.then], dr1, ran1⟩
   | «if» condition thenBranch elseBranch ih1 ih2 =>
     intro k tenv env st c st' le run ok inv rel bound
-    simp only [stmtOk, Bool.and_eq_true, Option.isSome_iff_exists] at ok
-    obtain ⟨⟨⟨tc, htc⟩, ok1⟩, ok2⟩ := ok
+    simp only [stmtOk, Bool.and_eq_true] at ok
+    obtain ⟨⟨hc, ok1⟩, ok2⟩ := ok
+    have htc := isBoolTy_some hc
     simp only [SrcStmt.toCore] at run
     obtain ⟨j, s1, x, rfl, crun, brun⟩ := if_inv run
     have e := condition.eval_state crun
@@ -213,8 +224,9 @@ theorem stmt_sim (calls : ∀ i < N, FuncSim sp prims outside i) (ret : SrcType)
   | setEval => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
   | ifEval condition thenBranch elseBranch ih1 ih2 =>
     intro k tenv env st c st' le run ok inv rel bound
-    simp only [stmtOk, Bool.and_eq_true, Option.isSome_iff_exists] at ok
-    obtain ⟨⟨⟨tc, htc⟩, ok1⟩, ok2⟩ := ok
+    simp only [stmtOk, Bool.and_eq_true] at ok
+    obtain ⟨⟨hc, ok1⟩, ok2⟩ := ok
+    have htc := isBoolTy_some hc
     simp only [SrcStmt.toCore] at run
     obtain ⟨j, s1, x, rfl, crun, brun⟩ := if_inv run
     cases x with
@@ -255,6 +267,10 @@ theorem stmt_sim (calls : ∀ i < N, FuncSim sp prims outside i) (ret : SrcType)
     exact ⟨.next, by simp [pstmt, hp], trivial, ran⟩
   | setIndexEval => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
   | setFieldEval => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
+  | «break» => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
+  | «continue» => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
+  | matchArm => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
+  | unreachable => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
   | returnUnit =>
     intro k tenv env st c st' le run ok inv rel bound
     simp only [SrcStmt.toCore] at run
@@ -262,8 +278,8 @@ theorem stmt_sim (calls : ∀ i < N, FuncSim sp prims outside i) (ret : SrcType)
     exact ⟨.ret none, rfl, trivial, .refl inv⟩
   | «assert» condition =>
     intro k tenv env st c st' le run ok inv rel bound
-    simp only [stmtOk, Option.isSome_iff_exists] at ok
-    obtain ⟨t, ht⟩ := ok
+    simp only [stmtOk] at ok
+    have ht := isBoolTy_some ok
     simp only [SrcStmt.toCore] at run
     obtain ⟨j, w, rfl, arun, rfl⟩ := expression_inv run
     obtain ⟨i, rfl, crun, rfl⟩ := assert_inv arun

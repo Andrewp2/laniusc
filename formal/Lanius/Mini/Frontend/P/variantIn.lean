@@ -3,11 +3,11 @@ module
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Compiler.P.callAgrees
 import Lanius.Mini.Compiler.P.matchVariants
+import Lanius.Mini.Frontend.P.collectedWith
 import Lanius.Mini.Frontend.P.distinct
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.hasKids
-import Lanius.Mini.Frontend.P.moduleOr
-import Lanius.Mini.Frontend.P.noNames
+import Lanius.Mini.Frontend.P.itemOf
 import Lanius.Mini.Frontend.P.rootInsts
 import Lanius.Mini.Frontend.P.textSelf
 import Lanius.Mini.Frontend.P.typePathSpellings
@@ -32,7 +32,7 @@ def variantIn (types : List TypeDecl) (d : Option Nat) (name : List Nat) : Optio
 def enumVariant (env : FrontEnv) (front : List (List Nat)) (name : List Nat) : Option VariantAt :=
   match splitLast front with
   | none => none
-  | some t => variantIn env.decls.types (findType env.decls.types (moduleOr env.home t.home) t.name 0) name
+  | some t => variantIn env.decls.types (findType env.decls.types (pathModule env t.home t.name) t.name 0) name
 
 /-- The variant a value path names: `V` (see bare_variant), `E::V` or `m::E::V` when the prefix names an enum, else `m::V`, the one enum of module m that has V. -/
 def variantByPath (env : FrontEnv) (s : Split) : Option VariantAt :=
@@ -53,8 +53,12 @@ def srcTy (t : SrcType) : Option Ty :=
   | .enum id variants => none
   | .ptr => some Ty.tyPtr
   | .slice e => none
+  | .array e arrayLength => none
   | .unit => none
   | .isize => some Ty.tyIsize
+  | .char => some Ty.tyChar
+  | .float ft => some (Ty.tyFloat ft)
+  | .sint sk => some (Ty.tySint sk)
 
 def scalarSrc (t : Ty) : Option SrcType :=
   match t with
@@ -63,8 +67,12 @@ def scalarSrc (t : Ty) : Option SrcType :=
   | .tyUint k => some (SrcType.uint k)
   | .tyPtr => some SrcType.ptr
   | .tyIsize => some SrcType.isize
+  | .tyChar => some SrcType.char
+  | .tyFloat ft => some (SrcType.float ft)
   | .tySlice e => none
+  | .tyArray e n => none
   | .tyNamed d args => none
+  | .tySint k => some (SrcType.sint k)
 
 def primTy (name : List Nat) : Option Ty :=
   match primitive name with

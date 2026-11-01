@@ -1,4 +1,6 @@
 import Lanius.Mini.Source
+import Lanius.Mini.Guard
+import Lanius.Mini.FloatLower
 import Lanius.Typing
 
 /-! Type checker soundness for the front pass (roadmap step 7).
@@ -40,8 +42,13 @@ inductive TypeDeclared (P : Core.Program) : SrcType → Prop where
       (found : P.enumeration? id = some ⟨id, variants.map (List.map SrcType.toCore)⟩)
       (inner : ∀ fs ∈ variants, ∀ f ∈ fs, TypeDeclared P f) : TypeDeclared P (.enum id variants)
   | slice {element : SrcType} (inner : TypeDeclared P element) : TypeDeclared P (.slice element)
+  | array {element : SrcType} {length : Nat} (inner : TypeDeclared P element) :
+      TypeDeclared P (.array element length)
   | unit : TypeDeclared P .unit
   | isize : TypeDeclared P .isize
+  | char : TypeDeclared P .char
+  | float (ft : FloatTy) : TypeDeclared P (.float ft)
+  | sint (kind : UintTy) : TypeDeclared P (.sint kind)
 
 /-- The types a statement's bindings name are declared. -/
 def SrcStmt.Declared (P : Core.Program) (s : SrcStmt) : Prop :=
@@ -78,6 +85,10 @@ def SrcStmt.Declared (P : Core.Program) (s : SrcStmt) : Prop :=
   | .setFieldEval _ _ value => ∀ t ∈ value.types, TypeDeclared P t
   | .returnUnit => True
   | .assert condition => ∀ t ∈ condition.types, TypeDeclared P t
+  | .break => True
+  | .continue => True
+  | .matchArm _ _ _ _ _ ty body rest => TypeDeclared P ty ∧ SrcStmt.Declared P body ∧ SrcStmt.Declared P rest
+  | .unreachable _ ty => TypeDeclared P ty
 
 /-- Every parameter type and binding type of every function is declared. -/
 def SrcProgram.Declared (P : Core.Program) (sp : SrcProgram) : Prop :=
@@ -124,6 +135,16 @@ theorem returns_sound : ∀ (s : SrcStmt), s.returns = true → Typing.Definitel
   | .setFieldEval _ _ _, h => by simp [SrcStmt.returns] at h
   | .returnUnit, _ => .returnValue
   | .assert _, h => by simp [SrcStmt.returns] at h
+  | .break, h => by simp [SrcStmt.returns] at h
+  | .continue, h => by simp [SrcStmt.returns] at h
+  | .unreachable _ _, _ => .letUninitialized .returnValue
+  | .matchArm _ _ _ _ _ ty body rest, h => by
+    simp only [SrcStmt.returns, Bool.and_eq_true] at h
+    simp only [SrcStmt.toCore]
+    refine .ifThenElse ?_ (returns_sound rest h.2)
+    split
+    · exact .letLocal (returns_sound body h.1)
+    · exact returns_sound body h.1
 
 /-! ## Types -/
 
@@ -146,6 +167,9 @@ theorem eq_unit {ty : SrcType} (h : ty.isUnit = true) : ty = .unit := by
 
 theorem eq_isize {ty : SrcType} (h : ty.isIsize = true) : ty = .isize := by
   cases ty <;> simp_all [SrcType.isIsize]
+
+theorem eq_char {ty : SrcType} (h : ty.isChar = true) : ty = .char := by
+  cases ty <;> simp_all [SrcType.isChar]
 
 theorem eq_uintKind {ty : SrcType} {k : UintTy} (h : ty.uintKind = some k) : ty = .uint k := by
   cases ty <;> simp_all [SrcType.uintKind]
@@ -175,36 +199,52 @@ theorem same_toCore : ∀ {a b : SrcType}, a.same b = true → a.toCore = b.toCo
   | .slice element, b, h => by
     cases b <;> simp only [SrcType.same, Bool.false_eq_true] at h
     simp only [SrcType.toCore, same_toCore h]
+  | .array element n, b, h => by
+    cases b <;> simp only [SrcType.same, Bool.and_eq_true, decide_eq_true_eq, Bool.false_eq_true] at h
+    simp only [SrcType.toCore, h.1, same_toCore h.2]
   | .unit, b, h => by
     cases b <;> simp_all [SrcType.same, SrcType.isUnit]
   | .isize, b, h => by
     cases b <;> simp_all [SrcType.same, SrcType.isIsize]
+  | .char, b, h => by
+    cases b <;> simp_all [SrcType.same, SrcType.isChar]
+  | .float ft, b, h => by
+    have := SrcType.eq_of_isFloat (ty := b) (t := ft) (by simpa [SrcType.same] using h)
+    subst this; rfl
+  | .sint k, b, h => by
+    have := SrcType.eq_of_isSint (ty := b) (k := k) (by simpa [SrcType.same] using h)
+    subst this; rfl
 
 /-- An integer type of the front pass. -/
 inductive IsInt : SrcType → Prop where
   | i32 : IsInt .i32
   | uint (k : UintTy) : IsInt (.uint k)
   | isize : IsInt .isize
+  | sint (k : UintTy) : IsInt (.sint k)
 
 theorem IsInt.scalar {ty : SrcType} : IsInt ty → ty.isScalar = true
   | .i32 => rfl
   | .uint _ => rfl
   | .isize => rfl
+  | .sint _ => rfl
 
 theorem IsInt.arith {ty : SrcType} : IsInt ty → Typing.ArithmeticTy ty.toCore
   | .i32 => .signed _
   | .uint _ => .unsigned _
   | .isize => .signed _
+  | .sint _ => .signed _
 
 theorem IsInt.integer {ty : SrcType} : IsInt ty → Typing.IntegerTy ty.toCore
   | .i32 => .signed _
   | .uint _ => .unsigned _
   | .isize => .signed _
+  | .sint _ => .signed _
 
 theorem IsInt.ordered {ty : SrcType} : IsInt ty → Typing.OrderedTy ty.toCore
   | .i32 => .signed _
   | .uint _ => .unsigned _
   | .isize => .signed _
+  | .sint _ => .signed _
 
 theorem equalityTy {ty : SrcType} (scalar : ty.isScalar = true) : Typing.EqualityTy ty.toCore := by
   cases ty with
@@ -215,14 +255,30 @@ theorem equalityTy {ty : SrcType} (scalar : ty.isScalar = true) : Typing.Equalit
   | struct => simp [SrcType.isScalar] at scalar
   | enum => simp [SrcType.isScalar] at scalar
   | slice => simp [SrcType.isScalar] at scalar
+  | array => simp [SrcType.isScalar] at scalar
   | unit => simp [SrcType.isScalar] at scalar
   | isize => exact .signed _
+  | char => exact .character
+  | float ft => cases ft <;> first | exact .f32 | exact .f64
+  | sint => exact .signed _
+
+theorem floatArithTy (ft : FloatTy) : Typing.ArithmeticTy (SrcType.float ft).toCore := by
+  cases ft <;> first | exact .f32 | exact .f64
+
+theorem floatOrderedTy (ft : FloatTy) : Typing.OrderedTy (SrcType.float ft).toCore := by
+  cases ft <;> first | exact .f32 | exact .f64
+
+theorem floatNegatableTy (ft : FloatTy) : Typing.NegatableTy (SrcType.float ft).toCore := by
+  cases ft <;> first | exact .f32 | exact .f64
 
 /-! ## Operators -/
 
-theorem arith_some {op : BinOp} {l r t : Typed} (h : arith op l r = some t) :
+theorem arith_some {op : BinOp} {l r t : Typed} (notFloat : l.ty.isFloatAny = false) (h : arith op l r = some t) :
     l.ty = t.ty ∧ r.ty = t.ty ∧ IsInt t.ty := by
   unfold arith at h
+  split at h
+  · rename_i float
+    simp [notFloat] at float
   split at h
   · rename_i both
     simp only [Bool.and_eq_true] at both
@@ -235,6 +291,10 @@ theorem arith_some {op : BinOp} {l r t : Typed} (h : arith op l r = some t) :
     simp only [Option.some.injEq] at h
     subst h
     exact ⟨eq_isize both.1, eq_isize both.2, .isize⟩
+  split at h
+  · obtain ⟨k, htl, htr, ht⟩ := arithSint_types h
+    rw [htl, htr, ht]
+    exact ⟨rfl, rfl, .sint k⟩
   · unfold arithUint at h
     split at h
     · simp at h
@@ -247,22 +307,37 @@ theorem arith_some {op : BinOp} {l r t : Typed} (h : arith op l r = some t) :
       · simp at h
 
 theorem order_some {op : CmpOp} {l r t : Typed} (h : order op l r = some t) :
-    l.ty.toCore = r.ty.toCore ∧ IsInt l.ty ∧ t.ty = .bool := by
+    l.ty.toCore = r.ty.toCore ∧ Typing.OrderedTy l.ty.toCore ∧ t.ty = .bool := by
   unfold order at h
+  split at h
+  · obtain ⟨ft, hl, hr, rfl⟩ := floatOrder_types h
+    rw [hl, hr]
+    exact ⟨rfl, floatOrderedTy ft, rfl⟩
   split at h
   · rename_i both
     simp only [Bool.and_eq_true] at both
     simp only [Option.some.injEq] at h
     subst h
     rw [eq_i32 both.1, eq_i32 both.2]
-    exact ⟨rfl, .i32, rfl⟩
+    exact ⟨rfl, IsInt.i32.ordered, rfl⟩
   split at h
   · rename_i both
     simp only [Bool.and_eq_true] at both
     simp only [Option.some.injEq] at h
     subst h
     rw [eq_isize both.1, eq_isize both.2]
-    exact ⟨rfl, .isize, rfl⟩
+    exact ⟨rfl, IsInt.isize.ordered, rfl⟩
+  split at h
+  · obtain ⟨k, htl, htr, ht⟩ := orderSint_types h
+    rw [htl, htr]
+    exact ⟨rfl, (IsInt.sint k).ordered, ht⟩
+  split at h
+  · rename_i both
+    simp only [Bool.and_eq_true] at both
+    simp only [Option.some.injEq] at h
+    subst h
+    rw [eq_char both.1, eq_char both.2]
+    exact ⟨rfl, .character, rfl⟩
   · unfold orderUint at h
     split at h
     · simp at h
@@ -272,12 +347,16 @@ theorem order_some {op : CmpOp} {l r t : Typed} (h : order op l r = some t) :
         simp only [Option.some.injEq] at h
         subst h
         rw [eq_uintKind kind, eq_uint right]
-        exact ⟨rfl, .uint k, rfl⟩
+        exact ⟨rfl, (IsInt.uint k).ordered, rfl⟩
       · simp at h
 
 theorem equality_some {op : CmpOp} {l r t : Typed} (h : equality op l r = some t) :
     l.ty.toCore = r.ty.toCore ∧ t.ty = .bool := by
   unfold equality at h
+  split at h
+  · obtain ⟨ft, hl, hr, rfl⟩ := floatOrder_types h
+    rw [hl, hr]
+    exact ⟨rfl, rfl⟩
   split at h
   · rename_i same
     simp only [Option.some.injEq] at h
@@ -310,11 +389,48 @@ theorem disjunction_some {l r t : Typed} (h : disjunction l r = some t) :
 theorem arith_typed {op : BinOp} {cop : Core.BinaryOp} {l r t : Typed}
     (rule : ∀ {T : Core.Ty}, Typing.ArithmeticTy T → Typing.IntegerTy T →
       Typing.BinaryOpHasType cop T T T)
+    (frule : ∀ (ft : FloatTy) (o : FArith), floatOp op = some o →
+      Typing.BinaryOpHasType cop (SrcType.float ft).toCore (SrcType.float ft).toCore (SrcType.float ft).toCore)
     (h : arith op l r = some t) :
     Typing.BinaryOpHasType cop l.ty.toCore r.ty.toCore t.ty.toCore ∧ t.ty.isScalar = true := by
-  obtain ⟨hl, hr, int⟩ := arith_some h
-  rw [hl, hr]
-  exact ⟨rule int.arith int.integer, int.scalar⟩
+  cases fl : l.ty.isFloatAny
+  · obtain ⟨hl, hr, int⟩ := arith_some fl h
+    rw [hl, hr]
+    exact ⟨rule int.arith int.integer, int.scalar⟩
+  · simp only [arith, fl, ↓reduceIte] at h
+    obtain ⟨ft, o, hl, hr, hop, rfl⟩ := floatArith_types h
+    rw [hl, hr]
+    exact ⟨frule ft o hop, rfl⟩
+
+theorem shiftTy_of {ty : SrcType} (int : ty.isInteger = true) : Typing.ShiftTy ty.toCore := by
+  cases ty with
+  | i32 => exact .signed _
+  | isize => exact .signed _
+  | char => simp [SrcType.isInteger] at int
+  | float => simp [SrcType.isInteger] at int
+  | uint k => exact .unsigned _
+  | sint k => exact .signed _
+  | bool => simp [SrcType.isInteger] at int
+  | unit => simp [SrcType.isInteger] at int
+  | struct => simp [SrcType.isInteger] at int
+  | enum => simp [SrcType.isInteger] at int
+  | ptr => simp [SrcType.isInteger] at int
+  | slice => simp [SrcType.isInteger] at int
+  | array => simp [SrcType.isInteger] at int
+
+/-- A shift by an amount of any integer type keeps its left operand's type. -/
+theorem lowerShift_typed {op : BinOp} {cop : Core.BinaryOp} {l r t : Typed}
+    (rule : ∀ {T R : Core.Ty}, Typing.ShiftTy T → Typing.ShiftTy R → Typing.BinaryOpHasType cop T R T)
+    (h : lowerShift op l r = some t) :
+    Typing.BinaryOpHasType cop l.ty.toCore r.ty.toCore t.ty.toCore ∧ t.ty.isScalar = true := by
+  simp only [lowerShift] at h
+  split at h
+  · rename_i ints
+    simp only [Bool.and_eq_true] at ints
+    obtain ⟨hl, -, int⟩ := arith_some (SrcType.isFloatAny_of_isInteger ints.1) h
+    rw [← hl]
+    exact ⟨rule (shiftTy_of ints.1) (shiftTy_of ints.2), hl ▸ int.scalar⟩
+  · simp at h
 
 theorem order_typed {op : CmpOp} {cop : Core.BinaryOp} {l r t : Typed}
     (rule : ∀ {T : Core.Ty}, Typing.OrderedTy T → Typing.BinaryOpHasType cop T T (.scalar .bool))
@@ -322,7 +438,7 @@ theorem order_typed {op : CmpOp} {cop : Core.BinaryOp} {l r t : Typed}
     Typing.BinaryOpHasType cop l.ty.toCore r.ty.toCore t.ty.toCore ∧ t.ty.isScalar = true := by
   obtain ⟨same, int, ht⟩ := order_some h
   rw [ht, ← same]
-  exact ⟨rule int.ordered, rfl⟩
+  exact ⟨rule int, rfl⟩
 
 theorem equality_typed {op : CmpOp} {cop : Core.BinaryOp} {l r t : Typed}
     (rule : ∀ {T : Core.Ty}, Typing.EqualityTy T → Typing.BinaryOpHasType cop T T (.scalar .bool))
@@ -340,22 +456,22 @@ theorem SrcOp.lower_typed {op : SrcOp} {l r t : Typed} (scalar : l.ty.isScalar =
     rcases offsetOrArith_some h with ⟨hl, hr, rfl⟩ | h
     · rw [hl, hr]
       exact ⟨.pointerAdd (.unsigned _), rfl⟩
-    · exact arith_typed (fun a _ => .add a) h
+    · exact arith_typed (fun a _ => .add a) (fun ft _ _ => .add (floatArithTy ft)) h
   | minus =>
     rcases offsetOrArith_some h with ⟨hl, hr, rfl⟩ | h
     · rw [hl, hr]
       exact ⟨.pointerSubtract (.unsigned _), rfl⟩
-    · exact arith_typed (fun a _ => .subtract a) h
-  | times => exact arith_typed (fun a _ => .multiply a) h
-  | bitAnd => exact arith_typed (fun _ i => .bitAnd i) h
-  | bitOr => exact arith_typed (fun _ i => .bitOr i) h
-  | bitXor => exact arith_typed (fun _ i => .bitXor i) h
-  | shiftLeft => exact arith_typed (fun _ i => .shiftLeft i) h
+    · exact arith_typed (fun a _ => .subtract a) (fun ft _ _ => .subtract (floatArithTy ft)) h
+  | times => exact arith_typed (fun a _ => .multiply a) (fun ft _ _ => .multiply (floatArithTy ft)) h
+  | bitAnd => exact arith_typed (fun _ i => .bitAnd i) (fun _ _ hop => by simp [floatOp] at hop) h
+  | bitOr => exact arith_typed (fun _ i => .bitOr i) (fun _ _ hop => by simp [floatOp] at hop) h
+  | bitXor => exact arith_typed (fun _ i => .bitXor i) (fun _ _ hop => by simp [floatOp] at hop) h
+  | shiftLeft => exact lowerShift_typed (fun a b => .shiftLeftBy a b) h
   | shiftRight =>
     simp only [SrcOp.lower, arithShiftRight] at h
     split at h
-    · exact arith_typed (fun _ i => .shiftRight i) h
-    · exact arith_typed (fun _ i => .shiftRight i) h
+    · exact lowerShift_typed (fun a b => .shiftRightBy a b) h
+    · exact lowerShift_typed (fun a b => .shiftRightBy a b) h
   | less => exact order_typed .less h
   | lessEq => exact order_typed .lessEqual h
   | greater => exact order_typed .greater h
@@ -442,6 +558,45 @@ theorem field_typed {P : Core.Program} {ctx : Typing.Context} {scope : List Bind
   obtain ⟨decl, inner⟩ := declared_struct declared
   exact ⟨.field (.local inCtx) _ decl (by simp [hf]), inner f (List.mem_of_getElem? hf)⟩
 
+theorem castToFloat_ty {ft : FloatTy} {o t : Typed} (h : castToFloat ft o = some t) : t.ty = .float ft := by
+  simp only [castToFloat] at h
+  split at h
+  all_goals first
+    | (simp at h; done)
+    | (simp only [intToFloat, Option.some.injEq] at h
+       subst h
+       rfl)
+    | (simp only [ifNarrow] at h
+       split at h
+       · simp at h
+       · simp only [intToFloat, Option.some.injEq] at h
+         subst h
+         rfl)
+    | (rename_i source _
+       cases source <;> cases ft <;> simp only [floatToFloat, Option.some.injEq, reduceCtorEq] at h <;>
+         subst h <;> rfl)
+
+theorem castToFloat_typed {P : Core.Program} {ctx : Typing.Context} {ce : Core.Expr} {ft : FloatTy} {o t : Typed}
+    (inner : ExprHasType P ctx ce o.ty.toCore) (h : castToFloat ft o = some t) :
+    ExprHasType P ctx (.cast (SrcType.float ft).toScalar ce) t.ty.toCore := by
+  rw [castToFloat_ty h]
+  simp only [castToFloat] at h
+  split at h <;> rename_i hty <;> (try rw [hty] at inner)
+  all_goals first
+    | (simp [ifNarrow, intToFloat] at h; done)
+    | (rename_i source
+       cases source <;> cases ft <;> simp only [floatToFloat, reduceCtorEq] at h <;>
+         first
+           | exact .cast inner .f32ToF64
+           | exact .cast inner .f64ToF32)
+    | (cases ft <;> first
+        | exact .cast inner (.signedToF32 _)
+        | exact .cast inner (.signedToF64 _)
+        | exact .cast inner (.unsignedToF32 _)
+        | exact .cast inner (.unsignedToF64 _)
+        | exact .cast inner .charToF32
+        | exact .cast inner .charToF64)
+
 theorem SrcExpr.lower_typed {P : Core.Program} (target : P.target = Core.Target.x86_64) :
     ∀ (e : SrcExpr) {scope : List Binding} {ctx : Typing.Context} {t : Typed}, ScopeOk P ctx scope →
       e.lower scope = some t → ExprHasType P ctx e.toCore t.ty.toCore ∧ t.ty.isScalar = true
@@ -457,6 +612,19 @@ theorem SrcExpr.lower_typed {P : Core.Program} (target : P.target = Core.Target.
     simp only [SrcExpr.lower, Option.some.injEq] at h
     subst h
     exact ⟨.value (.pointer 0) rfl, rfl⟩
+  | .char c, _, _, _, _, h => by
+    simp only [SrcExpr.lower, Option.some.injEq] at h
+    subst h
+    exact ⟨.value (.character _) rfl, rfl⟩
+  | .float ft bits, _, _, _, _, h => by
+    simp only [SrcExpr.lower, lowerFloat] at h
+    split at h
+    · simp only [Option.some.injEq] at h
+      subst h
+      cases ft
+      · exact ⟨.value (.f32Bits _) rfl, rfl⟩
+      · exact ⟨.value (.f64Bits _) rfl, rfl⟩
+    · simp at h
   | .unsigned kind v, _, _, _, _, h => by
     simp only [SrcExpr.lower, lowerUnsigned] at h
     split at h
@@ -506,6 +674,16 @@ theorem SrcExpr.lower_typed {P : Core.Program} (target : P.target = Core.Target.
     · rename_i o lowered
       simp only [lowerNegateTyped] at h
       split at h
+      · simp only [negateFloat] at h
+        split at h
+        · simp at h
+        rename_i ft hft
+        simp only [Option.some.injEq] at h
+        subst h
+        have inner := (SrcExpr.lower_typed target operand ok lowered).1
+        rw [SrcType.eq_of_floatTy hft] at inner ⊢
+        exact ⟨.unary inner (.negate (floatNegatableTy ft)), rfl⟩
+      split at h
       · rename_i isI32
         simp only [Option.some.injEq] at h
         subst h
@@ -519,7 +697,14 @@ theorem SrcExpr.lower_typed {P : Core.Program} (target : P.target = Core.Target.
         have inner := (SrcExpr.lower_typed target operand ok lowered).1
         rw [eq_isize isIsize] at inner
         exact ⟨.unary inner (.negate (.signed _)), rfl⟩
+      split at h
       · simp at h
+      · rename_i k hk
+        simp only [Option.some.injEq] at h
+        subst h
+        have inner := (SrcExpr.lower_typed target operand ok lowered).1
+        rw [SrcType.eq_of_sintKind hk] at inner
+        exact ⟨.unary inner (.negate (.signed _)), rfl⟩
   | .not operand, scope, ctx, t, ok, h => by
     simp only [SrcExpr.lower, lowerNot] at h
     split at h
@@ -573,7 +758,9 @@ theorem SrcExpr.lower_typed {P : Core.Program} (target : P.target = Core.Target.
              simp only [Option.some.injEq] at h
              subst h
              rw [hty] at inner
-             exact ⟨.cast inner (.signedToSigned _ _), rfl⟩)
+             first
+               | exact ⟨.cast inner (.signedToSigned _ _), rfl⟩
+               | exact ⟨.cast inner (.charToSigned _), rfl⟩)
       | uint kind =>
         simp only [castTo, castToUint] at h
         split at h
@@ -594,7 +781,9 @@ theorem SrcExpr.lower_typed {P : Core.Program} (target : P.target = Core.Target.
              simp only [Option.some.injEq] at h
              subst h
              rw [hty] at inner
-             exact ⟨.cast inner (.signedToUnsigned _ _), rfl⟩)
+             first
+               | exact ⟨.cast inner (.signedToUnsigned _ _), rfl⟩
+               | exact ⟨.cast inner (.charToUnsigned _), rfl⟩)
       | isize =>
         simp only [castTo, castToIsize] at h
         split at h
@@ -614,14 +803,33 @@ theorem SrcExpr.lower_typed {P : Core.Program} (target : P.target = Core.Target.
           | (rename_i hty
              simp only [Option.some.injEq] at h
              subst h
-             rw [hty] at inner ⊢
-             exact ⟨.cast inner (.signedToSigned _ _), rfl⟩)
+             rw [hty] at inner
+             try rw [hty]
+             first
+               | exact ⟨.cast inner (.signedToSigned _ _), rfl⟩
+               | exact ⟨.cast inner (.charToSigned _), rfl⟩)
+      | sint kind =>
+        cases hty : o.ty <;> rw [hty] at inner <;>
+          by_cases wide : kind.isWide = true <;>
+          simp [castTo, castToSint, castToIsize, hty, wide, SrcType.isScalar, SrcType.isBool,
+            SrcType.isPtr, SrcType.isFloatAny] at h <;>
+          subst h <;>
+          first
+            | exact ⟨.cast inner (.signedToSigned _ _), rfl⟩
+            | exact ⟨.cast inner (.unsignedToSigned _ _), rfl⟩
+            | exact ⟨.cast inner (.charToSigned _), rfl⟩
       | bool => simp [castTo] at h
       | struct => simp [castTo] at h
       | enum => simp [castTo] at h
       | ptr => simp [castTo] at h
       | slice => simp [castTo] at h
+      | array => simp [castTo] at h
+      | char => simp [castTo] at h
       | unit => simp [castTo] at h
+      | float ft =>
+        refine ⟨castToFloat_typed inner h, ?_⟩
+        rw [castToFloat_ty h]
+        rfl
 
 theorem lowerAs_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
     {scope : List Binding} {ctx : Typing.Context} (ok : ScopeOk P ctx scope) {e : SrcExpr}
@@ -690,6 +898,8 @@ theorem lowerValue_typed {P : Core.Program} (target : P.target = Core.Target.x86
     | apply => simp [lowerCopy] at h
     | cast => simp [lowerCopy] at h
     | null => simp [lowerCopy] at h
+    | char c => simp [lowerCopy] at h
+    | float => simp [lowerCopy] at h
 
 theorem lowerArgs_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
     {scope : List Binding} {ctx : Typing.Context} (ok : ScopeOk P ctx scope) :
@@ -712,8 +922,10 @@ theorem lowerArgs_typed {P : Core.Program} (target : P.target = Core.Target.x86_
 
 /-- Each signature is its function's Core signature. -/
 def SigsOk (P : Core.Program) (sigs : List Sig) : Prop :=
-  ∀ callee sig, sigs[callee]? = some sig → ∃ f, P.function? callee = some f ∧
-    f.parameters.map Prod.snd = sig.params.map SrcType.toCore ∧ f.returnType = sig.ret.toCore
+  (∀ callee sig, sigs[callee]? = some sig → ∃ f, P.function? callee = some f ∧
+    f.parameters.map Prod.snd = sig.params.map SrcType.toCore ∧ f.returnType = sig.ret.toCore) ∧
+  ∀ callee service, sigs[callee]? = none → hostService? callee = some service →
+    P.function? callee = some (hostFunc callee service)
 
 theorem lowerCall_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
     {sigs : List Sig} (sigsOk : SigsOk P sigs) {scope : List Binding} {ctx : Typing.Context}
@@ -727,7 +939,7 @@ theorem lowerCall_typed {P : Core.Program} (target : P.target = Core.Target.x86_
     unfold lowerCallSig at h
     split at h
     · rename_i same
-      obtain ⟨f, found, params, ret⟩ := sigsOk callee sig hsig
+      obtain ⟨f, found, params, ret⟩ := sigsOk.1 callee sig hsig
       have call := ExprHasType.call f found (by rw [params]; exact lowerArgs_typed target ok _ _ h)
       rw [ret, same_toCore same] at call
       exact call
@@ -735,17 +947,40 @@ theorem lowerCall_typed {P : Core.Program} (target : P.target = Core.Target.x86_
 
 /-! ## Struct and enum values -/
 
+theorem exprsHaveTypes_length {P : Core.Program} {ctx : Typing.Context} :
+    ∀ {es : List Core.Expr} {ts : List Core.Ty}, ExprsHaveTypes P ctx es ts → ts.length = es.length
+  | _, _, .nil => rfl
+  | _, _, .cons _ tail => by simp [exprsHaveTypes_length tail]
+
+/-- Core's array literal of `n` elements of `e`'s type, from expressions of
+those types. -/
+theorem array_typed {P : Core.Program} {ctx : Typing.Context} {e : SrcType} {n : Nat} {es : List Core.Expr}
+    (typed : ExprsHaveTypes P ctx es ((List.replicate n e).map SrcType.toCore)) :
+    ExprHasType P ctx ((SrcType.array e n).literal es) (SrcType.array e n).toCore := by
+  have len := exprsHaveTypes_length typed
+  simp only [List.length_map, List.length_replicate] at len
+  subst len
+  rw [List.map_replicate] at typed
+  exact .array typed
+
 theorem lowerLiteral_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
     {scope : List Binding} {ctx : Typing.Context} (ok : ScopeOk P ctx scope) {ty : SrcType}
     (declared : TypeDeclared P ty) {fields : List SrcExpr} {xs : List Expr}
     (h : lowerLiteral scope ty fields = some xs) :
-    ExprHasType P ctx (.structValue ty.typeId (fields.map SrcExpr.toCore)) ty.toCore := by
+    ExprHasType P ctx (ty.literal (fields.map SrcExpr.toCore)) ty.toCore := by
   cases ty with
   | struct sid types =>
     simp only [lowerLiteral, lowerStructFields] at h
     split at h
     · simp at h
     · exact .structValue _ (declared_struct declared).1 (lowerArgs_typed target ok _ _ h)
+  | array e n =>
+    simp only [lowerLiteral, lowerStructFields] at h
+    split at h
+    · simp at h
+    · have typed := lowerArgs_typed target ok _ _ h
+      rw [repeatType_eq] at typed
+      exact array_typed typed
   | i32 => simp [lowerLiteral] at h
   | bool => simp [lowerLiteral] at h
   | uint => simp [lowerLiteral] at h
@@ -754,6 +989,9 @@ theorem lowerLiteral_typed {P : Core.Program} (target : P.target = Core.Target.x
   | slice => simp [lowerLiteral] at h
   | unit => simp [lowerLiteral] at h
   | isize => simp [lowerLiteral] at h
+  | char => simp [lowerLiteral] at h
+  | float => simp [lowerLiteral] at h
+  | sint => simp [lowerLiteral] at h
 
 theorem lowerEnumValue_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
     {scope : List Binding} {ctx : Typing.Context} (ok : ScopeOk P ctx scope) {ty : SrcType}
@@ -781,8 +1019,12 @@ theorem lowerEnumValue_typed {P : Core.Program} (target : P.target = Core.Target
   | struct => simp [lowerEnumValue] at h
   | ptr => simp [lowerEnumValue] at h
   | slice => simp [lowerEnumValue] at h
+  | array => simp [lowerEnumValue] at h
   | unit => simp [lowerEnumValue] at h
   | isize => simp [lowerEnumValue] at h
+  | char => simp [lowerEnumValue] at h
+  | float => simp [lowerEnumValue] at h
+  | sint => simp [lowerEnumValue] at h
 
 /-! ## Match -/
 
@@ -881,6 +1123,10 @@ theorem lowerMatch_typed {P : Core.Program} (target : P.target = Core.Target.x86
     · simp at h
     · simp at h
     · simp at h
+    · simp at h
+    · simp at h
+    · simp at h
+    · simp at h
 
 /-! ## Statements -/
 
@@ -907,7 +1153,7 @@ theorem wordElement_kind {ds : SrcDecls} {e : SrcType} (h : wordElement ds e = t
   cases e with
   | struct id fields => exact .inl ⟨id, fields, rfl⟩
   | enum id variants => exact .inr ⟨id, variants, rfl⟩
-  | i32 | bool | uint | ptr | slice | unit | isize => simp [wordElement] at h
+  | i32 | bool | uint | ptr | slice | array | unit | isize | char | float | sint => simp [wordElement] at h
 
 theorem lowerSlice_some {ds : SrcDecls} {element : SrcType} {p l : Option Expr} {xs : List Expr}
     (h : lowerSlice ds element p l = some xs) :
@@ -918,8 +1164,8 @@ theorem lowerSlice_some {ds : SrcDecls} {element : SrcType} {p l : Option Expr} 
   · rename_i cond
     have kind : element = .i32 ∨ (∃ id fields, element = .struct id fields) ∨
         ∃ id variants, element = .enum id variants := by
-      simp only [Bool.or_eq_true] at cond
-      rcases cond with c | c
+      simp only [Bool.and_eq_true, Bool.or_eq_true] at cond
+      rcases cond.1 with c | c
       · exact .inl (eq_i32 c)
       · exact .inr (wordElement_kind c)
     split at h
@@ -997,7 +1243,9 @@ theorem castTo_typed {P : Core.Program} {ctx : Typing.Context} {ce : Core.Expr} 
          simp only [Option.some.injEq] at h
          subst h
          rw [hty] at inner
-         exact .cast inner (.signedToSigned _ _))
+         first
+           | exact .cast inner (.signedToSigned _ _)
+           | exact .cast inner (.charToSigned _))
   | uint kind =>
     simp only [castTo, castToUint] at h
     split at h
@@ -1018,7 +1266,9 @@ theorem castTo_typed {P : Core.Program} {ctx : Typing.Context} {ce : Core.Expr} 
          simp only [Option.some.injEq] at h
          subst h
          rw [hty] at inner
-         exact .cast inner (.signedToUnsigned _ _))
+         first
+           | exact .cast inner (.signedToUnsigned _ _)
+           | exact .cast inner (.charToUnsigned _))
   | isize =>
     simp only [castTo, castToIsize] at h
     split at h
@@ -1038,13 +1288,29 @@ theorem castTo_typed {P : Core.Program} {ctx : Typing.Context} {ce : Core.Expr} 
       | (rename_i hty
          simp only [Option.some.injEq] at h
          subst h
-         rw [hty] at inner ⊢
-         exact .cast inner (.signedToSigned _ _))
+         rw [hty] at inner
+         try rw [hty]
+         first
+           | exact .cast inner (.signedToSigned _ _)
+           | exact .cast inner (.charToSigned _))
+  | sint kind =>
+    cases hty : o.ty <;> rw [hty] at inner <;>
+      by_cases wide : kind.isWide = true <;>
+      simp [castTo, castToSint, castToIsize, hty, wide, SrcType.isScalar, SrcType.isBool,
+        SrcType.isPtr, SrcType.isFloatAny] at h <;>
+      subst h <;>
+      first
+        | exact .cast inner (.signedToSigned _ _)
+        | exact .cast inner (.unsignedToSigned _ _)
+        | exact .cast inner (.charToSigned _)
   | bool => simp [castTo] at h
   | struct => simp [castTo] at h
   | enum => simp [castTo] at h
   | ptr => simp [castTo] at h
   | slice => simp [castTo] at h
+  | array => simp [castTo] at h
+  | char => simp [castTo] at h
+  | float ft => exact castToFloat_typed inner h
   | unit => simp [castTo] at h
 
 /-- An element read of a word struct or enum slice has the element's type. -/
@@ -1116,10 +1382,82 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
       | apply => simp at h
       | cast => simp at h
       | null => simp at h
+      | char c => simp at h
+      | float => simp at h
   | .eCall callee args, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalCall] at h
     split at h
-    · simp at h
+    · rename_i hsig
+      split at h
+      · simp at h
+      · rename_i ea hea
+        have typedArgs := evalArgs_typed target sigsOk args ok (by simpa [SrcEff.types] using dd) hea
+        simp only [evalHost] at h
+        split at h
+        · rename_i checks
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+          obtain ⟨rfl, same⟩ := checks
+          simp only [Option.some.injEq] at h
+          subst h
+          rw [typesSame_toCore same] at typedArgs
+          exact ExprHasType.call _ (sigsOk.2 _ .writeByte hsig (by simp [hostService?, hostBase])) typedArgs
+        split at h
+        · rename_i _ checks
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+          obtain ⟨rfl, same⟩ := checks
+          simp only [Option.some.injEq] at h
+          subst h
+          rw [typesSame_toCore same] at typedArgs
+          exact ExprHasType.call _ (sigsOk.2 _ .writeStdout hsig (by simp [hostService?, hostBase])) typedArgs
+        split at h
+        · rename_i _ _ checks
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+          obtain ⟨rfl, same⟩ := checks
+          simp only [Option.some.injEq] at h
+          subst h
+          rw [typesSame_toCore same] at typedArgs
+          exact ExprHasType.call _ (sigsOk.2 _ .writeStderr hsig (by simp [hostService?, hostBase])) typedArgs
+        split at h
+        · rename_i _ _ _ checks
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+          obtain ⟨rfl, same⟩ := checks
+          simp only [Option.some.injEq] at h
+          subst h
+          rw [typesSame_toCore same] at typedArgs
+          exact ExprHasType.call _ (sigsOk.2 _ .readStdin hsig (by simp [hostService?, hostBase])) typedArgs
+        split at h
+        · rename_i _ _ _ _ checks
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+          obtain ⟨rfl, same⟩ := checks
+          simp only [Option.some.injEq] at h
+          subst h
+          rw [typesSame_toCore same] at typedArgs
+          exact ExprHasType.call _ (sigsOk.2 _ .sleepMsI32 hsig (by simp [hostService?, hostBase])) typedArgs
+        split at h
+        · rename_i checks
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+          obtain ⟨rfl, same⟩ := checks
+          simp only [Option.some.injEq] at h
+          subst h
+          rw [typesSame_toCore same] at typedArgs
+          exact ExprHasType.call _ (sigsOk.2 _ .monotonicRead hsig (by simp [hostService?, hostBase])) typedArgs
+        split at h
+        · rename_i checks
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+          obtain ⟨rfl, same⟩ := checks
+          simp only [Option.some.injEq] at h
+          subst h
+          rw [typesSame_toCore same] at typedArgs
+          exact ExprHasType.call _ (sigsOk.2 _ .systemRead hsig (by simp [hostService?, hostBase])) typedArgs
+        split at h
+        · rename_i checks
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+          obtain ⟨rfl, same⟩ := checks
+          simp only [Option.some.injEq] at h
+          subst h
+          rw [typesSame_toCore same] at typedArgs
+          exact ExprHasType.call _ (sigsOk.2 _ .fillSecureBytes hsig (by simp [hostService?, hostBase])) typedArgs
+        · simp at h
     · rename_i sig hsig
       split at h
       · simp at h
@@ -1130,7 +1468,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
           simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
           simp only [Option.some.injEq] at h
           subst h
-          obtain ⟨f, found, params, ret⟩ := sigsOk callee sig hsig
+          obtain ⟨f, found, params, ret⟩ := sigsOk.1 callee sig hsig
           have typedArgs := evalArgs_typed target sigsOk args ok (by simpa [SrcEff.types] using dd) hea
           rw [typesSame_toCore checks.1, ← params] at typedArgs
           have call := ExprHasType.call f found typedArgs
@@ -1192,6 +1530,15 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
         subst h
         simp only [lowerNegateTyped] at ht
         split at ht
+        · simp only [negateFloat] at ht
+          split at ht
+          · simp at ht
+          rename_i ft hft
+          simp only [Option.some.injEq] at ht
+          subst ht
+          rw [SrcType.eq_of_floatTy hft] at inner ⊢
+          exact .unary inner (.negate (floatNegatableTy ft))
+        split at ht
         · rename_i isI32
           simp only [Option.some.injEq] at ht
           subst ht
@@ -1203,7 +1550,13 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
           subst ht
           rw [eq_isize isIsize] at inner
           exact .unary inner (.negate (.signed _))
+        split at ht
         · simp at ht
+        · rename_i k hk
+          simp only [Option.some.injEq] at ht
+          subst ht
+          rw [SrcType.eq_of_sintKind hk] at inner
+          exact .unary inner (.negate (.signed _))
   | .eNot operand, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalNot] at h
     split at h
@@ -1246,7 +1599,16 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
     · simp at h
     · rename_i b found
       split at h
-      · simp at h
+      · obtain ⟨e, n, i, bty, hi, cond, -, -, -, rfl⟩ := evalArrayIndex_some h
+        have typedIndex := SrcEff.eval_typed target sigsOk index ok (by simpa [SrcEff.types] using dd) hi
+        have inCtx := (ok slice b found).1
+        rw [bty] at inCtx
+        have integer : Typing.IntegerTy i.ty.toCore := by
+          simp only [Bool.or_eq_true] at cond
+          rcases cond with c | c
+          · rw [eq_i32 c]; exact .signed _
+          · rw [eq_uint c]; exact .unsigned _
+        exact .indexArray (.local inCtx) typedIndex integer
       · rename_i element he
         simp only [evalElement] at h
         split at h
@@ -1303,6 +1665,16 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
           rw [typesSame_toCore checks.1] at typedArgs
           exact .structValue _ (declared_struct declared).1 typedArgs
         · simp at h
+      | array e n =>
+        simp only [evalStructOf] at h
+        split at h
+        · rename_i checks
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+          simp only [Option.some.injEq] at h
+          subst h
+          rw [typesSame_toCore checks.1, repeatType_eq] at typedArgs
+          exact array_typed typedArgs
+        · simp at h
       | i32 => simp at h
       | bool => simp at h
       | uint => simp at h
@@ -1311,6 +1683,9 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
       | slice => simp at h
       | unit => simp at h
       | isize => simp at h
+      | char => simp at h
+      | float => simp at h
+      | sint => simp at h
   | .eVariant ty variant payload, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalVariant] at h
     split at h
@@ -1340,8 +1715,12 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
       | struct => simp at h
       | ptr => simp at h
       | slice => simp at h
+      | array => simp at h
       | unit => simp at h
       | isize => simp at h
+      | char => simp at h
+      | float => simp at h
+      | sint => simp at h
   | .eMatch scrutinee ety ty binders values, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalMatch] at h
     split at h
@@ -1372,8 +1751,12 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
           | struct => cases values <;> simp [matchVariants, evalArms] at ha
           | ptr => cases values <;> simp [matchVariants, evalArms] at ha
           | slice => cases values <;> simp [matchVariants, evalArms] at ha
+          | array => cases values <;> simp [matchVariants, evalArms] at ha
           | unit => cases values <;> simp [matchVariants, evalArms] at ha
           | isize => cases values <;> simp [matchVariants, evalArms] at ha
+          | char => cases values <;> simp [matchVariants, evalArms] at ha
+          | float => cases values <;> simp [matchVariants, evalArms] at ha
+          | sint => cases values <;> simp [matchVariants, evalArms] at ha
         · simp at h
   | .eDivide op left right, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalDivision] at h
@@ -1396,19 +1779,51 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
           cases op
           · exact .binary typedL typedR (.divide IsInt.i32.arith)
           · exact .binary typedL typedR (.remainder IsInt.i32.integer)
+        split at h
+        · rename_i both
+          simp only [Bool.and_eq_true] at both
+          simp only [Option.some.injEq] at h
+          subst h
+          rw [eq_isize both.1] at typedL
+          rw [eq_isize both.2] at typedR
+          cases op
+          · exact .binary typedL typedR (.divide IsInt.isize.arith)
+          · exact .binary typedL typedR (.remainder IsInt.isize.integer)
         · split at h
-          · simp at h
+          · split at h
+            · simp at h
+            · rename_i k hk
+              simp only [evalDivideUint] at h
+              split at h
+              · rename_i hr'
+                simp only [Option.some.injEq] at h
+                subst h
+                rw [eq_uintKind hk] at typedL
+                rw [eq_uint hr'] at typedR
+                cases op
+                · exact .binary typedL typedR (.divide (IsInt.uint k).arith)
+                · exact .binary typedL typedR (.remainder (IsInt.uint k).integer)
+              · simp at h
           · rename_i k hk
-            simp only [evalDivideUint] at h
+            rw [SrcType.eq_of_sintKind hk] at typedL
+            simp only [evalDivideSint] at h
+            split at h
+            · rename_i both
+              simp only [Bool.and_eq_true] at both
+              simp only [Option.some.injEq] at h
+              subst h
+              rw [SrcType.eq_of_isSint both.1] at typedR
+              cases op
+              · exact .binary typedL typedR (.divide (IsInt.sint k).arith)
+              · exact .binary typedL typedR (.remainder (IsInt.sint k).integer)
             split at h
             · rename_i hr'
               simp only [Option.some.injEq] at h
               subst h
-              rw [eq_uintKind hk] at typedL
-              rw [eq_uint hr'] at typedR
+              rw [SrcType.eq_of_isSint hr'] at typedR
               cases op
-              · exact .binary typedL typedR (.divide (IsInt.uint k).arith)
-              · exact .binary typedL typedR (.remainder (IsInt.uint k).integer)
+              · exact .binary typedL typedR (.divide (IsInt.sint k).arith)
+              · exact .binary typedL typedR (.remainder (IsInt.sint k).integer)
             · simp at h
   | .eStride slice, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalStride] at h
@@ -1501,15 +1916,40 @@ theorem evalArms_typed {P : Core.Program} (target : P.target = Core.Target.x86_6
 
 end
 
+/-- `array[index] = value` on an array local is a well-typed Core assignment. -/
+theorem setIndexEval_array_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
+    {sigs : List Sig} {decls : SrcDecls} (sigsOk : SigsOk P sigs) {ret : SrcType} {slice : Nat}
+    {index value : SrcEff} {scope : List Binding} {ctx : Typing.Context} {next : Nat} {inLoop : Bool}
+    {b : Binding} {out : Stmt}
+    (ok : ScopeOk P ctx scope) (d : ∀ t ∈ index.types ++ value.types, TypeDeclared P t)
+    (found : lookup scope slice = some b)
+    (h : storeArray b next (index.eval sigs decls scope next) (value.eval sigs decls scope (next + 1)) = some out) :
+    StmtHasType P ret.toCore ctx inLoop (SrcStmt.setIndexEval slice index value).toCore := by
+  obtain ⟨e, n, i, v, bty, hi, hv, cond, same, -, -, -, -⟩ := storeArray_some h
+  have typedIndex := SrcEff.eval_typed target sigsOk index ok (fun t mem => d t (List.mem_append_left _ mem)) hi
+  have typedValue := SrcEff.eval_typed target sigsOk value ok (fun t mem => d t (List.mem_append_right _ mem)) hv
+  have inCtx := (ok slice b found).1
+  rw [bty] at inCtx
+  rw [same_toCore same] at typedValue
+  have integer : Typing.IntegerTy i.ty.toCore := by
+    simp only [Bool.or_eq_true] at cond
+    rcases cond with c | c
+    · rw [eq_i32 c]; exact .signed _
+    · rw [eq_uint c]; exact .unsigned _
+  exact .expression (.assign (.indexArray (.local inCtx) typedIndex integer) typedValue .set)
+
 theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
     {sigs : List Sig} {decls : SrcDecls} (sigsOk : SigsOk P sigs) {ret : SrcType} :
     ∀ (s : SrcStmt) {scope : List Binding} {ctx : Typing.Context} {next : Nat} {inLoop : Bool}
-      {out : Stmt}, ScopeOk P ctx scope → s.Declared P → s.lower sigs decls ret scope next = some out →
+      {out : Stmt}, ScopeOk P ctx scope → s.Declared P → (s.breaksOut = true → inLoop = true) →
+      s.lower sigs decls ret scope next = some out →
       StmtHasType P ret.toCore ctx inLoop s.toCore
-  | .nop, _, _, _, _, _, _, _, _ => .skip
-  | .let id ty value body, scope, ctx, next, inLoop, out, ok, d, h => by
+  | .nop, _, _, _, _, _, _, _, _, _ => .skip
+  | .let id ty value body, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.Declared] at d
-    simp only [SrcStmt.lower, lowerLet] at h
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerLet] at h
     split at h
     · simp at h
     · rename_i vs hvs
@@ -1517,10 +1957,12 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
       · simp at h
       · rename_i b hb
         exact .letLocal (lowerValue_typed target ok hvs)
-          (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2 hb)
-  | .letStruct id ty fields body, scope, ctx, next, inLoop, out, ok, d, h => by
+          (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
+  | .letStruct id ty fields body, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.Declared] at d
-    simp only [SrcStmt.lower, lowerLet] at h
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerLet] at h
     split at h
     · simp at h
     · rename_i vs hvs
@@ -1528,10 +1970,12 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
       · simp at h
       · rename_i b hb
         exact .letLocal (lowerLiteral_typed target ok d.1 hvs)
-          (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2 hb)
-  | .letCall id ty callee args body, scope, ctx, next, inLoop, out, ok, d, h => by
+          (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
+  | .letCall id ty callee args body, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.Declared] at d
-    simp only [SrcStmt.lower, lowerLetCall] at h
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerLetCall] at h
     split at h
     · simp at h
     · rename_i a ha
@@ -1539,10 +1983,12 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
       · simp at h
       · rename_i b hb
         exact .letLocal (lowerCall_typed target sigsOk ok ha)
-          (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2 hb)
-  | .letEnum id ty variant payload body, scope, ctx, next, inLoop, out, ok, d, h => by
+          (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
+  | .letEnum id ty variant payload body, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.Declared] at d
-    simp only [SrcStmt.lower, lowerLet] at h
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerLet] at h
     split at h
     · simp at h
     · rename_i vs hvs
@@ -1550,8 +1996,8 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
       · simp at h
       · rename_i b hb
         exact .letLocal (lowerEnumValue_typed target ok d.1 hvs)
-          (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2 hb)
-  | .letMatch id ty scrutinee enumId arms body, scope, ctx, next, inLoop, out, ok, d, h => by
+          (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
+  | .letMatch id ty scrutinee enumId arms body, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.Declared] at d
     simp only [SrcStmt.lower, lowerThen] at h
     split at h
@@ -1561,9 +2007,11 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
       · simp at h
       · rename_i b hb
         exact .letLocal (lowerMatch_typed target ok hm)
-          (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2 hb)
-  | .set id value, scope, ctx, next, inLoop, out, ok, _, h => by
-    simp only [SrcStmt.lower, lowerSet] at h
+          (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
+  | .set id value, scope, ctx, next, inLoop, out, ok, _, _, h => by
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerSet] at h
     split at h
     · simp at h
     · rename_i b found
@@ -1572,8 +2020,10 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
       · simp at h
       · rename_i vs hvs
         exact .expression (.assign (.local (ok id b found).1) (lowerValue_typed target ok hvs) .set)
-  | .setField id index value, scope, ctx, next, inLoop, out, ok, _, h => by
-    simp only [SrcStmt.lower, lowerSetField] at h
+  | .setField id index value, scope, ctx, next, inLoop, out, ok, _, _, h => by
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerSetField] at h
     split at h
     · simp at h
     · rename_i b found
@@ -1599,8 +2049,10 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
                 (lowerAs_typed target ok hv) .set)
           · simp at h
       all_goals simp at h
-  | .setCall id callee args, scope, ctx, next, inLoop, out, ok, _, h => by
-    simp only [SrcStmt.lower, lowerSetCall] at h
+  | .setCall id callee args, scope, ctx, next, inLoop, out, ok, _, _, h => by
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerSetCall] at h
     split at h
     · simp at h
     · rename_i b found
@@ -1609,7 +2061,7 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
       · simp at h
       · rename_i a ha
         exact .expression (.assign (.local (ok id b found).1) (lowerCall_typed target sigsOk ok ha) .set)
-  | .then first second, scope, ctx, next, inLoop, out, ok, d, h => by
+  | .then first second, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.Declared] at d
     simp only [SrcStmt.lower, lowerThen] at h
     split at h
@@ -1618,11 +2070,13 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
       split at h
       · simp at h
       · rename_i b hb
-        exact .sequence (SrcStmt.lower_typed target sigsOk first ok d.1 ha)
-          (SrcStmt.lower_typed target sigsOk second ok d.2 hb)
-  | .if condition thenBranch elseBranch, scope, ctx, next, inLoop, out, ok, d, h => by
+        exact .sequence (SrcStmt.lower_typed target sigsOk first ok d.1 (fun e => bo (by simp [SrcStmt.breaksOut, e])) ha)
+          (SrcStmt.lower_typed target sigsOk second ok d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
+  | .if condition thenBranch elseBranch, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.Declared] at d
-    simp only [SrcStmt.lower, lowerIf] at h
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerIf] at h
     split at h
     · simp at h
     · rename_i c hc
@@ -1633,27 +2087,32 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
         · simp at h
         · rename_i b hb
           exact .ifThenElse (lowerAs_typed target ok hc)
-            (SrcStmt.lower_typed target sigsOk thenBranch ok d.1 ha)
-            (SrcStmt.lower_typed target sigsOk elseBranch ok d.2 hb)
-  | .while condition body, scope, ctx, next, inLoop, out, ok, d, h => by
+            (SrcStmt.lower_typed target sigsOk thenBranch ok d.1 (fun e => bo (by simp [SrcStmt.breaksOut, e])) ha)
+            (SrcStmt.lower_typed target sigsOk elseBranch ok d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
+  | .while condition body, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.Declared] at d
-    simp only [SrcStmt.lower, lowerWhile] at h
+    simp only [SrcStmt.lower] at h
+    simp only [lowerWhile] at h
     split at h
     · simp at h
     · rename_i c hc
       split at h
       · simp at h
       · rename_i b hb
-        exact .whileLoop (lowerAs_typed target ok hc) (SrcStmt.lower_typed target sigsOk body ok d hb)
-  | .return value, scope, ctx, next, inLoop, out, ok, _, h => by
-    simp only [SrcStmt.lower, lowerReturn] at h
+        exact .whileLoop (lowerAs_typed target ok hc) (SrcStmt.lower_typed target sigsOk body ok d (fun _ => rfl) hb)
+  | .return value, scope, ctx, next, inLoop, out, ok, _, _, h => by
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerReturn] at h
     split at h
     · simp at h
     · rename_i vs hvs
       exact .returnValue (lowerValue_typed target ok hvs)
-  | .letAlloc id size shift body, scope, ctx, next, inLoop, out, ok, d, h => by
+  | .letAlloc id size shift body, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.Declared] at d
-    simp only [SrcStmt.lower, lowerAlloc] at h
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerAlloc] at h
     split at h
     · rename_i small
       split at h
@@ -1663,11 +2122,13 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
         · simp at h
         · rename_i b hb
           exact .letLocal (.alloc (lowerAs_typed target ok hsz) (align_literal target small))
-            (SrcStmt.lower_typed target sigsOk body (ok.cons (ty := .ptr) .ptr) d hb)
+            (SrcStmt.lower_typed target sigsOk body (ok.cons (ty := .ptr) .ptr) d (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
     · simp at h
-  | .letLoad id pointer offset body, scope, ctx, next, inLoop, out, ok, d, h => by
+  | .letLoad id pointer offset body, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.Declared] at d
-    simp only [SrcStmt.lower, lowerLoad] at h
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerLoad] at h
     split at h
     · simp at h
     · rename_i a ha
@@ -1676,9 +2137,11 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
       · rename_i b hb
         obtain ⟨x, y, hx, hy⟩ := lowerAddress_some ha
         exact .letLocal (.loadByte (lowerAs_typed target ok hx) (lowerAs_typed target ok hy))
-          (SrcStmt.lower_typed target sigsOk body (ok.cons (ty := .uint .uint8) (.uint _)) d hb)
-  | .setByte pointer offset value, scope, ctx, next, inLoop, out, ok, _, h => by
-    simp only [SrcStmt.lower, lowerStore] at h
+          (SrcStmt.lower_typed target sigsOk body (ok.cons (ty := .uint .uint8) (.uint _)) d (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
+  | .setByte pointer offset value, scope, ctx, next, inLoop, out, ok, _, _, h => by
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerStore] at h
     split at h
     · simp at h
     · rename_i a ha
@@ -1688,8 +2151,10 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
         obtain ⟨x, y, hx, hy⟩ := lowerAddress_some ha
         exact .expression (.storeByte (lowerAs_typed target ok hx) (lowerAs_typed target ok hy)
           (lowerAs_typed target ok hv))
-  | .free pointer size shift, scope, ctx, next, inLoop, out, ok, _, h => by
-    simp only [SrcStmt.lower, lowerFree] at h
+  | .free pointer size shift, scope, ctx, next, inLoop, out, ok, _, _, h => by
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerFree] at h
     split at h
     · rename_i small
       split at h
@@ -1701,9 +2166,11 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
           exact .expression (.dealloc (lowerAs_typed target ok hp) (lowerAs_typed target ok hsz)
             (align_literal target small))
     · simp at h
-  | .letSlice id element pointer length body, scope, ctx, next, inLoop, out, ok, d, h => by
+  | .letSlice id element pointer length body, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.Declared] at d
-    simp only [SrcStmt.lower, lowerLet] at h
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerLet] at h
     split at h
     · simp at h
     · rename_i vs hvs
@@ -1713,20 +2180,39 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
         obtain ⟨kind, x, y, hx, hy⟩ := lowerSlice_some hvs
         rcases kind with rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩
         · exact .letLocal (.i32SliceFromRawParts (lowerAs_typed target ok hx) (lowerAs_typed target ok hy))
-            (SrcStmt.lower_typed target sigsOk body (ok.cons (ty := .slice .i32) (.slice d.1)) d.2 hb)
+            (SrcStmt.lower_typed target sigsOk body (ok.cons (ty := .slice .i32) (.slice d.1)) d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
         · obtain ⟨found, -⟩ := declared_struct d.1
           exact .letLocal (.typedSliceFromRawParts (.structureType sid _ found) (lowerAs_typed target ok hx)
               (lowerAs_typed target ok hy))
             (SrcStmt.lower_typed target sigsOk body (ok.cons (ty := .slice (.struct sid fields)) (.slice d.1))
-              d.2 hb)
+              d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
         · obtain ⟨found, -⟩ := declared_enum d.1
           exact .letLocal (.typedSliceFromRawParts (.enumerationType eid _ found) (lowerAs_typed target ok hx)
               (lowerAs_typed target ok hy))
             (SrcStmt.lower_typed target sigsOk body (ok.cons (ty := .slice (.enum eid variants)) (.slice d.1))
-              d.2 hb)
-  | .letIndex id ty slice index body, scope, ctx, next, inLoop, out, ok, d, h => by
+              d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
+  | .letIndex id ty slice index body, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.Declared] at d
-    simp only [SrcStmt.lower, lowerLetIndex] at h
+    simp only [SrcStmt.lower, lowerLetIndexAny] at h
+    split at h
+    case isTrue =>
+      simp only [lowerLetEval] at h
+      split at h
+      · simp at h
+      · rename_i v hv
+        split at h
+        · simp at h
+        · rename_i b hb
+          simp only [evalSame] at h
+          split at h
+          · rename_i same
+            have typed := SrcEff.eval_typed target sigsOk (sigs := sigs) (decls := decls) (.eIndex slice (.ePure index)) ok
+              (by simp [SrcEff.types]) (by simp only [SrcEff.eval]; exact hv)
+            rw [same_toCore same] at typed
+            exact .letLocal typed (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
+          · simp at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerLetIndex] at h
     split at h
     case isFalse =>
       unfold lowerLoadType at h
@@ -1747,7 +2233,7 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
         have inCtx := (ok slice sb found).1
         rw [same_toCore same] at inCtx
         exact .letLocal (.indexSlice (.local inCtx) typedIndex integer)
-          (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2 hb)
+          (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
       · simp at h
     simp only [lowerLoadWord] at h
     split at h
@@ -1767,10 +2253,25 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
             have inCtx := (ok slice sb found).1
             rw [same_toCore same] at inCtx
             exact .letLocal (.indexSlice (.local inCtx) typedIndex integer)
-              (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2 hb)
+              (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
           · simp at ha
-  | .setIndex slice index value, scope, ctx, next, inLoop, out, ok, _, h => by
-    simp only [SrcStmt.lower, lowerSetIndex] at h
+  | .setIndex slice index value, scope, ctx, next, inLoop, out, ok, _, _, h => by
+    simp only [SrcStmt.lower, lowerSetIndexAny] at h
+    split at h
+    case isTrue arr =>
+      simp only [lowerSetIndexEval] at h
+      split at h
+      · simp at h
+      rename_i sb found
+      split at h
+      · exact setIndexEval_array_typed (decls := decls) (index := .ePure index) (value := .ePure value) target sigsOk ok
+          (by simp [SrcEff.types]) found (by simpa only [SrcEff.eval] using h)
+      · rename_i e he
+        exfalso
+        have bty : sb.ty = .slice e := by cases hb : sb.ty <;> simp_all [elementOf]
+        simp [isArrayLocal, found, bty] at arr
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerSetIndex] at h
     split at h
     · simp at h
     · rename_i sb found
@@ -1807,7 +2308,7 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
             rw [elementOf_some he] at inCtx
             exact .expression (.assign (.indexSlice (.local inCtx) typedIndex integer)
               (lowerAs_typed target ok hv) .set)
-  | .letEval id ty value body, scope, ctx, next, inLoop, out, ok, d, h => by
+  | .letEval id ty value body, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.Declared] at d
     simp only [SrcStmt.lower, lowerLetEval] at h
     split at h
@@ -1821,9 +2322,9 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
         · rename_i same
           have typed := SrcEff.eval_typed target sigsOk value ok d.2.1 hv
           rw [same_toCore same] at typed
-          exact .letLocal typed (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2.2 hb)
+          exact .letLocal typed (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
         · simp at h
-  | .setEval id value, scope, ctx, next, inLoop, out, ok, d, h => by
+  | .setEval id value, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.lower, lowerSetEval] at h
     split at h
     · simp at h
@@ -1838,7 +2339,7 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
           rw [same_toCore same] at typed
           exact .expression (.assign (.local (ok id b found).1) typed .set)
         · simp at h
-  | .ifEval condition thenBranch elseBranch, scope, ctx, next, inLoop, out, ok, d, h => by
+  | .ifEval condition thenBranch elseBranch, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.Declared] at d
     simp only [SrcStmt.lower, lowerIfEval] at h
     split at h
@@ -1855,10 +2356,10 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
           · rename_i same
             have typed := SrcEff.eval_typed target sigsOk condition ok d.1 hc
             rw [same_toCore same] at typed
-            exact .ifThenElse typed (SrcStmt.lower_typed target sigsOk thenBranch ok d.2.1 ha)
-              (SrcStmt.lower_typed target sigsOk elseBranch ok d.2.2 hb)
+            exact .ifThenElse typed (SrcStmt.lower_typed target sigsOk thenBranch ok d.2.1 (fun e => bo (by simp [SrcStmt.breaksOut, e])) ha)
+              (SrcStmt.lower_typed target sigsOk elseBranch ok d.2.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
           · simp at h
-  | .whileEval condition body, scope, ctx, next, inLoop, out, ok, d, h => by
+  | .whileEval condition body, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.Declared] at d
     simp only [SrcStmt.lower, lowerWhileEval] at h
     split at h
@@ -1872,9 +2373,9 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
         · rename_i same
           have typed := SrcEff.eval_typed target sigsOk condition ok d.1 hc
           rw [same_toCore same] at typed
-          exact .whileLoop typed (SrcStmt.lower_typed target sigsOk body ok d.2 hb)
+          exact .whileLoop typed (SrcStmt.lower_typed target sigsOk body ok d.2 (fun _ => rfl) hb)
         · simp at h
-  | .returnEval value, scope, ctx, next, inLoop, out, ok, d, h => by
+  | .returnEval value, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.lower, lowerReturnEval] at h
     split at h
     · simp at h
@@ -1886,20 +2387,65 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
         rw [same_toCore same] at typed
         exact .returnValue typed
       · simp at h
-  | .discard value, scope, ctx, next, inLoop, out, ok, d, h => by
+  | .discard value, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.lower, lowerDiscard] at h
     split at h
     · simp at h
     · rename_i v hv
       exact .expression (SrcEff.eval_typed target sigsOk value ok d hv)
-  | .returnUnit, scope, ctx, next, inLoop, out, ok, d, h => by
+  | .returnUnit, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.lower, lowerReturnUnit] at h
     split at h
     · rename_i isUnit
       rw [eq_unit isUnit]
       exact .returnUnit rfl
     · simp at h
-  | .assert condition, scope, ctx, next, inLoop, out, ok, d, h => by
+  | .break, scope, ctx, next, inLoop, out, ok, d, bo, h => by
+    rw [bo rfl]
+    exact .breakLoop
+  | .continue, scope, ctx, next, inLoop, out, ok, d, bo, h => by
+    rw [bo rfl]
+    exact .continueLoop
+  | .matchArm scrutinee enumId variant binds binder ty body rest, scope, ctx, next, inLoop, out, ok, d, bo, h => by
+    simp only [SrcStmt.Declared] at d
+    obtain ⟨b, variants, fields, vs, bstmt, rstmt, found, hty, fieldsFound, -, payloadOk, bodyOk, restOk, -⟩ :=
+      matchArm_lower_inv h
+    obtain ⟨inCtx, declared⟩ := ok scrutinee b found
+    rw [hty] at inCtx declared
+    obtain ⟨decl, inner⟩ := declared_enum declared
+    have pat : ∀ {pats : List Core.Pattern} {bs : List (Nat × Core.Ty)},
+        Typing.PatternsHaveTypes P pats (fields.map SrcType.toCore) bs →
+        Typing.PatternHasType P (.enumVariant enumId variant pats) (.enumeration enumId) bs :=
+      fun pats => .enumVariant _ decl (by simp [fieldsFound]) pats
+    have restTyped := SrcStmt.lower_typed target sigsOk rest ok d.2.2
+      (fun e => bo (by simp [SrcStmt.breaksOut, e])) restOk
+    rcases armPayload_shape payloadOk with ⟨u, rfl, rfl⟩ | ⟨u, _, s', scopeOk, valueOk⟩
+    · simp only [armBodyScope, u, Bool.not_false, ↓reduceIte] at bodyOk
+      have bodyTyped := SrcStmt.lower_typed target sigsOk body ok d.2.1
+        (fun e => bo (by simp [SrcStmt.breaksOut, e])) bodyOk
+      simp only [SrcStmt.toCore, u, Bool.false_eq_true, ↓reduceIte]
+      exact .ifThenElse (.matchValue (.local inCtx)
+        (.cons (pat .nil) (.value (.boolean true)) (.one .wildcard (.value (.boolean false))))) bodyTyped restTyped
+    · obtain ⟨f, rfl⟩ : ∃ f, fields = [f] := by
+        rcases fields with _ | ⟨f, _ | ⟨g, more⟩⟩
+        · simp [armScope] at scopeOk
+        · exact ⟨f, rfl⟩
+        · simp [armScope] at scopeOk
+      obtain ⟨ok', pats⟩ := armScope_ok [binder] [f] ok (inner [f] (List.mem_of_getElem? fieldsFound)) scopeOk
+      have init := lowerValue_typed target ok' valueOk
+      simp only [armBodyScope, u, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at bodyOk
+      have bodyTyped := SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2.1
+        (fun e => bo (by simp [SrcStmt.breaksOut, e])) bodyOk
+      simp only [SrcStmt.toCore, u, ↓reduceIte]
+      exact .ifThenElse (.matchValue (.local inCtx)
+          (.cons (pat (.cons .wildcard .nil)) (.value (.boolean true)) (.one .wildcard (.value (.boolean false)))))
+        (.letLocal (.matchValue (.local inCtx) (.one (pat pats) init)) bodyTyped) restTyped
+  | .unreachable id ty, scope, ctx, next, inLoop, out, ok, d, bo, h => by
+    obtain ⟨same, -⟩ := unreachable_lower_inv h
+    simp only [SrcStmt.toCore]
+    rw [same_toCore same]
+    exact .letUninitialized (.returnValue (.local (by simp [Typing.Context.bind])))
+  | .assert condition, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.lower, lowerAssert] at h
     split at h
     · simp at h
@@ -1911,13 +2457,13 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
         rw [same_toCore same] at typed
         exact .expression (.assert typed)
       · simp at h
-  | .setIndexEval slice index value, scope, ctx, next, inLoop, out, ok, d, h => by
+  | .setIndexEval slice index value, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.lower, lowerSetIndexEval] at h
     split at h
     · simp at h
     · rename_i sb found
       split at h
-      · simp at h
+      · exact setIndexEval_array_typed target sigsOk ok d found h
       · rename_i e he
         simp only [storeEvalElement] at h
         split at h
@@ -1965,7 +2511,7 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
                 · rw [eq_i32 c]; exact .signed _
                 · rw [eq_uint c]; exact .unsigned _
               exact .expression (.assign (.indexSlice (.local inCtx) typedIndex integer) typedValue .set)
-  | .setFieldEval id index value, scope, ctx, next, inLoop, out, ok, d, h => by
+  | .setFieldEval id index value, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.lower, lowerSetFieldEval] at h
     split at h
     · simp at h
@@ -2075,15 +2621,18 @@ theorem unitTail_some {ret : SrcType} {body : Option Stmt} {b : Stmt} (h : unitT
   · exact ⟨b, h⟩
 
 theorem lowerFunc_body {sigs : List Sig} {decls : SrcDecls} {func : SrcFunc} {c : Func} (h : lowerFunc sigs decls func = some c) :
-    ∃ out, func.body.lower sigs decls func.ret (paramScope func.params 0 []) (paramsSize func.params) = some out := by
+    func.body.breaksOut = false ∧
+      ∃ out, func.body.lower sigs decls func.ret (paramScope func.params 0 []) (paramsSize func.params) = some out := by
   unfold lowerFunc at h
   split at h
-  · unfold lowerBody at h
+  · rename_i checks
+    simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at checks
+    unfold lowerBody at h
     dsimp only at h
     split at h
     · simp at h
     · rename_i b hb
-      exact unitTail_some hb
+      exact ⟨checks.2, unitTail_some hb⟩
   · simp at h
 
 
@@ -2222,6 +2771,10 @@ theorem SrcType.declare_sound : ∀ (ty : SrcType) {d d' : SrcDecls}, ty.declare
     simp only [SrcType.declare, Option.some.injEq] at h
     subst h
     exact ⟨Extends.refl _, fun _ _ => .ptr⟩
+  | .sint kind, _, _, h => by
+    simp only [SrcType.declare, Option.some.injEq] at h
+    subst h
+    exact ⟨Extends.refl _, fun _ _ => .sint kind⟩
   | .struct id fields, d, d', h => by
     simp only [SrcType.declare] at h
     obtain ⟨d1, inner, ext, fs, found, same⟩ := declareStruct_some h
@@ -2238,6 +2791,10 @@ theorem SrcType.declare_sound : ∀ (ty : SrcType) {d d' : SrcDecls}, ty.declare
     simp only [SrcType.declare] at h
     obtain ⟨ext, declared⟩ := SrcType.declare_sound element h
     exact ⟨ext, fun extD agrees => .slice (declared extD agrees)⟩
+  | .array element _, d, d', h => by
+    simp only [SrcType.declare] at h
+    obtain ⟨ext, declared⟩ := SrcType.declare_sound element h
+    exact ⟨ext, fun extD agrees => .array (declared extD agrees)⟩
   | .unit, _, _, h => by
     simp only [SrcType.declare, Option.some.injEq] at h
     subst h
@@ -2246,6 +2803,14 @@ theorem SrcType.declare_sound : ∀ (ty : SrcType) {d d' : SrcDecls}, ty.declare
     simp only [SrcType.declare, Option.some.injEq] at h
     subst h
     exact ⟨Extends.refl _, fun _ _ => .isize⟩
+  | .char, _, _, h => by
+    simp only [SrcType.declare, Option.some.injEq] at h
+    subst h
+    exact ⟨Extends.refl _, fun _ _ => .char⟩
+  | .float ft, _, _, h => by
+    simp only [SrcType.declare, Option.some.injEq] at h
+    subst h
+    exact ⟨Extends.refl _, fun _ _ => .float ft⟩
 
 theorem declareTypes_sound : ∀ (types : List SrcType) {d d' : SrcDecls}, declareTypes types d = some d' →
     Extends d d' ∧ ∀ {P : Core.Program} {D : SrcDecls}, Extends d' D → Agrees P D →
@@ -2451,9 +3016,32 @@ theorem SrcStmt.declare_sound : ∀ (s : SrcStmt) {d d' : SrcDecls}, s.declare d
     simp only [SrcStmt.declare, Option.some.injEq] at h
     subst h
     exact ⟨Extends.refl _, fun _ _ => trivial⟩
+  | .break, _, _, h | .continue, _, _, h => by
+    simp only [SrcStmt.declare, Option.some.injEq] at h
+    subst h
+    exact ⟨Extends.refl _, fun _ _ => trivial⟩
+  | .matchArm _ _ _ _ _ ty body rest, d, d', h => by
+    simp only [SrcStmt.declare] at h
+    cases h1 : ty.declare d with
+    | none => simp [h1] at h
+    | some d1 =>
+      cases h2 : body.declare d1 with
+      | none => simp [h1, h2] at h
+      | some d2 =>
+        simp only [h1, h2] at h
+        obtain ⟨ext1, head⟩ := SrcType.declare_sound ty h1
+        obtain ⟨ext2, declared2⟩ := SrcStmt.declare_sound body h2
+        obtain ⟨ext3, declared3⟩ := SrcStmt.declare_sound rest h
+        exact ⟨ext1.trans (ext2.trans ext3), fun extD agrees =>
+          ⟨head ((ext2.trans ext3).trans extD) agrees, declared2 (ext3.trans extD) agrees,
+            declared3 extD agrees⟩⟩
   | .assert condition, d, d', h => by
     simp only [SrcStmt.declare] at h
     exact declareTypes_sound _ h
+  | .unreachable _ ty, d, d', h => by
+    simp only [SrcStmt.declare] at h
+    obtain ⟨ext, head⟩ := SrcType.declare_sound ty h
+    exact ⟨ext, fun extD agrees => head extD agrees⟩
 
 theorem declareParams_sound : ∀ (params : List SrcParam) {d d' : SrcDecls},
     declareParams params d = some d' →
@@ -2537,18 +3125,54 @@ theorem funcsReturn_each : ∀ {funcs : List SrcFunc}, funcsReturn funcs = true 
     · exact h.1
     · exact funcsReturn_each h.2 g mem
 
+theorem hostFuncs_find (i : Nat) :
+    hostFuncs.find? (fun function => function.id == i) = (hostService? i).map (hostFunc i) := by
+  unfold hostFuncs hostService?
+  by_cases a : i = hostBase
+  · subst a
+    simp [hostFunc]
+  · by_cases b : i = hostBase + 1
+    · subst b
+      simp [hostFunc, hostBase]
+    · by_cases c : i = hostBase + 2
+      · subst c
+        simp [hostFunc, hostBase]
+      · by_cases d : i = hostBase + 3
+        · subst d
+          simp [hostFunc, hostBase]
+        · by_cases e : i = hostBase + 4
+          · subst e
+            simp [hostFunc, hostBase]
+          · by_cases f : i = hostBase + 5
+            · subst f
+              simp [hostFunc, hostBase]
+            · by_cases g : i = hostBase + 6
+              · subst g
+                simp [hostFunc, hostBase]
+              · by_cases h : i = hostBase + 7
+                · subst h
+                  simp [hostFunc, hostBase]
+                · simp [hostFunc, a, b, c, d, e, f, g, h, Ne.symm a, Ne.symm b, Ne.symm c, Ne.symm d, Ne.symm e, Ne.symm f, Ne.symm g, Ne.symm h]
+
 theorem sigsOk_program (sp : SrcProgram) : SigsOk sp.toCore (sigs sp.funcs) := by
-  intro callee sig found
-  rw [sigs_getElem] at found
-  cases hf : sp.funcs[callee]? with
-  | none => simp [hf] at found
-  | some func =>
-    simp only [hf, Option.map_some, Option.some.injEq] at found
-    subst found
-    refine ⟨func.toCore callee, ?_, paramTypes_toCore func.params, rfl⟩
-    have := find_coreFuncs sp.funcs 0 callee
-    simp only [Nat.zero_add, hf, Option.map_some] at this
-    exact this
+  constructor
+  · intro callee sig found
+    rw [sigs_getElem] at found
+    cases hf : sp.funcs[callee]? with
+    | none => simp [hf] at found
+    | some func =>
+      simp only [hf, Option.map_some, Option.some.injEq] at found
+      subst found
+      refine ⟨func.toCore callee, ?_, paramTypes_toCore func.params, rfl⟩
+      have := find_coreFuncs sp.funcs 0 callee
+      simp only [Nat.zero_add, hf, Option.map_some] at this
+      simp only [Core.Program.function?, SrcProgram.toCore, List.find?_append, this, Option.some_or]
+  · intro callee service none hs
+    rw [sigs_getElem] at none
+    have this := find_coreFuncs sp.funcs 0 callee
+    simp only [Nat.zero_add, Option.map_eq_none_iff.mp none, Option.map_none] at this
+    simp only [Core.Program.function?, SrcProgram.toCore, List.find?_append, this, Option.none_or,
+      hostFuncs_find, hs, Option.map_some]
 
 end TypeSound
 
@@ -2563,12 +3187,17 @@ theorem lowerFuncs_wellTyped {sp : SrcProgram} {funcs : List Func}
     Typing.ProgramWellTyped sp.toCore := by
   refine ⟨fun c hc => by simp [SrcProgram.toCore] at hc, ?_⟩
   intro f hf
+  simp only [SrcProgram.toCore, List.mem_append] at hf
+  rcases hf with hf | hf
+  case inr =>
+    simp only [hostFuncs, List.mem_cons, List.not_mem_nil, or_false] at hf
+    rcases hf with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> exact ⟨rfl, rfl⟩
   obtain ⟨i, func, mem, rfl⟩ := mem_coreFuncs (n := 0) (funcs := sp.funcs) hf
   obtain ⟨c, hc⟩ := lowerFuncs_each lowered func mem
-  obtain ⟨out, hout⟩ := lowerFunc_body hc
+  obtain ⟨inside, out, hout⟩ := lowerFunc_body hc
   obtain ⟨dparams, dbody⟩ := declared func mem
   have stmt := SrcStmt.lower_typed rfl (sigsOk_program sp) func.body (inLoop := false)
-    (paramScope_ok func.params (scopeOk_empty _) dparams) dbody hout
+    (paramScope_ok func.params (scopeOk_empty _) dparams) dbody (fun e => by simp [inside] at e) hout
   simp only [Typing.FunctionWellTyped, SrcFunc.toCore]
   have r := returns func mem
   simp only [Bool.or_eq_true] at r
@@ -2620,7 +3249,7 @@ theorem idClash_rejected : compileSource idClash = none := rfl
 theorem noReturn_not_wellTyped (structs : List Core.StructDecl) (enums : List Core.EnumDecl) :
     ¬ Typing.ProgramWellTyped (noReturn.toCoreWith structs enums) := by
   intro ⟨_, funcs⟩
-  have h := funcs _ (List.mem_singleton_self _)
+  have h := funcs _ (List.mem_cons_self ..)
   simp only [Typing.FunctionWellTyped, noReturn, SrcFunc.toCore, SrcType.toCore, SrcStmt.toCore,
     reduceCtorEq, false_or] at h
   cases h.2.2
@@ -2628,7 +3257,7 @@ theorem noReturn_not_wellTyped (structs : List Core.StructDecl) (enums : List Co
 theorem idClash_not_wellTyped (structs : List Core.StructDecl) (enums : List Core.EnumDecl) :
     ¬ Typing.ProgramWellTyped (idClash.toCoreWith structs enums) := by
   intro ⟨_, funcs⟩
-  have h := funcs _ (List.mem_singleton_self _)
+  have h := funcs _ (List.mem_cons_self ..)
   simp only [Typing.FunctionWellTyped, idClash, SrcFunc.toCore, SrcStmt.toCore, SrcType.toCore,
     SrcType.typeId, List.map_cons, List.map_nil] at h
   obtain ⟨_, typed, _⟩ := h

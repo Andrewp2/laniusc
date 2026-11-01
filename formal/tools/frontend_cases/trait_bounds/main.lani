@@ -1,0 +1,43 @@
+// Trait bounds are checked (F7): each instance's type has an impl of the
+// bound's trait, through bounds on type parameters, where clauses, an
+// impl's own where clause (Boxed<Boxed<i32>> needs Boxed<i32> and then
+// i32) and an inherent impl's bound.
+trait Hash<T> {
+    fn hash(value: T) -> u32;
+}
+
+struct Boxed<T> { v: T }
+
+impl Hash<i32> for i32 {
+    fn hash(value: i32) -> u32 {
+        return value as u32;
+    }
+}
+
+impl<T> Hash<Boxed<T>> for Boxed<T>
+    where T: Hash<T> {
+    fn hash(b: Boxed<T>) -> u32 {
+        return T::hash(b.v) + 1;
+    }
+}
+
+impl<T: Hash<T> > Boxed<T> {
+    fn rehash(self) -> u32 {
+        let x: T = self.v;
+        return T::hash(x) * 2;
+    }
+}
+
+fn hash_of<T: Hash<T> >(x: T) -> u32 {
+    return T::hash(x);
+}
+
+fn hash_where<T>(x: T) -> u32 where T: Hash<T> {
+    return T::hash(x);
+}
+
+fn top(n: i32) -> u32 {
+    let b: Boxed<i32> = Boxed { v: n };
+    let c: Boxed<Boxed<i32>> = Boxed { v: b };
+    return hash_of(c) + hash_where(n) + b.rehash();
+}

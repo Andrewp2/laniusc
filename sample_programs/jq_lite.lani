@@ -1,0 +1,238 @@
+// jq-lite: stream JSON from stdin and print the values at one path, such as
+// `.`, `.items[2].name` or `.[0]`. Tokens flow from ext::json_stream without
+// building a document; every match is re-encoded compactly, one per line.
+// Missing paths print `null`. Output is published only after the whole input
+// validates. Exit 0 ok, 1 usage, 2 invalid JSON, 3 I/O, 4 out of memory.
+module app::main;
+import alloc::vec;
+import core::io;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::json_stream;
+import std::args;
+import std::signal;
+import std::stream;
+
+struct Query {
+    path: [u8], segment: alloc::vec::Vec<i32>, key_start: alloc::vec::Vec<i32>, key_len: alloc::vec::Vec<i32>,
+    kinds: alloc::vec::Vec<u8>, ok: alloc::vec::Vec<u8>, index: alloc::vec::Vec<i32>, hit: alloc::vec::Vec<u8>,
+    capturing: bool, matches: i32, out: ext::json_stream::Writer,
+}
+
+fn tag_of(token: ext::json_stream::Token) -> i32 {
+    let tag: i32 = match (token) {
+        ext::json_stream::Token::BeginObject -> 0, ext::json_stream::Token::EndObject -> 1,
+        ext::json_stream::Token::BeginArray -> 2, ext::json_stream::Token::EndArray -> 3,
+        ext::json_stream::Token::Key -> 4, ext::json_stream::Token::Text -> 5,
+        ext::json_stream::Token::Number -> 6, ext::json_stream::Token::Boolean -> 7,
+        ext::json_stream::Token::Null -> 8,
+    };
+    return tag;
+}
+
+impl Query {
+    fn borrow(&self) -> &Query { return self; }
+    // Grammar: "." alone, or a sequence of ".key", "[N]" and ".[N]" where a
+    // key is every byte up to the next '.' or '['. Returns false if invalid.
+    fn parse_path(&self, start: i32, length: i32) -> bool {
+        let at: i32 = 0;
+        if (length == 0 || self.path[start] != 46) { return false; }
+        if (length == 1) { return true; }
+        while (at < length) {
+            let byte: u8 = self.path[start + at];
+            if (byte == 46) {
+                at += 1;
+                if (at < length && self.path[start + at] == 91) { continue; }
+                let first: i32 = at;
+                while (at < length && self.path[start + at] != 46 && self.path[start + at] != 91) { at += 1; }
+                if (at == first) { return false; }
+                if (self.segment.try_push(-1).is_err() || self.key_start.try_push(start + first).is_err() || self.key_len.try_push(at - first).is_err()) { return false; }
+                continue;
+            }
+            if (byte != 91) { return false; }
+            at += 1;
+            let value: i32 = 0; let digits: i32 = 0;
+            while (at < length && self.path[start + at] >= 48 && self.path[start + at] <= 57) {
+                if (value > 100000000) { return false; }
+                value = value * 10 + ((self.path[start + at] - 48) as i32); digits += 1; at += 1;
+            }
+            if (digits == 0 || at >= length || self.path[start + at] != 93) { return false; }
+            at += 1;
+            if (self.segment.try_push(value).is_err() || self.key_start.try_push(0).is_err() || self.key_len.try_push(0).is_err()) { return false; }
+        }
+        return true;
+    }
+    fn key_equals(&self, segment: i32, text: core::text::Text) -> bool {
+        let length: i32 = self.key_len.at(segment);
+        if (length != text.length) { return false; }
+        let first: i32 = self.key_start.at(segment);
+        let index: i32 = 0;
+        while (index < length) {
+            if (self.path[first + index] != text.bytes[text.start + index]) { return false; }
+            index += 1;
+        }
+        return true;
+    }
+    fn capture(&self, source: &ext::json_stream::Tokenizer) -> core::result::Result<i32, ext::json_stream::Error> {
+        return self.out.token(source);
+    }
+    // Returns Err on writer failure (output or allocation limits).
+    fn handle(&self, source: &ext::json_stream::Tokenizer) -> core::result::Result<i32, ext::json_stream::Error> {
+        let tag: i32 = tag_of(core::option::unwrap(source.token()));
+        let after: i32 = source.depth();
+        let wanted: i32 = self.segment.len();
+        if (self.capturing) {
+            let written = self.capture(source);
+            if (written.is_err()) { return written; }
+            if ((tag == 1 || tag == 3) && after == wanted) { self.capturing = false; self.matches += 1; }
+            return core::result::Ok(0);
+        }
+        if (tag == 1 || tag == 3) {
+            self.kinds.pop(); self.ok.pop(); self.index.pop(); self.hit.pop();
+            return core::result::Ok(0);
+        }
+        if (tag == 4) {
+            let level: i32 = after - 1;
+            let matched: bool = self.ok.at(level) == 1 && level < wanted && self.segment.at(level) == -1 &&
+                self.key_equals(level, core::result::unwrap(source.text()));
+            let flag: u8 = 0; if (matched) { flag = 1; }
+            core::result::unwrap(self.hit.set(level, flag));
+            return core::result::Ok(0);
+        }
+        let begin: bool = tag == 0 || tag == 2;
+        let depth: i32 = after;
+        if (begin) { depth = after - 1; }
+        let on_path: bool = true;
+        if (depth > 0) {
+            let level: i32 = depth - 1;
+            let selected: bool = false;
+            if (self.kinds.at(level) == 1) {
+                let position: i32 = self.index.at(level);
+                core::result::unwrap(self.index.set(level, position + 1));
+                selected = level < wanted && self.segment.at(level) == position;
+            } else {
+                selected = self.hit.at(level) == 1;
+            }
+            on_path = self.ok.at(level) == 1 && selected;
+        }
+        if (on_path && depth == wanted) {
+            if (self.matches > 0) {
+                let separated = self.out.next_document();
+                if (separated.is_err()) { return separated; }
+            }
+            let written = self.capture(source);
+            if (written.is_err()) { return written; }
+            if (begin) { self.capturing = true; } else { self.matches += 1; }
+            return core::result::Ok(0);
+        }
+        if (begin) {
+            let kind: u8 = 2; if (tag == 2) { kind = 1; }
+            let flag: u8 = 0; if (on_path) { flag = 1; }
+            if (self.kinds.try_push(kind).is_err() || self.ok.try_push(flag).is_err() || self.index.try_push(0).is_err() || self.hit.try_push(0).is_err()) {
+                return core::result::Err(ext::json_stream::Error { kind: ext::json_stream::ErrorKind::AllocationFailed, offset: source.token_offset() });
+            }
+        }
+        return core::result::Ok(0);
+    }
+    fn destroy(&self) {
+        self.segment.destroy(); self.key_start.destroy(); self.key_len.destroy();
+        self.kinds.destroy(); self.ok.destroy(); self.index.destroy(); self.hit.destroy();
+        self.out.destroy();
+    }
+}
+
+fn put_all(target: std::stream::Descriptor, bytes: [u8], count: i32) -> bool {
+    let sent = core::io::write_all<std::stream::Descriptor>(target.borrow(), bytes, 0, count);
+    return sent.is_ok();
+}
+fn put_text(target: std::stream::Descriptor, text: core::text::Text) -> bool {
+    let sent = core::io::write_all<std::stream::Descriptor>(target.borrow(), text.bytes, text.start, text.length);
+    return sent.is_ok();
+}
+fn report(error: ext::json_stream::Error) -> i32 {
+    let failure: std::stream::Descriptor = std::stream::stderr();
+    let prefix: [u8; 9] = [106, 113, 45, 108, 105, 116, 101, 58, 32];
+    put_all(failure, prefix, 9);
+    put_text(failure, ext::json_stream::kind_name(error.kind));
+    let digits: [u8; 24] = [0; 24];
+    let count: i32 = 0; let value: u64 = error.offset;
+    let reversed: [u8; 24] = [0; 24];
+    reversed[0] = 48; if (value == 0) { count = 1; }
+    while (value > 0) { reversed[count] = ((value % 10) as u8) + 48; value = value / 10; count += 1; }
+    digits[0] = 32; digits[1] = 97; digits[2] = 116; digits[3] = 32;
+    let index: i32 = 0;
+    while (index < count) { digits[4 + index] = reversed[count - 1 - index]; index += 1; }
+    digits[4 + count] = 10;
+    put_all(failure, digits, 5 + count);
+    let status: i32 = match (error.kind) { ext::json_stream::ErrorKind::AllocationFailed -> 4, _ -> 2 };
+    return status;
+}
+
+fn run(query: &Query) -> i32 {
+    let options: ext::json_stream::Options = ext::json_stream::Options { max_depth: 512, max_string_bytes: 16777216, max_number_bytes: 1048576 };
+    let prepared = ext::json_stream::tokenizer(options);
+    if (prepared.is_err()) { return 4; }
+    let tokens: ext::json_stream::Tokenizer = prepared.unwrap();
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let buffer: [u8; 1024] = [0; 1024];
+    let opened = ext::json_stream::token_reader<std::stream::Descriptor>(source.borrow(), tokens.borrow(), core::result::unwrap(core::slice::view(buffer, 1024)));
+    if (opened.is_err()) { tokens.destroy(); return 4; }
+    let reader: ext::json_stream::TokenReader<std::stream::Descriptor> = opened.unwrap();
+    let status: i32 = 0;
+    while (status == 0) {
+        let step = reader.next();
+        if (step.is_err()) {
+            status = match (step.unwrap_err()) {
+                ext::json_stream::StreamError::Json(cause) -> report(cause),
+                ext::json_stream::StreamError::Io(cause) -> 3,
+            };
+            break;
+        }
+        if (!step.unwrap()) { break; }
+        let handled = query.handle(tokens.borrow());
+        if (handled.is_err()) { status = report(handled.unwrap_err()); }
+    }
+    tokens.destroy();
+    if (status != 0) { return status; }
+    if (query.matches == 0) {
+        let wrote = query.out.null();
+        if (wrote.is_err()) { return report(wrote.unwrap_err()); }
+    }
+    let target: std::stream::Descriptor = std::stream::stdout();
+    if (query.out.flush_to<std::stream::Descriptor>(target.borrow()).is_err()) { return 3; }
+    let newline: [u8; 1] = [10];
+    if (!put_all(target, newline, 1)) { return 3; }
+    return 0;
+}
+
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe, std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let captured = std::args::snapshot(1, 1, 65536);
+    if (captured.is_err()) { return 1; }
+    let arguments = captured.unwrap();
+    let made = ext::json_stream::writer(512, 67108864);
+    if (made.is_err()) { arguments.destroy(); return 4; }
+    let dot: [u8; 1] = [46];
+    let query: Query = Query { path: dot, segment: alloc::vec::new(), key_start: alloc::vec::new(), key_len: alloc::vec::new(),
+        kinds: alloc::vec::new(), ok: alloc::vec::new(), index: alloc::vec::new(), hit: alloc::vec::new(),
+        capturing: false, matches: 0, out: made.unwrap() };
+    let valid: bool = true;
+    if (arguments.len() == 1) {
+        let view: core::slice::View<u8> = core::option::unwrap(arguments.get(0));
+        query.path = view.values;
+        valid = query.parse_path(view.start, view.length);
+    } else {
+        valid = query.parse_path(0, 1);
+    }
+    if (!valid) {
+        let usage: [u8; 29] = [117, 115, 97, 103, 101, 58, 32, 106, 113, 95, 108, 105, 116, 101, 32, 46, 107, 101, 121, 91, 78, 93, 46, 46, 46, 32, 60, 32, 10];
+        put_all(std::stream::stderr(), usage, 29);
+        query.destroy(); arguments.destroy();
+        return 1;
+    }
+    let status: i32 = run(query.borrow());
+    query.destroy(); arguments.destroy();
+    return status;
+}

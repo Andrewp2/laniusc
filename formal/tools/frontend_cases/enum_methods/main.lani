@@ -1,0 +1,31 @@
+// `E::m(args)` on an enum of the current module (F7): `Color::next(c)`
+// calls the impl's function. `Color::Blue(..)` still names the variant.
+enum Color {
+    Red,
+    Blue(i32),
+}
+
+impl Color {
+    fn next(c: Color) -> Color {
+        let r: Color = match (c) {
+            Red -> Color::Blue(1),
+            Blue(k) -> Color::Red,
+        };
+        return r;
+    }
+
+    fn weight(c: Color) -> i32 {
+        let w: i32 = match (c) {
+            Red -> 0,
+            Blue(k) -> k,
+        };
+        return w;
+    }
+}
+
+fn top(n: i32) -> i32 {
+    let c: Color = Color::Blue(n);
+    let d: Color = Color::next(c);
+    let e: Color = Color::next(d);
+    return Color::weight(e) + Color::weight(d);
+}

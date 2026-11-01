@@ -40,6 +40,18 @@ def slotLoadBytes (slot : Nat) : List UInt8 :=
 def slotStoreBytes (slot : Nat) : List UInt8 :=
   memoryBytes .w64 false 0 rbpRegister (frameDisplacement slot)
 
+/-- rbx holds the frame pointer (`Heap.fsp`) as a heap offset. -/
+def fspRegister : Register := 3
+
+/-- `mov [rbp + disp32], rbx`: a call keeps the caller's frame pointer in its
+first result slot while the callee runs. -/
+def fspSaveBytes (slot : Nat) : List UInt8 :=
+  memoryBytes .w64 false fspRegister rbpRegister (frameDisplacement slot)
+
+/-- `mov rbx, [rbp + disp32]` -/
+def fspLoadBytes (slot : Nat) : List UInt8 :=
+  memoryBytes .w64 true fspRegister rbpRegister (frameDisplacement slot)
+
 /-- `mov rcx, rax` -/
 def accToRcxBytes : List UInt8 := moveBytes .w64 rcxRegister 0
 
@@ -85,6 +97,8 @@ def cmpBytes (word : Word) (operation : CmpOp) (slot : Nat) : List UInt8 :=
     setConditionBytes (operation.code word) 0 ++ zeroExtendByteBytes 0 0
 
 def rdxRegister : Register := 2
+def rsiRegister : Register := 6
+def rdiRegister : Register := 7
 
 def DivOp.signed : DivOp → Bool
   | .sDiv | .sRem => true
@@ -124,6 +138,8 @@ def epilogueBytes : List UInt8 :=
 def heapBaseRegister : Register := 12
 def cursorRegister : Register := 13
 def limitRegister : Register := 14
+/-- r10 holds the heap's top: the end of frame memory, which lies above the limit. -/
+def topRegister : Register := 10
 
 /-- `mov r11, imm64` -/
 def r11Bytes (value : BitVec 64) : List UInt8 := immediateBytes .w64 r11Register (lowHalf value) (highHalf value)
@@ -134,14 +150,31 @@ def limitCompareBytes : List UInt8 := [77, 57, 243]
 /-- `ud2` -/
 def trapBytes : List UInt8 := [15, 11]
 
-/-- Round the cursor up into rcx, check rcx + rax against the limit, advance
-the cursor and return the old rounded cursor in rax. -/
+/-- r15 holds the lowest address the stack may reach. -/
+def stackRegister : Register := 15
+
+/-- `cmp r15, rsp` -/
+def stackCompareBytes : List UInt8 := [73, 57, 231]
+
+/-- After the frame prologue: fault unless r15 is at most rsp. -/
+def stackCheckBytes : List UInt8 := stackCompareBytes ++ (branchBytes 6 2 ++ trapBytes)
+
+/-- Round the cursor up into rcx, check that rcx + rax neither wraps nor
+passes the limit, advance the cursor and return the old rounded cursor in rax. -/
 def bumpSpec (shift : Nat) : List UInt8 :=
   moveBytes .w64 rcxRegister cursorRegister ++ (r11Bytes (pow2 shift - 1) ++
   (aluBytes .w64 .add rcxRegister r11Register ++ (r11Bytes (0 - pow2 shift) ++
   (aluBytes .w64 .and rcxRegister r11Register ++ (moveBytes .w64 r11Register rcxRegister ++
-  (aluBytes .w64 .add r11Register 0 ++ (limitCompareBytes ++ (branchBytes 6 2 ++ (trapBytes ++
-  (moveBytes .w64 cursorRegister r11Register ++ moveBytes .w64 0 rcxRegister))))))))))
+  (aluBytes .w64 .add r11Register 0 ++ (branchBytes 2 9 ++ (limitCompareBytes ++ (branchBytes 6 2 ++
+  (trapBytes ++ (moveBytes .w64 cursorRegister r11Register ++ moveBytes .w64 0 rcxRegister)))))))))))
+
+/-- `mov r11, bytes; mov rax, rbx; sub rax, r11; jb +12; mov r11, rax; cmp r11, r14; jae +2; ud2;
+mov rbx, rax`: the frame pointer drops by `bytes`, faulting when that passes zero or the limit, and rax
+gets its new value. -/
+def frameSpec (bytes : Nat) : List UInt8 :=
+  r11Bytes (BitVec.ofNat 64 bytes) ++ (moveBytes .w64 0 fspRegister ++ (aluBytes .w64 .subtract 0 r11Register ++
+  (branchBytes 2 12 ++ (moveBytes .w64 r11Register 0 ++ (limitCompareBytes ++ (branchBytes 3 2 ++
+  (trapBytes ++ moveBytes .w64 fspRegister 0)))))))
 
 /-- `add rax, r12; movzx eax, byte [rax]` -/
 def loadAtSpec : List UInt8 := aluBytes .w64 .add 0 heapBaseRegister ++ loadByteBytes 0 0 0
@@ -165,6 +198,37 @@ def storeWordSpec (width : MemWidth) (slot : Nat) : List UInt8 :=
   memoryBytes .w64 true rcxRegister rbpRegister (frameDisplacement slot) ++
     (aluBytes .w64 .add rcxRegister heapBaseRegister ++ memoryBytes width.x86 false 0 rcxRegister 0)
 
+/-- `syscall` -/
+def syscallBytes : List UInt8 := [15, 5]
+
+/-- The Linux number of a system call. -/
+def Syscall.linux : Syscall → BitVec 32
+  | .write => 1
+  | .read => 0
+  | .poll => 7
+  | .clock => 228
+  | .random => 318
+
+/-- Which argument a system call makes a heap address: `add rsi, r12` the
+second for `write`, `read` and `clock_gettime`; `mov rsi, rsi` none for
+`poll`; `add rdi, r12` the first for `getrandom`. -/
+def Syscall.rsiBytes : Syscall → List UInt8
+  | .write => aluBytes .w64 .add rsiRegister heapBaseRegister
+  | .read => aluBytes .w64 .add rsiRegister heapBaseRegister
+  | .poll => moveBytes .w64 rsiRegister rsiRegister
+  | .clock => aluBytes .w64 .add rsiRegister heapBaseRegister
+  | .random => aluBytes .w64 .add rdiRegister heapBaseRegister
+
+/-- `mov rdi, [slot]; mov rsi, [slot + 1]; add rsi, r12; mov rdx, [slot + 2];
+mov eax, number; syscall; mov r11, rcx`. The kernel leaves r11 unknown; the last
+move makes it a function of the state again. -/
+def sysSpec (kind : Syscall) (slot : Nat) : List UInt8 :=
+  memoryBytes .w64 true rdiRegister rbpRegister (frameDisplacement slot) ++
+    (memoryBytes .w64 true rsiRegister rbpRegister (frameDisplacement (slot + 1)) ++
+    (kind.rsiBytes ++
+    (memoryBytes .w64 true rdxRegister rbpRegister (frameDisplacement (slot + 2)) ++
+    (immediateBytes .w32 0 kind.linux 0 ++ (syscallBytes ++ moveBytes .w64 r11Register rcxRegister)))))
+
 /-- The bytes of the instruction at body offset `pc`, as the x86 encoders write them. -/
 def Instr.bytes (i : Instr) (place : Place) (pc : Nat) : List UInt8 :=
   match i with
@@ -176,8 +240,9 @@ def Instr.bytes (i : Instr) (place : Place) (pc : Nat) : List UInt8 :=
   | .cmp word operation slot => cmpBytes word operation slot
   | .jmp target => jumpBytes (relative (pc + 5) target)
   | .jz target => testBytes .w64 0 0 ++ branchBytes 4 (relative (pc + 9) target)
-  | .call callee args target count => copyBytes (argBase place.slots) args 0 ++
-      callBytes (relative (place.body + pc + 14 * args.length + 5) (place.entries.getD callee 0)) ++
+  | .call callee args target count => copyBytes (argBase place.slots) args 0 ++ fspSaveBytes target ++
+      callBytes (relative (place.body + pc + 14 * args.length + 12) (place.entries.getD callee 0)) ++
+      fspLoadBytes target ++
       copyBytes target (slotRange (argBase place.slots) count) 0
   | .ret sources => copyBytes 0 sources 0 ++ epilogueBytes
   | .bump shift => bumpSpec shift
@@ -186,8 +251,13 @@ def Instr.bytes (i : Instr) (place : Place) (pc : Nat) : List UInt8 :=
   | .loadWordAt width => loadWordSpec width
   | .storeWordAt width slot => storeWordSpec width slot
   | .div word operation slot => operation.spec word slot
+  | .fp operation slot => accToRcxBytes ++ slotLoadBytes slot ++ operation.opcodeBytes
+  | .sys kind slot => sysSpec kind slot
+  | .frame bytes => frameSpec bytes
 
-/-! The extracted encoders are the x86 ones. -/
+/-! The extracted encoders are the x86 ones. (A float operation's SSE bytes
+are the extracted ones themselves: `Simulation.lean` proves what each
+decodes to.) -/
 
 theorem uint8_ofNat_mod (n : Nat) : UInt8.ofNat (n % 256) = UInt8.ofNat n := by
   apply UInt8.toNat_inj.mp
@@ -222,6 +292,16 @@ theorem slotStore_eq (slot : Nat) : slotStore slot = slotStoreBytes slot := by
   rw [slotStore, le32_i32Bytes _ _ (slotOffset_toNat slot)]
   rfl
 
+theorem fspSave_eq (slot : Nat) : fspSave slot = fspSaveBytes slot := by
+  rw [fspSave, le32_i32Bytes _ _ (slotOffset_toNat slot)]
+  rfl
+
+theorem fspLoad_eq (slot : Nat) : fspLoad slot = fspLoadBytes slot := by
+  rw [fspLoad, le32_i32Bytes _ _ (slotOffset_toNat slot)]
+  rfl
+
+
+
 theorem uint8_ofNat_congr {a b : Nat} (same : a % 256 = b % 256) : UInt8.ofNat a = UInt8.ofNat b := by
   rw [← uint8_ofNat_mod a, same, uint8_ofNat_mod]
 
@@ -234,7 +314,7 @@ theorem le64_eq (value : BitVec 64) :
 
 theorem frameSize_eq (slots : Nat) : frameSize slots = frameBytes slots := rfl
 
-theorem prologue_eq (slots : Nat) : prologue slots = framePrologueBytes slots := by
+theorem prologue_eq (slots : Nat) : prologue slots = framePrologueBytes slots ++ stackCheckBytes := by
   rw [prologue, le32_eq]
   rfl
 
@@ -265,7 +345,7 @@ theorem Instr.encode_eq (i : Instr) (place : Place) (pc : Nat) : i.encode place 
   | cmp word operation slot => exact slotCompare_eq word operation slot
   | jmp target => rw [Instr.encode, Instr.bytes, le32_eq]; rfl
   | jz target => rw [Instr.encode, Instr.bytes, le32_eq]; rfl
-  | call callee args target count => rw [Instr.encode, Instr.bytes, le32_eq]; rfl
+  | call callee args target count => rw [Instr.encode, Instr.bytes, le32_eq, fspSave_eq, fspLoad_eq]; rfl
   | ret sources => rfl
   | bump shift => simp only [Instr.encode, Instr.bytes, bumpBytes, le64_eq]; rfl
   | loadAt => rfl
@@ -274,6 +354,13 @@ theorem Instr.encode_eq (i : Instr) (place : Place) (pc : Nat) : i.encode place 
   | storeWordAt width slot =>
     cases width <;> rw [Instr.encode, Instr.bytes, storeWordBytes, le32_i32Bytes _ _ (slotOffset_toNat slot)] <;> rfl
   | div word operation slot => exact DivOp.bytes_eq operation word slot
+  | fp operation slot => rw [Instr.encode, FOp.bytes, slotOperands, slotLoad_eq]; rfl
+  | sys kind slot =>
+    cases kind <;>
+    · rw [Instr.encode, Instr.bytes, sysBytes, le32_i32Bytes _ _ (slotOffset_toNat slot),
+        le32_i32Bytes _ _ (slotOffset_toNat (slot + 1)), le32_i32Bytes _ _ (slotOffset_toNat (slot + 2))]
+      rfl
+  | frame bytes => simp only [Instr.encode, Instr.bytes, frameMemoryBytes, le64_eq]; rfl
 
 /-- A transfer by `relative source target` from `base + source` lands on `base + target`. -/
 theorem relative_eq (base : BitVec 64) (source target : Nat) (sourceSmall : source < 2 ^ 31)
@@ -299,10 +386,25 @@ theorem slotStoreBytes_length (slot : Nat) : (slotStoreBytes slot).length = 7 :=
     List.length_map, List.length_range]
   decide
 
+theorem fspSaveBytes_length (slot : Nat) : (fspSaveBytes slot).length = 7 := by
+  simp only [fspSaveBytes, memoryBytes, memoryHeader, Lanius.Semantics.i32Bytes, List.length_append,
+    List.length_map, List.length_range]
+  decide
+
+theorem fspLoadBytes_length (slot : Nat) : (fspLoadBytes slot).length = 7 := by
+  simp only [fspLoadBytes, memoryBytes, memoryHeader, Lanius.Semantics.i32Bytes, List.length_append,
+    List.length_map, List.length_range]
+  decide
+
 theorem framePrologueBytes_length (slots : Nat) : (framePrologueBytes slots).length = 13 := by
   simp only [framePrologueBytes, immediateBytes, displacementBytes, List.length_append, List.length_cons,
     List.length_nil]
   decide
+
+theorem stackCheckBytes_length : stackCheckBytes.length = 11 := by decide
+
+theorem prologue_length (slots : Nat) : (prologue slots).length = 24 := by
+  rw [prologue_eq, List.length_append, framePrologueBytes_length, stackCheckBytes_length]
 
 theorem copyBytes_length (first : Nat) (args : List Nat) (k : Nat) :
     (copyBytes first args k).length = 14 * args.length := by
@@ -345,7 +447,7 @@ theorem Instr.bytes_length (place : Place) (pc : Nat) (i : Instr) : (i.bytes pla
     decide
   | call callee args target count =>
     simp only [Instr.bytes, callBytes, displacementBytes, List.length_append, copyBytes_length,
-      slotRange_length, List.length_cons, List.length_nil, Instr.size]
+      slotRange_length, List.length_cons, List.length_nil, Instr.size, fspSaveBytes_length, fspLoadBytes_length]
   | ret sources =>
     have : epilogueBytes.length = 5 := by decide
     simp only [Instr.bytes, List.length_append, copyBytes_length, Instr.size, this]
@@ -360,6 +462,18 @@ theorem Instr.bytes_length (place : Place) (pc : Nat) (i : Instr) : (i.bytes pla
     cases word <;> cases operation <;>
       simp only [Instr.bytes, DivOp.spec, List.length_append, slotLoadBytes_length, Instr.size, DivOp.size,
         Word.prefix] <;> decide
+  | fp operation slot =>
+    rcases operation with ⟨ty, operation⟩ | ⟨ty, operation⟩ | ⟨ty, word⟩ | _ | _ <;>
+      (try cases ty) <;> (try cases operation) <;> (try cases word) <;>
+      simp only [Instr.bytes, FOp.opcodeBytes, floatOperands, floatResult, FloatTy.rex, Word.rex,
+        List.length_append, slotLoadBytes_length, Instr.size, FOp.size, FloatTy.rexSize, Word.prefix,
+        List.length_cons, List.length_nil] <;> decide
+  | sys kind slot =>
+    cases kind <;>
+    · simp only [Instr.bytes, sysSpec, Syscall.rsiBytes, memoryBytes, memoryHeader, Lanius.Semantics.i32Bytes,
+        List.length_append, List.length_map, List.length_range, Instr.size]
+      decide
+  | frame bytes => rw [← Instr.encode_eq]; simp [Instr.encode, frameMemoryBytes, le64, Instr.size]
 
 theorem Instr.encode_length (place : Place) (pc : Nat) (i : Instr) : (i.encode place pc).length = i.size := by
   rw [Instr.encode_eq, Instr.bytes_length]
@@ -414,7 +528,7 @@ theorem fetch_mem {code : List Instr} {pc : Nat} {i : Instr} (fetched : fetch co
 
 theorem Code.image_length (code : Code) (start : Nat) (entries : List Nat) :
     (code.image start entries).length = code.size := by
-  simp only [Code.image, prologue_eq, List.length_append, framePrologueBytes_length, encodeFrom_length, Code.size]
+  simp only [Code.image, List.length_append, prologue_length, encodeFrom_length, Code.size]
 
 theorem linkFrom_at (entries : List Nat) (codes : List Code) (start f : Nat) (code : Code)
     (found : codes[f]? = some code) :
@@ -461,8 +575,12 @@ def frameNeed : List Code → Nat
   | [] => 0
   | code :: rest => max (frameBytes code.slots + 16) (frameNeed rest)
 
-/-- Stack bytes below the return address that a call nesting fewer than
-`depth` calls deep needs. -/
-def Binary.stackNeed (binary : Binary) (depth : Nat) : Nat := (depth + 1) * frameNeed binary.codes
+/-- Stack bytes below the limit in r15 that a call may write before the
+callee's stack check: its arguments and return address. -/
+def Binary.guard (binary : Binary) : Nat := frameNeed binary.codes + 8
+
+/-- Stack bytes below the return address, down to `binary.guard` below the
+limit in r15, that a call nesting fewer than `depth` calls deep needs. -/
+def Binary.stackNeed (binary : Binary) (depth : Nat) : Nat := (depth + 2) * frameNeed binary.codes
 
 end Lanius.Mini

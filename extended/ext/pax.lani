@@ -1,0 +1,358 @@
+// POSIX pax extended headers (typeflags x and g) over ext::tar ustar records.
+// Borrowed views only: no allocation, no host services, no extraction policy.
+// See docs/extended-pax.md for the accepted keys, limits and writer policy.
+module ext::pax;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::tar;
+
+pub enum Error { Tar(ext::tar::Error), Bounds, InvalidHeader, InvalidRecord, InvalidNumber, UnsupportedKey, MisplacedExtension, GlobalLimit, SizeMismatch, OutputTooSmall, Finished }
+pub struct Overrides { path: core::slice::View<u8>, has_path: bool, link_name: core::slice::View<u8>, has_link: bool, uname: core::slice::View<u8>, has_uname: bool, gname: core::slice::View<u8>, has_gname: bool, uid: u64, has_uid: bool, gid: u64, has_gid: bool, mtime: u64, mtime_nanos: u32, has_mtime: bool, size: u64, has_size: bool }
+pub struct Entry { header: ext::tar::Entry, path: core::slice::View<u8>, has_path: bool, link_name: core::slice::View<u8>, uname: core::slice::View<u8>, gname: core::slice::View<u8>, uid: u64, gid: u64, mtime: u64, mtime_nanos: u32, offset: i32 }
+pub struct Reader { input: core::slice::View<u8>, cursor: i32, ended: bool, global: Overrides, globals: i32, options: ext::tar::ReadOptions }
+pub struct Writer { output: core::slice::View<u8>, cursor: i32, ended: bool }
+
+fn valid(view: core::slice::View<u8>) -> bool { return view.start >= 0 && view.length >= 0 && view.start <= 2147483647-view.length; }
+fn byte(view: core::slice::View<u8>, index: i32) -> u8 { return view.values[view.start+index]; }
+fn put(view: core::slice::View<u8>, index: i32, value: u8) { view.values[view.start+index] = value; }
+fn window(view: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> { return core::result::unwrap(view.subview(start,end)); }
+fn zeros(view: core::slice::View<u8>, start: i32, end: i32) -> bool { let index: i32 = start; while (index < end) { if (byte(view,index) != 0) { return false; } index += 1; } return true; }
+fn copy(source: core::slice::View<u8>, output: core::slice::View<u8>, start: i32) { let index: i32 = 0; while (index < source.length) { put(output,start+index,byte(source,index)); index += 1; } }
+fn literal(text: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text),count); return core::result::unwrap(core::slice::view(bytes,count));
+}
+fn same(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.length != right.length) { return false; } let index: i32 = 0;
+    while (index < left.length) { if (byte(left,index) != byte(right,index)) { return false; } index += 1; } return true;
+}
+fn has_nul(view: core::slice::View<u8>) -> bool { let index: i32 = 0; while (index < view.length) { if (byte(view,index) == 0) { return true; } index += 1; } return false; }
+fn tar_error(error: ext::tar::Error) -> Error { return Error::Tar(error); }
+
+pub fn empty_overrides(empty: core::slice::View<u8>) -> Overrides {
+    let none: core::slice::View<u8> = empty; none.length = 0;
+    return Overrides { path: none, has_path: false, link_name: none, has_link: false, uname: none, has_uname: false, gname: none, has_gname: false, uid: 0, has_uid: false, gid: 0, has_gid: false, mtime: 0, mtime_nanos: 0, has_mtime: false, size: 0, has_size: false };
+}
+impl Overrides { fn borrow(&self) -> &Overrides { return self; } }
+
+// Octal ustar field of an extension header; every failure is InvalidHeader.
+fn octal_field(header: core::slice::View<u8>, start: i32, width: i32, maximum: u64) -> core::result::Result<u64,Error> {
+    let position: i32 = start; let value: u64 = 0; let digits: bool = false;
+    while (position < start+width && byte(header,position) == 32) { position += 1; }
+    while (position < start+width && byte(header,position) >= 48 && byte(header,position) <= 55) {
+        let digit: u64 = (byte(header,position)-48) as u64;
+        if (value > (maximum-digit)/8) { return core::result::Err(Error::InvalidHeader); }
+        value = value*8+digit; digits = true; position += 1;
+    }
+    if (position == start+width && digits) { return core::result::Err(Error::InvalidHeader); }
+    while (position < start+width) { let value: u8 = byte(header,position); if (value != 0 && value != 32) { return core::result::Err(Error::InvalidHeader); } position += 1; }
+    return core::result::Ok(value);
+}
+fn checksum(header: core::slice::View<u8>) -> u64 {
+    let total: u64 = 0; let index: i32 = 0;
+    while (index < 512) { if (index >= 148 && index < 156) { total += 32; } else { total += byte(header,index) as u64; } index += 1; } return total;
+}
+// Validate an x/g header (checksum, ustar magic) and return its record size.
+fn extension_size(header: core::slice::View<u8>, gnu: bool) -> core::result::Result<i32,Error> {
+    let stored: core::result::Result<u64,Error> = octal_field(header,148,8,262143);
+    if (core::result::is_err(stored)) { return core::result::Err(core::result::unwrap_err(stored)); }
+    if (core::result::unwrap(stored) != checksum(header)) { return core::result::Err(Error::Tar(ext::tar::Error::InvalidChecksum)); }
+    let ustar: bool = byte(header,257) == 117 && byte(header,258) == 115 && byte(header,259) == 116 && byte(header,260) == 97 && byte(header,261) == 114;
+    let posix: bool = ustar && byte(header,262) == 0 && byte(header,263) == 48 && byte(header,264) == 48;
+    let old_gnu: bool = gnu && ustar && byte(header,262) == 32 && byte(header,263) == 32 && byte(header,264) == 0;
+    if (!posix && !old_gnu) { return core::result::Err(Error::Tar(ext::tar::Error::UnsupportedFormat)); }
+    let size: core::result::Result<u64,Error> = octal_field(header,124,12,2147483647);
+    if (core::result::is_err(size)) { return core::result::Err(core::result::unwrap_err(size)); }
+    return core::result::Ok(core::result::unwrap(size) as i32);
+}
+fn decimal(value: core::slice::View<u8>) -> core::result::Result<u64,Error> {
+    if (value.length == 0) { return core::result::Err(Error::InvalidNumber); }
+    let total: u64 = 0; let index: i32 = 0;
+    while (index < value.length) {
+        let code: u8 = byte(value,index); if (code < 48 || code > 57) { return core::result::Err(Error::InvalidNumber); }
+        let digit: u64 = (code-48) as u64;
+        if (total > (18446744073709551615-digit)/10) { return core::result::Err(Error::InvalidNumber); }
+        total = total*10+digit; index += 1;
+    } return core::result::Ok(total);
+}
+// Nonnegative decimal seconds with an optional fraction; nanoseconds truncate.
+fn time(value: core::slice::View<u8>, target: &Overrides) -> core::result::Result<bool,Error> {
+    let dot: i32 = 0; while (dot < value.length && byte(value,dot) != 46) { dot += 1; }
+    let seconds: core::result::Result<u64,Error> = decimal(window(value,0,dot));
+    if (core::result::is_err(seconds)) { return core::result::Err(core::result::unwrap_err(seconds)); }
+    let nanos: u32 = 0; let scale: i32 = 0;
+    if (dot < value.length) {
+        let index: i32 = dot+1;
+        while (index < value.length) {
+            let code: u8 = byte(value,index); if (code < 48 || code > 57) { return core::result::Err(Error::InvalidNumber); }
+            if (scale < 9) { nanos = nanos*10+(code-48) as u32; scale += 1; } index += 1;
+        }
+        while (scale < 9) { nanos = nanos*10; scale += 1; }
+    }
+    target.mtime = core::result::unwrap(seconds); target.mtime_nanos = nanos; target.has_mtime = true; return core::result::Ok(true);
+}
+fn number_key(value: core::slice::View<u8>) -> core::result::Result<u64,Error> { return decimal(value); }
+// Apply one key. Unknown keys are ignored; an empty value removes an override.
+fn assign(key: core::slice::View<u8>, value: core::slice::View<u8>, target: &Overrides) -> core::result::Result<bool,Error> {
+    let clear: bool = value.length == 0;
+    if (same(key,literal("path",4))) { target.path = value; target.has_path = !clear; return core::result::Ok(true); }
+    if (same(key,literal("linkpath",8))) { target.link_name = value; target.has_link = !clear; return core::result::Ok(true); }
+    if (same(key,literal("uname",5))) { target.uname = value; target.has_uname = !clear; return core::result::Ok(true); }
+    if (same(key,literal("gname",5))) { target.gname = value; target.has_gname = !clear; return core::result::Ok(true); }
+    let numeric: i32 = 0;
+    if (same(key,literal("uid",3))) { numeric = 1; }
+    if (same(key,literal("gid",3))) { numeric = 2; }
+    if (same(key,literal("size",4))) { numeric = 3; }
+    if (same(key,literal("mtime",5))) { numeric = 4; }
+    if (numeric == 4) { if (clear) { target.has_mtime = false; return core::result::Ok(true); } return time(value,target); }
+    if (numeric > 0) {
+        if (clear) { if (numeric == 1) { target.has_uid = false; } if (numeric == 2) { target.has_gid = false; } if (numeric == 3) { target.has_size = false; } return core::result::Ok(true); }
+        let parsed: core::result::Result<u64,Error> = number_key(value);
+        if (core::result::is_err(parsed)) { return core::result::Err(core::result::unwrap_err(parsed)); }
+        let number: u64 = core::result::unwrap(parsed);
+        if (numeric == 1) { target.uid = number; target.has_uid = true; }
+        if (numeric == 2) { target.gid = number; target.has_gid = true; }
+        if (numeric == 3) { target.size = number; target.has_size = true; }
+        return core::result::Ok(true);
+    }
+    if (key.length >= 10 && same(window(key,0,10),literal("GNU.sparse",10))) { return core::result::Err(Error::UnsupportedKey); }
+    return core::result::Ok(false);
+}
+// Parse "LEN key=value\n" records; LEN counts the whole record.
+pub fn apply_records(records: core::slice::View<u8>, target: &Overrides) -> core::result::Result<i32,Error> {
+    if (!valid(records)) { return core::result::Err(Error::Bounds); }
+    let position: i32 = 0; let count: i32 = 0;
+    while (position < records.length) {
+        let cursor: i32 = position; let length: i32 = 0; let digits: i32 = 0;
+        while (cursor < records.length && byte(records,cursor) >= 48 && byte(records,cursor) <= 57) {
+            if (length > 214748363) { return core::result::Err(Error::InvalidRecord); }
+            length = length*10+(byte(records,cursor)-48) as i32; cursor += 1; digits += 1;
+        }
+        if (digits == 0 || cursor >= records.length || byte(records,cursor) != 32) { return core::result::Err(Error::InvalidRecord); }
+        if (length <= cursor-position+2 || length > records.length-position) { return core::result::Err(Error::InvalidRecord); }
+        let end: i32 = position+length;
+        if (byte(records,end-1) != 10) { return core::result::Err(Error::InvalidRecord); }
+        let key_start: i32 = cursor+1; let equals: i32 = key_start;
+        while (equals < end-1 && byte(records,equals) != 61) { equals += 1; }
+        if (equals == key_start || equals >= end-1) { return core::result::Err(Error::InvalidRecord); }
+        let assigned: core::result::Result<bool,Error> = assign(window(records,key_start,equals),window(records,equals+1,end-1),target);
+        if (core::result::is_err(assigned)) { return core::result::Err(core::result::unwrap_err(assigned)); }
+        position = end; count += 1;
+    } return core::result::Ok(count);
+}
+
+pub fn reader(input: core::slice::View<u8>) -> core::result::Result<Reader,Error> { return reader_with(input,ext::tar::read_options()); }
+// options.gnu also accepts GNU ././@LongLink names (L) and link targets (K).
+// options.headers_only parses headers whose member data the caller streams.
+pub fn reader_with(input: core::slice::View<u8>, options: ext::tar::ReadOptions) -> core::result::Result<Reader,Error> {
+    if (!valid(input)) { return core::result::Err(Error::Bounds); }
+    return core::result::Ok(Reader { input: input, cursor: 0, ended: false, global: empty_overrides(input), globals: 0, options: options });
+}
+fn extension_flag(flag: u8, gnu: bool) -> bool { return flag == 120 || flag == 103 || (gnu && (flag == 76 || flag == 75)); }
+// For streaming readers: None for a member or zero header, else the number of
+// extension data bytes (before padding) that follow this 512-byte header.
+pub fn extension_data_len(header: core::slice::View<u8>, options: ext::tar::ReadOptions) -> core::result::Result<core::option::Option<i32>,Error> {
+    if (!valid(header) || header.length != 512) { return core::result::Err(Error::Bounds); }
+    if (!extension_flag(byte(header,156),options.gnu) || zeros(header,0,512)) { return core::result::Ok(core::option::None()); }
+    let sized: core::result::Result<i32,Error> = extension_size(header,options.gnu);
+    if (core::result::is_err(sized)) { return core::result::Err(core::result::unwrap_err(sized)); }
+    return core::result::Ok(core::option::Some(core::result::unwrap(sized)));
+}
+// GNU long-name data is the name followed by NUL padding.
+fn long_value(records: core::slice::View<u8>) -> core::result::Result<core::slice::View<u8>,Error> {
+    let end: i32 = 0; while (end < records.length && byte(records,end) != 0) { end += 1; }
+    if (end == 0 || !zeros(records,end,records.length)) { return core::result::Err(Error::InvalidRecord); }
+    return core::result::Ok(window(records,0,end));
+}
+pub impl Entry {
+    pub fn path_len(&self) -> i32 { if (self.has_path) { return self.path.length; } return self.header.path_len(); }
+    pub fn copy_path(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        if (!self.has_path) {
+            let copied: core::result::Result<i32,ext::tar::Error> = self.header.copy_path(output);
+            if (core::result::is_err(copied)) { return core::result::Err(tar_error(core::result::unwrap_err(copied))); } return core::result::Ok(core::result::unwrap(copied));
+        }
+        if (!valid(output) || !valid(self.path)) { return core::result::Err(Error::Bounds); }
+        if (output.length < self.path.length) { return core::result::Err(Error::OutputTooSmall); }
+        copy(self.path,output,0); return core::result::Ok(self.path.length);
+    }
+}
+pub impl Reader {
+    pub fn position(&self) -> i32 { return self.cursor; }
+    pub fn is_finished(&self) -> bool { return self.ended; }
+    // Errors preserve the cursor and global state. None certifies the footer.
+    pub fn next(&self) -> core::result::Result<core::option::Option<Entry>,Error> {
+        if (!valid(self.input) || self.cursor < 0 || self.cursor > self.input.length || self.cursor % 512 != 0) { return core::result::Err(Error::Bounds); }
+        if (self.ended) { return core::result::Ok(core::option::None()); }
+        let global: Overrides = self.global; let local: Overrides = self.global; let globals: i32 = self.globals;
+        let pending: bool = false; let long_name: bool = false; let long_link: bool = false; let start: i32 = self.cursor; let cursor: i32 = self.cursor;
+        while (self.input.length-cursor >= 512) {
+            let header: core::slice::View<u8> = window(self.input,cursor,cursor+512);
+            let flag: u8 = byte(header,156);
+            if (!extension_flag(flag,self.options.gnu) || zeros(header,0,512)) { break; }
+            if ((flag == 120 && pending) || (flag == 103 && (pending || long_name || long_link)) || (flag == 76 && long_name) || (flag == 75 && long_link)) { return core::result::Err(Error::MisplacedExtension); }
+            let sized: core::result::Result<i32,Error> = extension_size(header,flag == 76 || flag == 75);
+            if (core::result::is_err(sized)) { return core::result::Err(core::result::unwrap_err(sized)); }
+            let size: i32 = core::result::unwrap(sized); let padding: i32 = (512-size%512)%512; let available: i32 = self.input.length-cursor-512;
+            if (size > available || padding > available-size) { return core::result::Err(Error::Tar(ext::tar::Error::UnexpectedEof)); }
+            let data_start: i32 = cursor+512;
+            if (!zeros(self.input,data_start+size,data_start+size+padding)) { return core::result::Err(Error::Tar(ext::tar::Error::InvalidPadding)); }
+            let records: core::slice::View<u8> = window(self.input,data_start,data_start+size);
+            if (flag == 103) {
+                if (globals >= 1) { return core::result::Err(Error::GlobalLimit); }
+                let applied: core::result::Result<i32,Error> = apply_records(records,global.borrow());
+                if (core::result::is_err(applied)) { return core::result::Err(core::result::unwrap_err(applied)); }
+                local = global; globals += 1;
+            } else {
+              if (flag == 76 || flag == 75) {
+                let named: core::result::Result<core::slice::View<u8>,Error> = long_value(records);
+                if (core::result::is_err(named)) { return core::result::Err(core::result::unwrap_err(named)); }
+                if (flag == 76) { local.path = core::result::unwrap(named); local.has_path = true; long_name = true; }
+                else { local.link_name = core::result::unwrap(named); local.has_link = true; long_link = true; }
+              } else {
+                let applied: core::result::Result<i32,Error> = apply_records(records,local.borrow());
+                if (core::result::is_err(applied)) { return core::result::Err(core::result::unwrap_err(applied)); }
+                pending = true;
+              }
+            }
+            cursor = data_start+size+padding;
+        }
+        let opened: core::result::Result<ext::tar::Reader,ext::tar::Error> = ext::tar::reader_with(self.input,cursor,ext::tar::ReadOptions { full_uname: local.has_uname, full_gname: local.has_gname, gnu: self.options.gnu, headers_only: self.options.headers_only });
+        if (core::result::is_err(opened)) { return core::result::Err(tar_error(core::result::unwrap_err(opened))); }
+        let inner: ext::tar::Reader = core::result::unwrap(opened);
+        let parsed: core::result::Result<core::option::Option<ext::tar::Entry>,ext::tar::Error> = inner.next();
+        if (core::result::is_err(parsed)) { return core::result::Err(tar_error(core::result::unwrap_err(parsed))); }
+        let item: core::option::Option<ext::tar::Entry> = core::result::unwrap(parsed);
+        if (core::option::is_none(item)) {
+            if (pending || long_name || long_link) { return core::result::Err(Error::MisplacedExtension); }
+            self.global = global; self.globals = globals; self.cursor = inner.position(); self.ended = true; return core::result::Ok(core::option::None());
+        }
+        let header: ext::tar::Entry = core::option::unwrap(item);
+        if (local.has_size && local.size != header.size) { return core::result::Err(Error::SizeMismatch); }
+        let link: core::slice::View<u8> = header.link_name; if (local.has_link) { link = local.link_name; }
+        let uname: core::slice::View<u8> = header.uname; if (local.has_uname) { uname = local.uname; }
+        let gname: core::slice::View<u8> = header.gname; if (local.has_gname) { gname = local.gname; }
+        let uid: u64 = header.uid; if (local.has_uid) { uid = local.uid; }
+        let gid: u64 = header.gid; if (local.has_gid) { gid = local.gid; }
+        let mtime: u64 = header.mtime; let nanos: u32 = 0; if (local.has_mtime) { mtime = local.mtime; nanos = local.mtime_nanos; }
+        let entry: Entry = Entry { header: header, path: local.path, has_path: local.has_path, link_name: link, uname: uname, gname: gname, uid: uid, gid: gid, mtime: mtime, mtime_nanos: nanos, offset: start };
+        self.global = global; self.globals = globals; self.cursor = inner.position(); return core::result::Ok(core::option::Some(entry));
+    }
+}
+
+fn digits(value: u64) -> i32 { let count: i32 = 1; let rest: u64 = value; while (rest >= 10) { rest = rest/10; count += 1; } return count; }
+fn record_len(key: i32, value: i32) -> i32 { let base: i32 = key+value+3; let width: i32 = digits(base as u64); if (digits((base+width) as u64) > width) { width += 1; } return base+width; }
+fn put_decimal(output: core::slice::View<u8>, at: i32, value: u64) -> i32 {
+    let count: i32 = digits(value); let index: i32 = count-1; let rest: u64 = value;
+    while (index >= 0) { put(output,at+index,48+(rest%10) as u8); rest = rest/10; index -= 1; } return at+count;
+}
+fn record_head(output: core::slice::View<u8>, at: i32, key: core::slice::View<u8>, value_len: i32) -> i32 {
+    let position: i32 = put_decimal(output,at,record_len(key.length,value_len) as u64); put(output,position,32);
+    copy(key,output,position+1); put(output,position+1+key.length,61); return position+2+key.length;
+}
+fn text_record(output: core::slice::View<u8>, at: i32, key: core::slice::View<u8>, value: core::slice::View<u8>) -> i32 {
+    let position: i32 = record_head(output,at,key,value.length); copy(value,output,position); put(output,position+value.length,10); return position+value.length+1;
+}
+fn number_record(output: core::slice::View<u8>, at: i32, key: core::slice::View<u8>, value: u64) -> i32 {
+    let position: i32 = put_decimal(output,record_head(output,at,key,digits(value)),value); put(output,position,10); return position+1;
+}
+fn octal(output: core::slice::View<u8>, start: i32, width: i32, value: u64) {
+    let rest: u64 = value; let index: i32 = start+width-2; put(output,start+width-1,0);
+    while (index >= start) { put(output,index,48+(rest & 7) as u8); rest = rest >> 3; index -= 1; }
+}
+fn fits_ustar(path: core::slice::View<u8>) -> bool {
+    if (path.length <= 100) { return true; } if (path.length > 256) { return false; }
+    let position: i32 = path.length-1;
+    while (position > 0) { if (byte(path,position) == 47 && position <= 155 && path.length-position-1 <= 100) { return true; } position -= 1; }
+    return false;
+}
+fn extension_header(header: core::slice::View<u8>, size: i32) {
+    header.fill(0); copy(literal("././@PaxHeader",14),header,0);
+    octal(header,100,8,420); octal(header,108,8,0); octal(header,116,8,0); octal(header,124,12,size as u64); octal(header,136,12,0);
+    put(header,156,120); put(header,257,117); put(header,258,115); put(header,259,116); put(header,260,97); put(header,261,114); put(header,263,48); put(header,264,48);
+    octal(header,148,7,checksum(header)); put(header,155,32);
+}
+fn shorten(view: core::slice::View<u8>, limit: i32) -> core::slice::View<u8> { if (view.length <= limit) { return view; } return window(view,0,limit); }
+
+pub fn writer(output: core::slice::View<u8>) -> core::result::Result<Writer,Error> {
+    if (!valid(output)) { return core::result::Err(Error::Bounds); } return core::result::Ok(Writer { output: output, cursor: 0, ended: false });
+}
+// Bytes add_header writes: any extension header plus the 512-byte member header.
+pub fn header_len(meta: ext::tar::Metadata) -> core::result::Result<i32,Error> {
+    let total: core::result::Result<i32,Error> = member_len(meta,0); if (core::result::is_err(total)) { return total; } return core::result::Ok(core::result::unwrap(total));
+}
+// Bytes needed for one member, including any extension header and padding.
+pub fn member_len(meta: ext::tar::Metadata, data_len: i32) -> core::result::Result<i32,Error> {
+    if (!valid(meta.path) || !valid(meta.link_name) || !valid(meta.uname) || !valid(meta.gname) || data_len < 0) { return core::result::Err(Error::Bounds); }
+    let records: i32 = records_len(meta);
+    let total: u64 = 512 + ((data_len as u64 + 511)/512)*512;
+    if (records > 0) { total += 512 + ((records as u64 + 511)/512)*512; }
+    if (total > 2147483647) { return core::result::Err(Error::Tar(ext::tar::Error::CapacityOverflow)); } return core::result::Ok(total as i32);
+}
+fn records_len(meta: ext::tar::Metadata) -> i32 {
+    let total: i32 = 0;
+    if (!fits_ustar(meta.path)) { total += record_len(4,meta.path.length); }
+    if (meta.link_name.length > 100) { total += record_len(8,meta.link_name.length); }
+    if (meta.uname.length > 31) { total += record_len(5,meta.uname.length); }
+    if (meta.gname.length > 31) { total += record_len(5,meta.gname.length); }
+    if (meta.uid > 2097151) { total += record_len(3,digits(meta.uid)); }
+    if (meta.gid > 2097151) { total += record_len(3,digits(meta.gid)); }
+    if (meta.mtime > 8589934591) { total += record_len(5,digits(meta.mtime)); }
+    return total;
+}
+pub impl Writer {
+    pub fn position(&self) -> i32 { return self.cursor; }
+    pub fn is_finished(&self) -> bool { return self.ended; }
+    // Plain ustar when every field fits; otherwise one x header precedes it.
+    // Failure keeps the cursor; bytes after it are then unspecified.
+    pub fn add(&self, meta: ext::tar::Metadata, data: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        if (!valid(data)) { return core::result::Err(Error::Bounds); } return self.member(meta,data,data.length,true);
+    }
+    // Extension header (when needed) and member header for `size` data bytes;
+    // the caller then supplies the data and zero padding to a 512-byte record.
+    pub fn add_header(&self, meta: ext::tar::Metadata, size: i32) -> core::result::Result<i32,Error> {
+        if (size < 0) { return core::result::Err(Error::Bounds); } let empty: core::slice::View<u8> = meta.path; empty.length = 0; return self.member(meta,empty,size,false);
+    }
+    fn member(&self, meta: ext::tar::Metadata, data: core::slice::View<u8>, size: i32, with_data: bool) -> core::result::Result<i32,Error> {
+        if (!valid(self.output) || self.cursor < 0 || self.cursor > self.output.length || self.cursor % 512 != 0 || !valid(meta.path) || !valid(meta.link_name) || !valid(meta.uname) || !valid(meta.gname) || !valid(data)) { return core::result::Err(Error::Bounds); }
+        if (self.ended) { return core::result::Err(Error::Finished); }
+        if (meta.path.length == 0 || has_nul(meta.path) || has_nul(meta.link_name) || has_nul(meta.uname) || has_nul(meta.gname)) { return core::result::Err(Error::Tar(ext::tar::Error::InvalidName)); }
+        if (meta.path.length > 1048576 || meta.link_name.length > 1048576 || meta.uname.length > 1048576 || meta.gname.length > 1048576) { return core::result::Err(Error::Tar(ext::tar::Error::PathTooLong)); }
+        let records: i32 = records_len(meta); let at: i32 = self.cursor;
+        if (records > 0) {
+            let extension: i32 = 512+records+(512-records%512)%512;
+            if (extension > self.output.length-self.cursor) { return core::result::Err(Error::Tar(ext::tar::Error::OutputTooSmall)); }
+            extension_header(window(self.output,at,at+512),records);
+            let position: i32 = at+512;
+            if (!fits_ustar(meta.path)) { position = text_record(self.output,position,literal("path",4),meta.path); }
+            if (meta.link_name.length > 100) { position = text_record(self.output,position,literal("linkpath",8),meta.link_name); }
+            if (meta.uname.length > 31) { position = text_record(self.output,position,literal("uname",5),meta.uname); }
+            if (meta.gname.length > 31) { position = text_record(self.output,position,literal("gname",5),meta.gname); }
+            if (meta.uid > 2097151) { position = number_record(self.output,position,literal("uid",3),meta.uid); }
+            if (meta.gid > 2097151) { position = number_record(self.output,position,literal("gid",3),meta.gid); }
+            if (meta.mtime > 8589934591) { position = number_record(self.output,position,literal("mtime",5),meta.mtime); }
+            while (position < at+extension) { put(self.output,position,0); position += 1; }
+            at = at+extension;
+        }
+        let reduced: ext::tar::Metadata = meta;
+        reduced.path = shorten(meta.path,100); if (fits_ustar(meta.path)) { reduced.path = meta.path; }
+        reduced.link_name = shorten(meta.link_name,100); reduced.uname = shorten(meta.uname,31); reduced.gname = shorten(meta.gname,31);
+        if (meta.uid > 2097151) { reduced.uid = 0; } if (meta.gid > 2097151) { reduced.gid = 0; } if (meta.mtime > 8589934591) { reduced.mtime = 0; }
+        let opened: core::result::Result<ext::tar::Writer,ext::tar::Error> = ext::tar::writer_at(self.output,at);
+        if (core::result::is_err(opened)) { return core::result::Err(tar_error(core::result::unwrap_err(opened))); }
+        let inner: ext::tar::Writer = core::result::unwrap(opened);
+        let added: core::result::Result<i32,ext::tar::Error> = inner.add_header(reduced,size);
+        if (with_data) { added = inner.add(reduced,data); }
+        if (core::result::is_err(added)) { return core::result::Err(tar_error(core::result::unwrap_err(added))); }
+        self.cursor = core::result::unwrap(added); return core::result::Ok(self.cursor);
+    }
+    pub fn finish(&self) -> core::result::Result<i32,Error> {
+        if (self.ended) { return core::result::Ok(self.cursor); }
+        let opened: core::result::Result<ext::tar::Writer,ext::tar::Error> = ext::tar::writer_at(self.output,self.cursor);
+        if (core::result::is_err(opened)) { return core::result::Err(tar_error(core::result::unwrap_err(opened))); }
+        let inner: ext::tar::Writer = core::result::unwrap(opened);
+        let done: core::result::Result<i32,ext::tar::Error> = inner.finish();
+        if (core::result::is_err(done)) { return core::result::Err(tar_error(core::result::unwrap_err(done))); }
+        self.cursor = core::result::unwrap(done); self.ended = true; return core::result::Ok(self.cursor);
+    }
+}

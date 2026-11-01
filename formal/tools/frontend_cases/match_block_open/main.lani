@@ -1,0 +1,16 @@
+module app::main;
+
+// A block arm whose end is reachable, last in a function with a result:
+// laniusc rejects it (LNC0006), and so does compileSource (not every path
+// returns).
+enum Two {
+    A,
+    B,
+}
+
+fn pick(d: Two) -> i32 {
+    match (d) {
+        A -> { return 1; },
+        B -> { let x: i32 = 2; },
+    };
+}

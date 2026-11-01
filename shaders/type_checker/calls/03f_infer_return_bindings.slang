@@ -411,9 +411,11 @@ BindingPlan plan_try(uint node, uint count)
 void publish_try(BindingPlan plan, uint4 ids)
 {
     uint token = plan.token;
-    bool complete = (plan.value.x != 3u || (ct_is_resolved(ids.x) && ct_closed(ids.x))) &&
-        (plan.error.x != 3u || (ct_is_resolved(ids.z) && ct_closed(ids.z))) &&
-        (plan.expected_error.x != 3u || (ct_is_resolved(ids.w) && ct_closed(ids.w)));
+    // Instance rows may contain type parameters: a generic body's `value?`
+    // on an Option<Option<T>> has the payload type Option<T>.
+    bool complete = (plan.value.x != 3u || ct_is_resolved(ids.x)) &&
+        (plan.error.x != 3u || ct_is_resolved(ids.z)) &&
+        (plan.expected_error.x != 3u || ct_is_resolved(ids.w));
     if (!complete) { clear_unavailable_inferred_declaration(token); return; }
     if (!same_type(plan.error, ids.z, plan.expected_error, ids.w))
     {

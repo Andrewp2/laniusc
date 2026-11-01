@@ -1,0 +1,7 @@
+type Meters = distinct i64;
+struct Leg { length: Meters }
+fn main() -> i32 {
+    let leg: Leg = Leg { length: 3 };
+    let raw: i64 = leg.length;
+    return 0;
+}

@@ -20,20 +20,28 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-abbrev Stmt_lower_slice (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcDecls} {x1 : Lanius.Mini.SrcType} {x2 : Option Lanius.Mini.Expr} {x3 : Option Lanius.Mini.Expr} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepSrcDecls x0 v0 → RepSrcType x1 v1 → (RepOption 161 RepExpr) x2 v2 → (RepOption 161 RepExpr) x3 v3 →
-    (RepOption 158 (RepList 107 RepExpr)) (Lanius.Mini.lowerSlice x0 x1 x2 x3) w
-
 abbrev Stmt_store_cases (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Expr} {x1 : List Lanius.Mini.Expr} {x2 : Nat} {x3 : Lanius.Mini.Expr} {x4 : Nat} {x5 : Nat} {x6 : List (List Lanius.Mini.SrcType)} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepExpr x0 v0 → (RepList 107 RepExpr) x1 v1 → RepNat x2 v2 → RepExpr x3 v3 → RepNat x4 v4 → RepNat x5 v5 → (RepList 93 (RepList 89 RepSrcType)) x6 v6 →
-    (RepOption 140 RepStmt) (Lanius.Mini.storeCases x0 x1 x2 x3 x4 x5 x6) w
+  ∀ {x0 : Lanius.Mini.Expr} {x1 : List Lanius.Mini.Expr} {x2 : Nat} {x3 : Lanius.Mini.Expr} {x4 : Nat} {x5 : Nat} {x6 : List (List Lanius.Mini.SrcType)} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepExpr x0 v0 → (RepList 92 RepExpr) x1 v1 → RepNat x2 v2 → RepExpr x3 v3 → RepNat x4 v4 → RepNat x5 v5 → (RepList 77 (RepList 73 RepSrcType)) x6 v6 →
+    (RepOption 134 RepStmt) (Lanius.Mini.storeCases x0 x1 x2 x3 x4 x5 x6) w
 
 abbrev Stmt_store_type (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcType} {x1 : List Lanius.Mini.Expr} {x2 : Nat} {x3 : Lanius.Mini.Expr} {x4 : Nat} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepSrcType x0 v0 → (RepList 107 RepExpr) x1 v1 → RepNat x2 v2 → RepExpr x3 v3 → RepNat x4 v4 →
-    (RepOption 140 RepStmt) (Lanius.Mini.storeType x0 x1 x2 x3 x4) w
+  ∀ {x0 : Lanius.Mini.SrcType} {x1 : List Lanius.Mini.Expr} {x2 : Nat} {x3 : Lanius.Mini.Expr} {x4 : Nat} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepSrcType x0 v0 → (RepList 92 RepExpr) x1 v1 → RepNat x2 v2 → RepExpr x3 v3 → RepNat x4 v4 →
+    (RepOption 134 RepStmt) (Lanius.Mini.storeType x0 x1 x2 x3 x4) w
 
 abbrev Stmt_store_types (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.SrcType} {x1 : List Lanius.Mini.Expr} {x2 : Nat} {x3 : Lanius.Mini.Expr} {x4 : Nat} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepList 89 RepSrcType) x0 v0 → (RepList 107 RepExpr) x1 v1 → RepNat x2 v2 → RepExpr x3 v3 → RepNat x4 v4 →
-    (RepOption 140 RepStmt) (Lanius.Mini.storeTypes x0 x1 x2 x3 x4) w
+  ∀ {x0 : List Lanius.Mini.SrcType} {x1 : List Lanius.Mini.Expr} {x2 : Nat} {x3 : Lanius.Mini.Expr} {x4 : Nat} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepList 73 RepSrcType) x0 v0 → (RepList 92 RepExpr) x1 v1 → RepNat x2 v2 → RepExpr x3 v3 → RepNat x4 v4 →
+    (RepOption 134 RepStmt) (Lanius.Mini.storeTypes x0 x1 x2 x3 x4) w
+
+abbrev Stmt_within_layout (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.SrcType} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → RepSrcType x1 v1 →
+    RepBool (Lanius.Mini.withinLayout x0 x1) w
+
+abbrev Stmt_within_layouts (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : List Lanius.Mini.SrcType} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepList 73 RepSrcType) x1 v1 →
+    RepBool (Lanius.Mini.withinLayouts x0 x1) w
+
+abbrev Stmt_within_payloads (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : List (List Lanius.Mini.SrcType)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepList 77 (RepList 73 RepSrcType)) x1 v1 →
+    RepBool (Lanius.Mini.withinPayloads x0 x1) w
 
 end Lanius.Faithful.SelfCert

@@ -22,30 +22,22 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_compile_source (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcProgram} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcProgram x0 v0 →
-    (RepOption 0 RepBinary) (Lanius.Mini.compileSource x0) w
+    (RepOption 49 RepBinary) (Lanius.Mini.compileSource x0) w
 
-abbrev Stmt_ite_code (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Nat} {x2 : List Lanius.Mini.Instr} {x3 : Lanius.Mini.Stmt} {x4 : Lanius.Mini.Stmt} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepNat x1 v1 → (RepList 4 RepInstr) x2 v2 → RepStmt x3 v3 → RepStmt x4 v4 →
-    (RepList 4 RepInstr) (Lanius.Mini.Inline.iteCode x0 x1 x2 x3 x4) w
+abbrev Stmt_pack_word (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : UInt8} {x1 : UInt8} {x2 : UInt8} {x3 : UInt8} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepU8 x0 v0 → RepU8 x1 v1 → RepU8 x2 v2 → RepU8 x3 v3 →
+    RepI32 (Lanius.Mini.packWord x0 x1 x2 x3) w
 
-abbrev Stmt_link (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Code} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 2 RepCode) x0 v0 →
-    (RepOption 0 RepBinary) (Lanius.Mini.Inline.link x0) w
+abbrev Stmt_round_cons (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : BitVec 32} {x1 : Nat} {x2 : Lanius.Mini.Round} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepI32 x0 v0 → RepNat x1 v1 → RepRound x2 v2 →
+    RepRound (Lanius.Mini.roundCons x0 x1 x2) w
 
-abbrev Stmt_lookup_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Binding} {x1 : List Lanius.Mini.Binding} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepBinding x0 v0 → (RepList 141 RepBinding) x1 v1 → RepNat x2 v2 →
-    (RepOption 160 RepBinding) (Lanius.Mini.Inline.lookupAt x0 x1 x2) w
+abbrev Stmt_round_end (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    RepRound (Lanius.Mini.roundEnd) w
 
-abbrev Stmt_loop_code (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Nat} {x2 : List Lanius.Mini.Instr} {x3 : Lanius.Mini.Stmt} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepNat x1 v1 → (RepList 4 RepInstr) x2 v2 → RepStmt x3 v3 →
-    (RepList 4 RepInstr) (Lanius.Mini.Inline.loopCode x0 x1 x2 x3) w
-
-abbrev Stmt_offset_after (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcType} {x1 : List Lanius.Mini.SrcType} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSrcType x0 v0 → (RepList 89 RepSrcType) x1 v1 → RepNat x2 v2 →
-    RepNat (Lanius.Mini.Inline.offsetAfter x0 x1 x2) w
-
-abbrev Stmt_seq_code (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Nat} {x2 : List Lanius.Mini.Instr} {x3 : Lanius.Mini.Stmt} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepNat x1 v1 → (RepList 4 RepInstr) x2 v2 → RepStmt x3 v3 →
-    (RepList 4 RepInstr) (Lanius.Mini.Inline.seqCode x0 x1 x2 x3) w
+abbrev Stmt_usize_words (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 25 RepNat) x0 v0 →
+    (RepList 0 RepI32) (Lanius.Mini.usizeWords x0) w
 
 end Lanius.Faithful.SelfCert

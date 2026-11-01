@@ -1,0 +1,170 @@
+// API contracts for ext::seqdiff and ext::unidiff. Exit 0 or the failing check.
+module app::main;
+import alloc::vec;
+import core::cmp;
+import core::hash;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::seqdiff;
+import ext::unidiff;
+
+// A caller type: equality and hashing look only at `id`.
+struct Token { id: i32, weight: i32 }
+pub impl core::cmp::Eq<Token> for Token {
+    pub fn eq(left: Token, right: Token) -> bool { return left.id == right.id; }
+    pub fn ne(left: Token, right: Token) -> bool { return left.id != right.id; }
+}
+pub impl core::hash::Hash<Token> for Token { pub fn hash(value: Token) -> u32 { return value.id as u32; } }
+
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), count);
+    return core::result::unwrap(core::slice::view(bytes, count));
+}
+fn same(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.len() != right.len()) { return false; }
+    let i: i32 = 0; while (i < left.len()) { if (left.values[left.start+i] != right.values[right.start+i]) { return false; } i += 1; } return true;
+}
+fn ints(values: [i32], count: i32) -> core::slice::View<i32> { return core::result::unwrap(core::slice::view(values, count)); }
+fn kinds(script: &ext::seqdiff::Script) -> i32 {
+    // Encode step kinds base 3, most significant first.
+    let code: i32 = 0; let i: i32 = 0; while (i < script.len()) { code = code * 3 + core::result::unwrap(script.step(i)).kind; i += 1; } return code;
+}
+fn status_code(r: ext::unidiff::HunkReport) -> i32 {
+    return match (r.status) { ext::unidiff::HunkStatus::Exact -> 0, ext::unidiff::HunkStatus::Offset -> 1, ext::unidiff::HunkStatus::Fuzzed -> 2, ext::unidiff::HunkStatus::Rejected -> 3 };
+}
+fn reason_code(r: ext::unidiff::HunkReport) -> i32 {
+    return match (r.reason) { ext::unidiff::RejectReason::NotRejected -> 0, ext::unidiff::RejectReason::NoMatch -> 1, ext::unidiff::RejectReason::Overlap -> 2 };
+}
+fn parse_kind(text: core::slice::View<u8>) -> i32 {
+    let parsed: core::result::Result<ext::unidiff::Patch, ext::unidiff::ParseError> = ext::unidiff::parse(text, 1000);
+    if (core::result::is_ok(parsed)) { let p: ext::unidiff::Patch = core::result::unwrap(parsed); p.destroy(); return 0; }
+    let e: ext::unidiff::ParseError = core::result::unwrap_err(parsed);
+    return match (e.kind) { ext::unidiff::ParseKind::MissingHeader -> 1, ext::unidiff::ParseKind::BadHunkHeader -> 2, ext::unidiff::ParseKind::BadLine -> 3, ext::unidiff::ParseKind::BadMarker -> 4, ext::unidiff::ParseKind::Truncated -> 5, ext::unidiff::ParseKind::LineLimit -> 6, ext::unidiff::ParseKind::AllocationFailed -> 7 };
+}
+
+fn generic_checks() -> i32 {
+    let limits: ext::seqdiff::Limits = ext::seqdiff::default_limits();
+    let a: [i32;5] = [1,2,3,4,5]; let b: [i32;5] = [1,3,4,6,5];
+    let s: ext::seqdiff::Script = core::result::unwrap(ext::seqdiff::myers(ints(a,5), ints(b,5), limits));
+    // equal, delete 2, equal, equal, insert 6, equal
+    if (s.distance() != 2 || s.len() != 6 || kinds(s.borrow()) != 0*243+1*81+0*27+0*9+2*3+0) { return 10; }
+    if (core::result::is_ok(s.step(6)) || core::result::is_ok(s.step(-1))) { return 11; }
+    s.destroy();
+    // Empty sides.
+    let e: ext::seqdiff::Script = core::result::unwrap(ext::seqdiff::myers(ints(a,0), ints(b,3), limits));
+    if (e.distance() != 3 || kinds(e.borrow()) != 26) { return 12; } e.destroy();
+    // Caller-defined Eq/Hash type through both algorithms; weights are ignored.
+    let ta: [Token;4] = [Token{id:7,weight:0}, Token{id:8,weight:1}, Token{id:9,weight:2}, Token{id:7,weight:3}];
+    let tb: [Token;4] = [Token{id:7,weight:9}, Token{id:9,weight:9}, Token{id:7,weight:9}, Token{id:5,weight:9}];
+    let va: core::slice::View<Token> = core::result::unwrap(core::slice::view(ta,4)); let vb: core::slice::View<Token> = core::result::unwrap(core::slice::view(tb,4));
+    let m: ext::seqdiff::Script = core::result::unwrap(ext::seqdiff::myers(va, vb, limits));
+    if (m.distance() != 2) { return 13; } m.destroy();
+    let p: ext::seqdiff::Script = core::result::unwrap(ext::seqdiff::diff(va, vb, ext::seqdiff::Algorithm::Patience, limits));
+    if (p.distance() < 2 || p.before_len() != 4 || p.after_len() != 4) { return 14; } p.destroy();
+    let c: ext::seqdiff::Classes = core::result::unwrap(ext::seqdiff::classify(va, vb, limits));
+    if (c.count != 4 || c.before.at(0) != c.before.at(3) || c.after.at(1) != c.before.at(2)) { return 15; } c.destroy();
+    // Patience anchors on unique lines: classic "moved block" shape.
+    let pa: [i32;7] = [1,9,9,2,9,9,3]; let pb: [i32;7] = [1,9,9,3,9,9,2];
+    let q: ext::seqdiff::Script = core::result::unwrap(ext::seqdiff::patience_classes(ints(pa,7), ints(pb,7), 10, limits));
+    let r: ext::seqdiff::Script = core::result::unwrap(ext::seqdiff::myers(ints(pa,7), ints(pb,7), limits));
+    if (q.distance() < r.distance() || r.distance() != 4) { return 16; } q.destroy(); r.destroy();
+    if (core::result::is_ok(ext::seqdiff::patience_classes(ints(pa,7), ints(pb,7), 5, limits))) { return 17; }
+    // Typed limit errors.
+    let small: ext::seqdiff::Limits = ext::seqdiff::Limits { max_items: 4, max_work: 1000000 };
+    let over: core::result::Result<ext::seqdiff::Script, ext::seqdiff::Error> = ext::seqdiff::myers(ints(a,5), ints(b,5), small);
+    let item: bool = match (core::result::unwrap_err(over)) { ext::seqdiff::Error::ItemLimit -> true, _ -> false };
+    if (!item) { return 18; }
+    let none: ext::seqdiff::Limits = ext::seqdiff::Limits { max_items: 100, max_work: 3 };
+    let starved: core::result::Result<ext::seqdiff::Script, ext::seqdiff::Error> = ext::seqdiff::myers(ints(pa,7), ints(pb,7), none);
+    let work: bool = match (core::result::unwrap_err(starved)) { ext::seqdiff::Error::WorkLimit -> true, _ -> false };
+    if (!work) { return 19; }
+    return 0;
+}
+
+fn hunk_and_text_checks() -> i32 {
+    let limits: ext::seqdiff::Limits = ext::seqdiff::default_limits();
+    let before: core::slice::View<u8> = literal("a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n", 20);
+    let after: core::slice::View<u8> = literal("a\nB\nc\nd\ne\nf\ng\nh\nI\nj", 19);
+    let la: alloc::vec::Vec<ext::seqdiff::Line> = core::result::unwrap(ext::seqdiff::split_lines(before, limits));
+    let lb: alloc::vec::Vec<ext::seqdiff::Line> = core::result::unwrap(ext::seqdiff::split_lines(after, limits));
+    if (la.len() != 10 || lb.len() != 10) { return 20; }
+    let s: ext::seqdiff::Script = core::result::unwrap(ext::seqdiff::diff_lines(la.as_view(), lb.as_view(), ext::seqdiff::Algorithm::Myers, limits));
+    if (s.distance() != 6) { return 21; }
+    let h1: alloc::vec::Vec<ext::seqdiff::Hunk> = core::result::unwrap(ext::seqdiff::hunks(s.borrow(), 1));
+    let h3: alloc::vec::Vec<ext::seqdiff::Hunk> = core::result::unwrap(ext::seqdiff::hunks(s.borrow(), 3));
+    if (h1.len() != 2 || h3.len() != 1) { return 22; }
+    let first: ext::seqdiff::Hunk = h1.at(0);
+    if (first.before != 0 || first.before_count != 3 || first.after != 0 || first.after_count != 3) { return 23; }
+    let text: alloc::vec::Vec<u8> = core::result::unwrap(ext::unidiff::write_unified(la.as_view(), lb.as_view(), s.borrow(), h1.as_view(), literal("old", 3), literal("new", 3), 100000));
+    let expect: core::slice::View<u8> = literal("--- old\n+++ new\n@@ -1,3 +1,3 @@\n a\n-b\n+B\n c\n@@ -8,3 +8,3 @@\n h\n-i\n-j\n+I\n+j\n\\ No newline at end of file\n", 103);
+    if (!same(text.as_view(), expect)) { return 24; }
+    let tiny: core::result::Result<alloc::vec::Vec<u8>, ext::unidiff::WriteError> = ext::unidiff::write_unified(la.as_view(), lb.as_view(), s.borrow(), h1.as_view(), literal("old", 3), literal("new", 3), 10);
+    let limited: bool = match (core::result::unwrap_err(tiny)) { ext::unidiff::WriteError::OutputLimit -> true, _ -> false };
+    if (!limited) { return 25; }
+    // Parse our own output and apply it exactly.
+    let patch: ext::unidiff::Patch = core::result::unwrap(ext::unidiff::parse(text.as_view(), 1000));
+    if (patch.hunk_count() != 2 || !same(patch.old_name, literal("old", 3))) { return 26; }
+    let done: ext::unidiff::Applied = core::result::unwrap(ext::unidiff::apply(before, patch.borrow(), ext::unidiff::default_options()));
+    if (done.rejected != 0 || !same(done.output.as_view(), after) || status_code(done.reports.at(1)) != 0) { return 27; }
+    done.destroy();
+    // Offset: two extra lines at the top move both hunks by +2.
+    let shifted: core::slice::View<u8> = literal("x\ny\na\nb\nc\nd\ne\nf\ng\nh\ni\nj\n", 24);
+    let moved: ext::unidiff::Applied = core::result::unwrap(ext::unidiff::apply(shifted, patch.borrow(), ext::unidiff::default_options()));
+    let r0: ext::unidiff::HunkReport = moved.reports.at(0);
+    if (moved.rejected != 0 || status_code(r0) != 1 || r0.offset != 2 || r0.line != 3 || !same(moved.output.as_view(), literal("x\ny\na\nB\nc\nd\ne\nf\ng\nh\nI\nj", 23))) { return 28; }
+    moved.destroy();
+    // Fuzz: the first hunk's leading context changed; strict options reject it.
+    let edited: core::slice::View<u8> = literal("A\nb\nc\nd\ne\nf\ng\nh\ni\nj\n", 20);
+    let fuzzy: ext::unidiff::Applied = core::result::unwrap(ext::unidiff::apply(edited, patch.borrow(), ext::unidiff::default_options()));
+    if (fuzzy.rejected != 0 || status_code(fuzzy.reports.at(0)) != 2 || fuzzy.reports.at(0).fuzz != 1 || !same(fuzzy.output.as_view(), literal("A\nB\nc\nd\ne\nf\ng\nh\nI\nj", 19))) { return 29; }
+    fuzzy.destroy();
+    let strict: ext::unidiff::ApplyOptions = ext::unidiff::default_options(); strict.max_fuzz = 0;
+    let rejected: ext::unidiff::Applied = core::result::unwrap(ext::unidiff::apply(edited, patch.borrow(), strict));
+    if (rejected.rejected != 1 || status_code(rejected.reports.at(0)) != 3 || reason_code(rejected.reports.at(0)) != 1 || status_code(rejected.reports.at(1)) != 0) { return 30; }
+    // Rejected hunk leaves its region unchanged; the other hunk applies.
+    if (!same(rejected.output.as_view(), literal("A\nb\nc\nd\ne\nf\ng\nh\nI\nj", 19))) { return 31; }
+    rejected.destroy();
+    let bad: ext::unidiff::ApplyOptions = ext::unidiff::default_options(); bad.max_fuzz = -1;
+    let invalid: bool = match (core::result::unwrap_err(ext::unidiff::apply(edited, patch.borrow(), bad))) { ext::unidiff::ApplyError::InvalidOptions -> true, _ -> false };
+    if (!invalid) { return 32; }
+    patch.destroy(); text.destroy(); h1.destroy(); h3.destroy(); s.destroy(); la.destroy(); lb.destroy();
+    return 0;
+}
+
+fn overlap_check() -> i32 {
+    // Two hunks whose old sides are identical: the second can only match
+    // before the first one's end once the base lost a copy.
+    let text: core::slice::View<u8> = literal("--- a\n+++ b\n@@ -1,2 +1,2 @@\n p\n-q\n+Q\n@@ -5,2 +5,2 @@\n p\n-q\n+Q\n", 62);
+    let patch: ext::unidiff::Patch = core::result::unwrap(ext::unidiff::parse(text, 1000));
+    let done: ext::unidiff::Applied = core::result::unwrap(ext::unidiff::apply(literal("p\nq\nz\n", 6), patch.borrow(), ext::unidiff::default_options()));
+    if (done.rejected != 1 || reason_code(done.reports.at(1)) != 2 || !same(done.output.as_view(), literal("p\nQ\nz\n", 6))) { return 40; }
+    done.destroy(); patch.destroy(); return 0;
+}
+
+fn parse_checks() -> i32 {
+    if (parse_kind(literal("", 0)) != 0) { return 50; }
+    if (parse_kind(literal("hello\n", 6)) != 1) { return 51; }
+    if (parse_kind(literal("--- a\n+++ b\n@@ -x +1 @@\n", 24)) != 2) { return 52; }
+    if (parse_kind(literal("--- a\n+++ b\n@@ -1 +1 @@\n?a\n", 27)) != 3) { return 53; }
+    if (parse_kind(literal("--- a\n+++ b\n@@ -1,2 +1,2 @@\n a\n", 31)) != 5) { return 54; }
+    if (parse_kind(literal("--- a\n+++ b\n@@ -0,1 +1 @@\n-a\n+b\n", 32)) != 2) { return 55; }
+    if (parse_kind(literal("--- a\n+++ b\n@@ -1 +1 @@\n-a\n+b\n", 30)) != 0) { return 56; }
+    if (parse_kind(literal("--- a\n+++ b\n@@ -1,2000 +1 @@\n", 29)) != 6) { return 57; }
+    // Preamble, section text after @@, empty context line and trailing junk.
+    let gnu: core::slice::View<u8> = literal("diff -u a b\n--- a\t2026-10-31\n+++ b\t2026-10-31\n@@ -1,3 +1,3 @@ fn main\n x\n\n-y\n+Y\ntrailer\n", 88);
+    let p: ext::unidiff::Patch = core::result::unwrap(ext::unidiff::parse(gnu, 1000));
+    if (p.hunk_count() != 1 || !same(p.old_name, literal("a", 1)) || p.end != 80) { return 58; }
+    let out: ext::unidiff::Applied = core::result::unwrap(ext::unidiff::apply(literal("x\n\ny\n", 5), p.borrow(), ext::unidiff::default_options()));
+    if (!same(out.output.as_view(), literal("x\n\nY\n", 5))) { return 59; }
+    out.destroy(); p.destroy();
+    return 0;
+}
+
+fn main() -> i32 {
+    let status: i32 = generic_checks(); if (status != 0) { return status; }
+    status = hunk_and_text_checks(); if (status != 0) { return status; }
+    status = overlap_check(); if (status != 0) { return status; }
+    return parse_checks();
+}

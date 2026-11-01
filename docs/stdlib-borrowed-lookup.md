@@ -35,7 +35,8 @@ The collection must still satisfy its original stored-key identity and order
 invariants. Every stated bound applies even to an empty collection.
 Existing same-key operations retain their bounds and signatures; insertion
 still takes an actual K. Heterogeneous ordered bounds and ranges are separate
-work because they need interval and query-order contracts.
+work because they need interval and query-order contracts; the later
+[ordered navigation](stdlib-ordered-navigation.md) increment supplies them.
 
 ## Query laws and exact calls
 

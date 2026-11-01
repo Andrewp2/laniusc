@@ -49,6 +49,40 @@ inductive MemWidth where
   | m64 : MemWidth
   deriving DecidableEq, Repr
 
+/-- An IEEE binary floating-point format: binary32 or binary64. A word holds a float's bit pattern, an F32 one zero-extended. -/
+inductive FloatTy where
+  | f32 : FloatTy
+  | f64 : FloatTy
+  deriving DecidableEq, Repr
+
+/-- IEEE arithmetic, rounded to nearest, ties to even. -/
+inductive FArith where
+  | fAdd : FArith
+  | fSub : FArith
+  | fMul : FArith
+  | fDiv : FArith
+  deriving DecidableEq, Repr
+
+/-- IEEE comparisons: false when either operand is a NaN. -/
+inductive FCmp where
+  | fEq : FCmp
+  | fLt : FCmp
+  | fLe : FCmp
+  deriving DecidableEq, Repr
+
+/-- A float operation of the left and the right operand, by Lanius.IEEE. The conversions read only the right operand. -/
+inductive FOp where
+  | basic : FloatTy → FArith → FOp
+  /-- 1 when the comparison holds, else 0 -/
+  | fCompare : FloatTy → FCmp → FOp
+  /-- the right operand, a signed integer (its low 32 bits for S32, all 64 for U64), to the nearest float -/
+  | fromInt : FloatTy → Word → FOp
+  /-- the right operand, an F32, as an F64 (exact) -/
+  | widen : FOp
+  /-- the right operand, an F64, to the nearest F32 -/
+  | narrow : FOp
+  deriving DecidableEq, Repr
+
 inductive Expr where
   | lit : (BitVec 64) → Expr
   | var : Nat → Expr
@@ -56,6 +90,17 @@ inductive Expr where
   | neg : Expr → Expr
   | binary : Word → BinOp → Expr → Expr → Expr
   | compare : Word → CmpOp → Expr → Expr → Expr
+  /-- a float operation (SSE on x86) -/
+  | fp : FOp → Expr → Expr → Expr
+  deriving DecidableEq, Repr
+
+/-- A Linux system call (roadmap F8). Write: write(fd, the heap address, count), arguments in that order; Read: read(fd, the heap address, count); Poll: poll(fds, nfds, timeout), the second argument not made an address; Clock: clock_gettime(clock, the heap address, unused); Random: getrandom(the heap address, count, flags), the first argument made an address. -/
+inductive Syscall where
+  | write : Syscall
+  | read : Syscall
+  | poll : Syscall
+  | clock : Syscall
+  | random : Syscall
   deriving DecidableEq, Repr
 
 inductive Stmt where
@@ -68,6 +113,10 @@ inductive Stmt where
   /-- target, ..., target + count - 1 = callee(args) -/
   | call : Nat → Nat → Nat → (List Expr) → Stmt
   | ret : (List Expr) → Stmt
+  /-- leave the innermost loop -/
+  | brk : Stmt
+  /-- go back to the innermost loop's condition -/
+  | cont : Stmt
   /-- target = the cursor rounded up to a multiple of 2^shift; the cursor moves past size bytes from there -/
   | alloc : Nat → Nat → Expr → Stmt
   /-- target = the byte at address -/
@@ -80,6 +129,10 @@ inductive Stmt where
   | storeWord : MemWidth → Expr → Expr → Stmt
   /-- target = left op right; a zero divisor, or a signed division of the least value by -1, has no run -/
   | divide : Word → DivOp → Nat → Expr → Expr → Stmt
+  /-- target = what the kernel returns for call(args) -/
+  | sys : Syscall → Nat → (List Expr) → Stmt
+  /-- target = the frame pointer less bytes, which becomes the frame pointer: this activation's frame memory (not produced yet) -/
+  | frame : Nat → Nat → Stmt
   deriving DecidableEq, Repr
 
 structure Func where
@@ -129,6 +182,12 @@ inductive Instr where
   | storeWordAt : MemWidth → Nat → Instr
   /-- rax := slot op rax -/
   | div : Word → DivOp → Nat → Instr
+  /-- rax := slot op rax, a float operation through xmm0 and xmm1 -/
+  | fp : FOp → Nat → Instr
+  /-- rax := call(slot, slot + 1, slot + 2), through rdi, rsi and rdx -/
+  | sys : Syscall → Nat → Instr
+  /-- Frame memory: the frame pointer (rbx) drops by bytes, to no lower than the limit (r14), and rax gets its new value -/
+  | frame : Nat → Instr
   deriving DecidableEq, Repr
 
 /-- A function's parameter and result counts. -/
@@ -204,6 +263,7 @@ inductive UintTy where
   | uint32 : UintTy
   | uint64 : UintTy
   | usize : UintTy
+  | uint16 : UintTy
   deriving DecidableEq, Repr
 
 inductive SrcType where
@@ -216,10 +276,18 @@ inductive SrcType where
   | ptr : SrcType
   /-- Core's raw slice of this element type: one slot, its address -/
   | slice : SrcType → SrcType
+  /-- Core's array [element; length]: its elements one after another, laid out as a struct of length fields of the element type -/
+  | array : SrcType → Nat → SrcType
   /-- the unit type: one slot whose bits do not matter -/
   | unit : SrcType
   /-- a signed 64-bit integer, its two's complement bits in one slot -/
   | isize : SrcType
+  /-- a char, its 32-bit code in one slot -/
+  | char : SrcType
+  /-- an f32 or f64, its IEEE bit pattern in one slot (an f32's zero-extended) -/
+  | float : FloatTy → SrcType
+  /-- the signed integer type as wide as kind (i8, i16, i32, i64, isize). A narrow one sits in its slot as an i32 does, its value's 32-bit two's complement zero-extended; a 64-bit one as an isize does. -/
+  | sint : UintTy → SrcType
   deriving Repr
 
 inductive SrcOp where
@@ -256,6 +324,10 @@ inductive SrcExpr where
   | cast : SrcType → SrcExpr → SrcExpr
   /-- the null pointer, Core's pointer 0 -/
   | null : SrcExpr
+  /-- a char literal: its code, a Unicode scalar value -/
+  | char : (BitVec 32) → SrcExpr
+  /-- a float literal: its IEEE bit pattern -/
+  | float : FloatTy → (BitVec 64) → SrcExpr
   deriving Repr
 
 /-- A match arm: the binders of its variant's payload, and its value. -/
@@ -279,9 +351,9 @@ inductive SrcEff where
   | eNeg : SrcEff → SrcEff
   | eNot : SrcEff → SrcEff
   | eCast : SrcType → SrcEff → SrcEff
-  /-- slice[index] of a slice local -/
+  /-- slice[index] of a slice local, or array[index] of an array local -/
   | eIndex : Nat → SrcEff → SrcEff
-  /-- a struct of type ty -/
+  /-- a struct of type ty, or an array of type ty (its elements) -/
   | eStruct : SrcType → (List SrcEff) → SrcEff
   /-- variant(payload) of the enum type ty -/
   | eVariant : SrcType → Nat → (List SrcEff) → SrcEff
@@ -344,6 +416,13 @@ inductive SrcStmt where
   | returnUnit : SrcStmt
   /-- assert(condition): Core traps when it is false -/
   | assert : SrcEff → SrcStmt
+  /-- break; and continue; of the innermost loop -/
+  | break : SrcStmt
+  | continue : SrcStmt
+  /-- MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest): when the enum local scrutinee (Core id enum_id) is the variant, run body, else run rest. A variant with no payload binds nothing (binds is false); one with one field, of type ty, binds a copy of it to binder. -/
+  | matchArm : Nat → Nat → Nat → Bool → Nat → SrcType → SrcStmt → SrcStmt → SrcStmt
+  /-- Unreachable(id, ty): Core binds id, uninitialized, at type ty and returns it, so it traps; ty is the function's result type. -/
+  | unreachable : Nat → SrcType → SrcStmt
   deriving Repr
 
 structure SrcParam where
@@ -412,6 +491,13 @@ structure SrcDecls where
 structure Fact where
   slot : Nat
   value : Expr
+  deriving DecidableEq, Repr
+
+/-- Packed words, the number of bytes they hold, and the bytes after them. -/
+structure Round where
+  words : List (BitVec 32)
+  count : Nat
+  rest : List UInt8
   deriving DecidableEq, Repr
 
 end Lanius.Mini

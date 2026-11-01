@@ -1,3 +1,4 @@
+import Lanius.IEEE
 import Lanius.LiteralSyntax
 import Lanius.Static
 import Lanius.Typing
@@ -71,11 +72,11 @@ inductive LiteralElaborates (target : Core.Target) :
   | f32
       (parsed : parseFloatLiteral text = some value) :
       LiteralElaborates target (.float text) (.scalar .f32)
-        (.value (.f32Bits value.toFloat32.toBits))
+        (.value (.f32Bits (IEEE.F32.ofDecimal value.1 value.2)))
   | f64
       (parsed : parseFloatLiteral text = some value) :
       LiteralElaborates target (.float text) (.scalar .f64)
-        (.value (.f64Bits value.toBits))
+        (.value (.f64Bits (IEEE.F64.ofDecimal value.1 value.2)))
 
 /-- Literal parsing and contextual typing determine one emitted core literal.
     Proof evidence for range checks cannot change the resulting expression. -/

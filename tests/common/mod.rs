@@ -239,6 +239,22 @@ pub fn compile_source_pack_to_wasm_with_timeout(sources: &[&str]) -> Result<Vec<
     )
 }
 
+/// Compiles `src` as an entry module against the repository standard library.
+pub fn compile_source_with_stdlib_to_wasm_with_timeout(
+    label: &str,
+    src: &str,
+) -> Result<Vec<u8>, CompileError> {
+    let entry = TempArtifact::new("laniusc_wasm_stdlib_entry", label, Some("lani"));
+    entry.write_bytes(src);
+    let stdlib = Path::new(env!("CARGO_MANIFEST_DIR")).join("stdlib");
+    run_with_timeout_for("GPU stdlib WASM compile", gpu_codegen_test_timeout(), move || {
+        pollster::block_on(laniusc_compiler::compiler::compile_entry_to_wasm_with_stdlib(
+            entry.path(),
+            &stdlib,
+        ))
+    })
+}
+
 pub fn compile_path_to_wasm_with_timeout(path: &Path) -> Result<Vec<u8>, CompileError> {
     let path = path.to_path_buf();
     run_with_timeout_for(

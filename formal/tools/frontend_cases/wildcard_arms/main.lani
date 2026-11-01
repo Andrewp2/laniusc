@@ -1,0 +1,70 @@
+module app::main;
+
+// A last wildcard arm `_ -> ...` is the arm of every variant no other arm
+// names: in a match expression, a match statement and a let's match, for
+// variants with and without payloads (it binds each payload field).
+enum Shape {
+    Dot,
+    Line(i32),
+    Rect(i32),
+    Ring(bool),
+}
+
+enum Pair {
+    Both(i32, i32),
+    Half(i32),
+    Empty,
+}
+
+enum Tone {
+    Low,
+    Mid,
+    High(i32),
+}
+
+fn size(s: Shape) -> i32 {
+    return match (s) { Line(n) -> n, Rect(n) -> n + 1, Ring(b) -> 2, _ -> 0 };
+}
+
+fn line(s: Shape) -> i32 {
+    return match (s) { Line(n) -> n, _ -> 7 };
+}
+
+fn half(p: Pair) -> i32 {
+    return match (p) { Half(n) -> n, _ -> 4 };
+}
+
+fn tone(t: Tone) -> i32 {
+    return match (t) { High(n) -> n, _ -> 1 };
+}
+
+fn every(t: Tone) -> i32 {
+    return match (t) { Low -> 1, Tone::High(n) -> 2, _ -> 3 };
+}
+
+fn kind(s: Shape) -> i32 {
+    match (s) {
+        Shape::Line(n) -> { return n * 2; },
+        _ -> { let k: i32 = 9; return k; },
+    };
+}
+
+fn ring(s: Shape) -> bool {
+    let r: bool = match (s) {
+        Ring(b) -> { return b; },
+        Dot -> { return false; },
+        _ -> true,
+    };
+    return !r;
+}
+
+fn if_true(b: bool) -> i32 {
+    if (b) {
+        return 100;
+    }
+    return 0;
+}
+
+fn main() -> i32 {
+    return size(Line(3)) + size(Dot) + line(Ring(false)) + line(Line(2)) + half(Both(1, 2)) + half(Empty) + half(Half(6)) + tone(Mid) + tone(High(5)) + every(Mid) + kind(Rect(2)) + kind(Line(4)) + if_true(ring(Dot)) + if_true(ring(Ring(true))) + if_true(ring(Line(1)));
+}

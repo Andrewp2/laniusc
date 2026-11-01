@@ -57,7 +57,7 @@ theorem unbox_sim {c : Nat} {t : SrcType} {id slice : Nat} {values ps : List Val
   cases r with
   | scalar s => exact s.elim
   | struct none _ => rw [box] at none; cases none
-  | box found wv pos room read rel =>
+  | box found wv pos room ranged read rel =>
   rename_i t' a w y
   rw [box, Option.some.injEq] at found
   subst found

@@ -60,8 +60,10 @@ theorem wordType_pos {ds : SrcDecls} : ∀ {t : SrcType}, wordType ds t = true �
   | .enum _ _, _ => by simp only [SrcType.size]; omega
   | .ptr, _ => by decide
   | .isize, _ => by decide
+  | .sint _, _ => by simp [SrcType.size]
   | .slice _, ok => by simp [wordType] at ok
   | .unit, ok => by simp [wordType] at ok
+  | .array _ _, ok => by simp [wordType] at ok
 
 section
 variable {sp : SrcProgram} {boxes : Boxes}
@@ -230,6 +232,10 @@ theorem store_spec : ∀ n, StoreAt sp boxes n
       | i32 => exact NativeStoreSpec.sty s notUnit
       | bool => exact NativeStoreSpec.sty s notUnit
       | uint _ => exact NativeStoreSpec.sty s notUnit
+      | char => exact s.elim
+      | float => exact s.elim
+      | sint _ => exact s.elim
+      | array _ _ => exact s.elim
       | isize => exact NativeStoreSpec.sty s notUnit
       | unit => exact absurd rfl notUnit
     | struct none rs =>
@@ -246,7 +252,7 @@ theorem store_spec : ∀ n, StoreAt sp boxes n
       obtain ⟨ws, hws⟩ := enum_words words hdecl (k := k) (types := fs.map SrcType.toCore) (by simp [hk])
       exact variant_spec hdecl hk fits fieldWords (VRels.length rs).1 (mapM_option_mono up hws)
         (fields_spec ih fieldWords rs hws (by omega))
-    | box found wv pos room read rel =>
+    | box found wv pos room ranged read rel =>
       rename_i a _ _
       obtain ⟨decl, fieldWords, -⟩ := wordType_struct ok
       have hdecl := structFields_toCore (sp := sp) decl

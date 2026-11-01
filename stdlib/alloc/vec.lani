@@ -169,7 +169,9 @@ pub impl<T> Vec<T> {
             while (index < self.length) { target[index] = old[index]; index += 1; }
         }
         index = 0;
-        while (index < count) { target[self.length + index] = core::option::unwrap(values.get(index)); index += 1; }
+        // 0 <= index < count == values.length, so this is exactly values.get(index).
+        let source: [T] = values.values; let first: i32 = values.start;
+        while (index < count) { target[self.length + index] = source[first + index]; index += 1; }
         if (grows && self.reserved > 0 && size > 0) { alloc::allocator::dealloc(self.storage, size * (self.reserved as usize), ALIGN); }
         self.storage = storage; self.reserved = capacity; self.length = needed;
         return core::result::Ok(needed);

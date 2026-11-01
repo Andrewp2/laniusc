@@ -41,6 +41,16 @@ theorem proof_boxed_of_mini_selfhost_SrcStmt {prog : SrcProgram} {prims : Prims}
     Stmt_boxed_of_mini_selfhost_SrcStmt prog prims ix_boxed_of_mini_selfhost_SrcStmt n :=
   fun h r => prim_cert np h r
 
+theorem step_concat_of_mini_selfhost_BoundGoal {prog : SrcProgram} {prims : Prims} {ix_concat_of_mini_selfhost_BoundGoal ix_unbox_of_mini_selfhost_List_mini_selfhost_BoundGoal ix_boxed_of_mini_selfhost_List_mini_selfhost_BoundGoal : Nat} (fn : prog.funcs[ix_concat_of_mini_selfhost_BoundGoal]? = some (src_concat_of_mini_selfhost_BoundGoal ix_unbox_of_mini_selfhost_List_mini_selfhost_BoundGoal ix_concat_of_mini_selfhost_BoundGoal ix_boxed_of_mini_selfhost_List_mini_selfhost_BoundGoal)) (np : prims.isPrim ix_concat_of_mini_selfhost_BoundGoal = false)
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_BoundGoal : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_BoundGoal prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_BoundGoal n))
+    (ext_boxed_of_mini_selfhost_List_mini_selfhost_BoundGoal : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_mini_selfhost_BoundGoal prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_BoundGoal n)) {n : Nat}
+    (ih_concat_of_mini_selfhost_BoundGoal : Certified (Stmt_concat_of_mini_selfhost_BoundGoal prog prims ix_concat_of_mini_selfhost_BoundGoal n)) :
+    Stmt_concat_of_mini_selfhost_BoundGoal prog prims ix_concat_of_mini_selfhost_BoundGoal (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_concat_of_mini_selfhost_BoundGoal] at h
+  faithful []
+
 theorem step_concat_of_mini_selfhost_CTree {prog : SrcProgram} {prims : Prims} {ix_concat_of_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_boxed_of_mini_selfhost_List_mini_selfhost_CTree : Nat} (fn : prog.funcs[ix_concat_of_mini_selfhost_CTree]? = some (src_concat_of_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_boxed_of_mini_selfhost_List_mini_selfhost_CTree ix_concat_of_mini_selfhost_CTree)) (np : prims.isPrim ix_concat_of_mini_selfhost_CTree = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree n))
     (ext_boxed_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_CTree n)) {n : Nat}
@@ -79,6 +89,16 @@ theorem step_concat_of_mini_selfhost_VariantAt {prog : SrcProgram} {prims : Prim
   intro x0 x1 v0 v1 w h r0 r1
   rw [pcall_succ np fn] at h
   simp only [src_concat_of_mini_selfhost_VariantAt] at h
+  faithful []
+
+theorem proof_cons_of_mini_selfhost_BoundGoal {prog : SrcProgram} {prims : Prims} {ix_cons_of_mini_selfhost_BoundGoal ix_boxed_of_mini_selfhost_List_mini_selfhost_BoundGoal : Nat} (fn : prog.funcs[ix_cons_of_mini_selfhost_BoundGoal]? = some (src_cons_of_mini_selfhost_BoundGoal ix_boxed_of_mini_selfhost_List_mini_selfhost_BoundGoal)) (np : prims.isPrim ix_cons_of_mini_selfhost_BoundGoal = false)
+    (ext_boxed_of_mini_selfhost_List_mini_selfhost_BoundGoal : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_mini_selfhost_BoundGoal prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_BoundGoal n)) {n : Nat} :
+    Stmt_cons_of_mini_selfhost_BoundGoal prog prims ix_cons_of_mini_selfhost_BoundGoal n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_cons_of_mini_selfhost_BoundGoal] at h
   faithful []
 
 theorem proof_cons_of_mini_selfhost_List_mini_selfhost_Ty {prog : SrcProgram} {prims : Prims} {ix_cons_of_mini_selfhost_List_mini_selfhost_Ty ix_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty : Nat} (fn : prog.funcs[ix_cons_of_mini_selfhost_List_mini_selfhost_Ty]? = some (src_cons_of_mini_selfhost_List_mini_selfhost_Ty ix_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_Ty)) (np : prims.isPrim ix_cons_of_mini_selfhost_List_mini_selfhost_Ty = false)

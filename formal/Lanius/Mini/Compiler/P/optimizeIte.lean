@@ -3,7 +3,7 @@ module
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.Stmt_kills
 import Lanius.Mini.Compiler.P.callAgrees
-import Lanius.Mini.Compiler.P.optKill
+import Lanius.Mini.Compiler.P.longer
 import Lanius.Mini.Compiler.P.optimizeLeft
 import Lanius.Mini.Compiler.P.substAll
 
@@ -40,12 +40,16 @@ def Stmt.deadBefore (self : Stmt) (rest : Stmt) : Bool :=
   | .loop c b => false
   | .call t n f a => false
   | .ret v => false
+  | .brk => false
+  | .cont => false
   | .alloc t sh sz => false
   | .loadByte t a => false
   | .storeByte a v => false
   | .loadWord w t a => false
   | .storeWord w a v => false
   | .divide w o t l r => false
+  | .sys c t a => false
+  | .frame t b => false
 
 /-- facts hold on entry: each expression is read with them substituted. -/
 def Stmt.optimize (self : Stmt) (facts : List Fact) : Stmt :=
@@ -53,7 +57,7 @@ def Stmt.optimize (self : Stmt) (facts : List Fact) : Stmt :=
   | .skip => Stmt.skip
   | .assign index value => optimizeAssign index (Expr.optimize (Expr.subst value facts))
   | .seq first second =>
-    (let rest : Stmt := Stmt.optimize second (optFactsAfter first facts)
+    (let rest : Stmt := Stmt.optimize second (Stmt.factsAfter first facts)
      if Stmt.deadBefore first rest then
        rest
      else
@@ -62,12 +66,16 @@ def Stmt.optimize (self : Stmt) (facts : List Fact) : Stmt :=
   | .loop condition body => optimizeLoop (Expr.optimize condition) (Stmt.optimize body [])
   | .call target count callee args => Stmt.call target count callee (optimizeAll (substAll args facts))
   | .ret values => Stmt.ret (optimizeAll (substAll values facts))
+  | .brk => Stmt.brk
+  | .cont => Stmt.cont
   | .alloc target shift size => Stmt.alloc target shift (Expr.optimize (Expr.subst size facts))
   | .loadByte target address => Stmt.loadByte target (Expr.optimize (Expr.subst address facts))
   | .storeByte address value => Stmt.storeByte (Expr.optimize (Expr.subst address facts)) (Expr.optimize (Expr.subst value facts))
   | .loadWord width target address => Stmt.loadWord width target (Expr.optimize (Expr.subst address facts))
   | .storeWord width address value => Stmt.storeWord width (Expr.optimize (Expr.subst address facts)) (Expr.optimize (Expr.subst value facts))
   | .divide word operation target left right => Stmt.divide word operation target (Expr.optimize (Expr.subst left facts)) (Expr.optimize (Expr.subst right facts))
+  | .sys kind target args => Stmt.sys kind target (optimizeAll (substAll args facts))
+  | .frame target bytes => Stmt.frame target bytes
 
 def optimizeFuncs (funcs : List Func) : List Func :=
   match funcs with

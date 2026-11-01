@@ -1409,9 +1409,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if ((op == X86_LIR_OP_CALL || op == X86_LIR_OP_CALL_HOST ||
          op == X86_LIR_OP_PRINT_I32) && args.a == INVALID)
         flags |= TARGET_LIR_FLAG_UNSUPPORTED;
-    if (op == X86_LIR_OP_CALL && call_result_words != 0u)
+    // A local call's c is its result width, zero included: the emitter
+    // passes a hidden result address above two words, and the default
+    // (the semantic row's c) would make a three-argument call returning
+    // an empty record look like one.
+    if (op == X86_LIR_OP_CALL)
         c = call_result_words;
-    else if ((op == X86_LIR_OP_CALL || op == X86_LIR_OP_CALL_SYMBOL) &&
+    if ((op == X86_LIR_OP_CALL || op == X86_LIR_OP_CALL_SYMBOL) &&
              call_result_words == 0u &&
              source.value_word_count != 0u &&
              (metadata & X86_LIR_METADATA_AGGREGATE) != 0u)

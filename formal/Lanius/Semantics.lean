@@ -3,6 +3,7 @@ module
 public import Lanius.Memory
 public import Lanius.NativeLayout
 public import Lanius.World
+public import Lanius.IEEE
 
 @[expose] public section
 
@@ -249,10 +250,8 @@ def scalarEqual : Value → Value → Option Bool
       if leftType == rightType then some (left == right) else none
   | .unsigned leftType left, .unsigned rightType right =>
       if leftType == rightType then some (left == right) else none
-  | .f32Bits left, .f32Bits right =>
-      some (Float32.beq (Float32.ofBits left) (Float32.ofBits right))
-  | .f64Bits left, .f64Bits right =>
-      some (Float.beq (Float.ofBits left) (Float.ofBits right))
+  | .f32Bits left, .f32Bits right => some (IEEE.F32.eq left right)
+  | .f64Bits left, .f64Bits right => some (IEEE.F64.eq left right)
   | .character left, .character right => some (left == right)
   | .string left, .string right => some (left == right)
   | .pointer left, .pointer right => some (left == right)
@@ -300,8 +299,8 @@ def evalUnaryValue (target : Target) (op : UnaryOp) (value : Value) : Except Tra
   | .negate, .signed type value => .ok (.signed type (wrapSigned target type (-value)))
   | .negate, .unsigned type value =>
       .ok (.unsigned type (wrapUnsignedInt target type (-(Int.ofNat value))))
-  | .negate, .f32Bits bits => .ok (.f32Bits (Float32.neg (Float32.ofBits bits)).toBits)
-  | .negate, .f64Bits bits => .ok (.f64Bits (Float.neg (Float.ofBits bits)).toBits)
+  | .negate, .f32Bits bits => .ok (.f32Bits (IEEE.F32.neg bits))
+  | .negate, .f64Bits bits => .ok (.f64Bits (IEEE.F64.neg bits))
   | .negate, .character value =>
       .ok (.character (UInt32.ofNat ((2 ^ 32 - value.toNat) % (2 ^ 32))))
   | _, _ => .error .typeMismatch
@@ -317,19 +316,30 @@ def evalScalarCast (target : Target) (destination : ScalarTy)
       .ok (.signed targetType (wrapSigned target targetType (Int.ofNat source)))
   | .unsigned targetType, .unsigned _ source =>
       .ok (.unsigned targetType (wrapUnsigned target targetType source))
-  | .f32, .signed _ source => .ok (.f32Bits (Float32.ofInt source).toBits)
-  | .f64, .signed _ source => .ok (.f64Bits (Float.ofInt source).toBits)
-  | .f32, .unsigned _ source => .ok (.f32Bits (Float32.ofInt (Int.ofNat source)).toBits)
-  | .f64, .unsigned _ source => .ok (.f64Bits (Float.ofNat source).toBits)
+  | .f32, .signed _ source => .ok (.f32Bits (IEEE.F32.ofInt source))
+  | .f64, .signed _ source => .ok (.f64Bits (IEEE.F64.ofInt source))
+  | .f32, .unsigned _ source => .ok (.f32Bits (IEEE.F32.ofInt (Int.ofNat source)))
+  | .f64, .unsigned _ source => .ok (.f64Bits (IEEE.F64.ofInt (Int.ofNat source)))
   | .signed targetType, .character source =>
       .ok (.signed targetType (wrapSigned target targetType (Int.ofNat source.toNat)))
   | .unsigned targetType, .character source =>
       .ok (.unsigned targetType (wrapUnsigned target targetType source.toNat))
-  | .f32, .character source =>
-      .ok (.f32Bits (Float32.ofInt (Int.ofNat source.toNat)).toBits)
-  | .f64, .character source => .ok (.f64Bits (Float.ofNat source.toNat).toBits)
-  | .f64, .f32Bits source => .ok (.f64Bits (Float32.ofBits source).toFloat.toBits)
-  | .f32, .f64Bits source => .ok (.f32Bits (Float.ofBits source).toFloat32.toBits)
+  | .f32, .character source => .ok (.f32Bits (IEEE.F32.ofInt (Int.ofNat source.toNat)))
+  | .f64, .character source => .ok (.f64Bits (IEEE.F64.ofInt (Int.ofNat source.toNat)))
+  | .f64, .f32Bits source => .ok (.f64Bits (IEEE.F32.toF64 source))
+  | .f32, .f64Bits source => .ok (.f32Bits (IEEE.F64.toF32 source))
+  | .signed targetType, .f32Bits source =>
+      .ok (.signed targetType (IEEE.F32.truncSat source
+        (-signedSignBit target targetType) (signedSignBit target targetType - 1)))
+  | .signed targetType, .f64Bits source =>
+      .ok (.signed targetType (IEEE.F64.truncSat source
+        (-signedSignBit target targetType) (signedSignBit target targetType - 1)))
+  | .unsigned targetType, .f32Bits source =>
+      .ok (.unsigned targetType (IEEE.F32.truncSat source 0
+        ((unsignedModulus target targetType : Int) - 1)).toNat)
+  | .unsigned targetType, .f64Bits source =>
+      .ok (.unsigned targetType (IEEE.F64.truncSat source 0
+        ((unsignedModulus target targetType : Int) - 1)).toNat)
   | _, _ => .error .typeMismatch
 
 def evalSignedBinary
@@ -484,34 +494,30 @@ def evalUnsignedBinary
       else .ok (result (left / 2 ^ right))
   | _ => .error .typeMismatch
 
-def evalF32Binary (op : BinaryOp) (leftBits rightBits : UInt32) : Except Trap Value :=
-  let left := Float32.ofBits leftBits
-  let right := Float32.ofBits rightBits
-  let result := fun value : Float32 => Value.f32Bits value.toBits
+/-- IEEE arithmetic and ordering on the patterns (`Lanius.IEEE`): `>` and
+`>=` are `<` and `<=` with the operands swapped, all false on a NaN. -/
+def evalF32Binary (op : BinaryOp) (left right : UInt32) : Except Trap Value :=
   match op with
-  | .less => .ok (.boolean (left < right))
-  | .lessEqual => .ok (.boolean (left <= right))
-  | .greater => .ok (.boolean (left > right))
-  | .greaterEqual => .ok (.boolean (left >= right))
-  | .add => .ok (result (left + right))
-  | .subtract => .ok (result (left - right))
-  | .multiply => .ok (result (left * right))
-  | .divide => .ok (result (left / right))
+  | .less => .ok (.boolean (IEEE.F32.lt left right))
+  | .lessEqual => .ok (.boolean (IEEE.F32.le left right))
+  | .greater => .ok (.boolean (IEEE.F32.lt right left))
+  | .greaterEqual => .ok (.boolean (IEEE.F32.le right left))
+  | .add => .ok (.f32Bits (IEEE.F32.add left right))
+  | .subtract => .ok (.f32Bits (IEEE.F32.sub left right))
+  | .multiply => .ok (.f32Bits (IEEE.F32.mul left right))
+  | .divide => .ok (.f32Bits (IEEE.F32.div left right))
   | _ => .error .typeMismatch
 
-def evalF64Binary (op : BinaryOp) (leftBits rightBits : UInt64) : Except Trap Value :=
-  let left := Float.ofBits leftBits
-  let right := Float.ofBits rightBits
-  let result := fun value : Float => Value.f64Bits value.toBits
+def evalF64Binary (op : BinaryOp) (left right : UInt64) : Except Trap Value :=
   match op with
-  | .less => .ok (.boolean (left < right))
-  | .lessEqual => .ok (.boolean (left <= right))
-  | .greater => .ok (.boolean (left > right))
-  | .greaterEqual => .ok (.boolean (left >= right))
-  | .add => .ok (result (left + right))
-  | .subtract => .ok (result (left - right))
-  | .multiply => .ok (result (left * right))
-  | .divide => .ok (result (left / right))
+  | .less => .ok (.boolean (IEEE.F64.lt left right))
+  | .lessEqual => .ok (.boolean (IEEE.F64.le left right))
+  | .greater => .ok (.boolean (IEEE.F64.lt right left))
+  | .greaterEqual => .ok (.boolean (IEEE.F64.le right left))
+  | .add => .ok (.f64Bits (IEEE.F64.add left right))
+  | .subtract => .ok (.f64Bits (IEEE.F64.sub left right))
+  | .multiply => .ok (.f64Bits (IEEE.F64.mul left right))
+  | .divide => .ok (.f64Bits (IEEE.F64.div left right))
   | _ => .error .typeMismatch
 
 def evalCharBinary
@@ -546,6 +552,22 @@ def pointerOffset
   let result := if subtract then Int.ofNat address - offset else Int.ofNat address + offset
   .pointer (Int.toNat (result % modulus))
 
+/-- A shift of a signed or unsigned integer by an amount of another integer
+type: the amount's value, as for a shift by its own type, out of
+`0..width-1` traps. Other operators on two integer types are type errors. -/
+def evalShiftBy
+    (target : Target) (op : BinaryOp) (left : Value) (amount : Int) : Except Trap Value :=
+  match op, left with
+  | .shiftLeft, .signed type value => evalSignedBinary target .shiftLeft type value amount
+  | .shiftRight, .signed type value => evalSignedBinary target .shiftRight type value amount
+  | .shiftLeft, .unsigned type value =>
+      if amount < 0 then .error .invalidShift
+      else evalUnsignedBinary target .shiftLeft type value amount.toNat
+  | .shiftRight, .unsigned type value =>
+      if amount < 0 then .error .invalidShift
+      else evalUnsignedBinary target .shiftRight type value amount.toNat
+  | _, _ => .error .typeMismatch
+
 def evalBinaryValue
     (target : Target) (op : BinaryOp) (left right : Value) : Except Trap Value :=
   match op, left, right with
@@ -573,10 +595,14 @@ def evalBinaryValue
       .ok (pointerOffset target true address (Int.ofNat offset.toNat))
   | op, .signed leftType left, .signed rightType right =>
       if leftType == rightType then evalSignedBinary target op leftType left right
-      else .error .typeMismatch
+      else evalShiftBy target op (.signed leftType left) right
   | op, .unsigned leftType left, .unsigned rightType right =>
       if leftType == rightType then evalUnsignedBinary target op leftType left right
-      else .error .typeMismatch
+      else evalShiftBy target op (.unsigned leftType left) (Int.ofNat right)
+  | op, .signed leftType left, .unsigned _ right =>
+      evalShiftBy target op (.signed leftType left) (Int.ofNat right)
+  | op, .unsigned leftType left, .signed _ right =>
+      evalShiftBy target op (.unsigned leftType left) right
   | op, .f32Bits left, .f32Bits right => evalF32Binary op left right
   | op, .f64Bits left, .f64Bits right => evalF64Binary op left right
   | op, .character left, .character right => evalCharBinary op left right
@@ -1767,6 +1793,16 @@ mutual
                 | .exited code exitedState => .exited code exitedState
                 | .outOfFuel => .outOfFuel
             | _ => .trapped .typeMismatch afterBase
+        | .trapped reason next => .trapped reason next
+        | .exited code exitedState => .exited code exitedState
+        | .outOfFuel => .outOfFuel
+    | fuel + 1, program, state, _, .deref reference =>
+        match evalExpr fuel program state reference with
+        | .done (.reference _ cell projections) next =>
+            match readCellProjection next cell projections with
+            | .ok value => .done { root := cell, projections := projections, value := some value } next
+            | .error reason => .trapped reason next
+        | .done _ next => .trapped .typeMismatch next
         | .trapped reason next => .trapped reason next
         | .exited code exitedState => .exited code exitedState
         | .outOfFuel => .outOfFuel

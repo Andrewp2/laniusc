@@ -7,7 +7,7 @@ public import Lanius.Faithful.Gen.SelfStmt0
 public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmtC_BinOp_folds
 public import Lanius.Faithful.Gen.SelfStmtC_Expr_agrees
-public import Lanius.Faithful.Gen.SelfStmtC_Inline_lowerSetScalar
+public import Lanius.Faithful.Gen.SelfStmtC_Inline_factOr
 public import Lanius.Faithful.Gen.SelfStmtC_Lists_empty
 public import Lanius.Faithful.Gen.SelfStmtC_Word_narrows
 public import Lanius.Faithful.Gen.SelfStmtC_callAgrees
@@ -101,6 +101,15 @@ theorem step_fact_value {prog : SrcProgram} {prims : Prims} {ix_fact_value ix_fa
   simp only [src_fact_value] at h
   faithful [Lanius.Mini.factValue]
 
+theorem proof_frame_agrees {prog : SrcProgram} {prims : Prims} {ix_frame_agrees : Nat} (fn : prog.funcs[ix_frame_agrees]? = some (src_frame_agrees)) (np : prims.isPrim ix_frame_agrees = false) {n : Nat} :
+    Stmt_frame_agrees prog prims ix_frame_agrees n := by
+  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_frame_agrees] at h
+  faithful [Lanius.Mini.frameAgrees]
+
 theorem proof_load_byte_agrees {prog : SrcProgram} {prims : Prims} {ix_load_byte_agrees ix_Expr_agrees : Nat} (fn : prog.funcs[ix_load_byte_agrees]? = some (src_load_byte_agrees ix_Expr_agrees)) (np : prims.isPrim ix_load_byte_agrees = false)
     (ext_Expr_agrees : Certified (∀ {n : Nat}, Stmt_Expr_agrees prog prims ix_Expr_agrees n)) {n : Nat} :
     Stmt_load_byte_agrees prog prims ix_load_byte_agrees n := by
@@ -152,5 +161,16 @@ theorem proof_store_word_agrees {prog : SrcProgram} {prims : Prims} {ix_store_wo
   rw [pcall_succ np fn] at h
   simp only [src_store_word_agrees] at h
   faithful [Lanius.Mini.storeWordAgrees]
+
+theorem proof_sys_agrees {prog : SrcProgram} {prims : Prims} {ix_sys_agrees ix_args_agree ix_Syscall_number : Nat} (fn : prog.funcs[ix_sys_agrees]? = some (src_sys_agrees ix_args_agree ix_Syscall_number)) (np : prims.isPrim ix_sys_agrees = false)
+    (ext_args_agree : Certified (∀ {n : Nat}, Stmt_args_agree prog prims ix_args_agree n))
+    (ext_Syscall_number : Certified (∀ {n : Nat}, Stmt_Syscall_number prog prims ix_Syscall_number n)) {n : Nat} :
+    Stmt_sys_agrees prog prims ix_sys_agrees n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_sys_agrees] at h
+  faithful [Lanius.Mini.sysAgrees]
 
 end Lanius.Faithful.SelfCert

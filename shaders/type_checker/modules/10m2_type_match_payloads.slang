@@ -233,7 +233,6 @@ bool payload_declared_ref(HirMatchPayload payload_row, HirMatchArm arm, out uint
     if (valid_path(path) &&
         resolved_dependency_value_metadata[path * 4u] == IMPORTED_PAYLOAD_VARIANT)
     {
-        if (payload_row.parent_pattern != arm.pattern) return false;
         if (valid_hir(payload_row.pattern))
         {
             uint completed_tag = imported_match_payload_ref_tag[payload_row.pattern];
@@ -308,8 +307,21 @@ bool payload_ref(HirMatchPayload payload_row, out uint tag, out uint ref_payload
     {
         // A scrutinee whose closure fails is unknown, and then every use
         // below fails; the closure is read with the other IDs.
-        uint scrutinee_tag; uint scrutinee;
-        bool known = match_scrutinee(arm.owner, scrutinee_tag, scrutinee);
+        // A nested imported variant reads its slot from the enclosing
+        // payload's type, which that payload's own binder row publishes.
+        uint scrutinee_tag = TYPE_REF_INVALID; uint scrutinee = INVALID;
+        bool known;
+        if (payload_row.parent_pattern != arm.pattern)
+        {
+            uint parent_token = compact_hir_core[payload_row.parent_pattern].token_start;
+            if (valid_token(parent_token))
+            {
+                scrutinee_tag = decl_type_ref_tag[parent_token];
+                scrutinee = decl_type_ref_payload[parent_token];
+            }
+            known = scrutinee_tag != TYPE_REF_INVALID && scrutinee != INVALID;
+        }
+        else known = match_scrutinee(arm.owner, scrutinee_tag, scrutinee);
         bool application = known && scrutinee_tag == TYPE_REF_INSTANCE &&
             scrutinee < checked_type_capacity() && type_instance_kind[scrutinee] == 1u;
         if (mode == CHECKED_RESOLVE_CLOSED)

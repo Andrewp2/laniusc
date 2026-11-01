@@ -1,0 +1,7 @@
+module app::main;
+
+extern "lanius_std" fn write_byte(handle: i32, value: bool) -> i32;
+
+fn top(n: i32) -> i32 {
+    return write_byte(1, n == 3);
+}

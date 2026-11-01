@@ -1,0 +1,13 @@
+module app::main;
+
+// The error types differ: `?` never converts.
+import core::result;
+
+fn half(n: i32) -> core::result::Result<i32, bool> {
+    return Ok(n);
+}
+
+fn top(n: i32) -> core::result::Result<i32, i32> {
+    let a: i32 = half(n)?;
+    return Ok(a);
+}

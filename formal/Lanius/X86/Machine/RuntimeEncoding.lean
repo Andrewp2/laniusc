@@ -7,8 +7,8 @@ namespace Lanius.X86.Machine
 open Lanius.X86
 
 /-! Fixed control instructions used at the runtime boundary.  Their byte
-    identity is shared with `Control.decode`; no operating-system behavior is
-    placed in the pure machine `Step` relation. -/
+    identity is shared with `Control.decode`. `decode` knows neither; what
+    `syscall` does is the kernel's (`Kernel`, `Step.syscalled`). -/
 
 def fixedBytes (instruction : Control.Fixed) : List UInt8 :=
   instruction.bytes.map UInt8.ofNat

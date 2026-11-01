@@ -108,7 +108,7 @@ bool trait_impl_bound(uint raw)
            node_kind[owner] == PROD_IMPL_TRAIT && valid_raw(target) &&
            parent[target] == owner &&
            (node_kind[target] == PROD_TYPE_IDENT || node_kind[target] == PROD_TYPE_ARRAY ||
-            node_kind[target] == PROD_TYPE_REF) &&
+            node_kind[target] == PROD_TYPE_REF || node_kind[target] == PROD_TYPE_REF_MUT) &&
            valid_dense(raw_to_hir[raw]) && valid_dense(raw_to_hir[target]) &&
            valid_dense(raw_to_hir[owner]);
 }

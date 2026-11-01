@@ -1,6 +1,8 @@
 module
 
 public import Lanius.Mini.Compiler.Types
+public import Lanius.IEEE
+public import Lanius.X86.Machine.Io
 -- import all: Lanius.Mini.Compiler
 import all Lanius.Mini.Compiler.Types
 import all Lanius.Mini.Compiler.P.Lists_empty
@@ -8,7 +10,10 @@ import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.codeSize
 import all Lanius.Mini.Compiler.P.compileArgs
 import all Lanius.Mini.Compiler.P.arities
-import all Lanius.Mini.Compiler.P.pow2
+import all Lanius.Mini.Compiler.P.FloatTy_rex
+import all Lanius.Mini.Compiler.P.FArith_opcode
+import all Lanius.Mini.Compiler.P.loadAtBytes
+import all Lanius.Mini.Compiler.P.imageLimit
 import all Lanius.Mini.Compiler.P.moduleExports
 import all Lanius.Mini.Compiler.P.importOk
 import all Lanius.Mini.Compiler.P.importsOk
@@ -19,19 +24,33 @@ import all Lanius.Mini.Compiler.P.compileModules
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.UintTy_mask
 import all Lanius.Mini.Compiler.P.UintTy_isWide
-import all Lanius.Mini.Compiler.P.lookup
+import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.arithUint
+import all Lanius.Mini.Compiler.P.floatApply
+import all Lanius.Mini.Compiler.P.lowerShift
 import all Lanius.Mini.Compiler.P.arithShiftRight
 import all Lanius.Mini.Compiler.P.equality
 import all Lanius.Mini.Compiler.P.conjunction
 import all Lanius.Mini.Compiler.P.lowerLocal
-import all Lanius.Mini.Compiler.P.copyBinding
+import all Lanius.Mini.Compiler.P.sintToUint
+import all Lanius.Mini.Compiler.P.lowerApply
+import all Lanius.Mini.Compiler.P.guardAnd
+import all Lanius.Mini.Compiler.P.leftTrue
+import all Lanius.Mini.Compiler.P.applyGuard
+import all Lanius.Mini.Compiler.P.SrcExpr_guard
+import all Lanius.Mini.Compiler.P.repeatType
 import all Lanius.Mini.Compiler.P.lowerTagged
 import all Lanius.Mini.Compiler.P.armScope
 import all Lanius.Mini.Compiler.P.assignFrom
-import all Lanius.Mini.Compiler.P.lowerMatchArms
+import all Lanius.Mini.Compiler.P.armBodyScope
+import all Lanius.Mini.Compiler.P.armPayload
 import all Lanius.Mini.Compiler.P.lowerCallSig
+import all Lanius.Mini.Compiler.P.hostRandomCode
 import all Lanius.Mini.Compiler.P.consArgs
 import all Lanius.Mini.Compiler.P.shortCircuit
+import all Lanius.Mini.Compiler.P.evalDivideSint
+import all Lanius.Mini.Compiler.P.evalDivide
 import all Lanius.Mini.Compiler.P.evalNot
 import all Lanius.Mini.Compiler.P.evalSame
 import all Lanius.Mini.Compiler.P.matchDst
@@ -49,9 +68,13 @@ import all Lanius.Mini.Compiler.P.widthOf
 import all Lanius.Mini.Compiler.P.elementBase
 import all Lanius.Mini.Compiler.P.iteThen
 import all Lanius.Mini.Compiler.P.storeType
+import all Lanius.Mini.Compiler.P.lowerSlice
 import all Lanius.Mini.Compiler.P.indexOf
+import all Lanius.Mini.Compiler.P.elementAddress
 import all Lanius.Mini.Compiler.P.lowerLoadType
+import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.storeEvalWord
+import all Lanius.Mini.Compiler.P.storeArray
 import all Lanius.Mini.Compiler.P.sigs
 import all Lanius.Mini.Compiler.P.lowerBody
 import all Lanius.Mini.Compiler.P.declareFuncs
@@ -64,16 +87,20 @@ import all Lanius.Mini.Compiler.P.Expr_agrees
 import all Lanius.Mini.Compiler.P.assignAgrees
 import all Lanius.Mini.Compiler.P.callAgrees
 import all Lanius.Mini.Compiler.P.substAll
+import all Lanius.Mini.Compiler.P.extentAfter
+import all Lanius.Mini.Compiler.P.killShared
+import all Lanius.Mini.Compiler.P.longer
 import all Lanius.Mini.Compiler.P.Stmt_kills
-import all Lanius.Mini.Compiler.P.optKill
 import all Lanius.Mini.Compiler.P.optimizeNeg
 import all Lanius.Mini.Compiler.P.optimizeLeft
 import all Lanius.Mini.Compiler.P.optimizeIte
 import all Lanius.Mini.Compiler.P.compileOr
 import all Lanius.Mini.Compiler.P.compileSource
+import all Lanius.Mini.Compiler.P.packRound
+import all Lanius.Mini.Compiler.P.larger
 import all Lanius.Mini.Compiler.P.Inline_arithOf
 import all Lanius.Mini.Compiler.P.Inline_lowerSetScalar
-import all Lanius.Mini.Compiler.P.Inline_branchAgrees
+import all Lanius.Mini.Compiler.P.Inline_factOr
 -- end import all
 -- import parts: Lanius.Mini.Compiler BinOp.bytes DivOp.bytes MemWidth.bytes
 public import Lanius.Mini.Compiler.P.Lists_empty
@@ -162,6 +189,45 @@ def Word.divides : Word → DivOp → BitVec 64 → BitVec 64 → Bool
   | .s32, operation, a, b => operation.defined (low a) (low b)
   | .u64, operation, a, b => operation.defined a b
 
+/-! Floats. A word holds a float's IEEE bit pattern, an `f32` one
+zero-extended; each operation is `Lanius.IEEE`'s. -/
+
+def FloatTy.format : FloatTy → IEEE.Format
+  | .f32 => IEEE.binary32
+  | .f64 => IEEE.binary64
+
+def FloatTy.width : FloatTy → Nat
+  | .f32 => 32
+  | .f64 => 64
+
+/-- The pattern a word holds: its low `width` bits. -/
+def FloatTy.bits (t : FloatTy) (x : BitVec 64) : Nat := x.toNat % 2 ^ t.width
+
+/-- A pattern as a word, zero-extended. -/
+def FloatTy.word (t : FloatTy) (v : Nat) : BitVec 64 := BitVec.ofNat 64 (v % 2 ^ t.width)
+
+def FArith.apply (F : IEEE.Format) : FArith → Nat → Nat → Nat
+  | .fAdd => F.add
+  | .fSub => F.sub
+  | .fMul => F.mul
+  | .fDiv => F.div
+
+def FCmp.holds (F : IEEE.Format) : FCmp → Nat → Nat → Bool
+  | .fEq => F.eq
+  | .fLt => F.lt
+  | .fLe => F.le
+
+/-- A float operation of the left and the right operand; a conversion reads
+only the right one, an integer conversion its low 32 bits (`s32`) or all 64
+(`u64`) as a signed integer. -/
+def FOp.apply : FOp → BitVec 64 → BitVec 64 → BitVec 64
+  | .basic t operation, a, b => t.word (operation.apply t.format (t.bits a) (t.bits b))
+  | .fCompare t operation, a, b => if operation.holds t.format (t.bits a) (t.bits b) then 1 else 0
+  | .fromInt t .s32, _, b => t.word (t.format.ofInt (b.setWidth 32).toInt)
+  | .fromInt t .u64, _, b => t.word (t.format.ofInt b.toInt)
+  | .widen, _, b => FloatTy.f64.word (IEEE.binary32.convert IEEE.binary64 (FloatTy.f32.bits b))
+  | .narrow, _, b => FloatTy.f32.word (IEEE.binary64.convert IEEE.binary32 (FloatTy.f64.bits b))
+
 def Expr.eval (env : Env) : Expr → BitVec 64
   | .lit value => value
   | .var index => env index
@@ -169,6 +235,7 @@ def Expr.eval (env : Env) : Expr → BitVec 64
   | .binary word operation left right => word.apply operation (left.eval env) (right.eval env)
   | .compare word operation left right =>
       if word.holds operation (left.eval env) (right.eval env) then 1 else 0
+  | .fp operation left right => operation.apply (left.eval env) (right.eval env)
 
 def Expr.evalAll (env : Env) : List Expr → List (BitVec 64)
   | [] => []
@@ -186,11 +253,25 @@ def Env.setMany (env : Env) : Nat → List (BitVec 64) → Env
 def Func.entry (args : List (BitVec 64)) : Env := fun index => args.getD index 0
 
 /-- The heap: a byte at each offset, the bump allocator's cursor, and the
-limit no allocation passes and every access stays below. -/
+limit no allocation passes and every access stays below; and the process's
+side of its environment, the trace of its system calls (`Io`, which the x86
+state also holds). -/
 structure Heap where
   bytes : Nat → UInt8
   cursor : Nat
   limit : Nat
+  io : Lanius.X86.Machine.Io := {}
+  /-- The frame pointer: frame memory is handed out downward from here, and
+  stays at or above `limit` (SEMANTIC_DECISIONS, "Addressed locals"). -/
+  fsp : Nat := 0
+  /-- The bytes of frame memory above `limit`. -/
+  frameSize : Nat := 0
+
+/-- The end of the memory loads and stores reach: the bump heap below
+`limit`, then frame memory. -/
+def Heap.top (heap : Heap) : Nat := heap.limit + heap.frameSize
+
+theorem Heap.limit_le_top (heap : Heap) : heap.limit ≤ heap.top := Nat.le_add_right _ _
 
 /-- `n` rounded up to a multiple of `2 ^ shift`. -/
 def alignUp (n shift : Nat) : Nat := (n + 2 ^ shift - 1) / 2 ^ shift * 2 ^ shift
@@ -218,6 +299,19 @@ theorem Heap.writeLE_limit : ∀ (heap : Heap) (address value count : Nat),
     have := Heap.writeLE_limit (heap.write address (UInt8.ofNat value)) (address + 1) (value / 256) count
     exact ⟨this.1, this.2⟩
 
+theorem Heap.writeLE_top : ∀ (heap : Heap) (address value count : Nat),
+    (heap.writeLE address value count).top = heap.top ∧ (heap.writeLE address value count).fsp = heap.fsp
+  | _, _, _, 0 => ⟨rfl, rfl⟩
+  | heap, address, value, count + 1 => by
+    have := Heap.writeLE_top (heap.write address (UInt8.ofNat value)) (address + 1) (value / 256) count
+    exact ⟨this.1, this.2⟩
+
+theorem Heap.writeLE_io : ∀ (heap : Heap) (address value count : Nat),
+    (heap.writeLE address value count).io = heap.io
+  | _, _, _, 0 => rfl
+  | heap, address, value, count + 1 =>
+    Heap.writeLE_io (heap.write address (UInt8.ofNat value)) (address + 1) (value / 256) count
+
 theorem Heap.readLE_lt (heap : Heap) : ∀ (address count : Nat), heap.readLE address count < 256 ^ count
   | _, 0 => by simp [Heap.readLE]
   | address, count + 1 => by
@@ -226,9 +320,114 @@ theorem Heap.readLE_lt (heap : Heap) : ∀ (address count : Nat), heap.readLE ad
     simp only [Heap.readLE, Nat.pow_succ]
     omega
 
+/-- The `count` heap bytes from `address`. -/
+def Heap.slice (heap : Heap) (address : Nat) : Nat → List UInt8
+  | 0 => []
+  | count + 1 => heap.bytes address :: heap.slice (address + 1) count
+
+/-- The heap with `bytes` stored from `address` on. -/
+def Heap.writeAll (heap : Heap) (address : Nat) (bytes : List UInt8) : Heap :=
+  { heap with bytes := fun other =>
+      if address ≤ other ∧ other - address < bytes.length then bytes.getD (other - address) 0 else heap.bytes other }
+
+/-- A system call's meaning on the heap: what the kernel does
+(`Lanius.X86.Machine.Kernel`), with addresses heap offsets. `write(fd,
+address, count)` to fd 1 or 2 of at most `maxTransfer` bytes inside the heap
+appends them to the trace and returns the count. `read(0, address, count)`
+of at most `maxTransfer` bytes takes the next `count` bytes of the input, or
+all that are left, stores them from `address` on (inside the heap), and
+returns how many. `poll(0, 0, timeout)` with a timeout below 2^31 (a
+nonnegative `int`) polls no fd: it returns 0 and changes nothing.
+`clock_gettime(clock, address, _)` of clock 0 or 1 with a reading left
+stores it as a `struct timespec` from `address` on (inside the heap) and
+returns 0. `getrandom(address, count, 0)` of at most 256 bytes, no more than
+the secure bytes left, stores the next `count` of them from `address` on
+(inside the heap) and returns `count`. No other call returns. -/
+def Syscall.run : Syscall → List (BitVec 64) → Heap → Option (BitVec 64 × Heap)
+  | .write, [fd, address, count], heap =>
+    if (fd = 1 ∨ fd = 2) ∧ count.toNat ≤ Lanius.X86.Machine.maxTransfer ∧
+        address.toNat + count.toNat ≤ heap.top then
+      some (count, { heap with io := { heap.io with trace := heap.io.trace ++
+        [.write fd.toNat (heap.slice address.toNat count.toNat)] } })
+    else none
+  | .read, [fd, address, count], heap =>
+    if fd = 0 ∧ count.toNat ≤ Lanius.X86.Machine.maxTransfer ∧
+        (heap.io.input.take count.toNat = [] ∨
+          address.toNat + (heap.io.input.take count.toNat).length ≤ heap.top) then
+      some (BitVec.ofNat 64 (heap.io.input.take count.toNat).length,
+        { heap.writeAll address.toNat (heap.io.input.take count.toNat) with
+          io := { heap.io with input := heap.io.input.drop count.toNat } })
+    else none
+  | .poll, [fds, nfds, timeout], heap =>
+    if fds = 0 ∧ nfds = 0 ∧ timeout.toNat < 2 ^ 31 then some (0, heap) else none
+  | .clock, [which, address, _unused], heap =>
+    if (which = 0 ∨ which = 1) ∧ heap.io.readings which ≠ [] ∧ address.toNat + 16 ≤ heap.top then
+      some (0, { heap.writeAll address.toNat (Lanius.X86.Machine.timespecLE ((heap.io.readings which).headD (0, 0))) with
+        io := heap.io.afterReading which })
+    else none
+  | .random, [address, count, flags], heap =>
+    if flags = 0 ∧ count.toNat ≤ 256 ∧ count.toNat ≤ heap.io.entropy.length ∧ address.toNat + count.toNat ≤ heap.top then
+      some (count, { heap.writeAll address.toNat (heap.io.entropy.take count.toNat) with
+        io := { heap.io with entropy := heap.io.entropy.drop count.toNat } })
+    else none
+  | .write, [], _ => none
+  | .write, [_], _ => none
+  | .write, [_, _], _ => none
+  | .write, _ :: _ :: _ :: _ :: _, _ => none
+  | .read, [], _ => none
+  | .read, [_], _ => none
+  | .read, [_, _], _ => none
+  | .read, _ :: _ :: _ :: _ :: _, _ => none
+  | .poll, [], _ => none
+  | .poll, [_], _ => none
+  | .poll, [_, _], _ => none
+  | .poll, _ :: _ :: _ :: _ :: _, _ => none
+  | .clock, [], _ => none
+  | .clock, [_], _ => none
+  | .clock, [_, _], _ => none
+  | .clock, _ :: _ :: _ :: _ :: _, _ => none
+  | .random, [], _ => none
+  | .random, [_], _ => none
+  | .random, [_, _], _ => none
+  | .random, _ :: _ :: _ :: _ :: _, _ => none
+
+/-- A system call keeps the heap's limit and cursor. -/
+theorem Syscall.run_frame {call : Syscall} {args : List (BitVec 64)} {heap after : Heap} {result : BitVec 64}
+    (ran : call.run args heap = some (result, after)) : after.limit = heap.limit ∧ after.cursor = heap.cursor := by
+  cases call <;>
+  match args, ran with
+  | [fd, address, count], ran =>
+    rw [Syscall.run] at ran
+    split at ran
+    · cases ran; exact ⟨rfl, rfl⟩
+    · cases ran
+  | [], ran => simp [Syscall.run] at ran
+  | [_], ran => simp [Syscall.run] at ran
+  | [_, _], ran => simp [Syscall.run] at ran
+  | _ :: _ :: _ :: _ :: _, ran => simp [Syscall.run] at ran
+
+/-- A system call keeps the heap's top. -/
+theorem Syscall.run_top {call : Syscall} {args : List (BitVec 64)} {heap after : Heap} {result : BitVec 64}
+    (ran : call.run args heap = some (result, after)) : after.top = heap.top := by
+  cases call <;>
+  match args, ran with
+  | [fd, address, count], ran =>
+    rw [Syscall.run] at ran
+    split at ran
+    · cases ran; rfl
+    · cases ran
+  | [], ran => simp [Syscall.run] at ran
+  | [_], ran => simp [Syscall.run] at ran
+  | [_, _], ran => simp [Syscall.run] at ran
+  | _ :: _ :: _ :: _ :: _, ran => simp [Syscall.run] at ran
+
 inductive Outcome where
   | normal (env : Env) (heap : Heap)
   | returned (values : List (BitVec 64)) (heap : Heap)
+  /-- left the innermost loop (`brk`) -/
+  | broke (env : Env) (heap : Heap)
+  /-- went back to the innermost loop's condition (`cont`) -/
+  | continued (env : Env) (heap : Heap)
 
 /-- `Exec prog depth env heap stmt outcome`: running `stmt` from `env` and
 `heap` ends in `outcome`, with calls nested fewer than `depth` deep. -/
@@ -242,6 +441,12 @@ inductive Exec (prog : Program) : Nat → Env → Heap → Stmt → Outcome → 
   | seqReturned {depth : Nat} {env : Env} {heap after : Heap} {first second : Stmt} {value : List (BitVec 64)} :
       Exec prog depth env heap first (.returned value after) →
       Exec prog depth env heap (.seq first second) (.returned value after)
+  | seqBroke {depth : Nat} {env middle : Env} {heap between : Heap} {first second : Stmt} :
+      Exec prog depth env heap first (.broke middle between) →
+      Exec prog depth env heap (.seq first second) (.broke middle between)
+  | seqContinued {depth : Nat} {env middle : Env} {heap between : Heap} {first second : Stmt} :
+      Exec prog depth env heap first (.continued middle between) →
+      Exec prog depth env heap (.seq first second) (.continued middle between)
   | ifTrue {depth : Nat} {env : Env} {heap : Heap} {condition : Expr} {thenBranch elseBranch : Stmt}
       {outcome : Outcome} :
       condition.eval env ≠ 0 → Exec prog depth env heap thenBranch outcome →
@@ -261,11 +466,23 @@ inductive Exec (prog : Program) : Nat → Env → Heap → Stmt → Outcome → 
       {value : List (BitVec 64)} :
       condition.eval env ≠ 0 → Exec prog depth env heap body (.returned value after) →
       Exec prog depth env heap (.loop condition body) (.returned value after)
+  | loopBroke {depth : Nat} {env middle : Env} {heap between : Heap} {condition : Expr} {body : Stmt} :
+      condition.eval env ≠ 0 → Exec prog depth env heap body (.broke middle between) →
+      Exec prog depth env heap (.loop condition body) (.normal middle between)
+  | loopContinued {depth : Nat} {env middle : Env} {heap between : Heap} {condition : Expr} {body : Stmt}
+      {outcome : Outcome} :
+      condition.eval env ≠ 0 → Exec prog depth env heap body (.continued middle between) →
+      Exec prog depth middle between (.loop condition body) outcome →
+      Exec prog depth env heap (.loop condition body) outcome
+  | brk {depth : Nat} {env : Env} {heap : Heap} : Exec prog depth env heap .brk (.broke env heap)
+  | cont {depth : Nat} {env : Env} {heap : Heap} : Exec prog depth env heap .cont (.continued env heap)
+  /-- A call gives its callee's frame memory back: the caller's `fsp` again. -/
   | call {depth inner target count callee : Nat} {env : Env} {heap after : Heap} {args : List Expr}
       {func : Func} {value : List (BitVec 64)} :
       prog.funcs[callee]? = some func → args.length = func.params → value.length = count → inner < depth →
       Exec prog inner (Func.entry (Expr.evalAll env args)) heap func.body (.returned value after) →
-      Exec prog depth env heap (.call target count callee args) (.normal (env.setMany target value) after)
+      Exec prog depth env heap (.call target count callee args)
+        (.normal (env.setMany target value) { after with fsp := heap.fsp })
   | ret {depth : Nat} {env : Env} {heap : Heap} {values : List Expr} :
       Exec prog depth env heap (.ret values) (.returned (Expr.evalAll env values) heap)
   | alloc {depth : Nat} {env : Env} {heap : Heap} {target shift : Nat} {size : Expr} :
@@ -274,19 +491,19 @@ inductive Exec (prog : Program) : Nat → Env → Heap → Stmt → Outcome → 
         (.normal (env.set target (BitVec.ofNat 64 (alignUp heap.cursor shift)))
           { heap with cursor := alignUp heap.cursor shift + (size.eval env).toNat })
   | loadByte {depth : Nat} {env : Env} {heap : Heap} {target : Nat} {address : Expr} :
-      (address.eval env).toNat < heap.limit →
+      (address.eval env).toNat < heap.top →
       Exec prog depth env heap (.loadByte target address)
         (.normal (env.set target (BitVec.ofNat 64 (heap.bytes (address.eval env).toNat).toNat)) heap)
   | storeByte {depth : Nat} {env : Env} {heap : Heap} {address value : Expr} :
-      (address.eval env).toNat < heap.limit →
+      (address.eval env).toNat < heap.top →
       Exec prog depth env heap (.storeByte address value)
         (.normal env (heap.write (address.eval env).toNat (lowByte (value.eval env))))
   | loadWord {depth : Nat} {env : Env} {heap : Heap} {width : MemWidth} {target : Nat} {address : Expr} :
-      (address.eval env).toNat + width.bytes ≤ heap.limit →
+      (address.eval env).toNat + width.bytes ≤ heap.top →
       Exec prog depth env heap (.loadWord width target address)
         (.normal (env.set target (BitVec.ofNat 64 (heap.readLE (address.eval env).toNat width.bytes))) heap)
   | storeWord {depth : Nat} {env : Env} {heap : Heap} {width : MemWidth} {address value : Expr} :
-      (address.eval env).toNat + width.bytes ≤ heap.limit →
+      (address.eval env).toNat + width.bytes ≤ heap.top →
       Exec prog depth env heap (.storeWord width address value)
         (.normal env (heap.writeLE (address.eval env).toNat (value.eval env).toNat width.bytes))
   | divide {depth : Nat} {env : Env} {heap : Heap} {word : Word} {operation : DivOp} {target : Nat}
@@ -294,6 +511,16 @@ inductive Exec (prog : Program) : Nat → Env → Heap → Stmt → Outcome → 
       word.divides operation (left.eval env) (right.eval env) = true →
       Exec prog depth env heap (.divide word operation target left right)
         (.normal (env.set target (word.divide operation (left.eval env) (right.eval env))) heap)
+  | sys {depth : Nat} {env : Env} {heap after : Heap} {call : Syscall} {target : Nat} {args : List Expr}
+      {result : BitVec 64} :
+      call.run (Expr.evalAll env args) heap = some (result, after) →
+      Exec prog depth env heap (.sys call target args) (.normal (env.set target result) after)
+  /-- `bytes` of frame memory below the frame pointer, whose new value goes to
+  `target`. -/
+  | frame {depth : Nat} {env : Env} {heap : Heap} {target bytes : Nat} :
+      heap.limit + bytes ≤ heap.fsp →
+      Exec prog depth env heap (.frame target bytes)
+        (.normal (env.set target (BitVec.ofNat 64 (heap.fsp - bytes))) { heap with fsp := heap.fsp - bytes })
 
 /-- Calling function `callee` with `args` from `heap` returns `value` and
 leaves `after`, nesting calls fewer than `depth` deep. -/

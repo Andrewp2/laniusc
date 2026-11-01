@@ -178,6 +178,9 @@ pub fn load_sample_programs() -> Vec<SampleProgram> {
         }
     }
 
+    // Stdin- or argument-driven samples run in their own tests instead.
+    let dedicated = load_dedicated_samples(&root);
+    programs.retain(|path| !dedicated.contains(&sample_name(path)));
     programs.sort();
     expected_stdout_files.sort();
     assert!(
@@ -408,6 +411,35 @@ impl ManifestFileMapping {
             source_path,
         }
     }
+}
+
+/// The names in DEDICATED.tsv. Each row names a top-level sample and the
+/// test file that runs it; that file must exist and name the sample.
+fn load_dedicated_samples(root: &Path) -> Vec<String> {
+    let path = root.join("DEDICATED.tsv");
+    let text = fs::read_to_string(&path)
+        .unwrap_or_else(|err| panic!("read dedicated samples {}: {err}", path.display()));
+    let mut lines = text.lines();
+    assert_eq!(lines.next(), Some("sample\ttest"), "{}: header changed", path.display());
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    lines
+        .filter(|line| !line.is_empty())
+        .map(|line| {
+            let (name, test) = line
+                .split_once('\t')
+                .unwrap_or_else(|| panic!("{}: malformed row {line:?}", path.display()));
+            let source = root.join(format!("{name}.lani"));
+            assert!(source.is_file(), "{}: {name} has no {}", path.display(), source.display());
+            let test_text = fs::read_to_string(crate_root.join(test))
+                .unwrap_or_else(|err| panic!("{}: {name}: read {test}: {err}", path.display()));
+            assert!(
+                test_text.contains(&format!("{name}.lani")) || test_text.contains(&format!("\"{name}\"")),
+                "{}: {test} does not name sample {name}",
+                path.display()
+            );
+            name.to_owned()
+        })
+        .collect()
 }
 
 fn load_sample_manifest(root: &Path) -> HashMap<String, SampleManifestEntry> {

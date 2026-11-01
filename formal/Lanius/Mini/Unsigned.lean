@@ -8,7 +8,10 @@ import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.codeSize
 import all Lanius.Mini.Compiler.P.compileArgs
 import all Lanius.Mini.Compiler.P.arities
-import all Lanius.Mini.Compiler.P.pow2
+import all Lanius.Mini.Compiler.P.FloatTy_rex
+import all Lanius.Mini.Compiler.P.FArith_opcode
+import all Lanius.Mini.Compiler.P.loadAtBytes
+import all Lanius.Mini.Compiler.P.imageLimit
 import all Lanius.Mini.Compiler.P.moduleExports
 import all Lanius.Mini.Compiler.P.importOk
 import all Lanius.Mini.Compiler.P.importsOk
@@ -19,19 +22,33 @@ import all Lanius.Mini.Compiler.P.compileModules
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.UintTy_mask
 import all Lanius.Mini.Compiler.P.UintTy_isWide
-import all Lanius.Mini.Compiler.P.lookup
+import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.arithUint
+import all Lanius.Mini.Compiler.P.floatApply
+import all Lanius.Mini.Compiler.P.lowerShift
 import all Lanius.Mini.Compiler.P.arithShiftRight
 import all Lanius.Mini.Compiler.P.equality
 import all Lanius.Mini.Compiler.P.conjunction
 import all Lanius.Mini.Compiler.P.lowerLocal
-import all Lanius.Mini.Compiler.P.copyBinding
+import all Lanius.Mini.Compiler.P.sintToUint
+import all Lanius.Mini.Compiler.P.lowerApply
+import all Lanius.Mini.Compiler.P.guardAnd
+import all Lanius.Mini.Compiler.P.leftTrue
+import all Lanius.Mini.Compiler.P.applyGuard
+import all Lanius.Mini.Compiler.P.SrcExpr_guard
+import all Lanius.Mini.Compiler.P.repeatType
 import all Lanius.Mini.Compiler.P.lowerTagged
 import all Lanius.Mini.Compiler.P.armScope
 import all Lanius.Mini.Compiler.P.assignFrom
-import all Lanius.Mini.Compiler.P.lowerMatchArms
+import all Lanius.Mini.Compiler.P.armBodyScope
+import all Lanius.Mini.Compiler.P.armPayload
 import all Lanius.Mini.Compiler.P.lowerCallSig
+import all Lanius.Mini.Compiler.P.hostRandomCode
 import all Lanius.Mini.Compiler.P.consArgs
 import all Lanius.Mini.Compiler.P.shortCircuit
+import all Lanius.Mini.Compiler.P.evalDivideSint
+import all Lanius.Mini.Compiler.P.evalDivide
 import all Lanius.Mini.Compiler.P.evalNot
 import all Lanius.Mini.Compiler.P.evalSame
 import all Lanius.Mini.Compiler.P.matchDst
@@ -49,9 +66,13 @@ import all Lanius.Mini.Compiler.P.widthOf
 import all Lanius.Mini.Compiler.P.elementBase
 import all Lanius.Mini.Compiler.P.iteThen
 import all Lanius.Mini.Compiler.P.storeType
+import all Lanius.Mini.Compiler.P.lowerSlice
 import all Lanius.Mini.Compiler.P.indexOf
+import all Lanius.Mini.Compiler.P.elementAddress
 import all Lanius.Mini.Compiler.P.lowerLoadType
+import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.storeEvalWord
+import all Lanius.Mini.Compiler.P.storeArray
 import all Lanius.Mini.Compiler.P.sigs
 import all Lanius.Mini.Compiler.P.lowerBody
 import all Lanius.Mini.Compiler.P.declareFuncs
@@ -64,16 +85,20 @@ import all Lanius.Mini.Compiler.P.Expr_agrees
 import all Lanius.Mini.Compiler.P.assignAgrees
 import all Lanius.Mini.Compiler.P.callAgrees
 import all Lanius.Mini.Compiler.P.substAll
+import all Lanius.Mini.Compiler.P.extentAfter
+import all Lanius.Mini.Compiler.P.killShared
+import all Lanius.Mini.Compiler.P.longer
 import all Lanius.Mini.Compiler.P.Stmt_kills
-import all Lanius.Mini.Compiler.P.optKill
 import all Lanius.Mini.Compiler.P.optimizeNeg
 import all Lanius.Mini.Compiler.P.optimizeLeft
 import all Lanius.Mini.Compiler.P.optimizeIte
 import all Lanius.Mini.Compiler.P.compileOr
 import all Lanius.Mini.Compiler.P.compileSource
+import all Lanius.Mini.Compiler.P.packRound
+import all Lanius.Mini.Compiler.P.larger
 import all Lanius.Mini.Compiler.P.Inline_arithOf
 import all Lanius.Mini.Compiler.P.Inline_lowerSetScalar
-import all Lanius.Mini.Compiler.P.Inline_branchAgrees
+import all Lanius.Mini.Compiler.P.Inline_factOr
 -- end import all
 -- import parts: Lanius.Mini.Compiler UintTy.isWide UintTy.mask fromI32
 public import Lanius.Mini.Compiler.P.UintTy_isWide
@@ -424,5 +449,48 @@ theorem stride_word_bits {w : Nat} (small : w ≤ 4096) :
   · rw [Nat.mod_eq_of_lt (by omega)]
     rw [if_neg (by omega)]
     omega
+
+/-! ### Chars: a slot holds the code, below `2 ^ 32` -/
+
+section Chars
+
+open Semantics
+
+theorem char_code {a : BitVec 64} (h : a.toNat < 2 ^ 32) : (UInt32.ofNat a.toNat).toNat = a.toNat := by
+  simp [Nat.mod_eq_of_lt h]
+
+theorem eval_char_order {a b : BitVec 64} (ha : a.toNat < 2 ^ 32) (hb : b.toNat < 2 ^ 32) {cop : Core.BinaryOp}
+    {op : CmpOp}
+    (h : (cop = .less ∧ op = .lt) ∨ (cop = .lessEqual ∧ op = .le) ∨
+      (cop = .greater ∧ op = .gt) ∨ (cop = .greaterEqual ∧ op = .ge)) :
+    evalBinaryValue .x86_64 cop (.character (UInt32.ofNat a.toNat)) (.character (UInt32.ofNat b.toNat)) =
+      .ok (.boolean (op.holdsU a b)) := by
+  rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
+    simp [evalBinaryValue, evalCharBinary, char_code ha, char_code hb, CmpOp.holdsU, BitVec.ult,
+      BitVec.ule]
+
+theorem char_beq {a b : BitVec 64} (ha : a.toNat < 2 ^ 32) (hb : b.toNat < 2 ^ 32) :
+    (UInt32.ofNat a.toNat == UInt32.ofNat b.toNat) = (a == b) := by
+  rw [Bool.eq_iff_iff]
+  simp only [beq_iff_eq]
+  constructor
+  · intro e
+    have := congrArg UInt32.toNat e
+    rw [char_code ha, char_code hb] at this
+    exact BitVec.eq_of_toNat_eq this
+  · intro e
+    rw [e]
+
+theorem eval_char_eq {a b : BitVec 64} (ha : a.toNat < 2 ^ 32) (hb : b.toNat < 2 ^ 32) :
+    evalBinaryValue .x86_64 .equal (.character (UInt32.ofNat a.toNat)) (.character (UInt32.ofNat b.toNat)) =
+      .ok (.boolean (CmpOp.eq.holdsU a b)) := by
+  simp only [evalBinaryValue, scalarEqual, char_beq ha hb, CmpOp.holdsU]
+
+theorem eval_char_ne {a b : BitVec 64} (ha : a.toNat < 2 ^ 32) (hb : b.toNat < 2 ^ 32) :
+    evalBinaryValue .x86_64 .notEqual (.character (UInt32.ofNat a.toNat)) (.character (UInt32.ofNat b.toNat)) =
+      .ok (.boolean (CmpOp.ne.holdsU a b)) := by
+  simp only [evalBinaryValue, scalarEqual, char_beq ha hb, CmpOp.holdsU, bne]
+
+end Chars
 
 end Lanius.Mini

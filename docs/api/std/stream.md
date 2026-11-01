@@ -12,7 +12,7 @@ Layer: `std`. Role: module. Profile: **Source inventory**.
 
 - [stdlib-streams](../../stdlib-streams.md)
 
-Declaration counts: field: 1; function: 5; impl: 3; method: 5; struct: 1.
+Declaration counts: field: 1; function: 6; impl: 3; method: 5; struct: 1.
 
 ## Declared imports
 
@@ -22,6 +22,7 @@ Direct source imports; this is not a package-resolution or transitive dependency
 - [core::mem](../core/mem.md) · [source](../../../stdlib/std/stream.lani#L5)
 - [core::result](../core/result.md) · [source](../../../stdlib/std/stream.lani#L6)
 - [std::fs](fs.md) · [source](../../../stdlib/std/stream.lani#L7)
+- [alloc::io](../alloc/io.md) · [source](../../../stdlib/std/stream.lani#L8)
 
 ## Types, fields and variants
 
@@ -29,7 +30,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: Descriptor
 
-[Source line 9](../../../stdlib/std/stream.lani#L9)
+[Source line 10](../../../stdlib/std/stream.lani#L10)
 
 ```lanius
 pub struct Descriptor
@@ -37,7 +38,7 @@ pub struct Descriptor
 
 #### field: handle
 
-[Source line 9](../../../stdlib/std/stream.lani#L9)
+[Source line 10](../../../stdlib/std/stream.lani#L10)
 
 ```lanius
 handle: i32
@@ -47,7 +48,7 @@ handle: i32
 
 ### function: stdin
 
-[Source line 11](../../../stdlib/std/stream.lani#L11)
+[Source line 12](../../../stdlib/std/stream.lani#L12)
 
 ```lanius
 pub fn stdin() -> Descriptor
@@ -55,7 +56,7 @@ pub fn stdin() -> Descriptor
 
 ### function: stdout
 
-[Source line 12](../../../stdlib/std/stream.lani#L12)
+[Source line 13](../../../stdlib/std/stream.lani#L13)
 
 ```lanius
 pub fn stdout() -> Descriptor
@@ -63,7 +64,7 @@ pub fn stdout() -> Descriptor
 
 ### function: stderr
 
-[Source line 13](../../../stdlib/std/stream.lani#L13)
+[Source line 14](../../../stdlib/std/stream.lani#L14)
 
 ```lanius
 pub fn stderr() -> Descriptor
@@ -71,7 +72,7 @@ pub fn stderr() -> Descriptor
 
 ### function: from_handle
 
-[Source line 14](../../../stdlib/std/stream.lani#L14)
+[Source line 15](../../../stdlib/std/stream.lani#L15)
 
 ```lanius
 pub fn from_handle(handle: i32) -> Descriptor
@@ -79,18 +80,26 @@ pub fn from_handle(handle: i32) -> Descriptor
 
 ### function: copy
 
-[Source line 18](../../../stdlib/std/stream.lani#L18)
+[Source line 19](../../../stdlib/std/stream.lani#L19)
 
 ```lanius
 pub fn copy<R, W>(reader: &R, writer: &W) -> core::result::Result<u64, core::io::CopyFailure>
     where R: core::io::Read, W: core::io::Write
 ```
 
+### function: read_to_end
+
+[Source line 31](../../../stdlib/std/stream.lani#L31)
+
+```lanius
+pub fn read_to_end(reader: &Descriptor, output: &alloc::io::Buffer) -> core::result::Result<u64, core::io::Error>
+```
+
 ## Implementation blocks and public methods
 
-### impl at line 26
+### impl at line 57
 
-[Source line 26](../../../stdlib/std/stream.lani#L26)
+[Source line 57](../../../stdlib/std/stream.lani#L57)
 
 ```lanius
 pub impl Descriptor
@@ -98,7 +107,7 @@ pub impl Descriptor
 
 #### method: borrow
 
-[Source line 27](../../../stdlib/std/stream.lani#L27)
+[Source line 58](../../../stdlib/std/stream.lani#L58)
 
 ```lanius
 pub fn borrow(&self) -> &Descriptor
@@ -106,15 +115,15 @@ pub fn borrow(&self) -> &Descriptor
 
 #### method: raw_handle
 
-[Source line 28](../../../stdlib/std/stream.lani#L28)
+[Source line 59](../../../stdlib/std/stream.lani#L59)
 
 ```lanius
 pub fn raw_handle(&self) -> i32
 ```
 
-### impl at line 40
+### impl at line 71
 
-[Source line 40](../../../stdlib/std/stream.lani#L40)
+[Source line 71](../../../stdlib/std/stream.lani#L71)
 
 ```lanius
 pub impl core::io::Read for Descriptor
@@ -122,16 +131,16 @@ pub impl core::io::Read for Descriptor
 
 #### method: read
 
-[Source line 41](../../../stdlib/std/stream.lani#L41)
+[Source line 72](../../../stdlib/std/stream.lani#L72)
 
 ```lanius
 pub fn read(&self, destination: [u8], offset: i32, count: i32)
         -> core::result::Result<i32, core::io::Error>
 ```
 
-### impl at line 62
+### impl at line 93
 
-[Source line 62](../../../stdlib/std/stream.lani#L62)
+[Source line 93](../../../stdlib/std/stream.lani#L93)
 
 ```lanius
 pub impl core::io::Write for Descriptor
@@ -139,7 +148,7 @@ pub impl core::io::Write for Descriptor
 
 #### method: write
 
-[Source line 63](../../../stdlib/std/stream.lani#L63)
+[Source line 94](../../../stdlib/std/stream.lani#L94)
 
 ```lanius
 pub fn write(&self, source: [u8], offset: i32, count: i32)
@@ -148,7 +157,7 @@ pub fn write(&self, source: [u8], offset: i32, count: i32)
 
 #### method: flush
 
-[Source line 83](../../../stdlib/std/stream.lani#L83)
+[Source line 114](../../../stdlib/std/stream.lani#L114)
 
 ```lanius
 pub fn flush(&self) -> core::result::Result<i32, core::io::Error>

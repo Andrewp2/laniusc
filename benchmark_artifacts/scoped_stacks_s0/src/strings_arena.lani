@@ -1,0 +1,53 @@
+// String-heavy on alloc::arena: a doubling byte buffer per line, arena reset
+// after each line. Growth copies, as a Vec on an arena would.
+import alloc::arena;
+import core::mem;
+import core::result;
+
+const LINES: i32 = 200000;
+
+struct Buffer { data: ptr, length: i32, capacity: i32 }
+impl Buffer { fn borrow(&self) -> &Buffer { return self; } }
+
+fn push(arena: &alloc::arena::Arena, buffer: &Buffer, byte: u8) {
+    if (buffer.length == buffer.capacity) {
+        let capacity: i32 = buffer.capacity * 2;
+        if (capacity < 8) { capacity = 8; }
+        let block: alloc::arena::Block = core::result::unwrap(arena.allocate(capacity as usize, 8));
+        let old: [u8] = core::mem::typed_slice_from_storage<u8>(buffer.data, buffer.length);
+        let new: [u8] = core::mem::typed_slice_from_storage<u8>(block.data, capacity);
+        let at: i32 = 0; while (at < buffer.length) { new[at] = old[at]; at += 1; }
+        buffer.data = block.data; buffer.capacity = capacity;
+    }
+    let slots: [u8] = core::mem::typed_slice_from_storage<u8>(buffer.data, buffer.capacity);
+    slots[buffer.length] = byte; buffer.length += 1;
+}
+
+fn digits(arena: &alloc::arena::Arena, buffer: &Buffer, value: i32) {
+    if (value >= 10) { digits(arena, buffer, value / 10); }
+    push(arena, buffer, (48 + value % 10) as u8);
+}
+
+fn main() -> i32 {
+    let arena: alloc::arena::Arena = core::result::unwrap(alloc::arena::new(alloc::arena::default_config()));
+    let total: i64 = 0;
+    let line_index: i32 = 0;
+    while (line_index < LINES) {
+        let empty: ptr = 0;
+        let line: Buffer = Buffer { data: empty, length: 0, capacity: 0 };
+        push(arena.borrow(), line.borrow(), 105 as u8); push(arena.borrow(), line.borrow(), 116 as u8); push(arena.borrow(), line.borrow(), 101 as u8); push(arena.borrow(), line.borrow(), 109 as u8);
+        digits(arena.borrow(), line.borrow(), line_index);
+        push(arena.borrow(), line.borrow(), 58 as u8);
+        let pad: i32 = 0;
+        while (pad < line_index % 48) { push(arena.borrow(), line.borrow(), 120 as u8); pad += 1; }
+        push(arena.borrow(), line.borrow(), 10 as u8);
+        let bytes: [u8] = core::mem::typed_slice_from_storage<u8>(line.data, line.length);
+        let at: i32 = 0;
+        while (at < line.length) { total += (bytes[at] as i64) * ((at + 1) as i64); at += 1; }
+        arena.reset();
+        line_index += 1;
+    }
+    print(total);
+    arena.destroy();
+    return 0;
+}

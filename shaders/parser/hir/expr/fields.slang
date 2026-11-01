@@ -703,6 +703,14 @@ void publish_expr(uint i)
         return;
     }
 
+    // A block arm's value is its block: the arm's result is the HIR block,
+    // and the block's statements are ordinary statements.
+    if (prod == PROD_ARM_BLOCK)
+    {
+        publish_expr_result(i, child);
+        return;
+    }
+
     if (prod == PROD_POSTFIX)
     {
         uint result = postfix_value_node(i);

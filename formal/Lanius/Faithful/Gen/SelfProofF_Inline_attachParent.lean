@@ -7,9 +7,11 @@ public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_attachNode
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_attachParent
-public import Lanius.Faithful.Gen.SelfStmtF_Inline_pWhileStmt
+public import Lanius.Faithful.Gen.SelfStmtF_Inline_pBoundTypeArgsAfterCommaMore
+public import Lanius.Faithful.Gen.SelfStmtF_Inline_tRparen
 public import Lanius.Faithful.Gen.SelfStmtF_grammarPart13
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
+public import Lanius.Faithful.Gen.SelfStmtF_shrFirst
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_attachParent
 import all Lanius.Mini.Frontend.P.Inline_attachParent
 
@@ -30,7 +32,7 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem step_attach_leaf {prog : SrcProgram} {prims : Prims} {ix_attach_leaf ix_cons_of_mini_selfhost_Token ix_attach ix_with_kid ix_t_shr ix_t_gt ix_shr_first ix_shr_second : Nat} (fn : prog.funcs[ix_attach_leaf]? = some (src_attach_leaf ix_cons_of_mini_selfhost_Token ix_attach ix_with_kid ix_t_shr ix_t_gt ix_shr_first ix_shr_second)) (np : prims.isPrim ix_attach_leaf = false)
+theorem step_attach_leaf {prog : SrcProgram} {prims : Prims} {ix_attach_leaf ix_attach ix_cons_of_mini_selfhost_Token ix_with_kid ix_t_shr ix_t_gt ix_shr_first ix_shr_second : Nat} (fn : prog.funcs[ix_attach_leaf]? = some (src_attach_leaf ix_attach ix_cons_of_mini_selfhost_Token ix_with_kid ix_t_shr ix_t_gt ix_shr_first ix_shr_second)) (np : prims.isPrim ix_attach_leaf = false)
     (ext_cons_of_mini_selfhost_Token : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_Token prog prims ix_cons_of_mini_selfhost_Token n))
     (ext_with_kid : Certified (∀ {n : Nat}, Stmt_with_kid prog prims ix_with_kid n))
     (ext_t_shr : Certified (∀ {n : Nat}, Stmt_t_shr prog prims ix_t_shr n))

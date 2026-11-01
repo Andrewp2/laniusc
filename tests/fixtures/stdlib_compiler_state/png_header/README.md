@@ -1,5 +1,7 @@
 # Imported PNG header controls
 
+Status (2026-10-27): both fixtures compile on `lang`. `original_result` and `original_value` each exit 0 natively, with the command from `evidence.json`.
+
 These fixtures preserve two observations encountered while implementing
 `ext::png`. `evidence.json` records bounded commands, diagnostics, execution
 exit codes, and SHA-256 source hashes. They use the GPU compiler targeting

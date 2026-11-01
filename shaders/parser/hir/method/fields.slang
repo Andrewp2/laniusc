@@ -206,7 +206,7 @@ uint receiver_mode_for_param(uint param_node)
     uint prod = valid_node(param_node) ? node_kind[param_node] : INVALID;
     if (prod == PROD_PARAM_SELF)
         return METHOD_RECEIVER_SELF;
-    if (prod == PROD_PARAM_SELF_REF)
+    if (prod == PROD_PARAM_SELF_REF || prod == PROD_PARAM_SELF_REF_MUT)
         return METHOD_RECEIVER_REF_SELF;
     // Every typed ordinal-zero parameter is an explicit receiver candidate.
     // Type checking decides whether its type matches the impl receiver. This

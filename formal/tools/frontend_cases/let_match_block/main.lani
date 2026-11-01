@@ -1,0 +1,46 @@
+module app::main;
+
+// A let of a match with block arms and one value arm: the value arm binds
+// the let, a block arm returns early. On a local and on a call, for Result
+// and Option, with the value arm first or last.
+import core::result;
+import core::option;
+
+fn half(n: i32) -> core::result::Result<i32, i32> {
+    if (n < 0) {
+        return Err(n);
+    }
+    return Ok(n + 1);
+}
+
+fn step(n: i32) -> core::result::Result<i32, i32> {
+    let r: core::result::Result<i32, i32> = half(n);
+    let a: i32 = match (r) {
+        Ok(v) -> v,
+        Err(e) -> { return Err(e + 1); },
+    };
+    let b: i32 = match (half(a)) {
+        Err(e) -> {
+            if (e > 5) {
+                return Err(e);
+            }
+            return Ok(0);
+        },
+        Ok(w) -> w * 2,
+    };
+    return Ok(a + b);
+}
+
+fn first(o: core::option::Option<i32>) -> i32 {
+    let v: i32 = match (o) {
+        Some(x) -> x,
+        None -> { return 0; },
+    };
+    return v + 1;
+}
+
+fn top(n: i32) -> i32 {
+    let s: core::result::Result<i32, i32> = step(n);
+    let a: i32 = match (s) { Ok(v) -> v, Err(e) -> 0 - e };
+    return a + first(Some(n));
+}

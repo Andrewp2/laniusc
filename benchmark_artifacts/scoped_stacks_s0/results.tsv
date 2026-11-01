@@ -1,0 +1,12 @@
+benchmark	min_s	median_s	peak_rss_kb	checksum
+strings_vec	5.617	5.629	264	-1258685469
+strings_arena	0.460	0.462	264	-1258685469
+strings_stack	0.301	0.302	264	-1258685469
+requests_vec	3.776	3.779	264	432194262
+requests_arena	0.578	0.580	264	432194262
+requests_stack	0.428	0.429	264	432194262
+tree_box	8.733	8.758	262144	1055
+tree_arena	0.399	0.402	1408	1055
+tree_stack	0.232	0.233	1280	1055
+soa_records	0.164	0.165	12416	-1474936780
+soa_columns	0.058	0.058	12416	-1474936780

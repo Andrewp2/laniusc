@@ -46,7 +46,7 @@ fn regex_error(error: ext::regex::Error, diagnostic: &Diagnostic) -> i32 {
     reason = match (error) { ext::regex::Error::Unsupported(at) -> 4, ext::regex::Error::Limit(at) -> 5, ext::regex::Error::WorkLimit -> 6, ext::regex::Error::AllocationFailed -> 8, ext::regex::Error::InvalidUtf8(at) -> 2, _ -> 3 };
     if (reason == 8) { status = 4; } return fail(diagnostic,status,reason);
 }
-fn record(line: core::slice::View<u8>, terminated: bool, regex: &ext::regex::Regex, options: Options, progress: &Progress, diagnostic: &Diagnostic) -> i32 {
+fn record(line: core::slice::View<u8>, terminated: bool, regex: &ext::regex::Regex, matcher: &Matcher, options: Options, progress: &Progress, diagnostic: &Diagnostic) -> i32 {
     diagnostic.stage = 2; diagnostic.offset = 0;
     let checked: core::result::Result<core::text::Text,core::text::Error> = core::text::from_utf8_range(line.values,line.start,line.len());
     if (core::result::is_err(checked)) {
@@ -56,7 +56,9 @@ fn record(line: core::slice::View<u8>, terminated: bool, regex: &ext::regex::Reg
     let length: i32 = line.len(); if (terminated && length > 0 && line.values[line.start+length-1] == 13) { length -= 1; }
     let input: core::text::Text = core::result::unwrap(core::result::unwrap(checked).slice(0,length));
     diagnostic.stage = 3;
-    let matched: core::result::Result<bool,ext::regex::Error> = regex.is_match(input);
+    // The lazy DFA answers exactly what the VM would, falling back to it when needed.
+    let matched: core::result::Result<bool,ext::regex::Error> = core::result::Ok(false);
+    if (matcher.ready) { matched = matcher.dfa.is_match(regex,input); } else { matched = regex.is_match(input); }
     if (core::result::is_err(matched)) { return regex_error(core::result::unwrap_err(matched),diagnostic); }
     let selected: bool = core::result::unwrap(matched); if (options.invert) { selected = !selected; }
     if (!selected) { return 0; }
@@ -67,7 +69,18 @@ fn record(line: core::slice::View<u8>, terminated: bool, regex: &ext::regex::Reg
     if (!write_part(line)) { return fail(diagnostic,3,7); }
     if (terminated && !write_part(literal("\n",1))) { return fail(diagnostic,3,7); } return 0;
 }
+// An assertion-free pattern gets a capture-free lazy DFA; its cache allocation
+// failing just leaves the VM path, as before.
+struct Matcher { dfa: ext::regex::Dfa, ready: bool }
+impl Matcher { fn borrow(&self) -> &Matcher { return self; } }
 fn search(regex: &ext::regex::Regex, options: Options, diagnostic: &Diagnostic) -> i32 {
+    let built = ext::regex::dfa(regex);
+    let matcher: Matcher = Matcher { dfa: ext::regex::Dfa { set: ext::regex::prefix_set(), cost: 0, limit: 0 }, ready: false };
+    if (core::result::is_ok(built)) { matcher.dfa = core::result::unwrap(built); matcher.ready = true; }
+    let status: i32 = scan(regex, matcher.borrow(), options, diagnostic);
+    matcher.dfa.destroy(); return status;
+}
+fn scan(regex: &ext::regex::Regex, matcher: &Matcher, options: Options, diagnostic: &Diagnostic) -> i32 {
     let line: alloc::vec::Vec<u8> = alloc::vec::new(); let storage: [i32;256] = [0;256];
     let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),1024);
     let source: std::stream::Descriptor = std::stream::stdin(); let progress: Progress = Progress { selected: 0 }; diagnostic.line = 1;
@@ -79,7 +92,7 @@ fn search(regex: &ext::regex::Regex, options: Options, diagnostic: &Diagnostic) 
         while (index < count) {
             let current: u8 = bytes[index];
             if (current == 10) {
-                let status: i32 = record(line.as_view(),true,regex,options,progress.borrow(),diagnostic);
+                let status: i32 = record(line.as_view(),true,regex,matcher,options,progress.borrow(),diagnostic);
                 if (status != 0) { line.destroy(); return status; } line.clear();
                 if (diagnostic.line == 18446744073709551615) { line.destroy(); return fail(diagnostic,2,5); } diagnostic.line += 1;
             } else {
@@ -93,7 +106,7 @@ fn search(regex: &ext::regex::Regex, options: Options, diagnostic: &Diagnostic) 
             } index += 1;
         }
     }
-    let status: i32 = 0; if (!line.is_empty()) { status = record(line.as_view(),false,regex,options,progress.borrow(),diagnostic); }
+    let status: i32 = 0; if (!line.is_empty()) { status = record(line.as_view(),false,regex,matcher,options,progress.borrow(),diagnostic); }
     line.destroy(); if (status != 0) { return status; }
     if (options.count) { diagnostic.stage = 4; diagnostic.offset = -1; if (!write_number(progress.selected,text("\n",1))) { return fail(diagnostic,3,7); } }
     if (progress.selected == 0) { return 1; } return 0;

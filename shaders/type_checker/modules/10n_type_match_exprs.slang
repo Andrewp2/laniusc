@@ -97,6 +97,13 @@ bool inferred_arm_reference(uint node, out uint tag, out uint payload, out uint 
 
 bool complete_arm_reference(uint node, out uint tag, out uint payload, out uint id)
 {
+    // A block arm (`pattern -> { ... }`) does not complete: the returns pass
+    // checks that every path through its block returns.
+    if (valid_hir(node) && compact_hir_core[node].kind == 6u)
+    {
+        tag = 1u; payload = SCALAR_NEVER; id = CT_UNKNOWN;
+        return true;
+    }
     if (inferred_arm_reference(node, tag, payload, id)) return true;
     id = CT_UNKNOWN;
     if (!valid_hir(node)) return false;

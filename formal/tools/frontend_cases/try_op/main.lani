@@ -1,0 +1,35 @@
+module app::main;
+
+// `?` on a call, on a call whose value is dropped, on a local and in an
+// untyped let, for Result and Option.
+import core::result;
+import core::option;
+
+fn half(n: i32) -> core::result::Result<i32, i32> {
+    if (n < 0) {
+        return Err(n);
+    }
+    return Ok(n + 1);
+}
+
+fn step(n: i32) -> core::result::Result<i32, i32> {
+    let a: i32 = half(n)?;
+    half(a)?;
+    let r: core::result::Result<i32, i32> = half(a);
+    let b: i32 = r?;
+    let c = half(b)?;
+    return Ok(a + c);
+}
+
+fn first(o: core::option::Option<i32>) -> core::option::Option<bool> {
+    let v: i32 = o?;
+    return Some(v > 0);
+}
+
+fn top(n: i32) -> i32 {
+    let s: core::result::Result<i32, i32> = step(n);
+    let a: i32 = match (s) { Ok(v) -> v, Err(e) -> 0 - e };
+    let f: core::option::Option<bool> = first(Some(n));
+    let b: i32 = match (f) { Some(x) -> 1, None -> 2 };
+    return a + b;
+}

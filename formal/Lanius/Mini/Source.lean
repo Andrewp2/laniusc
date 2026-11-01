@@ -10,7 +10,10 @@ import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.codeSize
 import all Lanius.Mini.Compiler.P.compileArgs
 import all Lanius.Mini.Compiler.P.arities
-import all Lanius.Mini.Compiler.P.pow2
+import all Lanius.Mini.Compiler.P.FloatTy_rex
+import all Lanius.Mini.Compiler.P.FArith_opcode
+import all Lanius.Mini.Compiler.P.loadAtBytes
+import all Lanius.Mini.Compiler.P.imageLimit
 import all Lanius.Mini.Compiler.P.moduleExports
 import all Lanius.Mini.Compiler.P.importOk
 import all Lanius.Mini.Compiler.P.importsOk
@@ -21,19 +24,33 @@ import all Lanius.Mini.Compiler.P.compileModules
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.UintTy_mask
 import all Lanius.Mini.Compiler.P.UintTy_isWide
-import all Lanius.Mini.Compiler.P.lookup
+import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.arithUint
+import all Lanius.Mini.Compiler.P.floatApply
+import all Lanius.Mini.Compiler.P.lowerShift
 import all Lanius.Mini.Compiler.P.arithShiftRight
 import all Lanius.Mini.Compiler.P.equality
 import all Lanius.Mini.Compiler.P.conjunction
 import all Lanius.Mini.Compiler.P.lowerLocal
-import all Lanius.Mini.Compiler.P.copyBinding
+import all Lanius.Mini.Compiler.P.sintToUint
+import all Lanius.Mini.Compiler.P.lowerApply
+import all Lanius.Mini.Compiler.P.guardAnd
+import all Lanius.Mini.Compiler.P.leftTrue
+import all Lanius.Mini.Compiler.P.applyGuard
+import all Lanius.Mini.Compiler.P.SrcExpr_guard
+import all Lanius.Mini.Compiler.P.repeatType
 import all Lanius.Mini.Compiler.P.lowerTagged
 import all Lanius.Mini.Compiler.P.armScope
 import all Lanius.Mini.Compiler.P.assignFrom
-import all Lanius.Mini.Compiler.P.lowerMatchArms
+import all Lanius.Mini.Compiler.P.armBodyScope
+import all Lanius.Mini.Compiler.P.armPayload
 import all Lanius.Mini.Compiler.P.lowerCallSig
+import all Lanius.Mini.Compiler.P.hostRandomCode
 import all Lanius.Mini.Compiler.P.consArgs
 import all Lanius.Mini.Compiler.P.shortCircuit
+import all Lanius.Mini.Compiler.P.evalDivideSint
+import all Lanius.Mini.Compiler.P.evalDivide
 import all Lanius.Mini.Compiler.P.evalNot
 import all Lanius.Mini.Compiler.P.evalSame
 import all Lanius.Mini.Compiler.P.matchDst
@@ -51,9 +68,13 @@ import all Lanius.Mini.Compiler.P.widthOf
 import all Lanius.Mini.Compiler.P.elementBase
 import all Lanius.Mini.Compiler.P.iteThen
 import all Lanius.Mini.Compiler.P.storeType
+import all Lanius.Mini.Compiler.P.lowerSlice
 import all Lanius.Mini.Compiler.P.indexOf
+import all Lanius.Mini.Compiler.P.elementAddress
 import all Lanius.Mini.Compiler.P.lowerLoadType
+import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.storeEvalWord
+import all Lanius.Mini.Compiler.P.storeArray
 import all Lanius.Mini.Compiler.P.sigs
 import all Lanius.Mini.Compiler.P.lowerBody
 import all Lanius.Mini.Compiler.P.declareFuncs
@@ -66,33 +87,43 @@ import all Lanius.Mini.Compiler.P.Expr_agrees
 import all Lanius.Mini.Compiler.P.assignAgrees
 import all Lanius.Mini.Compiler.P.callAgrees
 import all Lanius.Mini.Compiler.P.substAll
+import all Lanius.Mini.Compiler.P.extentAfter
+import all Lanius.Mini.Compiler.P.killShared
+import all Lanius.Mini.Compiler.P.longer
 import all Lanius.Mini.Compiler.P.Stmt_kills
-import all Lanius.Mini.Compiler.P.optKill
 import all Lanius.Mini.Compiler.P.optimizeNeg
 import all Lanius.Mini.Compiler.P.optimizeLeft
 import all Lanius.Mini.Compiler.P.optimizeIte
 import all Lanius.Mini.Compiler.P.compileOr
 import all Lanius.Mini.Compiler.P.compileSource
+import all Lanius.Mini.Compiler.P.packRound
+import all Lanius.Mini.Compiler.P.larger
 import all Lanius.Mini.Compiler.P.Inline_arithOf
 import all Lanius.Mini.Compiler.P.Inline_lowerSetScalar
-import all Lanius.Mini.Compiler.P.Inline_branchAgrees
+import all Lanius.Mini.Compiler.P.Inline_factOr
 -- end import all
--- import parts: Lanius.Mini.Compiler BinOp.size Code.size DivOp.size Instr.size Piece.size SrcType.isI32 SrcType.isScalar SrcType.isUint SrcType.same SrcType.size arith boolBits compileOptimized compileSource declareProgram enumVariants fieldOffset funcsReturn lowerFuncs maxSize offsetOrArith sigs sizes storeEvalThen storeEvalWord structFields
+-- import parts: Lanius.Mini.Compiler BinOp.size Code.size DivOp.size Instr.size Piece.size SrcType.isI32 SrcType.isScalar SrcType.isUint SrcType.same SrcType.size arith boolBits checkThen evalArrayIndex pickElement storeArray putElement repeatType compileOptimized compileSource declareProgram enumVariants fieldOffset funcsReturn lowerFuncs maxSize offsetOrArith sigs sizes storeEvalThen storeEvalWord structFields
 public import Lanius.Mini.Compiler.P.DivOp_size
 public import Lanius.Mini.Compiler.P.Lists_empty
+public import Lanius.Mini.Compiler.P.SrcExpr_guard
+public import Lanius.Mini.Compiler.P.SrcType_size
+public import Lanius.Mini.Compiler.P.UintTy_half
 public import Lanius.Mini.Compiler.P.arithShiftRight
 public import Lanius.Mini.Compiler.P.compileModules
 public import Lanius.Mini.Compiler.P.compileOr
 public import Lanius.Mini.Compiler.P.compileSource
 public import Lanius.Mini.Compiler.P.declareProgram
 public import Lanius.Mini.Compiler.P.enumVariants
-public import Lanius.Mini.Compiler.P.lookup
+public import Lanius.Mini.Compiler.P.floatApply
+public import Lanius.Mini.Compiler.P.loadAtBytes
 public import Lanius.Mini.Compiler.P.lowerBody
 public import Lanius.Mini.Compiler.P.lowerLoadType
-public import Lanius.Mini.Compiler.P.pow2
+public import Lanius.Mini.Compiler.P.repeatType
 public import Lanius.Mini.Compiler.P.sigs
+public import Lanius.Mini.Compiler.P.storeArray
 public import Lanius.Mini.Compiler.P.storeEvalWord
 public import Lanius.Mini.Compiler.P.structFields
+public import Lanius.Mini.Compiler.P.wordStride
 -- end import parts
 
 @[expose] public section
@@ -115,12 +146,12 @@ def SrcProgram.decls (prog : SrcProgram) : SrcDecls :=
   | none => { structs := [], enums := [] }
   | some decls => decls
 
-/-- Functions numbered by position, and one struct or enum declaration per
-type id the program's types name. -/
+/-- Functions numbered by position, then the host functions (`hostFuncs`),
+and one struct or enum declaration per type id the program's types name. -/
 def SrcProgram.toCore (prog : SrcProgram) : Core.Program where
   structures := prog.decls.structs.map SrcStructDecl.toCore
   enumerations := prog.decls.enums.map SrcEnumDecl.toCore
-  functions := coreFuncs 0 prog.funcs
+  functions := coreFuncs 0 prog.funcs ++ hostFuncs
 
 /-- What `compileSource` checks before it optimizes and compiles the lowered
 functions. -/
@@ -217,10 +248,26 @@ theorem enumVariants_toCore {sp : SrcProgram} {id : Nat} {vs : List (List SrcTyp
     sp.toCore.enumeration? id = some ⟨id, vs.map (List.map SrcType.toCore)⟩ := by
   simp only [Core.Program.enumeration?, SrcProgram.toCore, find_enums, found, Option.map_some]
 
+/-- A narrow signed value of Core type `t`, `w` bits wide, in a slot as an
+`i32`: its 32-bit two's complement zero-extended, its value in range. -/
+def NarrowHolds (t : Core.SignedIntTy) (w : Nat) (value : Value) (bits : BitVec 64) : Prop :=
+  value = .signed t (low bits).toInt ∧ bits = widen (low bits) ∧
+    -2 ^ (w - 1) ≤ (low bits).toInt ∧ (low bits).toInt < 2 ^ (w - 1)
+
+/-- A value of the signed type as wide as `kind` (`SrcType.sint kind`): a
+64-bit one as an `isize`, its two's complement bits; a narrow one as an
+`i32`. -/
+def UintTy.SintHolds : UintTy → Value → BitVec 64 → Prop
+  | .uint8, value, bits => NarrowHolds .i8 8 value bits
+  | .uint32, value, bits => NarrowHolds .i32 32 value bits
+  | .uint64, value, bits => value = .signed .i64 bits.toInt
+  | .usize, value, bits => value = .signed .isize bits.toInt
+  | .uint16, value, bits => NarrowHolds .i16 16 value bits
+
 /-- `ty.Holds value bits`: one slot holding `bits` represents the Core `value`
 of scalar type `ty`. An `i32` is its bits zero-extended; booleans are 1 and 0;
 an unsigned value is the slot's number, below its type's bound; a pointer is
-its address. -/
+its address; a char is its code. -/
 def SrcType.Holds : SrcType → Value → BitVec 64 → Prop
   | .i32, value, bits => value = .signed .i32 (low bits).toInt ∧ bits = widen (low bits)
   | .bool, value, bits => ∃ b, value = .boolean b ∧ bits = boolBits b
@@ -229,8 +276,12 @@ def SrcType.Holds : SrcType → Value → BitVec 64 → Prop
   | .enum _ _, _, _ => False
   | .ptr, value, bits => value = .pointer bits.toNat
   | .slice _, _, _ => False
+  | .array _ _, _, _ => False
   | .unit, _, _ => False
   | .isize, value, bits => value = .signed .isize bits.toInt
+  | .char, value, bits => value = .character (UInt32.ofNat bits.toNat) ∧ bits.toNat < 2 ^ 32
+  | .float t, value, bits => value = t.value bits ∧ bits.toNat < 2 ^ t.width
+  | .sint kind, value, bits => kind.SintHolds value bits
 
 mutual
 /-- `ty.HoldsAt value env slot`: the `ty.size` slots of `env` from `slot`
@@ -251,13 +302,27 @@ inductive SrcType.HoldsAt : SrcType → Value → Env → Nat → Prop where
       SrcType.HoldsAt (.enum id variants) (.enumeration id k vs) env slot
   | ptr {value : Value} {env : Env} {slot : Nat} :
       SrcType.ptr.Holds value (env slot) → SrcType.HoldsAt .ptr value env slot
-  /-- A raw slice is its address; its length lives only in Core. -/
+  /-- A raw slice is its address, then its length, which is below `2 ^ 31`
+  (an `i32`'s bound), so an `i32` index below 0, a word of at least `2 ^ 31`,
+  is not below it. -/
   | slice {element : SrcType} {length : Nat} {env : Env} {slot : Nat} :
+      (env (slot + 1)).toNat = length → length < 2 ^ 31 →
       SrcType.HoldsAt (.slice element) (.rawSlice element.toCore (env slot).toNat length) env slot
+  /-- An array is its elements one after another, like a struct of `length`
+  fields of the element type. -/
+  | array {element : SrcType} {length : Nat} {vs : List Value} {env : Env} {slot : Nat} :
+      FieldsHold (List.replicate length element) vs env slot →
+      SrcType.HoldsAt (.array element length) (.array vs) env slot
   /-- The unit value's one slot holds any bits. -/
   | unit {env : Env} {slot : Nat} : SrcType.HoldsAt .unit .unit env slot
   | isize {value : Value} {env : Env} {slot : Nat} :
       SrcType.isize.Holds value (env slot) → SrcType.HoldsAt .isize value env slot
+  | char {value : Value} {env : Env} {slot : Nat} :
+      SrcType.char.Holds value (env slot) → SrcType.HoldsAt .char value env slot
+  | float {t : FloatTy} {value : Value} {env : Env} {slot : Nat} :
+      (SrcType.float t).Holds value (env slot) → SrcType.HoldsAt (.float t) value env slot
+  | sint {kind : UintTy} {value : Value} {env : Env} {slot : Nat} :
+      (SrcType.sint kind).Holds value (env slot) → SrcType.HoldsAt (.sint kind) value env slot
 
 /-- Values of these types, one after another from `slot`: a struct's fields,
 a payload, or arguments. -/
@@ -277,8 +342,12 @@ theorem SrcType.holdsAt_scalar {ty : SrcType} (scalar : ty.isScalar = true) {v :
   | enum => simp [SrcType.isScalar] at scalar
   | ptr => exact ⟨fun | .ptr h => h, .ptr⟩
   | slice => simp [SrcType.isScalar] at scalar
+  | array => simp [SrcType.isScalar] at scalar
   | unit => simp [SrcType.isScalar] at scalar
   | isize => exact ⟨fun | .isize h => h, .isize⟩
+  | char => exact ⟨fun | .char h => h, .char⟩
+  | float => exact ⟨fun | .float h => h, .float⟩
+  | sint => exact ⟨fun | .sint h => h, .sint⟩
 
 theorem FieldsHold.length : ∀ {fs vs env slot}, FieldsHold fs vs env slot → vs.length = fs.length
   | [], _, _, _, .nil => rfl
@@ -297,6 +366,20 @@ theorem sizes_le_maxSize : ∀ {variants : List (List SrcType)} {k : Nat} {fs : 
     have := sizes_le_maxSize found
     simp only [maxSize]
     omega
+
+/-- An array's slots: its length times its element's. -/
+theorem sizes_replicate (element : SrcType) : ∀ n, sizes (List.replicate n element) = n * element.size
+  | 0 => by simp [sizes]
+  | n + 1 => by
+    simp only [List.replicate_succ, sizes, sizes_replicate element n, Nat.succ_mul]
+    omega
+
+/-- An array's element types: `length` copies of its element type. -/
+theorem repeatType_eq (ty : SrcType) : ∀ n, repeatType ty n = List.replicate n ty
+  | 0 => by rw [repeatType]; rfl
+  | n + 1 => by
+    rw [repeatType]
+    simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel, repeatType_eq ty n, List.replicate_succ]
 
 mutual
 theorem SrcType.HoldsAt.congr : ∀ {ty : SrcType} {v : Value} {env : Env} {slot : Nat},
@@ -330,16 +413,32 @@ theorem SrcType.HoldsAt.congr : ∀ {ty : SrcType} {v : Value} {env : Env} {slot
     have := agree 0 (by simp [SrcType.size])
     simp only [Nat.add_zero] at this
     exact .ptr (by rw [this]; exact holds)
-  | .slice _, _, _, _, .slice, _, _, agree => by
+  | .slice _, _, _, _, .slice len small, _, _, agree => by
     have := agree 0 (by simp [SrcType.size])
+    have second := agree 1 (by simp [SrcType.size])
     simp only [Nat.add_zero] at this
     rw [← this]
-    exact .slice
+    exact .slice (by rw [second]; exact len) small
+  | .array _ _, _, _, _, .array holds, _, _, agree =>
+    .array (FieldsHold.congr holds fun i below => agree i (by
+      simp only [SrcType.size]; rw [sizes_replicate] at below; exact below))
   | .unit, _, _, _, .unit, _, _, _ => .unit
   | .isize, _, _, _, .isize holds, _, _, agree => by
     have := agree 0 (by simp [SrcType.size])
     simp only [Nat.add_zero] at this
     exact .isize (by rw [this]; exact holds)
+  | .char, _, _, _, .char holds, _, _, agree => by
+    have := agree 0 (by simp [SrcType.size])
+    simp only [Nat.add_zero] at this
+    exact .char (by rw [this]; exact holds)
+  | .float _, _, _, _, .float holds, _, _, agree => by
+    have := agree 0 (by simp [SrcType.size])
+    simp only [Nat.add_zero] at this
+    exact .float (by rw [this]; exact holds)
+  | .sint _, _, _, _, .sint holds, _, _, agree => by
+    have := agree 0 (by simp [SrcType.size])
+    simp only [Nat.add_zero] at this
+    exact .sint (by rw [this]; exact holds)
 
 theorem FieldsHold.congr : ∀ {fs : List SrcType} {vs : List Value} {env : Env} {slot : Nat},
     FieldsHold fs vs env slot → ∀ {env' : Env} {slot' : Nat},
@@ -454,8 +553,8 @@ theorem boolBits_ne_zero (b : Bool) : (boolBits b ≠ 0) = (b = true) := by
   cases b <;> simp [boolBits]
 
 /-- The checks of an effectful word element store. -/
-theorem storeEvalThen_cond {i v : Evaluated} {e : SrcType} {store : Option Stmt} {s : Stmt}
-    (h : storeEvalThen i v e store = some s) :
+theorem storeEvalThen_cond {i v : Evaluated} {e : SrcType} {slot : Nat} {g : Expr} {store : Option Stmt} {s : Stmt}
+    (h : storeEvalThen i v e slot g store = some s) :
     ((i.ty.isI32 || i.ty.isUint .usize) && v.ty.same e) = true := by
   simp only [storeEvalThen] at h
   split at h
@@ -469,5 +568,58 @@ theorem storeEvalWord_cond {decls : SrcDecls} {b : Binding} {e : SrcType} {slot 
   split at h
   · exact storeEvalThen_cond h
   · simp at h
+
+/-- `array[index]` of an array local: the index evaluated into `slot`,
+checked below the length, then the element it picks copied over it. -/
+theorem evalArrayIndex_some {b : Binding} {slot : Nat} {index : Option Evaluated} {ev : Evaluated}
+    (h : evalArrayIndex b slot index = some ev) :
+    ∃ e n i, b.ty = .array e n ∧ index = some i ∧ (i.ty.isI32 || i.ty.isUint .usize) = true ∧
+      0 < n ∧ n < 2147483648 ∧ 0 < e.size ∧
+      ev = { stmt := .seq i.stmt (checkThen slot (.compare .u64 .lt (.var slot) (.lit (BitVec.ofNat 64 n)))
+        (pickElement slot b.slot e.size 0 n)), ty := e } := by
+  unfold evalArrayIndex at h
+  split at h
+  case h_8 e n hty =>
+    simp only [evalArrayElement] at h
+    split at h
+    · simp at h
+    · rename_i i
+      simp only [evalPick] at h
+      split at h
+      · rename_i c
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+        simp only [Option.some.injEq] at h
+        exact ⟨e, n, i, hty, rfl, c.1.1.1, c.1.1.2, c.1.2, c.2, h.symm⟩
+      · simp at h
+  all_goals simp at h
+
+/-- `array[index] = value` of an array local: the index evaluated into
+`slot`, checked below the length, then the value evaluated into `slot + 1`
+and copied over the element. -/
+theorem storeArray_some {b : Binding} {slot : Nat} {index value : Option Evaluated} {s : Stmt}
+    (h : storeArray b slot index value = some s) :
+    ∃ e n i v, b.ty = .array e n ∧ index = some i ∧ value = some v ∧
+      (i.ty.isI32 || i.ty.isUint .usize) = true ∧ v.ty.same e = true ∧
+      0 < n ∧ n < 2147483648 ∧ 0 < e.size ∧
+      s = .seq i.stmt (checkThen slot (.compare .u64 .lt (.var slot) (.lit (BitVec.ofNat 64 n)))
+        (.seq v.stmt (putElement slot b.slot e.size 0 n))) := by
+  unfold storeArray at h
+  split at h
+  case h_8 e n hty =>
+    simp only [storeArrayElement] at h
+    split at h
+    · simp at h
+    · rename_i i
+      split at h
+      · simp at h
+      · rename_i v
+        simp only [storePick] at h
+        split at h
+        · rename_i c
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+          simp only [Option.some.injEq] at h
+          exact ⟨e, n, i, v, hty, rfl, rfl, c.1.1.1.1, c.1.1.1.2, c.1.1.2, c.1.2, c.2, h.symm⟩
+        · simp at h
+  all_goals simp at h
 
 end Lanius.Mini

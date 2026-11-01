@@ -170,6 +170,29 @@ public bool explicit_integer_literal_out_of_range(uint node, uint scalar, out ui
     return literal_token < explicit_operand_token_capacity();
 }
 
+// Whether `node` is a literal (possibly negated) of another class than
+// `scalar`: integer, float, bool or char. A same-class literal that does not
+// fit is a range question, not a type mismatch.
+bool explicit_literal_class_conflict(uint node, uint scalar)
+{
+    uint count = min(explicit_operand_hir_count[0u], explicit_operand_hir_capacity());
+    uint expected = scalar_is_integer(scalar) ? 1u
+        : scalar_in_set(scalar, SCALAR_FLOAT_SET) ? 2u
+        : scalar == SCALAR_BOOL ? 3u : scalar == SCALAR_CHAR ? 4u : 0u;
+    uint literal; bool negative;
+    if (integer_literal_magnitude(node, count, explicit_operand_hir_core,
+        explicit_operand_hir_payload, literal, negative)) return expected != 1u;
+    node = argument_context_root(node, count, explicit_operand_hir_core, explicit_operand_hir_payload);
+    if (node < count && explicit_operand_hir_core[node].kind == 17u &&
+        explicit_operand_hir_payload[node].a == 13u)
+        node = argument_context_root(explicit_operand_hir_payload[node].b, count,
+            explicit_operand_hir_core, explicit_operand_hir_payload);
+    if (node >= count || explicit_operand_hir_core[node].kind != 23u) return false;
+    uint form = explicit_operand_hir_payload[node].a;
+    uint found = form == 27u ? 2u : form == 4u || form == 5u ? 3u : form == 29u ? 4u : 0u;
+    return found != 0u && found != expected;
+}
+
 bool explicit_operand_inside_body(uint node)
 {
     uint count = min(explicit_operand_hir_count[0u], explicit_operand_hir_capacity());
@@ -289,6 +312,13 @@ bool bind_named_constant_operand(uint node, NamedConstantOperand named, uint exp
     return true;
 }
 
+// The declared scalar of a named constant operand, or 0 when it names none.
+public uint checked_named_constant_scalar<TypeRefs : IExplicitOperandTypeRefs>(
+    TypeRefs type_refs, uint node)
+{
+    return resolved_named_constant_operand(type_refs, ModuleScopeOperandNames(), node).scalar;
+}
+
 // expected_scalar=0 is reserved for callers that preserve a named operand's
 // own type (array-count projection). Generic binding always supplies a scalar.
 public bool checked_named_constant_operand<TypeRefs : IExplicitOperandTypeRefs>(
@@ -302,8 +332,9 @@ public bool checked_named_constant_operand<TypeRefs : IExplicitOperandTypeRefs>(
 }
 
 // Why an explicit constant operand binds or not. Conflicting type evidence
-// (a named constant declared with another scalar) and an integer literal out
-// of the parameter's range are diagnosed at the operand; anything else is an
+// (a named constant declared with another scalar, or a literal of another
+// class) and an integer literal out of the parameter's range are diagnosed
+// at the operand; anything else is an
 // unsupported operand of the application.
 public static const uint EXPLICIT_OPERAND_BOUND = 0u;
 public static const uint EXPLICIT_OPERAND_UNSUPPORTED = 1u;
@@ -316,7 +347,9 @@ public uint checked_scoped_explicit_constant_operand<TypeRefs : IExplicitOperand
     out uint kind, out uint value)
 {
     kind = 0u; value = 0xffffffffu;
-    if (!constant_scalar_is_supported(expected_scalar)) return EXPLICIT_OPERAND_UNSUPPORTED;
+    if (!constant_scalar_is_supported(expected_scalar))
+        return explicit_literal_class_conflict(node, expected_scalar) ? EXPLICIT_OPERAND_SCALAR_CONFLICT
+            : EXPLICIT_OPERAND_UNSUPPORTED;
     uint3 literal;
     if (checked_source_literal_value(node, expected_scalar, literal))
         return publish_explicit_constant_atom(node, literal, kind, value)
@@ -324,6 +357,8 @@ public uint checked_scoped_explicit_constant_operand<TypeRefs : IExplicitOperand
     uint literal_token;
     if (explicit_integer_literal_out_of_range(node, expected_scalar, literal_token))
         return EXPLICIT_OPERAND_LITERAL_RANGE;
+    // A literal of another class (`1` for a bool) is a type mismatch.
+    if (explicit_literal_class_conflict(node, expected_scalar)) return EXPLICIT_OPERAND_SCALAR_CONFLICT;
     NamedConstantOperand named = resolved_named_constant_operand(type_refs, body_names, node);
     if (named.kind != 0u && named.scalar != expected_scalar) return EXPLICIT_OPERAND_SCALAR_CONFLICT;
     return bind_named_constant_operand(node, named, expected_scalar, kind, value)

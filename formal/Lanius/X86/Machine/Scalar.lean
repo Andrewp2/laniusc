@@ -2,6 +2,7 @@ import Lanius.X86.Machine.Memory
 import Lanius.X86.Machine.Alu
 import Lanius.X86.Register
 import Lanius.X86.Control.Decode
+import Lanius.X86.Machine.Sse
 
 namespace Lanius.X86.Machine
 
@@ -61,6 +62,18 @@ inductive Instruction where
   | jump (displacement : BitVec 32)
   | call (displacement : BitVec 32)
   | returnNear
+  /-- MOVD xmm, r32 or MOVQ xmm, r64: the register, zero-extended. -/
+  | moveToXmm (wide : Bool) (destination : Fin 16) (source : Register)
+  /-- MOVD r32, xmm or MOVQ r64, xmm. -/
+  | moveFromXmm (wide : Bool) (destination : Register) (source : Fin 16)
+  /-- ADDSS ... DIVSD xmm, xmm. -/
+  | sseArith (double : Bool) (operation : SseArith) (destination source : Fin 16)
+  /-- CMPSS/CMPSD xmm, xmm, imm8. -/
+  | sseCompare (double : Bool) (predicate : SsePredicate) (destination source : Fin 16)
+  /-- CVTSI2SS/CVTSI2SD xmm, r32/r64. -/
+  | convertInt (double wide : Bool) (destination : Fin 16) (source : Register)
+  /-- CVTSS2SD (`fromDouble` false) or CVTSD2SS xmm, xmm. -/
+  | convertFloat (fromDouble : Bool) (destination source : Fin 16)
   deriving DecidableEq, Repr
 
 def Instruction.isDivision : Instruction → Bool
@@ -149,6 +162,41 @@ def escapedForm (rex : X86.Register.Rex) (rexPresent : Bool) (bytes : List UInt8
       | some (.branch condition displacement, size) => some (.branch condition displacement, size)
       | _ => none
   | _ => none
+
+/-- The SSE scalar forms after a mandatory prefix (102 = 66, 242 = F2,
+243 = F3) and an optional REX: 0F, the opcode and a register-direct ModRM
+(and CMPSS/CMPSD's predicate byte). REX.R and REX.B extend the ModRM's reg
+and r/m numbers, REX.W selects a 64-bit general register. The size counts
+from the 0F byte. Only the forms of `Sse.lean` decode. -/
+def sseForm (prefixByte : Nat) (rex : X86.Register.Rex) (bytes : List UInt8) : Option (Instruction × Nat) :=
+  match bytes with
+  | escape :: opcode :: modrm :: rest =>
+    if escape.toNat != 15 || modrm.toNat / 64 != 3 then none else
+    let reg : Fin 16 := extendRegister ⟨modrm.toNat / 8 % 8, by omega⟩ rex.r
+    let rm : Fin 16 := extendRegister ⟨modrm.toNat % 8, by omega⟩ rex.b
+    if prefixByte = 102 then
+      if opcode.toNat = 110 then some (.moveToXmm rex.w reg rm, 3)
+      else if opcode.toNat = 126 then some (.moveFromXmm rex.w rm reg, 3)
+      else none
+    else
+      let double := prefixByte == 242
+      if opcode.toNat = 42 then some (.convertInt double rex.w reg rm, 3)
+      else if rex.w then none
+      else if opcode.toNat = 90 then some (.convertFloat double reg rm, 3)
+      else if opcode.toNat = 194 then
+        match rest with
+        | predicate :: _ => (SsePredicate.ofImm? predicate.toNat).map fun p => (.sseCompare double p reg rm, 4)
+        | [] => none
+      else (SseArith.ofOpcode? opcode.toNat).map fun op => (.sseArith double op reg rm, 3)
+  | _ => none
+
+/-- A mandatory SSE prefix's bytes: an optional REX, then `sseForm`. -/
+def sseDecode (prefixByte : Nat) : List UInt8 → Option (Instruction × Nat)
+  | [] => none
+  | second :: rest => match X86.Register.Rex.decode? second.toNat with
+    | some rex => (sseForm prefixByte rex rest).map fun (instruction, size) => (instruction, size + 2)
+    | none => (sseForm prefixByte ⟨false, false, false, false⟩ (second :: rest)).map
+        fun (instruction, size) => (instruction, size + 1)
 
 def decodeOpcode (rex : X86.Register.Rex) (rexPresent : Bool) : List UInt8 → Option (Instruction × Nat)
   | [] => none
@@ -250,6 +298,8 @@ def decodeOpcode (rex : X86.Register.Rex) (rexPresent : Bool) : List UInt8 → O
       some (if rex.w then .signExtendDividend64 else .signExtendDividend32, 1)
     else if opcode.toNat = 15 then
       escapedForm rex rexPresent rest
+    else if !rexPresent && (opcode.toNat = 102 || opcode.toNat = 242 || opcode.toNat = 243) then
+      sseDecode opcode.toNat rest
     else none
 
 /-- One optional REX prefix followed by supported MOV/MOVSXD/MOVZX, byte memory
@@ -561,6 +611,49 @@ def State.call (before : State) (displacement : BitVec 32) (size : Nat) : State 
     memory := write64 before.memory stack next
     rip := next + displacement.signExtend 64 }
 
+def State.setXmm (before : State) (destination : Fin 16) (value : BitVec 64) (size : Nat) : State :=
+  { before with
+    xmm := fun register => if register = destination then value else before.xmm register
+    rip := before.rip + BitVec.ofNat 64 size }
+
+/-- MOVD/MOVQ xmm, r: the low 32 bits (MOVD) or all 64, zero-extended. -/
+def State.moveToXmm (before : State) (wide : Bool) (destination : Fin 16) (source : Register)
+    (size : Nat) : State :=
+  before.setXmm destination
+    (if wide then before.registers source else BitVec.ofNat 64 ((before.registers source).toNat % 2 ^ 32)) size
+
+/-- MOVD/MOVQ r, xmm: a 32-bit write zero-extends. -/
+def State.moveFromXmm (before : State) (wide : Bool) (destination : Register) (source : Fin 16)
+    (size : Nat) : State :=
+  { before with
+    registers := fun register => if register = destination then
+      (if wide then before.xmm source else BitVec.ofNat 64 ((before.xmm source).toNat % 2 ^ 32))
+      else before.registers register
+    rip := before.rip + BitVec.ofNat 64 size }
+
+def State.sseArith (before : State) (double : Bool) (operation : SseArith) (destination source : Fin 16)
+    (size : Nat) : State :=
+  before.setXmm destination (sseResult double (before.xmm destination)
+    (operation.apply (sseFormat double) (sseOperand double (before.xmm destination))
+      (sseOperand double (before.xmm source)))) size
+
+def State.sseCompare (before : State) (double : Bool) (predicate : SsePredicate) (destination source : Fin 16)
+    (size : Nat) : State :=
+  before.setXmm destination (sseResult double (before.xmm destination)
+    (sseMask double (predicate.holds (sseFormat double) (sseOperand double (before.xmm destination))
+      (sseOperand double (before.xmm source))))) size
+
+/-- CVTSI2SS/CVTSI2SD: the signed 32-bit (or, `wide`, 64-bit) integer, rounded. -/
+def State.convertInt (before : State) (double wide : Bool) (destination : Fin 16) (source : Register)
+    (size : Nat) : State :=
+  let value : Int := if wide then (before.registers source).toInt else ((before.registers source).setWidth 32).toInt
+  before.setXmm destination (sseResult double (before.xmm destination) ((sseFormat double).ofInt value)) size
+
+/-- CVTSS2SD (exact) or CVTSD2SS (rounded). -/
+def State.convertFloat (before : State) (fromDouble : Bool) (destination source : Fin 16) (size : Nat) : State :=
+  before.setXmm destination (sseResult (!fromDouble) (before.xmm destination)
+    ((sseFormat fromDouble).convert (sseFormat (!fromDouble)) (sseOperand fromDouble (before.xmm source)))) size
+
 def execute (instruction : Instruction) (size : Nat) (before : State) : State :=
   match instruction with
   | .move32 destination source => before.move32 destination source size
@@ -607,6 +700,89 @@ def execute (instruction : Instruction) (size : Nat) (before : State) : State :=
   | .jump displacement => before.jump displacement size
   | .call displacement => before.call displacement size
   | .returnNear => before.returnNear
+  | .moveToXmm wide destination source => before.moveToXmm wide destination source size
+  | .moveFromXmm wide destination source => before.moveFromXmm wide destination source size
+  | .sseArith double operation destination source => before.sseArith double operation destination source size
+  | .sseCompare double predicate destination source => before.sseCompare double predicate destination source size
+  | .convertInt double wide destination source => before.convertInt double wide destination source size
+  | .convertFloat fromDouble destination source => before.convertFloat fromDouble destination source size
+
+/-! ## The kernel (trusted)
+
+`syscall` is not an instruction `decode` knows: what it does is what Linux
+does, stated here for the calls the verified compiler makes
+(TRUSTED_BASE.md section 8). `exit` (rax 60) ends the process
+(`Lanius.Mini.Exits`) and takes no step. -/
+
+/-- The `count` bytes of memory from `address`. -/
+def bytesAt (memory : Memory) (address : Address) : Nat → List UInt8
+  | 0 => []
+  | count + 1 => memory address :: bytesAt memory (address + 1) count
+
+/-- `memory` with `bytes` written from `address` on. -/
+def writeBytes (memory : Memory) (address : Address) (bytes : List UInt8) : Memory :=
+  fun other => if (other - address).toNat < bytes.length then bytes.getD (other - address).toNat 0 else memory other
+
+/-- The state after a `syscall` that returned `result`, leaving `memory` and
+`io`: Linux's `syscall` entry and `sysret` leave rcx at the next instruction,
+every other register but r11 and the flags as they were. r11 holds RFLAGS;
+the model leaves it unknown (`r11`). -/
+def State.syscalled (before : State) (result r11 : BitVec 64) (memory : Memory) (io : Io) : State where
+  registers := fun register =>
+    if register = 0 then result
+    else if register = 1 then before.rip + 2
+    else if register = 11 then r11
+    else before.registers register
+  rip := before.rip + 2
+  memory := memory
+  flags := before.flags
+  io := io
+
+/-- What Linux does at a `syscall`, given that the process's standard output
+and standard error are open for writing, that writes to them succeed, and
+that no signal arrives (TRUSTED_BASE.md section 8):
+
+- `write` (rax 1) to fd 1 or 2 (rdi) of at most `maxTransfer` bytes (rdx)
+  from rsi writes all of them, an event on the trace, and returns their
+  count.
+- `read` (rax 0) from fd 0 (rdi) of at most `maxTransfer` bytes (rdx) to rsi
+  delivers the next of them that standard input holds, as many as asked for
+  or all that are left, stores them from rsi on, and returns their count
+  (standard input is a regular file, or a stream that delivers like one).
+- `poll` (rax 7) of no fds (rdi 0, rsi 0) with a timeout (rdx) below 2^31
+  milliseconds waits out the timeout and returns 0, changing nothing else.
+- `clock_gettime` (rax 228) of `CLOCK_REALTIME` or `CLOCK_MONOTONIC` (rdi 0
+  or 1) stores that clock's next reading as a `struct timespec` (16 bytes)
+  from rsi on and returns 0 (the clocks' readings are streams fixed before
+  the run, as standard input is).
+- `getrandom` (rax 318) of at most 256 bytes (rsi) with no flags (rdx 0)
+  stores the next that many secure random bytes from rdi on and returns
+  their count: Linux returns all of a request of at most 256 bytes, and a
+  signal does not interrupt it. -/
+inductive Kernel (before : State) : State → Prop where
+  | write (number : before.registers 0 = 1) (fd : before.registers 7 = 1 ∨ before.registers 7 = 2)
+      (count : (before.registers 2).toNat ≤ maxTransfer) (r11 : BitVec 64) :
+      Kernel before (before.syscalled (before.registers 2) r11 before.memory
+        { before.io with trace := before.io.trace ++
+          [.write (before.registers 7).toNat (bytesAt before.memory (before.registers 6) (before.registers 2).toNat)] })
+  | read (number : before.registers 0 = 0) (fd : before.registers 7 = 0)
+      (count : (before.registers 2).toNat ≤ maxTransfer) (r11 : BitVec 64) :
+      Kernel before (before.syscalled (BitVec.ofNat 64 (before.io.input.take (before.registers 2).toNat).length) r11
+        (writeBytes before.memory (before.registers 6) (before.io.input.take (before.registers 2).toNat))
+        { before.io with input := before.io.input.drop (before.registers 2).toNat })
+  | poll (number : before.registers 0 = 7) (fds : before.registers 7 = 0) (nfds : before.registers 6 = 0)
+      (timeout : (before.registers 2).toNat < 2 ^ 31) (r11 : BitVec 64) :
+      Kernel before (before.syscalled 0 r11 before.memory before.io)
+  | clock (number : before.registers 0 = 228) (which : before.registers 7 = 0 ∨ before.registers 7 = 1)
+      (reading : Int × Nat) (next : (before.io.readings (before.registers 7)).head? = some reading) (r11 : BitVec 64) :
+      Kernel before (before.syscalled 0 r11 (writeBytes before.memory (before.registers 6) (timespecLE reading))
+        (before.io.afterReading (before.registers 7)))
+  | getrandom (number : before.registers 0 = 318) (flags : before.registers 2 = 0)
+      (count : (before.registers 6).toNat ≤ 256) (enough : (before.registers 6).toNat ≤ before.io.entropy.length)
+      (r11 : BitVec 64) :
+      Kernel before (before.syscalled (before.registers 6) r11
+        (writeBytes before.memory (before.registers 7) (before.io.entropy.take (before.registers 6).toNat))
+        { before.io with entropy := before.io.entropy.drop (before.registers 6).toNat })
 
 /-- Decoding consumes bytes actually loaded at RIP. Division must use
 `divided`, which also requires nonzero-divisor and quotient-range evidence;
@@ -674,6 +850,8 @@ inductive Step (before : State) (after : State) : Prop where
       (destination : Register) (displacement : BitVec 32) (size : Nat)
       (decoded : decode bytes = some (.ripRelative destination displacement, size))
       (result : after = before.ripRelative destination displacement size)
+  /-- `syscall` (0F 05): what the kernel does. -/
+  | syscalled (loaded : CodeAt before.memory before.rip [15, 5]) (kernel : Kernel before after)
 
 /-- UD2 raises #UD at its own RIP. This records the architectural fault,
 not a Linux signal handler or an assumed successful instruction transition. -/

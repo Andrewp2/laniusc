@@ -1,0 +1,7 @@
+{ params := [{ id := 0, ty := .i32 }], ret := (.uint .uint32), body := (.return (.cast (.uint .uint32) (.local 0))) }
+{ params := [{ id := 0, ty := .i32 }], ret := (.uint .uint32), body := (.letStruct 1 (.struct 0 [.i32]) [(.local 0)] (.letStruct 2 (.struct 1 [(.struct 0 [.i32])]) [(.local 1)] (.returnEval (.eApply .plus (.eApply .plus (.eCall 2 [(.ePure (.local 2))]) (.eCall 3 [(.ePure (.local 0))])) (.eCall 4 [(.ePure (.local 1))]))))) }
+{ params := [{ id := 0, ty := (.struct 1 [(.struct 0 [.i32])]) }], ret := (.uint .uint32), body := (.returnEval (.eCall 5 [(.ePure (.local 0))])) }
+{ params := [{ id := 0, ty := .i32 }], ret := (.uint .uint32), body := (.returnEval (.eCall 0 [(.ePure (.local 0))])) }
+{ params := [{ id := 0, ty := (.struct 0 [.i32]) }], ret := (.uint .uint32), body := (.let 1 .i32 (.field 0 0) (.returnEval (.eApply .times (.eCall 0 [(.ePure (.local 1))]) (.ePure (.unsigned .uint32 2))))) }
+{ params := [{ id := 0, ty := (.struct 1 [(.struct 0 [.i32])]) }], ret := (.uint .uint32), body := (.returnEval (.eApply .plus (.eCall 6 [(.ePure (.field 0 0))]) (.ePure (.unsigned .uint32 1)))) }
+{ params := [{ id := 0, ty := (.struct 0 [.i32]) }], ret := (.uint .uint32), body := (.returnEval (.eApply .plus (.eCall 0 [(.ePure (.field 0 0))]) (.ePure (.unsigned .uint32 1)))) }

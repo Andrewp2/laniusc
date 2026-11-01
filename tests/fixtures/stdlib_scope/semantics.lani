@@ -1,0 +1,89 @@
+// std::scope: both ends, in-place growth, marks, and the errors R4 and
+// release rules produce. Each failed check returns its own exit code.
+import std::scope;
+import core::result;
+import core::mem;
+import core::slice;
+
+struct Pair { left: i64, right: i64 }
+
+fn code(error: std::scope::Error) -> i32 {
+    return match (error) {
+        std::scope::Error::InvalidCapacity -> 1, std::scope::Error::AllocationFailed -> 2,
+        std::scope::Error::Exhausted -> 3, std::scope::Error::InvalidMark -> 4,
+        std::scope::Error::NotOnTop -> 5, std::scope::Error::Destroyed -> 6
+    };
+}
+
+fn is_error(value: core::result::Result<i32, std::scope::Error>, expected: i32) -> bool {
+    if (core::result::is_ok(value)) { return false; }
+    return code(core::result::unwrap_err(value)) == expected;
+}
+
+fn main() -> i32 {
+    if (core::result::is_ok(std::scope::new(12))) { return 1; }
+    let stack: std::scope::Stack = core::result::unwrap(std::scope::new(4096));
+    let start: std::scope::Mark = stack.mark();
+
+    // A byte growable (low end) and a record growable (high end) grow at once.
+    let bytes: std::scope::Grow<u8> = std::scope::grow<u8>(stack.borrow());
+    let pairs: std::scope::Grow<Pair> = std::scope::grow<Pair>(stack.borrow());
+    let index: i32 = 0;
+    while (index < 100) {
+        std::scope::push<u8>(stack.borrow(), bytes.borrow(), (index % 251) as u8);
+        std::scope::push<Pair>(stack.borrow(), pairs.borrow(), Pair { left: index as i64, right: (index * 3) as i64 });
+        index += 1;
+    }
+    let byte_view: core::slice::View<u8> = std::scope::view<u8>(stack.borrow(), bytes);
+    let pair_view: core::slice::View<Pair> = std::scope::view<Pair>(stack.borrow(), pairs);
+    if (byte_view.length != 100 || pair_view.length != 100) { return 2; }
+    if (byte_view.values[99] != 99 as u8 || pair_view.values[0].left != 0 || pair_view.values[99].right != 297) { return 3; }
+    if (stack.used() != 100 + 1600) { return 4; }
+
+    // Another allocation on the high end ends in-place growth there only.
+    let middle: std::scope::Mark = stack.mark();
+    let numbers: core::slice::View<i64> = core::result::unwrap(std::scope::alloc_slice<i64>(stack.borrow(), 4, 7));
+    if (numbers.values[3] != 7) { return 5; }
+    if (!is_error(std::scope::push<Pair>(stack.borrow(), pairs.borrow(), Pair { left: 0, right: 0 }), 5)) { return 6; }
+    if (core::result::is_err(std::scope::push<u8>(stack.borrow(), bytes.borrow(), 1 as u8))) { return 7; }
+
+    // Releasing restores both ends; an older mark then a newer one is invalid.
+    stack.release(middle);
+    if (core::result::is_err(std::scope::push<Pair>(stack.borrow(), pairs.borrow(), Pair { left: 5, right: 6 }))) { return 8; }
+    stack.release(start);
+    if (stack.used() != 0) { return 9; }
+    if (core::result::is_ok(stack.release(middle))) { return 10; }
+
+    // Exhaustion fails without moving either end.
+    let big: std::scope::Grow<i64> = std::scope::grow<i64>(stack.borrow());
+    let pushed: i32 = 0;
+    while (core::result::is_ok(std::scope::push<i64>(stack.borrow(), big.borrow(), pushed as i64))) { pushed += 1; }
+    if (pushed != 512) { return 11; }
+    if (!is_error(std::scope::push<i64>(stack.borrow(), big.borrow(), 0), 3)) { return 12; }
+    if (std::scope::view<i64>(stack.borrow(), big).values[511] != 511) { return 13; }
+    if (stack.stats().peak != 4096) { return 14; }
+    stack.reset();
+
+    // Linked values by address, and struct-of-arrays columns.
+    let at: ptr = core::result::unwrap(std::scope::place<Pair>(stack.borrow(), Pair { left: 40, right: 2 }));
+    let placed: Pair = core::mem::typed_slice_from_storage<Pair>(at, 1)[0];
+    if (placed.left + placed.right != 42) { return 15; }
+    let columns: std::scope::Soa2<i64, u8> = core::result::unwrap(std::scope::soa2<i64, u8>(stack.borrow(), 2));
+    if (!columns.push(10, 1 as u8) || !columns.push(20, 2 as u8) || columns.push(30, 3 as u8)) { return 16; }
+    if (columns.first[1] + (columns.second[1] as i64) != 22 || columns.len() != 2) { return 17; }
+
+    // A frame scratch is a stack reset once per frame.
+    let frame: std::scope::Scratch = core::result::unwrap(std::scope::new(64));
+    let round: i32 = 0;
+    while (round < 3) {
+        if (core::result::is_err(std::scope::alloc_slice<i64>(frame.borrow(), 8, round as i64))) { return 19; }
+        frame.reset();
+        round += 1;
+    }
+    if (frame.stats().peak != 64 || frame.used() != 0) { return 20; }
+    frame.destroy();
+
+    stack.destroy();
+    if (!is_error(std::scope::push<i64>(stack.borrow(), big.borrow(), 0), 6)) { return 18; }
+    return 0;
+}

@@ -114,7 +114,9 @@ public uint ct_env_binding(uint env, uint slot, bool constant)
 {
     if (slot >= 32u) return CT_UNKNOWN;
     uint kind = ct_kind(env);
-    uint index = 32u;
+    // An environment holds up to 32 type and 32 constant bindings, types
+    // first, so a constant's index can reach 63.
+    uint index = 64u;
     if (kind == CT_KIND_ENV)
     {
         uint3 words = ct_words(env);
@@ -128,8 +130,9 @@ public uint ct_env_binding(uint env, uint slot, bool constant)
         uint operands = arity >= 32u ? 0xffffffffu : (1u << arity) - 1u;
         uint constants = ct_named_constant_mask(env);
         index = ct_nth_set_bit(constant ? constants & operands : operands & ~constants, slot);
+        if (index >= 32u) index = 64u;
     }
-    uint binding = index < 32u ? ct_arg(env, index) : CT_NONE;
+    uint binding = index < 64u ? ct_arg(env, index) : CT_NONE;
     if (!ct_is_resolved(binding) || ct_is_constant(binding) != constant) return CT_UNKNOWN;
     return binding;
 }

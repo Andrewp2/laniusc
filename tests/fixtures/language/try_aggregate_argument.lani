@@ -1,0 +1,31 @@
+module app::main;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+
+struct Text { start: i64, len: i32 }
+
+fn text(len: i32) -> Result<Text, i32> {
+    if (len < 0) { return Err(len); }
+    return Ok(Text { start: 0, len: len });
+}
+
+fn size(t: Text, extra: i32) -> Result<i32, i32> { return Ok(t.len + extra); }
+
+struct Counter { base: i32 }
+
+impl Counter {
+    fn count(&self, t: Text, extra: i32) -> Result<i32, i32> { return Ok(self.base + t.len + extra); }
+    // The two-word payload of `?` is passed straight to a method.
+    fn count_text(&self, len: i32) -> Result<i32, i32> { return self.count(text(len)?, 1); }
+}
+
+// The payload is passed straight to a function.
+fn run(len: i32) -> Result<i32, i32> { return size(text(len)?, 1); }
+
+fn main() -> i32 {
+    let counter = Counter { base: 100 };
+    if (run(-3).unwrap_err() != -3) { return 1; }
+    if (counter.count_text(-4).unwrap_err() != -4) { return 2; }
+    return run(5).unwrap() + counter.count_text(20).unwrap(); // 6 + 121 = 127
+}

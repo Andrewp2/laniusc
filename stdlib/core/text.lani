@@ -11,6 +11,7 @@ import core::option;
 import core::ordering;
 import core::pair;
 import core::result;
+import core::search;
 import core::slice;
 import core::utf8;
 
@@ -33,6 +34,8 @@ pub fn from_utf8_range(bytes: [u8], offset: i32, count: i32) -> core::result::Re
     let index: i32 = 0;
     while (index < count) {
         let first: u8 = bytes[offset + index];
+        // ASCII is a complete one-byte sequence; skip the general decoder.
+        if (first < 128) { index += 1; continue; }
         let width: u32 = core::utf8::sequence_len_or(first, 0);
         if (width == 0 || (width as i32) > count - index) {
             return core::result::Err(Error::InvalidUtf8(index));
@@ -81,12 +84,9 @@ pub impl Text {
     fn find_from(&self, needle: Text, start: i32) -> core::option::Option<i32> {
         if (needle.length > self.length - start) { return core::option::None(); }
         if (needle.length == 0) { return core::option::Some(start); }
-        let index: i32 = start;
-        while (index <= self.length - needle.length) {
-            if (self.matches_at(needle, index)) { return core::option::Some(index); }
-            index += 1;
-        }
-        return core::option::None();
+        let found: i32 = core::search::find(self.bytes, self.start + start, self.start + self.length, needle.bytes, needle.start, needle.length);
+        if (found < 0) { return core::option::None(); }
+        return core::option::Some(found - self.start);
     }
 
 
@@ -137,11 +137,20 @@ pub impl Text {
         return core::iter::eq<core::slice::Iter<u8>,core::slice::Iter<u8>,u8>(left.borrow(),right.borrow());
     }
     // Byte/scalar lexicographic order, without locale or normalization.
+    // A direct unsigned byte loop: the ordering engine of core::iter gives
+    // the same answer, but this is the hot path of every Text-keyed ordered
+    // collection and runs several times faster.
     pub fn compare(&self, other: Text) -> i32 {
-        let left: core::slice::Iter<u8> = self.iter_bytes();
-        let right: core::slice::Iter<u8> = other.iter_bytes();
-        let order: core::ordering::Ordering = core::iter::cmp<core::slice::Iter<u8>,core::slice::Iter<u8>,u8>(left.borrow(),right.borrow());
-        return core::ordering::to_i32(order);
+        let count: i32 = self.length; if (other.length < count) { count = other.length; }
+        let index: i32 = 0;
+        while (index < count) {
+            let left: u8 = self.bytes[self.start + index]; let right: u8 = other.bytes[other.start + index];
+            if (left != right) { if (left < right) { return -1; } return 1; }
+            index += 1;
+        }
+        if (self.length < other.length) { return -1; }
+        if (self.length > other.length) { return 1; }
+        return 0;
     }
     pub fn starts_with(&self, prefix: Text) -> bool {
         return prefix.length <= self.length && self.matches_at(prefix, 0);
@@ -150,7 +159,8 @@ pub impl Text {
         return suffix.length <= self.length && self.matches_at(suffix, self.length - suffix.length);
     }
     // Nonempty valid UTF-8 cannot match inside a scalar. Empty needles match
-    // at 0 for find and byte_len for rfind. Search is O(n*m), no allocation.
+    // at 0 for find and byte_len for rfind. find uses core::search (rarest
+    // byte prefilter, eight bytes per step, Two-Way fallback); O(n+m), no allocation.
     pub fn find(&self, needle: Text) -> core::option::Option<i32> { return self.find_from(needle, 0); }
     pub fn rfind(&self, needle: Text) -> core::option::Option<i32> {
         if (needle.length > self.length) { return core::option::None(); }
@@ -388,6 +398,19 @@ pub impl core::cmp::Ord<Text> for Text {
     pub fn le(left: Text, right: Text) -> bool { return left.compare(right) <= 0; }
     pub fn gt(left: Text, right: Text) -> bool { return left.compare(right) > 0; }
     pub fn ge(left: Text, right: Text) -> bool { return left.compare(right) >= 0; }
+}
+// Prefix-family order for ordered navigation over stored Text keys: a stored
+// Text that begins with the query bytes is Equal; any other keeps unsigned
+// byte order against the query. Equal runs are contiguous in byte order.
+// Not a point-lookup policy (one prefix can match several keys).
+pub struct TextPrefix {}
+pub impl TextPrefix { pub fn borrow(&self) -> &TextPrefix { return self; } }
+pub impl core::ordering::Comparator<Text,Text> for TextPrefix {
+    pub fn compare(&self, stored: Text, query: Text) -> core::ordering::Ordering {
+        if (stored.starts_with(query)) { return core::ordering::Equal; }
+        if (stored.compare(query) < 0) { return core::ordering::Less; }
+        return core::ordering::Greater;
+    }
 }
 pub impl core::hash::Hash<Text> for Text {
     pub fn hash(value: Text) -> u32 {

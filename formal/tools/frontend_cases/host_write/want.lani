@@ -1,0 +1,17 @@
+fn top(n: i32) -> i32 {
+    let ok: bool = write_stdout_byte(n);
+    let e: i32 = write_byte(2, 65);
+    if (ok) {
+        return e;
+    }
+    return 0 - e;
+}
+
+fn write_stdout_byte(value: i32) -> bool {
+    if (value<0 || value>255) {
+        return false;
+    }
+    return write_byte(1, value) == 1;
+}
+
+extern "lanius_std" fn write_byte(handle: i32, value: i32) -> i32;

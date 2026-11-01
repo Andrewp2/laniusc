@@ -9,22 +9,32 @@ public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_findMethodAt
-public import Lanius.Faithful.Gen.SelfStmtF_Inline_pLeTail
+public import Lanius.Faithful.Gen.SelfStmtF_Inline_pExpr
+public import Lanius.Faithful.Gen.SelfStmtF_Inline_pModTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pPathMore
+public import Lanius.Faithful.Gen.SelfStmtF_blockArmsOf
 public import Lanius.Faithful.Gen.SelfStmtF_compoundOf
 public import Lanius.Faithful.Gen.SelfStmtF_consBinder
 public import Lanius.Faithful.Gen.SelfStmtF_consTreeTail
 public import Lanius.Faithful.Gen.SelfStmtF_effNamedTys
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
+public import Lanius.Faithful.Gen.SelfStmtF_floatTyped
+public import Lanius.Faithful.Gen.SelfStmtF_freshId
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
-public import Lanius.Faithful.Gen.SelfStmtF_intLiteralAt
+public import Lanius.Faithful.Gen.SelfStmtF_intLiteral
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
-public import Lanius.Faithful.Gen.SelfStmtF_matchArms
+public import Lanius.Faithful.Gen.SelfStmtF_lxBlockEnd
+public import Lanius.Faithful.Gen.SelfStmtF_lxSpaceEnd
+public import Lanius.Faithful.Gen.SelfStmtF_lxSymbolStart
 public import Lanius.Faithful.Gen.SelfStmtF_monoLoop
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_noTrees
+public import Lanius.Faithful.Gen.SelfStmtF_paramGoals
+public import Lanius.Faithful.Gen.SelfStmtF_sintAt
+public import Lanius.Faithful.Gen.SelfStmtF_sliceHead
 public import Lanius.Faithful.Gen.SelfStmtF_textSelf
 public import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
+public import Lanius.Faithful.Gen.SelfStmtF_wideLeftStmt
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_findMethodAt
 import all Lanius.Mini.Frontend.P.Inline_findMethodAt
 
@@ -45,12 +55,13 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem step_binder_of {prog : SrcProgram} {prims : Prims} {ix_binder_of ix_node_prod ix_kid ix_minus ix_kid_token ix_member ix_cons_of_mini_selfhost_Local ix_path_name ix_p_pattern_ident ix_p_pattern_plain ix_binders_of ix_is_some_name ix_cons_binder : Nat} (fn : prog.funcs[ix_binder_of]? = some (src_binder_of ix_node_prod ix_kid ix_minus ix_kid_token ix_member ix_cons_of_mini_selfhost_Local ix_path_name ix_p_pattern_ident ix_p_pattern_plain ix_binders_of ix_is_some_name ix_cons_binder)) (np : prims.isPrim ix_binder_of = false)
+theorem step_binder_of {prog : SrcProgram} {prims : Prims} {ix_binder_of ix_minus ix_node_prod ix_kid ix_kid_token ix_member ix_fresh_id ix_cons_of_mini_selfhost_Local ix_path_name ix_p_pattern_ident ix_p_pattern_plain ix_binders_of ix_is_some_name ix_cons_binder : Nat} (fn : prog.funcs[ix_binder_of]? = some (src_binder_of ix_minus ix_node_prod ix_kid ix_kid_token ix_member ix_fresh_id ix_cons_of_mini_selfhost_Local ix_path_name ix_p_pattern_ident ix_p_pattern_plain ix_binders_of ix_is_some_name ix_cons_binder)) (np : prims.isPrim ix_binder_of = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
-    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_kid_token : Certified (∀ {n : Nat}, Stmt_kid_token prog prims ix_kid_token n))
     (ext_member : Certified (∀ {n : Nat}, Stmt_member prog prims ix_member n))
+    (ext_fresh_id : Certified (∀ {n : Nat}, Stmt_fresh_id prog prims ix_fresh_id n))
     (ext_cons_of_mini_selfhost_Local : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_Local prog prims ix_cons_of_mini_selfhost_Local n))
     (ext_path_name : Certified (∀ {n : Nat}, Stmt_path_name prog prims ix_path_name n))
     (ext_p_pattern_ident : Certified (∀ {n : Nat}, Stmt_p_pattern_ident prog prims ix_p_pattern_ident n))
@@ -64,10 +75,10 @@ theorem step_binder_of {prog : SrcProgram} {prims : Prims} {ix_binder_of ix_node
   simp only [src_binder_of] at h
   faithful [Lanius.Mini.Inline.binderOf]
 
-theorem step_find_method_at {prog : SrcProgram} {prims : Prims} {ix_find_method_at ix_plus ix_same_text ix_find_method ix_impl_binds ix_unique_found ix_no_method : Nat} (fn : prog.funcs[ix_find_method_at]? = some (src_find_method_at ix_plus ix_same_text ix_find_method ix_impl_binds ix_unique_found ix_no_method)) (np : prims.isPrim ix_find_method_at = false)
+theorem step_find_method_at {prog : SrcProgram} {prims : Prims} {ix_find_method_at ix_plus ix_same_text ix_find_method ix_impl_fit ix_unique_found ix_no_method : Nat} (fn : prog.funcs[ix_find_method_at]? = some (src_find_method_at ix_plus ix_same_text ix_find_method ix_impl_fit ix_unique_found ix_no_method)) (np : prims.isPrim ix_find_method_at = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_same_text : Certified (∀ {n : Nat}, Stmt_same_text prog prims ix_same_text n))
-    (ext_impl_binds : Certified (∀ {n : Nat}, Stmt_impl_binds prog prims ix_impl_binds n))
+    (ext_impl_fit : Certified (∀ {n : Nat}, Stmt_impl_fit prog prims ix_impl_fit n))
     (ext_unique_found : Certified (∀ {n : Nat}, Stmt_unique_found prog prims ix_unique_found n))
     (ext_no_method : Certified (∀ {n : Nat}, Stmt_no_method prog prims ix_no_method n)) {n : Nat}
     (ih_find_method : Certified (Stmt_find_method prog prims ix_find_method n)) :
@@ -76,6 +87,132 @@ theorem step_find_method_at {prog : SrcProgram} {prims : Prims} {ix_find_method_
   rw [pcall_succ np fn] at h
   simp only [src_find_method_at] at h
   faithful [Lanius.Mini.Inline.findMethodAt]
+
+theorem step_for_of {prog : SrcProgram} {prims : Prims} {ix_for_of ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_member ix_field_start_Token_of_mini_selfhost_Token ix_fresh_id ix_cons_of_mini_selfhost_Local ix_block_of ix_int_literal ix_p_postfix_end ix_find_local ix_p_for_iter_range_from_start ix_p_range_start_int ix_p_range_exclusive ix_p_range_bound ix_p_range_bound_name ix_for_range : Nat} (fn : prog.funcs[ix_for_of]? = some (src_for_of ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_member ix_field_start_Token_of_mini_selfhost_Token ix_fresh_id ix_cons_of_mini_selfhost_Local ix_block_of ix_int_literal ix_p_postfix_end ix_find_local ix_p_for_iter_range_from_start ix_p_range_start_int ix_p_range_exclusive ix_p_range_bound ix_p_range_bound_name ix_for_range)) (np : prims.isPrim ix_for_of = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
+    (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
+    (ext_field_text_Token_of_mini_selfhost_Token : Certified (∀ {n : Nat}, Stmt_field_text_Token_of_mini_selfhost_Token prog prims ix_field_text_Token_of_mini_selfhost_Token n))
+    (ext_kid_token : Certified (∀ {n : Nat}, Stmt_kid_token prog prims ix_kid_token n))
+    (ext_member : Certified (∀ {n : Nat}, Stmt_member prog prims ix_member n))
+    (ext_field_start_Token_of_mini_selfhost_Token : Certified (∀ {n : Nat}, Stmt_field_start_Token_of_mini_selfhost_Token prog prims ix_field_start_Token_of_mini_selfhost_Token n))
+    (ext_fresh_id : Certified (∀ {n : Nat}, Stmt_fresh_id prog prims ix_fresh_id n))
+    (ext_cons_of_mini_selfhost_Local : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_Local prog prims ix_cons_of_mini_selfhost_Local n))
+    (ext_int_literal : Certified (∀ {n : Nat}, Stmt_int_literal prog prims ix_int_literal n))
+    (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n))
+    (ext_find_local : Certified (∀ {n : Nat}, Stmt_find_local prog prims ix_find_local n))
+    (ext_p_for_iter_range_from_start : Certified (∀ {n : Nat}, Stmt_p_for_iter_range_from_start prog prims ix_p_for_iter_range_from_start n))
+    (ext_p_range_start_int : Certified (∀ {n : Nat}, Stmt_p_range_start_int prog prims ix_p_range_start_int n))
+    (ext_p_range_exclusive : Certified (∀ {n : Nat}, Stmt_p_range_exclusive prog prims ix_p_range_exclusive n))
+    (ext_p_range_bound : Certified (∀ {n : Nat}, Stmt_p_range_bound prog prims ix_p_range_bound n))
+    (ext_p_range_bound_name : Certified (∀ {n : Nat}, Stmt_p_range_bound_name prog prims ix_p_range_bound_name n))
+    (ext_for_range : Certified (∀ {n : Nat}, Stmt_for_range prog prims ix_for_range n)) {n : Nat}
+    (ih_block_of : Certified (Stmt_block_of prog prims ix_block_of n)) :
+    Stmt_for_of prog prims ix_for_of (n + 1) := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rw [pcall_succ np fn] at h
+  simp only [src_for_of] at h
+  faithful [Lanius.Mini.Inline.forOf]
+
+theorem step_lx_block_at {prog : SrcProgram} {prims : Prims} {ix_lx_block_at ix_plus ix_lx_block_next : Nat} (fn : prog.funcs[ix_lx_block_at]? = some (src_lx_block_at ix_plus ix_lx_block_next)) (np : prims.isPrim ix_lx_block_at = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n)) {n : Nat}
+    (ih_lx_block_next : Certified (Stmt_lx_block_next prog prims ix_lx_block_next n)) :
+    Stmt_lx_block_at prog prims ix_lx_block_at (n + 1) := by
+  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_block_at] at h
+  faithful [Lanius.Mini.Inline.lxBlockAt]
+
+theorem step_lx_block_next {prog : SrcProgram} {prims : Prims} {ix_lx_block_next ix_plus ix_lx_block : Nat} (fn : prog.funcs[ix_lx_block_next]? = some (src_lx_block_next ix_plus ix_lx_block)) (np : prims.isPrim ix_lx_block_next = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n)) {n : Nat}
+    (ih_lx_block : Certified (Stmt_lx_block prog prims ix_lx_block n)) :
+    Stmt_lx_block_next prog prims ix_lx_block_next (n + 1) := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_block_next] at h
+  faithful [Lanius.Mini.Inline.lxBlockNext]
+
+theorem proof_lx_digit_run_at {prog : SrcProgram} {prims : Prims} {ix_lx_digit_run_at ix_plus ix_lx_base_digit ix_lx_digit_tail : Nat} (fn : prog.funcs[ix_lx_digit_run_at]? = some (src_lx_digit_run_at ix_plus ix_lx_base_digit ix_lx_digit_tail)) (np : prims.isPrim ix_lx_digit_run_at = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_lx_base_digit : Certified (∀ {n : Nat}, Stmt_lx_base_digit prog prims ix_lx_base_digit n))
+    (ext_lx_digit_tail : Certified (∀ {n : Nat}, Stmt_lx_digit_tail prog prims ix_lx_digit_tail n)) {n : Nat} :
+    Stmt_lx_digit_run_at prog prims ix_lx_digit_run_at n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_digit_run_at] at h
+  faithful [Lanius.Mini.Inline.lxDigitRunAt]
+
+theorem step_lx_digit_sep {prog : SrcProgram} {prims : Prims} {ix_lx_digit_sep ix_plus ix_lx_base_digit ix_lx_digit_tail : Nat} (fn : prog.funcs[ix_lx_digit_sep]? = some (src_lx_digit_sep ix_plus ix_lx_base_digit ix_lx_digit_tail)) (np : prims.isPrim ix_lx_digit_sep = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_lx_base_digit : Certified (∀ {n : Nat}, Stmt_lx_base_digit prog prims ix_lx_base_digit n)) {n : Nat}
+    (ih_lx_digit_tail : Certified (Stmt_lx_digit_tail prog prims ix_lx_digit_tail n)) :
+    Stmt_lx_digit_sep prog prims ix_lx_digit_sep (n + 1) := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_digit_sep] at h
+  faithful [Lanius.Mini.Inline.lxDigitSep]
+
+theorem step_lx_digit_tail_at {prog : SrcProgram} {prims : Prims} {ix_lx_digit_tail_at ix_plus ix_unbox_of_mini_selfhost_List_usize ix_lx_base_digit ix_lx_digit_tail ix_lx_digit_sep : Nat} (fn : prog.funcs[ix_lx_digit_tail_at]? = some (src_lx_digit_tail_at ix_plus ix_unbox_of_mini_selfhost_List_usize ix_lx_base_digit ix_lx_digit_tail ix_lx_digit_sep)) (np : prims.isPrim ix_lx_digit_tail_at = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_unbox_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_usize n))
+    (ext_lx_base_digit : Certified (∀ {n : Nat}, Stmt_lx_base_digit prog prims ix_lx_base_digit n)) {n : Nat}
+    (ih_lx_digit_tail : Certified (Stmt_lx_digit_tail prog prims ix_lx_digit_tail n))
+    (ih_lx_digit_sep : Certified (Stmt_lx_digit_sep prog prims ix_lx_digit_sep n)) :
+    Stmt_lx_digit_tail_at prog prims ix_lx_digit_tail_at (n + 1) := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_digit_tail_at] at h
+  faithful [Lanius.Mini.Inline.lxDigitTailAt]
+
+theorem proof_lx_exponent_sign {prog : SrcProgram} {prims : Prims} {ix_lx_exponent_sign ix_plus : Nat} (fn : prog.funcs[ix_lx_exponent_sign]? = some (src_lx_exponent_sign ix_plus)) (np : prims.isPrim ix_lx_exponent_sign = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n)) {n : Nat} :
+    Stmt_lx_exponent_sign prog prims ix_lx_exponent_sign n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_exponent_sign] at h
+  faithful [Lanius.Mini.Inline.lxExponentSign]
+
+theorem step_lx_ident_run_at {prog : SrcProgram} {prims : Prims} {ix_lx_ident_run_at ix_plus ix_lx_ident_run ix_lx_ident_continue : Nat} (fn : prog.funcs[ix_lx_ident_run_at]? = some (src_lx_ident_run_at ix_plus ix_lx_ident_run ix_lx_ident_continue)) (np : prims.isPrim ix_lx_ident_run_at = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_lx_ident_continue : Certified (∀ {n : Nat}, Stmt_lx_ident_continue prog prims ix_lx_ident_continue n)) {n : Nat}
+    (ih_lx_ident_run : Certified (Stmt_lx_ident_run prog prims ix_lx_ident_run n)) :
+    Stmt_lx_ident_run_at prog prims ix_lx_ident_run_at (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_ident_run_at] at h
+  faithful [Lanius.Mini.Inline.lxIdentRunAt]
+
+theorem step_lx_line_run_at {prog : SrcProgram} {prims : Prims} {ix_lx_line_run_at ix_plus ix_lx_line_run : Nat} (fn : prog.funcs[ix_lx_line_run_at]? = some (src_lx_line_run_at ix_plus ix_lx_line_run)) (np : prims.isPrim ix_lx_line_run_at = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n)) {n : Nat}
+    (ih_lx_line_run : Certified (Stmt_lx_line_run prog prims ix_lx_line_run n)) :
+    Stmt_lx_line_run_at prog prims ix_lx_line_run_at (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_line_run_at] at h
+  faithful [Lanius.Mini.Inline.lxLineRunAt]
+
+theorem step_lx_quoted_at {prog : SrcProgram} {prims : Prims} {ix_lx_quoted_at ix_plus ix_lx_quoted : Nat} (fn : prog.funcs[ix_lx_quoted_at]? = some (src_lx_quoted_at ix_plus ix_lx_quoted)) (np : prims.isPrim ix_lx_quoted_at = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n)) {n : Nat}
+    (ih_lx_quoted : Certified (Stmt_lx_quoted prog prims ix_lx_quoted n)) :
+    Stmt_lx_quoted_at prog prims ix_lx_quoted_at (n + 1) := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_quoted_at] at h
+  faithful [Lanius.Mini.Inline.lxQuotedAt]
+
+theorem step_lx_space_run_at {prog : SrcProgram} {prims : Prims} {ix_lx_space_run_at ix_plus ix_lx_space ix_lx_space_run : Nat} (fn : prog.funcs[ix_lx_space_run_at]? = some (src_lx_space_run_at ix_plus ix_lx_space ix_lx_space_run)) (np : prims.isPrim ix_lx_space_run_at = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_lx_space : Certified (∀ {n : Nat}, Stmt_lx_space prog prims ix_lx_space n)) {n : Nat}
+    (ih_lx_space_run : Certified (Stmt_lx_space_run prog prims ix_lx_space_run n)) :
+    Stmt_lx_space_run_at prog prims ix_lx_space_run_at (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_space_run_at] at h
+  faithful [Lanius.Mini.Inline.lxSpaceRunAt]
 
 theorem step_mono_next {prog : SrcProgram} {prims : Prims} {ix_mono_next ix_plus ix_mono_loop ix_add_insts ix_stmt_calls ix_concat_of_mini_selfhost_MFunc ix_single_of_mini_selfhost_MFunc : Nat} (fn : prog.funcs[ix_mono_next]? = some (src_mono_next ix_plus ix_mono_loop ix_add_insts ix_stmt_calls ix_concat_of_mini_selfhost_MFunc ix_single_of_mini_selfhost_MFunc)) (np : prims.isPrim ix_mono_next = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
@@ -90,23 +227,16 @@ theorem step_mono_next {prog : SrcProgram} {prims : Prims} {ix_mono_next ix_plus
   simp only [src_mono_next] at h
   faithful [Lanius.Mini.Inline.monoNext]
 
-theorem proof_p_add {prog : SrcProgram} {prims : Prims} {ix_p_add : Nat} (fn : prog.funcs[ix_p_add]? = some (src_p_add)) (np : prims.isPrim ix_p_add = false) {n : Nat} :
-    Stmt_p_add prog prims ix_p_add n := by
-  intro w h
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_p_add] at h
-  faithful [Lanius.Mini.Inline.pAdd]
-
-theorem step_param_of {prog : SrcProgram} {prims : Prims} {ix_param_of ix_node_prod ix_minus ix_kid_token ix_member ix_params_of ix_ty_of ix_p_param_named ix_p_param_self ix_pattern_of ix_cons_param ix_cons_of_mini_selfhost_Local : Nat} (fn : prog.funcs[ix_param_of]? = some (src_param_of ix_node_prod ix_minus ix_kid_token ix_member ix_params_of ix_ty_of ix_p_param_named ix_p_param_self ix_pattern_of ix_cons_param ix_cons_of_mini_selfhost_Local)) (np : prims.isPrim ix_param_of = false)
-    (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
+theorem step_param_of {prog : SrcProgram} {prims : Prims} {ix_param_of ix_minus ix_node_prod ix_member ix_params_of ix_ty_of ix_param_token ix_p_param_named ix_p_param_self ix_p_param_self_ref ix_fresh_id ix_pattern_of ix_cons_param ix_cons_of_mini_selfhost_Local : Nat} (fn : prog.funcs[ix_param_of]? = some (src_param_of ix_minus ix_node_prod ix_member ix_params_of ix_ty_of ix_param_token ix_p_param_named ix_p_param_self ix_p_param_self_ref ix_fresh_id ix_pattern_of ix_cons_param ix_cons_of_mini_selfhost_Local)) (np : prims.isPrim ix_param_of = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
-    (ext_kid_token : Certified (∀ {n : Nat}, Stmt_kid_token prog prims ix_kid_token n))
+    (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_member : Certified (∀ {n : Nat}, Stmt_member prog prims ix_member n))
     (ext_ty_of : Certified (∀ {n : Nat}, Stmt_ty_of prog prims ix_ty_of n))
+    (ext_param_token : Certified (∀ {n : Nat}, Stmt_param_token prog prims ix_param_token n))
     (ext_p_param_named : Certified (∀ {n : Nat}, Stmt_p_param_named prog prims ix_p_param_named n))
     (ext_p_param_self : Certified (∀ {n : Nat}, Stmt_p_param_self prog prims ix_p_param_self n))
+    (ext_p_param_self_ref : Certified (∀ {n : Nat}, Stmt_p_param_self_ref prog prims ix_p_param_self_ref n))
+    (ext_fresh_id : Certified (∀ {n : Nat}, Stmt_fresh_id prog prims ix_fresh_id n))
     (ext_pattern_of : Certified (∀ {n : Nat}, Stmt_pattern_of prog prims ix_pattern_of n))
     (ext_cons_param : Certified (∀ {n : Nat}, Stmt_cons_param prog prims ix_cons_param n))
     (ext_cons_of_mini_selfhost_Local : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_Local prog prims ix_cons_of_mini_selfhost_Local n)) {n : Nat}

@@ -29,6 +29,16 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
+theorem proof_array_type {prog : SrcProgram} {prims : Prims} {ix_array_type ix_boxed_of_mini_selfhost_SrcType : Nat} (fn : prog.funcs[ix_array_type]? = some (src_array_type ix_boxed_of_mini_selfhost_SrcType)) (np : prims.isPrim ix_array_type = false)
+    (ext_boxed_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcType prog prims ix_boxed_of_mini_selfhost_SrcType n)) {n : Nat} :
+    Stmt_array_type prog prims ix_array_type n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_array_type] at h
+  faithful [Lanius.Mini.arrayType]
+
 theorem proof_cons_type {prog : SrcProgram} {prims : Prims} {ix_cons_type ix_cons_type_tail : Nat} (fn : prog.funcs[ix_cons_type]? = some (src_cons_type ix_cons_type_tail)) (np : prims.isPrim ix_cons_type = false)
     (ext_cons_type_tail : Certified (∀ {n : Nat}, Stmt_cons_type_tail prog prims ix_cons_type_tail n)) {n : Nat} :
     Stmt_cons_type prog prims ix_cons_type n := by

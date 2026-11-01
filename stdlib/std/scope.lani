@@ -1,0 +1,200 @@
+// Scoped stacks, phase S0 of docs/memory-scoped-stacks-design.md: library
+// types with explicit marks and no compiler support.
+//
+// A Stack is one reserved region with two ends. Packed byte and i32 values
+// grow up from the bottom; every other T grows down from the top, the
+// direction its raw view runs (core::mem::typed_slice_from_storage puts
+// element zero at the top of its storage). Either way, allocating is a bump,
+// releasing to a mark is two stores, and the newest growable on each end
+// extends in place without copying.
+//
+// Copies of a Stack alias one region: keep one active owner. Nothing stops a
+// view from outliving the mark it was allocated after; S1's root check adds
+// that. The reservation is committed by the system on first touch.
+module std::scope;
+import alloc::allocator;
+import core::mem;
+import core::result;
+import core::slice;
+
+pub enum Error { InvalidCapacity, AllocationFailed, Exhausted, InvalidMark, NotOnTop, Destroyed }
+// Both ends of a stack at one moment; release restores them.
+pub struct Mark { low: usize, high: usize }
+pub struct Stats { capacity: usize, used: usize, peak: usize }
+pub struct Stack { base: ptr, capacity: usize, low: usize, high: usize, peak: usize, live: bool }
+// Frame scratch (Odin's temp allocator): a stack that callees allocate into
+// and its owner resets once per frame. S0 has no scope-exit release, so the
+// owner calls `reset`.
+pub type Scratch = Stack;
+// A growable array on one end of a stack. `start` is the offset of its first
+// byte on the low end and one past its last byte on the high end.
+pub struct Grow<T> { start: usize, length: i32, high: bool, size: usize }
+// Two columns of one capacity: struct-of-arrays storage for a record (A, B).
+pub struct Soa2<A, B> { first: [A], second: [B], length: i32, capacity: i32 }
+pub struct Soa3<A, B, C> { first: [A], second: [B], third: [C], length: i32, capacity: i32 }
+
+const ALIGN: usize = 8;
+const MAX_CAPACITY: usize = 1099511627776;
+
+pub fn new(capacity: usize) -> core::result::Result<Stack, Error> {
+    if (capacity == 0 || capacity > MAX_CAPACITY || capacity % ALIGN != 0) { return core::result::Err(Error::InvalidCapacity); }
+    let base: ptr = alloc::allocator::alloc(capacity, ALIGN);
+    if (base == 0) { return core::result::Err(Error::AllocationFailed); }
+    return core::result::Ok(Stack { base: base, capacity: capacity, low: 0, high: capacity, peak: 0, live: true });
+}
+
+// The bytes one T takes and the end it lives on.
+fn high_end<T>() -> bool {
+    let nowhere: ptr = 0;
+    let probe: [T] = core::mem::typed_slice_from_storage<T>(nowhere, 0);
+    return core::mem::slice_stride(probe) < 0;
+}
+fn round_up(value: usize) -> usize { return (value + ALIGN - 1) / ALIGN * ALIGN; }
+
+pub impl Stack {
+    pub fn borrow(&self) -> &Stack { return self; }
+    pub fn is_live(&self) -> bool { return self.live; }
+    pub fn mark(&self) -> Mark { return Mark { low: self.low, high: self.high }; }
+    pub fn used(&self) -> usize { return self.low + (self.capacity - self.high); }
+    pub fn stats(&self) -> Stats { self.note_peak(); return Stats { capacity: self.capacity, used: self.used(), peak: self.peak }; }
+    // Frees everything allocated after `mark`. A mark from before an earlier
+    // release to an older mark is rejected, not trusted.
+    pub fn release(&self, mark: Mark) -> core::result::Result<bool, Error> {
+        if (!self.live) { return core::result::Err(Error::Destroyed); }
+        if (mark.low > self.low || mark.high < self.high || mark.high > self.capacity) { return core::result::Err(Error::InvalidMark); }
+        self.note_peak(); self.low = mark.low; self.high = mark.high;
+        return core::result::Ok(true);
+    }
+    // Frees everything: the frame-scratch reset.
+    pub fn reset(&self) { self.note_peak(); self.low = 0; self.high = self.capacity; }
+    pub fn destroy(&self) {
+        if (self.live) { alloc::allocator::dealloc(self.base, self.capacity, ALIGN); self.live = false; }
+    }
+    // Use only falls at a release or reset, so the peak is noted there.
+    fn note_peak(&self) { let used: usize = self.used(); if (used > self.peak) { self.peak = used; } }
+    // Reserve `size` bytes on one end and return their lowest address.
+    fn bump(&self, size: usize, high: bool) -> core::result::Result<ptr, Error> {
+        if (!self.live) { return core::result::Err(Error::Destroyed); }
+        let start: usize = self.low;
+        if (!high) { start = round_up(self.low); }
+        let end: usize = self.high;
+        if (high) { end = self.high / ALIGN * ALIGN; }
+        if (start > end || size > end - start) { return core::result::Err(Error::Exhausted); }
+        if (high) { self.high = end - size; return core::result::Ok(self.base + self.high); }
+        self.low = start + size;
+        return core::result::Ok(self.base + start);
+    }
+}
+
+pub fn alloc_slice<T>(stack: &Stack, count: i32, fill: T) -> core::result::Result<core::slice::View<T>, Error> {
+    if (count < 0) { return core::result::Err(Error::InvalidCapacity); }
+    let size: usize = core::mem::size_of<T>();
+    let bytes: usize = size * (count as usize);
+    let placed: core::result::Result<ptr, Error> = stack.bump(bytes, high_end<T>());
+    if (core::result::is_err(placed)) { return core::result::Err(core::result::unwrap_err(placed)); }
+    let values: [T] = core::mem::typed_slice_from_storage<T>(core::result::unwrap(placed), count);
+    let index: i32 = 0; if (size > 0) { while (index < count) { values[index] = fill; index += 1; } }
+    return core::result::Ok(core::slice::View { values: values, start: 0, length: count });
+}
+
+pub fn copy_slice<T>(stack: &Stack, input: core::slice::View<T>) -> core::result::Result<core::slice::View<T>, Error> {
+    let count: i32 = input.len();
+    let size: usize = core::mem::size_of<T>();
+    let placed: core::result::Result<ptr, Error> = stack.bump(size * (count as usize), high_end<T>());
+    if (core::result::is_err(placed)) { return core::result::Err(core::result::unwrap_err(placed)); }
+    let values: [T] = core::mem::typed_slice_from_storage<T>(core::result::unwrap(placed), count);
+    let index: i32 = 0; if (size > 0) { while (index < count) { values[index] = input.values[input.start + index]; index += 1; } }
+    return core::result::Ok(core::slice::View { values: values, start: 0, length: count });
+}
+
+// One T on its end of the stack, by address: for linked structures. Read and
+// write it with core::mem::typed_slice_from_storage<T>(at, 1).
+pub fn place<T>(stack: &Stack, value: T) -> core::result::Result<ptr, Error> {
+    let placed: core::result::Result<ptr, Error> = stack.bump(core::mem::size_of<T>(), high_end<T>());
+    if (core::result::is_err(placed)) { return placed; }
+    let slots: [T] = core::mem::typed_slice_from_storage<T>(core::result::unwrap(placed), 1);
+    slots[0] = value;
+    return placed;
+}
+
+// Start an empty growable on T's end of the stack. It extends in place while
+// nothing else is allocated on that end after it.
+pub fn grow<T>(stack: &Stack) -> Grow<T> {
+    let high: bool = high_end<T>();
+    let size: usize = core::mem::size_of<T>();
+    if (high) { stack.high = stack.high / ALIGN * ALIGN; return Grow { start: stack.high, length: 0, high: true, size: size }; }
+    stack.low = round_up(stack.low);
+    return Grow { start: stack.low, length: 0, high: false, size: size };
+}
+
+pub impl<T> Grow<T> {
+    pub fn borrow(&self) -> &Grow<T> { return self; }
+    pub fn len(&self) -> i32 { return self.length; }
+}
+
+fn grow_base<T>(stack: &Stack, start: usize, length: i32, high: bool) -> ptr {
+    if (high) { return stack.base + (start - core::mem::size_of<T>() * (length as usize)); }
+    return stack.base + start;
+}
+
+// The new element is the lowest on the high end and the highest on the low
+// end, so it is written through a one-element view at its own address.
+pub fn push<T>(stack: &Stack, values: &Grow<T>, item: T) -> core::result::Result<i32, Error> {
+    if (!stack.live) { return core::result::Err(Error::Destroyed); }
+    let size: usize = values.size;
+    let bytes: usize = size * (values.length as usize);
+    if (stack.high - stack.low < size) { return core::result::Err(Error::Exhausted); }
+    let at: usize = stack.low;
+    if (values.high) {
+        if (values.start - bytes != stack.high) { return core::result::Err(Error::NotOnTop); }
+        stack.high -= size; at = stack.high;
+    } else {
+        if (values.start + bytes != stack.low) { return core::result::Err(Error::NotOnTop); }
+        stack.low += size;
+    }
+    values.length += 1;
+    let slot: [T] = core::mem::typed_slice_from_storage<T>(stack.base + at, 1);
+    slot[0] = item;
+    return core::result::Ok(values.length);
+}
+
+pub fn view<T>(stack: &Stack, values: Grow<T>) -> core::slice::View<T> {
+    let slots: [T] = core::mem::typed_slice_from_storage<T>(grow_base<T>(stack, values.start, values.length, values.high), values.length);
+    return core::slice::View { values: slots, start: 0, length: values.length };
+}
+
+pub fn soa2<A, B>(stack: &Stack, capacity: i32) -> core::result::Result<Soa2<A, B>, Error> {
+    if (capacity < 0) { return core::result::Err(Error::InvalidCapacity); }
+    let first: core::result::Result<ptr, Error> = stack.bump(core::mem::size_of<A>() * (capacity as usize), high_end<A>());
+    if (core::result::is_err(first)) { return core::result::Err(core::result::unwrap_err(first)); }
+    let second: core::result::Result<ptr, Error> = stack.bump(core::mem::size_of<B>() * (capacity as usize), high_end<B>());
+    if (core::result::is_err(second)) { return core::result::Err(core::result::unwrap_err(second)); }
+    return core::result::Ok(Soa2 { first: core::mem::typed_slice_from_storage<A>(core::result::unwrap(first), capacity),
+        second: core::mem::typed_slice_from_storage<B>(core::result::unwrap(second), capacity), length: 0, capacity: capacity });
+}
+
+pub impl<A, B> Soa2<A, B> {
+    pub fn len(&self) -> i32 { return self.length; }
+    pub fn push(&self, a: A, b: B) -> bool {
+        if (self.length == self.capacity) { return false; }
+        self.first[self.length] = a; self.second[self.length] = b; self.length += 1; return true;
+    }
+}
+
+pub fn soa3<A, B, C>(stack: &Stack, capacity: i32) -> core::result::Result<Soa3<A, B, C>, Error> {
+    let pair: core::result::Result<Soa2<A, B>, Error> = soa2<A, B>(stack, capacity);
+    if (core::result::is_err(pair)) { return core::result::Err(core::result::unwrap_err(pair)); }
+    let third: core::result::Result<ptr, Error> = stack.bump(core::mem::size_of<C>() * (capacity as usize), high_end<C>());
+    if (core::result::is_err(third)) { return core::result::Err(core::result::unwrap_err(third)); }
+    let columns: Soa2<A, B> = core::result::unwrap(pair);
+    return core::result::Ok(Soa3 { first: columns.first, second: columns.second,
+        third: core::mem::typed_slice_from_storage<C>(core::result::unwrap(third), capacity), length: 0, capacity: capacity });
+}
+
+pub impl<A, B, C> Soa3<A, B, C> {
+    pub fn len(&self) -> i32 { return self.length; }
+    pub fn push(&self, a: A, b: B, c: C) -> bool {
+        if (self.length == self.capacity) { return false; }
+        self.first[self.length] = a; self.second[self.length] = b; self.third[self.length] = c; self.length += 1; return true;
+    }
+}

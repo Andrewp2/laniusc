@@ -24,6 +24,9 @@ namespace Lanius.Mini
 @[expose] def Inline.pPatternPlain : Nat :=
   199
 
+@[expose] def Inline.pPatternTuple : Nat :=
+  200
+
 @[expose] def Inline.pPatternsAfterCommaMore : Nat :=
   205
 
@@ -56,6 +59,21 @@ namespace Lanius.Mini
 
 @[expose] def Inline.pPostfixMember : Nat :=
   163
+
+@[expose] def Inline.pPostfixTry : Nat :=
+  318
+
+@[expose] def Inline.pRangeBound : Nat :=
+  102
+
+@[expose] def Inline.pRangeBoundName : Nat :=
+  99
+
+@[expose] def Inline.pRangeExclusive : Nat :=
+  97
+
+@[expose] def Inline.pRangeStartInt : Nat :=
+  96
 
 @[expose] def Inline.pRetType : Nat :=
   34

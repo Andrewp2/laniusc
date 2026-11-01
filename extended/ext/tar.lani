@@ -10,7 +10,11 @@ pub enum Error { Bounds, UnexpectedEof, MissingFooter, InvalidChecksum, Unsuppor
 pub enum Kind { Regular, HardLink, SymbolicLink, CharacterDevice, BlockDevice, Directory, Fifo, Contiguous }
 pub struct Metadata { path: core::slice::View<u8>, link_name: core::slice::View<u8>, uname: core::slice::View<u8>, gname: core::slice::View<u8>, kind: Kind, mode: u32, uid: u64, gid: u64, mtime: u64, dev_major: u64, dev_minor: u64 }
 pub struct Entry { name: core::slice::View<u8>, prefix: core::slice::View<u8>, link_name: core::slice::View<u8>, uname: core::slice::View<u8>, gname: core::slice::View<u8>, data: core::slice::View<u8>, kind: Kind, mode: u32, uid: u64, gid: u64, size: u64, mtime: u64, dev_major: u64, dev_minor: u64, offset: i32 }
-pub struct Reader { input: core::slice::View<u8>, cursor: i32, ended: bool }
+// gnu accepts old-GNU magic (`ustar  \0`), base-256 numbers and ignores the
+// GNU prefix/atime area. headers_only parses one header without its data, for
+// streaming callers that read data separately (Entry.data is then empty).
+pub struct ReadOptions { full_uname: bool, full_gname: bool, gnu: bool, headers_only: bool }
+pub struct Reader { input: core::slice::View<u8>, cursor: i32, ended: bool, options: ReadOptions }
 pub struct Writer { output: core::slice::View<u8>, cursor: i32, ended: bool }
 
 fn valid(view: core::slice::View<u8>) -> bool { return view.start >= 0 && view.length >= 0 && view.start <= 2147483647-view.length; }
@@ -36,6 +40,16 @@ fn string_field(header: core::slice::View<u8>, start: i32, width: i32, require_n
     if ((require_nul && end == start+width) || !zeros(header,end,start+width)) { return core::result::Err(Error::InvalidName); }
     return core::result::Ok(window(header,start,end));
 }
+// GNU base-256: first byte 0x80 then big-endian magnitude; negatives fail.
+fn base256(header: core::slice::View<u8>, start: i32, width: i32, maximum: u64) -> core::result::Result<u64,Error> {
+    if (byte(header,start) != 128) { return core::result::Err(Error::UnsupportedFormat); }
+    let value: u64 = 0; let index: i32 = start+1;
+    while (index < start+width) { if (value > (maximum-(byte(header,index) as u64))/256) { return core::result::Err(Error::NumberOverflow); } value = value*256+(byte(header,index) as u64); index += 1; }
+    return core::result::Ok(value);
+}
+fn number_in(header: core::slice::View<u8>, start: i32, width: i32, octal_maximum: u64, base256_maximum: u64, gnu: bool) -> core::result::Result<u64,Error> {
+    if (gnu && (byte(header,start) & 128) != 0) { return base256(header,start,width,base256_maximum); } return number(header,start,width,octal_maximum);
+}
 fn number(header: core::slice::View<u8>, start: i32, width: i32, maximum: u64) -> core::result::Result<u64,Error> {
     if ((byte(header,start) & 128) != 0) { return core::result::Err(Error::UnsupportedFormat); }
     let position: i32 = start; let value: u64 = 0; let digits: bool = false;
@@ -60,7 +74,14 @@ pub fn metadata(path: core::slice::View<u8>, kind: Kind) -> Metadata {
     return Metadata { path: path, link_name: empty, uname: empty, gname: empty, kind: kind, mode: mode, uid: 0, gid: 0, mtime: 0, dev_major: 0, dev_minor: 0 };
 }
 pub fn reader(input: core::slice::View<u8>) -> core::result::Result<Reader,Error> {
-    if (!valid(input)) { return core::result::Err(Error::Bounds); } return core::result::Ok(Reader { input: input, cursor: 0, ended: false });
+    if (!valid(input)) { return core::result::Err(Error::Bounds); } return core::result::Ok(Reader { input: input, cursor: 0, ended: false, options: read_options() });
+}
+pub fn read_options() -> ReadOptions { return ReadOptions { full_uname: false, full_gname: false, gnu: false, headers_only: false }; }
+// Resume reading at a record-aligned offset (used by ext::pax after extension
+// headers). full_uname/full_gname accept an unterminated 32-byte name field,
+// which pax writers such as Python tarfile emit when a pax record replaces it.
+pub fn reader_with(input: core::slice::View<u8>, cursor: i32, options: ReadOptions) -> core::result::Result<Reader,Error> {
+    if (!valid(input) || cursor < 0 || cursor > input.length || cursor % 512 != 0) { return core::result::Err(Error::Bounds); } return core::result::Ok(Reader { input: input, cursor: cursor, ended: false, options: options });
 }
 pub impl Entry {
     pub fn path_len(&self) -> i32 { if (self.prefix.length == 0) { return self.name.length; } return self.prefix.length+1+self.name.length; }
@@ -94,27 +115,31 @@ pub impl Reader {
         let stored: core::result::Result<u64,Error> = number(header,148,8,262143);
         if (core::result::is_err(stored)) { return core::result::Err(core::result::unwrap_err(stored)); }
         if (core::result::unwrap(stored) != checksum(header)) { return core::result::Err(Error::InvalidChecksum); }
-        if (byte(header,257) != 117 || byte(header,258) != 115 || byte(header,259) != 116 || byte(header,260) != 97 || byte(header,261) != 114 || byte(header,262) != 0 || byte(header,263) != 48 || byte(header,264) != 48 || !zeros(header,500,512)) { return core::result::Err(Error::UnsupportedFormat); }
+        let ustar: bool = byte(header,257) == 117 && byte(header,258) == 115 && byte(header,259) == 116 && byte(header,260) == 97 && byte(header,261) == 114;
+        let posix: bool = ustar && byte(header,262) == 0 && byte(header,263) == 48 && byte(header,264) == 48 && zeros(header,500,512);
+        let gnu: bool = self.options.gnu && ustar && byte(header,262) == 32 && byte(header,263) == 32 && byte(header,264) == 0;
+        if (!posix && !gnu) { return core::result::Err(Error::UnsupportedFormat); }
         let parsed_kind: core::result::Result<Kind,Error> = parse_kind(byte(header,156));
         if (core::result::is_err(parsed_kind)) { return core::result::Err(core::result::unwrap_err(parsed_kind)); }
         let kind: Kind = core::result::unwrap(parsed_kind);
         let name: core::result::Result<core::slice::View<u8>,Error> = string_field(header,0,100,false);
-        let prefix: core::result::Result<core::slice::View<u8>,Error> = string_field(header,345,155,false);
+        let prefix: core::result::Result<core::slice::View<u8>,Error> = core::result::Ok(window(header,345,345));
+        if (!gnu) { prefix = string_field(header,345,155,false); }
         let link: core::result::Result<core::slice::View<u8>,Error> = string_field(header,157,100,false);
-        let uname: core::result::Result<core::slice::View<u8>,Error> = string_field(header,265,32,true);
-        let gname: core::result::Result<core::slice::View<u8>,Error> = string_field(header,297,32,true);
+        let uname: core::result::Result<core::slice::View<u8>,Error> = string_field(header,265,32,!self.options.full_uname && !gnu);
+        let gname: core::result::Result<core::slice::View<u8>,Error> = string_field(header,297,32,!self.options.full_gname && !gnu);
         if (core::result::is_err(name)) { return core::result::Err(core::result::unwrap_err(name)); }
         if (core::result::is_err(prefix)) { return core::result::Err(core::result::unwrap_err(prefix)); }
         if (core::result::is_err(link)) { return core::result::Err(core::result::unwrap_err(link)); }
         if (core::result::is_err(uname)) { return core::result::Err(core::result::unwrap_err(uname)); }
         if (core::result::is_err(gname)) { return core::result::Err(core::result::unwrap_err(gname)); }
-        let size: core::result::Result<u64,Error> = number(header,124,12,8589934591);
-        let mode: core::result::Result<u64,Error> = number(header,100,8,4095);
-        let uid: core::result::Result<u64,Error> = number(header,108,8,2097151);
-        let gid: core::result::Result<u64,Error> = number(header,116,8,2097151);
-        let mtime: core::result::Result<u64,Error> = number(header,136,12,8589934591);
-        let major: core::result::Result<u64,Error> = number(header,329,8,2097151);
-        let minor: core::result::Result<u64,Error> = number(header,337,8,2097151);
+        let size: core::result::Result<u64,Error> = number_in(header,124,12,8589934591,8589934591,gnu);
+        let mode: core::result::Result<u64,Error> = number_in(header,100,8,4095,4095,gnu);
+        let uid: core::result::Result<u64,Error> = number_in(header,108,8,2097151,4294967295,gnu);
+        let gid: core::result::Result<u64,Error> = number_in(header,116,8,2097151,4294967295,gnu);
+        let mtime: core::result::Result<u64,Error> = number_in(header,136,12,18446744073709551615,18446744073709551615,gnu);
+        let major: core::result::Result<u64,Error> = number_in(header,329,8,2097151,2097151,gnu);
+        let minor: core::result::Result<u64,Error> = number_in(header,337,8,2097151,2097151,gnu);
         if (core::result::is_err(size)) { return core::result::Err(core::result::unwrap_err(size)); }
         if (core::result::is_err(mode)) { return core::result::Err(core::result::unwrap_err(mode)); }
         if (core::result::is_err(uid)) { return core::result::Err(core::result::unwrap_err(uid)); }
@@ -132,8 +157,10 @@ pub impl Reader {
         if ((code == 49 || code == 50) && file_size != 0) { return core::result::Err(Error::InvalidSize); }
         if (data_size > 2147483647) { return core::result::Err(Error::CapacityOverflow); }
         let count: i32 = data_size as i32; let padding: i32 = (512-count%512)%512;
+        let data_start: i32 = self.cursor+512;
+        if (self.options.headers_only) { count = 0; padding = 0; }
         if (count > remaining-512 || padding > remaining-512-count) { return core::result::Err(Error::UnexpectedEof); }
-        let data_start: i32 = self.cursor+512; let next: i32 = data_start+count+padding;
+        let next: i32 = data_start+count+padding;
         if (!zeros(self.input,data_start+count,next)) { return core::result::Err(Error::InvalidPadding); }
         let entry: Entry = Entry { name: name_view, prefix: prefix_view, link_name: core::result::unwrap(link), uname: core::result::unwrap(uname), gname: core::result::unwrap(gname), data: window(self.input,data_start,data_start+count), kind: kind, mode: core::result::unwrap(mode) as u32, uid: core::result::unwrap(uid), gid: core::result::unwrap(gid), size: file_size, mtime: core::result::unwrap(mtime), dev_major: core::result::unwrap(major), dev_minor: core::result::unwrap(minor), offset: self.cursor };
         self.cursor = next; return core::result::Ok(core::option::Some(entry));
@@ -148,6 +175,10 @@ fn octal(output: core::slice::View<u8>, start: i32, width: i32, value: u64) {
 pub fn writer(output: core::slice::View<u8>) -> core::result::Result<Writer,Error> {
     if (!valid(output)) { return core::result::Err(Error::Bounds); } return core::result::Ok(Writer { output: output, cursor: 0, ended: false });
 }
+// Resume writing at a record-aligned offset whose prefix the caller already wrote.
+pub fn writer_at(output: core::slice::View<u8>, cursor: i32) -> core::result::Result<Writer,Error> {
+    if (!valid(output) || cursor < 0 || cursor > output.length || cursor % 512 != 0) { return core::result::Err(Error::Bounds); } return core::result::Ok(Writer { output: output, cursor: cursor, ended: false });
+}
 pub impl Writer {
     pub fn position(&self) -> i32 { return self.cursor; }
     pub fn is_finished(&self) -> bool { return self.ended; }
@@ -158,6 +189,14 @@ pub impl Writer {
         self.output = output; return core::result::Ok(true);
     }
     pub fn add(&self, meta: Metadata, data: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        if (!valid(data)) { return core::result::Err(Error::Bounds); } return self.member(meta,data,data.length,true);
+    }
+    // Write only the 512-byte header for `size` data bytes. The caller then
+    // supplies exactly `size` bytes plus zero padding to the next record.
+    pub fn add_header(&self, meta: Metadata, size: i32) -> core::result::Result<i32,Error> {
+        if (size < 0) { return core::result::Err(Error::InvalidSize); } let empty: core::slice::View<u8> = meta.path; empty.length = 0; return self.member(meta,empty,size,false);
+    }
+    fn member(&self, meta: Metadata, data: core::slice::View<u8>, size: i32, with_data: bool) -> core::result::Result<i32,Error> {
         if (!valid(self.output) || self.cursor < 0 || self.cursor > self.output.length || self.cursor % 512 != 0 || !valid(meta.path) || !valid(meta.link_name) || !valid(meta.uname) || !valid(meta.gname) || !valid(data)) { return core::result::Err(Error::Bounds); }
         if (self.ended) { return core::result::Err(Error::Finished); }
         if (meta.path.length > 256) { return core::result::Err(Error::PathTooLong); }
@@ -166,7 +205,7 @@ pub impl Writer {
         if (meta.path.length == 0 || !no_nul(meta.path) || !no_nul(meta.link_name) || !no_nul(meta.uname) || !no_nul(meta.gname)) { return core::result::Err(Error::InvalidName); }
         if (meta.mode > 4095 || meta.uid > 2097151 || meta.gid > 2097151 || meta.mtime > 8589934591 || meta.dev_major > 2097151 || meta.dev_minor > 2097151) { return core::result::Err(Error::NumberOverflow); }
         let code: u8 = kind_byte(meta.kind);
-        if (code != 48 && code != 55 && data.length != 0) { return core::result::Err(Error::InvalidSize); }
+        if (code != 48 && code != 55 && size != 0) { return core::result::Err(Error::InvalidSize); }
         if ((code == 49 || code == 50) && meta.link_name.length == 0) { return core::result::Err(Error::InvalidName); }
         if (code != 49 && code != 50 && meta.link_name.length != 0) { return core::result::Err(Error::InvalidName); }
         let split: i32 = -1;
@@ -174,20 +213,20 @@ pub impl Writer {
             let position: i32 = meta.path.length-1; while (position > 0) { if (byte(meta.path,position) == 47 && position <= 155 && meta.path.length-position-1 <= 100) { split = position; break; } position -= 1; }
             if (split < 0) { return core::result::Err(Error::PathTooLong); }
         }
-        let padding: i32 = (512-data.length%512)%512;
-        if (data.length > 2147483135-padding) { return core::result::Err(Error::CapacityOverflow); }
-        let required: i32 = 512+data.length+padding;
+        let padding: i32 = (512-size%512)%512;
+        if (size > 2147483135-padding) { return core::result::Err(Error::CapacityOverflow); }
+        let required: i32 = 512+size+padding; if (!with_data) { required = 512; }
         if (required > self.output.length-self.cursor) { return core::result::Err(Error::OutputTooSmall); }
         let words: [i32;128] = [0;128]; let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(words),512);
         let header: core::slice::View<u8> = core::result::unwrap(core::slice::view(raw,512)); header.fill(0);
         if (split < 0) { copy(meta.path,header,0); }
         else { copy(window(meta.path,split+1,meta.path.length),header,0); copy(window(meta.path,0,split),header,345); }
-        octal(header,100,8,meta.mode as u64); octal(header,108,8,meta.uid); octal(header,116,8,meta.gid); octal(header,124,12,data.length as u64); octal(header,136,12,meta.mtime);
+        octal(header,100,8,meta.mode as u64); octal(header,108,8,meta.uid); octal(header,116,8,meta.gid); octal(header,124,12,size as u64); octal(header,136,12,meta.mtime);
         put(header,156,code); copy(meta.link_name,header,157); put(header,257,117); put(header,258,115); put(header,259,116); put(header,260,97); put(header,261,114); put(header,263,48); put(header,264,48);
         copy(meta.uname,header,265); copy(meta.gname,header,297); octal(header,329,8,meta.dev_major); octal(header,337,8,meta.dev_minor);
         octal(header,148,7,checksum(header)); put(header,155,32);
-        copy(header,self.output,self.cursor); copy(data,self.output,self.cursor+512);
-        let next: i32 = self.cursor+required; let position: i32 = self.cursor+512+data.length; while (position < next) { put(self.output,position,0); position += 1; }
+        copy(header,self.output,self.cursor); let next: i32 = self.cursor+required;
+        if (with_data) { copy(data,self.output,self.cursor+512); let position: i32 = self.cursor+512+data.length; while (position < next) { put(self.output,position,0); position += 1; } }
         self.cursor = next; return core::result::Ok(next);
     }
     pub fn finish(&self) -> core::result::Result<i32,Error> {

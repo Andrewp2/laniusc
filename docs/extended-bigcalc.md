@@ -1,7 +1,7 @@
 # Arbitrary precision calculator
 
 `sample_programs/library/bigcalc.lani` is a native streaming calculator built from
-`ext::big_int`, `ext::big_uint`, `ext::cli`, `alloc::vec`, `std::args`, and
+`alloc::big_int`, `alloc::big_uint`, `ext::cli`, `alloc::vec`, `std::args`, and
 `std::stream`. Its operands and results use owned arrays of limbs. Arithmetic
 executes in Lanius; the program does not call a host integer library.
 

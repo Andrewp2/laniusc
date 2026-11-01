@@ -1,0 +1,11 @@
+// Indexed stores through a multi-element [i64] view built over a local [i32;N]
+// array in the same function are lost. Expected exit 5; actual exit 0.
+// Workaround: store one word per helper call (as std::linux::store_word does).
+module app::main;
+import core::mem;
+fn main() -> i32 {
+    let storage: [i32;8] = [0;8]; let base: ptr = core::mem::i32_array_data_ptr(storage);
+    let words: [i64] = core::mem::typed_slice_from_raw_parts<i64>(base,4);
+    words[2] = 5;
+    return storage[4];
+}

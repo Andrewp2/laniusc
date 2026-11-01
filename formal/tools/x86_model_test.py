@@ -12,8 +12,9 @@ instruction twice:
              sixteen registers, executes the instruction bytes, and lands on a
              recorder that stores the registers, RFLAGS and which landing point
              was reached (the fall-through or the branch/call/ret target);
-  in Lean    `Lanius.X86.Machine.decode` and `execute`, with `#eval` on a
-             generated file `<out>/ModelTest.lean` that reads the same states.
+  in Lean    `Lanius.X86.Machine.decode` and `execute`, compiled (the
+             `x86ModelTest` executable, Lanius/Tools/X86ModelTest.lean), on
+             the same states (`<out>/cases.txt`).
 
 `Step` is a relation; its only freedom is in flags (AF after AND/OR/XOR/TEST,
 every flag after IMUL/NEG/shifts/DIV) and `decode` may be applied to any byte list
@@ -30,7 +31,12 @@ checks that `decode` returns exactly the instruction's length, that every
 shorter prefix decodes to nothing, and that trailing bytes do not change the
 result, which is what makes `Step` deterministic on these bytes.
 
-The Lean file also prints `Instr.encode` for every instruction constructor,
+The SSE forms (F9) also load xmm0 and xmm1 (low 64 bits random float
+patterns, high 64 random) and MXCSR's default 0x1F80 before the instruction
+and compare the low 64 bits of xmm0 and xmm1 after it, the part the model
+holds.
+
+The executable also prints `Instr.encode` for every instruction constructor,
 `prologue` and `epilogue`; the tool splits those bytes into the forms below and
 fails if any byte sequence is not covered, so a new emitted form is noticed.
 
@@ -103,6 +109,9 @@ def compiler_forms():
         form('mov rax, [rbp+disp32]', [0x48, 0x8B, 0x85], 'disp32', 'mem', base=RBP, width=8),
         form('mov rcx, [rbp+disp32]', [0x48, 0x8B, 0x8D], 'disp32', 'mem', base=RBP, width=8),
         form('mov [rbp+disp32], rax', [0x48, 0x89, 0x85], 'disp32', 'mem', base=RBP, width=8),
+        # The frame pointer in rbx, saved and loaded around each call.
+        form('mov [rbp+disp32], rbx', [0x48, 0x89, 0x9D], 'disp32', 'mem', base=RBP, width=8),
+        form('mov rbx, [rbp+disp32]', [0x48, 0x8B, 0x9D], 'disp32', 'mem', base=RBP, width=8),
         form('movzx eax, byte [rax+disp32]', [0x0F, 0xB6, 0x80], 'disp32', 'mem', base=RAX, width=1),
         form('mov [rcx+disp32], al', [0x88, 0x81], 'disp32', 'mem', base=RCX, width=1),
         form('mov eax, [rax+disp32]', [0x8B, 0x80], 'disp32', 'mem', base=RAX, width=4),
@@ -145,6 +154,7 @@ def compiler_forms():
         form('cmp eax, ecx', [0x39, 0xC8]),
         form('cmp rax, rcx', [0x48, 0x39, 0xC8]),
         form('cmp r11, r14', [0x4D, 0x39, 0xF3]),
+        form('cmp r15, rsp', [0x49, 0x39, 0xE7]),
         form('test rax, rax', [0x48, 0x85, 0xC0], mask=ALL_DEFINED & ~AF),
         form('mov r11, rdx', [0x49, 0x89, 0xD3]),
         form('mov rdx, r11', [0x4C, 0x89, 0xDA]),
@@ -165,11 +175,38 @@ def compiler_forms():
         form('jmp rel32', [0xE9], 'rel32', 'jmp'),
         form('je rel32', [0x0F, 0x84], 'rel32', 'jcc'),
         form('jbe rel32', [0x0F, 0x86], 'rel32', 'jcc'),
+        form('jb rel32', [0x0F, 0x82], 'rel32', 'jcc'),
+        # Frame memory: the frame pointer in rbx less the bytes, checked against the limit.
+        form('jae rel32', [0x0F, 0x83], 'rel32', 'jcc'),
+        form('mov rax, rbx', [0x48, 0x89, 0xD8]),
+        form('sub rax, r11', [0x4C, 0x29, 0xD8]),
+        form('mov r11, rax', [0x49, 0x89, 0xC3]),
+        form('mov rbx, rax', [0x48, 0x89, 0xC3]),
         form('call rel32', [0xE8], 'rel32', 'call'),
         form('push rbp', [0x55], kind='push'),
         form('pop rbp', [0x5D], kind='pop'),
         form('ret', [0xC3], kind='ret'),
         form('ud2', [0x0F, 0x0B], kind='fault'),
+    ]
+    # F9: the SSE forms of FOp.opcode_bytes, on xmm0 and xmm1 only.
+    for rex, name in ((b'', 'movd'), (b'\x48', 'movq')):
+        gp = 'e' if not rex else 'r'
+        f += [
+            form(f'{name} xmm0, {gp}ax', b'\x66' + rex + b'\x0F\x6E\xC0', kind='sse'),
+            form(f'{name} xmm1, {gp}cx', b'\x66' + rex + b'\x0F\x6E\xC9', kind='sse'),
+            form(f'{name} xmm0, {gp}cx', b'\x66' + rex + b'\x0F\x6E\xC1', kind='sse'),
+            form(f'{name} {gp}ax, xmm0', b'\x66' + rex + b'\x0F\x7E\xC0', kind='sse'),
+        ]
+    for prefix, suffix in ((0xF3, 'ss'), (0xF2, 'sd')):
+        for opcode, name in ((0x58, 'add'), (0x5C, 'sub'), (0x59, 'mul'), (0x5E, 'div')):
+            f.append(form(f'{name}{suffix} xmm0, xmm1', [prefix, 0x0F, opcode, 0xC1], kind='sse'))
+        for imm, name in ((0, 'eq'), (1, 'lt'), (2, 'le')):
+            f.append(form(f'cmp{name}{suffix} xmm0, xmm1', [prefix, 0x0F, 0xC2, 0xC1, imm], kind='sse'))
+        f.append(form(f'cvtsi2{suffix} xmm0, ecx', [prefix, 0x0F, 0x2A, 0xC1], kind='sse'))
+        f.append(form(f'cvtsi2{suffix} xmm0, rcx', [prefix, 0x48, 0x0F, 0x2A, 0xC1], kind='sse'))
+    f += [
+        form('cvtss2sd xmm0, xmm0', [0xF3, 0x0F, 0x5A, 0xC0], kind='sse'),
+        form('cvtsd2ss xmm0, xmm0', [0xF2, 0x0F, 0x5A, 0xC0], kind='sse'),
     ]
     return f
 
@@ -208,6 +245,7 @@ class Native:
         self.sbase = ctypes.addressof(ctypes.c_char.from_buffer(self.save))
         self.region = self.dbase + REGION_OFFSET
         self.out = self.sbase + 0x100
+        self.xin = self.sbase + 0x200                    # xmm0, xmm1 (16 bytes each), MXCSR
         rec = self.recorder()
         self.code[RECORDER:RECORDER + len(rec)] = rec
         self.fn = ctypes.CFUNCTYPE(None)(self.cbase + MAIN)
@@ -221,6 +259,8 @@ class Native:
         for r in range(1, 16):
             rex = 0x48 | (4 if r >= 8 else 0)
             c += bytes([rex, 0x89, 0x40 | ((r & 7) << 3), 8 * r])  # mov [rax+8r], r
+        c += b'\xF3\x0F\x7F\x80' + le(0x90, 4)              # movdqu [rax+0x90], xmm0
+        c += b'\xF3\x0F\x7F\x88' + le(0xA0, 4)              # movdqu [rax+0xa0], xmm1
         c += b'\x48\x8B\xA0' + le(-0x100, 4)                 # mov rsp, [rax-0x100]
         c += b'\x9C\x59'                                     # pushfq; pop rcx
         c += b'\x48\x89\x88' + le(0x80, 4)                   # mov [rax+0x80], rcx
@@ -231,6 +271,9 @@ class Native:
     def preamble(self, flags, regs):
         c = b'\x53\x55\x41\x54\x41\x55\x41\x56\x41\x57'      # push rbx rbp r12-r15
         c += b'\x48\x89\xE0' + b'\x48\xA3' + le(self.sbase, 8)  # mov rax, rsp; mov [save], rax
+        c += b'\x48\xB8' + le(self.xin, 8)                  # mov rax, xin
+        c += b'\x0F\xAE\x50\x20'                          # ldmxcsr [rax+0x20]: the default 0x1F80
+        c += b'\xF3\x0F\x6F\x00\xF3\x0F\x6F\x48\x10'      # movdqu xmm0, [rax]; movdqu xmm1, [rax+16]
         c += b'\x48\xB8' + le(flags, 8) + b'\x50\x9D'        # mov rax, flags; push rax; popfq
         for r in range(16):
             c += bytes([0x48 | (1 if r >= 8 else 0), 0xB8 + (r & 7)]) + le(regs[r], 8)
@@ -262,17 +305,20 @@ class Native:
         page = bytearray(os.urandom(4096))
         page[REGION_OFFSET:REGION_OFFSET + REGION] = case['mem']
         self.data[:] = bytes(page)
-        self.save[0x100:0x190] = bytes(0x90)
+        self.save[0x100:0x1B0] = bytes(0xB0)
+        self.save[0x200:0x224] = (le(case['xmm'][0], 8) + le(case['xmm_high'][0], 8) +
+                                  le(case['xmm'][1], 8) + le(case['xmm_high'][1], 8) + le(0x1F80, 4))
         self.fn()
-        out = bytes(self.save[0x100:0x190])
+        out = bytes(self.save[0x100:0x1B0])
         regs = [int.from_bytes(out[8 * r:8 * r + 8], 'little') for r in range(16)]
         regs[RAX] = int.from_bytes(out[0:8], 'little')
         flags = int.from_bytes(out[0x80:0x88], 'little')
         ident = int.from_bytes(out[0x88:0x90], 'little')
+        xmm = [int.from_bytes(out[0x90:0x98], 'little'), int.from_bytes(out[0xA0:0xA8], 'little')]
         after = bytes(self.data[:])
         rest_ok = (after[:REGION_OFFSET] == bytes(page[:REGION_OFFSET]) and
                    after[REGION_OFFSET + REGION:] == bytes(page[REGION_OFFSET + REGION:]))
-        return regs, flags, lands[ident], after[REGION_OFFSET:REGION_OFFSET + REGION], rest_ok
+        return regs, flags, lands[ident], after[REGION_OFFSET:REGION_OFFSET + REGION], rest_ok, xmm
 
     def run_fault(self, case):
         """Run in a forked child; return the signal that ended it (0 if it returned)."""
@@ -302,6 +348,28 @@ def rand64(rng):
     if roll < 0.55:
         return rng.randrange(1 << 32)
     return rng.randrange(1 << 64)
+
+
+F32_SPECIAL = [0, 0x80000000, 0x3F800000, 0xBF800000, 0x7F800000, 0xFF800000, 0x7FC00000, 0xFFC00000,
+               0x7F800001, 0x7FA00000, 0x00000001, 0x007FFFFF, 0x00800000, 0x7F7FFFFF, 0x3F000000, 0x4B000000]
+F64_SPECIAL = [0, 1 << 63, 0x3FF0000000000000, 0xBFF0000000000000, 0x7FF0000000000000, 0xFFF0000000000000,
+               0x7FF8000000000000, 0xFFF8000000000000, 0x7FF0000000000001, 0x7FF4000000000000, 1,
+               0x000FFFFFFFFFFFFF, 0x0010000000000000, 0x7FEFFFFFFFFFFFFF, 0x3FE0000000000000,
+               0x4330000000000000, 0x47EFFFFFE0000000, 0x36A0000000000000]
+
+
+def rand_float_bits(rng):
+    """A word whose low 32 or all 64 bits are an interesting float."""
+    roll = rng.random()
+    if roll < 0.25:
+        return (rng.randrange(1 << 32) << 32 | rng.choice(F32_SPECIAL)) if rng.random() < 0.5 else rng.choice(F32_SPECIAL)
+    if roll < 0.5:
+        return rng.choice(F64_SPECIAL)
+    if roll < 0.65:                                     # a small exponent range, so sums round
+        return rng.randrange(0x3F000000, 0x40800000) | (rng.randrange(2) << 31)
+    if roll < 0.8:
+        return rng.randrange(0x3FE0000000000000, 0x4010000000000000) | (rng.randrange(2) << 63)
+    return rand64(rng)
 
 
 def rand_regs(rng):
@@ -340,7 +408,7 @@ def make_case(rng, fm, native, ident):
     regs = rand_regs(rng)
     flags = rng.randrange(1 << 12) & (STATUS | DF)
     flags |= 0x202                                      # reserved bit 1; IF stays set in user mode
-    mem = bytearray(rng.randrange(256) for _ in range(REGION))
+    mem = bytearray(rng.randbytes(REGION))
     region = native.region
     rip = native.cbase + MAIN + native.pre_len
     length = form_length(fm)
@@ -405,118 +473,28 @@ def make_case(rng, fm, native, ident):
             regs[RDX] = high_bits | rng.randrange(divisor)
     # alignment probes: unaligned stack and slot addresses happen naturally
 
+    xmm = [rand_float_bits(rng), rand_float_bits(rng)]
+    if fm['kind'] == 'sse':
+        if rng.random() < 0.3:
+            regs[RAX], regs[RCX] = rand_float_bits(rng), rand_float_bits(rng)
+        roll = rng.random()
+        if roll < 0.1:
+            xmm[1] = xmm[0]
+        elif roll < 0.2:                                # near operands: an exact tie or cancellation
+            xmm[1] = xmm[0] ^ rng.choice([1, 2, 1 << 31, 1 << 63, 1 << 23, 1 << 52])
+    xmm_high = [rng.randrange(1 << 64), rng.randrange(1 << 64)]
     data = fm['prefix'] + (le(value, FIELD_LEN[field]) if field else b'')
-    tail = bytes(rng.randrange(256) for _ in range(16))
+    tail = rng.randbytes(16)
     return dict(id=ident, form=fm, bytes=data, regs=regs, flags=flags, mem=bytes(mem),
-                rip=rip, region=region, tail=tail, layout=layout)
+                rip=rip, region=region, tail=tail, layout=layout, xmm=xmm, xmm_high=xmm_high)
 
 
 # ---------------------------------------------------------------- Lean side
 
-LEAN = r'''import Lanius.X86.Machine.Scalar
-import Lanius.Mini.Compiler
-
-/-! Generated by formal/tools/x86_model_test.py. Runs the x86 model's
-`decode` and `execute` on the states in `cases.txt` and prints the results,
-then prints the bytes of every mini compiler instruction form. -/
-
-namespace X86ModelTest
-open Lanius.X86.Machine
-
-def digit (c : Char) : Nat :=
-  if c.isDigit then c.toNat - 48 else c.toLower.toNat - 87
-
-def hexNat (s : String) : Nat :=
-  s.foldl (fun acc c => acc * 16 + digit c) 0
-
-def hexBytes (s : String) : ByteArray := Id.run do
-  let cs := s.toList.toArray
-  let mut out := ByteArray.empty
-  for i in [0:cs.size / 2] do
-    out := out.push (UInt8.ofNat (digit cs[2 * i]! * 16 + digit cs[2 * i + 1]!))
-  return out
-
-def hexChar (n : Nat) : Char :=
-  if n < 10 then Char.ofNat (48 + n) else Char.ofNat (87 + n)
-
-def showByte (b : UInt8) : String :=
-  String.mk [hexChar (b.toNat / 16), hexChar (b.toNat % 16)]
-
-def showNat (n : Nat) : String :=
-  String.mk (Nat.toDigits 16 n)
-
-def initial (regs : Array Nat) (rip flags base : Nat) (mem : ByteArray) : State :=
-  { registers := fun r => BitVec.ofNat 64 (regs.getD r.val 0)
-    rip := BitVec.ofNat 64 rip
-    memory := fun a =>
-      let n := a.toNat
-      if base ≤ n ∧ n - base < mem.size then mem.get! (n - base) else 0
-    flags := BitVec.ofNat 64 flags }
-
-/-- `id bytes rip flags base mem tail r0 .. r15`, all hex. -/
-def runCase (line : String) : String :=
-  let f := (line.splitOn " ").toArray
-  let ident := f[0]!
-  let bytes := (hexBytes f[1]!).toList
-  let rip := hexNat f[2]!
-  let flags := hexNat f[3]!
-  let base := hexNat f[4]!
-  let mem := hexBytes f[5]!
-  let tail := (hexBytes f[6]!).toList
-  let regs := (f.extract 7 23).map hexNat
-  let s := initial regs rip flags base mem
-  match decode bytes with
-  | none => ident ++ " none"
-  | some (instruction, size) =>
-    let prefixes := (List.range bytes.length).all fun k => decode (bytes.take k) == none
-    let tailed := decode (bytes ++ tail) == some (instruction, size)
-    let after := execute instruction size s
-    let regsOut := (List.range 16).map fun r =>
-      if h : r < 16 then showNat (after.registers ⟨r, h⟩).toNat else "0"
-    let memOut := String.join ((List.range mem.size).map fun i =>
-      showByte (after.memory (BitVec.ofNat 64 (base + i))))
-    let shown := (toString (repr instruction)).replace "\n" " "
-    ident ++ " some " ++ toString size ++ " " ++ toString prefixes ++ " " ++ toString tailed ++ " " ++
-      toString instruction.isDivision ++ " " ++ " ".intercalate regsOut ++ " " ++
-      showNat after.rip.toNat ++ " " ++ showNat after.flags.toNat ++ " " ++ memOut ++ " | " ++ shown
-
-def bytesHex (bytes : List UInt8) : String := String.join (bytes.map showByte)
-
-open Lanius.Mini in
-def encodings : List (String × List UInt8) :=
-  let place : Place := { body := 4096, slots := 9, entries := [0, 2000, 3000] }
-  let words := [Word.s32, Word.u64]
-  let binops := [BinOp.add, BinOp.sub, BinOp.mul, BinOp.and, BinOp.or, BinOp.xor, BinOp.shl, BinOp.shr, BinOp.sar]
-  let cmpops := [CmpOp.eq, CmpOp.ne, CmpOp.lt, CmpOp.le, CmpOp.gt, CmpOp.ge]
-  let ops := words.flatMap fun w => binops.map fun o => (s!"op {repr w} {repr o}", Instr.op w o 3)
-  let cmps := words.flatMap fun w => cmpops.map fun o => (s!"cmp {repr w} {repr o}", Instr.cmp w o 1048575)
-  let divops := [DivOp.sDiv, DivOp.sRem, DivOp.uDiv, DivOp.uRem]
-  let divs := words.flatMap fun w => divops.map fun o => (s!"div {repr w} {repr o}", Instr.div w o 5)
-  let rest : List (String × Instr) :=
-    [("imm", .imm 0x123456789abcdef0), ("load", .load 0), ("load far", .load 1048575),
-     ("store", .store 7), ("neg", .neg), ("jmp back", .jmp 0), ("jmp", .jmp 900),
-     ("jz", .jz 50), ("call", .call 1 [0, 1, 2] 3 2), ("ret", .ret [0, 1]),
-     ("bump 0", .bump 0), ("bump 3", .bump 3), ("bump 31", .bump 31),
-     ("loadAt", .loadAt), ("storeAt", .storeAt 4),
-     ("loadWordAt m32", .loadWordAt .m32), ("loadWordAt m64", .loadWordAt .m64),
-     ("storeWordAt m32", .storeWordAt .m32 4), ("storeWordAt m64", .storeWordAt .m64 4)]
-  (ops ++ cmps ++ divs ++ rest).map (fun (n, i) => (n, Instr.encode i place 100)) ++
-    [("prologue", prologue 5), ("prologue big", prologue 1048576), ("epilogue", epilogue)]
-
-def main : IO Unit := do
-  let text ← IO.FS.readFile "CASES"
-  let lines := (text.splitOn "\n").filter (· ≠ "")
-  let out := lines.map runCase
-  let enc := encodings.map fun (n, b) => "enc " ++ n.replace " " "_" ++ " " ++ bytesHex b
-  IO.FS.writeFile "RESULTS" ("\n".intercalate (out ++ enc) ++ "\n")
-
-#eval main
-
-end X86ModelTest
-'''
+X86_MODEL_TEST = os.path.join(run_cache.FORMAL, '.lake/build/bin/x86ModelTest')
 
 
-def write_lean(out_dir, cases):
+def write_cases(out_dir, cases):
     path_cases = os.path.join(out_dir, 'cases.txt')
     path_results = os.path.join(out_dir, 'results.txt')
     with open(path_cases, 'w') as fh:
@@ -524,23 +502,45 @@ def write_lean(out_dir, cases):
             fields = [str(c['id']), c['bytes'].hex(), f"{c['rip']:x}", f"{c['flags']:x}",
                       f"{c['region']:x}", c['mem'].hex(), c['tail'].hex()]
             fields += [f'{r:x}' for r in c['regs']]
+            fields += [f'{x:x}' for x in c['xmm']]
             fh.write(' '.join(fields) + '\n')
-    lean = LEAN.replace('"CASES"', '"' + path_cases + '"').replace('"RESULTS"', '"' + path_results + '"')
-    path_lean = os.path.join(out_dir, 'ModelTest.lean')
-    with open(path_lean, 'w') as fh:
-        fh.write(lean)
-    return path_lean, path_results
+    return path_cases, path_results
 
 
-def run_lean(formal, path_lean):
-    lake = os.path.expanduser('~/.elan/bin/lake')
-    if not os.path.exists(lake):
-        lake = 'lake'
-    proc = subprocess.run([lake, 'env', 'lean', path_lean], cwd=formal,
-                          capture_output=True, text=True)
-    if proc.returncode != 0:
-        sys.stderr.write(proc.stdout + proc.stderr)
-        raise SystemExit('lean failed')
+def run_lean(formal, path_cases, path_results):
+    """The compiled model (Lanius/Tools/X86ModelTest.lean) on the cases."""
+    if os.environ.get('LANIUS_BUILT') != '1':
+        env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
+        with run_cache.lean_lock():
+            subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryMax=6G',
+                            '-p', 'MemorySwapMax=0', 'lake', 'build', 'x86ModelTest'], cwd=formal, env=env,
+                           capture_output=True, check=True)
+    # In `parts` processes at once, on consecutive slices of the cases; the
+    # encodings are taken from the first.
+    lines = open(path_cases).read().split('\n')[:-1]
+    parts = max(1, min(6, (os.cpu_count() or 2) // 2))
+    size = -(-len(lines) // parts)
+    procs = []
+    for i in range(parts):
+        cases_i, results_i = f'{path_cases}.{i}', f'{path_results}.{i}'
+        open(cases_i, 'w').write(''.join(line + '\n' for line in lines[i * size:(i + 1) * size]))
+        if os.path.exists(results_i):
+            os.remove(results_i)
+        procs.append(subprocess.Popen(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryMax=2G',
+                                       '-p', 'MemorySwapMax=0', X86_MODEL_TEST, cases_i, results_i],
+                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True))
+    for proc in procs:
+        out = proc.communicate()[0]
+        if proc.returncode != 0:
+            sys.stderr.write(out)
+            raise SystemExit('x86ModelTest failed')
+    with open(path_results, 'w') as fh:
+        for i in range(parts):
+            for line in open(f'{path_results}.{i}'):
+                if i == 0 or not line.startswith('enc '):
+                    fh.write(line)
+            os.remove(f'{path_results}.{i}')
+            os.remove(f'{path_cases}.{i}')
 
 
 # ---------------------------------------------------------------- coverage
@@ -597,8 +597,8 @@ def main():
         else:
             native_results[c['id']] = native.run(c)
     t1 = time.time()
-    path_lean, path_results = write_lean(out_dir, cases)
-    run_lean(os.path.abspath(args.formal), path_lean)
+    path_cases, path_results = write_cases(out_dir, cases)
+    run_lean(os.path.abspath(args.formal), path_cases, path_results)
     t2 = time.time()
 
     model, encodings = {}, []
@@ -633,7 +633,8 @@ def main():
             size, prefixes, tailed, division = int(p[2]), p[3], p[4], p[5]
             m_regs = [int(x, 16) for x in p[6:22]]
             m_rip, m_flags, m_mem = int(p[22], 16), int(p[23], 16), bytes.fromhex(p[24])
-            n_regs, n_flags, n_rip, n_mem, rest_ok = native_results[c['id']]
+            m_xmm = [int(p[25], 16), int(p[26], 16)]
+            n_regs, n_flags, n_rip, n_mem, rest_ok, n_xmm = native_results[c['id']]
             if size != len(c['bytes']):
                 bad.append(f'decoded size {size}, instruction is {len(c["bytes"])} bytes')
             if prefixes != 'true':
@@ -645,6 +646,9 @@ def main():
             for r in range(16):
                 if m_regs[r] != n_regs[r]:
                     bad.append(f'{REG_NAMES[r]}: model {m_regs[r]:#x} CPU {n_regs[r]:#x}')
+            for r in range(2):
+                if m_xmm[r] != n_xmm[r]:
+                    bad.append(f'xmm{r} (low 64 bits): model {m_xmm[r]:#x} CPU {n_xmm[r]:#x}')
             if m_rip != n_rip:
                 bad.append(f'rip: model {m_rip:#x} CPU {n_rip:#x}')
             if (m_flags ^ n_flags) & fm['mask']:

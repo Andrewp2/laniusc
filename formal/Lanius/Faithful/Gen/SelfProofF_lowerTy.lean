@@ -57,11 +57,12 @@ theorem step_lower_named {prog : SrcProgram} {prims : Prims} {ix_lower_named ix_
   simp only [src_lower_named] at h
   faithful [Lanius.Mini.lowerNamed]
 
-theorem step_lower_ty {prog : SrcProgram} {prims : Prims} {ix_lower_ty ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_lower_named ix_unbox_of_mini_selfhost_Ty ix_slice_type : Nat} (fn : prog.funcs[ix_lower_ty]? = some (src_lower_ty ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_lower_named ix_unbox_of_mini_selfhost_Ty ix_slice_type ix_lower_ty)) (np : prims.isPrim ix_lower_ty = false)
+theorem step_lower_ty {prog : SrcProgram} {prims : Prims} {ix_lower_ty ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_lower_named ix_unbox_of_mini_selfhost_Ty ix_slice_type ix_array_type : Nat} (fn : prog.funcs[ix_lower_ty]? = some (src_lower_ty ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_lower_named ix_unbox_of_mini_selfhost_Ty ix_slice_type ix_array_type ix_lower_ty)) (np : prims.isPrim ix_lower_ty = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Ty prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty n))
     (ext_unbox_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_Ty prog prims ix_unbox_of_mini_selfhost_Ty n))
-    (ext_slice_type : Certified (∀ {n : Nat}, Stmt_slice_type prog prims ix_slice_type n)) {n : Nat}
+    (ext_slice_type : Certified (∀ {n : Nat}, Stmt_slice_type prog prims ix_slice_type n))
+    (ext_array_type : Certified (∀ {n : Nat}, Stmt_array_type prog prims ix_array_type n)) {n : Nat}
     (ih_lower_named : Certified (Stmt_lower_named prog prims ix_lower_named n))
     (ih_lower_ty : Certified (Stmt_lower_ty prog prims ix_lower_ty n)) :
     Stmt_lower_ty prog prims ix_lower_ty (n + 1) := by

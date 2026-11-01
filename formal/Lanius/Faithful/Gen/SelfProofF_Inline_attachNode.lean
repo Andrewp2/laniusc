@@ -6,8 +6,9 @@ public import Lanius.Faithful.Gen.SelfSrcF_Inline_attachNode
 public import Lanius.Faithful.Gen.SelfStmt0
 public import Lanius.Faithful.Gen.SelfStmt1
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_attachNode
+public import Lanius.Faithful.Gen.SelfStmtF_genericOpen
 public import Lanius.Faithful.Gen.SelfStmtF_grammarPart13
-public import Lanius.Faithful.Gen.SelfStmtF_noToken
+public import Lanius.Faithful.Gen.SelfStmtF_shrFirst
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_attachNode
 import all Lanius.Mini.Frontend.P.Inline_attachNode
 
@@ -38,7 +39,8 @@ theorem step_attach_node {prog : SrcProgram} {prims : Prims} {ix_attach_node ix_
   simp only [src_attach_node] at h
   faithful [Lanius.Mini.Inline.attachNode]
 
-theorem step_attach_prod {prog : SrcProgram} {prims : Prims} {ix_attach_prod ix_get_of_mini_selfhost_Rule ix_attach_node : Nat} (fn : prog.funcs[ix_attach_prod]? = some (src_attach_prod ix_get_of_mini_selfhost_Rule ix_attach_node)) (np : prims.isPrim ix_attach_prod = false)
+theorem step_attach_prod {prog : SrcProgram} {prims : Prims} {ix_attach_prod ix_picks ix_get_of_mini_selfhost_Rule ix_attach_node : Nat} (fn : prog.funcs[ix_attach_prod]? = some (src_attach_prod ix_picks ix_get_of_mini_selfhost_Rule ix_attach_node)) (np : prims.isPrim ix_attach_prod = false)
+    (ext_picks : Certified (∀ {n : Nat}, Stmt_picks prog prims ix_picks n))
     (ext_get_of_mini_selfhost_Rule : Certified (∀ {n : Nat}, Stmt_get_of_mini_selfhost_Rule prog prims ix_get_of_mini_selfhost_Rule n)) {n : Nat}
     (ih_attach_node : Certified (Stmt_attach_node prog prims ix_attach_node n)) :
     Stmt_attach_prod prog prims ix_attach_prod (n + 1) := by

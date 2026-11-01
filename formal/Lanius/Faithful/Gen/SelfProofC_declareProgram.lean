@@ -5,9 +5,9 @@ public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_declareProgram
 public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt6
+public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_declareFuncs
 public import Lanius.Faithful.Gen.SelfStmtC_declareProgram
-public import Lanius.Faithful.Gen.SelfStmtC_lookup
 public import Lanius.Faithful.Gen.SelfStmtC_lowerBody
 import all Lanius.Faithful.Gen.SelfSrcC_declareProgram
 import all Lanius.Mini.Compiler.P.declareProgram

@@ -1,0 +1,39 @@
+// Layout, records: one array of eight-field particles; the update reads two
+// fields of each.
+import std::scope;
+import core::result;
+import core::slice;
+
+const COUNT: i32 = 200000;
+const STEPS: i32 = 50;
+
+struct Particle { x: i64, y: i64, z: i64, vx: i64, vy: i64, vz: i64, mass: i64, id: i64 }
+
+fn main() -> i32 {
+    let stack: std::scope::Stack = core::result::unwrap(std::scope::new(67108864));
+    let blank: Particle = Particle { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, mass: 0, id: 0 };
+    let particles: core::slice::View<Particle> = core::result::unwrap(std::scope::alloc_slice<Particle>(stack.borrow(), COUNT, blank));
+    let index: i32 = 0;
+    while (index < COUNT) {
+        let value: i64 = index as i64;
+        particles.values[index] = Particle { x: value, y: value * 2, z: value * 3, vx: value % 7 - 3, vy: 1, vz: 2, mass: 5, id: value };
+        index += 1;
+    }
+    let step: i32 = 0;
+    while (step < STEPS) {
+        index = 0;
+        while (index < COUNT) {
+            let p: Particle = particles.values[index];
+            p.x = p.x + p.vx;
+            particles.values[index] = p;
+            index += 1;
+        }
+        step += 1;
+    }
+    let total: i64 = 0;
+    index = 0;
+    while (index < COUNT) { total += particles.values[index].x; index += 1; }
+    print(total);
+    stack.destroy();
+    return 0;
+}

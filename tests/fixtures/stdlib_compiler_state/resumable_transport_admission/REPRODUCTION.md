@@ -1,5 +1,16 @@
 # Imported resumable transport admission probe
 
+Status (2026-10-27): still open. The three candidate reductions now compile and run with exit 0. The original does not. The rejection comes from `calls/03d_bind_method_receiver_environment` phase 0: `.unwrap()`'s receiver binding disagrees with a prior. The diagnostic text ("array of an unsupported type") is a misdecoded detail.
+
+A smaller reproducer is `admission::scheduler` with `run` replaced by either of these one-line generic functions:
+
+```lanius
+pub fn f4<E>(n: i32) -> alloc::vec::Vec<Outcome<E>> { let outcomes: alloc::vec::Vec<Outcome<E>> = alloc::vec::with_capacity<Outcome<E>>(n).unwrap(); return outcomes; }
+pub fn f5<E>(outcomes: alloc::vec::Vec<Outcome<E>>) { outcomes.try_push(Outcome::Pending).unwrap(); }
+```
+
+The entry is `reduction_nested.lani` with `admission::scheduler` types and a local `enum Error`. With `pub fn f1<E>(o: alloc::vec::Vec<Outcome<E>>) { o.set(0,Outcome::Pending).unwrap(); }` instead, it passes, and it also passes with no generic function. So the entry's result depends on another unit's generic body; the dependency units are checked in an earlier job.
+
 Status: the explicitly annotated full probe compiled and executed successfully.
 The initial rejected source and the accepted first-probe sources are retained
 unchanged. Smaller context reductions and a separate production-shape extension

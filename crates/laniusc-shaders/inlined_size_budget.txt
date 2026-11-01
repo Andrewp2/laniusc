@@ -1,7 +1,11 @@
 # Per-kernel fully inlined instruction limits for kernels already above the
 # 40000 default (see check_inlined_size_budget in build.rs). Limits only go
 # down: when a kernel shrinks, run tools/ratchet_inlined_budget.py after the
-# build (it also lowers local_array_budget.txt). Never add a kernel.
-# Recorded 2026-10-14 from the 7ae8a250 shaders.
+# build (it also lowers local_array_budget.txt). Never add a kernel over the
+# default. Recorded 2026-10-14 from the 7ae8a250 shaders.
+# A line under the default is headroom: a kernel split to make room for new
+# rows keeps that room (2026-10-27: semantic scatter 39987 -> 30687 when the
+# schedule moved to its own dispatch).
 57083 tests/owned_type_constraints_fixed
 51215 tests/owned_type_constraints_overlap
+30687 codegen/lir/semantic/scatter

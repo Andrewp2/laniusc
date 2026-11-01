@@ -157,6 +157,8 @@ use build_progress::*;
 mod diagnostics;
 pub use diagnostics::*;
 
+mod machine_elaboration;
+
 /// Error returned by public compile/check operations.
 ///
 /// `Diagnostic` is the preferred user-facing variant because it carries a

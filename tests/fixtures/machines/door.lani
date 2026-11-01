@@ -1,0 +1,49 @@
+// The design document's door: a machine with per-state data and an output.
+enum Input { Open, Close, Lock(u32), Unlock(u32) }
+enum Reply { Done, Ignored, WrongCode }
+
+machine Door on Input -> Reply {
+    turns: i32,
+    start Closed;
+
+    state Opened {
+        Input::Close -> goto Closed with Reply::Done,
+        Input::Open -> stay with Reply::Ignored,
+        Input::Lock(_) -> stay with Reply::Ignored,
+        Input::Unlock(_) -> stay with Reply::Ignored,
+    }
+    state Closed {
+        Input::Open -> { self.turns += 1; goto Opened with Reply::Done; },
+        Input::Lock(code) -> goto Locked(code) with Reply::Done,
+        Input::Close -> stay with Reply::Ignored,
+        Input::Unlock(_) -> stay with Reply::Ignored,
+    }
+    state Locked(stored: u32) {
+        Input::Unlock(code) -> {
+            if (code != stored) { stay with Reply::WrongCode; }
+            goto Closed with Reply::Done;
+        },
+        Input::Open -> stay with Reply::Ignored,
+        Input::Close -> stay with Reply::Ignored,
+        Input::Lock(_) -> stay with Reply::Ignored,
+    }
+}
+
+fn code(reply: Reply) -> i32 {
+    return match (reply) { Reply::Done -> 1, Reply::Ignored -> 2, Reply::WrongCode -> 3 };
+}
+
+fn main() -> i32 {
+    let door: Door = door_start(0);
+    if (code(door.step(Input::Lock(7))) != 1) { return 1; }
+    let locked: i32 = match (door.state()) { DoorState::Locked(stored) -> stored as i32, DoorState::Opened -> 0, DoorState::Closed -> 0 };
+    if (locked != 7) { return 2; }
+    if (code(door.step(Input::Open)) != 2) { return 3; }
+    if (code(door.step(Input::Unlock(3))) != 3) { return 4; }
+    if (code(door.step(Input::Unlock(7))) != 1) { return 5; }
+    if (code(door.step(Input::Open)) != 1) { return 6; }
+    if (code(door.step(Input::Open)) != 2) { return 7; }
+    if (code(door.step(Input::Close)) != 1) { return 8; }
+    if (code(door.step(Input::Open)) != 1 || door.turns != 2) { return 9; }
+    return 0;
+}

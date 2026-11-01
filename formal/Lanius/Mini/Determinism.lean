@@ -24,7 +24,9 @@ theorem Returned.congr {window : Nat} {s s' t : State} {values : List (BitVec 64
   unchanged := by rw [← same.memory]; exact returned.unchanged
   cursor := by rw [← same.registers]; exact returned.cursor
   limit := returned.limit
+  top := returned.top
   heap := by rw [← same.memory]; exact returned.heap
+  io := by rw [← same.io]; exact returned.io
 
 /-- **The mini compiler's code returns the same way on every run.** Under the
 hypotheses of `compileProgram_correct`, some `n`-step run returns, and every
@@ -44,13 +46,13 @@ theorem compileProgram_deterministic {prog : Program} {binary : Binary}
     (entry : s.rip = imageBase + BitVec.ofNat 64 (binary.entries.getD f 0))
     (params : ∀ k (bound : k < args.length),
       read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = args[k])
-    (heapAt : HeapAt window s heap) :
-    ∃ n s', Steps n s s' ∧ Returned window s s' value after ∧
+    (heapAt : HeapAt window s heap) (stack : StackAt binary.guard window s) :
+    ∃ n s', Steps n s s' ∧ Det n s s' ∧ Returned window s s' value after ∧
       ∀ t, Steps n s t → DataEq s' t ∧ Returned window s t value after := by
   obtain ⟨n, s', steps, det, returned⟩ :=
-    (compiled_contract compiled imageBase depth f args heap value after returns).mono enough s bounded loaded apart
-      imageHeap entry params heapAt
-  exact ⟨n, s', steps, returned, fun t run => ⟨det.final run, returned.congr (det.final run)⟩⟩
+    compileProgram_correct compiled returns s imageBase window enough bounded loaded apart imageHeap entry params
+      heapAt stack
+  exact ⟨n, s', steps, det, returned, fun t run => ⟨det.final run, returned.congr (det.final run)⟩⟩
 
 /-- `compileProgram_deterministic` through the optimizer: the image is the
 original program's or a validated one's, and either returns the same way on
@@ -68,14 +70,14 @@ theorem compileOptimized_deterministic {prog : Program} {binary : Binary}
     (entry : s.rip = imageBase + BitVec.ofNat 64 (binary.entries.getD f 0))
     (params : ∀ k (bound : k < args.length),
       read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = args[k])
-    (heapAt : HeapAt window s heap) :
-    ∃ n s', Steps n s s' ∧ Returned window s s' value after ∧
+    (heapAt : HeapAt window s heap) (stack : StackAt binary.guard window s) :
+    ∃ n s', Steps n s s' ∧ Det n s s' ∧ Returned window s s' value after ∧
       ∀ t, Steps n s t → DataEq s' t ∧ Returned window s t value after := by
   rcases compileOptimized_some compiled with original | ⟨q, accepted, optimized⟩
   · exact compileProgram_deterministic original returns s imageBase window enough bounded loaded apart imageHeap
-      entry params heapAt
+      entry params heapAt stack
   · exact compileProgram_deterministic optimized (returns.validated accepted) s imageBase window enough bounded
-      loaded apart imageHeap entry params heapAt
+      loaded apart imageHeap entry params heapAt stack
 
 /-- `compileSource_correct`, with every run of the compiled call returning
 the same way: the results representing `v` and the heap cursor at Core's final
@@ -86,8 +88,9 @@ theorem compileSource_deterministic {sp : SrcProgram} {binary : Binary}
     (typed : FieldsHold (paramTypes func.params) args (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize func.params) {fuel : Nat} {v : Value}
     {final : Semantics.State} {heap : Heap} (start : heap.cursor = 1)
-    (zero : ∀ a, 1 ≤ a → heap.bytes a = 0) (small : heap.limit < 2 ^ 62)
-    (runs : Semantics.evalExpr fuel sp.toCore {} (.call f (args.map Core.Expr.value)) = .done v final)
+    (zero : ∀ a, 1 ≤ a → heap.bytes a = 0) (small : heap.limit < 2 ^ 62) (silent : heap.io.trace = [])
+    (runs : Semantics.evalExpr fuel sp.toCore (startState heap.io) (.call f (args.map Core.Expr.value)) =
+      .done v final)
     (fits : final.heap.nextAddress ≤ heap.limit) :
     ∃ depth results after, func.ret.HoldsAt v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
       after.cursor = final.heap.nextAddress ∧
@@ -100,23 +103,24 @@ theorem compileSource_deterministic {sp : SrcProgram} {binary : Binary}
         s.rip = imageBase + BitVec.ofNat 64 (binary.entries.getD f 0) →
         (∀ k (bound : k < bits.length),
           read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = bits[k]) →
-        HeapAt window s heap →
-        ∃ n s', Steps n s s' ∧ Returned window s s' results after ∧
+        HeapAt window s heap → StackAt binary.guard window s →
+        ∃ n s', Steps n s s' ∧ Det n s s' ∧ Returned window s s' results after ∧
           ∀ t, Steps n s t → DataEq s' t ∧ Returned window s t results after := by
   obtain ⟨_, _, funcs, lowered, compiledProgram⟩ := compileSource_some compiled
   cases fuel with
   | zero => simp [Semantics.evalExpr] at runs
   | succ k =>
-    obtain ⟨func', values, afterArgs, completed, c, argsRun, found', _, bodyRun, result, rfl⟩ := call_inv runs
+    obtain ⟨func', values, afterArgs, completed, c, argsRun, found', _, bodyRun, result, rfl⟩ :=
+      call_inv (List.getElem?_eq_some_iff.mp found).1 runs
     rw [found] at found'
     cases found'
     obtain ⟨rfl, rfl⟩ := evalExprs_values argsRun
     obtain ⟨_, _, depth, results, after, returns, holds, len, hc⟩ :=
       body_sound (mp := { funcs := funcs }) (hp := heap) lowered (stmt_sound lowered k) found
-        ⟨fun _ mem => by simp at mem, rfl⟩ (HeapCorr.empty start zero small) typed bitsLen bodyRun result fits
+        (startState_fresh _) (HeapCorr.empty start zero small silent) typed bitsLen bodyRun result fits
     exact ⟨depth, results, after, holds, len, hc.cursor,
-      fun s imageBase window enough bounded loaded apart imageHeap entry params heapAt =>
+      fun s imageBase window enough bounded loaded apart imageHeap entry params heapAt stack =>
         compileOptimized_deterministic compiledProgram returns s imageBase window enough bounded loaded apart
-          imageHeap entry params heapAt⟩
+          imageHeap entry params heapAt stack⟩
 
 end Lanius.Mini

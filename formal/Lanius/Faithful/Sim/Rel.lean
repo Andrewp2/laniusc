@@ -8,7 +8,8 @@ means the pure value `p`. A scalar means itself, in its type's range; a
 struct or an enum means the value with the meanings of its parts; a box (a
 struct id that `boxes` gives an element type) means the meaning of the value
 Core reads from its storage, where `boxed` wrote it. Core reads only grow
-with the heap (`HeapReads`), so the relation does too (`VRel.mono`). -/
+with the heap (`HeapReads`), and its blocks stay (`HeapRanges`), so the
+relation does too (`VRel.mono`). -/
 
 namespace Lanius.Faithful
 
@@ -27,6 +28,20 @@ def STy : SrcType → Value → Prop
   | .enum _ _, _ => False
   | .ptr, _ => False
   | .slice _, _ => False
+  | .char, _ => False
+  | .float _, _ => False
+  | .sint _, _ => False
+  | .array _ _, _ => False
+
+/-- Every range Core's raw views check in `h` still checks in `h'`: blocks
+stay live with their bases, sizes and alignments. -/
+def HeapRanges (h h' : Memory.Heap) : Prop :=
+  ∀ p s a, h.checkRange p s a = .ok () → h'.checkRange p s a = .ok ()
+
+theorem HeapRanges.refl (h : Memory.Heap) : HeapRanges h h := fun _ _ _ ok => ok
+
+theorem HeapRanges.trans {a b c : Memory.Heap} (first : HeapRanges a b) (second : HeapRanges b c) :
+    HeapRanges a c := fun _ _ _ ok => second _ _ _ (first _ _ _ ok)
 
 /-- The box struct ids, and the type of the value each box holds. -/
 abbrev Boxes := Nat → Option SrcType
@@ -46,6 +61,7 @@ inductive VRel (P : Core.Program) (boxes : Boxes) (heap : Memory.Heap) :
       VRel P boxes heap (.enum id variants) (.enumeration id k vs) (.enumeration id k ps)
   | box {id : Nat} {t : SrcType} {a w : Nat} {v p : Value} :
       boxes id = some t → NativeLayout.valueWords? P t.toCore = some w → 0 < w → a + 8 * w ≤ 2 ^ 64 →
+      heap.checkRange a (8 * w) 8 = .ok () →
       readNativeValue NativeLayout.maxDepth P heap t.toCore (a + 8 * w - 8) = .ok v →
       VRel P boxes heap t v p → VRel P boxes heap (.struct id [.ptr]) (.structure id [.pointer a]) p
 
@@ -61,17 +77,18 @@ section
 variable {P : Core.Program} {boxes : Boxes}
 
 mutual
-theorem VRel.mono {h h' : Memory.Heap} (reads : HeapReads h h') :
+theorem VRel.mono {h h' : Memory.Heap} (reads : HeapReads h h') (ranges : HeapRanges h h') :
     ∀ {t : SrcType} {v p : Value}, VRel P boxes h t v p → VRel P boxes h' t v p
   | _, _, _, .scalar s => .scalar s
-  | _, _, _, .struct n rs => .struct n (VRels.mono reads rs)
-  | _, _, _, .enum k rs => .enum k (VRels.mono reads rs)
-  | _, _, _, .box b w pos a r rel => .box b w pos a (reads.nativeValue r) (VRel.mono reads rel)
+  | _, _, _, .struct n rs => .struct n (VRels.mono reads ranges rs)
+  | _, _, _, .enum k rs => .enum k (VRels.mono reads ranges rs)
+  | _, _, _, .box b w pos a c r rel =>
+    .box b w pos a (ranges _ _ _ c) (reads.nativeValue r) (VRel.mono reads ranges rel)
 
-theorem VRels.mono {h h' : Memory.Heap} (reads : HeapReads h h') :
+theorem VRels.mono {h h' : Memory.Heap} (reads : HeapReads h h') (ranges : HeapRanges h h') :
     ∀ {ts : List SrcType} {vs ps : List Value}, VRels P boxes h ts vs ps → VRels P boxes h' ts vs ps
   | _, _, _, .nil => .nil
-  | _, _, _, .cons r rs => .cons (VRel.mono reads r) (VRels.mono reads rs)
+  | _, _, _, .cons r rs => .cons (VRel.mono reads ranges r) (VRels.mono reads ranges rs)
 end
 
 /-- A value that is not a struct or an enum. -/
@@ -104,6 +121,10 @@ theorem STy.flat : ∀ {t : SrcType} {v : Value}, STy t v → Flat v
   | .enum _ _, _, s => s.elim
   | .ptr, _, s => s.elim
   | .slice _, _, s => s.elim
+  | .char, _, s => s.elim
+  | .float _, _, s => s.elim
+  | .sint _, _, s => s.elim
+  | .array _ _, _, s => s.elim
 
 theorem VRels.length {heap : Memory.Heap} :
     ∀ {ts : List SrcType} {vs ps : List Value}, VRels P boxes heap ts vs ps →

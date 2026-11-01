@@ -51,6 +51,24 @@ theorem proof_p_type_array {prog : SrcProgram} {prims : Prims} {ix_p_type_array 
   simp only [src_p_type_array] at h
   faithful [Lanius.Mini.Inline.pTypeArray]
 
+theorem proof_p_type_array_len_constant {prog : SrcProgram} {prims : Prims} {ix_p_type_array_len_constant : Nat} (fn : prog.funcs[ix_p_type_array_len_constant]? = some (src_p_type_array_len_constant)) (np : prims.isPrim ix_p_type_array_len_constant = false) {n : Nat} :
+    Stmt_p_type_array_len_constant prog prims ix_p_type_array_len_constant n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_p_type_array_len_constant] at h
+  faithful [Lanius.Mini.Inline.pTypeArrayLenConstant]
+
+theorem proof_p_type_array_tail {prog : SrcProgram} {prims : Prims} {ix_p_type_array_tail : Nat} (fn : prog.funcs[ix_p_type_array_tail]? = some (src_p_type_array_tail)) (np : prims.isPrim ix_p_type_array_tail = false) {n : Nat} :
+    Stmt_p_type_array_tail prog prims ix_p_type_array_tail n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_p_type_array_tail] at h
+  faithful [Lanius.Mini.Inline.pTypeArrayTail]
+
 theorem proof_p_type_ident {prog : SrcProgram} {prims : Prims} {ix_p_type_ident : Nat} (fn : prog.funcs[ix_p_type_ident]? = some (src_p_type_ident)) (np : prims.isPrim ix_p_type_ident = false) {n : Nat} :
     Stmt_p_type_ident prog prims ix_p_type_ident n := by
   intro w h

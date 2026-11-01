@@ -66,8 +66,14 @@ inductive Ty where
   | tyUint : UintTy → Ty
   | tyPtr : Ty
   | tyIsize : Ty
+  | tyChar : Ty
+  /-- f32 or f64 -/
+  | tyFloat : FloatTy → Ty
   | tySlice : Ty → Ty
   | tyNamed : Nat → (List Ty) → Ty
+  | tySint : UintTy → Ty
+  /-- [element; length] -/
+  | tyArray : Ty → Nat → Ty
   deriving Repr
 
 /-- A declaration at type arguments: a type instance (the declaration is a type's index) or a function instance (a function's index). -/
@@ -88,7 +94,7 @@ structure TypeDecl where
   payloads : List (List CTree)
   deriving Repr
 
-/-- A function or an impl method: its module, spelling, the impl's type parameters and type as written (a method), its own type parameters, and its fn_item or impl_fn_item node. -/
+/-- A function or an impl method: its module, spelling, the impl's type parameters and type as written (a method), its own type parameters, its fn_item or impl_fn_item node, and a method's impl node (whose type parameters and where clause bound the method's instances too). -/
 structure FnDecl where
   home : List (List Nat)
   name : List Nat
@@ -97,6 +103,7 @@ structure FnDecl where
   selfType : CTree
   params : List (List Nat)
   tree : CTree
+  implTree : CTree
   deriving Repr
 
 /-- `const name: ty = value;` -/
@@ -121,6 +128,13 @@ structure AliasDecl where
   ty : CTree
   deriving Repr
 
+/-- `impl<params> Trait<..> for T where ..` (impl_trait), its node. -/
+structure ImplDecl where
+  home : List (List Nat)
+  params : List (List Nat)
+  tree : CTree
+  deriving Repr
+
 /-- The declarations of all the files, in file order. -/
 structure Decls where
   types : List TypeDecl
@@ -128,6 +142,7 @@ structure Decls where
   consts : List ConstDecl
   imports : List ImportDecl
   aliases : List AliasDecl
+  impls : List ImplDecl
   deriving Repr
 
 /-- A struct's fields: spellings and type expressions. -/
@@ -171,6 +186,18 @@ structure FrontEnv where
   base : Nat
   deriving Repr
 
+structure FlDiv where
+  q : List Bool
+  r : List Bool
+  deriving DecidableEq, Repr
+
+/-- A float literal's digits and exponent. -/
+structure FlDec where
+  m : List Bool
+  neg : Bool
+  mag : Nat
+  deriving DecidableEq, Repr
+
 /-- A local in scope: its spelling, its id and its type. -/
 structure Local where
   name : List Nat
@@ -182,6 +209,33 @@ structure Local where
 structure Bind where
   name : List Nat
   ty : Ty
+  deriving Repr
+
+/-- An array type, its element type and its length. -/
+structure ArrayParts where
+  ty : Ty
+  element : Ty
+  count : Nat
+  deriving Repr
+
+/-- A trait as a bound or an impl names it: its module and spelling, resolved like a type path's, and its type arguments. -/
+structure TraitRef where
+  home : List (List Nat)
+  name : List Nat
+  args : List Ty
+  deriving Repr
+
+/-- A bound to check: the type ty has an impl of the trait. -/
+structure BoundGoal where
+  traitRef : TraitRef
+  ty : Ty
+  deriving Repr
+
+/-- Whether a type expression matches an actual type, as match_ty decides it, with a mismatch told apart from running out of fuel: a method's impl is passed over only when its type does not match. -/
+inductive Fit where
+  | fits : (List Bind) → Fit
+  | misfit : Fit
+  | spent : Fit
   deriving Repr
 
 /-- A method found for a type: its function and the impl's inferred parameters. -/
@@ -206,6 +260,8 @@ inductive MEff where
   | xDivide : SrcDivOp → MEff → MEff → MEff
   /-- slice_stride(x) of a slice local x -/
   | xStride : Nat → MEff
+  /-- a call of the host service with this Core function id (see extern_func): only an extern's instance has one -/
+  | xHost : Nat → (List MEff) → MEff
   deriving Repr
 
 /-- An arm of a match expression: its binders, its value and the value's type. -/
@@ -248,6 +304,12 @@ inductive MStmt where
   | mSetFieldEval : Nat → Nat → MEff → MStmt
   | mReturnUnit : MStmt
   | mAssert : MEff → MStmt
+  | mBreak : MStmt
+  | mContinue : MStmt
+  /-- MMatchArm(scrutinee, its type, variant, binds, binder, binder type, body, rest): SrcStmt's MatchArm; without a binder the type is unused. -/
+  | mMatchArm : Nat → Ty → Nat → Bool → Nat → Ty → MStmt → MStmt → MStmt
+  /-- SrcStmt's Unreachable -/
+  | mUnreachable : Nat → Ty → MStmt
   deriving Repr
 
 /-- A call: the function instance and the arguments. -/
@@ -256,7 +318,18 @@ structure Called where
   args : List SrcExpr
   deriving Repr
 
-/-- What a let binds: a value, a call, a variant, a struct literal, a match, an allocation, a raw view, a slice element, or an effectful expression. -/
+/-- What a let binds: a value, a call, a variant, a struct literal, a match, an allocation, a raw view, a slice element, or an effectful expression. `op?` with op a `core::result::Result` or `core::option::Option`: the scrutinee local, its type, the call that binds it (none when op is a local), the success payload's type, the failure arm's binder, whether the failure variant has a payload and its type, and the function's result type. -/
+structure Tried where
+  scrutinee : Nat
+  sty : Ty
+  call : Option MEff
+  okTy : Ty
+  binder : Nat
+  binds : Bool
+  errTy : Ty
+  ret : Ty
+  deriving Repr
+
 inductive LetHead where
   | plain : SrcExpr → LetHead
   | callOf : Called → LetHead
@@ -271,6 +344,8 @@ inductive LetHead where
   /-- slice[index], the slice a local -/
   | indexOf : Nat → SrcExpr → LetHead
   | evalOf : MEff → LetHead
+  /-- op? -/
+  | tryOf : Tried → LetHead
   deriving Repr
 
 /-- Binder ids, and the scope with the binders in it. -/
@@ -285,10 +360,33 @@ structure VariantTy where
   payload : List Ty
   deriving Repr
 
+/-- Arms whose last is a wildcard: the others, and the wildcard. -/
+structure WildSplit where
+  init : List CTree
+  wild : CTree
+  deriving Repr
+
 /-- Arguments read so far, and the type parameters they bind. -/
 structure ArgsBound where
   args : List MEff
   binds : List Bind
+  deriving Repr
+
+/-- What `let x = init;` binds, and at which type. -/
+structure Untyped where
+  ty : Ty
+  head : LetHead
+  deriving Repr
+
+/-- A match statement's scrutinee (a local, or else a value bound to a local numbered by the `match`), its enum and variants, and the local numbered by its `}` that the Unreachable after the last arm binds. -/
+structure MatchStmt where
+  scrutinee : Nat
+  sty : Ty
+  value : Option MEff
+  owner : TypeDecl
+  variants : List VariantTy
+  closer : Nat
+  ret : Ty
   deriving Repr
 
 structure MParam where
@@ -339,6 +437,52 @@ structure FileInput where
   tokens : List Token
   prods : List Nat
   parents : List Nat
+  deriving DecidableEq, Repr
+
+/-- A token before canonicalizing: its kind code and its bytes' offsets. -/
+structure RawTok where
+  kind : Nat
+  start : Nat
+  finish : Nat
+  deriving DecidableEq, Repr
+
+/-- A scan's end: where it stopped, or the offset of the error. -/
+inductive Scan where
+  | scanDone : Nat → Scan
+  | scanFail : Nat → Scan
+  deriving DecidableEq, Repr
+
+/-- A number's kind code and end, or the offset of the error. -/
+inductive NumScan where
+  | numDone : Nat → Nat → NumScan
+  | numFail : Nat → NumScan
+  deriving DecidableEq, Repr
+
+/-- One token, or the offset of the error. -/
+inductive OneTok where
+  | oneDone : RawTok → OneTok
+  | oneFail : Nat → OneTok
+  deriving DecidableEq, Repr
+
+/-- A fixed spelling and its token kind code. -/
+structure SymRule where
+  spelling : List Nat
+  kind : Nat
+  deriving DecidableEq, Repr
+
+structure NumsRead where
+  nums : List Nat
+  rest : List (BitVec 32)
+  deriving DecidableEq, Repr
+
+structure FileRead where
+  file : FileInput
+  rest : List (BitVec 32)
+  deriving DecidableEq, Repr
+
+structure FilesRead where
+  files : List FileInput
+  rest : List (BitVec 32)
   deriving DecidableEq, Repr
 
 end Lanius.Mini

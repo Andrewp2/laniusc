@@ -66,7 +66,7 @@ theorem proof_close_ret {prog : SrcProgram} {prims : Prims} {ix_close_ret ix_clo
   simp only [src_close_ret] at h
   faithful [Lanius.Mini.closeRet]
 
-theorem step_close_stmt {prog : SrcProgram} {prims : Prims} {ix_close_stmt ix_unbox_of_mini_selfhost_MStmt ix_close_ty ix_let_closed ix_let_struct_closed ix_let_call_closed ix_inst_index ix_let_enum_closed ix_let_match_closed ix_src_enum_id ix_set_call_closed ix_then_closed ix_if_closed ix_while_closed ix_alloc_closed ix_let_slice_closed ix_let_index_closed ix_let_eval_closed ix_close_eff ix_set_eval_closed ix_if_eval_closed ix_while_eval_closed ix_return_eval_closed ix_discard_closed ix_set_index_eval_closed ix_set_field_eval_closed ix_assert_closed : Nat} (fn : prog.funcs[ix_close_stmt]? = some (src_close_stmt ix_close_stmt ix_unbox_of_mini_selfhost_MStmt ix_close_ty ix_let_closed ix_let_struct_closed ix_let_call_closed ix_inst_index ix_let_enum_closed ix_let_match_closed ix_src_enum_id ix_set_call_closed ix_then_closed ix_if_closed ix_while_closed ix_alloc_closed ix_let_slice_closed ix_let_index_closed ix_let_eval_closed ix_close_eff ix_set_eval_closed ix_if_eval_closed ix_while_eval_closed ix_return_eval_closed ix_discard_closed ix_set_index_eval_closed ix_set_field_eval_closed ix_assert_closed)) (np : prims.isPrim ix_close_stmt = false)
+theorem step_close_stmt {prog : SrcProgram} {prims : Prims} {ix_close_stmt ix_unbox_of_mini_selfhost_MStmt ix_close_ty ix_let_closed ix_let_struct_closed ix_let_call_closed ix_inst_index ix_let_enum_closed ix_let_match_closed ix_src_enum_id ix_set_call_closed ix_then_closed ix_if_closed ix_while_closed ix_alloc_closed ix_let_slice_closed ix_let_index_closed ix_let_eval_closed ix_close_eff ix_set_eval_closed ix_if_eval_closed ix_while_eval_closed ix_return_eval_closed ix_discard_closed ix_set_index_eval_closed ix_set_field_eval_closed ix_assert_closed ix_match_arm_closed ix_arm_ty_closed ix_unreachable_closed : Nat} (fn : prog.funcs[ix_close_stmt]? = some (src_close_stmt ix_close_stmt ix_unbox_of_mini_selfhost_MStmt ix_close_ty ix_let_closed ix_let_struct_closed ix_let_call_closed ix_inst_index ix_let_enum_closed ix_let_match_closed ix_src_enum_id ix_set_call_closed ix_then_closed ix_if_closed ix_while_closed ix_alloc_closed ix_let_slice_closed ix_let_index_closed ix_let_eval_closed ix_close_eff ix_set_eval_closed ix_if_eval_closed ix_while_eval_closed ix_return_eval_closed ix_discard_closed ix_set_index_eval_closed ix_set_field_eval_closed ix_assert_closed ix_match_arm_closed ix_arm_ty_closed ix_unreachable_closed)) (np : prims.isPrim ix_close_stmt = false)
     (ext_unbox_of_mini_selfhost_MStmt : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_MStmt prog prims ix_unbox_of_mini_selfhost_MStmt n))
     (ext_close_ty : Certified (∀ {n : Nat}, Stmt_close_ty prog prims ix_close_ty n))
     (ext_let_closed : Certified (∀ {n : Nat}, Stmt_let_closed prog prims ix_let_closed n))
@@ -92,7 +92,10 @@ theorem step_close_stmt {prog : SrcProgram} {prims : Prims} {ix_close_stmt ix_un
     (ext_discard_closed : Certified (∀ {n : Nat}, Stmt_discard_closed prog prims ix_discard_closed n))
     (ext_set_index_eval_closed : Certified (∀ {n : Nat}, Stmt_set_index_eval_closed prog prims ix_set_index_eval_closed n))
     (ext_set_field_eval_closed : Certified (∀ {n : Nat}, Stmt_set_field_eval_closed prog prims ix_set_field_eval_closed n))
-    (ext_assert_closed : Certified (∀ {n : Nat}, Stmt_assert_closed prog prims ix_assert_closed n)) {n : Nat}
+    (ext_assert_closed : Certified (∀ {n : Nat}, Stmt_assert_closed prog prims ix_assert_closed n))
+    (ext_match_arm_closed : Certified (∀ {n : Nat}, Stmt_match_arm_closed prog prims ix_match_arm_closed n))
+    (ext_arm_ty_closed : Certified (∀ {n : Nat}, Stmt_arm_ty_closed prog prims ix_arm_ty_closed n))
+    (ext_unreachable_closed : Certified (∀ {n : Nat}, Stmt_unreachable_closed prog prims ix_unreachable_closed n)) {n : Nat}
     (ih_close_stmt : Certified (Stmt_close_stmt prog prims ix_close_stmt n)) :
     Stmt_close_stmt prog prims ix_close_stmt (n + 1) := by
   intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2

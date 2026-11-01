@@ -386,9 +386,13 @@ theorem typedSlice_inv {el : Core.Ty} {p n : Core.Expr} {v : Value}
       all_goals simp at h
     all_goals simp at h
 
-/-- A call: its arguments, then the callee's body on fresh locals. -/
+theorem inside_of {α : Type} {l : List α} {i : Nat} {x : α} (h : l[i]? = some x) : i < l.length :=
+  (List.getElem?_eq_some_iff.mp h).1
+
+/-- A call of one of `sp`'s functions: its arguments, then the callee's body
+on fresh locals. -/
 theorem call_inv' {sp : SrcProgram} {callee : Nat} {args : List Core.Expr} {v : Value}
-    (h : evalExpr k sp.toCore st (.call callee args) = .done v st') :
+    (inside : callee < sp.funcs.length) (h : evalExpr k sp.toCore st (.call callee args) = .done v st') :
     ∃ j f values afterArgs completed c, k = j + 1 ∧ evalExprs j sp.toCore st args = .done values afterArgs ∧
       sp.funcs[callee]? = some f ∧ values.length = f.params.length ∧
       execStmt j sp.toCore (({ afterArgs with locals := [] } : State).bindLocals
@@ -397,7 +401,7 @@ theorem call_inv' {sp : SrcProgram} {callee : Nat} {args : List Core.Expr} {v : 
   cases k with
   | zero => simp [evalExpr] at h
   | succ j =>
-    obtain ⟨f, values, afterArgs, completed, c, a, b, d, e, g, i⟩ := call_inv h
+    obtain ⟨f, values, afterArgs, completed, c, a, b, d, e, g, i⟩ := call_inv inside h
     exact ⟨j, f, values, afterArgs, completed, c, rfl, a, b, d, e, g, i⟩
 
 end

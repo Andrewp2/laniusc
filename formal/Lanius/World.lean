@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Memory
+public import Lanius.IEEE
 
 @[expose] public section
 
@@ -54,10 +55,13 @@ structure State where
   standardOutput : List UInt8 := []
   standardError : List UInt8 := []
   unixTimeSeconds : Int := 0
-  monotonicSeconds : Int := 0
-  monotonicNanoseconds : Nat := 0
-  systemSeconds : Int := 0
-  systemNanoseconds : Nat := 0
+  /-- The readings (seconds, nanoseconds) the monotonic clock gives, one a
+  read, in turn: a stream fixed before the run, as the kernel's clock is
+  outside the program (SEMANTIC_DECISIONS.md, "Clock readings and secure
+  bytes"). -/
+  monotonicReadings : List (Int × Nat) := []
+  /-- The readings the system (real-time) clock gives, one a read. -/
+  systemReadings : List (Int × Nat) := []
   secureU32Stream : List Nat := []
   secureByteStream : List UInt8 := []
   files : List FileEntry := []
@@ -117,22 +121,10 @@ def State.afterPrintI32 (world : State) (value : Int) : State :=
 def record (world : State) (service : HostService) : State :=
   { world with calls := world.calls ++ [service] }
 
-def advanceClock (seconds : Int) (nanoseconds milliseconds : Nat) : Int × Nat :=
-  let totalNanoseconds := nanoseconds + milliseconds * 1_000_000
-  (seconds + Int.ofNat (totalNanoseconds / 1_000_000_000),
-    totalNanoseconds % 1_000_000_000)
-
+/-- A sleep advances the whole-second compatibility clock; the monotonic and
+system clocks are streams of readings, which a sleep does not change. -/
 def State.afterSleepMs (world : State) (milliseconds : Nat) : State :=
-  let monotonic := advanceClock world.monotonicSeconds world.monotonicNanoseconds milliseconds
-  let system := advanceClock world.systemSeconds world.systemNanoseconds milliseconds
-  {
-    world with
-    unixTimeSeconds := world.unixTimeSeconds + Int.ofNat (milliseconds / 1000)
-    monotonicSeconds := monotonic.1
-    monotonicNanoseconds := monotonic.2
-    systemSeconds := system.1
-    systemNanoseconds := system.2
-  }
+  { world with unixTimeSeconds := world.unixTimeSeconds + Int.ofNat (milliseconds / 1000) }
 
 /-- Host APIs returning `i32` use the same two's-complement wrapping rule as
     ordinary resolved integer operations. Host inputs such as timestamps and
@@ -335,7 +327,7 @@ def callSimple (world : State) (service : HostService) (arguments : List Value) 
           .returned (.unsigned .u32 (value % (2 ^ 32)))
             { world with secureU32Stream := rest }
   | .i32ToF32, [.signed .i32 value] =>
-      .returned (.f32Bits (Float32.ofInt value).toBits) world
+      .returned (.f32Bits (IEEE.F32.ofInt value)) world
   | .sleepMsI32, [.signed .i32 milliseconds] =>
       if milliseconds < 0 then .returned (i32Result (-1)) world
       else .returned (i32Result 0) (world.afterSleepMs milliseconds.toNat)
@@ -601,17 +593,21 @@ def call (heap : Heap) (world : State) (service : HostService)
       | .monotonicRead, [.pointer pointer, .unsigned .usize length] =>
           if length < 16 then .returned (i32Result (-1)) heap next
           else
-            match heap.storeBytes pointer
-                (timespecBytes next.monotonicSeconds next.monotonicNanoseconds) with
-            | .error reason => .trapped reason heap next
-            | .ok copied => .returned (i32Result 0) copied next
+            match next.monotonicReadings with
+            | [] => .trapped .clockExhausted heap next
+            | reading :: rest =>
+                match heap.storeBytes pointer (timespecBytes reading.1 reading.2) with
+                | .error reason => .trapped reason heap next
+                | .ok copied => .returned (i32Result 0) copied { next with monotonicReadings := rest }
       | .systemRead, [.pointer pointer, .unsigned .usize length] =>
           if length < 16 then .returned (i32Result (-1)) heap next
           else
-            match heap.storeBytes pointer
-                (timespecBytes next.systemSeconds next.systemNanoseconds) with
-            | .error reason => .trapped reason heap next
-            | .ok copied => .returned (i32Result 0) copied next
+            match next.systemReadings with
+            | [] => .trapped .clockExhausted heap next
+            | reading :: rest =>
+                match heap.storeBytes pointer (timespecBytes reading.1 reading.2) with
+                | .error reason => .trapped reason heap next
+                | .ok copied => .returned (i32Result 0) copied { next with systemReadings := rest }
       | service, _ => .unavailable service heap next
 
 end Lanius.World

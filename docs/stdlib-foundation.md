@@ -432,7 +432,7 @@ The [full library roadmap](library-roadmap.md) remains incomplete.
 
 **Preceding numeric/text checkpoint (2026-10-23):** the `codex/stdlib` branch adds
 [lawful comparison contracts](stdlib-comparison.md),
-[unsigned](extended-big-uint.md) and [signed](extended-big-int.md) arbitrary
+[unsigned](stdlib-big-uint.md) and [signed](stdlib-big-int.md) arbitrary
 precision arithmetic, [Unicode 17 properties and scalar mappings](stdlib-unicode.md),
 [all four normalization forms](extended-unicode-normalize.md) and
 [default extended grapheme clusters](extended-unicode-graphemes.md).

@@ -1,0 +1,64 @@
+// door.lani written by hand as an enum, a struct and a match per state: the
+// shape `machine` elaborates to. The machine's code must equal this.
+enum Input { Open, Close, Lock(u32), Unlock(u32) }
+enum Reply { Done, Ignored, WrongCode }
+
+enum DoorState { Opened, Closed, Locked(u32) }
+struct Door { turns: i32, current: DoorState }
+fn door_start(turns: i32) -> Door { return Door { turns: turns, current: DoorState::Closed }; }
+impl Door {
+    fn step(&mut self, event: Input) -> Reply {
+        return match (self.current) {
+            DoorState::Opened -> { return self.in_opened(event); },
+            DoorState::Closed -> { return self.in_closed(event); },
+            DoorState::Locked(stored) -> { return self.in_locked(stored, event); },
+        };
+    }
+    fn state(&self) -> DoorState { return self.current; }
+    fn in_opened(&mut self, event: Input) -> Reply {
+        return match (event) {
+            Input::Close -> { self.current = DoorState::Closed; return Reply::Done; },
+            Input::Open -> { return Reply::Ignored; },
+            Input::Lock(_) -> { return Reply::Ignored; },
+            Input::Unlock(_) -> { return Reply::Ignored; },
+        };
+    }
+    fn in_closed(&mut self, event: Input) -> Reply {
+        return match (event) {
+            Input::Open -> { self.turns += 1; self.current = DoorState::Opened; return Reply::Done; },
+            Input::Lock(code) -> { self.current = DoorState::Locked(code); return Reply::Done; },
+            Input::Close -> { return Reply::Ignored; },
+            Input::Unlock(_) -> { return Reply::Ignored; },
+        };
+    }
+    fn in_locked(&mut self, stored: u32, event: Input) -> Reply {
+        return match (event) {
+            Input::Unlock(code) -> {
+                if (code != stored) { return Reply::WrongCode; }
+                self.current = DoorState::Closed; return Reply::Done;
+            },
+            Input::Open -> { return Reply::Ignored; },
+            Input::Close -> { return Reply::Ignored; },
+            Input::Lock(_) -> { return Reply::Ignored; },
+        };
+    }
+}
+
+fn code(reply: Reply) -> i32 {
+    return match (reply) { Reply::Done -> 1, Reply::Ignored -> 2, Reply::WrongCode -> 3 };
+}
+
+fn main() -> i32 {
+    let door: Door = door_start(0);
+    if (code(door.step(Input::Lock(7))) != 1) { return 1; }
+    let locked: i32 = match (door.state()) { DoorState::Locked(stored) -> stored as i32, DoorState::Opened -> 0, DoorState::Closed -> 0 };
+    if (locked != 7) { return 2; }
+    if (code(door.step(Input::Open)) != 2) { return 3; }
+    if (code(door.step(Input::Unlock(3))) != 3) { return 4; }
+    if (code(door.step(Input::Unlock(7))) != 1) { return 5; }
+    if (code(door.step(Input::Open)) != 1) { return 6; }
+    if (code(door.step(Input::Open)) != 2) { return 7; }
+    if (code(door.step(Input::Close)) != 1) { return 8; }
+    if (code(door.step(Input::Open)) != 1 || door.turns != 2) { return 9; }
+    return 0;
+}

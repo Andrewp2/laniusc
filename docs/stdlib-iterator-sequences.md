@@ -175,8 +175,12 @@ exact custom-policy counts <= n, pulls <= n+1 per source and two matched
 mappings/releases. These are finite work-count checks, not isolated throughput
 or a compiler-speed comparison.
 
-The migrated Text equality/order operations and arena_words byte ordering now
-use these engines. Three selected existing regressions pass separately:
+The migrated Text equality/order operations and arena_words byte ordering
+used these engines. `Text.compare` has since returned to a direct unsigned
+byte loop with the same results, because it is the hot path of Text-keyed
+ordered collections (3.6x faster when indexing 60,000 words; see
+[sorted word lookup](stdlib-look-words.md)). Text equality still uses the
+engine. Three selected existing regressions pass separately:
 
 | Receipt under target/stdlib-work | Accepted scope |
 | --- | --- |

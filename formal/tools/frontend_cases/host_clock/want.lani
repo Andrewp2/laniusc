@@ -1,0 +1,13 @@
+fn top(n: i32) -> i32 {
+    let p: ptr = alloc::allocator::alloc((32 as usize), (8 as usize));
+    let a: i32 = monotonic_read(p, (16 as usize));
+    let b: i32 = system_read(p, (8 as usize));
+    let c: i32 = fill_secure_bytes(p, (4 as usize));
+    return a + b + c + n;
+}
+
+extern "lanius_std" fn monotonic_read(ptr: ptr, len: usize) -> i32;
+
+extern "lanius_std" fn system_read(ptr: ptr, len: usize) -> i32;
+
+extern "lanius_std" fn fill_secure_bytes(ptr: ptr, len: usize) -> i32;

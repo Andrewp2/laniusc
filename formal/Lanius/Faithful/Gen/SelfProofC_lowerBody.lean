@@ -11,12 +11,13 @@ public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtC_Inline_lowerSetScalar
+public import Lanius.Faithful.Gen.SelfStmtC_SrcType_size
+public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_enumVariants
-public import Lanius.Faithful.Gen.SelfStmtC_lookup
 public import Lanius.Faithful.Gen.SelfStmtC_lowerBody
 public import Lanius.Faithful.Gen.SelfStmtC_matchVariants
 public import Lanius.Faithful.Gen.SelfStmtC_sigs
-public import Lanius.Faithful.Gen.SelfStmtC_storeEvalWord
+public import Lanius.Faithful.Gen.SelfStmtC_storeArray
 public import Lanius.Faithful.Gen.SelfStmtC_structFields
 import all Lanius.Faithful.Gen.SelfSrcC_lowerBody
 import all Lanius.Mini.Compiler.P.lowerBody
@@ -62,12 +63,12 @@ theorem step_SrcStmt_returns {prog : SrcProgram} {prims : Prims} {ix_SrcStmt_ret
   simp only [src_SrcStmt_returns] at h
   faithful [Lanius.Mini.SrcStmt.returns]
 
-theorem step_SrcType_declare {prog : SrcProgram} {prims : Prims} {ix_SrcType_declare ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_declare_struct ix_declare_types ix_declare_enum ix_declare_variants ix_unbox_of_mini_selfhost_SrcType : Nat} (fn : prog.funcs[ix_SrcType_declare]? = some (src_SrcType_declare ix_SrcType_declare ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_declare_struct ix_declare_types ix_declare_enum ix_declare_variants ix_unbox_of_mini_selfhost_SrcType)) (np : prims.isPrim ix_SrcType_declare = false)
+theorem step_SrcType_declare {prog : SrcProgram} {prims : Prims} {ix_SrcType_declare ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcType ix_declare_struct ix_declare_types ix_declare_enum ix_declare_variants : Nat} (fn : prog.funcs[ix_SrcType_declare]? = some (src_SrcType_declare ix_SrcType_declare ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcType ix_declare_struct ix_declare_types ix_declare_enum ix_declare_variants)) (np : prims.isPrim ix_SrcType_declare = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType n))
+    (ext_unbox_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_SrcType n))
     (ext_declare_struct : Certified (∀ {n : Nat}, Stmt_declare_struct prog prims ix_declare_struct n))
-    (ext_declare_enum : Certified (∀ {n : Nat}, Stmt_declare_enum prog prims ix_declare_enum n))
-    (ext_unbox_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_SrcType n)) {n : Nat}
+    (ext_declare_enum : Certified (∀ {n : Nat}, Stmt_declare_enum prog prims ix_declare_enum n)) {n : Nat}
     (ih_SrcType_declare : Certified (Stmt_SrcType_declare prog prims ix_SrcType_declare n))
     (ih_declare_types : Certified (Stmt_declare_types prog prims ix_declare_types n))
     (ih_declare_variants : Certified (Stmt_declare_variants prog prims ix_declare_variants n)) :
@@ -162,10 +163,11 @@ theorem proof_lower_body {prog : SrcProgram} {prims : Prims} {ix_lower_body ix_p
   simp only [src_lower_body] at h
   faithful [Lanius.Mini.lowerBody]
 
-theorem proof_lower_func {prog : SrcProgram} {prims : Prims} {ix_lower_func ix_params_size ix_SrcType_size ix_params_valid ix_lower_body ix_SrcStmt_depth ix_unit_tail ix_SrcStmt_lower ix_param_scope ix_empty_of_mini_selfhost_Binding : Nat} (fn : prog.funcs[ix_lower_func]? = some (src_lower_func ix_params_size ix_SrcType_size ix_params_valid ix_lower_body ix_SrcStmt_depth ix_unit_tail ix_SrcStmt_lower ix_param_scope ix_empty_of_mini_selfhost_Binding)) (np : prims.isPrim ix_lower_func = false)
+theorem proof_lower_func {prog : SrcProgram} {prims : Prims} {ix_lower_func ix_params_size ix_SrcType_size ix_params_valid ix_SrcStmt_breaks_out ix_lower_body ix_SrcStmt_depth ix_unit_tail ix_SrcStmt_lower ix_param_scope ix_empty_of_mini_selfhost_Binding : Nat} (fn : prog.funcs[ix_lower_func]? = some (src_lower_func ix_params_size ix_SrcType_size ix_params_valid ix_SrcStmt_breaks_out ix_lower_body ix_SrcStmt_depth ix_unit_tail ix_SrcStmt_lower ix_param_scope ix_empty_of_mini_selfhost_Binding)) (np : prims.isPrim ix_lower_func = false)
     (ext_params_size : Certified (∀ {n : Nat}, Stmt_params_size prog prims ix_params_size n))
     (ext_SrcType_size : Certified (∀ {n : Nat}, Stmt_SrcType_size prog prims ix_SrcType_size n))
     (ext_params_valid : Certified (∀ {n : Nat}, Stmt_params_valid prog prims ix_params_valid n))
+    (ext_SrcStmt_breaks_out : Certified (∀ {n : Nat}, Stmt_SrcStmt_breaks_out prog prims ix_SrcStmt_breaks_out n))
     (ext_lower_body : Certified (∀ {n : Nat}, Stmt_lower_body prog prims ix_lower_body n))
     (ext_SrcStmt_depth : Certified (∀ {n : Nat}, Stmt_SrcStmt_depth prog prims ix_SrcStmt_depth n))
     (ext_unit_tail : Certified (∀ {n : Nat}, Stmt_unit_tail prog prims ix_unit_tail n))

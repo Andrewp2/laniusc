@@ -85,6 +85,7 @@ inductive TokenKind where
   | typeKeyword
   | whereKeyword
   | selfKeyword
+  | requiresKeyword
   | matchArrow
   | dotDot
   | dotDotEqual
@@ -170,6 +171,7 @@ def TokenKind.gpuCode : TokenKind → Nat
   | .typeKeyword => 103
   | .whereKeyword => 104
   | .selfKeyword => 105
+  | .requiresKeyword => 201
   | .matchArrow => 113
   | .dotDot => 182
   | .dotDotEqual => 189
@@ -260,6 +262,7 @@ def TokenKind.ofGpuCode : Nat → Option TokenKind
   | 113 => some .matchArrow
   | 182 => some .dotDot
   | 189 => some .dotDotEqual
+  | 201 => some .requiresKeyword
   | _ => none
 
 theorem TokenKind.ofGpuCode_gpuCode (kind : TokenKind) :

@@ -212,6 +212,62 @@ resource limit, allocation failure, invalid options, bounds, and wrong kind.
 
 ## Executable evidence
 
+### Python tomllib oracle (2026-10-31)
+
+[`toml_oracle/oracle.py`](../tests/fixtures/stdlib_execution/toml_oracle/oracle.py)
+runs the [normalizer](extended-toml-normalize.md), built by the GPU compiler
+for native Linux x86_64. It is registered in
+`tests/extended_toml_oracle_execution.rs`. For each input accepted by
+Python's `tomllib`, two checks apply. First, `tomllib.loads` of the
+normalizer's output must equal `tomllib.loads` of the input. The comparison
+keeps key order and exact types, including float sign, NaN and datetime
+spelling and offset. Second, normalizing the output again must reproduce it
+byte for byte. For each rejected input, the program must exit 2 with a typed
+`toml-error` diagnostic (kind and byte offset) or an `invalid-utf8` one, and
+write nothing to stdout.
+
+| Group | Cases | Agreement | tomllib accepts | tomllib rejects | TOML 1.1 only | Integers beyond i64 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| edge: hand-written | 154 | 154 | 67 | 80 | 6 | 1 |
+| generated documents | 600 | 600 | 600 | 0 | 0 | 0 |
+| 1–2 byte mutations of generated documents | 1,000 | 1,000 | 221 | 777 | 1 | 1 |
+
+The edge cases cover:
+
+- dotted keys, including quoted dots, collisions between escaped and bare
+  spellings, and extending dotted tables from headers;
+- inline tables, including duplicates, extension from outside, and nesting;
+- arrays and arrays of tables, including subtables, nested arrays of tables,
+  and static-array conflicts;
+- table redefinition;
+- all four date-time kinds, separators, offsets, fractions, leap days and
+  invalid fields;
+- integer and float spellings, including the i64 bounds, radix prefixes, `inf`
+  and `nan`;
+- all string forms with quote runs, escapes, surrogates, controls, and CRLF;
+- comments and a BOM.
+
+Six of these cases also check the exact error kind: four
+`duplicate key`, one `table redefinition` and one `number out of range`.
+
+Generated documents mix inline values, dotted keys, `[table]` and
+`[[array]]` headers, every string form, radix integers, special floats, all
+date-time kinds and CRLF line endings.
+
+Two classes are expected disagreements by policy:
+
+- **TOML 1.1 syntax** (`\e`, `\xHH`, omitted seconds, multiline or
+  trailing-comma inline tables): `ext::toml` accepts it, while `tomllib`
+  implements TOML 1.0.0 and rejects it. Each such case must still normalize
+  idempotently.
+- **Integers outside i64**: `tomllib` keeps them as unbounded Python ints.
+  TOML requires an error when an integer cannot be kept losslessly, so
+  `ext::toml` reports `number out of range`.
+
+No other disagreement occurred. `cargo test` was not run in this session.
+
+### Earlier receipts
+
 The historical receipts below predate the shared resumable serializer. Its
 [current acceptance](extended-toml-streaming.md#status-and-dependencies) covers
 five library groups, including the independent state model and selected

@@ -1,0 +1,20 @@
+struct P { c: char, n: u32 }
+
+fn pick(a: char, b: char) -> char {
+    if (a < b && a != '\n') {
+        return a;
+    }
+    let p: P = P { c: 'é', n: 1 };
+    if (b == '\'' || b == '\\') {
+        p.c = '€';
+    }
+    if (b >= '😀') {
+        return '\t';
+    }
+    return p.c;
+}
+
+fn code(x: char) -> u32 {
+    let c: char = pick(x, '\0');
+    return (c as u32) + ('a' as u32);
+}

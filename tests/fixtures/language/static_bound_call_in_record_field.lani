@@ -1,0 +1,16 @@
+module app::main;
+// A static bound-trait call fills a generic record field directly.
+pub struct Obs<T> { stamp: u64, payload: T }
+pub trait Inspect<T> { pub fn echo(value: T) -> T; }
+pub struct Car<T> { item: T }
+pub impl<T> Inspect<T> for Car<T> { pub fn echo(value: T) -> T { return value; } }
+fn observe<W,T>(source: W, p: T) -> Obs<T> where W: Inspect<T> {
+    let o: Obs<T> = Obs { stamp:7, payload:W::echo(p) };
+    return o;
+}
+fn main() -> i32 {
+    let c: Car<i32> = Car<i32> { item: 5 };
+    let r: Obs<i32> = observe(c, 9);
+    assert(r.stamp == 7);
+    return r.payload - 9;
+}

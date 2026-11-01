@@ -191,8 +191,17 @@ theorem boxed_sim {c : Nat} {t : SrcType} {id sizeOf slice panic : Nat} {values 
   have reads : HeapReads st.heap H2 := heap1 ▸ oldReads.writeRegionFresh inv1.below age region
   have inv5 : Inv { (s10.bindLocal 203 (.rawSlice t.toCore ((a + (8 * w - 8)) % 2 ^ 64) 1)) with heap := H2 } :=
     ⟨inv4.views, inv4.fresh, region.below below1, region.unique⟩
-  refine ⟨?_, ((inv5.restore _).restore _).restore _, ⟨?_, reads⟩⟩
-  · exact .box box hw pos room snap.read (VRel.mono reads r)
+  have ranges : HeapRanges st.heap H2 := by
+    rw [← heap1]
+    refine HeapRanges.trans (b := H1) ?_ (HeapRanges.layout region.layout)
+    rw [hH]
+    exact HeapRanges.allocated
+  have ranged : H2.checkRange a (8 * w) 8 = .ok () := by
+    refine HeapRanges.layout region.layout _ _ _ ?_
+    rw [hH, ha]
+    exact allocated_checkRange inv1.below (by omega) (by decide)
+  refine ⟨?_, ((inv5.restore _).restore _).restore _, ⟨?_, reads, ranges⟩⟩
+  · exact .box box hw pos room ranged snap.read (VRel.mono reads ranges r)
   · exact step1.cells.trans ((Step.bindLocal { q1 with heap := H1 } 86 _).cells.trans
       (same3.step.cells.trans (Step.bindLocal s10 203 _).cells))
 

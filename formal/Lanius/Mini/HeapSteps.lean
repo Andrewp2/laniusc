@@ -81,7 +81,7 @@ theorem bump_steps (s : State) (shift : Nat) (shiftSmall : shift < 32)
     (atCursor : s.registers cursorRegister = BitVec.ofNat 64 cursor)
     (atLimit : (s.registers limitRegister).toNat = limit) (limitSmall : limit < 2 ^ 62)
     (room : alignUp cursor shift + (s.registers 0).toNat ≤ limit) :
-    ∃ s', Steps 11 s s' ∧ Det 11 s s' ∧ s'.memory = s.memory ∧ s'.rip = s.rip + BitVec.ofNat 64 52 ∧
+    ∃ s', Steps 12 s s' ∧ Det 12 s s' ∧ s'.io = s.io ∧ s'.memory = s.memory ∧ s'.rip = s.rip + BitVec.ofNat 64 58 ∧
       s'.registers 0 = BitVec.ofNat 64 (alignUp cursor shift) ∧
       s'.registers cursorRegister = BitVec.ofNat 64 (alignUp cursor shift + (s.registers 0).toNat) ∧
       ∀ register, register ≠ 0 → register ≠ rcxRegister → register ≠ r11Register → register ≠ cursorRegister →
@@ -113,11 +113,6 @@ theorem bump_steps (s : State) (shift : Nat) (shiftSmall : shift < 32)
   let s7 := s6.alu64 .add r11Register 0 false (aluBytes .w64 .add r11Register 0).length
   have t7 : Lanius.X86.Machine.Step s6 s7 := alu_step .w64 s6 s7 .add _ _ c6.prefix false rfl
   have c7 := c6.next (s' := s7) rfl rfl
-  let s8 := s7.compare64 r11Register limitRegister limitCompareBytes.length
-  have t8 : Lanius.X86.Machine.Step s7 s8 :=
-    Lanius.X86.Machine.Step.decoded limitCompareBytes c7.prefix (.compare64 r11Register limitRegister) 3
-      (by decide) rfl rfl
-  have c8 := c7.next (s' := s8) rfl rfl
   -- the values
   have cursorSmall : cursor < 2 ^ 62 := by have := alignUp_ge cursor shift; omega
   have rounded : s5.registers rcxRegister = BitVec.ofNat 64 (alignUp cursor shift) := by
@@ -129,8 +124,8 @@ theorem bump_steps (s : State) (shift : Nat) (shiftSmall : shift < 32)
   have accKept : s6.registers 0 = s.registers 0 := by
     simp [s6, s5, s4, s3, s2, s1, State.alu64, State.alu, State.immediate64, State.move64, rcxRegister,
       r11Register]
+  have moved : s6.registers r11Register = s5.registers rcxRegister := by simp [s6, State.move64]
   have ended : s7.registers r11Register = BitVec.ofNat 64 (alignUp cursor shift) + s.registers 0 := by
-    have moved : s6.registers r11Register = s5.registers rcxRegister := by simp [s6, State.move64]
     simp only [s7, State.alu64, State.alu, Alu.result, BitVec.setWidth_eq, if_pos, moved, rounded, accKept]
   have endedNat : (BitVec.ofNat 64 (alignUp cursor shift) + s.registers 0).toNat =
       alignUp cursor shift + (s.registers 0).toNat := by
@@ -138,8 +133,28 @@ theorem bump_steps (s : State) (shift : Nat) (shiftSmall : shift < 32)
   have limitKept : s7.registers limitRegister = s.registers limitRegister := by
     simp [s7, s6, s5, s4, s3, s2, s1, State.alu64, State.alu, State.immediate64, State.move64, rcxRegister,
       r11Register, limitRegister]
+  -- `jb`: the end does not wrap
+  have carryClear : condition s7.flags 2 = false := by
+    show s7.flags.getLsbD 0 = false
+    simp only [s7, State.alu64, State.alu, Alu.flags, arithmeticFlags_carry, BitVec.setWidth_eq,
+      moved, rounded, accKept, BitVec.toNat_ofNat, decide_eq_false_iff_not]
+    omega
+  let s7' := s7.branch 2 9 6
+  obtain ⟨t7', rip7'⟩ := branch_step_rip_not_taken s7 s7' 2 9 c7.prefix carryClear rfl
+  have c7' : CodeAt s7'.memory s7'.rip (limitCompareBytes ++ (branchBytes 6 2 ++ (trapBytes ++
+      (moveBytes .w64 cursorRegister r11Register ++ moveBytes .w64 0 rcxRegister)))) := by
+    have tail := c7.suffix
+    rw [show s7'.memory = s7.memory from rfl, rip7',
+      show s7.rip + 6#64 + 0 = s7.rip + BitVec.ofNat 64 (branchBytes 2 9).length from by
+        simp [branchBytes, displacementBytes]]
+    exact tail
+  let s8 := s7'.compare64 r11Register limitRegister limitCompareBytes.length
+  have t8 : Lanius.X86.Machine.Step s7' s8 :=
+    Lanius.X86.Machine.Step.decoded limitCompareBytes c7'.prefix (.compare64 r11Register limitRegister) 3
+      (by decide) rfl rfl
+  have c8 := c7'.next (s' := s8) rfl rfl
   have taken : condition s8.flags 6 = true := by
-    show condition (subtractFlags s7.flags (s7.registers r11Register) (s7.registers limitRegister))
+    show condition (subtractFlags s7'.flags (s7.registers r11Register) (s7.registers limitRegister))
       (CmpOp.code .u64 .le) = true
     rw [CmpOp.conditionU, ended, limitKept]
     simp only [CmpOp.holdsU, BitVec.ule, decide_eq_true_eq, endedNat, atLimit]
@@ -156,16 +171,16 @@ theorem bump_steps (s : State) (shift : Nat) (shiftSmall : shift < 32)
   have c10 := c9.next (s' := s10) rfl rfl
   let s11 := s10.move64 0 rcxRegister (moveBytes .w64 0 rcxRegister).length
   have t11 : Lanius.X86.Machine.Step s10 s11 := move_step s10 s11 .w64 _ _ c10 rfl
-  refine ⟨s11, .cons t1 (.cons t2 (.cons t3 (.cons t4 (.cons t5 (.cons t6 (.cons t7 (.cons t8 (.cons t9
-    (.cons t10 (.cons t11 (.refl _))))))))))),
+  refine ⟨s11, .cons t1 (.cons t2 (.cons t3 (.cons t4 (.cons t5 (.cons t6 (.cons t7 (.cons t7' (.cons t8
+    (.cons t9 (.cons t10 (.cons t11 (.refl _)))))))))))),
     Det.cons t1 (move_noRead c0.prefix) (Det.cons t2 (immediate_noRead c1.prefix)
       (Det.cons t3 (alu_noRead c2.prefix) (Det.cons t4 (immediate_noRead c3.prefix)
         (Det.cons t5 (alu_noRead c4.prefix) (Det.cons t6 (move_noRead c5.prefix)
-          (Det.cons t7 (alu_noRead c6.prefix)
-            (Det.pairCons t8 (Writes.of (i := .compare64 r11Register limitRegister) (k := 3) c7.prefix
-              (by decide) rfl) t9
+          (Det.pairCons t7 (alu_writes c6.prefix) t7' ⟨_, c7.prefix, branch_decodes 2 9⟩
+            (Det.pairCons t8 (Writes.of (i := .compare64 r11Register limitRegister) (k := 3) c7'.prefix
+              (by decide) rfl) t9 ⟨_, c8.prefix, branch_decodes 6 2⟩
               (Det.cons t10 (move_noRead c9.prefix) (Det.cons t11 (move_noRead c10) (Det.refl _)))))))))),
-    rfl, ?_, ?_, ?_, ?_⟩
+    rfl, rfl, ?_, ?_, ?_, ?_⟩
   · have lengths : (moveBytes .w64 0 rcxRegister).length = 3 ∧ (moveBytes .w64 cursorRegister r11Register).length = 3 ∧
         (r11Bytes (pow2 shift - 1)).length = 10 ∧ (r11Bytes (0 - pow2 shift)).length = 10 ∧
         (aluBytes .w64 .add rcxRegister r11Register).length = 3 ∧
@@ -176,26 +191,148 @@ theorem bump_steps (s : State) (shift : Nat) (shiftSmall : shift < 32)
         simp only [r11Bytes, immediateBytes, displacementBytes, List.length_append, List.length_cons,
           List.length_nil, ↓reduceIte] <;> decide
     obtain ⟨l1, l2, l3, l4, l5, l6, l7, l8, l9⟩ := lengths
-    simp only [s11, s10, State.move64, rip9, s8, s7, s6, s5, s4, s3, s2, s1, State.compare64, State.alu64,
-      State.alu, State.immediate64, l1, l2, l3, l4, l5, l6, l7, l8, l9,
+    simp only [s11, s10, State.move64, rip9, s8, State.compare64, rip7', s7, s6, s5, s4, s3, s2, s1,
+      State.alu64, State.alu, State.immediate64, l1, l2, l3, l4, l5, l6, l7, l8, l9,
       show ((2 : BitVec 32).signExtend 64) = BitVec.ofNat 64 2 from by decide,
       show limitCompareBytes.length = 3 from rfl]
     bv_omega
   · have : s10.registers rcxRegister = s5.registers rcxRegister := by
-      simp [s10, s9, s8, s7, s6, State.move64, State.branch, State.compare64, State.alu64, State.alu, rcxRegister,
-        r11Register, cursorRegister]
+      simp [s10, s9, s8, s7', s7, s6, State.move64, State.branch, State.compare64, State.alu64, State.alu,
+        rcxRegister, r11Register, cursorRegister]
     simp only [s11, State.move64, if_pos, this, rounded]
   · have : s10.registers cursorRegister = s7.registers r11Register := by
-      simp [s10, s9, s8, State.move64, State.branch, State.compare64]
+      simp [s10, s9, s8, s7', State.move64, State.branch, State.compare64]
     simp only [s11, State.move64, if_neg (show cursorRegister ≠ 0 by decide), this, ended]
     rw [← endedNat, BitVec.ofNat_toNat, BitVec.setWidth_eq]
   · intro register zero one eleven thirteen
-    simp [s11, s10, s9, s8, s7, s6, s5, s4, s3, s2, s1, State.move64, State.branch, State.compare64,
+    simp [s11, s10, s9, s8, s7', s7, s6, s5, s4, s3, s2, s1, State.move64, State.branch, State.compare64,
       State.alu64, State.alu, State.immediate64, zero, one, eleven, thirteen]
+
+/-- `jae`: the carry flag of a compare is clear. -/
+theorem compare_aboveEqual (before : BitVec 64) (left right : BitVec width) :
+    condition (subtractFlags before left right) 3 = !decide (left.toNat < right.toNat) := by
+  rw [← compare_below before left right]
+  rfl
+
+/-- Frame memory: rbx and rax end as the frame pointer less `bytes`, provided
+that stays at or above the limit. -/
+theorem frame_steps (s : State) (bytes : Nat) (bytesSmall : bytes < 2 ^ 31)
+    (loaded : CodeAt s.memory s.rip (frameSpec bytes)) {fsp limit : Nat}
+    (atFsp : s.registers fspRegister = BitVec.ofNat 64 fsp) (fspSmall : fsp < 2 ^ 62)
+    (atLimit : (s.registers limitRegister).toNat = limit) (room : limit + bytes ≤ fsp) :
+    ∃ s', Steps 8 s s' ∧ Det 8 s s' ∧ s'.io = s.io ∧ s'.memory = s.memory ∧ s'.rip = s.rip + BitVec.ofNat 64 39 ∧
+      s'.registers 0 = BitVec.ofNat 64 (fsp - bytes) ∧ s'.registers fspRegister = BitVec.ofNat 64 (fsp - bytes) ∧
+      ∀ register, register ≠ 0 → register ≠ r11Register → register ≠ fspRegister →
+        s'.registers register = s.registers register := by
+  have c0 := loaded
+  simp only [frameSpec] at c0
+  let s1 := s.immediate64 r11Register
+    (BitVec.ofNat 64 ((lowHalf (BitVec.ofNat 64 bytes)).toNat + 4294967296 * (highHalf (BitVec.ofNat 64 bytes)).toNat))
+    (r11Bytes (BitVec.ofNat 64 bytes)).length
+  have t1 : Lanius.X86.Machine.Step s s1 := immediate_step s s1 .w64 r11Register _ _ c0.prefix rfl
+  have c1 := c0.next (s' := s1) rfl rfl
+  let s2 := s1.move64 0 fspRegister (moveBytes .w64 0 fspRegister).length
+  have t2 : Lanius.X86.Machine.Step s1 s2 := move_step s1 s2 .w64 _ _ c1.prefix rfl
+  have c2 := c1.next (s' := s2) rfl rfl
+  let s3 := s2.alu64 .subtract 0 r11Register false (aluBytes .w64 .subtract 0 r11Register).length
+  have t3 : Lanius.X86.Machine.Step s2 s3 := alu_step .w64 s2 s3 .subtract _ _ c2.prefix false rfl
+  have c3 := c2.next (s' := s3) rfl rfl
+  -- the values
+  have r11v : s2.registers r11Register = BitVec.ofNat 64 bytes := by
+    simp [s2, s1, State.move64, State.immediate64, lowHalf_highHalf, r11Register]
+  have raxv : s2.registers 0 = BitVec.ofNat 64 fsp := by
+    have : s1.registers fspRegister = s.registers fspRegister := by
+      simp [s1, State.immediate64, fspRegister, r11Register]
+    simp only [s2, State.move64, if_pos, this, atFsp]
+  have diff : BitVec.ofNat 64 fsp - BitVec.ofNat 64 bytes = BitVec.ofNat 64 (fsp - bytes) := by
+    apply BitVec.eq_of_toNat_eq
+    simp only [BitVec.toNat_sub, BitVec.toNat_ofNat]
+    omega
+  have rax3 : s3.registers 0 = BitVec.ofNat 64 (fsp - bytes) := by
+    simp only [s3, State.alu64, State.alu, Alu.result, BitVec.setWidth_eq, if_pos, raxv, r11v]
+    exact diff
+  have limit3 : s3.registers limitRegister = s.registers limitRegister := by
+    simp [s3, s2, s1, State.alu64, State.alu, State.immediate64, State.move64, r11Register, limitRegister]
+  -- `jb`: no borrow
+  have carryClear : condition s3.flags 2 = false := by
+    show condition (subtractFlags s2.flags ((s2.registers 0).setWidth 64) ((s2.registers r11Register).setWidth 64))
+      2 = false
+    rw [compare_below, BitVec.setWidth_eq, BitVec.setWidth_eq, raxv, r11v]
+    simp only [BitVec.toNat_ofNat, decide_eq_false_iff_not]
+    omega
+  let s3' := s3.branch 2 12 6
+  obtain ⟨t3', rip3'⟩ := branch_step_rip_not_taken s3 s3' 2 12 c3.prefix carryClear rfl
+  have c3' : CodeAt s3'.memory s3'.rip (moveBytes .w64 r11Register 0 ++ (limitCompareBytes ++
+      (branchBytes 3 2 ++ (trapBytes ++ moveBytes .w64 fspRegister 0)))) := by
+    have tail := c3.suffix
+    rw [show s3'.memory = s3.memory from rfl, rip3',
+      show s3.rip + 6#64 + 0 = s3.rip + BitVec.ofNat 64 (branchBytes 2 12).length from by
+        simp [branchBytes, displacementBytes]]
+    exact tail
+  let s4 := s3'.move64 r11Register 0 (moveBytes .w64 r11Register 0).length
+  have t4 : Lanius.X86.Machine.Step s3' s4 := move_step s3' s4 .w64 _ _ c3'.prefix rfl
+  have c4 := c3'.next (s' := s4) rfl rfl
+  let s5 := s4.compare64 r11Register limitRegister limitCompareBytes.length
+  have t5 : Lanius.X86.Machine.Step s4 s5 :=
+    Lanius.X86.Machine.Step.decoded limitCompareBytes c4.prefix (.compare64 r11Register limitRegister) 3
+      (by decide) rfl rfl
+  have c5 := c4.next (s' := s5) rfl rfl
+  have r11v4 : s4.registers r11Register = BitVec.ofNat 64 (fsp - bytes) := by
+    simp only [s4, State.move64, if_pos]
+    exact rax3
+  have limit4 : s4.registers limitRegister = s.registers limitRegister := by
+    simp only [s4, State.move64, if_neg (show limitRegister ≠ r11Register by decide)]
+    exact limit3
+  have taken : condition s5.flags 3 = true := by
+    show condition (subtractFlags s4.flags (s4.registers r11Register) (s4.registers limitRegister)) 3 = true
+    rw [compare_aboveEqual, r11v4, limit4]
+    simp only [BitVec.toNat_ofNat, atLimit, Bool.not_eq_true', decide_eq_false_iff_not]
+    omega
+  let s5' := s5.branch 3 2 6
+  obtain ⟨t5', rip5'⟩ := branch_step_rip s5 s5' 3 2 c5.prefix taken rfl
+  have c6 : CodeAt s5'.memory s5'.rip (moveBytes .w64 fspRegister 0) := by
+    have tail := c5.suffix.suffix
+    rw [show s5'.memory = s5.memory from rfl, rip5',
+      show ((2 : BitVec 32).signExtend 64) = BitVec.ofNat 64 2 from by decide]
+    exact tail
+  let s6 := s5'.move64 fspRegister 0 (moveBytes .w64 fspRegister 0).length
+  have t6 : Lanius.X86.Machine.Step s5' s6 := move_step s5' s6 .w64 _ _ c6 rfl
+  have rax5 : s5'.registers 0 = BitVec.ofNat 64 (fsp - bytes) := by
+    simp only [s5', s5, s4, State.branch, State.compare64, State.move64,
+      if_neg (show (0 : Register) ≠ r11Register by decide)]
+    exact rax3
+  refine ⟨s6, .cons t1 (.cons t2 (.cons t3 (.cons t3' (.cons t4 (.cons t5 (.cons t5' (.cons t6 (.refl _)))))))),
+    Det.cons t1 (immediate_noRead c0.prefix) (Det.cons t2 (move_noRead c1.prefix)
+      (Det.pairCons t3 (alu_writes c2.prefix) t3' ⟨_, c3.prefix, branch_decodes 2 12⟩
+        (Det.cons t4 (move_noRead c3'.prefix)
+          (Det.pairCons t5 (Writes.of (i := .compare64 r11Register limitRegister) (k := 3) c4.prefix
+            (by decide) rfl) t5' ⟨_, c5.prefix, branch_decodes 3 2⟩
+            (Det.cons t6 (move_noRead c6) (Det.refl _)))))),
+    rfl, rfl, ?_, ?_, ?_, ?_⟩
+  · have lengths : (r11Bytes (BitVec.ofNat 64 bytes)).length = 10 ∧ (moveBytes .w64 0 fspRegister).length = 3 ∧
+        (aluBytes .w64 .subtract 0 r11Register).length = 3 ∧ (moveBytes .w64 r11Register 0).length = 3 ∧
+        (moveBytes .w64 fspRegister 0).length = 3 := by
+      refine ⟨?_, rfl, rfl, rfl, rfl⟩
+      simp only [r11Bytes, immediateBytes, displacementBytes, List.length_append, List.length_cons,
+        List.length_nil, ↓reduceIte]
+      decide
+    obtain ⟨l1, l2, l3, l4, l5⟩ := lengths
+    simp only [s6, State.move64, rip5', s5, State.compare64, s4, rip3', s3, s2, s1,
+      State.alu64, State.alu, State.immediate64, l1, l2, l3, l4, l5,
+      show ((2 : BitVec 32).signExtend 64) = BitVec.ofNat 64 2 from by decide,
+      show limitCompareBytes.length = 3 from rfl]
+    bv_omega
+  · simp only [s6, State.move64, if_neg (show (0 : Register) ≠ fspRegister by decide)]
+    exact rax5
+  · simp only [s6, State.move64, if_pos]
+    exact rax5
+  · intro register zero eleven three
+    simp [s6, s5', s5, s4, s3', s3, s2, s1, State.move64, State.branch, State.compare64,
+      State.alu64, State.alu, State.immediate64, zero, eleven, three]
 
 /-- The byte load: rax becomes the heap byte at offset rax. -/
 theorem loadAt_steps (s : State) (loaded : CodeAt s.memory s.rip loadAtSpec) :
-    ∃ s', Steps 2 s s' ∧ Det 2 s s' ∧ s'.memory = s.memory ∧ s'.rip = s.rip + BitVec.ofNat 64 10 ∧
+    ∃ s', Steps 2 s s' ∧ Det 2 s s' ∧ s'.io = s.io ∧ s'.memory = s.memory ∧ s'.rip = s.rip + BitVec.ofNat 64 10 ∧
       s'.registers 0 = BitVec.ofNat 64 (s.memory (s.registers heapBaseRegister + s.registers 0)).toNat ∧
       ∀ register, register ≠ 0 → s'.registers register = s.registers register := by
   have c0 := loaded
@@ -206,7 +343,7 @@ theorem loadAt_steps (s : State) (loaded : CodeAt s.memory s.rip loadAtSpec) :
   let s2 := s1.loadByte 0 0 (BitVec.ofInt 32 0) (loadByteBytes 0 0 0).length
   have t2 : Lanius.X86.Machine.Step s1 s2 := loadByte_step s1 s2 0 0 0 c1 rfl
   refine ⟨s2, .cons t1 (.cons t2 (.refl _)),
-    Det.cons t1 (alu_noRead c0.prefix) (Det.cons t2 (loadByte_noRead c1) (Det.refl _)), rfl, ?_, ?_, ?_⟩
+    Det.cons t1 (alu_noRead c0.prefix) (Det.cons t2 (loadByte_noRead c1) (Det.refl _)), rfl, rfl, ?_, ?_, ?_⟩
   · simp only [s2, s1, State.loadByte, State.alu64, State.alu]
     rw [show (aluBytes .w64 .add 0 heapBaseRegister).length = 3 from rfl,
       show (loadByteBytes 0 0 0).length = 7 from rfl]
@@ -219,7 +356,7 @@ theorem loadAt_steps (s : State) (loaded : CodeAt s.memory s.rip loadAtSpec) :
 
 /-- The byte store: the low byte of rax goes to the heap at the offset in `slot`. -/
 theorem storeAt_steps (s : State) (slot : Nat) (loaded : CodeAt s.memory s.rip (storeAtSpec slot)) :
-    ∃ s', Steps 3 s s' ∧ Det 3 s s' ∧ s'.rip = s.rip + BitVec.ofNat 64 16 ∧
+    ∃ s', Steps 3 s s' ∧ Det 3 s s' ∧ s'.io = s.io ∧ s'.rip = s.rip + BitVec.ofNat 64 16 ∧
       s'.memory = (fun address => if address = s.registers heapBaseRegister +
           read64 s.memory (s.registers rbpRegister + (BitVec.ofInt 32 (frameDisplacement slot)).signExtend 64)
         then lowByte (s.registers 0) else s.memory address) ∧
@@ -241,7 +378,7 @@ theorem storeAt_steps (s : State) (slot : Nat) (loaded : CodeAt s.memory s.rip (
   have t3 : Lanius.X86.Machine.Step s2 s3 := storeByte_step s2 s3 0 rcxRegister 0 c2 rfl
   refine ⟨s3, .cons t1 (.cons t2 (.cons t3 (.refl _))),
     Det.cons t1 (memory_noRead c0.prefix) (Det.cons t2 (alu_noRead c1.prefix)
-      (Det.cons t3 (storeByte_noRead c2) (Det.refl _))), ?_, ?_, ?_⟩
+      (Det.cons t3 (storeByte_noRead c2) (Det.refl _))), rfl, ?_, ?_, ?_⟩
   · simp only [s3, s2, s1, State.storeByte, State.alu64, State.alu, State.load64]
     rw [show (memoryBytes .w64 true rcxRegister rbpRegister (frameDisplacement slot)).length = 7 from by
         simp only [memoryBytes, memoryHeader, Lanius.Semantics.i32Bytes, List.length_append, List.length_map,
@@ -258,5 +395,62 @@ theorem storeAt_steps (s : State) (slot : Nat) (loaded : CodeAt s.memory s.rip (
     simp
   · intro register one
     simp [s3, s2, s1, State.storeByte, State.alu64, State.alu, State.load64, one]
+
+/-- The state after a passing stack check: only the flags and rip change. -/
+def stackChecked (s : State) : State := (s.compare64 stackRegister rspRegister 3).branch 6 2 6
+
+/-- `cmp r15, rsp; jbe +2; ud2` jumps over the `ud2` when r15 is at most rsp. -/
+theorem stackCheck_det (s : State)
+    (loaded : CodeAt s.memory s.rip (stackCompareBytes ++ (branchBytes 6 2 ++ trapBytes)))
+    (room : (s.registers stackRegister).toNat ≤ (s.registers rspRegister).toNat) :
+    Steps 2 s (stackChecked s) ∧ Det 2 s (stackChecked s) ∧
+      (stackChecked s).rip = s.rip + BitVec.ofNat 64 11 := by
+  let s1 := s.compare64 stackRegister rspRegister stackCompareBytes.length
+  have t1 : Lanius.X86.Machine.Step s s1 :=
+    Lanius.X86.Machine.Step.decoded stackCompareBytes loaded.prefix (.compare64 stackRegister rspRegister) 3
+      (by decide) rfl rfl
+  have c1 := loaded.next (s' := s1) rfl rfl
+  have taken : condition s1.flags 6 = true := by
+    show condition (subtractFlags s.flags (s.registers stackRegister) (s.registers rspRegister))
+      (CmpOp.code .u64 .le) = true
+    rw [CmpOp.conditionU]
+    simp only [CmpOp.holdsU, BitVec.ule, decide_eq_true_eq]
+    exact room
+  obtain ⟨t2, rip2⟩ := branch_step_rip s1 (stackChecked s) 6 2 c1.prefix taken rfl
+  refine ⟨.cons t1 (.cons t2 (.refl _)),
+    Det.pairCons t1 (Writes.of (i := .compare64 stackRegister rspRegister) (k := 3) loaded.prefix (by decide) rfl)
+      t2 ⟨_, c1.prefix, branch_decodes 6 2⟩ (Det.refl _), ?_⟩
+  rw [rip2, show ((2 : BitVec 32).signExtend 64) = BitVec.ofNat 64 2 from by decide]
+  simp only [s1, State.compare64, stackCompareBytes, List.length_cons, List.length_nil]
+  bv_omega
+
+/-- The check fails when rsp is below r15: the run stops at the `ud2`. -/
+theorem stackCheck_fails (s : State)
+    (loaded : CodeAt s.memory s.rip (stackCompareBytes ++ (branchBytes 6 2 ++ trapBytes)))
+    (below : (s.registers rspRegister).toNat < (s.registers stackRegister).toNat) :
+    Steps 2 s (stackChecked s) ∧ Det 2 s (stackChecked s) ∧ Fault (stackChecked s) := by
+  let s1 := s.compare64 stackRegister rspRegister stackCompareBytes.length
+  have t1 : Lanius.X86.Machine.Step s s1 :=
+    Lanius.X86.Machine.Step.decoded stackCompareBytes loaded.prefix (.compare64 stackRegister rspRegister) 3
+      (by decide) rfl rfl
+  have c1 := loaded.next (s' := s1) rfl rfl
+  have notTaken : condition s1.flags 6 = false := by
+    show condition (subtractFlags s.flags (s.registers stackRegister) (s.registers rspRegister))
+      (CmpOp.code .u64 .le) = false
+    rw [CmpOp.conditionU]
+    simp only [CmpOp.holdsU, BitVec.ule, decide_eq_false_iff_not]
+    omega
+  obtain ⟨t2, rip2⟩ := branch_step_rip_not_taken s1 (stackChecked s) 6 2 c1.prefix notTaken rfl
+  refine ⟨.cons t1 (.cons t2 (.refl _)),
+    Det.pairCons t1 (Writes.of (i := .compare64 stackRegister rspRegister) (k := 3) loaded.prefix (by decide) rfl)
+      t2 ⟨_, c1.prefix, branch_decodes 6 2⟩ (Det.refl _), .ud2 ?_⟩
+  have tail := c1.suffix
+  rw [show (stackChecked s).memory = s1.memory from rfl, rip2,
+    show s1.rip + 6#64 + 0 = s1.rip + BitVec.ofNat 64 (branchBytes 6 2).length from by
+      simp [branchBytes, displacementBytes]]
+  exact tail
+
+theorem stackChecked_registers (s : State) : (stackChecked s).registers = s.registers := rfl
+theorem stackChecked_memory (s : State) : (stackChecked s).memory = s.memory := rfl
 
 end Lanius.Mini
