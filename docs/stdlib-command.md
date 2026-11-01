@@ -66,7 +66,12 @@ The child marks **all** descriptors ≥3 CLOEXEC with `close_range`; only its in
 `try_observe_exit()` instead uses waitid with WNOWAIT to retain the unreaped
 leader. Its observed status is separate from the final reaped cache; repeating
 the call may return the cached observation without another syscall. It is not
-a fresh existence or ownership probe. Group authority ends on actual reaping
+a fresh existence or ownership probe. `observe_exit()` is the blocking form:
+waitid(WEXITED|WNOWAIT) retried on EINTR, returning the observed `ExitStatus`
+while the child stays unreaped, so its PID still names it (for example for a
+[process CPU-clock read](stdlib-host-clocks.md)) until `wait()`/`try_wait()`.
+`wait_with_usage()`/`try_wait_with_usage()` reap with wait4 rusage and
+`resource_usage()` calls getrusage; see [child resource usage](stdlib-child-usage.md). Group authority ends on actual reaping
 or observed ECHILD, and still requires the no-outside-reaper precondition.
 `signal_group()` and `cancel_group_and_wait()` use only a confirmed new-group
 owner; the latter attempts both that group and the still-owned positive leader

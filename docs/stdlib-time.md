@@ -161,7 +161,10 @@ because a pause call returned success while the observed clock is still early.
 Custom clocks must eventually progress or fail. Repeated equal reads are allowed;
 there is no arbitrary retry cap that turns a slow clock into false success.
 Clock identity, concurrent use and cancellation remain caller responsibilities.
-No thread, cancellation, suspend-aware clock or timer-queue service is implied.
+[Named host clocks](stdlib-host-clocks.md) add coarse/raw/boot/TAI and CPU
+clocks, resolutions, absolute nanosecond kernel waits and a suspend-aware
+`Boottime` provider for these same waits.
+No thread, cancellation or timer-queue service is implied.
 
 ## Application: scheduled ticks
 

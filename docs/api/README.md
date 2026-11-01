@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **282 modules**, **14371 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **285 modules**, **14527 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -133,12 +133,13 @@ Inventory: **282 modules**, **14371 declaration/member entries**. Counts include
 | [std::args_checked](std/args_checked.md) | [source](../../stdlib/std/args_checked.lani#L7) | 3 | Source inventory | [stdlib-process-context](../stdlib-process-context.md) |
 | [std::atomic_file](std/atomic_file.md) | [source](../../stdlib/std/atomic_file.lani#L4) | 104 | Source inventory | [stdlib-atomic-files](../stdlib-atomic-files.md), [stdlib-temp-files](../stdlib-temp-files.md), [extended-kv](../extended-kv.md) |
 | [std::clock](std/clock.md) | [source](../../stdlib/std/clock.lani#L2) | 21 | Source inventory | [stdlib-time](../stdlib-time.md) |
-| [std::command](std/command.md) | [source](../../stdlib/std/command.lani#L3) | 122 | Source inventory | [stdlib-command](../stdlib-command.md), [stdlib-command-groups](../stdlib-command-groups.md), [stdlib-run-group](../stdlib-run-group.md) |
+| [std::command](std/command.md) | [source](../../stdlib/std/command.lani#L3) | 146 | Source inventory | [stdlib-command](../stdlib-command.md), [stdlib-command-groups](../stdlib-command-groups.md), [stdlib-run-group](../stdlib-run-group.md), [stdlib-host-clocks](../stdlib-host-clocks.md), [stdlib-child-usage](../stdlib-child-usage.md) |
 | [std::command_capture](std/command_capture.md) | [source](../../stdlib/std/command_capture.lani#L3) | 84 | Source inventory | [stdlib-command-capture](../stdlib-command-capture.md), [stdlib-command-groups](../stdlib-command-groups.md), [stdlib-run-group](../stdlib-run-group.md) |
 | [std::directory](std/directory.md) | [source](../../stdlib/std/directory.lani#L2) | 63 | Source inventory | [stdlib-directory](../stdlib-directory.md) |
 | [std::entropy](std/entropy.md) | [source](../../stdlib/std/entropy.lani#L2) | 26 | Source inventory | [stdlib-randomness](../stdlib-randomness.md), [stdlib-entropy-bounded](../stdlib-entropy-bounded.md) |
 | [std::env](std/env.md) | [source](../../stdlib/std/env.lani#L3) | 78 | Source inventory | [stdlib-process-context](../stdlib-process-context.md) |
 | [std::env_checked](std/env_checked.md) | [source](../../stdlib/std/env_checked.lani#L2) | 3 | Source inventory | [stdlib-process-context](../stdlib-process-context.md) |
+| [std::event](std/event.md) | [source](../../stdlib/std/event.lani#L5) | 52 | Source inventory | [stdlib-event-loop](../stdlib-event-loop.md) |
 | [std::file](std/file.md) | [source](../../stdlib/std/file.lani#L7) | 44 | Source inventory | [stdlib-files](../stdlib-files.md) |
 | [std::file_binary](std/file_binary.md) | [source](../../stdlib/std/file_binary.lani#L4) | 6 | Source inventory | **Unregistered** |
 | [std::file_binary_wide_i64](std/file_binary_wide_i64.md) | [source](../../stdlib/std/file_binary_wide_i64.lani#L2) | 2 | Source inventory | **Unregistered** |
@@ -152,6 +153,7 @@ Inventory: **282 modules**, **14371 declaration/member entries**. Counts include
 | [std::fs](std/fs.md) | [source](../../stdlib/std/fs.lani#L5) | 105 | Source inventory | [stdlib-filesystem](../stdlib-filesystem.md) |
 | [std::gpu](std/gpu.md) | [source](../../stdlib/std/gpu.lani#L6) | 60 | Unbound host declarations | [library-remaining-api-audit](../library-remaining-api-audit.md), [library-host-prerequisites](../library-host-prerequisites.md) |
 | [std::host](std/host.md) | [source](../../stdlib/std/host.lani#L5) | 23 | Metadata only | [library-remaining-api-audit](../library-remaining-api-audit.md), [library-host-prerequisites](../library-host-prerequisites.md) |
+| [std::host_clocks](std/host_clocks.md) | [source](../../stdlib/std/host_clocks.lani#L3) | 41 | Source inventory | [stdlib-host-clocks](../stdlib-host-clocks.md), [stdlib-time](../stdlib-time.md) |
 | [std::io](std/io.md) | [source](../../stdlib/std/io.lani#L3) | 78 | Source inventory | [stdlib-checked-sample-migration](../stdlib-checked-sample-migration.md), [library-remaining-api-audit](../library-remaining-api-audit.md) |
 | [std::io_binary](std/io_binary.md) | [source](../../stdlib/std/io_binary.lani#L2) | 6 | Source inventory | **Unregistered** |
 | [std::io_binary_wide_i64](std/io_binary_wide_i64.md) | [source](../../stdlib/std/io_binary_wide_i64.lani#L2) | 2 | Source inventory | **Unregistered** |
@@ -182,6 +184,7 @@ Inventory: **282 modules**, **14371 declaration/member entries**. Counts include
 | [std::time](std/time.md) | [source](../../stdlib/std/time.lani#L5) | 83 | Mixed host bindings | [stdlib-time](../stdlib-time.md) |
 | [std::time_checked](std/time_checked.md) | [source](../../stdlib/std/time_checked.lani#L6) | 3 | Source inventory | [stdlib-time](../stdlib-time.md) |
 | [std::time_wide](std/time_wide.md) | [source](../../stdlib/std/time_wide.lani#L4) | 5 | Source inventory | [stdlib-time](../stdlib-time.md) |
+| [std::timer](std/timer.md) | [source](../../stdlib/std/timer.lani#L4) | 36 | Source inventory | [stdlib-timers](../stdlib-timers.md) |
 | [std::vec](std/vec.md) | [source](../../stdlib/std/vec.lani#L11) | 44 | Protected legacy | [stdlib-legacy-collections](../stdlib-legacy-collections.md), [stdlib-checked-sample-migration](../stdlib-checked-sample-migration.md), [library-dependencies](../library-dependencies.md) |
 
 ### `test`
@@ -320,7 +323,7 @@ Inventory: **282 modules**, **14371 declaration/member entries**. Counts include
 
 | Module | Source | Entries | Profile | Contract guides |
 | --- | --- | ---: | --- | --- |
-| [std::command_raw](std/command_raw.md) | [source](../../stdlib/std/command_raw.lani#L2) | 16 | Source inventory | [stdlib-command](../stdlib-command.md), [stdlib-command-groups](../stdlib-command-groups.md), [stdlib-run-group](../stdlib-run-group.md) |
+| [std::command_raw](std/command_raw.md) | [source](../../stdlib/std/command_raw.lani#L2) | 19 | Source inventory | [stdlib-command](../stdlib-command.md), [stdlib-command-groups](../stdlib-command-groups.md), [stdlib-run-group](../stdlib-run-group.md) |
 
 ### `ext`
 

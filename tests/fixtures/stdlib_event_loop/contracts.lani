@@ -1,0 +1,104 @@
+// Self-checking epoll/pidfd contracts over pipes, a socket pair, a timerfd
+// and a child process. Exit 0 means every assertion held.
+module app::main;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import std::command;
+import std::command_raw;
+import std::event;
+import std::file;
+import std::host_clocks;
+import std::socket;
+import std::timer;
+
+fn code(error: std::event::Error) -> i32 {
+    return match (error) {
+        std::event::Error::Host(value) -> value, std::event::Error::Closed -> 1000, std::event::Error::Bounds -> 1001,
+        std::event::Error::StillRegistered(count) -> 2000 + count, std::event::Error::InvalidResult -> 1002, std::event::Error::Clock(cause) -> 1003
+    };
+}
+fn failed(result: core::result::Result<i32, std::event::Error>) -> i32 { if (result.is_ok()) { return 0; } return code(result.unwrap_err()); }
+fn bytes(value: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),n); return core::slice::view(raw,n).unwrap(); }
+fn now() -> core::time::Instant { return std::host_clocks::instant(std::host_clocks::Clock::Monotonic).unwrap(); }
+fn later(milliseconds: u64) -> core::time::Deadline { return core::time::deadline_at(now().checked_add(core::time::from_millis(milliseconds)).unwrap()); }
+fn spawn_sleep(delay: str, n: i32) -> std::command::Child {
+    let parts: [core::slice::View<u8>;2] = [bytes("/bin/sleep",10),bytes(delay,n)]; let none: [core::slice::View<u8>;0] = [];
+    let spawned = std::command::spawn(std::command::request(bytes("/bin/sleep",10),core::slice::view(parts,2).unwrap(),core::slice::view(none,0).unwrap())).unwrap();
+    return match (spawned) { std::command::Spawn::Child(child) -> child, _ -> lost() };
+}
+fn lost() -> std::command::Child { assert(false); return lost(); }
+fn main() -> i32 {
+    let storage: [std::event::Event;8] = [std::event::empty_event();8];
+    let events: core::slice::View<std::event::Event> = core::slice::view(storage,8).unwrap();
+    let ev = std::event::create().unwrap(); assert(ev.is_open() && ev.registered() == 0);
+    // Capacity bounds.
+    assert(failed(ev.wait(core::slice::view_range(storage,0,0).unwrap(),0)) == 1001 && failed(ev.wait(events,-2)) == 1001);
+    // Pipe readiness, tokens, duplicate add and unregistered removal.
+    let pair: [i32;2] = [-1;2]; assert(std::command_raw::make_pipe(pair) == 0);
+    let reader: std::file::File = std::file::from_owned_handle(pair[0]).unwrap(); let writer: std::file::File = std::file::from_owned_handle(pair[1]).unwrap();
+    assert(ev.add(pair[0],std::event::readable(),7).unwrap() == 0 && ev.registered() == 1);
+    assert(failed(ev.add(pair[0],std::event::readable(),8)) == 17 && failed(ev.add(-1,std::event::readable(),8)) == 1001 && failed(ev.remove(pair[1])) == 2);
+    assert(ev.wait(events,0).unwrap() == 0);
+    let data: [u8;3] = [1,2,3]; assert(writer.write(data,0,3).unwrap() == 3);
+    assert(ev.wait(events,0).unwrap() == 1 && storage[0].token == 7 && storage[0].readable() && !storage[0].writable() && !storage[0].hangup());
+    // Level-triggered: still ready until drained.
+    assert(ev.wait(events,0).unwrap() == 1);
+    let sink: [u8;8] = [0;8]; assert(reader.read(sink,0,8).unwrap() == 3 && ev.wait(events,0).unwrap() == 0);
+    // Writable interest and 64-bit tokens.
+    let big: u64 = 18446744073709551614;
+    assert(ev.add(pair[1],std::event::writable(),big).unwrap() == 0 && ev.wait(events,0).unwrap() == 1 && storage[0].token == big && storage[0].writable());
+    // Closing the writer reports hangup on the reader.
+    assert(ev.remove(pair[1]).unwrap() == 0 && writer.close().is_ok());
+    assert(ev.wait(events,0).unwrap() == 1 && storage[0].token == 7 && storage[0].hangup());
+    assert(ev.remove(pair[0]).unwrap() == 0 && reader.close().is_ok() && ev.registered() == 0);
+    // Oneshot registrations report once until modify rearms them.
+    let second: [i32;2] = [-1;2]; assert(std::command_raw::make_pipe(second) == 0);
+    let left: std::file::File = std::file::from_owned_handle(second[0]).unwrap(); let right: std::file::File = std::file::from_owned_handle(second[1]).unwrap();
+    assert(right.write(data,0,1).unwrap() == 1 && ev.add(second[0],std::event::readable().oneshot(),3).unwrap() == 0);
+    assert(ev.wait(events,0).unwrap() == 1 && ev.wait(events,0).unwrap() == 0);
+    assert(ev.modify(second[0],std::event::readable(),4).unwrap() == 0 && ev.wait(events,0).unwrap() == 1 && storage[0].token == 4);
+    assert(failed(ev.modify(second[1],std::event::readable(),4)) == 2);
+    // Socket pair: writable at once, read-closed after the peer's write shutdown.
+    let sockets = std::socket::unix_pair(true).unwrap(); let near = sockets.first; let far = sockets.second;
+    let near_fd: i32 = near.raw_handle().unwrap();
+    assert(ev.add(near_fd,std::event::read_write().with_read_closed(),11).unwrap() == 0);
+    let ready: i32 = ev.wait(events,0).unwrap(); assert(ready == 2);
+    let index: i32 = 0; let found: bool = false;
+    while (index < ready) { if (storage[index].token == 11) { assert(storage[index].writable() && !storage[index].read_closed()); found = true; } index += 1; }
+    assert(found && far.shutdown(std::socket::Shutdown::Write).is_ok());
+    assert(ev.remove(second[0]).unwrap() == 0);
+    assert(ev.wait(events,0).unwrap() == 1 && storage[0].token == 11 && storage[0].readable() && storage[0].read_closed());
+    // Timer expiry through the loop with a deadline.
+    let timer = std::timer::create(std::host_clocks::Clock::Monotonic,std::timer::Mode::Nonblocking).unwrap();
+    assert(ev.add(timer.raw_fd().unwrap(),std::event::readable(),21).unwrap() == 0);
+    let started: core::time::Instant = now(); timer.arm_after(core::time::from_millis(5),core::time::zero()).unwrap();
+    assert(ev.modify(near_fd,std::event::readable(),11).unwrap() == 0 && ev.remove(near_fd).unwrap() == 0);
+    assert(ev.wait_until(events,later(2000)).unwrap() == 1 && storage[0].token == 21 && storage[0].readable());
+    assert(now().duration_since(started).unwrap().compare(core::time::from_millis(5)) >= 0 && timer.try_wait().unwrap().unwrap() == 1);
+    // A deadline with nothing ready returns 0 only once the clock reaches it.
+    let deadline: core::time::Deadline = later(15); assert(ev.wait_until(events,deadline).unwrap() == 0 && deadline.is_expired(now()));
+    assert(ev.wait_until(events,core::time::deadline_at(started)).unwrap() == 0);
+    // Pidfd: readable on exit, before the reap; signals target exactly the process.
+    let child: std::command::Child = spawn_sleep("0.02",4);
+    let pidfd = std::event::pidfd_open(child.id().unwrap()).unwrap(); assert(pidfd.send_signal(0).unwrap() == 0);
+    assert(ev.add(pidfd.raw_fd(),std::event::readable(),31).unwrap() == 0);
+    assert(ev.wait_until(events,later(5000)).unwrap() == 1 && storage[0].token == 31 && storage[0].readable() && child.id().is_some());
+    assert(child.wait().unwrap().code.unwrap() == 0);
+    let gone: core::result::Result<i32, std::event::Error> = pidfd.send_signal(0); assert(gone.is_err() && code(gone.unwrap_err()) == 3);
+    let doomed: std::command::Child = spawn_sleep("10",2); let target = std::event::pidfd_open(doomed.id().unwrap()).unwrap();
+    assert(target.send_signal(9).unwrap() == 0 && doomed.wait().unwrap().signal.unwrap() == 9 && target.close().unwrap() == 0);
+    // Close refuses while registrations remain.
+    let refused: core::result::Result<i32, std::event::Error> = ev.close(); assert(refused.is_err() && code(refused.unwrap_err()) == 2002);
+    assert(ev.remove(pidfd.raw_fd()).unwrap() == 0 && ev.remove(timer.raw_fd().unwrap()).unwrap() == 0 && ev.registered() == 0);
+    assert(ev.close().unwrap() == 0 && !ev.is_open() && failed(ev.close()) == 1000 && failed(ev.wait(events,0)) == 1000 && failed(ev.add(0,std::event::readable(),0)) == 1000);
+    assert(pidfd.close().unwrap() == 0 && timer.close().unwrap() == 0 && near.close().is_ok() && far.close().is_ok() && left.close().is_ok() && right.close().is_ok());
+    // force_close drops remaining registrations with the loop.
+    let other = std::event::create().unwrap(); let third: [i32;2] = [-1;2]; assert(std::command_raw::make_pipe(third) == 0);
+    assert(other.add(third[0],std::event::readable(),1).unwrap() == 0 && other.force_close().unwrap() == 0 && other.registered() == 0);
+    assert(std::command_raw::close(third[0]) == 0 && std::command_raw::close(third[1]) == 0);
+    let bad: core::result::Result<std::event::Pidfd, std::event::Error> = std::event::pidfd_open(0); assert(bad.is_err() && code(bad.unwrap_err()) == 1001);
+    return 0;
+}
