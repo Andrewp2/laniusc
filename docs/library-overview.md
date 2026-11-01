@@ -2123,6 +2123,14 @@ generated values, about 15 to 24 times faster on typical values.
 [`ext::toml`](extended-toml.md) agrees with Python `tomllib` on 1,754
 hand-written, generated and mutated documents. The only differences are by
 policy: TOML 1.1-only syntax, and integers outside i64.
+[`ext::cbor_stream`](extended-cbor-stream.md) streams CBOR: its decoder takes
+byte chunks of any size, its writer flushes to `core::io::Write`, and both have
+an RFC 8949 core deterministic mode (sorted unique keys, definite lengths,
+shortest exact floats). Errors are typed with u64 offsets under depth, item,
+string and input limits. It agrees with all 81 hand-typed Appendix A rows and
+an independent Python implementation on 8,100 generated, mutated, limit and
+sequence cases at four chunk sizes; the
+[cbor-to-json](../sample_programs/cbor_to_json.lani) sample agrees on 700.
 [Reusable CSV records and bounded stream writing](extended-csv-write.md)
 share the canonical encoder, preflight the complete record and retain exact
 accepted-prefix progress. The [column rewrite program](extended-csv-rewrite.md)
