@@ -26,7 +26,7 @@ fn lower(c: u8) -> u8 { if (c >= 65 && c <= 90) { return c + 32; } return c; }
 fn is(name: core::slice::View<u8>, s: str, n: i32) -> bool { return ext::http::equal_name(name, literal(s, n)); }
 fn ows(c: u8) -> bool { return c == 32 || c == 9; }
 // True when the comma-separated value lists name (case-insensitive).
-fn lists(value: core::slice::View<u8>, name: core::slice::View<u8>) -> bool {
+pub fn lists(value: core::slice::View<u8>, name: core::slice::View<u8>) -> bool {
     let i: i32 = 0; let n: i32 = value.len();
     while (i < n) {
         while (i < n && (ows(value.values[value.start + i]) || value.values[value.start + i] == 44)) { i += 1; }
