@@ -233,7 +233,7 @@ theorem reverse_spec (inst : VecInstance P T ids) (kind : ElemKind P T size)
       obtain ⟨h1, stored1, readBack1, written1⟩ := stores (xs[hi]'(by omega)) (List.getElem_mem _) s1 h
         (elemBase T size p cap k) (roomAt k) (readable h k loCap effect) effect.unique
       rw [slotEq] at written1
-      have assign1 := StableExpr.assignRaw (before := s1) (indexed := s1) (ready := s1) (heap := h1)
+      have assign1 := StableExpr.assignRaw (nb := kind.notByte) (before := s1) (indexed := s1) (ready := s1) (heap := h1)
         (sourceId := 1) s1_1 (StableExpr.local s1_2) loCap (elementAddress kind loCap)
         (show s1.i32ArrayViews = [] from sV)
         (StableExpr.rawSliceIndex s1_1 s1_3 (show readRawSliceIndex P s1 T _ cap hi = _ from hiRead))
@@ -246,7 +246,7 @@ theorem reverse_spec (inst : VecInstance P T ids) (kind : ElemKind P T size)
       obtain ⟨h2, stored2, readBack2, written2⟩ := stores a (List.getElem_mem _) s2 h1
         (elemBase T size p cap hi) (roomAt hi) (readable h1 hi hiCap effect1) effect1.unique
       rw [slotEq] at written2
-      have assign2 := StableExpr.assignRaw (before := s2) (indexed := s2) (ready := s2) (heap := h2)
+      have assign2 := StableExpr.assignRaw (nb := kind.notByte) (before := s2) (indexed := s2) (ready := s2) (heap := h2)
         (sourceId := 1) (show s2.local? 1 = some view from s1_1)
         (StableExpr.local (show s2.local? 3 = some (.signed .i32 (Int.ofNat hi)) from s1_3)) hiCap
         (elementAddress kind hiCap) (show s2.i32ArrayViews = [] from sV)

@@ -158,9 +158,10 @@ theorem step_declare_variants_after {prog : SrcProgram} {prims : Prims} {ix_decl
   simp only [src_declare_variants_after] at h
   faithful [Lanius.Mini.Inline.declareVariantsAfter]
 
-theorem proof_element_at {prog : SrcProgram} {prims : Prims} {ix_element_at ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 : Nat} (fn : prog.funcs[ix_element_at]? = some (src_element_at ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32)) (np : prims.isPrim ix_element_at = false)
+theorem proof_element_at {prog : SrcProgram} {prims : Prims} {ix_element_at ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_uint : Nat} (fn : prog.funcs[ix_element_at]? = some (src_element_at ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_uint)) (np : prims.isPrim ix_element_at = false)
     (ext_boxed_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Expr prog prims ix_boxed_of_mini_selfhost_Expr n))
-    (ext_SrcType_is_i32 : Certified (∀ {n : Nat}, Stmt_SrcType_is_i32 prog prims ix_SrcType_is_i32 n)) {n : Nat} :
+    (ext_SrcType_is_i32 : Certified (∀ {n : Nat}, Stmt_SrcType_is_i32 prog prims ix_SrcType_is_i32 n))
+    (ext_SrcType_is_uint : Certified (∀ {n : Nat}, Stmt_SrcType_is_uint prog prims ix_SrcType_is_uint n)) {n : Nat} :
     Stmt_element_at prog prims ix_element_at n := by
   intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
   rcases n with _ | n

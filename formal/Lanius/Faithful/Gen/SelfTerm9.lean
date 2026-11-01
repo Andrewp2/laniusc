@@ -93,46 +93,46 @@ theorem ok_field_offset : FnOk prog prims info (470, ⟨3, [0], 0⟩) :=
 theorem ok_get_of_mini_selfhost_SrcType : FnOk prog prims info (471, ⟨2, [0], 0⟩) :=
   fnOk_of fn_get_of_mini_selfhost_SrcType (by decide +kernel)
 
-theorem ok_word_type : FnOk prog prims info (474, ⟨4, [1], 0⟩) :=
+theorem ok_UintTy_code : FnOk prog prims info (474, ⟨0, [], 0⟩) :=
+  fnOk_of fn_UintTy_code (by decide +kernel)
+
+theorem ok_word_type : FnOk prog prims info (475, ⟨4, [1], 0⟩) :=
   fnOk_of fn_word_type (by decide +kernel)
 
-theorem ok_within_layouts : FnOk prog prims info (475, ⟨3, [1], 0⟩) :=
+theorem ok_within_layouts : FnOk prog prims info (476, ⟨3, [1], 0⟩) :=
   fnOk_of fn_within_layouts (by decide +kernel)
 
-theorem ok_within_payloads : FnOk prog prims info (476, ⟨3, [1], 0⟩) :=
+theorem ok_within_payloads : FnOk prog prims info (477, ⟨3, [1], 0⟩) :=
   fnOk_of fn_within_payloads (by decide +kernel)
 
-theorem ok_eval_element : FnOk prog prims info (477, ⟨7, [], 0⟩) :=
+theorem ok_eval_element : FnOk prog prims info (478, ⟨7, [], 0⟩) :=
   fnOk_of fn_eval_element (by decide +kernel)
 
-theorem ok_eval_array_index : FnOk prog prims info (478, ⟨6, [], 0⟩) :=
+theorem ok_eval_array_index : FnOk prog prims info (479, ⟨6, [], 0⟩) :=
   fnOk_of fn_eval_array_index (by decide +kernel)
 
-theorem ok_eval_checked : FnOk prog prims info (479, ⟨2, [], 0⟩) :=
+theorem ok_eval_checked : FnOk prog prims info (480, ⟨2, [], 0⟩) :=
   fnOk_of fn_eval_checked (by decide +kernel)
 
-theorem ok_eval_copy : FnOk prog prims info (480, ⟨12, [], 0⟩) :=
+theorem ok_eval_copy : FnOk prog prims info (481, ⟨12, [], 0⟩) :=
   fnOk_of fn_eval_copy (by decide +kernel)
 
-theorem ok_eval_field_copy : FnOk prog prims info (481, ⟨14, [], 0⟩) :=
+theorem ok_eval_field_copy : FnOk prog prims info (482, ⟨14, [], 0⟩) :=
   fnOk_of fn_eval_field_copy (by decide +kernel)
 
-theorem ok_bounds_guard : FnOk prog prims info (482, ⟨2, [], 0⟩) :=
+theorem ok_bounds_guard : FnOk prog prims info (483, ⟨2, [], 0⟩) :=
   fnOk_of fn_bounds_guard (by decide +kernel)
 
-theorem ok_lower_load_word : FnOk prog prims info (483, ⟨0, [], 0⟩) :=
+theorem ok_lower_load_word : FnOk prog prims info (484, ⟨0, [], 0⟩) :=
   fnOk_of fn_lower_load_word (by decide +kernel)
 
-theorem ok_lower_element : FnOk prog prims info (484, ⟨4, [], 0⟩) :=
+theorem ok_lower_element : FnOk prog prims info (485, ⟨5, [], 0⟩) :=
   fnOk_of fn_lower_element (by decide +kernel)
 
-theorem ok_lower_load_type : FnOk prog prims info (485, ⟨7, [], 0⟩) :=
+theorem ok_lower_load_type : FnOk prog prims info (486, ⟨7, [], 0⟩) :=
   fnOk_of fn_lower_load_type (by decide +kernel)
 
-theorem ok_index_of : FnOk prog prims info (486, ⟨2, [], 0⟩) :=
-  fnOk_of fn_index_of (by decide +kernel)
-
 theorem chunk9 : AllFns prog prims info part9 :=
-  ⟨ok_code_size, ok_Code_size, ok_concat_of_u8, ok_prologue, ok_encode_onto, ok_trap, ok_shift_guard, ok_guard_or, ok_left_false, ok_left_true, ok_bool_bits, ok_lower_unsigned, ok_lower_local, ok_lower_field, ok_lower_negate, ok_lower_not, ok_lower_apply, ok_lower_cast, ok_lower_float, ok_copy_binding, ok_copy_field, ok_lower_args, ok_lower_variant, ok_lower_match_arms, ok_lower_set_field_at, ok_field_offset, ok_get_of_mini_selfhost_SrcType, ok_word_type, ok_within_layouts, ok_within_payloads, ok_eval_element, ok_eval_array_index, ok_eval_checked, ok_eval_copy, ok_eval_field_copy, ok_bounds_guard, ok_lower_load_word, ok_lower_element, ok_lower_load_type, ok_index_of, trivial⟩
+  ⟨ok_code_size, ok_Code_size, ok_concat_of_u8, ok_prologue, ok_encode_onto, ok_trap, ok_shift_guard, ok_guard_or, ok_left_false, ok_left_true, ok_bool_bits, ok_lower_unsigned, ok_lower_local, ok_lower_field, ok_lower_negate, ok_lower_not, ok_lower_apply, ok_lower_cast, ok_lower_float, ok_copy_binding, ok_copy_field, ok_lower_args, ok_lower_variant, ok_lower_match_arms, ok_lower_set_field_at, ok_field_offset, ok_get_of_mini_selfhost_SrcType, ok_UintTy_code, ok_word_type, ok_within_layouts, ok_within_payloads, ok_eval_element, ok_eval_array_index, ok_eval_checked, ok_eval_copy, ok_eval_field_copy, ok_bounds_guard, ok_lower_load_word, ok_lower_element, ok_lower_load_type, trivial⟩
 
 end Lanius.Faithful.SelfTerm

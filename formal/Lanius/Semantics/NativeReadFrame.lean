@@ -161,9 +161,16 @@ theorem HeapReads.rawSlice (reads : HeapReads before.heap after.heap)
     | error reason => rw [location] at loaded; contradiction
     | ok base =>
         rw [location] at loaded
-        change readNativeValue NativeLayout.maxDepth program before.heap element base = .ok value at loaded
-        change readNativeValue NativeLayout.maxDepth program after.heap element base = .ok value
-        exact reads.nativeValue loaded
+        change readRawElement program before.heap element base = .ok value at loaded
+        change readRawElement program after.heap element base = .ok value
+        unfold readRawElement at loaded ⊢
+        split
+        · rename_i byte
+          rw [if_pos byte] at loaded
+          exact Refines.bind reads.natLE (fun _ => .refl _) _ loaded
+        · rename_i byte
+          rw [if_neg byte] at loaded
+          exact reads.nativeValue loaded
 
 /-- A native i32 read survives writes confined to a disjoint region. -/
 theorem readRawSliceIndex_i32_afterRegionWrite (write : HeapRegionWrite before.heap after.heap address size)

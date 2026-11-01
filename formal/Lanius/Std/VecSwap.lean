@@ -91,7 +91,7 @@ theorem swap_run (kind : ElemKind P T size) {s : State} (formed : s.CellsWellFor
   obtain ⟨h1, stored1, readBack1, written1⟩ := stores (elt a j) (elt_mem hj) ({ s1 with heap := s.heap } : State)
     s.heap (elemBase T size p cap i) roomI readyI effect.unique
   rw [slotEq] at written1
-  have assign1 := StableExpr.assignRaw (before := { s1 with heap := s.heap }) (indexed := { s1 with heap := s.heap })
+  have assign1 := StableExpr.assignRaw (nb := kind.notByte) (before := { s1 with heap := s.heap }) (indexed := { s1 with heap := s.heap })
     (ready := { s1 with heap := s.heap }) (heap := h1) (sourceId := items) (s1_items s.heap) si1 ic
     (elementAddress kind ic) noViews (StableExpr.rawSliceIndexAt (s1_items s.heap) sj1 readJ) stored1
   have effect1 : HeapRegionWrite h0 h1 p (size * cap) := by
@@ -103,7 +103,7 @@ theorem swap_run (kind : ElemKind P T size) {s : State} (formed : s.CellsWellFor
   obtain ⟨h2, stored2, readBack2, written2⟩ := stores (elt a i) (elt_mem hi) ({ s1 with heap := h1 } : State)
     h1 (elemBase T size p cap j) roomJ readyJ effect1.unique
   rw [slotEq] at written2
-  have assign2 := StableExpr.assignRaw (before := { s1 with heap := h1 }) (indexed := { s1 with heap := h1 })
+  have assign2 := StableExpr.assignRaw (nb := kind.notByte) (before := { s1 with heap := h1 }) (indexed := { s1 with heap := h1 })
     (ready := { s1 with heap := h1 }) (heap := h2) (sourceId := items) (s1_items h1) sj2 jc
     (elementAddress kind jc) noViews (StableExpr.local (s1_held h1)) stored2
   have effect2 : HeapRegionWrite h0 h2 p (size * cap) := by

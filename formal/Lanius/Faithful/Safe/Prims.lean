@@ -21,7 +21,7 @@ theorem map_zero {P : Core.Program} {s : State} {T : Core.Ty} {a w : Nat}
     (pos : 0 < w) : mapRawNominalSlice P s T a 0 = .done (.rawSlice T a (Int.toNat 0)) s := by
   have nz : (w == 0) = false := by simp only [beq_eq_false_iff_ne]; omega
   rcases kind with ⟨id, rfl⟩ | ⟨id, rfl⟩ <;>
-  · simp only [mapRawNominalSlice, hw, nz]
+  · simp only [mapRawNominalSlice, Semantics.isByte, hw, nz]
     rfl
 
 theorem map_one {P : Core.Program} {s : State} {T : Core.Ty} {a w : Nat}
@@ -32,7 +32,7 @@ theorem map_one {P : Core.Program} {s : State} {T : Core.Ty} {a w : Nat}
   have first : a + 8 * w - 8 + 8 - 8 * w = a := by omega
   have fits : ¬ (a + 8 * w - 8 + 8 < 8 * w) := by omega
   rcases kind with ⟨id, rfl⟩ | ⟨id, rfl⟩ <;>
-  · simp [mapRawNominalSlice, hw, nz, NativeLayout.wordBytes, first, fits, range, Nat.mul_comm w 8]
+  · simp [mapRawNominalSlice, Semantics.isByte, hw, nz, NativeLayout.wordBytes, first, fits, range, Nat.mul_comm w 8]
 
 /-! ## Raw stores and allocations -/
 
@@ -62,7 +62,7 @@ theorem place_local_trap {id : Nat} {x : Value} {acc : Semantics.PlaceAccess} (k
 `arrayBounds`, and otherwise only the native write can trap, at the state it
 started from. -/
 theorem set_raw_trap {view x : Nat} {i : Core.Expr} {iv : Value} {el : Core.Ty} {a len pos base : Nat} {v : Value}
-    (views : st.i32ArrayViews = [])
+    (views : st.i32ArrayViews = []) (nb : Semantics.isByte el = false)
     (hview : st.local? view = some (.rawSlice el a len)) (ki : Known P st i iv) (hx : st.local? x = some v)
     (ix : Semantics.integerIndex iv = .ok pos)
     (hb : pos < len → Semantics.rawSliceElementAddress? P el a pos = .ok base)
@@ -92,7 +92,8 @@ theorem set_raw_trap {view x : Nat} {i : Core.Expr} {iv : Value} {el : Core.Ty} 
         obtain ⟨rfl, hs2⟩ := local_eval hx hv
         subst s2
         rw [hv] at h
-        simp only [Semantics.evalAssignValue, Semantics.assignOpBinary?, Semantics.writeResolvedPlaceNative, raw] at h
+        simp only [Semantics.evalAssignValue, Semantics.assignOpBinary?, Semantics.writeResolvedPlaceNative, raw,
+          Semantics.writeRawNative, nb, Bool.false_eq_true, ↓reduceIte] at h
         cases hw : Semantics.writeNativeValue NativeLayout.maxDepth P st st.heap el base u with
         | ok H =>
           simp only [hw, bind, Except.bind, pure, Except.pure, Semantics.ResolvedPlace.viewFreeRootWrite, raw,
@@ -381,8 +382,9 @@ theorem raw_read_of {P : Core.Program} {s : State} {T : Core.Ty} {a w : Nat} {v 
     (kind : (∃ id, T = .structure id) ∨ ∃ id, T = .enumeration id) (words : NativeLayout.valueWords? P T = some w)
     (pos : 0 < w) (h : Semantics.readNativeValue NativeLayout.maxDepth P s.heap T (a + 8 * w - 8) = .ok v) :
     Semantics.readRawSliceIndex P s T (a + 8 * w - 8) 1 0 = .ok v := by
+  have nb : Semantics.isByte T = false := by rcases kind with ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> rfl
   simp only [Semantics.readRawSliceIndex, show ¬ (0 ≥ 1) by decide, if_false,
-    elementAddress_zero kind words pos]
+    elementAddress_zero kind words pos, Semantics.readRawElement, nb, Bool.false_eq_true, ↓reduceIte]
   exact h
 
 theorem unbox_safe {t : SrcType} {id slice : Nat} {values ps : List Value} {st : State}
@@ -551,7 +553,8 @@ theorem boxed_safe {t : SrcType} {id sizeOf slice panic : Nat} {values ps : List
   have heap4 : (s10.bindLocal 203 (.rawSlice t.toCore (a + 8 * w - 8) 1)).heap = H1 := same3.heap
   -- the write: the value's store fits in the storage
   refine safeS_seq (safeS_expression fun k r s h bound => ?_) fun {k s} h => ?_
-  · obtain ⟨rfl, ⟨bad, -⟩ | write⟩ := set_raw_trap (P := sp.toCore) (pos := 0) inv4.views view4
+  · obtain ⟨rfl, ⟨bad, -⟩ | write⟩ := set_raw_trap (P := sp.toCore) (pos := 0) inv4.views
+      (by rcases kind with ⟨_, h⟩ | ⟨_, h⟩ <;> simp [h, Semantics.isByte]) view4
       (known_value (.signed .i32 0)) x4 (by simp [Semantics.integerIndex]) (fun _ => elementAddress_zero kind hw pos) h
     · exact absurd bad (by decide)
     replace write := write.2

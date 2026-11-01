@@ -133,15 +133,16 @@ nullable body, which is the documented Pike cycle policy.
 ## Receipts
 
 The receipts are for `extended/ext/regex.lani` SHA256
-`906bcf3856ced172084e45078e31abf72798a5a547ae2a70ac6cc78687dfcd6e`, oracle
+`7b2fe368f4cffb3b0a96e1d01f981042a9537652bc290918ffbc3183b84ba909`, oracle
 SHA256 `8751ce9a25df4303cf5c6dbf722184684894aa64b43755f45d4b7faa49dce3c0`,
 `text_grep.lani` SHA256
-`829b5a6b2b0c6a3794a4515dd7bcea7ce06deafd50e7e0b6877a3d98d701d307` and
+`a2cadd865cccb86e872224e3ac9142fcc366c588724192f9e263fa787c4851e6` and
 `dfa.lani` SHA256
 `b6112163f8d84bae6d2357e3fd486c1ebdb763f23fc1a22e4831962d1f64b999`, with
 CPython 3.12.3, on native Linux x86_64. Executables were built with
 `target/claude-work/bin/lcc`. Log:
-`target/claude-work/s3/oracle-numbers-receipt.log`. The earlier logs
+`target/claude-work/s3/oracle-count-receipt.log`. The earlier logs
+`oracle-numbers-receipt.log` (before the counting scan),
 `oracle-output-receipt.log` (before the line-scan skip),
 `oracle-lines-receipt.log` (before the output rework),
 `oracle-unicode-receipt.log` (before the line scan and `grep_unicode`),
