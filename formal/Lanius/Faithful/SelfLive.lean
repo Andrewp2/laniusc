@@ -515,4 +515,173 @@ theorem put_live {outp room : Nat} (roomLt : room < 2 ^ 31) {s : State} {rv rp :
     show done1.heap.nextAddress ≤ _
     exact heap1 ▸ next1
 
+/-! ## The driver -/
+
+theorem i32Slice_fwd {P : Core.Program} {st : State} {p n : Core.Expr} {a : Nat} {c : Int} {v : Value}
+    {s1 s2 s3 : State} (hp : Ev (fun k => evalExpr k P st p) (.pointer a) s1)
+    (hn : Ev (fun k => evalExpr k P s1 n) (.signed .i32 c) s2) (m : Semantics.mapRawI32Slice s2 a c = .done v s3) :
+    Ev (fun k => evalExpr k P st (.i32SliceFromRawParts p n)) v s3 := by
+  obtain ⟨K1, h1⟩ := hp
+  obtain ⟨K2, h2⟩ := hn
+  refine ⟨max K1 K2 + 1, fun k hk => ?_⟩
+  obtain ⟨j, rfl⟩ : ∃ j, k = j + 1 := ⟨k - 1, by omega⟩
+  simp only [evalExpr, h1 j (by omega), h2 j (by omega), m]
+
+theorem map_i32 {s : State} {a n : Nat} (range : n = 0 ∨ s.heap.checkRange a (n * 4) 4 = .ok ()) :
+    Semantics.mapRawI32Slice s a (n : Int) = .done (.rawSlice i32T a n) s := by
+  unfold Semantics.mapRawI32Slice
+  rcases range with rfl | ok
+  · rfl
+  · by_cases zero : n = 0
+    · subst zero; rfl
+    · simp only [show ¬ ((n : Int) < 0) by omega, if_false, show ¬ ((n : Int) = 0) by omega, Int.toNat_natCast, ok]
+
+theorem listVal_rep (W : List (BitVec 32)) : (RepList 0 RepI32) W (listVal W) := by
+  induction W with
+  | nil => exact .nil
+  | cons x xs ih => exact .cons (.mk x) ih
+
+/-- **The driver completes.** On an input view reading `W` and an output view
+of `room` words, with an unbounded allocator: when the cost semantics gives
+`w`'s run the cost `h` with some fuel, the heap has `h` bytes below `2 ^ 64`,
+and the result's words fit in the room, Core completes `w`'s call with the
+heap grown by at most `h`. -/
+theorem driver_live {N h : Nat} {st : State} {inp outp room : Nat} {W : List (BitVec 32)}
+    (inv : Inv st) (wordsLt : W.length < 2 ^ 31) (roomLt : room < 2 ^ 31)
+    (input : Reads st inp W) (output : st.heap.Readable outp (room * 4))
+    (inRange : W.length = 0 ∨ st.heap.checkRange inp (W.length * 4) 4 = .ok ())
+    (outRange : room = 0 ∨ st.heap.checkRange outp (room * 4) 4 = .ok ())
+    (fr : st.heap.remaining = none) (cost : selfCost N W = some h) (budget : st.heap.nextAddress + h ≤ 2 ^ 64)
+    (fits : ∀ ws, compileWords (frontEndWords grammar W) = some ws → ws.length ≤ room) :
+    ∃ v st', Ev (fun k => evalExpr k prog.toCore st (.call 0 [.value (.pointer inp), .value (.signed .i32 W.length),
+      .value (.pointer outp), .value (.signed .i32 room)])) v st' ∧ st'.heap.nextAddress ≤ st.heap.nextAddress + h := by
+  simp only [selfCost, Option.bind_eq_some_iff, Option.some.injEq] at cost
+  obtain ⟨⟨g, hg⟩, hG, ⟨fe, hf⟩, hF, ⟨cw, hc⟩, hC, rfl⟩ := cost
+  generalize hR : W.length * consCost = R at budget ⊢
+  generalize hE : ({ st with locals := [] } : State).bindLocals [(2, .pointer inp), (14, .signed .i32 W.length),
+    (26, .pointer outp), (39, .signed .i32 room)] = E
+  have invE : Inv E := by rw [← hE]; exact Same.start inv _
+  have stepE : Step st E := by rw [← hE]; exact (Step.clear st).trans (Step.bindLocals _ _)
+  have heapE : E.heap = st.heap := by rw [← hE]; rfl
+  have l2 : E.local? 2 = some (.pointer inp) := by
+    rw [← hE]; exact local?_entry inv [] [(14, .signed .i32 W.length), (26, .pointer outp), (39, .signed .i32 room)]
+      2 _ rfl (by simp)
+  have l14 : E.local? 14 = some (.signed .i32 W.length) := by
+    rw [← hE]; exact local?_entry inv [(2, .pointer inp)] [(26, .pointer outp), (39, .signed .i32 room)] 14 _ rfl
+      (by simp)
+  have l26 : E.local? 26 = some (.pointer outp) := by
+    rw [← hE]; exact local?_entry inv [(2, .pointer inp), (14, .signed .i32 W.length)] [(39, .signed .i32 room)] 26 _
+      rfl (by simp)
+  have l39 : E.local? 39 = some (.signed .i32 room) := by
+    rw [← hE]; exact local?_entry inv [(2, .pointer inp), (14, .signed .i32 W.length), (26, .pointer outp)] [] 39 _
+      rfl (by simp)
+  -- The two views.
+  have slice1 : Ev (fun k => evalExpr k prog.toCore E (.i32SliceFromRawParts (.local 2) (.local 14)))
+      (.rawSlice i32T inp W.length) E :=
+    i32Slice_fwd (local_fwd l2) (local_fwd l14) (map_i32 (by rw [heapE]; exact inRange))
+  generalize hE1 : E.bindLocal 67 (.rawSlice i32T inp W.length) = E1
+  have invE1 : Inv E1 := by rw [← hE1]; exact invE.bindLocal _ _
+  have slice2 : Ev (fun k => evalExpr k prog.toCore E1 (.i32SliceFromRawParts (.local 26) (.local 39)))
+      (.rawSlice i32T outp room) E1 :=
+    i32Slice_fwd (local_fwd (by rw [← hE1]; exact local?_bindLocal_other (by decide) _ l26))
+      (local_fwd (by rw [← hE1]; exact local?_bindLocal_other (by decide) _ l39))
+      (map_i32 (by rw [← hE1]; exact heapE ▸ outRange))
+  generalize hE2 : E1.bindLocal 125 (.rawSlice i32T outp room) = E2
+  have invE2 : Inv E2 := by rw [← hE2]; exact invE1.bindLocal _ _
+  have stepE2 : Step st E2 := by
+    rw [← hE2, ← hE1]; exact stepE.trans ((Step.bindLocal _ _ _).trans (Step.bindLocal _ _ _))
+  have heapE2 : E2.heap = st.heap := by rw [← hE2, ← hE1]; exact heapE
+  have k67 : E2.local? 67 = some (.rawSlice i32T inp W.length) := by
+    rw [← hE2, ← hE1]; exact local?_bindLocal_other (by decide) _ (local?_bindLocal_self invE _ _)
+  have k14 : E2.local? 14 = some (.signed .i32 W.length) := by
+    rw [← hE2, ← hE1]; exact local?_bindLocal_other (by decide) _ (local?_bindLocal_other (by decide) _ l14)
+  have k125 : E2.local? 125 = some (.rawSlice i32T outp room) := by
+    rw [← hE2]; exact local?_bindLocal_self invE1 _ _
+  -- `empty()`
+  obtain ⟨we, ev, sE, hwe, emptyE, relE, invSE, stepSE, nextSE, frSE, locSE⟩ := pure_call_fwd SelfPure.selfPure
+    SelfPure.selfPrims (N := 1) (h := 0) fn_empty_of_i32 (notOut 5) (exprs_nil_fwd (st := E2)) invE2 .nil
+    (by simp only [ccall, qcall_empty 0, Option.map_some]) (by rw [heapE2]; aomega) (by rw [heapE2]; exact fr)
+  have hwe' : pcall prog prims 1 5 [] = some nilVal := by rw [pcall_eq_qcall _ _ (boxCost prog), qcall_empty 0]; rfl
+  rw [hwe', Option.some.injEq] at hwe
+  subst hwe
+  -- `oracle_read(data, 0, words as usize, empty())`
+  have castE : Ev (fun k => evalExpr k prog.toCore E2 (.cast (.unsigned .usize) (.local 14)))
+      (.unsigned .usize W.length) E2 :=
+    cast_fwd (local_fwd k14) (by rw [toCore_target', cast_usize_int (by aomega) (by aomega)]; simp)
+  have argsR : Ev (fun k => evalExprs k prog.toCore E2 [.local 67, .value (.unsigned .usize (0#64).toNat),
+      .cast (.unsigned .usize) (.local 14), .call 5 []]) [.rawSlice i32T inp W.length, .unsigned .usize 0,
+      .unsigned .usize W.length, ev] sE :=
+    exprs_cons_fwd (local_fwd k67) (exprs_cons_fwd (value_fwd _) (exprs_cons_fwd castE
+      (exprs_cons_fwd emptyE exprs_nil_fwd)))
+  have nextSE' : sE.heap.nextAddress ≤ st.heap.nextAddress := by
+    rw [← heapE2]; simpa using nextSE
+  obtain ⟨cR, doneR, lv, bodyR, resR, relR, invR, stepR, nextR, frR⟩ := read_live (inp := inp) (W := W) (by aomega)
+    (W.length - 0) (lo := 0) (hi := W.length) (s := sE) (tv := ev) (tp := nilVal) rfl (Nat.zero_le _) (Nat.le_refl _)
+    invSE (input.step (stepE2.trans stepSE)) relE
+    (by rw [Nat.sub_zero, hR]; aomega) frSE
+  simp only [List.drop_zero, Nat.sub_zero, List.take_length] at relR nextR
+  rw [hR] at nextR
+  have readE := call_fwd argsR fn_read rfl bodyR resR
+  generalize hE3 : (restoreLocals sE doneR).bindLocal 182 lv = E3
+  have invE3 : Inv E3 := by rw [← hE3]; exact (invR.restore _).bindLocal _ _
+  have stepE3 : Step st E3 := by
+    rw [← hE3]; exact ((stepE2.trans (stepSE.trans stepR)).restore _).trans (Step.bindLocal _ _ _)
+  have heapE3 : E3.heap = doneR.heap := by rw [← hE3]; rfl
+  have k182 : E3.local? 182 = some lv := by rw [← hE3]; exact local?_bindLocal_self (invR.restore _) _ _
+  have k125' : E3.local? 125 = some (.rawSlice i32T outp room) := by
+    rw [← hE3]
+    refine local?_bindLocal_other (by decide) _ (local?_prefix (st' := restoreLocals sE doneR)
+      (stepSE.cells.trans stepR.cells) (by show sE.locals = E2.locals; exact locSE) k125)
+  have relL : VRel prog.toCore boxes E3.heap ty1 lv (listVal W) := heapE3 ▸ relR
+  -- `grammar()`
+  have nG : E3.heap.nextAddress ≤ st.heap.nextAddress + R := by rw [heapE3]; aomega
+  obtain ⟨wg, gv, sG, hwg, gramE, relG, invG, stepG, nextG, frG, locG⟩ := pure_call_fwd SelfPure.selfPure
+    SelfPure.selfPrims (N := N) (h := hg) fn_grammar (notOut 8) (exprs_nil_fwd (st := E3)) invE3 .nil
+    (by simp only [ccall, hG, Option.map_some]) (by aomega) (by rw [heapE3]; exact frR)
+  have hwg' : pcall prog prims N 8 [] = some g := by rw [pcall_eq_qcall _ _ (boxCost prog), hG]; rfl
+  rw [hwg', Option.some.injEq] at hwg
+  subst hwg
+  -- `front_end_words(grammar(), read)`
+  have k182G : sG.local? 182 = some lv := local?_prefix stepG.cells locG k182
+  obtain ⟨wf, fv, sF, hwf, feE, relF, invF, stepF, nextF, frF, locF⟩ := pure_call_fwd SelfPure.selfPure
+    SelfPure.selfPrims (N := N) (h := hf) fn_front_end_words (notOut 7)
+    (exprs_cons_fwd gramE (exprs_cons_fwd (local_fwd k182G) exprs_nil_fwd)) invG
+    (.cons relG (.cons (VRel.mono stepG.reads stepG.ranges relL) .nil))
+    (by simp only [ccall, hF, Option.map_some]) (by aomega) frG
+  have hwf' : pcall prog prims N 7 [g, listVal W] = some fe := by rw [pcall_eq_qcall _ _ (boxCost prog), hF]; rfl
+  rw [hwf', Option.some.injEq] at hwf
+  subst hwf
+  -- `compile_words(..)`
+  obtain ⟨wc, cv, sC, hwc, cwE, relC, invC, stepC, nextC, frC, locC⟩ := pure_call_fwd SelfPure.selfPure
+    SelfPure.selfPrims (N := N) (h := hc) fn_compile_words (notOut 6) (exprs_cons_fwd feE exprs_nil_fwd) invF
+    (.cons relF .nil) (by simp only [ccall, hC, Option.map_some]) (by aomega) frF
+  have repC := cert_compile_words hwc (cert_front_end_words hwf' (cert_grammar hwg') (listVal_rep W))
+  -- `oracle_put(out, ..)`
+  have stepAll : Step st sC := stepE3.trans (stepG.trans (stepF.trans stepC))
+  obtain ⟨cP, doneP, vP, bodyP, resP, nextP⟩ := put_live roomLt invC (stepAll.reads.readable output) relC repC fits
+    (by aomega) frC
+  have k125C : E3.local? 125 = some (.rawSlice i32T outp room) := k125'
+  have putE := call_fwd (exprs_cons_fwd (local_fwd k125C) (exprs_cons_fwd cwE exprs_nil_fwd)) fn_put rfl bodyP resP
+  obtain ⟨sW, bodyW, boundW⟩ : ∃ sW, Ev (fun k => execStmt k prog.toCore (({ st with locals := [] } : State).bindLocals
+      (paramBindings (src_app_main_w 1 2 5 6 7 8).params [.pointer inp, .signed .i32 W.length, .pointer outp,
+        .signed .i32 room])) (src_app_main_w 1 2 5 6 7 8).body.toCore) (.returned (some vP)) sW ∧
+      sW.heap.nextAddress ≤ st.heap.nextAddress + (R + hg + hf + hc) := by
+    refine ⟨?s, ?ev, ?b⟩
+    case ev =>
+      rw [w_params, hE]
+      simp only [src_app_main_w, SrcStmt.toCore, SrcEff.toCore, SrcEff.toCoreList, SrcExpr.toCore, SrcType.toCore,
+        SrcType.sliceFrom, SrcType.toScalar, UintTy.toCore]
+      have e3 := return_fwd (P := prog.toCore) putE
+      rw [← hE3] at e3
+      have e2 := letLocal_fwd (ty := ty1.toCore) readE e3
+      rw [← hE2] at e2
+      have e1 := letLocal_fwd (ty := (Core.Ty.scalar (.signed .i32)).slice) slice2 e2
+      rw [← hE1] at e1
+      exact letLocal_fwd (ty := (Core.Ty.scalar (.signed .i32)).slice) slice1 e1
+    case b =>
+      show doneP.heap.nextAddress ≤ _
+      aomega
+  exact ⟨vP, _, call_fwd (exprs_cons_fwd (value_fwd _) (exprs_cons_fwd (value_fwd _) (exprs_cons_fwd (value_fwd _)
+    (exprs_cons_fwd (value_fwd _) exprs_nil_fwd)))) fn_w rfl bodyW rfl, boundW⟩
+
 end Lanius.Faithful.SelfLive
