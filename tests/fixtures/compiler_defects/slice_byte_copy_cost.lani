@@ -1,0 +1,14 @@
+// Performance defect (correct result, slow code): a byte-copy loop between
+// [u8] slices executes about 62 instructions per byte. Copies 64 MiB in 4 KiB
+// rounds and exits 7. See README.md for the disassembly and expected cost.
+module app::main;
+fn copy(target: [u8], at: i32, source: [u8], start: i32, count: i32) {
+    let index: i32 = 0;
+    while (index < count) { target[at + index] = source[start + index]; index += 1; }
+}
+fn main() -> i32 {
+    let a: [u8; 4096] = [7; 4096]; let b: [u8; 4096] = [0; 4096];
+    let round: i32 = 0;
+    while (round < 16384) { copy(b, 0, a, 0, 4096); round += 1; }
+    return b[3] as i32;
+}

@@ -13,8 +13,8 @@ one should become a passing regression test once its defect is fixed.
 
 | File | Defect | Expected | Actual |
 | --- | --- | --- | --- |
-| `question_comparison.lani` | `?` inside a comparison: `if (three()? != 3)` | exit 0 | exit 1 (silent miscompile) |
-| `i64_view_writes.lani` | `words[2] = 5` through `typed_slice_from_raw_parts<i64>(base, 4)` over a local `[i32; 8]` | exit 5 | exit 0: the store is lost (silent miscompile) |
+| `question_comparison.lani` (removed) | `?` inside a comparison: `if (three()? != 3)` | exit 0 | **fixed**: the operator after `?` was dropped; now `tests/codegen_x86.rs` `x86_try_operand_keeps_the_following_binary_operator` |
+| `i64_view_writes.lani` (removed) | `words[2] = 5` through `typed_slice_from_raw_parts<i64>(base, 4)` over a local `[i32; 8]` | — | **not a defect**: raw `[i64]` views descend (element i at `base - 8 * i`, as `core::mem` documents), so the store landed below the array; now `tests/codegen_x86.rs` `x86_i64_raw_views_store_at_descending_word_addresses` |
 | `u64_cast_literal.lani` | `4000000000 as u64` | compiles, exit 4 | **fixed 2026-10-31**: was LNC0069 "invalid integer literal" (the literal was checked as i32 before the cast); now exits 4 |
 | `u64_cast_literal_forms.lani` | literal casts to u32/u64/i64 at their extremes, plus `-1 as u32`, `-1 as u64`, `300 as u8`, `(3 + 4) as u64`, `3 as f64` | exit 0 | exit 0 since the fix |
 | `untyped_generic_trait_result.lani` | untyped `let got = reader.read(...)` where `R: core::io::Read` | compiles, exit 1 with one stdin byte | **fixed 2026-10-31**: was LNC0006 "type mismatch" at the later `unwrap` (LNC0027 for `got.unwrap()`, LNC0047 for `w.flush()` and `core::random::Source64::draw`); see [bound trait results](#bound-trait-results) |
@@ -23,14 +23,23 @@ one should become a passing regression test once its defect is fixed.
 | `bound_trait_open_param.lani` | the same through `I: core::iter::Iterator<T>` in a generic caller | exit 3 | exit 3 since the fix (was LNC0006) |
 | `bound_trait_open_forms.lani` | `let r = f.try_apply(2, 3 as u8)` where `F: core::iter::TryFolder<i32, u8, bool>` | exit 6 | exit 6 since the fix (was LNC0006) |
 | `bound_trait_open_argument.lani` | the untyped `Option` from `it.next()` passed to a nongeneric parameter | exit 12 | **fixed 2026-10-31**: compiled before, then died with SIGILL (exit 132) |
-| `u64_stack_carry.lani` | performance: u64 values and every expression temporary live in stack slots | exit 10, carry and temporaries in registers | exit 10. Before 2026-10-31: 0.42 s, all u64 values in slots. 64-bit declarations are now register-eligible (`decl_slots_scatter.slang`, `allocation_words.slang`), which brings it to 0.31 s. Temporaries still take slots, and `>> 32` still range-checks its constant amount at run time. The asm excerpt is in the file |
-| `u32_slice_row.lani` | performance: the big-integer multiply-add row costs about 13 ns per limb (26 ns under load) instead of about 1 ns | exit 72 in about 0.1 s | exit 72 in 1.34 s. Each slice access copies the three descriptor words into fresh slots, bounds-checks, multiplies by the runtime stride and spills the loaded value. About 100 instructions and 70 memory operands per limb. The asm excerpt is in the file |
+| `u64_stack_carry.lani` | performance: u64 values and every expression temporary live in stack slots | exit 10, carry and temporaries in registers | exit 10 in 0.12 s with no memory operand in the loop. Before 2026-10-31: 0.42 s, all u64 values in slots. 64-bit declarations became register-eligible (0.31 s), then temporaries got a per-function linear-scan allocator over r8-r11, rbx and r12-r14 (`allocation_words.slang`), `>> 32` became an immediate shift and `j < n` a fused compare-branch. Left: register-to-register move chains and dead constant loads (`mov $0x20,%ebx`) |
+| `u32_slice_row.lani` | performance: the big-integer multiply-add row costs about 13 ns per limb (26 ns under load) instead of about 1 ns | exit 72 in about 0.1 s | exit 72 in 0.29 s (2.9 ns per limb, was 1.34 s). Slice parameters are now read in place (no descriptor copies), temporaries stay in registers and the loop test is a fused `cmp; jge`: about 60 instructions per limb. Left: `factor` reloads from its slot each pass, each access still bounds-checks and multiplies by the runtime stride (`imul` plus a stride==1 branch, even for 4-byte elements), and move chains. The asm excerpt is in the file |
 | `candidate_nested_generic_match.lani` | reported: LNC0047 "type-check execution failed" on a nested match on a generic enum bound in an outer arm | compiles, exit 4 | **not reproduced**: compiles and exits 4 |
 | `check_slice_select_label.lani` | reported: LNC0008 "unsatisfied trait bound" labels pointing at `stdlib/core/slice.lani:899` (inside `select_nth_unstable`) instead of the caller | `laniusc check` accepts; compiles, exit 1 | **fixed 2026-10-31**: real in `laniusc check` only, which rejected it at `slice.lani:899`; builds were never affected. See [check and generic impls](#check-and-generic-impls) |
 | `check_slice_import.lani` | `laniusc check --stdlib-root stdlib` on any program importing `core::slice` | check accepts; exit 3 | **fixed 2026-10-31**: was LNC0008 at `slice.lani:899` |
 | `check_generic_impl_bound.lani` | `laniusc check` on a call bound met only by a generic impl (`impl<T> Cmp for N<T>`) | check accepts; exit 3 | **fixed 2026-10-31**: was LNC0008 "no matching impl satisfies this call" at the call |
 | `candidate_missing_module_long.lani` | reported: LNC0016 "syntax error" on a long file without a `module` line | compiles, exit 0 | **not reproduced, closed 2026-10-31**: this file and 2,000- to 20,000-function files (up to 2 MB) with or without `module`, CRLF or import-first all compile. Large files fail on GPU memory instead; see [GPU out of memory](#gpu-out-of-memory) |
+| `b14_path_self_method_inherent.lani` | a self method called through its type's path: `S::get(s, 1)`, `S::peek(s.borrow(), 2)` for `&self` | exit 0 | **fixed 2026-10-31**: was LNC0027 "call resolution failed"; registered in `tests/compiler_defect_fixtures_execution.rs` |
+| `b14_path_self_method_bound.lani` | a bound's self member called through the parameter's path, `T::tw(x, 3)` with `T: Tw<T>`, on `i32` and a record | exit 0 | **fixed 2026-10-31**: was LNC0027 "call resolution failed"; registered in `tests/compiler_defect_fixtures_execution.rs` |
+| `b19_stdlib_path_self_method.lani` | self methods of stdlib types through the type's path: `TotalF32::to_bits(t)`, `Descriptor::raw_handle(d.borrow())`, `Option<i32>::is_some(o)` | exit 0 | **fixed 2026-10-31**: was LNC0027 "call resolution failed". The bare `Option::is_some(o)` is still LNC0005 (generics backlog b19) |
+| `generic_impl_path_inference.lani` | a bare generic type's path infers the impl's parameters: `W::wrap(5)`, `W::get(w)`, `W::peek(u.borrow())` on `impl<T> W<T>` | exit 0 | **fixed 2026-10-31**: was LNC0006 "type mismatch" (the bare `W` bound T to the declaration's own parameter) |
 | `byte_loop_codegen.lani` | performance: a `[u8]` newline-count loop, 160 M byte reads; compare `byte_loop_codegen.c` and the loop disassembly in `byte_loop_codegen.s` | about `gcc -O0` speed (0.14 s; `-O2` 0.02 s) | 0.50 s (2.8 ns/byte), exit 0: per-iteration slice copy, bounds check, stride `imul` and branch, spills of every temporary |
+
+An imported method called with too few arguments, `o.unwrap_or()` on an
+`Option<i32>` or `TotalF32::to_bits()`, compiled and ran with an undefined
+argument until 2026-10-31. dependencies/08c now checks a method's arity as it
+did a function's, and both report LNC0027.
 
 The nested-match candidate is the closest shape tried from its report. Five
 other shapes also compiled correctly: generic-function and user-enum nested
@@ -167,3 +176,63 @@ executables, and 16 are rejected by both with the same code. Of the 12
 reductions, 9 went from rejected to accepted and now give the expected exit
 code. `bound_trait_result_argument.lani` went from SIGILL to exit 1. The typed
 `let` and the concrete-receiver control were unchanged.
+
+## Performance defects
+
+These programs compute the right result, but the generated code is far slower
+than it should be. Each one should become a timing or instruction-count check
+once its defect is fixed.
+
+| File | Defect | Expected | Actual |
+| --- | --- | --- | --- |
+| `slice_byte_copy_cost.lani` | `target[at + index] = source[start + index]` loop over `[u8]` parameters | about 5–8 instructions per byte; 64 MiB in under 0.1 s | 62 instructions per byte; 64 MiB in 0.42 s on the laptop (exit 7 either way) |
+
+To read the loop, disassemble the binary. The output is a static ELF without
+symbols, loaded at 0x400000:
+
+```sh
+objdump -D -b binary -m i386:x86-64 --adjust-vma=0x400000 target/claude-work/defect
+```
+
+Each loop iteration of `copy` executes 62 instructions:
+
+- The two slice descriptors (pointer, length, stride) are copied into fresh
+  stack temporaries for every index expression. That is 12 `mov`s per
+  iteration.
+- Each access computes `base + index * stride` with an `imul`, then branches
+  at run time on `stride == 1` to choose a byte or word load or store, even
+  though the element type is `u8`.
+- The loop condition is materialized as a bool (`setl`, `movzbl`, a store, a
+  reload and `test`) before the branch.
+- Every value goes through a stack slot. There is no register allocation
+  across statements, and dead stores are kept.
+
+The same costs apply to every `[T]` index in library code. They are why the
+S5 byte loops in ext::cbor_stream and ext::json_stream cost about 60–140
+instructions per byte, and why a `Result` return and check costs about
+100 instructions against about 8 for a `bool` return. The S5 fast paths
+(`Writer.fast_*`, `Decoder.advance`) work around the Result cost; only the
+compiler can fix the per-byte cost.
+
+## Diagnostic defects
+
+| File | Defect | Expected | Actual |
+| --- | --- | --- | --- |
+| `stdlib_stray_body_diagnostic.lani` | a stray function body (`let stray: i32 = 2; return stray;` then `}`) at top level of a stdlib module, `core::float_decimal` | LNC0016 "syntax error" at the stray line | LNC0008 "unsatisfied trait bound" at `stdlib/core/result.lani:93` (`and_then`'s `Mapper<T,Result<U,E>>` bound), which names neither the file nor the line |
+
+The program compiles and exits 0 against the real stdlib. To reproduce,
+insert the stray lines into a copy of the stdlib:
+
+```sh
+D=target/claude-work/stdlib_stray; rm -rf $D; cp -r stdlib $D
+sed -i '0,/^fn decimal_digit/{/^fn decimal_digit/i\    let stray: i32 = 2; return stray;\n}
+}' $D/core/float_decimal.lani
+target/claude-work/bin/lcc --stdlib-root $D -o target/claude-work/defect \
+  tests/fixtures/compiler_defects/stdlib_stray_body_diagnostic.lani
+```
+
+The same stray lines in a module under `--source-root` (`app::bad`), or in a
+new stdlib module that nothing else imports (`core::straybad`), are reported
+correctly as LNC0016 at the stray line. This misreport cost a bisection
+during the S5 Schubfach work. The stray lines were left by deleting only the
+first line of a removed function.

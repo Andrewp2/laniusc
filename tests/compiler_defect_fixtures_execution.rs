@@ -29,3 +29,23 @@ fn compiles_and_exits_zero(name: &str) {
 fn lnc0047_literal_arm_of_a_nested_match_takes_the_outer_context() {
     compiles_and_exits_zero("lnc0047_nested_match_literal_arm");
 }
+
+#[test]
+fn b14_self_method_called_through_its_type_path_takes_the_receiver_first() {
+    compiles_and_exits_zero("b14_path_self_method_inherent");
+}
+
+#[test]
+fn b14_bound_self_member_called_through_the_parameter_path_routes() {
+    compiles_and_exits_zero("b14_path_self_method_bound");
+}
+
+#[test]
+fn b19_stdlib_self_method_called_through_its_type_path() {
+    compiles_and_exits_zero("b19_stdlib_path_self_method");
+}
+
+#[test]
+fn bare_generic_type_path_infers_the_impl_parameters() {
+    compiles_and_exits_zero("generic_impl_path_inference");
+}

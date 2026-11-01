@@ -58,6 +58,7 @@ class Gen:
         self.lookbehind = lookbehind
         self.captures = captures
         self.behinds = 0
+        self.literals, self.class_terms, self.shorthands = LITERALS, CLASS_TERMS, SHORTHANDS
 
     def behind(self, depth):
         """A capture-free lookbehind. Fixed counts make most bodies fixed
@@ -78,16 +79,17 @@ class Gen:
         return (kind, kind)
 
     def klass(self):
-        terms = [self.rng.choice(CLASS_TERMS) for _ in range(self.rng.randint(1, 3))]
-        body = "".join(terms)
+        terms = [self.rng.choice(self.class_terms) for _ in range(self.rng.randint(1, 3))]
+        pairs = [t if isinstance(t, tuple) else (t, t) for t in terms]
         neg = "^" if self.rng.random() < 0.3 else ""
-        return ("[" + neg + body + "]",) * 2
+        return ("[" + neg + "".join(a for a, _ in pairs) + "]",
+                "[" + neg + "".join(b for _, b in pairs) + "]")
 
     def atom(self, depth):
         """Return (lanius, python, nullable, quantifiable)."""
         r = self.rng.random()
         if r < 0.42:
-            lan, py = self.rng.choice(LITERALS)
+            lan, py = self.rng.choice(self.literals)
             return lan, py, False, True
         if r < 0.50:
             return ".", ".", False, True
@@ -95,8 +97,9 @@ class Gen:
             lan, py = self.klass()
             return lan, py, False, True
         if r < 0.68:
-            s = self.rng.choice(SHORTHANDS)
-            return s, s, False, True
+            s = self.rng.choice(self.shorthands)
+            lan, py = s if isinstance(s, tuple) else (s, s)
+            return lan, py, False, True
         if r < 0.76:
             if self.lookbehind and self.rng.random() < self.lookbehind:
                 lan, py = self.behind(depth)
@@ -104,7 +107,7 @@ class Gen:
             lan, py = self.assertion()
             return lan, py, True, False
         if depth <= 0:
-            lan, py = self.rng.choice(LITERALS)
+            lan, py = self.rng.choice(self.literals)
             return lan, py, False, True
         capture = self.rng.random() < 0.6 and self.captures
         if capture:
@@ -187,6 +190,42 @@ PINNED = [
     (r"(a??((a+\t{1,2})a|([^b]+?)){0,3}?)a{1,2}", "-1ccaaac\t🙂_ a"),
     (r"_|\x61*?\x{1f642}+?|((b)+?c{0,2}){0,3}?a", "🙂_céab1aacb1🙂bba."),
 ]
+
+
+# Non-ASCII input for the lazy DFA's byte-level transitions: two-, three-
+# and four-byte scalars. Python re has no \p, so a property becomes the class
+# of the alphabet scalars with that category (unicodedata), which is exact on
+# inputs drawn from this alphabet.
+UNICODE_ALPHABET = list("aab 1_.\n") + list("αβγΩдЖßé日本語🙂𝔸٣") + ["\u00a0"]
+
+
+def category_class(prefix, negated):
+    import unicodedata
+    chars = "".join(re.escape(c) for c in UNICODE_ALPHABET if unicodedata.category(c).startswith(prefix))
+    return "[" + ("^" if negated else "") + chars + "]"
+
+
+UNICODE_PROPERTIES = [(r"\p{L}", "L"), (r"\p{Lu}", "Lu"), (r"\p{Ll}", "Ll"), (r"\p{Lo}", "Lo"),
+                      (r"\p{N}", "N"), (r"\p{Nd}", "Nd"), (r"\pL", "L"), (r"\p{So}", "So"), (r"\p{Zs}", "Zs")]
+
+
+def unicode_gen(rng, multiline):
+    g = Gen(rng, multiline)
+    g.literals = [("a", "a"), ("b", "b"), ("Ω", "Ω"), ("д", "д"), ("ß", "ß"), ("日", "日"), ("本", "本"),
+                  ("🙂", "🙂"), ("𝔸", "𝔸"), (r"\x{65e5}", "日"), (r"\x{1d538}", "𝔸"), ("é", "é"), (" ", " ")]
+    g.class_terms = ["a", "α-ω", "а-я", "一-龥", "é-🙂", "Ω", r"\d", r"\w", r"\s"] + [
+        (lan, category_class(cat, False)[1:-1]) for lan, cat in UNICODE_PROPERTIES]
+    g.shorthands = SHORTHANDS + [(lan, category_class(cat, False)) for lan, cat in UNICODE_PROPERTIES] + [
+        (lan.replace("\\p", "\\P"), category_class(cat, True)) for lan, cat in UNICODE_PROPERTIES]
+    return g
+
+
+def unicode_pattern(rng, multiline):
+    while True:
+        g = unicode_gen(rng, multiline)
+        lan, py, _ = g.expr(2)
+        if lan and g.groups <= 8 and len(lan) <= 160:
+            return lan, py
 
 
 def text(rng, lo=0, hi=10):
@@ -279,7 +318,7 @@ def header_work(lan, t, flags, work):
     return struct.pack("<9I", len(p), len(b), flags, 4096, 16, work, 64, 1000, 65536) + p + b
 
 
-def dfa_surface(exe, rng, count):
+def dfa_surface(exe, rng, count, unicode=False):
     """ext::regex::Dfa is_match/find_span, one-shot and reusable, against Python
     and the VM. A tenth of cases use a tiny per-search work budget, so the DFA
     must fall back exactly; those compare the DFA with the VM only."""
@@ -289,15 +328,22 @@ def dfa_surface(exe, rng, count):
         # Assertions are DFA state; a tenth of patterns have lookbehind, which
         # dfa() must refuse so that the VM answers.
         error = True
-        if rng.random() < 0.1:
-            lan, py, error = behind_pattern(rng, flags & 1)
-        if error:
-            lan, py = pattern(rng, flags & 1)
+        if unicode:
+            lan, py = unicode_pattern(rng, flags & 1)
+        else:
+            if rng.random() < 0.1:
+                lan, py, error = behind_pattern(rng, flags & 1)
+            if error:
+                lan, py = pattern(rng, flags & 1)
         q = re.compile(py, re.ASCII | (re.M if flags & 1 else 0) | (re.S if flags & 2 else 0))
         # CPython backtracks exponentially on long inputs under quantified
         # groups, so those patterns get at most 20 scalars; others up to 400.
         quantified = re.search(r"\)[*+?{]", py) is not None
-        t = text(rng, 1 if r"\B" in lan else 0, min(rng.choice([10, 40, 400]), 20 if quantified else 400))
+        hi = min(rng.choice([10, 40, 400]), 20 if quantified else 400)
+        if unicode:
+            t = "".join(rng.choice(UNICODE_ALPHABET) for _ in range(rng.randint(1 if r"\B" in lan else 0, hi)))
+        else:
+            t = text(rng, 1 if r"\B" in lan else 0, hi)
         work = rng.choice([1, 20, 200]) if rng.random() < 0.1 else 10_000_000
         m = q.search(t)
         b = "0" if m is None else "1"
@@ -331,7 +377,7 @@ def dfa_surface(exe, rng, count):
             ok = body == want
         if not ok:
             failures.append((case, want, got))
-    print(f"  dfa_match_find coverage: {built} with a Dfa ({asserting} with assertions), "
+    print(f"  {'dfa_unicode' if unicode else 'dfa_match_find'} coverage: {built} with a Dfa ({asserting} with assertions), "
           f"{behind} lookbehind patterns on the VM, {budget} with a tiny work budget")
     return len(cases) - len(failures), len(cases), failures
 
@@ -411,23 +457,37 @@ def replace_surface(exe, rng, count):
     return agree, count, failures
 
 
-def grep_surface(exe, rng, count):
+def grep_surface(exe, rng, count, unicode=False):
+    """text_grep against a per-record Python search. The unicode form uses
+    the dfa_unicode patterns, up to 300 records over the mixed-script
+    alphabet, and CRLF endings on some records (CR is not searched but is
+    written back)."""
     agree, failures = 0, []
     for _ in range(count):
-        lan, py = pattern(rng, False)
+        if unicode:
+            lan, py = unicode_pattern(rng, False)
+            alphabet = [c for c in UNICODE_ALPHABET if c != "\n"]
+            # CPython 3.12's \B never matches an empty string; keep records nonempty.
+            lo = 1 if r"\B" in lan else 0
+            lines = ["".join(rng.choice(alphabet) for _ in range(rng.randint(lo, 12)))
+                     for _ in range(rng.randint(0, rng.choice([12, 300])))]
+            ends = [rng.choice(["\n", "\n", "\r\n"]) for _ in lines]
+        else:
+            lan, py = pattern(rng, False)
+            lo = 1 if r"\B" in lan else 0
+            lines = [text(rng, lo, 8).replace("\n", "") or "a" * lo for _ in range(rng.randint(0, 12))]
+            ends = ["\n" for _ in lines]
         q = re.compile(py, re.ASCII)
-        lo = 1 if r"\B" in lan else 0
-        lines = [text(rng, lo, 8).replace("\n", "") or "a" * lo for _ in range(rng.randint(0, 12))]
-        data = "".join(line + "\n" for line in lines)
+        data = "".join(line + end for line, end in zip(lines, ends))
         flags = rng.choice(["", "-v", "-n", "-c", "-vn", "-vc"])
-        selected = [(i + 1, l) for i, l in enumerate(lines)
+        selected = [(i + 1, l + ends[i]) for i, l in enumerate(lines)
                     if (q.search(l) is not None) != ("v" in flags)]
         if "c" in flags:
             want = f"{len(selected)}\n"
         elif "n" in flags:
-            want = "".join(f"{n}:{l}\n" for n, l in selected)
+            want = "".join(f"{n}:{l}" for n, l in selected)
         else:
-            want = "".join(l + "\n" for _, l in selected)
+            want = "".join(l for _, l in selected)
         status = 0 if selected else 1
         argv = [exe] + ([flags] if flags else []) + ["--", lan]
         result = run(argv, data.encode())
@@ -505,6 +565,12 @@ def main():
         agree, total, failures = dfa_surface(dfa_exe, random.Random(f"{seed}:dfa"), patterns)
         report("dfa_match_find", agree, total, failures)
         total_failures += total - agree
+        agree, total, failures = dfa_surface(dfa_exe, random.Random(f"{seed}:dfa_unicode"), patterns // 3, unicode=True)
+        report("dfa_unicode", agree, total, failures)
+        total_failures += total - agree
+    agree, total, failures = grep_surface(grep_exe, random.Random(f"{seed}:grep_unicode"), patterns // 3, unicode=True)
+    report("grep_unicode", agree, total, failures)
+    total_failures += total - agree
     for name, surface, exe in [("linear_time", linear_surface, input_exe)]:
         agree, total, failures = surface(exe)
         report(name, agree, total, failures)

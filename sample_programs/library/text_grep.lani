@@ -8,11 +8,14 @@ import core::io;
 import core::mem;
 import core::option;
 import core::result;
+import core::search;
 import core::slice;
 import core::text;
+import core::utf8;
 import ext::cli;
 import ext::regex;
 import std::args;
+import std::fs;
 import std::stream;
 
 struct Options { invert: bool, numbers: bool, count: bool, max_line: i32, regex: ext::regex::Options, help: bool }
@@ -46,32 +49,159 @@ fn regex_error(error: ext::regex::Error, diagnostic: &Diagnostic) -> i32 {
     reason = match (error) { ext::regex::Error::Unsupported(at) -> 4, ext::regex::Error::Limit(at) -> 5, ext::regex::Error::WorkLimit -> 6, ext::regex::Error::AllocationFailed -> 8, ext::regex::Error::InvalidUtf8(at) -> 2, _ -> 3 };
     if (reason == 8) { status = 4; } return fail(diagnostic,status,reason);
 }
-fn record(line: core::slice::View<u8>, terminated: bool, regex: &ext::regex::Regex, matcher: &Matcher, options: Options, progress: &Progress, diagnostic: &Diagnostic) -> i32 {
-    diagnostic.stage = 2; diagnostic.offset = 0;
-    let checked: core::result::Result<core::text::Text,core::text::Error> = core::text::from_utf8_range(line.values,line.start,line.len());
-    if (core::result::is_err(checked)) {
-        diagnostic.offset = match (core::result::unwrap_err(checked)) { core::text::Error::InvalidUtf8(at) -> at, _ -> -1 };
-        return fail(diagnostic,2,2);
+// Record output goes straight from the packed Vec<u8> input buffer to fd 1,
+// with write_all's rules: EINTR retries, a short write continues after the
+// transferred bytes, zero progress or another error fails.
+fn write_range(base: ptr, start: i32, count: i32) -> bool {
+    let done: i32 = 0;
+    while (done < count) {
+        let sent: i32 = std::fs::write(1, base + ((start + done) as usize), (count - done) as usize);
+        if (sent == -4) { continue; }
+        if (sent <= 0 || sent > count - done) { return false; }
+        done += sent;
     }
-    let length: i32 = line.len(); if (terminated && length > 0 && line.values[line.start+length-1] == 13) { length -= 1; }
-    let input: core::text::Text = core::result::unwrap(core::result::unwrap(checked).slice(0,length));
-    diagnostic.stage = 3;
-    // The lazy DFA answers exactly what the VM would, falling back to it when needed.
-    let matched: core::result::Result<bool,ext::regex::Error> = core::result::Ok(false);
-    if (matcher.ready) { matched = matcher.dfa.is_match(regex,input); } else { matched = regex.is_match(input); }
-    if (core::result::is_err(matched)) { return regex_error(core::result::unwrap_err(matched),diagnostic); }
-    let selected: bool = core::result::unwrap(matched); if (options.invert) { selected = !selected; }
-    if (!selected) { return 0; }
+    return true;
+}
+// Index of the first byte >= 128 in [from, to), or to; eight bytes per step.
+fn first_non_ascii(bytes: [u8], from: i32, to: i32) -> i32 {
+    let i: i32 = from; let words: i32 = (to - from) / 8;
+    if (words > 0) {
+        // As in core::search, storage views of u64 run downward: the word at
+        // byte from + 8k is element words - 1 - k.
+        let view: [u64] = core::mem::typed_slice_from_storage<u64>(core::mem::i32_slice_data_ptr(bytes) + (from as usize), words);
+        let k: i32 = words - 1;
+        while (k >= 0) { if ((view[k] & 9259542123273814144) != 0) { break; } k -= 1; }
+        i = from + (words - 1 - k) * 8;
+    }
+    while (i < to && bytes[i] < 128) { i += 1; }
+    return i;
+}
+// LF count of [from, to) when the range is valid UTF-8, else -1, in one
+// pass. ASCII runs go sixteen bytes per step: per-byte 0/1 flags for the
+// bytes that are not LF add up in the eight byte lanes of acc, folded into
+// the total every 255 words before a lane can overflow. Each non-ASCII
+// sequence is checked as in valid_utf8.
+fn newlines_if_valid(bytes: [u8], from: i32, to: i32) -> i64 {
+    let total: u64 = 0; let i: i32 = from; let low: u64 = 9187201950435737471;
+    while (true) {
+        let words: i32 = (to - i) / 8;
+        if (words > 0) {
+            let view: [u64] = core::mem::typed_slice_from_storage<u64>(core::mem::i32_slice_data_ptr(bytes) + (i as usize), words);
+            let j: i32 = words - 1; let ascii: bool = true;
+            while (ascii && j >= 0) {
+                let stop: i32 = j - 255; if (stop < -1) { stop = -1; }
+                let top: i32 = j; let acc: u64 = 0;
+                // In an ASCII word w, ((w ^ LFs) + 0x7f..7f) carries into a
+                // byte's high bit exactly when that byte is not LF, and no
+                // lane carries into the next; acc counts those bytes.
+                while (j > stop + 1) {
+                    let w: u64 = view[j]; let v: u64 = view[j - 1];
+                    if (((w | v) & 9259542123273814144) != 0) { break; }
+                    acc += (((w ^ 723401728380766730) + low) & 9259542123273814144) >> 7;
+                    acc += (((v ^ 723401728380766730) + low) & 9259542123273814144) >> 7; j -= 2;
+                }
+                while (j > stop) {
+                    let w: u64 = view[j];
+                    if ((w & 9259542123273814144) != 0) { ascii = false; break; }
+                    acc += (((w ^ 723401728380766730) + low) & 9259542123273814144) >> 7; j -= 1;
+                }
+                acc = (acc & 71777214294589695) + ((acc >> 8) & 71777214294589695);
+                acc = acc + (acc >> 16); acc = acc + (acc >> 32);
+                total += ((top - j) as u64) * 8 - (acc & 65535);
+            }
+            i = i + (words - 1 - j) * 8;
+        }
+        while (i < to && bytes[i] < 128) { if (bytes[i] == 10) { total += 1; } i += 1; }
+        if (i >= to) { return total as i64; }
+        let width: i32 = core::utf8::sequence_len_or(bytes[i], 0) as i32;
+        if (width == 0 || width > to - i || core::result::is_err(core::text::from_utf8_range(bytes, i, width))) { return -1; }
+        i += width;
+    }
+    return -1;
+}
+fn valid_utf8(bytes: [u8], from: i32, to: i32) -> bool {
+    let i: i32 = first_non_ascii(bytes, from, to);
+    while (i < to) {
+        let width: i32 = core::utf8::sequence_len_or(bytes[i], 0) as i32;
+        if (width == 0 || width > to - i || core::result::is_err(core::text::from_utf8_range(bytes, i, width))) { return false; }
+        i = first_non_ascii(bytes, i + width, to);
+    }
+    return true;
+}
+// Selected records collect in one output buffer, written once it holds
+// 64 KiB, at the end, and before any error is reported.
+struct Output { bytes: alloc::vec::Vec<u8> }
+impl Output { fn borrow(&self) -> &Output { return self; } }
+fn flush(output: &Output) -> bool {
+    let ok: bool = write_range(output.bytes.storage,0,output.bytes.len()); output.bytes.clear(); return ok;
+}
+fn put(output: &Output, values: [u8], start: i32, count: i32, diagnostic: &Diagnostic) -> i32 {
+    let extended: core::result::Result<i32,alloc::vec::Error> = output.bytes.try_extend(core::result::unwrap(core::slice::view_range(values,start,count)));
+    if (core::result::is_err(extended)) {
+        let allocation: bool = match (core::result::unwrap_err(extended)) { alloc::vec::Error::AllocationFailed -> true, _ -> false };
+        if (allocation) { return fail(diagnostic,4,8); } return fail(diagnostic,2,5);
+    }
+    if (output.bytes.len() >= 65536 && !flush(output)) { return fail(diagnostic,3,7); }
+    return 0;
+}
+// Selected-record bookkeeping; a terminated record keeps its LF.
+fn emit(bytes: [u8], start: i32, end: i32, terminated: bool, options: Options, progress: &Progress, output: &Output, diagnostic: &Diagnostic) -> i32 {
     if (progress.selected == 18446744073709551615) { return fail(diagnostic,2,5); } progress.selected += 1;
     if (options.count) { return 0; }
     diagnostic.stage = 4;
-    if (options.numbers && !write_number(diagnostic.line,text(":",1))) { return fail(diagnostic,3,7); }
-    if (!write_part(line)) { return fail(diagnostic,3,7); }
-    if (terminated && !write_part(literal("\n",1))) { return fail(diagnostic,3,7); } return 0;
+    if (options.numbers) {
+        let storage: [i32;8] = [0;8]; let digits: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),32);
+        let format: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(digits,0,32));
+        format.write_unsigned(diagnostic.line,core::fmt::decimal()); format.write_text(text(":",1));
+        let status: i32 = put(output,digits,0,core::result::unwrap(format.finish()),diagnostic); if (status != 0) { return status; }
+    }
+    let count: i32 = end - start; if (terminated) { count += 1; }
+    return put(output,bytes,start,count,diagnostic);
 }
-// An assertion-free pattern gets a capture-free lazy DFA. Only Unsupported
-// (a pattern with assertions) leaves the VM path; a failed cache allocation
-// is an allocation failure like any other, reported at the pattern stage.
+fn record(bytes: [u8], start: i32, end: i32, terminated: bool, regex: &ext::regex::Regex, matcher: &Matcher, options: Options, progress: &Progress, output: &Output, diagnostic: &Diagnostic) -> i32 {
+    diagnostic.stage = 2; diagnostic.offset = 0;
+    // The word-at-a-time check decides validity; core::text locates an error.
+    if (!valid_utf8(bytes,start,end)) {
+        let checked: core::result::Result<core::text::Text,core::text::Error> = core::text::from_utf8_range(bytes,start,end - start);
+        diagnostic.offset = match (core::result::unwrap_err(checked)) { core::text::Error::InvalidUtf8(at) -> at, _ -> -1 };
+        return fail(diagnostic,2,2);
+    }
+    let length: i32 = end - start; if (terminated && length > 0 && bytes[end-1] == 13) { length -= 1; }
+    let input: core::text::Text = core::text::from_utf8_unchecked(bytes,start,length);
+    diagnostic.stage = 3;
+    // The lazy DFA answers exactly what the VM would, falling back to it when needed.
+    let matched: core::result::Result<bool,ext::regex::Error> = core::result::Ok(false);
+    if (matcher.ready) { matched = matcher.dfa.is_match_input(regex,ext::regex::input_unchecked(input)); } else { matched = regex.is_match(input); }
+    if (core::result::is_err(matched)) { return regex_error(core::result::unwrap_err(matched),diagnostic); }
+    let selected: bool = core::result::unwrap(matched); if (options.invert) { selected = !selected; }
+    if (!selected) { return 0; }
+    return emit(bytes,start,end,terminated,options,progress,output,diagnostic);
+}
+// Prefilter: every match contains needle[0..length]. A record without it is
+// decided without the matcher when the matcher provably could not have
+// reported WorkLimit on it, the same bound the DFA uses. hit caches the next
+// occurrence at or after the last search start within [.., end), or end.
+// exact: the pattern is that literal alone and the literal has no CR or LF,
+// so a valid record containing it matches.
+struct Filter { needle: [u8], length: i32, cost: i64, limit: i64, hit: i32, end: i32, exact: bool }
+impl Filter { fn borrow(&self) -> &Filter { return self; } }
+fn line(bytes: [u8], start: i32, end: i32, terminated: bool, regex: &ext::regex::Regex, matcher: &Matcher, filter: &Filter, options: Options, progress: &Progress, output: &Output, diagnostic: &Diagnostic) -> i32 {
+    if (filter.length > 0 && ((end - start) as i64 + 2) * filter.cost <= filter.limit) {
+        if (filter.hit < start) {
+            filter.hit = core::search::find(bytes,start,filter.end,filter.needle,0,filter.length);
+            if (filter.hit < 0) { filter.hit = filter.end; }
+        }
+        if (filter.hit + filter.length > end && valid_utf8(bytes,start,end)) {
+            diagnostic.stage = 3;
+            if (!options.invert) { return 0; }
+            return emit(bytes,start,end,terminated,options,progress,output,diagnostic);
+        }
+    }
+    return record(bytes,start,end,terminated,regex,matcher,options,progress,output,diagnostic);
+}
+// A pattern without lookbehind gets a capture-free lazy DFA. Only
+// Unsupported (lookbehind) leaves the VM path; a failed cache allocation is
+// an allocation failure like any other, reported at the pattern stage.
 struct Matcher { dfa: ext::regex::Dfa, ready: bool }
 impl Matcher { fn borrow(&self) -> &Matcher { return self; } }
 fn search(regex: &ext::regex::Regex, options: Options, diagnostic: &Diagnostic) -> i32 {
@@ -82,34 +212,141 @@ fn search(regex: &ext::regex::Regex, options: Options, diagnostic: &Diagnostic) 
     let status: i32 = scan(regex, matcher.borrow(), options, diagnostic);
     matcher.dfa.destroy(); return status;
 }
+// Records are cut from one buffer filled 64 KiB at a time; the unfinished
+// tail moves to the front before the next read.
 fn scan(regex: &ext::regex::Regex, matcher: &Matcher, options: Options, diagnostic: &Diagnostic) -> i32 {
-    let line: alloc::vec::Vec<u8> = alloc::vec::new(); let storage: [i32;256] = [0;256];
-    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),1024);
-    let source: std::stream::Descriptor = std::stream::stdin(); let progress: Progress = Progress { selected: 0 }; diagnostic.line = 1;
-    while (true) {
-        diagnostic.stage = 2; diagnostic.offset = line.len();
-        let received: core::result::Result<i32,core::io::Error> = source.read(bytes,0,1024);
-        if (core::result::is_err(received)) { let error: core::io::Error = core::result::unwrap_err(received); if (core::io::is_interrupted(error)) { continue; } line.destroy(); return fail(diagnostic,3,7); }
-        let count: i32 = core::result::unwrap(received); if (count == 0) { break; } let index: i32 = 0;
-        while (index < count) {
-            let current: u8 = bytes[index];
-            if (current == 10) {
-                let status: i32 = record(line.as_view(),true,regex,matcher,options,progress.borrow(),diagnostic);
-                if (status != 0) { line.destroy(); return status; } line.clear();
-                if (diagnostic.line == 18446744073709551615) { line.destroy(); return fail(diagnostic,2,5); } diagnostic.line += 1;
-            } else {
-                diagnostic.stage = 2; diagnostic.offset = line.len();
-                if (line.len() == options.max_line) { line.destroy(); return fail(diagnostic,2,9); }
-                let pushed: core::result::Result<i32,alloc::vec::Error> = line.try_push(current);
-                if (core::result::is_err(pushed)) {
-                    let allocation: bool = match (core::result::unwrap_err(pushed)) { alloc::vec::Error::AllocationFailed -> true, _ -> false }; line.destroy();
-                    if (allocation) { return fail(diagnostic,4,8); } return fail(diagnostic,2,5);
-                }
-            } index += 1;
-        }
+    let output: Output = Output { bytes: alloc::vec::new() };
+    let status: i32 = records(regex,matcher,options,output.borrow(),diagnostic);
+    if (!output.bytes.is_empty() && !flush(output.borrow())) { diagnostic.stage = 4; status = fail(diagnostic,3,7); }
+    output.bytes.destroy(); return status;
+}
+// Selects (for --invert) every record in bytes[from, to), which match_lines
+// found valid and not matching; to is a record start.
+fn gap(bytes: [u8], from: i32, to: i32, options: Options, progress: &Progress, output: &Output, diagnostic: &Diagnostic) -> i32 {
+    let position: i32 = from;
+    while (position < to) {
+        let newline: i32 = core::search::find_byte(bytes,position,to,10);
+        diagnostic.stage = 3; diagnostic.offset = 0;
+        let status: i32 = emit(bytes,position,newline,true,options,progress,output,diagnostic); if (status != 0) { return status; }
+        if (diagnostic.line == 18446744073709551615) { return fail(diagnostic,2,5); } diagnostic.line += 1;
+        position = newline + 1;
     }
-    let status: i32 = 0; if (!line.is_empty()) { status = record(line.as_view(),false,regex,matcher,options,progress.borrow(),diagnostic); }
-    line.destroy(); if (status != 0) { return status; }
+    return 0;
+}
+fn records(regex: &ext::regex::Regex, matcher: &Matcher, options: Options, output: &Output, diagnostic: &Diagnostic) -> i32 {
+    let storage: [i32;64] = [0;64]; let needle: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),256);
+    let required: core::result::Result<i32,ext::regex::Error> = core::result::Ok(0);
+    if (!regex.has_lookbehind()) { required = regex.required_literal(needle,256); }
+    if (core::result::is_err(required)) { return regex_error(core::result::unwrap_err(required),diagnostic); }
+    let filter: Filter = Filter { needle: needle, length: core::result::unwrap(required), cost: regex.boundary_cost(), limit: regex.search_work_limit() as i64, hit: -1, end: 0, exact: false };
+    if (filter.length > 0 && regex.literal_length() == filter.length) {
+        filter.exact = true; let k: i32 = 0;
+        while (k < filter.length) { if (needle[k] == 10 || needle[k] == 13) { filter.exact = false; } k += 1; }
+    }
+    let buffer: alloc::vec::Vec<u8> = alloc::vec::new();
+    let source: std::stream::Descriptor = std::stream::stdin(); let progress: Progress = Progress { selected: 0 }; diagnostic.line = 1;
+    let length: i32 = 0;
+    while (true) {
+        diagnostic.stage = 2; diagnostic.offset = length;
+        // The buffer only grows; its bytes beyond length are scratch.
+        let grown: core::result::Result<i32,alloc::vec::Error> = core::result::Ok(0);
+        if (buffer.len() < length + 65536) { grown = buffer.try_resize(length + 65536, 0); }
+        if (core::result::is_err(grown)) {
+            let allocation: bool = match (core::result::unwrap_err(grown)) { alloc::vec::Error::AllocationFailed -> true, _ -> false }; buffer.destroy();
+            if (allocation) { return fail(diagnostic,4,8); } return fail(diagnostic,2,5);
+        }
+        let bytes: [u8] = buffer.as_slice();
+        // Vec<u8> storage is packed bytes, so the host reads straight into it.
+        let count: i32 = std::fs::read(source.raw_handle(), buffer.storage + (length as usize), 65536 as usize);
+        if (count == -4) { continue; }
+        if (count < 0 || count > 65536) { buffer.destroy(); return fail(diagnostic,3,7); }
+        if (count == 0) { break; }
+        length += count; filter.hit = -1; filter.end = length; let start: i32 = 0;
+        // Fast path: find the required literal across the complete records
+        // and run the matcher only on the records containing it. Valid when
+        // no record here can exceed the line limit or let the matcher reach
+        // WorkLimit. Each gap between hit records gets one pass that checks
+        // UTF-8 and counts its lines; at an invalid gap the record-by-record
+        // loop below takes over, which locates the error. record() checks
+        // the hit records themselves.
+        let region: i32 = length; while (region > 0 && bytes[region - 1] != 10) { region -= 1; }
+        let dense: bool = false;
+        if (filter.length > 0 && !options.invert && region <= options.max_line && ((region as i64) + 2) * filter.cost <= filter.limit) {
+            let position: i32 = 0; let hits: i32 = 0;
+            let hit: i32 = core::search::find(bytes,0,region,filter.needle,0,filter.length);
+            while (true) {
+                // Hit records denser than one per 256 bytes cost more one by one
+                // than one DFA pass; the line scan below takes the rest.
+                if (!filter.exact && matcher.ready && hits >= 32 && (hits as i64) * 256 > position as i64) { dense = true; break; }
+                let first: i32 = region;
+                if (hit >= 0) { first = core::search::rfind_byte(bytes,position,hit,10) + 1; if (first < position) { first = position; } }
+                let skipped: i64 = newlines_if_valid(bytes,position,first);
+                if (skipped < 0) { break; }
+                if (diagnostic.line > 18446744073709551615 - (skipped as u64)) { buffer.destroy(); return fail(diagnostic,2,5); } diagnostic.line += skipped as u64;
+                position = first;
+                if (hit < 0) { break; }
+                let newline: i32 = core::search::find_byte(bytes,hit,region,10);
+                let status: i32 = 0;
+                let decided: i32 = 2;
+                if (filter.exact) { decided = 1; } else { if (matcher.ready) { decided = matcher.dfa.match_lines(bytes,first,newline + 1).status; } }
+                if (decided != 2 && valid_utf8(bytes,first,newline)) {
+                    diagnostic.stage = 3; diagnostic.offset = 0;
+                    if (decided == 1) { status = emit(bytes,first,newline,true,options,progress.borrow(),output,diagnostic); }
+                }
+                else { status = record(bytes,first,newline,true,regex,matcher,options,progress.borrow(),output,diagnostic); }
+                hits += 1;
+                if (status != 0) { buffer.destroy(); return status; }
+                if (diagnostic.line == 18446744073709551615) { buffer.destroy(); return fail(diagnostic,2,5); } diagnostic.line += 1;
+                position = newline + 1;
+                hit = core::search::find(bytes,position,region,filter.needle,0,filter.length);
+            }
+            start = position;
+        }
+        // Without a literal, the DFA runs over the whole region in one pass,
+        // restarting at each record. Selected records, and records it cannot
+        // decide, are cut out here; an undecided record goes through record(),
+        // which also reports a UTF-8 error at its exact offset.
+        if (matcher.ready && region <= options.max_line && ((start == 0 && filter.length == 0) || dense)) {
+            let position: i32 = start;
+            while (position < region) {
+                let scan: ext::regex::LineScan = matcher.dfa.match_lines(bytes,position,region);
+                if (options.invert) {
+                    // Every record before scan.start was searched and missed.
+                    let status: i32 = gap(bytes,position,scan.start,options,progress.borrow(),output,diagnostic);
+                    if (status != 0) { buffer.destroy(); return status; }
+                } else {
+                    if (diagnostic.line > 18446744073709551615 - (scan.lines as u64)) { buffer.destroy(); return fail(diagnostic,2,5); } diagnostic.line += scan.lines as u64;
+                }
+                position = scan.start;
+                if (scan.status == 0) { break; }
+                let newline: i32 = core::search::find_byte(bytes,position,region,10);
+                let status: i32 = 0;
+                if (scan.status == 1 && valid_utf8(bytes,position,newline)) {
+                    diagnostic.stage = 3; diagnostic.offset = 0;
+                    if (!options.invert) { status = emit(bytes,position,newline,true,options,progress.borrow(),output,diagnostic); }
+                } else { status = record(bytes,position,newline,true,regex,matcher,options,progress.borrow(),output,diagnostic); }
+                if (status != 0) { buffer.destroy(); return status; }
+                if (diagnostic.line == 18446744073709551615) { buffer.destroy(); return fail(diagnostic,2,5); } diagnostic.line += 1;
+                position = newline + 1;
+            }
+            start = position;
+        }
+        while (true) {
+            let newline: i32 = core::search::find_byte(bytes,start,length,10); if (newline < 0) { break; }
+            if (newline - start > options.max_line) { buffer.destroy(); diagnostic.stage = 2; diagnostic.offset = options.max_line; return fail(diagnostic,2,9); }
+            let status: i32 = line(bytes,start,newline,true,regex,matcher,filter.borrow(),options,progress.borrow(),output,diagnostic);
+            if (status != 0) { buffer.destroy(); return status; }
+            if (diagnostic.line == 18446744073709551615) { buffer.destroy(); return fail(diagnostic,2,5); } diagnostic.line += 1;
+            start = newline + 1;
+        }
+        if (length - start > options.max_line) { buffer.destroy(); diagnostic.stage = 2; diagnostic.offset = options.max_line; return fail(diagnostic,2,9); }
+        let i: i32 = start; while (i < length) { bytes[i - start] = bytes[i]; i += 1; }
+        length -= start;
+    }
+    let status: i32 = 0;
+    if (length > 0) { filter.hit = -1; filter.end = length; status = line(buffer.as_slice(),0,length,false,regex,matcher,filter.borrow(),options,progress.borrow(),output,diagnostic); }
+    buffer.destroy(); if (status != 0) { return status; }
+    if (!output.bytes.is_empty() && !flush(output)) { diagnostic.stage = 4; diagnostic.offset = -1; return fail(diagnostic,3,7); }
     if (options.count) { diagnostic.stage = 4; diagnostic.offset = -1; if (!write_number(progress.selected,text("\n",1))) { return fail(diagnostic,3,7); } }
     if (progress.selected == 0) { return 1; } return 0;
 }

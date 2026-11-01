@@ -35,6 +35,8 @@ pub fn decoder(options: Options) -> Result<Decoder, Error>;
 Decoder.feed(source: [u8], start: i32, count: i32) -> Result<i32, Error>;
 Decoder.finish();
 Decoder.next() -> Result<bool, Error>;
+Decoder.advance() -> i32;                // next() without the Result: 1, 0 or -1
+Decoder.last_error() -> Error;           // the error after advance() returned -1
 Decoder.event() -> ext::cbor::Event;     // valid after next() returned Ok(true)
 Decoder.event_offset() -> u64;           // byte offset of the event's head
 Decoder.is_complete() -> bool;
@@ -48,6 +50,11 @@ Each `next()` call returns one of three results:
 - `Ok(false)`: either more input is needed, or `finish()` has been called and
   the input is complete.
 - An error. Errors are sticky: every later call returns the same error.
+
+`advance()` is the same step without the `Result`. It returns 1 for
+`Ok(true)`, 0 for `Ok(false)` and -1 for an error, which `last_error()` then
+returns. A `Result` return costs about 100 instructions in the current
+native code, so per-event loops should use `advance()`.
 
 The decoder never consumes part of a head. A truncated head, or a string
 whose payload has not fully arrived, waits for more input. After `finish()`,
@@ -101,6 +108,8 @@ Input beyond `max_input` is `InputLimit`. Feeding after `finish()` is
 pub fn event_reader<R>(reader: &R, decoder: &Decoder, scratch: View<u8>)
     -> Result<EventReader<R>, Error> where R: core::io::Read;
 EventReader.next() -> Result<bool, StreamError>;  // Cbor(Error) or Io(core::io::Error)
+EventReader.advance() -> i32;                     // 1 event, 0 EOF and complete, -1 failed
+EventReader.last_error() -> StreamError;          // the error after advance() returned -1
 EventReader.read_calls() -> u64;
 ```
 
@@ -264,10 +273,36 @@ All six oracle groups run in about 17 seconds in total. The cargo
 registrations were not run in this session.
 
 Measured on this development host on 2026-10-31, with the GPU compiler's
-native x86_64 output:
+native x86_64 output. Each figure is the minimum user+sys time of interleaved
+runs. The host was loaded, so the earlier and later binaries were timed side
+by side:
 
-- Decoding a definite array of 1,000,000 zero bytes in check mode takes
-  1.06 s (about 1 µs per item, including hex parsing in the driver).
-- Preserving re-encoding of the same array takes 2.0 s.
-- Converting a 4.66 MB document of 100,000 four-key records to 7.4 MB of JSON
-  takes 4.8 s of user time.
+| Workload | Before the S5 speed work | After |
+| --- | --- | --- |
+| `cbor_to_json`: a 4.66 MB document of 100,000 four-key records to 7.4 MB of JSON | 2.81 s (4.8 s in the first measurement) | 0.49 s (5.7x) |
+| `cbor_batch check`: a definite array of 1,000,000 zero bytes, including hex parsing in the driver | 0.80 s | 0.34 s |
+| `cbor_batch copy`: preserving re-encoding of the same array | 1.79 s | 1.27 s |
+
+After the speed work, `cbor_to_json` costs about 200 ns per small item:
+about 80 ns to decode, and the rest to dispatch and write JSON. A shortest
+binary64 float costs about 0.7 µs more. Where the time went, and what
+changed:
+
+- `Decoder.next()` called `Vec` methods for its frame stack and key records
+  on every event, each costing 40–80 ns. Frames now live in one `Vec<u64>`
+  whose slice is cached, so the per-event path makes no `Vec` calls.
+  `advance()` also skips the `Result` return.
+- The JSON writer appended through `Vec.try_push` one byte at a time. It now
+  writes into a cached slice that grows geometrically. Keys, strings and
+  numbers that need no escapes are copied in one checked loop, and the
+  `fast_` methods skip the `Result`.
+- `core::float_decimal` shortest formatting dropped from about 2.5 µs to
+  about 0.7 µs per value. A tuned Grisu3 came first, then Schubfach with
+  binary-search tables and eight-digit spelling replaced it; see
+  [the float guide](stdlib-float-decimal.md#algorithms-and-speed). With
+  Schubfach, the 4.66 MB document converts in 0.485 s, against 0.532 s with
+  the tuned Grisu3.
+- Byte loops still cost about 60–140 instructions per byte, because every
+  slice index copies the slice descriptor and multiplies by a run-time
+  stride. This is a compiler defect, recorded in
+  `tests/fixtures/compiler_defects/slice_byte_copy_cost.lani`.

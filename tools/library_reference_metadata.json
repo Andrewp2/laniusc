@@ -1220,9 +1220,10 @@
       "guides": [
         "docs/extended-http-agent.md",
         "docs/extended-http.md",
-        "docs/extended-url-client.md"
+        "docs/extended-url-client.md",
+        "docs/extended-openssl-tls.md"
       ],
-      "note": "Synchronous cleartext HTTP/1.1 client over ext::http framing, ext::http_url and ext::url_connect: a keep-alive pool keyed by host and port with per-host/total idle counts, idle time, Keep-Alive hints and use limits, stale probing and one idempotent retry; redirects with a hop limit, 303/301/302/307/308 method rules, RFC 3986 reference resolution and cross-origin Authorization/Cookie stripping; fixed or chunked streamed bodies with early-response handling. The curl-like sample passes four Python http.server oracle groups (pool 18, redirect 29, upload 10, broken 21 cases) with exact counters."
+      "note": "Synchronous HTTP/1.1 client for http:// and verified https:// over ext::http framing, ext::http_url, ext::url_connect and ext::tls_stream: a keep-alive pool of cleartext and TLS connections keyed by scheme, host and port with per-host/total idle counts, idle time, Keep-Alive hints and use limits, stale probing and one idempotent retry; redirects with a hop limit, 303/301/302/307/308 method rules, RFC 3986 reference resolution and cross-origin Authorization/Cookie stripping; fixed or chunked streamed bodies with early-response handling; unpooled dial connections for HTTP/1.1 upgrades. The curl-like sample passes five oracle groups (pool 18, redirect 29, upload 10, broken 21, https 17 cases against Python ssl origins with locally generated certificates) with exact counters."
     },
     "ext::http_service": {
       "guides": [
@@ -1387,6 +1388,11 @@
     "ext::parse": {
       "guides": [
         "docs/extended-parse.md"
+      ]
+    },
+    "ext::patchset": {
+      "guides": [
+        "docs/extended-patchset.md"
       ]
     },
     "ext::pratt": {
@@ -1824,6 +1830,15 @@
         "server": "Creates an empty borrowed server handshake without allocation or transport I/O. Reads one canonical request before a no-write Request policy pause; the caller supplies established-provider Accept and optional offered protocol through accept. Ready requires all response bytes and inner flush; conversion uses Role::Server over the same caller-owned transport."
       }
     },
+    "ext::websocket_client": {
+      "guides": [
+        "docs/extended-websocket-client.md",
+        "docs/extended-websocket.md",
+        "docs/extended-http-agent.md",
+        "docs/extended-openssl-websocket.md"
+      ],
+      "note": "Synchronous RFC 6455 client for ws:// and verified wss:// URLs over ext::http_agent dial connections and the canonical ext::websocket wire engine in Role::Client. The opening handshake uses a fresh 16-byte OS-random key and validates the 101 (Upgrade, Connection, Accept, no extensions, offered protocol); frame bytes coalesced with the head are kept. Every frame is masked with a key from a 256-byte OS-random pool. Supports single-frame and fragmented sends, assembles fragmented messages with interleaved control frames, answers Pings, echoes peer Close codes, starts the close handshake with a bounded wait, and fails the connection with Close 1002/1007/1009 on protocol violations. Receive timeouts leave plain and TLS connections usable. The ws_cat sample passes ws (24 cases) and wss (26 cases) groups against a minimal asyncio RFC 6455 server."
+    },
     "ext::weighted_statistics": {
       "guides": [
         "docs/extended-weighted-statistics.md",
@@ -2034,6 +2049,11 @@
       ],
       "profile": "Unbound host declarations",
       "note": "The direct legacy network service declarations are unbound. Metadata helpers describe that unavailable service; executable owned sockets use std::socket over std::linux separately."
+    },
+    "std::par": {
+      "guides": [
+        "docs/stdlib-concurrency.md"
+      ]
     },
     "std::parallel": {
       "guides": [

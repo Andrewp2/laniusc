@@ -46,6 +46,12 @@ work on native Linux x86_64/glibc with libatomic:
   cleanly.
 - `std::parallel`: chunked `for_each`, `map`, ordered `reduce`, `scan` and
   stable `merge_sort` over shared arrays.
+- `std::par`: stable and unstable sorts, `map` and ordered `reduce` as
+  stolen tasks on a `std::steal` pool. The sorts sort runs with
+  `core::slice` pdqsort or the stable sort, then merge them in parallel at
+  merge-path splits. A Python model oracle covers 3,003 runs with 0
+  mismatches. On 10M i64 keys, 8 workers take 1.1–1.7 s, against 7.1–9.2 s
+  for single-threaded pdqsort.
 
 The stress fixture keeps exact invariants: 1,600,000 atomic adds; 400,000
 locked increments; 1 initializer among 16 racers; 200 barrier leaders; and
@@ -227,7 +233,10 @@ above, with its own evidence and remaining broader slice scope.
 The preceding
 [resumable decompression increment](extended-streaming-inflate.md) preserves
 DEFLATE bits, tables, history and pending output across chunks; zlib/gzip framing
-and owned decoding use the same engine. An atomic file decompressor validates
+and owned decoding use the same engine. Its
+[table-driven fast path](extended-streaming-inflate.md#table-driven-fast-path)
+(10-bit primary tables with subtables, a 64-bit bit buffer, word-wide copies)
+decodes gzip at 83–91 MB/s against 6–7 MB/s before. An atomic file decompressor validates
 complete input before publication. Fixed workspace, provisional output and
 per-call final-input promises are explicit. All seven new library tests pass,
 including 1,925 model cases plus 311 reset passes, fixed backing at 2 MiB and
@@ -560,7 +569,10 @@ GNU-style offset/fuzz and typed per-hunk rejects. Across 1,000 generated pairs,
 the `seq-diff`/`seq-patch` tools give 878/878 minimal Myers edit lengths against
 an O(N·M) LCS, 878/878 GNU and native round trips, 878/878 real GNU `diff -u`
 applications and 333/333 distinct-line plus 328/328 repeated-line offset/fuzz
-agreements with GNU `patch` at `-F0` and `-F2`.
+agreements with GNU `patch` at `-F0` and `-F2`. On a 1.6 MB pair, `seq-diff`
+runs within 2× of `git diff --no-index` in every mode (59-70 ms against
+43 ms for the default unified diff). It gets there by splitting and
+hash-consing lines in one word-at-a-time pass (`split_classify`).
 [Three-way merge](extended-merge3.md) (`ext::merge3`, `seq-merge`) aligns with
 the xdiff port. It agrees byte for byte with `git merge-file` and
 `git merge-file --diff3` on all 4,000 generated triples (2,000 distinct-line,
@@ -572,6 +584,14 @@ xdiff alignment (`Algorithm::Xdiff`). Their output is identical to git 2.43 on
 all 2,040 generated pairs for word diffs, character diffs and `--stat`, on
 1,500 `git diff --stat` reports over generated repositories and on 282
 `diff -ruN` patches.
+[Multi-file patches](extended-patchset.md) (`ext::patchset`, `seq-patch -i`)
+read git extended headers (renames, copies, modes, creation, deletion,
+binary sections), reverse patches, detect reversed patches as GNU `patch`
+does, place hunks as `git apply` does and fall back to a `git apply --3way`
+merge. On 900 generated repositories patched into seven kinds of mutated
+tree, the resulting trees and exit statuses agree with GNU `patch`
+(`-t`/`-N`/`-f`/`-R`), `git apply` (and `-R`) and `git apply --3way` in all
+5,518 comparisons. Binary patches are refused with an error.
 
 The preceding [reusable regex-workspace increment](library-regex-workspace-plan.md) is
 implemented and passes the selected Workspace/Search, regex, lexer,
@@ -2239,14 +2259,26 @@ event server plus four sequential groups, with exact server counters. TLS,
 threads, multipart ranges and allocation-failure coverage remain open.
 
 The [HTTP/1.1 client agent](extended-http-agent.md) (`ext::http_agent`) is a
-synchronous cleartext client over the same codec, `ext::http_url` and
-`ext::url_connect`. It pools keep-alive connections per host and port under
+synchronous `http://` and verified `https://` client over the same codec,
+`ext::http_url`, `ext::url_connect` and `ext::tls_stream`. It pools
+keep-alive cleartext and TLS connections per scheme, host and port under
 idle-count, idle-time and use limits, discards stale ones and retries an
 idempotent request once on a fresh connection. It follows redirects with a
 hop limit, RFC 9110 method rules and cross-origin credential stripping, and
 sends fixed or chunked streamed bodies, stopping an upload on an early final
 response. The curl-like sample passes Python `http.server` oracle groups
-pool18, redirect29, upload10 and broken21 with exact counters.
+pool18, redirect29, upload10 and broken21, plus https17 against Python `ssl`
+origins with locally generated test certificates, with exact counters.
+Its `dial` opens an unpooled connection for protocols that take over after
+an HTTP/1.1 upgrade.
+
+The [WebSocket client](extended-websocket-client.md) (`ext::websocket_client`)
+uses `dial` for `ws://` and verified `wss://` URLs and the canonical
+`ext::websocket` frame engine in the client role. It validates the opening
+handshake against a fresh key, masks every frame, sends and assembles
+fragmented messages, answers Pings, runs both close handshakes and fails the
+connection with 1002/1007/1009. The `ws_cat` sample passes ws (24 cases) and
+wss (26 cases) groups against a minimal asyncio RFC 6455 server.
 
 [Resumable cleartext HTTP exchanges](extended-http-client.md) expose owned
 Prepared request staging and caller-driven Exchange steps. At `480432e8`,
@@ -2358,10 +2390,11 @@ Its structural writer emits the `ext::json` byte policy. The streaming
 `json` on 2,237 cases, and [csv-to-json](../sample_programs/csv_to_json.lani)
 agrees with Python `csv` on 550 RFC 4180 cases. `TokenReader` pulls tokens
 from any `core::io::Read` source, and `Writer.flush_to` streams output to any
-`core::io::Write` sink. [`core::float_decimal`](stdlib-float-decimal.md) now
-tries Eisel-Lemire parsing and Grisu3 shortest formatting before its exact
-big-integer path. It agrees with Python `float()` and `repr()` on 4.8 million
-generated values, about 15 to 24 times faster on typical values.
+`core::io::Write` sink. [`core::float_decimal`](stdlib-float-decimal.md)
+formats shortest decimals with Schubfach, which is exact with no fallback, in
+about 0.6 to 0.8 µs per value. It parses with an Eisel-Lemire fast path
+before its exact big-integer path, in about 0.7 to 0.8 µs per value. It
+agrees with Python `float()` and `repr()` on 4.8 million generated values.
 [`ext::toml`](extended-toml.md) agrees with Python `tomllib` on 1,754
 hand-written, generated and mutated documents. The only differences are by
 policy: TOML 1.1-only syntax, and integers outside i64.
@@ -2373,6 +2406,9 @@ string and input limits. It agrees with all 81 hand-typed Appendix A rows and
 an independent Python implementation on 8,100 generated, mutated, limit and
 sequence cases at four chunk sizes; the
 [cbor-to-json](../sample_programs/cbor_to_json.lani) sample agrees on 700.
+cbor-to-json converts a 4.66 MB document in 0.49 s, 5.7 times faster than
+before the S5 speed work, using the decoder's and JSON writer's `Result`-free
+fast paths.
 [`ext::msgpack`](extended-msgpack.md) streams MessagePack the same way, with
 optional canonical-header and timestamp checks. It agrees with the installed
 Python `msgpack` package and an independent model on 8,174 format-table,
@@ -2397,12 +2433,22 @@ The [regex differential oracle](extended-regex-oracle.md) runs the real
 `find_iter`, template-replacement and grep programs against CPython `re` on
 seeded grammar-generated patterns from the shared subset. Five seeds agree on
 60,025 find/capture cases (with named groups), 5,000 replacements, 5,000 grep
-runs, 13,853 fixed-width lookbehind cases and 15,000 capture-free lazy-DFA `is_match`/`find` cases, and five
+runs, 13,853 fixed-width lookbehind cases, 15,000 capture-free lazy-DFA `is_match`/`find` cases and 5,000
+mixed-script `\p{..}` DFA cases, and six
 pathological inputs finish in about 0.2 s. It found, and the engine now fixes,
 a lazy counted-repetition priority error (`(?:a|aab){0,2}?b` on `aabb`).
 The DFA, which carries `^ $ \A \z \b \B` as look-behind bits and delayed
 accepts in its states, lets `text_grep` count any lookbehind-free pattern on a
-0.9 MB corpus in about 0.1–0.2 s instead of 2.3–3.8 s.
+0.9 MB corpus in about 0.1–0.2 s instead of 2.3–3.8 s. Its transitions are
+cached per byte, with partial states for UTF-8 prefixes, so `\p{Lu}` on a
+1.3 MB mixed-script file takes 147 ms instead of 1110 ms. `text_grep` also
+searches for the pattern's required literal with `core::search` across each
+64 KiB read and runs the matcher only on the records that contain it. On
+S4's 49 MB corpus a no-match scan takes 68 ms instead of 5.2 s, against GNU
+grep's 11 ms; patterns with a literal take 85–272 ms with `-c`
+([timings](extended-text-grep.md#literal-prefilter)). Patterns without one
+run `Dfa.match_lines` over each whole block, restarting at every record, so
+`[0-9]+$` takes 0.54 s instead of 1.8 s.
 
 [Regex splitting and replacement](extended-regex-text.md) now reuse canonical
 Search with one lazily acquired workspace. Borrowed split fields, independent

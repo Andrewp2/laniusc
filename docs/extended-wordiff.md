@@ -48,7 +48,9 @@ slidable group. The oracle below found no such case. `myers` and
   LF does.
 
 `write_word_diff(a, b, script, hunks, old_name, new_name, options)` takes the
-same line inputs as `ext::unidiff::write_unified`. It writes `--- `/`+++ `
+same line inputs as `ext::unidiff::write_unified`;
+`write_word_diff_split(split, script, hunks, ...)` takes an
+`ext::seqdiff::split_classify` result instead and writes the same bytes. It writes `--- `/`+++ `
 headers, then each hunk with:
 
 - **Header.** A git-style hunk header. With `options.function_names`, it ends

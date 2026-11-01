@@ -34,10 +34,28 @@ can be borrow artifacts. `rfind_byte` confirms the highest zero byte
 exactly.
 
 **Substring search.** `find` ranks the needle's bytes by a fixed
-text/source frequency table and picks the two rarest offsets. It runs
-`find_byte` on the rarest byte, checks the second rarest at its offset, and
-only then compares the whole needle. The table affects speed only, never
-results.
+text/source frequency table. The first probe is the rarest offset. The
+second probe is the rarest offset whose byte value differs from the first
+probe's, as in memchr's packed pair; a needle of one repeated byte uses its
+last offset. `find` runs `find_byte` on the first probe's byte, checks the
+second probe, and only then compares the whole needle. The table affects
+speed only, never results.
+
+Earlier versions picked the two rarest offsets even when their bytes were
+equal. For `core::result::Result`, that probed the adjacent `::` pair, so
+every `::` in the corpus passed the filter. On the 49 MB corpus, the
+distinct second probe (`:` then `R`) cuts full-needle compares from 207,342
+to 9,798. Time barely moved, because the scan still stops at every one of
+the corpus's 578,700 `:` bytes:
+
+| Program | Pattern | Equal-byte pair | Distinct pair |
+| --- | --- | --- | --- |
+| Single-process `count` (min of 7) | `core::result::Result` | 142 ms | 135 ms |
+| `parallel_grep` (best of 5) | `core::result::Result` | 136 ms | 113 ms |
+| GNU `grep -F` (best of 5) | `core::result::Result` | 21 ms | 21 ms |
+
+The machine was shared, so absolute times vary between sessions. A rank
+table built from this corpus would be the next step.
 
 **Two-Way fallback.** `find` and `rfind` count their full-needle compares.
 Once `compares × m` exceeds `4 × scanned bytes + 256`, they continue from
@@ -69,7 +87,8 @@ generates those cases and compares the results with Python's
 `bytes.find`/`rfind`/`count` and `str.find` (converted to byte offsets).
 
 - **Coverage:** each oracle run adds 57 adversarial cases to 20,000 random
-  ones. Eight seeds gave 160,456 cases with 0 mismatches. About 69% of the
+  ones. Eight seeds gave 160,456 cases with 0 mismatches, before and after
+  the distinct-byte probe change. About 69% of the
   cases are valid UTF-8 and also check `Text::find`. Every case also calls
   `find_two_way` and `rfind_two_way` directly.
 - **Adversarial cases:** needles `b`×{2, 3, 17, 500, 4000} followed by `a`,

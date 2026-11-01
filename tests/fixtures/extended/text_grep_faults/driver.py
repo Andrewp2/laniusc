@@ -17,8 +17,11 @@ import tempfile
 INPUT = "aaé\r\nnope\néa".encode()
 EXPECTED = "1:aaé\r\n3:éa".encode()
 # The first pattern has lookbehind and runs on the VM. The second has
-# anchors, which are lazy-DFA state; the third has no assertion.
-PATTERNS = [("vm", "^(?<!x)(?:a|é)+$"), ("dfa-anchored", "^(?:a|é)+$"), ("dfa", "(?:a|é)+")]
+# anchors, which are lazy-DFA state; the third has no assertion. The last two
+# take the literal prefilter: a*é runs the DFA on the records containing é,
+# and é alone is decided by the search.
+PATTERNS = [("vm", "^(?<!x)(?:a|é)+$"), ("dfa-anchored", "^(?:a|é)+$"), ("dfa", "(?:a|é)+"),
+            ("prefilter", "a*é"), ("literal", "é")]
 
 
 def main():

@@ -72,7 +72,7 @@ pub fn find(bytes: [u8], from: i32, to: i32, needle: [u8], needle_start: i32, ne
 
 ### function: rfind
 
-[Source line 233](../../../stdlib/core/search.lani#L233)
+[Source line 243](../../../stdlib/core/search.lani#L243)
 
 ```lanius
 pub fn rfind(bytes: [u8], from: i32, to: i32, needle: [u8], needle_start: i32, needle_length: i32) -> i32
@@ -80,7 +80,7 @@ pub fn rfind(bytes: [u8], from: i32, to: i32, needle: [u8], needle_start: i32, n
 
 ### function: count
 
-[Source line 259](../../../stdlib/core/search.lani#L259)
+[Source line 269](../../../stdlib/core/search.lani#L269)
 
 ```lanius
 pub fn count(bytes: [u8], from: i32, to: i32, needle: [u8], needle_start: i32, needle_length: i32) -> i32
