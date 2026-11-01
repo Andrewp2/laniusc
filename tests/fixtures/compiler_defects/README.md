@@ -26,16 +26,80 @@ one should become a passing regression test once its defect is fixed.
 | `u64_stack_carry.lani` | performance: u64 values and every expression temporary live in stack slots | exit 10, carry and temporaries in registers | exit 10. Before 2026-10-31: 0.42 s, all u64 values in slots. 64-bit declarations are now register-eligible (`decl_slots_scatter.slang`, `allocation_words.slang`), which brings it to 0.31 s. Temporaries still take slots, and `>> 32` still range-checks its constant amount at run time. The asm excerpt is in the file |
 | `u32_slice_row.lani` | performance: the big-integer multiply-add row costs about 13 ns per limb (26 ns under load) instead of about 1 ns | exit 72 in about 0.1 s | exit 72 in 1.34 s. Each slice access copies the three descriptor words into fresh slots, bounds-checks, multiplies by the runtime stride and spills the loaded value. About 100 instructions and 70 memory operands per limb. The asm excerpt is in the file |
 | `candidate_nested_generic_match.lani` | reported: LNC0047 "type-check execution failed" on a nested match on a generic enum bound in an outer arm | compiles, exit 4 | **not reproduced**: compiles and exits 4 |
-| `candidate_slice_select_label.lani` | reported: LNC0008 "unsatisfied trait bound" labels pointing at `stdlib/core/slice.lani:899` (inside `select_nth_unstable`) instead of the caller | compiles, exit 1 | **not reproduced**: compiles and exits 1 |
-| `candidate_missing_module_long.lani` | reported: LNC0016 "syntax error" on a long file without a `module` line | compiles, exit 0 | **not reproduced**: 401 functions and no `module` line compile and exit 0 |
+| `check_slice_select_label.lani` | reported: LNC0008 "unsatisfied trait bound" labels pointing at `stdlib/core/slice.lani:899` (inside `select_nth_unstable`) instead of the caller | `laniusc check` accepts; compiles, exit 1 | **fixed 2026-10-31**: real in `laniusc check` only, which rejected it at `slice.lani:899`; builds were never affected. See [check and generic impls](#check-and-generic-impls) |
+| `check_slice_import.lani` | `laniusc check --stdlib-root stdlib` on any program importing `core::slice` | check accepts; exit 3 | **fixed 2026-10-31**: was LNC0008 at `slice.lani:899` |
+| `check_generic_impl_bound.lani` | `laniusc check` on a call bound met only by a generic impl (`impl<T> Cmp for N<T>`) | check accepts; exit 3 | **fixed 2026-10-31**: was LNC0008 "no matching impl satisfies this call" at the call |
+| `candidate_missing_module_long.lani` | reported: LNC0016 "syntax error" on a long file without a `module` line | compiles, exit 0 | **not reproduced, closed 2026-10-31**: this file and 2,000- to 20,000-function files (up to 2 MB) with or without `module`, CRLF or import-first all compile. Large files fail on GPU memory instead; see [GPU out of memory](#gpu-out-of-memory) |
 | `byte_loop_codegen.lani` | performance: a `[u8]` newline-count loop, 160 M byte reads; compare `byte_loop_codegen.c` and the loop disassembly in `byte_loop_codegen.s` | about `gcc -O0` speed (0.14 s; `-O2` 0.02 s) | 0.50 s (2.8 ns/byte), exit 0: per-iteration slice copy, bounds check, stride `imul` and branch, spills of every temporary |
 
-The three candidates are the closest shapes tried from the reports. Six other
-shapes also compiled correctly: generic-function and user-enum nested matches,
-`Option<Result<T, i32>>`, an untyped `let` of `T::lt`, `try_clone`, generic
-`select_nth_unstable<T>`, and 3,000-line, import-first and struct/enum/impl-heavy
-files without `module`. The agent that hit each of those diagnostics should
-replace its candidate with the failing program.
+The nested-match candidate is the closest shape tried from its report. Five
+other shapes also compiled correctly: generic-function and user-enum nested
+matches, `Option<Result<T, i32>>`, an untyped `let` of `T::lt` and
+`try_clone`. The agent that hit that diagnostic should replace the candidate
+with the failing program.
+
+## check and generic impls
+
+`laniusc check` runs only the frontend. Its trait solver indexes concrete
+impls only (`impl_row_has_supported_exact_key` in
+[`02_obligations.slang`](../../../shaders/type_checker/predicates/02_obligations.slang)).
+A generic impl head such as `impl<T> Cmp for N<T>` is selected by the
+whole-program admission that only a build runs. So check rejected every call
+whose bound only a generic impl meets. The rejection was LNC0008 "no matching
+impl satisfies this call". It hit `selection_engine<T,Natural<T>>` in
+`core::slice::select_nth_unstable`, so check rejected every program that
+imports `core::slice` at `stdlib/core/slice.lani:899`. Under the min-token
+rule that false error also replaced the real label of a program with a real
+unsatisfied bound. Builds, and the label tests that compile, were never
+affected.
+
+The fix is in the CLI (`cli/compile/entry.rs`, `check_with_build_fallback`).
+When the frontend check fails with exactly that diagnostic, check builds the
+program for x86-64 and discards the output, then reports what the build
+reports. Every other check result is unchanged, and so is its cost. The
+library functions `type_check_entry_with_*` and the language server still run
+the frontend alone, so they still reject these programs.
+
+Before the fix, check rejected `check_generic_impl_bound.lani`,
+`check_slice_import.lani`, `check_slice_select_label.lani`, seven other
+generic-impl reductions and all 17 negative label fixtures. That covers 13
+in `stdlib_borrowed_lookup/direct` and 4 in
+`stdlib_ordered_navigation`; all 17 were labeled `slice.lani:899`. After the
+fix, the valid programs pass check and the 17 negatives are labeled at their
+`rejected_lookup_bound` or `rejected_navigation_bound` call in the fixture, as
+a build labels them. A
+program that uses a generic impl and also has an earlier type error still
+reports that error.
+
+## GPU out of memory
+
+What large files actually hit is GPU memory. When `create_buffer` runs out of
+memory, wgpu reports the error asynchronously and the dispatches that use the
+buffer do not run. The compiler then read zeroed results and reported a
+wrong diagnostic, usually LNC0017 "missing main entrypoint", even with `main`
+first in the file. Two cases were found on the 8 GB laptop GPU, both with
+2026-10-31 builds:
+
+- One compile of an `import core::result;` file with 16,500 one-line helpers
+  (1.65 MB; 16,000 helpers pass) runs out creating
+  `program_evidence.thread_scratch`. Generate it with
+  `python3 -c 'print("import core::result;"); [print(f"fn helper_{i}(x: i32) -> i32 {{ let y: i32 = x + {i % 97}; if (y > 1000) {{ return y - 1000; }} return y; }}") for i in range(16500)]; print("fn main() -> i32 { return helper_0(3); }")'`.
+- A poisoned daemon. After one 18,000- to 20,000-helper compile without
+  imports (about 2 MB), the daemon's resident buffers stay sized for it.
+  Every later compile with an import then ran out creating
+  `codegen.lowering.arena.2` and reported LNC0017 until the daemon restarted.
+
+The GPU device now counts uncaptured errors and keeps the first message
+(`gpu/device.rs`). A daemon compile that saw an error drops its compiled-unit
+cache and resident job buffers and retries once. If the retry also fails, it
+reports LNC0057 "GPU device error during compilation", naming the resource
+that ran out. A one-shot compile reports the same LNC0057 instead of the
+bogus diagnostic. The poisoned-daemon sequences now recover on the retry.
+
+The compilers built before and after this change compiled the same 84
+programs in one daemon each. The 68 programs that compile give byte-identical
+executables, the other 16 are rejected by both, and the 198 runs of those 68
+match apart from 6 timing lines.
 
 ## Cast-target literals
 

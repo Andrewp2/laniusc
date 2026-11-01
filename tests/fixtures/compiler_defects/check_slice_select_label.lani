@@ -1,5 +1,8 @@
-// CANDIDATE, NOT REPRODUCED: reported LNC0008 labels pointing at
-// core/slice.lani:899 (select_nth_unstable). This compiles and exits 1.
+// Reported LNC0008 labels pointing at core/slice.lani:899 (inside
+// select_nth_unstable). Real in `laniusc check` only: check rejected this at
+// slice.lani:899, and that false error also hid the real label of every
+// unsatisfied-bound program importing core::slice. A build always compiled it
+// and it exits 1. Fixed 2026-10-31; see check_slice_import.lani.
 module app::main;
 import core::cmp;
 import core::result;
