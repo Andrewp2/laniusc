@@ -81,7 +81,7 @@ const WORDS: i32 = 7;
 const KEY_WORDS: i32 = 7;
 
 struct Reader {
-    src: [u8], base: i32, at: i32, end: i32, line: i32, column: i32, index: i32,
+    src: [u8], base: i32, at: i32, end: i32, line: i32, column: i32, index: i32, has_cr: bool,
     flow: i32, indent: i32, indents: alloc::vec::Vec<i32>, allow: bool, done: bool,
     key_store: alloc::vec::Vec<i32>, keys: [i32], key_levels: i32,
     token_store: alloc::vec::Vec<i32>, toks: [i32], count: i32, token_cap: i32,
@@ -115,7 +115,24 @@ impl Reader {
         self.at += width;
         if (!mark) { self.column += 1; }
     }
-    fn advance(&self, bytes: i32) { let stop: i32 = self.at + bytes; while (self.at < stop) { self.forward(); } }
+    // Moves to the next line break or the end. Without carriage returns in
+    // the source, the break is found with memchr_from; the column is then
+    // only approximate, which is harmless because a line break follows.
+    fn skip_line(&self) {
+        if (!self.has_cr) {
+            let stop: i32 = core::slice::memchr_from(self.src, self.at, self.end, 10);
+            if (stop >= 0) { self.index += stop - self.at; self.column += stop - self.at; self.at = stop; return; }
+        }
+        while (self.at < self.end && self.peek(0) != 10 && self.peek(0) != 13) { self.forward(); }
+    }
+    // ASCII bytes other than line breaks take the short path.
+    fn advance(&self, bytes: i32) {
+        let stop: i32 = self.at + bytes; let src: [u8] = self.src;
+        while (self.at < stop) {
+            let byte: u8 = src[self.at];
+            if (byte >= 32 && byte < 128) { self.at += 1; self.column += 1; self.index += 1; } else { self.forward(); }
+        }
+    }
     fn line_break(&self) -> bool {
         let byte: u8 = self.peek(0);
         if (byte == 13) { self.forward(); if (self.peek(0) == 10) { self.forward(); } return true; }
@@ -264,7 +281,7 @@ impl Reader {
         while (true) {
             let leading: bool = self.line_head(); let tab: bool = false;
             while (self.peek(0) == 32 || self.peek(0) == 9) { if (self.peek(0) == 9) { tab = true; } self.forward(); }
-            if (self.peek(0) == 35) { while (self.at < self.end && self.peek(0) != 10 && self.peek(0) != 13) { self.forward(); } }
+            if (self.peek(0) == 35) { self.skip_line(); }
             if (self.line_break()) { if (self.flow == 0) { self.allow = true; } continue; }
             if (leading && tab && self.flow == 0 && self.at < self.end) { return self.fail(ErrorKind::Syntax); }
             return true;
@@ -410,10 +427,10 @@ impl Reader {
             if (count == 0 || !blank(self.peek(0))) { return self.fail(ErrorKind::Syntax); }
             if (major != 1) { return self.fail_at(ErrorKind::Unsupported, line, column, offset); }
             while (self.peek(0) == 32 || self.peek(0) == 9) { self.forward(); }
-            if (self.peek(0) == 35) { while (self.at < self.end && self.peek(0) != 10 && self.peek(0) != 13) { self.forward(); } }
+            if (self.peek(0) == 35) { self.skip_line(); }
             if (self.at < self.end && !self.line_break()) { return self.fail(ErrorKind::Syntax); }
         } else {
-            while (self.at < self.end && self.peek(0) != 10 && self.peek(0) != 13) { self.forward(); }
+            self.skip_line();
             self.line_break();
         }
         return self.emit(T_DIRECTIVE, 0, 0, 0, line, column, offset);
@@ -612,7 +629,7 @@ impl Reader {
         }
         if (!blank(self.peek(0))) { return self.fail(ErrorKind::Syntax); }
         while (self.peek(0) == 32 || self.peek(0) == 9) { self.forward(); }
-        if (self.peek(0) == 35) { while (self.at < self.end && self.peek(0) != 10 && self.peek(0) != 13) { self.forward(); } }
+        if (self.peek(0) == 35) { self.skip_line(); }
         if (self.at < self.end && !self.line_break()) { return self.fail(ErrorKind::Syntax); }
         let minimum: i32 = self.indent + 1; if (minimum < 1) { minimum = 1; }
         let indent: i32 = 0; let breaks: i32 = 0;
@@ -631,10 +648,9 @@ impl Reader {
         while (self.column == indent && self.at < self.end) {
             if (!self.put_breaks(breaks)) { return false; }
             let leading: bool = self.peek(0) != 32 && self.peek(0) != 9;
-            let length: i32 = 0;
-            while (self.at + length < self.end && self.peek(length) != 10 && self.peek(length) != 13) { length += 1; }
-            if (!self.put_source(self.at, length)) { return false; }
-            self.advance(length);
+            let from: i32 = self.at;
+            self.skip_line();
+            if (!self.put_source(from, self.at - from)) { return false; }
             broke = self.line_break();
             breaks = self.block_breaks(indent);
             if (self.column == indent && self.at < self.end) {
@@ -1062,7 +1078,7 @@ fn read(source: [u8], start: i32, count: i32, limits: Limits, all: bool) -> core
     let indents: alloc::vec::Vec<i32> = alloc::vec::new(); let key_store: alloc::vec::Vec<i32> = alloc::vec::new();
     let token_store: alloc::vec::Vec<i32> = alloc::vec::new(); let value_store: alloc::vec::Vec<u8> = alloc::vec::new();
     let reader: Reader = Reader {
-        src: source, base: start, at: start, end: end, line: 0, column: 0, index: 0,
+        src: source, base: start, at: start, end: end, line: 0, column: 0, index: 0, has_cr: core::slice::memchr_from(source, start, end, 13) >= 0,
         flow: 0, indent: -1, indents: indents, allow: true, done: false,
         key_store: key_store, keys: key_store.as_slice(), key_levels: 0,
         token_store: token_store, toks: token_store.as_slice(), count: 0, token_cap: 0,

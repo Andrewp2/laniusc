@@ -1,4 +1,4 @@
-# YAML 1.2 reading into JSON trees
+# YAML 1.2 reading and writing with JSON trees
 
 `ext::yaml` reads YAML 1.2 documents into [`ext::json_tree`](extended-json-patch.md) trees, resolving plain scalars with the YAML 1.2 core schema. It covers:
 
@@ -7,7 +7,7 @@
 - anchors and aliases, with a limit on alias expansion;
 - comments, directives, `---` and `...` markers and multiple documents.
 
-It reads only; there is no YAML writer. The module is in the `extended` source root.
+[`ext::yaml_writer`](#writing) writes trees back as block-style YAML that YAML 1.1 and 1.2 readers both read back exactly. Both modules are in the `extended` source root.
 
 ## API
 
@@ -120,9 +120,75 @@ The whole oracle run, including PyYAML, takes 2 s.
 
 ## Speed
 
-A 2.1 MB block sequence of 20,000 mappings, each with a quoted string, a flow sequence, a number and a literal block scalar, loads in 1.0 s end to end, including writing the JSON. PyYAML's `safe_load` takes 16 s on the same document.
+Times are end to end, including writing the JSON:
+
+| Document | Time |
+| --- | --- |
+| 2.1 MB block sequence of 20,000 mappings, each with a quoted string, a flow sequence, a number and a literal block scalar | 0.58 s (PyYAML `safe_load`: 16 s) |
+| 6.3 MB of the same shape with long comment lines and two-line literal blocks | 0.39 s |
+
+Comments and literal block lines are skipped with `core::slice::memchr_from` when the source has no carriage returns. This took the second document from 0.66 s to 0.39 s and the first from 0.72 s to 0.58 s. ASCII runs inside scalars also skip the per-character line and column bookkeeping.
 
 ```text
 lcc -o batch tests/fixtures/extended/yaml/batch.lani --stdlib-root stdlib --source-root extended
 python3 -I tests/fixtures/extended/yaml/oracle.py ./batch [--seed N] [--docs N]
+```
+
+## Writing
+
+```text
+ext::yaml_writer::write(tree: &ext::json_tree::Tree, node: i32, out: &Vec<u8>) -> Result<i32, ErrorKind>
+```
+
+`write` appends one document for `node` to `out` and returns the number of bytes written. The only error is `AllocationFailed`, which leaves a partial document in `out`. The document has no `---` marker and ends with a line feed.
+
+**Layout:**
+- Nonempty mappings and sequences are written in block style, indented by two spaces. A collection inside a sequence starts on the item's line (`- - a`, `- k: v`).
+- Empty collections are written as `[]` and `{}`.
+- A key longer than 200 bytes uses the explicit `? key` form, which avoids the 1024-character limit on implicit keys.
+
+**Scalars:**
+- `null`, `true` and `false` are written as these words.
+- Integers keep their spelling. A float with an exponent gets a fraction and an exponent sign, so `1e3` becomes `1.0e+3`, because YAML 1.1 floats need both. Other floats keep their spelling.
+- A string is written plain when no reader could take the plain form for anything else. The rules:
+  - It must start with an ASCII letter, `_`, `/` or a non-ASCII character, so it is never a number, date, indicator or YAML 1.1 merge (`<<`) or value (`=`) key.
+  - It must not end with a space.
+  - It must not be `y`, `n`, `yes`, `no`, `on`, `off`, `true`, `false` or `null` in any case.
+  - It must contain no control characters, no `: ` or final `:`, and no ` #`.
+  - It must contain no C1 control, line or paragraph separator, byte order mark, U+FFFE or U+FFFF. YAML 1.1 treats NEL, U+2028 and U+2029 as line breaks.
+- A string with line feeds that meets the same character rules, and whose first line is nonempty and does not start with a space, becomes a literal block scalar. Its chomping indicator matches its trailing line feeds: `|-` for none, `|` for one, `|+` for more.
+- Every other string is double-quoted. Inside the quotes, `"`, `\`, tab, line feed, carriage return and NUL use their short escapes. Other C0 controls, DEL and C1 controls use `\xXX`, and the separators and noncharacters use `\uXXXX`.
+
+The plain rules are conservative. Of the 125 short strings in the oracle's list, 11 are quoted even though PyYAML would read them plain:
+- `y` and `N`, which other 1.1 readers take as booleans;
+- `1e3`, `1.5e3` and `0o17`, which are numbers in 1.2;
+- `-x`, `?x` and `:x`, which start with an indicator character;
+- three strings holding U+2028, U+2029 or U+FEFF.
+
+### Writer evidence
+
+[`tests/fixtures/extended/writers/oracle.py`](../tests/fixtures/extended/writers/oracle.py) generates trees and runs them through [`batch.lani`](../tests/fixtures/extended/writers/batch.lani). The batch parses each tree with `ext::json_tree`, writes it, and reads the output back with `ext::yaml::load`.
+
+**Checks:**
+- PyYAML 6.0.1 `yaml.safe_load` of the output must equal the tree. Integers must match exactly and floats as doubles.
+- `ext::yaml` must read the output back to the same tree, with numbers compared as exact decimals.
+
+**Generated trees:**
+- Trees nest up to four levels.
+- Strings are drawn from 125 hand-picked hard cases and combinations of them: 1.1 and 1.2 keywords and numbers, indicators, quotes, escapes, every control class, separators, multi-line text with each trailing-newline count, and keys longer than 1024 bytes.
+- Numbers cover each JSON spelling: `-0`, exponents with and without a sign, big integers, and values that overflow and underflow.
+
+| Group | Trees | Agree |
+| --- | --- | --- |
+| Hand-written trees | 20 | 20 |
+| Generated trees | 3,000 | 3,000 |
+| Generated root strings | 300 | 300 |
+
+- The outputs hold 3,751 double-quoted scalars and 706 literal blocks.
+- Seeds 1 and 2 with `--trees 15000` also agree.
+- A 3.2 MB JSON array of 20,000 records is written as YAML and read back in 1.7 s.
+
+```text
+lcc -o batch tests/fixtures/extended/writers/batch.lani --stdlib-root stdlib --source-root extended
+python3 -I tests/fixtures/extended/writers/oracle.py ./batch [--seed N] [--trees N]
 ```

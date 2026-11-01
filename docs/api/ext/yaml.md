@@ -251,7 +251,7 @@ pub fn kind_name(kind: ErrorKind) -> core::text::Text
 
 ### function: load
 
-[Source line 1086](../../../extended/ext/yaml.lani#L1086)
+[Source line 1102](../../../extended/ext/yaml.lani#L1102)
 
 ```lanius
 pub fn load(source: [u8], start: i32, count: i32, limits: Limits) -> core::result::Result<ext::json_tree::Tree, Error>
@@ -259,7 +259,7 @@ pub fn load(source: [u8], start: i32, count: i32, limits: Limits) -> core::resul
 
 ### function: load_all
 
-[Source line 1090](../../../extended/ext/yaml.lani#L1090)
+[Source line 1106](../../../extended/ext/yaml.lani#L1106)
 
 ```lanius
 pub fn load_all(source: [u8], start: i32, count: i32, limits: Limits) -> core::result::Result<ext::json_tree::Tree, Error>
