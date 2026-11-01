@@ -5,12 +5,12 @@ import Lanius.Faithful.SelfAgree
 
 `SelfShort`'s first reason is that `plus` or `times` panics. This file
 replaces it by a reason about the heap, under one premise left open
-(`CompileBounded`): when `progW`'s compile (`plus` and `times` wrapping) costs
-less than `2 ^ 62`, its guarded run (`pcallG progW prims safeW`, no `plus`
+(`CompileBounded T`): when `progW`'s compile (`plus` and `times` wrapping) costs
+less than a threshold `T`, its guarded run (`pcallG progW prims safeW`, no `plus`
 or `times` wraps) has a value. Then the self program's compile has a value
 and a cost (`SelfAgree.qcall_of_safe`), so when it has no cost, `progW`'s
-compile, which always has one (`costW_total`), costs at least `2 ^ 62`,
-past any heap limit `failing_short` allows (`SelfShortW`,
+compile, which always has one (`costW_total`), costs at least `T`, past
+a heap limit below `T` (`SelfShortW`,
 `failing_short_of`). -/
 
 namespace Lanius.Faithful.SelfTotal
@@ -42,10 +42,10 @@ noncomputable def compileG (N : Nat) (W : List (BitVec 32)) : Option Value :=
   (pcallG progW prims safeW N 7 [g, listVal W]).bind fun fe =>
   pcallG progW prims safeW N 6 [fe]
 
-/-- The premise left open: a wrapped compile that costs less than `2 ^ 62`
+/-- The premise left open: a wrapped compile that costs less than `T`
 wraps no `plus` or `times`. -/
-def CompileBounded (W : List (BitVec 32)) : Prop :=
-  ∀ N k, costW N W = some k → k < 2 ^ 62 → ∃ N' v, compileG N' W = some v
+def CompileBounded (T : Nat) (W : List (BitVec 32)) : Prop :=
+  ∀ N k, costW N W = some k → k < T → ∃ N' v, compileG N' W = some v
 
 /-- The wrapped compile has a cost. -/
 theorem costW_total (W : List (BitVec 32)) : ∃ N k, costW N W = some k := by
@@ -87,23 +87,24 @@ theorem selfCost_of_compileG {N : Nat} {W : List (BitVec 32)} {v : Value} (h : c
 
 /-- `SelfShort` with the panic reason replaced: the output room is short, or
 the heap limit is short of the self program's compile, or the self program's
-compile has no cost and the wrapped one costs at least `2 ^ 62`. -/
+compile has no cost and the wrapped one costs more than the limit. -/
 def SelfShortW (files : List SourceFile) (room limit : Nat) : Prop :=
   (∃ ws, binaryWords (compileText files) = some ws ∧ room < ws.length) ∨
   ((∃ N h, selfCost N (filesWords files) = some h) ∧
     ∀ N h, selfCost N (filesWords files) = some h → limit < selfNext (filesWords files) room + h) ∨
   ((∀ N, selfCost N (filesWords files) = none) ∧ (∃ N k, costW N (filesWords files) = some k) ∧
-    ∀ N k, costW N (filesWords files) = some k → 2 ^ 62 ≤ k)
+    ∀ N k, costW N (filesWords files) = some k → limit < k)
 
 /-- **Core's run of `w` fails only for a reason, the panic reason replaced by
 the wrapped compile's cost**, under `CompileBounded`. -/
-theorem failing_short_of {files : List SourceFile} (safe : CompileBounded (filesWords files)) (fit : FilesFit files)
+theorem failing_short_of {T : Nat} {files : List SourceFile} (safe : CompileBounded T (filesWords files))
+    (fit : FilesFit files)
     (wordsLt : (filesWords files).length < 2 ^ 31) {room limit : Nat} (roomLt : room < 2 ^ 31)
-    (small : limit < 2 ^ 62) (fails : ∀ fuel, Failing limit (selfRun (filesWords files) room fuel)) :
+    (small : limit < 2 ^ 62) (below : limit < T) (fails : ∀ fuel, Failing limit (selfRun (filesWords files) room fuel)) :
     SelfShortW files room limit := by
   rcases failing_short fit wordsLt roomLt small fails with panics | room | heap
   · refine .inr (.inr ⟨panics.1, costW_total _, fun N k hk => ?_⟩)
-    refine Nat.le_of_not_lt fun lt => ?_
+    refine Nat.lt_of_lt_of_le below (Nat.le_of_not_lt fun lt => ?_)
     obtain ⟨N', v, hv⟩ := safe N k hk lt
     obtain ⟨c, hc⟩ := selfCost_of_compileG hv
     rw [panics.1 N'] at hc
@@ -114,21 +115,23 @@ theorem failing_short_of {files : List SourceFile} (safe : CompileBounded (files
 #print axioms failing_short_of
 
 /-- `SelfFaultReason` with `SelfShortW` for `SelfShort`. -/
-def SelfFaultReasonW (files : List SourceFile) (room limit window : Nat) (B : Binary) (s : State) : Prop :=
+def SelfFaultReasonW (files : List SourceFile) (room limit window : Nat) (B : Binary) (s : State) :
+    Prop :=
   ((∀ fuel, Failing limit (selfRun (filesWords files) room fuel)) ∧ SelfShortW files room limit ∧ Faults s) ∨
   ∃ fuel v final depth, selfRun (filesWords files) room fuel = .done v final ∧
     final.heap.nextAddress ≤ limit ∧ window < B.stackNeed depth ∧ Faults s
 
 /-- **The self-built verified compiler, with why it faults, no panic reason
-among them, under `CompileBounded`.** `selfCompiler_reason` with `SelfShortW`:
+among them, under `CompileBounded T`.** `selfCompiler_reason` with `SelfShortW`:
 a fault because Core's run of `w` fails at every fuel comes with the room
 short, the heap limit short of the compile's cost, or the compile's `plus` or
-`times` wrapping only in a compile that costs at least `2 ^ 62`. Conditional:
-`CompileBounded` is the open part of F14. -/
+`times` wrapping only in a compile that costs more than the heap limit,
+which is below `T`. Conditional: `CompileBounded` is the open part of
+F14. -/
 theorem selfCompiler_total_reason_of_bounds {B : Binary} (compiled : compileSource prog = some B)
-    {files : List SourceFile} (bounds : CompileBounded (filesWords files))
+    {T : Nat} {files : List SourceFile} (bounds : CompileBounded T (filesWords files))
     (fit : FilesFit files) (wordsLt : (filesWords files).length < 2 ^ 31) {room limit : Nat} (roomLt : room < 2 ^ 31)
-    (enough : selfNext (filesWords files) room ≤ limit) (small : limit < 2 ^ 62)
+    (enough : selfNext (filesWords files) room ≤ limit) (small : limit < 2 ^ 62) (below : limit < T)
     (s : State) (imageBase : BitVec 64) (window : Nat) (bounded : window ≤ 2 ^ 62)
     (loaded : CodeAt s.memory imageBase B.image)
     (apart : ∀ index, index < B.image.length →
@@ -143,7 +146,7 @@ theorem selfCompiler_total_reason_of_bounds {B : Binary} (compiled : compileSour
       SelfOutput (compileText files) (filesWords files) s s' :=
   (selfCompiler_outcome compiled fit wordsLt roomLt enough small s imageBase window bounded loaded apart imageHeap
     entry params heapAt stack).imp_left fun
-    | .inl ⟨fails, faults⟩ => .inl ⟨fails, failing_short_of bounds fit wordsLt roomLt small fails, faults⟩
+    | .inl ⟨fails, faults⟩ => .inl ⟨fails, failing_short_of bounds fit wordsLt roomLt small below fails, faults⟩
     | .inr stack => .inr stack
 
 #print axioms selfCompiler_total_reason_of_bounds
