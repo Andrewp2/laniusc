@@ -204,6 +204,7 @@ uint checked_literal_context(uint literal)
     uint mode = QUERY_OPERAND;
     uint array_node = INVALID; uint array_layers = 0u; uint array_depth = 0u;
     uint operand_steps = 0u;
+    bool negated = false; bool climbed = false;
     // Set when a field context's substitution failed: the same query resumes
     // after that context.
     bool after_field = false;
@@ -297,7 +298,17 @@ uint checked_literal_context(uint literal)
         }
         if (core.kind != 14u && core.kind != 16u && core.kind != 17u) return peer;
         if ((hir_is_forward_expression(core.kind, value.a) || value.a == 13u) && value.b == current)
-        { current = parent; query = parent; continue; }
+        { negated = negated != (core.kind == 17u && value.a == 13u); current = parent; query = parent; continue; }
+        // `literal as T` takes a 32- or 64-bit integer T, which holds every
+        // non-negative i32 unchanged. A negated literal under an unsigned T
+        // and an operand of arithmetic keep their existing contexts.
+        if (core.kind == 16u && value.a == 36u && value.b == current)
+        {
+            uint target = !floating && !climbed && valid_token(value.d) ? numeric_context(uint2(
+                type_expr_ref_tag[value.d], type_expr_ref_payload[value.d]), false) : 0u;
+            return target != 0u && !scalar_is_narrow_integer(target) &&
+                !(negated && scalar_is_unsigned_integer(target)) ? target : peer;
+        }
         if (core.kind != 16u || (value.b != current && value.c != current)) return peer;
         bool comparison = value.a >= 7u && value.a <= 12u;
         bool arithmetic = floating ? ((value.a >= 14u && value.a <= 16u) || value.a == 20u)
@@ -309,7 +320,7 @@ uint checked_literal_context(uint literal)
         if (!shift && peer == 0u)
             peer = checked_numeric_peer(value.b == current ? value.c : value.b, floating);
         if (comparison) return peer;
-        current = parent; query = parent;
+        climbed = true; current = parent; query = parent;
     }
     return peer;
 }
