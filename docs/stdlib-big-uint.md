@@ -1,6 +1,6 @@
 # Arbitrary precision nonnegative integers
 
-`ext::big_uint` stores normalized little endian `u32` limbs in an owned
+`alloc::big_uint` stores normalized little endian `u32` limbs in an owned
 `alloc::vec::Vec<u32>`. Zero has no limbs. The highest limb of a nonzero value
 is nonzero. There is no fixed numerical width; allocation, explicit limits,
 and the vector's addressable capacity bound a calculation.
@@ -14,11 +14,11 @@ allocation. A destroyed owner becomes zero and repeated destruction of that
 same owner is harmless; stale copies of an owner remain invalid.
 
 ```lanius
-import ext::big_uint;
-let limits: ext::big_uint::Limits = ext::big_uint::default_limits();
-let a: ext::big_uint::BigUint = ext::big_uint::from_u64(18446744073709551615,limits).unwrap();
-let square: ext::big_uint::BigUint = a.mul(a.borrow(),limits).unwrap();
-let pair: ext::big_uint::DivRem = square.div_rem(a.borrow(),limits).unwrap();
+import alloc::big_uint;
+let limits: alloc::big_uint::Limits = alloc::big_uint::default_limits();
+let a: alloc::big_uint::BigUint = alloc::big_uint::from_u64(18446744073709551615,limits).unwrap();
+let square: alloc::big_uint::BigUint = a.mul(a.borrow(),limits).unwrap();
+let pair: alloc::big_uint::DivRem = square.div_rem(a.borrow(),limits).unwrap();
 assert(pair.quotient.compare(a.borrow()) == 0 && pair.remainder.is_zero());
 pair.destroy(); square.destroy(); a.destroy();
 ```

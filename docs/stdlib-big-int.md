@@ -1,9 +1,9 @@
 # Signed arbitrary precision integers
 
-`ext::big_int` provides owned signed integers over `ext::big_uint`. All
+`alloc::big_int` provides owned signed integers over `alloc::big_uint`. All
 magnitude storage, arithmetic and digit conversion come from the unsigned
 provider. `BigInt` adds a sign and keeps zero nonnegative. It has no fixed
-numeric width; `ext::big_uint::Limits` bounds memory, work and text output.
+numeric width; `alloc::big_uint::Limits` bounds memory, work and text output.
 
 ## Ownership and errors
 
@@ -19,8 +19,8 @@ that owner to zero; a shallow copy must not be destroyed again.
 those owners later. Do not destroy the pair after transferring either field.
 Every failing division destroys all partial results before returning.
 
-Fallible functions return `core::result::Result<T, ext::big_uint::Error>` and
-take `ext::big_uint::Limits`. They propagate the provider's errors:
+Fallible functions return `core::result::Result<T, alloc::big_uint::Error>` and
+take `alloc::big_uint::Limits`. They propagate the provider's errors:
 `Bounds`, `LimbLimit`, `WorkLimit`, `OutputLimit`, `AllocationFailed`,
 `InvalidRadix`, `InvalidDigit`, `Empty`, `Underflow`, `DivisionByZero`, and
 `Overflow`. Valid signed subtraction never returns `Underflow`. Negative

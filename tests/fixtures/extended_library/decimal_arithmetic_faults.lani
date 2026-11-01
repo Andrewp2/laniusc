@@ -4,7 +4,7 @@ import core::mem;
 import core::result;
 import core::slice;
 import core::text;
-import ext::big_int;
+import alloc::big_int;
 import ext::decimal;
 import std::io;
 fn check(result: core::result::Result<ext::decimal::Decimal,ext::decimal::Error>) { if (result.is_err()) { assert(result.unwrap_err() == ext::decimal::Error::AllocationFailed); } else { let value: ext::decimal::Decimal = result.unwrap(); value.destroy(); } }
@@ -28,7 +28,7 @@ fn main() -> i32 {
     if (op == 12) { check(a.neg(limits)); } if (op == 13) { check(a.abs(limits)); } if (op == 14) { check(a.reduce(limits)); }
     if (op == 15) { check(ext::decimal::from_i64(-9223372036854775807 - 1,limits)); } if (op == 16) { check(ext::decimal::from_u64(18446744073709551615,limits)); }
     if (op == 17) { check(ext::decimal::from_coefficient(a.coefficient.borrow(),-4,limits)); }
-    if (op == 18) { let result: core::result::Result<ext::big_int::BigInt,ext::decimal::Error> = a.to_big_int(ext::decimal::Rounding::Floor,limits); if (result.is_err()) { assert(result.unwrap_err() == ext::decimal::Error::AllocationFailed); } else { let value: ext::big_int::BigInt = result.unwrap(); value.destroy(); } }
+    if (op == 18) { let result: core::result::Result<alloc::big_int::BigInt,ext::decimal::Error> = a.to_big_int(ext::decimal::Rounding::Floor,limits); if (result.is_err()) { assert(result.unwrap_err() == ext::decimal::Error::AllocationFailed); } else { let value: alloc::big_int::BigInt = result.unwrap(); value.destroy(); } }
     if (op == 19) { let result: core::result::Result<i64,ext::decimal::Error> = b.to_i64(limits); if (result.is_err()) { assert(result.unwrap_err() == ext::decimal::Error::AllocationFailed); } else { assert(result.unwrap() == 7); } }
     if (op == 20) { check_bytes(a.format(limits)); }
     if (op == 21) { let output: [u8;32] = [91;32]; let view: core::slice::View<u8> = core::slice::view_range(output,3,20).unwrap(); let result: core::result::Result<i32,ext::decimal::Error> = a.format_into(view,limits); if (result.is_err()) { assert(result.unwrap_err() == ext::decimal::Error::AllocationFailed); let i: i32 = 0; while(i<32) { assert(output[i] == 91); i += 1; } } else { assert(result.unwrap() == 10 && output[2] == 91 && output[13] == 91); } }

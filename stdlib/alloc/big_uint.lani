@@ -1,7 +1,7 @@
 // Independent owned nonnegative integers, base 2^32, least significant limb first.
 // Keep one active owner per allocation. All operands are borrowed; destroy each
 // successful owned result exactly once. Zero has no limbs and needs no allocation.
-module ext::big_uint;
+module alloc::big_uint;
 import alloc::vec;
 import core::cmp;
 import core::hash;

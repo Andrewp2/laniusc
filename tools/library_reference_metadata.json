@@ -12,6 +12,18 @@
         "docs/stdlib-layout.md"
       ]
     },
+    "alloc::big_int": {
+      "guides": [
+        "docs/stdlib-big-integers.md",
+        "docs/stdlib-big-int.md"
+      ]
+    },
+    "alloc::big_uint": {
+      "guides": [
+        "docs/stdlib-big-integers.md",
+        "docs/stdlib-big-uint.md"
+      ]
+    },
     "alloc::binary_heap": {
       "guides": [
         "docs/stdlib-binary-heap.md",
@@ -866,16 +878,6 @@
         "docs/library-completion-plan.md"
       ],
       "note": "Allocation-free literal Bash-word measurement/decoding into caller storage. Complete and Prefix modes share one traversal; syntax, logical ranges and capacity are admitted before writes. It preserves non-UTF-8 bytes, supports literal quote/escape concatenation and explicitly rejects expansions/operators outside the documented profile. Pure contracts and a 389-record decoder/reply model execute on native Linux x86_64. This is neither shell evaluation nor the response-file grammar; the separate adapter has finite Bash 5.2/bash-completion 2.11 function and actual PTY insertion acceptance. Other shells and arbitrary expansions are outside this literal profile."
-    },
-    "ext::big_int": {
-      "guides": [
-        "docs/extended-big-int.md"
-      ]
-    },
-    "ext::big_uint": {
-      "guides": [
-        "docs/extended-big-uint.md"
-      ]
     },
     "ext::cbor": {
       "guides": [

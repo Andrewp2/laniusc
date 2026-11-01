@@ -26,6 +26,7 @@ runtime behavior, failure rules and supported targets.
 | Optional values and failures | `core::option`, `core::result`, `core::pair` | [Option](../docs/stdlib-option.md), [Result](../docs/stdlib-result.md) |
 | Equality, ordering and hashing | `core::cmp`, `core::ordering`, `core::hash`, `core::float_order` | [Lawful comparison and float keys](../docs/stdlib-comparison.md) |
 | Integer arithmetic | `core::{i8,i16,i32,i64,u8,u16,u32,u64,isize,usize}`, bit/conversion helpers | [8/16/32-bit contracts](../docs/stdlib-narrow-integers.md), [64-bit and pointer-sized contracts](../docs/stdlib-native-integers.md), [consumer consolidation](../docs/stdlib-numeric-migration.md); each operation names its checked, wrapping or saturating policy |
+| Arbitrary precision integers | `alloc::big_uint`, `alloc::big_int` | [Big integer guide](../docs/stdlib-big-integers.md), [unsigned contracts](../docs/stdlib-big-uint.md), [signed contracts](../docs/stdlib-big-int.md), [bigcalc](../docs/extended-bigcalc.md) |
 | Boolean values and bit operations | `core::bool`, `core::bits` | [Truth functions, widths, rotations and extraction](../docs/stdlib-boolean-bits.md) |
 | Floating values and conversion | `core::f32`, `core::f64`, `core::float_decimal` | [Exact precision formatting](../docs/stdlib-float-precision.md) |
 | Elementary mathematics | `core::math` | [Full-range binary64 functions and accuracy evidence](../docs/stdlib-math.md) |

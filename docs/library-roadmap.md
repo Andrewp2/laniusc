@@ -141,8 +141,8 @@ dialects and reference forms fail explicitly. The
 against stdin, with resource, allocation and I/O failure evidence.
 [Borrowed decimal numbers](stdlib-decimal-number.md) retain arbitrary coefficient
 and exponent precision for comparison/integer/divisibility behavior.
-[Owned unsigned integers](extended-big-uint.md) and
-[signed integers](extended-big-int.md) supply arbitrary precision arithmetic,
+[Owned unsigned integers](stdlib-big-uint.md) and
+[signed integers](stdlib-big-int.md) supply arbitrary precision arithmetic,
 radix conversion, division, shifts, bitwise operations, powers and GCD, with
 explicit limits, ownership and allocation failures. A
 [streaming calculator](extended-bigcalc.md) executes twenty operations across
