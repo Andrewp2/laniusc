@@ -2324,7 +2324,12 @@ Its `dial` opens an unpooled connection for protocols that take over after
 an HTTP/1.1 upgrade. Over https it offers `h2` by ALPN and runs requests to
 an origin that selects it as streams of one [HTTP/2](extended-http2.md)
 connection; `fetch_all` multiplexes them. That h2 group (21 cases) runs
-against libnghttp2's server session over TLS.
+against libnghttp2's server session over TLS. `fetch_to` streams a final
+response body of any size to a `core::io::Write` sink as it arrives, over
+HTTP/1.1 (through `ext::http_body`) and HTTP/2. The `agent-fetch` sample is
+built on it and on `std::cli`; it passes http12 against Python
+`http.server`, h2 6 against libnghttp2 over TLS and proxy4 through
+`ext::http_proxy` and its TLS front end.
 
 [HTTP/2](extended-http2.md) is three I/O-free modules:
 [`ext::hpack`](extended-hpack.md) (RFC 7541 with the canonical Huffman code,
