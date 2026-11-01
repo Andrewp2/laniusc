@@ -1986,6 +1986,27 @@ oracle adds 691 xz archive cases (now 4,160 in total) against Python
 300 exact decodes by Python, `xz -t` and the Lanius decoder (23,475 cases in
 all).
 
+**Streaming zip.** [`ext::zip_stream`](extended-zip-stream.md) reads and
+writes ZIP records one at a time with u64 offsets: end records with ZIP64,
+central and local headers, ZIP64 and timestamp extras, and data descriptors.
+The [`zip` program](../sample_programs/library/zip.lani) creates archives as
+a stream (to a file or a pipe), with stored or deflated members at levels 0-3
+and optional forced ZIP64. It lists and extracts archives after a full
+verifying pass that checks local headers, overlap, sizes and CRC-32, using
+`tgz`'s path guard. A seeded oracle (`tests/fixtures/extended/zip_oracle.py`)
+passes 8,662 cases with 0 failures against Python `zipfile` and Info-ZIP
+`unzip -t`:
+
+- 120 checks of the sample's archives;
+- 120 checks of `zipfile`'s archives (streamed, forced ZIP64, with comments);
+- 65,600-entry ZIP64 archives in both directions;
+- 26 guard cases;
+- 5,994 truncations rejected;
+- 2,400 bit-flipped archives handled without a signal or hang.
+
+An optional case writes and reads back a 4 GiB member. `ext::compression`
+exports `crc32_update`.
+
 **Accepted bounded archive increment.**
 
 The new production code is Lanius over the existing TAR/ZIP engines,

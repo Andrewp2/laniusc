@@ -12,6 +12,9 @@ particularly its local headers, descriptors, central directory, end record,
 flags and extra fields. ZIP64, split archives, encryption, patched data,
 unsupported compression methods and unsupported flag/version requirements
 return explicit errors. This API does not claim general ZIP feature support.
+[`ext::zip_stream`](extended-zip-stream.md) reads and writes ZIP64 and
+archives larger than memory one record at a time, and backs the streaming
+`zip` sample.
 
 Executable evidence covers **x86_64 Linux using the GPU compiler**. Other
 hosts and GPU-kernel execution have not been established.

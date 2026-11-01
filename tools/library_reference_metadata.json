@@ -1895,6 +1895,11 @@
         "validate_name": "Allocation-free validation of the canonical writer name policy before archive construction; trailing-slash entries still require empty data during encode. The existing ZIP contract passes with this public helper."
       }
     },
+    "ext::zip_stream": {
+      "guides": [
+        "docs/extended-zip-stream.md"
+      ]
+    },
     "std::args": {
       "guides": [
         "docs/stdlib-process-context.md"
