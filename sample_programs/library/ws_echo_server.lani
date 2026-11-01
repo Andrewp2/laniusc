@@ -1,0 +1,142 @@
+// Multi-client WebSocket echo server on one thread: ext::http_service
+// serves HTTP on the listener, GET /ws upgrades to an echo session and
+// GET /chat to a session whose messages go to every chat session, through
+// ext::websocket_service (permessage-deflate when offered). The text
+// message "close" makes the server start the closing handshake.
+module app::main;
+import alloc::vec;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import ext::http_service;
+import ext::websocket_service;
+import std::args;
+import std::clock;
+import std::signal;
+import std::socket;
+import std::stream;
+
+struct Totals { requests: i32, upgrades: i32, rejected: i32, closed: i32, echoed: u64, broadcast: u64, compressed: i32, failed: i32 }
+impl Totals { fn borrow(&self) -> &Totals { return self; } }
+fn literal(s: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(s),n); return core::slice::view<u8>(raw,n).unwrap(); }
+fn eq(v: core::slice::View<u8>, s: str, n: i32) -> bool { return ext::http_service::same(v,literal(s,n)); }
+fn write_output(bytes: core::slice::View<u8>) -> bool {
+    let sink: std::stream::Descriptor = std::stream::from_handle(1); let completed: i32 = 0;
+    while (completed < bytes.len()) {
+        let sent = sink.write(bytes.values,bytes.start + completed,bytes.len() - completed);
+        if (sent.is_err()) { if (core::io::is_interrupted(sent.unwrap_err())) { continue; } return false; }
+        let count: i32 = sent.unwrap(); if (count <= 0) { return false; } completed += count;
+    }
+    return true;
+}
+fn push(out: &alloc::vec::Vec<u8>, v: core::slice::View<u8>) -> bool { return out.try_extend(v).is_ok(); }
+fn push_number(out: &alloc::vec::Vec<u8>, n: u64) -> bool {
+    let digits: [u8;20] = [0;20]; let count: i32 = 0; let x: u64 = n;
+    while (count == 0 || x > 0) { digits[19 - count] = (48 + (x % 10)) as u8; x = x / 10; count += 1; }
+    return out.try_extend(core::slice::View { values: digits, start: 20 - count, length: count }).is_ok();
+}
+fn number(v: core::slice::View<u8>) -> i32 { let parsed = core::decimal::parse_u32_range(v.values,v.start,v.len()); if (v.is_empty() || parsed.is_err() || parsed.unwrap() > 2147483647) { return -1; } return parsed.unwrap() as i32; }
+fn after_ms(ms: i32) -> core::time::Deadline {
+    let now = std::clock::monotonic_now(); let base: core::time::Instant = core::time::instant(core::time::zero()); if (now.is_ok()) { base = now.unwrap(); }
+    let d = core::time::deadline_after(base,core::time::from_millis(ms as u64)); if (d.is_err()) { return core::time::Deadline { instant: base }; } return d.unwrap();
+}
+fn answer(server: &ext::http_service::Server, slot: i32, status: i32, body: core::slice::View<u8>) {
+    let conn: ext::http_service::Connection = server.take(slot);
+    conn.respond(status,literal("text/plain",10),body); server.put(slot,conn);
+}
+// One HTTP request: an upgrade on /ws or /chat, a banner on /, 404 otherwise.
+fn handle(server: &ext::http_service::Server, hub: &ext::websocket_service::Hub, slot: i32, chat: &alloc::vec::Vec<bool>, totals: &Totals) {
+    totals.requests += 1;
+    let request: ext::http_service::Request = server.request(slot);
+    let echo: bool = eq(request.path,"/ws",3); let room: bool = eq(request.path,"/chat",5);
+    if (echo || room) {
+        let up: core::result::Result<i32,ext::websocket_service::Error> = hub.upgrade(server,slot,core::option::None());
+        if (up.is_ok()) { totals.upgrades += 1; chat.set(up.unwrap(),room); return; }
+        totals.rejected += 1;
+        let full: bool = match(up.unwrap_err()) { ext::websocket_service::Error::Full -> true, _ -> false };
+        if (full) { answer(server,slot,503,literal("busy\n",5)); return; }
+        answer(server,slot,400,literal("websocket upgrade required\n",27)); return;
+    }
+    if (eq(request.path,"/",1)) { answer(server,slot,200,literal("websocket echo: /ws, /chat\n",27)); return; }
+    answer(server,slot,404,literal("not found\n",10));
+}
+// One delivered message: echo it, broadcast it, or close on "close".
+fn on_message(hub: &ext::websocket_service::Hub, m: ext::websocket_service::Message, chat: &alloc::vec::Vec<bool>, totals: &Totals) {
+    let opcode: i32 = match(m.kind) { ext::websocket_service::Kind::Text -> 1, ext::websocket_service::Kind::Binary -> 2, ext::websocket_service::Kind::Closed -> 0 };
+    if (opcode == 0) { totals.closed += 1; chat.set(m.session,false); return; }
+    let data: core::slice::View<u8> = hub.data(m);
+    if (opcode == 1 && eq(data,"close",5)) { hub.close(m.session,1000,literal("bye",3)); return; }
+    if (!chat.get(m.session).unwrap()) { hub.send(m.session,opcode,data); totals.echoed += 1; return; }
+    let i: i32 = 0;
+    while (i < chat.len()) { if (chat.get(i).unwrap() && hub.is_open(i)) { hub.send(i,opcode,data); totals.broadcast += 1; } i += 1; }
+}
+fn serve(listener: &std::socket::Socket, width: i32, options: ext::websocket_service::Options, exit_after: i32, totals: &Totals) -> i32 {
+    let made = ext::http_service::server(listener,ext::http_service::default_options(),width); if (made.is_err()) { return 3; }
+    let server: ext::http_service::Server = made.unwrap();
+    let opened = ext::websocket_service::hub(options); if (opened.is_err()) { server.close(); return 3; }
+    let hub: ext::websocket_service::Hub = opened.unwrap();
+    let chat: alloc::vec::Vec<bool> = alloc::vec::new<bool>(); let i: i32 = 0; while (i < options.sessions) { chat.try_push(false); i += 1; }
+    let status: i32 = 0;
+    if (hub.watch(server.event_fd()).is_err()) { status = 3; }
+    while (status == 0) {
+        // HTTP work that is ready now, without blocking.
+        while (true) {
+            let next = server.next(after_ms(0)); if (next.is_err()) { status = 3; break; }
+            let slot = next.unwrap(); if (slot.is_none()) { break; }
+            handle(server.borrow(),hub.borrow(),slot.unwrap(),chat.borrow(),totals);
+        }
+        if (status != 0) { break; }
+        if (exit_after > 0 && totals.closed >= exit_after && hub.active() == 0) { break; }
+        let polled = hub.poll(server.next_deadline(after_ms(1000))); if (polled.is_err()) { status = 3; break; }
+        while (true) { let m = hub.next(); if (m.is_none()) { break; } on_message(hub.borrow(),m.unwrap(),chat.borrow(),totals); }
+    }
+    let hs: ext::websocket_service::Stats = hub.stats(); totals.compressed = hs.compressed; totals.failed = hs.failed;
+    hub.destroy(); chat.destroy(); if (server.close().is_err() && status == 0) { status = 3; }
+    return status;
+}
+fn summary(t: Totals) -> bool {
+    let out: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+    let ok: bool = push(out.borrow(),literal("requests=",9)) && push_number(out.borrow(),t.requests as u64) && push(out.borrow(),literal(" upgrades=",10)) && push_number(out.borrow(),t.upgrades as u64)
+        && push(out.borrow(),literal(" rejected=",10)) && push_number(out.borrow(),t.rejected as u64) && push(out.borrow(),literal(" closed=",8)) && push_number(out.borrow(),t.closed as u64)
+        && push(out.borrow(),literal(" echoed=",8)) && push_number(out.borrow(),t.echoed) && push(out.borrow(),literal(" broadcast=",11)) && push_number(out.borrow(),t.broadcast)
+        && push(out.borrow(),literal(" compressed=",12)) && push_number(out.borrow(),t.compressed as u64) && push(out.borrow(),literal(" failed=",8)) && push_number(out.borrow(),t.failed as u64)
+        && push(out.borrow(),literal("\n",1));
+    ok = ok && write_output(out.as_view()); out.destroy(); return ok;
+}
+fn run(args: std::args::Arguments) -> i32 {
+    if (args.len() < 1) { write_output(literal("Usage: ws-echo-server ADDRESS [--sessions N] [--connections N] [--max-message BYTES] [--idle-timeout MS] [--exit-after N] [--no-deflate]\n",137)); return 2; }
+    let endpoint = core::net::parse_socket(args.get(0).unwrap()); if (endpoint.is_err()) { return 2; }
+    let options: ext::websocket_service::Options = ext::websocket_service::default_options(); let width: i32 = 64; let exit_after: i32 = 0; let i: i32 = 1;
+    while (i < args.len()) {
+        let key = args.get(i).unwrap(); if (eq(key,"--no-deflate",12)) { options.deflate = false; i += 1; continue; }
+        if (i + 1 >= args.len()) { return 2; }
+        let n: i32 = number(args.get(i+1).unwrap()); i += 2; if (n < 0) { return 2; }
+        let known: bool = false;
+        if (eq(key,"--sessions",10) && n > 0) { options.sessions = n; known = true; }
+        if (eq(key,"--connections",13) && n > 0) { width = n; known = true; }
+        if (eq(key,"--max-message",13) && n >= 125) { options.limits.message_bytes = n; options.limits.frame_bytes = n; known = true; }
+        if (eq(key,"--idle-timeout",14)) { options.idle_timeout_ms = n; known = true; }
+        if (eq(key,"--exit-after",12)) { exit_after = n; known = true; }
+        if (!known) { return 2; }
+    }
+    let family: std::socket::Family = std::socket::Family::Ipv4; let v6: bool = match(endpoint.unwrap()) { core::net::SocketAddr::V6(a) -> true, _ -> false }; if (v6) { family = std::socket::Family::Ipv6; }
+    let opened = std::socket::create(family,std::socket::Kind::Tcp,true); if (opened.is_err()) { return 3; } let listener = opened.unwrap();
+    listener.set_option(std::socket::Setting::ReuseAddress,1);
+    if (listener.bind(endpoint.unwrap()).is_err() || listener.listen(64).is_err()) { listener.close(); return 3; }
+    let actual = listener.local_addr(); if (actual.is_err()) { listener.close(); return 3; }
+    let startup: [u8;96] = [0;96]; let formatted = actual.unwrap().format_into(core::slice::view(startup,95).unwrap()); if (formatted.is_err()) { listener.close(); return 3; }
+    let length = formatted.unwrap(); startup[length] = 10; if (!write_output(core::slice::view(startup,length+1).unwrap())) { listener.close(); return 5; }
+    let totals: Totals = Totals { requests: 0, upgrades: 0, rejected: 0, closed: 0, echoed: 0, broadcast: 0, compressed: 0, failed: 0 };
+    let status: i32 = serve(listener.borrow(),width,options,exit_after,totals.borrow()); listener.close();
+    if (!summary(totals) && status == 0) { status = 5; } return status;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let got = std::args::snapshot(1,32,8192); if (got.is_err()) { return 2; }
+    let args = got.unwrap(); let status = run(args); args.destroy(); return status;
+}
