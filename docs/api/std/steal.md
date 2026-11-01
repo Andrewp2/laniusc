@@ -12,7 +12,7 @@ Layer: `std`. Role: module. Profile: **Source inventory**.
 
 - [stdlib-concurrency](../../stdlib-concurrency.md)
 
-Declaration counts: constant: 2; enum: 3; field: 7; function: 1; impl: 1; method: 8; struct: 2; variant: 9.
+Declaration counts: constant: 2; enum: 3; field: 8; function: 1; impl: 1; method: 13; struct: 2; variant: 11.
 
 ## Declared imports
 
@@ -92,6 +92,14 @@ Full(T)
 NotWorker(T)
 ```
 
+#### variant: Cancelled
+
+[Source line 21](../../../stdlib/std/steal.lani#L21)
+
+```lanius
+Cancelled(T)
+```
+
 #### variant: Sync
 
 [Source line 21](../../../stdlib/std/steal.lani#L21)
@@ -102,7 +110,7 @@ Sync(std::sync::Error)
 
 ### enum: Next
 
-[Source line 22](../../../stdlib/std/steal.lani#L22)
+[Source line 24](../../../stdlib/std/steal.lani#L24)
 
 ```lanius
 pub enum Next<T>
@@ -110,7 +118,7 @@ pub enum Next<T>
 
 #### variant: Task
 
-[Source line 22](../../../stdlib/std/steal.lani#L22)
+[Source line 24](../../../stdlib/std/steal.lani#L24)
 
 ```lanius
 Task(T)
@@ -118,15 +126,23 @@ Task(T)
 
 #### variant: Finished
 
-[Source line 22](../../../stdlib/std/steal.lani#L22)
+[Source line 24](../../../stdlib/std/steal.lani#L24)
 
 ```lanius
 Finished
 ```
 
+#### variant: Cancelled
+
+[Source line 24](../../../stdlib/std/steal.lani#L24)
+
+```lanius
+Cancelled
+```
+
 ### struct: Stats
 
-[Source line 23](../../../stdlib/std/steal.lani#L23)
+[Source line 25](../../../stdlib/std/steal.lani#L25)
 
 ```lanius
 pub struct Stats
@@ -134,7 +150,7 @@ pub struct Stats
 
 #### field: executed
 
-[Source line 23](../../../stdlib/std/steal.lani#L23)
+[Source line 25](../../../stdlib/std/steal.lani#L25)
 
 ```lanius
 executed: u64
@@ -142,7 +158,7 @@ executed: u64
 
 #### field: stolen
 
-[Source line 23](../../../stdlib/std/steal.lani#L23)
+[Source line 25](../../../stdlib/std/steal.lani#L25)
 
 ```lanius
 stolen: u64
@@ -150,7 +166,7 @@ stolen: u64
 
 ### struct: Queues
 
-[Source line 27](../../../stdlib/std/steal.lani#L27)
+[Source line 29](../../../stdlib/std/steal.lani#L29)
 
 ```lanius
 pub struct Queues<T>
@@ -158,7 +174,7 @@ pub struct Queues<T>
 
 #### field: lines
 
-[Source line 27](../../../stdlib/std/steal.lani#L27)
+[Source line 29](../../../stdlib/std/steal.lani#L29)
 
 ```lanius
 lines: ptr
@@ -166,7 +182,7 @@ lines: ptr
 
 #### field: shared
 
-[Source line 27](../../../stdlib/std/steal.lani#L27)
+[Source line 29](../../../stdlib/std/steal.lani#L29)
 
 ```lanius
 shared: ptr
@@ -174,7 +190,7 @@ shared: ptr
 
 #### field: slots
 
-[Source line 27](../../../stdlib/std/steal.lani#L27)
+[Source line 29](../../../stdlib/std/steal.lani#L29)
 
 ```lanius
 slots: ptr
@@ -182,7 +198,7 @@ slots: ptr
 
 #### field: workers
 
-[Source line 27](../../../stdlib/std/steal.lani#L27)
+[Source line 29](../../../stdlib/std/steal.lani#L29)
 
 ```lanius
 workers: i32
@@ -190,10 +206,18 @@ workers: i32
 
 #### field: capacity
 
-[Source line 27](../../../stdlib/std/steal.lani#L27)
+[Source line 29](../../../stdlib/std/steal.lani#L29)
 
 ```lanius
 capacity: i32
+```
+
+#### field: token
+
+[Source line 29](../../../stdlib/std/steal.lani#L29)
+
+```lanius
+token: std::sync::Token
 ```
 
 ## Constants
@@ -218,7 +242,7 @@ pub const MAX_CAPACITY: i32 = 1048576;
 
 ### function: queues
 
-[Source line 29](../../../stdlib/std/steal.lani#L29)
+[Source line 31](../../../stdlib/std/steal.lani#L31)
 
 ```lanius
 pub fn queues<T>(region: &std::sync::Region, workers: i32, capacity: i32) -> core::result::Result<Queues<T>, Error>
@@ -226,9 +250,9 @@ pub fn queues<T>(region: &std::sync::Region, workers: i32, capacity: i32) -> cor
 
 ## Implementation blocks and public methods
 
-### impl at line 46
+### impl at line 50
 
-[Source line 46](../../../stdlib/std/steal.lani#L46)
+[Source line 50](../../../stdlib/std/steal.lani#L50)
 
 ```lanius
 pub impl<T> Queues<T>
@@ -236,7 +260,7 @@ pub impl<T> Queues<T>
 
 #### method: borrow
 
-[Source line 47](../../../stdlib/std/steal.lani#L47)
+[Source line 51](../../../stdlib/std/steal.lani#L51)
 
 ```lanius
 pub fn borrow(&self) -> &Queues<T>
@@ -244,7 +268,7 @@ pub fn borrow(&self) -> &Queues<T>
 
 #### method: workers
 
-[Source line 48](../../../stdlib/std/steal.lani#L48)
+[Source line 52](../../../stdlib/std/steal.lani#L52)
 
 ```lanius
 pub fn workers(&self) -> i32
@@ -252,15 +276,55 @@ pub fn workers(&self) -> i32
 
 #### method: capacity
 
-[Source line 49](../../../stdlib/std/steal.lani#L49)
+[Source line 53](../../../stdlib/std/steal.lani#L53)
 
 ```lanius
 pub fn capacity(&self) -> i32
 ```
 
+#### method: token
+
+[Source line 64](../../../stdlib/std/steal.lani#L64)
+
+```lanius
+pub fn token(&self) -> std::sync::Token
+```
+
+#### method: cancel
+
+[Source line 65](../../../stdlib/std/steal.lani#L65)
+
+```lanius
+pub fn cancel(&self) -> core::result::Result<bool, Error>
+```
+
+#### method: cancel_at
+
+[Source line 72](../../../stdlib/std/steal.lani#L72)
+
+```lanius
+pub fn cancel_at(&self, deadline: std::sync::Deadline)
+```
+
+#### method: is_cancelled
+
+[Source line 73](../../../stdlib/std/steal.lani#L73)
+
+```lanius
+pub fn is_cancelled(&self) -> bool
+```
+
+#### method: discarded
+
+[Source line 76](../../../stdlib/std/steal.lani#L76)
+
+```lanius
+pub fn discarded(&self) -> u64
+```
+
 #### method: pending_count
 
-[Source line 59](../../../stdlib/std/steal.lani#L59)
+[Source line 78](../../../stdlib/std/steal.lani#L78)
 
 ```lanius
 pub fn pending_count(&self) -> u64
@@ -268,7 +332,7 @@ pub fn pending_count(&self) -> u64
 
 #### method: stats
 
-[Source line 60](../../../stdlib/std/steal.lani#L60)
+[Source line 79](../../../stdlib/std/steal.lani#L79)
 
 ```lanius
 pub fn stats(&self, worker: i32) -> Stats
@@ -276,7 +340,7 @@ pub fn stats(&self, worker: i32) -> Stats
 
 #### method: push
 
-[Source line 67](../../../stdlib/std/steal.lani#L67)
+[Source line 86](../../../stdlib/std/steal.lani#L86)
 
 ```lanius
 pub fn push(&self, worker: i32, task: T) -> core::result::Result<i32, PushError<T>>
@@ -284,7 +348,7 @@ pub fn push(&self, worker: i32, task: T) -> core::result::Result<i32, PushError<
 
 #### method: next
 
-[Source line 111](../../../stdlib/std/steal.lani#L111)
+[Source line 131](../../../stdlib/std/steal.lani#L131)
 
 ```lanius
 pub fn next(&self, worker: i32) -> core::result::Result<Next<T>, Error>
@@ -292,7 +356,7 @@ pub fn next(&self, worker: i32) -> core::result::Result<Next<T>, Error>
 
 #### method: done
 
-[Source line 139](../../../stdlib/std/steal.lani#L139)
+[Source line 182](../../../stdlib/std/steal.lani#L182)
 
 ```lanius
 pub fn done(&self, worker: i32) -> core::result::Result<u64, Error>

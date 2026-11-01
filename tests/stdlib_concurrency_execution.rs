@@ -135,3 +135,58 @@ fn parallel_quicksort_sorts_a_permutation() {
     assert_eq!(output.stdout, b"sorted 2000000\n");
     assert!(String::from_utf8(output.stderr).unwrap().starts_with("tasks "));
 }
+
+#[test]
+fn parallel_slices_and_cancellation_keep_exact_counts() {
+    let program = native("tests/fixtures/stdlib_execution/concurrency/parallel.lani", "parallel");
+    let expected = "for-each-chunks-indices-once 245 1000003\n\
+                    map-squares-exact 1000003 1000003\n\
+                    reduce-sum-ok-ordered-hash-ok 1 1\n\
+                    prefix-sum-exact 1000003 1000003\n\
+                    merge-sort-sorted-stable 1 1\n\
+                    merge-sort-rounds-checksum-ok 8 1\n\
+                    failing-chunk-code-duplicates 7 0\n\
+                    deadline-for-each-cancelled 1 1\n\
+                    steal-cancel-by-worker-balanced-cancelled-workers 1 8\n\
+                    steal-cancel-by-deadline-balanced-cancelled-workers 1 8\n\
+                    join-until-timed-out-then-clean 1 1\n\
+                    signal-all-sent-signal 1 9\n";
+    for _ in 0..3 {
+        let mut command = Command::new(program.path());
+        command.stdin(Stdio::null());
+        let output = common::process_output_with_timeout("parallel slices", &mut command, Duration::from_secs(60));
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert_eq!(String::from_utf8(output.stdout).unwrap(), expected);
+    }
+}
+
+#[test]
+fn parallel_grep_matches_fixed_string_grep() {
+    let program = native("sample_programs/library/parallel_grep.lani", "grep");
+    let mut state: u64 = 3;
+    let mut input = Vec::new();
+    for _ in 0..200_000 {
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        let len = (state >> 58) as usize;
+        for k in 0..len { input.push(b"abcz \t"[((state >> (k % 50)) % 6) as usize]); }
+        input.push(b'\n');
+    }
+    input.extend_from_slice(b"tail ab");
+    let path = common::TempArtifact::new("laniusc_concurrency", "grep_input", Some("txt"));
+    fs::write(path.path(), &input).unwrap();
+    for pattern in ["ab", "zz", "a b", "", "qqq"] {
+        let lines: Vec<&[u8]> = input.split(|&b| b == b'\n').collect();
+        let mut expected = Vec::new();
+        for line in &lines {
+            if pattern.is_empty() || line.windows(pattern.len()).any(|w| w == pattern.as_bytes()) {
+                expected.extend_from_slice(line);
+                expected.push(b'\n');
+            }
+        }
+        let mut command = Command::new(program.path());
+        command.arg(pattern).stdin(fs::File::open(path.path()).unwrap());
+        let output = common::process_output_with_timeout("parallel grep", &mut command, Duration::from_secs(60));
+        assert_eq!(output.status.code(), Some(if expected.is_empty() { 1 } else { 0 }), "{pattern:?}");
+        assert_eq!(output.stdout, expected, "{pattern:?}");
+    }
+}

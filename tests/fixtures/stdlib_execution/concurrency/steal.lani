@@ -105,9 +105,9 @@ fn tree(region: &std::sync::Region, workers: i32) -> i32 {
             let me: i32 = index_of(role);
             while (true) {
                 let next: std::steal::Next<Span> = queues.next(me).unwrap();
-                let finished: bool = match (next) { std::steal::Next::Finished -> true, std::steal::Next::Task(span) -> false };
+                let finished: bool = match (next) { std::steal::Next::Task(span) -> false, _ -> true };
                 if (finished) { return std::worker::finish(0); }
-                let span: Span = match (next) { std::steal::Next::Task(span) -> span, std::steal::Next::Finished -> Span { lo: 0, hi: 0 } };
+                let span: Span = match (next) { std::steal::Next::Task(span) -> span, _ -> Span { lo: 0, hi: 0 } };
                 if (span.hi - span.lo == 1) {
                     std::atomic::at64(flags + (span.lo as usize) * 8).fetch_add(1, std::atomic::Ordering::Relaxed);
                     total.fetch_add(span.lo as u64, std::atomic::Ordering::Relaxed);
@@ -163,7 +163,7 @@ fn seeded(region: &std::sync::Region) -> i32 {
             let me: i32 = index_of(role);
             while (true) {
                 let next: std::steal::Next<Span> = queues.next(me).unwrap();
-                let task: i64 = match (next) { std::steal::Next::Task(span) -> span.lo, std::steal::Next::Finished -> -1 };
+                let task: i64 = match (next) { std::steal::Next::Task(span) -> span.lo, _ -> -1 };
                 if (task < 0) { return std::worker::finish(0); }
                 // A little work per task, so stealing has time to matter.
                 let spin: i64 = 0; let acc: i64 = task;

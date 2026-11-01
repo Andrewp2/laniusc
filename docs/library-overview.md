@@ -13,7 +13,10 @@ work on native Linux x86_64/glibc with libatomic:
 - `std::channel`: a bounded MPMC channel of any plain value type, with try,
   blocking and deadline forms and endpoint-count disconnection.
 - `std::steal`: work-stealing queues, one deque per worker, with
-  pending-count termination.
+  pending-count termination and token cancellation that drains the pool
+  cleanly.
+- `std::parallel`: chunked `for_each`, `map`, ordered `reduce`, `scan` and
+  stable `merge_sort` over shared arrays.
 
 The stress fixture keeps exact invariants: 1,600,000 atomic adds; 400,000
 locked increments; 1 initializer among 16 racers; 200 barrier leaders; and

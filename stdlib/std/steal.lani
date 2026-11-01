@@ -18,25 +18,29 @@ pub const MAX_CAPACITY: i32 = 1048576;
 
 pub enum Error { InvalidSize, NotWorker, NotPending, Sync(std::sync::Error) }
 // A rejected push returns the task, so the caller can run it inline.
-pub enum PushError<T> { Full(T), NotWorker(T), Sync(std::sync::Error) }
-pub enum Next<T> { Task(T), Finished }
+pub enum PushError<T> { Full(T), NotWorker(T), Cancelled(T), Sync(std::sync::Error) }
+// Cancelled once the pool's token is cancelled: the worker's own queued
+// tasks were discarded (counted, and no longer pending) before returning.
+pub enum Next<T> { Task(T), Finished, Cancelled }
 pub struct Stats { executed: u64, stolen: u64 }
 
 // Per worker: lock word, top, bottom, executed, stolen (8 bytes each, one
-// 64-byte line per worker). Shared: pending, epoch, sleepers.
-pub struct Queues<T> { lines: ptr, shared: ptr, slots: ptr, workers: i32, capacity: i32 }
+// 64-byte line per worker). Shared: pending, epoch, sleepers, discarded.
+pub struct Queues<T> { lines: ptr, shared: ptr, slots: ptr, workers: i32, capacity: i32, token: std::sync::Token }
 
 pub fn queues<T>(region: &std::sync::Region, workers: i32, capacity: i32) -> core::result::Result<Queues<T>, Error> {
     if (workers <= 0 || workers > MAX_WORKERS || capacity <= 0 || capacity > MAX_CAPACITY) { return core::result::Err(Error::InvalidSize); }
     let lines: core::result::Result<ptr, std::sync::Error> = region.allocate((workers as usize) * 64);
     if (lines.is_err()) { return core::result::Err(Error::Sync(lines.unwrap_err())); }
-    let shared: core::result::Result<ptr, std::sync::Error> = region.allocate(24);
+    let shared: core::result::Result<ptr, std::sync::Error> = region.allocate(32);
     if (shared.is_err()) { return core::result::Err(Error::Sync(shared.unwrap_err())); }
     let bytes: usize = (workers as usize) * (capacity as usize) * core::mem::size_of<T>();
     if (bytes == 0) { bytes = 8; }
     let slots: core::result::Result<ptr, std::sync::Error> = region.allocate(bytes);
     if (slots.is_err()) { return core::result::Err(Error::Sync(slots.unwrap_err())); }
-    return core::result::Ok(Queues { lines: lines.unwrap(), shared: shared.unwrap(), slots: slots.unwrap(), workers: workers, capacity: capacity });
+    let token: core::result::Result<std::sync::Token, std::sync::Error> = std::sync::token(region);
+    if (token.is_err()) { return core::result::Err(Error::Sync(token.unwrap_err())); }
+    return core::result::Ok(Queues { lines: lines.unwrap(), shared: shared.unwrap(), slots: slots.unwrap(), workers: workers, capacity: capacity, token: token.unwrap() });
 }
 
 fn word(at: ptr) -> std::atomic::Atomic64 { return std::atomic::at64(at); }
@@ -55,6 +59,21 @@ pub impl<T> Queues<T> {
     // One view length for every access, so all agree on element addresses.
     fn ring(&self) -> [T] { return core::mem::typed_slice_from_storage<T>(self.slots, self.workers * self.capacity); }
     fn slot(&self, worker: i32, position: u64) -> i32 { return worker * self.capacity + ((position % (self.capacity as u64)) as i32); }
+    // The pool's cancellation token. Cancel through Queues::cancel (which also
+    // wakes idle workers) or arm a deadline with cancel_at before spawning.
+    pub fn token(&self) -> std::sync::Token { return self.token; }
+    pub fn cancel(&self) -> core::result::Result<bool, Error> {
+        let first: core::result::Result<bool, std::sync::Error> = self.token.cancel();
+        if (first.is_err()) { return core::result::Err(Error::Sync(first.unwrap_err())); }
+        let woke: core::result::Result<i32, std::sync::Error> = self.signal(true);
+        if (woke.is_err()) { return core::result::Err(Error::Sync(woke.unwrap_err())); }
+        return core::result::Ok(first.unwrap());
+    }
+    pub fn cancel_at(&self, deadline: std::sync::Deadline) { self.token.cancel_at(deadline); }
+    pub fn is_cancelled(&self) -> bool { return self.token.is_cancelled(); }
+    // Tasks removed unexecuted by cancellation. After every worker returned
+    // and joined: pushed == executed + discarded and pending_count() == 0.
+    pub fn discarded(&self) -> u64 { return word(self.shared + 24).load(std::atomic::Load::Acquire); }
     // Tasks pushed and not yet marked done. Zero means the pool is finished.
     pub fn pending_count(&self) -> u64 { return self.pending().load(std::atomic::Load::Acquire); }
     pub fn stats(&self, worker: i32) -> Stats {
@@ -66,6 +85,7 @@ pub impl<T> Queues<T> {
     // The task counts as pending until some worker calls done for it.
     pub fn push(&self, worker: i32, task: T) -> core::result::Result<i32, PushError<T>> {
         if (worker < 0 || worker >= self.workers) { return core::result::Err(PushError::NotWorker(task)); }
+        if (self.token.is_cancelled()) { return core::result::Err(PushError::Cancelled(task)); }
         let lock: std::sync::Mutex = self.lock(worker);
         let locked: core::result::Result<i32, std::sync::Error> = lock.lock();
         if (locked.is_err()) { return core::result::Err(PushError::Sync(locked.unwrap_err())); }
@@ -111,6 +131,7 @@ pub impl<T> Queues<T> {
     pub fn next(&self, worker: i32) -> core::result::Result<Next<T>, Error> {
         if (worker < 0 || worker >= self.workers) { return core::result::Err(Error::NotWorker); }
         while (true) {
+            if (self.token.is_cancelled()) { return self.drain(worker); }
             // Read the epoch before scanning: a push after this read changes
             // it, so the sleep below cannot miss that push.
             let seen: u32 = self.epoch().load(std::atomic::Load::SeqCst);
@@ -128,11 +149,33 @@ pub impl<T> Queues<T> {
             }
             if (self.pending().load(std::atomic::Load::SeqCst) == 0) { return core::result::Ok(Next::Finished); }
             self.sleepers().fetch_add(1, std::atomic::Ordering::SeqCst);
+            // With a deadline armed, sleep no later than it, so expiry is seen.
+            let limit: core::option::Option<std::sync::Deadline> = self.token.deadline();
             let slept: core::result::Result<std::sync::Wait, std::sync::Error> = std::sync::futex_wait(self.shared + 8, seen);
+            if (limit.is_some()) { slept = std::sync::futex_wait_until(self.shared + 8, seen, limit.unwrap()); }
             self.sleepers().fetch_sub(1, std::atomic::Ordering::SeqCst);
             if (slept.is_err()) { return core::result::Err(Error::Sync(slept.unwrap_err())); }
         }
         return core::result::Ok(Next::Finished);
+    }
+    // Discard every task queued on worker's own deque, then wake the others
+    // so they observe the cancellation too.
+    fn drain(&self, worker: i32) -> core::result::Result<Next<T>, Error> {
+        let lock: std::sync::Mutex = self.lock(worker);
+        let locked: core::result::Result<i32, std::sync::Error> = lock.lock();
+        if (locked.is_err()) { return core::result::Err(Error::Sync(locked.unwrap_err())); }
+        let top: u64 = get(self.line(worker) + 8); let bottom: u64 = get(self.line(worker) + 16);
+        set(self.line(worker) + 8, bottom);
+        let unlocked: core::result::Result<i32, std::sync::Error> = lock.unlock();
+        if (unlocked.is_err()) { return core::result::Err(Error::Sync(unlocked.unwrap_err())); }
+        let count: u64 = bottom - top;
+        if (count > 0) {
+            word(self.shared + 24).fetch_add(count, std::atomic::Ordering::SeqCst);
+            self.pending().fetch_sub(count, std::atomic::Ordering::SeqCst);
+        }
+        let woke: core::result::Result<i32, std::sync::Error> = self.signal(true);
+        if (woke.is_err()) { return core::result::Err(Error::Sync(woke.unwrap_err())); }
+        return core::result::Ok(Next::Cancelled);
     }
     // Mark one task taken by worker complete; Err(NotPending) if none was. The last completion wakes every
     // sleeper so they observe Finished.

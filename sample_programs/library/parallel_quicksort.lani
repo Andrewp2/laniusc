@@ -62,7 +62,7 @@ fn sequential(values: [i64], lo: i64, hi: i64) {
 fn run(values: [i64], queues: std::steal::Queues<Span>, me: i32) -> i32 {
     while (true) {
         let next: std::steal::Next<Span> = queues.next(me).unwrap();
-        let span: Span = match (next) { std::steal::Next::Task(span) -> span, std::steal::Next::Finished -> Span { lo: -1, hi: -1 } };
+        let span: Span = match (next) { std::steal::Next::Task(span) -> span, std::steal::Next::Finished -> Span { lo: -1, hi: -1 }, std::steal::Next::Cancelled -> Span { lo: -1, hi: -1 } };
         if (span.lo < 0) { return 0; }
         let lo: i64 = span.lo; let hi: i64 = span.hi;
         while (hi - lo > CUTOFF) {

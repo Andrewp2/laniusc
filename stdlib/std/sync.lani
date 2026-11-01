@@ -6,6 +6,7 @@
 // See docs/stdlib-concurrency.md.
 module std::sync;
 import core::mem;
+import core::option;
 import core::result;
 import core::slice;
 import std::linux;
@@ -337,5 +338,61 @@ pub impl Barrier {
             if (slept.is_err()) { return core::result::Err(slept.unwrap_err()); }
         }
         return core::result::Ok(false);
+    }
+}
+
+// Cooperative cancellation shared by every worker that holds a copy.
+// state: 0 live, 1 cancelled. An optional absolute deadline cancels the
+// token the first time a check observes that it has passed. Cancellation is
+// sticky and never reset. A failed clock read counts as cancelled.
+pub struct Token { state: ptr }
+pub fn token(region: &Region) -> core::result::Result<Token, Error> {
+    let at: core::result::Result<ptr, Error> = region.allocate(32);
+    if (at.is_err()) { return core::result::Err(at.unwrap_err()); }
+    return core::result::Ok(Token { state: at.unwrap() });
+}
+pub impl Token {
+    pub fn borrow(&self) -> &Token { return self; }
+    fn flag(&self) -> std::atomic::Atomic32 { return std::atomic::at32(self.state); }
+    fn armed(&self) -> std::atomic::Atomic64 { return std::atomic::at64(self.state + 24); }
+    // Wakes every wait_until sleeper. Returns whether this call cancelled it.
+    pub fn cancel(&self) -> core::result::Result<bool, Error> {
+        let before: u32 = self.flag().swap(1, std::atomic::Ordering::SeqCst);
+        let woke: core::result::Result<i32, Error> = futex_wake(self.state, 2147483647);
+        if (woke.is_err()) { return core::result::Err(woke.unwrap_err()); }
+        return core::result::Ok(before == 0);
+    }
+    // Set the deadline before sharing the token with running workers.
+    pub fn cancel_at(&self, deadline: Deadline) {
+        std::atomic::at64(self.state + 8).store(deadline.seconds as u64, std::atomic::Store::Relaxed);
+        std::atomic::at64(self.state + 16).store(deadline.nanos as u64, std::atomic::Store::Relaxed);
+        self.armed().store(1, std::atomic::Store::Release);
+    }
+    pub fn deadline(&self) -> core::option::Option<Deadline> {
+        if (self.armed().load(std::atomic::Load::Acquire) == 0) { return core::option::None(); }
+        return core::option::Some(Deadline { seconds: std::atomic::at64(self.state + 8).load(std::atomic::Load::Relaxed) as i64,
+            nanos: std::atomic::at64(self.state + 16).load(std::atomic::Load::Relaxed) as i64 });
+    }
+    pub fn is_cancelled(&self) -> bool {
+        if (self.flag().load(std::atomic::Load::Acquire) != 0) { return true; }
+        let limit: core::option::Option<Deadline> = self.deadline();
+        if (limit.is_none()) { return false; }
+        let past: core::result::Result<bool, Error> = is_past(limit.unwrap());
+        if (past.is_err() || past.unwrap()) { self.cancel(); return true; }
+        return false;
+    }
+    // Sleep until cancelled or until deadline; Ok(true) when cancelled.
+    pub fn wait_until(&self, deadline: Deadline) -> core::result::Result<bool, Error> {
+        while (!self.is_cancelled()) {
+            let past: core::result::Result<bool, Error> = is_past(deadline);
+            if (past.is_err()) { return core::result::Err(past.unwrap_err()); }
+            if (past.unwrap()) { return core::result::Ok(false); }
+            let until: Deadline = deadline;
+            let own: core::option::Option<Deadline> = self.deadline();
+            if (own.is_some()) { let d: Deadline = own.unwrap(); if (d.seconds < until.seconds || (d.seconds == until.seconds && d.nanos < until.nanos)) { until = d; } }
+            let slept: core::result::Result<Wait, Error> = futex_wait_until(self.state, 0, until);
+            if (slept.is_err()) { return core::result::Err(slept.unwrap_err()); }
+        }
+        return core::result::Ok(true);
     }
 }

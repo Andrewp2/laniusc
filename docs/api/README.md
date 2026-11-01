@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **286 modules**, **14532 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **287 modules**, **14582 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -168,6 +168,7 @@ Inventory: **286 modules**, **14532 declaration/member entries**. Counts include
 | [std::io_utf8](std/io_utf8.md) | [source](../../stdlib/std/io_utf8.lani#L3) | 7 | Source inventory | **Unregistered** |
 | [std::linux](std/linux.md) | [source](../../stdlib/std/linux.lani#L4) | 15 | Source inventory | [stdlib-linux](../stdlib-linux.md) |
 | [std::net](std/net.md) | [source](../../stdlib/std/net.lani#L5) | 85 | Unbound host declarations | [library-remaining-api-audit](../library-remaining-api-audit.md), [library-host-prerequisites](../library-host-prerequisites.md) |
+| [std::parallel](std/parallel.md) | [source](../../stdlib/std/parallel.lani#L10) | 29 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
 | [std::poll](std/poll.md) | [source](../../stdlib/std/poll.lani#L4) | 45 | Source inventory | [stdlib-poll](../stdlib-poll.md) |
 | [std::process](std/process.md) | [source](../../stdlib/std/process.lani#L3) | 66 | Source inventory | [stdlib-process-context](../stdlib-process-context.md) |
 | [std::random](std/random.md) | [source](../../stdlib/std/random.lani#L3) | 43 | Source inventory | [stdlib-randomness](../stdlib-randomness.md) |
@@ -177,9 +178,9 @@ Inventory: **286 modules**, **14532 declaration/member entries**. Counts include
 | [std::scope](std/scope.md) | [source](../../stdlib/std/scope.lani#L14) | 65 | Source inventory | [stdlib-scope](../stdlib-scope.md), [memory-scoped-stacks-design](../memory-scoped-stacks-design.md) |
 | [std::signal](std/signal.md) | [source](../../stdlib/std/signal.lani#L3) | 14 | Source inventory | [stdlib-signals](../stdlib-signals.md) |
 | [std::socket](std/socket.md) | [source](../../stdlib/std/socket.lani#L3) | 119 | Source inventory | [stdlib-sockets](../stdlib-sockets.md), [stdlib-unix-streams](../stdlib-unix-streams.md), [stdlib-unix-request](../stdlib-unix-request.md) |
-| [std::steal](std/steal.md) | [source](../../stdlib/std/steal.lani#L9) | 33 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
+| [std::steal](std/steal.md) | [source](../../stdlib/std/steal.lani#L9) | 41 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
 | [std::stream](std/stream.md) | [source](../../stdlib/std/stream.lani#L3) | 15 | Source inventory | [stdlib-streams](../stdlib-streams.md) |
-| [std::sync](std/sync.md) | [source](../../stdlib/std/sync.lani#L7) | 92 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
+| [std::sync](std/sync.md) | [source](../../stdlib/std/sync.lani#L7) | 102 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
 | [std::temp_dir](std/temp_dir.md) | [source](../../stdlib/std/temp_dir.lani#L3) | 88 | Source inventory | [stdlib-temp-directories](../stdlib-temp-directories.md), [stdlib-mktemp-dir](../stdlib-mktemp-dir.md) |
 | [std::temp_file](std/temp_file.md) | [source](../../stdlib/std/temp_file.lani#L4) | 90 | Source inventory | [stdlib-temp-files](../stdlib-temp-files.md), [stdlib-file-operations](../stdlib-file-operations.md) |
 | [std::thread](std/thread.md) | [source](../../stdlib/std/thread.lani#L5) | 47 | Unbound host declarations | [library-remaining-api-audit](../library-remaining-api-audit.md), [library-host-prerequisites](../library-host-prerequisites.md) |
@@ -187,7 +188,7 @@ Inventory: **286 modules**, **14532 declaration/member entries**. Counts include
 | [std::time_checked](std/time_checked.md) | [source](../../stdlib/std/time_checked.lani#L6) | 3 | Source inventory | [stdlib-time](../stdlib-time.md) |
 | [std::time_wide](std/time_wide.md) | [source](../../stdlib/std/time_wide.lani#L4) | 5 | Source inventory | [stdlib-time](../stdlib-time.md) |
 | [std::vec](std/vec.md) | [source](../../stdlib/std/vec.lani#L11) | 44 | Protected legacy | [stdlib-legacy-collections](../stdlib-legacy-collections.md), [stdlib-checked-sample-migration](../stdlib-checked-sample-migration.md), [library-dependencies](../library-dependencies.md) |
-| [std::worker](std/worker.md) | [source](../../stdlib/std/worker.lani#L8) | 37 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
+| [std::worker](std/worker.md) | [source](../../stdlib/std/worker.lani#L8) | 40 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
 
 ### `test`
 

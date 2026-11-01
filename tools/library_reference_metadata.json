@@ -1873,6 +1873,11 @@
       "profile": "Unbound host declarations",
       "note": "The direct legacy network service declarations are unbound. Metadata helpers describe that unavailable service; executable owned sockets use std::socket over std::linux separately."
     },
+    "std::parallel": {
+      "guides": [
+        "docs/stdlib-concurrency.md"
+      ]
+    },
     "std::poll": {
       "guides": [
         "docs/stdlib-poll.md"
