@@ -3,10 +3,12 @@
 
 usage: oracle.py GROUP EXE
 
-GROUP: pool, redirect, upload, broken, or all.
+GROUP: pool, redirect, upload, broken, https, or all.
 
 Origins are http.server ThreadingHTTPServer instances on 127.0.0.1:0 (two of
 them, for cross-origin redirects); broken servers are scripted raw sockets.
+The https group adds TLS origins (Python ssl) whose test certificates are
+generated per run with the openssl CLI by ../openssl_tls/certificates.py.
 Every case checks the client's exit code, output and its own "pool ..." and
 "response ..." statistics lines against the oracle, and the server-observed
 connection and request counts. Prints one line per group:
@@ -16,6 +18,8 @@ import hashlib
 import http.server
 import os
 import random
+import shutil
+import ssl
 import socket
 import subprocess
 import sys
@@ -23,6 +27,10 @@ import tempfile
 import threading
 import time
 import urllib.parse
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "openssl_tls"))
+from certificates import generate  # noqa: E402
 
 EXE = None
 LOCK = threading.Lock()
@@ -205,17 +213,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
 class Origin(http.server.ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self):
+    def __init__(self, context=None):
         super().__init__(("127.0.0.1", 0), Handler)
         self.connections = 0
         self.requests = 0
         self.log = []
         self.drained = None
+        self.scheme = "http"
+        if context is not None:
+            # The handshake runs in the handler thread, at the first read.
+            self.socket = context.wrap_socket(self.socket, server_side=True, do_handshake_on_connect=False)
+            self.scheme = "https"
         threading.Thread(target=self.serve_forever, daemon=True).start()
+
+    def handle_error(self, request, client_address):
+        pass  # failed handshakes and client hang-ups are part of the cases
 
     @property
     def base(self):
-        return "http://127.0.0.1:%d" % self.server_address[1]
+        return "%s://127.0.0.1:%d" % (self.scheme, self.server_address[1])
 
     def reset(self):
         with LOCK:
@@ -531,7 +547,7 @@ def group_redirect(a, b):
 
     @case
     def https_location_refused():
-        rc, out, err, *_ = client(["-L", a.base + "/tohttps"])
+        rc, out, err, *_ = client(["--no-https", "-L", a.base + "/tohttps"])
         expect(rc == 1 and "unsupported scheme" in err, (rc, err))
 
     @case
@@ -769,7 +785,7 @@ def group_broken(a, b):
 
     @case
     def https_url_refused():
-        rc, out, err, *_ = client(["https://127.0.0.1:1/"])
+        rc, out, err, *_ = client(["--no-https", "https://127.0.0.1:1/"])
         expect(rc == 1, (rc, err))
 
     @case
@@ -782,7 +798,155 @@ def group_broken(a, b):
     return cases
 
 
-GROUPS = {"pool": group_pool, "redirect": group_redirect, "upload": group_upload, "broken": group_broken}
+def tls_origin(certificate):
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(str(CERTS / (certificate + ".pem")), str(CERTS / (certificate + ".key")))
+    return Origin(context)
+
+
+def group_https(a, b):
+    cases = []
+    s = tls_origin("valid")
+    expired = tls_origin("expired")
+    ORIGINS.extend([s, expired])
+    root = ["--cacert", str(CERTS / "root.pem")]
+    port = s.server_address[1]
+
+    def case(fn):
+        cases.append(fn)
+        return fn
+
+    @case
+    def reuse_three():
+        rc, out, err, pool, rs, _ = client(root + ["--stats", s.base + "/hello", s.base + "/hello", s.base + "/hello"])
+        expect(rc == 0 and out == b"hello\n" * 3, (rc, out, err))
+        pool_has(pool, connections=1, reused=2, requests=3, idle=1)
+        expect([r["reused"] for r in rs] == ["0", "1", "1"], rs)
+        expect(s.connections == 1 and s.requests == 3, (s.connections, s.requests))
+
+    @case
+    def dns_identity():
+        rc, out, err, pool, _, _ = client(root + ["--stats", "https://localhost:%d/hello" % port, "https://localhost:%d/dir/hello" % port])
+        expect(rc == 0 and out == b"hello\ndir hello\n", (rc, out, err))
+        pool_has(pool, connections=1, reused=1)
+        expect(s.log[0][2].get("Host") == "localhost:%d" % port, s.log)
+
+    @case
+    def http_to_https_redirect():
+        target = urllib.parse.quote(s.base + "/echo", safe="")
+        rc, out, err, pool, rs, _ = client(root + ["--stats", "-L", "-H", "Authorization: Bearer x", a.base + "/redirect?code=302&to=" + target, s.base + "/hello"])
+        expect(rc == 0, (rc, err))
+        got = fields(out.split(b"hello\n")[0])
+        expect(got["auth"] == "None" and got["method"] == "GET", got)
+        expect(rs[0]["redirects"] == "1" and rs[0]["url"] == s.base + "/echo", rs)
+        expect(rs[1]["reused"] == "1", rs)
+        pool_has(pool, connections=2, reused=1, requests=3, redirects=1, idle=2)
+        expect(a.connections == 1 and s.connections == 1 and s.requests == 2, (a.connections, s.connections, s.requests))
+
+    @case
+    def https_to_http_redirect():
+        target = urllib.parse.quote(a.base + "/hello", safe="")
+        rc, out, err, pool, rs, _ = client(root + ["--stats", "-L", s.base + "/redirect?code=301&to=" + target])
+        expect(rc == 0 and out == b"hello\n" and rs[0]["url"] == a.base + "/hello", (rc, out, rs))
+        pool_has(pool, connections=2, redirects=1)
+
+    @case
+    def same_port_scheme_keys():
+        # http:// to the TLS port is a different pool key: it fails on its
+        # own connection and leaves the pooled TLS connection alone.
+        rc, out, err, pool, _, _ = client(root + ["--stats", s.base + "/hello", "http://127.0.0.1:%d/hello" % port])
+        expect(rc != 0 and out == b"hello\n", (rc, out, err))
+        pool_has(pool, connections=2, reused=0, idle=1)
+
+    @case
+    def bodies():
+        rc, out, err, pool, _, _ = client(root + ["--stats", s.base + "/bytes/1000000", s.base + "/chunked/250000", s.base + "/bytes/0"])
+        expect(rc == 0 and out == pattern(1000000) + pattern(250000, 11), (rc, len(out), err))
+        pool_has(pool, connections=1, reused=2)
+
+    @case
+    def streamed_upload():
+        path = os.path.join(WORK, "upload.bin")
+        data = pattern(3 * 1024 * 1024 + 5, 3)
+        with open(path, "wb") as f:
+            f.write(data)
+        try:
+            rc, out, err, pool, _, _ = client(root + ["--stats", "-T", path, s.base + "/echo", s.base + "/echo"])
+        finally:
+            os.unlink(path)
+        expect(rc == 0, (rc, err))
+        first = fields(out.split(b"host=")[0])
+        expect(first["method"] == "PUT" and first["len"] == str(len(data)) and first["sha"] == hashlib.sha256(data).hexdigest()[:16], first)
+        expect(first["te"] == "chunked" and first["chunks"] == str(-(-len(data) // 16384)), first)
+        pool_has(pool, connections=1, reused=1)
+
+    @case
+    def fixed_post():
+        rc, out, err, pool, _, _ = client(root + ["--stats", "-d", "x" * 40000, s.base + "/echo"])
+        got = fields(out)
+        expect(rc == 0 and got["method"] == "POST" and got["len"] == "40000" and got["cl"] == "40000", (rc, got))
+
+    @case
+    def stale_tls_connection():
+        rc, out, err, pool, _, _ = client(root + ["--stats", "--pause", "200", s.base + "/idle-close", s.base + "/hello"])
+        expect(rc == 0 and out == b"bye\nhello\n", (rc, out, err))
+        pool_has(pool, connections=2, stale=1, reused=0)
+
+    @case
+    def retry_after_unauthenticated_eof():
+        # The server reads the second request and drops the TCP connection
+        # without close_notify or a response: a retryable empty reply.
+        rc, out, err, pool, _, _ = client(root + ["--stats", s.base + "/dropnext", s.base + "/hello"])
+        expect(rc == 0 and out == b"armed\nhello\n", (rc, out, err))
+        pool_has(pool, connections=2, reused=1, retries=1, requests=3)
+        expect(s.requests == 3, s.requests)
+
+    @case
+    def no_retry_empty_reply():
+        rc, out, err, *_ = client(root + ["--no-retry", s.base + "/dropnext", s.base + "/hello"])
+        expect(rc == 52 and "empty reply" in err, (rc, err))
+
+    @case
+    def preconnect():
+        rc, out, err, pool, _, _ = client(root + ["--stats", "--preconnect", "2", s.base + "/hello", s.base + "/hello"])
+        expect(rc == 0 and out == b"hello\n" * 2, (rc, err))
+        pool_has(pool, connections=2, reused=2, idle=2)
+        expect(s.connections == 2, s.connections)
+
+    @case
+    def untrusted_root():
+        # Default trust paths do not contain the test root.
+        rc, out, err, *_ = client([s.base + "/hello"])
+        expect(rc == 60 and "certificate verification failed" in err, (rc, err))
+        expect(s.requests == 0, s.requests)
+
+    @case
+    def expired_certificate():
+        rc, out, err, *_ = client(root + [expired.base + "/hello"])
+        expect(rc == 60 and "certificate verification failed" in err, (rc, err))
+        expect(expired.requests == 0, expired.requests)
+
+    @case
+    def redirect_to_untrusted():
+        target = urllib.parse.quote(expired.base + "/hello", safe="")
+        rc, out, err, *_ = client(root + ["-L", a.base + "/redirect?code=302&to=" + target])
+        expect(rc == 60 and expired.requests == 0, (rc, err))
+
+    @case
+    def https_disabled():
+        rc, out, err, *_ = client(root + ["--no-https", s.base + "/hello"])
+        expect(rc == 1 and "unsupported scheme" in err and s.connections == 0, (rc, err))
+
+    @case
+    def missing_ca_file():
+        rc, out, err, *_ = client(["--cacert", os.path.join(WORK, "absent.pem"), s.base + "/hello"])
+        expect(rc == 35 and "TLS error" in err and s.connections == 0, (rc, err))
+
+    return cases
+
+
+GROUPS = {"pool": group_pool, "redirect": group_redirect, "upload": group_upload, "broken": group_broken, "https": group_https}
+ORIGINS = []
 
 
 def run_group(name):
@@ -791,8 +955,8 @@ def run_group(name):
     count = 0
     try:
         for fn in GROUPS[name](a, b):
-            a.reset()
-            b.reset()
+            for o in [a, b] + ORIGINS:
+                o.reset()
             try:
                 fn()
             except Failure as e:
@@ -802,29 +966,36 @@ def run_group(name):
                 print("FAIL %s/%s: client timed out" % (name, fn.__name__), file=sys.stderr)
                 sys.exit(1)
             count += 1
-        a.reset()
-        b.reset()
+        for o in [a, b] + ORIGINS:
+            o.reset()
     finally:
-        a.shutdown()
-        b.shutdown()
+        for o in [a, b] + ORIGINS:
+            o.shutdown()
+        del ORIGINS[:]
     print("http-agent-%s cases=%d connections=%d requests=%d" % (name, count, TOTAL["connections"], TOTAL["requests"]))
 
 
 def main():
-    global EXE, WORK
+    global EXE, WORK, CERTS
     if len(sys.argv) != 3 or (sys.argv[1] not in GROUPS and sys.argv[1] != "all"):
         print(__doc__, file=sys.stderr)
         return 2
     EXE = os.path.abspath(sys.argv[2])
     WORK = tempfile.mkdtemp(prefix="http-agent-")
+    CERTS = Path(WORK) / "certs"
+    names = list(GROUPS) if sys.argv[1] == "all" else [sys.argv[1]]
     try:
-        for name in (list(GROUPS) if sys.argv[1] == "all" else [sys.argv[1]]):
+        if "https" in names:
+            generate(CERTS)
+        for name in names:
             run_group(name)
     finally:
+        shutil.rmtree(CERTS, ignore_errors=True)
         os.rmdir(WORK)
     return 0
 
 
 WORK = None
+CERTS = None
 if __name__ == "__main__":
     sys.exit(main())

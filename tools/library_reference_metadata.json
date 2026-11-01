@@ -1220,9 +1220,10 @@
       "guides": [
         "docs/extended-http-agent.md",
         "docs/extended-http.md",
-        "docs/extended-url-client.md"
+        "docs/extended-url-client.md",
+        "docs/extended-openssl-tls.md"
       ],
-      "note": "Synchronous cleartext HTTP/1.1 client over ext::http framing, ext::http_url and ext::url_connect: a keep-alive pool keyed by host and port with per-host/total idle counts, idle time, Keep-Alive hints and use limits, stale probing and one idempotent retry; redirects with a hop limit, 303/301/302/307/308 method rules, RFC 3986 reference resolution and cross-origin Authorization/Cookie stripping; fixed or chunked streamed bodies with early-response handling. The curl-like sample passes four Python http.server oracle groups (pool 18, redirect 29, upload 10, broken 21 cases) with exact counters."
+      "note": "Synchronous HTTP/1.1 client for http:// and verified https:// over ext::http framing, ext::http_url, ext::url_connect and ext::tls_stream: a keep-alive pool of cleartext and TLS connections keyed by scheme, host and port with per-host/total idle counts, idle time, Keep-Alive hints and use limits, stale probing and one idempotent retry; redirects with a hop limit, 303/301/302/307/308 method rules, RFC 3986 reference resolution and cross-origin Authorization/Cookie stripping; fixed or chunked streamed bodies with early-response handling. The curl-like sample passes five oracle groups (pool 18, redirect 29, upload 10, broken 21, https 17 cases against Python ssl origins with locally generated certificates) with exact counters."
     },
     "ext::http_service": {
       "guides": [
@@ -1387,6 +1388,11 @@
     "ext::parse": {
       "guides": [
         "docs/extended-parse.md"
+      ]
+    },
+    "ext::patchset": {
+      "guides": [
+        "docs/extended-patchset.md"
       ]
     },
     "ext::pratt": {

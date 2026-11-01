@@ -572,6 +572,14 @@ xdiff alignment (`Algorithm::Xdiff`). Their output is identical to git 2.43 on
 all 2,040 generated pairs for word diffs, character diffs and `--stat`, on
 1,500 `git diff --stat` reports over generated repositories and on 282
 `diff -ruN` patches.
+[Multi-file patches](extended-patchset.md) (`ext::patchset`, `seq-patch -i`)
+read git extended headers (renames, copies, modes, creation, deletion,
+binary sections), reverse patches, detect reversed patches as GNU `patch`
+does, place hunks as `git apply` does and fall back to a `git apply --3way`
+merge. On 900 generated repositories patched into seven kinds of mutated
+tree, the resulting trees and exit statuses agree with GNU `patch`
+(`-t`/`-N`/`-f`/`-R`), `git apply` (and `-R`) and `git apply --3way` in all
+5,518 comparisons. Binary patches are refused with an error.
 
 The preceding [reusable regex-workspace increment](library-regex-workspace-plan.md) is
 implemented and passes the selected Workspace/Search, regex, lexer,
@@ -2239,14 +2247,16 @@ event server plus four sequential groups, with exact server counters. TLS,
 threads, multipart ranges and allocation-failure coverage remain open.
 
 The [HTTP/1.1 client agent](extended-http-agent.md) (`ext::http_agent`) is a
-synchronous cleartext client over the same codec, `ext::http_url` and
-`ext::url_connect`. It pools keep-alive connections per host and port under
+synchronous `http://` and verified `https://` client over the same codec,
+`ext::http_url`, `ext::url_connect` and `ext::tls_stream`. It pools
+keep-alive cleartext and TLS connections per scheme, host and port under
 idle-count, idle-time and use limits, discards stale ones and retries an
 idempotent request once on a fresh connection. It follows redirects with a
 hop limit, RFC 9110 method rules and cross-origin credential stripping, and
 sends fixed or chunked streamed bodies, stopping an upload on an early final
 response. The curl-like sample passes Python `http.server` oracle groups
-pool18, redirect29, upload10 and broken21 with exact counters.
+pool18, redirect29, upload10 and broken21, plus https17 against Python `ssl`
+origins with locally generated test certificates, with exact counters.
 
 [Resumable cleartext HTTP exchanges](extended-http-client.md) expose owned
 Prepared request staging and caller-driven Exchange steps. At `480432e8`,
@@ -2373,6 +2383,9 @@ string and input limits. It agrees with all 81 hand-typed Appendix A rows and
 an independent Python implementation on 8,100 generated, mutated, limit and
 sequence cases at four chunk sizes; the
 [cbor-to-json](../sample_programs/cbor_to_json.lani) sample agrees on 700.
+cbor-to-json converts a 4.66 MB document in 0.49 s, 5.7 times faster than
+before the S5 speed work, using the decoder's and JSON writer's `Result`-free
+fast paths.
 [`ext::msgpack`](extended-msgpack.md) streams MessagePack the same way, with
 optional canonical-header and timestamp checks. It agrees with the installed
 Python `msgpack` package and an independent model on 8,174 format-table,
@@ -2397,12 +2410,20 @@ The [regex differential oracle](extended-regex-oracle.md) runs the real
 `find_iter`, template-replacement and grep programs against CPython `re` on
 seeded grammar-generated patterns from the shared subset. Five seeds agree on
 60,025 find/capture cases (with named groups), 5,000 replacements, 5,000 grep
-runs, 13,853 fixed-width lookbehind cases and 15,000 capture-free lazy-DFA `is_match`/`find` cases, and five
+runs, 13,853 fixed-width lookbehind cases, 15,000 capture-free lazy-DFA `is_match`/`find` cases and 5,000
+mixed-script `\p{..}` DFA cases, and six
 pathological inputs finish in about 0.2 s. It found, and the engine now fixes,
 a lazy counted-repetition priority error (`(?:a|aab){0,2}?b` on `aabb`).
 The DFA, which carries `^ $ \A \z \b \B` as look-behind bits and delayed
 accepts in its states, lets `text_grep` count any lookbehind-free pattern on a
-0.9 MB corpus in about 0.1–0.2 s instead of 2.3–3.8 s.
+0.9 MB corpus in about 0.1–0.2 s instead of 2.3–3.8 s. Its transitions are
+cached per byte, with partial states for UTF-8 prefixes, so `\p{Lu}` on a
+1.3 MB mixed-script file takes 147 ms instead of 1110 ms. `text_grep` also
+searches for the pattern's required literal with `core::search` across each
+64 KiB read and runs the matcher only on the records that contain it. On
+S4's 49 MB corpus a no-match scan takes 68 ms instead of 5.2 s, against GNU
+grep's 11 ms; patterns with a literal take 85–272 ms with `-c`
+([timings](extended-text-grep.md#literal-prefilter)).
 
 [Regex splitting and replacement](extended-regex-text.md) now reuse canonical
 Search with one lazily acquired workspace. Borrowed split fields, independent
