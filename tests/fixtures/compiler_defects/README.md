@@ -37,7 +37,11 @@ one should become a passing regression test once its defect is fixed.
 | `b19_stdlib_path_self_method.lani` | self methods of stdlib types through the type's path: `TotalF32::to_bits(t)`, `Descriptor::raw_handle(d.borrow())`, `Option<i32>::is_some(o)` | exit 0 | **fixed 2026-10-31**: was LNC0027 "call resolution failed". The bare `Option::is_some(o)` (was LNC0005) is generics matrix p83 |
 | `b19_bare_imported_generic_path.lani` | self methods of imported generic types through the bare type's path: `Option::is_some(o)`, `Option::unwrap_or(n, 9)`, `Result::unwrap(r)` | exit 0 | **fixed 2026-11-01**: was LNC0005 "unresolved identifier" at `Option`. dependencies/14 gives the bare qualifier its declaration's own application (an external canonical type), methods/06, 07, 08 and candidate.slang accept it as a receiver key, and calls/03d binds no parameter from it |
 | `generic_impl_path_inference.lani` | a bare generic type's path infers the impl's parameters: `W::wrap(5)`, `W::get(w)`, `W::peek(u.borrow())` on `impl<T> W<T>` | exit 0 | **fixed 2026-10-31**: was LNC0006 "type mismatch" (the bare `W` bound T to the declaration's own parameter) |
+| `ptr_zero_local.lani` | `let value: ptr = 0; return value;` after an earlier call | exit 1 | **fixed 2026-11-01**: exit 2, the pointer was non-null; see [immediate stack stores](#immediate-stack-stores) |
+| `ptr_zero_socket_args.lani` | std::socket's shape: `[word(5), address(null()), address(null())]` | exit 11 | **fixed 2026-11-01**: was exit 22. In `std::socket` every `receive`/`receive_until` failed with EFAULT |
+| `u64_raw_view_direction.lani` | reported: a store through `typed_slice_from_raw_parts<u64>(p, n)` at index 1 writes below `p` and segfaults | exit 79 | **not a defect**: raw views of types other than i32 and u8 descend in eight-byte words, as `core::mem` documents, so element 1 is at `p - 8`. The fixture views the storage with `typed_slice_from_storage` and exits 79 |
 | `byte_loop_codegen.lani` | performance: a `[u8]` newline-count loop, 160 M byte reads; compare `byte_loop_codegen.c` and the loop disassembly in `byte_loop_codegen.s` | about `gcc -O0` speed (0.14 s; `-O2` 0.02 s) | 0.50 s (2.8 ns/byte), exit 0: per-iteration slice copy, bounds check, stride `imul` and branch, spills of every temporary |
+| `ptr_literal_store_width.lani` | `let empty: ptr = 0;` in a function whose slot last held a stack address | exit 0 (null) | exit 1: the literal is stored with `mov %eax,-0x8(%rbp)` (32 bits) and reloaded with a 64-bit `mov`, giving 0x00007ffe00000000. Found 2026-11-01 when `alloc::vec::new()` returned a nonnull `storage` after a push; `new` now takes its null from `return 0;`, which is `xor %eax,%eax; ret`, and four fixtures that trapped on such a `storage` now pass (`stdlib_vec_edit_model`, `stdlib_vec_edit_resources/zero_sized.lani`, `stdlib_vec_transfer_model`, `stdlib_vec_transfer/zero_sized.lani`). About 40 other `let ...: ptr = 0;` sites in the stdlib are still exposed |
 
 An imported method called with too few arguments, `o.unwrap_or()` on an
 `Option<i32>` or `TotalF32::to_bits()`, compiled and ran with an undefined
@@ -49,6 +53,29 @@ other shapes also compiled correctly: generic-function and user-enum nested
 matches, `Option<Result<T, i32>>`, an untyped `let` of `T::lt` and
 `try_clone`. The agent that hit that diagnostic should replace the candidate
 with the failing program.
+
+## Immediate stack stores
+
+`x86_put_imm32_to_location` (`shaders/codegen/lir/x86/encoding.slang`) wrote an
+integer or pointer immediate to a stack slot with a 32-bit
+`mov [rbp+d], eax`. Readers of a pointer or 64-bit value load the slot's
+whole eight-byte word. Since the linear-scan allocator (d4453f42b) moved more
+temporaries onto the stack, the upper half could be stale from an earlier
+call's frame. For example, `null()` in `ptr_zero_local.lani` returned a stack
+address with its low half cleared, and so did `std::socket`'s `null()`. The
+store now carries REX.W. RAX already holds the zero-extended immediate, as the
+register form leaves it, so i32 readers see the same value. The change adds
+one byte per such store and no kernel instructions (`emit` 26,250,
+`byte_count` 21,652; limit 40,000).
+
+The compilers built before and after this change compiled 97 programs in
+one daemon each: 84 sample programs and stdlib fixtures, 11 reductions and
+the two `u64_slice` probes. Every executable changed by the extra REX byte.
+16 programs are rejected by both. Of the 243 runs, 204 match. Six of the rest
+differ only in clock output. 30 are the 10 reductions, which went from the
+wrong result to the expected one. The other three are
+`stdlib_foundation/owned_delimited/bounds.lani`, which died with SIGILL on
+lang and now exits 0.
 
 ## check and generic impls
 

@@ -231,7 +231,7 @@ pub fn plan(region: &std::sync::Region, workers: i32, grain: i32) -> core::resul
 
 ### function: sort_unstable
 
-[Source line 352](../../../stdlib/std/par.lani#L352)
+[Source line 362](../../../stdlib/std/par.lani#L362)
 
 ```lanius
 pub fn sort_unstable<T>(plan: Plan, data: std::parallel::Shared<T>, scratch: std::parallel::Shared<T>) -> core::result::Result<i32, Error> where T: core::cmp::Ord<T>
@@ -239,7 +239,7 @@ pub fn sort_unstable<T>(plan: Plan, data: std::parallel::Shared<T>, scratch: std
 
 ### function: sort_stable
 
-[Source line 356](../../../stdlib/std/par.lani#L356)
+[Source line 366](../../../stdlib/std/par.lani#L366)
 
 ```lanius
 pub fn sort_stable<T>(plan: Plan, data: std::parallel::Shared<T>, scratch: std::parallel::Shared<T>) -> core::result::Result<i32, Error> where T: core::cmp::Ord<T>
@@ -247,7 +247,7 @@ pub fn sort_stable<T>(plan: Plan, data: std::parallel::Shared<T>, scratch: std::
 
 ### function: map
 
-[Source line 361](../../../stdlib/std/par.lani#L361)
+[Source line 371](../../../stdlib/std/par.lani#L371)
 
 ```lanius
 pub fn map<T, U, M>(plan: Plan, input: std::parallel::Shared<T>, output: std::parallel::Shared<U>, mapper: &M) -> core::result::Result<i32, Error> where M: core::function::Mapper<T, U>
@@ -255,7 +255,7 @@ pub fn map<T, U, M>(plan: Plan, input: std::parallel::Shared<T>, output: std::pa
 
 ### function: reduce
 
-[Source line 401](../../../stdlib/std/par.lani#L401)
+[Source line 411](../../../stdlib/std/par.lani#L411)
 
 ```lanius
 pub fn reduce<T, A, F, C>(plan: Plan, input: std::parallel::Shared<T>, partials: std::parallel::Shared<A>, identity: A, fold: &F, combine: &C) -> core::result::Result<A, Error>
@@ -264,7 +264,7 @@ pub fn reduce<T, A, F, C>(plan: Plan, input: std::parallel::Shared<T>, partials:
 
 ### function: scan
 
-[Source line 479](../../../stdlib/std/par.lani#L479)
+[Source line 489](../../../stdlib/std/par.lani#L489)
 
 ```lanius
 pub fn scan<T, C>(plan: Plan, data: std::parallel::Shared<T>, partials: std::parallel::Shared<T>, identity: T, combine: &C) -> core::result::Result<i32, Error> where C: core::iter::Folder<T, T>

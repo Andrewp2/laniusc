@@ -1,7 +1,12 @@
 # Standard and extended library overview
 
-The full library goal remains open. The current increment makes
-`core::slice` sorting adaptive: [pattern-defeating quicksort](stdlib-sort-algorithms.md)
+The full library goal remains open. The current increment adds
+[bulk slice and vector operations](stdlib-slice-bulk.md): `copy_from_slice`,
+`swap_with_slice`, `fill_range`, `memchr` and `memcmp` in `core::slice`, and
+`try_extend_from_slice`, `copy_from_slice`, `swap_with_slice`, `fill` and
+`swap` on `alloc::vec::Vec`. Packed byte runs move eight bytes at a time:
+a 4 KiB copy runs 5x faster than the element loop and a fill 38x faster.
+The preceding increment makes `core::slice` sorting adaptive: [pattern-defeating quicksort](stdlib-sort-algorithms.md)
 for unstable sorts and a run-adaptive stable merge sort with galloping over
 caller scratch. Both are checked against Python `sorted`, with recorded
 comparison counts and timings. The preceding increment adds inline
@@ -50,7 +55,7 @@ work on native Linux x86_64/glibc with libatomic:
   `scan` as stolen tasks on a `std::steal` pool. The sorts keep one forked crew
   for all phases, sort runs with a direct-comparison introsort or merge
   sort, then merge them in parallel at merge-path splits. A Python model oracle covers 3,600 runs with 0
-  mismatches, including non-commutative scans. On 10M i64 keys, 8 workers take 387–392 ms, against 638–699 ms
+  mismatches, including non-commutative scans. On 10M i64 keys, 8 workers take 306–373 ms, against 577–689 ms
   for C++ `std::sort` at -O2.
 
 The stress fixture keeps exact invariants: 1,600,000 atomic adds; 400,000
@@ -2298,6 +2303,20 @@ GOAWAY, RST_STREAM and response validation). The engine passes 17 cases
 against libnghttp2's server session and 46 against hand-built frames for
 every connection and stream error it must detect.
 
+The [HTTP/2 server engine](extended-http2-server.md) (`ext::http2_server`) is
+the I/O-free server side. It reads the client preface, enforces
+MAX_CONCURRENT_STREAMS by refusing extra streams, validates request
+pseudo-fields and fields, buffers bodies under flow control, answers 413 and
+431 itself, and sends responses within the client's windows.
+[`ext::http_service`](extended-http-service.md#http2-h2c) hands connections
+that open with the preface to it (prior-knowledge h2c) and keeps serving
+HTTP/1.1 on the same listener. The event server multiplexes h2c
+connections on its loop as well, and a load test of 100 concurrent h2c
+clients against 100 HTTP/1.1 clients checks every body and counter. A libnghttp2 client session through ctypes
+passes 6 session cases and 18 malformed-frame cases, both against the engine
+over a pipe and against the service over TCP. HTTP/2 over TLS waits on C
+callback support for OpenSSL's ALPN selection.
+
 The [WebSocket client](extended-websocket-client.md) (`ext::websocket_client`)
 uses `dial` for `ws://` and verified `wss://` URLs and the canonical
 `ext::websocket` frame engine in the client role. It validates the opening
@@ -2477,10 +2496,11 @@ accepts in its states, lets `text_grep` count any lookbehind-free pattern on a
 0.9 MB corpus in about 0.1–0.2 s instead of 2.3–3.8 s. Its transitions are
 cached per byte, with partial states for UTF-8 prefixes, so `\p{Lu}` on a
 1.3 MB mixed-script file takes 147 ms instead of 1110 ms. `text_grep` also
-searches for the pattern's required literal with `core::search` across each
-64 KiB read and runs the matcher only on the records that contain it. On
-S4's 49 MB corpus a no-match scan takes 68 ms instead of 5.2 s, against GNU
-grep's 11 ms; patterns with a literal take 85–272 ms with `-c`
+searches for the pattern's required literal across each 64 KiB read, eight
+candidate starts per word step, and runs the matcher only on the records that
+contain it. On S4's 49 MB corpus a no-match scan takes 56 ms instead of 5.2 s,
+against GNU grep's 9 ms; patterns with a literal take 57–100 ms with `-c`
+(`the`, 150,582 matching lines, takes 100 ms against GNU's 54)
 ([timings](extended-text-grep.md#literal-prefilter)). Patterns without one
 run `Dfa.match_lines` over each whole block, restarting at every record, so
 `[0-9]+$` takes 0.54 s instead of 1.8 s.

@@ -112,6 +112,107 @@ sends `status_for(error)` (when nonzero) and closes. `close` half-closes,
 drains briefly, and closes once. One slow client therefore holds every later
 client for up to its deadlines; the `slowloris-seq` oracle group records this.
 
+## HTTP/2 (h2c)
+
+A connection that opens with the HTTP/2 preface (prior-knowledge `h2c`,
+RFC 9113 section 3.3) makes the first `next_request` return
+`Err(Error::Http2Preface)`. `upgrade_h2` then moves the socket and the bytes
+read so far into an `H2Connection`, which serves multiplexed requests
+through the [`ext::http2_server`](extended-http2-server.md) engine. One
+listener therefore serves both protocols.
+
+```lanius
+pub enum Error { ..., Http2Preface, Http2(ext::http2::Error) }
+pub struct H2Request { id: i32, method: View<u8>, target: View<u8>, path: View<u8>, query: View<u8>, authority: View<u8>, body: View<u8>, head_only: bool }
+pub fn h2_options(o: Options) -> ext::http2_server::Options;
+pub impl Connection { pub fn upgrade_h2(&self) -> Result<H2Connection,Error>; }
+pub impl H2Connection {
+    pub fn next_request(&self) -> Result<Option<H2Request>,Error>;
+    pub fn header(&self, request: H2Request, name: View<u8>) -> Option<View<u8>>;
+    pub fn respond(&self, request: H2Request, status: i32, content_type: View<u8>, body: View<u8>) -> Result<i32,Error>;
+    pub fn goaway(&self) -> Result<i32,Error>;
+    pub fn close(&self) -> Result<i32,Error>;
+    pub fn stats(&self) -> Stats;
+    pub fn is_open(&self) -> bool;
+}
+```
+
+`h2_options` derives the engine settings from the service options:
+
+- the header list limit is `limits.head_bytes`;
+- the body limit is `limits.body_bytes`;
+- `max_requests` streams are served before a graceful GOAWAY.
+
+`next_request` sends what the engine queued and returns the next complete
+request on any stream. `Ok(None)` means one of:
+
+- the peer closed;
+- a GOAWAY went either way and every stream finished;
+- the connection stayed idle past `idle_timeout_ms` with no open stream,
+  in which case it first sends GOAWAY(NO_ERROR).
+
+An open stream whose body stalls past `body_timeout_ms` gives
+`Err(BodyTimeout)`. A protocol error is sent as GOAWAY before
+`Err(Http2(e))` returns.
+
+`respond` sends `:status`, `content-type` (when nonempty), `content-length`
+and `date` (when `options.date`), then the body, which is dropped for HEAD.
+It waits under `write_timeout_ms` for the client's flow-control windows.
+Meanwhile it takes in other streams' frames, which stay queued for later
+`next_request` calls. `close` sends GOAWAY if none was sent, flushes and
+drains briefly, then closes. `target` is the full `:path` and `path` is the
+part before `?`, so the `Router` applies unchanged.
+
+`H2Connection` is the sequential driver: it serves one connection at a
+time, like `accept_until`/`next_request`. The event server below
+multiplexes h2c connections on its loop instead. HTTP/2 over TLS waits on C
+callback support for ALPN selection; see
+[HTTP/2 server](extended-http2-server.md#http2-over-tls).
+
+### h2c on the event server
+
+```lanius
+pub struct Ready { slot: i32, stream: i32 }   // stream 0: HTTP/1.1
+pub impl Server {
+    pub fn enable_h2(&self);
+    pub fn next_ready(&self, deadline: core::time::Deadline) -> Result<Option<Ready>,Error>;
+    pub fn h2_request(&self, ready: Ready) -> Result<H2Request,Error>;
+    pub fn h2_header(&self, ready: Ready, name: View<u8>) -> Option<View<u8>>;
+    pub fn h2_respond(&self, ready: Ready, status: i32, content_type: View<u8>, body: View<u8>) -> Result<i32,Error>;
+}
+```
+
+After `enable_h2`, the slot of a connection that opens with the preface
+runs an `ext::http2_server` engine, and `ServerStats.h2_connections` counts
+these slots. Without `enable_h2`, such a connection is closed without a
+response, because `status_for` maps `Http2Preface` to 0.
+
+`next_ready` returns one entry per ready request:
+
+- `stream` 0 is an HTTP/1.1 request, served with `request`, `take` and
+  `put` as before;
+- any other `stream` is an HTTP/2 request on that slot's connection, read
+  with `h2_request` and `h2_header` and answered with `h2_respond`.
+
+`next` keeps its HTTP/1.1-only behaviour and returns
+`Err(InvalidState)` once h2 is enabled.
+
+`h2_respond` queues the whole response in the engine and returns without
+blocking. The loop sends DATA as the client's windows and the socket
+allow, and keeps reading other streams' frames meanwhile. It waits for
+writability only while the engine has bytes the socket refused.
+
+The slot's deadline depends on what it is waiting for:
+
+- `write_timeout_ms` while output is pending (an error when it passes);
+- `body_timeout_ms` while streams are open (a timeout);
+- otherwise `idle_timeout_ms`, after which the slot sends GOAWAY(NO_ERROR)
+  and closes.
+
+A slot also closes when the connection is finished, meaning a GOAWAY went
+either way and every stream ended, or when the peer closes. Its queued
+requests are dropped with it.
+
 ## Requests and keep-alive
 
 `next_request` returns `Ok(None)` when the peer closes or stays idle between
@@ -353,7 +454,8 @@ by other heavy jobs.
 
 ## Limits of this version
 
-- **Threads and TLS:** one thread, no TLS.
+- **Threads and TLS:** one thread, no TLS. HTTP/2 is prior-knowledge h2c
+  only, on both the sequential driver and the event server.
 - **Memory:** a connection uses up to `buffer_bytes` plus the decoded body,
   and the event server's `max_connections` is the only cap on the total.
 - **Write deadline:** the event server's write deadline applies to the whole

@@ -11,6 +11,7 @@
 module core::slice;
 
 import core::cmp;
+import core::mem;
 import core::ops;
 import core::option;
 import core::ordering;
@@ -232,12 +233,11 @@ pub fn swap<T>(values: [T], len: i32, left: i32, right: i32) -> bool {
 
 // Returns the number of elements written; nonpositive lengths write nothing.
 pub fn fill<T>(values: [T], len: i32, value: T) -> i32 {
-    let index: i32 = 0;
-    while (index < len) {
-        values[index] = value;
-        index += 1;
+    if (len <= 0) {
+        return 0;
     }
-    return index;
+    fill_run(values, 0, len, value);
+    return len;
 }
 
 fn reverse_segment<T>(values: [T], start: i32, end: i32) -> i32 {
@@ -298,19 +298,7 @@ pub fn copy_within<T>(values: [T], len: i32, source_start: i32, source_end: i32,
     if (destination_start > len - count) {
         return false;
     }
-    if (destination_start > source_start) {
-        let remaining: i32 = count;
-        while (remaining > 0) {
-            remaining -= 1;
-            values[destination_start + remaining] = values[source_start + remaining];
-        }
-    } else {
-        let offset: i32 = 0;
-        while (offset < count) {
-            values[destination_start + offset] = values[source_start + offset];
-            offset += 1;
-        }
-    }
+    move_run(values, destination_start, values, source_start, count);
     return true;
 }
 
@@ -323,11 +311,7 @@ pub fn copy_nonoverlapping_prefix<T>(destination: [T], destination_len: i32, sou
     if (destination_len < 0 || source_len < 0 || source_len > destination_len) {
         return false;
     }
-    let offset: i32 = 0;
-    while (offset < source_len) {
-        destination[offset] = source[offset];
-        offset += 1;
-    }
+    move_run(destination, 0, source, 0, source_len);
     return true;
 }
 
@@ -348,12 +332,252 @@ pub fn copy_nonoverlapping_range<T>(destination: [T], destination_len: i32,
     if (count > destination_len - destination_start || count > source_len - source_start) {
         return false;
     }
+    move_run(destination, destination_start, source, source_start, count);
+    return true;
+}
+
+// Bulk moves. Packed views (positive stride: u8 is 1, i32 is 4) hold a run
+// of consecutive elements in one ascending byte range from the data pointer.
+// When both views are packed with one stride, the run spans at least 64
+// bytes, and raw [u64] and [u8] views have strides -8 and +1, bulk operations
+// move the run eight bytes at a time through raw [u64] views, then a byte
+// tail. Everything else copies elements. That includes word views (negative
+// stride: one or more descending eight-byte words per element), where an
+// element copy already moves whole words and measured no slower than a raw
+// word loop. Before any raw access they index each run's first and last
+// element through the caller's view, so an overstated length still traps as
+// native indexing does. See docs/stdlib-slice-bulk.md.
+fn bulk_layout() -> bool {
+    let nowhere: ptr = 0;
+    let words: [u64] = slice_from_raw_parts(nowhere, 0);
+    let bytes: [u8] = slice_from_raw_parts(nowhere, 0);
+    return slice_stride(words) == -8 && slice_stride(bytes) == 1;
+}
+
+// The address of element `start` of a packed view.
+fn run_low<T>(values: [T], stride: isize, start: i32) -> ptr {
+    return core::mem::i32_slice_data_ptr(values) + (stride as usize) * (start as usize);
+}
+
+// The words starting at `low`. Raw [u64] views run downward, so the word
+// k * 8 bytes above `low` is element words - 1 - k.
+fn word_view(low: ptr, words: i32) -> [u64] {
+    if (words == 0) { return slice_from_raw_parts(low, 0); }
+    return slice_from_raw_parts(low + ((words - 1) as usize) * 8, words);
+}
+
+// Copy `bytes` bytes from `from` to `to`. Overlapping ranges need high_first
+// exactly when `to` lies above `from`; each step loads before it stores.
+fn move_bytes(to: ptr, from: ptr, bytes: usize, high_first: bool) {
+    let words: i32 = (bytes >> 3) as i32; let tail: i32 = (bytes & 7) as i32;
+    let body: usize = bytes - (bytes & 7);
+    let t: [u64] = word_view(to, words); let f: [u64] = word_view(from, words);
+    let tt: [u8] = slice_from_raw_parts(to + body, tail); let tf: [u8] = slice_from_raw_parts(from + body, tail);
+    if (high_first) {
+        let k: i32 = tail - 1;
+        while (k >= 0) { tt[k] = tf[k]; k -= 1; }
+        let i: i32 = 0;
+        while (i < words - 3) { t[i] = f[i]; t[i + 1] = f[i + 1]; t[i + 2] = f[i + 2]; t[i + 3] = f[i + 3]; i += 4; }
+        while (i < words) { t[i] = f[i]; i += 1; }
+    } else {
+        let i: i32 = words - 1;
+        while (i >= 3) { t[i] = f[i]; t[i - 1] = f[i - 1]; t[i - 2] = f[i - 2]; t[i - 3] = f[i - 3]; i -= 4; }
+        while (i >= 0) { t[i] = f[i]; i -= 1; }
+        let k: i32 = 0;
+        while (k < tail) { tt[k] = tf[k]; k += 1; }
+    }
+}
+
+fn fill_words(low: ptr, words: i32, word: u64) {
+    let t: [u64] = word_view(low, words); let i: i32 = 0;
+    while (i < words - 3) { t[i] = word; t[i + 1] = word; t[i + 2] = word; t[i + 3] = word; i += 4; }
+    while (i < words) { t[i] = word; i += 1; }
+}
+
+// Exchange two byte ranges that do not overlap.
+fn swap_bytes(left: ptr, right: ptr, bytes: usize) {
+    let words: i32 = (bytes >> 3) as i32; let tail: i32 = (bytes & 7) as i32;
+    let body: usize = bytes - (bytes & 7);
+    let a: [u64] = word_view(left, words); let b: [u64] = word_view(right, words);
+    let i: i32 = 0;
+    while (i < words) { let held: u64 = a[i]; a[i] = b[i]; b[i] = held; i += 1; }
+    let ta: [u8] = slice_from_raw_parts(left + body, tail); let tb: [u8] = slice_from_raw_parts(right + body, tail);
+    let k: i32 = 0;
+    while (k < tail) { let byte: u8 = ta[k]; ta[k] = tb[k]; tb[k] = byte; k += 1; }
+}
+
+// A run of `count` elements in two views with these strides moves as words.
+// Below 64 bytes the fixed cost (about 100 ns) outweighs the saving.
+fn bulk_run(stride: isize, other: isize, count: i32) -> bool {
+    return stride == other && stride > 0 && (stride as usize) * (count as usize) >= 64 && bulk_layout();
+}
+
+// Copy `count` elements of `from` at from_start to `to` at to_start as if
+// through a temporary, so runs in one view may overlap. Callers check the
+// logical bounds; native indexing traps if a view does not back its run.
+fn move_run<T>(to: [T], to_start: i32, from: [T], from_start: i32, count: i32) {
+    if (count <= 0) { return; }
+    let stride: isize = slice_stride(from);
+    if (bulk_run(stride, slice_stride(to), count)) {
+        let edge: T = from[from_start]; edge = from[from_start + count - 1];
+        edge = to[to_start]; edge = to[to_start + count - 1];
+        // In a packed view a higher index is a higher address.
+        let bytes: usize = (stride as usize) * (count as usize);
+        move_bytes(run_low(to, stride, to_start), run_low(from, stride, from_start), bytes, to_start > from_start);
+        return;
+    }
+    if (to_start > from_start) {
+        let i: i32 = to_start + count; let j: i32 = from_start + count;
+        while (i > to_start) { i -= 1; j -= 1; to[i] = from[j]; }
+    } else {
+        let i: i32 = to_start; let j: i32 = from_start; let end: i32 = to_start + count;
+        while (i < end) { to[i] = from[j]; i += 1; j += 1; }
+    }
+}
+
+// Write `value` to [start, start + count). In a packed view whose stride
+// divides 8 (u8, packed i32), write the run's first word through the view,
+// then repeat that word and finish the tail through the view.
+fn fill_run<T>(values: [T], start: i32, count: i32, value: T) {
+    if (count <= 0) { return; }
+    let stride: isize = slice_stride(values);
+    if (!bulk_run(stride, stride, count) || 8 % (stride as usize) != 0) {
+        let index: i32 = start;
+        while (index < start + count) { values[index] = value; index += 1; }
+        return;
+    }
+    let size: usize = stride as usize;
+    let edge: T = values[start + count - 1];
+    let low: ptr = run_low(values, stride, start);
+    let index: i32 = start;
+    while (index < start + ((8 / size) as i32)) { values[index] = value; index += 1; }
+    let first: [u64] = slice_from_raw_parts(low, 1);
+    let words: i32 = ((size * (count as usize)) >> 3) as i32;
+    fill_words(low, words, first[0]);
+    index = start + ((((words as usize) * 8) / size) as i32);
+    while (index < start + count) { values[index] = value; index += 1; }
+}
+
+fn swap_run<T>(left: [T], left_start: i32, right: [T], right_start: i32, count: i32) {
+    if (count <= 0) { return; }
+    let stride: isize = slice_stride(left);
+    if (bulk_run(stride, slice_stride(right), count)) {
+        let edge: T = left[left_start]; edge = left[left_start + count - 1];
+        edge = right[right_start]; edge = right[right_start + count - 1];
+        let bytes: usize = (stride as usize) * (count as usize);
+        swap_bytes(run_low(left, stride, left_start), run_low(right, stride, right_start), bytes);
+        return;
+    }
     let offset: i32 = 0;
     while (offset < count) {
-        destination[destination_start + offset] = source[source_start + offset];
+        let held: T = left[left_start + offset];
+        left[left_start + offset] = right[right_start + offset];
+        right[right_start + offset] = held;
         offset += 1;
     }
+}
+
+// Copies all of `source` over `destination`, eight bytes at a time where the
+// layouts allow. Lengths must be equal and the views must not overlap in
+// memory (use copy_within inside one view). Negative or unequal lengths
+// return false without writing.
+pub fn copy_from_slice<T>(destination: [T], destination_len: i32, source: [T], source_len: i32) -> bool {
+    if (destination_len < 0 || destination_len != source_len) {
+        return false;
+    }
+    move_run(destination, 0, source, 0, source_len);
     return true;
+}
+
+// Exchanges every element of two equal-length views that do not overlap in
+// memory. Negative or unequal lengths return false without writing.
+pub fn swap_with_slice<T>(left: [T], left_len: i32, right: [T], right_len: i32) -> bool {
+    if (left_len < 0 || left_len != right_len) {
+        return false;
+    }
+    swap_run(left, 0, right, 0, left_len);
+    return true;
+}
+
+// Writes `value` to [start, end). Returns false without writing unless
+// 0 <= start <= end <= len.
+pub fn fill_range<T>(values: [T], len: i32, start: i32, end: i32, value: T) -> bool {
+    if (start < 0 || end < start || end > len) {
+        return false;
+    }
+    fill_run(values, start, end - start, value);
+    return true;
+}
+
+// Index of the lowest marked byte of a nonzero mask of byte high bits.
+fn lowest_marked_byte(mask: u64) -> i32 {
+    let low: u64 = mask & ((mask - 1) ^ 18446744073709551615);
+    return (((low >> 7) * 283686952306183) >> 56) as i32;
+}
+
+// The first index below len that holds `needle`, or -1. Packed byte views
+// test eight bytes per step. A nonpositive length returns -1.
+pub fn memchr(values: [u8], len: i32, needle: u8) -> i32 {
+    if (len <= 0) {
+        return -1;
+    }
+    let index: i32 = 0;
+    if (len >= 32 && slice_stride(values) == 1 && bulk_layout()) {
+        let edge: u8 = values[len - 1];
+        let words: i32 = len >> 3;
+        let view: [u64] = word_view(core::mem::i32_slice_data_ptr(values), words);
+        let pattern: u64 = (needle as u64) * 72340172838076673;
+        let slot: i32 = words - 1;
+        while (slot >= 0) {
+            // A borrow can mark a byte above a match, never below one.
+            let x: u64 = view[slot] ^ pattern;
+            let found: u64 = (x - 72340172838076673) & (x ^ 18446744073709551615) & 9259542123273814144;
+            if (found != 0) { return ((words - 1 - slot) << 3) + lowest_marked_byte(found); }
+            slot -= 1;
+        }
+        index = words << 3;
+    }
+    while (index < len) {
+        if (values[index] == needle) { return index; }
+        index += 1;
+    }
+    return -1;
+}
+
+fn first_unequal_word(left: [u64], right: [u64], words: i32) -> i32 {
+    let slot: i32 = words - 1;
+    while (slot >= 0) {
+        if (left[slot] != right[slot]) { return slot; }
+        slot -= 1;
+    }
+    return -1;
+}
+
+// Compares the first `count` bytes of two views as unsigned bytes: -1 or 1
+// at the first difference, 0 if none. Packed byte views compare eight bytes
+// per step. A nonpositive count returns 0.
+pub fn memcmp(left: [u8], right: [u8], count: i32) -> i32 {
+    if (count <= 0) {
+        return 0;
+    }
+    let index: i32 = 0; let end: i32 = count;
+    if (count >= 32 && slice_stride(left) == 1 && slice_stride(right) == 1 && bulk_layout()) {
+        let edge: u8 = left[count - 1]; edge = right[count - 1];
+        let words: i32 = count >> 3;
+        let slot: i32 = first_unequal_word(word_view(core::mem::i32_slice_data_ptr(left), words),
+            word_view(core::mem::i32_slice_data_ptr(right), words), words);
+        if (slot >= 0) { index = (words - 1 - slot) << 3; end = index + 8; }
+        else { index = words << 3; }
+    }
+    while (index < end) {
+        let a: u8 = left[index]; let b: u8 = right[index];
+        if (a != b) {
+            if (a < b) { return -1; }
+            return 1;
+        }
+        index += 1;
+    }
+    return 0;
 }
 
 // Remove one logical element and shift its successors left. A valid index
@@ -363,11 +587,7 @@ pub fn remove_at<T>(values: [T], len: i32, index: i32) -> bool {
     if (index < 0 || index >= len) {
         return false;
     }
-    let read: i32 = index + 1;
-    while (read < len) {
-        values[read - 1] = values[read];
-        read += 1;
-    }
+    move_run(values, index, values, index + 1, len - index - 1);
     return true;
 }
 
@@ -380,11 +600,7 @@ pub fn insert<T>(values: [T], len: i32, capacity: i32, index: i32, value: T) -> 
     if (len < 0 || capacity <= 0 || len >= capacity || index < 0 || index > len) {
         return false;
     }
-    let cursor: i32 = len;
-    while (cursor > index) {
-        values[cursor] = values[cursor - 1];
-        cursor -= 1;
-    }
+    move_run(values, index + 1, values, index, len - index);
     values[index] = value;
     return true;
 }
@@ -1331,13 +1547,9 @@ fn suffix_not_less<T,C>(values:View<T>,key:T,base:i32,count:i32,comparator:&C) -
     }
     return left;
 }
+// Copies as if through a temporary (move_run), so overlap in either direction is safe.
 fn copy_range<T>(from:View<T>,from_index:i32,to:View<T>,to_index:i32,count:i32) {
-    let index:i32 = 0;
-    while(index<count) { to.values[to.start+to_index+index] = from.values[from.start+from_index+index]; index+=1; }
-}
-fn copy_range_down<T>(from:View<T>,from_index:i32,to:View<T>,to_index:i32,count:i32) {
-    let index:i32 = count;
-    while(index>0) { index-=1; to.values[to.start+to_index+index] = from.values[from.start+from_index+index]; }
+    move_run(to.values, to.start+to_index, from.values, from.start+from_index, count);
 }
 const MIN_GALLOP: i32 = 7;
 // Merge with the left run in scratch, front to back. Requires the first right
@@ -1438,7 +1650,7 @@ fn merge_high<T,C>(values:View<T>,scratch:View<T>,start:i32,middle:i32,end:i32,t
                 let count:i32 = suffix_greater<T,C>(values,scratch.values[scratch.start+right],start,left_count,comparator);
                 left_wins = count;
                 if(count>0) {
-                    copy_range_down<T>(values,left-count+1,values,output-count+1,count);
+                    copy_range<T>(values,left-count+1,values,output-count+1,count);
                     output-=count; left-=count; left_count-=count;
                     if(left_count==0) { finish = 1; }
                 }
@@ -1466,7 +1678,7 @@ fn merge_high<T,C>(values:View<T>,scratch:View<T>,start:i32,middle:i32,end:i32,t
     }
     if(finish==1) { copy_range<T>(scratch,0,values,output-right_count+1,right_count); }
     else {
-        copy_range_down<T>(values,left-left_count+1,values,output-left_count+1,left_count);
+        copy_range<T>(values,left-left_count+1,values,output-left_count+1,left_count);
         values.values[values.start+output-left_count] = scratch.values[scratch.start+0];
     }
     return gallop;
