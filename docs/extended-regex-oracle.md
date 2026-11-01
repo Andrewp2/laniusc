@@ -44,8 +44,12 @@ The default is 3,000 generated patterns. Each pattern gets four inputs for
 replacement and grep surfaces. The script prints `surface agree/total` for each
 surface, followed by `disagreements N`. It exits 1 if any case disagrees.
 `--dfa EXE` adds the `dfa_match_find` surface: one case per pattern. A case
-agrees only when the DFA answer, the VM answer and Python all match. Patterns
-with assertions get `Unsupported` from `dfa()` and run on the VM. About one
+agrees only when the DFA answer, the VM answer and Python all match. Anchors
+and word boundaries are DFA state, so every pattern without lookbehind must
+get a `Dfa`. A tenth of the patterns contain lookbehind; `dfa()` refuses those
+unless the lookbehind compiled away (inside `{0}`), and the VM answers. Inputs
+reach 400 scalars, or 20 when the pattern has a quantified group, which keeps
+CPython's backtracking short. About one
 case in ten gets a work budget of 1, 20 or 200, so the exactness bound fails;
 those cases are compared with the VM only, including its `WorkLimit` errors,
 and not with Python.
@@ -124,23 +128,24 @@ nullable body, which is the documented Pike cycle policy.
 ## Receipts
 
 The receipts are for `extended/ext/regex.lani` SHA256
-`5c0c5428604a424e196d393f72854e3f0f6be7107565076d0c090ed746407aa3`, oracle
-SHA256 `f9da10359bcbcfae795a17ff0d53dcf3e58e2c707d0d1a0b1dbf87a698e2cf50` and
+`baac32079de0d03c0f9f038b735ad9995eda4871b1c0aaa900ee70c48dd9389c`, oracle
+SHA256 `a85b3d29888a5ca26e1c335182c8e8ea18a42515e20999a682b84869bd3d0148` and
 `dfa.lani` SHA256
 `b6112163f8d84bae6d2357e3fd486c1ebdb763f23fc1a22e4831962d1f64b999`, with
 CPython 3.12.3, on native Linux x86_64. Executables were built with
 `target/claude-work/bin/lcc`. Log:
-`target/claude-work/s3/oracle-lookbehind-receipt.log`. The earlier logs
+`target/claude-work/s3/oracle-dfa-assert-receipt.log`. The earlier logs
+`oracle-lookbehind-receipt.log` (before assertions in the DFA),
 `oracle-dfa-receipt.log` (before lookbehind) and `oracle-receipt.log` (before
 named groups and the DFA) are in the same directory.
 
 | Seed | find_iter_captures | replace_template | grep_filter | lookbehind_find | dfa_match_find | linear_time | Wall time |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 20261031 | 12,005/12,005 | 1,000/1,000 | 1,000/1,000 | 2,728/2,728 | 3,000/3,000 | 6/6 | 13.22 s |
-| 1 | 12,005/12,005 | 1,000/1,000 | 1,000/1,000 | 2,737/2,737 | 3,000/3,000 | 6/6 | 10.90 s |
-| 2 | 12,005/12,005 | 1,000/1,000 | 1,000/1,000 | 2,809/2,809 | 3,000/3,000 | 6/6 | 16.20 s |
-| 3 | 12,005/12,005 | 1,000/1,000 | 1,000/1,000 | 2,812/2,812 | 3,000/3,000 | 6/6 | 11.14 s |
-| 4 | 12,005/12,005 | 1,000/1,000 | 1,000/1,000 | 2,767/2,767 | 3,000/3,000 | 6/6 | 10.46 s |
+| 20261031 | 12,005/12,005 | 1,000/1,000 | 1,000/1,000 | 2,728/2,728 | 3,000/3,000 | 6/6 | 8.65 s |
+| 1 | 12,005/12,005 | 1,000/1,000 | 1,000/1,000 | 2,737/2,737 | 3,000/3,000 | 6/6 | 8.95 s |
+| 2 | 12,005/12,005 | 1,000/1,000 | 1,000/1,000 | 2,809/2,809 | 3,000/3,000 | 6/6 | 8.60 s |
+| 3 | 12,005/12,005 | 1,000/1,000 | 1,000/1,000 | 2,812/2,812 | 3,000/3,000 | 6/6 | 7.91 s |
+| 4 | 12,005/12,005 | 1,000/1,000 | 1,000/1,000 | 2,767/2,767 | 3,000/3,000 | 6/6 | 8.67 s |
 | Total | 60,025/60,025 | 5,000/5,000 | 5,000/5,000 | 13,853/13,853 | 15,000/15,000 | 30/30 | |
 
 For the default seed, 6,942 of the find cases have at least one match, 4,890
@@ -150,9 +155,11 @@ patterns, Python rejected 424 for width, and Lanius rejected the same 424 with
 `Syntax`. The other 576 gave 2,304 find cases, 1,497 of them with a match;
 1,530 cases contain a negative lookbehind and 340 contain two or more. Across
 the five seeds there are 2,049 width rejections and 11,804 lookbehind find
-cases. Of the 3,000 `dfa_match_find` cases, 2,153 ran through a `Dfa`, 847
-assertion patterns stayed on the VM and 330 had a tiny work budget. Across the
-five seeds the DFA path covered 10,720 cases. The six pathological inputs
+cases. Of the default seed's 3,000 `dfa_match_find` cases, 2,829 ran through a
+`Dfa`, 830 of them with assertions; 171 lookbehind patterns stayed on the VM;
+318 had a tiny work budget, where DFA and VM must agree exactly, `WorkLimit`
+included. Across the five seeds the DFA path covered 14,155 cases (4,054 with
+assertions), the VM path 845 and the tiny budget 1,533. The six pathological inputs
 complete in about 0.35 s together; CPython alone takes about 30 s on the
 lookbehind one.
 
