@@ -39,12 +39,14 @@ stopping at the computations the theorems are about (`compileSource`,
 `linkObjects`, `elfFile`, `sourceProgramFiles`, `compileWords`,
 `frontEndWords` and the self program `Lanius.Faithful.Self.prog`, which are
 not trusted, section 10), with each one's type and body:
-definitions `7c8cdcd26ea3fcc7` (4,235 constants). This covers Core's
+definitions `8bd813e2f8863a05` (4,321 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
-modules keeps its hash (the last change of the hash: this rule, no
-definition changed). `trusted_check.py` writes each constant's own hash to
+modules keeps its hash. The last change of the hash (10-31): the self-host
+theorems state the reason for a fault (`SelfFaults`, `selfRun`, review
+finding 5), `compileSource_behaviour_rawFree` brings in `RawFree`, and the
+front end's review fixes changed the reading. `trusted_check.py` writes each constant's own hash to
 its work directory's `definitions.txt`, to find which one changed.
 
 ### Processes (`Lanius/Mini/Process.lean`)
@@ -142,6 +144,13 @@ statement `0000000066f9c1d3`. Same premises: a run to a state with no step
 that is not a fault comes from a Core run of `f(args)` that finished within
 the heap limit, or reached an undefined trap within it.
 
+#### `Lanius.Mini.compileSource_behaviour_rawFree`
+
+statement `00000000b7e621d9`. `compileSource_behaviour` for a program without raw
+memory (`RawFree`: no `alloc`, `load_byte`, `store_byte`, `dealloc`, raw
+slices or `slice_stride`), from a fresh heap: the undefined trap its second
+case allows is not `typeMismatch` (`Lanius/Mini/ShapeSource.lean`).
+
 #### `Lanius.Mini.compileSource_deterministic`
 
 statement `000000009882455b`. `compileSource_correct` (without the output
@@ -235,29 +244,31 @@ Core's run of `w` never reaches an undefined trap, at any fuel (`SafeE`).
 
 #### `Lanius.Faithful.SelfCompiler.selfCompiler_outcome`
 
-statement `00000000141f9894`. If `compileSource prog = some B` (section 5):
+statement `00000000c90eab02`. If `compileSource prog = some B` (section 5):
 for files within `FilesFit`, fewer than 2^31 words and output room, a heap
 laid out as `selfHeap` (the words, then the output room, then the bump
 heap up to a limit at least `selfNext` and below 2^62), argument slots
 `selfBits`, and the caller's obligations for `B` with entry 0, the run
-faults, or some run returns, deterministically, with rax's low 32 bits -1
+faults (`SelfFaults`: only when Core's run of `w` fails at every fuel, or
+completes within the limit with the stack window below `B.stackNeed`), or
+some run returns, deterministically, with rax's low 32 bits -1
 when `compileText files` is `none` and otherwise the number of words of its
 binary, which are in the output view (`SelfOutput`). Rests on sections 3,
 4, 5, 6 and 8.
 
 #### `Lanius.Faithful.SelfHost.selfHost_fixpoint`
 
-statement `00000000c83c8720`. For source files `self` that the front end
+statement `0000000089161915`. For source files `self` that the front end
 reads as `prog` (`read : sourceProgramFiles self = some prog`) and `B` with
 `compileText self = some B` (`compiled`), both computed (section 5): `prog`
 is the files' one reading (`TextReading`), and `B`'s code for `w`, entered
-as in `selfCompiler_outcome` with the words of `self`, faults or returns
-`B`'s own words: the verified compiler compiles its own text to itself.
+as in `selfCompiler_outcome` with the words of `self`, faults as
+`SelfFaults` allows or returns `B`'s own words: the verified compiler compiles its own text to itself.
 Rests on sections 3, 4, 5, 6 and 8.
 
 #### `Lanius.Faithful.SelfHost.selfHost_outcome`
 
-statement `00000000ca89d21d`. `selfCompiler_outcome` for any files, with
+statement `00000000dc4933a2`. `selfCompiler_outcome` for any files, with
 `read` and `compiled` in place of `compileSource prog = some B`.
 
 ## 1. Lean

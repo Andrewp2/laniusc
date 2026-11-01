@@ -46,6 +46,7 @@ def tops : Array (Name × Name) := #[
   (`Lanius.Mini.SourceCorrect, `Lanius.Mini.compileSource_correct_from),
   (`Lanius.Mini.SourceStops, `Lanius.Mini.compileSource_stops),
   (`Lanius.Mini.SourceStops, `Lanius.Mini.compileSource_behaviour),
+  (`Lanius.Mini.ShapeSource, `Lanius.Mini.compileSource_behaviour_rawFree),
   (`Lanius.Mini.Determinism, `Lanius.Mini.compileSource_deterministic),
   (`Lanius.Mini.Determinism, `Lanius.Mini.compileProgram_deterministic),
   (`Lanius.Mini.TypeSound, `Lanius.Mini.compileSource_wellTyped),
