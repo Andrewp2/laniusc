@@ -8,6 +8,9 @@ observed read with EIO and EINTR, and fails every stdout write with EIO, a zero
 return, EINTR and a faked one-byte transfer. Every run must give the documented
 status and diagnostic, keep stdout a prefix of the clean output, and leave
 /proc/PID/maps at exit identical to its state at the first trapped call.
+The recursive runs search a small tree with -r: a failed allocation ends
+the search with status 4, a failed read of one file (or .gitignore) is
+reported for that path and the search goes on to status 2.
 """
 import os
 import subprocess
@@ -28,7 +31,7 @@ PATTERNS = [("vm", "^(?<!x)(?:a|é)+$"), ("dfa-anchored", "^(?:a|é)+$"), ("dfa"
 
 
 def main():
-    inj, exe = sys.argv[1], sys.argv[2]
+    inj, exe = os.path.abspath(sys.argv[1]), os.path.abspath(sys.argv[2])
     work = tempfile.mkdtemp(prefix="text_grep_faults_", dir=os.environ.get("FAULT_DIR"))
     source = os.path.join(work, "input")
     with open(source, "wb") as f:
@@ -36,11 +39,11 @@ def main():
     report_path = os.path.join(work, "report")
     failures = []
 
-    def execute(args, syscall="none", when=0, action="e0", stdout=None):
+    def execute(args, syscall="none", when=0, action="e0", stdout=None, cwd=None):
         with open(source, "rb") as stdin:
             p = subprocess.run([inj, report_path, syscall, str(when), action, "--", exe, *args],
                                stdin=stdin, stdout=stdout or subprocess.PIPE,
-                               stderr=subprocess.PIPE, timeout=20,
+                               stderr=subprocess.PIPE, timeout=20, cwd=cwd,
                                # Direct allocator: each allocation is one observable mmap.
                                env=dict(os.environ, LANIUS_ALLOC="mmap"))
         report = {}
@@ -101,6 +104,67 @@ def main():
         totals[name] = (mmaps, reads, len(writes))
         print(f"{name} {pattern!r}: {mmaps} mmap/{mmaps} munmap, {mmaps} allocation failures, "
               f"{reads} reads x2 faults, {len(writes)} stdout writes x4 faults")
+    tree = os.path.join(work, "tree")
+    os.makedirs(os.path.join(tree, "sub"))
+    for name, data in (("a", INPUT), ("sub/b", INPUT), ("ignored", INPUT), (".gitignore", b"ignored\n")):
+        with open(os.path.join(tree, name), "wb") as f:
+            f.write(data)
+    recursive_runs = 0
+    for name, args in (("recursive", ["-r", "-n", "--gitignore", "é", "tree"]),
+                       ("recursive-count", ["-r", "-c", "--include=[ab]", "a", "tree"])):
+        p, r = execute(args, cwd=work)
+        baseline = p.stdout
+        check(name + " baseline", p.returncode == 0 and p.stderr == b"" and len(baseline.splitlines()) >= 2,
+              (p.returncode, p.stdout, p.stderr))
+        check(name + " baseline maps", r["maps_changed"] == ["0"], r)
+        mmaps, reads = int(r["mmap"][0]), int(r["read"][0])
+        writes = [int(w) for w in r["stdout_writes"][0].split()]
+        check(name + " balanced", r["munmap"] == r["mmap"], r)
+        lines = set(baseline.splitlines(keepends=True))
+
+        def ended(label, p, r, status, reason):
+            message = p.stderr.decode(errors="replace")
+            check(label, p.returncode == status and baseline.startswith(p.stdout)
+                  and message.startswith("text-grep: ") and message.endswith("\n") and reason in message,
+                  (p.returncode, p.stdout, p.stderr))
+            check(label + " maps", r["maps_changed"] == ["0"], r)
+            check(label + " injected", r["injected"] == ["1"], r)
+
+        def same(label, p, r, wanted):
+            check(label, p.returncode == 0 and p.stdout == wanted and p.stderr == b"", (p.returncode, p.stdout, p.stderr))
+            check(label + " maps", r["maps_changed"] == ["0"], r)
+
+        for when in range(1, mmaps + 1):
+            p, r = execute(args, "mmap", when, "e12", cwd=work)
+            ended(f"{name} mmap {when}", p, r, 4, "allocation-failure")
+        for when in range(1, reads + 1):
+            p, r = execute(args, "read", when, "e5", cwd=work)
+            message = p.stderr.decode(errors="replace")
+            # The failed file's lines go missing; when the read of a
+            # .gitignore fails its rules do not apply.
+            shown = {l for l in p.stdout.splitlines(keepends=True)
+                     if not (message.startswith("text-grep: tree/.gitignore:") and l.startswith(b"tree/ignored:"))}
+            check(f"{name} read EIO {when}", p.returncode == 2 and message.startswith("text-grep: tree/")
+                  and message.count("\n") == 1 and "io-failure stage=input" in message
+                  and shown <= lines, (p.returncode, p.stdout, p.stderr))
+            check(f"{name} read EIO {when} maps", r["maps_changed"] == ["0"], r)
+            p, r = execute(args, "read", when, "e4", cwd=work)
+            same(f"{name} read EINTR {when}", p, r, baseline)
+        offset = 0
+        for index, count in enumerate(writes):
+            when = index + 1
+            for action in ("e5", "r0"):
+                p, r = execute(args, "write", when, action, cwd=work)
+                ended(f"{name} write {action} {when}", p, r, 3, "io-failure stage=output")
+            p, r = execute(args, "write", when, "e4", cwd=work)
+            same(f"{name} write EINTR {when}", p, r, baseline)
+            p, r = execute(args, "write", when, "r1", cwd=work)
+            same(f"{name} write short {when}", p, r, baseline[:offset] + baseline[offset + 1:])
+            offset += count
+        check(name + " write lengths", offset == len(baseline), writes)
+        recursive_runs += 1 + mmaps + 2 * reads + 4 * len(writes)
+        print(f"{name} {' '.join(args)}: {mmaps} mmap/{mmaps} munmap, {mmaps} allocation failures, "
+              f"{reads} reads x2 faults, {len(writes)} stdout writes x4 faults")
     with open("/dev/full", "wb") as full:
         p, r = execute([".",], stdout=full)
     failed("/dev/full", p, r, 3, "io-failure stage=output", injected=False)
@@ -108,10 +172,10 @@ def main():
     check("failed diagnostic", p.returncode == 3 and p.stdout == b"" and p.stderr == b"",
           (p.returncode, p.stdout, p.stderr))
     check("failed diagnostic maps", r["maps_changed"] == ["0"], r)
-    runs = sum(1 + m + 2 * rd + 4 * w for m, rd, w in totals.values()) + 2
+    runs = sum(1 + m + 2 * rd + 4 * w for m, rd, w in totals.values()) + 2 + recursive_runs
     print(f"runs {runs}")
     print(f"failures {len(failures)}")
-    for label, detail in failures[:20]:
+    for label, detail in failures[:int(os.environ.get("FAULT_SHOW", "20"))]:
         print(" ", label, detail)
     return 1 if failures else 0
 

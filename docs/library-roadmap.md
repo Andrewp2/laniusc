@@ -73,7 +73,15 @@ The [compiled byte-glob module](extended-glob.md) and its streaming path-filter
 application execute on x86_64 Linux, including recursive components, explicit
 work limits, raw byte paths and allocation/I/O failures. [Raw directory iteration
 and anchored walking](stdlib-directory.md) now execute separately, with a
-filtered directory-report program and explicit traversal budgets.
+filtered directory-report program and explicit traversal budgets. [`ext::fnmatch`](extended-fnmatch.md) gives glibc's
+`fnmatch(3)` answers in the C locale for `FNM_PATHNAME`, `FNM_NOESCAPE`,
+`FNM_PERIOD`, `FNM_LEADING_DIR` and `FNM_CASEFOLD`, malformed brackets
+included, and agrees with libc through `ctypes` on 3 x 200,000 generated
+cases. [`ext::gitignore`](extended-gitignore.md) applies `.gitignore` rules
+on top of it, and `text_grep -r` with `--include`, `--exclude`,
+`--exclude-dir` and `--gitignore` matches GNU grep 3.11 `-r` on the
+repository tree and 1,200 generated trees, and git's own listing in 730 of
+them.
 
 [Checked filesystem mutations](stdlib-filesystem.md) provide allocation-free
 creation/removal of one directory, file unlinking and renaming over existing

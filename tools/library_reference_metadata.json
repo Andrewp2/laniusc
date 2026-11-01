@@ -1105,6 +1105,16 @@
         "docs/extended-geometry.md"
       ]
     },
+    "ext::fnmatch": {
+      "guides": [
+        "docs/extended-fnmatch.md"
+      ]
+    },
+    "ext::gitignore": {
+      "guides": [
+        "docs/extended-gitignore.md"
+      ]
+    },
     "ext::glob": {
       "guides": [
         "docs/extended-glob.md"

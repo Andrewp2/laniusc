@@ -194,7 +194,6 @@ fn text_grep_preserves_records_reports_errors_and_enforces_bounds() {
     );
     for args in [
         vec![],
-        vec!["a", "b"],
         vec!["--bad", "a"],
         vec!["--max-line", "a"],
         vec!["--max-line=-1", "a"],
@@ -208,6 +207,14 @@ fn text_grep_preserves_records_reports_errors_and_enforces_bounds() {
     ] {
         failure(&invoke(exe, &args, b""), 2, "invalid-arguments", b"");
     }
+    // Operands after the pattern are files; a missing one is reported with
+    // its path and the status is 2.
+    failure(
+        &invoke(exe, &["a", "text-grep-missing-operand"], b""),
+        2,
+        "text-grep-missing-operand: io-failure stage=input",
+        b"",
+    );
     failure(
         &invoke(exe, &vec!["-c"; 65], b""),
         2,

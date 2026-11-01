@@ -1,0 +1,268 @@
+// POSIX fnmatch over bytes, with the answers of glibc's fnmatch in the C
+// locale: FNM_PATHNAME, FNM_NOESCAPE, FNM_PERIOD, and the GNU FNM_LEADING_DIR
+// and FNM_CASEFOLD flags; no FNM_EXTMATCH. Malformed bracket expressions get
+// glibc's treatment byte for byte, including its literal-'[' fallbacks. A NUL
+// byte ends the pattern or the name, as in C. Matching allocates nothing and
+// backtracks only to the last '*', so it takes O(pattern * name) steps.
+// See docs/extended-fnmatch.md.
+module ext::fnmatch;
+import core::mem;
+import core::result;
+import core::slice;
+
+pub const PATHNAME: i32 = 1;
+pub const NOESCAPE: i32 = 2;
+pub const PERIOD: i32 = 4;
+pub const LEADING_DIR: i32 = 8;
+pub const CASEFOLD: i32 = 16;
+pub enum Error { Bounds, Flags(i32) }
+
+const MATCH: i32 = 0;
+const NOMATCH: i32 = 1;
+const LITERAL: i32 = 2;
+// A bracket outcome and the pattern index just after it.
+struct Step { status: i32, next: i32 }
+struct Mode { pathname: bool, escape: bool, period: bool, leading_dir: bool, casefold: bool }
+
+fn valid(view: core::slice::View<u8>) -> bool { return view.start >= 0 && view.length >= 0 && view.start <= 2147483647 - view.length; }
+// The view up to its first NUL.
+fn c_string(view: core::slice::View<u8>) -> core::slice::View<u8> {
+    let index: i32 = 0; while (index < view.length && view.values[view.start + index] != 0) { index += 1; }
+    return core::slice::View { values: view.values, start: view.start, length: index };
+}
+// The byte at index, or 0 past the end (the C terminator).
+fn at(text: core::slice::View<u8>, index: i32) -> u8 { if (index >= 0 && index < text.length) { return text.values[text.start + index]; } return 0; }
+fn fold(value: u8, mode: Mode) -> u8 { if (mode.casefold && value >= 65 && value <= 90) { return value + 32; } return value; }
+fn name_is(pattern: core::slice::View<u8>, start: i32, end: i32, name: str, count: i32) -> bool {
+    if (end - start != count) { return false; }
+    let expected: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(name),count);
+    let index: i32 = 0; while (index < count) { if (at(pattern,start + index) != expected[index]) { return false; } index += 1; } return true;
+}
+// The C-locale class named by pattern[start, end), or 0 for an unknown name.
+fn class_kind(pattern: core::slice::View<u8>, start: i32, end: i32) -> i32 {
+    if (name_is(pattern,start,end,"alnum",5)) { return 1; }
+    if (name_is(pattern,start,end,"alpha",5)) { return 2; }
+    if (name_is(pattern,start,end,"blank",5)) { return 3; }
+    if (name_is(pattern,start,end,"cntrl",5)) { return 4; }
+    if (name_is(pattern,start,end,"digit",5)) { return 5; }
+    if (name_is(pattern,start,end,"graph",5)) { return 6; }
+    if (name_is(pattern,start,end,"lower",5)) { return 7; }
+    if (name_is(pattern,start,end,"print",5)) { return 8; }
+    if (name_is(pattern,start,end,"punct",5)) { return 9; }
+    if (name_is(pattern,start,end,"space",5)) { return 10; }
+    if (name_is(pattern,start,end,"upper",5)) { return 11; }
+    if (name_is(pattern,start,end,"xdigit",6)) { return 12; }
+    return 0;
+}
+fn class_member(kind: i32, value: u8) -> bool {
+    let lower: bool = value >= 97 && value <= 122; let upper: bool = value >= 65 && value <= 90; let digit: bool = value >= 48 && value <= 57;
+    if (kind == 1) { return lower || upper || digit; } if (kind == 2) { return lower || upper; }
+    if (kind == 3) { return value == 9 || value == 32; } if (kind == 4) { return value < 32 || value == 127; }
+    if (kind == 5) { return digit; } if (kind == 6) { return value >= 33 && value <= 126; }
+    if (kind == 7) { return lower; } if (kind == 8) { return value >= 32 && value <= 126; }
+    if (kind == 9) { return value >= 33 && value <= 126 && !lower && !upper && !digit; }
+    if (kind == 10) { return (value >= 9 && value <= 13) || value == 32; } if (kind == 11) { return upper; }
+    return digit || (value >= 65 && value <= 70) || (value >= 97 && value <= 102);
+}
+fn step(status: i32, next: i32) -> Step { return Step { status: status, next: next }; }
+// After a member matched at pattern index p: skip to the closing ']'. An
+// unterminated expression falls back to a literal '['.
+fn skip_rest(pattern: core::slice::View<u8>, from: i32, negated: bool, mode: Mode) -> Step {
+    let p: i32 = from;
+    while (true) {
+        let c: u8 = at(pattern,p); p += 1;
+        if (c == 0) { return step(LITERAL,from); }
+        if (mode.escape && c == 92) {
+            if (at(pattern,p) == 0) { return step(NOMATCH,p); }
+            p += 1;
+        } else {
+            if (c == 91 && at(pattern,p) == 58) {
+                let count: i32 = 0; let restart: i32 = p; let closed: bool = false;
+                while (true) {
+                    p += 1; let d: u8 = at(pattern,p); count += 1;
+                    if (count == 256) { return step(NOMATCH,p); }
+                    if (d == 58 && at(pattern,p + 1) == 93) { closed = true; break; }
+                    if (d < 97 || d >= 122) { break; }
+                }
+                if (closed) { p += 2; } else { p = restart; }
+                continue;
+            }
+            if (c == 91 && at(pattern,p) == 61) {
+                p += 1; if (at(pattern,p) == 0) { return step(NOMATCH,p); }
+                p += 1; if (at(pattern,p) != 61 || at(pattern,p + 1) != 93) { return step(NOMATCH,p); }
+                p += 2; continue;
+            }
+            if (c == 91 && at(pattern,p) == 46) {
+                while (true) {
+                    p += 1; let d: u8 = at(pattern,p);
+                    if (d == 0) { return step(NOMATCH,p); }
+                    if (d == 46 && at(pattern,p + 1) == 93) { break; }
+                }
+                p += 2; continue;
+            }
+            if (c == 93) { if (negated) { return step(NOMATCH,p); } return step(MATCH,p); }
+        }
+    }
+    return step(NOMATCH,p);
+}
+// "[.x.]" starting at pattern index p (at the '.'): the index after it, or
+// -1 when unterminated, -2 when not a single byte. The byte is at p + 1.
+fn collating_end(pattern: core::slice::View<u8>, from: i32) -> i32 {
+    let p: i32 = from; let count: i32 = 0;
+    while (true) {
+        p += 1; let d: u8 = at(pattern,p);
+        if (d == 46 && at(pattern,p + 1) == 93) { p += 2; break; }
+        if (d == 0) { return -1; }
+        count += 1;
+    }
+    if (count != 1) { return -2; }
+    return p;
+}
+// The bracket expression whose '[' precedes pattern index from, against the
+// name byte ch (has: false at the end of the name).
+fn bracket(pattern: core::slice::View<u8>, from: i32, has: bool, ch: u8, leading: bool, mode: Mode) -> Step {
+    if (!has || (ch == 46 && leading) || (ch == 47 && mode.pathname)) { return step(NOMATCH,from); }
+    let p: i32 = from;
+    let negated: bool = at(pattern,p) == 33 || at(pattern,p) == 94; if (negated) { p += 1; }
+    let target: u8 = fold(ch,mode);
+    let c: u8 = at(pattern,p); p += 1;
+    while (true) {
+        // member >= 0: a plain member byte (glibc's normal_bracket); cold is
+        // the range start when a range may follow.
+        let member: i32 = -1; let ranged: bool = false; let cold: u8 = 0;
+        let handled: bool = false;
+        if (mode.escape && c == 92) {
+            if (at(pattern,p) == 0) { return step(NOMATCH,p); }
+            member = fold(at(pattern,p),mode) as i32; p += 1;
+        } else { if (c == 91 && at(pattern,p) == 58) {
+            let restart: i32 = p; let count: i32 = 0; let closed: bool = false;
+            while (true) {
+                if (count == 256) { return step(NOMATCH,p); }
+                p += 1; let d: u8 = at(pattern,p);
+                if (d == 58 && at(pattern,p + 1) == 93) { closed = true; break; }
+                if (d < 97 || d >= 122) { break; }
+                count += 1;
+            }
+            if (closed) {
+                let kind: i32 = class_kind(pattern,restart + 1,p); p += 2;
+                if (kind == 0) { return step(NOMATCH,p); }
+                if (class_member(kind,ch)) { return skip_rest(pattern,p,negated,mode); }
+                c = at(pattern,p); p += 1; handled = true;
+            } else { p = restart; member = 91; }
+        } else { if (c == 91 && at(pattern,p) == 61) {
+            let restart: i32 = p;
+            if (at(pattern,p + 1) == 0 || at(pattern,p + 2) != 61 || at(pattern,p + 3) != 93) { member = 91; }
+            else {
+                let equal: u8 = at(pattern,p + 1); p += 4;
+                if (ch == equal) { return skip_rest(pattern,p,negated,mode); }
+                c = at(pattern,p); p += 1; handled = true;
+            }
+            if (!handled) { p = restart; }
+        } else { if (c == 0) { return step(LITERAL,from); }
+        else { if (c == 91 && at(pattern,p) == 46) {
+            let end: i32 = collating_end(pattern,p);
+            if (end < 0) { return step(NOMATCH,p); }
+            let value: u8 = at(pattern,p + 1); p = end;
+            let range: bool = at(pattern,p) == 45 && at(pattern,p + 1) != 0;
+            if (!range && ch == value) { return skip_rest(pattern,p,negated,mode); }
+            cold = value; ranged = true; c = at(pattern,p); p += 1;
+        } else { member = fold(c,mode) as i32; } } } } }
+        if (member >= 0) {
+            let value: u8 = member as u8;
+            let range: bool = at(pattern,p) == 45 && at(pattern,p + 1) != 0 && at(pattern,p + 1) != 93;
+            if (!range && value == target) { return skip_rest(pattern,p,negated,mode); }
+            cold = value; ranged = true; c = at(pattern,p); p += 1;
+        }
+        if (ranged && c == 45 && at(pattern,p) != 93) {
+            let high: u8 = at(pattern,p); p += 1;
+            if (high == 91 && at(pattern,p) == 46) {
+                let end: i32 = collating_end(pattern,p);
+                if (end < 0) { return step(NOMATCH,p); }
+                high = at(pattern,p + 1); p = end;
+            } else {
+                if (mode.escape && high == 92) { high = at(pattern,p); p += 1; }
+                if (high == 0) { return step(NOMATCH,p); }
+                high = fold(high,mode);
+            }
+            if (cold <= target && target <= high) { return skip_rest(pattern,p,negated,mode); }
+            c = at(pattern,p); p += 1;
+        }
+        if (c == 93) { break; }
+    }
+    if (negated) { return step(MATCH,p); }
+    return step(NOMATCH,p);
+}
+fn no_slash(name: core::slice::View<u8>, from: i32) -> bool {
+    let i: i32 = from; while (i < name.length) { if (at(name,i) == 47) { return false; } i += 1; } return true;
+}
+// Index of the next '/' at or after from, or the name length.
+fn segment_end(name: core::slice::View<u8>, from: i32) -> i32 {
+    let i: i32 = from; while (i < name.length && at(name,i) != 47) { i += 1; } return i;
+}
+fn run(pattern: core::slice::View<u8>, name: core::slice::View<u8>, mode: Mode) -> bool {
+    let p: i32 = 0; let n: i32 = 0; let leading: bool = mode.period;
+    // The innermost '*': its pattern resume index, the name index it last
+    // tried and the end of the bytes it may absorb; resume < 0 when none.
+    let resume: i32 = -1; let tried: i32 = 0; let limit: i32 = 0;
+    let size: i32 = pattern.length; let length: i32 = name.length;
+    while (true) {
+        let ok: bool = true; let next_leading: bool = false;
+        if (p >= size) {
+            if (n == length || (mode.leading_dir && at(name,n) == 47)) { return true; }
+            ok = false;
+        } else {
+            let c: u8 = at(pattern,p); let has: bool = n < length; let ch: u8 = at(name,n);
+            if (c == 63) {
+                if (!has || (ch == 47 && mode.pathname) || (ch == 46 && leading)) { ok = false; } else { p += 1; n += 1; }
+            } else { if (c == 92 && mode.escape) {
+                if (p + 1 >= size || !has || fold(ch,mode) != fold(at(pattern,p + 1),mode)) { ok = false; } else { p += 2; n += 1; }
+            } else { if (c == 42) {
+                if (has && ch == 46 && leading) { ok = false; }
+                else {
+                    // A run of '*' and '?': each '?' takes one byte now.
+                    let q: i32 = p;
+                    while (ok && q < size && (at(pattern,q) == 42 || at(pattern,q) == 63)) {
+                        if (at(pattern,q) == 63) { if (n >= length || (at(name,n) == 47 && mode.pathname)) { ok = false; } else { n += 1; } }
+                        q += 1;
+                    }
+                    if (ok) {
+                        if (q >= size) {
+                            if (!mode.pathname || mode.leading_dir || no_slash(name,n)) { return true; }
+                            ok = false;
+                        } else { if (mode.pathname && at(pattern,q) == 47) {
+                            // "*/": the star takes the rest of this segment.
+                            let slash: i32 = segment_end(name,n);
+                            if (slash >= length) { return false; }
+                            resume = -1; p = q + 1; n = slash + 1; leading = mode.period; continue;
+                        } else {
+                            limit = length; if (mode.pathname) { limit = segment_end(name,n); }
+                            if (n >= limit) { ok = false; } else { resume = q; tried = n; p = q; continue; }
+                        } }
+                    }
+                }
+            } else { if (c == 91) {
+                let outcome: Step = bracket(pattern,p + 1,has,ch,leading,mode);
+                if (outcome.status == MATCH) { p = outcome.next; n += 1; }
+                else { if (outcome.status == LITERAL && has && fold(ch,mode) == 91) { p += 1; n += 1; } else { ok = false; } }
+            } else {
+                if (c == 47 && mode.pathname && mode.period) {
+                    if (!has || ch != 47) { ok = false; } else { p += 1; n += 1; next_leading = true; }
+                } else { if (!has || fold(ch,mode) != fold(c,mode)) { ok = false; } else { p += 1; n += 1; } }
+            } } } }
+        }
+        if (ok) { leading = next_leading; continue; }
+        // Backtrack: the innermost '*' absorbs one more byte.
+        if (resume < 0) { return false; }
+        tried += 1; if (tried >= limit) { return false; }
+        p = resume; n = tried; leading = false;
+    }
+    return false;
+}
+// Whether name matches pattern under the FNM_* flags (bitwise or of the
+// constants above).
+pub fn matches(pattern: core::slice::View<u8>, name: core::slice::View<u8>, flags: i32) -> core::result::Result<bool, Error> {
+    if (!valid(pattern) || !valid(name)) { return core::result::Err(Error::Bounds); }
+    if ((flags & -32) != 0) { return core::result::Err(Error::Flags(flags)); }
+    let mode: Mode = Mode { pathname: (flags & PATHNAME) != 0, escape: (flags & NOESCAPE) == 0, period: (flags & PERIOD) != 0, leading_dir: (flags & LEADING_DIR) != 0, casefold: (flags & CASEFOLD) != 0 };
+    return core::result::Ok(run(c_string(pattern),c_string(name),mode));
+}
