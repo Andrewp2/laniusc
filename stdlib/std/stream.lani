@@ -65,14 +65,35 @@ fn host_error(result: i32) -> core::io::Error {
     return core::io::Error::Host(0 - result);
 }
 
-// A packed staging buffer adapts any Lanius byte-slice stride to the Linux
-// contiguous-byte ABI. Each call transfers at most 1024 bytes and allocates
-// no heap memory. In particular, stack [u8; N] values are not raw byte arrays.
+// Each call transfers at most 1024 bytes and allocates no heap memory; the
+// per-call cap is part of the observable contract (callers and their traced
+// tests see the same request sizes on every layout). A packed (stride +1)
+// byte view is contiguous native memory, so the host reads or writes the
+// caller's own bytes in place with no staging copy. Other layouts, such as
+// native [u8; N] arrays (which are not raw byte arrays), go through a private
+// packed staging buffer filled or drained element by element.
+fn packed_at(values: [u8], offset: i32) -> ptr {
+    if (core::mem::slice_stride(values) != 1) { let nowhere: ptr = 0; return nowhere; }
+    return core::mem::i32_slice_data_ptr(values) + (offset as usize);
+}
+
 pub impl core::io::Read for Descriptor {
     pub fn read(&self, destination: [u8], offset: i32, count: i32)
         -> core::result::Result<i32, core::io::Error> {
         if (!core::io::valid_range(offset, count)) { return core::result::Err(core::io::Error::InvalidInput); }
         if (count == 0) { return core::result::Ok(0); }
+        let direct: ptr = packed_at(destination, offset);
+        if (direct != 0) {
+            let amount: i32 = count;
+            if (amount > 1024) { amount = 1024; }
+            // The host touches amount bytes in place: index the last one first
+            // so a range past the view's backing traps instead of overrunning.
+            let last: u8 = destination[offset + amount - 1];
+            let moved: i32 = std::fs::read(self.handle, direct, amount as usize);
+            if (moved < 0) { return core::result::Err(host_error(moved)); }
+            if (moved > amount) { return core::result::Err(core::io::Error::InvalidCount); }
+            return core::result::Ok(moved);
+        }
         let amount: i32 = count;
         if (amount > 1024) { amount = 1024; }
         let storage: [i32; 256] = [0; 256];
@@ -95,6 +116,18 @@ pub impl core::io::Write for Descriptor {
         -> core::result::Result<i32, core::io::Error> {
         if (!core::io::valid_range(offset, count)) { return core::result::Err(core::io::Error::InvalidInput); }
         if (count == 0) { return core::result::Ok(0); }
+        let direct: ptr = packed_at(source, offset);
+        if (direct != 0) {
+            let amount: i32 = count;
+            if (amount > 1024) { amount = 1024; }
+            // The host touches amount bytes in place: index the last one first
+            // so a range past the view's backing traps instead of overrunning.
+            let last: u8 = source[offset + amount - 1];
+            let moved: i32 = std::fs::write(self.handle, direct, amount as usize);
+            if (moved < 0) { return core::result::Err(host_error(moved)); }
+            if (moved > amount) { return core::result::Err(core::io::Error::InvalidCount); }
+            return core::result::Ok(moved);
+        }
         let amount: i32 = count;
         if (amount > 1024) { amount = 1024; }
         let storage: [i32; 256] = [0; 256];

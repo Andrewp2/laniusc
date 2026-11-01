@@ -121,9 +121,9 @@ pub fn borrow(&self) -> &Descriptor
 pub fn raw_handle(&self) -> i32
 ```
 
-### impl at line 71
+### impl at line 80
 
-[Source line 71](../../../stdlib/std/stream.lani#L71)
+[Source line 80](../../../stdlib/std/stream.lani#L80)
 
 ```lanius
 pub impl core::io::Read for Descriptor
@@ -131,16 +131,16 @@ pub impl core::io::Read for Descriptor
 
 #### method: read
 
-[Source line 72](../../../stdlib/std/stream.lani#L72)
+[Source line 81](../../../stdlib/std/stream.lani#L81)
 
 ```lanius
 pub fn read(&self, destination: [u8], offset: i32, count: i32)
         -> core::result::Result<i32, core::io::Error>
 ```
 
-### impl at line 93
+### impl at line 114
 
-[Source line 93](../../../stdlib/std/stream.lani#L93)
+[Source line 114](../../../stdlib/std/stream.lani#L114)
 
 ```lanius
 pub impl core::io::Write for Descriptor
@@ -148,7 +148,7 @@ pub impl core::io::Write for Descriptor
 
 #### method: write
 
-[Source line 94](../../../stdlib/std/stream.lani#L94)
+[Source line 115](../../../stdlib/std/stream.lani#L115)
 
 ```lanius
 pub fn write(&self, source: [u8], offset: i32, count: i32)
@@ -157,7 +157,7 @@ pub fn write(&self, source: [u8], offset: i32, count: i32)
 
 #### method: flush
 
-[Source line 114](../../../stdlib/std/stream.lani#L114)
+[Source line 147](../../../stdlib/std/stream.lani#L147)
 
 ```lanius
 pub fn flush(&self) -> core::result::Result<i32, core::io::Error>
