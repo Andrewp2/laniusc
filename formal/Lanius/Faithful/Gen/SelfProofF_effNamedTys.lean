@@ -6,6 +6,7 @@ public import Lanius.Faithful.Gen.SelfSrcF_effNamedTys
 public import Lanius.Faithful.Gen.SelfStmt0
 public import Lanius.Faithful.Gen.SelfStmt2
 public import Lanius.Faithful.Gen.SelfStmt3
+public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmtF_effNamedTys
@@ -30,10 +31,11 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem step_eff_named_tys {prog : SrcProgram} {prims : Prims} {ix_eff_named_tys ix_empty_of_mini_selfhost_Ty ix_cons_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_Ty ix_effs_named_tys ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_unbox_of_mini_selfhost_MEff : Nat} (fn : prog.funcs[ix_eff_named_tys]? = some (src_eff_named_tys ix_empty_of_mini_selfhost_Ty ix_cons_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_Ty ix_eff_named_tys ix_effs_named_tys ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_unbox_of_mini_selfhost_MEff)) (np : prims.isPrim ix_eff_named_tys = false)
+theorem step_eff_named_tys {prog : SrcProgram} {prims : Prims} {ix_eff_named_tys ix_empty_of_mini_selfhost_Ty ix_cons_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_Ty ix_single_of_mini_selfhost_Ty ix_effs_named_tys ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_unbox_of_mini_selfhost_MEff : Nat} (fn : prog.funcs[ix_eff_named_tys]? = some (src_eff_named_tys ix_empty_of_mini_selfhost_Ty ix_cons_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_Ty ix_single_of_mini_selfhost_Ty ix_eff_named_tys ix_effs_named_tys ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_unbox_of_mini_selfhost_MEff)) (np : prims.isPrim ix_eff_named_tys = false)
     (ext_empty_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Ty prog prims ix_empty_of_mini_selfhost_Ty n))
     (ext_cons_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_Ty prog prims ix_cons_of_mini_selfhost_Ty n))
     (ext_concat_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_Ty prog prims ix_concat_of_mini_selfhost_Ty n))
+    (ext_single_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_Ty prog prims ix_single_of_mini_selfhost_Ty n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_MEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_MEff prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff n))
     (ext_unbox_of_mini_selfhost_MEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_MEff prog prims ix_unbox_of_mini_selfhost_MEff n)) {n : Nat}
     (ih_eff_named_tys : Certified (Stmt_eff_named_tys prog prims ix_eff_named_tys n))

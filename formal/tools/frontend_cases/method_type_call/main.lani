@@ -1,0 +1,22 @@
+// A method's type arguments written: the impl's parameters come from the
+// receiver's type, the method's own from the arguments `<..>`, and the
+// arguments are read at the types they give (`7` at u8).
+struct Cell<T> { v: T }
+
+pub impl<T> Cell<T> {
+    pub fn pick<U>(self, u: U) -> U {
+        return u;
+    }
+
+    pub fn second<U>(self, u: U, w: U) -> U {
+        return w;
+    }
+}
+
+fn top(n: i32) -> i32 {
+    let c: Cell<bool> = Cell { v: true };
+    let a: i32 = c.pick<i32>(n);
+    let b: u8 = c.pick<u8>(7);
+    let d: i32 = c.second<i32>(a, 3) + c.pick(a);
+    return a + d;
+}

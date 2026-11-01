@@ -1,0 +1,1084 @@
+// GNU `sort` under LC_ALL=C: keys (-k POS1[,POS2] with b, f, n, r), field
+// separators (-t, or blank runs), numeric order (-n, GNU's strnumcmp),
+// case folding (-f), reverse order (-r), stable order (-s), unique lines
+// (-u, the first of each run of equal lines), and GNU's last-resort whole
+// line comparison. Lines end with `eol` (LF, or NUL for -z).
+//
+// The sort is a stable multikey MSD radix sort. A run of lines at one
+// comparison level (a key, then the whole line) packs into one u64 per
+// line the next few key bytes (big endian), how many of them the key has
+// there, and the line's position in the run, so the values are distinct and
+// equal keys keep input order; numeric keys use one u64 that orders numbers
+// exactly while they have at most 13 significant digits. The values are
+// radix sorted from their highest differing bit, and each run of equal keys
+// continues with the next bytes or the next level. Runs of at most twelve
+// lines are insertion sorted by direct comparison, and numbers past 13
+// digits fall back to GNU's numcompare. From 50,000 lines the work is
+// shared by up to eight forked workers (see ts_parallel).
+// See docs/extended-textutils.md.
+module ext::text_sort;
+import alloc::io;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::text_lines;
+import std::linux;
+
+pub enum Error { AllocationFailed, LimitExceeded, WorkerFailed }
+pub const MAX: u64 = 18446744073709551615;
+
+// GNU's keyfield. sword/eword are 0-based field numbers (MAX: line start /
+// line end), schar/echar byte offsets (echar 0: the end of field eword).
+pub struct Key { sword: u64, schar: u64, eword: u64, echar: u64, skipsblanks: bool, skipeblanks: bool, fold: bool, numeric: bool, reverse: bool }
+pub fn key() -> Key {
+    return Key { sword: 0, schar: 0, eword: 0, echar: 0, skipsblanks: false, skipeblanks: false, fold: false, numeric: false, reverse: false };
+}
+// The whole line, byte by byte (GNU's last-resort comparison).
+pub fn whole_line(reverse: bool) -> Key { let k: Key = key(); k.sword = MAX; k.eword = MAX; k.reverse = reverse; return k; }
+// Whether a key has no ordering option of its own (r aside), so it takes
+// the global ones.
+pub fn default_compare(k: Key) -> bool { return !(k.fold || k.skipsblanks || k.skipeblanks || k.numeric); }
+
+// tab: the -t byte, or -1 for blank-separated fields.
+pub struct Options { tab: i32, unique: bool, stable: bool, eol: u8 }
+pub fn default_options() -> Options { return Options { tab: -1, unique: false, stable: false, eol: 10 }; }
+
+// ------------------------------------------------------------------ -k specs
+pub enum KeyError { InvalidStart, FieldZero, CharZero, InvalidAfterDot, InvalidAfterComma, Stray, Unsupported }
+struct Count { ok: bool, value: u64, next: i32 }
+// GNU parse_field_count: optional white space and '+', then digits
+// (values past u64 become MAX).
+fn ts_count(v: core::slice::View<u8>, at: i32) -> Count {
+    let i: i32 = at; let n: i32 = v.length; let r: Count = Count { ok: false, value: 0, next: at };
+    while (i < n && (v.values[v.start+i] == 32 || (v.values[v.start+i] >= 9 && v.values[v.start+i] <= 13))) { i += 1; }
+    if (i < n && v.values[v.start+i] == 43) { i += 1; }
+    let digits: i32 = 0; let over: bool = false;
+    while (i < n && v.values[v.start+i] >= 48 && v.values[v.start+i] <= 57) {
+        let d: u64 = (v.values[v.start+i] - 48) as u64;
+        if (r.value > (MAX - d) / 10) { over = true; } else { if (!over) { r.value = r.value * 10 + d; } }
+        i += 1; digits += 1;
+    }
+    if (digits == 0) { return r; }
+    if (over) { r.value = MAX; }
+    r.ok = true; r.next = i; return r;
+}
+struct Ordered { next: i32, unsupported: bool }
+// GNU set_ordering: b n f r (and the unsupported d g h i M R V); `blank`
+// 0 start, 1 end, 2 both.
+fn ts_ordering(v: core::slice::View<u8>, at: i32, k: &Key, blank: i32) -> Ordered {
+    let i: i32 = at; let r: Ordered = Ordered { next: at, unsupported: false };
+    while (i < v.length) {
+        let c: u8 = v.values[v.start+i];
+        if (c == 98) { if (blank != 1) { k.skipsblanks = true; } if (blank != 0) { k.skipeblanks = true; } }
+        else { if (c == 102) { k.fold = true; }
+        else { if (c == 110) { k.numeric = true; }
+        else { if (c == 114) { k.reverse = true; }
+        else { if (c == 100 || c == 103 || c == 104 || c == 105 || c == 77 || c == 82 || c == 86) { r.unsupported = true; }
+        else { break; } } } } }
+        i += 1;
+    }
+    r.next = i; return r;
+}
+// Apply global ordering letters (sort -b, -f, -n, -r) to `k`; false for an
+// unsupported letter.
+pub fn global_ordering(letter: u8, k: &Key) -> bool {
+    let one: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr("bfnrdghiMRV"), 11);
+    let i: i32 = 0; while (i < 11 && one[i] != letter) { i += 1; }
+    if (i == 11) { return false; }
+    let v: core::slice::View<u8> = core::slice::View { values: one, start: 0, length: i + 1 };
+    let r: Ordered = ts_ordering(v, i, k, 2);
+    return !r.unsupported;
+}
+pub struct ParsedKey { ok: bool, k: Key, error: KeyError }
+// Parse a -k POS1[,POS2] spec as GNU does.
+pub fn parse_key(spec: core::slice::View<u8>) -> ParsedKey {
+    let k: Key = key(); let r: ParsedKey = ParsedKey { ok: false, k: k, error: KeyError::Stray };
+    let c: Count = ts_count(spec, 0);
+    if (!c.ok) { r.error = KeyError::InvalidStart; return r; }
+    if (c.value == 0) { r.error = KeyError::FieldZero; return r; }
+    k.sword = c.value - 1; let at: i32 = c.next;
+    if (at < spec.length && spec.values[spec.start+at] == 46) {
+        let d: Count = ts_count(spec, at + 1);
+        if (!d.ok) { r.error = KeyError::InvalidAfterDot; return r; }
+        if (d.value == 0) { r.error = KeyError::CharZero; return r; }
+        k.schar = d.value - 1; at = d.next;
+    }
+    if (k.sword == 0 && k.schar == 0) { k.sword = MAX; }
+    let o: Ordered = ts_ordering(spec, at, k.borrow(), 0); at = o.next;
+    let unsupported: bool = o.unsupported;
+    if (at >= spec.length || spec.values[spec.start+at] != 44) { k.eword = MAX; k.echar = 0; }
+    else {
+        let e: Count = ts_count(spec, at + 1);
+        if (!e.ok) { r.error = KeyError::InvalidAfterComma; return r; }
+        if (e.value == 0) { r.error = KeyError::FieldZero; return r; }
+        k.eword = e.value - 1; at = e.next;
+        if (at < spec.length && spec.values[spec.start+at] == 46) {
+            let f: Count = ts_count(spec, at + 1);
+            if (!f.ok) { r.error = KeyError::InvalidAfterDot; return r; }
+            k.echar = f.value; at = f.next;
+        }
+        let o2: Ordered = ts_ordering(spec, at, k.borrow(), 1); at = o2.next;
+        unsupported = unsupported || o2.unsupported;
+    }
+    if (at < spec.length) { r.error = KeyError::Stray; return r; }
+    if (unsupported) { r.error = KeyError::Unsupported; return r; }
+    r.ok = true; r.k = k; return r;
+}
+pub impl Key { pub fn borrow(&self) -> &Key { return self; } }
+
+// The comparison levels GNU's compare() walks: the keys (each without
+// ordering options of its own taking the global ones from g), then the
+// whole line unless -u or -s; with no keys, the global key when it has
+// options, else just the whole line.
+pub fn levels(keys: &alloc::vec::Vec<Key>, g: Key, o: Options) -> alloc::vec::Vec<Key> {
+    let out: alloc::vec::Vec<Key> = alloc::vec::new(); let i: i32 = 0;
+    while (i < keys.len()) {
+        let k: Key = keys.at(i); i += 1;
+        if (default_compare(k) && !k.reverse) {
+            k.skipsblanks = g.skipsblanks; k.skipeblanks = g.skipeblanks; k.fold = g.fold; k.numeric = g.numeric; k.reverse = g.reverse;
+        }
+        let pushed: core::result::Result<i32, alloc::vec::Error> = out.try_push(k);
+    }
+    if (keys.len() == 0) {
+        // The last resort would only repeat this comparison.
+        if (default_compare(g)) { let pushed: core::result::Result<i32, alloc::vec::Error> = out.try_push(whole_line(g.reverse)); return out; }
+        let gk: Key = g; gk.sword = MAX; gk.eword = MAX;
+        let pushed: core::result::Result<i32, alloc::vec::Error> = out.try_push(gk);
+    }
+    if (!o.unique && !o.stable) { let pushed: core::result::Result<i32, alloc::vec::Error> = out.try_push(whole_line(g.reverse)); }
+    return out;
+}
+
+// ------------------------------------------------------------------ fields
+// Blanks are space, tab and LF (GNU's field_sep).
+// The first position in [p, e) whose byte is a blank (mode 1), is not a
+// blank (mode 0) or is t (mode 2), or e: eight bytes at a time.
+fn ts_scan(w: &ext::text_lines::Words, p: i32, e: i32, mode: i32, t: u8) -> i32 {
+    if (p >= e) { return e; }
+    let words: [u64] = w.words; let nw: i32 = w.nw; let tail: u64 = w.tail;
+    let low: u64 = ext::text_lines::LOW7; let all: u64 = ext::text_lines::ALL; let high: u64 = ext::text_lines::HIGH; let ranks: u64 = ext::text_lines::RANKS;
+    let q: i32 = p >> 3; let from: u64 = all << (((p & 7) * 8) as u64);
+    let pt: u64 = (t as u64) * ext::text_lines::ONES; let sp: u64 = 2314885530818453536; let tb: u64 = 651061555542690057; let nl: u64 = ext::text_lines::NL;
+    while (q * 8 < e) {
+        let x: u64 = tail; if (q < nw) { x = words[nw-1-q]; }
+        let stop: u64 = 0;
+        if (mode == 2) { let a: u64 = x ^ pt; stop = (((a & low) + low) | a | low) ^ all; }
+        else {
+            let a: u64 = x ^ sp; let b: u64 = x ^ tb; let c: u64 = x ^ nl;
+            stop = ((((a & low) + low) | a | low) ^ all) | ((((b & low) + low) | b | low) ^ all) | ((((c & low) + low) | c | low) ^ all);
+            if (mode == 0) { stop = stop ^ high; }
+        }
+        stop = stop & from; from = all;
+        if (stop != 0) {
+            let bit: u64 = stop & (0 - stop); let at: i32 = q * 8 + ((((bit >> 7) * ranks) >> 56) as i32) - 1;
+            if (at > e) { return e; } return at;
+        }
+        q += 1;
+    }
+    return e;
+}
+// `steps` of GNU's field skips from p in [p, e): without a tab, skip blanks
+// then non-blanks; with one, go to the next tab and past it (the last step
+// steps past it only when `past`). Every word's stop bytes are found at
+// once and the steps walk through them.
+fn ts_walk(w: &ext::text_lines::Words, p: i32, e: i32, steps: u64, tab: i32, past: bool) -> i32 {
+    if (steps == 0 || p >= e) { return p; }
+    let words: [u64] = w.words; let nw: i32 = w.nw; let tail: u64 = w.tail;
+    let low: u64 = ext::text_lines::LOW7; let all: u64 = ext::text_lines::ALL; let high: u64 = ext::text_lines::HIGH; let ranks: u64 = ext::text_lines::RANKS;
+    let sp: u64 = 2314885530818453536; let tb: u64 = 651061555542690057; let nl: u64 = ext::text_lines::NL;
+    let pt: u64 = 0; if (tab >= 0) { pt = ((tab & 255) as u64) * ext::text_lines::ONES; }
+    let seek_blank: bool = false; let q: i32 = p >> 3;
+    while (q * 8 < e) {
+        let x: u64 = tail; if (q < nw) { x = words[nw-1-q]; }
+        let bm: u64 = 0;
+        if (tab >= 0) { let a: u64 = x ^ pt; bm = (((a & low) + low) | a | low) ^ all; }
+        else {
+            let a: u64 = x ^ sp; let b: u64 = x ^ tb; let c: u64 = x ^ nl;
+            bm = ((((a & low) + low) | a | low) ^ all) | ((((b & low) + low) | b | low) ^ all) | ((((c & low) + low) | c | low) ^ all);
+        }
+        let base: i32 = q * 8;
+        while (p - base < 8) {
+            let cand: u64 = bm; if (tab < 0 && !seek_blank) { cand = bm ^ high; }
+            if (p > base) { cand = cand & (all << (((p - base) * 8) as u64)); }
+            if (cand == 0) { break; }
+            let bit: u64 = cand & (0 - cand); let at: i32 = base + ((((bit >> 7) * ranks) >> 56) as i32) - 1;
+            if (at >= e) { return e; }
+            p = at;
+            if (tab >= 0) { steps -= 1; if (steps == 0) { if (past) { p += 1; } return p; } p += 1; }
+            else {
+                if (seek_blank) { steps -= 1; if (steps == 0) { return p; } }
+                seek_blank = !seek_blank;
+            }
+        }
+        q += 1;
+    }
+    return e;
+}
+// GNU begfield and limfield on line [s, e), as one u64 (begin << 32 | limit).
+fn ts_fields(w: &ext::text_lines::Words, s: i32, e: i32, k: &Key, tab: i32) -> u64 {
+    let beg: i32 = s; let lim: i32 = e;
+    if (k.sword != MAX) {
+        beg = ts_walk(w, s, e, k.sword, tab, true);
+        if (k.skipsblanks) { beg = ts_scan(w, beg, e, 0, 0); }
+        let room: u64 = (e - beg) as u64; if (k.schar < room) { beg += k.schar as i32; } else { beg = e; }
+    } else { if (k.skipsblanks) { beg = ts_scan(w, beg, e, 0, 0); } }
+    if (k.eword != MAX) {
+        let echar: u64 = k.echar; let eword: u64 = k.eword; if (echar == 0) { eword += 1; }
+        lim = ts_walk(w, s, e, eword, tab, echar != 0);
+        if (echar != 0) {
+            if (k.skipeblanks) { lim = ts_scan(w, lim, e, 0, 0); }
+            let room: u64 = (e - lim) as u64; if (echar < room) { lim += echar as i32; } else { lim = e; }
+        }
+    }
+    if (lim < beg) { lim = beg; }
+    return ((beg as u64) << 32) | (lim as u64);
+}
+
+// ------------------------------------------------------------------ numbers
+// One u64 ordering numbers as GNU's numcompare: 1 << 63 for zero (and
+// anything that is not a number), above it (1 << 63) | (L << 52) | the first
+// 13 significant digits (BCD) for a positive number with L integer digits,
+// mirrored below it for negative ones. `exact` is false when digits were
+// cut off (or L > 1022), so equal values still need numcompare.
+struct NumKey { v: u64, exact: bool }
+fn ts_number(vals: [u8], base: i32, b: i32, e: i32) -> NumKey {
+    let i: i32 = b; let top: u64 = 9223372036854775808;
+    while (i < e && (vals[base+i] == 32 || vals[base+i] == 9 || vals[base+i] == 10)) { i += 1; }
+    let neg: bool = false; if (i < e && vals[base+i] == 45) { neg = true; i += 1; }
+    // GNU skips leading zeros and thousands separators, which under
+    // LC_ALL=C is byte 0x80 (see ts_numcmp).
+    while (i < e && (vals[base+i] == 48 || vals[base+i] == 128)) { i += 1; }
+    let l: u64 = 0; let bcd: u64 = 0; let nd: i32 = 0; let exact: bool = true; let nonzero: bool = false;
+    while (i < e && vals[base+i] >= 48 && vals[base+i] <= 57) {
+        let d: u64 = (vals[base+i] - 48) as u64; if (l < 1023) { l += 1; }
+        if (nd < 13) { bcd = (bcd << 4) | d; nd += 1; } else { if (d != 0) { exact = false; } }
+        if (d != 0) { nonzero = true; } i += 1;
+        while (i < e && vals[base+i] == 128) { i += 1; }
+    }
+    if (i < e && vals[base+i] == 46) {
+        i += 1;
+        while (i < e && vals[base+i] >= 48 && vals[base+i] <= 57) {
+            let d: u64 = (vals[base+i] - 48) as u64;
+            if (nd < 13) { bcd = (bcd << 4) | d; nd += 1; } else { if (d != 0) { exact = false; } }
+            if (d != 0) { nonzero = true; } i += 1;
+        }
+    }
+    if (!nonzero) { return NumKey { v: top, exact: true }; }
+    while (nd < 13) { bcd = bcd << 4; nd += 1; }
+    let mag: u64 = (l << 52) | bcd;
+    let capped: u64 = 1023;
+    if (l >= 1023) { mag = capped << 52; exact = false; }
+    if (neg) { return NumKey { v: top - 1 - mag, exact: exact }; }
+    return NumKey { v: top | mag, exact: exact };
+}
+fn ts_at(vals: [u8], base: i32, p: i32, e: i32) -> i32 { if (p < e) { return vals[base+p] as i32; } return 0; }
+fn ts_digit(c: i32) -> bool { return c >= 48 && c <= 57; }
+// GNU fraccompare on [a, ae) and [b, be).
+fn ts_frac(vals: [u8], base: i32, a: i32, ae: i32, b: i32, be: i32) -> i32 {
+    let ca: i32 = ts_at(vals, base, a, ae); let cb: i32 = ts_at(vals, base, b, be);
+    let trail: i32 = 0;
+    if (ca == 46 && cb == 46) {
+        while (true) {
+            a += 1; b += 1; ca = ts_at(vals, base, a, ae); cb = ts_at(vals, base, b, be);
+            if (ca != cb) { break; }
+            if (!ts_digit(ca)) { return 0; }
+        }
+        if (ts_digit(ca) && ts_digit(cb)) { return ca - cb; }
+        if (ts_digit(ca)) { trail = 1; } else { if (ts_digit(cb)) { trail = 2; } else { return 0; } }
+    } else {
+        if (ca == 46) { a += 1; trail = 1; } else { if (cb == 46) { b += 1; trail = 2; } else { return 0; } }
+    }
+    if (trail == 1) { while (ts_at(vals, base, a, ae) == 48) { a += 1; } if (ts_digit(ts_at(vals, base, a, ae))) { return 1; } return 0; }
+    while (ts_at(vals, base, b, be) == 48) { b += 1; } if (ts_digit(ts_at(vals, base, b, be))) { return -1; } return 0;
+}
+// GNU numcompare (strnumcmp in the C locale) on [a, ae) and [b, be). GNU
+// marks "no thousands separator" with CHAR_MAX + 1, which equals byte 0x80
+// once read as unsigned char, so 0x80 acts as one: skipped among the
+// leading zeros and after digits.
+fn ts_skip_sep(vals: [u8], base: i32, p: i32, e: i32) -> i32 { p += 1; while (ts_at(vals, base, p, e) == 128) { p += 1; } return p; }
+fn ts_numcmp(vals: [u8], base: i32, a: i32, ae: i32, b: i32, be: i32) -> i32 {
+    while (a < ae && (vals[base+a] == 32 || vals[base+a] == 9 || vals[base+a] == 10)) { a += 1; }
+    while (b < be && (vals[base+b] == 32 || vals[base+b] == 9 || vals[base+b] == 10)) { b += 1; }
+    let ta: i32 = ts_at(vals, base, a, ae); let tb: i32 = ts_at(vals, base, b, be);
+    if (ta == 45) {
+        a += 1; ta = ts_at(vals, base, a, ae); while (ta == 48 || ta == 128) { a += 1; ta = ts_at(vals, base, a, ae); }
+        if (tb != 45) {
+            if (ta == 46) { a += 1; ta = ts_at(vals, base, a, ae); while (ta == 48) { a += 1; ta = ts_at(vals, base, a, ae); } }
+            if (ts_digit(ta)) { return -1; }
+            while (tb == 48 || tb == 128) { b += 1; tb = ts_at(vals, base, b, be); }
+            if (tb == 46) { b += 1; tb = ts_at(vals, base, b, be); while (tb == 48) { b += 1; tb = ts_at(vals, base, b, be); } }
+            if (ts_digit(tb)) { return -1; } return 0;
+        }
+        b += 1; tb = ts_at(vals, base, b, be); while (tb == 48 || tb == 128) { b += 1; tb = ts_at(vals, base, b, be); }
+        while (ta == tb && ts_digit(ta)) { a = ts_skip_sep(vals, base, a, ae); ta = ts_at(vals, base, a, ae); b = ts_skip_sep(vals, base, b, be); tb = ts_at(vals, base, b, be); }
+        if ((ta == 46 && !ts_digit(tb)) || (tb == 46 && !ts_digit(ta))) { return ts_frac(vals, base, b, be, a, ae); }
+        let tmp: i32 = tb - ta; let la: i32 = 0; let lb: i32 = 0;
+        while (ts_digit(ta)) { la += 1; a = ts_skip_sep(vals, base, a, ae); ta = ts_at(vals, base, a, ae); }
+        while (ts_digit(tb)) { lb += 1; b = ts_skip_sep(vals, base, b, be); tb = ts_at(vals, base, b, be); }
+        if (la != lb) { if (la < lb) { return 1; } return -1; }
+        if (la == 0) { return 0; }
+        return tmp;
+    }
+    if (tb == 45) {
+        b += 1; tb = ts_at(vals, base, b, be); while (tb == 48 || tb == 128) { b += 1; tb = ts_at(vals, base, b, be); }
+        if (tb == 46) { b += 1; tb = ts_at(vals, base, b, be); while (tb == 48) { b += 1; tb = ts_at(vals, base, b, be); } }
+        if (ts_digit(tb)) { return 1; }
+        while (ta == 48 || ta == 128) { a += 1; ta = ts_at(vals, base, a, ae); }
+        if (ta == 46) { a += 1; ta = ts_at(vals, base, a, ae); while (ta == 48) { a += 1; ta = ts_at(vals, base, a, ae); } }
+        if (ts_digit(ta)) { return 1; } return 0;
+    }
+    while (ta == 48 || ta == 128) { a += 1; ta = ts_at(vals, base, a, ae); }
+    while (tb == 48 || tb == 128) { b += 1; tb = ts_at(vals, base, b, be); }
+    while (ta == tb && ts_digit(ta)) { a = ts_skip_sep(vals, base, a, ae); ta = ts_at(vals, base, a, ae); b = ts_skip_sep(vals, base, b, be); tb = ts_at(vals, base, b, be); }
+    if ((ta == 46 && !ts_digit(tb)) || (tb == 46 && !ts_digit(ta))) { return ts_frac(vals, base, a, ae, b, be); }
+    let tmp: i32 = ta - tb; let la: i32 = 0; let lb: i32 = 0;
+    while (ts_digit(ta)) { la += 1; a = ts_skip_sep(vals, base, a, ae); ta = ts_at(vals, base, a, ae); }
+    while (ts_digit(tb)) { lb += 1; b = ts_skip_sep(vals, base, b, be); tb = ts_at(vals, base, b, be); }
+    if (la != lb) { if (la < lb) { return -1; } return 1; }
+    if (la == 0) { return 0; }
+    return tmp;
+}
+
+// ------------------------------------------------------------------ sorting
+// Everything is indexed by position in the current order: ln[p] the line
+// (start << 32 | end, the end byte excluded), kk[p] its key bounds at the
+// level its run is on, v[p] its sort value there, dup[p] set when -u drops
+// it. tv, tln, tk, pos and tpos are scratch; gs holds the pending runs
+// (four i32 each: lo, hi, level, byte offset into the key); cnt the radix
+// counts and, from MS, the radix sort's own range stack.
+const MS: i32 = 262144;
+const CELLS: i32 = 327744;
+// One shared anonymous mapping holds every array, so forked workers (see
+// ts_parallel) write results the parent sees. cnt is this process's count
+// region; region c of `regions` (CELLS i32 each) belongs to worker c.
+struct Work {
+    base: ptr, bytes: i64, n: i32, regions: ptr, flags: [i64],
+    v: [u64], tv: [u64], ln: [u64], tln: [u64], kk: [u64], tk: [u64], pos: [i32], tpos: [i32], dup: [i32], gs: [i32], cnt: [i32]
+}
+impl Work { fn borrow(&self) -> &Work { return self; } fn destroy(&self) { ts_unmap(self.base, self.bytes); } }
+fn ts_word(value: i64) -> std::linux::Argument { return std::linux::Argument::Word(value); }
+fn ts_map(bytes: i64) -> core::result::Result<ptr, Error> {
+    let nowhere: ptr = 0;
+    let args: [std::linux::Argument; 6] = [std::linux::Argument::Address(nowhere), ts_word(bytes), ts_word(3), ts_word(33), ts_word(-1), ts_word(0)];
+    let done: core::result::Result<i64, std::linux::Error> = std::linux::call(9, core::slice::view(args, 6).unwrap());
+    if (done.is_err()) { return core::result::Err(Error::AllocationFailed); }
+    return core::result::Ok(nowhere + (done.unwrap() as usize));
+}
+fn ts_unmap(base: ptr, bytes: i64) {
+    let args: [std::linux::Argument; 2] = [std::linux::Argument::Address(base), ts_word(bytes)];
+    let done: core::result::Result<i64, std::linux::Error> = std::linux::call(11, core::slice::view(args, 2).unwrap());
+}
+// fork(2): the child's pid in the parent, 0 in the child, -1 on failure.
+fn ts_fork() -> i64 {
+    let args: [std::linux::Argument; 1] = [ts_word(0)];
+    let done: core::result::Result<i64, std::linux::Error> = std::linux::call(57, core::slice::view(args, 0).unwrap());
+    if (done.is_err()) { return -1; }
+    return done.unwrap();
+}
+// End a worker at once (exit(2)), without the parent's exit path.
+fn ts_exit(code: i64) {
+    let args: [std::linux::Argument; 1] = [ts_word(code)];
+    let done: core::result::Result<i64, std::linux::Error> = std::linux::call(60, core::slice::view(args, 1).unwrap());
+}
+// Wait for worker pid; true when it exited with status 0.
+fn ts_wait(pid: i64) -> bool {
+    let storage: [i32; 2] = [0; 2]; let status: ptr = core::mem::i32_array_data_ptr(storage); let nowhere: ptr = 0;
+    while (true) {
+        let args: [std::linux::Argument; 4] = [ts_word(pid), std::linux::Argument::Address(status), ts_word(0), std::linux::Argument::Address(nowhere)];
+        let done: core::result::Result<i64, std::linux::Error> = std::linux::call(61, core::slice::view(args, 4).unwrap());
+        if (done.is_ok()) { return storage[0] == 0; }
+        let again: bool = match (done.unwrap_err()) { std::linux::Error::System(code) -> code == 4, _ -> false };
+        if (!again) { return false; }
+    }
+    return false;
+}
+// CPUs this process may run on (sched_getaffinity), at least 1.
+fn ts_cpus() -> i32 {
+    let mask: [i32; 32] = [0; 32]; let at: ptr = core::mem::i32_array_data_ptr(mask);
+    let args: [std::linux::Argument; 3] = [ts_word(0), ts_word(128), std::linux::Argument::Address(at)];
+    let done: core::result::Result<i64, std::linux::Error> = std::linux::call(204, core::slice::view(args, 3).unwrap());
+    if (done.is_err()) { return 1; }
+    let count: i32 = 0; let i: i32 = 0;
+    while (i < 32) { let x: u32 = mask[i] as u32; while (x != 0) { count += (x & 1) as i32; x = x >> 1; } i += 1; }
+    if (count < 1) { return 1; }
+    return count;
+}
+fn ts_work(n: i32, workers: i32) -> core::result::Result<Work, Error> {
+    if (n > 250000000) { return core::result::Err(Error::LimitExceeded); }
+    let m: i32 = n + 1; let s: usize = (m as usize) * 8; let q: usize = (m as usize) * 4;
+    let rs: usize = (CELLS as usize) * 4 * ((workers + 1) as usize);
+    let total: usize = s * 6 + q * 5 + rs + 32 * (workers as usize) + 128;
+    let mapped: core::result::Result<ptr, Error> = ts_map(total as i64);
+    if (core::result::is_err(mapped)) { return core::result::Err(Error::AllocationFailed); }
+    let p: ptr = core::result::unwrap(mapped); let at: ptr = p + s * 6; let regions: ptr = at + q * 5;
+    return core::result::Ok(Work {
+        base: p, bytes: total as i64, n: n, regions: regions,
+        flags: core::mem::typed_slice_from_raw_parts<i64>(regions + rs, workers * 4),
+        v: core::mem::typed_slice_from_storage<u64>(p, m), tv: core::mem::typed_slice_from_storage<u64>(p + s, m),
+        ln: core::mem::typed_slice_from_storage<u64>(p + s * 2, m), tln: core::mem::typed_slice_from_storage<u64>(p + s * 3, m),
+        kk: core::mem::typed_slice_from_storage<u64>(p + s * 4, m), tk: core::mem::typed_slice_from_storage<u64>(p + s * 5, m),
+        pos: core::mem::typed_slice_from_raw_parts<i32>(at, m), tpos: core::mem::typed_slice_from_raw_parts<i32>(at + q, m),
+        dup: core::mem::typed_slice_from_raw_parts<i32>(at + q * 2, m), gs: core::mem::typed_slice_from_raw_parts<i32>(at + q * 3, m * 2),
+        cnt: core::mem::typed_slice_from_raw_parts<i32>(regions + (CELLS as usize) * 4 * (workers as usize), CELLS)
+    });
+}
+fn ts_region(wk: &Work, c: i32) -> [i32] { return core::mem::typed_slice_from_raw_parts<i32>(wk.regions + (CELLS as usize) * 4 * (c as usize), CELLS); }
+fn ts_lo(x: u64) -> i32 { return (x >> 32) as i32; }
+fn ts_hi(x: u64) -> i32 { return (x & 4294967295) as i32; }
+fn ts_pair(a: i32, b: i32) -> u64 { return ((a as u64) << 32) | (b as u64); }
+// Key bounds of k on line [s, e) (GNU's keybeg and keylim).
+fn ts_bounds(w: &ext::text_lines::Words, s: i32, e: i32, k: &Key, tab: i32) -> u64 {
+    if (k.sword == MAX && k.eword == MAX && !k.skipsblanks) { return ts_pair(s, e); }
+    return ts_fields(w, s, e, k, tab);
+}
+// The eight bytes from `off` as a little-endian word (zero past the end).
+fn ts_load(words: [u64], nw: i32, tail: u64, off: i32) -> u64 {
+    let q: i32 = off >> 3; let sh: u64 = ((off & 7) * 8) as u64;
+    let lo8: u64 = 0; if (q < nw) { lo8 = words[nw-1-q]; } else { if (q == nw) { lo8 = tail; } }
+    if (sh == 0) { return lo8; }
+    let hi8: u64 = 0; if (q + 1 < nw) { hi8 = words[nw-2-q]; } else { if (q + 1 == nw) { hi8 = tail; } }
+    return (lo8 >> sh) | (hi8 << (64 - sh));
+}
+fn ts_swap(x: u64) -> u64 {
+    let m8: u64 = 71777214294589695; let m16: u64 = 281470681808895;
+    x = ((x & m8) << 8) | ((x >> 8) & m8); x = ((x & m16) << 16) | ((x >> 16) & m16); return (x << 32) | (x >> 32);
+}
+// a..z to A..Z in every byte.
+fn ts_upper(x: u64) -> u64 {
+    let y: u64 = x & ext::text_lines::LOW7;
+    let m: u64 = ((((y + 2242545357980376863) ^ (y + 361700864190383365)) | x) ^ x) & ext::text_lines::HIGH;
+    return x ^ (m >> 2);
+}
+// memcmp order of [a0, a1) and [b0, b1), case folded with fold.
+fn ts_bytes(w: &ext::text_lines::Words, a0: i32, a1: i32, b0: i32, b1: i32, fold: bool) -> i32 {
+    let words: [u64] = w.words; let nw: i32 = w.nw; let tail: u64 = w.tail; let one: u64 = 1;
+    let la: i32 = a1 - a0; let lb: i32 = b1 - b0; if (la < 0) { la = 0; } if (lb < 0) { lb = 0; }
+    let m: i32 = la; if (lb < m) { m = lb; }
+    let i: i32 = 0;
+    while (i < m) {
+        let xa: u64 = ts_load(words, nw, tail, a0 + i); let xb: u64 = ts_load(words, nw, tail, b0 + i);
+        let r: i32 = m - i;
+        if (r < 8) { let mask: u64 = (one << ((r * 8) as u64)) - one; xa = xa & mask; xb = xb & mask; }
+        if (fold) { xa = ts_upper(xa); xb = ts_upper(xb); }
+        if (xa != xb) { if (ts_swap(xa) < ts_swap(xb)) { return -1; } return 1; }
+        i += 8;
+    }
+    if (la < lb) { return -1; } if (la > lb) { return 1; } return 0;
+}
+// A short run at a byte level: stable insertion sort by this level's key
+// from byte `chunk` on (case folded with fold, reversed with rev); runs of
+// equal keys are pushed for the next level onto gs at sp. Returns the new sp.
+fn ts_small(wk: &Work, w: &ext::text_lines::Words, level: i32, chunk: i32, lo: i32, hi: i32, fold: bool, rev: bool, sp: i32) -> i32 {
+    let kk: [u64] = wk.kk; let ln: [u64] = wk.ln; let i: i32 = lo + 1;
+    while (i < hi) {
+        let ck: u64 = kk[i]; let cl: u64 = ln[i]; let j: i32 = i - 1; let c0: i32 = ts_lo(ck) + chunk; let c1: i32 = ts_hi(ck);
+        while (j >= lo) {
+            let pk: u64 = kk[j];
+            let c: i32 = ts_bytes(w, ts_lo(pk) + chunk, ts_hi(pk), c0, c1, fold); if (rev) { c = 0 - c; }
+            if (c <= 0) { break; }
+            kk[j+1] = pk; ln[j+1] = ln[j]; j -= 1;
+        }
+        kk[j+1] = ck; ln[j+1] = cl; i += 1;
+    }
+    let gs: [i32] = wk.gs; let g: i32 = lo;
+    while (g < hi) {
+        let h: i32 = g + 1; let gk: u64 = kk[g];
+        while (h < hi) { let hk: u64 = kk[h]; if (ts_bytes(w, ts_lo(gk) + chunk, ts_hi(gk), ts_lo(hk) + chunk, ts_hi(hk), fold) != 0) { break; } h += 1; }
+        if (h - g >= 2) { gs[sp] = g; gs[sp+1] = h; gs[sp+2] = level + 1; gs[sp+3] = 0; sp += 4; }
+        g = h;
+    }
+    return sp;
+}
+// Apply pos (the new order of [lo, hi)) to ln and kk.
+fn ts_gather(wk: &Work, lo: i32, hi: i32) {
+    let pos: [i32] = wk.pos; let ln: [u64] = wk.ln; let kk: [u64] = wk.kk; let tln: [u64] = wk.tln; let tk: [u64] = wk.tk;
+    let p: i32 = lo; while (p < hi) { let q: i32 = pos[p]; tln[p] = ln[q]; tk[p] = kk[q]; p += 1; }
+    p = lo; while (p < hi) { ln[p] = tln[p]; kk[p] = tk[p]; p += 1; }
+}
+
+// Stable sort of positions [lo, hi) by v, carrying pos: insertion for short
+// runs, merge sort for medium ones, LSD radix (8- or 16-bit digits,
+// skipping digits all values share) for long ones.
+fn ts_sort_run(wk: &Work, lo: i32, hi: i32) {
+    let n: i32 = hi - lo; let v: [u64] = wk.v; let idx: [i32] = wk.pos;
+    if (n <= 16) {
+        let i: i32 = lo + 1;
+        while (i < hi) {
+            let cv: u64 = v[i]; let ci: i32 = idx[i]; let j: i32 = i - 1;
+            while (j >= lo) { let pv: u64 = v[j]; if (pv <= cv) { break; } v[j+1] = pv; idx[j+1] = idx[j]; j -= 1; }
+            v[j+1] = cv; idx[j+1] = ci; i += 1;
+        }
+        return;
+    }
+    if (n < 384) { ts_merge(wk, lo, hi); return; }
+    if (n < 65536) { ts_radix8(wk, lo, hi); return; }
+    let sv: [u64] = wk.v; let si: [i32] = wk.pos; let dv: [u64] = wk.tv; let di: [i32] = wk.tpos;
+    let cnt: [i32] = wk.cnt; let swapped: bool = false;
+    let c: i32 = 0; while (c < 262144) { cnt[c] = 0; c += 1; }
+    let p: i32 = lo;
+    while (p < hi) {
+        let x: u64 = sv[p];
+        let d0: i32 = (x & 65535) as i32; let d1: i32 = (((x >> 16) & 65535) as i32) + 65536; let d2: i32 = (((x >> 32) & 65535) as i32) + 131072; let d3: i32 = ((x >> 48) as i32) + 196608;
+        cnt[d0] = cnt[d0] + 1; cnt[d1] = cnt[d1] + 1; cnt[d2] = cnt[d2] + 1; cnt[d3] = cnt[d3] + 1; p += 1;
+    }
+    let pass: i32 = 0;
+    while (pass < 4) {
+        let off: i32 = pass * 65536; let sh: u64 = (pass * 16) as u64; pass += 1;
+        let first: i32 = ((sv[lo] >> sh) & 65535) as i32;
+        if (cnt[off+first] == n) { continue; }
+        let sum: i32 = lo; c = 0;
+        while (c < 65536) { let k: i32 = cnt[off+c]; cnt[off+c] = sum; sum += k; c += 1; }
+        p = lo;
+        while (p < hi) {
+            let x: u64 = sv[p]; let k: i32 = off + (((x >> sh) & 65535) as i32); let at: i32 = cnt[k]; cnt[k] = at + 1;
+            dv[at] = x; di[at] = si[p]; p += 1;
+        }
+        let t1: [u64] = sv; sv = dv; dv = t1; let t3: [i32] = si; si = di; di = t3; swapped = !swapped;
+    }
+    if (swapped) { p = lo; while (p < hi) { dv[p] = sv[p]; di[p] = si[p]; p += 1; } }
+}
+// LSD radix of [lo, hi) by v on 8-bit digits, skipping digits all values share.
+fn ts_radix8(wk: &Work, lo: i32, hi: i32) {
+    let n: i32 = hi - lo; let sv: [u64] = wk.v; let si: [i32] = wk.pos; let dv: [u64] = wk.tv; let di: [i32] = wk.tpos;
+    let cnt: [i32] = wk.cnt; let swapped: bool = false;
+    let c: i32 = 0; while (c < 2048) { cnt[c] = 0; c += 1; }
+    let p: i32 = lo;
+    while (p < hi) {
+        let x: u64 = sv[p];
+        let d0: i32 = (x & 255) as i32; let d1: i32 = (((x >> 8) & 255) as i32) + 256; let d2: i32 = (((x >> 16) & 255) as i32) + 512; let d3: i32 = (((x >> 24) & 255) as i32) + 768;
+        let d4: i32 = (((x >> 32) & 255) as i32) + 1024; let d5: i32 = (((x >> 40) & 255) as i32) + 1280; let d6: i32 = (((x >> 48) & 255) as i32) + 1536; let d7: i32 = ((x >> 56) as i32) + 1792;
+        cnt[d0] = cnt[d0] + 1; cnt[d1] = cnt[d1] + 1; cnt[d2] = cnt[d2] + 1; cnt[d3] = cnt[d3] + 1;
+        cnt[d4] = cnt[d4] + 1; cnt[d5] = cnt[d5] + 1; cnt[d6] = cnt[d6] + 1; cnt[d7] = cnt[d7] + 1; p += 1;
+    }
+    let pass: i32 = 0;
+    while (pass < 8) {
+        let off: i32 = pass * 256; let sh: u64 = (pass * 8) as u64; pass += 1;
+        let first: i32 = ((sv[lo] >> sh) & 255) as i32;
+        if (cnt[off+first] == n) { continue; }
+        let sum: i32 = lo; c = 0;
+        while (c < 256) { let k: i32 = cnt[off+c]; cnt[off+c] = sum; sum += k; c += 1; }
+        p = lo;
+        while (p < hi) {
+            let x: u64 = sv[p]; let k: i32 = off + (((x >> sh) & 255) as i32); let at: i32 = cnt[k]; cnt[k] = at + 1;
+            dv[at] = x; di[at] = si[p]; p += 1;
+        }
+        let t1: [u64] = sv; sv = dv; dv = t1; let t3: [i32] = si; si = di; di = t3; swapped = !swapped;
+    }
+    if (swapped) { p = lo; while (p < hi) { dv[p] = sv[p]; di[p] = si[p]; p += 1; } }
+}
+// Bottom-up stable merge sort of [lo, hi) by v, carrying pos.
+fn ts_merge(wk: &Work, lo: i32, hi: i32) {
+    let sv: [u64] = wk.v; let si: [i32] = wk.pos; let dv: [u64] = wk.tv; let di: [i32] = wk.tpos;
+    // Runs of 8 by insertion first.
+    let s: i32 = lo;
+    while (s < hi) {
+        let e: i32 = s + 8; if (e > hi) { e = hi; }
+        let i: i32 = s + 1;
+        while (i < e) {
+            let cv: u64 = sv[i]; let ci: i32 = si[i]; let j: i32 = i - 1;
+            while (j >= s) { let pv: u64 = sv[j]; if (pv <= cv) { break; } sv[j+1] = pv; si[j+1] = si[j]; j -= 1; }
+            sv[j+1] = cv; si[j+1] = ci; i += 1;
+        }
+        s = e;
+    }
+    let width: i32 = 8; let swapped: bool = false;
+    while (width < hi - lo) {
+        let a: i32 = lo;
+        while (a < hi) {
+            let m: i32 = a + width; if (m > hi) { m = hi; } let e: i32 = m + width; if (e > hi) { e = hi; }
+            let i: i32 = a; let j: i32 = m; let k: i32 = a;
+            if (m >= e || sv[m-1] <= sv[m]) {
+                // One run, or two already in order: copy them through.
+                while (i < e) { dv[i] = sv[i]; di[i] = si[i]; i += 1; }
+                a = e; continue;
+            }
+            let x: u64 = sv[i]; let y: u64 = sv[j];
+            while (true) {
+                if (y < x) { dv[k] = y; di[k] = si[j]; j += 1; k += 1; if (j == e) { break; } y = sv[j]; }
+                else { dv[k] = x; di[k] = si[i]; i += 1; k += 1; if (i == m) { break; } x = sv[i]; }
+            }
+            while (i < m) { dv[k] = sv[i]; di[k] = si[i]; i += 1; k += 1; }
+            while (j < e) { dv[k] = sv[j]; di[k] = si[j]; j += 1; k += 1; }
+            a = e;
+        }
+        let t1: [u64] = sv; sv = dv; dv = t1; let t3: [i32] = si; si = di; di = t3; swapped = !swapped;
+        width = width * 2;
+    }
+    if (swapped) { let p: i32 = lo; while (p < hi) { dv[p] = sv[p]; di[p] = si[p]; p += 1; } }
+}
+// Sort the distinct values v[lo, hi) (their low ib bits hold the position in
+// the run, so equal keys keep their order) and set pos to the new order:
+// MSD radix on up to 11 bits below the highest bit that differs, insertion
+// sort for short ranges. Bits that differ only below ib need no work, as
+// every pass keeps that order.
+fn ts_sort_packed(wk: &Work, lo: i32, hi: i32, ib: u64) {
+    let one: u64 = 1; ts_msd(wk, lo, hi, ib); ts_positions(wk, lo, lo, hi, (one << ib) - one);
+}
+// pos[p] = origin + the position in v[p]'s low bits, for p in [from, to).
+fn ts_positions(wk: &Work, origin: i32, from: i32, to: i32, keep: u64) {
+    let v: [u64] = wk.v; let pos: [i32] = wk.pos; let p: i32 = from; while (p < to) { pos[p] = origin + ((v[p] & keep) as i32); p += 1; }
+}
+// The sort of ts_sort_packed, without setting pos.
+fn ts_msd(wk: &Work, lo: i32, hi: i32, ib: u64) {
+    let v: [u64] = wk.v; let tv: [u64] = wk.tv; let cnt: [i32] = wk.cnt; let one: u64 = 1;
+    let keep: u64 = (one << ib) - one; let keys: u64 = MAX ^ keep;
+    let sp: i32 = MS; cnt[sp] = lo; cnt[sp+1] = hi; sp += 2;
+    while (sp > MS) {
+        sp -= 2; let a: i32 = cnt[sp]; let b: i32 = cnt[sp+1]; let n: i32 = b - a;
+        if (n <= 16) {
+            let i: i32 = a + 1;
+            while (i < b) {
+                let cv: u64 = v[i]; let j: i32 = i - 1;
+                while (j >= a) { let pv: u64 = v[j]; if (pv < cv) { break; } v[j+1] = pv; j -= 1; }
+                v[j+1] = cv; i += 1;
+            }
+            continue;
+        }
+        let o: u64 = 0; let z: u64 = MAX; let p: i32 = a;
+        while (p < b) { let x: u64 = v[p]; o = o | x; z = z & x; p += 1; }
+        let d: u64 = (o ^ z) & keys;
+        if (d == 0) { continue; }
+        let hb: i32 = 0;
+        if ((d >> 32) != 0) { hb += 32; d = d >> 32; } if ((d >> 16) != 0) { hb += 16; d = d >> 16; }
+        if ((d >> 8) != 0) { hb += 8; d = d >> 8; } if ((d >> 4) != 0) { hb += 4; d = d >> 4; }
+        if ((d >> 2) != 0) { hb += 2; d = d >> 2; } if ((d >> 1) != 0) { hb += 1; }
+        let bits: i32 = 4; let m: i32 = n >> 4; while (bits < 11 && m > 1) { bits += 1; m = m >> 1; }
+        let sh: i32 = hb + 1 - bits; if (sh < 0) { sh = 0; }
+        let size: i32 = 1 << (bits as u32); let dm: u64 = (size - 1) as u64; let su: u64 = sh as u64;
+        let c: i32 = 0; while (c < size) { cnt[c] = 0; c += 1; }
+        p = a; while (p < b) { let k: i32 = ((v[p] >> su) & dm) as i32; cnt[k] = cnt[k] + 1; p += 1; }
+        let sum: i32 = a; c = 0; while (c < size) { let k: i32 = cnt[c]; cnt[c] = sum; sum += k; c += 1; }
+        p = a; while (p < b) { let x: u64 = v[p]; let k: i32 = ((x >> su) & dm) as i32; let at: i32 = cnt[k]; cnt[k] = at + 1; tv[at] = x; p += 1; }
+        p = a; while (p < b) { v[p] = tv[p]; p += 1; }
+        let start: i32 = a; c = 0;
+        while (c < size) { let e: i32 = cnt[c]; if (e - start >= 2) { cnt[sp] = start; cnt[sp+1] = e; sp += 2; } start = e; c += 1; }
+    }
+}
+// One MSD pass of ts_msd over [lo, hi) on the 11 bits below the highest
+// key bit that differs: returns the bucket count, each bucket's end in
+// cnt, or 0 when every key is equal (nothing moves).
+fn ts_top(wk: &Work, lo: i32, hi: i32, ib: u64) -> i32 {
+    let v: [u64] = wk.v; let tv: [u64] = wk.tv; let cnt: [i32] = wk.cnt; let one: u64 = 1;
+    let keys: u64 = MAX ^ ((one << ib) - one);
+    let o: u64 = 0; let z: u64 = MAX; let p: i32 = lo;
+    while (p < hi) { let x: u64 = v[p]; o = o | x; z = z & x; p += 1; }
+    let d: u64 = (o ^ z) & keys;
+    if (d == 0) { return 0; }
+    let hb: i32 = 0;
+    if ((d >> 32) != 0) { hb += 32; d = d >> 32; } if ((d >> 16) != 0) { hb += 16; d = d >> 16; }
+    if ((d >> 8) != 0) { hb += 8; d = d >> 8; } if ((d >> 4) != 0) { hb += 4; d = d >> 4; }
+    if ((d >> 2) != 0) { hb += 2; d = d >> 2; } if ((d >> 1) != 0) { hb += 1; }
+    let sh: i32 = hb - 10; if (sh < 0) { sh = 0; }
+    let size: i32 = 2048; let dm: u64 = 2047; let su: u64 = sh as u64;
+    let c: i32 = 0; while (c < size) { cnt[c] = 0; c += 1; }
+    p = lo; while (p < hi) { let k: i32 = ((v[p] >> su) & dm) as i32; cnt[k] = cnt[k] + 1; p += 1; }
+    let sum: i32 = lo; c = 0; while (c < size) { let k: i32 = cnt[c]; cnt[c] = sum; sum += k; c += 1; }
+    p = lo; while (p < hi) { let x: u64 = v[p]; let k: i32 = ((x >> su) & dm) as i32; let at: i32 = cnt[k]; cnt[k] = at + 1; tv[at] = x; p += 1; }
+    p = lo; while (p < hi) { v[p] = tv[p]; p += 1; }
+    return size;
+}
+// Stable merge sort of positions [lo, hi) by GNU's numcompare of their keys;
+// leaves the order in pos.
+fn ts_num_sort(wk: &Work, vals: [u8], base: i32, lo: i32, hi: i32, reverse: bool) {
+    let si: [i32] = wk.pos; let di: [i32] = wk.tpos; let kk: [u64] = wk.kk;
+    let p: i32 = lo; while (p < hi) { si[p] = p; p += 1; }
+    let width: i32 = 1; let swapped: bool = false;
+    while (width < hi - lo) {
+        let a: i32 = lo;
+        while (a < hi) {
+            let m: i32 = a + width; if (m > hi) { m = hi; } let e: i32 = m + width; if (e > hi) { e = hi; }
+            let i: i32 = a; let j: i32 = m; let k: i32 = a;
+            while (i < m && j < e) {
+                let x: u64 = kk[si[i]]; let y: u64 = kk[si[j]];
+                let c: i32 = ts_numcmp(vals, base, ts_lo(y), ts_hi(y), ts_lo(x), ts_hi(x)); if (reverse) { c = 0 - c; }
+                if (c < 0) { di[k] = si[j]; j += 1; } else { di[k] = si[i]; i += 1; }
+                k += 1;
+            }
+            while (i < m) { di[k] = si[i]; i += 1; k += 1; }
+            while (j < e) { di[k] = si[j]; j += 1; k += 1; }
+            a = e;
+        }
+        let t: [i32] = si; si = di; di = t; swapped = !swapped; width = width * 2;
+    }
+    if (swapped) { p = lo; while (p < hi) { di[p] = si[p]; p += 1; } }
+}
+// Byte values of [from, to) at `chunk` of the key (see ts_run), positions
+// counted from origin.
+fn ts_pack(wk: &Work, w: &ext::text_lines::Words, origin: i32, from: i32, to: i32, chunk: i32, b: i32, ib: u64, fold: bool, flip: u64) {
+    let kk: [u64] = wk.kk; let v: [u64] = wk.v; let words: [u64] = w.words; let nw: i32 = w.nw; let tail: u64 = w.tail; let one: u64 = 1;
+    let cut: u64 = (64 - b * 8) as u64; let p: i32 = from;
+    while (p < to) {
+        let kb: u64 = kk[p]; let off: i32 = ts_lo(kb) + chunk; let a: i32 = ts_hi(kb) - off;
+        if (a > b) { a = b; } if (a < 0) { a = 0; }
+        let x: u64 = 0;
+        if (a > 0) {
+            let q: i32 = off >> 3; let sh: u64 = ((off & 7) * 8) as u64;
+            let lo8: u64 = tail; if (q < nw) { lo8 = words[nw-1-q]; }
+            x = lo8;
+            if (sh != 0) { let hi8: u64 = 0; if (q + 1 < nw) { hi8 = words[nw-2-q]; } else { if (q + 1 == nw) { hi8 = tail; } } x = (lo8 >> sh) | (hi8 << (64 - sh)); }
+            x = x & ((one << ((a * 8) as u64)) - one);
+            if (fold) { x = ts_upper(x); }
+            x = ts_swap(x) >> cut;
+        }
+        x = (((x << 3) | (a as u64)) << ib) | ((p - origin) as u64);
+        v[p] = x ^ flip; p += 1;
+    }
+}
+// Key bounds of [from, to) for key k.
+fn ts_keys(wk: &Work, w: &ext::text_lines::Words, from: i32, to: i32, k: &Key, tab: i32) {
+    let ln: [u64] = wk.ln; let kk: [u64] = wk.kk; let p: i32 = from;
+    while (p < to) { let l: u64 = ln[p]; let kb: u64 = ts_bounds(w, ts_lo(l), ts_hi(l), k, tab); kk[p] = kb; p += 1; }
+}
+// Numeric values of [from, to). used: what the low ib bits carry (zero when
+// they are free for positions); exact: no number lost digits.
+struct NumScan { used: u64, exact: bool }
+fn ts_numbers(wk: &Work, w: &ext::text_lines::Words, from: i32, to: i32, keep: u64) -> NumScan {
+    let kk: [u64] = wk.kk; let v: [u64] = wk.v; let vals: [u8] = w.values; let base: i32 = w.start;
+    let p: i32 = from; let exact: bool = true; let used: u64 = 0; let top: u64 = 9223372036854775808;
+    while (p < to) {
+        let b: u64 = kk[p]; let nk: NumKey = ts_number(vals, base, ts_lo(b), ts_hi(b)); let x: u64 = nk.v;
+        v[p] = x; if (x >= top) { used = used | (x & keep); } else { used = used | ((x & keep) ^ keep); }
+        if (!nk.exact) { exact = false; } p += 1;
+    }
+    return NumScan { used: used, exact: exact };
+}
+// Runs of equal byte values in [g0, g1) continue with the next b bytes, or
+// with the next level once the key ends. Returns the new sp.
+fn ts_byte_groups(wk: &Work, g0: i32, g1: i32, level: i32, chunk: i32, b: i32, ib: u64, flip: u64, sp: i32) -> i32 {
+    let v: [u64] = wk.v; let gs: [i32] = wk.gs; let g: i32 = g0;
+    while (g < g1) {
+        let h: i32 = g + 1; let gk: u64 = v[g] >> ib;
+        while (h < g1 && (v[h] >> ib) == gk) { h += 1; }
+        if (h - g >= 2) {
+            let full: i32 = ((gk ^ (flip >> ib)) & 7) as i32;
+            gs[sp] = g; gs[sp+1] = h;
+            if (full == b) { gs[sp+2] = level; gs[sp+3] = chunk + b; } else { gs[sp+2] = level + 1; gs[sp+3] = 0; }
+            sp += 4;
+        }
+        g = h;
+    }
+    return sp;
+}
+// Runs of equal numeric values in [g0, g1) continue with the next level;
+// where digits were cut off, GNU's numcompare orders the run first.
+fn ts_num_groups(wk: &Work, w: &ext::text_lines::Words, g0: i32, g1: i32, level: i32, shift: u64, exact: bool, reverse: bool, sp: i32) -> i32 {
+    let v: [u64] = wk.v; let gs: [i32] = wk.gs; let kk: [u64] = wk.kk; let vals: [u8] = w.values; let base: i32 = w.start; let g: i32 = g0;
+    while (g < g1) {
+        let h: i32 = g + 1; let gv: u64 = v[g] >> shift;
+        while (h < g1 && (v[h] >> shift) == gv) { h += 1; }
+        if (h - g >= 2) {
+            let inexact: bool = false; let q: i32 = g;
+            while (q < h && !inexact && !exact) { let b: u64 = kk[q]; let nk: NumKey = ts_number(vals, base, ts_lo(b), ts_hi(b)); if (!nk.exact) { inexact = true; } q += 1; }
+            if (!inexact) { gs[sp] = g; gs[sp+1] = h; gs[sp+2] = level + 1; gs[sp+3] = 0; sp += 4; }
+            else {
+                ts_num_sort(wk, vals, base, g, h, reverse);
+                ts_gather(wk, g, h);
+                let a: i32 = g;
+                while (a < h) {
+                    let b: i32 = a + 1;
+                    while (b < h) { let x: u64 = kk[a]; let y: u64 = kk[b]; if (ts_numcmp(vals, base, ts_lo(x), ts_hi(x), ts_lo(y), ts_hi(y)) != 0) { break; } b += 1; }
+                    if (b - a >= 2) { gs[sp] = a; gs[sp+1] = b; gs[sp+2] = level + 1; gs[sp+3] = 0; sp += 4; }
+                    a = b;
+                }
+            }
+        }
+        g = h;
+    }
+    return sp;
+}
+// The ib for a run of n lines: enough bits for every position.
+fn ts_ib(n: i32) -> u64 { let ib: u64 = 1; let span: i64 = 2; while (span < (n as i64)) { span = span * 2; ib += 1; } return ib; }
+
+// Sort every pending run on gs above sp0 (each four i32: lo, hi, level,
+// byte offset into the key) to the end.
+fn ts_run(wk: &Work, w: &ext::text_lines::Words, levels: &alloc::vec::Vec<Key>, o: Options, sp0: i32, sp: i32) {
+    let gs: [i32] = wk.gs; let dup: [i32] = wk.dup; let nl: i32 = levels.len(); let tab: i32 = o.tab;
+    let all: u64 = ext::text_lines::ALL; let one: u64 = 1;
+    while (sp > sp0) {
+        sp -= 4; let lo: i32 = gs[sp]; let hi: i32 = gs[sp+1]; let level: i32 = gs[sp+2]; let chunk: i32 = gs[sp+3];
+        if (level == nl) {
+            if (o.unique) { let p: i32 = lo + 1; while (p < hi) { dup[p] = 1; p += 1; } }
+            continue;
+        }
+        let k: Key = levels.at(level); let v: [u64] = wk.v;
+        if (chunk == 0) { ts_keys(wk, w, lo, hi, k.borrow(), tab); }
+        let ib: u64 = ts_ib(hi - lo); let keep: u64 = (one << ib) - one; let flip: u64 = 0; if (k.reverse) { flip = all ^ keep; }
+        if (k.numeric) {
+            // When the low ib bits carry nothing (zero, or all ones for
+            // negative numbers) they take the position, as for bytes below;
+            // otherwise a stable sort carries pos.
+            let scan: NumScan = ts_numbers(wk, w, lo, hi, keep); let shift: u64 = 0;
+            if (scan.used == 0) { ts_numpack(wk, lo, lo, hi, keep, flip); ts_sort_packed(wk, lo, hi, ib); shift = ib; }
+            else {
+                let pos: [i32] = wk.pos; let p: i32 = lo;
+                while (p < hi) { if (k.reverse) { v[p] = v[p] ^ all; } pos[p] = p; p += 1; }
+                ts_sort_run(wk, lo, hi);
+            }
+            ts_gather(wk, lo, hi);
+            sp = ts_num_groups(wk, w, lo, hi, level, shift, scan.exact, k.reverse, sp);
+            continue;
+        }
+        if (hi - lo <= SMALL) { sp = ts_small(wk, w, level, chunk, lo, hi, k.fold, k.reverse, sp); continue; }
+        // Bytes: each value packs, from the top, the next b key bytes (big
+        // endian), how many of them the key has (3 bits; b: it may go on)
+        // and the position in the run (ib bits), so values are distinct,
+        // sort by key bytes and keep input order among equal keys.
+        let b: i32 = ((61 - ib) / 8) as i32;
+        ts_pack(wk, w, lo, lo, hi, chunk, b, ib, k.fold, flip);
+        ts_sort_packed(wk, lo, hi, ib);
+        ts_gather(wk, lo, hi);
+        sp = ts_byte_groups(wk, lo, hi, level, chunk, b, ib, flip, sp);
+    }
+}
+// Numeric values of [from, to) with their low bits replaced by positions.
+fn ts_numpack(wk: &Work, origin: i32, from: i32, to: i32, keep: u64, flip: u64) {
+    let v: [u64] = wk.v; let hold: u64 = ext::text_lines::ALL ^ keep; let p: i32 = from;
+    while (p < to) { v[p] = ((v[p] & hold) ^ flip) | ((p - origin) as u64); p += 1; }
+}
+// Write lines [from, to) but those -u drops; lines that follow each other
+// in the input leave as one span. Lines are touched a block ahead, so their
+// cache misses overlap.
+fn ts_emit(wk: &Work, w: &ext::text_lines::Words, from: i32, to: i32, out: &ext::text_lines::Out) -> u64 {
+    let ln: [u64] = wk.ln; let dup: [i32] = wk.dup; let words: [u64] = w.words; let nw: i32 = w.nw;
+    let ps: i32 = 0; let pe: i32 = 0; let i: i32 = from; let ahead: i32 = from; let sink: u64 = 0;
+    while (i < to) {
+        if (i == ahead) {
+            ahead = i + 1024; if (ahead > to) { ahead = to; }
+            let t: i32 = i; while (t < ahead) { let q: i32 = ts_lo(ln[t]) >> 3; if (q < nw) { sink = sink ^ words[nw-1-q]; } t += 1; }
+        }
+        if (dup[i] == 0) {
+            let l: u64 = ln[i]; let s: i32 = ts_lo(l); let e: i32 = ts_hi(l) + 1;
+            if (s == pe && pe > ps) { pe = e; }
+            else { if (pe > ps) { ext::text_lines::put_span(out, w, ps, pe - ps); } ps = s; pe = e; }
+        }
+        i += 1;
+    }
+    if (pe > ps) { ext::text_lines::put_span(out, w, ps, pe - ps); }
+    return sink;
+}
+
+// ------------------------------------------------------------------ workers
+// Large inputs are sorted by forked workers over the shared Work: the
+// parent sorts the first run (and, while one run covers everything, the
+// next levels) with the workers splitting each pass, then hands each
+// worker a slice of whole runs to finish and write into a shared buffer.
+// The parent works as worker 0 and writes the buffers in order.
+const PARALLEL: i32 = 50000;
+struct Job { round: i32, a: i32, b: i32, level: i32, chunk: i32, nb: i32, ib: u64, flip: u64, shift: u64, exact: bool, fin: bool, area: ptr, words: i32 }
+fn ts_job(wk: &Work, w: &ext::text_lines::Words, levels: &alloc::vec::Vec<Key>, o: Options, c: i32, j: Job) -> bool {
+    let k: Key = whole_line(false); if (j.level < levels.len()) { k = levels.at(j.level); }
+    let one: u64 = 1; let keep: u64 = (one << j.ib) - one;
+    wk.cnt = ts_region(wk, c);
+    if (j.round == 1) {
+        if (j.chunk == 0) { ts_keys(wk, w, j.a, j.b, k.borrow(), o.tab); }
+        if (k.numeric) {
+            let scan: NumScan = ts_numbers(wk, w, j.a, j.b, keep);
+            wk.flags[c*4] = scan.used as i64; if (scan.exact) { wk.flags[c*4+1] = 1; } else { wk.flags[c*4+1] = 0; }
+        } else { ts_pack(wk, w, 0, j.a, j.b, j.chunk, j.nb, j.ib, k.fold, j.flip); }
+        return true;
+    }
+    if (j.round == 2) {
+        if (j.b - j.a >= 2) { ts_msd(wk, j.a, j.b, j.ib); }
+        ts_positions(wk, 0, j.a, j.b, keep);
+        let pos: [i32] = wk.pos; let ln: [u64] = wk.ln; let kk: [u64] = wk.kk; let tln: [u64] = wk.tln; let tk: [u64] = wk.tk;
+        let p: i32 = j.a; while (p < j.b) { let q: i32 = pos[p]; tln[p] = ln[q]; tk[p] = kk[q]; p += 1; }
+        return true;
+    }
+    let sp0: i32 = j.a * 2; let sp: i32 = sp0;
+    if (!j.fin) {
+        if (k.numeric) { sp = ts_num_groups(wk, w, j.a, j.b, j.level, j.shift, j.exact, k.reverse, sp); }
+        else { sp = ts_byte_groups(wk, j.a, j.b, j.level, j.chunk, j.nb, j.ib, j.flip, sp); }
+    }
+    ts_run(wk, w, levels, o, sp0, sp);
+    let oo: ext::text_lines::Out = ext::text_lines::out_over(j.area, j.words);
+    let touched: u64 = ts_emit(wk, w, j.a, j.b, oo.borrow());
+    let length: i32 = ext::text_lines::seal(oo.borrow()); wk.flags[c*4+2] = length as i64;
+    return true;
+}
+// Run job j over the slices cuts[c]..cuts[c+1] for c < count: workers 1..
+// in forked children, worker 0 here. False when a worker failed.
+fn ts_round(wk: &Work, w: &ext::text_lines::Words, levels: &alloc::vec::Vec<Key>, o: Options, j: Job, cuts: [i32], count: i32, offsets: [i64]) -> bool {
+    let pids: [i64; 64] = [0; 64]; let c: i32 = 1; let ok: bool = true; let mine: [i32] = wk.cnt;
+    while (c < count) {
+        let job: Job = j; job.a = cuts[c]; job.b = cuts[c+1];
+        if (j.round == 3) { job.area = j.area + (offsets[c] as usize); job.words = ((offsets[c+1] - offsets[c]) / 8) as i32; }
+        let pid: i64 = ts_fork();
+        if (pid == 0) { let done: bool = ts_job(wk, w, levels, o, c, job); ts_exit(0); }
+        if (pid < 0) { let done: bool = ts_job(wk, w, levels, o, c, job); wk.cnt = mine; }
+        pids[c] = pid; c += 1;
+    }
+    let first: Job = j; first.a = cuts[0]; first.b = cuts[1];
+    if (j.round == 3) { first.area = j.area; first.words = ((offsets[1] - offsets[0]) / 8) as i32; }
+    let done: bool = ts_job(wk, w, levels, o, 0, first); wk.cnt = mine;
+    c = 1;
+    while (c < count) { if (pids[c] > 0 && !ts_wait(pids[c])) { ok = false; } c += 1; }
+    return ok;
+}
+// Cut [0, n) into count slices of about equal size.
+fn ts_even(cuts: [i32], n: i32, count: i32) {
+    let c: i32 = 0; while (c <= count) { cuts[c] = ((n as i64) * (c as i64) / (count as i64)) as i32; c += 1; }
+}
+fn ts_parallel(wk: &Work, w: &ext::text_lines::Words, levels: &alloc::vec::Vec<Key>, o: Options, count: i32, out: &ext::text_lines::Out) -> bool {
+    let n: i32 = wk.n; let nl: i32 = levels.len(); let all: u64 = ext::text_lines::ALL; let one: u64 = 1;
+    let cuts: [i32; 72] = [0; 72]; let offsets: [i64; 72] = [0; 72];
+    let level: i32 = 0; let chunk: i32 = 0; let fin: bool = false;
+    let ib: u64 = ts_ib(n); let keep: u64 = (one << ib) - one;
+    let j: Job = Job { round: 1, a: 0, b: n, level: 0, chunk: 0, nb: 0, ib: ib, flip: 0, shift: 0, exact: true, fin: false, area: wk.base, words: 0 };
+    while (true) {
+        if (level == nl) {
+            if (o.unique) { let p: i32 = 1; while (p < n) { wk.dup[p] = 1; p += 1; } }
+            fin = true; break;
+        }
+        let k: Key = levels.at(level); let flip: u64 = 0; if (k.reverse) { flip = all ^ keep; }
+        let nb: i32 = ((61 - ib) / 8) as i32;
+        j = Job { round: 1, a: 0, b: n, level: level, chunk: chunk, nb: nb, ib: ib, flip: flip, shift: ib, exact: true, fin: false, area: wk.base, words: 0 };
+        ts_even(cuts, n, count);
+        if (!ts_round(wk, w, levels, o, j, cuts, count, offsets)) { return false; }
+        let packed: bool = true;
+        if (k.numeric) {
+            let used: u64 = 0; let c: i32 = 0;
+            while (c < count) { used = used | (wk.flags[c*4] as u64); if (wk.flags[c*4+1] == 0) { j.exact = false; } c += 1; }
+            if (used == 0) { ts_numpack(wk, 0, 0, n, keep, flip); }
+            else {
+                // Values too wide to share bits with positions: sorted here.
+                let v: [u64] = wk.v; let pos: [i32] = wk.pos; let p: i32 = 0;
+                while (p < n) { if (k.reverse) { v[p] = v[p] ^ all; } pos[p] = p; p += 1; }
+                ts_sort_run(wk, 0, n); ts_gather(wk, 0, n); packed = false; j.shift = 0;
+            }
+        }
+        if (packed) {
+            // One radix pass here splits the values into buckets; each worker
+            // then sorts and gathers a slice of whole buckets.
+            let size: i32 = ts_top(wk, 0, n, ib);
+            if (size > 0) {
+                let cnt: [i32] = wk.cnt; let c: i32 = 1; let bk: i32 = 0; cuts[0] = 0;
+                while (c < count) {
+                    let want: i32 = ((n as i64) * (c as i64) / (count as i64)) as i32;
+                    while (bk < size && cnt[bk] < want) { bk += 1; }
+                    let at: i32 = n; if (bk < size) { at = cnt[bk]; }
+                    if (at < cuts[c-1]) { at = cuts[c-1]; }
+                    cuts[c] = at; c += 1;
+                }
+                cuts[count] = n;
+                j.round = 2;
+                if (!ts_round(wk, w, levels, o, j, cuts, count, offsets)) { return false; }
+                let t1: [u64] = wk.ln; wk.ln = wk.tln; wk.tln = t1; let t2: [u64] = wk.kk; wk.kk = wk.tk; wk.tk = t2;
+            }
+        }
+        // One run of equal keys over everything: on to its next pass.
+        let v: [u64] = wk.v; let sh: u64 = j.shift;
+        if ((v[0] >> sh) != (v[n-1] >> sh)) { break; }
+        if (k.numeric) { if (!j.exact) { break; } level += 1; chunk = 0; }
+        else { let full: i32 = (((v[0] >> ib) ^ (flip >> ib)) & 7) as i32; if (full == nb) { chunk += nb; } else { level += 1; chunk = 0; } }
+    }
+    // Slices of whole runs.
+    let v: [u64] = wk.v; let sh: u64 = j.shift; let c: i32 = 1; cuts[0] = 0;
+    while (c < count) {
+        let at: i32 = ((n as i64) * (c as i64) / (count as i64)) as i32;
+        if (at < cuts[c-1]) { at = cuts[c-1]; }
+        if (!fin) { while (at > 0 && at < n && (v[at] >> sh) == (v[at-1] >> sh)) { at += 1; } }
+        cuts[c] = at; c += 1;
+    }
+    cuts[count] = n;
+    let ln: [u64] = wk.ln; let total: i64 = 0; c = 0;
+    while (c < count) {
+        offsets[c] = total; let p: i32 = cuts[c]; let bytes: i64 = 0;
+        while (p < cuts[c+1]) { let l: u64 = ln[p]; bytes += (ts_hi(l) + 1 - ts_lo(l)) as i64; p += 1; }
+        total += (bytes / 8 + 2) * 8; c += 1;
+    }
+    offsets[count] = total;
+    let mapped: core::result::Result<ptr, Error> = ts_map(total + 64);
+    if (core::result::is_err(mapped)) { return false; }
+    let area: ptr = core::result::unwrap(mapped);
+    j.round = 3; j.fin = fin; j.level = level; j.chunk = chunk; j.area = area;
+    let ok: bool = ts_round(wk, w, levels, o, j, cuts, count, offsets);
+    c = 0;
+    while (ok && c < count) {
+        if (!ext::text_lines::write_all(out.fd, area + (offsets[c] as usize), wk.flags[c*4+2] as i32)) { out.failed = true; }
+        c += 1;
+    }
+    ts_unmap(area, total + 64);
+    return ok;
+}
+// Short runs go straight to ts_small.
+const SMALL: i32 = 12;
+
+// Whether input already in order can be written as it is: every level is
+// a whole-line byte (or case-folded) comparison and each line is in order
+// with the next (strictly with -u). Stops at the first line out of order.
+fn ts_presorted(w: &ext::text_lines::Words, at: [i32], n: i32, levels: &alloc::vec::Vec<Key>, unique: bool) -> bool {
+    let nl: i32 = levels.len(); if (nl == 0 || n < 2) { return false; }
+    let q: i32 = 0;
+    while (q < nl) {
+        let k: Key = levels.at(q); q += 1;
+        if (k.sword != MAX || k.eword != MAX || k.numeric || k.skipsblanks || k.skipeblanks) { return false; }
+    }
+    let ps: i32 = 0; let pe: i32 = at[0] >> 1; let i: i32 = 1;
+    while (i < n) {
+        let s: i32 = pe + 1; let e: i32 = at[i] >> 1; let c: i32 = 0; let l: i32 = 0;
+        while (c == 0 && l < nl) {
+            let k: Key = levels.at(l); l += 1;
+            c = ts_bytes(w, ps, pe, s, e, k.fold); if (k.reverse) { c = 0 - c; }
+        }
+        if (c > 0 || (c == 0 && unique)) { return false; }
+        ps = s; pe = e; i += 1;
+    }
+    return true;
+}
+
+// Sort `text` (every line ends with o.eol) by `levels` and write it to out.
+pub fn sort(text: core::slice::View<u8>, levels: &alloc::vec::Vec<Key>, o: Options, out: &ext::text_lines::Out) -> core::result::Result<i32, Error> {
+    let made: core::result::Result<ext::text_lines::Words, ext::text_lines::Error> = ext::text_lines::words(text);
+    if (core::result::is_err(made)) { return core::result::Err(Error::AllocationFailed); }
+    let w: ext::text_lines::Words = core::result::unwrap(made);
+    let found: core::result::Result<ext::text_lines::Starts, ext::text_lines::Error> = ext::text_lines::byte_positions(w.borrow(), o.eol, o.eol);
+    if (core::result::is_err(found)) { w.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let hits: ext::text_lines::Starts = core::result::unwrap(found);
+    let n: i32 = hits.count;
+    if (ts_presorted(w.borrow(), hits.at, n, levels, o.unique)) {
+        ext::text_lines::put_span(out, w.borrow(), 0, text.length);
+        hits.destroy(); w.destroy();
+        return core::result::Ok(0);
+    }
+    let count: i32 = 1;
+    if (n >= PARALLEL && out.fd >= 0 && levels.len() > 0) { count = ts_cpus(); if (count > 8) { count = 8; } }
+    let wm: core::result::Result<Work, Error> = ts_work(n, count);
+    if (core::result::is_err(wm)) { hits.destroy(); w.destroy(); return core::result::Err(core::result::unwrap_err(wm)); }
+    let wk: Work = core::result::unwrap(wm);
+    let ln: [u64] = wk.ln; let gs: [i32] = wk.gs; let at: [i32] = hits.at;
+    let i: i32 = 0; let s0: i32 = 0;
+    while (i < n) { let e0: i32 = at[i] >> 1; let l0: u64 = ts_pair(s0, e0); ln[i] = l0; s0 = e0 + 1; i += 1; }
+    hits.destroy();
+    if (count > 1) {
+        let ok: bool = ext::text_lines::finish(out) && ts_parallel(wk.borrow(), w.borrow(), levels, o, count, out);
+        wk.destroy(); w.destroy();
+        if (!ok) { return core::result::Err(Error::WorkerFailed); }
+        return core::result::Ok(0);
+    }
+    let sp: i32 = 0;
+    if (n > 1) { gs[0] = 0; gs[1] = n; gs[2] = 0; gs[3] = 0; sp = 4; }
+    ts_run(wk.borrow(), w.borrow(), levels, o, 0, sp);
+    let touched: u64 = ts_emit(wk.borrow(), w.borrow(), 0, n, out);
+    wk.destroy(); w.destroy();
+    return core::result::Ok(0);
+}
+
+// GNU's messages for -k errors.
+fn ts_text(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), count);
+    return core::slice::View { values: bytes, start: 0, length: count };
+}
+pub fn key_message(e: KeyError) -> core::slice::View<u8> {
+    return match (e) {
+        KeyError::InvalidStart -> ts_text("invalid number at field start", 29),
+        KeyError::FieldZero -> ts_text("field number is zero", 20),
+        KeyError::CharZero -> ts_text("character offset is zero", 24),
+        KeyError::InvalidAfterDot -> ts_text("invalid number after '.'", 24),
+        KeyError::InvalidAfterComma -> ts_text("invalid number after ','", 24),
+        KeyError::Stray -> ts_text("stray character in field spec", 29),
+        KeyError::Unsupported -> ts_text("ordering option not supported (d g h i M R V)", 45)
+    };
+}

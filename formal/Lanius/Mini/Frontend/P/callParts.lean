@@ -1,12 +1,11 @@
 module
 
 public import Lanius.Mini.Frontend.Types
-import Lanius.Mini.Compiler.P.Lists_empty
+import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.floatTyped
-import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasConst
-import Lanius.Mini.Frontend.P.isEmptyUsize
-import Lanius.Mini.Frontend.P.paramGoals
+import Lanius.Mini.Frontend.P.noBlock
+import Lanius.Mini.Frontend.P.pickTy
 import Lanius.Mini.Frontend.P.purePart
 
 public section
@@ -34,6 +33,7 @@ def callParts (x : MEff) : Option Called :=
   | .xMatch sc ety t bs vs => none
   | .xDivide op l r => none
   | .xStride sl => none
+  | .xArraySlice e sl => none
   | .xHost id args => none
 
 /-- The local an expression is, if it is one. -/
@@ -57,39 +57,26 @@ def effLocal (x : MEff) : Option Nat :=
   | none => none
   | some e => pureLocal e
 
-/-- The projection of field j of type t: a function instance numbered past the declared functions, `fn(v: t) -> f { return v.f; }`. -/
-def projection (decls : Decls) (t : Ty) (j : Nat) : Inst :=
-  ({ decl := decls.fns.length + j, args := [t] } : Inst)
+/-- An argument read where a slice of element type want is expected: an array local of that element type is passed as a slice of it (Core's array-to-slice, so the callee's writes reach the array), an array local of another element type rejects, and any other value is passed as it is. -/
+def viewArray (id : Nat) (want : Ty) (l : Option Local) (x : MEff) : Option MEff :=
+  match l with
+  | none => some x
+  | some v =>
+    match arrayParts v.ty with
+    | none => some x
+    | some a => checkedEff (sameTy a.element want) (some (MEff.xArraySlice want id))
 
-/-- Field j of the value x of type t: Field of a local, else the call of the projection. -/
-def fieldValue (decls : Decls) (x : MEff) (t : Ty) (j : Nat) : MEff :=
-  match effLocal x with
-  | some id => MEff.xPure (SrcExpr.field id j)
-  | none => MEff.xCall (projection decls t j) [x]
+def viewLocal (scope : List Local) (want : Option Ty) (id : Option Nat) (x : MEff) : Option MEff :=
+  match want with
+  | none => some x
+  | some e =>
+    match id with
+    | none => some x
+    | some i => viewArray i e (findLocalId scope i) x
 
-def fieldOfTy (env : FrontEnv) (x : MEff) (t : Option Ty) (name : List Nat) : Option MEff :=
-  match t with
+def wantElem (expected : Option Ty) : Option Ty :=
+  match expected with
   | none => none
-  | some ty =>
-    match fieldIndex env ty name with
-    | none => none
-    | some j => some (fieldValue env.decls x ty j)
-
-def methodOfTy (fuel : Nat) (env : FrontEnv) (t : Option Ty) (name : List Nat) : Option Found :=
-  match t with
-  | none => none
-  | some ty => findMethod fuel env.decls env.decls.fns 0 name ty
-
-def effSliceLocal (scope : List Local) (x : MEff) : Option Local :=
-  match effLocal x with
-  | none => none
-  | some id => findLocalId scope id
-
-/-- The expected type of a step whose tail is next: the chain's, for its last. -/
-def stepExpected (expected : Option Ty) (next : CTree) : Option Ty :=
-  if nodeProd next = (164) then
-    expected
-  else
-    none
+  | some t => sliceElem t
 
 end Lanius.Mini

@@ -3,10 +3,10 @@ module
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Compiler.P.arithShiftRight
 import Lanius.Mini.Compiler.P.matchVariants
+import Lanius.Mini.Frontend.P.bindsOfTys
 import Lanius.Mini.Frontend.P.callParts
 import Lanius.Mini.Frontend.P.consBinder
 import Lanius.Mini.Frontend.P.consTys
-import Lanius.Mini.Frontend.P.divergeArm
 import Lanius.Mini.Frontend.P.fnInstRet
 import Lanius.Mini.Frontend.P.forRange
 import Lanius.Mini.Frontend.P.freshId

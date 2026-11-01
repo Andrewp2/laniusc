@@ -1,7 +1,13 @@
 # Standard and extended library overview
 
-The full library goal remains open. The current increment replaces the
-native runtime's allocator, which made every allocation its own `mmap`, with a
+The full library goal remains open. The current increment makes the runtime
+allocator [thread-safe](runtime-allocator.md#threads), so `std::pthread`
+bodies may allocate and free. Each thread, keyed by its `%fs:0` thread
+pointer, gets its own pool, and there is no lock on the hot path. Blocks freed
+on another thread flow back through shared per-class lists, so a
+producer/consumer pair passing 1.9 GB of messages grows resident memory by
+about 1 MiB. Single-thread allocation is as fast as before, within noise.
+The preceding increment replaces the native runtime's allocator, which made every allocation its own `mmap`, with a
 [pooling allocator](runtime-allocator.md): power-of-two classes up to 32 KiB
 in 1 MiB arenas, free lists per class, and direct `mmap` above that.
 Allocating and freeing 1,000 bytes drops from 6.3 µs to 0.19 µs,
@@ -627,6 +633,15 @@ xdiff alignment (`Algorithm::Xdiff`). Their output is identical to git 2.43 on
 all 2,040 generated pairs for word diffs, character diffs and `--stat`, on
 1,500 `git diff --stat` reports over generated repositories and on 282
 `diff -ruN` patches.
+[Text tools](extended-textutils.md) (`ext::text_sort`, `ext::text_uniq`,
+`ext::text_cut`, `ext::text_tr`, `ext::text_wc`, `ext::text_lines`;
+`text-sort`, `text-uniq`, `text-cut`, `text-tr`, `text-wc`) reimplement GNU
+coreutils 9.4 `sort` (`-bfnrsuz`, `-k`, `-t`, `-o`), `uniq` (`-c -d -u -i
+-f -s -w -z`), `cut` (`-b -c -f -d -s --complement --output-delimiter`),
+`tr` (sets, ranges, classes, `-c -d -s -t`) and `wc` under `LC_ALL=C`. Each
+matches GNU byte for byte, with the same exit status, on 2,000 generated
+cases from its own oracle. `sort` is a multikey MSD radix sort with forked
+workers from 50,000 lines up. Speeds are in the guide.
 [Multi-file patches](extended-patchset.md) (`ext::patchset`, `seq-patch -i`)
 read git extended headers (renames, copies, modes, creation, deletion,
 binary sections), reverse patches, detect reversed patches as GNU `patch`
@@ -2097,6 +2112,16 @@ calibrations/overlap. They use frozen production `cf1347d5...` and probe ELF
 [materializer guide](extended-archive-extraction.md). This selected workflow
 does not complete the full standard or extended library goal.
 
+**Append-only key/value log.**
+
+[`ext::kv_log`](extended-kv-log.md) is an embedded Bitcask-style store. It
+appends CRC-32 records to a single log and keeps a hash index of keys in memory.
+`sync()` is the commit point. Recovery truncates at the first torn or corrupt
+record, and compaction writes a new log and renames it over the old one. A
+Python dict model passes 300 generated op-sequence cases (with simulated crashes
+and exact file bytes) and 600 crash-injection cases (truncation, bit flips,
+garbage, stale compaction file). The `kv` sample is built on `std::cli`.
+
 **Atomic publication and key-value application checkpoint.**
 
 The actual AtomicFile probe passes owner nine, bounds 25, publication six and
@@ -2366,7 +2391,12 @@ Its `dial` opens an unpooled connection for protocols that take over after
 an HTTP/1.1 upgrade. Over https it offers `h2` by ALPN and runs requests to
 an origin that selects it as streams of one [HTTP/2](extended-http2.md)
 connection; `fetch_all` multiplexes them. That h2 group (21 cases) runs
-against libnghttp2's server session over TLS.
+against libnghttp2's server session over TLS. `fetch_to` streams a final
+response body of any size to a `core::io::Write` sink as it arrives, over
+HTTP/1.1 (through `ext::http_body`) and HTTP/2. The `agent-fetch` sample is
+built on it and on `std::cli`; it passes http12 against Python
+`http.server`, h2 6 against libnghttp2 over TLS and proxy4 through
+`ext::http_proxy` and its TLS front end.
 
 [HTTP/2](extended-http2.md) is three I/O-free modules:
 [`ext::hpack`](extended-hpack.md) (RFC 7541 with the canonical Huffman code,

@@ -4,6 +4,7 @@ public import Lanius.Mini.Reading.Det.Close
 public import Lanius.Mini.Reading.Program
 import all Lanius.Mini.Frontend.P.blockArmsOf
 import all Lanius.Mini.Frontend.P.callParts
+import all Lanius.Mini.Frontend.P.projection
 import all Lanius.Mini.Frontend.P.distinct
 import all Lanius.Mini.Frontend.P.moduleOr
 import all Lanius.Mini.Frontend.P.shrFirst

@@ -1,0 +1,102 @@
+// GNU wc under LC_ALL=C over ext::text_wc: newline, word, character and byte
+// counts and the longest line's width, per file and in total.
+// usage: text-wc [-c|-m|-l|-w|-L]... [--bytes|--chars|--lines|--words|--max-line-length]... [FILE...]
+// Without FILE (or with -) it reads standard input. Exit 0, or 1 when an
+// input cannot be read or an option is unknown.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::text_lines;
+import ext::text_wc;
+import std::args;
+import std::stream;
+
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), count);
+    return core::result::unwrap(core::slice::view(bytes, count));
+}
+fn same(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.len() != right.len()) { return false; }
+    let i: i32 = 0; while (i < left.len()) { if (left.values[left.start+i] != right.values[right.start+i]) { return false; } i += 1; } return true;
+}
+fn say(v: core::slice::View<u8>) {
+    let sink: std::stream::Descriptor = std::stream::stderr();
+    let written: core::result::Result<i32, core::io::Failure> = core::io::write_all(sink.borrow(), v.values, v.start, v.len());
+}
+fn complain(text: str, count: i32) -> i32 { say(literal(text, count)); return 1; }
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1, 4096, 1048576);
+    if (core::result::is_err(captured)) { return complain("text-wc: bad arguments\n", 23); }
+    let arguments: std::args::Arguments = core::result::unwrap(captured);
+    let s: ext::text_wc::Select = ext::text_wc::Select { lines: false, words: false, chars: false, bytes: false, longest: false };
+    let names: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new(); let ok: bool = true; let plain: bool = false; let i: i32 = 0;
+    while (i < arguments.len() && ok) {
+        let arg: core::slice::View<u8> = core::option::unwrap(arguments.get(i)); i += 1;
+        if (plain || arg.len() < 2 || arg.values[arg.start] != 45) { ok = core::result::is_ok(names.try_push(arg)); continue; }
+        if (same(arg, literal("--", 2))) { plain = true; continue; }
+        if (arg.values[arg.start+1] == 45) {
+            if (same(arg, literal("--bytes", 7))) { s.bytes = true; }
+            else { if (same(arg, literal("--chars", 7))) { s.chars = true; }
+            else { if (same(arg, literal("--lines", 7))) { s.lines = true; }
+            else { if (same(arg, literal("--words", 7))) { s.words = true; }
+            else { if (same(arg, literal("--max-line-length", 17))) { s.longest = true; }
+            else { ok = false; } } } } }
+            continue;
+        }
+        let j: i32 = 1;
+        while (j < arg.len() && ok) {
+            let c: u8 = arg.values[arg.start+j]; j += 1;
+            if (c == 99) { s.bytes = true; } else { if (c == 109) { s.chars = true; } else { if (c == 108) { s.lines = true; }
+            else { if (c == 119) { s.words = true; } else { if (c == 76) { s.longest = true; } else { ok = false; } } } } }
+        }
+    }
+    if (!ok) { names.destroy(); arguments.destroy(); return complain("usage: text-wc [-clmwL] [FILE...]\n", 34); }
+    if (ext::text_wc::selected(s) == 0) { s = ext::text_wc::default_select(); }
+    let named: bool = names.len() > 0;
+    if (!named) { let pushed: core::result::Result<i32, alloc::vec::Error> = names.try_push(literal("-", 1)); }
+    let count: i32 = names.len();
+    // GNU examines every input before counting, to size the columns.
+    let fds: alloc::vec::Vec<i32> = alloc::vec::new(); let sizes: alloc::vec::Vec<i64> = alloc::vec::new(); i = 0;
+    while (i < count) {
+        let fd: i32 = ext::text_lines::open_input(core::option::unwrap(names.get(i))); let size: i64 = -2;
+        if (fd >= 0) { size = ext::text_lines::input_size(fd); }
+        let a: core::result::Result<i32, alloc::vec::Error> = fds.try_push(fd); let b: core::result::Result<i32, alloc::vec::Error> = sizes.try_push(size);
+        i += 1;
+    }
+    let width: i32 = ext::text_wc::width(sizes.as_slice(), count, ext::text_wc::selected(s));
+    let o: ext::text_lines::Out = core::result::unwrap(ext::text_lines::out(1, 8192));
+    let chunk: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(262152));
+    let p: ptr = core::result::unwrap(chunk.reserve_raw(262152));
+    let total: ext::text_wc::Counter = ext::text_wc::counter(); let status: i32 = 0;
+    let sized: bool = !s.lines && !s.words && !s.longest;
+    i = 0;
+    while (i < count) {
+        let name: core::slice::View<u8> = core::option::unwrap(names.get(i)); let fd: i32 = core::option::unwrap(fds.get(i)); let size: i64 = core::option::unwrap(sizes.get(i)); i += 1;
+        if (fd < 0) { say(literal("text-wc: ", 9)); say(name); say(literal(": No such file or directory\n", 28)); status = 1; continue; }
+        let c: ext::text_wc::Counter = ext::text_wc::counter(); let failed: bool = false;
+        if (sized && size >= 0) { c.bytes = size; }
+        else {
+            while (true) {
+                let got: i32 = ext::text_lines::read_some(fd, p, 262144);
+                if (got < 0) { failed = true; break; }
+                if (got == 0) { break; }
+                let v: core::slice::View<u8> = core::slice::View { values: core::mem::typed_slice_from_raw_parts<u8>(p, got), start: 0, length: got };
+                let fed: core::result::Result<i32, ext::text_lines::Error> = ext::text_wc::feed(c.borrow(), v, s.words, s.longest);
+            }
+        }
+        ext::text_lines::close_input(fd);
+        if (failed) { say(literal("text-wc: ", 9)); say(name); say(literal(": read error\n", 13)); status = 1; }
+        ext::text_wc::done(c.borrow());
+        ext::text_wc::write_row(o.borrow(), c, s, width, name, named);
+        total.lines += c.lines; total.words += c.words; total.bytes += c.bytes; if (c.longest > total.longest) { total.longest = c.longest; }
+    }
+    if (count > 1) { ext::text_wc::write_row(o.borrow(), total, s, width, literal("total", 5), true); }
+    if (!ext::text_lines::finish(o.borrow())) { status = 1; }
+    o.destroy(); chunk.destroy(); fds.destroy(); sizes.destroy(); names.destroy(); arguments.destroy();
+    return status;
+}

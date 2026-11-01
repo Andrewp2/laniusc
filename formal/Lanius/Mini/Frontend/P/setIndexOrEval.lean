@@ -2,7 +2,7 @@ module
 
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Compiler.P.Lists_empty
-import Lanius.Mini.Frontend.P.divergeArm
+import Lanius.Mini.Frontend.P.bindsOfTys
 import Lanius.Mini.Frontend.P.ifEff
 import Lanius.Mini.Frontend.P.pickTy
 import Lanius.Mini.Frontend.P.whileEvalOf

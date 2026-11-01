@@ -494,8 +494,12 @@ argument tokens; the verified compiler's validator checks it (`picks`).
 A method's `<` (`x.f<T>(..)`, ambiguous in the same way: `x.f < a > (b)`)
 opens type arguments by the same rule, from the `<` on (decided 10-31, F11b;
 before, a file with one was rejected, which rejected `alloc::vec` and every
-program importing it). The reader does not yet read a call with them, so
-such a call is still outside the subset, but the rest of its file is read.
+program importing it). The reader reads such a call as the call without
+them, with the method's own type parameters bound to the written types in
+order, after the binds the receiver's type gives the impl, instead of
+inferring them (`MethodBinds`; a count other than the method's type
+parameters rejects; decided 11-01, F11b). A field (`x.f`) with type
+arguments rejects.
 A statement that begins with `{` is a block statement, never an
 expression statement (decided 10-30, F4), as in Rust: `{ a } - b;` is the
 block `{ a }` and then `-b;`. Its lets scope over the block only
@@ -621,8 +625,15 @@ Core's array, held by value:
   is read as `slice[i] = v` is (`SetIndex`) and lowered as the effectful
   form (`lower_set_index_any`). The front end reads v at the element type
   (`index_elem`), so `bytes[i] = 48` is a `u8` store.
-- Not yet: an array passed where a slice is
-  expected (Core's coercion of `[T; N]` to `[T]`), `for` over an array,
+- An array local passed as a call's argument at a `[T]` parameter, its
+  element type T, is read as `ArraySlice(T, a)`, Core's `arrayToSlice`
+  of the local, so the callee's writes reach the array, as laniusc's do
+  (decided 11-01, F11b; before, the reading passed the array by value,
+  which disagreed with laniusc in `core::utf16_bytes`). An array local of
+  another element type rejects. The compiler does not lower it yet
+  (`SrcEff.eval` rejects it), so such a program is read but not compiled.
+- Not yet: an array other than a local passed where a slice is
+  expected, `for` over an array,
   `==` of arrays, `core::mem::i32_array_data_ptr`, a length that names a
   constant, and arrays of floats (no element layout for float slices yet;
   an array of floats is held by value and should work, but is untested).
@@ -1630,3 +1641,29 @@ accepts `u16`): `s[i]` is a bounds check and a 32-bit load at
 and `slice_stride` is -8. The other one-word scalars (`u32`, `u64`, `i64`,
 `bool`, `char`, `ptr`, ...) have the same layout in laniusc and are later
 work.
+
+## laniusc's process exit is `exit_group`; the verified compiler's stays `exit` (decided 11-01)
+
+laniusc's x86 runtime now ends a process with Linux syscall 231,
+`exit_group`, instead of 60, `exit`. This covers the `exit` service
+(`std::process::exit`) and allocation failure
+(`shaders/codegen/lir/x86/runtime_abi.slang`), the inline exits of failed
+safety guards such as bounds checks, status 101 (`emit_exit` in
+`safety_emit.slang`), and the static entry wrapper's exit after `main`
+(`emit.slang`).
+With `std::pthread`, `exit` ended only the calling thread. A worker that
+failed a bounds check vanished, `pthread_join` returned, and `main` went on
+to exit 0 (`tests/fixtures/stdlib_execution/concurrency/thread_exit.lani`).
+The native-link CRT bridge returns into glibc, whose `exit` already uses
+`exit_group`, so it is unchanged.
+
+The verified compiler keeps `mov eax, 60; syscall` (`lani/mini/compiler.lani`'s
+entry, `Lanius/Mini/Process.lean`'s `Exits`, `exit_steps` and the start bytes
+`[72, 137, 199, 184, 60, 0, 0, 0, 15, 5]`). Its programs have one thread:
+it emits no C entries and links no pthread. For a one-thread process, `exit`
+and `exit_group` end the same process with the same status, so `Exits` is
+exact for every program it compiles. Switching it would change the self
+source, the process theorems and the self-hosting fixpoint for no
+observable difference. It should switch when the verified compiler admits
+threads. The change is the byte 60 -> 231 in the entry and the immediate
+in `Exits.number` and `exit_steps`.
