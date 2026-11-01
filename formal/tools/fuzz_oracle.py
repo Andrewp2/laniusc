@@ -477,16 +477,26 @@ class Gen:
         """An index into an array of n elements: in range but for a few
         (self.wild says whether this one may not be)."""
         it = self.rng.choice(['i32', 'usize'])
+        # an index inside an index's expression is a literal: atoms make
+        # indexes, so they would nest without end
+        self.indexing = getattr(self, 'indexing', 0)
+        if self.indexing >= 2:
+            d = 0
         self.wild = False
         if self.chance(self.safe):
             if n & (n - 1) == 0 and d > 0 and self.chance(0.6):
+                self.indexing += 1
                 e = self.int_expr(s, it, d - 1, True)
+                self.indexing -= 1
                 return f'({e} & {n - 1})'
             return str(self.rng.randrange(n))
         # computed: laniusc rejects a constant index past the end at compile time
         self.wild = True
         if d > 0 and self.chance(0.5):
-            return self.int_expr(s, it, d - 1, True)
+            self.indexing += 1
+            e = self.int_expr(s, it, d - 1, True)
+            self.indexing -= 1
+            return e
         return f'({self.rng.choice(["i32", "usize"]) and str(self.rng.choice([n, n + 1, 255]))} as {it})'
 
     def calls_to(self, s, t):
