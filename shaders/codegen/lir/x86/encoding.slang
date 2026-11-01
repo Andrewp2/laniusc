@@ -212,9 +212,11 @@ void x86_put_imm32_to_location(uint value, uint destination)
         x86_put_u32(value);
         return;
     }
+    // The slot is a native word that a pointer or 64-bit reader loads whole,
+    // so store all of the zero-extended RAX, as the register form leaves it.
     if (value == 0u) { x86_put(0x31u); x86_put(0xc0u); }
     else { x86_put(0xb8u); x86_put_u32(value); }
-    x86_put_stack(0x89u, false, 0u, x86_location_payload(destination));
+    x86_put_stack(0x89u, true, 0u, x86_location_payload(destination));
 }
 
 void x86_put_binary32(uint operation, uint right, uint destination)
