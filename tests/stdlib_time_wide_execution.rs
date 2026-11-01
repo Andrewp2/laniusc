@@ -72,7 +72,7 @@ fn overstated_timespec_view_traps_before_host_read_on_x86() {
 fn wide_clock_reads_report_host_failures_on_x86() {
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -87,7 +87,7 @@ fn wide_clock_reads_report_host_failures_on_x86() {
             let exe = executable(&bytes, name);
             let output = common::short_process_output_with_timeout(
                 format!("wide time {name} host failure"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-e")
                     .arg("trace=clock_gettime")

@@ -178,7 +178,7 @@ def identity_case(mode, injection=None):
     global CASES
     with tempfile.TemporaryDirectory(prefix="command-group-") as directory:
         trace = Path(directory) / "trace"
-        command = ["strace", "--kill-on-exit", "-f", "-qq", "-s", "4096", "-e", "signal=none", "-e", "trace=" + TRACE, "-o", str(trace)]
+        command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-f", "-qq", "-s", "4096", "-e", "signal=none", "-e", "trace=" + TRACE, "-o", str(trace)]
         if injection:
             command += ["-e", "inject=" + injection]
         command += [PROBE, PEER, str(mode)]
@@ -247,7 +247,7 @@ def startup_case(injection=None, expected=43, follow=True, executable=FAILURE):
     global CASES
     with tempfile.TemporaryDirectory(prefix="command-group-fault-") as directory:
         trace = Path(directory) / "trace"
-        command = ["strace", "-qq", "-xx", "-s", "4096", "-e", "signal=none", "-e", "trace=" + TRACE, "-o", str(trace)]
+        command = ["strace","-E","LANIUS_ALLOC=mmap", "-qq", "-xx", "-s", "4096", "-e", "signal=none", "-e", "trace=" + TRACE, "-o", str(trace)]
         if follow:
             command.append("-f")
         expressions = [] if injection is None else ([injection] if isinstance(injection, str) else injection)

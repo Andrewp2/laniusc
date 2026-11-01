@@ -38,7 +38,7 @@ fn selection_preserves_typed_payloads_stride_context_and_shallow_owners() {
     let trace = common::TempArtifact::new("laniusc_iterator_selection", "owner_trace", None);
     let output = common::process_output_with_timeout(
         "selection payload and owner contracts",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap"])

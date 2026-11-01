@@ -1,7 +1,7 @@
 //! Generic borrowed slice segmentation: direct contracts and capability boundaries.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod common;
-use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command, time::Duration};
+use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, time::Duration};
 fn compile(name: &str) -> Result<Vec<u8>, laniusc_compiler::compiler::CompileError> {
     compile_from("tests/fixtures/stdlib_slice_segmentation/direct", name)
 }
@@ -30,7 +30,7 @@ fn execute_bytes(name: &str, bytes: Vec<u8>) {
     let trace = common::TempArtifact::new("laniusc_slice_segmentation", "all_syscalls", None);
     let output = common::process_output_with_timeout(
         "pure slice segmentation contracts",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=all", "-e", "signal=none"])

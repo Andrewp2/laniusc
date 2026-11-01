@@ -77,7 +77,7 @@ def case(handler,args=(),status=0,data=None,name='/path?q=x',family=socket.AF_IN
     command=[EXE,address,'virtual.example:8080',name,'--timeout','1500',*args]
     if sys.argv[1]=='native':command=[EXE,address]
     if trace:
-        command=['strace','-qq','-o',trace,'-e','trace=mmap,munmap,socket,close,connect,getsockopt,getpeername,sendto,recvfrom,poll,shutdown,clock_gettime,read,write,open,openat,rt_sigaction',*[part for item in (fault if isinstance(fault,list) else [fault]) if item for part in ['-e',item]],*command]
+        command=['strace','-E','LANIUS_ALLOC=mmap','-qq','-o',trace,'-e','trace=mmap,munmap,socket,close,connect,getsockopt,getpeername,sendto,recvfrom,poll,shutdown,clock_gettime,read,write,open,openat,rt_sigaction',*[part for item in (fault if isinstance(fault,list) else [fault]) if item for part in ['-e',item]],*command]
     start=time.monotonic()
     if output is None:out=subprocess.run(command,input=data,capture_output=True,timeout=5)
     else:out=subprocess.run(command,input=data,stdout=output,stderr=subprocess.PIPE,timeout=5)
@@ -170,10 +170,10 @@ def failures():
     with tempfile.TemporaryDirectory() as directory:
         trace=directory+'/preflight.trace'
         for args in bad:
-            out=subprocess.run(['strace','-qq','-o',trace,'-e','trace=mmap,munmap,socket,connect,close',EXE,'127.0.0.1:9','virtual.example:8080','/',*args],capture_output=True,timeout=2)
+            out=subprocess.run(['strace','-E','LANIUS_ALLOC=mmap','-qq','-o',trace,'-e','trace=mmap,munmap,socket,connect,close',EXE,'127.0.0.1:9','virtual.example:8080','/',*args],capture_output=True,timeout=2)
             check(out,3);resources(trace);assert 'socket(' not in open(trace).read() and 'connect(' not in open(trace).read();COUNT+=1
         for authority,target,args,data in [('bad\r\nInjected:yes','/',[],None),('virtual.example','/bad\r\nInjected:yes',[],None),('virtual.example','http://other.example/',[],None),('virtual.example','/',['--method','TRACE','--body','-'],b'x')]:
-            out=subprocess.run(['strace','-qq','-o',trace,'-e','trace=mmap,munmap,socket,connect,close',EXE,'127.0.0.1:9',authority,target,*args],input=data,capture_output=True,timeout=2)
+            out=subprocess.run(['strace','-E','LANIUS_ALLOC=mmap','-qq','-o',trace,'-e','trace=mmap,munmap,socket,connect,close',EXE,'127.0.0.1:9',authority,target,*args],input=data,capture_output=True,timeout=2)
             check(out,3);resources(trace);assert 'socket(' not in open(trace).read() and 'connect(' not in open(trace).read();COUNT+=1
     for args in ([],['127.0.0.1:9','x'],['hostname:80','x','/'],['127.0.0.1:9','x','/','--unknown'],['127.0.0.1:9','x','/','--timeout','60001'],['127.0.0.1:9','x','/','--header',':x']):
         out=subprocess.run([EXE,*args],capture_output=True,timeout=2);check(out,2);COUNT+=1
@@ -257,7 +257,7 @@ def io_faults():
             case(ordinary(wire),['--body',path],status=5,trace=trace,fault='inject=%s:error=EIO:when=1'%syscall);resources(trace)
         read_end,write_end=os.pipe();os.close(read_end)
         try:
-            out=subprocess.run(['strace','-qq','-o',trace,'-e','trace=mmap,munmap,write,rt_sigaction',EXE,'127.0.0.1:9','x','/','--max-request','0'],stdout=subprocess.PIPE,stderr=write_end,timeout=2);assert out.returncode==5 and not out.stdout,out
+            out=subprocess.run(['strace','-E','LANIUS_ALLOC=mmap','-qq','-o',trace,'-e','trace=mmap,munmap,write,rt_sigaction',EXE,'127.0.0.1:9','x','/','--max-request','0'],stdout=subprocess.PIPE,stderr=write_end,timeout=2);assert out.returncode==5 and not out.stdout,out
         finally:os.close(write_end)
         resources(trace);assert 'EPIPE' in open(trace).read()
     print('http-client-io cases=%d'%(COUNT+1))

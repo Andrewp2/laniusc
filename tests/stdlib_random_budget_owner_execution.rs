@@ -230,7 +230,7 @@ fn budgeted_random_operations_preserve_nested_owners_aliases_strides_and_exact_p
     let trace = common::TempArtifact::new("laniusc_random_budget_owners", "all_syscalls", None);
     let output = common::process_output_with_timeout(
         "shared random budget owner lifecycle",
-        Command::new("strace")
+        crate::common::strace()
             .args(["--kill-on-exit", "-qq", "-s", "64", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=all", "-e", "signal=none"])

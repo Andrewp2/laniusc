@@ -1,6 +1,14 @@
 # Standard and extended library overview
 
-The full library goal remains open. The current increment adds
+The full library goal remains open. The current increment replaces the
+native runtime's allocator, which made every allocation its own `mmap`, with a
+[pooling allocator](runtime-allocator.md): power-of-two classes up to 32 KiB
+in 1 MiB arenas, free lists per class, and direct `mmap` above that.
+Allocating and freeing 1,000 bytes drops from 6.3 µs to 0.19 µs,
+`alloc::io::read_line` runs 4.5x faster, and the h2c server's system time
+drops from 0.34–0.38 s to 0.09 s. `LANIUS_ALLOC=mmap` restores the old
+syscalls for the failure-injection tests.
+The preceding increment adds
 [bulk slice and vector operations](stdlib-slice-bulk.md): `copy_from_slice`,
 `swap_with_slice`, `fill_range`, `memchr` and `memcmp` in `core::slice`, and
 `try_extend_from_slice`, `copy_from_slice`, `swap_with_slice`, `fill` and
@@ -33,6 +41,12 @@ owner fields, and the interval-edit fixture shows under an in-program
 RLIMIT_AS denial that failed extraction leaves the source unchanged. Native receipts use the prebuilt compiler; the two registered
 Rust tests type-check and await a full test-binary run.
 The [concurrency increment](stdlib-concurrency.md) adds four modules for parallel
+The [`std::pthread`](stdlib-threads.md) increment runs native threads
+through `pthread_create`/`pthread_join`, with Lanius functions as C entries.
+Threads coordinate with std::sync's futex Mutex and Condvar. Its fixture
+checks parallel sums against the serial sum, an exact Mutex counter, a
+Condvar queue and 1,000 spawn/join pairs. `std::par` adds thread-crew sorts
+that pass the same model oracle.
 The [`std::uring`](stdlib-uring.md) increment drives io_uring through raw
 syscalls (setup, ring mmaps, enter). It adds read, write, readv, writev,
 openat, close, accept, recv and send operations, linked SQEs, and completion
@@ -1604,6 +1618,14 @@ the generic borrowed client handoff has its separate acceptance above.
 
 **Accepted command completion.**
 
+[`std::cli`](stdlib-cli.md) parses arguments declaratively with GNU
+`getopt_long` rules: unique long-option prefixes, `-abc` clusters, `--opt=value`
+and `--opt value`, optional values, `--`, operand counts and subcommands. It
+generates `--help` text and prints glibc's messages (`unrecognized option
+'--x'`, `option '--co' is ambiguous; possibilities: ...`). It agrees with a
+Python model, itself checked against Python `getopt`, on 6,026 generated and
+fixed cases and 7 help texts. The `tgz` and `seq-diff` samples use it.
+
 [Portable completion and the Bash adapter](extended-cli-complete.md) separate
 three allocation-free modules from host behavior. `ext::cli_complete` reuses
 canonical prefix parsing and command scopes; a Context retains no mutable
@@ -2348,8 +2370,45 @@ HTTP/1.1 on the same listener. The event server multiplexes h2c
 connections on its loop as well, and a load test of 100 concurrent h2c
 clients against 100 HTTP/1.1 clients checks every body and counter. A libnghttp2 client session through ctypes
 passes 6 session cases and 18 malformed-frame cases, both against the engine
-over a pipe and against the service over TCP. HTTP/2 over TLS waits on C
-callback support for OpenSSL's ALPN selection.
+over a pipe and against the service over TCP. `ext::http_service_tls`
+serves the event server over TLS. `ext::openssl_tls::ServerContext.set_alpn`
+selects the protocol in a Lanius `SSL_CTX_set_alpn_select_cb` callback:
+`h2` clients get HTTP/2 streams and the others get HTTP/1.1
+(`http-service-tls cases=8`, against libnghttp2 and Python `ssl` clients).
+
+The [reverse proxy](extended-http-proxy.md) (`ext::http_proxy`, with
+`ext::http_body` and `ext::http_rewrite`) is part of the same family.
+
+- **Clients:** HTTP/1.1 and h2c clients, on one `std::event` loop, go to
+  HTTP/1.1 upstreams chosen by path prefix.
+- **Pools:** idle upstream connections are kept per upstream, with idle
+  limits, a connection cap with a queue, and one retry on a stale reused
+  connection.
+- **Headers:** RFC 9110 hop-by-hop removal, plus X-Forwarded-For,
+  X-Forwarded-Proto and Via.
+- **Bodies:** bodies stream both ways through fixed buffers, with
+  backpressure.
+- **Timeouts:** connect, response, inactivity, head and idle timeouts map
+  to 502 and 504.
+- **TLS:** `ext::http_proxy_tls` adds TLS with ALPN h2. Both TLS servers
+  use one transport layer: `ext::tls_clients` over the
+  `ext::client_transport` interface.
+
+Python asyncio upstreams with raw HTTP/1.1, libnghttp2 and `ssl` clients
+pass these groups:
+
+| Group | Cases |
+| --- | --- |
+| body | 151 |
+| rewrite | 11 |
+| h1 | 19 |
+| errors | 12 |
+| h2 | 13 |
+| tls | 13 |
+
+A load test sends 100 h2c clients × 20 requests and 100 HTTP/1.1
+clients × 20 requests through the proxy, plain and over TLS, and checks
+every body.
 
 The [WebSocket client](extended-websocket-client.md) (`ext::websocket_client`)
 uses `dial` for `ws://` and verified `wss://` URLs and the canonical
@@ -2530,6 +2589,28 @@ atoms, prefix, infix, postfix, grouping and call kinds into postfix events. It
 uses fixed scratch, allocation-free O(n) parsing and typed errors with token
 indices. Its Python-precedence calculator sample agrees with CPython `ast` on
 100,000 generated expressions and 25,000 token-soup lines.
+
+[`ext::fnmatch`](extended-fnmatch.md) matches byte names against shell
+wildcards with glibc's `fnmatch(3)` answers in the C locale, for
+`FNM_PATHNAME`, `FNM_NOESCAPE`, `FNM_PERIOD`, `FNM_LEADING_DIR` and
+`FNM_CASEFOLD`. That includes POSIX bracket classes, `[=x=]`, `[.x.]` and
+glibc's handling of malformed brackets. It backtracks only to the last `*`, so
+it takes at most pattern-times-name steps. It agrees with libc through `ctypes`
+on three seeds of 200,000 generated cases plus 2,304 pinned malformed-bracket
+cases.
+
+[`ext::gitignore`](extended-gitignore.md) decides whether a path is ignored
+under git's `.gitignore` rules: comments, escaped trailing spaces, `!`
+negation, directory-only and anchored patterns, `**` components, and
+deeper-file and later-line precedence, with components matched by
+`ext::fnmatch`. `text_grep` now takes file operands and `-r` with
+`--include`, `--exclude`, `--exclude-dir` and `--gitignore`
+([recursive search](extended-text-grep.md#files-and-recursive-search)). Its
+stdout, status and binary-file messages match GNU grep 3.11 `-r` on 36
+searches of the repository tree and on 1,200 generated trees, and
+`--gitignore` matches the files `git ls-files -o --exclude-standard` lists in
+730 generated trees. It is about 4x GNU grep's user time on the repository,
+mostly because it validates every byte of each file that holds the literal.
 
 The [regex differential oracle](extended-regex-oracle.md) runs the real
 `find_iter`, template-replacement and grep programs against CPython `re` on

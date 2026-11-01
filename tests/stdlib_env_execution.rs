@@ -136,7 +136,7 @@ fn std_env_current_dir_read_into_reports_host_failure_on_x86() {
     {
         use std::os::unix::fs::PermissionsExt;
 
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -155,7 +155,7 @@ fn std_env_current_dir_read_into_reports_host_failure_on_x86() {
 
         let output = common::short_process_output_with_timeout(
             "current directory host failure",
-            std::process::Command::new("strace")
+            crate::common::strace()
                 .arg("-qq")
                 .arg("-e")
                 .arg("trace=getcwd")
@@ -199,12 +199,12 @@ fn std_env_current_dir_len_reports_allocation_failure_on_x86() {
         );
         assert_eq!(normal.status.code(), Some(0), "{normal:?}");
 
-        if std::process::Command::new("strace").arg("-V").output().is_err() {
+        if crate::common::strace().arg("-V").output().is_err() {
             return;
         }
         let fault = common::short_process_output_with_timeout(
             "current directory length allocation failure",
-            std::process::Command::new("strace")
+            crate::common::strace()
                 .arg("-qq")
                 .arg("-e")
                 .arg("trace=mmap")

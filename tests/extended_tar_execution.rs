@@ -27,7 +27,7 @@ fn run(path: &str, input: &[u8]) -> Vec<u8> {
     let trace = common::TempArtifact::new("laniusc_tar", "trace", None);
     let out = common::process_output_with_timeout(
         "tar native execution",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([

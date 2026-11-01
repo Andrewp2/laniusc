@@ -121,7 +121,7 @@ class Runner:
     def run(self, name, arguments, *, status=0, diagnostic=None, output=b"", injection=None,
             preflight=False, position=0, length=1, expect_written=None, closed_stdout=False):
         prefix = self.directory / name
-        command = ["strace", "--kill-on-exit", "-qq", "-xx", "-s", "32", "-e", "signal=none",
+        command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-xx", "-s", "32", "-e", "signal=none",
                    "-e", "trace=" + TRACE, "-o", str(prefix.with_suffix(".trace"))]
         if injection:
             call, ordinal, failure = injection

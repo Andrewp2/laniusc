@@ -75,7 +75,7 @@ fn trace(exe: &common::TempArtifact) -> (Output, String) {
     let file = common::TempArtifact::new("iterator_lookahead", "mappings", None);
     let output = common::process_output_with_timeout(
         "lookahead mapping ledger",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(file.path())
             .args(["-e", "trace=mmap,mremap,munmap,brk", "-e", "signal=none"])
@@ -347,7 +347,7 @@ fn app_trace(exe: &common::TempArtifact, injection: Option<&str>) -> (Output, St
     let input = common::TempArtifact::new("column_extrema", "trace_input", None);
     input.write_bytes(b"1\n2\n");
     let file = common::TempArtifact::new("column_extrema", "fault_trace", None);
-    let mut command = Command::new("strace");
+    let mut command = crate::common::strace();
     command.args(["-qq", "-o"]).arg(file.path()).args([
         "-e",
         "trace=mmap,munmap,write",

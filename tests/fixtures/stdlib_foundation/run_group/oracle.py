@@ -90,7 +90,7 @@ def traced(arguments, expected, injection=None, retained=False, closed_stderr=Fa
     with tempfile.TemporaryDirectory(prefix="run-group-trace-") as temporary:
         path = Path(temporary) / "trace"
         stdout_path, stderr_path = Path(temporary) / "stdout", Path(temporary) / "stderr"
-        command = ["strace", "-qq", "-e", "signal=none", "-o", str(path), "-e", "trace=" + TRACE]
+        command = ["strace","-E","LANIUS_ALLOC=mmap", "-qq", "-e", "signal=none", "-o", str(path), "-e", "trace=" + TRACE]
         if injection:
             command += ["-e", "inject=" + injection]
         command += [CLI, *arguments]

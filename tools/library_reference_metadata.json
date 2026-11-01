@@ -1105,6 +1105,16 @@
         "docs/extended-geometry.md"
       ]
     },
+    "ext::fnmatch": {
+      "guides": [
+        "docs/extended-fnmatch.md"
+      ]
+    },
+    "ext::gitignore": {
+      "guides": [
+        "docs/extended-gitignore.md"
+      ]
+    },
     "ext::glob": {
       "guides": [
         "docs/extended-glob.md"
@@ -1900,6 +1910,12 @@
         "docs/extended-zip-stream.md"
       ]
     },
+    "std::cli": {
+      "guides": [
+        "docs/stdlib-cli.md"
+      ],
+      "note": "Declarative command-line parser with GNU getopt_long rules: short options and -abc clusters, unique-prefix long options, --opt=value and --opt value, attached optional values, -- and -, permuting or stop-at-operand order, operand counts, subcommands, repeated options in argument order, generated --help text and glibc-style error messages naming the bad argument. Native binaries from lcc agree with a Python model (checked against Python getopt on 4,051 cases) on 6,026 generated and fixed cases and 7 help texts; tgz and seq-diff use it."
+    },
     "std::args": {
       "guides": [
         "docs/stdlib-process-context.md"
@@ -2090,6 +2106,11 @@
     "std::poll": {
       "guides": [
         "docs/stdlib-poll.md"
+      ]
+    },
+    "std::pthread": {
+      "guides": [
+        "docs/stdlib-threads.md"
       ]
     },
     "std::process": {

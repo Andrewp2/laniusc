@@ -1,0 +1,53 @@
+// The interface between an event server that leaves its client sockets'
+// I/O to a transport layer and that layer. ext::http_proxy and
+// ext::http_service's event Server implement Clients once their clients
+// are wrapped; ext::tls_clients is the TLS transport over any of them.
+//
+// The server still owns each socket's epoll registration and computes the
+// readiness its buffers need; after each of its polls it queues notices,
+// which the transport handles in order:
+//   ACCEPTED  a new client on fd (start the transport's session);
+//   READY     readiness bits (std::event) for the client;
+//   SHUTDOWN  the response is sent: end the write side of fd;
+//   DROPPED   the server is done with the client: the transport closes fd.
+// The transport moves bytes with client_input/client_received and
+// client_output/client_sent, runs the server with client_ready, and adds
+// readiness of its own with client_hold.
+module ext::client_transport;
+import core::slice;
+
+pub struct Notice { kind: i32, slot: i32, fd: i32, bits: u32 }
+pub const ACCEPTED: i32 = 1;
+pub const READY: i32 = 2;
+pub const SHUTDOWN: i32 = 3;
+pub const DROPPED: i32 = 4;
+// std::event readiness bits.
+pub const READ: u32 = 1;
+pub const WRITE: u32 = 4;
+
+pub trait Clients {
+    // Notices queued since clear_notices, oldest first; handling one may
+    // queue more.
+    pub fn notice_count(&self) -> i32;
+    pub fn notice(&self, i: i32) -> Notice;
+    pub fn clear_notices(&self);
+    pub fn client_open(&self, slot: i32) -> bool;
+    // Free input space: copy received bytes in, then client_received.
+    pub fn client_input(&self, slot: i32) -> core::slice::View<u8>;
+    pub fn client_received(&self, slot: i32, count: i32);
+    // The client's stream ended (a failure is client_drop instead).
+    pub fn client_eof(&self, slot: i32);
+    // True while the server would take more input from the client.
+    pub fn client_wants_read(&self, slot: i32) -> bool;
+    // Run the server on new input (readable) or after output was sent.
+    pub fn client_ready(&self, slot: i32, readable: bool, writable: bool);
+    // Bytes waiting for the client; report those sent with client_sent.
+    pub fn client_output(&self, slot: i32) -> core::slice::View<u8>;
+    pub fn client_sent(&self, slot: i32, count: i32);
+    // The transport negotiated HTTP/2 (ALPN "h2") before any request.
+    pub fn client_start_h2(&self, slot: i32);
+    // Readiness the transport needs on top of the server's own.
+    pub fn client_hold(&self, slot: i32, bits: u32);
+    // The transport failed: drop the client (a DROPPED notice follows).
+    pub fn client_drop(&self, slot: i32);
+}

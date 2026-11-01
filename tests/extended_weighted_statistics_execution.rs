@@ -60,7 +60,7 @@ fn weighted_zero_validation_atomic_views_count_limits_and_subnormal_effective_co
     let events = common::TempArtifact::new("laniusc_weighted_statistics", "allocations", None);
     let output = common::process_output_with_timeout(
         "weighted statistics public and allocation contracts",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(events.path())
             .args(["-e", "trace=mmap,mremap,munmap,brk", "-e", "signal=none"])

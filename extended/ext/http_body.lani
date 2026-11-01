@@ -1,0 +1,143 @@
+// Incremental HTTP/1.1 body framing for relays (RFC 9112 6 and 7.1). A
+// Framer walks a message body as its bytes arrive, keeping only scalar
+// state, so a proxy can forward a body of any size through a fixed buffer:
+// each advance reports how many bytes it consumed and the one content span
+// among them. Chunked framing is strict: CRLF line ends, hex sizes, bounded
+// size lines and trailer sections. No allocation, no I/O.
+module ext::http_body;
+import alloc::vec;
+import core::result;
+import core::slice;
+
+pub enum Error { Malformed, Limit, Truncated }
+// consumed: bytes taken from the input; [data_start, data_start+data_length)
+// within them is content (the rest is chunk framing); done: the body ended
+// exactly at consumed.
+pub struct Step { consumed: i32, data_start: i32, data_length: i32, done: bool }
+pub struct Framer { mode: i32, left: u64, phase: i32, size: u64, digits: i32, extension: bool, line: i32, trailer: i32, line_limit: i32, trailer_limit: i32, done: bool, failed: bool, content: u64 }
+
+const EMPTY: i32 = 0;
+const FIXED: i32 = 1;
+const CHUNKED: i32 = 2;
+const CLOSE: i32 = 3;
+const SIZE: i32 = 0;
+const SIZE_LF: i32 = 1;
+const DATA: i32 = 2;
+const DATA_CR: i32 = 3;
+const DATA_LF: i32 = 4;
+const TRAILER: i32 = 5;
+const TRAILER_LF: i32 = 6;
+const LARGEST_CHUNK: u64 = 1099511627776;
+
+fn framer(mode: i32, left: u64) -> Framer { return Framer { mode: mode, left: left, phase: SIZE, size: 0, digits: 0, extension: false, line: 0, trailer: 0, line_limit: 4096, trailer_limit: 16384, done: mode == EMPTY || (mode == FIXED && left == 0), failed: false, content: 0 }; }
+// No body (HEAD responses, 1xx/204/304, requests without framing fields).
+pub fn empty() -> Framer { return framer(EMPTY, 0); }
+// Content-Length: length bytes.
+pub fn fixed(length: u64) -> Framer { return framer(FIXED, length); }
+// Transfer-Encoding: chunked, with size lines up to line_bytes and a
+// trailer section up to trailer_bytes.
+pub fn chunked(line_bytes: i32, trailer_bytes: i32) -> Framer { let f: Framer = framer(CHUNKED, 0); f.line_limit = line_bytes; f.trailer_limit = trailer_bytes; return f; }
+// A response delimited by the connection closing.
+pub fn until_close() -> Framer { return framer(CLOSE, 0); }
+
+fn hex(c: u8) -> i32 {
+    if (c >= 48 && c <= 57) { return (c - 48) as i32; }
+    if (c >= 97 && c <= 102) { return (c - 87) as i32; }
+    if (c >= 65 && c <= 70) { return (c - 55) as i32; }
+    return -1;
+}
+fn step(consumed: i32, start: i32, length: i32, done: bool) -> Step { return Step { consumed: consumed, data_start: start, data_length: length, done: done }; }
+
+pub impl Framer {
+    pub fn borrow(&self) -> &Framer { return self; }
+    pub fn is_done(&self) -> bool { return self.done; }
+    pub fn is_chunked(&self) -> bool { return self.mode == CHUNKED; }
+    pub fn is_close_delimited(&self) -> bool { return self.mode == CLOSE; }
+    // Content bytes seen so far (chunk framing excluded).
+    pub fn content(&self) -> u64 { return self.content; }
+    // Bytes still due for a fixed-length body.
+    pub fn remaining(&self) -> u64 { return self.left; }
+    fn fail(&self, e: Error) -> core::result::Result<Step,Error> { self.failed = true; return core::result::Err(e); }
+    // Consume a prefix of input. At most one content span is reported per
+    // call, so call again with the rest until consumed covers the input or
+    // done is set. Bytes after done belong to the next message.
+    pub fn advance(&self, input: core::slice::View<u8>) -> core::result::Result<Step,Error> {
+        if (self.failed) { return core::result::Err(Error::Malformed); }
+        if (self.done) { return core::result::Ok(step(0, 0, 0, true)); }
+        let n: i32 = input.len();
+        if (self.mode == FIXED) {
+            let take: i32 = n; if ((take as u64) > self.left) { take = self.left as i32; }
+            self.left -= take as u64; self.content += take as u64; self.done = self.left == 0;
+            return core::result::Ok(step(take, 0, take, self.done));
+        }
+        if (self.mode == CLOSE) { self.content += n as u64; return core::result::Ok(step(n, 0, n, false)); }
+        let i: i32 = 0;
+        while (i < n) {
+            let c: u8 = input.values[input.start + i];
+            if (self.phase == DATA) {
+                let take: i32 = n - i; if ((take as u64) > self.left) { take = self.left as i32; }
+                self.left -= take as u64; self.content += take as u64;
+                if (self.left == 0) { self.phase = DATA_CR; }
+                return core::result::Ok(step(i + take, i, take, false));
+            }
+            if (self.phase == SIZE) {
+                self.line += 1; if (self.line > self.line_limit) { return self.fail(Error::Limit); }
+                let v: i32 = hex(c);
+                if (!self.extension && v >= 0) {
+                    self.size = self.size * 16 + (v as u64); self.digits += 1;
+                    if (self.size > LARGEST_CHUNK) { return self.fail(Error::Limit); }
+                } else {
+                    if (c == 13) {
+                        if (self.digits == 0) { return self.fail(Error::Malformed); }
+                        self.phase = SIZE_LF;
+                    } else {
+                        // Chunk extensions (and whitespace before them) are skipped.
+                        if (self.digits == 0 || c == 10 || c == 0 || c == 127 || (c < 32 && c != 9)) { return self.fail(Error::Malformed); }
+                        self.extension = true;
+                    }
+                }
+                i += 1; continue;
+            }
+            if (self.phase == SIZE_LF) {
+                if (c != 10) { return self.fail(Error::Malformed); }
+                self.line = 0; self.extension = false; self.digits = 0;
+                if (self.size == 0) { self.phase = TRAILER; } else { self.phase = DATA; self.left = self.size; }
+                self.size = 0; i += 1; continue;
+            }
+            if (self.phase == DATA_CR) { if (c != 13) { return self.fail(Error::Malformed); } self.phase = DATA_LF; i += 1; continue; }
+            if (self.phase == DATA_LF) { if (c != 10) { return self.fail(Error::Malformed); } self.phase = SIZE; i += 1; continue; }
+            if (self.phase == TRAILER) {
+                if (c == 13) { self.phase = TRAILER_LF; i += 1; continue; }
+                if (c == 10 || c == 0) { return self.fail(Error::Malformed); }
+                self.line += 1; self.trailer += 1; if (self.trailer > self.trailer_limit) { return self.fail(Error::Limit); }
+                i += 1; continue;
+            }
+            // TRAILER_LF: an empty line ends the body.
+            if (c != 10) { return self.fail(Error::Malformed); }
+            i += 1;
+            if (self.line == 0) { self.done = true; return core::result::Ok(step(i, 0, 0, true)); }
+            self.line = 0; self.phase = TRAILER;
+        }
+        return core::result::Ok(step(n, 0, 0, false));
+    }
+    // The connection reached EOF: a close-delimited body ends here; any
+    // other unfinished body is truncated.
+    pub fn finish(&self) -> core::result::Result<i32,Error> {
+        if (self.done) { return core::result::Ok(0); }
+        if (self.mode == CLOSE && !self.failed) { self.done = true; return core::result::Ok(0); }
+        self.failed = true; return core::result::Err(Error::Truncated);
+    }
+}
+
+// Append one chunk's size line ("hex CRLF"); the caller appends the data
+// and then chunk_end.
+pub fn chunk_head(out: &alloc::vec::Vec<u8>, length: i32) -> bool {
+    if (length <= 0) { return false; }
+    let digits: [u8;8] = [0;8]; let n: i32 = 0; let v: i32 = length;
+    while (v > 0) { let d: i32 = v & 15; let c: u8 = (48 + d) as u8; if (d >= 10) { c = (87 + d) as u8; } digits[n] = c; n += 1; v = v >> 4; }
+    while (n > 0) { n -= 1; if (out.try_push(digits[n]).is_err()) { return false; } }
+    return chunk_end(out);
+}
+pub fn chunk_end(out: &alloc::vec::Vec<u8>) -> bool { return out.try_push(13).is_ok() && out.try_push(10).is_ok(); }
+// The last chunk and an empty trailer section.
+pub fn last_chunk(out: &alloc::vec::Vec<u8>) -> bool { return out.try_push(48).is_ok() && out.try_push(13).is_ok() && out.try_push(10).is_ok() && out.try_push(13).is_ok() && out.try_push(10).is_ok(); }

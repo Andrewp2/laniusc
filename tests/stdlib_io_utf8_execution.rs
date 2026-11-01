@@ -161,7 +161,7 @@ fn utf8_scalar_io_rejects_malformed_and_truncated_sequences() {
 fn utf8_scalar_io_reports_host_failures() {
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -203,7 +203,7 @@ fn utf8_scalar_io_reports_host_failures() {
             let trace = common::TempArtifact::new("laniusc_std_io_utf8", "fault_trace", None);
             let output = common::short_process_output_with_timeout(
                 format!("UTF-8 scalar {syscall} failure"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-o")
                     .arg(trace.path())

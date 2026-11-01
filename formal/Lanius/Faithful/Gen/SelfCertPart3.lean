@@ -414,7 +414,7 @@ theorem cert_word_variants {n : Nat} :
 
 theorem cert_word_element {n : Nat} :
     Stmt_word_element prog prims 314 n :=
-  @proof_word_element prog prims 314 475 fn_word_element np_word_element ⟨@cert_word_type⟩ n
+  @proof_word_element prog prims 314 313 475 fn_word_element np_word_element ⟨@cert_SrcType_is_uint⟩ ⟨@cert_word_type⟩ n
 
 theorem certs_within_layout : ∀ n, (Stmt_within_layout prog prims 315 n) ∧ (Stmt_within_layouts prog prims 476 n) ∧ (Stmt_within_payloads prog prims 477 n) := by
   intro n

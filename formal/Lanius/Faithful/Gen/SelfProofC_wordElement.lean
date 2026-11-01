@@ -3,6 +3,7 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_wordElement
+public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_wordElement
 public import Lanius.Faithful.Gen.SelfStmtC_wordWidth
 import all Lanius.Faithful.Gen.SelfSrcC_wordElement
@@ -25,7 +26,8 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_word_element {prog : SrcProgram} {prims : Prims} {ix_word_element ix_word_type : Nat} (fn : prog.funcs[ix_word_element]? = some (src_word_element ix_word_type)) (np : prims.isPrim ix_word_element = false)
+theorem proof_word_element {prog : SrcProgram} {prims : Prims} {ix_word_element ix_SrcType_is_uint ix_word_type : Nat} (fn : prog.funcs[ix_word_element]? = some (src_word_element ix_SrcType_is_uint ix_word_type)) (np : prims.isPrim ix_word_element = false)
+    (ext_SrcType_is_uint : Certified (∀ {n : Nat}, Stmt_SrcType_is_uint prog prims ix_SrcType_is_uint n))
     (ext_word_type : Certified (∀ {n : Nat}, Stmt_word_type prog prims ix_word_type n)) {n : Nat} :
     Stmt_word_element prog prims ix_word_element n := by
   intro x0 x1 v0 v1 w h r0 r1

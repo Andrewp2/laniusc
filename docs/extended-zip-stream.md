@@ -192,8 +192,8 @@ allocation.
 
 ## Executable evidence
 
-`python3 -I tests/fixtures/extended/zip_oracle.py ZIP WORKDIR` (seeded, about
-65 s) passes **8,662 cases with 0 failures** against Python 3.12 `zipfile`
+`python3 -I tests/fixtures/extended/zip_oracle.py ZIP WORKDIR` (seeded, 28 s
+idle, 65 s under load) passes **8,662 cases with 0 failures** against Python 3.12 `zipfile`
 and Info-ZIP `unzip` 6.0:
 
 | Group | Cases | What agrees |

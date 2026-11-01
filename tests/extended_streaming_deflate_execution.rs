@@ -186,7 +186,7 @@ fn execute(name: &str, expected: &[usize]) -> (Vec<u8>, Observed, Duration, Dura
     let started = Instant::now();
     let output = common::process_output_with_timeout(
         name,
-        Command::new("strace")
+        crate::common::strace()
             .args(["--kill-on-exit", "-qq", "-s", "64", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=all", "-e", "signal=none"])

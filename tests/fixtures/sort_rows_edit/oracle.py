@@ -165,7 +165,7 @@ class Runner:
             injections=(), closed_stdout=False, diagnostic=True):
         directory = self.directory / label; directory.mkdir()
         source = directory / 'input'; source.write_bytes(data)
-        command = ['strace', '--kill-on-exit', '-qq', '-xx', '-s', '64', '-e', 'signal=none',
+        command = ['strace','-E','LANIUS_ALLOC=mmap', '--kill-on-exit', '-qq', '-xx', '-s', '64', '-e', 'signal=none',
                    '-e', 'trace=' + TRACE, '-o', str(directory / 'trace')]
         for call, position, failure in injections:
             command += ['-e', f'inject={call}:error={failure}:when={position}']

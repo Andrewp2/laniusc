@@ -85,7 +85,7 @@ fn pure_contracts_execute_native_strides_selected_windows_guards_limits_and_no_a
     let trace = common::TempArtifact::new("laniusc_cbor", "trace", None);
     let result = common::process_output_with_timeout(
         "CBOR contracts",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([

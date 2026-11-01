@@ -422,7 +422,7 @@ fn regex_matches_independent_python_reference_and_documents_unicode_and_limits()
     let baseline_trace = common::TempArtifact::new("laniusc_regex", "allocation_baseline", None);
     let baseline = common::short_process_output_with_timeout(
         "observe regex allocation points",
-        std::process::Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(baseline_trace.path())
             .args(["-e", "trace=mmap,munmap"])
@@ -454,7 +454,7 @@ fn regex_matches_independent_python_reference_and_documents_unicode_and_limits()
         let trace = common::TempArtifact::new("laniusc_regex", "allocations", None);
         let output = common::short_process_output_with_timeout(
             "regex allocation failure cleanup",
-            std::process::Command::new("strace")
+            crate::common::strace()
                 .args(["-qq", "-o"])
                 .arg(trace.path())
                 .args(["-e", "trace=mmap,munmap", "-e"])

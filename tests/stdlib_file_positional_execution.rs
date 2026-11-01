@@ -56,7 +56,7 @@ fn run(
     let trace = common::TempArtifact::new("laniusc_positional", "trace", None);
     let input = common::TempArtifact::new("laniusc_positional", "mode", None);
     input.write_bytes([mode.unwrap_or(0)]);
-    let mut command = Command::new("strace");
+    let mut command = crate::common::strace();
     command.args(["-qq","-s","64","-o"]).arg(trace.path()).args([
         "-e","trace=openat,pread64,pwrite64,fcntl,lseek,pipe2,close,mmap,mremap,munmap,brk,fsync,fdatasync",
         "-e","signal=none",

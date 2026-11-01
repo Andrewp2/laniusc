@@ -7,8 +7,9 @@
 // 7 std::par::scan wrapping u64 prefix sum, 8 std::par::scan composing affine
 // maps x -> a*x + b mod P (a = key mod P, b = (key >> 20) mod P; not
 // commutative), 9 a sequential wrapping u64 prefix sum. The scan modes use a
-// 997-element grain, so small inputs still split into many tasks.
-// stdout: the n result keys as i64, then for modes 1 and 3 the n original
+// 997-element grain, so small inputs still split into many tasks. Modes 10
+// and 11 are modes 0 and 1 with pthread workers (sort_*_threads).
+// stdout: the n result keys as i64, then for modes 1, 3 and 11 the n original
 // indices as u32; mode 5 writes sum, hash and scale as three u64; mode 8
 // writes the n prefix maps as (a, b) u64 pairs.
 // stderr: "ms <milliseconds of the operation alone>".
@@ -95,6 +96,10 @@ fn millis() -> i64 {
     return now.seconds * 1000 + now.nanos / 1000000;
 }
 
+// Start routines for the threaded sorts (modes 10 and 11).
+fn key_crew(arg: ptr) -> ptr { return std::par::crew_entry<i64>(arg); }
+fn item_crew(arg: ptr) -> ptr { return std::par::crew_entry<Item>(arg); }
+
 fn main() -> i32 {
     let header: ptr = alloc::allocator::alloc(16, 8);
     let head: [u8] = core::mem::typed_slice_from_raw_parts<u8>(header, 12);
@@ -118,17 +123,18 @@ fn main() -> i32 {
     let out_bytes: i32 = n * 16 + 24;
     let out: ptr = alloc::allocator::alloc((out_bytes + 64) as usize, 8);
     let output: [u8] = core::mem::typed_slice_from_raw_parts<u8>(out, out_bytes);
-    if (mode < 0 || mode > 9) { return 4; }
+    if (mode < 0 || mode > 11) { return 4; }
     let started: i64 = 0; let elapsed: i64 = 0; let i: i32 = 0;
     let plan: std::par::Plan = std::par::plan(region.borrow(), workers, 65536).unwrap();
-    if (mode == 1 || mode == 3) {
+    if (mode == 1 || mode == 3 || mode == 11) {
         let items: std::parallel::Shared<Item> = std::parallel::shared<Item>(region.borrow(), n).unwrap();
         let spare: std::parallel::Shared<Item> = std::parallel::shared<Item>(region.borrow(), n).unwrap();
         let values: [Item] = items.view();
         while (i < n) { values[i] = Item { key: i64_at(input, i * 8), index: i }; i += 1; }
         started = millis();
         if (mode == 1) { if (std::par::sort_stable(plan, items, spare).is_err()) { return 3; } }
-        else {
+        if (mode == 11) { if (std::par::sort_stable_threads(plan, items, spare, item_crew).is_err()) { return 3; } }
+        if (mode == 3) {
             let view: core::slice::View<Item> = core::slice::view(values, n).unwrap();
             let scratch: core::slice::View<Item> = core::slice::view(spare.view(), n).unwrap();
             if (core::slice::sort_stable(view, scratch).is_err()) { return 3; }
@@ -152,7 +158,7 @@ fn main() -> i32 {
         put64(output, 0, acc.sum); put64(output, 8, acc.hash); put64(output, 16, acc.scale);
         out_bytes = 24;
     }
-    if (mode == 0 || mode == 2 || mode == 4 || mode == 6) {
+    if (mode == 0 || mode == 2 || mode == 4 || mode == 6 || mode == 10) {
         let keys: std::parallel::Shared<i64> = std::parallel::shared<i64>(region.borrow(), n).unwrap();
         let spare: std::parallel::Shared<i64> = std::parallel::shared<i64>(region.borrow(), n).unwrap();
         let values: [i64] = keys.view();
@@ -160,6 +166,7 @@ fn main() -> i32 {
         let result: [i64] = values;
         started = millis();
         if (mode == 0) { if (std::par::sort_unstable(plan, keys, spare).is_err()) { return 3; } }
+        if (mode == 10) { if (std::par::sort_unstable_threads(plan, keys, spare, key_crew).is_err()) { return 3; } }
         if (mode == 2) { if (core::slice::sort_unstable(core::slice::view(values, n).unwrap()).is_err()) { return 3; } }
         if (mode == 4) {
             let mix: Mix = Mix {};

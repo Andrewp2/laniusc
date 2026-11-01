@@ -133,7 +133,7 @@ class Runner:
         args=args if args is not None else ([needle,replacement] if count is None else [b'--count',str(count).encode(),needle,replacement])
         raw_args=[os.fsencode(x) for x in args]
         d=self.directory/name;d.mkdir();source=d/'input';source.write_bytes(data)
-        command=['strace','--kill-on-exit','-qq','-xx','-s','256','-e','signal=none','-e','trace='+TRACE,'-o',str(d/'trace')]
+        command=['strace','-E','LANIUS_ALLOC=mmap','--kill-on-exit','-qq','-xx','-s','256','-e','signal=none','-e','trace='+TRACE,'-o',str(d/'trace')]
         for call,position,failure in injections:
             action=failure if failure.startswith('retval=') else 'error='+failure
             command+=['-e',f'inject={call}:{action}:when={position}']

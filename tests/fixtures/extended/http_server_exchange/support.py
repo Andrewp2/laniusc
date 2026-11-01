@@ -215,7 +215,7 @@ class Session:
         self.reset = False
         self.last = None
         self.payloads = []
-        command = ["strace", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-o", str(self.trace),
+        command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-o", str(self.trace),
                    "-e", "signal=none", "-e", "trace=" + TRACE]
         for expression in ([] if fault is None else ([fault] if isinstance(fault, str) else fault)):
             command += ["-e", "inject=" + expression]

@@ -136,7 +136,7 @@ fn lf_line_io_consumes_overflow_and_handles_binary_boundaries() {
 fn lf_line_io_reports_host_failures() {
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -164,7 +164,7 @@ fn lf_line_io_reports_host_failures() {
             let trace = common::TempArtifact::new("laniusc_std_io_line", "fault_trace", None);
             let output = common::short_process_output_with_timeout(
                 format!("LF line {syscall} failure"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-o")
                     .arg(trace.path())

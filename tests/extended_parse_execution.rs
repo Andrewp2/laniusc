@@ -1,7 +1,7 @@
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod common;
 
-use std::{os::unix::fs::PermissionsExt, process::Command};
+use std::os::unix::fs::PermissionsExt;
 
 fn executable(path: &str) -> common::TempArtifact {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -28,7 +28,7 @@ fn parse_contracts_execute_atomic_locations_limits_and_exact_numbers_without_all
     let trace = common::TempArtifact::new("laniusc_parse", "trace", None);
     let output = common::short_process_output_with_timeout(
         "parse contracts",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([
@@ -612,7 +612,7 @@ fn parse_operation_sequences_match_independent_utf8_prefix_model_without_allocat
     let trace = common::TempArtifact::new("laniusc_parse", "model_trace", None);
     let output = common::process_output_with_timeout(
         "parse model batch",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([

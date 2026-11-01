@@ -202,7 +202,7 @@ fn run(
     let trace = common::TempArtifact::new("laniusc_range_dot", "trace", None);
     // output() preserves a supplied closed pipe. The common capture helper
     // replaces stdout, so this explicit external timeout bounds that case.
-    let mut command = Command::new("timeout");
+    let mut command = crate::common::traced_timeout();
     command
         .args(["--kill-after=1s", "5s", "strace", "-qq", "-o"])
         .arg(trace.path())

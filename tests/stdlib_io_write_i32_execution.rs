@@ -59,7 +59,7 @@ fn raw_signed_integer_writer_retries_short_writes_on_x86() {
         assert_eq!(normal.status.code(), Some(0), "{normal:?}");
         assert_eq!(normal.stdout, b"42");
 
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -69,7 +69,7 @@ fn raw_signed_integer_writer_retries_short_writes_on_x86() {
         let trace = common::TempArtifact::new("laniusc_write_i32", "short_trace", None);
         let injected = common::short_process_output_with_timeout(
             "raw write_i32 short host write",
-            std::process::Command::new("strace")
+            crate::common::strace()
                 .arg("-qq")
                 .arg("-o")
                 .arg(trace.path())
@@ -97,7 +97,7 @@ fn raw_signed_integer_writer_reports_no_progress_and_host_errors_on_x86() {
 
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -109,7 +109,7 @@ fn raw_signed_integer_writer_reports_no_progress_and_host_errors_on_x86() {
             let trace = common::TempArtifact::new("laniusc_write_i32", "failure_trace", None);
             let injected = common::short_process_output_with_timeout(
                 format!("raw write_i32 {fault}"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-o")
                     .arg(trace.path())

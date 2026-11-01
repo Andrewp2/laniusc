@@ -18,7 +18,7 @@ def run(name, data=b"", injection=None, traced=False, full=False, broken=False):
         trace = Path(folder) / "trace"
         command = [PROGRAMS[name]]
         if traced:
-            command = ["strace", "-qq", "-o", str(trace), "-e",
+            command = ["strace","-E","LANIUS_ALLOC=mmap", "-qq", "-o", str(trace), "-e",
                        "trace=mmap,munmap,read,write,open,openat,close,getrandom,rt_sigaction"] + (
                            ["-e", "inject=" + injection] if injection else []) + command
         with ExitStack() as resources:

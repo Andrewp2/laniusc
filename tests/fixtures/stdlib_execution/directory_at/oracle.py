@@ -120,7 +120,7 @@ class Suite:
         request = struct.pack("<5Q", operation, mode, len(actual_path), view, parent) + actual_path.ljust(4096, b"\0")
         (directory / "request.bin").write_bytes(request)
         trace = directory / "syscalls.log"
-        cmd = ["strace", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "8192", "-e", "signal=none",
+        cmd = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "8192", "-e", "signal=none",
                "-e", "trace=" + LEDGER.TRACE, "-o", str(trace)]
         if inject:
             value = inject["syscall"] + (":error=" + inject["error"] if "error" in inject else ":retval=" + str(inject["retval"]))

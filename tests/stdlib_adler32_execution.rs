@@ -34,7 +34,7 @@ fn adler_contracts_execute_strided_views_state_validation_and_u32_chunk_boundari
  {
     let exe = fixture("contracts");
     let trace = common::TempArtifact::new("laniusc_adler32", "trace", None);
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args([

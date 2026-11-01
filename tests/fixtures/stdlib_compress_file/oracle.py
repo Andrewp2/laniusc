@@ -154,7 +154,7 @@ class Runner:
         before=destination.lstat() if destination.exists() or destination.is_symlink() else None
         old_content=destination.read_bytes() if before else None
         old_link=os.readlink(destination) if destination.is_symlink() else None
-        command=['strace','--kill-on-exit','-qq','-xx','-s','64' if compact else '256','-e','signal=none','-e','trace='+CALLS,'-o',str(d/'trace')]
+        command=['strace','-E','LANIUS_ALLOC=mmap','--kill-on-exit','-qq','-xx','-s','64' if compact else '256','-e','signal=none','-e','trace='+CALLS,'-o',str(d/'trace')]
         for call,ordinal,failure in injections:command+=['-e',f'inject={call}:error={failure}:when={ordinal}']
         command+=[self.exe,*(args if args is not None else ['--format',format,'input.bin','out/result'])]
         (d/'command').write_text(repr(command)+'\n')

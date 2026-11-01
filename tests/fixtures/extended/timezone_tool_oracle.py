@@ -70,7 +70,7 @@ r=run(['--help'],b'');assert r.returncode==0 and r.stdout.startswith(b'Usage: ti
 # fault, measured from syscalls rather than assumptions about allocator calls.
 def traced(args,data,inject=None,output=None):
     with tempfile.NamedTemporaryFile() as trace:
-        command=['strace','-qq','-o',trace.name,'-e','trace=mmap,munmap,read,write']
+        command=['strace','-E','LANIUS_ALLOC=mmap','-qq','-o',trace.name,'-e','trace=mmap,munmap,read,write']
         if inject:command+=['-e',inject]
         command += [exe]+args
         r=subprocess.run(command,input=data,stdout=output or subprocess.PIPE,stderr=subprocess.PIPE,timeout=15)

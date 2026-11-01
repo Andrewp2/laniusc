@@ -1,6 +1,6 @@
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod common;
-use std::{os::unix::fs::PermissionsExt, process::Command};
+use std::os::unix::fs::PermissionsExt;
 fn executable(path: &str) -> common::TempArtifact {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root.join(path);
@@ -24,7 +24,7 @@ fn traced(path: &str) -> String {
     let trace = common::TempArtifact::new("laniusc_http_cursor", "trace", None);
     let output = common::short_process_output_with_timeout(
         "HTTP cursor native contract",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap,read,write,socket,connect"])

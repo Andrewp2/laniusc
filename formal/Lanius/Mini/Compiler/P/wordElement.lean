@@ -1,6 +1,8 @@
 module
 
 public import Lanius.Mini.Compiler.Types
+import Lanius.Mini.Compiler.P.UintTy_half
+import Lanius.Mini.Compiler.P.loadAtBytes
 import Lanius.Mini.Compiler.P.wordWidth
 
 public section
@@ -10,12 +12,12 @@ set_option linter.unusedVariables false
 
 namespace Lanius.Mini
 
-/-- A raw slice element of words: a struct or an enum of a word type. -/
+/-- A raw slice element of words: a struct or an enum of a word type, or a u16 (one word, laniusc's layout of a [u16]). -/
 def wordElement (decls : SrcDecls) (element : SrcType) : Bool :=
   match element with
   | .i32 => false
   | .bool => false
-  | .uint kind => false
+  | .uint kind => SrcType.isUint element UintTy.uint16
   | .struct id fields => wordType decls element
   | .enum id variants => wordType decls element
   | .ptr => false

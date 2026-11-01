@@ -319,7 +319,7 @@ fn data_analyze_releases_every_observed_allocation_and_handles_host_io_faults() 
     let input = file(b"x,z,y\n1,2,5\n2,-1,0\n3,0,3\n4,4,12\n5,-3,-2\n");
     let trace = common::TempArtifact::new("laniusc_data_analyze", "trace", None);
     let execute = |fault: Option<&str>| {
-        let mut c = Command::new("strace");
+        let mut c = crate::common::strace();
         c.args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap,read,write"]);
@@ -402,7 +402,7 @@ fn data_analyze_releases_every_observed_allocation_and_handles_host_io_faults() 
         .arg(exe.path())
         .arg(file(b"1\n2\n").path()));
     failure(&full, 3, "io-failure stage=output");
-    let out = run(Command::new("strace")
+    let out = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args([
@@ -416,7 +416,7 @@ fn data_analyze_releases_every_observed_allocation_and_handles_host_io_faults() 
     assert_eq!(out.status.code(), Some(3));
     assert!(out.stdout.is_empty() && out.stderr.is_empty());
     no_leaks(&std::fs::read_to_string(trace.path()).unwrap());
-    let out = run(Command::new("strace")
+    let out = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args([

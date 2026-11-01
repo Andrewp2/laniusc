@@ -61,7 +61,7 @@ fn timespec_hex(seconds: i64, nanos: i64) -> String {
 }
 fn trace_run(exe: &common::TempArtifact, mode: u8, faults: &[String]) -> (Output, String) {
     let trace = common::TempArtifact::new("laniusc_poll", "trace", None);
-    let mut command = Command::new("strace");
+    let mut command = crate::common::strace();
     command
         .args(["-qq", "-o"])
         .arg(trace.path())

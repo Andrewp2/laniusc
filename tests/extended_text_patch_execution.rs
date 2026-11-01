@@ -623,7 +623,7 @@ fn cleanup(events: &str) -> usize {
 fn traced(arguments: &[OsString], input: &[u8], fault: Option<&str>) -> (Output, String) {
     let source = file(input);
     let trace = common::TempArtifact::new("laniusc_text_patch", "syscalls", None);
-    let mut command = Command::new("strace");
+    let mut command = crate::common::strace();
     command
         .args(["-qq", "-o"])
         .arg(trace.path())
@@ -812,9 +812,9 @@ fn every_observed_allocation_and_io_failure_releases_owners_before_reporting() {
         // The process helper captures stdout, so redirect the native descriptor
         // inside the shell. Run the shell outside strace's native-only trace.
         let script = if mode == "diff" {
-            "exec strace -qq -o \"$1\" -e trace=mmap,munmap,open,openat,close,read,write \"$2\" diff \"$3\" \"$4\" >/dev/full"
+            "exec strace -E LANIUS_ALLOC=mmap -qq -o \"$1\" -e trace=mmap,munmap,open,openat,close,read,write \"$2\" diff \"$3\" \"$4\" >/dev/full"
         } else {
-            "exec strace -qq -o \"$1\" -e trace=mmap,munmap,open,openat,close,read,write \"$2\" apply \"$3\" >/dev/full"
+            "exec strace -E LANIUS_ALLOC=mmap -qq -o \"$1\" -e trace=mmap,munmap,open,openat,close,read,write \"$2\" apply \"$3\" >/dev/full"
         };
         let mut command = Command::new("sh");
         command

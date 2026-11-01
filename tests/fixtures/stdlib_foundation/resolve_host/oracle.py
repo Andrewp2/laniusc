@@ -244,7 +244,7 @@ def io(directory):
                                   ("inject=write:retval=0:when=1",5,1)):
         trace = directory / "output.trace"
         result, _ = run(directory, [*args,"--max-write-calls=4"], status,
-                        command=("strace","-qq","-o",trace,"-e","trace=write","-e",fault),
+                        command=("strace","-E","LANIUS_ALLOC=mmap","-qq","-o",trace,"-e","trace=write","-e",fault),
                         expected_prefix=baseline.stdout if status == 0 else b"", diagnostic="when=1+" not in fault)
         assert "INJECTED" in trace.read_text()
         if status:
@@ -367,7 +367,7 @@ def resources(directory):
     controls = ledger_controls()
     args = ["fixture", "8080", "--max-results=64"]
     trace = directory / "alloc.trace"
-    command = ("strace","-qq","-i","-o",trace,"-e","trace=mmap,munmap")
+    command = ("strace","-E","LANIUS_ALLOC=mmap","-qq","-i","-o",trace,"-e","trace=mmap,munmap")
     # A count-one control keeps argv/setup unchanged. Exactly seven live
     # allocation sites are reached: argument entries/storage, host/service
     # staging, native frame, exact address Vec, exact output Buffer reserve.

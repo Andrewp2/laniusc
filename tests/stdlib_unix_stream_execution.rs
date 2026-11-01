@@ -47,7 +47,7 @@ fn execute(name: &str, directory: &Directory) -> String {
     let trace = common::TempArtifact::new("laniusc_unix_stream", "trace", None);
     let output=common::process_output_with_timeout(
         name,
-        Command::new("strace").args(["-qq","-s","64","-o"]).arg(trace.path())
+        crate::common::strace().args(["-qq","-s","64","-o"]).arg(trace.path())
             .args(["-e","trace=socket,socketpair,bind,listen,connect,accept4,sendto,recvfrom,shutdown,fcntl,poll,clock_gettime,close,mmap,mremap,munmap,brk,unlink,unlinkat","-e","signal=none"])
             .arg(executable.path()).current_dir(directory.path()),
         Duration::from_secs(12),

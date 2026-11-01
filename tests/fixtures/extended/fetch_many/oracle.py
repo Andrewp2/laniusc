@@ -122,7 +122,7 @@ def invoke(directory, data, args=(), status=0, *, traced=False, fault=None,
     trace = directory/f"process-{CASES}.trace"
     command = [EXE,*map(str,args)]
     if traced or fault:
-        command = ["strace","--kill-on-exit","-qq","-i","-o",str(trace),"-e",f"trace={TRACE}",*(["-e",fault] if fault else []),*command]
+        command = ["strace","-E","LANIUS_ALLOC=mmap","--kill-on-exit","-qq","-i","-o",str(trace),"-e",f"trace={TRACE}",*(["-e",fault] if fault else []),*command]
     start = time.monotonic()
     output = subprocess.run(command,input=data,stdout=stdout,stderr=subprocess.PIPE,
                             preexec_fn=preexec_fn,timeout=12)
