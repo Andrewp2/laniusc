@@ -65,7 +65,8 @@ def tops : Array (Name × Name) := #[
   (`Lanius.Faithful.SelfShort, `Lanius.Faithful.SelfShort.selfCompiler_reason),
   (`Lanius.Faithful.SelfShort, `Lanius.Faithful.SelfShort.selfHost_fixpoint_reason),
   (`Lanius.Faithful.SelfShort, `Lanius.Faithful.SelfShort.selfHost_outcome_reason),
-  (`Lanius.Faithful.SelfPanics, `Lanius.Faithful.SelfPanics.compileW_total)
+  (`Lanius.Faithful.SelfPanics, `Lanius.Faithful.SelfPanics.compileW_total),
+  (`Lanius.Faithful.SelfTotal, `Lanius.Faithful.SelfTotal.selfCompiler_total_reason_of_bounds)
 ]
 
 /-- Constants the theorems are about rather than trusted: their bodies are
