@@ -14,34 +14,34 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::checked_bound -/
-def src_checked_bound : SrcFunc := { params := [{ id := 14, ty := SrcType.bool }, { id := 24, ty := ty355 }], ret := ty355, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 14) (SrcStmt.return (SrcExpr.local 24)) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty355 1 [])) }
+def src_checked_bound : SrcFunc := { params := [{ id := 14, ty := SrcType.bool }, { id := 24, ty := ty358 }], ret := ty358, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 14) (SrcStmt.return (SrcExpr.local 24)) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty358 1 [])) }
 
 /-- mini::selfhost::checked_eff -/
-def src_checked_eff : SrcFunc := { params := [{ id := 12, ty := SrcType.bool }, { id := 22, ty := ty305 }], ret := ty305, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 12) (SrcStmt.return (SrcExpr.local 22)) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty305 1 [])) }
+def src_checked_eff : SrcFunc := { params := [{ id := 12, ty := SrcType.bool }, { id := 22, ty := ty306 }], ret := ty306, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 12) (SrcStmt.return (SrcExpr.local 22)) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty306 1 [])) }
 
 /-- mini::selfhost::checked_effs -/
-def src_checked_effs : SrcFunc := { params := [{ id := 13, ty := SrcType.bool }, { id := 23, ty := ty330 }], ret := ty330, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 13) (SrcStmt.return (SrcExpr.local 23)) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty330 1 [])) }
+def src_checked_effs : SrcFunc := { params := [{ id := 13, ty := SrcType.bool }, { id := 23, ty := ty331 }], ret := ty331, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 13) (SrcStmt.return (SrcExpr.local 23)) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty331 1 [])) }
 
 /-- mini::selfhost::checked_stmt -/
-def src_checked_stmt : SrcFunc := { params := [{ id := 13, ty := SrcType.bool }, { id := 23, ty := ty297 }], ret := ty297, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 13) (SrcStmt.return (SrcExpr.local 23)) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty297 1 [])) }
+def src_checked_stmt : SrcFunc := { params := [{ id := 13, ty := SrcType.bool }, { id := 23, ty := ty298 }], ret := ty298, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 13) (SrcStmt.return (SrcExpr.local 23)) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty298 1 [])) }
 
 /-- mini::selfhost::has_local -/
-def src_has_local : SrcFunc := { params := [{ id := 10, ty := ty306 }], ret := SrcType.bool, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 10)) ty306 (SrcType.bool) [[111], []] [SrcEff.ePure (SrcExpr.boolean true), SrcEff.ePure (SrcExpr.boolean false)]) }
+def src_has_local : SrcFunc := { params := [{ id := 10, ty := ty307 }], ret := SrcType.bool, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 10)) ty307 (SrcType.bool) [[111], []] [SrcEff.ePure (SrcExpr.boolean true), SrcEff.ePure (SrcExpr.boolean false)]) }
 
 /-- mini::selfhost::has_ty -/
-def src_has_ty : SrcFunc := { params := [{ id := 7, ty := ty244 }], ret := SrcType.bool, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 7)) ty244 (SrcType.bool) [[105], []] [SrcEff.ePure (SrcExpr.boolean true), SrcEff.ePure (SrcExpr.boolean false)]) }
+def src_has_ty : SrcFunc := { params := [{ id := 7, ty := ty245 }], ret := SrcType.bool, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 7)) ty245 (SrcType.bool) [[105], []] [SrcEff.ePure (SrcExpr.boolean true), SrcEff.ePure (SrcExpr.boolean false)]) }
 
 /-- mini::selfhost::has_tys -/
-def src_has_tys : SrcFunc := { params := [{ id := 8, ty := ty245 }], ret := SrcType.bool, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 8)) ty245 (SrcType.bool) [[112], []] [SrcEff.ePure (SrcExpr.boolean true), SrcEff.ePure (SrcExpr.boolean false)]) }
+def src_has_tys : SrcFunc := { params := [{ id := 8, ty := ty246 }], ret := SrcType.bool, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 8)) ty246 (SrcType.bool) [[112], []] [SrcEff.ePure (SrcExpr.boolean true), SrcEff.ePure (SrcExpr.boolean false)]) }
 
 /-- mini::selfhost::let_head -/
-def src_let_head (ix_peel : Nat) (ix_postfix_head : Nat) : SrcFunc := { params := [{ id := 9, ty := SrcType.uint (UintTy.usize) }, { id := 22, ty := ty265 }, { id := 37, ty := ty281 }, { id := 57, ty := ty83 }], ret := ty336, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.eCall ix_peel [SrcEff.ePure (SrcExpr.local 9), SrcEff.ePure (SrcExpr.local 57)]) ty135 ty336 [[178], []] [SrcEff.eCall ix_postfix_head [SrcEff.ePure (SrcExpr.local 9), SrcEff.ePure (SrcExpr.local 22), SrcEff.ePure (SrcExpr.local 37), SrcEff.ePure (SrcExpr.local 178)], SrcEff.eVariant ty336 1 []]) }
+def src_let_head (ix_peel : Nat) (ix_postfix_head : Nat) : SrcFunc := { params := [{ id := 9, ty := SrcType.uint (UintTy.usize) }, { id := 22, ty := ty266 }, { id := 37, ty := ty282 }, { id := 57, ty := ty84 }], ret := ty337, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.eCall ix_peel [SrcEff.ePure (SrcExpr.local 9), SrcEff.ePure (SrcExpr.local 57)]) ty136 ty337 [[178], []] [SrcEff.eCall ix_postfix_head [SrcEff.ePure (SrcExpr.local 9), SrcEff.ePure (SrcExpr.local 22), SrcEff.ePure (SrcExpr.local 37), SrcEff.ePure (SrcExpr.local 178)], SrcEff.eVariant ty337 1 []]) }
 
 /-- mini::selfhost::postfix_head -/
-def src_postfix_head (ix_kid : Nat) (ix_is_path_call : Nat) (ix_call_path_head : Nat) : SrcFunc := { params := [{ id := 13, ty := SrcType.uint (UintTy.usize) }, { id := 26, ty := ty265 }, { id := 41, ty := ty281 }, { id := 61, ty := ty83 }], ret := ty336, body := SrcStmt.then (SrcStmt.ifEval (SrcEff.eCall ix_is_path_call [SrcEff.ePure (SrcExpr.local 61)]) (SrcStmt.returnEval (SrcEff.eCall ix_call_path_head [SrcEff.ePure (SrcExpr.local 13), SrcEff.ePure (SrcExpr.local 26), SrcEff.ePure (SrcExpr.local 41), SrcEff.eCall ix_kid [SrcEff.eCall ix_kid [SrcEff.ePure (SrcExpr.local 61), SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000000#64)], SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000000#64)], SrcEff.eCall ix_kid [SrcEff.eCall ix_kid [SrcEff.ePure (SrcExpr.local 61), SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000001#64)], SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000001#64)]])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty336 1 [])) }
+def src_postfix_head (ix_kid : Nat) (ix_is_path_call : Nat) (ix_call_path_head : Nat) : SrcFunc := { params := [{ id := 13, ty := SrcType.uint (UintTy.usize) }, { id := 26, ty := ty266 }, { id := 41, ty := ty282 }, { id := 61, ty := ty84 }], ret := ty337, body := SrcStmt.then (SrcStmt.ifEval (SrcEff.eCall ix_is_path_call [SrcEff.ePure (SrcExpr.local 61)]) (SrcStmt.returnEval (SrcEff.eCall ix_call_path_head [SrcEff.ePure (SrcExpr.local 13), SrcEff.ePure (SrcExpr.local 26), SrcEff.ePure (SrcExpr.local 41), SrcEff.eCall ix_kid [SrcEff.eCall ix_kid [SrcEff.ePure (SrcExpr.local 61), SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000000#64)], SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000000#64)], SrcEff.eCall ix_kid [SrcEff.eCall ix_kid [SrcEff.ePure (SrcExpr.local 61), SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000001#64)], SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000001#64)]])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty337 1 [])) }
 
 /-- mini::selfhost::same_decl_args -/
-def src_same_decl_args : SrcFunc := { params := [{ id := 15, ty := SrcType.bool }, { id := 25, ty := ty153 }], ret := ty245, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 15) (SrcStmt.returnEval (SrcEff.eVariant ty245 0 [SrcEff.ePure (SrcExpr.local 25)])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty245 1 [])) }
+def src_same_decl_args : SrcFunc := { params := [{ id := 15, ty := SrcType.bool }, { id := 25, ty := ty154 }], ret := ty246, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 15) (SrcStmt.returnEval (SrcEff.eVariant ty246 0 [SrcEff.ePure (SrcExpr.local 25)])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty246 1 [])) }
 
 end
 

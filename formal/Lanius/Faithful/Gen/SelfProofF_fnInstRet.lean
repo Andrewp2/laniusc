@@ -16,6 +16,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_Inline_pIdentPlain
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pLeTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pPathMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pSelfValue
+public import Lanius.Faithful.Gen.SelfStmtF_collectedWith
 public import Lanius.Faithful.Gen.SelfStmtF_consTreeTail
 public import Lanius.Faithful.Gen.SelfStmtF_distinct
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
@@ -30,7 +31,6 @@ public import Lanius.Faithful.Gen.SelfStmtF_projectionRet
 public import Lanius.Faithful.Gen.SelfStmtF_rootInsts
 public import Lanius.Faithful.Gen.SelfStmtF_textSelf
 public import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
-public import Lanius.Faithful.Gen.SelfStmtF_typeNamesIn
 public import Lanius.Faithful.Gen.SelfStmtF_variantIn
 public import Lanius.Faithful.Gen.SelfStmtF_wideOf
 import all Lanius.Faithful.Gen.SelfSrcF_fnInstRet

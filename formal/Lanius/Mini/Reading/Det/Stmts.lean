@@ -783,16 +783,13 @@ theorem matchR_noBlock {env : FrontEnv} {scope : List Local} {E : Option Ty} {m 
     (ab : ArmBlockR a list) (h : EffR env scope E m x) (pm : nodeProd m = pMatchExpr) : False := by
   cases h with
   | pure r => exact exprR_noPrim (.inl pm) r
-  | «match» _ _ _ _ td en _ it' len sub ar _ =>
+  | «match» _ _ _ _ td en _ it' ord ar _ =>
     cases items_unique it it'
-    have nd := listRel_nodup armNames_fun (effArmsR_named ar) ((vn _ _ td en).sublist (zipVariants_names _ _))
-    have all := by
-      classical
-      exact subset_of_nodup_length nd sub (by rw [listRel_length (effArmsR_named ar), List.length_map, len])
-    obtain ⟨v, ea, r⟩ := effArmsR_mem ar (all ma)
+    obtain ⟨o, mo, ko⟩ := armsOrder_reaches ((vn _ _ td en).sublist (zipVariants_names _ _)) ord (effArmsR_named ar) ma
+    obtain ⟨v, ea, r⟩ := effArmsR_mem ar mo
     cases r with
-    | unit _ _ _ _ k _ _ => exact armBlockR_noEff ab k
-    | payload _ _ _ _ _ _ k _ _ => exact armBlockR_noEff ab k
+    | unit _ _ _ _ k _ _ => rw [ko] at k; exact armBlockR_noEff ab k
+    | payload _ _ _ _ _ _ k _ _ => rw [ko] at k; exact armBlockR_noEff ab k
   | _ => eff_clash
 
 theorem letInitR_noArmBlock {env : FrontEnv} {scope : List Local} {ty : Ty} {a list : CTree} {hd : LetHead}
@@ -889,18 +886,16 @@ theorem stmtsR_unique : ∀ {scope : List Local} {items : List CTree} {a : MStmt
       subst e
       have e := ih body'
       subst e
-      obtain ⟨arms, it, len, sub⟩ := mo
-      obtain ⟨arms', it', _, sub'⟩ := mo'
+      obtain ⟨arms, it, ord⟩ := mo
+      obtain ⟨arms', it', ord'⟩ := mo'
       have e := items_unique it it'
       subst e
       cases mr with
       | mk _ _ _ td en _ _ hh =>
         obtain ⟨ho, hv⟩ := matchStmtHead_parts hh
-        have eo := by
-          classical
-          exact arms_unique armNames_fun
-            ((vn _ _ td en).sublist (by rw [hv, zipVariants_eq, ← ho]; exact zipVariants_names _ _))
-            (by rw [List.length_map]; exact len) (letArmsR_named la) (letArmsR_named la') sub sub'
+        have eo := armsOrder_unique
+          ((vn _ _ td en).sublist (by rw [hv, zipVariants_eq, ← ho]; exact zipVariants_names _ _))
+          ord ord' (letArmsR_named la) (letArmsR_named la')
         subst eo
         have e := letArmsR_unique la nd vn la'
         subst e
@@ -1049,18 +1044,16 @@ theorem stmtR_unique : ∀ {scope : List Local} {s : CTree} {a : MStmt}, StmtR e
       subst e
       have e := matchStmtR_unique nd vn mr mr'
       subst e
-      obtain ⟨arms, it, len, sub⟩ := mo
-      obtain ⟨arms', it', _, sub'⟩ := mo'
+      obtain ⟨arms, it, ord⟩ := mo
+      obtain ⟨arms', it', ord'⟩ := mo'
       have e := items_unique it it'
       subst e
       cases mr with
       | mk _ _ _ td en _ _ hh =>
         obtain ⟨ho, hv⟩ := matchStmtHead_parts hh
-        have eo := by
-          classical
-          exact arms_unique armNames_fun
-            ((vn _ _ td en).sublist (by rw [hv, zipVariants_eq, ← ho]; exact zipVariants_names _ _))
-            (by rw [List.length_map]; exact len) (armsStmtR_named ar) (armsStmtR_named ar') sub sub'
+        have eo := armsOrder_unique
+          ((vn _ _ td en).sublist (by rw [hv, zipVariants_eq, ← ho]; exact zipVariants_names _ _))
+          ord ord' (armsStmtR_named ar) (armsStmtR_named ar')
         subst eo
         have e := ih ar'
         subst e

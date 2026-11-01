@@ -37,6 +37,21 @@ theorem outputOf_write (fd target : Nat) (bytes : List UInt8) :
     outputOf fd [.write target bytes] = if target = fd then bytes else [] := by
   simp only [outputOf, List.append_nil]
 
+/-- The streams Core's world and the process have still to read, other than
+standard input: the clocks' readings and the secure bytes. -/
+def Streams (w : World.State) (io : Lanius.X86.Machine.Io) : Prop :=
+  w.monotonicReadings = io.monotonic ∧ w.systemReadings = io.realtime ∧ w.secureByteStream = io.entropy
+
+theorem Streams.congr {w w' : World.State} {io io' : Lanius.X86.Machine.Io} (s : Streams w io)
+    (world : w'.monotonicReadings = w.monotonicReadings ∧ w'.systemReadings = w.systemReadings ∧
+      w'.secureByteStream = w.secureByteStream)
+    (process : io'.monotonic = io.monotonic ∧ io'.realtime = io.realtime ∧ io'.entropy = io.entropy) :
+    Streams w' io' := by
+  obtain ⟨m, r, e⟩ := s
+  obtain ⟨wm, wr, we⟩ := world
+  obtain ⟨pm, pr, pe⟩ := process
+  exact ⟨wm.trans (m.trans pm.symm), wr.trans (r.trans pr.symm), we.trans (e.trans pe.symm)⟩
+
 /-- Core's heap `h` and world `w`, and the mini heap `hp` with its trace. The
 world's standard output and error are what the trace wrote to fds 1 and 2
 (roadmap F8), its standard input is what the process has still to read, and
@@ -57,6 +72,9 @@ structure HeapCorr (h : Memory.Heap) (w : World.State) (hp : Heap) : Prop where
   err : w.standardError = outputOf 2 hp.io.trace
   closed : w.fileHandles = []
   input : w.standardInput = hp.io.input
+  /-- The clocks' readings and the secure bytes still to come are the
+  process's. -/
+  streams : Streams w hp.io
 
 /-- Frame memory starts at the limit. -/
 theorem HeapCorr.topped {h : Memory.Heap} {w : World.State} {hp : Heap} (_ : HeapCorr h w hp) :
@@ -67,7 +85,7 @@ theorem HeapCorr.topped {h : Memory.Heap} {w : World.State} {hp : Heap} (_ : Hea
 theorem HeapCorr.withFsp {h : Memory.Heap} {w : World.State} {hp : Heap} (hc : HeapCorr h w hp) (fsp : Nat) :
     HeapCorr h w { hp with fsp := fsp } :=
   ⟨hc.cursor, hc.pos, hc.unbounded, hc.small, hc.sized, hc.below, hc.apart, hc.unique, hc.bytes, hc.zero,
-    hc.out, hc.err, hc.closed, hc.input⟩
+    hc.out, hc.err, hc.closed, hc.input, hc.streams⟩
 
 /-! ## Lists of blocks -/
 
@@ -151,7 +169,7 @@ theorem HeapCorr.store {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h w hp) {p
   have cases : ∀ b ∈ Memory.replaceBlock h.blocks { blk with bytes := Memory.setByte blk.bytes (p + o - blk.base) v },
       (b = { blk with bytes := Memory.setByte blk.bytes (p + o - blk.base) v }) ∨ (b ∈ h.blocks ∧ b.base ≠ blk.base) :=
     fun b m => mem_replaceBlock m
-  refine ⟨corr.cursor, corr.pos, corr.unbounded, corr.small, ?_, ?_, ?_, ?_, ?_, ?_, corr.out, corr.err, corr.closed, corr.input⟩
+  refine ⟨corr.cursor, corr.pos, corr.unbounded, corr.small, ?_, ?_, ?_, ?_, ?_, ?_, corr.out, corr.err, corr.closed, corr.input, corr.streams⟩
   · intro b m
     rcases cases b m with rfl | ⟨m', -⟩
     · simp only [setByte_length]
@@ -220,7 +238,7 @@ theorem HeapCorr.dealloc {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h w hp) 
       (b = { blk with live := false }) ∨ (b ∈ h.blocks ∧ b.base ≠ blk.base) :=
     fun b m => mem_replaceBlock m
   refine ⟨corr.cursor, corr.pos, by simp [Memory.refundBudget, corr.unbounded], corr.small, ?_, ?_, ?_, ?_, ?_,
-    corr.zero, corr.out, corr.err, corr.closed, corr.input⟩
+    corr.zero, corr.out, corr.err, corr.closed, corr.input, corr.streams⟩
   · intro b m
     rcases cases b m with rfl | ⟨m', -⟩
     · exact corr.sized blk mem
@@ -265,7 +283,7 @@ theorem HeapCorr.allocate {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h w hp)
     rw [alignUp_eq]
     exact memAlignUp_ge _ _ (Nat.two_pow_pos _)
   refine ⟨rfl, rfl, fun roomBound => ⟨rfl, by addr_omega, rfl, corr.small, ?_, ?_, ?_, ?_, ?_, ?_, corr.out, corr.err,
-    corr.closed, corr.input⟩⟩
+    corr.closed, corr.input, corr.streams⟩⟩
   · intro b m
     simp only [List.mem_append, List.mem_singleton] at m
     rcases m with m | rfl
@@ -418,7 +436,7 @@ theorem HeapCorr.replace {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h w hp) 
   have cases : ∀ b ∈ Memory.replaceBlock h.blocks ⟨blk.base, blk.size, ra, blk.bytes, blk.live, ro⟩,
       b = ⟨blk.base, blk.size, ra, blk.bytes, blk.live, ro⟩ ∨ (b ∈ h.blocks ∧ b.base ≠ blk.base) :=
     fun b m => mem_replaceBlock m
-  refine ⟨corr.cursor, corr.pos, corr.unbounded, corr.small, ?_, ?_, ?_, ?_, ?_, corr.zero, corr.out, corr.err, corr.closed, corr.input⟩
+  refine ⟨corr.cursor, corr.pos, corr.unbounded, corr.small, ?_, ?_, ?_, ?_, ?_, corr.zero, corr.out, corr.err, corr.closed, corr.input, corr.streams⟩
   · intro b m
     rcases cases b m with rfl | ⟨m', -⟩
     · exact corr.sized blk mem

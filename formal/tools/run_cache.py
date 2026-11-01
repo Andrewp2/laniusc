@@ -18,11 +18,16 @@ CACHE = os.path.join(ROOT, 'target/claude-work/cache')
 class lean_lock:
     """Held while Lean builds or runs: one lock for every worktree of the
     repository (in its common git directory), so Lean runs one at a time and
-    the memory caps of parallel worktrees never add up past the machine's."""
+    the memory caps of parallel worktrees never add up past the machine's.
+    With LEAN_LOCK_HELD=1 the caller already holds it (`flock LOCK gate.py`),
+    so a whole gate run waits for the lock once rather than at every step."""
 
     def __enter__(self):
         import fcntl
         import subprocess
+        self.f = None
+        if os.environ.get('LEAN_LOCK_HELD') == '1':
+            return self
         common = subprocess.run(['git', 'rev-parse', '--git-common-dir'], cwd=ROOT, capture_output=True,
                                 text=True).stdout.strip() or '.git'
         self.f = open(os.path.join(ROOT, common, 'lean.lock'), 'a')
@@ -30,7 +35,8 @@ class lean_lock:
         return self
 
     def __exit__(self, *exc):
-        self.f.close()
+        if self.f is not None:
+            self.f.close()
 
 _digests = {}
 

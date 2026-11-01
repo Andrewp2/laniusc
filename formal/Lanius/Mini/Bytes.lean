@@ -206,14 +206,18 @@ def Syscall.linux : Syscall → BitVec 32
   | .write => 1
   | .read => 0
   | .poll => 7
+  | .clock => 228
+  | .random => 318
 
-/-- What a system call does to its second argument in rsi: `add rsi, r12`
-makes it a heap address for `write` and `read`; `mov rsi, rsi` keeps it for
-`poll`. -/
+/-- Which argument a system call makes a heap address: `add rsi, r12` the
+second for `write`, `read` and `clock_gettime`; `mov rsi, rsi` none for
+`poll`; `add rdi, r12` the first for `getrandom`. -/
 def Syscall.rsiBytes : Syscall → List UInt8
   | .write => aluBytes .w64 .add rsiRegister heapBaseRegister
   | .read => aluBytes .w64 .add rsiRegister heapBaseRegister
   | .poll => moveBytes .w64 rsiRegister rsiRegister
+  | .clock => aluBytes .w64 .add rsiRegister heapBaseRegister
+  | .random => aluBytes .w64 .add rdiRegister heapBaseRegister
 
 /-- `mov rdi, [slot]; mov rsi, [slot + 1]; add rsi, r12; mov rdx, [slot + 2];
 mov eax, number; syscall; mov r11, rcx`. The kernel leaves r11 unknown; the last

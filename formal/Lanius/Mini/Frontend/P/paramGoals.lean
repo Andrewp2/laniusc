@@ -2,6 +2,7 @@ module
 
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Compiler.P.Lists_empty
+import Lanius.Mini.Frontend.P.collectedWith
 import Lanius.Mini.Frontend.P.consTreeTail
 import Lanius.Mini.Frontend.P.distinct
 import Lanius.Mini.Frontend.P.findConst
@@ -11,7 +12,6 @@ import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.pickTy
 import Lanius.Mini.Frontend.P.repeatEff
 import Lanius.Mini.Frontend.P.typeDeclAt
-import Lanius.Mini.Frontend.P.typeNamesIn
 import Lanius.Mini.Frontend.P.typePathSpellings
 
 public section

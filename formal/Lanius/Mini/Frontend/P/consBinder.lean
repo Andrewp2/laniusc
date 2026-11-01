@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Mini.Frontend.Types
+import Lanius.Mini.Frontend.P.collectedWith
 import Lanius.Mini.Frontend.P.distinct
 import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
@@ -9,7 +10,6 @@ import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.noTrees
 import Lanius.Mini.Frontend.P.sliceHead
 import Lanius.Mini.Frontend.P.textSelf
-import Lanius.Mini.Frontend.P.typeNamesIn
 import Lanius.Mini.Frontend.P.typePathSpellings
 
 public section

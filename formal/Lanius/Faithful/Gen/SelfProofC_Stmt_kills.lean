@@ -3,17 +3,15 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_Stmt_kills
-public import Lanius.Faithful.Gen.SelfStmt0
-public import Lanius.Faithful.Gen.SelfStmt1
 public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt6
-public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtC_Inline_factOr
 public import Lanius.Faithful.Gen.SelfStmtC_Stmt_kills
 public import Lanius.Faithful.Gen.SelfStmtC_assignAgrees
 public import Lanius.Faithful.Gen.SelfStmtC_binaryConstant
 public import Lanius.Faithful.Gen.SelfStmtC_callAgrees
+public import Lanius.Faithful.Gen.SelfStmtC_longer
 public import Lanius.Faithful.Gen.SelfStmtC_substAll
 import all Lanius.Faithful.Gen.SelfSrcC_Stmt_kills
 import all Lanius.Mini.Compiler.P.Stmt_kills
@@ -35,6 +33,15 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
+theorem proof_Expr_literal {prog : SrcProgram} {prims : Prims} {ix_Expr_literal : Nat} (fn : prog.funcs[ix_Expr_literal]? = some (src_Expr_literal)) (np : prims.isPrim ix_Expr_literal = false) {n : Nat} :
+    Stmt_Expr_literal prog prims ix_Expr_literal n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_Expr_literal] at h
+  faithful [Lanius.Mini.Expr.literal]
+
 theorem proof_Func_agrees {prog : SrcProgram} {prims : Prims} {ix_Func_agrees ix_empty_of_mini_selfhost_Fact ix_Stmt_agrees : Nat} (fn : prog.funcs[ix_Func_agrees]? = some (src_Func_agrees ix_empty_of_mini_selfhost_Fact ix_Stmt_agrees)) (np : prims.isPrim ix_Func_agrees = false)
     (ext_empty_of_mini_selfhost_Fact : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Fact prog prims ix_empty_of_mini_selfhost_Fact n))
     (ext_Stmt_agrees : Certified (∀ {n : Nat}, Stmt_Stmt_agrees prog prims ix_Stmt_agrees n)) {n : Nat} :
@@ -46,13 +53,13 @@ theorem proof_Func_agrees {prog : SrcProgram} {prims : Prims} {ix_Func_agrees ix
   simp only [src_Func_agrees] at h
   faithful [Lanius.Mini.Func.agrees]
 
-theorem step_Stmt_agrees {prog : SrcProgram} {prims : Prims} {ix_Stmt_agrees ix_unbox_of_mini_selfhost_Stmt ix_Expr_subst ix_subst_all ix_Stmt_is_skip ix_assign_agrees ix_seq_agrees ix_dead_agrees ix_Stmt_facts_after ix_ite_agrees ix_branch_agrees ix_Expr_constant ix_unknown ix_Expr_is_zero ix_loop_agrees ix_call_agrees ix_ret_agrees ix_Stmt_is_brk ix_Stmt_is_cont ix_alloc_agrees ix_load_byte_agrees ix_store_byte_agrees ix_load_word_agrees ix_store_word_agrees ix_divide_agrees ix_sys_agrees ix_frame_agrees : Nat} (fn : prog.funcs[ix_Stmt_agrees]? = some (src_Stmt_agrees ix_unbox_of_mini_selfhost_Stmt ix_Expr_subst ix_subst_all ix_Stmt_agrees ix_Stmt_is_skip ix_assign_agrees ix_seq_agrees ix_dead_agrees ix_Stmt_facts_after ix_ite_agrees ix_branch_agrees ix_Expr_constant ix_unknown ix_Expr_is_zero ix_loop_agrees ix_call_agrees ix_ret_agrees ix_Stmt_is_brk ix_Stmt_is_cont ix_alloc_agrees ix_load_byte_agrees ix_store_byte_agrees ix_load_word_agrees ix_store_word_agrees ix_divide_agrees ix_sys_agrees ix_frame_agrees)) (np : prims.isPrim ix_Stmt_agrees = false)
+theorem step_Stmt_agrees {prog : SrcProgram} {prims : Prims} {ix_Stmt_agrees ix_unbox_of_mini_selfhost_Stmt ix_Expr_subst ix_subst_all ix_Stmt_facts_after ix_Stmt_is_skip ix_assign_agrees ix_seq_agrees ix_dead_agrees ix_ite_agrees ix_branch_agrees ix_Expr_constant ix_unknown ix_Expr_is_zero ix_loop_agrees ix_call_agrees ix_ret_agrees ix_Stmt_is_brk ix_Stmt_is_cont ix_alloc_agrees ix_load_byte_agrees ix_store_byte_agrees ix_load_word_agrees ix_store_word_agrees ix_divide_agrees ix_sys_agrees ix_frame_agrees : Nat} (fn : prog.funcs[ix_Stmt_agrees]? = some (src_Stmt_agrees ix_unbox_of_mini_selfhost_Stmt ix_Expr_subst ix_subst_all ix_Stmt_agrees ix_Stmt_facts_after ix_Stmt_is_skip ix_assign_agrees ix_seq_agrees ix_dead_agrees ix_ite_agrees ix_branch_agrees ix_Expr_constant ix_unknown ix_Expr_is_zero ix_loop_agrees ix_call_agrees ix_ret_agrees ix_Stmt_is_brk ix_Stmt_is_cont ix_alloc_agrees ix_load_byte_agrees ix_store_byte_agrees ix_load_word_agrees ix_store_word_agrees ix_divide_agrees ix_sys_agrees ix_frame_agrees)) (np : prims.isPrim ix_Stmt_agrees = false)
     (ext_unbox_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_Stmt prog prims ix_unbox_of_mini_selfhost_Stmt n))
     (ext_Expr_subst : Certified (∀ {n : Nat}, Stmt_Expr_subst prog prims ix_Expr_subst n))
     (ext_subst_all : Certified (∀ {n : Nat}, Stmt_subst_all prog prims ix_subst_all n))
+    (ext_Stmt_facts_after : Certified (∀ {n : Nat}, Stmt_Stmt_facts_after prog prims ix_Stmt_facts_after n))
     (ext_Stmt_is_skip : Certified (∀ {n : Nat}, Stmt_Stmt_is_skip prog prims ix_Stmt_is_skip n))
     (ext_assign_agrees : Certified (∀ {n : Nat}, Stmt_assign_agrees prog prims ix_assign_agrees n))
-    (ext_Stmt_facts_after : Certified (∀ {n : Nat}, Stmt_Stmt_facts_after prog prims ix_Stmt_facts_after n))
     (ext_Expr_constant : Certified (∀ {n : Nat}, Stmt_Expr_constant prog prims ix_Expr_constant n))
     (ext_unknown : Certified (∀ {n : Nat}, Stmt_unknown prog prims ix_unknown n))
     (ext_Expr_is_zero : Certified (∀ {n : Nat}, Stmt_Expr_is_zero prog prims ix_Expr_is_zero n))
@@ -93,37 +100,6 @@ theorem step_Stmt_kills {prog : SrcProgram} {prims : Prims} {ix_Stmt_kills ix_un
   simp only [src_Stmt_kills] at h
   faithful [Lanius.Mini.Stmt.kills]
 
-theorem step_dying_extent {prog : SrcProgram} {prims : Prims} {ix_dying_extent ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_Fact ix_extent_after ix_fact_dies : Nat} (fn : prog.funcs[ix_dying_extent]? = some (src_dying_extent ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_Fact ix_dying_extent ix_extent_after ix_fact_dies)) (np : prims.isPrim ix_dying_extent = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_Fact : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Fact prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Fact n))
-    (ext_extent_after : Certified (∀ {n : Nat}, Stmt_extent_after prog prims ix_extent_after n))
-    (ext_fact_dies : Certified (∀ {n : Nat}, Stmt_fact_dies prog prims ix_fact_dies n)) {n : Nat}
-    (ih_dying_extent : Certified (Stmt_dying_extent prog prims ix_dying_extent n)) :
-    Stmt_dying_extent prog prims ix_dying_extent (n + 1) := by
-  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
-  rw [pcall_succ np fn] at h
-  simp only [src_dying_extent] at h
-  faithful [Lanius.Mini.dyingExtent]
-
-theorem proof_extent_after {prog : SrcProgram} {prims : Prims} {ix_extent_after : Nat} (fn : prog.funcs[ix_extent_after]? = some (src_extent_after)) (np : prims.isPrim ix_extent_after = false) {n : Nat} :
-    Stmt_extent_after prog prims ix_extent_after n := by
-  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_extent_after] at h
-  faithful [Lanius.Mini.extentAfter]
-
-theorem proof_fact_dies {prog : SrcProgram} {prims : Prims} {ix_fact_dies ix_Expr_mentions : Nat} (fn : prog.funcs[ix_fact_dies]? = some (src_fact_dies ix_Expr_mentions)) (np : prims.isPrim ix_fact_dies = false)
-    (ext_Expr_mentions : Certified (∀ {n : Nat}, Stmt_Expr_mentions prog prims ix_Expr_mentions n)) {n : Nat} :
-    Stmt_fact_dies prog prims ix_fact_dies n := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_fact_dies] at h
-  faithful [Lanius.Mini.factDies]
-
 theorem step_funcs_agree {prog : SrcProgram} {prims : Prims} {ix_funcs_agree ix_unbox_of_mini_selfhost_List_mini_selfhost_Func ix_Func_agrees : Nat} (fn : prog.funcs[ix_funcs_agree]? = some (src_funcs_agree ix_funcs_agree ix_unbox_of_mini_selfhost_List_mini_selfhost_Func ix_Func_agrees)) (np : prims.isPrim ix_funcs_agree = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_Func : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Func prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Func n))
     (ext_Func_agrees : Certified (∀ {n : Nat}, Stmt_Func_agrees prog prims ix_Func_agrees n)) {n : Nat}
@@ -133,29 +109,6 @@ theorem step_funcs_agree {prog : SrcProgram} {prims : Prims} {ix_funcs_agree ix_
   rw [pcall_succ np fn] at h
   simp only [src_funcs_agree] at h
   faithful [Lanius.Mini.funcsAgree]
-
-theorem step_kill_prefix {prog : SrcProgram} {prims : Prims} {ix_kill_prefix ix_minus ix_empty_of_mini_selfhost_Fact ix_unbox_of_mini_selfhost_List_mini_selfhost_Fact ix_kill_prefix_at : Nat} (fn : prog.funcs[ix_kill_prefix]? = some (src_kill_prefix ix_minus ix_empty_of_mini_selfhost_Fact ix_unbox_of_mini_selfhost_List_mini_selfhost_Fact ix_kill_prefix ix_kill_prefix_at)) (np : prims.isPrim ix_kill_prefix = false)
-    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
-    (ext_empty_of_mini_selfhost_Fact : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Fact prog prims ix_empty_of_mini_selfhost_Fact n))
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_Fact : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Fact prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Fact n))
-    (ext_kill_prefix_at : Certified (∀ {n : Nat}, Stmt_kill_prefix_at prog prims ix_kill_prefix_at n)) {n : Nat}
-    (ih_kill_prefix : Certified (Stmt_kill_prefix prog prims ix_kill_prefix n)) :
-    Stmt_kill_prefix prog prims ix_kill_prefix (n + 1) := by
-  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
-  rw [pcall_succ np fn] at h
-  simp only [src_kill_prefix] at h
-  faithful [Lanius.Mini.killPrefix]
-
-theorem proof_kill_prefix_at {prog : SrcProgram} {prims : Prims} {ix_kill_prefix_at ix_cons_of_mini_selfhost_Fact ix_fact_dies : Nat} (fn : prog.funcs[ix_kill_prefix_at]? = some (src_kill_prefix_at ix_cons_of_mini_selfhost_Fact ix_fact_dies)) (np : prims.isPrim ix_kill_prefix_at = false)
-    (ext_cons_of_mini_selfhost_Fact : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_Fact prog prims ix_cons_of_mini_selfhost_Fact n))
-    (ext_fact_dies : Certified (∀ {n : Nat}, Stmt_fact_dies prog prims ix_fact_dies n)) {n : Nat} :
-    Stmt_kill_prefix_at prog prims ix_kill_prefix_at n := by
-  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_kill_prefix_at] at h
-  faithful [Lanius.Mini.killPrefixAt]
 
 theorem proof_validate {prog : SrcProgram} {prims : Prims} {ix_validate ix_funcs_agree : Nat} (fn : prog.funcs[ix_validate]? = some (src_validate ix_funcs_agree)) (np : prims.isPrim ix_validate = false)
     (ext_funcs_agree : Certified (∀ {n : Nat}, Stmt_funcs_agree prog prims ix_funcs_agree n)) {n : Nat} :

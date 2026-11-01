@@ -31,9 +31,9 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_lx_base_digit {prog : SrcProgram} {prims : Prims} {ix_lx_base_digit ix_plus ix_minus : Nat} (fn : prog.funcs[ix_lx_base_digit]? = some (src_lx_base_digit ix_plus ix_minus)) (np : prims.isPrim ix_lx_base_digit = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n)) {n : Nat} :
+theorem proof_lx_base_digit {prog : SrcProgram} {prims : Prims} {ix_lx_base_digit ix_minus ix_plus : Nat} (fn : prog.funcs[ix_lx_base_digit]? = some (src_lx_base_digit ix_minus ix_plus)) (np : prims.isPrim ix_lx_base_digit = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n)) {n : Nat} :
     Stmt_lx_base_digit prog prims ix_lx_base_digit n := by
   intro x0 x1 v0 v1 w h r0 r1
   rcases n with _ | n

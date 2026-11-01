@@ -32,9 +32,9 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_fl_decimal_at {prog : SrcProgram} {prims : Prims} {ix_fl_decimal_at ix_plus ix_minus ix_times ix_fl_pow2 ix_fl_round ix_fl_times10 ix_single_of_bool : Nat} (fn : prog.funcs[ix_fl_decimal_at]? = some (src_fl_decimal_at ix_plus ix_minus ix_times ix_fl_pow2 ix_fl_round ix_fl_times10 ix_single_of_bool)) (np : prims.isPrim ix_fl_decimal_at = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+theorem proof_fl_decimal_at {prog : SrcProgram} {prims : Prims} {ix_fl_decimal_at ix_minus ix_plus ix_times ix_fl_pow2 ix_fl_round ix_fl_times10 ix_single_of_bool : Nat} (fn : prog.funcs[ix_fl_decimal_at]? = some (src_fl_decimal_at ix_minus ix_plus ix_times ix_fl_pow2 ix_fl_round ix_fl_times10 ix_single_of_bool)) (np : prims.isPrim ix_fl_decimal_at = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_times : Certified (∀ {n : Nat}, Stmt_times prog prims ix_times n))
     (ext_fl_pow2 : Certified (∀ {n : Nat}, Stmt_fl_pow2 prog prims ix_fl_pow2 n))
     (ext_fl_round : Certified (∀ {n : Nat}, Stmt_fl_round prog prims ix_fl_round n))
@@ -60,9 +60,9 @@ theorem proof_fl_ratio_ok {prog : SrcProgram} {prims : Prims} {ix_fl_ratio_ok ix
   simp only [src_fl_ratio_ok] at h
   faithful [Lanius.Mini.flRatioOk]
 
-theorem proof_fl_round {prog : SrcProgram} {prims : Prims} {ix_fl_round ix_plus ix_minus ix_times ix_fl_pow2 ix_cons_of_bool ix_fl_log2_or0 ix_fl_sat ix_fl_bit ix_fl_ratio_ok ix_fl_shl ix_fl_divmod ix_fl_less ix_fl_odd ix_fl_round_up ix_fl_to_nat : Nat} (fn : prog.funcs[ix_fl_round]? = some (src_fl_round ix_plus ix_minus ix_times ix_fl_pow2 ix_cons_of_bool ix_fl_log2_or0 ix_fl_sat ix_fl_bit ix_fl_ratio_ok ix_fl_shl ix_fl_divmod ix_fl_less ix_fl_odd ix_fl_round_up ix_fl_to_nat)) (np : prims.isPrim ix_fl_round = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+theorem proof_fl_round {prog : SrcProgram} {prims : Prims} {ix_fl_round ix_minus ix_plus ix_times ix_fl_pow2 ix_cons_of_bool ix_fl_log2_or0 ix_fl_sat ix_fl_bit ix_fl_ratio_ok ix_fl_shl ix_fl_divmod ix_fl_less ix_fl_odd ix_fl_round_up ix_fl_to_nat : Nat} (fn : prog.funcs[ix_fl_round]? = some (src_fl_round ix_minus ix_plus ix_times ix_fl_pow2 ix_cons_of_bool ix_fl_log2_or0 ix_fl_sat ix_fl_bit ix_fl_ratio_ok ix_fl_shl ix_fl_divmod ix_fl_less ix_fl_odd ix_fl_round_up ix_fl_to_nat)) (np : prims.isPrim ix_fl_round = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_times : Certified (∀ {n : Nat}, Stmt_times prog prims ix_times n))
     (ext_fl_pow2 : Certified (∀ {n : Nat}, Stmt_fl_pow2 prog prims ix_fl_pow2 n))
     (ext_cons_of_bool : Certified (∀ {n : Nat}, Stmt_cons_of_bool prog prims ix_cons_of_bool n))

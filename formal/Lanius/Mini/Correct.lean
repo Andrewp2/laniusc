@@ -61,6 +61,27 @@ theorem frameNeed_le : ∀ {codes : List Code} {f : Nat} {code : Code}, codes[f]
       have := frameNeed_le found
       simp only [frameNeed]; omega
 
+/-- The image's length is the functions' sizes added, which `link` checks
+against the limit without a walk over the image. -/
+theorem linkFrom_length (entries : List Nat) : ∀ (start : Nat) (codes : List Code),
+    (linkFrom entries start codes).length = linkedSize codes
+  | _, [] => rfl
+  | start, code :: rest => by
+    simp only [linkFrom, linkedSize, List.length_append, Code.image_length, linkFrom_length entries _ rest]
+
+theorem encodeOnto_eq (place : Place) (tail : List UInt8) : ∀ (pc : Nat) (code : List Instr),
+    encodeOnto place pc code tail = encodeFrom place pc code ++ tail
+  | _, [] => by simp [encodeOnto, encodeFrom]
+  | pc, i :: rest => by
+    simp only [encodeOnto, encodeFrom, encodeOnto_eq place tail _ rest, List.append_assoc]
+
+/-- `link` builds `linkFrom`'s bytes without copying each function's image. -/
+theorem linkOnto_eq (entries : List Nat) : ∀ (start : Nat) (codes : List Code),
+    linkOnto entries start codes = linkFrom entries start codes
+  | _, [] => by simp [linkOnto, linkFrom]
+  | start, code :: rest => by
+    simp only [linkOnto, linkFrom, Code.image, encodeOnto_eq, linkOnto_eq entries _ rest, List.append_assoc]
+
 theorem compileProgram_spec {prog : Program} {binary : Binary} (compiled : compileProgram prog = some binary) :
     compileFuncs (arities prog.funcs) prog.funcs = some binary.codes ∧ binary.entries = layout 0 binary.codes ∧
       binary.image = linkFrom binary.entries 0 binary.codes ∧ binary.image.length ≤ imageLimit := by
@@ -72,7 +93,7 @@ theorem compileProgram_spec {prog : Program} {binary : Binary} (compiled : compi
     · rename_i small
       simp only [Option.some.injEq] at compiled
       subst compiled
-      exact ⟨codesCompiled, rfl, rfl, small⟩
+      exact ⟨codesCompiled, rfl, linkOnto_eq _ _ _, by rw [linkOnto_eq, linkFrom_length]; exact small⟩
     · contradiction
 
 theorem compileFuncs_frameNeed {arities : List Arity} :

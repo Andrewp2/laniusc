@@ -153,33 +153,9 @@ def hostSleepCode (slot : Nat) : Stmt :=
   let sleep : Stmt := Stmt.seq (Stmt.sys Syscall.poll (slot + 1) (Expr.lit 0 :: Expr.lit 0 :: [Expr.var slot])) (Stmt.assign slot (Expr.lit 0))
   Stmt.ite (Expr.compare Word.s32 CmpOp.lt (Expr.var slot) (Expr.lit 0)) (Stmt.assign slot (Expr.lit 4294967295)) sleep
 
-def evalHost (callee : Nat) (slot : Nat) (args : EvaluatedArgs) : Option Evaluated :=
-  if decide (callee = 4294967296) && typesSame args.types (SrcType.i32 :: [SrcType.i32]) then
-    some ({ stmt := Stmt.seq args.stmt (hostByteCode slot), ty := SrcType.i32 } : Evaluated)
-  else
-    if decide (callee = 4294967297) && typesSame args.types (SrcType.ptr :: [SrcType.uint UintTy.usize]) then
-      some ({ stmt := Stmt.seq args.stmt (hostWriteCode 1 slot), ty := SrcType.i32 } : Evaluated)
-    else
-      if decide (callee = 4294967298) && typesSame args.types (SrcType.ptr :: [SrcType.uint UintTy.usize]) then
-        some ({ stmt := Stmt.seq args.stmt (hostWriteCode 2 slot), ty := SrcType.i32 } : Evaluated)
-      else
-        if decide (callee = 4294967299) && typesSame args.types (SrcType.ptr :: [SrcType.uint UintTy.usize]) then
-          some ({ stmt := Stmt.seq args.stmt (hostReadCode slot), ty := SrcType.i32 } : Evaluated)
-        else
-          if decide (callee = 4294967300) && typesSame args.types [SrcType.i32] then
-            some ({ stmt := Stmt.seq args.stmt (hostSleepCode slot), ty := SrcType.i32 } : Evaluated)
-          else
-            none
-
-def evalCall (sig : Option Sig) (callee : Nat) (slot : Nat) (args : Option EvaluatedArgs) : Option Evaluated :=
-  match sig with
-  | none =>
-    (match args with
-     | none => none
-     | some a => evalHost callee slot a)
-  | some s =>
-    match args with
-    | none => none
-    | some a => evalCallSig s callee slot a
+/-- monotonic_read(pointer, len) (clock 1) or system_read (clock 0), pointer and len in slot and slot + 1: -1 when len is below 16; else clock_gettime(clock, pointer) and 0. -/
+def hostClockCode (clock : BitVec 64) (slot : Nat) : Stmt :=
+  let read : Stmt := Stmt.seq (Stmt.sys Syscall.clock (slot + 2) (Expr.lit clock :: Expr.var slot :: [Expr.lit 0])) (Stmt.assign slot (Expr.lit 0))
+  Stmt.ite (Expr.compare Word.u64 CmpOp.lt (Expr.var (slot + 1)) (Expr.lit 16)) (Stmt.assign slot (Expr.lit 4294967295)) read
 
 end Lanius.Mini

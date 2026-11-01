@@ -85,6 +85,10 @@ STEPS = [
      ['lean', 'extended', 'laniusc', 'stdlib'], True),
     # F2: the extractor in Lanius, run on laniusc's trees, writes the checked-in extraction.
     ('extract', ['lani_extract.py', '--check', '--work', '{w}'], ['extract', 'lani', 'extended', 'laniusc', 'stdlib'], True),
+    # F12: Gen/'s self program is the front end's reading of the current self source text.
+    ('self-current', ['faithful_current.py', '{w}'], ['extract', 'lean', 'lani', 'laniusc', 'stdlib'], True),
+    # F13: the top theorems' axioms are the standard three, and each statement is the one TRUSTED_BASE.md lists.
+    ('trusted', ['trusted_check.py', '{w}'], ['trusted'], True),
     # The full tier: larger counts and the rest.
     ('mini-200', ['mini_difftest.py', '{w}', '--count', '200', '--seed', '{s}'], ['lean', 'laniusc', 'stdlib'], False),
     ('oracle-300', ['oracle_difftest.py', '{w}', '--count', '300', '--seed', '{s}'], ['lean', 'laniusc', 'stdlib'],
@@ -104,11 +108,23 @@ STEPS = [
       False) for k in range(3)] + [
     # F11: laniusc's own test programs, a seeded sample of them, run both ways.
     ('programs', ['programs_oracle.py', '{w}', '--sample', '60', '--seed', '{s}'],
-     ['lean', 'run_all', 'laniusc', 'stdlib', 'programs'], False),
+     ['lean', 'run_all', 'laniusc', 'stdlib', 'programs', 'extended_all'], False),
+    # F11: every extended/ module's testable targets, as stdlib-* tests the stdlib's.
+    ('extended', ['stdlib_oracle.py', '{w}', '--root', 'extended', '--seed', '{s}'],
+     ['run_all', 'laniusc', 'stdlib', 'extended_all'], False),
     # M11c: the self-built verified compiler compiles itself to its own image.
     ('self-host-fixpoint', ['self_host.py', '{w}', '--no-cases', '--fixpoint', '--timeout', '280'],
      ['run_all', 'lani', 'laniusc', 'stdlib'], False),
 ]
+
+
+def trusted_digest():
+    """The top theorems' built modules, their list and TRUSTED_BASE.md, for the `trusted` step."""
+    import trusted_check
+    modules = ''.join(f'import {m}\n' for m in trusted_check.top_modules())
+    exe = os.path.join(run_cache.FORMAL, '.lake/build/bin/topAxioms')
+    return ((run_cache.olean_digest(modules) or 'unbuilt') + run_cache.file_digest(trusted_check.TRUSTED)
+            + run_cache.file_digest(trusted_check.TOPS) + (run_cache.file_digest(exe) if os.path.exists(exe) else ''))
 
 
 def inputs():
@@ -129,6 +145,8 @@ def inputs():
         'stdlib': run_cache.tree_digest(os.path.join(ROOT, 'stdlib')),
         'programs': run_cache.tree_digest(os.path.join(ROOT, 'tests/fixtures'))
         + run_cache.tree_digest(os.path.join(ROOT, 'sample_programs')),
+        'extended_all': run_cache.tree_digest(os.path.join(ROOT, 'extended')),
+        'trusted': trusted_digest(),
         'extended': ''.join(run_cache.file_digest(os.path.join(ROOT, 'extended/ext', name))
                             for name in ('sqlite_statement.lani', 'openssl_tls_lifecycle.lani')),
     }
@@ -139,7 +157,7 @@ def build():
     env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
     with run_cache.lean_lock():
         run = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
-                              'lake', 'build', 'runAll', 'extract', 'floatTest', 'srcDump', 'LaniusMini', 'Lanius.Mini.FrontLex',
+                              'lake', 'build', 'runAll', 'extract', 'floatTest', 'srcDump', 'topAxioms', 'LaniusMini', 'Lanius.Mini.FrontLex',
                               'Lanius.Mini.MutPilotCorrect', 'Lanius.Machines.SqliteStatementCorrect',
                               'Lanius.Machines.TlsLifecycleCorrect', 'Lanius.Machines.RunLowering'],
                              cwd=run_cache.FORMAL, env=env, capture_output=True, text=True)
@@ -172,6 +190,8 @@ def main():
     args = parser.parse_args()
     run_cache.no_core_dumps()
     build()
+    # The steps' own builds of runAll would only wait on the Lean lock.
+    os.environ['LANIUS_BUILT'] = '1'
     digests = inputs()
     steps = [s for s in STEPS if (s[3] or args.tier == 'full')]
     if args.only:

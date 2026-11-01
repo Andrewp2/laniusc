@@ -273,9 +273,9 @@ theorem step_get_of_mini_selfhost_List_mini_selfhost_Ty {prog : SrcProgram} {pri
   simp only [src_get_of_mini_selfhost_List_mini_selfhost_Ty] at h
   faithful []
 
-theorem step_get_of_mini_selfhost_SrcFunc {prog : SrcProgram} {prims : Prims} {ix_get_of_mini_selfhost_SrcFunc ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_minus : Nat} (fn : prog.funcs[ix_get_of_mini_selfhost_SrcFunc]? = some (src_get_of_mini_selfhost_SrcFunc ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_minus ix_get_of_mini_selfhost_SrcFunc)) (np : prims.isPrim ix_get_of_mini_selfhost_SrcFunc = false)
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc n))
-    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n)) {n : Nat}
+theorem step_get_of_mini_selfhost_SrcFunc {prog : SrcProgram} {prims : Prims} {ix_get_of_mini_selfhost_SrcFunc ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc : Nat} (fn : prog.funcs[ix_get_of_mini_selfhost_SrcFunc]? = some (src_get_of_mini_selfhost_SrcFunc ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc ix_get_of_mini_selfhost_SrcFunc)) (np : prims.isPrim ix_get_of_mini_selfhost_SrcFunc = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc n)) {n : Nat}
     (ih_get_of_mini_selfhost_SrcFunc : Certified (Stmt_get_of_mini_selfhost_SrcFunc prog prims ix_get_of_mini_selfhost_SrcFunc n)) :
     Stmt_get_of_mini_selfhost_SrcFunc prog prims ix_get_of_mini_selfhost_SrcFunc (n + 1) := by
   intro x0 x1 v0 v1 w h r0 r1

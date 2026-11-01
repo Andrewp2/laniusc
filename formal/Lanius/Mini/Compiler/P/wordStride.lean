@@ -12,6 +12,7 @@ import Lanius.Mini.Compiler.P.consArgs
 import Lanius.Mini.Compiler.P.evalDivide
 import Lanius.Mini.Compiler.P.evalNot
 import Lanius.Mini.Compiler.P.evalSame
+import Lanius.Mini.Compiler.P.hostRandomCode
 import Lanius.Mini.Compiler.P.loadAtBytes
 import Lanius.Mini.Compiler.P.lowerCallSig
 import Lanius.Mini.Compiler.P.lowerLoadType

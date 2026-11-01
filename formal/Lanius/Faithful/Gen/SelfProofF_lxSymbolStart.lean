@@ -30,9 +30,9 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem step_lx_drop {prog : SrcProgram} {prims : Prims} {ix_lx_drop ix_unbox_of_mini_selfhost_List_usize ix_minus ix_empty_of_usize : Nat} (fn : prog.funcs[ix_lx_drop]? = some (src_lx_drop ix_unbox_of_mini_selfhost_List_usize ix_minus ix_empty_of_usize ix_lx_drop)) (np : prims.isPrim ix_lx_drop = false)
-    (ext_unbox_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_usize n))
+theorem step_lx_drop {prog : SrcProgram} {prims : Prims} {ix_lx_drop ix_minus ix_unbox_of_mini_selfhost_List_usize ix_empty_of_usize : Nat} (fn : prog.funcs[ix_lx_drop]? = some (src_lx_drop ix_minus ix_unbox_of_mini_selfhost_List_usize ix_empty_of_usize ix_lx_drop)) (np : prims.isPrim ix_lx_drop = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_unbox_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_usize n))
     (ext_empty_of_usize : Certified (∀ {n : Nat}, Stmt_empty_of_usize prog prims ix_empty_of_usize n)) {n : Nat}
     (ih_lx_drop : Certified (Stmt_lx_drop prog prims ix_lx_drop n)) :
     Stmt_lx_drop prog prims ix_lx_drop (n + 1) := by
@@ -98,9 +98,9 @@ theorem proof_lx_symbol_start {prog : SrcProgram} {prims : Prims} {ix_lx_symbol_
   simp only [src_lx_symbol_start] at h
   faithful [Lanius.Mini.lxSymbolStart]
 
-theorem step_lx_take {prog : SrcProgram} {prims : Prims} {ix_lx_take ix_unbox_of_mini_selfhost_List_usize ix_minus ix_empty_of_usize ix_cons_of_usize : Nat} (fn : prog.funcs[ix_lx_take]? = some (src_lx_take ix_unbox_of_mini_selfhost_List_usize ix_minus ix_empty_of_usize ix_cons_of_usize ix_lx_take)) (np : prims.isPrim ix_lx_take = false)
-    (ext_unbox_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_usize n))
+theorem step_lx_take {prog : SrcProgram} {prims : Prims} {ix_lx_take ix_minus ix_unbox_of_mini_selfhost_List_usize ix_empty_of_usize ix_cons_of_usize : Nat} (fn : prog.funcs[ix_lx_take]? = some (src_lx_take ix_minus ix_unbox_of_mini_selfhost_List_usize ix_empty_of_usize ix_cons_of_usize ix_lx_take)) (np : prims.isPrim ix_lx_take = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_unbox_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_usize n))
     (ext_empty_of_usize : Certified (∀ {n : Nat}, Stmt_empty_of_usize prog prims ix_empty_of_usize n))
     (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n)) {n : Nat}
     (ih_lx_take : Certified (Stmt_lx_take prog prims ix_lx_take n)) :

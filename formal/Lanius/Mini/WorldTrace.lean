@@ -47,9 +47,10 @@ theorem HeapCorr.retrace {h : Memory.Heap} {w : World.State} {hp : Heap} (corr :
     {w' : World.State} {hp' : Heap} (bytes : hp'.bytes = hp.bytes) (cursor : hp'.cursor = hp.cursor)
     (limit : hp'.limit = hp.limit) (out : w'.standardOutput = outputOf 1 hp'.io.trace)
     (err : w'.standardError = outputOf 2 hp'.io.trace) (closed : w'.fileHandles = [])
-    (input : w'.standardInput = hp'.io.input) : HeapCorr h w' hp' := by
-  obtain ⟨c, pos, unb, small, sized, below, apart, unique, bs, zero, -, -, -, -⟩ := corr
-  refine ⟨cursor.trans c, pos, unb, limit ▸ small, sized, below, apart, unique, ?_, ?_, out, err, closed, input⟩
+    (input : w'.standardInput = hp'.io.input) (streams : Streams w' hp'.io) : HeapCorr h w' hp' := by
+  obtain ⟨c, pos, unb, small, sized, below, apart, unique, bs, zero, -, -, -, -, -⟩ := corr
+  refine ⟨cursor.trans c, pos, unb, limit ▸ small, sized, below, apart, unique, ?_, ?_, out, err, closed, input,
+    streams⟩
   · intro b mem live i lt
     rw [bytes]
     exact bs b mem live i lt
@@ -67,14 +68,15 @@ theorem HeapCorr.wrote {h : Memory.Heap} {w : World.State} {hp : Heap} (corr : H
     (outs : ∀ k, outputOf k events = if fd = k then bytes else [])
     (out : w'.standardOutput = w.standardOutput ++ (if fd = 1 then bytes else []))
     (err : w'.standardError = w.standardError ++ (if fd = 2 then bytes else []))
-    (closed : w'.fileHandles = w.fileHandles) (input : w'.standardInput = hp'.io.input) : HeapCorr h w' hp' :=
+    (closed : w'.fileHandles = w.fileHandles) (input : w'.standardInput = hp'.io.input)
+    (streams : Streams w' hp'.io) : HeapCorr h w' hp' :=
   corr.retrace sameBytes cursor limit (by simp only [out, corr.out, trace, outputOf_append, outs])
-    (by simp only [err, corr.err, trace, outputOf_append, outs]) (closed.trans corr.closed) input
+    (by simp only [err, corr.err, trace, outputOf_append, outs]) (closed.trans corr.closed) input streams
 
 /-- The record of host calls does not touch the output or the files. -/
 theorem HeapCorr.record {h : Memory.Heap} {w : World.State} {hp : Heap} (corr : HeapCorr h w hp)
     (service : Core.HostService) : HeapCorr h (World.record w service) hp :=
-  corr.retrace rfl rfl rfl corr.out corr.err corr.closed corr.input
+  corr.retrace rfl rfl rfl corr.out corr.err corr.closed corr.input corr.streams
 
 /-- With no file open, a write to a file handle has nowhere to go. -/
 theorem writeFileBytes_closed {w : World.State} (closed : w.fileHandles = []) (handle : Int)
@@ -159,7 +161,8 @@ theorem hostByte_exec {mp : Program} {d : Nat} {E : Env} {H : Heap} (slot : Nat)
     (which : E slot = 1 ∨ E slot = 2) :
     ∃ E' H', Exec mp d E H (hostByteCode slot) (.normal E' H') ∧ (∀ j < slot, E' j = E j) ∧ E' slot = 1 ∧
       H'.bytes = H.bytes ∧ H'.cursor = H.cursor ∧ H'.limit = H.limit ∧ H'.top = H.top ∧
-      H'.io.trace = H.io.trace ++ [Event.write (E slot).toNat [lowByte (E (slot + 1))]] ∧ H'.io.input = H.io.input := by
+      H'.io.trace = H.io.trace ++ [Event.write (E slot).toNat [lowByte (E (slot + 1))]] ∧ H'.io.input = H.io.input ∧
+      H'.io.monotonic = H.io.monotonic ∧ H'.io.realtime = H.io.realtime ∧ H'.io.entropy = H.io.entropy := by
   have cond : (Expr.binary .u64 .or (.compare .u64 .eq (.var slot) (.lit 1))
       (.compare .u64 .eq (.var slot) (.lit 2))).eval E ≠ 0 := by
     rcases which with one | two
@@ -187,7 +190,7 @@ theorem hostByte_exec {mp : Program} {d : Nat} {E : Env} {H : Heap} (slot : Nat)
   have s5 : Exec mp d E2 H3 (.assign slot (.lit 1)) (.normal (E2.set slot ((Expr.lit 1).eval E2)) H3) := .assign
   have saved : E2 (slot + 2) = BitVec.ofNat 64 (H.bytes 0).toNat := by simp [E2, E1, set_get, Expr.eval]
   refine ⟨_, _, .ifTrue cond (.seq s1 (.seq s2 (.seq s3 (.seq s4 s5)))), ?_, by simp [set_get, Expr.eval], ?_,
-    rfl, rfl, rfl, ?_, rfl⟩
+    rfl, rfl, rfl, ?_, rfl, rfl, rfl, rfl⟩
   · intro j lt
     simp only [E2, E1, set_get]
     rw [if_neg (by omega), if_neg (by omega), if_neg (by omega)]
@@ -644,7 +647,7 @@ theorem HeapCorr.storeBytesAll {h : Memory.Heap} {w : World.State} {hp : Heap} (
 hold. -/
 theorem HeapCorr.sleep {h : Memory.Heap} {w : World.State} {hp : Heap} (corr : HeapCorr h w hp)
     (milliseconds : Nat) : HeapCorr h (w.afterSleepMs milliseconds) hp :=
-  corr.retrace rfl rfl rfl corr.out corr.err corr.closed corr.input
+  corr.retrace rfl rfl rfl corr.out corr.err corr.closed corr.input corr.streams
 
 /-- The test of `sleep_ms_i32`: a negative count. -/
 theorem hostSleep_cond (E : Env) (slot : Nat) :
@@ -688,5 +691,185 @@ theorem hostSleep_exec {mp : Program} {d : Nat} {E : Env} {H : Heap} (slot : Nat
     simp [Expr.evalAll, Expr.eval, Syscall.run, small]
   refine .ifFalse ?_ (.seq (.sys ran) .assign)
   exact Decidable.byContradiction fun ne => absurd ((hostSleep_cond E slot).mp ne) (Int.not_lt.mpr nonneg)
+
+/-! ## The code of `monotonic_read` and `system_read` -/
+
+/-- The heap after the clock `clock`'s next reading, `reading`, stored at
+offset `p`. -/
+def clockHeap (H : Heap) (clock : BitVec 64) (p : Nat) (reading : Int × Nat) : Heap :=
+  { H.writeAll p (Lanius.X86.Machine.timespecLE reading) with io := H.io.afterReading clock }
+
+/-- Core's `struct timespec` bytes are the kernel's. -/
+theorem timespecBytes_eq (reading : Int × Nat) :
+    World.timespecBytes reading.1 reading.2 = Lanius.X86.Machine.timespecLE reading := rfl
+
+theorem hostClock_cond (E : Env) (slot : Nat) :
+    (Expr.compare .u64 .lt (.var (slot + 1)) (.lit 16)).eval E ≠ 0 ↔ (E (slot + 1)).toNat < 16 := by
+  simp [Expr.eval, Word.holds, CmpOp.holdsU, BitVec.ult]
+
+/-- A clock read into fewer than 16 bytes: -1 in `slot`, nothing else done. -/
+theorem hostClock_small {mp : Program} {d : Nat} {E : Env} {H : Heap} (clock : BitVec 64) (slot : Nat)
+    (small : (E (slot + 1)).toNat < 16) :
+    Exec mp d E H (hostClockCode clock slot) (.normal (E.set slot 4294967295) H) :=
+  .ifTrue ((hostClock_cond E slot).mpr small) .assign
+
+/-- A clock read into at least 16 bytes: `clock_gettime` stores the clock's
+next reading at the pointer, then 0 in `slot`. -/
+theorem hostClock_exec {mp : Program} {d : Nat} {E : Env} {H : Heap} {clock : BitVec 64} (slot : Nat)
+    (big : 16 ≤ (E (slot + 1)).toNat) (which : clock = 0 ∨ clock = 1) {reading : Int × Nat}
+    {rest : List (Int × Nat)} (reads : H.io.readings clock = reading :: rest) (inside : (E slot).toNat + 16 ≤ H.top) :
+    Exec mp d E H (hostClockCode clock slot)
+      (.normal ((E.set (slot + 2) 0).set slot 0) (clockHeap H clock (E slot).toNat reading)) := by
+  have ran : Syscall.run .clock (Expr.evalAll E [.lit clock, .var slot, .lit 0]) H =
+      some (0, clockHeap H clock (E slot).toNat reading) := by
+    show Syscall.run .clock [clock, E slot, 0] H = _
+    rw [Syscall.run, if_pos ⟨which, by rw [reads]; exact List.cons_ne_nil _ _, inside⟩, reads]
+    rfl
+  refine .ifFalse ?_ (.seq (.sys ran) .assign)
+  exact Decidable.byContradiction fun ne => absurd ((hostClock_cond E slot).mp ne) (by omega)
+
+theorem Io.afterReading_trace (io : Io) (clock : BitVec 64) : (io.afterReading clock).trace = io.trace := by
+  unfold Io.afterReading; split <;> rfl
+
+theorem Io.afterReading_input (io : Io) (clock : BitVec 64) : (io.afterReading clock).input = io.input := by
+  unfold Io.afterReading; split <;> rfl
+
+/-! ## The code of `fill_secure_bytes` -/
+
+/-- The heap after the next `n` secure bytes stored at offset `p`. -/
+def randomHeap (H : Heap) (p n : Nat) : Heap :=
+  { H.writeAll p (H.io.entropy.take n) with io := { H.io with entropy := H.io.entropy.drop n } }
+
+theorem randomHeap_zero (H : Heap) (p : Nat) : randomHeap H p 0 = H := by
+  cases H
+  simp [randomHeap, Heap.writeAll]
+
+/-- `c` secure bytes, then the next `n - c`, are the first `n`. -/
+theorem randomHeap_split (H : Heap) (p : Nat) {c n : Nat} (le : c ≤ n) (enough : n ≤ H.io.entropy.length) :
+    randomHeap (randomHeap H p c) (p + c) (n - c) = randomHeap H p n := by
+  simp only [randomHeap]
+  have full : (H.io.entropy.take c).length = c := by simp; omega
+  have whole : H.io.entropy.take c ++ (H.io.entropy.drop c).take (n - c) = H.io.entropy.take n := by
+    rw [← List.take_add, Nat.add_sub_cancel' le]
+  have bytes := Heap.writeAll_append H p (H.io.entropy.take c) ((H.io.entropy.drop c).take (n - c))
+  rw [full, whole] at bytes
+  rw [show ({ H.writeAll p (H.io.entropy.take c) with io := { H.io with entropy := H.io.entropy.drop c } } : Heap).writeAll
+      (p + c) ((H.io.entropy.drop c).take (n - c)) =
+    { (H.writeAll p (H.io.entropy.take c)).writeAll (p + c) ((H.io.entropy.drop c).take (n - c)) with
+      io := { H.io with entropy := H.io.entropy.drop c } } from rfl, bytes, List.drop_drop, Nat.add_sub_cancel' le]
+
+/-- One turn: a chunk of at most 256 bytes asked for, stored, and the pointer
+and count moved past it. -/
+def randomBody (slot : Nat) : Stmt :=
+  .seq (.ite (.compare .u64 .lt (.var (slot + 1)) (.lit 256)) (.assign (slot + 3) (.var (slot + 1)))
+      (.assign (slot + 3) (.lit 256)))
+    (.seq (.sys .random (slot + 4) [.var slot, .var (slot + 3), .lit 0])
+      (.seq (.assign slot (.binary .u64 .add (.var slot) (.var (slot + 3))))
+        (.assign (slot + 1) (.binary .u64 .sub (.var (slot + 1)) (.var (slot + 3))))))
+
+theorem hostRandomCode_eq (slot : Nat) :
+    hostRandomCode slot = .seq (.assign (slot + 2) (.var (slot + 1)))
+      (.seq (.loop (writeCond slot) (randomBody slot))
+        (.assign slot (.binary .s32 .add (.var (slot + 2)) (.lit 0)))) := rfl
+
+theorem eval_pick256 (E : Env) (slot : Nat) :
+    (if Word.holds .u64 .lt ((Expr.var (slot + 1)).eval E) ((Expr.lit 256).eval E) then (1 : BitVec 64) else 0)
+      ≠ 0 ↔ (E (slot + 1)).toNat < 256 := by
+  simp [Expr.eval, Word.holds, CmpOp.holdsU, BitVec.ult]
+
+/-- The loop stores the next `count` secure bytes from the pointer, in
+chunks, and keeps the slots below `slot` and `slot + 2`. -/
+theorem randomLoop {mp : Program} {d : Nat} (slot : Nat) :
+    ∀ (n : Nat) (E : Env) (H : Heap), (E (slot + 1)).toNat = n → n ≤ H.io.entropy.length →
+      (0 < n → (E slot).toNat + n ≤ H.limit) → H.limit < 2 ^ 62 →
+      ∃ E', Exec mp d E H (.loop (writeCond slot) (randomBody slot)) (.normal E' (randomHeap H (E slot).toNat n)) ∧
+        (∀ j, j < slot ∨ j = slot + 2 → E' j = E j) := by
+  intro n
+  induction n using Nat.strongRecOn with
+  | ind n ih =>
+    intro E H count enough inside small
+    rcases Nat.eq_zero_or_pos n with zero | pos
+    · subst zero
+      have done : (writeCond slot).eval E = 0 := by
+        have : E (slot + 1) = 0 := BitVec.eq_of_toNat_eq (by simpa using count)
+        simp [writeCond, Expr.eval, Word.holds, CmpOp.holdsU, this]
+      refine ⟨E, ?_, fun _ _ => rfl⟩
+      rw [randomHeap_zero]
+      exact .loopDone done
+    · have going : (writeCond slot).eval E ≠ 0 := by
+        have : E (slot + 1) ≠ 0 := fun h => by rw [h] at count; simp at count; omega
+        simpa [writeCond, Expr.eval, Word.holds, CmpOp.holdsU] using this
+      have p_lt := inside pos
+      obtain ⟨cbits, c, picked, cnat, cpos, cle, cmax⟩ : ∃ (cbits : BitVec 64) (c : Nat),
+          Exec mp d E H (.ite (.compare .u64 .lt (.var (slot + 1)) (.lit 256))
+            (.assign (slot + 3) (.var (slot + 1))) (.assign (slot + 3) (.lit 256)))
+            (.normal (E.set (slot + 3) cbits) H) ∧ cbits.toNat = c ∧ 0 < c ∧ c ≤ n ∧ c ≤ 256 := by
+        by_cases lt : (E (slot + 1)).toNat < 256
+        · exact ⟨E (slot + 1), n, .ifTrue ((eval_pick256 E slot).mpr lt) .assign, count, pos, Nat.le_refl _,
+            by omega⟩
+        · refine ⟨256, 256, .ifFalse ?_ .assign, by simp, by simp, by omega, Nat.le_refl _⟩
+          exact Classical.byContradiction fun h => lt ((eval_pick256 E slot).mp h)
+      let E1 := E.set (slot + 3) cbits
+      have e1p : E1 slot = E slot := by simp [E1, set_get]
+      have e1c : E1 (slot + 3) = cbits := by simp [E1, set_get]
+      let H1 := randomHeap H (E slot).toNat c
+      have ran : Syscall.run .random (Expr.evalAll E1 [.var slot, .var (slot + 3), .lit 0]) H =
+          some (E1 (slot + 3), H1) := by
+        show Syscall.run .random [E1 slot, E1 (slot + 3), 0] H = _
+        have top := H.limit_le_top
+        rw [Syscall.run, if_pos ⟨rfl, by rw [e1c, cnat]; exact cmax, by rw [e1c, cnat]; omega,
+          by rw [e1c, e1p, cnat]; omega⟩, e1p, e1c, cnat]
+        rfl
+      let E2 := E1.set (slot + 4) (E1 (slot + 3))
+      let E3 := E2.set slot ((Expr.binary .u64 .add (.var slot) (.var (slot + 3))).eval E2)
+      let E4 := E3.set (slot + 1) ((Expr.binary .u64 .sub (.var (slot + 1)) (.var (slot + 3))).eval E3)
+      have body : Exec mp d E H (randomBody slot) (.normal E4 H1) :=
+        .seq picked (.seq (.sys ran) (.seq .assign .assign))
+      have e4p : (E4 slot).toNat = (E slot).toNat + c := by
+        have : E4 slot = E slot + cbits := by simp [E4, E3, E2, E1, set_get, Expr.eval, Word.apply, BinOp.apply]
+        rw [this, BitVec.toNat_add, cnat, Nat.mod_eq_of_lt (by omega)]
+      have e4n : (E4 (slot + 1)).toNat = n - c := by
+        have : E4 (slot + 1) = E (slot + 1) - cbits := by
+          simp [E4, E3, E2, E1, set_get, Expr.eval, Word.apply, BinOp.apply]
+        rw [this, BitVec.toNat_sub_of_le (by rw [BitVec.le_def, cnat, count]; exact cle), cnat, count]
+      obtain ⟨E', loop, keep⟩ := ih (n - c) (by omega) E4 H1 e4n
+        (by simp only [H1, randomHeap, List.length_drop]; omega)
+        (fun _ => by rw [e4p]; show _ ≤ H.limit; omega) small
+      refine ⟨E', ?_, ?_⟩
+      · rw [e4p, randomHeap_split H (E slot).toNat cle enough] at loop
+        exact .loopNext going body loop
+      · intro j which'
+        rw [keep j which']
+        simp only [E4, E3, E2, E1, set_get]
+        rcases which' with lt | eq
+        · rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega)]
+        · subst eq
+          rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega)]
+
+/-- `fill_secure_bytes`: the next `count` secure bytes stored from the
+pointer, and the count as `i32` in `slot`. -/
+theorem hostRandom_exec {mp : Program} {d : Nat} {E : Env} {H : Heap} (slot : Nat)
+    (enough : (E (slot + 1)).toNat ≤ H.io.entropy.length)
+    (inside : 0 < (E (slot + 1)).toNat → (E slot).toNat + (E (slot + 1)).toNat ≤ H.limit)
+    (small : H.limit < 2 ^ 62) :
+    ∃ E', Exec mp d E H (hostRandomCode slot) (.normal E' (randomHeap H (E slot).toNat (E (slot + 1)).toNat)) ∧
+      (∀ j < slot, E' j = E j) ∧ E' slot = widen (low (E (slot + 1))) := by
+  let E0 := E.set (slot + 2) ((Expr.var (slot + 1)).eval E)
+  have e0p : E0 slot = E slot := by simp [E0, set_get]
+  have e0n : E0 (slot + 1) = E (slot + 1) := by simp [E0, set_get]
+  obtain ⟨E', loop, keep⟩ := randomLoop (mp := mp) (d := d) slot (E (slot + 1)).toNat E0 H
+    (by rw [e0n]) enough (by rw [e0p]; exact inside) small
+  rw [e0p] at loop
+  refine ⟨E'.set slot ((Expr.binary .s32 .add (.var (slot + 2)) (.lit 0)).eval E'), ?_, ?_, ?_⟩
+  · rw [hostRandomCode_eq]
+    exact .seq (.assign (env := E)) (.seq loop .assign)
+  · intro j lt
+    simp only [set_get]
+    rw [if_neg (by omega), keep j (.inl lt)]
+    simp only [E0, set_get]
+    rw [if_neg (by omega)]
+  · simp only [set_get, if_true, Expr.eval]
+    rw [keep (slot + 2) (.inr rfl)]
+    simp [E0, set_get, Word.apply, BinOp.apply, Expr.eval]
 
 end Lanius.Mini

@@ -14,7 +14,7 @@ public import Lanius.Mini.Frontend.P.pathRef
 public import Lanius.Mini.Frontend.P.typePathSpellings
 public import Lanius.Mini.Frontend.P.moduleOr
 public import Lanius.Mini.Frontend.P.methodsOf
-public import Lanius.Mini.Frontend.P.typeNamesIn
+public import Lanius.Mini.Frontend.P.collectedWith
 public import Lanius.Mini.Frontend.P.rootInsts
 public import Lanius.Mini.Frontend.P.findConst
 public import Lanius.Mini.Frontend.P.itemOf
@@ -52,6 +52,8 @@ public import Lanius.Mini.Frontend.P.isTryEnum
 public import Lanius.Mini.Frontend.P.sliceHead
 public import Lanius.Mini.Frontend.P.consBinder
 public import Lanius.Mini.Frontend.P.armsNaming
+public import Lanius.Mini.Frontend.P.isUnderscore
+public import Lanius.Mini.Frontend.P.namesSome
 public import Lanius.Mini.Frontend.P.armsOf
 public import Lanius.Mini.Frontend.P.hasConst
 public import Lanius.Mini.Frontend.P.callParts
@@ -156,6 +158,6 @@ operations become `Lists.name` with a spec theorem). `usize` is `Nat`, `i32` is
 prelude's `plus`/`minus`/`times` panic instead of wrapping, so they are
 `+`/`-`/`*` on `Nat` for every run that returns.
 
-The definitions are in 145 parts, `.P0` on, in source order, whose bodies
+The definitions are in 147 parts, `.P0` on, in source order, whose bodies
 are hidden from other modules: a proof that unfolds one imports its part with
 `import all`, so that it is rebuilt only when that part changes. -/

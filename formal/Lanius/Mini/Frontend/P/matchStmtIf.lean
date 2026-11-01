@@ -2,7 +2,6 @@ module
 
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Compiler.P.matchVariants
-import Lanius.Mini.Frontend.P.armsNaming
 import Lanius.Mini.Frontend.P.callParts
 import Lanius.Mini.Frontend.P.compoundOf
 import Lanius.Mini.Frontend.P.consBinder
@@ -12,6 +11,7 @@ import Lanius.Mini.Frontend.P.fnInstRet
 import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isEmptyUsize
+import Lanius.Mini.Frontend.P.namesSome
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.noTrees
 import Lanius.Mini.Frontend.P.repeatEff

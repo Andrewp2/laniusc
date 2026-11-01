@@ -15,6 +15,11 @@ they are, never edited.
    has (i32, bool, u8, u16, u32, u64, usize, isize, i8, i16, i64, char, f32,
    f64) or `core::option::Option` of one; others are counted by the type
    that stops them. A float goes in and out as its bit pattern (FLOATS).
+   A result may also be a struct or an enum, `core::result::Result` among
+   them, whose fields and payloads are such types or enums in turn (an
+   error enum with payloads, a struct holding one): the wrapper returns its
+   tag or one scalar leaf, through one helper per level. A type named by an
+   item import (`import core::result::Result;`) is the imported module's.
 2. Each testable target gets a program of its own: a first file, the module
    app::main, holding one wrapper `w` that takes scalar arguments (an
    Option as a flag and a payload), calls the target and returns an i32 (a
@@ -74,6 +79,9 @@ import oracle_difftest as oracle  # noqa: E402
 import run_cache  # noqa: E402
 
 STDLIB = 'stdlib'
+# Source roots besides the stdlib (--root): laniusc's --source-root.
+SOURCE_ROOTS = []
+SRC_DUMP = 'formal/.lake/build/bin/srcDump'
 HEAVY = 'target/claude-work/bin/heavy'
 SCALARS = ('i32', 'bool', 'u8', 'u16', 'u32', 'u64', 'usize', 'isize', 'i8', 'i16', 'i64', 'char', 'f32', 'f64')
 WIDE = ('u64', 'usize', 'isize', 'i64')
@@ -238,7 +246,7 @@ class Module:
                     variants = None
                     break
                 variants.append((vm.group(1), [norm(x) for x in split_top(vm.group(2))] if vm.group(2) else []))
-            if variants:
+            if variants is not None:
                 self.enums[em.group(1)] = ([g.strip() for g in em.group(2).split(',')] if em.group(2) else [], variants)
         self.fns = {}           # name -> fn (top level)
         self.trait_methods = []  # (trait text, impl type, fn)
@@ -282,9 +290,10 @@ class Module:
             i += 1
 
 
-def load_modules():
+def load_modules(top=None):
+    """The modules below top (default STDLIB, read when called), by name."""
     mods = {}
-    for root, _, names in os.walk(STDLIB):
+    for root, _, names in os.walk(top or STDLIB):
         for name in sorted(names):
             if name.endswith('.lani'):
                 m = Module(os.path.join(root, name))
@@ -331,6 +340,12 @@ def resolve(mods, module, t, subst):
     path, name = base.rsplit('::', 1) if '::' in base else (module, base)
     if path not in mods:
         return None
+    if '::' not in base and name not in mods[path].types and name not in mods[path].aliases:
+        # An item import `import p::Name;` names the type of module p.
+        home = next((i.rsplit('::', 1)[0] for i in mods[path].imports
+                     if i.endswith('::' + name) and i.rsplit('::', 1)[0] in mods), None)
+        if home:
+            path = home
     if name in mods[path].aliases and not targs:
         return resolve(mods, path, mods[path].aliases[name], {})
     if name in mods[path].structs and not targs:
@@ -381,8 +396,11 @@ def flat_enum(ty):
 
 
 def leaf_type(ty):
-    """A type a struct field or a variant payload may have."""
-    return bool(ty) and (ty in SCALARS or (ty.startswith('struct:') and bool(STRUCTS.get(ty))) or flat_enum(ty))
+    """A type a struct field or a variant payload may have: a scalar, a struct
+    or an enum (of such payloads), so a Result's error may be an enum with
+    payloads or a struct holding one."""
+    return bool(ty) and (ty in SCALARS or (ty.startswith('struct:') and bool(STRUCTS.get(ty))) or
+                         (ty.startswith('enum:') and bool(ENUMS.get(ty))))
 
 
 def variant_leaves(ps):
@@ -505,6 +523,8 @@ def results_of(ret):
     """The parts of a result the wrapper can return, one wrapper each."""
     if ret.startswith('struct:') or array_parts(ret):
         return [f'f{j}:{sub}' for j, (_, ty) in enumerate(leaves(ret)) for sub in results_of(ty)]
+    if ret.startswith('enum:') and not ENUMS[ret][1]:
+        return []  # an enum without variants has no value
     if flat_enum(ret):
         return ['tag']
     if ret.startswith('enum:'):
@@ -580,6 +600,45 @@ def scalar_lines(base, part):
     return lines
 
 
+def part_lines(base, part, helpers):
+    """The statements that return part of r, of type base, as an i32: those of
+    scalar_lines, or for a leaf of an enum's payload or of a struct inside a
+    payload, a match or a field read and a helper of its own (appended to
+    helpers) for the leaf's part."""
+    if base.startswith('enum:') and part != 'tag':
+        home, vs = ENUMS[base]
+        at, sub = part[1:].split(':', 1)
+        i, n = (int(x) for x in at.split('_'))
+        j, path, lty = variant_leaves(vs[i][1])[n]
+        name = f'oracle_part{len(helpers) + 1}'
+        helpers.append(None)
+        k = len(helpers) - 1
+        arms = [f'{variant_pattern(home, v, ps, j if q == i else None)} -> '
+                f'{f"{name}(x{path})" if q == i else "0"}' for q, (v, ps) in enumerate(vs)]
+        helpers[k] = ['', f'fn {name}(r: {type_text(lty)}) -> i32 {{'] + part_lines(lty, sub, helpers) + ['}']
+        return [f'    let t: i32 = match (r) {{ {", ".join(arms)} }};', '    return t;']
+    if (base.startswith('struct:') or array_parts(base)) and part.startswith('f'):
+        j, sub = part[1:].split(':', 1)
+        path, lty = leaves(base)[int(j)]
+        name = f'oracle_part{len(helpers) + 1}'
+        helpers.append(None)
+        k = len(helpers) - 1
+        helpers[k] = ['', f'fn {name}(r: {type_text(lty)}) -> i32 {{'] + part_lines(lty, sub, helpers) + ['}']
+        return [f'    let y: {type_text(lty)} = r{path};', f'    let t: i32 = {name}(y);', '    return t;']
+    return scalar_lines(base, part)
+
+
+def all_leaves(ty):
+    """Every scalar leaf type of a result type, through structs and enums."""
+    if ty.startswith('enum:'):
+        return [x for _, ps in ENUMS[ty][1] for p in ps for x in all_leaves(p)]
+    if ty.startswith('struct:') or array_parts(ty):
+        return [x for _, lty in leaves(ty) for x in all_leaves(lty)]
+    if ty.startswith('Option<'):
+        return [ty[7:-1]]
+    return [ty]
+
+
 def wrapper_text(mods, t, part):
     """The first file of a target's program, and the wrapper's scalar parameter types."""
     fn = t.fn
@@ -588,9 +647,7 @@ def wrapper_text(mods, t, part):
         t.ret.startswith('Option<') else {t.module}
     if t.ret not in FLOATS:
         # a float leaf of a struct, enum or Option result is read by to_bits
-        rleaves = [lty for _, ps in ENUMS[t.ret][1] for _, _, lty in variant_leaves(ps)] \
-            if t.ret.startswith('enum:') else [lty for _, lty in leaves(t.ret)] \
-            if t.ret.startswith('struct:') else [t.ret[7:-1]] if t.ret.startswith('Option<') else []
+        rleaves = all_leaves(t.ret)
         imports |= {f'core::{f}' for f in FLOATS if f in rleaves}
     if t.trait:
         imports.add(trait_home(mods, t).rsplit('::', 1)[0])
@@ -653,25 +710,29 @@ def wrapper_text(mods, t, part):
             arms = [f'{variant_pattern(home, v, ps, None)} -> {i}' for i, (v, ps) in enumerate(vs)]
             helper = []
         else:
-            at, part = part[1:].split(':')
+            at, part = part[1:].split(':', 1)
             i, n = (int(x) for x in at.split('_'))
             j, path, base = variant_leaves(vs[i][1])[n]
             arms = [f'{variant_pattern(home, v, ps, j if k == i else None)} -> '
                     f'{f"oracle_part(x{path})" if k == i else "0"}' for k, (v, ps) in enumerate(vs)]
-            helper = ['', f'fn oracle_part(r: {type_text(base)}) -> i32 {{'] + scalar_lines(base, part) + ['}']
+            more = []
+            helper = ['', f'fn oracle_part(r: {type_text(base)}) -> i32 {{'] + part_lines(base, part, more) + ['}']
+            helper += [line for h in more for line in h]
         lines.append(f'    let t: i32 = match (r) {{ {", ".join(arms)} }};')
         lines += ['    return t;', '}'] + helper
         return '\n'.join(lines) + '\n', wparams
     if part.startswith('f'):
         # One scalar leaf of a struct result, returned as a scalar result is.
-        j, part = part[1:].split(':')
+        j, part = part[1:].split(':', 1)
         path, base = leaves(t.ret)[int(j)]
         lines.append(f'    let r0: {ret} = {call};')
         lines.append(f'    let r: {type_text(base)} = r0{path};')
     else:
         lines.append(f'    let r: {ret} = {call};')
-    lines += scalar_lines(base, part)
+    more = []
+    lines += part_lines(base, part, more)
     lines.append('}')
+    lines += [line for h in more for line in h]
     if t.ret == 'Option<bool>' and part == 'val':
         lines += ['', 'fn oracle_flag(b: bool) -> i32 {', '    if (b) {', '        return 1;', '    }', '    return 0;', '}']
     return '\n'.join(lines) + '\n', wparams
@@ -688,8 +749,8 @@ def capture_tree(laniusc, lani_path, workdir, index):
     env = dict(os.environ, LANIUS_DEBUG_CAPTURE_PASS='parser/tree/parent_parallel', LANIUS_DEBUG_CAPTURE_DIR=cap,
                LANIUS_DEBUG_CAPTURE_INDEX=str(index))
     shutil.rmtree(cap, ignore_errors=True)
-    subprocess.run([HEAVY, '-t', '10', laniusc, '--stdlib-root', STDLIB, '-o', os.path.join(workdir, 'a.out'),
-                    lani_path], env=env, capture_output=True, text=True)
+    subprocess.run([HEAVY, '-t', '10', laniusc, '--stdlib-root', STDLIB, *source_root_args(SOURCE_ROOTS), '-o',
+                    os.path.join(workdir, 'a.out'), lani_path], env=env, capture_output=True, text=True)
     status = os.path.join(cap, 'post', '002_tree_count_status.bin')
     if not os.path.exists(status):
         return None
@@ -843,7 +904,11 @@ def parse_checked(laniusc, base, workdir):
 
 
 def build_run_all():
-    """Build runAll (a no-op when it is current)."""
+    """Build runAll (a no-op when it is current). Skipped when LANIUS_BUILT
+    is set (gate.py sets it after its own build), so that a step does not
+    wait on another build's hold of the Lean lock."""
+    if os.environ.get('LANIUS_BUILT'):
+        return
     env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
     with run_cache.lean_lock():
         subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
@@ -1168,6 +1233,51 @@ def causes(mods, t, find=None):
     return out
 
 
+# The gap a srcDump reason shows (its source snippet, by the first pattern that
+# matches), and which roadmap step owns it.
+GAPS = [
+    ('references (&T), F6', r'& (mut )?[\w\[]|&self'),
+    ('str and string literals, F6', r'\bstr\b|"'),
+    ('arrays, slices and raw views, F6', r'\[ [\w:<> ]+ (; [\w:]+ )?\]|i32_array_data_ptr|slice_from_raw_parts|string_data|\w \[ '),
+    ('host externs (process, time, random, files, syscall6), F8',
+     r'std::(process|time|random\w*|linux|fs|file\w*|env|socket|signal|command\w*|clock|resolve)::|extern'),
+    ('floats, F9', r'\bf(32|64)\b'),
+    ('the print builtin', r'(^|[^\w:.])print \('),
+    ('patterns other than V or V(names): nested, literal or module-qualified',
+     r'\b[a-z]\w*::\w+::[A-Z]\w* (\( [^)]*\) )?->|[A-Z]\w* \( [\w:]*[A-Z]\w* \( |[{,] (-?\d+|true|false) ->'),
+    ('a method or field of a call result', r'\) \. \w+'),
+    ('a bound that does not hold', r'a bound that does not hold'),
+]
+
+
+def gap(reason):
+    text = reason.replace(' : : ', '::')
+    if reason.startswith('compileSource: '):
+        return 'read, but compileSource fails: ' + re.sub(r'\d+', 'N', text.split(': ', 1)[1].split(':')[0])
+    for label, pattern in GAPS:
+        if re.search(pattern, text):
+            return label
+    if reason.startswith('the first file') or reason.startswith('the declarations'):
+        return 'declarations: ' + text.split(': ', 1)[-1][:80]
+    return 'other: ' + text.split(': ', 1)[-1][:100]
+
+
+def why(base_files, workdir, k):
+    """srcDump's reason the front end rejects the files."""
+    manifest = os.path.join(workdir, f'why{k}.txt')
+    open(manifest, 'w').write(f'p{k} ' + ' '.join(base_files) + '\n')
+    out = subprocess.run([SRC_DUMP, manifest, os.path.join(workdir, f'why{k}.out'), 'Why'], capture_output=True,
+                         text=True, timeout=60)
+    text = (out.stdout + out.stderr).strip().split('\n')[-1]
+    if out.returncode == 0:
+        # The front end reads them: runAll's diag says where compileSource fails.
+        open(manifest, 'w').write(f'diag p{k} ' + ' '.join(base_files) + '\n')
+        diag = subprocess.run([RUN_ALL, manifest], capture_output=True, text=True, timeout=60).stdout.split('\n')
+        fails = [line.split(' ', 1)[1] for line in diag if line and ' funcs ' not in line]
+        return 'compileSource: ' + (fails[0][:150] if fails else 'no diagnosis')
+    return re.sub(r'^the front end rejects the files: ', '', text)
+
+
 # ---------------------------------------------------------------- main
 
 def main():
@@ -1180,10 +1290,17 @@ def main():
     parser.add_argument('--chunk', type=int, default=40)
     parser.add_argument('--laniusc', default='target/release/laniusc')
     parser.add_argument('--shard', default='0/1', help='k/n: every nth target from the kth')
+    parser.add_argument('--root', help='a source root (extended) whose modules are the targets, by default all of them')
+    parser.add_argument('--why', action='store_true', help="srcDump's reason for each unread target, in unread.txt")
     args = parser.parse_args()
     rng = random.Random(args.seed)
     mods = load_modules()
     wanted = set(args.modules.split(',')) if args.modules else None
+    if args.root:
+        SOURCE_ROOTS.append(args.root)
+        extra = load_modules(args.root)
+        mods.update({n: m for n, m in extra.items() if n not in mods})
+        wanted = wanted or set(extra)
     all_targets = targets(mods, wanted)
     shard, shards = (int(x) for x in args.shard.split('/'))
     all_targets = all_targets[shard::shards]
@@ -1238,6 +1355,7 @@ def main():
         if not all(b in good for b in bases):
             p['status'] = 'noparse'
             continue
+        p['bases'] = bases
         manifest.append(f'compile p{k} ' + ' '.join(bases))
     open(os.path.join(workdir, 'manifest.txt'), 'w').write('\n'.join(manifest) + '\n')
     run = subprocess.run([RUN_ALL, os.path.join(workdir, 'manifest.txt')], capture_output=True, text=True)
@@ -1326,7 +1444,7 @@ def main():
     print(f'time: parse {parse_s:.0f} s, runAll {compile_s:.0f} s, native {native_s:.0f} s, '
           f'laniusc {time.time() - began - parse_s - compile_s - native_s:.0f} s',
           file=sys.stderr)
-    report(workdir, mods, all_targets, programs, disagreements, agreed, calls_total, traps)
+    report(workdir, mods, all_targets, programs, disagreements, agreed, calls_total, traps, args.why)
     return 1 if disagreements else 0
 
 
@@ -1379,11 +1497,18 @@ def harness_text(chunk, start, single=False):
     return '\n'.join(out) + '\n'
 
 
-def build(args, workdir, name, text):
-    """laniusc's binary of a harness (cached), or None and its error output."""
+def source_root_args(roots):
+    return [a for r in roots for a in ('--source-root', r)]
+
+
+def build(args, workdir, name, text, roots=None):
+    """laniusc's binary of a harness (cached), or None and its error output;
+    roots are source roots besides the stdlib (default SOURCE_ROOTS)."""
+    roots = SOURCE_ROOTS if roots is None else roots
     lani_path = os.path.join(workdir, name + '.lani')
     open(lani_path, 'w').write(text)
-    k = run_cache.key(run_cache.file_digest(args.laniusc), run_cache.tree_digest(STDLIB), text)
+    k = run_cache.key(run_cache.file_digest(args.laniusc), run_cache.tree_digest(STDLIB), text,
+                      *(run_cache.tree_digest(r) for r in roots))
     hit = run_cache.load_file('build', k)
     if hit is not None:
         return hit, ''
@@ -1391,7 +1516,8 @@ def build(args, workdir, name, text):
     if os.path.exists(exe):
         os.remove(exe)
     built = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
-                            HEAVY, '-t', '20', args.laniusc, '--stdlib-root', STDLIB, '-o', exe, lani_path],
+                            HEAVY, '-t', '20', args.laniusc, '--stdlib-root', STDLIB,
+                            *source_root_args(roots), '-o', exe, lani_path],
                            capture_output=True, text=True)
     if built.returncode != 0 or not os.path.exists(exe):
         return None, built.stdout[-2000:] + built.stderr[-2000:]
@@ -1459,7 +1585,7 @@ def category(cause):
     return c
 
 
-def report(workdir, mods, all_targets, programs, disagreements, agreed, calls_total, traps):
+def report(workdir, mods, all_targets, programs, disagreements, agreed, calls_total, traps, with_why=False):
     by_target = {}
     for p in programs:
         by_target.setdefault(p['target'].label, []).append(p)
@@ -1476,6 +1602,7 @@ def report(workdir, mods, all_targets, programs, disagreements, agreed, calls_to
         states.setdefault(s, []).append(t)
     unread_lines = []
     reason_counts = {}
+    gaps = {}
     for s in ('unread', 'tree', 'nolex', 'noparse', 'uncompiled'):
         for t in states.get(s, []):
             cs = causes(mods, t, compile_constructs if s == 'uncompiled' else constructs) \
@@ -1485,8 +1612,14 @@ def report(workdir, mods, all_targets, programs, disagreements, agreed, calls_to
                 key = ('compileSource: ' if s == 'uncompiled' else '') + kind
                 if s in ('unread', 'uncompiled'):
                     reason_counts[key] = reason_counts.get(key, 0) + 1
-            unread_lines.append(f'{t.label} [{s}]: ' + ('; '.join(dict.fromkeys(cs)) if cs else
-                                                        ('no known cause' if s in ('unread', 'uncompiled') else s)))
+            line = f'{t.label} [{s}]: ' + ('; '.join(dict.fromkeys(cs)) if cs else
+                                           ('no known cause' if s in ('unread', 'uncompiled') else s))
+            if with_why and s == 'unread':
+                p = by_target[t.label][0]
+                r = why(p['bases'], workdir, os.path.basename(p['base']))
+                gaps[gap(r)] = gaps.get(gap(r), 0) + 1
+                line += f'\n    srcDump: {r}'
+            unread_lines.append(line)
     modules = sorted({t.module for t in all_targets})
     per_module = []
     for m in modules:
@@ -1507,6 +1640,9 @@ def report(workdir, mods, all_targets, programs, disagreements, agreed, calls_to
         f'each checked to stop laniusc\'s binary too',
         f'{len(disagreements)} disagreements',
     ]
+    if with_why:
+        summary[-1:-1] = ['unread, by the gap srcDump names (GAPS):'] + \
+            [f'  {n} {r}' for r, n in sorted(gaps.items(), key=lambda x: (-x[1], x[0]))]
     for d in disagreements:
         print(d)
     open(os.path.join(workdir, 'summary.txt'), 'w').write('\n'.join(summary + disagreements) + '\n')

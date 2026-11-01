@@ -20,21 +20,21 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-abbrev Stmt_binary_words (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Binary} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 49 RepBinary) x0 v0 →
-    (RepOption 2 (RepList 0 RepI32)) (Lanius.Mini.binaryWords x0) w
-
-abbrev Stmt_byte_words (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List UInt8} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 66 RepU8) x0 v0 →
-    (RepList 0 RepI32) (Lanius.Mini.byteWords x0) w
-
 abbrev Stmt_compile_source (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcProgram} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcProgram x0 v0 →
     (RepOption 49 RepBinary) (Lanius.Mini.compileSource x0) w
 
-abbrev Stmt_compile_words (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcProgram} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 3 RepSrcProgram) x0 v0 →
-    (RepOption 2 (RepList 0 RepI32)) (Lanius.Mini.compileWords x0) w
+abbrev Stmt_pack_word (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : UInt8} {x1 : UInt8} {x2 : UInt8} {x3 : UInt8} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepU8 x0 v0 → RepU8 x1 v1 → RepU8 x2 v2 → RepU8 x3 v3 →
+    RepI32 (Lanius.Mini.packWord x0 x1 x2 x3) w
+
+abbrev Stmt_round_cons (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : BitVec 32} {x1 : Nat} {x2 : Lanius.Mini.Round} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepI32 x0 v0 → RepNat x1 v1 → RepRound x2 v2 →
+    RepRound (Lanius.Mini.roundCons x0 x1 x2) w
+
+abbrev Stmt_round_end (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    RepRound (Lanius.Mini.roundEnd) w
 
 abbrev Stmt_usize_words (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 25 RepNat) x0 v0 →

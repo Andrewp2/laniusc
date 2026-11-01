@@ -105,11 +105,11 @@ theorem proof_read_file_parents {prog : SrcProgram} {prims : Prims} {ix_read_fil
   simp only [src_read_file_parents] at h
   faithful [Lanius.Mini.readFileParents]
 
-theorem step_read_files {prog : SrcProgram} {prims : Prims} {ix_read_files ix_empty_of_mini_selfhost_FileInput ix_read_file ix_files_after ix_minus : Nat} (fn : prog.funcs[ix_read_files]? = some (src_read_files ix_read_files ix_empty_of_mini_selfhost_FileInput ix_read_file ix_files_after ix_minus)) (np : prims.isPrim ix_read_files = false)
+theorem step_read_files {prog : SrcProgram} {prims : Prims} {ix_read_files ix_minus ix_empty_of_mini_selfhost_FileInput ix_read_file ix_files_after : Nat} (fn : prog.funcs[ix_read_files]? = some (src_read_files ix_read_files ix_minus ix_empty_of_mini_selfhost_FileInput ix_read_file ix_files_after)) (np : prims.isPrim ix_read_files = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_empty_of_mini_selfhost_FileInput : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_FileInput prog prims ix_empty_of_mini_selfhost_FileInput n))
     (ext_read_file : Certified (∀ {n : Nat}, Stmt_read_file prog prims ix_read_file n))
-    (ext_files_after : Certified (∀ {n : Nat}, Stmt_files_after prog prims ix_files_after n))
-    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n)) {n : Nat}
+    (ext_files_after : Certified (∀ {n : Nat}, Stmt_files_after prog prims ix_files_after n)) {n : Nat}
     (ih_read_files : Certified (Stmt_read_files prog prims ix_read_files n)) :
     Stmt_read_files prog prims ix_read_files (n + 1) := by
   intro x0 x1 v0 v1 w h r0 r1

@@ -182,14 +182,35 @@ def layout(bases):
     return words
 
 
-def expected_words(status):
-    """compileSource's result as the driver writes it, or None when rejected."""
+def parse_image(status):
+    """compileSource's (entries, image) from runAll's status line, or None when rejected."""
     if not status.startswith('image'):
         return None
     entries_s, image_s = re.match(r'image \[(.*?)\] \[(.*?)\]$', status).groups()
     entries = [int(x) for x in entries_s.split(',')] if entries_s else []
     image = [int(x) for x in image_s.split(',')] if image_s else []
-    return [len(entries)] + entries + [len(image)] + image
+    return entries, image
+
+
+def pack(image):
+    """The image's bytes four to a word, little-endian, the last word padded
+    with zeros (`pack_rounds` in compiler.lani), as signed words."""
+    padded = bytes(image) + bytes(-len(image) % 4)
+    return [int.from_bytes(padded[i:i + 4], 'little', signed=True) for i in range(0, len(padded), 4)]
+
+
+def unpack(words, count):
+    """The first count bytes of packed words."""
+    return list(b''.join((w & 0xffffffff).to_bytes(4, 'little') for w in words)[:count])
+
+
+def expected_words(status):
+    """compileSource's result as the driver writes it, or None when rejected."""
+    parsed = parse_image(status)
+    if parsed is None:
+        return None
+    entries, image = parsed
+    return [len(entries)] + entries + [len(image)] + pack(image)
 
 
 def backed(path, size):
@@ -434,26 +455,25 @@ def main():
     self_status = status.get('self', 'missing')
     if not self_status.startswith('image'):
         raise SystemExit(f'the verified compiler does not compile itself: {self_status}')
-    self_words = expected_words(self_status)
-    entries = self_words[1:1 + self_words[0]]
-    image = self_words[2 + self_words[0]:]
+    entries, image = parse_image(self_status)
     print(f'self-built verified compiler: {len(image)} bytes, {len(entries)} functions')
     open(os.path.join(workdir, 'self.image'), 'wb').write(bytes(image))
 
     room = 1 << 24  # output words: the fixpoint image is about 11M bytes
 
-    # laniusc's build of the same driver.
+    # laniusc's build of the same driver, for the cases.
+    cases = any(not t.get('fixpoint') for t in tests)
     imports = 'import alloc::allocator;\nimport std::io_byte;\n'
     exe = os.path.join(workdir, 'laniusc_driver')
     text = DRIVER.replace('import mini::selfhost;\n', 'import mini::selfhost;\n' + imports, 1) + LANIUSC_MAIN
     open(exe + '.lani', 'w').write(text)
     if os.path.exists(exe):
         os.remove(exe)
-    build = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=8G', '-p', 'MemorySwapMax=0',
+    build = None if not cases else subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=8G', '-p', 'MemorySwapMax=0',
                             so.HEAVY, '-t', '30', args.laniusc, '--stdlib-root', 'stdlib', '--source-root',
                             source_root, '-o', exe, exe + '.lani'],
                            capture_output=True, text=True)
-    if build.returncode != 0 or not os.path.exists(exe):
+    if build is not None and (build.returncode != 0 or not os.path.exists(exe)):
         raise SystemExit('laniusc does not build the driver:\n' + build.stdout[-2000:] + build.stderr[-2000:])
     print(f'time: laniusc build {time.time() - began:.0f} s', file=sys.stderr, flush=True)
     began = time.time()
@@ -481,21 +501,16 @@ def main():
     for k, t in enumerate(tests):
         want = expected_words(status.get(f't{k}', 'missing'))
         got_self, seconds, rss = selfs[k]
-        words = read_words(os.path.join(batch, f'in{runnable.index(k)}.words'))
-        stdin = b''.join((x & 0xffffffff).to_bytes(4, 'little') for x in [len(words), room] + words)
         show = lambda v: v if not isinstance(v, list) else f'{len(v)} words'  # noqa: E731
         if t.get('fixpoint'):
-            image_words = want[2 + want[0]:] if isinstance(want, list) else None
+            image_words = (unpack(got_self[2 + got_self[0]:], got_self[1 + got_self[0]])
+                           if isinstance(got_self, list) else None)
             print(f'fixpoint: the self-built verified compiler on its own source: {show(got_self)} in {seconds:.0f} s '
                   f'(peak resident {rss >> 10} MiB), Lean {show(want)}; '
                   f'its own image: {image_words == list(image)}')
-            # laniusc's build on the same input. Its runtime allocator maps
-            # fresh pages for every allocation (one mmap each), and this run
-            # makes on the order of 10^8 allocations, so it cannot finish; it
-            # is run under a cap and reported, not counted.
-            got_laniusc = run_laniusc(exe, stdin, args.timeout, args.memory_max, 1 << args.stack_log2)
-            notes.append(f'{t["name"]}: laniusc {show(got_laniusc)} (not counted: laniusc\'s runtime maps a fresh '
-                         f'page for every allocation)')
+            # laniusc's build is not run on this input: its runtime allocator
+            # maps fresh pages for every allocation (one mmap each), and this
+            # run makes on the order of 10^8 allocations, so it cannot finish.
             if got_self == want and image_words == list(image):
                 agree += 1
             else:
@@ -503,6 +518,8 @@ def main():
                                 + ('' if not (isinstance(want, list) and isinstance(got_self, list)) or want == got_self
                                    else ' (self differs from Lean)'))
             continue
+        words = read_words(os.path.join(batch, f'in{runnable.index(k)}.words'))
+        stdin = b''.join((x & 0xffffffff).to_bytes(4, 'little') for x in [len(words), room] + words)
         got_laniusc = run_laniusc(exe, stdin, args.timeout, None, None)
         if got_self == want and got_laniusc == want:
             agree += 1

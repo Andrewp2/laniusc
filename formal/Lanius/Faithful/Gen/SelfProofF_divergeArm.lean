@@ -19,9 +19,9 @@ public import Lanius.Faithful.Gen.SelfStmtF_Inline_pLeTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pModTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pPathMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pStructFieldsMore
-public import Lanius.Faithful.Gen.SelfStmtF_armsNaming
 public import Lanius.Faithful.Gen.SelfStmtF_armsOf
 public import Lanius.Faithful.Gen.SelfStmtF_callParts
+public import Lanius.Faithful.Gen.SelfStmtF_collectedWith
 public import Lanius.Faithful.Gen.SelfStmtF_consBinder
 public import Lanius.Faithful.Gen.SelfStmtF_consBound
 public import Lanius.Faithful.Gen.SelfStmtF_consTreeTail
@@ -37,6 +37,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_isPathCall
 public import Lanius.Faithful.Gen.SelfStmtF_itemOf
 public import Lanius.Faithful.Gen.SelfStmtF_joinInsts
 public import Lanius.Faithful.Gen.SelfStmtF_matchTysOrNone
+public import Lanius.Faithful.Gen.SelfStmtF_namesSome
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_noTrees
 public import Lanius.Faithful.Gen.SelfStmtF_paramGoals
@@ -49,7 +50,6 @@ public import Lanius.Faithful.Gen.SelfStmtF_rootInsts
 public import Lanius.Faithful.Gen.SelfStmtF_sliceHead
 public import Lanius.Faithful.Gen.SelfStmtF_textSelf
 public import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
-public import Lanius.Faithful.Gen.SelfStmtF_typeNamesIn
 public import Lanius.Faithful.Gen.SelfStmtF_typePathSpellings
 public import Lanius.Faithful.Gen.SelfStmtF_variantIn
 public import Lanius.Faithful.Gen.SelfStmtF_wideOf

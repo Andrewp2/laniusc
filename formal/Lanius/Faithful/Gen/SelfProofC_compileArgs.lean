@@ -139,9 +139,9 @@ theorem step_compile_args {prog : SrcProgram} {prims : Prims} {ix_compile_args i
   simp only [src_compile_args] at h
   faithful [Lanius.Mini.compileArgs]
 
-theorem proof_compile_func {prog : SrcProgram} {prims : Prims} {ix_compile_func ix_plus ix_minus ix_Stmt_temps ix_Stmt_within ix_frame_limit ix_cons_of_mini_selfhost_Instr ix_zero_locals ix_concat_of_mini_selfhost_Instr ix_compile_stmt ix_code_size : Nat} (fn : prog.funcs[ix_compile_func]? = some (src_compile_func ix_plus ix_minus ix_Stmt_temps ix_Stmt_within ix_frame_limit ix_cons_of_mini_selfhost_Instr ix_zero_locals ix_concat_of_mini_selfhost_Instr ix_compile_stmt ix_code_size)) (np : prims.isPrim ix_compile_func = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+theorem proof_compile_func {prog : SrcProgram} {prims : Prims} {ix_compile_func ix_minus ix_plus ix_Stmt_temps ix_Stmt_within ix_frame_limit ix_cons_of_mini_selfhost_Instr ix_zero_locals ix_concat_of_mini_selfhost_Instr ix_compile_stmt ix_code_size : Nat} (fn : prog.funcs[ix_compile_func]? = some (src_compile_func ix_minus ix_plus ix_Stmt_temps ix_Stmt_within ix_frame_limit ix_cons_of_mini_selfhost_Instr ix_zero_locals ix_concat_of_mini_selfhost_Instr ix_compile_stmt ix_code_size)) (np : prims.isPrim ix_compile_func = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_Stmt_temps : Certified (∀ {n : Nat}, Stmt_Stmt_temps prog prims ix_Stmt_temps n))
     (ext_Stmt_within : Certified (∀ {n : Nat}, Stmt_Stmt_within prog prims ix_Stmt_within n))
     (ext_frame_limit : Certified (∀ {n : Nat}, Stmt_frame_limit prog prims ix_frame_limit n))
@@ -186,9 +186,9 @@ theorem proof_frame_limit {prog : SrcProgram} {prims : Prims} {ix_frame_limit : 
   simp only [src_frame_limit] at h
   faithful [Lanius.Mini.frameLimit]
 
-theorem step_zero_locals {prog : SrcProgram} {prims : Prims} {ix_zero_locals ix_plus ix_minus ix_cons_of_mini_selfhost_Instr ix_empty_of_mini_selfhost_Instr : Nat} (fn : prog.funcs[ix_zero_locals]? = some (src_zero_locals ix_plus ix_minus ix_cons_of_mini_selfhost_Instr ix_zero_locals ix_empty_of_mini_selfhost_Instr)) (np : prims.isPrim ix_zero_locals = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+theorem step_zero_locals {prog : SrcProgram} {prims : Prims} {ix_zero_locals ix_minus ix_plus ix_cons_of_mini_selfhost_Instr ix_empty_of_mini_selfhost_Instr : Nat} (fn : prog.funcs[ix_zero_locals]? = some (src_zero_locals ix_minus ix_plus ix_cons_of_mini_selfhost_Instr ix_zero_locals ix_empty_of_mini_selfhost_Instr)) (np : prims.isPrim ix_zero_locals = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_cons_of_mini_selfhost_Instr : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_Instr prog prims ix_cons_of_mini_selfhost_Instr n))
     (ext_empty_of_mini_selfhost_Instr : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Instr prog prims ix_empty_of_mini_selfhost_Instr n)) {n : Nat}
     (ih_zero_locals : Certified (Stmt_zero_locals prog prims ix_zero_locals n)) :

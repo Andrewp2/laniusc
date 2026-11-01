@@ -13,17 +13,17 @@ open Lanius.Mini
 
 noncomputable section
 
-/-- mini::selfhost::binary_words -/
-def src_binary_words (ix_cons_of_i32 : Nat) (ix_concat_of_i32 : Nat) (ix_length_of_usize : Nat) (ix_usize_words : Nat) (ix_length_of_u8 : Nat) (ix_byte_words : Nat) : SrcFunc := { params := [{ id := 13, ty := ty69 }], ret := ty3, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 13)) ty69 ty3 [[151], []] [SrcEff.eVariant ty3 0 [SrcEff.eCall ix_concat_of_i32 [SrcEff.eCall ix_cons_of_i32 [SrcEff.eCast (SrcType.i32) (SrcEff.eCall ix_length_of_usize [SrcEff.ePure (SrcExpr.field 151 1)]), SrcEff.eCall ix_usize_words [SrcEff.ePure (SrcExpr.field 151 1)]], SrcEff.eCall ix_cons_of_i32 [SrcEff.eCast (SrcType.i32) (SrcEff.eCall ix_length_of_u8 [SrcEff.ePure (SrcExpr.field 151 2)]), SrcEff.eCall ix_byte_words [SrcEff.ePure (SrcExpr.field 151 2)]]]], SrcEff.eVariant ty3 1 []]) }
-
-/-- mini::selfhost::byte_words -/
-def src_byte_words (ix_empty_of_i32 : Nat) (ix_cons_of_i32 : Nat) (ix_byte_words : Nat) (ix_unbox_of_mini_selfhost_List_u8 : Nat) : SrcFunc := { params := [{ id := 11, ty := ty67 }], ret := ty1, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 11)) ty67 ty1 [[], [101, 104]] [SrcEff.eCall ix_empty_of_i32 [], SrcEff.eCall ix_cons_of_i32 [SrcEff.ePure (SrcExpr.cast (SrcType.i32) (SrcExpr.local 101)), SrcEff.eCall ix_byte_words [SrcEff.eCall ix_unbox_of_mini_selfhost_List_u8 [SrcEff.ePure (SrcExpr.local 104)]]]]) }
-
 /-- mini::selfhost::compile_source -/
 def src_compile_source (ix_funcs_return : Nat) (ix_compile_declared : Nat) (ix_declare_program : Nat) : SrcFunc := { params := [{ id := 15, ty := ty34 }], ret := ty69, body := SrcStmt.then (SrcStmt.ifEval (SrcEff.eCall ix_funcs_return [SrcEff.ePure (SrcExpr.field 15 0)]) (SrcStmt.returnEval (SrcEff.eCall ix_compile_declared [SrcEff.eCall ix_declare_program [SrcEff.ePure (SrcExpr.local 15)], SrcEff.ePure (SrcExpr.local 15)])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty69 1 [])) }
 
-/-- mini::selfhost::compile_words -/
-def src_compile_words (ix_binary_words : Nat) (ix_compile_source : Nat) : SrcFunc := { params := [{ id := 14, ty := ty35 }], ret := ty3, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 14)) ty35 ty3 [[158], []] [SrcEff.eCall ix_binary_words [SrcEff.eCall ix_compile_source [SrcEff.ePure (SrcExpr.local 158)]], SrcEff.eVariant ty3 1 []]) }
+/-- mini::selfhost::pack_word -/
+def src_pack_word : SrcFunc := { params := [{ id := 10, ty := SrcType.uint (UintTy.uint8) }, { id := 17, ty := SrcType.uint (UintTy.uint8) }, { id := 24, ty := SrcType.uint (UintTy.uint8) }, { id := 31, ty := SrcType.uint (UintTy.uint8) }], ret := SrcType.i32, body := SrcStmt.return (SrcExpr.apply (SrcOp.plus) (SrcExpr.apply (SrcOp.plus) (SrcExpr.apply (SrcOp.plus) (SrcExpr.cast (SrcType.i32) (SrcExpr.local 10)) (SrcExpr.apply (SrcOp.times) (SrcExpr.cast (SrcType.i32) (SrcExpr.local 17)) (SrcExpr.int 0x00000100#32))) (SrcExpr.apply (SrcOp.times) (SrcExpr.cast (SrcType.i32) (SrcExpr.local 24)) (SrcExpr.int 0x00010000#32))) (SrcExpr.apply (SrcOp.times) (SrcExpr.cast (SrcType.i32) (SrcExpr.local 31)) (SrcExpr.int 0x01000000#32))) }
+
+/-- mini::selfhost::round_cons -/
+def src_round_cons (ix_cons_of_i32 : Nat) (ix_plus : Nat) : SrcFunc := { params := [{ id := 11, ty := SrcType.i32 }, { id := 22, ty := SrcType.uint (UintTy.usize) }, { id := 32, ty := ty70 }], ret := ty70, body := SrcStmt.returnEval (SrcEff.eStruct ty70 [SrcEff.eCall ix_cons_of_i32 [SrcEff.ePure (SrcExpr.local 11), SrcEff.ePure (SrcExpr.field 32 0)], SrcEff.eCall ix_plus [SrcEff.ePure (SrcExpr.field 32 1), SrcEff.ePure (SrcExpr.local 22)], SrcEff.ePure (SrcExpr.field 32 2)]) }
+
+/-- mini::selfhost::round_end -/
+def src_round_end (ix_empty_of_i32 : Nat) (ix_empty_of_u8 : Nat) : SrcFunc := { params := [], ret := ty70, body := SrcStmt.returnEval (SrcEff.eStruct ty70 [SrcEff.eCall ix_empty_of_i32 [], SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000000#64), SrcEff.eCall ix_empty_of_u8 []]) }
 
 /-- mini::selfhost::usize_words -/
 def src_usize_words (ix_empty_of_i32 : Nat) (ix_cons_of_i32 : Nat) (ix_usize_words : Nat) (ix_unbox_of_mini_selfhost_List_usize : Nat) : SrcFunc := { params := [{ id := 12, ty := ty20 }], ret := ty1, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 12)) ty20 ty1 [[], [105, 108]] [SrcEff.eCall ix_empty_of_i32 [], SrcEff.eCall ix_cons_of_i32 [SrcEff.ePure (SrcExpr.cast (SrcType.i32) (SrcExpr.local 105)), SrcEff.eCall ix_usize_words [SrcEff.eCall ix_unbox_of_mini_selfhost_List_usize [SrcEff.ePure (SrcExpr.local 108)]]]]) }

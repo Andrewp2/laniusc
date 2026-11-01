@@ -827,9 +827,9 @@ theorem matchStmtParts_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} 
                 exact .mk (effOf_sound hx) (effTy_sound he) hn ht en (payloadTys_sound hp) hr hh
           · cases hh
 
-/-- The arms in variant order: as many as variants, each a written arm. -/
+/-- The arms in variant order (`ArmsOrder`). -/
 def MatchArmsOrder (h : MatchStmt) (m : CTree) (os : List CTree) : Prop :=
-  ∃ arms, Items (kid m 5) arms ∧ arms.length = h.variants.length ∧ ∀ a ∈ os, a ∈ arms
+  ∃ arms, Items (kid m 5) arms ∧ ArmsOrder h.variants arms os
 
 theorem matchStmtArms_sound {fuel : Nat} {h : MatchStmt} {m : CTree} {os : List CTree}
     (hh : matchStmtArms fuel h m = some os) : MatchArmsOrder h m os := by
@@ -839,11 +839,7 @@ theorem matchStmtArms_sound {fuel : Nat} {h : MatchStmt} {m : CTree} {os : List 
   | some arms =>
     rw [hi] at hh
     simp only at hh
-    unfold armsInOrder at hh
-    split at hh
-    · rename_i len
-      exact ⟨arms, listItems_sound hi, by simpa using len, armsByVariant_mem hh⟩
-    · cases hh
+    exact ⟨arms, listItems_sound hi, armsInOrder_sound hh⟩
 
 /-- An arm's pattern names variant v: `V` binds nothing, `V(b, ...)` its
 payload's plain name binders. -/

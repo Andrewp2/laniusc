@@ -202,6 +202,8 @@ theorem Kernel.agree (same : DataEq s t) (ka : Kernel s a) (kb : Kernel t b) :
       simp only [State.syscalled, if_neg ne]
     | read number' fd' count' r11' => simp only at number number'; rw [number] at number'; cases number'
     | poll number' _ _ _ r11' => simp only at number number'; rw [number] at number'; cases number'
+    | clock number' which' reading' next' r11' => simp only at number number'; rw [number] at number'; cases number'
+    | getrandom number' _ _ _ r11' => simp only at number number'; rw [number] at number'; cases number'
   | read number fd count r11 =>
     cases kb with
     | write number' fd' count' r11' => simp only at number number'; rw [number] at number'; cases number'
@@ -209,11 +211,35 @@ theorem Kernel.agree (same : DataEq s t) (ka : Kernel s a) (kb : Kernel t b) :
       refine ⟨fun r ne => ?_, rfl, rfl, rfl, rfl⟩
       simp only [State.syscalled, if_neg ne]
     | poll number' _ _ _ r11' => simp only at number number'; rw [number] at number'; cases number'
+    | clock number' which' reading' next' r11' => simp only at number number'; rw [number] at number'; cases number'
+    | getrandom number' _ _ _ r11' => simp only at number number'; rw [number] at number'; cases number'
   | poll number _ _ _ r11 =>
     cases kb with
     | write number' fd' count' r11' => simp only at number number'; rw [number] at number'; cases number'
     | read number' fd' count' r11' => simp only at number number'; rw [number] at number'; cases number'
     | poll number' _ _ _ r11' =>
+      refine ⟨fun r ne => ?_, rfl, rfl, rfl, rfl⟩
+      simp only [State.syscalled, if_neg ne]
+    | clock number' which' reading' next' r11' => simp only at number number'; rw [number] at number'; cases number'
+    | getrandom number' _ _ _ r11' => simp only at number number'; rw [number] at number'; cases number'
+  | clock number which reading next r11 =>
+    cases kb with
+    | write number' fd' count' r11' => simp only at number number'; rw [number] at number'; cases number'
+    | read number' fd' count' r11' => simp only at number number'; rw [number] at number'; cases number'
+    | poll number' _ _ _ r11' => simp only at number number'; rw [number] at number'; cases number'
+    | clock number' which' reading' next' r11' =>
+      rw [next] at next'
+      cases next'
+      refine ⟨fun r ne => ?_, rfl, rfl, rfl, rfl⟩
+      simp only [State.syscalled, if_neg ne]
+    | getrandom number' _ _ _ r11' => simp only at number number'; rw [number] at number'; cases number'
+  | getrandom number _ _ _ r11 =>
+    cases kb with
+    | write number' fd' count' r11' => simp only at number number'; rw [number] at number'; cases number'
+    | read number' fd' count' r11' => simp only at number number'; rw [number] at number'; cases number'
+    | poll number' _ _ _ r11' => simp only at number number'; rw [number] at number'; cases number'
+    | clock number' which' reading' next' r11' => simp only at number number'; rw [number] at number'; cases number'
+    | getrandom number' _ _ _ r11' =>
       refine ⟨fun r ne => ?_, rfl, rfl, rfl, rfl⟩
       simp only [State.syscalled, if_neg ne]
 

@@ -94,11 +94,13 @@ inductive Expr where
   | fp : FOp → Expr → Expr → Expr
   deriving DecidableEq, Repr
 
-/-- A Linux system call (roadmap F8). Write: write(fd, the heap address, count), arguments in that order; Read: read(fd, the heap address, count); Poll: poll(fds, nfds, timeout), the second argument not made an address. -/
+/-- A Linux system call (roadmap F8). Write: write(fd, the heap address, count), arguments in that order; Read: read(fd, the heap address, count); Poll: poll(fds, nfds, timeout), the second argument not made an address; Clock: clock_gettime(clock, the heap address, unused); Random: getrandom(the heap address, count, flags), the first argument made an address. -/
 inductive Syscall where
   | write : Syscall
   | read : Syscall
   | poll : Syscall
+  | clock : Syscall
+  | random : Syscall
   deriving DecidableEq, Repr
 
 inductive Stmt where
@@ -491,6 +493,13 @@ structure SrcDecls where
 structure Fact where
   slot : Nat
   value : Expr
+  deriving DecidableEq, Repr
+
+/-- Packed words, the number of bytes they hold, and the bytes after them. -/
+structure Round where
+  words : List (BitVec 32)
+  count : Nat
+  rest : List UInt8
   deriving DecidableEq, Repr
 
 end Lanius.Mini

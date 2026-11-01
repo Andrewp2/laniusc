@@ -276,6 +276,76 @@ def markFunc (f : SrcFunc) : StateM Table SrcFunc := do
   return { params := ← f.params.mapM fun p => return { p with ty := ← mark p.ty },
            ret := ← mark f.ret, body := ← markStmt f.body }
 
+/-- A subtree's source: its tokens' texts, spaced, cut at 160 characters. -/
+partial def leaves : CTree → List Token
+  | .leaf t => [t]
+  | .node _ kids => kids.flatMap leaves
+
+def snippet (t : CTree) : String :=
+  let s := " ".intercalate ((leaves t).map fun k => text k.text)
+  if s.length > 160 then "`" ++ String.ofList (s.toList.take 160) ++ " ..`" else "`" ++ s ++ "`"
+
+/-- The local a let statement binds, when its type is read (as `letFirst` binds it). -/
+def letLocal (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) : Option Local :=
+  let tok := kidToken s 1
+  let mk (t : Ty) : Local := { name := tok.text, id := tok.start - env.base, ty := t }
+  if nodeProd (kid s 2) == Inline.pLetType then (tyOf fuel env (kid (kid s 2) 1)).map mk
+  else (untypedHead fuel env scope (kid (kid s 3) 1)).map fun u => mk u.ty
+
+mutual
+/-- The first statement of a list the front end cannot read, innermost first:
+a statement inside an if, while or block statement that fails on its own is
+named rather than the statement around it. -/
+partial def whyStmts (fuel : Nat) (env : FrontEnv) (scope : List Local) : List CTree → Option String
+  | [] => none
+  | s :: rest =>
+    if nodeProd s == Inline.pLetStmt then
+      match letFirst fuel env scope s [] with
+      | none => some s!"let {snippet s}"
+      | some _ => match letLocal fuel env scope s with
+        | some l => whyStmts fuel env (l :: scope) rest
+        | none => none
+    else
+      match stmtOf fuel env scope s with
+      | none => some ((whyNested fuel env scope s).getD s!"statement {snippet s}")
+      | some _ => whyStmts fuel env scope rest
+
+partial def whyBlock (fuel : Nat) (env : FrontEnv) (scope : List Local) (list : CTree) : Option String :=
+  (listItems fuel list).bind (whyStmts fuel env scope)
+
+partial def whyNested (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) : Option String :=
+  let p := nodeProd s
+  if p == Inline.pIfStmt then
+    (whyBlock fuel env scope (kid (kid s 4) 1)).orElse fun _ =>
+      if nodeProd (kid s 5) == Inline.pElseStmt then whyBlock fuel env scope (kid (kid (kid s 5) 1) 1) else none
+  else if p == Inline.pWhileStmt then whyBlock fuel env scope (kid (kid s 4) 1)
+  else if p == Inline.pBlockStmt then whyBlock fuel env scope (kid (kid s 0) 1)
+  else none
+end
+
+/-- Why a function instance is not read: the part of `readFn` that fails. -/
+def whyFn (fuel : Nat) (decls : Decls) (fd : FnDecl) (inst : Inst) : String :=
+  if nodeProd fd.tree == Inline.pExternFn then "an extern it does not read" else
+  let args := if diverges fd inst then initTys inst.args else inst.args
+  let names := fd.implParams ++ fd.params
+  let f := fd.tree
+  let tenv : FrontEnv := { decls := decls, home := fd.home, names := names, subst := args,
+                           globals := moduleGlobals decls fd.home, ret := none, base := (kidToken f 1).start }
+  let rt := resultOf fuel tenv (kid f 6)
+  let env := { tenv with ret := retExpected rt }
+  if names.length != args.length then "its type arguments" else
+  if !fnBoundsOk fuel decls fd tenv then "a bound that does not hold" else
+  match listItems fuel (kid f 4) with
+  | none => "its parameter list"
+  | some items => match paramsOf fuel env fd [] items with
+    | none => s!"its parameters {snippet (kid f 4)}"
+    | some ps => match rt with
+      | none => s!"its result type {snippet (kid f 6)}"
+      | some _ => match funcParams fuel env (some ps) rt (kid f 8) (kid (kid f 9) 1) with
+        | some _ => "a write to its `&self` local"
+        | none => ((listItems fuel (kid (kid f 9) 1)).bind (whyStmts fuel env ps.scope)).getD
+            "its contracts, or its body as a whole"
+
 /-- Why `describe` rejects the files: the step that fails, or the first
 function instance the front end cannot read. -/
 def diagnose (files : List FileInput) : String := Id.run do
@@ -284,15 +354,16 @@ def diagnose (files : List FileInput) : String := Id.run do
   match roots with
   | [] => return "no files"
   | first :: rest =>
-    let some f := fileDecls fuel first | return "the first file's declarations"
+    -- A file's items that do not read on their own, with their source.
+    let badItems (r : CTree) : String :=
+      let items := (listItems fuel (kid r 0)).getD []
+      let home := (modulePath fuel items).getD []
+      let fails := items.filter fun p => (itemDecls fuel home p).isNone
+      "; ".intercalate (fails.map fun p => snippet (itemBody p))
+    let some f := fileDecls fuel first | return s!"the first file's declarations: {badItems first}"
     let some c := collectFiles fuel rest ({ decls := f.decls, modules := [f.home] } : Collected)
       | let bad := rest.zipIdx.filter fun (r, _) => (fileDecls fuel r).isNone
-        let why := bad.map fun (r, i) =>
-          let items := (listItems fuel (kid r 0)).getD []
-          let home := (modulePath fuel items).getD []
-          let fails := (items.zipIdx.filter fun (p : CTree × Nat) => (itemDecls fuel home p.1).isNone).map
-            fun (p : CTree × Nat) => (p.2, nodeProd (itemBody p.1), (kidToken (itemBody p.1) 0).start)
-          s!"file {i + 1}: items {fails} (item, production, byte)"
+        let why := bad.map fun (r, i) => s!"file {i + 1}: {badItems r}"
         return s!"the declarations of {why}"
     let name (inst : Inst) := match c.decls.fns[inst.decl]? with
       | none => "a projection"
@@ -305,7 +376,11 @@ def diagnose (files : List FileInput) : String := Id.run do
       | none => break
       | some inst =>
         match readInst fuel c.decls inst with
-        | none => return s!"the front end cannot read {name inst}"
+        | none =>
+          let why := match c.decls.fns[inst.decl]? with
+            | none => "a projection"
+            | some fd => whyFn fuel c.decls fd inst
+          return s!"the front end cannot read {name inst}: {why}"
         | some mf =>
           table := addInsts table (Lanius.Mini.stmtCalls mf.body)
           funcs := funcs ++ [mf]

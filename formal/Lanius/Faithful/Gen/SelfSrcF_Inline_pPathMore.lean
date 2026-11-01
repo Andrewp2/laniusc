@@ -28,6 +28,9 @@ def src_p_pattern_ident : SrcFunc := { params := [], ret := SrcType.uint (UintTy
 /-- mini::selfhost::p_pattern_plain -/
 def src_p_pattern_plain : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x00000000000000c7#64) }
 
+/-- mini::selfhost::p_pattern_tuple -/
+def src_p_pattern_tuple : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x00000000000000c8#64) }
+
 /-- mini::selfhost::p_patterns_after_comma_more -/
 def src_p_patterns_after_comma_more : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x00000000000000cd#64) }
 
