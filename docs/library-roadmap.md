@@ -141,6 +141,9 @@ deterministic mode for both (sorted unique keys, definite lengths, shortest
 exact floats), with u64-offset errors and depth/item/string/input limits. It
 agrees with a hand-typed Appendix A table and an independent Python
 implementation on every case, and drives a cbor-to-json sample.
+[MessagePack](extended-msgpack.md) has the same streaming decoder/writer shape,
+with canonical-header and timestamp checks, checked against the Python
+`msgpack` package.
 CBOR application schemas and tag-specific semantics remain separate work.
 The [foundation compilation measurements](library-foundation-performance.md)
 record executable import workloads for arenas, network values, CBOR, floating
