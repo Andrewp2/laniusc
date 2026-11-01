@@ -202,14 +202,24 @@ pub fn find(bytes: [u8], from: i32, to: i32, needle: [u8], needle_start: i32, ne
     if (needle_length == 0) { return from; }
     if (needle_length > to - from) { return -1; }
     if (needle_length == 1) { return find_byte(bytes, from, to, needle[needle_start]); }
-    // Rarest offset first, then the rarest other offset.
-    let rare: i32 = 0; let other: i32 = -1; let k: i32 = 1;
+    // Rarest offset first. The second probe is the rarest offset whose byte
+    // differs from the first probe's byte (memchr's packed pair): probing two
+    // equal bytes, like the "::" in "core::result::Result", filters nothing
+    // when the haystack is full of that byte pair. A needle of one repeated
+    // byte falls back to its last offset.
+    let rare: i32 = 0; let k: i32 = 1;
     while (k < needle_length) {
-        let r: i32 = rank(needle[needle_start + k]);
-        if (r < rank(needle[needle_start + rare])) { other = rare; rare = k; }
-        else { if (other < 0 || r < rank(needle[needle_start + other])) { other = k; } }
+        if (rank(needle[needle_start + k]) < rank(needle[needle_start + rare])) { rare = k; }
         k += 1;
     }
+    let other: i32 = -1; k = 0;
+    while (k < needle_length) {
+        if (needle[needle_start + k] != needle[needle_start + rare]) {
+            if (other < 0 || rank(needle[needle_start + k]) < rank(needle[needle_start + other])) { other = k; }
+        }
+        k += 1;
+    }
+    if (other < 0) { other = needle_length - 1; if (other == rare) { other = 0; } }
     let first: u8 = needle[needle_start + rare]; let second: u8 = needle[needle_start + other];
     let last: i32 = to - needle_length;
     let scan: i32 = from + rare; let compares: i32 = 0;
