@@ -46,6 +46,10 @@ A null entry and a stack below the minimum are `Error::InvalidInput`.
   synchronized. Allocate before spawning, and have threads work in memory
   that already exists, such as a `std::sync::Region`, a `std::uring`
   buffer or a Vec.
+- **An exit or a trap on any thread ends the process.** The runtime exits
+  with `exit_group` (syscall 231): `std::process::exit`, a failed bounds
+  check (status 101) and allocation failure all end every thread, as they
+  would in a one-thread program.
 - **Generic code goes through a wrapper.** An entry must be non-generic, so
   generic work is reached through a one-line wrapper that names the type:
   `fn crew(arg: ptr) -> ptr { return std::par::crew_entry<i64>(arg); }`.
@@ -73,6 +77,12 @@ about 1.7 s each.
 | `queue.taken`, `queue.sum_ok`, `queue.split` | 2 producers × 20,000 values pass through an 8-slot queue (one Mutex, `not_empty`/`not_full` Condvars) to 2 consumers. All 40,000 values are taken once, their sum is exact, and the consumers' counts add up to 40,000 |
 | `join.pairs`, `join.second_refused` | 1,000 sequential spawn/join pairs each return their argument + 8, and a second join is refused |
 
+`tests/fixtures/stdlib_execution/concurrency/thread_exit.lani` covers
+termination. With `exit`, the worker calls `std::process::exit(7)` and the
+process exits with status 7. With `trap`, the worker writes past the end of a slice and the
+process exits with status 101. With `none`, the process exits 0. Before the
+runtime used `exit_group`, all three modes exited 0.
+
 ## std::par on threads
 
 `std::par::sort_unstable_threads` and `sort_stable_threads` run the same
@@ -81,4 +91,8 @@ crew threads start once per sort, wait on the phase futex between phases
 and exit on the stop word. The caller passes the crew entry for its element
 type. See
 [parallel sorting](stdlib-concurrency.md#parallel-sorting-map-reduce-and-scan)
-for the oracle and benchmark.
+for the oracle and benchmark. The threaded stable sort used to burn about
+1.6x the CPU of the forked one. Record stores from a stack temporary ran as
+backward `rep movsq` copies whenever a thread stack was mapped below the
+data. Copies now run backward only when the ranges overlap, and both crews
+use the same CPU time.

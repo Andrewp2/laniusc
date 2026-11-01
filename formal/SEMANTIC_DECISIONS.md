@@ -1630,3 +1630,29 @@ accepts `u16`): `s[i]` is a bounds check and a 32-bit load at
 and `slice_stride` is -8. The other one-word scalars (`u32`, `u64`, `i64`,
 `bool`, `char`, `ptr`, ...) have the same layout in laniusc and are later
 work.
+
+## laniusc's process exit is `exit_group`; the verified compiler's stays `exit` (decided 11-01)
+
+laniusc's x86 runtime now ends a process with Linux syscall 231,
+`exit_group`, instead of 60, `exit`. This covers the `exit` service
+(`std::process::exit`) and allocation failure
+(`shaders/codegen/lir/x86/runtime_abi.slang`), the inline exits of failed
+safety guards such as bounds checks, status 101 (`emit_exit` in
+`safety_emit.slang`), and the static entry wrapper's exit after `main`
+(`emit.slang`).
+With `std::pthread`, `exit` ended only the calling thread. A worker that
+failed a bounds check vanished, `pthread_join` returned, and `main` went on
+to exit 0 (`tests/fixtures/stdlib_execution/concurrency/thread_exit.lani`).
+The native-link CRT bridge returns into glibc, whose `exit` already uses
+`exit_group`, so it is unchanged.
+
+The verified compiler keeps `mov eax, 60; syscall` (`lani/mini/compiler.lani`'s
+entry, `Lanius/Mini/Process.lean`'s `Exits`, `exit_steps` and the start bytes
+`[72, 137, 199, 184, 60, 0, 0, 0, 15, 5]`). Its programs have one thread:
+it emits no C entries and links no pthread. For a one-thread process, `exit`
+and `exit_group` end the same process with the same status, so `Exits` is
+exact for every program it compiles. Switching it would change the self
+source, the process theorems and the self-hosting fixpoint for no
+observable difference. It should switch when the verified compiler admits
+threads. The change is the byte 60 -> 231 in the entry and the immediate
+in `Exits.number` and `exit_steps`.

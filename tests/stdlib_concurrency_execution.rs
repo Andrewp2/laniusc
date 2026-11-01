@@ -326,3 +326,16 @@ fn pthread_sum_counter_queue_and_join_are_exact() {
     assert!(!text.contains("FAIL"), "{text}");
     assert!(text.contains("counter 160000\n") && text.contains("join.pairs 1000\n") && text.contains("queue.taken 40000\n"), "{text}");
 }
+
+// Runtime exit and traps use exit_group: an exit or a failed bounds check on a
+// worker thread ends the whole process with that status.
+#[test]
+fn exit_and_trap_on_a_worker_thread_end_the_process() {
+    let program = native("tests/fixtures/stdlib_execution/concurrency/thread_exit.lani", "thread_exit");
+    for (mode, status) in [("exit", 7), ("trap", 101), ("none", 0)] {
+        let mut command = Command::new(program.path());
+        command.arg(mode).stdin(Stdio::null());
+        let output = common::process_output_with_timeout("thread_exit", &mut command, Duration::from_secs(60));
+        assert_eq!(output.status.code(), Some(status), "{mode}: {output:?}");
+    }
+}

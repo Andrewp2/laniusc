@@ -22,7 +22,7 @@ class SourceAllocationAuthority(unittest.TestCase):
         for unit, selected in enumerate((flags, 0x22) if both else (flags,)):
             raw = base + len(image)
             entry = raw + 17 if unit == 0 else raw + 16
-            wrapper = bytearray.fromhex("4989e7e80000000089c7b83c0000000f05")
+            wrapper = bytearray.fromhex("4989e7e80000000089c7b8e70000000f05")
             struct.pack_into("<i", wrapper, 4, entry - (raw + 8))
             image.extend(wrapper)
             functions.append((f"__lanius_0_{unit}_0", raw + 17, 16))

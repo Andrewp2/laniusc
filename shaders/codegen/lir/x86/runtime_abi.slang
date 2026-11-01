@@ -120,8 +120,10 @@ uint x86_runtime_byte(uint pos)
     static const uint argc_bytes[4] = {0x41u, 0x8bu, 0x07u, 0xc3u};
     if (pos < 4u) return argc_bytes[pos];
 
+    // Process exit is exit_group (231): exit (60) would end only the calling
+    // thread when std::pthread threads are running.
     static const uint exit_bytes[8] =
-        {0xb8u, 60u, 0u, 0u, 0u, 0x0fu, 0x05u, 0xc3u};
+        {0xb8u, 231u, 0u, 0u, 0u, 0x0fu, 0x05u, 0xc3u};
     if (pos < 12u) return exit_bytes[pos - 4u];
 
     static const uint close_bytes[8] =
@@ -235,9 +237,9 @@ uint x86_runtime_byte(uint pos)
 
     // Allocation failure is a non-returning host ABI boundary. The size and
     // alignment arguments arrive in EDI/ESI but Linux process exit needs only
-    // the stable failure status in EDI.
+    // the stable failure status in EDI. exit_group (231) ends every thread.
     static const uint alloc_failed_bytes[13] = {
-        0xbfu, 1u, 0u, 0u, 0u, 0xb8u, 60u, 0u, 0u, 0u,
+        0xbfu, 1u, 0u, 0u, 0u, 0xb8u, 231u, 0u, 0u, 0u,
         0x0fu, 0x05u, 0xc3u
     };
     if (pos < X86_RUNTIME_PRINT_I32_OFFSET)
