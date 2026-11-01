@@ -1,0 +1,86 @@
+// GNU tr under LC_ALL=C over ext::text_tr: standard input to standard output.
+// usage: text-tr [-c|-C] [-d] [-s] [-t] SET1 [SET2]
+// Exit 0, or 1 on a usage or SET error (nothing is written then).
+module app::main;
+import alloc::io;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::text_lines;
+import ext::text_tr;
+import std::args;
+import std::stream;
+
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), count);
+    return core::result::unwrap(core::slice::view(bytes, count));
+}
+fn same(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.len() != right.len()) { return false; }
+    let i: i32 = 0; while (i < left.len()) { if (left.values[left.start+i] != right.values[right.start+i]) { return false; } i += 1; } return true;
+}
+fn say(v: core::slice::View<u8>) {
+    let sink: std::stream::Descriptor = std::stream::stderr();
+    let written: core::result::Result<i32, core::io::Failure> = core::io::write_all(sink.borrow(), v.values, v.start, v.len());
+}
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1, 64, 1048576);
+    if (core::result::is_err(captured)) { say(literal("text-tr: bad arguments\n", 23)); return 1; }
+    let arguments: std::args::Arguments = core::result::unwrap(captured);
+    let o: ext::text_tr::Options = ext::text_tr::default_options();
+    let sets: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new(); let ok: bool = true; let plain: bool = false; let i: i32 = 0;
+    while (i < arguments.len() && ok) {
+        let arg: core::slice::View<u8> = core::option::unwrap(arguments.get(i)); i += 1;
+        // Options end at the first operand, as in GNU tr (getopt "+").
+        if (plain || arg.len() < 2 || arg.values[arg.start] != 45) { plain = true; let pushed: core::result::Result<i32, alloc::vec::Error> = sets.try_push(arg); continue; }
+        if (same(arg, literal("--", 2))) { plain = true; continue; }
+        if (arg.values[arg.start+1] == 45) {
+            if (same(arg, literal("--complement", 12))) { o.complement = true; }
+            else { if (same(arg, literal("--delete", 8))) { o.delete = true; }
+            else { if (same(arg, literal("--squeeze-repeats", 17))) { o.squeeze = true; }
+            else { if (same(arg, literal("--truncate-set1", 15))) { o.truncate = true; }
+            else { ok = false; } } } }
+            continue;
+        }
+        let j: i32 = 1;
+        while (j < arg.len() && ok) {
+            let c: u8 = arg.values[arg.start+j]; j += 1;
+            if (c == 99 || c == 67) { o.complement = true; } else { if (c == 100) { o.delete = true; } else { if (c == 115) { o.squeeze = true; }
+            else { if (c == 116) { o.truncate = true; } else { ok = false; } } } }
+        }
+    }
+    if (!ok) { sets.destroy(); arguments.destroy(); say(literal("usage: text-tr [-cdst] SET1 [SET2]\n", 35)); return 1; }
+    let empty: core::slice::View<u8> = literal("", 0);
+    let s1: core::slice::View<u8> = empty; let s2: core::slice::View<u8> = empty;
+    if (sets.len() > 0) { s1 = core::option::unwrap(sets.get(0)); }
+    if (sets.len() > 1) { s2 = core::option::unwrap(sets.get(1)); }
+    let made: core::result::Result<ext::text_tr::Plan, ext::text_tr::Error> = ext::text_tr::plan(s1, s2, sets.len(), o);
+    if (core::result::is_err(made)) {
+        say(literal("text-tr: ", 9)); say(ext::text_tr::message(core::result::unwrap_err(made))); say(literal("\n", 1));
+        sets.destroy(); arguments.destroy(); return 1;
+    }
+    let plan: ext::text_tr::Plan = core::result::unwrap(made);
+    let chunk: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(262152));
+    let p: ptr = core::result::unwrap(chunk.reserve_raw(262152));
+    let out: ext::text_lines::Out = core::result::unwrap(ext::text_lines::out(1, 32768));
+    let st: ext::text_tr::State = ext::text_tr::state(); let status: i32 = 0;
+    let direct: bool = plan.translate && !plan.squeeze;
+    while (true) {
+        let got: i32 = ext::text_lines::read_some(0, p, 262144);
+        if (got < 0) { status = 1; break; }
+        if (got == 0) { break; }
+        let v: core::slice::View<u8> = core::slice::View { values: core::mem::typed_slice_from_raw_parts<u8>(p, got), start: 0, length: got };
+        if (direct) {
+            let done: core::result::Result<i32, ext::text_lines::Error> = ext::text_tr::translate(plan.borrow(), v);
+            if (!ext::text_lines::write_all(1, p, got)) { status = 1; break; }
+        } else {
+            let done: core::result::Result<i32, ext::text_lines::Error> = ext::text_tr::filter(plan.borrow(), st.borrow(), v, out.borrow());
+        }
+    }
+    if (!ext::text_lines::finish(out.borrow())) { status = 1; }
+    out.destroy(); chunk.destroy(); plan.destroy(); sets.destroy(); arguments.destroy();
+    return status;
+}

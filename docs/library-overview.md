@@ -595,6 +595,15 @@ xdiff alignment (`Algorithm::Xdiff`). Their output is identical to git 2.43 on
 all 2,040 generated pairs for word diffs, character diffs and `--stat`, on
 1,500 `git diff --stat` reports over generated repositories and on 282
 `diff -ruN` patches.
+[Text tools](extended-textutils.md) (`ext::text_sort`, `ext::text_uniq`,
+`ext::text_cut`, `ext::text_tr`, `ext::text_wc`, `ext::text_lines`;
+`text-sort`, `text-uniq`, `text-cut`, `text-tr`, `text-wc`) reimplement GNU
+coreutils 9.4 `sort` (`-bfnrsuz`, `-k`, `-t`, `-o`), `uniq` (`-c -d -u -i
+-f -s -w -z`), `cut` (`-b -c -f -d -s --complement --output-delimiter`),
+`tr` (sets, ranges, classes, `-c -d -s -t`) and `wc` under `LC_ALL=C`. Each
+matches GNU byte for byte, with the same exit status, on 2,000 generated
+cases from its own oracle. `sort` is a multikey MSD radix sort with forked
+workers from 50,000 lines up. Speeds are in the guide.
 [Multi-file patches](extended-patchset.md) (`ext::patchset`, `seq-patch -i`)
 read git extended headers (renames, copies, modes, creation, deletion,
 binary sections), reverse patches, detect reversed patches as GNU `patch`
