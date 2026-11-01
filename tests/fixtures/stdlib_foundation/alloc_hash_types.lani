@@ -42,9 +42,9 @@ fn main() -> i32 {
     let signed_short_hash: u32 = 4294934528;
     let unsigned_byte_hash: u32 = 255;
     let unsigned_short_hash: u32 = 65535;
-    let all_ones_hash: u32 = 1823345245;
-    let positive_hash: u32 = 2393657685;
-    let negative_hash: u32 = 3847648588;
+    let all_ones_hash: u32 = 313160499;
+    let positive_hash: u32 = 3981806797;
+    let negative_hash: u32 = 614897213;
     if (i8::hash(-128) != signed_byte_hash || u8::hash(255) != unsigned_byte_hash ||
         i16::hash(-32768) != signed_short_hash || u16::hash(65535) != unsigned_short_hash) { return 14; }
     if (u64::hash(wide) != all_ones_hash || i64::hash(positive) != positive_hash ||

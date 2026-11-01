@@ -184,10 +184,16 @@ uint dependency_type_id(uint t)
 
 // Whether checked row `row` is `pattern` under `environment`. A slice
 // pattern with `slice_root` accepts an array of the same element.
-bool argument_matches(uint pattern, uint environment, uint row, bool slice_root)
+bool argument_matches(uint pattern, uint environment, uint row, bool slice_root, bool borrowed)
 {
     uint spare = CT_NONE;
     uint actual = ct_intern_checked<CtCheckedRows>(TYPE_REF_INSTANCE, row, spare);
+    // A path call's &self receiver reaches the impl root through one reference.
+    if (borrowed)
+    {
+        if (!ct_is_resolved(actual) || ct_kind(actual) != CT_KIND_REF) return false;
+        actual = ct_arg(actual, 0u);
+    }
     if (!ct_is_resolved(actual) || !ct_is_resolved(pattern)) return false;
     bool coerce = slice_root && ct_kind(pattern) == CT_KIND_SLICE && ct_kind(actual) == CT_KIND_ARRAY;
     DependencySlots slots;
@@ -214,6 +220,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         call_dependency_unit_id[callee],
         call_dependency_local_index[callee]);
     uint expected_type = INVALID;
+    bool borrowed = false;
     uint first_edge = INVALID;
     uint edge_count = 0u;
     if (declaration_i != INVALID)
@@ -235,8 +242,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint call_callee = compact_hir_payload[arg.call].a;
         bool dotted_call = valid_hir(call_callee) &&
             compact_hir_core[call_callee].kind == HIR_MEMBER_EXPR;
-        expected_type = dependency_method_parameter_type(
-            method, arg.ordinal + (dotted_call ? 1u : 0u));
+        expected_type = dependency_method_argument_type(method, arg.ordinal, dotted_call, borrowed);
         // A resolved method without a complete parameter record must not
         // silently accept an argument of any type.
         if (expected_type == INVALID || arg.ordinal >= call_param_count[callee])
@@ -256,8 +262,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // Retain the passing mode of the bound parameter before this page expires.
     // A declaration-side T can denote a slice; copying its source array here
     // would sever the borrowed alias even though call checking accepted it.
-    uint mode = expected_kind == 6u ? 3u : expected_kind == INTERFACE_TYPE_SLICE ? 2u : 1u;
-    if (ct_is_param(pattern))
+    uint mode = expected_kind == 6u || borrowed ? 3u : expected_kind == INTERFACE_TYPE_SLICE ? 2u : 1u;
+    if (!borrowed && ct_is_param(pattern))
     {
         DependencySlots slots;
         uint kind = ct_kind(ct_subst_param(slots, environment, pattern));
@@ -272,7 +278,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // claim pipeline. This late structural validator must not second-guess the
     // substitution relation with an uninstantiated interface node.
     uint receiver_scalar = TY_UNKNOWN;
-    if (expected_kind == INTERFACE_TYPE_GENERIC_PARAMETER)
+    if (!borrowed && expected_kind == INTERFACE_TYPE_GENERIC_PARAMETER)
     {
         uint method = dependency_find_method(call_dependency_library_id[callee],
             call_dependency_unit_id[callee], call_dependency_local_index[callee]);
@@ -285,7 +291,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
 
     uint arg_token = compact_hir_core[arg_node].token_start;
-    if (expected_kind != INTERFACE_TYPE_SCALAR && receiver_scalar == TY_UNKNOWN)
+    if ((borrowed || expected_kind != INTERFACE_TYPE_SCALAR) && receiver_scalar == TY_UNKNOWN)
     {
         uint expr_node = generic_result_type_origin(arg_node, active_hir_count(),
             compact_hir_core, compact_hir_payload, call_generic_return_arg_node);
@@ -337,7 +343,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         // Array-to-slice conversion is allowed only at this comparison's root;
         // nested element/constant relationships remain exact.
         if (actual_tag == TYPE_REF_INSTANCE &&
-            (actual_payload >= gParams.visible_capacity || expected_kind == 6u ||
+            (actual_payload >= gParams.visible_capacity || expected_kind == 6u || borrowed ||
              expected_kind == INTERFACE_TYPE_ARRAY || expected_kind == INTERFACE_TYPE_SLICE ||
              expected_kind == INTERFACE_TYPE_DECLARATION) &&
             actual_payload < checked_type_capacity())
@@ -345,14 +351,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
             // A receiver instance alone would omit the method's own type and
             // constant slots; the call environment has them.
             if (!argument_matches(pattern, environment, actual_payload,
-                expected_kind == INTERFACE_TYPE_SLICE))
+                expected_kind == INTERFACE_TYPE_SLICE, borrowed))
                 record_min_token_error(status, arg_token < gParams.visible_capacity ? arg_token : callee,
                     ERR_ASSIGN_MISMATCH, HIR_SEM_TY_UNKNOWN);
             return;
         }
         uint expected_count = dependency_type_word(expected_base + 4u);
         bool matches = false;
-        if (expected_kind == INTERFACE_TYPE_DECLARATION &&
+        if (!borrowed && expected_kind == INTERFACE_TYPE_DECLARATION &&
             actual_tag == TYPE_REF_EXTERNAL_CANONICAL)
         {
             matches = stable_nominal_matches(

@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **319 modules**, **16875 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **319 modules**, **16886 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -177,7 +177,7 @@ Inventory: **319 modules**, **16875 declaration/member entries**. Counts include
 | [std::io_utf8](std/io_utf8.md) | [source](../../stdlib/std/io_utf8.lani#L3) | 7 | Source inventory | **Unregistered** |
 | [std::linux](std/linux.md) | [source](../../stdlib/std/linux.lani#L4) | 15 | Source inventory | [stdlib-linux](../stdlib-linux.md) |
 | [std::net](std/net.md) | [source](../../stdlib/std/net.lani#L5) | 85 | Unbound host declarations | [library-remaining-api-audit](../library-remaining-api-audit.md), [library-host-prerequisites](../library-host-prerequisites.md) |
-| [std::par](std/par.md) | [source](../../stdlib/std/par.lani#L11) | 27 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
+| [std::par](std/par.md) | [source](../../stdlib/std/par.lani#L11) | 28 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
 | [std::parallel](std/parallel.md) | [source](../../stdlib/std/parallel.lani#L10) | 29 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
 | [std::poll](std/poll.md) | [source](../../stdlib/std/poll.lani#L4) | 45 | Source inventory | [stdlib-poll](../stdlib-poll.md) |
 | [std::process](std/process.md) | [source](../../stdlib/std/process.lani#L3) | 66 | Source inventory | [stdlib-process-context](../stdlib-process-context.md) |
@@ -226,7 +226,7 @@ Inventory: **319 modules**, **16875 declaration/member entries**. Counts include
 | [ext::audio](ext/audio.md) | [source](../../extended/ext/audio.lani#L2) | 44 | Source inventory | [extended-audio](../extended-audio.md) |
 | [ext::bash_words](ext/bash_words.md) | [source](../../extended/ext/bash_words.lani#L4) | 22 | Source inventory | [extended-cli-complete](../extended-cli-complete.md), [library-completion-plan](../library-completion-plan.md) |
 | [ext::cbor](ext/cbor.md) | [source](../../extended/ext/cbor.lani#L4) | 64 | Source inventory | [extended-cbor](../extended-cbor.md), [extended-cbor-stream](../extended-cbor-stream.md) |
-| [ext::cbor_stream](ext/cbor_stream.md) | [source](../../extended/ext/cbor_stream.lani#L8) | 164 | Source inventory | [extended-cbor-stream](../extended-cbor-stream.md) |
+| [ext::cbor_stream](ext/cbor_stream.md) | [source](../../extended/ext/cbor_stream.lani#L8) | 174 | Source inventory | [extended-cbor-stream](../extended-cbor-stream.md) |
 | [ext::cli](ext/cli.md) | [source](../../extended/ext/cli.lani#L3) | 63 | Source inventory | [extended-cli](../extended-cli.md), [extended-cli-commands](../extended-cli-commands.md), [extended-cli-response](../extended-cli-response.md), [extended-cli-complete](../extended-cli-complete.md) |
 | [ext::cli_bash](ext/cli_bash.md) | [source](../../extended/ext/cli_bash.lani#L4) | 24 | Source inventory | [extended-cli-complete](../extended-cli-complete.md), [library-completion-plan](../library-completion-plan.md) |
 | [ext::cli_commands](ext/cli_commands.md) | [source](../../extended/ext/cli_commands.lani#L5) | 66 | Source inventory | [extended-cli-commands](../extended-cli-commands.md), [extended-cli-response](../extended-cli-response.md), [extended-cli-complete](../extended-cli-complete.md) |

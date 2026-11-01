@@ -39,3 +39,13 @@ fn b14_self_method_called_through_its_type_path_takes_the_receiver_first() {
 fn b14_bound_self_member_called_through_the_parameter_path_routes() {
     compiles_and_exits_zero("b14_path_self_method_bound");
 }
+
+#[test]
+fn b19_stdlib_self_method_called_through_its_type_path() {
+    compiles_and_exits_zero("b19_stdlib_path_self_method");
+}
+
+#[test]
+fn bare_generic_type_path_infers_the_impl_parameters() {
+    compiles_and_exits_zero("generic_impl_path_inference");
+}

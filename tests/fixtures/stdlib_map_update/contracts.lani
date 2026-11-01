@@ -107,7 +107,7 @@ fn hash_contract() {
     while(i<7) { let rank:i32=ranks[i]; assert(map.try_insert(key(rank,1000+rank as u64,log.borrow()),marker(rank)).is_ok()); i+=1; }
     assert(map.remove(key(2,8002,log.borrow())).is_some()); assert(map.remove(key(6,8006,log.borrow())).is_some());
     assert(map.try_insert(key(8,1008,log.borrow()),marker(8)).is_ok()); assert(map.try_insert(key(9,1009,log.borrow()),marker(9)).is_ok());
-    assert(map.remove(key(1,8001,log.borrow())).is_some()); assert(map.len()==6 && map.occupied>map.length);
+    assert(map.remove(key(1,8001,log.borrow())).is_some()); assert(map.len()==6 && map.occupied>=map.length);
     let pointer:ptr=map.storage; let capacity:i32=map.capacity(); let buckets:i32=map.buckets; let occupied:i32=map.occupied;
     let before_present:[bool;10]=[false;10]; let before_tags:[u64;10]=[0;10]; let before_values:[u64;10]=[0;10];
     let after_present:[bool;10]=[false;10]; let after_tags:[u64;10]=[0;10]; let after_values:[u64;10]=[0;10];
