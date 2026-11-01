@@ -38,8 +38,9 @@ fn failure(error: alloc::clone_hash_map::Error<fixture::leaf::KeyError,alloc::cl
     };
 }
 fn run_case(mode: i32, wanted: i32, inner: i32, stage: i32) {
-    // All live keys collide. Removing id20 leaves a tombstone between id10
-    // and id30; error indexes must count live entries, not physical buckets.
+    // All live keys collide. Removing id20 leaves a gap between id10
+    // and id30 (an empty cell: its group still has empty cells, so no probe
+    // path needs a tombstone); error indexes count live entries, not cells.
     let raw: [u8; 7] = [83,0,195,169,33,90,78]; let original: alloc::string::String = alloc::string::from_utf8(raw,7).unwrap();
     let log: [i32; 256] = [0; 256];
     let rows: [alloc::vec::Vec<fixture::leaf::Value>; 3] = [alloc::vec::new(),alloc::vec::new(),alloc::vec::new()];
@@ -66,13 +67,13 @@ fn run_case(mode: i32, wanted: i32, inner: i32, stage: i32) {
     }
     let query: fixture::leaf::Key = fixture::leaf::Key { text:original,id:20,ordinal:0,fail:-1,mode:0,hash_code:17,cloned:false,log:log };
     let deleted: alloc::hash_map::Entry<fixture::leaf::Key,alloc::vec::Vec<fixture::leaf::Value>> = source.remove(query).unwrap();
-    assert(deleted.value.is_empty() && source.len()==3 && source.occupied==4);
+    assert(deleted.value.is_empty() && source.len()==3 && source.occupied==3);
     let capacity: i32 = source.capacity(); let storage: ptr = source.storage;
     let result: core::result::Result<alloc::hash_map::HashMap<fixture::leaf::Key,alloc::vec::Vec<fixture::leaf::Value>>,alloc::clone_hash_map::Error<fixture::leaf::KeyError,alloc::clone::Error<fixture::leaf::ValueError>>> =
         alloc::clone_hash_map::try_clone<fixture::leaf::Key,alloc::vec::Vec<fixture::leaf::Value>,fixture::leaf::KeyError,alloc::clone::Error<fixture::leaf::ValueError>>(source.borrow());
     // Restore deliberately broken Eq before inspecting the untouched source.
     log[6]=0;
-    assert((result.is_err() || mode==6) && source.len()==3 && source.capacity()==capacity && source.storage==storage && source.occupied==4 && original.byte_at(1).unwrap()==0);
+    assert((result.is_err() || mode==6) && source.len()==3 && source.capacity()==capacity && source.storage==storage && source.occupied==3 && original.byte_at(1).unwrap()==0);
     let cursor: alloc::hash_map::Iter<fixture::leaf::Key,alloc::vec::Vec<fixture::leaf::Value>> = source.iter();
     let index: i32 = 0;
     while (true) {
