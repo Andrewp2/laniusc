@@ -33,6 +33,14 @@ owner fields, and the interval-edit fixture shows under an in-program
 RLIMIT_AS denial that failed extraction leaves the source unchanged. Native receipts use the prebuilt compiler; the two registered
 Rust tests type-check and await a full test-binary run.
 The [concurrency increment](stdlib-concurrency.md) adds four modules for parallel
+The [`std::uring`](stdlib-uring.md) increment drives io_uring through raw
+syscalls (setup, ring mmaps, enter). It adds read, write, readv, writev,
+openat, close, accept, recv and send operations, linked SQEs, and completion
+backpressure that keeps the CQ from overflowing. `Ring::transfer` is a
+batched copy engine. The `uring_cat` and `uring_copy` samples match GNU
+`cat` and `cp` on a 97-case oracle per seed. A 512 MiB file goes to a new
+file in 131 ms with overlapped positional writes, against 169 ms for GNU
+`cat`.
 The [`core::search`](stdlib-search.md) increment adds SWAR byte scans and a
 rarest-byte substring prefilter, used by `Text::find` and the parallel
 grep. A budgeted Two-Way (Crochemore–Perrin) fallback keeps the worst case

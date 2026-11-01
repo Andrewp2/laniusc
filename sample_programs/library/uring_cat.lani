@@ -1,0 +1,132 @@
+// uring_cat [FILE...]: write each FILE (stdin for "-" or when there are
+// none) to stdout through std::uring, like GNU `cat` without options.
+// Opens go 32 at a time in one batch of IORING_OP_OPENAT, together with the
+// previous batch's IORING_OP_CLOSEs; each file is read with eight 128 KiB
+// reads in flight (Ring::transfer). When stdout is a seekable file without
+// O_APPEND each block is written at its final offset as soon as it arrives
+// and the file position is set once at the end; otherwise (pipes, ttys,
+// O_APPEND) blocks are written one at a time, in order.
+// A file that cannot be opened or read prints "uring_cat: NAME: errno N"
+// on stderr and is skipped; the exit status is then 1. A failed write to
+// stdout prints "uring_cat: write error: errno N" and exits 1.
+// Build: laniusc --native-link --native-library atomic --stdlib-root stdlib
+module app::main;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::args;
+import std::io;
+import std::uring;
+
+const BLOCK: i32 = 131072;
+const DEPTH: i32 = 8;
+const BATCH: i32 = 32;
+const PATH_SLOT: i32 = 4096;
+// O_RDONLY | O_CLOEXEC
+const OPEN_FLAGS: i32 = 524288;
+
+fn complain(name: core::slice::View<u8>, code: i32) {
+    std::io::write_text(2, "uring_cat: ");
+    let i: i32 = 0;
+    while (i < name.length) { std::io::write_byte(2, name.values[name.start + i] as i32); i += 1; }
+    std::io::write_text(2, ": errno "); std::io::write_i32(2, code); std::io::write_newline(2);
+}
+fn dash(name: core::slice::View<u8>) -> bool { return name.length == 1 && name.values[name.start] == 45; }
+fn code_of(error: std::uring::Error) -> i32 {
+    return match (error) { std::uring::Error::Read(code) -> code, std::uring::Error::Write(code) -> 0 - code, std::uring::Error::Host(code) -> code, _ -> 22 };
+}
+// A failed write to stdout ends the program, like GNU cat.
+fn write_failed(code: i32) -> i32 {
+    std::io::write_text(2, "uring_cat: write error: errno "); std::io::write_i32(2, 0 - code); std::io::write_newline(2);
+    return 1;
+}
+
+fn main() -> i32 {
+    let arguments: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1, 1048576, 67108864);
+    if (arguments.is_err()) { std::io::eprintln("uring_cat: arguments too large"); return 1; }
+    let names: std::args::Arguments = arguments.unwrap();
+    let made: core::result::Result<std::uring::Ring, std::uring::Error> = std::uring::setup(64);
+    if (made.is_err()) { std::io::eprintln("uring_cat: io_uring_setup failed"); return 1; }
+    let ring: std::uring::Ring = made.unwrap();
+    let buffer_bytes: usize = (BLOCK as usize) * (DEPTH as usize);
+    let buffers: ptr = std::uring::map_buffers(buffer_bytes + (BATCH as usize) * (PATH_SLOT as usize)).unwrap();
+    let slots: ptr = buffers + buffer_bytes;
+    let status: i32 = 0;
+    let count: i32 = names.len();
+    if (count == 0) {
+        let at: i64 = std::uring::cat_output(1);
+        let copied: core::result::Result<i64, std::uring::Error> = ring.transfer(0, 1, buffers, BLOCK, DEPTH, true, at);
+        std::uring::finish_output(1, at, ring.transferred());
+        if (copied.is_err()) {
+            let code: i32 = code_of(copied.unwrap_err());
+            if (code < 0) { return write_failed(code); }
+            std::io::write_text(2, "uring_cat: -: errno "); std::io::write_i32(2, code); std::io::write_newline(2); return 1;
+        }
+        return 0;
+    }
+    let fds: [i32; 32] = [0; 32];
+    // Where the next file's bytes go in stdout, or CURRENT.
+    let at: i64 = std::uring::cat_output(1);
+    let first: i32 = 0;
+    // Start of the batch whose closes are queued.
+    let closing: i32 = 0;
+    while (first < count) {
+        let batch: i32 = count - first;
+        if (batch > BATCH) { batch = BATCH; }
+        let b: i32 = 0;
+        while (b < batch) {
+            let name: core::slice::View<u8> = names.get(first + b).unwrap();
+            fds[b] = 0;
+            if (!dash(name)) {
+                let slot: ptr = slots + (b as usize) * (PATH_SLOT as usize);
+                let staged: core::result::Result<i32, std::uring::Error> = std::uring::stage_path(name, slot, PATH_SLOT);
+                if (staged.is_err()) { fds[b] = -36; }
+                else { ring.openat(std::uring::AT_FDCWD, slot, OPEN_FLAGS, 0, b as u64); }
+            }
+            b += 1;
+        }
+        // One enter submits the opens and the previous batch's closes.
+        while (ring.owed() > 0) {
+            let done: core::result::Result<std::uring::Completion, std::uring::Error> = ring.wait();
+            if (done.is_err()) { std::io::eprintln("uring_cat: io_uring_enter failed"); return 1; }
+            let c: std::uring::Completion = done.unwrap();
+            let tag: i32 = c.user_data() as i32;
+            let opened: i32 = c.result();
+            if (tag < BATCH) { fds[tag] = opened; }
+            else { if (c.failed()) { complain(names.get(closing + tag - 256).unwrap(), c.errno()); status = 1; } }
+        }
+        b = 0;
+        while (b < batch) {
+            let name: core::slice::View<u8> = names.get(first + b).unwrap();
+            let fd: i32 = fds[b];
+            if (fd < 0) { complain(name, 0 - fd); status = 1; }
+            else {
+                let stream: bool = fd == 0 || !std::uring::seekable(fd);
+                let copied: core::result::Result<i64, std::uring::Error> = ring.transfer(fd, 1, buffers, BLOCK, DEPTH, stream, at);
+                if (at >= 0) { at += ring.transferred(); }
+                if (copied.is_err()) {
+                    std::uring::finish_output(1, at, 0);
+                    let code: i32 = code_of(copied.unwrap_err());
+                    if (code < 0) { return write_failed(code); }
+                    complain(name, code); status = 1;
+                }
+            }
+            b += 1;
+        }
+        b = 0;
+        while (b < batch) {
+            if (fds[b] > 0) { ring.close(fds[b], (256 + b) as u64); }
+            b += 1;
+        }
+        closing = first;
+        first += batch;
+    }
+    std::uring::finish_output(1, at, 0);
+    while (ring.owed() > 0) {
+        let c: std::uring::Completion = ring.wait().unwrap();
+        if (c.failed()) { complain(names.get(closing + (c.user_data() as i32) - 256).unwrap(), c.errno()); status = 1; }
+    }
+    ring.destroy();
+    return status;
+}
