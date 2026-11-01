@@ -1,0 +1,17 @@
+// A Vec field moved out with take() checks against its own element type.
+// move_rows.lani:205 annotated Vec<Record> for ext::csv's Vec<TableRow>
+// field; that LNC0006 was correct (tests/fixtures/compiler_defects/README.md).
+module app::main;
+
+import alloc::vec;
+import alloc::vec::Vec;
+
+struct Row { first: i32, count: i32 }
+struct Table { rows: Vec<Row> }
+
+fn main() -> i32 {
+    let empty: Vec<Row> = alloc::vec::new();
+    let table: Table = Table { rows: empty };
+    let rows: Vec<Row> = table.rows.take(); if (rows.len() != 0) { return 1; } rows.destroy();
+    return 0;
+}

@@ -257,6 +257,7 @@ compiler can fix the per-byte cost.
 | --- | --- | --- | --- |
 | `stdlib_stray_body_diagnostic.lani` | a stray function body (`let stray: i32 = 2; return stray;` then `}`) at top level of a stdlib module, `core::float_decimal` | LNC0016 "syntax error" at the stray line | **fixed 2026-11-01**: LNC0016 at the stray `let` (`float_decimal.lani:337:5`). Was LNC0008 "unsatisfied trait bound" at `stdlib/core/result.lani:93` (`and_then`'s `Mapper<T,Result<U,E>>` bound), which named neither the file nor the line; see [parser labels in a source pack](#parser-labels-in-a-source-pack) |
 | `byte_order_mark_source.lani` | the file starts with a UTF-8 byte-order mark (EF BB BF) | rejected with a message that names the mark | **fixed 2026-11-01**: LNC0046 at 1:1, labeled "this file starts with a UTF-8 byte-order mark", with help "save the file as UTF-8 without a byte-order mark (U+FEFF)". Was "tokenization fails at this byte". The same label applies to a module under `--source-root` |
+| `lnc0006_vec_field_take.lani` | a struct's `Vec<Row>` field moved out with `table.rows.take()` into `let rows: Vec<Row>` | exit 0 | **not a defect, 2026-11-01**: `move_rows.lani:205` annotated `Vec<ext::csv::Record>` for the `Vec<TableRow>` field of the packed `ext::csv::Table` (a1420edec), so its LNC0006 was correct; `Vec<u8>` here is LNC0006 too. The sample now decodes owned Records with `ext::csv::Decoder` |
 
 The program compiles and exits 0 against the real stdlib. To reproduce,
 insert the stray lines into a copy of the stdlib:
