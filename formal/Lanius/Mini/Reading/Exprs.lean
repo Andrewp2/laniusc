@@ -6,6 +6,7 @@ import all Lanius.Mini.Compiler.P.SrcType_size
 import all Lanius.Mini.Frontend.P.findConst
 import all Lanius.Mini.Frontend.P.flDecimal
 import all Lanius.Mini.Frontend.P.flExpFirst
+import all Lanius.Mini.Frontend.P.floatFinite
 import all Lanius.Mini.Frontend.P.floatTyped
 import all Lanius.Mini.Frontend.P.freshId
 import all Lanius.Mini.Frontend.P.grammarPart13
@@ -662,6 +663,26 @@ def floatPart : FloatTy → SrcExpr → SrcExpr → SrcExpr
 theorem unitTy_iff (t : SrcType) : unitTy t = true ↔ t = .unit := by
   cases t <;> simp [unitTy]
 
+/-- A literal `floatFinite` keeps is the literal itself (it rejects the infinite ones). -/
+theorem floatFinite_some {x e : SrcExpr} {inf : Nat} (h : floatFinite x inf = some e) : e = x := by
+  cases x with
+  | float g bits =>
+    simp only [floatFinite] at h
+    split at h
+    · cases h
+    · exact (Option.some.inj h).symm
+  | int _ => cases h
+  | boolean _ => cases h
+  | unsigned _ _ => cases h
+  | «local» _ => cases h
+  | field _ _ => cases h
+  | negate _ => cases h
+  | not _ => cases h
+  | apply _ _ _ => cases h
+  | cast _ _ => cases h
+  | null => cases h
+  | char _ => cases h
+
 theorem floatPick_some {ft : FloatTy} {t : SrcType} {x e : SrcExpr} (h : floatPick ft t x = some e) :
     t = .unit ∧ ∃ op a b, x = .apply op a b ∧ e = floatPart ft a b := by
   unfold floatPick at h
@@ -671,7 +692,7 @@ theorem floatPick_some {ft : FloatTy} {t : SrcType} {x e : SrcExpr} (h : floatPi
     cases x with
     | apply op a b =>
       refine ⟨op, a, b, rfl, ?_⟩
-      cases ft <;> simp [floatPickOf] at h <;> simp [floatPart, h]
+      cases ft <;> simp only [floatPickOf] at h <;> simp [floatPart, floatFinite_some h]
     | int _ => cases h
     | boolean _ => cases h
     | unsigned _ _ => cases h

@@ -52,6 +52,10 @@ abbrev Stmt_fl_exp_sign_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
   ∀ {x0 : Nat} {x1 : List Nat} {x2 : List Bool} {x3 : Nat} {x4 : Nat} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → (RepList 25 RepNat) x1 v1 → (RepList 254 RepBool) x2 v2 → RepNat x3 v3 → RepNat x4 v4 →
     (RepOption 252 RepFlDec) (Lanius.Mini.Inline.flExpSignAt x0 x1 x2 x3 x4) w
 
+abbrev Stmt_fl_finite_bits (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.FloatTy} {x1 : BitVec 64} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepFloatTy x0 v0 → RepU64 x1 v1 → RepNat x2 v2 →
+    (RepOption 227 RepSrcExpr) (Lanius.Mini.Inline.flFiniteBits x0 x1 x2) w
+
 abbrev Stmt_fl_frac_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : List Nat} {x2 : List Bool} {x3 : Nat} {x4 : Nat} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → (RepList 25 RepNat) x1 v1 → (RepList 254 RepBool) x2 v2 → RepNat x3 v3 → RepNat x4 v4 →
     (RepOption 252 RepFlDec) (Lanius.Mini.Inline.flFracAt x0 x1 x2 x3 x4) w

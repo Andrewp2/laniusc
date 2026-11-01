@@ -51,7 +51,7 @@ theorem ok_wide_isize_at : FnOk prog prims info (1405, ⟨0, [], 0⟩) :=
 theorem ok_wide_sint_at : FnOk prog prims info (1406, ⟨1, [], 0⟩) :=
   fnOk_of fn_wide_sint_at (by decide +kernel)
 
-theorem ok_float_pick : FnOk prog prims info (1407, ⟨1, [], 0⟩) :=
+theorem ok_float_pick : FnOk prog prims info (1407, ⟨5, [], 0⟩) :=
   fnOk_of fn_float_pick (by decide +kernel)
 
 theorem ok_cons_of_mini_selfhost_SrcEff : FnOk prog prims info (1412, ⟨0, [], 0⟩) :=

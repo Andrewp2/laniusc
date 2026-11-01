@@ -13,7 +13,7 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Termination
 open Lanius.Faithful.SelfCert
 
-theorem ok_lit_eff : FnOk prog prims info (1120, ⟨5, [3], 0⟩) :=
+theorem ok_lit_eff : FnOk prog prims info (1120, ⟨8, [3], 0⟩) :=
   fnOk_of fn_lit_eff (by decide +kernel)
 
 theorem ok_empty_of_mini_selfhost_LocalTy : FnOk prog prims info (1121, ⟨0, [], 0⟩) :=

@@ -33,13 +33,13 @@ theorem ok_rest_payloads : FnOk prog prims info (1305, ⟨0, [], 0⟩) :=
 theorem ok_ty_local_at : FnOk prog prims info (1306, ⟨0, [1], 1⟩) :=
   fnOk_of fn_ty_local_at (by decide +kernel)
 
-theorem ok_lit_effs : FnOk prog prims info (1309, ⟨5, [3], 0⟩) :=
+theorem ok_lit_effs : FnOk prog prims info (1309, ⟨8, [3], 0⟩) :=
   fnOk_of fn_lit_effs (by decide +kernel)
 
 theorem ok_known_eff : FnOk prog prims info (1311, ⟨4, [2], 0⟩) :=
   fnOk_of fn_known_eff (by decide +kernel)
 
-theorem ok_lit_arm_effs : FnOk prog prims info (1312, ⟨5, [5], 0⟩) :=
+theorem ok_lit_arm_effs : FnOk prog prims info (1312, ⟨8, [5], 0⟩) :=
   fnOk_of fn_lit_arm_effs (by decide +kernel)
 
 theorem ok_same_inst : FnOk prog prims info (1314, ⟨3, [], 0⟩) :=

@@ -892,4 +892,8 @@ theorem cert_load_byte_agrees {n : Nat} :
     Stmt_load_byte_agrees prog prims 655 n :=
   @proof_load_byte_agrees prog prims 655 938 fn_load_byte_agrees np_load_byte_agrees ⟨@cert_Expr_agrees⟩ n
 
+theorem cert_store_byte_agrees {n : Nat} :
+    Stmt_store_byte_agrees prog prims 656 n :=
+  @proof_store_byte_agrees prog prims 656 938 fn_store_byte_agrees np_store_byte_agrees ⟨@cert_Expr_agrees⟩ n
+
 end Lanius.Faithful.SelfCert

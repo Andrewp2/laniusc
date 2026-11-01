@@ -71,10 +71,6 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem cert_store_byte_agrees {n : Nat} :
-    Stmt_store_byte_agrees prog prims 656 n :=
-  @proof_store_byte_agrees prog prims 656 938 fn_store_byte_agrees np_store_byte_agrees ⟨@cert_Expr_agrees⟩ n
-
 theorem cert_MemWidth_bytes {n : Nat} :
     Stmt_MemWidth_bytes prog prims 944 n :=
   @proof_MemWidth_bytes prog prims 944 fn_MemWidth_bytes np_MemWidth_bytes n
@@ -882,5 +878,18 @@ theorem certs_params_size : ∀ n, (Stmt_params_size prog prims 118 n) := by
 theorem cert_params_size {n : Nat} :
     Stmt_params_size prog prims 118 n :=
   (certs_params_size n)
+
+theorem certs_params_valid : ∀ n, (Stmt_params_valid prog prims 120 n) := by
+  intro n
+  induction n with
+  | zero =>
+    exact (by intro x0 v0 w h r0; simp [pcall] at h)
+  | succ n ih =>
+    have ih_params_valid : Stmt_params_valid prog prims 120 n := ih
+    exact @step_params_valid prog prims 120 119 131 fn_params_valid np_params_valid ⟨@cert_SrcType_size⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam⟩ n ⟨ih_params_valid⟩
+
+theorem cert_params_valid {n : Nat} :
+    Stmt_params_valid prog prims 120 n :=
+  (certs_params_valid n)
 
 end Lanius.Faithful.SelfCert

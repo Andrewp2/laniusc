@@ -30,7 +30,7 @@ fn lits(x: f64, y: f32) -> f64 {
         return NEG;
     }
     if (y == -0.0) {
-        return 1e400;
+        return 1.7976931348623157e308;
     }
     return b - (HALF as f64) + (a as f64) - 0.0000001;
 }

@@ -81,19 +81,6 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem certs_params_valid : ∀ n, (Stmt_params_valid prog prims 120 n) := by
-  intro n
-  induction n with
-  | zero =>
-    exact (by intro x0 v0 w h r0; simp [pcall] at h)
-  | succ n ih =>
-    have ih_params_valid : Stmt_params_valid prog prims 120 n := ih
-    exact @step_params_valid prog prims 120 119 131 fn_params_valid np_params_valid ⟨@cert_SrcType_size⟩ ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam⟩ n ⟨ih_params_valid⟩
-
-theorem cert_params_valid {n : Nat} :
-    Stmt_params_valid prog prims 120 n :=
-  (certs_params_valid n)
-
 theorem certs_SrcStmt_breaks_out : ∀ n, (Stmt_SrcStmt_breaks_out prog prims 121 n) := by
   intro n
   induction n with
@@ -781,5 +768,9 @@ theorem cert_lower_struct_fields {n : Nat} :
 theorem cert_empty_of_mini_selfhost_SrcType {n : Nat} :
     Stmt_empty_of_mini_selfhost_SrcType prog prims 129 n :=
   @proof_empty_of_mini_selfhost_SrcType prog prims 129 fn_empty_of_mini_selfhost_SrcType np_empty_of_mini_selfhost_SrcType n
+
+theorem cert_boxed_of_mini_selfhost_List_mini_selfhost_SrcType {n : Nat} :
+    Stmt_boxed_of_mini_selfhost_List_mini_selfhost_SrcType prog prims 221 n :=
+  @proof_boxed_of_mini_selfhost_List_mini_selfhost_SrcType prog prims 221 np_boxed_of_mini_selfhost_List_mini_selfhost_SrcType n
 
 end Lanius.Faithful.SelfCert

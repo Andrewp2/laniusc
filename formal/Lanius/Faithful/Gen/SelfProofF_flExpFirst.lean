@@ -3,13 +3,14 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_flExpFirst
-public import Lanius.Faithful.Gen.SelfStmt0
 public import Lanius.Faithful.Gen.SelfStmt3
+public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt6
+public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_charOpen
 public import Lanius.Faithful.Gen.SelfStmtF_flDecimal
 public import Lanius.Faithful.Gen.SelfStmtF_flExpFirst
-public import Lanius.Faithful.Gen.SelfStmtF_unitTy
+public import Lanius.Faithful.Gen.SelfStmtF_flNatHalf
 import all Lanius.Faithful.Gen.SelfSrcF_flExpFirst
 import all Lanius.Mini.Frontend.P.flExpFirst
 
@@ -74,6 +75,18 @@ theorem step_fl_frac_part {prog : SrcProgram} {prims : Prims} {ix_fl_frac_part i
   simp only [src_fl_frac_part] at h
   faithful [Lanius.Mini.flFracPart]
 
+theorem proof_fl_inf {prog : SrcProgram} {prims : Prims} {ix_fl_inf ix_minus ix_times ix_fl_pow2 : Nat} (fn : prog.funcs[ix_fl_inf]? = some (src_fl_inf ix_minus ix_times ix_fl_pow2)) (np : prims.isPrim ix_fl_inf = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_times : Certified (∀ {n : Nat}, Stmt_times prog prims ix_times n))
+    (ext_fl_pow2 : Certified (∀ {n : Nat}, Stmt_fl_pow2 prog prims ix_fl_pow2 n)) {n : Nat} :
+    Stmt_fl_inf prog prims ix_fl_inf n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_fl_inf] at h
+  faithful [Lanius.Mini.flInf]
+
 theorem step_fl_int_part {prog : SrcProgram} {prims : Prims} {ix_fl_int_part ix_unbox_of_mini_selfhost_List_usize ix_fl_finish ix_fl_int_at : Nat} (fn : prog.funcs[ix_fl_int_part]? = some (src_fl_int_part ix_unbox_of_mini_selfhost_List_usize ix_fl_finish ix_fl_int_at)) (np : prims.isPrim ix_fl_int_part = false)
     (ext_unbox_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_usize n))
     (ext_fl_finish : Certified (∀ {n : Nat}, Stmt_fl_finish prog prims ix_fl_finish n)) {n : Nat}
@@ -106,36 +119,5 @@ theorem proof_float_marker {prog : SrcProgram} {prims : Prims} {ix_float_marker 
   rw [pcall_succ np fn] at h
   simp only [src_float_marker] at h
   faithful [Lanius.Mini.floatMarker]
-
-theorem proof_float_pick {prog : SrcProgram} {prims : Prims} {ix_float_pick ix_unbox_of_mini_selfhost_SrcExpr ix_unit_ty ix_float_pick_of : Nat} (fn : prog.funcs[ix_float_pick]? = some (src_float_pick ix_unbox_of_mini_selfhost_SrcExpr ix_unit_ty ix_float_pick_of)) (np : prims.isPrim ix_float_pick = false)
-    (ext_unbox_of_mini_selfhost_SrcExpr : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcExpr prog prims ix_unbox_of_mini_selfhost_SrcExpr n))
-    (ext_unit_ty : Certified (∀ {n : Nat}, Stmt_unit_ty prog prims ix_unit_ty n))
-    (ext_float_pick_of : Certified (∀ {n : Nat}, Stmt_float_pick_of prog prims ix_float_pick_of n)) {n : Nat} :
-    Stmt_float_pick prog prims ix_float_pick n := by
-  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_float_pick] at h
-  faithful [Lanius.Mini.floatPick]
-
-theorem proof_float_pick_of {prog : SrcProgram} {prims : Prims} {ix_float_pick_of : Nat} (fn : prog.funcs[ix_float_pick_of]? = some (src_float_pick_of)) (np : prims.isPrim ix_float_pick_of = false) {n : Nat} :
-    Stmt_float_pick_of prog prims ix_float_pick_of n := by
-  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_float_pick_of] at h
-  faithful [Lanius.Mini.floatPickOf]
-
-theorem proof_float_want {prog : SrcProgram} {prims : Prims} {ix_float_want ix_float_pick : Nat} (fn : prog.funcs[ix_float_want]? = some (src_float_want ix_float_pick)) (np : prims.isPrim ix_float_want = false)
-    (ext_float_pick : Certified (∀ {n : Nat}, Stmt_float_pick prog prims ix_float_pick n)) {n : Nat} :
-    Stmt_float_want prog prims ix_float_want n := by
-  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_float_want] at h
-  faithful [Lanius.Mini.floatWant]
 
 end Lanius.Faithful.SelfCert

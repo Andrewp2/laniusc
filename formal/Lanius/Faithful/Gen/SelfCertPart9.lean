@@ -9,6 +9,7 @@ public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmt7
+public import Lanius.Faithful.Gen.SelfStmtF_Inline_charOpen
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_findMethodAt
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pModTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pSelfParamPlain
@@ -22,7 +23,9 @@ public import Lanius.Faithful.Gen.SelfStmtF_externBody
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
 public import Lanius.Faithful.Gen.SelfStmtF_firstSrc
 public import Lanius.Faithful.Gen.SelfStmtF_flExpFirst
+public import Lanius.Faithful.Gen.SelfStmtF_flNatHalf
 public import Lanius.Faithful.Gen.SelfStmtF_flattenTys
+public import Lanius.Faithful.Gen.SelfStmtF_floatFinite
 public import Lanius.Faithful.Gen.SelfStmtF_freshId
 public import Lanius.Faithful.Gen.SelfStmtF_funcsOnto
 public import Lanius.Faithful.Gen.SelfStmtF_ifNotWrites
@@ -43,6 +46,7 @@ import Lanius.Faithful.Gen.SelfProof4
 import Lanius.Faithful.Gen.SelfProof5
 import Lanius.Faithful.Gen.SelfProof6
 import Lanius.Faithful.Gen.SelfProof7
+import Lanius.Faithful.Gen.SelfProofF_Inline_charOpen
 import Lanius.Faithful.Gen.SelfProofF_Inline_findMethodAt
 import Lanius.Faithful.Gen.SelfProofF_Inline_pModTail
 import Lanius.Faithful.Gen.SelfProofF_Inline_pSelfParamPlain
@@ -56,7 +60,9 @@ import Lanius.Faithful.Gen.SelfProofF_externBody
 import Lanius.Faithful.Gen.SelfProofF_findConst
 import Lanius.Faithful.Gen.SelfProofF_firstSrc
 import Lanius.Faithful.Gen.SelfProofF_flExpFirst
+import Lanius.Faithful.Gen.SelfProofF_flNatHalf
 import Lanius.Faithful.Gen.SelfProofF_flattenTys
+import Lanius.Faithful.Gen.SelfProofF_floatFinite
 import Lanius.Faithful.Gen.SelfProofF_freshId
 import Lanius.Faithful.Gen.SelfProofF_funcsOnto
 import Lanius.Faithful.Gen.SelfProofF_ifNotWrites
@@ -86,23 +92,6 @@ open Lanius.Core (Value)
 open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
-
-theorem certs_wide_left_funcs : ∀ n, (Stmt_wide_left_funcs prog prims 888 n) := by
-  intro n
-  induction n with
-  | zero =>
-    exact (by intro x0 v0 w h r0; simp [pcall] at h)
-  | succ n ih =>
-    have ih_wide_left_funcs : Stmt_wide_left_funcs prog prims 888 n := ih
-    exact @step_wide_left_funcs prog prims 888 59 1106 fn_wide_left_funcs np_wide_left_funcs ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc⟩ ⟨@cert_wide_left_stmt⟩ n ⟨ih_wide_left_funcs⟩
-
-theorem cert_wide_left_funcs {n : Nat} :
-    Stmt_wide_left_funcs prog prims 888 n :=
-  (certs_wide_left_funcs n)
-
-theorem cert_untyped_rejected {n : Nat} :
-    Stmt_untyped_rejected prog prims 597 n :=
-  @proof_untyped_rejected prog prims 597 888 fn_untyped_rejected np_untyped_rejected ⟨@cert_wide_left_funcs⟩ n
 
 theorem cert_boxed_of_mini_selfhost_SrcExpr {n : Nat} :
     Stmt_boxed_of_mini_selfhost_SrcExpr prog prims 1288 n :=
@@ -270,9 +259,34 @@ theorem cert_wide_at {n : Nat} :
     Stmt_wide_at prog prims 1292 n :=
   @proof_wide_at prog prims 1292 1404 1405 1406 fn_wide_at np_wide_at ⟨@cert_wide_uint_at⟩ ⟨@cert_wide_isize_at⟩ ⟨@cert_wide_sint_at⟩ n
 
+theorem cert_fl_finite_bits {n : Nat} :
+    Stmt_fl_finite_bits prog prims 1581 n :=
+  @proof_fl_finite_bits prog prims 1581 fn_fl_finite_bits np_fl_finite_bits n
+
+theorem cert_float_finite {n : Nat} :
+    Stmt_float_finite prog prims 1543 n :=
+  @proof_float_finite prog prims 1543 1581 fn_float_finite np_float_finite ⟨@cert_fl_finite_bits⟩ n
+
+theorem certs_fl_pow2 : ∀ n, (Stmt_fl_pow2 prog prims 1582 n) := by
+  intro n
+  induction n with
+  | zero =>
+    exact (by intro x0 v0 w h r0; simp [pcall] at h)
+  | succ n ih =>
+    have ih_fl_pow2 : Stmt_fl_pow2 prog prims 1582 n := ih
+    exact @step_fl_pow2 prog prims 1582 56 105 fn_fl_pow2 np_fl_pow2 ⟨@cert_minus⟩ ⟨@cert_times⟩ n ⟨ih_fl_pow2⟩
+
+theorem cert_fl_pow2 {n : Nat} :
+    Stmt_fl_pow2 prog prims 1582 n :=
+  (certs_fl_pow2 n)
+
+theorem cert_fl_inf {n : Nat} :
+    Stmt_fl_inf prog prims 1544 n :=
+  @proof_fl_inf prog prims 1544 56 105 1582 fn_fl_inf np_fl_inf ⟨@cert_minus⟩ ⟨@cert_times⟩ ⟨@cert_fl_pow2⟩ n
+
 theorem cert_float_pick_of {n : Nat} :
     Stmt_float_pick_of prog prims 1483 n :=
-  @proof_float_pick_of prog prims 1483 fn_float_pick_of np_float_pick_of n
+  @proof_float_pick_of prog prims 1483 1543 1544 fn_float_pick_of np_float_pick_of ⟨@cert_float_finite⟩ ⟨@cert_fl_inf⟩ n
 
 theorem cert_float_pick {n : Nat} :
     Stmt_float_pick prog prims 1407 n :=
@@ -943,25 +957,5 @@ theorem cert_cons_param {n : Nat} :
 theorem cert_boxed_of_mini_selfhost_List_mini_selfhost_Local {n : Nat} :
     Stmt_boxed_of_mini_selfhost_List_mini_selfhost_Local prog prims 1491 n :=
   @proof_boxed_of_mini_selfhost_List_mini_selfhost_Local prog prims 1491 np_boxed_of_mini_selfhost_List_mini_selfhost_Local n
-
-theorem cert_cons_of_mini_selfhost_Local {n : Nat} :
-    Stmt_cons_of_mini_selfhost_Local prog prims 1429 n :=
-  @proof_cons_of_mini_selfhost_Local prog prims 1429 1491 fn_cons_of_mini_selfhost_Local np_cons_of_mini_selfhost_Local ⟨@cert_boxed_of_mini_selfhost_List_mini_selfhost_Local⟩ n
-
-theorem certs_params_of : ∀ n, (Stmt_params_of prog prims 1137 n) ∧ (Stmt_param_of prog prims 1321 n) := by
-  intro n
-  induction n with
-  | zero =>
-    exact ⟨(by intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4; simp [pcall] at h), (by intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5; simp [pcall] at h)⟩
-  | succ n ih =>
-    obtain ⟨ih_params_of, ih_param_of⟩ := ih
-    exact ⟨@step_params_of prog prims 1137 103 1320 1321 fn_params_of np_params_of ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_CTree⟩ ⟨@cert_empty_of_mini_selfhost_MParam⟩ n ⟨ih_param_of⟩, @step_param_of prog prims 1321 56 144 1065 1137 1326 1422 1423 1424 1425 1426 1427 1428 1429 fn_param_of np_param_of ⟨@cert_minus⟩ ⟨@cert_node_prod⟩ ⟨@cert_member⟩ ⟨@cert_ty_of⟩ ⟨@cert_param_token⟩ ⟨@cert_p_param_named⟩ ⟨@cert_p_param_self⟩ ⟨@cert_p_param_self_ref⟩ ⟨@cert_fresh_id⟩ ⟨@cert_pattern_of⟩ ⟨@cert_cons_param⟩ ⟨@cert_cons_of_mini_selfhost_Local⟩ n ⟨ih_params_of⟩⟩
-
-theorem cert_params_of {n : Nat} :
-    Stmt_params_of prog prims 1137 n :=
-  (certs_params_of n).1
-theorem cert_param_of {n : Nat} :
-    Stmt_param_of prog prims 1321 n :=
-  (certs_params_of n).2
 
 end Lanius.Faithful.SelfCert

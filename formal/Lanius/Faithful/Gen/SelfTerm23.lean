@@ -99,13 +99,13 @@ theorem ok_lower_decl : FnOk prog prims info (1105, ⟨14, [0], 0⟩) :=
 theorem ok_wide_left_stmt : FnOk prog prims info (1106, ⟨3, [0], 0⟩) :=
   fnOk_of fn_wide_left_stmt (by decide +kernel)
 
-theorem ok_lit_expr : FnOk prog prims info (1108, ⟨4, [2], 0⟩) :=
+theorem ok_lit_expr : FnOk prog prims info (1108, ⟨7, [2], 0⟩) :=
   fnOk_of fn_lit_expr (by decide +kernel)
 
 theorem ok_with_local : FnOk prog prims info (1110, ⟨1, [], 0⟩) :=
   fnOk_of fn_with_local (by decide +kernel)
 
-theorem ok_lit_exprs : FnOk prog prims info (1111, ⟨5, [2], 0⟩) :=
+theorem ok_lit_exprs : FnOk prog prims info (1111, ⟨8, [2], 0⟩) :=
   fnOk_of fn_lit_exprs (by decide +kernel)
 
 theorem ok_src_fields : FnOk prog prims info (1112, ⟨2, [], 0⟩) :=
@@ -120,7 +120,7 @@ theorem ok_payload_at : FnOk prog prims info (1114, ⟨2, [], 0⟩) :=
 theorem ok_src_variants : FnOk prog prims info (1115, ⟨0, [], 0⟩) :=
   fnOk_of fn_src_variants (by decide +kernel)
 
-theorem ok_lit_src_arms : FnOk prog prims info (1116, ⟨5, [3], 0⟩) :=
+theorem ok_lit_src_arms : FnOk prog prims info (1116, ⟨8, [3], 0⟩) :=
   fnOk_of fn_lit_src_arms (by decide +kernel)
 
 theorem ok_ty_local : FnOk prog prims info (1117, ⟨0, [0], 0⟩) :=

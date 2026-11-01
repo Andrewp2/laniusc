@@ -3571,10 +3571,43 @@ pub fn float_literal(text: List<usize>) -> core::option::Option<SrcExpr> {
     };
 }
 
+// The bits of +inf in the format of exponent width ew and fraction width f.
+pub fn fl_inf(ew: usize, f: usize) -> usize {
+    return times(minus(fl_pow2(ew), 1), fl_pow2(f));
+}
+
+// extract: inline
+fn fl_finite_bits(g: FloatTy, bits: u64, inf: usize) -> core::option::Option<SrcExpr> {
+    if (bits == (inf as u64)) {
+        return None;
+    }
+    return Some(SrcExpr::Float(g, bits));
+}
+
+// A literal that rounds to infinity is rejected, as laniusc rejects it
+// (LNC0070): only a finite pattern is read (SEMANTIC_DECISIONS.md, "Float
+// literals in the front end"). The marker's halves are float literals.
+pub fn float_finite(x: SrcExpr, inf: usize) -> core::option::Option<SrcExpr> {
+    return match (x) {
+        Int(k) -> None,
+        Boolean(b) -> None,
+        Unsigned(u, k) -> None,
+        Local(id) -> None,
+        Field(id, j) -> None,
+        Negate(y) -> None,
+        Not(y) -> None,
+        Apply(op, l, r) -> None,
+        Cast(s, y) -> None,
+        Null -> None,
+        SrcExpr::Char(code) -> None,
+        SrcExpr::Float(g, bits) -> fl_finite_bits(g, bits, inf),
+    };
+}
+
 pub fn float_pick_of(ft: FloatTy, a: SrcExpr, b: SrcExpr) -> core::option::Option<SrcExpr> {
     return match (ft) {
-        F32 -> Some(a),
-        F64 -> Some(b),
+        F32 -> float_finite(a, fl_inf(8, 23)),
+        F64 -> float_finite(b, fl_inf(11, 52)),
     };
 }
 

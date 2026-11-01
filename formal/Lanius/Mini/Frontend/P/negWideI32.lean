@@ -2,7 +2,7 @@ module
 
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.firstSrc
-import Lanius.Mini.Frontend.P.flExpFirst
+import Lanius.Mini.Frontend.P.floatFinite
 import Lanius.Mini.Frontend.P.nullConst
 import Lanius.Mini.Frontend.P.sintAt
 import Lanius.Mini.Frontend.P.unitTy

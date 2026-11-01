@@ -120,7 +120,7 @@ theorem ok_least_cast : FnOk prog prims info (1481, ⟨1, [], 0⟩) :=
 theorem ok_uint_mask : FnOk prog prims info (1482, ⟨0, [], 0⟩) :=
   fnOk_of fn_uint_mask (by decide +kernel)
 
-theorem ok_float_pick_of : FnOk prog prims info (1483, ⟨0, [], 0⟩) :=
+theorem ok_float_pick_of : FnOk prog prims info (1483, ⟨4, [], 0⟩) :=
   fnOk_of fn_float_pick_of (by decide +kernel)
 
 theorem ok_same_ty : FnOk prog prims info (1486, ⟨2, [0], 0⟩) :=

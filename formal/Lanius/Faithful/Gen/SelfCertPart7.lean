@@ -75,22 +75,6 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem certs_param_spellings : ∀ n, (Stmt_param_spellings prog prims 852 n) ∧ (Stmt_param_spelling_at prog prims 1051 n) := by
-  intro n
-  induction n with
-  | zero =>
-    exact ⟨(by intro x0 v0 w h r0; simp [pcall] at h), (by intro x0 x1 v0 v1 w h r0 r1; simp [pcall] at h)⟩
-  | succ n ih =>
-    obtain ⟨ih_param_spellings, ih_param_spelling_at⟩ := ih
-    exact ⟨@step_param_spellings prog prims 852 103 246 1051 fn_param_spellings np_param_spellings ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_CTree⟩ ⟨@cert_empty_of_mini_selfhost_List_usize⟩ n ⟨ih_param_spelling_at⟩, @step_param_spelling_at prog prims 1051 144 566 567 588 852 1250 fn_param_spelling_at np_param_spelling_at ⟨@cert_node_prod⟩ ⟨@cert_field_text_Token_of_mini_selfhost_Token⟩ ⟨@cert_kid_token⟩ ⟨@cert_cons_name⟩ ⟨@cert_p_enum_type_param⟩ n ⟨ih_param_spellings⟩⟩
-
-theorem cert_param_spellings {n : Nat} :
-    Stmt_param_spellings prog prims 852 n :=
-  (certs_param_spellings n).1
-theorem cert_param_spelling_at {n : Nat} :
-    Stmt_param_spelling_at prog prims 1051 n :=
-  (certs_param_spellings n).2
-
 theorem cert_if_unbounded {n : Nat} :
     Stmt_if_unbounded prog prims 858 n :=
   @proof_if_unbounded prog prims 858 fn_if_unbounded np_if_unbounded n
@@ -732,16 +716,16 @@ theorem cert_unbox_of_mini_selfhost_List_mini_selfhost_Inst {n : Nat} :
   @proof_unbox_of_mini_selfhost_List_mini_selfhost_Inst prog prims 605 np_unbox_of_mini_selfhost_List_mini_selfhost_Inst n
 
 theorem cert_uint_code {n : Nat} :
-    Stmt_uint_code prog prims 1543 n :=
-  @proof_uint_code prog prims 1543 fn_uint_code np_uint_code n
+    Stmt_uint_code prog prims 1545 n :=
+  @proof_uint_code prog prims 1545 fn_uint_code np_uint_code n
 
 theorem cert_float_code {n : Nat} :
-    Stmt_float_code prog prims 1579 n :=
-  @proof_float_code prog prims 1579 fn_float_code np_float_code n
+    Stmt_float_code prog prims 1583 n :=
+  @proof_float_code prog prims 1583 fn_float_code np_float_code n
 
 theorem cert_same_float {n : Nat} :
-    Stmt_same_float prog prims 1544 n :=
-  @proof_same_float prog prims 1544 1579 fn_same_float np_same_float ⟨@cert_float_code⟩ n
+    Stmt_same_float prog prims 1546 n :=
+  @proof_same_float prog prims 1546 1583 fn_same_float np_same_float ⟨@cert_float_code⟩ n
 
 theorem certs_same_tys : ∀ n, (Stmt_same_tys prog prims 1418 n) ∧ (Stmt_same_ty prog prims 1486 n) := by
   intro n
@@ -750,7 +734,7 @@ theorem certs_same_tys : ∀ n, (Stmt_same_tys prog prims 1418 n) ∧ (Stmt_same
     exact ⟨(by intro x0 x1 v0 v1 w h r0 r1; simp [pcall] at h), (by intro x0 x1 v0 v1 w h r0 r1; simp [pcall] at h)⟩
   | succ n ih =>
     obtain ⟨ih_same_tys, ih_same_ty⟩ := ih
-    exact ⟨@step_same_tys prog prims 1418 600 1486 fn_same_tys np_same_tys ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_Ty⟩ n ⟨ih_same_tys⟩ ⟨ih_same_ty⟩, @step_same_ty prog prims 1486 600 895 1418 1543 1544 fn_same_ty np_same_ty ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_Ty⟩ ⟨@cert_unbox_of_mini_selfhost_Ty⟩ ⟨@cert_uint_code⟩ ⟨@cert_same_float⟩ n ⟨ih_same_tys⟩ ⟨ih_same_ty⟩⟩
+    exact ⟨@step_same_tys prog prims 1418 600 1486 fn_same_tys np_same_tys ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_Ty⟩ n ⟨ih_same_tys⟩ ⟨ih_same_ty⟩, @step_same_ty prog prims 1486 600 895 1418 1545 1546 fn_same_ty np_same_ty ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_Ty⟩ ⟨@cert_unbox_of_mini_selfhost_Ty⟩ ⟨@cert_uint_code⟩ ⟨@cert_same_float⟩ n ⟨ih_same_tys⟩ ⟨ih_same_ty⟩⟩
 
 theorem cert_same_tys {n : Nat} :
     Stmt_same_tys prog prims 1418 n :=
@@ -832,24 +816,28 @@ theorem cert_p_generic_argument_integer {n : Nat} :
     Stmt_p_generic_argument_integer prog prims 1494 n :=
   @proof_p_generic_argument_integer prog prims 1494 fn_p_generic_argument_integer np_p_generic_argument_integer n
 
-theorem certs_decimal : ∀ n, (Stmt_decimal prog prims 1495 n) ∧ (Stmt_decimal_digit prog prims 1548 n) := by
+theorem certs_decimal : ∀ n, (Stmt_decimal prog prims 1495 n) ∧ (Stmt_decimal_digit prog prims 1550 n) := by
   intro n
   induction n with
   | zero =>
     exact ⟨(by intro x0 x1 v0 v1 w h r0 r1; simp [pcall] at h), (by intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2; simp [pcall] at h)⟩
   | succ n ih =>
     obtain ⟨ih_decimal, ih_decimal_digit⟩ := ih
-    exact ⟨@step_decimal prog prims 1495 76 1548 fn_decimal np_decimal ⟨@cert_unbox_of_mini_selfhost_List_usize⟩ n ⟨ih_decimal_digit⟩, @step_decimal_digit prog prims 1548 56 75 105 1495 fn_decimal_digit np_decimal_digit ⟨@cert_minus⟩ ⟨@cert_plus⟩ ⟨@cert_times⟩ n ⟨ih_decimal⟩⟩
+    exact ⟨@step_decimal prog prims 1495 76 1550 fn_decimal np_decimal ⟨@cert_unbox_of_mini_selfhost_List_usize⟩ n ⟨ih_decimal_digit⟩, @step_decimal_digit prog prims 1550 56 75 105 1495 fn_decimal_digit np_decimal_digit ⟨@cert_minus⟩ ⟨@cert_plus⟩ ⟨@cert_times⟩ n ⟨ih_decimal⟩⟩
 
 theorem cert_decimal {n : Nat} :
     Stmt_decimal prog prims 1495 n :=
   (certs_decimal n).1
 theorem cert_decimal_digit {n : Nat} :
-    Stmt_decimal_digit prog prims 1548 n :=
+    Stmt_decimal_digit prog prims 1550 n :=
   (certs_decimal n).2
 
 theorem cert_array_len {n : Nat} :
     Stmt_array_len prog prims 1435 n :=
   @proof_array_len prog prims 1435 144 147 566 567 1493 1494 1495 fn_array_len np_array_len ⟨@cert_node_prod⟩ ⟨@cert_kid⟩ ⟨@cert_field_text_Token_of_mini_selfhost_Token⟩ ⟨@cert_kid_token⟩ ⟨@cert_p_type_array_len_constant⟩ ⟨@cert_p_generic_argument_integer⟩ ⟨@cert_decimal⟩ n
+
+theorem cert_p_type_ident {n : Nat} :
+    Stmt_p_type_ident prog prims 1436 n :=
+  @proof_p_type_ident prog prims 1436 fn_p_type_ident np_p_type_ident n
 
 end Lanius.Faithful.SelfCert

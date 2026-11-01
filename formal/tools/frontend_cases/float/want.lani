@@ -23,7 +23,7 @@ fn lits(x: f64, y: f32) -> f64 {
         return -1500.0;
     }
     if (y == -0e0) {
-        return 1e+400;
+        return 17976931348623157e292;
     }
     return b - (5e-1 as f64) + (a as f64) - 1e-7;
 }

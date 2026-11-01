@@ -586,6 +586,17 @@ Float literals in the front end:
 - Underscores in a float literal are rejected, and so is an exponent above
   99999 (with 10^400 already past every finite pattern, this only keeps the
   front end's powers small).
+- A literal that rounds to infinity at its type is rejected, as laniusc
+  rejects it (LNC0070, "this finite literal overflows f64") and as Rust
+  does (decided 11-01): `1e400`, `-1e400`, `1e39` as an `f32`,
+  `1.7976931348623159e308` (past the largest finite `f64` by more than half
+  an ulp). One that rounds down to the largest finite pattern
+  (`1.7976931348623158e308`, `3.4028235e38` as an `f32`) is read, and so is
+  one that underflows to zero or a subnormal (`1e-400`). The front end
+  never reads `inf`: `float_finite` drops the marker's half whose bits are
+  +inf, so the check is at the type the context picks (`1e39` is a fine
+  `f64`). Found by fuzz_oracle.py's boundary probes
+  (formal/tools/fuzz_found/float_literal_infinity.lani).
 
 ### Arrays in the verified compiler (decided 10-31, F6)
 

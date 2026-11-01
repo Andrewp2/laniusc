@@ -114,7 +114,7 @@ theorem ok_amount_want : FnOk prog prims info (1291, ⟨2, [], 0⟩) :=
 theorem ok_wide_at : FnOk prog prims info (1292, ⟨2, [], 0⟩) :=
   fnOk_of fn_wide_at (by decide +kernel)
 
-theorem ok_float_want : FnOk prog prims info (1293, ⟨2, [], 0⟩) :=
+theorem ok_float_want : FnOk prog prims info (1293, ⟨6, [], 0⟩) :=
   fnOk_of fn_float_want (by decide +kernel)
 
 theorem ok_empty_of_mini_selfhost_SrcExpr : FnOk prog prims info (1295, ⟨0, [], 0⟩) :=

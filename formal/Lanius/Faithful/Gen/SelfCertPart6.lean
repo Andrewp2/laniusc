@@ -27,6 +27,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_Inline_pStructFieldsAfterCommaMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pStructFieldsMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pTypeArgsNone
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pTypeSliceTail
+public import Lanius.Faithful.Gen.SelfStmtF_Inline_positionAt
 public import Lanius.Faithful.Gen.SelfStmtF_collect
 public import Lanius.Faithful.Gen.SelfStmtF_distinct
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
@@ -60,6 +61,7 @@ import Lanius.Faithful.Gen.SelfProofF_Inline_pStructFieldsAfterCommaMore
 import Lanius.Faithful.Gen.SelfProofF_Inline_pStructFieldsMore
 import Lanius.Faithful.Gen.SelfProofF_Inline_pTypeArgsNone
 import Lanius.Faithful.Gen.SelfProofF_Inline_pTypeSliceTail
+import Lanius.Faithful.Gen.SelfProofF_Inline_positionAt
 import Lanius.Faithful.Gen.SelfProofF_collect
 import Lanius.Faithful.Gen.SelfProofF_distinct
 import Lanius.Faithful.Gen.SelfProofF_hasKids
@@ -84,10 +86,6 @@ open Lanius.Core (Value)
 open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
-
-theorem cert_p_items_more {n : Nat} :
-    Stmt_p_items_more prog prims 774 n :=
-  @proof_p_items_more prog prims 774 fn_p_items_more np_p_items_more n
 
 theorem cert_p_items_end {n : Nat} :
     Stmt_p_items_end prog prims 775 n :=
@@ -733,5 +731,21 @@ theorem cert_p_where_none {n : Nat} :
 theorem cert_p_enum_type_param {n : Nat} :
     Stmt_p_enum_type_param prog prims 1250 n :=
   @proof_p_enum_type_param prog prims 1250 fn_p_enum_type_param np_p_enum_type_param n
+
+theorem certs_param_spellings : ∀ n, (Stmt_param_spellings prog prims 852 n) ∧ (Stmt_param_spelling_at prog prims 1051 n) := by
+  intro n
+  induction n with
+  | zero =>
+    exact ⟨(by intro x0 v0 w h r0; simp [pcall] at h), (by intro x0 x1 v0 v1 w h r0 r1; simp [pcall] at h)⟩
+  | succ n ih =>
+    obtain ⟨ih_param_spellings, ih_param_spelling_at⟩ := ih
+    exact ⟨@step_param_spellings prog prims 852 103 246 1051 fn_param_spellings np_param_spellings ⟨@cert_unbox_of_mini_selfhost_List_mini_selfhost_CTree⟩ ⟨@cert_empty_of_mini_selfhost_List_usize⟩ n ⟨ih_param_spelling_at⟩, @step_param_spelling_at prog prims 1051 144 566 567 588 852 1250 fn_param_spelling_at np_param_spelling_at ⟨@cert_node_prod⟩ ⟨@cert_field_text_Token_of_mini_selfhost_Token⟩ ⟨@cert_kid_token⟩ ⟨@cert_cons_name⟩ ⟨@cert_p_enum_type_param⟩ n ⟨ih_param_spellings⟩⟩
+
+theorem cert_param_spellings {n : Nat} :
+    Stmt_param_spellings prog prims 852 n :=
+  (certs_param_spellings n).1
+theorem cert_param_spelling_at {n : Nat} :
+    Stmt_param_spelling_at prog prims 1051 n :=
+  (certs_param_spellings n).2
 
 end Lanius.Faithful.SelfCert

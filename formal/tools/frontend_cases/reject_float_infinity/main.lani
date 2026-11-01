@@ -1,0 +1,10 @@
+module app::main;
+
+// A float literal that rounds to infinity at its type is rejected, as
+// laniusc rejects it (LNC0070); SEMANTIC_DECISIONS.md, "Float literals in the
+// front end". 3.4028236e38 is past f32's largest value by more than half an
+// ulp, though it is a finite f64.
+fn top(x: f32) -> f32 {
+    let big: f32 = 3.4028236e38;
+    return x + big;
+}

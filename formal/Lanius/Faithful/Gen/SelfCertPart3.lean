@@ -99,10 +99,6 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem cert_boxed_of_mini_selfhost_List_mini_selfhost_SrcType {n : Nat} :
-    Stmt_boxed_of_mini_selfhost_List_mini_selfhost_SrcType prog prims 221 n :=
-  @proof_boxed_of_mini_selfhost_List_mini_selfhost_SrcType prog prims 221 np_boxed_of_mini_selfhost_List_mini_selfhost_SrcType n
-
 theorem cert_cons_of_mini_selfhost_SrcType {n : Nat} :
     Stmt_cons_of_mini_selfhost_SrcType prog prims 130 n :=
   @proof_cons_of_mini_selfhost_SrcType prog prims 130 221 fn_cons_of_mini_selfhost_SrcType np_cons_of_mini_selfhost_SrcType ⟨@cert_boxed_of_mini_selfhost_List_mini_selfhost_SrcType⟩ n
@@ -783,5 +779,9 @@ theorem cert_eval_host {n : Nat} :
 theorem cert_eval_call {n : Nat} :
     Stmt_eval_call prog prims 325 n :=
   @proof_eval_call prog prims 325 489 490 fn_eval_call np_eval_call ⟨@cert_eval_call_sig⟩ ⟨@cert_eval_host⟩ n
+
+theorem cert_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff {n : Nat} :
+    Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff prog prims 327 n :=
+  @proof_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff prog prims 327 np_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff n
 
 end Lanius.Faithful.SelfCert

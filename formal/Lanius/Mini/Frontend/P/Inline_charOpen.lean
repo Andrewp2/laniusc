@@ -63,6 +63,12 @@ namespace Lanius.Mini
     else
       flExpPart (ib :: irest) im inn 0
 
+@[expose] def Inline.flFiniteBits (g : FloatTy) (bits : BitVec 64) (inf : Nat) : Option SrcExpr :=
+  if bits = BitVec.ofNat 64 inf then
+    none
+  else
+    some (SrcExpr.float g bits)
+
 @[expose] def Inline.findLocalAt (fl : Local) (frest : List Local) (fname : List Nat) : Option Local :=
   if sameText fl.name fname then
     some fl

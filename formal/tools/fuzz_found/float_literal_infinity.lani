@@ -1,10 +1,13 @@
 // fuzz_oracle.py (boundary literals, 11-01): a float literal that rounds to
 // infinity. laniusc rejects it, as Rust does: LNC0070 "this finite literal
-// overflows f64". The verified front end rounds it with ofDecimal to +inf and
-// compiles it: exit 1. The same for f32 (`1e39`, `3.4028236e38`), for a
-// negated literal (-inf), and for 400 digits before the point. Literals that
-// round down to the largest finite value (`1.7976931348623158e308`,
-// `3.4028235e38`) and literals that underflow (`1e-400`) are read alike.
+// overflows f64". The verified front end used to round it with ofDecimal to
+// +inf and compile it (exit 1). Decided 11-01 (SEMANTIC_DECISIONS.md, "Float
+// literals in the front end"): both reject it; frontend.lani's float_finite
+// drops a literal whose bits at the picked type are infinite. The same holds for
+// f32 (`1e39`, `3.4028236e38`), for a negated literal, and for 400 digits
+// before the point. Literals that round down to the largest finite value
+// (`1.7976931348623158e308`, `3.4028235e38`) and literals that underflow
+// (`1e-400`) are still read, alike in both.
 // Run: python3 -I formal/tools/fuzz_oracle.py WORKDIR --program THIS
 module app::main;
 

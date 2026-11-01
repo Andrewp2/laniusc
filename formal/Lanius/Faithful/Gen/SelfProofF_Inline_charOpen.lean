@@ -115,6 +115,15 @@ theorem proof_fl_exp_sign_at {prog : SrcProgram} {prims : Prims} {ix_fl_exp_sign
   simp only [src_fl_exp_sign_at] at h
   faithful [Lanius.Mini.Inline.flExpSignAt]
 
+theorem proof_fl_finite_bits {prog : SrcProgram} {prims : Prims} {ix_fl_finite_bits : Nat} (fn : prog.funcs[ix_fl_finite_bits]? = some (src_fl_finite_bits)) (np : prims.isPrim ix_fl_finite_bits = false) {n : Nat} :
+    Stmt_fl_finite_bits prog prims ix_fl_finite_bits n := by
+  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_fl_finite_bits] at h
+  faithful [Lanius.Mini.Inline.flFiniteBits]
+
 theorem step_fl_frac_at {prog : SrcProgram} {prims : Prims} {ix_fl_frac_at ix_plus ix_cons_of_usize ix_fl_digit ix_fl_push ix_fl_frac_part ix_fl_exp_part : Nat} (fn : prog.funcs[ix_fl_frac_at]? = some (src_fl_frac_at ix_plus ix_cons_of_usize ix_fl_digit ix_fl_push ix_fl_frac_part ix_fl_exp_part)) (np : prims.isPrim ix_fl_frac_at = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))

@@ -78,7 +78,7 @@ theorem ok_lowered_all : FnOk prog prims info (596, ⟨15, [3], 0⟩) :=
 theorem ok_untyped_rejected : FnOk prog prims info (597, ⟨5, [], 0⟩) :=
   fnOk_of fn_untyped_rejected (by decide +kernel)
 
-theorem ok_lit_funcs : FnOk prog prims info (598, ⟨7, [1], 0⟩) :=
+theorem ok_lit_funcs : FnOk prog prims info (598, ⟨10, [1], 0⟩) :=
   fnOk_of fn_lit_funcs (by decide +kernel)
 
 theorem ok_type_table_more_at : FnOk prog prims info (599, ⟨16, [4], 1⟩) :=

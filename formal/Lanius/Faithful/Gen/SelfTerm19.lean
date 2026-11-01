@@ -21,7 +21,7 @@ theorem ok_wide_left_funcs : FnOk prog prims info (888, ⟨4, [0], 0⟩) :=
 theorem ok_cons_of_mini_selfhost_SrcFunc : FnOk prog prims info (889, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_SrcFunc (by decide +kernel)
 
-theorem ok_lit_stmt : FnOk prog prims info (890, ⟨6, [3], 0⟩) :=
+theorem ok_lit_stmt : FnOk prog prims info (890, ⟨9, [3], 0⟩) :=
   fnOk_of fn_lit_stmt (by decide +kernel)
 
 theorem ok_param_locals : FnOk prog prims info (891, ⟨1, [0], 0⟩) :=
