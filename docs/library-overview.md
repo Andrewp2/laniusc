@@ -561,10 +561,11 @@ the `seq-diff`/`seq-patch` tools give 878/878 minimal Myers edit lengths against
 an O(N·M) LCS, 878/878 GNU and native round trips, 878/878 real GNU `diff -u`
 applications and 333/333 distinct-line plus 328/328 repeated-line offset/fuzz
 agreements with GNU `patch` at `-F0` and `-F2`.
-[Three-way merge](extended-merge3.md) (`ext::merge3`, `seq-merge`) agrees byte
-for byte with `git merge-file`, `git merge-file --diff3` and GNU `diff3 -m` on
-2,000/2,000 distinct-line triples each; repeated-line triples agree on
-1,787-1,800 of 2,000, with equal-cost alignment differences otherwise.
+[Three-way merge](extended-merge3.md) (`ext::merge3`, `seq-merge`) aligns with
+the xdiff port. It agrees byte for byte with `git merge-file` and
+`git merge-file --diff3` on all 4,000 generated triples (2,000 distinct-line,
+2,000 repeated-line), and with GNU `diff3 -m` on 2,000/2,000 distinct-line and
+1,863/2,000 repeated-line triples.
 [Word diff and diffstat](extended-wordiff.md) (`ext::wordiff`, `ext::diffstat`,
 `seq-diff --word-diff|--char-diff|--stat`, `seq-diffstat`) use a port of git's
 xdiff alignment (`Algorithm::Xdiff`). Their output is identical to git 2.43 on

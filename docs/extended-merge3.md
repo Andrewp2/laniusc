@@ -9,8 +9,9 @@ markers in merge or diff3 style. `sample_programs/library/seq_merge.lani` is a
 
 ## API
 
-`merge3(o, a, b, level, limits)` is generic over `T: Eq<T> + Hash<T>`; `o` is
-the base, `a` ours, `b` theirs. `merge_lines(o, a, b, level, limits)`
+`merge3(o, a, b, level, limits)` (or `merge3_with(o, a, b, level, algorithm,
+limits)`) is generic over `T: Eq<T> + Hash<T>`; `o` is
+the base, `a` ours, `b` theirs. `merge_lines(o, a, b, level, limits)` (or `merge_lines_with`)
 specializes it to `ext::seqdiff::Line` and adds git's conflict rejoining. Both
 return `Merge`, with `len()`, `chunk(i) -> Option<Chunk>`, `conflict_count()`
 and `destroy()`.
@@ -27,8 +28,11 @@ sequences. Its `kind` is one of:
 | 4 | conflict | markers |
 | 5 | lines both sides share inside a refined conflict | ours (= theirs) |
 
-**Algorithm.** The engine computes linear-space Myers matchings for base→ours
-and base→theirs. It then walks the base, emitting maximal runs where all three
+**Algorithm.** The engine computes matchings for base→ours and base→theirs
+with `ext::seqdiff::Algorithm::Xdiff`, the port of git's xdiff alignment that
+git merge-file also uses (see [word diff and diffstat](extended-wordiff.md)).
+`merge3_with` and `merge_lines_with` take another `Algorithm`, such as minimal
+`Myers`, for both the side diffs and conflict refinement. It then walks the base, emitting maximal runs where all three
 sequences stay matched in step as unchanged chunks. At any other point, it
 advances to the next base line that is matched in both sides, and classifies
 the chunk in between by comparing contents. A side equal to the base takes the
@@ -70,14 +74,14 @@ Errors are `InvalidOptions`, `Bounds`, `ItemLimit`, `WorkLimit`,
 ## Tool
 
 ```sh
-seq-merge [--diff3] [--gnu] [--eager|--zealous|--alnum] [-L OURS -L BASE -L THEIRS] OURS BASE THEIRS
+seq-merge [--diff3] [--gnu] [--eager|--zealous|--alnum] [--myers] [-L OURS -L BASE -L THEIRS] OURS BASE THEIRS
 ```
 
 The merge goes to stdout. The default is merge style at `--alnum`, matching
 `git merge-file -p`. `--diff3` selects diff3 style at `--eager`, matching
 `git merge-file -p --diff3`. `--gnu` adds the GNU identical-change form and
 counts those chunks as conflicts, matching `diff3 -m`. Labels default to the
-file names. Exit status is 0 for a clean merge, 1 for conflicts and 2 for
+file names. `--myers` aligns with minimal Myers instead of xdiff. Exit status is 0 for a clean merge, 1 for conflicts and 2 for
 errors.
 
 ## Verification
@@ -93,21 +97,23 @@ triple is checked three ways, on exact output bytes and on clean/conflict
 status. Independent properties (a side equal to the base yields the other side;
 clean merges carry no markers) are also checked.
 
-Receipt for 4,000 triples (seed 20261031, 57 s, run directly on the compiled
+Receipt for 4,000 triples (seed 20261031, 81 s, run directly on the compiled
 tool):
 
 | group (2,000 triples each) | git merge-file | git merge-file --diff3 | diff3 -m |
 | --- | ---: | ---: | ---: |
 | distinct lines: identical output and status | 2,000 (829 conflicted) | 2,000 (829 conflicted) | 2,000 (904 conflicted) |
-| repeated lines: identical output and status | 1,800 (559 conflicted) | 1,787 (546 conflicted) | 1,788 (616 conflicted) |
-| repeated lines: different | 200 | 213 | 212 |
+| repeated lines: identical output and status | 2,000 (721 conflicted) | 2,000 (721 conflicted) | 1,863 (671 conflicted) |
+| repeated lines: different | 0 | 0 | 137 |
 
-The properties hold for all 4,000 triples. With only a few repeated line
-values, several minimal base→side diffs exist. git (xdiff preprocessing and
-heuristics) and GNU diff pick alignments differently from this Myers
-implementation, which moves chunk boundaries. The inspected differences are of
-this kind. Distinct-line triples have one alignment, and the oracle fails on
-any disagreement there.
+The properties hold for all 4,000 triples. With the earlier minimal-Myers
+alignment, which is still available as `--myers`, repeated-line triples agreed
+on 1,800, 1,787 and 1,788 of 2,000. With only a few repeated line values,
+several minimal base→side diffs exist, and the xdiff port picks git's choice.
+GNU diff3 runs GNU diff, which has its own preprocessing and tie rules, so 137
+repeated-line triples still place chunk boundaries differently from `diff3 -m`.
+The oracle now fails on any git merge-file disagreement; `--strict-repeated`
+also requires diff3 agreement.
 
 Verified execution is x86_64 Linux output from the GPU compiler. Other targets
 have not been verified.
