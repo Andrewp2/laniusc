@@ -327,8 +327,10 @@ generated triples, `seq-merge` matches `git merge-file` and `git merge-file
 all 2,000 distinct-line and 1,863 of 2,000 repeated-line triples. On a 1.6 MB
 input, `seq-merge` takes 99 ms against git's 83 ms, and `seq-patch` takes
 10 ms against GNU `patch`'s 9.5 ms. `seq-diff --histogram` ports git's
-histogram diff, with its indent heuristic and xdiff fallback, and matches
-`git diff --histogram` on all 4,000 generated pairs.
+histogram diff, with its indent heuristic and xdiff fallback. seq-diff's
+default output (git's xdiff with the indent heuristic and hunk-header function
+names), `--histogram` and `-W`/`--function-context` (`ext::seqdiff::function_hunks`)
+match plain `git diff --no-index` on all 4,000 generated pairs in each mode.
 
 [Runtime format strings and owned formatting](stdlib-format-strings.md) add
 typed positional/named arguments, scalar fill/alignment/truncation, signed radix

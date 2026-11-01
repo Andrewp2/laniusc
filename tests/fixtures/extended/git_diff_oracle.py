@@ -1,22 +1,30 @@
 #!/usr/bin/env python3
-"""Compare seq-diff --histogram with git diff --histogram.
+"""Compare seq-diff with plain git diff, byte for byte.
 
-usage: histogram_oracle.py SEQ_DIFF WORKDIR [PAIRS]
+usage: git_diff_oracle.py SEQ_DIFF WORKDIR [PAIRS]
 
 Each pair is compared on exact output bytes from the first hunk header on
-(git also prints diff --git/index/---/+++ lines) and on exit status:
+(git also prints diff --git/index/---/+++ lines) and on exit status, in three
+modes:
 
-  seq-diff --histogram [-U N] A B  vs  git diff --no-index --histogram [-U N] A B
+  default    seq-diff [-U N] A B              vs  git diff --no-index [-U N] A B
+             (every fourth pair spells it seq-diff --xdiff)
+  histogram  seq-diff --histogram [-U N] A B  vs  git diff --no-index --histogram ...
+  function   seq-diff -W|--function-context [--histogram] [-U N] A B
+                                              vs  git diff --no-index -W ...
 
-git runs with its default indent heuristic pinned on and with hunk-header
-function names switched off (a global attributes file maps every path to a
-diff driver whose xfuncname never matches), since seq-diff prints bare
-`@@ ... @@` headers. Groups:
+git runs with an empty global configuration (no system file, HOME in the work
+directory), so its defaults apply: the indent heuristic is on and hunk headers
+carry function names from xdiff's default rule (a line starting with an ASCII
+letter, '_' or '$'). Groups:
 
   distinct   all lines distinct, small random edits
   repeated   a few line values repeated (ties between equal-length runs)
   code       indented blocks, braces and blank lines; blocks inserted,
              deleted and duplicated (the indent heuristic places them)
+  funcs      C-like functions separated by blank lines, with comments, long
+             signature lines (over 80 bytes, trailing blanks), '_'/'$'/digit/
+             non-ASCII first bytes; functions added, removed and edited
   heavy      long files over two to four line values, so every value occurs
              more than 64 times and git falls back to xdiff on the range
   mixed      unique lines among heavy repeats
@@ -32,12 +40,9 @@ import sys
 SEQ, WORK = os.path.abspath(sys.argv[1]), os.path.abspath(sys.argv[2])
 COUNT = int(sys.argv[3]) if len(sys.argv) > 3 else 1200
 os.makedirs(WORK, exist_ok=True)
-ATTRS = os.path.join(WORK, "attributes")
 CONFIG = os.path.join(WORK, "gitconfig")
-with open(ATTRS, "w") as f:
-    f.write("* diff=nofunc\n")
 with open(CONFIG, "w") as f:
-    f.write(f'[core]\n\tattributesFile = {ATTRS}\n[diff "nofunc"]\n\txfuncname = "^NO-FUNCNAME-PATTERN-MATCHES-THIS-LINE$"\n')
+    f.write("")
 ENV = dict(os.environ)
 ENV.update(LC_ALL="C", GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=CONFIG, HOME=WORK, GIT_CEILING_DIRECTORIES=os.path.dirname(WORK))
 counts = {}
@@ -152,6 +157,58 @@ def pair_code(rng):
     return a, b
 
 
+def func(rng, n):
+    name = rng.choice(["int", "static void", "_init", "$proc", "fn", "struct", "Type", "9lives", "\u00e9t\u00e9", "  helper", "\tinner"])
+    sig = f"{name} f{n}({', '.join(rng.choice(['int a', 'char *s', 'long b']) for _ in range(rng.randint(0, 6)))})"
+    if rng.random() < 0.2:
+        sig += " /* " + "x" * rng.randint(20, 90) + " */"
+    sig += rng.choice(["", " ", "\t", "  "]) + rng.choice(["\n", " {\n"])
+    out = []
+    if rng.random() < 0.3:
+        out.append(f"/* f{n} */\n")
+    out.append(sig)
+    if not sig.endswith("{\n"):
+        out.append("{\n")
+    for _ in range(rng.randint(0, 6)):
+        r = rng.random()
+        if r < 0.15:
+            out.append("\n")
+        elif r < 0.2:
+            out.append("label:\n")
+        else:
+            out.append(f"\t{rng.choice(['x', 'y', 'z'])} = {rng.randint(0, 9)};\n")
+    out.append("}\n")
+    for _ in range(rng.choice([0, 1, 1, 1, 2])):
+        out.append(rng.choice(["\n", "\n", " \n", "\t\n"]))
+    return out
+
+
+def pair_funcs(rng):
+    n = [0]
+    def one():
+        n[0] += 1
+        return func(rng, n[0])
+    fs = [one() for _ in range(rng.randint(0, 7))]
+    a = [line for f in fs for line in f]
+    gs = [list(f) for f in fs]
+    for _ in range(rng.randint(1, 4)):
+        op = rng.randint(0, 3)
+        at = rng.randint(0, len(gs))
+        if op == 0:
+            gs.insert(at, one())
+        elif op == 1 and gs:
+            del gs[min(at, len(gs) - 1)]
+        elif gs:
+            g = gs[min(at, len(gs) - 1)]
+            j = rng.randint(0, len(g))
+            if rng.random() < 0.5:
+                g[j:j] = [f"\tw = {rng.randint(0, 9)};\n" for _ in range(rng.randint(1, 3))]
+            else:
+                del g[j:j + rng.randint(1, 2)]
+    b = [line for g in gs for line in g]
+    return a, b
+
+
 def pair_heavy(rng):
     vocab = [f"{w}\n" for w in rng.sample(["a", "b", "c", "", "}"], rng.randint(2, 4))]
     make = lambda: rng.choice(vocab)
@@ -183,11 +240,27 @@ def pair_big(rng):
     return a, edit(rng, a, make, rng.randint(10, 60), 10)
 
 
-GROUPS = [("distinct", pair_distinct, 6), ("repeated", pair_repeated, 6), ("code", pair_code, 6),
+GROUPS = [("distinct", pair_distinct, 6), ("repeated", pair_repeated, 6), ("code", pair_code, 6), ("funcs", pair_funcs, 6),
           ("heavy", pair_heavy, 2), ("mixed", pair_mixed, 2), ("big", pair_big, 2)]
 
 
-def check(rng, group, a, b):
+def compare(group, mode, args, gargs, ta, tb, pa, pb):
+    mine = run([SEQ] + args + [pa, pb])
+    ref = run(["git", "diff", "--no-index", "--no-color"] + gargs + [pa, pb])
+    key = f"{group}/{mode}"
+    bump(key + "/pairs")
+    if ref.returncode == 1:
+        bump(key + "/different")
+    if b" @@ " in ref.stdout:
+        bump(key + "/named")
+    if mine.returncode != ref.returncode or body(mine.stdout) != body(ref.stdout):
+        fail(f"{key} {' '.join(args)} rc {mine.returncode}/{ref.returncode}", ta, tb, body(mine.stdout), body(ref.stdout))
+    else:
+        bump(key + "/agree")
+    return body(ref.stdout)
+
+
+def check(rng, group, a, b, index):
     ta, tb = finish(rng, a), finish(rng, b)
     pa, pb = os.path.join(WORK, "p", "a"), os.path.join(WORK, "p", "b")
     write(pa, ta)
@@ -195,16 +268,14 @@ def check(rng, group, a, b):
     ctx = []
     if rng.random() < 0.3:
         ctx = ["-U", str(rng.choice([0, 1, 2, 5, 8]))]
-    mine = run([SEQ, "--histogram"] + ctx + [pa, pb])
     gctx = ["-U" + ctx[1]] if ctx else []
-    ref = run(["git", "-c", "diff.indentHeuristic=true", "diff", "--no-index", "--no-color", "--histogram"] + gctx + [pa, pb])
-    bump(group + "/pairs")
-    if ref.returncode == 1:
-        bump(group + "/different")
-    if mine.returncode != ref.returncode or body(mine.stdout) != body(ref.stdout):
-        fail(f"{group} {' '.join(ctx)} rc {mine.returncode}/{ref.returncode}", ta, tb, body(mine.stdout), body(ref.stdout))
-    else:
-        bump(group + "/agree")
+    plain = compare(group, "default", (["--xdiff"] if index % 4 == 0 else []) + ctx, gctx, ta, tb, pa, pb)
+    compare(group, "histogram", ["--histogram"] + ctx, ["--histogram"] + gctx, ta, tb, pa, pb)
+    hist = ["--histogram"] if rng.random() < 0.3 else []
+    flag = rng.choice(["-W", "--function-context"])
+    wide = compare(group, "function", [flag] + hist + ctx, ["-W"] + hist + gctx, ta, tb, pa, pb)
+    if not hist and wide != plain:
+        bump(group + "/function/wider")
 
 
 def main():
@@ -216,7 +287,7 @@ def main():
                 if made >= COUNT:
                     break
                 a, b = maker(rng)
-                check(rng, name, a, b)
+                check(rng, name, a, b, made)
                 made += 1
     shutil.rmtree(os.path.join(WORK, "p"), ignore_errors=True)
     for key in sorted(counts):
