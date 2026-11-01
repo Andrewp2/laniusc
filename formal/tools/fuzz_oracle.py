@@ -16,8 +16,12 @@ alone with --seed S --first k --count 1.
    end reads (formal/tools/frontend_cases/, SEMANTIC_DECISIONS.md, the F rows
    of ROADMAP.md): integer arithmetic at every width, with overflow, division
    by zero, shifts out of range and casts between all of them; structs,
-   enums, Option and Result; matches with wildcard arms, as expressions,
-   statements and lets; while and for loops with break and continue; `?`;
+   enums with payloads of other enums, Option and Result; fields of fields;
+   matches with wildcard arms and nested patterns (`V(p, Ok(q))`, the forms
+   SEMANTIC_DECISIONS.md's "Nested patterns" reads, and F11b's in
+   statements and lets), as expressions, statements and lets; while and for
+   loops with break and continue, a while's condition sometimes more than
+   its counter; `?`;
    recursion; traits with impls, generic functions with bounds and where
    clauses, inherent methods; arrays by value. Every loop is bounded and
    recursion is on a counter below 16, and a cost bound on calls in loops
@@ -50,14 +54,22 @@ in target/claude-work/fuzz/found/):
 - Store order. For `a[i] = v` with i past the end, Core checks the bound
   before it evaluates v (SEMANTIC_DECISIONS.md, "Traps in compiled code");
   laniusc evaluates v first, as Rust does, so v's output (or v's own trap)
-  comes before laniusc's trap. Such a program is counted as known
-  (store_order_known), not as a disagreement.
+  comes before laniusc's trap. The front end no longer reads a store whose
+  value calls a function, and the generator writes none; a program that
+  still shows the order is counted as known (store_order_known).
+- Bare shift amounts, a verified-compiler reading bug (ROADMAP.md, "Bare
+  shift amounts"; found/bare_amount_*.lani): an amount with no local in it
+  is cast to its own type until it is fixed (BARE_AMOUNTS).
+- Nested `None` in `Some(..)`: laniusc does not resolve it (LNC0005,
+  found/nested_none.lani), a laniusc bug; the generator nests no Option in
+  an Option or Result.
 - Constant traps. laniusc rejects a constant divisor of zero and a constant
   index past the end at compile time (KNOWN_REJECTS); Core traps when the
   program runs. Divisors and indexes that may trap are computed.
 - Path calls of methods. laniusc rejects `T::m(x, ..)` and `S::m(x, ..)`
-  for a method m that takes self (LNC0027, call resolution failed); the
-  verified front end reads them as `x.m(..)`. Methods are called with a dot.
+  for a method m that takes self (LNC0027, call resolution failed; not yet
+  implemented, generics backlog b14); the verified front end reads them as
+  `x.m(..)`. Methods are called with a dot.
 - Literal typing. laniusc types a bare literal by its context only in some
   places: not in Some(..), Ok(..), Err(..), nor as a match arm's value
   outside a typed let; there the generator writes no bare literal.
@@ -87,6 +99,14 @@ import stdlib_oracle as so  # noqa: E402
 MIB = 1 << 20
 # The most candidates a minimizing round compiles.
 MAX_CANDIDATES = 48
+# A shift amount with no local in it, such as `(K1 % 7) & 31`: laniusc gives
+# it a type of its own (i32 for literals, as Rust does) and the verified front
+# end the shifted value's (amountWant), a reading bug (ROADMAP.md, "Bare shift
+# amounts"). Until it is fixed such an amount is cast to its own type.
+BARE_AMOUNTS = False
+# A call (a function's or method's name, maybe with type arguments, then `(`);
+# variants start with a capital letter.
+CALL = re.compile(r'\b[a-z_]\w*(?:<[^<>()]*>)?\(')
 FOUND = 'target/claude-work/fuzz/found'
 IMPORTS = ['core::option', 'core::result', 'std::io']
 
@@ -210,7 +230,7 @@ class Gen:
         self.err = rng.choice(['i32', 'u8', 'u16', 'i64'])
         # The program's feature weights: each program leans its own way.
         self.w = {k: rng.choice([0.3, 1, 1, 2, 4]) for k in
-                  ('arith', 'shift', 'div', 'cast', 'struct', 'enum', 'array', 'match', 'loop', 'try', 'rec',
+                  ('arith', 'shift', 'div', 'cast', 'struct', 'enum', 'array', 'match', 'loop', 'try', 'rec', 'nest',
                    'trait', 'call', 'emit', 'tap')}
         self.taps = {}      # type -> an identity function that writes a tag to stderr first
         self.tags = 0
@@ -309,6 +329,9 @@ class Gen:
         for n, vt in s.vars():
             if vt in self.structs:
                 out += [f'{n}.{f}' for f, ft in self.structs[vt] if ft == t]
+                # a field of a field
+                out += [f'{n}.{f}.{g}' for f, ft in self.structs[vt] if ft in self.structs
+                        for g, gt in self.structs[ft] if gt == t]
             a = array_parts(vt)
             if a and a[0] == t:
                 out.append(f'{n}[{self.index(s, a[1])}]')
@@ -417,7 +440,12 @@ class Gen:
 
     def arms(self, s, t, statement=False):
         """The arms of a match on t, in some order, maybe ending in a wildcard:
-        (pattern, binders) for each, None for the wildcard."""
+        (pattern, binders) for each, None for the wildcard. A variant whose
+        payload holds an enum may get nested arms (SEMANTIC_DECISIONS.md,
+        "Nested patterns"): one per inner variant, the same binders in the
+        other columns, ending, when the inner variants are not all named, in
+        a binder there that its value does not use, or in the outer wildcard.
+        In a statement's or a let's match (F11b) a nested arm binds at most one."""
         vs = list(self.variants(t))
         self.rng.shuffle(vs)
         named = vs
@@ -425,13 +453,48 @@ class Gen:
             named = vs[:self.rng.randrange(1, len(vs))]
             if statement and any(len(ps) > 1 for _, ps in vs[len(named):]):
                 named = vs
+        wildcard = len(named) < len(vs)
         out = []
         for v, ps in named:
-            binders = [(s.fresh('p'), pt) for pt in ps]
             q = f'{t}::{v}' if t in self.enums and self.chance(0.3) else v
+            nested = self.nested_arms(s, t, q, ps, wildcard, statement)
+            if nested:
+                out += nested
+                continue
+            binders = [(s.fresh('p'), pt) for pt in ps]
             out.append((f'{q}({", ".join(b for b, _ in binders)})' if ps else q, binders))
-        if len(named) < len(vs):
+        if wildcard:
             out.append(('_', []))
+        return out
+
+    def nested_arms(self, s, t, q, ps, wildcard, statement):
+        """Nested arms for the variant q of t with payload types ps, or None."""
+        cols = [j for j, pt in enumerate(ps) if pt in self.enums or option_of(pt) or result_of(pt)]
+        # laniusc does not resolve `None` nested in `Some(..)` (found/nested_none.lani)
+        cols = [j for j in cols if not (t not in self.enums and option_of(ps[j]))]
+        if not cols or not self.chance(min(0.8, 0.2 * self.w['nest'])):
+            return None
+        j = self.rng.choice(cols)
+        if statement and (len(ps) > 1 or any(len(ips) > 1 for _, ips in self.variants(ps[j]))):
+            return None
+        others = [(s.fresh('p'), pt) for pt in ps]
+        inner = list(self.variants(ps[j]))
+        self.rng.shuffle(inner)
+        some = inner[:self.rng.randrange(1, len(inner) + 1)]
+        out = []
+        if statement and self.chance(0.15):
+            # a plain arm first: it takes every value of the variant (F11b)
+            plain = [(s.fresh('p'), pt) for pt in ps]
+            out.append((f'{q}({", ".join(b for b, _ in plain)})', plain))
+        for iv, ips in some:
+            iq = f'{ps[j]}::{iv}' if ps[j] in self.enums and self.chance(0.3) else iv
+            ib = [(s.fresh('p'), ipt) for ipt in ips]
+            cells = [b for b, _ in others]
+            cells[j] = f'{iq}({", ".join(b for b, _ in ib)})' if ips else iq
+            out.append((f'{q}({", ".join(cells)})', [x for k, x in enumerate(others) if k != j] + ib))
+        if len(some) < len(inner) and (not wildcard or self.chance(0.5)):
+            # the binder at j is read as `_`: its value must not spell it, so it is not bound
+            out.append((f'{q}({", ".join(b for b, _ in others)})', [x for k, x in enumerate(others) if k != j]))
         return out
 
     def match_expr(self, s, t, d):
@@ -501,6 +564,9 @@ class Gen:
                 amt = self.int_expr(s, at, d - 1, True)
                 if self.chance(self.safe):
                     amt = f'({amt} & {width - 1})'
+                if not BARE_AMOUNTS and not any(re.search(rf'\b{n}\b', amt) for n, _ in s.vars()):
+                    # no local: the front end would read it at the shifted value's type (ROADMAP)
+                    amt = f'({amt} as {at})'
             return f'({a} {op} {amt})'
         if k == 'div':
             op = self.rng.choice(['/', '%'])
@@ -753,9 +819,14 @@ class Gen:
         et, size = array_parts(vt)
         i = self.index(s, size)
         # Past the end, Core traps before it evaluates the value and laniusc
-        # after (the docstring's store order, counted as known); a literal
-        # value half the time keeps the rest of such a program compared.
-        v = self.lit(et) if self.wild and self.chance(0.5) else self.expr(s, et, self.depth)
+        # after (the docstring's store order, counted as known), so the front
+        # end reads no store whose value calls a function (effActs).
+        v = self.lit(et)
+        for _ in range(4):
+            e = self.expr(s, et, self.depth)
+            if not CALL.search(e):
+                v = e
+                break
         return [ind + f'{n}[{i}] = {v};']
 
     def s_emit(self, s, d, ind):
@@ -800,15 +871,26 @@ class Gen:
         c = s.fresh('c')
         n = self.rng.randrange(1, 9)
         ct = self.rng.choice(['i32', 'u32', 'usize', 'i64', 'u8'])
-        out = [ind + f'let {c}: {ct} = 0;', ind + f'while ({c} < {n}) {{', ind + f'    {c} = {c} + 1;']
+        cond = f'{c} < {n}'
+        if self.chance(0.3):
+            cond = f'({cond}) && {self.bool_expr(s, 1)}'
+        out = [ind + f'let {c}: {ct} = 0;', ind + f'while ({cond}) {{', ind + f'    {c} = {c} + 1;']
         s.loop += 1
         s.mult *= n
         s.bind(c, ct)  # read in the body, never assigned (assignable() leaves out c, i and n names)
-        out += self.block(s, self.rng.randrange(1, 4), d - 1, ind + '    ')
+        out += self.loop_body(s, d, ind)
         s.mult //= n
         s.loop -= 1
         out.append(ind + '}')
         return out
+
+    def loop_body(self, s, d, ind):
+        """A loop's body, often with a break or continue before or after the rest."""
+        body = self.block(s, self.rng.randrange(1, 4), d - 1, ind + '    ')
+        if d > 0 and self.chance(min(0.8, 0.25 * self.w['loop'])):
+            jump = self.s_jump(s, d, ind + '    ')
+            body = jump + body if self.chance(0.5) else body + jump
+        return body
 
     def s_for(self, s, d, ind):
         lim, i = s.fresh('n'), s.fresh('i')
@@ -819,7 +901,7 @@ class Gen:
         s.mult *= 8
         s.push()
         s.bind(i, t)
-        out += self.block(s, self.rng.randrange(1, 4), d - 1, ind + '    ')
+        out += self.loop_body(s, d, ind)
         s.pop()
         s.mult //= 8
         s.loop -= 1
@@ -946,13 +1028,28 @@ class Gen:
             self.fns.append(Fn(mk, [('v', 'T'), ('n', nt)], inst, 'generic', cost=1, generic=(None, [x])))
             self.fns.append(Fn(get, [('w', inst), ('k', 'i32')], x, 'generic', cost=2, generic=(None, [x])))
 
+    def payload_type(self):
+        """A variant's payload: mostly a scalar, else a struct, an earlier
+        enum or an Option or Result, so that patterns nest."""
+        k = self.pick([(8, 'scalar'), (1 if self.structs else 0, 'struct'),
+                       (1.5 * self.w['nest'] if self.enums else 0, 'enum'), (0.5 * self.w['nest'], 'option'),
+                       (0.3 * self.w['nest'], 'result')])
+        if k == 'struct':
+            return self.rng.choice(sorted(self.structs))
+        if k == 'enum':
+            return self.rng.choice(sorted(self.enums))
+        if k == 'option':
+            return f'{OPTION}{self.scalar_type()}>'
+        if k == 'result':
+            return f'{RESULT}{self.scalar_type()}, {self.err}>'
+        return self.scalar_type()
+
     def add_enum(self):
         name = self.name('E')
         vs = []
         for i in range(self.rng.randrange(2, 5)):
             n = self.rng.choice([0, 0, 1, 1, 1, 2])
-            ps = [self.scalar_type() if self.chance(0.8) or not self.structs else self.rng.choice(sorted(self.structs))
-                  for _ in range(n)]
+            ps = [self.payload_type() for _ in range(n)]
             vs.append((self.name('V'), ps))
         self.enums[name] = vs
         self.items.append(f'enum {name} {{ ' + ', '.join(f'{v}({", ".join(ps)})' if ps else v for v, ps in vs)
