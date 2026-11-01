@@ -1,0 +1,243 @@
+// permessage-deflate for WebSocket (RFC 7692): extension negotiation and
+// per-message compression over ext::deflate and ext::inflate. Framing (the
+// RSV1 bit) stays in ext::websocket; enable it there with
+// Connection.enable_compression once negotiation succeeds.
+//
+// Sending: every compressed message is one complete raw DEFLATE stream
+// whose last block has BFINAL set (RFC 7692 7.2.3.4), so this side never
+// uses context takeover. Outgoing messages are compressed only when the
+// agreement says the peer resets its context too (server_no_context_takeover
+// for a server, client_no_context_takeover for a client) and our window is
+// not limited below 15 bits; otherwise they go out uncompressed, which the
+// extension always permits. Receiving: the peer may use context takeover
+// and any window size; a 32 KiB history is kept per codec.
+module ext::ws_deflate;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::deflate;
+import ext::http;
+import ext::inflate;
+import ext::websocket;
+
+pub enum Error { Bounds, Offer, Corrupt, TooLarge, AllocationFailed }
+// The agreed parameters. bits are 8..15; 15 when absent.
+pub struct Params { server_no_context: bool, client_no_context: bool, server_bits: i32, client_bits: i32 }
+// One endpoint's compression state. compress_out: whether outgoing
+// messages are compressed (see the module comment).
+pub struct Codec { server: bool, params: Params, compress_out: bool, history: alloc::vec::Vec<u8>, tables: alloc::vec::Vec<i32>, decoder: ext::inflate::Decoder,
+    block: alloc::vec::Vec<u8>, pending: alloc::vec::Vec<u8>, scratch: alloc::vec::Vec<i32>, encoder_ready: bool, encoder: core::option::Option<ext::deflate::Encoder>, active: bool }
+
+fn literal(s: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(s),n); return core::slice::View { values: raw, start: 0, length: n }; }
+fn byte(v: core::slice::View<u8>, i: i32) -> u8 { return v.values[v.start + i]; }
+fn part(v: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> { return core::slice::View { values: v.values, start: v.start + start, length: end - start }; }
+fn lower(c: u8) -> u8 { if (c >= 65 && c <= 90) { return c + 32; } return c; }
+fn is(v: core::slice::View<u8>, s: str, n: i32) -> bool {
+    if (v.len() != n) { return false; } let w: core::slice::View<u8> = literal(s,n); let i: i32 = 0;
+    while (i < n) { if (lower(byte(v,i)) != byte(w,i)) { return false; } i += 1; } return true;
+}
+fn ows(c: u8) -> bool { return c == 32 || c == 9; }
+fn tchar(c: u8) -> bool { return (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 33 || c == 35 || c == 36 || c == 37 || c == 38 || c == 39 || c == 42 || c == 43 || c == 45 || c == 46 || c == 94 || c == 95 || c == 96 || c == 124 || c == 126; }
+fn default_params() -> Params { return Params { server_no_context: false, client_no_context: false, server_bits: 15, client_bits: 15 }; }
+
+// One extension of a header value, starting at at: its name, its
+// parameters and where the next extension starts (-1 at the end, -2 on a
+// syntax error).
+struct Ext { name: core::slice::View<u8>, params: core::slice::View<u8>, next: i32 }
+fn skip(v: core::slice::View<u8>, i: i32) -> i32 { let j: i32 = i; while (j < v.len() && ows(byte(v,j))) { j += 1; } return j; }
+fn extension_at(v: core::slice::View<u8>, at: i32) -> Ext {
+    let i: i32 = skip(v,at); let start: i32 = i;
+    while (i < v.len() && tchar(byte(v,i))) { i += 1; }
+    let bad: Ext = Ext { name: part(v,0,0), params: part(v,0,0), next: -2 };
+    if (i == start) { return bad; }
+    let name: core::slice::View<u8> = part(v,start,i); let params_start: i32 = i; let quoted: bool = false;
+    while (i < v.len()) { let c: u8 = byte(v,i); if (c == 34) { quoted = !quoted; } if (c == 44 && !quoted) { break; } i += 1; }
+    if (quoted) { return bad; }
+    let next: i32 = -1; if (i < v.len()) { next = i + 1; }
+    return Ext { name: name, params: part(v,params_start,i), next: next };
+}
+// Parse permessage-deflate parameters ("; name[=value]"...). bits values
+// may be quoted. Duplicates and unknown names fail.
+fn parse_params(p: core::slice::View<u8>, server_side: bool) -> core::option::Option<Params> {
+    let out: Params = default_params(); let seen: i32 = 0; let i: i32 = 0;
+    while (true) {
+        i = skip(p,i); if (i == p.len()) { return core::option::Some(out); }
+        if (byte(p,i) != 59) { return core::option::None(); }
+        i = skip(p,i + 1); let start: i32 = i; while (i < p.len() && tchar(byte(p,i))) { i += 1; }
+        if (i == start) { return core::option::None(); }
+        let name: core::slice::View<u8> = part(p,start,i); i = skip(p,i);
+        let value: i32 = -1; let has_value: bool = false;
+        if (i < p.len() && byte(p,i) == 61) {
+            i = skip(p,i + 1); has_value = true; let q: bool = i < p.len() && byte(p,i) == 34; if (q) { i += 1; }
+            let vs: i32 = i; while (i < p.len() && byte(p,i) >= 48 && byte(p,i) <= 57) { i += 1; }
+            if (i == vs || i - vs > 2 || (byte(p,vs) == 48)) { return core::option::None(); }
+            value = 0; let k: i32 = vs; while (k < i) { value = value * 10 + ((byte(p,k) - 48) as i32); k += 1; }
+            if (q) { if (i == p.len() || byte(p,i) != 34) { return core::option::None(); } i += 1; }
+            if (value < 8 || value > 15) { return core::option::None(); }
+        }
+        let bit: i32 = 0;
+        if (is(name,"server_no_context_takeover",26)) { bit = 1; if (has_value) { return core::option::None(); } out.server_no_context = true; }
+        if (is(name,"client_no_context_takeover",26)) { bit = 2; if (has_value) { return core::option::None(); } out.client_no_context = true; }
+        if (is(name,"server_max_window_bits",22)) { bit = 4; if (!has_value) { return core::option::None(); } out.server_bits = value; }
+        if (is(name,"client_max_window_bits",22)) {
+            bit = 8;
+            // Only an offer may leave client_max_window_bits without a value.
+            if (!has_value && !server_side) { return core::option::None(); }
+            if (has_value) { out.client_bits = value; }
+        }
+        if (bit == 0 || (seen & bit) != 0) { return core::option::None(); }
+        seen = seen | bit;
+    }
+    return core::option::None();
+}
+
+// The client's offer: permessage-deflate with client_no_context_takeover
+// (this side never uses context) and client_max_window_bits (the server
+// may limit our window; we then send uncompressed).
+pub fn offer() -> core::slice::View<u8> { return literal("permessage-deflate; client_no_context_takeover; client_max_window_bits",70); }
+
+// Server side: the first permessage-deflate offer in the request's
+// Sec-WebSocket-Extensions fields that this side can accept, with the
+// response value appended to out. None when there is no acceptable offer
+// (answer without the extension); a malformed field also yields None.
+pub fn negotiate(head: ext::http::Head, out: &alloc::vec::Vec<u8>) -> core::option::Option<Params> {
+    let cursor: ext::http::Fields = head.headers();
+    while (true) {
+        let next: core::option::Option<ext::http::Field> = cursor.next(); if (next.is_none()) { break; }
+        let f: ext::http::Field = next.unwrap();
+        if (!is(f.name,"sec-websocket-extensions",24)) { continue; }
+        let at: i32 = 0;
+        while (at >= 0 && at < f.value.len()) {
+            let e: Ext = extension_at(f.value,at); if (e.next == -2) { return core::option::None(); }
+            at = e.next;
+            if (!is(e.name,"permessage-deflate",18)) { continue; }
+            let p: core::option::Option<Params> = parse_params(e.params,true);
+            // This side cannot compress within fewer than 15 window bits.
+            if (p.is_none() || p.unwrap().server_bits != 15) { continue; }
+            let agreed: Params = p.unwrap(); agreed.server_no_context = true;
+            let ok: bool = out.try_extend(literal("permessage-deflate; server_no_context_takeover",46)).is_ok();
+            if (agreed.client_no_context) { ok = ok && out.try_extend(literal("; client_no_context_takeover",28)).is_ok(); }
+            if (!ok) { return core::option::None(); }
+            return core::option::Some(agreed);
+        }
+    }
+    return core::option::None();
+}
+
+// Client side: check the server's Sec-WebSocket-Extensions value against
+// offer(). It must select exactly permessage-deflate with valid parameters.
+pub fn accepted(value: core::slice::View<u8>) -> core::result::Result<Params,Error> {
+    let e: Ext = extension_at(value,0);
+    if (e.next != -1 || !is(e.name,"permessage-deflate",18)) { return core::result::Err(Error::Offer); }
+    let p: core::option::Option<Params> = parse_params(e.params,false);
+    if (p.is_none()) { return core::result::Err(Error::Offer); }
+    return core::result::Ok(p.unwrap());
+}
+
+fn bytes(n: i32) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+    let made: core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> = alloc::vec::with_capacity<u8>(n); if (made.is_err()) { return core::result::Err(Error::AllocationFailed); }
+    let v: alloc::vec::Vec<u8> = made.unwrap(); v.length = n; return core::result::Ok(v);
+}
+fn words(n: i32) -> core::result::Result<alloc::vec::Vec<i32>,Error> {
+    let made: core::result::Result<alloc::vec::Vec<i32>,alloc::vec::Error> = alloc::vec::with_capacity<i32>(n); if (made.is_err()) { return core::result::Err(Error::AllocationFailed); }
+    let v: alloc::vec::Vec<i32> = made.unwrap(); v.length = n; return core::result::Ok(v);
+}
+
+// A codec for one connection, for the given role and agreed parameters.
+pub fn codec(role: ext::websocket::Role, params: Params) -> core::result::Result<Codec,Error> {
+    let server: bool = match (role) { ext::websocket::Role::Server -> true, ext::websocket::Role::Client -> false };
+    let history: core::result::Result<alloc::vec::Vec<u8>,Error> = bytes(32768);
+    let tables: core::result::Result<alloc::vec::Vec<i32>,Error> = words(ext::inflate::fast_workspace_len());
+    if (history.is_err() || tables.is_err()) {
+        if (history.is_ok()) { let h: alloc::vec::Vec<u8> = history.unwrap(); h.destroy(); }
+        if (tables.is_ok()) { let t: alloc::vec::Vec<i32> = tables.unwrap(); t.destroy(); }
+        return core::result::Err(Error::AllocationFailed);
+    }
+    let h: alloc::vec::Vec<u8> = history.unwrap(); let t: alloc::vec::Vec<i32> = tables.unwrap();
+    let made: core::result::Result<ext::inflate::Decoder,ext::inflate::Error> = ext::inflate::decoder(h.as_view(),t.as_view(),32768);
+    if (made.is_err()) { h.destroy(); t.destroy(); return core::result::Err(Error::Bounds); }
+    let out: bool = (server && params.server_no_context) || (!server && params.client_no_context && params.client_bits == 15);
+    return core::result::Ok(Codec { server: server, params: params, compress_out: out, history: h, tables: t, decoder: made.unwrap(),
+        block: alloc::vec::new<u8>(), pending: alloc::vec::new<u8>(), scratch: alloc::vec::new<i32>(), encoder_ready: false, encoder: core::option::None(), active: true });
+}
+
+pub impl Codec {
+    pub fn borrow(&self) -> &Codec { return self; }
+    // Whether outgoing messages should be compressed (send them with
+    // Connection.send_compressed after compress).
+    pub fn compresses(&self) -> bool { return self.compress_out; }
+    // Whether the peer resets its context after every message.
+    fn peer_resets(&self) -> bool { if (self.server) { return self.params.client_no_context; } return self.params.server_no_context; }
+    fn ready_encoder(&self) -> bool {
+        if (self.encoder_ready) { return true; }
+        let b: core::result::Result<alloc::vec::Vec<u8>,Error> = bytes(ext::deflate::input_buffer_len());
+        let p: core::result::Result<alloc::vec::Vec<u8>,Error> = bytes(ext::deflate::output_buffer_len());
+        let s: core::result::Result<alloc::vec::Vec<i32>,Error> = words(ext::deflate::scratch_len());
+        if (b.is_err() || p.is_err() || s.is_err()) {
+            if (b.is_ok()) { let x: alloc::vec::Vec<u8> = b.unwrap(); x.destroy(); } if (p.is_ok()) { let x: alloc::vec::Vec<u8> = p.unwrap(); x.destroy(); }
+            if (s.is_ok()) { let x: alloc::vec::Vec<i32> = s.unwrap(); x.destroy(); } return false;
+        }
+        self.block = b.unwrap(); self.pending = p.unwrap(); self.scratch = s.unwrap();
+        let e: core::result::Result<ext::deflate::Encoder,ext::deflate::Error> = ext::deflate::encoder(self.block.as_view(),self.pending.as_view(),self.scratch.as_view());
+        if (e.is_err()) { return false; }
+        self.encoder = core::option::Some(e.unwrap()); self.encoder_ready = true; return true;
+    }
+    // Append the compressed form of message to out (a complete raw DEFLATE
+    // stream).
+    pub fn compress(&self, message: core::slice::View<u8>, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32,Error> {
+        if (!self.active || message.start < 0 || message.length < 0) { return core::result::Err(Error::Bounds); }
+        if (!self.ready_encoder()) { return core::result::Err(Error::AllocationFailed); }
+        let e: ext::deflate::Encoder = self.encoder.unwrap(); e.reset();
+        let base: i32 = out.len(); let read: i32 = 0; let written: i32 = 0;
+        while (true) {
+            let room: i32 = message.len() / 2 + 64; if (room < 4096) { room = 4096; }
+            if (out.try_reserve(room).is_err()) { self.encoder = core::option::Some(e); out.length = base; return core::result::Err(Error::AllocationFailed); }
+            let at: i32 = out.len(); out.length = at + room;
+            let space: core::slice::View<u8> = part(out.as_view(),at,at + room);
+            let stepped: core::result::Result<ext::deflate::Step,ext::deflate::Failure> = e.step(part(message,read,message.len()),space,true);
+            if (stepped.is_err()) { self.encoder = core::option::Some(e); out.length = base; return core::result::Err(Error::Corrupt); }
+            let st: ext::deflate::Step = stepped.unwrap(); read += st.read; written += st.written; out.length = at + st.written;
+            let done: bool = match (st.status) { ext::deflate::Status::Done -> true, _ -> false };
+            if (done) { break; }
+        }
+        self.encoder = core::option::Some(e);
+        return core::result::Ok(written);
+    }
+    // Inflate one received compressed message into out (appended), at most
+    // limit bytes; a text message must also be UTF-8 (check it with
+    // ext::websocket::valid_text).
+    pub fn inflate(&self, compressed: core::slice::View<u8>, out: &alloc::vec::Vec<u8>, limit: i32) -> core::result::Result<i32,Error> {
+        if (!self.active || compressed.start < 0 || compressed.length < 0) { return core::result::Err(Error::Bounds); }
+        let tail: [u8;4] = [0,0,255,255]; let base: i32 = out.len(); let produced: i32 = 0;
+        let pieces: i32 = 0; let finished: bool = false;
+        while (pieces < 2 && !finished) {
+            let input: core::slice::View<u8> = compressed; if (pieces == 1) { input = core::slice::View { values: tail, start: 0, length: 4 }; }
+            let read: i32 = 0;
+            while (true) {
+                let room: i32 = 16384; if (produced + room > limit + 1) { room = limit + 1 - produced; }
+                if (room <= 0) { out.length = base; self.restart(); return core::result::Err(Error::TooLarge); }
+                if (out.try_reserve(room).is_err()) { out.length = base; return core::result::Err(Error::AllocationFailed); }
+                let at: i32 = out.len(); out.length = at + room;
+                let stepped: core::result::Result<ext::inflate::Step,ext::inflate::Failure> = self.decoder.step(part(input,read,input.len()),part(out.as_view(),at,at + room),false);
+                if (stepped.is_err()) { out.length = base; self.restart(); return core::result::Err(Error::Corrupt); }
+                let st: ext::inflate::Step = stepped.unwrap(); read += st.read; produced += st.written; out.length = at + st.written;
+                if (produced > limit) { out.length = base; self.restart(); return core::result::Err(Error::TooLarge); }
+                let kind: i32 = match (st.status) { ext::inflate::Status::NeedInput -> 0, ext::inflate::Status::NeedOutput -> 1, ext::inflate::Status::Done -> 2 };
+                if (kind == 2) { finished = true; break; }
+                if (kind == 0 && read >= input.len()) { break; }
+            }
+            pieces += 1;
+        }
+        // A final block ends the peer's stream; context resets either way
+        // when the peer said it would not use it.
+        if (finished || self.peer_resets()) { self.restart(); }
+        return core::result::Ok(produced);
+    }
+    fn restart(&self) { let r: core::result::Result<bool,ext::inflate::Error> = self.decoder.reset(32768); }
+    pub fn destroy(&self) -> bool {
+        if (!self.active) { return false; } self.active = false;
+        self.history.destroy(); self.tables.destroy(); self.block.destroy(); self.pending.destroy(); self.scratch.destroy(); return true;
+    }
+}
