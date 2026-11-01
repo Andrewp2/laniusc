@@ -1,0 +1,91 @@
+// Event-server h2c for the oracle and the load test: one std::event loop on
+// 127.0.0.1 (port printed on the first line) serves HTTP/1.1 and HTTP/2
+// connections side by side, up to 256 at once. Answers match
+// h2c_service.lani: "/big/N" gives N bytes, anything else echoes the
+// method, target, x-tag field and body over HTTP/2, and "h1 TARGET" over
+// HTTP/1.1. After argument 1 milliseconds (default 3000) with no request
+// and no connection it prints its counters and exits.
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import ext::http;
+import ext::http_service;
+import std::args;
+import std::clock;
+import std::socket;
+import std::stream;
+
+fn literal(s: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(s),n); return core::slice::view<u8>(raw,n).unwrap(); }
+fn write_output(bytes: core::slice::View<u8>) -> bool {
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    return core::io::write_all(sink.borrow(), bytes.values, bytes.start, bytes.len()).is_ok();
+}
+fn number(v: core::slice::View<u8>, from: i32) -> i32 { let n: i32 = 0; let i: i32 = from; while (i < v.len()) { let d: i32 = v.values[v.start + i] as i32 - 48; if (d < 0 || d > 9) { return n; } n = n * 10 + d; i += 1; } return n; }
+fn put_number(out: &alloc::vec::Vec<u8>, label: str, n: i32, value: i32) {
+    out.try_extend(literal(label, n));
+    let digits: [u8;24] = [0;24]; let k: i32 = ext::http_service::format_u64(value as u64, digits);
+    let i: i32 = 24 - k; while (i < 24) { let d: u8 = digits[i]; out.try_push(d); i += 1; }
+}
+fn answer_h2(server: &ext::http_service::Server, ready: ext::http_service::Ready) {
+    let got = server.h2_request(ready); if (got.is_err()) { return; }
+    let r: ext::http_service::H2Request = got.unwrap();
+    let body: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+    let p: core::slice::View<u8> = r.path;
+    let big: bool = p.len() > 5 && p.values[p.start + 1] == 98 && p.values[p.start + 4] == 47;
+    if (big) { let n: i32 = number(p, 5); let i: i32 = 0; while (i < n) { let c: u8 = (97 + i % 26) as u8; body.try_push(c); i += 1; } }
+    if (!big) {
+        body.try_extend(r.method); body.try_push(32); body.try_extend(r.target); body.try_push(32);
+        let tag = server.h2_header(ready, literal("x-tag",5)); if (tag.is_some()) { body.try_extend(tag.unwrap()); } body.try_push(32);
+        body.try_extend(r.body);
+    }
+    let sent = server.h2_respond(ready, 200, literal("text/plain",10), body.as_view());
+    body.destroy();
+}
+fn answer_h1(server: &ext::http_service::Server, slot: i32) {
+    let r: ext::http_service::Request = server.request(slot);
+    let conn: ext::http_service::Connection = server.take(slot);
+    let body: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); body.try_extend(literal("h1 ",3)); body.try_extend(r.target);
+    conn.respond(200, literal("text/plain",10), body.as_view()); body.destroy();
+    server.put(slot, conn);
+}
+fn main() -> i32 {
+    let quiet: i32 = 3000;
+    let captured = std::args::snapshot(1,4,64); if (captured.is_err()) { return 2; }
+    let args = captured.unwrap(); if (args.len() > 0) { quiet = number(args.get(0).unwrap(), 0); }
+    let endpoint = core::net::parse_socket(literal("127.0.0.1:0",11)); if (endpoint.is_err()) { return 2; }
+    let opened = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Tcp,true); if (opened.is_err()) { return 3; }
+    let listener = opened.unwrap(); listener.set_option(std::socket::Setting::ReuseAddress,1);
+    if (listener.bind(endpoint.unwrap()).is_err() || listener.listen(512).is_err()) { listener.close(); return 3; }
+    let actual = listener.local_addr(); if (actual.is_err()) { listener.close(); return 3; }
+    let startup: [u8;96] = [0;96]; let formatted = actual.unwrap().format_into(core::slice::view(startup,95).unwrap()); if (formatted.is_err()) { listener.close(); return 3; }
+    let length = formatted.unwrap(); startup[length] = 10; if (!write_output(core::slice::view(startup,length+1).unwrap())) { listener.close(); return 5; }
+    let options: ext::http_service::Options = ext::http_service::default_options();
+    let limits: ext::http::Limits = options.limits; limits.body_bytes = 200000; options.limits = limits;
+    options.date = false; options.idle_timeout_ms = 5000; options.max_requests = 1000;
+    let made = ext::http_service::server(listener.borrow(), options, 256); if (made.is_err()) { listener.close(); return 4; }
+    let server: ext::http_service::Server = made.unwrap(); server.enable_h2();
+    let status: i32 = 0;
+    while (true) {
+        let now = std::clock::monotonic_now(); if (now.is_err()) { status = 3; break; }
+        let wait = core::time::deadline_after(now.unwrap(),core::time::from_millis(quiet as u64)); if (wait.is_err()) { status = 3; break; }
+        let got = server.next_ready(wait.unwrap()); if (got.is_err()) { status = 3; break; }
+        let maybe: core::option::Option<ext::http_service::Ready> = got.unwrap();
+        if (maybe.is_none()) { if (server.active() == 0) { break; } continue; }
+        let ready: ext::http_service::Ready = maybe.unwrap();
+        if (ready.stream == 0) { answer_h1(server.borrow(), ready.slot); } else { answer_h2(server.borrow(), ready); }
+    }
+    let st: ext::http_service::ServerStats = server.stats();
+    let line: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+    put_number(line.borrow(), "connections=", 12, st.connections); put_number(line.borrow(), " h2=", 4, st.h2_connections);
+    put_number(line.borrow(), " requests=", 10, st.requests); put_number(line.borrow(), " peak=", 6, st.peak);
+    put_number(line.borrow(), " errors=", 8, st.errors); line.try_push(10);
+    write_output(line.as_view()); line.destroy();
+    server.close(); listener.close();
+    return status;
+}

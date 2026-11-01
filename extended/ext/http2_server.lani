@@ -609,6 +609,13 @@ pub impl Connection {
         if (s.state == RECEIVING || s.state == READY) { self.reset(index, ext::http2::Cause::Cancelled, ext::http2_frame::CANCEL); }
         self.free_stream(index); return true;
     }
+    // Free every taken stream that has finished (Done or Failed); returns
+    // how many were freed.
+    pub fn collect(&self) -> i32 {
+        let n: i32 = 0; let i: i32 = self.streams.len() - 1;
+        while (i >= 0) { let s: Stream = self.streams.at(i); if (s.taken && (s.state == DONE || s.state == FAILED)) { self.free_stream(i); n += 1; } i -= 1; }
+        return n;
+    }
     pub fn cancel(&self, id: i32) -> bool {
         let index: i32 = self.find(id); if (index < 0) { return false; }
         let s: Stream = self.streams.at(index); if (s.state == DONE || s.state == FAILED) { return false; }
