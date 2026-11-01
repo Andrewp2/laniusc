@@ -209,7 +209,7 @@ fn sd_lines_of(v: core::slice::View<u8>, s: &Src, starts: [i32], count: i32) -> 
     let data: [u8] = v.values; let base: i32 = v.start;
     if (core::result::is_err(out.try_resize(count, Line { bytes: core::slice::View { values: data, start: base, length: 0 }, hash: 0 }))) { out.destroy(); return core::result::Err(Error::AllocationFailed); }
     let lines: [Line] = out.as_slice(); let k: i32 = 0;
-    while (k < count) { let at: i32 = starts[k]; let len: i32 = starts[k+1] - at; lines[k] = Line { bytes: core::slice::View { values: data, start: base + at, length: len }, hash: sd_hash_src(s, at, len) }; k += 1; }
+    while (k < count) { let at: i32 = starts[k]; let len: i32 = starts[k+1] - at; let h: u32 = sd_hash_src(s, at, len); lines[k] = Line { bytes: core::slice::View { values: data, start: base + at, length: len }, hash: h }; k += 1; }
     return core::result::Ok(out);
 }
 
