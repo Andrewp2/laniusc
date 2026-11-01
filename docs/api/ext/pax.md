@@ -12,7 +12,7 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 
 - [extended-pax](../../extended-pax.md)
 
-Declaration counts: enum: 1; field: 36; function: 5; impl: 3; method: 9; struct: 4; variant: 11.
+Declaration counts: enum: 1; field: 37; function: 8; impl: 3; method: 10; struct: 4; variant: 11.
 
 ## Declared imports
 
@@ -412,6 +412,14 @@ global: Overrides
 globals: i32
 ```
 
+#### field: options
+
+[Source line 14](../../../extended/ext/pax.lani#L14)
+
+```lanius
+options: ext::tar::ReadOptions
+```
+
 ### struct: Writer
 
 [Source line 15](../../../extended/ext/pax.lani#L15)
@@ -456,7 +464,7 @@ pub fn empty_overrides(empty: core::slice::View<u8>) -> Overrides
 
 ### function: apply_records
 
-[Source line 120](../../../extended/ext/pax.lani#L120)
+[Source line 123](../../../extended/ext/pax.lani#L123)
 
 ```lanius
 pub fn apply_records(records: core::slice::View<u8>, target: &Overrides) -> core::result::Result<i32,Error>
@@ -464,23 +472,47 @@ pub fn apply_records(records: core::slice::View<u8>, target: &Overrides) -> core
 
 ### function: reader
 
-[Source line 142](../../../extended/ext/pax.lani#L142)
+[Source line 145](../../../extended/ext/pax.lani#L145)
 
 ```lanius
 pub fn reader(input: core::slice::View<u8>) -> core::result::Result<Reader,Error>
 ```
 
+### function: reader_with
+
+[Source line 148](../../../extended/ext/pax.lani#L148)
+
+```lanius
+pub fn reader_with(input: core::slice::View<u8>, options: ext::tar::ReadOptions) -> core::result::Result<Reader,Error>
+```
+
+### function: extension_data_len
+
+[Source line 155](../../../extended/ext/pax.lani#L155)
+
+```lanius
+pub fn extension_data_len(header: core::slice::View<u8>, options: ext::tar::ReadOptions) -> core::result::Result<core::option::Option<i32>,Error>
+```
+
 ### function: writer
 
-[Source line 248](../../../extended/ext/pax.lani#L248)
+[Source line 277](../../../extended/ext/pax.lani#L277)
 
 ```lanius
 pub fn writer(output: core::slice::View<u8>) -> core::result::Result<Writer,Error>
 ```
 
+### function: header_len
+
+[Source line 281](../../../extended/ext/pax.lani#L281)
+
+```lanius
+pub fn header_len(meta: ext::tar::Metadata) -> core::result::Result<i32,Error>
+```
+
 ### function: member_len
 
-[Source line 252](../../../extended/ext/pax.lani#L252)
+[Source line 285](../../../extended/ext/pax.lani#L285)
 
 ```lanius
 pub fn member_len(meta: ext::tar::Metadata, data_len: i32) -> core::result::Result<i32,Error>
@@ -488,9 +520,9 @@ pub fn member_len(meta: ext::tar::Metadata, data_len: i32) -> core::result::Resu
 
 ## Implementation blocks and public methods
 
-### impl at line 146
+### impl at line 168
 
-[Source line 146](../../../extended/ext/pax.lani#L146)
+[Source line 168](../../../extended/ext/pax.lani#L168)
 
 ```lanius
 pub impl Entry
@@ -498,7 +530,7 @@ pub impl Entry
 
 #### method: path_len
 
-[Source line 147](../../../extended/ext/pax.lani#L147)
+[Source line 169](../../../extended/ext/pax.lani#L169)
 
 ```lanius
 pub fn path_len(&self) -> i32
@@ -506,15 +538,15 @@ pub fn path_len(&self) -> i32
 
 #### method: copy_path
 
-[Source line 148](../../../extended/ext/pax.lani#L148)
+[Source line 170](../../../extended/ext/pax.lani#L170)
 
 ```lanius
 pub fn copy_path(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error>
 ```
 
-### impl at line 158
+### impl at line 180
 
-[Source line 158](../../../extended/ext/pax.lani#L158)
+[Source line 180](../../../extended/ext/pax.lani#L180)
 
 ```lanius
 pub impl Reader
@@ -522,7 +554,7 @@ pub impl Reader
 
 #### method: position
 
-[Source line 159](../../../extended/ext/pax.lani#L159)
+[Source line 181](../../../extended/ext/pax.lani#L181)
 
 ```lanius
 pub fn position(&self) -> i32
@@ -530,7 +562,7 @@ pub fn position(&self) -> i32
 
 #### method: is_finished
 
-[Source line 160](../../../extended/ext/pax.lani#L160)
+[Source line 182](../../../extended/ext/pax.lani#L182)
 
 ```lanius
 pub fn is_finished(&self) -> bool
@@ -538,15 +570,15 @@ pub fn is_finished(&self) -> bool
 
 #### method: next
 
-[Source line 162](../../../extended/ext/pax.lani#L162)
+[Source line 184](../../../extended/ext/pax.lani#L184)
 
 ```lanius
 pub fn next(&self) -> core::result::Result<core::option::Option<Entry>,Error>
 ```
 
-### impl at line 270
+### impl at line 303
 
-[Source line 270](../../../extended/ext/pax.lani#L270)
+[Source line 303](../../../extended/ext/pax.lani#L303)
 
 ```lanius
 pub impl Writer
@@ -554,7 +586,7 @@ pub impl Writer
 
 #### method: position
 
-[Source line 271](../../../extended/ext/pax.lani#L271)
+[Source line 304](../../../extended/ext/pax.lani#L304)
 
 ```lanius
 pub fn position(&self) -> i32
@@ -562,7 +594,7 @@ pub fn position(&self) -> i32
 
 #### method: is_finished
 
-[Source line 272](../../../extended/ext/pax.lani#L272)
+[Source line 305](../../../extended/ext/pax.lani#L305)
 
 ```lanius
 pub fn is_finished(&self) -> bool
@@ -570,15 +602,23 @@ pub fn is_finished(&self) -> bool
 
 #### method: add
 
-[Source line 275](../../../extended/ext/pax.lani#L275)
+[Source line 308](../../../extended/ext/pax.lani#L308)
 
 ```lanius
 pub fn add(&self, meta: ext::tar::Metadata, data: core::slice::View<u8>) -> core::result::Result<i32,Error>
 ```
 
+#### method: add_header
+
+[Source line 313](../../../extended/ext/pax.lani#L313)
+
+```lanius
+pub fn add_header(&self, meta: ext::tar::Metadata, size: i32) -> core::result::Result<i32,Error>
+```
+
 #### method: finish
 
-[Source line 307](../../../extended/ext/pax.lani#L307)
+[Source line 349](../../../extended/ext/pax.lani#L349)
 
 ```lanius
 pub fn finish(&self) -> core::result::Result<i32,Error>

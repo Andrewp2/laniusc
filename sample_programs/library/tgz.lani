@@ -1,7 +1,7 @@
 // tar czf / xzf / tzf over ext::pax, ext::tar and streaming ext::compression.
 // Archives stream through fixed 64 KiB buffers: neither side holds a whole
-// archive or member. Extracting from a file validates it in a first streaming
-// pass before touching the filesystem; `-f -` (stdin) extracts in one pass.
+// archive or member. Listing or extracting a file validates it in a first
+// streaming pass before any output; `-f -` (stdin) works in one pass.
 // Exit 2: arguments/format/unsafe/limits; 3: I/O; 4: allocation.
 module app::main;
 import alloc::vec;
@@ -367,7 +367,7 @@ fn read_archive(options: Options) -> core::result::Result<i32,Error> {
     let work: Work = Work { block: alloc::vec::new(), globals: alloc::vec::new(), pending: alloc::vec::new(), combined: alloc::vec::new(), name: alloc::vec::new(), path: alloc::vec::new(), other: alloc::vec::new(), dir_names: alloc::vec::new(), dirs: alloc::vec::new() };
     let stdin: bool = options.archive.len() == 1 && at(options.archive,0) == 45;
     let result: core::result::Result<i32,Error> = core::result::Ok(0);
-    if (options.mode == 2 && !stdin) { result = one_pass(options,0,work.borrow()); }
+    if (!stdin) { result = one_pass(options,0,work.borrow()); }
     if (core::result::is_ok(result)) { result = one_pass(options,1,work.borrow()); }
     if (core::result::is_ok(result) && options.mode == 2) { result = finish_directories(work.borrow()); }
     work.destroy(); return result;
