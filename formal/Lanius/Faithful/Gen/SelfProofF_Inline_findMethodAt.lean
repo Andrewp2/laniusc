@@ -55,10 +55,11 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem step_binder_of {prog : SrcProgram} {prims : Prims} {ix_binder_of ix_minus ix_node_prod ix_kid ix_kid_token ix_member ix_fresh_id ix_cons_of_mini_selfhost_Local ix_path_name ix_p_pattern_ident ix_p_pattern_plain ix_binders_of ix_is_some_name ix_cons_binder : Nat} (fn : prog.funcs[ix_binder_of]? = some (src_binder_of ix_minus ix_node_prod ix_kid ix_kid_token ix_member ix_fresh_id ix_cons_of_mini_selfhost_Local ix_path_name ix_p_pattern_ident ix_p_pattern_plain ix_binders_of ix_is_some_name ix_cons_binder)) (np : prims.isPrim ix_binder_of = false)
+theorem step_binder_of {prog : SrcProgram} {prims : Prims} {ix_binder_of ix_minus ix_node_prod ix_kid ix_field_types_Decls_of_mini_selfhost_Decls ix_kid_token ix_member ix_fresh_id ix_cons_of_mini_selfhost_Local ix_path_name ix_p_pattern_ident ix_p_pattern_plain ix_binders_of ix_is_some_name ix_any_variant ix_cons_binder : Nat} (fn : prog.funcs[ix_binder_of]? = some (src_binder_of ix_minus ix_node_prod ix_kid ix_field_types_Decls_of_mini_selfhost_Decls ix_kid_token ix_member ix_fresh_id ix_cons_of_mini_selfhost_Local ix_path_name ix_p_pattern_ident ix_p_pattern_plain ix_binders_of ix_is_some_name ix_any_variant ix_cons_binder)) (np : prims.isPrim ix_binder_of = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
+    (ext_field_types_Decls_of_mini_selfhost_Decls : Certified (∀ {n : Nat}, Stmt_field_types_Decls_of_mini_selfhost_Decls prog prims ix_field_types_Decls_of_mini_selfhost_Decls n))
     (ext_kid_token : Certified (∀ {n : Nat}, Stmt_kid_token prog prims ix_kid_token n))
     (ext_member : Certified (∀ {n : Nat}, Stmt_member prog prims ix_member n))
     (ext_fresh_id : Certified (∀ {n : Nat}, Stmt_fresh_id prog prims ix_fresh_id n))
@@ -67,6 +68,7 @@ theorem step_binder_of {prog : SrcProgram} {prims : Prims} {ix_binder_of ix_minu
     (ext_p_pattern_ident : Certified (∀ {n : Nat}, Stmt_p_pattern_ident prog prims ix_p_pattern_ident n))
     (ext_p_pattern_plain : Certified (∀ {n : Nat}, Stmt_p_pattern_plain prog prims ix_p_pattern_plain n))
     (ext_is_some_name : Certified (∀ {n : Nat}, Stmt_is_some_name prog prims ix_is_some_name n))
+    (ext_any_variant : Certified (∀ {n : Nat}, Stmt_any_variant prog prims ix_any_variant n))
     (ext_cons_binder : Certified (∀ {n : Nat}, Stmt_cons_binder prog prims ix_cons_binder n)) {n : Nat}
     (ih_binders_of : Certified (Stmt_binders_of prog prims ix_binders_of n)) :
     Stmt_binder_of prog prims ix_binder_of (n + 1) := by

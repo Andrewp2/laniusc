@@ -1,5 +1,5 @@
-//! ext::url, the WHATWG URL parser: API contracts and url-parse compared with
-//! the Node.js WHATWG URL implementation.
+//! ext::url (WHATWG URLs) and ext::idna (UTS #46): API contracts, the generated
+//! IDNA table, and url-parse compared with the Node.js WHATWG URL implementation.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod common;
 use std::{
@@ -84,4 +84,29 @@ fn url_parse_matches_node_whatwg_url_on_the_generated_corpus() {
         return;
     }
     oracle("whatwg", 9174);
+}
+#[test]
+fn url_parse_matches_node_on_internationalized_hosts() {
+    if !has_node() {
+        eprintln!("skipping: node is not installed");
+        return;
+    }
+    oracle("idna", 46060);
+}
+#[test]
+fn generated_idna_table_is_current_and_matches_node_per_scalar() {
+    let check = common::short_process_output_with_timeout(
+        "generate_idna.py",
+        Command::new("python3")
+            .arg("-I")
+            .arg("tools/unicode17/generate_idna.py")
+            .arg("--check")
+            .current_dir(root()),
+    );
+    assert!(check.status.success(), "{check:?}");
+    if !has_node() {
+        eprintln!("skipping the per-scalar comparison: node is not installed");
+        return;
+    }
+    oracle("table", 1111937);
 }

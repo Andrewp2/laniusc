@@ -283,6 +283,13 @@ uint checked_literal_context(uint literal)
                 continue;
             }
         }
+        // A match without a declared context passes on its own receiver's:
+        // climb on from the match, e.g. when it is itself an arm result.
+        if (mode == QUERY_MATCH)
+        {
+            mode = QUERY_OPERAND; current = query;
+            continue;
+        }
         mode = QUERY_OPERAND;
         uint parent = compact_hir_expr_parent[current];
         if (!valid_hir(parent) || parent == current) return peer;
@@ -298,10 +305,11 @@ uint checked_literal_context(uint literal)
         }
         if (core.kind != 14u && core.kind != 16u && core.kind != 17u) return peer;
         if ((hir_is_forward_expression(core.kind, value.a) || value.a == 13u) && value.b == current)
-        { negated = negated != (core.kind == 17u && value.a == 13u); current = parent; query = parent; continue; }
+        { negated = negated || (core.kind == 17u && value.a == 13u); current = parent; query = parent; continue; }
         // `literal as T` takes a 32- or 64-bit integer T, which holds every
-        // non-negative i32 unchanged. A negated literal under an unsigned T
-        // and an operand of arithmetic keep their existing contexts.
+        // non-negative i32 unchanged. A literal under any negation (even a
+        // double one, `-(-x) as usize`) with an unsigned T, and an operand of
+        // arithmetic, keep their existing contexts.
         if (core.kind == 16u && value.a == 36u && value.b == current)
         {
             uint target = !floating && !climbed && valid_token(value.d) ? numeric_context(uint2(

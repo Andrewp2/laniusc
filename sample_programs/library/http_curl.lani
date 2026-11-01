@@ -11,6 +11,7 @@ import core::result;
 import core::slice;
 import ext::http;
 import ext::http_agent;
+import ext::openssl_tls;
 import std::args;
 import std::clock;
 import std::file;
@@ -57,7 +58,8 @@ fn code(e: ext::http_agent::Error) -> i32 {
         ext::http_agent::Error::Timeout -> 28, ext::http_agent::Error::Truncated(n) -> match(n) { 0 -> 52, _ -> 18 },
         ext::http_agent::Error::Parse(p) -> 8, ext::http_agent::Error::TooLarge -> 63, ext::http_agent::Error::TooManyRedirects(n) -> 47,
         ext::http_agent::Error::BadLocation -> 3, ext::http_agent::Error::UnreplayableBody(s) -> 65, ext::http_agent::Error::UnexpectedUpgrade -> 8,
-        ext::http_agent::Error::Source(i) -> 26, ext::http_agent::Error::AllocationFailed -> 27, ext::http_agent::Error::Clock -> 2
+        ext::http_agent::Error::Source(i) -> 26, ext::http_agent::Error::AllocationFailed -> 27, ext::http_agent::Error::Clock -> 2,
+        ext::http_agent::Error::Tls(t) -> match(t.cause) { ext::openssl_tls::Cause::Verification -> 60, ext::openssl_tls::Cause::PeerCertificate -> 60, _ -> 35 }
     };
 }
 fn name(e: ext::http_agent::Error) -> core::slice::View<u8> {
@@ -70,7 +72,8 @@ fn name(e: ext::http_agent::Error) -> core::slice::View<u8> {
         ext::http_agent::Error::TooManyRedirects(n) -> literal("too many redirects",18), ext::http_agent::Error::BadLocation -> literal("bad redirect location",21),
         ext::http_agent::Error::UnreplayableBody(s) -> literal("redirect needs the streamed body again",38), ext::http_agent::Error::UnexpectedUpgrade -> literal("unexpected upgrade",18),
         ext::http_agent::Error::Source(i) -> literal("upload read error",17), ext::http_agent::Error::AllocationFailed -> literal("out of memory",13),
-        ext::http_agent::Error::Clock -> literal("clock error",11)
+        ext::http_agent::Error::Clock -> literal("clock error",11),
+        ext::http_agent::Error::Tls(t) -> match(t.cause) { ext::openssl_tls::Cause::Verification -> literal("certificate verification failed",31), ext::openssl_tls::Cause::PeerCertificate -> literal("certificate verification failed",31), _ -> literal("TLS error",9) }
     };
 }
 fn report(r: &ext::http_agent::Response) -> bool {
@@ -89,6 +92,7 @@ fn totals(agent: &ext::http_agent::Agent) -> bool {
 }
 fn usage() -> i32 {
     say("Usage: http-curl [-X METHOD] [-H 'Name: value']... [-d DATA | -T FILE|-] [-L] [--max-redirs N] [-i] [-I] [-f] [--max-time MS]\n",126);
+    say("       [--cacert FILE] [--no-https]\n",36);
     say("       [--max-idle-per-host N] [--max-idle N] [--idle-timeout MS] [--max-uses N] [--preconnect N] [--pause MS] [--no-retry] [--stats] URL...\n",141);
     return 2;
 }
@@ -114,12 +118,14 @@ fn run(args: std::args::Arguments) -> i32 {
         if (eq(a,"-f",2)) { fail = true; continue; }
         if (eq(a,"--stats",7)) { stats = true; continue; }
         if (eq(a,"--no-retry",10)) { options.retry_stale = false; continue; }
+        if (eq(a,"--no-https",10)) { options.https = false; continue; }
         if (a.len() > 0 && byte(a,0) == 45) {
             if (i >= args.len()) { headers.destroy(); urls.destroy(); return usage(); }
             let v: core::slice::View<u8> = args.get(i).unwrap(); i += 1; let n: i32 = number(v);
             if (eq(a,"-X",2)) { method = core::option::Some(v); continue; }
             if (eq(a,"-d",2)) { data = core::option::Some(v); continue; }
             if (eq(a,"-T",2)) { upload = core::option::Some(v); continue; }
+            if (eq(a,"--cacert",8)) { options.trust = ext::openssl_tls::Trust::CaFile(v); continue; }
             if (eq(a,"-H",2)) {
                 let c: i32 = 0; while (c < v.len() && byte(v,c) != 58) { c += 1; }
                 if (c == 0 || c == v.len()) { headers.destroy(); urls.destroy(); return usage(); }

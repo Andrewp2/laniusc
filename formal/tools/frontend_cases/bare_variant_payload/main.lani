@@ -1,0 +1,17 @@
+module app::main;
+
+// A bare variant imported with its module, in a payload: a check of the
+// payload, not a binder, so the arms read as nested matches.
+import lib::opt;
+
+fn f(o: lib::opt::Opt<lib::opt::Opt<i32>>) -> i32 {
+    return match (o) {
+        lib::opt::Some(None) -> 1,
+        lib::opt::Some(lib::opt::Some(x)) -> x,
+        lib::opt::None -> 3,
+    };
+}
+
+fn main() -> i32 {
+    return f(lib::opt::Some(lib::opt::Some(7))) + f(lib::opt::Some(lib::opt::None())) * 10;
+}

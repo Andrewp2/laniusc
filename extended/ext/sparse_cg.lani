@@ -268,7 +268,7 @@ pub fn solve(a:ext::sparse::CsrView,b:core::slice::View<f64>,initial:core::slice
     let rhs:f64=norm(b,-1)?;
     if(n==0) { return core::result::Ok(Solution { x:alloc::vec::new(),iterations:0,restarts:0,residual_norm:0.0,rhs_norm:rhs,stop:Stop::Converged }); }
     let w:Workspace=workspace(n,jacobi)?; let x:[f64]=w.x.as_slice(); let index:i32=0;
-    while(index<n) { x[index]=number(initial,index); index+=1; }
+    while(index<n) { let stored:f64=number(initial,index); x[index]=stored; index+=1; }
     if(jacobi) {
         // Copy admitted positive diagonal values in one linear CSR walk;
         // avoid adding a second n*log(n) lookup phase to the setup estimate.
@@ -276,7 +276,7 @@ pub fn solve(a:ext::sparse::CsrView,b:core::slice::View<f64>,initial:core::slice
         while(row<n) {
             let entry:i32=integer(a.offsets,row);
             while(integer(a.columns,entry)<row) { entry+=1; }
-            diagonal[row]=number(a.values,entry); row+=1;
+            let stored:f64=number(a.values,entry); diagonal[row]=stored; row+=1;
         }
     }
     let result=iterate(a,b,w.borrow(),options,limits,rhs,jacobi);

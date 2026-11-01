@@ -26,7 +26,7 @@ Direct source imports; this is not a package-resolution or transitive dependency
 
 ### constant: POW5_MIN
 
-[Source line 25](../../../stdlib/core/float_tables.lani#L25)
+[Source line 26](../../../stdlib/core/float_tables.lani#L26)
 
 ```lanius
 pub const POW5_MIN: i32 = -342;
@@ -34,7 +34,7 @@ pub const POW5_MIN: i32 = -342;
 
 ### constant: POW5_MAX
 
-[Source line 26](../../../stdlib/core/float_tables.lani#L26)
+[Source line 27](../../../stdlib/core/float_tables.lani#L27)
 
 ```lanius
 pub const POW5_MAX: i32 = 308;
@@ -42,7 +42,7 @@ pub const POW5_MAX: i32 = 308;
 
 ### constant: CACHED_COUNT
 
-[Source line 27](../../../stdlib/core/float_tables.lani#L27)
+[Source line 28](../../../stdlib/core/float_tables.lani#L28)
 
 ```lanius
 pub const CACHED_COUNT: i32 = 87;
@@ -52,7 +52,7 @@ pub const CACHED_COUNT: i32 = 87;
 
 ### function: pow5_high
 
-[Source line 29](../../../stdlib/core/float_tables.lani#L29)
+[Source line 30](../../../stdlib/core/float_tables.lani#L30)
 
 ```lanius
 pub fn pow5_high(q: i32) -> u64
@@ -60,7 +60,7 @@ pub fn pow5_high(q: i32) -> u64
 
 ### function: pow5_low
 
-[Source line 30](../../../stdlib/core/float_tables.lani#L30)
+[Source line 31](../../../stdlib/core/float_tables.lani#L31)
 
 ```lanius
 pub fn pow5_low(q: i32) -> u64
@@ -68,7 +68,7 @@ pub fn pow5_low(q: i32) -> u64
 
 ### function: cached_significand
 
-[Source line 32](../../../stdlib/core/float_tables.lani#L32)
+[Source line 33](../../../stdlib/core/float_tables.lani#L33)
 
 ```lanius
 pub fn cached_significand(i: i32) -> u64
@@ -76,7 +76,7 @@ pub fn cached_significand(i: i32) -> u64
 
 ### function: cached_exponent
 
-[Source line 33](../../../stdlib/core/float_tables.lani#L33)
+[Source line 295](../../../stdlib/core/float_tables.lani#L295)
 
 ```lanius
 pub fn cached_exponent(i: i32) -> i32
@@ -84,7 +84,7 @@ pub fn cached_exponent(i: i32) -> i32
 
 ### function: cached_decimal
 
-[Source line 34](../../../stdlib/core/float_tables.lani#L34)
+[Source line 296](../../../stdlib/core/float_tables.lani#L296)
 
 ```lanius
 pub fn cached_decimal(i: i32) -> i32

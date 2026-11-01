@@ -1,0 +1,446 @@
+// Multi-file patches as GNU patch and git apply read them: git extended
+// headers (renames, copies, modes, creation, deletion, binary sections),
+// reversal, reversed-patch detection, git-apply hunk placement and the
+// `git apply --3way` merge fallback. See docs/extended-patchset.md.
+module ext::patchset;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::merge3;
+import ext::seqdiff;
+import ext::unidiff;
+
+pub enum Error { InvalidInput, Malformed, FileLimit, LineLimit, AllocationFailed }
+pub enum Kind { Modify, Create, Delete, Rename, Copy }
+// Literal: a "GIT binary patch" section. Marker: "Binary files A and B differ".
+pub enum Binary { Text, Literal, Marker }
+// Modes are the octal values of git's mode lines, 0 when absent. Names are
+// ranges of PatchSet.names with the strip prefix removed: a created file has
+// an empty old name and a deleted file an empty new name.
+pub struct FilePatch { kind: Kind, binary: Binary, git: bool, old_mode: i32, new_mode: i32, old_start: i32, old_length: i32, new_start: i32, new_length: i32, patch: ext::unidiff::Patch, offset: i32 }
+pub struct PatchSet { files: alloc::vec::Vec<FilePatch>, names: alloc::vec::Vec<u8> }
+pub enum Direction { Forward, Reversed, Neither }
+// applied is false when the patch does not apply to the base (git then falls
+// back to direct application); conflicts counts conflict blocks in output.
+pub struct Merged { output: alloc::vec::Vec<u8>, applied: bool, conflicts: i32 }
+
+fn ps_at(v: core::slice::View<u8>, i: i32) -> i32 { if (i < 0 || i >= v.length) { return -1; } return v.values[v.start+i] as i32; }
+fn ps_sub(v: core::slice::View<u8>, from: i32, to: i32) -> core::slice::View<u8> { return core::slice::View { values: v.values, start: v.start+from, length: to-from }; }
+fn ps_literal(text: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text), count);
+    return core::slice::View { values: bytes, start: 0, length: count };
+}
+fn ps_starts(v: core::slice::View<u8>, pos: i32, text: str, count: i32) -> bool {
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text), count);
+    if (pos < 0 || pos + count > v.length) { return false; }
+    let i: i32 = 0; while (i < count) { if (v.values[v.start+pos+i] != raw[i]) { return false; } i += 1; } return true;
+}
+fn ps_line_end(v: core::slice::View<u8>, pos: i32) -> i32 {
+    let i: i32 = pos; while (i < v.length) { if (v.values[v.start+i] == 10) { return i + 1; } i += 1; } return v.length;
+}
+// End of a header line's text: before the LF (and a CR before it).
+fn ps_text_end(v: core::slice::View<u8>, pos: i32, end: i32) -> i32 {
+    let e: i32 = end; if (e > pos && ps_at(v, e - 1) == 10) { e -= 1; } if (e > pos && ps_at(v, e - 1) == 13) { e -= 1; } return e;
+}
+fn ps_same(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool {
+    if (a.length != b.length) { return false; }
+    let i: i32 = 0; while (i < a.length) { if (a.values[a.start+i] != b.values[b.start+i]) { return false; } i += 1; } return true;
+}
+fn ps_is_null(v: core::slice::View<u8>) -> bool { return v.length == 9 && ps_starts(v, 0, "/dev/null", 9); }
+fn ps_push(out: &alloc::vec::Vec<u8>, byte: i32) -> bool { return core::result::is_ok(out.try_push(byte as u8)); }
+
+// ---------------------------------------------------------------- names
+// C-style quoted name as git writes it: "a/caf\303\251".
+fn ps_unquote(out: &alloc::vec::Vec<u8>, p: core::slice::View<u8>) -> bool {
+    let i: i32 = 1; let end: i32 = p.length - 1; if (end < 1 || ps_at(p, end) != 34) { return false; }
+    while (i < end) {
+        let c: i32 = ps_at(p, i); let v: i32 = c;
+        if (c == 92) {
+            i += 1; let e: i32 = ps_at(p, i);
+            if (e >= 48 && e <= 55) {
+                v = 0; let d: i32 = 0;
+                while (d < 3 && i < end && ps_at(p, i) >= 48 && ps_at(p, i) <= 55) { v = v * 8 + ps_at(p, i) - 48; i += 1; d += 1; }
+                i -= 1; if (v > 255) { return false; }
+            }
+            else {
+                v = e;
+                if (e == 97) { v = 7; } if (e == 98) { v = 8; } if (e == 116) { v = 9; } if (e == 110) { v = 10; }
+                if (e == 118) { v = 11; } if (e == 102) { v = 12; } if (e == 114) { v = 13; }
+                if (e < 0) { return false; }
+            }
+        }
+        if (!ps_push(out, v)) { return false; }
+        i += 1;
+    }
+    return true;
+}
+// Append p (quoted or not) without its first `strip` components; repeated
+// slashes count as one, and a name with fewer components keeps its last one.
+fn ps_name(out: &alloc::vec::Vec<u8>, p: core::slice::View<u8>, strip: i32) -> bool {
+    let raw: alloc::vec::Vec<u8> = alloc::vec::new(); let v: core::slice::View<u8> = p;
+    if (ps_at(p, 0) == 34) { if (!ps_unquote(raw.borrow(), p)) { raw.destroy(); return false; } v = raw.as_view(); }
+    let i: i32 = 0; let k: i32 = strip;
+    while (k > 0) {
+        let j: i32 = i; while (j < v.length && ps_at(v, j) != 47) { j += 1; }
+        if (j >= v.length) { k = 0; }
+        else { i = j + 1; while (i < v.length && ps_at(v, i) == 47) { i += 1; } k -= 1; }
+    }
+    let ok: bool = v.length - i > 0 && core::result::is_ok(out.try_extend(ps_sub(v, i, v.length)));
+    raw.destroy(); return ok;
+}
+// A ---/+++ name ends at a tab (GNU timestamps; git's tab after names with spaces).
+fn ps_dash_name(text: core::slice::View<u8>, from: i32, end: i32) -> core::slice::View<u8> {
+    let e: i32 = ps_text_end(text, from, end); let i: i32 = from;
+    if (ps_at(text, from) != 34) { while (i < e && ps_at(text, i) != 9) { i += 1; } return ps_sub(text, from, i); }
+    i = from + 1; while (i < e && ps_at(text, i) != 34) { if (ps_at(text, i) == 92) { i += 1; } i += 1; }
+    if (i < e) { i += 1; } return ps_sub(text, from, i);
+}
+// One side of "diff --git A B". Unquoted names with spaces are split where
+// both halves name the same path after stripping, as git does.
+fn ps_header_name(out: &alloc::vec::Vec<u8>, line: core::slice::View<u8>, second: bool, strip: i32) -> bool {
+    let n: i32 = line.length;
+    if (ps_at(line, 0) == 34) {
+        let q: i32 = 1; while (q < n && ps_at(line, q) != 34) { if (ps_at(line, q) == 92) { q += 1; } q += 1; }
+        if (q + 2 >= n || ps_at(line, q + 1) != 32) { return false; }
+        if (second) { return ps_name(out, ps_sub(line, q + 2, n), strip); }
+        return ps_name(out, ps_sub(line, 0, q + 1), strip);
+    }
+    if (ps_at(line, n - 1) == 34) {
+        let s: i32 = 1; while (s < n && !(ps_at(line, s) == 34 && ps_at(line, s - 1) == 32)) { s += 1; }
+        if (s >= n) { return false; }
+        if (second) { return ps_name(out, ps_sub(line, s, n), strip); }
+        return ps_name(out, ps_sub(line, 0, s - 1), strip);
+    }
+    if (n < 3 || (n - 1) % 2 != 0 || ps_at(line, (n - 1) / 2) != 32) { return false; }
+    let half: i32 = (n - 1) / 2;
+    let a: alloc::vec::Vec<u8> = alloc::vec::new(); let b: alloc::vec::Vec<u8> = alloc::vec::new();
+    let ok: bool = ps_name(a.borrow(), ps_sub(line, 0, half), strip) && ps_name(b.borrow(), ps_sub(line, half + 1, n), strip) && ps_same(a.as_view(), b.as_view());
+    if (ok) { if (second) { ok = core::result::is_ok(out.try_extend(b.as_view())); } else { ok = core::result::is_ok(out.try_extend(a.as_view())); } }
+    a.destroy(); b.destroy(); return ok;
+}
+
+// ---------------------------------------------------------------- parsing
+struct Section { open: bool, git: bool, offset: i32, header: i32, header_end: i32, old_from: i32, old_end: i32, new_from: i32, new_end: i32, ren_from: i32, ren_from_end: i32, ren_to: i32, ren_to_end: i32, copy: bool, is_new: bool, is_delete: bool, old_mode: i32, new_mode: i32, binary: i32, has_patch: bool, patch: ext::unidiff::Patch }
+impl Section { fn borrow(&self) -> &Section { return self; } }
+fn ps_empty_patch(text: core::slice::View<u8>) -> ext::unidiff::Patch {
+    let none: core::slice::View<u8> = core::slice::View { values: text.values, start: text.start, length: 0 };
+    return ext::unidiff::Patch { old_name: none, new_name: none, hunks: alloc::vec::new(), lines: alloc::vec::new(), end: 0 };
+}
+fn ps_open(s: &Section, text: core::slice::View<u8>, git: bool, offset: i32) {
+    s.open = true; s.git = git; s.offset = offset; s.header = -1; s.header_end = -1; s.old_from = -1; s.old_end = -1; s.new_from = -1; s.new_end = -1;
+    s.ren_from = -1; s.ren_from_end = -1; s.ren_to = -1; s.ren_to_end = -1; s.copy = false; s.is_new = false; s.is_delete = false;
+    s.old_mode = 0; s.new_mode = 0; s.binary = 0; s.has_patch = false; s.patch = ps_empty_patch(text);
+}
+fn ps_octal(text: core::slice::View<u8>, from: i32, end: i32) -> i32 {
+    let i: i32 = from; let v: i32 = 0;
+    while (i < end && ps_at(text, i) >= 48 && ps_at(text, i) <= 55 && v < 16777216) { v = v * 8 + ps_at(text, i) - 48; i += 1; }
+    return v;
+}
+fn ps_close(ps: &PatchSet, text: core::slice::View<u8>, s: &Section, strip: i32, max_files: i32) -> core::result::Result<i32, Error> {
+    s.open = false;
+    if (ps.files.len() >= max_files) { s.patch.destroy(); return core::result::Err(Error::FileLimit); }
+    let old_dash: core::slice::View<u8> = ps_literal("", 0); let new_dash: core::slice::View<u8> = ps_literal("", 0);
+    if (s.old_from >= 0) { old_dash = ps_dash_name(text, s.old_from, s.old_end); if (ps_is_null(old_dash)) { s.is_new = true; } }
+    if (s.new_from >= 0) { new_dash = ps_dash_name(text, s.new_from, s.new_end); if (ps_is_null(new_dash)) { s.is_delete = true; } }
+    let kind: Kind = Kind::Modify; let renamed: bool = s.ren_from >= 0 && s.ren_to >= 0;
+    if (renamed) { if (s.copy) { kind = Kind::Copy; } else { kind = Kind::Rename; } }
+    else { if (s.is_new) { kind = Kind::Create; } else { if (s.is_delete) { kind = Kind::Delete; } } }
+    if (s.is_new && s.is_delete) { s.patch.destroy(); return core::result::Err(Error::Malformed); }
+    let header: core::slice::View<u8> = ps_literal("", 0); if (s.header >= 0) { header = ps_sub(text, s.header, s.header_end); }
+    // Rename and copy lines carry no a/ b/ prefix: git strips one component less.
+    let inner: i32 = strip - 1; if (inner < 0) { inner = 0; }
+    let ok: bool = true; let old_start: i32 = ps.names.len();
+    if (!s.is_new) {
+        if (renamed) { ok = ps_name(ps.names.borrow(), ps_sub(text, s.ren_from, ps_text_end(text, s.ren_from, s.ren_from_end)), inner); }
+        else { if (s.old_from >= 0) { ok = ps_name(ps.names.borrow(), old_dash, strip); }
+        else { ok = s.header >= 0 && ps_header_name(ps.names.borrow(), header, false, strip); } }
+    }
+    let new_start: i32 = ps.names.len();
+    if (ok && !s.is_delete) {
+        if (renamed) { ok = ps_name(ps.names.borrow(), ps_sub(text, s.ren_to, ps_text_end(text, s.ren_to, s.ren_to_end)), inner); }
+        else { if (s.new_from >= 0) { ok = ps_name(ps.names.borrow(), new_dash, strip); }
+        else { ok = s.header >= 0 && ps_header_name(ps.names.borrow(), header, true, strip); } }
+    }
+    if (!ok) { s.patch.destroy(); return core::result::Err(Error::Malformed); }
+    let binary: Binary = Binary::Text; if (s.binary == 1) { binary = Binary::Literal; } if (s.binary == 2) { binary = Binary::Marker; }
+    let fp: FilePatch = FilePatch { kind: kind, binary: binary, git: s.git, old_mode: s.old_mode, new_mode: s.new_mode, old_start: old_start, old_length: new_start - old_start, new_start: new_start, new_length: ps.names.len() - new_start, patch: s.patch, offset: s.offset };
+    if (core::result::is_err(ps.files.try_push(fp))) { s.patch.destroy(); return core::result::Err(Error::AllocationFailed); }
+    return core::result::Ok(0);
+}
+fn ps_parse_fail(ps: PatchSet, s: &Section, error: Error) -> core::result::Result<PatchSet, Error> {
+    if (s.open) { s.patch.destroy(); }
+    ps.destroy(); return core::result::Err(error);
+}
+
+// Split a patch into file sections: "diff --git" sections with their
+// extended headers, and plain ---/+++ sections (diff -u, diff -ru). Text
+// outside sections (mail headers, "Index:" lines, signatures) is skipped.
+// strip drops leading path components as -p does; max_lines bounds each hunk.
+pub fn parse(text: core::slice::View<u8>, strip: i32, max_files: i32, max_lines: i32) -> core::result::Result<PatchSet, Error> {
+    let ps: PatchSet = PatchSet { files: alloc::vec::new(), names: alloc::vec::new() };
+    let s: Section = Section { open: false, git: false, offset: 0, header: -1, header_end: -1, old_from: -1, old_end: -1, new_from: -1, new_end: -1, ren_from: -1, ren_from_end: -1, ren_to: -1, ren_to_end: -1, copy: false, is_new: false, is_delete: false, old_mode: 0, new_mode: 0, binary: 0, has_patch: false, patch: ps_empty_patch(text) };
+    if (text.start < 0 || text.length < 0 || strip < 0 || max_files < 0 || max_lines < 0) { return ps_parse_fail(ps, s.borrow(), Error::InvalidInput); }
+    let pos: i32 = 0;
+    while (pos < text.length) {
+        let end: i32 = ps_line_end(text, pos); let next: i32 = end;
+        if (ps_starts(text, pos, "diff --git ", 11)) {
+            if (s.open) { let r: core::result::Result<i32, Error> = ps_close(ps.borrow(), text, s.borrow(), strip, max_files); if (core::result::is_err(r)) { return ps_parse_fail(ps, s.borrow(), core::result::unwrap_err(r)); } }
+            ps_open(s.borrow(), text, true, pos); s.header = pos + 11; s.header_end = ps_text_end(text, pos, end);
+        }
+        else { if (ps_starts(text, pos, "--- ", 4) && ps_starts(text, end, "+++ ", 4)) {
+            if (s.open && (!s.git || s.has_patch)) { let r: core::result::Result<i32, Error> = ps_close(ps.borrow(), text, s.borrow(), strip, max_files); if (core::result::is_err(r)) { return ps_parse_fail(ps, s.borrow(), core::result::unwrap_err(r)); } }
+            if (!s.open) { ps_open(s.borrow(), text, false, pos); }
+            s.old_from = pos + 4; s.old_end = end; s.new_from = end + 4; s.new_end = ps_line_end(text, end);
+            let parsed: core::result::Result<ext::unidiff::Patch, ext::unidiff::ParseError> = ext::unidiff::parse(ps_sub(text, pos, text.length), max_lines);
+            if (core::result::is_err(parsed)) {
+                let error: Error = match (core::result::unwrap_err(parsed).kind) { ext::unidiff::ParseKind::LineLimit -> Error::LineLimit, ext::unidiff::ParseKind::AllocationFailed -> Error::AllocationFailed, _ -> Error::Malformed };
+                return ps_parse_fail(ps, s.borrow(), error);
+            }
+            s.patch = core::result::unwrap(parsed); s.has_patch = true; next = pos + s.patch.end;
+            if (!s.git) { let r: core::result::Result<i32, Error> = ps_close(ps.borrow(), text, s.borrow(), strip, max_files); if (core::result::is_err(r)) { return ps_parse_fail(ps, s.borrow(), core::result::unwrap_err(r)); } }
+        }
+        else { if (s.open && s.git && !s.has_patch) {
+            let e: i32 = ps_text_end(text, pos, end);
+            if (ps_starts(text, pos, "old mode ", 9)) { s.old_mode = ps_octal(text, pos + 9, e); }
+            if (ps_starts(text, pos, "new mode ", 9)) { s.new_mode = ps_octal(text, pos + 9, e); }
+            if (ps_starts(text, pos, "deleted file mode ", 18)) { s.is_delete = true; s.old_mode = ps_octal(text, pos + 18, e); }
+            if (ps_starts(text, pos, "new file mode ", 14)) { s.is_new = true; s.new_mode = ps_octal(text, pos + 14, e); }
+            if (ps_starts(text, pos, "rename from ", 12)) { s.ren_from = pos + 12; s.ren_from_end = end; }
+            if (ps_starts(text, pos, "rename to ", 10)) { s.ren_to = pos + 10; s.ren_to_end = end; }
+            if (ps_starts(text, pos, "copy from ", 10)) { s.ren_from = pos + 10; s.ren_from_end = end; s.copy = true; }
+            if (ps_starts(text, pos, "copy to ", 8)) { s.ren_to = pos + 8; s.ren_to_end = end; s.copy = true; }
+            if (ps_starts(text, pos, "GIT binary patch", 16)) { s.binary = 1; }
+            if (ps_starts(text, pos, "Binary files ", 13)) { s.binary = 2; }
+        } } }
+        pos = next;
+    }
+    if (s.open) { let r: core::result::Result<i32, Error> = ps_close(ps.borrow(), text, s.borrow(), strip, max_files); if (core::result::is_err(r)) { return ps_parse_fail(ps, s.borrow(), core::result::unwrap_err(r)); } }
+    return core::result::Ok(ps);
+}
+pub impl PatchSet {
+    pub fn borrow(&self) -> &PatchSet { return self; }
+    pub fn len(&self) -> i32 { return self.files.len(); }
+    pub fn get(&self, index: i32) -> core::option::Option<FilePatch> { return self.files.get(index); }
+    pub fn old_name(&self, index: i32) -> core::slice::View<u8> { let f: FilePatch = self.files.as_slice()[index]; return ps_sub(self.names.as_view(), f.old_start, f.old_start + f.old_length); }
+    pub fn new_name(&self, index: i32) -> core::slice::View<u8> { let f: FilePatch = self.files.as_slice()[index]; return ps_sub(self.names.as_view(), f.new_start, f.new_start + f.new_length); }
+    pub fn destroy(&self) {
+        let i: i32 = 0; while (i < self.files.len()) { let f: FilePatch = self.files.as_slice()[i]; f.patch.destroy(); i += 1; }
+        self.files.destroy(); self.names.destroy(); self.files = alloc::vec::new(); self.names = alloc::vec::new();
+    }
+}
+
+// ---------------------------------------------------------------- reversal
+// The patch that undoes `patch`: sides, counts and line kinds swapped. The
+// result shares line bytes with `patch` and owns new vectors.
+pub fn reverse(patch: &ext::unidiff::Patch) -> core::result::Result<ext::unidiff::Patch, Error> {
+    let r: ext::unidiff::Patch = ext::unidiff::Patch { old_name: patch.new_name, new_name: patch.old_name, hunks: alloc::vec::new(), lines: alloc::vec::new(), end: patch.end };
+    if (core::result::is_err(r.lines.try_reserve(patch.lines.len())) || core::result::is_err(r.hunks.try_reserve(patch.hunks.len()))) { r.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let i: i32 = 0;
+    while (i < patch.lines.len()) {
+        let l: ext::unidiff::PatchLine = patch.lines.as_slice()[i]; let kind: i32 = l.kind;
+        if (kind == 1) { kind = 2; } else { if (kind == 2) { kind = 1; } }
+        if (core::result::is_err(r.lines.try_push(ext::unidiff::PatchLine { kind: kind, bytes: l.bytes }))) { r.destroy(); return core::result::Err(Error::AllocationFailed); }
+        i += 1;
+    }
+    i = 0;
+    while (i < patch.hunks.len()) {
+        let h: ext::unidiff::PatchHunk = patch.hunks.as_slice()[i];
+        if (core::result::is_err(r.hunks.try_push(ext::unidiff::PatchHunk { old_start: h.new_start, old_count: h.new_count, new_start: h.old_start, new_count: h.old_count, first: h.first, count: h.count, offset: h.offset, end: h.end }))) { r.destroy(); return core::result::Err(Error::AllocationFailed); }
+        i += 1;
+    }
+    return core::result::Ok(r);
+}
+// The file patch that undoes `file` (as `patch -R` and `git apply -R` read
+// it): names, modes and creation/deletion swapped, hunks reversed. Destroy
+// the result's patch; the names still refer to the set.
+pub fn reverse_file(file: FilePatch) -> core::result::Result<FilePatch, Error> {
+    let r: core::result::Result<ext::unidiff::Patch, Error> = reverse(file.patch.borrow());
+    if (core::result::is_err(r)) { return core::result::Err(core::result::unwrap_err(r)); }
+    let kind: Kind = match (file.kind) { Kind::Create -> Kind::Delete, Kind::Delete -> Kind::Create, Kind::Modify -> Kind::Modify, Kind::Rename -> Kind::Rename, Kind::Copy -> Kind::Copy };
+    return core::result::Ok(FilePatch { kind: kind, binary: file.binary, git: file.git, old_mode: file.new_mode, new_mode: file.old_mode, old_start: file.new_start, old_length: file.new_length, new_start: file.old_start, new_length: file.old_length, patch: core::result::unwrap(r), offset: file.offset });
+}
+
+fn ps_options(options: ext::unidiff::ApplyOptions, fuzz: i32) -> ext::unidiff::ApplyOptions {
+    return ext::unidiff::ApplyOptions { max_fuzz: fuzz, max_offset: options.max_offset, max_lines: options.max_lines, max_output: options.max_output, max_work: options.max_work };
+}
+fn ps_first_applies(base: core::slice::View<u8>, one: &ext::unidiff::Patch, options: ext::unidiff::ApplyOptions) -> core::result::Result<bool, ext::unidiff::ApplyError> {
+    let r: core::result::Result<ext::unidiff::Applied, ext::unidiff::ApplyError> = ext::unidiff::apply(base, one, options);
+    if (core::result::is_err(r)) { return core::result::Err(core::result::unwrap_err(r)); }
+    let a: ext::unidiff::Applied = core::result::unwrap(r); let ok: bool = a.rejected == 0; a.destroy(); return core::result::Ok(ok);
+}
+// GNU patch's reversed-patch check: for fuzz 0, 1, ... max_fuzz, try the
+// first hunk forward, then reversed; the first placement found decides.
+// Neither when the first hunk applies in neither direction.
+pub fn direction(base: core::slice::View<u8>, patch: &ext::unidiff::Patch, options: ext::unidiff::ApplyOptions) -> core::result::Result<Direction, ext::unidiff::ApplyError> {
+    if (patch.hunks.len() == 0) { return core::result::Ok(Direction::Forward); }
+    let reversed: core::result::Result<ext::unidiff::Patch, Error> = reverse(patch);
+    if (core::result::is_err(reversed)) { return core::result::Err(ext::unidiff::ApplyError::AllocationFailed); }
+    let back_all: ext::unidiff::Patch = core::result::unwrap(reversed);
+    let one: ext::unidiff::Patch = ext::unidiff::Patch { old_name: patch.old_name, new_name: patch.new_name, hunks: alloc::vec::new(), lines: patch.lines, end: patch.end };
+    let back: ext::unidiff::Patch = ext::unidiff::Patch { old_name: patch.new_name, new_name: patch.old_name, hunks: alloc::vec::new(), lines: back_all.lines, end: patch.end };
+    let result: core::result::Result<Direction, ext::unidiff::ApplyError> = core::result::Ok(Direction::Neither);
+    if (core::result::is_err(one.hunks.try_push(patch.hunks.as_slice()[0])) || core::result::is_err(back.hunks.try_push(back_all.hunks.as_slice()[0]))) { result = core::result::Err(ext::unidiff::ApplyError::AllocationFailed); }
+    let fuzz: i32 = 0; let done: bool = core::result::is_err(result);
+    while (!done && fuzz <= options.max_fuzz) {
+        let level: ext::unidiff::ApplyOptions = ps_options(options, fuzz);
+        let f: core::result::Result<bool, ext::unidiff::ApplyError> = ps_first_applies(base, one.borrow(), level);
+        if (core::result::is_err(f)) { result = core::result::Err(core::result::unwrap_err(f)); done = true; }
+        else { if (core::result::unwrap(f)) { result = core::result::Ok(Direction::Forward); done = true; }
+        else {
+            let b: core::result::Result<bool, ext::unidiff::ApplyError> = ps_first_applies(base, back.borrow(), level);
+            if (core::result::is_err(b)) { result = core::result::Err(core::result::unwrap_err(b)); done = true; }
+            else { if (core::result::unwrap(b)) { result = core::result::Ok(Direction::Reversed); done = true; } }
+        } }
+        fuzz += 1;
+    }
+    one.hunks.destroy(); back.hunks.destroy(); back_all.destroy();
+    return result;
+}
+
+// ---------------------------------------------------------------- git apply
+struct Work { used: u64, max: u64 }
+impl Work { fn borrow(&self) -> &Work { return self; } }
+fn pg_match(img: core::slice::View<core::slice::View<u8>>, pre: core::slice::View<core::slice::View<u8>>, at: i32, beginning: bool, end: bool, w: &Work) -> bool {
+    if (at < 0 || at + pre.length > img.length) { return false; }
+    if (end && at + pre.length != img.length) { return false; }
+    if (beginning && at != 0) { return false; }
+    let i: i32 = 0;
+    while (i < pre.length) {
+        let x: core::slice::View<u8> = pre.values[pre.start+i]; w.used += 1 + (x.length as u64);
+        if (!ps_same(img.values[img.start+at+i], x)) { return false; }
+        i += 1;
+    }
+    return true;
+}
+// git's find_pos: start at `line`, then line+1, line-1, line+2, ...
+fn pg_find(img: core::slice::View<core::slice::View<u8>>, pre: core::slice::View<core::slice::View<u8>>, line: i32, beginning: bool, end: bool, w: &Work) -> i32 {
+    let nr: i32 = img.length;
+    if (pre.length > nr) { return -1; }
+    let start: i32 = line;
+    if (beginning) { start = 0; } else { if (end) { start = nr - pre.length; } }
+    if (start > nr) { start = nr; } if (start < 0) { start = 0; }
+    let forwards: i32 = start; let backwards: i32 = start; let current: i32 = start; let i: i32 = 0;
+    while (w.used <= w.max) {
+        if (pg_match(img, pre, current, beginning, end, w)) { return current; }
+        let moved: bool = false;
+        while (!moved) {
+            if (backwards == 0 && forwards == nr) { return -1; }
+            if (i % 2 == 1) { if (backwards == 0) { i += 1; } else { backwards -= 1; current = backwards; moved = true; } }
+            else { if (forwards == nr) { i += 1; } else { forwards += 1; current = forwards; moved = true; } }
+        }
+        i += 1;
+    }
+    return -2;
+}
+fn pg_fail(img: alloc::vec::Vec<core::slice::View<u8>>, pre: alloc::vec::Vec<core::slice::View<u8>>, post: alloc::vec::Vec<core::slice::View<u8>>, reports: alloc::vec::Vec<ext::unidiff::HunkReport>, error: ext::unidiff::ApplyError) -> core::result::Result<ext::unidiff::Applied, ext::unidiff::ApplyError> {
+    img.destroy(); pre.destroy(); post.destroy(); reports.destroy(); return core::result::Err(error);
+}
+// Apply hunks the way `git apply` does: in order, each to the result of the
+// previous ones, exact context only, searched from the hunk's new-side line
+// outward (+1, -1, +2, ...). A hunk starting at old line 0 or 1 must match at
+// the top and one without trailing context at the end. Application stops at
+// the first hunk that does not apply (rejected 1, report line = its old start)
+// and the output is then empty.
+pub fn apply_git(base: core::slice::View<u8>, patch: &ext::unidiff::Patch, options: ext::unidiff::ApplyOptions) -> core::result::Result<ext::unidiff::Applied, ext::unidiff::ApplyError> {
+    let img: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new(); let pre: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new(); let post: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new();
+    let reports: alloc::vec::Vec<ext::unidiff::HunkReport> = alloc::vec::new();
+    if (options.max_lines < 0 || options.max_output < 0) { return pg_fail(img, pre, post, reports, ext::unidiff::ApplyError::InvalidOptions); }
+    let split: core::result::Result<alloc::vec::Vec<ext::seqdiff::Line>, ext::seqdiff::Error> = ext::seqdiff::split_lines(base, ext::seqdiff::Limits { max_items: options.max_lines, max_work: options.max_work });
+    if (core::result::is_err(split)) {
+        let error: ext::unidiff::ApplyError = match (core::result::unwrap_err(split)) { ext::seqdiff::Error::ItemLimit -> ext::unidiff::ApplyError::LineLimit, ext::seqdiff::Error::AllocationFailed -> ext::unidiff::ApplyError::AllocationFailed, _ -> ext::unidiff::ApplyError::InvalidOptions };
+        return pg_fail(img, pre, post, reports, error);
+    }
+    let lines: alloc::vec::Vec<ext::seqdiff::Line> = core::result::unwrap(split);
+    let k: i32 = 0; let grown: bool = core::result::is_ok(img.try_reserve(lines.len()));
+    while (grown && k < lines.len()) { grown = core::result::is_ok(img.try_push(lines.as_slice()[k].bytes)); k += 1; }
+    lines.destroy();
+    if (!grown) { return pg_fail(img, pre, post, reports, ext::unidiff::ApplyError::AllocationFailed); }
+    let w: Work = Work { used: base.length as u64, max: options.max_work };
+    let all: [ext::unidiff::PatchLine] = patch.lines.as_slice(); let rejected: i32 = 0; let h: i32 = 0;
+    while (h < patch.hunks.len() && rejected == 0) {
+        let hunk: ext::unidiff::PatchHunk = patch.hunks.as_slice()[h];
+        pre.clear(); post.clear(); let leading: i32 = 0; let trailing: i32 = 0; let changed: bool = false; let q: i32 = 0; let ok: bool = true;
+        while (q < hunk.count && ok) {
+            let pl: ext::unidiff::PatchLine = all[hunk.first+q];
+            if (pl.kind != 2) { ok = core::result::is_ok(pre.try_push(pl.bytes)); }
+            if (ok && pl.kind != 1) { ok = core::result::is_ok(post.try_push(pl.bytes)); }
+            if (pl.kind == 0) { if (!changed) { leading += 1; } trailing += 1; } else { changed = true; trailing = 0; }
+            q += 1;
+        }
+        if (!ok) { return pg_fail(img, pre, post, reports, ext::unidiff::ApplyError::AllocationFailed); }
+        let line: i32 = 0; if (hunk.new_start > 0) { line = hunk.new_start - 1; }
+        let at: i32 = pg_find(img.as_view(), pre.as_view(), line, hunk.old_start <= 1, trailing == 0, w.borrow());
+        if (at == -2 || w.used > w.max) { return pg_fail(img, pre, post, reports, ext::unidiff::ApplyError::WorkLimit); }
+        let report: ext::unidiff::HunkReport = ext::unidiff::HunkReport { index: h, status: ext::unidiff::HunkStatus::Rejected, reason: ext::unidiff::RejectReason::NoMatch, line: hunk.old_start, offset: 0, fuzz: 0 };
+        if (at < 0) { rejected = 1; }
+        else {
+            report.line = at + 1; report.offset = at - line; report.reason = ext::unidiff::RejectReason::NotRejected;
+            if (at == line) { report.status = ext::unidiff::HunkStatus::Exact; } else { report.status = ext::unidiff::HunkStatus::Offset; }
+            let next: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new();
+            let iv: core::slice::View<core::slice::View<u8>> = img.as_view();
+            let grew: bool = core::result::is_ok(next.try_reserve(img.len() - pre.len() + post.len()))
+                && core::result::is_ok(next.try_extend(core::slice::View { values: iv.values, start: iv.start, length: at }))
+                && core::result::is_ok(next.try_extend(post.as_view()))
+                && core::result::is_ok(next.try_extend(core::slice::View { values: iv.values, start: iv.start + at + pre.len(), length: img.len() - at - pre.len() }));
+            img.destroy(); img = next;
+            if (!grew) { return pg_fail(img, pre, post, reports, ext::unidiff::ApplyError::AllocationFailed); }
+        }
+        if (core::result::is_err(reports.try_push(report))) { return pg_fail(img, pre, post, reports, ext::unidiff::ApplyError::AllocationFailed); }
+        h += 1;
+    }
+    let output: alloc::vec::Vec<u8> = alloc::vec::new(); let i: i32 = 0; let total: i32 = 0; let fits: bool = true;
+    while (rejected == 0 && i < img.len() && fits) {
+        let v: core::slice::View<u8> = img.as_slice()[i];
+        if (v.length > options.max_output - total) { output.destroy(); return pg_fail(img, pre, post, reports, ext::unidiff::ApplyError::OutputLimit); }
+        total += v.length; fits = core::result::is_ok(output.try_extend(v)); i += 1;
+    }
+    if (!fits) { output.destroy(); return pg_fail(img, pre, post, reports, ext::unidiff::ApplyError::AllocationFailed); }
+    img.destroy(); pre.destroy(); post.destroy();
+    return core::result::Ok(ext::unidiff::Applied { output: output, reports: reports, rejected: rejected });
+}
+
+fn ps_merge_error(e: ext::merge3::Error) -> ext::unidiff::ApplyError {
+    return match (e) { ext::merge3::Error::ItemLimit -> ext::unidiff::ApplyError::LineLimit, ext::merge3::Error::WorkLimit -> ext::unidiff::ApplyError::WorkLimit, ext::merge3::Error::OutputLimit -> ext::unidiff::ApplyError::OutputLimit, ext::merge3::Error::AllocationFailed -> ext::unidiff::ApplyError::AllocationFailed, _ -> ext::unidiff::ApplyError::InvalidOptions };
+}
+fn ps_split(v: core::slice::View<u8>, options: ext::unidiff::ApplyOptions) -> core::result::Result<alloc::vec::Vec<ext::seqdiff::Line>, ext::unidiff::ApplyError> {
+    let r: core::result::Result<alloc::vec::Vec<ext::seqdiff::Line>, ext::seqdiff::Error> = ext::seqdiff::split_lines(v, ext::seqdiff::Limits { max_items: options.max_lines, max_work: options.max_work });
+    if (core::result::is_ok(r)) { return core::result::Ok(core::result::unwrap(r)); }
+    return match (core::result::unwrap_err(r)) { ext::seqdiff::Error::ItemLimit -> core::result::Err(ext::unidiff::ApplyError::LineLimit), ext::seqdiff::Error::AllocationFailed -> core::result::Err(ext::unidiff::ApplyError::AllocationFailed), _ -> core::result::Err(ext::unidiff::ApplyError::InvalidOptions) };
+}
+// `git apply --3way` for one file: apply the patch to the preimage `base`
+// (git's blob from the index line), then merge that result into `ours`
+// with base as the common ancestor: zealous level, xdiff alignment,
+// markers "<<<<<<< ours" and ">>>>>>> theirs".
+pub fn three_way(ours: core::slice::View<u8>, base: core::slice::View<u8>, patch: &ext::unidiff::Patch, options: ext::unidiff::ApplyOptions) -> core::result::Result<Merged, ext::unidiff::ApplyError> {
+    let applied: core::result::Result<ext::unidiff::Applied, ext::unidiff::ApplyError> = apply_git(base, patch, options);
+    if (core::result::is_err(applied)) { return core::result::Err(core::result::unwrap_err(applied)); }
+    let theirs: ext::unidiff::Applied = core::result::unwrap(applied);
+    if (theirs.rejected > 0) { theirs.destroy(); return core::result::Ok(Merged { output: alloc::vec::new(), applied: false, conflicts: 0 }); }
+    let ov: alloc::vec::Vec<ext::seqdiff::Line> = alloc::vec::new(); let av: alloc::vec::Vec<ext::seqdiff::Line> = alloc::vec::new(); let bv: alloc::vec::Vec<ext::seqdiff::Line> = alloc::vec::new();
+    let result: core::result::Result<Merged, ext::unidiff::ApplyError> = core::result::Ok(Merged { output: alloc::vec::new(), applied: false, conflicts: 0 });
+    let o: core::result::Result<alloc::vec::Vec<ext::seqdiff::Line>, ext::unidiff::ApplyError> = ps_split(base, options);
+    if (core::result::is_err(o)) { result = core::result::Err(core::result::unwrap_err(o)); } else { ov = core::result::unwrap(o); }
+    if (core::result::is_ok(result)) { let a: core::result::Result<alloc::vec::Vec<ext::seqdiff::Line>, ext::unidiff::ApplyError> = ps_split(ours, options); if (core::result::is_err(a)) { result = core::result::Err(core::result::unwrap_err(a)); } else { av = core::result::unwrap(a); } }
+    if (core::result::is_ok(result)) { let b: core::result::Result<alloc::vec::Vec<ext::seqdiff::Line>, ext::unidiff::ApplyError> = ps_split(theirs.output.as_view(), options); if (core::result::is_err(b)) { result = core::result::Err(core::result::unwrap_err(b)); } else { bv = core::result::unwrap(b); } }
+    if (core::result::is_ok(result)) {
+        let m: core::result::Result<ext::merge3::Merge, ext::merge3::Error> = ext::merge3::merge_lines_with(ov.as_view(), av.as_view(), bv.as_view(), ext::merge3::Level::Zealous, ext::seqdiff::Algorithm::Xdiff, ext::seqdiff::Limits { max_items: options.max_lines, max_work: options.max_work });
+        if (core::result::is_err(m)) { result = core::result::Err(ps_merge_error(core::result::unwrap_err(m))); }
+        else {
+            let merge: ext::merge3::Merge = core::result::unwrap(m);
+            let labels: ext::merge3::Labels = ext::merge3::Labels { ours: ps_literal("ours", 4), base: ps_literal("base", 4), theirs: ps_literal("theirs", 6) };
+            let written: core::result::Result<alloc::vec::Vec<u8>, ext::merge3::Error> = ext::merge3::write_merge(ov.as_view(), av.as_view(), bv.as_view(), merge.borrow(), labels, ext::merge3::Format { style: ext::merge3::Style::Merge, gnu_identical: false, max_output: options.max_output });
+            if (core::result::is_err(written)) { result = core::result::Err(ps_merge_error(core::result::unwrap_err(written))); }
+            else { result = core::result::Ok(Merged { output: core::result::unwrap(written), applied: true, conflicts: merge.conflicts }); }
+            merge.destroy();
+        }
+    }
+    ov.destroy(); av.destroy(); bv.destroy();
+    theirs.destroy();
+    return result;
+}
+pub impl Merged {
+    pub fn borrow(&self) -> &Merged { return self; }
+    pub fn destroy(&self) { self.output.destroy(); self.output = alloc::vec::new(); }
+}

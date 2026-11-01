@@ -2,6 +2,7 @@
 """Compare the Lanius Unicode library with Python's unicodedata as an oracle.
 
 Usage: python3 -I tools/unicode17/python_oracle.py EXECUTABLE [--strings N] [--seed S]
+       [--hostile N]
 
 EXECUTABLE is the compiled sample_programs/library/unicode_oracle.lani. With
 empty stdin it dumps category, combining class, decimal digit, full
@@ -129,11 +130,50 @@ def generated_strings(count: int, seed: int) -> list[str]:
     return out
 
 
+def hostile_strings(count: int, seed: int) -> list[str]:
+    """Long combining runs that stress canonical ordering past the short-run
+    insertion path: reversed, alternating, random and decomposing marks."""
+    rng = random.Random(seed ^ 0x5EED)
+    assigned = [c for c in range(LIMIT) if not 0xD800 <= c <= 0xDFFF and host_assigned(c)]
+    marks = [c for c in assigned if unicodedata.combining(chr(c))]
+    by_class: dict[int, list[int]] = {}
+    for c in marks:
+        by_class.setdefault(unicodedata.combining(chr(c)), []).append(c)
+    classes = sorted(by_class)
+    split = [0x0344, 0x0F73, 0x0F75, 0x0F81, 0x0340, 0x0341, 0x0343]
+    bases = ["", "a", "e", "A", "\u03b1", "\u1100\u1161", "\uac00", "\u0915", "\u05d0", "x"]
+    lengths = [33, 34, 47, 64, 100, 255, 256, 257, 1000, 3000, 4000]
+    out = []
+    for i in range(count):
+        n = rng.choice(lengths) if i % 2 else rng.randint(33, 1500)
+        shape = i % 6
+        if shape == 0:      # strictly reversed class order
+            run = [rng.choice(by_class[k]) for k in sorted(rng.choices(classes, k=n), reverse=True)]
+        elif shape == 1:    # two classes alternating
+            a, b = rng.sample(classes, 2)
+            run = [rng.choice(by_class[a if j % 2 else b]) for j in range(n)]
+        elif shape == 2:    # uniform over every mark
+            run = rng.choices(marks, k=n)
+        elif shape == 3:    # few classes, many repeats: stability matters
+            pick = rng.sample(classes, rng.randint(2, 5))
+            run = [rng.choice(by_class[rng.choice(pick)][:3]) for _ in range(n)]
+        elif shape == 4:    # decomposing marks inside the run
+            run = [rng.choice(split) if rng.random() < 0.2 else rng.choice(marks) for _ in range(n)]
+        else:               # already ordered, then one out-of-order tail mark
+            run = [rng.choice(by_class[k]) for k in sorted(rng.choices(classes, k=n))] + [0x0316]
+        text = rng.choice(bases) + "".join(map(chr, run))
+        if rng.random() < 0.3:
+            text += rng.choice(["b", "\u0301", "\u1161", "\u0300a\u0301"])
+        out.append(text)
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("executable")
     ap.add_argument("--strings", type=int, default=200000)
     ap.add_argument("--seed", type=int, default=17)
+    ap.add_argument("--hostile", type=int, default=300, help="long combining-run strings")
     ap.add_argument("--uconv", help="also check a compiled sample_programs/library/uconv.lani")
     args = ap.parse_args()
     ucd = ucd17()
@@ -195,7 +235,7 @@ def main() -> int:
         print(f"  {name:8} compared={compared[name]} agree={agree[name]} version={version[name]} "
               f"defect={compared[name] - agree[name] - version[name]}")
 
-    strings = generated_strings(args.strings, args.seed)
+    strings = generated_strings(args.strings, args.seed) + hostile_strings(args.hostile, args.seed)
     payload = b"".join(s.encode("utf-8") + b"\xff" for s in strings)
     run = subprocess.run([args.executable], input=payload, capture_output=True, timeout=280)
     assert run.returncode == 0, run.returncode
@@ -226,7 +266,8 @@ def main() -> int:
                 if sdefect[name] <= 5:
                     defects.append(f"string {s!r} {name}: lanius={mine!r} host={host!r}")
     assert pos == len(data)
-    print(f"generated strings: {len(strings)} (seed {args.seed}, {len(payload)} input bytes)")
+    print(f"generated strings: {len(strings)} (seed {args.seed}, {args.hostile} hostile, "
+          f"{len(payload)} input bytes)")
     for name in FIELDS:
         label = "differ(word-rule)" if name == "title" else "defect"
         print(f"  {name:8} agree={sagree[name]} version={sversion[name]} {label}={sdefect[name]}")

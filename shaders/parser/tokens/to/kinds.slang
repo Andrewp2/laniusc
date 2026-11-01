@@ -57,6 +57,7 @@ groupshared uint group_feature_flags[256];
 #include "token_relations.slang"
 
 static const uint TK_NOT = 19u;
+static const uint TK_QUESTION = 39u;
 static const uint TK_RETURN_NEVER = 197u;
 
 bool semantic_token_ends_primary(uint kind)
@@ -77,7 +78,9 @@ bool semantic_token_ends_primary(uint kind)
            kind == TK_CHAR ||
            kind == TK_TRUE ||
            kind == TK_FALSE ||
-           kind == TK_SELF_VALUE;
+           kind == TK_SELF_VALUE ||
+           // `value?` ends an operand: `value? - 1` subtracts.
+           kind == TK_QUESTION;
 }
 
 // The semantic kind of the raw `<` at parser_i.

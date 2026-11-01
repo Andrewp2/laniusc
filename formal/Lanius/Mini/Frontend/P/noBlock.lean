@@ -51,6 +51,18 @@ def matchOrder (fuel : Nat) (env : FrontEnv) (owner : TypeDecl) (variants : List
   | none => none
   | some n => orderBy fuel env owner variants arms n
 
+def stmtOrderBy (fuel : Nat) (env : FrontEnv) (owner : TypeDecl) (variants : List VariantTy) (arms : List CTree) (nested : Bool) : Option (List CTree) :=
+  if nested then
+    nestedChecked fuel env owner variants arms true
+  else
+    armsInOrder fuel owner variants arms
+
+/-- A match statement's arms in variant order: as a match expression's, but an arm's value may be a block. A nested arm's value is then the inner match `match (h) { arms }` (nest_arm), read as a match statement. -/
+def stmtArmOrder (fuel : Nat) (env : FrontEnv) (owner : TypeDecl) (variants : List VariantTy) (arms : List CTree) : Option (List CTree) :=
+  match anyNested fuel env arms with
+  | none => none
+  | some n => stmtOrderBy fuel env owner variants arms n
+
 def postfixHead (fuel : Nat) (env : FrontEnv) (scope : List Local) (pf : CTree) : Option LetHead :=
   if isPathCall pf then
     callPathHead fuel env scope (kid (kid pf 0) 0) (kid (kid pf 1) 1)

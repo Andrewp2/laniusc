@@ -196,8 +196,9 @@ void collect_bucket(uint token, uint bucket, uint tag, uint payload, uint actual
         if (!visible_method(token, fn_token) ||
             method_decl_name_id[fn_token] != method_call_name_id[token]) continue;
         uint mode = method_decl_receiver_mode[fn_token];
-        if (dotted ? (mode == 0u || (mode == 3u && call_param_count[fn_token] == 0u)) :
-            (mode == 1u || mode == 2u)) continue;
+        // A path call names every method of the type: a self method then
+        // takes its receiver as the first argument, checked like any other.
+        if (dotted && (mode == 0u || (mode == 3u && call_param_count[fn_token] == 0u))) continue;
         if (!local_receiver_matches(fn_token, mode, dotted, actual)) continue;
         MethodCandidate candidate = method_candidate_empty();
         candidate.state = METHOD_CANDIDATE_UNIQUE;

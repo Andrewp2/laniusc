@@ -52,8 +52,8 @@ literal spelling, and the provider's ASCII `\d`, `\s`, `\w`, and word-boundary
 semantics. No Unicode normalization or case folding is performed.
 
 The provider supports alternatives, groups, character classes and ranges,
-greedy and lazy repetition, anchors, and Unicode properties. Lookaround,
-backreferences, possessive quantifiers, and unsupported escapes fail explicitly;
+greedy and lazy repetition, anchors, fixed-width lookbehind, and Unicode
+properties. Lookahead, backreferences, possessive quantifiers, and unsupported escapes fail explicitly;
 see the provider guide for the complete grammar. Default multiline and dot
 options are used. Each logical record is searched independently.
 
@@ -115,8 +115,73 @@ times on a laptop with other work running; log
 `target/claude-work/s3/grep-assert-timings.log`. A failed DFA cache
 allocation is an allocation failure (status 4, `stage=pattern`); only a
 pattern with lookbehind uses the VM instead. Spare line capacity and regex scratch mean these limits do not specify a
-total memory limit. The input is read in 1024-byte chunks; a UTF-8 sequence may
-cross a read boundary safely because validation happens after record assembly.
+total memory limit. The input is read with `std::fs::read`, up to 64 KiB per
+call, straight into the record buffer. A UTF-8 sequence or record may cross a
+read boundary safely, because validation happens after record assembly.
+Selected records collect in one output buffer. It is written when it holds
+64 KiB, at EOF, and before any error is reported. If that last write fails,
+the status is 3 at `stage=output`, in place of the earlier error.
+
+## Literal prefilter
+
+Before the scan, `Regex.required_literal` gives the longest literal that every
+match contains (up to 256 bytes). For each 64 KiB read, the complete records
+form one region. `core::search::find` looks for the literal across the whole
+region, and only the records containing it go to the matcher. One pass over
+each gap between those records checks UTF-8 and counts its LFs, eight bytes per
+step, so line numbers and errors stay exact. When the pattern is that literal
+alone (`Regex.literal_length()`) and it has no CR or LF, a valid record that
+contains it is selected without running the matcher at all. The region path
+is used only when none of its records can exceed `--max-line` and none can
+reach `WorkLimit`, which is the bound the DFA uses: `(region bytes + 2) *
+boundary_cost <= max_work`. It is not used with `--invert` or for patterns
+with lookbehind. Otherwise, and from an invalid gap onward, records go one at
+a time. Each of them still skips the matcher when it lacks the literal and
+cannot reach `WorkLimit`. Output, status and diagnostics are byte-identical to
+the record-at-a-time scan.
+`tests/fixtures/extended/text_grep_scan/compare.py` checks that against a
+build from before the change on generated inputs. The inputs mix multibyte
+scalars, CR, NUL, invalid UTF-8, records over 64 KiB, `-v`, `-n`, `-c`, small
+`--max-line` and small `--max-work`. Seeds 20261031, 1 and 2 gave 1500/1500
+identical runs (log `target/claude-work/s3/text-grep-scan-receipt.log`).
+
+The table compares GNU grep 3.11 (`-E`, `en_US.UTF-8`) with text_grep on
+S4's 48,770,754-byte, 814,590-line Rust-heavy corpus. Times are best of three
+wall times in ms, with stdout written to a file. Every row's output (`-c`
+count, or the `-n` listing) is byte-identical to GNU's. "Before" is the build
+from the assertion commit above, which used 1024-byte reads, a matcher run
+on every record and one write per record. The laptop had other work running
+(load 10–19). Logs: `target/claude-work/s3/grep-prefilter-timings.log` and
+`grep-unicode-timings.log`.
+
+| Pattern | Before `-c` | `-c` | `-n` | GNU `-c` | GNU `-n` |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `zzzz` (no match) | 5176 | 68 | 69 | 11 | 18 |
+| `core::result::Result` (8,682 lines) | 5035 | 140 | 165 | 17 | 31 |
+| `fn main` | 5024 | 109 | 134 | 32 | 47 |
+| `the` | 5552 | 272 | 473 | 69 | 100 |
+| `^\s*//` | 4835 | 114 | 142 | 30 | 42 |
+| `\bResult<` | 5066 | 110 | 131 | 16 | 28 |
+| `fn [a-z_]+_main\(` | 4717 | 85 | 84 | 15 | 23 |
+| `[0-9]+$` (no required literal) | | 1583 | 1690 | 44 | 57 |
+
+The no-match scan is now close to the cost of `core::search` itself. A
+program that only reads the corpus and calls `core::search::find` in a loop
+takes 30 ms for `zzzz` and 100–110 ms for `core::result::Result`; the rest of
+text_grep's time is the validating line count. The `core::result::Result`
+search is slower because `find` picks its two probe bytes by rank, and here
+both are the adjacent `::` at offsets 4 and 5. Every `::` in Rust text then
+costs a full compare. Patterns with no required literal, such as `[0-9]+$`,
+still run the DFA on every record, at about 32 ns per byte. On the 1.3 MB
+mixed-script file `target/claude-work/s3/unicode_lines.txt`, compared with
+GNU `grep -P`:
+
+| Pattern | Before `-c` | `-c` | `-n` | GNU `-P -c` |
+| --- | ---: | ---: | ---: | ---: |
+| `\p{Lu}` | 1110 | 147 | 142 | 9 |
+| `\p{L}+ \p{N}` | 1329 | 153 | 143 | 8 |
+| `日\p{L}` | 832 | 145 | 166 | 5 |
+| `[^\p{L}\s]` | 1583 | 197 | 203 | 13 |
 
 ## Exit status and failures
 
@@ -177,16 +242,21 @@ patterns on `aaé\r\nnope\néa` with `-n`:
 
 | Pattern | Path | mmap = munmap | Allocation failures (status 4) | Read faults | Stdout write faults |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `^(?<!x)(?:a\|é)+$` | VM (lookbehind) | 42 | 42/42 | 2 × EIO, EINTR | 5 × EIO, 0, EINTR, short |
-| `^(?:a\|é)+$` | lazy DFA with anchors | 26 | 26/26 | 2 × EIO, EINTR | 5 × EIO, 0, EINTR, short |
-| `(?:a\|é)+` | lazy DFA | 23 | 23/23 | 2 × EIO, EINTR | 5 × EIO, 0, EINTR, short |
+| `^(?<!x)(?:a\|é)+$` | VM (lookbehind) | 45 | 45/45 | 2 × EIO, EINTR | 1 × EIO, 0, EINTR, short |
+| `^(?:a\|é)+$` | lazy DFA with anchors | 34 | 34/34 | 2 × EIO, EINTR | 1 × EIO, 0, EINTR, short |
+| `(?:a\|é)+` | lazy DFA | 31 | 31/31 | 2 × EIO, EINTR | 1 × EIO, 0, EINTR, short |
+| `a*é` | prefilter, DFA on hit records | 31 | 31/31 | 2 × EIO, EINTR | 1 × EIO, 0, EINTR, short |
+| `é` | prefilter, literal decides | 30 | 30/30 | 2 × EIO, EINTR | 1 × EIO, 0, EINTR, short |
 
-All 168 runs, including `/dev/full` and the failed diagnostic, give the
+All 218 runs, including `/dev/full` and the failed diagnostic, give the
 documented status, diagnostic and stdout prefix, and leave the map unchanged.
 The DFA path maps fewer regions because it never creates per-record VM
-scratch. Before the fix above, failures 8 through 21 of the DFA pattern were
-silently absorbed: the search fell back to the VM and exited 0. Log:
-`target/claude-work/s3/text-grep-faults-receipt.log`.
+scratch. The single stdout write is the buffered output. There are more
+mappings than before because of the output buffer, the DFA's partial-state
+tables and `required_literal`'s three temporary vectors. Before the fix above,
+failures 8 through 21 of the DFA pattern were silently absorbed: the search
+fell back to the VM and exited 0. Log:
+`target/claude-work/s3/text-grep-faults-unicode-receipt.log`.
 
 ```sh
 W=target/claude-work/s3
