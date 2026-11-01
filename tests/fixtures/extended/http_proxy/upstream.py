@@ -12,6 +12,7 @@ request path picks the behaviour:
   /fixed/N      N pattern bytes with Content-Length
   /chunked/N    N pattern bytes chunked (1000-byte chunks), trailer X-T
   /close/N      N pattern bytes delimited by closing (HTTP/1.0 style)
+  /load/...     "TARGET X-TAG VIA", the load test's short answer
   /head-only    Content-Length: 1234 and no body (for HEAD)
   /304          304 Not Modified with an ETag
   /100          an interim 100 Continue, then 200
@@ -144,6 +145,11 @@ async def handle(reader, writer):
                 writer.write(b"HTTP/1.1 200 OK\r\nConnection: close\r\nX-Conn: %s-%d\r\n\r\n" % (NAME, conn) + pattern(n))
                 await writer.drain()
                 return
+            if path.startswith(b"/load/"):
+                body = target + b" " + headers.get(b"x-tag", b"-") + b" " + headers.get(b"via", b"-")
+                writer.write(response(200, b"OK", [(b"Content-Length", b"%d" % len(body))], body))
+                await writer.drain()
+                continue
             if path == b"/head-only":
                 writer.write(response(200, b"OK", ident + [(b"Content-Length", b"1234")]))
                 await writer.drain()
