@@ -44,6 +44,78 @@ leaves historical ending/call/consumption facts intact. Repeated destruction of
 an emptied owner is valid. Copies are shallow aliases, not new cleanup rights;
 public fields describe state rather than permission to forge or mutate owners.
 
+## Reusing one owner
+
+```text
+Appended { appended:i32, ending:ReadEnding, calls:u64, consumed:u64 }
+AppendFailure { cause:ReadError, appended:i32, calls:u64, consumed:u64 }
+LineView { text:Text, ending:ReadEnding, calls:u64, consumed:u64 }
+append_until<B>(&B, delimiter:u8, bytes:&Vec<u8>, limits:ReadLimits)
+    -> Result<Appended,AppendFailure> where B:BufRead
+read_line_into<B>(&B, buffer:&Vec<u8>, limits:ReadLimits)
+    -> Result<LineView,AppendFailure> where B:BufRead
+```
+
+These forms behave like Rust's `read_until(&mut Vec)`: they append to
+storage the caller owns instead of returning a fresh owner. A loop that
+reuses one Vec allocates only when a record outgrows its capacity.
+`append_until` uses the same engine as `read_until`, with the same fill and
+consume order, call accounting, interrupted retries and non-draining
+`ByteLimit` peek. Here `max_bytes` bounds the bytes **appended**, and growth
+is capped at the existing length plus `max_bytes`. `appended` counts the
+bytes added. On failure, every appended byte stays in the Vec, just as
+`BufferedReadFailure` retains its bytes.
+
+`read_line_into` first clears the buffer, keeping its capacity, then appends
+one LF-terminated record and validates it as UTF-8. On success it returns a
+`core::text::Text` that borrows the buffer until the buffer is next changed or
+destroyed. An empty record with ending `Eof` means input is exhausted.
+Invalid UTF-8 returns `Text(InvalidUtf8(offset))`, with the offset relative to
+the record, and leaves the raw record in the buffer. The provider has already
+consumed those bytes.
+
+`read_until` and `read_line` now call the same engine with a fresh Vec and
+base 0. Their results, limits, error order and calls are unchanged.
+
+### Large-input timing
+
+The reader is `alloc::buffered::Reader` (64 KiB) over stdin. The input is
+21,827,146 bytes in 200,000 LF lines of mixed scripts. Each run computes line
+count, byte count and a 32-bit hash over every record. Timings are native
+Linux x86_64 on this laptop:
+
+| Loop | Time | Of which kernel |
+| --- | --- | --- |
+| `read_line`, before this change | 3.86 s | |
+| `read_line`, bulk record copy and ASCII-fast UTF-8 check | 2.94 s | 1.56 s |
+| `read_line_into`, one reused Vec | 0.86 s | 0.02 s |
+| Python 3.12, `bytes.split` plus the same hash (oracle) | 4.4 s | |
+
+The owned form's remaining cost is mostly the allocator: one allocation and
+one release per record. 200,000 allocate/free pairs alone take 0.69 s, nearly
+all of it in the kernel. Reused storage avoids that cost. Two changes help
+both forms:
+
+- The engine appends each selected span with one `try_extend` instead of one
+  `try_push` per byte.
+- `core::text::from_utf8_range` skips the general decoder for ASCII bytes.
+  Its results and error offsets are unchanged.
+
+The benchmark output (records, bytes, hash) matched the Python oracle exactly
+for both forms. The inputs were the 22 MB text, a 3 MB prefix, and edge files:
+
+- empty input, no trailing LF, LF-only, CRLF, embedded NUL;
+- a 200,000-byte line, lines of exactly 65,535 and 65,536 bytes, a 2-byte
+  sequence split across the 64 KiB fill boundary;
+- mixed UTF-8, and 127k random records of ASCII, é, 🙂 and CRLF tokens.
+
+Invalid UTF-8 input fails in both forms.
+
+The reused-buffer loop is
+[`sample_programs/library/line_hash.lani`](../sample_programs/library/line_hash.lani),
+and [`tools/line_hash_oracle.py`](../tools/line_hash_oracle.py) prints the
+same three numbers.
+
 ## Records, endings and budgets
 
 read_until includes the first delimiter, which can be any u8 including NUL.
