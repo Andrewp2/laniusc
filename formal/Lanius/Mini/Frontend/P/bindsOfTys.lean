@@ -3,7 +3,7 @@ module
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Compiler.P.arithShiftRight
 import Lanius.Mini.Compiler.P.matchVariants
-import Lanius.Mini.Frontend.P.callParts
+import Lanius.Mini.Frontend.P.argView
 import Lanius.Mini.Frontend.P.collect
 import Lanius.Mini.Frontend.P.consBinder
 import Lanius.Mini.Frontend.P.consBound
@@ -26,6 +26,7 @@ import Lanius.Mini.Frontend.P.noTrees
 import Lanius.Mini.Frontend.P.paramGoals
 import Lanius.Mini.Frontend.P.pathRef
 import Lanius.Mini.Frontend.P.pickTy
+import Lanius.Mini.Frontend.P.projection
 import Lanius.Mini.Frontend.P.purePart
 import Lanius.Mini.Frontend.P.repeatEff
 import Lanius.Mini.Frontend.P.retBinds
@@ -333,7 +334,7 @@ def effFree (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Optio
       match explicitInst fuel env d fd targs with
       | none => none
       | some i =>
-        match checkedEffs (hasTys (paramExpects fuel env.decls fd (some i.args))) (effList (fuel - 1) env scope (paramExpects fuel env.decls fd (some i.args)) items) with
+        match checkedEffs (hasTys (paramExpects fuel env.decls fd (some i.args))) (viewsOf scope (paramExpects fuel env.decls fd (some i.args)) (effList (fuel - 1) env scope (paramExpects fuel env.decls fd (some i.args)) items)) with
         | none => none
         | some xs => some (MEff.xCall i xs)
 /-- A call whose type arguments are inferred, from start: the arguments after pre (the receiver, if any). -/
@@ -344,7 +345,7 @@ def effInfer (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Opti
     let names : List (List Nat) := fd.implParams ++ fd.params
     if noNames names then
       let expects : Option (List Ty) := paramExpects fuel env.decls fd (some [])
-      checkedEff (hasTys expects) (effCalled fuel env scope expected d fd start pre (effList (fuel - 1) env scope (skipExpects expects pre) items))
+      checkedEff (hasTys expects) (effCalled fuel env scope expected d fd start pre (viewsOf scope (skipExpects expects pre) (effList (fuel - 1) env scope (skipExpects expects pre) items)))
     else
       match paramPatterns fuel fd with
       | none => none
@@ -372,7 +373,7 @@ def effArgsBound (fuel : Nat) (env : FrontEnv) (scope : List Local) (fd : FnDecl
         | [] =>
           match items with
           | [] => none
-          | c :: more => checkedBound (!(hasTys (boundArgs names b)) || hasTy (argExpected f env.decls fd names p b)) (effArgNext f env scope fd names p rest more b (effOf f env scope (argExpected f env.decls fd names p b) c))
+          | c :: more => checkedBound (!(hasTys (boundArgs names b)) || hasTy (argExpected f env.decls fd names p b)) (effArgNext f env scope fd names p rest more b (viewOf scope (argExpected f env.decls fd names p b) (effOf f env scope (argExpected f env.decls fd names p b) c)))
 def effArgNext (fuel : Nat) (env : FrontEnv) (scope : List Local) (fd : FnDecl) (names : List (List Nat)) (p : CTree) (ps : List CTree) (items : List CTree) (b : List Bind) (x : Option MEff) : Option ArgsBound :=
   if fuel = 0 then
     none

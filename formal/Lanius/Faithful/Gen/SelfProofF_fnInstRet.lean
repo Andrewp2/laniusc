@@ -127,9 +127,10 @@ theorem proof_cons_expr_tail {prog : SrcProgram} {prims : Prims} {ix_cons_expr_t
   simp only [src_cons_expr_tail] at h
   faithful [Lanius.Mini.consExprTail]
 
-theorem step_eff_ty {prog : SrcProgram} {prims : Prims} {ix_eff_ty ix_minus ix_unbox_of_mini_selfhost_MEff ix_src_ty ix_expr_ty ix_inst_ret ix_apply_ty ix_pick_ty ix_bare_eff ix_index_ty ix_find_local_id : Nat} (fn : prog.funcs[ix_eff_ty]? = some (src_eff_ty ix_minus ix_unbox_of_mini_selfhost_MEff ix_src_ty ix_eff_ty ix_expr_ty ix_inst_ret ix_apply_ty ix_pick_ty ix_bare_eff ix_index_ty ix_find_local_id)) (np : prims.isPrim ix_eff_ty = false)
+theorem step_eff_ty {prog : SrcProgram} {prims : Prims} {ix_eff_ty ix_minus ix_unbox_of_mini_selfhost_MEff ix_boxed_of_mini_selfhost_Ty ix_src_ty ix_expr_ty ix_inst_ret ix_apply_ty ix_pick_ty ix_bare_eff ix_index_ty ix_find_local_id : Nat} (fn : prog.funcs[ix_eff_ty]? = some (src_eff_ty ix_minus ix_unbox_of_mini_selfhost_MEff ix_boxed_of_mini_selfhost_Ty ix_src_ty ix_eff_ty ix_expr_ty ix_inst_ret ix_apply_ty ix_pick_ty ix_bare_eff ix_index_ty ix_find_local_id)) (np : prims.isPrim ix_eff_ty = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_unbox_of_mini_selfhost_MEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_MEff prog prims ix_unbox_of_mini_selfhost_MEff n))
+    (ext_boxed_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Ty prog prims ix_boxed_of_mini_selfhost_Ty n))
     (ext_src_ty : Certified (∀ {n : Nat}, Stmt_src_ty prog prims ix_src_ty n))
     (ext_expr_ty : Certified (∀ {n : Nat}, Stmt_expr_ty prog prims ix_expr_ty n))
     (ext_inst_ret : Certified (∀ {n : Nat}, Stmt_inst_ret prog prims ix_inst_ret n))

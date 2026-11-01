@@ -39,12 +39,17 @@ stopping at the computations the theorems are about (`compileSource`,
 `linkObjects`, `elfFile`, `sourceProgramFiles`, `compileWords`,
 `frontEndWords` and the self program `Lanius.Faithful.Self.prog`, which are
 not trusted, section 10), with each one's type and body:
-definitions `3dedf99d3116eb68` (4,347 constants). This covers Core's
+definitions `3dd472d8eba9bbe5` (4,373 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
-modules keeps its hash. The last change of the hash (11-01, F11b): the
-reading of a method call with type arguments `x.m<T, ..>(..)`: `MethodBinds`
+modules keeps its hash. The last change of the hash (11-01, F11b): an
+array local passed at a `[T]` parameter is `SrcEff.eArraySlice T x`, whose
+meaning is Core's `arrayToSlice T (local x)` (`SrcEff.toCore`), read by
+`argView`/`argViews` in `EffInfer.plain`, `EffNamed.explicit` and
+`EffArgs.arg` (`MEff.xArraySlice`, `EffTy.arraySlice`,
+`EffClosed.arraySlice`, `LitEff.arraySlice`); the compiler does not lower
+it yet. Before that (11-01, F11b): the reading of a method call with type arguments `x.m<T, ..>(..)`: `MethodBinds`
 binds m's own type parameters to the written types after the receiver's
 binds, used by `EffR.method`, `EffChain.method` and `MethodEff`, and
 `MethodForm` and `TryMethodForm` allow the type arguments (section 4).
@@ -313,7 +318,7 @@ the statements, so a reader has to agree that each one says what is intended:
 
 | definition | file | says |
 |---|---|---|
-| `SrcProgram.toCore` and the `toCore` of each construct | `Mini/Source.lean` | which Core program a source program *is*: each construct is the Core construct of the same name (`Null` is Core's literal `.pointer 0`), and functions are numbered by position, then the host functions (`hostFuncs`, ids 2^32 up). A literal (`EStruct`, `LetStruct`) means `SrcType.literal`: Core's array value `.array T vs` at an array type `[T; N]`, and a struct value otherwise |
+| `SrcProgram.toCore` and the `toCore` of each construct | `Mini/Source.lean` | which Core program a source program *is*: each construct is the Core construct of the same name (`Null` is Core's literal `.pointer 0`), and functions are numbered by position, then the host functions (`hostFuncs`, ids 2^32 up). A literal (`EStruct`, `LetStruct`) means `SrcType.literal`: Core's array value `.array T vs` at an array type `[T; N]`, and a struct value otherwise. `EArraySlice(T, x)` is Core's `arrayToSlice T (local x)` |
 | `FieldsHold`, `SrcType.HoldsAt` | `Mini/Source.lean` | how a Core value sits in 64-bit slots: an `i32` is zero-extended, a `bool` is 1/0, a struct is its fields in order, an enum is a tag then its payload, a pointer is its address, an array `[T; N]` is its N elements in order, as a struct of N fields of type T, a float is its bits |
 | `startState`, `State.Fresh`, `HeapCorr`, `outputOf` | `Mini/SourceCorrect.lean`, `Mini/HeapCorr.lean` | Core's start state for a standard input (empty heap, the world with that input); a state with no live cells; the mini heap representing Core's heap and world (standard output and error are `outputOf 1` and `outputOf 2` of the mini heap's trace, the bytes its writes put on fds 1 and 2, no open files, the same standard input) |
 | `Returned`, `HeapAt`, `StackAt`, `Contract`, `Scratch`, `InHeap` | `Mini/Simulation.lean` | the calling convention and what "returns" means (section 8) |
@@ -722,6 +727,10 @@ unique. Trusted:
     operands expect the type of whichever operand has one.
 
   - `slice_stride(x)` of a slice local x is `EStride(x)`;
+  - (F11b) a call's argument at a parameter of type `[T]` that is an array
+    local of element type T is `EArraySlice(T, x)` (`argView`), Core's
+    `arrayToSlice T x`, so the callee's writes reach the array, as in
+    laniusc; an array local of another element type rejects;
   - `return slice_from_raw_parts(p, n);` in a function whose result is a
     slice is a slice local (named by the offset of `slice_from_raw_parts`)
     and its return;

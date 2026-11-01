@@ -365,6 +365,8 @@ class Checker:
             return left
         if c == 'eStride':
             raise Impure('stride')
+        if c == 'eArraySlice':
+            raise Impure('array slice')
         raise ValueError(c)
 
     def stmt(self, ret, tenv, s):
@@ -478,7 +480,7 @@ class Declarer:
 
     def eff_types(self, e):
         c, a = ctor(e)
-        if c in ('ePure', 'eStride'):
+        if c in ('ePure', 'eStride', 'eArraySlice'):
             return []
         if c == 'eCall':
             return [t for x in a[1][1] for t in self.eff_types(x)]

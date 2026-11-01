@@ -110,6 +110,8 @@ inductive EffClosed (decls : Decls) (fns types : List Inst) : MEff → SrcEff �
       EffClosed decls fns types l a → EffClosed decls fns types r b →
       EffClosed decls fns types (.xDivide op l r) (.eDivide op a b)
   | stride {sl : Nat} : EffClosed decls fns types (.xStride sl) (.eStride sl)
+  | arraySlice {ty : Ty} {s : SrcType} {a : Nat} :
+      LowerR decls types ty s → EffClosed decls fns types (.xArraySlice ty a) (.eArraySlice s a)
   | host {id : Nat} {args : List MEff} {as : List SrcEff} : EffsClosed decls fns types args as →
       EffClosed decls fns types (.xHost id args) (.eCall id as)
 
@@ -177,6 +179,11 @@ theorem closeEff_sound {fuel : Nat} {t : Tables} (ok : LoweredOk t) :
     subst h
     exact .divide (closeEff_sound ok _ _ hl) (closeEff_sound ok _ _ hr)
   | .xStride sl, s, h => by simp only [closeEff, Option.some.injEq] at h; subst h; exact .stride
+  | .xArraySlice ty a, s, h => by
+    simp only [closeEff] at h
+    cases ht : closeTy fuel t ty <;> simp [ht, eArraySliceClosed] at h
+    subst h
+    exact .arraySlice (closeTy_sound ok ht)
   | .xHost id args, s, h => by
     simp only [closeEff] at h
     cases ha : closeEffs fuel t args <;> simp [ha, eCallClosed] at h

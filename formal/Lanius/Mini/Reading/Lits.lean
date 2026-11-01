@@ -144,6 +144,8 @@ inductive LitEff (funcs : List SrcFunc) : List LocalTy → Option SrcType → Sr
       LitEff funcs locals (operandWant .plus want (knownEff funcs locals a) (knownEff funcs locals b)) b b' →
       LitEff funcs locals want (.eDivide op a b) (.eDivide op a' b')
   | stride {locals : List LocalTy} {want : Option SrcType} {sl : Nat} : LitEff funcs locals want (.eStride sl) (.eStride sl)
+  | arraySlice {locals : List LocalTy} {want : Option SrcType} {e : SrcType} {a : Nat} :
+      LitEff funcs locals want (.eArraySlice e a) (.eArraySlice e a)
 
 inductive LitEffs (funcs : List SrcFunc) : List LocalTy → Option (List SrcType) → List SrcEff → List SrcEff → Prop
   | nil {locals : List LocalTy} {wants : Option (List SrcType)} : LitEffs funcs locals wants [] []
@@ -179,6 +181,7 @@ theorem litEff_sound (funcs : List SrcFunc) :
   | locals, want, .eDivide op a b => by
     simp only [litEff]; exact .divide (litEff_sound funcs _ _ a) (litEff_sound funcs _ _ b)
   | locals, want, .eStride sl => by simp only [litEff]; exact .stride
+  | locals, want, .eArraySlice e a => by simp only [litEff]; exact .arraySlice
 
 theorem litEffs_sound (funcs : List SrcFunc) :
     ∀ (locals : List LocalTy) (wants : Option (List SrcType)) (xs : List SrcEff),

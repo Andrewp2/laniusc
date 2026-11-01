@@ -234,6 +234,7 @@ pub enum SrcEff {
     EMatch(Box<SrcEff>, SrcType, SrcType, List<List<usize>>, Box<List<SrcEff>>),
     EDivide(SrcDivOp, Box<SrcEff>, Box<SrcEff>),
     EStride(usize),
+    EArraySlice(SrcType, usize),
 }
 
 pub enum SrcStmt {
@@ -5401,6 +5402,9 @@ pub enum MEff {
     XDivide(SrcDivOp, Box<MEff>, Box<MEff>),
     // slice_stride(x) of a slice local x
     XStride(usize),
+    // the array local x as a slice of its elements, of this element type
+    // (Core's array-to-slice): an array argument at a slice parameter
+    XArraySlice(Ty, usize),
     // a call of the host service with this Core function id (see
     // extern_func): only an extern's instance has one
     XHost(usize, Box<List<MEff>>),
@@ -5421,6 +5425,7 @@ pub fn pure_part(x: MEff) -> core::option::Option<SrcExpr> {
         XMatch(s, ety, t, bs, vs) -> None,
         XDivide(op, l, r) -> None,
         XStride(sl) -> None,
+        XArraySlice(e, sl) -> None,
         XHost(id, args) -> None,
     };
 }
@@ -5601,6 +5606,7 @@ pub fn bare_eff(x: MEff) -> bool {
         XMatch(s, ety, t, bs, vs) -> false,
         XDivide(op, l, r) -> bare_eff(unbox(l)) && bare_eff(unbox(r)),
         XStride(sl) -> false,
+        XArraySlice(e, sl) -> false,
         XHost(id, args) -> false,
     };
 }
@@ -5622,6 +5628,7 @@ pub fn eff_ty(fuel: usize, env: FrontEnv, scope: List<Local>, x: MEff) -> core::
         XMatch(s, ety, t, bs, vs) -> Some(t),
         XDivide(op, l, r) -> pick_ty(bare_eff(unbox(l)), eff_ty(minus(fuel, 1), env, scope, unbox(l)), eff_ty(minus(fuel, 1), env, scope, unbox(r))),
         XStride(sl) -> Some(TyIsize),
+        XArraySlice(e, sl) -> Some(TySlice(boxed(e))),
         XHost(id, args) -> Some(TyI32),
     };
 }
@@ -7415,6 +7422,7 @@ pub fn call_parts(x: MEff) -> core::option::Option<Called> {
         XMatch(sc, ety, t, bs, vs) -> None,
         XDivide(op, l, r) -> None,
         XStride(sl) -> None,
+        XArraySlice(e, sl) -> None,
         XHost(id, args) -> None,
     };
 }
@@ -7441,6 +7449,62 @@ pub fn eff_local(x: MEff) -> core::option::Option<usize> {
     return match (pure_part(x)) {
         None -> None,
         Some(e) -> pure_local(e),
+    };
+}
+
+// An argument read where a slice of element type want is expected: an
+// array local of that element type is passed as a slice of it (Core's
+// array-to-slice, so the callee's writes reach the array), an array local
+// of another element type rejects, and any other value is passed as it is.
+pub fn view_array(id: usize, want: Ty, l: core::option::Option<Local>, x: MEff) -> core::option::Option<MEff> {
+    return match (l) {
+        None -> Some(x),
+        Some(v) -> match (array_parts(v.ty)) {
+            None -> Some(x),
+            Some(a) -> checked_eff(same_ty(a.element, want), Some(XArraySlice(want, id))),
+        },
+    };
+}
+
+pub fn view_local(scope: List<Local>, want: core::option::Option<Ty>, id: core::option::Option<usize>, x: MEff) -> core::option::Option<MEff> {
+    return match (want) {
+        None -> Some(x),
+        Some(e) -> match (id) {
+            None -> Some(x),
+            Some(i) -> view_array(i, e, find_local_id(scope, i), x),
+        },
+    };
+}
+
+pub fn want_elem(expected: core::option::Option<Ty>) -> core::option::Option<Ty> {
+    return match (expected) {
+        None -> None,
+        Some(t) -> slice_elem(t),
+    };
+}
+
+pub fn arg_view(scope: List<Local>, expected: core::option::Option<Ty>, x: MEff) -> core::option::Option<MEff> {
+    return view_local(scope, want_elem(expected), eff_local(x), x);
+}
+
+pub fn arg_views(scope: List<Local>, expects: core::option::Option<List<Ty>>, xs: List<MEff>) -> core::option::Option<List<MEff>> {
+    return match (xs) {
+        Nil -> Some(empty()),
+        Cons(x, rest) -> cons_eff(arg_view(scope, head_ty(expects), x), arg_views(scope, tail_tys(expects), unbox(rest))),
+    };
+}
+
+pub fn views_of(scope: List<Local>, expects: core::option::Option<List<Ty>>, xs: core::option::Option<List<MEff>>) -> core::option::Option<List<MEff>> {
+    return match (xs) {
+        None -> None,
+        Some(l) -> arg_views(scope, expects, l),
+    };
+}
+
+pub fn view_of(scope: List<Local>, expected: core::option::Option<Ty>, x: core::option::Option<MEff>) -> core::option::Option<MEff> {
+    return match (x) {
+        None -> None,
+        Some(v) -> arg_view(scope, expected, v),
     };
 }
 
@@ -7588,6 +7652,7 @@ pub fn diverge_eff(decls: Decls, t: Ty, x: MEff) -> MEff {
         XMatch(sc, ety, mt, bs, vs) -> x,
         XDivide(op, l, r) -> x,
         XStride(sl) -> x,
+        XArraySlice(e, sl) -> x,
         XHost(id, args) -> x,
     };
 }
@@ -7998,7 +8063,7 @@ pub fn eff_free(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::
     }
     return match (explicit_inst(fuel, env, d, fd, targs)) {
         None -> None,
-        Some(i) -> match (checked_effs(has_tys(param_expects(fuel, env.decls, fd, Some(i.args))), eff_list(minus(fuel, 1), env, scope, param_expects(fuel, env.decls, fd, Some(i.args)), items))) {
+        Some(i) -> match (checked_effs(has_tys(param_expects(fuel, env.decls, fd, Some(i.args))), views_of(scope, param_expects(fuel, env.decls, fd, Some(i.args)), eff_list(minus(fuel, 1), env, scope, param_expects(fuel, env.decls, fd, Some(i.args)), items)))) {
             None -> None,
             Some(xs) -> Some(XCall(i, boxed(xs))),
         },
@@ -8014,7 +8079,7 @@ pub fn eff_infer(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core:
     let names: List<List<usize>> = concat(fd.impl_params, fd.params);
     if (no_names(names)) {
         let expects: core::option::Option<List<Ty>> = param_expects(fuel, env.decls, fd, Some(empty()));
-        return checked_eff(has_tys(expects), eff_called(fuel, env, scope, expected, d, fd, start, pre, eff_list(minus(fuel, 1), env, scope, skip_expects(expects, pre), items)));
+        return checked_eff(has_tys(expects), eff_called(fuel, env, scope, expected, d, fd, start, pre, views_of(scope, skip_expects(expects, pre), eff_list(minus(fuel, 1), env, scope, skip_expects(expects, pre), items))));
     }
     return match (param_patterns(fuel, fd)) {
         None -> None,
@@ -8043,7 +8108,7 @@ pub fn eff_args_bound(fuel: usize, env: FrontEnv, scope: List<Local>, fd: FnDecl
                 Cons(x, more) -> cons_bound(x, eff_args_bound(f, env, scope, fd, names, unbox(rest), unbox(more), items, bind_arg(f, env, scope, fd, names, p, x, b))),
                 Nil -> match (items) {
                     Nil -> None,
-                    Cons(c, more) -> checked_bound(!has_tys(bound_args(names, b)) || has_ty(arg_expected(f, env.decls, fd, names, p, b)), eff_arg_next(f, env, scope, fd, names, p, unbox(rest), unbox(more), b, eff_of(f, env, scope, arg_expected(f, env.decls, fd, names, p, b), c))),
+                    Cons(c, more) -> checked_bound(!has_tys(bound_args(names, b)) || has_ty(arg_expected(f, env.decls, fd, names, p, b)), eff_arg_next(f, env, scope, fd, names, p, unbox(rest), unbox(more), b, view_of(scope, arg_expected(f, env.decls, fd, names, p, b), eff_of(f, env, scope, arg_expected(f, env.decls, fd, names, p, b), c)))),
                 },
             },
         },
@@ -8346,6 +8411,7 @@ pub fn eval_let_head(ty: Ty, x: MEff) -> LetHead {
         XMatch(sc, ety, rt, binders, values) -> match_let_head(x, eff_local(unbox(sc)), ety, pure_arms(binders, unbox(values))),
         XDivide(op, l, r) -> EvalOf(x),
         XStride(sl) -> EvalOf(x),
+        XArraySlice(e, sl) -> EvalOf(x),
         XHost(id, args) -> EvalOf(x),
     };
 }
@@ -8594,6 +8660,7 @@ pub fn inferred(x: MEff) -> bool {
         XMatch(s, ety, t, bs, vs) -> false,
         XDivide(op, l, r) -> false,
         XStride(sl) -> true,
+        XArraySlice(e, sl) -> true,
         XHost(id, args) -> true,
     };
 }
@@ -8856,6 +8923,7 @@ pub fn eff_acts(n: usize, x: MEff) -> bool {
         XMatch(s, ety, t, bs, vs) -> eff_acts(n, unbox(s)) || effs_act(n, unbox(vs)),
         XDivide(op, l, r) -> eff_acts(n, unbox(l)) || eff_acts(n, unbox(r)),
         XStride(sl) -> false,
+        XArraySlice(e, sl) -> false,
         XHost(id, args) -> true,
     };
 }
@@ -9977,6 +10045,7 @@ pub fn eff_calls(x: MEff) -> List<Inst> {
         XMatch(s, ety, t, bs, vs) -> concat(eff_calls(unbox(s)), effs_calls(unbox(vs))),
         XDivide(op, l, r) -> concat(eff_calls(unbox(l)), eff_calls(unbox(r))),
         XStride(sl) -> empty(),
+        XArraySlice(e, sl) -> empty(),
         XHost(id, args) -> effs_calls(unbox(args)),
     };
 }
@@ -10006,6 +10075,7 @@ pub fn eff_named_tys(x: MEff) -> List<Ty> {
         XMatch(s, ety, t, bs, vs) -> concat(eff_named_tys(unbox(s)), cons(ety, cons(t, effs_named_tys(unbox(vs))))),
         XDivide(op, l, r) -> concat(eff_named_tys(unbox(l)), eff_named_tys(unbox(r))),
         XStride(sl) -> empty(),
+        XArraySlice(e, sl) -> single(e),
         XHost(id, args) -> effs_named_tys(unbox(args)),
     };
 }
@@ -10494,6 +10564,13 @@ pub fn e_index_closed(s: usize, x: core::option::Option<SrcEff>) -> core::option
     };
 }
 
+pub fn e_array_slice_closed(t: core::option::Option<SrcType>, a: usize) -> core::option::Option<SrcEff> {
+    return match (t) {
+        None -> None,
+        Some(e) -> Some(EArraySlice(e, a)),
+    };
+}
+
 pub fn e_struct_closed(t: core::option::Option<SrcType>, fs: core::option::Option<List<SrcEff>>) -> core::option::Option<SrcEff> {
     return match (t) {
         None -> None,
@@ -10557,6 +10634,7 @@ pub fn close_eff(fuel: usize, t: Tables, x: MEff) -> core::option::Option<SrcEff
         XMatch(s, ety, ty, bs, vs) -> e_match_closed(close_eff(fuel, t, unbox(s)), close_ty(fuel, t, ety), close_ty(fuel, t, ty), bs, close_effs(fuel, t, unbox(vs))),
         XDivide(op, l, r) -> e_divide_closed(op, close_eff(fuel, t, unbox(l)), close_eff(fuel, t, unbox(r))),
         XStride(sl) -> Some(EStride(sl)),
+        XArraySlice(e, sl) -> e_array_slice_closed(close_ty(fuel, t, e), sl),
         XHost(id, args) -> e_call_closed(Some(id), close_effs(fuel, t, unbox(args))),
     };
 }
@@ -11258,6 +11336,7 @@ pub fn known_eff(funcs: List<SrcFunc>, locals: List<LocalTy>, x: SrcEff) -> core
         EMatch(s, ety, t, bs, vs) -> Some(t),
         EDivide(op, a, b) -> either_ty(known_eff(funcs, locals, unbox(a)), known_eff(funcs, locals, unbox(b))),
         EStride(s) -> Some(Isize),
+        EArraySlice(e, a) -> Some(Slice(boxed(e))),
     };
 }
 
@@ -11276,6 +11355,7 @@ pub fn lit_eff(funcs: List<SrcFunc>, locals: List<LocalTy>, want: core::option::
         EMatch(s, ety, t, bs, vs) -> EMatch(boxed(lit_eff(funcs, locals, Some(ety), unbox(s))), ety, t, bs, boxed(lit_arm_effs(funcs, locals, src_variants(Some(ety)), t, bs, unbox(vs)))),
         EDivide(op, a, b) -> EDivide(op, boxed(lit_eff(funcs, locals, operand_want(Plus, want, known_eff(funcs, locals, unbox(a)), known_eff(funcs, locals, unbox(b))), unbox(a))), boxed(lit_eff(funcs, locals, operand_want(Plus, want, known_eff(funcs, locals, unbox(a)), known_eff(funcs, locals, unbox(b))), unbox(b)))),
         EStride(s) -> EStride(s),
+        EArraySlice(e, a) -> EArraySlice(e, a),
     };
 }
 
@@ -11402,6 +11482,7 @@ pub fn wide_left_eff(x: SrcEff) -> bool {
         EMatch(sc, ety, t, bs, vs) -> wide_left_eff(unbox(sc)) || wide_left_effs(unbox(vs)),
         EDivide(op, a, b) -> wide_left_eff(unbox(a)) || wide_left_eff(unbox(b)),
         EStride(sl) -> false,
+        EArraySlice(e, a) -> false,
     };
 }
 

@@ -67,6 +67,7 @@ def SrcEff.types (self : SrcEff) : List SrcType :=
   | .eMatch scrutinee ety ty binders values => ety :: (SrcEff.types scrutinee ++ effsTypes values)
   | .eDivide op left right => SrcEff.types left ++ SrcEff.types right
   | .eStride slice => []
+  | .eArraySlice element array => [element]
 def effsTypes (es : List SrcEff) : List SrcType :=
   match es with
   | [] => []

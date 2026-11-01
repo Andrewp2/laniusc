@@ -397,7 +397,7 @@ theorem effNamed_unique : ∀ {scope : List Local} {expected : Option Ty} {front
       cases fd'
       exact ih1 inf'
     | infer nt _ _ _ _ => exact (nt ⟨to, te⟩).elim
-    | explicit nt _ _ _ _ _ _ => exact (nt ⟨to, te⟩).elim
+    | explicit nt _ _ _ _ _ _ _ => exact (nt ⟨to, te⟩).elim
     | variant nf _ _ _ => exact (nf (.inl to)).elim
   | _, _, _, _, _, _, _, .infer nt fnm fd te inf, nd, vn, _, h₂ => by
     have ih1 := fun {y} k' => effInfer_unique inf nd vn (y := y) k'
@@ -409,14 +409,14 @@ theorem effNamed_unique : ∀ {scope : List Local} {expected : Option Ty} {front
       rw [fd] at fd'
       cases fd'
       exact ih1 inf'
-    | explicit _ _ _ tne _ _ _ => exact absurd te tne
+    | explicit _ _ _ tne _ _ _ _ => exact absurd te tne
     | variant nf _ _ _ => exact (nf (.inr ⟨_, fnm⟩)).elim
-  | _, _, _, _, _, _, _, .explicit nt fnm fd tne ei pe el, nd, vn, _, h₂ => by
+  | _, _, _, _, _, _, _, .explicit nt fnm fd tne ei pe el av, nd, vn, _, h₂ => by
     have ih1 := fun {y} k' => effList_unique el nd vn (ys := y) k'
     cases h₂ with
     | static to te _ _ _ _ => exact (nt ⟨to, te⟩).elim
     | infer _ _ _ te _ => exact absurd te tne
-    | explicit _ fnm' fd' _ ei' pe' el' =>
+    | explicit _ fnm' fd' _ ei' pe' el' av' =>
       have e := fnNamed_unique fnm fnm'
       subst e
       rw [fd] at fd'
@@ -425,14 +425,16 @@ theorem effNamed_unique : ∀ {scope : List Local} {expected : Option Ty} {front
       subst e
       have e := paramExpects_unique pe pe'
       subst e
-      rw [ih1 el']
+      rw [ih1 el', av'] at av
+      cases av
+      rfl
     | variant nf _ _ _ => exact (nf (.inr ⟨_, fnm⟩)).elim
   | _, _, _, _, _, _, _, .variant nf te vb ev, nd, vn, _, h₂ => by
     have ih1 := fun {y} k' => effVariant_unique ev nd vn (y := y) k'
     cases h₂ with
     | static to _ _ _ _ _ => exact (nf (.inl to)).elim
     | infer _ fnm _ _ _ => exact (nf (.inr ⟨_, fnm⟩)).elim
-    | explicit _ fnm _ _ _ _ _ => exact (nf (.inr ⟨_, fnm⟩)).elim
+    | explicit _ fnm _ _ _ _ _ _ => exact (nf (.inr ⟨_, fnm⟩)).elim
     | variant _ _ vb' ev' =>
       have e := variantByPath_unique vb vb'
       subst e
@@ -443,18 +445,20 @@ theorem effInfer_unique : ∀ {scope : List Local} {expected : Option Ty} {d : N
     {start : List Bind} {pre : List MEff} {items : List CTree} {x : MEff},
     EffInfer env scope expected d fd start pre items x → IdsFresh scope → VariantsNodup env.decls →
     ∀ {y : MEff}, EffInfer env scope expected d fd start pre items y → x = y
-  | _, _, _, _, _, _, _, _, .plain e pe el, nd, vn, _, h₂ => by
+  | _, _, _, _, _, _, _, _, .plain e pe el av, nd, vn, _, h₂ => by
     have ih1 := fun {y} k' => effList_unique el nd vn (ys := y) k'
     cases h₂ with
-    | plain _ pe' el' =>
+    | plain _ pe' el' av' =>
       have es := paramExpects_unique pe pe'
       subst es
-      rw [ih1 el']
+      rw [ih1 el', av'] at av
+      cases av
+      rfl
     | infer ne _ _ _ _ => exact absurd e ne
   | _, _, _, _, _, _, _, _, .infer ne pp rb ea ib, nd, vn, _, h₂ => by
     have ih1 := fun {y} k' => effArgs_unique ea nd vn (a' := y) k'
     cases h₂ with
-    | plain e _ _ => exact absurd e ne
+    | plain e _ _ _ => exact absurd e ne
     | infer _ pp' rb' ea' ib' =>
       have e := paramPatterns_unique pp pp'
       subst e
@@ -477,15 +481,17 @@ theorem effArgs_unique : ∀ {scope : List Local} {fd : FnDecl} {names : List Na
       have e := bindArg_unique ba ba'
       subst e
       rw [ih1 rest']
-  | _, _, _, _, _, _, _, _, .arg ah k ba rest, nd, vn, _, h₂ => by
+  | _, _, _, _, _, _, _, _, .arg ah k av ba rest, nd, vn, _, h₂ => by
     have ih1 := fun {y} k' => effR_unique k nd vn (y := y) k'
     have ih2 := fun {y} k' => effArgs_unique rest nd vn (a' := y) k'
     cases h₂ with
-    | arg ah' k' ba' rest' =>
+    | arg ah' k' av' ba' rest' =>
       have e := argHint_unique ah ah'
       subst e
       have e := ih1 k'
       subst e
+      rw [av'] at av
+      cases av
       have e := bindArg_unique ba ba'
       subst e
       rw [ih2 rest']

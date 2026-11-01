@@ -625,8 +625,15 @@ Core's array, held by value:
   is read as `slice[i] = v` is (`SetIndex`) and lowered as the effectful
   form (`lower_set_index_any`). The front end reads v at the element type
   (`index_elem`), so `bytes[i] = 48` is a `u8` store.
-- Not yet: an array passed where a slice is
-  expected (Core's coercion of `[T; N]` to `[T]`), `for` over an array,
+- An array local passed as a call's argument at a `[T]` parameter, its
+  element type T, is read as `EArraySlice(T, a)`, Core's `arrayToSlice`
+  of the local, so the callee's writes reach the array, as laniusc's do
+  (decided 11-01, F11b; before, the reading passed the array by value,
+  which disagreed with laniusc in `core::utf16_bytes`). An array local of
+  another element type rejects. The compiler does not lower it yet
+  (`SrcEff.eval` rejects it), so such a program is read but not compiled.
+- Not yet: an array other than a local passed where a slice is
+  expected, `for` over an array,
   `==` of arrays, `core::mem::i32_array_data_ptr`, a length that names a
   constant, and arrays of floats (no element layout for float slices yet;
   an array of floats is held by value and should work, but is untested).

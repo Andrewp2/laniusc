@@ -305,6 +305,7 @@ def effCls (A : AEnv) : SrcEff → SizeCls
   | .eMatch _ _ _ _ _ => .unk
   | .eDivide _ _ _ => .unk
   | .eStride _ => .unk
+  | .eArraySlice _ _ => .unk
 
 def effsCls (A : AEnv) : List SrcEff → List SizeCls
   | [] => []
@@ -326,6 +327,7 @@ def chkEff (A : AEnv) (W : Wit) : SrcEff → Bool
       chkEff A W scrutinee && chkArms A W (effCls prims T A scrutinee) ety.typeId 0 binders values
   | .eDivide _ left right => chkEff A W left && chkEff A W right
   | .eStride _ => true
+  | .eArraySlice _ _ => true
 
 def chkEffs (A : AEnv) (W : Wit) : List SrcEff → Bool
   | [] => true

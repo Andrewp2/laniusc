@@ -1848,6 +1848,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
               · exact .binary typedL typedR (.divide (IsInt.sint k).arith)
               · exact .binary typedL typedR (.remainder (IsInt.sint k).integer)
             · simp at h
+  | .eArraySlice element array, scope, ctx, slot, ev, ok, dd, h => by simp [SrcEff.eval] at h
   | .eStride slice, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalStride] at h
     split at h

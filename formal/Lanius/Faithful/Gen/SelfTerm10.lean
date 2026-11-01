@@ -99,40 +99,40 @@ theorem ok_FloatTy_number : FnOk prog prims info (517, ⟨0, [], 0⟩) :=
 theorem ok_effs_types : FnOk prog prims info (518, ⟨1, [0], 0⟩) :=
   fnOk_of fn_effs_types (by decide +kernel)
 
-theorem ok_keep_if : FnOk prog prims info (519, ⟨0, [], 0⟩) :=
+theorem ok_single_of_mini_selfhost_SrcType : FnOk prog prims info (519, ⟨0, [], 0⟩) :=
+  fnOk_of fn_single_of_mini_selfhost_SrcType (by decide +kernel)
+
+theorem ok_keep_if : FnOk prog prims info (520, ⟨0, [], 0⟩) :=
   fnOk_of fn_keep_if (by decide +kernel)
 
-theorem ok_cons_of_mini_selfhost_SrcStructDecl : FnOk prog prims info (520, ⟨0, [], 0⟩) :=
+theorem ok_cons_of_mini_selfhost_SrcStructDecl : FnOk prog prims info (521, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_SrcStructDecl (by decide +kernel)
 
-theorem ok_struct_fields_at : FnOk prog prims info (521, ⟨0, [1], 1⟩) :=
+theorem ok_struct_fields_at : FnOk prog prims info (522, ⟨0, [1], 1⟩) :=
   fnOk_of fn_struct_fields_at (by decide +kernel)
 
-theorem ok_cons_of_mini_selfhost_SrcEnumDecl : FnOk prog prims info (523, ⟨0, [], 0⟩) :=
+theorem ok_cons_of_mini_selfhost_SrcEnumDecl : FnOk prog prims info (524, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_SrcEnumDecl (by decide +kernel)
 
-theorem ok_enum_variants_at : FnOk prog prims info (524, ⟨0, [1], 1⟩) :=
+theorem ok_enum_variants_at : FnOk prog prims info (525, ⟨0, [1], 1⟩) :=
   fnOk_of fn_enum_variants_at (by decide +kernel)
 
-theorem ok_empty_of_mini_selfhost_RawTok : FnOk prog prims info (526, ⟨0, [], 0⟩) :=
+theorem ok_empty_of_mini_selfhost_RawTok : FnOk prog prims info (527, ⟨0, [], 0⟩) :=
   fnOk_of fn_empty_of_mini_selfhost_RawTok (by decide +kernel)
 
-theorem ok_lx_one_at : FnOk prog prims info (527, ⟨16, [], 0⟩) :=
+theorem ok_lx_one_at : FnOk prog prims info (528, ⟨16, [], 0⟩) :=
   fnOk_of fn_lx_one_at (by decide +kernel)
 
-theorem ok_lx_prepend : FnOk prog prims info (528, ⟨1, [], 0⟩) :=
+theorem ok_lx_prepend : FnOk prog prims info (529, ⟨1, [], 0⟩) :=
   fnOk_of fn_lx_prepend (by decide +kernel)
 
-theorem ok_lx_shift : FnOk prog prims info (529, ⟨2, [], 0⟩) :=
+theorem ok_lx_shift : FnOk prog prims info (530, ⟨2, [], 0⟩) :=
   fnOk_of fn_lx_shift (by decide +kernel)
 
-theorem ok_lx_drop : FnOk prog prims info (530, ⟨2, [0], 0⟩) :=
+theorem ok_lx_drop : FnOk prog prims info (531, ⟨2, [0], 0⟩) :=
   fnOk_of fn_lx_drop (by decide +kernel)
 
-theorem ok_cons_of_mini_selfhost_SymRule : FnOk prog prims info (531, ⟨0, [], 0⟩) :=
-  fnOk_of fn_cons_of_mini_selfhost_SymRule (by decide +kernel)
-
 theorem chunk10 : AllFns prog prims info part10 :=
-  ⟨ok_index_of, ok_lower_set_index_of, ok_eval_call_sig, ok_eval_host, ok_cons_args, ok_eval_operands, ok_eval_then, ok_lower_negate_typed, ok_lower_not_typed, ok_scalar_cast, ok_eval_struct_of, ok_eval_tagged, ok_eval_match_of, ok_eval_arm_in, ok_arm_scope, ok_empty_of_mini_selfhost_List_mini_selfhost_SrcType, ok_eval_divide, ok_eval_stride_of, ok_empty_of_mini_selfhost_Expr, ok_cons_of_mini_selfhost_Expr, ok_store_eval, ok_store_eval_byte, ok_store_eval_word, ok_store_array_element, ok_set_field_eval_at, ok_lower_arm_stmt, ok_arm_payload, ok_FloatTy_number, ok_effs_types, ok_keep_if, ok_cons_of_mini_selfhost_SrcStructDecl, ok_struct_fields_at, ok_cons_of_mini_selfhost_SrcEnumDecl, ok_enum_variants_at, ok_empty_of_mini_selfhost_RawTok, ok_lx_one_at, ok_lx_prepend, ok_lx_shift, ok_lx_drop, ok_cons_of_mini_selfhost_SymRule, trivial⟩
+  ⟨ok_index_of, ok_lower_set_index_of, ok_eval_call_sig, ok_eval_host, ok_cons_args, ok_eval_operands, ok_eval_then, ok_lower_negate_typed, ok_lower_not_typed, ok_scalar_cast, ok_eval_struct_of, ok_eval_tagged, ok_eval_match_of, ok_eval_arm_in, ok_arm_scope, ok_empty_of_mini_selfhost_List_mini_selfhost_SrcType, ok_eval_divide, ok_eval_stride_of, ok_empty_of_mini_selfhost_Expr, ok_cons_of_mini_selfhost_Expr, ok_store_eval, ok_store_eval_byte, ok_store_eval_word, ok_store_array_element, ok_set_field_eval_at, ok_lower_arm_stmt, ok_arm_payload, ok_FloatTy_number, ok_effs_types, ok_single_of_mini_selfhost_SrcType, ok_keep_if, ok_cons_of_mini_selfhost_SrcStructDecl, ok_struct_fields_at, ok_cons_of_mini_selfhost_SrcEnumDecl, ok_enum_variants_at, ok_empty_of_mini_selfhost_RawTok, ok_lx_one_at, ok_lx_prepend, ok_lx_shift, ok_lx_drop, trivial⟩
 
 end Lanius.Faithful.SelfTerm

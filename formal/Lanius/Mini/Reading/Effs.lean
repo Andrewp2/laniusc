@@ -249,11 +249,12 @@ inductive EffNamed (env : FrontEnv) : List Local → Option Ty → ModPath → N
       FnNamed env.decls (pathHome env.decls env.home front name) name d → env.decls.fns[d]? = some fd → targs = [] →
       EffInfer env scope expected d fd [] [] items x → EffNamed env scope expected front name targs items x
   | explicit {scope : List Local} {expected : Option Ty} {front : ModPath} {name : Name} {targs items : List CTree}
-      {d : Nat} {fd : FnDecl} {i : Inst} {ts : List Ty} {xs : List MEff} :
+      {d : Nat} {fd : FnDecl} {i : Inst} {ts : List Ty} {xs ys : List MEff} :
       ¬(TypeOwner env front name ∧ targs = []) → FnNamed env.decls (pathHome env.decls env.home front name) name d →
       env.decls.fns[d]? = some fd → targs ≠ [] → ExplicitInst env d fd targs i →
       ParamExpects env.decls fd i.args ts → EffList env scope (some ts) items xs →
-      EffNamed env scope expected front name targs items (.xCall i xs)
+      argViews scope (some ts) xs = some ys →
+      EffNamed env scope expected front name targs items (.xCall i ys)
   | variant {scope : List Local} {expected : Option Ty} {front : ModPath} {name : Name} {targs items : List CTree}
       {v : VariantAt} {x : MEff} : ¬IsFnPath env front name → targs = [] → VariantByPath env front name v →
       EffVariant env scope expected v items x → EffNamed env scope expected front name targs items x
@@ -262,9 +263,10 @@ inductive EffNamed (env : FrontEnv) : List Local → Option Ty → ModPath → N
 bindings `start`: the arguments after `pre` (the receiver, if any). -/
 inductive EffInfer (env : FrontEnv) : List Local → Option Ty → Nat → FnDecl → List Bind → List MEff → List CTree → MEff → Prop
   | plain {scope : List Local} {expected : Option Ty} {d : Nat} {fd : FnDecl} {start : List Bind} {pre : List MEff}
-      {items : List CTree} {ts : List Ty} {xs : List MEff} : fd.implParams ++ fd.params = [] →
+      {items : List CTree} {ts : List Ty} {xs ys : List MEff} : fd.implParams ++ fd.params = [] →
       ParamExpects env.decls fd [] ts → EffList env scope (skipExpects (some ts) pre) items xs →
-      EffInfer env scope expected d fd start pre items (.xCall ⟨d, []⟩ (pre ++ xs))
+      argViews scope (skipExpects (some ts) pre) xs = some ys →
+      EffInfer env scope expected d fd start pre items (.xCall ⟨d, []⟩ (pre ++ ys))
   | infer {scope : List Local} {expected : Option Ty} {d : Nat} {fd : FnDecl} {start : List Bind} {pre : List MEff}
       {items : List CTree} {ps : List CTree} {b : List Bind} {a : ArgsBound} {inst : Inst} :
       fd.implParams ++ fd.params ≠ [] → ParamPatterns fd ps →
@@ -284,10 +286,10 @@ inductive EffArgs (env : FrontEnv) : List Local → FnDecl → List Name → Lis
       BindArg env.decls scope fd names p x b b' → EffArgs env scope fd names ps pre items b' a →
       EffArgs env scope fd names (p :: ps) (x :: pre) items b ⟨x :: a.args, a.binds⟩
   | arg {scope : List Local} {fd : FnDecl} {names : List Name} {p : CTree} {ps : List CTree} {c : CTree}
-      {items : List CTree} {b : List Bind} {E : Option Ty} {x : MEff} {b' : List Bind} {a : ArgsBound} :
-      ArgHint env.decls fd names p b E → EffR env scope E c x →
-      BindArg env.decls scope fd names p x b b' → EffArgs env scope fd names ps [] items b' a →
-      EffArgs env scope fd names (p :: ps) [] (c :: items) b ⟨x :: a.args, a.binds⟩
+      {items : List CTree} {b : List Bind} {E : Option Ty} {x y : MEff} {b' : List Bind} {a : ArgsBound} :
+      ArgHint env.decls fd names p b E → EffR env scope E c x → argView scope E x = some y →
+      BindArg env.decls scope fd names p y b b' → EffArgs env scope fd names ps [] items b' a →
+      EffArgs env scope fd names (p :: ps) [] (c :: items) b ⟨y :: a.args, a.binds⟩
 
 /-- Variant `v` with its payload. -/
 inductive EffVariant (env : FrontEnv) : List Local → Option Ty → VariantAt → List CTree → MEff → Prop
@@ -664,8 +666,14 @@ def MatchOnEff (env : FrontEnv) (scope : List Local) (expected : Option Ty) (s :
 def FreeEff (env : FrontEnv) (scope : List Local) (expected : Option Ty) (d : Nat) (fd : FnDecl) (targs items : List CTree)
     (x : MEff) : Prop :=
   (targs = [] ∧ EffInfer env scope expected d fd [] [] items x) ∨
-  (targs ≠ [] ∧ ∃ i ts xs, ExplicitInst env d fd targs i ∧ ParamExpects env.decls fd i.args ts ∧
-    EffList env scope (some ts) items xs ∧ x = .xCall i xs)
+  (targs ≠ [] ∧ ∃ i ts xs ys, ExplicitInst env d fd targs i ∧ ParamExpects env.decls fd i.args ts ∧
+    EffList env scope (some ts) items xs ∧ argViews scope (some ts) xs = some ys ∧ x = .xCall i ys)
+
+theorem viewOf_some {scope : List Local} {E : Option Ty} {o : Option MEff} {y : MEff}
+    (h : viewOf scope E o = some y) : ∃ x, o = some x ∧ argView scope E x = some y := by
+  cases o with
+  | none => simp [viewOf] at h
+  | some x => exact ⟨x, rfl, by simpa [viewOf] using h⟩
 
 theorem repeatTy_eq (t : Ty) : ∀ n, repeatTy t n = List.replicate n t
   | 0 => by rw [repeatTy]; rfl
@@ -1229,9 +1237,9 @@ theorem effSound : ∀ fuel, EffSound fuel
               exact ⟨(isTypeOwner_iff env s.home s.name).2 own, (noTrees_iff _).2 e⟩)
             have fn : FnNamed env.decls (pathHome env.decls env.home s.home s.name) s.name d := by
               rw [← pathModule_eq]; exact findFn_sound hf
-            rcases ihFree h with ⟨nt, inf⟩ | ⟨nt, i, E, xs, ei, hE, el, rfl⟩
+            rcases ihFree h with ⟨nt, inf⟩ | ⟨nt, i, E, xs, ys, ei, hE, el, hv, rfl⟩
             · exact .infer no fn hd nt inf
-            · exact .explicit no fn hd nt ei hE el
+            · exact .explicit no fn hd nt ei hE el hv
     -- effFree
     · intro env scope expected d fd targs items x h
       rw [effFree.eq_def] at h
@@ -1253,10 +1261,15 @@ theorem effSound : ∀ fuel, EffSound fuel
             | none => rw [hl] at h; cases h
             | some xs =>
               rw [hl] at h
+              simp only [viewsOf] at h
+              cases hv : argViews scope (some ts) xs with
+              | none => rw [hv] at h; cases h
+              | some ys =>
+              rw [hv] at h
               simp only [Option.some.injEq] at h
               subst h
-              exact .inr ⟨fun e => nt ((noTrees_iff _).2 e), i, ts, xs, explicitInst_sound hi, paramExpects_sound ts hp,
-                ihList hl, rfl⟩
+              exact .inr ⟨fun e => nt ((noTrees_iff _).2 e), i, ts, xs, ys, explicitInst_sound hi, paramExpects_sound ts hp,
+                ihList hl, hv, rfl⟩
     -- effInfer
     · intro env scope expected d fd start pre items x h
       rw [effInfer.eq_def] at h
@@ -1272,14 +1285,19 @@ theorem effSound : ∀ fuel, EffSound fuel
         | none => rw [hl] at h; cases h
         | some xs =>
           rw [hl] at h
+          simp only [viewsOf] at h
+          cases hv : argViews scope (skipExpects (some ts) pre) xs with
+          | none => rw [hv] at h; cases h
+          | some ys =>
+          rw [hv] at h
           simp only at h
-          have ie : inferEff (f + 1) env.decls d fd start (effsTys (f + 1) env scope (pre ++ xs)) expected =
+          have ie : inferEff (f + 1) env.decls d fd start (effsTys (f + 1) env scope (pre ++ ys)) expected =
               some ⟨d, []⟩ := by
             cases expected <;> simp [inferEff, inferInst, inferArgs, e, noNames]
           rw [ie] at h
           simp only [xCallOf, Option.some.injEq] at h
           subst h
-          exact .plain e (paramExpects_sound ts hp) (ihList hl)
+          exact .plain e (paramExpects_sound ts hp) (ihList hl) hv
       · rename_i nn
         cases hp : paramPatterns (f + 1) fd with
         | none => rw [hp] at h; cases h
@@ -1343,7 +1361,8 @@ theorem effSound : ∀ fuel, EffSound fuel
               · cases h
               rename_i ok
               obtain ⟨x, b', a', hx, hb', args, rfl⟩ := ihArgNext h
-              exact .arg (argHint_sound ok) (ihOf hx) hb' args
+              obtain ⟨x0, hx0, hv⟩ := viewOf_some hx
+              exact .arg (argHint_sound ok) (ihOf hx0) hv hb' args
     -- effArgNext
     · intro env scope fd names p ps items b xo a h
       rw [effArgNext.eq_def] at h
