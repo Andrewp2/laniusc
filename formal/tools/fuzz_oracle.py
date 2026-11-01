@@ -1573,7 +1573,12 @@ class Laniusc:
     def build(self, name, text, stop=None):
         """The binary, or None and laniusc's error (None and None when the
         compile is still waiting, mostly for the shared GPU, at stop)."""
-        k = run_cache.key(run_cache.file_digest(self.args.laniusc), run_cache.tree_digest(so.STDLIB), text)
+        # laniusc loads its kernels from its shader artifacts, so a shader-only
+        # change can leave the binary as it was (gate.py keys on both).
+        k = run_cache.key(run_cache.file_digest(self.args.laniusc), run_cache.tree_digest(
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(self.args.laniusc)))),
+                         'shaders')),
+                          run_cache.tree_digest(so.STDLIB), text)
         hit = run_cache.load_file('build', k)
         if hit is not None:
             return hit, ''
