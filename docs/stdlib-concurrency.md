@@ -1,7 +1,7 @@
 # Workers, atomics, synchronization and channels
 
-`std::atomic`, `std::sync`, `std::channel`, `std::steal`, `std::parallel`
-and `std::worker` run parallel work on Linux x86_64/glibc. Programs must be native-linked with libatomic:
+`std::atomic`, `std::sync`, `std::channel`, `std::steal`, `std::parallel`,
+`std::par` and `std::worker` run parallel work on Linux x86_64/glibc. Programs must be native-linked with libatomic:
 
 ```sh
 target/release/laniusc --native-link --native-library atomic --stdlib-root stdlib \
@@ -210,6 +210,30 @@ claims. The call then returns `Err(Cancelled)` or `Err(Failed(n))`, and the
 outputs are partly written. A cancelled token stays cancelled, so use a
 fresh token for each plan you want to rerun.
 
+## Parallel sorting, map and reduce
+
+`std::par` runs slice algorithms as tasks on a `std::steal` pool. A
+`Plan(region, workers, grain)` holds the pool's deques (1,024 tasks per
+worker) and a target task size. Each phase seeds its tasks round-robin over
+the deques, forks the workers, and they pop, steal and run tasks until
+nothing is pending. If a phase would need more tasks than the deques hold,
+the grain grows to fit.
+
+| Operation | Contract |
+| --- | --- |
+| `sort_unstable(plan, data, scratch)` | Splits `data` into four runs per worker and sorts each run with `core::slice::sort_unstable` (pdqsort). Merge rounds then merge adjacent runs into `scratch` and back. Equal keys may reorder. Returns the phase count |
+| `sort_stable(plan, data, scratch)` | Same shape, but each run uses `core::slice::sort_stable`, with scratch taken from the run's own range of `scratch`. Every merge takes the left run on ties, so equal keys keep their input order |
+| `map(plan, input, output, &mapper)` | `output[i] = mapper.apply(input[i])` in grain-sized stolen tasks. Returns the task count |
+| `reduce(plan, input, partials, identity, &fold, &combine)` | Each task folds its range from `identity` into `partials[task]`. The parent then combines those results in task order, so `combine` must be associative but need not be commutative. `partials` needs `ceil(length / grain)` slots |
+
+Merges are parallel within a round, too. Each pair merge is cut into
+grain-sized output pieces at merge-path (co-rank) boundaries, found by binary
+search. Every worker therefore shares even the last round, which merges the
+two halves of the whole array. `scratch` must be as long as `data`; if the
+round count is odd, a parallel copy moves the result back. Errors are
+`InvalidPlan`, `LengthMismatch`, `Failed` (a worker exited nonzero or work
+was left pending), `Steal`, `Sync` and `Worker`.
+
 ## Samples
 
 [`parallel_word_count.lani`](../sample_programs/library/parallel_word_count.lani)
@@ -322,8 +346,53 @@ byte-identical stdout; one run takes about 0.6 s.
 | Steal pool cancelled by deadline | Same tree, 30 ms deadline | Same balance; 8 `Cancelled` workers |
 | Joins | A worker waiting on a token; a second worker blocked forever | `join_until` returns `TimedOut` after 20 ms, then a clean join after `cancel`; `signal_all(9)` sends 1 signal and the join decodes `Signal(9)` |
 
+[`par_sort.lani`](../tests/fixtures/stdlib_execution/concurrency/par_sort.lani)
+reads a mode, a worker count and n i64 keys, then writes back the result.
+[`par_oracle.py`](../tests/fixtures/stdlib_execution/concurrency/par_oracle.py)
+compares every mode with a Python model:
+
+- the sorts with `sorted()`;
+- the stable sorts with a stable sort by key, where the original indices must
+  match exactly;
+- `map` element by element;
+- `reduce` with a wrapping sum plus an ordered polynomial hash.
+
+The shapes are random full-range keys, all-equal keys, sorted, reversed, four
+distinct values, organ pipe, sawtooth, i64 extremes and dense duplicates.
+Sizes run from 0 to 300,000 keys, with 1 to 13 workers. Eight seeds ran
+3,003 mode runs with 0 mismatches.
+
+On 10,000,000 random i64 keys, this laptop (16 hardware threads, shared with
+other jobs) timed the operation alone, as the runner measures it:
+
+| Sort | Workers | Time |
+| --- | --- | --- |
+| `core::slice::sort_unstable` | 1 | 7.1–9.2 s |
+| `core::slice::sort_stable` on (key, index) | 1 | 27.9 s |
+| `std::par::sort_unstable` | 1 | 7.1–7.8 s |
+| `std::par::sort_unstable` | 8 | 1.1–1.7 s |
+| `std::par::sort_unstable` | 16 | 1.2–1.4 s |
+| `std::par::sort_stable` on (key, index) | 8 | 3.5–3.7 s |
+| `std::par::sort_stable` on (key, index) | 16 | 2.7–2.9 s |
+| `std::parallel::merge_sort` | 8 | 1.2 s |
+| GNU `sort -n --parallel=1 -S 3G` on the same keys as text | 1 | 14.1 s |
+| GNU `sort -n --parallel=8` | 8 | 6.6 s |
+| GNU `sort -n --parallel=16` | 16 | 4.5 s |
+
+The GNU times include parsing and printing 203 MB of text, written to a
+file. The whole `std::par` process, including binary decoding and output,
+took 2.4–2.6 s at 8–16 workers. Its output matched GNU's byte for byte once
+converted.
+
+The run sorts dominate. At 8 workers they took 943 ms, and each of the five
+merge rounds took 27–39 ms. Single-threaded `core::slice::sort_unstable`
+pays about 19 ns per comparison through `core::ordering::Comparator`
+(`compare` returns an `Ordering` value that `is_less` then tests), against
+6 ns for a direct `T::lt`. The 50,000,000-compare microbenchmark took
+966 ms against 303 ms. `std::par`'s own merges call `T::lt` directly.
+
 [`tests/stdlib_concurrency_execution.rs`](../tests/stdlib_concurrency_execution.rs)
-compiles the three fixtures and four samples through
+compiles the four fixtures and four samples through
 `compile_entry_to_x86_64_with_native_link`, then checks:
 
 - Three stress runs produce the exact summary lines.
@@ -334,6 +403,8 @@ compiles the three fixtures and four samples through
 - The quicksort prints `sorted 2000000`.
 - The parallel fixture produces its exact lines.
 - The grep matches GNU `grep -F` on generated inputs.
+- Every `par_sort` mode matches a Rust model on random, five-valued,
+  all-equal, sorted, reversed, empty and one-key inputs.
 
 These test wrappers are checked at merge time; this session ran the same
 programs directly.
