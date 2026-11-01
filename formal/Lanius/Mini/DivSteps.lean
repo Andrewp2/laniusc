@@ -1,5 +1,8 @@
-import Lanius.Mini.HeapSteps
+module
 
+public import Lanius.Mini.HeapSteps
+
+@[expose] public section
 /-! The x86 run of a division, `DivOp.spec`: the dividend's high half (`cdq`,
 `cqo` or `xor edx, edx`), then `idiv` or `div`, whose success conditions are
 the mini semantics' `Word.divides`. rdx is saved in r11 and restored. -/

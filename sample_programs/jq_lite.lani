@@ -182,15 +182,15 @@ fn run(query: &Query) -> i32 {
     let reader: ext::json_stream::TokenReader<std::stream::Descriptor> = opened.unwrap();
     let status: i32 = 0;
     while (status == 0) {
-        let step = reader.next();
-        if (step.is_err()) {
-            status = match (step.unwrap_err()) {
+        let step: i32 = reader.advance();
+        if (step < 0) {
+            status = match (reader.last_error()) {
                 ext::json_stream::StreamError::Json(cause) -> report(cause),
                 ext::json_stream::StreamError::Io(cause) -> 3,
             };
             break;
         }
-        if (!step.unwrap()) { break; }
+        if (step == 0) { break; }
         let handled = query.handle(tokens.borrow());
         if (handled.is_err()) { status = report(handled.unwrap_err()); }
     }

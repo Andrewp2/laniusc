@@ -1,5 +1,16 @@
-import Lanius.Mini.Reading.Det.EffParts
+module
 
+public import Lanius.Mini.Reading.Det.EffParts
+import all Lanius.Mini.Compiler.P.arithShiftRight
+import all Lanius.Mini.Frontend.P.distinct
+import all Lanius.Mini.Frontend.P.fnInstRet
+import all Lanius.Mini.Frontend.P.hasKids
+import all Lanius.Mini.Frontend.P.isUnderscore
+import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.noTrees
+import all Lanius.Mini.Frontend.P.shrFirst
+
+@[expose] public section
 /-! # The reading is deterministic, F1: a match's arms
 
 A match has as many arms as its enum has variants, and each variant's arm

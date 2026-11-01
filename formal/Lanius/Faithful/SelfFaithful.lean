@@ -1,7 +1,16 @@
-import Lanius.Faithful.Simulation
-import Lanius.Faithful.Gen.SelfCert
-import Lanius.Faithful.Gen.SelfPure
+module
 
+public import Lanius.Faithful.Simulation
+public import Lanius.Faithful.Gen.SelfCert
+public import Lanius.Faithful.Gen.SelfPure
+import all Lanius.Faithful.Gen.SelfSrcC_packRound
+import all Lanius.Faithful.Gen.SelfSrcF_grammarPart13
+import all Lanius.Faithful.Gen.SelfSrcF_frontEndWords
+public import Lanius.Mini.Compiler.P.packRound
+public import Lanius.Mini.Frontend.P.frontEndWords
+public import Lanius.Mini.Frontend.P.grammarPart13
+
+@[expose] public section
 /-! # The self program's compiler means its extraction (roadmap V1)
 
 A Core call of the self program's `compile_words`, `front_end_words` or

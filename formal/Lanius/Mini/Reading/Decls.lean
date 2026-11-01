@@ -1,6 +1,22 @@
-import Lanius.Mini.FrontSpec
-import Lanius.Mini.Reading.Prods
+module
 
+public import Lanius.Mini.FrontSpec
+public import Lanius.Mini.Reading.Prods
+import all Lanius.Mini.Compiler.P.arithShiftRight
+import all Lanius.Mini.Frontend.P.collect
+import all Lanius.Mini.Frontend.P.distinct
+import all Lanius.Mini.Frontend.P.grammarPart13
+import all Lanius.Mini.Frontend.P.hasKids
+import all Lanius.Mini.Frontend.P.isEmptyUsize
+import all Lanius.Mini.Frontend.P.methodDecl
+import all Lanius.Mini.Frontend.P.moduleOr
+import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.noTrees
+import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.textSelf
+import all Lanius.Mini.Frontend.P.wideLeftStmt
+
+@[expose] public section
 /-! # The reading, V8a: what the items declare
 
 The first layer of the reading of parse trees (roadmap step V8): the items
@@ -634,7 +650,7 @@ theorem noDecls_append (a : Decls) : noDecls.append a = a := by
 theorem append_noDecls (a : Decls) : a.append noDecls = a := by
   simp [Decls.append, noDecls]
 
-theorem joinDecls_some (a d : Decls) : joinDecls a (some d) = some (a.append d) := rfl
+theorem joinDecls_some (a d : Decls) : joinDecls a (some d) = some (a.append d) := by rfl
 
 theorem collect_sound : ∀ {fuel : Nat} {home : ModPath} {items : List CTree} {d : Decls},
     collect fuel home items = some d → Collect home items d
@@ -681,7 +697,7 @@ theorem fileDecls_sound {fuel : Nat} {root : CTree} {f : FileDecls} (h : fileDec
     cases h
 
 theorem collectedWith_eq (c : Collected) (f : FileDecls) :
-    collectedWith c f = { decls := c.decls.append f.decls, modules := c.modules ++ [f.home] } := rfl
+    collectedWith c f = { decls := c.decls.append f.decls, modules := c.modules ++ [f.home] } := by rfl
 
 /-- `collectFiles` appends the files' declarations to what it has. -/
 theorem collectFiles_sound : ∀ {fuel : Nat} {roots : List CTree} {acc c : Collected},

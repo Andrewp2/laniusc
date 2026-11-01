@@ -1,5 +1,8 @@
-import Lanius.X86.Machine.NonDivEncoding
+module
 
+public import Lanius.X86.Machine.NonDivEncoding
+
+@[expose] public section
 namespace Lanius.X86.Machine
 
 open Lanius.X86

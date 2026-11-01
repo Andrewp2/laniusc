@@ -126,7 +126,7 @@ theorem ok_lx_prepend : FnOk prog prims info (528, ⟨1, [], 0⟩) :=
 theorem ok_lx_shift : FnOk prog prims info (529, ⟨2, [], 0⟩) :=
   fnOk_of fn_lx_shift (by decide +kernel)
 
-theorem ok_lx_drop : FnOk prog prims info (530, ⟨2, [0], 0⟩) :=
+theorem ok_lx_drop : FnOk prog prims info (530, ⟨1, [0], 0⟩) :=
   fnOk_of fn_lx_drop (by decide +kernel)
 
 theorem ok_cons_of_mini_selfhost_SymRule : FnOk prog prims info (531, ⟨0, [], 0⟩) :=

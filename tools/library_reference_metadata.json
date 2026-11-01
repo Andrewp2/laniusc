@@ -2258,6 +2258,48 @@
         "docs/stdlib-development.md"
       ]
     },
+    "ext::json_tree": {
+      "guides": [
+        "docs/extended-json-patch.md"
+      ],
+      "note": "Mutable JSON document arena read with ext::json_stream (exact number spelling, duplicate keys rejected) and written through its Writer; hashed member lookup for objects with 8 or more members; RFC 6902 equality with numeric number comparison."
+    },
+    "ext::json_pointer": {
+      "guides": [
+        "docs/extended-json-patch.md"
+      ],
+      "note": "RFC 6901 pointer parsing (~0/~1, offset of a bad escape), array index rules and evaluation over ext::json_tree."
+    },
+    "ext::json_patch": {
+      "guides": [
+        "docs/extended-json-patch.md"
+      ],
+      "note": "RFC 6902 JSON Patch and RFC 7386 JSON Merge Patch over ext::json_tree, returning a new tree and leaving the document unchanged on failure. Native binaries from lcc agree with a Python model on 6,450 RFC-example, error-kind and generated cases."
+    },
+    "ext::json_schema": {
+      "guides": [
+        "docs/extended-json-schema.md"
+      ],
+      "note": "JSON Schema draft 2020-12 validation (core, applicator and validation vocabularies; pattern via ext::regex; local $ref and $defs) over ext::json_tree, with exact decimal numeric keywords and depth/work limits. Native binaries from lcc agree with a Python model on 246 hand-written specification cases, 92 error/limit cases and 10,000 generated schema/instance pairs."
+    },
+    "ext::yaml_writer": {
+      "guides": [
+        "docs/extended-yaml.md"
+      ],
+      "note": "Block-style YAML writer from ext::json_tree: plain strings only where no YAML 1.1 or 1.2 reader could misread them, literal block scalars with matching chomping for multi-line text, double quotes otherwise; floats with exponents re-spelled for YAML 1.1. Native binaries from lcc round-trip 3,320 hand-written and generated trees through PyYAML 6.0.1 safe_load and ext::yaml."
+    },
+    "ext::toml_writer": {
+      "guides": [
+        "docs/extended-toml-writer.md"
+      ],
+      "note": "TOML 1.0 writer from an ext::json_tree object: [tables], [[arrays of tables]], inline tables inside arrays, basic strings and the tree's exact number spellings; typed NotTable, NullValue and IntegerRange errors with the node. Native binaries from lcc round-trip 3,014 hand-written and generated trees through Python tomllib (floats compared by spelling) and reject 11 error cases."
+    },
+    "ext::yaml": {
+      "guides": [
+        "docs/extended-yaml.md"
+      ],
+      "note": "YAML 1.2 reader into ext::json_tree with the core schema: block and flow collections, plain, quoted and block scalars (| and > with chomping), anchors and aliases with an alias-expansion limit, comments and multiple documents; typed errors with line, column and byte offset. Native binaries from lcc agree with PyYAML 6.0.1 on 87 hand-written and 3,000 generated documents, and with hand-written expectations on 32 YAML 1.1/1.2 differences and 68 error/limit cases."
+    },
     "ext::json_stream": {
       "guides": [
         "docs/extended-json-stream.md"

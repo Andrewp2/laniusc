@@ -1,5 +1,19 @@
-import Lanius.Mini.FrontLex
+module
 
+public import Lanius.Mini.FrontLex
+import all Lanius.Mini.Frontend.P.hasKids
+import all Lanius.Mini.Frontend.P.lxBlockEnd
+import all Lanius.Mini.Frontend.P.lxCanonicalKind
+import all Lanius.Mini.Frontend.P.lxDotAt
+import all Lanius.Mini.Frontend.P.lxExponent
+import all Lanius.Mini.Frontend.P.lxFixed
+import all Lanius.Mini.Frontend.P.lxLeadingDot
+import all Lanius.Mini.Frontend.P.lxSpaceEnd
+import all Lanius.Mini.Frontend.P.lxSymbolStart
+import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.wideLeftStmt
+
+@[expose] public section
 /-! The verified compiler's lexer (`lex_source` in `formal/lani/mini/frontend.lani`,
 extracted as `lexSource`) is the Lean lexer: on a file's byte values it gives
 `lexTokens` of the file (`lexSource_eq`). Each extracted function is proved
@@ -311,7 +325,7 @@ theorem best_eq (input : List Nat) : ∀ rules : List SymbolRule,
         split <;> rfl
     · simp only [h, Bool.false_eq_true, if_false]
 
-theorem symbolRules_eq : lxSymbolRules = symbolRules.map symRule := rfl
+theorem symbolRules_eq : lxSymbolRules = symbolRules.map symRule := by rfl
 
 theorem sameText_eq : ∀ a b : List Nat, sameText a b = decide (a = b)
   | [], [] => rfl
@@ -447,7 +461,7 @@ theorem raw_eq : ∀ (fuel : Nat) (rest : List Byte) (offset : Nat),
 
 def kwRule (rule : KeywordRule) : SymRule := { spelling := rule.spelling, kind := rule.kind.gpuCode }
 
-theorem keywordRules_eq : lxKeywordRules = keywordRules.map kwRule := rfl
+theorem keywordRules_eq : lxKeywordRules = keywordRules.map kwRule := by rfl
 
 theorem trivia_eq (k : TokenKind) : lxTrivia k.gpuCode = isTriviaKind k := by
   cases k <;> rfl

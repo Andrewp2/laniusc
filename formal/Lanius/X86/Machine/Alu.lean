@@ -1,5 +1,8 @@
-import Lanius.X86.Machine.Flags
+module
 
+public import Lanius.X86.Machine.Flags
+
+@[expose] public section
 namespace Lanius.X86.Machine
 
 /-- The register-register arithmetic/logical subset used by scalar lowering.

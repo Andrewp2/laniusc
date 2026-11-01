@@ -1,7 +1,10 @@
-import Lanius.Compiler.Lexer
-import Lanius.Compiler.LexerNumbers
-import Lanius.Compiler.LexerSymbols
+module
 
+public import Lanius.Compiler.Lexer
+public import Lanius.Compiler.LexerNumbers
+public import Lanius.Compiler.LexerSymbols
+
+@[expose] public section
 namespace Lanius.Compiler.Lexer
 
 def doubleQuote : Byte := ⟨34, by omega⟩

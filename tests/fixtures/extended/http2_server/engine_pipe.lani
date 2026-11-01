@@ -1,0 +1,69 @@
+// Engine harness over stdin/stdout: every received chunk is fed to the
+// server engine; each complete request is answered with 200 and a body that
+// echoes the method, path and request body ("/big/N" answers N bytes).
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::hpack;
+import ext::http2;
+import ext::http2_server;
+import std::io;
+import std::stream;
+
+fn text(value: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), count); return core::slice::View { values: raw, start: 0, length: count }; }
+fn flush_out(c: &ext::http2_server::Connection) -> bool {
+    let out: core::slice::View<u8> = c.output(); let n: i32 = out.len(); if (n == 0) { return true; }
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    let w = core::io::write_all(sink.borrow(), out.values, out.start, n); if (w.is_err()) { return false; }
+    c.sent(n); return true;
+}
+fn number(v: core::slice::View<u8>, from: i32) -> i32 { let n: i32 = 0; let i: i32 = from; while (i < v.length) { let d: i32 = v.values[v.start + i] as i32 - 48; if (d < 0 || d > 9) { return n; } n = n * 10 + d; i += 1; } return n; }
+fn answer(c: &ext::http2_server::Connection, id: i32) -> bool {
+    let path: core::slice::View<u8> = c.path(id);
+    let body: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+    let big: bool = path.length > 5 && path.values[path.start + 1] == 98 && path.values[path.start + 4] == 47;
+    if (big) { let n: i32 = number(path, 5); let i: i32 = 0; while (i < n) { body.try_push((97 + i % 26) as u8); i += 1; } }
+    else {
+        body.try_extend(c.method(id)); body.try_push(32); body.try_extend(path); body.try_push(32);
+        let ua = c.header(id, text("x-tag", 5)); if (ua.is_some()) { body.try_extend(ua.unwrap()); } body.try_push(32);
+        body.try_extend(c.body(id));
+        let t: i32 = c.trailer_count(id); if (t > 0) { body.try_push(32); body.try_extend(c.field(id, c.field_count(id)).value); }
+    }
+    let fields: alloc::vec::Vec<ext::hpack::Header> = alloc::vec::new<ext::hpack::Header>();
+    fields.try_push(ext::hpack::Header { name: text("content-type", 12), value: text("text/plain", 10), never_indexed: false });
+    let r = c.respond(id, 200, fields.as_view(), false);
+    fields.destroy();
+    if (r.is_err()) { body.destroy(); c.release(id); return true; }
+    let d = c.send_data(id, body.as_view(), true);
+    body.destroy();
+    return true;
+}
+fn main() -> i32 {
+    let o: ext::http2_server::Options = ext::http2_server::default_options();
+    o.stream_window = 65535; o.connection_window = 65535; o.max_streams = 8; o.body_bytes = 200000;
+    let made = ext::http2_server::server(o); if (made.is_err()) { return 1; }
+    let c: ext::http2_server::Connection = made.unwrap();
+    let scratch: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); scratch.try_resize(16384, 0 as u8);
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let done: alloc::vec::Vec<i32> = alloc::vec::new<i32>();
+    if (!flush_out(c.borrow())) { return 2; }
+    while (!c.finished()) {
+        let got = source.read(scratch.as_slice(), 0, 16384); if (got.is_err()) { return 3; }
+        let n: i32 = got.unwrap(); if (n == 0) { break; }
+        let fed = c.feed(core::slice::View { values: scratch.as_slice(), start: 0, length: n });
+        while (true) { let next: core::option::Option<i32> = c.next_request(); if (next.is_none()) { break; } let id: i32 = next.unwrap(); answer(c.borrow(), id); done.try_push(id); }
+        // Release taken streams once their responses are framed.
+        let i: i32 = done.len() - 1;
+        while (i >= 0) { let id: i32 = done.at(i); let st = c.state(id); let open: bool = match (st) { ext::http2::State::Open -> true, _ -> false }; if (!open) { c.release(id); done.remove(i); } i -= 1; }
+        if (!flush_out(c.borrow())) { return 4; }
+        if (fed.is_err()) { break; }
+    }
+    flush_out(c.borrow());
+    let status: i32 = 0; if (c.failure().is_some()) { status = 10 + c.failure().unwrap().code; }
+    c.destroy(); scratch.destroy(); done.destroy();
+    return status;
+}

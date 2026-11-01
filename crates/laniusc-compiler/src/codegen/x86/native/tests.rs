@@ -522,7 +522,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(64))]
     #[test]
     fn elf_packaging_preserves_arbitrary_gpu_bytes(
-        text in prop::collection::vec(any::<u8>(), 225..512),
+        text in prop::collection::vec(any::<u8>(), 233..512),
         rodata in prop::collection::vec(any::<u8>(), 4..256),
     ) {
         let mut object = object();

@@ -18,22 +18,22 @@ theorem ok_p_let_type : FnOk prog prims info (1703, ⟨0, [], 0⟩) :=
 theorem ok_p_let_init : FnOk prog prims info (1704, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_let_init (by decide +kernel)
 
-theorem ok_is_block_match : FnOk prog prims info (1705, ⟨9, [], 0⟩) :=
+theorem ok_is_block_match : FnOk prog prims info (1705, ⟨8, [], 0⟩) :=
   fnOk_of fn_is_block_match (by decide +kernel)
 
-theorem ok_let_match_of : FnOk prog prims info (1706, ⟨37, [0], 0⟩) :=
+theorem ok_let_match_of : FnOk prog prims info (1706, ⟨36, [0], 0⟩) :=
   fnOk_of fn_let_match_of (by decide +kernel)
 
 theorem ok_let_of : FnOk prog prims info (1707, ⟨6, [], 0⟩) :=
   fnOk_of fn_let_of (by decide +kernel)
 
-theorem ok_let_head_or_eval : FnOk prog prims info (1708, ⟨35, [], 0⟩) :=
+theorem ok_let_head_or_eval : FnOk prog prims info (1708, ⟨34, [], 0⟩) :=
   fnOk_of fn_let_head_or_eval (by decide +kernel)
 
 theorem ok_p_let_type_none : FnOk prog prims info (1709, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_let_type_none (by decide +kernel)
 
-theorem ok_untyped_head : FnOk prog prims info (1710, ⟨34, [], 0⟩) :=
+theorem ok_untyped_head : FnOk prog prims info (1710, ⟨33, [], 0⟩) :=
   fnOk_of fn_untyped_head (by decide +kernel)
 
 theorem ok_let_body : FnOk prog prims info (1711, ⟨5, [], 0⟩) :=
@@ -45,7 +45,7 @@ theorem ok_p_return_stmt : FnOk prog prims info (1712, ⟨0, [], 0⟩) :=
 theorem ok_p_return_value : FnOk prog prims info (1713, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_return_value (by decide +kernel)
 
-theorem ok_return_or_eval : FnOk prog prims info (1714, ⟨31, [], 0⟩) :=
+theorem ok_return_or_eval : FnOk prog prims info (1714, ⟨30, [], 0⟩) :=
   fnOk_of fn_return_or_eval (by decide +kernel)
 
 theorem ok_p_return_void : FnOk prog prims info (1715, ⟨0, [], 0⟩) :=
@@ -63,7 +63,7 @@ theorem ok_p_if_stmt : FnOk prog prims info (1718, ⟨0, [], 0⟩) :=
 theorem ok_p_else_stmt : FnOk prog prims info (1719, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_else_stmt (by decide +kernel)
 
-theorem ok_if_or_eval : FnOk prog prims info (1720, ⟨31, [], 0⟩) :=
+theorem ok_if_or_eval : FnOk prog prims info (1720, ⟨30, [], 0⟩) :=
   fnOk_of fn_if_or_eval (by decide +kernel)
 
 theorem ok_p_else_none : FnOk prog prims info (1721, ⟨0, [], 0⟩) :=
@@ -72,22 +72,22 @@ theorem ok_p_else_none : FnOk prog prims info (1721, ⟨0, [], 0⟩) :=
 theorem ok_p_while_stmt : FnOk prog prims info (1722, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_while_stmt (by decide +kernel)
 
-theorem ok_while_or_eval : FnOk prog prims info (1723, ⟨31, [], 0⟩) :=
+theorem ok_while_or_eval : FnOk prog prims info (1723, ⟨30, [], 0⟩) :=
   fnOk_of fn_while_or_eval (by decide +kernel)
 
 theorem ok_p_for_stmt : FnOk prog prims info (1724, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_for_stmt (by decide +kernel)
 
-theorem ok_nested_of : FnOk prog prims info (1725, ⟨37, [0], 0⟩) :=
+theorem ok_nested_of : FnOk prog prims info (1725, ⟨36, [0], 0⟩) :=
   fnOk_of fn_nested_of (by decide +kernel)
 
-theorem ok_is_match_stmt : FnOk prog prims info (1726, ⟨6, [], 0⟩) :=
+theorem ok_is_match_stmt : FnOk prog prims info (1726, ⟨5, [], 0⟩) :=
   fnOk_of fn_is_match_stmt (by decide +kernel)
 
-theorem ok_match_stmt_of : FnOk prog prims info (1727, ⟨37, [0], 0⟩) :=
+theorem ok_match_stmt_of : FnOk prog prims info (1727, ⟨36, [0], 0⟩) :=
   fnOk_of fn_match_stmt_of (by decide +kernel)
 
-theorem ok_assignment : FnOk prog prims info (1728, ⟨36, [], 0⟩) :=
+theorem ok_assignment : FnOk prog prims info (1728, ⟨35, [], 0⟩) :=
   fnOk_of fn_assignment (by decide +kernel)
 
 theorem ok_then_rest : FnOk prog prims info (1729, ⟨0, [], 0⟩) :=

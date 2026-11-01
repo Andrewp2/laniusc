@@ -1099,6 +1099,8 @@ def build_run_all():
     if os.environ.get('LANIUS_BUILT'):
         return
     env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
+    if run_cache.lake_current('runAll', env):
+        return
     with run_cache.lean_lock():
         subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
                         'lake', 'build', 'runAll'], cwd='formal', env=env, capture_output=True, check=True)

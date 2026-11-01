@@ -1,5 +1,8 @@
-import Lanius.Faithful.Sim.Eff
+module
 
+public import Lanius.Faithful.Sim.Eff
+
+@[expose] public section
 /-! # Effectful expressions, by Core's fuel
 
 Each effectful expression Core completes with fuel `k + 1` has its pure

@@ -8,16 +8,6 @@ Gaps found while writing the generic core::vec, core::set and core::pair
 (2026-10-15). Each probe returns 42 once the feature works; the diagnostic is
 what the current compiler prints. "Blocks" counts the existing per-type
 stdlib modules that a generic replacement cannot cover until the gap closes.
-- b19: a self method of a stdlib generic type called through the bare
-  type's path, `Option::is_some(o)` after `import core::option;`. LNC0005
-  "unresolved identifier" at `Option`. The forms around it work since
-  2026-10-31: `Option<i32>::is_some(o)`, the nongeneric
-  `TotalF32::to_bits(t)` and `Descriptor::raw_handle(d.borrow())`, and a local
-  bare `W::get(w)`. A local bare qualifier names its declaration's symbolic
-  application (modules/10k); an imported generic one has no application
-  (dependencies/14 builds only the zero-operand form), so the call publishes
-  no method key. It needs a per-use application whose operands are the
-  declaration's own parameters, and calls/03d must not bind them. Owner: TBD.
 - b16 (Wasm only): a function whose result type is an imported generic
   enum, `fn half(x: i32) -> core::option::Option<i32>`, compiles to a module
   node rejects ("not enough arguments on the stack for local.set"). The same
@@ -63,7 +53,11 @@ Not probes here:
   rejection rather than exit 42 (docs/compiler-generic-types.md, "Recursive
   by-value types").
 
-Passed and moved to the matrix: b14 (a self method called through its
+Passed and moved to the matrix: b19 (a self method of a stdlib generic type
+called through the bare type's path, `Option::is_some(o)`) is p83, passing by
+2026-10-31: the bare imported qualifier names its declaration's own
+application (dependencies/14), and calls/03d binds no parameter from it.
+b14 (a self method called through its
 type's path, `Counter::get(next)` on a type from a source module) is p82,
 passing by 2026-10-31: a path call names every method of the type, and a
 self method's receiver is its first argument, checked against the self

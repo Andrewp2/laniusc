@@ -1,0 +1,16 @@
+// fuzz boundary literals (11-01): a decimal literal of 20 or more digits whose
+// value is 2^64 or more. Lean's compileSource rejects it (wideDecimal returns
+// none). The verified compiler built by laniusc (self_host.py's
+// laniusc_driver) dies with SIGILL, a checked overflow in wide_decimal's
+// times/plus: the bug Reviewer A is fixing. The same in every position tried:
+// let, struct field, array element, call argument, return, and for
+// 18450000000000000000 and 20000000000000000000 (20 digits, past 2^64), not
+// for 18446744073709551615 nor for leading zeros (00000000000000000001).
+// Hex, octal and binary literals past 2^64 are rejected by both builds.
+// Run: python3 -I formal/tools/native_front.py DRIVER THIS
+module app::main;
+
+fn main() -> i32 {
+    let a: u64 = 18450000000000000000;
+    return (a & 7) as i32;
+}

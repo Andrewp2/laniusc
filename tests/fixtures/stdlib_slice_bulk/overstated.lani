@@ -1,0 +1,25 @@
+// A claimed length past a view's backing must trap before any raw word
+// access, as native indexing does. Each call overstates a 64-byte packed
+// view as 72 bytes. The argument count picks the call: 1 + k arguments run
+// call k (0 copy_from_slice, 1 fill, 2 swap_with_slice, 3 memchr, 4 memcmp,
+// 5 copy_within), which must exit 101 (bounds trap). With no argument every
+// call runs in bounds and the program exits 0.
+module app::main;
+import alloc::vec;
+import core::slice;
+import std::process;
+fn main() -> i32 {
+    let a: alloc::vec::Vec<u8> = alloc::vec::new(); a.try_resize(64, 1).unwrap();
+    let b: alloc::vec::Vec<u8> = alloc::vec::new(); b.try_resize(64, 2).unwrap();
+    let x: [u8] = a.as_slice(); let y: [u8] = b.as_slice();
+    let n: i32 = 64;
+    let mode: i32 = -1;
+    if (std::process::argc() > 1) { mode = std::process::argc() - 2; n = 72; }
+    if (mode == -1 || mode == 0) { core::slice::copy_from_slice(x, n, y, n); }
+    if (mode == -1 || mode == 1) { core::slice::fill(x, n, 5); }
+    if (mode == -1 || mode == 2) { core::slice::swap_with_slice(x, n, y, n); }
+    if (mode == -1 || mode == 3) { core::slice::memchr(x, n, 9); }
+    if (mode == -1 || mode == 4) { core::slice::memcmp(x, y, n); }
+    if (mode == -1 || mode == 5) { core::slice::copy_within(x, n, 8, n, 0); }
+    return 0;
+}
