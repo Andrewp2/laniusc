@@ -1,5 +1,8 @@
-import Lanius.X86.Machine.Scalar
+module
 
+public import Lanius.X86.Machine.Scalar
+
+@[expose] public section
 /-! `decode` reads only the bytes of the instruction it returns. So two byte
 lists loaded at the same address that both decode give the same instruction
 and size: `Step` has no freedom in what it decodes. -/

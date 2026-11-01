@@ -1,5 +1,8 @@
-import Lanius.Memory.Read
+module
 
+public import Lanius.Memory.Read
+
+@[expose] public section
 namespace Lanius.Memory
 
 variable {heap : Heap} {block : Block} {size alignment offset count pointer : Nat}

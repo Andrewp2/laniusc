@@ -1,8 +1,11 @@
-import Lanius.Memory.Borrow
+module
 
+public import Lanius.Memory.Borrow
+
+@[expose] public section
 namespace Lanius.Memory
 
-private def borrowedBlock (base : Address) (block : Block) : Block :=
+def borrowedBlock (base : Address) (block : Block) : Block :=
   { block with owned := if block.base == base then false else block.owned }
 
 /-- Ownership transfer changes no allocation identity, liveness or bytes. -/

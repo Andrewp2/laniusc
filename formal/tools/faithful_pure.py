@@ -558,7 +558,57 @@ class Declarer:
 
 # ---------------------------------------------------------------- Lean text
 
+GEN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Lanius', 'Faithful', 'Gen')
+
+
+def gen_closure(mods):
+    """The generated modules (Gen/) mods import, transitively, with mods."""
+    seen, todo = set(), [m for m in mods if m.startswith('Lanius.Faithful.Gen.')]
+    while todo:
+        m = todo.pop()
+        if m in seen:
+            continue
+        seen.add(m)
+        path = os.path.join(GEN_DIR, m.rsplit('.', 1)[1] + '.lean')
+        if os.path.exists(path):
+            todo += [x for x in re.findall(r'^(?:public )?import (?:all )?(\S+)', open(path).read(), re.M)
+                     if x.startswith('Lanius.Faithful.Gen.')]
+    return sorted(seen)
+
+
+CHECKERS = ('CheckFast', 'Check', 'ProgOk', 'DeclStep', 'Boxed')
+_bodies = []
+
+
+def checker_bodies():
+    """The extracted modules whose bodies the checkers (Sim/CheckFast.lean, ..)
+    unfold (their own `import all`s), which a kernel check of them unfolds too."""
+    if not _bodies:
+        sim = os.path.join(GEN_DIR, '..', 'Sim')
+        found = set()
+        for c in CHECKERS:
+            found |= set(re.findall(r'^import all (\S+)', open(os.path.join(sim, c + '.lean')).read(), re.M))
+        _bodies.append(sorted(found))
+    return _bodies[0]
+
+
+def modulize(text):
+    """A legacy file's text as a `module`: its imports public, the bodies of
+    the generated modules below it imported (`import all`) for its kernel
+    checks, and the rest in an exposed public section."""
+    lines = text.split('\n')
+    k = 0
+    while k < len(lines) and lines[k].startswith('import '):
+        k += 1
+    mods = [line.split()[1] for line in lines[:k]]
+    return '\n'.join(['module', ''] + [f'public import {m}' for m in mods] +
+                     [f'import all {m}' for m in gen_closure(mods) + checker_bodies()] +
+                     ['', '@[expose] public section'] + lines[k:])
+
+
 def write(path, text):
+    if not text.startswith('module'):
+        text = modulize(text)
     try:
         with open(path) as f:
             if f.read() == text:

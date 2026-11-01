@@ -1,6 +1,18 @@
-import Lanius.Mini.DetSteps
-import Lanius.Mini.Bytes
+module
 
+public import Lanius.Mini.DetSteps
+public import Lanius.Mini.Bytes
+public import Lanius.Mini.Compiler.P.FArith_opcode
+import all Lanius.Mini.Compiler.P.DivOp_size
+import all Lanius.Mini.Compiler.P.FArith_opcode
+import all Lanius.Mini.Compiler.P.FloatTy_rex
+import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.arities
+import all Lanius.Mini.Compiler.P.codeSize
+import all Lanius.Mini.Compiler.P.compileArgs
+import all Lanius.Mini.Compiler.Types
+
+@[expose] public section
 /-! The SSE code of a float operation (`FOp.opcodeBytes`) as x86 steps: each
 instruction decodes, reads no flags and is not a division, so its run is
 `Det`; and it leaves `FOp.apply` of rax and rcx in rax, writing no other

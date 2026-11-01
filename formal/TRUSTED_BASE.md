@@ -39,11 +39,16 @@ stopping at the computations the theorems are about (`compileSource`,
 `linkObjects`, `elfFile`, `sourceProgramFiles`, `compileWords`,
 `frontEndWords` and the self program `Lanius.Faithful.Self.prog`, which are
 not trusted, section 10), with each one's type and body:
-definitions `f221909910346588` (4,341 constants). This covers Core's
+definitions `8884a4fe6100bebe` (4,341 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
-modules keeps its hash. The last change of the hash (11-01): the lexer
+modules keeps its hash. The last change of the hash (11-01): Core's
+semantics, the x86 model, the memory model and the self program's
+simulation became Lean `module`s, so their auxiliary definitions (matchers,
+`_proof_N`) are named per module: the same constants, with 18 hashes that
+differ only in the names of the auxiliaries they mention; no definition's
+meaning changed. Before that (11-01): the lexer
 (`Lanius/Compiler/Lexer*.lean`, `Tokens.lean`) and the reading became Lean
 `module`s, so a function's matcher is its own (`OneTokenResult.shift.match_1`)
 rather than shared with a derived `Repr` instance's; no definition's meaning
