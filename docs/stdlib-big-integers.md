@@ -41,9 +41,8 @@ Operands are borrowed and survive every error.
 ## Multiplication: schoolbook and Karatsuba
 
 `mul` uses Karatsuba when **both** operands have at least
-`alloc::big_uint::KARATSUBA_THRESHOLD` (32) limbs, the full product fits in
-`max_limbs`, and the workspace described below also fits in `max_limbs`.
-Otherwise it uses the existing schoolbook loop, including the
+`alloc::big_uint::KARATSUBA_THRESHOLD` (32) limbs and the full product fits in
+`max_limbs`. Otherwise it uses the existing schoolbook loop, including the
 edge case where the product is exactly one limb longer than `max_limbs` and
 must be clamped.
 
@@ -71,9 +70,12 @@ their own. The workspace size is therefore the sum of `8k+4` over the chain
 `n -> k+1` while the size stays at or above the threshold, which is about
 `8*max(n, m)` limbs.
 
-The workspace goes through the same bounded `fresh` path as every other
-vector. When it would exceed `max_limbs`, `mul` uses schoolbook instead. When
-an allocation fails, `mul` destroys whatever it has already allocated and
+The workspace is the one vector allowed to exceed `max_limbs`. It is bounded
+by `8*max_limbs+64` and by the vector's limb capacity; past either bound, `mul`
+uses schoolbook instead. An earlier draft also required the workspace to fit
+in `max_limbs`. That sent large squarings in `pow` to schoolbook: `2^100000000`
+under `bc`'s 65,536-limb limit took more than 20 s. With the current bound it
+reaches `WorkLimit` in about 1 s. When an allocation fails, `mul` destroys whatever it has already allocated and
 returns `AllocationFailed`. Both operands are preserved.
 
 Every window the kernel writes holds the complete value it accumulates. Carry

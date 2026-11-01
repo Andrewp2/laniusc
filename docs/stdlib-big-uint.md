@@ -74,6 +74,8 @@ Limb storage is reserved exactly or within its declared bound. Division alone
 uses one additional temporary guard limb, so its dividend scratch may have
 `max_limbs+1` limbs. Each temporary vector is bounded independently; the limit
 is not a total live memory quota. The allocator can deny any request.
+Karatsuba multiplication's single workspace is the exception: it may reach
+`8*max_limbs+64` limbs (about eight times the longer operand).
 The vector's capacity derived from its target element layout is also checked;
 a smaller physical capacity is reported as `LimbLimit`.
 

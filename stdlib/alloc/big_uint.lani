@@ -101,10 +101,12 @@ pub impl BigUint {
         if (self.is_zero() || other.is_zero()) { return core::result::Ok(zero()); }
         let count: i32 = self.limbs.len()+other.limbs.len(); if (count-1 > limits.max_limbs) { return core::result::Err(Error::LimbLimit); } if (count > limits.max_limbs) { count = limits.max_limbs; }
         let longest: i32 = self.limbs.len(); if (other.limbs.len() > longest) { longest = other.limbs.len(); } let scratch: i64 = workspace_limbs(longest);
-        // Karatsuba needs one workspace within max_limbs; otherwise schoolbook.
-        if (count == self.limbs.len()+other.limbs.len() && self.limbs.len() >= KARATSUBA_THRESHOLD && other.limbs.len() >= KARATSUBA_THRESHOLD && scratch <= limits.max_limbs as i64 && scratch <= limits.max_work as i64) {
+        // One Karatsuba workspace of about 8*longest limbs (at most 8*max_limbs+64),
+        // bounded by the vector's limb capacity; otherwise schoolbook.
+        if (count == self.limbs.len()+other.limbs.len() && self.limbs.len() >= KARATSUBA_THRESHOLD && other.limbs.len() >= KARATSUBA_THRESHOLD && scratch <= 8*(limits.max_limbs as i64)+64 && scratch <= limb_capacity() as i64 && scratch <= limits.max_work as i64) {
             let wide: core::result::Result<BigUint,Error> = fresh(count,limits); if (wide.is_err()) { return wide; } let product: BigUint = wide.unwrap();
-            let space: core::result::Result<BigUint,Error> = fresh(scratch as i32,limits); if (space.is_err()) { product.destroy(); return space; } let workspace: BigUint = space.unwrap();
+            let workspace_limits: Limits = limits; workspace_limits.max_limbs = 536870911;
+            let space: core::result::Result<BigUint,Error> = fresh(scratch as i32,workspace_limits); if (space.is_err()) { product.destroy(); return space; } let workspace: BigUint = space.unwrap();
             kmul_into(product.borrow(),0,count,self,0,self.limbs.len(),other,0,other.limbs.len(),workspace.borrow(),0);
             workspace.destroy(); product.normalize(); return core::result::Ok(product);
         }
