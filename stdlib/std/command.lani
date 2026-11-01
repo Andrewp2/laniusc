@@ -19,9 +19,13 @@ pub struct Failure { kind: Error, stage: Stage, errno: i32 }
 pub struct Limits { max_args: i32, max_env: i32, max_string: i32, max_bytes: i32, max_paths: i32 }
 pub enum Search { Exact, EnvironmentPath }
 pub enum ChildSigpipe { Default, Inherit }
+// Clear (the request default) empties the child's blocked-signal mask before
+// exec, so a parent that blocks signals for std::signal receivers does not
+// pass them on. Inherit keeps the parent's mask.
+pub enum ChildMask { Clear, Inherit }
 pub enum Group { Inherit, New }
 pub enum Stdio { Inherit, Closed, Null, Pipe, Borrowed(i32) }
-pub struct Request { program: core::slice::View<u8>, arguments: core::slice::View<core::slice::View<u8>>, environment: core::slice::View<core::slice::View<u8>>, cwd: core::option::Option<core::slice::View<u8>>, search: Search, sigpipe: ChildSigpipe, group: Group, stdin: Stdio, stdout: Stdio, stderr: Stdio, limits: Limits }
+pub struct Request { program: core::slice::View<u8>, arguments: core::slice::View<core::slice::View<u8>>, environment: core::slice::View<core::slice::View<u8>>, cwd: core::option::Option<core::slice::View<u8>>, search: Search, sigpipe: ChildSigpipe, signal_mask: ChildMask, group: Group, stdin: Stdio, stdout: Stdio, stderr: Stdio, limits: Limits }
 pub enum Startup { Unconfirmed, Unknown }
 pub struct ExitStatus { raw: i32, code: core::option::Option<i32>, signal: core::option::Option<i32>, core_dumped: bool }
 // Linux struct rusage fields, as reported by the kernel. Times have microsecond
@@ -92,7 +96,7 @@ fn child_failure(fd: i32, stage: i32, errno: i32) {
     while (done < 16) { let n: i64 = std::command_raw::pointer(1,fd as i64,p+(done as usize),(16-done) as i64); if (n == -4) { continue; } if (n <= 0 || n > (16-done) as i64) { break; } done += n as i32; }
     std::command_raw::terminate();
 }
-fn child_exec(prepared: Prepared, fds: [i32], error_fd: i32, sigpipe: ChildSigpipe, group: Group) {
+fn child_exec(prepared: Prepared, fds: [i32], error_fd: i32, sigpipe: ChildSigpipe, mask: ChildMask, group: Group) {
     let new_group: bool = match(group) { Group::New -> true, _ -> false };
     if (new_group) { let grouped: i64 = std::command_raw::set_group(0,0); if (grouped != 0) { let errno: i32 = 5; if (grouped < 0) { errno = (0-grouped) as i32; } child_failure(error_fd,6,errno); } }
     let n: i64 = -4; while (n == -4) { n = std::command_raw::word(436,3,4294967295,4); } if (n < 0) { child_failure(error_fd,1,(0-n) as i32); }
@@ -100,6 +104,8 @@ fn child_exec(prepared: Prepared, fds: [i32], error_fd: i32, sigpipe: ChildSigpi
         if (fds[i] < 0) { n = std::command_raw::close(i) as i64; if (n < 0 && n != -9) { child_failure(error_fd,2,(0-n) as i32); } }
         else { n = -4; while (n == -4) { n = std::command_raw::word(292,fds[i] as i64,i as i64,0); } if (n < 0) { child_failure(error_fd,2,(0-n) as i32); } } i += 1;
     }
+    let clear: bool = match(mask) { ChildMask::Clear -> true, _ -> false };
+    if (clear) { let cleared = std::signal::set_mask(std::signal::empty()); if (cleared.is_err()) { let errno: i32 = match(cleared.unwrap_err()) { std::signal::Error::Host(code) -> code, _ -> 5 }; child_failure(error_fd,5,errno); } }
     let reset: bool = match(sigpipe) { ChildSigpipe::Default -> true, _ -> false };
     if (reset) { let changed = std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Default); if (changed.is_err()) { let error = changed.unwrap_err(); let errno: i32 = match(error) { core::io::Error::Host(code) -> code, core::io::Error::Interrupted -> 4, core::io::Error::WouldBlock -> 11, _ -> 5 }; child_failure(error_fd,5,errno); } }
     let base = core::mem::i32_slice_data_ptr(prepared.bytes.as_slice()); let pointers = core::mem::i32_slice_data_ptr(prepared.pointers.as_slice());
@@ -139,7 +145,7 @@ pub fn spawn(request: Request) -> core::result::Result<Spawn,Failure> {
     }
     let channel: [i32;2] = [-1;2]; let made: i32 = std::command_raw::make_pipe(channel); if (made < 0) { close_fds(child_fds); close_fds(parent_fds); prepared.destroy(); return core::result::Err(host(Stage::Descriptors,made as i64)); }
     let pid: i64 = std::command_raw::fork(); if (pid < 0) { close_fds(child_fds); close_fds(parent_fds); std::command_raw::close(channel[0]); std::command_raw::close(channel[1]); prepared.destroy(); return core::result::Err(host(Stage::Fork,pid)); }
-    if (pid == 0) { child_exec(prepared,child_fds,channel[1],request.sigpipe,request.group); std::command_raw::terminate(); }
+    if (pid == 0) { child_exec(prepared,child_fds,channel[1],request.sigpipe,request.signal_mask,request.group); std::command_raw::terminate(); }
     close_fds(child_fds); std::command_raw::close(channel[1]); prepared.destroy(); let child: Child = make_child(pid as i32,parent_fds,Startup::Unconfirmed,request.group);
     // Both sides establish the new group before relying on it. Parent EACCES
     // means exec won the race, but only an exact getpgid result confirms the
@@ -348,7 +354,7 @@ pub impl Usage {
     pub fn cpu(&self) -> core::time::Duration { return self.user.saturating_add(self.system); }
 }
 pub fn request(program: core::slice::View<u8>, arguments: core::slice::View<core::slice::View<u8>>, environment: core::slice::View<core::slice::View<u8>>) -> Request {
-    return Request { program: program, arguments: arguments, environment: environment, cwd: core::option::None(), search: Search::Exact, sigpipe: ChildSigpipe::Default, group: Group::Inherit, stdin: Stdio::Inherit, stdout: Stdio::Inherit, stderr: Stdio::Inherit, limits: default_limits() };
+    return Request { program: program, arguments: arguments, environment: environment, cwd: core::option::None(), search: Search::Exact, sigpipe: ChildSigpipe::Default, signal_mask: ChildMask::Clear, group: Group::Inherit, stdin: Stdio::Inherit, stdout: Stdio::Inherit, stderr: Stdio::Inherit, limits: default_limits() };
 }
 pub struct Environment { bytes: alloc::vec::Vec<i32>, values: alloc::vec::Vec<core::slice::View<u8>> }
 pub impl Environment {
