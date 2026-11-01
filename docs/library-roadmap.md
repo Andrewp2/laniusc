@@ -726,8 +726,9 @@ and a word load. It also stores the constant 10 to the stack, materializes each
 comparison with `set*`/`movzbl` and spills it before testing, and spills every
 `+= 1` before reloading it. Nothing is hoisted out of the loop.
 `core::u32::wrapping_mul` and trait methods such as `T::eq` and `T::hash` are
-calls, not inlined code. A byte loop that also hashes costs 9-14 ns/byte. That is why
-`seq-diff` spends 0.14 s on a 1.6 MB pair where GNU diff spends 0.02 s
+calls, not inlined code. A byte loop that also hashes costs 9-14 ns/byte. `seq-diff` now reads
+8-byte words and hash-conses lines in one pass. It takes 59-70 ms on a 1.6 MB
+pair where `git diff --no-index` takes 43 ms
 ([seqdiff speed notes](extended-seqdiff.md)).
 
 ## Completion requirements
