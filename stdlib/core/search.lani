@@ -1,0 +1,169 @@
+// Fast byte and substring search over u8 slices.
+// find_byte/rfind_byte scan eight bytes per step with SWAR zero-byte tests.
+// find picks the needle's two rarest bytes by a fixed frequency rank, scans
+// for the rarest one with find_byte, checks the second, then compares the
+// whole needle. Results equal a naive leftmost (or rightmost) search. The
+// worst case is O(n*m), for example when every haystack byte is the needle's
+// rarest byte; typical text skips most positions eight bytes at a time.
+// Ranges are explicit [from, to) byte indices. The caller guarantees that
+// to does not exceed the slice length and that the needle range lies inside
+// the needle slice: the word loads are not bounds-checked. Negative or
+// inverted ranges return -1. See docs/stdlib-search.md.
+module core::search;
+import core::mem;
+
+const ONES: u64 = 72340172838076673;
+const HIGHS: u64 = 9259542123273814144;
+const ALL: u64 = 18446744073709551615;
+
+// Unaligned little-endian 8-byte load at base + offset.
+fn word(base: ptr, offset: i32) -> u64 {
+    let view: [u64] = core::mem::typed_slice_from_raw_parts<u64>(base + (offset as usize), 1);
+    return view[0];
+}
+// Nonzero exactly when x has a zero byte; the lowest set high bit marks the
+// first zero byte (higher marks may be borrows and are never used).
+fn zero_bytes(x: u64) -> u64 { return (x - ONES) & (x ^ ALL) & HIGHS; }
+fn lowest_byte(mask: u64) -> i32 {
+    let index: i32 = 0; let rest: u64 = mask;
+    while ((rest & 128) == 0) { rest = rest >> 8; index += 1; }
+    return index;
+}
+// Exact highest zero byte of x (no borrow false positives).
+fn highest_zero(x: u64) -> i32 {
+    let index: i32 = 7;
+    while (index >= 0) { if (((x >> ((index as u64) * 8)) & 255) == 0) { return index; } index -= 1; }
+    return -1;
+}
+fn valid(bytes: [u8], from: i32, to: i32) -> bool { return from >= 0 && from <= to; }
+
+// First index i in [from, to) with bytes[i] == byte, or -1.
+pub fn find_byte(bytes: [u8], from: i32, to: i32, byte: u8) -> i32 {
+    if (!valid(bytes, from, to)) { return -1; }
+    let base: ptr = core::mem::i32_slice_data_ptr(bytes);
+    let spread: u64 = (byte as u64) * ONES;
+    let i: i32 = from;
+    let words: i32 = (to - from) / 8;
+    if (words > 0) {
+        // One word view for the whole range: storage views of u64 run
+        // downward, so the word at byte from + 8k is element words - 1 - k.
+        let view: [u64] = core::mem::typed_slice_from_storage<u64>(base + (from as usize), words);
+        let k: i32 = words - 1;
+        while (k >= 1) {
+            let a: u64 = zero_bytes(view[k] ^ spread); let b: u64 = zero_bytes(view[k - 1] ^ spread);
+            if ((a | b) != 0) {
+                let at: i32 = from + (words - 1 - k) * 8;
+                if (a != 0) { return at + lowest_byte(a); }
+                return at + 8 + lowest_byte(b);
+            }
+            k -= 2;
+        }
+        if (k == 0) {
+            let c: u64 = zero_bytes(view[0] ^ spread);
+            if (c != 0) { return from + (words - 1) * 8 + lowest_byte(c); }
+        }
+        i = from + words * 8;
+    }
+    while (i < to) { if (bytes[i] == byte) { return i; } i += 1; }
+    return -1;
+}
+
+// Last index i in [from, to) with bytes[i] == byte, or -1.
+pub fn rfind_byte(bytes: [u8], from: i32, to: i32, byte: u8) -> i32 {
+    if (!valid(bytes, from, to)) { return -1; }
+    let base: ptr = core::mem::i32_slice_data_ptr(bytes);
+    let spread: u64 = (byte as u64) * ONES;
+    let end: i32 = to;
+    while (end - from >= 8) {
+        let x: u64 = word(base, end - 8) ^ spread;
+        if (zero_bytes(x) != 0) { return end - 8 + highest_zero(x); }
+        end -= 8;
+    }
+    while (end > from) { end -= 1; if (bytes[end] == byte) { return end; } }
+    return -1;
+}
+
+// Approximate frequency rank of a byte in text and source code; lower is
+// rarer. Only the choice of prefilter bytes depends on it, never results.
+pub fn rank(byte: u8) -> i32 {
+    if (byte == 32) { return 255; }
+    if (byte == 101) { return 250; }
+    if (byte == 116 || byte == 97 || byte == 111 || byte == 105 || byte == 110) { return 240; }
+    if (byte == 115 || byte == 114 || byte == 104 || byte == 108 || byte == 100) { return 225; }
+    if (byte == 10 || byte == 9) { return 210; }
+    if (byte >= 97 && byte <= 122) { if (byte == 122 || byte == 113 || byte == 120 || byte == 106) { return 60; } return 170; }
+    if (byte >= 48 && byte <= 57) { return 140; }
+    if (byte >= 65 && byte <= 90) { return 110; }
+    if (byte == 46 || byte == 44 || byte == 40 || byte == 41 || byte == 59 || byte == 95 || byte == 61 || byte == 34) { return 130; }
+    if (byte >= 33 && byte <= 126) { return 80; }
+    return 20;
+}
+
+fn same(bytes: [u8], at: i32, needle: [u8], start: i32, length: i32) -> bool {
+    let k: i32 = 0;
+    while (k < length) { if (bytes[at + k] != needle[start + k]) { return false; } k += 1; }
+    return true;
+}
+
+// Leftmost start i in [from, to - needle_length] where bytes[i..] begins with
+// needle[needle_start .. needle_start + needle_length], or -1. An empty needle
+// matches at from.
+pub fn find(bytes: [u8], from: i32, to: i32, needle: [u8], needle_start: i32, needle_length: i32) -> i32 {
+    if (!valid(bytes, from, to) || needle_start < 0 || needle_length < 0) { return -1; }
+    if (needle_length == 0) { return from; }
+    if (needle_length > to - from) { return -1; }
+    if (needle_length == 1) { return find_byte(bytes, from, to, needle[needle_start]); }
+    // Rarest offset first, then the rarest other offset.
+    let rare: i32 = 0; let other: i32 = -1; let k: i32 = 1;
+    while (k < needle_length) {
+        let r: i32 = rank(needle[needle_start + k]);
+        if (r < rank(needle[needle_start + rare])) { other = rare; rare = k; }
+        else { if (other < 0 || r < rank(needle[needle_start + other])) { other = k; } }
+        k += 1;
+    }
+    let first: u8 = needle[needle_start + rare]; let second: u8 = needle[needle_start + other];
+    let last: i32 = to - needle_length;
+    let scan: i32 = from + rare;
+    while (scan <= last + rare) {
+        let hit: i32 = find_byte(bytes, scan, last + rare + 1, first);
+        if (hit < 0) { return -1; }
+        let start: i32 = hit - rare;
+        if (bytes[start + other] == second && same(bytes, start, needle, needle_start, needle_length)) { return start; }
+        scan = hit + 1;
+    }
+    return -1;
+}
+
+// Rightmost match start in [from, to - needle_length], or -1. An empty
+// needle matches at to.
+pub fn rfind(bytes: [u8], from: i32, to: i32, needle: [u8], needle_start: i32, needle_length: i32) -> i32 {
+    if (!valid(bytes, from, to) || needle_start < 0 || needle_length < 0) { return -1; }
+    if (needle_length == 0) { return to; }
+    if (needle_length > to - from) { return -1; }
+    let rare: i32 = 0; let k: i32 = 1;
+    while (k < needle_length) { if (rank(needle[needle_start + k]) < rank(needle[needle_start + rare])) { rare = k; } k += 1; }
+    let first: u8 = needle[needle_start + rare];
+    let end: i32 = to - needle_length + rare + 1;
+    while (end > from + rare) {
+        let hit: i32 = rfind_byte(bytes, from + rare, end, first);
+        if (hit < 0) { return -1; }
+        let start: i32 = hit - rare;
+        if (same(bytes, start, needle, needle_start, needle_length)) { return start; }
+        end = hit;
+    }
+    return -1;
+}
+
+// Number of nonoverlapping leftmost matches in [from, to); an empty needle
+// counts to - from + 1 boundaries.
+pub fn count(bytes: [u8], from: i32, to: i32, needle: [u8], needle_start: i32, needle_length: i32) -> i32 {
+    if (!valid(bytes, from, to)) { return 0; }
+    if (needle_length == 0) { return to - from + 1; }
+    let total: i32 = 0; let at: i32 = from;
+    while (true) {
+        let hit: i32 = find(bytes, at, to, needle, needle_start, needle_length);
+        if (hit < 0) { return total; }
+        total += 1; at = hit + needle_length;
+    }
+    return total;
+}

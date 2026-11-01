@@ -16,6 +16,11 @@ owner fields, and the interval-edit fixture shows under an in-program
 RLIMIT_AS denial that failed extraction leaves the source unchanged. Native receipts use the prebuilt compiler; the two registered
 Rust tests type-check and await a full test-binary run.
 The [concurrency increment](stdlib-concurrency.md) adds four modules for parallel
+The [`core::search`](stdlib-search.md) increment adds SWAR byte scans and a
+rarest-byte substring prefilter, used by `Text::find` and the parallel
+grep. 160,000 generated cases match Python's search results.
+The preceding
+[concurrency increment](stdlib-concurrency.md) adds four modules for parallel
 work on native Linux x86_64/glibc with libatomic:
 
 - `std::worker`: scoped pools of forked worker processes.

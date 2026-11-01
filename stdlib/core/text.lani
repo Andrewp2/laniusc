@@ -11,6 +11,7 @@ import core::option;
 import core::ordering;
 import core::pair;
 import core::result;
+import core::search;
 import core::slice;
 import core::utf8;
 
@@ -81,12 +82,9 @@ pub impl Text {
     fn find_from(&self, needle: Text, start: i32) -> core::option::Option<i32> {
         if (needle.length > self.length - start) { return core::option::None(); }
         if (needle.length == 0) { return core::option::Some(start); }
-        let index: i32 = start;
-        while (index <= self.length - needle.length) {
-            if (self.matches_at(needle, index)) { return core::option::Some(index); }
-            index += 1;
-        }
-        return core::option::None();
+        let found: i32 = core::search::find(self.bytes, self.start + start, self.start + self.length, needle.bytes, needle.start, needle.length);
+        if (found < 0) { return core::option::None(); }
+        return core::option::Some(found - self.start);
     }
 
 
@@ -159,7 +157,8 @@ pub impl Text {
         return suffix.length <= self.length && self.matches_at(suffix, self.length - suffix.length);
     }
     // Nonempty valid UTF-8 cannot match inside a scalar. Empty needles match
-    // at 0 for find and byte_len for rfind. Search is O(n*m), no allocation.
+    // at 0 for find and byte_len for rfind. find uses core::search (rarest
+    // byte prefilter, eight bytes per step); worst case O(n*m), no allocation.
     pub fn find(&self, needle: Text) -> core::option::Option<i32> { return self.find_from(needle, 0); }
     pub fn rfind(&self, needle: Text) -> core::option::Option<i32> {
         if (needle.length > self.length) { return core::option::None(); }

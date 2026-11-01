@@ -664,6 +664,11 @@
         "docs/library-host-operation-support.md"
       ]
     },
+    "core::search": {
+      "guides": [
+        "docs/stdlib-search.md"
+      ]
+    },
     "core::set": {
       "guides": [
         "docs/stdlib-fixed-capacity.md",
