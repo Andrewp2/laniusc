@@ -17,4 +17,8 @@ each be rejected. The printed summary is compared exactly by
 
 Commands: 0 reset to a family, 1 insert/replace, 2 remove, 3 same-key
 navigation, 4 policy navigation, 5 same-key `range_bounds`, 6 policy
-`range_bounds_by`, 7 snapshot, 8 clear.
+`range_bounds_by`, 7 snapshot, 8 clear, 9 `remove_range`, 10 `remove_range_by`,
+11 `try_extract_range`, 12 `try_extract_range_by`, 13 `try_split_off`. Edit
+responses report the count or extracted entries in order and the capacity
+facts (source capacity unchanged, extracted capacity exact); the oracle
+applies the same edit to its dict and checks the following snapshots.

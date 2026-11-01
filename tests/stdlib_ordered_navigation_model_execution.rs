@@ -41,7 +41,7 @@ fn ordered_navigation_matches_sorted_model_lawful_descents_and_two_ended_ranges(
     let summary = String::from_utf8(output.stdout).unwrap();
     assert_eq!(
         summary,
-        "ordered-navigation-model cases=48 commands=10565 navigations=1174 policy_navigations=1363 ranges=982 policy_ranges=2042 invalid_ranges=344 pulls=44427 back_pulls=12807 policy_calls=12032 descents=2982 checks=1066 empty_ranges=1195 equal_runs=142 snapshot_entries=6652 nav_routes=16 range_routes=36 controls=9 seed=0xd0e20261031\n"
+        "ordered-navigation-model cases=48 commands=10565 navigations=1005 policy_navigations=1188 ranges=815 policy_ranges=1726 invalid_ranges=295 pulls=20923 back_pulls=5637 policy_calls=7592 descents=2467 checks=799 empty_ranges=1302 equal_runs=49 snapshot_entries=2878 removals=329 removed_entries=1601 extractions=278 extracted_entries=1106 nav_routes=16 range_routes=36 controls=9 seed=0xd0e20261031\n"
     );
     eprint!("{summary}");
 }

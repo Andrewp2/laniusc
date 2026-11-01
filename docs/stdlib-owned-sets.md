@@ -28,7 +28,11 @@ methods as TreeMap, returning stored representatives and `Cursor<T>`:
 `last_at_most`, `last_below`, the four `_by` searches, `range_bounds` and
 `range_bounds_by`. They run through the shared map engine via KeyStorage
 bridges. `alloc::string::TextPrefix` selects prefix families of owned String
-elements.
+elements. The five interval edits (`remove_range`, `remove_range_by`,
+`try_extract_range`, `try_extract_range_by`, `try_split_off`) follow the map
+contract: removal discards representatives shallowly without allocating, and
+extraction moves them, with their cleanup authority, into a new TreeSet of
+exactly the interval size.
 
 ## Representatives and ownership
 

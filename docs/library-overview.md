@@ -6,10 +6,14 @@ searches, heterogeneous lower/upper/predecessor bounds and `Bound`-based
 intervals to TreeMap and TreeSet: sixteen methods plus `core::range::Bound`.
 Navigation policies may denote a contiguous Equal run of several keys, so
 `alloc::string::TextPrefix` traverses String prefix families. Exact call
-sequences are specified, and nothing allocates. The independent 48-case model
-checks 12,032 policy calls as lawful descents and 44,427 two-ended pulls; the
+sequences are specified, and navigation allocates nothing. The same intervals
+can be removed in place or extracted, with cleanup authority, into a new
+exact-capacity owner (`remove_range`, `try_extract_range`, `try_split_off` and
+their `_by` forms). The independent 48-case model checks 7,592 policy calls as
+lawful descents, 20,923 two-ended pulls, 329 removals and 278 extractions; the
 contract fixture checks exact call counts, interval edges and unchanged
-owner fields. Native receipts use the prebuilt compiler; the two registered
+owner fields, and the interval-edit fixture shows under an in-program
+RLIMIT_AS denial that failed extraction leaves the source unchanged. Native receipts use the prebuilt compiler; the two registered
 Rust tests type-check and await a full test-binary run.
 The [concurrency increment](stdlib-concurrency.md) adds four modules for parallel
 work on native Linux x86_64/glibc with libatomic:

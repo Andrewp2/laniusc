@@ -1,0 +1,163 @@
+// Range removal, extraction and split_off. While the address-space soft limit
+// is held at 1 MiB, below current usage, any allocation that needs fresh
+// mappings fails. The runtime allocator still serves small requests from
+// memory it already holds, so the denied phase first shows that a fresh
+// 20,000-node owner is refused and then uses only extractions at least that
+// large. Removal never allocates; failed extraction changes nothing.
+module app::main;
+import alloc::string;
+import alloc::tree_map;
+import alloc::tree_set;
+import core::cmp;
+import core::iter;
+import core::mem;
+import core::option;
+import core::ordering;
+import core::range;
+import core::result;
+import core::slice;
+import core::text;
+import std::linux;
+
+const PRLIMIT64: i64 = 302;
+const RLIMIT_AS: i64 = 9;
+// prlimit64(0, RLIMIT_AS, new, old) on this process. Words 0..4 hold the new
+// rlimit as little-endian halves, words 4..8 receive the previous one.
+fn prlimit(base:ptr, install:bool) {
+    let request:std::linux::Argument = std::linux::Argument::Word(0);
+    if(install) { request=std::linux::Argument::Address(base); }
+    let arguments:[std::linux::Argument;4]=[std::linux::Argument::Word(0),std::linux::Argument::Word(RLIMIT_AS),request,std::linux::Argument::Address(base+16)];
+    let view:core::slice::View<std::linux::Argument> = core::slice::View { values:arguments,start:0,length:4 };
+    assert(std::linux::call(PRLIMIT64,view).is_ok());
+}
+struct Band { low:i32,high:i32 }
+struct Policy { calls:i32 }
+impl Policy { fn borrow(&self) -> &Policy { return self; } }
+pub impl core::ordering::Comparator<i32,Band> for Policy {
+    pub fn compare(&self,stored:i32,query:Band) -> core::ordering::Ordering {
+        self.calls+=1;
+        if(stored<query.low) { return core::ordering::Less; }
+        if(stored>query.high) { return core::ordering::Greater; }
+        return core::ordering::Equal;
+    }
+}
+fn inc(value:i32) -> core::range::Bound<i32> { return core::range::Bound::Included(value); }
+fn exc(value:i32) -> core::range::Bound<i32> { return core::range::Bound::Excluded(value); }
+fn all() -> core::range::Bound<i32> { return core::range::Bound::Unbounded; }
+fn band(low:i32,high:i32) -> core::range::Bound<Band> { return core::range::Bound::Included(Band { low:low,high:high }); }
+const N: i32 = 40000;
+// Sum of keys times 1000 plus count; values must stay paired with their keys.
+fn digest(map:&alloc::tree_map::TreeMap<i32,i32>) -> i64 {
+    let cursor:alloc::tree_map::Cursor<i32,i32> = map.iter(); let total:i64=0; let count:i32=0; let last:i32=-1;
+    let item:core::option::Option<alloc::tree_map::Entry<i32,i32>> = cursor.next();
+    while(item.is_some()) {
+        let entry:alloc::tree_map::Entry<i32,i32> = item.unwrap(); assert(entry.value==entry.key*3 && entry.key>last);
+        last=entry.key; total+=entry.key as i64; count+=1; item=cursor.next();
+    }
+    assert(count==map.len()); return total*1000+(count as i64);
+}
+fn digest_set(set:&alloc::tree_set::TreeSet<i32>) -> i64 {
+    let cursor:alloc::tree_set::Cursor<i32> = set.iter(); let total:i64=0; let count:i32=0; let last:i32=-1;
+    let item:core::option::Option<i32> = cursor.next();
+    while(item.is_some()) { let key:i32=item.unwrap(); assert(key>last); last=key; total+=key as i64; count+=1; item=cursor.next(); }
+    assert(count==set.len()); return total*1000+(count as i64);
+}
+fn sum(low:i32,high:i32) -> i64 { let total:i64=0; let i:i32=low; while(i<high) { total+=i as i64; i+=1; } return total*1000+((high-low) as i64); }
+fn same_fields(map:&alloc::tree_map::TreeMap<i32,i32>,storage:ptr,used:i32,length:i32,root:i32,free:i32) -> bool {
+    return map.storage==storage && map.reserved==N && map.used==used && map.length==length && map.root==root && map.free==free;
+}
+fn is_allocation_failure<T>(result:core::result::Result<T,alloc::tree_map::Error>) -> bool {
+    if(result.is_ok()) { return false; }
+    return match(result.unwrap_err()) { alloc::tree_map::Error::AllocationFailed -> true, _ -> false };
+}
+fn denied_allocation(map:&alloc::tree_map::TreeMap<i32,i32>,set:&alloc::tree_set::TreeSet<i32>,policy:&Policy) {
+    assert(is_allocation_failure<alloc::tree_map::TreeMap<i32,i32>>(alloc::tree_map::with_capacity<i32,i32>(20000)));
+    let storage:ptr=map.storage; let used:i32=map.used; let root:i32=map.root; let free:i32=map.free;
+    assert(is_allocation_failure<alloc::tree_map::TreeMap<i32,i32>>(map.try_extract_range(inc(0),exc(20000))));
+    assert(is_allocation_failure<alloc::tree_map::TreeMap<i32,i32>>(map.try_split_off(10000)));
+    policy.calls=0;
+    assert(is_allocation_failure<alloc::tree_map::TreeMap<i32,i32>>(map.try_extract_range_by<Band,Policy>(band(0,4),band(29990,29999),policy)));
+    assert(policy.calls>0 && same_fields(map,storage,used,N,root,free) && digest(map)==sum(0,N));
+    // Empty extraction allocates nothing, so it succeeds even now.
+    let empty:alloc::tree_map::TreeMap<i32,i32> = map.try_extract_range(exc(N),all()).unwrap();
+    assert(empty.is_empty() && empty.capacity()==0 && same_fields(map,storage,used,N,root,free));
+    let reversed:core::result::Result<alloc::tree_map::TreeMap<i32,i32>,alloc::tree_map::Error> = map.try_extract_range(inc(20),inc(10));
+    assert(match(reversed.unwrap_err()) { alloc::tree_map::Error::InvalidRange -> true, _ -> false });
+    assert(map.remove_range(exc(5),exc(4)).is_err() && same_fields(map,storage,used,N,root,free));
+    // Navigation and removal never allocate.
+    assert(map.last_below(50).unwrap().key==49 && map.last_at_most_by<Band,Policy>(Band { low:7,high:9 },policy).unwrap().key==9);
+    assert(map.remove_range(inc(39990),all()).unwrap()==10 && map.len()==39990 && map.capacity()==N && map.storage==storage);
+    policy.calls=0;
+    assert(map.remove_range_by<Band,Policy>(band(39980,39984),band(39980,39984),policy)==5 && policy.calls>0 && map.len()==39985);
+    assert(map.remove_range(exc(70),exc(71)).unwrap()==0 && map.len()==39985);
+    assert(digest(map)==sum(0,39980)+sum(39985,39990));
+    let set_failed:core::result::Result<alloc::tree_set::TreeSet<i32>,alloc::tree_map::Error> = set.try_split_off(3);
+    assert(is_allocation_failure<alloc::tree_set::TreeSet<i32>>(set_failed) && set.len()==N && digest_set(set)==sum(0,N));
+    assert(set.remove_range(inc(0),exc(10)).unwrap()==10 && set.remove_range_by<Band,Policy>(band(39995,50000),core::range::Bound::Unbounded,policy)==5);
+    assert(set.len()==39985 && set.capacity()==N);
+}
+fn allowed_allocation(map:&alloc::tree_map::TreeMap<i32,i32>,set:&alloc::tree_set::TreeSet<i32>,policy:&Policy) {
+    // The map holds 0..39980 and 39985..39990.
+    let middle:alloc::tree_map::TreeMap<i32,i32> = map.try_extract_range(inc(10),exc(20)).unwrap();
+    assert(middle.len()==10 && middle.capacity()==10 && digest(middle.borrow())==sum(10,20));
+    assert(map.len()==39975 && map.capacity()==N && digest(map)==sum(0,10)+sum(20,39980)+sum(39985,39990));
+    assert(middle.first().unwrap().key==10 && middle.last().unwrap().key==19 && middle.last_below(15).unwrap().key==14);
+    middle.destroy();
+    let upper:alloc::tree_map::TreeMap<i32,i32> = map.try_split_off(20000).unwrap();
+    assert(upper.len()==19985 && upper.capacity()==19985 && digest(upper.borrow())==sum(20000,39980)+sum(39985,39990));
+    assert(digest(map)==sum(0,10)+sum(20,20000) && map.capacity()==N);
+    // The split owner is a complete map: edits and navigation work on it.
+    assert(upper.try_insert(39981,119943).unwrap().is_none() && upper.capacity()>19985 && upper.last_below(39985).unwrap().key==39981);
+    upper.destroy();
+    policy.calls=0;
+    let banded:alloc::tree_map::TreeMap<i32,i32> = map.try_extract_range_by<Band,Policy>(band(0,2),band(19990,19999),policy).unwrap();
+    assert(policy.calls>0 && digest(banded.borrow())==sum(0,10)+sum(20,20000) && map.is_empty() && map.capacity()==N);
+    // Refill the emptied source: freed nodes are reused without growth.
+    let i:i32=0; while(i<N) { map.try_insert(i,i*3).unwrap(); i+=1; }
+    assert(map.capacity()==N && digest(map)==sum(0,N));
+    banded.destroy();
+    // The set holds 10..39995.
+    let tail:alloc::tree_set::TreeSet<i32> = set.try_split_off(20000).unwrap();
+    assert(tail.len()==19995 && tail.capacity()==19995 && digest_set(tail.borrow())==sum(20000,39995) && digest_set(set)==sum(10,20000));
+    let window:alloc::tree_set::TreeSet<i32> = set.try_extract_range(exc(19),inc(29)).unwrap();
+    assert(window.len()==10 && window.capacity()==10 && digest_set(window.borrow())==sum(20,30) && set.len()==19980);
+    let by:alloc::tree_set::TreeSet<i32> = set.try_extract_range_by<Band,Policy>(band(30,39),band(30,39),policy).unwrap();
+    assert(by.len()==10 && digest_set(set)==sum(10,20)+sum(40,20000) && set.capacity()==N);
+    tail.destroy(); window.destroy(); by.destroy();
+}
+// Extraction transfers cleanup authority of nested owners exactly once.
+fn nested_owners() {
+    let backing:[u8;8]=[97,98,99,100,101,102,103,104];
+    let map:alloc::tree_map::TreeMap<i32,alloc::string::String> = alloc::tree_map::with_capacity<i32,alloc::string::String>(8).unwrap();
+    let i:i32=0;
+    while(i<8) {
+        let text:core::text::Text = core::text::from_utf8_range(backing,i,1).unwrap();
+        map.try_insert(i,alloc::string::from_text(text).unwrap()).unwrap(); i+=1;
+    }
+    let moved:alloc::tree_map::TreeMap<i32,alloc::string::String> = map.try_extract_range(inc(2),inc(5)).unwrap();
+    let released:i32=0;
+    while(!moved.is_empty()) {
+        let entry:alloc::tree_map::Entry<i32,alloc::string::String> = moved.pop_first().unwrap();
+        assert(entry.value.as_text().byte_at(0).unwrap()==backing[entry.key]); entry.value.destroy(); released+=1;
+    }
+    assert(released==4 && map.len()==4);
+    while(!map.is_empty()) { let entry:alloc::tree_map::Entry<i32,alloc::string::String> = map.pop_last().unwrap(); entry.value.destroy(); released+=1; }
+    assert(released==8); moved.destroy(); map.destroy();
+}
+fn main() -> i32 {
+    let map:alloc::tree_map::TreeMap<i32,i32> = alloc::tree_map::with_capacity<i32,i32>(N).unwrap();
+    let set:alloc::tree_set::TreeSet<i32> = alloc::tree_set::with_capacity<i32>(N).unwrap();
+    let i:i32=0; while(i<N) { map.try_insert(i,i*3).unwrap(); set.try_insert(i).unwrap(); i+=1; }
+    let policy:Policy=Policy { calls:0 };
+    // Keep the hard limit; lower the soft limit to 1 MiB, then restore it.
+    let words:[i32;8]=[0;8]; let base:ptr=core::mem::i32_array_data_ptr(words); prlimit(base,false);
+    let saved:[i32;8]=[words[4],words[5],words[6],words[7],0,0,0,0];
+    words[0]=1048576; words[1]=0; words[2]=words[6]; words[3]=words[7]; prlimit(base,true);
+    denied_allocation(map.borrow(),set.borrow(),policy.borrow());
+    prlimit(core::mem::i32_array_data_ptr(saved),true);
+    assert(saved[4]==1048576 && saved[5]==0);
+    allowed_allocation(map.borrow(),set.borrow(),policy.borrow());
+    nested_owners();
+    map.destroy(); set.destroy();
+    return 0;
+}

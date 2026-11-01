@@ -72,6 +72,11 @@ Unbounded, so `Included(i32::MAX)` is reachable. Navigation policies order
 stored keys as Less*, Equal*, Greater*; unlike point lookup, an Equal run may
 hold several keys, such as a String prefix family. Calls are one per visited
 node per descent, plus one front check for a bounded range. Nothing allocates.
+The same intervals can be removed in place (`remove_range`,
+`remove_range_by`; shallow discard, capacity kept, no allocation) or moved
+with their cleanup authority to a new exact-capacity owner
+(`try_extract_range`, `try_extract_range_by`, `try_split_off`); failed
+extraction leaves the source unchanged.
 
 ## API contracts
 
@@ -94,6 +99,9 @@ node per descent, plus one front check for a bounded range. Nothing allocates.
 | `lower_bound_by`, `upper_bound_by`, `last_at_most_by`, `last_below_by` | The four searches with a `Comparator<K,Q>` query; see [ordered navigation](stdlib-ordered-navigation.md) |
 | `range_bounds(lower, upper)` | Result containing a cursor between two `Bound<K>` ends; InvalidRange only when upper is strictly less than lower |
 | `range_bounds_by(lower, upper, policy)` | Cursor between two `Bound<Q>` ends; disjoint or reversed bounds are empty |
+| `remove_range(lower, upper)`, `remove_range_by(lower, upper, policy)` | Remove the `range_bounds`/`range_bounds_by` interval shallowly, without allocation; return the count (same-key form in a Result with InvalidRange) |
+| `try_extract_range(lower, upper)`, `try_extract_range_by(lower, upper, policy)` | Move that interval with its cleanup authority into a new owner of exactly its size; Err leaves the source unchanged |
+| `try_split_off(at)` | `try_extract_range(Included(at), Unbounded)` |
 | `try_reserve(additional)` | Reserve for `len + additional`; return resulting capacity |
 | `try_insert(key, value)` | Result containing the replaced entry, or None for a new key |
 | `remove(key)` | Transfer the equivalent entry, or None |

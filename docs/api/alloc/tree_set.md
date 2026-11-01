@@ -8,7 +8,7 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `alloc`. Role: module. Profile: **Source inventory**.
 
-Ordered navigation adds last_at_most/last_below, heterogeneous lower_bound_by/upper_bound_by/last_at_most_by/last_below_by and range_bounds/range_bounds_by over core::range::Bound ends. Navigation policies order stored keys as Less*, Equal*, Greater*; an Equal run may hold several keys. Each descent calls the policy once per visited node; a bounded range adds one front check before its upper descent. range_bounds returns InvalidRange only for strictly reversed same-key values; disjoint or reversed heterogeneous bounds are empty. Nothing allocates; returned entries are shallow borrowed copies. The 48-case model and exact-call/allocation contracts pass natively through the prebuilt compiler; see the ordered-navigation guide for scope. Borrowed contains_by/get_by/remove_by use Comparator<T,Q> through the shared TreeMap engine. The stored-first comparison must agree with stored ordering and identify one equivalence class. Getters borrow actual representatives; removal transfers them without adopting or destroying the query. alloc::string::TextKey supplies String/Text policy. All nine borrowed-lookup library groups and the migrated unique_words application (124 native cases) pass on Linux x86_64 CPU output from the GPU compiler; four selected old regressions are separate. Query laws, physical backing, call-scoped observations and manual cleanup remain caller obligations. No GPU-device, automatic-lifetime or compiler-repair claim follows. Earlier API/source scopes follow. Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence. TryReplaceSink stores the incoming representative and returns the old one, using canonical try_replace. Existing duplicate-preserving insertion/sink policy is unchanged; the new replacement facade has finite model/owner/reached-OOM acceptance in the linked guide.
+Ordered navigation adds last_at_most/last_below, heterogeneous lower_bound_by/upper_bound_by/last_at_most_by/last_below_by and range_bounds/range_bounds_by over core::range::Bound ends. Navigation policies order stored keys as Less*, Equal*, Greater*; an Equal run may hold several keys. Each descent calls the policy once per visited node; a bounded range adds one front check before its upper descent. range_bounds returns InvalidRange only for strictly reversed same-key values; disjoint or reversed heterogeneous bounds are empty. Nothing allocates; returned entries are shallow borrowed copies. The 48-case model and exact-call/allocation contracts pass natively through the prebuilt compiler; see the ordered-navigation guide for scope. Borrowed contains_by/get_by/remove_by use Comparator<T,Q> through the shared TreeMap engine. The stored-first comparison must agree with stored ordering and identify one equivalence class. Getters borrow actual representatives; removal transfers them without adopting or destroying the query. alloc::string::TextKey supplies String/Text policy. All nine borrowed-lookup library groups and the migrated unique_words application (124 native cases) pass on Linux x86_64 CPU output from the GPU compiler; four selected old regressions are separate. Query laws, physical backing, call-scoped observations and manual cleanup remain caller obligations. No GPU-device, automatic-lifetime or compiler-repair claim follows. Earlier API/source scopes follow. Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence. TryReplaceSink stores the incoming representative and returns the old one, using canonical try_replace. Existing duplicate-preserving insertion/sink policy is unchanged; the new replacement facade has finite model/owner/reached-OOM acceptance in the linked guide. Interval edits: remove_range/remove_range_by remove exactly the range_bounds/range_bounds_by interval shallowly (no destructor, no allocation, capacity kept) and return the count; try_extract_range/try_extract_range_by/try_split_off move it with cleanup authority into one new exact-capacity owner (none allocated when empty) and leave the source unchanged on any Err.
 
 ## Contract and evidence guides
 
@@ -21,7 +21,7 @@ Ordered navigation adds last_at_most/last_below, heterogeneous lower_bound_by/up
 - [stdlib-borrowed-lookup](../../stdlib-borrowed-lookup.md)
 - [stdlib-ordered-navigation](../../stdlib-ordered-navigation.md)
 
-Declaration counts: enum: 1; field: 3; function: 2; impl: 10; method: 56; struct: 3; variant: 1.
+Declaration counts: enum: 1; field: 3; function: 2; impl: 10; method: 61; struct: 3; variant: 1.
 
 ## Declared imports
 
@@ -458,18 +458,60 @@ pub fn last_below_by<Q,P>(&self, query:Q, policy:&P) -> core::option::Option<T>
 pub fn range_bounds(&self, lower: core::range::Bound<T>, upper: core::range::Bound<T>) -> core::result::Result<Cursor<T>, alloc::tree_map::Error> where T: core::cmp::Ord<T>
 ```
 
+#### method: remove_range
+
+[Source line 169](../../../stdlib/alloc/tree_set.lani#L169)
+
+```lanius
+pub fn remove_range(&self, lower: core::range::Bound<T>, upper: core::range::Bound<T>) -> core::result::Result<i32, alloc::tree_map::Error> where T: core::cmp::Ord<T>
+```
+
+#### method: remove_range_by
+
+[Source line 172](../../../stdlib/alloc/tree_set.lani#L172)
+
+```lanius
+pub fn remove_range_by<Q,P>(&self, lower: core::range::Bound<Q>, upper: core::range::Bound<Q>, policy:&P) -> i32
+        where P:core::ordering::Comparator<T,Q>
+```
+
+#### method: try_extract_range
+
+[Source line 176](../../../stdlib/alloc/tree_set.lani#L176)
+
+```lanius
+pub fn try_extract_range(&self, lower: core::range::Bound<T>, upper: core::range::Bound<T>) -> core::result::Result<TreeSet<T>, alloc::tree_map::Error> where T: core::cmp::Ord<T>
+```
+
+#### method: try_extract_range_by
+
+[Source line 181](../../../stdlib/alloc/tree_set.lani#L181)
+
+```lanius
+pub fn try_extract_range_by<Q,P>(&self, lower: core::range::Bound<Q>, upper: core::range::Bound<Q>, policy:&P) -> core::result::Result<TreeSet<T>, alloc::tree_map::Error>
+        where P:core::ordering::Comparator<T,Q>
+```
+
+#### method: try_split_off
+
+[Source line 188](../../../stdlib/alloc/tree_set.lani#L188)
+
+```lanius
+pub fn try_split_off(&self, at: T) -> core::result::Result<TreeSet<T>, alloc::tree_map::Error> where T: core::cmp::Ord<T>
+```
+
 #### method: range_bounds_by
 
-[Source line 167](../../../stdlib/alloc/tree_set.lani#L167)
+[Source line 193](../../../stdlib/alloc/tree_set.lani#L193)
 
 ```lanius
 pub fn range_bounds_by<Q,P>(&self, lower: core::range::Bound<Q>, upper: core::range::Bound<Q>, policy:&P) -> Cursor<T>
         where P:core::ordering::Comparator<T,Q>
 ```
 
-### impl at line 173
+### impl at line 199
 
-[Source line 173](../../../stdlib/alloc/tree_set.lani#L173)
+[Source line 199](../../../stdlib/alloc/tree_set.lani#L199)
 
 ```lanius
 pub impl<T> core::iter::TrySink<T, alloc::tree_map::SinkError> for TreeSet<T>
@@ -478,15 +520,15 @@ pub impl<T> core::iter::TrySink<T, alloc::tree_map::SinkError> for TreeSet<T>
 
 #### method: try_accept
 
-[Source line 175](../../../stdlib/alloc/tree_set.lani#L175)
+[Source line 201](../../../stdlib/alloc/tree_set.lani#L201)
 
 ```lanius
 pub fn try_accept(&self, item: T) -> core::option::Option<alloc::tree_map::SinkError>
 ```
 
-### impl at line 186
+### impl at line 212
 
-[Source line 186](../../../stdlib/alloc/tree_set.lani#L186)
+[Source line 212](../../../stdlib/alloc/tree_set.lani#L212)
 
 ```lanius
 pub impl<T> core::iter::TryReplaceSink<T,alloc::tree_map::Error> for TreeSet<T>
@@ -495,15 +537,15 @@ pub impl<T> core::iter::TryReplaceSink<T,alloc::tree_map::Error> for TreeSet<T>
 
 #### method: try_replace_item
 
-[Source line 188](../../../stdlib/alloc/tree_set.lani#L188)
+[Source line 214](../../../stdlib/alloc/tree_set.lani#L214)
 
 ```lanius
 pub fn try_replace_item(&self, item: T) -> core::result::Result<core::option::Option<T>,alloc::tree_map::Error>
 ```
 
-### impl at line 193
+### impl at line 219
 
-[Source line 193](../../../stdlib/alloc/tree_set.lani#L193)
+[Source line 219](../../../stdlib/alloc/tree_set.lani#L219)
 
 ```lanius
 pub impl<T> Cursor<T>
@@ -511,7 +553,7 @@ pub impl<T> Cursor<T>
 
 #### method: borrow
 
-[Source line 194](../../../stdlib/alloc/tree_set.lani#L194)
+[Source line 220](../../../stdlib/alloc/tree_set.lani#L220)
 
 ```lanius
 pub fn borrow(&self) -> &Cursor<T>
@@ -519,15 +561,15 @@ pub fn borrow(&self) -> &Cursor<T>
 
 #### method: is_empty
 
-[Source line 195](../../../stdlib/alloc/tree_set.lani#L195)
+[Source line 221](../../../stdlib/alloc/tree_set.lani#L221)
 
 ```lanius
 pub fn is_empty(&self) -> bool
 ```
 
-### impl at line 198
+### impl at line 224
 
-[Source line 198](../../../stdlib/alloc/tree_set.lani#L198)
+[Source line 224](../../../stdlib/alloc/tree_set.lani#L224)
 
 ```lanius
 pub impl<T> core::iter::Iterator<T> for Cursor<T>
@@ -535,95 +577,7 @@ pub impl<T> core::iter::Iterator<T> for Cursor<T>
 
 #### method: next
 
-[Source line 199](../../../stdlib/alloc/tree_set.lani#L199)
-
-```lanius
-pub fn next(&self) -> core::option::Option<T>
-```
-
-### impl at line 202
-
-[Source line 202](../../../stdlib/alloc/tree_set.lani#L202)
-
-```lanius
-pub impl<T> core::iter::DoubleEndedIterator<T> for Cursor<T>
-```
-
-#### method: next_back
-
-[Source line 203](../../../stdlib/alloc/tree_set.lani#L203)
-
-```lanius
-pub fn next_back(&self) -> core::option::Option<T>
-```
-
-### impl at line 206
-
-[Source line 206](../../../stdlib/alloc/tree_set.lani#L206)
-
-```lanius
-pub impl<T> IntoIter<T>
-```
-
-#### method: borrow
-
-[Source line 207](../../../stdlib/alloc/tree_set.lani#L207)
-
-```lanius
-pub fn borrow(&self) -> &IntoIter<T>
-```
-
-#### method: remaining
-
-[Source line 208](../../../stdlib/alloc/tree_set.lani#L208)
-
-```lanius
-pub fn remaining(&self) -> i32
-```
-
-#### method: capacity
-
-[Source line 209](../../../stdlib/alloc/tree_set.lani#L209)
-
-```lanius
-pub fn capacity(&self) -> i32
-```
-
-#### method: is_empty
-
-[Source line 210](../../../stdlib/alloc/tree_set.lani#L210)
-
-```lanius
-pub fn is_empty(&self) -> bool
-```
-
-#### method: try_finish
-
-[Source line 211](../../../stdlib/alloc/tree_set.lani#L211)
-
-```lanius
-pub fn try_finish(&self) -> core::option::Option<IntoIterError>
-```
-
-#### method: take_remaining
-
-[Source line 217](../../../stdlib/alloc/tree_set.lani#L217)
-
-```lanius
-pub fn take_remaining(&self) -> TreeSet<T>
-```
-
-### impl at line 222
-
-[Source line 222](../../../stdlib/alloc/tree_set.lani#L222)
-
-```lanius
-pub impl<T> core::iter::Iterator<T> for IntoIter<T>
-```
-
-#### method: next
-
-[Source line 223](../../../stdlib/alloc/tree_set.lani#L223)
+[Source line 225](../../../stdlib/alloc/tree_set.lani#L225)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>
@@ -634,20 +588,108 @@ pub fn next(&self) -> core::option::Option<T>
 [Source line 228](../../../stdlib/alloc/tree_set.lani#L228)
 
 ```lanius
-pub impl<T> core::iter::DoubleEndedIterator<T> for IntoIter<T>
+pub impl<T> core::iter::DoubleEndedIterator<T> for Cursor<T>
 ```
 
 #### method: next_back
 
-[Source line 230](../../../stdlib/alloc/tree_set.lani#L230)
+[Source line 229](../../../stdlib/alloc/tree_set.lani#L229)
 
 ```lanius
 pub fn next_back(&self) -> core::option::Option<T>
 ```
 
-### impl at line 233
+### impl at line 232
+
+[Source line 232](../../../stdlib/alloc/tree_set.lani#L232)
+
+```lanius
+pub impl<T> IntoIter<T>
+```
+
+#### method: borrow
 
 [Source line 233](../../../stdlib/alloc/tree_set.lani#L233)
+
+```lanius
+pub fn borrow(&self) -> &IntoIter<T>
+```
+
+#### method: remaining
+
+[Source line 234](../../../stdlib/alloc/tree_set.lani#L234)
+
+```lanius
+pub fn remaining(&self) -> i32
+```
+
+#### method: capacity
+
+[Source line 235](../../../stdlib/alloc/tree_set.lani#L235)
+
+```lanius
+pub fn capacity(&self) -> i32
+```
+
+#### method: is_empty
+
+[Source line 236](../../../stdlib/alloc/tree_set.lani#L236)
+
+```lanius
+pub fn is_empty(&self) -> bool
+```
+
+#### method: try_finish
+
+[Source line 237](../../../stdlib/alloc/tree_set.lani#L237)
+
+```lanius
+pub fn try_finish(&self) -> core::option::Option<IntoIterError>
+```
+
+#### method: take_remaining
+
+[Source line 243](../../../stdlib/alloc/tree_set.lani#L243)
+
+```lanius
+pub fn take_remaining(&self) -> TreeSet<T>
+```
+
+### impl at line 248
+
+[Source line 248](../../../stdlib/alloc/tree_set.lani#L248)
+
+```lanius
+pub impl<T> core::iter::Iterator<T> for IntoIter<T>
+```
+
+#### method: next
+
+[Source line 249](../../../stdlib/alloc/tree_set.lani#L249)
+
+```lanius
+pub fn next(&self) -> core::option::Option<T>
+```
+
+### impl at line 254
+
+[Source line 254](../../../stdlib/alloc/tree_set.lani#L254)
+
+```lanius
+pub impl<T> core::iter::DoubleEndedIterator<T> for IntoIter<T>
+```
+
+#### method: next_back
+
+[Source line 256](../../../stdlib/alloc/tree_set.lani#L256)
+
+```lanius
+pub fn next_back(&self) -> core::option::Option<T>
+```
+
+### impl at line 259
+
+[Source line 259](../../../stdlib/alloc/tree_set.lani#L259)
 
 ```lanius
 pub impl<T> core::iter::ExactSizeIterator<T> for IntoIter<T>
@@ -655,7 +697,7 @@ pub impl<T> core::iter::ExactSizeIterator<T> for IntoIter<T>
 
 #### method: remaining_count
 
-[Source line 234](../../../stdlib/alloc/tree_set.lani#L234)
+[Source line 260](../../../stdlib/alloc/tree_set.lani#L260)
 
 ```lanius
 pub fn remaining_count(&self) -> u64

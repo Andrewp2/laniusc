@@ -1,4 +1,5 @@
-//! Ordered navigation: exact policy call sequences, interval edges, prefix families and bounds.
+//! Ordered navigation: exact policy call sequences, interval edges, prefix families, bounds,
+//! and range removal, extraction and split_off under a denied address space.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod common;
 use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command, time::Duration};
@@ -34,6 +35,9 @@ fn execute(name: &str) {
 }
 #[test]
 fn ordered_navigation_calls_edges_prefix_families_and_owner_release_execute() { execute("contracts.lani"); }
+// The fixture lowers its own RLIMIT_AS soft limit around the denied phase.
+#[test]
+fn range_removal_extraction_and_split_off_keep_sources_on_allocation_failure() { execute("edits.lani"); }
 #[test]
 fn ordered_navigation_requires_exact_comparator_and_same_key_order_when_empty() {
     for name in ["negative_tree_map_missing_comparator.lani", "negative_tree_set_reversed_comparator.lani",
