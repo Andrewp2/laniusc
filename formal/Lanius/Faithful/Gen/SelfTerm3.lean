@@ -12,6 +12,24 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Termination
 open Lanius.Faithful.SelfCert
 
+theorem ok_build_checked : FnOk prog prims info (150, ⟨44, [], 0⟩) :=
+  fnOk_of fn_build_checked (by decide +kernel)
+
+theorem ok_root_insts : FnOk prog prims info (151, ⟨2, [0], 0⟩) :=
+  fnOk_of fn_root_insts (by decide +kernel)
+
+theorem ok_field_fns_Decls_of_mini_selfhost_Decls : FnOk prog prims info (152, ⟨0, [], 0⟩) :=
+  fnOk_of fn_field_fns_Decls_of_mini_selfhost_Decls (by decide +kernel)
+
+theorem ok_seed_insts : FnOk prog prims info (153, ⟨2, [0], 0⟩) :=
+  fnOk_of fn_seed_insts (by decide +kernel)
+
+theorem ok_field_types_Decls_of_mini_selfhost_Decls : FnOk prog prims info (154, ⟨0, [], 0⟩) :=
+  fnOk_of fn_field_types_Decls_of_mini_selfhost_Decls (by decide +kernel)
+
+theorem ok_collect_file_next : FnOk prog prims info (155, ⟨14, [3], 1⟩) :=
+  fnOk_of fn_collect_file_next (by decide +kernel)
+
 theorem ok_optimize_funcs : FnOk prog prims info (159, ⟨9, [0], 0⟩) :=
   fnOk_of fn_optimize_funcs (by decide +kernel)
 
@@ -114,25 +132,7 @@ theorem ok_lower_load : FnOk prog prims info (196, ⟨0, [], 0⟩) :=
 theorem ok_lower_address : FnOk prog prims info (197, ⟨0, [], 0⟩) :=
   fnOk_of fn_lower_address (by decide +kernel)
 
-theorem ok_lower_store : FnOk prog prims info (198, ⟨0, [], 0⟩) :=
-  fnOk_of fn_lower_store (by decide +kernel)
-
-theorem ok_lower_free : FnOk prog prims info (199, ⟨0, [], 0⟩) :=
-  fnOk_of fn_lower_free (by decide +kernel)
-
-theorem ok_lower_slice : FnOk prog prims info (200, ⟨6, [], 0⟩) :=
-  fnOk_of fn_lower_slice (by decide +kernel)
-
-theorem ok_lower_let_index_any : FnOk prog prims info (202, ⟨16, [], 0⟩) :=
-  fnOk_of fn_lower_let_index_any (by decide +kernel)
-
-theorem ok_lower_set_index_any : FnOk prog prims info (203, ⟨16, [], 0⟩) :=
-  fnOk_of fn_lower_set_index_any (by decide +kernel)
-
-theorem ok_lower_let_eval : FnOk prog prims info (204, ⟨4, [], 0⟩) :=
-  fnOk_of fn_lower_let_eval (by decide +kernel)
-
 theorem chunk3 : AllFns prog prims info part3 :=
-  ⟨ok_optimize_funcs, ok_funcs_agree, ok_compile_funcs, ok_arities, ok_link, ok_sizes, ok_max_size, ok_max_of, ok_Stmt_extent, ok_single_of_mini_selfhost_Expr, ok_guarded, ok_SrcExpr_guard, ok_lower_let, ok_lower_value, ok_cons_of_mini_selfhost_Binding, ok_guard_all, ok_lower_literal, ok_lower_let_call, ok_lower_call, ok_lower_enum_value, ok_lower_then, ok_lower_match, ok_lookup, ok_lower_set, ok_lower_set_field, ok_lower_set_call, ok_lower_if, ok_lower_as, ok_lower_while, ok_lower_return, ok_lower_alloc, ok_guard_and, ok_lower_load, ok_lower_address, ok_lower_store, ok_lower_free, ok_lower_slice, ok_lower_let_index_any, ok_lower_set_index_any, ok_lower_let_eval, trivial⟩
+  ⟨ok_build_checked, ok_root_insts, ok_field_fns_Decls_of_mini_selfhost_Decls, ok_seed_insts, ok_field_types_Decls_of_mini_selfhost_Decls, ok_collect_file_next, ok_optimize_funcs, ok_funcs_agree, ok_compile_funcs, ok_arities, ok_link, ok_sizes, ok_max_size, ok_max_of, ok_Stmt_extent, ok_single_of_mini_selfhost_Expr, ok_guarded, ok_SrcExpr_guard, ok_lower_let, ok_lower_value, ok_cons_of_mini_selfhost_Binding, ok_guard_all, ok_lower_literal, ok_lower_let_call, ok_lower_call, ok_lower_enum_value, ok_lower_then, ok_lower_match, ok_lookup, ok_lower_set, ok_lower_set_field, ok_lower_set_call, ok_lower_if, ok_lower_as, ok_lower_while, ok_lower_return, ok_lower_alloc, ok_guard_and, ok_lower_load, ok_lower_address, trivial⟩
 
 end Lanius.Faithful.SelfTerm

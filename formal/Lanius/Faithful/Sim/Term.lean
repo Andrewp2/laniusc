@@ -31,7 +31,11 @@ After `if x == 0 { .. }` or `if x < k { .. }` that does not go on, or in its
 `else`, `x` is a `usize` of at least 1 or `k` (`ge`), and a call of a
 decrement function (`DecOk`, the prelude's `minus`, checked once) on such an
 `x` and a literal from 1 to that bound gives a smaller value (counted-down
-fuel and counters).
+fuel and counters). A match arm with a payload, on a value no larger than
+`B`, shows that the payload-free variants of that enum up to the arm's are
+smaller than `B` (`Wit`), so a constant such as `empty()` (`ConstOk`) passed
+in place of a list the caller matched non-empty is smaller too (`fl_add`
+walking two lists).
 
 The annotations are only read by the check; the soundness proof never
 trusts them. -/
@@ -50,6 +54,7 @@ inductive SizeCls where
   | lt
   | ge (k : Nat)
   | lit (k : Nat)
+  | nil (id j : Nat)
   deriving DecidableEq, Repr
 
 def SizeCls.holds (B : Nat) : SizeCls → Value → Prop
@@ -58,11 +63,27 @@ def SizeCls.holds (B : Nat) : SizeCls → Value → Prop
   | .lt, v => sizeOf v < B
   | .ge k, v => sizeOf v ≤ B ∧ ∃ n, v = .unsigned .usize n ∧ k ≤ n
   | .lit k, v => v = .unsigned .usize k
+  | .nil id j, v => v = .enumeration id j []
 
 /-- The class of a field or payload value of a value of this class. -/
 def SizeCls.part : SizeCls → SizeCls
   | .le | .lt | .ge _ => .lt
-  | .unk | .lit _ => .unk
+  | .unk | .lit _ | .nil _ _ => .unk
+
+/-- Facts the check has learnt of `B`: `(id, k)` says every variant of enum
+`id` from 0 to `k` without a payload is smaller than `B`, from a value no
+larger than `B` that matched variant `k` with a payload. -/
+abbrev Wit := List (Nat × Nat)
+
+/-- A class read with the facts: a payload-free variant they bound is
+smaller. -/
+def SizeCls.res (W : Wit) : SizeCls → SizeCls
+  | .nil id j => if W.any (fun p => p.1 == id && decide (j ≤ p.2)) then .lt else .unk
+  | .unk => .unk
+  | .le => .le
+  | .lt => .lt
+  | .ge k => .ge k
+  | .lit k => .lit k
 
 /-- Classes of locals, the newest binding first, as `Env`. -/
 abbrev AEnv := List (Nat × SizeCls)
@@ -115,6 +136,9 @@ returns an entry of the tree. -/
 structure TermInfo where
   tab : ATree
   decs : List Nat
+  /-- Functions `c` returning the payload-free variant `j` of enum `id`, as
+  `(c, id, j)`: the prelude's `empty`. -/
+  consts : List (Nat × Nat × Nat) := []
   deriving Repr
 
 def TermInfo.anns (T : TermInfo) : List (Nat × TermAnn) := T.tab.toList
@@ -216,11 +240,11 @@ def AEnv.after (A : AEnv) : SrcStmt → AEnv
 
 def SizeCls.isLt : SizeCls → Bool
   | .lt => true
-  | .unk | .le | .ge _ | .lit _ => false
+  | .unk | .le | .ge _ | .lit _ | .nil _ _ => false
 
 def SizeCls.isLe : SizeCls → Bool
   | .lt | .le | .ge _ => true
-  | .unk | .lit _ => false
+  | .unk | .lit _ | .nil _ _ => false
 
 /-- A same-rank call descends: its designated arguments are smaller, or no
 larger with a lower subrank. -/
@@ -231,14 +255,15 @@ def descends (ks : List SizeCls) (lower : Bool) : Bool :=
 from 1 to `k`. -/
 def decCls : SizeCls → SizeCls → SizeCls
   | .ge k, .lit d => if 1 ≤ d ∧ d ≤ k then .lt else .unk
-  | .ge _, .unk | .ge _, .le | .ge _, .lt | .ge _, .ge _ => .unk
-  | .unk, _ | .le, _ | .lt, _ | .lit _, _ => .unk
+  | .ge _, .unk | .ge _, .le | .ge _, .lt | .ge _, .ge _ | .ge _, .nil _ _ => .unk
+  | .unk, _ | .le, _ | .lt, _ | .lit _, _ | .nil _ _, _ => .unk
 
 section
 variable (prims : Prims) (T : TermInfo) (me : TermAnn)
 
 /-- The class of a call's value: a prim's is its argument's, a decrement's
-by a literal within the bound of its first argument is smaller. -/
+by a literal within the bound of its first argument is smaller, and a
+constant's is its variant. -/
 def callCls (c : Nat) (cs : List SizeCls) : SizeCls :=
   if prims.isPrim c then
     match cs with
@@ -251,17 +276,20 @@ def callCls (c : Nat) (cs : List SizeCls) : SizeCls :=
     | [] => .unk
     | [_] => .unk
     | _ :: _ :: _ :: _ => .unk
-  else .unk
+  else
+    match T.consts.lookup c with
+    | some (id, j) => .nil id j
+    | none => .unk
 
 /-- A call the body of a call annotated `me` may make, on arguments of
-classes `cs`. -/
-def callOk (c : Nat) (cs : List SizeCls) : Bool :=
+classes `cs`, with the facts `W`. -/
+def callOk (W : Wit) (c : Nat) (cs : List SizeCls) : Bool :=
   prims.isPrim c ||
     match T.ann c with
     | none => false
     | some a => decide (a.rank < me.rank) ||
         (decide (a.rank = me.rank) &&
-          descends (a.pos.map fun p => cs.getD p .unk) (decide (a.sub < me.sub)))
+          descends (a.pos.map fun p => (cs.map (SizeCls.res W)).getD p .unk) (decide (a.sub < me.sub)))
 
 mutual
 def effCls (A : AEnv) : SrcEff → SizeCls
@@ -284,50 +312,54 @@ def effsCls (A : AEnv) : List SrcEff → List SizeCls
 end
 
 mutual
-def chkEff (A : AEnv) : SrcEff → Bool
+def chkEff (A : AEnv) (W : Wit) : SrcEff → Bool
   | .ePure _ => true
-  | .eCall c args => chkEffs A args && callOk prims T me c (effsCls prims T A args)
-  | .eApply _ left right => chkEff A left && chkEff A right
-  | .eNeg operand => chkEff A operand
-  | .eNot operand => chkEff A operand
-  | .eCast _ operand => chkEff A operand
+  | .eCall c args => chkEffs A W args && callOk prims T me W c (effsCls prims T A args)
+  | .eApply _ left right => chkEff A W left && chkEff A W right
+  | .eNeg operand => chkEff A W operand
+  | .eNot operand => chkEff A W operand
+  | .eCast _ operand => chkEff A W operand
   | .eIndex _ _ => true
-  | .eStruct _ fields => chkEffs A fields
-  | .eVariant _ _ payload => chkEffs A payload
-  | .eMatch scrutinee _ _ binders values =>
-      chkEff A scrutinee && chkArms A (effCls prims T A scrutinee).part binders values
-  | .eDivide _ left right => chkEff A left && chkEff A right
+  | .eStruct _ fields => chkEffs A W fields
+  | .eVariant _ _ payload => chkEffs A W payload
+  | .eMatch scrutinee ety _ binders values =>
+      chkEff A W scrutinee && chkArms A W (effCls prims T A scrutinee) ety.typeId 0 binders values
+  | .eDivide _ left right => chkEff A W left && chkEff A W right
   | .eStride _ => true
 
-def chkEffs (A : AEnv) : List SrcEff → Bool
+def chkEffs (A : AEnv) (W : Wit) : List SrcEff → Bool
   | [] => true
-  | e :: es => chkEff A e && chkEffs A es
+  | e :: es => chkEff A W e && chkEffs A W es
 
-def chkArms (A : AEnv) (k : SizeCls) : List (List Nat) → List SrcEff → Bool
-  | [], _ => true
-  | _ :: _, [] => true
-  | binders :: rest, value :: values =>
-      chkEff (A.bindAll (binders.map (·, k))) value && chkArms A k rest values
+/-- The arms of a match on a value of class `k` of enum `id`, from variant
+`i`. An arm with a payload on a value no larger than `B` adds the fact. -/
+def chkArms (A : AEnv) (W : Wit) (k : SizeCls) (id : Nat) : Nat → List (List Nat) → List SrcEff → Bool
+  | _, [], _ => true
+  | _, _ :: _, [] => true
+  | i, binders :: rest, value :: values =>
+      chkEff (A.bindAll (binders.map (·, k.part)))
+          (if k.isLe && !binders.isEmpty then (id, i) :: W else W) value &&
+        chkArms A W k id (i + 1) rest values
 end
 
-def chkStmt (A : AEnv) : SrcStmt → Bool
+def chkStmt (A : AEnv) (W : Wit) : SrcStmt → Bool
   | .nop => true
-  | .let id _ value body => chkStmt ((id, exprCls A value) :: A) body
-  | .letStruct id _ _ body => chkStmt ((id, .unk) :: A) body
+  | .let id _ value body => chkStmt ((id, exprCls A value) :: A) W body
+  | .letStruct id _ _ body => chkStmt ((id, .unk) :: A) W body
   | .letCall id _ callee args body =>
-      callOk prims T me callee (args.map (exprCls A)) &&
-        chkStmt ((id, callCls prims T callee (args.map (exprCls A))) :: A) body
-  | .letEnum id _ _ _ body => chkStmt ((id, .unk) :: A) body
+      callOk prims T me W callee (args.map (exprCls A)) &&
+        chkStmt ((id, callCls prims T callee (args.map (exprCls A))) :: A) W body
+  | .letEnum id _ _ _ body => chkStmt ((id, .unk) :: A) W body
   | .letMatch _ _ _ _ _ _ => true
   | .set _ _ => true
   | .setField _ _ _ => true
   | .setCall _ _ _ => true
-  | .then first second => chkStmt A first && chkStmt (A.after first) second
+  | .then first second => chkStmt A W first && chkStmt (A.after first) W second
   | .if condition thenBranch elseBranch =>
-      chkStmt A thenBranch &&
+      chkStmt A W thenBranch &&
         chkStmt (match guardVar condition with
           | some (x, k) => A.refine x k
-          | none => A) elseBranch
+          | none => A) W elseBranch
   | .while _ _ => true
   | .return _ => true
   | .letAlloc _ _ _ _ => true
@@ -338,17 +370,17 @@ def chkStmt (A : AEnv) : SrcStmt → Bool
   | .letIndex _ _ _ _ _ => true
   | .setIndex _ _ _ => true
   | .letEval id _ value body =>
-      chkEff prims T me A value && chkStmt ((id, effCls prims T A value) :: A) body
+      chkEff prims T me A W value && chkStmt ((id, effCls prims T A value) :: A) W body
   | .setEval _ _ => true
   | .ifEval condition thenBranch elseBranch =>
-      chkEff prims T me A condition && chkStmt A thenBranch && chkStmt A elseBranch
+      chkEff prims T me A W condition && chkStmt A W thenBranch && chkStmt A W elseBranch
   | .whileEval _ _ => true
-  | .returnEval value => chkEff prims T me A value
-  | .discard value => chkEff prims T me A value
+  | .returnEval value => chkEff prims T me A W value
+  | .discard value => chkEff prims T me A W value
   | .setIndexEval _ _ _ => true
   | .setFieldEval _ _ _ => true
   | .returnUnit => true
-  | .assert condition => chkEff prims T me A condition
+  | .assert condition => chkEff prims T me A W condition
   | .break => true
   | .continue => true
   | .matchArm _ _ _ _ _ _ _ _ => true
@@ -362,7 +394,7 @@ def paramIds (params : List SrcParam) : List Nat := params.map (·.id)
 
 /-- A function body checked for the annotation `me`. -/
 def chkFn (f : SrcFunc) : Bool :=
-  chkStmt prims T me (AEnv.bindAll [] ((paramIds f.params).zip (initCls me.pos f.params.length))) f.body
+  chkStmt prims T me (AEnv.bindAll [] ((paramIds f.params).zip (initCls me.pos f.params.length))) [] f.body
 
 end
 
@@ -373,10 +405,17 @@ def DecOk (sp : SrcProgram) (prims : Prims) (c : Nat) : Prop :=
     f.body = .then (.if (.apply .greater (.local b) (.local a)) panic .nop)
       (.return (.apply .minus (.local a) (.local b)))
 
-/-- Every annotated function's body passes the check, and the decrement
-functions are decrements. -/
+/-- A constant: a function that returns the payload-free variant `j` of enum
+`id`. -/
+def ConstOk (sp : SrcProgram) (prims : Prims) (c id j : Nat) : Prop :=
+  prims.isPrim c = false ∧ ∃ f ty, sp.funcs[c]? = some f ∧ ty.typeId = id ∧
+    f.body = .returnEval (.eVariant ty j [])
+
+/-- Every annotated function's body passes the check, the decrement
+functions are decrements, and the constants constants. -/
 structure TermOk (sp : SrcProgram) (prims : Prims) (T : TermInfo) : Prop where
   decs : ∀ c ∈ T.decs, DecOk sp prims c
+  consts : ∀ p ∈ T.consts, ConstOk sp prims p.1 p.2.1 p.2.2
   fns : ∀ p ∈ T.anns, prims.isPrim p.1 = true ∨ ∀ f, sp.funcs[p.1]? = some f → chkFn prims T p.2 f = true
 
 /-- A pure call settles: past some fuel, more fuel gives the same answer. -/

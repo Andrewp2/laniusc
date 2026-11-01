@@ -12,6 +12,21 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Termination
 open Lanius.Faithful.SelfCert
 
+theorem ok_file_decls : FnOk prog prims info (100, ⟨13, [], 0⟩) :=
+  fnOk_of fn_file_decls (by decide +kernel)
+
+theorem ok_build_collected : FnOk prog prims info (101, ⟨45, [], 0⟩) :=
+  fnOk_of fn_build_collected (by decide +kernel)
+
+theorem ok_collect_files : FnOk prog prims info (102, ⟨14, [1], 0⟩) :=
+  fnOk_of fn_collect_files (by decide +kernel)
+
+theorem ok_single_of_mini_selfhost_List_mini_selfhost_List_usize : FnOk prog prims info (104, ⟨0, [], 0⟩) :=
+  fnOk_of fn_single_of_mini_selfhost_List_mini_selfhost_List_usize (by decide +kernel)
+
+theorem ok_times : FnOk prog prims info (105, ⟨1, [], 0⟩) :=
+  fnOk_of fn_times (by decide +kernel)
+
 theorem ok_length_of_mini_selfhost_Token : FnOk prog prims info (106, ⟨2, [0], 0⟩) :=
   fnOk_of fn_length_of_mini_selfhost_Token (by decide +kernel)
 
@@ -117,22 +132,7 @@ theorem ok_file_items : FnOk prog prims info (148, ⟨12, [], 0⟩) :=
 theorem ok_module_path : FnOk prog prims info (149, ⟨6, [1], 0⟩) :=
   fnOk_of fn_module_path (by decide +kernel)
 
-theorem ok_root_insts : FnOk prog prims info (151, ⟨2, [0], 0⟩) :=
-  fnOk_of fn_root_insts (by decide +kernel)
-
-theorem ok_field_fns_Decls_of_mini_selfhost_Decls : FnOk prog prims info (152, ⟨0, [], 0⟩) :=
-  fnOk_of fn_field_fns_Decls_of_mini_selfhost_Decls (by decide +kernel)
-
-theorem ok_seed_insts : FnOk prog prims info (153, ⟨2, [0], 0⟩) :=
-  fnOk_of fn_seed_insts (by decide +kernel)
-
-theorem ok_field_types_Decls_of_mini_selfhost_Decls : FnOk prog prims info (154, ⟨0, [], 0⟩) :=
-  fnOk_of fn_field_types_Decls_of_mini_selfhost_Decls (by decide +kernel)
-
-theorem ok_collect_file_next : FnOk prog prims info (155, ⟨14, [3], 1⟩) :=
-  fnOk_of fn_collect_file_next (by decide +kernel)
-
 theorem chunk2 : AllFns prog prims info part2 :=
-  ⟨ok_length_of_mini_selfhost_Token, ok_empty_of_u8, ok_optimize_program, ok_validate, ok_compile_or, ok_compile_program, ok_cons_of_mini_selfhost_Func, ok_params_size, ok_SrcType_size, ok_params_valid, ok_SrcStmt_breaks_out, ok_lower_body, ok_SrcStmt_depth, ok_unit_tail, ok_SrcStmt_lower, ok_param_scope, ok_empty_of_mini_selfhost_Binding, ok_empty_of_mini_selfhost_SrcType, ok_cons_of_mini_selfhost_SrcType, ok_declare_params, ok_declare_in, ok_SrcType_declare, ok_read_bytes, ok_read_file_end, ok_read_nums, ok_cons_of_mini_selfhost_CTree, ok_attach, ok_single_of_mini_selfhost_Sym, ok_whole, ok_node_prod, ok_p_file, ok_list_items, ok_kid, ok_file_items, ok_module_path, ok_root_insts, ok_field_fns_Decls_of_mini_selfhost_Decls, ok_seed_insts, ok_field_types_Decls_of_mini_selfhost_Decls, ok_collect_file_next, trivial⟩
+  ⟨ok_file_decls, ok_build_collected, ok_collect_files, ok_single_of_mini_selfhost_List_mini_selfhost_List_usize, ok_times, ok_length_of_mini_selfhost_Token, ok_empty_of_u8, ok_optimize_program, ok_validate, ok_compile_or, ok_compile_program, ok_cons_of_mini_selfhost_Func, ok_params_size, ok_SrcType_size, ok_params_valid, ok_SrcStmt_breaks_out, ok_lower_body, ok_SrcStmt_depth, ok_unit_tail, ok_SrcStmt_lower, ok_param_scope, ok_empty_of_mini_selfhost_Binding, ok_empty_of_mini_selfhost_SrcType, ok_cons_of_mini_selfhost_SrcType, ok_declare_params, ok_declare_in, ok_SrcType_declare, ok_read_bytes, ok_read_file_end, ok_read_nums, ok_cons_of_mini_selfhost_CTree, ok_attach, ok_single_of_mini_selfhost_Sym, ok_whole, ok_node_prod, ok_p_file, ok_list_items, ok_kid, ok_file_items, ok_module_path, trivial⟩
 
 end Lanius.Faithful.SelfTerm

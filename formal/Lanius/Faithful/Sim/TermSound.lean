@@ -173,6 +173,7 @@ theorem part_holds {B : Nat} {c : SizeCls} {w v : Value} (hw : c.holds B w) (lt 
   | lt => simp only [SizeCls.part, SizeCls.holds] at hw ⊢; omega
   | ge _ => simp only [SizeCls.part, SizeCls.holds] at hw ⊢; omega
   | lit _ => trivial
+  | nil _ _ => trivial
 
 theorem fieldOf_lt {w : Value} {i : Nat} {v : Value} (h : fieldOf w i = some v) : sizeOf v < sizeOf w := by
   cases w with
@@ -252,6 +253,99 @@ theorem match_binds {B : Nat} {c : SizeCls} {v : Value} (hv : c.holds B v) {id k
   | unit | boolean _ | signed _ _ | unsigned _ _ | f32Bits _ | f64Bits _ | character _ | string _
   | pointer _ | array _ | slice _ _ _ _ _ | rawSlice _ _ _ | «structure» _ _ | reference _ _ _ =>
     simp [matchPattern] at h
+
+/-! ## Facts from matches -/
+
+/-- The facts hold of `B`. -/
+def WitOk (B : Nat) (W : Wit) : Prop :=
+  ∀ p ∈ W, ∀ j ≤ p.2, sizeOf (Value.enumeration p.1 j []) < B
+
+theorem WitOk.nil (B : Nat) : WitOk B [] := by
+  intro p hp
+  simp at hp
+
+/-- **A payload-free variant is minimal**: smaller than a later or the same
+variant of its enum with a payload. -/
+theorem sizeOf_nil_lt {id j k : Nat} {p : Value} {ps : List Value} (h : j ≤ k) :
+    sizeOf (Value.enumeration id j []) < sizeOf (Value.enumeration id k (p :: ps)) := by
+  have hps : 0 < sizeOf ps := by
+    cases ps with
+    | nil => simp only [List.nil.sizeOf_spec]; omega
+    | cons _ _ => simp only [List.cons.sizeOf_spec]; omega
+  simp only [Value.enumeration.sizeOf_spec, List.cons.sizeOf_spec, List.nil.sizeOf_spec, sizeOf_nat]
+  omega
+
+theorem match_payload {id k b : Nat} {bs : List Nat} {v : Value} {bindings : List (Nat × Value)}
+    (h : matchPattern (.enumVariant id k ((b :: bs).map .bind)) v = some bindings) :
+    ∃ p ps, v = .enumeration id k (p :: ps) := by
+  cases v with
+  | enumeration id' k' payload =>
+    simp only [matchPattern] at h
+    split at h
+    · rename_i hc
+      simp only [Bool.and_eq_true, beq_iff_eq] at hc
+      obtain ⟨rfl, rfl⟩ := hc
+      cases payload with
+      | nil => simp [matchPatterns] at h
+      | cons p ps => exact ⟨p, ps, rfl⟩
+    · simp at h
+  | unit | boolean _ | signed _ _ | unsigned _ _ | f32Bits _ | f64Bits _ | character _ | string _
+  | pointer _ | array _ | slice _ _ _ _ _ | rawSlice _ _ _ | «structure» _ _ | reference _ _ _ =>
+    simp [matchPattern] at h
+
+theorem le_of_isLe {B : Nat} {c : SizeCls} {v : Value} (hv : c.holds B v) (hle : c.isLe = true) :
+    sizeOf v ≤ B := by
+  cases c with
+  | lt => exact Nat.le_of_lt hv
+  | le => exact hv
+  | ge _ => exact hv.1
+  | unk => simp [SizeCls.isLe] at hle
+  | lit _ => simp [SizeCls.isLe] at hle
+  | nil _ _ => simp [SizeCls.isLe] at hle
+
+/-- An arm with a payload, on a value no larger than `B`, adds its fact. -/
+theorem WitOk.arm {B : Nat} {W : Wit} (hW : WitOk B W) {c : SizeCls} {v : Value} (hv : c.holds B v)
+    {id k : Nat} {bs : List Nat} {bindings : List (Nat × Value)}
+    (h : matchPattern (.enumVariant id k (bs.map .bind)) v = some bindings) :
+    WitOk B (if c.isLe && !bs.isEmpty then (id, k) :: W else W) := by
+  cases hc : (c.isLe && !bs.isEmpty) with
+  | false => exact hW
+  | true =>
+    simp only [ite_true]
+    simp only [Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff] at hc
+    obtain ⟨hle, hne⟩ := hc
+    cases bs with
+    | nil => exact absurd rfl hne
+    | cons b bs =>
+      obtain ⟨p, ps, rfl⟩ := match_payload h
+      have hB := le_of_isLe hv hle
+      intro q hq j hj
+      rcases List.mem_cons.mp hq with rfl | hq
+      · have := sizeOf_nil_lt (p := p) (ps := ps) (id := id) hj
+        exact Nat.lt_of_lt_of_le this hB
+      · exact hW q hq j hj
+
+theorem res_holds {B : Nat} {W : Wit} (hW : WitOk B W) :
+    ∀ {c : SizeCls} {v : Value}, c.holds B v → (c.res W).holds B v
+  | .nil id j, v, h => by
+    simp only [SizeCls.res]
+    split
+    · rename_i hw
+      simp only [List.any_eq_true, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hw
+      obtain ⟨⟨id', k⟩, hp, hid, hj⟩ := hw
+      simp only [SizeCls.holds] at h ⊢
+      subst h
+      dsimp only at hid hj
+      subst hid
+      exact hW _ hp j hj
+    · trivial
+  | .unk, _, h | .le, _, h | .lt, _, h | .ge _, _, h | .lit _, _, h => h
+
+theorem ListRel.res {B : Nat} {W : Wit} (hW : WitOk B W) {cs : List SizeCls} {vs : List Value}
+    (r : ListRel (SizeCls.holds B) cs vs) : ListRel (SizeCls.holds B) (cs.map (SizeCls.res W)) vs := by
+  induction r with
+  | nil => exact .nil
+  | cons h _ ih => exact .cons (res_holds hW h) ih
 
 /-! ## Guards and statements that do not go on -/
 
@@ -495,8 +589,39 @@ structure OracleOk (prims : Prims) (T : TermInfo) (call : Calls) : Prop where
   prim : ∀ c vs v, prims.isPrim c = true → call c vs = some v → single vs = some v
   dec : ∀ c ∈ T.decs, ∀ n d v, 1 ≤ d → d ≤ n → call c [.unsigned .usize n, .unsigned .usize d] = some v →
     sizeOf v < sizeOf (Value.unsigned .usize n)
+  const : ∀ c id j, T.consts.lookup c = some (id, j) → ∀ vs v, call c vs = some v →
+    v = .enumeration id j []
+
+theorem lookup_mem3 {c : Nat} {x : Nat × Nat} :
+    ∀ {l : List (Nat × Nat × Nat)}, l.lookup c = some x → (c, x) ∈ l
+  | [], h => by simp [List.lookup] at h
+  | (k, y) :: l, h => by
+    simp only [List.lookup] at h
+    split at h
+    · rename_i hk
+      simp only [Option.some.injEq] at h
+      subst h
+      simp only [beq_iff_eq] at hk
+      subst hk
+      exact List.mem_cons_self
+    · exact List.mem_cons_of_mem _ (lookup_mem3 h)
+
+theorem const_val {sp : SrcProgram} {prims : Prims} {c id j : Nat} (hc : ConstOk sp prims c id j)
+    {m : Nat} {vs : List Value} {v : Value} (h : pcall sp prims m c vs = some v) :
+    v = .enumeration id j [] := by
+  obtain ⟨np, f, ty, hf, hid, hbody⟩ := hc
+  cases m with
+  | zero => simp [pcall] at h
+  | succ m =>
+    simp only [pcall, np, hf, Bool.false_eq_true, ↓reduceIte] at h
+    split at h
+    · rw [hbody] at h
+      simp [pstmt, peff, peffs, Option.bind, doneValue] at h
+      rw [← h, hid]
+    · simp at h
 
 theorem oracleOk_pcall {sp : SrcProgram} {prims : Prims} {T : TermInfo} (hD : ∀ c ∈ T.decs, DecOk sp prims c)
+    (hC : ∀ p ∈ T.consts, ConstOk sp prims p.1 p.2.1 p.2.2)
     (m : Nat) : OracleOk prims T (pcall sp prims m) where
   prim := by
     intro c vs v hp hv
@@ -504,6 +629,7 @@ theorem oracleOk_pcall {sp : SrcProgram} {prims : Prims} {T : TermInfo} (hD : �
     | zero => simp [pcall] at hv
     | succ m => simpa [pcall, hp] using hv
   dec := fun c hc _ _ _ h1 hdn hv => dec_lt (hD c hc) h1 hdn hv
+  const := fun c id j hl _ _ hv => const_val (hC _ (lookup_mem3 hl)) hv
 
 theorem callCls_holds {prims : Prims} {T : TermInfo} {call : Calls} {B : Nat} (ho : OracleOk prims T call)
     {c : Nat} {cs : List SizeCls} {vs : List Value} (hr : ListRel (SizeCls.holds B) cs vs) {v : Value}
@@ -547,10 +673,13 @@ theorem callCls_holds {prims : Prims} {T : TermInfo} {call : Calls} {B : Nat} (h
                   simp only [SizeCls.holds]
                   omega
                 · trivial
-              | unk | le | lt | ge _ => trivial
-            | unk | le | lt | lit _ => trivial
+              | unk | le | lt | ge _ | nil _ _ => trivial
+            | unk | le | lt | lit _ | nil _ _ => trivial
           | cons _ _ => trivial
-    · trivial
+    · split
+      · rename_i id j hl
+        exact ho.const c id j hl vs v h
+      · trivial
 
 section
 variable {prims : Prims} {T : TermInfo} {call : Calls} {B : Nat}
@@ -653,6 +782,7 @@ theorem argAt_le {B : Nat} {cs : List SizeCls} {vs : List Value} (r : ListRel (S
     | ge _ => intro _ hk; exact hk.1
     | unk => intro h; simp [SizeCls.isLe] at h
     | lit _ => intro h; simp [SizeCls.isLe] at h
+    | nil _ _ => intro h; simp [SizeCls.isLe] at h
 
 theorem argAt_lt {B : Nat} {cs : List SizeCls} {vs : List Value} (r : ListRel (SizeCls.holds B) cs vs) (p : Nat)
     (h : (cs.getD p .unk).isLt = true) : argAt vs p < B := by
@@ -668,11 +798,14 @@ theorem argAt_lt {B : Nat} {cs : List SizeCls} {vs : List Value} (r : ListRel (S
     | ge _ => intro h; simp [SizeCls.isLt] at h
     | unk => intro h; simp [SizeCls.isLt] at h
     | lit _ => intro h; simp [SizeCls.isLt] at h
+    | nil _ _ => intro h; simp [SizeCls.isLt] at h
 
 theorem callSettles
     (IH : ∀ c a vs, T.ann c = some a → Below me B a (argSize a.pos vs) → Settles sp prims c vs)
-    {c : Nat} {cs : List SizeCls} {vs : List Value} (hc : callOk prims T me c cs = true)
-    (hr : ListRel (SizeCls.holds B) cs vs) : Settles sp prims c vs := by
+    {W : Wit} (hW : WitOk B W)
+    {c : Nat} {cs : List SizeCls} {vs : List Value} (hc : callOk prims T me W c cs = true)
+    (hr0 : ListRel (SizeCls.holds B) cs vs) : Settles sp prims c vs := by
+  have hr := hr0.res hW
   unfold callOk at hc
   simp only [Bool.or_eq_true] at hc
   rcases hc with hp | hc
@@ -702,145 +835,146 @@ theorem callSettles
           omega
 
 mutual
-theorem eff_evConst (hD : ∀ c ∈ T.decs, DecOk sp prims c)
+theorem eff_evConst (hO : ∀ m, OracleOk prims T (pcall sp prims m))
     (IH : ∀ c a vs, T.ann c = some a → Below me B a (argSize a.pos vs) → Settles sp prims c vs) :
-    ∀ (e : SrcEff) {A : AEnv} {E : Env}, EnvOk B A E → chkEff prims T me A e = true →
+    ∀ (e : SrcEff) {A : AEnv} {W : Wit} {E : Env}, EnvOk B A E → WitOk B W → chkEff prims T me A W e = true →
       EvConst (fun m => peff (pcall sp prims m) E e)
-  | .ePure x, A, E, _, _ => by
+  | .ePure x, A, W, E, _, _, _ => by
     simp only [peff]
     exact EvConst.const _
-  | .eCall c args, A, E, h, hc => by
+  | .eCall c args, A, W, E, h, hW, hc => by
     simp only [chkEff, Bool.and_eq_true] at hc
     simp only [peff]
-    refine EvConst.bind (eff_evConst_list hD IH args h hc.1) fun vs ⟨m, hm⟩ => ?_
-    exact callSettles IH hc.2 (effsCls_holds (oracleOk_pcall hD m) h args hm)
-  | .eApply op l r, A, E, h, hc => by
+    refine EvConst.bind (eff_evConst_list hO IH args h hW hc.1) fun vs ⟨m, hm⟩ => ?_
+    exact callSettles IH hW hc.2 (effsCls_holds (hO m) h args hm)
+  | .eApply op l r, A, W, E, h, hW, hc => by
     simp only [chkEff, Bool.and_eq_true] at hc
     simp only [peff]
-    exact EvConst.pair (applyOp op) (eff_evConst hD IH l h hc.1) (eff_evConst hD IH r h hc.2)
-  | .eNeg x, A, E, h, hc => by
+    exact EvConst.pair (applyOp op) (eff_evConst hO IH l h hW hc.1) (eff_evConst hO IH r h hW hc.2)
+  | .eNeg x, A, W, E, h, hW, hc => by
     simp only [chkEff] at hc
     simp only [peff]
-    exact EvConst.map (fun o => o.bind (unary .negate)) (eff_evConst hD IH x h hc)
-  | .eNot x, A, E, h, hc => by
+    exact EvConst.map (fun o => o.bind (unary .negate)) (eff_evConst hO IH x h hW hc)
+  | .eNot x, A, W, E, h, hW, hc => by
     simp only [chkEff] at hc
     simp only [peff]
-    exact EvConst.map (fun o => o.bind (unary .logicalNot)) (eff_evConst hD IH x h hc)
-  | .eCast ty x, A, E, h, hc => by
+    exact EvConst.map (fun o => o.bind (unary .logicalNot)) (eff_evConst hO IH x h hW hc)
+  | .eCast ty x, A, W, E, h, hW, hc => by
     simp only [chkEff] at hc
     simp only [peff]
-    exact EvConst.map (fun o => o.bind (cast ty)) (eff_evConst hD IH x h hc)
-  | .eIndex _ _, A, E, _, _ => by
+    exact EvConst.map (fun o => o.bind (cast ty)) (eff_evConst hO IH x h hW hc)
+  | .eIndex _ _, A, W, E, _, _, _ => by
     simp only [peff]
     exact EvConst.const _
-  | .eStruct ty fields, A, E, h, hc => by
+  | .eStruct ty fields, A, W, E, h, hW, hc => by
     simp only [chkEff] at hc
     simp only [peff]
-    exact EvConst.map (fun o => o.map (Value.structure ty.typeId)) (eff_evConst_list hD IH fields h hc)
-  | .eVariant ty k payload, A, E, h, hc => by
+    exact EvConst.map (fun o => o.map (Value.structure ty.typeId)) (eff_evConst_list hO IH fields h hW hc)
+  | .eVariant ty k payload, A, W, E, h, hW, hc => by
     simp only [chkEff] at hc
     simp only [peff]
-    exact EvConst.map (fun o => o.map (Value.enumeration ty.typeId k)) (eff_evConst_list hD IH payload h hc)
-  | .eMatch scrutinee ety _ binders values, A, E, h, hc => by
+    exact EvConst.map (fun o => o.map (Value.enumeration ty.typeId k)) (eff_evConst_list hO IH payload h hW hc)
+  | .eMatch scrutinee ety _ binders values, A, W, E, h, hW, hc => by
     simp only [chkEff, Bool.and_eq_true] at hc
     simp only [peff]
-    refine EvConst.bind (eff_evConst hD IH scrutinee h hc.1) fun v ⟨m, hm⟩ => ?_
-    exact eff_evConst_arms hD IH (effCls_holds (oracleOk_pcall hD m) h scrutinee hm) ety.typeId values 0 binders
-      h hc.2
-  | .eDivide op l r, A, E, h, hc => by
+    refine EvConst.bind (eff_evConst hO IH scrutinee h hW hc.1) fun v ⟨m, hm⟩ => ?_
+    exact eff_evConst_arms hO IH (effCls_holds (hO m) h scrutinee hm) ety.typeId values 0 binders
+      h hW hc.2
+  | .eDivide op l r, A, W, E, h, hW, hc => by
     simp only [chkEff, Bool.and_eq_true] at hc
     simp only [peff]
-    exact EvConst.pair (binary op.toCore) (eff_evConst hD IH l h hc.1) (eff_evConst hD IH r h hc.2)
-  | .eStride _, A, E, _, _ => by
+    exact EvConst.pair (binary op.toCore) (eff_evConst hO IH l h hW hc.1) (eff_evConst hO IH r h hW hc.2)
+  | .eStride _, A, W, E, _, _, _ => by
     simp only [peff]
     exact EvConst.const _
 
-theorem eff_evConst_list (hD : ∀ c ∈ T.decs, DecOk sp prims c)
+theorem eff_evConst_list (hO : ∀ m, OracleOk prims T (pcall sp prims m))
     (IH : ∀ c a vs, T.ann c = some a → Below me B a (argSize a.pos vs) → Settles sp prims c vs) :
-    ∀ (es : List SrcEff) {A : AEnv} {E : Env}, EnvOk B A E → chkEffs prims T me A es = true →
+    ∀ (es : List SrcEff) {A : AEnv} {W : Wit} {E : Env}, EnvOk B A E → WitOk B W → chkEffs prims T me A W es = true →
       EvConst (fun m => peffs (pcall sp prims m) E es)
-  | [], A, E, _, _ => by
+  | [], A, W, E, _, _, _ => by
     simp only [peffs]
     exact EvConst.const _
-  | e :: es, A, E, h, hc => by
+  | e :: es, A, W, E, h, hW, hc => by
     simp only [chkEffs, Bool.and_eq_true] at hc
     simp only [peffs]
-    exact EvConst.pair (fun o os => o.bind fun v => os.map (v :: ·)) (eff_evConst hD IH e h hc.1)
-      (eff_evConst_list hD IH es h hc.2)
+    exact EvConst.pair (fun o os => o.bind fun v => os.map (v :: ·)) (eff_evConst hO IH e h hW hc.1)
+      (eff_evConst_list hO IH es h hW hc.2)
 
-theorem eff_evConst_arms (hD : ∀ c ∈ T.decs, DecOk sp prims c)
+theorem eff_evConst_arms (hO : ∀ m, OracleOk prims T (pcall sp prims m))
     (IH : ∀ c a vs, T.ann c = some a → Below me B a (argSize a.pos vs) → Settles sp prims c vs) {c : SizeCls} {v : Value} (hv : c.holds B v) (id : Nat) :
-    ∀ (values : List SrcEff) (k : Nat) (binders : List (List Nat)) {A : AEnv} {E : Env}, EnvOk B A E →
-      chkArms prims T me A c.part binders values = true →
+    ∀ (values : List SrcEff) (k : Nat) (binders : List (List Nat)) {A : AEnv} {W : Wit} {E : Env}, EnvOk B A E →
+      WitOk B W → chkArms prims T me A W c id k binders values = true →
       EvConst (fun m => parms (pcall sp prims m) E v id k binders values)
-  | _, _, [], A, E, _, _ => by
+  | _, _, [], A, W, E, _, _, _ => by
     simp only [parms]
     exact EvConst.const _
-  | [], _, _ :: _, A, E, _, _ => by
+  | [], _, _ :: _, A, W, E, _, _, _ => by
     simp only [parms]
     exact EvConst.const _
-  | value :: values, k, bs :: rest, A, E, h, hc => by
-    simp only [chkArms, Bool.and_eq_true] at hc
+  | value :: values, k, bs :: rest, A, W, E, h, hW, hc => by
+    rw [chkArms] at hc
+    replace hc := Bool.and_eq_true_iff.mp hc
     simp only [parms]
     cases hm : matchPattern (.enumVariant id k (bs.map .bind)) v with
-    | none => exact eff_evConst_arms hD IH hv id values (k + 1) rest h hc.2
-    | some bindings => exact eff_evConst hD IH value (EnvOk.bindAll (match_binds hv hm) h) hc.1
+    | none => exact eff_evConst_arms hO IH hv id values (k + 1) rest h hW hc.2
+    | some bindings => exact eff_evConst hO IH value (EnvOk.bindAll (match_binds hv hm) h) (hW.arm hv hm) hc.1
 end
 
 end
 
 section
 variable {sp : SrcProgram} {prims : Prims} {T : TermInfo} {me : TermAnn} {B : Nat}
-  (hD : ∀ c ∈ T.decs, DecOk sp prims c)
+  (hO : ∀ m, OracleOk prims T (pcall sp prims m))
   (IH : ∀ c a vs, T.ann c = some a → Below me B a (argSize a.pos vs) → Settles sp prims c vs)
-include hD IH
+include hO IH
 
 /-- A checked statement, run with calls of fuel `m`, is eventually constant
 in `m`. -/
 theorem stmt_evConst :
-    ∀ (s : SrcStmt) {A : AEnv} {E : Env}, EnvOk B A E → chkStmt prims T me A s = true →
+    ∀ (s : SrcStmt) {A : AEnv} {W : Wit} {E : Env}, EnvOk B A E → WitOk B W → chkStmt prims T me A W s = true →
       EvConst (fun m => pstmt (pcall sp prims m) E s) := by
   intro s
   induction s with
-  | nop => intro A E _ _; simp only [pstmt]; exact EvConst.const _
+  | nop => intro A W E _ _ _; simp only [pstmt]; exact EvConst.const _
   | «let» id _ value body ih =>
-    intro A E h hc
+    intro A W E h hW hc
     simp only [chkStmt] at hc
     simp only [pstmt]
     cases hv : pexpr E value with
     | none => simp only [Option.bind]; exact EvConst.const _
-    | some v => simp only [Option.bind]; exact ih (h.cons (exprCls_holds h value hv)) hc
+    | some v => simp only [Option.bind]; exact ih (h.cons (exprCls_holds h value hv)) hW hc
   | letStruct id ty fields body ih =>
-    intro A E h hc
+    intro A W E h hW hc
     simp only [chkStmt] at hc
     simp only [pstmt]
     cases hv : pexprs E fields with
     | none => simp only [Option.bind]; exact EvConst.const _
-    | some vs => simp only [Option.bind]; exact ih (h.cons (by trivial)) hc
+    | some vs => simp only [Option.bind]; exact ih (h.cons (by trivial)) hW hc
   | letCall id _ callee args body ih =>
-    intro A E h hc
+    intro A W E h hW hc
     simp only [chkStmt, Bool.and_eq_true] at hc
     simp only [pstmt]
     cases hvs : pexprs E args with
     | none => simp only [Option.bind]; exact EvConst.const _
     | some vs =>
       have hr := exprsCls_holds h args hvs
-      refine EvConst.bind (callSettles IH hc.1 hr) fun v ⟨m, hm⟩ => ?_
-      exact ih (h.cons (callCls_holds (oracleOk_pcall hD m) hr hm)) hc.2
+      refine EvConst.bind (callSettles IH hW hc.1 hr) fun v ⟨m, hm⟩ => ?_
+      exact ih (h.cons (callCls_holds (hO m) hr hm)) hW hc.2
   | letEnum id ty k payload body ih =>
-    intro A E h hc
+    intro A W E h hW hc
     simp only [chkStmt] at hc
     simp only [pstmt]
     cases hv : pexprs E payload with
     | none => simp only [Option.bind]; exact EvConst.const _
-    | some vs => simp only [Option.bind]; exact ih (h.cons (by trivial)) hc
+    | some vs => simp only [Option.bind]; exact ih (h.cons (by trivial)) hW hc
   | «then» first second ih1 ih2 =>
-    intro A E h hc
+    intro A W E h hW hc
     simp only [chkStmt, Bool.and_eq_true] at hc
     simp only [pstmt]
-    exact EvConst.next (ih1 h hc.1) fun ⟨_, hm⟩ => ih2 (after_ok h _ first hm) hc.2
+    exact EvConst.next (ih1 h hW hc.1) fun ⟨_, hm⟩ => ih2 (after_ok h _ first hm) hW hc.2
   | «if» condition a b iha ihb =>
-    intro A E h hc
+    intro A W E h hW hc
     simp only [chkStmt, Bool.and_eq_true] at hc
     simp only [pstmt]
     cases hcv : pexpr E condition with
@@ -851,52 +985,52 @@ theorem stmt_evConst :
       | some bv =>
         simp only [hb, Option.bind]
         cases bv with
-        | true => simp only [↓reduceIte]; exact iha h hc.1
+        | true => simp only [↓reduceIte]; exact iha h hW hc.1
         | false =>
           simp only [Bool.false_eq_true, ↓reduceIte]
           have hc2 := hc.2
           revert hc2
           cases hg : guardVar condition with
-          | none => exact fun hc2 => ihb h hc2
-          | some xk => exact fun hc2 => ihb (h.refine (guard_ge hg hcv hb)) hc2
+          | none => exact fun hc2 => ihb h hW hc2
+          | some xk => exact fun hc2 => ihb (h.refine (guard_ge hg hcv hb)) hW hc2
   | letEval id _ value body ih =>
-    intro A E h hc
+    intro A W E h hW hc
     simp only [chkStmt, Bool.and_eq_true] at hc
     simp only [pstmt]
-    refine EvConst.bind (eff_evConst hD IH value h hc.1) fun v ⟨m, hm⟩ => ?_
-    exact ih (h.cons (effCls_holds (oracleOk_pcall hD m) h value hm)) hc.2
+    refine EvConst.bind (eff_evConst hO IH value h hW hc.1) fun v ⟨m, hm⟩ => ?_
+    exact ih (h.cons (effCls_holds (hO m) h value hm)) hW hc.2
   | ifEval condition a b iha ihb =>
-    intro A E h hc
+    intro A W E h hW hc
     simp only [chkStmt, Bool.and_eq_true] at hc
     simp only [pstmt]
-    refine EvConst.bind (EvConst.map (fun o => o.bind asBool) (eff_evConst hD IH condition h hc.1.1))
+    refine EvConst.bind (EvConst.map (fun o => o.bind asBool) (eff_evConst hO IH condition h hW hc.1.1))
       fun bv _ => ?_
     cases bv with
-    | true => simp only [↓reduceIte]; exact iha h hc.1.2
-    | false => simp only [Bool.false_eq_true, ↓reduceIte]; exact ihb h hc.2
-  | «return» value => intro A E _ _; simp only [pstmt]; exact EvConst.const _
+    | true => simp only [↓reduceIte]; exact iha h hW hc.1.2
+    | false => simp only [Bool.false_eq_true, ↓reduceIte]; exact ihb h hW hc.2
+  | «return» value => intro A W E _ _ _; simp only [pstmt]; exact EvConst.const _
   | returnEval value =>
-    intro A E h hc
+    intro A W E h hW hc
     simp only [chkStmt] at hc
     simp only [pstmt]
-    exact EvConst.map (fun o => o.map fun v => Done.ret (some v)) (eff_evConst hD IH value h hc)
+    exact EvConst.map (fun o => o.map fun v => Done.ret (some v)) (eff_evConst hO IH value h hW hc)
   | discard value =>
-    intro A E h hc
+    intro A W E h hW hc
     simp only [chkStmt] at hc
     simp only [pstmt]
-    exact EvConst.map (fun o => o.map fun _ => Done.next) (eff_evConst hD IH value h hc)
+    exact EvConst.map (fun o => o.map fun _ => Done.next) (eff_evConst hO IH value h hW hc)
   | assert condition =>
-    intro A E h hc
+    intro A W E h hW hc
     simp only [chkStmt] at hc
     simp only [pstmt]
     exact EvConst.map (fun o => (o.bind asBool).bind fun b => if b then some Done.next else none)
-      (eff_evConst hD IH condition h hc)
-  | returnUnit => intro A E _ _; simp only [pstmt]; exact EvConst.const _
+      (eff_evConst hO IH condition h hW hc)
+  | returnUnit => intro A W E _ _ _; simp only [pstmt]; exact EvConst.const _
   | letMatch _ _ _ _ _ _ | set _ _ | setField _ _ _ | setCall _ _ _ | «while» _ _ | letAlloc _ _ _ _
   | letLoad _ _ _ _ | setByte _ _ _ | free _ _ _ | letSlice _ _ _ _ _ | letIndex _ _ _ _ _
   | setIndex _ _ _ | setEval _ _ | whileEval _ _ | setIndexEval _ _ _ | setFieldEval _ _ _ | «break»
   | «continue» | matchArm _ _ _ _ _ _ _ _ | unreachable _ _ =>
-    intro A E _ _; simp only [pstmt]; exact EvConst.const _
+    intro A W E _ _ _; simp only [pstmt]; exact EvConst.const _
 
 end
 
@@ -1000,7 +1134,7 @@ theorem pcall_complete {sp : SrcProgram} {prims : Prims} {T : TermInfo} (hT : Te
             (paramEnv f.params vs) := by
           rw [paramEnv, paramBindings_ids, ← hl]
           exact EnvOk.bindAll (zip_rel (initCls_holds a.pos vs) _) (EnvOk.nil _ _)
-        obtain ⟨N, hN⟩ := stmt_evConst hT.decs IH f.body henv hchk
+        obtain ⟨N, hN⟩ := stmt_evConst (oracleOk_pcall hT.decs hT.consts) IH f.body henv (WitOk.nil _) hchk
         refine ⟨N + 1, fun m hm => ?_⟩
         obtain ⟨m, rfl⟩ : ∃ m', m = m' + 1 := ⟨m - 1, by omega⟩
         simp only [pcall, hp', hf, hl, Bool.false_eq_true, ↓reduceIte]
@@ -1060,8 +1194,26 @@ theorem AllDecs.mem {sp : SrcProgram} {prims : Prims} :
     · exact hq
     · exact AllDecs.mem h c hc
 
+def AllConsts (sp : SrcProgram) (prims : Prims) : List (Nat × Nat × Nat) → Prop
+  | [] => True
+  | p :: ps => ConstOk sp prims p.1 p.2.1 p.2.2 ∧ AllConsts sp prims ps
+
+theorem AllConsts.mem {sp : SrcProgram} {prims : Prims} :
+    ∀ {l : List (Nat × Nat × Nat)}, AllConsts sp prims l → ∀ p ∈ l, ConstOk sp prims p.1 p.2.1 p.2.2
+  | [], _, p, hp => by simp at hp
+  | _ :: _, ⟨hq, h⟩, p, hp => by
+    rcases List.mem_cons.mp hp with rfl | hp
+    · exact hq
+    · exact AllConsts.mem h p hp
+
+theorem constOk_of {sp : SrcProgram} {prims : Prims} {c id : Nat} {f : SrcFunc} {ty : SrcType} (j : Nat)
+    (np : prims.isPrim c = false) (hf : sp.funcs[c]? = some f)
+    (hbody : f.body = .returnEval (.eVariant ty j [])) (hid : ty.typeId = id) : ConstOk sp prims c id j :=
+  ⟨np, f, ty, hf, hid, hbody⟩
+
 theorem termOk_of {sp : SrcProgram} {prims : Prims} {T : TermInfo} {l : List (Nat × TermAnn)}
-    (hd : AllDecs sp prims T.decs) (he : T.anns = l) (hf : AllFns sp prims T l) : TermOk sp prims T :=
-  ⟨hd.mem, he ▸ hf.mem⟩
+    (hd : AllDecs sp prims T.decs) (hk : AllConsts sp prims T.consts) (he : T.anns = l)
+    (hf : AllFns sp prims T l) : TermOk sp prims T :=
+  ⟨hd.mem, hk.mem, he ▸ hf.mem⟩
 
 end Lanius.Faithful.Termination

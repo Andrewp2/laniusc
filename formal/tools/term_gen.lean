@@ -6,7 +6,7 @@ import Std.Data.HashSet
 /-! The termination annotations of the self program (`Sim/Term.lean`), and
 the modules that check them.
 
-    cd formal && lake env lean --run tools/term_gen.lean ROOT...
+    cd formal && lake env lean --run tools/term_gen.lean [--out DIR] ROOT...
 
 ROOTs are function names as the certificates spell them after `fn_`
 (`Gen/SelfLookFn*.lean`). Every function they call, directly or not, gets an
@@ -18,7 +18,8 @@ annotations are not trusted: `Gen/SelfTerm*.lean` has the kernel decide the
 check for each function, and `pcall_complete` turns that into settling.
 
 Writes `Lanius/Faithful/Gen/SelfTermInfo.lean`, `SelfTerm<k>.lean` (chunks of
-the checks) and `SelfTerm.lean` (the link, and each root's settling). -/
+the checks) and `SelfTerm.lean` (the link, and each root's settling), or
+writes them to DIR (`faithful_current.py` compares them with Gen/'s). -/
 
 open Lanius.Mini Lanius.Faithful Lanius.Faithful.Self Lanius.Faithful.Termination
 
@@ -28,38 +29,42 @@ section
 variable (prims : Prims) (T : TermInfo)
 
 mutual
-partial def sitesEff (A : AEnv) : SrcEff → List (Nat × List SizeCls)
+partial def sitesEff (A : AEnv) (W : Wit) : SrcEff → List (Nat × List SizeCls)
   | .ePure _ => []
-  | .eCall c args => sitesEffs A args ++ [(c, effsCls prims T A args)]
-  | .eApply _ l r | .eDivide _ l r => sitesEff A l ++ sitesEff A r
-  | .eNeg a | .eNot a | .eCast _ a => sitesEff A a
+  | .eCall c args => sitesEffs A W args ++ [(c, (effsCls prims T A args).map (SizeCls.res W))]
+  | .eApply _ l r | .eDivide _ l r => sitesEff A W l ++ sitesEff A W r
+  | .eNeg a | .eNot a | .eCast _ a => sitesEff A W a
   | .eIndex _ _ | .eStride _ => []
-  | .eStruct _ fs | .eVariant _ _ fs => sitesEffs A fs
-  | .eMatch s _ _ bs vs => sitesEff A s ++ sitesArms A (effCls prims T A s).part bs vs
+  | .eStruct _ fs | .eVariant _ _ fs => sitesEffs A W fs
+  | .eMatch s ety _ bs vs => sitesEff A W s ++ sitesArms A W (effCls prims T A s) ety.typeId 0 bs vs
 
-partial def sitesEffs (A : AEnv) : List SrcEff → List (Nat × List SizeCls)
+partial def sitesEffs (A : AEnv) (W : Wit) : List SrcEff → List (Nat × List SizeCls)
   | [] => []
-  | e :: es => sitesEff A e ++ sitesEffs A es
+  | e :: es => sitesEff A W e ++ sitesEffs A W es
 
-partial def sitesArms (A : AEnv) (k : SizeCls) : List (List Nat) → List SrcEff → List (Nat × List SizeCls)
-  | bs :: rest, v :: vs => sitesEff (A.bindAll (bs.map (·, k))) v ++ sitesArms A k rest vs
-  | _, _ => []
+partial def sitesArms (A : AEnv) (W : Wit) (k : SizeCls) (id : Nat) :
+    Nat → List (List Nat) → List SrcEff → List (Nat × List SizeCls)
+  | i, bs :: rest, v :: vs =>
+    sitesEff (A.bindAll (bs.map (·, k.part))) (if k.isLe && !bs.isEmpty then (id, i) :: W else W) v ++
+      sitesArms A W k id (i + 1) rest vs
+  | _, _, _ => []
 end
 
-partial def sitesStmt (A : AEnv) : SrcStmt → List (Nat × List SizeCls)
-  | .let id _ value body => sitesStmt ((id, exprCls A value) :: A) body
-  | .letStruct id _ _ body | .letEnum id _ _ _ body => sitesStmt ((id, .unk) :: A) body
+partial def sitesStmt (A : AEnv) (W : Wit) : SrcStmt → List (Nat × List SizeCls)
+  | .let id _ value body => sitesStmt ((id, exprCls A value) :: A) W body
+  | .letStruct id _ _ body | .letEnum id _ _ _ body => sitesStmt ((id, .unk) :: A) W body
   | .letCall id _ c args body =>
-    (c, args.map (exprCls A)) :: sitesStmt ((id, callCls prims T c (args.map (exprCls A))) :: A) body
-  | .then a b => sitesStmt A a ++ sitesStmt (A.after a) b
-  | .if c a b => sitesStmt A a ++ sitesStmt (match guardVar c with | some (x, k) => A.refine x k | none => A) b
-  | .letEval id _ v body => sitesEff prims T A v ++ sitesStmt ((id, effCls prims T A v) :: A) body
-  | .ifEval c a b => sitesEff prims T A c ++ sitesStmt A a ++ sitesStmt A b
-  | .returnEval v | .discard v | .assert v => sitesEff prims T A v
+    (c, (args.map (exprCls A)).map (SizeCls.res W)) ::
+      sitesStmt ((id, callCls prims T c (args.map (exprCls A))) :: A) W body
+  | .then a b => sitesStmt A W a ++ sitesStmt (A.after a) W b
+  | .if c a b => sitesStmt A W a ++ sitesStmt (match guardVar c with | some (x, k) => A.refine x k | none => A) W b
+  | .letEval id _ v body => sitesEff prims T A W v ++ sitesStmt ((id, effCls prims T A v) :: A) W body
+  | .ifEval c a b => sitesEff prims T A W c ++ sitesStmt A W a ++ sitesStmt A W b
+  | .returnEval v | .discard v | .assert v => sitesEff prims T A W v
   | _ => []
 
 def sitesFn (pos : List Nat) (f : SrcFunc) : List (Nat × List SizeCls) :=
-  sitesStmt prims T (AEnv.bindAll [] ((paramIds f.params).zip (initCls pos f.params.length))) f.body
+  sitesStmt prims T (AEnv.bindAll [] ((paramIds f.params).zip (initCls pos f.params.length))) [] f.body
 end
 
 /-! ## The call graph -/
@@ -87,6 +92,15 @@ partial def stmtCalls : SrcStmt → List Nat
   | .whileEval e a => effCalls e ++ stmtCalls a
   | .setIndexEval _ a b => effCalls a ++ effCalls b
   | _ => []
+
+/-- A constant: `empty()`'s shape (`ConstOk`). -/
+def constOf (f : SrcFunc) : Option (SrcType × Nat) :=
+  match f.body with
+  | .returnEval (.eVariant ty j []) => some (ty, j)
+  | _ => none
+
+def constTab (consts : List (Nat × SrcType × Nat)) : List (Nat × Nat × Nat) :=
+  consts.map fun (c, ty, j) => (c, ty.typeId, j)
 
 /-- A decrement: `minus(a, b)`'s shape (`DecOk`). -/
 def decParams (f : SrcFunc) : Option (Nat × Nat) :=
@@ -183,12 +197,15 @@ partial def reach (sp : SrcProgram) (prims : Prims) : List Nat → Std.HashSet N
 /-- The annotations of the functions the roots reach, in components callees
 first, and the decrements with their parameters. -/
 def annotate (sp : SrcProgram) (prims : Prims) (roots : List Nat) :
-    List (Nat × TermAnn) × List (Nat × Nat × Nat) × List String := Id.run do
+    List (Nat × TermAnn) × List (Nat × Nat × Nat) × List (Nat × SrcType × Nat) × List String := Id.run do
   let all := (reach sp prims roots {}).toList.mergeSort
   let decs := all.filterMap fun i => match sp.funcs[i]? with
     | some f => (decParams f).map fun (a, b) => (i, a, b)
     | none => none
-  let T0 : TermInfo := { tab := .leaf, decs := decs.map (·.1) }
+  let consts := all.filterMap fun i => match sp.funcs[i]? with
+    | some f => if prims.isPrim i then none else (constOf f).map fun (ty, j) => (i, ty, j)
+    | none => none
+  let T0 : TermInfo := { tab := .leaf, decs := decs.map (·.1), consts := constTab consts }
   let succ := callees sp prims
   let act : StateM Tarjan Unit := all.forM fun v => do
     let s ← get
@@ -215,7 +232,7 @@ def annotate (sp : SrcProgram) (prims : Prims) (roots : List Nat) :
     | none =>
       notes := s!"no annotation found for the component {scc}" :: notes
       for f in scc do anns := (f, ⟨r, [], 0⟩) :: anns
-  return (anns.reverse, decs, notes.reverse)
+  return (anns.reverse, decs, consts, notes.reverse)
 
 /-- The functions that reach one of `bad` in the call graph. -/
 def badReach (sp : SrcProgram) (prims : Prims) (bad : List Nat) (all : List Nat) : Std.HashSet Nat := Id.run do
@@ -267,14 +284,17 @@ partial def mkTree (xs : Array (Nat × TermAnn)) (lo hi : Nat) : ATree :=
   .node (mkTree xs lo m) xs[m]!.1 xs[m]!.2 (mkTree xs (m + 1) hi)
 
 partial def treeText : ATree → String
-  | .leaf => ".leaf"
-  | .node l k a r => s!"(.node {treeText l} {k} {annText a} {treeText r})"
+  | .leaf => "ATree.leaf"
+  | .node l k a r => s!"(ATree.node {treeText l} {k} {annText a} {treeText r})"
 
-def infoOf (anns : List (Nat × TermAnn)) (decs : List Nat) : TermInfo :=
+def infoOf (anns : List (Nat × TermAnn)) (decs : List Nat) (consts : List (Nat × Nat × Nat)) : TermInfo :=
   let xs := (anns.mergeSort fun a b => a.1 ≤ b.1).toArray
-  { tab := mkTree xs 0 xs.size, decs := decs }
+  { tab := mkTree xs 0 xs.size, decs := decs, consts := consts }
 
 def main (args : List String) : IO Unit := do
+  let (out, args) := match args with
+    | "--out" :: dir :: rest => (dir ++ "/", rest)
+    | _ => (gen, args)
   -- names from the lookup lemmas
   let mut names : Std.HashMap Nat String := {}
   let mut index : Std.HashMap String Nat := {}
@@ -293,10 +313,11 @@ def main (args : List String) : IO Unit := do
           fileOf := fileOf.insert i k
           index := index.insert name i
   let roots := args.map fun r => index.getD r 0
-  let (anns, decs, notes) := annotate prog SelfRep.prims roots
+  let (anns, decs, consts, notes) := annotate prog SelfRep.prims roots
+  let ctab := constTab consts
   for n in notes do IO.eprintln n
   -- drop the functions that fail the check and every function that reaches one
-  let info0 := infoOf anns (decs.map (·.1))
+  let info0 := infoOf anns (decs.map (·.1)) ctab
   let fails0 := anns.filterMap fun (c, a) => match prog.funcs[c]? with
     | some f => if chkFn SelfRep.prims info0 a f then none else some c
     | none => none
@@ -304,7 +325,7 @@ def main (args : List String) : IO Unit := do
   let mut anns := anns.filter fun (c, _) => !bad.contains c
   let mut dropped : List Nat := (info0.anns.map (·.1)).filter bad.contains
   repeat
-    let info := infoOf anns (decs.map (·.1))
+    let info := infoOf anns (decs.map (·.1)) ctab
     let fails := anns.filter fun (c, a) => match prog.funcs[c]? with
       | some f => !chkFn SelfRep.prims info a f
       | none => false
@@ -314,7 +335,7 @@ def main (args : List String) : IO Unit := do
   if !dropped.isEmpty then
     IO.eprintln s!"{dropped.length} functions fail the check or call one that does: {dropped.map fun c => names.getD c s!"#{c}"}"
   anns := anns.mergeSort fun a b => a.1 ≤ b.1
-  let info := infoOf anns (decs.map (·.1))
+  let info := infoOf anns (decs.map (·.1)) ctab
   let parts := chunks 40 anns
   -- the annotations
   let mut text := header ["Lanius.Faithful.Sim.TermSound", "Lanius.Faithful.Gen.SelfProg"] false
@@ -323,11 +344,12 @@ def main (args : List String) : IO Unit := do
       ",\n".intercalate (parts[k]!.map fun (c, a) => s!"  ({c}, {annText a})") ++ "]\n\n"
   let appended := (List.range parts.length).foldr (fun k acc =>
     if acc == "" then s!"part{k}" else s!"part{k} ++ ({acc})") ""
-  text := text ++ s!"/-- The annotations of the functions {", ".intercalate args} reach. -/\n" ++
-    s!"def info : TermInfo := \{ tab := {treeText info.tab}, decs := {decs.map (·.1)} }\n\n" ++
+  text := text ++ s!"noncomputable def tab : ATree := {treeText info.tab}\n\n" ++
+    s!"/-- The annotations of the functions {", ".intercalate args} reach. -/\n" ++
+    s!"noncomputable def info : TermInfo := \{ tab := tab, decs := {decs.map (·.1)}, consts := {ctab} }\n\n" ++
     s!"theorem info_anns : info.anns = {appended} := by decide +kernel\n\n" ++
     "end Lanius.Faithful.SelfTerm\n"
-  IO.FS.writeFile s!"{gen}SelfTermInfo.lean" text
+  IO.FS.writeFile s!"{out}SelfTermInfo.lean" text
   -- the checks
   let looks := (List.range lookCount).map (s!"Lanius.Faithful.Gen.SelfLookFn{·}")
   for k in [0:parts.length] do
@@ -340,7 +362,7 @@ def main (args : List String) : IO Unit := do
     t := t ++ s!"theorem chunk{k} : AllFns prog prims info part{k} :=\n  ⟨" ++
       ", ".intercalate (parts[k]!.map fun (c, _) => s!"ok_{names.getD c s!"#{c}"}") ++ ", trivial⟩\n\n" ++
       "end Lanius.Faithful.SelfTerm\n"
-    IO.FS.writeFile s!"{gen}SelfTerm{k}.lean" t
+    IO.FS.writeFile s!"{out}SelfTerm{k}.lean" t
   -- the link
   let mut t := header (["Lanius.Faithful.Gen.SelfTermInfo"] ++ looks ++
     (List.range parts.length).map (s!"Lanius.Faithful.Gen.SelfTerm{·}"))
@@ -349,10 +371,15 @@ def main (args : List String) : IO Unit := do
   let decProofs := decs.map fun (c, a, b) =>
     let n := names.getD c s!"#{c}"
     s!"decOk_of {a} {b} np_{n} fn_{n} rfl (by decide) rfl"
+  let constProofs := consts.map fun (c, _, j) =>
+    let n := names.getD c s!"#{c}"
+    s!"constOk_of {j} np_{n} fn_{n} rfl rfl"
+  t := t ++ "theorem consts : AllConsts prog prims info.consts :=\n  ⟨" ++
+    ", ".intercalate (constProofs ++ ["trivial"]) ++ "⟩\n\n"
   t := t ++ "theorem decs : AllDecs prog prims info.decs :=\n  ⟨" ++
     ", ".intercalate decProofs ++ ", trivial⟩\n\n" ++
     "/-- The check passes for every function the roots reach. -/\n" ++
-    s!"theorem termOk : TermOk prog prims info :=\n  termOk_of decs info_anns ({chunked})\n\n"
+    s!"theorem termOk : TermOk prog prims info :=\n  termOk_of decs consts info_anns ({chunked})\n\n"
   let kept := (args.zip roots).filter fun (_, c) => (info.ann c).isSome
   for (r, c) in kept do
     if let some a := info.ann c then
@@ -360,5 +387,5 @@ def main (args : List String) : IO Unit := do
         s!"theorem settles_{r} (vs : List Lanius.Core.Value) : Settles prog prims {c} vs :=\n" ++
         s!"  pcall_complete termOk {c} {annText a} rfl vs\n\n"
   t := t ++ String.join (kept.map fun (r, _) => s!"#print axioms settles_{r}\n") ++ "\nend Lanius.Faithful.SelfTerm\n"
-  IO.FS.writeFile s!"{gen}SelfTerm.lean" t
-  IO.println s!"{anns.length} functions, {parts.length} chunks, decrements {decs.map (·.1)}"
+  IO.FS.writeFile s!"{out}SelfTerm.lean" t
+  IO.println s!"{anns.length} functions, {parts.length} chunks, decrements {decs.map (·.1)}, {consts.length} constants"

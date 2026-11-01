@@ -18,6 +18,9 @@ theorem ok_empty_of_i32 : FnOk prog prims info (5, ⟨0, [], 0⟩) :=
 theorem ok_compile_words : FnOk prog prims info (6, ⟨22, [], 0⟩) :=
   fnOk_of fn_compile_words (by decide +kernel)
 
+theorem ok_front_end_words : FnOk prog prims info (7, ⟨49, [], 0⟩) :=
+  fnOk_of fn_front_end_words (by decide +kernel)
+
 theorem ok_grammar : FnOk prog prims info (8, ⟨2, [], 0⟩) :=
   fnOk_of fn_grammar (by decide +kernel)
 
@@ -32,6 +35,9 @@ theorem ok_compile_source : FnOk prog prims info (12, ⟨21, [], 0⟩) :=
 
 theorem ok_read_counted_files : FnOk prog prims info (13, ⟨23, [], 0⟩) :=
   fnOk_of fn_read_counted_files (by decide +kernel)
+
+theorem ok_front_end_read : FnOk prog prims info (14, ⟨48, [], 0⟩) :=
+  fnOk_of fn_front_end_read (by decide +kernel)
 
 theorem ok_concat_of_mini_selfhost_Rule : FnOk prog prims info (15, ⟨0, [0], 0⟩) :=
   fnOk_of fn_concat_of_mini_selfhost_Rule (by decide +kernel)
@@ -108,6 +114,9 @@ theorem ok_read_files : FnOk prog prims info (40, ⟨22, [1], 0⟩) :=
 theorem ok_word_num : FnOk prog prims info (41, ⟨0, [], 0⟩) :=
   fnOk_of fn_word_num (by decide +kernel)
 
+theorem ok_front_end_files : FnOk prog prims info (42, ⟨47, [], 0⟩) :=
+  fnOk_of fn_front_end_files (by decide +kernel)
+
 theorem ok_cons_of_mini_selfhost_Rule : FnOk prog prims info (45, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_Rule (by decide +kernel)
 
@@ -123,16 +132,7 @@ theorem ok_empty_of_mini_selfhost_Rule : FnOk prog prims info (48, ⟨0, [], 0�
 theorem ok_core_panic_panic : FnOk prog prims info (50, ⟨0, [], 0⟩) :=
   fnOk_of fn_core_panic_panic (by decide +kernel)
 
-theorem ok_concat_of_i32 : FnOk prog prims info (51, ⟨0, [0], 0⟩) :=
-  fnOk_of fn_concat_of_i32 (by decide +kernel)
-
-theorem ok_length_of_usize : FnOk prog prims info (52, ⟨2, [0], 0⟩) :=
-  fnOk_of fn_length_of_usize (by decide +kernel)
-
-theorem ok_usize_words : FnOk prog prims info (53, ⟨1, [0], 0⟩) :=
-  fnOk_of fn_usize_words (by decide +kernel)
-
 theorem chunk0 : AllFns prog prims info part0 :=
-  ⟨ok_empty_of_i32, ok_compile_words, ok_grammar, ok_cons_of_i32, ok_binary_words, ok_compile_source, ok_read_counted_files, ok_concat_of_mini_selfhost_Rule, ok_grammar_part_0, ok_grammar_part_1, ok_grammar_part_2, ok_grammar_part_3, ok_grammar_part_4, ok_grammar_part_5, ok_grammar_part_6, ok_grammar_part_7, ok_grammar_part_8, ok_grammar_part_9, ok_grammar_part_10, ok_grammar_part_11, ok_grammar_part_12, ok_grammar_part_13, ok_grammar_part_14, ok_grammar_part_15, ok_grammar_part_16, ok_image_words, ok_pack_rounds, ok_funcs_return, ok_compile_declared, ok_declare_program, ok_read_files, ok_word_num, ok_cons_of_mini_selfhost_Rule, ok_cons_of_mini_selfhost_Sym, ok_empty_of_mini_selfhost_Sym, ok_empty_of_mini_selfhost_Rule, ok_core_panic_panic, ok_concat_of_i32, ok_length_of_usize, ok_usize_words, trivial⟩
+  ⟨ok_empty_of_i32, ok_compile_words, ok_front_end_words, ok_grammar, ok_cons_of_i32, ok_binary_words, ok_compile_source, ok_read_counted_files, ok_front_end_read, ok_concat_of_mini_selfhost_Rule, ok_grammar_part_0, ok_grammar_part_1, ok_grammar_part_2, ok_grammar_part_3, ok_grammar_part_4, ok_grammar_part_5, ok_grammar_part_6, ok_grammar_part_7, ok_grammar_part_8, ok_grammar_part_9, ok_grammar_part_10, ok_grammar_part_11, ok_grammar_part_12, ok_grammar_part_13, ok_grammar_part_14, ok_grammar_part_15, ok_grammar_part_16, ok_image_words, ok_pack_rounds, ok_funcs_return, ok_compile_declared, ok_declare_program, ok_read_files, ok_word_num, ok_front_end_files, ok_cons_of_mini_selfhost_Rule, ok_cons_of_mini_selfhost_Sym, ok_empty_of_mini_selfhost_Sym, ok_empty_of_mini_selfhost_Rule, ok_core_panic_panic, trivial⟩
 
 end Lanius.Faithful.SelfTerm

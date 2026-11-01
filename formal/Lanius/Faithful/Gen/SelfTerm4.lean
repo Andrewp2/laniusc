@@ -12,6 +12,24 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Termination
 open Lanius.Faithful.SelfCert
 
+theorem ok_lower_store : FnOk prog prims info (198, ⟨0, [], 0⟩) :=
+  fnOk_of fn_lower_store (by decide +kernel)
+
+theorem ok_lower_free : FnOk prog prims info (199, ⟨0, [], 0⟩) :=
+  fnOk_of fn_lower_free (by decide +kernel)
+
+theorem ok_lower_slice : FnOk prog prims info (200, ⟨6, [], 0⟩) :=
+  fnOk_of fn_lower_slice (by decide +kernel)
+
+theorem ok_lower_let_index_any : FnOk prog prims info (202, ⟨16, [], 0⟩) :=
+  fnOk_of fn_lower_let_index_any (by decide +kernel)
+
+theorem ok_lower_set_index_any : FnOk prog prims info (203, ⟨16, [], 0⟩) :=
+  fnOk_of fn_lower_set_index_any (by decide +kernel)
+
+theorem ok_lower_let_eval : FnOk prog prims info (204, ⟨4, [], 0⟩) :=
+  fnOk_of fn_lower_let_eval (by decide +kernel)
+
 theorem ok_SrcEff_eval : FnOk prog prims info (205, ⟨16, [0], 0⟩) :=
   fnOk_of fn_SrcEff_eval (by decide +kernel)
 
@@ -114,25 +132,7 @@ theorem ok_file_collected : FnOk prog prims info (244, ⟨0, [], 0⟩) :=
 theorem ok_collect : FnOk prog prims info (245, ⟨11, [2], 0⟩) :=
   fnOk_of fn_collect (by decide +kernel)
 
-theorem ok_no_decls : FnOk prog prims info (246, ⟨1, [], 0⟩) :=
-  fnOk_of fn_no_decls (by decide +kernel)
-
-theorem ok_empty_of_mini_selfhost_List_usize : FnOk prog prims info (247, ⟨0, [], 0⟩) :=
-  fnOk_of fn_empty_of_mini_selfhost_List_usize (by decide +kernel)
-
-theorem ok_module_at : FnOk prog prims info (248, ⟨6, [2], 1⟩) :=
-  fnOk_of fn_module_at (by decide +kernel)
-
-theorem ok_item_body : FnOk prog prims info (249, ⟨4, [], 0⟩) :=
-  fnOk_of fn_item_body (by decide +kernel)
-
-theorem ok_well_named : FnOk prog prims info (250, ⟨8, [], 0⟩) :=
-  fnOk_of fn_well_named (by decide +kernel)
-
-theorem ok_build_mono : FnOk prog prims info (251, ⟨21, [], 0⟩) :=
-  fnOk_of fn_build_mono (by decide +kernel)
-
 theorem chunk4 : AllFns prog prims info part4 :=
-  ⟨ok_SrcEff_eval, ok_lower_set_eval, ok_lower_if_eval, ok_lower_while_eval, ok_lower_return_eval, ok_lower_discard, ok_lower_set_index_eval, ok_lower_set_field_eval, ok_lower_return_unit, ok_lower_assert, ok_lower_match_arm, ok_arm_body_scope, ok_lower_unreachable, ok_SrcType_same, ok_declare_params_after, ok_SrcStmt_declare, ok_declare_struct, ok_declare_types, ok_declare_enum, ok_declare_variants, ok_empty_of_usize, ok_byte_after, ok_file_lexed, ok_lex_source, ok_nums_after, ok_attach_sym, ok_used_up, ok_only, ok_items_in, ok_kids_of, ok_get_or_of_mini_selfhost_CTree, ok_no_token, ok_file_collected, ok_collect, ok_no_decls, ok_empty_of_mini_selfhost_List_usize, ok_module_at, ok_item_body, ok_well_named, ok_build_mono, trivial⟩
+  ⟨ok_lower_store, ok_lower_free, ok_lower_slice, ok_lower_let_index_any, ok_lower_set_index_any, ok_lower_let_eval, ok_SrcEff_eval, ok_lower_set_eval, ok_lower_if_eval, ok_lower_while_eval, ok_lower_return_eval, ok_lower_discard, ok_lower_set_index_eval, ok_lower_set_field_eval, ok_lower_return_unit, ok_lower_assert, ok_lower_match_arm, ok_arm_body_scope, ok_lower_unreachable, ok_SrcType_same, ok_declare_params_after, ok_SrcStmt_declare, ok_declare_struct, ok_declare_types, ok_declare_enum, ok_declare_variants, ok_empty_of_usize, ok_byte_after, ok_file_lexed, ok_lex_source, ok_nums_after, ok_attach_sym, ok_used_up, ok_only, ok_items_in, ok_kids_of, ok_get_or_of_mini_selfhost_CTree, ok_no_token, ok_file_collected, ok_collect, trivial⟩
 
 end Lanius.Faithful.SelfTerm
