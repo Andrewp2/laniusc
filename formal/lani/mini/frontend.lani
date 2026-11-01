@@ -4547,7 +4547,8 @@ pub fn field_ty(fuel: usize, decls: Decls, l: core::option::Option<Local>, j: us
 
 // An integer literal, or arithmetic of them: its type comes from its
 // context (an isize literal is written bare beside a typed operand), so an
-// operator's type is its other operand's.
+// operator's type is its other operand's. A shift's type is its value's,
+// whatever its amount: `5 << (c & 31)` is bare.
 pub fn bare_int(e: SrcExpr) -> bool {
     return match (e) {
         Int(k) -> true,
@@ -4557,7 +4558,7 @@ pub fn bare_int(e: SrcExpr) -> bool {
         Field(id, j) -> false,
         Negate(x) -> bare_int(unbox(x)),
         Not(x) -> false,
-        Apply(op, a, b) -> !gives_bool(op) && bare_int(unbox(a)) && bare_int(unbox(b)),
+        Apply(op, a, b) -> !gives_bool(op) && bare_int(unbox(a)) && (shift_op(op) || bare_int(unbox(b))),
         Cast(t, x) -> unit_ty(t),
         Null -> false,
         SrcExpr::Char(code) -> false,
@@ -4585,7 +4586,7 @@ pub fn expr_ty(fuel: usize, env: FrontEnv, scope: List<Local>, e: SrcExpr) -> co
         Field(id, j) -> field_ty(fuel, env.decls, find_local_id(scope, id), j),
         Negate(x) -> expr_ty(minus(fuel, 1), env, scope, unbox(x)),
         Not(x) -> Some(TyBool),
-        Apply(op, a, b) -> apply_ty(op, pick_ty(bare_int(unbox(a)), expr_ty(minus(fuel, 1), env, scope, unbox(a)), expr_ty(minus(fuel, 1), env, scope, unbox(b)))),
+        Apply(op, a, b) -> apply_ty(op, pick_ty(bare_int(unbox(a)) && !shift_op(op), expr_ty(minus(fuel, 1), env, scope, unbox(a)), expr_ty(minus(fuel, 1), env, scope, unbox(b)))),
         Cast(t, x) -> src_ty(t),
         Null -> Some(TyPtr),
         SrcExpr::Char(code) -> None,
@@ -5697,7 +5698,7 @@ pub fn bare_eff(x: MEff) -> bool {
     return match (x) {
         XPure(e) -> bare_int(e),
         XCall(inst, args) -> false,
-        XApply(op, l, r) -> !gives_bool(op) && bare_eff(unbox(l)) && bare_eff(unbox(r)),
+        XApply(op, l, r) -> !gives_bool(op) && bare_eff(unbox(l)) && (shift_op(op) || bare_eff(unbox(r))),
         XNeg(a) -> bare_eff(unbox(a)),
         XNot(a) -> false,
         XCast(t, a) -> false,
@@ -5719,7 +5720,7 @@ pub fn eff_ty(fuel: usize, env: FrontEnv, scope: List<Local>, x: MEff) -> core::
     return match (x) {
         XPure(e) -> expr_ty(fuel, env, scope, e),
         XCall(inst, args) -> inst_ret(fuel, env.decls, inst),
-        XApply(op, l, r) -> apply_ty(op, pick_ty(bare_eff(unbox(l)), eff_ty(minus(fuel, 1), env, scope, unbox(l)), eff_ty(minus(fuel, 1), env, scope, unbox(r)))),
+        XApply(op, l, r) -> apply_ty(op, pick_ty(bare_eff(unbox(l)) && !shift_op(op), eff_ty(minus(fuel, 1), env, scope, unbox(l)), eff_ty(minus(fuel, 1), env, scope, unbox(r)))),
         XNeg(a) -> eff_ty(minus(fuel, 1), env, scope, unbox(a)),
         XNot(a) -> Some(TyBool),
         XCast(t, a) -> src_ty(t),

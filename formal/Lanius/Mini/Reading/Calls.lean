@@ -54,10 +54,10 @@ inductive EffTy (decls : Decls) (scope : List Local) : MEff → Ty → Prop
   | pure {e : SrcExpr} {t : Ty} : ExprTy decls scope e t → EffTy decls scope (.xPure e) t
   | call {inst : Inst} {args : List MEff} {t : Ty} : InstRet decls inst t → EffTy decls scope (.xCall inst args) t
   | compare {op : SrcOp} {l r : MEff} : givesBool op = true → EffTy decls scope (.xApply op l r) .tyBool
-  | left {op : SrcOp} {l r : MEff} {t : Ty} : givesBool op = false → bareEff l = false → EffTy decls scope l t →
-      EffTy decls scope (.xApply op l r) t
-  | right {op : SrcOp} {l r : MEff} {t : Ty} : givesBool op = false → bareEff l = true → EffTy decls scope r t →
-      EffTy decls scope (.xApply op l r) t
+  | left {op : SrcOp} {l r : MEff} {t : Ty} : givesBool op = false → (bareEff l && !shiftOp op) = false →
+      EffTy decls scope l t → EffTy decls scope (.xApply op l r) t
+  | right {op : SrcOp} {l r : MEff} {t : Ty} : givesBool op = false → (bareEff l && !shiftOp op) = true →
+      EffTy decls scope r t → EffTy decls scope (.xApply op l r) t
   | neg {a : MEff} {t : Ty} : EffTy decls scope a t → EffTy decls scope (.xNeg a) t
   | not {a : MEff} : EffTy decls scope (.xNot a) .tyBool
   | cast {s : SrcType} {a : MEff} {t : Ty} : ScalarTy t s → EffTy decls scope (.xCast s a) t
@@ -137,7 +137,7 @@ theorem effTy_sound : ∀ {fuel : Nat} {env : FrontEnv} {scope : List Local} {x 
       · rw [if_neg g] at h
         have g' : givesBool op = false := by simpa using g
         simp only [pickTy] at h
-        by_cases bl : bareEff l = true
+        by_cases bl : (bareEff l && !shiftOp op) = true
         · rw [if_pos bl] at h
           exact .right g' bl (effTy_sound h)
         · rw [if_neg bl] at h

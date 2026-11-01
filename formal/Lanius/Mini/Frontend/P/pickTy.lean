@@ -37,7 +37,7 @@ def exprTy (fuel : Nat) (env : FrontEnv) (scope : List Local) (e : SrcExpr) : Op
     | .field id j => fieldTy fuel env.decls (findLocalId scope id) j
     | .negate x => exprTy (fuel - 1) env scope x
     | .not x => some Ty.tyBool
-    | .apply op a b => applyTy op (pickTy (bareInt a) (exprTy (fuel - 1) env scope a) (exprTy (fuel - 1) env scope b))
+    | .apply op a b => applyTy op (pickTy (bareInt a && !(shiftOp op)) (exprTy (fuel - 1) env scope a) (exprTy (fuel - 1) env scope b))
     | .cast t x => srcTy t
     | .null => some Ty.tyPtr
     | .char code => none

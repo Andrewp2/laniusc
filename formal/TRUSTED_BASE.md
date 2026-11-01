@@ -633,7 +633,9 @@ when it is right; a stale cache entry is rejected, never used. Trusted:
     callee's result type with the type its value is stored at, then its
     parameter types with the argument types in order, each argument read at
     its parameter's type once all are bound; an integer literal argument
-    binds nothing unless a parameter is left unbound, when it counts as
+    (or arithmetic of literals, or a shift whose value is one: a shift's
+    type is its value's, whatever its amount, `bareInt`/`bareEff`) binds
+    nothing unless a parameter is left unbound, when it counts as
     `i32`; a conflict or an unbound parameter rejects;
   - `x.m(args)` (`x` any value) and `T::m(args)` (`T` a type parameter, or
     a primitive type as in `i32::hash(v)`) call
