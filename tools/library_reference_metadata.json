@@ -2282,6 +2282,18 @@
       ],
       "note": "JSON Schema draft 2020-12 validation (core, applicator and validation vocabularies; pattern via ext::regex; local $ref and $defs) over ext::json_tree, with exact decimal numeric keywords and depth/work limits. Native binaries from lcc agree with a Python model on 246 hand-written specification cases, 92 error/limit cases and 10,000 generated schema/instance pairs."
     },
+    "ext::yaml_writer": {
+      "guides": [
+        "docs/extended-yaml.md"
+      ],
+      "note": "Block-style YAML writer from ext::json_tree: plain strings only where no YAML 1.1 or 1.2 reader could misread them, literal block scalars with matching chomping for multi-line text, double quotes otherwise; floats with exponents re-spelled for YAML 1.1. Native binaries from lcc round-trip 3,320 hand-written and generated trees through PyYAML 6.0.1 safe_load and ext::yaml."
+    },
+    "ext::toml_writer": {
+      "guides": [
+        "docs/extended-toml-writer.md"
+      ],
+      "note": "TOML 1.0 writer from an ext::json_tree object: [tables], [[arrays of tables]], inline tables inside arrays, basic strings and the tree's exact number spellings; typed NotTable, NullValue and IntegerRange errors with the node. Native binaries from lcc round-trip 3,014 hand-written and generated trees through Python tomllib (floats compared by spelling) and reject 11 error cases."
+    },
     "ext::yaml": {
       "guides": [
         "docs/extended-yaml.md"

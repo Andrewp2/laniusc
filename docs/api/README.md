@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **328 modules**, **17547 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **330 modules**, **17560 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -321,6 +321,7 @@ Inventory: **328 modules**, **17547 declaration/member entries**. Counts include
 | [ext::timezone](ext/timezone.md) | [source](../../extended/ext/timezone.lani#L3) | 80 | Source inventory | [extended-timezone](../extended-timezone.md) |
 | [ext::tls_stream](ext/tls_stream.md) | [source](../../extended/ext/tls_stream.lani#L3) | 74 | Source inventory | [extended-https-fetch](../extended-https-fetch.md), [extended-openssl-tls](../extended-openssl-tls.md), [extended-https-server](../extended-https-server.md), [extended-openssl-tls-server](../extended-openssl-tls-server.md), [extended-openssl-mutual-tls](../extended-openssl-mutual-tls.md), [extended-https-mutual-tls](../extended-https-mutual-tls.md) |
 | [ext::toml](ext/toml.md) | [source](../../extended/ext/toml.lani#L2) | 93 | Source inventory | [extended-toml](../extended-toml.md), [extended-toml-streaming](../extended-toml-streaming.md), [extended-toml-normalize](../extended-toml-normalize.md) |
+| [ext::toml_writer](ext/toml_writer.md) | [source](../../extended/ext/toml_writer.lani#L6) | 10 | Source inventory | [extended-toml-writer](../extended-toml-writer.md) |
 | [ext::unicode_case](ext/unicode_case.md) | [source](../../extended/ext/unicode_case.lani#L4) | 21 | Source inventory | [extended-unicode-case](../extended-unicode-case.md), [extended-unicode-uconv](../extended-unicode-uconv.md) |
 | [ext::unicode_graphemes](ext/unicode_graphemes.md) | [source](../../extended/ext/unicode_graphemes.lani#L3) | 18 | Source inventory | [extended-unicode-graphemes](../extended-unicode-graphemes.md) |
 | [ext::unicode_lines](ext/unicode_lines.md) | [source](../../extended/ext/unicode_lines.lani#L3) | 37 | Source inventory | [extended-unicode-lines](../extended-unicode-lines.md) |
@@ -345,6 +346,7 @@ Inventory: **328 modules**, **17547 declaration/member entries**. Counts include
 | [ext::x509](ext/x509.md) | [source](../../extended/ext/x509.lani#L3) | 141 | Source inventory | [extended-x509](../extended-x509.md), [extended-certificate-info](../extended-certificate-info.md) |
 | [ext::xz](ext/xz.md) | [source](../../extended/ext/xz.lani#L4) | 168 | Source inventory | [extended-xz](../extended-xz.md) |
 | [ext::yaml](ext/yaml.md) | [source](../../extended/ext/yaml.lani#L4) | 29 | Source inventory | [extended-yaml](../extended-yaml.md) |
+| [ext::yaml_writer](ext/yaml_writer.md) | [source](../../extended/ext/yaml_writer.lani#L6) | 3 | Source inventory | [extended-yaml](../extended-yaml.md) |
 | [ext::zip](ext/zip.md) | [source](../../extended/ext/zip.lani#L2) | 82 | Source inventory | [extended-zip](../extended-zip.md), [extended-fetch-many](../extended-fetch-many.md) |
 
 ## Support and implementation data
