@@ -140,7 +140,7 @@ The preceding
 [resumable compression encoder](extended-streaming-deflate.md) adds fixed
 32 KiB blocks, retained pending output and u64 raw/zlib/gzip limits over shared
 block helpers. Its [packed fast pass](extended-streaming-deflate.md#packed-fast-pass)
-encodes gzip at 50–54 MB/s against 3.5–3.8 MB/s before, with byte-identical output. The [file compressor](extended-compress-file.md) uses fixed
+encodes gzip at 50–54 MB/s against 3.5–3.8 MB/s before, with byte-identical output. Opt-in [dynamic Huffman levels](extended-streaming-deflate.md#dynamic-huffman-levels) 1–3 add a sliding window, hash chains, lazy matching and per-block dynamic codes; level 2 comes within 2.9% (docs/stdlib tar) and 6.9% (text tar) of `gzip -6`'s size at 28.7 and 33.8 MB/s. The [file compressor](extended-compress-file.md) uses fixed
 workspace and NoReplace publication. All five library groups and five
 application groups/99 native cases pass, including the 112-case chunk/block
 model and nine reached application allocation denials. This finite native

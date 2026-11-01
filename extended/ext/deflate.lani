@@ -15,7 +15,12 @@ pub struct Failure { error: Error, read: i32, written: i32 }
 // aliases; no transient input/output view or external cleanup is retained.
 pub struct Encoder {
     block: core::slice::View<u8>, pending: core::slice::View<u8>, scratch: core::slice::View<i32>,
-    buffered: i32, front: i32, back: i32, final_block: bool, done: bool
+    buffered: i32, front: i32, back: i32, final_block: bool, done: bool,
+    // Levels 1-3 only (see level_encoder): match parameters, the sliding
+    // window's fill and chunk start, the absolute position of window byte 0,
+    // the next position still to hash, and output bits not yet a whole byte.
+    level: i32, chain: i32, lazy: i32, nice: i32, good: i32,
+    filled: i32, start: i32, origin: i32, hashed: i32, carry: u64, carry_bits: i32, cleared: bool
 }
 
 pub fn input_buffer_len() -> i32 { return 32768; }
@@ -482,7 +487,9 @@ pub fn encoder(block: core::slice::View<u8>, pending: core::slice::View<u8>, scr
         block: core::slice::View { values: block.values, start: block.start, length: input_buffer_len() },
         pending: core::slice::View { values: pending.values, start: pending.start, length: output_buffer_len() },
         scratch: core::slice::View { values: scratch.values, start: scratch.start, length: scratch_len() },
-        buffered: 0, front: 0, back: 0, final_block: false, done: false
+        buffered: 0, front: 0, back: 0, final_block: false, done: false,
+        level: 0, chain: 0, lazy: 0, nice: 0, good: 0,
+        filled: 0, start: 0, origin: 0, hashed: 0, carry: 0, carry_bits: 0, cleared: false
     });
 }
 
@@ -493,6 +500,7 @@ pub impl Encoder {
     pub fn reset(&self) {
         self.buffered = 0; self.front = 0; self.back = 0;
         self.final_block = false; self.done = false;
+        self.filled = 0; self.start = 0; self.origin = 32768; self.hashed = 0; self.carry = 0; self.carry_bits = 0; self.cleared = false;
     }
 
     // Called only with no pending bytes. Every block starts with fresh match
@@ -517,6 +525,7 @@ pub impl Encoder {
             return core::result::Err(Failure { error: Error::Bounds, read: 0, written: 0 });
         }
         if (self.done) { return core::result::Ok(Step { read: 0, written: 0, status: Status::Done }); }
+        if (self.level > 0) { return level_step(self,input,output,final_input); }
         let read: i32 = 0; let written: i32 = 0;
         while (true) {
             // Publish confirmed pending bytes before admitting any new input.
@@ -545,4 +554,456 @@ pub impl Encoder {
         }
         return core::result::Ok(Step { read: read, written: written, status: Status::NeedInput });
     }
+}
+
+// ---------------------------------------------------------------- levels
+// Opt-in levels 1-3 add a 32 KiB sliding window, hash chains, lazy matching
+// (levels 2-3) and per-block dynamic Huffman codes. Level 0 is the encoder
+// above. Each 32 KiB of input becomes one block: dynamic, fixed or stored,
+// whichever is smallest, with bit packing continuing across blocks.
+pub fn level_window_len() -> i32 { return 65552; }
+pub fn level_pending_len() -> i32 { return 32784; }
+pub fn level_scratch_len() -> i32 { return 102400; }
+const HEAD: i32 = 0;
+const PREV: i32 = 32768;
+const SYMBOLS: i32 = 65536;
+const LIT_FREQ: i32 = 98304;
+const DIST_FREQ: i32 = 98590;
+const LIT_LEN: i32 = 98620;
+const DIST_LEN: i32 = 98906;
+const LIT_CODE: i32 = 98936;
+const DIST_CODE: i32 = 99222;
+const CL_FREQ: i32 = 99252;
+const CL_LEN: i32 = 99271;
+const CL_CODE: i32 = 99290;
+const RUNS: i32 = 99309;
+const SORT: i32 = 99625;
+const SORT2: i32 = 99911;
+const DEPTH: i32 = 100197;
+
+// Level 0 is encoder(); levels 1-3 need packed (stride +1) window and pending
+// views of at least level_window_len() and level_pending_len() bytes and
+// level_scratch_len() scratch entries. Construction touches no backing.
+pub fn level_encoder(window: core::slice::View<u8>, pending: core::slice::View<u8>, scratch: core::slice::View<i32>, level: i32) -> core::result::Result<Encoder,Error> {
+    if (level == 0) { return encoder(window,pending,scratch); }
+    if (level < 0 || level > 3) { return core::result::Err(Error::Bounds); }
+    if (!valid_bytes(window) || !valid_bytes(pending) || !valid_scratch(scratch)) { return core::result::Err(Error::Bounds); }
+    if (window.length < level_window_len()) { return core::result::Err(Error::ScratchTooSmall(level_window_len())); }
+    if (pending.length < level_pending_len()) { return core::result::Err(Error::Capacity(level_pending_len())); }
+    if (scratch.length < level_scratch_len()) { return core::result::Err(Error::ScratchTooSmall(level_scratch_len())); }
+    if (!packed(window) || !packed(pending)) { return core::result::Err(Error::Bounds); }
+    // chain, lazy (0 = greedy), nice, good, as in zlib: chains walk at most
+    // chain entries (a quarter once the previous match reaches good), stop at
+    // a nice match, and lazy matching retries only matches shorter than lazy.
+    let chain: i32 = 4; let lazy: i32 = 0; let nice: i32 = 16; let good: i32 = 4;
+    if (level == 2) { chain = 4; lazy = 8; nice = 32; good = 4; }
+    if (level == 3) { chain = 16; lazy = 32; nice = 258; good = 16; }
+    return core::result::Ok(Encoder {
+        block: core::slice::View { values: window.values, start: window.start, length: level_window_len() },
+        pending: core::slice::View { values: pending.values, start: pending.start, length: level_pending_len() },
+        scratch: core::slice::View { values: scratch.values, start: scratch.start, length: level_scratch_len() },
+        buffered: 0, front: 0, back: 0, final_block: false, done: false,
+        level: level, chain: chain, lazy: lazy, nice: nice, good: good,
+        filled: 0, start: 0, origin: 32768, hashed: 0, carry: 0, carry_bits: 0, cleared: false
+    });
+}
+
+fn level_step(e: &Encoder, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<Step,Failure> {
+    let read: i32 = 0; let written: i32 = 0;
+    while (true) {
+        let publish: i32 = e.back-e.front; if (publish > output.length-written) { publish = output.length-written; }
+        copy_bytes(output,written,e.pending,e.front,publish); e.front += publish; written += publish;
+        if (e.front < e.back) { return core::result::Ok(Step { read: read, written: written, status: Status::NeedOutput }); }
+        e.front = 0; e.back = 0;
+        if (e.final_block) { e.done = true; return core::result::Ok(Step { read: read, written: written, status: Status::Done }); }
+        let chunk_end: i32 = e.start+32768;
+        let count: i32 = input.length-read; if (count > chunk_end-e.filled) { count = chunk_end-e.filled; }
+        copy_bytes(e.block,e.filled,input,read,count); e.filled += count; read += count;
+        if (e.filled == chunk_end) {
+            // A full chunk is nonfinal even when input ends here; the empty
+            // final block follows.
+            level_block(e,e.start,chunk_end,false);
+            if (chunk_end == 65536) { level_slide(e); } else { e.start = chunk_end; }
+        } else {
+            if (final_input) { level_block(e,e.start,e.filled,true); }
+            else { return core::result::Ok(Step { read: read, written: written, status: Status::NeedInput }); }
+        }
+    }
+    return core::result::Ok(Step { read: read, written: written, status: Status::NeedInput });
+}
+
+// Keep the newest 32 KiB as history. Positions are absolute; far from the
+// i32 limit they are rebased, dropping entries older than the window.
+fn level_slide(e: &Encoder) {
+    copy_bytes(e.block,0,e.block,32768,32768);
+    e.origin += 32768; e.filled = 32768; e.start = 32768;
+    if (e.origin >= 1073741824) {
+        let w: [i32] = e.scratch.values; let s0: i32 = e.scratch.start; let shift: i32 = e.origin-32768; let k: i32 = 0;
+        while (k < 65536) { let v: i32 = w[s0+k]; if (v < shift) { v = -1; } else { v -= shift; } w[s0+k] = v; k += 1; }
+        e.hashed -= shift; e.origin = 32768;
+    }
+}
+
+// Multiplicative (Fibonacci) hash of four bytes, 15 bits.
+fn level_hash(four: u64) -> i32 { return (((four*2654435761) & 4294967295) >> 17) as i32; }
+fn level_insert(e: &Encoder, bytes: [u8], at: i32) {
+    let w: [i32] = e.scratch.values; let s0: i32 = e.scratch.start;
+    let four: u64 = ((bytes[at] as u64) << 24) | ((bytes[at+1] as u64) << 16) | ((bytes[at+2] as u64) << 8) | (bytes[at+3] as u64);
+    let key: i32 = s0+HEAD+level_hash(four); let position: i32 = e.origin+at;
+    let old: i32 = w[key]; w[s0+PREV+(position & 32767)] = old; w[key] = position;
+}
+
+// Parse window[begin..end) into symbols, then code it as one block.
+fn level_block(e: &Encoder, begin: i32, end: i32, final_block: bool) {
+    let w: [i32] = e.scratch.values; let s0: i32 = e.scratch.start;
+    if (!e.cleared) { let k: i32 = 0; while (k < 32768) { w[s0+HEAD+k] = -1; k += 1; } e.cleared = true; }
+    let base: ptr = data(e.block); let size: i32 = e.block.length;
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(base,size);
+    let units: i32 = size >> 3; let whole: [u64] = words(base,0,units);
+    // Length entries: symbol-257 | extra << 5 | base << 8; distances as in
+    // block_pass, here symbol | extra << 5 | base << 9.
+    let lengths: [i32;259] = [0;259]; let near: [i32;512] = [0;512];
+    let symbol: i32 = 257; let first: i32 = 3; let extra: i32 = 0; let index: i32 = 3;
+    while (index <= 258) {
+        if (index == 258) { symbol = 285; first = 258; extra = 0; }
+        else { if (index >= first+(1 << extra)) { first += 1 << extra; symbol += 1; if (symbol >= 265) { extra = (symbol-261) >> 2; } } }
+        lengths[index] = (symbol-257) | (extra << 5) | (first << 8); index += 1;
+    }
+    symbol = 0;
+    while (symbol < 30) {
+        let low: i32 = distance_base(symbol); let span: i32 = distance_extra(symbol); let last: i32 = low+(1 << span)-1;
+        let item: i32 = symbol | (span << 5) | (low << 9); let d: i32 = low;
+        while (d <= last && d <= 256) { near[d-1] = item; d += 1; }
+        if (last > 256) { let slot: i32 = (low-1) >> 7; while (slot <= (last-1) >> 7) { near[256+slot] = item; slot += 1; } }
+        symbol += 1;
+    }
+    // Positions that lacked lookahead at the previous chunk's end.
+    let q: i32 = e.hashed-e.origin; if (q < 0) { q = 0; }
+    while (q < begin && q+3 < end) { level_insert(e,bytes,q); q += 1; }
+    let lf: [i32;286] = [0;286]; let df: [i32;30] = [0;30]; let bits: i32 = 0; let count: i32 = 0;
+    let origin: i32 = e.origin; let chain: i32 = e.chain; let lazy: i32 = e.lazy; let nice: i32 = e.nice; let good: i32 = e.good;
+    let p: i32 = begin; let prev_len: i32 = 2; let prev_dist: i32 = 0; let held: bool = false; let held_byte: i32 = 0;
+    // Before position p, t holds bytes p..p+2; the loop shifts in p+3, so
+    // t holds the four hashed bytes (byte p highest) and h is their hash.
+    // Absolute positions start at 32768, so an empty head (-1) is always
+    // out of range.
+    let t: u64 = ((bytes[begin] as u64) << 16) | ((bytes[begin+1] as u64) << 8) | (bytes[begin+2] as u64);
+    let h: i32 = 0;
+    let hashing: i32 = end-3; let here: i32 = origin+p;
+    while (p < end) {
+        let cur_len: i32 = 2; let cur_dist: i32 = 0;
+        if (p < hashing) {
+            let next_byte: i32 = (t & 255) as i32;
+            t = ((t << 8) | (bytes[p+3] as u64)) & 4294967295; h = (((t*2654435761) & 4294967295) >> 17) as i32;
+            let c: i32 = w[s0+h]; w[s0+PREV+(here & 32767)] = c; w[s0+h] = here;
+            let limit: i32 = here-32768;
+            if (c > limit && (prev_len < lazy || lazy == 0)) {
+                let best: i32 = prev_len; let left: i32 = chain; if (prev_len >= good) { left = left >> 2; }
+                let scan_end: i32 = next_byte; if (best > 2) { scan_end = bytes[p+best] as i32; }
+                let wp: u64 = 0; let loaded: bool = false;
+                while (c > limit && left > 0) {
+                    let ci: i32 = c-origin;
+                    if ((bytes[ci+best] as i32) == scan_end) {
+                        let pq: i32 = p >> 3; let wsh: i32 = (p & 7) << 3;
+                        if (!loaded) {
+                            wp = whole[units-1-pq];
+                            if (wsh != 0) { wp = (wp >> (wsh as u64)) | (whole[units-2-pq] << ((64-wsh) as u64)); }
+                            loaded = true;
+                        }
+                        let maximum: i32 = end-p; if (maximum > 258) { maximum = 258; }
+                        // Word compare; past maximum only stale bytes remain.
+                        let length: i32 = 0; let probe: u64 = wp;
+                        let csh: i32 = (ci & 7) << 3; let ck: i32 = units-1-(ci >> 3); let pk: i32 = units-1-pq;
+                        while (true) {
+                            let cw: u64 = whole[ck];
+                            if (csh != 0) { cw = (cw >> (csh as u64)) | (whole[ck-1] << ((64-csh) as u64)); }
+                            let differ: u64 = cw ^ probe;
+                            if (differ != 0) {
+                                if ((differ & 4294967295) == 0) { differ = differ >> 32; length += 4; }
+                                if ((differ & 65535) == 0) { differ = differ >> 16; length += 2; }
+                                if ((differ & 255) == 0) { length += 1; }
+                                break;
+                            }
+                            length += 8;
+                            if (length >= maximum) { break; }
+                            ck -= 1; pk -= 1; probe = whole[pk];
+                            if (wsh != 0) { probe = (probe >> (wsh as u64)) | (whole[pk-1] << ((64-wsh) as u64)); }
+                        }
+                        if (length > maximum) { length = maximum; }
+                        if (length > best) {
+                            best = length; cur_dist = here-c;
+                            if (length >= nice || length >= maximum) { break; }
+                            scan_end = bytes[p+best] as i32;
+                        }
+                    }
+                    c = w[s0+PREV+(c & 32767)]; left -= 1;
+                }
+                if (cur_dist > 0) {
+                    cur_len = best;
+                    // A three-byte match this far back rarely pays (zlib's TOO_FAR).
+                    if (best == 3 && cur_dist > 4096) { cur_len = 2; cur_dist = 0; }
+                }
+            }
+        } else { t = (t << 8) & 4294967295; }
+        // t >> 24 is byte p.
+        let take: i32 = 0; let take_dist: i32 = 0; let at: i32 = p;
+        if (lazy == 0) {
+            if (cur_len >= 3) { take = cur_len; take_dist = cur_dist; }
+        } else {
+            if (prev_len >= 3 && cur_len <= prev_len) { take = prev_len; take_dist = prev_dist; at = p-1; }
+        }
+        if (take >= 3) {
+            let item: i32 = lengths[take]; let dist: i32 = 0;
+            if (take_dist <= 256) { dist = near[take_dist-1]; } else { dist = near[256+((take_dist-1) >> 7)]; }
+            w[s0+SYMBOLS+count] = (take << 16) | take_dist; count += 1;
+            lf[257+(item & 31)] += 1; df[dist & 31] += 1; bits += ((item >> 5) & 7)+((dist >> 5) & 15);
+            // Hash the rest of the match; p itself is already in.
+            let next: i32 = at+take; let stop: i32 = next; if (stop > hashing) { stop = hashing; }
+            // New hash bytes come from aligned words, up to eight per load.
+            let r: i32 = p+1; here += 1; let chained: i32 = s0+PREV;
+            // Like zlib's fast levels, a match longer than nice skips the
+            // positions inside it.
+            if (take > nice) { r = stop; }
+            while (r < stop) {
+                let ahead: i32 = r+3; let v: u64 = whole[units-1-(ahead >> 3)] >> (((ahead & 7) << 3) as u64);
+                let n: i32 = 8-(ahead & 7); if (n > stop-r) { n = stop-r; }
+                r += n;
+                while (n > 0) {
+                    t = ((t << 8) | (v & 255)) & 4294967295; h = (((t*2654435761) & 4294967295) >> 17) as i32;
+                    let old: i32 = w[s0+h]; w[chained+(here & 32767)] = old; w[s0+h] = here;
+                    v = v >> 8; here += 1; n -= 1;
+                }
+            }
+            t = ((bytes[next] as u64) << 16) | ((bytes[next+1] as u64) << 8) | (bytes[next+2] as u64);
+            here = origin+next; p = next; held = false; prev_len = 2; prev_dist = 0;
+        } else {
+            if (lazy == 0) {
+                let b: i32 = (t >> 24) as i32; w[s0+SYMBOLS+count] = b; count += 1; lf[b] += 1;
+            } else {
+                if (held) { let b: i32 = held_byte; w[s0+SYMBOLS+count] = b; count += 1; lf[b] += 1; }
+                held = true; held_byte = (t >> 24) as i32; prev_len = cur_len; prev_dist = cur_dist;
+            }
+            p += 1; here += 1;
+        }
+    }
+    if (held) { let b: i32 = held_byte; w[s0+SYMBOLS+count] = b; count += 1; lf[b] += 1; }
+    lf[256] += 1;
+    index = 0; while (index < 286) { w[s0+LIT_FREQ+index] = lf[index]; index += 1; }
+    index = 0; while (index < 30) { w[s0+DIST_FREQ+index] = df[index]; index += 1; }
+    if (!final_block) { e.hashed = origin+end-3; }
+    level_code(e,bytes,begin,end,count,bits,lengths,near,final_block);
+}
+
+// Huffman code lengths for freq[0..n), at most limit bits, into len[0..n):
+// in-place minimum-redundancy lengths (Moffat and Katajainen) over the
+// frequency-sorted symbols, then the Kraft excess is removed one unit at a
+// time as zlib does. Fewer than two used symbols get two one-bit codes.
+fn level_lengths(e: &Encoder, freq: i32, n: i32, limit: i32, len: i32) {
+    let w: [i32] = e.scratch.values; let s0: i32 = e.scratch.start;
+    let m: i32 = 0; let i: i32 = 0;
+    while (i < n) { w[s0+len+i] = 0; let f: i32 = w[s0+freq+i]; if (f > 0) { w[s0+SORT+m] = (f << 9) | i; m += 1; } i += 1; }
+    if (m < 2) {
+        let only: i32 = 0; if (m == 1) { only = w[s0+SORT] & 511; }
+        w[s0+len+only] = 1; if (only == 0) { w[s0+len+1] = 1; } else { w[s0+len] = 1; }
+        return;
+    }
+    // Bottom-up merge sort of the keys, alternating SORT and SORT2.
+    let from: i32 = SORT; let to: i32 = SORT2; let width: i32 = 1;
+    while (width < m) {
+        let low: i32 = 0;
+        while (low < m) {
+            let mid: i32 = low+width; if (mid > m) { mid = m; }
+            let high: i32 = low+2*width; if (high > m) { high = m; }
+            let a: i32 = low; let b: i32 = mid; let k: i32 = low;
+            while (k < high) {
+                let take_a: bool = b >= high;
+                if (!take_a && a < mid) { take_a = w[s0+from+a] <= w[s0+from+b]; }
+                if (take_a) { let v: i32 = w[s0+from+a]; w[s0+to+k] = v; a += 1; } else { let v: i32 = w[s0+from+b]; w[s0+to+k] = v; b += 1; }
+                k += 1;
+            }
+            low = high;
+        }
+        let t: i32 = from; from = to; to = t; width = width*2;
+    }
+    let a0: i32 = s0+DEPTH;
+    i = 0; while (i < m) { w[a0+i] = w[s0+from+i] >> 9; i += 1; }
+    // Phase 1: internal node weights, parents stored in place.
+    let leaf: i32 = 0; let root: i32 = 0; let next: i32 = 0;
+    while (next < m-1) {
+        if (leaf >= m || (root < next && w[a0+root] < w[a0+leaf])) { w[a0+next] = w[a0+root]; w[a0+root] = next; root += 1; }
+        else { w[a0+next] = w[a0+leaf]; leaf += 1; }
+        if (leaf >= m || (root < next && w[a0+root] < w[a0+leaf])) { w[a0+next] = w[a0+next]+w[a0+root]; w[a0+root] = next; root += 1; }
+        else { w[a0+next] = w[a0+next]+w[a0+leaf]; leaf += 1; }
+        next += 1;
+    }
+    // Phase 2: internal node depths.
+    w[a0+m-2] = 0; next = m-3;
+    while (next >= 0) { let parent: i32 = w[a0+next]; w[a0+next] = w[a0+parent]+1; next -= 1; }
+    // Phase 3: leaf depths, deepest first.
+    let avail: i32 = 1; let used: i32 = 0; let depth: i32 = 0; root = m-2; next = m-1;
+    while (avail > 0) {
+        while (root >= 0 && w[a0+root] == depth) { used += 1; root -= 1; }
+        while (avail > used) { w[a0+next] = depth; next -= 1; avail -= 1; }
+        avail = 2*used; depth += 1; used = 0;
+    }
+    let deepest: i32 = w[a0];
+    if (deepest > limit) {
+        let counts: [i32;16] = [0;16]; i = 0;
+        while (i < m) { let d: i32 = w[a0+i]; if (d > limit) { d = limit; } counts[d] += 1; i += 1; }
+        let kraft: i32 = 0; let l: i32 = 1;
+        while (l <= limit) { kraft += counts[l] << (limit-l); l += 1; }
+        while (kraft > (1 << limit)) {
+            let b: i32 = limit-1; while (counts[b] == 0) { b -= 1; }
+            counts[b] -= 1; counts[b+1] += 2; counts[limit] -= 1; kraft -= 1;
+        }
+        i = 0; l = limit;
+        while (l >= 1) { let c: i32 = counts[l]; while (c > 0) { w[a0+i] = l; i += 1; c -= 1; } l -= 1; }
+    }
+    i = 0; while (i < m) { let s: i32 = w[s0+from+i] & 511; let d: i32 = w[a0+i]; w[s0+len+s] = d; i += 1; }
+}
+// Canonical codes, stored bit-reversed: code << 4 | length.
+fn level_codes(e: &Encoder, len: i32, n: i32, code: i32) {
+    let w: [i32] = e.scratch.values; let s0: i32 = e.scratch.start;
+    let counts: [i32;16] = [0;16]; let next: [i32;16] = [0;16]; let i: i32 = 0;
+    while (i < n) { let l: i32 = w[s0+len+i]; counts[l] += 1; i += 1; }
+    counts[0] = 0; let c: i32 = 0; let bits: i32 = 1;
+    while (bits <= 15) { c = (c+counts[bits-1]) << 1; next[bits] = c; bits += 1; }
+    i = 0;
+    while (i < n) {
+        let l: i32 = w[s0+len+i]; let value: i32 = 0;
+        if (l > 0) { let v: i32 = next[l]; next[l] = v+1; let flipped: i32 = reverse(v,l); value = (flipped << 4) | l; }
+        w[s0+code+i] = value; i += 1;
+    }
+}
+// Code-length runs over lengths: symbol | extra value << 5 (RFC 1951 3.2.7).
+fn level_runs(e: &Encoder, hlit: i32, hdist: i32) -> i32 {
+    let w: [i32] = e.scratch.values; let s0: i32 = e.scratch.start;
+    let total: i32 = hlit+hdist; let i: i32 = 0; let out: i32 = 0;
+    while (i < 19) { w[s0+CL_FREQ+i] = 0; i += 1; }
+    i = 0;
+    while (i < total) {
+        let cur: i32 = level_length_at(e,i,hlit); let run: i32 = 1;
+        while (i+run < total && level_length_at(e,i+run,hlit) == cur) { run += 1; }
+        i += run;
+        if (cur == 0) {
+            while (run >= 11) { let take: i32 = run; if (take > 138) { take = 138; } w[s0+RUNS+out] = 18 | ((take-11) << 5); out += 1; run -= take; }
+            if (run >= 3) { w[s0+RUNS+out] = 17 | ((run-3) << 5); out += 1; run = 0; }
+            while (run > 0) { w[s0+RUNS+out] = 0; out += 1; run -= 1; }
+        } else {
+            w[s0+RUNS+out] = cur; out += 1; run -= 1;
+            while (run >= 3) { let take: i32 = run; if (take > 6) { take = 6; } w[s0+RUNS+out] = 16 | ((take-3) << 5); out += 1; run -= take; }
+            while (run > 0) { w[s0+RUNS+out] = cur; out += 1; run -= 1; }
+        }
+    }
+    i = 0; while (i < out) { let sym: i32 = w[s0+RUNS+i] & 31; w[s0+CL_FREQ+sym] = w[s0+CL_FREQ+sym]+1; i += 1; }
+    return out;
+}
+fn level_length_at(e: &Encoder, i: i32, hlit: i32) -> i32 {
+    if (i < hlit) { return e.scratch.values[e.scratch.start+LIT_LEN+i]; }
+    return e.scratch.values[e.scratch.start+DIST_LEN+i-hlit];
+}
+fn cl_order(i: i32) -> i32 {
+    if (i < 3) { return 16+i; }
+    if (i == 3) { return 0; }
+    // 8 7 9 6 10 5 11 4 12 3 13 2 14 1 15
+    let k: i32 = i-4;
+    if ((k & 1) == 0) { return 8+(k >> 1); }
+    return 7-(k >> 1);
+}
+
+// Bit writer over the packed pending view; flushed bytes go out as whole
+// bytes, and fewer than 8 bits carry to the next block.
+struct Bits { out: [u8], at: i32, acc: u64, count: i32 }
+impl Bits {
+    fn borrow(&self) -> &Bits { return self; }
+    fn put(&self, value: i32, width: i32) {
+        self.acc = self.acc | ((value as u32 as u64) << (self.count as u64)); self.count += width;
+        while (self.count >= 8) { self.out[self.at] = (self.acc & 255) as u8; self.acc = self.acc >> 8; self.count -= 8; self.at += 1; }
+    }
+}
+
+// Choose dynamic, fixed or stored for the parsed block and write it.
+fn level_code(e: &Encoder, bytes: [u8], begin: i32, end: i32, count: i32, extra_bits: i32, lengths: [i32;259], near: [i32;512], final_block: bool) {
+    let w: [i32] = e.scratch.values; let s0: i32 = e.scratch.start;
+    level_lengths(e,LIT_FREQ,286,15,LIT_LEN); level_lengths(e,DIST_FREQ,30,15,DIST_LEN);
+    let hlit: i32 = 286; while (hlit > 257 && w[s0+LIT_LEN+hlit-1] == 0) { hlit -= 1; }
+    let hdist: i32 = 30; while (hdist > 1 && w[s0+DIST_LEN+hdist-1] == 0) { hdist -= 1; }
+    let runs: i32 = level_runs(e,hlit,hdist);
+    level_lengths(e,CL_FREQ,19,7,CL_LEN);
+    let hclen: i32 = 19; while (hclen > 4 && w[s0+CL_LEN+cl_order(hclen-1)] == 0) { hclen -= 1; }
+    // Sizes in bits, each including its 3-bit block header.
+    let body: i32 = extra_bits; let fixed: i32 = extra_bits; let i: i32 = 0;
+    while (i < 286) { let f: i32 = w[s0+LIT_FREQ+i]; body += f*w[s0+LIT_LEN+i]; fixed += f*(symbol_width(i)); i += 1; }
+    i = 0; while (i < 30) { let f: i32 = w[s0+DIST_FREQ+i]; body += f*w[s0+DIST_LEN+i]; fixed += f*5; i += 1; }
+    let header: i32 = 17+3*hclen; i = 0;
+    while (i < runs) {
+        let sym: i32 = w[s0+RUNS+i] & 31; header += w[s0+CL_LEN+sym];
+        if (sym == 16) { header += 2; } if (sym == 17) { header += 3; } if (sym == 18) { header += 7; }
+        i += 1;
+    }
+    let dynamic: i32 = header+body; fixed += 3;
+    let length: i32 = end-begin; let lead: i32 = (e.carry_bits+3) & 7; let pad: i32 = (8-lead) & 7;
+    let stored: i32 = 3+pad+32+8*length;
+    let writer: Bits = Bits { out: core::mem::typed_slice_from_raw_parts<u8>(data(e.pending),e.pending.length), at: 0, acc: e.carry, count: e.carry_bits };
+    let last: i32 = 0; if (final_block) { last = 1; }
+    if (stored < dynamic && stored < fixed) {
+        writer.put(last,3); writer.put(0,pad);
+        writer.put(length,16); writer.put(65535-length,16);
+        copy_bytes(e.pending,writer.at,e.block,begin,length); writer.at += length;
+    } else {
+        if (dynamic < fixed) {
+            level_codes(e,LIT_LEN,286,LIT_CODE); level_codes(e,DIST_LEN,30,DIST_CODE); level_codes(e,CL_LEN,19,CL_CODE);
+            writer.put(last | 4,3); writer.put(hlit-257,5); writer.put(hdist-1,5); writer.put(hclen-4,4);
+            i = 0; while (i < hclen) { writer.put(w[s0+CL_LEN+cl_order(i)],3); i += 1; }
+            i = 0;
+            while (i < runs) {
+                let item: i32 = w[s0+RUNS+i]; let sym: i32 = item & 31; let code: i32 = w[s0+CL_CODE+sym];
+                writer.put(code >> 4,code & 15);
+                if (sym == 16) { writer.put(item >> 5,2); } if (sym == 17) { writer.put(item >> 5,3); } if (sym == 18) { writer.put(item >> 5,7); }
+                i += 1;
+            }
+        } else {
+            i = 0;
+            // Fixed literal codes count symbols 286 and 287, so they come
+            // from fixed_code rather than a canonical pass over 286 lengths.
+            while (i < 286) { let code: i32 = fixed_code(i); w[s0+LIT_CODE+i] = code; i += 1; }
+            i = 0; while (i < 30) { w[s0+DIST_LEN+i] = 5; i += 1; }
+            level_codes(e,DIST_LEN,30,DIST_CODE);
+            writer.put(last | 2,3);
+        }
+        // Symbols go out a whole word at a time: acc is the current output
+        // word, first refilled with the bytes already written into it.
+        let out: [u8] = writer.out; let units: i32 = e.pending.length >> 3; let sink: [u64] = words(data(e.pending),0,units);
+        let q: i32 = writer.at >> 3; let k: i32 = units-1-q; let j: i32 = 0;
+        let acc: u64 = writer.acc << (((writer.at & 7) << 3) as u64);
+        while (j < (writer.at & 7)) { acc = acc | ((out[(q << 3)+j] as u64) << ((j << 3) as u64)); j += 1; }
+        let bitcount: i32 = ((writer.at & 7) << 3)+writer.count;
+        i = 0;
+        while (i <= count) {
+            let value: i32 = 256; if (i < count) { value = w[s0+SYMBOLS+i]; }
+            let v: u64 = 0; let width: i32 = 0;
+            if (value < 65536) {
+                let code: i32 = w[s0+LIT_CODE+value]; v = (code >> 4) as u64; width = code & 15;
+            } else {
+                // Length then distance, up to 20 + 28 bits.
+                let take: i32 = value >> 16; let distance: i32 = value & 65535;
+                let item: i32 = lengths[take]; let code: i32 = w[s0+LIT_CODE+257+(item & 31)];
+                let field: i32 = (code >> 4) | ((take-(item >> 8)) << (code & 15)); let lw: i32 = (code & 15)+((item >> 5) & 7);
+                let dist: i32 = 0; if (distance <= 256) { dist = near[distance-1]; } else { dist = near[256+((distance-1) >> 7)]; }
+                let dcode: i32 = w[s0+DIST_CODE+(dist & 31)];
+                let dfield: i32 = (dcode >> 4) | ((distance-(dist >> 9)) << (dcode & 15));
+                v = (field as u32 as u64) | ((dfield as u32 as u64) << (lw as u64)); width = lw+(dcode & 15)+((dist >> 5) & 15);
+            }
+            let total: i32 = bitcount+width;
+            if (total < 64) { acc = acc | (v << (bitcount as u64)); bitcount = total; }
+            else { sink[k] = acc | (v << (bitcount as u64)); k -= 1; acc = v >> ((64-bitcount) as u64); bitcount = total-64; }
+            i += 1;
+        }
+        let at: i32 = (units-1-k) << 3;
+        while (bitcount >= 8) { out[at] = (acc & 255) as u8; acc = acc >> 8; bitcount -= 8; at += 1; }
+        writer.at = at; writer.acc = acc; writer.count = bitcount;
+    }
+    if (final_block && writer.count > 0) { writer.out[writer.at] = (writer.acc & 255) as u8; writer.at += 1; writer.acc = 0; writer.count = 0; }
+    e.carry = writer.acc; e.carry_bits = writer.count;
+    e.front = 0; e.back = writer.at; e.final_block = final_block;
 }
