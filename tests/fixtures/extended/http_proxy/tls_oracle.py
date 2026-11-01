@@ -3,27 +3,12 @@ Python upstreams, driven by Python's ssl module (OpenSSL) with HTTP/1.1
 sockets and libnghttp2 sessions over ALPN h2. A throwaway self-signed
 certificate is made with the openssl command. Usage: tls_oracle.py
 TLS_PROXY_EXE. Prints one summary line."""
-import os, socket, ssl, subprocess, sys, tempfile
+import os, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from proxy_oracle import H1, H2, check, h2_echo, pattern, sha, start_proxy, start_upstream, stop_proxy
-
-
-def certificate(directory):
-    cert, key = os.path.join(directory, "cert.pem"), os.path.join(directory, "key.pem")
-    subprocess.run(["openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes",
-                    "-keyout", key, "-out", cert, "-days", "2", "-subj", "/CN=localhost",
-                    "-addext", "subjectAltName=DNS:localhost"], check=True, capture_output=True)
-    return cert, key
-
-
-def wrapper(cert, protocols):
-    context = ssl.create_default_context(cafile=cert)
-    if protocols:
-        context.set_alpn_protocols(protocols)
-    # A missing close_notify must show as an error, not a clean EOF.
-    return lambda s: context.wrap_socket(s, server_hostname="localhost", suppress_ragged_eofs=False)
+from tls_oracle_common import certificate, wrapper
 
 
 def main():
