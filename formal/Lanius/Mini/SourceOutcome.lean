@@ -7,7 +7,6 @@ import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.Expr_agrees
 import all Lanius.Mini.Compiler.P.FArith_opcode
 import all Lanius.Mini.Compiler.P.FloatTy_rex
-import all Lanius.Mini.Compiler.P.Instr_pieces
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
 import all Lanius.Mini.Compiler.P.SrcType_size
@@ -50,8 +49,6 @@ import all Lanius.Mini.Compiler.P.floatApply
 import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.hostRandomCode
 import all Lanius.Mini.Compiler.P.imageLimit
-import all Lanius.Mini.Compiler.P.importOk
-import all Lanius.Mini.Compiler.P.importsOk
 import all Lanius.Mini.Compiler.P.indexOf
 import all Lanius.Mini.Compiler.P.iteThen
 import all Lanius.Mini.Compiler.P.killShared
@@ -72,9 +69,6 @@ import all Lanius.Mini.Compiler.P.lowerSlice
 import all Lanius.Mini.Compiler.P.lowerTagged
 import all Lanius.Mini.Compiler.P.matchDst
 import all Lanius.Mini.Compiler.P.matchVariants
-import all Lanius.Mini.Compiler.P.moduleExports
-import all Lanius.Mini.Compiler.P.moduleFirsts
-import all Lanius.Mini.Compiler.P.modulesOk
 import all Lanius.Mini.Compiler.P.optimizeIte
 import all Lanius.Mini.Compiler.P.optimizeLeft
 import all Lanius.Mini.Compiler.P.optimizeNeg

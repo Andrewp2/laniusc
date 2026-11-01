@@ -3,23 +3,9 @@ module
 public import Lanius.Faithful.Sim.Check
 public import Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.DivOp_size
-import all Lanius.Mini.Compiler.P.FArith_opcode
-import all Lanius.Mini.Compiler.P.FloatTy_rex
-import all Lanius.Mini.Compiler.P.Instr_pieces
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
-import all Lanius.Mini.Compiler.P.arities
-import all Lanius.Mini.Compiler.P.codeSize
-import all Lanius.Mini.Compiler.P.compileArgs
-import all Lanius.Mini.Compiler.P.compileModules
-import all Lanius.Mini.Compiler.P.imageLimit
-import all Lanius.Mini.Compiler.P.importOk
-import all Lanius.Mini.Compiler.P.importsOk
-import all Lanius.Mini.Compiler.P.loadAtBytes
-import all Lanius.Mini.Compiler.P.moduleExports
-import all Lanius.Mini.Compiler.P.moduleFirsts
-import all Lanius.Mini.Compiler.P.modulesOk
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.Types
 
@@ -255,6 +241,20 @@ def entriesFit : List SrcFunc → List SigEntry → Bool
   | _ :: _, [] => false
   | _ :: fs, none :: es => entriesFit fs es
   | f :: fs, some (ps, r) :: es => typesSame (f.params.map SrcParam.ty) ps && f.ret.same r && entriesFit fs es
+
+/-- Fitting lists of functions and entries append: the self program's fit is
+checked a run of functions at a time. -/
+theorem entriesFit_append {fs' : List SrcFunc} {es' : List SigEntry} (h' : entriesFit fs' es' = true) :
+    ∀ {fs : List SrcFunc} {es : List SigEntry}, entriesFit fs es = true → entriesFit (fs ++ fs') (es ++ es') = true
+  | [], [], _ => h'
+  | [], _ :: _, h => nomatch h
+  | _ :: _, [], h => nomatch h
+  | _ :: fs, none :: es, h => by
+    simp only [List.cons_append, entriesFit] at h ⊢
+    exact entriesFit_append h' h
+  | f :: fs, some (ps, r) :: es, h => by
+    simp only [List.cons_append, entriesFit, Bool.and_eq_true] at h ⊢
+    exact ⟨h.1, entriesFit_append h' h.2⟩
 
 /-- The positions, from `n`, of the `none` entries. -/
 def noneAt : Nat → List SigEntry → List Nat
