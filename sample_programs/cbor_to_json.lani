@@ -25,9 +25,15 @@ import std::signal;
 import std::stream;
 
 // Frame kinds: 1 array, 2 map, 3 tag, 4 chunked bytes, 5 chunked text.
+// The innermost frame is cached in fields: `kind` (0 at the root), and for
+// the nearest frame that is not a tag, `container` and `key` (1 when that
+// map expects a key). `stack` keeps one packed byte per enclosing frame in
+// its first depth bytes; `saved` caches stack.as_slice().
 struct Convert {
-    out: ext::json_stream::Writer, kinds: alloc::vec::Vec<u8>, key_next: alloc::vec::Vec<u8>,
-    chunks: alloc::vec::Vec<u8>, text: alloc::vec::Vec<u8>, scratch: [u32; 864], number: [u8; 40],
+    out: ext::json_stream::Writer, stack: alloc::vec::Vec<u8>, saved: [u8], depth: i32, kind: u8, container: u8, key: u8,
+    chunks: alloc::vec::Vec<u8>, text: alloc::vec::Vec<u8>,
+    // Views of main's float scratch and 40-byte number buffer.
+    scratch: core::slice::View<u32>, number: core::slice::View<u8>,
     failure: i32, at: u64,
 }
 
@@ -42,25 +48,9 @@ fn base64_digit(value: u8) -> u8 {
 impl Convert {
     fn borrow(&self) -> &Convert { return self; }
     fn text_of(&self) -> core::text::Text { return core::text::from_utf8_unchecked(self.text.as_slice(), 0, self.text.len()); }
-    fn grow(&self, value: u8) -> bool { return self.text.try_push(value).is_ok(); }
-    // Nearest non-tag frame index, or -1 at the root.
-    fn container(&self) -> i32 {
-        let index: i32 = self.kinds.len() - 1;
-        while (index >= 0 && self.kinds.at(index) == 3) { index -= 1; }
-        return index;
-    }
-    fn at_key(&self) -> bool {
-        let index: i32 = self.container();
-        return index >= 0 && self.kinds.at(index) == 2 && self.key_next.at(index) == 1;
-    }
+    fn at_key(&self) -> bool { return self.key == 1; }
     // A complete value or key was written in the enclosing container.
-    fn completed(&self) {
-        let index: i32 = self.container();
-        if (index >= 0 && self.kinds.at(index) == 2) {
-            let flag: u8 = 1; if (self.key_next.at(index) == 1) { flag = 0; }
-            core::result::unwrap(self.key_next.set(index, flag));
-        }
-    }
+    fn completed(&self) { if (self.container == 2) { self.key = 1 - self.key; } }
     fn wrote(&self, result: core::result::Result<i32, ext::json_stream::Error>) -> bool {
         if (result.is_err()) {
             self.failure = 2;
@@ -71,119 +61,144 @@ impl Convert {
         }
         return true;
     }
-    fn decimal(&self, value: u64, negative: bool) {
-        self.text.clear();
-        let digits: [u8; 24] = [0; 24]; let count: i32 = 0;
-        if (value == 0) { digits[0] = 48; count = 1; }
-        while (value > 0) { digits[count] = ((value % 10) as u8) + 48; value = value / 10; count += 1; }
+    fn emit(&self, text: core::text::Text, key: bool) -> bool {
+        if (key) { return self.wrote(self.out.key(text)); }
+        return self.wrote(self.out.string(text));
+    }
+    // Integers: n, or -1 - n when negative, as decimal digits in `number`.
+    fn integer(&self, value: u64, negative: bool) -> bool {
+        let digits: [u8] = self.number.values; let low: i32 = 40;
+        if (value == 0) { low -= 1; digits[low] = 48; }
+        while (value > 0) { low -= 1; let next: u64 = value / 10; digits[low] = ((value - next * 10) as u8) + 48; value = next; }
         if (negative) {
             // -1 - n: add one to the decimal digits of n.
-            let index: i32 = 0; let carry: bool = true;
-            while (carry && index < count) {
-                if (digits[index] == 57) { digits[index] = 48; index += 1; } else { digits[index] += 1; carry = false; }
+            let index: i32 = 39; let carry: bool = true;
+            while (carry && index >= low) {
+                if (digits[index] == 57) { digits[index] = 48; index -= 1; } else { digits[index] += 1; carry = false; }
             }
-            if (carry) { digits[count] = 49; count += 1; }
-            self.grow(45);
+            if (carry) { low -= 1; digits[low] = 49; }
+            low -= 1; digits[low] = 45;
         }
-        while (count > 0) { count -= 1; self.grow(digits[count]); }
-    }
-    fn emit_string(&self, key: bool) -> bool {
-        if (key) { return self.wrote(self.out.key(self.text_of())); }
-        return self.wrote(self.out.string(self.text_of()));
-    }
-    fn base64(&self, data: core::slice::View<u8>) {
-        let index: i32 = 0;
-        while (index + 2 < data.length) {
-            let a: u8 = data.values[data.start + index]; let b: u8 = data.values[data.start + index + 1]; let c: u8 = data.values[data.start + index + 2];
-            self.grow(base64_digit(a >> 2)); self.grow(base64_digit(((a & 3) << 4) | (b >> 4)));
-            self.grow(base64_digit(((b & 15) << 2) | (c >> 6))); self.grow(base64_digit(c & 63));
-            index += 3;
-        }
-        if (data.length - index == 1) {
-            let a: u8 = data.values[data.start + index];
-            self.grow(base64_digit(a >> 2)); self.grow(base64_digit((a & 3) << 4));
-        }
-        if (data.length - index == 2) {
-            let a: u8 = data.values[data.start + index]; let b: u8 = data.values[data.start + index + 1];
-            self.grow(base64_digit(a >> 2)); self.grow(base64_digit(((a & 3) << 4) | (b >> 4))); self.grow(base64_digit((b & 15) << 2));
-        }
-    }
-    fn float(&self, bits: u64) -> bool {
-        if (((bits >> 52) & 2047) == 2047) { return self.wrote(self.out.null()); }
-        let scratch: core::slice::View<u32> = core::result::unwrap(core::slice::view(self.scratch, 864));
-        let output: core::slice::View<u8> = core::result::unwrap(core::slice::view(self.number, 40));
-        let written = core::float_decimal::format_f64_into(core::f64::from_bits(bits), output, scratch, core::float_decimal::default_format_work());
-        if (written.is_err()) { self.failure = 4; return false; }
-        let spelled: core::text::Text = core::text::from_utf8_unchecked(self.number, 0, written.unwrap());
-        return self.wrote(self.out.number(spelled));
-    }
-    fn unsupported(&self, at: u64) -> bool { self.failure = 5; self.at = at; return false; }
-    fn open(&self, kind: u8) -> bool {
-        let flag: u8 = 0; if (kind == 2) { flag = 1; }
-        if (self.kinds.try_push(kind).is_err() || self.key_next.try_push(flag).is_err()) { self.failure = 4; return false; }
-        return true;
-    }
-    fn handle(&self, event: ext::cbor::Event, at: u64) -> bool {
-        let key: bool = self.at_key();
-        let tag: i32 = match (event) {
-            ext::cbor::Event::Unsigned(n) -> 0, ext::cbor::Event::Negative(n) -> 1, ext::cbor::Event::Bytes(n) -> 2,
-            ext::cbor::Event::Text(n) -> 3, ext::cbor::Event::Array(n) -> 4, ext::cbor::Event::Map(n) -> 5,
-            ext::cbor::Event::Tag(n) -> 6, ext::cbor::Event::Simple(n) -> 7, ext::cbor::Event::Float16(n) -> 8,
-            ext::cbor::Event::Float32(n) -> 9, ext::cbor::Event::Float64(n) -> 10, ext::cbor::Event::BeginBytes -> 11,
-            ext::cbor::Event::BeginText -> 12, ext::cbor::Event::BeginArray -> 13, ext::cbor::Event::BeginMap -> 14,
-            ext::cbor::Event::End -> 15,
-        };
-        let number: u64 = match (event) {
-            ext::cbor::Event::Unsigned(n) -> n, ext::cbor::Event::Negative(n) -> n, ext::cbor::Event::Simple(n) -> n as u64,
-            ext::cbor::Event::Float16(n) -> ext::cbor_stream::widen_f16(n), ext::cbor::Event::Float32(n) -> ext::cbor_stream::widen_f32(n),
-            ext::cbor::Event::Float64(n) -> n, _ -> 0,
-        };
-        let data: core::slice::View<u8> = match (event) { ext::cbor::Event::Bytes(n) -> n, ext::cbor::Event::Text(n) -> n, _ -> core::slice::View { values: self.number, start: 0, length: 0 } };
-        let depth: i32 = self.kinds.len();
-        if (depth > 0 && self.kinds.at(depth - 1) >= 4 && tag != 15) {
-            if (self.chunks.try_extend(data).is_err()) { self.failure = 4; return false; }
-            return true;
-        }
-        if (tag == 6) { return self.open(3); }
-        if (tag == 15) {
-            let kind: u8 = self.kinds.at(depth - 1);
-            self.kinds.pop(); self.key_next.pop();
-            if (kind == 3) { return true; }
-            let closing_key: bool = self.at_key();
-            let ok: bool = true;
-            if (kind == 1) { ok = self.wrote(self.out.end_array()); }
-            if (kind == 2) { ok = self.wrote(self.out.end_object()); }
-            if (kind == 4 || kind == 5) {
-                let joined: core::slice::View<u8> = self.chunks.as_view();
-                self.text.clear();
-                if (kind == 5) { if (self.text.try_extend(joined).is_err()) { self.failure = 4; return false; } } else { self.base64(joined); }
-                self.chunks.clear();
-                ok = self.emit_string(closing_key);
-            }
-            if (ok) { self.completed(); }
-            return ok;
-        }
-        if (key && tag != 0 && tag != 1 && tag != 3 && tag != 12) { return self.unsupported(at); }
+        let spelled: core::text::Text = core::text::from_utf8_unchecked(digits, low, 40 - low);
         let ok: bool = true;
-        if (tag == 0 || tag == 1) {
-            self.decimal(number, tag == 1);
-            if (key) { ok = self.emit_string(true); } else { ok = self.wrote(self.out.number(self.text_of())); }
-        }
-        if (tag == 2 || tag == 3) {
-            self.text.clear();
-            if (tag == 3) { if (self.text.try_extend(data).is_err()) { self.failure = 4; return false; } } else { self.base64(data); }
-            ok = self.emit_string(key);
-        }
-        if (tag == 4 || tag == 13) { if (!self.wrote(self.out.begin_array())) { return false; } return self.open(1); }
-        if (tag == 5 || tag == 14) { if (!self.wrote(self.out.begin_object())) { return false; } return self.open(2); }
-        if (tag == 11) { self.chunks.clear(); return self.open(4); }
-        if (tag == 12) { self.chunks.clear(); return self.open(5); }
-        if (tag == 7) {
-            if (number == 20 || number == 21) { ok = self.wrote(self.out.boolean(number == 21)); } else { ok = self.wrote(self.out.null()); }
-        }
-        if (tag >= 8 && tag <= 10) { ok = self.float(number); }
+        if (self.key == 1) { ok = self.emit(spelled, true); } else { ok = self.wrote(self.out.number(spelled)); }
         if (ok) { self.completed(); }
         return ok;
+    }
+    fn base64(&self, data: core::slice::View<u8>) -> bool {
+        let full: i32 = data.length / 3; let rest: i32 = data.length - full * 3;
+        let size: i32 = full * 4; if (rest > 0) { size += rest + 1; }
+        if (self.text.try_resize(size, 0).is_err()) { self.failure = 4; return false; }
+        let target: [u8] = self.text.as_slice(); let source: [u8] = data.values;
+        let index: i32 = 0; let from: i32 = data.start; let to: i32 = 0;
+        while (index < full) {
+            let a: u8 = source[from]; let b: u8 = source[from + 1]; let c: u8 = source[from + 2];
+            target[to] = base64_digit(a >> 2); target[to + 1] = base64_digit(((a & 3) << 4) | (b >> 4));
+            target[to + 2] = base64_digit(((b & 15) << 2) | (c >> 6)); target[to + 3] = base64_digit(c & 63);
+            index += 1; from += 3; to += 4;
+        }
+        if (rest == 1) {
+            let a: u8 = source[from];
+            target[to] = base64_digit(a >> 2); target[to + 1] = base64_digit((a & 3) << 4);
+        }
+        if (rest == 2) {
+            let a: u8 = source[from]; let b: u8 = source[from + 1];
+            target[to] = base64_digit(a >> 2); target[to + 1] = base64_digit(((a & 3) << 4) | (b >> 4)); target[to + 2] = base64_digit((b & 15) << 2);
+        }
+        return true;
+    }
+    fn string(&self, data: core::slice::View<u8>, text: bool, key: bool) -> bool {
+        let ok: bool = true;
+        if (text) { ok = self.emit(core::text::from_utf8_unchecked(data.values, data.start, data.length), key); }
+        else { if (!self.base64(data)) { return false; } ok = self.emit(self.text_of(), key); }
+        if (ok) { self.completed(); }
+        return ok;
+    }
+    fn float(&self, bits: u64) -> bool {
+        let ok: bool = true;
+        if (((bits >> 52) & 2047) == 2047) { ok = self.wrote(self.out.null()); }
+        else {
+            let written = core::float_decimal::format_f64_into(core::f64::from_bits(bits), self.number, self.scratch, core::float_decimal::default_format_work());
+            if (written.is_err()) { self.failure = 4; return false; }
+            ok = self.wrote(self.out.number(core::text::from_utf8_unchecked(self.number.values, 0, written.unwrap())));
+        }
+        if (ok) { self.completed(); }
+        return ok;
+    }
+    fn simple(&self, value: u8) -> bool {
+        let ok: bool = true;
+        if (value == 20 || value == 21) { ok = self.wrote(self.out.boolean(value == 21)); } else { ok = self.wrote(self.out.null()); }
+        if (ok) { self.completed(); }
+        return ok;
+    }
+    fn unsupported(&self, at: u64) -> bool { self.failure = 5; self.at = at; return false; }
+    // True (after recording UnsupportedKey) when an item that cannot be a
+    // JSON key sits at a key position.
+    fn rejected(&self, key: bool, at: u64) -> bool { if (key) { self.unsupported(at); } return key; }
+    fn open(&self, kind: u8) -> bool {
+        if (self.depth == self.stack.len()) {
+            let grown: i32 = 16; if (self.depth >= 8) { grown = self.depth * 2; }
+            if (self.stack.try_resize(grown, 0).is_err()) { self.failure = 4; return false; }
+            self.saved = self.stack.as_slice();
+        }
+        self.saved[self.depth] = self.kind | (self.container << 3) | (self.key << 6);
+        self.depth += 1; self.kind = kind;
+        if (kind != 3) { self.container = kind; self.key = 0; if (kind == 2) { self.key = 1; } }
+        return true;
+    }
+    fn array(&self) -> bool { if (!self.wrote(self.out.begin_array())) { return false; } return self.open(1); }
+    fn object(&self) -> bool { if (!self.wrote(self.out.begin_object())) { return false; } return self.open(2); }
+    fn chunked(&self, kind: u8) -> bool { self.chunks.clear(); return self.open(kind); }
+    fn close(&self) -> bool {
+        let kind: u8 = self.kind;
+        self.depth -= 1;
+        let packed: u8 = self.saved[self.depth]; self.kind = packed & 7;
+        // A tag leaves its container's key state to its content.
+        if (kind == 3) { return true; }
+        self.container = (packed >> 3) & 7; self.key = packed >> 6;
+        let ok: bool = true;
+        if (kind == 1) { ok = self.wrote(self.out.end_array()); }
+        if (kind == 2) { ok = self.wrote(self.out.end_object()); }
+        if (kind == 4 || kind == 5) {
+            let joined: core::slice::View<u8> = self.chunks.as_view();
+            ok = self.string(joined, kind == 5, self.key == 1);
+            self.chunks.clear();
+            return ok;
+        }
+        if (ok) { self.completed(); }
+        return ok;
+    }
+    fn handle(&self, event: ext::cbor::Event, at: u64) -> bool {
+        if (self.kind >= 4) {
+            let piece: core::slice::View<u8> = match (event) {
+                ext::cbor::Event::Bytes(n) -> n, ext::cbor::Event::Text(n) -> n, _ -> core::slice::View { values: self.number.values, start: 0, length: 0 },
+            };
+            let closing: bool = match (event) { ext::cbor::Event::End -> true, _ -> false };
+            if (closing) { return self.close(); }
+            if (self.chunks.try_extend(piece).is_err()) { self.failure = 4; return false; }
+            return true;
+        }
+        // Map keys must be text or integers: other items at a key fail with
+        // the offset of their head.
+        let key: bool = self.key == 1;
+        return match (event) {
+            ext::cbor::Event::Text(n) -> self.string(n, true, key),
+            ext::cbor::Event::Unsigned(n) -> self.integer(n, false),
+            ext::cbor::Event::End -> self.close(),
+            ext::cbor::Event::Float64(n) -> !self.rejected(key, at) && self.float(n),
+            ext::cbor::Event::Map(n) -> !self.rejected(key, at) && self.object(),
+            ext::cbor::Event::Array(n) -> !self.rejected(key, at) && self.array(),
+            ext::cbor::Event::Negative(n) -> self.integer(n, true),
+            ext::cbor::Event::Tag(n) -> self.open(3),
+            ext::cbor::Event::Simple(n) -> !self.rejected(key, at) && self.simple(n),
+            ext::cbor::Event::Bytes(n) -> !self.rejected(key, at) && self.string(n, false, false),
+            ext::cbor::Event::Float32(n) -> !self.rejected(key, at) && self.float(ext::cbor_stream::widen_f32(n)),
+            ext::cbor::Event::Float16(n) -> !self.rejected(key, at) && self.float(ext::cbor_stream::widen_f16(n)),
+            ext::cbor::Event::BeginText -> self.chunked(5),
+            ext::cbor::Event::BeginBytes -> !self.rejected(key, at) && self.chunked(4),
+            ext::cbor::Event::BeginArray -> !self.rejected(key, at) && self.array(),
+            ext::cbor::Event::BeginMap -> !self.rejected(key, at) && self.object(),
+        };
     }
 }
 
@@ -223,16 +238,16 @@ fn run(convert: &Convert, options: ext::cbor_stream::Options) -> i32 {
     let reader: ext::cbor_stream::EventReader<std::stream::Descriptor> = opened.unwrap();
     let status: i32 = 0; let roots: u64 = 0;
     while (status == 0) {
-        let step = reader.next();
-        if (step.is_err()) {
-            status = match (step.unwrap_err()) {
+        let step: i32 = reader.advance();
+        if (step < 0) {
+            status = match (reader.last_error()) {
                 ext::cbor_stream::StreamError::Cbor(cause) -> cbor_failure(cause),
                 ext::cbor_stream::StreamError::Io(cause) -> 3,
             };
             break;
         }
-        if (!step.unwrap()) { break; }
-        if (convert.kinds.len() == 0 && roots > 0) {
+        if (step == 0) { break; }
+        if (convert.depth == 0 && roots > 0) {
             if (convert.out.next_document().is_err()) { status = 4; break; }
         }
         if (!convert.handle(decoder.event(), decoder.event_offset())) {
@@ -243,7 +258,7 @@ fn run(convert: &Convert, options: ext::cbor_stream::Options) -> i32 {
             }
             break;
         }
-        if (convert.kinds.len() == 0) { roots += 1; }
+        if (convert.depth == 0) { roots += 1; }
         if (convert.out.len() > 65536) {
             if (convert.out.flush_to<std::stream::Descriptor>(target.borrow()).is_err()) { status = 3; }
         }
@@ -281,9 +296,11 @@ fn main() -> i32 {
     }
     let made = ext::json_stream::writer(1024, 67108864);
     if (made.is_err()) { return 4; }
-    let convert: Convert = Convert { out: made.unwrap(), kinds: alloc::vec::new(), key_next: alloc::vec::new(),
-        chunks: alloc::vec::new(), text: alloc::vec::new(), scratch: [0; 864], number: [0; 40], failure: 0, at: 0 };
+    let scratch: [u32; 864] = [0; 864]; let number: [u8; 40] = [0; 40];
+    let stack: alloc::vec::Vec<u8> = alloc::vec::new();
+    let convert: Convert = Convert { out: made.unwrap(), stack: stack, saved: stack.as_slice(), depth: 0, kind: 0, container: 0, key: 0,
+        chunks: alloc::vec::new(), text: alloc::vec::new(), scratch: core::result::unwrap(core::slice::view(scratch, 864)), number: core::result::unwrap(core::slice::view(number, 40)), failure: 0, at: 0 };
     let status: i32 = run(convert.borrow(), options);
-    convert.out.destroy(); convert.kinds.destroy(); convert.key_next.destroy(); convert.chunks.destroy(); convert.text.destroy();
+    convert.out.destroy(); convert.stack.destroy(); convert.chunks.destroy(); convert.text.destroy();
     return status;
 }
