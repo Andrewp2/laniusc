@@ -1,0 +1,10 @@
+module app::main;
+
+// `return;` in a unit main is read, but the verified compiler rejects it:
+// the function's result type is read as i32.
+fn main() {
+    let x: i32 = 1;
+    if (x > 0) {
+        return;
+    }
+}

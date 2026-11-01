@@ -4,15 +4,15 @@ public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_larger
 public import Lanius.Faithful.Gen.SelfStmt1
-public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt7
-public import Lanius.Faithful.Gen.SelfStmtC_Code_size
 public import Lanius.Faithful.Gen.SelfStmtC_SrcType_size
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_codeSize
 public import Lanius.Faithful.Gen.SelfStmtC_compileArgs
+public import Lanius.Faithful.Gen.SelfStmtC_imageLimit
 public import Lanius.Faithful.Gen.SelfStmtC_larger
+public import Lanius.Faithful.Gen.SelfStmtC_loadAtBytes
 import all Lanius.Faithful.Gen.SelfSrcC_larger
 import all Lanius.Mini.Compiler.P.larger
 
@@ -45,11 +45,11 @@ theorem step_ite_code {prog : SrcProgram} {prims : Prims} {ix_ite_code ix_plus i
   simp only [src_ite_code] at h
   faithful [Lanius.Mini.Inline.iteCode]
 
-theorem proof_link {prog : SrcProgram} {prims : Prims} {ix_link ix_length_of_u8 ix_layout ix_link_from ix_image_limit : Nat} (fn : prog.funcs[ix_link]? = some (src_link ix_length_of_u8 ix_layout ix_link_from ix_image_limit)) (np : prims.isPrim ix_link = false)
-    (ext_length_of_u8 : Certified (∀ {n : Nat}, Stmt_length_of_u8 prog prims ix_length_of_u8 n))
+theorem proof_link {prog : SrcProgram} {prims : Prims} {ix_link ix_layout ix_link_onto ix_image_limit ix_linked_size : Nat} (fn : prog.funcs[ix_link]? = some (src_link ix_layout ix_link_onto ix_image_limit ix_linked_size)) (np : prims.isPrim ix_link = false)
     (ext_layout : Certified (∀ {n : Nat}, Stmt_layout prog prims ix_layout n))
-    (ext_link_from : Certified (∀ {n : Nat}, Stmt_link_from prog prims ix_link_from n))
-    (ext_image_limit : Certified (∀ {n : Nat}, Stmt_image_limit prog prims ix_image_limit n)) {n : Nat} :
+    (ext_link_onto : Certified (∀ {n : Nat}, Stmt_link_onto prog prims ix_link_onto n))
+    (ext_image_limit : Certified (∀ {n : Nat}, Stmt_image_limit prog prims ix_image_limit n))
+    (ext_linked_size : Certified (∀ {n : Nat}, Stmt_linked_size prog prims ix_linked_size n)) {n : Nat} :
     Stmt_link prog prims ix_link n := by
   intro x0 v0 w h r0
   rcases n with _ | n
@@ -78,9 +78,9 @@ theorem step_loop_code {prog : SrcProgram} {prims : Prims} {ix_loop_code ix_plus
   simp only [src_loop_code] at h
   faithful [Lanius.Mini.Inline.loopCode]
 
-theorem step_offset_after {prog : SrcProgram} {prims : Prims} {ix_offset_after ix_plus ix_minus ix_SrcType_size ix_field_offset : Nat} (fn : prog.funcs[ix_offset_after]? = some (src_offset_after ix_plus ix_minus ix_SrcType_size ix_field_offset)) (np : prims.isPrim ix_offset_after = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+theorem step_offset_after {prog : SrcProgram} {prims : Prims} {ix_offset_after ix_minus ix_plus ix_SrcType_size ix_field_offset : Nat} (fn : prog.funcs[ix_offset_after]? = some (src_offset_after ix_minus ix_plus ix_SrcType_size ix_field_offset)) (np : prims.isPrim ix_offset_after = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_SrcType_size : Certified (∀ {n : Nat}, Stmt_SrcType_size prog prims ix_SrcType_size n)) {n : Nat}
     (ih_field_offset : Certified (Stmt_field_offset prog prims ix_field_offset n)) :
     Stmt_offset_after prog prims ix_offset_after (n + 1) := by

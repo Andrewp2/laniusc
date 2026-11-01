@@ -138,6 +138,8 @@ def epilogueBytes : List UInt8 :=
 def heapBaseRegister : Register := 12
 def cursorRegister : Register := 13
 def limitRegister : Register := 14
+/-- r10 holds the heap's top: the end of frame memory, which lies above the limit. -/
+def topRegister : Register := 10
 
 /-- `mov r11, imm64` -/
 def r11Bytes (value : BitVec 64) : List UInt8 := immediateBytes .w64 r11Register (lowHalf value) (highHalf value)
@@ -165,6 +167,14 @@ def bumpSpec (shift : Nat) : List UInt8 :=
   (aluBytes .w64 .and rcxRegister r11Register ++ (moveBytes .w64 r11Register rcxRegister ++
   (aluBytes .w64 .add r11Register 0 ++ (branchBytes 2 9 ++ (limitCompareBytes ++ (branchBytes 6 2 ++
   (trapBytes ++ (moveBytes .w64 cursorRegister r11Register ++ moveBytes .w64 0 rcxRegister)))))))))))
+
+/-- `mov r11, bytes; mov rax, rbx; sub rax, r11; jb +12; mov r11, rax; cmp r11, r14; jae +2; ud2;
+mov rbx, rax`: the frame pointer drops by `bytes`, faulting when that passes zero or the limit, and rax
+gets its new value. -/
+def frameSpec (bytes : Nat) : List UInt8 :=
+  r11Bytes (BitVec.ofNat 64 bytes) ++ (moveBytes .w64 0 fspRegister ++ (aluBytes .w64 .subtract 0 r11Register ++
+  (branchBytes 2 12 ++ (moveBytes .w64 r11Register 0 ++ (limitCompareBytes ++ (branchBytes 3 2 ++
+  (trapBytes ++ moveBytes .w64 fspRegister 0)))))))
 
 /-- `add rax, r12; movzx eax, byte [rax]` -/
 def loadAtSpec : List UInt8 := aluBytes .w64 .add 0 heapBaseRegister ++ loadByteBytes 0 0 0
@@ -195,6 +205,19 @@ def syscallBytes : List UInt8 := [15, 5]
 def Syscall.linux : Syscall → BitVec 32
   | .write => 1
   | .read => 0
+  | .poll => 7
+  | .clock => 228
+  | .random => 318
+
+/-- Which argument a system call makes a heap address: `add rsi, r12` the
+second for `write`, `read` and `clock_gettime`; `mov rsi, rsi` none for
+`poll`; `add rdi, r12` the first for `getrandom`. -/
+def Syscall.rsiBytes : Syscall → List UInt8
+  | .write => aluBytes .w64 .add rsiRegister heapBaseRegister
+  | .read => aluBytes .w64 .add rsiRegister heapBaseRegister
+  | .poll => moveBytes .w64 rsiRegister rsiRegister
+  | .clock => aluBytes .w64 .add rsiRegister heapBaseRegister
+  | .random => aluBytes .w64 .add rdiRegister heapBaseRegister
 
 /-- `mov rdi, [slot]; mov rsi, [slot + 1]; add rsi, r12; mov rdx, [slot + 2];
 mov eax, number; syscall; mov r11, rcx`. The kernel leaves r11 unknown; the last
@@ -202,7 +225,7 @@ move makes it a function of the state again. -/
 def sysSpec (kind : Syscall) (slot : Nat) : List UInt8 :=
   memoryBytes .w64 true rdiRegister rbpRegister (frameDisplacement slot) ++
     (memoryBytes .w64 true rsiRegister rbpRegister (frameDisplacement (slot + 1)) ++
-    (aluBytes .w64 .add rsiRegister heapBaseRegister ++
+    (kind.rsiBytes ++
     (memoryBytes .w64 true rdxRegister rbpRegister (frameDisplacement (slot + 2)) ++
     (immediateBytes .w32 0 kind.linux 0 ++ (syscallBytes ++ moveBytes .w64 r11Register rcxRegister)))))
 
@@ -230,6 +253,7 @@ def Instr.bytes (i : Instr) (place : Place) (pc : Nat) : List UInt8 :=
   | .div word operation slot => operation.spec word slot
   | .fp operation slot => accToRcxBytes ++ slotLoadBytes slot ++ operation.opcodeBytes
   | .sys kind slot => sysSpec kind slot
+  | .frame bytes => frameSpec bytes
 
 /-! The extracted encoders are the x86 ones. (A float operation's SSE bytes
 are the extracted ones themselves: `Simulation.lean` proves what each
@@ -336,6 +360,7 @@ theorem Instr.encode_eq (i : Instr) (place : Place) (pc : Nat) : i.encode place 
     · rw [Instr.encode, Instr.bytes, sysBytes, le32_i32Bytes _ _ (slotOffset_toNat slot),
         le32_i32Bytes _ _ (slotOffset_toNat (slot + 1)), le32_i32Bytes _ _ (slotOffset_toNat (slot + 2))]
       rfl
+  | frame bytes => simp only [Instr.encode, Instr.bytes, frameMemoryBytes, le64_eq]; rfl
 
 /-- A transfer by `relative source target` from `base + source` lands on `base + target`. -/
 theorem relative_eq (base : BitVec 64) (source target : Nat) (sourceSmall : source < 2 ^ 31)
@@ -445,9 +470,10 @@ theorem Instr.bytes_length (place : Place) (pc : Nat) (i : Instr) : (i.bytes pla
         List.length_cons, List.length_nil] <;> decide
   | sys kind slot =>
     cases kind <;>
-    · simp only [Instr.bytes, sysSpec, memoryBytes, memoryHeader, Lanius.Semantics.i32Bytes, List.length_append,
-        List.length_map, List.length_range, Instr.size]
+    · simp only [Instr.bytes, sysSpec, Syscall.rsiBytes, memoryBytes, memoryHeader, Lanius.Semantics.i32Bytes,
+        List.length_append, List.length_map, List.length_range, Instr.size]
       decide
+  | frame bytes => rw [← Instr.encode_eq]; simp [Instr.encode, frameMemoryBytes, le64, Instr.size]
 
 theorem Instr.encode_length (place : Place) (pc : Nat) (i : Instr) : (i.encode place pc).length = i.size := by
   rw [Instr.encode_eq, Instr.bytes_length]

@@ -68,9 +68,9 @@ theorem proof_fl_low_bit {prog : SrcProgram} {prims : Prims} {ix_fl_low_bit : Na
   simp only [src_fl_low_bit] at h
   faithful [Lanius.Mini.flLowBit]
 
-theorem step_fl_nat_half {prog : SrcProgram} {prims : Prims} {ix_fl_nat_half ix_plus ix_minus : Nat} (fn : prog.funcs[ix_fl_nat_half]? = some (src_fl_nat_half ix_plus ix_minus ix_fl_nat_half)) (np : prims.isPrim ix_fl_nat_half = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n)) {n : Nat}
+theorem step_fl_nat_half {prog : SrcProgram} {prims : Prims} {ix_fl_nat_half ix_minus ix_plus : Nat} (fn : prog.funcs[ix_fl_nat_half]? = some (src_fl_nat_half ix_minus ix_plus ix_fl_nat_half)) (np : prims.isPrim ix_fl_nat_half = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n)) {n : Nat}
     (ih_fl_nat_half : Certified (Stmt_fl_nat_half prog prims ix_fl_nat_half n)) :
     Stmt_fl_nat_half prog prims ix_fl_nat_half (n + 1) := by
   intro x0 v0 w h r0

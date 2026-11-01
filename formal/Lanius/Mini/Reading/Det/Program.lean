@@ -110,11 +110,20 @@ theorem contractsR_unique {env : FrontEnv} {scope : List Local} {b : MStmt} (nd 
   | _, _, _, .more _ _ k r, .more _ _ k' r' => by
     rw [effR_unique k nd vn k', contractsR_unique nd vn r r']
 
+theorem fnResult_unique {decls : Decls} {fd : FnDecl} {args : List Ty} {r r' : RetTy}
+    (h₁ : FnResult decls fd args r) (h₂ : FnResult decls fd args r') : r = r' := by
+  unfold FnResult at h₁ h₂
+  by_cases u : unitMain fd = true
+  · rw [if_pos u] at h₁ h₂
+    exact h₁.trans h₂.symm
+  · rw [if_neg u] at h₁ h₂
+    exact resultR_unique h₁ h₂
+
 theorem readFn_unique {decls : Decls} {fd : FnDecl} {args : List Ty} {a b : MFunc} (vn : VariantsNodup decls)
     (h₁ : ReadFn decls fd args a) (h₂ : ReadFn decls fd args b) : a = b := by
   obtain ⟨r, items, ps, body, mb, _, _, rr, it, pr, br, cr, _, rfl⟩ := h₁
   obtain ⟨r', items', ps', body', mb', _, _, rr', it', pr', br', cr', _, rfl⟩ := h₂
-  cases resultR_unique rr rr'
+  cases fnResult_unique rr rr'
   cases items_unique it it'
   cases paramsR_unique pr pr'
   cases blockR_unique br (paramsR_fresh pr List.nodup_nil) vn br'

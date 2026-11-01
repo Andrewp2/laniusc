@@ -3,7 +3,7 @@ module
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.Stmt_kills
 import Lanius.Mini.Compiler.P.callAgrees
-import Lanius.Mini.Compiler.P.optKill
+import Lanius.Mini.Compiler.P.longer
 import Lanius.Mini.Compiler.P.optimizeLeft
 import Lanius.Mini.Compiler.P.substAll
 
@@ -57,7 +57,7 @@ def Stmt.optimize (self : Stmt) (facts : List Fact) : Stmt :=
   | .skip => Stmt.skip
   | .assign index value => optimizeAssign index (Expr.optimize (Expr.subst value facts))
   | .seq first second =>
-    (let rest : Stmt := Stmt.optimize second (optFactsAfter first facts)
+    (let rest : Stmt := Stmt.optimize second (Stmt.factsAfter first facts)
      if Stmt.deadBefore first rest then
        rest
      else

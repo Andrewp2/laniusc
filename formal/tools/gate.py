@@ -62,6 +62,9 @@ STEPS = [
     # F8: stdlib output through the host externs, stdout and stderr compared.
     ('stdlib-io', ['stdlib_oracle.py', '{w}', '--modules', 'std::io_byte,std::io_hex,std::io_binary,std::io_hex_wide_u64,std::io_utf8', '--calls', '32', '--seed', '{s}'],
      ['run_all', 'laniusc', 'stdlib'], True),
+    # F8: the time externs (sleep_ms_i32 through poll), on small and negative counts.
+    ('stdlib-time', ['stdlib_oracle.py', '{w}', '--modules', 'std::time_checked', '--calls', '16', '--seed', '{s}'],
+     ['run_all', 'laniusc', 'stdlib'], True),
     # F6: arrays [T; N] passed by value, built by the wrapper from scalars.
     ('stdlib-arrays', ['stdlib_oracle.py', '{w}', '--modules', 'core::array_i32_4,core::array_u8_4', '--seed', '{s}'],
      ['run_all', 'laniusc', 'stdlib'], True),
@@ -82,6 +85,10 @@ STEPS = [
      ['lean', 'extended', 'laniusc', 'stdlib'], True),
     # F2: the extractor in Lanius, run on laniusc's trees, writes the checked-in extraction.
     ('extract', ['lani_extract.py', '--check', '--work', '{w}'], ['extract', 'lani', 'extended', 'laniusc', 'stdlib'], True),
+    # F12: Gen/'s self program is the front end's reading of the current self source text.
+    ('self-current', ['faithful_current.py', '{w}'], ['extract', 'lean', 'lani', 'laniusc', 'stdlib'], True),
+    # F13: the top theorems' axioms are the standard three, and each statement is the one TRUSTED_BASE.md lists.
+    ('trusted', ['trusted_check.py', '{w}'], ['trusted'], True),
     # The full tier: larger counts and the rest.
     ('mini-200', ['mini_difftest.py', '{w}', '--count', '200', '--seed', '{s}'], ['lean', 'laniusc', 'stdlib'], False),
     ('oracle-300', ['oracle_difftest.py', '{w}', '--count', '300', '--seed', '{s}'], ['lean', 'laniusc', 'stdlib'],
@@ -111,6 +118,15 @@ STEPS = [
 ]
 
 
+def trusted_digest():
+    """The top theorems' built modules, their list and TRUSTED_BASE.md, for the `trusted` step."""
+    import trusted_check
+    modules = ''.join(f'import {m}\n' for m in trusted_check.top_modules())
+    exe = os.path.join(run_cache.FORMAL, '.lake/build/bin/topAxioms')
+    return ((run_cache.olean_digest(modules) or 'unbuilt') + run_cache.file_digest(trusted_check.TRUSTED)
+            + run_cache.file_digest(trusted_check.TOPS) + (run_cache.file_digest(exe) if os.path.exists(exe) else ''))
+
+
 def inputs():
     """The digest of each kind of input."""
     lean = run_cache.olean_digest('import Lanius.Mini.Process\nimport Lanius.Mini.TextCorrect\nimport Lanius.Mini.FrontLex\nimport Lanius.Mini.MutPilotCorrect\nimport Lanius.Machines.SqliteStatementCorrect\nimport Lanius.Machines.TlsLifecycleCorrect\nimport Lanius.Machines.RunLowering\n')
@@ -130,6 +146,7 @@ def inputs():
         'programs': run_cache.tree_digest(os.path.join(ROOT, 'tests/fixtures'))
         + run_cache.tree_digest(os.path.join(ROOT, 'sample_programs')),
         'extended_all': run_cache.tree_digest(os.path.join(ROOT, 'extended')),
+        'trusted': trusted_digest(),
         'extended': ''.join(run_cache.file_digest(os.path.join(ROOT, 'extended/ext', name))
                             for name in ('sqlite_statement.lani', 'openssl_tls_lifecycle.lani')),
     }
@@ -140,7 +157,7 @@ def build():
     env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
     with run_cache.lean_lock():
         run = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
-                              'lake', 'build', 'runAll', 'extract', 'floatTest', 'srcDump', 'LaniusMini', 'Lanius.Mini.FrontLex',
+                              'lake', 'build', 'runAll', 'extract', 'floatTest', 'srcDump', 'topAxioms', 'LaniusMini', 'Lanius.Mini.FrontLex',
                               'Lanius.Mini.MutPilotCorrect', 'Lanius.Machines.SqliteStatementCorrect',
                               'Lanius.Machines.TlsLifecycleCorrect', 'Lanius.Machines.RunLowering'],
                              cwd=run_cache.FORMAL, env=env, capture_output=True, text=True)

@@ -155,10 +155,11 @@ Lean definition or judgment.
   files, and open handles are explicit semantic state. Randomness is consumed
   from an initial entropy stream, so a concrete execution remains reproducible.
 - Exhausting either secure entropy stream traps as `entropyExhausted`; it is not
-  misclassified as an unknown external function. A successful nonnegative
-  millisecond sleep advances monotonic and system clocks with nanosecond carry
-  and advances the whole-second compatibility clock. A negative sleep returns
-  `-1` without advancing time.
+  misclassified as an unknown external function. The monotonic and system
+  clocks are streams of readings (10-31, "Clock readings and secure bytes");
+  reading past one's end traps as `clockExhausted`. A successful nonnegative
+  millisecond sleep advances only the whole-second compatibility clock. A
+  negative sleep returns `-1` without advancing time.
 - Process exit is a terminal execution outcome distinct from both return and
   trap, and propagates through every enclosing expression, statement, and call.
 - Generic type and const parameters are substituted before core execution.
@@ -635,17 +636,35 @@ verified compiler's locals are 64-bit slots with no address. The design:
    the cursor in r13. rbx is scratch: each call stores it into the
    caller's first result slot (the results overwrite that slot after the
    return) and loads it back after the return, so the callee may change it
-   and the call rule's restore is what x86 does. The startup code sets rbx
-   to the heap's top; the loader maps the region above the heap once a
-   `Frame` instruction uses it (until then the top is the limit).
-2. **Addressed bindings.** A local is addressed when the program takes its
-   address: an array local passed where a slice is expected (later `&x`
-   and `&self`). Its slot holds its frame address, and its value lives in
-   frame memory in the raw-slice element layout (`ElementLayout`: an `i32`
-   in 4 bytes, a word type in 8 bytes a word), so a slice of it is the
-   same (pointer, length) pair as a raw slice and the callee runs the code
-   it runs for a raw slice. Element reads and writes of the local itself
-   are loads and stores at its address.
+   and the call rule's restore is what x86 does. r10 holds the heap's top
+   (`Frame.heapTop`, `Rel.top`), so loads and stores reach frame memory
+   through the same `r12 + offset` as the bump heap. The loader maps frame
+   memory as large as the stack above the heap (`frame` stops at a `ud2`
+   past it, as the prologue does past the stack); the startup code
+   sets r10 and rbx to `heap + stack`.
+   `Frame target bytes` compiles to the abstract instruction `frame bytes`
+   then `store target`. `frame bytes` is `mov r11, bytes; mov rax, rbx;
+   sub rax, r11; jb +12; mov r11, rax; cmp r11, r14; jae +2; ud2; mov rbx,
+   rax`: a borrow or a result below the limit reaches the `ud2` (the stop
+   rule `Stops.frame`, as for an allocation past the limit), and otherwise
+   rbx and rax hold the new frame pointer. `bytes` is below 2^31 (`within`).
+   The simulation keeps `fsp ≤ top` (`Rel.fspLe`, `HeapAt.fspLe`), so the
+   frame pointer is below 2^62 and rbx's subtraction is exact.
+2. **One slice layout (decided 10-31).** Every slice, safe or raw, has one
+   element layout, laniusc's native one (`stdlib/core/mem.lani`): an `i32`
+   packed at stride +4 from the pointer, a `u8` packed at stride +1, every
+   other scalar as one 8-byte word and a struct or enum as its native words,
+   both running down from the pointer (stride -8 times the element's native
+   words). The verified compiler never reads `[T]` two ways: a function
+   with a `[T]` parameter runs one body whether its argument is a raw slice
+   or a safe one. An array local passed as a slice is therefore stored in
+   that layout wherever it lives, in a heap view (point 5) or in a frame
+   block by F5's call sequence, and its slice is the same (pointer, length)
+   pair as a raw slice of those bytes. So `FrameCorr`'s places carry a
+   layout: word per slot for a reference to a scalar or a struct (F5), the
+   slice layout for an array passed as a slice. Element reads and writes of
+   an addressed local itself are loads and stores at its address in its
+   layout.
 3. **The correspondence.** The simulation relation carries the addressed
    cells (cell, type, address); for each, frame memory at the address holds
    the cell's value in that layout (`FrameCorr`, beside `HeapCorr`). A safe
@@ -793,7 +812,8 @@ loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
   to inline `syscall` code. The mini IR's `Stmt.sys kind target args`
   (`Instr.sys kind slot`, `Mini/Semantics.lean`) is one system call; its
   arguments are evaluated into three consecutive frame slots, and the
-  result lands in `target`. Only `Syscall.write` exists so far.
+  result lands in `target`. `Syscall.write`, `Syscall.read`, `Syscall.poll`,
+  `Syscall.clock` and `Syscall.random` exist.
 - **`Syscall.write` at the mini level.** `[fd, address, count]` with fd 1 or
   2, count at most `maxTransfer`, and `address + count` within the heap
   limit; it appends `.write fd (heap bytes address..address+count)` to
@@ -813,11 +833,10 @@ loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
   side is `World.State.standardOutput`/`standardError`; the link from
   Core's `write_byte`/`write_stdout` services to `.write` events (one event
   per call, the bytes Core appends) is the next part of F8.
-- **Not yet modeled (deferred).** `getrandom`/`secure_u32`, process
+- **Not yet modeled (deferred).** Process
   arguments and environment variables (the loader would have to place
-  `argv`/`envp`, now arbitrary memory), time (`clock_gettime`, `nanosleep`),
-  files, sockets and processes, the general `syscall6`, the allocator
-  externs (the verified compiler's `alloc` is the mini bump allocator over
+  `argv`/`envp`, now arbitrary memory), files, sockets and processes, the
+  general `syscall6`, the allocator externs (the verified compiler's `alloc` is the mini bump allocator over
   a heap the startup code provides, not `mmap`), and writes longer than
   `MAX_RW_COUNT` (Core would have to loop; a short write is not modeled).
 
@@ -855,6 +874,83 @@ loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
   random bytes (by seed, program and call) as a regular file on fd 0, to
   the verified compiler's image and to laniusc's harness (one call per
   run); other calls read `/dev/null`.
+
+## Host sleep (decided 10-31, F8)
+
+- **`sleep_ms_i32(ms)` (host id 2^32 + 4) is `poll(NULL, 0, ms)`.** Core's
+  meaning (`World.call .sleepMsI32`): -1 for a negative count; else 0, with
+  the whole-second compatibility clock advanced by `ms` (`afterSleepMs`; the
+  monotonic and system clocks are streams of readings, which a sleep does
+  not change). laniusc's runtime
+  calls `nanosleep` with a timespec on the stack; the verified compiler
+  calls `poll` with no fds instead (rax 7), which waits the same
+  milliseconds and needs no memory, so neither the frame nor the heap
+  changes. The front end reads the stdlib's `extern "lanius_std" fn
+  sleep_ms_i32` as the host call (case `host_sleep`), and the verified
+  compiler lowers it to `host_sleep_code`: a signed test of the count, -1 if
+  it is negative, else `Sys Poll [0, 0, ms]` and 0.
+- **`Syscall.poll` at the mini level.** `[0, 0, timeout]` with a timeout
+  below 2^31 returns 0 and changes nothing; anything else has no step. The
+  x86 code is `sysSpec` with `mov rsi, rsi` where the address calls have
+  `add rsi, r12` (`Syscall.rsiBytes`, same length, so every `Sys` is still
+  34 bytes) and `mov eax, 7`; the kernel's `poll` is in TRUSTED_BASE.md
+  section 8.
+- **The sleep is not observed.** `HeapCorr` does not mention the
+  compatibility clock (`HeapCorr.sleep`), so the proof
+  (`LowerEval.host_sleep`) is about the result and the rest of the world
+  only; the clocks a program can read are streams of readings ("Clock
+  readings and secure bytes").
+- **The oracle sleeps briefly.** A stdlib function's `milliseconds: i32`
+  parameter gets small or negative counts (`SLEEP_MS`), so that calls end
+  well inside the two-second timeout; gate step `stdlib-time` compares
+  `std::time_checked::sleep_nonnegative_ms` with laniusc.
+
+## Clock readings and secure bytes (decided 10-31, F8)
+
+- **Streams fixed before the run, like standard input.** Core's world holds
+  `monotonicReadings` and `systemReadings`, the (seconds, nanoseconds)
+  readings the monotonic and the system clock give, one a read, and
+  `secureByteStream`, the secure random bytes; the process side (`Io`,
+  which the x86 state and the mini heap hold) has the same streams
+  (`monotonic`, `realtime`, `entropy`), and `HeapCorr` says they are equal
+  (`Streams`). The top theorems start Core from `startState io`, the
+  streams of the mini heap's or the loaded process's `io`, so they hold for
+  every reading and random byte the kernel could give. A sleep does not
+  move the readings: a real clock moves on its own, and a stream says what
+  it was each time it was read.
+- **`monotonic_read(ptr, len)` and `system_read(ptr, len)`.** -1 when `len`
+  is below 16; else the next reading of that clock as a 16-byte timespec
+  (`timespecBytes`, two little-endian 64-bit words) stored from `ptr`
+  (trapping where Core's store traps), the reading dropped, and 0. No
+  readings left traps as `clockExhausted`.
+- **`fill_secure_bytes(ptr, len)`** stores the next `len` secure bytes, drops
+  them, and returns `len`; fewer than `len` left traps as
+  `entropyExhausted` (Core's existing meaning).
+- **Reading past a stream's end is not specified.** The kernel's clocks and
+  random source do not run out, so a Core run that exhausts a stream is a
+  run the given streams do not describe: `clockExhausted` and
+  `entropyExhausted` are undefined traps (`undefinedTrap`), on which the
+  stop theorems promise nothing, as for raw memory errors.
+- **Host ids.** `monotonic_read`, `system_read` and `fill_secure_bytes` are
+  host functions 2^32 + 5, + 6 and + 7 (`hostFuncs`); the front end reads
+  their `extern "lanius_std"` declarations as those host calls (case
+  `host_clock`, which `compileSource` compiles).
+- **Lowering.** A clock read is `host_clock_code`: -1 when `len` is below
+  16, else `clock_gettime(clock, ptr)` (clock 1 for the monotonic clock, 0
+  for the system clock; `Syscall.clock`, rax 228, `add rsi, r12`) and 0.
+  `fill_secure_bytes` is `host_random_code`: `getrandom(ptr, chunk, 0)` of
+  chunks of at most 256 bytes until none are left to ask for, then `len`
+  as `i32` (`Syscall.random`, rax 318, `add rdi, r12`: the first argument
+  is the address). At the mini level `Syscall.clock` with clock 0 or 1, a
+  reading left and 16 bytes inside the heap stores the reading
+  (`timespecLE`, the same bytes as Core's `timespecBytes`) and drops it;
+  `Syscall.random` with flags 0, a count of at most 256 and no more than
+  the secure bytes left, inside the heap, stores and drops them. Proved
+  against `World.call` (`LowerEval.host_monotonicRead`, `host_systemRead`,
+  `host_fillSecureBytes`) and through the simulation (`clock_simulates`,
+  `random_simulates`); the kernel calls are in TRUSTED_BASE.md section 8.
+  The stdlib's callers pass a pointer the oracle cannot give, so there is
+  no oracle step for them.
 
 ## `for` over a range (decided 10-30, F4)
 
@@ -1112,6 +1208,117 @@ field set, a set from a call or an effectful value: `writesLocal`). A write
 to a slice element through `self` goes to the heap, which the copy shares,
 so it is read. `&T` parameters are not read yet.
 
+## The fixpoint (decided 10-31, F12)
+
+What "the verified compiler self-hosts" states, as a theorem
+(`selfHost_fixpoint`, `Faithful/SelfHost.lean`): for the self program's
+source files `self`, if the front end reads them as `prog` (the program the
+certificates are about) and the verified compiler makes `B` of them, then
+`prog` is their one reading, and `B`'s code for the driver `w`, given the
+words of `self`, faults or returns `B`'s own words (entry count, entries,
+image length, then the image's bytes four to a word). The native compiler, run on its own text, is the
+compilation of what that text means, and gives itself back.
+
+- The two facts about `self` stay premises, computed by Lean's compiled
+  code and checked by the gate (TRUSTED_BASE.md section 5, "The self-built
+  verified compiler"). The kernel cannot evaluate the front end on the 8
+  files (795 KB, 1.4 million productions) or `compileSource` on `prog`
+  (2,221 functions, a 15 MB image): Lean's compiled code takes 12 s for
+  both, the kernel's evaluator is orders of magnitude slower and keeps every
+  intermediate term. The premises are about source text and the binary on
+  disk, so they are exactly what `srcDump` and `runAll` compute; V7's
+  premise `compileSource prog = some B` follows from them
+  (`compileSource_of_text`).
+- `self` is a parameter, not a Lean constant: writing 795 KB of text and
+  2.8 million tree numbers as a Lean literal adds nothing the premise `read`
+  does not already say, and the theorem holds of any text read as `prog`.
+- The extractor is not in the self program. It is not on the path from
+  source text to the image: the top theorems are about Core's meaning of
+  the reading and the Lean definitions `compileText` and `compileSource`,
+  and for the self program the certificates prove each reachable function's
+  Core run equal to its extraction, so a wrong extraction would fail to
+  check rather than be trusted. A self-built extractor would only matter
+  for running `extract` natively, which nothing in the theorems needs.
+- The ELF writer is not on the native path: `elf_file` is in the self
+  program's text but no root of `w` reaches it, and the self-built compiler
+  writes the binary's words. V6's `textProcess_exits` covers `elfFile` as a
+  Lean function. A self-built compiler that is itself a process (reading
+  the files from standard input with F8's `read_stdin` and writing the
+  executable to standard output) would put the driver under
+  `process_exits`; it needs a driver proved for byte I/O, and the
+  run's 5.2 GiB of heap and its stack in an ELF's zero fill.
+- The fixpoint's time (10-31): the gate step took 264 s of its 300 s (the
+  native run 218 s; 106 s on 10-29, at 1,823 functions and an 11 MB
+  image), and after the changes below about 140 s (the native run about
+  112 s, at 2,221 functions and a 15 MB image). The
+  bump allocator never frees, so heap is time: allocation was 12 GiB and
+  is 5.2 GiB (sampled by rip and heap cursor,
+  `target/claude-work/f12/prof.py`). The changes, all to the verified
+  compiler, with its proofs kept:
+  - The driver's output packs the image four bytes to a word
+    (`pack_rounds`, rounds of 4096 words on fuel, so no walk is 15 million
+    calls deep), 3.8 million words instead of 15 million, and `link`
+    checks the image limit against the functions' sizes (`linked_size`,
+    `linkFrom_length`) instead of counting the image.
+  - The validator's facts: a write keeps the part of the fact list after
+    the last fact it kills (`kill_shared`; `kill_tail` checks that nothing
+    after that point dies, so `dying_extent` only decides where sharing
+    starts and the proof, `mem_killPrefix`, does not depend on it), and a
+    list past 31 facts is cut to its 15 newest (`trim_facts`), so a list
+    holds at most 32. The optimizer uses the validator's `facts_after`;
+    its own copies are gone. With the packed output this took the heap
+    from 12 to 5.6 GiB; the facts no longer show in the profile.
+  - `link` builds each function's bytes in front of the rest
+    (`link_onto`, equal to `link_from` by `linkOnto_eq`) instead of
+    concatenating whole function images: 5.6 to 5.2 GiB.
+
+  The peak resident set is still at the 4 GiB cap, since 5.2 GiB is
+  allocated. What is left is in each list step: `unbox` copies the node
+  out of its box (for a `List<FnDecl>` node, the whole `FnDecl`), and it
+  and `boxed` build slice headers through `typed_slice_from_storage`. The
+  front end takes 2.3 GiB (`find_fn` walking `decls.fns`, `concat<FnDecl>`),
+  lowering's `concat<Instr>` about 0.7 GiB, and encoding about 1.3 GiB
+  (each byte is a cons cell made by `encode` and copied once by `concat`).
+  Lowering `unbox` without the copy, or a table for the front end's
+  lookups, would take most of it.
+
+### The design of writes through references (decided 10-31, F5)
+
+The stdlib has no `&mut` and no `&mut x`; it has 1046 `&self` methods, 200
+of which write `self`, 279 `&T` parameters and 100 functions that return a
+reference. In that order of need:
+
+1. **Core.** Core's places gain `Place.deref reference`: the reference's
+   value names a cell and a projection path, and the place is that path in
+   that cell, so `self.n = v` in a method that writes `self` is
+   `assign set (field (deref (local self)) n) v` and writes the caller's
+   cell. Core still does not dereference a place automatically: the front
+   end writes the `deref`, as the elaborator writes `dereference` for reads.
+2. **Which methods take a reference.** A `&self` method whose body writes
+   `self` (`writesLocal`) takes a reference; one that does not is still read
+   by value, which has the same meaning when nothing writes through it. `&T`
+   parameters follow the same rule.
+3. **Lowering.** Mini Source's `ref ty` is one slot holding an address. A
+   call that passes a reference to a local's place evaluates the other
+   arguments first (Core's reference names the cell, not a copy, so the
+   order of reading is the call's), stores the place's slots into the
+   function's frame block, passes the block's address plus the place's
+   offset, and loads the slots back after the call. Each function takes one
+   frame block at entry (`Frame`), as large as its largest such store, so a
+   loop does not use more frame memory. A reference parameter passes its
+   own address on, plus a field's offset. Reads and writes through a
+   reference are word loads and stores at the address. A reference is only
+   passed as an argument: a function whose result, a struct field or a
+   local's type holds a reference is not read, so no address outlives the
+   activation that took it.
+4. **The correspondence.** `FrameCorr` (`Mini/FrameCorr.lean`) lists the
+   places in frame memory: cell, projection path, type, address. Each
+   place's value is its words (`ty.HoldsAt v (hp.words address) 0`, the
+   slot layout), and its words lie between the frame pointer and the top.
+   Stores below the frame pointer (the bump heap, a callee's own frame) and
+   Core writes to other cells keep it (`FrameCorr.congr`); a store through a
+   reference changes Core's cell at the path and the words together.
+
 ## Wildcard match arms (decided 10-31, F11)
 
 A last arm `_ -> value` (a plain one-segment pattern spelled `_`) is the arm
@@ -1185,3 +1392,17 @@ digit stays below 2^64 (`based_limit`, and 1844674407370955161 for
 decimal digits): in Lean the result is the same, and the self-built
 verified compiler, whose u64 arithmetic traps on overflow, then rejects
 such a literal instead of trapping.
+
+## `fn main()` with no result type (decided 10-31, F11)
+
+laniusc's entry may be `fn main()` with no `-> T`; the process then exits
+0 when the block ends. The verified compiler's executables exit with the
+entry's `i32` result, so such a main (`unit_main`: spelled `main`, outside
+an impl, no `-> T`) is read as `fn main() -> i32` whose body is its block
+followed by `return 0;` (`FnResult`, `mainBody`, case unit_main). Its
+`return e;` statements are read at `i32`, which gives the exit status
+laniusc gives. `return;` in such a main is read, but the verified compiler
+rejects the program, as the function's result is `i32` (case
+unit_main_return). A method spelled `main` keeps its own result type. The
+choice touches no Core semantics: the program read is an ordinary Source
+program whose `main` returns `i32`.

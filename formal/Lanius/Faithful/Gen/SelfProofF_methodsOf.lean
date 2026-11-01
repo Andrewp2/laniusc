@@ -3,14 +3,11 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_methodsOf
-public import Lanius.Faithful.Gen.SelfStmt0
 public import Lanius.Faithful.Gen.SelfStmt1
 public import Lanius.Faithful.Gen.SelfStmt2
 public import Lanius.Faithful.Gen.SelfStmt3
-public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt6
-public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pBitAnd
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pElseStmt
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pExpr
@@ -73,39 +70,6 @@ theorem step_collect {prog : SrcProgram} {prims : Prims} {ix_collect ix_unbox_of
   simp only [src_collect] at h
   faithful [Lanius.Mini.collect]
 
-theorem step_collect_files {prog : SrcProgram} {prims : Prims} {ix_collect_files ix_file_decls ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_collect_file_next : Nat} (fn : prog.funcs[ix_collect_files]? = some (src_collect_files ix_file_decls ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_collect_file_next)) (np : prims.isPrim ix_collect_files = false)
-    (ext_file_decls : Certified (∀ {n : Nat}, Stmt_file_decls prog prims ix_file_decls n))
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree n)) {n : Nat}
-    (ih_collect_file_next : Certified (Stmt_collect_file_next prog prims ix_collect_file_next n)) :
-    Stmt_collect_files prog prims ix_collect_files (n + 1) := by
-  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
-  rw [pcall_succ np fn] at h
-  simp only [src_collect_files] at h
-  faithful [Lanius.Mini.collectFiles]
-
-theorem proof_collected_with {prog : SrcProgram} {prims : Prims} {ix_collected_with ix_single_of_mini_selfhost_List_mini_selfhost_List_usize ix_field_fns_Decls_of_mini_selfhost_Decls ix_field_types_Decls_of_mini_selfhost_Decls ix_field_aliases_Decls_of_mini_selfhost_Decls ix_concat_of_mini_selfhost_TypeDecl ix_concat_of_mini_selfhost_FnDecl ix_concat_of_mini_selfhost_ConstDecl ix_field_consts_Decls_of_mini_selfhost_Decls ix_concat_of_mini_selfhost_ImportDecl ix_field_imports_Decls_of_mini_selfhost_Decls ix_concat_of_mini_selfhost_AliasDecl ix_concat_of_mini_selfhost_ImplDecl ix_field_impls_Decls_of_mini_selfhost_Decls ix_concat_of_mini_selfhost_List_mini_selfhost_List_usize : Nat} (fn : prog.funcs[ix_collected_with]? = some (src_collected_with ix_single_of_mini_selfhost_List_mini_selfhost_List_usize ix_field_fns_Decls_of_mini_selfhost_Decls ix_field_types_Decls_of_mini_selfhost_Decls ix_field_aliases_Decls_of_mini_selfhost_Decls ix_concat_of_mini_selfhost_TypeDecl ix_concat_of_mini_selfhost_FnDecl ix_concat_of_mini_selfhost_ConstDecl ix_field_consts_Decls_of_mini_selfhost_Decls ix_concat_of_mini_selfhost_ImportDecl ix_field_imports_Decls_of_mini_selfhost_Decls ix_concat_of_mini_selfhost_AliasDecl ix_concat_of_mini_selfhost_ImplDecl ix_field_impls_Decls_of_mini_selfhost_Decls ix_concat_of_mini_selfhost_List_mini_selfhost_List_usize)) (np : prims.isPrim ix_collected_with = false)
-    (ext_single_of_mini_selfhost_List_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_List_mini_selfhost_List_usize prog prims ix_single_of_mini_selfhost_List_mini_selfhost_List_usize n))
-    (ext_field_fns_Decls_of_mini_selfhost_Decls : Certified (∀ {n : Nat}, Stmt_field_fns_Decls_of_mini_selfhost_Decls prog prims ix_field_fns_Decls_of_mini_selfhost_Decls n))
-    (ext_field_types_Decls_of_mini_selfhost_Decls : Certified (∀ {n : Nat}, Stmt_field_types_Decls_of_mini_selfhost_Decls prog prims ix_field_types_Decls_of_mini_selfhost_Decls n))
-    (ext_field_aliases_Decls_of_mini_selfhost_Decls : Certified (∀ {n : Nat}, Stmt_field_aliases_Decls_of_mini_selfhost_Decls prog prims ix_field_aliases_Decls_of_mini_selfhost_Decls n))
-    (ext_concat_of_mini_selfhost_TypeDecl : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_TypeDecl prog prims ix_concat_of_mini_selfhost_TypeDecl n))
-    (ext_concat_of_mini_selfhost_FnDecl : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_FnDecl prog prims ix_concat_of_mini_selfhost_FnDecl n))
-    (ext_concat_of_mini_selfhost_ConstDecl : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_ConstDecl prog prims ix_concat_of_mini_selfhost_ConstDecl n))
-    (ext_field_consts_Decls_of_mini_selfhost_Decls : Certified (∀ {n : Nat}, Stmt_field_consts_Decls_of_mini_selfhost_Decls prog prims ix_field_consts_Decls_of_mini_selfhost_Decls n))
-    (ext_concat_of_mini_selfhost_ImportDecl : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_ImportDecl prog prims ix_concat_of_mini_selfhost_ImportDecl n))
-    (ext_field_imports_Decls_of_mini_selfhost_Decls : Certified (∀ {n : Nat}, Stmt_field_imports_Decls_of_mini_selfhost_Decls prog prims ix_field_imports_Decls_of_mini_selfhost_Decls n))
-    (ext_concat_of_mini_selfhost_AliasDecl : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_AliasDecl prog prims ix_concat_of_mini_selfhost_AliasDecl n))
-    (ext_concat_of_mini_selfhost_ImplDecl : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_ImplDecl prog prims ix_concat_of_mini_selfhost_ImplDecl n))
-    (ext_field_impls_Decls_of_mini_selfhost_Decls : Certified (∀ {n : Nat}, Stmt_field_impls_Decls_of_mini_selfhost_Decls prog prims ix_field_impls_Decls_of_mini_selfhost_Decls n))
-    (ext_concat_of_mini_selfhost_List_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_List_mini_selfhost_List_usize prog prims ix_concat_of_mini_selfhost_List_mini_selfhost_List_usize n)) {n : Nat} :
-    Stmt_collected_with prog prims ix_collected_with n := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_collected_with] at h
-  faithful [Lanius.Mini.collectedWith]
-
 theorem proof_extern_tree {prog : SrcProgram} {prims : Prims} {ix_extern_tree ix_cons_of_mini_selfhost_CTree ix_kid ix_boxed_of_mini_selfhost_List_mini_selfhost_CTree ix_single_of_mini_selfhost_CTree ix_p_extern_fn : Nat} (fn : prog.funcs[ix_extern_tree]? = some (src_extern_tree ix_cons_of_mini_selfhost_CTree ix_kid ix_boxed_of_mini_selfhost_List_mini_selfhost_CTree ix_single_of_mini_selfhost_CTree ix_p_extern_fn)) (np : prims.isPrim ix_extern_tree = false)
     (ext_cons_of_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_CTree prog prims ix_cons_of_mini_selfhost_CTree n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
@@ -156,16 +120,6 @@ theorem proof_file_items {prog : SrcProgram} {prims : Prims} {ix_file_items ix_f
   simp only [src_file_items] at h
   faithful [Lanius.Mini.fileItems]
 
-theorem step_fn_names_in {prog : SrcProgram} {prims : Prims} {ix_fn_names_in ix_empty_of_mini_selfhost_List_usize ix_unbox_of_mini_selfhost_List_mini_selfhost_FnDecl ix_fn_name_at : Nat} (fn : prog.funcs[ix_fn_names_in]? = some (src_fn_names_in ix_empty_of_mini_selfhost_List_usize ix_unbox_of_mini_selfhost_List_mini_selfhost_FnDecl ix_fn_name_at)) (np : prims.isPrim ix_fn_names_in = false)
-    (ext_empty_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_List_usize prog prims ix_empty_of_mini_selfhost_List_usize n))
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_FnDecl : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_FnDecl prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_FnDecl n)) {n : Nat}
-    (ih_fn_name_at : Certified (Stmt_fn_name_at prog prims ix_fn_name_at n)) :
-    Stmt_fn_names_in prog prims ix_fn_names_in (n + 1) := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rw [pcall_succ np fn] at h
-  simp only [src_fn_names_in] at h
-  faithful [Lanius.Mini.fnNamesIn]
-
 theorem proof_fns_decls {prog : SrcProgram} {prims : Prims} {ix_fns_decls ix_empty_of_mini_selfhost_TypeDecl ix_empty_of_mini_selfhost_ConstDecl ix_empty_of_mini_selfhost_ImportDecl ix_empty_of_mini_selfhost_AliasDecl ix_empty_of_mini_selfhost_ImplDecl : Nat} (fn : prog.funcs[ix_fns_decls]? = some (src_fns_decls ix_empty_of_mini_selfhost_TypeDecl ix_empty_of_mini_selfhost_ConstDecl ix_empty_of_mini_selfhost_ImportDecl ix_empty_of_mini_selfhost_AliasDecl ix_empty_of_mini_selfhost_ImplDecl)) (np : prims.isPrim ix_fns_decls = false)
     (ext_empty_of_mini_selfhost_TypeDecl : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_TypeDecl prog prims ix_empty_of_mini_selfhost_TypeDecl n))
     (ext_empty_of_mini_selfhost_ConstDecl : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_ConstDecl prog prims ix_empty_of_mini_selfhost_ConstDecl n))
@@ -198,12 +152,16 @@ theorem proof_host_extern {prog : SrcProgram} {prims : Prims} {ix_host_extern ix
   simp only [src_host_extern] at h
   faithful [Lanius.Mini.hostExtern]
 
-theorem proof_host_id {prog : SrcProgram} {prims : Prims} {ix_host_id ix_same_text ix_text_write_byte ix_text_write_stdout ix_text_write_stderr ix_text_read_stdin : Nat} (fn : prog.funcs[ix_host_id]? = some (src_host_id ix_same_text ix_text_write_byte ix_text_write_stdout ix_text_write_stderr ix_text_read_stdin)) (np : prims.isPrim ix_host_id = false)
+theorem proof_host_id {prog : SrcProgram} {prims : Prims} {ix_host_id ix_same_text ix_text_write_byte ix_text_write_stdout ix_text_write_stderr ix_text_read_stdin ix_text_sleep_ms_i32 ix_text_monotonic_read ix_text_system_read ix_text_fill_secure_bytes : Nat} (fn : prog.funcs[ix_host_id]? = some (src_host_id ix_same_text ix_text_write_byte ix_text_write_stdout ix_text_write_stderr ix_text_read_stdin ix_text_sleep_ms_i32 ix_text_monotonic_read ix_text_system_read ix_text_fill_secure_bytes)) (np : prims.isPrim ix_host_id = false)
     (ext_same_text : Certified (∀ {n : Nat}, Stmt_same_text prog prims ix_same_text n))
     (ext_text_write_byte : Certified (∀ {n : Nat}, Stmt_text_write_byte prog prims ix_text_write_byte n))
     (ext_text_write_stdout : Certified (∀ {n : Nat}, Stmt_text_write_stdout prog prims ix_text_write_stdout n))
     (ext_text_write_stderr : Certified (∀ {n : Nat}, Stmt_text_write_stderr prog prims ix_text_write_stderr n))
-    (ext_text_read_stdin : Certified (∀ {n : Nat}, Stmt_text_read_stdin prog prims ix_text_read_stdin n)) {n : Nat} :
+    (ext_text_read_stdin : Certified (∀ {n : Nat}, Stmt_text_read_stdin prog prims ix_text_read_stdin n))
+    (ext_text_sleep_ms_i32 : Certified (∀ {n : Nat}, Stmt_text_sleep_ms_i32 prog prims ix_text_sleep_ms_i32 n))
+    (ext_text_monotonic_read : Certified (∀ {n : Nat}, Stmt_text_monotonic_read prog prims ix_text_monotonic_read n))
+    (ext_text_system_read : Certified (∀ {n : Nat}, Stmt_text_system_read prog prims ix_text_system_read n))
+    (ext_text_fill_secure_bytes : Certified (∀ {n : Nat}, Stmt_text_fill_secure_bytes prog prims ix_text_fill_secure_bytes n)) {n : Nat} :
     Stmt_host_id prog prims ix_host_id n := by
   intro x0 v0 w h r0
   rcases n with _ | n
@@ -285,6 +243,17 @@ theorem step_methods_of {prog : SrcProgram} {prims : Prims} {ix_methods_of ix_un
   simp only [src_methods_of] at h
   faithful [Lanius.Mini.methodsOf]
 
+theorem proof_text_fill_secure_bytes {prog : SrcProgram} {prims : Prims} {ix_text_fill_secure_bytes ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_fill_secure_bytes]? = some (src_text_fill_secure_bytes ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_fill_secure_bytes = false)
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+    Stmt_text_fill_secure_bytes prog prims ix_text_fill_secure_bytes n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_text_fill_secure_bytes] at h
+  faithful [Lanius.Mini.textFillSecureBytes]
+
 theorem proof_text_lanius_std {prog : SrcProgram} {prims : Prims} {ix_text_lanius_std ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_lanius_std]? = some (src_text_lanius_std ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_lanius_std = false)
     (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
     (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
@@ -296,6 +265,17 @@ theorem proof_text_lanius_std {prog : SrcProgram} {prims : Prims} {ix_text_laniu
   simp only [src_text_lanius_std] at h
   faithful [Lanius.Mini.textLaniusStd]
 
+theorem proof_text_monotonic_read {prog : SrcProgram} {prims : Prims} {ix_text_monotonic_read ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_monotonic_read]? = some (src_text_monotonic_read ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_monotonic_read = false)
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+    Stmt_text_monotonic_read prog prims ix_text_monotonic_read n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_text_monotonic_read] at h
+  faithful [Lanius.Mini.textMonotonicRead]
+
 theorem proof_text_read_stdin {prog : SrcProgram} {prims : Prims} {ix_text_read_stdin ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_read_stdin]? = some (src_text_read_stdin ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_read_stdin = false)
     (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
     (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
@@ -306,6 +286,28 @@ theorem proof_text_read_stdin {prog : SrcProgram} {prims : Prims} {ix_text_read_
   rw [pcall_succ np fn] at h
   simp only [src_text_read_stdin] at h
   faithful [Lanius.Mini.textReadStdin]
+
+theorem proof_text_sleep_ms_i32 {prog : SrcProgram} {prims : Prims} {ix_text_sleep_ms_i32 ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_sleep_ms_i32]? = some (src_text_sleep_ms_i32 ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_sleep_ms_i32 = false)
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+    Stmt_text_sleep_ms_i32 prog prims ix_text_sleep_ms_i32 n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_text_sleep_ms_i32] at h
+  faithful [Lanius.Mini.textSleepMsI32]
+
+theorem proof_text_system_read {prog : SrcProgram} {prims : Prims} {ix_text_system_read ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_system_read]? = some (src_text_system_read ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_system_read = false)
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+    Stmt_text_system_read prog prims ix_text_system_read n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_text_system_read] at h
+  faithful [Lanius.Mini.textSystemRead]
 
 theorem proof_text_write_byte {prog : SrcProgram} {prims : Prims} {ix_text_write_byte ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_write_byte]? = some (src_text_write_byte ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_write_byte = false)
     (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
@@ -354,16 +356,6 @@ theorem proof_type_decls {prog : SrcProgram} {prims : Prims} {ix_type_decls ix_e
   rw [pcall_succ np fn] at h
   simp only [src_type_decls] at h
   faithful [Lanius.Mini.typeDecls]
-
-theorem step_type_names_in {prog : SrcProgram} {prims : Prims} {ix_type_names_in ix_empty_of_mini_selfhost_List_usize ix_unbox_of_mini_selfhost_List_mini_selfhost_TypeDecl ix_type_name_at : Nat} (fn : prog.funcs[ix_type_names_in]? = some (src_type_names_in ix_empty_of_mini_selfhost_List_usize ix_unbox_of_mini_selfhost_List_mini_selfhost_TypeDecl ix_type_name_at)) (np : prims.isPrim ix_type_names_in = false)
-    (ext_empty_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_List_usize prog prims ix_empty_of_mini_selfhost_List_usize n))
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_TypeDecl : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_TypeDecl prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_TypeDecl n)) {n : Nat}
-    (ih_type_name_at : Certified (Stmt_type_name_at prog prims ix_type_name_at n)) :
-    Stmt_type_names_in prog prims ix_type_names_in (n + 1) := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rw [pcall_succ np fn] at h
-  simp only [src_type_names_in] at h
-  faithful [Lanius.Mini.typeNamesIn]
 
 theorem proof_with_impl {prog : SrcProgram} {prims : Prims} {ix_with_impl ix_with_impl_decl : Nat} (fn : prog.funcs[ix_with_impl]? = some (src_with_impl ix_with_impl_decl)) (np : prims.isPrim ix_with_impl = false)
     (ext_with_impl_decl : Certified (∀ {n : Nat}, Stmt_with_impl_decl prog prims ix_with_impl_decl n)) {n : Nat} :

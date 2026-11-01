@@ -86,6 +86,9 @@ def Syscall.number (self : Syscall) : Nat :=
   match self with
   | .write => 0
   | .read => 1
+  | .poll => 2
+  | .clock => 3
+  | .random => 4
 
 /-- Unsigned comparison. -/
 def CmpOp.test (self : CmpOp) (a : BitVec 64) (b : BitVec 64) : Bool :=

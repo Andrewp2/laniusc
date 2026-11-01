@@ -37,9 +37,9 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem step_put_element {prog : SrcProgram} {prims : Prims} {ix_put_element ix_plus ix_minus ix_times ix_boxed_of_mini_selfhost_Stmt ix_assign_from ix_boxed_of_mini_selfhost_Expr ix_slot_vars : Nat} (fn : prog.funcs[ix_put_element]? = some (src_put_element ix_plus ix_minus ix_times ix_boxed_of_mini_selfhost_Stmt ix_assign_from ix_boxed_of_mini_selfhost_Expr ix_slot_vars ix_put_element)) (np : prims.isPrim ix_put_element = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+theorem step_put_element {prog : SrcProgram} {prims : Prims} {ix_put_element ix_minus ix_plus ix_times ix_boxed_of_mini_selfhost_Stmt ix_assign_from ix_boxed_of_mini_selfhost_Expr ix_slot_vars : Nat} (fn : prog.funcs[ix_put_element]? = some (src_put_element ix_minus ix_plus ix_times ix_boxed_of_mini_selfhost_Stmt ix_assign_from ix_boxed_of_mini_selfhost_Expr ix_slot_vars ix_put_element)) (np : prims.isPrim ix_put_element = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_times : Certified (∀ {n : Nat}, Stmt_times prog prims ix_times n))
     (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
     (ext_assign_from : Certified (∀ {n : Nat}, Stmt_assign_from prog prims ix_assign_from n))

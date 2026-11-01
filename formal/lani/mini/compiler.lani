@@ -232,8 +232,12 @@ pub enum Expr {
 }
 
 // A Linux system call (roadmap F8). Write: write(fd, the heap address,
-// count), arguments in that order; Read: read(fd, the heap address, count).
-pub enum Syscall { Write, Read, }
+// count), arguments in that order; Read: read(fd, the heap address, count);
+// Poll: poll(fds, nfds, timeout), the second argument not made an address;
+// Clock: clock_gettime(clock, the heap address, unused); Random:
+// getrandom(the heap address, count, flags), the first argument made an
+// address.
+pub enum Syscall { Write, Read, Poll, Clock, Random, }
 
 pub enum Stmt {
     Skip,
@@ -326,6 +330,9 @@ pub enum Instr {
     Fp(FOp, usize),
     // rax := call(slot, slot + 1, slot + 2), through rdi, rsi and rdx
     Sys(Syscall, usize),
+    // Frame memory: the frame pointer (rbx) drops by bytes, to no lower than
+    // the limit (r14), and rax gets its new value
+    Frame(usize),
 }
 
 impl BinOp {
@@ -453,6 +460,7 @@ impl Instr {
             Div(word, operation, slot) -> plus(plus(18, word.prefix()), operation.size(word)),
             Instr::Fp(operation, slot) -> plus(10, operation.size()),
             Instr::Sys(kind, slot) -> 34,
+            Instr::Frame(bytes) -> 39,
         };
     }
 }
@@ -515,7 +523,7 @@ pub fn compile_stmt(base: usize, pos: usize, brk: usize, cont: usize, s: Stmt) -
         StoreWord(width, address, value) -> concat(concat(compile_expr(base, address, 0), single(Store(base))), concat(compile_expr(base, value, 1), single(StoreWordAt(width, base)))),
         Divide(word, operation, target, left, right) -> concat(concat(concat(compile_expr(base, left, 0), single(Store(base))), compile_expr(base, right, 1)), cons(Div(word, operation, base), single(Store(target)))),
         Stmt::Sys(kind, target, args) -> concat(compile_args(base, args, 0), cons(Instr::Sys(kind, base), single(Store(target)))),
-        Stmt::Frame(target, bytes) -> empty(),
+        Stmt::Frame(target, bytes) -> cons(Instr::Frame(bytes), single(Store(target))),
     };
 }
 
@@ -616,7 +624,7 @@ impl Stmt {
             StoreWord(width, address, value) -> address.within(locals) && value.within(locals),
             Divide(word, operation, target, left, right) -> locals > target && left.within(locals) && right.within(locals),
             Stmt::Sys(kind, target, args) -> locals > target && (length(args) == 3) && all_within(locals, args),
-            Stmt::Frame(target, bytes) -> false,
+            Stmt::Frame(target, bytes) -> locals > target && 2147483648 > bytes,
         };
     }
 
@@ -943,6 +951,14 @@ pub fn bump_bytes(shift: usize) -> List<u8> {
     return concat(concat(concat(round, mask), concat(carry, check)), cons(77, cons(137, cons(221, cons(72, cons(137, single(200)))))));
 }
 
+// mov r11, bytes; mov rax, rbx; sub rax, r11; jb +12 (below zero);
+// mov r11, rax; cmp r11, r14; jae +2; ud2 (below the limit); mov rbx, rax
+pub fn frame_memory_bytes(bytes: usize) -> List<u8> {
+    let start: List<u8> = concat(cons(73, cons(187, le64(bytes as u64))), cons(72, cons(137, cons(216, cons(76, cons(41, single(216)))))));
+    let check: List<u8> = cons(15, cons(130, cons(12, cons(0, cons(0, cons(0, cons(73, cons(137, cons(195, cons(77, cons(57, cons(243, cons(15, cons(131, cons(2, cons(0, cons(0, single(0))))))))))))))))));
+    return concat(concat(start, check), cons(15, cons(11, cons(72, cons(137, single(195))))));
+}
+
 // add rax, r12; movzx eax, byte [rax + 0]
 pub fn load_at_bytes() -> List<u8> {
     return cons(76, cons(1, cons(224, cons(15, cons(182, cons(128, cons(0, cons(0, cons(0, single(0))))))))));
@@ -968,17 +984,45 @@ pub fn syscall_linux_byte(kind: Syscall) -> u8 {
     return match (kind) {
         Write -> 1,
         Read -> 0,
+        Poll -> 7,
+        Clock -> 228,
+        Random -> 62,
+    };
+}
+
+// The second byte of a system call's Linux number (getrandom is 318).
+pub fn syscall_linux_high(kind: Syscall) -> u8 {
+    return match (kind) {
+        Write -> 0,
+        Read -> 0,
+        Poll -> 0,
+        Clock -> 0,
+        Random -> 1,
+    };
+}
+
+// Which argument a system call makes a heap address: add rsi, r12 (the
+// second) for write, read and clock_gettime, mov rsi, rsi (none) for poll,
+// add rdi, r12 (the first) for getrandom.
+pub fn syscall_rsi_bytes(kind: Syscall) -> List<u8> {
+    return match (kind) {
+        Write -> cons(76, cons(1, single(230))),
+        Read -> cons(76, cons(1, single(230))),
+        Poll -> cons(72, cons(137, single(246))),
+        Clock -> cons(76, cons(1, single(230))),
+        Random -> cons(76, cons(1, single(231))),
     };
 }
 
 // mov rdi, [rbp + disp32] (the fd); mov rsi, [rbp + disp32]; add rsi, r12
-// (the heap address); mov rdx, [rbp + disp32] (the count); mov eax, the call's number;
-// syscall; mov r11, rcx (the kernel leaves RFLAGS in r11)
+// (the heap address; mov rsi, rsi for poll); mov rdx, [rbp + disp32] (the
+// count); mov eax, the call's number; syscall; mov r11, rcx (the kernel
+// leaves RFLAGS in r11)
 pub fn sys_bytes(kind: Syscall, slot: usize) -> List<u8> {
     let fd: List<u8> = concat(cons(72, cons(139, single(189))), le32(slot_offset(slot)));
-    let address: List<u8> = concat(concat(cons(72, cons(139, single(181))), le32(slot_offset(plus(slot, 1)))), cons(76, cons(1, single(230))));
+    let address: List<u8> = concat(concat(cons(72, cons(139, single(181))), le32(slot_offset(plus(slot, 1)))), syscall_rsi_bytes(kind));
     let count: List<u8> = concat(cons(72, cons(139, single(149))), le32(slot_offset(plus(slot, 2))));
-    return concat(concat(fd, address), concat(count, cons(184, cons(syscall_linux_byte(kind), cons(0, cons(0, cons(0, cons(15, cons(5, cons(73, cons(137, single(203))))))))))));
+    return concat(concat(fd, address), concat(count, cons(184, cons(syscall_linux_byte(kind), cons(syscall_linux_high(kind), cons(0, cons(0, cons(15, cons(5, cons(73, cons(137, single(203))))))))))));
 }
 
 // mov rsp, rbp; pop rbp; ret
@@ -1060,6 +1104,7 @@ impl Instr {
             Div(word, operation, slot) -> operation.bytes(word, slot),
             Instr::Fp(operation, slot) -> operation.bytes(slot),
             Instr::Sys(kind, slot) -> sys_bytes(kind, slot),
+            Instr::Frame(bytes) -> frame_memory_bytes(bytes),
         };
     }
 }
@@ -1098,6 +1143,24 @@ pub fn link_from(entries: List<usize>, start: usize, codes: List<Code>) -> List<
     };
 }
 
+// The bytes of code followed by tail.
+pub fn encode_onto(place: Place, pc: usize, code: List<Instr>, tail: List<u8>) -> List<u8> {
+    return match (code) {
+        Nil -> tail,
+        Cons(i, rest) -> concat(i.encode(place, pc), encode_onto(place, plus(pc, i.size()), unbox(rest), tail)),
+    };
+}
+
+// link_from's bytes, each function's built in front of the rest instead of
+// concatenated onto it: concat copies its first list, and the heap of the
+// self-built verified compiler is never freed (roadmap F12).
+pub fn link_onto(entries: List<usize>, start: usize, codes: List<Code>) -> List<u8> {
+    return match (codes) {
+        Nil -> empty(),
+        Cons(code, rest) -> concat(prologue(code.slots), encode_onto(Place { body: plus(start, 24), slots: code.slots, entries: entries }, 0, code.instrs, link_onto(entries, plus(start, code.size()), unbox(rest)))),
+    };
+}
+
 // Machine code of a compiled program.
 pub struct Binary {
     codes: List<Code>,
@@ -1110,6 +1173,15 @@ pub fn image_limit() -> usize {
     return 1073741824;
 }
 
+// The size of functions laid out back to back: the image's length, found
+// without a walk over the image.
+pub fn linked_size(codes: List<Code>) -> usize {
+    return match (codes) {
+        Nil -> 0,
+        Cons(code, rest) -> plus(code.size(), linked_size(unbox(rest))),
+    };
+}
+
 pub fn compile_program(prog: Program) -> core::option::Option<Binary> {
     return match (compile_funcs(arities(prog.funcs), prog.funcs)) {
         None -> None,
@@ -1120,8 +1192,8 @@ pub fn compile_program(prog: Program) -> core::option::Option<Binary> {
 // extract: inline
 fn link(codes: List<Code>) -> core::option::Option<Binary> {
     let entries: List<usize> = layout(0, codes);
-    let image: List<u8> = link_from(entries, 0, codes);
-    if (image_limit() >= length(image)) {
+    let image: List<u8> = link_onto(entries, 0, codes);
+    if (image_limit() >= linked_size(codes)) {
         return Some(Binary { codes: codes, entries: entries, image: image });
     }
     return None;
@@ -1306,6 +1378,7 @@ impl Instr {
             Div(word, operation, slot) -> single(Piece::Bytes(self.encode(place, pc))),
             Instr::Fp(operation, slot) -> single(Piece::Bytes(self.encode(place, pc))),
             Instr::Sys(kind, slot) -> single(Piece::Bytes(self.encode(place, pc))),
+            Instr::Frame(bytes) -> single(Piece::Bytes(self.encode(place, pc))),
         };
     }
 }
@@ -3607,7 +3680,7 @@ pub fn eval_call_sig(sig: Sig, callee: usize, slot: usize, args: EvaluatedArgs) 
 // Core's host services (roadmap F8) are its functions from id 2^32 on
 // (`hostService?`, Mini/SourceCore.lean), past every program's own: 2^32 is
 // write_byte, 2^32 + 1 write_stdout, 2^32 + 2 write_stderr, 2^32 + 3
-// read_stdin. Their code is system calls.
+// read_stdin, 2^32 + 4 sleep_ms_i32. Their code is system calls.
 //
 // write_byte(handle, value), handle and value in slot and slot + 1: to handle
 // 1 or 2 the value's low byte goes through the heap's byte 0 (no block's,
@@ -3655,6 +3728,38 @@ pub fn host_read_code(slot: usize) -> Stmt {
     return Seq(boxed(Assign(total, Lit(0))), boxed(looped));
 }
 
+// sleep_ms_i32(milliseconds), milliseconds in slot: -1 for a negative count;
+// else poll(0, 0, milliseconds), which polls no fd and so returns after the
+// timeout, and 0.
+pub fn host_sleep_code(slot: usize) -> Stmt {
+    let sleep: Stmt = Seq(boxed(Stmt::Sys(Poll, plus(slot, 1), cons(Lit(0), cons(Lit(0), single(Var(slot)))))), boxed(Assign(slot, Lit(0))));
+    return Stmt::Ite(Compare(S32, Lt, boxed(Var(slot)), boxed(Lit(0))), boxed(Assign(slot, Lit(4294967295))), boxed(sleep));
+}
+
+// monotonic_read(pointer, len) (clock 1) or system_read (clock 0), pointer
+// and len in slot and slot + 1: -1 when len is below 16; else
+// clock_gettime(clock, pointer) and 0.
+pub fn host_clock_code(clock: u64, slot: usize) -> Stmt {
+    let read: Stmt = Seq(boxed(Stmt::Sys(Clock, plus(slot, 2), cons(Lit(clock), cons(Var(slot), single(Lit(0)))))), boxed(Assign(slot, Lit(0))));
+    return Stmt::Ite(Compare(U64, Lt, boxed(Var(plus(slot, 1))), boxed(Lit(16))), boxed(Assign(slot, Lit(4294967295))), boxed(read));
+}
+
+// fill_secure_bytes(pointer, count), pointer and count in slot and slot + 1:
+// getrandom of at most 256 bytes at a time to the pointer until none are
+// left to ask for, then the count as i32.
+pub fn host_random_code(slot: usize) -> Stmt {
+    let count: usize = plus(slot, 1);
+    let total: usize = plus(slot, 2);
+    let chunk: usize = plus(slot, 3);
+    let got: usize = plus(slot, 4);
+    let pick: Stmt = Stmt::Ite(Compare(U64, Lt, boxed(Var(count)), boxed(Lit(256))), boxed(Assign(chunk, Var(count))), boxed(Assign(chunk, Lit(256))));
+    let advance: Stmt = Seq(boxed(Assign(slot, Binary(U64, Add, boxed(Var(slot)), boxed(Var(chunk))))), boxed(Assign(count, Binary(U64, Sub, boxed(Var(count)), boxed(Var(chunk))))));
+    let fill: Stmt = Seq(boxed(Stmt::Sys(Random, got, cons(Var(slot), cons(Var(chunk), single(Lit(0)))))), boxed(advance));
+    let body: Stmt = Seq(boxed(pick), boxed(fill));
+    let looped: Stmt = Seq(boxed(Stmt::Loop(Compare(U64, Ne, boxed(Var(count)), boxed(Lit(0))), boxed(body))), boxed(Assign(slot, Binary(S32, Add, boxed(Var(total)), boxed(Lit(0))))));
+    return Seq(boxed(Assign(total, Var(count))), boxed(looped));
+}
+
 pub fn eval_host(callee: usize, slot: usize, args: EvaluatedArgs) -> core::option::Option<Evaluated> {
     if ((callee == 4294967296) && types_same(args.types, cons(I32, single(I32)))) {
         return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_byte_code(slot))), ty: I32 });
@@ -3667,6 +3772,18 @@ pub fn eval_host(callee: usize, slot: usize, args: EvaluatedArgs) -> core::optio
     }
     if ((callee == 4294967299) && types_same(args.types, cons(Ptr, single(Uint(Usize))))) {
         return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_read_code(slot))), ty: I32 });
+    }
+    if ((callee == 4294967300) && types_same(args.types, single(I32))) {
+        return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_sleep_code(slot))), ty: I32 });
+    }
+    if ((callee == 4294967301) && types_same(args.types, cons(Ptr, single(Uint(Usize))))) {
+        return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_clock_code(1, slot))), ty: I32 });
+    }
+    if ((callee == 4294967302) && types_same(args.types, cons(Ptr, single(Uint(Usize))))) {
+        return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_clock_code(0, slot))), ty: I32 });
+    }
+    if ((callee == 4294967303) && types_same(args.types, cons(Ptr, single(Uint(Usize))))) {
+        return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_random_code(slot))), ty: I32 });
     }
     return None;
 }
@@ -5841,6 +5958,9 @@ impl Syscall {
         return match (self) {
             Write -> 0,
             Read -> 1,
+            Poll -> 2,
+            Clock -> 3,
+            Random -> 4,
         };
     }
 }
@@ -6487,12 +6607,111 @@ fn kept(fact: Fact, index: usize, tail: List<Fact>) -> List<Fact> {
     return tail;
 }
 
+pub fn fact_dies(fact: Fact, index: usize) -> bool {
+    return (fact.slot == index) || fact.value.mentions(index);
+}
+
+pub fn none_dies(facts: List<Fact>, index: usize) -> bool {
+    return match (facts) {
+        Nil -> true,
+        Cons(fact, rest) -> !fact_dies(fact, index) && none_dies(unbox(rest), index),
+    };
+}
+
+// The facts themselves when none dies, else kill's list.
+pub fn kill_tail(facts: List<Fact>, index: usize) -> List<Fact> {
+    if (none_dies(facts, index)) {
+        return facts;
+    }
+    return kill(facts, index);
+}
+
+pub fn extent_after(dies: bool, k: usize, extent: usize) -> usize {
+    if (dies) {
+        return k;
+    }
+    return extent;
+}
+
+// How many of the facts, counted from the front, reach the last one that
+// dies (0 when none does); k facts come before these.
+pub fn dying_extent(facts: List<Fact>, index: usize, k: usize, extent: usize) -> usize {
+    return match (facts) {
+        Nil -> extent,
+        Cons(fact, rest) -> dying_extent(unbox(rest), index, plus(k, 1), extent_after(fact_dies(fact, index), plus(k, 1), extent)),
+    };
+}
+
+pub fn kill_prefix_at(fact: Fact, index: usize, tail: List<Fact>) -> List<Fact> {
+    if (fact_dies(fact, index)) {
+        return tail;
+    }
+    return cons(fact, tail);
+}
+
+// The first n facts filtered as kill does, followed by kill_tail of the rest.
+pub fn kill_prefix(facts: List<Fact>, index: usize, n: usize) -> List<Fact> {
+    if (n == 0) {
+        return kill_tail(facts, index);
+    }
+    return match (facts) {
+        Nil -> empty(),
+        Cons(fact, rest) -> kill_prefix_at(fact, index, kill_prefix(unbox(rest), index, minus(n, 1))),
+    };
+}
+
+// The facts that survive a write to slot index, in kill's order, sharing the
+// part of the list after the last fact that dies: the self-built verified
+// compiler's heap is never freed, and rebuilding the list on every write
+// cost gigabytes (roadmap F12). dying_extent only picks where the sharing
+// starts; kill_tail checks that nothing after it dies.
+pub fn kill_shared(facts: List<Fact>, index: usize) -> List<Fact> {
+    return kill_prefix(facts, index, dying_extent(facts, index, 0, 0));
+}
+
+// The first n facts.
+pub fn first_facts(facts: List<Fact>, n: usize) -> List<Fact> {
+    if (n == 0) {
+        return empty();
+    }
+    return match (facts) {
+        Nil -> empty(),
+        Cons(fact, rest) -> cons(fact, first_facts(unbox(rest), minus(n, 1))),
+    };
+}
+
+// The list has more than n facts.
+pub fn longer(facts: List<Fact>, n: usize) -> bool {
+    if (n == 0) {
+        return match (facts) {
+            Nil -> false,
+            Cons(fact, rest) -> true,
+        };
+    }
+    return match (facts) {
+        Nil -> false,
+        Cons(fact, rest) -> longer(unbox(rest), minus(n, 1)),
+    };
+}
+
+// A list past 31 facts is cut to its 15 newest, so a list holds at most 32
+// facts and finding one or killing some walks at most 32, and the cut copies
+// 15 facts once per 16 or more writes (an unbounded list made the self-built
+// verified compiler allocate gigabytes of facts on its own long functions;
+// roadmap F12).
+pub fn trim_facts(facts: List<Fact>) -> List<Fact> {
+    if (longer(facts, 31)) {
+        return first_facts(facts, 15);
+    }
+    return facts;
+}
+
 // The facts after index = value.
 pub fn assigned(facts: List<Fact>, index: usize, value: Expr) -> List<Fact> {
     let known: Expr = value.subst(facts);
-    let rest: List<Fact> = kill(facts, index);
+    let rest: List<Fact> = kill_shared(facts, index);
     if (known.is_atom() && !known.mentions(index)) {
-        return cons(Fact { slot: index, value: known }, rest);
+        return cons(Fact { slot: index, value: known }, trim_facts(rest));
     }
     return rest;
 }
@@ -6601,14 +6820,14 @@ impl Stmt {
             Stmt::Ret(v) -> empty(),
             Brk -> empty(),
             Cont -> empty(),
-            Alloc(target, sh, sz) -> kill(facts, target),
-            LoadByte(target, a) -> kill(facts, target),
+            Alloc(target, sh, sz) -> kill_shared(facts, target),
+            LoadByte(target, a) -> kill_shared(facts, target),
             StoreByte(a, v) -> facts,
-            LoadWord(w, target, a) -> kill(facts, target),
+            LoadWord(w, target, a) -> kill_shared(facts, target),
             StoreWord(w, a, v) -> facts,
-            Divide(w, o, target, l, r) -> kill(facts, target),
+            Divide(w, o, target, l, r) -> kill_shared(facts, target),
             Stmt::Sys(c, t, a) -> empty(),
-            Stmt::Frame(t, b) -> kill(facts, t),
+            Stmt::Frame(t, b) -> kill_shared(facts, t),
         };
     }
 
@@ -6842,84 +7061,6 @@ pub fn validate(original: Program, optimized: Program) -> bool {
 // or y is written; branches, loops and calls forget all of them), and drops
 // x = e when the optimized rest of the sequence writes x before reading it.
 
-pub fn fact_dies(fact: Fact, index: usize) -> bool {
-    return (fact.slot == index) || fact.value.mentions(index);
-}
-
-pub fn extent_after(dies: bool, k: usize, extent: usize) -> usize {
-    if (dies) {
-        return k;
-    }
-    return extent;
-}
-
-// How many of the facts, counted from the front, reach the last one that
-// dies (0 when none does); k facts come before these.
-pub fn dying_extent(facts: List<Fact>, index: usize, k: usize, extent: usize) -> usize {
-    return match (facts) {
-        Nil -> extent,
-        Cons(fact, rest) -> dying_extent(unbox(rest), index, plus(k, 1), extent_after(fact_dies(fact, index), plus(k, 1), extent)),
-    };
-}
-
-pub fn kill_prefix_at(fact: Fact, index: usize, tail: List<Fact>) -> List<Fact> {
-    if (fact_dies(fact, index)) {
-        return tail;
-    }
-    return cons(fact, tail);
-}
-
-// The first n facts filtered as kill does, followed by the rest unchanged.
-pub fn kill_prefix(facts: List<Fact>, index: usize, n: usize) -> List<Fact> {
-    if (n == 0) {
-        return facts;
-    }
-    return match (facts) {
-        Nil -> empty(),
-        Cons(fact, rest) -> kill_prefix_at(fact, index, kill_prefix(unbox(rest), index, minus(n, 1))),
-    };
-}
-
-// kill(facts, index), sharing the facts after the last one that dies.
-pub fn opt_kill(facts: List<Fact>, index: usize) -> List<Fact> {
-    return kill_prefix(facts, index, dying_extent(facts, index, 0, 0));
-}
-
-pub fn opt_assigned(facts: List<Fact>, index: usize, value: Expr) -> List<Fact> {
-    let known: Expr = value.subst(facts);
-    let rest: List<Fact> = opt_kill(facts, index);
-    if (known.is_atom() && !known.mentions(index)) {
-        return cons(Fact { slot: index, value: known }, rest);
-    }
-    return rest;
-}
-
-// The optimizer's copy of the validator's facts_after: the same facts, but a
-// write keeps the part of the list after the last fact it kills instead of
-// rebuilding it (the self-built compiler's heap is never freed, and the
-// validator's kill rebuilds the whole list on every write).
-pub fn opt_facts_after(s: Stmt, facts: List<Fact>) -> List<Fact> {
-    return match (s) {
-        Skip -> facts,
-        Assign(index, value) -> opt_assigned(facts, index, value),
-        Seq(first, second) -> opt_facts_after(unbox(second), opt_facts_after(unbox(first), facts)),
-        Ite(c, t, e) -> empty(),
-        Loop(c, b) -> empty(),
-        Stmt::Call(t, n, f, a) -> empty(),
-        Stmt::Ret(v) -> empty(),
-        Brk -> empty(),
-        Cont -> empty(),
-        Alloc(target, sh, sz) -> opt_kill(facts, target),
-        LoadByte(target, a) -> opt_kill(facts, target),
-        StoreByte(a, v) -> facts,
-        LoadWord(w, target, a) -> opt_kill(facts, target),
-        StoreWord(w, a, v) -> facts,
-        Divide(w, o, target, l, r) -> opt_kill(facts, target),
-        Stmt::Sys(c, t, a) -> empty(),
-        Stmt::Frame(t, b) -> opt_kill(facts, t),
-    };
-}
-
 impl Expr {
     pub fn literal(self) -> core::option::Option<u64> {
         return match (self) {
@@ -7117,7 +7258,7 @@ impl Stmt {
 // to a slot the optimized rest kills is dropped.
 // extract: inline
 fn optimize_sequence(first: Stmt, second: Stmt, facts: List<Fact>) -> Stmt {
-    let rest: Stmt = second.optimize(opt_facts_after(first, facts));
+    let rest: Stmt = second.optimize(first.facts_after(facts));
     if (first.dead_before(rest)) {
         return rest;
     }
@@ -7180,9 +7321,13 @@ pub fn compile_source(prog: SrcProgram) -> core::option::Option<Binary> {
 // ---------------------------------------------------------------- the driver's output
 
 // The words a driver writes for a program the front end read (or did not):
-// the entry count, the entries, the image length and the image's bytes, one
-// word each; none when the program is rejected (roadmap V1). `compile_words`
-// is the entry.
+// the entry count, the entries, the image length, then the image's bytes
+// packed four to a word, little-endian, the last word padded with zeros;
+// none when the program is rejected (roadmap V1). `compile_words` is the
+// entry. The image is packed in rounds of at most 4096 words, so no call
+// chain over it is deeper than one round plus the number of rounds: the
+// self-built compiler's own image is 15 MB, and a call per byte took
+// gigabytes of stack (roadmap F12).
 
 pub fn usize_words(xs: List<usize>) -> List<i32> {
     return match (xs) {
@@ -7191,17 +7336,75 @@ pub fn usize_words(xs: List<usize>) -> List<i32> {
     };
 }
 
-pub fn byte_words(xs: List<u8>) -> List<i32> {
+// Bytes a, b, c, d as one little-endian word.
+pub fn pack_word(a: u8, b: u8, c: u8, d: u8) -> i32 {
+    return (a as i32) + ((b as i32) * 256) + ((c as i32) * 65536) + ((d as i32) * 16777216);
+}
+
+// Packed words, the number of bytes they hold, and the bytes after them.
+pub struct Round {
+    words: List<i32>,
+    count: usize,
+    rest: List<u8>,
+}
+
+pub fn round_end() -> Round {
+    return Round { words: empty(), count: 0, rest: empty() };
+}
+
+// One more word, of k bytes, in front of a round.
+pub fn round_cons(word: i32, k: usize, after: Round) -> Round {
+    return Round { words: cons(word, after.words), count: plus(after.count, k), rest: after.rest };
+}
+
+// Up to n words of the bytes xs.
+pub fn pack_round(xs: List<u8>, n: usize) -> Round {
+    if (n == 0) {
+        return Round { words: empty(), count: 0, rest: xs };
+    }
     return match (xs) {
-        Nil -> empty(),
-        Cons(x, rest) -> cons(x as i32, byte_words(unbox(rest))),
+        Nil -> round_end(),
+        Cons(a, ra) -> match (unbox(ra)) {
+            Nil -> round_cons(pack_word(a, 0, 0, 0), 1, round_end()),
+            Cons(b, rb) -> match (unbox(rb)) {
+                Nil -> round_cons(pack_word(a, b, 0, 0), 2, round_end()),
+                Cons(c, rc) -> match (unbox(rc)) {
+                    Nil -> round_cons(pack_word(a, b, c, 0), 3, round_end()),
+                    Cons(d, rd) -> round_cons(pack_word(a, b, c, d), 4, pack_round(unbox(rd), minus(n, 1))),
+                },
+            },
+        },
     };
 }
 
+// Two rounds, one after the other.
+pub fn round_join(first: Round, second: Round) -> Round {
+    return Round { words: concat(first.words, second.words), count: plus(first.count, second.count), rest: second.rest };
+}
+
+// All the bytes xs packed: rounds of 4096 words while the fuel lasts, then
+// the rest in one round.
+pub fn pack_rounds(xs: List<u8>, fuel: usize) -> Round {
+    if (fuel == 0) {
+        return pack_round(xs, 4611686018427387904);
+    }
+    let round: Round = pack_round(xs, 4096);
+    return match (round.rest) {
+        Nil -> round,
+        Cons(x, more) -> round_join(round, pack_rounds(round.rest, minus(fuel, 1))),
+    };
+}
+
+// The words of a binary, from its entries and its packed image.
+pub fn image_words(entries: List<usize>, packed: Round) -> List<i32> {
+    return concat(cons(length(entries) as i32, usize_words(entries)), cons(packed.count as i32, packed.words));
+}
+
+// 2^20 rounds of 4096 words cover 16 GiB, past the image limit.
 pub fn binary_words(binary: core::option::Option<Binary>) -> core::option::Option<List<i32>> {
     return match (binary) {
         None -> None,
-        Some(b) -> Some(concat(cons(length(b.entries) as i32, usize_words(b.entries)), cons(length(b.image) as i32, byte_words(b.image)))),
+        Some(b) -> Some(image_words(b.entries, pack_rounds(b.image, 1048576))),
     };
 }
 
@@ -7218,10 +7421,11 @@ pub fn compile_words(program: core::option::Option<SrcProgram>) -> core::option:
 // readable, writable and executable, from the file's first byte. The file is
 // the ELF header, its one program header, the startup code and the image;
 // the segment goes on, zero-filled by Linux, to a page boundary, then `stack`
-// bytes of stack and `heap` bytes of heap. The startup code sets rsp to the
+// bytes of stack, `heap` bytes of heap and `stack` bytes of frame memory. The startup code sets rsp to the
 // stack's top, r15 to the stack limit (`binary.guard` above its bottom),
-// r12, r14 and r13 to the heap's base, its limit and cursor 1, rbx to the
-// frame pointer (the heap's top, which is its limit), calls function
+// r12, r14 and r13 to the heap's base, its limit and cursor 1, r10 and rbx
+// to the heap's top (the end of frame memory) and the frame pointer there,
+// calls function
 // `entry`, and exits with its rax: mov rdi, rax; mov eax, 60; syscall. None
 // when the sizes do not fit (`elf_fits`).
 
@@ -7229,9 +7433,9 @@ pub fn elf_base() -> usize {
     return 4294967296;
 }
 
-// The bytes before the image: the headers (120) and the startup code (75).
+// The bytes before the image: the headers (120) and the startup code (85).
 pub fn elf_before_image() -> usize {
-    return 195;
+    return 205;
 }
 
 pub fn larger(a: usize, b: usize) -> usize {
@@ -7285,20 +7489,20 @@ pub fn elf_header(binary: Binary) -> List<u8> {
 
 // The program header: a loadable segment, readable, writable and
 // executable, from file offset 0 to the segment's start, the file's bytes
-// and then zeros up to the end of the heap.
+// and then zeros up to the end of frame memory.
 pub fn elf_program_header(binary: Binary, stack: usize, heap: usize) -> List<u8> {
     let file: usize = plus(elf_before_image(), length(binary.image));
-    let memory: usize = plus(plus(minus(elf_stack_base(binary), elf_base()), stack), heap);
+    let memory: usize = plus(plus(plus(minus(elf_stack_base(binary), elf_base()), stack), heap), stack);
     let kinds: List<u8> = concat(concat(le32(1), le32(7)), le64n(0));
     let places: List<u8> = concat(le64n(elf_base()), le64n(elf_base()));
     return concat(concat(concat(kinds, places), concat(le64n(file), le64n(memory))), le64n(4096));
 }
 
-// mov reg, imm64 for rsp, r15, r12, r14, r13 and rbx; call the entry; exit.
+// mov reg, imm64 for rsp, r15, r12, r14, r13, r10 and rbx; call the entry; exit.
 pub fn elf_startup(binary: Binary, entry: usize, stack: usize, heap: usize) -> List<u8> {
     let bottom: usize = elf_stack_base(binary);
     let top: usize = plus(bottom, stack);
-    let sets: List<u8> = concat(concat(concat(cons(72, cons(188, le64n(top))), cons(73, cons(191, le64n(plus(bottom, stack_guard(binary)))))), concat(cons(73, cons(188, le64n(top))), cons(73, cons(190, le64n(heap))))), concat(cons(73, cons(189, le64n(1))), cons(72, cons(187, le64n(heap)))));
+    let sets: List<u8> = concat(concat(concat(cons(72, cons(188, le64n(top))), cons(73, cons(191, le64n(plus(bottom, stack_guard(binary)))))), concat(cons(73, cons(188, le64n(top))), cons(73, cons(190, le64n(heap))))), concat(concat(cons(73, cons(189, le64n(1))), cons(73, cons(186, le64n(plus(heap, stack))))), cons(72, cons(187, le64n(plus(heap, stack))))));
     let call: List<u8> = cons(232, le32(plus(get_or(binary.entries, entry, 0), 10) as i32));
     let exit: List<u8> = cons(72, cons(137, cons(199, cons(184, cons(60, cons(0, cons(0, cons(0, cons(15, single(5))))))))));
     return concat(concat(sets, call), exit);

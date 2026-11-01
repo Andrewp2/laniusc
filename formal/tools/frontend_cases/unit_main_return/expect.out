@@ -1,0 +1,1 @@
+{ params := [], ret := .i32, body := (.then (.let 0 .i32 (.int 1) (.if (.apply .greater (.local 0) (.int 0)) .returnUnit .nop)) (.return (.int 0))) }

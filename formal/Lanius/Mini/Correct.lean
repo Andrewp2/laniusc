@@ -61,6 +61,27 @@ theorem frameNeed_le : ∀ {codes : List Code} {f : Nat} {code : Code}, codes[f]
       have := frameNeed_le found
       simp only [frameNeed]; omega
 
+/-- The image's length is the functions' sizes added, which `link` checks
+against the limit without a walk over the image. -/
+theorem linkFrom_length (entries : List Nat) : ∀ (start : Nat) (codes : List Code),
+    (linkFrom entries start codes).length = linkedSize codes
+  | _, [] => rfl
+  | start, code :: rest => by
+    simp only [linkFrom, linkedSize, List.length_append, Code.image_length, linkFrom_length entries _ rest]
+
+theorem encodeOnto_eq (place : Place) (tail : List UInt8) : ∀ (pc : Nat) (code : List Instr),
+    encodeOnto place pc code tail = encodeFrom place pc code ++ tail
+  | _, [] => by simp [encodeOnto, encodeFrom]
+  | pc, i :: rest => by
+    simp only [encodeOnto, encodeFrom, encodeOnto_eq place tail _ rest, List.append_assoc]
+
+/-- `link` builds `linkFrom`'s bytes without copying each function's image. -/
+theorem linkOnto_eq (entries : List Nat) : ∀ (start : Nat) (codes : List Code),
+    linkOnto entries start codes = linkFrom entries start codes
+  | _, [] => by simp [linkOnto, linkFrom]
+  | start, code :: rest => by
+    simp only [linkOnto, linkFrom, Code.image, encodeOnto_eq, linkOnto_eq entries _ rest, List.append_assoc]
+
 theorem compileProgram_spec {prog : Program} {binary : Binary} (compiled : compileProgram prog = some binary) :
     compileFuncs (arities prog.funcs) prog.funcs = some binary.codes ∧ binary.entries = layout 0 binary.codes ∧
       binary.image = linkFrom binary.entries 0 binary.codes ∧ binary.image.length ≤ imageLimit := by
@@ -72,7 +93,7 @@ theorem compileProgram_spec {prog : Program} {binary : Binary} (compiled : compi
     · rename_i small
       simp only [Option.some.injEq] at compiled
       subst compiled
-      exact ⟨codesCompiled, rfl, rfl, small⟩
+      exact ⟨codesCompiled, rfl, linkOnto_eq _ _ _, by rw [linkOnto_eq, linkFrom_length]; exact small⟩
     · contradiction
 
 theorem compileFuncs_frameNeed {arities : List Arity} :
@@ -233,7 +254,9 @@ theorem function_enter {prog : Program} {binary : Binary} (compiled : compilePro
       guard := binary.guard }
   have fits : frame.Fits :=
     ⟨limit, by show frameBytes code.slots + 16 ≤ window; omega, bounded,
-      by show (s.registers limitRegister).toNat < 2 ^ 62; rw [← heapAt.limit]; exact heapAt.small,
+      by show (s.registers topRegister).toNat < 2 ^ 62; rw [← heapAt.top]; exact heapAt.small,
+      by show (s.registers limitRegister).toNat ≤ (s.registers topRegister).toNat
+         rw [← heapAt.limit, ← heapAt.top]; exact heap.limit_le_top,
       heapAt.apart, stackLimit, stackHigh, by show frameBytes code.slots + 8 + binary.guard ≤ window; omega⟩
   have body : Body frame binary imageBase ⟨offset + 24, code.slots, binary.entries⟩ code.instrs :=
     { loaded := by
@@ -313,9 +336,10 @@ theorem function_enter {prog : Program} {binary : Binary} (compiled : compilePro
         simp [entered, framed, stackChecked, State.branch, State.compare64, prologueState, State.alu64, State.alu, State.immediate32, State.move64,
           State.push64, rspRegister, rbpRegister, r11Register, fspRegister, this]
         rfl
+      fspLe := heapAt.fspLe
       heap := by
         intro a inside
-        have inside' : a < frame.heapLimit := by rw [show frame.heapLimit = heap.limit from heapAt.limit.symm]; exact inside
+        have inside' : a < frame.heapTop := by rw [show frame.heapTop = heap.top from heapAt.top.symm]; exact inside
         rw [memoryEntered, write64_frame _ _ _ _ (fun lane => heap_ne_below fits inside' (pushBelow lane))]
         exact heapAt.bytes a inside
       io := heapAt.io }

@@ -158,19 +158,65 @@ theorem contractsOf_none {env : FrontEnv} {scope : List Local} :
       split <;> rfl
     rfl
 
+/-- A function's result type: the one its `-> T` names (`ResultR`), except
+that laniusc's entry `fn main()` with no result type (`unitMain`: spelled
+`main`, outside an impl, no `-> T`) has `i32`. -/
+def FnResult (decls : Decls) (fd : FnDecl) (args : List Ty) (r : RetTy) : Prop :=
+  if unitMain fd = true then r = .retOf .tyI32 else ResultR (fnScope decls fd args none) (kid fd.tree 6) r
+
+/-- A function's body: a unit main's is its block, then `return 0;` (laniusc
+exits 0 when such a main's block ends). -/
+def mainBody (fd : FnDecl) (mb : MStmt) : MStmt :=
+  if unitMain fd = true then .mThen mb (.mReturn (.int 0)) else mb
+
+theorem fnResult_sound {fuel : Nat} {decls : Decls} {fd : FnDecl} {args : List Ty} {r : RetTy}
+    (h : fnResult fuel (fnScope decls fd args none) fd = some r) : FnResult decls fd args r := by
+  unfold fnResult at h
+  unfold FnResult
+  by_cases u : unitMain fd = true
+  · rw [if_pos u] at h
+    rw [if_pos u]
+    simp only [Option.some.injEq] at h
+    exact h.symm
+  · rw [if_neg u] at h
+    rw [if_neg u]
+    exact resultOf_sound h
+
+theorem mainEnded_none (fd : FnDecl) : mainEnded fd none = none := by
+  unfold mainEnded
+  split <;> rfl
+
+theorem mainEnded_some {fd : FnDecl} {f : Option MFunc} {mf : MFunc} (h : mainEnded fd f = some mf) :
+    ∃ m, f = some m ∧ mf = { params := m.params, ret := m.ret, body := mainBody fd m.body } := by
+  unfold mainEnded at h
+  by_cases u : unitMain fd = true
+  · rw [if_pos u] at h
+    cases f with
+    | none => cases h
+    | some m =>
+      simp only [Option.some.injEq] at h
+      refine ⟨m, rfl, ?_⟩
+      rw [← h]
+      simp only [mainBody, if_pos u]
+  · rw [if_neg u] at h
+    refine ⟨mf, h, ?_⟩
+    cases mf
+    simp only [mainBody, if_neg u]
+
 /-- A function instance's body: its bounds hold at its arguments (F7,
-`FnBound`), and it has its parameters, its result type, its block read
-with the result type as `return`'s, after its `requires` checks; a method
-taking `&self` (read by value) does not write `self`. -/
+`FnBound`), and it has its parameters, its result type (`FnResult`), its
+block read with the result type as `return`'s, after its `requires` checks
+(and, for a unit main, `return 0;` after them, `mainBody`); a method taking
+`&self` (read by value) does not write `self`. -/
 def ReadFn (decls : Decls) (fd : FnDecl) (args : List Ty) (mf : MFunc) : Prop :=
   ∃ r items ps body mb, (fd.implParams ++ fd.params).length = args.length ∧
     (∀ n b, FnBound fd n b → BoundOk decls (fnScope decls fd args none) n b) ∧
-    ResultR (fnScope decls fd args none) (kid fd.tree 6) r ∧ Items (kid fd.tree 4) items ∧
+    FnResult decls fd args r ∧ Items (kid fd.tree 4) items ∧
     ParamsR (fnScope decls fd args (retExpected (some r))) fd [] items ps ∧
     BlockR (fnScope decls fd args (retExpected (some r))) ps.scope (kid (kid fd.tree 9) 1) body ∧
     ContractsR (fnScope decls fd args (retExpected (some r))) ps.scope (kid fd.tree 8) body mb ∧
     (∀ i, selfRefId (fnScope decls fd args (retExpected (some r))) items = some i → writesLocal mb i = false) ∧
-    mf = { params := ps.params, ret := r, body := mb }
+    mf = { params := ps.params, ret := r, body := mainBody fd mb }
 
 theorem refChecked_some {f : Option MFunc} {sid : Option Nat} {m : MFunc} (h : refChecked f sid = some m) :
     f = some m ∧ ∀ i, sid = some i → writesLocal m.body i = false := by
@@ -197,14 +243,15 @@ theorem readFn_sound {fuel : Nat} {decls : Decls} {fd : FnDecl} {args : List Ty}
   · rename_i c
     simp only [Bool.and_eq_true, decide_eq_true_eq] at c
     have bo := fnBoundsOk_sound c.2
-    cases hr : resultOf fuel (fnScope decls fd args none) (kid fd.tree 6) with
+    cases hr : fnResult fuel (fnScope decls fd args none) fd with
     | none =>
       rw [hr] at h
       cases hi : listItems fuel (kid fd.tree 4) with
       | none => rw [hi] at h; cases h
       | some items =>
         rw [hi] at h
-        obtain ⟨h, -⟩ := refChecked_some h
+        obtain ⟨m, hm, -⟩ := mainEnded_some h
+        obtain ⟨h, -⟩ := refChecked_some hm
         simp only [funcParams] at h
         split at h
         · cases h
@@ -215,7 +262,8 @@ theorem readFn_sound {fuel : Nat} {decls : Decls} {fd : FnDecl} {args : List Ty}
       | none => rw [hi] at h; cases h
       | some items =>
         rw [hi] at h
-        obtain ⟨h, nw⟩ := refChecked_some h
+        obtain ⟨m, hm, rfl⟩ := mainEnded_some h
+        obtain ⟨h, nw⟩ := refChecked_some hm
         simp only [funcParams] at h
         cases hp : paramsOf fuel (fnScope decls fd args (retExpected (some r))) fd [] items with
         | none => rw [hp] at h; cases h
@@ -233,7 +281,7 @@ theorem readFn_sound {fuel : Nat} {decls : Decls} {fd : FnDecl} {args : List Ty}
               rw [hc] at h
               simp only [Option.some.injEq] at h
               subst h
-              exact ⟨r, items, ps, body, mb, c.1, bo, resultOf_sound hr, listItems_sound hi, paramsOf_sound hp,
+              exact ⟨r, items, ps, body, mb, c.1, bo, fnResult_sound hr, listItems_sound hi, paramsOf_sound hp,
                 blockOf_sound hb, contractsOf_sound hc, nw, rfl⟩
   · cases h
 

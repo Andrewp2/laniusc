@@ -10,10 +10,9 @@ public import Lanius.Faithful.Gen.SelfStmtC_Expr_agrees
 public import Lanius.Faithful.Gen.SelfStmtC_Inline_factOr
 public import Lanius.Faithful.Gen.SelfStmtC_Stmt_kills
 public import Lanius.Faithful.Gen.SelfStmtC_callAgrees
-public import Lanius.Faithful.Gen.SelfStmtC_optKill
+public import Lanius.Faithful.Gen.SelfStmtC_longer
 public import Lanius.Faithful.Gen.SelfStmtC_optimizeIte
 public import Lanius.Faithful.Gen.SelfStmtC_optimizeLeft
-public import Lanius.Faithful.Gen.SelfStmtC_substAll
 import all Lanius.Faithful.Gen.SelfSrcC_Inline_factOr
 import all Lanius.Mini.Compiler.P.Inline_factOr
 
@@ -42,9 +41,9 @@ theorem step_branch_agrees {prog : SrcProgram} {prims : Prims} {ix_branch_agrees
   simp only [src_branch_agrees] at h
   faithful [Lanius.Mini.Inline.branchAgrees]
 
-theorem step_dead_agrees {prog : SrcProgram} {prims : Prims} {ix_dead_agrees ix_Stmt_agrees ix_Stmt_kills ix_assigned : Nat} (fn : prog.funcs[ix_dead_agrees]? = some (src_dead_agrees ix_Stmt_agrees ix_Stmt_kills ix_assigned)) (np : prims.isPrim ix_dead_agrees = false)
-    (ext_Stmt_kills : Certified (∀ {n : Nat}, Stmt_Stmt_kills prog prims ix_Stmt_kills n))
-    (ext_assigned : Certified (∀ {n : Nat}, Stmt_assigned prog prims ix_assigned n)) {n : Nat}
+theorem step_dead_agrees {prog : SrcProgram} {prims : Prims} {ix_dead_agrees ix_Stmt_agrees ix_assigned ix_Stmt_kills : Nat} (fn : prog.funcs[ix_dead_agrees]? = some (src_dead_agrees ix_Stmt_agrees ix_assigned ix_Stmt_kills)) (np : prims.isPrim ix_dead_agrees = false)
+    (ext_assigned : Certified (∀ {n : Nat}, Stmt_assigned prog prims ix_assigned n))
+    (ext_Stmt_kills : Certified (∀ {n : Nat}, Stmt_Stmt_kills prog prims ix_Stmt_kills n)) {n : Nat}
     (ih_Stmt_agrees : Certified (Stmt_Stmt_agrees prog prims ix_Stmt_agrees n)) :
     Stmt_dead_agrees prog prims ix_dead_agrees (n + 1) := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
@@ -92,8 +91,8 @@ theorem step_loop_agrees {prog : SrcProgram} {prims : Prims} {ix_loop_agrees ix_
   simp only [src_loop_agrees] at h
   faithful [Lanius.Mini.Inline.loopAgrees]
 
-theorem step_optimize_sequence {prog : SrcProgram} {prims : Prims} {ix_optimize_sequence ix_Stmt_optimize ix_opt_facts_after ix_Stmt_dead_before ix_optimize_seq : Nat} (fn : prog.funcs[ix_optimize_sequence]? = some (src_optimize_sequence ix_Stmt_optimize ix_opt_facts_after ix_Stmt_dead_before ix_optimize_seq)) (np : prims.isPrim ix_optimize_sequence = false)
-    (ext_opt_facts_after : Certified (∀ {n : Nat}, Stmt_opt_facts_after prog prims ix_opt_facts_after n))
+theorem step_optimize_sequence {prog : SrcProgram} {prims : Prims} {ix_optimize_sequence ix_Stmt_optimize ix_Stmt_facts_after ix_Stmt_dead_before ix_optimize_seq : Nat} (fn : prog.funcs[ix_optimize_sequence]? = some (src_optimize_sequence ix_Stmt_optimize ix_Stmt_facts_after ix_Stmt_dead_before ix_optimize_seq)) (np : prims.isPrim ix_optimize_sequence = false)
+    (ext_Stmt_facts_after : Certified (∀ {n : Nat}, Stmt_Stmt_facts_after prog prims ix_Stmt_facts_after n))
     (ext_Stmt_dead_before : Certified (∀ {n : Nat}, Stmt_Stmt_dead_before prog prims ix_Stmt_dead_before n))
     (ext_optimize_seq : Certified (∀ {n : Nat}, Stmt_optimize_seq prog prims ix_optimize_seq n)) {n : Nat}
     (ih_Stmt_optimize : Certified (Stmt_Stmt_optimize prog prims ix_Stmt_optimize n)) :

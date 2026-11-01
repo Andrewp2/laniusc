@@ -1,0 +1,3 @@
+{ params := [{ id := 0, ty := (.struct 0 [.i32]) }], ret := .unit, body := (.assert (.ePure (.apply .greater (.field 0 0) (.int 0)))) }
+{ params := [{ id := 0, ty := .i32 }], ret := .i32, body := (.return (.apply .plus (.local 0) (.int 1))) }
+{ params := [], ret := .i32, body := (.then (.letCall 0 .i32 1 [(.int 2)] (.letStruct 1 (.struct 0 [.i32]) [(.local 0)] (.then (.discard (.eCall 0 [(.ePure (.local 1))])) (.assert (.ePure (.apply .equal (.local 0) (.int 3))))))) (.return (.int 0))) }

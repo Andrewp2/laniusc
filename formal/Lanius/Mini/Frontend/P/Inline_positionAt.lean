@@ -1,7 +1,7 @@
 module
 
 public import Lanius.Mini.Frontend.Types
-public import Lanius.Mini.Frontend.P.constNamesIn
+public import Lanius.Mini.Frontend.P.collectedWith
 public import Lanius.Mini.Frontend.P.distinct
 public import Lanius.Mini.Frontend.P.findConst
 public import Lanius.Mini.Frontend.P.hasKids

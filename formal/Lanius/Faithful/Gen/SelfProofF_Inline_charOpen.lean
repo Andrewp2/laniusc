@@ -80,9 +80,9 @@ theorem proof_fl_exp_at {prog : SrcProgram} {prims : Prims} {ix_fl_exp_at ix_fl_
   simp only [src_fl_exp_at] at h
   faithful [Lanius.Mini.Inline.flExpAt]
 
-theorem step_fl_exp_digit_at {prog : SrcProgram} {prims : Prims} {ix_fl_exp_digit_at ix_plus ix_minus ix_times ix_fl_digit ix_fl_exp_digits : Nat} (fn : prog.funcs[ix_fl_exp_digit_at]? = some (src_fl_exp_digit_at ix_plus ix_minus ix_times ix_fl_digit ix_fl_exp_digits)) (np : prims.isPrim ix_fl_exp_digit_at = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+theorem step_fl_exp_digit_at {prog : SrcProgram} {prims : Prims} {ix_fl_exp_digit_at ix_minus ix_plus ix_times ix_fl_digit ix_fl_exp_digits : Nat} (fn : prog.funcs[ix_fl_exp_digit_at]? = some (src_fl_exp_digit_at ix_minus ix_plus ix_times ix_fl_digit ix_fl_exp_digits)) (np : prims.isPrim ix_fl_exp_digit_at = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_times : Certified (∀ {n : Nat}, Stmt_times prog prims ix_times n))
     (ext_fl_digit : Certified (∀ {n : Nat}, Stmt_fl_digit prog prims ix_fl_digit n)) {n : Nat}
     (ih_fl_exp_digits : Certified (Stmt_fl_exp_digits prog prims ix_fl_exp_digits n)) :

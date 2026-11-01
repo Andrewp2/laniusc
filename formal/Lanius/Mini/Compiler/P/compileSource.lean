@@ -1,8 +1,6 @@
 module
 
 public import Lanius.Mini.Compiler.Types
-import Lanius.Mini.Compiler.P.Code_size
-import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.compileOr
 import Lanius.Mini.Compiler.P.declareProgram
 
@@ -25,26 +23,15 @@ def usizeWords (xs : List Nat) : List (BitVec 32) :=
   | [] => []
   | x :: rest => BitVec.ofNat 32 x :: usizeWords rest
 
-def byteWords (xs : List UInt8) : List (BitVec 32) :=
-  match xs with
-  | [] => []
-  | x :: rest => BitVec.ofNat 32 x.toNat :: byteWords rest
+/-- Bytes a, b, c, d as one little-endian word. -/
+def packWord (a : UInt8) (b : UInt8) (c : UInt8) (d : UInt8) : BitVec 32 :=
+  BitVec.ofNat 32 a.toNat + BitVec.ofNat 32 b.toNat * 256 + BitVec.ofNat 32 c.toNat * 65536 + BitVec.ofNat 32 d.toNat * 16777216
 
-def binaryWords (binary : Option Binary) : Option (List (BitVec 32)) :=
-  match binary with
-  | none => none
-  | some b => some (BitVec.ofNat 32 b.entries.length :: usizeWords b.entries ++ BitVec.ofNat 32 b.image.length :: byteWords b.image)
+def roundEnd : Round :=
+  ({ words := [], count := 0, rest := [] } : Round)
 
-def compileWords (program : Option SrcProgram) : Option (List (BitVec 32)) :=
-  match program with
-  | none => none
-  | some prog => binaryWords (compileSource prog)
-
-def elfBase : Nat :=
-  4294967296
-
-/-- The bytes before the image: the headers (120) and the startup code (75). -/
-def elfBeforeImage : Nat :=
-  195
+/-- One more word, of k bytes, in front of a round. -/
+def roundCons (word : BitVec 32) (k : Nat) (after : Round) : Round :=
+  ({ words := word :: after.words, count := after.count + k, rest := after.rest } : Round)
 
 end Lanius.Mini

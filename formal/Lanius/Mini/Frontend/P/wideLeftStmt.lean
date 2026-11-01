@@ -5,7 +5,7 @@ import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.arithShiftRight
 import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Frontend.P.closeFuncs
-import Lanius.Mini.Frontend.P.constNamesIn
+import Lanius.Mini.Frontend.P.collectedWith
 import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.methodsOf
 import Lanius.Mini.Frontend.P.monoLoop

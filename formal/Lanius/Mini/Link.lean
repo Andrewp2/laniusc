@@ -53,6 +53,7 @@ def Instr.rename (table : List Nat) (missing : Nat) : Instr → Instr
   | .div word operation slot => .div word operation slot
   | .fp operation slot => .fp operation slot
   | .sys kind slot => .sys kind slot
+  | .frame bytes => .frame bytes
 
 def Code.rename (table : List Nat) (missing : Nat) (code : Code) : Code :=
   { slots := code.slots, instrs := code.instrs.map (Instr.rename table missing) }
@@ -586,7 +587,7 @@ theorem link_eq (ms : List Module) :
         agrees.bytes (entries := layout 0 codes) (by rw [layout_length, codesLength]; exact Nat.le_refl _) 0 (fun j _ => by simp)
       simp only [Option.bind_some, compileProgram, program, c2, linkObjects, firstsSame, at_, image, okSame, ok,
         exportsSame, slots, Bool.true_and]
-      split <;> simp_all [Binary.executable]
+      split <;> simp_all [Binary.executable, linkOnto_eq, linkFrom_length]
   · have meaning : linkProgram ms = none := by simp [linkProgram, ok]
     rw [meaning]
     cases compiled : compileModules ms with

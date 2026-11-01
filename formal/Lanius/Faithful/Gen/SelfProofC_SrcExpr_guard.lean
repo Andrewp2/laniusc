@@ -121,9 +121,9 @@ theorem proof_lower_as {prog : SrcProgram} {prims : Prims} {ix_lower_as ix_SrcEx
   simp only [src_lower_as] at h
   faithful [Lanius.Mini.lowerAs]
 
-theorem step_slot_vars {prog : SrcProgram} {prims : Prims} {ix_slot_vars ix_plus ix_minus ix_empty_of_mini_selfhost_Expr ix_cons_of_mini_selfhost_Expr : Nat} (fn : prog.funcs[ix_slot_vars]? = some (src_slot_vars ix_plus ix_minus ix_slot_vars ix_empty_of_mini_selfhost_Expr ix_cons_of_mini_selfhost_Expr)) (np : prims.isPrim ix_slot_vars = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+theorem step_slot_vars {prog : SrcProgram} {prims : Prims} {ix_slot_vars ix_minus ix_plus ix_empty_of_mini_selfhost_Expr ix_cons_of_mini_selfhost_Expr : Nat} (fn : prog.funcs[ix_slot_vars]? = some (src_slot_vars ix_minus ix_plus ix_slot_vars ix_empty_of_mini_selfhost_Expr ix_cons_of_mini_selfhost_Expr)) (np : prims.isPrim ix_slot_vars = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_empty_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Expr prog prims ix_empty_of_mini_selfhost_Expr n))
     (ext_cons_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_Expr prog prims ix_cons_of_mini_selfhost_Expr n)) {n : Nat}
     (ih_slot_vars : Certified (Stmt_slot_vars prog prims ix_slot_vars n)) :

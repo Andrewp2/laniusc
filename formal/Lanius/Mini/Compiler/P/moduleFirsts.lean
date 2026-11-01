@@ -4,6 +4,7 @@ public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.FArith_opcode
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.arities
+import Lanius.Mini.Compiler.P.loadAtBytes
 import Lanius.Mini.Compiler.P.moduleExports
 import Lanius.Mini.Compiler.P.modulesOk
 

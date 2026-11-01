@@ -1,7 +1,6 @@
 module
 
 public import Lanius.Mini.Compiler.Types
-import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.FloatTy_rex
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.arities
@@ -65,97 +64,10 @@ def bumpBytes (shift : Nat) : List UInt8 :=
   let check : List UInt8 := 77 :: 57 :: 243 :: 15 :: 134 :: 2 :: 0 :: 0 :: 0 :: 15 :: [11]
   round ++ mask ++ (carry ++ check) ++ 77 :: 137 :: 221 :: 72 :: 137 :: [200]
 
-/-- add rax, r12; movzx eax, byte [rax + 0] -/
-def loadAtBytes : List UInt8 :=
-  76 :: 1 :: 224 :: 15 :: 182 :: 128 :: 0 :: 0 :: 0 :: [0]
-
-/-- mov rcx, [rbp + disp32]; add rcx, r12; mov [rcx + 0], al -/
-def storeAtBytes (slot : Nat) : List UInt8 :=
-  72 :: 139 :: [141] ++ le32 (slotOffset slot) ++ 76 :: 1 :: 225 :: 136 :: 129 :: 0 :: 0 :: 0 :: [0]
-
-/-- add rax, r12; mov eax, [rax + 0] (rax with REX.W) -/
-def loadWordBytes (width : MemWidth) : List UInt8 :=
-  76 :: 1 :: 224 :: (MemWidth.rex width ++ 139 :: 128 :: 0 :: 0 :: 0 :: [0])
-
-/-- mov rcx, [rbp + disp32]; add rcx, r12; mov [rcx + 0], eax (rax with REX.W) -/
-def storeWordBytes (width : MemWidth) (slot : Nat) : List UInt8 :=
-  72 :: 139 :: [141] ++ le32 (slotOffset slot) ++ 76 :: 1 :: 225 :: (MemWidth.rex width ++ 137 :: 129 :: 0 :: 0 :: 0 :: [0])
-
-/-- The low byte of a system call's Linux number (mov eax, number). -/
-def syscallLinuxByte (kind : Syscall) : UInt8 :=
-  match kind with
-  | .write => 1
-  | .read => 0
-
-/-- mov rdi, [rbp + disp32] (the fd); mov rsi, [rbp + disp32]; add rsi, r12 (the heap address); mov rdx, [rbp + disp32] (the count); mov eax, the call's number; syscall; mov r11, rcx (the kernel leaves RFLAGS in r11) -/
-def sysBytes (kind : Syscall) (slot : Nat) : List UInt8 :=
-  let fd : List UInt8 := 72 :: 139 :: [189] ++ le32 (slotOffset slot)
-  let address : List UInt8 := 72 :: 139 :: [181] ++ le32 (slotOffset (slot + 1)) ++ 76 :: 1 :: [230]
-  let count : List UInt8 := 72 :: 139 :: [149] ++ le32 (slotOffset (slot + 2))
-  fd ++ address ++ (count ++ 184 :: syscallLinuxByte kind :: 0 :: 0 :: 0 :: 15 :: 5 :: 73 :: 137 :: [203])
-
-/-- mov rsp, rbp; pop rbp; ret -/
-def epilogue : List UInt8 :=
-  72 :: 137 :: 236 :: 93 :: [195]
-
-/-- Frame bytes below rbp, a multiple of 16. -/
-def frameSize (slots : Nat) : Nat :=
-  (slots + 1) / 2 * 16
-
-/-- cmp r15, rsp; jbe +2; ud2 (past the stack limit in r15) -/
-def stackCheck : List UInt8 :=
-  73 :: 57 :: 231 :: 15 :: 134 :: 2 :: 0 :: 0 :: 0 :: 15 :: [11]
-
-/-- push rbp; mov rbp, rsp; mov r11d, frame_size; sub rsp, r11; the stack check -/
-def prologue (slots : Nat) : List UInt8 :=
-  85 :: 72 :: 137 :: 229 :: 65 :: [187] ++ le32 (BitVec.ofNat 32 (frameSize slots)) ++ 76 :: 41 :: [220] ++ stackCheck
-
-/-- The rel32 field of a transfer from the end of an instruction at source to target. -/
-def relative (source : Nat) (target : Nat) : BitVec 32 :=
-  BitVec.ofNat 32 target - BitVec.ofNat 32 source
-
-/-- The caller's virtual slot that is the callee's parameter 0: the slot just below the return address the call pushes. -/
-def argBase (slots : Nat) : Nat :=
-  frameSize slots / 8 + 2
-
-/-- slot, slot + 1, ..., count of them. -/
-def slotRange (slot : Nat) (count : Nat) : List Nat :=
-  if count = 0 then
-    []
-  else
-    slot :: slotRange (slot + 1) (count - 1)
-
-/-- Copy argument slots args to virtual slots first + k, first + k + 1, ... -/
-def copyBytes (first : Nat) (args : List Nat) (k : Nat) : List UInt8 :=
-  match args with
-  | [] => []
-  | slot :: rest => slotLoad slot ++ slotStore (first + k) ++ copyBytes first rest (k + 1)
-
-/-- The bytes of the instruction at body offset pc. -/
-def Instr.encode (self : Instr) (place : Place) (pc : Nat) : List UInt8 :=
-  match self with
-  | .imm value => 72 :: 184 :: le64 value
-  | .load slot => slotLoad slot
-  | .store slot => slotStore slot
-  | .neg => 247 :: [216]
-  | .op word operation slot => BinOp.bytes operation word slot
-  | .cmp word operation slot => slotCompare word operation slot
-  | .jmp target => 233 :: le32 (relative (pc + 5) target)
-  | .jz target => 72 :: 133 :: 192 :: 15 :: [132] ++ le32 (relative (pc + 9) target)
-  | .call callee args target count => copyBytes (argBase place.slots) args 0 ++ fspSave target ++ 232 :: le32 (relative (place.body + pc + 14 * args.length + 12) (place.entries.getD callee 0)) ++ fspLoad target ++ copyBytes target (slotRange (argBase place.slots) count) 0
-  | .ret sources => copyBytes 0 sources 0 ++ epilogue
-  | .bump shift => bumpBytes shift
-  | .loadAt => loadAtBytes
-  | .storeAt slot => storeAtBytes slot
-  | .loadWordAt width => loadWordBytes width
-  | .storeWordAt width slot => storeWordBytes width slot
-  | .div word operation slot => DivOp.bytes operation word slot
-  | .fp operation slot => FOp.bytes operation slot
-  | .sys kind slot => sysBytes kind slot
-
-def encodeFrom (place : Place) (pc : Nat) (code : List Instr) : List UInt8 :=
-  match code with
-  | [] => []
-  | i :: rest => Instr.encode i place pc ++ encodeFrom place (pc + Instr.size i) rest
+/-- mov r11, bytes; mov rax, rbx; sub rax, r11; jb +12 (below zero); mov r11, rax; cmp r11, r14; jae +2; ud2 (below the limit); mov rbx, rax -/
+def frameMemoryBytes (bytes : Nat) : List UInt8 :=
+  let start : List UInt8 := 73 :: 187 :: le64 (BitVec.ofNat 64 bytes) ++ 72 :: 137 :: 216 :: 76 :: 41 :: [216]
+  let check : List UInt8 := 15 :: 130 :: 12 :: 0 :: 0 :: 0 :: 73 :: 137 :: 195 :: 77 :: 57 :: 243 :: 15 :: 131 :: 2 :: 0 :: 0 :: [0]
+  start ++ check ++ 15 :: 11 :: 72 :: 137 :: [195]
 
 end Lanius.Mini

@@ -2,7 +2,6 @@ module
 
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Compiler.P.matchVariants
-import Lanius.Mini.Frontend.P.distinct
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.moduleOr
@@ -82,6 +81,26 @@ def textReadStdin : List Nat :=
   let t : List Nat := 114 :: 101 :: 97 :: 100 :: 95 :: 115 :: 116 :: 100 :: 105 :: [110]
   t
 
+/-- sleep_ms_i32 -/
+def textSleepMsI32 : List Nat :=
+  let t : List Nat := 115 :: 108 :: 101 :: 101 :: 112 :: 95 :: 109 :: 115 :: 95 :: 105 :: 51 :: [50]
+  t
+
+/-- monotonic_read -/
+def textMonotonicRead : List Nat :=
+  let t : List Nat := 109 :: 111 :: 110 :: 111 :: 116 :: 111 :: 110 :: 105 :: 99 :: 95 :: 114 :: 101 :: 97 :: [100]
+  t
+
+/-- system_read -/
+def textSystemRead : List Nat :=
+  let t : List Nat := 115 :: 121 :: 115 :: 116 :: 101 :: 109 :: 95 :: 114 :: 101 :: 97 :: [100]
+  t
+
+/-- fill_secure_bytes -/
+def textFillSecureBytes : List Nat :=
+  let t : List Nat := 102 :: 105 :: 108 :: 108 :: 95 :: 115 :: 101 :: 99 :: 117 :: 114 :: 101 :: 95 :: 98 :: 121 :: 116 :: 101 :: [115]
+  t
+
 /-- The Core function id of the host service an `extern "lanius_std" fn` of this name stands for (hostFuncs in SrcProgram.toCore), 0 for none. -/
 def hostId (name : List Nat) : Nat :=
   if sameText name textWriteByte then
@@ -96,7 +115,19 @@ def hostId (name : List Nat) : Nat :=
         if sameText name textReadStdin then
           4294967299
         else
-          0
+          if sameText name textSleepMsI32 then
+            4294967300
+          else
+            if sameText name textMonotonicRead then
+              4294967301
+            else
+              if sameText name textSystemRead then
+                4294967302
+              else
+                if sameText name textFillSecureBytes then
+                  4294967303
+                else
+                  0
 
 /-- An `extern "lanius_std" fn` naming a host service, without a where clause. -/
 def hostExtern (b : CTree) : Bool :=
@@ -165,36 +196,5 @@ def fileDecls (fuel : Nat) (root : CTree) : Option FileDecls :=
     | some items => fileItems fuel (modulePath fuel items) items
   else
     none
-
-def collectedWith (c : Collected) (f : FileDecls) : Collected :=
-  ({ decls := ({ types := c.decls.types ++ f.decls.types, fns := c.decls.fns ++ f.decls.fns, consts := c.decls.consts ++ f.decls.consts, imports := c.decls.imports ++ f.decls.imports, aliases := c.decls.aliases ++ f.decls.aliases, impls := c.decls.impls ++ f.decls.impls } : Decls), modules := c.modules ++ [f.home] } : Collected)
-
-def collectFiles (fuel : Nat) (roots : List CTree) (acc : Collected) : Option Collected :=
-  match roots with
-  | [] => some acc
-  | root :: rest =>
-    let ffile : Option FileDecls := fileDecls fuel root
-    match ffile with
-    | none => none
-    | some f => collectFiles fuel rest (collectedWith acc f)
-
-/-- The spellings a module gives its items: free functions, types, variants and constants. A local cannot be spelled like one, so a use has one reading. -/
-def fnNamesIn (fns : List FnDecl) (m : List (List Nat)) : List (List Nat) :=
-  match fns with
-  | [] => []
-  | f :: rest =>
-    if !f.inImpl && sameSpellings f.home m then
-      f.name :: fnNamesIn rest m
-    else
-      fnNamesIn rest m
-
-def typeNamesIn (types : List TypeDecl) (m : List (List Nat)) : List (List Nat) :=
-  match types with
-  | [] => []
-  | t :: rest =>
-    if sameSpellings t.home m then
-      t.name :: (t.variants ++ typeNamesIn rest m)
-    else
-      typeNamesIn rest m
 
 end Lanius.Mini

@@ -1,0 +1,23 @@
+module app::main;
+
+// laniusc's entry `fn main()` with no result type exits 0 when its block
+// ends: it is read as `fn main() -> i32` with `return 0;` after its block.
+// A method spelled main keeps its own result type.
+struct C { n: i32 }
+
+impl C {
+    fn main(self) {
+        assert(self.n > 0);
+    }
+}
+
+fn helper(n: i32) -> i32 {
+    return n + 1;
+}
+
+fn main() {
+    let x: i32 = helper(2);
+    let c: C = C { n: x };
+    c.main();
+    assert(x == 3);
+}

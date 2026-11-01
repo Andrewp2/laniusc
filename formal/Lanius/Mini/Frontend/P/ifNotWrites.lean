@@ -4,8 +4,9 @@ public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Frontend.P.blockArmsOf
 import Lanius.Mini.Frontend.P.callParts
-import Lanius.Mini.Frontend.P.constNamesIn
+import Lanius.Mini.Frontend.P.collectedWith
 import Lanius.Mini.Frontend.P.hasKids
+import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.paramGoals
 import Lanius.Mini.Frontend.P.projectionRet
@@ -41,17 +42,40 @@ def refChecked (f : Option MFunc) (sid : Option Nat) : Option MFunc :=
     | none => some m
     | some i => ifNotWrites (writesLocal m.body i) m
 
+def textMain : List Nat :=
+  109 :: 97 :: 105 :: [110]
+
+/-- laniusc's entry `fn main()` with no result type, which exits 0 when its block ends: a function spelled main, outside an impl, with no `-> T`. -/
+def unitMain (fd : FnDecl) : Bool :=
+  !fd.inImpl && sameText fd.name textMain && decide (nodeProd (kid fd.tree 6) = (35))
+
+/-- A function's result type; a unit main's is i32. -/
+def fnResult (fuel : Nat) (env : FrontEnv) (fd : FnDecl) : Option RetTy :=
+  if unitMain fd then
+    some (RetTy.retOf Ty.tyI32)
+  else
+    resultOf fuel env (kid fd.tree 6)
+
+/-- A unit main's body, `return 0;` after its block. -/
+def mainEnded (fd : FnDecl) (f : Option MFunc) : Option MFunc :=
+  if unitMain fd then
+    match f with
+    | none => none
+    | some m => some ({ params := m.params, ret := m.ret, body := MStmt.mThen m.body (MStmt.mReturn (SrcExpr.int 0)) } : MFunc)
+  else
+    f
+
 /-- A function instance's body, read with its type parameters (the impl's, then its own) standing for the instance's arguments. -/
 def readFn (fuel : Nat) (decls : Decls) (fd : FnDecl) (args : List Ty) : Option MFunc :=
   let names : List (List Nat) := fd.implParams ++ fd.params
   let f : CTree := fd.tree
   let tenv : FrontEnv := ({ decls := decls, home := fd.home, names := names, subst := args, globals := moduleGlobals decls fd.home, ret := none, base := (kidToken f 1).start } : FrontEnv)
-  let rt : Option RetTy := resultOf fuel tenv (kid f 6)
+  let rt : Option RetTy := fnResult fuel tenv fd
   let env : FrontEnv := ({ decls := decls, home := fd.home, names := names, subst := args, globals := moduleGlobals decls fd.home, ret := retExpected rt, base := (kidToken f 1).start } : FrontEnv)
   if decide (names.length = args.length) && fnBoundsOk fuel decls fd tenv then
     match listItems fuel (kid f 4) with
     | none => none
-    | some items => refChecked (funcParams fuel env (paramsOf fuel env fd [] items) rt (kid f 8) (kid (kid f 9) 1)) (selfRefId env items)
+    | some items => mainEnded fd (refChecked (funcParams fuel env (paramsOf fuel env fd [] items) rt (kid f 8) (kid (kid f 9) 1)) (selfRefId env items))
   else
     none
 

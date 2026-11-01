@@ -1468,6 +1468,30 @@ pub fn text_read_stdin() -> List<usize> {
     return t;
 }
 
+// sleep_ms_i32
+pub fn text_sleep_ms_i32() -> List<usize> {
+    let t: List<usize> = cons(115, cons(108, cons(101, cons(101, cons(112, cons(95, cons(109, cons(115, cons(95, cons(105, cons(51, single(50))))))))))));
+    return t;
+}
+
+// monotonic_read
+pub fn text_monotonic_read() -> List<usize> {
+    let t: List<usize> = cons(109, cons(111, cons(110, cons(111, cons(116, cons(111, cons(110, cons(105, cons(99, cons(95, cons(114, cons(101, cons(97, single(100))))))))))))));
+    return t;
+}
+
+// system_read
+pub fn text_system_read() -> List<usize> {
+    let t: List<usize> = cons(115, cons(121, cons(115, cons(116, cons(101, cons(109, cons(95, cons(114, cons(101, cons(97, single(100)))))))))));
+    return t;
+}
+
+// fill_secure_bytes
+pub fn text_fill_secure_bytes() -> List<usize> {
+    let t: List<usize> = cons(102, cons(105, cons(108, cons(108, cons(95, cons(115, cons(101, cons(99, cons(117, cons(114, cons(101, cons(95, cons(98, cons(121, cons(116, cons(101, single(115)))))))))))))))));
+    return t;
+}
+
 // The Core function id of the host service an `extern "lanius_std" fn` of
 // this name stands for (hostFuncs in SrcProgram.toCore), 0 for none.
 pub fn host_id(name: List<usize>) -> usize {
@@ -1482,6 +1506,18 @@ pub fn host_id(name: List<usize>) -> usize {
     }
     if (same_text(name, text_read_stdin())) {
         return 4294967299;
+    }
+    if (same_text(name, text_sleep_ms_i32())) {
+        return 4294967300;
+    }
+    if (same_text(name, text_monotonic_read())) {
+        return 4294967301;
+    }
+    if (same_text(name, text_system_read())) {
+        return 4294967302;
+    }
+    if (same_text(name, text_fill_secure_bytes())) {
+        return 4294967303;
     }
     return 0;
 }
@@ -9133,18 +9169,47 @@ pub fn ref_checked(f: core::option::Option<MFunc>, sid: core::option::Option<usi
     };
 }
 
+pub fn text_main() -> List<usize> {
+    return cons(109, cons(97, cons(105, single(110))));
+}
+
+// laniusc's entry `fn main()` with no result type, which exits 0 when its
+// block ends: a function spelled main, outside an impl, with no `-> T`.
+pub fn unit_main(fd: FnDecl) -> bool {
+    return !fd.in_impl && same_text(fd.name, text_main()) && node_prod(kid(fd.tree, 6)) == p_ret_void();
+}
+
+// A function's result type; a unit main's is i32.
+pub fn fn_result(fuel: usize, env: FrontEnv, fd: FnDecl) -> core::option::Option<RetTy> {
+    if (unit_main(fd)) {
+        return Some(RetOf(TyI32));
+    }
+    return result_of(fuel, env, kid(fd.tree, 6));
+}
+
+// A unit main's body, `return 0;` after its block.
+pub fn main_ended(fd: FnDecl, f: core::option::Option<MFunc>) -> core::option::Option<MFunc> {
+    if (unit_main(fd)) {
+        return match (f) {
+            None -> None,
+            Some(m) -> Some(MFunc { params: m.params, ret: m.ret, body: MThen(boxed(m.body), boxed(MReturn(Int(0)))) }),
+        };
+    }
+    return f;
+}
+
 // A function instance's body, read with its type parameters (the impl's,
 // then its own) standing for the instance's arguments.
 pub fn read_fn(fuel: usize, decls: Decls, fd: FnDecl, args: List<Ty>) -> core::option::Option<MFunc> {
     let names: List<List<usize>> = concat(fd.impl_params, fd.params);
     let f: CTree = fd.tree;
     let tenv: FrontEnv = FrontEnv { decls: decls, home: fd.home, names: names, subst: args, globals: module_globals(decls, fd.home), ret: None, base: kid_token(f, 1).start };
-    let rt: core::option::Option<RetTy> = result_of(fuel, tenv, kid(f, 6));
+    let rt: core::option::Option<RetTy> = fn_result(fuel, tenv, fd);
     let env: FrontEnv = FrontEnv { decls: decls, home: fd.home, names: names, subst: args, globals: module_globals(decls, fd.home), ret: ret_expected(rt), base: kid_token(f, 1).start };
     if (length(names) == length(args) && fn_bounds_ok(fuel, decls, fd, tenv)) {
         return match (list_items(fuel, kid(f, 4))) {
             None -> None,
-            Some(items) -> ref_checked(func_params(fuel, env, params_of(fuel, env, fd, empty(), items), rt, kid(f, 8), kid(kid(f, 9), 1)), self_ref_id(env, items)),
+            Some(items) -> main_ended(fd, ref_checked(func_params(fuel, env, params_of(fuel, env, fd, empty(), items), rt, kid(f, 8), kid(kid(f, 9), 1)), self_ref_id(env, items))),
         };
     }
     return None;

@@ -3,16 +3,10 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_FArith_opcode
-public import Lanius.Faithful.Gen.SelfStmt0
-public import Lanius.Faithful.Gen.SelfStmt1
-public import Lanius.Faithful.Gen.SelfStmt2
-public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmt7
-public import Lanius.Faithful.Gen.SelfStmtC_DivOp_size
 public import Lanius.Faithful.Gen.SelfStmtC_FArith_opcode
 public import Lanius.Faithful.Gen.SelfStmtC_FloatTy_rex
-public import Lanius.Faithful.Gen.SelfStmtC_Lists_empty
 public import Lanius.Faithful.Gen.SelfStmtC_arities
 import all Lanius.Faithful.Gen.SelfSrcC_FArith_opcode
 import all Lanius.Mini.Compiler.P.FArith_opcode
@@ -82,54 +76,6 @@ theorem proof_FOp_opcode_bytes {prog : SrcProgram} {prims : Prims} {ix_FOp_opcod
   simp only [src_FOp_opcode_bytes] at h
   faithful [Lanius.Mini.FOp.opcodeBytes]
 
-theorem proof_Instr_encode {prog : SrcProgram} {prims : Prims} {ix_Instr_encode ix_length_of_usize ix_plus ix_times ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_le32 ix_le64 ix_slot_load ix_slot_store ix_BinOp_bytes ix_slot_compare ix_relative ix_copy_bytes ix_arg_base ix_fsp_save ix_get_or_of_usize ix_fsp_load ix_slot_range ix_epilogue ix_bump_bytes ix_load_at_bytes ix_store_at_bytes ix_load_word_bytes ix_store_word_bytes ix_DivOp_bytes ix_FOp_bytes ix_sys_bytes : Nat} (fn : prog.funcs[ix_Instr_encode]? = some (src_Instr_encode ix_length_of_usize ix_plus ix_times ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_le32 ix_le64 ix_slot_load ix_slot_store ix_BinOp_bytes ix_slot_compare ix_relative ix_copy_bytes ix_arg_base ix_fsp_save ix_get_or_of_usize ix_fsp_load ix_slot_range ix_epilogue ix_bump_bytes ix_load_at_bytes ix_store_at_bytes ix_load_word_bytes ix_store_word_bytes ix_DivOp_bytes ix_FOp_bytes ix_sys_bytes)) (np : prims.isPrim ix_Instr_encode = false)
-    (ext_length_of_usize : Certified (∀ {n : Nat}, Stmt_length_of_usize prog prims ix_length_of_usize n))
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_times : Certified (∀ {n : Nat}, Stmt_times prog prims ix_times n))
-    (ext_concat_of_u8 : Certified (∀ {n : Nat}, Stmt_concat_of_u8 prog prims ix_concat_of_u8 n))
-    (ext_cons_of_u8 : Certified (∀ {n : Nat}, Stmt_cons_of_u8 prog prims ix_cons_of_u8 n))
-    (ext_single_of_u8 : Certified (∀ {n : Nat}, Stmt_single_of_u8 prog prims ix_single_of_u8 n))
-    (ext_le32 : Certified (∀ {n : Nat}, Stmt_le32 prog prims ix_le32 n))
-    (ext_le64 : Certified (∀ {n : Nat}, Stmt_le64 prog prims ix_le64 n))
-    (ext_slot_load : Certified (∀ {n : Nat}, Stmt_slot_load prog prims ix_slot_load n))
-    (ext_slot_store : Certified (∀ {n : Nat}, Stmt_slot_store prog prims ix_slot_store n))
-    (ext_BinOp_bytes : Certified (∀ {n : Nat}, Stmt_BinOp_bytes prog prims ix_BinOp_bytes n))
-    (ext_slot_compare : Certified (∀ {n : Nat}, Stmt_slot_compare prog prims ix_slot_compare n))
-    (ext_relative : Certified (∀ {n : Nat}, Stmt_relative prog prims ix_relative n))
-    (ext_copy_bytes : Certified (∀ {n : Nat}, Stmt_copy_bytes prog prims ix_copy_bytes n))
-    (ext_arg_base : Certified (∀ {n : Nat}, Stmt_arg_base prog prims ix_arg_base n))
-    (ext_fsp_save : Certified (∀ {n : Nat}, Stmt_fsp_save prog prims ix_fsp_save n))
-    (ext_get_or_of_usize : Certified (∀ {n : Nat}, Stmt_get_or_of_usize prog prims ix_get_or_of_usize n))
-    (ext_fsp_load : Certified (∀ {n : Nat}, Stmt_fsp_load prog prims ix_fsp_load n))
-    (ext_slot_range : Certified (∀ {n : Nat}, Stmt_slot_range prog prims ix_slot_range n))
-    (ext_epilogue : Certified (∀ {n : Nat}, Stmt_epilogue prog prims ix_epilogue n))
-    (ext_bump_bytes : Certified (∀ {n : Nat}, Stmt_bump_bytes prog prims ix_bump_bytes n))
-    (ext_load_at_bytes : Certified (∀ {n : Nat}, Stmt_load_at_bytes prog prims ix_load_at_bytes n))
-    (ext_store_at_bytes : Certified (∀ {n : Nat}, Stmt_store_at_bytes prog prims ix_store_at_bytes n))
-    (ext_load_word_bytes : Certified (∀ {n : Nat}, Stmt_load_word_bytes prog prims ix_load_word_bytes n))
-    (ext_store_word_bytes : Certified (∀ {n : Nat}, Stmt_store_word_bytes prog prims ix_store_word_bytes n))
-    (ext_DivOp_bytes : Certified (∀ {n : Nat}, Stmt_DivOp_bytes prog prims ix_DivOp_bytes n))
-    (ext_FOp_bytes : Certified (∀ {n : Nat}, Stmt_FOp_bytes prog prims ix_FOp_bytes n))
-    (ext_sys_bytes : Certified (∀ {n : Nat}, Stmt_sys_bytes prog prims ix_sys_bytes n)) {n : Nat} :
-    Stmt_Instr_encode prog prims ix_Instr_encode n := by
-  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_Instr_encode] at h
-  faithful [Lanius.Mini.Instr.encode]
-
-theorem proof_arg_base {prog : SrcProgram} {prims : Prims} {ix_arg_base ix_plus ix_frame_size : Nat} (fn : prog.funcs[ix_arg_base]? = some (src_arg_base ix_plus ix_frame_size)) (np : prims.isPrim ix_arg_base = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_frame_size : Certified (∀ {n : Nat}, Stmt_frame_size prog prims ix_frame_size n)) {n : Nat} :
-    Stmt_arg_base prog prims ix_arg_base n := by
-  intro x0 v0 w h r0
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_arg_base] at h
-  faithful [Lanius.Mini.argBase]
-
 theorem proof_bump_bytes {prog : SrcProgram} {prims : Prims} {ix_bump_bytes ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_le64 ix_pow2 : Nat} (fn : prog.funcs[ix_bump_bytes]? = some (src_bump_bytes ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_le64 ix_pow2)) (np : prims.isPrim ix_bump_bytes = false)
     (ext_concat_of_u8 : Certified (∀ {n : Nat}, Stmt_concat_of_u8 prog prims ix_concat_of_u8 n))
     (ext_cons_of_u8 : Certified (∀ {n : Nat}, Stmt_cons_of_u8 prog prims ix_cons_of_u8 n))
@@ -143,45 +89,6 @@ theorem proof_bump_bytes {prog : SrcProgram} {prims : Prims} {ix_bump_bytes ix_c
   rw [pcall_succ np fn] at h
   simp only [src_bump_bytes] at h
   faithful [Lanius.Mini.bumpBytes]
-
-theorem step_copy_bytes {prog : SrcProgram} {prims : Prims} {ix_copy_bytes ix_plus ix_unbox_of_mini_selfhost_List_usize ix_empty_of_u8 ix_concat_of_u8 ix_slot_load ix_slot_store : Nat} (fn : prog.funcs[ix_copy_bytes]? = some (src_copy_bytes ix_plus ix_unbox_of_mini_selfhost_List_usize ix_empty_of_u8 ix_concat_of_u8 ix_slot_load ix_slot_store ix_copy_bytes)) (np : prims.isPrim ix_copy_bytes = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_unbox_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_usize n))
-    (ext_empty_of_u8 : Certified (∀ {n : Nat}, Stmt_empty_of_u8 prog prims ix_empty_of_u8 n))
-    (ext_concat_of_u8 : Certified (∀ {n : Nat}, Stmt_concat_of_u8 prog prims ix_concat_of_u8 n))
-    (ext_slot_load : Certified (∀ {n : Nat}, Stmt_slot_load prog prims ix_slot_load n))
-    (ext_slot_store : Certified (∀ {n : Nat}, Stmt_slot_store prog prims ix_slot_store n)) {n : Nat}
-    (ih_copy_bytes : Certified (Stmt_copy_bytes prog prims ix_copy_bytes n)) :
-    Stmt_copy_bytes prog prims ix_copy_bytes (n + 1) := by
-  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
-  rw [pcall_succ np fn] at h
-  simp only [src_copy_bytes] at h
-  faithful [Lanius.Mini.copyBytes]
-
-theorem step_encode_from {prog : SrcProgram} {prims : Prims} {ix_encode_from ix_plus ix_empty_of_u8 ix_concat_of_u8 ix_unbox_of_mini_selfhost_List_mini_selfhost_Instr ix_Instr_size ix_Instr_encode : Nat} (fn : prog.funcs[ix_encode_from]? = some (src_encode_from ix_plus ix_empty_of_u8 ix_concat_of_u8 ix_unbox_of_mini_selfhost_List_mini_selfhost_Instr ix_Instr_size ix_encode_from ix_Instr_encode)) (np : prims.isPrim ix_encode_from = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_empty_of_u8 : Certified (∀ {n : Nat}, Stmt_empty_of_u8 prog prims ix_empty_of_u8 n))
-    (ext_concat_of_u8 : Certified (∀ {n : Nat}, Stmt_concat_of_u8 prog prims ix_concat_of_u8 n))
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_Instr : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Instr prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Instr n))
-    (ext_Instr_size : Certified (∀ {n : Nat}, Stmt_Instr_size prog prims ix_Instr_size n))
-    (ext_Instr_encode : Certified (∀ {n : Nat}, Stmt_Instr_encode prog prims ix_Instr_encode n)) {n : Nat}
-    (ih_encode_from : Certified (Stmt_encode_from prog prims ix_encode_from n)) :
-    Stmt_encode_from prog prims ix_encode_from (n + 1) := by
-  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
-  rw [pcall_succ np fn] at h
-  simp only [src_encode_from] at h
-  faithful [Lanius.Mini.encodeFrom]
-
-theorem proof_epilogue {prog : SrcProgram} {prims : Prims} {ix_epilogue ix_cons_of_u8 ix_single_of_u8 : Nat} (fn : prog.funcs[ix_epilogue]? = some (src_epilogue ix_cons_of_u8 ix_single_of_u8)) (np : prims.isPrim ix_epilogue = false)
-    (ext_cons_of_u8 : Certified (∀ {n : Nat}, Stmt_cons_of_u8 prog prims ix_cons_of_u8 n))
-    (ext_single_of_u8 : Certified (∀ {n : Nat}, Stmt_single_of_u8 prog prims ix_single_of_u8 n)) {n : Nat} :
-    Stmt_epilogue prog prims ix_epilogue n := by
-  intro w h
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_epilogue] at h
-  faithful [Lanius.Mini.epilogue]
 
 theorem proof_float_operands {prog : SrcProgram} {prims : Prims} {ix_float_operands ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_FloatTy_rex : Nat} (fn : prog.funcs[ix_float_operands]? = some (src_float_operands ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_FloatTy_rex)) (np : prims.isPrim ix_float_operands = false)
     (ext_concat_of_u8 : Certified (∀ {n : Nat}, Stmt_concat_of_u8 prog prims ix_concat_of_u8 n))
@@ -209,40 +116,18 @@ theorem proof_float_result {prog : SrcProgram} {prims : Prims} {ix_float_result 
   simp only [src_float_result] at h
   faithful [Lanius.Mini.floatResult]
 
-theorem proof_frame_size {prog : SrcProgram} {prims : Prims} {ix_frame_size ix_plus ix_times : Nat} (fn : prog.funcs[ix_frame_size]? = some (src_frame_size ix_plus ix_times)) (np : prims.isPrim ix_frame_size = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_times : Certified (∀ {n : Nat}, Stmt_times prog prims ix_times n)) {n : Nat} :
-    Stmt_frame_size prog prims ix_frame_size n := by
-  intro x0 v0 w h r0
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_frame_size] at h
-  faithful [Lanius.Mini.frameSize]
-
-theorem proof_load_at_bytes {prog : SrcProgram} {prims : Prims} {ix_load_at_bytes ix_cons_of_u8 ix_single_of_u8 : Nat} (fn : prog.funcs[ix_load_at_bytes]? = some (src_load_at_bytes ix_cons_of_u8 ix_single_of_u8)) (np : prims.isPrim ix_load_at_bytes = false)
-    (ext_cons_of_u8 : Certified (∀ {n : Nat}, Stmt_cons_of_u8 prog prims ix_cons_of_u8 n))
-    (ext_single_of_u8 : Certified (∀ {n : Nat}, Stmt_single_of_u8 prog prims ix_single_of_u8 n)) {n : Nat} :
-    Stmt_load_at_bytes prog prims ix_load_at_bytes n := by
-  intro w h
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_load_at_bytes] at h
-  faithful [Lanius.Mini.loadAtBytes]
-
-theorem proof_load_word_bytes {prog : SrcProgram} {prims : Prims} {ix_load_word_bytes ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_MemWidth_rex : Nat} (fn : prog.funcs[ix_load_word_bytes]? = some (src_load_word_bytes ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_MemWidth_rex)) (np : prims.isPrim ix_load_word_bytes = false)
+theorem proof_frame_memory_bytes {prog : SrcProgram} {prims : Prims} {ix_frame_memory_bytes ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_le64 : Nat} (fn : prog.funcs[ix_frame_memory_bytes]? = some (src_frame_memory_bytes ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_le64)) (np : prims.isPrim ix_frame_memory_bytes = false)
     (ext_concat_of_u8 : Certified (∀ {n : Nat}, Stmt_concat_of_u8 prog prims ix_concat_of_u8 n))
     (ext_cons_of_u8 : Certified (∀ {n : Nat}, Stmt_cons_of_u8 prog prims ix_cons_of_u8 n))
     (ext_single_of_u8 : Certified (∀ {n : Nat}, Stmt_single_of_u8 prog prims ix_single_of_u8 n))
-    (ext_MemWidth_rex : Certified (∀ {n : Nat}, Stmt_MemWidth_rex prog prims ix_MemWidth_rex n)) {n : Nat} :
-    Stmt_load_word_bytes prog prims ix_load_word_bytes n := by
+    (ext_le64 : Certified (∀ {n : Nat}, Stmt_le64 prog prims ix_le64 n)) {n : Nat} :
+    Stmt_frame_memory_bytes prog prims ix_frame_memory_bytes n := by
   intro x0 v0 w h r0
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_load_word_bytes] at h
-  faithful [Lanius.Mini.loadWordBytes]
+  simp only [src_frame_memory_bytes] at h
+  faithful [Lanius.Mini.frameMemoryBytes]
 
 theorem step_pow2 {prog : SrcProgram} {prims : Prims} {ix_pow2 ix_minus : Nat} (fn : prog.funcs[ix_pow2]? = some (src_pow2 ix_minus ix_pow2)) (np : prims.isPrim ix_pow2 = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n)) {n : Nat}
@@ -252,106 +137,5 @@ theorem step_pow2 {prog : SrcProgram} {prims : Prims} {ix_pow2 ix_minus : Nat} (
   rw [pcall_succ np fn] at h
   simp only [src_pow2] at h
   faithful [Lanius.Mini.pow2]
-
-theorem proof_prologue {prog : SrcProgram} {prims : Prims} {ix_prologue ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_le32 ix_frame_size ix_stack_check : Nat} (fn : prog.funcs[ix_prologue]? = some (src_prologue ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_le32 ix_frame_size ix_stack_check)) (np : prims.isPrim ix_prologue = false)
-    (ext_concat_of_u8 : Certified (∀ {n : Nat}, Stmt_concat_of_u8 prog prims ix_concat_of_u8 n))
-    (ext_cons_of_u8 : Certified (∀ {n : Nat}, Stmt_cons_of_u8 prog prims ix_cons_of_u8 n))
-    (ext_single_of_u8 : Certified (∀ {n : Nat}, Stmt_single_of_u8 prog prims ix_single_of_u8 n))
-    (ext_le32 : Certified (∀ {n : Nat}, Stmt_le32 prog prims ix_le32 n))
-    (ext_frame_size : Certified (∀ {n : Nat}, Stmt_frame_size prog prims ix_frame_size n))
-    (ext_stack_check : Certified (∀ {n : Nat}, Stmt_stack_check prog prims ix_stack_check n)) {n : Nat} :
-    Stmt_prologue prog prims ix_prologue n := by
-  intro x0 v0 w h r0
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_prologue] at h
-  faithful [Lanius.Mini.prologue]
-
-theorem proof_relative {prog : SrcProgram} {prims : Prims} {ix_relative : Nat} (fn : prog.funcs[ix_relative]? = some (src_relative)) (np : prims.isPrim ix_relative = false) {n : Nat} :
-    Stmt_relative prog prims ix_relative n := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_relative] at h
-  faithful [Lanius.Mini.relative]
-
-theorem step_slot_range {prog : SrcProgram} {prims : Prims} {ix_slot_range ix_plus ix_minus ix_empty_of_usize ix_cons_of_usize : Nat} (fn : prog.funcs[ix_slot_range]? = some (src_slot_range ix_plus ix_minus ix_empty_of_usize ix_cons_of_usize ix_slot_range)) (np : prims.isPrim ix_slot_range = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
-    (ext_empty_of_usize : Certified (∀ {n : Nat}, Stmt_empty_of_usize prog prims ix_empty_of_usize n))
-    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n)) {n : Nat}
-    (ih_slot_range : Certified (Stmt_slot_range prog prims ix_slot_range n)) :
-    Stmt_slot_range prog prims ix_slot_range (n + 1) := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rw [pcall_succ np fn] at h
-  simp only [src_slot_range] at h
-  faithful [Lanius.Mini.slotRange]
-
-theorem proof_stack_check {prog : SrcProgram} {prims : Prims} {ix_stack_check ix_cons_of_u8 ix_single_of_u8 : Nat} (fn : prog.funcs[ix_stack_check]? = some (src_stack_check ix_cons_of_u8 ix_single_of_u8)) (np : prims.isPrim ix_stack_check = false)
-    (ext_cons_of_u8 : Certified (∀ {n : Nat}, Stmt_cons_of_u8 prog prims ix_cons_of_u8 n))
-    (ext_single_of_u8 : Certified (∀ {n : Nat}, Stmt_single_of_u8 prog prims ix_single_of_u8 n)) {n : Nat} :
-    Stmt_stack_check prog prims ix_stack_check n := by
-  intro w h
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_stack_check] at h
-  faithful [Lanius.Mini.stackCheck]
-
-theorem proof_store_at_bytes {prog : SrcProgram} {prims : Prims} {ix_store_at_bytes ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_le32 ix_slot_offset : Nat} (fn : prog.funcs[ix_store_at_bytes]? = some (src_store_at_bytes ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_le32 ix_slot_offset)) (np : prims.isPrim ix_store_at_bytes = false)
-    (ext_concat_of_u8 : Certified (∀ {n : Nat}, Stmt_concat_of_u8 prog prims ix_concat_of_u8 n))
-    (ext_cons_of_u8 : Certified (∀ {n : Nat}, Stmt_cons_of_u8 prog prims ix_cons_of_u8 n))
-    (ext_single_of_u8 : Certified (∀ {n : Nat}, Stmt_single_of_u8 prog prims ix_single_of_u8 n))
-    (ext_le32 : Certified (∀ {n : Nat}, Stmt_le32 prog prims ix_le32 n))
-    (ext_slot_offset : Certified (∀ {n : Nat}, Stmt_slot_offset prog prims ix_slot_offset n)) {n : Nat} :
-    Stmt_store_at_bytes prog prims ix_store_at_bytes n := by
-  intro x0 v0 w h r0
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_store_at_bytes] at h
-  faithful [Lanius.Mini.storeAtBytes]
-
-theorem proof_store_word_bytes {prog : SrcProgram} {prims : Prims} {ix_store_word_bytes ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_le32 ix_slot_offset ix_MemWidth_rex : Nat} (fn : prog.funcs[ix_store_word_bytes]? = some (src_store_word_bytes ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_le32 ix_slot_offset ix_MemWidth_rex)) (np : prims.isPrim ix_store_word_bytes = false)
-    (ext_concat_of_u8 : Certified (∀ {n : Nat}, Stmt_concat_of_u8 prog prims ix_concat_of_u8 n))
-    (ext_cons_of_u8 : Certified (∀ {n : Nat}, Stmt_cons_of_u8 prog prims ix_cons_of_u8 n))
-    (ext_single_of_u8 : Certified (∀ {n : Nat}, Stmt_single_of_u8 prog prims ix_single_of_u8 n))
-    (ext_le32 : Certified (∀ {n : Nat}, Stmt_le32 prog prims ix_le32 n))
-    (ext_slot_offset : Certified (∀ {n : Nat}, Stmt_slot_offset prog prims ix_slot_offset n))
-    (ext_MemWidth_rex : Certified (∀ {n : Nat}, Stmt_MemWidth_rex prog prims ix_MemWidth_rex n)) {n : Nat} :
-    Stmt_store_word_bytes prog prims ix_store_word_bytes n := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_store_word_bytes] at h
-  faithful [Lanius.Mini.storeWordBytes]
-
-theorem proof_sys_bytes {prog : SrcProgram} {prims : Prims} {ix_sys_bytes ix_plus ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_le32 ix_slot_offset ix_syscall_linux_byte : Nat} (fn : prog.funcs[ix_sys_bytes]? = some (src_sys_bytes ix_plus ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_le32 ix_slot_offset ix_syscall_linux_byte)) (np : prims.isPrim ix_sys_bytes = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_concat_of_u8 : Certified (∀ {n : Nat}, Stmt_concat_of_u8 prog prims ix_concat_of_u8 n))
-    (ext_cons_of_u8 : Certified (∀ {n : Nat}, Stmt_cons_of_u8 prog prims ix_cons_of_u8 n))
-    (ext_single_of_u8 : Certified (∀ {n : Nat}, Stmt_single_of_u8 prog prims ix_single_of_u8 n))
-    (ext_le32 : Certified (∀ {n : Nat}, Stmt_le32 prog prims ix_le32 n))
-    (ext_slot_offset : Certified (∀ {n : Nat}, Stmt_slot_offset prog prims ix_slot_offset n))
-    (ext_syscall_linux_byte : Certified (∀ {n : Nat}, Stmt_syscall_linux_byte prog prims ix_syscall_linux_byte n)) {n : Nat} :
-    Stmt_sys_bytes prog prims ix_sys_bytes n := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_sys_bytes] at h
-  faithful [Lanius.Mini.sysBytes]
-
-theorem proof_syscall_linux_byte {prog : SrcProgram} {prims : Prims} {ix_syscall_linux_byte : Nat} (fn : prog.funcs[ix_syscall_linux_byte]? = some (src_syscall_linux_byte)) (np : prims.isPrim ix_syscall_linux_byte = false) {n : Nat} :
-    Stmt_syscall_linux_byte prog prims ix_syscall_linux_byte n := by
-  intro x0 v0 w h r0
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_syscall_linux_byte] at h
-  faithful [Lanius.Mini.syscallLinuxByte]
 
 end Lanius.Faithful.SelfCert

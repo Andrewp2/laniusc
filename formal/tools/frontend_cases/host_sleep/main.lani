@@ -1,0 +1,10 @@
+module app::main;
+
+fn top(n: i32) -> i32 {
+    let early: i32 = std::time::sleep_ms_i32(0 - 5);
+    if (early != 0 - 1) {
+        return 100;
+    }
+    let slept: i32 = std::time::sleep_ms_i32(n);
+    return slept + 7;
+}

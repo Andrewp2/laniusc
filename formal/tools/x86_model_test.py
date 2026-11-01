@@ -175,6 +175,12 @@ def compiler_forms():
         form('je rel32', [0x0F, 0x84], 'rel32', 'jcc'),
         form('jbe rel32', [0x0F, 0x86], 'rel32', 'jcc'),
         form('jb rel32', [0x0F, 0x82], 'rel32', 'jcc'),
+        # Frame memory: the frame pointer in rbx less the bytes, checked against the limit.
+        form('jae rel32', [0x0F, 0x83], 'rel32', 'jcc'),
+        form('mov rax, rbx', [0x48, 0x89, 0xD8]),
+        form('sub rax, r11', [0x4C, 0x29, 0xD8]),
+        form('mov r11, rax', [0x49, 0x89, 0xC3]),
+        form('mov rbx, rax', [0x48, 0x89, 0xC3]),
         form('call rel32', [0xE8], 'rel32', 'call'),
         form('push rbp', [0x55], kind='push'),
         form('pop rbp', [0x5D], kind='pop'),

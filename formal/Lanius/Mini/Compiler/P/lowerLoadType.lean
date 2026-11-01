@@ -1,7 +1,6 @@
 module
 
 public import Lanius.Mini.Compiler.Types
-import Lanius.Mini.Compiler.P.Code_size
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.SrcExpr_guard
@@ -13,6 +12,7 @@ import Lanius.Mini.Compiler.P.elementAddress
 import Lanius.Mini.Compiler.P.elementBase
 import Lanius.Mini.Compiler.P.guardAnd
 import Lanius.Mini.Compiler.P.indexOf
+import Lanius.Mini.Compiler.P.loadAtBytes
 import Lanius.Mini.Compiler.P.lowerCallSig
 import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Compiler.P.shortCircuit

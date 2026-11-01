@@ -2,7 +2,7 @@ module
 
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Compiler.P.matchVariants
-import Lanius.Mini.Frontend.P.constNamesIn
+import Lanius.Mini.Frontend.P.collectedWith
 import Lanius.Mini.Frontend.P.distinct
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.hasKids
