@@ -16,7 +16,7 @@ Internal Linux syscall support for std::command, including process-group setup a
 - [stdlib-command-groups](../../stdlib-command-groups.md)
 - [stdlib-run-group](../../stdlib-run-group.md)
 
-Declaration counts: function: 17.
+Declaration counts: function: 19.
 
 ## Declared imports
 
@@ -125,9 +125,25 @@ pub fn observe_exit(pid: i32, info: ptr) -> i64
 pub fn observe_exit_blocking(pid: i32, info: ptr) -> i64
 ```
 
+### function: wait_usage
+
+[Source line 44](../../../stdlib/std/command_raw.lani#L44)
+
+```lanius
+pub fn wait_usage(pid: i32, status: ptr, usage: ptr, nonblocking: bool) -> i64
+```
+
+### function: usage
+
+[Source line 50](../../../stdlib/std/command_raw.lani#L50)
+
+```lanius
+pub fn usage(who: i64, out: ptr) -> i64
+```
+
 ### function: wait
 
-[Source line 43](../../../stdlib/std/command_raw.lani#L43)
+[Source line 51](../../../stdlib/std/command_raw.lani#L51)
 
 ```lanius
 pub fn wait(pid: i32, status: ptr, nonblocking: bool) -> i64
@@ -135,7 +151,7 @@ pub fn wait(pid: i32, status: ptr, nonblocking: bool) -> i64
 
 ### function: change_dir
 
-[Source line 44](../../../stdlib/std/command_raw.lani#L44)
+[Source line 52](../../../stdlib/std/command_raw.lani#L52)
 
 ```lanius
 pub fn change_dir(path: ptr) -> i64
@@ -143,7 +159,7 @@ pub fn change_dir(path: ptr) -> i64
 
 ### function: execute
 
-[Source line 45](../../../stdlib/std/command_raw.lani#L45)
+[Source line 53](../../../stdlib/std/command_raw.lani#L53)
 
 ```lanius
 pub fn execute(path: ptr, argv: ptr, env: ptr) -> i64
@@ -151,7 +167,7 @@ pub fn execute(path: ptr, argv: ptr, env: ptr) -> i64
 
 ### function: store_pointer
 
-[Source line 46](../../../stdlib/std/command_raw.lani#L46)
+[Source line 54](../../../stdlib/std/command_raw.lani#L54)
 
 ```lanius
 pub fn store_pointer(slot: ptr, value: ptr)
@@ -159,7 +175,7 @@ pub fn store_pointer(slot: ptr, value: ptr)
 
 ### function: terminate
 
-[Source line 47](../../../stdlib/std/command_raw.lani#L47)
+[Source line 55](../../../stdlib/std/command_raw.lani#L55)
 
 ```lanius
 pub fn terminate()

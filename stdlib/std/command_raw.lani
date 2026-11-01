@@ -40,6 +40,14 @@ pub fn observe_exit(pid: i32, info: ptr) -> i64 {
 pub fn observe_exit_blocking(pid: i32, info: ptr) -> i64 {
     return invoke(247,std::linux::Argument::Word(1),std::linux::Argument::Word(pid as i64),std::linux::Argument::Address(info),std::linux::Argument::Word(16777220));
 }
+// wait4 with a 144-byte struct rusage; blocking calls retry EINTR.
+pub fn wait_usage(pid: i32, status: ptr, usage: ptr, nonblocking: bool) -> i64 {
+    let flags: i64 = 0; if (nonblocking) { flags = 1; }
+    let n: i64 = -4; while (n == -4) { n = invoke(61,std::linux::Argument::Word(pid as i64),std::linux::Argument::Address(status),std::linux::Argument::Word(flags),std::linux::Argument::Address(usage)); if (nonblocking) { return n; } }
+    return n;
+}
+// getrusage(who, usage): RUSAGE_SELF 0, RUSAGE_CHILDREN -1, RUSAGE_THREAD 1.
+pub fn usage(who: i64, out: ptr) -> i64 { return invoke(98,std::linux::Argument::Word(who),std::linux::Argument::Address(out),std::linux::Argument::Word(0),std::linux::Argument::Word(0)); }
 pub fn wait(pid: i32, status: ptr, nonblocking: bool) -> i64 { if (nonblocking) { return pointer(61,pid as i64,status,1); } let n: i64 = -4; while (n == -4) { n = pointer(61,pid as i64,status,0); } return n; }
 pub fn change_dir(path: ptr) -> i64 { return invoke(80,std::linux::Argument::Address(path),std::linux::Argument::Word(0),std::linux::Argument::Word(0),std::linux::Argument::Word(0)); }
 pub fn execute(path: ptr, argv: ptr, env: ptr) -> i64 { return invoke(59,std::linux::Argument::Address(path),std::linux::Argument::Address(argv),std::linux::Argument::Address(env),std::linux::Argument::Word(0)); }

@@ -1734,6 +1734,12 @@
         "docs/stdlib-time.md"
       ]
     },
+    "std::timer": {
+      "guides": [
+        "docs/stdlib-timers.md"
+      ],
+      "note": "Manual timerfd owner: close exactly once, never retried. Clock, kind and setting checks precede host calls. Alarm timers need CAP_WAKE_ALARM. Evidence is finite native Linux x86_64 CPU execution."
+    },
     "std::host_clocks": {
       "guides": [
         "docs/stdlib-host-clocks.md",
@@ -1746,7 +1752,8 @@
         "docs/stdlib-command.md",
         "docs/stdlib-command-groups.md",
         "docs/stdlib-run-group.md",
-        "docs/stdlib-host-clocks.md"
+        "docs/stdlib-host-clocks.md",
+        "docs/stdlib-child-usage.md"
       ],
       "note": "Process-group creation is explicit. Group signaling requires the confirmed original group and an owned, unreaped leader; non-reaping terminal observations do not consume that anchor. Final reaping or lost-child evidence revokes it. Copied Child descriptors do not grant independent wait or signal authority. The guides define startup uncertainty, cancellation limits and current target/execution evidence."
     },

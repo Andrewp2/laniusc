@@ -15,7 +15,7 @@ Kind checks (wall/steady/CPU), PID bounds and waitability are decided before any
 - [stdlib-host-clocks](../../stdlib-host-clocks.md)
 - [stdlib-time](../../stdlib-time.md)
 
-Declaration counts: constant: 1; enum: 3; function: 9; impl: 2; method: 3; struct: 1; variant: 20.
+Declaration counts: constant: 1; enum: 3; function: 9; impl: 2; method: 3; struct: 1; variant: 22.
 
 ## Declared imports
 
@@ -34,7 +34,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Clock
 
-[Source line 14](../../../stdlib/std/host_clocks.lani#L14)
+[Source line 17](../../../stdlib/std/host_clocks.lani#L17)
 
 ```lanius
 pub enum Clock
@@ -42,7 +42,7 @@ pub enum Clock
 
 #### variant: Realtime
 
-[Source line 14](../../../stdlib/std/host_clocks.lani#L14)
+[Source line 17](../../../stdlib/std/host_clocks.lani#L17)
 
 ```lanius
 Realtime
@@ -50,7 +50,7 @@ Realtime
 
 #### variant: RealtimeCoarse
 
-[Source line 14](../../../stdlib/std/host_clocks.lani#L14)
+[Source line 17](../../../stdlib/std/host_clocks.lani#L17)
 
 ```lanius
 RealtimeCoarse
@@ -58,7 +58,7 @@ RealtimeCoarse
 
 #### variant: Tai
 
-[Source line 14](../../../stdlib/std/host_clocks.lani#L14)
+[Source line 17](../../../stdlib/std/host_clocks.lani#L17)
 
 ```lanius
 Tai
@@ -66,7 +66,7 @@ Tai
 
 #### variant: Monotonic
 
-[Source line 14](../../../stdlib/std/host_clocks.lani#L14)
+[Source line 17](../../../stdlib/std/host_clocks.lani#L17)
 
 ```lanius
 Monotonic
@@ -74,7 +74,7 @@ Monotonic
 
 #### variant: MonotonicRaw
 
-[Source line 14](../../../stdlib/std/host_clocks.lani#L14)
+[Source line 17](../../../stdlib/std/host_clocks.lani#L17)
 
 ```lanius
 MonotonicRaw
@@ -82,7 +82,7 @@ MonotonicRaw
 
 #### variant: MonotonicCoarse
 
-[Source line 14](../../../stdlib/std/host_clocks.lani#L14)
+[Source line 17](../../../stdlib/std/host_clocks.lani#L17)
 
 ```lanius
 MonotonicCoarse
@@ -90,7 +90,7 @@ MonotonicCoarse
 
 #### variant: Boottime
 
-[Source line 14](../../../stdlib/std/host_clocks.lani#L14)
+[Source line 17](../../../stdlib/std/host_clocks.lani#L17)
 
 ```lanius
 Boottime
@@ -98,7 +98,7 @@ Boottime
 
 #### variant: ProcessCpu
 
-[Source line 14](../../../stdlib/std/host_clocks.lani#L14)
+[Source line 17](../../../stdlib/std/host_clocks.lani#L17)
 
 ```lanius
 ProcessCpu
@@ -106,7 +106,7 @@ ProcessCpu
 
 #### variant: ThreadCpu
 
-[Source line 14](../../../stdlib/std/host_clocks.lani#L14)
+[Source line 17](../../../stdlib/std/host_clocks.lani#L17)
 
 ```lanius
 ThreadCpu
@@ -114,15 +114,31 @@ ThreadCpu
 
 #### variant: ProcessCpuOf
 
-[Source line 14](../../../stdlib/std/host_clocks.lani#L14)
+[Source line 17](../../../stdlib/std/host_clocks.lani#L17)
 
 ```lanius
 ProcessCpuOf(i32)
 ```
 
+#### variant: RealtimeAlarm
+
+[Source line 17](../../../stdlib/std/host_clocks.lani#L17)
+
+```lanius
+RealtimeAlarm
+```
+
+#### variant: BoottimeAlarm
+
+[Source line 17](../../../stdlib/std/host_clocks.lani#L17)
+
+```lanius
+BoottimeAlarm
+```
+
 ### enum: Kind
 
-[Source line 15](../../../stdlib/std/host_clocks.lani#L15)
+[Source line 18](../../../stdlib/std/host_clocks.lani#L18)
 
 ```lanius
 pub enum Kind
@@ -130,7 +146,7 @@ pub enum Kind
 
 #### variant: Wall
 
-[Source line 15](../../../stdlib/std/host_clocks.lani#L15)
+[Source line 18](../../../stdlib/std/host_clocks.lani#L18)
 
 ```lanius
 Wall
@@ -138,7 +154,7 @@ Wall
 
 #### variant: Steady
 
-[Source line 15](../../../stdlib/std/host_clocks.lani#L15)
+[Source line 18](../../../stdlib/std/host_clocks.lani#L18)
 
 ```lanius
 Steady
@@ -146,7 +162,7 @@ Steady
 
 #### variant: Cpu
 
-[Source line 15](../../../stdlib/std/host_clocks.lani#L15)
+[Source line 18](../../../stdlib/std/host_clocks.lani#L18)
 
 ```lanius
 Cpu
@@ -154,7 +170,7 @@ Cpu
 
 ### enum: Error
 
-[Source line 18](../../../stdlib/std/host_clocks.lani#L18)
+[Source line 21](../../../stdlib/std/host_clocks.lani#L21)
 
 ```lanius
 pub enum Error
@@ -162,7 +178,7 @@ pub enum Error
 
 #### variant: Host
 
-[Source line 18](../../../stdlib/std/host_clocks.lani#L18)
+[Source line 21](../../../stdlib/std/host_clocks.lani#L21)
 
 ```lanius
 Host(i32)
@@ -170,7 +186,7 @@ Host(i32)
 
 #### variant: InvalidProcess
 
-[Source line 18](../../../stdlib/std/host_clocks.lani#L18)
+[Source line 21](../../../stdlib/std/host_clocks.lani#L21)
 
 ```lanius
 InvalidProcess
@@ -178,7 +194,7 @@ InvalidProcess
 
 #### variant: WrongKind
 
-[Source line 18](../../../stdlib/std/host_clocks.lani#L18)
+[Source line 21](../../../stdlib/std/host_clocks.lani#L21)
 
 ```lanius
 WrongKind
@@ -186,7 +202,7 @@ WrongKind
 
 #### variant: Unsupported
 
-[Source line 18](../../../stdlib/std/host_clocks.lani#L18)
+[Source line 21](../../../stdlib/std/host_clocks.lani#L21)
 
 ```lanius
 Unsupported
@@ -194,7 +210,7 @@ Unsupported
 
 #### variant: InvalidTimestamp
 
-[Source line 18](../../../stdlib/std/host_clocks.lani#L18)
+[Source line 21](../../../stdlib/std/host_clocks.lani#L21)
 
 ```lanius
 InvalidTimestamp
@@ -202,7 +218,7 @@ InvalidTimestamp
 
 #### variant: InvalidStatus
 
-[Source line 18](../../../stdlib/std/host_clocks.lani#L18)
+[Source line 21](../../../stdlib/std/host_clocks.lani#L21)
 
 ```lanius
 InvalidStatus
@@ -210,7 +226,7 @@ InvalidStatus
 
 #### variant: ClockReversed
 
-[Source line 18](../../../stdlib/std/host_clocks.lani#L18)
+[Source line 21](../../../stdlib/std/host_clocks.lani#L21)
 
 ```lanius
 ClockReversed
@@ -218,7 +234,7 @@ ClockReversed
 
 ### struct: Boottime
 
-[Source line 157](../../../stdlib/std/host_clocks.lani#L157)
+[Source line 161](../../../stdlib/std/host_clocks.lani#L161)
 
 ```lanius
 pub struct Boottime
@@ -228,7 +244,7 @@ pub struct Boottime
 
 ### constant: PID_LIMIT
 
-[Source line 20](../../../stdlib/std/host_clocks.lani#L20)
+[Source line 23](../../../stdlib/std/host_clocks.lani#L23)
 
 ```lanius
 pub const PID_LIMIT: i32 = 4194304;
@@ -238,7 +254,7 @@ pub const PID_LIMIT: i32 = 4194304;
 
 ### function: kind
 
-[Source line 22](../../../stdlib/std/host_clocks.lani#L22)
+[Source line 25](../../../stdlib/std/host_clocks.lani#L25)
 
 ```lanius
 pub fn kind(clock: Clock) -> Kind
@@ -246,7 +262,7 @@ pub fn kind(clock: Clock) -> Kind
 
 ### function: id
 
-[Source line 34](../../../stdlib/std/host_clocks.lani#L34)
+[Source line 38](../../../stdlib/std/host_clocks.lani#L38)
 
 ```lanius
 pub fn id(clock: Clock) -> core::result::Result<i64, Error>
@@ -254,7 +270,7 @@ pub fn id(clock: Clock) -> core::result::Result<i64, Error>
 
 ### function: timestamp
 
-[Source line 77](../../../stdlib/std/host_clocks.lani#L77)
+[Source line 81](../../../stdlib/std/host_clocks.lani#L81)
 
 ```lanius
 pub fn timestamp(clock: Clock) -> core::result::Result<core::time::SystemTime, Error>
@@ -262,7 +278,7 @@ pub fn timestamp(clock: Clock) -> core::result::Result<core::time::SystemTime, E
 
 ### function: instant
 
-[Source line 82](../../../stdlib/std/host_clocks.lani#L82)
+[Source line 86](../../../stdlib/std/host_clocks.lani#L86)
 
 ```lanius
 pub fn instant(clock: Clock) -> core::result::Result<core::time::Instant, Error>
@@ -270,7 +286,7 @@ pub fn instant(clock: Clock) -> core::result::Result<core::time::Instant, Error>
 
 ### function: cpu_time
 
-[Source line 89](../../../stdlib/std/host_clocks.lani#L89)
+[Source line 93](../../../stdlib/std/host_clocks.lani#L93)
 
 ```lanius
 pub fn cpu_time(clock: Clock) -> core::result::Result<core::time::Duration, Error>
@@ -278,7 +294,7 @@ pub fn cpu_time(clock: Clock) -> core::result::Result<core::time::Duration, Erro
 
 ### function: resolution
 
-[Source line 94](../../../stdlib/std/host_clocks.lani#L94)
+[Source line 98](../../../stdlib/std/host_clocks.lani#L98)
 
 ```lanius
 pub fn resolution(clock: Clock) -> core::result::Result<core::time::Duration, Error>
@@ -286,7 +302,7 @@ pub fn resolution(clock: Clock) -> core::result::Result<core::time::Duration, Er
 
 ### function: sleep_until_instant
 
-[Source line 119](../../../stdlib/std/host_clocks.lani#L119)
+[Source line 123](../../../stdlib/std/host_clocks.lani#L123)
 
 ```lanius
 pub fn sleep_until_instant(clock: Clock, target: core::time::Instant) -> core::result::Result<core::time::Instant, Error>
@@ -294,7 +310,7 @@ pub fn sleep_until_instant(clock: Clock, target: core::time::Instant) -> core::r
 
 ### function: sleep_until_timestamp
 
-[Source line 141](../../../stdlib/std/host_clocks.lani#L141)
+[Source line 145](../../../stdlib/std/host_clocks.lani#L145)
 
 ```lanius
 pub fn sleep_until_timestamp(clock: Clock, target: core::time::SystemTime) -> core::result::Result<core::time::SystemTime, Error>
@@ -302,7 +318,7 @@ pub fn sleep_until_timestamp(clock: Clock, target: core::time::SystemTime) -> co
 
 ### function: boottime
 
-[Source line 158](../../../stdlib/std/host_clocks.lani#L158)
+[Source line 162](../../../stdlib/std/host_clocks.lani#L162)
 
 ```lanius
 pub fn boottime() -> Boottime
@@ -310,9 +326,9 @@ pub fn boottime() -> Boottime
 
 ## Implementation blocks and public methods
 
-### impl at line 159
+### impl at line 163
 
-[Source line 159](../../../stdlib/std/host_clocks.lani#L159)
+[Source line 163](../../../stdlib/std/host_clocks.lani#L163)
 
 ```lanius
 pub impl Boottime
@@ -320,15 +336,15 @@ pub impl Boottime
 
 #### method: borrow
 
-[Source line 159](../../../stdlib/std/host_clocks.lani#L159)
+[Source line 163](../../../stdlib/std/host_clocks.lani#L163)
 
 ```lanius
 pub fn borrow(&self) -> &Boottime
 ```
 
-### impl at line 163
+### impl at line 167
 
-[Source line 163](../../../stdlib/std/host_clocks.lani#L163)
+[Source line 167](../../../stdlib/std/host_clocks.lani#L167)
 
 ```lanius
 pub impl std::clock::Monotonic for Boottime
@@ -336,7 +352,7 @@ pub impl std::clock::Monotonic for Boottime
 
 #### method: now
 
-[Source line 164](../../../stdlib/std/host_clocks.lani#L164)
+[Source line 168](../../../stdlib/std/host_clocks.lani#L168)
 
 ```lanius
 pub fn now(&self) -> core::result::Result<core::time::Instant, std::clock::Error>
@@ -344,7 +360,7 @@ pub fn now(&self) -> core::result::Result<core::time::Instant, std::clock::Error
 
 #### method: pause_ms
 
-[Source line 171](../../../stdlib/std/host_clocks.lani#L171)
+[Source line 175](../../../stdlib/std/host_clocks.lani#L175)
 
 ```lanius
 pub fn pause_ms(&self, milliseconds: i32) -> core::result::Result<i32, std::clock::Error>

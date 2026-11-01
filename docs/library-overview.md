@@ -593,6 +593,20 @@ program and the cli50/timing21/clocks48 oracle groups pass as direct runs of the
 compiled programs on native Linux x86_64; two existing command-group oracles
 pass after the observation change.
 
+**Timers and child resource usage.**
+
+The [timer guide](stdlib-timers.md) adds `std::timer`, a manual timerfd owner
+for one-shot and periodic timers on Monotonic, Boottime, Realtime and the two
+alarm clocks, armed relative, at an absolute instant or timestamp (optionally
+cancel-on-set), with blocking `wait()` and nonblocking `try_wait()` expiration
+counts that include overruns. Alarm clocks join `std::host_clocks`; their
+waits and timers report EPERM without CAP_WAKE_ALARM. The
+[resource-usage guide](stdlib-child-usage.md) adds wait4 reaps with rusage and
+getrusage totals to `std::command`. The timer and usage contracts programs, the
+[timer-ticks](stdlib-timers.md#application-timer-ticks) cli19/ticks138 groups
+and the [child-usage](stdlib-child-usage.md#application-child-usage)
+cli39/usage42 groups pass as direct runs on native Linux x86_64.
+
 **Shared random-source budgets.**
 
 The [draw-budget guide](stdlib-random-budget.md) specifies one borrowed adapter,
