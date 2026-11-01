@@ -1,0 +1,338 @@
+// Shared regions, futex waits and blocking synchronization for workers.
+// Linux x86_64 only; link with --native-link --native-library atomic.
+// Every primitive keeps its state in a Region mapped MAP_SHARED before the
+// workers that use it are spawned, so the same addresses are valid in every
+// worker process. There is no poisoning: failures are explicit Error values.
+// See docs/stdlib-concurrency.md.
+module std::sync;
+import core::mem;
+import core::result;
+import core::slice;
+import std::linux;
+import std::atomic;
+
+pub enum Error { Host(i32), InvalidSize, Exhausted, Unmapped, NotLocked, InvalidState, TimedOut, Overflow }
+pub enum Wait { Woken, Changed, Interrupted, TimedOut }
+pub enum Step { Run, Done }
+
+pub const MAX_REGION_BYTES: usize = 1073741824;
+pub const LINE_BYTES: usize = 64;
+
+// An absolute CLOCK_MONOTONIC instant.
+pub struct Deadline { seconds: i64, nanos: i64 }
+
+fn word_arg(value: i64) -> std::linux::Argument { return std::linux::Argument::Word(value); }
+fn host(error: std::linux::Error) -> Error {
+    return match (error) { std::linux::Error::System(code) -> Error::Host(code), _ -> Error::Host(22) };
+}
+fn store_i64(slot: ptr, value: i64) { let view: [i64] = core::mem::typed_slice_from_raw_parts<i64>(slot, 1); view[0] = value; }
+fn load_i64(slot: ptr) -> i64 { let view: [i64] = core::mem::typed_slice_from_raw_parts<i64>(slot, 1); return view[0]; }
+
+pub fn now() -> core::result::Result<Deadline, Error> {
+    let storage: [i32; 4] = [0; 4];
+    let slot: ptr = core::mem::i32_array_data_ptr(storage);
+    let args: [std::linux::Argument; 2] = [word_arg(1), std::linux::Argument::Address(slot)];
+    let done: core::result::Result<i64, std::linux::Error> = std::linux::call(228, core::slice::view(args, 2).unwrap());
+    if (done.is_err()) { return core::result::Err(host(done.unwrap_err())); }
+    return core::result::Ok(Deadline { seconds: load_i64(slot), nanos: load_i64(slot + 8) });
+}
+// milliseconds must be in 0..=86400000 (one day).
+pub fn deadline_after_ms(milliseconds: i64) -> core::result::Result<Deadline, Error> {
+    if (milliseconds < 0 || milliseconds > 86400000) { return core::result::Err(Error::Overflow); }
+    let start: core::result::Result<Deadline, Error> = now();
+    if (start.is_err()) { return start; }
+    let base: Deadline = start.unwrap();
+    let nanos: i64 = base.nanos + (milliseconds % 1000) * 1000000;
+    let seconds: i64 = base.seconds + milliseconds / 1000;
+    if (nanos >= 1000000000) { nanos -= 1000000000; seconds += 1; }
+    return core::result::Ok(Deadline { seconds: seconds, nanos: nanos });
+}
+pub fn is_past(deadline: Deadline) -> core::result::Result<bool, Error> {
+    let current: core::result::Result<Deadline, Error> = now();
+    if (current.is_err()) { return core::result::Err(current.unwrap_err()); }
+    let at: Deadline = current.unwrap();
+    return core::result::Ok(at.seconds > deadline.seconds || (at.seconds == deadline.seconds && at.nanos >= deadline.nanos));
+}
+
+// Shared (not process-private) futex operations on a 4-byte word.
+fn futex(word: ptr, op: i64, value: i64, timeout: ptr, mask: i64) -> core::result::Result<i64, std::linux::Error> {
+    let nowhere: ptr = 0;
+    let args: [std::linux::Argument; 6] = [std::linux::Argument::Address(word), word_arg(op), word_arg(value),
+        std::linux::Argument::Address(timeout), std::linux::Argument::Address(nowhere), word_arg(mask)];
+    return std::linux::call(202, core::slice::view(args, 6).unwrap());
+}
+fn wait_result(done: core::result::Result<i64, std::linux::Error>) -> core::result::Result<Wait, Error> {
+    if (done.is_ok()) { return core::result::Ok(Wait::Woken); }
+    let error: std::linux::Error = done.unwrap_err();
+    let code: i32 = match (error) { std::linux::Error::System(code) -> code, _ -> 22 };
+    if (code == 11) { return core::result::Ok(Wait::Changed); }
+    if (code == 4) { return core::result::Ok(Wait::Interrupted); }
+    if (code == 110) { return core::result::Ok(Wait::TimedOut); }
+    return core::result::Err(Error::Host(code));
+}
+// Sleep while *word == expected. Woken, Changed and Interrupted are all
+// possible without any state change: callers recheck their condition.
+pub fn futex_wait(word: ptr, expected: u32) -> core::result::Result<Wait, Error> {
+    let nowhere: ptr = 0;
+    return wait_result(futex(word, 0, expected as i64, nowhere, 0));
+}
+pub fn futex_wait_until(word: ptr, expected: u32, deadline: Deadline) -> core::result::Result<Wait, Error> {
+    let storage: [i32; 4] = [0; 4];
+    let slot: ptr = core::mem::i32_array_data_ptr(storage);
+    store_i64(slot, deadline.seconds); store_i64(slot + 8, deadline.nanos);
+    // FUTEX_WAIT_BITSET with an absolute CLOCK_MONOTONIC deadline, any bit.
+    return wait_result(futex(word, 9, expected as i64, slot, 4294967295));
+}
+pub fn futex_wake(word: ptr, count: i32) -> core::result::Result<i32, Error> {
+    let nowhere: ptr = 0;
+    let done: core::result::Result<i64, std::linux::Error> = futex(word, 1, count as i64, nowhere, 0);
+    if (done.is_err()) { return core::result::Err(host(done.unwrap_err())); }
+    return core::result::Ok(done.unwrap() as i32);
+}
+
+// A MAP_SHARED|MAP_ANONYMOUS mapping with a bump allocator. Allocations are
+// zeroed, 64-byte aligned (one cache line) and live until unmap. Map and
+// allocate every primitive before spawning the workers that share it; only
+// the creating process allocates or unmaps.
+pub struct Region { base: ptr, bytes: usize, used: usize, live: bool }
+pub fn map_shared(bytes: usize) -> core::result::Result<Region, Error> {
+    if (bytes == 0 || bytes > MAX_REGION_BYTES) { return core::result::Err(Error::InvalidSize); }
+    let rounded: usize = (bytes + 4095) / 4096 * 4096;
+    let nowhere: ptr = 0;
+    let args: [std::linux::Argument; 6] = [std::linux::Argument::Address(nowhere), word_arg(rounded as i64), word_arg(3), word_arg(33), word_arg(-1), word_arg(0)];
+    let done: core::result::Result<i64, std::linux::Error> = std::linux::call(9, core::slice::view(args, 6).unwrap());
+    if (done.is_err()) { return core::result::Err(host(done.unwrap_err())); }
+    let base: ptr = nowhere + (done.unwrap() as usize);
+    return core::result::Ok(Region { base: base, bytes: rounded, used: 0, live: true });
+}
+pub impl Region {
+    pub fn borrow(&self) -> &Region { return self; }
+    pub fn capacity(&self) -> usize { return self.bytes; }
+    pub fn used(&self) -> usize { return self.used; }
+    pub fn is_live(&self) -> bool { return self.live; }
+    pub fn allocate(&self, bytes: usize) -> core::result::Result<ptr, Error> {
+        if (!self.live) { return core::result::Err(Error::Unmapped); }
+        if (bytes == 0 || bytes > self.bytes) { return core::result::Err(Error::InvalidSize); }
+        let rounded: usize = (bytes + LINE_BYTES - 1) / LINE_BYTES * LINE_BYTES;
+        if (rounded > self.bytes - self.used) { return core::result::Err(Error::Exhausted); }
+        let address: ptr = self.base + self.used;
+        self.used += rounded;
+        return core::result::Ok(address);
+    }
+    // Every worker using the region must have been joined first.
+    pub fn unmap(&self) -> core::result::Result<i32, Error> {
+        if (!self.live) { return core::result::Err(Error::Unmapped); }
+        let args: [std::linux::Argument; 2] = [std::linux::Argument::Address(self.base), word_arg(self.bytes as i64)];
+        let done: core::result::Result<i64, std::linux::Error> = std::linux::call(11, core::slice::view(args, 2).unwrap());
+        if (done.is_err()) { return core::result::Err(host(done.unwrap_err())); }
+        self.live = false;
+        return core::result::Ok(0);
+    }
+}
+
+// Futex mutex: 0 unlocked, 1 locked, 2 locked with possible sleepers.
+// Not reentrant and not owner-checked; a worker that exits while holding it
+// leaves it locked (no robust futex, no poisoning).
+pub struct Mutex { state: ptr }
+pub fn mutex(region: &Region) -> core::result::Result<Mutex, Error> {
+    let at: core::result::Result<ptr, Error> = region.allocate(8);
+    if (at.is_err()) { return core::result::Err(at.unwrap_err()); }
+    return core::result::Ok(Mutex { state: at.unwrap() });
+}
+pub impl Mutex {
+    pub fn borrow(&self) -> &Mutex { return self; }
+    fn word(&self) -> std::atomic::Atomic32 { return std::atomic::at32(self.state); }
+    pub fn try_lock(&self) -> bool {
+        return std::atomic::swapped(self.word().compare_exchange(0, 1, std::atomic::Ordering::Acquire, std::atomic::Load::Relaxed));
+    }
+    pub fn lock(&self) -> core::result::Result<i32, Error> {
+        if (self.word().swap(1, std::atomic::Ordering::Acquire) == 0) { return core::result::Ok(0); }
+        return self.lock_contended();
+    }
+    // Acquire in state 2, so the eventual unlock wakes a remaining sleeper.
+    fn lock_contended(&self) -> core::result::Result<i32, Error> {
+        while (self.word().swap(2, std::atomic::Ordering::Acquire) != 0) {
+            let slept: core::result::Result<Wait, Error> = futex_wait(self.state, 2);
+            if (slept.is_err()) { return core::result::Err(slept.unwrap_err()); }
+        }
+        return core::result::Ok(0);
+    }
+    // Err(TimedOut) leaves the mutex unowned by the caller.
+    pub fn lock_until(&self, deadline: Deadline) -> core::result::Result<i32, Error> {
+        if (self.word().swap(1, std::atomic::Ordering::Acquire) == 0) { return core::result::Ok(0); }
+        while (self.word().swap(2, std::atomic::Ordering::Acquire) != 0) {
+            let slept: core::result::Result<Wait, Error> = futex_wait_until(self.state, 2, deadline);
+            if (slept.is_err()) { return core::result::Err(slept.unwrap_err()); }
+            let outcome: Wait = slept.unwrap();
+            let expired: bool = match (outcome) { Wait::TimedOut -> true, _ -> false };
+            if (expired) {
+                if (self.word().swap(2, std::atomic::Ordering::Acquire) == 0) { return core::result::Ok(0); }
+                return core::result::Err(Error::TimedOut);
+            }
+        }
+        return core::result::Ok(0);
+    }
+    // Err(NotLocked) when the mutex was not locked; its state is unchanged.
+    pub fn unlock(&self) -> core::result::Result<i32, Error> {
+        let previous: u32 = self.word().swap(0, std::atomic::Ordering::Release);
+        if (previous == 0) { return core::result::Err(Error::NotLocked); }
+        if (previous == 2) {
+            let woke: core::result::Result<i32, Error> = futex_wake(self.state, 1);
+            if (woke.is_err()) { return woke; }
+        }
+        return core::result::Ok(0);
+    }
+    pub fn is_locked(&self) -> bool { return self.word().load(std::atomic::Load::Relaxed) != 0; }
+}
+
+// Sequence condition variable. wait releases the mutex, sleeps until a
+// notify after the sequence read, and always reacquires the mutex before
+// returning, including on TimedOut and on error after the sleep. Spurious
+// returns are possible: callers loop on their predicate.
+// waiters counts sleepers registered under the associated mutex, so a
+// notifier holding that mutex can skip the wake syscall when it is zero.
+pub struct Condvar { sequence: ptr, waiters: ptr }
+pub fn condvar(region: &Region) -> core::result::Result<Condvar, Error> {
+    let at: core::result::Result<ptr, Error> = region.allocate(16);
+    if (at.is_err()) { return core::result::Err(at.unwrap_err()); }
+    let base: ptr = at.unwrap();
+    return core::result::Ok(Condvar { sequence: base, waiters: base + 8 });
+}
+pub impl Condvar {
+    pub fn borrow(&self) -> &Condvar { return self; }
+    fn word(&self) -> std::atomic::Atomic32 { return std::atomic::at32(self.sequence); }
+    pub fn wait(&self, held: &Mutex) -> core::result::Result<Wait, Error> {
+        let seen: u32 = self.word().load(std::atomic::Load::Acquire);
+        let count: std::atomic::Atomic32 = std::atomic::at32(self.waiters);
+        count.fetch_add(1, std::atomic::Ordering::Relaxed);
+        let released: core::result::Result<i32, Error> = held.unlock();
+        if (released.is_err()) { count.fetch_sub(1, std::atomic::Ordering::Relaxed); return core::result::Err(released.unwrap_err()); }
+        let slept: core::result::Result<Wait, Error> = futex_wait(self.sequence, seen);
+        let again: core::result::Result<i32, Error> = held.lock_contended();
+        if (again.is_err()) { return core::result::Err(again.unwrap_err()); }
+        count.fetch_sub(1, std::atomic::Ordering::Relaxed);
+        return slept;
+    }
+    pub fn wait_until(&self, held: &Mutex, deadline: Deadline) -> core::result::Result<Wait, Error> {
+        let seen: u32 = self.word().load(std::atomic::Load::Acquire);
+        let count: std::atomic::Atomic32 = std::atomic::at32(self.waiters);
+        count.fetch_add(1, std::atomic::Ordering::Relaxed);
+        let released: core::result::Result<i32, Error> = held.unlock();
+        if (released.is_err()) { count.fetch_sub(1, std::atomic::Ordering::Relaxed); return core::result::Err(released.unwrap_err()); }
+        let slept: core::result::Result<Wait, Error> = futex_wait_until(self.sequence, seen, deadline);
+        let again: core::result::Result<i32, Error> = held.lock_contended();
+        if (again.is_err()) { return core::result::Err(again.unwrap_err()); }
+        count.fetch_sub(1, std::atomic::Ordering::Relaxed);
+        return slept;
+    }
+    // Exact only while holding the mutex the waiters use. A notifier that
+    // reads zero under that mutex and then skips notification loses no
+    // wake: any later waiter registers after the notifier's state change.
+    pub fn has_waiters(&self) -> bool { return std::atomic::at32(self.waiters).load(std::atomic::Load::Relaxed) != 0; }
+    pub fn notify_one(&self) -> core::result::Result<i32, Error> {
+        self.word().fetch_add(1, std::atomic::Ordering::Release);
+        return futex_wake(self.sequence, 1);
+    }
+    pub fn notify_all(&self) -> core::result::Result<i32, Error> {
+        self.word().fetch_add(1, std::atomic::Ordering::Release);
+        return futex_wake(self.sequence, 2147483647);
+    }
+}
+
+// One-time initialization: 0 new, 1 running, 3 running with sleepers, 2 done.
+// begin returns Run to exactly one caller at a time; that caller must call
+// complete or abandon. abandon returns the Once to new and wakes sleepers, one
+// of which then receives Run: there is no poisoned state.
+pub struct Once { state: ptr }
+pub fn once(region: &Region) -> core::result::Result<Once, Error> {
+    let at: core::result::Result<ptr, Error> = region.allocate(8);
+    if (at.is_err()) { return core::result::Err(at.unwrap_err()); }
+    return core::result::Ok(Once { state: at.unwrap() });
+}
+pub impl Once {
+    pub fn borrow(&self) -> &Once { return self; }
+    fn word(&self) -> std::atomic::Atomic32 { return std::atomic::at32(self.state); }
+    pub fn is_complete(&self) -> bool { return self.word().load(std::atomic::Load::Acquire) == 2; }
+    pub fn begin(&self) -> core::result::Result<Step, Error> {
+        while (true) {
+            let seen: std::atomic::Exchange = self.word().compare_exchange(0, 1, std::atomic::Ordering::Acquire, std::atomic::Load::Acquire);
+            if (std::atomic::swapped(seen)) { return core::result::Ok(Step::Run); }
+            let state: u64 = std::atomic::observed(seen);
+            if (state == 2) { return core::result::Ok(Step::Done); }
+            if (state == 1) { self.word().compare_exchange(1, 3, std::atomic::Ordering::Relaxed, std::atomic::Load::Relaxed); }
+            let slept: core::result::Result<Wait, Error> = futex_wait(self.state, 3);
+            if (slept.is_err()) { return core::result::Err(slept.unwrap_err()); }
+        }
+        return core::result::Err(Error::InvalidState);
+    }
+    fn finish(&self, target: u32) -> core::result::Result<i32, Error> {
+        if (std::atomic::swapped(self.word().compare_exchange(1, target, std::atomic::Ordering::Release, std::atomic::Load::Relaxed))) { return core::result::Ok(0); }
+        if (std::atomic::swapped(self.word().compare_exchange(3, target, std::atomic::Ordering::Release, std::atomic::Load::Relaxed))) {
+            return futex_wake(self.state, 2147483647);
+        }
+        return core::result::Err(Error::InvalidState);
+    }
+    // Err(InvalidState) when no initialization is running.
+    pub fn complete(&self) -> core::result::Result<i32, Error> { return self.finish(2); }
+    pub fn abandon(&self) -> core::result::Result<i32, Error> { return self.finish(0); }
+}
+
+// A lazily initialized shared 64-bit value.
+pub enum Init { Ready(u64), Run }
+pub struct Lazy64 { gate: Once, value: ptr }
+pub fn lazy64(region: &Region) -> core::result::Result<Lazy64, Error> {
+    let gate: core::result::Result<Once, Error> = once(region);
+    if (gate.is_err()) { return core::result::Err(gate.unwrap_err()); }
+    let at: core::result::Result<ptr, Error> = region.allocate(8);
+    if (at.is_err()) { return core::result::Err(at.unwrap_err()); }
+    return core::result::Ok(Lazy64 { gate: gate.unwrap(), value: at.unwrap() });
+}
+pub impl Lazy64 {
+    pub fn borrow(&self) -> &Lazy64 { return self; }
+    // Ready(value) after publication; Run hands this caller the initializer.
+    pub fn get_or_begin(&self) -> core::result::Result<Init, Error> {
+        let step: core::result::Result<Step, Error> = self.gate.begin();
+        if (step.is_err()) { return core::result::Err(step.unwrap_err()); }
+        let run: bool = match (step.unwrap()) { Step::Run -> true, Step::Done -> false };
+        if (run) { return core::result::Ok(Init::Run); }
+        return core::result::Ok(Init::Ready(std::atomic::at64(self.value).load(std::atomic::Load::Acquire)));
+    }
+    pub fn publish(&self, value: u64) -> core::result::Result<u64, Error> {
+        std::atomic::at64(self.value).store(value, std::atomic::Store::Release);
+        let done: core::result::Result<i32, Error> = self.gate.complete();
+        if (done.is_err()) { return core::result::Err(done.unwrap_err()); }
+        return core::result::Ok(value);
+    }
+    pub fn abandon(&self) -> core::result::Result<i32, Error> { return self.gate.abandon(); }
+}
+
+// Reusable barrier for a fixed party count. wait returns true for exactly one
+// party (the last to arrive) in each generation.
+pub struct Barrier { arrived: ptr, generation: ptr, parties: u32 }
+pub fn barrier(region: &Region, parties: i32) -> core::result::Result<Barrier, Error> {
+    if (parties <= 0) { return core::result::Err(Error::InvalidSize); }
+    let at: core::result::Result<ptr, Error> = region.allocate(16);
+    if (at.is_err()) { return core::result::Err(at.unwrap_err()); }
+    let base: ptr = at.unwrap();
+    return core::result::Ok(Barrier { arrived: base, generation: base + 8, parties: parties as u32 });
+}
+pub impl Barrier {
+    pub fn borrow(&self) -> &Barrier { return self; }
+    pub fn wait(&self) -> core::result::Result<bool, Error> {
+        let generation: std::atomic::Atomic32 = std::atomic::at32(self.generation);
+        let seen: u32 = generation.load(std::atomic::Load::Acquire);
+        let arrived: u32 = std::atomic::at32(self.arrived).fetch_add(1, std::atomic::Ordering::AcqRel) + 1;
+        if (arrived == self.parties) {
+            std::atomic::at32(self.arrived).store(0, std::atomic::Store::Relaxed);
+            generation.fetch_add(1, std::atomic::Ordering::Release);
+            let woke: core::result::Result<i32, Error> = futex_wake(self.generation, 2147483647);
+            if (woke.is_err()) { return core::result::Err(woke.unwrap_err()); }
+            return core::result::Ok(true);
+        }
+        while (generation.load(std::atomic::Load::Acquire) == seen) {
+            let slept: core::result::Result<Wait, Error> = futex_wait(self.generation, seen);
+            if (slept.is_err()) { return core::result::Err(slept.unwrap_err()); }
+        }
+        return core::result::Ok(false);
+    }
+}

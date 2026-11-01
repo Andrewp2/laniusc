@@ -1738,6 +1738,11 @@
         "docs/stdlib-process-context.md"
       ]
     },
+    "std::atomic": {
+      "guides": [
+        "docs/stdlib-concurrency.md"
+      ]
+    },
     "std::atomic_file": {
       "guides": [
         "docs/stdlib-atomic-files.md",
@@ -1745,6 +1750,11 @@
         "docs/extended-kv.md"
       ],
       "note": "Bounded sequential publication implemented in Lanius over TempFile and existing Linux descriptor calls. Keep one in-place manual owner; destination bytes are copied before effects. Replace/NoReplace commit syncs and closes the file once, renames once, immediately records Published/disarms deletion, then syncs the anchored directory. Receipts preserve NotPublished/Published/Unconfirmed visibility, confirmed bytes, current resources and separate primary/latest/cleanup errors. Cached commit is inert; explicit directory-sync retry never writes or renames. Failed removal retains recovery ownership; cleanup never unlinks the destination. Native Linux x86_64/kernel 7.0.0-38-generic/ext4 under /tmp passes owner 9, bounds 25, publication 6 and faults 26: 66 process invocations across four groups including baselines; preliminary smoke overlaps. A live-anchor Published checkpoint precedes ACK-controlled explicit sync retry. The bounds retry fixes only the oracle owned-fd write selector and reuses the unchanged probe ELF. Thirty-six CPU ledger controls and Rust --no-run admission are separate from native execution. Actual source/fd ownership is observed before exit. Parent mutation authority must be exclusive/cooperative; attempts/bytes are bounded, blocking time is not. No hostile-directory, network-filesystem, locking, universal power-loss or automatic-destructor guarantee; no new runtime binding or crypto implementation."
+    },
+    "std::channel": {
+      "guides": [
+        "docs/stdlib-concurrency.md"
+      ]
     },
     "std::clock": {
       "guides": [
@@ -1957,13 +1967,18 @@
         "docs/stdlib-streams.md"
       ]
     },
+    "std::sync": {
+      "guides": [
+        "docs/stdlib-concurrency.md"
+      ]
+    },
     "std::thread": {
       "guides": [
         "docs/library-remaining-api-audit.md",
         "docs/library-host-prerequisites.md"
       ],
       "profile": "Unbound host declarations",
-      "note": "Thread spawn/join/yield/current-ID extern declarations have no runtime binding. Source metadata helpers do not implement threads."
+      "note": "Thread spawn/join/yield/current-ID extern declarations have no runtime binding. Source metadata helpers do not implement threads. Parallel work executes through std::worker forked processes; see docs/stdlib-concurrency.md."
     },
     "std::temp_dir": {
       "guides": [
@@ -2009,6 +2024,11 @@
       ],
       "profile": "Protected legacy",
       "note": "Protected active formal vector specification/template contract and a remaining binary-heap backing dependency. The mini compiler and extractor use List; the dependency ledger records the formal contract and separate heap-migration compiler dependency. Legacy failure/owner policies differ from alloc::vec; ordinary programs use alloc::vec. This source inventory creates no compatibility alias or new support promise."
+    },
+    "std::worker": {
+      "guides": [
+        "docs/stdlib-concurrency.md"
+      ]
     },
     "test::assert": {
       "guides": [

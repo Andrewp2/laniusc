@@ -11,6 +11,25 @@ checks 12,032 policy calls as lawful descents and 44,427 two-ended pulls; the
 contract fixture checks exact call counts, interval edges and unchanged
 owner fields. Native receipts use the prebuilt compiler; the two registered
 Rust tests type-check and await a full test-binary run.
+The [concurrency increment](stdlib-concurrency.md) adds four modules for parallel
+work on native Linux x86_64/glibc with libatomic:
+
+- `std::worker`: scoped pools of forked worker processes.
+- `std::atomic`: 4/8-byte atomic words. Each operation takes its own C11
+  order enum, and compare-exchange is strong.
+- `std::sync`: shared `MAP_SHARED` regions, futex waits with monotonic
+  deadlines, and Mutex, Condvar, Once, Lazy64 and Barrier, all without
+  poisoning.
+- `std::channel`: a bounded MPMC `u64` channel with try, blocking and
+  deadline forms and endpoint-count disconnection.
+
+The stress fixture keeps exact invariants: 1,600,000 atomic adds; 400,000
+locked increments; 1 initializer among 16 racers; 200 barrier leaders; and
+120,000/80,000/50,000 channel messages at capacity 64/1/7 with no loss,
+duplication or per-sender FIFO violation. Those 50 runs passed, alongside
+20 runs each of a parallel word count matching `wc` and a three-stage
+pipeline. In-process threads remain blocked on checked callback entry, so
+`std::thread` stays unbound.
 The preceding
 [borrowed collection lookup](stdlib-borrowed-lookup.md) adds sixteen point
 methods across hash/tree maps and sets with explicit query laws and stored
@@ -2099,7 +2118,9 @@ five groups in 24.18 seconds, including 59 reached allocation failures and a
 stream receipts remain distinct from these selected current program gates.
 The [current concurrent-server increment](library-server-concurrency-plan.md)
 has the finite passes recorded above; its complete acceptance remains open.
-Executable worker threads also remain part of the full goal. The
+Parallel [forked workers, atomics, futex synchronization and bounded
+channels](stdlib-concurrency.md) execute separately. In-process worker
+threads remain part of the full goal. The
 [concurrency admission audit](library-concurrency-dependencies.md) records
 separate compiler/runtime boundaries. The historical execution receipts cover
 native Linux x86-64 CPU programs built by the GPU compiler.
