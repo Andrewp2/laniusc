@@ -50,6 +50,14 @@ data tailorings, without locale discovery, CLDR services or additional
 language rules. In default titlecasing, a combining dot following the
 first cased character receives its lowercase mapping, as R3 specifies.
 
+Per-scalar lookups go through a two-level table,
+`ext::unicode_case_fast_data`. It is generated from the same pinned files by
+`tools/unicode17/generate_case_fast.py`. A scalar with no SpecialCasing row,
+and for folding no `F`/`T` record, takes its simple mapping from the table
+without a search. Root-locale ASCII is handled directly. Results and work
+units are unchanged; timings are in the
+[uconv guide](extended-unicode-uconv.md#quick-check).
+
 Folding uses the full `C` and `F` mappings from `CaseFolding.txt`.
 `Turkic` additionally applies the `T` overrides; both `Root` and
 `Lithuanian` use default folding. Folding is independent of casing

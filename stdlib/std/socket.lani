@@ -400,6 +400,33 @@ pub impl Socket {
     }
 }
 pub impl Datagram { pub fn is_truncated(&self) -> bool { return self.copied < self.full_length; } }
+fn retry_later(error: core::io::Error) -> bool { return core::io::is_interrupted(error) || match (error) { core::io::Error::WouldBlock -> true, _ -> false }; }
+pub impl Socket {
+    // UDP with a deadline: EAGAIN and EINTR wait for readiness against the same
+    // absolute deadline; expiry is Host(110) (ETIMEDOUT), as for connect_until.
+    // Use a nonblocking socket, so a readiness report never leaves a call blocked.
+    pub fn send_to_until(&self, input: core::slice::View<u8>, endpoint: core::net::SocketAddr, deadline: core::time::Deadline) -> core::result::Result<i32,core::io::Error> {
+        while (true) {
+            let sent: core::result::Result<i32,core::io::Error> = self.send_to(input,endpoint);
+            if (sent.is_ok() || !retry_later(sent.unwrap_err())) { return sent; }
+            let waited: core::result::Result<Ready,core::io::Error> = self.wait_until(false,true,deadline);
+            if (waited.is_err()) { return core::result::Err(waited.unwrap_err()); }
+            if (waited.unwrap().timed_out) { return core::result::Err(core::io::Error::Host(110)); }
+        }
+        return core::result::Err(core::io::Error::InvalidCount);
+    }
+    // Receive one datagram before the deadline; Host(110) once it passes.
+    pub fn receive_from_until(&self, output: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<Datagram,core::io::Error> {
+        while (true) {
+            let waited: core::result::Result<Ready,core::io::Error> = self.wait_until(true,false,deadline);
+            if (waited.is_err()) { return core::result::Err(waited.unwrap_err()); }
+            if (waited.unwrap().timed_out) { return core::result::Err(core::io::Error::Host(110)); }
+            let got: core::result::Result<Datagram,core::io::Error> = self.receive_from(output);
+            if (got.is_ok() || !retry_later(got.unwrap_err())) { return got; }
+        }
+        return core::result::Err(core::io::Error::InvalidCount);
+    }
+}
 pub impl core::io::Read for Socket {
     pub fn read(&self, output: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> {
         if (!core::io::valid_range(offset,count)) { return core::result::Err(core::io::Error::InvalidInput); }

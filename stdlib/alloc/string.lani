@@ -52,6 +52,21 @@ pub impl core::ordering::Comparator<String,core::text::Text> for TextKey {
         return core::ordering::Equal;
     }
 }
+// Prefix-family order for ordered navigation: stored Strings that begin with
+// the query bytes are Equal; others keep unsigned byte order against the
+// query. The Equal run is contiguous, so range_bounds_by(Included(prefix),
+// Included(prefix), ...) traverses every stored String with that prefix.
+// Point lookups (get_by etc.) need one key class; use TextKey there.
+pub struct TextPrefix {}
+pub impl TextPrefix { pub fn borrow(&self) -> &TextPrefix { return self; } }
+pub impl core::ordering::Comparator<String,core::text::Text> for TextPrefix {
+    pub fn compare(&self, stored:String, query:core::text::Text) -> core::ordering::Ordering {
+        let text:core::text::Text = stored.as_text();
+        if (text.starts_with(query)) { return core::ordering::Equal; }
+        if (text.compare(query) < 0) { return core::ordering::Less; }
+        return core::ordering::Greater;
+    }
+}
 
 pub fn new() -> String {
     let bytes: alloc::vec::Vec<u8> = alloc::vec::new();

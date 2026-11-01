@@ -1,0 +1,152 @@
+// csv-to-json: read RFC 4180 CSV from stdin (first record is the header) and
+// print a JSON array with one object per data record, keys in header order.
+// `--csv` instead re-emits the records as canonical CSV (every field quoted,
+// CRLF). Output is published only after the whole input validates.
+// Exit 0 ok, 1 usage, 2 invalid CSV or limit, 3 I/O, 4 out of memory.
+module app::main;
+import alloc::string;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::csv;
+import ext::json_stream;
+import std::args;
+import std::signal;
+import std::stream;
+
+struct Convert {
+    csv_mode: bool, header: ext::csv::Record, have_header: bool,
+    out: ext::json_stream::Writer, bytes: alloc::vec::Vec<u8>, failed: i32,
+}
+
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value), count);
+    return core::slice::View { values: bytes, start: 0, length: count };
+}
+fn put(target: std::stream::Descriptor, view: core::slice::View<u8>) -> bool {
+    return core::io::write_all<std::stream::Descriptor>(target.borrow(), view.values, view.start, view.length).is_ok();
+}
+fn csv_status(error: ext::csv::Error) -> i32 {
+    let status: i32 = match (error) { ext::csv::Error::AllocationFailed -> 4, _ -> 2 };
+    if (status == 2) { put(std::stream::stderr(), literal("csv-to-json: invalid CSV or limit\n", 34)); }
+    return status;
+}
+fn json_status(error: ext::json_stream::Error) -> i32 {
+    let status: i32 = match (error.kind) { ext::json_stream::ErrorKind::AllocationFailed -> 4, _ -> 2 };
+    if (status == 2) { put(std::stream::stderr(), literal("csv-to-json: output limit\n", 26)); }
+    return status;
+}
+
+impl Convert {
+    fn borrow(&self) -> &Convert { return self; }
+    fn record(&self, decoder: &ext::csv::Decoder) -> i32 {
+        if (self.csv_mode) {
+            let taken: ext::csv::Record = core::option::unwrap(decoder.take_record());
+            let encoded = ext::csv::encode_record(taken);
+            taken.destroy();
+            if (encoded.is_err()) { return csv_status(encoded.unwrap_err()); }
+            let text: alloc::string::String = encoded.unwrap();
+            let view: core::slice::View<u8> = core::slice::View { values: text.as_bytes(), start: 0, length: text.byte_len() };
+            let appended = self.bytes.try_extend(view);
+            text.destroy();
+            if (appended.is_err()) { return 4; }
+            return 0;
+        }
+        if (!self.have_header) {
+            self.header = core::option::unwrap(decoder.take_record());
+            self.have_header = true;
+            return 0;
+        }
+        let begun = self.out.begin_object();
+        if (begun.is_err()) { return json_status(begun.unwrap_err()); }
+        let count: i32 = core::option::unwrap(decoder.field_count());
+        let index: i32 = 0;
+        while (index < count) {
+            let named = self.out.key(core::result::unwrap(self.header.field(index)));
+            if (named.is_err()) { return json_status(named.unwrap_err()); }
+            let valued = self.out.string(core::result::unwrap(decoder.field(index)));
+            if (valued.is_err()) { return json_status(valued.unwrap_err()); }
+            index += 1;
+        }
+        let ended = self.out.end_object();
+        if (ended.is_err()) { return json_status(ended.unwrap_err()); }
+        return 0;
+    }
+    fn destroy(&self) { self.header.destroy(); self.out.destroy(); self.bytes.destroy(); }
+}
+
+fn run(convert: &Convert) -> i32 {
+    let prepared = ext::csv::decoder(ext::csv::default_options());
+    if (prepared.is_err()) { return 4; }
+    let decoder: ext::csv::Decoder = prepared.unwrap();
+    if (!convert.csv_mode) {
+        let opened = convert.out.begin_array();
+        if (opened.is_err()) { decoder.destroy(); return 4; }
+    }
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let buffer: [u8; 1024] = [0; 1024];
+    let status: i32 = 0;
+    while (status == 0) {
+        let received = source.read(buffer, 0, 1024);
+        if (received.is_err()) {
+            if (core::io::is_interrupted(received.unwrap_err())) { continue; }
+            status = 3; break;
+        }
+        let count: i32 = received.unwrap();
+        if (count == 0) {
+            let ended = decoder.finish();
+            if (ended.is_err()) { status = csv_status(ended.unwrap_err()); break; }
+            if (ended.unwrap()) { status = convert.record(decoder.borrow()); }
+            break;
+        }
+        let position: i32 = 0;
+        while (status == 0 && position < count) {
+            let fed = decoder.feed(buffer, position, count - position);
+            if (fed.is_err()) { status = csv_status(fed.unwrap_err()); break; }
+            let progress: ext::csv::Progress = fed.unwrap();
+            position += progress.consumed;
+            if (progress.record) { status = convert.record(decoder.borrow()); }
+        }
+    }
+    decoder.destroy();
+    if (status != 0) { return status; }
+    let target: std::stream::Descriptor = std::stream::stdout();
+    if (convert.csv_mode) {
+        if (!put(target, convert.bytes.as_view())) { return 3; }
+        return 0;
+    }
+    let closed = convert.out.end_array();
+    if (closed.is_err()) { return json_status(closed.unwrap_err()); }
+    if (convert.out.flush_to<std::stream::Descriptor>(target.borrow()).is_err()) { return 3; }
+    if (!put(target, literal("\n", 1))) { return 3; }
+    return 0;
+}
+
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe, std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let captured = std::args::snapshot(1, 1, 64);
+    if (captured.is_err()) { put(std::stream::stderr(), literal("usage: csv_to_json [--csv] < input.csv\n", 39)); return 1; }
+    let arguments = captured.unwrap();
+    let csv_mode: bool = false;
+    if (arguments.len() == 1) {
+        let view: core::slice::View<u8> = core::option::unwrap(arguments.get(0));
+        let flag: core::slice::View<u8> = literal("--csv", 5);
+        let same: bool = view.length == 5;
+        let index: i32 = 0;
+        while (same && index < 5) { same = view.values[view.start + index] == flag.values[index]; index += 1; }
+        if (!same) { arguments.destroy(); put(std::stream::stderr(), literal("usage: csv_to_json [--csv] < input.csv\n", 39)); return 1; }
+        csv_mode = true;
+    }
+    arguments.destroy();
+    let made = ext::json_stream::writer(4, 268435456);
+    if (made.is_err()) { return 4; }
+    let convert: Convert = Convert { csv_mode: csv_mode, header: ext::csv::new(), have_header: false,
+        out: made.unwrap(), bytes: alloc::vec::new(), failed: 0 };
+    let status: i32 = run(convert.borrow());
+    convert.destroy();
+    return status;
+}

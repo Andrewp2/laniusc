@@ -1,0 +1,141 @@
+// Self-checking signal-set, mask, disposition, signalfd and resource-limit
+// contracts. Exit 0 means every check held; any other code names the check.
+module app::main;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import std::command;
+import std::command_raw;
+import std::event;
+import std::host_clocks;
+import std::rlimit;
+import std::signal;
+
+fn code(error: std::signal::Error) -> i32 {
+    return match (error) {
+        std::signal::Error::Host(value) -> value, std::signal::Error::Closed -> 1000, std::signal::Error::Bounds -> 1001,
+        std::signal::Error::InvalidResult -> 1002, std::signal::Error::Pending(n) -> 3000 + n
+    };
+}
+fn limit_code(error: std::rlimit::Error) -> i32 {
+    return match (error) { std::rlimit::Error::Host(value) -> value, std::rlimit::Error::Bounds -> 1001, std::rlimit::Error::InvalidResult -> 1002, std::rlimit::Error::InvalidLimit -> 1003 };
+}
+fn failed(result: core::result::Result<i32, std::signal::Error>) -> i32 { if (result.is_ok()) { return 0; } return code(result.unwrap_err()); }
+fn action_id(result: core::result::Result<std::signal::Action, std::signal::Error>) -> i32 {
+    if (result.is_err()) { return 0 - code(result.unwrap_err()); }
+    return match (result.unwrap()) { std::signal::Action::Default -> 1, std::signal::Action::Ignore -> 2, std::signal::Action::Handler -> 3 };
+}
+fn bytes(value: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),n); return core::slice::view(raw,n).unwrap(); }
+fn later(milliseconds: u64) -> core::time::Deadline { return core::time::deadline_at(std::host_clocks::instant(std::host_clocks::Clock::Monotonic).unwrap().checked_add(core::time::from_millis(milliseconds)).unwrap()); }
+fn me() -> i32 { return std::command_raw::word(39,0,0,0) as i32; }
+fn raise(signal: i32) -> bool { return std::command_raw::word(62,me() as i64,signal as i64,0) == 0; }
+fn shell(script: str, n: i32, mask: std::command::ChildMask) -> std::command::Child {
+    let parts: [core::slice::View<u8>;3] = [bytes("/bin/sh",7),bytes("-c",2),bytes(script,n)]; let none: [core::slice::View<u8>;0] = [];
+    let request = std::command::request(bytes("/bin/sh",7),core::slice::view(parts,3).unwrap(),core::slice::view(none,0).unwrap());
+    request.signal_mask = mask;
+    return match (std::command::spawn(request).unwrap()) { std::command::Spawn::Child(child) -> child, _ -> lost() };
+}
+fn lost() -> std::command::Child { assert(false); return lost(); }
+fn main() -> i32 {
+    // Sets and numbering.
+    let term = std::signal::of(std::signal::Signal::Terminate);
+    if (!term.contains(std::signal::Signal::Terminate) || term.bits() != 16384 || term.count() != 1 || term.first() != 15) { return 1; }
+    if (std::signal::number(std::signal::Signal::Other(0)) != 0 || std::signal::number(std::signal::Signal::Other(65)) != 0 || std::signal::number(std::signal::Signal::Other(40)) != 40) { return 2; }
+    if (term.with(std::signal::Signal::Other(99)).bits() != term.bits() || term.contains(std::signal::Signal::Other(99))) { return 3; }
+    if (!std::signal::from_number(0).is_none() || !std::signal::from_number(65).is_none() || std::signal::number(std::signal::from_number(10).unwrap()) != 10) { return 4; }
+    let named: bool = match (std::signal::from_number(28).unwrap()) { std::signal::Signal::WindowChange -> true, _ -> false };
+    let other: bool = match (std::signal::from_number(40).unwrap()) { std::signal::Signal::Other(n) -> n == 40, _ -> false };
+    if (!named || !other || std::signal::full().count() != 64 || !std::signal::full().contains_number(64) || std::signal::empty().first() != 0) { return 5; }
+    let pair = term.with(std::signal::Signal::Child);
+    if (pair.count() != 2 || pair.without(std::signal::Signal::Terminate).first() != 17 || pair.difference(term).bits() != 65536 || pair.intersection(term).bits() != 16384) { return 6; }
+    // Masks and pending signals.
+    let initial = std::signal::mask().unwrap();
+    let user1 = std::signal::of(std::signal::Signal::User1);
+    if (std::signal::block(user1).unwrap().bits() != initial.bits() || !std::signal::mask().unwrap().contains(std::signal::Signal::User1)) { return 10; }
+    if (std::signal::block(std::signal::of(std::signal::Signal::Kill)).is_err() || std::signal::mask().unwrap().contains(std::signal::Signal::Kill)) { return 11; }
+    if (!raise(10) || !std::signal::pending().unwrap().contains(std::signal::Signal::User1)) { return 12; }
+    let quick = std::signal::receiver(user1,std::signal::Mode::Nonblocking).unwrap();
+    let got = quick.try_read().unwrap();
+    if (got.is_none()) { return 13; }
+    let delivery = got.unwrap();
+    if (!delivery.is(std::signal::Signal::User1) || delivery.code != 0 || delivery.pid != me() || !delivery.from_user()) { return 14; }
+    if (!quick.try_read().unwrap().is_none() || std::signal::pending().unwrap().contains(std::signal::Signal::User1)) { return 15; }
+    let again = quick.read(); if (again.is_err() == false || code(again.unwrap_err()) != 11) { return 16; }
+    if (quick.close().unwrap() != 0 || failed(quick.close()) != 1000 || quick.read().is_ok()) { return 17; }
+    // A blocking receiver.
+    let slow = std::signal::receiver(user1,std::signal::Mode::Blocking).unwrap();
+    if (!raise(10) || slow.read().unwrap().signal != 10 || slow.close().unwrap() != 0) { return 18; }
+    let unblocked = std::signal::set_mask(initial); if (unblocked.is_err() || std::signal::mask().unwrap().bits() != initial.bits()) { return 19; }
+    // Dispositions.
+    let user2 = std::signal::Signal::User2;
+    if (action_id(std::signal::action(user2)) != 1 || action_id(std::signal::replace_disposition(user2,std::signal::Disposition::Ignore)) != 1 || action_id(std::signal::action(user2)) != 2) { return 20; }
+    if (action_id(std::signal::replace_disposition(std::signal::Signal::Kill,std::signal::Disposition::Ignore)) != -22 || action_id(std::signal::action(std::signal::Signal::Other(0))) != -1001) { return 21; }
+    if (std::signal::set_disposition(std::signal::Signal::Other(70),std::signal::Disposition::Default).is_ok()) { return 22; }
+    // handle(): an ignored signal is reset, blocked, received and restored.
+    let bad = std::signal::handle(std::signal::of(std::signal::Signal::Stop)); if (bad.is_ok() || code(bad.unwrap_err()) != 1001) { return 23; }
+    let none = std::signal::handle(std::signal::empty()); if (none.is_ok() || code(none.unwrap_err()) != 1001) { return 24; }
+    let handled = std::signal::handle(std::signal::of(user2)).unwrap();
+    if (action_id(std::signal::action(user2)) != 1 || !std::signal::mask().unwrap().contains(user2) || handled.previous_mask().bits() != initial.bits()) { return 25; }
+    if (!raise(12)) { return 26; }
+    let stuck = handled.restore(); if (stuck.is_ok() || code(stuck.unwrap_err()) != 3012 || !handled.is_open()) { return 27; }
+    let caught = handled.try_read().unwrap(); if (caught.is_none() || caught.unwrap().signal != 12) { return 28; }
+    if (handled.restore().unwrap() != 0 || handled.is_open() || failed(handled.restore()) != 1000) { return 29; }
+    if (action_id(std::signal::action(user2)) != 2 || std::signal::mask().unwrap().contains(user2)) { return 30; }
+    if (std::signal::set_disposition(user2,std::signal::Disposition::Default).unwrap() != 0) { return 31; }
+    // Through std::event: a child signals us, then its exit queues Child.
+    let storage: [std::event::Event;4] = [std::event::empty_event();4]; let events = core::slice::view(storage,4).unwrap();
+    let ev = std::event::create().unwrap();
+    let watched = std::signal::handle(pair).unwrap();
+    if (ev.add(watched.raw_fd(),std::event::readable(),5).unwrap() != 0 || ev.wait(events,0).unwrap() != 0) { return 40; }
+    let sender = shell("kill -TERM $PPID; exit 3",24,std::command::ChildMask::Clear); let sender_pid: i32 = sender.id().unwrap();
+    let saw_term: bool = false; let saw_child: bool = false; let rounds: i32 = 0;
+    while ((!saw_term || !saw_child) && rounds < 100) {
+        let ready = ev.wait_until(events,later(3000)).unwrap(); if (ready != 1 || storage[0].token != 5) { return 41; }
+        let next = watched.try_read().unwrap();
+        while (next.is_some()) {
+            let one = next.unwrap();
+            if (one.is(std::signal::Signal::Terminate)) { if (one.pid != sender_pid || one.code != 0) { return 42; } saw_term = true; }
+            if (one.is(std::signal::Signal::Child)) { if (one.pid != sender_pid || one.code != 1 || one.status != 3) { return 43; } saw_child = true; }
+            next = watched.try_read().unwrap();
+        }
+        rounds += 1;
+    }
+    if (!saw_term || !saw_child || sender.wait().unwrap().code.unwrap() != 3) { return 44; }
+    // Children get a cleared mask by default, the parent's with Inherit.
+    let cleared = shell("kill -TERM $$; exit 3",21,std::command::ChildMask::Clear);
+    if (cleared.wait().unwrap().signal.unwrap_or(0) != 15) { return 45; }
+    let inherited = shell("kill -TERM $$; exit 3",21,std::command::ChildMask::Inherit);
+    if (inherited.wait().unwrap().code.unwrap_or(0) != 3) { return 46; }
+    // Drain the queued Child signals, then restore.
+    let drained = watched.try_read().unwrap(); while (drained.is_some()) { drained = watched.try_read().unwrap(); }
+    if (ev.remove(watched.raw_fd()).unwrap() != 0 || watched.restore().unwrap() != 0 || ev.close().unwrap() != 0) { return 47; }
+    if (std::signal::mask().unwrap().bits() != initial.bits()) { return 48; }
+    // Resource limits.
+    let files = std::rlimit::get(std::rlimit::Resource::OpenFiles).unwrap();
+    if (files.soft > files.hard || std::rlimit::number(std::rlimit::Resource::RealtimeMicros) != 15 || !std::rlimit::limit(std::rlimit::unlimited(),1).soft_unlimited()) { return 60; }
+    let inverted = std::rlimit::set(std::rlimit::Resource::OpenFiles,std::rlimit::limit(files.hard,files.hard-1));
+    if (inverted.is_ok() || limit_code(inverted.unwrap_err()) != 1003) { return 61; }
+    let previous = std::rlimit::set(std::rlimit::Resource::OpenFiles,files.with_soft(3)).unwrap();
+    if (previous.soft != files.soft || previous.hard != files.hard || std::rlimit::get(std::rlimit::Resource::OpenFiles).unwrap().soft != 3) { return 62; }
+    let pipe: [i32;2] = [-1;2]; if (std::command_raw::make_pipe(pipe) != -24) { return 63; }
+    if (std::rlimit::set(std::rlimit::Resource::OpenFiles,files.with_soft(40)).is_err()) { return 64; }
+    let inherits = shell("test \"$(ulimit -n)\" = 40",24,std::command::ChildMask::Clear);
+    if (inherits.wait().unwrap().code.unwrap_or(9) != 0) { return 65; }
+    if (std::rlimit::set(std::rlimit::Resource::OpenFiles,files).is_err() || std::command_raw::make_pipe(pipe) != 0) { return 66; }
+    std::command_raw::close(pipe[0]); std::command_raw::close(pipe[1]);
+    if (!files.hard_unlimited()) {
+        let raised = std::rlimit::set(std::rlimit::Resource::OpenFiles,std::rlimit::limit(files.soft,files.hard+1));
+        if (raised.is_ok()) { std::rlimit::set(std::rlimit::Resource::OpenFiles,files); } else { if (limit_code(raised.unwrap_err()) != 1) { return 67; } }
+    }
+    // prlimit on a child.
+    let sleeper = shell("exec sleep 5",12,std::command::ChildMask::Clear); let pid: i32 = sleeper.id().unwrap();
+    let theirs = std::rlimit::set_for(pid,std::rlimit::Resource::OpenFiles,files.with_soft(16)).unwrap();
+    if (theirs.soft != files.soft || theirs.hard != files.hard || std::rlimit::get_for(pid,std::rlimit::Resource::OpenFiles).unwrap().soft != 16) { return 68; }
+    if (std::rlimit::get(std::rlimit::Resource::OpenFiles).unwrap().soft != files.soft) { return 69; }
+    let none_pid = std::rlimit::get_for(0,std::rlimit::Resource::Core); if (none_pid.is_ok() || limit_code(none_pid.unwrap_err()) != 1001) { return 70; }
+    if (sleeper.signal(9).is_err() || sleeper.wait().unwrap().signal.unwrap_or(0) != 9) { return 71; }
+    let gone = std::rlimit::get_for(pid,std::rlimit::Resource::OpenFiles); if (gone.is_ok() || limit_code(gone.unwrap_err()) != 3) { return 72; }
+    return 0;
+}

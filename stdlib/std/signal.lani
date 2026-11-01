@@ -1,36 +1,282 @@
-// Explicit Linux x86_64 process-wide signal dispositions. No custom handlers,
-// callbacks or trampolines. See docs/stdlib-signals.md.
+// Explicit Linux x86_64 signals: process-wide dispositions, the calling
+// thread's block mask, pending sets and signalfd delivery. No custom handlers,
+// callbacks or trampolines: "handled" signals are blocked and read
+// synchronously from a signalfd, which std::event can watch. No allocation.
+// See docs/stdlib-signals.md.
 module std::signal;
 import core::io;
 import core::mem;
+import core::option;
 import core::result;
 import core::slice;
 import std::linux;
 
-pub enum Signal { Hangup, Interrupt, Quit, User1, User2, BrokenPipe, Alarm, Terminate, Child }
+// Other(n) names any signal 1..64 without a variant (including realtime
+// signals 34..64). Other(n) with n outside 1..64 is invalid: number() is 0.
+pub enum Signal { Hangup, Interrupt, Quit, User1, User2, BrokenPipe, Alarm, Terminate, Child, Abort, Kill, Segfault, Continue, Stop, TerminalStop, CpuLimit, FileSizeLimit, WindowChange, Other(i32) }
 pub enum Disposition { Default, Ignore }
-fn number(signal: Signal) -> i64 {
-    return match (signal) { Signal::Hangup -> 1, Signal::Interrupt -> 2, Signal::Quit -> 3, Signal::User1 -> 10, Signal::User2 -> 12, Signal::BrokenPipe -> 13, Signal::Alarm -> 14, Signal::Terminate -> 15, Signal::Child -> 17 };
+// What rt_sigaction reports: Handler is any installed handler address,
+// which this library never installs itself.
+pub enum Action { Default, Ignore, Handler }
+// Host(errno) for kernel errors; Bounds for invalid signals, empty sets or
+// uncatchable Kill/Stop in a handled set; Pending(n) when restore() finds
+// signal n still pending.
+pub enum Error { Host(i32), Bounds, Closed, Pending(i32), InvalidResult }
+
+// The Linux x86_64 number, or 0 for an invalid Other.
+pub fn number(signal: Signal) -> i32 {
+    return match (signal) {
+        Signal::Hangup -> 1, Signal::Interrupt -> 2, Signal::Quit -> 3, Signal::User1 -> 10, Signal::User2 -> 12, Signal::BrokenPipe -> 13,
+        Signal::Alarm -> 14, Signal::Terminate -> 15, Signal::Child -> 17, Signal::Abort -> 6, Signal::Kill -> 9, Signal::Segfault -> 11,
+        Signal::Continue -> 18, Signal::Stop -> 19, Signal::TerminalStop -> 20, Signal::CpuLimit -> 24, Signal::FileSizeLimit -> 25,
+        Signal::WindowChange -> 28, Signal::Other(value) -> valid(value)
+    };
+}
+fn valid(value: i32) -> i32 { if (value < 1 || value > 64) { return 0; } return value; }
+// The named variant for 1..64, Other(n) for unnamed numbers, None otherwise.
+pub fn from_number(value: i32) -> core::option::Option<Signal> {
+    if (value < 1 || value > 64) { return core::option::None(); }
+    if (value == 1) { return core::option::Some(Signal::Hangup); } if (value == 2) { return core::option::Some(Signal::Interrupt); }
+    if (value == 3) { return core::option::Some(Signal::Quit); } if (value == 6) { return core::option::Some(Signal::Abort); }
+    if (value == 9) { return core::option::Some(Signal::Kill); } if (value == 10) { return core::option::Some(Signal::User1); }
+    if (value == 11) { return core::option::Some(Signal::Segfault); } if (value == 12) { return core::option::Some(Signal::User2); }
+    if (value == 13) { return core::option::Some(Signal::BrokenPipe); } if (value == 14) { return core::option::Some(Signal::Alarm); }
+    if (value == 15) { return core::option::Some(Signal::Terminate); } if (value == 17) { return core::option::Some(Signal::Child); }
+    if (value == 18) { return core::option::Some(Signal::Continue); } if (value == 19) { return core::option::Some(Signal::Stop); }
+    if (value == 20) { return core::option::Some(Signal::TerminalStop); } if (value == 24) { return core::option::Some(Signal::CpuLimit); }
+    if (value == 25) { return core::option::Some(Signal::FileSizeLimit); } if (value == 28) { return core::option::Some(Signal::WindowChange); }
+    return core::option::Some(Signal::Other(value));
+}
+
+fn linux_error(error: std::linux::Error) -> Error {
+    return match (error) { std::linux::Error::System(code) -> Error::Host(code), _ -> Error::InvalidResult };
+}
+fn call(number: i64, arguments: [std::linux::Argument], count: i32) -> core::result::Result<i64, Error> {
+    let result: core::result::Result<i64, std::linux::Error> = std::linux::call(number,core::slice::view(arguments,count).unwrap());
+    if (result.is_err()) { return core::result::Err(linux_error(result.unwrap_err())); }
+    return core::result::Ok(result.unwrap());
+}
+fn zero_status(result: core::result::Result<i64, Error>) -> core::result::Result<i32, Error> {
+    if (result.is_err()) { return core::result::Err(result.unwrap_err()); }
+    if (result.unwrap() != 0) { return core::result::Err(Error::InvalidResult); }
+    return core::result::Ok(0);
+}
+
+// A set of signals 1..64; bit n-1 is signal n, as in the kernel sigset_t.
+pub struct Set { bits: u64 }
+pub fn empty() -> Set { return Set { bits: 0 }; }
+pub fn full() -> Set { let all: i64 = -1; return Set { bits: all as u64 }; }
+pub fn from_bits(bits: u64) -> Set { return Set { bits: bits }; }
+pub fn of(signal: Signal) -> Set { return empty().with(signal); }
+fn bit(signal: Signal) -> u64 { let n: i32 = number(signal); if (n == 0) { return 0; } return (1 as u64) << ((n - 1) as u64); }
+pub impl Set {
+    pub fn borrow(&self) -> &Set { return self; }
+    pub fn bits(&self) -> u64 { return self.bits; }
+    // Invalid signals have no bit: with() leaves the set unchanged.
+    pub fn with(&self, signal: Signal) -> Set { return Set { bits: self.bits | bit(signal) }; }
+    pub fn without(&self, signal: Signal) -> Set { let all: i64 = -1; return Set { bits: self.bits & (bit(signal) ^ (all as u64)) }; }
+    pub fn contains(&self, signal: Signal) -> bool { let b: u64 = bit(signal); return b != 0 && (self.bits & b) != 0; }
+    pub fn contains_number(&self, value: i32) -> bool { if (value < 1 || value > 64) { return false; } return (self.bits & ((1 as u64) << ((value - 1) as u64))) != 0; }
+    pub fn union(&self, other: Set) -> Set { return Set { bits: self.bits | other.bits }; }
+    pub fn intersection(&self, other: Set) -> Set { return Set { bits: self.bits & other.bits }; }
+    pub fn difference(&self, other: Set) -> Set { let all: i64 = -1; return Set { bits: self.bits & (other.bits ^ (all as u64)) }; }
+    pub fn is_empty(&self) -> bool { return self.bits == 0; }
+    pub fn count(&self) -> i32 { let n: i32 = 0; let v: u64 = self.bits; while (v != 0) { v = v & (v - 1); n += 1; } return n; }
+    // Lowest signal number in the set, or 0 when empty.
+    pub fn first(&self) -> i32 { let n: i32 = 1; while (n <= 64) { if (self.contains_number(n)) { return n; } n += 1; } return 0; }
+}
+fn store(words: [i32], at: i32, value: u64) { words[at] = ((value & 4294967295) as u32) as i32; words[at+1] = ((value >> 32) as u32) as i32; }
+fn load(words: [i32], at: i32) -> u64 { let high: u64 = (words[at+1] as u32) as u64; let low: u64 = (words[at] as u32) as u64; return (high << 32) | low; }
+
+// rt_sigprocmask(how, set, old, 8) for the calling thread; returns the
+// previous mask. The kernel silently keeps Kill and Stop unblocked.
+fn procmask(how: i64, set: Set, change: bool) -> core::result::Result<Set, Error> {
+    let words: [i32;4] = [0;4]; store(words,0,set.bits); let empty_address: ptr = 0;
+    let new_set: ptr = core::mem::i32_array_data_ptr(words); if (!change) { new_set = empty_address; }
+    let arguments: [std::linux::Argument;4] = [std::linux::Argument::Word(how),std::linux::Argument::Address(new_set),std::linux::Argument::Address(core::mem::i32_array_data_ptr(words)+8),std::linux::Argument::Word(8)];
+    let done: core::result::Result<i32, Error> = zero_status(call(14,arguments,4));
+    if (done.is_err()) { return core::result::Err(done.unwrap_err()); }
+    return core::result::Ok(Set { bits: load(words,2) });
+}
+// Add set to the calling thread's mask; returns the previous mask.
+pub fn block(set: Set) -> core::result::Result<Set, Error> { return procmask(0,set,true); }
+pub fn unblock(set: Set) -> core::result::Result<Set, Error> { return procmask(1,set,true); }
+// Replace the mask; returns the previous one.
+pub fn set_mask(set: Set) -> core::result::Result<Set, Error> { return procmask(2,set,true); }
+pub fn mask() -> core::result::Result<Set, Error> { return procmask(0,empty(),false); }
+// Signals blocked and pending for this thread or the process.
+pub fn pending() -> core::result::Result<Set, Error> {
+    let words: [i32;2] = [0;2];
+    let arguments: [std::linux::Argument;2] = [std::linux::Argument::Address(core::mem::i32_array_data_ptr(words)),std::linux::Argument::Word(8)];
+    let done: core::result::Result<i32, Error> = zero_status(call(127,arguments,2));
+    if (done.is_err()) { return core::result::Err(done.unwrap_err()); }
+    return core::result::Ok(Set { bits: load(words,0) });
+}
+
+// rt_sigaction(signal, new or NULL, old, 8). Kernel layout: handler, flags,
+// restorer, then the 8-byte mask. SIG_DFL=0 and SIG_IGN=1 need no restorer.
+fn sigaction(signal: i32, replace: bool, handler: i64) -> core::result::Result<Action, Error> {
+    if (signal == 0) { return core::result::Err(Error::Bounds); }
+    let action: [i32;8] = [0;8]; action[0] = handler as i32; let old: [i32;8] = [0;8]; let empty_address: ptr = 0;
+    let new_action: ptr = core::mem::i32_array_data_ptr(action); if (!replace) { new_action = empty_address; }
+    let arguments: [std::linux::Argument;4] = [std::linux::Argument::Word(signal as i64),std::linux::Argument::Address(new_action),std::linux::Argument::Address(core::mem::i32_array_data_ptr(old)),std::linux::Argument::Word(8)];
+    let done: core::result::Result<i32, Error> = zero_status(call(13,arguments,4));
+    if (done.is_err()) { return core::result::Err(done.unwrap_err()); }
+    let address: u64 = load(old,0);
+    if (address == 0) { return core::result::Ok(Action::Default); } if (address == 1) { return core::result::Ok(Action::Ignore); }
+    return core::result::Ok(Action::Handler);
 }
 // This changes the disposition for every thread in the calling process.
 // Success returns zero; kernel errors are preserved as checked I/O errors.
 pub fn set_disposition(signal: Signal, disposition: Disposition) -> core::result::Result<i32,core::io::Error> {
-    // Kernel sigaction: 64-bit handler, flags, restorer, then 8-byte signal set.
-    // SIG_DFL=0 and SIG_IGN=1 need no signal-return trampoline or SA_RESTORER.
-    let action: [i32;8] = [0;8];
-    action[0] = match (disposition) { Disposition::Default -> 0, Disposition::Ignore -> 1 };
-    let empty: ptr = 0;
-    let arguments: [std::linux::Argument;6] = [std::linux::Argument::Word(number(signal)),std::linux::Argument::Address(core::mem::i32_array_data_ptr(action)),std::linux::Argument::Address(empty),std::linux::Argument::Word(8),std::linux::Argument::Word(0),std::linux::Argument::Word(0)];
-    let result: core::result::Result<i64,std::linux::Error> = std::linux::call(13,core::slice::view(arguments,6).unwrap());
-    if (result.is_err()) {
-        let error: core::io::Error = match (result.unwrap_err()) { std::linux::Error::System(code) -> system_error(code), _ -> core::io::Error::InvalidInput };
+    let n: i32 = number(signal); if (n == 0) { return core::result::Err(core::io::Error::InvalidInput); }
+    let replaced: core::result::Result<Action, Error> = sigaction(n,true,disposition_word(disposition));
+    if (replaced.is_err()) {
+        let error: core::io::Error = match (replaced.unwrap_err()) { Error::Host(code) -> system_error(code), Error::InvalidResult -> core::io::Error::InvalidCount, _ -> core::io::Error::InvalidInput };
         return core::result::Err(error);
     }
-    if (result.unwrap() != 0) { return core::result::Err(core::io::Error::InvalidCount); }
     return core::result::Ok(0);
 }
+fn disposition_word(disposition: Disposition) -> i64 { return match (disposition) { Disposition::Default -> 0, Disposition::Ignore -> 1 }; }
+// Like set_disposition, but returns the previous action. Kill and Stop are
+// Host(22) (EINVAL).
+pub fn replace_disposition(signal: Signal, disposition: Disposition) -> core::result::Result<Action, Error> {
+    return sigaction(number(signal),true,disposition_word(disposition));
+}
+// The current action, without changing it.
+pub fn action(signal: Signal) -> core::result::Result<Action, Error> { return sigaction(number(signal),false,0); }
 fn system_error(code: i32) -> core::io::Error {
     if (code == 4) { return core::io::Error::Interrupted; }
     if (code == 11) { return core::io::Error::WouldBlock; }
     return core::io::Error::Host(code);
+}
+
+// One signal read from a signalfd (struct signalfd_siginfo). code is the
+// si_code: 0 (SI_USER) for kill, -6 (SI_TKILL) for tgkill, positive values
+// for kernel-generated signals such as CLD_EXITED (1) for Child. pid and uid
+// identify the sender; status is the exit code or signal for Child.
+pub struct Delivery { signal: i32, code: i32, pid: i32, uid: u32, status: i32, errno: i32 }
+pub impl Delivery {
+    pub fn borrow(&self) -> &Delivery { return self; }
+    pub fn named(&self) -> core::option::Option<Signal> { return from_number(self.signal); }
+    pub fn is(&self, signal: Signal) -> bool { return self.signal == number(signal) && self.signal != 0; }
+    pub fn from_user(&self) -> bool { return self.code <= 0; }
+}
+pub fn empty_delivery() -> Delivery { return Delivery { signal: 0, code: 0, pid: 0, uid: 0, status: 0, errno: 0 }; }
+
+// A signalfd for set. It receives only signals that are blocked (otherwise
+// they are delivered by their disposition) and not ignored (ignored signals
+// are discarded). Readable in std::event while one is pending.
+pub enum Mode { Blocking, Nonblocking }
+pub struct Receiver { fd: i32, set: Set, blocking: bool }
+pub fn receiver(set: Set, mode: Mode) -> core::result::Result<Receiver, Error> {
+    if (set.is_empty()) { return core::result::Err(Error::Bounds); }
+    let blocking: bool = match (mode) { Mode::Blocking -> true, Mode::Nonblocking -> false };
+    let flags: i64 = 524288; if (!blocking) { flags += 2048; }
+    let words: [i32;2] = [0;2]; store(words,0,set.bits);
+    let arguments: [std::linux::Argument;4] = [std::linux::Argument::Word(-1),std::linux::Argument::Address(core::mem::i32_array_data_ptr(words)),std::linux::Argument::Word(8),std::linux::Argument::Word(flags)];
+    let made: core::result::Result<i64, Error> = call(289,arguments,4);
+    if (made.is_err()) { return core::result::Err(made.unwrap_err()); }
+    if (made.unwrap() < 0 || made.unwrap() > 2147483647) { return core::result::Err(Error::InvalidResult); }
+    return core::result::Ok(Receiver { fd: made.unwrap() as i32, set: set, blocking: blocking });
+}
+pub impl Receiver {
+    pub fn borrow(&self) -> &Receiver { return self; }
+    pub fn raw_fd(&self) -> i32 { return self.fd; }
+    pub fn is_open(&self) -> bool { return self.fd >= 0; }
+    pub fn set(&self) -> Set { return self.set; }
+    fn read_once(&self) -> core::result::Result<Delivery, Error> {
+        let info: [i32;32] = [0;32];
+        let arguments: [std::linux::Argument;3] = [std::linux::Argument::Word(self.fd as i64),std::linux::Argument::Address(core::mem::i32_array_data_ptr(info)),std::linux::Argument::Word(128)];
+        let done: core::result::Result<i64, Error> = call(0,arguments,3);
+        if (done.is_err()) { return core::result::Err(done.unwrap_err()); }
+        if (done.unwrap() != 128 || info[0] < 1 || info[0] > 64) { return core::result::Err(Error::InvalidResult); }
+        return core::result::Ok(Delivery { signal: info[0], code: info[2], pid: info[3], uid: info[4] as u32, status: info[10], errno: info[1] });
+    }
+    // Blocking receivers wait for one signal (EINTR retried); a nonblocking
+    // receiver with nothing pending returns Host(11).
+    pub fn read(&self) -> core::result::Result<Delivery, Error> {
+        if (self.fd < 0) { return core::result::Err(Error::Closed); }
+        while (true) {
+            let got: core::result::Result<Delivery, Error> = self.read_once();
+            let interrupted: bool = false; if (got.is_err()) { interrupted = match (got.unwrap_err()) { Error::Host(code) -> code == 4, _ -> false }; }
+            if (!interrupted || !self.blocking) { return got; }
+        }
+        return core::result::Err(Error::InvalidResult);
+    }
+    // One nonblocking read: None when nothing is pending (EAGAIN). On a
+    // blocking receiver this blocks like read().
+    pub fn try_read(&self) -> core::result::Result<core::option::Option<Delivery>, Error> {
+        let got: core::result::Result<Delivery, Error> = self.read();
+        if (got.is_ok()) { return core::result::Ok(core::option::Some(got.unwrap())); }
+        let again: bool = match (got.unwrap_err()) { Error::Host(code) -> code == 11, _ -> false };
+        if (again) { return core::result::Ok(core::option::None()); }
+        return core::result::Err(got.unwrap_err());
+    }
+    // Close once, never retried; pending signals stay pending and blocked.
+    pub fn close(&self) -> core::result::Result<i32, Error> {
+        if (self.fd < 0) { return core::result::Err(Error::Closed); }
+        let fd: i32 = self.fd; self.fd = -1;
+        let arguments: [std::linux::Argument;1] = [std::linux::Argument::Word(fd as i64)];
+        return zero_status(call(3,arguments,1));
+    }
+}
+
+// Handle set synchronously: ignored signals in it are set to Default,
+// the set is blocked, and a nonblocking receiver is opened. restore() undoes
+// all three. Kill, Stop or an empty or invalid set is Bounds. On failure
+// every completed step is undone.
+pub struct Handled { fd: i32, set: Set, previous: Set, reset: Set }
+pub fn handle(set: Set) -> core::result::Result<Handled, Error> {
+    if (set.is_empty() || set.contains(Signal::Kill) || set.contains(Signal::Stop)) { return core::result::Err(Error::Bounds); }
+    let reset: Set = empty(); let n: i32 = 1; let failure: core::option::Option<Error> = core::option::None();
+    while (n <= 64 && failure.is_none()) {
+        if (set.contains_number(n)) {
+            let current: core::result::Result<Action, Error> = sigaction(n,false,0);
+            if (current.is_err()) { failure = core::option::Some(current.unwrap_err()); }
+            else {
+                let ignored: bool = match (current.unwrap()) { Action::Ignore -> true, _ -> false };
+                if (ignored) { let changed = sigaction(n,true,0); if (changed.is_err()) { failure = core::option::Some(changed.unwrap_err()); } else { reset = reset.with(Signal::Other(n)); } }
+            }
+        }
+        n += 1;
+    }
+    let previous: Set = empty(); let blocked: bool = false;
+    if (failure.is_none()) { let old = block(set); if (old.is_err()) { failure = core::option::Some(old.unwrap_err()); } else { previous = old.unwrap(); blocked = true; } }
+    if (failure.is_none()) {
+        let opened = receiver(set,Mode::Nonblocking);
+        if (opened.is_ok()) { return core::result::Ok(Handled { fd: opened.unwrap().raw_fd(), set: set, previous: previous, reset: reset }); }
+        failure = core::option::Some(opened.unwrap_err());
+    }
+    if (blocked) { unblock(set.difference(previous)); }
+    reignore(reset); return core::result::Err(failure.unwrap());
+}
+fn reignore(reset: Set) { let n: i32 = 1; while (n <= 64) { if (reset.contains_number(n)) { sigaction(n,true,1); } n += 1; } }
+pub impl Handled {
+    pub fn borrow(&self) -> &Handled { return self; }
+    pub fn raw_fd(&self) -> i32 { return self.fd; }
+    pub fn is_open(&self) -> bool { return self.fd >= 0; }
+    pub fn set(&self) -> Set { return self.set; }
+    // Signals blocked before handle(); restore() leaves these blocked.
+    pub fn previous_mask(&self) -> Set { return self.previous; }
+    // One nonblocking read: None when nothing is pending.
+    pub fn try_read(&self) -> core::result::Result<core::option::Option<Delivery>, Error> {
+        let view: Receiver = Receiver { fd: self.fd, set: self.set, blocking: false }; return view.try_read();
+    }
+    // Refuses with Pending(n) while a handled signal that was not blocked
+    // before is pending (it would be delivered by its disposition on unblock):
+    // drain with try_read first. Otherwise closes the receiver once, unblocks
+    // what handle() blocked and re-ignores what it reset.
+    pub fn restore(&self) -> core::result::Result<i32, Error> {
+        if (self.fd < 0) { return core::result::Err(Error::Closed); }
+        let waiting = pending(); if (waiting.is_err()) { return core::result::Err(waiting.unwrap_err()); }
+        let ours: Set = self.set.difference(self.previous);
+        let stuck: Set = waiting.unwrap().intersection(ours);
+        if (!stuck.is_empty()) { return core::result::Err(Error::Pending(stuck.first())); }
+        let view: Receiver = Receiver { fd: self.fd, set: self.set, blocking: false }; self.fd = -1;
+        let closed = view.close(); let unblocked = unblock(ours); reignore(self.reset);
+        if (closed.is_err()) { return closed; }
+        if (unblocked.is_err()) { return core::result::Err(unblocked.unwrap_err()); }
+        return core::result::Ok(0);
+    }
 }

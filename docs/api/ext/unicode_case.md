@@ -11,6 +11,7 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 ## Contract and evidence guides
 
 - [extended-unicode-case](../../extended-unicode-case.md)
+- [extended-unicode-uconv](../../extended-unicode-uconv.md)
 
 Declaration counts: enum: 3; field: 3; function: 2; struct: 1; variant: 12.
 
@@ -25,7 +26,8 @@ Direct source imports; this is not a package-resolution or transitive dependency
 - [core::unicode](../core/unicode.md) · [source](../../../extended/ext/unicode_case.lani#L9)
 - [core::utf8](../core/utf8.md) · [source](../../../extended/ext/unicode_case.lani#L10)
 - [ext::unicode_case_data](unicode_case_data.md) · [source](../../../extended/ext/unicode_case.lani#L11)
-- [ext::unicode_words](unicode_words.md) · [source](../../../extended/ext/unicode_case.lani#L12)
+- [ext::unicode_case_fast_data](unicode_case_fast_data.md) · [source](../../../extended/ext/unicode_case.lani#L12)
+- [ext::unicode_words](unicode_words.md) · [source](../../../extended/ext/unicode_case.lani#L13)
 
 ## Types, fields and variants
 
@@ -33,7 +35,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Kind
 
-[Source line 14](../../../extended/ext/unicode_case.lani#L14)
+[Source line 15](../../../extended/ext/unicode_case.lani#L15)
 
 ```lanius
 pub enum Kind
@@ -41,7 +43,7 @@ pub enum Kind
 
 #### variant: Lower
 
-[Source line 14](../../../extended/ext/unicode_case.lani#L14)
+[Source line 15](../../../extended/ext/unicode_case.lani#L15)
 
 ```lanius
 Lower
@@ -49,7 +51,7 @@ Lower
 
 #### variant: Upper
 
-[Source line 14](../../../extended/ext/unicode_case.lani#L14)
+[Source line 15](../../../extended/ext/unicode_case.lani#L15)
 
 ```lanius
 Upper
@@ -57,7 +59,7 @@ Upper
 
 #### variant: Title
 
-[Source line 14](../../../extended/ext/unicode_case.lani#L14)
+[Source line 15](../../../extended/ext/unicode_case.lani#L15)
 
 ```lanius
 Title
@@ -65,7 +67,7 @@ Title
 
 #### variant: Fold
 
-[Source line 14](../../../extended/ext/unicode_case.lani#L14)
+[Source line 15](../../../extended/ext/unicode_case.lani#L15)
 
 ```lanius
 Fold
@@ -73,7 +75,7 @@ Fold
 
 ### enum: Locale
 
-[Source line 15](../../../extended/ext/unicode_case.lani#L15)
+[Source line 16](../../../extended/ext/unicode_case.lani#L16)
 
 ```lanius
 pub enum Locale
@@ -81,7 +83,7 @@ pub enum Locale
 
 #### variant: Root
 
-[Source line 15](../../../extended/ext/unicode_case.lani#L15)
+[Source line 16](../../../extended/ext/unicode_case.lani#L16)
 
 ```lanius
 Root
@@ -89,7 +91,7 @@ Root
 
 #### variant: Turkic
 
-[Source line 15](../../../extended/ext/unicode_case.lani#L15)
+[Source line 16](../../../extended/ext/unicode_case.lani#L16)
 
 ```lanius
 Turkic
@@ -97,7 +99,7 @@ Turkic
 
 #### variant: Lithuanian
 
-[Source line 15](../../../extended/ext/unicode_case.lani#L15)
+[Source line 16](../../../extended/ext/unicode_case.lani#L16)
 
 ```lanius
 Lithuanian
@@ -105,7 +107,7 @@ Lithuanian
 
 ### enum: Error
 
-[Source line 16](../../../extended/ext/unicode_case.lani#L16)
+[Source line 17](../../../extended/ext/unicode_case.lani#L17)
 
 ```lanius
 pub enum Error
@@ -113,7 +115,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 16](../../../extended/ext/unicode_case.lani#L16)
+[Source line 17](../../../extended/ext/unicode_case.lani#L17)
 
 ```lanius
 Bounds
@@ -121,7 +123,7 @@ Bounds
 
 #### variant: InvalidUtf8
 
-[Source line 16](../../../extended/ext/unicode_case.lani#L16)
+[Source line 17](../../../extended/ext/unicode_case.lani#L17)
 
 ```lanius
 InvalidUtf8(i32)
@@ -129,7 +131,7 @@ InvalidUtf8(i32)
 
 #### variant: SizeOverflow
 
-[Source line 16](../../../extended/ext/unicode_case.lani#L16)
+[Source line 17](../../../extended/ext/unicode_case.lani#L17)
 
 ```lanius
 SizeOverflow
@@ -137,7 +139,7 @@ SizeOverflow
 
 #### variant: OutputCapacity
 
-[Source line 16](../../../extended/ext/unicode_case.lani#L16)
+[Source line 17](../../../extended/ext/unicode_case.lani#L17)
 
 ```lanius
 OutputCapacity(i32)
@@ -145,7 +147,7 @@ OutputCapacity(i32)
 
 #### variant: WorkLimit
 
-[Source line 16](../../../extended/ext/unicode_case.lani#L16)
+[Source line 17](../../../extended/ext/unicode_case.lani#L17)
 
 ```lanius
 WorkLimit(u64)
@@ -153,7 +155,7 @@ WorkLimit(u64)
 
 ### struct: Report
 
-[Source line 17](../../../extended/ext/unicode_case.lani#L17)
+[Source line 18](../../../extended/ext/unicode_case.lani#L18)
 
 ```lanius
 pub struct Report
@@ -161,7 +163,7 @@ pub struct Report
 
 #### field: bytes
 
-[Source line 17](../../../extended/ext/unicode_case.lani#L17)
+[Source line 18](../../../extended/ext/unicode_case.lani#L18)
 
 ```lanius
 bytes: i32
@@ -169,7 +171,7 @@ bytes: i32
 
 #### field: scalars
 
-[Source line 17](../../../extended/ext/unicode_case.lani#L17)
+[Source line 18](../../../extended/ext/unicode_case.lani#L18)
 
 ```lanius
 scalars: i32
@@ -177,7 +179,7 @@ scalars: i32
 
 #### field: work
 
-[Source line 17](../../../extended/ext/unicode_case.lani#L17)
+[Source line 18](../../../extended/ext/unicode_case.lani#L18)
 
 ```lanius
 work: u64
@@ -187,7 +189,7 @@ work: u64
 
 ### function: measure
 
-[Source line 179](../../../extended/ext/unicode_case.lani#L179)
+[Source line 225](../../../extended/ext/unicode_case.lani#L225)
 
 ```lanius
 pub fn measure(input: core::text::Text, kind: Kind, locale: Locale, work_limit: u64) -> core::result::Result<Report, Error>
@@ -195,7 +197,7 @@ pub fn measure(input: core::text::Text, kind: Kind, locale: Locale, work_limit: 
 
 ### function: transform_into
 
-[Source line 184](../../../extended/ext/unicode_case.lani#L184)
+[Source line 230](../../../extended/ext/unicode_case.lani#L230)
 
 ```lanius
 pub fn transform_into(input: core::text::Text, kind: Kind, locale: Locale, output: core::slice::View<u8>, work_limit: u64) -> core::result::Result<Report, Error>

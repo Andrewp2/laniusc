@@ -1,0 +1,193 @@
+// Bounded multi-producer multi-consumer FIFO of plain values in a shared
+// Region. T is copied by value into Region storage: it must be a plain value
+// (scalars, enums, records and arrays of them). A pointer or owner inside T
+// is meaningful to the receiver only if it refers into a shared Region. One mutex orders every operation, so each sender's messages are
+// received in send order and no message is lost or duplicated.
+// Linux x86_64; link with --native-link --native-library atomic.
+// See docs/stdlib-concurrency.md for endpoint counting and disconnection.
+module std::channel;
+import core::mem;
+import core::result;
+import std::atomic;
+import std::sync;
+
+pub const MAX_CAPACITY: i32 = 1048576;
+
+// Rejected sends return the message to the caller.
+pub enum SendError<T> { Full(T), Disconnected(T), TimedOut(T), Sync(std::sync::Error) }
+pub enum RecvError { Empty, Disconnected, TimedOut, Sync(std::sync::Error) }
+pub enum Error { InvalidCapacity, NoEndpoint, Sync(std::sync::Error) }
+
+// Shared header words, each 8 bytes: head, length, senders, receivers.
+pub struct Channel<T> { lock: std::sync::Mutex, readable: std::sync::Condvar, writable: std::sync::Condvar, header: ptr, slots: ptr, capacity: u64 }
+pub struct Sender<T> { channel: Channel<T> }
+pub struct Receiver<T> { channel: Channel<T> }
+
+pub fn bounded<T>(region: &std::sync::Region, capacity: i32) -> core::result::Result<Channel<T>, Error> {
+    if (capacity <= 0 || capacity > MAX_CAPACITY) { return core::result::Err(Error::InvalidCapacity); }
+    let lock: core::result::Result<std::sync::Mutex, std::sync::Error> = std::sync::mutex(region);
+    if (lock.is_err()) { return core::result::Err(Error::Sync(lock.unwrap_err())); }
+    let readable: core::result::Result<std::sync::Condvar, std::sync::Error> = std::sync::condvar(region);
+    if (readable.is_err()) { return core::result::Err(Error::Sync(readable.unwrap_err())); }
+    let writable: core::result::Result<std::sync::Condvar, std::sync::Error> = std::sync::condvar(region);
+    if (writable.is_err()) { return core::result::Err(Error::Sync(writable.unwrap_err())); }
+    let header: core::result::Result<ptr, std::sync::Error> = region.allocate(32);
+    if (header.is_err()) { return core::result::Err(Error::Sync(header.unwrap_err())); }
+    let bytes: usize = (capacity as usize) * core::mem::size_of<T>();
+    if (bytes == 0) { bytes = 8; }
+    let slots: core::result::Result<ptr, std::sync::Error> = region.allocate(bytes);
+    if (slots.is_err()) { return core::result::Err(Error::Sync(slots.unwrap_err())); }
+    return core::result::Ok(Channel { lock: lock.unwrap(), readable: readable.unwrap(), writable: writable.unwrap(),
+        header: header.unwrap(), slots: slots.unwrap(), capacity: capacity as u64 });
+}
+
+fn cell(at: ptr) -> std::atomic::Atomic64 { return std::atomic::at64(at); }
+fn get(at: ptr) -> u64 { return cell(at).load(std::atomic::Load::Relaxed); }
+fn set(at: ptr, value: u64) { cell(at).store(value, std::atomic::Store::Relaxed); }
+
+pub impl<T> Channel<T> {
+    pub fn borrow(&self) -> &Channel<T> { return self; }
+    // One view length for every access, so all agree on element addresses.
+    fn ring(&self) -> [T] { return core::mem::typed_slice_from_storage<T>(self.slots, self.capacity as i32); }
+    pub fn capacity(&self) -> i32 { return self.capacity as i32; }
+    fn head(&self) -> ptr { return self.header; }
+    fn length(&self) -> ptr { return self.header + 8; }
+    fn senders(&self) -> ptr { return self.header + 16; }
+    fn receivers(&self) -> ptr { return self.header + 24; }
+    // Register one endpoint. Register before spawning the worker that will
+    // use it; whichever process uses the endpoint closes it exactly once.
+    pub fn open_sender(&self) -> core::result::Result<Sender<T>, Error> {
+        let locked: core::result::Result<i32, std::sync::Error> = self.lock.lock();
+        if (locked.is_err()) { return core::result::Err(Error::Sync(locked.unwrap_err())); }
+        set(self.senders(), get(self.senders()) + 1);
+        let done: core::result::Result<i32, std::sync::Error> = self.lock.unlock();
+        if (done.is_err()) { return core::result::Err(Error::Sync(done.unwrap_err())); }
+        return core::result::Ok(Sender { channel: Channel { lock: self.lock, readable: self.readable, writable: self.writable, header: self.header, slots: self.slots, capacity: self.capacity } });
+    }
+    pub fn open_receiver(&self) -> core::result::Result<Receiver<T>, Error> {
+        let locked: core::result::Result<i32, std::sync::Error> = self.lock.lock();
+        if (locked.is_err()) { return core::result::Err(Error::Sync(locked.unwrap_err())); }
+        set(self.receivers(), get(self.receivers()) + 1);
+        let done: core::result::Result<i32, std::sync::Error> = self.lock.unlock();
+        if (done.is_err()) { return core::result::Err(Error::Sync(done.unwrap_err())); }
+        return core::result::Ok(Receiver { channel: Channel { lock: self.lock, readable: self.readable, writable: self.writable, header: self.header, slots: self.slots, capacity: self.capacity } });
+    }
+    // Snapshot counts; they may change immediately after return.
+    pub fn len(&self) -> i32 { return cell(self.length()).load(std::atomic::Load::Acquire) as i32; }
+    pub fn sender_count(&self) -> i32 { return cell(self.senders()).load(std::atomic::Load::Acquire) as i32; }
+    pub fn receiver_count(&self) -> i32 { return cell(self.receivers()).load(std::atomic::Load::Acquire) as i32; }
+
+    // mode 0 nonblocking, 1 blocking, 2 until deadline.
+    fn send_mode(&self, value: T, mode: i32, deadline: std::sync::Deadline) -> core::result::Result<i32, SendError<T>> {
+        let locked: core::result::Result<i32, std::sync::Error> = self.lock.lock();
+        if (locked.is_err()) { return core::result::Err(SendError::Sync(locked.unwrap_err())); }
+        while (true) {
+            if (get(self.receivers()) == 0) { self.lock.unlock(); return core::result::Err(SendError::Disconnected(value)); }
+            let length: u64 = get(self.length());
+            if (length < self.capacity) {
+                let tail: u64 = (get(self.head()) + length) % self.capacity;
+                let ring: [T] = self.ring(); ring[tail as i32] = value;
+                set(self.length(), length + 1);
+                let sleeping: bool = self.readable.has_waiters();
+                let unlocked: core::result::Result<i32, std::sync::Error> = self.lock.unlock();
+                if (unlocked.is_err()) { return core::result::Err(SendError::Sync(unlocked.unwrap_err())); }
+                if (!sleeping) { return core::result::Ok(0); }
+                let woke: core::result::Result<i32, std::sync::Error> = self.readable.notify_one();
+                if (woke.is_err()) { return core::result::Err(SendError::Sync(woke.unwrap_err())); }
+                return core::result::Ok(0);
+            }
+            if (mode == 0) { self.lock.unlock(); return core::result::Err(SendError::Full(value)); }
+            let slept: core::result::Result<std::sync::Wait, std::sync::Error> = self.wait_on(self.writable, mode, deadline);
+            if (slept.is_err()) { self.lock.unlock(); return core::result::Err(SendError::Sync(slept.unwrap_err())); }
+            if (expired(slept.unwrap()) && get(self.length()) >= self.capacity && get(self.receivers()) != 0) {
+                self.lock.unlock(); return core::result::Err(SendError::TimedOut(value));
+            }
+        }
+        return core::result::Err(SendError::Disconnected(value));
+    }
+    fn recv_mode(&self, mode: i32, deadline: std::sync::Deadline) -> core::result::Result<T, RecvError> {
+        let locked: core::result::Result<i32, std::sync::Error> = self.lock.lock();
+        if (locked.is_err()) { return core::result::Err(RecvError::Sync(locked.unwrap_err())); }
+        while (true) {
+            let length: u64 = get(self.length());
+            if (length > 0) {
+                let head: u64 = get(self.head());
+                let ring: [T] = self.ring(); let value: T = ring[head as i32];
+                set(self.head(), (head + 1) % self.capacity);
+                set(self.length(), length - 1);
+                let sleeping: bool = self.writable.has_waiters();
+                let unlocked: core::result::Result<i32, std::sync::Error> = self.lock.unlock();
+                if (unlocked.is_err()) { return core::result::Err(RecvError::Sync(unlocked.unwrap_err())); }
+                if (!sleeping) { return core::result::Ok(value); }
+                let woke: core::result::Result<i32, std::sync::Error> = self.writable.notify_one();
+                if (woke.is_err()) { return core::result::Err(RecvError::Sync(woke.unwrap_err())); }
+                return core::result::Ok(value);
+            }
+            if (get(self.senders()) == 0) { self.lock.unlock(); return core::result::Err(RecvError::Disconnected); }
+            if (mode == 0) { self.lock.unlock(); return core::result::Err(RecvError::Empty); }
+            let slept: core::result::Result<std::sync::Wait, std::sync::Error> = self.wait_on(self.readable, mode, deadline);
+            if (slept.is_err()) { self.lock.unlock(); return core::result::Err(RecvError::Sync(slept.unwrap_err())); }
+            if (expired(slept.unwrap()) && get(self.length()) == 0 && get(self.senders()) != 0) {
+                self.lock.unlock(); return core::result::Err(RecvError::TimedOut);
+            }
+        }
+        return core::result::Err(RecvError::Disconnected);
+    }
+    fn wait_on(&self, signal: std::sync::Condvar, mode: i32, deadline: std::sync::Deadline) -> core::result::Result<std::sync::Wait, std::sync::Error> {
+        if (mode == 1) { return signal.wait(self.lock.borrow()); }
+        let slept: core::result::Result<std::sync::Wait, std::sync::Error> = signal.wait_until(self.lock.borrow(), deadline);
+        if (slept.is_err()) { return slept; }
+        // A wake near the deadline still reports expiry once it has passed.
+        let past: core::result::Result<bool, std::sync::Error> = std::sync::is_past(deadline);
+        if (past.is_err()) { return core::result::Err(past.unwrap_err()); }
+        if (past.unwrap()) { return core::result::Ok(std::sync::Wait::TimedOut); }
+        return slept;
+    }
+    // Decrement one endpoint count; the last close of a side wakes the other.
+    fn close_side(&self, count: ptr, other: std::sync::Condvar) -> core::result::Result<i32, Error> {
+        let locked: core::result::Result<i32, std::sync::Error> = self.lock.lock();
+        if (locked.is_err()) { return core::result::Err(Error::Sync(locked.unwrap_err())); }
+        let open: u64 = get(count);
+        if (open == 0) { self.lock.unlock(); return core::result::Err(Error::NoEndpoint); }
+        set(count, open - 1);
+        let unlocked: core::result::Result<i32, std::sync::Error> = self.lock.unlock();
+        if (unlocked.is_err()) { return core::result::Err(Error::Sync(unlocked.unwrap_err())); }
+        if (open == 1) {
+            let woke: core::result::Result<i32, std::sync::Error> = other.notify_all();
+            if (woke.is_err()) { return core::result::Err(Error::Sync(woke.unwrap_err())); }
+        }
+        return core::result::Ok((open - 1) as i32);
+    }
+}
+fn expired(outcome: std::sync::Wait) -> bool { return match (outcome) { std::sync::Wait::TimedOut -> true, _ -> false }; }
+fn never() -> std::sync::Deadline { return std::sync::Deadline { seconds: 0, nanos: 0 }; }
+
+pub impl<T> Sender<T> {
+    pub fn borrow(&self) -> &Sender<T> { return self; }
+    // Blocks while full. Disconnected(value) once every receiver has closed.
+    pub fn send(&self, value: T) -> core::result::Result<i32, SendError<T>> { return self.channel.send_mode(value, 1, never()); }
+    pub fn try_send(&self, value: T) -> core::result::Result<i32, SendError<T>> { return self.channel.send_mode(value, 0, never()); }
+    pub fn send_until(&self, value: T, deadline: std::sync::Deadline) -> core::result::Result<i32, SendError<T>> { return self.channel.send_mode(value, 2, deadline); }
+    pub fn send_timeout_ms(&self, value: T, milliseconds: i64) -> core::result::Result<i32, SendError<T>> {
+        let deadline: core::result::Result<std::sync::Deadline, std::sync::Error> = std::sync::deadline_after_ms(milliseconds);
+        if (deadline.is_err()) { return core::result::Err(SendError::Sync(deadline.unwrap_err())); }
+        return self.channel.send_mode(value, 2, deadline.unwrap());
+    }
+    // Returns the senders still open. Err(NoEndpoint) if none were open.
+    pub fn close(&self) -> core::result::Result<i32, Error> { return self.channel.close_side(self.channel.senders(), self.channel.readable); }
+}
+
+pub impl<T> Receiver<T> {
+    pub fn borrow(&self) -> &Receiver<T> { return self; }
+    // Blocks while empty. Disconnected only when empty and every sender closed:
+    // messages sent before the last close are still delivered.
+    pub fn recv(&self) -> core::result::Result<T, RecvError> { return self.channel.recv_mode(1, never()); }
+    pub fn try_recv(&self) -> core::result::Result<T, RecvError> { return self.channel.recv_mode(0, never()); }
+    pub fn recv_until(&self, deadline: std::sync::Deadline) -> core::result::Result<T, RecvError> { return self.channel.recv_mode(2, deadline); }
+    pub fn recv_timeout_ms(&self, milliseconds: i64) -> core::result::Result<T, RecvError> {
+        let deadline: core::result::Result<std::sync::Deadline, std::sync::Error> = std::sync::deadline_after_ms(milliseconds);
+        if (deadline.is_err()) { return core::result::Err(RecvError::Sync(deadline.unwrap_err())); }
+        return self.channel.recv_mode(2, deadline.unwrap());
+    }
+    pub fn close(&self) -> core::result::Result<i32, Error> { return self.channel.close_side(self.channel.receivers(), self.channel.writable); }
+}
