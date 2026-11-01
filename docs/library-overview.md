@@ -575,8 +575,10 @@ the `NegativeExponent` error. Radix 2-36 parsing and formatting fold
 `radix^g < 2^32` digits per pass. The [bc calculator](stdlib-bc.md) evaluates
 infix expressions over stdin; its Python oracle checked 9,526 values and 103
 diagnostics across six radices on native Linux x86_64, including operands that
-straddle the threshold, zero, negatives and division by zero. Karatsuba runs in
-one preallocated workspace; subquadratic radix conversion remains.
+straddle the threshold, zero, negatives and division by zero (now 9,735 values
+and 326 diagnostics with modular inverses). Karatsuba runs in one workspace;
+Burnikel-Ziegler division and divide-and-conquer/power-of-two conversion make
+million-digit operations pass a separate oracle at 12-38x Python's time.
 
 **Checked native varints.**
 

@@ -55,7 +55,8 @@ Functions:
 - `abs(a)`;
 - `gcd(a, b)`, which is never negative;
 - `modpow(a, e, m)`, which matches Python's `pow(a, e, m)`. The result has
-  the modulus's sign, and `e` must be nonnegative.
+  the modulus's sign. A negative `e` uses the modular inverse.
+- `modinv(a, m)`, which matches Python's `pow(a, -1, m)`.
 
 **Numbers** are runs of `0-9A-Z` in the input base. Digits above 9 must be
 uppercase letters, as in `bc`; lowercase letters are reserved for function
@@ -95,7 +96,8 @@ The error kinds are:
 - `syntax-error`
 - `invalid-digit` (a digit not below the input base)
 - `unknown-function`
-- `division-by-zero` (from `/`, `%` or a zero `modpow` modulus)
+- `division-by-zero` (from `/`, `%` or a zero `modpow`/`modinv` modulus)
+- `not-invertible`
 - `negative-exponent`
 - `invalid-exponent` (above `u32`)
 - `invalid-shift` (negative or above `u64`)
@@ -123,10 +125,16 @@ and line number).
 
 The checked operands straddle the Karatsuba threshold. They include zero,
 negative values, all-ones and sparse limb patterns, and division by zero. On
-2026-10-31 the oracle checked **9,526 values and 103 diagnostics** across
-radices 10, 16, 2, 3, 7 and 36. The [big integer guide](stdlib-big-integers.md#verification)
-lists the counts per category.
+2026-10-31 the oracle checked **9,735 values and 326 diagnostics** across
+radices 10, 16, 2, 3, 7 and 36, including 378 modular inverses. The
+[big integer guide](stdlib-big-integers.md#verification) lists the cases.
 
 The test also checks precedence, comments, `quit`, base conversion,
 diagnostic text and invalid options directly. The oracle needs `python3`;
 the test does not use `strace`.
+
+`tests/oracles/bc_million.py` checks seven operations on 1,000,000-digit and
+500,000-digit operands against Python, and reports both times. With raised
+limits, for example `--max-limbs 10000000 --max-work 18446744073709551615`, a
+million-digit round trip takes about 31 s, against 0.9 s in Python. The
+[guide](stdlib-big-integers.md#million-digit-oracle) has the full table.
