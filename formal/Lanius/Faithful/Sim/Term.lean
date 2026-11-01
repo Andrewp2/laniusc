@@ -33,7 +33,7 @@ prelude's `minus`, checked once) on such an `x` and `1` gives a smaller value
 Prims, the designated position and the subrank are only read by the check;
 the soundness proof never trusts them. -/
 
-namespace Lanius.Faithful
+namespace Lanius.Faithful.Termination
 
 open Lanius.Mini
 open Lanius.Core (Value)
@@ -331,4 +331,4 @@ structure TermOk (sp : SrcProgram) (prims : Prims) (T : TermInfo) : Prop where
 def Settles (sp : SrcProgram) (prims : Prims) (c : Nat) (vs : List Value) : Prop :=
   ∃ N, ∀ m, N ≤ m → pcall sp prims m c vs = pcall sp prims N c vs
 
-end Lanius.Faithful
+end Lanius.Faithful.Termination

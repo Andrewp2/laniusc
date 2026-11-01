@@ -9,7 +9,7 @@ calls of fuel `m` is eventually constant in `m` once every call it makes
 settles (`stmt_evConst`), and the check sees to it that every call it makes
 is smaller than the call being run. -/
 
-namespace Lanius.Faithful
+namespace Lanius.Faithful.Termination
 
 open Lanius.Mini
 open Lanius.Core (Value)
@@ -900,4 +900,58 @@ theorem pcall_complete {sp : SrcProgram} {prims : Prims} {T : TermInfo} (hT : Te
       · refine ⟨0, fun m _ => ?_⟩
         cases m <;> simp [pcall, hp', hf, hl]
 
-end Lanius.Faithful
+/-! ## Checking a program's annotations one function at a time -/
+
+/-- One annotated function: a prim, or its body passes the check. -/
+def FnOk (sp : SrcProgram) (prims : Prims) (T : TermInfo) (p : Nat × TermAnn) : Prop :=
+  prims.isPrim p.1 = true ∨ ∀ f, sp.funcs[p.1]? = some f → chkFn prims T p.2 f = true
+
+def AllFns (sp : SrcProgram) (prims : Prims) (T : TermInfo) : List (Nat × TermAnn) → Prop
+  | [] => True
+  | p :: ps => FnOk sp prims T p ∧ AllFns sp prims T ps
+
+def AllDecs (sp : SrcProgram) (prims : Prims) : List Nat → Prop
+  | [] => True
+  | c :: cs => DecOk sp prims c ∧ AllDecs sp prims cs
+
+theorem fnOk_of {sp : SrcProgram} {prims : Prims} {T : TermInfo} {c : Nat} {a : TermAnn} {f : SrcFunc}
+    (hf : sp.funcs[c]? = some f) (h : chkFn prims T a f = true) : FnOk sp prims T (c, a) :=
+  Or.inr fun g hg => by
+    rw [hf] at hg
+    cases hg
+    exact h
+
+theorem decOk_of {sp : SrcProgram} {prims : Prims} {c : Nat} {f : SrcFunc} (a b : Nat) {panic : SrcStmt}
+    (np : prims.isPrim c = false) (hf : sp.funcs[c]? = some f) (hids : paramIds f.params = [a, b])
+    (hab : a ≠ b)
+    (hbody : f.body = .then (.if (.apply .greater (.local b) (.local a)) panic .nop)
+      (.return (.apply .minus (.local a) (.local b)))) : DecOk sp prims c :=
+  ⟨np, f, a, b, panic, hf, hids, hab, hbody⟩
+
+theorem AllFns.append {sp : SrcProgram} {prims : Prims} {T : TermInfo} :
+    ∀ {l₁ l₂ : List (Nat × TermAnn)}, AllFns sp prims T l₁ → AllFns sp prims T l₂ →
+      AllFns sp prims T (l₁ ++ l₂)
+  | [], _, _, h₂ => h₂
+  | _ :: _, _, ⟨hp, h₁⟩, h₂ => ⟨hp, AllFns.append h₁ h₂⟩
+
+theorem AllFns.mem {sp : SrcProgram} {prims : Prims} {T : TermInfo} :
+    ∀ {l : List (Nat × TermAnn)}, AllFns sp prims T l → ∀ p ∈ l, FnOk sp prims T p
+  | [], _, p, hp => by simp at hp
+  | _ :: _, ⟨hq, h⟩, p, hp => by
+    rcases List.mem_cons.mp hp with rfl | hp
+    · exact hq
+    · exact AllFns.mem h p hp
+
+theorem AllDecs.mem {sp : SrcProgram} {prims : Prims} :
+    ∀ {l : List Nat}, AllDecs sp prims l → ∀ c ∈ l, DecOk sp prims c
+  | [], _, c, hc => by simp at hc
+  | _ :: _, ⟨hq, h⟩, c, hc => by
+    rcases List.mem_cons.mp hc with rfl | hc
+    · exact hq
+    · exact AllDecs.mem h c hc
+
+theorem termOk_of {sp : SrcProgram} {prims : Prims} {T : TermInfo} (hd : AllDecs sp prims T.decs)
+    (hf : AllFns sp prims T T.anns) : TermOk sp prims T :=
+  ⟨hd.mem, hf.mem⟩
+
+end Lanius.Faithful.Termination
