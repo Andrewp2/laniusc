@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **331 modules**, **17683 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **332 modules**, **17754 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -141,6 +141,7 @@ Inventory: **331 modules**, **17683 declaration/member entries**. Counts include
 | [std::atomic](std/atomic.md) | [source](../../stdlib/std/atomic.lani#L4) | 50 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
 | [std::atomic_file](std/atomic_file.md) | [source](../../stdlib/std/atomic_file.lani#L4) | 104 | Source inventory | [stdlib-atomic-files](../stdlib-atomic-files.md), [stdlib-temp-files](../stdlib-temp-files.md), [extended-kv](../extended-kv.md) |
 | [std::channel](std/channel.md) | [source](../../stdlib/std/channel.lani#L8) | 49 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
+| [std::cli](std/cli.md) | [source](../../stdlib/std/cli.lani#L6) | 71 | Source inventory | [stdlib-cli](../stdlib-cli.md) |
 | [std::clock](std/clock.md) | [source](../../stdlib/std/clock.lani#L2) | 21 | Source inventory | [stdlib-time](../stdlib-time.md) |
 | [std::command](std/command.md) | [source](../../stdlib/std/command.lani#L3) | 150 | Source inventory | [stdlib-command](../stdlib-command.md), [stdlib-command-groups](../stdlib-command-groups.md), [stdlib-run-group](../stdlib-run-group.md), [stdlib-host-clocks](../stdlib-host-clocks.md), [stdlib-child-usage](../stdlib-child-usage.md) |
 | [std::command_capture](std/command_capture.md) | [source](../../stdlib/std/command_capture.lani#L3) | 84 | Source inventory | [stdlib-command-capture](../stdlib-command-capture.md), [stdlib-command-groups](../stdlib-command-groups.md), [stdlib-run-group](../stdlib-run-group.md) |

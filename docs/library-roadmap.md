@@ -2743,6 +2743,11 @@ borrowed point lookup has the current increment above.
   routing and usage output through caller storage. Optional
   [response preprocessing](extended-cli-response.md) now has portable semantic,
   native provider/resource and current KV application receipts. Completion remains open.
+  [`std::cli`](stdlib-cli.md) adds a declarative GNU `getopt_long`-style
+  parser (unique long prefixes, `-abc` clusters, optional values, `--`,
+  operand counts, subcommands, generated `--help`, glibc error messages); it
+  agrees with a Python model checked against Python `getopt` on 6,026 cases
+  and 7 help texts, and `tgz` and `seq-diff` now use it.
   Logging executes as documented below.
 - Configuration: [`ext::config`](extended-config.md) executes strict JSON object
   sources, bounded file loading, typed borrowed queries and explicit shallow
