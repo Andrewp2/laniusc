@@ -4,34 +4,40 @@
 
 Generated source inventory. Linked guides own runtime and semantic contracts; a listed declaration does not establish executable behavior.
 
-[All modules](../README.md) · [Source](../../../extended/ext/http_service.lani#L4)
+[All modules](../README.md) · [Source](../../../extended/ext/http_service.lani#L5)
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-Sequential keep-alive HTTP/1.1 service over the ext::http codec: absolute head/body/idle/write deadlines, typed errors with status_for, pipelining, chunked bodies, 100 Continue, a response writer and an id-based router. The static-file sample passes Python loopback oracle groups functional69/malformed42/slowloris12 with exact server counters; one connection is served at a time.
+Keep-alive HTTP/1.1 service over the ext::http codec: absolute head/body/idle/write deadlines, typed errors with status_for (400/408/413/431/501/505), pipelining, chunked bodies, 100 Continue, Date, a response writer with file streaming and an id-based router. A one-thread std::event Server multiplexes buffered connections; a sequential driver shares the code. The static-file sample (listings, ranges, ETag/Last-Modified conditional requests) passes nine Python loopback oracle groups with exact server counters.
 
 ## Contract and evidence guides
 
 - [extended-http-service](../../extended-http-service.md)
 - [extended-http](../../extended-http.md)
+- [stdlib-event-loop](../../stdlib-event-loop.md)
 
-Declaration counts: enum: 2; field: 44; function: 9; impl: 3; method: 20; struct: 7; variant: 15.
+Declaration counts: enum: 2; field: 71; function: 12; impl: 4; method: 30; struct: 9; variant: 17.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/http_service.lani#L5)
-- [core::io](../core/io.md) · [source](../../../extended/ext/http_service.lani#L6)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/http_service.lani#L7)
-- [core::net](../core/net.md) · [source](../../../extended/ext/http_service.lani#L8)
-- [core::option](../core/option.md) · [source](../../../extended/ext/http_service.lani#L9)
-- [core::result](../core/result.md) · [source](../../../extended/ext/http_service.lani#L10)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/http_service.lani#L11)
-- [core::time](../core/time.md) · [source](../../../extended/ext/http_service.lani#L12)
-- [ext::http](http.md) · [source](../../../extended/ext/http_service.lani#L13)
-- [std::clock](../std/clock.md) · [source](../../../extended/ext/http_service.lani#L14)
-- [std::socket](../std/socket.md) · [source](../../../extended/ext/http_service.lani#L15)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/http_service.lani#L6)
+- [core::calendar](../core/calendar.md) · [source](../../../extended/ext/http_service.lani#L7)
+- [core::io](../core/io.md) · [source](../../../extended/ext/http_service.lani#L8)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/http_service.lani#L9)
+- [core::net](../core/net.md) · [source](../../../extended/ext/http_service.lani#L10)
+- [core::option](../core/option.md) · [source](../../../extended/ext/http_service.lani#L11)
+- [core::result](../core/result.md) · [source](../../../extended/ext/http_service.lani#L12)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/http_service.lani#L13)
+- [core::time](../core/time.md) · [source](../../../extended/ext/http_service.lani#L14)
+- [ext::http](http.md) · [source](../../../extended/ext/http_service.lani#L15)
+- [std::clock](../std/clock.md) · [source](../../../extended/ext/http_service.lani#L16)
+- [std::event](../std/event.md) · [source](../../../extended/ext/http_service.lani#L17)
+- [std::file](../std/file.md) · [source](../../../extended/ext/http_service.lani#L18)
+- [std::file_ops](../std/file_ops.md) · [source](../../../extended/ext/http_service.lani#L19)
+- [std::linux](../std/linux.md) · [source](../../../extended/ext/http_service.lani#L20)
+- [std::socket](../std/socket.md) · [source](../../../extended/ext/http_service.lani#L21)
 
 ## Types, fields and variants
 
@@ -39,7 +45,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 19](../../../extended/ext/http_service.lani#L19)
+[Source line 25](../../../extended/ext/http_service.lani#L25)
 
 ```lanius
 pub enum Error
@@ -47,7 +53,7 @@ pub enum Error
 
 #### variant: Parse
 
-[Source line 19](../../../extended/ext/http_service.lani#L19)
+[Source line 25](../../../extended/ext/http_service.lani#L25)
 
 ```lanius
 Parse(ext::http::Error)
@@ -55,7 +61,7 @@ Parse(ext::http::Error)
 
 #### variant: HeadTooLarge
 
-[Source line 19](../../../extended/ext/http_service.lani#L19)
+[Source line 25](../../../extended/ext/http_service.lani#L25)
 
 ```lanius
 HeadTooLarge
@@ -63,7 +69,7 @@ HeadTooLarge
 
 #### variant: BodyTooLarge
 
-[Source line 19](../../../extended/ext/http_service.lani#L19)
+[Source line 25](../../../extended/ext/http_service.lani#L25)
 
 ```lanius
 BodyTooLarge
@@ -71,7 +77,7 @@ BodyTooLarge
 
 #### variant: HeadTimeout
 
-[Source line 19](../../../extended/ext/http_service.lani#L19)
+[Source line 25](../../../extended/ext/http_service.lani#L25)
 
 ```lanius
 HeadTimeout
@@ -79,7 +85,7 @@ HeadTimeout
 
 #### variant: BodyTimeout
 
-[Source line 19](../../../extended/ext/http_service.lani#L19)
+[Source line 25](../../../extended/ext/http_service.lani#L25)
 
 ```lanius
 BodyTimeout
@@ -87,7 +93,7 @@ BodyTimeout
 
 #### variant: WriteTimeout
 
-[Source line 19](../../../extended/ext/http_service.lani#L19)
+[Source line 25](../../../extended/ext/http_service.lani#L25)
 
 ```lanius
 WriteTimeout
@@ -95,15 +101,23 @@ WriteTimeout
 
 #### variant: Truncated
 
-[Source line 19](../../../extended/ext/http_service.lani#L19)
+[Source line 25](../../../extended/ext/http_service.lani#L25)
 
 ```lanius
 Truncated
 ```
 
+#### variant: VersionNotSupported
+
+[Source line 25](../../../extended/ext/http_service.lani#L25)
+
+```lanius
+VersionNotSupported
+```
+
 #### variant: Io
 
-[Source line 19](../../../extended/ext/http_service.lani#L19)
+[Source line 25](../../../extended/ext/http_service.lani#L25)
 
 ```lanius
 Io(core::io::Error)
@@ -111,7 +125,7 @@ Io(core::io::Error)
 
 #### variant: Clock
 
-[Source line 19](../../../extended/ext/http_service.lani#L19)
+[Source line 25](../../../extended/ext/http_service.lani#L25)
 
 ```lanius
 Clock
@@ -119,7 +133,7 @@ Clock
 
 #### variant: AllocationFailed
 
-[Source line 19](../../../extended/ext/http_service.lani#L19)
+[Source line 25](../../../extended/ext/http_service.lani#L25)
 
 ```lanius
 AllocationFailed
@@ -127,7 +141,7 @@ AllocationFailed
 
 #### variant: InvalidState
 
-[Source line 19](../../../extended/ext/http_service.lani#L19)
+[Source line 25](../../../extended/ext/http_service.lani#L25)
 
 ```lanius
 InvalidState
@@ -135,15 +149,23 @@ InvalidState
 
 #### variant: InvalidHeader
 
-[Source line 19](../../../extended/ext/http_service.lani#L19)
+[Source line 25](../../../extended/ext/http_service.lani#L25)
 
 ```lanius
 InvalidHeader
 ```
 
+#### variant: Event
+
+[Source line 25](../../../extended/ext/http_service.lani#L25)
+
+```lanius
+Event(std::event::Error)
+```
+
 ### struct: Options
 
-[Source line 20](../../../extended/ext/http_service.lani#L20)
+[Source line 26](../../../extended/ext/http_service.lani#L26)
 
 ```lanius
 pub struct Options
@@ -151,7 +173,7 @@ pub struct Options
 
 #### field: limits
 
-[Source line 20](../../../extended/ext/http_service.lani#L20)
+[Source line 26](../../../extended/ext/http_service.lani#L26)
 
 ```lanius
 limits: ext::http::Limits
@@ -159,7 +181,7 @@ limits: ext::http::Limits
 
 #### field: buffer_bytes
 
-[Source line 20](../../../extended/ext/http_service.lani#L20)
+[Source line 26](../../../extended/ext/http_service.lani#L26)
 
 ```lanius
 buffer_bytes: i32
@@ -167,7 +189,7 @@ buffer_bytes: i32
 
 #### field: head_timeout_ms
 
-[Source line 20](../../../extended/ext/http_service.lani#L20)
+[Source line 26](../../../extended/ext/http_service.lani#L26)
 
 ```lanius
 head_timeout_ms: i32
@@ -175,7 +197,7 @@ head_timeout_ms: i32
 
 #### field: body_timeout_ms
 
-[Source line 20](../../../extended/ext/http_service.lani#L20)
+[Source line 26](../../../extended/ext/http_service.lani#L26)
 
 ```lanius
 body_timeout_ms: i32
@@ -183,7 +205,7 @@ body_timeout_ms: i32
 
 #### field: idle_timeout_ms
 
-[Source line 20](../../../extended/ext/http_service.lani#L20)
+[Source line 26](../../../extended/ext/http_service.lani#L26)
 
 ```lanius
 idle_timeout_ms: i32
@@ -191,7 +213,7 @@ idle_timeout_ms: i32
 
 #### field: write_timeout_ms
 
-[Source line 20](../../../extended/ext/http_service.lani#L20)
+[Source line 26](../../../extended/ext/http_service.lani#L26)
 
 ```lanius
 write_timeout_ms: i32
@@ -199,7 +221,7 @@ write_timeout_ms: i32
 
 #### field: max_requests
 
-[Source line 20](../../../extended/ext/http_service.lani#L20)
+[Source line 26](../../../extended/ext/http_service.lani#L26)
 
 ```lanius
 max_requests: i32
@@ -207,7 +229,7 @@ max_requests: i32
 
 #### field: drain_bytes
 
-[Source line 20](../../../extended/ext/http_service.lani#L20)
+[Source line 26](../../../extended/ext/http_service.lani#L26)
 
 ```lanius
 drain_bytes: i32
@@ -215,15 +237,23 @@ drain_bytes: i32
 
 #### field: drain_timeout_ms
 
-[Source line 20](../../../extended/ext/http_service.lani#L20)
+[Source line 26](../../../extended/ext/http_service.lani#L26)
 
 ```lanius
 drain_timeout_ms: i32
 ```
 
+#### field: date
+
+[Source line 26](../../../extended/ext/http_service.lani#L26)
+
+```lanius
+date: bool
+```
+
 ### struct: Stats
 
-[Source line 21](../../../extended/ext/http_service.lani#L21)
+[Source line 27](../../../extended/ext/http_service.lani#L27)
 
 ```lanius
 pub struct Stats
@@ -231,7 +261,7 @@ pub struct Stats
 
 #### field: requests
 
-[Source line 21](../../../extended/ext/http_service.lani#L21)
+[Source line 27](../../../extended/ext/http_service.lani#L27)
 
 ```lanius
 requests: i32
@@ -239,7 +269,7 @@ requests: i32
 
 #### field: responses
 
-[Source line 21](../../../extended/ext/http_service.lani#L21)
+[Source line 27](../../../extended/ext/http_service.lani#L27)
 
 ```lanius
 responses: i32
@@ -247,7 +277,7 @@ responses: i32
 
 #### field: bytes_received
 
-[Source line 21](../../../extended/ext/http_service.lani#L21)
+[Source line 27](../../../extended/ext/http_service.lani#L27)
 
 ```lanius
 bytes_received: u64
@@ -255,7 +285,7 @@ bytes_received: u64
 
 #### field: bytes_sent
 
-[Source line 21](../../../extended/ext/http_service.lani#L21)
+[Source line 27](../../../extended/ext/http_service.lani#L27)
 
 ```lanius
 bytes_sent: u64
@@ -263,7 +293,7 @@ bytes_sent: u64
 
 #### field: reads
 
-[Source line 21](../../../extended/ext/http_service.lani#L21)
+[Source line 27](../../../extended/ext/http_service.lani#L27)
 
 ```lanius
 reads: u64
@@ -271,7 +301,7 @@ reads: u64
 
 ### struct: Request
 
-[Source line 22](../../../extended/ext/http_service.lani#L22)
+[Source line 28](../../../extended/ext/http_service.lani#L28)
 
 ```lanius
 pub struct Request
@@ -279,7 +309,7 @@ pub struct Request
 
 #### field: method
 
-[Source line 22](../../../extended/ext/http_service.lani#L22)
+[Source line 28](../../../extended/ext/http_service.lani#L28)
 
 ```lanius
 method: core::slice::View<u8>
@@ -287,7 +317,7 @@ method: core::slice::View<u8>
 
 #### field: target
 
-[Source line 22](../../../extended/ext/http_service.lani#L22)
+[Source line 28](../../../extended/ext/http_service.lani#L28)
 
 ```lanius
 target: core::slice::View<u8>
@@ -295,7 +325,7 @@ target: core::slice::View<u8>
 
 #### field: path
 
-[Source line 22](../../../extended/ext/http_service.lani#L22)
+[Source line 28](../../../extended/ext/http_service.lani#L28)
 
 ```lanius
 path: core::slice::View<u8>
@@ -303,7 +333,7 @@ path: core::slice::View<u8>
 
 #### field: query
 
-[Source line 22](../../../extended/ext/http_service.lani#L22)
+[Source line 28](../../../extended/ext/http_service.lani#L28)
 
 ```lanius
 query: core::slice::View<u8>
@@ -311,7 +341,7 @@ query: core::slice::View<u8>
 
 #### field: version
 
-[Source line 22](../../../extended/ext/http_service.lani#L22)
+[Source line 28](../../../extended/ext/http_service.lani#L28)
 
 ```lanius
 version: i32
@@ -319,7 +349,7 @@ version: i32
 
 #### field: head
 
-[Source line 22](../../../extended/ext/http_service.lani#L22)
+[Source line 28](../../../extended/ext/http_service.lani#L28)
 
 ```lanius
 head: ext::http::Head
@@ -327,7 +357,7 @@ head: ext::http::Head
 
 #### field: body
 
-[Source line 22](../../../extended/ext/http_service.lani#L22)
+[Source line 28](../../../extended/ext/http_service.lani#L28)
 
 ```lanius
 body: core::slice::View<u8>
@@ -335,7 +365,7 @@ body: core::slice::View<u8>
 
 #### field: keep_alive
 
-[Source line 22](../../../extended/ext/http_service.lani#L22)
+[Source line 28](../../../extended/ext/http_service.lani#L28)
 
 ```lanius
 keep_alive: bool
@@ -343,7 +373,7 @@ keep_alive: bool
 
 #### field: chunked
 
-[Source line 22](../../../extended/ext/http_service.lani#L22)
+[Source line 28](../../../extended/ext/http_service.lani#L28)
 
 ```lanius
 chunked: bool
@@ -351,7 +381,7 @@ chunked: bool
 
 ### struct: Connection
 
-[Source line 23](../../../extended/ext/http_service.lani#L23)
+[Source line 30](../../../extended/ext/http_service.lani#L30)
 
 ```lanius
 pub struct Connection
@@ -359,7 +389,7 @@ pub struct Connection
 
 #### field: socket
 
-[Source line 23](../../../extended/ext/http_service.lani#L23)
+[Source line 30](../../../extended/ext/http_service.lani#L30)
 
 ```lanius
 socket: std::socket::Socket
@@ -367,7 +397,7 @@ socket: std::socket::Socket
 
 #### field: peer
 
-[Source line 23](../../../extended/ext/http_service.lani#L23)
+[Source line 30](../../../extended/ext/http_service.lani#L30)
 
 ```lanius
 peer: core::net::SocketAddr
@@ -375,7 +405,7 @@ peer: core::net::SocketAddr
 
 #### field: options
 
-[Source line 23](../../../extended/ext/http_service.lani#L23)
+[Source line 30](../../../extended/ext/http_service.lani#L30)
 
 ```lanius
 options: Options
@@ -383,7 +413,7 @@ options: Options
 
 #### field: input
 
-[Source line 23](../../../extended/ext/http_service.lani#L23)
+[Source line 30](../../../extended/ext/http_service.lani#L30)
 
 ```lanius
 input: alloc::vec::Vec<u8>
@@ -391,7 +421,7 @@ input: alloc::vec::Vec<u8>
 
 #### field: filled
 
-[Source line 23](../../../extended/ext/http_service.lani#L23)
+[Source line 30](../../../extended/ext/http_service.lani#L30)
 
 ```lanius
 filled: i32
@@ -399,7 +429,7 @@ filled: i32
 
 #### field: consumed
 
-[Source line 23](../../../extended/ext/http_service.lani#L23)
+[Source line 30](../../../extended/ext/http_service.lani#L30)
 
 ```lanius
 consumed: i32
@@ -407,7 +437,7 @@ consumed: i32
 
 #### field: body
 
-[Source line 23](../../../extended/ext/http_service.lani#L23)
+[Source line 30](../../../extended/ext/http_service.lani#L30)
 
 ```lanius
 body: alloc::vec::Vec<u8>
@@ -415,15 +445,55 @@ body: alloc::vec::Vec<u8>
 
 #### field: output
 
-[Source line 23](../../../extended/ext/http_service.lani#L23)
+[Source line 30](../../../extended/ext/http_service.lani#L30)
 
 ```lanius
 output: alloc::vec::Vec<u8>
 ```
 
+#### field: sent
+
+[Source line 30](../../../extended/ext/http_service.lani#L30)
+
+```lanius
+sent: i32
+```
+
+#### field: buffered
+
+[Source line 30](../../../extended/ext/http_service.lani#L30)
+
+```lanius
+buffered: bool
+```
+
+#### field: file
+
+[Source line 30](../../../extended/ext/http_service.lani#L30)
+
+```lanius
+file: std::file::File
+```
+
+#### field: file_position
+
+[Source line 30](../../../extended/ext/http_service.lani#L30)
+
+```lanius
+file_position: u64
+```
+
+#### field: file_left
+
+[Source line 30](../../../extended/ext/http_service.lani#L30)
+
+```lanius
+file_left: u64
+```
+
 #### field: keep_alive
 
-[Source line 23](../../../extended/ext/http_service.lani#L23)
+[Source line 30](../../../extended/ext/http_service.lani#L30)
 
 ```lanius
 keep_alive: bool
@@ -431,7 +501,7 @@ keep_alive: bool
 
 #### field: head_only
 
-[Source line 23](../../../extended/ext/http_service.lani#L23)
+[Source line 30](../../../extended/ext/http_service.lani#L30)
 
 ```lanius
 head_only: bool
@@ -439,7 +509,7 @@ head_only: bool
 
 #### field: staged
 
-[Source line 23](../../../extended/ext/http_service.lani#L23)
+[Source line 30](../../../extended/ext/http_service.lani#L30)
 
 ```lanius
 staged: bool
@@ -447,7 +517,7 @@ staged: bool
 
 #### field: body_left
 
-[Source line 23](../../../extended/ext/http_service.lani#L23)
+[Source line 30](../../../extended/ext/http_service.lani#L30)
 
 ```lanius
 body_left: u64
@@ -455,15 +525,55 @@ body_left: u64
 
 #### field: closed
 
-[Source line 23](../../../extended/ext/http_service.lani#L23)
+[Source line 30](../../../extended/ext/http_service.lani#L30)
 
 ```lanius
 closed: bool
 ```
 
+#### field: phase
+
+[Source line 30](../../../extended/ext/http_service.lani#L30)
+
+```lanius
+phase: i32
+```
+
+#### field: deadline
+
+[Source line 30](../../../extended/ext/http_service.lani#L30)
+
+```lanius
+deadline: core::time::Deadline
+```
+
+#### field: continue_due
+
+[Source line 30](../../../extended/ext/http_service.lani#L30)
+
+```lanius
+continue_due: bool
+```
+
+#### field: eof
+
+[Source line 30](../../../extended/ext/http_service.lani#L30)
+
+```lanius
+eof: bool
+```
+
+#### field: current
+
+[Source line 30](../../../extended/ext/http_service.lani#L30)
+
+```lanius
+current: Request
+```
+
 #### field: stats
 
-[Source line 23](../../../extended/ext/http_service.lani#L23)
+[Source line 30](../../../extended/ext/http_service.lani#L30)
 
 ```lanius
 stats: Stats
@@ -471,7 +581,7 @@ stats: Stats
 
 ### struct: Route
 
-[Source line 24](../../../extended/ext/http_service.lani#L24)
+[Source line 31](../../../extended/ext/http_service.lani#L31)
 
 ```lanius
 pub struct Route
@@ -479,7 +589,7 @@ pub struct Route
 
 #### field: method
 
-[Source line 24](../../../extended/ext/http_service.lani#L24)
+[Source line 31](../../../extended/ext/http_service.lani#L31)
 
 ```lanius
 method: core::slice::View<u8>
@@ -487,7 +597,7 @@ method: core::slice::View<u8>
 
 #### field: pattern
 
-[Source line 24](../../../extended/ext/http_service.lani#L24)
+[Source line 31](../../../extended/ext/http_service.lani#L31)
 
 ```lanius
 pattern: core::slice::View<u8>
@@ -495,7 +605,7 @@ pattern: core::slice::View<u8>
 
 #### field: prefix
 
-[Source line 24](../../../extended/ext/http_service.lani#L24)
+[Source line 31](../../../extended/ext/http_service.lani#L31)
 
 ```lanius
 prefix: bool
@@ -503,7 +613,7 @@ prefix: bool
 
 #### field: id
 
-[Source line 24](../../../extended/ext/http_service.lani#L24)
+[Source line 31](../../../extended/ext/http_service.lani#L31)
 
 ```lanius
 id: i32
@@ -511,7 +621,7 @@ id: i32
 
 ### struct: Router
 
-[Source line 25](../../../extended/ext/http_service.lani#L25)
+[Source line 32](../../../extended/ext/http_service.lani#L32)
 
 ```lanius
 pub struct Router
@@ -519,7 +629,7 @@ pub struct Router
 
 #### field: routes
 
-[Source line 25](../../../extended/ext/http_service.lani#L25)
+[Source line 32](../../../extended/ext/http_service.lani#L32)
 
 ```lanius
 routes: alloc::vec::Vec<Route>
@@ -527,7 +637,7 @@ routes: alloc::vec::Vec<Route>
 
 ### struct: Hit
 
-[Source line 26](../../../extended/ext/http_service.lani#L26)
+[Source line 33](../../../extended/ext/http_service.lani#L33)
 
 ```lanius
 pub struct Hit
@@ -535,7 +645,7 @@ pub struct Hit
 
 #### field: id
 
-[Source line 26](../../../extended/ext/http_service.lani#L26)
+[Source line 33](../../../extended/ext/http_service.lani#L33)
 
 ```lanius
 id: i32
@@ -543,7 +653,7 @@ id: i32
 
 #### field: rest
 
-[Source line 26](../../../extended/ext/http_service.lani#L26)
+[Source line 33](../../../extended/ext/http_service.lani#L33)
 
 ```lanius
 rest: core::slice::View<u8>
@@ -551,7 +661,7 @@ rest: core::slice::View<u8>
 
 ### enum: Match
 
-[Source line 27](../../../extended/ext/http_service.lani#L27)
+[Source line 34](../../../extended/ext/http_service.lani#L34)
 
 ```lanius
 pub enum Match
@@ -559,7 +669,7 @@ pub enum Match
 
 #### variant: Found
 
-[Source line 27](../../../extended/ext/http_service.lani#L27)
+[Source line 34](../../../extended/ext/http_service.lani#L34)
 
 ```lanius
 Found(Hit)
@@ -567,7 +677,7 @@ Found(Hit)
 
 #### variant: NotFound
 
-[Source line 27](../../../extended/ext/http_service.lani#L27)
+[Source line 34](../../../extended/ext/http_service.lani#L34)
 
 ```lanius
 NotFound
@@ -575,17 +685,161 @@ NotFound
 
 #### variant: MethodNotAllowed
 
-[Source line 27](../../../extended/ext/http_service.lani#L27)
+[Source line 34](../../../extended/ext/http_service.lani#L34)
 
 ```lanius
 MethodNotAllowed
+```
+
+### struct: ServerStats
+
+[Source line 513](../../../extended/ext/http_service.lani#L513)
+
+```lanius
+pub struct ServerStats
+```
+
+#### field: connections
+
+[Source line 513](../../../extended/ext/http_service.lani#L513)
+
+```lanius
+connections: i32
+```
+
+#### field: requests
+
+[Source line 513](../../../extended/ext/http_service.lani#L513)
+
+```lanius
+requests: i32
+```
+
+#### field: rejected
+
+[Source line 513](../../../extended/ext/http_service.lani#L513)
+
+```lanius
+rejected: i32
+```
+
+#### field: timeouts
+
+[Source line 513](../../../extended/ext/http_service.lani#L513)
+
+```lanius
+timeouts: i32
+```
+
+#### field: idle
+
+[Source line 513](../../../extended/ext/http_service.lani#L513)
+
+```lanius
+idle: i32
+```
+
+#### field: errors
+
+[Source line 513](../../../extended/ext/http_service.lani#L513)
+
+```lanius
+errors: i32
+```
+
+#### field: peak
+
+[Source line 513](../../../extended/ext/http_service.lani#L513)
+
+```lanius
+peak: i32
+```
+
+### struct: Server
+
+[Source line 514](../../../extended/ext/http_service.lani#L514)
+
+```lanius
+pub struct Server
+```
+
+#### field: events
+
+[Source line 514](../../../extended/ext/http_service.lani#L514)
+
+```lanius
+events: std::event::Loop
+```
+
+#### field: listener
+
+[Source line 514](../../../extended/ext/http_service.lani#L514)
+
+```lanius
+listener: std::socket::Socket
+```
+
+#### field: options
+
+[Source line 514](../../../extended/ext/http_service.lani#L514)
+
+```lanius
+options: Options
+```
+
+#### field: slots
+
+[Source line 514](../../../extended/ext/http_service.lani#L514)
+
+```lanius
+slots: alloc::vec::Vec<Connection>
+```
+
+#### field: interest
+
+[Source line 514](../../../extended/ext/http_service.lani#L514)
+
+```lanius
+interest: alloc::vec::Vec<u32>
+```
+
+#### field: ready
+
+[Source line 514](../../../extended/ext/http_service.lani#L514)
+
+```lanius
+ready: alloc::vec::Vec<i32>
+```
+
+#### field: active
+
+[Source line 514](../../../extended/ext/http_service.lani#L514)
+
+```lanius
+active: i32
+```
+
+#### field: listening
+
+[Source line 514](../../../extended/ext/http_service.lani#L514)
+
+```lanius
+listening: bool
+```
+
+#### field: stats
+
+[Source line 514](../../../extended/ext/http_service.lani#L514)
+
+```lanius
+stats: ServerStats
 ```
 
 ## Free functions and extern declarations
 
 ### function: default_options
 
-[Source line 31](../../../extended/ext/http_service.lani#L31)
+[Source line 46](../../../extended/ext/http_service.lani#L46)
 
 ```lanius
 pub fn default_options() -> Options
@@ -593,7 +847,7 @@ pub fn default_options() -> Options
 
 ### function: same
 
-[Source line 39](../../../extended/ext/http_service.lani#L39)
+[Source line 54](../../../extended/ext/http_service.lani#L54)
 
 ```lanius
 pub fn same(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool
@@ -601,7 +855,7 @@ pub fn same(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool
 
 ### function: same_ascii_case
 
-[Source line 40](../../../extended/ext/http_service.lani#L40)
+[Source line 55](../../../extended/ext/http_service.lani#L55)
 
 ```lanius
 pub fn same_ascii_case(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool
@@ -609,7 +863,7 @@ pub fn same_ascii_case(left: core::slice::View<u8>, right: core::slice::View<u8>
 
 ### function: has_token
 
-[Source line 43](../../../extended/ext/http_service.lani#L43)
+[Source line 58](../../../extended/ext/http_service.lani#L58)
 
 ```lanius
 pub fn has_token(value: core::slice::View<u8>, token: core::slice::View<u8>) -> bool
@@ -617,7 +871,7 @@ pub fn has_token(value: core::slice::View<u8>, token: core::slice::View<u8>) -> 
 
 ### function: status_for
 
-[Source line 58](../../../extended/ext/http_service.lani#L58)
+[Source line 73](../../../extended/ext/http_service.lani#L73)
 
 ```lanius
 pub fn status_for(error: Error) -> i32
@@ -625,15 +879,31 @@ pub fn status_for(error: Error) -> i32
 
 ### function: reason
 
-[Source line 65](../../../extended/ext/http_service.lani#L65)
+[Source line 80](../../../extended/ext/http_service.lani#L80)
 
 ```lanius
 pub fn reason(status: i32) -> core::slice::View<u8>
 ```
 
+### function: format_http_date
+
+[Source line 154](../../../extended/ext/http_service.lani#L154)
+
+```lanius
+pub fn format_http_date(seconds: i64, out: [u8]) -> bool
+```
+
+### function: parse_http_date
+
+[Source line 169](../../../extended/ext/http_service.lani#L169)
+
+```lanius
+pub fn parse_http_date(value: core::slice::View<u8>) -> i64
+```
+
 ### function: accept_until
 
-[Source line 92](../../../extended/ext/http_service.lani#L92)
+[Source line 199](../../../extended/ext/http_service.lani#L199)
 
 ```lanius
 pub fn accept_until(listener: &std::socket::Socket, options: Options, deadline: core::time::Deadline) -> core::result::Result<core::option::Option<Connection>,Error>
@@ -641,7 +911,7 @@ pub fn accept_until(listener: &std::socket::Socket, options: Options, deadline: 
 
 ### function: format_u64
 
-[Source line 299](../../../extended/ext/http_service.lani#L299)
+[Source line 479](../../../extended/ext/http_service.lani#L479)
 
 ```lanius
 pub fn format_u64(value: u64, out: [u8]) -> i32
@@ -649,17 +919,25 @@ pub fn format_u64(value: u64, out: [u8]) -> i32
 
 ### function: router
 
-[Source line 301](../../../extended/ext/http_service.lani#L301)
+[Source line 481](../../../extended/ext/http_service.lani#L481)
 
 ```lanius
 pub fn router() -> Router
 ```
 
+### function: server
+
+[Source line 519](../../../extended/ext/http_service.lani#L519)
+
+```lanius
+pub fn server(listener: &std::socket::Socket, options: Options, max_connections: i32) -> core::result::Result<Server,Error>
+```
+
 ## Implementation blocks and public methods
 
-### impl at line 115
+### impl at line 214
 
-[Source line 115](../../../extended/ext/http_service.lani#L115)
+[Source line 214](../../../extended/ext/http_service.lani#L214)
 
 ```lanius
 pub impl Request
@@ -667,7 +945,7 @@ pub impl Request
 
 #### method: borrow
 
-[Source line 116](../../../extended/ext/http_service.lani#L116)
+[Source line 215](../../../extended/ext/http_service.lani#L215)
 
 ```lanius
 pub fn borrow(&self) -> &Request
@@ -675,7 +953,7 @@ pub fn borrow(&self) -> &Request
 
 #### method: header
 
-[Source line 117](../../../extended/ext/http_service.lani#L117)
+[Source line 216](../../../extended/ext/http_service.lani#L216)
 
 ```lanius
 pub fn header(&self, name: core::slice::View<u8>) -> core::option::Option<core::slice::View<u8>>
@@ -683,15 +961,15 @@ pub fn header(&self, name: core::slice::View<u8>) -> core::option::Option<core::
 
 #### method: is_method
 
-[Source line 120](../../../extended/ext/http_service.lani#L120)
+[Source line 219](../../../extended/ext/http_service.lani#L219)
 
 ```lanius
 pub fn is_method(&self, name: core::slice::View<u8>) -> bool
 ```
 
-### impl at line 123
+### impl at line 222
 
-[Source line 123](../../../extended/ext/http_service.lani#L123)
+[Source line 222](../../../extended/ext/http_service.lani#L222)
 
 ```lanius
 pub impl Connection
@@ -699,7 +977,7 @@ pub impl Connection
 
 #### method: borrow
 
-[Source line 124](../../../extended/ext/http_service.lani#L124)
+[Source line 223](../../../extended/ext/http_service.lani#L223)
 
 ```lanius
 pub fn borrow(&self) -> &Connection
@@ -707,7 +985,7 @@ pub fn borrow(&self) -> &Connection
 
 #### method: stats
 
-[Source line 125](../../../extended/ext/http_service.lani#L125)
+[Source line 224](../../../extended/ext/http_service.lani#L224)
 
 ```lanius
 pub fn stats(&self) -> Stats
@@ -715,7 +993,7 @@ pub fn stats(&self) -> Stats
 
 #### method: will_keep_alive
 
-[Source line 126](../../../extended/ext/http_service.lani#L126)
+[Source line 225](../../../extended/ext/http_service.lani#L225)
 
 ```lanius
 pub fn will_keep_alive(&self) -> bool
@@ -723,7 +1001,7 @@ pub fn will_keep_alive(&self) -> bool
 
 #### method: set_close
 
-[Source line 128](../../../extended/ext/http_service.lani#L128)
+[Source line 227](../../../extended/ext/http_service.lani#L227)
 
 ```lanius
 pub fn set_close(&self)
@@ -731,7 +1009,7 @@ pub fn set_close(&self)
 
 #### method: next_request
 
-[Source line 155](../../../extended/ext/http_service.lani#L155)
+[Source line 334](../../../extended/ext/http_service.lani#L334)
 
 ```lanius
 pub fn next_request(&self) -> core::result::Result<core::option::Option<Request>,Error>
@@ -739,7 +1017,7 @@ pub fn next_request(&self) -> core::result::Result<core::option::Option<Request>
 
 #### method: begin
 
-[Source line 223](../../../extended/ext/http_service.lani#L223)
+[Source line 356](../../../extended/ext/http_service.lani#L356)
 
 ```lanius
 pub fn begin(&self, status: i32) -> core::result::Result<i32,Error>
@@ -747,7 +1025,7 @@ pub fn begin(&self, status: i32) -> core::result::Result<i32,Error>
 
 #### method: header
 
-[Source line 234](../../../extended/ext/http_service.lani#L234)
+[Source line 370](../../../extended/ext/http_service.lani#L370)
 
 ```lanius
 pub fn header(&self, name: core::slice::View<u8>, value: core::slice::View<u8>) -> core::result::Result<i32,Error>
@@ -755,7 +1033,7 @@ pub fn header(&self, name: core::slice::View<u8>, value: core::slice::View<u8>) 
 
 #### method: header_number
 
-[Source line 243](../../../extended/ext/http_service.lani#L243)
+[Source line 379](../../../extended/ext/http_service.lani#L379)
 
 ```lanius
 pub fn header_number(&self, name: core::slice::View<u8>, value: u64) -> core::result::Result<i32,Error>
@@ -763,23 +1041,39 @@ pub fn header_number(&self, name: core::slice::View<u8>, value: u64) -> core::re
 
 #### method: end_head
 
-[Source line 246](../../../extended/ext/http_service.lani#L246)
+[Source line 393](../../../extended/ext/http_service.lani#L393)
 
 ```lanius
 pub fn end_head(&self, length: u64) -> core::result::Result<i32,Error>
 ```
 
+#### method: end_head_without_body
+
+[Source line 396](../../../extended/ext/http_service.lani#L396)
+
+```lanius
+pub fn end_head_without_body(&self, length: u64) -> core::result::Result<i32,Error>
+```
+
 #### method: write_body
 
-[Source line 257](../../../extended/ext/http_service.lani#L257)
+[Source line 397](../../../extended/ext/http_service.lani#L397)
 
 ```lanius
 pub fn write_body(&self, data: core::slice::View<u8>) -> core::result::Result<i32,Error>
 ```
 
+#### method: stream_file
+
+[Source line 406](../../../extended/ext/http_service.lani#L406)
+
+```lanius
+pub fn stream_file(&self, file: std::file::File, position: u64, length: u64) -> core::result::Result<i32,Error>
+```
+
 #### method: respond
 
-[Source line 266](../../../extended/ext/http_service.lani#L266)
+[Source line 421](../../../extended/ext/http_service.lani#L421)
 
 ```lanius
 pub fn respond(&self, status: i32, content_type: core::slice::View<u8>, body: core::slice::View<u8>) -> core::result::Result<i32,Error>
@@ -787,7 +1081,7 @@ pub fn respond(&self, status: i32, content_type: core::slice::View<u8>, body: co
 
 #### method: reject
 
-[Source line 273](../../../extended/ext/http_service.lani#L273)
+[Source line 428](../../../extended/ext/http_service.lani#L428)
 
 ```lanius
 pub fn reject(&self, error: Error) -> core::result::Result<i32,Error>
@@ -795,15 +1089,15 @@ pub fn reject(&self, error: Error) -> core::result::Result<i32,Error>
 
 #### method: close
 
-[Source line 280](../../../extended/ext/http_service.lani#L280)
+[Source line 461](../../../extended/ext/http_service.lani#L461)
 
 ```lanius
 pub fn close(&self) -> core::result::Result<i32,Error>
 ```
 
-### impl at line 302
+### impl at line 482
 
-[Source line 302](../../../extended/ext/http_service.lani#L302)
+[Source line 482](../../../extended/ext/http_service.lani#L482)
 
 ```lanius
 pub impl Router
@@ -811,7 +1105,7 @@ pub impl Router
 
 #### method: borrow
 
-[Source line 303](../../../extended/ext/http_service.lani#L303)
+[Source line 483](../../../extended/ext/http_service.lani#L483)
 
 ```lanius
 pub fn borrow(&self) -> &Router
@@ -819,7 +1113,7 @@ pub fn borrow(&self) -> &Router
 
 #### method: add
 
-[Source line 306](../../../extended/ext/http_service.lani#L306)
+[Source line 486](../../../extended/ext/http_service.lani#L486)
 
 ```lanius
 pub fn add(&self, method: core::slice::View<u8>, pattern: core::slice::View<u8>, prefix: bool, id: i32) -> core::result::Result<i32,Error>
@@ -827,7 +1121,7 @@ pub fn add(&self, method: core::slice::View<u8>, pattern: core::slice::View<u8>,
 
 #### method: find
 
-[Source line 311](../../../extended/ext/http_service.lani#L311)
+[Source line 491](../../../extended/ext/http_service.lani#L491)
 
 ```lanius
 pub fn find(&self, method: core::slice::View<u8>, path: core::slice::View<u8>) -> Match
@@ -835,8 +1129,80 @@ pub fn find(&self, method: core::slice::View<u8>, path: core::slice::View<u8>) -
 
 #### method: destroy
 
-[Source line 325](../../../extended/ext/http_service.lani#L325)
+[Source line 505](../../../extended/ext/http_service.lani#L505)
 
 ```lanius
 pub fn destroy(&self)
+```
+
+### impl at line 539
+
+[Source line 539](../../../extended/ext/http_service.lani#L539)
+
+```lanius
+pub impl Server
+```
+
+#### method: borrow
+
+[Source line 540](../../../extended/ext/http_service.lani#L540)
+
+```lanius
+pub fn borrow(&self) -> &Server
+```
+
+#### method: stats
+
+[Source line 541](../../../extended/ext/http_service.lani#L541)
+
+```lanius
+pub fn stats(&self) -> ServerStats
+```
+
+#### method: active
+
+[Source line 542](../../../extended/ext/http_service.lani#L542)
+
+```lanius
+pub fn active(&self) -> i32
+```
+
+#### method: request
+
+[Source line 543](../../../extended/ext/http_service.lani#L543)
+
+```lanius
+pub fn request(&self, slot: i32) -> Request
+```
+
+#### method: take
+
+[Source line 545](../../../extended/ext/http_service.lani#L545)
+
+```lanius
+pub fn take(&self, slot: i32) -> Connection
+```
+
+#### method: put
+
+[Source line 546](../../../extended/ext/http_service.lani#L546)
+
+```lanius
+pub fn put(&self, slot: i32, conn: Connection) -> core::result::Result<i32,Error>
+```
+
+#### method: next
+
+[Source line 659](../../../extended/ext/http_service.lani#L659)
+
+```lanius
+pub fn next(&self, deadline: core::time::Deadline) -> core::result::Result<core::option::Option<i32>,Error>
+```
+
+#### method: close
+
+[Source line 680](../../../extended/ext/http_service.lani#L680)
+
+```lanius
+pub fn close(&self) -> core::result::Result<i32,Error>
 ```

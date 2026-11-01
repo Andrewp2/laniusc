@@ -1185,9 +1185,10 @@
     "ext::http_service": {
       "guides": [
         "docs/extended-http-service.md",
-        "docs/extended-http.md"
+        "docs/extended-http.md",
+        "docs/stdlib-event-loop.md"
       ],
-      "note": "Sequential keep-alive HTTP/1.1 service over the ext::http codec: absolute head/body/idle/write deadlines, typed errors with status_for, pipelining, chunked bodies, 100 Continue, a response writer and an id-based router. The static-file sample passes Python loopback oracle groups functional69/malformed42/slowloris12 with exact server counters; one connection is served at a time."
+      "note": "Keep-alive HTTP/1.1 service over the ext::http codec: absolute head/body/idle/write deadlines, typed errors with status_for (400/408/413/431/501/505), pipelining, chunked bodies, 100 Continue, Date, a response writer with file streaming and an id-based router. A one-thread std::event Server multiplexes buffered connections; a sequential driver shares the code. The static-file sample (listings, ranges, ETag/Last-Modified conditional requests) passes nine Python loopback oracle groups with exact server counters."
     },
     "ext::http_url": {
       "guides": [

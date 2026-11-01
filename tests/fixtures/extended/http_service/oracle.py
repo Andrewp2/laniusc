@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """Loopback oracle for sample_programs/library/http_static.lani.
 
-usage: oracle.py GROUP EXE   (GROUP: functional, malformed, slowloris, all)
+usage: oracle.py GROUP EXE
+
+GROUP: functional, malformed, slowloris, conditional, concurrent (event
+server) or functional-seq, malformed-seq, slowloris-seq, conditional-seq
+(--sequential driver), or all.
 
 Each group starts its own server on 127.0.0.1:0 over a fresh document root,
 runs Python http.client/urllib/raw-socket cases, waits for the server to exit
@@ -16,15 +20,25 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
+import email.utils
+import hashlib
 import urllib.request
 
 TALLY = {"connections": 0, "requests": 0, "rejected": 0, "timeouts": 0}
+LOCK = threading.Lock()
+MODE = {"sequential": False}
+
+
+def bump(key, n=1):
+    with LOCK:
+        TALLY[key] += n
 
 
 class Counted(http.client.HTTPConnection):
     def connect(self):
-        TALLY["connections"] += 1
+        bump("connections")
         super().connect()
 
 
@@ -56,6 +70,8 @@ def make_root(base):
 class Server:
     def __init__(self, exe, root, extra):
         args = [exe, root, "127.0.0.1:0", "--accept-timeout", "1500"] + extra
+        if MODE["sequential"]:
+            args.append("--sequential")
         self.proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         line = self.proc.stdout.readline().decode()
         m = re.match(r"127\.0\.0\.1:(\d+)\n", line)
@@ -75,7 +91,7 @@ def http_conn(port):
 
 
 def get(conn, method, path, headers=None, body=None, chunked=False):
-    TALLY["requests"] += 1
+    bump("requests")
     conn.request(method, path, body=body, headers=headers or {}, encode_chunked=chunked)
     r = conn.getresponse()
     data = r.read()
@@ -86,7 +102,7 @@ def get(conn, method, path, headers=None, body=None, chunked=False):
 
 def raw(port, data, pause=None, read_timeout=5.0, shut=False):
     """Send bytes (a list means separate writes), return (bytes until EOF, seconds)."""
-    TALLY["connections"] += 1
+    bump("connections")
     s = socket.create_connection(("127.0.0.1", port), timeout=read_timeout)
     start = time.monotonic()
     parts = data if isinstance(data, list) else [data]
@@ -162,6 +178,10 @@ def functional(exe, base):
         r, data = get(conn, "HEAD", "/" + name)
         check(r.status == 200 and data == b"" and r.getheader("Content-Type") == ctype and r.getheader("Content-Length") == str(len(files[name])), "HEAD " + name)
         cases += 1
+    r, data = get(conn, "GET", "/a.txt")
+    date = email.utils.parsedate_to_datetime(r.getheader("Date"))
+    check(abs(date.timestamp() - time.time()) < 10 and r.getheader("Date").endswith(" GMT"), "Date %r" % r.getheader("Date"))
+    cases += 1
     sock0 = conn.sock
     # Percent-encoded names and the escaped name.
     r, data = get(conn, "GET", "/we%20ird/caf%C3%A9.txt")
@@ -305,8 +325,11 @@ MALFORMED = [
     (b"GET / HTTP/1.1\r\nHost: x\r\nX: a\x7fb\r\n\r\n", 400),
     (b"GET /a b HTTP/1.1\r\nHost: x\r\n\r\n", 400),
     (b"GET / HTTP/1.1 \r\nHost: x\r\n\r\n", 400),
-    (b"GET / HTTP/1.2\r\nHost: x\r\n\r\n", 501),
-    (b"GET / HTTP/2.0\r\nHost: x\r\n\r\n", 501),
+    (b"GET / HTTP/1.2\r\nHost: x\r\n\r\n", 505),
+    (b"GET / HTTP/2.0\r\nHost: x\r\n\r\n", 505),
+    (b"GET / HTTP/3.9\r\nHost: x\r\n\r\n", 505),
+    (b"GET / http/1.1\r\nHost: x\r\n\r\n", 400),
+    (b"GET / HTTP/1.10\r\nHost: x\r\n\r\n", 400),
     (b"GET / HTP/1.1\r\nHost: x\r\n\r\n", 400),
     (b"POST /echo HTTP/1.1\r\nHost: x\r\nContent-Length: 3\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r\n0\r\n\r\n", 400),
     (b"POST /echo HTTP/1.1\r\nHost: x\r\nContent-Length: 3\r\nContent-Length: 3\r\n\r\nabc", 400),
@@ -342,7 +365,7 @@ def malformed(exe, base):
         TALLY["rejected"] += 1
         st = statuses(got)
         check(st == [code], "%r -> %r" % (data[:60], st))
-        check(b"Connection: close" in got, "close %r" % data[:40])
+        check(b"Connection: close" in got and b"\r\nDate: " in got, "close %r" % data[:40])
         cases += 1
     # A valid request before a malformed one is answered first; nothing after.
     TALLY["requests"] += 1
@@ -484,20 +507,215 @@ def slowloris(exe, base):
             break
         held += c
     hold.close()
-    check(statuses(held) == [408] and statuses(got) == [200] and 0.5 <= waited < 2.0, "queued %f" % waited)
+    if MODE["sequential"]:
+        check(statuses(held) == [408] and statuses(got) == [200] and 0.5 <= waited < 2.0, "queued %f" % waited)
+    else:
+        check(statuses(held) == [408] and statuses(got) == [200] and waited < 0.3, "not queued %f" % waited)
     cases += 1
     stats = srv.finish()
     return cases, stats
 
 
+def conditional(exe, base):
+    root, files = make_root(base)
+    srv = Server(exe, root, [])
+    port = srv.port
+    cases = 0
+    conn = http_conn(port)
+    path = os.path.join(root, "big.bin")
+    st = os.stat(path)
+    etag = '"%x-%x-%x"' % (st.st_size, st.st_mtime_ns // 1000000000, st.st_mtime_ns % 1000000000)
+    lastmod = email.utils.formatdate(st.st_mtime_ns // 1000000000, usegmt=True)
+    big = files["big.bin"]
+    r, data = get(conn, "GET", "/big.bin")
+    check(r.status == 200 and r.getheader("ETag") == etag and r.getheader("Last-Modified") == lastmod and data == big, "validators %r %r" % (r.getheader("ETag"), r.getheader("Last-Modified")))
+    cases += 1
+    for headers, code in [
+        ({"If-None-Match": etag}, 304), ({"If-None-Match": "W/" + etag}, 304), ({"If-None-Match": "*"}, 304),
+        ({"If-None-Match": '"nope"'}, 200), ({"If-None-Match": '"nope", ' + etag}, 304), ({"If-None-Match": '"a" , W/"b",' + etag + ' '}, 304),
+        ({"If-Modified-Since": lastmod}, 304), ({"If-Modified-Since": email.utils.formatdate(st.st_mtime - 86400, usegmt=True)}, 200),
+        ({"If-Modified-Since": email.utils.formatdate(time.time() + 86400, usegmt=True)}, 304), ({"If-Modified-Since": "yesterday"}, 200),
+        ({"If-Modified-Since": lastmod.replace("GMT", "UTC")}, 200),
+        ({"If-None-Match": '"nope"', "If-Modified-Since": lastmod}, 200),
+        ({"If-None-Match": etag, "Range": "bytes=0-9"}, 304),
+        ({"Range": "bytes=0-9", "If-Range": etag}, 206), ({"Range": "bytes=0-9", "If-Range": '"other"'}, 200),
+        ({"Range": "bytes=0-9", "If-Range": "W/" + etag}, 200), ({"Range": "bytes=0-9", "If-Range": lastmod}, 206),
+        ({"Range": "bytes=0-9", "If-Range": email.utils.formatdate(st.st_mtime - 5, usegmt=True)}, 200),
+    ]:
+        r, data = get(conn, "GET", "/big.bin", headers)
+        check(r.status == code, "%r -> %d" % (headers, r.status))
+        if code == 304:
+            check(data == b"" and r.getheader("ETag") == etag and r.getheader("Content-Length") == str(len(big)) and r.getheader("Date"), "304 fields")
+        if code == 200:
+            check(data == big, "full")
+        if code == 206:
+            check(data == big[:10], "partial")
+        cases += 1
+    r, data = get(conn, "HEAD", "/big.bin", {"If-None-Match": etag})
+    check(r.status == 304 and data == b"", "HEAD 304")
+    cases += 1
+    check(conn.sock is not None, "304 keeps the connection")
+    os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns + 100 * 1000000000))
+    r, data = get(conn, "GET", "/big.bin", {"If-None-Match": etag})
+    check(r.status == 200 and r.getheader("ETag") != etag and data == big, "changed file")
+    r, data = get(conn, "GET", "/big.bin", {"If-None-Match": r.getheader("ETag")})
+    check(r.status == 304, "new etag")
+    cases += 2
+    r, data = get(conn, "GET", "/nope")
+    check(r.status == 404 and r.getheader("Date"), "Date on 404")
+    cases += 1
+    conn.close()
+    stats = srv.finish()
+    return cases, stats
+
+
+def concurrent(exe, base):
+    root, files = make_root(base)
+    huge = bytes(range(256)) * (32 * 4096)  # 32 MiB
+    with open(os.path.join(root, "huge.bin"), "wb") as f:
+        f.write(huge)
+    srv = Server(exe, root, ["--head-timeout", "1500", "--idle-timeout", "1500", "--max-connections", "128"])
+    port = srv.port
+    cases = 0
+    errors = []
+    big = files["big.bin"]
+
+    def worker(n):
+        try:
+            conn = http_conn(port)
+            for i in range(12):
+                k = (n + i) % 4
+                if k == 0:
+                    r, d = get(conn, "GET", "/a.txt")
+                    check(r.status == 200 and d == files["a.txt"], "w a")
+                elif k == 1:
+                    lo = (n * 977 + i * 31) % 290000
+                    r, d = get(conn, "GET", "/big.bin", {"Range": "bytes=%d-%d" % (lo, lo + 4095)})
+                    check(r.status == 206 and d == big[lo:lo + 4096], "w range")
+                elif k == 2:
+                    r, d = get(conn, "GET", "/sub/")
+                    check(r.status == 200 and b"i.html" in d, "w list")
+                else:
+                    body = os.urandom(65536 + n)
+                    r, d = get(conn, "POST", "/echo", body=iter([body[:1000], body[1000:]]), chunked=True)
+                    check(r.status == 200 and d == body, "w echo")
+            conn.close()
+        except Exception as e:
+            errors.append(repr(e))
+
+    # 1. Sixteen keep-alive clients at once, 12 mixed requests each.
+    threads = [threading.Thread(target=worker, args=(n,)) for n in range(16)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    check(not errors, "workers %r" % errors[:3])
+    cases += 16
+    # 2. Eight held slowloris heads do not delay another client.
+    holds = []
+    for _ in range(8):
+        bump("connections")
+        bump("rejected")
+        bump("timeouts")
+        h = socket.create_connection(("127.0.0.1", port), timeout=5)
+        h.sendall(b"GET / HTTP/1.1\r\nHost: x\r\n")
+        holds.append(h)
+    time.sleep(0.1)
+    start = time.monotonic()
+    conn = http_conn(port)
+    for i in range(20):
+        r, d = get(conn, "GET", "/a.txt")
+        check(r.status == 200 and d == files["a.txt"], "beside slowloris")
+    conn.close()
+    elapsed = time.monotonic() - start
+    check(elapsed < 0.5, "20 requests beside 8 slowloris took %f" % elapsed)
+    cases += 1
+    for h in holds:
+        got = b""
+        while True:
+            c = h.recv(4096)
+            if not c:
+                break
+            got += c
+        h.close()
+        check(statuses(got) == [408], "held 408")
+        cases += 1
+    # 3. A client that stops reading a 32 MiB body does not delay another.
+    bump("connections")
+    bump("requests")
+    slow = socket.create_connection(("127.0.0.1", port), timeout=10)
+    slow.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 65536)
+    slow.sendall(b"GET /huge.bin HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+    time.sleep(0.3)
+    start = time.monotonic()
+    conn = http_conn(port)
+    for i in range(10):
+        r, d = get(conn, "GET", "/big.bin")
+        check(r.status == 200 and d == big, "beside slow reader")
+    conn.close()
+    elapsed = time.monotonic() - start
+    check(elapsed < 1.0, "10 requests beside a stalled reader took %f" % elapsed)
+    got = b""
+    while True:
+        c = slow.recv(1 << 20)
+        if not c:
+            break
+        got += c
+    slow.close()
+    head, _, body = got.partition(b"\r\n\r\n")
+    check(statuses(head) == [200] and hashlib.sha256(body).digest() == hashlib.sha256(huge).digest(), "huge body %d" % len(body))
+    cases += 2
+    # 4. Forty idle connections, then a prompt request; the idle ones expire silently.
+    idle = []
+    for _ in range(40):
+        bump("connections")
+        idle.append(socket.create_connection(("127.0.0.1", port), timeout=5))
+    time.sleep(0.1)
+    start = time.monotonic()
+    conn = http_conn(port)
+    r, d = get(conn, "GET", "/healthz")
+    conn.close()
+    check(r.status == 200 and time.monotonic() - start < 0.3, "beside idle")
+    for s in idle:
+        check(s.recv(10) == b"", "idle closed")
+        s.close()
+    cases += 2
+    # 5. Interleaved pipelined requests from many raw sockets, byte by byte, round robin.
+    socks = []
+    for _ in range(10):
+        bump("connections")
+        bump("requests", 3)
+        socks.append(socket.create_connection(("127.0.0.1", port), timeout=5))
+    msg = b"GET /a.txt HTTP/1.1\r\nHost: x\r\n\r\nGET /healthz HTTP/1.1\r\nHost: x\r\n\r\nGET /sub/i.html HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"
+    for i in range(len(msg)):
+        for s in socks:
+            s.sendall(msg[i:i + 1])
+    for s in socks:
+        got = b""
+        while True:
+            c = s.recv(4096)
+            if not c:
+                break
+            got += c
+        s.close()
+        check(statuses(got) == [200, 200, 200] and got.endswith(b"<b>x</b>\n"), "interleaved %r" % statuses(got))
+        cases += 1
+    stats = srv.finish()
+    return cases, stats
+
+
+GROUPS = {"functional": functional, "malformed": malformed, "slowloris": slowloris, "conditional": conditional, "concurrent": concurrent}
+
+
 def main():
     group, exe = sys.argv[1], sys.argv[2]
-    groups = ["functional", "malformed", "slowloris"] if group == "all" else [group]
+    groups = ["functional", "malformed", "slowloris", "conditional", "concurrent", "functional-seq", "malformed-seq", "slowloris-seq", "conditional-seq"] if group == "all" else [group]
     for g in groups:
+        MODE["sequential"] = g.endswith("-seq")
         for k in TALLY:
             TALLY[k] = 0
         with tempfile.TemporaryDirectory(prefix="lanius-http-service-") as base:
-            cases, stats = {"functional": functional, "malformed": malformed, "slowloris": slowloris}[g](exe, base)
+            cases, stats = GROUPS[g.replace("-seq", "")](exe, base)
         for k in TALLY:
             check(stats[k] == TALLY[k], "%s %s server=%d oracle=%d %r" % (g, k, stats[k], TALLY[k], stats))
         check(stats["errors"] == 0, "server errors %r" % stats)
