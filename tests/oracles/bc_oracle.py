@@ -146,7 +146,21 @@ def make_cases(rng, radix):
     for m in (1, -1):
         cases.append(("modpow", "modpow(%s,%s,%s)" % (lit(7, radix), lit(5, radix), lit(m, radix)), pow(7, 5, m)))
     cases.append(("modpow", "modpow(%s,%s,0)" % (lit(3, radix), lit(5, radix)), Error("division-by-zero")))
-    cases.append(("modpow", "modpow(%s,(-1),%s)" % (lit(3, radix), lit(7, radix)), Error("negative-exponent")))
+    # Modular inverses and negative exponents, Python pow(a, -e, m).
+    for _ in range(60):
+        m = signed(rng, value_of_limbs(rng, rng.choice([1, 2, 8, 33, 70]), rng.randrange(5)))
+        a = signed(rng, value_of_limbs(rng, rng.choice([0, 1, 2, 8, 33, 70]), rng.randrange(5)))
+        try:
+            want = pow(a, -1, m)
+        except ValueError:
+            want = Error("not-invertible")
+        cases.append(("modinv", "modinv(%s,%s)" % (lit(a, radix), lit(m, radix)), want))
+        e = value_of_limbs(rng, rng.choice([0, 1, 2]), 0)
+        if not isinstance(want, Error):
+            cases.append(("modpow-negative", "modpow(%s,(-%s),%s)" % (lit(a, radix), lit(e, radix), lit(m, radix)), pow(a, -e, m) if e else pow(a, 0, m)))
+    cases.append(("modinv", "modinv(%s,%s)" % (lit(6, radix), lit(9, radix)), Error("not-invertible")))
+    cases.append(("modinv", "modinv(%s,0)" % lit(3, radix), Error("division-by-zero")))
+    cases.append(("modinv", "modinv(%s,%s)" % (lit(5, radix), lit(1, radix)), 0))
     # Random fully parenthesized expression trees.
     def tree(depth):
         if depth == 0 or rng.random() < 0.25:

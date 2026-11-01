@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **305 modules**, **15904 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **305 modules**, **15910 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -104,8 +104,8 @@ Inventory: **305 modules**, **15904 declaration/member entries**. Counts include
 | --- | --- | ---: | --- | --- |
 | [alloc::allocator](alloc/allocator.md) | [source](../../stdlib/alloc/allocator.lani#L3) | 51 | Source inventory | [stdlib-raw-host-width](../stdlib-raw-host-width.md), [library-host-operation-support](../library-host-operation-support.md) |
 | [alloc::arena](alloc/arena.md) | [source](../../stdlib/alloc/arena.lani#L3) | 49 | Source inventory | [stdlib-arena](../stdlib-arena.md), [stdlib-layout](../stdlib-layout.md) |
-| [alloc::big_int](alloc/big_int.md) | [source](../../stdlib/alloc/big_int.lani#L3) | 57 | Source inventory | [stdlib-big-integers](../stdlib-big-integers.md), [stdlib-big-int](../stdlib-big-int.md) |
-| [alloc::big_uint](alloc/big_uint.md) | [source](../../stdlib/alloc/big_uint.lani#L4) | 75 | Source inventory | [stdlib-big-integers](../stdlib-big-integers.md), [stdlib-big-uint](../stdlib-big-uint.md) |
+| [alloc::big_int](alloc/big_int.md) | [source](../../stdlib/alloc/big_int.lani#L3) | 58 | Source inventory | [stdlib-big-integers](../stdlib-big-integers.md), [stdlib-big-int](../stdlib-big-int.md) |
+| [alloc::big_uint](alloc/big_uint.md) | [source](../../stdlib/alloc/big_uint.lani#L4) | 80 | Source inventory | [stdlib-big-integers](../stdlib-big-integers.md), [stdlib-big-uint](../stdlib-big-uint.md) |
 | [alloc::binary_heap](alloc/binary_heap.md) | [source](../../stdlib/alloc/binary_heap.lani#L4) | 54 | Source inventory | [stdlib-binary-heap](../stdlib-binary-heap.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-heap-iterators](../stdlib-heap-iterators.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md), [stdlib-owning-heap](../stdlib-owning-heap.md), [stdlib-exact-size-iterators](../stdlib-exact-size-iterators.md) |
 | [alloc::bitset](alloc/bitset.md) | [source](../../stdlib/alloc/bitset.lani#L4) | 55 | Source inventory | [stdlib-bitset-owned](../stdlib-bitset-owned.md) |
 | [alloc::buffered](alloc/buffered.md) | [source](../../stdlib/alloc/buffered.lani#L4) | 49 | Source inventory | [stdlib-buffered](../stdlib-buffered.md), [stdlib-format-write](../stdlib-format-write.md), [stdlib-delimited-io](../stdlib-delimited-io.md), [stdlib-select-records](../stdlib-select-records.md), [stdlib-seek](../stdlib-seek.md), [stdlib-reverse-records](../stdlib-reverse-records.md) |

@@ -45,6 +45,7 @@ owners separately. Do not destroy the aggregate after transferring a field.
 | `bit_and`, `bit_or`, `bit_xor` | Zero extended unsigned bit operations |
 | `pow(exponent: u32, limits)` | Exponentiation by squaring; `0^0 = 1` |
 | `gcd(other, limits)` | Euclidean GCD; `gcd(0,0) = 0` |
+| `mod_inverse(modulus, limits)` | `x` in `[0, modulus)` with `self*x ≡ 1`; `NotInvertible` when `gcd != 1`; zero modulus is `DivisionByZero`; modulus one gives zero |
 | `mod_pow(exponent, modulus, limits)` | `self^exponent mod modulus` in `[0, modulus)`; zero modulus is `DivisionByZero`; modulus one gives zero |
 | `format_radix(radix, limits)` | Owned lowercase ASCII digits, without sign, prefix, separator, or terminator |
 | `format_into(output, radix, limits)` | Stages owned formatting then copies into caller storage; returns bytes written |
@@ -91,7 +92,7 @@ a budget across multiple calls must account for that separately.
 
 Errors are `Bounds`, `LimbLimit`, `WorkLimit`, `OutputLimit`,
 `AllocationFailed`, `InvalidRadix`, `InvalidDigit`, `Empty`, `Underflow`,
-`DivisionByZero`, `Overflow`, and `NegativeExponent` (signed `mod_pow` only). Failed construction destroys its partial
+`DivisionByZero`, `Overflow`, `NegativeExponent` (no library operation returns it any more; kept for callers), and `NotInvertible`. Failed construction destroys its partial
 owner. Failed arithmetic destroys its temporary owners and preserves both
 operands, including when they refer to the same owner.
 
@@ -115,8 +116,10 @@ a pair whose quotient would require another limb. The normalized remainder
 is shifted back after all quotient positions are processed. Complexity is
 `O((N-M+1)*M)` for division of `N` limbs by `M` limbs. Multiplication is
 `O(N*M)` below the Karatsuba threshold and `O(N^1.585)` above it; its work
-charge stays the conservative `N*M`. Parsing and formatting fold `g` digits
-per pass (`radix^g < 2^32`) and remain quadratic for long inputs. See the
+charge stays the conservative `N*M`. Division uses Burnikel-Ziegler above
+1,024-limb divisors. Radix conversion is linear for power-of-two radices and
+divide and conquer for large values in other radices; small values fold `g`
+digits per pass (`radix^g < 2^32`). Work charges keep the basecase bounds. See the
 [big integer guide](stdlib-big-integers.md) for the Karatsuba workspace
 and bounds.
 
