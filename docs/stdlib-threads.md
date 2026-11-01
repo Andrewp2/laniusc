@@ -42,10 +42,11 @@ A null entry and a stack below the minimum are `Error::InvalidInput`.
 - **The entry's type is not checked.** The name is only a `ptr`, so passing
   a function of another signature is undefined. Use exactly
   `fn (ptr) -> ptr`.
-- **No heap allocation in thread bodies.** The Lanius heap allocator is not
-  synchronized. Allocate before spawning, and have threads work in memory
-  that already exists, such as a `std::sync::Region`, a `std::uring`
-  buffer or a Vec.
+- **Heap allocation is allowed in thread bodies.** The runtime allocator is
+  thread-safe: each thread allocates from and frees into its own pool
+  ([runtime allocator](runtime-allocator.md)). A thread may still prefer to
+  work in memory the caller prepared, such as a `std::sync::Region`, a
+  `std::uring` buffer or a Vec, to avoid per-thread arenas.
 - **Generic code goes through a wrapper.** An entry must be non-generic, so
   generic work is reached through a one-line wrapper that names the type:
   `fn crew(arg: ptr) -> ptr { return std::par::crew_entry<i64>(arg); }`.
@@ -72,6 +73,16 @@ about 1.7 s each.
 | `counter` | 8 threads × 20,000 Mutex-guarded plain increments give exactly 160,000 |
 | `queue.taken`, `queue.sum_ok`, `queue.split` | 2 producers × 20,000 values pass through an 8-slot queue (one Mutex, `not_empty`/`not_full` Condvars) to 2 consumers. All 40,000 values are taken once, their sum is exact, and the consumers' counts add up to 40,000 |
 | `join.pairs`, `join.second_refused` | 1,000 sequential spawn/join pairs each return their argument + 8, and a second join is refused |
+
+`tests/fixtures/stdlib_execution/concurrency/thread_alloc.lani` checks heap
+allocation in thread bodies, in the same format. Ten runs passed, in 1.1 to
+2.8 s each.
+
+| Check | Invariant |
+| --- | --- |
+| `churn.1`, `churn.4`, `churn.16` | 1, 4 and 16 threads each run 20,000 random alloc, realloc and free steps over 64 tagged slots (1 to 3,000 bytes, every 16th 40,000). Fresh blocks read as zero, live blocks keep their tag, realloc keeps the common prefix, and the error count is 0 |
+| `cross.taken`, `cross.bad`, `cross.main` | 2 producers allocate 40,000 tagged blocks and pass them through a 16-slot Condvar queue to 2 consumers, which verify and free them, while main allocates 2,000 more |
+| `spawn.pairs` | 1,000 sequential spawn/join pairs whose bodies allocate, check zeroing and free |
 
 ## std::par on threads
 
