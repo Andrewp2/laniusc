@@ -1,5 +1,8 @@
-import Lanius.Mini.Reading.Det.Decls
+module
 
+public import Lanius.Mini.Reading.Det.Decls
+
+@[expose] public section
 /-! # The reading is deterministic, F1: lowering types and their instances -/
 
 namespace Lanius.Mini.Reading

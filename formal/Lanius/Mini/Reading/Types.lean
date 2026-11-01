@@ -1,5 +1,19 @@
-import Lanius.Mini.Reading.Names
+module
 
+public import Lanius.Mini.Reading.Names
+import all Lanius.Mini.Frontend.P.distinct
+import all Lanius.Mini.Frontend.P.findConst
+import all Lanius.Mini.Frontend.P.hasKids
+import all Lanius.Mini.Frontend.P.isEmptyUsize
+import all Lanius.Mini.Frontend.P.itemOf
+import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.textSelf
+import all Lanius.Mini.Frontend.P.typeDeclAt
+import all Lanius.Mini.Frontend.P.typePathSpellings
+import all Lanius.Mini.Frontend.P.variantIn
+
+@[expose] public section
 /-! # The reading, V8b: type expressions
 
 `TyR env t ty`: the type expression `t`, read where `env` says (the

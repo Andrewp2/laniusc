@@ -1,6 +1,10 @@
-import Lanius.Mini.Reading.Det.Base
-import Lanius.Mini.Reading.Det.Prods
+module
 
+public import Lanius.Mini.Reading.Det.Base
+public import Lanius.Mini.Reading.Det.Prods
+import all Lanius.Mini.Frontend.P.shrFirst
+
+@[expose] public section
 /-! # The reading is deterministic, F1: declarations
 
 What the items of each file declare, and the files' modules. -/

@@ -1,5 +1,8 @@
-import Lanius.Basic
+module
 
+public import Lanius.Basic
+
+@[expose] public section
 namespace Lanius.Compiler
 
 /-- Raw lexer token identities. Their explicit codes are the compatibility

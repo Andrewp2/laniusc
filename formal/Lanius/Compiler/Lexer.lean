@@ -1,5 +1,8 @@
-import Lanius.Basic
+module
 
+public import Lanius.Basic
+
+@[expose] public section
 namespace Lanius.Compiler.Lexer
 
 /-- A source byte. Lanius source locations and token spans are byte-based, as

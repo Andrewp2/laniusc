@@ -1,6 +1,35 @@
-import Lanius.Mini.Reading.Types
-import Lanius.Mini.Reading.FloatBits
+module
 
+public import Lanius.Mini.Reading.Types
+public import Lanius.Mini.Reading.FloatBits
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Frontend.P.findConst
+import all Lanius.Mini.Frontend.P.flDecimal
+import all Lanius.Mini.Frontend.P.flExpFirst
+import all Lanius.Mini.Frontend.P.floatTyped
+import all Lanius.Mini.Frontend.P.freshId
+import all Lanius.Mini.Frontend.P.grammarPart13
+import all Lanius.Mini.Frontend.P.hasKids
+import all Lanius.Mini.Frontend.P.intLiteral
+import all Lanius.Mini.Frontend.P.isEmptyUsize
+import all Lanius.Mini.Frontend.P.itemOf
+import all Lanius.Mini.Frontend.P.joinInsts
+import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.noTrees
+import all Lanius.Mini.Frontend.P.nullConst
+import all Lanius.Mini.Frontend.P.scalarOf
+import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.textSelf
+import all Lanius.Mini.Frontend.P.treeTokens
+import all Lanius.Mini.Frontend.P.typeDeclAt
+import all Lanius.Mini.Frontend.P.typePathSpellings
+import all Lanius.Mini.Frontend.P.typedLiteral
+import all Lanius.Mini.Frontend.P.unitTy
+import all Lanius.Mini.Frontend.P.variantIn
+import all Lanius.Mini.Frontend.P.wideMarker
+import all Lanius.Mini.Frontend.P.wideOf
+
+@[expose] public section
 /-! # The reading, V8c: expressions and literals
 
 `ExprR env scope c e`: the node `c` of the expression grammar, read where

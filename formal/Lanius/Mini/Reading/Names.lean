@@ -1,5 +1,17 @@
-import Lanius.Mini.Reading.Decls
+module
 
+public import Lanius.Mini.Reading.Decls
+import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Frontend.P.collect
+import all Lanius.Mini.Frontend.P.distinct
+import all Lanius.Mini.Frontend.P.findConst
+import all Lanius.Mini.Frontend.P.hasKids
+import all Lanius.Mini.Frontend.P.itemOf
+import all Lanius.Mini.Frontend.P.rootInsts
+import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.textSelf
+
+@[expose] public section
 /-! # The reading, V8a: names
 
 What the modules' names must satisfy (`WellNamed`), the primitive types'

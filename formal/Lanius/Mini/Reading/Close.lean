@@ -1,5 +1,22 @@
-import Lanius.Mini.Reading.Funcs
+module
 
+public import Lanius.Mini.Reading.Funcs
+import all Lanius.Mini.Frontend.P.allocClosed
+import all Lanius.Mini.Frontend.P.assertClosed
+import all Lanius.Mini.Frontend.P.closeFuncs
+import all Lanius.Mini.Frontend.P.distinct
+import all Lanius.Mini.Frontend.P.eDivideClosed
+import all Lanius.Mini.Frontend.P.eIndexClosed
+import all Lanius.Mini.Frontend.P.findConst
+import all Lanius.Mini.Frontend.P.flattenTys
+import all Lanius.Mini.Frontend.P.funcsOnto
+import all Lanius.Mini.Frontend.P.letClosed
+import all Lanius.Mini.Frontend.P.letStructClosed
+import all Lanius.Mini.Frontend.P.lowerTy
+import all Lanius.Mini.Frontend.P.setEvalClosed
+import all Lanius.Mini.Frontend.P.shrFirst
+
+@[expose] public section
 /-! # The reading, V8e: the closed program
 
 `EffClosed decls fns types x s`, `StmtClosed` and `FuncClosed`: a
