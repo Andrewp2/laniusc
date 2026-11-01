@@ -707,6 +707,9 @@ bool associated_receiver_ref(
     receiver_tag = type_expr_ref_tag[receiver_token];
     receiver_payload = type_expr_ref_payload[receiver_token];
     if (method_lookup_receiver(receiver_tag, receiver_payload)) return true;
+    // A bare imported generic qualifier names its declaration's own
+    // application (dependencies/14), an external canonical type.
+    if (receiver_tag == 5u && receiver_payload != INVALID) return true;
     receiver_tag = TYPE_REF_INVALID;
     receiver_payload = INVALID;
 
