@@ -39,11 +39,18 @@ stopping at the computations the theorems are about (`compileSource`,
 `linkObjects`, `elfFile`, `sourceProgramFiles`, `compileWords`,
 `frontEndWords` and the self program `Lanius.Faithful.Self.prog`, which are
 not trusted, section 10), with each one's type and body:
-definitions `da057f9f0d2562a7` (4,414 constants). This covers Core's
+definitions `b8d2e28d6f544c42` (4,416 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
-modules keeps its hash. The last change of the hash (11-01, review finding
+modules keeps its hash. The last change of the hash (11-01, merge of
+rfront's `u16` views into lang): Core's `u16` views (SEMANTIC_DECISIONS
+"`u16` views"): a raw slice of `u16` is a word view in laniusc's layout, one
+descending 8-byte word per element (`rawSliceElementAddress?` and
+`mapRawNominalSlice` take it as they take a struct or enum,
+`NativeLayout.elementStride?` is -8 and `words?` of a `[u16]` is 3), and
+`RawNominalSliceElement.word16` types it; the hash before it was
+`da057f9f0d2562a7` (Reviewer A's change kept it). Before that (11-01, review finding
 5 piece (c)): the new top theorems `selfCompiler_reason`,
 `selfHost_fixpoint_reason` and `selfHost_outcome_reason` bring in
 `SelfFaultReason` and `SelfShort` (`Faithful/SelfShort.lean`), `selfCost`,

@@ -1755,10 +1755,9 @@ theorem eval_stride {k slice : Nat} (ok : evalStride sp.decls scope slice slot =
   simp only [Option.some.injEq] at ok
   subst ok
   have wok := wordElement_wordType hel
-  have agg : (∃ id, element.toCore = .structure id) ∨ ∃ id, element.toCore = .enumeration id := by
-    cases element <;> simp_all [wordElement, SrcType.toCore]
+  have agg := wordElement_core hel
   have agg2 := agg
-  rcases agg2 with ⟨id, e⟩ | ⟨id, e⟩ <;>
+  rcases agg2 with ⟨id, e⟩ | ⟨id, e⟩ | e <;>
     (simp only [Semantics.rawSliceStride?, NativeLayout.elementStride?, e] at strideOk; rw [← e] at strideOk)
   all_goals
     cases hwords : NativeLayout.valueWords? sp.toCore element.toCore with
@@ -1767,7 +1766,7 @@ theorem eval_stride {k slice : Nat} (ok : evalStride sp.decls scope slice slot =
     simp only [hwords, Option.some.injEq] at strideOk
     subst strideOk
     rw [NativeLayout.valueWords?, show NativeLayout.maxDepth = 63 + 1 from rfl] at hwords
-    have small := words_le_max agg hwords
+    have small := words_le_max3 agg hwords
     have wEq := wordType_words element wok hwords
     subst wEq
     refine ⟨_, rfl, ?_⟩
@@ -3222,7 +3221,7 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
       simp only [Option.some.injEq] at ok
       subst ok
       have nb : Semantics.isByte element.toCore = false := by
-        revert hel; cases element <;> simp [wordElement, SrcType.toCore, Semantics.isByte]
+        exact wordElement_notByte hel
       simp only [Semantics.writeRawNative, nb, Bool.false_eq_true, ↓reduceIte] at stored
       obtain ⟨hp', exec, hc'⟩ := storeElement_sound (mp := mp) hc2 hel posEq located stored flat sOk bound3
       exact finish exec hc'
