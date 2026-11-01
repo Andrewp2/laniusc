@@ -53,7 +53,7 @@ fn regex_find_replace_and_grep_agree_with_python_re_on_generated_patterns() {
     let report = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success(), "{report}\n{output:?}");
     for line in [
-        "find_iter_captures 12000/12000",
+        "find_iter_captures 12005/12005",
         "replace_template 1000/1000",
         "grep_filter 1000/1000",
         "linear_time 5/5",

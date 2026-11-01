@@ -123,11 +123,25 @@ class Gen:
 
 
 def pattern(rng, multiline):
+    """One quarter of patterns nest three groups deep, the rest two."""
+    depth = 3 if rng.random() < 0.25 else 2
     while True:
         g = Gen(rng, multiline)
-        lan, py, _ = g.expr(2)
-        if lan and g.groups <= 6:
+        lan, py, _ = g.expr(depth)
+        if lan and g.groups <= 8 and len(lan) <= 160:
             return lan, py
+
+
+# Reductions of disagreements this oracle found; they stay in every run.
+# Lazy counted repeats once expanded x{0,2}? as x??x??, preferring every
+# single iteration over a second one.
+PINNED = [
+    (r"(?:a|aab){0,2}?b", "aabb"),
+    (r"(a|1b|a1b){0,2}?\.", "a1b."),
+    (r"([a1]b*|\S{2,}){0,3}? ", "a1b "),
+    (r"(a??((a+\t{1,2})a|([^b]+?)){0,3}?)a{1,2}", "-1ccaaac\t🙂_ a"),
+    (r"_|\x61*?\x{1f642}+?|((b)+?c{0,2}){0,3}?a", "🙂_céab1aacb1🙂bba."),
+]
 
 
 def text(rng, lo=0, hi=10):
@@ -178,6 +192,10 @@ def report(name, agree, total, failures):
 
 def find_iter_surface(exe, rng, count):
     cases, expected = [], []
+    for lan, t in PINNED:
+        py = lan.replace(r"\x{1f642}", "🙂")
+        cases.append((lan, py, t, 0))
+        expected.append(describe(re.compile(py, re.ASCII), t))
     for _ in range(count):
         flags = (1 if rng.random() < 0.25 else 0) | (2 if rng.random() < 0.25 else 0)
         lan, py = pattern(rng, flags & 1)
@@ -199,7 +217,7 @@ def find_iter_surface(exe, rng, count):
     multi = sum(e.count("M") > 1 for e in expected)
     unset = sum("/-" in e for e in expected)
     grouped = sum("/" in e for e in expected)
-    print(f"  find_iter_captures coverage: {count} patterns, {matched} cases with a match, "
+    print(f"  find_iter_captures coverage: {count} generated patterns, {len(PINNED)} pinned, {matched} cases with a match, "
           f"{multi} with several matches, {grouped} with capture groups, "
           f"{unset} with an unset group")
     return len(cases) - len(failures), len(cases), failures
