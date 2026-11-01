@@ -884,6 +884,12 @@
         "docs/extended-cbor-stream.md"
       ]
     },
+    "ext::msgpack": {
+      "guides": [
+        "docs/extended-msgpack.md"
+      ],
+      "note": "Streaming MessagePack: a chunk-fed Decoder (sticky typed errors with u64 offsets, depth/item/payload/input limits, concatenated streams, optional canonical-header and timestamp checks), EventReader over core::io::Read, and a Writer that emits the shortest formats, patches unknown container lengths and flushes its stable prefix to core::io::Write. Native Linux x86_64 binaries agree with the installed Python msgpack package and an independent model on 76 hand-typed format cases, 1,500 generated, 3,000 mutated, 2,398 limit and 1,200 stream cases; the msgpack-json sample agrees on 900. The cargo registrations were not run in this session."
+    },
     "ext::cbor_stream": {
       "guides": [
         "docs/extended-cbor-stream.md"

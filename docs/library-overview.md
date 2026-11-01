@@ -2131,6 +2131,11 @@ string and input limits. It agrees with all 81 hand-typed Appendix A rows and
 an independent Python implementation on 8,100 generated, mutated, limit and
 sequence cases at four chunk sizes; the
 [cbor-to-json](../sample_programs/cbor_to_json.lani) sample agrees on 700.
+[`ext::msgpack`](extended-msgpack.md) streams MessagePack the same way, with
+optional canonical-header and timestamp checks. It agrees with the installed
+Python `msgpack` package and an independent model on 8,174 format-table,
+generated, mutated, limit and stream cases; the two-way
+[msgpack-json](../sample_programs/msgpack_json.lani) sample agrees on 900.
 [Reusable CSV records and bounded stream writing](extended-csv-write.md)
 share the canonical encoder, preflight the complete record and retain exact
 accepted-prefix progress. The [column rewrite program](extended-csv-rewrite.md)
