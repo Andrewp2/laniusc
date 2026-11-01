@@ -2120,6 +2120,9 @@ from any `core::io::Read` source, and `Writer.flush_to` streams output to any
 tries Eisel-Lemire parsing and Grisu3 shortest formatting before its exact
 big-integer path. It agrees with Python `float()` and `repr()` on 4.8 million
 generated values, about 15 to 24 times faster on typical values.
+[`ext::toml`](extended-toml.md) agrees with Python `tomllib` on 1,754
+hand-written, generated and mutated documents. The only differences are by
+policy: TOML 1.1-only syntax, and integers outside i64.
 [Reusable CSV records and bounded stream writing](extended-csv-write.md)
 share the canonical encoder, preflight the complete record and retain exact
 accepted-prefix progress. The [column rewrite program](extended-csv-rewrite.md)
