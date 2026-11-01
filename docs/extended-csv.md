@@ -105,7 +105,14 @@ Encoding quotes every field, doubles embedded quotes and terminates each record
 with CRLF. It does not preserve source spelling. Encoding and field copying
 preserve their source on failure and release partial output. Output capacity
 limits are reported explicitly. The encoder uses one record-encoding routine
-for both APIs; it currently materializes the returned String.
+for both APIs; it currently materializes the returned String. It reserves the
+encoded length once (doubling when it grows) and appends 1 KiB encoded blocks
+cut at UTF-8 boundaries. Measured on 2026-10-31 (minimum of 3 interleaved
+runs on a loaded host): `encode_record` of a six-field, 114-byte record went
+from 92 µs to 17 µs, of which about 11 µs is the system time of the returned
+String's own allocation. `write_record` of the same record to a discarding
+sink went from 14 µs to 2.6 µs. End to end, `csv_normalize` on a 7.2 MB,
+100,000-record file went from 11.0 s to 7.5 s, where decoding now dominates.
 
 Record, Table and Decoder are manually owned values. Copying their handles does
 not clone storage. Maintain one active owner and destroy it once; copies of a
