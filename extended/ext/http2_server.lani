@@ -53,7 +53,10 @@ pub struct Connection {
     // from identifier to index+1, the count of open streams, the ready
     // requests in arrival order, and the streams with response bytes queued.
     streams: alloc::vec::Vec<Stream>, ids: alloc::vec::Vec<i32>, states: alloc::vec::Vec<i32>, taken: alloc::vec::Vec<bool>,
-    table: alloc::vec::Vec<i32>, open_count: i32, queue: alloc::vec::Vec<i32>, senders: alloc::vec::Vec<i32>, last_peer: i32, accepted: i32, preface_seen: bool, settings_seen: bool, settings_pending: i32,
+    table: alloc::vec::Vec<i32>, open_count: i32, queue: alloc::vec::Vec<i32>, senders: alloc::vec::Vec<i32>,
+    // Reused per response (the header list and its encoded block) and the
+    // buffers of freed streams, so steady traffic allocates little.
+    head_fields: alloc::vec::Vec<ext::hpack::Header>, head_block: alloc::vec::Vec<u8>, spare: alloc::vec::Vec<Stream>, last_peer: i32, accepted: i32, preface_seen: bool, settings_seen: bool, settings_pending: i32,
     peer_max_frame: i32, peer_window: i64, peer_list: i64, peer_table: i64,
     send_window: i64, receive_window: i64, unacknowledged: i64,
     goaway_received: bool, goaway_code: i32, goaway_sent: bool, goaway_last: i32,
@@ -93,7 +96,8 @@ pub fn server(options: Options) -> core::result::Result<Connection,ext::http2::E
         options: options, encoder: made_encoder.unwrap(), decoder: made_decoder.unwrap(),
         out: alloc::vec::new<u8>(), input: alloc::vec::new<u8>(), block: alloc::vec::new<u8>(), block_stream: 0, block_end_stream: false, block_self_dependent: false,
         streams: alloc::vec::new<Stream>(), ids: alloc::vec::new<i32>(), states: alloc::vec::new<i32>(), taken: alloc::vec::new<bool>(),
-        table: alloc::vec::new<i32>(), open_count: 0, queue: alloc::vec::new<i32>(), senders: alloc::vec::new<i32>(), last_peer: 0, accepted: 0, preface_seen: false, settings_seen: false, settings_pending: 1,
+        table: alloc::vec::new<i32>(), open_count: 0, queue: alloc::vec::new<i32>(), senders: alloc::vec::new<i32>(),
+        head_fields: alloc::vec::new<ext::hpack::Header>(), head_block: alloc::vec::new<u8>(), spare: alloc::vec::new<Stream>(), last_peer: 0, accepted: 0, preface_seen: false, settings_seen: false, settings_pending: 1,
         peer_max_frame: 16384, peer_window: 65535, peer_list: -1, peer_table: 4096,
         send_window: 65535, receive_window: 65535, unacknowledged: 0,
         goaway_received: false, goaway_code: 0, goaway_sent: false, goaway_last: 2147483647,
@@ -190,9 +194,16 @@ pub impl Connection {
         if (state == READY) { self.queue.try_push(self.ids.at(index)); }
     }
     fn is_open_at(&self, index: i32) -> bool { let st: i32 = self.states.at(index); return st == RECEIVING || st == READY; }
+    // Keep a freed stream's buffers (up to 32 sets of at most 16 KiB each)
+    // for the next stream.
+    fn recycle(&self, s: Stream) {
+        let keep: bool = self.active && self.spare.len() < 32 && s.fields.capacity() <= 16384 && s.slots.capacity() <= 4096
+            && s.body.capacity() <= 16384 && s.pending.capacity() <= 16384;
+        if (keep) { s.fields.clear(); s.slots.clear(); s.body.clear(); s.pending.clear(); keep = self.spare.try_push(s).is_ok(); }
+        if (!keep) { s.fields.destroy(); s.slots.destroy(); s.body.destroy(); s.pending.destroy(); }
+    }
     fn free_stream(&self, index: i32) {
-        let s: Stream = self.streams.at(index);
-        s.fields.destroy(); s.slots.destroy(); s.body.destroy(); s.pending.destroy();
+        self.recycle(self.streams.at(index));
         if (self.is_open_at(index)) { self.open_count -= 1; }
         let id: i32 = self.ids.at(index); let last: i32 = self.ids.len() - 1;
         self.unplace(id);
@@ -441,6 +452,8 @@ pub impl Connection {
             method: -1, scheme: -1, authority: -1, path: -1,
             fields: alloc::vec::new<u8>(), slots: alloc::vec::new<i32>(), body: alloc::vec::new<u8>(),
             pending: alloc::vec::new<u8>(), pending_sent: 0, pending_end: false };
+        let reused: core::option::Option<Stream> = self.spare.pop();
+        if (reused.is_some()) { let r: Stream = reused.unwrap(); s.fields = r.fields; s.slots = r.slots; s.body = r.body; s.pending = r.pending; }
         // Reserve every parallel slot first so the pushes below cannot fail
         // halfway and leave the arrays out of step.
         let room: bool = self.reserve_slot() && self.streams.try_reserve(1).is_ok() && self.ids.try_reserve(1).is_ok()
@@ -463,6 +476,10 @@ pub impl Connection {
     fn store_fields(&self, index: i32, request: bool) -> bool {
         let s: Stream = self.streams.at(index);
         let n: i32 = self.decoder.count(); let i: i32 = 0; let regular: bool = false; let bad: bool = false;
+        // One reservation for the whole section instead of growing per field.
+        let bytes: i32 = 0; while (i < n) { let h: ext::hpack::Header = self.decoder.header(i); bytes += h.name.length + h.value.length; i += 1; }
+        i = 0;
+        if (s.fields.try_reserve(bytes).is_err() || s.slots.try_reserve(n * 4).is_err()) { self.streams.set(index, s); self.reset(index, ext::http2::Cause::AllocationFailed, ext::http2_frame::INTERNAL_ERROR); return false; }
         while (i < n && !bad) {
             let f: ext::hpack::Header = self.decoder.header(i);
             let pseudo: bool = f.name.length > 0 && f.name.values[f.name.start] == 58;
@@ -519,18 +536,17 @@ pub impl Connection {
     // Encode and queue a response header section: :status, then fields.
     fn send_head(&self, index: i32, status: i32, fields: core::slice::View<ext::hpack::Header>, end_stream: bool) -> core::result::Result<i32,ext::http2::Error> {
         let s: Stream = self.streams.at(index);
-        let digits: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
-        let all: alloc::vec::Vec<ext::hpack::Header> = alloc::vec::new<ext::hpack::Header>();
-        let hundreds: u8 = (48 + status / 100) as u8; let tens: u8 = (48 + (status / 10) % 10) as u8; let ones: u8 = (48 + status % 10) as u8;
-        let ok: bool = digits.try_push(hundreds).is_ok() && digits.try_push(tens).is_ok() && digits.try_push(ones).is_ok();
-        ok = ok && all.try_push(ext::hpack::Header { name: text(":status", 7), value: digits.as_view(), never_indexed: false }).is_ok();
+        let digits: [u8;3] = [0;3];
+        digits[0] = (48 + status / 100) as u8; digits[1] = (48 + (status / 10) % 10) as u8; digits[2] = (48 + status % 10) as u8;
+        let all: alloc::vec::Vec<ext::hpack::Header> = self.head_fields; all.clear();
+        let ok: bool = all.try_push(ext::hpack::Header { name: text(":status", 7), value: core::slice::view<u8>(digits, 3).unwrap(), never_indexed: false }).is_ok();
         let i: i32 = 0; while (ok && i < fields.length) { ok = all.try_push(fields.values[fields.start + i]).is_ok(); i += 1; }
-        let block: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+        let block: alloc::vec::Vec<u8> = self.head_block; block.clear();
         // The encoder's table may change: a block we cannot send would
         // desynchronize the peer's decoder, so failures here are final.
         if (ok) { ok = self.encoder.encode(all.as_view(), block.borrow()).is_ok(); }
         ok = ok && ext::http2_frame::write_headers(self.out.borrow(), s.id, block.as_view(), end_stream, self.peer_max_frame);
-        block.destroy(); all.destroy(); digits.destroy();
+        all.clear(); block.clear(); self.head_fields = all; self.head_block = block;
         if (!ok) { return core::result::Err(self.fail(ext::http2::Cause::AllocationFailed, ext::http2_frame::INTERNAL_ERROR)); }
         s.responded = true; if (end_stream) { s.local_closed = true; }
         self.streams.set(index, s);
@@ -544,10 +560,8 @@ pub impl Connection {
         if (s.responded) { return; }
         s.pending.clear(); s.pending_sent = 0; s.pending_end = false; self.streams.set(index, s); self.taken.set(index, false);
         let length: ext::hpack::Header = ext::hpack::Header { name: text("content-length", 14), value: text("0", 1), never_indexed: false };
-        let one: alloc::vec::Vec<ext::hpack::Header> = alloc::vec::new<ext::hpack::Header>();
-        if (one.try_push(length).is_err()) { one.destroy(); self.reset(index, ext::http2::Cause::AllocationFailed, ext::http2_frame::INTERNAL_ERROR); return; }
-        let sent = self.send_head(index, status, one.as_view(), true);
-        one.destroy();
+        let one: [ext::hpack::Header;1] = [length;1];
+        let sent = self.send_head(index, status, core::slice::view<ext::hpack::Header>(one, 1).unwrap(), true);
     }
     // Start the response to stream id: status 200-599 and regular fields in
     // HTTP/2 form; END_STREAM when end_stream (no content follows).
@@ -696,7 +710,9 @@ pub impl Connection {
     pub fn destroy(&self) -> bool {
         if (!self.active) { return false; } self.active = false;
         while (self.streams.len() > 0) { self.free_stream(self.streams.len() - 1); }
-        self.streams.destroy(); self.ids.destroy(); self.states.destroy(); self.taken.destroy(); self.table.destroy(); self.queue.destroy(); self.senders.destroy(); self.out.destroy(); self.input.destroy(); self.block.destroy(); self.encoder.destroy(); self.decoder.destroy();
+        self.streams.destroy(); self.ids.destroy(); self.states.destroy(); self.taken.destroy(); self.table.destroy(); self.queue.destroy(); self.senders.destroy();
+        while (self.spare.len() > 0) { let r: Stream = self.spare.pop().unwrap(); r.fields.destroy(); r.slots.destroy(); r.body.destroy(); r.pending.destroy(); }
+        self.spare.destroy(); self.head_fields.destroy(); self.head_block.destroy(); self.out.destroy(); self.input.destroy(); self.block.destroy(); self.encoder.destroy(); self.decoder.destroy();
         return true;
     }
 }
