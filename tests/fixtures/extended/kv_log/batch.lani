@@ -1,0 +1,149 @@
+// Batch driver for oracle.py. stdin holds length-prefixed fields ("N:" then
+// N bytes). The first op must be o. Ops and their output lines:
+//   o PATH BUFFER SYNC_EVERY AUTO_COMPACT  "o RECORDS TRUNCATED END"
+//   p KEY VALUE   "p END"            d KEY   "d FOUND END"
+//   g KEY         "g N:VALUE" or "g none"
+//   s / f / c     sync, flush, compact: "s END" (END = file bytes)
+//   i             "i COUNT" then " N:KEY N:VALUE" per live key
+//   n             "n LEN"
+//   b             "b FILE LIVE DEAD SYNCED"
+//   q             close (syncs): "q"
+//   x             drop without flushing, as a crash: "x"
+// A failing op prints "err KIND".
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::kv_log;
+import std::stream;
+
+struct Input { bytes: [u8], at: i32, end: i32 }
+impl Input {
+    fn borrow(&self) -> &Input { return self; }
+    fn field(&self) -> core::slice::View<u8> {
+        let length: i32 = 0;
+        while (self.bytes[self.at] != 58) { length = length * 10 + ((self.bytes[self.at] - 48) as i32); self.at += 1; }
+        self.at += 1;
+        let view: core::slice::View<u8> = core::slice::View { values: self.bytes, start: self.at, length: length };
+        self.at += length;
+        return view;
+    }
+    fn number(&self) -> i64 {
+        let view: core::slice::View<u8> = self.field();
+        let value: i64 = 0; let index: i32 = 0;
+        while (index < view.length) { value = value * 10 + ((view.values[view.start + index] - 48) as i64); index += 1; }
+        return value;
+    }
+}
+fn append(out: &alloc::vec::Vec<u8>, view: core::slice::View<u8>) { if (view.length > 0) { core::result::unwrap(out.try_extend(view)); } }
+fn append_str(out: &alloc::vec::Vec<u8>, value: str, count: i32) {
+    append(out, core::slice::View { values: core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value), count), start: 0, length: count });
+}
+fn append_int(out: &alloc::vec::Vec<u8>, value: i64) {
+    if (value < 0) { core::result::unwrap(out.try_push(45)); value = -value; }
+    let buffer: [u8; 24] = [0; 24]; let used: i32 = 0;
+    while (true) { buffer[used] = ((value % 10) as u8) + 48; used += 1; value = value / 10; if (value == 0) { break; } }
+    while (used > 0) { used -= 1; let digit: u8 = buffer[used]; core::result::unwrap(out.try_push(digit)); }
+}
+fn append_field(out: &alloc::vec::Vec<u8>, view: core::slice::View<u8>) {
+    append_int(out, view.length as i64); core::result::unwrap(out.try_push(58)); append(out, view);
+}
+fn append_error(out: &alloc::vec::Vec<u8>, error: ext::kv_log::Error) {
+    append_str(out, "err ", 4); append(out, ext::kv_log::kind_name(error.kind)); core::result::unwrap(out.try_push(10));
+}
+fn open_store(input: &Input, out: &alloc::vec::Vec<u8>) -> core::result::Result<ext::kv_log::Store, ext::kv_log::Error> {
+    let path: core::slice::View<u8> = input.field();
+    let options: ext::kv_log::Options = ext::kv_log::default_options();
+    options.buffer = input.number() as i32; options.sync_every = input.number() != 0; options.auto_compact = input.number();
+    let opened = ext::kv_log::open(path, options);
+    if (opened.is_err()) { append_error(out, opened.unwrap_err()); return opened; }
+    let store: ext::kv_log::Store = opened.unwrap();
+    let recovery: ext::kv_log::Recovery = store.recovery();
+    append_str(out, "o ", 2); append_int(out, recovery.records); core::result::unwrap(out.try_push(32));
+    append_int(out, recovery.truncated); core::result::unwrap(out.try_push(32)); append_int(out, store.file_bytes());
+    core::result::unwrap(out.try_push(10));
+    return core::result::Ok(store);
+}
+fn ended(out: &alloc::vec::Vec<u8>, letter: u8, result: core::result::Result<i32, ext::kv_log::Error>, end: i64) {
+    if (result.is_err()) { append_error(out, result.unwrap_err()); return; }
+    core::result::unwrap(out.try_push(letter)); core::result::unwrap(out.try_push(32)); append_int(out, end); core::result::unwrap(out.try_push(10));
+}
+
+fn main() -> i32 {
+    let data: alloc::vec::Vec<u8> = alloc::vec::new();
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let buffer: [u8; 65536] = [0; 65536];
+    while (true) {
+        let got = source.read(buffer, 0, 65536);
+        if (got.is_err()) { return 3; }
+        let n: i32 = got.unwrap();
+        if (n == 0) { break; }
+        core::result::unwrap(data.try_extend(core::slice::View { values: buffer, start: 0, length: n }));
+    }
+    let input: Input = Input { bytes: data.as_slice(), at: 0, end: data.len() };
+    let out: alloc::vec::Vec<u8> = alloc::vec::new();
+    let value: alloc::vec::Vec<u8> = alloc::vec::new();
+    let first: core::slice::View<u8> = input.field();
+    let opened = open_store(input.borrow(), out.borrow());
+    if (opened.is_err()) { core::result::unwrap(core::io::write_all<std::stream::Descriptor>(std::stream::stdout().borrow(), out.as_slice(), 0, out.len())); return 0; }
+    let store: ext::kv_log::Store = opened.unwrap();
+    let live: bool = true;
+    while (input.at < input.end) {
+        let op: u8 = input.field().values[input.at - 1];
+        if (op == 111) {
+            if (live) { store.destroy(); }
+            let again = open_store(input.borrow(), out.borrow());
+            live = again.is_ok();
+            if (live) { store = again.unwrap(); }
+        } else {
+        if (!live) { if (op == 112) { let skip = input.field(); skip = input.field(); } if (op == 100 || op == 103) { let skip = input.field(); } append_str(out.borrow(), "err Closed\n", 11); }
+        else {
+        if (op == 112) {
+            let key: core::slice::View<u8> = input.field(); let item: core::slice::View<u8> = input.field();
+            let result = store.put(key, item); ended(out.borrow(), 112, result, store.file_bytes());
+        }
+        if (op == 100) {
+            let key: core::slice::View<u8> = input.field();
+            let result = store.delete(key);
+            if (result.is_err()) { append_error(out.borrow(), result.unwrap_err()); }
+            else { append_str(out.borrow(), "d ", 2); if (result.unwrap()) { append_str(out.borrow(), "1 ", 2); } else { append_str(out.borrow(), "0 ", 2); } append_int(out.borrow(), store.file_bytes()); core::result::unwrap(out.try_push(10)); }
+        }
+        if (op == 103) {
+            let key: core::slice::View<u8> = input.field();
+            let result = store.get(key, value.borrow());
+            if (result.is_err()) { append_error(out.borrow(), result.unwrap_err()); }
+            else { if (result.unwrap()) { append_str(out.borrow(), "g ", 2); append_field(out.borrow(), value.as_view()); core::result::unwrap(out.try_push(10)); } else { append_str(out.borrow(), "g none\n", 7); } }
+        }
+        if (op == 115) { let result = store.sync(); ended(out.borrow(), 115, result, store.file_bytes()); }
+        if (op == 102) { let result = store.flush(); ended(out.borrow(), 102, result, store.file_bytes()); }
+        if (op == 99) { let result = store.compact(); ended(out.borrow(), 99, result, store.file_bytes()); }
+        if (op == 105) {
+            append_str(out.borrow(), "i ", 2); append_int(out.borrow(), store.len() as i64);
+            let position: i32 = store.first(); let ok: bool = true;
+            while (position >= 0 && ok) {
+                core::result::unwrap(out.try_push(32)); append_field(out.borrow(), store.key(position));
+                let read = store.value(position, value.borrow());
+                if (read.is_err()) { ok = false; append_str(out.borrow(), " readerror", 10); }
+                else { core::result::unwrap(out.try_push(32)); append_field(out.borrow(), value.as_view()); }
+                position = store.next(position);
+            }
+            core::result::unwrap(out.try_push(10));
+        }
+        if (op == 110) { append_str(out.borrow(), "n ", 2); append_int(out.borrow(), store.len() as i64); core::result::unwrap(out.try_push(10)); }
+        if (op == 98) {
+            append_str(out.borrow(), "b ", 2); append_int(out.borrow(), store.file_bytes()); core::result::unwrap(out.try_push(32));
+            append_int(out.borrow(), store.live_bytes()); core::result::unwrap(out.try_push(32)); append_int(out.borrow(), store.dead_bytes());
+            core::result::unwrap(out.try_push(32)); append_int(out.borrow(), store.synced_bytes()); core::result::unwrap(out.try_push(10));
+        }
+        if (op == 113) { let result = store.close(); live = false; ended(out.borrow(), 113, result, 0); }
+        if (op == 120) { store.destroy(); live = false; append_str(out.borrow(), "x\n", 2); }
+        }
+        }
+    }
+    if (live) { store.destroy(); }
+    value.destroy();
+    if (core::io::write_all<std::stream::Descriptor>(std::stream::stdout().borrow(), out.as_slice(), 0, out.len()).is_err()) { return 3; }
+    return 0;
+}
