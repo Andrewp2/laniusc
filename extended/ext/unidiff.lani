@@ -241,7 +241,9 @@ pub fn apply(base: core::slice::View<u8>, patch: &Patch, options: ApplyOptions) 
         // anchored to the start (hunk at line 1) or end of the file until fuzz
         // covers the difference.
         let context: i32 = lead; if (trail > context) { context = trail; }
-        while (!found && fuzz <= options.max_fuzz) {
+        // As in GNU patch, fuzz never exceeds the hunk's context length.
+        let max_fuzz: i32 = options.max_fuzz; if (context < max_fuzz) { max_fuzz = context; }
+        while (!found && fuzz <= max_fuzz) {
             top = fuzz + lead - context; bot = fuzz + trail - context;
             // Leading and trailing context cannot both fall short of `context`.
             let anchored: bool = false; let at_start: bool = false;
