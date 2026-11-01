@@ -23,6 +23,23 @@ def cases(seed, n):
         out.append((hay, needle, lo, hi))
     return out
 
+def adversarial():
+    """Inputs where every haystack byte is the needle's rarest byte, so the
+    prefilter verifies at every position: O(n*m) without Two-Way."""
+    out = []
+    for m in (2, 3, 17, 500, 4000):
+        for tail in (b"a", b"ab", b"ba"):
+            needle = b"b" * m + tail
+            out.append((b"b" * 200000, needle, 0, 200000))
+            out.append((b"b" * 100000 + needle + b"b" * 1000, needle, 0, 100000 + len(needle) + 1000))
+            out.append((needle + b"b" * 100000, needle, 0, len(needle) + 100000))
+    for unit in (b"ab", b"aab", b"abaab", b"bbbbbbba"):
+        hay = unit * (60000 // len(unit))
+        out.append((hay, unit * 50 + b"b", 0, len(hay)))
+        out.append((hay, unit * 50, 0, len(hay)))
+        out.append((hay, unit * 50, 7, len(hay) - 5))
+    return out
+
 def expected(hay, needle, lo, hi):
     f = hay.find(needle, lo, hi); rf = hay.rfind(needle, lo, hi); c = hay.count(needle, lo, hi)
     b = hay.find(needle[:1], lo, hi) if needle else -1
@@ -32,13 +49,16 @@ def expected(hay, needle, lo, hi):
         t = -1 if k < 0 else len(text[:k].encode()) + lo
     except UnicodeDecodeError:
         t = -2
-    return f"{f} {rf} {c} {b} {t}"
+    return f"{f} {rf} {c} {b} {t} {f} {rf}"
 
 def main():
     runner, seed, n = sys.argv[1], int(sys.argv[2]) if len(sys.argv) > 2 else 1, int(sys.argv[3]) if len(sys.argv) > 3 else 20000
-    data = cases(seed, n)
+    data = cases(seed, n) + adversarial()
     blob = b"".join(struct.pack("<I", len(h)) + h + struct.pack("<I", len(nd)) + nd + struct.pack("<II", lo, hi) for h, nd, lo, hi in data)
+    import time
+    began = time.monotonic()
     got = subprocess.run([runner], input=blob, capture_output=True, timeout=120)
+    elapsed = time.monotonic() - began
     if got.returncode != 0:
         print(f"runner exit {got.returncode}", got.stderr[:200]); return 1
     lines = got.stdout.decode().splitlines()
@@ -48,8 +68,9 @@ def main():
         if i >= len(lines) or lines[i] != want:
             bad += 1
             if bad <= 5: print("MISMATCH", i, case[1][:20], case[2], case[3], len(case[0]), "want", want, "got", lines[i] if i < len(lines) else None)
-    texts = sum(1 for case in data if not expected(*case).endswith(" -2"))
-    print(f"search cases={len(data)} mismatches={bad} text_cases={texts}")
+    texts = sum(1 for case in data if expected(*case).split()[4] != "-2")
+    print(f"search cases={len(data)} mismatches={bad} text_cases={texts} adversarial={len(adversarial())} seconds={elapsed:.2f}")
     return 1 if bad else 0
 
-sys.exit(main())
+if __name__ == "__main__":
+    sys.exit(main())
