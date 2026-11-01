@@ -1,0 +1,435 @@
+// Shared byte machinery for the text tools (ext::text_sort, ext::text_uniq,
+// ext::text_cut, ext::text_tr, ext::text_wc): little-endian word reads of
+// packed bytes, LF scanning eight bytes at a time, and a word-at-a-time output
+// writer that grows in memory or streams to a file descriptor.
+// See docs/extended-textutils.md.
+module ext::text_lines;
+import alloc::io;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import std::file;
+import std::file_ops;
+import std::fs;
+import std::stream;
+
+pub const ALL: u64 = 18446744073709551615;
+// 0x7f in every byte, 0x80 in every byte, 0x01 in every byte, LF in every byte.
+pub const LOW7: u64 = 9187201950435737471;
+pub const HIGH: u64 = 9259542123273814144;
+pub const ONES: u64 = 72340172838076673;
+pub const NL: u64 = 723401728380766730;
+// Byte k holds 8 - k: (bit 8j of a one-bit word) * RANKS >> 56 is j + 1.
+pub const RANKS: u64 = 72623859790382856;
+
+pub enum Error { AllocationFailed, LimitExceeded, Io }
+
+// Bytes as little-endian words. Word i holds bytes 8i..8i+7; `tail` is the
+// last partial word, zero padded, and words past it read as zero.
+pub struct Words { words: [u64], nw: i32, tail: u64, length: i32, values: [u8], start: i32, copy: alloc::io::Buffer }
+pub impl Words {
+    pub fn borrow(&self) -> &Words { return self; }
+    pub fn len(&self) -> i32 { return self.length; }
+    // Word i (i >= 0).
+    pub fn word(&self, i: i32) -> u64 { if (i < self.nw) { return self.words[self.nw-1-i]; } if (i == self.nw) { return self.tail; } return 0; }
+    // The eight bytes from byte offset `at` (bytes past the end read as zero).
+    pub fn load(&self, at: i32) -> u64 {
+        let i: i32 = at >> 3; let s: u64 = ((at & 7) * 8) as u64; let lo: u64 = self.word(i);
+        if (s == 0) { return lo; }
+        return (lo >> s) | (self.word(i + 1) << (64 - s));
+    }
+    pub fn byte(&self, at: i32) -> u8 { return self.values[self.start+at]; }
+    pub fn destroy(&self) { self.copy.destroy(); }
+}
+pub fn packed(v: core::slice::View<u8>) -> bool { return core::mem::slice_stride(v.values) == 1; }
+fn tw_tail(values: [u8], start: i32, nw: i32, length: i32) -> u64 {
+    let tail: u64 = 0; let j: i32 = nw * 8;
+    while (j < length) { tail = tail | ((values[start+j] as u64) << (((j - nw * 8) * 8) as u64)); j += 1; }
+    return tail;
+}
+// Word view of `v`. Views that are not packed bytes (native arrays) are
+// copied into a packed buffer first.
+pub fn words(v: core::slice::View<u8>) -> core::result::Result<Words, Error> {
+    let n: i32 = v.length; let nw: i32 = n / 8;
+    if (packed(v)) {
+        let base: ptr = core::mem::i32_slice_data_ptr(v.values) + (v.start as usize);
+        let ws: [u64] = core::mem::typed_slice_from_storage<u64>(base, nw);
+        return core::result::Ok(Words { words: ws, nw: nw, tail: tw_tail(v.values, v.start, nw, n), length: n, values: v.values, start: v.start, copy: alloc::io::new() });
+    }
+    let made: core::result::Result<alloc::io::Buffer, core::io::Error> = alloc::io::with_limit(n + 8);
+    if (core::result::is_err(made)) { return core::result::Err(Error::AllocationFailed); }
+    let copy: alloc::io::Buffer = core::result::unwrap(made);
+    let room: core::result::Result<ptr, core::io::Error> = copy.reserve_raw(n + 8);
+    if (core::result::is_err(room)) { copy.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let p: ptr = core::result::unwrap(room); let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(p, n); let i: i32 = 0;
+    while (i < n) { raw[i] = v.values[v.start+i]; i += 1; }
+    let committed: core::result::Result<i32, core::io::Error> = copy.commit_raw(n);
+    let ws: [u64] = core::mem::typed_slice_from_storage<u64>(p, nw);
+    return core::result::Ok(Words { words: ws, nw: nw, tail: tw_tail(raw, 0, nw, n), length: n, values: raw, start: 0, copy: copy });
+}
+
+// Line offsets: at[i] is where line i starts and at[count] is the input
+// length. A line keeps its LF; a final fragment without one is a line too.
+pub struct Starts { mem: alloc::io::Buffer, at: [i32], count: i32, room: i32 }
+pub impl Starts {
+    pub fn borrow(&self) -> &Starts { return self; }
+    pub fn len(&self) -> i32 { return self.count; }
+    pub fn start(&self, i: i32) -> i32 { return self.at[i]; }
+    pub fn end(&self, i: i32) -> i32 { return self.at[i+1]; }
+    pub fn destroy(&self) { self.mem.destroy(); self.count = 0; self.room = 0; }
+}
+// Room for `room` entries (`room` lines plus the closing offset).
+fn tl_starts(room: i32) -> core::result::Result<Starts, Error> {
+    if (room < 2) { room = 2; }
+    if (room > 536870000) { return core::result::Err(Error::LimitExceeded); }
+    let made: core::result::Result<alloc::io::Buffer, core::io::Error> = alloc::io::with_limit(room * 4 + 8);
+    if (core::result::is_err(made)) { return core::result::Err(Error::AllocationFailed); }
+    let mem: alloc::io::Buffer = core::result::unwrap(made);
+    let p: core::result::Result<ptr, core::io::Error> = mem.reserve_raw(room * 4 + 8);
+    if (core::result::is_err(p)) { mem.destroy(); return core::result::Err(Error::AllocationFailed); }
+    return core::result::Ok(Starts { mem: mem, at: core::mem::typed_slice_from_raw_parts<i32>(core::result::unwrap(p), room), count: 0, room: room });
+}
+fn tl_grow(s: &Starts, used: i32) -> bool {
+    let bigger: core::result::Result<Starts, Error> = tl_starts(s.room * 2);
+    if (core::result::is_err(bigger)) { return false; }
+    let b: Starts = core::result::unwrap(bigger); let from: [i32] = s.at; let to: [i32] = b.at; let i: i32 = 0;
+    while (i < used) { to[i] = from[i]; i += 1; }
+    s.mem.destroy(); s.mem = b.mem; s.at = b.at; s.room = b.room; return true;
+}
+// LF positions found eight bytes at a time.
+pub fn line_starts(w: &Words) -> core::result::Result<Starts, Error> {
+    let n: i32 = w.length;
+    let made: core::result::Result<Starts, Error> = tl_starts(n / 24 + 64);
+    if (core::result::is_err(made)) { return made; }
+    let s: Starts = core::result::unwrap(made);
+    let at: [i32] = s.at; let room: i32 = s.room; at[0] = 0; let k: i32 = 1;
+    let words: [u64] = w.words; let nw: i32 = w.nw; let nl: u64 = NL; let low: u64 = LOW7; let all: u64 = ALL; let ranks: u64 = RANKS;
+    let wi: i32 = 0;
+    while (wi <= nw) {
+        let x: u64 = w.tail ^ nl; if (wi < nw) { x = words[nw-1-wi] ^ nl; }
+        let m: u64 = (((x & low) + low) | x | low) ^ all;
+        // Tail padding is zero, never LF.
+        while (m != 0) {
+            let bit: u64 = m & (0 - m); m = m ^ bit;
+            if (k + 1 >= room) {
+                if (!tl_grow(s.borrow(), k)) { s.destroy(); return core::result::Err(Error::AllocationFailed); }
+                at = s.at; room = s.room;
+            }
+            at[k] = wi * 8 + (((bit >> 7) * ranks) >> 56) as i32; k += 1;
+        }
+        wi += 1;
+    }
+    if (at[k-1] < n) { at[k] = n; k += 1; }
+    s.count = k - 1; return core::result::Ok(s);
+}
+
+// Word-at-a-time output. Bytes collect in `acc` and leave as whole words;
+// a full buffer is written to `fd`, or doubled when fd is negative.
+pub struct Out { mem: alloc::io::Buffer, base: ptr, cap: i32, w: [u64], at: i32, acc: u64, fill: i32, fd: i32, failed: bool, written: i64 }
+pub impl Out {
+    pub fn borrow(&self) -> &Out { return self; }
+    pub fn destroy(&self) { self.mem.destroy(); self.cap = 0; self.at = 0; self.fill = 0; }
+    // Bytes produced so far (written plus pending).
+    pub fn total(&self) -> i64 { return self.written + ((self.at * 8 + self.fill) as i64); }
+}
+// An output with room for `words` words before it writes or grows.
+pub fn out(fd: i32, words: i32) -> core::result::Result<Out, Error> {
+    if (words < 4) { words = 4; }
+    if (words > 268000000) { return core::result::Err(Error::LimitExceeded); }
+    let made: core::result::Result<alloc::io::Buffer, core::io::Error> = alloc::io::with_limit(words * 8);
+    if (core::result::is_err(made)) { return core::result::Err(Error::AllocationFailed); }
+    let mem: alloc::io::Buffer = core::result::unwrap(made);
+    let p: core::result::Result<ptr, core::io::Error> = mem.reserve_raw(words * 8);
+    if (core::result::is_err(p)) { mem.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let base: ptr = core::result::unwrap(p);
+    return core::result::Ok(Out { mem: mem, base: base, cap: words, w: core::mem::typed_slice_from_storage<u64>(base, words), at: 0, acc: 0, fill: 0, fd: fd, failed: false, written: 0 });
+}
+// Write count bytes from base to fd, retrying short writes.
+pub fn write_all(fd: i32, base: ptr, count: i32) -> bool { return tl_write(fd, base, count); }
+fn tl_write(fd: i32, base: ptr, count: i32) -> bool {
+    let sent: i32 = 0;
+    while (sent < count) {
+        let r: i32 = std::fs::write(fd, base + (sent as usize), (count - sent) as usize);
+        if (r == -4) { continue; }
+        if (r <= 0 || r > count - sent) { return false; }
+        sent += r;
+    }
+    return true;
+}
+// Make room for one more word.
+pub fn spill(o: &Out) {
+    if (o.fd >= 0) {
+        if (!tl_write(o.fd, o.base, o.at * 8)) { o.failed = true; }
+        o.written += (o.at * 8) as i64; o.at = 0; return;
+    }
+    if (o.cap > 134000000) { o.failed = true; o.at = 0; return; }
+    let bigger: core::result::Result<Out, Error> = out(-1, o.cap * 2);
+    if (core::result::is_err(bigger)) { o.failed = true; o.at = 0; return; }
+    let b: Out = core::result::unwrap(bigger); let from: [u64] = o.w; let to: [u64] = b.w; let i: i32 = 0; let oc: i32 = o.cap; let nc: i32 = b.cap;
+    while (i < o.at) { to[nc-1-i] = from[oc-1-i]; i += 1; }
+    o.mem.destroy(); o.mem = b.mem; o.base = b.base; o.cap = b.cap; o.w = b.w;
+}
+// Append the low k bytes (1..8) of x; x must be zero above them.
+pub fn put(o: &Out, x: u64, k: i32) {
+    let fill: i32 = o.fill; o.acc = o.acc | (x << ((fill * 8) as u64)); let nf: i32 = fill + k;
+    if (nf >= 8) {
+        if (o.at == o.cap) { spill(o); }
+        o.w[o.cap-1-o.at] = o.acc; o.at += 1;
+        if (fill == 0) { o.acc = 0; } else { o.acc = x >> ((64 - fill * 8) as u64); }
+        nf -= 8;
+    }
+    o.fill = nf;
+}
+// One byte (put, inlined).
+pub fn put_byte(o: &Out, b: u8) {
+    let fill: i32 = o.fill; let x: u64 = b as u64; o.acc = o.acc | (x << ((fill * 8) as u64));
+    if (fill == 7) {
+        if (o.at == o.cap) { spill(o); }
+        o.w[o.cap-1-o.at] = o.acc; o.at += 1; o.acc = 0; o.fill = 0;
+    } else { o.fill = fill + 1; }
+}
+// Append bytes [off, off + len) of src.
+pub fn put_span(o: &Out, src: &Words, off: i32, len: i32) {
+    if (len <= 0) { return; }
+    let words: [u64] = src.words; let nw: i32 = src.nw; let tail: u64 = src.tail; let all: u64 = ALL;
+    if (len <= 8) {
+        // Short spans: one unaligned load, then put.
+        let q: i32 = off >> 3; let sh: u64 = ((off & 7) * 8) as u64;
+        let lo8: u64 = 0; if (q < nw) { lo8 = words[nw-1-q]; } else { if (q == nw) { lo8 = tail; } }
+        let x: u64 = lo8;
+        if (sh != 0 && (off & 7) + len > 8) { let hi8: u64 = 0; if (q + 1 < nw) { hi8 = words[nw-2-q]; } else { if (q + 1 == nw) { hi8 = tail; } } x = (lo8 >> sh) | (hi8 << (64 - sh)); }
+        else { x = lo8 >> sh; }
+        if (len < 8) { x = x & (all >> ((64 - len * 8) as u64)); }
+        put(o, x, len); return;
+    }
+    let acc: u64 = o.acc; let fill: i32 = o.fill; let at: i32 = o.at; let cap: i32 = o.cap; let w: [u64] = o.w;
+    // Output word t takes source bytes from d + 8t, where d (>= -7) is the
+    // source offset of the pending word's first byte; its first `fill`
+    // bytes come from acc instead.
+    let total: i32 = fill + len; let full: i32 = total >> 3; let r: i32 = total & 7;
+    let d: i32 = off - fill; let i: i32 = ((d + 8) >> 3) - 1; let s: u64 = ((d & 7) * 8) as u64; let back: u64 = (64 - s) & 63;
+    let keep: u64 = all << ((fill * 8) as u64);
+    let cur: u64 = 0; if (i >= 0) { if (i < nw) { cur = words[nw-1-i]; } else { if (i == nw) { cur = tail; } } }
+    let t: i32 = 0;
+    while (t < full) {
+        let j: i32 = i + 1; let nxt: u64 = 0;
+        if (j < nw) { nxt = words[nw-1-j]; } else { if (j == nw) { nxt = tail; } }
+        let x: u64 = cur; if (s != 0) { x = (cur >> s) | (nxt << back); }
+        if (t == 0) { x = (x & keep) | acc; }
+        if (at == cap) { o.at = at; spill(o); at = o.at; cap = o.cap; w = o.w; }
+        w[cap-1-at] = x; at += 1; cur = nxt; i = j; t += 1;
+    }
+    if (r > 0) {
+        let x: u64 = cur;
+        if (s != 0) { let j: i32 = i + 1; let nxt: u64 = 0; if (j < nw) { nxt = words[nw-1-j]; } else { if (j == nw) { nxt = tail; } } x = (cur >> s) | (nxt << back); }
+        if (full == 0) { x = (x & keep) | acc; }
+        acc = x & (all >> ((64 - r * 8) as u64));
+    } else { acc = 0; }
+    o.acc = acc; o.fill = r; o.at = at;
+}
+// `value` in decimal, right-aligned in `width` columns with spaces.
+pub fn put_number(o: &Out, value: i64, width: i32) {
+    let digits: [u8; 24] = [0; 24]; let n: i32 = 0; let v: i64 = value; let negative: bool = v < 0;
+    if (negative) { v = 0 - v; }
+    if (v == 0) { digits[0] = 48; n = 1; }
+    while (v > 0) { digits[n] = (48 + (v % 10)) as u8; v = v / 10; n += 1; }
+    let size: i32 = n; if (negative) { size += 1; }
+    while (width > size) { put_byte(o, 32); width -= 1; }
+    if (negative) { put_byte(o, 45); }
+    while (n > 0) { n -= 1; put_byte(o, digits[n]); }
+}
+// Write out every pending byte (fd outputs) or close the last word (memory
+// outputs, whose bytes are then `bytes(o)`). Returns false on a failed write.
+pub fn finish(o: &Out) -> bool {
+    if (o.fill > 0) {
+        if (o.at == o.cap) { spill(o); }
+        o.w[o.cap-1-o.at] = o.acc;
+        if (o.fd >= 0) {
+            if (!tl_write(o.fd, o.base, o.at * 8 + o.fill)) { o.failed = true; }
+            o.written += (o.at * 8 + o.fill) as i64; o.at = 0; o.fill = 0; o.acc = 0;
+            return !o.failed;
+        }
+        let committed: core::result::Result<i32, core::io::Error> = o.mem.commit_raw(o.at * 8 + o.fill);
+        o.at += 1; o.written = 0;
+        return !o.failed;
+    }
+    if (o.fd >= 0) {
+        if (o.at > 0 && !tl_write(o.fd, o.base, o.at * 8)) { o.failed = true; }
+        o.written += (o.at * 8) as i64; o.at = 0; return !o.failed;
+    }
+    let committed: core::result::Result<i32, core::io::Error> = o.mem.commit_raw(o.at * 8);
+    return !o.failed;
+}
+// An output into `words` words of caller memory at base. It must never
+// fill up (it would move to a heap buffer): seal it and take its bytes.
+pub fn out_over(base: ptr, words: i32) -> Out {
+    return Out { mem: alloc::io::new(), base: base, cap: words, w: core::mem::typed_slice_from_storage<u64>(base, words), at: 0, acc: 0, fill: 0, fd: -1, failed: false, written: 0 };
+}
+// Store an out_over output's pending word; its byte count.
+pub fn seal(o: &Out) -> i32 { if (o.fill > 0) { let last: u64 = o.acc; o.w[o.cap-1-o.at] = last; } return o.at * 8 + o.fill; }
+// A memory output's bytes after finish.
+pub fn bytes(o: &Out) -> core::slice::View<u8> {
+    return core::slice::View { values: o.mem.as_bytes(), start: 0, length: o.mem.len() };
+}
+
+// ------------------------------------------------------------------ inputs
+// Open a named input for reading ("-" is standard input): a descriptor, or
+// -1 when the file cannot be opened.
+pub fn open_input(name: core::slice::View<u8>) -> i32 {
+    if (name.length == 1 && name.values[name.start] == 45) { return 0; }
+    let checked: core::result::Result<core::path::Path, core::path::Error> = core::path::from_view(name);
+    if (core::result::is_err(checked)) { return -1; }
+    let opened: core::result::Result<std::file::File, core::io::Error> = std::file::open(core::result::unwrap(checked), std::file::OpenMode::Read);
+    if (core::result::is_err(opened)) { return -1; }
+    let file: std::file::File = core::result::unwrap(opened);
+    let fd: core::option::Option<i32> = file.take_handle();
+    if (core::option::is_none(fd)) { return -1; }
+    return core::option::unwrap(fd);
+}
+// Close a descriptor from open_input (standard input stays open).
+pub fn close_input(fd: i32) {
+    if (fd <= 0) { return; }
+    let owned: core::result::Result<std::file::File, core::io::Error> = std::file::from_owned_handle(fd);
+    if (core::result::is_ok(owned)) { let f: std::file::File = core::result::unwrap(owned); let closed: core::result::Result<i32, core::io::Error> = f.close(); }
+}
+// The size of a regular file open on fd, -1 for any other kind of file and
+// -2 when fd cannot be examined.
+pub fn input_size(fd: i32) -> i64 {
+    let owned: core::result::Result<std::file::File, core::io::Error> = std::file::from_owned_handle(fd);
+    if (core::result::is_err(owned)) { return -2; }
+    let f: std::file::File = core::result::unwrap(owned);
+    let m: std::file_ops::Metadata = std::file_ops::empty_metadata();
+    let got: core::result::Result<i32, core::io::Error> = std::file_ops::metadata_file_into(f.borrow(), m.borrow());
+    let kept: core::option::Option<i32> = f.take_handle();
+    if (core::result::is_err(got)) { return -2; }
+    let regular: bool = match (std::file_ops::kind(m.mode)) { std::file_ops::Kind::Regular -> true, _ -> false };
+    if (!regular) { return -1; }
+    return m.length.bytes as i64;
+}
+// Append everything readable from fd to buf, sized up front from the file
+// length so the buffer does not regrow (growth copies byte by byte).
+pub fn read_all(fd: i32, buf: &alloc::io::Buffer) -> bool {
+    let size: i64 = input_size(fd);
+    if (size > 0 && size < 2000000000 && (buf.len() as i64) + size + 65536 < (buf.limit() as i64)) { let room: core::result::Result<ptr, core::io::Error> = buf.reserve_raw((size as i32) + 65536); }
+    let d: std::stream::Descriptor = std::stream::from_handle(fd);
+    return core::result::is_ok(std::stream::read_to_end(d.borrow(), buf));
+}
+// One read of up to `count` bytes into p: the bytes read, 0 at end of input,
+// or -1 on an error.
+pub fn read_some(fd: i32, p: ptr, count: i32) -> i32 {
+    while (true) {
+        let got: i32 = std::fs::read(fd, p, count as usize);
+        if (got == -4) { continue; }
+        if (got < 0 || got > count) { return -1; }
+        return got;
+    }
+    return -1;
+}
+
+// Positions of the bytes equal to `a` or `b`, eight bytes at a time. Entry
+// i is 2 * position, plus 1 when that byte is `b` (so with a == b every
+// entry is odd). `count` entries; `at[count]` is unused.
+pub fn byte_positions(w: &Words, a: u8, b: u8) -> core::result::Result<Starts, Error> {
+    let made: core::result::Result<Starts, Error> = tl_starts(w.length / 16 + 64);
+    if (core::result::is_err(made)) { return made; }
+    let s: Starts = core::result::unwrap(made);
+    let at: [i32] = s.at; let room: i32 = s.room; let k: i32 = 0;
+    let words: [u64] = w.words; let nw: i32 = w.nw; let low: u64 = LOW7; let all: u64 = ALL; let ranks: u64 = RANKS;
+    let pa: u64 = (a as u64) * ONES; let pb: u64 = (b as u64) * ONES; let n: i32 = w.length;
+    let wi: i32 = 0;
+    while (wi <= nw) {
+        let x: u64 = w.tail; if (wi < nw) { x = words[nw-1-wi]; }
+        let xa: u64 = x ^ pa; let xb: u64 = x ^ pb;
+        let ma: u64 = (((xa & low) + low) | xa | low) ^ all; let mb: u64 = (((xb & low) + low) | xb | low) ^ all;
+        let m: u64 = ma | mb;
+        while (m != 0) {
+            let bit: u64 = m & (0 - m); m = m ^ bit;
+            let pos: i32 = wi * 8 + ((((bit >> 7) * ranks) >> 56) as i32) - 1;
+            // The zero padding of the tail matches a zero byte; stop at the end.
+            if (pos >= n) { break; }
+            if (k + 1 >= room) {
+                if (!tl_grow(s.borrow(), k)) { s.destroy(); return core::result::Err(Error::AllocationFailed); }
+                at = s.at; room = s.room;
+            }
+            let kind: i32 = 0; if ((mb & bit) != 0) { kind = 1; }
+            at[k] = pos * 2 + kind; k += 1;
+        }
+        wi += 1;
+    }
+    s.count = k; return core::result::Ok(s);
+}
+
+// ------------------------------------------------------------------ line reader
+// Reads a descriptor in chunks and hands out whole lines: each `next_lines`
+// returns the complete lines read so far (ending with `eol`), keeping a
+// trailing partial line for the next call, or everything left at the end of
+// input. A line longer than the buffer doubles it.
+pub struct Lines { mem: alloc::io::Buffer, base: ptr, cap: i32, have: i32, used: i32, fd: i32, done: bool, failed: bool }
+pub impl Lines {
+    pub fn borrow(&self) -> &Lines { return self; }
+    // True once the last call returned the end of the input.
+    pub fn finished(&self) -> bool { return self.done && self.used == self.have; }
+    pub fn destroy(&self) { self.mem.destroy(); }
+}
+struct Room { mem: alloc::io::Buffer, p: ptr }
+fn tl_room(cap: i32) -> core::result::Result<Room, Error> {
+    let made: core::result::Result<alloc::io::Buffer, core::io::Error> = alloc::io::with_limit(cap + 16);
+    if (core::result::is_err(made)) { return core::result::Err(Error::AllocationFailed); }
+    let mem: alloc::io::Buffer = core::result::unwrap(made);
+    let p: core::result::Result<ptr, core::io::Error> = mem.reserve_raw(cap + 16);
+    if (core::result::is_err(p)) { mem.destroy(); return core::result::Err(Error::AllocationFailed); }
+    return core::result::Ok(Room { mem: mem, p: core::result::unwrap(p) });
+}
+pub fn lines(fd: i32, cap: i32) -> core::result::Result<Lines, Error> {
+    let made: core::result::Result<Room, Error> = tl_room(cap);
+    if (core::result::is_err(made)) { return core::result::Err(core::result::unwrap_err(made)); }
+    let room: Room = core::result::unwrap(made);
+    return core::result::Ok(Lines { mem: room.mem, base: room.p, cap: cap, have: 0, used: 0, fd: fd, done: false, failed: false });
+}
+// The next run of whole lines (see Lines). With `whole`, nothing is handed
+// out before the end of input. An empty view after the end.
+pub fn next_lines(r: &Lines, eol: u8, whole: bool) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(r.base, r.cap);
+    if (r.used > 0) {
+        let i: i32 = r.used; let j: i32 = 0; while (i < r.have) { bytes[j] = bytes[i]; i += 1; j += 1; }
+        r.have = r.have - r.used; r.used = 0;
+    }
+    while (!r.done) {
+        if (r.have == r.cap) {
+            if (r.cap > 1000000000) { r.failed = true; r.done = true; break; }
+            let grown: core::result::Result<Room, Error> = tl_room(r.cap * 2);
+            if (core::result::is_err(grown)) { r.failed = true; r.done = true; break; }
+            let room: Room = core::result::unwrap(grown); let mem: alloc::io::Buffer = room.mem; let nb: ptr = room.p;
+            let to: [u8] = core::mem::typed_slice_from_raw_parts<u8>(nb, r.cap * 2); let i: i32 = 0;
+            while (i < r.have) { to[i] = bytes[i]; i += 1; }
+            r.mem.destroy(); r.mem = mem; r.base = nb; r.cap = r.cap * 2; bytes = to;
+        }
+        let got: i32 = read_some(r.fd, r.base + (r.have as usize), r.cap - r.have);
+        if (got < 0) { r.failed = true; r.done = true; break; }
+        if (got == 0) { r.done = true; break; }
+        let from: i32 = r.have; r.have += got;
+        if (!whole) {
+            let k: i32 = r.have - 1;
+            while (k >= from && bytes[k] != eol) { k -= 1; }
+            if (k >= from) { r.used = k + 1; return core::slice::View { values: bytes, start: 0, length: k + 1 }; }
+        }
+    }
+    r.used = r.have;
+    return core::slice::View { values: bytes, start: 0, length: r.have };
+}
+// Open (create or truncate) a named output ("-" is standard output): a
+// descriptor, or -1 when the file cannot be opened.
+pub fn open_output(name: core::slice::View<u8>) -> i32 {
+    if (name.length == 1 && name.values[name.start] == 45) { return 1; }
+    let checked: core::result::Result<core::path::Path, core::path::Error> = core::path::from_view(name);
+    if (core::result::is_err(checked)) { return -1; }
+    let opened: core::result::Result<std::file::File, core::io::Error> = std::file::open(core::result::unwrap(checked), std::file::OpenMode::Create);
+    if (core::result::is_err(opened)) { return -1; }
+    let file: std::file::File = core::result::unwrap(opened);
+    let fd: core::option::Option<i32> = file.take_handle();
+    if (core::option::is_none(fd)) { return -1; }
+    return core::option::unwrap(fd);
+}

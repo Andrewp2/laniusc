@@ -100,6 +100,10 @@ abbrev Stmt_is_type_owner (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
   ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : List (List Nat)} {x2 : List Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepFrontEnv x0 v0 → (RepList 31 (RepList 25 RepNat)) x1 v1 → (RepList 25 RepNat) x2 v2 →
     RepBool (Lanius.Mini.isTypeOwner x0 x1 x2) w
 
+abbrev Stmt_member_args (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
+    RepBool (Lanius.Mini.memberArgs x0) w
+
 abbrev Stmt_result_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.Ty} {x1 : List Lanius.Mini.EffArm} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 207 RepTy) x0 v0 → (RepList 289 RepEffArm) x1 v1 →
     (RepOption 207 RepTy) (Lanius.Mini.resultTy x0 x1) w

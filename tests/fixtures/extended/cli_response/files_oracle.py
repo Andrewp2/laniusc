@@ -43,7 +43,7 @@ def rule(name, ordinal, error=None, retval=None):
 
 
 def command(executable, trace, rules):
-    result = ["strace", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096",
+    result = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096",
               "-e", "signal=none", "-e", "trace=" + LEDGER.TRACE, "-o", str(trace)]
     for item in rules:
         field = "error" if "error" in item else "retval"

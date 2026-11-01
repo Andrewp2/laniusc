@@ -36,7 +36,7 @@ fn execute(name: &str) {
     let trace = common::TempArtifact::new("structural_clone_result", "mapping_trace", None);
     let output = common::process_output_with_timeout(
         "checked structural result owner transfer",
-        Command::new("timeout")
+        crate::common::traced_timeout()
             .args(["--kill-after=1s", "3s", "strace", "-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap"])

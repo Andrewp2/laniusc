@@ -1,0 +1,70 @@
+// HTTPS for ext::http_service's event Server: connections arrive over TLS
+// and ALPN picks the protocol ("h2" serves HTTP/2 streams, anything else
+// HTTP/1.1). The Server runs with wrapped connections and ext::tls_clients
+// is their transport, on the server's nonblocking loop. Serve with
+// next_ready and answer exactly as with the plain Server. Programs using
+// it link OpenSSL (--native-link --native-library ssl --native-library
+// crypto).
+module ext::http_service_tls;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import ext::client_transport;
+import ext::http_service;
+import ext::openssl_tls;
+import ext::tls_clients;
+import std::clock;
+import std::socket;
+
+pub struct TlsServer { server: ext::http_service::Server, tls: ext::tls_clients::TlsClients, closed: bool }
+
+// Like ext::http_service::server, with connections served over TLS by
+// context, which the caller keeps (and destroys after close). With h2,
+// HTTP/2 is enabled; give context the matching ALPN list
+// (ext::tls_clients::alpn_protocols).
+pub fn server(listener: &std::socket::Socket, options: ext::http_service::Options, max_connections: i32, context: ext::openssl_tls::ServerContext, h2: bool) -> core::result::Result<TlsServer,ext::http_service::Error> {
+    if (!context.is_open()) { return core::result::Err(ext::http_service::Error::InvalidState); }
+    let made: core::result::Result<ext::http_service::Server,ext::http_service::Error> = ext::http_service::server(listener, options, max_connections);
+    if (made.is_err()) { return core::result::Err(made.unwrap_err()); }
+    let s: ext::http_service::Server = made.unwrap(); s.wrap_clients(); if (h2) { s.enable_h2(); }
+    let tls: core::option::Option<ext::tls_clients::TlsClients> = ext::tls_clients::clients(context, max_connections);
+    if (tls.is_none()) { s.close(); return core::result::Err(ext::http_service::Error::AllocationFailed); }
+    return core::result::Ok(TlsServer { server: s, tls: tls.unwrap(), closed: false });
+}
+
+pub impl TlsServer {
+    pub fn borrow(&self) -> &TlsServer { return self; }
+    pub fn stats(&self) -> ext::http_service::ServerStats { return self.server.stats(); }
+    pub fn tls_stats(&self) -> ext::tls_clients::Stats { return self.tls.stats(); }
+    pub fn active(&self) -> i32 { return self.server.active(); }
+    pub fn request(&self, slot: i32) -> ext::http_service::Request { return self.server.request(slot); }
+    pub fn take(&self, slot: i32) -> ext::http_service::Connection { return self.server.take(slot); }
+    pub fn put(&self, slot: i32, conn: ext::http_service::Connection) -> core::result::Result<i32,ext::http_service::Error> { return self.server.put(slot, conn); }
+    pub fn h2_request(&self, ready: ext::http_service::Ready) -> core::result::Result<ext::http_service::H2Request,ext::http_service::Error> { return self.server.h2_request(ready); }
+    pub fn h2_header(&self, ready: ext::http_service::Ready, name: core::slice::View<u8>) -> core::option::Option<core::slice::View<u8>> { return self.server.h2_header(ready, name); }
+    pub fn h2_respond(&self, ready: ext::http_service::Ready, status: i32, content_type: core::slice::View<u8>, body: core::slice::View<u8>) -> core::result::Result<i32,ext::http_service::Error> { return self.server.h2_respond(ready, status, content_type, body); }
+    // Drive TLS and HTTP until a request is ready or the deadline passes.
+    pub fn next_ready(&self, deadline: core::time::Deadline) -> core::result::Result<core::option::Option<ext::http_service::Ready>,ext::http_service::Error> {
+        if (self.closed) { return core::result::Err(ext::http_service::Error::InvalidState); }
+        while (true) {
+            // Responses staged since the last round go out first.
+            self.tls.serve(self.server.borrow());
+            let r: core::option::Option<ext::http_service::Ready> = self.server.pop_ready(); if (r.is_some()) { return core::result::Ok(r); }
+            let wake: core::time::Deadline = self.tls.wake(self.server.borrow(), deadline);
+            let got: core::result::Result<bool,ext::http_service::Error> = self.server.poll_round(wake);
+            if (got.is_err()) { return core::result::Err(got.unwrap_err()); }
+            self.tls.serve(self.server.borrow());
+            r = self.server.pop_ready(); if (r.is_some()) { return core::result::Ok(r); }
+            // wake may be earlier than deadline: check the caller's own.
+            let now = std::clock::monotonic_now(); if (now.is_err() || deadline.is_expired(now.unwrap())) { return core::result::Ok(core::option::None()); }
+        }
+        return core::result::Err(ext::http_service::Error::InvalidState);
+    }
+    // Free the sessions, then close the server (and the sockets).
+    pub fn close(&self) -> core::result::Result<i32,ext::http_service::Error> {
+        if (self.closed) { return core::result::Ok(0); }
+        self.closed = true; self.tls.close();
+        return self.server.close();
+    }
+}

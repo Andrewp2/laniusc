@@ -55,7 +55,7 @@ class Runner:
         self.directory=Path(tempfile.mkdtemp(prefix=f'inflate-stream-resources-{group}-'));self.count=0
     def run(self,name,data,oom=None):
         prefix=self.directory/name;prefix.with_suffix('.input').write_bytes(data)
-        command=['strace','--kill-on-exit','-qq','-xx','-s','32','-e','signal=none','-e','trace='+TRACE,'-o',str(prefix.with_suffix('.trace'))]
+        command=['strace','-E','LANIUS_ALLOC=mmap','--kill-on-exit','-qq','-xx','-s','32','-e','signal=none','-e','trace='+TRACE,'-o',str(prefix.with_suffix('.trace'))]
         if oom is not None: command+=['-e',f'inject=mmap:error=ENOMEM:when={oom}']
         command+=[self.exe];prefix.with_suffix('.command').write_text(repr(command)+'\n')
         result=subprocess.run(command,input=data,capture_output=True,timeout=60,check=False)

@@ -349,7 +349,7 @@ pub impl Decoder {
     // than the quote (and comma when unquoted), CR and LF inside quotes, and
     // complete valid UTF-8 sequences. They are appended in one step, within
     // the field, record and offset limits; returns how many (0 leaves
-    // everything to step()).
+    // everything to step(), -1 after a failed reservation).
     fn plain_run(&self, source: [u8], from: i32, available: i32) -> i32 {
         let length: i32 = self.current.bytes.len();
         let room: i32 = self.options.max_field_bytes - (length - self.field_start);
@@ -387,7 +387,9 @@ pub impl Decoder {
             while (target < needed) {
                 if (target > 1073741823) { target = 2147483647; } else { target = target * 2; if (target < 4) { target = 4; } }
             }
-            if (core::result::is_err(self.current.bytes.try_reserve(target - length))) { return 0; }
+            // A failed reservation is AllocationFailed, as for a single push:
+            // allocation errors are sticky and never retried in smaller steps.
+            if (core::result::is_err(self.current.bytes.try_reserve(target - length))) { self.fail(Error::AllocationFailed); return -1; }
         }
         core::result::unwrap(self.current.bytes.try_extend(core::slice::View { values: source, start: from, length: run }));
         return run;
@@ -449,6 +451,7 @@ pub impl Decoder {
             }
             if ((self.mode == 1 || self.mode == 2) && !self.cr_pending && self.utf8_used == 0) {
                 let run: i32 = self.plain_run(source, start + consumed, count - consumed);
+                if (run < 0) { return core::result::Err(core::option::unwrap(self.failure)); }
                 if (run > 0) { consumed += run; self.offset += run as u64; continue; }
             }
             if (!self.step(source[start + consumed])) { return core::result::Err(core::option::unwrap(self.failure)); }

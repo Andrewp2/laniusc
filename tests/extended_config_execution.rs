@@ -57,7 +57,7 @@ fn freed(events: &str) -> usize {
 fn configuration_queries_preserve_types_precedence_and_borrowed_lifetimes() {
     let exe = executable("tests/fixtures/extended/config_contracts.lani");
     let trace = common::TempArtifact::new("laniusc_config", "query_trace", None);
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args(["-e", "trace=mmap,munmap,write"])
@@ -77,7 +77,7 @@ fn configuration_queries_preserve_types_precedence_and_borrowed_lifetimes() {
 fn borrowed_json_views_survive_node_growth_and_queries_do_not_allocate() {
     let exe = executable("tests/fixtures/extended/json_views.lani");
     let trace = common::TempArtifact::new("laniusc_config", "json_views_trace", None);
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args(["-e", "trace=mmap,munmap,write"])
@@ -201,7 +201,7 @@ fn configured_checksum_releases_sources_when_any_allocation_or_io_step_fails() {
     let trace = common::TempArtifact::new("laniusc_config", "configured_trace", None);
     let expected = b"3421780262\n";
     let execute = |injection: Option<String>, status: i32| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -464,7 +464,7 @@ fn file_loading_rejects_invalid_documents_and_enforces_each_limit() {
     ];
     for (case, (bytes, maximum, mode, status)) in cases.into_iter().enumerate() {
         input.write_bytes(bytes);
-        let output = run(Command::new("strace")
+        let output = run(crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap,open,openat,close"])
@@ -509,7 +509,7 @@ fn loading_frees_partial_owners_at_every_allocation_and_host_failure() {
     let trace = common::TempArtifact::new("laniusc_config", "fault_trace", None);
     input.write_bytes("{\"limit\":9.0,\"decimal\":true,\"nested\":[1,{\"x\":\"é\"}]}".as_bytes());
     let execute = |injection: Option<String>, status: i32| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())

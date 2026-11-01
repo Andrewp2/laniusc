@@ -1,7 +1,7 @@
 //! Lazy outcomes: exact branches, callback effects, generic values, and trait bounds.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod common;
-use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command, time::Duration};
+use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, time::Duration};
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/stdlib_lazy_outcomes").join(name)
@@ -26,7 +26,7 @@ fn execute(name: &str) {
     let trace = common::TempArtifact::new("laniusc_lazy_outcomes", "all_syscalls", None);
     let output = common::process_output_with_timeout(
         "lazy outcome direct contracts",
-        Command::new("strace").args(["-qq", "-o"]).arg(trace.path())
+        crate::common::strace().args(["-qq", "-o"]).arg(trace.path())
             .args(["-e", "trace=all", "-e", "signal=none"]).arg(executable.path()),
         Duration::from_secs(15),
     );

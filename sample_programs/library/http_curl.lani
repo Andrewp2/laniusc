@@ -62,7 +62,7 @@ fn code(e: ext::http_agent::Error) -> i32 {
         ext::http_agent::Error::BadLocation -> 3, ext::http_agent::Error::UnreplayableBody(s) -> 65, ext::http_agent::Error::UnexpectedUpgrade -> 8,
         ext::http_agent::Error::Source(i) -> 26, ext::http_agent::Error::AllocationFailed -> 27, ext::http_agent::Error::Clock -> 2,
         ext::http_agent::Error::Tls(t) -> match(t.cause) { ext::openssl_tls::Cause::Verification -> 60, ext::openssl_tls::Cause::PeerCertificate -> 60, _ -> 35 },
-        ext::http_agent::Error::Http2(h) -> 16
+        ext::http_agent::Error::Http2(h) -> 16, ext::http_agent::Error::Sink(i) -> 23
     };
 }
 fn name(e: ext::http_agent::Error) -> core::slice::View<u8> {
@@ -77,7 +77,7 @@ fn name(e: ext::http_agent::Error) -> core::slice::View<u8> {
         ext::http_agent::Error::Source(i) -> literal("upload read error",17), ext::http_agent::Error::AllocationFailed -> literal("out of memory",13),
         ext::http_agent::Error::Clock -> literal("clock error",11),
         ext::http_agent::Error::Tls(t) -> match(t.cause) { ext::openssl_tls::Cause::Verification -> literal("certificate verification failed",31), ext::openssl_tls::Cause::PeerCertificate -> literal("certificate verification failed",31), _ -> literal("TLS error",9) },
-        ext::http_agent::Error::Http2(h) -> literal("HTTP/2 error",12)
+        ext::http_agent::Error::Http2(h) -> literal("HTTP/2 error",12), ext::http_agent::Error::Sink(i) -> literal("write error",11)
     };
 }
 fn report(r: &ext::http_agent::Response) -> bool {

@@ -53,7 +53,7 @@ fn generic_sources_exact_cumulative_budgets_errors_and_no_allocation() {
     let trace = common::TempArtifact::new("laniusc_discrete", "trace", None);
     let output = common::process_output_with_timeout(
         "discrete budget/source contracts",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap"])

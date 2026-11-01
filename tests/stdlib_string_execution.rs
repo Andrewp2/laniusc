@@ -47,7 +47,7 @@ fn failed_string_allocations_preserve_the_owner_and_bytes() {
         let trace = common::TempArtifact::new("laniusc_string", "allocation_trace", None);
         let injected = common::short_process_output_with_timeout(
             name,
-            std::process::Command::new("strace")
+            crate::common::strace()
                 .args(["-qq", "-o"])
                 .arg(trace.path())
                 .args(["-e", "trace=mmap", "-e"])

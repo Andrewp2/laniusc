@@ -38,7 +38,12 @@ encode_level(input: View<u8>, format: Format, max_output: i32, level: i32)
 decode(input: View<u8>, format: Format, limits: Limits)
     -> Result<alloc::vec::Vec<u8>, Error>
 default_limits() -> Limits
+crc32_update(state: u32, bytes: View<u8>) -> u32
 ```
+
+`crc32_update` continues the CRC-32 that gzip and ZIP use: start from
+`core::crc32::INITIAL` and finish with `core::crc32::finish`. Packed spans of
+2 KiB or more use slicing-by-8. An invalid view returns `state` unchanged.
 
 The default limits are 16 MiB of compressed input, 64 MiB of decoded output,
 and 1,024 members. The exported constants are `DEFAULT_MAX_INPUT`,

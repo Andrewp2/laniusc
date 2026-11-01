@@ -1293,22 +1293,23 @@ theorem lowerAddress_some {p o : Option Expr} {a : Expr} (h : lowerAddress p o =
     · exact ⟨_, _, rfl, rfl⟩
 
 theorem wordElement_kind {ds : SrcDecls} {e : SrcType} (h : wordElement ds e = true) :
-    (∃ id fields, e = .struct id fields) ∨ ∃ id variants, e = .enum id variants := by
+    (∃ id fields, e = .struct id fields) ∨ (∃ id variants, e = .enum id variants) ∨ e = .uint .uint16 := by
   cases e with
   | struct id fields => exact .inl ⟨id, fields, rfl⟩
-  | enum id variants => exact .inr ⟨id, variants, rfl⟩
-  | i32 | bool | uint | ptr | slice | array | unit | isize | char | float | sint => simp [wordElement] at h
+  | enum id variants => exact .inr (.inl ⟨id, variants, rfl⟩)
+  | uint k => exact .inr (.inr (eq_uint h))
+  | i32 | bool | ptr | slice | array | unit | isize | char | float | sint => simp [wordElement] at h
 
 theorem lowerSlice_some {ds : SrcDecls} {element : SrcType} {p l : Option Expr} {xs : List Expr}
     (h : lowerSlice ds element p l = some xs) :
     (element = .i32 ∨ element = .uint .uint8 ∨ (∃ id fields, element = .struct id fields) ∨
-        ∃ id variants, element = .enum id variants) ∧
+        (∃ id variants, element = .enum id variants) ∨ element = .uint .uint16) ∧
       ∃ x y, p = some x ∧ l = some y := by
   unfold lowerSlice at h
   split at h
   · rename_i cond
     have kind : element = .i32 ∨ element = .uint .uint8 ∨ (∃ id fields, element = .struct id fields) ∨
-        ∃ id variants, element = .enum id variants := by
+        (∃ id variants, element = .enum id variants) ∨ element = .uint .uint16 := by
       simp only [Bool.and_eq_true, Bool.or_eq_true] at cond
       rcases cond.1 with (c | c) | c
       · exact .inl (eq_i32 c)
@@ -1992,6 +1993,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
               · exact .binary typedL typedR (.divide (IsInt.sint k).arith)
               · exact .binary typedL typedR (.remainder (IsInt.sint k).integer)
             · simp at h
+  | .arraySlice element array, scope, ctx, slot, ev, ok, dd, h => by simp [SrcEff.eval] at h
   | .eStride slice, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalStride] at h
     split at h
@@ -2347,7 +2349,7 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
       · simp at h
       · rename_i b hb
         obtain ⟨kind, x, y, hx, hy⟩ := lowerSlice_some hvs
-        rcases kind with rfl | rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩
+        rcases kind with rfl | rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩ | rfl
         · exact .letLocal (.i32SliceFromRawParts (lowerAs_typed target ok hx) (lowerAs_typed target ok hy))
             (SrcStmt.lower_typed target sigsOk body (ok.cons (ty := .slice .i32) (.slice d.1)) d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
         · exact .letLocal (.typedSliceFromRawParts .byte (lowerAs_typed target ok hx) (lowerAs_typed target ok hy))
@@ -2362,6 +2364,9 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
           exact .letLocal (.typedSliceFromRawParts (.enumerationType eid _ found) (lowerAs_typed target ok hx)
               (lowerAs_typed target ok hy))
             (SrcStmt.lower_typed target sigsOk body (ok.cons (ty := .slice (.enum eid variants)) (.slice d.1))
+              d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
+        · exact .letLocal (.typedSliceFromRawParts .word16 (lowerAs_typed target ok hx) (lowerAs_typed target ok hy))
+            (SrcStmt.lower_typed target sigsOk body (ok.cons (ty := .slice (.uint .uint16)) (.slice d.1))
               d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
   | .letIndex id ty slice index body, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.Declared] at d

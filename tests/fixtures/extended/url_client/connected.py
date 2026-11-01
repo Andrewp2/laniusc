@@ -14,7 +14,7 @@ def probe(executable, arguments, directory, inspect, *, environment=None):
     trace = directory / "syscalls.log"
     profile = NATIVE.verified_sites(executable, directory)
     env = dict(os.environ, **(environment or {}))
-    process = subprocess.Popen(["strace", "--kill-on-exit", "-qq", "-xx", "-s", "65536", "-i",
+    process = subprocess.Popen(["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-xx", "-s", "65536", "-i",
                                 "-e", "signal=none", "-e", "trace=all", "-o", str(trace), str(executable), *[os.fspath(value) if isinstance(value, os.PathLike) else value for value in arguments]],
                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                env=env, restore_signals=True)

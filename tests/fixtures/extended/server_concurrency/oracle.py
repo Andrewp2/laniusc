@@ -303,7 +303,7 @@ class Service:
         if tls:
             options += ["--max-tls", "200000"]
         self.trace_path = self.directory / "syscalls.log"
-        command = ["strace", "--kill-on-exit", "-qq", "-i", "-s", "96",
+        command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-i", "-s", "96",
                    "-o", str(self.trace_path), "-e", "trace=" + TRACE_CALLS,
                    *arguments, *options]
         self.process = subprocess.Popen(command, stdin=subprocess.DEVNULL,

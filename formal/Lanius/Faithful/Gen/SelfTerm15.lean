@@ -12,14 +12,14 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Termination
 open Lanius.Faithful.SelfCert
 
-theorem ok_checked_load : FnOk prog prims info (717, ⟨6, [], 0⟩) :=
+theorem ok_checked_element : FnOk prog prims info (717, ⟨4, [], 0⟩) :=
+  fnOk_of fn_checked_element (by decide +kernel)
+
+theorem ok_checked_load : FnOk prog prims info (718, ⟨6, [], 0⟩) :=
   fnOk_of fn_checked_load (by decide +kernel)
 
-theorem ok_store_any : FnOk prog prims info (718, ⟨13, [], 0⟩) :=
+theorem ok_store_any : FnOk prog prims info (719, ⟨13, [], 0⟩) :=
   fnOk_of fn_store_any (by decide +kernel)
-
-theorem ok_single_of_mini_selfhost_SrcType : FnOk prog prims info (719, ⟨0, [], 0⟩) :=
-  fnOk_of fn_single_of_mini_selfhost_SrcType (by decide +kernel)
 
 theorem ok_host_byte_code : FnOk prog prims info (720, ⟨2, [], 0⟩) :=
   fnOk_of fn_host_byte_code (by decide +kernel)
@@ -133,6 +133,6 @@ theorem ok_single_of_mini_selfhost_RawTok : FnOk prog prims info (763, ⟨0, [],
   fnOk_of fn_single_of_mini_selfhost_RawTok (by decide +kernel)
 
 theorem chunk15 : AllFns prog prims info part15 :=
-  ⟨ok_checked_load, ok_store_any, ok_single_of_mini_selfhost_SrcType, ok_host_byte_code, ok_host_write_code, ok_host_read_code, ok_host_sleep_code, ok_host_clock_code, ok_host_random_code, ok_short_circuit, ok_then_check, ok_operand_guard, ok_eval_right, ok_SrcType_is_float_any, ok_negate_float, ok_SrcType_float_ty, ok_SrcType_sint_kind, ok_negate_signed, ok_eval_payload, ok_eval_arm, ok_arm_bind, ok_signed_div, ok_eval_divide_sint, ok_SrcType_uint_kind, ok_eval_divide_uint, ok_eval_word_stride, ok_store_eval_then, ok_store_type, ok_element_base, ok_store_pick, ok_set_scalar_eval, ok_unit_payload, ok_field_payload, ok_lower_arm_value, ok_get_of_usize, ok_lx_one_first, ok_cons_of_mini_selfhost_RawTok, ok_cons_of_mini_selfhost_Token, ok_lx_token, ok_single_of_mini_selfhost_RawTok, trivial⟩
+  ⟨ok_checked_element, ok_checked_load, ok_store_any, ok_host_byte_code, ok_host_write_code, ok_host_read_code, ok_host_sleep_code, ok_host_clock_code, ok_host_random_code, ok_short_circuit, ok_then_check, ok_operand_guard, ok_eval_right, ok_SrcType_is_float_any, ok_negate_float, ok_SrcType_float_ty, ok_SrcType_sint_kind, ok_negate_signed, ok_eval_payload, ok_eval_arm, ok_arm_bind, ok_signed_div, ok_eval_divide_sint, ok_SrcType_uint_kind, ok_eval_divide_uint, ok_eval_word_stride, ok_store_eval_then, ok_store_type, ok_element_base, ok_store_pick, ok_set_scalar_eval, ok_unit_payload, ok_field_payload, ok_lower_arm_value, ok_get_of_usize, ok_lx_one_first, ok_cons_of_mini_selfhost_RawTok, ok_cons_of_mini_selfhost_Token, ok_lx_token, ok_single_of_mini_selfhost_RawTok, trivial⟩
 
 end Lanius.Faithful.SelfTerm

@@ -1,0 +1,21 @@
+struct CellB { v: bool }
+
+fn top(n: i32) -> i32 {
+    let c: CellB = CellB { v: true };
+    let a: i32 = cell_pick_i(c, n);
+    let b: u8 = cell_pick_u8(c, 7);
+    let d: i32 = cell_second_i(c, a, 3) + cell_pick_i(c, a);
+    return a + d;
+}
+
+fn cell_pick_i(s: CellB, u: i32) -> i32 {
+    return u;
+}
+
+fn cell_pick_u8(s: CellB, u: u8) -> u8 {
+    return u;
+}
+
+fn cell_second_i(s: CellB, u: i32, w: i32) -> i32 {
+    return w;
+}

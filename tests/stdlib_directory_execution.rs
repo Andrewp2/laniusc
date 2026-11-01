@@ -184,7 +184,7 @@ fn directory_iteration_walk_limits_and_cleanup_execute() {
     let dir = Directory::new();
     tree(&dir);
     let trace = common::TempArtifact::new("laniusc_directory", "trace", None);
-    let out = run(Command::new("strace")
+    let out = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args(["-e", "trace=mmap,munmap,openat,close"])
@@ -285,7 +285,7 @@ fn directory_report_matches_os_oracle_and_checks_limits_faults_and_scale() {
     assert!(help.stdout.starts_with(b"Usage: directory-report "));
     let trace = common::TempArtifact::new("laniusc_directory", "trace", None);
     let traced = |injection: Option<&str>| {
-        let mut c = Command::new("strace");
+        let mut c = crate::common::strace();
         c.args(["-qq", "-o"]).arg(trace.path()).args([
             "-e",
             "trace=mmap,munmap,openat,close,getdents64,statx,write",
@@ -412,7 +412,7 @@ fn directory_report_handles_real_stdout_failures_and_signal_setup() {
     tree(&directory);
     let trace = common::TempArtifact::new("laniusc_directory", "real_output", None);
     for (closed_pipe, setup_failure) in [(true, false), (false, false), (false, true)] {
-        let mut command = Command::new("timeout");
+        let mut command = crate::common::traced_timeout();
         command
             .args(["--kill-after=1s", "8s", "strace", "-qq", "-o"])
             .arg(trace.path())

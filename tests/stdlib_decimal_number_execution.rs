@@ -42,7 +42,7 @@ fn exact_decimals_execute_contracts_errors_views_and_exact_work_budgets_without_
     let trace = common::TempArtifact::new("laniusc_decimal_number", "trace", None);
     for name in ["contracts", "errors"] {
         let exe = fixture(name);
-        let output = run(Command::new("strace")
+        let output = run(crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap,open,openat,read,write"])
@@ -326,7 +326,7 @@ fn decimals_match_independent_fraction_and_integer_models_including_unbounded_ex
         }
     }
     let trace = common::TempArtifact::new("laniusc_decimal_number", "model_trace", None);
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args(["-e", "trace=mmap,munmap"])

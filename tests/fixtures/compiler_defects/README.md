@@ -102,9 +102,21 @@ library functions themselves (`type_check_entry_with_stdlib`,
 `_with_source_root`, `_with_source_roots`, `type_check_source_with_gpu` and
 `type_check_source_with_gpu_from_path`), so `laniusc check` and the language
 server share it. The language server's pull diagnostics now accept
-`check_generic_impl_bound.lani` (before: LNC0008 at its call). The server
-still checks one document without the stdlib, so it reports a `core::slice`
-import as LNC0010 "imported module not found", as before.
+`check_generic_impl_bound.lani` (before: LNC0008 at its call).
+
+The server also loads the stdlib now. Before, it checked each document on
+its own, so it reported every `core::slice` import as LNC0010 "imported
+module not found". The root comes from `initializationOptions.stdlibRoot` (a
+path or `file:` URI). Without that option, the server uses `stdlib/` next to
+the laniusc binary, then `stdlib/` in the workspace root (`rootUri`,
+`rootPath` or the first workspace folder). With a root, a document is
+checked as `laniusc check --stdlib-root ROOT FILE` checks it. If the open
+text differs from the file on disk, the text is written to a private overlay
+file for the check. A label in an imported file keeps its own path in
+`relatedInformation`, and the diagnostic sits at the start of the document.
+`tests/cli_lsp.rs` drives the server over stdio on `check_slice_import.lani`,
+`check_generic_impl_bound.lani` and `tests/fixtures/lsp/slice_import_type_error.lani`
+(saved and unsaved), and on the workspace-root fallback.
 
 Before the fix, check rejected `check_generic_impl_bound.lani`,
 `check_slice_import.lani`, `check_slice_select_label.lani`, seven other
@@ -257,6 +269,8 @@ compiler can fix the per-byte cost.
 | --- | --- | --- | --- |
 | `stdlib_stray_body_diagnostic.lani` | a stray function body (`let stray: i32 = 2; return stray;` then `}`) at top level of a stdlib module, `core::float_decimal` | LNC0016 "syntax error" at the stray line | **fixed 2026-11-01**: LNC0016 at the stray `let` (`float_decimal.lani:337:5`). Was LNC0008 "unsatisfied trait bound" at `stdlib/core/result.lani:93` (`and_then`'s `Mapper<T,Result<U,E>>` bound), which named neither the file nor the line; see [parser labels in a source pack](#parser-labels-in-a-source-pack) |
 | `byte_order_mark_source.lani` | the file starts with a UTF-8 byte-order mark (EF BB BF) | rejected with a message that names the mark | **fixed 2026-11-01**: LNC0046 at 1:1, labeled "this file starts with a UTF-8 byte-order mark", with help "save the file as UTF-8 without a byte-order mark (U+FEFF)". Was "tokenization fails at this byte". The same label applies to a module under `--source-root` |
+| `lnc0006_vec_field_take.lani` | a struct's `Vec<Row>` field moved out with `table.rows.take()` into `let rows: Vec<Row>` | exit 0 | **not a defect, 2026-11-01**: `move_rows.lani:205` annotated `Vec<ext::csv::Record>` for the `Vec<TableRow>` field of the packed `ext::csv::Table` (a1420edec), so its LNC0006 was correct; `Vec<u8>` here is LNC0006 too. The sample now decodes owned Records with `ext::csv::Decoder` |
+| `lnc0057_start_and_window_condition.lani` | `std::uring` `Ring::transfer`'s `if (start && reading >= window) { start = false; }` in its slot loop | exit 0 | **not a source defect, 2026-11-01**: S4's LNC0057 on `uring_copy.lani` came only while the integration build (4e2c3c28d, 20:48:51-20:51:44 UTC) was rewriting the kernels that the running laniusc reads from disk; the exact saved input compiles repeatedly on lang 132408674, on a44fd172f and on the pre-merge build. Such failures now say `compiler kernels changed under this binary` (shader_artifacts `kernel_pairing_problem`) |
 
 The program compiles and exits 0 against the real stdlib. To reproduce,
 insert the stray lines into a copy of the stdlib:
@@ -303,6 +317,14 @@ and 104 mutants gave identical results, and the 53 binaries were identical.
 The 8 mutants that changed all had wrong labels before. Six had a false
 LNC0021 at a valid `Mapper<View<u8>,Result<i64,i32>>` impl header, and two
 had LNC0016 labels three lines before the error. Six now point at the error.
-The two `return (status;` mutants report "expected ';' after return
+The two `return (status;` mutants reported "expected ';' after return
 statement" at the end of the file, just past the `}` after the unclosed
-`(`. That is the statement heuristic's label, not one of these two steps.
+`(`. That label came from the statement heuristic
+(`missing_statement_semicolon_label`), which counted bracket depth and so
+read past the `;` inside the `(`. Since 2026-11-01 it tracks the open
+brackets, and a `;` directly inside a `(` (never valid, unlike `[0; 8]` or a
+block) labels that `(` "this `(` is not closed". An unclosed `(` at the end
+of the file gets the same label. All 40 unclosed-paren mutants now point at
+their `return (`. Before, 31 said "expected ';' after return statement" at
+the end of the file or the line, and 9 said "expected `)`, found `;`" at the
+`;`. The other 72 mutants are unchanged.

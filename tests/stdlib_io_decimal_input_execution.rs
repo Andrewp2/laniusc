@@ -215,7 +215,7 @@ fn bounded_stdin_decimal_reports_host_failures_on_x86() {
 
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -245,7 +245,7 @@ fn bounded_stdin_decimal_reports_host_failures_on_x86() {
                 let trace = common::TempArtifact::new("laniusc_decimal_stdin", "trace", None);
                 let output = common::short_process_output_with_timeout(
                     format!("decimal stdin {name} {injection}"),
-                    std::process::Command::new("strace")
+                    crate::common::strace()
                         .arg("-qq")
                         .arg("-o")
                         .arg(trace.path())

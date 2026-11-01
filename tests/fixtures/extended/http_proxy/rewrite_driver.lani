@@ -1,0 +1,75 @@
+// ext::http_rewrite driver. Argument 1 selects the rewrite and stdin holds
+// its input: "request" and "response-keep"/"response-close" read an
+// HTTP/1.1 head, "h2-response" prints the HTTP/2 field list as
+// "name: value" lines, and "h2-request" reads "name: value" lines
+// (pseudo-fields first) followed by a blank line. Argument 2 is the body
+// length for h2-request (-1 chunked, -2 none). The client is 192.0.2.7,
+// the pseudonym "lanius", the scheme "http". Output goes to stdout; a
+// failure prints "error".
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::hpack;
+import ext::http;
+import ext::http_rewrite;
+import std::args;
+import std::io;
+import std::stream;
+
+fn literal(s: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(s),n); return core::slice::view<u8>(raw,n).unwrap(); }
+fn write_out(bytes: core::slice::View<u8>) -> bool { if (bytes.len() == 0) { return true; } let sink: std::stream::Descriptor = std::stream::stdout(); return core::io::write_all(sink.borrow(), bytes.values, bytes.start, bytes.len()).is_ok(); }
+fn sub(v: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> { return core::slice::View { values: v.values, start: v.start + start, length: end - start }; }
+fn number(v: core::slice::View<u8>) -> i64 { let neg: bool = v.len() > 0 && v.values[v.start] == 45; let i: i32 = 0; if (neg) { i = 1; } let n: i64 = 0; while (i < v.len()) { n = n * 10 + (v.values[v.start + i] as i64 - 48); i += 1; } if (neg) { return -n; } return n; }
+fn main() -> i32 {
+    let captured = std::args::snapshot(1, 4, 64); if (captured.is_err()) { return 2; }
+    let args = captured.unwrap(); if (args.len() < 1) { return 2; }
+    let mode: core::slice::View<u8> = args.get(0).unwrap();
+    let input: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); input.try_resize(65536, 0);
+    let source: std::stream::Descriptor = std::stream::stdin(); let filled: i32 = 0;
+    while (true) { let got = source.read(input.as_slice(), filled, 65536 - filled); if (got.is_err() || got.unwrap() == 0) { break; } filled += got.unwrap(); }
+    let wire: core::slice::View<u8> = core::slice::View { values: input.as_slice(), start: 0, length: filled };
+    let forward: ext::http_rewrite::Forward = ext::http_rewrite::Forward { client: literal("192.0.2.7", 9), via: literal("lanius", 6), proto: literal("http", 4) };
+    let out: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); let ok: bool = false;
+    let first: u8 = mode.values[mode.start];
+    let limits: ext::http::Limits = ext::http::default_limits();
+    if (first == 114 && mode.len() == 7) {
+        let h = ext::http::parse_request_head(wire, limits); if (h.is_ok()) { ok = ext::http_rewrite::request_head(out.borrow(), h.unwrap(), forward); }
+    }
+    if (first == 114 && mode.len() > 7) {
+        let h = ext::http::parse_response_head(wire, literal("GET", 3), limits);
+        if (h.is_ok()) { ok = ext::http_rewrite::response_head(out.borrow(), h.unwrap(), mode.len() == 13, forward); }
+    }
+    if (first == 104 && mode.values[mode.start + 3] == 114 && mode.values[mode.start + 4] == 101 && mode.values[mode.start + 5] == 115) {
+        let h = ext::http::parse_response_head(wire, literal("GET", 3), limits);
+        let fields: alloc::vec::Vec<ext::hpack::Header> = alloc::vec::new<ext::hpack::Header>(); let scratch: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+        if (h.is_ok()) { ok = ext::http_rewrite::h2_response_fields(h.unwrap(), fields.borrow(), scratch.borrow(), forward); }
+        let i: i32 = 0; while (ok && i < fields.len()) { let f: ext::hpack::Header = fields.at(i); out.try_extend(f.name); out.try_extend(literal(": ", 2)); out.try_extend(f.value); out.try_push(10); i += 1; }
+        fields.destroy(); scratch.destroy();
+    }
+    if (first == 104 && mode.values[mode.start + 3] == 114 && mode.values[mode.start + 4] == 101 && mode.values[mode.start + 5] == 113) {
+        let fields: alloc::vec::Vec<ext::hpack::Header> = alloc::vec::new<ext::hpack::Header>();
+        let method: core::slice::View<u8> = literal("", 0); let path: core::slice::View<u8> = literal("", 0); let authority: core::slice::View<u8> = literal("", 0);
+        let at: i32 = 0;
+        while (at < wire.len()) {
+            let end: i32 = at; while (end < wire.len() && wire.values[wire.start + end] != 10) { end += 1; }
+            if (end == at) { break; }
+            let colon: i32 = at + 1; while (colon < end && wire.values[wire.start + colon] != 58) { colon += 1; }
+            let name: core::slice::View<u8> = sub(wire, at, colon); let value: core::slice::View<u8> = sub(wire, colon + 2, end);
+            if (name.values[name.start] == 58) {
+                if (name.len() == 7 && name.values[name.start + 1] == 109) { method = value; }
+                if (name.len() == 5) { path = value; }
+                if (name.len() == 10) { authority = value; }
+            } else { fields.try_push(ext::hpack::Header { name: name, value: value, never_indexed: false }); }
+            at = end + 1;
+        }
+        let length: i64 = -2; if (args.len() > 1) { length = number(args.get(1).unwrap()); }
+        ok = ext::http_rewrite::h2_request_head(out.borrow(), method, path, authority, fields.as_view(), length, forward);
+        fields.destroy();
+    }
+    if (!ok) { write_out(literal("error\n", 6)); return 0; }
+    write_out(out.as_view()); out.destroy(); input.destroy();
+    return 0;
+}

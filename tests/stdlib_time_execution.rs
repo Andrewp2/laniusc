@@ -112,7 +112,7 @@ fn std_time_metadata_executes_on_x86() {
 fn std_time_checked_reports_host_failures_on_x86() {
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -143,7 +143,7 @@ fn std_time_checked_reports_host_failures_on_x86() {
             let executable = write_executable(&bytes, name);
             let output = common::short_process_output_with_timeout(
                 format!("checked time {injection}"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-e")
                     .arg(format!("trace={trace}"))

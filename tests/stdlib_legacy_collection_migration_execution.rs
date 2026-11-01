@@ -63,7 +63,7 @@ fn traced(
     let data = common::TempArtifact::new("laniusc_collection_migration", "input", None);
     data.write_bytes(input);
     let trace = common::TempArtifact::new("laniusc_collection_migration", "trace", None);
-    let mut command = Command::new("timeout");
+    let mut command = crate::common::traced_timeout();
     command.args(["3s", "strace"]);
     command
         .args(["-qq", "-o"])

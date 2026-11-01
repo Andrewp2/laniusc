@@ -611,7 +611,7 @@ fn resolver_local_validation_is_ordered_allocation_free_and_preserves_all_view_l
         case.encode(&mut bytes);
     }
     input.write_bytes(bytes);
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-i", "-o"])
         .arg(trace.path())
         .args(["-e", "trace=mmap,munmap"])
@@ -896,7 +896,7 @@ fn every_reached_resolver_source_allocation_failure_cleans_both_owner_domains_an
     let sites = allocation_sites(file.path());
     let trace = common::TempArtifact::new("laniusc_resolve", "allocation_trace", None);
     let execute = |failure: Option<usize>| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-i", "-o"])
             .arg(trace.path())

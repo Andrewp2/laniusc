@@ -269,7 +269,7 @@ class Suite:
         directory = self.directory / f"{self.count:03d}-b{backend}-p{profile}-n{point or 0}"
         directory.mkdir()
         trace = directory / "syscalls.log"
-        command = ["strace", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-e", "signal=none", "-e", "trace=" + TRACE, "-o", str(trace)]
+        command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-e", "signal=none", "-e", "trace=" + TRACE, "-o", str(trace)]
         if point:
             command += ["-e", f"inject=mmap:error=ENOMEM:when={point}"]
         command.append(str(self.executable))

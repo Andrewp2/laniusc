@@ -65,7 +65,7 @@ def _partition(inspected, source_ranges, runtime_ranges, crt=None):
     bridge = crt_bytes() if crt is None else crt
     ELF.check(len(bridge) == 225 and bridge[181:186] == b"\xe8\0\0\0\0",
               "unsupported exact CRT bridge")
-    wrapper = bytes.fromhex("4989e7e80000000089c7b83c0000000f05")
+    wrapper = bytes.fromhex("4989e7e80000000089c7b8e70000000f05")
     source = [(name, address, size) for name, address, size in inspected["functions"]
               if re.fullmatch(r"__lanius_\d+_\d+_\d+", name)]
 

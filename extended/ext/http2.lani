@@ -588,6 +588,10 @@ pub impl Connection {
         return ext::hpack::Header { name: part(raw, s.slots.at(i * 4), s.slots.at(i * 4 + 1)), value: part(raw, s.slots.at(i * 4 + 2), s.slots.at(i * 4 + 3)), never_indexed: false };
     }
     pub fn body(&self, id: i32) -> core::slice::View<u8> { let index: i32 = self.find(id); if (index < 0) { return text("", 0); } let s: Stream = self.streams.at(index); return s.body.as_view(); }
+    // Forget the body bytes received so far on stream id, after the caller
+    // has used body(id): a streamed response is then bounded by body_bytes
+    // per batch of DATA between calls, not in total.
+    pub fn take_body(&self, id: i32) -> bool { let index: i32 = self.find(id); if (index < 0) { return false; } let s: Stream = self.streams.at(index); s.body.clear(); self.streams.set(index, s); return true; }
     // Forget a finished stream and free its storage. Later frames for it are
     // ignored (connection flow control still counts their DATA).
     pub fn release(&self, id: i32) -> bool {

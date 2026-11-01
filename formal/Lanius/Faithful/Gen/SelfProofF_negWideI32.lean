@@ -58,7 +58,8 @@ theorem proof_callee_ret {prog : SrcProgram} {prims : Prims} {ix_callee_ret ix_g
   simp only [src_callee_ret] at h
   faithful [Lanius.Mini.calleeRet]
 
-theorem step_known_eff {prog : SrcProgram} {prims : Prims} {ix_known_eff ix_unbox_of_mini_selfhost_SrcEff ix_ty_local ix_src_element ix_known_expr ix_either_ty ix_known_apply ix_callee_ret : Nat} (fn : prog.funcs[ix_known_eff]? = some (src_known_eff ix_unbox_of_mini_selfhost_SrcEff ix_ty_local ix_src_element ix_known_expr ix_known_eff ix_either_ty ix_known_apply ix_callee_ret)) (np : prims.isPrim ix_known_eff = false)
+theorem step_known_eff {prog : SrcProgram} {prims : Prims} {ix_known_eff ix_boxed_of_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcEff ix_ty_local ix_src_element ix_known_expr ix_either_ty ix_known_apply ix_callee_ret : Nat} (fn : prog.funcs[ix_known_eff]? = some (src_known_eff ix_boxed_of_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcEff ix_ty_local ix_src_element ix_known_expr ix_known_eff ix_either_ty ix_known_apply ix_callee_ret)) (np : prims.isPrim ix_known_eff = false)
+    (ext_boxed_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcType prog prims ix_boxed_of_mini_selfhost_SrcType n))
     (ext_unbox_of_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcEff prog prims ix_unbox_of_mini_selfhost_SrcEff n))
     (ext_ty_local : Certified (∀ {n : Nat}, Stmt_ty_local prog prims ix_ty_local n))
     (ext_src_element : Certified (∀ {n : Nat}, Stmt_src_element prog prims ix_src_element n))

@@ -188,7 +188,7 @@ class Session:
             self.request["repair"] = repair[1]
         self.trace = self.directory / "syscalls.log"
         self.frames, self.stdout = [], bytearray()
-        command = ["strace", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-e", "signal=none",
+        command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-e", "signal=none",
                    "-e", "trace=" + ledger.TRACE, "-o", str(self.trace)]
         for item in self.rules:
             command += ["-e", "inject=" + injection(item)]

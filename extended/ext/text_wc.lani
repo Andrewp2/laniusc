@@ -1,0 +1,146 @@
+// GNU `wc` counts under LC_ALL=C: lines (LFs), words (runs of printable
+// bytes other than space, ended by space, \t, \n, \v, \f or \r; any other
+// byte neither starts nor ends a word), bytes, characters (bytes in the C
+// locale) and the longest line's display width (-L: a tab moves to the next
+// multiple of 8, a printable byte takes one column and any other byte none;
+// LF, CR and FF end a line). Input arrives in chunks of any size. Lines and
+// words are counted eight bytes at a time. See docs/extended-textutils.md.
+module ext::text_wc;
+import alloc::io;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::text_lines;
+
+pub struct Counter { lines: i64, words: i64, bytes: i64, longest: i64, pos: i64, space: bool }
+pub impl Counter { pub fn borrow(&self) -> &Counter { return self; } }
+pub fn counter() -> Counter { return Counter { lines: 0, words: 0, bytes: 0, longest: 0, pos: 0, space: true }; }
+// Which counts to print, in wc's column order.
+pub struct Select { lines: bool, words: bool, chars: bool, bytes: bool, longest: bool }
+pub fn default_select() -> Select { return Select { lines: true, words: true, chars: false, bytes: true, longest: false }; }
+pub fn selected(s: Select) -> i32 {
+    let n: i32 = 0; if (s.lines) { n += 1; } if (s.words) { n += 1; } if (s.chars) { n += 1; } if (s.bytes) { n += 1; } if (s.longest) { n += 1; } return n;
+}
+
+fn wc_space(b: u8) -> bool { return b == 32 || (b >= 9 && b <= 13); }
+
+// Every count, one byte at a time, over bytes [from, to) of w.
+fn wc_bytes(c: &Counter, w: &ext::text_lines::Words, from: i32, to: i32) {
+    let pos: i64 = c.pos; let longest: i64 = c.longest; let space: bool = c.space; let lines: i64 = c.lines; let words: i64 = c.words;
+    let j: i32 = from;
+    while (j < to) {
+        let b: u8 = w.byte(j); j += 1;
+        if (b == 10 || b == 13 || b == 12) { if (b == 10) { lines += 1; } if (pos > longest) { longest = pos; } pos = 0; space = true; }
+        else { if (b == 9) { pos += 8 - pos % 8; space = true; }
+        else { if (b == 32) { pos += 1; space = true; }
+        else { if (b == 11) { space = true; }
+        else { if (b > 32 && b < 127) { pos += 1; if (space) { words += 1; } space = false; } } } } }
+    }
+    c.pos = pos; c.longest = longest; c.space = space; c.lines = lines; c.words = words;
+}
+
+// LFs in the first nw words, in byte lanes folded every 248 words.
+fn wc_count_lf(ws: [u64], nw: i32) -> i64 {
+    let low: u64 = ext::text_lines::LOW7; let ones: u64 = ext::text_lines::ONES; let nl: u64 = ext::text_lines::NL;
+    let m16: u64 = 71777214294589695;
+    let total: i64 = 0; let k: i32 = 0; let base: i32 = nw - 1;
+    while (k < nw) {
+        let begin: i32 = k; let stop: i32 = k + 248; if (stop > nw) { stop = nw; }
+        // Each lane counts the bytes that are not LF.
+        let a0: u64 = 0; let a1: u64 = 0; let a2: u64 = 0; let a3: u64 = 0;
+        while (k + 3 < stop) {
+            let x0: u64 = ws[base-k] ^ nl; let x1: u64 = ws[base-k-1] ^ nl; let x2: u64 = ws[base-k-2] ^ nl; let x3: u64 = ws[base-k-3] ^ nl;
+            a0 = a0 + (((((x0 & low) + low) | x0) >> 7) & ones); a1 = a1 + (((((x1 & low) + low) | x1) >> 7) & ones);
+            a2 = a2 + (((((x2 & low) + low) | x2) >> 7) & ones); a3 = a3 + (((((x3 & low) + low) | x3) >> 7) & ones);
+            k += 4;
+        }
+        while (k < stop) { let x: u64 = ws[base-k] ^ nl; a0 = a0 + (((((x & low) + low) | x) >> 7) & ones); k += 1; }
+        let s: u64 = (a0 & m16) + ((a0 >> 8) & m16) + (a1 & m16) + ((a1 >> 8) & m16) + (a2 & m16) + ((a2 >> 8) & m16) + (a3 & m16) + ((a3 >> 8) & m16);
+        let kept: u64 = (s & 65535) + ((s >> 16) & 65535) + ((s >> 32) & 65535) + (s >> 48);
+        total += ((stop - begin) * 8) as i64 - (kept as i64);
+    }
+    return total;
+}
+
+// Count one chunk. Without `words` and `longest` only LFs and bytes are
+// counted. Counts and the word and column state carry across chunks; call
+// `done` after the last chunk.
+pub fn feed(c: &Counter, chunk: core::slice::View<u8>, words: bool, longest: bool) -> core::result::Result<i32, ext::text_lines::Error> {
+    let made: core::result::Result<ext::text_lines::Words, ext::text_lines::Error> = ext::text_lines::words(chunk);
+    if (core::result::is_err(made)) { return core::result::Err(core::result::unwrap_err(made)); }
+    let w: ext::text_lines::Words = core::result::unwrap(made);
+    let n: i32 = chunk.length; c.bytes += n as i64;
+    let ws: [u64] = w.words; let nw: i32 = w.nw; let full: i32 = nw * 8;
+    if (longest) { wc_bytes(c, w.borrow(), 0, n); w.destroy(); return core::result::Ok(0); }
+    if (!words) {
+        c.lines += wc_count_lf(ws, nw);
+        let j: i32 = full; while (j < n) { if (w.byte(j) == 10) { c.lines += 1; } j += 1; }
+        w.destroy(); return core::result::Ok(0);
+    }
+    let low: u64 = ext::text_lines::LOW7; let high: u64 = ext::text_lines::HIGH; let all: u64 = ext::text_lines::ALL; let ones: u64 = ext::text_lines::ONES; let nl: u64 = ext::text_lines::NL;
+    // y + 119 reaches bit 7 from 9 up, y + 114 from 14 up; 0x20 in each byte.
+    let c9: u64 = 8608480567731124087; let c14: u64 = 8246779703540740722; let sp: u64 = 2314885530818453536;
+    // y + 95 reaches bit 7 from 33 (!) up, y + 1 only at 127 (DEL).
+    let c33: u64 = 6872316419617283935;
+    let carry: u64 = 0; if (c.space) { carry = 128; }
+    let count: i64 = 0; let lfs: i64 = 0; let k: i32 = 0; let base: i32 = nw - 1;
+    while (k < nw) {
+        let x: u64 = ws[base-k]; k += 1;
+        let y: u64 = x & low;
+        let u: u64 = ((y + c9) ^ (y + c14)) | ((((y ^ sp) + low) | (y ^ sp)) ^ all);
+        // High bit of each space byte (bytes from 0x80 up are not spaces).
+        let s: u64 = ((u | x) ^ x) & high;
+        let pr: u64 = ((((y + c33) ^ (y + ones)) | x) ^ x) & high;
+        if ((s | pr) == high) {
+            let starts: u64 = pr & ((s << 8) | carry);
+            count += ((((starts >> 7) * ones) >> 56) as i64);
+            carry = s >> 56;
+        } else {
+            // A byte that is neither printable nor a space leaves the word
+            // state alone.
+            let j: u64 = 0;
+            while (j < 64) {
+                let lane: u64 = ((s | pr) >> (j + 7)) & 1;
+                if (lane != 0) { if (((pr >> (j + 7)) & 1) != 0) { if (carry != 0) { count += 1; } carry = 0; } else { carry = 128; } }
+                j += 8;
+            }
+        }
+        let l: u64 = x ^ nl;
+        lfs += 8 - ((((((((l & low) + low) | l) >> 7) & ones) * ones) >> 56) as i64);
+    }
+    c.words += count; c.lines += lfs; c.space = carry != 0;
+    if (full < n) {
+        let pos: i64 = c.pos; let longest_now: i64 = c.longest;
+        wc_bytes(c, w.borrow(), full, n);
+        c.pos = pos; c.longest = longest_now;
+    }
+    w.destroy();
+    return core::result::Ok(0);
+}
+// Close the last line's width after the final chunk.
+pub fn done(c: &Counter) { if (c.pos > c.longest) { c.longest = c.pos; } c.pos = 0; }
+
+// One output row: the selected counts, each right-aligned in `width`
+// columns and separated by one space, then " NAME" when `named`.
+pub fn write_row(o: &ext::text_lines::Out, c: Counter, s: Select, width: i32, name: core::slice::View<u8>, named: bool) {
+    let first: bool = true;
+    if (s.lines) { if (!first) { ext::text_lines::put_byte(o, 32); } ext::text_lines::put_number(o, c.lines, width); first = false; }
+    if (s.words) { if (!first) { ext::text_lines::put_byte(o, 32); } ext::text_lines::put_number(o, c.words, width); first = false; }
+    if (s.chars) { if (!first) { ext::text_lines::put_byte(o, 32); } ext::text_lines::put_number(o, c.bytes, width); first = false; }
+    if (s.bytes) { if (!first) { ext::text_lines::put_byte(o, 32); } ext::text_lines::put_number(o, c.bytes, width); first = false; }
+    if (s.longest) { if (!first) { ext::text_lines::put_byte(o, 32); } ext::text_lines::put_number(o, c.longest, width); first = false; }
+    if (named) { ext::text_lines::put_byte(o, 32); let i: i32 = 0; while (i < name.length) { ext::text_lines::put_byte(o, name.values[name.start+i]); i += 1; } }
+    ext::text_lines::put_byte(o, 10);
+}
+// GNU's column width: 1 for one count of one input; otherwise the digits of
+// the regular inputs' total size, at least 7 when an input is not a regular
+// file. `sizes[i]` is input i's size, or -1 when it is not a regular file;
+pub fn width(sizes: [i64], count: i32, counts: i32) -> i32 {
+    if (count == 1 && counts == 1) { return 1; }
+    if (count == 0) { return 1; }
+    let minimum: i32 = 1; let total: i64 = 0; let i: i32 = 0;
+    while (i < count) { if (sizes[i] == -1) { minimum = 7; } else { if (sizes[i] >= 0) { total += sizes[i]; } } i += 1; }
+    let digits: i32 = 1; while (total >= 10) { total = total / 10; digits += 1; }
+    if (digits < minimum) { return minimum; } return digits;
+}

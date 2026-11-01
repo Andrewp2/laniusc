@@ -74,7 +74,7 @@ def case(handler, args=(), status=0, data=None, family=socket.AF_INET, trace=Non
     command=[EXE,endpoint,name,'--timeout','1500',*args]
     if sys.argv[1] == 'native': command=[EXE,endpoint]
     if trace:
-        command=['strace','-qq','-o',trace,'-e','trace=mmap,munmap,socket,close,connect,sendto,recvfrom,poll,getrandom,clock_gettime,read,write,rt_sigaction',*[part for item in (fault if isinstance(fault,list) else [fault]) if item for part in ['-e',item]],*command]
+        command=['strace','-E','LANIUS_ALLOC=mmap','-qq','-o',trace,'-e','trace=mmap,munmap,socket,close,connect,sendto,recvfrom,poll,getrandom,clock_gettime,read,write,rt_sigaction',*[part for item in (fault if isinstance(fault,list) else [fault]) if item for part in ['-e',item]],*command]
     started=time.monotonic()
     if output is None: out=subprocess.run(command,input=data,capture_output=True,timeout=4)
     else: out=subprocess.run(command,input=data,stdout=output,stderr=subprocess.PIPE,timeout=4)
@@ -269,7 +269,7 @@ def io_faults():
         case(udp_ok,['--raw'],status=5,trace=trace,fault='inject=rt_sigaction:error=EPERM:when=1');alloc,calls=resources(trace);assert not alloc and not calls.get('socket')
         read_end,write_end=os.pipe();os.close(read_end)
         try:
-            out=subprocess.run(['strace','-qq','-o',trace,'-e','trace=mmap,munmap,write,rt_sigaction',EXE,'127.0.0.1:9','.','--attempts','0'],stdout=subprocess.PIPE,stderr=write_end,timeout=2)
+            out=subprocess.run(['strace','-E','LANIUS_ALLOC=mmap','-qq','-o',trace,'-e','trace=mmap,munmap,write,rt_sigaction',EXE,'127.0.0.1:9','.','--attempts','0'],stdout=subprocess.PIPE,stderr=write_end,timeout=2)
             assert out.returncode==5 and not out.stdout,out
         finally:os.close(write_end)
         resources(trace);assert 'EPIPE' in open(trace).read()

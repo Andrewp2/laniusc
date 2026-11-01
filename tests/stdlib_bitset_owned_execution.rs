@@ -64,7 +64,7 @@ fn every_observed_bitset_allocation_denial_preserves_owner_contents_and_views() 
     let exe = fixture("bitset_owned_failure");
     let trace = common::TempArtifact::new("laniusc_bitset", "allocation_trace", None);
     let execute = |when: Option<(usize, bool)>| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -332,7 +332,7 @@ fn million_bit_dense_and_sparse_workloads_execute_without_leaks() {
     let trace = common::TempArtifact::new("laniusc_bitset", "large_trace", None);
     let output = common::process_output_with_timeout(
         "million bit workloads",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap"])

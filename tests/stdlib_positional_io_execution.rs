@@ -2,7 +2,7 @@
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod common;
 
-use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command, time::Duration};
+use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, time::Duration};
 
 fn compile(name: &str) -> Result<Vec<u8>, laniusc_compiler::compiler::CompileError> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -31,7 +31,7 @@ fn portable_positional_io_executes_exact_offsets_and_confirmed_failure_prefixes(
     let events = common::TempArtifact::new("laniusc_positional_io", "service_trace", None);
     let output = common::process_output_with_timeout(
         "scripted positional progress, admission, quotas and strided buffers",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(events.path())
             .args([

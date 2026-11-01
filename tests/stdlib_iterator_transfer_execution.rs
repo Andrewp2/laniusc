@@ -41,7 +41,7 @@ fn typed_bounded_transfer_retry_and_owner_contracts_execute() {
     let trace = common::TempArtifact::new("laniusc_iterator_transfer", "contract_memory", None);
     let output = common::process_output_with_timeout(
         "typed bounded iterator transfer",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,mremap,munmap,brk", "-e", "signal=none"])
@@ -272,7 +272,7 @@ fn transfer_state_sequences_match_independent_retry_model() {
     let trace = common::TempArtifact::new("laniusc_iterator_transfer", "model_memory", None);
     let output = common::process_output_with_timeout(
         "iterator transfer state models",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,mremap,munmap,brk", "-e", "signal=none"])

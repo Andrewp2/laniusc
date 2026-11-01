@@ -145,10 +145,12 @@ fn workspace_metadata() -> serde_json::Value {
         "file_operations": false,
         "workspace_diagnostics": false,
         "source_root_loading": false,
-        "stdlib_root_loading": false,
+        "stdlib_root_loading": true,
+        "stdlib_root_option": "initializationOptions.stdlibRoot",
+        "stdlib_root_fallbacks": ["stdlib/ next to the laniusc binary", "stdlib/ in the workspace root"],
         "open_document_scope": "explicit textDocument/didOpen documents only",
-        "initialize_root_uri": "ignored",
-        "initialize_workspace_folders": "ignored"
+        "initialize_root_uri": "stdlib-root fallback",
+        "initialize_workspace_folders": "stdlib-root fallback (first folder)"
     })
 }
 
@@ -195,12 +197,12 @@ fn document_diagnostics_metadata() -> serde_json::Value {
         "report_kind": "full",
         "document_scope": "open-document-text",
         "publish_diagnostics": false,
-        "inter_file_dependencies": false,
+        "inter_file_dependencies": true,
         "workspace_diagnostics": false,
         "result_id_supported": false,
         "source_scanning": false,
         "source_root_loading": false,
-        "stdlib_root_loading": false,
+        "stdlib_root_loading": true,
         "source_compilation": true,
         "gpu_device_creation": true,
         "target_codegen": false
@@ -225,7 +227,6 @@ fn claim_boundaries_metadata() -> serde_json::Value {
         "claim_blockers": [
             "no workspace diagnostics",
             "no source-root loading",
-            "no stdlib-root loading",
             "no local LSP latency artifacts",
             "not a release artifact"
         ],

@@ -106,7 +106,7 @@ fn string_byte_transfers_validate_preserve_identity_and_release_once() {
     let trace = common::TempArtifact::new("laniusc_string_transfer", "owners", None);
     let output = common::process_output_with_timeout(
         "String byte ownership transfer contracts",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([

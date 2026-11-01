@@ -164,7 +164,7 @@ Required contracts are:
   join waiting forever. Initially exclude detach and asynchronous cancellation.
 - Whole-process termination and worker completion need separate paths. The
   raw-entry wrapper, process exit and allocation-failure runtime use Linux
-  syscall 60, which exits the calling thread in a multithreaded process. The
+  syscall 231 (exit_group), which ends every thread of the process. The
   wrapper also retains the original argument stack in R15. A thread runtime
   must define and preserve those process-context and termination contracts.
 

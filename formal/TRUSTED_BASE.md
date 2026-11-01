@@ -39,18 +39,47 @@ stopping at the computations the theorems are about (`compileSource`,
 `linkObjects`, `elfFile`, `sourceProgramFiles`, `compileWords`,
 `frontEndWords` and the self program `Lanius.Faithful.Self.prog`, which are
 not trusted, section 10), with each one's type and body:
-definitions `922da72c444cc90a` (4,418 constants). This covers Core's
+definitions `ff7166cc0f6bf66d` (4,479 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
-modules keeps its hash. The last change of the hash (11-01, fuzzer): a
+modules keeps its hash. The last change of the hash (11-01, fuzzer, merged
+with lang's `6415d962ec6a970a`, which did not change its definitions): a
 float literal that rounds to infinity at its type is rejected, as laniusc
 rejects it (SEMANTIC_DECISIONS "Float literals in the front end"):
 `floatPickOf` keeps a literal only through the new `floatFinite`, which
 drops the bits of +inf (`flInf`, from `flPow2`; a negated literal negates a
 positive one, so -inf goes the same way), so `floatPick`
 changed with it; the self program's prim table `prims` changed with the
-front end's new functions. Before that (11-01, review finding
+front end's new functions. Before that (11-01, F11b, merged
+with the review-fixes restatement and rfront's `u16` views,
+`a784f30fce5c9322`): an array local passed at a `[T]` parameter is
+`SrcEff.arraySlice T x`, whose meaning is Core's `arrayToSlice T (local x)`
+(`SrcEff.toCore`), read by `argView`/`argViews` in `EffInfer.plain`,
+`EffNamed.explicit` and `EffArgs.arg` (`MEff.xArraySlice`,
+`EffTy.arraySlice`, `EffClosed.arraySlice`, `LitEff.arraySlice`); the
+compiler does not lower it yet; and the reading of a method call with type
+arguments `x.m<T, ..>(..)`: `MethodBinds` binds m's own type parameters to
+the written types after the receiver's binds, used by `EffR.method`,
+`EffChain.method` and `MethodEff`, and `MethodForm` and `TryMethodForm`
+allow the type arguments (section 4). Before that (11-01, merge of
+review-fixes into lang): it combines lang's `u16` views
+(`b8d2e28d6f544c42`) and review-fixes' restatement of review finding 5's
+first reason (`adcfd7afcaf25cbd`), which did not change each other's
+definitions. The restatement: `SelfShort`'s first reason is
+`SelfPanics W` (`Faithful/SelfPanics.lean`): no cost at any fuel, and with
+the prelude's `plus` and `times` wrapping the pure compile has a value
+(`compileW`, through `pcall` of `progW`, which is `prog` with those two
+functions' bodies replaced by `wrapAt` and `wrapFunc`,
+`Faithful/Sim/Wrap.lean`, at `ixPlus` and `ixTimes`,
+`Faithful/Gen/SelfLiveTab.lean`). The `u16` views (11-01, merge of
+rfront's `u16` views into lang): Core's `u16` views (SEMANTIC_DECISIONS
+"`u16` views"): a raw slice of `u16` is a word view in laniusc's layout, one
+descending 8-byte word per element (`rawSliceElementAddress?` and
+`mapRawNominalSlice` take it as they take a struct or enum,
+`NativeLayout.elementStride?` is -8 and `words?` of a `[u16]` is 3), and
+`RawNominalSliceElement.word16` types it; the hash before it was
+`da057f9f0d2562a7` (Reviewer A's change kept it). Before that (11-01, review finding
 5 piece (c)): the new top theorems `selfCompiler_reason`,
 `selfHost_fixpoint_reason` and `selfHost_outcome_reason` bring in
 `SelfFaultReason` and `SelfShort` (`Faithful/SelfShort.lean`), `selfCost`,
@@ -282,7 +311,7 @@ statement `00000000370c8fc9`. Under `driver_faithful`'s premises on the
 state and views, with the input and output ranges checked in Core's heap,
 Core's run of `w` never reaches an undefined trap, at any fuel (`SafeE`).
 
-### The self-built verified compiler (`Lanius/Faithful/SelfCompiler.lean`, `SelfHost.lean`, `SelfShort.lean`)
+### The self-built verified compiler (`Lanius/Faithful/SelfCompiler.lean`, `SelfHost.lean`, `SelfShort.lean`, `SelfPanics.lean`)
 
 #### `Lanius.Faithful.SelfCompiler.selfCompiler_outcome`
 
@@ -319,7 +348,9 @@ statement `00000000803be923`. `selfCompiler_outcome`, premises unchanged,
 with `SelfFaults` replaced by `SelfFaultReason`: when the run faults
 because Core's run of `w` fails at every fuel, one of `SelfShort`'s reasons
 holds. Either the cost semantics gives the pure compile no cost at any fuel
-(`selfCost N W = none` for every `N`), or `compileText files`'s binary has
+(`selfCost N W = none` for every `N`) because the prelude's `plus` or
+`times` panics (`SelfPanics W`: with the two wrapping, `compileW` has a
+value at some fuel), or `compileText files`'s binary has
 more words than `room`, or it has a cost and the heap limit is short:
 `limit < selfNext W room + h` for every cost `h` that `selfCost` gives
 (`W = filesWords files`). The other fault branch, Core's run completing
@@ -335,6 +366,18 @@ replaced by `SelfFaultReason`.
 
 statement `00000000b38b3b9b`. `selfHost_outcome` with `SelfFaults`
 replaced by `SelfFaultReason`.
+
+#### `Lanius.Faithful.SelfPanics.compileW_total`
+
+statement `00000000cb6e99e6`. For any words `W`, the pure compile of the
+self program with the prelude's `plus` and `times` replaced by their
+operators, which wrap (`progW`), has a value at some fuel: `compileW N W =
+some v`, `grammar()`, then `front_end_words(grammar(), list W)` and
+`compile_words(..)` by `pcall`. Every function the compile reaches
+terminates (`SelfTerm.termOk`), is typed (`SelfPure.selfPure`) and cannot
+fail but at a call (`SelfPure.livesOk`, `LiveFn` of `Sim/Live.lean`), so
+`pcall_live` gives each call a value. Rests on section 1 only: it is about
+the pure semantics, not Core or the machine.
 
 ## 1. Lean
 
@@ -356,7 +399,7 @@ the statements, so a reader has to agree that each one says what is intended:
 
 | definition | file | says |
 |---|---|---|
-| `SrcProgram.toCore` and the `toCore` of each construct | `Mini/Source.lean` | which Core program a source program *is*: each construct is the Core construct of the same name (`Null` is Core's literal `.pointer 0`), and functions are numbered by position, then the host functions (`hostFuncs`, ids 2^32 up). A literal (`EStruct`, `LetStruct`) means `SrcType.literal`: Core's array value `.array T vs` at an array type `[T; N]`, and a struct value otherwise |
+| `SrcProgram.toCore` and the `toCore` of each construct | `Mini/Source.lean` | which Core program a source program *is*: each construct is the Core construct of the same name (`Null` is Core's literal `.pointer 0`), and functions are numbered by position, then the host functions (`hostFuncs`, ids 2^32 up). A literal (`EStruct`, `LetStruct`) means `SrcType.literal`: Core's array value `.array T vs` at an array type `[T; N]`, and a struct value otherwise. `ArraySlice(T, x)` is Core's `arrayToSlice T (local x)` |
 | `FieldsHold`, `SrcType.HoldsAt` | `Mini/Source.lean` | how a Core value sits in 64-bit slots: an `i32` is zero-extended, a `bool` is 1/0, a struct is its fields in order, an enum is a tag then its payload, a pointer is its address, an array `[T; N]` is its N elements in order, as a struct of N fields of type T, a float is its bits |
 | `startState`, `State.Fresh`, `HeapCorr`, `outputOf` | `Mini/SourceCorrect.lean`, `Mini/HeapCorr.lean` | Core's start state for a standard input (empty heap, the world with that input); a state with no live cells; the mini heap representing Core's heap and world (standard output and error are `outputOf 1` and `outputOf 2` of the mini heap's trace, the bytes its writes put on fds 1 and 2, no open files, the same standard input) |
 | `Returned`, `HeapAt`, `StackAt`, `Contract`, `Scratch`, `InHeap` | `Mini/Simulation.lean` | the calling convention and what "returns" means (section 8) |
@@ -376,6 +419,7 @@ the statements, so a reader has to agree that each one says what is intended:
 | `SafeE` | `Faithful/Safe/Run.lean` | no fuel of Core's run reaches an undefined trap |
 | `SelfOutput`, `selfHeap`, `selfBits`, `selfNext` | `Faithful/SelfCompiler.lean` | what the self-built compiler's `w` returned in x86 memory; the heap layout and argument slots its caller sets up (the input words, then the output room, then the bump heap) |
 | `SelfFaultReason`, `SelfShort`, `selfCost`, `qcall`, `boxCost`, `prims` | `Faithful/SelfShort.lean`, `Faithful/SelfLive.lean`, `Faithful/Cost.lean`, `Faithful/Fwd/Prim.lean`, `Faithful/Gen/SelfPureTab.lean` | why the self-built compiler's `w` may fault when Core's run of it fails at every fuel: no pure cost, the output room short, or the heap limit below `selfNext` plus every cost. `selfCost` is `w`'s heap cost by the pure cost semantics `qcall` (the pure semantics of `pcall`, adding `boxCost`, the box's storage and 8 bytes of alignment, at each call of a `prims.boxed` function): one `List<i32>` box per input word, then `grammar()`, `front_end_words` and `compile_words` |
+| `SelfPanics`, `compileW`, `progW`, `wrapAt`, `wrapFunc`, `pcall`, `ixPlus`, `ixTimes` | `Faithful/SelfPanics.lean`, `Faithful/Sim/Wrap.lean`, `Faithful/Pure.lean`, `Faithful/Gen/SelfLiveTab.lean` | `SelfShort`'s first reason: no cost at any fuel, and the pure compile (`pcall` of `grammar()`, `front_end_words` and `compile_words`, as `selfCost` runs them) of `progW` has a value. `progW` is `prog` with functions `ixPlus` and `ixTimes` (the prelude's `plus` and `times`, found by name by `faithful_pure.py`) wrapped: `wrapFunc op f` is `f` with the body `return a op b` of its first two parameters, which wraps, where the prelude's panics when the result overflows |
 
 The computations the theorems are about are not trusted (section 10):
 whatever `compileSource`, `compileText`, `compileProgram`, the optimizer,
@@ -602,7 +646,10 @@ when it is right; a stale cache entry is rejected, never used. Trusted:
   - `x.m(args)` (`x` any value) and `T::m(args)` (`T` a type parameter, or
     a primitive type as in `i32::hash(v)`) call
     the method `m` of the one `impl` whose type matches the receiver's type,
-    with `self` (by value) the receiver;
+    with `self` (by value) the receiver; `x.m<T, ..>(args)` binds m's own
+    type parameters to the written types in order, after the impl's binds
+    from the receiver, instead of inferring them (`MethodBinds`, F11b; a
+    count other than m's parameters rejects);
   - a `match` has one arm per variant of its scrutinee's enum, in any order,
     and its arms are listed in variant order (only one runs, so their order
     has no effect);
@@ -771,6 +818,10 @@ when it is right; a stale cache entry is rejected, never used. Trusted:
     operands expect the type of whichever operand has one.
 
   - `slice_stride(x)` of a slice local x is `EStride(x)`;
+  - (F11b) a call's argument at a parameter of type `[T]` that is an array
+    local of element type T is `ArraySlice(T, x)` (`argView`), Core's
+    `arrayToSlice T x`, so the callee's writes reach the array, as in
+    laniusc; an array local of another element type rejects;
   - `return slice_from_raw_parts(p, n);` in a function whose result is a
     slice is a slice local (named by the offset of `slice_from_raw_parts`)
     and its return;

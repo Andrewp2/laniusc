@@ -4,6 +4,7 @@ public import Lanius.Mini.Reading.Det.Effs
 public import Lanius.Mini.Reading.Stmts
 import all Lanius.Mini.Compiler.P.SrcType_size
 import all Lanius.Mini.Frontend.P.callParts
+import all Lanius.Mini.Frontend.P.projection
 import all Lanius.Mini.Frontend.P.distinct
 import all Lanius.Mini.Frontend.P.forRange
 import all Lanius.Mini.Frontend.P.isEmptyUsize
@@ -239,7 +240,7 @@ theorem effChain_noTryMethod {env : FrontEnv} {scope : List Local} {E : Option T
     {x : MEff} (pm : nodeProd tail = pPostfixMember) (pc : nodeProd (kid tail 3) = pPostfixCall)
     (pt : nodeProd (kid (kid tail 3) 3) = pPostfixTry) (h : EffChain env scope E a tail x) : False := by
   cases h with
-  | method _ _ _ _ _ _ _ _ ch => exact effChain_noTry pt ch
+  | method _ _ _ _ _ _ _ _ _ ch => exact effChain_noTry pt ch
   | field _ _ nc _ _ _ => exact nc pc
   | _ => prod_clash
 
@@ -269,8 +270,8 @@ theorem peel_noEffTryMethod : ∀ {env : FrontEnv} {scope : List Local} {E : Opt
 theorem methodEff_unique {env : FrontEnv} {scope : List Local} {expected : Option Ty} {pf : CTree} {x y : MEff}
     (nd : IdsFresh scope) (vn : VariantsNodup env.decls) (h₁ : MethodEff env scope expected pf x)
     (h₂ : MethodEff env scope expected pf y) : x = y := by
-  obtain ⟨l, items, found, fd, lo, it, mfor, hfd, inf⟩ := h₁
-  obtain ⟨l', items', found', fd', lo', it', mfor', hfd', inf'⟩ := h₂
+  obtain ⟨l, items, found, fd, bs, lo, it, mfor, hfd, mb, inf⟩ := h₁
+  obtain ⟨l', items', found', fd', bs', lo', it', mfor', hfd', mb', inf'⟩ := h₂
   have e := localOf_unique lo lo'
   subst e
   have e := items_unique it it'
@@ -279,6 +280,7 @@ theorem methodEff_unique {env : FrontEnv} {scope : List Local} {expected : Optio
   subst e
   rw [hfd] at hfd'
   cases hfd'
+  cases methodBinds_unique mb mb'
   exact effInfer_unique inf nd vn inf'
 
 theorem triedR_unique {env : FrontEnv} {r : Nat} {call : Option MEff} {st : Ty} {w : Nat} {a b : Tried}

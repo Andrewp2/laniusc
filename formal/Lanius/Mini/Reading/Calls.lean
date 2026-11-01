@@ -2,6 +2,7 @@ module
 
 public import Lanius.Mini.Reading.Method
 import all Lanius.Mini.Frontend.P.callParts
+import all Lanius.Mini.Frontend.P.projection
 import all Lanius.Mini.Frontend.P.collect
 import all Lanius.Mini.Frontend.P.consTreeTail
 import all Lanius.Mini.Frontend.P.distinct
@@ -73,6 +74,7 @@ inductive EffTy (decls : Decls) (scope : List Local) : MEff → Ty → Prop
       EffTy decls scope (.xDivide op l r) t
   | stride {sl : Nat} : EffTy decls scope (.xStride sl) .tyIsize
   | host {id : Nat} {args : List MEff} : EffTy decls scope (.xHost id args) .tyI32
+  | arraySlice {e : Ty} {a : Nat} : EffTy decls scope (.xArraySlice e a) (.tySlice e)
 
 theorem instRet_sound {fuel : Nat} {decls : Decls} {inst : Inst} {t : Ty} (h : instRet fuel decls inst = some t) :
     InstRet decls inst t := by
@@ -175,6 +177,7 @@ theorem effTy_sound : ∀ {fuel : Nat} {env : FrontEnv} {scope : List Local} {x 
         exact .divideLeft (by simpa using bl) (effTy_sound h)
     | xStride sl => cases h; exact .stride
     | xHost id args => cases h; exact .host
+    | xArraySlice e a => cases h; exact .arraySlice
 
 theorem effsTys_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} :
     ∀ {xs : List MEff} {ts : List Ty}, effsTys fuel env scope xs = some ts → ListRel (EffTy env.decls scope) xs ts

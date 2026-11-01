@@ -208,7 +208,7 @@ class Cases:
         target = os.path.join(os.fsencode(work), parent)
         before = set(os.listdir(target)) if os.path.isdir(target) else set()
         trace = directory / "syscalls.log"
-        command = ["strace", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "8192", "-e", "signal=none",
+        command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "8192", "-e", "signal=none",
                    "-o", str(trace), "-e", "trace=" + TRACE]
         for item in rules:
             command += ["-e", injection(item)]

@@ -43,7 +43,7 @@ fn traced(exe: &common::TempArtifact, args: &[String], syscall: &str, injection:
     let trace = common::TempArtifact::new("laniusc_raw_width", "trace", None);
     let out = common::process_output_with_timeout(
         "raw host width fault transport",
-        Command::new("timeout")
+        crate::common::traced_timeout()
             .args(["--kill-after=1s", "4s", "strace"])
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -247,7 +247,7 @@ fn finite_argument_environment_copies_keep_full_bounds_and_exact_key_identity() 
     let trace = common::TempArtifact::new("laniusc_raw_width", "copy_trace", None);
     let out = common::process_output_with_timeout(
         "finite source wide capacity probes",
-        Command::new("timeout")
+        crate::common::traced_timeout()
             .args(["--kill-after=1s", "4s", "strace"])
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -299,7 +299,7 @@ fn small_real_operations_and_allocator_rejections_preserve_owners_and_runtime_ne
     let trace = common::TempArtifact::new("laniusc_raw_width", "controls_trace", None);
     let input = common::TempArtifact::new("laniusc_raw_width", "input", None);
     input.write_bytes(&[255, 0, 128]);
-    let mut command = Command::new("timeout");
+    let mut command = crate::common::traced_timeout();
     command.args(["--kill-after=1s","4s","strace","-qq","-o"]).arg(trace.path()).args(["-e","trace=mmap,mremap,munmap,read,write,clock_gettime,getcwd,time,nanosleep,getrandom,open,close,getpid"]).arg(exe.path()).current_dir("/").stdin(std::fs::File::open(input.path()).unwrap());
     let out = common::process_output_with_timeout(
         "small raw host controls",
@@ -356,7 +356,7 @@ fn raw_allocation_high_word_is_transported_without_modulo_reduction() {
     let trace = common::TempArtifact::new("laniusc_raw_width", "trace", None);
     let out = common::process_output_with_timeout(
         "raw width admission",
-        Command::new("timeout")
+        crate::common::traced_timeout()
             .args(["--kill-after=1s", "4s", "strace"])
             .args(["-qq", "-o"])
             .arg(trace.path())

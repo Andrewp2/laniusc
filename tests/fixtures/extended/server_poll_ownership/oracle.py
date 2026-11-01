@@ -17,7 +17,7 @@ from publication_oracle import resources
 def run(executable):
     directory = Path(tempfile.mkdtemp(prefix="server-poll-ownership-"))
     trace = directory / "trace.txt"
-    command = ["strace", "--kill-on-exit", "-qq", "-o", str(trace), "-e", "trace=mmap,munmap,socket,accept4,close,recvfrom,read,write", str(executable)]
+    command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-o", str(trace), "-e", "trace=mmap,munmap,socket,accept4,close,recvfrom,read,write", str(executable)]
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     captured = bytearray()
     try:

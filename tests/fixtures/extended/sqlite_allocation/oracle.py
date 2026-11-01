@@ -78,7 +78,7 @@ def execute(executable, observer, fail_at=None):
             environment = os.environ.copy()
             environment["LD_PRELOAD"] = str(observer)
             environment["LANIUS_SQLITE_ALLOCATION_FD"] = str(events.fileno())
-            command = ["strace", "-i", "-qq", "-o", str(trace), "-e", "trace=mmap,munmap"]
+            command = ["strace","-E","LANIUS_ALLOC=mmap", "-i", "-qq", "-o", str(trace), "-e", "trace=mmap,munmap"]
             if fail_at is not None:
                 command += ["-e", f"inject=mmap:error=ENOMEM:when={fail_at}"]
             command.append(str(executable))

@@ -259,7 +259,7 @@ class Suite:
         if setup:
             setup(cwd)
         trace = directory/"native.trace"
-        command = ["strace","--kill-on-exit","-qq","-xx","-i","-s","4096","-e","signal=none","-e","trace="+TRACE,"-o",str(trace)]
+        command = ["strace","-E","LANIUS_ALLOC=mmap","--kill-on-exit","-qq","-xx","-i","-s","4096","-e","signal=none","-e","trace="+TRACE,"-o",str(trace)]
         command += injection_options(rules)
         command += [str(self.executable)]
         request = struct.pack("<5Q",mode,names,entropy,parent,repair[2] if repair else 0)

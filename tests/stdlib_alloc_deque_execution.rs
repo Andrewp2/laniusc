@@ -69,7 +69,7 @@ fn every_deque_allocation_failure_preserves_contents_capacity_and_views() {
     let exe = fixture("alloc_deque_failure");
     let trace = common::TempArtifact::new("laniusc_alloc_deque", "failure_trace", None);
     let execute = |when: Option<usize>| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -116,7 +116,7 @@ fn checked_indexing_panics_for_empty_negative_and_past_end_indices() {
 fn zero_sized_ring_storage_never_allocates() {
     let exe = fixture("alloc_deque_zero_sized");
     let trace = common::TempArtifact::new("laniusc_deque", "zst_trace", None);
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args([
@@ -151,7 +151,7 @@ fn reserved_edits_and_large_fifo_workloads_allocate_once() {
         let trace = common::TempArtifact::new("laniusc_deque", "reserved_trace", None);
         let output = common::process_output_with_timeout(
             "reserved deque workload",
-            Command::new("strace")
+            crate::common::strace()
                 .args(["-qq", "-o"])
                 .arg(trace.path())
                 .args([
@@ -191,7 +191,7 @@ fn recent_value_programs_report_allocation_failure_and_release_storage() {
         data.write_bytes(input);
         let trace = common::TempArtifact::new("laniusc_deque", "program_trace", None);
         let execute = |when: Option<usize>| {
-            let mut command = Command::new("strace");
+            let mut command = crate::common::strace();
             command
                 .args(["-qq", "-o"])
                 .arg(trace.path())

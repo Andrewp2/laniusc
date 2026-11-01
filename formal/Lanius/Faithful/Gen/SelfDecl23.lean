@@ -1,11 +1,19 @@
 module
 
 public import Lanius.Faithful.Gen.SelfPureTab
+public import Lanius.Faithful.Gen.SelfSrc0
 public import Lanius.Faithful.Gen.SelfSrcF_anyNested
+public import Lanius.Faithful.Gen.SelfSrcF_isUnderscore
+public import Lanius.Faithful.Gen.SelfSrcF_paramGoals
 public import Lanius.Faithful.Gen.SelfSrcF_plainNaming
+public import Lanius.Faithful.Gen.SelfSrcF_shadowUse
 import all Lanius.Faithful.Gen.SelfPureTab
+import all Lanius.Faithful.Gen.SelfSrc0
 import all Lanius.Faithful.Gen.SelfSrcF_anyNested
+import all Lanius.Faithful.Gen.SelfSrcF_isUnderscore
+import all Lanius.Faithful.Gen.SelfSrcF_paramGoals
 import all Lanius.Faithful.Gen.SelfSrcF_plainNaming
+import all Lanius.Faithful.Gen.SelfSrcF_shadowUse
 import all Lanius.Faithful.Gen.SelfTypes
 import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.FArith_opcode
@@ -94,8 +102,8 @@ open Lanius.Mini
 open Lanius.Faithful
 open Lanius.Faithful.Self
 
-/-- `declareFuncs` of functions 2300 to 2334. -/
-theorem dchunk23 : declsStep [(src_column_arms 96 103 2291 2300 2303 2304), (src_wild_inner 2302 2305 2306 2307), (src_nest_arm 139 144 147 235 546 815 821 1628 2308 2309 2310), (src_column_arm 2298 2311 2312 2313), (src_is_last), (src_ends_wild 2186), (src_known_use 2314), (src_covers 154 1104 1815 2315), (src_replace_at 56 96 103 139 2308), (src_hidden_pat 96 139 235 546 2131 2133 2316), (src_hidden_expr 96 139 235 546 1609 1667 2316), (src_column_fit 2212), (src_row_fits 75 103 2312 2317), (src_column_sub 147 1669 2252 2318 2319 2320), (src_covered_use 147 2302 2321 2322), (src_covers_decl 2323), (src_hidden_path 2324 2325), (src_col_fits 147 1669 2252 2326), (src_quiet_sub 2327), (src_quiet_in 546 2248 2328), (src_sub_arm 139 144 147 235 546), (src_quiet_use 2329), (src_cols_quiet 75 103 2247 2322 2330), (src_covers_enum 2331), (src_named_path 96 139 147 235 546 567 584 585 1776), (src_text_hidden 532), (src_same_opt_name 861), (src_quiet_arm 2320 2332), (src_mentions 56 103 861 1045 2127 2328), (src_appended_use 546 1045 2302), (src_col_quiet 147 1669 2319), (src_covers_all 504 2247 2331 2333), (src_wild_pat 96 139 235 546 2131 2133 2281 2324), (src_covered_by 103 2127 2333 2334), (src_plain_naming 2128 2247 2248 2275)]
+/-- `declareFuncs` of functions 2300 to 2348. -/
+theorem dchunk23 : declsStep [(src_fit_args_next 56 2293), (src_fit_arg 56 144 147 1591 2109), (src_nest_use 2305 2306), (src_plain_use 2014 2307), (src_wild_binder 75 139 144 147 235 547 568), (src_row_pats 144 146 147 2129 2131), (src_nest_pats 2308 2309), (src_shadow_use 2310), (src_first_nested 75 103 2265 2308 2311), (src_nest_at 917 2312 2313 2314), (src_shadow_if), (src_first_at), (src_get_of_mini_selfhost_CTree 56 103 2312), (src_nest_inner 2315 2316), (src_column_arms 96 103 2305 2314 2317 2318), (src_wild_inner 2316 2319 2320 2321), (src_nest_arm 139 144 147 235 547 815 821 1629 2322 2323 2324), (src_column_arm 2312 2325 2326 2327), (src_is_last), (src_ends_wild 2191), (src_known_use 2328), (src_covers 154 1104 1817 2329), (src_replace_at 56 96 103 139 2322), (src_hidden_pat 96 139 235 547 2129 2131 2330), (src_hidden_expr 96 139 235 547 1610 1668 2330), (src_column_fit 2256), (src_row_fits 75 103 2326 2331), (src_column_sub 147 1670 2265 2332 2333 2334), (src_covered_use 147 2316 2335 2336), (src_covers_decl 2337), (src_hidden_path 2338 2339), (src_col_fits 147 1670 2265 2340), (src_quiet_sub 2341), (src_quiet_in 547 2261 2342), (src_sub_arm 139 144 147 235 547), (src_quiet_use 2343), (src_cols_quiet 75 103 2260 2336 2344), (src_covers_enum 2345), (src_named_path 96 139 147 235 547 568 585 586 1777), (src_text_hidden 533), (src_same_opt_name 861), (src_quiet_arm 2334 2346), (src_mentions 56 103 861 1045 2125 2342), (src_appended_use 547 1045 2316), (src_col_quiet 147 1670 2333), (src_covers_all 504 2260 2345 2347), (src_wild_pat 96 139 235 547 2129 2131 2295 2338), (src_covered_by 103 2125 2347 2348), (src_plain_naming 2126 2260 2261 2289)]
     decls 0 0 0 0 = true := by decide +kernel
 
 end Lanius.Faithful.SelfPure

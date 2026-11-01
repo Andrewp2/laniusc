@@ -210,6 +210,13 @@ Percentages are relative to `gzip -6`. Level 2 runs at 28.7 MB/s on the docs/std
 33.8 MB/s on the text tar. On this run level 0 and `gzip -6` were each about 9% slower than in
 the quieter run above.
 
+Where level 2's time goes on the docs/stdlib tar, from builds with one part removed: hashing
+the positions inside matches is about 14%, choosing and writing the codes about 12%, and stream
+plumbing about 8%. Most of the rest is the per-position match loop. Search depth matters little:
+chain 1 with greedy matching saves only about 10%. The generated code spends about 16
+instructions on each slice element access, re-copying the slice header and multiplying by the
+stride every time, and level 2 makes roughly eight such accesses per input byte.
+
 ## Raw, zlib and gzip containers
 
 ```text

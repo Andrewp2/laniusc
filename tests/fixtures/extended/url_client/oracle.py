@@ -142,7 +142,7 @@ def connected_case(executable, directory, *, chunked=False):
     worker.start()
     trace = directory / "syscalls.log"
     profile = NATIVE.verified_sites(executable, directory)
-    process = subprocess.Popen(["strace", "--kill-on-exit", "-qq", "-xx", "-s", "65536", "-i",
+    process = subprocess.Popen(["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-xx", "-s", "65536", "-i",
                                 "-e", "signal=none", "-e", "trace=all", "-o", str(trace), str(executable), url, "0"],
                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, restore_signals=True)
     observed = bytearray()

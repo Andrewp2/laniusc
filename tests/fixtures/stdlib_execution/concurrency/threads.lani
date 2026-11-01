@@ -1,0 +1,206 @@
+// Functional tests for std::pthread with std::sync's Mutex and Condvar.
+// Prints "name value" per check (" FAIL want W" on a mismatch) and exits 0
+// when every check passes:
+//   sum.T      parallel sum over T threads equals the serial sum
+//   counter    a Mutex-guarded shared counter reaches threads * rounds
+//   queue.*    a bounded Condvar queue delivers every produced value once
+//   join.*     1,000 sequential spawn/join pairs return their results
+// Build: laniusc --native-link --native-library atomic --stdlib-root stdlib
+module app::main;
+import core::mem;
+import core::result;
+import std::io;
+import std::pthread;
+import std::sync;
+
+const N: i32 = 1000003;
+const ROUNDS: i64 = 20000;
+const ITEMS: i64 = 20000;
+const CAPACITY: i64 = 8;
+
+fn get(at: ptr, word: i32) -> i64 { let v: [i64] = core::mem::typed_slice_from_raw_parts<i64>(at + (word as usize) * 8, 1); return v[0]; }
+fn set(at: ptr, word: i32, value: i64) { let v: [i64] = core::mem::typed_slice_from_raw_parts<i64>(at + (word as usize) * 8, 1); v[0] = value; }
+fn get_ptr(at: ptr, word: i32) -> ptr { let v: [ptr] = core::mem::typed_slice_from_raw_parts<ptr>(at + (word as usize) * 8, 1); return v[0]; }
+fn set_ptr(at: ptr, word: i32, value: ptr) { let v: [ptr] = core::mem::typed_slice_from_raw_parts<ptr>(at + (word as usize) * 8, 1); v[0] = value; }
+
+struct Score { failed: i32 }
+impl Score { pub fn borrow(&self) -> &Score { return self; } }
+fn report(score: &Score, label: str, got: i64, want: i64) {
+    std::io::write_text(1, label); std::io::write_text(1, " ");
+    std::io::write_i32(1, got as i32);
+    if (got != want) { std::io::write_text(1, " FAIL want "); std::io::write_i32(1, want as i32); score.failed += 1; }
+    std::io::write_newline(1);
+}
+fn flag(value: bool) -> i64 { if (value) { return 1; } return 0; }
+fn value_at(i: i32) -> u64 { let x: u64 = i as u64; return (x * 2654435761) % 1000003; }
+
+// Parallel sum. Task words: 0 data, 1 n, 2 lo, 3 hi, 4 result.
+fn add_range(task: ptr) -> ptr {
+    let n: i32 = get(task, 1) as i32;
+    let data: [u64] = core::mem::typed_slice_from_storage<u64>(get_ptr(task, 0), n);
+    let total: u64 = 0;
+    let i: i32 = get(task, 2) as i32;
+    let hi: i32 = get(task, 3) as i32;
+    while (i < hi) { total += data[i]; i += 1; }
+    set(task, 4, total as i64);
+    return task;
+}
+fn parallel_sum(score: &Score, region: &std::sync::Region, data: ptr, threads: i32, label: str) {
+    let tasks: ptr = region.allocate((threads as usize) * 64).unwrap();
+    let t: i32 = 0;
+    while (t < threads) {
+        let task: ptr = tasks + (t as usize) * 64;
+        set_ptr(task, 0, data); set(task, 1, N as i64);
+        set(task, 2, ((N as i64) * (t as i64)) / (threads as i64));
+        set(task, 3, ((N as i64) * ((t + 1) as i64)) / (threads as i64));
+        let made: std::pthread::Thread = std::pthread::spawn(add_range, task).unwrap();
+        set(task, 5, made.id() as i64);
+        t += 1;
+    }
+    let total: u64 = 0;
+    t = 0;
+    while (t < threads) {
+        let task: ptr = tasks + (t as usize) * 64;
+        let done: ptr = std::pthread::join_id(get(task, 5) as u64).unwrap();
+        total += get(done, 4) as u64;
+        t += 1;
+    }
+    let serial: u64 = 0;
+    let values: [u64] = core::mem::typed_slice_from_storage<u64>(data, N);
+    let i: i32 = 0;
+    while (i < N) { serial += values[i]; i += 1; }
+    report(score, label, flag(total == serial), 1);
+}
+
+// Shared counter. Task words: 0 mutex word, 1 counter word.
+fn count_up(task: ptr) -> ptr {
+    let lock: std::sync::Mutex = std::sync::mutex_at(get_ptr(task, 0));
+    let counter: ptr = get_ptr(task, 1);
+    let k: i64 = 0;
+    while (k < ROUNDS) {
+        lock.lock();
+        set(counter, 0, get(counter, 0) + 1);
+        lock.unlock();
+        k += 1;
+    }
+    return task;
+}
+
+// Bounded queue. Queue words: 0 mutex, 1-2 not_empty, 3-4 not_full,
+// 5 head, 6 tail, 7 taken, 8 consumed sum, 9.. slots.
+fn produce(task: ptr) -> ptr {
+    let queue: ptr = get_ptr(task, 0);
+    let first: i64 = get(task, 1);
+    let lock: std::sync::Mutex = std::sync::mutex_at(queue);
+    let not_empty: std::sync::Condvar = std::sync::condvar_at(queue + 8);
+    let not_full: std::sync::Condvar = std::sync::condvar_at(queue + 24);
+    let k: i64 = 0;
+    while (k < ITEMS) {
+        lock.lock();
+        while (get(queue, 6) - get(queue, 5) == CAPACITY) { not_full.wait(lock.borrow()); }
+        let tail: i64 = get(queue, 6);
+        set(queue, 9 + ((tail % CAPACITY) as i32), first + k);
+        set(queue, 6, tail + 1);
+        not_empty.notify_one();
+        lock.unlock();
+        k += 1;
+    }
+    return task;
+}
+fn consume(task: ptr) -> ptr {
+    let queue: ptr = get_ptr(task, 0);
+    let total: i64 = get(task, 1);
+    let lock: std::sync::Mutex = std::sync::mutex_at(queue);
+    let not_empty: std::sync::Condvar = std::sync::condvar_at(queue + 8);
+    let not_full: std::sync::Condvar = std::sync::condvar_at(queue + 24);
+    let mine: i64 = 0;
+    let running: bool = true;
+    while (running) {
+        lock.lock();
+        while (get(queue, 6) == get(queue, 5) && get(queue, 7) < total) { not_empty.wait(lock.borrow()); }
+        if (get(queue, 7) == total) { running = false; }
+        else {
+            let head: i64 = get(queue, 5);
+            let value: i64 = get(queue, 9 + ((head % CAPACITY) as i32));
+            set(queue, 5, head + 1);
+            set(queue, 7, get(queue, 7) + 1);
+            set(queue, 8, get(queue, 8) + value);
+            mine += 1;
+            if (get(queue, 7) == total) { not_empty.notify_all(); }
+            not_full.notify_one();
+        }
+        lock.unlock();
+    }
+    set(task, 2, mine);
+    return task;
+}
+
+fn echo(arg: ptr) -> ptr { return arg + 8; }
+
+fn main() -> i32 {
+    let score: Score = Score { failed: 0 };
+    let region: std::sync::Region = std::sync::map_shared(16777216).unwrap();
+    let data: ptr = region.allocate((N as usize) * 8).unwrap();
+    let values: [u64] = core::mem::typed_slice_from_storage<u64>(data, N);
+    let i: i32 = 0;
+    while (i < N) { let v: u64 = value_at(i); values[i] = v; i += 1; }
+    parallel_sum(score.borrow(), region.borrow(), data, 1, "sum.1");
+    parallel_sum(score.borrow(), region.borrow(), data, 2, "sum.2");
+    parallel_sum(score.borrow(), region.borrow(), data, 3, "sum.3");
+    parallel_sum(score.borrow(), region.borrow(), data, 8, "sum.8");
+    parallel_sum(score.borrow(), region.borrow(), data, 16, "sum.16");
+
+    // Counter: 8 threads.
+    let words: ptr = region.allocate(64).unwrap();
+    let task: ptr = region.allocate(64).unwrap();
+    set_ptr(task, 0, words); set_ptr(task, 1, words + 8);
+    let ids: ptr = region.allocate(64).unwrap();
+    let t: i32 = 0;
+    while (t < 8) { let made: std::pthread::Thread = std::pthread::spawn(count_up, task).unwrap(); set(ids, t, made.id() as i64); t += 1; }
+    t = 0;
+    while (t < 8) { std::pthread::join_id(get(ids, t) as u64).unwrap(); t += 1; }
+    report(score.borrow(), "counter", get(words, 1), 8 * ROUNDS);
+
+    // Queue: 2 producers, 2 consumers.
+    let queue: ptr = region.allocate(256).unwrap();
+    let jobs: ptr = region.allocate(256).unwrap();
+    let p: i32 = 0;
+    while (p < 4) {
+        let job: ptr = jobs + (p as usize) * 64;
+        set_ptr(job, 0, queue);
+        let entry: ptr = consume;
+        if (p < 2) { set(job, 1, (p as i64) * 1000000); entry = produce; }
+        else { set(job, 1, 2 * ITEMS); }
+        let made: std::pthread::Thread = std::pthread::spawn(entry, job).unwrap();
+        set(ids, p, made.id() as i64);
+        p += 1;
+    }
+    p = 0;
+    while (p < 4) { std::pthread::join_id(get(ids, p) as u64).unwrap(); p += 1; }
+    let expected: i64 = 2 * (ITEMS * (ITEMS - 1) / 2) + 1000000 * ITEMS;
+    report(score.borrow(), "queue.taken", get(queue, 7), 2 * ITEMS);
+    report(score.borrow(), "queue.sum_ok", flag(get(queue, 8) == expected), 1);
+    report(score.borrow(), "queue.split", get(jobs + 128, 2) + get(jobs + 192, 2), 2 * ITEMS);
+
+    // 1,000 sequential spawn/join pairs.
+    let base: ptr = region.allocate(64).unwrap();
+    let good: i64 = 0;
+    let k: i32 = 0;
+    while (k < 1000) {
+        let thread: std::pthread::Thread = std::pthread::spawn(echo, base).unwrap();
+        let back: ptr = thread.join().unwrap();
+        if (back == base + 8) { good += 1; }
+        if (k == 999) {
+            let again: core::result::Result<ptr, std::pthread::Error> = thread.join();
+            let refused: i64 = 0;
+            if (again.is_err()) { refused = match (again.unwrap_err()) { std::pthread::Error::Joined -> 1, _ -> 0 }; }
+            report(score.borrow(), "join.second_refused", refused, 1);
+        }
+        k += 1;
+    }
+    report(score.borrow(), "join.pairs", good, 1000);
+    report(score.borrow(), "parallelism_ok", flag(std::pthread::available_parallelism() >= 1), 1);
+    region.unmap();
+    if (score.failed != 0) { return 1; }
+    return 0;
+}

@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Mini.Frontend.Types
+import Lanius.Mini.Frontend.P.fnInstRet
 import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.noToken
 
@@ -78,6 +79,6 @@ def isTryMethod (pf : CTree) : Bool :=
   let primary : CTree := kid pf 0
   let tail : CTree := kid pf 1
   let call : CTree := kid tail 3
-  (decide (nodeProd primary = (174)) || decide (nodeProd primary = (173)) && decide (nodeProd (kid primary 1) = (274))) && decide (nodeProd tail = (163)) && decide (nodeProd (kid tail 2) = (297)) && decide (nodeProd call = (161)) && decide (nodeProd (kid call 3) = (318)) && decide (nodeProd (kid (kid call 3) 1) = (164))
+  (decide (nodeProd primary = (174)) || decide (nodeProd primary = (173)) && decide (nodeProd (kid primary 1) = (274))) && decide (nodeProd tail = (163)) && memberArgs (nodeProd (kid tail 2)) && decide (nodeProd call = (161)) && decide (nodeProd (kid call 3) = (318)) && decide (nodeProd (kid (kid call 3) 1) = (164))
 
 end Lanius.Mini
