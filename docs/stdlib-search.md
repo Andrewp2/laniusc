@@ -12,6 +12,7 @@ line scanning and matching.
 | `find(bytes, from, to, needle, needle_start, needle_length)` | Leftmost match start, or -1. An empty needle matches at `from` |
 | `rfind(...)` | Rightmost match start, or -1. An empty needle matches at `to` |
 | `count(...)` | Nonoverlapping leftmost matches. An empty needle counts `to - from + 1` |
+| `find_two_way(...)` / `rfind_two_way(...)` | Two-Way search alone, with the same results as `find`/`rfind` |
 | `rank(byte)` | The frequency rank used to choose prefilter bytes |
 
 Results equal a naive search and Python's
@@ -38,8 +39,22 @@ text/source frequency table and picks the two rarest offsets. It runs
 only then compares the whole needle. The table affects speed only, never
 results.
 
-**Worst case.** It is O(n·m), for example when every haystack byte equals
-the needle's rarest byte. There is no Two-Way fallback yet.
+**Two-Way fallback.** `find` and `rfind` count their full-needle compares.
+Once `compares × m` exceeds `4 × scanned bytes + 256`, they continue from
+the current position with Two-Way (Crochemore–Perrin). That happens on
+periodic needles, or when every haystack byte is the needle's rarest byte.
+
+- Before the switch, positions are rejected only by a failed compare, so the
+  results do not change.
+- Two-Way uses the critical factorization from the two maximal suffixes. A
+  short-period needle remembers its matched prefix; a long-period needle
+  shifts by `max(critical, m - critical) + 1`.
+- `rfind` runs the same search with the haystack range and the needle read
+  backwards.
+
+Prefilter work stays linear before the switch, so `find`, `rfind`, `count`
+and `Text::find` are O(n + m) with O(1) space. `find_two_way` and
+`rfind_two_way` expose the fallback directly.
 
 **Platform assumptions.** The word loads may be unaligned, which x86_64
 permits. `core::mem::i32_slice_data_ptr` supplies the byte slice's data
@@ -53,8 +68,17 @@ stdin. [`oracle.py`](../tests/fixtures/stdlib_execution/search/oracle.py)
 generates those cases and compares the results with Python's
 `bytes.find`/`rfind`/`count` and `str.find` (converted to byte offsets).
 
-- **Coverage:** 160,000 cases over eight seeds, with 0 mismatches. About
-  69% of the cases are valid UTF-8 and also check `Text::find`.
+- **Coverage:** each oracle run adds 57 adversarial cases to 20,000 random
+  ones. Eight seeds gave 160,456 cases with 0 mismatches. About 69% of the
+  cases are valid UTF-8 and also check `Text::find`. Every case also calls
+  `find_two_way` and `rfind_two_way` directly.
+- **Adversarial cases:** needles `b`×{2, 3, 17, 500, 4000} followed by `a`,
+  `ab` or `ba`, in all-`b` haystacks of 100,000–200,000 bytes, with the
+  match at the start, in the middle or absent. Also periodic units `ab`,
+  `aab`, `abaab` and `bbbbbbba` repeated about 60,000 bytes, with periodic
+  needles and subranges.
+- **Speed on the adversarial set:** the 57 cases took 82.1 s before the
+  fallback and 1.55 s after, with identical find, rfind and count results.
 - **Generated inputs:** haystacks of 0 to 3,000 bytes, including every
   boundary near multiples of 8 and 64; alphabets of 1, 2, 3 and 256 bytes,
   English and UTF-8; needles cut from the haystack, empty needles and
@@ -88,6 +112,12 @@ GNU grep is still 2–7x faster. Two costs remain:
 
 Each worker also builds per-chunk match summaries, so the parent skips the
 flag scan for chunks with no match.
+
+On an adversarial file, `parallel_grep` went from 8.13 s to 0.109 s with
+the fallback; GNU grep took 0.004 s. The file held 4,000 lines of 5,000 `b`
+bytes, and the pattern was `b`×400 followed by `a`. Output still matched
+GNU `grep -F` in 42 of 42 cases, across seven patterns (including both
+adversarial ones) and six inputs.
 
 Do not benchmark GNU grep with output to `/dev/null`. It detects that and
 stops at the first match, which made it look about ten times faster.

@@ -2,9 +2,10 @@
 // find_byte/rfind_byte scan eight bytes per step with SWAR zero-byte tests.
 // find picks the needle's two rarest bytes by a fixed frequency rank, scans
 // for the rarest one with find_byte, checks the second, then compares the
-// whole needle. Results equal a naive leftmost (or rightmost) search. The
-// worst case is O(n*m), for example when every haystack byte is the needle's
-// rarest byte; typical text skips most positions eight bytes at a time.
+// whole needle. Results equal a naive leftmost (or rightmost) search. When
+// full compares exceed a linear budget of the bytes scanned (periodic or
+// adversarial inputs), the search continues with Two-Way, so find, rfind
+// and count are O(n + m) in the worst case.
 // Ranges are explicit [from, to) byte indices. The caller guarantees that
 // to does not exceed the slice length and that the needle range lies inside
 // the needle slice: the word loads are not bounds-checked. Negative or
@@ -105,6 +106,94 @@ fn same(bytes: [u8], at: i32, needle: [u8], start: i32, length: i32) -> bool {
     return true;
 }
 
+// Two-Way (Crochemore-Perrin) string matching: O(n + m) time, O(1) space.
+// In reverse mode the haystack range and the needle are read backwards, so
+// the same search finds the rightmost match.
+fn needle_at(needle: [u8], start: i32, length: i32, reverse: bool, i: i32) -> u8 {
+    if (reverse) { return needle[start + length - 1 - i]; }
+    return needle[start + i];
+}
+fn hay_at(bytes: [u8], from: i32, to: i32, reverse: bool, i: i32) -> u8 {
+    if (reverse) { return bytes[to - 1 - i]; }
+    return bytes[from + i];
+}
+// Maximal suffix of the needle under < (greater false) or > (greater true).
+// Writes its start to out[0] and its period to out[1]; no allocation.
+fn maximal_suffix(needle: [u8], start: i32, length: i32, reverse: bool, greater: bool, out: [i32]) {
+    let left: i32 = 0; let right: i32 = 1; let offset: i32 = 0; let period: i32 = 1;
+    while (right + offset < length) {
+        let a: u8 = needle_at(needle, start, length, reverse, right + offset);
+        let b: u8 = needle_at(needle, start, length, reverse, left + offset);
+        let smaller: bool = a < b; if (greater) { smaller = a > b; }
+        if (smaller) { right += offset + 1; offset = 0; period = right - left; }
+        else {
+            if (a == b) {
+                if (offset + 1 == period) { right += offset + 1; offset = 0; } else { offset += 1; }
+            } else { left = right; right += 1; offset = 0; period = 1; }
+        }
+    }
+    out[0] = left; out[1] = period;
+}
+// Search position (0-based in the possibly reversed range) of the first
+// match, or -1. needle_length must be >= 1 and <= to - from.
+fn two_way_position(bytes: [u8], from: i32, to: i32, needle: [u8], start: i32, m: i32, reverse: bool) -> i32 {
+    let less: [i32; 2] = [0; 2]; let more: [i32; 2] = [0; 2];
+    maximal_suffix(needle, start, m, reverse, false, less);
+    maximal_suffix(needle, start, m, reverse, true, more);
+    let critical: i32 = more[0]; let period: i32 = more[1];
+    if (less[0] > more[0]) { critical = less[0]; period = less[1]; }
+    // Short period when needle[0..critical) == needle[period..period+critical).
+    let periodic: bool = period + critical <= m;
+    let k: i32 = 0;
+    while (periodic && k < critical) {
+        if (needle_at(needle, start, m, reverse, k) != needle_at(needle, start, m, reverse, period + k)) { periodic = false; }
+        k += 1;
+    }
+    if (!periodic) { period = critical; if (m - critical > period) { period = m - critical; } period += 1; }
+    let n: i32 = to - from; let position: i32 = 0; let memory: i32 = 0;
+    while (position + m <= n) {
+        // Right part, from the critical position (or the remembered prefix).
+        let i: i32 = critical; if (periodic && memory > critical) { i = memory; }
+        while (i < m && needle_at(needle, start, m, reverse, i) == hay_at(bytes, from, to, reverse, position + i)) { i += 1; }
+        if (i < m) {
+            position += i - critical + 1; memory = 0;
+        } else {
+            // Left part, right to left, stopping at the remembered prefix.
+            let low: i32 = 0; if (periodic) { low = memory; }
+            let j: i32 = critical - 1;
+            while (j >= low && needle_at(needle, start, m, reverse, j) == hay_at(bytes, from, to, reverse, position + j)) { j -= 1; }
+            if (j < low) { return position; }
+            position += period;
+            if (periodic) { memory = m - period; }
+        }
+    }
+    return -1;
+}
+// Two-Way search directly: leftmost / rightmost match with an O(n + m)
+// bound and the same results as find / rfind.
+pub fn find_two_way(bytes: [u8], from: i32, to: i32, needle: [u8], needle_start: i32, needle_length: i32) -> i32 {
+    if (!valid(bytes, from, to) || needle_start < 0 || needle_length < 0) { return -1; }
+    if (needle_length == 0) { return from; }
+    if (needle_length > to - from) { return -1; }
+    let at: i32 = two_way_position(bytes, from, to, needle, needle_start, needle_length, false);
+    if (at < 0) { return -1; }
+    return from + at;
+}
+pub fn rfind_two_way(bytes: [u8], from: i32, to: i32, needle: [u8], needle_start: i32, needle_length: i32) -> i32 {
+    if (!valid(bytes, from, to) || needle_start < 0 || needle_length < 0) { return -1; }
+    if (needle_length == 0) { return to; }
+    if (needle_length > to - from) { return -1; }
+    let at: i32 = two_way_position(bytes, from, to, needle, needle_start, needle_length, true);
+    if (at < 0) { return -1; }
+    return to - at - needle_length;
+}
+// Full needle compares are allowed while their total cost stays within a
+// linear budget of the bytes scanned; beyond it the search switches to
+// Two-Way from the current position, so the whole search is O(n + m).
+fn over_budget(compares: i32, length: i32, scanned: i32) -> bool {
+    return (compares as i64) * (length as i64) > 4 * (scanned as i64) + 256;
+}
+
 // Leftmost start i in [from, to - needle_length] where bytes[i..] begins with
 // needle[needle_start .. needle_start + needle_length], or -1. An empty needle
 // matches at from.
@@ -123,12 +212,17 @@ pub fn find(bytes: [u8], from: i32, to: i32, needle: [u8], needle_start: i32, ne
     }
     let first: u8 = needle[needle_start + rare]; let second: u8 = needle[needle_start + other];
     let last: i32 = to - needle_length;
-    let scan: i32 = from + rare;
+    let scan: i32 = from + rare; let compares: i32 = 0;
     while (scan <= last + rare) {
         let hit: i32 = find_byte(bytes, scan, last + rare + 1, first);
         if (hit < 0) { return -1; }
         let start: i32 = hit - rare;
-        if (bytes[start + other] == second && same(bytes, start, needle, needle_start, needle_length)) { return start; }
+        if (bytes[start + other] == second) {
+            if (same(bytes, start, needle, needle_start, needle_length)) { return start; }
+            compares += 1;
+            // No match starts before start + 1: continue there with Two-Way.
+            if (over_budget(compares, needle_length, hit - from + 1)) { return find_two_way(bytes, start + 1, to, needle, needle_start, needle_length); }
+        }
         scan = hit + 1;
     }
     return -1;
@@ -143,12 +237,18 @@ pub fn rfind(bytes: [u8], from: i32, to: i32, needle: [u8], needle_start: i32, n
     let rare: i32 = 0; let k: i32 = 1;
     while (k < needle_length) { if (rank(needle[needle_start + k]) < rank(needle[needle_start + rare])) { rare = k; } k += 1; }
     let first: u8 = needle[needle_start + rare];
-    let end: i32 = to - needle_length + rare + 1;
+    let end: i32 = to - needle_length + rare + 1; let compares: i32 = 0;
     while (end > from + rare) {
         let hit: i32 = rfind_byte(bytes, from + rare, end, first);
         if (hit < 0) { return -1; }
         let start: i32 = hit - rare;
         if (same(bytes, start, needle, needle_start, needle_length)) { return start; }
+        compares += 1;
+        // Remaining matches start before start: search [from, start - 1 + m).
+        if (over_budget(compares, needle_length, to - hit)) {
+            if (start - 1 + needle_length - from < needle_length) { return -1; }
+            return rfind_two_way(bytes, from, start - 1 + needle_length, needle, needle_start, needle_length);
+        }
         end = hit;
     }
     return -1;

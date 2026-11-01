@@ -149,7 +149,7 @@ pub impl Text {
     }
     // Nonempty valid UTF-8 cannot match inside a scalar. Empty needles match
     // at 0 for find and byte_len for rfind. find uses core::search (rarest
-    // byte prefilter, eight bytes per step); worst case O(n*m), no allocation.
+    // byte prefilter, eight bytes per step, Two-Way fallback); O(n+m), no allocation.
     pub fn find(&self, needle: Text) -> core::option::Option<i32> { return self.find_from(needle, 0); }
     pub fn rfind(&self, needle: Text) -> core::option::Option<i32> {
         if (needle.length > self.length) { return core::option::None(); }

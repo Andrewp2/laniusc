@@ -3,7 +3,9 @@
 The full library goal remains open. The current
 [`core::search`](stdlib-search.md) increment adds SWAR byte scans and a
 rarest-byte substring prefilter, used by `Text::find` and the parallel
-grep. 160,000 generated cases match Python's search results.
+grep. A budgeted Two-Way (Crochemore–Perrin) fallback keeps the worst case
+at O(n+m). 160,456 generated cases match Python's search results. That is
+eight runs, each adding the same 57 adversarial periodic cases.
 The preceding
 [concurrency increment](stdlib-concurrency.md) adds four modules for parallel
 work on native Linux x86_64/glibc with libatomic:

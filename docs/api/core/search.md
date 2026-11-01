@@ -4,7 +4,7 @@
 
 Generated source inventory. Linked guides own runtime and semantic contracts; a listed declaration does not establish executable behavior.
 
-[All modules](../README.md) · [Source](../../../stdlib/core/search.lani#L12)
+[All modules](../README.md) · [Source](../../../stdlib/core/search.lani#L13)
 
 Layer: `core`. Role: module. Profile: **Source inventory**.
 
@@ -12,19 +12,19 @@ Layer: `core`. Role: module. Profile: **Source inventory**.
 
 - [stdlib-search](../../stdlib-search.md)
 
-Declaration counts: function: 6.
+Declaration counts: function: 8.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::mem](mem.md) · [source](../../../stdlib/core/search.lani#L13)
+- [core::mem](mem.md) · [source](../../../stdlib/core/search.lani#L14)
 
 ## Free functions and extern declarations
 
 ### function: find_byte
 
-[Source line 41](../../../stdlib/core/search.lani#L41)
+[Source line 42](../../../stdlib/core/search.lani#L42)
 
 ```lanius
 pub fn find_byte(bytes: [u8], from: i32, to: i32, byte: u8) -> i32
@@ -32,7 +32,7 @@ pub fn find_byte(bytes: [u8], from: i32, to: i32, byte: u8) -> i32
 
 ### function: rfind_byte
 
-[Source line 72](../../../stdlib/core/search.lani#L72)
+[Source line 73](../../../stdlib/core/search.lani#L73)
 
 ```lanius
 pub fn rfind_byte(bytes: [u8], from: i32, to: i32, byte: u8) -> i32
@@ -40,15 +40,31 @@ pub fn rfind_byte(bytes: [u8], from: i32, to: i32, byte: u8) -> i32
 
 ### function: rank
 
-[Source line 88](../../../stdlib/core/search.lani#L88)
+[Source line 89](../../../stdlib/core/search.lani#L89)
 
 ```lanius
 pub fn rank(byte: u8) -> i32
 ```
 
+### function: find_two_way
+
+[Source line 174](../../../stdlib/core/search.lani#L174)
+
+```lanius
+pub fn find_two_way(bytes: [u8], from: i32, to: i32, needle: [u8], needle_start: i32, needle_length: i32) -> i32
+```
+
+### function: rfind_two_way
+
+[Source line 182](../../../stdlib/core/search.lani#L182)
+
+```lanius
+pub fn rfind_two_way(bytes: [u8], from: i32, to: i32, needle: [u8], needle_start: i32, needle_length: i32) -> i32
+```
+
 ### function: find
 
-[Source line 111](../../../stdlib/core/search.lani#L111)
+[Source line 200](../../../stdlib/core/search.lani#L200)
 
 ```lanius
 pub fn find(bytes: [u8], from: i32, to: i32, needle: [u8], needle_start: i32, needle_length: i32) -> i32
@@ -56,7 +72,7 @@ pub fn find(bytes: [u8], from: i32, to: i32, needle: [u8], needle_start: i32, ne
 
 ### function: rfind
 
-[Source line 139](../../../stdlib/core/search.lani#L139)
+[Source line 233](../../../stdlib/core/search.lani#L233)
 
 ```lanius
 pub fn rfind(bytes: [u8], from: i32, to: i32, needle: [u8], needle_start: i32, needle_length: i32) -> i32
@@ -64,7 +80,7 @@ pub fn rfind(bytes: [u8], from: i32, to: i32, needle: [u8], needle_start: i32, n
 
 ### function: count
 
-[Source line 159](../../../stdlib/core/search.lani#L159)
+[Source line 259](../../../stdlib/core/search.lani#L259)
 
 ```lanius
 pub fn count(bytes: [u8], from: i32, to: i32, needle: [u8], needle_start: i32, needle_length: i32) -> i32
