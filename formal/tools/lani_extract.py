@@ -54,6 +54,13 @@ def build_extract():
 
 def extract(name, work, check):
     """Run the extractor on one program: (returncode, stderr)."""
+    ready = prepare(name, work)
+    return ready if isinstance(ready, tuple) else run_extract(ready, check)
+
+
+def prepare(name, work):
+    """Write laniusc's trees of one program: its extractor arguments, or
+    (1, why) when laniusc gives none."""
     source, module = PROGRAMS[name]
     base = os.path.join(work, name)
     shutil.copyfile(source, base + '.lani')
@@ -66,8 +73,11 @@ def extract(name, work, check):
         if not stdlib_oracle.parse_checked(LANIUSC, ext, work):
             return 1, f'laniusc gives no tree of {path}'
         trees += ['--tree', f'{path}={ext}']
-    run = subprocess.run([EXTRACT] + (['--check'] if check else []) + trees + [source, base, source, module, 'formal', 'formal'],
-                         capture_output=True, text=True)
+    return trees + [source, base, source, module, 'formal', 'formal']
+
+
+def run_extract(arguments, check):
+    run = subprocess.run([EXTRACT] + (['--check'] if check else []) + arguments, capture_output=True, text=True)
     return run.returncode, run.stderr.strip()
 
 
@@ -84,7 +94,19 @@ def main(argv):
     for name in names:
         if name not in PROGRAMS:
             raise SystemExit(f'no program {name}: {", ".join(PROGRAMS)}')
-        if args.check or name != 'extract':
+    checked = {}
+    if args.check:
+        # The checks write nothing, so they run at once (the trees first:
+        # laniusc runs one at a time anyway).
+        import concurrent.futures
+        ready = {name: prepare(name, work) for name in names}
+        with concurrent.futures.ThreadPoolExecutor(len(names)) as pool:
+            jobs = {name: pool.submit(run_extract, r, True) for name, r in ready.items() if not isinstance(r, tuple)}
+        checked = {name: r if isinstance(r, tuple) else jobs[name].result() for name, r in ready.items()}
+    for name in names:
+        if name in checked:
+            code, err = checked[name]
+        elif args.check or name != 'extract':
             code, err = extract(name, work, args.check)
         else:
             # Rebuild and rerun until the extraction stops changing.

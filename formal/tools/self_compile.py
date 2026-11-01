@@ -269,7 +269,7 @@ def main():
 
     # The front end and compileSource on the module, once (the compiled
     # runAll), and the extracted definitions on each test (Lean).
-    run = subprocess.run([so.RUN_ALL, os.path.join(workdir, 'manifest.txt')], capture_output=True, text=True)
+    run = run_cache.run_all(os.path.join(workdir, 'manifest.txt'))
     status = run.stdout.strip().split(' ', 1)[1] if run.returncode == 0 and ' ' in run.stdout.strip() else None
     lean_path = os.path.join(workdir, 'self_compile.lean')
     expected = '\n'.join(f'#eval IO.println ("t{k} " ++ ({lean_text(t)}))' for k, t in enumerate(tests))
@@ -302,12 +302,11 @@ def main():
     # root, laniusc rejects some of its generic instances (LNC0017).
     exe = os.path.join(workdir, 'harness')
     open(exe + '.lani', 'w').write(harness)
-    if os.path.exists(exe):
-        os.remove(exe)
-    build = subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
-                            so.HEAVY, '-t', '20', args.laniusc, '--stdlib-root', 'stdlib', '--source-root', 'formal/lani',
-                            '-o', exe, exe + '.lani'], capture_output=True, text=True)
-    if build.returncode != 0 or not os.path.exists(exe):
+    exe, build = run_cache.laniusc_build(
+        ['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
+         so.HEAVY, '-t', '20', args.laniusc, '--stdlib-root', 'stdlib', '--source-root', 'formal/lani',
+         '-o', exe, exe + '.lani'], args.laniusc, exe + '.lani', exe, ['formal/lani', 'stdlib'])
+    if build is not None:
         raise SystemExit('laniusc rejects the harness:\n' + build.stdout[-2000:] + build.stderr[-2000:])
     data = subprocess.run([exe], capture_output=True, timeout=600).stdout
     results = [[so.oracle.i32(int.from_bytes(data[4 * j:4 * j + 4], 'little')) if 4 * j + 4 <= len(data)

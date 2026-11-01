@@ -525,9 +525,11 @@ def main():
     lean_s = time.time() - began
     binary = os.path.join(args.workdir, 'cases')
     began = time.time()
-    built = subprocess.run([HEAVY, '-t', '20', args.laniusc, '--stdlib-root', os.path.join(ROOT, 'stdlib'),
-                            '-o', binary, lani_path], capture_output=True, text=True)
-    if built.returncode != 0:
+    # laniusc's build (cached by the binary and the sources it reads).
+    stdlib = os.path.join(ROOT, 'stdlib')
+    binary, built = run_cache.laniusc_build([HEAVY, '-t', '20', args.laniusc, '--stdlib-root', stdlib, '-o', binary, lani_path],
+                                            args.laniusc, lani_path, binary, [stdlib])
+    if built is not None:
         print(built.stdout[-3000:], built.stderr[-3000:], file=sys.stderr)
         return 1
 

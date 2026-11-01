@@ -775,7 +775,7 @@ def accepted(lani_path, tree, workdir):
     open(base + '.parents', 'w').write(' '.join(map(str, tree[1])))
     manifest = os.path.join(workdir, 'candidate.txt')
     open(manifest, 'w').write(f'validate c {base}\n')
-    out = subprocess.run([RUN_ALL, manifest], capture_output=True, text=True).stdout
+    out = run_cache.run_all(manifest).stdout
     return out.strip() == 'c ok'
 
 
@@ -919,7 +919,10 @@ def validate_all(bases, workdir):
     """The bases whose stored tree the verified validator accepts."""
     manifest = os.path.join(workdir, 'validate.txt')
     open(manifest, 'w').write(''.join(f'validate {i} {b}\n' for i, b in enumerate(bases)))
-    out = subprocess.run([RUN_ALL, manifest], capture_output=True, text=True, check=True).stdout
+    run = run_cache.run_all(manifest)
+    if run.returncode != 0:
+        raise SystemExit('runAll failed:\n' + run.stdout[-4000:] + run.stderr[-4000:])
+    out = run.stdout
     ok = {int(line.split(' ')[0]) for line in out.split('\n') if line.endswith(' ok')}
     return {b for i, b in enumerate(bases) if i in ok}
 
@@ -936,7 +939,17 @@ ARG_STORES = [bytes([0x48, 0x89, 0x7C, 0x24]), bytes([0x48, 0x89, 0x74, 0x24]), 
 
 
 class Native(oracle.Native):
-    """oracle_difftest's stub, with up to six arguments (rdi, rsi, rdx, rcx, r8, r9)."""
+    """oracle_difftest's stub, with up to six arguments (rdi, rsi, rdx, rcx, r8, r9).
+    Its code and heap are private mappings, so a forked child (NativeCalls)
+    keeps its own copy while the next program is loaded and other children
+    run."""
+
+    def __init__(self):
+        private = mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS
+        self.code = mmap.mmap(-1, 1 << 22, flags=private, prot=mmap.PROT_READ | mmap.PROT_WRITE | mmap.PROT_EXEC)
+        self.base = ctypes.addressof(ctypes.c_char.from_buffer(self.code))
+        self.heap = mmap.mmap(-1, self.HEAP, flags=private, prot=mmap.PROT_READ | mmap.PROT_WRITE)
+        self.heap_base = ctypes.addressof(ctypes.c_char.from_buffer(self.heap))
 
     def load(self, entries, image, arity):
         self.code[0:len(image)] = image
@@ -1022,6 +1035,91 @@ def native_call(native, args, types, high=False, stdin_path=os.devnull):
     if os.WIFSIGNALED(status):
         return ('timeout' if os.WTERMSIG(status) == signal.SIGALRM else 'trap'), out, err
     return int(data), out, err
+
+
+class NativeCalls:
+    """native_call, with up to `width` forked children at once: submit forks
+    a child on the image loaded now (the child keeps its own copy, so the
+    next program can be loaded at once) and results() waits for every child,
+    each result as native_call's, by tag. Each child is the same as
+    native_call's (fd 0 a regular file, a 2 s alarm, a zeroed heap)."""
+
+    def __init__(self, workdir, width=None):
+        self.workdir = workdir
+        self.width = width or max(1, min(8, (os.cpu_count() or 2) // 2))
+        self.live = {}  # fd -> (pid, which)
+        self.children = {}  # pid -> dict
+        self.done = {}
+        self.count = 0
+
+    def submit(self, tag, native, args, types, high=False, stdin=None):
+        while len(self.children) >= self.width:
+            self._step()
+        path = os.devnull
+        if stdin is not None:
+            path = os.path.join(self.workdir, f'stdin{self.count}.bin')
+            with open(path, 'wb') as f:
+                f.write(stdin)
+        self.count += 1
+        r, w = os.pipe()
+        out_r, out_w = os.pipe()
+        err_r, err_w = os.pipe()
+        sys.stdout.flush()
+        sys.stderr.flush()
+        pid = os.fork()
+        if pid == 0:
+            os.close(r)
+            os.close(out_r)
+            os.close(err_r)
+            for fd in self.live:
+                os.close(fd)
+            os.dup2(out_w, 1)
+            os.dup2(err_w, 2)
+            given = os.open(path, os.O_RDONLY)
+            os.dup2(given, 0)
+            os.close(given)
+            signal.alarm(2)
+            native.heap[0:native.HEAP] = bytes(native.HEAP)
+            value = native.fn(*[slot(a, t) for a, t in zip(args, types)])
+            os.write(w, str(oracle.i32(value >> 32 if high else value)).encode())
+            os._exit(0)
+        os.close(w)
+        os.close(out_w)
+        os.close(err_w)
+        self.children[pid] = dict(tag=tag, path=path, got={r: b'', out_r: b'', err_r: b''}, fds=(r, out_r, err_r))
+        for fd in (r, out_r, err_r):
+            self.live[fd] = pid
+
+    def _step(self):
+        if not self.live:
+            raise SystemExit(f'NativeCalls: {len(self.children)} children without pipes')
+        ready, _, _ = select.select(list(self.live), [], [])
+        for fd in ready:
+            pid = self.live[fd]
+            child = self.children[pid]
+            chunk = os.read(fd, 1 << 16)
+            if chunk:
+                child['got'][fd] += chunk
+                continue
+            os.close(fd)
+            del self.live[fd]
+            if any(self.live.get(f) == pid for f in child['fds']):  # (a closed fd's number is reused)
+                continue
+            _, status = os.waitpid(pid, 0)
+            del self.children[pid]
+            if child['path'] != os.devnull:
+                os.remove(child['path'])
+            r, out_r, err_r = child['fds']
+            out, err = child['got'][out_r], child['got'][err_r]
+            if os.WIFSIGNALED(status):
+                self.done[child['tag']] = (('timeout' if os.WTERMSIG(status) == signal.SIGALRM else 'trap'), out, err)
+            else:
+                self.done[child['tag']] = (int(child['got'][r]), out, err)
+
+    def results(self):
+        while self.children:
+            self._step()
+        return self.done
 
 
 # ---------------------------------------------------------------- arguments
@@ -1358,7 +1456,7 @@ def main():
         p['bases'] = bases
         manifest.append(f'compile p{k} ' + ' '.join(bases))
     open(os.path.join(workdir, 'manifest.txt'), 'w').write('\n'.join(manifest) + '\n')
-    run = subprocess.run([RUN_ALL, os.path.join(workdir, 'manifest.txt')], capture_output=True, text=True)
+    run = run_cache.run_all(os.path.join(workdir, 'manifest.txt'))
     if run.returncode != 0:
         raise SystemExit('runAll failed:\n' + run.stdout[-4000:] + run.stderr[-4000:])
     status = {}
@@ -1372,6 +1470,7 @@ def main():
     compile_s = time.time() - began - parse_s
     # Native runs.
     native = Native()
+    calls = NativeCalls(workdir)
     for k, p in enumerate(programs):
         if p.get('status') == 'noparse':
             continue
@@ -1395,9 +1494,12 @@ def main():
         high = p['target'].ret in FLOATS and p['part'] == 'hi'
         p['reads'] = reads_stdin(mods, p)
         p['stdin'] = [gen_stdin(args.seed, k, i) if p['reads'] else b'' for i in range(len(p['calls']))]
-        p['native'] = [native_call(native, a, types, high,
-                                   stdin_file(workdir, data) if p['reads'] else os.devnull)
-                       for a, data in zip(p['calls'], p['stdin'])]
+        for i, (a, data) in enumerate(zip(p['calls'], p['stdin'])):
+            calls.submit((k, i), native, a, types, high, data if p['reads'] else None)
+    done = calls.results()
+    for k, p in enumerate(programs):
+        if 'calls' in p:
+            p['native'] = [done[(k, i)] for i in range(len(p['calls']))]
 
     native_s = time.time() - began - parse_s - compile_s
     # laniusc: the compiled wrappers, renamed, in harness binaries.
@@ -1507,8 +1609,7 @@ def build(args, workdir, name, text, roots=None):
     roots = SOURCE_ROOTS if roots is None else roots
     lani_path = os.path.join(workdir, name + '.lani')
     open(lani_path, 'w').write(text)
-    k = run_cache.key(run_cache.file_digest(args.laniusc), run_cache.tree_digest(STDLIB), text,
-                      *(run_cache.tree_digest(r) for r in roots))
+    k = run_cache.key('build', run_cache.file_digest(args.laniusc), run_cache.lani_digest(lani_path, roots + [STDLIB]))
     hit = run_cache.load_file('build', k)
     if hit is not None:
         return hit, ''
