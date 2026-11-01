@@ -69,7 +69,8 @@ theorem place_index_fwd {b : Core.Place} {i : Core.Expr} {rb : ResolvedPlace} {s
     (hb : Ev (fun k => evalPlace k P st .read b) rb s1) (hv : rb.value = some (.rawSlice el a len))
     (hi : Ev (fun k => evalExpr k P s1 i) iv s2) (ip : Semantics.integerIndex iv = .ok pos) (lt : pos < len)
     (hbase : Semantics.rawSliceElementAddress? P el a pos = .ok base) :
-    Ev (fun k => evalPlace k P st .address (.index b i)) { rb with value := none, raw := some (el, base) } s2 := by
+    Ev (fun k => evalPlace k P st .address (.index b i))
+      { rb with value := none, raw := some (el, base), rawByte := Semantics.isByte el } s2 := by
   obtain ⟨K1, h1⟩ := hb
   obtain ⟨K2, h2⟩ := hi
   refine ⟨max K1 K2 + 1, fun k hk => ?_⟩
