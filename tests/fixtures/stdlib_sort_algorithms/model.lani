@@ -1,0 +1,136 @@
+// pdqsort (core::slice::sort_unstable_by), run-adaptive stable merge sort
+// (core::slice::sort_stable_by) and alloc::slice::sort_by on stdin cases,
+// checked by oracle.py against Python sorted. stdin per case: n, algorithm,
+// then n u64 keys (none for the adversary). stdout per case: comparator
+// calls, then sorted keys (unstable) or original indices (stable).
+module app::main;
+import alloc::slice;
+import alloc::vec;
+import core::cmp;
+import core::mem;
+import core::option;
+import core::ordering;
+import core::result;
+import core::slice;
+import std::io;
+
+fn read_exact(pointer:ptr,count:i32) -> bool {
+    let done:i32=0;
+    while(done<count) {
+        let got:i32=std::io::read_stdin(pointer+(done as usize),(count-done) as usize);
+        assert(got>=0);
+        if(got==0) { assert(done==0); return false; }
+        done+=got;
+    }
+    return true;
+}
+fn write_all(pointer:ptr,count:i32) {
+    let done:i32=0;
+    while(done<count) {
+        let got:i32=std::io::write_stdout(pointer+(done as usize),(count-done) as usize);
+        assert(got>0); done+=got;
+    }
+}
+struct Input { bytes:[u8],pointer:ptr }
+impl Input {
+    fn borrow(&self) -> &Input { return self; }
+    fn word(&self) -> u64 {
+        assert(read_exact(self.pointer,8));
+        let value:u64=0; let i:i32=0;
+        while(i<8) { value|=(self.bytes[i] as u64)<<(i*8); i+=1; }
+        return value;
+    }
+}
+struct Output { bytes:[u8],pointer:ptr,used:i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { write_all(self.pointer,self.used); self.used=0; }
+    fn word(&self,value:u64) {
+        if(self.used==4096) { self.flush(); }
+        let i:i32=0; while(i<8) { self.bytes[self.used+i]=((value>>(i*8))&255) as u8; i+=1; }
+        self.used+=8;
+    }
+}
+struct Item { key:u64, index:i32 }
+struct KeyOrder { calls:u64 }
+impl KeyOrder { fn borrow(&self) -> &KeyOrder { return self; } }
+pub impl core::ordering::Comparator<Item,Item> for KeyOrder {
+    pub fn compare(&self,left:Item,right:Item) -> core::ordering::Ordering {
+        self.calls+=1;
+        if(left.key<right.key) { return core::ordering::Less; }
+        if(left.key>right.key) { return core::ordering::Greater; }
+        return core::ordering::Equal;
+    }
+}
+// McIlroy's adversary: values are frozen lazily so that every pivot the
+// sort chooses is as bad as possible ("A Killer Adversary for Quicksort").
+struct Adversary { values:[i64], gas:i64, solid:i64, candidate:i32, calls:u64 }
+impl Adversary {
+    fn borrow(&self) -> &Adversary { return self; }
+    fn freeze(&self,index:i32) { self.values[index]=self.solid; self.solid+=1; }
+}
+pub impl core::ordering::Comparator<Item,Item> for Adversary {
+    pub fn compare(&self,left:Item,right:Item) -> core::ordering::Ordering {
+        self.calls+=1;
+        let x:i32=left.index; let y:i32=right.index;
+        if(self.values[x]==self.gas && self.values[y]==self.gas) {
+            if(x==self.candidate) { self.freeze(x); } else { self.freeze(y); }
+        }
+        if(self.values[x]==self.gas) { self.candidate=x; } else { if(self.values[y]==self.gas) { self.candidate=y; } }
+        if(self.values[x]<self.values[y]) { return core::ordering::Less; }
+        if(self.values[x]>self.values[y]) { return core::ordering::Greater; }
+        return core::ordering::Equal;
+    }
+}
+fn main() -> i32 {
+    let input_storage:[i32;4]=[0;4]; let input_pointer:ptr=core::mem::i32_array_data_ptr(input_storage);
+    let input:Input=Input { bytes:core::mem::typed_slice_from_raw_parts<u8>(input_pointer,8),pointer:input_pointer };
+    let output_storage:[i32;1024]=[0;1024]; let output_pointer:ptr=core::mem::i32_array_data_ptr(output_storage);
+    let output:Output=Output { bytes:core::mem::typed_slice_from_raw_parts<u8>(output_pointer,4096),pointer:output_pointer,used:0 };
+    let cases:u64=0;
+    while(read_exact(input_pointer,8)) {
+        let header:u64=0; let i:i32=0;
+        while(i<8) { header|=(input.bytes[i] as u64)<<(i*8); i+=1; }
+        let n:i32=header as i32;
+        let algorithm:u64=input.word();
+        let items:alloc::vec::Vec<Item> = alloc::vec::with_capacity<Item>(n+1).unwrap();
+        i=0;
+        while(i<n) {
+            let key:u64=0; if(algorithm!=3) { key=input.word(); }
+            items.try_push(Item { key:key, index:i }).unwrap(); i+=1;
+        }
+        let view:core::slice::View<Item> = items.as_view();
+        let order:KeyOrder=KeyOrder { calls:0 };
+        if(algorithm==0) {
+            assert(core::slice::sort_unstable_by<Item,KeyOrder>(view,order.borrow()).unwrap()==n);
+            output.word(order.calls);
+            i=0; while(i<n) { output.word(items.get(i).unwrap().key); i+=1; }
+        }
+        if(algorithm==1 || algorithm==2) {
+            if(algorithm==1) {
+                let scratch:alloc::vec::Vec<Item> = alloc::vec::with_capacity<Item>(n/2+1).unwrap();
+                let s:i32=0; while(s<n/2) { scratch.try_push(Item { key:0, index:-1 }).unwrap(); s+=1; }
+                assert(core::slice::sort_stable_by<Item,KeyOrder>(view,scratch.as_view(),order.borrow()).unwrap()==n);
+                scratch.destroy();
+            } else {
+                assert(alloc::slice::sort_by<Item,KeyOrder>(view,order.borrow()).unwrap()==n);
+            }
+            output.word(order.calls);
+            i=0; while(i<n) { output.word(items.get(i).unwrap().index as u64); i+=1; }
+        }
+        if(algorithm==3) {
+            let values:alloc::vec::Vec<i64> = alloc::vec::with_capacity<i64>(n+1).unwrap();
+            i=0; while(i<n) { values.try_push(n as i64).unwrap(); i+=1; }
+            let adversary:Adversary=Adversary { values:values.as_slice(), gas:n as i64, solid:0, candidate:0, calls:0 };
+            assert(core::slice::sort_unstable_by<Item,Adversary>(view,adversary.borrow()).unwrap()==n);
+            // The result must be ordered by the values the adversary fixed.
+            i=1; while(i<n) { assert(values.get(items.get(i-1).unwrap().index).unwrap()<=values.get(items.get(i).unwrap().index).unwrap()); i+=1; }
+            output.word(adversary.calls);
+            values.destroy();
+        }
+        items.destroy();
+        cases+=1;
+    }
+    output.word(255); output.word(cases); output.flush();
+    return 0;
+}

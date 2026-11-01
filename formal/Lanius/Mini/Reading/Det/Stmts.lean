@@ -474,8 +474,8 @@ theorem assignTargetR_unique {target : CTree} {v : Nat} {value : CTree} {a b : M
       cases fieldTyAt_unique ft ft'
       rw [effR_unique k nd vn k']
     | _ => prod_clash
-  | indexEval _ _ lo ki kv => cases h₂ with
-    | indexEval _ _ lo' ki' kv' =>
+  | indexEval _ _ lo ki kv _ => cases h₂ with
+    | indexEval _ _ lo' ki' kv' _ =>
       cases localOf_unique lo lo'
       rw [effR_unique ki nd vn ki', effR_unique kv nd vn kv']
     | _ => prod_clash
@@ -675,6 +675,25 @@ theorem armsStmtR_named {h : MatchStmt} : ∀ {os : List CTree} {k : Nat} {vs : 
   | _ :: _, _, _, _, r => by
     cases r with
     | cons ab _ _ rest _ => exact .cons (armBindR_names ab) (armsStmtR_named rest)
+    | inner ab _ _ _ _ _ rest _ => exact .cons (armBindR_names ab) (armsStmtR_named rest)
+
+/-- A match statement's arm order is one list: the statement's variants have
+distinct names (`VariantsNodup`). -/
+theorem stmtArmsOrder_unique {m : CTree} {h : MatchStmt} {os os' : List CTree}
+    (vn : VariantsNodup env.decls) (mr : MatchStmtR env scope m h)
+    (mo : StmtArmsOrder env h m os) (mo' : StmtArmsOrder env h m os')
+    (n : ListRel (ArmNames h.owner) os (h.variants.map (·.name)))
+    (n' : ListRel (ArmNames h.owner) os' (h.variants.map (·.name))) : os = os' := by
+  obtain ⟨arms, it, ord⟩ := mo
+  obtain ⟨arms', it', ord'⟩ := mo'
+  have e := items_unique it it'
+  subst e
+  cases mr with
+  | mk _ _ _ td en _ _ hh =>
+    obtain ⟨ho, hv⟩ := matchStmtHead_parts hh
+    exact stmtOrder_unique
+      ((vn _ _ td en).sublist (by rw [hv, zipVariants_eq, ← ho]; exact zipVariants_names _ _))
+      ord ord' n n'
 
 theorem letArmsR_named {h : MatchStmt} {x : Local} {rest : MStmt} : ∀ {os : List CTree} {k : Nat}
     {vs : List VariantTy} {c : MStmt}, LetArmsR env scope h x rest k vs os c → ListRel (ArmNames h.owner) os (vs.map (·.name))
@@ -682,7 +701,8 @@ theorem letArmsR_named {h : MatchStmt} {x : Local} {rest : MStmt} : ∀ {os : Li
   | _ :: _, _, _, _, r => by
     cases r with
     | block ab _ _ rest _ => exact .cons (armBindR_names ab) (letArmsR_named rest)
-    | value ab _ _ rest _ => exact .cons (armBindR_names ab) (letArmsR_named rest)
+    | value ab _ _ _ rest _ => exact .cons (armBindR_names ab) (letArmsR_named rest)
+    | inner ab _ _ _ _ _ rest _ => exact .cons (armBindR_names ab) (letArmsR_named rest)
 
 theorem matchInit_unique {init a b : CTree} (h₁ : MatchInit init a) (h₂ : MatchInit init b) : a = b := by
   cases h₁ with
@@ -785,6 +805,10 @@ theorem matchR_noBlock {env : FrontEnv} {scope : List Local} {E : Option Ty} {m 
   | pure r => exact exprR_noPrim (.inl pm) r
   | «match» _ _ _ _ td en _ it' ord ar _ =>
     cases items_unique it it'
+    rcases ord with ⟨_, ord⟩ | ⟨_, nb, _⟩
+    rotate_left
+    · cases ab with
+      | mk pl pc pe => exact nb a ma ⟨_, pl, pc, pe⟩
     obtain ⟨o, mo, ko⟩ := armsOrder_reaches ((vn _ _ td en).sublist (zipVariants_names _ _)) ord (effArmsR_named ar) ma
     obtain ⟨v, ea, r⟩ := effArmsR_mem ar mo
     cases r with
@@ -886,21 +910,12 @@ theorem stmtsR_unique : ∀ {scope : List Local} {items : List CTree} {a : MStmt
       subst e
       have e := ih body'
       subst e
-      obtain ⟨arms, it, ord⟩ := mo
-      obtain ⟨arms', it', ord'⟩ := mo'
-      have e := items_unique it it'
+      have eo := stmtArmsOrder_unique vn mr mo mo' (letArmsR_named la) (letArmsR_named la')
+      subst eo
+      have e := letArmsR_unique la nd vn la'
       subst e
-      cases mr with
-      | mk _ _ _ td en _ _ hh =>
-        obtain ⟨ho, hv⟩ := matchStmtHead_parts hh
-        have eo := armsOrder_unique
-          ((vn _ _ td en).sublist (by rw [hv, zipVariants_eq, ← ho]; exact zipVariants_names _ _))
-          ord ord' (letArmsR_named la) (letArmsR_named la')
-        subst eo
-        have e := letArmsR_unique la nd vn la'
-        subst e
-        rw [mv'] at mv
-        exact (Option.some.inj mv).symm
+      rw [mv'] at mv
+      exact (Option.some.inj mv).symm
     | last np _ => exact absurd ps np
     | seq np _ _ => exact absurd ps np
   | _, _, _, .letUntyped ps lt _ _ fr un body ls, nd, vn, _, h₂ => by
@@ -951,6 +966,28 @@ theorem armsStmtR_unique : ∀ {scope : List Local} {h : MatchStmt} {k : Nat} {v
       subst e
       rw [hb'] at hb
       exact (Option.some.inj hb).symm
+    | inner _ pm _ _ _ _ _ _ => exact (armBlockR_noMatch al pm).elim
+  | _, _, _, _, _, _, .inner ab pm mr mo ar mv rest hb, nd, vn, _, h₂ => by
+    have fr := armBindR_fresh ab nd
+    have ih1 := fun {y} k' => armsStmtR_unique ar fr vn (b := y) k'
+    have ih2 := fun {y} k' => armsStmtR_unique rest nd vn (b := y) k'
+    cases h₂ with
+    | cons _ al' _ _ _ => exact (armBlockR_noMatch al' pm).elim
+    | inner ab' _ mr' mo' ar' mv' rest' hb' =>
+      have e := armBindR_unique ab ab'
+      subst e
+      have e := matchStmtR_unique fr vn mr mr'
+      subst e
+      have e := stmtArmsOrder_unique vn mr mo mo' (armsStmtR_named ar) (armsStmtR_named ar')
+      subst e
+      have e := ih1 ar'
+      subst e
+      rw [mv'] at mv
+      cases mv
+      have e := ih2 rest'
+      subst e
+      rw [hb'] at hb
+      exact (Option.some.inj hb).symm
 termination_by structural _ _ _ _ _ _ h _ _ _ _ => h
 
 theorem letArmsR_unique : ∀ {scope : List Local} {h : MatchStmt} {x : Local} {rest : MStmt} {k : Nat}
@@ -972,18 +1009,42 @@ theorem letArmsR_unique : ∀ {scope : List Local} {h : MatchStmt} {x : Local} {
       subst e
       rw [hb'] at hb
       exact (Option.some.inj hb).symm
-    | value _ li' _ _ _ => exact (letInitR_noArmBlock al li').elim
-  | _, _, _, _, _, _, _, _, .value ab li ls rest hb, nd, vn, _, h₂ => by
+    | value _ _ li' _ _ _ => exact (letInitR_noArmBlock al li').elim
+    | inner _ pm _ _ _ _ _ _ => exact (armBlockR_noMatch al pm).elim
+  | _, _, _, _, _, _, _, _, .value ab np li ls rest hb, nd, vn, _, h₂ => by
     have ih2 := fun {y} k' => letArmsR_unique rest nd vn (b := y) k'
     cases h₂ with
     | block _ al' _ _ _ => exact (letInitR_noArmBlock al' li).elim
-    | value ab' li' ls' rest' hb' =>
+    | inner _ pm _ _ _ _ _ _ => exact (np pm).elim
+    | value ab' _ li' ls' rest' hb' =>
       have e := armBindR_unique ab ab'
       subst e
       have e := letInitR_unique (armBindR_fresh ab nd) vn li li'
       subst e
       rw [ls'] at ls
       cases ls
+      have e := ih2 rest'
+      subst e
+      rw [hb'] at hb
+      exact (Option.some.inj hb).symm
+  | _, _, _, _, _, _, _, _, .inner ab pm mr mo la mv rest hb, nd, vn, _, h₂ => by
+    have fr := armBindR_fresh ab nd
+    have ih1 := fun {y} k' => letArmsR_unique la fr vn (b := y) k'
+    have ih2 := fun {y} k' => letArmsR_unique rest nd vn (b := y) k'
+    cases h₂ with
+    | block _ al' _ _ _ => exact (armBlockR_noMatch al' pm).elim
+    | value _ np _ _ _ _ => exact (np pm).elim
+    | inner ab' _ mr' mo' la' mv' rest' hb' =>
+      have e := armBindR_unique ab ab'
+      subst e
+      have e := matchStmtR_unique fr vn mr mr'
+      subst e
+      have e := stmtArmsOrder_unique vn mr mo mo' (letArmsR_named la) (letArmsR_named la')
+      subst e
+      have e := ih1 la'
+      subst e
+      rw [mv'] at mv
+      cases mv
       have e := ih2 rest'
       subst e
       rw [hb'] at hb
@@ -1044,27 +1105,18 @@ theorem stmtR_unique : ∀ {scope : List Local} {s : CTree} {a : MStmt}, StmtR e
       subst e
       have e := matchStmtR_unique nd vn mr mr'
       subst e
-      obtain ⟨arms, it, ord⟩ := mo
-      obtain ⟨arms', it', ord'⟩ := mo'
-      have e := items_unique it it'
+      have eo := stmtArmsOrder_unique vn mr mo mo' (armsStmtR_named ar) (armsStmtR_named ar')
+      subst eo
+      have e := ih ar'
       subst e
-      cases mr with
-      | mk _ _ _ td en _ _ hh =>
-        obtain ⟨ho, hv⟩ := matchStmtHead_parts hh
-        have eo := armsOrder_unique
-          ((vn _ _ td en).sublist (by rw [hv, zipVariants_eq, ← ho]; exact zipVariants_names _ _))
-          ord ord' (armsStmtR_named ar) (armsStmtR_named ar')
-        subst eo
-        have e := ih ar'
-        subst e
-        rw [mv'] at mv
-        exact (Option.some.inj mv).symm
+      rw [mv'] at mv
+      exact (Option.some.inj mv).symm
     | assign _ a' => exact (assignR_noMatch a' mp).elim
     | _ => prod_clash
-  | _, _, _, .forRange _ _ _ _ _ _ _ _ _ _ fx ln il bb fr, nd, vn, _, h₂ => by
+  | _, _, _, .forRange _ _ _ _ _ _ _ _ _ _ fx ln il bb _ fr, nd, vn, _, h₂ => by
     have ih := fun {y} k' => blockR_unique bb (idsFresh_cons nd fx) vn (b := y) k'
     cases h₂ with
-    | forRange _ _ _ _ _ _ _ _ _ _ _ ln' il' bb' fr' =>
+    | forRange _ _ _ _ _ _ _ _ _ _ _ ln' il' bb' _ fr' =>
       obtain ⟨_, f⟩ := ln
       obtain ⟨_, f'⟩ := ln'
       cases (firstWith_unique f f').2

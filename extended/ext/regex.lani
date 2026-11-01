@@ -32,7 +32,7 @@ pub struct Matches { search: Search }
 pub struct Inst { op: i32, x: i32, y: i32, a: i32, b: i32, flag: bool }
 pub struct Term { low: u32, high: u32, property: i32, negated: bool }
 struct Node { op: i32, left: i32, right: i32, a: i32, b: i32, flag: bool }
-struct Parser { text: core::text::Text, position: i32, nodes: alloc::vec::Vec<Node>, terms: alloc::vec::Vec<Term>, config: Options, groups: i32, depth: i32, failed: bool, error: Error, names: alloc::vec::Vec<i32>, name_bytes: alloc::vec::Vec<u8> }
+struct Parser { text: core::text::Text, position: i32, nodes: alloc::vec::Vec<Node>, terms: alloc::vec::Vec<Term>, config: Options, groups: i32, depth: i32, failed: bool, error: Error, names: alloc::vec::Vec<i32>, name_bytes: alloc::vec::Vec<u8>, behind: i32 }
 // Leaf ops: 0 empty, 1 scalar, 2 class, 3 dot, 4 ^, 5 $, 6 \A,
 // 7 \z, 8 \b, 9 \B. AST: 10 concat,11 alternate,12 repeat,13 group.
 // VM: 10 jump,11 split,12 save,13 accept.
@@ -234,16 +234,20 @@ pub impl Parser {
             if (self.peek() == 63) {
                 self.take();
                 let kind: u32 = self.take();
-                // (?P<name>x) and (?<name>x) are named captures; (?<= and (?<! stay unsupported lookbehind.
+                // (?P<name>x) and (?<name>x) are named captures; (?<=x) and (?<!x) are
+                // fixed-width lookbehind.
                 let named: bool = false;
                 if (kind == 80 && self.peek() == 60) { self.take(); named = true; }
-                if (kind == 60 && self.peek() != 61 && self.peek() != 33) { named = true; }
+                if (kind == 60 && (self.peek() == 61 || self.peek() == 33)) { return self.lookbehind(at); }
+                if (kind == 60) { named = true; }
                 if (named) {
+                    if (self.behind > 0) { self.fail(Error::Unsupported(at)); return 0; }
                     if (self.groups >= self.config.max_captures) { self.fail(Error::Limit(at)); return 0; }
                     self.groups += 1; group = self.groups;
                     if (!self.group_name(group)) { return 0; }
                 } else { if (kind != 58) { self.fail(Error::Unsupported(at)); return 0; } }
             } else {
+                if (self.behind > 0) { self.fail(Error::Unsupported(at)); return 0; }
                 if (self.groups >= self.config.max_captures) { self.fail(Error::Limit(at)); return 0; }
                 self.groups += 1; group = self.groups;
             }
@@ -260,6 +264,48 @@ pub impl Parser {
         if (value == 36) { return self.add(simple_node(5)); }
         if (value == 42 || value == 43 || value == 63 || value == 123 || value == 125 || value == 93 || value == 4294967295) { self.fail(Error::Syntax(at)); return 0; }
         return self.add(literal_node(value));
+    }
+    // After `(?<`: `=x)` or `!x)`. The body may not capture, and every path
+    // through it must consume the same number of scalars (Python's rule).
+    // depth was already incremented by atom.
+    fn lookbehind(&self, at: i32) -> i32 {
+        let negated: bool = self.take() == 33; let first: i32 = self.nodes.len();
+        self.behind += 1; let inside: i32 = self.expression(); self.behind -= 1;
+        if (self.take() != 41) { self.fail(Error::Syntax(at)); }
+        self.depth -= 1;
+        if (self.failed) { return 0; }
+        let width: i32 = self.fixed_width(first, inside);
+        if (width == -2) { self.fail(Error::AllocationFailed); return 0; }
+        if (width < 0) { self.fail(Error::Syntax(at)); return 0; }
+        return self.add(Node { op: 14, left: inside, right: 0, a: width, b: 0, flag: negated });
+    }
+    // Width of nodes[root] in scalars when every path has the same width;
+    // -1 when it varies or is unbounded, -2 on allocation failure. Children
+    // precede parents, and every node of the body is in [first, root].
+    fn fixed_width(&self, first: i32, root: i32) -> i32 {
+        let unbounded: i64 = 1000000000; let count: i32 = root - first + 1;
+        let widths: alloc::vec::Vec<i64> = alloc::vec::new();
+        if (widths.try_resize(count * 2, 0).is_err()) { widths.destroy(); return -2; }
+        let w: [i64] = widths.as_slice(); let nodes: [Node] = self.nodes.as_slice(); let i: i32 = 0;
+        while (i < count) {
+            let n: Node = nodes[first + i]; let lo: i64 = 0; let hi: i64 = 0;
+            if (n.op >= 1 && n.op <= 3) { lo = 1; hi = 1; }
+            if (n.op == 10 || n.op == 11) {
+                let l: i32 = (n.left - first) * 2; let r: i32 = (n.right - first) * 2;
+                if (n.op == 10) { lo = w[l] + w[r]; hi = w[l + 1] + w[r + 1]; }
+                else { lo = w[l]; if (w[r] < lo) { lo = w[r]; } hi = w[l + 1]; if (w[r + 1] > hi) { hi = w[r + 1]; } }
+            }
+            if (n.op == 12) {
+                let l: i32 = (n.left - first) * 2;
+                lo = w[l] * n.a as i64;
+                if (n.b < 0) { if (w[l + 1] == 0) { hi = 0; } else { hi = unbounded; } } else { hi = w[l + 1] * n.b as i64; }
+            }
+            if (lo > unbounded) { lo = unbounded; } if (hi > unbounded) { hi = unbounded; }
+            w[i * 2] = lo; w[i * 2 + 1] = hi; i += 1;
+        }
+        let lo: i64 = w[(count - 1) * 2]; let hi: i64 = w[(count - 1) * 2 + 1]; widths.destroy();
+        if (lo != hi || hi >= unbounded) { return -1; }
+        return hi as i32;
     }
     fn number(&self) -> i32 {
         let count: i32 = 0; let digits: i32 = 0;
@@ -345,6 +391,15 @@ pub impl Builder {
                         else { result = self.emit(instruction(11, result, f.saved, 0, 0, false)); }
                     }
                 }
+                // Lookbehind: a separate sub-program [accept, look) ending in op 15,
+                // then op 14 (x next, y sub-program base, a its entry, b width).
+                if (n.op == 14) {
+                    if (f.phase == 0) { f.phase = 1; f.saved = self.emit(instruction(15, 0, 0, 0, 0, false)); self.push(f); self.push(frame(n.left, f.saved)); }
+                    else {
+                        if (self.code.len() - f.saved > 256) { self.failed = true; self.error = Error::Limit(0); }
+                        result = self.emit(instruction(14, f.next, f.saved, result, n.a, n.flag));
+                    }
+                }
                 if (n.op == 13) {
                     if (f.phase == 0) { f.phase = 1; let end: i32 = self.emit(instruction(12, f.next, 0, n.a * 2 + 1, 0, false)); self.push(f); self.push(frame(n.left, end)); }
                     else { result = self.emit(instruction(12, result, 0, n.a * 2, 0, false)); }
@@ -399,7 +454,7 @@ pub fn compile(pattern: core::text::Text, config: Options) -> core::result::Resu
     let checked: core::result::Result<core::text::Text, Error> = validate(pattern);
     if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
     let nodes: alloc::vec::Vec<Node> = alloc::vec::new(); let terms: alloc::vec::Vec<Term> = alloc::vec::new();
-    let parser: Parser = Parser { text: core::result::unwrap(checked), position: 0, nodes: nodes, terms: terms, config: config, groups: 0, depth: 0, failed: false, error: Error::Bounds, names: alloc::vec::new(), name_bytes: alloc::vec::new() };
+    let parser: Parser = Parser { text: core::result::unwrap(checked), position: 0, nodes: nodes, terms: terms, config: config, groups: 0, depth: 0, failed: false, error: Error::Bounds, names: alloc::vec::new(), name_bytes: alloc::vec::new(), behind: 0 };
     let root: i32 = parser.expression();
     if (parser.position != pattern.length) { parser.fail(Error::Syntax(parser.position)); }
     if (parser.failed) { parser.nodes.destroy(); parser.terms.destroy(); parser.names.destroy(); parser.name_bytes.destroy(); return core::result::Err(parser.error); }
@@ -409,7 +464,7 @@ pub fn compile(pattern: core::text::Text, config: Options) -> core::result::Resu
     let all_nodes: [Node] = parser.nodes.as_slice(); let ni: i32 = 0; let allocation_failed: bool = false;
     while (ni < parser.nodes.len() && !allocation_failed) {
         let n: Node = all_nodes[ni]; let prior: [i32] = nullable.as_slice();
-        let yes: bool = n.op == 0 || (n.op >= 4 && n.op <= 9);
+        let yes: bool = n.op == 0 || (n.op >= 4 && n.op <= 9) || n.op == 14;
         if (n.op == 10) { yes = prior[n.left] != 0 && prior[n.right] != 0; }
         if (n.op == 11) { yes = prior[n.left] != 0 || prior[n.right] != 0; }
         if (n.op == 12) { yes = n.a == 0 || prior[n.left] != 0; }
@@ -580,8 +635,11 @@ pub impl Regex {
                 // Captures record past execution only. Span mode skips the
                 // subgroup write, preserving the Save PC, tick and priority.
                 if (inst.op == 12) { if (inst.a < scratch.slots) { temp[inst.a] = position; } cursor = inst.x; continue; }
-                if (inst.op >= 4 && inst.op <= 9) {
-                    if (assertion(inst.op, text, position, self.config.multiline)) { cursor = inst.x; continue; }
+                if ((inst.op >= 4 && inst.op <= 9) || inst.op == 14) {
+                    let holds: bool = false;
+                    if (inst.op == 14) { holds = self.behind(scratch, inst, text, position) != inst.flag; }
+                    else { holds = assertion(inst.op, text, position, self.config.multiline); }
+                    if (holds) { cursor = inst.x; continue; }
                 } else {
                     output[total] = cursor; copy_slots(temp, 0, output_caps, total * scratch.slots, scratch.slots); total += 1;
                 }
@@ -590,6 +648,65 @@ pub impl Regex {
             pending -= 1; cursor = stack[pending]; copy_slots(stack_caps, pending * scratch.slots, temp, 0, scratch.slots);
         }
         return total;
+    }
+    // Whether a lookbehind body matches the `look.b` scalars ending at
+    // `position`. The body is a capture-free sub-program of at most 256 PCs
+    // [look.y, look) with a fixed width, so a bit set per position replaces
+    // thread lists and no workspace storage is needed. Every visited PC and
+    // stepped-back scalar costs one tick of the search's work allowance.
+    fn behind(&self, scratch: &Workspace, look: Inst, text: core::text::Text, position: i32) -> bool {
+        let code: [Inst] = self.code.as_slice(); let base: i32 = look.y;
+        let at: i32 = position; let k: i32 = 0;
+        while (k < look.b) {
+            if (at == 0 || !scratch.tick()) { return false; }
+            at -= 1; while (!text.is_char_boundary(at)) { at -= 1; }
+            k += 1;
+        }
+        let current: [u64; 4] = [0, 0, 0, 0]; let next: [u64; 4] = [0, 0, 0, 0]; let stack: [i32; 256] = [0; 256];
+        let one: u64 = 1; let pending: i32 = 1; stack[0] = look.a; next[(look.a - base) / 64] = one << ((look.a - base) % 64) as u64;
+        let step: i32 = 0;
+        while (!scratch.failed) {
+            let accepted: bool = false;
+            // Epsilon closure at `at`; a PC's bit is set when it is first pushed.
+            while (pending > 0) {
+                pending -= 1; let pc: i32 = stack[pending];
+                if (!scratch.tick()) { return false; }
+                let inst: Inst = code[pc]; let follow: i32 = -1; let other: i32 = -1;
+                if (inst.op == 10 || inst.op == 12) { follow = inst.x; }
+                if (inst.op == 11) { follow = inst.y; other = inst.x; }
+                if (inst.op >= 4 && inst.op <= 9 && assertion(inst.op, text, at, self.config.multiline)) { follow = inst.x; }
+                if (inst.op == 14 && self.behind(scratch, inst, text, at) != inst.flag) { follow = inst.x; }
+                if (inst.op == 15) { accepted = true; }
+                if (follow >= 0) {
+                    let bit: i32 = follow - base; let mask: u64 = one << (bit % 64) as u64;
+                    if ((next[bit / 64] & mask) == 0) { next[bit / 64] = next[bit / 64] | mask; stack[pending] = follow; pending += 1; }
+                }
+                if (other >= 0) {
+                    let bit: i32 = other - base; let mask: u64 = one << (bit % 64) as u64;
+                    if ((next[bit / 64] & mask) == 0) { next[bit / 64] = next[bit / 64] | mask; stack[pending] = other; pending += 1; }
+                }
+            }
+            if (scratch.failed) { return false; }
+            if (step == look.b) { return accepted; }
+            let w: i32 = 0; while (w < 4) { current[w] = next[w]; next[w] = 0; w += 1; }
+            let scalar: u32 = core::option::unwrap_or(text.scalar_at_byte(at), 4294967295);
+            let following: i32 = at + core::utf8::encoded_len_or(scalar, 0) as i32;
+            let bit: i32 = 0;
+            while (bit < 256) {
+                if (current[bit / 64] == 0) { bit += 64; continue; }
+                if ((current[bit / 64] & (one << (bit % 64) as u64)) != 0) {
+                    let inst: Inst = code[base + bit];
+                    if (inst.op >= 1 && inst.op <= 3 && self.consumes(inst, scalar, scratch)) {
+                        let target: i32 = inst.x - base; let mask: u64 = one << (target % 64) as u64;
+                        if ((next[target / 64] & mask) == 0) { next[target / 64] = next[target / 64] | mask; stack[pending] = inst.x; pending += 1; }
+                    }
+                }
+                bit += 1;
+            }
+            if (pending == 0) { return false; }
+            at = following; step += 1;
+        }
+        return false;
     }
     fn consumes(&self, inst: Inst, scalar: u32, scratch: &Workspace) -> bool {
         if (inst.op == 1) { return scalar == inst.a as u32; }
@@ -780,33 +897,138 @@ pub impl Matches {
 // PrefixSet alias one cache and nothing reallocates after construction.
 // meta: [state count, pool used, closure generation, reset pending, resets].
 pub struct PrefixSet {
-    code: alloc::vec::Vec<Inst>, terms: alloc::vec::Vec<Term>, rule_of: alloc::vec::Vec<i32>, dot: alloc::vec::Vec<bool>,
+    code: alloc::vec::Vec<Inst>, terms: alloc::vec::Vec<Term>, rule_of: alloc::vec::Vec<i32>, mode: alloc::vec::Vec<i32>,
     entries: alloc::vec::Vec<i32>, meta: alloc::vec::Vec<i32>, set_start: alloc::vec::Vec<i32>, set_len: alloc::vec::Vec<i32>,
     accept: alloc::vec::Vec<i32>, trans: alloc::vec::Vec<i32>, pool: alloc::vec::Vec<i32>, table: alloc::vec::Vec<i32>,
     work: alloc::vec::Vec<i32>, mark: alloc::vec::Vec<i32>, stack: alloc::vec::Vec<i32>, capacity: i32, pool_capacity: i32,
+    // Non-ASCII input runs byte by byte: a lead byte leads from a state to a
+    // partial (base state, decoded bits, continuation bytes still needed),
+    // and the last continuation byte to the state for the whole scalar.
+    // parts holds three ints per partial; ptrans 64 continuation entries.
+    parts: alloc::vec::Vec<i32>, ptrans: alloc::vec::Vec<i32>, part_capacity: i32,
     // Unanchored sets re-add every entry after each scalar and stop at the first accept.
-    unanchored: bool
+    unanchored: bool,
+    // Look-behind bits a state must remember: 1 at start of text, 2 previous
+    // scalar is LF (multiline ^), 4 previous scalar is an ASCII word scalar.
+    look: i32
 }
 // end/rule are the furthest accepting boundary and the lowest rule accepting
 // there (-1 when none); scalars counts consumed scalars until every rule died.
 // complete is false when the state cache filled; the caller must not use it.
 pub struct PrefixRun { end: i32, rule: i32, scalars: i32, complete: bool }
 pub fn prefix_set() -> PrefixSet {
-    return PrefixSet { code: alloc::vec::new(), terms: alloc::vec::new(), rule_of: alloc::vec::new(), dot: alloc::vec::new(),
+    return PrefixSet { code: alloc::vec::new(), terms: alloc::vec::new(), rule_of: alloc::vec::new(), mode: alloc::vec::new(),
         entries: alloc::vec::new(), meta: alloc::vec::new(), set_start: alloc::vec::new(), set_len: alloc::vec::new(),
         accept: alloc::vec::new(), trans: alloc::vec::new(), pool: alloc::vec::new(), table: alloc::vec::new(),
-        work: alloc::vec::new(), mark: alloc::vec::new(), stack: alloc::vec::new(), capacity: 0, pool_capacity: 0, unanchored: false };
+        work: alloc::vec::new(), mark: alloc::vec::new(), stack: alloc::vec::new(), capacity: 0, pool_capacity: 0,
+        parts: alloc::vec::new(), ptrans: alloc::vec::new(), part_capacity: 0, unanchored: false, look: 0 };
 }
 // The same cache in unanchored mode: run() then reports the earliest end of
 // any match starting at or after the start position.
 pub fn search_set() -> PrefixSet { let set = prefix_set(); set.unanchored = true; return set; }
 fn incomplete() -> PrefixRun { return PrefixRun { end: -1, rule: -1, scalars: 0, complete: false }; }
+// Look-ahead facts of the next scalar: 2 LF, 4 ASCII word (1 is end of text).
+fn ahead_bits(scalar: u32) -> i32 { let bits: i32 = 0; if (scalar == 10) { bits = 2; } if (ascii_word(scalar)) { bits += 4; } return bits; }
+// An assertion at a boundary with look-behind bits `behind` and look-ahead
+// bits `ahead` (see ahead_bits), as the VM's assertion() decides it.
+fn holds(op: i32, multiline: bool, behind: i32, ahead: i32) -> bool {
+    if (op == 6) { return (behind & 1) != 0; }
+    if (op == 4) { return (behind & 1) != 0 || (multiline && (behind & 2) != 0); }
+    if (op == 7) { return (ahead & 1) != 0; }
+    if (op == 5) { return (ahead & 1) != 0 || (multiline && (ahead & 2) != 0); }
+    let word: bool = (behind & 4) != 0; let next: bool = (ahead & 4) != 0;
+    if (op == 8) { return word != next; }
+    return word == next;
+}
+fn looks_ahead(op: i32) -> bool { return op == 5 || op == 7 || op == 8 || op == 9; }
 pub impl Regex {
-    // True when the program has an assertion, which the combined DFA omits.
+    // True when the program has an assertion, including lookbehind.
     pub fn has_assertion(&self) -> bool {
         let code: [Inst] = self.code.as_slice(); let i: i32 = 0;
-        while (i < self.code.len()) { if (code[i].op >= 4 && code[i].op <= 9) { return true; } i += 1; }
+        while (i < self.code.len()) { if ((code[i].op >= 4 && code[i].op <= 9) || code[i].op == 14) { return true; } i += 1; }
         return false;
+    }
+    // True when the program has lookbehind, which the lazy DFA leaves to the VM.
+    pub fn has_lookbehind(&self) -> bool {
+        let code: [Inst] = self.code.as_slice(); let i: i32 = 0;
+        while (i < self.code.len()) { if (code[i].op == 14) { return true; } i += 1; }
+        return false;
+    }
+    // Writes to out[0..] the UTF-8 bytes of a literal that every match
+    // contains, the longest such run of consecutive required literal scalars
+    // (at most `capacity` bytes), and returns its length; 0 when there is
+    // none or the program has more than 2048 instructions. A literal PC is
+    // required when the accepting PC is unreachable from the entry without
+    // it. Searchers use it as a prefilter: a text without it cannot match.
+    pub fn required_literal(&self, out: [u8], capacity: i32) -> Result<i32, Error> {
+        let m: i32 = self.code.len(); if (m > 2048 || capacity < 4) { return Ok(0); }
+        let seen: alloc::vec::Vec<i32> = alloc::vec::new(); let stack: alloc::vec::Vec<i32> = alloc::vec::new(); let needed: alloc::vec::Vec<bool> = alloc::vec::new();
+        if (seen.try_resize(m, 0).is_err() || stack.try_resize(m + 1, 0).is_err() || needed.try_resize(m, false).is_err()) { seen.destroy(); stack.destroy(); needed.destroy(); return Err(Error::AllocationFailed); }
+        let code: [Inst] = self.code.as_slice(); let mark: [i32] = seen.as_slice(); let todo: [i32] = stack.as_slice(); let required: [bool] = needed.as_slice();
+        let pc: i32 = 0;
+        while (pc < m) {
+            if (code[pc].op == 1) {
+                // Search from the entry for the accepting PC, never entering pc.
+                let token: i32 = pc + 1; let pending: i32 = 0; let reached: bool = false;
+                if (self.entry != pc) { todo[0] = self.entry; mark[self.entry] = token; pending = 1; }
+                while (pending > 0 && !reached) {
+                    pending -= 1; let inst: Inst = code[todo[pending]];
+                    if (inst.op == 13) { reached = true; }
+                    else {
+                        if (inst.x != pc && mark[inst.x] != token) { mark[inst.x] = token; todo[pending] = inst.x; pending += 1; }
+                        if (inst.op == 11 && inst.y != pc && mark[inst.y] != token) { mark[inst.y] = token; todo[pending] = inst.y; pending += 1; }
+                    }
+                }
+                required[pc] = !reached;
+            }
+            pc += 1;
+        }
+        // Longest chain of required literals joined by non-branching,
+        // non-consuming PCs (jumps, saves and assertions).
+        let best: i32 = 0; let best_start: i32 = -1; pc = 0;
+        while (pc < m) {
+            if (required[pc]) {
+                let length: i32 = 0; let at: i32 = pc; let steps: i32 = 0;
+                while (at >= 0 && steps < m) {
+                    let width: i32 = core::utf8::encoded_len_or(code[at].a as u32, 0) as i32;
+                    if (length + width > capacity) { break; }
+                    length += width; steps += 1; at = self.chained(code, required, at);
+                }
+                if (length > best) { best = length; best_start = pc; }
+            }
+            pc += 1;
+        }
+        let written: i32 = 0; let at: i32 = best_start;
+        while (at >= 0 && written < best) {
+            let scalar: u32 = code[at].a as u32; let width: i32 = core::utf8::encoded_len_or(scalar, 0) as i32; let k: i32 = 0;
+            while (k < width) { let byte: u8 = core::utf8::encoded_byte_or(scalar, k as u32, 0); out[written + k] = byte; k += 1; }
+            written += width; at = self.chained(code, required, at);
+        }
+        seen.destroy(); stack.destroy(); needed.destroy();
+        return Ok(written);
+    }
+    // UTF-8 length of the pattern's literal when the pattern is nothing but
+    // one literal (only literals, saves and jumps from the entry to the
+    // accepting PC), else -1. A text then matches exactly when it contains
+    // those bytes, which required_literal returns when they fit.
+    pub fn literal_length(&self) -> i32 {
+        let code: [Inst] = self.code.as_slice(); let pc: i32 = self.entry; let steps: i32 = 0; let length: i32 = 0;
+        while (steps <= self.code.len()) {
+            let op: i32 = code[pc].op;
+            if (op == 13) { return length; }
+            if (op == 1) { length += core::utf8::encoded_len_or(code[pc].a as u32, 0) as i32; }
+            else { if (op != 10 && op != 12) { return -1; } }
+            pc = code[pc].x; steps += 1;
+        }
+        return -1;
+    }
+    // The required literal that always follows the literal at `at` with only
+    // jumps, saves and assertions between, or -1.
+    fn chained(&self, code: [Inst], required: [bool], at: i32) -> i32 {
+        let next: i32 = code[at].x; let hops: i32 = 0;
+        while (hops < self.code.len() && (code[next].op == 10 || code[next].op == 12 || (code[next].op >= 4 && code[next].op <= 9) || code[next].op == 14)) { next = code[next].x; hops += 1; }
+        if (code[next].op == 1 && required[next] && next != at) { return next; }
+        return -1;
     }
     // Upper bound on VM ticks per input boundary of one search: every PC once
     // in closure and once as a thread, plus every class term once.
@@ -816,55 +1038,75 @@ pub impl Regex {
         return total;
     }
 }
+// A lazy-DFA state is a sorted set of PCs, the look-behind bits at its
+// boundary (masked by `look`), and a delayed accept: the lowest rule that
+// matched at the boundary before the scalar that led here. Assertions that
+// need the next scalar ($ \z \b \B) stay in the set unresolved; a transition
+// on scalar c first resolves them with c's look-ahead bits, records the
+// rules accepting there, then steps. End of text resolves with bit 1 and is
+// cached per state. This is the RE2 / regex-automata construction.
 pub impl PrefixSet {
     pub fn borrow(&self) -> &PrefixSet { return self; }
     pub fn rule_count(&self) -> i32 { return self.entries.len(); }
     // Cache rebuilds so far, including the first; observation only.
     pub fn cache_resets(&self) -> i32 { if (self.meta.len() < 5) { return 0; } return self.meta.at(4); }
     pub fn destroy(&self) {
-        self.code.destroy(); self.terms.destroy(); self.rule_of.destroy(); self.dot.destroy(); self.entries.destroy();
+        self.code.destroy(); self.terms.destroy(); self.rule_of.destroy(); self.mode.destroy(); self.entries.destroy();
         self.meta.destroy(); self.set_start.destroy(); self.set_len.destroy(); self.accept.destroy(); self.trans.destroy();
         self.pool.destroy(); self.table.destroy(); self.work.destroy(); self.mark.destroy(); self.stack.destroy();
-        self.capacity = 0; self.pool_capacity = 0;
+        self.parts.destroy(); self.ptrans.destroy();
+        self.capacity = 0; self.pool_capacity = 0; self.part_capacity = 0; self.look = 0;
     }
-    // Append one assertion-free program as rule `rule`. Call before finish().
+    // Append one lookbehind-free program as rule `rule`. Call before finish().
     pub fn add(&self, rule: i32, regex: &Regex) -> Result<i32, Error> {
-        if (regex.has_assertion() || self.capacity != 0) { return Err(Error::Unsupported(0)); }
+        if (regex.has_lookbehind() || self.capacity != 0) { return Err(Error::Unsupported(0)); }
         let base: i32 = self.code.len(); let term_base: i32 = self.terms.len();
         if (self.code.try_reserve(regex.code.len()).is_err() || self.rule_of.try_reserve(regex.code.len()).is_err() || self.terms.try_reserve(regex.terms.len()).is_err()) { return Err(Error::AllocationFailed); }
-        let code: [Inst] = regex.code.as_slice(); let i: i32 = 0;
+        let code: [Inst] = regex.code.as_slice(); let i: i32 = 0; let multiline: bool = regex.config.multiline;
         while (i < regex.code.len()) {
             let inst: Inst = code[i];
             if (inst.op != 13) { inst.x += base; }
             if (inst.op == 11) { inst.y += base; }
             if (inst.op == 2) { inst.a += term_base; inst.b += term_base; }
+            if (inst.op == 4) { self.look = self.look | 1; if (multiline) { self.look = self.look | 2; } }
+            if (inst.op == 6) { self.look = self.look | 1; }
+            if (inst.op == 8 || inst.op == 9) { self.look = self.look | 4; }
             if (self.code.try_push(inst).is_err() || self.rule_of.try_push(rule).is_err()) { return Err(Error::AllocationFailed); }
             i += 1;
         }
         let terms: [Term] = regex.terms.as_slice(); i = 0;
         while (i < regex.terms.len()) { if (self.terms.try_push(terms[i]).is_err()) { return Err(Error::AllocationFailed); } i += 1; }
         if (self.entries.try_push(regex.entry + base).is_err()) { return Err(Error::AllocationFailed); }
-        while (self.dot.len() <= rule) { if (self.dot.try_push(false).is_err()) { return Err(Error::AllocationFailed); } }
-        let unused = self.dot.set(rule, regex.config.dot_matches_newline);
+        while (self.mode.len() <= rule) { if (self.mode.try_push(0).is_err()) { return Err(Error::AllocationFailed); } }
+        let mode: i32 = 0; if (regex.config.dot_matches_newline) { mode = 1; } if (multiline) { mode += 2; }
+        let unused = self.mode.set(rule, mode);
         return Ok(base);
     }
-    // Allocate the fixed lazy-DFA cache.
+    // Allocate the fixed lazy-DFA cache. meta is [states, pool used,
+    // generation, reset pending, resets, start state + 2 for each of the
+    // eight look-behind values, partials used]. Each state has 256 byte
+    // entries.
     pub fn finish(&self) -> Result<i32, Error> {
         let pcs: i32 = self.code.len(); let states: i32 = pcs * 4;
         if (states < 64) { states = 64; } if (states > 1024) { states = 1024; }
-        self.capacity = states; self.pool_capacity = states * 8 + pcs * 2;
-        if (self.meta.try_resize(5, 0).is_err() || self.set_start.try_resize(states, 0).is_err() || self.set_len.try_resize(states, 0).is_err()
-            || self.accept.try_resize(states, -1).is_err() || self.trans.try_resize(states * 128, -2).is_err() || self.pool.try_resize(self.pool_capacity, 0).is_err()
-            || self.table.try_resize(states * 2, 0).is_err() || self.work.try_resize(pcs + 1, 0).is_err() || self.mark.try_resize(pcs + 1, 0).is_err()
+        self.capacity = states; self.pool_capacity = states * 8 + pcs * 2; self.part_capacity = states * 2;
+        if (self.parts.try_resize(self.part_capacity * 3, 0).is_err() || self.ptrans.try_resize(self.part_capacity * 64, -2).is_err()) { return Err(Error::AllocationFailed); }
+        if (self.meta.try_resize(14, 0).is_err() || self.set_start.try_resize(states, 0).is_err() || self.set_len.try_resize(states * 2, 0).is_err()
+            || self.accept.try_resize(states * 2, -1).is_err() || self.trans.try_resize(states * 256, -2).is_err() || self.pool.try_resize(self.pool_capacity, 0).is_err()
+            || self.table.try_resize(states * 2, 0).is_err() || self.work.try_resize(pcs * 2 + 2, 0).is_err() || self.mark.try_resize(pcs + 1, 0).is_err()
             || self.stack.try_resize(pcs + 1, 0).is_err()) { return Err(Error::AllocationFailed); }
         let meta = self.meta.as_slice(); meta[3] = 1;
         return Ok(states);
     }
     fn reset(&self) {
         let meta = self.meta.as_slice(); let trans = self.trans.as_slice(); let table = self.table.as_slice();
-        let used: i32 = meta[0] * 128; let i: i32 = 0;
+        let used: i32 = meta[0] * 256; let i: i32 = 0;
         while (i < used) { trans[i] = -2; i += 1; }
+        let ptrans = self.ptrans.as_slice(); used = meta[13] * 64; i = 0;
+        while (i < used) { ptrans[i] = -2; i += 1; }
+        meta[13] = 0;
         i = 0; while (i < self.capacity * 2) { table[i] = 0; i += 1; }
+        i = 5; while (i < 13) { meta[i] = 0; i += 1; }
         meta[0] = 0; meta[1] = 0; meta[3] = 0; meta[4] += 1;
     }
     fn next_generation(&self) -> i32 {
@@ -872,20 +1114,27 @@ pub impl PrefixSet {
         if (meta[2] >= 2147483000) { let mark = self.mark.as_slice(); let i: i32 = 0; while (i < self.code.len()) { mark[i] = 0; i += 1; } meta[2] = 0; }
         meta[2] += 1; return meta[2];
     }
-    // Add the epsilon closure of pc to work[count..]; returns the new count.
-    fn close(&self, pc: i32, generation: i32, count: i32) -> i32 {
+    fn multiline_at(&self, pc: i32) -> bool { let rule_of = self.rule_of.as_slice(); let mode = self.mode.as_slice(); return (mode[rule_of[pc]] & 2) != 0; }
+    // Add the epsilon closure of pc to work[base + count..]; returns the new
+    // count. With ahead < 0 the next scalar is unknown, and look-ahead
+    // assertions are kept as members instead of being followed.
+    fn close(&self, pc: i32, generation: i32, count: i32, behind: i32, ahead: i32, base: i32) -> i32 {
         let code: [Inst] = self.code.as_slice(); let mark = self.mark.as_slice(); let stack = self.stack.as_slice(); let work = self.work.as_slice();
         let total: i32 = count; let pending: i32 = 0;
         if (mark[pc] == generation) { return total; }
         mark[pc] = generation; stack[0] = pc; pending = 1;
         while (pending > 0) {
             pending -= 1; let cursor: i32 = stack[pending]; let inst: Inst = code[cursor];
-            if (inst.op == 10 || inst.op == 12) {
-                if (mark[inst.x] != generation) { mark[inst.x] = generation; stack[pending] = inst.x; pending += 1; }
-            } else { if (inst.op == 11) {
+            let follow: i32 = -1;
+            if (inst.op == 10 || inst.op == 12) { follow = inst.x; }
+            else { if (inst.op == 11) {
                 if (mark[inst.y] != generation) { mark[inst.y] = generation; stack[pending] = inst.y; pending += 1; }
-                if (mark[inst.x] != generation) { mark[inst.x] = generation; stack[pending] = inst.x; pending += 1; }
-            } else { work[total] = cursor; total += 1; } }
+                follow = inst.x;
+            } else { if (inst.op >= 4 && inst.op <= 9) {
+                if (ahead < 0 && looks_ahead(inst.op)) { work[base + total] = cursor; total += 1; }
+                else { if (holds(inst.op, self.multiline_at(cursor), behind, ahead)) { follow = inst.x; } }
+            } else { work[base + total] = cursor; total += 1; } } }
+            if (follow >= 0 && mark[follow] != generation) { mark[follow] = generation; stack[pending] = follow; pending += 1; }
         }
         return total;
     }
@@ -903,18 +1152,21 @@ pub impl PrefixSet {
         if (inst.flag) { return !found; }
         return found;
     }
-    // Find or insert the state for work[0..count] (sorted here). -1 for the
-    // empty set, -3 when the cache is full.
-    fn intern(&self, count: i32) -> i32 {
-        if (count == 0) { return -1; }
+    // Find or insert the state (work[0..count] sorted here, behind, delayed).
+    // -1 for a dead state, -3 when the cache is full. An unanchored empty
+    // set is not dead: entries are re-added at the next boundary.
+    fn intern(&self, count: i32, behind_bits: i32, delayed: i32) -> i32 {
+        let behind: i32 = behind_bits;
+        if (count == 0 && !self.unanchored) { if (delayed < 0) { return -1; } behind = 0; }
         let work = self.work.as_slice(); let i: i32 = 1;
         while (i < count) { let v: i32 = work[i]; let j: i32 = i - 1; while (j >= 0 && work[j] > v) { work[j + 1] = work[j]; j -= 1; } work[j + 1] = v; i += 1; }
-        let buckets: i32 = self.capacity * 2; let h: i32 = count % buckets; i = 0;
+        let buckets: i32 = self.capacity * 2; let h: i32 = (count * 7 + behind * 131 + delayed + 2) % buckets; i = 0;
         while (i < count) { h = (h * 31 + work[i] + 1) % buckets; i += 1; }
         let table = self.table.as_slice(); let set_start = self.set_start.as_slice(); let set_len = self.set_len.as_slice(); let pool = self.pool.as_slice();
+        let accept = self.accept.as_slice();
         while (table[h] != 0) {
             let s: i32 = table[h] - 1;
-            if (set_len[s] == count) {
+            if (set_len[s * 2] == count && set_len[s * 2 + 1] == behind && accept[s * 2] == delayed) {
                 let same: bool = true; i = 0;
                 while (same && i < count) { if (pool[set_start[s] + i] != work[i]) { same = false; } i += 1; }
                 if (same) { return s; }
@@ -923,69 +1175,142 @@ pub impl PrefixSet {
         }
         let meta = self.meta.as_slice();
         if (meta[0] == self.capacity || meta[1] > self.pool_capacity - count) { meta[3] = 1; return -3; }
-        let id: i32 = meta[0]; set_start[id] = meta[1]; set_len[id] = count;
-        let code: [Inst] = self.code.as_slice(); let rule_of = self.rule_of.as_slice(); let best: i32 = -1; i = 0;
-        while (i < count) {
-            pool[meta[1] + i] = work[i];
-            if (code[work[i]].op == 13 && (best < 0 || rule_of[work[i]] < best)) { best = rule_of[work[i]]; }
-            i += 1;
-        }
-        let accept = self.accept.as_slice(); accept[id] = best;
+        let id: i32 = meta[0]; set_start[id] = meta[1]; set_len[id * 2] = count; set_len[id * 2 + 1] = behind;
+        i = 0; while (i < count) { pool[meta[1] + i] = work[i]; i += 1; }
+        accept[id * 2] = delayed; accept[id * 2 + 1] = -2;
         meta[0] += 1; meta[1] += count; table[h] = id + 1;
         return id;
     }
-    fn start_state(&self) -> i32 {
-        let generation: i32 = self.next_generation(); let entries = self.entries.as_slice(); let count: i32 = 0; let i: i32 = 0;
-        while (i < self.entries.len()) { count = self.close(entries[i], generation, count); i += 1; }
-        return self.intern(count);
-    }
-    fn step(&self, state: i32, scalar: u32) -> i32 {
-        let generation: i32 = self.next_generation();
-        let set_start = self.set_start.as_slice(); let set_len = self.set_len.as_slice(); let pool = self.pool.as_slice();
-        let code: [Inst] = self.code.as_slice(); let rule_of = self.rule_of.as_slice(); let dot = self.dot.as_slice();
-        let count: i32 = 0; let i: i32 = 0; let first: i32 = set_start[state]; let length: i32 = set_len[state];
+    // Resolve the state's look-ahead assertions for a boundary with look-ahead
+    // bits `ahead` into work[half..]; returns the count.
+    fn resolve(&self, state: i32, ahead: i32, generation: i32) -> i32 {
+        let set_start = self.set_start.as_slice(); let set_len = self.set_len.as_slice(); let pool = self.pool.as_slice(); let mark = self.mark.as_slice();
+        let work = self.work.as_slice(); let code: [Inst] = self.code.as_slice();
+        let half: i32 = self.code.len() + 1; let first: i32 = set_start[state]; let length: i32 = set_len[state * 2]; let behind: i32 = set_len[state * 2 + 1];
+        let count: i32 = 0; let i: i32 = 0;
+        while (i < length) { let pc: i32 = pool[first + i]; if (!looks_ahead(code[pc].op)) { mark[pc] = generation; work[half + count] = pc; count += 1; } i += 1; }
+        i = 0;
         while (i < length) {
             let pc: i32 = pool[first + i]; let inst: Inst = code[pc];
-            if (self.consumes(inst, scalar, dot[rule_of[pc]])) { count = self.close(inst.x, generation, count); }
+            if (looks_ahead(inst.op) && holds(inst.op, self.multiline_at(pc), behind, ahead)) { count = self.close(inst.x, generation, count, behind, ahead, half); }
             i += 1;
         }
-        if (self.unanchored) { let entries = self.entries.as_slice(); i = 0; while (i < self.entries.len()) { count = self.close(entries[i], generation, count); i += 1; } }
-        return self.intern(count);
+        return count;
     }
-    // Anchored longest prefix over every added rule from a scalar boundary.
+    // Lowest rule with an accepting PC among work[half..half + count].
+    fn best(&self, count: i32) -> i32 {
+        let work = self.work.as_slice(); let code: [Inst] = self.code.as_slice(); let rule_of = self.rule_of.as_slice();
+        let half: i32 = self.code.len() + 1; let rule: i32 = -1; let i: i32 = 0;
+        while (i < count) { let pc: i32 = work[half + i]; if (code[pc].op == 13 && (rule < 0 || rule_of[pc] < rule)) { rule = rule_of[pc]; } i += 1; }
+        return rule;
+    }
+    fn start_state(&self, behind: i32) -> i32 {
+        let generation: i32 = self.next_generation(); let entries = self.entries.as_slice(); let count: i32 = 0; let i: i32 = 0;
+        while (i < self.entries.len()) { count = self.close(entries[i], generation, count, behind, -1, 0); i += 1; }
+        return self.intern(count, behind, -1);
+    }
+    fn step(&self, state: i32, scalar: u32) -> i32 {
+        let resolved: i32 = self.resolve(state, ahead_bits(scalar), self.next_generation());
+        let delayed: i32 = self.best(resolved);
+        let generation: i32 = self.next_generation(); let behind: i32 = ahead_bits(scalar) & self.look;
+        let work = self.work.as_slice(); let code: [Inst] = self.code.as_slice(); let rule_of = self.rule_of.as_slice(); let mode = self.mode.as_slice();
+        let half: i32 = self.code.len() + 1; let count: i32 = 0; let i: i32 = 0;
+        while (i < resolved) {
+            let pc: i32 = work[half + i]; let inst: Inst = code[pc];
+            if (self.consumes(inst, scalar, (mode[rule_of[pc]] & 1) != 0)) { count = self.close(inst.x, generation, count, behind, -1, 0); }
+            i += 1;
+        }
+        if (self.unanchored) { let entries = self.entries.as_slice(); i = 0; while (i < self.entries.len()) { count = self.close(entries[i], generation, count, behind, -1, 0); i += 1; } }
+        return self.intern(count, behind, delayed);
+    }
+    // A new partial for `base` after a lead byte (lead_mode 0: `value` is
+    // ignored and decoded from `byte`) or after a continuation (lead_mode 1:
+    // `value` holds the decoded bits and `byte` the continuation bytes still
+    // needed). Returns -6 - id, or -5 when the partial arena is full.
+    fn partial(&self, base: i32, byte: i32, needed: i32, lead_mode: i32) -> i32 {
+        let meta = self.meta.as_slice();
+        if (meta[13] == self.part_capacity) { return -5; }
+        let bits: i32 = byte; let rest: i32 = needed;
+        if (lead_mode == 0) {
+            if (byte >= 240) { bits = byte - 240; rest = 3; } else { if (byte >= 224) { bits = byte - 224; rest = 2; } else { bits = byte - 192; rest = 1; } }
+        }
+        let id: i32 = meta[13]; let parts = self.parts.as_slice();
+        parts[id * 3] = base; parts[id * 3 + 1] = bits; parts[id * 3 + 2] = rest;
+        meta[13] += 1;
+        return -6 - id;
+    }
+    // The lowest rule accepting at end of text from this state, cached.
+    fn final_rule(&self, state: i32) -> i32 {
+        let accept = self.accept.as_slice();
+        if (accept[state * 2 + 1] == -2) { let stored: i32 = self.best(self.resolve(state, 1, self.next_generation())); accept[state * 2 + 1] = stored; }
+        return accept[state * 2 + 1];
+    }
+    // Longest prefix (anchored) or earliest match end (unanchored) over every
+    // added rule from a scalar boundary; text before start sets look-behind.
     pub fn run(&self, input: Input, start: i32) -> PrefixRun {
         if (self.capacity == 0 || self.entries.is_empty()) { return incomplete(); }
         let meta = self.meta.as_slice();
-        if (meta[3] != 0) { self.reset(); if (self.start_state() != 0) { meta[3] = 1; return incomplete(); } }
-        let text = input.text; let trans = self.trans.as_slice(); let accept = self.accept.as_slice();
-        let state: i32 = 0; let position: i32 = start; let best_end: i32 = -1; let best_rule: i32 = -1; let scalars: i32 = 0;
-        while (true) {
-            let a: i32 = accept[state]; if (a >= 0) { best_end = position; best_rule = a; if (self.unanchored) { break; } }
-            if (position >= text.length) { break; }
-            let byte: u8 = text.bytes[text.start + position]; let next: i32 = -1; let width: i32 = 1;
-            if (byte < 128) {
-                next = trans[state * 128 + (byte as i32)];
-                if (next == -2) { next = self.step(state, byte as u32); if (next == -3) { return incomplete(); } trans[state * 128 + (byte as i32)] = next; }
-            } else {
-                let scalar: u32 = core::option::unwrap_or(text.scalar_at_byte(position), 4294967295);
-                width = core::utf8::encoded_len_or(scalar, 1) as i32;
-                next = self.step(state, scalar); if (next == -3) { return incomplete(); }
+        if (meta[3] != 0) { self.reset(); }
+        let text = input.text; let trans = self.trans.as_slice(); let accept = self.accept.as_slice(); let ptrans = self.ptrans.as_slice();
+        let behind: i32 = 1;
+        if (start > 0) { behind = ahead_bits(previous_scalar(text, start)); }
+        behind = behind & self.look;
+        if (meta[5 + behind] == 0) { let made: i32 = self.start_state(behind); if (made == -3) { return incomplete(); } meta[5 + behind] = made + 2; }
+        let state: i32 = meta[5 + behind] - 2;
+        let position: i32 = start; let last: i32 = start; let best_end: i32 = -1; let best_rule: i32 = -1; let scalars: i32 = 0;
+        while (state >= 0) {
+            if (scalars > 0) { let a: i32 = accept[state * 2]; if (a >= 0) { best_end = last; best_rule = a; if (self.unanchored) { break; } } }
+            if (position >= text.length) { let f: i32 = self.final_rule(state); if (f >= 0) { best_end = position; best_rule = f; } break; }
+            let lead: i32 = position; let byte: u8 = text.bytes[text.start + position];
+            let next: i32 = trans[state * 256 + (byte as i32)];
+            if (next == -2) {
+                let cache: bool = true;
+                if (byte < 128) { next = self.step(state, byte as u32); }
+                else {
+                    next = self.partial(state, byte as i32, 0, 0);
+                    if (next == -5) {
+                        // No room for a partial: step the whole scalar uncached.
+                        cache = false; let scalar: u32 = core::option::unwrap_or(text.scalar_at_byte(lead), 4294967295);
+                        next = self.step(state, scalar); position = lead + core::utf8::encoded_len_or(scalar, 1) as i32 - 1;
+                    }
+                }
+                if (next == -3) { return incomplete(); }
+                if (cache) { trans[state * 256 + (byte as i32)] = next; }
             }
-            if (next < 0) { break; }
-            state = next; position += width; scalars += 1;
+            position += 1;
+            // Continuation bytes of a non-ASCII scalar (input is valid UTF-8).
+            while (next <= -6) {
+                let part: i32 = -6 - next; let cont: i32 = text.bytes[text.start + position] as i32 - 128;
+                let follow: i32 = ptrans[part * 64 + cont];
+                if (follow == -2) {
+                    let parts = self.parts.as_slice(); let value: i32 = parts[part * 3 + 1] * 64 + cont; let cache: bool = true;
+                    if (parts[part * 3 + 2] == 1) { follow = self.step(parts[part * 3], value as u32); }
+                    else {
+                        follow = self.partial(parts[part * 3], value, parts[part * 3 + 2] - 1, 1);
+                        if (follow == -5) {
+                            cache = false; let scalar: u32 = core::option::unwrap_or(text.scalar_at_byte(lead), 4294967295);
+                            follow = self.step(parts[part * 3], scalar); position = lead + core::utf8::encoded_len_or(scalar, 1) as i32 - 1;
+                        }
+                    }
+                    if (follow == -3) { return incomplete(); }
+                    if (cache) { ptrans[part * 64 + cont] = follow; }
+                }
+                next = follow; position += 1;
+            }
+            last = lead; state = next; scalars += 1;
         }
         return PrefixRun { end: best_end, rule: best_rule, scalars: scalars, complete: true };
     }
 }
 
-// Capture-free matching through an unanchored lazy DFA, for assertion-free
-// programs. Results, including errors, equal the VM's: the DFA answer is used
+// Capture-free matching through an unanchored lazy DFA, for programs without
+// lookbehind (other assertions are DFA state; see PrefixSet). Results, including errors, equal the VM's: the DFA answer is used
 // only when the VM provably could not reach WorkLimit, and otherwise the
 // same call runs on the VM. Build it with dfa(&regex) and always pass that
 // same Regex. The DFA path publishes no workspace result and reports zero work.
 pub struct Dfa { set: PrefixSet, cost: i64, limit: i64 }
 pub fn dfa(regex: &Regex) -> Result<Dfa, Error> {
-    if (regex.has_assertion()) { return Err(Error::Unsupported(0)); }
+    if (regex.has_lookbehind()) { return Err(Error::Unsupported(0)); }
     let set = search_set();
     let added = set.add(0, regex); if (added.is_err()) { set.destroy(); return Err(added.unwrap_err()); }
     let made = set.finish(); if (made.is_err()) { set.destroy(); return Err(made.unwrap_err()); }

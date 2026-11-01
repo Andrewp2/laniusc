@@ -1,0 +1,13 @@
+// A store whose value calls a function: Core checks the index before it
+// evaluates the value, laniusc after, so with i out of bounds the call's
+// effects would run in laniusc's program and not in the reading; the store
+// is not read. (A call in the index is read: array_store.)
+fn bump(k: i32) -> i32 {
+    return k + 1;
+}
+
+fn top(i: i32) -> i32 {
+    let v: [i32; 2] = [0, 0];
+    v[i] = bump(i);
+    return v[0];
+}

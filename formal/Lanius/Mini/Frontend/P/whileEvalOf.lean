@@ -6,6 +6,7 @@ import Lanius.Mini.Frontend.P.divergeArm
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.ifEff
+import Lanius.Mini.Frontend.P.shrFirst
 import Lanius.Mini.Frontend.P.tryLetHead
 import Lanius.Mini.Frontend.P.tryLocalOf
 
@@ -52,12 +53,43 @@ def setTryOrEval (fuel : Nat) (env : FrontEnv) (scope : List Local) (l : Local) 
 def setOrEval (fuel : Nat) (env : FrontEnv) (scope : List Local) (l : Local) (v : Nat) (value : CTree) : Option MStmt :=
   setTryOrEval fuel env scope l v (tryOfInit fuel env scope value) value
 
-def setIndexEvalOf (slice : Nat) (index : Option MEff) (value : Option MEff) : Option MStmt :=
+/-- A statement, unless w. -/
+def stmtUnless (w : Bool) (s : MStmt) : Option MStmt :=
+  if w then
+    none
+  else
+    some s
+
+mutual
+/-- Whether evaluating an expression can act: it calls one of the n declared functions (a projection, numbered past them, only reads a field) or a host service. -/
+def effActs (n : Nat) (x : MEff) : Bool :=
+  match x with
+  | .xPure e => false
+  | .xCall inst args => decide (inst.decl < n) || effsAct n args
+  | .xApply op l r => effActs n l || effActs n r
+  | .xNeg a => effActs n a
+  | .xNot a => effActs n a
+  | .xCast t a => effActs n a
+  | .xIndex s i => effActs n i
+  | .xStruct t fs => effsAct n fs
+  | .xVariant t k ps => effsAct n ps
+  | .xMatch s ety t bs vs => effActs n s || effsAct n vs
+  | .xDivide op l r => effActs n l || effActs n r
+  | .xStride sl => false
+  | .xHost id args => true
+def effsAct (n : Nat) (xs : List MEff) : Bool :=
+  match xs with
+  | [] => false
+  | x :: rest => effActs n x || effsAct n rest
+end
+
+/-- `v[i] = value`, n the declared functions: Core checks i against v's length before it evaluates the value, laniusc after, so a value that can act is not read (its effect would be seen, or not, on an index out of bounds). -/
+def setIndexEvalOf (n : Nat) (slice : Nat) (index : Option MEff) (value : Option MEff) : Option MStmt :=
   match index with
   | none => none
   | some i =>
     match value with
     | none => none
-    | some v => some (setIndexEff slice i v)
+    | some v => stmtUnless (effActs n v) (setIndexEff slice i v)
 
 end Lanius.Mini

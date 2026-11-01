@@ -1,0 +1,7 @@
+fn b() -> i32 {
+    return 2;
+}
+
+fn top(n: i32) -> i32 {
+    return b() + n;
+}

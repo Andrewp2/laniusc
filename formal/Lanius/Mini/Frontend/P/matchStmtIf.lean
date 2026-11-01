@@ -1,17 +1,18 @@
 module
 
 public import Lanius.Mini.Frontend.Types
+import Lanius.Mini.Compiler.P.arithShiftRight
 import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Frontend.P.callParts
-import Lanius.Mini.Frontend.P.compoundOf
 import Lanius.Mini.Frontend.P.consBinder
 import Lanius.Mini.Frontend.P.consTys
 import Lanius.Mini.Frontend.P.divergeArm
 import Lanius.Mini.Frontend.P.fnInstRet
+import Lanius.Mini.Frontend.P.forRange
 import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isEmptyUsize
-import Lanius.Mini.Frontend.P.namesSome
+import Lanius.Mini.Frontend.P.noBlock
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.noTrees
 import Lanius.Mini.Frontend.P.repeatEff
@@ -64,11 +65,11 @@ def matchStmtOn (fuel : Nat) (env : FrontEnv) (scope : List Local) (m : CTree) (
 def matchStmtParts (fuel : Nat) (env : FrontEnv) (scope : List Local) (m : CTree) : Option MatchStmt :=
   matchStmtOn fuel env scope m (effOf fuel env scope none (kid m 2))
 
-/-- The arms in variant order. -/
-def matchStmtArms (fuel : Nat) (h : MatchStmt) (m : CTree) : Option (List CTree) :=
+/-- A match statement's arms in variant order (stmt_arm_order). -/
+def stmtArms (fuel : Nat) (env : FrontEnv) (h : MatchStmt) (m : CTree) : Option (List CTree) :=
   match listItems fuel (kid m 5) with
   | none => none
-  | some arms => armsInOrder fuel h.owner h.variants arms
+  | some arms => stmtArmOrder fuel env h.owner h.variants arms
 
 /-- An arm's pattern: `V`, or `V(b, ...)` with plain name binders. -/
 def armBinding (fuel : Nat) (env : FrontEnv) (scope : List Local) (owner : TypeDecl) (v : VariantTy) (arm : CTree) : Option Bound :=

@@ -1,0 +1,6 @@
+module lib::opt;
+
+pub enum Opt<T> {
+    Some(T),
+    None,
+}

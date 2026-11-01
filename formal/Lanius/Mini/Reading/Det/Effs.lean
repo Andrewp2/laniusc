@@ -1,4 +1,4 @@
-import Lanius.Mini.Reading.Det.Arms
+import Lanius.Mini.Reading.Det.Nested
 
 /-! # The reading is deterministic, F1: effectful expressions
 
@@ -227,7 +227,7 @@ theorem effR_unique : ∀ {scope : List Local} {expected : Option Ty} {c : CTree
       subst e
       have e := items_unique it it'
       subst e
-      have eo := armsOrder_unique ((vn _ _ td en).sublist (zipVariants_names _ _)) ord ord'
+      have eo := matchOrder_unique ((vn _ _ td en).sublist (zipVariants_names _ _)) ord ord'
         (effArmsR_named arms) (effArmsR_named arms')
       subst eo
       have ag := ih2 arms'

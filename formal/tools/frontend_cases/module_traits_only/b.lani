@@ -1,0 +1,5 @@
+module a::b;
+
+pub trait Mark {
+    pub fn mark(&self) -> i32;
+}

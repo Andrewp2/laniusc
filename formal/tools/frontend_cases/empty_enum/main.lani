@@ -1,0 +1,24 @@
+// An enum with no variants, as core::clone_values::Infallible: no value of
+// it can be made, so a Result whose error type is one is always Ok, and the
+// arm of that error still binds its payload.
+enum Never {}
+
+enum Outcome<T, E> {
+    Good(T),
+    Bad(E),
+}
+
+fn clone_value(x: i32) -> Outcome<i32, Never> {
+    return Good(x);
+}
+
+fn value_of(o: Outcome<i32, Never>) -> i32 {
+    return match (o) {
+        Good(x) -> x,
+        Bad(n) -> 0,
+    };
+}
+
+fn main() -> i32 {
+    return value_of(clone_value(7));
+}

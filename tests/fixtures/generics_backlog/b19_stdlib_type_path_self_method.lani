@@ -1,0 +1,11 @@
+// A self method of a stdlib type called through the type's path,
+// Option::is_some(o) and Option::unwrap_or(o, 7), like o.is_some().
+module app::main;
+
+import core::option;
+
+fn main() -> i32 {
+    let o: Option<i32> = Option::Some(42);
+    if (!Option::is_some(o)) { return 1; }
+    return Option::unwrap_or(o, 7);
+}

@@ -1,0 +1,14 @@
+module app::main;
+
+// a::b is a module, since its file's `module` item names it, though it
+// declares only a trait: as in laniusc, this imports the module, not a's
+// function b, so b() is this module's b.
+import a::b;
+
+fn b() -> i32 {
+    return 2;
+}
+
+fn top(n: i32) -> i32 {
+    return b() + n;
+}

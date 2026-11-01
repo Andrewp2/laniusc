@@ -1,0 +1,165 @@
+// Decode an xz (default) or .lzma stream from stdin to stdout through
+// ext::xz, offering at most IN input bytes and OUT output bytes per step.
+// Usage: xz-bytes [xz|lzma|e0|e1|e2|e3] [IN] [OUT]; eN encodes stdin to xz
+// at level N. Exit 0 ok, 2 usage, 3 I/O,
+// 4 allocation, 10+ decoder error (ordinal of ext::xz::Error).
+// `xz-bytes batch` decodes many streams from stdin records
+// (format 0 xz / 1 lzma / 16+N encode at level N, IN, OUT, length as u8 +
+// 3 LE u32, then the bytes)
+// and answers each with (status u8, length LE u32, decoded bytes).
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::xz;
+import std::args;
+import std::stream;
+
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(bytes,count));
+}
+fn sub(view: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> { return core::result::unwrap(view.subview(start,end)); }
+fn report(status: i32, message: core::slice::View<u8>) -> i32 {
+    let sink: std::stream::Descriptor = std::stream::stderr(); core::io::write_all(sink.borrow(),message.values,message.start,message.len()); return status;
+}
+fn number(text: core::slice::View<u8>) -> i32 {
+    let value: i32 = 0; let index: i32 = 0;
+    if (text.len() == 0 || text.len() > 7) { return -1; }
+    while (index < text.len()) { let digit: u8 = core::option::unwrap(text.get(index)); if (digit < 48 || digit > 57) { return -1; } value = value*10+((digit-48) as i32); index += 1; }
+    return value;
+}
+fn code(error: ext::xz::Error) -> i32 {
+    return match (error) {
+        ext::xz::Error::Bounds -> 10, ext::xz::Error::Header -> 11, ext::xz::Error::Options -> 12, ext::xz::Error::UnsupportedCheck -> 13,
+        ext::xz::Error::UnsupportedFilter -> 14, ext::xz::Error::Corrupt -> 15, ext::xz::Error::Checksum -> 16, ext::xz::Error::Index -> 17,
+        ext::xz::Error::Footer -> 18, ext::xz::Error::SizeMismatch -> 19, ext::xz::Error::Truncated -> 21,
+        ext::xz::Error::TrailingData -> 22, ext::xz::Error::Failed -> 23
+    };
+}
+fn read_some(into: core::slice::View<u8>) -> i32 {
+    let source: std::stream::Descriptor = std::stream::stdin();
+    while (true) {
+        let got: core::result::Result<i32,core::io::Error> = source.read(into.values,into.start,into.len());
+        if (core::result::is_ok(got)) { return core::result::unwrap(got); }
+        let retry: bool = match (core::result::unwrap_err(got)) { core::io::Error::Interrupted -> true, _ -> false };
+        if (!retry) { return -1; }
+    } return -1;
+}
+fn write_out(bytes: core::slice::View<u8>) -> bool {
+    if (bytes.len() == 0) { return true; }
+    let sink: std::stream::Descriptor = std::stream::stdout(); return core::result::is_ok(core::io::write_all(sink.borrow(),bytes.values,bytes.start,bytes.len()));
+}
+// Input comes from stdin, or from `memory` when collecting into `collected`.
+struct Buffers { probs: alloc::vec::Vec<i32>, stage: alloc::vec::Vec<u8>, dict: alloc::vec::Vec<u8>, raw: alloc::vec::Vec<u8>, out: alloc::vec::Vec<u8>, memory: alloc::vec::Vec<u8>, collected: alloc::vec::Vec<u8>, batch: bool, taken: i32, work: alloc::vec::Vec<i32>, window: alloc::vec::Vec<u8>, estage: alloc::vec::Vec<u8> }
+impl Buffers { fn borrow(&self) -> &Buffers { return self; } fn destroy(&self) { self.probs.destroy(); self.stage.destroy(); self.dict.destroy(); self.raw.destroy(); self.out.destroy(); self.memory.destroy(); self.collected.destroy(); self.work.destroy(); self.window.destroy(); self.estage.destroy(); } }
+// Next input span into raw: from memory in batch mode, else stdin. -1 on I/O failure.
+fn next_input(b: &Buffers, in_chunk: i32) -> i32 {
+    if (!b.batch) { return read_some(sub(b.raw.as_view(),0,in_chunk)); }
+    let got: i32 = b.memory.len()-b.taken; if (got > in_chunk) { got = in_chunk; }
+    let index: i32 = 0; let from: core::slice::View<u8> = b.memory.as_view(); let into: core::slice::View<u8> = b.raw.as_view();
+    while (index < got) { into.values[into.start+index] = from.values[from.start+b.taken+index]; index += 1; }
+    b.taken += got; return got;
+}
+fn deliver(b: &Buffers, bytes: core::slice::View<u8>) -> i32 {
+    if (b.batch) { if (core::result::is_err(b.collected.try_extend(bytes))) { return 4; } return 0; }
+    if (!write_out(bytes)) { return 3; } return 0;
+}
+fn grow_i32(vector: &alloc::vec::Vec<i32>, length: i32) -> bool { if (vector.len() >= length) { return true; } return core::result::is_ok(vector.try_resize(length,0)); }
+fn grow_u8(vector: &alloc::vec::Vec<u8>, length: i32) -> bool { if (vector.len() >= length) { return true; } return core::result::is_ok(vector.try_resize(length,0)); }
+fn encode(level: i32, in_chunk: i32, out_chunk: i32, b: &Buffers) -> i32 {
+    if (!grow_i32(b.work.borrow(),ext::xz::encoder_workspace_len(level)) || !grow_u8(b.window.borrow(),ext::xz::encoder_window_len(level)) || !grow_u8(b.estage.borrow(),ext::xz::ENCODER_STAGE)) { return 4; }
+    let made: core::result::Result<ext::xz::Encoder,ext::xz::Error> = ext::xz::encoder(b.work.as_view(),b.window.as_view(),b.estage.as_view(),level);
+    if (core::result::is_err(made)) { return code(core::result::unwrap_err(made)); }
+    let encoder: ext::xz::Encoder = core::result::unwrap(made);
+    let have: i32 = 0; let pos: i32 = 0; let eof: bool = false;
+    while (true) {
+        if (pos == have && !eof) { let got: i32 = next_input(b,in_chunk); if (got < 0) { return 3; } pos = 0; have = got; if (got == 0) { eof = true; } }
+        let stepped: core::result::Result<ext::xz::Step,ext::xz::Error> = encoder.borrow().step(sub(b.raw.as_view(),pos,have),sub(b.out.as_view(),0,out_chunk),eof);
+        if (core::result::is_err(stepped)) { return code(core::result::unwrap_err(stepped)); }
+        let progress: ext::xz::Step = core::result::unwrap(stepped); pos += progress.read;
+        let sent: i32 = deliver(b,sub(b.out.as_view(),0,progress.written)); if (sent != 0) { return sent; }
+        if (encoder.borrow().is_done()) { return 0; }
+    } return 0;
+}
+fn decode(format: ext::xz::Format, in_chunk: i32, out_chunk: i32, b: &Buffers) -> i32 {
+    let probs: &alloc::vec::Vec<i32> = b.probs.borrow(); let stage: &alloc::vec::Vec<u8> = b.stage.borrow(); let dict: &alloc::vec::Vec<u8> = b.dict.borrow(); let raw: &alloc::vec::Vec<u8> = b.raw.borrow(); let out: &alloc::vec::Vec<u8> = b.out.borrow();
+    let made: core::result::Result<ext::xz::Decoder,ext::xz::Error> = ext::xz::decoder(probs.as_view(),stage.as_view(),format);
+    if (core::result::is_err(made)) { return code(core::result::unwrap_err(made)); }
+    let decoder: ext::xz::Decoder = core::result::unwrap(made);
+    let have: i32 = 0; let pos: i32 = 0; let eof: bool = false;
+    while (true) {
+        if (pos == have && !eof) {
+            let got: i32 = next_input(b,in_chunk); if (got < 0) { return 3; }
+            pos = 0; have = got; if (got == 0) { eof = true; }
+        }
+        let stepped: core::result::Result<ext::xz::Step,ext::xz::Error> = decoder.borrow().step(sub(raw.as_view(),pos,have),sub(out.as_view(),0,out_chunk),eof);
+        if (core::result::is_err(stepped)) { return code(core::result::unwrap_err(stepped)); }
+        let progress: ext::xz::Step = core::result::unwrap(stepped); pos += progress.read;
+        let sent: i32 = deliver(b,sub(out.as_view(),0,progress.written)); if (sent != 0) { return sent; }
+        let next: i32 = match (progress.status) { ext::xz::Status::Done -> 1, ext::xz::Status::NeedDictionary -> 2, ext::xz::Status::NeedInput -> 0, ext::xz::Status::NeedOutput -> 0 };
+        if (next == 1) { return 0; }
+        if (next == 2) {
+            let wanted: i32 = decoder.borrow().dictionary_len();
+            if (dict.len() < wanted) { if (core::result::is_err(dict.try_resize(wanted,0))) { return 4; } }
+            if (core::result::is_err(decoder.borrow().set_dictionary(dict.as_view()))) { return 23; }
+        }
+    } return 0;
+}
+fn read_full(into: core::slice::View<u8>) -> i32 {
+    let filled: i32 = 0;
+    while (filled < into.len()) { let got: i32 = read_some(sub(into,filled,into.len())); if (got < 0) { return -1; } if (got == 0) { return filled; } filled += got; }
+    return filled;
+}
+fn word(view: core::slice::View<u8>, at: i32) -> i32 {
+    return (core::option::unwrap(view.get(at)) as i32) | ((core::option::unwrap(view.get(at+1)) as i32) << 8) | ((core::option::unwrap(view.get(at+2)) as i32) << 16) | ((core::option::unwrap(view.get(at+3)) as i32) << 24);
+}
+fn batch(b: &Buffers) -> i32 {
+    let words: [i32;4] = [0;4]; let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(words),16);
+    let header: core::slice::View<u8> = core::result::unwrap(core::slice::view(bytes,16));
+    while (true) {
+        let got: i32 = read_full(sub(header,0,13)); if (got == 0) { return 0; } if (got != 13) { return 2; }
+        let in_chunk: i32 = word(header,1); let out_chunk: i32 = word(header,5); let length: i32 = word(header,9);
+        if (in_chunk < 1 || out_chunk < 1 || in_chunk > 1048576 || out_chunk > 1048576 || length < 0) { return 2; }
+        if (core::result::is_err(b.memory.try_resize(length,0)) || core::result::is_err(b.raw.try_resize(in_chunk,0)) || core::result::is_err(b.out.try_resize(out_chunk,0))) { return 4; }
+        if (read_full(b.memory.as_view()) != length) { return 2; }
+        let kind: i32 = core::option::unwrap(header.get(0)) as i32;
+        let format: ext::xz::Format = ext::xz::Format::Xz; if (kind == 1) { format = ext::xz::Format::Lzma; }
+        b.collected.clear(); b.dict.clear(); b.taken = 0;
+        let status: i32 = 0;
+        if (kind >= 16) { status = encode(kind-16,in_chunk,out_chunk,b); } else { status = decode(format,in_chunk,out_chunk,b); }
+        let count: i32 = b.collected.len();
+        let reply: [i32;2] = [0;2]; let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(reply),8);
+        raw[0] = status as u8; raw[1] = (count & 255) as u8; raw[2] = ((count >> 8) & 255) as u8; raw[3] = ((count >> 16) & 255) as u8; raw[4] = ((count >> 24) & 255) as u8;
+        if (!write_out(sub(core::result::unwrap(core::slice::view(raw,8)),0,5)) || !write_out(b.collected.as_view())) { return 3; }
+    } return 0;
+}
+fn run(values: std::args::Arguments) -> i32 {
+    let format: ext::xz::Format = ext::xz::Format::Xz; let in_chunk: i32 = 65536; let out_chunk: i32 = 65536;
+    let batched: bool = false; let level: i32 = -1;
+    if (values.len() >= 1) {
+        let name: core::slice::View<u8> = core::option::unwrap(values.get(0));
+        if (name.len() == 2 && core::option::unwrap(name.get(0)) == 101) { level = (core::option::unwrap(name.get(1)) as i32)-48; if (level < 0 || level > 3) { return report(2,literal("xz-bytes: usage\n",16)); } } else {
+        if (name.len() == 5 && core::option::unwrap(name.get(0)) == 98) { batched = true; } else {
+        if (name.len() == 4 && core::option::unwrap(name.get(0)) == 108) { format = ext::xz::Format::Lzma; }
+        else { if (!(name.len() == 2 && core::option::unwrap(name.get(0)) == 120)) { return report(2,literal("xz-bytes: usage\n",16)); } } } }
+    }
+    if (values.len() >= 2) { in_chunk = number(core::option::unwrap(values.get(1))); }
+    if (values.len() >= 3) { out_chunk = number(core::option::unwrap(values.get(2))); }
+    if (in_chunk < 1 || out_chunk < 1 || in_chunk > 1048576 || out_chunk > 1048576 || values.len() > 3) { return report(2,literal("xz-bytes: usage\n",16)); }
+    let b: Buffers = Buffers { probs: alloc::vec::new(), stage: alloc::vec::new(), dict: alloc::vec::new(), raw: alloc::vec::new(), out: alloc::vec::new(), memory: alloc::vec::new(), collected: alloc::vec::new(), batch: batched, taken: 0, work: alloc::vec::new(), window: alloc::vec::new(), estage: alloc::vec::new() };
+    let status: i32 = 4;
+    if (core::result::is_ok(b.probs.try_resize(ext::xz::probabilities_len(),0)) && core::result::is_ok(b.stage.try_resize(ext::xz::stage_len(),0)) && core::result::is_ok(b.raw.try_resize(in_chunk,0)) && core::result::is_ok(b.out.try_resize(out_chunk,0))) {
+        if (batched) { status = batch(b.borrow()); } else { if (level >= 0) { status = encode(level,in_chunk,out_chunk,b.borrow()); } else { status = decode(format,in_chunk,out_chunk,b.borrow()); } }
+    }
+    b.destroy();
+    if (status >= 10) { return report(status,literal("xz-bytes: invalid stream\n",25)); }
+    return status;
+}
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,8,4096);
+    if (core::result::is_err(captured)) { return 2; }
+    let values: std::args::Arguments = core::result::unwrap(captured); let status: i32 = run(values); values.destroy(); return status;
+}

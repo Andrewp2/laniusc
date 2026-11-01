@@ -1,6 +1,14 @@
 # Standard and extended library overview
 
-The full library goal remains open. The current
+The full library goal remains open. The current increment makes
+`core::slice` sorting adaptive: [pattern-defeating quicksort](stdlib-sort-algorithms.md)
+for unstable sorts and a run-adaptive stable merge sort with galloping over
+caller scratch. Both are checked against Python `sorted`, with recorded
+comparison counts and timings. The preceding increment adds inline
+fixed-capacity containers ([ring buffer and inline string](stdlib-inline-containers.md))
+and a fixed-capacity [LRU cache](stdlib-lru-cache.md) with O(1) expected
+operations, no allocation after construction and exact eviction order; one
+Python-reference model checks 11,346 commands. The preceding
 [ordered navigation increment](stdlib-ordered-navigation.md) adds predecessor
 searches, heterogeneous lower/upper/predecessor bounds and `Bound`-based
 intervals to TreeMap and TreeSet: sixteen methods plus `core::range::Bound`.
@@ -553,10 +561,25 @@ the `seq-diff`/`seq-patch` tools give 878/878 minimal Myers edit lengths against
 an O(N·M) LCS, 878/878 GNU and native round trips, 878/878 real GNU `diff -u`
 applications and 333/333 distinct-line plus 328/328 repeated-line offset/fuzz
 agreements with GNU `patch` at `-F0` and `-F2`.
-[Three-way merge](extended-merge3.md) (`ext::merge3`, `seq-merge`) agrees byte
-for byte with `git merge-file`, `git merge-file --diff3` and GNU `diff3 -m` on
-2,000/2,000 distinct-line triples each; repeated-line triples agree on
-1,787-1,800 of 2,000, with equal-cost alignment differences otherwise.
+[Three-way merge](extended-merge3.md) (`ext::merge3`, `seq-merge`) aligns with
+the xdiff port. It agrees byte for byte with `git merge-file` and
+`git merge-file --diff3` on all 4,000 generated triples (2,000 distinct-line,
+2,000 repeated-line), and with GNU `diff3 -m` on 2,000/2,000 distinct-line and
+1,863/2,000 repeated-line triples.
+[Word diff and diffstat](extended-wordiff.md) (`ext::wordiff`, `ext::diffstat`,
+`seq-diff --word-diff|--char-diff|--stat`, `seq-diffstat`) use a port of git's
+xdiff alignment (`Algorithm::Xdiff`). Their output is identical to git 2.43 on
+all 2,040 generated pairs for word diffs, character diffs and `--stat`, on
+1,500 `git diff --stat` reports over generated repositories and on 282
+`diff -ruN` patches.
+[Multi-file patches](extended-patchset.md) (`ext::patchset`, `seq-patch -i`)
+read git extended headers (renames, copies, modes, creation, deletion,
+binary sections), reverse patches, detect reversed patches as GNU `patch`
+does, place hunks as `git apply` does and fall back to a `git apply --3way`
+merge. On 900 generated repositories patched into seven kinds of mutated
+tree, the resulting trees and exit statuses agree with GNU `patch`
+(`-t`/`-N`/`-f`/`-R`), `git apply` (and `-R`) and `git apply --3way` in all
+5,518 comparisons. Binary patches are refused with an error.
 
 The preceding [reusable regex-workspace increment](library-regex-workspace-plan.md) is
 implemented and passes the selected Workspace/Search, regex, lexer,
@@ -734,6 +757,19 @@ fallback, and reports every exchange. The contracts program and the
 [stub-dig](extended-stub-resolver.md#application-stub-dig) cli30/dns42
 groups, run against Python fake DNS servers with malformed and truncated
 replies, pass as direct runs on native Linux x86_64.
+
+**WHATWG URL parsing.**
+
+The [URL guide](extended-url.md) adds `ext::url`, the WHATWG URL Standard
+basic URL parser and serializer with an optional base. It returns an owned
+href with spans for every getter, plus the host kind and origin. The
+[IDNA guide](extended-idna.md) adds `ext::idna`, UTS #46 ToASCII with Punycode
+over a table derived from the vendored Unicode 17 UCD, which `ext::url` uses
+for internationalized hosts; a ZWNJ that needs Joining_Type data returns
+`UnsupportedIdna`. The contracts program and the
+[url-parse](extended-url.md#application-url-parse) cli25, whatwg9174,
+idna46060 and table1111937 groups pass as direct runs on native Linux x86_64,
+comparing every getter, and every scalar's IDNA behaviour, with Node.js.
 
 **Shared random-source budgets.**
 
@@ -995,8 +1031,9 @@ make no callback; short transfers advance both array/file coordinates.
 Interrupted calls spend attempts, and every failure retains only confirmed
 progress. A call quota is separate from callback duration or a host deadline.
 
-The `std::file_ops` File adapter stages at most 1024 bytes through stack
-storage and makes one pread64/pwrite64 transfer after status validation.
+The `std::file_ops` File adapter reads packed (stride 1) destinations with one
+direct pread64 and no status probe. Writes and other layouts stage at most 1024
+bytes through stack storage and make one transfer after status validation.
 Read bytes publish only after a valid count. It leaves the shared cursor
 unchanged, rejects O_DIRECT and rejects O_APPEND for nonempty writes.
 Manual owner/backing and descriptor/status stability remain caller duties;
@@ -1889,6 +1926,25 @@ archive rejections, five destination-guard cases and a 96 MiB pipeline under
 32 MiB RSS. The oracle ran directly against `lcc` executables on native Linux
 x86_64; its cargo wrapper `tests/extended_tgz_execution.rs` was not run.
 
+**xz and .lzma.** [`ext::xz`](extended-xz.md) decodes xz (LZMA2; none, CRC32
+and CRC64 checks; multi-block, concatenated and padded streams with index
+verification) and `.lzma` streams incrementally over caller-owned
+probability, staging and dictionary views, with a dictionary that grows on
+demand, and encodes xz with a streaming LZMA2 encoder (levels 0-3, hash-chain
+match finder, greedy or one-step lazy) whose output is independent of call
+boundaries. `tgz` detects and reads xz archives and writes them with `-J` at
+level 2, which matches `xz -1`'s size on the docs/stdlib tar (7,562,060
+against 7,561,504 bytes) at roughly an eighth of its speed. A seeded oracle
+(`tests/fixtures/extended/xz_oracle.py`) passes 22,913 cases with 0 failures
+against Python `lzma` and the xz 5.4.6 CLI: 2,268 decodes of valid streams
+under step sizes down to one byte, 20,639 concatenated, truncated,
+bit-flipped or extended streams rejected exactly when a strict Python decode
+rejects them (and decoded identically otherwise) and 6 error-class checks. The tgz
+oracle adds 691 xz archive cases (now 4,160 in total) against Python
+`tarfile` and GNU tar; the encoder adds 228 step-size-invariance checks and
+300 exact decodes by Python, `xz -t` and the Lanius decoder (23,475 cases in
+all).
+
 **Accepted bounded archive increment.**
 
 The new production code is Lanius over the existing TAR/ZIP engines,
@@ -2190,6 +2246,18 @@ functional70, malformed45, slowloris12, conditional23 and concurrent39 on the
 event server plus four sequential groups, with exact server counters. TLS,
 threads, multipart ranges and allocation-failure coverage remain open.
 
+The [HTTP/1.1 client agent](extended-http-agent.md) (`ext::http_agent`) is a
+synchronous `http://` and verified `https://` client over the same codec,
+`ext::http_url`, `ext::url_connect` and `ext::tls_stream`. It pools
+keep-alive cleartext and TLS connections per scheme, host and port under
+idle-count, idle-time and use limits, discards stale ones and retries an
+idempotent request once on a fresh connection. It follows redirects with a
+hop limit, RFC 9110 method rules and cross-origin credential stripping, and
+sends fixed or chunked streamed bodies, stopping an upload on an early final
+response. The curl-like sample passes Python `http.server` oracle groups
+pool18, redirect29, upload10 and broken21, plus https17 against Python `ssl`
+origins with locally generated test certificates, with exact counters.
+
 [Resumable cleartext HTTP exchanges](extended-http-client.md) expose owned
 Prepared request staging and caller-driven Exchange steps. At `480432e8`,
 all five direct [Exchange groups](extended-http-exchange-testing.md) passed
@@ -2342,11 +2410,20 @@ The [regex differential oracle](extended-regex-oracle.md) runs the real
 `find_iter`, template-replacement and grep programs against CPython `re` on
 seeded grammar-generated patterns from the shared subset. Five seeds agree on
 60,025 find/capture cases (with named groups), 5,000 replacements, 5,000 grep
-runs and 15,000 capture-free lazy-DFA `is_match`/`find` cases, and five
+runs, 13,853 fixed-width lookbehind cases, 15,000 capture-free lazy-DFA `is_match`/`find` cases and 5,000
+mixed-script `\p{..}` DFA cases, and six
 pathological inputs finish in about 0.2 s. It found, and the engine now fixes,
 a lazy counted-repetition priority error (`(?:a|aab){0,2}?b` on `aabb`).
-The DFA lets `text_grep` count assertion-free patterns on a 0.9 MB corpus in
-0.15–0.23 s instead of 3–3.8 s.
+The DFA, which carries `^ $ \A \z \b \B` as look-behind bits and delayed
+accepts in its states, lets `text_grep` count any lookbehind-free pattern on a
+0.9 MB corpus in about 0.1–0.2 s instead of 2.3–3.8 s. Its transitions are
+cached per byte, with partial states for UTF-8 prefixes, so `\p{Lu}` on a
+1.3 MB mixed-script file takes 147 ms instead of 1110 ms. `text_grep` also
+searches for the pattern's required literal with `core::search` across each
+64 KiB read and runs the matcher only on the records that contain it. On
+S4's 49 MB corpus a no-match scan takes 68 ms instead of 5.2 s, against GNU
+grep's 11 ms; patterns with a literal take 85–272 ms with `-c`
+([timings](extended-text-grep.md#literal-prefilter)).
 
 [Regex splitting and replacement](extended-regex-text.md) now reuse canonical
 Search with one lazily acquired workspace. Borrowed split fields, independent
@@ -2364,7 +2441,7 @@ eager span workspace, reused during token selection; terminal calls can release
 it. All six current groups pass: owner/admission/contracts, 576 model cases,
 63 explicit tables and all 30 reached OOM positions. The earlier 120-position
 receipt retains its preceding per-probe scope. A combined lazy DFA over the
-assertion-free rules now runs each step once, with VM fallback for assertions,
+lookbehind-free rules now runs each step once, with VM fallback for lookbehind,
 a full cache or a possible work limit. Its traces are byte-identical to the
 frozen per-rule lexer on 30,000 generated cases, and it is about 40 times
 faster on an 18-rule corpus. Competing patterns can rescan

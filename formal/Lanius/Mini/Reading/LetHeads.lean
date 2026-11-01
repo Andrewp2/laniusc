@@ -331,11 +331,30 @@ theorem armNamed_sound {ss : List Name} {owner : TypeDecl} {name : Name}
     obtain ⟨e, p⟩ := h
     exact ⟨s.home, by rw [splitLast_sound hs, e], p⟩
 
-/-- Payload binders: plain names, not globals, numbered by their offsets. -/
+/-- No enum of the program has a variant spelled `n`: laniusc reads a payload
+pattern whose name resolves to a variant as a check, not a binder. -/
+def NoVariant (env : FrontEnv) (n : Name) : Prop :=
+  ∀ t ∈ env.decls.types, t.isEnum = true → n ∉ t.variants
+
+theorem anyVariant_false : ∀ {types : List TypeDecl} {n : Name}, anyVariant types n = false →
+    ∀ t ∈ types, t.isEnum = true → n ∉ t.variants
+  | [], _, _, _, m, _ => by cases m
+  | u :: rest, n, h, t, m, en => by
+    simp only [anyVariant, Bool.or_eq_false_iff, Bool.and_eq_false_iff] at h
+    rcases List.mem_cons.1 m with rfl | m
+    · intro mem
+      rcases h.1 with h' | h'
+      · rw [en] at h'; cases h'
+      · rw [(member_iff _ _).2 mem] at h'; cases h'
+    · exact anyVariant_false h.2 t m en
+
+/-- Payload binders: plain names, not globals or variants, numbered by their
+offsets. -/
 inductive BindersR (env : FrontEnv) : List Local → List CTree → List Ty → Bound → Prop
   | nil {scope : List Local} : BindersR env scope [] [] { ids := [], scope := scope }
   | cons {scope : List Local} {p : CTree} {more : List CTree} {t : Ty} {rest : List Ty} {b : Bound} {n : Name} :
-      nodeProd p = pPatternIdent → nodeProd (kid p 1) = pPatternPlain → PathName (kid p 0) n → n ∉ env.globals →
+      nodeProd p = pPatternIdent → nodeProd (kid p 1) = pPatternPlain → PathName (kid p 0) n →
+      n ∉ env.globals ∧ NoVariant env n →
       FreshId scope ((kidToken (kid (kid p 0) 0) 0).start - env.base) → BindersR env ({ name := n, id := (kidToken (kid (kid p 0) 0) 0).start - env.base, ty := t } :: scope) more rest b →
       BindersR env scope (p :: more) (t :: rest)
         { ids := ((kidToken (kid (kid p 0) 0) 0).start - env.base) :: b.ids, scope := b.scope }
@@ -353,7 +372,7 @@ theorem bindersOf_sound {env : FrontEnv} : ∀ {scope : List Local} {pats : List
     split at h
     · rename_i c
       simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true'] at c
-      obtain ⟨⟨⟨⟨pi, pl⟩, sn⟩, ng⟩, fr⟩ := c
+      obtain ⟨⟨⟨⟨⟨pi, pl⟩, sn⟩, ng⟩, nv⟩, fr⟩ := c
       cases hn : pathName (kid p 0) with
       | none => rw [hn] at sn; simp [isSomeName] at sn
       | some n =>
@@ -366,7 +385,7 @@ theorem bindersOf_sound {env : FrontEnv} : ∀ {scope : List Local} {pats : List
           rw [hr] at h
           simp only [consBinder, Option.some.injEq] at h
           subst h
-          refine .cons pi pl pn (fun mem => ?_) ((freshId_iff _ _).1 fr) (bindersOf_sound hr)
+          refine .cons pi pl pn ⟨fun mem => ?_, anyVariant_false nv⟩ ((freshId_iff _ _).1 fr) (bindersOf_sound hr)
           rw [(member_iff _ _).2 mem] at ng
           cases ng
     · cases h

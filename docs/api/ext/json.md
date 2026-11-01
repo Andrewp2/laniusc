@@ -464,7 +464,7 @@ pub fn parse(input: alloc::string::String, options: Options) -> core::result::Re
 
 ### function: encode
 
-[Source line 833](../../../extended/ext/json.lani#L833)
+[Source line 834](../../../extended/ext/json.lani#L834)
 
 ```lanius
 pub fn encode(document: Document) -> core::result::Result<alloc::string::String, Error>

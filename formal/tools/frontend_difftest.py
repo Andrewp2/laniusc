@@ -40,6 +40,7 @@ Prints one line per difference and a summary; exits nonzero on any.
 """
 
 import argparse
+import json
 import os
 import random
 import re
@@ -66,6 +67,7 @@ def inputs_digest(workdir):
 import run_cache  # noqa: E402
 oracle.EFFECTS = False  # set in main: effectful expressions, except with --generic
 oracle.NESTED = False  # nested struct fields: the oracle's, not yet the front end tests'
+oracle.INDEX_VALUE_CALLS = False  # the front end rejects s[i] = value when value can act
 
 HEAVY = 'target/claude-work/bin/heavy'
 UINT_LEAN = oracle.UINT_LEAN
@@ -977,34 +979,184 @@ def parse_plain(heavy, laniusc, lani_path, workdir):
     return hit['prods'], hit['parents'], [tuple(t) for t in hit['tokens']]
 
 
-def parse_uncached(heavy, laniusc, lani_path, workdir):
-    cap = os.path.join(workdir, 'cap')
-    env = dict(os.environ,
-               LANIUS_DEBUG_CAPTURE_PASS='parser/tree/parent_parallel',
-               LANIUS_DEBUG_CAPTURE_DIR=cap,
-               LANIUS_DEBUG_DUMP_BUFFERS='token_words,token_count',
-               LANIUS_DEBUG_DUMP_WORDS='4000000',
-               LANIUS_DEBUG_DUMP_DIR=workdir)
+def capture_env(cap, dump):
+    """laniusc's environment for capturing the parse tree into cap and dumping
+    the tokens into dump."""
+    return dict(os.environ,
+                LANIUS_DEBUG_CAPTURE_PASS='parser/tree/parent_parallel',
+                LANIUS_DEBUG_CAPTURE_DIR=cap,
+                LANIUS_DEBUG_CAPTURE_PER_JOB='1',
+                LANIUS_DEBUG_DUMP_BUFFERS='token_words,token_count',
+                LANIUS_DEBUG_DUMP_WORDS='4000000',
+                LANIUS_DEBUG_DUMP_DIR=dump)
+
+
+def clear_capture(cap, dump):
     shutil.rmtree(cap, ignore_errors=True)
-    for name in os.listdir(workdir):
+    for name in os.listdir(dump):
         if name.endswith('.bin'):
-            os.remove(os.path.join(workdir, name))
-    # The file has no main, so the compile fails after parsing; the capture
-    # and the dump are written anyway.
-    subprocess.run([heavy, '-t', '10', laniusc, '--stdlib-root', 'stdlib', '-o', os.path.join(workdir, 'a.out'),
-                    lani_path], env=env, capture_output=True, text=True)
+            os.remove(os.path.join(dump, name))
+
+
+def read_capture(cap, dump, last_stage, lani_path):
+    """The tree and tokens a compile left in cap and dump. A generic program
+    is lexed twice: as written (type_check), and again after laniusc's own
+    monomorphization (the last stage: x86_64 for a compile, daemon for a
+    daemon's job)."""
     count = words(os.path.join(cap, 'post', '002_tree_count_status.bin'))[5]
     prods = words(os.path.join(cap, 'post', '006_node_kind.bin'))[:count]
     parents = words(os.path.join(cap, 'post', '007_parent.bin'))[:count]
-    # A generic program is lexed twice: as written (type_check), and again
-    # after laniusc's own monomorphization (x86_64).
-    stage = 'type_check' if os.path.exists(os.path.join(workdir, 'type_check.token_count.bin')) else 'x86_64'
-    ntok = words(os.path.join(workdir, f'{stage}.token_count.bin'))[0]
-    tw = words(os.path.join(workdir, f'{stage}.token_words.bin'))
+    stage = 'type_check' if os.path.exists(os.path.join(dump, 'type_check.token_count.bin')) else last_stage
+    ntok = words(os.path.join(dump, f'{stage}.token_count.bin'))[0]
+    tw = words(os.path.join(dump, f'{stage}.token_words.bin'))
     tokens = [(tw[3 * i], tw[3 * i + 1], tw[3 * i + 2]) for i in range(ntok)]
     if len(prods) != count or len(tw) < 3 * ntok:
         raise SystemExit(f'{lani_path}: the capture or the dump is short')
     return prods, parents, tokens
+
+
+class ParseServer:
+    """One resident `laniusc daemon` for every parse of a run, in a server
+    process (serve_parses) that heavy runs in its GPU lane: the GPU start-up
+    is paid once, not once per file. Started at the first parse the cache
+    misses and stopped (close) before the Lean check, so it holds the GPU
+    only while there are files to parse. A file it gives no tree for is
+    parsed by a one-shot compile. Only this script's own runs turn it on
+    (main): a caller that also runs laniusc through heavy (stdlib_oracle.py)
+    would wait for the GPU lane the server holds."""
+    proc = None
+    enabled = False
+
+    def parse(self, heavy, laniusc, lani_path, workdir):
+        if not self.enabled:
+            return None
+        if self.proc is None:
+            server = os.path.join(workdir, 'parse_server')
+            os.makedirs(server, exist_ok=True)
+            self.proc = subprocess.Popen([heavy, '-t', '10', sys.executable, '-I', os.path.abspath(__file__),
+                                          '--parse-server', laniusc, server],
+                                         stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        try:
+            self.proc.stdin.write(os.path.abspath(lani_path) + '\n')
+            self.proc.stdin.flush()
+            while True:
+                line = self.proc.stdout.readline()
+                if not line:
+                    return None
+                if line.startswith('PARSE '):
+                    got = json.loads(line[6:])
+                    return None if got is None else (got[0], got[1], [tuple(t) for t in got[2]])
+        except (BrokenPipeError, OSError):
+            return None
+
+    def close(self):
+        if self.proc is not None:
+            try:
+                self.proc.stdin.close()
+            except OSError:
+                pass
+            self.proc.wait()
+            self.proc = None
+
+
+PARSE_SERVER = ParseServer()
+
+
+def serve_parses(laniusc, server):
+    """The parse server: reads file paths, one per line, and prints `PARSE`
+    and each one's [prods, parents, tokens] (null when laniusc gives none).
+    Each file is compiled as a distinct copy (the daemon caches by path), the
+    capture directory and the dumps cleared before each job, and
+    LANIUS_DEBUG_CAPTURE_PER_JOB makes the daemon capture each job's first
+    parse. A daemon that captures nothing for a file (it happens after some
+    dozens of jobs, when its resident buffers grow) is replaced by a new one
+    and the file tried again."""
+    cap, dump = os.path.join(server, 'cap'), os.path.join(server, 'dump')
+    os.makedirs(dump, exist_ok=True)
+    log = open(os.path.join(server, 'daemon.log'), 'a')
+    state = {'daemon': None, 'jobs': 0}
+
+    def response(daemon, want):
+        while True:
+            line = daemon.stdout.readline()
+            if not line:
+                return None
+            msg = json.loads(line)
+            if want is None and msg.get('event') == 'ready' or want is not None and msg.get('id') == want:
+                return msg
+
+    def stop():
+        daemon = state['daemon']
+        state['daemon'] = None
+        if daemon is None:
+            return
+        try:
+            daemon.stdin.write(json.dumps({'id': 'end', 'command': 'shutdown'}) + '\n')
+            daemon.stdin.close()
+            daemon.wait(timeout=30)
+        except (OSError, subprocess.TimeoutExpired):
+            daemon.kill()
+            daemon.wait()
+
+    def start():
+        daemon = subprocess.Popen([laniusc, 'daemon', '--stdio', '--backend', 'x86_64', '--stdlib-root', 'stdlib'],
+                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log, text=True, bufsize=1,
+                                  env=capture_env(cap, dump))
+        if response(daemon, None) is None:
+            daemon.wait()
+            return False
+        state['daemon'] = daemon
+        return True
+
+    def parse(path):
+        if state['daemon'] is None and not start():
+            return None
+        daemon = state['daemon']
+        k = state['jobs']
+        state['jobs'] += 1
+        request = os.path.join(server, f'r{k}.lani')
+        shutil.copyfile(path, request)
+        clear_capture(cap, dump)
+        # The file has no main, so the compile fails after parsing; the
+        # capture and the dump are written anyway.
+        daemon.stdin.write(json.dumps({'id': k, 'command': 'compile', 'emit': 'x86_64', 'input': request,
+                                       'output': os.path.join(server, 'a.out'),
+                                       'stdlib_root': os.path.abspath('stdlib')}) + '\n')
+        daemon.stdin.flush()
+        got = None
+        if response(daemon, k) is not None:
+            try:
+                got = read_capture(cap, dump, 'daemon', path)
+            except (OSError, IndexError, SystemExit):
+                pass
+        os.remove(request)
+        return got
+
+    for line in sys.stdin:
+        path = line.strip()
+        got = parse(path)
+        if got is None:
+            stop()
+            got = parse(path)
+        print('PARSE ' + json.dumps(got), flush=True)
+    stop()
+    return 0
+
+
+def parse_uncached(heavy, laniusc, lani_path, workdir):
+    got = PARSE_SERVER.parse(heavy, laniusc, lani_path, workdir)
+    if got is not None:
+        return got
+    # The server holds heavy's GPU lane: release it before the one-shot
+    # compile queues for the lane (a later parse starts a new server).
+    PARSE_SERVER.close()
+    cap = os.path.join(workdir, 'cap')
+    clear_capture(cap, workdir)
+    # The file has no main, so the compile fails after parsing; the capture
+    # and the dump are written anyway.
+    subprocess.run([heavy, '-t', '10', laniusc, '--stdlib-root', 'stdlib', '-o', os.path.join(workdir, 'a.out'),
+                    lani_path], env=capture_env(cap, workdir), capture_output=True, text=True)
+    return read_capture(cap, workdir, 'x86_64', lani_path)
 
 
 # ---------------------------------------------------------------- Lean
@@ -1346,6 +1498,7 @@ def run_cases(args, cases_dir):
     lean_path = os.path.join(workdir, 'cases_check.lean')
     lean.append(f'-- inputs {inputs_digest(workdir)}')
     open(lean_path, 'w').write('\n'.join(lean) + '\n')
+    PARSE_SERVER.close()
     run = run_cache.run_lean(lean_path)
     if run.returncode != 0:
         raise SystemExit('lean failed:\n' + run.stdout[-4000:] + run.stderr[-4000:])
@@ -1397,6 +1550,9 @@ def run_cases(args, cases_dir):
 
 
 def main():
+    if sys.argv[1:2] == ['--parse-server']:
+        return serve_parses(*sys.argv[2:4])
+    PARSE_SERVER.enabled = True
     parser = argparse.ArgumentParser()
     parser.add_argument('workdir')
     parser.add_argument('--count', type=int, default=100)
@@ -1476,6 +1632,7 @@ def main():
     lean_path = os.path.join(workdir, 'frontend_check.lean')
     lean.append(f'-- inputs {inputs_digest(workdir)}')
     open(lean_path, 'w').write('\n'.join(lean) + '\n')
+    PARSE_SERVER.close()
     run = run_cache.run_lean(lean_path)
     if run.returncode != 0:
         raise SystemExit('lean failed:\n' + run.stdout[-4000:] + run.stderr[-4000:])

@@ -14,15 +14,62 @@ deriving DecidableEq, Repr
 /-- The process's side of its environment: the trace of events so far, and
 what the kernel has still to deliver, streams fixed when the process starts
 (TRUSTED_BASE.md section 8): the bytes of standard input, the readings
-(seconds, nanoseconds) of the monotonic and the real-time clock, and the
-secure random bytes. -/
+(seconds, nanoseconds) of the monotonic and the real-time clock, the secure
+random bytes, and how many bytes each read of standard input delivers. -/
 structure Io where
   trace : List Event := []
   input : List UInt8 := []
   monotonic : List (Int × Nat) := []
   realtime : List (Int × Nat) := []
   entropy : List UInt8 := []
+  /-- The most bytes each `read` delivers, less one, in turn: a pipe or a
+  terminal may deliver fewer bytes than were asked for, but at least one while
+  any are left. A read past the end of the list delivers all it asks for. -/
+  readLimits : List Nat := []
 deriving Repr
+
+/-- How many bytes of the input the next `read` asking for `count` takes: the
+count, or the next limit plus one when that is smaller. -/
+def Io.readCap (io : Io) (count : Nat) : Nat :=
+  match io.readLimits with
+  | [] => count
+  | limit :: _ => min count (limit + 1)
+
+/-- The bytes the next `read` asking for `count` delivers. -/
+def Io.readBytes (io : Io) (count : Nat) : List UInt8 :=
+  io.input.take (io.readCap count)
+
+/-- `io` after a `read` asking for `count`: its bytes taken, and its limit. -/
+def Io.afterRead (io : Io) (count : Nat) : Io :=
+  { io with input := io.input.drop (io.readCap count), readLimits := io.readLimits.tail }
+
+theorem Io.readCap_le (io : Io) (count : Nat) : io.readCap count ≤ count := by
+  unfold Io.readCap
+  split <;> omega
+
+theorem Io.readCap_pos (io : Io) {count : Nat} (pos : 0 < count) : 0 < io.readCap count := by
+  unfold Io.readCap
+  split <;> omega
+
+/-- A read delivers at most what it asks for, and none only when it asks for
+none or the input is used up. -/
+theorem Io.readBytes_length (io : Io) (count : Nat) :
+    (io.readBytes count).length ≤ count ∧ (io.readBytes count).length ≤ io.input.length ∧
+      ((io.readBytes count).length = 0 → count = 0 ∨ io.input = []) := by
+  have le := io.readCap_le count
+  have pos : 0 < count → 0 < io.readCap count := io.readCap_pos
+  simp only [Io.readBytes, List.length_take]
+  refine ⟨by omega, by omega, fun zero => ?_⟩
+  rcases Nat.eq_zero_or_pos count with z | p
+  · exact .inl z
+  · exact .inr (List.length_eq_zero_iff.mp (by have := pos p; omega))
+
+/-- Every length a read may deliver, from one to what it asks for or what is
+left, is the length some schedule of limits delivers. -/
+theorem Io.readBytes_any (io : Io) {count k : Nat} (pos : 0 < k) (le : k ≤ count) (left : k ≤ io.input.length)
+    (rest : List Nat) : ({ io with readLimits := (k - 1) :: rest }.readBytes count).length = k := by
+  simp only [Io.readBytes, Io.readCap, List.length_take]
+  omega
 
 /-- The readings left of the clock `clock_gettime` names: `CLOCK_MONOTONIC`
 (1) or, for any other, `CLOCK_REALTIME` (0). -/

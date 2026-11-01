@@ -22,7 +22,7 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_args_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 231 RepLocal) x2 v2 → RepCTree x3 v3 →
-    (RepOption 296 (RepList 21 RepSrcExpr)) (Lanius.Mini.argsOf x0 x1 x2 x3) w
+    (RepOption 295 (RepList 21 RepSrcExpr)) (Lanius.Mini.argsOf x0 x1 x2 x3) w
 
 abbrev Stmt_arm_binders (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.EffArm} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 289 RepEffArm) x0 v0 →
@@ -37,16 +37,16 @@ abbrev Stmt_bare_eff (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     RepBool (Lanius.Mini.bareEff x0) w
 
 abbrev Stmt_cons_eff_arm (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.EffArm} {x1 : Option (List Lanius.Mini.EffArm)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 302 RepEffArm) x0 v0 → (RepOption 288 (RepList 289 RepEffArm)) x1 v1 →
+  ∀ {x0 : Option Lanius.Mini.EffArm} {x1 : Option (List Lanius.Mini.EffArm)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 301 RepEffArm) x0 v0 → (RepOption 288 (RepList 289 RepEffArm)) x1 v1 →
     (RepOption 288 (RepList 289 RepEffArm)) (Lanius.Mini.consEffArm x0 x1) w
 
 abbrev Stmt_cons_expr (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcExpr} {x1 : Option (List Lanius.Mini.SrcExpr)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 227 RepSrcExpr) x0 v0 → (RepOption 296 (RepList 21 RepSrcExpr)) x1 v1 →
-    (RepOption 296 (RepList 21 RepSrcExpr)) (Lanius.Mini.consExpr x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.SrcExpr} {x1 : Option (List Lanius.Mini.SrcExpr)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 227 RepSrcExpr) x0 v0 → (RepOption 295 (RepList 21 RepSrcExpr)) x1 v1 →
+    (RepOption 295 (RepList 21 RepSrcExpr)) (Lanius.Mini.consExpr x0 x1) w
 
 abbrev Stmt_cons_expr_tail (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcExpr} {x1 : Option (List Lanius.Mini.SrcExpr)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepSrcExpr x0 v0 → (RepOption 296 (RepList 21 RepSrcExpr)) x1 v1 →
-    (RepOption 296 (RepList 21 RepSrcExpr)) (Lanius.Mini.consExprTail x0 x1) w
+  ∀ {x0 : Lanius.Mini.SrcExpr} {x1 : Option (List Lanius.Mini.SrcExpr)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepSrcExpr x0 v0 → (RepOption 295 (RepList 21 RepSrcExpr)) x1 v1 →
+    (RepOption 295 (RepList 21 RepSrcExpr)) (Lanius.Mini.consExprTail x0 x1) w
 
 abbrev Stmt_eff_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.MEff} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 231 RepLocal) x2 v2 → RepMEff x3 v3 →
@@ -58,7 +58,7 @@ abbrev Stmt_effs_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_exprs_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : List Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 231 RepLocal) x2 v2 → (RepList 82 RepCTree) x3 v3 →
-    (RepOption 296 (RepList 21 RepSrcExpr)) (Lanius.Mini.exprsOf x0 x1 x2 x3) w
+    (RepOption 295 (RepList 21 RepSrcExpr)) (Lanius.Mini.exprsOf x0 x1 x2 x3) w
 
 abbrev Stmt_fn_inst_ret (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Lanius.Mini.FnDecl} {x3 : Lanius.Mini.Inst} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepFnDecl x2 v2 → RepInst x3 v3 →

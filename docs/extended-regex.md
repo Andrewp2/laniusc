@@ -184,6 +184,7 @@ POSIX leftmost-longest matching. No implicit normalization or casing occurs.
 | `^`, `$` | Start/end of text; also after/before LF when multiline is true. |
 | `\A`, `\z` | Absolute start/end of text. |
 | `\b`, `\B` | ASCII word boundary and its complement, including EOF/BOF. |
+| `(?<=x)`, `(?<!x)` | Fixed-width lookbehind and its negation: whether `x` matches the scalars just before the current position. See [Lookbehind](#lookbehind). |
 | `\d`, `\D` | ASCII `[0-9]` and complement. |
 | `\s`, `\S` | ASCII HT, LF, FF, CR and space, and complement (VT is excluded). |
 | `\w`, `\W` | ASCII letters, digits and underscore, and complement. |
@@ -235,7 +236,8 @@ RE2/Pike cycle policy.
 Nullable branch priority still matters: `(?:|a)*` and `(?:|a)+` prefer an
 empty match on `a`.
 
-Unsupported constructs return an explicit error: lookaround, backreferences
+Unsupported constructs return an explicit error: lookahead, captures inside
+lookbehind, backreferences
 (including numeric and named forms such as `(?P=name)`), inline flags, possessive
 quantifiers, atomic groups, comments, POSIX named classes, script properties,
 byte-mode `\C`, octal escapes, `\Q...\E`, `\Z`, and unknown alphanumeric
@@ -392,14 +394,41 @@ change or reduced regex capability is part of this adaptation.
 or -1. `Regex.group_name(group) -> Option<Text>` borrows the name from the
 Regex's own copy, and `name_count()` counts the names. A duplicate name, an
 empty name, or a name that starts with a digit is `Syntax` at the name.
-`(?<=` and `(?<!` remain unsupported lookbehind. Template replacement still
-accepts numeric references only.
+Template replacement still accepts numeric references only.
+
+### Lookbehind
+
+`(?<=x)` holds at a position when `x` matches the `w` scalars ending there,
+and `(?<!x)` when it does not. As in Python `re`, every path through `x` must
+consume the same number of scalars `w`: alternatives must have equal widths
+and counted repeats must be exact (`{n}`, or any count of a zero-width body).
+Otherwise compilation returns `Syntax` at the `(`. Fewer than `w` scalars
+before the position fail `(?<=x)` and satisfy `(?<!x)`. The body may contain
+assertions and further lookbehind. It may not contain captures, named or
+numbered; those are `Unsupported` at the group. Lookbehind looks before the
+search start, so `find_from`, `find_iter` and `longest_prefix_from` see the
+preceding text.
+
+Lookbehind runs on the VM only. `has_lookbehind()` is true for it, so `dfa()`
+returns `Unsupported(0)` and [`ext::lexer`](extended-lexer.md) keeps such a
+rule out of its combined DFA. The body compiles to a separate sub-program of
+at most 256 instructions (`Limit(0)` beyond that). At each position where a
+thread reaches the lookbehind, the VM steps back `w` scalars and runs the
+sub-program forward with a 256-bit set of PCs per scalar. It needs no
+workspace storage and allocates nothing at search time; compilation
+allocates one temporary width table per lookbehind. Every stepped-back scalar
+and visited PC costs one tick of `max_work`. Without nesting, a search costs
+O(n · m · w · m') ticks at most, for input length n, program size m and
+sub-program size m'; each nesting level multiplies by its own w · m'. On
+`(?:(?<=(?:a|a){8})a)+b` over 20,000 `a`s the oracle's harness takes about
+0.2 s, while CPython takes about 30 s.
 
 ### Capture-free DFA matching
 
-`dfa(&Regex) -> Result<Dfa, Error>` builds an unanchored lazy DFA for an
-assertion-free program; a program with `^ $ \A \z \b \B` is
-`Unsupported(0)`. Always pass the same Regex to its methods:
+`dfa(&Regex) -> Result<Dfa, Error>` builds an unanchored lazy DFA for any
+program without lookbehind; a program with lookbehind is `Unsupported(0)`.
+`^ $ \A \z \b \B` are part of the DFA state; see
+[Assertions in the DFA](#assertions-in-the-dfa). Always pass the same Regex to its methods:
 
 | Dfa method | Contract |
 | --- | --- |
@@ -420,12 +449,64 @@ has a fixed size and is shared by copies.
 
 `prefix_set()`, `PrefixSet.add(rule, &Regex)`, `finish()` and
 `run(Input, start) -> PrefixRun` provide one anchored longest-prefix DFA over
-several assertion-free programs. A `PrefixRun` reports the furthest accepting
+several lookbehind-free programs. A `PrefixRun` reports the furthest accepting
 end, the lowest rule accepting there, the scalars scanned, and `complete`.
 `complete` is false when the fixed cache filled, and the caller must then use
-the VM. `Regex.has_assertion()` and `Regex.boundary_cost()` support exact VM
-fallback. [`ext::lexer`](extended-lexer.md#combined-dfa-matching) owns the only
+the VM. `Regex.has_lookbehind()` and `Regex.boundary_cost()` support exact VM
+fallback; `Regex.has_assertion()` reports any assertion, lookbehind included.
+
+### Assertions in the DFA
+
+The construction follows RE2 and Rust's `regex-automata`. A state is a set of
+PCs plus look-behind bits for its boundary: at start of text (for `^` and
+`\A`), previous scalar is LF (for multiline `^`), and previous scalar is an
+ASCII word scalar (for `\b` and `\B`). Only the bits some rule needs are kept,
+so an assertion-free program has the same states as before. Look-behind
+assertions are decided while the state is built. `$`, `\z`, `\b` and `\B` also
+need the next scalar, so they stay in the set unresolved. A transition on
+scalar c first resolves them with c's facts (LF, word) and records the lowest
+rule accepting at that boundary; the match is reported one scalar late, as a
+delayed accept stored in the next state. End of text resolves with the
+end-of-text fact and is cached per state. `run()` takes the start state's
+look-behind bits from the scalar before `start`, so lexer steps and searches
+from an offset see the real preceding text. Multiline and dot mode are kept
+per rule. In unanchored mode an empty set is a live state, since a later
+boundary (after an LF, say) can satisfy `^` again. [`ext::lexer`](extended-lexer.md#combined-dfa-matching) owns the only
 current consumer and its acceptance evidence.
+
+### Byte-level transitions and Unicode classes
+
+Classes, `\p{..}`, `\P{..}` and the Unicode shorthands already ran on the
+DFA; it steps whole scalars. Its transition cache is now keyed by bytes, as in
+`regex-automata`, but filled lazily rather than compiled ahead of time from
+UTF-8 byte-range automata. Each state has 256 byte entries. An ASCII byte
+leads to the next state. A lead byte of a longer sequence leads to a partial:
+the base state, the bits decoded so far, and the number of continuation bytes
+still needed. Each partial has 64 entries, one per continuation byte, that
+lead to the next partial or, on the last byte, to the state that `step` gives
+for the whole scalar. So a (state, UTF-8 prefix) pair is computed once, and
+later inputs follow cached byte entries. Partials live in a fixed arena of
+twice the state capacity. When it is full, the scalar is stepped without
+caching, and the answer is unchanged. A cache reset clears partials with the
+states. The dialect has no case-insensitive mode, so there is no case folding
+to compile. On a 1.3 MB file of mixed scripts, `\p{Lu}` with `text_grep -c`
+went from 1110 ms to 147 ms. GNU `grep -P` takes 9 ms, and the oracle's
+`dfa_unicode` surface checks the results.
+
+### Required literal
+
+`Regex.required_literal(out, capacity) -> Result<i32, Error>` writes to `out`
+the UTF-8 bytes of a literal that every match contains, and returns their
+length. It can return 0, which means there is no such literal or the program
+has more than 2048 PCs. A literal PC is required when the accepting PC cannot
+be reached from the entry without passing it. The result is the longest run
+of required literals linked only by jumps, saves and assertions, truncated to
+`capacity` bytes. `Regex.literal_length()` returns the pattern's UTF-8 length
+when the pattern is a single literal (only literals, saves and jumps lead to
+the match), else -1. When it equals the `required_literal` length, a text
+matches exactly when it contains those bytes. `AllocationFailed` is the only
+error. [`text_grep`](extended-text-grep.md#literal-prefilter) uses both, with
+`core::search`, to skip records.
 
 ### Differential oracle and lazy counted repetition
 

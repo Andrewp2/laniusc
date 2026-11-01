@@ -204,6 +204,18 @@ specials such as Σ, ß, İ, U+0345, ﬃ and U+0344. Results:
   the library uses UAX #29 word boundaries
   ([casing guide](extended-unicode-case.md)).
 
+`--hostile N` (default 300) appends N strings built around long combining
+runs of 33 to 4,000 marks, which take the normalizer's radix ordering path
+rather than its short-run insertion sort. The six shapes are reversed class
+order, two alternating classes, uniform marks, a few classes with repeated
+marks (stability), decomposing marks such as U+0344 and U+0F73 inside the
+run, and an ordered run with one late mark. Bases include none, Latin,
+Greek, Hangul and Hebrew letters, sometimes followed by a composing tail. A
+run of 50,000 strings plus 300 hostile ones (seed 17), and one of 1,000
+strings plus 2,000 hostile ones (seed 99), agree with
+`unicodedata.normalize` and `is_normalized` for all four forms with no
+defects.
+
 Running `uconv` over the same strings joined into a 20,000-line text gives
 output byte-identical to Python on the whole text for NFC, NFD, NFKC, NFKD,
 lower and casefold. Upper differs only on the 2 version lines. `--check`

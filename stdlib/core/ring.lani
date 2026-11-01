@@ -1,0 +1,213 @@
+// Inline fixed-capacity ring buffer. An [T; N] array holds a logical sequence
+// that wraps around the array end; both ends push and pop in O(1). Operations
+// borrow and mutate the current owner; by-value copies own independent arrays
+// with shallow copies of T. Nothing allocates, frees or destroys elements.
+// See docs/stdlib-inline-containers.md.
+module core::ring;
+import core::iter;
+import core::option;
+import core::pair;
+import core::panic;
+import core::result;
+import core::slice;
+pub enum Error {
+    Full,
+    Bounds
+}
+pub struct Ring<T, const N: usize> {
+    items:[T; N],
+    head: i32,
+    length: i32
+}
+// Borrowed logical-order cursor; front and back share one remainder.
+pub struct Iter<T> { values: [T], capacity: i32, head: i32, front: i32, back: i32 }
+// Filler is copied into spare slots; no filler element is logically owned.
+pub fn from_storage<T, const N: usize>(storage:[T; N]) -> Ring<T, N> {
+    let count: usize = N;
+    if (count > 2147483647) { core::panic::panic(); }
+    return Ring { items: storage, head: 0, length: 0 };
+}
+// Full ring in array order.
+pub fn from_array<T, const N: usize>(items:[T; N]) -> Ring<T, N> {
+    let count: usize = N;
+    if (count > 2147483647) { core::panic::panic(); }
+    return Ring { items: items, head: 0, length: count as i32 };
+}
+pub impl<T, const N: usize> Ring<T, N> {
+    pub fn borrow(&self) -> &Ring<T, N> { return self; }
+}
+fn cap<T, const N: usize>(value: &Ring<T, N>) -> i32 {
+    let count: usize = N;
+    return count as i32;
+}
+// Array slot of logical index `index` in 0..capacity; never overflows.
+fn slot_of(head: i32, capacity: i32, index: i32) -> i32 {
+    if (index >= capacity - head) { return index - (capacity - head); }
+    return head + index;
+}
+pub fn len<T, const N: usize>(value: &Ring<T, N>) -> i32 { return value.length; }
+pub fn capacity<T, const N: usize>(value: &Ring<T, N>) -> i32 { return cap<T, N>(value); }
+pub fn is_empty<T, const N: usize>(value: &Ring<T, N>) -> bool { return value.length == 0; }
+pub fn is_full<T, const N: usize>(value: &Ring<T, N>) -> bool { return value.length == cap<T, N>(value); }
+// Remaining free slots.
+pub fn spare<T, const N: usize>(value: &Ring<T, N>) -> i32 { return cap<T, N>(value) - value.length; }
+// Logical index 0 is the front.
+pub fn get<T, const N: usize>(value: &Ring<T, N>, index: i32) -> core::option::Option<T> {
+    if (index < 0 || index >= value.length) { return core::option::None(); }
+    return core::option::Some(value.items[slot_of(value.head, cap<T, N>(value), index)]);
+}
+pub fn front<T, const N: usize>(value: &Ring<T, N>) -> core::option::Option<T> { return get<T, N>(value, 0); }
+pub fn back<T, const N: usize>(value: &Ring<T, N>) -> core::option::Option<T> { return get<T, N>(value, value.length - 1); }
+// Return the displaced shallow value; nested ownership transfers explicitly.
+pub fn try_set<T, const N: usize>(value: &Ring<T, N>, index: i32, item: T) -> core::result::Result<T, Error> {
+    if (index < 0 || index >= value.length) { return core::result::Err(Error::Bounds); }
+    let at: i32 = slot_of(value.head, cap<T, N>(value), index);
+    let previous: T = value.items[at];
+    value.items[at] = item;
+    return core::result::Ok(previous);
+}
+// Return the new length; Full leaves the ring unchanged.
+pub fn try_push_back<T, const N: usize>(value: &Ring<T, N>, item: T) -> core::result::Result<i32, Error> {
+    let capacity: i32 = cap<T, N>(value);
+    if (value.length == capacity) { return core::result::Err(Error::Full); }
+    value.items[slot_of(value.head, capacity, value.length)] = item;
+    value.length += 1;
+    return core::result::Ok(value.length);
+}
+pub fn try_push_front<T, const N: usize>(value: &Ring<T, N>, item: T) -> core::result::Result<i32, Error> {
+    let capacity: i32 = cap<T, N>(value);
+    if (value.length == capacity) { return core::result::Err(Error::Full); }
+    if (value.head == 0) { value.head = capacity - 1; } else { value.head -= 1; }
+    value.items[value.head] = item;
+    value.length += 1;
+    return core::result::Ok(value.length);
+}
+// Push at the back; when full, first evict and return the front. Capacity
+// zero stores nothing and returns the item itself.
+pub fn push_back_overwrite<T, const N: usize>(value: &Ring<T, N>, item: T) -> core::option::Option<T> {
+    let capacity: i32 = cap<T, N>(value);
+    if (capacity == 0) { return core::option::Some(item); }
+    if (value.length < capacity) {
+        value.items[slot_of(value.head, capacity, value.length)] = item;
+        value.length += 1;
+        return core::option::None();
+    }
+    let evicted: T = value.items[value.head];
+    value.items[value.head] = item;
+    if (value.head + 1 == capacity) { value.head = 0; } else { value.head += 1; }
+    return core::option::Some(evicted);
+}
+// Push at the front; when full, first evict and return the back.
+pub fn push_front_overwrite<T, const N: usize>(value: &Ring<T, N>, item: T) -> core::option::Option<T> {
+    let capacity: i32 = cap<T, N>(value);
+    if (capacity == 0) { return core::option::Some(item); }
+    let evicted: core::option::Option<T> = core::option::None();
+    if (value.length == capacity) {
+        evicted = core::option::Some(value.items[slot_of(value.head, capacity, capacity - 1)]);
+        value.length -= 1;
+    }
+    if (value.head == 0) { value.head = capacity - 1; } else { value.head -= 1; }
+    value.items[value.head] = item;
+    value.length += 1;
+    return evicted;
+}
+pub fn pop_front<T, const N: usize>(value: &Ring<T, N>) -> core::option::Option<T> {
+    if (value.length == 0) { return core::option::None(); }
+    let item: T = value.items[value.head];
+    value.length -= 1;
+    value.head += 1;
+    if (value.length == 0 || value.head == cap<T, N>(value)) { value.head = 0; }
+    return core::option::Some(item);
+}
+pub fn pop_back<T, const N: usize>(value: &Ring<T, N>) -> core::option::Option<T> {
+    if (value.length == 0) { return core::option::None(); }
+    let item: T = value.items[slot_of(value.head, cap<T, N>(value), value.length - 1)];
+    value.length -= 1;
+    if (value.length == 0) { value.head = 0; }
+    return core::option::Some(item);
+}
+// Drop `count` items from one end in O(1) and return the new length. Requests
+// outside 0..=len give Bounds and change nothing. Nothing is destroyed.
+pub fn discard_front<T, const N: usize>(value: &Ring<T, N>, count: i32) -> core::result::Result<i32, Error> {
+    if (count < 0 || count > value.length) { return core::result::Err(Error::Bounds); }
+    if (count == value.length) { value.head = 0; value.length = 0; return core::result::Ok(0); }
+    value.head = slot_of(value.head, cap<T, N>(value), count);
+    value.length -= count;
+    return core::result::Ok(value.length);
+}
+pub fn discard_back<T, const N: usize>(value: &Ring<T, N>, count: i32) -> core::result::Result<i32, Error> {
+    if (count < 0 || count > value.length) { return core::result::Err(Error::Bounds); }
+    value.length -= count;
+    if (value.length == 0) { value.head = 0; }
+    return core::result::Ok(value.length);
+}
+// Return the number discarded; the next push starts at slot 0.
+pub fn clear<T, const N: usize>(value: &Ring<T, N>) -> i32 {
+    let removed: i32 = value.length;
+    value.head = 0; value.length = 0;
+    return removed;
+}
+// The logical sequence as two borrowed array runs: first the run from the
+// front up to the array end, then the wrapped run from slot 0. The second
+// is empty unless the sequence wraps. End views before mutation.
+pub fn as_views<T, const N: usize>(value: &Ring<T, N>) -> core::pair::Pair<core::slice::View<T>, core::slice::View<T>> {
+    let capacity: i32 = cap<T, N>(value);
+    let first: i32 = value.length;
+    if (first > capacity - value.head) { first = capacity - value.head; }
+    let head: core::slice::View<T> = core::slice::View { values: value.items, start: value.head, length: first };
+    let tail: core::slice::View<T> = core::slice::View { values: value.items, start: 0, length: value.length - first };
+    return core::pair::Pair { first: head, second: tail };
+}
+fn reverse_slots<T, const N: usize>(value: &Ring<T, N>, low: i32, high: i32) {
+    let left: i32 = low; let right: i32 = high - 1;
+    while (left < right) {
+        let saved: T = value.items[left];
+        value.items[left] = value.items[right];
+        value.items[right] = saved;
+        left += 1; right -= 1;
+    }
+}
+// Rotate the array in place so the sequence occupies slots 0..len, in order,
+// and return one view over it. O(capacity) moves, constant extra storage.
+pub fn make_contiguous<T, const N: usize>(value: &Ring<T, N>) -> core::slice::View<T> {
+    let capacity: i32 = cap<T, N>(value);
+    if (value.head != 0) {
+        reverse_slots<T, N>(value, 0, value.head);
+        reverse_slots<T, N>(value, value.head, capacity);
+        reverse_slots<T, N>(value, 0, capacity);
+        value.head = 0;
+    }
+    return core::slice::View { values: value.items, start: 0, length: value.length };
+}
+pub fn iter<T, const N: usize>(value: &Ring<T, N>) -> Iter<T> {
+    return Iter { values: value.items, capacity: cap<T, N>(value), head: value.head, front: 0, back: value.length };
+}
+pub impl<T> Iter<T> {
+    pub fn borrow(&self) -> &Iter<T> { return self; }
+}
+pub impl<T> core::iter::Iterator<T> for Iter<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        if (self.front >= self.back) { self.front = 0; self.back = 0; return core::option::None(); }
+        let item: T = self.values[slot_of(self.head, self.capacity, self.front)];
+        self.front += 1;
+        return core::option::Some(item);
+    }
+}
+pub impl<T> core::iter::DoubleEndedIterator<T> for Iter<T> {
+    pub fn next_back(&self) -> core::option::Option<T> {
+        if (self.front >= self.back) { self.front = 0; self.back = 0; return core::option::None(); }
+        self.back -= 1;
+        return core::option::Some(self.values[slot_of(self.head, self.capacity, self.back)]);
+    }
+}
+pub impl<T> core::iter::ExactSizeIterator<T> for Iter<T> {
+    pub fn remaining_count(&self) -> u64 { return (self.back - self.front) as u64; }
+}
+// Acceptance pushes at the back; a full ring rejects with Full unchanged.
+pub impl<T, const N: usize> core::iter::TrySink<T, Error> for Ring<T, N> {
+    pub fn try_accept(&self, item: T) -> core::option::Option<Error> {
+        let pushed: core::result::Result<i32, Error> = try_push_back<T, N>(self, item);
+        if (core::result::is_err(pushed)) { return core::option::Some(core::result::unwrap_err(pushed)); }
+        return core::option::None();
+    }
+}

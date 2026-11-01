@@ -1,0 +1,970 @@
+// Streaming xz (LZMA2) and .lzma (LZMA1 "alone") decoding with caller-owned
+// probability, staging and dictionary storage, plus a stored-chunk xz writer.
+// No allocation and no host services. See docs/extended-xz.md.
+module ext::xz;
+import core::crc32;
+import core::result;
+import core::slice;
+
+pub enum Format { Xz, Lzma }
+pub enum Error { Bounds, Header, Options, UnsupportedCheck, UnsupportedFilter, Corrupt, Checksum, Index, Footer, SizeMismatch, Truncated, TrailingData, Failed }
+pub enum Status { NeedInput, NeedOutput, NeedDictionary, Done }
+pub struct Step { read: i32, written: i32, status: Status }
+pub struct Decoder {
+    lzma1: bool, probs: core::slice::View<i32>, stage: core::slice::View<u8>, dict: core::slice::View<u8>,
+    phase: i32, need: i32, have: i32, failed: bool,
+    check: i32, check_size: i32, crc: u32, crc64: u64, flag0: u8, flag1: u8,
+    header_size: i32, declared_packed: u64, has_packed: bool, declared_unpacked: u64, has_unpacked: bool, block_packed: u64, block_out: u64,
+    blocks: u64, record_hash: u32, index_hash: u32, index_crc: u32, index_size: u64, index_left: u64, index_field: i32, index_unpadded: u64, varint: u64, shift: i32, pad: i32,
+    need_dict_reset: bool, need_props: bool, control: i32, reset: i32, packed: i32,
+    lc: i32, lp: i32, pb: i32, state: i32, rep0: u32, rep1: u32, rep2: u32, rep3: u32,
+    range: u32, code: u32, in_pos: i32, in_end: i32, bad: bool, rc_ready: bool, end_marker: bool,
+    pending: i32, limited: bool, left: u64, dict_size: i32, dict_want: i32, dict_pos: i32, dict_full: i32, position: u64,
+    read_total: u64, written_total: u64 }
+pub struct Encoder {
+    probs: core::slice::View<i32>, heads: core::slice::View<i32>, chain: core::slice::View<i32>, window: core::slice::View<u8>, stage: core::slice::View<u8>,
+    depth: i32, nice: i32, lazy: bool, dict_size: i32, dict_code: u8, fill: i32, pos: i32, hashed: i32, base: u64,
+    stage_pos: i32, stage_len: i32, started: bool, ended: bool, failed: bool, first: bool, state_reset: bool, props_needed: bool,
+    state: i32, rep0: i32, rep1: i32, rep2: i32, rep3: i32, low: u64, range: u32, cache: u8, cache_size: i32, out: i32, found_len: i32, found_dist: i32,
+    crc64: u64, packed: u64, unpacked: u64, read_total: u64, written_total: u64 }
+pub struct StoreEncoder { table: core::slice::View<i32>, crc64: u64, packed: u64, unpacked: u64, chunks: u64 }
+
+// 14134 probabilities (lc+lp <= 4), then CRC32 and CRC64 lookup tables.
+pub const PROBABILITIES: i32 = 14902;
+const TABLE32: i32 = 14134;
+const TABLE64: i32 = 14390;
+pub const STAGE: i32 = 65536;
+const IS_MATCH: i32 = 0;
+const IS_REP: i32 = 192;
+const IS_REP_G0: i32 = 204;
+const IS_REP_G1: i32 = 216;
+const IS_REP_G2: i32 = 228;
+const IS_REP0_LONG: i32 = 240;
+const POS_SLOT: i32 = 432;
+const SPEC_POS: i32 = 688;
+const ALIGN: i32 = 802;
+const LEN_CODER: i32 = 818;
+const REP_LEN_CODER: i32 = 1332;
+const LITERAL: i32 = 1846;
+const CRC64_POLY: u64 = 14514072000185962306;
+const ALL64: u64 = 18446744073709551615;
+const ALL32: u32 = 4294967295;
+// Phases.
+const STREAM_HEADER: i32 = 0;
+const BLOCK_START: i32 = 1;
+const BLOCK_HEADER: i32 = 2;
+const DICTIONARY: i32 = 3;
+const CONTROL: i32 = 4;
+const CHUNK_HEADER: i32 = 5;
+const CHUNK_DATA: i32 = 6;
+const DECODE: i32 = 7;
+const COPY: i32 = 8;
+const BLOCK_PAD: i32 = 9;
+const CHECK: i32 = 10;
+const INDEX: i32 = 11;
+const FOOTER: i32 = 12;
+const STREAM_PAD: i32 = 13;
+const ALONE_HEADER: i32 = 20;
+const ALONE_DICTIONARY: i32 = 21;
+const ALONE_STREAM: i32 = 22;
+const DONE: i32 = 30;
+
+fn valid(view: core::slice::View<u8>) -> bool { return view.start >= 0 && view.length >= 0 && view.start <= 2147483647-view.length; }
+fn byte(view: core::slice::View<u8>, index: i32) -> u8 { return view.values[view.start+index]; }
+fn put(view: core::slice::View<u8>, index: i32, value: u8) { view.values[view.start+index] = value; }
+fn le32(view: core::slice::View<u8>, at: i32) -> u32 { return (byte(view,at) as u32) | ((byte(view,at+1) as u32) << 8) | ((byte(view,at+2) as u32) << 16) | ((byte(view,at+3) as u32) << 24); }
+fn le64(view: core::slice::View<u8>, at: i32) -> u64 { return (le32(view,at) as u64) | ((le32(view,at+4) as u64) << 32); }
+fn crc_range(view: core::slice::View<u8>, start: i32, end: i32) -> u32 {
+    let state: u32 = core::crc32::INITIAL; let index: i32 = start;
+    while (index < end) { state = core::crc32::update_byte(state,byte(view,index)); index += 1; } return core::crc32::finish(state);
+}
+fn hash_u64(state: u32, value: u64) -> u32 {
+    let current: u32 = state; let index: i32 = 0; let rest: u64 = value;
+    while (index < 8) { current = core::crc32::update_byte(current,(rest & 255) as u8); rest = rest >> 8; index += 1; } return current;
+}
+// Sizes past 2^31-1 (codes 38..40) are clamped: the window only matters for
+// streams whose output exceeds it.
+fn lzma2_dictionary(code: u8) -> i32 {
+    if (code > 40) { return -1; } if (code >= 37) { return 2147483647; }
+    let base: i32 = 2 | ((code as i32) & 1); let shift: i32 = (code as i32)/2 + 11;
+    return base << shift;
+}
+
+fn tables(work: core::slice::View<i32>) {
+    let index: i32 = 0;
+    while (index < 256) {
+        let c32: u32 = index as u32; let c64: u64 = index as u64; let bit: i32 = 0;
+        while (bit < 8) {
+            if ((c32 & 1) != 0) { c32 = (c32 >> 1) ^ 3988292384; } else { c32 = c32 >> 1; }
+            if ((c64 & 1) != 0) { c64 = (c64 >> 1) ^ CRC64_POLY; } else { c64 = c64 >> 1; }
+            bit += 1;
+        }
+        work.values[work.start+TABLE32+index] = c32 as i32;
+        work.values[work.start+TABLE64+2*index] = (c64 & 4294967295) as i32; work.values[work.start+TABLE64+2*index+1] = (c64 >> 32) as i32;
+        index += 1;
+    }
+}
+// Fold output[from..to] into the block's integrity check.
+fn checksum(d: &Decoder, output: core::slice::View<u8>, from: i32, to: i32) {
+    let work: core::slice::View<i32> = d.probs; let index: i32 = from;
+    if (d.check == 1) {
+        let state: u32 = d.crc;
+        while (index < to) { state = (work.values[work.start+TABLE32+(((state ^ (output.values[output.start+index] as u32)) & 255) as i32)] as u32) ^ (state >> 8); index += 1; }
+        d.crc = state;
+    }
+    if (d.check == 4) {
+        let state: u64 = d.crc64;
+        while (index < to) {
+            let slot: i32 = work.start+TABLE64+2*(((state ^ (output.values[output.start+index] as u64)) & 255) as i32);
+            state = ((work.values[slot] as u32) as u64 | (((work.values[slot+1] as u32) as u64) << 32)) ^ (state >> 8); index += 1;
+        }
+        d.crc64 = state;
+    }
+}
+pub fn probabilities_len() -> i32 { return PROBABILITIES; }
+pub fn stage_len() -> i32 { return STAGE; }
+// probabilities: PROBABILITIES i32 elements; stage: STAGE bytes. Both are
+// overwritten and must stay alive and disjoint for the decoder's lifetime.
+pub fn decoder(probabilities: core::slice::View<i32>, stage: core::slice::View<u8>, format: Format) -> core::result::Result<Decoder,Error> {
+    if (probabilities.start < 0 || probabilities.length < PROBABILITIES || probabilities.start > 2147483647-probabilities.length || !valid(stage) || stage.length < STAGE) { return core::result::Err(Error::Bounds); }
+    let lzma1: bool = match (format) { Format::Lzma -> true, Format::Xz -> false };
+    let phase: i32 = STREAM_HEADER; let need: i32 = 12; if (lzma1) { phase = ALONE_HEADER; need = 13; }
+    let empty: core::slice::View<u8> = stage; empty.length = 0;
+    tables(probabilities);
+    return core::result::Ok(Decoder { lzma1: lzma1, probs: probabilities, stage: stage, dict: empty, phase: phase, need: need, have: 0, failed: false,
+        check: 0, check_size: 0, crc: 0, crc64: 0, flag0: 0, flag1: 0, header_size: 0, declared_packed: 0, has_packed: false, declared_unpacked: 0, has_unpacked: false, block_packed: 0, block_out: 0,
+        blocks: 0, record_hash: core::crc32::INITIAL, index_hash: core::crc32::INITIAL, index_crc: 0, index_size: 0, index_left: 0, index_field: 0, index_unpadded: 0, varint: 0, shift: 0, pad: 0,
+        need_dict_reset: true, need_props: true, control: 0, reset: 0, packed: 0, lc: 0, lp: 0, pb: 0, state: 0, rep0: 0, rep1: 0, rep2: 0, rep3: 0,
+        range: 0, code: 0, in_pos: 0, in_end: 0, bad: false, rc_ready: false, end_marker: false, pending: 0, limited: false, left: 0, dict_size: 0, dict_want: 0, dict_pos: 0, dict_full: 0, position: 0,
+        read_total: 0, written_total: 0 });
+}
+
+// ---------------------------------------------------------------- LZMA core
+fn prob(d: &Decoder, index: i32) -> u32 { return d.probs.values[d.probs.start+index] as u32; }
+fn set_prob(d: &Decoder, index: i32, value: u32) { d.probs.values[d.probs.start+index] = value as i32; }
+fn normalize(d: &Decoder) {
+    if (d.range < 16777216) {
+        d.range = d.range << 8;
+        if (d.in_pos >= d.in_end) { d.bad = true; d.code = d.code << 8; return; }
+        d.code = (d.code << 8) | (byte(d.stage,d.in_pos) as u32); d.in_pos += 1;
+    }
+}
+fn bit(d: &Decoder, index: i32) -> i32 {
+    normalize(d);
+    let p: u32 = prob(d,index); let bound: u32 = (d.range >> 11) * p;
+    if (d.code < bound) { d.range = bound; set_prob(d,index,p+((2048-p) >> 5)); return 0; }
+    d.range = d.range-bound; d.code = d.code-bound; set_prob(d,index,p-(p >> 5)); return 1;
+}
+fn tree(d: &Decoder, base: i32, bits: i32) -> i32 {
+    let symbol: i32 = 1; let count: i32 = 0;
+    while (count < bits) { symbol = (symbol << 1) + bit(d,base+symbol); count += 1; } return symbol-(1 << bits);
+}
+fn reverse(d: &Decoder, base: i32, bits: i32) -> u32 {
+    let symbol: i32 = 1; let result: u32 = 0; let index: i32 = 0;
+    while (index < bits) { let b: i32 = bit(d,base+symbol); symbol = (symbol << 1) + b; result = result | ((b as u32) << index); index += 1; } return result;
+}
+fn direct(d: &Decoder, bits: i32) -> u32 {
+    let result: u32 = 0; let index: i32 = 0;
+    while (index < bits) {
+        normalize(d); d.range = d.range >> 1;
+        if (d.code >= d.range) { d.code = d.code-d.range; result = (result << 1) | 1; } else { result = result << 1; }
+        index += 1;
+    } return result;
+}
+fn length(d: &Decoder, base: i32, pos_state: i32) -> i32 {
+    if (bit(d,base) == 0) { return tree(d,base+2+(pos_state << 3),3); }
+    if (bit(d,base+1) == 0) { return 8+tree(d,base+130+(pos_state << 3),3); }
+    return 16+tree(d,base+258,8);
+}
+fn distance(d: &Decoder, len: i32) -> u32 {
+    let state: i32 = len; if (state > 3) { state = 3; }
+    let slot: i32 = tree(d,POS_SLOT+(state << 6),6);
+    if (slot < 4) { return slot as u32; }
+    let bits: i32 = (slot >> 1)-1; let value: u32 = ((2 | (slot & 1)) as u32) << bits;
+    if (slot < 14) { return value+reverse(d,SPEC_POS+(value as i32)-slot-1,bits); }
+    value = value+(direct(d,bits-4) << 4); return value+reverse(d,ALIGN,4);
+}
+// After a known LZMA1 size: the next symbol must be the end marker.
+fn marker(d: &Decoder) -> bool {
+    let pos_state: i32 = (d.position & (((1 << d.pb)-1) as u64)) as i32;
+    if (bit(d,IS_MATCH+(d.state << 4)+pos_state) == 0) { return false; }
+    if (bit(d,IS_REP+d.state) != 0) { return false; }
+    let len: i32 = length(d,LEN_CODER,pos_state);
+    if (distance(d,len) != ALL32 || d.bad) { return false; }
+    normalize(d); return !d.bad;
+}
+fn reset_state(d: &Decoder) {
+    let count: i32 = LITERAL+(768 << (d.lc+d.lp)); let index: i32 = 0;
+    while (index < count) { d.probs.values[d.probs.start+index] = 1024; index += 1; }
+    d.state = 0; d.rep0 = 0; d.rep1 = 0; d.rep2 = 0; d.rep3 = 0; d.pending = 0;
+}
+fn reset_dictionary(d: &Decoder) { d.dict_pos = 0; d.dict_full = 0; d.position = 0; }
+fn set_properties(d: &Decoder, value: u8) -> bool {
+    let code: i32 = value as i32; if (code >= 225) { return false; }
+    d.lc = code % 9; d.lp = (code / 9) % 5; d.pb = code / 45; return d.lc+d.lp <= 4 && d.pb <= 4;
+}
+// The dictionary grows on demand: until the caller's view reaches dict_size
+// the buffer is linear, and when it fills the decoder suspends with
+// Status::NeedDictionary asking for twice as much (contents must be kept).
+fn first_window(d: &Decoder) { d.dict_want = d.dict_size; if (d.dict_want > 4096) { d.dict_want = 4096; } }
+fn room(d: &Decoder) -> i32 { if (d.dict.length >= d.dict_size) { return 2147483647; } return d.dict.length-d.dict_pos; }
+fn want_more(d: &Decoder) {
+    let next: i32 = d.dict_size; if (d.dict.length <= d.dict_size/2) { next = d.dict.length*2; }
+    if (next < d.dict.length+1) { next = d.dict_size; } d.dict_want = next;
+}
+// One output byte: dictionary, caller output, integrity check and counters.
+fn emit(d: &Decoder, output: core::slice::View<u8>, at: i32, value: u8) {
+    d.dict.values[d.dict.start+d.dict_pos] = value; d.dict_pos += 1; if (d.dict_pos == d.dict_size) { d.dict_pos = 0; }
+    if (d.dict_full < d.dict_size) { d.dict_full += 1; }
+    put(output,at,value);
+    d.block_out += 1; d.position += 1; d.written_total += 1; if (d.limited) { d.left -= 1; }
+}
+fn back(d: &Decoder, distance: u32) -> u8 {
+    let at: i32 = d.dict_pos-(distance as i32)-1; if (at < 0) { at += d.dict_size; } return byte(d.dict,at);
+}
+// Decode symbols into output from `at`. Stops when output is full, the
+// limit is reached, LZMA1 needs more input, an end marker appears or on error
+// (d.bad). Returns the new output position.
+fn run(d: &Decoder, output: core::slice::View<u8>, at: i32, final_input: bool) -> i32 {
+    let out: i32 = symbols(d,output,at,final_input); checksum(d,output,at,out); return out;
+}
+// Copy up to d.pending match bytes in one tight loop.
+fn copy_match(d: &Decoder, output: core::slice::View<u8>, at: i32) -> i32 {
+    let count: i32 = d.pending; if (count > output.length-at) { count = output.length-at; }
+    let space: i32 = room(d); if (count > space) { count = space; }
+    let size: i32 = d.dict_size; let dict: core::slice::View<u8> = d.dict;
+    let source: i32 = d.dict_pos-(d.rep0 as i32)-1; if (source < 0) { source += size; }
+    let target: i32 = d.dict_pos; let index: i32 = 0;
+    while (index < count) {
+        let value: u8 = dict.values[dict.start+source]; dict.values[dict.start+target] = value; output.values[output.start+at+index] = value;
+        source += 1; if (source == size) { source = 0; } target += 1; if (target == size) { target = 0; } index += 1;
+    }
+    d.dict_pos = target; d.dict_full += count; if (d.dict_full > size) { d.dict_full = size; }
+    d.pending -= count; d.position += count as u64; d.block_out += count as u64; d.written_total += count as u64; if (d.limited) { d.left -= count as u64; }
+    return at+count;
+}
+fn symbols(d: &Decoder, output: core::slice::View<u8>, at: i32, final_input: bool) -> i32 {
+    let out: i32 = at;
+    while (true) {
+        if (d.pending > 0) { out = copy_match(d,output,out); }
+        if (room(d) == 0) { want_more(d); return out; }
+        if (d.pending > 0 || out >= output.length || d.end_marker) { return out; }
+        if (d.limited && d.left == 0) { return out; }
+        if (d.lzma1 && !final_input && d.in_end-d.in_pos < 20) { return out; }
+        let pos_state: i32 = (d.position & (((1 << d.pb)-1) as u64)) as i32;
+        if (bit(d,IS_MATCH+(d.state << 4)+pos_state) == 0) {
+            let previous: i32 = 0; if (d.dict_full > 0) { previous = back(d,0) as i32; }
+            let low: i32 = (d.position & (((1 << d.lp)-1) as u64)) as i32;
+            let base: i32 = LITERAL+768*((low << d.lc)+(previous >> (8-d.lc)));
+            let symbol: i32 = 1;
+            if (d.state >= 7) {
+                if ((d.rep0 as i64) >= (d.dict_full as i64)) { d.bad = true; return out; }
+                let matched: i32 = back(d,d.rep0) as i32;
+                while (symbol < 256) {
+                    let match_bit: i32 = (matched >> 7) & 1; matched = matched << 1;
+                    let b: i32 = bit(d,base+((1+match_bit) << 8)+symbol); symbol = (symbol << 1) | b;
+                    if (match_bit != b) { break; }
+                }
+            }
+            while (symbol < 256) { symbol = (symbol << 1) | bit(d,base+symbol); }
+            if (d.bad) { return out; }
+            emit(d,output,out,(symbol-256) as u8); out += 1;
+            if (d.state < 4) { d.state = 0; } else { if (d.state < 10) { d.state -= 3; } else { d.state -= 6; } }
+            continue;
+        }
+        let len: i32 = 0;
+        if (bit(d,IS_REP+d.state) == 0) {
+            d.rep3 = d.rep2; d.rep2 = d.rep1; d.rep1 = d.rep0;
+            len = length(d,LEN_CODER,pos_state);
+            if (d.state < 7) { d.state = 7; } else { d.state = 10; }
+            d.rep0 = distance(d,len);
+            if (d.rep0 == ALL32) {
+                // End-of-payload marker: LZMA1 only, and only with an unknown size.
+                if (!d.lzma1 || d.limited || d.bad) { d.bad = true; return out; }
+                normalize(d); d.end_marker = true; return out;
+            }
+        } else {
+            if (bit(d,IS_REP_G0+d.state) == 0) {
+                if (bit(d,IS_REP0_LONG+(d.state << 4)+pos_state) == 0) {
+                    if (d.bad || (d.rep0 as i64) >= (d.dict_full as i64)) { d.bad = true; return out; }
+                    if (d.state < 7) { d.state = 9; } else { d.state = 11; }
+                    emit(d,output,out,back(d,d.rep0)); out += 1; continue;
+                }
+            } else {
+                let chosen: u32 = 0;
+                if (bit(d,IS_REP_G1+d.state) == 0) { chosen = d.rep1; }
+                else {
+                    if (bit(d,IS_REP_G2+d.state) == 0) { chosen = d.rep2; } else { chosen = d.rep3; d.rep3 = d.rep2; }
+                    d.rep2 = d.rep1;
+                }
+                d.rep1 = d.rep0; d.rep0 = chosen;
+            }
+            len = length(d,REP_LEN_CODER,pos_state);
+            if (d.state < 7) { d.state = 8; } else { d.state = 11; }
+        }
+        if (d.bad || (d.rep0 as i64) >= (d.dict_full as i64)) { d.bad = true; return out; }
+        d.pending = len+2;
+        if (d.limited && (d.pending as u64) > d.left) { d.bad = true; return out; }
+    } return out;
+}
+
+// ---------------------------------------------------------------- container
+fn gather(d: &Decoder, input: core::slice::View<u8>, at: i32) -> i32 {
+    let count: i32 = d.need-d.have; if (count > input.length-at) { count = input.length-at; }
+    let index: i32 = 0; while (index < count) { put(d.stage,d.have+index,byte(input,at+index)); index += 1; }
+    d.have += count; d.read_total += count as u64; return at+count;
+}
+fn begin(d: &Decoder, phase: i32, need: i32) { d.phase = phase; d.need = need; d.have = 0; }
+// Minimal xz varint inside the staged block header.
+fn varint(d: &Decoder, at: i32, end: i32) -> i64 {
+    let value: u64 = 0; let shift: i32 = 0; let position: i32 = at;
+    while (position < end && shift < 63) {
+        let b: u8 = byte(d.stage,position); position += 1;
+        if (b == 0 && shift > 0) { return -1; }
+        value = value | (((b & 127) as u64) << shift);
+        if ((b & 128) == 0) { d.varint = value; return position as i64; }
+        shift += 7;
+    } return -1;
+}
+fn stream_header(d: &Decoder) -> core::result::Result<bool,Error> {
+    let s: core::slice::View<u8> = d.stage;
+    if (byte(s,0) != 253 || byte(s,1) != 55 || byte(s,2) != 122 || byte(s,3) != 88 || byte(s,4) != 90 || byte(s,5) != 0) { return core::result::Err(Error::Header); }
+    if (crc_range(s,6,8) != le32(s,8)) { return core::result::Err(Error::Header); }
+    if (byte(s,6) != 0 || byte(s,7) > 15) { return core::result::Err(Error::Header); }
+    let check: i32 = byte(s,7) as i32;
+    if (check != 0 && check != 1 && check != 4) { return core::result::Err(Error::UnsupportedCheck); }
+    d.check = check; d.check_size = 0; if (check == 1) { d.check_size = 4; } if (check == 4) { d.check_size = 8; }
+    d.flag0 = byte(s,6); d.flag1 = byte(s,7); d.blocks = 0; d.record_hash = core::crc32::INITIAL; d.index_hash = core::crc32::INITIAL;
+    begin(d,BLOCK_START,1); return core::result::Ok(true);
+}
+fn block_header(d: &Decoder) -> core::result::Result<bool,Error> {
+    let s: core::slice::View<u8> = d.stage; let size: i32 = d.header_size;
+    if (crc_range(s,0,size-4) != le32(s,size-4)) { return core::result::Err(Error::Header); }
+    let flags: u8 = byte(s,1); if ((flags & 60) != 0) { return core::result::Err(Error::Options); }
+    let filters: i32 = ((flags & 3) as i32)+1; let position: i64 = 2; let end: i32 = size-4;
+    d.has_packed = (flags & 64) != 0; d.has_unpacked = (flags & 128) != 0;
+    if (d.has_packed) { position = varint(d,position as i32,end); if (position < 0 || d.varint == 0) { return core::result::Err(Error::Header); } d.declared_packed = d.varint; }
+    if (d.has_unpacked) { position = varint(d,position as i32,end); if (position < 0) { return core::result::Err(Error::Header); } d.declared_unpacked = d.varint; }
+    if (filters != 1) { return core::result::Err(Error::UnsupportedFilter); }
+    position = varint(d,position as i32,end); if (position < 0) { return core::result::Err(Error::Header); }
+    if (d.varint != 33) { return core::result::Err(Error::UnsupportedFilter); }
+    position = varint(d,position as i32,end); if (position < 0 || d.varint != 1 || position >= end as i64) { return core::result::Err(Error::Options); }
+    let dictionary: i32 = lzma2_dictionary(byte(s,position as i32)); position += 1;
+    if (dictionary < 0) { return core::result::Err(Error::Options); }
+    let index: i32 = position as i32; while (index < end) { if (byte(s,index) != 0) { return core::result::Err(Error::Options); } index += 1; }
+    d.dict_size = dictionary;
+    if (d.has_unpacked && d.declared_unpacked < (dictionary as u64)) { d.dict_size = d.declared_unpacked as i32; }
+    if (d.dict_size < 4096) { d.dict_size = 4096; }
+    first_window(d);
+    d.block_packed = 0; d.block_out = 0; d.crc = core::crc32::INITIAL; d.crc64 = ALL64;
+    d.need_dict_reset = true; d.need_props = true; d.limited = false; d.end_marker = false;
+    begin(d,DICTIONARY,0); return core::result::Ok(true);
+}
+fn chunk_header(d: &Decoder) -> core::result::Result<bool,Error> {
+    let s: core::slice::View<u8> = d.stage; let control: i32 = d.control;
+    let size: i32 = ((byte(s,1) as i32) << 8)+(byte(s,2) as i32)+1;
+    d.block_packed += d.need as u64;
+    if (control < 128) {
+        // A dictionary reset obliges the next LZMA chunk to set properties.
+        if (control == 1) { reset_dictionary(d); d.need_dict_reset = false; d.need_props = true; }
+        d.limited = true; d.left = size as u64; begin(d,COPY,0); return core::result::Ok(true);
+    }
+    let reset: i32 = (control >> 5) & 3;
+    let unpacked: i32 = ((control & 31) << 16)+size; let packed: i32 = ((byte(s,3) as i32) << 8)+(byte(s,4) as i32)+1;
+    if (reset == 3) { reset_dictionary(d); d.need_dict_reset = false; }
+    if (reset >= 2) { if (!set_properties(d,byte(s,5))) { return core::result::Err(Error::Options); } d.need_props = false; }
+    if (reset >= 1) { reset_state(d); }
+    d.limited = true; d.left = unpacked as u64; d.packed = packed; begin(d,CHUNK_DATA,packed); return core::result::Ok(true);
+}
+fn finish_index(d: &Decoder) -> core::result::Result<bool,Error> {
+    if (core::crc32::finish(d.index_crc) != le32(d.stage,0) || d.index_hash != d.record_hash) { return core::result::Err(Error::Index); }
+    d.index_size += 4; begin(d,FOOTER,12); return core::result::Ok(true);
+}
+fn index_byte(d: &Decoder, value: u8) -> core::result::Result<bool,Error> {
+    d.index_crc = core::crc32::update_byte(d.index_crc,value); d.index_size += 1;
+    if (d.index_field == 3) { if (value != 0) { return core::result::Err(Error::Index); } d.pad -= 1; if (d.pad == 0) { d.index_field = 4; begin(d,INDEX,4); } return core::result::Ok(true); }
+    if (value == 0 && d.shift > 0) { return core::result::Err(Error::Index); }
+    if (d.shift >= 63) { return core::result::Err(Error::Index); }
+    d.varint = d.varint | (((value & 127) as u64) << d.shift);
+    if ((value & 128) != 0) { d.shift += 7; return core::result::Ok(true); }
+    let number: u64 = d.varint; d.varint = 0; d.shift = 0;
+    if (d.index_field == 0) { if (number != d.blocks) { return core::result::Err(Error::Index); } d.index_left = number; d.index_field = 1; }
+    else { if (d.index_field == 1) { d.index_unpadded = number; d.index_field = 2; }
+    else { d.index_hash = hash_u64(hash_u64(d.index_hash,d.index_unpadded),number); d.index_left -= 1; d.index_field = 1; } }
+    if (d.index_field == 1 && d.index_left == 0) {
+        d.index_field = 3; d.pad = ((4-(d.index_size % 4)) % 4) as i32;
+        if (d.pad == 0) { d.index_field = 4; begin(d,INDEX,4); }
+    }
+    return core::result::Ok(true);
+}
+fn footer(d: &Decoder) -> core::result::Result<bool,Error> {
+    let s: core::slice::View<u8> = d.stage;
+    if (crc_range(s,4,10) != le32(s,0) || byte(s,10) != 89 || byte(s,11) != 90 || byte(s,8) != d.flag0 || byte(s,9) != d.flag1) { return core::result::Err(Error::Footer); }
+    if (((le32(s,4) as u64)+1)*4 != d.index_size) { return core::result::Err(Error::Footer); }
+    d.pad = 0; begin(d,STREAM_PAD,0); return core::result::Ok(true);
+}
+fn alone_header(d: &Decoder) -> core::result::Result<bool,Error> {
+    let s: core::slice::View<u8> = d.stage;
+    if (!set_properties(d,byte(s,0))) { return core::result::Err(Error::Options); }
+    let dictionary: u32 = le32(s,1); let size: u64 = le64(s,5);
+    d.limited = size != ALL64; d.left = size;
+    let needed: u64 = dictionary as u64; if (needed < 4096) { needed = 4096; }
+    if (d.limited && size < needed) { needed = size; if (needed == 0) { needed = 1; } }
+    if (needed > 2147483647) { needed = 2147483647; }
+    d.dict_size = needed as i32; first_window(d); d.check = 0; reset_state(d); reset_dictionary(d);
+    d.in_pos = 0; d.in_end = 0; d.rc_ready = false; begin(d,ALONE_DICTIONARY,0); return core::result::Ok(true);
+}
+
+pub impl Decoder {
+    pub fn borrow(&self) -> &Decoder { return self; }
+    // Bytes the dictionary must hold before decoding can continue.
+    pub fn dictionary_len(&self) -> i32 { return self.dict_want; }
+    // The full window the stream declares (the most dictionary_len can ask for).
+    pub fn window_len(&self) -> i32 { return self.dict_size; }
+    // Provide the dictionary after Status::NeedDictionary: at least
+    // dictionary_len() bytes, starting with the previous view's contents
+    // (a grown vector). It must stay alive while the decoder is used.
+    pub fn set_dictionary(&self, dictionary: core::slice::View<u8>) -> core::result::Result<bool,Error> {
+        if (!valid(dictionary)) { return core::result::Err(Error::Bounds); }
+        if (self.dict.length > 0 && dictionary.length < self.dict.length) { return core::result::Err(Error::Bounds); }
+        self.dict = dictionary; return core::result::Ok(true);
+    }
+    pub fn total_read(&self) -> u64 { return self.read_total; }
+    pub fn total_written(&self) -> u64 { return self.written_total; }
+    pub fn is_done(&self) -> bool { return self.phase == DONE; }
+    pub fn is_failed(&self) -> bool { return self.failed; }
+    // Consume input and produce output. final_input says no input follows
+    // this call's span. Errors are sticky; bytes already written stay written.
+    pub fn step(&self, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<Step,Error> {
+        if (!valid(input) || !valid(output)) { return core::result::Err(Error::Bounds); }
+        if (self.failed) { return core::result::Err(Error::Failed); }
+        let result: core::result::Result<Step,Error> = advance(self,input,output,final_input);
+        if (core::result::is_err(result)) { self.failed = true; } return result;
+    }
+}
+fn done(read: i32, written: i32, status: Status) -> core::result::Result<Step,Error> { return core::result::Ok(Step { read: read, written: written, status: status }); }
+fn advance(d: &Decoder, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<Step,Error> {
+    let ip: i32 = 0; let op: i32 = 0;
+    while (true) {
+        let phase: i32 = d.phase;
+        if (phase == DONE) {
+            if (ip < input.length) { return core::result::Err(Error::TrailingData); }
+            return done(ip,op,Status::Done);
+        }
+        if (phase == DICTIONARY || phase == ALONE_DICTIONARY) {
+            if (d.dict.length < d.dict_want) { return done(ip,op,Status::NeedDictionary); }
+            if (phase == DICTIONARY) { begin(d,CONTROL,1); } else { begin(d,ALONE_STREAM,0); }
+            continue;
+        }
+        if (phase == DECODE) {
+            if (d.dict.length < d.dict_want) { return done(ip,op,Status::NeedDictionary); }
+            op = run(d,output,op,true);
+            if (d.bad) { return core::result::Err(Error::Corrupt); }
+            if (d.dict.length < d.dict_want) { return done(ip,op,Status::NeedDictionary); }
+            if (d.pending > 0 || d.left > 0) { return done(ip,op,Status::NeedOutput); }
+            normalize(d);
+            if (d.bad || d.in_pos != d.in_end || d.code != 0) { return core::result::Err(Error::Corrupt); }
+            begin(d,CONTROL,1); continue;
+        }
+        if (phase == COPY) {
+            if (d.dict.length < d.dict_want) { return done(ip,op,Status::NeedDictionary); }
+            let from: i32 = op;
+            let count: i32 = input.length-ip; if (count > output.length-op) { count = output.length-op; }
+            if ((count as u64) > d.left) { count = d.left as i32; } let space: i32 = room(d); if (count > space) { count = space; }
+            let dict: core::slice::View<u8> = d.dict; let target: i32 = d.dict_pos; let size: i32 = d.dict_size; let index: i32 = 0;
+            while (index < count) {
+                let value: u8 = input.values[input.start+ip+index]; dict.values[dict.start+target] = value; output.values[output.start+op+index] = value;
+                target += 1; if (target == size) { target = 0; } index += 1;
+            }
+            d.dict_pos = target; d.dict_full += count; if (d.dict_full > size) { d.dict_full = size; }
+            op += count; ip += count; d.left -= count as u64; d.position += count as u64; d.block_out += count as u64; d.written_total += count as u64;
+            d.read_total += count as u64; d.block_packed += count as u64;
+            checksum(d,output,from,op);
+            if (d.left == 0) { begin(d,CONTROL,1); continue; }
+            if (room(d) == 0) { want_more(d); continue; }
+            if (op >= output.length) { return done(ip,op,Status::NeedOutput); }
+            if (final_input) { return core::result::Err(Error::Truncated); } return done(ip,op,Status::NeedInput);
+        }
+        if (phase == INDEX && d.index_field < 4) {
+            if (ip >= input.length) { if (final_input) { return core::result::Err(Error::Truncated); } return done(ip,op,Status::NeedInput); }
+            let value: u8 = byte(input,ip); ip += 1; d.read_total += 1;
+            let accepted: core::result::Result<bool,Error> = index_byte(d,value);
+            if (core::result::is_err(accepted)) { return core::result::Err(core::result::unwrap_err(accepted)); }
+            continue;
+        }
+        if (phase == STREAM_PAD) {
+            while (ip < input.length && byte(input,ip) == 0) { d.pad += 1; ip += 1; d.read_total += 1; }
+            if (ip < input.length) {
+                if (d.pad % 4 != 0 || byte(input,ip) != 253) { return core::result::Err(Error::TrailingData); }
+                d.pad = 0; begin(d,STREAM_HEADER,12); continue;
+            }
+            if (!final_input) { return done(ip,op,Status::NeedInput); }
+            if (d.pad % 4 != 0) { return core::result::Err(Error::TrailingData); }
+            begin(d,DONE,0); continue;
+        }
+        if (phase == ALONE_STREAM) {
+            // Slide unread bytes to the front, then top the stage up from input.
+            if (d.in_pos >= d.stage.length/2 || (d.in_pos > 0 && d.in_end-d.in_pos < 20)) {
+                let count: i32 = d.in_end-d.in_pos; let index: i32 = 0;
+                while (index < count) { put(d.stage,index,byte(d.stage,d.in_pos+index)); index += 1; }
+                d.in_end = count; d.in_pos = 0;
+            }
+            while (d.in_end < d.stage.length && ip < input.length) { put(d.stage,d.in_end,byte(input,ip)); d.in_end += 1; ip += 1; d.read_total += 1; }
+            let last: bool = final_input && ip == input.length;
+            if (!d.rc_ready) {
+                if (d.in_end < 5) { if (last) { return core::result::Err(Error::Truncated); } return done(ip,op,Status::NeedInput); }
+                if (byte(d.stage,0) != 0) { return core::result::Err(Error::Corrupt); }
+                d.code = ((byte(d.stage,1) as u32) << 24) | ((byte(d.stage,2) as u32) << 16) | ((byte(d.stage,3) as u32) << 8) | (byte(d.stage,4) as u32);
+                d.range = ALL32; d.in_pos = 5; d.rc_ready = true;
+                if (d.code == ALL32) { return core::result::Err(Error::Corrupt); }
+            }
+            if (d.dict.length < d.dict_want) { return done(ip,op,Status::NeedDictionary); }
+            op = run(d,output,op,last);
+            if (d.bad) { if (last) { return core::result::Err(Error::Truncated); } return core::result::Err(Error::Corrupt); }
+            let reached: bool = d.limited && d.left == 0 && d.pending == 0;
+            if (reached && !d.end_marker && (last || d.in_end-d.in_pos >= 20)) {
+                // Known size reached: the range coder must be flushed, or an
+                // end marker may follow (as liblzma accepts).
+                normalize(d);
+                if (!d.bad && d.code != 0) { if (!marker(d)) { d.bad = true; } }
+                if (d.bad) { if (last) { return core::result::Err(Error::Truncated); } return core::result::Err(Error::Corrupt); }
+                d.end_marker = true;
+            }
+            if (d.end_marker) {
+                if (d.code != 0) { return core::result::Err(Error::Corrupt); }
+                if (d.in_pos != d.in_end || ip < input.length) { return core::result::Err(Error::TrailingData); }
+                begin(d,DONE,0); continue;
+            }
+            if (d.dict.length < d.dict_want) { return done(ip,op,Status::NeedDictionary); }
+            if (op >= output.length && !reached) { return done(ip,op,Status::NeedOutput); }
+            if (last) { return core::result::Err(Error::Truncated); }
+            if (ip < input.length) { continue; }
+            return done(ip,op,Status::NeedInput);
+        }
+        // Remaining phases stage a fixed number of bytes first.
+        ip = gather(d,input,ip);
+        if (d.have < d.need) { if (final_input) { return core::result::Err(Error::Truncated); } return done(ip,op,Status::NeedInput); }
+        let handled: core::result::Result<bool,Error> = core::result::Ok(true);
+        if (phase == STREAM_HEADER) { handled = stream_header(d); }
+        if (phase == ALONE_HEADER) { handled = alone_header(d); }
+        if (phase == BLOCK_START) {
+            let first: u8 = byte(d.stage,0);
+            if (first == 0) { d.index_crc = core::crc32::update_byte(core::crc32::INITIAL,0); d.index_size = 1; d.index_field = 0; d.varint = 0; d.shift = 0; d.phase = INDEX; }
+            else { d.header_size = ((first as i32)+1)*4; d.need = d.header_size; d.phase = BLOCK_HEADER; }
+        }
+        if (phase == BLOCK_HEADER) { handled = block_header(d); }
+        if (phase == CONTROL) {
+            let control: i32 = byte(d.stage,0) as i32; d.control = control;
+            if (control == 0) {
+                d.block_packed += 1; d.pad = ((4-((d.header_size as u64+d.block_packed) % 4)) % 4) as i32;
+                if (d.has_packed && d.declared_packed != d.block_packed) { return core::result::Err(Error::SizeMismatch); }
+                if (d.has_unpacked && d.declared_unpacked != d.block_out) { return core::result::Err(Error::SizeMismatch); }
+                begin(d,BLOCK_PAD,d.pad);
+            } else {
+                if (control > 2 && control < 128) { return core::result::Err(Error::Corrupt); }
+                let reset: i32 = (control >> 5) & 3;
+                if (d.need_dict_reset && control != 1 && (control < 128 || reset != 3)) { return core::result::Err(Error::Corrupt); }
+                if (control >= 128 && d.need_props && reset < 2) { return core::result::Err(Error::Corrupt); }
+                d.need = 3; if (control >= 128) { d.need = 5; if (reset >= 2) { d.need = 6; } }
+                d.phase = CHUNK_HEADER;
+            }
+        }
+        if (phase == CHUNK_HEADER) { handled = chunk_header(d); }
+        if (phase == CHUNK_DATA) {
+            d.block_packed += d.packed as u64;
+            if (d.packed < 5 || byte(d.stage,0) != 0) { return core::result::Err(Error::Corrupt); }
+            d.code = ((byte(d.stage,1) as u32) << 24) | ((byte(d.stage,2) as u32) << 16) | ((byte(d.stage,3) as u32) << 8) | (byte(d.stage,4) as u32);
+            d.range = ALL32; d.in_pos = 5; d.in_end = d.packed; d.bad = false; d.phase = DECODE;
+        }
+        if (phase == BLOCK_PAD) {
+            let index: i32 = 0; while (index < d.need) { if (byte(d.stage,index) != 0) { return core::result::Err(Error::Corrupt); } index += 1; }
+            begin(d,CHECK,d.check_size);
+        }
+        if (phase == CHECK) {
+            let matches: bool = true;
+            if (d.check == 1) { matches = le32(d.stage,0) == core::crc32::finish(d.crc); }
+            if (d.check == 4) { matches = le64(d.stage,0) == (d.crc64 ^ ALL64); }
+            if (!matches) { return core::result::Err(Error::Checksum); }
+            let unpadded: u64 = (d.header_size as u64)+d.block_packed+(d.check_size as u64);
+            d.record_hash = hash_u64(hash_u64(d.record_hash,unpadded),d.block_out); d.blocks += 1;
+            begin(d,BLOCK_START,1);
+        }
+        if (phase == INDEX) { handled = finish_index(d); }
+        if (phase == FOOTER) { handled = footer(d); }
+        if (core::result::is_err(handled)) { return core::result::Err(core::result::unwrap_err(handled)); }
+    } return done(ip,op,Status::NeedInput);
+}
+
+// ---------------------------------------------------------------- xz framing
+fn put32(output: core::slice::View<u8>, at: i32, value: u32) { put(output,at,(value & 255) as u8); put(output,at+1,((value >> 8) & 255) as u8); put(output,at+2,((value >> 16) & 255) as u8); put(output,at+3,((value >> 24) & 255) as u8); }
+fn put_varint(output: core::slice::View<u8>, at: i32, value: u64) -> i32 {
+    let rest: u64 = value; let position: i32 = at;
+    while (rest >= 128) { put(output,position,((rest & 127) | 128) as u8); rest = rest >> 7; position += 1; }
+    put(output,position,rest as u8); return position+1;
+}
+// Stream header (CRC64 check) and a 12-byte LZMA2 block header: 24 bytes.
+fn stream_start(output: core::slice::View<u8>, dictionary: u8) -> i32 {
+    put(output,0,253); put(output,1,55); put(output,2,122); put(output,3,88); put(output,4,90); put(output,5,0); put(output,6,0); put(output,7,4);
+    put32(output,8,crc_range(output,6,8));
+    put(output,12,2); put(output,13,0); put(output,14,33); put(output,15,1); put(output,16,dictionary); put(output,17,0); put(output,18,0); put(output,19,0);
+    put32(output,20,crc_range(output,12,20)); return 24;
+}
+// LZMA2 end marker, block padding, CRC64, index and footer: at most 64 bytes.
+// packed counts the block's chunk bytes before the end marker.
+fn stream_end(output: core::slice::View<u8>, packed_chunks: u64, unpacked: u64, crc64: u64) -> i32 {
+    put(output,0,0); let packed: u64 = packed_chunks+1; let position: i32 = 1;
+    while ((12+packed) % 4 != 0) { put(output,position,0); position += 1; packed += 1; }
+    let check: u64 = crc64 ^ ALL64; let index: i32 = 0;
+    while (index < 8) { put(output,position+index,((check >> (8*index)) & 255) as u8); index += 1; }
+    position += 8;
+    let start: i32 = position; put(output,position,0); position = put_varint(output,position+1,1);
+    position = put_varint(output,position,12+packed_chunks+1+8); position = put_varint(output,position,unpacked);
+    while ((position-start) % 4 != 0) { put(output,position,0); position += 1; }
+    put32(output,position,crc_range(output,start,position)); position += 4;
+    let backward: u32 = (((position-start)/4)-1) as u32; let footer: i32 = position;
+    put32(output,footer+4,backward); put(output,footer+8,0); put(output,footer+9,4); put32(output,footer,crc_range(output,footer+4,footer+10));
+    put(output,footer+10,89); put(output,footer+11,90); return footer+12;
+}
+fn table64(work: core::slice::View<i32>) -> core::slice::View<i32> { let table: core::slice::View<i32> = work; table.start = work.start+TABLE64; table.length = 512; return table; }
+fn crc64_update(table: core::slice::View<i32>, state: u64, bytes: core::slice::View<u8>, from: i32, to: i32) -> u64 {
+    let current: u64 = state; let index: i32 = from;
+    while (index < to) {
+        let slot: i32 = table.start+2*(((current ^ (bytes.values[bytes.start+index] as u64)) & 255) as i32);
+        current = ((table.values[slot] as u32) as u64 | (((table.values[slot+1] as u32) as u64) << 32)) ^ (current >> 8); index += 1;
+    } return current;
+}
+
+// ---------------------------------------------------------------- stored writer
+// A valid single-block xz stream (CRC64 check) whose LZMA2 chunks are all
+// uncompressed: no compression, but readable by any xz decoder.
+// workspace: STORE_WORKSPACE i32 elements (the CRC64 table), kept alive.
+pub const STORE_WORKSPACE: i32 = 512;
+pub fn store_encoder(workspace: core::slice::View<i32>) -> core::result::Result<StoreEncoder,Error> {
+    if (workspace.start < 0 || workspace.length < STORE_WORKSPACE || workspace.start > 2147483647-workspace.length) { return core::result::Err(Error::Bounds); }
+    let index: i32 = 0;
+    while (index < 256) {
+        let c64: u64 = index as u64; let bit: i32 = 0;
+        while (bit < 8) { if ((c64 & 1) != 0) { c64 = (c64 >> 1) ^ CRC64_POLY; } else { c64 = c64 >> 1; } bit += 1; }
+        workspace.values[workspace.start+2*index] = (c64 & 4294967295) as i32; workspace.values[workspace.start+2*index+1] = (c64 >> 32) as i32; index += 1;
+    }
+    return core::result::Ok(StoreEncoder { table: workspace, crc64: ALL64, packed: 0, unpacked: 0, chunks: 0 });
+}
+pub impl StoreEncoder {
+    pub fn borrow(&self) -> &StoreEncoder { return self; }
+    // Stream header and block header: exactly 24 bytes.
+    pub fn begin(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        if (!valid(output) || output.length < 24) { return core::result::Err(Error::Bounds); }
+        return core::result::Ok(stream_start(output,0));
+    }
+    // One stored chunk of 1..65536 bytes: output needs data.length + 3 bytes.
+    pub fn chunk(&self, data: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        if (!valid(data) || !valid(output) || data.length < 1 || data.length > 65536 || output.length < data.length+3) { return core::result::Err(Error::Bounds); }
+        let control: u8 = 2; if (self.chunks == 0) { control = 1; }
+        put(output,0,control); put(output,1,(((data.length-1) >> 8) & 255) as u8); put(output,2,((data.length-1) & 255) as u8);
+        let index: i32 = 0; while (index < data.length) { put(output,3+index,byte(data,index)); index += 1; }
+        self.crc64 = crc64_update(self.table,self.crc64,data,0,data.length);
+        self.chunks += 1; self.packed += (data.length+3) as u64; self.unpacked += data.length as u64; return core::result::Ok(data.length+3);
+    }
+    // End marker, padding, CRC64, index and footer: at most 64 bytes.
+    pub fn finish(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        if (!valid(output) || output.length < 64) { return core::result::Err(Error::Bounds); }
+        return core::result::Ok(stream_end(output,self.packed,self.unpacked,self.crc64));
+    }
+}
+
+// ---------------------------------------------------------------- LZMA2 encoder
+// Levels 0..3: 256 KiB / 1 / 2 / 4 MiB dictionaries; hash-chain match finder
+// over 3-byte hashes, greedy at 0-1 and one-step lazy at 2-3, with rep0..3
+// and short-rep checks. lc=3, lp=0, pb=2. One block, CRC64 check.
+pub const ENCODER_STAGE: i32 = 65600;
+const HEADS: i32 = 65536;
+const MAX_LEN: i32 = 273;
+const CHUNK_UNPACKED: i32 = 2097152;
+const CHUNK_PACKED: i32 = 65536;
+fn level_dictionary(level: i32) -> i32 { if (level <= 0) { return 262144; } if (level == 1) { return 1048576; } if (level == 2) { return 2097152; } return 4194304; }
+// Window bytes (twice the dictionary) and i32 workspace words for a level.
+pub fn encoder_window_len(level: i32) -> i32 { return 2*level_dictionary(level); }
+pub fn encoder_workspace_len(level: i32) -> i32 { return PROBABILITIES+HEADS+encoder_window_len(level); }
+pub fn encoder(workspace: core::slice::View<i32>, window: core::slice::View<u8>, stage: core::slice::View<u8>, level: i32) -> core::result::Result<Encoder,Error> {
+    if (level < 0 || level > 3) { return core::result::Err(Error::Options); }
+    let size: i32 = encoder_window_len(level); let words: i32 = encoder_workspace_len(level);
+    if (workspace.start < 0 || workspace.length < words || workspace.start > 2147483647-workspace.length || !valid(window) || window.length < size || !valid(stage) || stage.length < ENCODER_STAGE) { return core::result::Err(Error::Bounds); }
+    tables(workspace);
+    let probs: core::slice::View<i32> = workspace; probs.length = PROBABILITIES;
+    let heads: core::slice::View<i32> = workspace; heads.start = workspace.start+PROBABILITIES; heads.length = HEADS;
+    let chain: core::slice::View<i32> = workspace; chain.start = heads.start+HEADS; chain.length = size;
+    let index: i32 = 0; while (index < HEADS) { heads.values[heads.start+index] = -1; index += 1; }
+    let used: core::slice::View<u8> = window; used.length = size;
+    let dictionary: i32 = level_dictionary(level); let code: i32 = 0;
+    while (lzma2_dictionary(code as u8) < dictionary) { code += 1; }
+    let depth: i32 = 4; let nice: i32 = 32;
+    if (level == 1) { depth = 8; nice = 64; } if (level == 2) { depth = 16; nice = 128; } if (level == 3) { depth = 48; nice = 192; }
+    return core::result::Ok(Encoder { probs: probs, heads: heads, chain: chain, window: used, stage: stage, depth: depth, nice: nice, lazy: level >= 1,
+        dict_size: dictionary, dict_code: code as u8, fill: 0, pos: 0, hashed: 0, base: 0, stage_pos: 0, stage_len: 0, started: false, ended: false, failed: false,
+        first: true, state_reset: true, props_needed: true, state: 0, rep0: 0, rep1: 0, rep2: 0, rep3: 0,
+        low: 0, range: ALL32, cache: 0, cache_size: 1, out: 0, found_len: 0, found_dist: 0,
+        crc64: ALL64, packed: 0, unpacked: 0, read_total: 0, written_total: 0 });
+}
+// A placeholder for structs that hold an Encoder they may never use: every
+// step fails with Error::Failed. The views are not touched.
+pub fn unused_encoder(bytes: core::slice::View<u8>, words: core::slice::View<i32>) -> Encoder {
+    let b: core::slice::View<u8> = bytes; b.length = 0; let w: core::slice::View<i32> = words; w.length = 0;
+    return Encoder { probs: w, heads: w, chain: w, window: b, stage: b, depth: 0, nice: 0, lazy: false,
+        dict_size: 0, dict_code: 0, fill: 0, pos: 0, hashed: 0, base: 0, stage_pos: 0, stage_len: 0, started: false, ended: false, failed: true,
+        first: true, state_reset: true, props_needed: true, state: 0, rep0: 0, rep1: 0, rep2: 0, rep3: 0,
+        low: 0, range: ALL32, cache: 0, cache_size: 1, out: 0, found_len: 0, found_dist: 0,
+        crc64: ALL64, packed: 0, unpacked: 0, read_total: 0, written_total: 0 };
+}
+fn ewin(e: &Encoder, at: i32) -> i32 { return e.window.values[e.window.start+at] as i32; }
+fn shift_low(e: &Encoder) {
+    if (e.low < 4278190080 || e.low >= 4294967296) {
+        let carry: i32 = (e.low >> 32) as i32; let temp: i32 = e.cache as i32;
+        while (true) {
+            e.stage.values[e.stage.start+e.out] = ((temp+carry) & 255) as u8; e.out += 1;
+            temp = 255; e.cache_size -= 1; if (e.cache_size == 0) { break; }
+        }
+        e.cache = ((e.low >> 24) & 255) as u8;
+    }
+    e.cache_size += 1; e.low = (e.low & 16777215) << 8;
+}
+fn ebit(e: &Encoder, index: i32, value: i32) {
+    let slot: i32 = e.probs.start+index; let p: u32 = e.probs.values[slot] as u32; let bound: u32 = (e.range >> 11) * p;
+    if (value == 0) { e.range = bound; e.probs.values[slot] = (p+((2048-p) >> 5)) as i32; }
+    else { e.low += bound as u64; e.range = e.range-bound; e.probs.values[slot] = (p-(p >> 5)) as i32; }
+    while (e.range < 16777216) { e.range = e.range << 8; shift_low(e); }
+}
+fn etree(e: &Encoder, base: i32, bits: i32, value: i32) {
+    let symbol: i32 = 1; let index: i32 = bits-1;
+    while (index >= 0) { let b: i32 = (value >> index) & 1; ebit(e,base+symbol,b); symbol = (symbol << 1) | b; index -= 1; }
+}
+fn ereverse(e: &Encoder, base: i32, bits: i32, value: i32) {
+    let symbol: i32 = 1; let index: i32 = 0; let rest: i32 = value;
+    while (index < bits) { let b: i32 = rest & 1; rest = rest >> 1; ebit(e,base+symbol,b); symbol = (symbol << 1) | b; index += 1; }
+}
+fn edirect(e: &Encoder, value: i32, bits: i32) {
+    let index: i32 = bits-1;
+    while (index >= 0) {
+        e.range = e.range >> 1; if (((value >> index) & 1) != 0) { e.low += e.range as u64; }
+        while (e.range < 16777216) { e.range = e.range << 8; shift_low(e); }
+        index -= 1;
+    }
+}
+fn elength(e: &Encoder, base: i32, length: i32, pos_state: i32) {
+    let l: i32 = length-2;
+    if (l < 8) { ebit(e,base,0); etree(e,base+2+(pos_state << 3),3,l); return; }
+    ebit(e,base,1);
+    if (l < 16) { ebit(e,base+1,0); etree(e,base+130+(pos_state << 3),3,l-8); return; }
+    ebit(e,base+1,1); etree(e,base+258,8,l-16);
+}
+fn edistance(e: &Encoder, distance: i32, length: i32) {
+    let state: i32 = length-2; if (state > 3) { state = 3; }
+    let slot: i32 = distance;
+    if (distance >= 4) { let top: i32 = 31; while (((distance >> top) & 1) == 0) { top -= 1; } slot = (top << 1) | ((distance >> (top-1)) & 1); }
+    etree(e,POS_SLOT+(state << 6),6,slot);
+    if (slot < 4) { return; }
+    let bits: i32 = (slot >> 1)-1; let base: i32 = (2 | (slot & 1)) << bits; let reduced: i32 = distance-base;
+    if (slot < 14) { ereverse(e,SPEC_POS+base-slot-1,bits,reduced); return; }
+    edirect(e,reduced >> 4,bits-4); ereverse(e,ALIGN,4,reduced & 15);
+}
+fn pos_state(e: &Encoder) -> i32 { return ((e.base+(e.pos as u64)) & 3) as i32; }
+fn eliteral(e: &Encoder) {
+    let ps: i32 = pos_state(e); ebit(e,IS_MATCH+(e.state << 4)+ps,0);
+    let previous: i32 = 0; if (e.base+(e.pos as u64) > 0) { previous = ewin(e,e.pos-1); }
+    let base: i32 = LITERAL+768*(previous >> 5); let value: i32 = ewin(e,e.pos); let symbol: i32 = 1; let index: i32 = 7;
+    if (e.state >= 7) {
+        let matched: i32 = ewin(e,e.pos-e.rep0-1); let same: bool = true;
+        while (index >= 0) {
+            let b: i32 = (value >> index) & 1;
+            if (same) { let m: i32 = (matched >> index) & 1; ebit(e,base+((1+m) << 8)+symbol,b); same = m == b; } else { ebit(e,base+symbol,b); }
+            symbol = (symbol << 1) | b; index -= 1;
+        }
+    } else {
+        // Plain literal: the eight bit codings inlined over locals.
+        let probs: core::slice::View<i32> = e.probs; let range: u32 = e.range; let low: u64 = e.low;
+        while (index >= 0) {
+            let b: i32 = (value >> index) & 1; let slot: i32 = probs.start+base+symbol; let p: u32 = probs.values[slot] as u32; let bound: u32 = (range >> 11) * p;
+            if (b == 0) { range = bound; probs.values[slot] = (p+((2048-p) >> 5)) as i32; } else { low += bound as u64; range = range-bound; probs.values[slot] = (p-(p >> 5)) as i32; }
+            if (range < 16777216) { e.low = low; range = range << 8; shift_low(e); low = e.low; }
+            symbol = (symbol << 1) | b; index -= 1;
+        }
+        e.range = range; e.low = low;
+    }
+    if (e.state < 4) { e.state = 0; } else { if (e.state < 10) { e.state -= 3; } else { e.state -= 6; } }
+    e.pos += 1;
+}
+fn ematch(e: &Encoder, length: i32, distance: i32) {
+    let ps: i32 = pos_state(e); ebit(e,IS_MATCH+(e.state << 4)+ps,1); ebit(e,IS_REP+e.state,0);
+    elength(e,LEN_CODER,length,ps); edistance(e,distance,length);
+    e.rep3 = e.rep2; e.rep2 = e.rep1; e.rep1 = e.rep0; e.rep0 = distance;
+    if (e.state < 7) { e.state = 7; } else { e.state = 10; }
+    e.pos += length;
+}
+fn erep(e: &Encoder, which: i32, length: i32) {
+    let ps: i32 = pos_state(e); ebit(e,IS_MATCH+(e.state << 4)+ps,1); ebit(e,IS_REP+e.state,1);
+    if (which == 0) {
+        ebit(e,IS_REP_G0+e.state,0);
+        if (length == 1) { ebit(e,IS_REP0_LONG+(e.state << 4)+ps,0); if (e.state < 7) { e.state = 9; } else { e.state = 11; } e.pos += 1; return; }
+        ebit(e,IS_REP0_LONG+(e.state << 4)+ps,1);
+    } else {
+        ebit(e,IS_REP_G0+e.state,1); let chosen: i32 = e.rep1;
+        if (which == 1) { ebit(e,IS_REP_G1+e.state,0); }
+        else {
+            ebit(e,IS_REP_G1+e.state,1);
+            if (which == 2) { ebit(e,IS_REP_G2+e.state,0); chosen = e.rep2; } else { ebit(e,IS_REP_G2+e.state,1); chosen = e.rep3; e.rep3 = e.rep2; }
+            e.rep2 = e.rep1;
+        }
+        e.rep1 = e.rep0; e.rep0 = chosen;
+    }
+    elength(e,REP_LEN_CODER,length,ps);
+    if (e.state < 7) { e.state = 8; } else { e.state = 11; }
+    e.pos += length;
+}
+fn hash(e: &Encoder, at: i32) -> i32 {
+    return (e.probs.values[e.probs.start+TABLE32+ewin(e,at)] ^ ewin(e,at+1) ^ (ewin(e,at+2) << 8)) & 65535;
+}
+fn insert_upto(e: &Encoder, limit: i32) {
+    let at: i32 = e.hashed; let end: i32 = limit; if (end > e.fill-2) { end = e.fill-2; }
+    if (at >= end) { return; }
+    let w: core::slice::View<u8> = e.window; let t: core::slice::View<i32> = e.probs; let heads: core::slice::View<i32> = e.heads; let chain: core::slice::View<i32> = e.chain;
+    while (at < end) {
+        let h: i32 = (t.values[t.start+TABLE32+(w.values[w.start+at] as i32)] ^ (w.values[w.start+at+1] as i32) ^ ((w.values[w.start+at+2] as i32) << 8)) & 65535;
+        chain.values[chain.start+at] = heads.values[heads.start+h]; heads.values[heads.start+h] = at; at += 1;
+    }
+    e.hashed = at;
+}
+fn match_len(e: &Encoder, older: i32, at: i32, limit: i32) -> i32 {
+    let w: core::slice::View<u8> = e.window; let length: i32 = 0;
+    while (length < limit && w.values[w.start+older+length] == w.values[w.start+at+length]) { length += 1; }
+    return length;
+}
+// Longest hash-chain match at `at` within `limit` bytes: e.found_len/found_dist.
+fn find(e: &Encoder, at: i32, limit: i32) {
+    e.found_len = 0; e.found_dist = 0; insert_upto(e,at);
+    if (limit < 3 || at+2 >= e.fill) { return; }
+    let w: core::slice::View<u8> = e.window; let oldest: i32 = at-e.dict_size;
+    let candidate: i32 = e.heads.values[e.heads.start+hash(e,at)]; let count: i32 = 0; let best: i32 = 2;
+    while (count < e.depth && candidate >= 0 && candidate >= oldest) {
+        if (w.values[w.start+candidate+best] == w.values[w.start+at+best] && w.values[w.start+candidate] == w.values[w.start+at]) {
+            let length: i32 = match_len(e,candidate,at,limit);
+            if (length > best || (length == best && e.found_len == 0)) {
+                best = length; e.found_len = length; e.found_dist = at-candidate-1;
+                if (length >= e.nice || length >= limit) { break; }
+            }
+        }
+        candidate = e.chain.values[e.chain.start+candidate]; count += 1;
+    }
+    if (e.found_len < 3 || (e.found_len == 3 && e.found_dist >= 4096)) { e.found_len = 0; }
+}
+fn rep_value(e: &Encoder, which: i32) -> i32 { if (which == 0) { return e.rep0; } if (which == 1) { return e.rep1; } if (which == 2) { return e.rep2; } return e.rep3; }
+fn encode_symbol(e: &Encoder) {
+    let limit: i32 = e.fill-e.pos; if (limit > MAX_LEN) { limit = MAX_LEN; }
+    let seen: u64 = e.base+(e.pos as u64);
+    let rep_len: i32 = 0; let rep_which: i32 = 0; let which: i32 = 0;
+    if (limit >= 2) {
+        while (which < 4) {
+            let r: i32 = rep_value(e,which);
+            if ((r as u64) < seen && e.window.values[e.window.start+e.pos-r-1] == e.window.values[e.window.start+e.pos] && e.window.values[e.window.start+e.pos-r] == e.window.values[e.window.start+e.pos+1]) {
+                let length: i32 = match_len(e,e.pos-r-1,e.pos,limit);
+                if (length > rep_len) { rep_len = length; rep_which = which; }
+            }
+            which += 1;
+        }
+    }
+    if (rep_len >= 2 && rep_len >= e.nice) { erep(e,rep_which,rep_len); return; }
+    find(e,e.pos,limit); let main_len: i32 = e.found_len; let main_dist: i32 = e.found_dist;
+    if (rep_len >= 2 && (rep_len+1 >= main_len || (rep_len+2 >= main_len && main_dist >= 512) || (rep_len+3 >= main_len && main_dist >= 32768))) { erep(e,rep_which,rep_len); return; }
+    if (main_len >= 3) {
+        if (e.lazy && main_len < e.nice && limit > main_len) {
+            find(e,e.pos+1,limit-1);
+            if (e.found_len > main_len+1 || (e.found_len == main_len+1 && e.found_dist <= main_dist*4) || (e.found_len == main_len && e.found_dist < main_dist/128)) {
+                literal_or_short(e,seen); return;
+            }
+        }
+        ematch(e,main_len,main_dist); return;
+    }
+    literal_or_short(e,seen);
+}
+fn literal_or_short(e: &Encoder, seen: u64) {
+    if ((e.rep0 as u64) < seen && ewin(e,e.pos) == ewin(e,e.pos-e.rep0-1)) { erep(e,0,1); return; }
+    eliteral(e);
+}
+fn reset_encoder_state(e: &Encoder) {
+    let index: i32 = 0; let count: i32 = LITERAL+(768 << 3);
+    while (index < count) { e.probs.values[e.probs.start+index] = 1024; index += 1; }
+    e.state = 0; e.rep0 = 0; e.rep1 = 0; e.rep2 = 0; e.rep3 = 0;
+}
+// Encode one LZMA2 chunk (or its stored fallback) into the stage.
+fn encode_chunk(e: &Encoder, last: bool) {
+    let limit: i32 = e.fill; if (!last) { limit = e.fill-MAX_LEN; }
+    let control: i32 = 128; let header: i32 = 5;
+    if (e.first) { control = 224; header = 6; } else { if (e.state_reset) { control = 160; if (e.props_needed) { control = 192; header = 6; } } }
+    if (control >= 160) { reset_encoder_state(e); }
+    e.low = 0; e.range = ALL32; e.cache = 0; e.cache_size = 1; e.out = 6;
+    let start: i32 = e.pos;
+    while (e.pos < limit && e.pos-start < CHUNK_UNPACKED-MAX_LEN && (e.out-6)+e.cache_size+4+64 <= CHUNK_PACKED) { encode_symbol(e); }
+    let flush: i32 = 0; while (flush < 5) { shift_low(e); flush += 1; }
+    let packed: i32 = e.out-6; let unpacked: i32 = e.pos-start; let s: core::slice::View<u8> = e.stage;
+    if (packed > unpacked) {
+        let stored: i32 = 2; if (e.first) { stored = 1; e.props_needed = true; }
+        put(s,0,stored as u8); put(s,1,(((unpacked-1) >> 8) & 255) as u8); put(s,2,((unpacked-1) & 255) as u8);
+        let index: i32 = 0; while (index < unpacked) { put(s,3+index,e.window.values[e.window.start+start+index]); index += 1; }
+        e.stage_pos = 0; e.stage_len = 3+unpacked; e.state_reset = true;
+    } else {
+        let at: i32 = 6-header; let size: i32 = unpacked-1;
+        put(s,at,(control | (size >> 16)) as u8); put(s,at+1,((size >> 8) & 255) as u8); put(s,at+2,(size & 255) as u8);
+        put(s,at+3,(((packed-1) >> 8) & 255) as u8); put(s,at+4,((packed-1) & 255) as u8);
+        if (header == 6) { put(s,at+5,93); }
+        e.stage_pos = at; e.stage_len = 6+packed; e.state_reset = false; e.props_needed = false;
+    }
+    e.first = false; e.packed += (e.stage_len-e.stage_pos) as u64;
+}
+// Keep the last dict_size bytes before pos; rebase window, heads and chains.
+fn slide(e: &Encoder) {
+    let shift: i32 = e.pos-e.dict_size; if (shift <= 0) { return; }
+    let w: core::slice::View<u8> = e.window; let count: i32 = e.fill-shift; let index: i32 = 0;
+    while (index < count) { w.values[w.start+index] = w.values[w.start+shift+index]; index += 1; }
+    // Positions never hashed (skipped by long rep matches) are dropped too.
+    if (e.hashed < shift) { e.hashed = shift; }
+    let c: core::slice::View<i32> = e.chain; index = 0;
+    while (index < e.hashed-shift) { let link: i32 = c.values[c.start+shift+index]; if (link < shift) { link = -1; } else { link -= shift; } c.values[c.start+index] = link; index += 1; }
+    let h: core::slice::View<i32> = e.heads; index = 0;
+    while (index < HEADS) { let link: i32 = h.values[h.start+index]; if (link < shift) { link = -1; } else { link -= shift; } h.values[h.start+index] = link; index += 1; }
+    e.fill = count; e.pos -= shift; e.hashed -= shift; e.base += shift as u64;
+}
+pub impl Encoder {
+    pub fn borrow(&self) -> &Encoder { return self; }
+    pub fn total_read(&self) -> u64 { return self.read_total; }
+    pub fn total_written(&self) -> u64 { return self.written_total; }
+    pub fn is_done(&self) -> bool { return self.ended && self.stage_pos == self.stage_len; }
+    // Consume input and produce xz output; final_input says no input follows
+    // this call's span. Status::Done once the footer has been written.
+    pub fn step(&self, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<Step,Error> {
+        if (!valid(input) || !valid(output)) { return core::result::Err(Error::Bounds); }
+        if (self.failed) { return core::result::Err(Error::Failed); }
+        let ip: i32 = 0; let op: i32 = 0;
+        while (true) {
+            if (self.stage_pos < self.stage_len) {
+                let count: i32 = self.stage_len-self.stage_pos; if (count > output.length-op) { count = output.length-op; }
+                let index: i32 = 0; while (index < count) { put(output,op+index,byte(self.stage,self.stage_pos+index)); index += 1; }
+                op += count; self.stage_pos += count; self.written_total += count as u64;
+                if (self.stage_pos < self.stage_len) { return done(ip,op,Status::NeedOutput); }
+                continue;
+            }
+            if (self.ended) { return done(ip,op,Status::Done); }
+            if (!self.started) { self.stage_len = stream_start(self.stage,self.dict_code); self.stage_pos = 0; self.started = true; continue; }
+            if (ip < input.length && self.fill < self.window.length) {
+                let count: i32 = input.length-ip; if (count > self.window.length-self.fill) { count = self.window.length-self.fill; }
+                let w: core::slice::View<u8> = self.window; let index: i32 = 0;
+                while (index < count) { w.values[w.start+self.fill+index] = input.values[input.start+ip+index]; index += 1; }
+                self.crc64 = crc64_update(table64(self.probs),self.crc64,input,ip,ip+count);
+                ip += count; self.fill += count; self.unpacked += count as u64; self.read_total += count as u64;
+            }
+            let last: bool = final_input && ip == input.length;
+            let full: bool = self.fill == self.window.length;
+            if (self.pos < self.fill && ((full && self.fill-self.pos > MAX_LEN) || last)) { encode_chunk(self,last); continue; }
+            if (full && !last) { slide(self); continue; }
+            if (last && self.pos == self.fill) { self.stage_len = stream_end(self.stage,self.packed,self.unpacked,self.crc64); self.stage_pos = 0; self.ended = true; continue; }
+            return done(ip,op,Status::NeedInput);
+        } return done(ip,op,Status::NeedInput);
+    }
+}

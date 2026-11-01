@@ -48,11 +48,27 @@ QUANTIFIERS = ["?", "*", "+", "{2}", "{1,2}", "{0,2}", "{2,}", "??", "*?",
 
 
 class Gen:
-    def __init__(self, rng, multiline):
+    def __init__(self, rng, multiline, lookbehind=0.0, captures=True):
         self.rng = rng
         self.multiline = multiline
         self.groups = 0
         self.names = []
+        # Chance that an assertion slot becomes (?<=...) or (?<!...). Zero
+        # keeps the random stream of the older surfaces unchanged.
+        self.lookbehind = lookbehind
+        self.captures = captures
+        self.behinds = 0
+        self.literals, self.class_terms, self.shorthands = LITERALS, CLASS_TERMS, SHORTHANDS
+
+    def behind(self, depth):
+        """A capture-free lookbehind. Fixed counts make most bodies fixed
+        width; the rest exercise Python's fixed-width rejection."""
+        body = Gen(self.rng, self.multiline, self.lookbehind * 0.5, captures=False)
+        body.fixed = self.rng.random() < 0.8
+        lan, py, _ = body.expr(min(depth, 1))
+        self.behinds += 1 + body.behinds
+        opener = self.rng.choice(["(?<=", "(?<!"])
+        return opener + lan + ")", opener + py + ")"
 
     def assertion(self):
         kind = self.rng.choice(["^", "$", r"\A", r"\z", r"\b", r"\B"])
@@ -63,16 +79,17 @@ class Gen:
         return (kind, kind)
 
     def klass(self):
-        terms = [self.rng.choice(CLASS_TERMS) for _ in range(self.rng.randint(1, 3))]
-        body = "".join(terms)
+        terms = [self.rng.choice(self.class_terms) for _ in range(self.rng.randint(1, 3))]
+        pairs = [t if isinstance(t, tuple) else (t, t) for t in terms]
         neg = "^" if self.rng.random() < 0.3 else ""
-        return ("[" + neg + body + "]",) * 2
+        return ("[" + neg + "".join(a for a, _ in pairs) + "]",
+                "[" + neg + "".join(b for _, b in pairs) + "]")
 
     def atom(self, depth):
         """Return (lanius, python, nullable, quantifiable)."""
         r = self.rng.random()
         if r < 0.42:
-            lan, py = self.rng.choice(LITERALS)
+            lan, py = self.rng.choice(self.literals)
             return lan, py, False, True
         if r < 0.50:
             return ".", ".", False, True
@@ -80,15 +97,19 @@ class Gen:
             lan, py = self.klass()
             return lan, py, False, True
         if r < 0.68:
-            s = self.rng.choice(SHORTHANDS)
-            return s, s, False, True
+            s = self.rng.choice(self.shorthands)
+            lan, py = s if isinstance(s, tuple) else (s, s)
+            return lan, py, False, True
         if r < 0.76:
+            if self.lookbehind and self.rng.random() < self.lookbehind:
+                lan, py = self.behind(depth)
+                return lan, py, True, False
             lan, py = self.assertion()
             return lan, py, True, False
         if depth <= 0:
-            lan, py = self.rng.choice(LITERALS)
+            lan, py = self.rng.choice(self.literals)
             return lan, py, False, True
-        capture = self.rng.random() < 0.6
+        capture = self.rng.random() < 0.6 and self.captures
         if capture:
             self.groups += 1
         lan, py, nullable = self.expr(depth - 1)
@@ -109,6 +130,8 @@ class Gen:
             return lan, py, nullable
         if nullable:
             q = self.rng.choice(["?", "??"])
+        elif getattr(self, "fixed", False):
+            q = self.rng.choice(["{2}", "{1}", "{0}", "{3}", "{2}?"])
         else:
             q = self.rng.choice(QUANTIFIERS)
         bare = q.rstrip("?") or "?"
@@ -141,6 +164,22 @@ def pattern(rng, multiline):
             return lan, py
 
 
+def behind_pattern(rng, multiline):
+    """A pattern with at least one lookbehind. Python either compiles it or
+    rejects it only for lookbehind width; returns (lan, py, error)."""
+    while True:
+        g = Gen(rng, multiline, lookbehind=0.6)
+        lan, py, _ = g.expr(2)
+        if not g.behinds or g.groups > 8 or len(lan) > 160:
+            continue
+        try:
+            re.compile(py, re.ASCII)
+            return lan, py, False
+        except re.error as e:
+            if "look-behind requires fixed-width pattern" in str(e):
+                return lan, py, True
+
+
 # Reductions of disagreements this oracle found; they stay in every run.
 # Lazy counted repeats once expanded x{0,2}? as x??x??, preferring every
 # single iteration over a second one.
@@ -151,6 +190,42 @@ PINNED = [
     (r"(a??((a+\t{1,2})a|([^b]+?)){0,3}?)a{1,2}", "-1ccaaac\t🙂_ a"),
     (r"_|\x61*?\x{1f642}+?|((b)+?c{0,2}){0,3}?a", "🙂_céab1aacb1🙂bba."),
 ]
+
+
+# Non-ASCII input for the lazy DFA's byte-level transitions: two-, three-
+# and four-byte scalars. Python re has no \p, so a property becomes the class
+# of the alphabet scalars with that category (unicodedata), which is exact on
+# inputs drawn from this alphabet.
+UNICODE_ALPHABET = list("aab 1_.\n") + list("αβγΩдЖßé日本語🙂𝔸٣") + ["\u00a0"]
+
+
+def category_class(prefix, negated):
+    import unicodedata
+    chars = "".join(re.escape(c) for c in UNICODE_ALPHABET if unicodedata.category(c).startswith(prefix))
+    return "[" + ("^" if negated else "") + chars + "]"
+
+
+UNICODE_PROPERTIES = [(r"\p{L}", "L"), (r"\p{Lu}", "Lu"), (r"\p{Ll}", "Ll"), (r"\p{Lo}", "Lo"),
+                      (r"\p{N}", "N"), (r"\p{Nd}", "Nd"), (r"\pL", "L"), (r"\p{So}", "So"), (r"\p{Zs}", "Zs")]
+
+
+def unicode_gen(rng, multiline):
+    g = Gen(rng, multiline)
+    g.literals = [("a", "a"), ("b", "b"), ("Ω", "Ω"), ("д", "д"), ("ß", "ß"), ("日", "日"), ("本", "本"),
+                  ("🙂", "🙂"), ("𝔸", "𝔸"), (r"\x{65e5}", "日"), (r"\x{1d538}", "𝔸"), ("é", "é"), (" ", " ")]
+    g.class_terms = ["a", "α-ω", "а-я", "一-龥", "é-🙂", "Ω", r"\d", r"\w", r"\s"] + [
+        (lan, category_class(cat, False)[1:-1]) for lan, cat in UNICODE_PROPERTIES]
+    g.shorthands = SHORTHANDS + [(lan, category_class(cat, False)) for lan, cat in UNICODE_PROPERTIES] + [
+        (lan.replace("\\p", "\\P"), category_class(cat, True)) for lan, cat in UNICODE_PROPERTIES]
+    return g
+
+
+def unicode_pattern(rng, multiline):
+    while True:
+        g = unicode_gen(rng, multiline)
+        lan, py, _ = g.expr(2)
+        if lan and g.groups <= 8 and len(lan) <= 160:
+            return lan, py
 
 
 def text(rng, lo=0, hi=10):
@@ -243,19 +318,32 @@ def header_work(lan, t, flags, work):
     return struct.pack("<9I", len(p), len(b), flags, 4096, 16, work, 64, 1000, 65536) + p + b
 
 
-def dfa_surface(exe, rng, count):
+def dfa_surface(exe, rng, count, unicode=False):
     """ext::regex::Dfa is_match/find_span, one-shot and reusable, against Python
     and the VM. A tenth of cases use a tiny per-search work budget, so the DFA
     must fall back exactly; those compare the DFA with the VM only."""
     cases, expected = [], []
     for _ in range(count):
         flags = (1 if rng.random() < 0.25 else 0) | (2 if rng.random() < 0.25 else 0)
-        lan, py = pattern(rng, flags & 1)
+        # Assertions are DFA state; a tenth of patterns have lookbehind, which
+        # dfa() must refuse so that the VM answers.
+        error = True
+        if unicode:
+            lan, py = unicode_pattern(rng, flags & 1)
+        else:
+            if rng.random() < 0.1:
+                lan, py, error = behind_pattern(rng, flags & 1)
+            if error:
+                lan, py = pattern(rng, flags & 1)
         q = re.compile(py, re.ASCII | (re.M if flags & 1 else 0) | (re.S if flags & 2 else 0))
         # CPython backtracks exponentially on long inputs under quantified
-        # groups, so 400-scalar inputs go only to patterns without them.
-        longest = 400 if not re.search(r"\)[*+?{]", py) else 40
-        t = text(rng, 1 if r"\B" in lan else 0, rng.choice([10, 40, longest]))
+        # groups, so those patterns get at most 20 scalars; others up to 400.
+        quantified = re.search(r"\)[*+?{]", py) is not None
+        hi = min(rng.choice([10, 40, 400]), 20 if quantified else 400)
+        if unicode:
+            t = "".join(rng.choice(UNICODE_ALPHABET) for _ in range(rng.randint(1 if r"\B" in lan else 0, hi)))
+        else:
+            t = text(rng, 1 if r"\B" in lan else 0, hi)
         work = rng.choice([1, 20, 200]) if rng.random() < 0.1 else 10_000_000
         m = q.search(t)
         b = "0" if m is None else "1"
@@ -268,10 +356,19 @@ def dfa_surface(exe, rng, count):
     if result.returncode != 0 or len(actual) != len(cases):
         print(f"dfa harness failed: status {result.returncode}, {len(actual)}/{len(cases)} lines")
         return 0, len(cases), [("harness", result.returncode)]
-    failures, built, budget = [], 0, 0
+    failures, built, budget, asserting, behind = [], 0, 0, 0, 0
     for case, want, got in zip(cases, expected, actual):
         body, kind = got.rsplit(" ", 1)
         built += kind == "D"
+        lookbehind = "(?<=" in case[0] or "(?<!" in case[0]
+        behind += kind == "V"
+        bare = case[0].replace("[^", "[")
+        asserting += not lookbehind and any(a in bare for a in ("^", "$", r"\A", r"\z", r"\b", r"\B"))
+        # Lookbehind inside a {0} repeat compiles away, so only patterns
+        # without lookbehind are required to get a Dfa.
+        if kind != "D" and not lookbehind:
+            failures.append((case, "D", got))
+            continue
         if want is None:
             budget += 1
             dm, vm, ds, vs, again = body.split(" ")
@@ -280,8 +377,8 @@ def dfa_surface(exe, rng, count):
             ok = body == want
         if not ok:
             failures.append((case, want, got))
-    print(f"  dfa_match_find coverage: {built} with a Dfa, {len(cases) - built} assertion patterns on the VM, "
-          f"{budget} with a tiny work budget")
+    print(f"  {'dfa_unicode' if unicode else 'dfa_match_find'} coverage: {built} with a Dfa ({asserting} with assertions), "
+          f"{behind} lookbehind patterns on the VM, {budget} with a tiny work budget")
     return len(cases) - len(failures), len(cases), failures
 
 
@@ -299,6 +396,8 @@ def linear_surface(exe):
         ("(a|aa)*c", "a" * 20000, "N"),
         ("(?:a|a)*b", "a" * 20000, "N"),
         ("(x+x+)+y", "x" * 20000, "N"),
+        # Quadratic for a backtracking search; a lookbehind at every boundary.
+        ("(?:(?<=(?:a|a){8})a)+b", "a" * 20000, "N"),
     ]
     payload = b"".join(header(lan, t, 0) for lan, t, _ in cases)
     began = time.monotonic()
@@ -385,6 +484,45 @@ def grep_surface(exe, rng, count):
     return agree, count, failures
 
 
+def lookbehind_surface(exe, rng, count):
+    """(?<=...) and (?<!...), nested and inside generated patterns, through
+    the find_iter/captures harness. A pattern Python rejects for lookbehind
+    width must be a Lanius Syntax error."""
+    cases, expected = [], []
+    rejected = 0
+    for _ in range(count):
+        flags = (1 if rng.random() < 0.25 else 0) | (2 if rng.random() < 0.25 else 0) | 4
+        lan, py, error = behind_pattern(rng, flags & 1)
+        if error:
+            rejected += 1
+            cases.append((lan, py, "a", flags))
+            expected.append(None)
+            continue
+        q = re.compile(py, re.ASCII | (re.M if flags & 1 else 0) | (re.S if flags & 2 else 0))
+        for _ in range(4):
+            t = text(rng, 1 if r"\B" in lan else 0, rng.choice([10, 20]))
+            cases.append((lan, py, t, flags))
+            expected.append(describe(q, t) + names(q))
+    payload = b"".join(header(lan, t, flags) for lan, _, t, flags in cases)
+    result = run([exe], payload, timeout=120)
+    actual = result.stdout.decode().split("\n")[:-1]
+    if result.returncode != 0 or len(actual) != len(cases):
+        print(f"lookbehind harness failed: status {result.returncode}, {len(actual)}/{len(cases)} lines")
+        return 0, len(cases), [("harness", result.returncode)]
+    failures = []
+    for case, want, got in zip(cases, expected, actual):
+        ok = got.startswith("E1:") if want is None else got == want
+        if not ok:
+            failures.append((case, want, got))
+    found = [e for e in expected if e is not None]
+    matched = sum(not e.startswith("N") for e in found)
+    negative = sum("(?<!" in c[0] for c in cases)
+    nested = sum(c[0].count("(?<=") + c[0].count("(?<!") > 1 for c in cases)
+    print(f"  lookbehind coverage: {count} patterns, {rejected} rejected for width, {len(found)} find cases, "
+          f"{matched} with a match, {negative} with negative lookbehind, {nested} with two or more lookbehinds")
+    return len(cases) - len(failures), len(cases), failures
+
+
 def main():
     args = sys.argv[1:]
     seed, patterns = 20261031, 3000
@@ -406,9 +544,15 @@ def main():
         agree, total, failures = surface(exe, random.Random(f"{seed}:{name}"), count)
         report(name, agree, total, failures)
         total_failures += total - agree
+    agree, total, failures = lookbehind_surface(input_exe, random.Random(f"{seed}:lookbehind"), patterns // 3)
+    report("lookbehind_find", agree, total, failures)
+    total_failures += total - agree
     if dfa_exe:
         agree, total, failures = dfa_surface(dfa_exe, random.Random(f"{seed}:dfa"), patterns)
         report("dfa_match_find", agree, total, failures)
+        total_failures += total - agree
+        agree, total, failures = dfa_surface(dfa_exe, random.Random(f"{seed}:dfa_unicode"), patterns // 3, unicode=True)
+        report("dfa_unicode", agree, total, failures)
         total_failures += total - agree
     for name, surface, exe in [("linear_time", linear_surface, input_exe)]:
         agree, total, failures = surface(exe)
