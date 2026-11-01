@@ -115,7 +115,7 @@ is shifted back after all quotient positions are processed. Complexity is
 `O(N*M)` below the Karatsuba threshold and `O(N^1.585)` above it; its work
 charge stays the conservative `N*M`. Parsing and formatting fold `g` digits
 per pass (`radix^g < 2^32`) and remain quadratic for long inputs. See the
-[big integer guide](stdlib-big-integers.md) for the Karatsuba temporaries
+[big integer guide](stdlib-big-integers.md) for the Karatsuba workspace
 and bounds.
 
 The derivation follows the official Go `math/big` long division explanation:

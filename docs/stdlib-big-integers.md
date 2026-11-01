@@ -41,8 +41,9 @@ Operands are borrowed and survive every error.
 ## Multiplication: schoolbook and Karatsuba
 
 `mul` uses Karatsuba when **both** operands have at least
-`alloc::big_uint::KARATSUBA_THRESHOLD` (32) limbs and the full product fits in
-`max_limbs`. Otherwise it uses the existing schoolbook loop, including the
+`alloc::big_uint::KARATSUBA_THRESHOLD` (32) limbs, the full product fits in
+`max_limbs`, and the workspace described below also fits in `max_limbs`.
+Otherwise it uses the existing schoolbook loop, including the
 edge case where the product is exactly one limb longer than `max_limbs` and
 must be clamped.
 
@@ -62,12 +63,21 @@ them. It accumulates `out[at..] += x[window] * y[window]`:
   `x0*y1 + x1*y0 >= 0`, so the in-place subtraction cannot underflow. Then it
   adds `z0`, `z1 << k` and `z2 << 2k` into the output.
 
-Each balanced node owns five temporaries: `z0`, `z2`, both half sums and
-`z1`. Every temporary is created through the same bounded `fresh` path. None
-is larger than `2k+2 <= n+3 <= n+m` limbs, which is at most the product size
-already admitted against `max_limbs`. A failed allocation destroys every
-temporary that is live and returns `AllocationFailed`. The output is
-destroyed by `mul`, and both operands are preserved.
+`mul` allocates exactly two vectors: the product and one workspace. A
+balanced node of `n` limbs keeps `z0[2k]`, `z2[2k]`, both half sums `[k+1]`
+and `z1[2k+2]` in `8k+4` workspace limbs. It hands the rest of the workspace
+to its children, which run one at a time. Unbalanced nodes need no storage of
+their own. The workspace size is therefore the sum of `8k+4` over the chain
+`n -> k+1` while the size stays at or above the threshold, which is about
+`8*max(n, m)` limbs.
+
+The workspace goes through the same bounded `fresh` path as every other
+vector. When it would exceed `max_limbs`, `mul` uses schoolbook instead. When
+an allocation fails, `mul` destroys whatever it has already allocated and
+returns `AllocationFailed`. Both operands are preserved.
+
+Every window the kernel writes holds the complete value it accumulates. Carry
+propagation is bounded by the window end and never leaves the window.
 
 Work accounting keeps the existing conservative charge of `n*m` limb
 products. Karatsuba performs fewer, so the same `max_work` admits the same
@@ -122,7 +132,8 @@ instead of calling `Vec::get_or` and `Vec::set`, which build an `Option` or
 `Result` for each limb. These loops are:
 
 - small multiply-add and small division;
-- the Karatsuba schoolbook leaf and window add/subtract;
+- the Karatsuba schoolbook leaf and the workspace window add, subtract and
+  clear;
 - the Knuth multiply-subtract step.
 
 Slice indexing keeps the language's bounds checks.
@@ -136,20 +147,20 @@ guarantees.
 | Parse 200 hex numbers of 513 limbs | 1.33 s | 0.60 s |
 | Parse one 4,943-digit decimal number and print it again | 0.44 s | 0.03 s |
 | 100 products of 513×513 limbs, schoolbook only (threshold set to 1,000,000) | 12.9 s | n/a |
-| 100 products of 513×513 limbs, Karatsuba at 32 limbs | 2.8 s | 1.8 s, including 0.7 s of parsing |
-| The radix 10 part of the `bc` oracle (5 MB of input) | 11.5 s | 5.8 s |
+| 100 products of 513×513 limbs, Karatsuba at 32 limbs, with per-node temporaries | 2.8 s | 1.8 s, including 0.7 s of parsing |
+| The same, with one Karatsuba workspace | | 0.55 s, including 0.33 s of parsing (about 2.2 ms per product) |
+| The radix 10 part of the `bc` oracle (5 MB of input) | 11.5 s | 3.8 s |
 
 Moving the threshold from 32 to 64 limbs changed the 513-limb case only
 within noise.
 
-The remaining cost has two parts:
+With per-node temporaries, a 513-limb product made about 400 allocations, each
+an `mmap` with fresh page faults. The single workspace removed nearly all of
+the system time.
 
-- **Per-iteration cost:** about 20 ns per inner-loop iteration in the current
-  code generator.
-- **Allocation:** one `mmap` per vector, including each Karatsuba temporary.
-
-A single preallocated Karatsuba workspace would remove most of those
-allocations. It is not implemented.
+What remains is mostly the code generator's cost of about 20 ns per
+inner-loop iteration. Quadratic radix formatting of the 1,000-limb products
+also costs more than multiplying them.
 
 ## Verification
 
@@ -160,7 +171,7 @@ laniusc. It is not evidence of GPU kernel arithmetic.
   runs `tests/oracles/bc_oracle.py`. The oracle is an independent Python
   integer reference with fixed seed `0xBC2026`. On 2026-10-31 it checked
   **9,526 values and 103 diagnostics** in radices 10, 16, 2, 3, 7 and 36, in
-  about 13 s. The checked cases are:
+  about 11 s, including Python generation. The checked cases are:
   - 1,515 Karatsuba products, with both operands of at least 32 limbs;
   - 1,695 schoolbook products, using sizes 0–3, 30–34, 63–66, 95–97, 127–129,
     200, 257 and 513 limbs;
@@ -184,5 +195,8 @@ laniusc. It is not evidence of GPU kernel arithmetic.
   `big_uint_contracts`, `big_int_contracts`, `big_uint_smoke` and
   `decimal_arithmetic_contracts` fixtures also exit 0 natively.
 - The allocation-denial suites require `strace` and were not run for this
-  increment. Karatsuba's cleanup on a failed temporary is therefore reviewed
-  but not fault-injected.
+  increment. The Karatsuba cleanup paths (product, then workspace) are
+  therefore reviewed but not fault-injected. Under the user's current rule,
+  cargo tests are not run: the registered Rust tests were written, and the
+  same oracle scripts were run directly against binaries compiled by
+  laniusc.
