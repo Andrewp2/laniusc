@@ -21,6 +21,15 @@ acceptance and migrated application on native Linux x86_64 CPU output. Earlier
 set receipts below do not establish the new
 signatures. Ordered bounds/ranges and insertion retain their existing T APIs.
 
+## Ordered navigation
+
+TreeSet has the same eight [ordered navigation](stdlib-ordered-navigation.md)
+methods as TreeMap, returning stored representatives and `Cursor<T>`:
+`last_at_most`, `last_below`, the four `_by` searches, `range_bounds` and
+`range_bounds_by`. They run through the shared map engine via KeyStorage
+bridges. `alloc::string::TextPrefix` selects prefix families of owned String
+elements.
+
 ## Representatives and ownership
 
 Both sets implement the [fallible iterator sink](stdlib-iterator-collection-sinks.md).

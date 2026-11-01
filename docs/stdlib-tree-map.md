@@ -59,8 +59,19 @@ the stored representative; removal transfers the actual entry; update retains
 the original key and reinstalls V on every normal callback return.
 `alloc::string::TextKey` supplies String/Text policy. All sixteen map/set
 methods pass the nine-group library acceptance and migrated application
-on native Linux x86_64 CPU output. Existing ordered
-bounds/ranges still take K and are not extended by this point-query contract.
+on native Linux x86_64 CPU output. Ordered bounds and ranges take
+heterogeneous queries separately, through the navigation contract below.
+
+## Ordered navigation
+
+[Ordered navigation](stdlib-ordered-navigation.md) adds `last_at_most`,
+`last_below`, `lower_bound_by`, `upper_bound_by`, `last_at_most_by`,
+`last_below_by`, `range_bounds` and `range_bounds_by`. Interval ends are
+`core::range::Bound<K>` (or `Bound<Q>`) values: Included, Excluded or
+Unbounded, so `Included(i32::MAX)` is reachable. Navigation policies order
+stored keys as Less*, Equal*, Greater*; unlike point lookup, an Equal run may
+hold several keys, such as a String prefix family. Calls are one per visited
+node per descent, plus one front check for a bounded range. Nothing allocates.
 
 ## API contracts
 
@@ -79,6 +90,10 @@ bounds/ranges still take K and are not extended by this point-query contract.
 | `lower_bound(key)`, `upper_bound(key)` | First entry at least equal to, or strictly greater than, the key |
 | `iter()` | Borrowed cursor over all entries in key order |
 | `range(lower, upper)` | Result containing a cursor over `[lower, upper)`; equivalent bounds yield empty |
+| `last_at_most(key)`, `last_below(key)` | Last entry at most equal to, or strictly less than, the key |
+| `lower_bound_by`, `upper_bound_by`, `last_at_most_by`, `last_below_by` | The four searches with a `Comparator<K,Q>` query; see [ordered navigation](stdlib-ordered-navigation.md) |
+| `range_bounds(lower, upper)` | Result containing a cursor between two `Bound<K>` ends; InvalidRange only when upper is strictly less than lower |
+| `range_bounds_by(lower, upper, policy)` | Cursor between two `Bound<Q>` ends; disjoint or reversed bounds are empty |
 | `try_reserve(additional)` | Reserve for `len + additional`; return resulting capacity |
 | `try_insert(key, value)` | Result containing the replaced entry, or None for a new key |
 | `remove(key)` | Transfer the equivalent entry, or None |

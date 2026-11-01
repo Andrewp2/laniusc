@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **277 modules**, **14125 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **278 modules**, **14206 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -27,6 +27,7 @@ Inventory: **277 modules**, **14125 declaration/member entries**. Counts include
 | [core::bits](core/bits.md) | [source](../../stdlib/core/bits.lani#L2) | 42 | Source inventory | [stdlib-boolean-bits](../stdlib-boolean-bits.md) |
 | [core::bitset](core/bitset.md) | [source](../../stdlib/core/bitset.lani#L5) | 59 | Source inventory | [stdlib-bitset-owned](../stdlib-bitset-owned.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md) |
 | [core::bool](core/bool.md) | [source](../../stdlib/core/bool.lani#L3) | 10 | Source inventory | [stdlib-boolean-bits](../stdlib-boolean-bits.md) |
+| [core::buffered](core/buffered.md) | [source](../../stdlib/core/buffered.lani#L4) | 57 | Source inventory | **Unregistered** |
 | [core::calendar](core/calendar.md) | [source](../../stdlib/core/calendar.lani#L4) | 158 | Source inventory | [stdlib-calendar](../stdlib-calendar.md) |
 | [core::char](core/char.md) | [source](../../stdlib/core/char.lani#L2) | 19 | Source inventory | [stdlib-unicode](../stdlib-unicode.md) |
 | [core::clone](core/clone.md) | [source](../../stdlib/core/clone.lani#L3) | 4 | Source inventory | [stdlib-clone](../stdlib-clone.md), [stdlib-clone-values](../stdlib-clone-values.md) |
@@ -66,7 +67,7 @@ Inventory: **277 modules**, **14125 declaration/member entries**. Counts include
 | [core::path](core/path.md) | [source](../../stdlib/core/path.lani#L5) | 78 | Source inventory | [stdlib-paths](../stdlib-paths.md) |
 | [core::path_rules](core/path_rules.md) | [source](../../stdlib/core/path_rules.lani#L3) | 59 | Source inventory | [stdlib-paths](../stdlib-paths.md) |
 | [core::random](core/random.md) | [source](../../stdlib/core/random.lani#L5) | 55 | Source inventory | [stdlib-randomness](../stdlib-randomness.md), [stdlib-random-budget](../stdlib-random-budget.md), [stdlib-sample-integers](../stdlib-sample-integers.md) |
-| [core::range](core/range.md) | [source](../../stdlib/core/range.lani#L9) | 51 | Source inventory | [stdlib-ranges](../stdlib-ranges.md) |
+| [core::range](core/range.md) | [source](../../stdlib/core/range.lani#L9) | 55 | Source inventory | [stdlib-ranges](../stdlib-ranges.md), [stdlib-ordered-navigation](../stdlib-ordered-navigation.md) |
 | [core::result](core/result.md) | [source](../../stdlib/core/result.lani#L9) | 45 | Source inventory | [stdlib-result](../stdlib-result.md), [stdlib-lazy-outcomes](../stdlib-lazy-outcomes.md), [stdlib-outcome-composition](../stdlib-outcome-composition.md), [stdlib-optional-sum](../stdlib-optional-sum.md) |
 | [core::runtime](core/runtime.md) | [source](../../stdlib/core/runtime.lani#L15) | 113 | Source inventory | [library-host-prerequisites](../library-host-prerequisites.md), [library-host-operation-support](../library-host-operation-support.md) |
 | [core::set](core/set.md) | [source](../../stdlib/core/set.lani#L4) | 24 | Source inventory | [stdlib-fixed-capacity](../stdlib-fixed-capacity.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md) |
@@ -103,7 +104,7 @@ Inventory: **277 modules**, **14125 declaration/member entries**. Counts include
 | [alloc::arena](alloc/arena.md) | [source](../../stdlib/alloc/arena.lani#L3) | 49 | Source inventory | [stdlib-arena](../stdlib-arena.md), [stdlib-layout](../stdlib-layout.md) |
 | [alloc::binary_heap](alloc/binary_heap.md) | [source](../../stdlib/alloc/binary_heap.lani#L4) | 54 | Source inventory | [stdlib-binary-heap](../stdlib-binary-heap.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-heap-iterators](../stdlib-heap-iterators.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md), [stdlib-owning-heap](../stdlib-owning-heap.md), [stdlib-exact-size-iterators](../stdlib-exact-size-iterators.md) |
 | [alloc::bitset](alloc/bitset.md) | [source](../../stdlib/alloc/bitset.lani#L4) | 55 | Source inventory | [stdlib-bitset-owned](../stdlib-bitset-owned.md) |
-| [alloc::buffered](alloc/buffered.md) | [source](../../stdlib/alloc/buffered.lani#L4) | 54 | Source inventory | [stdlib-buffered](../stdlib-buffered.md), [stdlib-format-write](../stdlib-format-write.md), [stdlib-delimited-io](../stdlib-delimited-io.md), [stdlib-select-records](../stdlib-select-records.md), [stdlib-seek](../stdlib-seek.md), [stdlib-reverse-records](../stdlib-reverse-records.md) |
+| [alloc::buffered](alloc/buffered.md) | [source](../../stdlib/alloc/buffered.lani#L4) | 49 | Source inventory | [stdlib-buffered](../stdlib-buffered.md), [stdlib-format-write](../stdlib-format-write.md), [stdlib-delimited-io](../stdlib-delimited-io.md), [stdlib-select-records](../stdlib-select-records.md), [stdlib-seek](../stdlib-seek.md), [stdlib-reverse-records](../stdlib-reverse-records.md) |
 | [alloc::clone](alloc/clone.md) | [source](../../stdlib/alloc/clone.lani#L2) | 8 | Source inventory | [stdlib-clone](../stdlib-clone.md), [stdlib-owning-iterators](../stdlib-owning-iterators.md) |
 | [alloc::clone_binary_heap](alloc/clone_binary_heap.md) | [source](../../stdlib/alloc/clone_binary_heap.lani#L4) | 10 | Source inventory | [stdlib-clone-binary-heap](../stdlib-clone-binary-heap.md), [stdlib-owning-heap](../stdlib-owning-heap.md) |
 | [alloc::clone_deque](alloc/clone_deque.md) | [source](../../stdlib/alloc/clone_deque.lani#L4) | 9 | Source inventory | [stdlib-clone-deque](../stdlib-clone-deque.md) |
@@ -119,9 +120,9 @@ Inventory: **277 modules**, **14125 declaration/member entries**. Counts include
 | [alloc::io](alloc/io.md) | [source](../../stdlib/alloc/io.lani#L3) | 69 | Source inventory | [stdlib-streams](../stdlib-streams.md), [stdlib-owned-input](../stdlib-owned-input.md), [stdlib-input-stats](../stdlib-input-stats.md), [stdlib-owned-delimited](../stdlib-owned-delimited.md), [stdlib-line-report](../stdlib-line-report.md) |
 | [alloc::path](alloc/path.md) | [source](../../stdlib/alloc/path.lani#L4) | 48 | Source inventory | [stdlib-paths](../stdlib-paths.md) |
 | [alloc::slice](alloc/slice.md) | [source](../../stdlib/alloc/slice.lani#L3) | 5 | Source inventory | [stdlib-stable-sort](../stdlib-stable-sort.md), [stdlib-slice-ordering](../stdlib-slice-ordering.md), [stdlib-sort-rows](../stdlib-sort-rows.md) |
-| [alloc::string](alloc/string.md) | [source](../../stdlib/alloc/string.lani#L5) | 85 | Source inventory | [stdlib-string](../stdlib-string.md), [stdlib-clone](../stdlib-clone.md), [stdlib-owned-input](../stdlib-owned-input.md), [stdlib-text-replacement](../stdlib-text-replacement.md), [stdlib-literal-rewrite](../stdlib-literal-rewrite.md), [stdlib-borrowed-lookup](../stdlib-borrowed-lookup.md) |
-| [alloc::tree_map](alloc/tree_map.md) | [source](../../stdlib/alloc/tree_map.lani#L3) | 125 | Source inventory | [stdlib-tree-map](../stdlib-tree-map.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md), [stdlib-owning-tree](../stdlib-owning-tree.md), [stdlib-replacement-sinks](../stdlib-replacement-sinks.md), [stdlib-latest-values](../stdlib-latest-values.md), [stdlib-exact-size-iterators](../stdlib-exact-size-iterators.md), [stdlib-map-updates](../stdlib-map-updates.md), [stdlib-borrowed-lookup](../stdlib-borrowed-lookup.md) |
-| [alloc::tree_set](alloc/tree_set.md) | [source](../../stdlib/alloc/tree_set.lani#L3) | 68 | Source inventory | [stdlib-owned-sets](../stdlib-owned-sets.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md), [stdlib-owning-tree](../stdlib-owning-tree.md), [stdlib-replacement-sinks](../stdlib-replacement-sinks.md), [stdlib-exact-size-iterators](../stdlib-exact-size-iterators.md), [stdlib-borrowed-lookup](../stdlib-borrowed-lookup.md) |
+| [alloc::string](alloc/string.md) | [source](../../stdlib/alloc/string.lani#L5) | 90 | Source inventory | [stdlib-string](../stdlib-string.md), [stdlib-clone](../stdlib-clone.md), [stdlib-owned-input](../stdlib-owned-input.md), [stdlib-text-replacement](../stdlib-text-replacement.md), [stdlib-literal-rewrite](../stdlib-literal-rewrite.md), [stdlib-borrowed-lookup](../stdlib-borrowed-lookup.md), [stdlib-ordered-navigation](../stdlib-ordered-navigation.md) |
+| [alloc::tree_map](alloc/tree_map.md) | [source](../../stdlib/alloc/tree_map.lani#L3) | 137 | Source inventory | [stdlib-tree-map](../stdlib-tree-map.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md), [stdlib-owning-tree](../stdlib-owning-tree.md), [stdlib-replacement-sinks](../stdlib-replacement-sinks.md), [stdlib-latest-values](../stdlib-latest-values.md), [stdlib-exact-size-iterators](../stdlib-exact-size-iterators.md), [stdlib-map-updates](../stdlib-map-updates.md), [stdlib-borrowed-lookup](../stdlib-borrowed-lookup.md), [stdlib-ordered-navigation](../stdlib-ordered-navigation.md) |
+| [alloc::tree_set](alloc/tree_set.md) | [source](../../stdlib/alloc/tree_set.lani#L3) | 76 | Source inventory | [stdlib-owned-sets](../stdlib-owned-sets.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md), [stdlib-owning-tree](../stdlib-owning-tree.md), [stdlib-replacement-sinks](../stdlib-replacement-sinks.md), [stdlib-exact-size-iterators](../stdlib-exact-size-iterators.md), [stdlib-borrowed-lookup](../stdlib-borrowed-lookup.md), [stdlib-ordered-navigation](../stdlib-ordered-navigation.md) |
 | [alloc::vec](alloc/vec.md) | [source](../../stdlib/alloc/vec.lani#L4) | 81 | Source inventory | [stdlib-vec](../stdlib-vec.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-iterator-transfer](../stdlib-iterator-transfer.md), [stdlib-owning-iterators](../stdlib-owning-iterators.md), [stdlib-exact-size-iterators](../stdlib-exact-size-iterators.md), [stdlib-vec-transfer](../stdlib-vec-transfer.md), [stdlib-move-rows](../stdlib-move-rows.md), [stdlib-vec-edit](../stdlib-vec-edit.md), [stdlib-sort-rows](../stdlib-sort-rows.md) |
 
 ### `std`
@@ -340,6 +341,7 @@ These are discovery/contract-link gaps, not claims that their code is missing or
 - [core::array_u8_4](core/array_u8_4.md)
 - [core::binary_wide_i64](core/binary_wide_i64.md)
 - [core::binary_wide_u64](core/binary_wide_u64.md)
+- [core::buffered](core/buffered.md)
 - [core::hex_wide_i64](core/hex_wide_i64.md)
 - [core::hex_wide_u64](core/hex_wide_u64.md)
 - [core::ops](core/ops.md)

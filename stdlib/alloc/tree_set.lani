@@ -6,6 +6,7 @@ import core::cmp;
 import core::iter;
 import core::option;
 import core::ordering;
+import core::range;
 import core::result;
 
 pub struct TreeSet<T> { state: alloc::tree_map::KeyStorage }
@@ -142,6 +143,30 @@ pub impl<T> TreeSet<T> {
         let result: core::result::Result<alloc::tree_map::KeyCursor, alloc::tree_map::Error> = alloc::tree_map::key_range<T>(self.state.borrow(), lower, upper);
         if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); }
         return core::result::Ok(Cursor { state: core::result::unwrap(result) });
+    }
+    // Greatest stored element at most, or strictly less than, the key.
+    pub fn last_at_most(&self, key: T) -> core::option::Option<T> where T: core::cmp::Ord<T> { return alloc::tree_map::key_navigate<T>(self.state.borrow(), key, 2); }
+    pub fn last_below(&self, key: T) -> core::option::Option<T> where T: core::cmp::Ord<T> { return alloc::tree_map::key_navigate<T>(self.state.borrow(), key, 3); }
+    // Heterogeneous navigation; the policy orders stored elements as
+    // Less*, Equal*, Greater* and receives the stored element first.
+    pub fn lower_bound_by<Q,P>(&self, query:Q, policy:&P) -> core::option::Option<T>
+        where P:core::ordering::Comparator<T,Q> { return alloc::tree_map::key_navigate_by<T,Q,P>(self.state.borrow(), query, policy, 0); }
+    pub fn upper_bound_by<Q,P>(&self, query:Q, policy:&P) -> core::option::Option<T>
+        where P:core::ordering::Comparator<T,Q> { return alloc::tree_map::key_navigate_by<T,Q,P>(self.state.borrow(), query, policy, 1); }
+    pub fn last_at_most_by<Q,P>(&self, query:Q, policy:&P) -> core::option::Option<T>
+        where P:core::ordering::Comparator<T,Q> { return alloc::tree_map::key_navigate_by<T,Q,P>(self.state.borrow(), query, policy, 2); }
+    pub fn last_below_by<Q,P>(&self, query:Q, policy:&P) -> core::option::Option<T>
+        where P:core::ordering::Comparator<T,Q> { return alloc::tree_map::key_navigate_by<T,Q,P>(self.state.borrow(), query, policy, 3); }
+    // InvalidRange only when both bounds hold values and upper < lower.
+    pub fn range_bounds(&self, lower: core::range::Bound<T>, upper: core::range::Bound<T>) -> core::result::Result<Cursor<T>, alloc::tree_map::Error> where T: core::cmp::Ord<T> {
+        let result: core::result::Result<alloc::tree_map::KeyCursor, alloc::tree_map::Error> = alloc::tree_map::key_range_bounds<T>(self.state.borrow(), lower, upper);
+        if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); }
+        return core::result::Ok(Cursor { state: core::result::unwrap(result) });
+    }
+    // Same call sequence as TreeMap.range_bounds_by; disjoint bounds are empty.
+    pub fn range_bounds_by<Q,P>(&self, lower: core::range::Bound<Q>, upper: core::range::Bound<Q>, policy:&P) -> Cursor<T>
+        where P:core::ordering::Comparator<T,Q> {
+        return Cursor { state: alloc::tree_map::key_range_bounds_by<T,Q,P>(self.state.borrow(), lower, upper, policy) };
     }
 }
 // Existing representatives survive duplicate rejection; item remains shallow.

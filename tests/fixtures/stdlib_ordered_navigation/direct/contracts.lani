@@ -1,0 +1,150 @@
+// Ordered navigation: exact policy call sequences, interval edges, prefix runs.
+module app::main;
+import alloc::string;
+import alloc::tree_map;
+import alloc::tree_set;
+import core::cmp;
+import core::iter;
+import core::option;
+import core::ordering;
+import core::range;
+import core::result;
+import core::text;
+
+struct Probe { value:i32,role:i32 }
+struct Counting { calls:i32,lower:i32,upper:i32,last:i32 }
+impl Counting { fn borrow(&self) -> &Counting { return self; } fn reset(&self) { self.calls=0; self.lower=0; self.upper=0; self.last=-1; } }
+pub impl core::ordering::Comparator<i32,Probe> for Counting {
+    pub fn compare(&self,stored:i32,query:Probe) -> core::ordering::Ordering {
+        self.calls+=1; self.last=stored;
+        if(query.role==0) { self.lower+=1; } else { self.upper+=1; }
+        return core::ordering::compare_i32(stored,query.value);
+    }
+}
+fn probe(value:i32,role:i32) -> Probe { return Probe { value:value,role:role }; }
+fn included(value:i32,role:i32) -> core::range::Bound<Probe> { return core::range::Bound::Included(probe(value,role)); }
+fn excluded(value:i32,role:i32) -> core::range::Bound<Probe> { return core::range::Bound::Excluded(probe(value,role)); }
+fn open() -> core::range::Bound<Probe> { return core::range::Bound::Unbounded; }
+fn key(entry:core::option::Option<alloc::tree_map::Entry<i32,i32>>) -> i32 {
+    if(entry.is_none()) { return -1; }
+    let item:alloc::tree_map::Entry<i32,i32> = entry.unwrap(); assert(item.value==item.key*3); return item.key;
+}
+// Forward sum and count, then fused exhaustion at both ends.
+fn drain(cursor:&alloc::tree_map::Cursor<i32,i32>) -> i32 {
+    let total:i32=0; let count:i32=0;
+    let item:core::option::Option<alloc::tree_map::Entry<i32,i32>> = cursor.next();
+    while(item.is_some()) { total+=key(item); count+=1; item=cursor.next(); }
+    assert(cursor.next().is_none() && cursor.next_back().is_none());
+    return count*1000+total;
+}
+// Fifteen ascending inserts build the perfect AVL tree rooted at 7, so every
+// descent visits exactly four nodes before reaching an empty child.
+fn exact_calls() {
+    let map:alloc::tree_map::TreeMap<i32,i32> = alloc::tree_map::with_capacity<i32,i32>(15).unwrap();
+    let policy:Counting=Counting { calls:0,lower:0,upper:0,last:-1 };
+    assert(map.lower_bound_by<Probe,Counting>(probe(3,0),policy.borrow()).is_none() && policy.calls==0);
+    let empty:alloc::tree_map::Cursor<i32,i32> = map.range_bounds_by<Probe,Counting>(included(0,0),included(9,1),policy.borrow());
+    assert(empty.is_empty() && policy.calls==0);
+    let i:i32=0; while(i<15) { assert(map.try_insert(i,i*3).unwrap().is_none()); i+=1; }
+    assert(key(map.lower_bound_by<Probe,Counting>(probe(7,0),policy.borrow()))==7 && policy.calls==4);
+    policy.reset(); assert(key(map.upper_bound_by<Probe,Counting>(probe(7,0),policy.borrow()))==8 && policy.calls==4);
+    policy.reset(); assert(key(map.last_at_most_by<Probe,Counting>(probe(7,0),policy.borrow()))==7 && policy.calls==4);
+    policy.reset(); assert(key(map.last_below_by<Probe,Counting>(probe(7,0),policy.borrow()))==6 && policy.calls==4);
+    policy.reset(); assert(map.last_below_by<Probe,Counting>(probe(0,0),policy.borrow()).is_none() && policy.calls==4);
+    policy.reset(); assert(map.upper_bound_by<Probe,Counting>(probe(14,0),policy.borrow()).is_none() && policy.calls==4);
+    // Both bounded and nonempty: lower descent, front check, upper descent.
+    policy.reset(); let cursor:alloc::tree_map::Cursor<i32,i32> = map.range_bounds_by<Probe,Counting>(included(3,0),excluded(9,1),policy.borrow());
+    assert(policy.calls==9 && policy.lower==4 && policy.upper==5 && drain(cursor.borrow())==6033);
+    // A front above the upper bound stops after one check call.
+    policy.reset(); cursor=map.range_bounds_by<Probe,Counting>(excluded(9,0),included(4,1),policy.borrow());
+    assert(cursor.is_empty() && policy.calls==5 && policy.upper==1 && policy.last==10);
+    // No front: no upper calls at all.
+    policy.reset(); cursor=map.range_bounds_by<Probe,Counting>(excluded(14,0),included(20,1),policy.borrow());
+    assert(cursor.is_empty() && policy.calls==4 && policy.upper==0);
+    // Unbounded ends skip their descents; the check still runs for the first key.
+    policy.reset(); cursor=map.range_bounds_by<Probe,Counting>(open(),included(2,1),policy.borrow());
+    assert(policy.calls==5 && policy.lower==0 && drain(cursor.borrow())==3003);
+    policy.reset(); cursor=map.range_bounds_by<Probe,Counting>(included(12,0),open(),policy.borrow());
+    assert(policy.calls==4 && policy.upper==0 && drain(cursor.borrow())==3039);
+    policy.reset(); cursor=map.range_bounds_by<Probe,Counting>(open(),open(),policy.borrow());
+    assert(policy.calls==0 && drain(cursor.borrow())==15105);
+    // Equal points: Included..Included holds one key; any exclusion is empty.
+    policy.reset(); cursor=map.range_bounds_by<Probe,Counting>(included(5,0),included(5,1),policy.borrow()); assert(drain(cursor.borrow())==1005);
+    cursor=map.range_bounds_by<Probe,Counting>(excluded(5,0),included(5,1),policy.borrow()); assert(cursor.is_empty());
+    cursor=map.range_bounds_by<Probe,Counting>(included(5,0),excluded(5,1),policy.borrow()); assert(cursor.is_empty());
+    // Reversed heterogeneous bounds are not an error, only empty.
+    cursor=map.range_bounds_by<Probe,Counting>(included(9,0),included(3,1),policy.borrow()); assert(cursor.is_empty());
+    // Both ends of one range share a single non-crossing remainder.
+    cursor=map.range_bounds_by<Probe,Counting>(included(4,0),included(8,1),policy.borrow());
+    assert(key(cursor.next_back())==8 && key(cursor.next())==4 && key(cursor.next_back())==7 && key(cursor.next())==5 && key(cursor.next())==6);
+    assert(cursor.next().is_none() && cursor.next_back().is_none() && cursor.is_empty());
+    // Same-key navigation agrees, including misses at both ends.
+    assert(key(map.last_at_most(100))==14 && key(map.last_below(100))==14 && map.last_at_most(-1).is_none() && key(map.last_below(1))==0);
+    assert(map.len()==15 && map.capacity()==15);
+    map.destroy();
+}
+fn full_domain() {
+    let map:alloc::tree_map::TreeMap<i32,i32> = alloc::tree_map::with_capacity<i32,i32>(4).unwrap();
+    let max:i32=2147483647; let min:i32=-2147483647-1;
+    map.try_insert(max,0).unwrap(); map.try_insert(min,0).unwrap(); map.try_insert(0,0).unwrap(); map.try_insert(max-1,0).unwrap();
+    // The half-open range cannot reach MAX; an Included upper bound can.
+    let half:alloc::tree_map::Cursor<i32,i32> = map.range(0,max).unwrap(); let count:i32=0;
+    while(half.next().is_some()) { count+=1; } assert(count==2);
+    let all:alloc::tree_map::Cursor<i32,i32> = map.range_bounds(core::range::Bound::Included(min),core::range::Bound::Included(max)).unwrap();
+    let back:alloc::tree_map::Entry<i32,i32> = all.next_back().unwrap(); assert(back.key==max);
+    count=1; while(all.next().is_some()) { count+=1; } assert(count==4);
+    let top:alloc::tree_map::Cursor<i32,i32> = map.range_bounds(core::range::Bound::Excluded(max-1),core::range::Bound::Unbounded).unwrap();
+    assert(top.next().unwrap().key==max && top.next().is_none());
+    let bottom:alloc::tree_map::Cursor<i32,i32> = map.range_bounds(core::range::Bound::Unbounded,core::range::Bound::Excluded(min)).unwrap(); assert(bottom.is_empty());
+    assert(map.last_at_most(min).unwrap().key==min && map.last_below(min).is_none() && map.last_below(max).unwrap().key==max-1);
+    // Same-key bounds: reversed values are InvalidRange; equal values never are.
+    let reversed:core::result::Result<alloc::tree_map::Cursor<i32,i32>,alloc::tree_map::Error> = map.range_bounds(core::range::Bound::Excluded(1),core::range::Bound::Excluded(0));
+    assert(match(reversed.unwrap_err()) { alloc::tree_map::Error::InvalidRange -> true, _ -> false });
+    assert(map.range_bounds(core::range::Bound::Excluded(0),core::range::Bound::Excluded(0)).unwrap().is_empty());
+    assert(map.range_bounds(core::range::Bound::Included(0),core::range::Bound::Included(0)).unwrap().next().unwrap().key==0);
+    let set:alloc::tree_set::TreeSet<i32> = alloc::tree_set::with_capacity<i32>(3).unwrap();
+    set.try_insert(max).unwrap(); set.try_insert(min).unwrap(); set.try_insert(7).unwrap();
+    assert(set.last_at_most(6).unwrap()==min && set.last_below(7).unwrap()==min && set.last_at_most(7).unwrap()==7);
+    let tail:alloc::tree_set::Cursor<i32> = set.range_bounds(core::range::Bound::Included(7),core::range::Bound::Included(max)).unwrap();
+    assert(tail.next_back().unwrap()==max && tail.next_back().unwrap()==7 && tail.next_back().is_none());
+    assert(set.range_bounds(core::range::Bound::Included(8),core::range::Bound::Included(7)).is_err());
+    set.destroy(); map.destroy();
+}
+fn text(backing:[u8],at:i32,count:i32) -> core::text::Text { return core::text::from_utf8_range(backing,at,count).unwrap(); }
+fn same(value:alloc::string::String,backing:[u8],at:i32,count:i32) -> bool { return value.as_text().equals(text(backing,at,count)); }
+// Prefix families with owned String keys and borrowed Text queries.
+fn prefixes() {
+    let words:[u8;24]=[97,112,97,112,112,97,112,112,108,101,97,112,112,108,121,97,112,116,98,97,110,97,110,97];
+    let starts:[i32;6]=[0,2,5,10,15,18]; let lengths:[i32;6]=[2,3,5,5,3,6]; // ap app apple apply apt banana
+    let set:alloc::tree_set::TreeSet<alloc::string::String> = alloc::tree_set::with_capacity<alloc::string::String>(6).unwrap();
+    let map:alloc::tree_map::TreeMap<alloc::string::String,i32> = alloc::tree_map::with_capacity<alloc::string::String,i32>(6).unwrap();
+    let order:[i32;6]=[3,0,5,1,4,2]; let i:i32=0;
+    while(i<6) {
+        let at:i32=order[i];
+        set.try_insert(alloc::string::from_text(text(words,starts[at],lengths[at])).unwrap()).unwrap();
+        map.try_insert(alloc::string::from_text(text(words,starts[at],lengths[at])).unwrap(),at).unwrap(); i+=1;
+    }
+    let prefix:alloc::string::TextPrefix=alloc::string::TextPrefix {};
+    let app:core::text::Text=text(words,2,3);
+    let family:alloc::tree_set::Cursor<alloc::string::String> = set.range_bounds_by<core::text::Text,alloc::string::TextPrefix>(core::range::Bound::Included(app),core::range::Bound::Included(app),prefix.borrow());
+    assert(same(family.next().unwrap(),words,2,3) && same(family.next_back().unwrap(),words,10,5) && same(family.next().unwrap(),words,5,5) && family.next().is_none());
+    // Neighbors of a prefix family: the last word before it, the first after.
+    assert(same(set.last_below_by<core::text::Text,alloc::string::TextPrefix>(app,prefix.borrow()).unwrap(),words,0,2));
+    assert(same(set.upper_bound_by<core::text::Text,alloc::string::TextPrefix>(app,prefix.borrow()).unwrap(),words,15,3));
+    assert(same(set.last_at_most_by<core::text::Text,alloc::string::TextPrefix>(app,prefix.borrow()).unwrap(),words,10,5));
+    let b:core::text::Text=text(words,18,1); let empty:core::text::Text=text(words,0,0); let a:core::text::Text=text(words,0,1);
+    assert(same(set.lower_bound_by<core::text::Text,alloc::string::TextPrefix>(b,prefix.borrow()).unwrap(),words,18,6));
+    let none:alloc::tree_set::Cursor<alloc::string::String> = set.range_bounds_by<core::text::Text,alloc::string::TextPrefix>(core::range::Bound::Included(text(words,1,2)),core::range::Bound::Included(text(words,1,2)),prefix.borrow());
+    assert(none.is_empty()); // "pa" sits between families
+    let everything:alloc::tree_set::Cursor<alloc::string::String> = set.range_bounds_by<core::text::Text,alloc::string::TextPrefix>(core::range::Bound::Included(empty),core::range::Bound::Included(empty),prefix.borrow());
+    let count:i32=0; while(everything.next().is_some()) { count+=1; } assert(count==6);
+    // Words after the "a" family, through the map with the same policy.
+    let after:alloc::tree_map::Cursor<alloc::string::String,i32> = map.range_bounds_by<core::text::Text,alloc::string::TextPrefix>(core::range::Bound::Excluded(a),core::range::Bound::Unbounded,prefix.borrow());
+    let entry:alloc::tree_map::Entry<alloc::string::String,i32> = after.next().unwrap(); assert(entry.value==5 && same(entry.key,words,18,6) && after.next().is_none());
+    let ap:alloc::tree_map::Entry<alloc::string::String,i32> = map.lower_bound_by<core::text::Text,alloc::string::TextPrefix>(app,prefix.borrow()).unwrap(); assert(ap.value==1);
+    // Removal transfers representatives; release each owner once.
+    while(!set.is_empty()) { let owned:alloc::string::String=set.pop_first().unwrap(); owned.destroy(); }
+    while(!map.is_empty()) { let owned:alloc::tree_map::Entry<alloc::string::String,i32> = map.pop_last().unwrap(); owned.key.destroy(); }
+    set.destroy(); map.destroy();
+}
+fn main() -> i32 { exact_calls(); full_domain(); prefixes(); return 0; }

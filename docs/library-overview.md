@@ -1,6 +1,17 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[ordered navigation increment](stdlib-ordered-navigation.md) adds predecessor
+searches, heterogeneous lower/upper/predecessor bounds and `Bound`-based
+intervals to TreeMap and TreeSet: sixteen methods plus `core::range::Bound`.
+Navigation policies may denote a contiguous Equal run of several keys, so
+`alloc::string::TextPrefix` traverses String prefix families. Exact call
+sequences are specified, and nothing allocates. The independent 48-case model
+checks 12,032 policy calls as lawful descents and 44,427 two-ended pulls; the
+contract fixture checks exact call counts, interval edges and 17 matched
+allocations. Native receipts use the prebuilt compiler; the two registered
+Rust tests type-check and await a full test-binary run.
+The preceding
 [borrowed collection lookup](stdlib-borrowed-lookup.md) adds sixteen point
 methods across hash/tree maps and sets with explicit query laws and stored
 representative ownership. `alloc::string::TextKey` permits borrowed Text
@@ -8,7 +19,8 @@ queries of String keys. The [word deduplicator](stdlib-unique-words.md) checks
 both committed and pending words before allocating a new key. All nine library
 groups and the migrated application's 124 native cases pass on Linux x86_64 CPU
 output, with four selected regressions recorded separately. Heterogeneous
-ordered bounds/ranges and caller-backed buffering remain separate work.
+ordered bounds/ranges are the current increment above; caller-backed
+buffering remains separate work.
 The preceding
 [lazy Option/Result increment](stdlib-lazy-outcomes.md) adds nineteen
 free-function/method pairs over one shared `core::function::Mapper` and
