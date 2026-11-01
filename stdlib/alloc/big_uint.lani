@@ -9,7 +9,7 @@ import core::mem;
 import core::result;
 import core::slice;
 
-pub enum Error { Bounds, LimbLimit, WorkLimit, OutputLimit, AllocationFailed, InvalidRadix, InvalidDigit, Empty, Underflow, DivisionByZero, Overflow, NegativeExponent }
+pub enum Error { Bounds, LimbLimit, WorkLimit, OutputLimit, AllocationFailed, InvalidRadix, InvalidDigit, Empty, Underflow, DivisionByZero, Overflow, NegativeExponent, NotInvertible }
 pub struct Limits { max_limbs: i32, max_work: u64, max_output: i32 }
 pub struct BigUint { limbs: alloc::vec::Vec<u32> }
 pub struct DivRem { quotient: BigUint, remainder: BigUint }
@@ -17,6 +17,13 @@ const BASE: u64 = 4294967296;
 const MASK: u64 = 4294967295;
 // Operands with at least this many significant limbs on both sides use Karatsuba.
 pub const KARATSUBA_THRESHOLD: i32 = 32;
+// Divisors with at least this many limbs, and quotients at least this long, use
+// Burnikel-Ziegler recursive division; smaller cases use Knuth algorithm D.
+pub const BURNIKEL_ZIEGLER_THRESHOLD: i32 = 1024;
+// Values above this many limbs (inputs above this many digits) convert by
+// divide and conquer over squared radix powers.
+pub const CONVERSION_THRESHOLD: i32 = 1024;
+const PARSE_DC_DIGITS: i32 = 8192;
 pub fn default_limits() -> Limits { return Limits { max_limbs: 1048576, max_work: 100000000, max_output: 1048576 }; }
 pub fn zero() -> BigUint { return BigUint { limbs: alloc::vec::new() }; }
 fn valid(limits: Limits) -> bool { return limits.max_limbs >= 0 && limits.max_limbs <= 536870911 && limits.max_output >= 0; }
@@ -103,7 +110,7 @@ pub impl BigUint {
         let longest: i32 = self.limbs.len(); if (other.limbs.len() > longest) { longest = other.limbs.len(); } let scratch: i64 = workspace_limbs(longest);
         // One Karatsuba workspace of about 8*longest limbs (at most 8*max_limbs+64),
         // bounded by the vector's limb capacity; otherwise schoolbook.
-        if (count == self.limbs.len()+other.limbs.len() && self.limbs.len() >= KARATSUBA_THRESHOLD && other.limbs.len() >= KARATSUBA_THRESHOLD && scratch <= 8*(limits.max_limbs as i64)+64 && scratch <= limb_capacity() as i64 && scratch <= limits.max_work as i64) {
+        if (count == self.limbs.len()+other.limbs.len() && self.limbs.len() >= KARATSUBA_THRESHOLD && other.limbs.len() >= KARATSUBA_THRESHOLD && scratch <= 8*(limits.max_limbs as i64)+64 && scratch <= limb_capacity() as i64 && (scratch as u64) <= limits.max_work) {
             let wide: core::result::Result<BigUint,Error> = fresh(count,limits); if (wide.is_err()) { return wide; } let product: BigUint = wide.unwrap();
             let workspace_limits: Limits = limits; workspace_limits.max_limbs = 536870911;
             let space: core::result::Result<BigUint,Error> = fresh(scratch as i32,workspace_limits); if (space.is_err()) { product.destroy(); return space; } let workspace: BigUint = space.unwrap();
@@ -194,7 +201,7 @@ fn kmul_into(out: &BigUint, at: i32, end: i32, x: &BigUint, xf: i32, xc: i32, y:
 // Largest g with radix^g < 2^32.
 fn chunk_digits(radix: i32) -> i32 { let g: i32 = 0; let power: u64 = 1; while (power*(radix as u64) <= MASK) { power = power*(radix as u64); g += 1; } return g; }
 fn digit(byte: u8) -> i32 { if (byte >= 48 && byte <= 57) { return (byte-48) as i32; } if (byte >= 65 && byte <= 90) { return (byte-65) as i32+10; } if (byte >= 97 && byte <= 122) { return (byte-97) as i32+10; } return 36; }
-pub fn parse(input: core::slice::View<u8>, radix: i32, limits: Limits) -> core::result::Result<BigUint,Error> {
+fn parse_basic(input: core::slice::View<u8>, radix: i32, limits: Limits) -> core::result::Result<BigUint,Error> {
     if (!valid(limits) || input.start < 0 || input.length < 0 || input.start > 2147483647-input.length) { return core::result::Err(Error::Bounds); }
     if (radix < 2 || radix > 36) { return core::result::Err(Error::InvalidRadix); } if (input.length == 0) { return core::result::Err(Error::Empty); }
     if ((input.length as u64) > limits.max_work) { return core::result::Err(Error::WorkLimit); }
@@ -242,7 +249,7 @@ fn mul_mod(left: &BigUint, right: &BigUint, modulus: &BigUint, limits: Limits) -
     let pair: DivRem = divided.unwrap(); pair.quotient.destroy(); return core::result::Ok(pair.remainder);
 }
 pub impl BigUint {
-    pub fn div_rem(&self, other: &BigUint, limits: Limits) -> core::result::Result<DivRem,Error> {
+    fn div_rem_basic(&self, other: &BigUint, limits: Limits) -> core::result::Result<DivRem,Error> {
         if (!valid(limits)) { return core::result::Err(Error::Bounds); } if (other.is_zero()) { return core::result::Err(Error::DivisionByZero); }
         let checked: core::result::Result<i32,Error> = guard(limits,self.limbs.len(),division_work(self.limbs.len(),other.limbs.len())); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
         if (other.limbs.len() > limits.max_limbs) { return core::result::Err(Error::LimbLimit); }
@@ -289,7 +296,7 @@ pub impl BigUint {
         if (remainder_result.is_err()) { quotient.destroy(); return core::result::Err(remainder_result.unwrap_err()); }
         return core::result::Ok(DivRem { quotient: quotient, remainder: remainder_result.unwrap() });
     }
-    pub fn format_radix(&self, radix: i32, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+    fn format_basic(&self, radix: i32, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
         if (!valid(limits)) { return core::result::Err(Error::Bounds); } if (radix < 2 || radix > 36) { return core::result::Err(Error::InvalidRadix); }
         if (limits.max_output == 0) { return core::result::Err(Error::OutputLimit); }
         let cloned: core::result::Result<BigUint,Error> = self.try_clone(limits); if (cloned.is_err()) { return core::result::Err(cloned.unwrap_err()); } let copy: BigUint = cloned.unwrap(); let output: alloc::vec::Vec<u8> = alloc::vec::new(); let work: u64 = self.limbs.len() as u64;
@@ -396,3 +403,236 @@ pub impl core::cmp::PartialOrd<BigUint> for BigUint {
     pub fn partial_cmp(left: BigUint, right: BigUint) -> core::cmp::PartialOrdering { let order: i32 = left.compare(right.borrow()); if (order < 0) { return core::cmp::Less; } if (order > 0) { return core::cmp::Greater; } return core::cmp::Equal; }
 }
 pub impl core::hash::Hash<BigUint> for BigUint { pub fn hash(value: BigUint) -> u32 { return value.value_hash(); } }
+
+// ---- Subquadratic division, radix conversion and modular inverse ----
+// Internal steps record the first failure in Ctx and return zero owners, so
+// each routine stays straight-line; every owner is still destroyed exactly once.
+struct Ctx { limits: Limits, failed: bool, error: Error }
+impl Ctx { fn borrow(&self) -> &Ctx { return self; } }
+fn context(limits: Limits) -> Ctx { return Ctx { limits: Limits { max_limbs: 536870911, max_work: 18446744073709551615, max_output: limits.max_output }, failed: false, error: Error::Bounds }; }
+fn keep(c: &Ctx, value: core::result::Result<BigUint,Error>) -> BigUint {
+    if (value.is_err()) { if (!c.failed) { c.failed = true; c.error = value.unwrap_err(); } return zero(); } return value.unwrap();
+}
+fn keep_pair(c: &Ctx, value: core::result::Result<DivRem,Error>) -> DivRem {
+    if (value.is_err()) { if (!c.failed) { c.failed = true; c.error = value.unwrap_err(); } return DivRem { quotient: zero(), remainder: zero() }; } return value.unwrap();
+}
+fn flag(c: &Ctx, error: Error) { if (!c.failed) { c.failed = true; c.error = error; } }
+fn one(c: &Ctx) -> BigUint { return keep(c,from_u64(1,c.limits)); }
+impl BigUint {
+    // Limbs [from, from+count) as a new normalized owner.
+    fn window(&self, from: i32, count: i32, limits: Limits) -> core::result::Result<BigUint,Error> {
+        let end: i32 = from+count; if (end > self.limbs.len()) { end = self.limbs.len(); } let size: i32 = end-from; if (size < 0) { size = 0; }
+        let made: core::result::Result<BigUint,Error> = fresh(size,limits); if (made.is_err()) { return made; } let out: BigUint = made.unwrap();
+        let os: [u32] = out.limbs.as_slice(); let xs: [u32] = self.limbs.as_slice(); let i: i32 = 0; while (i < size) { os[i] = xs[from+i]; i += 1; }
+        out.normalize(); return core::result::Ok(out);
+    }
+    // self mod 2^bits.
+    fn low_bits(&self, bits: u64, limits: Limits) -> core::result::Result<BigUint,Error> {
+        let whole: u64 = bits/32; if (whole >= self.limbs.len() as u64) { return self.try_clone(limits); }
+        let extra: i32 = 0; if (bits%32 != 0) { extra = 1; }
+        let made: core::result::Result<BigUint,Error> = self.window(0,(whole as i32)+extra,limits); if (made.is_err()) { return made; } let out: BigUint = made.unwrap();
+        if (extra != 0 && out.limbs.len() > (whole as i32)) { let os: [u32] = out.limbs.as_slice(); os[whole as i32] = os[whole as i32] & ((1 << ((bits%32) as i32))-1) as u32; }
+        out.normalize(); return core::result::Ok(out);
+    }
+}
+fn decrement(c: &Ctx, value: BigUint) -> BigUint { let unit: BigUint = one(c); let out: BigUint = keep(c,value.sub(unit.borrow(),c.limits)); unit.destroy(); value.destroy(); return out; }
+// Burnikel-Ziegler (as in CPython's _pylong): a < b*2^n and b has exactly n bits.
+fn div2n1n(c: &Ctx, a: &BigUint, b: &BigUint, n: u64) -> DivRem {
+    if (c.failed) { return DivRem { quotient: zero(), remainder: zero() }; }
+    let limit: u64 = (BURNIKEL_ZIEGLER_THRESHOLD as u64)*32;
+    if (n < limit || a.bit_length() < n+limit) { return keep_pair(c,a.div_rem_basic(b,c.limits)); }
+    if ((n & 1) == 0) { return div2n1n_even(c,a,b,n); }
+    let aa: BigUint = keep(c,a.shl(1,c.limits)); let bb: BigUint = keep(c,b.shl(1,c.limits));
+    let pair: DivRem = div2n1n_even(c,aa.borrow(),bb.borrow(),n+1); aa.destroy(); bb.destroy();
+    let rem: BigUint = keep(c,pair.remainder.shr(1,c.limits)); pair.remainder.destroy();
+    return DivRem { quotient: pair.quotient, remainder: rem };
+}
+fn div2n1n_even(c: &Ctx, a: &BigUint, b: &BigUint, n: u64) -> DivRem {
+    let half: u64 = n >> 1;
+    let b1: BigUint = keep(c,b.shr(half,c.limits)); let b2: BigUint = keep(c,b.low_bits(half,c.limits));
+    let a_hi: BigUint = keep(c,a.shr(n,c.limits)); let a_shift: BigUint = keep(c,a.shr(half,c.limits)); let a_mid: BigUint = keep(c,a_shift.low_bits(half,c.limits)); a_shift.destroy();
+    let first: DivRem = div3n2n(c,a_hi.borrow(),a_mid.borrow(),b,b1.borrow(),b2.borrow(),half); a_hi.destroy(); a_mid.destroy();
+    let a_lo: BigUint = keep(c,a.low_bits(half,c.limits));
+    let second: DivRem = div3n2n(c,first.remainder.borrow(),a_lo.borrow(),b,b1.borrow(),b2.borrow(),half); a_lo.destroy(); first.remainder.destroy(); b2.destroy(); b1.destroy();
+    let high: BigUint = keep(c,first.quotient.shl(half,c.limits)); first.quotient.destroy();
+    let quotient: BigUint = keep(c,high.add(second.quotient.borrow(),c.limits)); high.destroy(); second.quotient.destroy();
+    return DivRem { quotient: quotient, remainder: second.remainder };
+}
+// [a12, a3] / b where b = b1*2^n + b2 and a12 < b*2^n; at most two corrections.
+fn div3n2n(c: &Ctx, a12: &BigUint, a3: &BigUint, b: &BigUint, b1: &BigUint, b2: &BigUint, n: u64) -> DivRem {
+    let top: BigUint = keep(c,a12.shr(n,c.limits)); let q: BigUint = zero(); let r: BigUint = zero();
+    if (top.compare(b1) == 0) {
+        let unit: BigUint = one(c); let power: BigUint = keep(c,unit.shl(n,c.limits)); q = keep(c,power.sub(unit.borrow(),c.limits)); power.destroy(); unit.destroy();
+        let shifted: BigUint = keep(c,b1.shl(n,c.limits)); let diff: BigUint = keep(c,a12.sub(shifted.borrow(),c.limits)); shifted.destroy(); r = keep(c,diff.add(b1,c.limits)); diff.destroy();
+    } else { let pair: DivRem = div2n1n(c,a12,b1,n); q = pair.quotient; r = pair.remainder; }
+    top.destroy();
+    let shifted_r: BigUint = keep(c,r.shl(n,c.limits)); r.destroy(); let rr: BigUint = keep(c,shifted_r.add(a3,c.limits)); shifted_r.destroy();
+    let t: BigUint = keep(c,q.mul(b2,c.limits));
+    while (!c.failed && rr.compare(t.borrow()) < 0) { q = decrement(c,q); let grown: BigUint = keep(c,rr.add(b,c.limits)); rr.destroy(); rr = grown; }
+    let out: BigUint = keep(c,rr.sub(t.borrow(),c.limits)); rr.destroy(); t.destroy();
+    return DivRem { quotient: q, remainder: out };
+}
+// Normalize b to a whole number of limbs, then divide n-bit chunks of a from the top.
+fn fast_div(a: &BigUint, b: &BigUint, limits: Limits) -> core::result::Result<DivRem,Error> {
+    let state: Ctx = context(limits); let c: &Ctx = state.borrow();
+    let shift: u64 = (32-(b.bit_length()%32))%32;
+    let bn: BigUint = keep(c,b.shl(shift,c.limits)); let an: BigUint = keep(c,a.shl(shift,c.limits));
+    let n: u64 = bn.bit_length(); let width: i32 = (n/32) as i32; let chunks: i32 = (an.limbs.len()+width-1)/width;
+    let quotient: BigUint = keep(c,fresh(chunks*width,c.limits)); let r: BigUint = zero(); let index: i32 = chunks-1;
+    let top: BigUint = keep(c,an.window(index*width,width,c.limits));
+    if (top.compare(bn.borrow()) < 0) { r = top; index -= 1; } else { top.destroy(); }
+    while (index >= 0 && !c.failed) {
+        let digit: BigUint = keep(c,an.window(index*width,width,c.limits));
+        let shifted: BigUint = keep(c,r.shl(n,c.limits)); r.destroy(); let combined: BigUint = keep(c,shifted.add(digit.borrow(),c.limits)); shifted.destroy(); digit.destroy();
+        let pair: DivRem = div2n1n(c,combined.borrow(),bn.borrow(),n); combined.destroy();
+        if (!c.failed) { let qs: [u32] = quotient.limbs.as_slice(); let ps: [u32] = pair.quotient.limbs.as_slice(); let i: i32 = 0; while (i < pair.quotient.limbs.len()) { qs[index*width+i] = ps[i]; i += 1; } }
+        pair.quotient.destroy(); r = pair.remainder; index -= 1;
+    }
+    quotient.normalize(); let rem: BigUint = keep(c,r.shr(shift,c.limits)); r.destroy(); an.destroy(); bn.destroy();
+    if (!c.failed && (quotient.limbs.len() > limits.max_limbs || rem.limbs.len() > limits.max_limbs)) { flag(c,Error::LimbLimit); }
+    if (c.failed) { quotient.destroy(); rem.destroy(); return core::result::Err(c.error); }
+    return core::result::Ok(DivRem { quotient: quotient, remainder: rem });
+}
+// powers[i] = (radix^g)^(2^i). Stops after `levels` entries, or (levels == 0)
+// at the first entry whose square exceeds any value of `cover` limbs.
+fn radix_powers(c: &Ctx, radix: i32, levels: i32, cover: i32) -> alloc::vec::Vec<BigUint> {
+    let powers: alloc::vec::Vec<BigUint> = alloc::vec::new(); let base: u64 = 1; let g: i32 = 0; while (g < chunk_digits(radix)) { base = base*(radix as u64); g += 1; }
+    let current: BigUint = keep(c,from_u64(base,c.limits)); let level: i32 = 0;
+    while (true) {
+        if (powers.try_push(current).is_err()) { current.destroy(); flag(c,Error::AllocationFailed); return powers; }
+        level += 1; if (c.failed || (levels > 0 && level >= levels) || (levels == 0 && 2*(current.limbs.len()-1) >= cover)) { break; }
+        current = keep(c,current.mul(current.borrow(),c.limits));
+    }
+    return powers;
+}
+fn destroy_powers(powers: alloc::vec::Vec<BigUint>) { let i: i32 = 0; while (i < powers.len()) { let p: BigUint = powers.at(i); p.destroy(); i += 1; } powers.destroy(); }
+fn push_zeros(c: &Ctx, out: &alloc::vec::Vec<u8>, count: i32) {
+    let i: i32 = 0; while (i < count && !c.failed) { if (out.len() >= c.limits.max_output) { flag(c,Error::OutputLimit); return; } if (out.try_push(48).is_err()) { flag(c,Error::AllocationFailed); return; } i += 1; }
+}
+// Appends x in radix; width > 0 left-pads to exactly width digits. Requires
+// x < powers[level+1] (or x < radix^g when level is -1).
+fn emit(c: &Ctx, out: &alloc::vec::Vec<u8>, x: &BigUint, level: i32, width: i32, radix: i32, powers: &alloc::vec::Vec<BigUint>) {
+    if (c.failed) { return; }
+    if (level < 0 || x.limbs.len() <= CONVERSION_THRESHOLD) {
+        if (width > 0 && x.is_zero()) { push_zeros(c,out,width); return; }
+        let formatted: core::result::Result<alloc::vec::Vec<u8>,Error> = x.format_basic(radix,c.limits);
+        if (formatted.is_err()) { flag(c,formatted.unwrap_err()); return; } let digits: alloc::vec::Vec<u8> = formatted.unwrap();
+        if (width > digits.len()) { push_zeros(c,out,width-digits.len()); }
+        let i: i32 = 0; while (i < digits.len() && !c.failed) { if (out.len() >= c.limits.max_output) { flag(c,Error::OutputLimit); } else { if (out.try_push(digits.at(i)).is_err()) { flag(c,Error::AllocationFailed); } } i += 1; }
+        digits.destroy(); return;
+    }
+    let power: BigUint = powers.at(level); let half: i32 = 0; if (width > 0) { half = width/2; }
+    let low_width: i32 = chunk_digits(radix); let k: i32 = 0; while (k < level) { low_width = low_width*2; k += 1; }
+    if (x.compare(power.borrow()) < 0) { if (width > 0) { push_zeros(c,out,width-low_width); emit(c,out,x,level-1,low_width,radix,powers); } else { emit(c,out,x,level-1,0,radix,powers); } return; }
+    let pair: DivRem = keep_pair(c,x.div_rem(power.borrow(),c.limits));
+    if (width > 0) { emit(c,out,pair.quotient.borrow(),level-1,width-low_width,radix,powers); } else { emit(c,out,pair.quotient.borrow(),level-1,0,radix,powers); }
+    emit(c,out,pair.remainder.borrow(),level-1,low_width,radix,powers); pair.destroy();
+}
+// value = hi * radix^(g*2^j) + lo over the digit string.
+fn parse_dc(c: &Ctx, input: core::slice::View<u8>, from: i32, count: i32, radix: i32, powers: &alloc::vec::Vec<BigUint>) -> BigUint {
+    if (c.failed) { return zero(); }
+    let part: core::slice::View<u8> = core::slice::View { values: input.values, start: input.start+from, length: count };
+    if (count <= PARSE_DC_DIGITS) { return keep(c,parse_basic(part,radix,c.limits)); }
+    let low: i32 = chunk_digits(radix); let j: i32 = 0; while (low*2 < count) { low = low*2; j += 1; }
+    let high: BigUint = parse_dc(c,input,from,count-low,radix,powers); let rest: BigUint = parse_dc(c,input,from+count-low,low,radix,powers);
+    let power: BigUint = powers.at(j); let scaled: BigUint = keep(c,high.mul(power.borrow(),c.limits)); high.destroy();
+    let value: BigUint = keep(c,scaled.add(rest.borrow(),c.limits)); scaled.destroy(); rest.destroy(); return value;
+}
+fn conversion_work(digits: u64, radix: i32, limbs: u64) -> u64 { return (digits/(chunk_digits(radix) as u64)+1)*(limbs+1)+digits; }
+// log2(radix) for power-of-two radices, else 0.
+fn radix_shift(radix: i32) -> i32 { if (radix == 2) { return 1; } if (radix == 4) { return 2; } if (radix == 8) { return 3; } if (radix == 16) { return 4; } if (radix == 32) { return 5; } return 0; }
+// Power-of-two radices pack bits directly: linear time in the digit count.
+fn parse_bits(input: core::slice::View<u8>, radix: i32, limits: Limits) -> core::result::Result<BigUint,Error> {
+    let shift: i32 = radix_shift(radix); let index: i32 = 0;
+    while (index < input.length) { if (digit(input.values[input.start+index]) >= radix) { return core::result::Err(Error::InvalidDigit); } index += 1; }
+    let skip: i32 = 0; while (skip < input.length && input.values[input.start+skip] == 48) { skip += 1; }
+    let bits: u64 = ((input.length-skip) as u64)*(shift as u64); let count: u64 = (bits+31)/32;
+    if (count > limits.max_limbs as u64) { return core::result::Err(Error::LimbLimit); }
+    let made: core::result::Result<BigUint,Error> = fresh(count as i32,limits); if (made.is_err()) { return made; } let out: BigUint = made.unwrap();
+    let os: [u32] = out.limbs.as_slice(); let position: u64 = 0; index = input.length;
+    while (index > skip) {
+        index -= 1; let value: u64 = digit(input.values[input.start+index]) as u64; let limb: i32 = (position/32) as i32; let offset: u64 = position%32;
+        os[limb] = os[limb] | ((value << offset) as u32); if (offset+(shift as u64) > 32) { os[limb+1] = os[limb+1] | ((value >> (32-offset)) as u32); }
+        position += shift as u64;
+    }
+    out.normalize(); return core::result::Ok(out);
+}
+pub fn parse(input: core::slice::View<u8>, radix: i32, limits: Limits) -> core::result::Result<BigUint,Error> {
+    if (radix_shift(radix) != 0 && input.length > PARSE_DC_DIGITS && valid(limits) && input.start >= 0 && input.start <= 2147483647-input.length) {
+        if ((input.length as u64) > limits.max_work) { return core::result::Err(Error::WorkLimit); } return parse_bits(input,radix,limits);
+    }
+    if (input.length <= PARSE_DC_DIGITS || !valid(limits) || radix < 2 || radix > 36 || input.start < 0 || input.start > 2147483647-input.length) { return parse_basic(input,radix,limits); }
+    let index: i32 = 0; while (index < input.length) { if (digit(input.values[input.start+index]) >= radix) { return core::result::Err(Error::InvalidDigit); } index += 1; }
+    let digit_bits: u64 = 1; while ((1 << digit_bits) < (radix as u64)) { digit_bits += 1; }
+    let estimate: u64 = (input.length as u64)*digit_bits/32+1;
+    // Charged as the basecase bound, so a limit admits the same inputs on either path.
+    if (conversion_work(input.length as u64,radix,estimate) > limits.max_work) { return core::result::Err(Error::WorkLimit); }
+    let levels: i32 = 1; let span: i32 = chunk_digits(radix); while (span*2 < input.length) { span = span*2; levels += 1; }
+    let state: Ctx = context(limits); let c: &Ctx = state.borrow();
+    let powers: alloc::vec::Vec<BigUint> = radix_powers(c,radix,levels,0);
+    let value: BigUint = parse_dc(c,input,0,input.length,radix,powers.borrow()); destroy_powers(powers);
+    if (!c.failed && value.limbs.len() > limits.max_limbs) { flag(c,Error::LimbLimit); }
+    if (c.failed) { value.destroy(); return core::result::Err(c.error); } return core::result::Ok(value);
+}
+pub impl BigUint {
+    pub fn div_rem(&self, other: &BigUint, limits: Limits) -> core::result::Result<DivRem,Error> {
+        if (valid(limits) && !other.is_zero() && other.limbs.len() >= BURNIKEL_ZIEGLER_THRESHOLD && self.limbs.len() >= other.limbs.len()+BURNIKEL_ZIEGLER_THRESHOLD) {
+            let checked: core::result::Result<i32,Error> = guard(limits,self.limbs.len(),division_work(self.limbs.len(),other.limbs.len())); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+            if (other.limbs.len() > limits.max_limbs) { return core::result::Err(Error::LimbLimit); }
+            return fast_div(self,other,limits);
+        }
+        return self.div_rem_basic(other,limits);
+    }
+    pub fn format_radix(&self, radix: i32, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+        if (self.limbs.len() <= CONVERSION_THRESHOLD || !valid(limits) || radix < 2 || radix > 36 || limits.max_output == 0) { return self.format_basic(radix,limits); }
+        if (radix_shift(radix) != 0) { return self.format_bits(radix,limits); }
+        let digit_bits: u64 = 0; let radix_power: i32 = radix; while (radix_power > 1) { digit_bits += 1; radix_power = radix_power >> 1; }
+        let digits: u64 = self.bit_length()/digit_bits+1;
+        if (conversion_work(digits,radix,self.limbs.len() as u64) > limits.max_work) { return core::result::Err(Error::WorkLimit); }
+        let state: Ctx = context(limits); let c: &Ctx = state.borrow();
+        // Square until powers[last]^2 exceeds self.
+        let powers: alloc::vec::Vec<BigUint> = radix_powers(c,radix,0,self.limbs.len()); let top: i32 = powers.len()-1;
+        let output: alloc::vec::Vec<u8> = alloc::vec::new(); let reserve: u64 = digits; if (reserve > limits.max_output as u64) { reserve = limits.max_output as u64; }
+        if (output.try_reserve(reserve as i32).is_err()) { flag(c,Error::AllocationFailed); }
+        emit(c,output.borrow(),self,top,0,radix,powers.borrow()); destroy_powers(powers);
+        if (c.failed) { output.destroy(); return core::result::Err(c.error); } return core::result::Ok(output);
+    }
+    // Power-of-two radix: read digits straight from the bits, most significant first.
+    fn format_bits(&self, radix: i32, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+        let shift: u64 = radix_shift(radix) as u64; let count: u64 = (self.bit_length()+shift-1)/shift;
+        if ((self.limbs.len() as u64) > limits.max_work) { return core::result::Err(Error::WorkLimit); }
+        if (count > limits.max_output as u64) { return core::result::Err(Error::OutputLimit); }
+        let output: alloc::vec::Vec<u8> = alloc::vec::new(); if (output.try_reserve(count as i32).is_err()) { return core::result::Err(Error::AllocationFailed); }
+        let xs: [u32] = self.limbs.as_slice(); let length: i32 = self.limbs.len(); let index: u64 = count;
+        while (index > 0) {
+            index -= 1; let position: u64 = index*shift; let limb: i32 = (position/32) as i32; let offset: u64 = position%32;
+            let wide: u64 = (xs[limb] as u64) >> offset; if (offset+shift > 32 && limb+1 < length) { wide = wide | ((xs[limb+1] as u64) << (32-offset)); }
+            let value: u32 = (wide & ((1 << shift)-1)) as u32; let byte: u8 = (value+48) as u8; if (value >= 10) { byte = (value+87) as u8; }
+            if (output.try_push(byte).is_err()) { output.destroy(); return core::result::Err(Error::AllocationFailed); }
+        }
+        return core::result::Ok(output);
+    }
+    // Inverse of self modulo modulus by the extended Euclidean algorithm over
+    // magnitudes: r_i is congruent to (-1)^(i+1) * u_i * self.
+    pub fn mod_inverse(&self, modulus: &BigUint, limits: Limits) -> core::result::Result<BigUint,Error> {
+        if (!valid(limits)) { return core::result::Err(Error::Bounds); } if (modulus.is_zero()) { return core::result::Err(Error::DivisionByZero); }
+        if (modulus.limbs.len() == 1 && modulus.get(0) == 1) { return core::result::Ok(zero()); }
+        let state: Ctx = Ctx { limits: limits, failed: false, error: Error::Bounds }; let c: &Ctx = state.borrow();
+        let reduced: DivRem = keep_pair(c,self.div_rem(modulus,limits)); reduced.quotient.destroy();
+        let r0: BigUint = keep(c,modulus.try_clone(limits)); let r1: BigUint = reduced.remainder; let u0: BigUint = zero(); let u1: BigUint = one(c); let odd: bool = true;
+        let budget: u64 = limits.max_work;
+        while (!c.failed && !r1.is_zero() && !(r1.limbs.len() == 1 && r1.get(0) == 1)) {
+            let cost: u64 = division_work(r0.limbs.len(),r1.limbs.len())+(r0.limbs.len() as u64)*(u1.limbs.len() as u64+1);
+            if (cost > budget) { flag(c,Error::WorkLimit); break; } budget -= cost;
+            let step: DivRem = keep_pair(c,r0.div_rem(r1.borrow(),limits));
+            let product: BigUint = keep(c,step.quotient.mul(u1.borrow(),limits)); step.quotient.destroy();
+            let u2: BigUint = keep(c,u0.add(product.borrow(),limits)); product.destroy();
+            r0.destroy(); r0 = r1; r1 = step.remainder; u0.destroy(); u0 = u1; u1 = u2; odd = !odd;
+        }
+        if (!c.failed && r1.is_zero()) { flag(c,Error::NotInvertible); }
+        let result: BigUint = zero();
+        if (!c.failed) { if (odd) { result = u1; u1 = zero(); } else { result = keep(c,modulus.sub(u1.borrow(),limits)); } }
+        r0.destroy(); r1.destroy(); u0.destroy(); u1.destroy();
+        if (c.failed) { result.destroy(); return core::result::Err(c.error); } return core::result::Ok(result);
+    }
+}

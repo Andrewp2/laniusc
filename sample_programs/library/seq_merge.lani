@@ -1,8 +1,9 @@
 // git merge-file / diff3 -m style three-way merge over ext::merge3.
-// usage: seq-merge [--diff3] [--gnu] [--eager|--zealous|--alnum] [-L OURS -L BASE -L THEIRS] OURS BASE THEIRS
+// usage: seq-merge [--diff3] [--gnu] [--eager|--zealous|--alnum] [--myers] [-L OURS -L BASE -L THEIRS] OURS BASE THEIRS
 // Default: merge-style markers, zealous-alnum level (git merge-file). --diff3
 // adds the base section (eager level); --gnu also prints identical changes the
-// way GNU diff3 -m does. Writes the merge to stdout.
+// way GNU diff3 -m does. Lines align with git's xdiff; --myers uses minimal
+// Myers instead. Writes the merge to stdout.
 // Exit 0 clean, 1 conflicts, 2 usage/limits/I/O failure.
 module app::main;
 import alloc::io;
@@ -40,7 +41,7 @@ fn read_file(name: core::slice::View<u8>, output: &alloc::io::Buffer) -> bool {
     return core::result::is_ok(copied) && core::result::is_ok(closed);
 }
 fn view_of(buffer: &alloc::io::Buffer) -> core::slice::View<u8> { return core::result::unwrap(core::slice::view(buffer.as_bytes(), buffer.len())); }
-fn run(names: [core::slice::View<u8>;3], labels: ext::merge3::Labels, level: ext::merge3::Level, format: ext::merge3::Format) -> i32 {
+fn run(names: [core::slice::View<u8>;3], labels: ext::merge3::Labels, level: ext::merge3::Level, algorithm: ext::seqdiff::Algorithm, format: ext::merge3::Format) -> i32 {
     let ours: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(268435456));
     let base: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(268435456));
     let theirs: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(268435456));
@@ -50,7 +51,7 @@ fn run(names: [core::slice::View<u8>;3], labels: ext::merge3::Labels, level: ext
     let o: alloc::vec::Vec<ext::seqdiff::Line> = core::result::unwrap(ext::seqdiff::split_lines(view_of(base.borrow()), limits));
     let b: alloc::vec::Vec<ext::seqdiff::Line> = core::result::unwrap(ext::seqdiff::split_lines(view_of(theirs.borrow()), limits));
     let status: i32 = 0;
-    let merged: core::result::Result<ext::merge3::Merge, ext::merge3::Error> = ext::merge3::merge_lines(o.as_view(), a.as_view(), b.as_view(), level, limits);
+    let merged: core::result::Result<ext::merge3::Merge, ext::merge3::Error> = ext::merge3::merge_lines_with(o.as_view(), a.as_view(), b.as_view(), level, algorithm, limits);
     if (core::result::is_err(merged)) { status = complain("seq-merge: merge failed\n", 24); }
     else {
         let m: ext::merge3::Merge = core::result::unwrap(merged);
@@ -75,7 +76,7 @@ fn main() -> i32 {
     let arguments: std::args::Arguments = core::result::unwrap(captured);
     let names: [core::slice::View<u8>;3] = [literal("", 0); 3]; let tags: [core::slice::View<u8>;3] = [literal("", 0); 3];
     let count: i32 = 0; let tagged: i32 = 0; let ok: bool = true; let i: i32 = 0;
-    let diff3: bool = false; let gnu: bool = false; let level: i32 = -1;
+    let diff3: bool = false; let gnu: bool = false; let level: i32 = -1; let algorithm: ext::seqdiff::Algorithm = ext::seqdiff::Algorithm::Xdiff;
     while (i < arguments.len() && ok) {
         let arg: core::slice::View<u8> = core::option::unwrap(arguments.get(i));
         if (same(arg, literal("--diff3", 7))) { diff3 = true; }
@@ -83,12 +84,13 @@ fn main() -> i32 {
         else { if (same(arg, literal("--eager", 7))) { level = 0; }
         else { if (same(arg, literal("--zealous", 9))) { level = 1; }
         else { if (same(arg, literal("--alnum", 7))) { level = 2; }
+        else { if (same(arg, literal("--myers", 7))) { algorithm = ext::seqdiff::Algorithm::Myers; }
         else { if (same(arg, literal("-L", 2)) && i + 1 < arguments.len() && tagged < 3) { i += 1; tags[tagged] = core::option::unwrap(arguments.get(i)); tagged += 1; }
-        else { if (count < 3) { names[count] = arg; count += 1; } else { ok = false; } } } } } } }
+        else { if (count < 3) { names[count] = arg; count += 1; } else { ok = false; } } } } } } } }
         i += 1;
     }
     let status: i32 = 2;
-    if (!ok || count != 3) { status = complain("usage: seq-merge [--diff3] [--gnu] [--eager|--zealous|--alnum] [-L L]x3 OURS BASE THEIRS\n", 89); }
+    if (!ok || count != 3) { status = complain("usage: seq-merge [--diff3] [--gnu] [--eager|--zealous|--alnum] [--myers] [-L L]x3 OURS BASE THEIRS\n", 99); }
     else {
         while (tagged < 3) { tags[tagged] = names[tagged]; tagged += 1; }
         if (level < 0) { if (diff3) { level = 0; } else { level = 2; } }
@@ -96,7 +98,7 @@ fn main() -> i32 {
         if (level == 1) { chosen = ext::merge3::Level::Zealous; } if (level == 2) { chosen = ext::merge3::Level::ZealousAlnum; }
         let style: ext::merge3::Style = ext::merge3::Style::Merge; if (diff3) { style = ext::merge3::Style::Diff3; }
         let labels: ext::merge3::Labels = ext::merge3::Labels { ours: tags[0], base: tags[1], theirs: tags[2] };
-        status = run(names, labels, chosen, ext::merge3::Format { style: style, gnu_identical: gnu, max_output: 268435456 });
+        status = run(names, labels, chosen, algorithm, ext::merge3::Format { style: style, gnu_identical: gnu, max_output: 268435456 });
     }
     arguments.destroy(); return status;
 }

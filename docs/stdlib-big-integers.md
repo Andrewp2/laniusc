@@ -23,8 +23,9 @@ evidence. The per-operation contracts are in two other guides.
 | --- | --- | --- |
 | Construction | `zero`, `from_u64`, `parse(View<u8>, radix, limits)` | `zero`, `from_i64`, `from_u64`, `parse` with optional sign |
 | Arithmetic | `add`, `sub` (rejects underflow), `mul` | `add`, `sub`, `mul`, `neg`, `abs` |
-| Division | `div_rem` (Knuth algorithm D) | `div_rem` (truncating), `div_rem_euclid` |
-| Powers | `pow(u32)`, `mod_pow(exponent, modulus)` | `pow(u32)`, `mod_pow(exponent, modulus)` |
+| Division | `div_rem`: Knuth algorithm D, Burnikel-Ziegler above 1,024 limbs | `div_rem` (truncating), `div_rem_euclid` |
+| Powers | `pow(u32)`, `mod_pow(exponent, modulus)` | `pow(u32)`, `mod_pow(exponent, modulus)`, including negative exponents |
+| Inverses | `mod_inverse(modulus)` | `mod_inverse(modulus)` |
 | Number theory | `gcd` | `gcd` (nonnegative) |
 | Bits | `shl`, `shr`, `bit_and`, `bit_or`, `bit_xor`, `bit`, `bit_length` | `shl`, arithmetic `shr`, `bit_and`, `bit_or`, `bit_xor`, `bit_not` |
 | Comparison | `compare`, lawful `Eq`/`Ord`/`PartialOrd`, `Hash` | `compare`, lawful `Eq`/`Ord`/`PartialOrd` |
@@ -35,8 +36,23 @@ Every fallible operation takes `alloc::big_uint::Limits` by value. It returns
 each success returns a new owner, which must be destroyed exactly once.
 Operands are borrowed and survive every error.
 
-`Error` has a new final variant, `NegativeExponent`. Only
-`BigInt::mod_pow` returns it.
+`Error` has two new final variants:
+
+- `NotInvertible`: returned by `mod_inverse`, and by `BigInt::mod_pow` with a
+  negative exponent, when `gcd(a, m) != 1`.
+- `NegativeExponent`: no library operation returns it any more, because
+  signed `mod_pow` now accepts negative exponents. It stays for callers;
+  `bc` reports it for `^`.
+
+The thresholds are public constants:
+
+| Constant | Value | Used for |
+| --- | ---: | --- |
+| `KARATSUBA_THRESHOLD` | 32 limbs | Both multiplication operands |
+| `BURNIKEL_ZIEGLER_THRESHOLD` | 1,024 limbs | The divisor, and the dividend's excess over it |
+| `CONVERSION_THRESHOLD` | 1,024 limbs | Divide-and-conquer formatting |
+
+Parsing switches to divide and conquer above 8,192 digits.
 
 ## Multiplication: schoolbook and Karatsuba
 
@@ -85,6 +101,56 @@ Work accounting keeps the existing conservative charge of `n*m` limb
 products. Karatsuba performs fewer, so the same `max_work` admits the same
 calls.
 
+## Division: Burnikel-Ziegler
+
+`div_rem` uses recursive Burnikel-Ziegler division when the divisor has at
+least 1,024 limbs and the dividend has at least 1,024 more. Otherwise it uses
+Knuth algorithm D. The recursion follows CPython's `_pylong` formulation:
+
+- `fast_div` shifts the divisor so that its bit length `n` is a whole number
+  of limbs. It then divides the dividend in `n`-bit chunks from the top, and
+  each chunk's quotient is copied straight into its limb position. Rebuilding
+  the quotient with repeated shift-and-add would be quadratic.
+- `div2n1n(a, b, n)` requires `a < b*2^n`, with `b` exactly `n` bits long. It
+  makes two `div3n2n` calls on halves; an odd `n` first doubles both
+  operands.
+- `div3n2n` estimates the quotient from the top halves, either recursively or
+  as the saturated `2^n-1`. It subtracts `q*b2` and corrects at most twice. The
+  test `rr < q*b2` adds `b` before subtracting, so all values stay unsigned.
+- The base case is Knuth division whenever `n` or the quotient length is
+  below the threshold.
+
+The cost is `O(M(n) log n)`, where `M` is the Karatsuba multiplication time.
+
+Work accounting still charges the Knuth bound, `division_work`, so a
+`max_work` value admits the same calls on either path. Million-digit inputs
+therefore need a large `max_work`.
+
+Internal steps use a context that records the first error and returns zero
+owners. Every intermediate is destroyed on every path. A failure is reported
+only after cleanup, and both operands are preserved. Intermediate values may
+exceed `max_limbs` by the shift and recombination headroom. The quotient and
+remainder are checked against `max_limbs` at the end.
+
+## Modular inverse
+
+`BigUint::mod_inverse(modulus)` runs the extended Euclidean algorithm over
+magnitudes:
+
+- It keeps `u_{i+1} = u_{i-1} + q_i*u_i`, which uses the invariant
+  `r_i ≡ (-1)^(i+1) * u_i * a`. It returns `u_k` or `modulus - u_k`, depending
+  on the parity of the step where `r_k = 1`.
+- A remainder of zero first returns `NotInvertible`, a zero modulus
+  `DivisionByZero`, and a modulus of one returns zero.
+- A remaining work budget is charged once per step, at the Knuth division
+  bound plus the coefficient product.
+
+`BigInt::mod_inverse` matches Python's `pow(a, -1, m)`. A negative `a` maps to
+`m - inverse`. A nonzero result takes the modulus's sign.
+
+`BigInt::mod_pow` with a negative exponent computes
+`mod_pow(mod_inverse(a), -e, m)`, which is Python's `pow(a, -e, m)`.
+
 ## Modular exponentiation
 
 `BigUint::mod_pow(exponent, modulus, limits)` first reduces the base modulo
@@ -110,7 +176,25 @@ bits and reduces each product with Knuth division.
 
 ## Radix conversion
 
-Parsing and formatting accept every radix from 2 to 36. They now process
+Parsing and formatting accept every radix from 2 to 36. They choose one of
+three paths:
+
+- **Power-of-two radices** (2, 4, 8, 16, 32) use linear bit packing and
+  unpacking for inputs above 600 digits or values above 1,024 limbs. A
+  million-digit hexadecimal round trip went from 17.7 s to 0.63 s.
+- **Other radices, large values:** divide and conquer, which costs
+  `O(M(n) log n)`.
+  - Parsing above 8,192 digits splits the digit string at `g*2^j` digits and
+    computes `high*radix^(g*2^j) + low`.
+  - Formatting above 1,024 limbs divides by the precomputed squares
+    `(radix^g)^(2^i)`. It emits the quotient, then the remainder left-padded to
+    exactly `g*2^i` digits. A quotient of zero becomes zeros on padded paths.
+  - Both build only the powers they need, by repeated Karatsuba squaring.
+    Formatting stops at the first power whose square exceeds the value.
+- **Small values** use the basecase loops below. The new paths charge the
+  same basecase work bound, so a limit admits the same inputs either way.
+
+The basecase loops process
 `g` digits per pass, where `g` is the largest value with `radix^g < 2^32`. For
 example, `g = 9` for radix 10, `g = 7` for radix 16 and `g = 31` for radix 2.
 
@@ -164,6 +248,63 @@ What remains is mostly the code generator's cost of about 20 ns per
 inner-loop iteration. Quadratic radix formatting of the 1,000-limb products
 also costs more than multiplying them.
 
+## Million-digit oracle
+
+`tests/oracles/bc_million.py` uses fixed seed `0x1E6`. It runs each operation
+in its own `bc` process and compares the full decimal output with Python
+3.12.3 `int`. The operands are:
+
+- `A`, with exactly 1,000,000 digits;
+- `B`, with exactly 500,000 digits;
+- a 3,000-digit odd modulus `M`.
+
+The `bc` time includes start-up, parsing, the operation and printing. The
+Python time covers `int()`, the operation and `str()`. Python 3.12 also uses
+subquadratic conversion and division for numbers this large. These results
+are from one local run on 2026-10-31.
+
+| Operation | Result digits | `bc` | Python | Ratio |
+| --- | ---: | ---: | ---: | ---: |
+| Round trip `A` | 1,000,000 | 30.7 s | 0.93 s | 33× |
+| `A+B` | 1,000,000 | 32.0 s | 1.05 s | 30× |
+| `A*B` | 1,500,000 | 57.4 s | 1.51 s | 38× |
+| `B*B` | 1,000,000 | 37.6 s | 1.22 s | 31× |
+| `A/B` | 500,000 | 24.2 s | 1.11 s | 22× |
+| `(-A)%B` | 500,000 | 31.8 s | 2.63 s | 12× |
+| `modpow(B[:20000], B[:3000], M)` | 3,000 | 51.0 s | 1.81 s | 28× |
+
+All seven outputs match Python exactly.
+
+**Where the time goes:**
+
+- Decimal conversion dominates. Parsing a million digits takes 15 s, and
+  printing them takes about twice as long. Both reduce to Karatsuba
+  multiplications, at about 26 ns per 32-bit multiply-add with the current
+  code generator.
+- The hexadecimal round trip takes 0.63 s.
+
+**Before this change,** the quadratic basecase needed about 5.5 s for 50,000
+digits. Scaled by `n^2` that is roughly 40 minutes for a million digits; this
+is an estimate, and a million-digit basecase run was not attempted.
+
+**Remaining gap to Python:** 64-bit limbs, Toom-Cook and leaner allocations.
+
+**Threshold choices:**
+
+| Configuration | 200,000-digit division | `modpow`, 3,000-digit modulus, 300-digit exponent |
+| --- | ---: | ---: |
+| Burnikel-Ziegler at 64 limbs | 1.84 s | 9.73 s |
+| Burnikel-Ziegler at 256 limbs | 1.53 s | 6.44 s |
+| Burnikel-Ziegler at 1,024 limbs | 1.56 s | 5.20 s |
+| Burnikel-Ziegler at 2,048 limbs | 1.71 s | 5.11 s |
+
+For formatting 200,000 digits, a 1,024-limb leaf (2.12 s) was faster than 64
+or 256 limbs (2.37 s).
+
+**A bug found during tuning:** Karatsuba's workspace check compared against
+`max_work as i64`. A `max_work` of `u64::MAX` became `-1`, which silently
+disabled Karatsuba. The check now compares unsigned values.
+
 ## Verification
 
 All evidence is native x86_64 Linux execution of binaries compiled by
@@ -171,9 +312,20 @@ laniusc. It is not evidence of GPU kernel arithmetic.
 
 - `tests/stdlib_bc_execution.rs` compiles `sample_programs/library/bc.lani` and
   runs `tests/oracles/bc_oracle.py`. The oracle is an independent Python
-  integer reference with fixed seed `0xBC2026`. On 2026-10-31 it checked
-  **9,526 values and 103 diagnostics** in radices 10, 16, 2, 3, 7 and 36, in
-  about 11 s, including Python generation. The checked cases are:
+  integer reference with fixed seed `0xBC2026`. The current oracle adds
+  inverse cases: 378 `modinv` calls and 155 `modpow` calls with negative
+  exponents, including not-invertible pairs. It checked
+  **9,735 values and 326 diagnostics** in radices 10, 16, 2, 3, 7 and 36, in
+  about 23 s.
+
+  Its operands have at most 513 limbs, so with the final thresholds it
+  exercises Knuth division and basecase formatting. The same oracle also
+  passed against a build with both the Burnikel-Ziegler and conversion
+  thresholds at 64 limbs, which drives those paths through the same values.
+  The million-digit oracle covers the final thresholds.
+
+  The category list below is from the earlier run of 9,526 values and 103
+  diagnostics. That run used the same generator without the inverse cases: The checked cases are:
   - 1,515 Karatsuba products, with both operands of at least 32 limbs;
   - 1,695 schoolbook products, using sizes 0–3, 30–34, 63–66, 95–97, 127–129,
     200, 257 and 513 limbs;
@@ -189,6 +341,9 @@ laniusc. It is not evidence of GPU kernel arithmetic.
 
   The value patterns are random, all ones, a single top bit, sparse, and a
   top limb of exactly one. Signs are mixed.
+- Separate Python checks of radices 2, 4, 8 and 32 cover the
+  power-of-two paths. They used products of up to 200,000 bits, plus a
+  900-digit run of zeros.
 - The existing unsigned model oracle in `tests/extended_big_uint_execution.rs`
   was compiled against the `alloc` path and run directly against
   `big_uint_model`: it verified all 2,366 cases. Its products have one operand
