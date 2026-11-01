@@ -93,12 +93,18 @@ rule that false error also replaced the real label of a program with a real
 unsatisfied bound. Builds, and the label tests that compile, were never
 affected.
 
-The fix is in the CLI (`cli/compile/entry.rs`, `check_with_build_fallback`).
-When the frontend check fails with exactly that diagnostic, check builds the
-program for x86-64 and discards the output, then reports what the build
-reports. Every other check result is unchanged, and so is its cost. The
-library functions `type_check_entry_with_*` and the language server still run
-the frontend alone, so they still reject these programs.
+The fix is in `compiler/gpu_public_api.rs`
+(`frontend_check_missed_generic_impl`). When the frontend check fails with
+exactly that diagnostic, the check builds the program for x86-64 and discards
+the output, then reports what the build reports. Every other check result is
+unchanged, and so is its cost. Since 2026-11-01 the fallback sits in the
+library functions themselves (`type_check_entry_with_stdlib`,
+`_with_source_root`, `_with_source_roots`, `type_check_source_with_gpu` and
+`type_check_source_with_gpu_from_path`), so `laniusc check` and the language
+server share it. The language server's pull diagnostics now accept
+`check_generic_impl_bound.lani` (before: LNC0008 at its call). The server
+still checks one document without the stdlib, so it reports a `core::slice`
+import as LNC0010 "imported module not found", as before.
 
 Before the fix, check rejected `check_generic_impl_bound.lani`,
 `check_slice_import.lani`, `check_slice_select_label.lani`, seven other
@@ -249,7 +255,9 @@ compiler can fix the per-byte cost.
 
 | File | Defect | Expected | Actual |
 | --- | --- | --- | --- |
-| `stdlib_stray_body_diagnostic.lani` | a stray function body (`let stray: i32 = 2; return stray;` then `}`) at top level of a stdlib module, `core::float_decimal` | LNC0016 "syntax error" at the stray line | LNC0008 "unsatisfied trait bound" at `stdlib/core/result.lani:93` (`and_then`'s `Mapper<T,Result<U,E>>` bound), which names neither the file nor the line |
+| `stdlib_stray_body_diagnostic.lani` | a stray function body (`let stray: i32 = 2; return stray;` then `}`) at top level of a stdlib module, `core::float_decimal` | LNC0016 "syntax error" at the stray line | **fixed 2026-11-01**: LNC0016 at the stray `let` (`float_decimal.lani:337:5`). Was LNC0008 "unsatisfied trait bound" at `stdlib/core/result.lani:93` (`and_then`'s `Mapper<T,Result<U,E>>` bound), which named neither the file nor the line; see [parser labels in a source pack](#parser-labels-in-a-source-pack) |
+| `byte_order_mark_source.lani` | the file starts with a UTF-8 byte-order mark (EF BB BF) | rejected with a message that names the mark | **fixed 2026-11-01**: LNC0046 at 1:1, labeled "this file starts with a UTF-8 byte-order mark", with help "save the file as UTF-8 without a byte-order mark (U+FEFF)". Was "tokenization fails at this byte". The same label applies to a module under `--source-root` |
+| `lnc0006_vec_field_take.lani` | a struct's `Vec<Row>` field moved out with `table.rows.take()` into `let rows: Vec<Row>` | exit 0 | **not a defect, 2026-11-01**: `move_rows.lani:205` annotated `Vec<ext::csv::Record>` for the `Vec<TableRow>` field of the packed `ext::csv::Table` (a1420edec), so its LNC0006 was correct; `Vec<u8>` here is LNC0006 too. The sample now decodes owned Records with `ext::csv::Decoder` |
 
 The program compiles and exits 0 against the real stdlib. To reproduce,
 insert the stray lines into a copy of the stdlib:
@@ -262,8 +270,40 @@ target/claude-work/bin/lcc --stdlib-root $D -o target/claude-work/defect \
   tests/fixtures/compiler_defects/stdlib_stray_body_diagnostic.lani
 ```
 
-The same stray lines in a module under `--source-root` (`app::bad`), or in a
-new stdlib module that nothing else imports (`core::straybad`), are reported
-correctly as LNC0016 at the stray line. This misreport cost a bisection
-during the S5 Schubfach work. The stray lines were left by deleting only the
-first line of a removed function.
+The stray lines were left by deleting only the first line of a removed
+function, and the misreport cost a bisection during the S5 Schubfach work.
+
+### Parser labels in a source pack
+
+Two host-side steps mislabeled the stray. Both are in
+`compiler/diagnostics.rs`.
+
+1. The trait-argument heuristic (`find_trait_parser_rejection`) turns a
+   parser rejection into "trait bound argument shape is not supported here"
+   (LNC0008) or "trait impl header uses an unsupported trait argument shape"
+   (LNC0021) when it finds such a shape. It searched every line of every file
+   in the pack, so any parse error in a program importing `core::result`
+   matched the valid `Mapper<T,Result<U,E>>` bound at `result.lani:93`. It now
+   searches only the line of the parser's error token, in that token's file.
+2. The LL(1) label indexed a token stream that the host rebuilt from the
+   files' text. That stream drifts from the GPU's stream after some stdlib
+   constructs, so a rejection was labeled up to about 20 tokens early, inside
+   the previous item. With `core::iter` imported, the stray module's label
+   moved from its `let` to the `pub` of the function before it. The label now
+   uses the GPU token at the rejection position, and the host stream is the
+   fallback.
+
+Probes of both cases were compiled through `laniusc daemon`. They used a
+stray body in `core::float_decimal`, a stray in a new `core::straybad`
+module imported beside `core::cmp`, `core::option`, `core::iter` or
+`core::slice`, and a missing `;`. Every probe now reports LNC0016 at the stray
+`let` or the missing `;`. `impl Rel<Boxed> for i32 {` still reports LNC0021.
+The comparison run was 72 sample programs plus 112 syntax-error mutants of
+40 of them (a dropped `;`, a stray body, an unclosed `(`). All 72 programs
+and 104 mutants gave identical results, and the 53 binaries were identical.
+The 8 mutants that changed all had wrong labels before. Six had a false
+LNC0021 at a valid `Mapper<View<u8>,Result<i64,i32>>` impl header, and two
+had LNC0016 labels three lines before the error. Six now point at the error.
+The two `return (status;` mutants report "expected ';' after return
+statement" at the end of the file, just past the `}` after the unclosed
+`(`. That is the statement heuristic's label, not one of these two steps.
