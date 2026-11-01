@@ -13,7 +13,7 @@ Layer: `alloc`. Role: module. Profile: **Source inventory**.
 - [stdlib-big-integers](../../stdlib-big-integers.md)
 - [stdlib-big-uint](../../stdlib-big-uint.md)
 
-Declaration counts: enum: 1; field: 6; function: 4; impl: 9; method: 38; struct: 3; variant: 11.
+Declaration counts: constant: 1; enum: 1; field: 6; function: 4; impl: 9; method: 39; struct: 3; variant: 12.
 
 ## Declared imports
 
@@ -126,6 +126,14 @@ DivisionByZero
 Overflow
 ```
 
+#### variant: NegativeExponent
+
+[Source line 12](../../../stdlib/alloc/big_uint.lani#L12)
+
+```lanius
+NegativeExponent
+```
+
 ### struct: Limits
 
 [Source line 13](../../../stdlib/alloc/big_uint.lani#L13)
@@ -198,11 +206,21 @@ quotient: BigUint
 remainder: BigUint
 ```
 
+## Constants
+
+### constant: KARATSUBA_THRESHOLD
+
+[Source line 19](../../../stdlib/alloc/big_uint.lani#L19)
+
+```lanius
+pub const KARATSUBA_THRESHOLD: i32 = 32;
+```
+
 ## Free functions and extern declarations
 
 ### function: default_limits
 
-[Source line 18](../../../stdlib/alloc/big_uint.lani#L18)
+[Source line 20](../../../stdlib/alloc/big_uint.lani#L20)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -210,7 +228,7 @@ pub fn default_limits() -> Limits
 
 ### function: zero
 
-[Source line 19](../../../stdlib/alloc/big_uint.lani#L19)
+[Source line 21](../../../stdlib/alloc/big_uint.lani#L21)
 
 ```lanius
 pub fn zero() -> BigUint
@@ -218,7 +236,7 @@ pub fn zero() -> BigUint
 
 ### function: from_u64
 
-[Source line 35](../../../stdlib/alloc/big_uint.lani#L35)
+[Source line 37](../../../stdlib/alloc/big_uint.lani#L37)
 
 ```lanius
 pub fn from_u64(value: u64, limits: Limits) -> core::result::Result<BigUint,Error>
@@ -226,7 +244,7 @@ pub fn from_u64(value: u64, limits: Limits) -> core::result::Result<BigUint,Erro
 
 ### function: parse
 
-[Source line 126](../../../stdlib/alloc/big_uint.lani#L126)
+[Source line 197](../../../stdlib/alloc/big_uint.lani#L197)
 
 ```lanius
 pub fn parse(input: core::slice::View<u8>, radix: i32, limits: Limits) -> core::result::Result<BigUint,Error>
@@ -234,9 +252,9 @@ pub fn parse(input: core::slice::View<u8>, radix: i32, limits: Limits) -> core::
 
 ## Implementation blocks and public methods
 
-### impl at line 63
+### impl at line 65
 
-[Source line 63](../../../stdlib/alloc/big_uint.lani#L63)
+[Source line 65](../../../stdlib/alloc/big_uint.lani#L65)
 
 ```lanius
 pub impl DivRem
@@ -244,15 +262,15 @@ pub impl DivRem
 
 #### method: destroy
 
-[Source line 63](../../../stdlib/alloc/big_uint.lani#L63)
+[Source line 65](../../../stdlib/alloc/big_uint.lani#L65)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 64
+### impl at line 66
 
-[Source line 64](../../../stdlib/alloc/big_uint.lani#L64)
+[Source line 66](../../../stdlib/alloc/big_uint.lani#L66)
 
 ```lanius
 pub impl BigUint
@@ -260,7 +278,7 @@ pub impl BigUint
 
 #### method: borrow
 
-[Source line 65](../../../stdlib/alloc/big_uint.lani#L65)
+[Source line 67](../../../stdlib/alloc/big_uint.lani#L67)
 
 ```lanius
 pub fn borrow(&self) -> &BigUint
@@ -268,7 +286,7 @@ pub fn borrow(&self) -> &BigUint
 
 #### method: destroy
 
-[Source line 66](../../../stdlib/alloc/big_uint.lani#L66)
+[Source line 68](../../../stdlib/alloc/big_uint.lani#L68)
 
 ```lanius
 pub fn destroy(&self)
@@ -276,7 +294,7 @@ pub fn destroy(&self)
 
 #### method: limb_len
 
-[Source line 67](../../../stdlib/alloc/big_uint.lani#L67)
+[Source line 69](../../../stdlib/alloc/big_uint.lani#L69)
 
 ```lanius
 pub fn limb_len(&self) -> i32
@@ -284,7 +302,7 @@ pub fn limb_len(&self) -> i32
 
 #### method: is_zero
 
-[Source line 68](../../../stdlib/alloc/big_uint.lani#L68)
+[Source line 70](../../../stdlib/alloc/big_uint.lani#L70)
 
 ```lanius
 pub fn is_zero(&self) -> bool
@@ -292,7 +310,7 @@ pub fn is_zero(&self) -> bool
 
 #### method: bit_length
 
-[Source line 69](../../../stdlib/alloc/big_uint.lani#L69)
+[Source line 71](../../../stdlib/alloc/big_uint.lani#L71)
 
 ```lanius
 pub fn bit_length(&self) -> u64
@@ -300,7 +318,7 @@ pub fn bit_length(&self) -> u64
 
 #### method: bit
 
-[Source line 73](../../../stdlib/alloc/big_uint.lani#L73)
+[Source line 75](../../../stdlib/alloc/big_uint.lani#L75)
 
 ```lanius
 pub fn bit(&self, index: u64) -> bool
@@ -308,7 +326,7 @@ pub fn bit(&self, index: u64) -> bool
 
 #### method: compare
 
-[Source line 74](../../../stdlib/alloc/big_uint.lani#L74)
+[Source line 76](../../../stdlib/alloc/big_uint.lani#L76)
 
 ```lanius
 pub fn compare(&self, other: &BigUint) -> i32
@@ -316,7 +334,7 @@ pub fn compare(&self, other: &BigUint) -> i32
 
 #### method: to_u64
 
-[Source line 78](../../../stdlib/alloc/big_uint.lani#L78)
+[Source line 80](../../../stdlib/alloc/big_uint.lani#L80)
 
 ```lanius
 pub fn to_u64(&self) -> core::result::Result<u64,Error>
@@ -324,7 +342,7 @@ pub fn to_u64(&self) -> core::result::Result<u64,Error>
 
 #### method: try_clone
 
-[Source line 79](../../../stdlib/alloc/big_uint.lani#L79)
+[Source line 81](../../../stdlib/alloc/big_uint.lani#L81)
 
 ```lanius
 pub fn try_clone(&self, limits: Limits) -> core::result::Result<BigUint,Error>
@@ -332,7 +350,7 @@ pub fn try_clone(&self, limits: Limits) -> core::result::Result<BigUint,Error>
 
 #### method: add
 
-[Source line 83](../../../stdlib/alloc/big_uint.lani#L83)
+[Source line 85](../../../stdlib/alloc/big_uint.lani#L85)
 
 ```lanius
 pub fn add(&self, other: &BigUint, limits: Limits) -> core::result::Result<BigUint,Error>
@@ -340,7 +358,7 @@ pub fn add(&self, other: &BigUint, limits: Limits) -> core::result::Result<BigUi
 
 #### method: sub
 
-[Source line 90](../../../stdlib/alloc/big_uint.lani#L90)
+[Source line 92](../../../stdlib/alloc/big_uint.lani#L92)
 
 ```lanius
 pub fn sub(&self, other: &BigUint, limits: Limits) -> core::result::Result<BigUint,Error>
@@ -348,7 +366,7 @@ pub fn sub(&self, other: &BigUint, limits: Limits) -> core::result::Result<BigUi
 
 #### method: mul
 
-[Source line 96](../../../stdlib/alloc/big_uint.lani#L96)
+[Source line 98](../../../stdlib/alloc/big_uint.lani#L98)
 
 ```lanius
 pub fn mul(&self, other: &BigUint, limits: Limits) -> core::result::Result<BigUint,Error>
@@ -356,7 +374,7 @@ pub fn mul(&self, other: &BigUint, limits: Limits) -> core::result::Result<BigUi
 
 #### method: shl
 
-[Source line 110](../../../stdlib/alloc/big_uint.lani#L110)
+[Source line 117](../../../stdlib/alloc/big_uint.lani#L117)
 
 ```lanius
 pub fn shl(&self, bits: u64, limits: Limits) -> core::result::Result<BigUint,Error>
@@ -364,15 +382,15 @@ pub fn shl(&self, bits: u64, limits: Limits) -> core::result::Result<BigUint,Err
 
 #### method: shr
 
-[Source line 118](../../../stdlib/alloc/big_uint.lani#L118)
+[Source line 125](../../../stdlib/alloc/big_uint.lani#L125)
 
 ```lanius
 pub fn shr(&self, bits: u64, limits: Limits) -> core::result::Result<BigUint,Error>
 ```
 
-### impl at line 143
+### impl at line 221
 
-[Source line 143](../../../stdlib/alloc/big_uint.lani#L143)
+[Source line 221](../../../stdlib/alloc/big_uint.lani#L221)
 
 ```lanius
 pub impl BigUint
@@ -380,7 +398,7 @@ pub impl BigUint
 
 #### method: bit_and
 
-[Source line 144](../../../stdlib/alloc/big_uint.lani#L144)
+[Source line 222](../../../stdlib/alloc/big_uint.lani#L222)
 
 ```lanius
 pub fn bit_and(&self, other: &BigUint, limits: Limits) -> core::result::Result<BigUint,Error>
@@ -388,7 +406,7 @@ pub fn bit_and(&self, other: &BigUint, limits: Limits) -> core::result::Result<B
 
 #### method: bit_or
 
-[Source line 145](../../../stdlib/alloc/big_uint.lani#L145)
+[Source line 223](../../../stdlib/alloc/big_uint.lani#L223)
 
 ```lanius
 pub fn bit_or(&self, other: &BigUint, limits: Limits) -> core::result::Result<BigUint,Error>
@@ -396,15 +414,15 @@ pub fn bit_or(&self, other: &BigUint, limits: Limits) -> core::result::Result<Bi
 
 #### method: bit_xor
 
-[Source line 146](../../../stdlib/alloc/big_uint.lani#L146)
+[Source line 224](../../../stdlib/alloc/big_uint.lani#L224)
 
 ```lanius
 pub fn bit_xor(&self, other: &BigUint, limits: Limits) -> core::result::Result<BigUint,Error>
 ```
 
-### impl at line 157
+### impl at line 244
 
-[Source line 157](../../../stdlib/alloc/big_uint.lani#L157)
+[Source line 244](../../../stdlib/alloc/big_uint.lani#L244)
 
 ```lanius
 pub impl BigUint
@@ -412,7 +430,7 @@ pub impl BigUint
 
 #### method: div_rem
 
-[Source line 158](../../../stdlib/alloc/big_uint.lani#L158)
+[Source line 245](../../../stdlib/alloc/big_uint.lani#L245)
 
 ```lanius
 pub fn div_rem(&self, other: &BigUint, limits: Limits) -> core::result::Result<DivRem,Error>
@@ -420,7 +438,7 @@ pub fn div_rem(&self, other: &BigUint, limits: Limits) -> core::result::Result<D
 
 #### method: format_radix
 
-[Source line 205](../../../stdlib/alloc/big_uint.lani#L205)
+[Source line 292](../../../stdlib/alloc/big_uint.lani#L292)
 
 ```lanius
 pub fn format_radix(&self, radix: i32, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error>
@@ -428,7 +446,7 @@ pub fn format_radix(&self, radix: i32, limits: Limits) -> core::result::Result<a
 
 #### method: format_into
 
-[Source line 221](../../../stdlib/alloc/big_uint.lani#L221)
+[Source line 314](../../../stdlib/alloc/big_uint.lani#L314)
 
 ```lanius
 pub fn format_into(&self, output: core::slice::View<u8>, radix: i32, limits: Limits) -> core::result::Result<i32,Error>
@@ -436,7 +454,7 @@ pub fn format_into(&self, output: core::slice::View<u8>, radix: i32, limits: Lim
 
 #### method: pow
 
-[Source line 227](../../../stdlib/alloc/big_uint.lani#L227)
+[Source line 320](../../../stdlib/alloc/big_uint.lani#L320)
 
 ```lanius
 pub fn pow(&self, exponent: u32, limits: Limits) -> core::result::Result<BigUint,Error>
@@ -444,23 +462,31 @@ pub fn pow(&self, exponent: u32, limits: Limits) -> core::result::Result<BigUint
 
 #### method: gcd
 
-[Source line 244](../../../stdlib/alloc/big_uint.lani#L244)
+[Source line 337](../../../stdlib/alloc/big_uint.lani#L337)
 
 ```lanius
 pub fn gcd(&self, other: &BigUint, limits: Limits) -> core::result::Result<BigUint,Error>
 ```
 
+#### method: mod_pow
+
+[Source line 348](../../../stdlib/alloc/big_uint.lani#L348)
+
+```lanius
+pub fn mod_pow(&self, exponent: &BigUint, modulus: &BigUint, limits: Limits) -> core::result::Result<BigUint,Error>
+```
+
 #### method: value_hash
 
-[Source line 253](../../../stdlib/alloc/big_uint.lani#L253)
+[Source line 369](../../../stdlib/alloc/big_uint.lani#L369)
 
 ```lanius
 pub fn value_hash(&self) -> u32
 ```
 
-### impl at line 261
+### impl at line 377
 
-[Source line 261](../../../stdlib/alloc/big_uint.lani#L261)
+[Source line 377](../../../stdlib/alloc/big_uint.lani#L377)
 
 ```lanius
 pub impl core::cmp::Eq<BigUint> for BigUint
@@ -468,7 +494,7 @@ pub impl core::cmp::Eq<BigUint> for BigUint
 
 #### method: eq
 
-[Source line 262](../../../stdlib/alloc/big_uint.lani#L262)
+[Source line 378](../../../stdlib/alloc/big_uint.lani#L378)
 
 ```lanius
 pub fn eq(left: BigUint, right: BigUint) -> bool
@@ -476,15 +502,15 @@ pub fn eq(left: BigUint, right: BigUint) -> bool
 
 #### method: ne
 
-[Source line 263](../../../stdlib/alloc/big_uint.lani#L263)
+[Source line 379](../../../stdlib/alloc/big_uint.lani#L379)
 
 ```lanius
 pub fn ne(left: BigUint, right: BigUint) -> bool
 ```
 
-### impl at line 265
+### impl at line 381
 
-[Source line 265](../../../stdlib/alloc/big_uint.lani#L265)
+[Source line 381](../../../stdlib/alloc/big_uint.lani#L381)
 
 ```lanius
 pub impl core::cmp::Ord<BigUint> for BigUint
@@ -492,7 +518,7 @@ pub impl core::cmp::Ord<BigUint> for BigUint
 
 #### method: lt
 
-[Source line 266](../../../stdlib/alloc/big_uint.lani#L266)
+[Source line 382](../../../stdlib/alloc/big_uint.lani#L382)
 
 ```lanius
 pub fn lt(left: BigUint, right: BigUint) -> bool
@@ -500,7 +526,7 @@ pub fn lt(left: BigUint, right: BigUint) -> bool
 
 #### method: le
 
-[Source line 267](../../../stdlib/alloc/big_uint.lani#L267)
+[Source line 383](../../../stdlib/alloc/big_uint.lani#L383)
 
 ```lanius
 pub fn le(left: BigUint, right: BigUint) -> bool
@@ -508,7 +534,7 @@ pub fn le(left: BigUint, right: BigUint) -> bool
 
 #### method: gt
 
-[Source line 268](../../../stdlib/alloc/big_uint.lani#L268)
+[Source line 384](../../../stdlib/alloc/big_uint.lani#L384)
 
 ```lanius
 pub fn gt(left: BigUint, right: BigUint) -> bool
@@ -516,15 +542,15 @@ pub fn gt(left: BigUint, right: BigUint) -> bool
 
 #### method: ge
 
-[Source line 269](../../../stdlib/alloc/big_uint.lani#L269)
+[Source line 385](../../../stdlib/alloc/big_uint.lani#L385)
 
 ```lanius
 pub fn ge(left: BigUint, right: BigUint) -> bool
 ```
 
-### impl at line 271
+### impl at line 387
 
-[Source line 271](../../../stdlib/alloc/big_uint.lani#L271)
+[Source line 387](../../../stdlib/alloc/big_uint.lani#L387)
 
 ```lanius
 pub impl core::cmp::PartialEq<BigUint> for BigUint
@@ -532,7 +558,7 @@ pub impl core::cmp::PartialEq<BigUint> for BigUint
 
 #### method: partial_eq
 
-[Source line 272](../../../stdlib/alloc/big_uint.lani#L272)
+[Source line 388](../../../stdlib/alloc/big_uint.lani#L388)
 
 ```lanius
 pub fn partial_eq(left: BigUint, right: BigUint) -> bool
@@ -540,15 +566,15 @@ pub fn partial_eq(left: BigUint, right: BigUint) -> bool
 
 #### method: partial_ne
 
-[Source line 273](../../../stdlib/alloc/big_uint.lani#L273)
+[Source line 389](../../../stdlib/alloc/big_uint.lani#L389)
 
 ```lanius
 pub fn partial_ne(left: BigUint, right: BigUint) -> bool
 ```
 
-### impl at line 275
+### impl at line 391
 
-[Source line 275](../../../stdlib/alloc/big_uint.lani#L275)
+[Source line 391](../../../stdlib/alloc/big_uint.lani#L391)
 
 ```lanius
 pub impl core::cmp::PartialOrd<BigUint> for BigUint
@@ -556,7 +582,7 @@ pub impl core::cmp::PartialOrd<BigUint> for BigUint
 
 #### method: partial_lt
 
-[Source line 276](../../../stdlib/alloc/big_uint.lani#L276)
+[Source line 392](../../../stdlib/alloc/big_uint.lani#L392)
 
 ```lanius
 pub fn partial_lt(left: BigUint, right: BigUint) -> bool
@@ -564,7 +590,7 @@ pub fn partial_lt(left: BigUint, right: BigUint) -> bool
 
 #### method: partial_le
 
-[Source line 277](../../../stdlib/alloc/big_uint.lani#L277)
+[Source line 393](../../../stdlib/alloc/big_uint.lani#L393)
 
 ```lanius
 pub fn partial_le(left: BigUint, right: BigUint) -> bool
@@ -572,7 +598,7 @@ pub fn partial_le(left: BigUint, right: BigUint) -> bool
 
 #### method: partial_gt
 
-[Source line 278](../../../stdlib/alloc/big_uint.lani#L278)
+[Source line 394](../../../stdlib/alloc/big_uint.lani#L394)
 
 ```lanius
 pub fn partial_gt(left: BigUint, right: BigUint) -> bool
@@ -580,7 +606,7 @@ pub fn partial_gt(left: BigUint, right: BigUint) -> bool
 
 #### method: partial_ge
 
-[Source line 279](../../../stdlib/alloc/big_uint.lani#L279)
+[Source line 395](../../../stdlib/alloc/big_uint.lani#L395)
 
 ```lanius
 pub fn partial_ge(left: BigUint, right: BigUint) -> bool
@@ -588,15 +614,15 @@ pub fn partial_ge(left: BigUint, right: BigUint) -> bool
 
 #### method: partial_cmp
 
-[Source line 280](../../../stdlib/alloc/big_uint.lani#L280)
+[Source line 396](../../../stdlib/alloc/big_uint.lani#L396)
 
 ```lanius
 pub fn partial_cmp(left: BigUint, right: BigUint) -> core::cmp::PartialOrdering
 ```
 
-### impl at line 282
+### impl at line 398
 
-[Source line 282](../../../stdlib/alloc/big_uint.lani#L282)
+[Source line 398](../../../stdlib/alloc/big_uint.lani#L398)
 
 ```lanius
 pub impl core::hash::Hash<BigUint> for BigUint
@@ -604,7 +630,7 @@ pub impl core::hash::Hash<BigUint> for BigUint
 
 #### method: hash
 
-[Source line 282](../../../stdlib/alloc/big_uint.lani#L282)
+[Source line 398](../../../stdlib/alloc/big_uint.lani#L398)
 
 ```lanius
 pub fn hash(value: BigUint) -> u32

@@ -564,6 +564,20 @@ selected wire/transport/OpenSSL tests and all 194 CLI cases pass separately
 on native Linux x86_64. Older
 standard-padded sentinel and broad WebSocket receipts retain their source scope.
 
+**Arbitrary precision integers.**
+
+The [big integer guide](stdlib-big-integers.md) moves owned `BigUint`/`BigInt`
+from `ext` into `alloc::big_uint` and `alloc::big_int`, keeping their explicit
+ownership, `Limits` and typed `Error` contracts. Multiplication switches from
+schoolbook to window-based Karatsuba when both operands reach 32 limbs;
+division is Knuth algorithm D; `mod_pow` follows Python `pow(a, e, m)` and adds
+the `NegativeExponent` error. Radix 2-36 parsing and formatting fold
+`radix^g < 2^32` digits per pass. The [bc calculator](stdlib-bc.md) evaluates
+infix expressions over stdin; its Python oracle checked 9,526 values and 103
+diagnostics across six radices on native Linux x86_64, including operands that
+straddle the threshold, zero, negatives and division by zero. A preallocated
+Karatsuba workspace and subquadratic radix conversion remain.
+
 **Checked native varints.**
 
 The [varint guide](stdlib-varint.md) defines one shortest base-128/ZigZag

@@ -22,8 +22,8 @@ Every failing division destroys all partial results before returning.
 Fallible functions return `core::result::Result<T, alloc::big_uint::Error>` and
 take `alloc::big_uint::Limits`. They propagate the provider's errors:
 `Bounds`, `LimbLimit`, `WorkLimit`, `OutputLimit`, `AllocationFailed`,
-`InvalidRadix`, `InvalidDigit`, `Empty`, `Underflow`, `DivisionByZero`, and
-`Overflow`. Valid signed subtraction never returns `Underflow`. Negative
+`InvalidRadix`, `InvalidDigit`, `Empty`, `Underflow`, `DivisionByZero`,
+`Overflow`, and `NegativeExponent` (from `mod_pow`). Valid signed subtraction never returns `Underflow`. Negative
 integers and oversized magnitudes return `Overflow` when converted to `u64`.
 
 ## Public API
@@ -52,6 +52,7 @@ Methods:
 | `div_rem_euclid(other, limits)` | Euclidean quotient and remainder |
 | `pow(exponent: u32, limits)` | Exact power; `0^0` is `1` |
 | `gcd(other, limits)` | Nonnegative greatest common divisor; `gcd(0,0)` is zero |
+| `mod_pow(exponent, modulus, limits)` | Python `pow(a, e, m)`: a nonzero result has the modulus sign; negative exponent is `NegativeExponent`, zero modulus `DivisionByZero` |
 | `shl(bits: u64, limits)`, `shr(bits: u64, limits)` | Exact left shift; arithmetic right shift |
 | `bit_and`, `bit_or`, `bit_xor` | Binary infinite two's complement operations, with `other, limits` |
 | `bit_not(limits)` | Infinite two's complement complement |
