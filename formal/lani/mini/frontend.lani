@@ -1168,23 +1168,34 @@ pub struct Decls {
     imports: List<ImportDecl>,
     aliases: List<AliasDecl>,
     impls: List<ImplDecl>,
+    // the paths of the files' `module` items: a module that declares only
+    // traits, say, is still a module
+    homes: List<List<List<usize>>>,
 }
 
 pub fn no_decls() -> Decls {
-    return Decls { types: empty(), fns: empty(), consts: empty(), imports: empty(), aliases: empty(), impls: empty() };
+    return Decls { types: empty(), fns: empty(), consts: empty(), imports: empty(), aliases: empty(), impls: empty(), homes: empty() };
 }
 
 pub fn join_decls(a: Decls, b: core::option::Option<Decls>) -> core::option::Option<Decls> {
     return match (b) {
         None -> None,
-        Some(d) -> Some(Decls { types: concat(a.types, d.types), fns: concat(a.fns, d.fns), consts: concat(a.consts, d.consts), imports: concat(a.imports, d.imports), aliases: concat(a.aliases, d.aliases), impls: concat(a.impls, d.impls) }),
+        Some(d) -> Some(Decls { types: concat(a.types, d.types), fns: concat(a.fns, d.fns), consts: concat(a.consts, d.consts), imports: concat(a.imports, d.imports), aliases: concat(a.aliases, d.aliases), impls: concat(a.impls, d.impls), homes: concat(a.homes, d.homes) }),
+    };
+}
+
+// A `module` item declares its path a module.
+pub fn module_decls(path: core::option::Option<List<List<usize>>>) -> core::option::Option<Decls> {
+    return match (path) {
+        None -> None,
+        Some(m) -> Some(Decls { types: empty(), fns: empty(), consts: empty(), imports: empty(), aliases: empty(), impls: empty(), homes: single(m) }),
     };
 }
 
 pub fn import_decls(home: List<List<usize>>, target: core::option::Option<List<List<usize>>>) -> core::option::Option<Decls> {
     return match (target) {
         None -> None,
-        Some(t) -> Some(Decls { types: empty(), fns: empty(), consts: empty(), imports: single(ImportDecl { home: home, target: t }), aliases: empty(), impls: empty() }),
+        Some(t) -> Some(Decls { types: empty(), fns: empty(), consts: empty(), imports: single(ImportDecl { home: home, target: t }), aliases: empty(), impls: empty(), homes: empty() }),
     };
 }
 
@@ -1395,7 +1406,7 @@ pub fn methods_of(fuel: usize, home: List<List<usize>>, impl_params: List<List<u
 pub fn fns_decls(fns: core::option::Option<List<FnDecl>>) -> core::option::Option<Decls> {
     return match (fns) {
         None -> None,
-        Some(fs) -> Some(Decls { types: empty(), fns: fs, consts: empty(), imports: empty(), aliases: empty(), impls: empty() }),
+        Some(fs) -> Some(Decls { types: empty(), fns: fs, consts: empty(), imports: empty(), aliases: empty(), impls: empty(), homes: empty() }),
     };
 }
 
@@ -1410,7 +1421,7 @@ pub fn impl_methods(fuel: usize, home: List<List<usize>>, params: core::option::
 }
 
 pub fn with_impl_decl(i: ImplDecl, d: Decls) -> Decls {
-    return Decls { types: d.types, fns: d.fns, consts: d.consts, imports: d.imports, aliases: d.aliases, impls: cons(i, d.impls) };
+    return Decls { types: d.types, fns: d.fns, consts: d.consts, imports: d.imports, aliases: d.aliases, impls: cons(i, d.impls), homes: d.homes };
 }
 
 // A trait impl: its methods, and the impl itself, which the bounds look up.
@@ -1427,14 +1438,14 @@ pub fn with_impl(home: List<List<usize>>, params: core::option::Option<List<List
 pub fn type_decls(t: core::option::Option<TypeDecl>) -> core::option::Option<Decls> {
     return match (t) {
         None -> None,
-        Some(d) -> Some(Decls { types: single(d), fns: empty(), consts: empty(), imports: empty(), aliases: empty(), impls: empty() }),
+        Some(d) -> Some(Decls { types: single(d), fns: empty(), consts: empty(), imports: empty(), aliases: empty(), impls: empty(), homes: empty() }),
     };
 }
 
 pub fn alias_decls(home: List<List<usize>>, name: List<usize>, params: core::option::Option<List<List<usize>>>, ty: CTree) -> core::option::Option<Decls> {
     return match (params) {
         None -> None,
-        Some(ps) -> Some(Decls { types: empty(), fns: empty(), consts: empty(), imports: empty(), aliases: single(AliasDecl { home: home, name: name, params: ps, ty: ty }), impls: empty() }),
+        Some(ps) -> Some(Decls { types: empty(), fns: empty(), consts: empty(), imports: empty(), aliases: single(AliasDecl { home: home, name: name, params: ps, ty: ty }), impls: empty(), homes: empty() }),
     };
 }
 
@@ -1547,7 +1558,7 @@ pub fn item_decls(fuel: usize, home: List<List<usize>>, item: CTree) -> core::op
         return fns_decls(cons_fn_decl(fn_decl_of(home, b, false, empty(), b, b, type_params(fuel, kid(b, 2))), Some(empty())));
     }
     if (p == p_const()) {
-        return Some(Decls { types: empty(), fns: empty(), consts: single(ConstDecl { home: home, name: kid_token(b, 1).text, ty: kid(b, 3), value: kid(b, 5) }), imports: empty(), aliases: empty(), impls: empty() });
+        return Some(Decls { types: empty(), fns: empty(), consts: single(ConstDecl { home: home, name: kid_token(b, 1).text, ty: kid(b, 3), value: kid(b, 5) }), imports: empty(), aliases: empty(), impls: empty(), homes: empty() });
     }
     // An impl's bounds and where clause are checked where its methods'
     // instances are read (fn_bounds_ok).
@@ -1567,7 +1578,10 @@ pub fn item_decls(fuel: usize, home: List<List<usize>>, item: CTree) -> core::op
     if (p == p_extern_fn() && host_extern(b)) {
         return fns_decls(cons_fn_decl(fn_decl_of(home, extern_tree(b), false, empty(), b, b, type_params(fuel, kid(b, 4))), Some(empty())));
     }
-    if (p == p_module() || p == p_import() || p == p_extern_fn() || p == p_trait() || p == p_type_alias()) {
+    if (p == p_module()) {
+        return module_decls(path_spellings(fuel, kid(kid(b, 1), 0), kid(kid(b, 1), 1)));
+    }
+    if (p == p_import() || p == p_extern_fn() || p == p_trait() || p == p_type_alias()) {
         return Some(no_decls());
     }
     return None;
@@ -1627,7 +1641,7 @@ pub struct Collected {
 }
 
 pub fn collected_with(c: Collected, f: FileDecls) -> Collected {
-    return Collected { decls: Decls { types: concat(c.decls.types, f.decls.types), fns: concat(c.decls.fns, f.decls.fns), consts: concat(c.decls.consts, f.decls.consts), imports: concat(c.decls.imports, f.decls.imports), aliases: concat(c.decls.aliases, f.decls.aliases), impls: concat(c.decls.impls, f.decls.impls) }, modules: concat(c.modules, single(f.home)) };
+    return Collected { decls: Decls { types: concat(c.decls.types, f.decls.types), fns: concat(c.decls.fns, f.decls.fns), consts: concat(c.decls.consts, f.decls.consts), imports: concat(c.decls.imports, f.decls.imports), aliases: concat(c.decls.aliases, f.decls.aliases), impls: concat(c.decls.impls, f.decls.impls), homes: concat(c.decls.homes, f.decls.homes) }, modules: concat(c.modules, single(f.home)) };
 }
 
 pub fn collect_files(fuel: usize, roots: List<CTree>, acc: Collected) -> core::option::Option<Collected> {
@@ -2187,38 +2201,11 @@ fn variants_named_at(nt: TypeDecl, nrest: List<TypeDecl>, nm: List<List<usize>>,
     return variants_named(nrest, nm, nname, plus(nk, 1));
 }
 
-// Some declaration of module m: then m is a module, and `import m;` imports
-// it rather than an item of m's prefix.
-pub fn types_home(types: List<TypeDecl>, m: List<List<usize>>) -> bool {
-    return match (types) {
-        Nil -> false,
-        Cons(t, rest) -> same_spellings(t.home, m) || types_home(unbox(rest), m),
-    };
-}
-
-pub fn fns_home(fns: List<FnDecl>, m: List<List<usize>>) -> bool {
-    return match (fns) {
-        Nil -> false,
-        Cons(f, rest) -> same_spellings(f.home, m) || fns_home(unbox(rest), m),
-    };
-}
-
-pub fn consts_home(consts: List<ConstDecl>, m: List<List<usize>>) -> bool {
-    return match (consts) {
-        Nil -> false,
-        Cons(c, rest) -> same_spellings(c.home, m) || consts_home(unbox(rest), m),
-    };
-}
-
-pub fn aliases_home(aliases: List<AliasDecl>, m: List<List<usize>>) -> bool {
-    return match (aliases) {
-        Nil -> false,
-        Cons(a, rest) -> same_spellings(a.home, m) || aliases_home(unbox(rest), m),
-    };
-}
-
+// A module path is a module when a file's `module` item names it, as in
+// laniusc (modules/05_resolve_imports.slang), whatever the file declares;
+// then `import m;` imports it rather than an item of m's prefix.
 pub fn is_module(d: Decls, m: List<List<usize>>) -> bool {
-    return types_home(d.types, m) || fns_home(d.fns, m) || consts_home(d.consts, m) || aliases_home(d.aliases, m);
+    return module_member(d.homes, m);
 }
 
 pub fn if_item(b: bool, p: List<List<usize>>) -> core::option::Option<List<List<usize>>> {
@@ -8725,19 +8712,61 @@ pub fn set_or_eval(fuel: usize, env: FrontEnv, scope: List<Local>, l: Local, v: 
     return set_try_or_eval(fuel, env, scope, l, v, try_of_init(fuel, env, scope, value), value);
 }
 
-pub fn set_index_eval_of(slice: usize, index: core::option::Option<MEff>, value: core::option::Option<MEff>) -> core::option::Option<MStmt> {
+// A statement, unless w.
+pub fn stmt_unless(w: bool, s: MStmt) -> core::option::Option<MStmt> {
+    if (w) {
+        return None;
+    }
+    return Some(s);
+}
+
+// extract: mutual begin
+// Whether evaluating an expression can act: it calls one of the n declared
+// functions (a projection, numbered past them, only reads a field) or a
+// host service.
+pub fn eff_acts(n: usize, x: MEff) -> bool {
+    return match (x) {
+        XPure(e) -> false,
+        XCall(inst, args) -> inst.decl < n || effs_act(n, unbox(args)),
+        XApply(op, l, r) -> eff_acts(n, unbox(l)) || eff_acts(n, unbox(r)),
+        XNeg(a) -> eff_acts(n, unbox(a)),
+        XNot(a) -> eff_acts(n, unbox(a)),
+        XCast(t, a) -> eff_acts(n, unbox(a)),
+        XIndex(s, i) -> eff_acts(n, unbox(i)),
+        XStruct(t, fs) -> effs_act(n, unbox(fs)),
+        XVariant(t, k, ps) -> effs_act(n, unbox(ps)),
+        XMatch(s, ety, t, bs, vs) -> eff_acts(n, unbox(s)) || effs_act(n, unbox(vs)),
+        XDivide(op, l, r) -> eff_acts(n, unbox(l)) || eff_acts(n, unbox(r)),
+        XStride(sl) -> false,
+        XHost(id, args) -> true,
+    };
+}
+
+pub fn effs_act(n: usize, xs: List<MEff>) -> bool {
+    return match (xs) {
+        Nil -> false,
+        Cons(x, rest) -> eff_acts(n, x) || effs_act(n, unbox(rest)),
+    };
+}
+// extract: mutual end
+
+// `v[i] = value`, n the declared functions: Core checks i against v's
+// length before it evaluates the value, laniusc after, so a value that can
+// act is not read (its effect would be seen, or not, on an index out of
+// bounds).
+pub fn set_index_eval_of(n: usize, slice: usize, index: core::option::Option<MEff>, value: core::option::Option<MEff>) -> core::option::Option<MStmt> {
     return match (index) {
         None -> None,
         Some(i) -> match (value) {
             None -> None,
-            Some(v) -> Some(set_index_eff(slice, i, v)),
+            Some(v) -> stmt_unless(eff_acts(n, v), set_index_eff(slice, i, v)),
         },
     };
 }
 
 // `v[index] = value;`
 pub fn set_index_or_eval(fuel: usize, env: FrontEnv, scope: List<Local>, l: Local, index: CTree, value: CTree) -> core::option::Option<MStmt> {
-    return set_index_eval_of(l.id, eff_of(fuel, env, scope, None, index), eff_of(fuel, env, scope, index_elem(l.ty), value));
+    return set_index_eval_of(length(env.decls.fns), l.id, eff_of(fuel, env, scope, None, index), eff_of(fuel, env, scope, index_elem(l.ty), value));
 }
 
 pub fn field_eval_stmt(id: usize, j: usize, x: core::option::Option<MEff>) -> core::option::Option<MStmt> {
@@ -8961,12 +8990,53 @@ pub fn assignment(fuel: usize, env: FrontEnv, scope: List<Local>, e: CTree) -> c
     return None;
 }
 
+// Whether s writes the local id itself: a set, a field set or a set from a
+// call or an effectful value. (A slice element's write goes to the heap,
+// which a copy of the local shares.)
+pub fn writes_local(s: MStmt, id: usize) -> bool {
+    return match (s) {
+        MNop -> false,
+        MLet(x, t, e, rest) -> writes_local(unbox(rest), id),
+        MLetStruct(x, t, es, rest) -> writes_local(unbox(rest), id),
+        MLetCall(x, t, i, es, rest) -> writes_local(unbox(rest), id),
+        MLetEnum(x, t, v, es, rest) -> writes_local(unbox(rest), id),
+        MLetMatch(x, t, sc, st, arms, rest) -> writes_local(unbox(rest), id),
+        MSet(x, e) -> x == id,
+        MSetField(x, j, e) -> x == id,
+        MSetCall(x, i, es) -> x == id,
+        MThen(a, b) -> writes_local(unbox(a), id) || writes_local(unbox(b), id),
+        MIf(c, a, b) -> writes_local(unbox(a), id) || writes_local(unbox(b), id),
+        MWhile(c, b) -> writes_local(unbox(b), id),
+        MReturn(e) -> false,
+        MLetAlloc(x, e, k, rest) -> writes_local(unbox(rest), id),
+        MFree(a, b, k) -> false,
+        MLetSlice(x, t, a, b, rest) -> writes_local(unbox(rest), id),
+        MLetIndex(x, t, sl, e, rest) -> writes_local(unbox(rest), id),
+        MSetIndex(x, i, e) -> false,
+        MLetEval(x, t, e, rest) -> writes_local(unbox(rest), id),
+        MSetEval(x, e) -> x == id,
+        MIfEval(c, a, b) -> writes_local(unbox(a), id) || writes_local(unbox(b), id),
+        MWhileEval(c, b) -> writes_local(unbox(b), id),
+        MReturnEval(e) -> false,
+        MDiscard(e) -> false,
+        MSetIndexEval(x, i, e) -> false,
+        MSetFieldEval(x, j, e) -> x == id,
+        MReturnUnit -> false,
+        MAssert(e) -> false,
+        MBreak -> false,
+        MContinue -> false,
+        MMatchArm(sc, st, v, binds, b, bt, body, rest) -> writes_local(unbox(body), id) || writes_local(unbox(rest), id),
+        MUnreachable(x, t) -> false,
+    };
+}
+
 // The reading of a range loop (for_of): counter c from a, bound e = n,
-// the loop variable x.
+// the loop variable x. laniusc's loop variable is the counter itself, so a
+// body that writes x is not read: x a copy of c would be another meaning.
 pub fn for_range(c: usize, e: usize, x: usize, t: Ty, a: SrcExpr, n: usize, body: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
     return match (body) {
         None -> None,
-        Some(b) -> Some(MLet(c, t, a, boxed(MLet(e, t, Local(n), boxed(MWhile(Apply(Less, boxed(Local(c)), boxed(Local(e))), boxed(MLet(x, t, Local(c), boxed(MThen(boxed(MSet(c, Apply(Plus, boxed(Local(c)), boxed(Int(1))))), boxed(b))))))))))),
+        Some(b) -> stmt_unless(writes_local(b, x), MLet(c, t, a, boxed(MLet(e, t, Local(n), boxed(MWhile(Apply(Less, boxed(Local(c)), boxed(Local(e))), boxed(MLet(x, t, Local(c), boxed(MThen(boxed(MSet(c, Apply(Plus, boxed(Local(c)), boxed(Int(1))))), boxed(b))))))))))),
     };
 }
 
@@ -9582,46 +9652,6 @@ pub fn ret_expected(r: core::option::Option<RetTy>) -> core::option::Option<Ty> 
             RetUnit -> None,
             RetOf(t) -> Some(t),
         },
-    };
-}
-
-// Whether s writes the local id itself: a set, a field set or a set from a
-// call or an effectful value. (A slice element's write goes to the heap,
-// which a copy of the local shares.)
-pub fn writes_local(s: MStmt, id: usize) -> bool {
-    return match (s) {
-        MNop -> false,
-        MLet(x, t, e, rest) -> writes_local(unbox(rest), id),
-        MLetStruct(x, t, es, rest) -> writes_local(unbox(rest), id),
-        MLetCall(x, t, i, es, rest) -> writes_local(unbox(rest), id),
-        MLetEnum(x, t, v, es, rest) -> writes_local(unbox(rest), id),
-        MLetMatch(x, t, sc, st, arms, rest) -> writes_local(unbox(rest), id),
-        MSet(x, e) -> x == id,
-        MSetField(x, j, e) -> x == id,
-        MSetCall(x, i, es) -> x == id,
-        MThen(a, b) -> writes_local(unbox(a), id) || writes_local(unbox(b), id),
-        MIf(c, a, b) -> writes_local(unbox(a), id) || writes_local(unbox(b), id),
-        MWhile(c, b) -> writes_local(unbox(b), id),
-        MReturn(e) -> false,
-        MLetAlloc(x, e, k, rest) -> writes_local(unbox(rest), id),
-        MFree(a, b, k) -> false,
-        MLetSlice(x, t, a, b, rest) -> writes_local(unbox(rest), id),
-        MLetIndex(x, t, sl, e, rest) -> writes_local(unbox(rest), id),
-        MSetIndex(x, i, e) -> false,
-        MLetEval(x, t, e, rest) -> writes_local(unbox(rest), id),
-        MSetEval(x, e) -> x == id,
-        MIfEval(c, a, b) -> writes_local(unbox(a), id) || writes_local(unbox(b), id),
-        MWhileEval(c, b) -> writes_local(unbox(b), id),
-        MReturnEval(e) -> false,
-        MDiscard(e) -> false,
-        MSetIndexEval(x, i, e) -> false,
-        MSetFieldEval(x, j, e) -> x == id,
-        MReturnUnit -> false,
-        MAssert(e) -> false,
-        MBreak -> false,
-        MContinue -> false,
-        MMatchArm(sc, st, v, binds, b, bt, body, rest) -> writes_local(unbox(body), id) || writes_local(unbox(rest), id),
-        MUnreachable(x, t) -> false,
     };
 }
 

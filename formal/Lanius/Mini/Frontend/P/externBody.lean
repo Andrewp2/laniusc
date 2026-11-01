@@ -6,7 +6,7 @@ import Lanius.Mini.Frontend.P.blockArmsOf
 import Lanius.Mini.Frontend.P.collect
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.ifNotWrites
-import Lanius.Mini.Frontend.P.methodsOf
+import Lanius.Mini.Frontend.P.methodDecl
 import Lanius.Mini.Frontend.P.noToken
 
 public section

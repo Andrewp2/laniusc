@@ -80,7 +80,7 @@ pub fn from_owned_handle(handle: i32, family: Family, kind: Kind) -> core::resul
 fn encode_v4(value: core::net::SocketAddrV4, expected_domain: i32, bytes: [u8]) -> core::result::Result<i32,core::io::Error> {
     if (expected_domain != 2) { return core::result::Err(core::io::Error::InvalidInput); }
     bytes[0] = 2; let index: i32 = 0;
-    while (index < 4) { bytes[4+index] = value.address.octet(index).unwrap(); index += 1; }
+    while (index < 4) { let stored1 = value.address.octet(index).unwrap(); bytes[4+index] = stored1; index += 1; }
     return core::result::Ok(16);
 }
 fn encode_v6(value: core::net::SocketAddrV6, expected_domain: i32, bytes: [u8]) -> core::result::Result<i32,core::io::Error> {
@@ -92,7 +92,7 @@ fn encode_v6(value: core::net::SocketAddrV6, expected_domain: i32, bytes: [u8]) 
 }
 fn encode(endpoint: core::net::SocketAddr, expected_domain: i32, bytes: [u8]) -> core::result::Result<i32,core::io::Error> {
     let index: i32 = 0; while (index < 32) { bytes[index] = 0; index += 1; }
-    bytes[2] = (endpoint.port() >> 8) as u8; bytes[3] = endpoint.port() as u8;
+    let stored3: u8 = (endpoint.port() >> 8) as u8; bytes[2] = stored3; let stored2: u8 = endpoint.port() as u8; bytes[3] = stored2;
     return match (endpoint) {
         core::net::SocketAddr::V4(value) -> encode_v4(value,expected_domain,bytes),
         core::net::SocketAddr::V6(value) -> encode_v6(value,expected_domain,bytes),

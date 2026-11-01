@@ -143,6 +143,8 @@ structure Decls where
   imports : List ImportDecl
   aliases : List AliasDecl
   impls : List ImplDecl
+  /-- the paths of the files' `module` items: a module that declares only traits, say, is still a module -/
+  homes : List (List (List Nat))
   deriving Repr
 
 /-- A struct's fields: spellings and type expressions. -/

@@ -6,7 +6,7 @@ import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Frontend.P.distinct
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isEmptyUsize
-import Lanius.Mini.Frontend.P.methodsOf
+import Lanius.Mini.Frontend.P.methodDecl
 import Lanius.Mini.Frontend.P.moduleOr
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.shrFirst
@@ -44,7 +44,7 @@ def fileDecls (fuel : Nat) (root : CTree) : Option FileDecls :=
     none
 
 def collectedWith (c : Collected) (f : FileDecls) : Collected :=
-  ({ decls := ({ types := c.decls.types ++ f.decls.types, fns := c.decls.fns ++ f.decls.fns, consts := c.decls.consts ++ f.decls.consts, imports := c.decls.imports ++ f.decls.imports, aliases := c.decls.aliases ++ f.decls.aliases, impls := c.decls.impls ++ f.decls.impls } : Decls), modules := c.modules ++ [f.home] } : Collected)
+  ({ decls := ({ types := c.decls.types ++ f.decls.types, fns := c.decls.fns ++ f.decls.fns, consts := c.decls.consts ++ f.decls.consts, imports := c.decls.imports ++ f.decls.imports, aliases := c.decls.aliases ++ f.decls.aliases, impls := c.decls.impls ++ f.decls.impls, homes := c.decls.homes ++ f.decls.homes } : Decls), modules := c.modules ++ [f.home] } : Collected)
 
 def collectFiles (fuel : Nat) (roots : List CTree) (acc : Collected) : Option Collected :=
   match roots with

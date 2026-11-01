@@ -27,7 +27,7 @@ theorem itemDecls_home {home : ModPath} {item : CTree} {d : Decls} (h : ItemDecl
     simp only [onlyTypes, List.mem_singleton] at m
     subst m
     exact typeDeclR_home td
-  | _ => intro t m; simp [onlyFns, onlyConsts, onlyImports, onlyAliases, noDecls] at m
+  | _ => intro t m; simp [onlyFns, onlyConsts, onlyImports, onlyAliases, onlyHomes, noDecls] at m
 
 theorem collect_home {home : ModPath} : ∀ {items : List CTree} {d : Decls}, Collect home items d →
     ∀ t ∈ d.types, t.home = home

@@ -474,8 +474,8 @@ theorem assignTargetR_unique {target : CTree} {v : Nat} {value : CTree} {a b : M
       cases fieldTyAt_unique ft ft'
       rw [effR_unique k nd vn k']
     | _ => prod_clash
-  | indexEval _ _ lo ki kv => cases h₂ with
-    | indexEval _ _ lo' ki' kv' =>
+  | indexEval _ _ lo ki kv _ => cases h₂ with
+    | indexEval _ _ lo' ki' kv' _ =>
       cases localOf_unique lo lo'
       rw [effR_unique ki nd vn ki', effR_unique kv nd vn kv']
     | _ => prod_clash
@@ -1065,10 +1065,10 @@ theorem stmtR_unique : ∀ {scope : List Local} {s : CTree} {a : MStmt}, StmtR e
         exact (Option.some.inj mv).symm
     | assign _ a' => exact (assignR_noMatch a' mp).elim
     | _ => prod_clash
-  | _, _, _, .forRange _ _ _ _ _ _ _ _ _ _ fx ln il bb fr, nd, vn, _, h₂ => by
+  | _, _, _, .forRange _ _ _ _ _ _ _ _ _ _ fx ln il bb _ fr, nd, vn, _, h₂ => by
     have ih := fun {y} k' => blockR_unique bb (idsFresh_cons nd fx) vn (b := y) k'
     cases h₂ with
-    | forRange _ _ _ _ _ _ _ _ _ _ _ ln' il' bb' fr' =>
+    | forRange _ _ _ _ _ _ _ _ _ _ _ ln' il' bb' _ fr' =>
       obtain ⟨_, f⟩ := ln
       obtain ⟨_, f'⟩ := ln'
       cases (firstWith_unique f f').2

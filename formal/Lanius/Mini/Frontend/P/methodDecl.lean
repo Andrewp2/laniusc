@@ -15,6 +15,17 @@ set_option linter.unusedVariables false
 
 namespace Lanius.Mini
 
+def methodDecl (fuel : Nat) (home : List (List Nat)) (implParams : List (List Nat)) (selfType : CTree) (implTree : CTree) (m : CTree) : Option FnDecl :=
+  let f : CTree := kid m 0
+  let g : CTree := kid m 1
+  if decide (nodeProd m = (21)) && decide (nodeProd f = (13)) then
+    fnDeclOf home f true implParams selfType implTree (typeParams fuel (kid f 2))
+  else
+    if decide (nodeProd m = (22)) && decide (nodeProd g = (13)) then
+      fnDeclOf home g true implParams selfType implTree (typeParams fuel (kid g 2))
+    else
+      none
+
 /-- The methods of an impl block: impl_method items holding impl_fn_items. -/
 def methodsOf (fuel : Nat) (home : List (List Nat)) (implParams : List (List Nat)) (selfType : CTree) (implTree : CTree) (items : List CTree) : Option (List FnDecl) :=
   match items with
@@ -24,7 +35,7 @@ def methodsOf (fuel : Nat) (home : List (List Nat)) (implParams : List (List Nat
 def fnsDecls (fns : Option (List FnDecl)) : Option Decls :=
   match fns with
   | none => none
-  | some fs => some ({ types := [], fns := fs, consts := [], imports := [], aliases := [], impls := [] } : Decls)
+  | some fs => some ({ types := [], fns := fs, consts := [], imports := [], aliases := [], impls := [], homes := [] } : Decls)
 
 def implMethods (fuel : Nat) (home : List (List Nat)) (params : Option (List (List Nat))) (selfType : CTree) (implTree : CTree) (list : CTree) : Option Decls :=
   match params with
@@ -35,7 +46,7 @@ def implMethods (fuel : Nat) (home : List (List Nat)) (params : Option (List (Li
     | some items => fnsDecls (methodsOf fuel home ps selfType implTree items)
 
 def withImplDecl (i : ImplDecl) (d : Decls) : Decls :=
-  ({ types := d.types, fns := d.fns, consts := d.consts, imports := d.imports, aliases := d.aliases, impls := i :: d.impls } : Decls)
+  ({ types := d.types, fns := d.fns, consts := d.consts, imports := d.imports, aliases := d.aliases, impls := i :: d.impls, homes := d.homes } : Decls)
 
 /-- A trait impl: its methods, and the impl itself, which the bounds look up. -/
 def withImpl (home : List (List Nat)) (params : Option (List (List Nat))) (b : CTree) (methods : Option Decls) : Option Decls :=
@@ -49,12 +60,12 @@ def withImpl (home : List (List Nat)) (params : Option (List (List Nat))) (b : C
 def typeDecls (t : Option TypeDecl) : Option Decls :=
   match t with
   | none => none
-  | some d => some ({ types := [d], fns := [], consts := [], imports := [], aliases := [], impls := [] } : Decls)
+  | some d => some ({ types := [d], fns := [], consts := [], imports := [], aliases := [], impls := [], homes := [] } : Decls)
 
 def aliasDecls (home : List (List Nat)) (name : List Nat) (params : Option (List (List Nat))) (ty : CTree) : Option Decls :=
   match params with
   | none => none
-  | some ps => some ({ types := [], fns := [], consts := [], imports := [], aliases := [({ home := home, name := name, params := ps, ty := ty } : AliasDecl)], impls := [] } : Decls)
+  | some ps => some ({ types := [], fns := [], consts := [], imports := [], aliases := [({ home := home, name := name, params := ps, ty := ty } : AliasDecl)], impls := [], homes := [] } : Decls)
 
 /-- "lanius_std", its quotes included: the ABI of the host services. -/
 def textLaniusStd : List Nat :=
@@ -148,7 +159,7 @@ def itemDecls (fuel : Nat) (home : List (List Nat)) (item : CTree) : Option Decl
       fnsDecls (consFnDecl (fnDeclOf home b false [] b b (typeParams fuel (kid b 2))) (some []))
     else
       if p = (208) then
-        some ({ types := [], fns := [], consts := [({ home := home, name := (kidToken b 1).text, ty := kid b 3, value := kid b 5 } : ConstDecl)], imports := [], aliases := [], impls := [] } : Decls)
+        some ({ types := [], fns := [], consts := [({ home := home, name := (kidToken b 1).text, ty := kid b 3, value := kid b 5 } : ConstDecl)], imports := [], aliases := [], impls := [], homes := [] } : Decls)
       else
         if p = (17) then
           implMethods fuel home (typeParams fuel (kid b 1)) (kid b 2) b (kid b 5)
@@ -165,10 +176,13 @@ def itemDecls (fuel : Nat) (home : List (List Nat)) (item : CTree) : Option Decl
                 if decide (p = (15)) && hostExtern b then
                   fnsDecls (consFnDecl (fnDeclOf home (externTree b) false [] b b (typeParams fuel (kid b 4))) (some []))
                 else
-                  if decide (p = (46)) || decide (p = (43)) || decide (p = (15)) || decide (p = (25)) || decide (p = (16)) then
-                    some noDecls
+                  if p = (46) then
+                    moduleDecls (pathSpellings fuel (kid (kid b 1) 0) (kid (kid b 1) 1))
                   else
-                    none
+                    if decide (p = (43)) || decide (p = (15)) || decide (p = (25)) || decide (p = (16)) then
+                      some noDecls
+                    else
+                      none
 
 def collectFront (first : Option Decls) (rest : Option Decls) : Option Decls :=
   match first with

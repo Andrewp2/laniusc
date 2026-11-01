@@ -594,7 +594,7 @@ fn field<W>(value: Argument, options: Spec, output: &Output<W>, offset: i32) whe
         }
         let at: i32 = 0;
         while (at<length) {
-            bytes[at] = core::utf8::encoded_byte_or(scalar, at as u32, 0);
+            let stored1 = core::utf8::encoded_byte_or(scalar, at as u32, 0); bytes[at] = stored1;
             at += 1;
         }
         text_field<W>(core::text::from_utf8_unchecked(bytes, 0, length), options, output, offset);
