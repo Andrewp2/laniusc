@@ -2114,7 +2114,12 @@ keeps exact number spelling and reports typed errors with u64 byte offsets.
 Its structural writer emits the `ext::json` byte policy. The streaming
 [jq-lite](../sample_programs/jq_lite.lani) path query agrees with strict Python
 `json` on 2,237 cases, and [csv-to-json](../sample_programs/csv_to_json.lani)
-agrees with Python `csv` on 550 RFC 4180 cases.
+agrees with Python `csv` on 550 RFC 4180 cases. `TokenReader` pulls tokens
+from any `core::io::Read` source, and `Writer.flush_to` streams output to any
+`core::io::Write` sink. [`core::float_decimal`](stdlib-float-decimal.md) now
+tries Eisel-Lemire parsing and Grisu3 shortest formatting before its exact
+big-integer path. It agrees with Python `float()` and `repr()` on 4.8 million
+generated values, about 15 to 24 times faster on typical values.
 [Reusable CSV records and bounded stream writing](extended-csv-write.md)
 share the canonical encoder, preflight the complete record and retain exact
 accepted-prefix progress. The [column rewrite program](extended-csv-rewrite.md)

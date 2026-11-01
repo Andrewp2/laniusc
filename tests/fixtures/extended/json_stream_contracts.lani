@@ -87,6 +87,36 @@ fn bytewise() -> i32 {
     return 0;
 }
 
+// Mode "stream": TokenReader over stdin with 7 bytes of scratch; tokens are
+// copied to a writer that flushes to stdout whenever 32 bytes are buffered.
+fn streamed() -> i32 {
+    let tokens: ext::json_stream::Tokenizer = core::result::unwrap(ext::json_stream::tokenizer(ext::json_stream::Options { max_depth: 512, max_string_bytes: 16777216, max_number_bytes: 1048576 }));
+    let out: ext::json_stream::Writer = core::result::unwrap(ext::json_stream::writer(512, 16777216));
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let target: std::stream::Descriptor = std::stream::stdout();
+    let scratch: [u8; 7] = [0; 7];
+    let reader: ext::json_stream::TokenReader<std::stream::Descriptor> = core::result::unwrap(ext::json_stream::token_reader<std::stream::Descriptor>(source.borrow(), tokens.borrow(), core::result::unwrap(core::slice::view(scratch, 7))));
+    while (true) {
+        let step: core::result::Result<bool, ext::json_stream::StreamError> = reader.next();
+        if (step.is_err()) {
+            let status: i32 = match (step.unwrap_err()) { ext::json_stream::StreamError::Json(cause) -> 2, ext::json_stream::StreamError::Io(cause) -> 3 };
+            return status;
+        }
+        if (!step.unwrap()) { break; }
+        let copied = out.token(tokens.borrow());
+        if (copied.is_err()) { return report(copied.unwrap_err()); }
+        if (out.len() > 32) { if (out.flush_to<std::stream::Descriptor>(target.borrow()).is_err()) { return 3; } }
+    }
+    let again: core::result::Result<bool, ext::json_stream::StreamError> = reader.next();
+    if (again.is_err() || again.unwrap()) { return 6; }
+    if (!out.is_complete()) { return 8; }
+    if (out.flush_to<std::stream::Descriptor>(target.borrow()).is_err()) { return 3; }
+    if (out.len() != 0) { return 9; }
+    let newline: [u8; 1] = [10]; put(core::text::from_utf8_unchecked(newline, 0, 1));
+    tokens.destroy(); out.destroy();
+    return 0;
+}
+
 fn fail(check: i32) -> i32 { put(literal("writer check ", 13)); put_u64(check as u64); put(literal(" failed\n", 8)); return 1; }
 
 fn writer_checks() -> i32 {
@@ -135,8 +165,9 @@ fn main() -> i32 {
     if (captured.is_err()) { return 1; }
     let arguments = captured.unwrap();
     let mode: i32 = 0;
-    if (arguments.len() == 1) { let view: core::slice::View<u8> = core::option::unwrap(arguments.get(0)); if (view.length == 6) { mode = 1; } }
+    if (arguments.len() == 1) { let view: core::slice::View<u8> = core::option::unwrap(arguments.get(0)); if (view.length == 6) { mode = 1; } if (view.length == 3) { mode = 2; } }
     arguments.destroy();
     if (mode == 1) { return writer_checks(); }
+    if (mode == 2) { return streamed(); }
     return bytewise();
 }

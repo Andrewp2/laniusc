@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **282 modules**, **14385 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **283 modules**, **14411 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -41,6 +41,7 @@ Inventory: **282 modules**, **14385 declaration/member entries**. Counts include
 | [core::f64](core/f64.md) | [source](../../stdlib/core/f64.lani#L3) | 57 | Source inventory | [stdlib-floats](../stdlib-floats.md) |
 | [core::float_decimal](core/float_decimal.md) | [source](../../stdlib/core/float_decimal.lani#L4) | 36 | Source inventory | [stdlib-float-decimal](../stdlib-float-decimal.md), [stdlib-float-precision](../stdlib-float-precision.md) |
 | [core::float_order](core/float_order.md) | [source](../../stdlib/core/float_order.lani#L4) | 50 | Source inventory | [stdlib-comparison](../stdlib-comparison.md) |
+| [core::float_tables](core/float_tables.md) | [source](../../stdlib/core/float_tables.lani#L4) | 8 | Source inventory | [stdlib-float-decimal](../stdlib-float-decimal.md) |
 | [core::fmt](core/fmt.md) | [source](../../stdlib/core/fmt.lani#L2) | 67 | Source inventory | [stdlib-formatting](../stdlib-formatting.md) |
 | [core::format](core/format.md) | [source](../../stdlib/core/format.lani#L3) | 41 | Source inventory | [stdlib-format-strings](../stdlib-format-strings.md), [stdlib-format-write](../stdlib-format-write.md) |
 | [core::function](core/function.md) | [source](../../stdlib/core/function.lani#L2) | 4 | Source inventory | [stdlib-lazy-outcomes](../stdlib-lazy-outcomes.md), [stdlib-iterator-adapters](../stdlib-iterator-adapters.md), [stdlib-map-updates](../stdlib-map-updates.md), [stdlib-vec-edit](../stdlib-vec-edit.md), [stdlib-slice-segmentation](../stdlib-slice-segmentation.md) |
@@ -249,7 +250,7 @@ Inventory: **282 modules**, **14385 declaration/member entries**. Counts include
 | [ext::image](ext/image.md) | [source](../../extended/ext/image.lani#L2) | 48 | Source inventory | [extended-image](../extended-image.md), [extended-image-resize](../extended-image-resize.md) |
 | [ext::inflate](ext/inflate.md) | [source](../../extended/ext/inflate.lani#L4) | 61 | Source inventory | [extended-inflate](../extended-inflate.md), [extended-streaming-inflate](../extended-streaming-inflate.md) |
 | [ext::json](ext/json.md) | [source](../../extended/ext/json.lani#L3) | 90 | Source inventory | [extended-json](../extended-json.md), [extended-json-streaming](../extended-json-streaming.md), [extended-json-normalize](../extended-json-normalize.md) |
-| [ext::json_stream](ext/json_stream.md) | [source](../../extended/ext/json_stream.lani#L5) | 114 | Source inventory | [extended-json-stream](../extended-json-stream.md) |
+| [ext::json_stream](ext/json_stream.md) | [source](../../extended/ext/json_stream.lani#L5) | 132 | Source inventory | [extended-json-stream](../extended-json-stream.md) |
 | [ext::kv](ext/kv.md) | [source](../../extended/ext/kv.lani#L3) | 48 | Source inventory | [extended-kv](../extended-kv.md), [extended-cli-complete](../extended-cli-complete.md) |
 | [ext::lexer](ext/lexer.md) | [source](../../extended/ext/lexer.lani#L2) | 73 | Source inventory | [extended-lexer](../extended-lexer.md), [extended-lex-scan](../extended-lex-scan.md), [library-regex-workspace-plan](../library-regex-workspace-plan.md) |
 | [ext::linalg](ext/linalg.md) | [source](../../extended/ext/linalg.lani#L3) | 87 | Source inventory | [extended-linalg](../extended-linalg.md), [extended-sparse](../extended-sparse.md) |

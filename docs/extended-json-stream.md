@@ -89,6 +89,27 @@ TrailingInput, the three limits, AllocationFailed, Bounds (an invalid feed
 range or an accessor with no matching token), Finished and OffsetOverflow.
 The writer adds OutputLimit and InvalidPlacement.
 
+## Reading from `core::io::Read`
+
+```text
+json_stream::token_reader<R>(reader: &R, tokens: &Tokenizer, scratch: View<u8>)
+    -> Result<TokenReader<R>, Error>          // R: core::io::Read
+TokenReader.next() -> Result<bool, StreamError>
+TokenReader.read_calls() -> u64
+StreamError = Json(Error) | Io(core::io::Error)
+```
+
+`next` feeds buffered bytes and reads more into the caller's scratch as
+needed. `Ok(true)` means the borrowed tokenizer holds a ready token, which you
+query with `token()`/`text()` as usual. `Ok(false)` means the source reached
+EOF and `finish` validated the document. Later calls keep returning false.
+Interrupted reads are retried. Any other read error is returned as `Io`, and
+the buffered bytes stay in place. A reported count outside the scratch range
+is `Io(InvalidCount)`. Scratch of any positive size works; the tests use 7
+bytes and 1 KiB. Nothing is allocated beyond the tokenizer's own buffers. The
+reader, tokenizer and scratch are borrowed, so keep them alive and
+unshared while driving the reader.
+
 ## Writer
 
 ```text
@@ -98,6 +119,7 @@ Writer.key(text), string(text), number(text), boolean(value), null()
 Writer.token(&Tokenizer)          // copy the ready token
 Writer.next_document()            // JSON Lines: LF, then accept another root
 Writer.output() -> View<u8>, output_text() -> Text, len(), depth(), is_complete()
+Writer.flush_to<W>(sink: &W) -> Result<i32, core::io::Failure>   // W: core::io::Write
 Writer.clear(), destroy(), borrow()
 ```
 
@@ -110,6 +132,13 @@ spelling. An `InvalidNumber` offset is relative to that Text. If
 `max_output_bytes` or an allocation failure stops a write partway, the output
 is truncated back to its previous length and the call returns `OutputLimit`
 or `AllocationFailed`.
+
+`flush_to` writes the buffered bytes with `core::io::write_all` and drops
+them. Structure state is kept, so a document of any size can stream through a
+bounded buffer. `max_output_bytes` then limits only the unflushed bytes. On a
+write failure, the unwritten suffix stays buffered for a retry.
+`Failure.completed` counts the bytes delivered by that call. The writer never
+flushes or closes the sink.
 
 The output bytes follow `ext::json` encoding exactly. JSON is compact. Quote
 and backslash are escaped. Bytes below 0x20 are written as lowercase
@@ -168,6 +197,7 @@ byte for byte with an independent rendering of the reference value.
 | errors: exact `kind at offset` from this contract | 30 | 30 |
 | bytewise: one byte per feed through tokenizer and writer | 602 | 602 |
 | writer: scripted placement, number, UTF-8, depth and limit checks | 1 | 1 |
+| stream: `TokenReader` over stdin with 7-byte scratch, `flush_to` every 32 bytes | 572 | 572 |
 
 The bytewise fixture
 ([`json_stream_contracts.lani`](../tests/fixtures/extended/json_stream_contracts.lani))
@@ -202,7 +232,8 @@ programs run on the GPU, and other hosts are untested.
 
 ## Limits of this increment
 
-Not done yet: a tokenizer that reads from a `core::io::Read` source directly,
-a writer that flushes to a `core::io::Write` sink, number conversion to
-floating point, duplicate-key detection in the tokenizer, and jq filters
-beyond plain paths.
+Both samples now read through `TokenReader` and publish with `flush_to`;
+every group above was rerun on those builds. For floating-point values, parse
+`text()` with `core::float_decimal::parse_f64`, which is exact and now has a
+fast path ([guide](stdlib-float-decimal.md)). Not done yet: duplicate-key
+detection in the tokenizer, and jq filters beyond plain paths.
