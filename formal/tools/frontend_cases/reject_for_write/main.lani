@@ -1,0 +1,11 @@
+// A write to a range loop's variable: laniusc's variable is the loop's
+// counter (top(10) is 5), so reading it as a copy of the counter (10) would
+// be another meaning; the loop is not read.
+fn top(n: i32) -> i32 {
+    let count: i32 = 0;
+    for i in 0..n {
+        i = i + 1;
+        count = count + 1;
+    }
+    return count;
+}

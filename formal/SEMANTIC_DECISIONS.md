@@ -962,6 +962,8 @@ read as `let c = a; let e = n; while (c < e) { let x = c; c = c + 1; body }`
   assigning `n` in the body does not change the iterations;
 - `x` is a fresh local each iteration, and `c` moves on before the body, so a
   `continue` goes to the next value; `c + 1` cannot overflow, as `c < e`;
+  a body that writes `x` is not read (10-31: laniusc's `x` is the counter,
+  see "Front end review fixes");
 - `x`, `c` and `e` have `n`'s type, and the literal `a` takes it.
 
 This agrees with Core's own `forRange` (`Semantics.lean`), which evaluates
@@ -1114,10 +1116,11 @@ grammar has no `ensures` clause, so none is read.
 or a variant (`pathHome`, `itemImport`, `BareVariant.item`). As in laniusc
 (docs/language-ergonomics.md) the import names only that item and beats
 module imports for its name; a module of that whole path wins over the
-item. Two deliberate differences, both on programs laniusc rejects: an item
+item. One deliberate difference, on programs laniusc rejects: an item
 import also beats a declaration of the same name in `m` (laniusc reports a
-clash), and a module with no declarations counts as no module. Module
-imports still bring only variants into scope by their bare names.
+clash). A module is a path a file's `module` item names, whatever the file
+declares (10-31, "Front end review fixes"). Module imports still bring
+only variants into scope by their bare names.
 Stdlib: `core::wide_i64_checked` and `core::wide_u64_checked`, 20 targets,
 all compile now (432 calls agree with laniusc).
 
@@ -1353,6 +1356,40 @@ arms after it are read as before.
 - A let's match with block arms still needs exactly one value arm as
   written; a wildcard value arm then copies the statements after the let
   into each variant it stands for.
+
+## Front end review fixes (decided 10-31)
+
+The 10-31 review of the front end against laniusc found three programs the
+front end read with another meaning than laniusc's. Each is now read as
+laniusc reads it or not read (frontend cases `reject_for_write`,
+`reject_index_call`, `module_traits_only`):
+
+- A write to a range loop's variable. laniusc's loop variable is the
+  counter itself (shaders/codegen/lir/semantic/loop_recipe.slang: the
+  binding is set to the start and incremented), so `for i in 0..n { i = i +
+  1; ... }` runs about n/2 times there and n times in a reading with `x` a
+  copy of the counter. `for_range` does not read a body that writes `x`
+  (`writesLocal`, as for `&self`; `StmtR.forRange`). Reading `x` as the
+  counter would also need `continue` to move on after the body, which is
+  laniusc's order but not this desugaring's.
+- `s[i] = value` where the value can act: it calls a declared function or a
+  host service (`effActs`; a field projection only reads). Core checks `i`
+  against the length before it evaluates the value ("Traps in compiled
+  code"); laniusc's store is one operation after its operands, so its bound
+  guard runs after the value (shaders/codegen/x86/safety_emit.slang). With
+  `i` out of bounds, laniusc runs the call's effects (output, a loop that
+  never ends) before it traps, and the reading traps first. Such a store is
+  not read (`AssignTargetR.indexEval`); a value without calls traps or not
+  the same way in both orders (Core does not tell traps apart), and a call
+  in the index is read. Programs write `let t = f(); s[i] = t;`.
+- A module that declares nothing the front end counts. laniusc's module
+  table holds every file's `module` item, and an import whose whole path is
+  a module imports the module (modules/05_resolve_imports.slang). The front
+  end counted a module only when it declared a type, function, constant or
+  alias, so `import a::b;` with `a/b.lani` holding only a trait imported the
+  function `b` of `a`, and a local `b()` called `a::b` instead of this
+  module's `b`. Now a `module` item declares its path (`Decls.homes`,
+  `ItemDecls.module`) and `isModule` is membership in those paths.
 
 ## Oracle comparisons of laniusc's programs and `extended/` (decided 10-31, F11)
 

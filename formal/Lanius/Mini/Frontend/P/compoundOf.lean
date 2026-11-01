@@ -39,26 +39,40 @@ def assignment (fuel : Nat) (env : FrontEnv) (scope : List Local) (e : CTree) : 
       else
         none
 
-/-- The reading of a range loop (for_of): counter c from a, bound e = n, the loop variable x. -/
-def forRange (c : Nat) (e : Nat) (x : Nat) (t : Ty) (a : SrcExpr) (n : Nat) (body : Option MStmt) : Option MStmt :=
-  match body with
-  | none => none
-  | some b => some (MStmt.mLet c t a (MStmt.mLet e t (SrcExpr.local n) (MStmt.mWhile (SrcExpr.apply SrcOp.less (SrcExpr.local c) (SrcExpr.local e)) (MStmt.mLet x t (SrcExpr.local c) (MStmt.mThen (MStmt.mSet c (SrcExpr.apply SrcOp.plus (SrcExpr.local c) (SrcExpr.int 1))) b)))))
-
-def matchOfPostfix (pf : CTree) : Option CTree :=
-  if decide (nodeProd (kid pf 0) = (187)) && decide (nodeProd (kid pf 1) = (164)) then
-    some (kid pf 0)
-  else
-    none
-
-/-- The match of a statement `match (s) { arms };`. -/
-def matchPrimary (fuel : Nat) (e : CTree) : Option CTree :=
-  let a : CTree := kid e 0
-  if decide (nodeProd e = (104)) && decide (nodeProd a = (105)) && decide (nodeProd (kid a 1) = (117)) && !(hasKids (kid a 1)) then
-    match peel fuel (kid a 0) with
-    | none => none
-    | some pf => matchOfPostfix pf
-  else
-    none
+/-- Whether s writes the local id itself: a set, a field set or a set from a call or an effectful value. (A slice element's write goes to the heap, which a copy of the local shares.) -/
+def writesLocal (s : MStmt) (id : Nat) : Bool :=
+  match s with
+  | .mNop => false
+  | .mLet x t e rest => writesLocal rest id
+  | .mLetStruct x t es rest => writesLocal rest id
+  | .mLetCall x t i es rest => writesLocal rest id
+  | .mLetEnum x t v es rest => writesLocal rest id
+  | .mLetMatch x t sc st arms rest => writesLocal rest id
+  | .mSet x e => decide (x = id)
+  | .mSetField x j e => decide (x = id)
+  | .mSetCall x i es => decide (x = id)
+  | .mThen a b => writesLocal a id || writesLocal b id
+  | .mIf c a b => writesLocal a id || writesLocal b id
+  | .mWhile c b => writesLocal b id
+  | .mReturn e => false
+  | .mLetAlloc x e k rest => writesLocal rest id
+  | .mFree a b k => false
+  | .mLetSlice x t a b rest => writesLocal rest id
+  | .mLetIndex x t sl e rest => writesLocal rest id
+  | .mSetIndex x i e => false
+  | .mLetEval x t e rest => writesLocal rest id
+  | .mSetEval x e => decide (x = id)
+  | .mIfEval c a b => writesLocal a id || writesLocal b id
+  | .mWhileEval c b => writesLocal b id
+  | .mReturnEval e => false
+  | .mDiscard e => false
+  | .mSetIndexEval x i e => false
+  | .mSetFieldEval x j e => decide (x = id)
+  | .mReturnUnit => false
+  | .mAssert e => false
+  | .mBreak => false
+  | .mContinue => false
+  | .mMatchArm sc st v binds b bt body rest => writesLocal body id || writesLocal rest id
+  | .mUnreachable x t => false
 
 end Lanius.Mini

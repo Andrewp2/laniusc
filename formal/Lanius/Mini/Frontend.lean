@@ -13,8 +13,8 @@ public import Lanius.Mini.Frontend.P.noTrees
 public import Lanius.Mini.Frontend.P.pathRef
 public import Lanius.Mini.Frontend.P.typePathSpellings
 public import Lanius.Mini.Frontend.P.moduleOr
-public import Lanius.Mini.Frontend.P.methodsOf
-public import Lanius.Mini.Frontend.P.collectedWith
+public import Lanius.Mini.Frontend.P.methodDecl
+public import Lanius.Mini.Frontend.P.fileDecls
 public import Lanius.Mini.Frontend.P.rootInsts
 public import Lanius.Mini.Frontend.P.findConst
 public import Lanius.Mini.Frontend.P.itemOf
@@ -75,10 +75,10 @@ public import Lanius.Mini.Frontend.P.setIndexOrEval
 public import Lanius.Mini.Frontend.P.fieldTyAt
 public import Lanius.Mini.Frontend.P.compoundEval
 public import Lanius.Mini.Frontend.P.compoundOf
+public import Lanius.Mini.Frontend.P.forRange
 public import Lanius.Mini.Frontend.P.isMatchStmt
 public import Lanius.Mini.Frontend.P.matchStmtIf
 public import Lanius.Mini.Frontend.P.blockArmsOf
-public import Lanius.Mini.Frontend.P.writesLocal
 public import Lanius.Mini.Frontend.P.selfRefOf
 public import Lanius.Mini.Frontend.P.ifNotWrites
 public import Lanius.Mini.Frontend.P.externBody

@@ -3,10 +3,10 @@ module
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Frontend.P.blockArmsOf
-import Lanius.Mini.Frontend.P.collectedWith
+import Lanius.Mini.Frontend.P.fileDecls
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.ifNotWrites
-import Lanius.Mini.Frontend.P.methodsOf
+import Lanius.Mini.Frontend.P.methodDecl
 import Lanius.Mini.Frontend.P.noToken
 
 public section

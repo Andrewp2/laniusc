@@ -3,12 +3,12 @@ module
 public import Lanius.Mini.Frontend.Types
 public import Lanius.Mini.Compiler.P.arithShiftRight
 public import Lanius.Mini.Frontend.P.blockArmsOf
-public import Lanius.Mini.Frontend.P.compoundOf
 public import Lanius.Mini.Frontend.P.consBinder
 public import Lanius.Mini.Frontend.P.consTreeTail
 public import Lanius.Mini.Frontend.P.effNamedTys
 public import Lanius.Mini.Frontend.P.findConst
 public import Lanius.Mini.Frontend.P.floatTyped
+public import Lanius.Mini.Frontend.P.forRange
 public import Lanius.Mini.Frontend.P.freshId
 public import Lanius.Mini.Frontend.P.hasKids
 public import Lanius.Mini.Frontend.P.intLiteral

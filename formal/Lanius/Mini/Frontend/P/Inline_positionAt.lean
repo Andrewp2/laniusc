@@ -1,12 +1,12 @@
 module
 
 public import Lanius.Mini.Frontend.Types
-public import Lanius.Mini.Frontend.P.collectedWith
 public import Lanius.Mini.Frontend.P.distinct
+public import Lanius.Mini.Frontend.P.fileDecls
 public import Lanius.Mini.Frontend.P.findConst
 public import Lanius.Mini.Frontend.P.hasKids
 public import Lanius.Mini.Frontend.P.isEmptyUsize
-public import Lanius.Mini.Frontend.P.methodsOf
+public import Lanius.Mini.Frontend.P.methodDecl
 public import Lanius.Mini.Frontend.P.moduleOr
 public import Lanius.Mini.Frontend.P.noToken
 public import Lanius.Mini.Frontend.P.noTrees
