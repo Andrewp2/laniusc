@@ -480,13 +480,8 @@ bool validate_method_args(uint method_i, uint fn_i, uint receiver_ty, uint call_
 
 bool validate_associated_args(uint method_i, uint fn_i, uint call_hir)
 {
-    uint receiver_mode = method_decl_receiver_mode[fn_i];
-    if (receiver_mode == METHOD_RECEIVER_SELF || receiver_mode == METHOD_RECEIVER_REF_SELF)
-    {
-        record_error(method_i, ERR_CALL_MISMATCH, receiver_mode);
-        return false;
-    }
-
+    // A self method called through its type's path takes the receiver as
+    // its first argument, so every parameter row has an argument.
     uint expected_args = call_param_count[fn_i];
     uint actual_args = call_arg_count_for_call_hir(method_i, call_hir);
     if (actual_args != expected_args)

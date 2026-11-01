@@ -1,0 +1,15 @@
+// A bound with three trait arguments, F: core::iter::TryFolder<i32, u8, bool>:
+// `let r = f.try_apply(2, 3 as u8);` types as Result<i32, bool>. Expected: exit 6.
+module app::main;
+import core::iter;
+import core::result;
+pub struct Add { k: i32 }
+pub impl Add { pub fn borrow(&self) -> &Add { return self; } }
+pub impl core::iter::TryFolder<i32, u8, bool> for Add {
+    pub fn try_apply(&self, accumulator: i32, value: u8) -> core::result::Result<i32, bool> { return core::result::Ok(accumulator + (value as i32) + self.k); }
+}
+fn run<F>(f: &F) -> i32 where F: core::iter::TryFolder<i32, u8, bool> {
+    let r = f.try_apply(2, 3 as u8);
+    return core::result::unwrap_or(r, 0);
+}
+fn main() -> i32 { let a: Add = Add { k: 1 }; return run<Add>(a.borrow()); }

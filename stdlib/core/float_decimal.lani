@@ -147,15 +147,18 @@ fn eisel_lemire(q: i32, digits: u64, cfg: Config) -> u64 {
 struct DiyFp { f: u64, e: i32 }
 fn normalized(f: u64, e: i32) -> DiyFp {
     let value: u64 = f; let exponent: i32 = e;
+    while ((value >> 56) == 0) { value = value << 8; exponent -= 8; }
     while ((value >> 63) == 0) { value = value << 1; exponent -= 1; }
     return DiyFp { f: value, e: exponent };
 }
-fn times(x: DiyFp, y: DiyFp) -> DiyFp {
+// Rounded high 64 bits of the 128-bit product x * y (the DiyFp product's
+// significand; its exponent is x.e + y.e + 64).
+fn times(x: u64, y: u64) -> u64 {
     let mask: u64 = 4294967295;
-    let a: u64 = x.f >> 32; let b: u64 = x.f & mask; let c: u64 = y.f >> 32; let d: u64 = y.f & mask;
+    let a: u64 = x >> 32; let b: u64 = x & mask; let c: u64 = y >> 32; let d: u64 = y & mask;
     let ac: u64 = a*c; let bc: u64 = b*c; let ad: u64 = a*d; let bd: u64 = b*d;
     let middle: u64 = (bd >> 32) + (ad & mask) + (bc & mask) + 2147483648;
-    return DiyFp { f: ac + (ad >> 32) + (bc >> 32) + (middle >> 32), e: x.e + y.e + 64 };
+    return ac + (ad >> 32) + (bc >> 32) + (middle >> 32);
 }
 struct Shortest { ok: bool, coefficient: u64, exponent: i32 }
 fn weed(coefficient: u64, distance_high: u64, unsafe_interval: u64, rest_in: u64, ten_kappa: u64, unit: u64) -> Shortest {
@@ -167,45 +170,65 @@ fn weed(coefficient: u64, distance_high: u64, unsafe_interval: u64, rest_in: u64
     if (2*unit <= rest && rest <= unsafe_interval-4*unit) { return Shortest { ok: true, coefficient: digits, exponent: 0 }; }
     return fail;
 }
+// core::float_tables::cached_exponent(index) without the table scan: the
+// binary exponent of the normalized 64-bit significand of 10^(-348 + 8i).
+// Equal to the table for every index in [0, CACHED_COUNT).
+fn cached_binary(index: i32) -> i32 { return binary_power(-348+8*index)-126; }
 // Grisu3 (Loitsch 2010): shortest digits inside a conservatively narrowed
 // interval, verified closest; ok is false when the 64-bit error bound cannot
 // prove the result, and the exact algorithm decides instead.
-fn grisu(absolute: u64, cfg: Config) -> Shortest {
+// Takes the three Config fields it reads as scalars (cheaper than copying
+// the whole Config per call); the dyadic split is inlined.
+fn grisu(absolute: u64, fraction_bits: i32, bias: i32, fraction_mask: u64) -> Shortest {
     let fail: Shortest = Shortest { ok: false, coefficient: 0, exponent: 0 };
-    let value: Dyadic = dyadic(absolute,cfg);
-    let w: DiyFp = normalized(value.mantissa,value.exponent);
-    let plus: DiyFp = normalized((value.mantissa << 1)+1,value.exponent-1);
-    let minus: DiyFp = DiyFp { f: (value.mantissa << 1)-1, e: value.exponent-1 };
-    if ((absolute & cfg.fraction_mask) == 0 && (absolute >> cfg.fraction_bits) > 1) { minus = DiyFp { f: (value.mantissa << 2)-1, e: value.exponent-2 }; }
+    let fraction: u64 = absolute & fraction_mask; let biased: i32 = (absolute >> fraction_bits) as i32;
+    let mantissa: u64 = fraction; let binary: i32 = 1-bias-fraction_bits;
+    if (biased != 0) { let hidden: u64 = 1; hidden = hidden << fraction_bits; mantissa = hidden | fraction; binary = biased-bias-fraction_bits; }
+    let w: DiyFp = normalized(mantissa,binary);
+    let plus: DiyFp = normalized((mantissa << 1)+1,binary-1);
+    let minus: DiyFp = DiyFp { f: (mantissa << 1)-1, e: binary-1 };
+    if (fraction == 0 && biased > 1) { minus = DiyFp { f: (mantissa << 2)-1, e: binary-2 }; }
     minus = DiyFp { f: minus.f << (minus.e-plus.e), e: plus.e };
     let lowest: i32 = -60-(w.e+64); let highest: i32 = -32-(w.e+64);
     let index: i32 = ((lowest+1220)*10)/266-1; if (index < 0) { index = 0; }
-    while (index < core::float_tables::CACHED_COUNT-1 && core::float_tables::cached_exponent(index) < lowest) { index += 1; }
-    while (index > 0 && core::float_tables::cached_exponent(index) > highest) { index -= 1; }
-    let ten: DiyFp = DiyFp { f: core::float_tables::cached_significand(index), e: core::float_tables::cached_exponent(index) };
+    while (index < core::float_tables::CACHED_COUNT-1 && cached_binary(index) < lowest) { index += 1; }
+    while (index > 0 && cached_binary(index) > highest) { index -= 1; }
+    let ten: DiyFp = DiyFp { f: core::float_tables::cached_significand(index), e: cached_binary(index) };
     if (ten.e < lowest || ten.e > highest) { return fail; }
-    let scaled: DiyFp = times(w,ten); let low: DiyFp = times(minus,ten); let high: DiyFp = times(plus,ten);
+    let scaled_f: u64 = times(w.f,ten.f); let scaled_e: i32 = w.e+ten.e+64; let low_f: u64 = times(minus.f,ten.f); let high_f: u64 = times(plus.f,ten.f);
     let unit: u64 = 1;
-    let too_low: u64 = low.f-unit; let too_high: u64 = high.f+unit; let unsafe_interval: u64 = too_high-too_low;
-    let shift: i32 = 0-scaled.e; let one: u64 = 1; one = one << shift;
+    let too_low: u64 = low_f-unit; let too_high: u64 = high_f+unit; let unsafe_interval: u64 = too_high-too_low;
+    let shift: i32 = 0-scaled_e; let one: u64 = 1; one = one << shift;
     let integrals: u64 = too_high >> shift; let fractionals: u64 = too_high & (one-1);
     let divisor: u64 = 1; let kappa: i32 = 1;
-    if (integrals == 0) { divisor = 0; kappa = 0; } else { while (divisor*10 <= integrals) { divisor *= 10; kappa += 1; } }
+    if (integrals == 0) { divisor = 0; kappa = 0; } else {
+        if (integrals >= 100000) { divisor = 100000; kappa = 6; }
+        while (divisor*10 <= integrals) { divisor *= 10; kappa += 1; }
+    }
     let coefficient: u64 = 0; let count: i32 = 0; let decimal: i32 = 0-core::float_tables::cached_decimal(index);
+    // Every integral step's rest is at least fractionals, so when that is
+    // already outside the unsafe interval no integral digit can stop the
+    // generation: take the whole integral part as the first kappa digits.
+    if (fractionals >= unsafe_interval) { coefficient = integrals; count = kappa; kappa = 0; }
     while (kappa > 0) {
-        coefficient = coefficient*10+integrals/divisor; count += 1; integrals = integrals%divisor; kappa -= 1;
+        let quotient: u64 = integrals/divisor; coefficient = coefficient*10+quotient; count += 1; integrals = integrals-quotient*divisor; kappa -= 1;
         let rest: u64 = (integrals << shift)+fractionals;
         if (rest < unsafe_interval) {
-            let result: Shortest = weed(coefficient,too_high-scaled.f,unsafe_interval,rest,divisor << shift,unit);
+            let result: Shortest = weed(coefficient,too_high-scaled_f,unsafe_interval,rest,divisor << shift,unit);
             result.exponent = decimal+kappa; return result;
         }
-        divisor = divisor/10;
+        // divisor <= 10^9 < 2^32, where (n * 3435973837) >> 35 == n / 10.
+        divisor = (divisor*3435973837) >> 35;
     }
-    while (count < 19) {
-        fractionals *= 10; unit *= 10; unsafe_interval *= 10;
-        coefficient = coefficient*10+(fractionals >> shift); count += 1; fractionals = fractionals & (one-1); kappa -= 1;
+    // Fractional digits; step k scales unit by 10^k, so it is computed only
+    // at the end. kappa runs from 0 down to count-19.
+    let mask: u64 = one-1; let last: i32 = count-19;
+    while (kappa > last) {
+        fractionals *= 10; unsafe_interval *= 10;
+        coefficient = coefficient*10+(fractionals >> shift); fractionals = fractionals & mask; kappa -= 1;
         if (fractionals < unsafe_interval) {
-            let result: Shortest = weed(coefficient,(too_high-scaled.f)*unit,unsafe_interval,fractionals,one,unit);
+            unit = power10(0-kappa);
+            let result: Shortest = weed(coefficient,(too_high-scaled_f)*unit,unsafe_interval,fractionals,one,unit);
             result.exponent = decimal+kappa; return result;
         }
     }
@@ -306,7 +329,14 @@ pub fn parse_f64(input: core::slice::View<u8>, scratch: core::slice::View<u32>, 
 }
 
 struct Decimal { coefficient: u64, exponent: i32, negative: bool, special: i32 }
-fn digits(value: u64) -> i32 { let rest: u64 = value; let count: i32 = 1; while (rest >= 10) { rest /= 10; count += 1; } return count; }
+// Decimal digit count; compares against growing powers of ten (no division).
+fn digits(value: u64) -> i32 {
+    let bound: u64 = 10; let count: i32 = 1;
+    // Most shortest doubles have 16 or 17 digits; start there.
+    if (value >= 1000000000000000) { bound = 10000000000000000; count = 16; }
+    while (count < 20 && value >= bound) { bound *= 10; count += 1; }
+    return count;
+}
 fn power10(exponent: i32) -> u64 { let value: u64 = 1; let i: i32 = 0; while (i < exponent) { value *= 10; i += 1; } return value; }
 fn decimal_digit(groups: core::slice::View<u32>, count: i32, first: i32, index: i32) -> u64 {
     let group: i32 = count-1; let position: i32 = index; let width: i32 = first;
@@ -323,7 +353,7 @@ fn prepare(bits: u64, cfg: Config, scratch: core::slice::View<u32>, work: u64) -
     if (absolute >= cfg.infinity) { let kind: i32 = 1; if (absolute > cfg.infinity) { kind = 2; negative = false; } return core::result::Ok(Decimal { coefficient: 0, exponent: 0, negative: negative, special: kind }); }
     if (absolute == 0) { return core::result::Ok(Decimal { coefficient: 0, exponent: 0, negative: negative, special: 0 }); }
     budget.pay(100); if (budget.failed) { return core::result::Err(Error::WorkLimit); }
-    let fast: Shortest = grisu(absolute,cfg);
+    let fast: Shortest = grisu(absolute,cfg.fraction_bits,cfg.bias,cfg.fraction_mask);
     if (fast.ok) {
         let coefficient: u64 = fast.coefficient; let decimal_exponent: i32 = fast.exponent;
         while (coefficient%10 == 0) { coefficient /= 10; decimal_exponent += 1; }
@@ -360,49 +390,114 @@ fn prepare(bits: u64, cfg: Config, scratch: core::slice::View<u32>, work: u64) -
     }
     assert(false); return core::result::Err(Error::Bounds);
 }
-fn scientific(value: Decimal) -> bool {
-    if (value.coefficient == 0 || value.special != 0) { return false; }
-    let count: i32 = digits(value.coefficient); let exponent: i32 = value.exponent+count-1; let absolute: i32 = exponent; if (absolute < 0) { absolute = 0-absolute; }
+// Whether a finite nonzero value whose coefficient has count digits is
+// shorter in scientific notation.
+fn scientific_count(value: Decimal, count: i32) -> bool {
+    let exponent: i32 = value.exponent+count-1; let absolute: i32 = exponent; if (absolute < 0) { absolute = 0-absolute; }
     let sci: i32 = count+1+digits(absolute as u64); if (count > 1) { sci += 1; } if (exponent < 0) { sci += 1; }
     let fixed: i32 = count+value.exponent; if (value.exponent < 0) { if (count+value.exponent > 0) { fixed = count+1; } else { fixed = 2-value.exponent; } }
     return sci < fixed;
 }
 fn length(value: Decimal) -> i32 {
-    let sign: i32 = 0; if (value.negative) { sign = 1; } if (value.special != 0) { return sign+3; } if (value.coefficient == 0) { return sign+1; }
+    if (value.special != 0 || value.coefficient == 0) { return sized_length(value,0,false); }
     let count: i32 = digits(value.coefficient);
-    if (scientific(value)) { let exponent: i32 = value.exponent+count-1; let negative: i32 = 0; if (exponent < 0) { negative = 1; exponent = 0-exponent; } let point: i32 = 0; if (count > 1) { point = 1; } return sign+count+point+1+negative+digits(exponent as u64); }
+    return sized_length(value,count,scientific_count(value,count));
+}
+// length() given the digit count and notation of a finite nonzero value.
+fn sized_length(value: Decimal, count: i32, sci: bool) -> i32 {
+    let sign: i32 = 0; if (value.negative) { sign = 1; } if (value.special != 0) { return sign+3; } if (value.coefficient == 0) { return sign+1; }
+    if (sci) { let exponent: i32 = value.exponent+count-1; let negative: i32 = 0; if (exponent < 0) { negative = 1; exponent = 0-exponent; } let point: i32 = 0; if (count > 1) { point = 1; } return sign+count+point+1+negative+digits(exponent as u64); }
     if (value.exponent >= 0) { return sign+count+value.exponent; } if (count+value.exponent > 0) { return sign+count+1; } return sign+2-value.exponent;
 }
 fn digit(value: u64, count: i32, index: i32) -> u8 { return (48+(value/power10(count-index-1))%10) as u8; }
-fn render(value: Decimal, output: core::slice::View<u8>) {
-    let at: i32 = output.start; if (value.negative) { output.values[at] = 45; at += 1; }
-    if (value.special == 1) { output.values[at] = 105; output.values[at+1] = 110; output.values[at+2] = 102; return; }
-    if (value.special == 2) { output.values[at] = 78; output.values[at+1] = 97; output.values[at+2] = 78; return; }
-    if (value.coefficient == 0) { output.values[at] = 48; return; }
-    let count: i32 = digits(value.coefficient); let index: i32 = 0;
-    if (scientific(value)) {
-        output.values[at] = digit(value.coefficient,count,0); at += 1; index = 1;
-        if (count > 1) { output.values[at] = 46; at += 1; while (index < count) { output.values[at] = digit(value.coefficient,count,index); at += 1; index += 1; } }
-        output.values[at] = 101; at += 1; let exponent: i32 = value.exponent+count-1; if (exponent < 0) { output.values[at] = 45; at += 1; exponent = 0-exponent; }
-        let width: i32 = digits(exponent as u64); index = 0; while (index < width) { output.values[at] = digit(exponent as u64,width,index); at += 1; index += 1; } return;
+// Writes the count decimal digits of value to spelled[0..count].
+// Writes the lowest count decimal digits of value into out[end-count, end),
+// right to left, and returns value / 10^count. Two digits per division;
+// (pair * 205) >> 11 == pair / 10 for pair < 100.
+fn spell(value: u64, count: i32, out: [u8], end: i32) -> u64 {
+    let rest: u64 = value; let at: i32 = end; let left: i32 = count;
+    while (left > 1) {
+        let next: u64 = rest/100; let pair: u64 = rest-next*100; let tens: u64 = (pair*205) >> 11;
+        out[at-1] = (48+pair-tens*10) as u8; out[at-2] = (48+tens) as u8; at -= 2; left -= 2; rest = next;
+    }
+    if (left == 1) { let next: u64 = rest/10; out[at-1] = (48+rest-next*10) as u8; rest = next; }
+    return rest;
+}
+// Digits are spelled straight into their final positions.
+fn render(value: Decimal, output: core::slice::View<u8>, count: i32, sci: bool) {
+    let out: [u8] = output.values;
+    let at: i32 = output.start; if (value.negative) { out[at] = 45; at += 1; }
+    if (value.special == 1) { out[at] = 105; out[at+1] = 110; out[at+2] = 102; return; }
+    if (value.special == 2) { out[at] = 78; out[at+1] = 97; out[at+2] = 78; return; }
+    if (value.coefficient == 0) { out[at] = 48; return; }
+    if (sci) {
+        if (count > 1) { let first: u64 = spell(value.coefficient,count-1,out,at+count+1); out[at] = (48+first) as u8; out[at+1] = 46; at += count+1; }
+        else { out[at] = (48+value.coefficient) as u8; at += 1; }
+        out[at] = 101; at += 1; let exponent: i32 = value.exponent+count-1; if (exponent < 0) { out[at] = 45; at += 1; exponent = 0-exponent; }
+        let width: i32 = digits(exponent as u64); spell(exponent as u64,width,out,at+width); return;
     }
     let point: i32 = count+value.exponent;
-    if (point <= 0) { output.values[at] = 48; output.values[at+1] = 46; at += 2; let zeros: i32 = 0-point; while (zeros > 0) { output.values[at] = 48; at += 1; zeros -= 1; } }
-    while (index < count) { if (index == point && index > 0) { output.values[at] = 46; at += 1; } output.values[at] = digit(value.coefficient,count,index); at += 1; index += 1; }
-    let zeros: i32 = value.exponent; while (zeros > 0) { output.values[at] = 48; at += 1; zeros -= 1; }
+    if (point <= 0) {
+        out[at] = 48; out[at+1] = 46; at += 2; let zeros: i32 = 0-point; while (zeros > 0) { out[at] = 48; at += 1; zeros -= 1; }
+        spell(value.coefficient,count,out,at+count); return;
+    }
+    if (point < count) { let high: u64 = spell(value.coefficient,count-point,out,at+count+1); out[at+point] = 46; spell(high,point,out,at+point); return; }
+    spell(value.coefficient,count,out,at+count); at += count;
+    let zeros: i32 = value.exponent; while (zeros > 0) { out[at] = 48; at += 1; zeros -= 1; }
 }
 fn format_bits_len(bits: u64, cfg: Config, scratch: core::slice::View<u32>, work: u64) -> core::result::Result<i32,Error> {
     let converted: core::result::Result<Decimal,Error> = prepare(bits,cfg,scratch,work); if (core::result::is_err(converted)) { return core::result::Err(core::result::unwrap_err(converted)); } return core::result::Ok(length(core::result::unwrap(converted)));
 }
 fn format_bits_into(bits: u64, cfg: Config, output: core::slice::View<u8>, scratch: core::slice::View<u32>, work: u64) -> core::result::Result<i32,Error> {
     // Conversion and all fallible checks precede the first output write.
-    if (!valid(output)) { return core::result::Err(Error::Bounds); } let converted: core::result::Result<Decimal,Error> = prepare(bits,cfg,scratch,work); if (core::result::is_err(converted)) { return core::result::Err(core::result::unwrap_err(converted)); }
-    let value: Decimal = core::result::unwrap(converted); let size: i32 = length(value); if (output.length < size) { return core::result::Err(Error::Capacity(size)); } render(value,output); return core::result::Ok(size);
+    if (!valid(output)) { return core::result::Err(Error::Bounds); }
+    // Shortcut for prepare()'s common case: valid scratch, enough work and a
+    // finite nonzero value Grisu proves; the same Decimal without the
+    // Result and budget plumbing. special -1 marks "not converted yet".
+    let value: Decimal = Decimal { coefficient: 0, exponent: 0, negative: false, special: -1 };
+    if (work >= 101 && scratch.start >= 0 && scratch.length >= SCRATCH_LEN && scratch.start <= 2147483647-scratch.length) {
+        let absolute: u64 = bits & (cfg.sign-1);
+        if (absolute != 0 && absolute < cfg.infinity) {
+            let fast: Shortest = grisu(absolute,cfg.fraction_bits,cfg.bias,cfg.fraction_mask);
+            if (fast.ok) {
+                let coefficient: u64 = fast.coefficient; let decimal_exponent: i32 = fast.exponent;
+                while (coefficient%10 == 0) { coefficient /= 10; decimal_exponent += 1; }
+                value = Decimal { coefficient: coefficient, exponent: decimal_exponent, negative: (bits & cfg.sign) != 0, special: 0 };
+            }
+        }
+    }
+    if (value.special < 0) {
+        let converted: core::result::Result<Decimal,Error> = prepare(bits,cfg,scratch,work); if (core::result::is_err(converted)) { return core::result::Err(core::result::unwrap_err(converted)); }
+        value = core::result::unwrap(converted);
+    }
+    return finish(value,output);
+}
+// Lay out and write a converted value; the capacity check precedes writing.
+fn finish(value: Decimal, output: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    let count: i32 = 0; let sci: bool = false;
+    if (value.special == 0 && value.coefficient != 0) { count = digits(value.coefficient); sci = scientific_count(value,count); }
+    let size: i32 = sized_length(value,count,sci); if (output.length < size) { return core::result::Err(Error::Capacity(size)); } render(value,output,count,sci); return core::result::Ok(size);
 }
 pub fn format_f32_len(value: f32, scratch: core::slice::View<u32>, max_work: u64) -> core::result::Result<i32,Error> { return format_bits_len(core::f32::to_bits(value) as u64,config(true),scratch,max_work); }
 pub fn format_f64_len(value: f64, scratch: core::slice::View<u32>, max_work: u64) -> core::result::Result<i32,Error> { return format_bits_len(core::f64::to_bits(value),config(false),scratch,max_work); }
 pub fn format_f32_into(value: f32, output: core::slice::View<u8>, scratch: core::slice::View<u32>, max_work: u64) -> core::result::Result<i32,Error> { return format_bits_into(core::f32::to_bits(value) as u64,config(true),output,scratch,max_work); }
-pub fn format_f64_into(value: f64, output: core::slice::View<u8>, scratch: core::slice::View<u32>, max_work: u64) -> core::result::Result<i32,Error> { return format_bits_into(core::f64::to_bits(value),config(false),output,scratch,max_work); }
+pub fn format_f64_into(value: f64, output: core::slice::View<u8>, scratch: core::slice::View<u32>, max_work: u64) -> core::result::Result<i32,Error> {
+    // format_bits_into's Grisu shortcut with the binary64 constants inline
+    // (no Config to build and copy); anything else takes the general path.
+    let bits: u64 = core::f64::to_bits(value);
+    if (valid(output) && max_work >= 101 && scratch.start >= 0 && scratch.length >= SCRATCH_LEN && scratch.start <= 2147483647-scratch.length) {
+        let absolute: u64 = bits & 9223372036854775807;
+        if (absolute != 0 && absolute < 9218868437227405312) {
+            let fast: Shortest = grisu(absolute,52,1023,4503599627370495);
+            if (fast.ok) {
+                let coefficient: u64 = fast.coefficient; let decimal_exponent: i32 = fast.exponent;
+                while (coefficient%10 == 0) { coefficient /= 10; decimal_exponent += 1; }
+                return finish(Decimal { coefficient: coefficient, exponent: decimal_exponent, negative: absolute != bits, special: 0 }, output);
+            }
+        }
+    }
+    return format_bits_into(bits,config(false),output,scratch,max_work);
+}
 
 // Explicit decimal precision uses the exact IEEE value, never shortest text.
 pub const MAX_PRECISION: i32 = 768;

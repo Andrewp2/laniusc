@@ -53,7 +53,7 @@ tests, target support, and relevant performance evidence.
 | Family | Deliverables |
 | --- | --- |
 | Data formats | JSON, CSV, TOML, binary serialization, schema/validation utilities; [ordered form byte pairs](extended-form.md) have a fixed borrowed/owned contract with all nine library gates and four application groups/86 native cases accepted on the finite native Linux x86_64 profile; a [byte-fed JSON tokenizer and token writer](extended-json-stream.md) (UTF-8 and lone-surrogate rejection, exact number spelling, typed u64-offset errors) runs the streaming jq-lite path query and csv-to-json samples, agreeing with strict Python `json` on 2,237 cases and with Python `csv` on 550 RFC 4180 cases (15/15 dialect rejections); streaming from `Read`/to `Write`, float conversion and jq filters remain open |
-| Text and parsing | Unicode properties and normalization, regex, lexers, parser utilities, diff and patch; the Pike-VM regex, its grep and replacement programs now pass a [CPython `re` differential oracle](extended-regex-oracle.md) on 60,025 generated find/capture cases, 5,000 replacements, 5,000 grep runs, 13,853 fixed-width lookbehind `(?<=...)`/`(?<!...)` cases (2,049 of them Python width rejections) and 15,000 capture-free lazy-DFA `is_match`/`find` cases, after a lazy `{0,m}?` priority fix; named groups `(?P<name>...)`/`(?<name>...)` resolve through `group_index`/`group_name`, and the DFA cut lookbehind-free grep, anchors and word boundaries included, from about 2.3–3.8 s to 0.1–0.2 s on 0.9 MB; [table-driven Pratt parsing](extended-pratt.md) adds prefix/infix/postfix/group/call binding powers with allocation-free postfix output, and its Python-precedence calculator agrees with CPython `ast` on 100,000 generated expressions and 25,000 token-soup lines |
+| Text and parsing | Unicode properties and normalization, regex, lexers, parser utilities, diff and patch; the Pike-VM regex, its grep and replacement programs now pass a [CPython `re` differential oracle](extended-regex-oracle.md) on 60,025 generated find/capture cases, 5,000 replacements, 5,000 grep runs, 13,853 fixed-width lookbehind `(?<=...)`/`(?<!...)` cases (2,049 of them Python width rejections) and 15,000 capture-free lazy-DFA `is_match`/`find` cases, after a lazy `{0,m}?` priority fix; named groups `(?P<name>...)`/`(?<name>...)` resolve through `group_index`/`group_name`, and the DFA cut lookbehind-free grep, anchors and word boundaries included, from about 2.3–3.8 s to 0.1–0.2 s on 0.9 MB; byte-keyed DFA transitions run `\p{..}` classes about 7x faster (5,000 more generated Unicode DFA cases agree), and a `core::search` prefilter on the pattern's required literal brings text_grep on S4's 49 MB corpus from about 5 s per search to 68 ms for a no-match scan (GNU grep: 11 ms) and 85–272 ms for literal-bearing patterns; [table-driven Pratt parsing](extended-pratt.md) adds prefix/infix/postfix/group/call binding powers with allocation-free postfix output, and its Python-precedence calculator agrees with CPython `ast` on 100,000 generated expressions and 25,000 token-soup lines |
 | Network protocols | The [borrowed WebSocket server upgrade](extended-websocket-upgrade.md#server-api-and-policy-boundary) now pauses for caller policy before staging/flush and server-role conversion; a real [one-client echo service](extended-websocket-echo.md) passes eight separate native groups plus one Lanius-client integration. Six server and eleven current-client scripted scenario functions pass in separate raw processes; the shared bounded HTTP encoder passes three actual Rust runtime tests. Persistent/concurrent service and existing HTTP-server/scheduler adoption remain open. A [borrowed WebSocket client upgrade](extended-websocket-upgrade.md) and [frame stream](extended-websocket-stream.md) preserve coalesced bytes and partial I/O over the same caller-owned transport. One raw contract process executes eleven scenario functions; the real [one-message client](extended-websocket-once.md) passes separate plain9/rejection12/CLI17/I/O3/TLS5 groups on Linux x86_64/OpenSSL 3. Manual ownership, entropy/deadline policy, quotas and explicit cleanup remain required; broader server orchestration, ws/wss URLs and failure/target coverage remain open. [WebSocket upgrade responses](extended-websocket.md#http-upgrade-response-syntax) validate/encode portable 101 wire data using externally computed Accept; the separate OpenSSL helper and offline response tool retain their finite native provider/error and functional acceptance. [URL-based HTTP/HTTPS](extended-url-client.md) now composes strict owned URL policy, one ordered connector and the canonical clients with finite native exchange, boundary/failure and real-program functional acceptance. Original URL identity/Host, exact selected-socket transfer and no post-selection replay are explicit; remaining source-OOM and broader schedule coverage is documented. HTTP client/server, WebSocket request/frame processing, DNS and client TLS with peer verification through OpenSSL; TLS stream/HTTPS executes with numeric endpoints and explicit trust/deadlines/manual ownership; server TLS, required mutual TLS and bounded health/echo HTTPS modes execute; one-thread/poll cleartext batches and their CSV-to-ZIP application have separately accepted historical receipts; the current resumable HTTPS batches pass 108 connected cases, plain batches pass 103, and migrated HTTPS/mutual-TLS applications pass 63/101 cases through separate receipts; the current fetch-many also passes all five groups, and a minimal nested-pattern limitation plus executable explicit-match control are confirmed; excluded buffered/prepared-context receipts retain older scope; current server source has finite direct/scheduler/plain-and-TLS application passes but full concurrent-server acceptance, application authorization and broader orchestration remain open. A [sequential keep-alive HTTP/1.1 service](extended-http-service.md) adds a bounded request reader with absolute head/body/idle/write deadlines, typed errors mapped to final statuses, pipelining, chunked bodies, a response writer and an id-based router; its static-file sample (listings, single byte ranges) passes Python loopback oracle groups functional69/malformed42/slowloris12 with exact connection/request/rejection/timeout counters; it serves one connection at a time, so concurrent keep-alive service remains open; current server source has finite direct/scheduler/plain-and-TLS application passes but full concurrent-server acceptance, application authorization and broader orchestration remain open |
 | Data formats | JSON, CSV, TOML, binary serialization, schema/validation utilities; [ordered form byte pairs](extended-form.md) have a fixed borrowed/owned contract with all nine library gates and four application groups/86 native cases accepted on the finite native Linux x86_64 profile |
 | Data formats | JSON, CSV, TOML, binary serialization, schema/validation utilities; a [byte-fed JSON tokenizer and token writer](extended-json-stream.md) (UTF-8 and lone-surrogate rejection, exact number spelling, typed u64-offset errors) runs the streaming jq-lite path query and csv-to-json samples, agreeing with strict Python `json` on 2,237 cases and with Python `csv` on 550 RFC 4180 cases (15/15 dialect rejections); it streams from `core::io::Read` (`TokenReader`) and to `core::io::Write` (`Writer.flush_to`); exact [float conversion](stdlib-float-decimal.md) now has Eisel-Lemire/Grisu3 fast paths with exact fallback, agreeing with Python `float()`/`repr()` on 4.8M cases; jq filters remain open; [TOML](extended-toml.md) agrees with Python `tomllib` on 1,754 edge, generated and mutated documents (the only differences are 7 TOML 1.1-only inputs and 2 integers beyond i64, both by policy); [ordered form byte pairs](extended-form.md) have a fixed borrowed/owned contract with all nine library gates and four application groups/86 native cases accepted on the finite native Linux x86_64 profile |
@@ -241,14 +241,19 @@ using ordered Pike matching, with captures, greedy/lazy repetition, scalar
 classes and Unicode 17 properties, named groups `(?P<name>...)` and `(?<name>...)`,
 and fixed-width lookbehind `(?<=...)` and `(?<!...)` on the VM.
 Unsupported syntax fails explicitly. A capture-free lazy DFA answers
-`is_match` and `find` for lookbehind-free patterns exactly as the VM would. A
+`is_match` and `find` for lookbehind-free patterns exactly as the VM would. Its
+transitions are cached per byte, so non-ASCII classes reuse cached UTF-8
+prefixes. A
 [streaming search program](extended-text-grep.md) compiles once and processes
-bounded UTF-8 records with counts, numbering and inversion. Wider regex syntax
+bounded UTF-8 records with counts, numbering and inversion. A
+[literal prefilter](extended-text-grep.md#literal-prefilter) built on
+`core::search` runs the matcher only on records that contain the pattern's
+required literal. Wider regex syntax
 and additional replacement interfaces remain. A seeded
 [differential oracle](extended-regex-oracle.md) against CPython `re` now agrees
 on 60,025/60,025 find/capture cases, 5,000/5,000 template replacements,
-5,000/5,000 grep runs, 13,853/13,853 lookbehind cases and 15,000/15,000 DFA
-`is_match`/`find` cases across five seeds, after fixing a lazy `x{0,m}?` priority
+5,000/5,000 grep runs, 13,853/13,853 lookbehind cases, 15,000/15,000 DFA
+`is_match`/`find` cases and 5,000/5,000 Unicode-class DFA cases across five seeds, after fixing a lazy `x{0,m}?` priority
 defect that it found.
 [Bounded splitting and replacement](extended-regex-text.md) now provide
 borrowed fields, independent literal/numeric-template output and conservative
@@ -304,8 +309,16 @@ applier with typed per-hunk reject reasons. The `seq-diff`/`seq-patch` tools
 pass 1,000 generated pairs: 878 Myers edit lengths equal an O(N·M) LCS, GNU
 `patch` and `seq-patch` reproduce every target, `seq-patch` applies real GNU
 `diff -u`/`-U0`/`-U5` output, and 333 offset/fuzz cases match GNU `patch`
-output and rejects at `-F0` and `-F2` (328 more over repeated-line files). Multi-file patch orchestration, reverse
-application, `.rej` files and word/character granularities remain.
+output and rejects at `-F0` and `-F2` (328 more over repeated-line files).
+[Multi-file patches](extended-patchset.md) now add tree patching with GNU
+`patch` semantics (offset/fuzz, reversed-patch detection with `-t`/`-N`/`-f`/`-R`,
+renames, copies, modes, creation and deletion), `git apply` semantics
+(exact placement, atomic writes) and the `git apply --3way` merge fallback
+through `ext::merge3`. All 5,518 tree and exit-status comparisons against GNU
+`patch` 2.7.6 and git 2.43 over 900 generated repositories agree. Binary
+patches are refused with an error. `.rej` files, `-d`/`-o`/`--dry-run`,
+whitespace options and blob lookup by `index` id (`--base-dir` stands in)
+remain.
 [Three-way merge](extended-merge3.md) adds diff3 chunking with git-style
 zealous/alnum conflict refinement and merge/diff3/GNU marker forms. Over 4,000
 generated triples, `seq-merge` matches `git merge-file`, `git merge-file
@@ -684,18 +697,24 @@ extended`.
 
 | Defect | Reproduction | Expected | Actual | Workaround |
 | --- | --- | --- | --- | --- |
-| `?` inside a comparison | `question_comparison.lani`: `if (three()? != 3) { return Ok(1); } return Ok(0);` with `three()` returning `Ok(3)` | exit 0 | exit 1, silently | bind first: `let v: i32 = three()?; if (v != 3)` |
-| Lost stores through a multi-element `[i64]` raw view | `i64_view_writes.lani`: `let words: [i64] = typed_slice_from_raw_parts<i64>(i32_array_data_ptr(storage), 4); words[2] = 5; return storage[4];` over a local `[i32; 8]` | exit 5 | exit 0, silently | one word per helper call, as `std::linux::store_word` does |
 | LNC0069 on `4000000000 as u64` (**fixed**) | `u64_cast_literal.lani`: `let value: u64 = 4000000000 as u64;` | compiles; exit 4 | exits 4: a literal directly under `as T` now takes T when T is a 32- or 64-bit integer ([details](../tests/fixtures/compiler_defects/README.md#cast-target-literals)) | none needed; `(1 + 4000000000) as u64` is still checked as i32 |
 | Untyped `let` of a generic trait-method result (**fixed**) | `untyped_generic_trait_result.lani`: `let got = reader.read(bytes, 0, 1);` with `R: core::io::Read`, then `unwrap(got)` | compiles; exit 1 on one stdin byte | exits 1; a call through a bound on an imported trait now takes the member's closed result ([details](../tests/fixtures/compiler_defects/README.md#bound-trait-results)). Before the fix, passing `got` to a nongeneric parameter compiled and died with SIGILL | none needed |
-| Untyped `let` of an open bound-trait result | `bound_trait_open_result.lani`: `let x = it.next();` with `I: core::iter::Iterator<i32>` | compiles; exit 6 | LNC0006 "type mismatch" at the `unwrap_or` | annotate the `let` type |
+| Untyped `let` of an open bound-trait result (**fixed**) | `bound_trait_open_result.lani`: `let x = it.next();` with `I: core::iter::Iterator<i32>` | compiles; exit 6 | exits 6: the result is substituted under the bound's trait arguments ([details](../tests/fixtures/compiler_defects/README.md#bound-trait-results)). Before the fix, passing the value to a nongeneric parameter compiled and died with SIGILL | none needed |
 | LNC0047, nested match on a generic enum bound in an outer arm | reported; `candidate_nested_generic_match.lani` and four other shapes compile correctly | compiles | not reproduced | — |
 | LNC0016 on a long file without a `module` line | reported; `candidate_missing_module_long.lani` (401 functions) and 3,000-line variants compile correctly | compiles | not reproduced | add a `module` line |
 | LNC0008 labels pointing at `core/slice.lani:899` | `tests/fixtures/stdlib_borrowed_lookup/direct/negative_tree_set_reversed_comparator.lani` via `laniusc check --diagnostic-format json --stdlib-root stdlib`; S7's `candidate_slice_select_label.lani` and concrete/generic `select_nth_unstable` calls | primary label on the call lacking the bound (the fixture line with `rejected_lookup_bound`); code LNC0008 | with lang built 2026-10-28, every unsatisfied-bound rejection labeled `stdlib/core/slice.lani:899` (the `selection_engine<T,Natural<T>>` call in `select_nth_unstable`); S7's candidates compile correctly (not reproduced there), and the fixture has not been rechecked since | none; library APIs and bounds are unaffected. The label assertions of `tests/stdlib_borrowed_lookup_execution.rs` (13 negative fixtures) and `tests/stdlib_ordered_navigation_execution.rs` (4) depend on it |
 | Slow per-element code for `[u8]` loops (performance) | `byte_loop_codegen.lani`: `while (i < n) { if (data[base+i] == 10) { c += 1; } i += 1; }`, 10 passes over 16 MB | near `gcc -O0` on `byte_loop_codegen.c` (0.14 s; `-O2` 0.02 s) | 0.50 s, 2.8 ns/byte; about 43 instructions per iteration | move hot loops to `[i32]` class ids; fewer passes over bytes |
 
-The two silent miscompiles are the most dangerous: they produce wrong values
-with no diagnostic. `ext::pax`/`tgz` code avoids both shapes.
+Two former rows are resolved. The binary operator right after `value?` was
+dropped (`three()? != 3` was true, `three()? * 5` was 3) because the try took
+that operator's canonical anchor: the try is now anchored at its `?`, and `?`
+ends an operand for token retagging, so `value? - 1` also parses
+(`shaders/parser/hir/canonical/mark.slang`, `shaders/parser/tokens/to/kinds.slang`).
+The "lost" `[i64]` raw-view stores were not a compiler defect: a raw view of
+an 8-byte type stores element i at `pointer - 8 * i`, as `core::mem`
+documents, so the reproduction wrote below its storage; use
+`typed_slice_from_storage` for storage-relative views. Both are regressions in
+`tests/codegen_x86.rs`.
 
 The codegen row is a cost, not a wrong result. In `byte_loop_codegen.s`, each
 iteration copies the slice's three words (pointer, length, stride) into new

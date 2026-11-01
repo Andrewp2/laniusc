@@ -4,6 +4,8 @@
 // writer emits the compact ext::json byte policy. See docs/extended-json-stream.md.
 module ext::json_stream;
 import alloc::vec;
+import core::f64;
+import core::float_decimal;
 import core::io;
 import core::mem;
 import core::option;
@@ -379,19 +381,31 @@ pub impl Tokenizer {
 // 3 later element or ']', 4 first key or '}', 5 later key or '}', 6 complete.
 pub struct Writer {
     out: alloc::vec::Vec<u8>, stack: alloc::vec::Vec<u8>, expect: i32,
-    max_depth: i32, max_output_bytes: i32,
+    max_depth: i32, max_output_bytes: i32, top: u8,
+    // Output storage: out holds cap bytes, data caches out.as_slice(), and
+    // the first used bytes are the output. top caches the innermost kind.
+    data: [u8], used: i32, cap: i32,
+    // Open containers: stack holds levels_cap bytes, levels caches its
+    // as_slice(), and the first count are the kinds, innermost last.
+    levels: [u8], levels_cap: i32, count: i32,
 }
 pub fn writer(max_depth: i32, max_output_bytes: i32) -> core::result::Result<Writer, Error> {
     if (max_depth < 0 || max_output_bytes < 0) { return core::result::Err(error(ErrorKind::InvalidOptions, 0)); }
-    return core::result::Ok(Writer { out: alloc::vec::new(), stack: alloc::vec::new(), expect: 0,
-        max_depth: max_depth, max_output_bytes: max_output_bytes });
+    let out: alloc::vec::Vec<u8> = alloc::vec::new();
+    return core::result::Ok(Writer { out: out, stack: alloc::vec::new(), expect: 0,
+        max_depth: max_depth, max_output_bytes: max_output_bytes, top: 0, data: out.as_slice(), used: 0, cap: 0,
+        levels: out.as_slice(), levels_cap: 0, count: 0 });
 }
 // Offset of the first invalid byte of a complete JSON number, or -1.
 pub fn number_error(text: core::text::Text) -> i32 {
     if (text.length == 0) { return 0; }
     let phase: i32 = 0; let index: i32 = 0;
+    let bytes: [u8] = text.bytes; let start: i32 = text.start;
     while (index < text.length) {
-        phase = number_next(phase, text.bytes[text.start + index]);
+        let byte: u8 = bytes[start + index];
+        // Digits keep phases 3, 5 and 8; skip the call for them.
+        if (byte >= 48 && byte <= 57 && (phase == 3 || phase == 5 || phase == 8)) { index += 1; continue; }
+        phase = number_next(phase, byte);
         if (phase == 0) { return index; }
         index += 1;
     }
@@ -399,22 +413,50 @@ pub fn number_error(text: core::text::Text) -> i32 {
     return -1;
 }
 fn hex_digit(value: u8) -> u8 { if (value < 10) { return value + 48; } return value + 87; }
+fn text_range(start: i32, length: i32) -> bool { return start >= 0 && length >= 0 && length <= 2147483647 - start; }
 
 pub impl Writer {
     pub fn borrow(&self) -> &Writer { return self; }
-    pub fn len(&self) -> i32 { return self.out.len(); }
-    pub fn depth(&self) -> i32 { return self.stack.len(); }
+    pub fn len(&self) -> i32 { return self.used; }
+    pub fn depth(&self) -> i32 { return self.count; }
     pub fn is_complete(&self) -> bool { return self.expect == 6; }
     // Borrowed output bytes; valid until the next writer mutation.
-    pub fn output(&self) -> core::slice::View<u8> { return self.out.as_view(); }
-    pub fn output_text(&self) -> core::text::Text { return core::text::from_utf8_unchecked(self.out.as_slice(), 0, self.out.len()); }
+    pub fn output(&self) -> core::slice::View<u8> { return core::slice::View { values: self.data, start: 0, length: self.used }; }
+    pub fn output_text(&self) -> core::text::Text { return core::text::from_utf8_unchecked(self.data, 0, self.used); }
+    // Room for need bytes in total; grows geometrically, at least 64.
+    fn reserve(&self, need: i32) -> bool {
+        if (need <= self.cap) { return true; }
+        let target: i32 = need;
+        if (self.cap <= 1073741823 && self.cap * 2 > target) { target = self.cap * 2; }
+        if (target < 64) { target = 64; }
+        if (self.out.try_resize(target, 0).is_err()) { return false; }
+        self.data = self.out.as_slice(); self.cap = target;
+        return true;
+    }
     fn byte(&self, value: u8) -> bool {
-        if (self.out.len() >= self.max_output_bytes) { return false; }
-        return core::result::is_ok(self.out.try_push(value));
+        let used: i32 = self.used;
+        if (used >= self.max_output_bytes) { return false; }
+        if (used == self.cap && !self.reserve(used + 1)) { return false; }
+        self.data[used] = value; self.used = used + 1;
+        return true;
+    }
+    // Append count bytes from start; like count byte() calls, a run that does
+    // not fit writes the bytes that fit and returns false.
+    fn run(&self, source: [u8], start: i32, count: i32) -> bool {
+        if (count <= 0) { return true; }
+        let used: i32 = self.used;
+        let take: i32 = self.max_output_bytes - used;
+        if (take > count) { take = count; }
+        if (take <= 0) { return false; }
+        if (!self.reserve(used + take)) { return false; }
+        let target: [u8] = self.data; let index: i32 = 0;
+        while (index < take) { target[used + index] = source[start + index]; index += 1; }
+        self.used = used + take;
+        return take == count;
     }
     fn rollback(&self, before: i32) -> core::result::Result<i32, Error> {
-        let reached: bool = self.out.len() >= self.max_output_bytes;
-        core::result::unwrap(self.out.truncate(before));
+        let reached: bool = self.used >= self.max_output_bytes;
+        if (before < self.used) { self.used = before; }
         if (reached) { return core::result::Err(error(ErrorKind::OutputLimit, before as u64)); }
         return core::result::Err(error(ErrorKind::AllocationFailed, before as u64));
     }
@@ -430,40 +472,165 @@ pub impl Writer {
         if (self.expect == 3) { if (!self.byte(44)) { return 1; } return 0; }
         return 2;
     }
+    // Fast paths: when a token is valid, placed without error and fits, write
+    // it in one step; otherwise the general path below runs from the same
+    // state and produces the same output or error.
+    // Separator a value needs here: 0 none, 1 comma, -1 not a value position.
+    fn value_comma(&self) -> i32 {
+        let expect: i32 = self.expect;
+        if (expect <= 2) { return 0; }
+        if (expect == 3) { return 1; }
+        return -1;
+    }
+    // Writes [comma] [quote] text [quote] [colon]; false (nothing committed)
+    // when it does not fit or, for quoted text, a byte is not plain ASCII
+    // (needs an escape or UTF-8 validation).
+    fn put_fast(&self, comma: i32, quote: bool, source: [u8], start: i32, length: i32, colon: bool) -> bool {
+        let size: i32 = comma + length; if (quote) { size += 2; } if (colon) { size += 1; }
+        let used: i32 = self.used;
+        if (size > self.max_output_bytes - used || !self.reserve(used + size)) { return false; }
+        let data: [u8] = self.data; let at: i32 = used;
+        if (comma == 1) { data[at] = 44; at += 1; }
+        if (quote) { data[at] = 34; at += 1; }
+        let from: i32 = start; let stop: i32 = at + length;
+        if (quote) {
+            while (at < stop) {
+                let value: u8 = source[from];
+                if (value < 32 || value >= 128 || value == 34 || value == 92) { return false; }
+                data[at] = value; at += 1; from += 1;
+            }
+        } else {
+            while (at < stop) { data[at] = source[from]; at += 1; from += 1; }
+        }
+        if (quote) { data[at] = 34; at += 1; }
+        if (colon) { data[at] = 58; at += 1; }
+        self.used = at;
+        return true;
+    }
     fn placed(&self) {
-        if (self.stack.is_empty()) { self.expect = 6; return; }
-        if (self.stack.at(self.stack.len() - 1) == 1) { self.expect = 3; } else { self.expect = 5; }
+        if (self.top == 0) { self.expect = 6; return; }
+        if (self.top == 1) { self.expect = 3; } else { self.expect = 5; }
+    }
+    // begin()'s common case: a value position, depth and stack room, and
+    // the bytes fit. False writes nothing.
+    fn fast_begin(&self, kind: u8, opening: u8, next: i32) -> bool {
+        let comma: i32 = self.value_comma(); let count: i32 = self.count;
+        if (comma < 0 || count >= self.max_depth || count == self.levels_cap) { return false; }
+        let used: i32 = self.used;
+        if (comma + 1 > self.max_output_bytes - used || !self.reserve(used + comma + 1)) { return false; }
+        let data: [u8] = self.data;
+        if (comma == 1) { data[used] = 44; used += 1; }
+        data[used] = opening; self.used = used + 1;
+        self.levels[count] = kind; self.count = count + 1;
+        self.expect = next; self.top = kind;
+        return true;
     }
     fn begin(&self, kind: u8, opening: u8, next: i32) -> core::result::Result<i32, Error> {
-        let before: i32 = self.out.len();
+        if (self.fast_begin(kind, opening, next)) { return core::result::Ok(self.used); }
+        let before: i32 = self.used;
         let placed: i32 = self.place(true, false);
         if (placed == 2) { return core::result::Err(error(ErrorKind::InvalidPlacement, before as u64)); }
         if (placed == 1) { return self.rollback(before); }
-        if (self.stack.len() >= self.max_depth) { core::result::unwrap(self.out.truncate(before)); return core::result::Err(error(ErrorKind::DepthLimit, before as u64)); }
+        if (self.count >= self.max_depth) { self.used = before; return core::result::Err(error(ErrorKind::DepthLimit, before as u64)); }
         if (!self.byte(opening)) { return self.rollback(before); }
-        if (core::result::is_err(self.stack.try_push(kind))) { core::result::unwrap(self.out.truncate(before)); return core::result::Err(error(ErrorKind::AllocationFailed, before as u64)); }
-        self.expect = next;
-        return core::result::Ok(self.out.len());
+        if (self.count == self.levels_cap) {
+            let grown: i32 = 16; if (self.levels_cap >= 8) { grown = self.levels_cap * 2; }
+            if (self.stack.try_resize(grown, 0).is_err()) { self.used = before; return core::result::Err(error(ErrorKind::AllocationFailed, before as u64)); }
+            self.levels = self.stack.as_slice(); self.levels_cap = grown;
+        }
+        self.levels[self.count] = kind; self.count += 1;
+        self.expect = next; self.top = kind;
+        return core::result::Ok(self.used);
+    }
+    fn open_kind(&self, kind: u8) -> bool {
+        let expect: i32 = self.expect;
+        if (kind == 1) { return expect == 2 || expect == 3; }
+        return expect == 4 || expect == 5;
+    }
+    // end() when it succeeds; false writes nothing.
+    fn fast_end(&self, kind: u8, closing: u8) -> bool {
+        if (!self.open_kind(kind) || !self.byte(closing)) { return false; }
+        let count: i32 = self.count - 1; self.count = count;
+        self.top = 0; if (count > 0) { self.top = self.levels[count - 1]; }
+        self.placed();
+        return true;
     }
     fn end(&self, kind: u8, closing: u8) -> core::result::Result<i32, Error> {
-        let before: i32 = self.out.len();
-        let open: bool = (kind == 1 && (self.expect == 2 || self.expect == 3)) || (kind == 2 && (self.expect == 4 || self.expect == 5));
-        if (!open) { return core::result::Err(error(ErrorKind::InvalidPlacement, before as u64)); }
-        if (!self.byte(closing)) { return self.rollback(before); }
-        self.stack.pop(); self.placed();
-        return core::result::Ok(self.out.len());
+        let before: i32 = self.used;
+        if (self.fast_end(kind, closing)) { return core::result::Ok(self.used); }
+        if (!self.open_kind(kind)) { return core::result::Err(error(ErrorKind::InvalidPlacement, before as u64)); }
+        return self.rollback(before);
     }
     pub fn begin_array(&self) -> core::result::Result<i32, Error> { return self.begin(1, 91, 2); }
     pub fn begin_object(&self) -> core::result::Result<i32, Error> { return self.begin(2, 123, 4); }
     pub fn end_array(&self) -> core::result::Result<i32, Error> { return self.end(1, 93); }
     pub fn end_object(&self) -> core::result::Result<i32, Error> { return self.end(2, 125); }
+    // Fast forms of the token methods, for hot loops: true when the token
+    // was written exactly as the Result form would write it; false when
+    // nothing was written, and the Result form then gives the outcome (it
+    // may still succeed through the general path, or report the error).
+    // They skip only the Result plumbing and the Text value.
+    pub fn fast_begin_array(&self) -> bool { return self.fast_begin(1, 91, 2); }
+    pub fn fast_begin_object(&self) -> bool { return self.fast_begin(2, 123, 4); }
+    pub fn fast_end_array(&self) -> bool { return self.fast_end(1, 93); }
+    pub fn fast_end_object(&self) -> bool { return self.fast_end(2, 125); }
+    // key(), string() and number_unchecked() over bytes[start, start+length).
+    pub fn fast_key(&self, bytes: [u8], start: i32, length: i32) -> bool {
+        let expect: i32 = self.expect;
+        if ((expect != 4 && expect != 5) || !text_range(start, length) || !self.put_fast(expect - 4, true, bytes, start, length, true)) { return false; }
+        self.expect = 1; return true;
+    }
+    pub fn fast_string(&self, bytes: [u8], start: i32, length: i32) -> bool {
+        let comma: i32 = self.value_comma();
+        if (comma < 0 || !text_range(start, length) || !self.put_fast(comma, true, bytes, start, length, false)) { return false; }
+        self.placed(); return true;
+    }
+    pub fn fast_number_unchecked(&self, bytes: [u8], start: i32, length: i32) -> bool {
+        let comma: i32 = self.value_comma();
+        if (comma < 0 || !text_range(start, length) || !self.put_fast(comma, false, bytes, start, length, false)) { return false; }
+        self.placed(); return true;
+    }
+    // A finite value's shortest round-trip spelling from
+    // core::float_decimal::format_f64_into, formatted straight into the
+    // output: what number_unchecked() of that spelling writes. False
+    // (nothing written) for NaN and infinities, which have no JSON number,
+    // and whenever the fast path declines. scratch holds
+    // core::float_decimal::scratch_len() words.
+    pub fn fast_f64(&self, value: f64, scratch: core::slice::View<u32>) -> bool {
+        if (((core::f64::to_bits(value) >> 52) & 2047) == 2047) { return false; }
+        let comma: i32 = self.value_comma(); let used: i32 = self.used;
+        // 32 bytes hold every shortest binary64 spelling (at most 24).
+        if (comma < 0 || comma + 32 > self.max_output_bytes - used || !self.reserve(used + comma + 32)) { return false; }
+        let at: i32 = used + comma;
+        let written = core::float_decimal::format_f64_into(value, core::slice::View { values: self.data, start: at, length: 32 }, scratch, core::float_decimal::default_format_work());
+        if (written.is_err()) { return false; }
+        if (comma == 1) { self.data[used] = 44; }
+        self.used = at + written.unwrap(); self.placed();
+        return true;
+    }
+    pub fn fast_null(&self) -> bool {
+        let word: [u8; 4] = [110, 117, 108, 108];
+        return self.fast_number_unchecked(word, 0, 4);
+    }
     // Escapes quote, backslash and C0 controls (lowercase \u00xx); other
     // scalars keep their UTF-8 bytes, matching ext::json encoding.
     fn quoted(&self, text: core::text::Text) -> bool {
         if (!self.byte(34)) { return false; }
-        let index: i32 = 0;
+        let index: i32 = 0; let bytes: [u8] = text.bytes; let start: i32 = text.start;
         while (index < text.length) {
-            let value: u8 = text.bytes[text.start + index];
+            // Copy the run of bytes that need no escape in one step.
+            let plain: i32 = index;
+            while (plain < text.length) {
+                let next: u8 = bytes[start + plain];
+                if (next < 32 || next == 34 || next == 92) { break; }
+                plain += 1;
+            }
+            if (plain > index) {
+                if (!self.run(bytes, start + index, plain - index)) { return false; }
+                index = plain;
+                continue;
+            }
+            let value: u8 = bytes[start + index];
             if (value == 34 || value == 92) {
                 if (!self.byte(92) || !self.byte(value)) { return false; }
             } else {
@@ -479,6 +646,12 @@ pub impl Writer {
         return self.byte(34);
     }
     fn checked(&self, text: core::text::Text) -> core::result::Result<i32, Error> {
+        // ASCII needs no decoding; anything else takes the full check.
+        let bytes: [u8] = text.bytes; let index: i32 = text.start; let stop: i32 = text.start + text.length;
+        if (text.start >= 0 && text.length >= 0 && text.length <= 2147483647 - text.start) {
+            while (index < stop && bytes[index] < 128) { index += 1; }
+            if (index == stop) { return core::result::Ok(text.length); }
+        }
         let valid = core::text::from_utf8_range(text.bytes, text.start, text.length);
         if (valid.is_err()) {
             let failure: Error = match (valid.unwrap_err()) {
@@ -490,31 +663,30 @@ pub impl Writer {
         return core::result::Ok(text.length);
     }
     pub fn key(&self, text: core::text::Text) -> core::result::Result<i32, Error> {
+        if (self.fast_key(text.bytes, text.start, text.length)) { return core::result::Ok(self.used); }
         let valid = self.checked(text);
         if (valid.is_err()) { return valid; }
-        let before: i32 = self.out.len();
+        let before: i32 = self.used;
         let placed: i32 = self.place(false, true);
         if (placed == 2) { return core::result::Err(error(ErrorKind::InvalidPlacement, before as u64)); }
         if (placed == 1 || !self.quoted(text) || !self.byte(58)) { return self.rollback(before); }
         self.expect = 1;
-        return core::result::Ok(self.out.len());
+        return core::result::Ok(self.used);
     }
     fn scalar(&self, text: core::text::Text, kind: i32) -> core::result::Result<i32, Error> {
-        let before: i32 = self.out.len();
+        let before: i32 = self.used;
         let placed: i32 = self.place(true, false);
         if (placed == 2) { return core::result::Err(error(ErrorKind::InvalidPlacement, before as u64)); }
         if (placed == 1) { return self.rollback(before); }
         let ok: bool = true;
         if (kind == 0) { ok = self.quoted(text); }
-        else {
-            let index: i32 = 0;
-            while (ok && index < text.length) { ok = self.byte(text.bytes[text.start + index]); index += 1; }
-        }
+        else { ok = self.run(text.bytes, text.start, text.length); }
         if (!ok) { return self.rollback(before); }
         self.placed();
-        return core::result::Ok(self.out.len());
+        return core::result::Ok(self.used);
     }
     pub fn string(&self, text: core::text::Text) -> core::result::Result<i32, Error> {
+        if (self.fast_string(text.bytes, text.start, text.length)) { return core::result::Ok(self.used); }
         let valid = self.checked(text);
         if (valid.is_err()) { return valid; }
         return self.scalar(text, 0);
@@ -524,6 +696,17 @@ pub impl Writer {
         if (text.length < 0 || text.start < 0) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
         let bad: i32 = number_error(text);
         if (bad >= 0) { return core::result::Err(error(ErrorKind::InvalidNumber, bad as u64)); }
+        let comma: i32 = self.value_comma();
+        if (comma >= 0 && self.put_fast(comma, false, text.bytes, text.start, text.length, false)) { self.placed(); return core::result::Ok(self.used); }
+        return self.scalar(text, 1);
+    }
+    // number() without the grammar check, for text the caller already knows
+    // is one complete RFC 8259 number (such as core::float_decimal shortest
+    // output of a finite value, or decimal digits). Invalid text is written
+    // as given.
+    pub fn number_unchecked(&self, text: core::text::Text) -> core::result::Result<i32, Error> {
+        if (text.length < 0 || text.start < 0) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
+        if (self.fast_number_unchecked(text.bytes, text.start, text.length)) { return core::result::Ok(self.used); }
         return self.scalar(text, 1);
     }
     pub fn boolean(&self, value: bool) -> core::result::Result<i32, Error> {
@@ -531,7 +714,9 @@ pub impl Writer {
         let word: [u8; 5] = [102, 97, 108, 115, 101]; return self.scalar(core::text::from_utf8_unchecked(word, 0, 5), 1);
     }
     pub fn null(&self) -> core::result::Result<i32, Error> {
-        let word: [u8; 4] = [110, 117, 108, 108]; return self.scalar(core::text::from_utf8_unchecked(word, 0, 4), 1);
+        if (self.fast_null()) { return core::result::Ok(self.used); }
+        let word: [u8; 4] = [110, 117, 108, 108];
+        return self.scalar(core::text::from_utf8_unchecked(word, 0, 4), 1);
     }
     // Copy the tokenizer's ready token.
     pub fn token(&self, source: &Tokenizer) -> core::result::Result<i32, Error> {
@@ -550,17 +735,19 @@ pub impl Writer {
     }
     // JSON Lines: after a complete root value, append LF and accept another root.
     pub fn next_document(&self) -> core::result::Result<i32, Error> {
-        let before: i32 = self.out.len();
+        let before: i32 = self.used;
         if (self.expect != 6) { return core::result::Err(error(ErrorKind::InvalidPlacement, before as u64)); }
         if (!self.byte(10)) { return self.rollback(before); }
         self.expect = 0;
-        return core::result::Ok(self.out.len());
+        return core::result::Ok(self.used);
     }
     // Retain capacity; forget output and structure.
-    pub fn clear(&self) { self.out.clear(); self.stack.clear(); self.expect = 0; }
+    pub fn clear(&self) { self.used = 0; self.count = 0; self.expect = 0; self.top = 0; }
     pub fn destroy(&self) {
         self.out.destroy(); self.stack.destroy();
-        self.out = alloc::vec::new(); self.stack = alloc::vec::new(); self.expect = 0;
+        self.out = alloc::vec::new(); self.stack = alloc::vec::new(); self.expect = 0; self.top = 0;
+        self.data = self.out.as_slice(); self.used = 0; self.cap = 0;
+        self.levels = self.stack.as_slice(); self.levels_cap = 0; self.count = 0;
     }
 }
 
@@ -570,20 +757,20 @@ pub impl Writer {
 // Failure.completed counts the bytes this call delivered.
 pub impl Writer {
     pub fn flush_to<W>(&self, sink: &W) -> core::result::Result<i32, core::io::Failure> where W: core::io::Write {
-        let count: i32 = self.out.len();
+        let count: i32 = self.used;
         if (count == 0) { return core::result::Ok(0); }
-        let sent: core::result::Result<i32, core::io::Failure> = core::io::write_all<W>(sink, self.out.as_slice(), 0, count);
+        let sent: core::result::Result<i32, core::io::Failure> = core::io::write_all<W>(sink, self.data, 0, count);
         if (sent.is_err()) {
             let failure: core::io::Failure = sent.unwrap_err();
             let done: i32 = failure.completed;
             if (done > 0 && done <= count) {
-                let bytes: [u8] = self.out.as_slice(); let i: i32 = done;
+                let bytes: [u8] = self.data; let i: i32 = done;
                 while (i < count) { bytes[i - done] = bytes[i]; i += 1; }
-                core::result::unwrap(self.out.truncate(count - done));
+                self.used = count - done;
             }
             return core::result::Err(failure);
         }
-        self.out.clear();
+        self.used = 0;
         return core::result::Ok(count);
     }
 }

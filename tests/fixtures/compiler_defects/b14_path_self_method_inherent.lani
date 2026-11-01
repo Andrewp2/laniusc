@@ -1,0 +1,34 @@
+// b14: a self method called through its type's path takes the receiver as
+// its first argument, `S::get(s, 1)` and `S::peek(s.borrow(), 2)`, like
+// `s.get(1)`.
+// Exits 0 when compiled correctly.
+module app::main;
+
+struct S { a: i32 }
+
+impl S {
+    fn get(self, k: i32) -> i32 {
+        return self.a + k;
+    }
+
+    fn peek(&self, k: i32) -> i32 {
+        return self.a * k;
+    }
+
+    fn borrow(&self) -> &S {
+        return self;
+    }
+
+    fn make(a: i32) -> S {
+        return S { a: a };
+    }
+}
+
+fn main() -> i32 {
+    let s: S = S { a: 4 };
+    if (S::get(s, 1) != 5) { return 1; }
+    if (S::peek(s.borrow(), 2) != 8) { return 2; }
+    if (S::get(S::make(6), 3) != s.get(5)) { return 3; }
+    if (S::peek(s.borrow(), 3) != s.peek(3)) { return 4; }
+    return 0;
+}

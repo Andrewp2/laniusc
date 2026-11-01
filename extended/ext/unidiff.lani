@@ -198,7 +198,9 @@ impl Work { fn borrow(&self) -> &Work { return self; } }
 // Old side of hunk lines [top, olen-bot) against base starting at pos+top.
 fn ud_matches(base: core::slice::View<ext::seqdiff::Line>, old: core::slice::View<core::slice::View<u8>>, pos: i32, top: i32, bot: i32, w: &Work) -> bool {
     let olen: i32 = old.length;
-    if (pos + top < 0 || pos + olen - bot > base.length) { return false; }
+    // The hunk, dropped leading context included, starts inside the file (GNU
+    // patch); dropped trailing context may run past the end.
+    if (pos < 0 || pos + olen - bot > base.length) { return false; }
     let t: i32 = top;
     while (t < olen - bot) {
         let x: core::slice::View<u8> = old.values[old.start+t]; w.used += 1 + (x.length as u64);

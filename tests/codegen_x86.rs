@@ -725,6 +725,101 @@ fn main() -> i32 {
     );
 }
 
+#[test]
+fn x86_try_operand_keeps_the_following_binary_operator() {
+    // Formerly tests/fixtures/compiler_defects/question_comparison.lani: the
+    // binary operator right after `value?` was dropped (`three()? != 3` was
+    // true and `three()? * 5` was 3), and `value? - 1` did not parse.
+    let sources = [
+        include_str!("../stdlib/core/cmp.lani"),
+        include_str!("../stdlib/core/function.lani"),
+        include_str!("../stdlib/core/panic.lani"),
+        include_str!("../stdlib/core/result.lani"),
+        r#"
+module app::main;
+
+import core::result;
+
+fn three() -> core::result::Result<i32, i32> {
+    return core::result::Ok(3);
+}
+
+fn check() -> core::result::Result<i32, i32> {
+    if (three()? != 3) { return core::result::Ok(1); }
+    if (three()? < 3) { return core::result::Ok(2); }
+    if (three()? == 4) { return core::result::Ok(3); }
+    let product: i32 = three()? * 5;
+    let difference: i32 = three()? - 1;
+    let sum: i32 = 1 + three()?;
+    let chain: i32 = 2 * three()? * 5 * 7;
+    let mask: i32 = three()? & 1;
+    return core::result::Ok(product + difference + sum + chain + mask);
+}
+
+fn main() -> i32 {
+    return core::result::unwrap(check());
+}
+"#,
+    ];
+    let bytes = common::run_gpu_codegen_with_timeout("x86 try operand binary operators", move || {
+        pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+    })
+    .expect("binary operators after `?` should compile");
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 try operand binary operators",
+        "x86_try_operand_binary_operators",
+        &bytes,
+        232,
+    );
+}
+
+#[test]
+fn x86_i64_raw_views_store_at_descending_word_addresses() {
+    // Formerly tests/fixtures/compiler_defects/i64_view_writes.lani, which
+    // expected ascending addresses: a raw [i64] view's element i is i words
+    // below its pointer, and typed_slice_from_storage starts at the top.
+    let sources = [
+        include_str!("../stdlib/core/mem.lani"),
+        r#"
+module app::main;
+
+import core::mem;
+
+fn main() -> i32 {
+    let storage: [i32; 8] = [0; 8];
+    let base: ptr = core::mem::i32_array_data_ptr(storage);
+    // Element zero of a descending raw view is at the top of the storage.
+    let words: [i64] = core::mem::typed_slice_from_storage<i64>(base, 4);
+    words[0] = 1;
+    words[1] = 2;
+    words[3] = 4;
+    // A raw view's element i is i words below its pointer.
+    let up: usize = 16;
+    let shifted: [i64] = core::mem::typed_slice_from_raw_parts<i64>(base + up, 4);
+    shifted[1] = 8;
+    let total: i64 = words[0] + words[1] + words[2] + words[3];
+    let shifted_hit: i32 = 0;
+    if (storage[2] == 8) { shifted_hit = 100; }
+    return storage[6] + storage[4] * 10 + storage[0] * 10 + shifted_hit + total as i32;
+}
+"#,
+    ];
+    let bytes = common::run_gpu_codegen_with_timeout("x86 i64 raw view stores", move || {
+        pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources))
+    })
+    .expect("i64 raw view stores should compile");
+    assert_x86_64_elf_header(&bytes);
+    #[cfg(all(unix, target_arch = "x86_64"))]
+    assert_x86_exit_code(
+        "x86 i64 raw view stores",
+        "x86_i64_raw_view_stores",
+        &bytes,
+        176,
+    );
+}
+
 fn assert_source_exit(name: &str, source: &str, expected: i32) {
     let bytes = compile_source(&format!("x86 source {name}"), source);
 
