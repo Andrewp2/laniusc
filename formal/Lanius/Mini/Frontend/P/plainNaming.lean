@@ -148,9 +148,10 @@ def nestUse (fuel : Nat) (env : FrontEnv) (v : VariantTy) (a : CTree) (rows : Li
   | none => none
   | some pa => nestPats fuel env v a pa rows w
 
-def plainUse (a : CTree) (more : List CTree) : Option ArmUse :=
-  match more with
-  | [] => some ({ arm := a, used := false } : ArmUse)
-  | b :: others => none
+def shadowIf (a : CTree) (n : Bool) : Option ArmUse :=
+  if n then
+    some ({ arm := a, used := false } : ArmUse)
+  else
+    none
 
 end Lanius.Mini

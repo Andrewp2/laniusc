@@ -185,7 +185,7 @@ pub fn extract(entry: Entry, max_output: i32) -> core::result::Result<alloc::vec
     let kind: i32 = match (entry.method) { Method::Stored -> 0, Method::Deflate -> 8 };
     if (kind == 0) {
         if (entry.compressed_size != entry.uncompressed_size) { output.destroy(); return core::result::Err(Error::SizeMismatch); }
-        let values: [u8] = output.as_slice(); let index: i32 = 0; while (index < entry.uncompressed_size) { values[index] = byte(entry.data,index); index += 1; }
+        let values: [u8] = output.as_slice(); let index: i32 = 0; while (index < entry.uncompressed_size) { let stored: u8 = byte(entry.data,index); values[index] = stored; index += 1; }
     } else {
         let result: core::result::Result<ext::inflate::Progress,ext::inflate::Failure> = ext::inflate::decode_into(entry.data,output.as_view());
         if (core::result::is_err(result)) {

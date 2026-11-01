@@ -1,18 +1,21 @@
 // WHATWG URL Standard basic URL parser and serializer, with an optional base
 // URL. The result owns its serialized href and records every component span.
-// Hosts are ASCII-only: a non-ASCII or "xn--" domain returns UnsupportedIdna
-// instead of guessing at UTS #46. See docs/extended-url.md.
+// Non-ASCII domains go through UTS #46 ToASCII (ext::idna). See
+// docs/extended-url.md.
 module ext::url;
 import alloc::vec;
 import core::mem;
 import core::option;
 import core::result;
 import core::slice;
+import ext::idna;
 
 pub enum HostKind { None, Empty, Domain, Ipv4, Ipv6, Opaque }
 // MissingScheme: relative input without a usable base. MissingHost: a special
 // URL with an empty host, or credentials followed by no host.
-pub enum Error { Bounds, TooLong, InvalidUtf8, AllocationFailed, MissingScheme, MissingHost, InvalidHost, InvalidPort, InvalidIpv4, InvalidIpv6, UnsupportedIdna }
+// InvalidIdna: a domain that fails UTS #46 processing (ext::idna::to_ascii).
+// UnsupportedIdna: one whose CONTEXTJ check needs Joining_Type data.
+pub enum Error { Bounds, TooLong, InvalidUtf8, AllocationFailed, MissingScheme, MissingHost, InvalidHost, InvalidPort, InvalidIpv4, InvalidIpv6, UnsupportedIdna, InvalidIdna }
 pub const MAX_INPUT_BYTES: i32 = 16777216;
 
 // Spans index text. Absent username, password and port spans are empty.
@@ -20,7 +23,7 @@ pub const MAX_INPUT_BYTES: i32 = 16777216;
 pub struct Url { text: alloc::vec::Vec<u8>, scheme_end: i32, username_start: i32, username_end: i32, password_start: i32, password_end: i32, host_start: i32, host_end: i32, kind: i32, port_value: i32, port_start: i32, port_end: i32, path_start: i32, path_end: i32, opaque: bool, query_start: i32, fragment_start: i32 }
 
 const E_BOUNDS: i32 = 1; const E_LONG: i32 = 2; const E_UTF8: i32 = 3; const E_OOM: i32 = 4; const E_SCHEME: i32 = 5; const E_MISSING_HOST: i32 = 6;
-const E_HOST: i32 = 7; const E_PORT: i32 = 8; const E_IPV4: i32 = 9; const E_IPV6: i32 = 10; const E_IDNA: i32 = 11;
+const E_HOST: i32 = 7; const E_PORT: i32 = 8; const E_IPV4: i32 = 9; const E_IPV6: i32 = 10; const E_IDNA: i32 = 11; const E_INVALID_IDNA: i32 = 12;
 const K_NONE: i32 = 0; const K_EMPTY: i32 = 1; const K_DOMAIN: i32 = 2; const K_IPV4: i32 = 3; const K_IPV6: i32 = 4; const K_OPAQUE: i32 = 5;
 const F_SCHEME: i32 = 0; const F_USER: i32 = 1; const F_PASS: i32 = 2; const F_HOST: i32 = 3; const F_PATH: i32 = 4; const F_QUERY: i32 = 5; const F_FRAG: i32 = 6; const F_BUF: i32 = 7; const F_TMP: i32 = 8;
 const SET_C0: i32 = 0; const SET_FRAGMENT: i32 = 1; const SET_QUERY: i32 = 2; const SET_SPECIAL_QUERY: i32 = 3; const SET_PATH: i32 = 4; const SET_USERINFO: i32 = 5;
@@ -124,7 +127,7 @@ fn ends_in_number(view: core::slice::View<u8>) -> bool {
 }
 
 struct Parser {
-    input: alloc::vec::Vec<u8>, n: i32, p: i32, state: i32, buf: alloc::vec::Vec<u8>, tmp: alloc::vec::Vec<u8>,
+    input: alloc::vec::Vec<u8>, n: i32, p: i32, state: i32, buf: alloc::vec::Vec<u8>, tmp: alloc::vec::Vec<u8>, ascii: alloc::vec::Vec<u8>,
     at_seen: bool, password_seen: bool, inside_brackets: bool, special: bool, oom: bool,
     scheme: alloc::vec::Vec<u8>, username: alloc::vec::Vec<u8>, password: alloc::vec::Vec<u8>, kind: i32, host: alloc::vec::Vec<u8>, port: i32,
     opaque: bool, path: alloc::vec::Vec<u8>, ends: alloc::vec::Vec<i32>, query: alloc::vec::Vec<u8>, has_query: bool, fragment: alloc::vec::Vec<u8>, has_fragment: bool
@@ -236,19 +239,16 @@ impl Parser {
             } else { self.put(F_TMP,c); i += 1; }
         }
         if (self.oom) { return E_OOM; }
-        let domain: core::slice::View<u8> = self.tmp.as_view(); i = 0;
-        while (i < domain.length) {
-            let c: i32 = at(domain,i) as i32;
-            if (c >= 128) { return E_IDNA; }
-            if (c >= 65 && c <= 90) { self.tmp.set(i,(c + 32) as u8); }
-            i += 1;
+        // domain to ASCII: ext::idna lowercases an all-ASCII domain and runs
+        // UTS #46 ToASCII on any other.
+        let converted: core::result::Result<i32, ext::idna::Error> = ext::idna::to_ascii(self.tmp.as_view(),self.ascii.borrow());
+        if (converted.is_err()) {
+            return match (converted.unwrap_err()) { ext::idna::Error::UnsupportedJoiner -> E_IDNA, ext::idna::Error::AllocationFailed -> E_OOM, _ -> E_INVALID_IDNA };
         }
-        domain = self.tmp.as_view(); i = 0;
-        while (i < domain.length) {
-            if ((i == 0 || at(domain,i-1) == 46) && domain.length - i >= 4 && is(part(domain,i,i+4),"xn--",4)) { return E_IDNA; }
-            if (forbidden_domain(at(domain,i) as i32)) { return E_HOST; }
-            i += 1;
-        }
+        let domain: core::slice::View<u8> = self.ascii.as_view();
+        if (domain.length == 0) { return E_INVALID_IDNA; }
+        i = 0;
+        while (i < domain.length) { if (forbidden_domain(at(domain,i) as i32)) { return E_HOST; } i += 1; }
         if (ends_in_number(domain)) { return self.parse_ipv4(domain); }
         self.extend(F_HOST,domain); self.kind = K_DOMAIN; return 0;
     }
@@ -574,7 +574,7 @@ impl Parser {
         return core::result::Ok(url);
     }
     fn destroy(&self) {
-        self.input.destroy(); self.buf.destroy(); self.tmp.destroy(); self.scheme.destroy(); self.username.destroy(); self.password.destroy();
+        self.input.destroy(); self.buf.destroy(); self.tmp.destroy(); self.ascii.destroy(); self.scheme.destroy(); self.username.destroy(); self.password.destroy();
         self.host.destroy(); self.path.destroy(); self.ends.destroy(); self.query.destroy(); self.fragment.destroy();
     }
 }
@@ -583,7 +583,7 @@ fn error(code: i32) -> Error {
     if (code == E_BOUNDS) { return Error::Bounds; } if (code == E_LONG) { return Error::TooLong; } if (code == E_UTF8) { return Error::InvalidUtf8; }
     if (code == E_SCHEME) { return Error::MissingScheme; } if (code == E_MISSING_HOST) { return Error::MissingHost; } if (code == E_HOST) { return Error::InvalidHost; }
     if (code == E_PORT) { return Error::InvalidPort; } if (code == E_IPV4) { return Error::InvalidIpv4; } if (code == E_IPV6) { return Error::InvalidIpv6; }
-    if (code == E_IDNA) { return Error::UnsupportedIdna; } return Error::AllocationFailed;
+    if (code == E_IDNA) { return Error::UnsupportedIdna; } if (code == E_INVALID_IDNA) { return Error::InvalidIdna; } return Error::AllocationFailed;
 }
 fn empty_url() -> Url {
     return Url { text: alloc::vec::new(), scheme_end: 0, username_start: 0, username_end: 0, password_start: 0, password_end: 0, host_start: 0, host_end: 0, kind: K_NONE, port_value: -1, port_start: 0, port_end: 0, path_start: 0, path_end: 0, opaque: false, query_start: -1, fragment_start: -1 };
@@ -595,7 +595,7 @@ fn parse_from(input: core::slice::View<u8>, base: &Url, has_base: bool) -> core:
     let start: i32 = 0; let end: i32 = input.length;
     while (start < end && at(input,start) <= 32) { start += 1; }
     while (end > start && at(input,end-1) <= 32) { end -= 1; }
-    let parser = Parser { input: alloc::vec::new(), n: 0, p: 0, state: S_SCHEME_START, buf: alloc::vec::new(), tmp: alloc::vec::new(),
+    let parser = Parser { input: alloc::vec::new(), n: 0, p: 0, state: S_SCHEME_START, buf: alloc::vec::new(), tmp: alloc::vec::new(), ascii: alloc::vec::new(),
         at_seen: false, password_seen: false, inside_brackets: false, special: false, oom: false,
         scheme: alloc::vec::new(), username: alloc::vec::new(), password: alloc::vec::new(), kind: K_NONE, host: alloc::vec::new(), port: -1,
         opaque: false, path: alloc::vec::new(), ends: alloc::vec::new(), query: alloc::vec::new(), has_query: false, fragment: alloc::vec::new(), has_fragment: false };

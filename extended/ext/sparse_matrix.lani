@@ -225,7 +225,7 @@ pub fn transpose(input: ext::sparse::CsrView, limits: ext::sparse::Limits)
         index = input.offsets.get(row).unwrap(); let end: i32 = input.offsets.get(row+1).unwrap();
         while (index < end) {
             let column: i32 = input.columns.get(index).unwrap(); let target: i32 = offsets[column];
-            columns[target] = row; values[target] = input.values.get(index).unwrap(); offsets[column] += 1; index += 1;
+            columns[target] = row; let stored: f64 = input.values.get(index).unwrap(); values[target] = stored; offsets[column] += 1; index += 1;
         }
         row += 1;
     }

@@ -150,8 +150,14 @@ uint declared_result(uint call, uint token, bool record, bool unit, bool importe
         {
             uint owner = checked_call_application_owner(token);
             uint receiver = method_call_receiver_ref_payload[owner];
-            if (method_call_receiver_ref_tag[owner] != 3u || receiver >= mutable_type_capacity()) return CT_NONE;
-            return dependency_type(dependency_member_word(method * SEMANTIC_INTERFACE_MEMBER_WORDS + 7u));
+            uint result = dependency_type(dependency_member_word(method * SEMANTIC_INTERFACE_MEMBER_WORDS + 7u));
+            // A required member of an imported trait called through a bound
+            // has the bounded parameter as its receiver. A closed result needs
+            // no environment; an open one takes the bound's trait arguments,
+            // which 15b publishes as the call's context arguments.
+            if (method_call_receiver_ref_tag[owner] != 3u || receiver >= mutable_type_capacity())
+                return ct_closed(result) || ct_is_record(ct_call_env(token).x) ? result : CT_NONE;
+            return result;
         }
         uint declaration = dependency_find_declaration(call_dependency_library_id[token],
             call_dependency_unit_id[token], call_dependency_local_index[token]);

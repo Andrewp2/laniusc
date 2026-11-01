@@ -45,6 +45,12 @@ RWStructuredBuffer<uint> method_decl_receiver_ref_tag;
 RWStructuredBuffer<uint> method_decl_receiver_ref_payload;
 RWStructuredBuffer<uint> method_decl_module_id;
 RWStructuredBuffer<uint> method_decl_name_id;
+StructuredBuffer<uint> call_param_row_count_out;
+StructuredBuffer<uint> call_param_row_start;
+StructuredBuffer<uint> call_param_row_fn_token;
+StructuredBuffer<uint> call_param_row_ordinal;
+RWStructuredBuffer<uint> call_param_row_ref_tag;
+RWStructuredBuffer<uint> call_param_row_ref_payload;
 
 static const uint INVALID = 0xffffffffu;
 static const uint TYPE_REF_INVALID = 0u;
@@ -170,6 +176,19 @@ void main(uint3 dtid: SV_DispatchThreadID)
         type_instance_state[self_token] = 1u;
         type_instance_elem_ref_tag[self_token] = type_expr_ref_tag[type_i];
         type_instance_elem_ref_payload[self_token] = type_expr_ref_payload[type_i];
+    }
+    // A path call such as `S::get(s, 1)` passes the receiver as its first
+    // argument, so the unannotated self row takes the receiver's declared
+    // type. Dotted calls consume the receiver and never match this row.
+    uint self_row = call_param_row_start[fn_token];
+    bool borrowed = signature.receiver_mode == 2u;
+    if ((signature.receiver_mode == 1u || (borrowed && self_token < active_token_count())) &&
+        type_i < active_token_count() &&
+        self_row < min(call_param_row_count_out[0u], gParams.n_hir_nodes) &&
+        call_param_row_fn_token[self_row] == fn_token && call_param_row_ordinal[self_row] == 0u)
+    {
+        call_param_row_ref_tag[self_row] = borrowed ? TYPE_REF_INSTANCE : type_expr_ref_tag[type_i];
+        call_param_row_ref_payload[self_row] = borrowed ? self_token : type_expr_ref_payload[type_i];
     }
     uint file_id = compact_hir_links[core.impl_node].file_id;
     method_decl_module_id[fn_token] = module_for_file(file_id);

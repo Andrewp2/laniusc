@@ -1,0 +1,17 @@
+// Fixed 2026-10-31: before the fix this compiled, but the untyped `got` passed
+// to a nongeneric Result parameter had no checked type and the program died
+// with SIGILL (exit 132). Expected: `printf x | ./prog` exits 1.
+module app::main;
+import core::io;
+import core::result;
+import std::stream;
+fn take(r: core::result::Result<i32, core::io::Error>) -> i32 { return core::result::unwrap(r); }
+fn read_one<R>(reader: &R, bytes: [u8]) -> i32 where R: core::io::Read {
+    let got = reader.read(bytes, 0, 1);
+    return take(got);
+}
+fn main() -> i32 {
+    let bytes: [u8;4] = [0;4];
+    let source: std::stream::Descriptor = std::stream::stdin();
+    return read_one<std::stream::Descriptor>(source.borrow(), bytes);
+}

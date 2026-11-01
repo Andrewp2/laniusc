@@ -572,6 +572,14 @@ xdiff alignment (`Algorithm::Xdiff`). Their output is identical to git 2.43 on
 all 2,040 generated pairs for word diffs, character diffs and `--stat`, on
 1,500 `git diff --stat` reports over generated repositories and on 282
 `diff -ruN` patches.
+[Multi-file patches](extended-patchset.md) (`ext::patchset`, `seq-patch -i`)
+read git extended headers (renames, copies, modes, creation, deletion,
+binary sections), reverse patches, detect reversed patches as GNU `patch`
+does, place hunks as `git apply` does and fall back to a `git apply --3way`
+merge. On 900 generated repositories patched into seven kinds of mutated
+tree, the resulting trees and exit statuses agree with GNU `patch`
+(`-t`/`-N`/`-f`/`-R`), `git apply` (and `-R`) and `git apply --3way` in all
+5,518 comparisons. Binary patches are refused with an error.
 
 The preceding [reusable regex-workspace increment](library-regex-workspace-plan.md) is
 implemented and passes the selected Workspace/Search, regex, lexer,
@@ -754,12 +762,14 @@ replies, pass as direct runs on native Linux x86_64.
 
 The [URL guide](extended-url.md) adds `ext::url`, the WHATWG URL Standard
 basic URL parser and serializer with an optional base. It returns an owned
-href with spans for every getter, plus the host kind and origin. Non-ASCII and
-`xn--` domains fail with an explicit `UnsupportedIdna` instead of an
-approximation. The contracts program and the
-[url-parse](extended-url.md#application-url-parse) cli25 and whatwg9174
-groups pass as direct runs on native Linux x86_64. The whatwg group compares
-every getter with Node.js's WHATWG URL over a fixed generated corpus.
+href with spans for every getter, plus the host kind and origin. The
+[IDNA guide](extended-idna.md) adds `ext::idna`, UTS #46 ToASCII with Punycode
+over a table derived from the vendored Unicode 17 UCD, which `ext::url` uses
+for internationalized hosts; a ZWNJ that needs Joining_Type data returns
+`UnsupportedIdna`. The contracts program and the
+[url-parse](extended-url.md#application-url-parse) cli25, whatwg9174,
+idna46060 and table1111937 groups pass as direct runs on native Linux x86_64,
+comparing every getter, and every scalar's IDNA behaviour, with Node.js.
 
 **Shared random-source budgets.**
 
@@ -1916,6 +1926,25 @@ archive rejections, five destination-guard cases and a 96 MiB pipeline under
 32 MiB RSS. The oracle ran directly against `lcc` executables on native Linux
 x86_64; its cargo wrapper `tests/extended_tgz_execution.rs` was not run.
 
+**xz and .lzma.** [`ext::xz`](extended-xz.md) decodes xz (LZMA2; none, CRC32
+and CRC64 checks; multi-block, concatenated and padded streams with index
+verification) and `.lzma` streams incrementally over caller-owned
+probability, staging and dictionary views, with a dictionary that grows on
+demand, and encodes xz with a streaming LZMA2 encoder (levels 0-3, hash-chain
+match finder, greedy or one-step lazy) whose output is independent of call
+boundaries. `tgz` detects and reads xz archives and writes them with `-J` at
+level 2, which matches `xz -1`'s size on the docs/stdlib tar (7,562,060
+against 7,561,504 bytes) at roughly an eighth of its speed. A seeded oracle
+(`tests/fixtures/extended/xz_oracle.py`) passes 22,913 cases with 0 failures
+against Python `lzma` and the xz 5.4.6 CLI: 2,268 decodes of valid streams
+under step sizes down to one byte, 20,639 concatenated, truncated,
+bit-flipped or extended streams rejected exactly when a strict Python decode
+rejects them (and decoded identically otherwise) and 6 error-class checks. The tgz
+oracle adds 691 xz archive cases (now 4,160 in total) against Python
+`tarfile` and GNU tar; the encoder adds 228 step-size-invariance checks and
+300 exact decodes by Python, `xz -t` and the Lanius decoder (23,475 cases in
+all).
+
 **Accepted bounded archive increment.**
 
 The new production code is Lanius over the existing TAR/ZIP engines,
@@ -2218,14 +2247,16 @@ event server plus four sequential groups, with exact server counters. TLS,
 threads, multipart ranges and allocation-failure coverage remain open.
 
 The [HTTP/1.1 client agent](extended-http-agent.md) (`ext::http_agent`) is a
-synchronous cleartext client over the same codec, `ext::http_url` and
-`ext::url_connect`. It pools keep-alive connections per host and port under
+synchronous `http://` and verified `https://` client over the same codec,
+`ext::http_url`, `ext::url_connect` and `ext::tls_stream`. It pools
+keep-alive cleartext and TLS connections per scheme, host and port under
 idle-count, idle-time and use limits, discards stale ones and retries an
 idempotent request once on a fresh connection. It follows redirects with a
 hop limit, RFC 9110 method rules and cross-origin credential stripping, and
 sends fixed or chunked streamed bodies, stopping an upload on an early final
 response. The curl-like sample passes Python `http.server` oracle groups
-pool18, redirect29, upload10 and broken21 with exact counters.
+pool18, redirect29, upload10 and broken21, plus https17 against Python `ssl`
+origins with locally generated test certificates, with exact counters.
 
 [Resumable cleartext HTTP exchanges](extended-http-client.md) expose owned
 Prepared request staging and caller-driven Exchange steps. At `480432e8`,
@@ -2352,6 +2383,9 @@ string and input limits. It agrees with all 81 hand-typed Appendix A rows and
 an independent Python implementation on 8,100 generated, mutated, limit and
 sequence cases at four chunk sizes; the
 [cbor-to-json](../sample_programs/cbor_to_json.lani) sample agrees on 700.
+cbor-to-json converts a 4.66 MB document in 0.49 s, 5.7 times faster than
+before the S5 speed work, using the decoder's and JSON writer's `Result`-free
+fast paths.
 [`ext::msgpack`](extended-msgpack.md) streams MessagePack the same way, with
 optional canonical-header and timestamp checks. It agrees with the installed
 Python `msgpack` package and an independent model on 8,174 format-table,
@@ -2376,12 +2410,20 @@ The [regex differential oracle](extended-regex-oracle.md) runs the real
 `find_iter`, template-replacement and grep programs against CPython `re` on
 seeded grammar-generated patterns from the shared subset. Five seeds agree on
 60,025 find/capture cases (with named groups), 5,000 replacements, 5,000 grep
-runs, 13,853 fixed-width lookbehind cases and 15,000 capture-free lazy-DFA `is_match`/`find` cases, and five
+runs, 13,853 fixed-width lookbehind cases, 15,000 capture-free lazy-DFA `is_match`/`find` cases and 5,000
+mixed-script `\p{..}` DFA cases, and six
 pathological inputs finish in about 0.2 s. It found, and the engine now fixes,
 a lazy counted-repetition priority error (`(?:a|aab){0,2}?b` on `aabb`).
 The DFA, which carries `^ $ \A \z \b \B` as look-behind bits and delayed
 accepts in its states, lets `text_grep` count any lookbehind-free pattern on a
-0.9 MB corpus in about 0.1–0.2 s instead of 2.3–3.8 s.
+0.9 MB corpus in about 0.1–0.2 s instead of 2.3–3.8 s. Its transitions are
+cached per byte, with partial states for UTF-8 prefixes, so `\p{Lu}` on a
+1.3 MB mixed-script file takes 147 ms instead of 1110 ms. `text_grep` also
+searches for the pattern's required literal with `core::search` across each
+64 KiB read and runs the matcher only on the records that contain it. On
+S4's 49 MB corpus a no-match scan takes 68 ms instead of 5.2 s, against GNU
+grep's 11 ms; patterns with a literal take 85–272 ms with `-c`
+([timings](extended-text-grep.md#literal-prefilter)).
 
 [Regex splitting and replacement](extended-regex-text.md) now reuse canonical
 Search with one lazily acquired workspace. Borrowed split fields, independent

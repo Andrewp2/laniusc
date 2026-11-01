@@ -585,7 +585,7 @@ pub fn parse(input: core::slice::View<u8>, max_lines: i32) -> core::result::Resu
 
 ### function: apply
 
-[Source line 220](../../../extended/ext/unidiff.lani#L220)
+[Source line 222](../../../extended/ext/unidiff.lani#L222)
 
 ```lanius
 pub fn apply(base: core::slice::View<u8>, patch: &Patch, options: ApplyOptions) -> core::result::Result<Applied, ApplyError>
@@ -641,9 +641,9 @@ pub fn line(&self, index: i32) -> core::option::Option<PatchLine>
 pub fn destroy(&self)
 ```
 
-### impl at line 328
+### impl at line 330
 
-[Source line 328](../../../extended/ext/unidiff.lani#L328)
+[Source line 330](../../../extended/ext/unidiff.lani#L330)
 
 ```lanius
 pub impl Applied
@@ -651,7 +651,7 @@ pub impl Applied
 
 #### method: borrow
 
-[Source line 329](../../../extended/ext/unidiff.lani#L329)
+[Source line 331](../../../extended/ext/unidiff.lani#L331)
 
 ```lanius
 pub fn borrow(&self) -> &Applied
@@ -659,7 +659,7 @@ pub fn borrow(&self) -> &Applied
 
 #### method: destroy
 
-[Source line 330](../../../extended/ext/unidiff.lani#L330)
+[Source line 332](../../../extended/ext/unidiff.lani#L332)
 
 ```lanius
 pub fn destroy(&self)

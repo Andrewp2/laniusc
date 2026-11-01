@@ -39,6 +39,8 @@ T = 'formal/tools/'
 # step reads besides its script, from INPUTS below. {w} is the step's
 # workdir, {s} the seed.
 STEPS = [
+    # The front end's store rule over the stdlib/ and extended/ text: no `v[i] = value;` whose value calls.
+    ('store-rule', ['store_rule.py', '{w}'], ['lani', 'stdlib', 'extended_all'], True),
     # F9: the IEEE specification against this CPU's SSE unit.
     ('float', ['float_test.py', '{w}', '--count', '2000', '--seed', '{s}'], ['float_test'], True),
     # Step 14 and F9: the x86 model's decode and execute against this CPU, every emitted form.
@@ -147,7 +149,10 @@ def inputs():
         + run_cache.tree_digest(os.path.join(run_cache.FORMAL, 'Lanius')),
         'lani': run_cache.tree_digest(os.path.join(run_cache.FORMAL, 'lani')),
         'tools': run_cache.tree_digest(os.path.join(ROOT, T)),
-        'laniusc': run_cache.file_digest(LANIUSC),
+        # laniusc loads its kernels at run time from the shader artifacts its
+        # build compiled from shaders/, so a shader-only change can leave the
+        # binary byte-identical: key on both.
+        'laniusc': run_cache.file_digest(LANIUSC) + run_cache.tree_digest(os.path.join(ROOT, 'shaders')),
         'stdlib': run_cache.tree_digest(os.path.join(ROOT, 'stdlib')),
         'programs': run_cache.tree_digest(os.path.join(ROOT, 'tests/fixtures'))
         + run_cache.tree_digest(os.path.join(ROOT, 'sample_programs')),

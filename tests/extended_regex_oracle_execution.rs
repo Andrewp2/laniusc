@@ -58,6 +58,7 @@ fn regex_find_replace_and_grep_agree_with_python_re_on_generated_patterns() {
     for line in [
         "find_iter_captures 12005/12005",
         "dfa_match_find 3000/3000",
+        "dfa_unicode 1000/1000",
         "replace_template 1000/1000",
         "grep_filter 1000/1000",
         "lookbehind_find 2728/2728",

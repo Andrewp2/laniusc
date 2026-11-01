@@ -5,8 +5,9 @@ module core::float_tables;
 import core::mem;
 
 fn hex(bytes: [u8], offset: i32, width: i32) -> u64 {
-    let value: u64 = 0; let i: i32 = 0;
-    while (i < width) { let b: u8 = bytes[offset + i]; let d: u64 = (b as u64) - 48; if (b >= 97) { d = (b as u64) - 87; } value = (value << 4) | d; i += 1; }
+    // Lowercase hex digits: (b & 15) + 9 * (b >> 6) maps 0-9 and a-f to 0..15.
+    let value: u64 = 0; let at: i32 = offset; let end: i32 = offset + width;
+    while (at < end) { let b: u64 = bytes[at] as u64; value = (value << 4) | ((b & 15) + 9 * (b >> 6)); at += 1; }
     return value;
 }
 fn pow5_chunk(index: i32) -> [u8] {
@@ -29,6 +30,267 @@ pub const CACHED_COUNT: i32 = 87;
 pub fn pow5_high(q: i32) -> u64 { let i: i32 = q + 342; return hex(pow5_chunk(i / 124), (i % 124) * 32, 16); }
 pub fn pow5_low(q: i32) -> u64 { let i: i32 = q + 342; return hex(pow5_chunk(i / 124), (i % 124) * 32 + 16, 16); }
 // Cached power i approximates 10^(-348 + 8i) as significand * 2^exponent.
-pub fn cached_significand(i: i32) -> u64 { return hex(cached_chunk(i / 124), (i % 124) * 20, 16); }
+pub fn cached_significand(i: i32) -> u64 {
+    if (i < 0 || i >= 87) { return hex(cached_chunk(i / 124), (i % 124) * 20, 16); }
+    if (i < 43) {
+        if (i < 21) {
+            if (i < 10) {
+                if (i < 5) {
+                    if (i < 2) {
+                        if (i < 1) {
+                            return 18054884314459144840;
+                        }
+                        return 13451937075301367670;
+                    }
+                    if (i < 3) {
+                        return 10022474136428063862;
+                    }
+                    if (i < 4) {
+                        return 14934650266808366570;
+                    }
+                    return 11127181549972568877;
+                }
+                if (i < 7) {
+                    if (i < 6) {
+                        return 16580792590934885855;
+                    }
+                    return 12353653155963782858;
+                }
+                if (i < 8) {
+                    return 18408377700990114895;
+                }
+                if (i < 9) {
+                    return 13715310171984221708;
+                }
+                return 10218702384817765436;
+            }
+            if (i < 15) {
+                if (i < 12) {
+                    if (i < 11) {
+                        return 15227053142812498563;
+                    }
+                    return 11345038669416679861;
+                }
+                if (i < 13) {
+                    return 16905424996341287883;
+                }
+                if (i < 14) {
+                    return 12595523146049147757;
+                }
+                return 9384396036005875287;
+            }
+            if (i < 18) {
+                if (i < 16) {
+                    return 13983839803942852151;
+                }
+                if (i < 17) {
+                    return 10418772551374772303;
+                }
+                return 15525180923007089351;
+            }
+            if (i < 19) {
+                return 11567161174868858868;
+            }
+            if (i < 20) {
+                return 17236413322193710309;
+            }
+            return 12842128665889583758;
+        }
+        if (i < 32) {
+            if (i < 26) {
+                if (i < 23) {
+                    if (i < 22) {
+                        return 9568131466127621947;
+                    }
+                    return 14257626930069360058;
+                }
+                if (i < 24) {
+                    return 10622759856335341974;
+                }
+                if (i < 25) {
+                    return 15829145694278690180;
+                }
+                return 11793632577567316726;
+            }
+            if (i < 29) {
+                if (i < 27) {
+                    return 17573882009934360870;
+                }
+                if (i < 28) {
+                    return 13093562431584567480;
+                }
+                return 9755464219737475723;
+            }
+            if (i < 30) {
+                return 14536774485912137811;
+            }
+            if (i < 31) {
+                return 10830740992659433045;
+            }
+            return 16139061738043178685;
+        }
+        if (i < 37) {
+            if (i < 34) {
+                if (i < 33) {
+                    return 12024538023802026127;
+                }
+                return 17917957937422433684;
+            }
+            if (i < 35) {
+                return 13349918974505688015;
+            }
+            if (i < 36) {
+                return 9946464728195732843;
+            }
+            return 14821387422376473014;
+        }
+        if (i < 40) {
+            if (i < 38) {
+                return 11042794154864902060;
+            }
+            if (i < 39) {
+                return 16455045573212060422;
+            }
+            return 12259964326927110867;
+        }
+        if (i < 41) {
+            return 18268770466636286478;
+        }
+        if (i < 42) {
+            return 13611294676837538539;
+        }
+        return 10141204801825835212;
+    }
+    if (i < 65) {
+        if (i < 54) {
+            if (i < 48) {
+                if (i < 45) {
+                    if (i < 44) {
+                        return 15111572745182864684;
+                    }
+                    return 11258999068426240000;
+                }
+                if (i < 46) {
+                    return 16777216000000000000;
+                }
+                if (i < 47) {
+                    return 12500000000000000000;
+                }
+                return 9313225746154785156;
+            }
+            if (i < 51) {
+                if (i < 49) {
+                    return 13877787807814456755;
+                }
+                if (i < 50) {
+                    return 10339757656912845936;
+                }
+                return 15407439555097886824;
+            }
+            if (i < 52) {
+                return 11479437019748901445;
+            }
+            if (i < 53) {
+                return 17105694144590052135;
+            }
+            return 12744735289059618216;
+        }
+        if (i < 59) {
+            if (i < 56) {
+                if (i < 55) {
+                    return 9495567745759798747;
+                }
+                return 14149498560666738074;
+            }
+            if (i < 57) {
+                return 10542197943230523224;
+            }
+            if (i < 58) {
+                return 15709099088952724970;
+            }
+            return 11704190886730495818;
+        }
+        if (i < 62) {
+            if (i < 60) {
+                return 17440603504673385349;
+            }
+            if (i < 61) {
+                return 12994262207056124023;
+            }
+            return 9681479787123295682;
+        }
+        if (i < 63) {
+            return 14426529090290212157;
+        }
+        if (i < 64) {
+            return 10748601772107342003;
+        }
+        return 16016664761464807395;
+    }
+    if (i < 76) {
+        if (i < 70) {
+            if (i < 67) {
+                if (i < 66) {
+                    return 11933345169920330789;
+                }
+                return 17782069995880619868;
+            }
+            if (i < 68) {
+                return 13248674568444952270;
+            }
+            if (i < 69) {
+                return 9871031767461413346;
+            }
+            return 14708983551653345445;
+        }
+        if (i < 73) {
+            if (i < 71) {
+                return 10959046745042015199;
+            }
+            if (i < 72) {
+                return 16330252207878254650;
+            }
+            return 12166986024289022870;
+        }
+        if (i < 74) {
+            return 18130221999122236476;
+        }
+        if (i < 75) {
+            return 13508068024458167312;
+        }
+        return 10064294952495520794;
+    }
+    if (i < 81) {
+        if (i < 78) {
+            if (i < 77) {
+                return 14996968138956309548;
+            }
+            return 11173611982879273257;
+        }
+        if (i < 79) {
+            return 16649979327439178909;
+        }
+        if (i < 80) {
+            return 12405201291620119593;
+        }
+        return 9242595204427927429;
+    }
+    if (i < 84) {
+        if (i < 82) {
+            return 13772540099066387757;
+        }
+        if (i < 83) {
+            return 10261342003245940623;
+        }
+        return 15290591125556738113;
+    }
+    if (i < 85) {
+        return 11392378155556871081;
+    }
+    if (i < 86) {
+        return 16975966327722178521;
+    }
+    return 12648080533535911531;
+}
 pub fn cached_exponent(i: i32) -> i32 { return (hex(cached_chunk(i / 124), (i % 124) * 20 + 16, 4) as i32) - 32768; }
 pub fn cached_decimal(i: i32) -> i32 { return -348 + 8 * i; }
