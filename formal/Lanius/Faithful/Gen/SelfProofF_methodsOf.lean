@@ -17,7 +17,6 @@ public import Lanius.Faithful.Gen.SelfStmtF_Inline_pModTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pStmtsMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pStructFieldsMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pTypeSliceTail
-public import Lanius.Faithful.Gen.SelfStmtF_Inline_positionAt
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_methodsOf
@@ -59,16 +58,15 @@ theorem proof_alias_decls {prog : SrcProgram} {prims : Prims} {ix_alias_decls ix
   simp only [src_alias_decls] at h
   faithful [Lanius.Mini.aliasDecls]
 
-theorem step_collect {prog : SrcProgram} {prims : Prims} {ix_collect ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_collect_next ix_join_decls ix_item_decls : Nat} (fn : prog.funcs[ix_collect]? = some (src_collect ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_collect_next ix_join_decls ix_item_decls)) (np : prims.isPrim ix_collect = false)
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree n))
-    (ext_join_decls : Certified (∀ {n : Nat}, Stmt_join_decls prog prims ix_join_decls n))
-    (ext_item_decls : Certified (∀ {n : Nat}, Stmt_item_decls prog prims ix_item_decls n)) {n : Nat}
-    (ih_collect_next : Certified (Stmt_collect_next prog prims ix_collect_next n)) :
-    Stmt_collect prog prims ix_collect (n + 1) := by
-  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+theorem proof_collect_front {prog : SrcProgram} {prims : Prims} {ix_collect_front ix_join_decls : Nat} (fn : prog.funcs[ix_collect_front]? = some (src_collect_front ix_join_decls)) (np : prims.isPrim ix_collect_front = false)
+    (ext_join_decls : Certified (∀ {n : Nat}, Stmt_join_decls prog prims ix_join_decls n)) {n : Nat} :
+    Stmt_collect_front prog prims ix_collect_front n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_collect] at h
-  faithful [Lanius.Mini.collect]
+  simp only [src_collect_front] at h
+  faithful [Lanius.Mini.collectFront]
 
 theorem proof_extern_tree {prog : SrcProgram} {prims : Prims} {ix_extern_tree ix_cons_of_mini_selfhost_CTree ix_kid ix_boxed_of_mini_selfhost_List_mini_selfhost_CTree ix_single_of_mini_selfhost_CTree ix_p_extern_fn : Nat} (fn : prog.funcs[ix_extern_tree]? = some (src_extern_tree ix_cons_of_mini_selfhost_CTree ix_kid ix_boxed_of_mini_selfhost_List_mini_selfhost_CTree ix_single_of_mini_selfhost_CTree ix_p_extern_fn)) (np : prims.isPrim ix_extern_tree = false)
     (ext_cons_of_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_CTree prog prims ix_cons_of_mini_selfhost_CTree n))
@@ -83,42 +81,6 @@ theorem proof_extern_tree {prog : SrcProgram} {prims : Prims} {ix_extern_tree ix
   rw [pcall_succ np fn] at h
   simp only [src_extern_tree] at h
   faithful [Lanius.Mini.externTree]
-
-theorem proof_file_collected {prog : SrcProgram} {prims : Prims} {ix_file_collected : Nat} (fn : prog.funcs[ix_file_collected]? = some (src_file_collected)) (np : prims.isPrim ix_file_collected = false) {n : Nat} :
-    Stmt_file_collected prog prims ix_file_collected n := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_file_collected] at h
-  faithful [Lanius.Mini.fileCollected]
-
-theorem proof_file_decls {prog : SrcProgram} {prims : Prims} {ix_file_decls ix_node_prod ix_p_file ix_list_items ix_kid ix_file_items ix_module_path : Nat} (fn : prog.funcs[ix_file_decls]? = some (src_file_decls ix_node_prod ix_p_file ix_list_items ix_kid ix_file_items ix_module_path)) (np : prims.isPrim ix_file_decls = false)
-    (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
-    (ext_p_file : Certified (∀ {n : Nat}, Stmt_p_file prog prims ix_p_file n))
-    (ext_list_items : Certified (∀ {n : Nat}, Stmt_list_items prog prims ix_list_items n))
-    (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
-    (ext_file_items : Certified (∀ {n : Nat}, Stmt_file_items prog prims ix_file_items n))
-    (ext_module_path : Certified (∀ {n : Nat}, Stmt_module_path prog prims ix_module_path n)) {n : Nat} :
-    Stmt_file_decls prog prims ix_file_decls n := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_file_decls] at h
-  faithful [Lanius.Mini.fileDecls]
-
-theorem proof_file_items {prog : SrcProgram} {prims : Prims} {ix_file_items ix_file_collected ix_collect ix_no_decls : Nat} (fn : prog.funcs[ix_file_items]? = some (src_file_items ix_file_collected ix_collect ix_no_decls)) (np : prims.isPrim ix_file_items = false)
-    (ext_file_collected : Certified (∀ {n : Nat}, Stmt_file_collected prog prims ix_file_collected n))
-    (ext_collect : Certified (∀ {n : Nat}, Stmt_collect prog prims ix_collect n))
-    (ext_no_decls : Certified (∀ {n : Nat}, Stmt_no_decls prog prims ix_no_decls n)) {n : Nat} :
-    Stmt_file_items prog prims ix_file_items n := by
-  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_file_items] at h
-  faithful [Lanius.Mini.fileItems]
 
 theorem proof_fns_decls {prog : SrcProgram} {prims : Prims} {ix_fns_decls ix_empty_of_mini_selfhost_TypeDecl ix_empty_of_mini_selfhost_ConstDecl ix_empty_of_mini_selfhost_ImportDecl ix_empty_of_mini_selfhost_AliasDecl ix_empty_of_mini_selfhost_ImplDecl : Nat} (fn : prog.funcs[ix_fns_decls]? = some (src_fns_decls ix_empty_of_mini_selfhost_TypeDecl ix_empty_of_mini_selfhost_ConstDecl ix_empty_of_mini_selfhost_ImportDecl ix_empty_of_mini_selfhost_AliasDecl ix_empty_of_mini_selfhost_ImplDecl)) (np : prims.isPrim ix_fns_decls = false)
     (ext_empty_of_mini_selfhost_TypeDecl : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_TypeDecl prog prims ix_empty_of_mini_selfhost_TypeDecl n))
@@ -182,19 +144,19 @@ theorem proof_impl_methods {prog : SrcProgram} {prims : Prims} {ix_impl_methods 
   simp only [src_impl_methods] at h
   faithful [Lanius.Mini.implMethods]
 
-theorem proof_item_decls {prog : SrcProgram} {prims : Prims} {ix_item_decls ix_node_prod ix_kid ix_no_decls ix_empty_of_mini_selfhost_List_usize ix_item_body ix_empty_of_mini_selfhost_TypeDecl ix_empty_of_mini_selfhost_FnDecl ix_empty_of_mini_selfhost_ImportDecl ix_empty_of_mini_selfhost_AliasDecl ix_empty_of_mini_selfhost_ImplDecl ix_p_module ix_path_spellings ix_p_struct ix_p_enum ix_type_decls ix_type_decl ix_p_fn ix_fns_decls ix_cons_fn_decl ix_fn_decl_of ix_type_params ix_p_const ix_single_of_mini_selfhost_ConstDecl ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_impl_inherent ix_impl_methods ix_p_impl_trait ix_with_impl ix_p_import ix_p_import_path ix_import_decls ix_p_type_alias ix_p_where_none ix_alias_decls ix_free_params ix_p_extern_fn ix_host_extern ix_extern_tree ix_p_trait : Nat} (fn : prog.funcs[ix_item_decls]? = some (src_item_decls ix_node_prod ix_kid ix_no_decls ix_empty_of_mini_selfhost_List_usize ix_item_body ix_empty_of_mini_selfhost_TypeDecl ix_empty_of_mini_selfhost_FnDecl ix_empty_of_mini_selfhost_ImportDecl ix_empty_of_mini_selfhost_AliasDecl ix_empty_of_mini_selfhost_ImplDecl ix_p_module ix_path_spellings ix_p_struct ix_p_enum ix_type_decls ix_type_decl ix_p_fn ix_fns_decls ix_cons_fn_decl ix_fn_decl_of ix_type_params ix_p_const ix_single_of_mini_selfhost_ConstDecl ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_impl_inherent ix_impl_methods ix_p_impl_trait ix_with_impl ix_p_import ix_p_import_path ix_import_decls ix_p_type_alias ix_p_where_none ix_alias_decls ix_free_params ix_p_extern_fn ix_host_extern ix_extern_tree ix_p_trait)) (np : prims.isPrim ix_item_decls = false)
+theorem proof_item_decls {prog : SrcProgram} {prims : Prims} {ix_item_decls ix_node_prod ix_kid ix_empty_of_mini_selfhost_List_usize ix_item_body ix_no_decls ix_p_module ix_path_spellings ix_empty_of_mini_selfhost_TypeDecl ix_empty_of_mini_selfhost_FnDecl ix_empty_of_mini_selfhost_ImportDecl ix_empty_of_mini_selfhost_AliasDecl ix_empty_of_mini_selfhost_ImplDecl ix_p_struct ix_p_enum ix_type_decls ix_type_decl ix_p_fn ix_fns_decls ix_cons_fn_decl ix_fn_decl_of ix_type_params ix_p_const ix_single_of_mini_selfhost_ConstDecl ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_impl_inherent ix_impl_methods ix_p_impl_trait ix_with_impl ix_p_import ix_p_import_path ix_import_decls ix_p_type_alias ix_p_where_none ix_alias_decls ix_free_params ix_p_extern_fn ix_host_extern ix_extern_tree ix_p_trait : Nat} (fn : prog.funcs[ix_item_decls]? = some (src_item_decls ix_node_prod ix_kid ix_empty_of_mini_selfhost_List_usize ix_item_body ix_no_decls ix_p_module ix_path_spellings ix_empty_of_mini_selfhost_TypeDecl ix_empty_of_mini_selfhost_FnDecl ix_empty_of_mini_selfhost_ImportDecl ix_empty_of_mini_selfhost_AliasDecl ix_empty_of_mini_selfhost_ImplDecl ix_p_struct ix_p_enum ix_type_decls ix_type_decl ix_p_fn ix_fns_decls ix_cons_fn_decl ix_fn_decl_of ix_type_params ix_p_const ix_single_of_mini_selfhost_ConstDecl ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_impl_inherent ix_impl_methods ix_p_impl_trait ix_with_impl ix_p_import ix_p_import_path ix_import_decls ix_p_type_alias ix_p_where_none ix_alias_decls ix_free_params ix_p_extern_fn ix_host_extern ix_extern_tree ix_p_trait)) (np : prims.isPrim ix_item_decls = false)
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
-    (ext_no_decls : Certified (∀ {n : Nat}, Stmt_no_decls prog prims ix_no_decls n))
     (ext_empty_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_List_usize prog prims ix_empty_of_mini_selfhost_List_usize n))
     (ext_item_body : Certified (∀ {n : Nat}, Stmt_item_body prog prims ix_item_body n))
+    (ext_no_decls : Certified (∀ {n : Nat}, Stmt_no_decls prog prims ix_no_decls n))
+    (ext_p_module : Certified (∀ {n : Nat}, Stmt_p_module prog prims ix_p_module n))
+    (ext_path_spellings : Certified (∀ {n : Nat}, Stmt_path_spellings prog prims ix_path_spellings n))
     (ext_empty_of_mini_selfhost_TypeDecl : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_TypeDecl prog prims ix_empty_of_mini_selfhost_TypeDecl n))
     (ext_empty_of_mini_selfhost_FnDecl : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_FnDecl prog prims ix_empty_of_mini_selfhost_FnDecl n))
     (ext_empty_of_mini_selfhost_ImportDecl : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_ImportDecl prog prims ix_empty_of_mini_selfhost_ImportDecl n))
     (ext_empty_of_mini_selfhost_AliasDecl : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_AliasDecl prog prims ix_empty_of_mini_selfhost_AliasDecl n))
     (ext_empty_of_mini_selfhost_ImplDecl : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_ImplDecl prog prims ix_empty_of_mini_selfhost_ImplDecl n))
-    (ext_p_module : Certified (∀ {n : Nat}, Stmt_p_module prog prims ix_p_module n))
-    (ext_path_spellings : Certified (∀ {n : Nat}, Stmt_path_spellings prog prims ix_path_spellings n))
     (ext_p_struct : Certified (∀ {n : Nat}, Stmt_p_struct prog prims ix_p_struct n))
     (ext_p_enum : Certified (∀ {n : Nat}, Stmt_p_enum prog prims ix_p_enum n))
     (ext_type_decls : Certified (∀ {n : Nat}, Stmt_type_decls prog prims ix_type_decls n))

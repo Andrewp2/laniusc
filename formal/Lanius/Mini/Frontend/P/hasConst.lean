@@ -2,7 +2,7 @@ module
 
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.armsOf
-import Lanius.Mini.Frontend.P.collectedWith
+import Lanius.Mini.Frontend.P.collect
 import Lanius.Mini.Frontend.P.consTreeTail
 import Lanius.Mini.Frontend.P.consTys
 import Lanius.Mini.Frontend.P.findConst

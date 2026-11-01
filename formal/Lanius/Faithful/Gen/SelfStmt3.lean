@@ -147,10 +147,6 @@ abbrev Stmt_single_of_mini_selfhost_List_mini_selfhost_List_usize (prog : SrcPro
   ∀ {x0 : List (List Nat)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 31 (RepList 25 RepNat)) x0 v0 →
     (RepList 125 (RepList 31 (RepList 25 RepNat))) ([x0]) w
 
-abbrev Stmt_single_of_mini_selfhost_MFunc (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.MFunc} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepMFunc x0 v0 →
-    (RepList 167 RepMFunc) ([x0]) w
-
 abbrev Stmt_single_of_mini_selfhost_SrcType (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcType x0 v0 →
     (RepList 73 RepSrcType) ([x0]) w

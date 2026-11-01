@@ -17,19 +17,25 @@ set_option linter.unusedVariables false
 
 namespace Lanius.Mini
 
-/-- Read instance i of the table, append the instances it calls that are new, and go on with i + 1 until the table is done. -/
+/-- Read instance i of the table, append the instances it calls that are new, and go on with i + 1 until the table is done. The functions fs reversed, in front of acc. -/
+def funcsOnto (fs : List MFunc) (acc : List MFunc) : List MFunc :=
+  match fs with
+  | [] => acc
+  | f :: rest => funcsOnto rest (f :: acc)
+
+/-- done holds the functions read so far, the last first, so each step conses one (appending copied every function before it). -/
 def monoLoop (fuel : Nat) (rfuel : Nat) (decls : Decls) (table : List Inst) (done : List MFunc) (i : Nat) : Option Mono :=
   if fuel = 0 then
     none
   else
     match table[i]? with
-    | none => some ({ table := table, funcs := done } : Mono)
+    | none => some ({ table := table, funcs := funcsOnto done [] } : Mono)
     | some inst =>
       let nfuel : Nat := fuel - 1
       let nf : Option MFunc := readInst rfuel decls inst
       match nf with
       | none => none
-      | some mf => monoLoop nfuel rfuel decls (addInsts table (stmtCalls mf.body)) (done ++ [mf]) (i + 1)
+      | some mf => monoLoop nfuel rfuel decls (addInsts table (stmtCalls mf.body)) (mf :: done) (i + 1)
 
 /-- The types a statement binds, in order (a match's result, then its scrutinee's). -/
 def stmtTys (m : MStmt) : List Ty :=

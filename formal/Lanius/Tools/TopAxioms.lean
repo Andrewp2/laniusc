@@ -25,8 +25,9 @@ constructors, stopping at the computations the theorems are about
 (`cuts`: the compiler, the front end's code, the ELF writer and the self
 program, which are not trusted), each with its type and body. It changes
 whenever a trusted definition (Core's semantics, the x86 model, the reading,
-the statements' own definitions) does. Run from `formal/`, after the modules
-are built. -/
+the statements' own definitions) does, and not when a definition only moves
+to another module (a private name's module prefix is dropped). Run from
+`formal/`, after the modules are built. -/
 
 open Lean
 
@@ -108,6 +109,17 @@ def project (env : Environment) (n : Name) : Bool :=
   | some i => (`Lanius).isPrefixOf (env.header.moduleNames[i.toNat]!)
   | none => false
 
+/-- A private name without its module (`_private.M.0.x` is `x`): which
+module a definition sits in is not part of what it says, and the generated
+modules move definitions between files. -/
+def stable (n : Name) : Name := privateToUserName n
+
+/-- `e`'s structural hash, with each constant's private prefix dropped. -/
+def stableHash (e : Expr) : UInt64 :=
+  (e.replace fun
+    | .const n us => if isPrivateName n then some (.const (stable n) us) else none
+    | _ => none).hash
+
 /-- The project constants the statements reach, each with its hash. -/
 def definitions (env : Environment) : Array (Name × UInt64) := Id.run do
   let env := env.setExporting false
@@ -124,16 +136,16 @@ def definitions (env : Environment) : Array (Name × UInt64) := Id.run do
     if seen.contains n || cut.contains n || !project env n then continue
     seen := seen.insert n
     let some ci := env.find? n | continue
-    let mut digest := ci.type.hash
+    let mut digest := stableHash ci.type
     todo := todo ++ ci.type.getUsedConstants
     match ci with
-    | .defnInfo v => digest := mixHash digest v.value.hash; todo := todo ++ v.value.getUsedConstants
-    | .opaqueInfo v => digest := mixHash digest v.value.hash; todo := todo ++ v.value.getUsedConstants
+    | .defnInfo v => digest := mixHash digest (stableHash v.value); todo := todo ++ v.value.getUsedConstants
+    | .opaqueInfo v => digest := mixHash digest (stableHash v.value); todo := todo ++ v.value.getUsedConstants
     | .inductInfo v => todo := todo ++ v.ctors.toArray
     | .ctorInfo v => todo := todo.push v.induct
     | _ => pure ()
-    out := out.push (n, digest)
-  return out.qsort fun a b => Name.quickLt a.1 b.1
+    out := out.push (stable n, digest)
+  return out.qsort fun a b => Name.quickLt a.1 b.1 || (a.1 == b.1 && a.2 < b.2)
 
 def check (defsFile : Option String) : IO UInt32 := do
   let env ← load (tops.map (·.1))

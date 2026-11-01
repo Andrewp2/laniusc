@@ -110,9 +110,6 @@ def src_length_of_mini_selfhost_List_usize (ix_plus : Nat) (ix_length_of_mini_se
 def src_single_of_mini_selfhost_List_mini_selfhost_List_usize (ix_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_List_usize : Nat) : SrcFunc := { params := [{ id := 10, ty := ty27 }], ret := ty129, body := SrcStmt.returnEval (SrcEff.eVariant ty129 1 [SrcEff.ePure (SrcExpr.local 10), SrcEff.eCall ix_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_List_usize [SrcEff.eVariant ty129 0 []]]) }
 
 /-- mini::selfhost::single -/
-def src_single_of_mini_selfhost_MFunc (ix_boxed_of_mini_selfhost_List_mini_selfhost_MFunc : Nat) : SrcFunc := { params := [{ id := 10, ty := ty193 }], ret := ty195, body := SrcStmt.returnEval (SrcEff.eVariant ty195 1 [SrcEff.ePure (SrcExpr.local 10), SrcEff.eCall ix_boxed_of_mini_selfhost_List_mini_selfhost_MFunc [SrcEff.eVariant ty195 0 []]]) }
-
-/-- mini::selfhost::single -/
 def src_single_of_mini_selfhost_SrcType (ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcType : Nat) : SrcFunc := { params := [{ id := 10, ty := ty9 }], ret := ty71, body := SrcStmt.returnEval (SrcEff.eVariant ty71 1 [SrcEff.ePure (SrcExpr.local 10), SrcEff.eCall ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcType [SrcEff.eVariant ty71 0 []]]) }
 
 /-- mini::selfhost::single -/

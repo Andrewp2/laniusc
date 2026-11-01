@@ -1,10 +1,14 @@
 module
 
 public import Lanius.Mini.Frontend.Types
+import Lanius.Mini.Compiler.P.arithShiftRight
 import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Frontend.P.distinct
 import Lanius.Mini.Frontend.P.hasKids
+import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.methodsOf
+import Lanius.Mini.Frontend.P.moduleOr
+import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.shrFirst
 import Lanius.Mini.Frontend.P.textSelf
 
@@ -14,6 +18,30 @@ public section
 set_option linter.unusedVariables false
 
 namespace Lanius.Mini
+
+/-- The items' declarations, in order: each item's in front of the rest's, so each list is copied once (appending to what came before copied it once per item). -/
+def collect (fuel : Nat) (home : List (List Nat)) (items : List CTree) : Option Decls :=
+  match items with
+  | [] => some noDecls
+  | item :: rest => collectFront (itemDecls fuel home item) (collect fuel home rest)
+
+def fileCollected (home : List (List Nat)) (decls : Option Decls) : Option FileDecls :=
+  match decls with
+  | none => none
+  | some d => some ({ home := home, decls := d } : FileDecls)
+
+def fileItems (fuel : Nat) (home : Option (List (List Nat))) (items : List CTree) : Option FileDecls :=
+  match home with
+  | none => none
+  | some m => fileCollected m (collect fuel m items)
+
+def fileDecls (fuel : Nat) (root : CTree) : Option FileDecls :=
+  if nodeProd root = (0) then
+    match listItems fuel (kid root 0) with
+    | none => none
+    | some items => fileItems fuel (modulePath fuel items) items
+  else
+    none
 
 def collectedWith (c : Collected) (f : FileDecls) : Collected :=
   ({ decls := ({ types := c.decls.types ++ f.decls.types, fns := c.decls.fns ++ f.decls.fns, consts := c.decls.consts ++ f.decls.consts, imports := c.decls.imports ++ f.decls.imports, aliases := c.decls.aliases ++ f.decls.aliases, impls := c.decls.impls ++ f.decls.impls } : Decls), modules := c.modules ++ [f.home] } : Collected)

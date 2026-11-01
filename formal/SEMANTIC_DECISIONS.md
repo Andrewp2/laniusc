@@ -1272,15 +1272,25 @@ compilation of what that text means, and gives itself back.
     (`link_onto`, equal to `link_from` by `linkOnto_eq`) instead of
     concatenating whole function images: 5.6 to 5.2 GiB.
 
-  The peak resident set is still at the 4 GiB cap, since 5.2 GiB is
-  allocated. What is left is in each list step: `unbox` copies the node
-  out of its box (for a `List<FnDecl>` node, the whole `FnDecl`), and it
-  and `boxed` build slice headers through `typed_slice_from_storage`. The
-  front end takes 2.3 GiB (`find_fn` walking `decls.fns`, `concat<FnDecl>`),
-  lowering's `concat<Instr>` about 0.7 GiB, and encoding about 1.3 GiB
-  (each byte is a cons cell made by `encode` and copied once by `concat`).
-  Lowering `unbox` without the copy, or a table for the front end's
-  lookups, would take most of it.
+  The front end then built two lists by appending to what it had read so
+  far, so each step copied everything before it: `collect` appended each
+  item's declarations to the file's (each `FnDecl` node copied once per
+  later item), and `mono_loop` appended each function it read to the
+  ones before. `collect` now puts each item's declarations in front of
+  the rest's (`collect_front`; `collect_sound` is now `collect … = some
+  d → Collect home items d`), and `mono_loop` conses each function onto
+  the ones read so far, the last first, and reverses them once at the end
+  (`funcs_onto`, `funcsOnto_eq`; `monoLoop_sound` reads `done.reverse`).
+  The relations `Collect` and `MonoR` are unchanged. The front end's heap
+  went from about 2.1 GiB to 0.7 GiB, and the whole run's from 5.2 to
+  about 3.9 GiB, in the same time (the native run about 110 s). The
+  lookups (`find_fn`, `get`) allocate nothing: `unbox` reads the node
+  through a slice held in slots. The peak resident set is still at the
+  4 GiB cap, since about 3.9 GiB is allocated: what is left is mostly
+  the encoder (each instruction's bytes built as a list and copied once
+  by `concat` onto the rest, and `slot_load`/`slot_store` copying their
+  opcode bytes onto `le32`'s, about 1.5 GiB), lowering's
+  `concat<Instr>` and the validator's facts.
 
 ### The design of writes through references (decided 10-31, F5)
 

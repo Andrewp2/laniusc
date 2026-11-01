@@ -622,19 +622,25 @@ theorem append_noDecls (a : Decls) : a.append noDecls = a := by
 
 theorem joinDecls_some (a d : Decls) : joinDecls a (some d) = some (a.append d) := rfl
 
-theorem collect_sound : ∀ {fuel : Nat} {home : ModPath} {items : List CTree} {acc d : Decls},
-    collect fuel home items acc = some d → ∃ e, Collect home items e ∧ d = acc.append e
-  | _, _, [], acc, d, h => by
+theorem collect_sound : ∀ {fuel : Nat} {home : ModPath} {items : List CTree} {d : Decls},
+    collect fuel home items = some d → Collect home items d
+  | _, _, [], d, h => by
     simp only [collect, Option.some.injEq] at h
-    exact ⟨noDecls, .nil, by rw [append_noDecls, ← h]⟩
-  | fuel, home, item :: rest, acc, d, h => by
+    subst h
+    exact .nil
+  | fuel, home, item :: rest, d, h => by
     simp only [collect] at h
     cases hi : itemDecls fuel home item with
-    | none => rw [hi] at h; simp [joinDecls] at h
+    | none => rw [hi] at h; simp [collectFront] at h
     | some x =>
-      rw [hi, joinDecls_some] at h
-      obtain ⟨e, ce, rfl⟩ := collect_sound h
-      exact ⟨x.append e, .cons (itemDecls_sound hi) ce, append_assoc _ _ _⟩
+      rw [hi] at h
+      simp only [collectFront] at h
+      cases hr : collect fuel home rest with
+      | none => rw [hr] at h; simp [joinDecls] at h
+      | some e =>
+        rw [hr, joinDecls_some, Option.some.injEq] at h
+        subst h
+        exact .cons (itemDecls_sound hi) (collect_sound hr)
 
 theorem fileDecls_sound {fuel : Nat} {root : CTree} {f : FileDecls} (h : fileDecls fuel root = some f) :
     FileDeclsR root f := by
@@ -651,14 +657,12 @@ theorem fileDecls_sound {fuel : Nat} {root : CTree} {f : FileDecls} (h : fileDec
       | some m =>
         rw [hm] at h
         simp only [fileCollected] at h
-        cases hc : collect fuel m items noDecls with
+        cases hc : collect fuel m items with
         | none => rw [hc] at h; cases h
         | some d =>
           rw [hc, Option.some.injEq] at h
           subst h
-          obtain ⟨e, ce, rfl⟩ := collect_sound hc
-          rw [noDecls_append]
-          exact ⟨r, items, listItems_sound hi, modulePath_sound hm, ce⟩
+          exact ⟨r, items, listItems_sound hi, modulePath_sound hm, collect_sound hc⟩
   · rw [if_neg r] at h
     cases h
 

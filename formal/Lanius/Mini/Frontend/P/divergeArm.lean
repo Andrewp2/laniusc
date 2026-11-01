@@ -5,7 +5,7 @@ import Lanius.Mini.Compiler.P.arithShiftRight
 import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Frontend.P.armsOf
 import Lanius.Mini.Frontend.P.callParts
-import Lanius.Mini.Frontend.P.collectedWith
+import Lanius.Mini.Frontend.P.collect
 import Lanius.Mini.Frontend.P.consBinder
 import Lanius.Mini.Frontend.P.consBound
 import Lanius.Mini.Frontend.P.consTreeTail

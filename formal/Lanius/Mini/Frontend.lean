@@ -14,7 +14,7 @@ public import Lanius.Mini.Frontend.P.pathRef
 public import Lanius.Mini.Frontend.P.typePathSpellings
 public import Lanius.Mini.Frontend.P.moduleOr
 public import Lanius.Mini.Frontend.P.methodsOf
-public import Lanius.Mini.Frontend.P.collectedWith
+public import Lanius.Mini.Frontend.P.collect
 public import Lanius.Mini.Frontend.P.rootInsts
 public import Lanius.Mini.Frontend.P.findConst
 public import Lanius.Mini.Frontend.P.itemOf
@@ -85,7 +85,7 @@ public import Lanius.Mini.Frontend.P.externBody
 public import Lanius.Mini.Frontend.P.readDeclInst
 public import Lanius.Mini.Frontend.P.readInst
 public import Lanius.Mini.Frontend.P.effNamedTys
-public import Lanius.Mini.Frontend.P.monoLoop
+public import Lanius.Mini.Frontend.P.funcsOnto
 public import Lanius.Mini.Frontend.P.letClosed
 public import Lanius.Mini.Frontend.P.letStructClosed
 public import Lanius.Mini.Frontend.P.allocClosed

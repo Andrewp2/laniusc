@@ -39,11 +39,13 @@ stopping at the computations the theorems are about (`compileSource`,
 `linkObjects`, `elfFile`, `sourceProgramFiles`, `compileWords`,
 `frontEndWords` and the self program `Lanius.Faithful.Self.prog`, which are
 not trusted, section 10), with each one's type and body:
-definitions `0c187d1f00ec73fe` (4,230 constants). This covers Core's
+definitions `ecb99c1e574d7359` (4,230 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
-the statements' own definitions (section 2). `trusted_check.py` writes each
-constant's own hash to its work directory's `definitions.txt`, to find which
-one changed.
+the statements' own definitions (section 2). A private name is hashed
+without its module, so a definition that only moves between generated
+modules keeps its hash (the last change of the hash: this rule, no
+definition changed). `trusted_check.py` writes each constant's own hash to
+its work directory's `definitions.txt`, to find which one changed.
 
 ### Processes (`Lanius/Mini/Process.lean`)
 

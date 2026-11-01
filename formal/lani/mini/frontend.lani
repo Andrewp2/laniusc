@@ -1573,18 +1573,20 @@ pub fn item_decls(fuel: usize, home: List<List<usize>>, item: CTree) -> core::op
     return None;
 }
 
-pub fn collect(fuel: usize, home: List<List<usize>>, items: List<CTree>, acc: Decls) -> core::option::Option<Decls> {
-    return match (items) {
-        Nil -> Some(acc),
-        Cons(item, rest) -> collect_next(fuel, home, join_decls(acc, item_decls(fuel, home, item)), unbox(rest)),
+pub fn collect_front(first: core::option::Option<Decls>, rest: core::option::Option<Decls>) -> core::option::Option<Decls> {
+    return match (first) {
+        None -> None,
+        Some(d) -> join_decls(d, rest),
     };
 }
 
-// extract: inline
-fn collect_next(cfuel: usize, cmodule: List<List<usize>>, cacc: core::option::Option<Decls>, crest: List<CTree>) -> core::option::Option<Decls> {
-    return match (cacc) {
-        None -> None,
-        Some(d) -> collect(cfuel, cmodule, crest, d),
+// The items' declarations, in order: each item's in front of the rest's,
+// so each list is copied once (appending to what came before copied it
+// once per item).
+pub fn collect(fuel: usize, home: List<List<usize>>, items: List<CTree>) -> core::option::Option<Decls> {
+    return match (items) {
+        Nil -> Some(no_decls()),
+        Cons(item, rest) -> collect_front(item_decls(fuel, home, item), collect(fuel, home, unbox(rest))),
     };
 }
 
@@ -1604,7 +1606,7 @@ pub fn file_collected(home: List<List<usize>>, decls: core::option::Option<Decls
 pub fn file_items(fuel: usize, home: core::option::Option<List<List<usize>>>, items: List<CTree>) -> core::option::Option<FileDecls> {
     return match (home) {
         None -> None,
-        Some(m) -> file_collected(m, collect(fuel, m, items, no_decls())),
+        Some(m) -> file_collected(m, collect(fuel, m, items)),
     };
 }
 
@@ -9239,12 +9241,22 @@ pub struct Mono {
 
 // Read instance i of the table, append the instances it calls that are
 // new, and go on with i + 1 until the table is done.
+// The functions fs reversed, in front of acc.
+pub fn funcs_onto(fs: List<MFunc>, acc: List<MFunc>) -> List<MFunc> {
+    return match (fs) {
+        Nil -> acc,
+        Cons(f, rest) -> funcs_onto(unbox(rest), cons(f, acc)),
+    };
+}
+
+// done holds the functions read so far, the last first, so each step
+// conses one (appending copied every function before it).
 pub fn mono_loop(fuel: usize, rfuel: usize, decls: Decls, table: List<Inst>, done: List<MFunc>, i: usize) -> core::option::Option<Mono> {
     if (fuel == 0) {
         return None;
     }
     return match (get(table, i)) {
-        None -> Some(Mono { table: table, funcs: done }),
+        None -> Some(Mono { table: table, funcs: funcs_onto(done, empty()) }),
         Some(inst) -> mono_next(minus(fuel, 1), rfuel, decls, table, done, i, read_inst(rfuel, decls, inst)),
     };
 }
@@ -9253,7 +9265,7 @@ pub fn mono_loop(fuel: usize, rfuel: usize, decls: Decls, table: List<Inst>, don
 fn mono_next(nfuel: usize, nrfuel: usize, ndecls: Decls, ntable: List<Inst>, ndone: List<MFunc>, ni: usize, nf: core::option::Option<MFunc>) -> core::option::Option<Mono> {
     return match (nf) {
         None -> None,
-        Some(mf) -> mono_loop(nfuel, nrfuel, ndecls, add_insts(ntable, stmt_calls(mf.body)), concat(ndone, single(mf)), plus(ni, 1)),
+        Some(mf) -> mono_loop(nfuel, nrfuel, ndecls, add_insts(ntable, stmt_calls(mf.body)), cons(mf, ndone), plus(ni, 1)),
     };
 }
 
