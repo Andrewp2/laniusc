@@ -2087,6 +2087,11 @@
         "docs/stdlib-poll.md"
       ]
     },
+    "std::pthread": {
+      "guides": [
+        "docs/stdlib-threads.md"
+      ]
+    },
     "std::process": {
       "guides": [
         "docs/stdlib-process-context.md"

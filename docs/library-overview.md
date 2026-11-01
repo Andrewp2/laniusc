@@ -33,6 +33,12 @@ owner fields, and the interval-edit fixture shows under an in-program
 RLIMIT_AS denial that failed extraction leaves the source unchanged. Native receipts use the prebuilt compiler; the two registered
 Rust tests type-check and await a full test-binary run.
 The [concurrency increment](stdlib-concurrency.md) adds four modules for parallel
+The [`std::pthread`](stdlib-threads.md) increment runs native threads
+through `pthread_create`/`pthread_join`, with Lanius functions as C entries.
+Threads coordinate with std::sync's futex Mutex and Condvar. Its fixture
+checks parallel sums against the serial sum, an exact Mutex counter, a
+Condvar queue and 1,000 spawn/join pairs. `std::par` adds thread-crew sorts
+that pass the same model oracle.
 The [`std::uring`](stdlib-uring.md) increment drives io_uring through raw
 syscalls (setup, ring mmaps, enter). It adds read, write, readv, writev,
 openat, close, accept, recv and send operations, linked SQEs, and completion

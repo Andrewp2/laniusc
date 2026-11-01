@@ -58,9 +58,9 @@ def run(runner, mode, workers, keys):
 
 def expect(mode, keys):
     n = len(keys)
-    if mode in (0, 2, 6):
+    if mode in (0, 2, 6, 10):
         return struct.pack("<%dq" % n, *sorted(keys))
-    if mode in (1, 3):
+    if mode in (1, 3, 11):
         order = sorted(range(n), key=lambda i: keys[i])
         return struct.pack("<%dq" % n, *[keys[i] for i in order]) + struct.pack("<%dI" % n, *order)
     if mode == 4:
@@ -97,7 +97,7 @@ def main():
         n = rng.choice([0, 1, 2, 3, 7, 64, 255, 1000, 4097, rng.randrange(2, 70000), rng.randrange(65536, 300000)])
         workers = rng.choice([1, 2, 3, 4, 7, 8, 13])
         keys = keys_for(rng, shape, n)
-        for mode in range(10):
+        for mode in range(12):
             got, code = run(runner, mode, workers, keys)
             checked += 1
             if code != 0 or got != expect(mode, keys):

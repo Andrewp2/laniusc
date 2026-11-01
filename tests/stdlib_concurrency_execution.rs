@@ -209,7 +209,7 @@ fn par_sorts_map_reduce_and_scan_match_a_model() {
     shapes.push(vec![]);
     shapes.push(vec![-1]);
     for keys in &shapes {
-        for (mode, workers) in [(0u32, 7u32), (1, 8), (2, 1), (3, 1), (4, 3), (5, 8), (6, 4), (7, 5), (8, 8), (9, 1)] {
+        for (mode, workers) in [(0u32, 7u32), (1, 8), (2, 1), (3, 1), (4, 3), (5, 8), (6, 4), (7, 5), (8, 8), (9, 1), (10, 8), (11, 8)] {
             let mut input = Vec::new();
             for word in [mode, workers, keys.len() as u32] { input.extend_from_slice(&word.to_le_bytes()); }
             for key in keys { input.extend_from_slice(&key.to_le_bytes()); }
@@ -221,12 +221,12 @@ fn par_sorts_map_reduce_and_scan_match_a_model() {
             assert_eq!(output.status.code(), Some(0), "mode {mode}");
             let mut expected = Vec::new();
             match mode {
-                0 | 2 | 6 => {
+                0 | 2 | 6 | 10 => {
                     let mut sorted = keys.clone();
                     sorted.sort();
                     for key in sorted { expected.extend_from_slice(&key.to_le_bytes()); }
                 }
-                1 | 3 => {
+                1 | 3 | 11 => {
                     let mut order: Vec<u32> = (0..keys.len() as u32).collect();
                     order.sort_by_key(|&i| keys[i as usize]);
                     for &i in &order { expected.extend_from_slice(&keys[i as usize].to_le_bytes()); }
