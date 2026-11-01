@@ -1340,6 +1340,11 @@
         "docs/extended-patch.md"
       ]
     },
+    "ext::pax": {
+      "guides": [
+        "docs/extended-pax.md"
+      ]
+    },
     "ext::percent": {
       "guides": [
         "docs/extended-percent.md"
@@ -1493,7 +1498,8 @@
     },
     "ext::tar": {
       "guides": [
-        "docs/extended-tar.md"
+        "docs/extended-tar.md",
+        "docs/extended-pax.md"
       ]
     },
     "ext::terminal": {
