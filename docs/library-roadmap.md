@@ -669,8 +669,6 @@ extended`.
 
 | Defect | Reproduction | Expected | Actual | Workaround |
 | --- | --- | --- | --- | --- |
-| `?` inside a comparison | `question_comparison.lani`: `if (three()? != 3) { return Ok(1); } return Ok(0);` with `three()` returning `Ok(3)` | exit 0 | exit 1, silently | bind first: `let v: i32 = three()?; if (v != 3)` |
-| Lost stores through a multi-element `[i64]` raw view | `i64_view_writes.lani`: `let words: [i64] = typed_slice_from_raw_parts<i64>(i32_array_data_ptr(storage), 4); words[2] = 5; return storage[4];` over a local `[i32; 8]` | exit 5 | exit 0, silently | one word per helper call, as `std::linux::store_word` does |
 | LNC0069 on `4000000000 as u64` (**fixed**) | `u64_cast_literal.lani`: `let value: u64 = 4000000000 as u64;` | compiles; exit 4 | exits 4: a literal directly under `as T` now takes T when T is a 32- or 64-bit integer ([details](../tests/fixtures/compiler_defects/README.md#cast-target-literals)) | none needed; `(1 + 4000000000) as u64` is still checked as i32 |
 | Untyped `let` of a generic trait-method result (**fixed**) | `untyped_generic_trait_result.lani`: `let got = reader.read(bytes, 0, 1);` with `R: core::io::Read`, then `unwrap(got)` | compiles; exit 1 on one stdin byte | exits 1; a call through a bound on an imported trait now takes the member's closed result ([details](../tests/fixtures/compiler_defects/README.md#bound-trait-results)). Before the fix, passing `got` to a nongeneric parameter compiled and died with SIGILL | none needed |
 | Untyped `let` of an open bound-trait result | `bound_trait_open_result.lani`: `let x = it.next();` with `I: core::iter::Iterator<i32>` | compiles; exit 6 | LNC0006 "type mismatch" at the `unwrap_or` | annotate the `let` type |
@@ -679,8 +677,16 @@ extended`.
 | LNC0008 labels pointing at `core/slice.lani:899` | `tests/fixtures/stdlib_borrowed_lookup/direct/negative_tree_set_reversed_comparator.lani` via `laniusc check --diagnostic-format json --stdlib-root stdlib`; S7's `candidate_slice_select_label.lani` and concrete/generic `select_nth_unstable` calls | primary label on the call lacking the bound (the fixture line with `rejected_lookup_bound`); code LNC0008 | with lang built 2026-10-28, every unsatisfied-bound rejection labeled `stdlib/core/slice.lani:899` (the `selection_engine<T,Natural<T>>` call in `select_nth_unstable`); S7's candidates compile correctly (not reproduced there), and the fixture has not been rechecked since | none; library APIs and bounds are unaffected. The label assertions of `tests/stdlib_borrowed_lookup_execution.rs` (13 negative fixtures) and `tests/stdlib_ordered_navigation_execution.rs` (4) depend on it |
 | Slow per-element code for `[u8]` loops (performance) | `byte_loop_codegen.lani`: `while (i < n) { if (data[base+i] == 10) { c += 1; } i += 1; }`, 10 passes over 16 MB | near `gcc -O0` on `byte_loop_codegen.c` (0.14 s; `-O2` 0.02 s) | 0.50 s, 2.8 ns/byte; about 43 instructions per iteration | move hot loops to `[i32]` class ids; fewer passes over bytes |
 
-The two silent miscompiles are the most dangerous: they produce wrong values
-with no diagnostic. `ext::pax`/`tgz` code avoids both shapes.
+Two former rows are resolved. The binary operator right after `value?` was
+dropped (`three()? != 3` was true, `three()? * 5` was 3) because the try took
+that operator's canonical anchor: the try is now anchored at its `?`, and `?`
+ends an operand for token retagging, so `value? - 1` also parses
+(`shaders/parser/hir/canonical/mark.slang`, `shaders/parser/tokens/to/kinds.slang`).
+The "lost" `[i64]` raw-view stores were not a compiler defect: a raw view of
+an 8-byte type stores element i at `pointer - 8 * i`, as `core::mem`
+documents, so the reproduction wrote below its storage; use
+`typed_slice_from_storage` for storage-relative views. Both are regressions in
+`tests/codegen_x86.rs`.
 
 The codegen row is a cost, not a wrong result. In `byte_loop_codegen.s`, each
 iteration copies the slice's three words (pointer, length, stride) into new
