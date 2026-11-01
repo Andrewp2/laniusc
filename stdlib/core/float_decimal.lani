@@ -4,6 +4,7 @@
 module core::float_decimal;
 import core::f32;
 import core::f64;
+import core::float_tables;
 import core::result;
 import core::slice;
 
@@ -86,10 +87,129 @@ impl Big {
         let i: i32 = 0; while (i < exponent && !budget.failed) { self.multiply_small(factor,budget); i += 1; }
     }
 }
-struct Config { fraction_bits: i32, bias: i32, fraction_mask: u64, sign: u64, infinity: u64, nan: u64, max_finite: u64, digits: i32, max_order: i32, min_order: i32 }
+// The el_* fields are Eisel-Lemire parameters: minimum unbiased exponent,
+// infinite biased exponent, decimal exponent range of nonzero/finite fast
+// results, and the exponent range where an exact product may need even rounding.
+struct Config { fraction_bits: i32, bias: i32, fraction_mask: u64, sign: u64, infinity: u64, nan: u64, max_finite: u64, digits: i32, max_order: i32, min_order: i32,
+    el_min_exponent: i32, el_infinite: i32, el_smallest: i32, el_largest: i32, el_round_min: i32, el_round_max: i32 }
 fn config(single: bool) -> Config {
-    if (single) { return Config { fraction_bits: 23, bias: 127, fraction_mask: 8388607, sign: 2147483648, infinity: 2139095040, nan: 2143289344, max_finite: 2139095039, digits: 9, max_order: 39, min_order: -46 }; }
-    return Config { fraction_bits: 52, bias: 1023, fraction_mask: 4503599627370495, sign: 9223372036854775808, infinity: 9218868437227405312, nan: 9221120237041090560, max_finite: 9218868437227405311, digits: 17, max_order: 309, min_order: -325 };
+    if (single) { return Config { fraction_bits: 23, bias: 127, fraction_mask: 8388607, sign: 2147483648, infinity: 2139095040, nan: 2143289344, max_finite: 2139095039, digits: 9, max_order: 39, min_order: -46,
+        el_min_exponent: -127, el_infinite: 255, el_smallest: -65, el_largest: 38, el_round_min: -17, el_round_max: 10 }; }
+    return Config { fraction_bits: 52, bias: 1023, fraction_mask: 4503599627370495, sign: 9223372036854775808, infinity: 9218868437227405312, nan: 9221120237041090560, max_finite: 9218868437227405311, digits: 17, max_order: 309, min_order: -325,
+        el_min_exponent: -1023, el_infinite: 2047, el_smallest: -342, el_largest: 308, el_round_min: -4, el_round_max: 23 };
+}
+// Fast paths. Each either returns the exact correctly rounded result or
+// reports failure, in which case the exact big-integer algorithm runs.
+struct Wide { high: u64, low: u64 }
+fn multiply_wide(a: u64, b: u64) -> Wide {
+    let mask: u64 = 4294967295;
+    let a_low: u64 = a & mask; let a_high: u64 = a >> 32; let b_low: u64 = b & mask; let b_high: u64 = b >> 32;
+    let low_low: u64 = a_low*b_low; let high_low: u64 = a_high*b_low; let low_high: u64 = a_low*b_high; let high_high: u64 = a_high*b_high;
+    let cross: u64 = (low_low >> 32) + (high_low & mask) + low_high;
+    return Wide { high: high_high + (high_low >> 32) + (cross >> 32), low: ((cross & mask) << 32) | (low_low & mask) };
+}
+// floor(q * log2(10)) + 63 for |q| <= 400, as in Eisel-Lemire.
+fn binary_power(q: i32) -> i32 {
+    let t: i32 = q*217706; if (t >= 0) { return t/65536 + 63; } return 0-((0-t+65535)/65536) + 63;
+}
+// Eisel-Lemire: w * 10^q (w nonzero, at most 19 digits) to positive IEEE bits,
+// or u64::MAX when the truncated 128-bit product cannot decide the rounding.
+fn eisel_lemire(q: i32, digits: u64, cfg: Config) -> u64 {
+    let fail: u64 = 18446744073709551615;
+    if (digits == 0 || q < cfg.el_smallest) { return 0; }
+    if (q > cfg.el_largest) { return cfg.infinity; }
+    let w: u64 = digits; let zeros: i32 = 0;
+    while ((w >> 63) == 0) { w = w << 1; zeros += 1; }
+    let mask: u64 = fail >> (cfg.fraction_bits+3);
+    let first: Wide = multiply_wide(w,core::float_tables::pow5_high(q)); let low: u64 = first.low; let high: u64 = first.high;
+    if ((high & mask) == mask) {
+        let second: Wide = multiply_wide(w,core::float_tables::pow5_low(q));
+        if (low > fail-second.high) { low = second.high-(fail-low)-1; high += 1; } else { low += second.high; }
+    }
+    if (low == fail && (q < -27 || q > 55)) { return fail; }
+    let upper: i32 = (high >> 63) as i32; let shift: i32 = upper+64-cfg.fraction_bits-3;
+    let mantissa: u64 = high >> shift;
+    let power2: i32 = binary_power(q)+upper-zeros-cfg.el_min_exponent;
+    if (power2 <= 0) {
+        if (1-power2 >= 64) { return 0; }
+        mantissa = mantissa >> (1-power2); mantissa += mantissa & 1; mantissa = mantissa >> 1;
+        return mantissa;
+    }
+    let below: u64 = 1; below = (below << shift)-1;
+    if (low <= 1 && q >= cfg.el_round_min && q <= cfg.el_round_max && (mantissa & 3) == 1 && (high & below) == 0) { mantissa -= 1; }
+    mantissa += mantissa & 1; mantissa = mantissa >> 1;
+    let hidden: u64 = 1; hidden = hidden << cfg.fraction_bits;
+    if (mantissa >= hidden*2) { mantissa = hidden; power2 += 1; }
+    mantissa = mantissa & cfg.fraction_mask;
+    if (power2 >= cfg.el_infinite) { return cfg.infinity; }
+    return ((power2 as u64) << cfg.fraction_bits) | mantissa;
+}
+struct DiyFp { f: u64, e: i32 }
+fn normalized(f: u64, e: i32) -> DiyFp {
+    let value: u64 = f; let exponent: i32 = e;
+    while ((value >> 63) == 0) { value = value << 1; exponent -= 1; }
+    return DiyFp { f: value, e: exponent };
+}
+fn times(x: DiyFp, y: DiyFp) -> DiyFp {
+    let mask: u64 = 4294967295;
+    let a: u64 = x.f >> 32; let b: u64 = x.f & mask; let c: u64 = y.f >> 32; let d: u64 = y.f & mask;
+    let ac: u64 = a*c; let bc: u64 = b*c; let ad: u64 = a*d; let bd: u64 = b*d;
+    let middle: u64 = (bd >> 32) + (ad & mask) + (bc & mask) + 2147483648;
+    return DiyFp { f: ac + (ad >> 32) + (bc >> 32) + (middle >> 32), e: x.e + y.e + 64 };
+}
+struct Shortest { ok: bool, coefficient: u64, exponent: i32 }
+fn weed(coefficient: u64, distance_high: u64, unsafe_interval: u64, rest_in: u64, ten_kappa: u64, unit: u64) -> Shortest {
+    let rest: u64 = rest_in; let digits: u64 = coefficient;
+    let small: u64 = distance_high-unit; let big: u64 = distance_high+unit;
+    while (rest < small && unsafe_interval-rest >= ten_kappa && (rest+ten_kappa < small || small-rest >= rest+ten_kappa-small)) { digits -= 1; rest += ten_kappa; }
+    let fail: Shortest = Shortest { ok: false, coefficient: 0, exponent: 0 };
+    if (rest < big && unsafe_interval-rest >= ten_kappa && (rest+ten_kappa < big || big-rest > rest+ten_kappa-big)) { return fail; }
+    if (2*unit <= rest && rest <= unsafe_interval-4*unit) { return Shortest { ok: true, coefficient: digits, exponent: 0 }; }
+    return fail;
+}
+// Grisu3 (Loitsch 2010): shortest digits inside a conservatively narrowed
+// interval, verified closest; ok is false when the 64-bit error bound cannot
+// prove the result, and the exact algorithm decides instead.
+fn grisu(absolute: u64, cfg: Config) -> Shortest {
+    let fail: Shortest = Shortest { ok: false, coefficient: 0, exponent: 0 };
+    let value: Dyadic = dyadic(absolute,cfg);
+    let w: DiyFp = normalized(value.mantissa,value.exponent);
+    let plus: DiyFp = normalized((value.mantissa << 1)+1,value.exponent-1);
+    let minus: DiyFp = DiyFp { f: (value.mantissa << 1)-1, e: value.exponent-1 };
+    if ((absolute & cfg.fraction_mask) == 0 && (absolute >> cfg.fraction_bits) > 1) { minus = DiyFp { f: (value.mantissa << 2)-1, e: value.exponent-2 }; }
+    minus = DiyFp { f: minus.f << (minus.e-plus.e), e: plus.e };
+    let lowest: i32 = -60-(w.e+64); let highest: i32 = -32-(w.e+64);
+    let index: i32 = ((lowest+1220)*10)/266-1; if (index < 0) { index = 0; }
+    while (index < core::float_tables::CACHED_COUNT-1 && core::float_tables::cached_exponent(index) < lowest) { index += 1; }
+    while (index > 0 && core::float_tables::cached_exponent(index) > highest) { index -= 1; }
+    let ten: DiyFp = DiyFp { f: core::float_tables::cached_significand(index), e: core::float_tables::cached_exponent(index) };
+    if (ten.e < lowest || ten.e > highest) { return fail; }
+    let scaled: DiyFp = times(w,ten); let low: DiyFp = times(minus,ten); let high: DiyFp = times(plus,ten);
+    let unit: u64 = 1;
+    let too_low: u64 = low.f-unit; let too_high: u64 = high.f+unit; let unsafe_interval: u64 = too_high-too_low;
+    let shift: i32 = 0-scaled.e; let one: u64 = 1; one = one << shift;
+    let integrals: u64 = too_high >> shift; let fractionals: u64 = too_high & (one-1);
+    let divisor: u64 = 1; let kappa: i32 = 1;
+    if (integrals == 0) { divisor = 0; kappa = 0; } else { while (divisor*10 <= integrals) { divisor *= 10; kappa += 1; } }
+    let coefficient: u64 = 0; let count: i32 = 0; let decimal: i32 = 0-core::float_tables::cached_decimal(index);
+    while (kappa > 0) {
+        coefficient = coefficient*10+integrals/divisor; count += 1; integrals = integrals%divisor; kappa -= 1;
+        let rest: u64 = (integrals << shift)+fractionals;
+        if (rest < unsafe_interval) {
+            let result: Shortest = weed(coefficient,too_high-scaled.f,unsafe_interval,rest,divisor << shift,unit);
+            result.exponent = decimal+kappa; return result;
+        }
+        divisor = divisor/10;
+    }
+    while (count < 19) {
+        fractionals *= 10; unit *= 10; unsafe_interval *= 10;
+        coefficient = coefficient*10+(fractionals >> shift); count += 1; fractionals = fractionals & (one-1); kappa -= 1;
+        if (fractionals < unsafe_interval) {
+            let result: Shortest = weed(coefficient,(too_high-scaled.f)*unit,unsafe_interval,fractionals,one,unit);
+            result.exponent = decimal+kappa; return result;
+        }
+    }
+    return fail;
 }
 struct Dyadic { mantissa: u64, exponent: i32 }
 fn dyadic(bits: u64, cfg: Config) -> Dyadic {
@@ -122,15 +242,19 @@ fn parse_bits(input: core::slice::View<u8>, scratch: core::slice::View<u32>, lim
     if (at < input.length && (input.values[input.start+at] == 43 || input.values[input.start+at] == 45)) { if (input.values[input.start+at] == 45) { sign = cfg.sign; } at += 1; }
     let known: i32 = special(input,at); if (known == 1) { return core::result::Ok(sign | cfg.infinity); } if (known == 2) { return core::result::Ok(sign | cfg.nan); }
     let numerator: Big = big(scratch,0); numerator.set(0,budget.borrow()); let denominator: Big = big(scratch,1); let temporary: Big = big(scratch,2); let shifted: Big = big(scratch,3);
-    let digits: i32 = 0; let significant: i32 = 0; let fraction: i32 = 0; let dot: bool = false; let nonzero: bool = false;
+    let digits: i32 = 0; let significant: i32 = 0; let fast: u64 = 0; let fraction: i32 = 0; let dot: bool = false; let nonzero: bool = false;
+    // First pass: syntax, digit counts and the leading 19 significant digits.
+    // The exact numerator is built only if the fast path cannot decide.
+    let mantissa_start: i32 = at;
     while (at < input.length) {
         let byte: u8 = input.values[input.start+at];
         if (byte >= 48 && byte <= 57) {
             if (digits == limits.max_digits) { return core::result::Err(Error::DigitLimit); } digits += 1; if (dot) { fraction += 1; }
-            if (byte != 48) { nonzero = true; } if (nonzero) { significant += 1; }
-            numerator.multiply_small(10,budget.borrow()); numerator.add_small((byte-48) as u32,budget.borrow()); if (budget.failed) { return core::result::Err(Error::WorkLimit); } at += 1;
+            if (byte != 48) { nonzero = true; } if (nonzero) { significant += 1; if (significant <= 19) { fast = fast*10+((byte-48) as u64); } }
+            at += 1;
         } else { if (byte == 46 && !dot) { dot = true; at += 1; } else { break; } }
     }
+    let mantissa_end: i32 = at;
     if (digits == 0) { return core::result::Err(Error::Invalid(at)); }
     let exponent: i32 = 0;
     if (at < input.length && (input.values[input.start+at] == 101 || input.values[input.start+at] == 69)) {
@@ -142,6 +266,24 @@ fn parse_bits(input: core::slice::View<u8>, scratch: core::slice::View<u32>, lim
     if (at != input.length) { return core::result::Err(Error::Invalid(at)); } if (!nonzero) { return core::result::Ok(sign); }
     exponent -= fraction; let order: i32 = exponent+significant-1;
     if (order > cfg.max_order) { return core::result::Ok(sign | cfg.infinity); } if (order < cfg.min_order) { return core::result::Ok(sign); }
+    // Charged like a short exact step, so tiny budgets still report WorkLimit.
+    budget.pay(100); if (budget.failed) { return core::result::Err(Error::WorkLimit); }
+    if (significant <= 19) {
+        // All significant digits fit in fast, so the value is fast * 10^exponent.
+        let quick: u64 = eisel_lemire(exponent,fast,cfg);
+        if (quick != 18446744073709551615) { return core::result::Ok(sign | quick); }
+    } else {
+        // The value lies in [fast, fast+1) * 10^q; equal roundings decide it.
+        let q: i32 = exponent+(significant-19);
+        let below: u64 = eisel_lemire(q,fast,cfg); let above: u64 = eisel_lemire(q,fast+1,cfg);
+        if (below != 18446744073709551615 && below == above) { return core::result::Ok(sign | below); }
+    }
+    let index: i32 = mantissa_start;
+    while (index < mantissa_end) {
+        let byte: u8 = input.values[input.start+index];
+        if (byte != 46) { numerator.multiply_small(10,budget.borrow()); numerator.add_small((byte-48) as u32,budget.borrow()); if (budget.failed) { return core::result::Err(Error::WorkLimit); } }
+        index += 1;
+    }
     denominator.set(1,budget.borrow()); if (exponent >= 0) { numerator.power(10,exponent,budget.borrow()); } else { denominator.power(10,0-exponent,budget.borrow()); }
     if (budget.failed) { return core::result::Err(Error::WorkLimit); }
     // Positive IEEE encodings are ordered by value. Find the floor, then compare
@@ -180,6 +322,13 @@ fn prepare(bits: u64, cfg: Config, scratch: core::slice::View<u32>, work: u64) -
     let negative: bool = (bits & cfg.sign) != 0; let absolute: u64 = bits & (cfg.sign-1);
     if (absolute >= cfg.infinity) { let kind: i32 = 1; if (absolute > cfg.infinity) { kind = 2; negative = false; } return core::result::Ok(Decimal { coefficient: 0, exponent: 0, negative: negative, special: kind }); }
     if (absolute == 0) { return core::result::Ok(Decimal { coefficient: 0, exponent: 0, negative: negative, special: 0 }); }
+    budget.pay(100); if (budget.failed) { return core::result::Err(Error::WorkLimit); }
+    let fast: Shortest = grisu(absolute,cfg);
+    if (fast.ok) {
+        let coefficient: u64 = fast.coefficient; let decimal_exponent: i32 = fast.exponent;
+        while (coefficient%10 == 0) { coefficient /= 10; decimal_exponent += 1; }
+        return core::result::Ok(Decimal { coefficient: coefficient, exponent: decimal_exponent, negative: negative, special: 0 });
+    }
     // Normal powers of two (except the min-normal transition) have a lower
     // half-width interval. Midpoints belong to this value iff m2 is even.
     let value: Dyadic = dyadic(absolute,cfg); let central: u64 = value.mantissa*4; let mm_shift: u64 = 1;

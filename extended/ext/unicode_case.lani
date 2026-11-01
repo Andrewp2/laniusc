@@ -9,6 +9,7 @@ import core::text;
 import core::unicode;
 import core::utf8;
 import ext::unicode_case_data;
+import ext::unicode_case_fast_data;
 import ext::unicode_words;
 
 pub enum Kind { Lower, Upper, Title, Fold }
@@ -28,14 +29,13 @@ impl Budget {
 struct Prefix { cased: bool, soft: bool, capital_i: bool }
 impl Prefix {
     fn borrow(&self) -> &Prefix { return self; }
-    fn consume(&self, value: u32, locale: u32) {
-        let properties: core::unicode::Properties = core::unicode::properties(value);
+    // bits are the scalar's ext::unicode_case_fast_data flags.
+    fn consume(&self, value: u32, bits: u32, locale: u32) {
         // Possessive Case_Ignorable* takes precedence over Cased (U+0345).
-        if ((properties.flags & core::unicode::CASE_IGNORABLE) == 0) { self.cased = (properties.flags & core::unicode::CASED) != 0; }
-        let ccc: u32 = properties.combining_class;
-        if (ccc == 0 || ccc == 230) { self.soft = false; self.capital_i = false; }
+        if ((bits & ext::unicode_case_fast_data::CASE_IGNORABLE) == 0) { self.cased = (bits & ext::unicode_case_fast_data::CASED) != 0; }
+        if ((bits & 12) != 0) { self.soft = false; self.capital_i = false; }
         if (value == 73) { self.capital_i = true; }
-        if (locale == 1 && ext::unicode_case_data::soft_dotted(value)) { self.soft = true; }
+        if (locale == 1 && (bits & ext::unicode_case_fast_data::SOFT_DOTTED) != 0) { self.soft = true; }
     }
 }
 fn valid(start: i32, length: i32) -> bool {
@@ -53,6 +53,7 @@ fn validate(input: core::text::Text, budget: &Budget) -> core::result::Result<i3
         if (!budget.charge(1)) { return core::result::Err(Error::WorkLimit(budget.used)); }
         let at: i32 = input.start + index;
         let first: u8 = input.bytes[at];
+        if (first < 128) { index += 1; count += 1; continue; }
         let width: u32 = core::utf8::sequence_len_or(first, 0);
         if (width == 0 || (width as i32) > input.length - index) { return core::result::Err(Error::InvalidUtf8(index)); }
         let second: u8 = 0; let third: u8 = 0; let fourth: u8 = 0;
@@ -89,9 +90,21 @@ fn context_matches(context: u32, input: core::text::Text, after: i32, prefix: &P
     }
     return core::result::Ok(context == 1 || context == 6);
 }
-fn mapping(value: u32, kind: i32, locale: u32, input: core::text::Text, after: i32, prefix: &Prefix, budget: &Budget) -> core::result::Result<ext::unicode_case_data::Mapping, Error> {
+// Two-level fast path: a scalar without a SpecialCasing row (or, for
+// folding, without an F/T record) takes its simple mapping from the table.
+// The generator derives those bits from the same files as the searched rows.
+fn mapping(value: u32, slot: i32, bits: u32, kind: i32, locale: u32, input: core::text::Text, after: i32, prefix: &Prefix, budget: &Budget) -> core::result::Result<ext::unicode_case_data::Mapping, Error> {
     let mapped: ext::unicode_case_data::Mapping = ext::unicode_case_data::Mapping { length: 1, first: value, second: 0, third: 0 };
     if (kind == 4) { return core::result::Ok(mapped); }
+    if (kind == 3 && (bits & ext::unicode_case_fast_data::FULL_FOLD) == 0) {
+        mapped.first = ext::unicode_case_fast_data::map(value, slot, 3); return core::result::Ok(mapped);
+    }
+    if (kind != 3 && (bits & ext::unicode_case_fast_data::SPECIAL) == 0) {
+        let column: i32 = 0;
+        if (kind == 1) { column = 2; }
+        if (kind == 2) { column = 1; }
+        mapped.first = ext::unicode_case_fast_data::map(value, slot, column); return core::result::Ok(mapped);
+    }
     if (kind == 3) {
         let folded: core::unicode::CaseFolding = core::result::unwrap(core::unicode::case_folding(value, locale == 2));
         mapped.length = folded.length as i32; mapped.first = folded.first; mapped.second = folded.second; mapped.third = folded.third;
@@ -131,18 +144,51 @@ fn scan(input: core::text::Text, kind: i32, locale: u32, output: core::slice::Vi
             end = core::option::unwrap(words.next()).end; have_cased = false;
         }
         if (!budget.charge(2)) { return core::result::Err(Error::WorkLimit(budget.used)); }
-        let value: u32 = core::option::unwrap(input.scalar_at_byte(position));
-        position += core::utf8::encoded_len_or(value, 0) as i32;
+        let value: u32 = input.bytes[input.start + position] as u32;
+        if (value < 128 && locale == 0) {
+            // Root-locale ASCII: no SpecialCasing row, no F/T folding record,
+            // ccc 0; Case_Ignorable is exactly ' . : ^ ` (asserted by the
+            // generator). Same results and work charges as the general path.
+            position += 1;
+            let big: bool = value >= 65 && value <= 90;
+            let small: bool = value >= 97 && value <= 122;
+            let ascii: i32 = kind;
+            if (kind == 1) {
+                ascii = 4;
+                if (have_cased) { ascii = 0; }
+                else { if (big || small) { ascii = 1; have_cased = true; } }
+            }
+            let mapped: u32 = value;
+            if ((ascii == 0 || ascii == 3) && big) { mapped = value + 32; }
+            if ((ascii == 1 || ascii == 2) && small) { mapped = value - 32; }
+            if (kind != 3) {
+                if (value != 39 && value != 46 && value != 58 && value != 94 && value != 96) { prefix.cased = big || small; }
+                prefix.soft = false; prefix.capital_i = value == 73;
+            }
+            if (scalars > 2147483646 || bytes > 2147483646) { return core::result::Err(Error::SizeOverflow); }
+            scalars += 1;
+            if (!budget.charge(3)) { return core::result::Err(Error::WorkLimit(budget.used)); }
+            if (commit) { output.values[output.start + bytes] = mapped as u8; }
+            bytes += 1;
+            continue;
+        }
+        if (value < 128) { position += 1; }
+        else {
+            value = core::option::unwrap(input.scalar_at_byte(position));
+            position += core::utf8::encoded_len_or(value, 0) as i32;
+        }
+        let slot: i32 = ext::unicode_case_fast_data::slot(value);
+        let bits: u32 = ext::unicode_case_fast_data::flags(slot);
         let operation: i32 = kind;
         if (kind == 1) {
             operation = 4;
             if (have_cased) { operation = 0; }
-            else { if (core::unicode::is_cased(value)) { operation = 1; have_cased = true; } }
+            else { if ((bits & ext::unicode_case_fast_data::CASED) != 0) { operation = 1; have_cased = true; } }
         }
-        let selected: core::result::Result<ext::unicode_case_data::Mapping, Error> = mapping(value, operation, locale, input, position, prefix.borrow(), budget);
+        let selected: core::result::Result<ext::unicode_case_data::Mapping, Error> = mapping(value, slot, bits, operation, locale, input, position, prefix.borrow(), budget);
         if (core::result::is_err(selected)) { return core::result::Err(core::result::unwrap_err(selected)); }
         let mapped: ext::unicode_case_data::Mapping = core::result::unwrap(selected);
-        if (kind != 3) { prefix.consume(value, locale); }
+        if (kind != 3) { prefix.consume(value, bits, locale); }
         if (scalars > 2147483647 - mapped.length) { return core::result::Err(Error::SizeOverflow); }
         scalars += mapped.length;
         let index: i32 = 0;

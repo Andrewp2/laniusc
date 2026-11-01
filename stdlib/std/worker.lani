@@ -1,0 +1,173 @@
+// Scoped parallel workers as forked processes over shared Regions.
+// The compiler has no checked callback entry yet, so std::thread stays
+// unbound; a worker is instead a fork of the caller that continues from
+// spawn with Role::Child and must end with finish. Only std::sync Regions
+// mapped before spawn are shared; every other value is a private snapshot.
+// Linux x86_64/glibc; link with --native-link --native-library atomic.
+// See docs/stdlib-concurrency.md.
+module std::worker;
+import core::mem;
+import core::result;
+import core::slice;
+import std::linux;
+import std::sync;
+
+pub const MAX_WORKERS: i32 = 1024;
+
+pub enum Error { InvalidCapacity, Full, Destroyed, NotSpawned, AlreadyJoined, Unjoined, TimedOut, Host(i32) }
+pub enum Role { Parent(i32), Child(i32) }
+pub enum Exit { Code(i32), Signal(i32) }
+// joined workers, how many did not exit with code 0, and the first of those.
+pub struct Summary { joined: i32, failed: i32, first_failed: i32, first_exit: Exit }
+
+extern "C" fn fork() -> i32;
+extern "C" fn _exit(status: i32);
+extern "C" fn __errno_location() -> ptr;
+
+fn word_arg(value: i64) -> std::linux::Argument { return std::linux::Argument::Word(value); }
+fn load_i64(slot: ptr) -> i64 { let view: [i64] = core::mem::typed_slice_from_raw_parts<i64>(slot, 1); return view[0]; }
+fn store_i64(slot: ptr, value: i64) { let view: [i64] = core::mem::typed_slice_from_raw_parts<i64>(slot, 1); view[0] = value; }
+fn errno() -> i32 { let view: [i32] = core::mem::typed_slice_from_raw_parts<i32>(__errno_location(), 1); return view[0]; }
+
+// End a worker immediately with status 0..255, without returning to the
+// caller's frames or running the parent's exit path. Never returns.
+pub fn finish(status: i32) -> i32 { _exit(status & 255); return status; }
+
+// Pid table, private to the creating process: one i64 per slot, 0 unspawned,
+// negative after a successful join.
+pub struct Pool { table: ptr, capacity: i32, count: i32, joined: i32, live: bool }
+pub fn pool(capacity: i32) -> core::result::Result<Pool, Error> {
+    if (capacity <= 0 || capacity > MAX_WORKERS) { return core::result::Err(Error::InvalidCapacity); }
+    let nowhere: ptr = 0;
+    let bytes: i64 = ((capacity as i64) * 8 + 4095) / 4096 * 4096;
+    // MAP_PRIVATE|MAP_ANONYMOUS
+    let args: [std::linux::Argument; 6] = [std::linux::Argument::Address(nowhere), word_arg(bytes), word_arg(3), word_arg(34), word_arg(-1), word_arg(0)];
+    let done: core::result::Result<i64, std::linux::Error> = std::linux::call(9, core::slice::view(args, 6).unwrap());
+    if (done.is_err()) { return core::result::Err(host(done.unwrap_err())); }
+    return core::result::Ok(Pool { table: nowhere + (done.unwrap() as usize), capacity: capacity, count: 0, joined: 0, live: true });
+}
+fn host(error: std::linux::Error) -> Error { return match (error) { std::linux::Error::System(code) -> Error::Host(code), _ -> Error::Host(22) }; }
+fn decode(status: i32) -> Exit {
+    if ((status & 127) == 0) { return Exit::Code((status >> 8) & 255); }
+    return Exit::Signal(status & 127);
+}
+pub fn succeeded(exit: Exit) -> bool { return match (exit) { Exit::Code(code) -> code == 0, Exit::Signal(number) -> false }; }
+
+pub impl Pool {
+    pub fn borrow(&self) -> &Pool { return self; }
+    pub fn len(&self) -> i32 { return self.count; }
+    pub fn joined(&self) -> i32 { return self.joined; }
+    fn slot(&self, index: i32) -> ptr { return self.table + (index as usize) * 8; }
+    // Parent(index) in the caller, Child(index) in the new worker. The child
+    // must not use this Pool and must end with finish.
+    pub fn spawn(&self) -> core::result::Result<Role, Error> {
+        if (!self.live) { return core::result::Err(Error::Destroyed); }
+        if (self.count == self.capacity) { return core::result::Err(Error::Full); }
+        let index: i32 = self.count;
+        let pid: i32 = fork();
+        if (pid < 0) { return core::result::Err(Error::Host(errno())); }
+        if (pid == 0) { return core::result::Ok(Role::Child(index)); }
+        store_i64(self.slot(index), pid as i64);
+        self.count += 1;
+        return core::result::Ok(Role::Parent(index));
+    }
+    // Block until worker index ends. Retries EINTR. Each worker joins once.
+    pub fn join(&self, index: i32) -> core::result::Result<Exit, Error> {
+        if (!self.live) { return core::result::Err(Error::Destroyed); }
+        if (index < 0 || index >= self.count) { return core::result::Err(Error::NotSpawned); }
+        let pid: i64 = load_i64(self.slot(index));
+        if (pid < 0) { return core::result::Err(Error::AlreadyJoined); }
+        let storage: [i32; 2] = [0; 2];
+        let status: ptr = core::mem::i32_array_data_ptr(storage);
+        let nowhere: ptr = 0;
+        while (true) {
+            let args: [std::linux::Argument; 4] = [word_arg(pid), std::linux::Argument::Address(status), word_arg(0), std::linux::Argument::Address(nowhere)];
+            let done: core::result::Result<i64, std::linux::Error> = std::linux::call(61, core::slice::view(args, 4).unwrap());
+            if (done.is_ok()) {
+                store_i64(self.slot(index), 0 - pid);
+                self.joined += 1;
+                return core::result::Ok(decode(storage[0]));
+            }
+            let error: Error = host(done.unwrap_err());
+            let again: bool = match (error) { Error::Host(code) -> code == 4, _ -> false };
+            if (!again) { return core::result::Err(error); }
+        }
+        return core::result::Err(Error::Host(22));
+    }
+    // Like join, but Err(TimedOut) once deadline passes with the worker still
+    // running; it stays unjoined. Polls every millisecond.
+    pub fn join_until(&self, index: i32, deadline: std::sync::Deadline) -> core::result::Result<Exit, Error> {
+        if (!self.live) { return core::result::Err(Error::Destroyed); }
+        if (index < 0 || index >= self.count) { return core::result::Err(Error::NotSpawned); }
+        let pid: i64 = load_i64(self.slot(index));
+        if (pid < 0) { return core::result::Err(Error::AlreadyJoined); }
+        let storage: [i32; 2] = [0; 2];
+        let status: ptr = core::mem::i32_array_data_ptr(storage);
+        let nowhere: ptr = 0;
+        while (true) {
+            let args: [std::linux::Argument; 4] = [word_arg(pid), std::linux::Argument::Address(status), word_arg(1), std::linux::Argument::Address(nowhere)];
+            let done: core::result::Result<i64, std::linux::Error> = std::linux::call(61, core::slice::view(args, 4).unwrap());
+            if (done.is_ok() && done.unwrap() == pid) {
+                store_i64(self.slot(index), 0 - pid);
+                self.joined += 1;
+                return core::result::Ok(decode(storage[0]));
+            }
+            if (done.is_err()) {
+                let error: Error = host(done.unwrap_err());
+                let again: bool = match (error) { Error::Host(code) -> code == 4, _ -> false };
+                if (!again) { return core::result::Err(error); }
+            }
+            let past: core::result::Result<bool, std::sync::Error> = std::sync::is_past(deadline);
+            if (past.is_err() || past.unwrap()) { return core::result::Err(Error::TimedOut); }
+            let interval: [i32; 4] = [0; 4];
+            let span: ptr = core::mem::i32_array_data_ptr(interval);
+            store_i64(span, 0); store_i64(span + 8, 1000000);
+            let pause: [std::linux::Argument; 2] = [std::linux::Argument::Address(span), std::linux::Argument::Address(nowhere)];
+            std::linux::call(35, core::slice::view(pause, 2).unwrap());
+        }
+        return core::result::Err(Error::TimedOut);
+    }
+    // Send signal to every unjoined worker (for example 9, SIGKILL, after a
+    // cooperative cancellation deadline). Workers still need joining.
+    pub fn signal_all(&self, signal: i32) -> core::result::Result<i32, Error> {
+        let index: i32 = 0; let sent: i32 = 0;
+        while (index < self.count) {
+            let pid: i64 = load_i64(self.slot(index));
+            if (pid > 0) {
+                let args: [std::linux::Argument; 2] = [word_arg(pid), word_arg(signal as i64)];
+                let done: core::result::Result<i64, std::linux::Error> = std::linux::call(62, core::slice::view(args, 2).unwrap());
+                if (done.is_err()) { return core::result::Err(host(done.unwrap_err())); }
+                sent += 1;
+            }
+            index += 1;
+        }
+        return core::result::Ok(sent);
+    }
+    // Join every unjoined worker in spawn order; stops at the first host error.
+    pub fn join_all(&self) -> core::result::Result<Summary, Error> {
+        let failed: i32 = 0; let first: i32 = -1; let first_exit: Exit = Exit::Code(0);
+        let index: i32 = 0;
+        while (index < self.count) {
+            if (load_i64(self.slot(index)) > 0) {
+                let joined: core::result::Result<Exit, Error> = self.join(index);
+                if (joined.is_err()) { return core::result::Err(joined.unwrap_err()); }
+                let exit: Exit = joined.unwrap();
+                if (!succeeded(exit)) { failed += 1; if (first < 0) { first = index; first_exit = exit; } }
+            }
+            index += 1;
+        }
+        return core::result::Ok(Summary { joined: self.joined, failed: failed, first_failed: first, first_exit: first_exit });
+    }
+    // Err(Unjoined) while any spawned worker is unjoined: the scope must end
+    // with every worker joined, before shared Regions are unmapped.
+    pub fn destroy(&self) -> core::result::Result<i32, Error> {
+        if (!self.live) { return core::result::Err(Error::Destroyed); }
+        if (self.joined != self.count) { return core::result::Err(Error::Unjoined); }
+        let bytes: i64 = ((self.capacity as i64) * 8 + 4095) / 4096 * 4096;
+        let args: [std::linux::Argument; 2] = [std::linux::Argument::Address(self.table), word_arg(bytes)];
+        let done: core::result::Result<i64, std::linux::Error> = std::linux::call(11, core::slice::view(args, 2).unwrap());
+        if (done.is_err()) { return core::result::Err(host(done.unwrap_err())); }
+        self.live = false;
+        return core::result::Ok(self.count);
+    }
+}

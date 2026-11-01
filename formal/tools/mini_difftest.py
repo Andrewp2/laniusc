@@ -395,10 +395,11 @@ def main():
         lani_path = os.path.join(args.workdir, 'programs.lani')
         exe_path = os.path.join(args.workdir, 'programs')
         open(lani_path, 'w').write(lani_file(chunk))
-        build = subprocess.run(['target/claude-work/bin/heavy', '-t', '20', args.laniusc, '--stdlib-root', 'stdlib',
-                                '--source-root', 'formal/lani', '-o', exe_path, lani_path],
-                               capture_output=True, text=True)
-        if build.returncode != 0:
+        exe_path, build = run_cache.laniusc_build(
+            ['target/claude-work/bin/heavy', '-t', '20', args.laniusc, '--stdlib-root', 'stdlib',
+             '--source-root', 'formal/lani', '-o', exe_path, lani_path],
+            args.laniusc, lani_path, exe_path, ['formal/lani', 'stdlib'])
+        if build is not None:
             raise SystemExit('laniusc failed:\n' + build.stdout + build.stderr)
         run = subprocess.run([exe_path], capture_output=True)
         if run.returncode != 0:

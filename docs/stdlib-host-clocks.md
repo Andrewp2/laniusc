@@ -22,6 +22,8 @@ output from the GPU compiler**; other targets have no binding.
 | `ProcessCpu` | CLOCK_PROCESS_CPUTIME_ID (2) | Cpu | CPU time of all threads of this process |
 | `ThreadCpu` | CLOCK_THREAD_CPUTIME_ID (3) | Cpu | CPU time of the calling thread |
 | `ProcessCpuOf(pid)` | `((~pid) << 3) \| 2` | Cpu | CPU time of process `pid` |
+| `RealtimeAlarm` | CLOCK_REALTIME_ALARM (8) | Wall | Reads like Realtime; waits and timers can wake a suspended system |
+| `BoottimeAlarm` | CLOCK_BOOTTIME_ALARM (9) | Steady | Reads like Boottime; waits and timers can wake a suspended system |
 
 `kind(clock)` returns `Kind::Wall`, `Steady` or `Cpu`. `id(clock)` returns the
 `clockid_t` value as i64. `ProcessCpuOf(pid)` requires `1 <= pid <= PID_LIMIT`
@@ -30,6 +32,11 @@ output from the GPU compiler**; other targets have no binding.
 and Monotonic/Boottime are subject to the process's time namespace offsets;
 compare instants only from the same clock. There is no conversion between
 clocks.
+
+Reading an alarm clock needs no privilege (the kernel requires an RTC device
+and returns EINVAL without one). Waiting on one, or creating a
+[timer](stdlib-timers.md) on one, needs CAP_WAKE_ALARM; otherwise the kernel
+returns EPERM, reported as `Host(1)`.
 
 ## Reading
 
@@ -60,8 +67,9 @@ an exact final CPU time, as `time-command` does.
 
 ## Absolute waits
 
-`sleep_until_instant(clock, target)` accepts Monotonic and Boottime;
-`sleep_until_timestamp(clock, target)` accepts Realtime and Tai. Other clocks of
+`sleep_until_instant(clock, target)` accepts Monotonic, Boottime and
+BoottimeAlarm; `sleep_until_timestamp(clock, target)` accepts Realtime, Tai and
+RealtimeAlarm. Other clocks of
 the right kind return `Unsupported` (the kernel cannot sleep on raw or coarse
 clocks, and sleeping on this process's own CPU clock could never finish in a
 single-threaded program); a clock of the other kind returns `WrongKind`.
@@ -136,7 +144,8 @@ time suspended. `cpu_ns` is the child process's exact user plus system CPU in
 nanoseconds; it excludes descendants the child reaped itself (unlike
 `RUSAGE_CHILDREN` totals). `self_cpu_ns` is time-command's own CPU.
 `--format tsv` writes a header line and one row with the same fields, `-` for
-null. `--clocks` instead writes to stdout one row per named clock: `clock`,
+null. `--clocks` instead writes to stdout one row for each of the nine
+non-alarm named clocks: `clock`,
 `kind`, `resolution_ns`, `sec`, `nsec` (CPU readings are this process's).
 
 The exit status is the child's exit code, or 128 plus its terminating signal;
@@ -161,7 +170,11 @@ they were executed directly as the same compiled programs and oracle commands:
   two process readings, and EINVAL for an absent PID; positive sub-second
   resolutions for all nine clocks; absolute Monotonic, Boottime, Realtime and
   Tai waits that wake at or after their targets; past targets; and Boottime
-  driving `std::clock::sleep_for`. It exits 0 with no output.
+  driving `std::clock::sleep_for`. Alarm clocks: ids 8 and 9, readings
+  between their Realtime/Boottime neighbours, kind checks, a past target
+  returning without a call, and a future BoottimeAlarm wait that must succeed
+  or return EPERM; eleven
+  resolutions are positive. It exits 0 with no output.
 - **cli** (50 cases): exact help, ten malformed argument lists, ENOENT,
   a lone `-` program, PATH miss, EACCES file and directory, exit codes 0/1/3/255, signals
   15/9/6, binary stdout passthrough with child stderr ahead of the report,

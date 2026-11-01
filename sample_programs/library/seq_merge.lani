@@ -1,0 +1,102 @@
+// git merge-file / diff3 -m style three-way merge over ext::merge3.
+// usage: seq-merge [--diff3] [--gnu] [--eager|--zealous|--alnum] [-L OURS -L BASE -L THEIRS] OURS BASE THEIRS
+// Default: merge-style markers, zealous-alnum level (git merge-file). --diff3
+// adds the base section (eager level); --gnu also prints identical changes the
+// way GNU diff3 -m does. Writes the merge to stdout.
+// Exit 0 clean, 1 conflicts, 2 usage/limits/I/O failure.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import ext::seqdiff;
+import ext::merge3;
+import std::args;
+import std::file;
+import std::stream;
+
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), count);
+    return core::result::unwrap(core::slice::view(bytes, count));
+}
+fn same(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.len() != right.len()) { return false; }
+    let i: i32 = 0; while (i < left.len()) { if (left.values[left.start+i] != right.values[right.start+i]) { return false; } i += 1; } return true;
+}
+fn emit(v: core::slice::View<u8>) { let sink: std::stream::Descriptor = std::stream::stderr(); let written: core::result::Result<i32, core::io::Failure> = core::io::write_all(sink.borrow(), v.values, v.start, v.len()); }
+fn complain(text: str, count: i32) -> i32 { emit(literal(text, count)); return 2; }
+fn read_file(name: core::slice::View<u8>, output: &alloc::io::Buffer) -> bool {
+    let checked: core::result::Result<core::path::Path, core::path::Error> = core::path::from_view(name);
+    if (core::result::is_err(checked)) { return false; }
+    let opened: core::result::Result<std::file::File, core::io::Error> = std::file::open(core::result::unwrap(checked), std::file::OpenMode::Read);
+    if (core::result::is_err(opened)) { return false; }
+    let file: std::file::File = core::result::unwrap(opened);
+    let copied: core::result::Result<u64, core::io::Error> = file.read_to_end(output);
+    let closed: core::result::Result<i32, core::io::Error> = file.close();
+    return core::result::is_ok(copied) && core::result::is_ok(closed);
+}
+fn view_of(buffer: &alloc::io::Buffer) -> core::slice::View<u8> { return core::result::unwrap(core::slice::view(buffer.as_bytes(), buffer.len())); }
+fn run(names: [core::slice::View<u8>;3], labels: ext::merge3::Labels, level: ext::merge3::Level, format: ext::merge3::Format) -> i32 {
+    let ours: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(268435456));
+    let base: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(268435456));
+    let theirs: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(268435456));
+    if (!read_file(names[0], ours.borrow()) || !read_file(names[1], base.borrow()) || !read_file(names[2], theirs.borrow())) { ours.destroy(); base.destroy(); theirs.destroy(); return complain("seq-merge: cannot read input\n", 29); }
+    let limits: ext::seqdiff::Limits = ext::seqdiff::default_limits();
+    let a: alloc::vec::Vec<ext::seqdiff::Line> = core::result::unwrap(ext::seqdiff::split_lines(view_of(ours.borrow()), limits));
+    let o: alloc::vec::Vec<ext::seqdiff::Line> = core::result::unwrap(ext::seqdiff::split_lines(view_of(base.borrow()), limits));
+    let b: alloc::vec::Vec<ext::seqdiff::Line> = core::result::unwrap(ext::seqdiff::split_lines(view_of(theirs.borrow()), limits));
+    let status: i32 = 0;
+    let merged: core::result::Result<ext::merge3::Merge, ext::merge3::Error> = ext::merge3::merge_lines(o.as_view(), a.as_view(), b.as_view(), level, limits);
+    if (core::result::is_err(merged)) { status = complain("seq-merge: merge failed\n", 24); }
+    else {
+        let m: ext::merge3::Merge = core::result::unwrap(merged);
+        let written: core::result::Result<alloc::vec::Vec<u8>, ext::merge3::Error> = ext::merge3::write_merge(o.as_view(), a.as_view(), b.as_view(), m.borrow(), labels, format);
+        if (core::result::is_err(written)) { status = complain("seq-merge: cannot write\n", 24); }
+        else {
+            let bytes: alloc::vec::Vec<u8> = core::result::unwrap(written);
+            let conflicts: i32 = m.conflict_count();
+            if (format.gnu_identical) { let i: i32 = 0; while (i < m.len()) { if (core::option::unwrap(m.chunk(i)).kind == 3) { conflicts += 1; } i += 1; } }
+            if (conflicts > 0) { status = 1; }
+            let sink: std::stream::Descriptor = std::stream::stdout();
+            if (core::result::is_err(core::io::write_all(sink.borrow(), bytes.as_slice(), 0, bytes.len()))) { status = 2; }
+            bytes.destroy();
+        }
+        m.destroy();
+    }
+    a.destroy(); o.destroy(); b.destroy(); ours.destroy(); base.destroy(); theirs.destroy(); return status;
+}
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1, 32, 16384);
+    if (core::result::is_err(captured)) { return complain("seq-merge: bad arguments\n", 25); }
+    let arguments: std::args::Arguments = core::result::unwrap(captured);
+    let names: [core::slice::View<u8>;3] = [literal("", 0); 3]; let tags: [core::slice::View<u8>;3] = [literal("", 0); 3];
+    let count: i32 = 0; let tagged: i32 = 0; let ok: bool = true; let i: i32 = 0;
+    let diff3: bool = false; let gnu: bool = false; let level: i32 = -1;
+    while (i < arguments.len() && ok) {
+        let arg: core::slice::View<u8> = core::option::unwrap(arguments.get(i));
+        if (same(arg, literal("--diff3", 7))) { diff3 = true; }
+        else { if (same(arg, literal("--gnu", 5))) { gnu = true; diff3 = true; }
+        else { if (same(arg, literal("--eager", 7))) { level = 0; }
+        else { if (same(arg, literal("--zealous", 9))) { level = 1; }
+        else { if (same(arg, literal("--alnum", 7))) { level = 2; }
+        else { if (same(arg, literal("-L", 2)) && i + 1 < arguments.len() && tagged < 3) { i += 1; tags[tagged] = core::option::unwrap(arguments.get(i)); tagged += 1; }
+        else { if (count < 3) { names[count] = arg; count += 1; } else { ok = false; } } } } } } }
+        i += 1;
+    }
+    let status: i32 = 2;
+    if (!ok || count != 3) { status = complain("usage: seq-merge [--diff3] [--gnu] [--eager|--zealous|--alnum] [-L L]x3 OURS BASE THEIRS\n", 89); }
+    else {
+        while (tagged < 3) { tags[tagged] = names[tagged]; tagged += 1; }
+        if (level < 0) { if (diff3) { level = 0; } else { level = 2; } }
+        let chosen: ext::merge3::Level = ext::merge3::Level::Eager;
+        if (level == 1) { chosen = ext::merge3::Level::Zealous; } if (level == 2) { chosen = ext::merge3::Level::ZealousAlnum; }
+        let style: ext::merge3::Style = ext::merge3::Style::Merge; if (diff3) { style = ext::merge3::Style::Diff3; }
+        let labels: ext::merge3::Labels = ext::merge3::Labels { ours: tags[0], base: tags[1], theirs: tags[2] };
+        status = run(names, labels, chosen, ext::merge3::Format { style: style, gnu_identical: gnu, max_output: 268435456 });
+    }
+    arguments.destroy(); return status;
+}

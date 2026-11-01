@@ -63,6 +63,18 @@ fn main() -> i32 {
     let native: core::time::SystemTime = std::clock::system_now().unwrap();
     assert(wall_coarse.compare(wall_fine) <= 0 && wall_fine.compare(native) <= 0 && wall_fine.seconds > 1700000000);
     let tai: core::time::SystemTime = std::host_clocks::timestamp(std::host_clocks::Clock::Tai).unwrap(); assert(tai.seconds >= wall_fine.seconds);
+    // Alarm clocks read like Realtime and Boottime without any capability.
+    assert(id(std::host_clocks::Clock::RealtimeAlarm) == 8 && id(std::host_clocks::Clock::BoottimeAlarm) == 9);
+    let wall_alarm: core::time::SystemTime = std::host_clocks::timestamp(std::host_clocks::Clock::RealtimeAlarm).unwrap();
+    let wall_after: core::time::SystemTime = std::host_clocks::timestamp(std::host_clocks::Clock::Realtime).unwrap();
+    assert(wall_alarm.compare(native) >= 0 && wall_alarm.compare(wall_after) <= 0);
+    let boot_before: core::time::Instant = now(std::host_clocks::Clock::Boottime); let boot_alarm: core::time::Instant = now(std::host_clocks::Clock::BoottimeAlarm);
+    assert(boot_alarm.compare(boot_before) >= 0 && boot_alarm.compare(now(std::host_clocks::Clock::Boottime)) <= 0);
+    assert(is_error(std::host_clocks::instant(std::host_clocks::Clock::RealtimeAlarm),1001));
+    // Past alarm targets return without a host call; a future one needs CAP_WAKE_ALARM.
+    let alarm_past: core::time::Instant = std::host_clocks::sleep_until_instant(std::host_clocks::Clock::BoottimeAlarm,boot_before).unwrap(); assert(alarm_past.compare(boot_alarm) >= 0);
+    let alarm_wait: core::result::Result<core::time::Instant, std::host_clocks::Error> = std::host_clocks::sleep_until_instant(std::host_clocks::Clock::BoottimeAlarm,after(now(std::host_clocks::Clock::BoottimeAlarm),2));
+    assert(alarm_wait.is_ok() || error_code(alarm_wait.unwrap_err()) == 1);
     // CPU clocks: thread <= process for this single-threaded program; the
     // pid-named clock of this process falls between two process readings.
     let first: core::time::Duration = cpu(std::host_clocks::Clock::ProcessCpu);
@@ -75,9 +87,9 @@ fn main() -> i32 {
     let absent: core::result::Result<core::time::Duration, std::host_clocks::Error> = std::host_clocks::cpu_time(std::host_clocks::Clock::ProcessCpuOf(4194304));
     assert(absent.is_err() && error_code(absent.unwrap_err()) == 22);
     // Resolutions are positive and below one second for every named clock.
-    let clocks: [std::host_clocks::Clock;9] = [std::host_clocks::Clock::Realtime,std::host_clocks::Clock::RealtimeCoarse,std::host_clocks::Clock::Tai,std::host_clocks::Clock::Monotonic,std::host_clocks::Clock::MonotonicRaw,std::host_clocks::Clock::MonotonicCoarse,std::host_clocks::Clock::Boottime,std::host_clocks::Clock::ProcessCpu,std::host_clocks::Clock::ThreadCpu];
+    let clocks: [std::host_clocks::Clock;11] = [std::host_clocks::Clock::RealtimeAlarm,std::host_clocks::Clock::BoottimeAlarm,std::host_clocks::Clock::Realtime,std::host_clocks::Clock::RealtimeCoarse,std::host_clocks::Clock::Tai,std::host_clocks::Clock::Monotonic,std::host_clocks::Clock::MonotonicRaw,std::host_clocks::Clock::MonotonicCoarse,std::host_clocks::Clock::Boottime,std::host_clocks::Clock::ProcessCpu,std::host_clocks::Clock::ThreadCpu];
     index = 0;
-    while (index < 9) { let span: core::time::Duration = std::host_clocks::resolution(clocks[index]).unwrap(); assert(span.seconds == 0 && span.nanos > 0); index += 1; }
+    while (index < 11) { let span: core::time::Duration = std::host_clocks::resolution(clocks[index]).unwrap(); assert(span.seconds == 0 && span.nanos > 0); index += 1; }
     // Absolute waits wake at or after the target and report the observed time.
     let start: core::time::Instant = now(std::host_clocks::Clock::Monotonic); let target: core::time::Instant = after(start,20);
     let woke: core::time::Instant = std::host_clocks::sleep_until_instant(std::host_clocks::Clock::Monotonic,target).unwrap();

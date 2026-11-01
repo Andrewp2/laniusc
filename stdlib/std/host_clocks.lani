@@ -11,7 +11,10 @@ import std::linux;
 // Wall clocks read signed Unix-style timestamps; steady clocks read
 // nonnegative instants from a boot-relative origin; CPU clocks read consumed
 // CPU time. ProcessCpuOf names another process's whole-process CPU clock.
-pub enum Clock { Realtime, RealtimeCoarse, Tai, Monotonic, MonotonicRaw, MonotonicCoarse, Boottime, ProcessCpu, ThreadCpu, ProcessCpuOf(i32) }
+// The alarm clocks read like Realtime and Boottime; waiting on them (and
+// timers on them, see std::timer) can wake a suspended system and needs
+// CAP_WAKE_ALARM, otherwise the kernel returns EPERM (Host(1)).
+pub enum Clock { Realtime, RealtimeCoarse, Tai, Monotonic, MonotonicRaw, MonotonicCoarse, Boottime, ProcessCpu, ThreadCpu, ProcessCpuOf(i32), RealtimeAlarm, BoottimeAlarm }
 pub enum Kind { Wall, Steady, Cpu }
 // WrongKind and Unsupported are decided before any host call. Host keeps the
 // positive Linux errno; EINVAL for ProcessCpuOf usually means no such process.
@@ -23,7 +26,8 @@ pub fn kind(clock: Clock) -> Kind {
     return match (clock) {
         Clock::Realtime -> Kind::Wall, Clock::RealtimeCoarse -> Kind::Wall, Clock::Tai -> Kind::Wall,
         Clock::Monotonic -> Kind::Steady, Clock::MonotonicRaw -> Kind::Steady, Clock::MonotonicCoarse -> Kind::Steady, Clock::Boottime -> Kind::Steady,
-        Clock::ProcessCpu -> Kind::Cpu, Clock::ThreadCpu -> Kind::Cpu, Clock::ProcessCpuOf(pid) -> Kind::Cpu
+        Clock::ProcessCpu -> Kind::Cpu, Clock::ThreadCpu -> Kind::Cpu, Clock::ProcessCpuOf(pid) -> Kind::Cpu,
+        Clock::RealtimeAlarm -> Kind::Wall, Clock::BoottimeAlarm -> Kind::Steady
     };
 }
 fn is_kind(clock: Clock, wanted: i32) -> bool {
@@ -35,7 +39,7 @@ pub fn id(clock: Clock) -> core::result::Result<i64, Error> {
     let value: i64 = match (clock) {
         Clock::Realtime -> 0, Clock::Monotonic -> 1, Clock::ProcessCpu -> 2, Clock::ThreadCpu -> 3,
         Clock::MonotonicRaw -> 4, Clock::RealtimeCoarse -> 5, Clock::MonotonicCoarse -> 6, Clock::Boottime -> 7,
-        Clock::Tai -> 11, Clock::ProcessCpuOf(pid) -> process_id(pid)
+        Clock::RealtimeAlarm -> 8, Clock::BoottimeAlarm -> 9, Clock::Tai -> 11, Clock::ProcessCpuOf(pid) -> process_id(pid)
     };
     if (value == -1) { return core::result::Err(Error::InvalidProcess); }
     return core::result::Ok(value);
@@ -99,7 +103,7 @@ pub fn resolution(clock: Clock) -> core::result::Result<core::time::Duration, Er
 // kernel can wait on are accepted; others return Unsupported without a call.
 // EINTR retries the same absolute target, so interruption never shifts it.
 fn waitable(clock: Clock) -> bool {
-    return match (clock) { Clock::Realtime -> true, Clock::Tai -> true, Clock::Monotonic -> true, Clock::Boottime -> true, _ -> false };
+    return match (clock) { Clock::Realtime -> true, Clock::Tai -> true, Clock::Monotonic -> true, Clock::Boottime -> true, Clock::RealtimeAlarm -> true, Clock::BoottimeAlarm -> true, _ -> false };
 }
 fn absolute(clock: Clock, seconds: i64, nanos: u32) -> core::result::Result<i64, Error> {
     let made: core::result::Result<i64, Error> = id(clock);
@@ -114,7 +118,7 @@ fn absolute(clock: Clock, seconds: i64, nanos: u32) -> core::result::Result<i64,
     }
     return core::result::Err(Error::InvalidStatus);
 }
-// Monotonic or Boottime. Returns the instant observed after waking, never one
+// Monotonic, Boottime or BoottimeAlarm. Returns the instant observed after waking, never one
 // before the target; a reading that precedes the target is InvalidStatus.
 pub fn sleep_until_instant(clock: Clock, target: core::time::Instant) -> core::result::Result<core::time::Instant, Error> {
     if (!is_kind(clock,1)) { return core::result::Err(Error::WrongKind); }
@@ -135,7 +139,7 @@ pub fn sleep_until_instant(clock: Clock, target: core::time::Instant) -> core::r
     if (now.compare(target) < 0) { return core::result::Err(Error::InvalidStatus); }
     return core::result::Ok(now);
 }
-// Realtime or Tai. The wait follows wall-clock changes; the observed timestamp
+// Realtime, Tai or RealtimeAlarm. The wait follows wall-clock changes; the observed timestamp
 // after waking is returned. A target at or before the current reading returns
 // without waiting; a negative target with a later pre-epoch clock is EINVAL.
 pub fn sleep_until_timestamp(clock: Clock, target: core::time::SystemTime) -> core::result::Result<core::time::SystemTime, Error> {

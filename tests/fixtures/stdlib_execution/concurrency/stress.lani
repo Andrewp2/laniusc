@@ -1,0 +1,284 @@
+// Concurrency stress: many workers, exact invariants, one summary line per
+// group. Exit 0 only when every invariant held.
+module app::main;
+import core::result;
+import std::atomic;
+import std::channel;
+import std::io;
+import std::sync;
+import std::worker;
+
+fn line(label: str, a: i32, b: i32) {
+    std::io::write_text(1, label); std::io::write_text(1, " "); std::io::write_i32(1, a);
+    std::io::write_text(1, " "); std::io::write_i32(1, b); std::io::write_newline(1);
+}
+fn cell(region: &std::sync::Region) -> ptr { return region.allocate(8).unwrap(); }
+fn joined_clean(pool: &std::worker::Pool) -> bool {
+    let summary: core::result::Result<std::worker::Summary, std::worker::Error> = pool.join_all();
+    if (summary.is_err()) { return false; }
+    let value: std::worker::Summary = summary.unwrap();
+    pool.destroy();
+    return value.failed == 0;
+}
+fn is_child(role: std::worker::Role) -> bool { return match (role) { std::worker::Role::Child(index) -> true, std::worker::Role::Parent(index) -> false }; }
+fn index_of(role: std::worker::Role) -> i32 { return match (role) { std::worker::Role::Child(index) -> index, std::worker::Role::Parent(index) -> index }; }
+
+// 8 workers x 200000 relaxed fetch_add.
+fn atomics(region: &std::sync::Region) -> i32 {
+    let counter: std::atomic::Atomic64 = std::atomic::at64(cell(region));
+    let pool: std::worker::Pool = std::worker::pool(8).unwrap();
+    let w: i32 = 0;
+    while (w < 8) {
+        let role: std::worker::Role = pool.spawn().unwrap();
+        if (is_child(role)) {
+            let k: i32 = 0;
+            while (k < 200000) { counter.fetch_add(1, std::atomic::Ordering::Relaxed); k += 1; }
+            return std::worker::finish(0);
+        }
+        w += 1;
+    }
+    if (!joined_clean(pool.borrow())) { return 1; }
+    let total: u64 = counter.load(std::atomic::Load::SeqCst);
+    // compare_exchange: one failure reports the actual value, one success.
+    let failed: std::atomic::Exchange = counter.compare_exchange(7, 9, std::atomic::Ordering::SeqCst, std::atomic::Load::SeqCst);
+    if (std::atomic::swapped(failed) || std::atomic::observed(failed) != total) { return 2; }
+    let won: std::atomic::Exchange = counter.compare_exchange(total, 9, std::atomic::Ordering::AcqRel, std::atomic::Load::Acquire);
+    if (!std::atomic::swapped(won) || counter.load(std::atomic::Load::Acquire) != 9) { return 3; }
+    line("atomic-fetch-add", 8, total as i32);
+    if (total != 1600000) { return 4; }
+    return 0;
+}
+
+// 8 workers x 50000 lock/load/store/unlock: a lost update means no exclusion.
+fn mutexes(region: &std::sync::Region) -> i32 {
+    let lock: std::sync::Mutex = std::sync::mutex(region).unwrap();
+    let plain: std::atomic::Atomic64 = std::atomic::at64(cell(region));
+    let pool: std::worker::Pool = std::worker::pool(8).unwrap();
+    let w: i32 = 0;
+    while (w < 8) {
+        let role: std::worker::Role = pool.spawn().unwrap();
+        if (is_child(role)) {
+            let k: i32 = 0;
+            while (k < 50000) {
+                if (lock.lock().is_err()) { return std::worker::finish(10); }
+                let value: u64 = plain.load(std::atomic::Load::Relaxed);
+                plain.store(value + 1, std::atomic::Store::Relaxed);
+                if (lock.unlock().is_err()) { return std::worker::finish(11); }
+                k += 1;
+            }
+            return std::worker::finish(0);
+        }
+        w += 1;
+    }
+    if (!joined_clean(pool.borrow())) { return 1; }
+    if (lock.is_locked()) { return 2; }
+    if (lock.unlock().is_ok()) { return 3; }
+    if (!lock.try_lock() || lock.try_lock()) { return 4; }
+    let deadline: std::sync::Deadline = std::sync::deadline_after_ms(30).unwrap();
+    let timed: core::result::Result<i32, std::sync::Error> = lock.lock_until(deadline);
+    let timed_out: bool = match (timed) { core::result::Err(error) -> match (error) { std::sync::Error::TimedOut -> true, _ -> false }, core::result::Ok(value) -> false };
+    if (!timed_out) { return 5; }
+    lock.unlock();
+    let total: u64 = plain.load(std::atomic::Load::SeqCst);
+    line("mutex-increments", 8, total as i32);
+    if (total != 400000) { return 6; }
+    return 0;
+}
+
+// 16 workers race one Lazy64: exactly one initializer, everyone sees 4242.
+fn lazies(region: &std::sync::Region) -> i32 {
+    let lazy: std::sync::Lazy64 = std::sync::lazy64(region).unwrap();
+    let runs: std::atomic::Atomic64 = std::atomic::at64(cell(region));
+    let seen: std::atomic::Atomic64 = std::atomic::at64(cell(region));
+    let start: std::sync::Barrier = std::sync::barrier(region, 16).unwrap();
+    let pool: std::worker::Pool = std::worker::pool(16).unwrap();
+    let w: i32 = 0;
+    while (w < 16) {
+        let role: std::worker::Role = pool.spawn().unwrap();
+        if (is_child(role)) {
+            if (start.wait().is_err()) { return std::worker::finish(20); }
+            let got: std::sync::Init = lazy.get_or_begin().unwrap();
+            let value: u64 = match (got) { std::sync::Init::Ready(value) -> value, std::sync::Init::Run -> 0 };
+            let ran: bool = match (got) { std::sync::Init::Ready(value) -> false, std::sync::Init::Run -> true };
+            if (ran) {
+                runs.fetch_add(1, std::atomic::Ordering::Relaxed);
+                value = lazy.publish(4242).unwrap();
+            }
+            if (value == 4242) { seen.fetch_add(1, std::atomic::Ordering::Relaxed); }
+            return std::worker::finish(0);
+        }
+        w += 1;
+    }
+    if (!joined_clean(pool.borrow())) { return 1; }
+    // An abandoned Once hands Run to the next caller.
+    let gate: std::sync::Once = std::sync::once(region).unwrap();
+    let first: bool = match (gate.begin().unwrap()) { std::sync::Step::Run -> true, std::sync::Step::Done -> false };
+    if (!first || gate.abandon().is_err()) { return 2; }
+    let second: bool = match (gate.begin().unwrap()) { std::sync::Step::Run -> true, std::sync::Step::Done -> false };
+    if (!second || gate.complete().is_err() || gate.complete().is_ok()) { return 3; }
+    let third: bool = match (gate.begin().unwrap()) { std::sync::Step::Run -> true, std::sync::Step::Done -> false };
+    if (third || !gate.is_complete()) { return 4; }
+    line("lazy-init-runs-seen", runs.load(std::atomic::Load::SeqCst) as i32, seen.load(std::atomic::Load::SeqCst) as i32);
+    if (runs.load(std::atomic::Load::SeqCst) != 1 || seen.load(std::atomic::Load::SeqCst) != 16) { return 5; }
+    return 0;
+}
+
+// 8 workers x 200 barrier rounds: exactly one leader per round.
+fn barriers(region: &std::sync::Region) -> i32 {
+    let gate: std::sync::Barrier = std::sync::barrier(region, 8).unwrap();
+    let leaders: std::atomic::Atomic64 = std::atomic::at64(cell(region));
+    let pool: std::worker::Pool = std::worker::pool(8).unwrap();
+    let w: i32 = 0;
+    while (w < 8) {
+        let role: std::worker::Role = pool.spawn().unwrap();
+        if (is_child(role)) {
+            let round: i32 = 0;
+            while (round < 200) {
+                let led: core::result::Result<bool, std::sync::Error> = gate.wait();
+                if (led.is_err()) { return std::worker::finish(30); }
+                if (led.unwrap()) { leaders.fetch_add(1, std::atomic::Ordering::Relaxed); }
+                round += 1;
+            }
+            return std::worker::finish(0);
+        }
+        w += 1;
+    }
+    if (!joined_clean(pool.borrow())) { return 1; }
+    let total: u64 = leaders.load(std::atomic::Load::SeqCst);
+    line("barrier-rounds-leaders", 200, total as i32);
+    if (total != 200) { return 2; }
+    return 0;
+}
+
+// P producers x M messages (sender << 32 | sequence) through a bounded
+// channel to C consumers (P <= 16). Each consumer checks per-sender sequences strictly
+// increase; shared per-sender counts and sequence sums prove no loss or
+// duplication. Consumers end on Disconnected after every producer closes.
+fn channels(region: &std::sync::Region, producers: i32, consumers: i32, messages: i64, capacity: i32) -> i32 {
+    let queue: std::channel::Channel<u64> = std::channel::bounded<u64>(region, capacity).unwrap();
+    let counts: ptr = region.allocate(16 * 8).unwrap();
+    let sums: ptr = region.allocate(16 * 8).unwrap();
+    let disorder: std::atomic::Atomic64 = std::atomic::at64(cell(region));
+    let ends: std::atomic::Atomic64 = std::atomic::at64(cell(region));
+    let pool: std::worker::Pool = std::worker::pool(producers + consumers).unwrap();
+    // Register every endpoint before any worker that uses one exists. The
+    // handles are identical copies; the shared counts carry the ownership.
+    let tx: std::channel::Sender<u64> = queue.open_sender().unwrap();
+    let rx: std::channel::Receiver<u64> = queue.open_receiver().unwrap();
+    let w: i32 = 1;
+    while (w < producers) { queue.open_sender().unwrap(); w += 1; }
+    w = 1;
+    while (w < consumers) { queue.open_receiver().unwrap(); w += 1; }
+    w = 0;
+    while (w < producers + consumers) {
+        let producer: bool = w < producers;
+        let role: std::worker::Role = pool.spawn().unwrap();
+        if (is_child(role)) {
+            let me: i32 = index_of(role);
+            if (producer) {
+                let k: i64 = 0;
+                while (k < messages) {
+                    if (tx.send((((me as u64) << 32) | (k as u64))).is_err()) { return std::worker::finish(40); }
+                    k += 1;
+                }
+                tx.close();
+                return std::worker::finish(0);
+            }
+            let last: [i64; 16] = [-1; 16];
+            let local: [i64; 16] = [0; 16];
+            let local_sum: [i64; 16] = [0; 16];
+            while (true) {
+                let got: core::result::Result<u64, std::channel::RecvError> = rx.recv();
+                if (got.is_err()) {
+                    let closed: bool = match (got.unwrap_err()) { std::channel::RecvError::Disconnected -> true, _ -> false };
+                    if (!closed) { return std::worker::finish(41); }
+                    let s: i32 = 0;
+                    while (s < producers) {
+                        std::atomic::at64(counts + (s as usize) * 8).fetch_add(local[s] as u64, std::atomic::Ordering::Relaxed);
+                        std::atomic::at64(sums + (s as usize) * 8).fetch_add(local_sum[s] as u64, std::atomic::Ordering::Relaxed);
+                        s += 1;
+                    }
+                    ends.fetch_add(1, std::atomic::Ordering::Relaxed);
+                    rx.close();
+                    return std::worker::finish(0);
+                }
+                let message: u64 = got.unwrap();
+                let sender: i32 = (message >> 32) as i32;
+                let sequence: i64 = (message & 4294967295) as i64;
+                if (sender < 0 || sender >= producers) { return std::worker::finish(42); }
+                if (sequence <= last[sender]) { disorder.fetch_add(1, std::atomic::Ordering::Relaxed); }
+                last[sender] = sequence; local[sender] += 1; local_sum[sender] += sequence;
+            }
+            return std::worker::finish(43);
+        }
+        w += 1;
+    }
+    if (!joined_clean(pool.borrow())) { return 1; }
+    let total: i64 = 0; let s: i32 = 0; let exact: bool = true;
+    while (s < producers) {
+        let count: u64 = std::atomic::at64(counts + (s as usize) * 8).load(std::atomic::Load::SeqCst);
+        let sum: u64 = std::atomic::at64(sums + (s as usize) * 8).load(std::atomic::Load::SeqCst);
+        if (count != messages as u64 || sum != (messages * (messages - 1) / 2) as u64) { exact = false; }
+        total += count as i64; s += 1;
+    }
+    line("channel-mpmc-producers-consumers", producers, consumers);
+    line("channel-mpmc-capacity-received", capacity, total as i32);
+    line("channel-fifo-violations-consumer-ends", disorder.load(std::atomic::Load::SeqCst) as i32, ends.load(std::atomic::Load::SeqCst) as i32);
+    if (!exact || total != (producers as i64) * messages || disorder.load(std::atomic::Load::SeqCst) != 0 || ends.load(std::atomic::Load::SeqCst) != consumers as u64) { return 2; }
+    if (queue.sender_count() != 0 || queue.receiver_count() != 0 || queue.len() != 0) { return 3; }
+    return 0;
+}
+
+fn send_error(result: core::result::Result<i32, std::channel::SendError<u64>>) -> i32 {
+    if (result.is_ok()) { return 0; }
+    return match (result.unwrap_err()) { std::channel::SendError::Full(v) -> 1, std::channel::SendError::Disconnected(v) -> 2, std::channel::SendError::TimedOut(v) -> 3, std::channel::SendError::Sync(e) -> 4 };
+}
+fn returned(result: core::result::Result<i32, std::channel::SendError<u64>>) -> u64 {
+    return match (result.unwrap_err()) { std::channel::SendError::Full(v) -> v, std::channel::SendError::Disconnected(v) -> v, std::channel::SendError::TimedOut(v) -> v, std::channel::SendError::Sync(e) -> 0 };
+}
+fn recv_error(result: core::result::Result<u64, std::channel::RecvError>) -> i32 {
+    if (result.is_ok()) { return 0; }
+    return match (result.unwrap_err()) { std::channel::RecvError::Empty -> 1, std::channel::RecvError::Disconnected -> 2, std::channel::RecvError::TimedOut -> 3, std::channel::RecvError::Sync(e) -> 4 };
+}
+
+// Single-process edges: try, timeouts and both disconnect directions.
+fn edges(region: &std::sync::Region) -> i32 {
+    let queue: std::channel::Channel<u64> = std::channel::bounded<u64>(region, 2).unwrap();
+    let rx0: core::result::Result<u64, std::channel::RecvError> = queue.open_receiver().unwrap().try_recv();
+    if (recv_error(rx0) != 2) { return 1; }
+    let tx: std::channel::Sender<u64> = queue.open_sender().unwrap();
+    let rx: std::channel::Receiver<u64> = queue.open_receiver().unwrap();
+    if (recv_error(rx.try_recv()) != 1) { return 2; }
+    if (recv_error(rx.recv_timeout_ms(20)) != 3) { return 3; }
+    if (send_error(tx.try_send(5)) != 0 || send_error(tx.try_send(6)) != 0) { return 4; }
+    let full: core::result::Result<i32, std::channel::SendError<u64>> = tx.try_send(7);
+    if (send_error(full) != 1 || returned(full) != 7) { return 5; }
+    let late: core::result::Result<i32, std::channel::SendError<u64>> = tx.send_timeout_ms(8, 20);
+    if (send_error(late) != 3 || returned(late) != 8) { return 6; }
+    if (rx.recv().unwrap() != 5) { return 7; }
+    // One receiver opened above for the probe is still registered: close both.
+    if (rx.close().unwrap() != 1 || rx.close().unwrap() != 0 || rx.close().is_ok()) { return 8; }
+    let gone: core::result::Result<i32, std::channel::SendError<u64>> = tx.send(9);
+    if (send_error(gone) != 2 || returned(gone) != 9) { return 9; }
+    // Messages sent before the last sender closes are still delivered.
+    let reopened: std::channel::Receiver<u64> = queue.open_receiver().unwrap();
+    if (tx.close().unwrap() != 0) { return 10; }
+    if (reopened.recv().unwrap() != 6) { return 11; }
+    if (recv_error(reopened.recv()) != 2 || recv_error(reopened.recv_timeout_ms(5)) != 2) { return 12; }
+    line("channel-edge-cases", 12, 0);
+    return 0;
+}
+
+fn main() -> i32 {
+    let region: std::sync::Region = std::sync::map_shared(1048576).unwrap();
+    let status: i32 = atomics(region.borrow());
+    if (status == 0) { status = mutexes(region.borrow()); if (status != 0) { status += 10; } }
+    if (status == 0) { status = lazies(region.borrow()); if (status != 0) { status += 20; } }
+    if (status == 0) { status = barriers(region.borrow()); if (status != 0) { status += 30; } }
+    if (status == 0) { status = channels(region.borrow(), 6, 4, 20000, 64); if (status != 0) { status += 40; } }
+    if (status == 0) { status = channels(region.borrow(), 16, 8, 5000, 1); if (status != 0) { status += 60; } }
+    if (status == 0) { status = channels(region.borrow(), 1, 12, 50000, 7); if (status != 0) { status += 70; } }
+    if (status == 0) { status = edges(region.borrow()); if (status != 0) { status += 50; } }
+    if (region.unmap().is_err() && status == 0) { status = 99; }
+    return status;
+}
