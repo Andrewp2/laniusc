@@ -3711,15 +3711,16 @@ pub fn host_write_code(fd: u64, slot: usize) -> Stmt {
 
 // read_stdin(pointer, count), pointer and count in slot and slot + 1: reads
 // of at most MAX_RW_COUNT bytes from fd 0 to the pointer until none are left
-// to ask for or a read delivers fewer than it asked for (standard input is
-// used up), then the total as i32.
+// to ask for or a read delivers none (standard input is used up), then the
+// total as i32. A read may deliver fewer bytes than it asked for, as a pipe or
+// terminal does, so a short read does not end the loop.
 pub fn host_read_code(slot: usize) -> Stmt {
     let count: usize = plus(slot, 1);
     let total: usize = plus(slot, 2);
     let chunk: usize = plus(slot, 3);
     let got: usize = plus(slot, 4);
     let pick: Stmt = Stmt::Ite(Compare(U64, Lt, boxed(Var(count)), boxed(Lit(2147479552))), boxed(Assign(chunk, Var(count))), boxed(Assign(chunk, Lit(2147479552))));
-    let stop: Stmt = Stmt::Ite(Compare(U64, Ne, boxed(Var(got)), boxed(Var(chunk))), boxed(Assign(count, Lit(0))), boxed(Stmt::Skip));
+    let stop: Stmt = Stmt::Ite(Compare(U64, Eq, boxed(Var(got)), boxed(Lit(0))), boxed(Assign(count, Lit(0))), boxed(Stmt::Skip));
     let tally: Stmt = Seq(boxed(Assign(total, Binary(U64, Add, boxed(Var(total)), boxed(Var(got))))), boxed(stop));
     let advance: Stmt = Seq(boxed(Assign(slot, Binary(U64, Add, boxed(Var(slot)), boxed(Var(got))))), boxed(Seq(boxed(Assign(count, Binary(U64, Sub, boxed(Var(count)), boxed(Var(got))))), boxed(tally))));
     let read: Stmt = Seq(boxed(Stmt::Sys(Read, got, cons(Lit(0), cons(Var(slot), single(Var(chunk)))))), boxed(advance));

@@ -39,7 +39,7 @@ stopping at the computations the theorems are about (`compileSource`,
 `linkObjects`, `elfFile`, `sourceProgramFiles`, `compileWords`,
 `frontEndWords` and the self program `Lanius.Faithful.Self.prog`, which are
 not trusted, section 10), with each one's type and body:
-definitions `ecb99c1e574d7359` (4,230 constants). This covers Core's
+definitions `7c8cdcd26ea3fcc7` (4,235 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
@@ -57,8 +57,8 @@ has no parameters: whenever Core runs `entry()` from `startState given` to
 a value `v` with the heap ending within `heap` bytes, then Core's final
 standard output and error are what a write trace puts on fds 1 and 2
 (`outputOf`), and from every state Linux may leave for `file` (`Loaded`)
-whose streams are `given` (standard input, the clocks' readings and the
-secure bytes, `s.io = given`), either some run reaches `exit`
+whose streams are `given` (standard input, the clocks' readings, the
+secure bytes and the read limits, `s.io = given`), either some run reaches `exit`
 (`Exits`) with that trace and the last of `v`'s slots as the status, every
 run of that length agreeing but for flags (`Det`), or the stack is too
 small for the call's depth and the process faults. Rests on sections 3, 6,
@@ -91,7 +91,8 @@ statement `000000002cdd1cd1`. `process_behaviour` from source text, as
 statement `0000000023824272`. If `compileText files = some binary`, the
 files' texts have exactly one reading `sp`, and `compileSource_correct`'s
 conclusion holds of `sp` and `binary`, from the start state of the mini
-heap's streams (standard input, the clocks' readings, the secure bytes). Rests on sections 3, 4, 6 and 8.
+heap's streams (standard input, the clocks' readings, the secure bytes; the
+read limits are any). Rests on sections 3, 4, 6 and 8.
 
 #### `Lanius.Mini.compileText_behaviour`
 
@@ -112,7 +113,7 @@ statement `000000009c74f811`. If `compileSource sp = some binary`, `f` is a
 function of `sp`, and `args` are values of its parameter types held in
 slots `bits` (`FieldsHold`), and Core runs `f(args)` from the start state
 (`startState` of the heap's streams: standard input, the clocks' readings
-and the secure bytes) to `v` with the heap ending within the limit: there are a
+and the secure bytes; the heap's read limits are any) to `v` with the heap ending within the limit: there are a
 depth and result slots representing `v` (`HoldsAt`), with Core's final
 standard output and error those of the mini heap's trace, such that from
 every x86 state meeting the caller's obligations, with a stack window of at
@@ -285,7 +286,7 @@ the statements, so a reader has to agree that each one says what is intended:
 | `Returned`, `HeapAt`, `StackAt`, `Contract`, `Scratch`, `InHeap` | `Mini/Simulation.lean` | the calling convention and what "returns" means (section 8) |
 | `Below`, `Binary.stackNeed`, `Binary.guard` | `Mini/Frame.lean`, `Mini/Bytes.lean` | the stack window |
 | `Det`, `DataEq`, `Live`, `Faults`, `Fault` | `Mini/StepDet.lean`, `X86/Machine/Scalar.lean` | every run agrees but for flags and does not stop early; a run that stops, stops at an architectural fault (`ud2`, `#DE`) |
-| `undefinedTrap`, `Failing` | `Mini/Fails.lean` | a Core run fails at a fuel when it runs out of fuel, stops at a trap that is not undefined, or completes with the heap past the mini heap's limit; the undefined traps are the raw memory errors and `typeMismatch` |
+| `undefinedTrap`, `Failing` | `Mini/Fails.lean` | a Core run fails at a fuel when it runs out of fuel, stops at a trap that is not undefined, exits (`.exited`), or completes or traps with the heap past the mini heap's limit; the undefined traps are the raw memory errors (`invalidPointer`, `rawMemoryBounds`, `doubleFree`, `allocatorContract`), `typeMismatch`, and the end of a clock's readings or of the secure bytes (`clockExhausted`, `entropyExhausted`) |
 | `Program.Returns`, `Exec` | `Mini/Semantics.lean` | the mini IR's big-step semantics, at a call depth |
 | `Stops`, `Program.Stops` | `Mini/Stops.lean`, `Mini/StopsCorrect.lean` | a mini run that, within `n` ticks (loop iterations and calls), has not finished or has stopped at an allocation past the limit from a cursor within it, or at a division by zero or of the least value by -1 |
 | `Typing.ProgramWellTyped` | `Lanius/Typing.lean` | Core's type system on programs |
@@ -636,9 +637,10 @@ unique. Trusted:
     (`builtinPaths`);
   - `x op= e` is `x = x op e`, and `x.f op= e` is `x.f = x.f op e`, for
     `op` one of `+ - * & | ^`. Core has the compound form itself
-    (`assign .add` and so on, `evalAssignValue`), which evaluates `e` before
-    it reads `x`; for the subset's expressions, which neither trap nor have
-    effects, the two orders give the same value and state;
+    (`assign .add` and so on, `evalAssignValue`), which reads `x` (its
+    place, `evalPlace` in read mode) before it evaluates `e`, as `x = x op
+    e` does; for the subset's expressions, which neither trap nor have
+    effects, the two forms give the same value and state;
   - an expression that calls a function, indexes a slice, divides (`/`,
     `%`), or is a struct literal, variant or `match` is a `SrcEff`, and its
     statement the effectful form (`LetEval`, `SetEval`, `SetFieldEval`,
@@ -820,7 +822,8 @@ theorems the kernel checks, so they are not trusted either way.
   existential: *some* model run `Steps n s s'` returns. `Step` is a relation,
   and it leaves these choices free:
   - AF after AND, OR, XOR and TEST;
-  - every flag after IMUL, NEG and shifts;
+  - every flag after IMUL, NEG, shifts, DIV and IDIV;
+  - r11 after a `syscall` (`Kernel`, where Linux leaves RFLAGS);
   - the byte list it decodes, which may be any list loaded at `rip`.
 
   The CPU's run is generally a different model run from the one the
@@ -834,8 +837,8 @@ theorems the kernel checks, so they are not trusted either way.
       ∀ t, Steps n s t → DataEq s' t ∧ Returned window s t value after
   ```
 
-  `DataEq` is equality of registers, rip and memory, so only RFLAGS may
-  differ. `compileSource_deterministic` and `linked_deterministic` are the
+  `DataEq` is equality of the registers, rip, memory, the xmm registers'
+  low halves and the process side (`io`), so only RFLAGS may differ. `compileSource_deterministic` and `linked_deterministic` are the
   same for `compileSource_correct` and `linked_correct`, and the process
   theorems carry `Det`.
 - **Still assumed.** That the CPU's run is one of the model's runs (section
@@ -870,7 +873,7 @@ obligation on the x86 state below from what Linux does. Trusted about Linux:
     `X86/Machine/Io.lean`), and changes no memory;
   - returns rdx in rax, leaves the next instruction's address in rcx and
     rip, an unknown value in r11 (where Linux saves RFLAGS), and every other
-    register and RFLAGS as they were.
+    register, the xmm registers and RFLAGS as they were (`State.syscalled`).
 
   So it is trusted that fds 1 and 2 are open for writing when the process
   starts, that a write to them never fails, blocks forever or is partial
@@ -886,23 +889,30 @@ obligation on the x86 state below from what Linux does. Trusted about Linux:
   "Externs and the runtime"); their Core meaning is `World.call`, part of
   Core's semantics (section 3).
 - **The kernel's `read` (`Kernel.read`, roadmap F8).** The state's
-  `io` also holds `input`, the bytes not yet read from standard input.
-  With rax 0, rdi 0 and rdx at most `maxTransfer`, the call
-  - delivers the first rdx bytes of `input`, or all of it when fewer are
-    left, written to memory from rsi on (`writeBytes`; no other byte
-    changes), and drops rdx bytes from `input`;
-  - returns how many it delivered in rax (0 at the end of the input),
-    with rcx, rip, r11 and the other registers and RFLAGS as for `write`.
+  `io` also holds `input`, the bytes not yet read from standard input,
+  and `readLimits`, how many bytes each read delivers. With rax 0, rdi 0
+  and rdx at most `maxTransfer`, the call
+  - delivers the first k bytes of `input` (`Io.readBytes`), written to
+    memory from rsi on (`writeBytes`; no other byte changes), and drops
+    them from `input` (`Io.afterRead`). k is rdx, or all that is left
+    when fewer are left, and at most the next of `readLimits` plus one,
+    which the call takes (past the end of the list there is no such bound);
+  - returns k in rax, with rcx, rip, r11 and the other registers and
+    RFLAGS as for `write`.
 
-  So it is trusted that fd 0 is open for reading when the process starts
-  and that it delivers like a regular file: every read returns as many
-  bytes as were asked for until the input ends, never fails, never blocks
-  forever and is never interrupted. A terminal or a pipe can return fewer
-  bytes than asked for before its end (a short read), which the model does
-  not have; the compiled code would still be right on one (it reads again
-  only after a full read), but the theorems do not cover it. Linux checks
-  the buffer with `access_ok` before reading, and could return EFAULT for
-  a range outside user space even when the file has no bytes left; the
+  So a read may deliver any k with 0 < k ≤ min(rdx, bytes left), as a
+  terminal or a pipe may (a short read), and delivers 0 only when rdx is
+  0 or the input is used up (`Io.readBytes_length`); every such k is the
+  one some list delivers (`Io.readBytes_any`). The list is fixed when the
+  process starts, as `input` is, and the theorems hold for every one, so
+  they cover every way the reads may come: the run is determined by how
+  many bytes each read delivered, and that sequence is a list. It is
+  trusted that fd 0 is open for reading when the process starts, that a
+  read never fails, never blocks forever and is never interrupted, and
+  that a read delivering 0 means the input has ended (on a terminal, the
+  end-of-file key ends it). Linux checks the buffer with `access_ok`
+  before reading, and could return EFAULT for a range outside user space
+  even when the file has no bytes left; the
   model assumes the call does not fault, and the verified compiler's
   buffers are inside its heap, whose end is below 2^62 (`HeapAt`). Core's
   `read_stdin` is lowered to this `read` (SEMANTIC_DECISIONS.md, "Host
