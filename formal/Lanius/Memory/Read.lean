@@ -1,5 +1,8 @@
-import Lanius.Memory.Store
+module
 
+public import Lanius.Memory.Store
+
+@[expose] public section
 namespace Lanius.Memory
 
 /-- Readability of a byte range, independent of its current contents. -/

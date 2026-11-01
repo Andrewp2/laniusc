@@ -1,5 +1,8 @@
-import Lanius.X86.Machine.Encoding
+module
 
+public import Lanius.X86.Machine.Encoding
+
+@[expose] public section
 namespace Lanius.X86.Machine
 
 /-!

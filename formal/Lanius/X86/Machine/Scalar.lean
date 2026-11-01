@@ -1,9 +1,12 @@
-import Lanius.X86.Machine.Memory
-import Lanius.X86.Machine.Alu
-import Lanius.X86.Register
-import Lanius.X86.Control.Decode
-import Lanius.X86.Machine.Sse
+module
 
+public import Lanius.X86.Machine.Memory
+public import Lanius.X86.Machine.Alu
+public import Lanius.X86.Register
+public import Lanius.X86.Control.Decode
+public import Lanius.X86.Machine.Sse
+
+@[expose] public section
 namespace Lanius.X86.Machine
 
 inductive Shift where

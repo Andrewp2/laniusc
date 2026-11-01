@@ -4,7 +4,11 @@
 # Linux x86_64/glibc calls this bridge as main(int argc, char **argv, char **envp).
 # The private native runtime retains its initial-stack ABI in R15. Build that
 # exact vector in bounded mmap storage, independently of libc's pointer layout.
-# The mapping lives until language main returns. Failure returns status 127.
+# The storage is at the fixed process-vector address (runtime_abi.slang,
+# X86_PROCESS_VECTOR_ADDRESS) so a C-callable entry on any thread can load R15
+# without writable data (instruction_plan.slang, plan_c_entry). The mapping
+# lives until language main returns. Failure, including an address already in
+# use or a kernel without MAP_FIXED_NOREPLACE, returns status 127.
 .intel_syntax noprefix
 .section .text.crt_entry_bytes,"ax"
 .globl crt_entry_start
@@ -45,16 +49,16 @@ crt_entry_start:
 .Lcrt_counted:
     lea r14, [rbx + rbp + 3]
     shl r14, 3
-    xor edi, edi
+    movabs rdi, 0x100000000000
     mov rsi, r14
     mov edx, 3
-    mov r10d, 0x22
+    mov r10d, 0x100022
     mov r8, -1
     xor r9d, r9d
     mov eax, 9
     syscall
-    test rax, rax
-    js .Lcrt_bad
+    cmp rax, rdi
+    jne .Lcrt_bad
     mov r15, rax
     mov qword ptr [r15], rbx
     lea rdi, [r15 + 8]

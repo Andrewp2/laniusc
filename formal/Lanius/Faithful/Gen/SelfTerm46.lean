@@ -27,7 +27,7 @@ theorem ok_fl_xor : FnOk prog prims info (2075, ⟨0, [], 0⟩) :=
 theorem ok_fl_carry : FnOk prog prims info (2076, ⟨0, [], 0⟩) :=
   fnOk_of fn_fl_carry (by decide +kernel)
 
-theorem ok_fl_nat_odd : FnOk prog prims info (2077, ⟨2, [0], 0⟩) :=
+theorem ok_fl_nat_odd : FnOk prog prims info (2077, ⟨1, [0], 0⟩) :=
   fnOk_of fn_fl_nat_odd (by decide +kernel)
 
 theorem ok_fl_nat_half : FnOk prog prims info (2078, ⟨2, [0], 0⟩) :=
@@ -42,16 +42,16 @@ theorem ok_fl_low_bit : FnOk prog prims info (2080, ⟨0, [], 0⟩) :=
 theorem ok_fl_log2_or0 : FnOk prog prims info (2082, ⟨4, [], 0⟩) :=
   fnOk_of fn_fl_log2_or0 (by decide +kernel)
 
-theorem ok_fl_sat : FnOk prog prims info (2083, ⟨2, [], 0⟩) :=
+theorem ok_fl_sat : FnOk prog prims info (2083, ⟨1, [], 0⟩) :=
   fnOk_of fn_fl_sat (by decide +kernel)
 
 theorem ok_fl_bit : FnOk prog prims info (2084, ⟨0, [], 0⟩) :=
   fnOk_of fn_fl_bit (by decide +kernel)
 
-theorem ok_fl_ratio_ok : FnOk prog prims info (2085, ⟨3, [], 0⟩) :=
+theorem ok_fl_ratio_ok : FnOk prog prims info (2085, ⟨2, [], 0⟩) :=
   fnOk_of fn_fl_ratio_ok (by decide +kernel)
 
-theorem ok_fl_shl : FnOk prog prims info (2086, ⟨2, [1], 0⟩) :=
+theorem ok_fl_shl : FnOk prog prims info (2086, ⟨1, [1], 0⟩) :=
   fnOk_of fn_fl_shl (by decide +kernel)
 
 theorem ok_fl_divmod : FnOk prog prims info (2087, ⟨3, [0], 0⟩) :=
@@ -72,7 +72,7 @@ theorem ok_fl_to_nat : FnOk prog prims info (2091, ⟨2, [0], 0⟩) :=
 theorem ok_is_scalar_owner : FnOk prog prims info (2093, ⟨7, [], 0⟩) :=
   fnOk_of fn_is_scalar_owner (by decide +kernel)
 
-theorem ok_is_owner_at : FnOk prog prims info (2094, ⟨3, [], 0⟩) :=
+theorem ok_is_owner_at : FnOk prog prims info (2094, ⟨2, [], 0⟩) :=
   fnOk_of fn_is_owner_at (by decide +kernel)
 
 theorem ok_find_fn_at : FnOk prog prims info (2095, ⟨2, [1], 1⟩) :=
@@ -93,7 +93,7 @@ theorem ok_infer_eff : FnOk prog prims info (2099, ⟨13, [], 0⟩) :=
 theorem ok_concat_of_mini_selfhost_MEff : FnOk prog prims info (2100, ⟨0, [0], 0⟩) :=
   fnOk_of fn_concat_of_mini_selfhost_MEff (by decide +kernel)
 
-theorem ok_patterns_of : FnOk prog prims info (2101, ⟨5, [1], 0⟩) :=
+theorem ok_patterns_of : FnOk prog prims info (2101, ⟨4, [1], 0⟩) :=
   fnOk_of fn_patterns_of (by decide +kernel)
 
 theorem ok_inst_bound : FnOk prog prims info (2102, ⟨18, [], 0⟩) :=
@@ -105,7 +105,7 @@ theorem ok_checked_bound : FnOk prog prims info (2103, ⟨0, [], 0⟩) :=
 theorem ok_arg_expected : FnOk prog prims info (2104, ⟨11, [], 0⟩) :=
   fnOk_of fn_arg_expected (by decide +kernel)
 
-theorem ok_eff_arg_next : FnOk prog prims info (2105, ⟨30, [0], 0⟩) :=
+theorem ok_eff_arg_next : FnOk prog prims info (2105, ⟨29, [0], 0⟩) :=
   fnOk_of fn_eff_arg_next (by decide +kernel)
 
 theorem ok_cons_bound : FnOk prog prims info (2106, ⟨1, [], 0⟩) :=
@@ -114,7 +114,7 @@ theorem ok_cons_bound : FnOk prog prims info (2106, ⟨1, [], 0⟩) :=
 theorem ok_bind_arg : FnOk prog prims info (2107, ⟨17, [], 0⟩) :=
   fnOk_of fn_bind_arg (by decide +kernel)
 
-theorem ok_ret_pattern : FnOk prog prims info (2108, ⟨4, [], 0⟩) :=
+theorem ok_ret_pattern : FnOk prog prims info (2108, ⟨3, [], 0⟩) :=
   fnOk_of fn_ret_pattern (by decide +kernel)
 
 theorem ok_callee_env : FnOk prog prims info (2109, ⟨2, [], 0⟩) :=

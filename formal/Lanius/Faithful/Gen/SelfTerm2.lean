@@ -12,13 +12,13 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Termination
 open Lanius.Faithful.SelfCert
 
-theorem ok_file_decls : FnOk prog prims info (100, ⟨13, [], 0⟩) :=
+theorem ok_file_decls : FnOk prog prims info (100, ⟨12, [], 0⟩) :=
   fnOk_of fn_file_decls (by decide +kernel)
 
-theorem ok_build_collected : FnOk prog prims info (101, ⟨45, [], 0⟩) :=
+theorem ok_build_collected : FnOk prog prims info (101, ⟨44, [], 0⟩) :=
   fnOk_of fn_build_collected (by decide +kernel)
 
-theorem ok_collect_files : FnOk prog prims info (102, ⟨14, [1], 0⟩) :=
+theorem ok_collect_files : FnOk prog prims info (102, ⟨13, [1], 0⟩) :=
   fnOk_of fn_collect_files (by decide +kernel)
 
 theorem ok_single_of_mini_selfhost_List_mini_selfhost_List_usize : FnOk prog prims info (104, ⟨0, [], 0⟩) :=
@@ -123,13 +123,13 @@ theorem ok_p_file : FnOk prog prims info (145, ⟨0, [], 0⟩) :=
 theorem ok_list_items : FnOk prog prims info (146, ⟨3, [0], 0⟩) :=
   fnOk_of fn_list_items (by decide +kernel)
 
-theorem ok_kid : FnOk prog prims info (147, ⟨3, [], 0⟩) :=
+theorem ok_kid : FnOk prog prims info (147, ⟨2, [], 0⟩) :=
   fnOk_of fn_kid (by decide +kernel)
 
-theorem ok_file_items : FnOk prog prims info (148, ⟨12, [], 0⟩) :=
+theorem ok_file_items : FnOk prog prims info (148, ⟨11, [], 0⟩) :=
   fnOk_of fn_file_items (by decide +kernel)
 
-theorem ok_module_path : FnOk prog prims info (149, ⟨6, [1], 0⟩) :=
+theorem ok_module_path : FnOk prog prims info (149, ⟨5, [1], 0⟩) :=
   fnOk_of fn_module_path (by decide +kernel)
 
 theorem chunk2 : AllFns prog prims info part2 :=

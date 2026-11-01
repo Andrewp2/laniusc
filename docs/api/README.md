@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **327 modules**, **17517 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **330 modules**, **17578 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -234,12 +234,12 @@ Inventory: **327 modules**, **17517 declaration/member entries**. Counts include
 | [ext::cli_help](ext/cli_help.md) | [source](../../extended/ext/cli_help.lani#L5) | 2 | Source inventory | [extended-cli-commands](../extended-cli-commands.md) |
 | [ext::cli_response](ext/cli_response.md) | [source](../../extended/ext/cli_response.lani#L4) | 73 | Source inventory | [extended-cli-response](../extended-cli-response.md), [library-response-files-plan](../library-response-files-plan.md) |
 | [ext::cli_response_files](ext/cli_response_files.md) | [source](../../extended/ext/cli_response_files.lani#L3) | 28 | Source inventory | [extended-cli-response](../extended-cli-response.md), [library-response-files-plan](../library-response-files-plan.md) |
-| [ext::compression](ext/compression.md) | [source](../../extended/ext/compression.lani#L3) | 93 | Source inventory | [extended-compression](../extended-compression.md), [extended-streaming-inflate](../extended-streaming-inflate.md), [extended-decompress-file](../extended-decompress-file.md), [extended-streaming-deflate](../extended-streaming-deflate.md), [extended-compress-file](../extended-compress-file.md) |
+| [ext::compression](ext/compression.md) | [source](../../extended/ext/compression.lani#L3) | 95 | Source inventory | [extended-compression](../extended-compression.md), [extended-streaming-inflate](../extended-streaming-inflate.md), [extended-decompress-file](../extended-decompress-file.md), [extended-streaming-deflate](../extended-streaming-deflate.md), [extended-compress-file](../extended-compress-file.md) |
 | [ext::config](ext/config.md) | [source](../../extended/ext/config.lani#L4) | 47 | Source inventory | [extended-config](../extended-config.md) |
 | [ext::csv](ext/csv.md) | [source](../../extended/ext/csv.lani#L4) | 107 | Source inventory | [extended-csv](../extended-csv.md), [extended-csv-write](../extended-csv-write.md), [extended-csv-rewrite](../extended-csv-rewrite.md), [extended-json-stream](../extended-json-stream.md) |
 | [ext::csv_write](ext/csv_write.md) | [source](../../extended/ext/csv_write.lani#L2) | 17 | Source inventory | [extended-csv-write](../extended-csv-write.md), [extended-csv-rewrite](../extended-csv-rewrite.md) |
 | [ext::decimal](ext/decimal.md) | [source](../../extended/ext/decimal.lani#L3) | 92 | Source inventory | [extended-decimal](../extended-decimal.md) |
-| [ext::deflate](ext/deflate.md) | [source](../../extended/ext/deflate.lani#L4) | 37 | Source inventory | [extended-deflate](../extended-deflate.md), [extended-streaming-deflate](../extended-streaming-deflate.md) |
+| [ext::deflate](ext/deflate.md) | [source](../../extended/ext/deflate.lani#L4) | 53 | Source inventory | [extended-deflate](../extended-deflate.md), [extended-streaming-deflate](../extended-streaming-deflate.md) |
 | [ext::der](ext/der.md) | [source](../../extended/ext/der.lani#L3) | 92 | Source inventory | [extended-der](../extended-der.md) |
 | [ext::diff](ext/diff.md) | [source](../../extended/ext/diff.lani#L2) | 48 | Source inventory | [extended-diff](../extended-diff.md) |
 | [ext::diffstat](ext/diffstat.md) | [source](../../extended/ext/diffstat.lani#L3) | 39 | Source inventory | [extended-wordiff](../extended-wordiff.md) |
@@ -279,7 +279,7 @@ Inventory: **327 modules**, **17517 declaration/member entries**. Counts include
 | [ext::json_pointer](ext/json_pointer.md) | [source](../../extended/ext/json_pointer.lani#L3) | 14 | Source inventory | [extended-json-patch](../extended-json-patch.md) |
 | [ext::json_schema](ext/json_schema.md) | [source](../../extended/ext/json_schema.lani#L4) | 45 | Source inventory | [extended-json-schema](../extended-json-schema.md) |
 | [ext::json_stream](ext/json_stream.md) | [source](../../extended/ext/json_stream.lani#L5) | 163 | Source inventory | [extended-json-stream](../extended-json-stream.md) |
-| [ext::json_tree](ext/json_tree.md) | [source](../../extended/ext/json_tree.lani#L5) | 88 | Source inventory | [extended-json-patch](../extended-json-patch.md) |
+| [ext::json_tree](ext/json_tree.md) | [source](../../extended/ext/json_tree.lani#L5) | 89 | Source inventory | [extended-json-patch](../extended-json-patch.md) |
 | [ext::kv](ext/kv.md) | [source](../../extended/ext/kv.lani#L3) | 48 | Source inventory | [extended-kv](../extended-kv.md), [extended-cli-complete](../extended-cli-complete.md) |
 | [ext::lexer](ext/lexer.md) | [source](../../extended/ext/lexer.lani#L2) | 80 | Source inventory | [extended-lexer](../extended-lexer.md), [extended-lex-scan](../extended-lex-scan.md), [library-regex-workspace-plan](../library-regex-workspace-plan.md) |
 | [ext::linalg](ext/linalg.md) | [source](../../extended/ext/linalg.lani#L3) | 87 | Source inventory | [extended-linalg](../extended-linalg.md), [extended-sparse](../extended-sparse.md) |
@@ -321,6 +321,7 @@ Inventory: **327 modules**, **17517 declaration/member entries**. Counts include
 | [ext::timezone](ext/timezone.md) | [source](../../extended/ext/timezone.lani#L3) | 80 | Source inventory | [extended-timezone](../extended-timezone.md) |
 | [ext::tls_stream](ext/tls_stream.md) | [source](../../extended/ext/tls_stream.lani#L3) | 74 | Source inventory | [extended-https-fetch](../extended-https-fetch.md), [extended-openssl-tls](../extended-openssl-tls.md), [extended-https-server](../extended-https-server.md), [extended-openssl-tls-server](../extended-openssl-tls-server.md), [extended-openssl-mutual-tls](../extended-openssl-mutual-tls.md), [extended-https-mutual-tls](../extended-https-mutual-tls.md) |
 | [ext::toml](ext/toml.md) | [source](../../extended/ext/toml.lani#L2) | 93 | Source inventory | [extended-toml](../extended-toml.md), [extended-toml-streaming](../extended-toml-streaming.md), [extended-toml-normalize](../extended-toml-normalize.md) |
+| [ext::toml_writer](ext/toml_writer.md) | [source](../../extended/ext/toml_writer.lani#L6) | 10 | Source inventory | [extended-toml-writer](../extended-toml-writer.md) |
 | [ext::unicode_case](ext/unicode_case.md) | [source](../../extended/ext/unicode_case.lani#L4) | 21 | Source inventory | [extended-unicode-case](../extended-unicode-case.md), [extended-unicode-uconv](../extended-unicode-uconv.md) |
 | [ext::unicode_graphemes](ext/unicode_graphemes.md) | [source](../../extended/ext/unicode_graphemes.lani#L3) | 18 | Source inventory | [extended-unicode-graphemes](../extended-unicode-graphemes.md) |
 | [ext::unicode_lines](ext/unicode_lines.md) | [source](../../extended/ext/unicode_lines.lani#L3) | 37 | Source inventory | [extended-unicode-lines](../extended-unicode-lines.md) |
@@ -344,6 +345,8 @@ Inventory: **327 modules**, **17517 declaration/member entries**. Counts include
 | [ext::wordiff](ext/wordiff.md) | [source](../../extended/ext/wordiff.lani#L3) | 19 | Source inventory | [extended-wordiff](../extended-wordiff.md) |
 | [ext::x509](ext/x509.md) | [source](../../extended/ext/x509.lani#L3) | 141 | Source inventory | [extended-x509](../extended-x509.md), [extended-certificate-info](../extended-certificate-info.md) |
 | [ext::xz](ext/xz.md) | [source](../../extended/ext/xz.lani#L4) | 168 | Source inventory | [extended-xz](../extended-xz.md) |
+| [ext::yaml](ext/yaml.md) | [source](../../extended/ext/yaml.lani#L4) | 29 | Source inventory | [extended-yaml](../extended-yaml.md) |
+| [ext::yaml_writer](ext/yaml_writer.md) | [source](../../extended/ext/yaml_writer.lani#L6) | 3 | Source inventory | [extended-yaml](../extended-yaml.md) |
 | [ext::zip](ext/zip.md) | [source](../../extended/ext/zip.lani#L2) | 82 | Source inventory | [extended-zip](../extended-zip.md), [extended-fetch-many](../extended-fetch-many.md) |
 
 ## Support and implementation data

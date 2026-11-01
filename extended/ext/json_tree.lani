@@ -388,6 +388,9 @@ fn same(left: [u8], left_start: i32, right: [u8], right_start: i32, length: i32)
     return true;
 }
 
+// An empty tree for builders such as ext::yaml: add nodes with new_node,
+// new_text, set_key and insert, then set_root.
+pub fn new_tree(limits: Limits) -> Tree { return empty(limits); }
 // A tree holding a deep copy of source's root.
 pub fn copy(source: &Tree, limits: Limits) -> core::result::Result<Tree, Error> {
     let tree: Tree = empty(limits);

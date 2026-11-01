@@ -80,10 +80,10 @@ pub fn times(a: usize, b: usize) -> usize {
     return product;
 }
 
-// Nat a - b, used only where a >= b
+// Nat a - b, truncated: 0 when b > a
 pub fn minus(a: usize, b: usize) -> usize {
     if (b > a) {
-        core::panic::panic();
+        return 0;
     }
     return a - b;
 }
@@ -2979,6 +2979,9 @@ pub fn wide_decimal(text: List<usize>, acc: usize) -> core::option::Option<usize
 
 // extract: inline
 fn wide_digit(wb: usize, wrest: List<usize>, wacc: usize) -> core::option::Option<usize> {
+    if (wacc > 1844674407370955161 || (wacc == 1844674407370955161 && wb > 53)) {
+        return None;
+    }
     if (wb >= 48 && 57 >= wb) {
         return wide_decimal(wrest, plus(times(wacc, 10), minus(wb, 48)));
     }

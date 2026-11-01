@@ -9,7 +9,7 @@ use crate::compiler::stable_name_hash;
 // Version 3 introduced (data, length, signed byte stride) slice values.
 // Version 4 appends the GPU-emitted CRT main bridge to each text section.
 pub const GPU_X86_OBJECT_VERSION: u32 = 4;
-pub const GPU_X86_CRT_MAIN_BRIDGE_BYTES: u32 = 225;
+pub const GPU_X86_CRT_MAIN_BRIDGE_BYTES: u32 = 233;
 const GPU_X86_OBJECT_MAGIC: [u8; 8] = *b"LNX86OBJ";
 const HEADER_U32S: usize = 9;
 const RELOCATION_U32S: usize = 8;

@@ -136,6 +136,7 @@ uint instruction_bytes(X86LirCore core, X86LirOperands operands,
         if (callee_index < target_function_count[0u])
             input.callee_row = target_functions[callee_index].instruction_start;
     }
+    input.c_entry_narrow_mask = 0u;
     input.specialized = x86_is_specialized_instruction(core, operands);
     input.footer = false;
     input.skip_body = false;

@@ -1,8 +1,11 @@
-import Lanius.Faithful.Sim.PrimInv
-import Lanius.Faithful.Sim.Slice
-import Lanius.Semantics.NativeReadFrame
-import Lanius.Memory.Store
+module
 
+public import Lanius.Faithful.Sim.PrimInv
+public import Lanius.Faithful.Sim.Slice
+public import Lanius.Semantics.NativeReadFrame
+public import Lanius.Memory.Store
+
+@[expose] public section
 /-! # Core runs of driver code
 
 The self-host driver is not in the pure subset: it makes raw i32 slices of

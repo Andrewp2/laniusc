@@ -30,13 +30,13 @@ theorem ok_seed_tys : FnOk prog prims info (395, ⟨1, [0], 0⟩) :=
 theorem ok_funcs_tys : FnOk prog prims info (396, ⟨3, [0], 0⟩) :=
   fnOk_of fn_funcs_tys (by decide +kernel)
 
-theorem ok_get_of_mini_selfhost_Inst : FnOk prog prims info (397, ⟨2, [0], 0⟩) :=
+theorem ok_get_of_mini_selfhost_Inst : FnOk prog prims info (397, ⟨1, [0], 0⟩) :=
   fnOk_of fn_get_of_mini_selfhost_Inst (by decide +kernel)
 
-theorem ok_mono_next : FnOk prog prims info (398, ⟨43, [0], 1⟩) :=
+theorem ok_mono_next : FnOk prog prims info (398, ⟨42, [0], 1⟩) :=
   fnOk_of fn_mono_next (by decide +kernel)
 
-theorem ok_read_inst : FnOk prog prims info (399, ⟨42, [], 0⟩) :=
+theorem ok_read_inst : FnOk prog prims info (399, ⟨41, [], 0⟩) :=
   fnOk_of fn_read_inst (by decide +kernel)
 
 theorem ok_funcs_onto : FnOk prog prims info (400, ⟨1, [0], 0⟩) :=
@@ -114,7 +114,7 @@ theorem ok_Stmt_agrees : FnOk prog prims info (425, ⟨9, [0], 0⟩) :=
 theorem ok_Stmt_temps : FnOk prog prims info (426, ⟨4, [0], 0⟩) :=
   fnOk_of fn_Stmt_temps (by decide +kernel)
 
-theorem ok_Stmt_within : FnOk prog prims info (427, ⟨4, [0], 0⟩) :=
+theorem ok_Stmt_within : FnOk prog prims info (427, ⟨3, [0], 0⟩) :=
   fnOk_of fn_Stmt_within (by decide +kernel)
 
 theorem ok_frame_limit : FnOk prog prims info (428, ⟨0, [], 0⟩) :=

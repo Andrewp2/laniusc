@@ -30,10 +30,10 @@ theorem ok_where_goals : FnOk prog prims info (1444, ⟨16, [], 0⟩) :=
 theorem ok_func_body : FnOk prog prims info (1445, ⟨0, [], 0⟩) :=
   fnOk_of fn_func_body (by decide +kernel)
 
-theorem ok_contracts_of : FnOk prog prims info (1446, ⟨31, [0], 0⟩) :=
+theorem ok_contracts_of : FnOk prog prims info (1446, ⟨30, [0], 0⟩) :=
   fnOk_of fn_contracts_of (by decide +kernel)
 
-theorem ok_block_of : FnOk prog prims info (1447, ⟨37, [0], 0⟩) :=
+theorem ok_block_of : FnOk prog prims info (1447, ⟨36, [0], 0⟩) :=
   fnOk_of fn_block_of (by decide +kernel)
 
 theorem ok_cons_ty : FnOk prog prims info (1448, ⟨2, [], 0⟩) :=

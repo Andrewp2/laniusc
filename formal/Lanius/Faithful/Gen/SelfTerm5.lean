@@ -15,10 +15,10 @@ open Lanius.Faithful.SelfCert
 theorem ok_empty_of_mini_selfhost_List_usize : FnOk prog prims info (246, ⟨0, [], 0⟩) :=
   fnOk_of fn_empty_of_mini_selfhost_List_usize (by decide +kernel)
 
-theorem ok_module_at : FnOk prog prims info (247, ⟨6, [2], 1⟩) :=
+theorem ok_module_at : FnOk prog prims info (247, ⟨5, [2], 1⟩) :=
   fnOk_of fn_module_at (by decide +kernel)
 
-theorem ok_item_body : FnOk prog prims info (248, ⟨4, [], 0⟩) :=
+theorem ok_item_body : FnOk prog prims info (248, ⟨3, [], 0⟩) :=
   fnOk_of fn_item_body (by decide +kernel)
 
 theorem ok_well_named : FnOk prog prims info (249, ⟨8, [], 0⟩) :=
@@ -27,7 +27,7 @@ theorem ok_well_named : FnOk prog prims info (249, ⟨8, [], 0⟩) :=
 theorem ok_build_mono : FnOk prog prims info (250, ⟨21, [], 0⟩) :=
   fnOk_of fn_build_mono (by decide +kernel)
 
-theorem ok_mono_loop : FnOk prog prims info (251, ⟨43, [0], 0⟩) :=
+theorem ok_mono_loop : FnOk prog prims info (251, ⟨42, [0], 0⟩) :=
   fnOk_of fn_mono_loop (by decide +kernel)
 
 theorem ok_empty_of_mini_selfhost_MFunc : FnOk prog prims info (252, ⟨0, [], 0⟩) :=
@@ -111,10 +111,10 @@ theorem ok_lower_copy : FnOk prog prims info (293, ⟨7, [], 0⟩) :=
 theorem ok_lower_struct_fields : FnOk prog prims info (296, ⟨13, [], 0⟩) :=
   fnOk_of fn_lower_struct_fields (by decide +kernel)
 
-theorem ok_repeat_type : FnOk prog prims info (297, ⟨2, [1], 0⟩) :=
+theorem ok_repeat_type : FnOk prog prims info (297, ⟨1, [1], 0⟩) :=
   fnOk_of fn_repeat_type (by decide +kernel)
 
-theorem ok_get_of_mini_selfhost_Sig : FnOk prog prims info (298, ⟨2, [0], 0⟩) :=
+theorem ok_get_of_mini_selfhost_Sig : FnOk prog prims info (298, ⟨1, [0], 0⟩) :=
   fnOk_of fn_get_of_mini_selfhost_Sig (by decide +kernel)
 
 theorem ok_lower_call_sig : FnOk prog prims info (299, ⟨13, [], 0⟩) :=
