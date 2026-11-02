@@ -17,7 +17,7 @@ use crate::gpu::{
 
 const PRODUCER: &str = "codegen/lir/x86/runtime_dispatch_args";
 const EMITTER: &str = "codegen/lir/x86/runtime_emit";
-const CAPACITY: usize = 3949;
+const CAPACITY: usize = 3952;
 const CANARY: u8 = 0xa5;
 
 fn words(values: &[u32]) -> Vec<u8> {
