@@ -743,6 +743,48 @@ verified compiler's locals are 64-bit slots with no address. The design:
    elements, and from then on the array local is addressed at that heap
    address. The proofs' invariant "Core has no views" (`Grows`) becomes
    "every view's block holds its cell".
+   The plan (decided 11-02, f6v):
+   - *When.* Core maps a view at the first `i32_array_data_ptr` the run
+     evaluates, so the verified compiler's block must be allocated there and
+     not earlier (Core's later allocations would get other addresses). The
+     verified compiler reads only the statement `let p: ptr =
+     core::mem::i32_array_data_ptr(a);` (Source `LetView p a body`, Core's
+     `letLocal p (i32ArrayDataPtr (local a)) body`), a an `[i32; n]` local
+     declared in the same block: `lower_func` rejects a body with a
+     `LetView` inside an `if`, `while` or match arm whose array is declared
+     outside it (`loose_views`, as `breaks_out` for a loose `break`), so the
+     local is viewed for the whole rest of its scope and never seen in
+     slots again. That is the
+     stdlib's pattern (most of its 125 calls; the rest pass the pointer
+     inside an expression, later work). A second `LetView` of a viewed
+     array gives its address again, as Core's `mapI32ArrayView` finds the
+     view it made.
+   - *Code.* `LetView` bump-allocates `4 n` bytes at alignment 4 (Core's
+     `mapBorrowed`, which takes no budget: the heap is unbounded in
+     `HeapCorr`), stores the n elements packed (an `i32` at +4k), and the
+     body is lowered with a's binding replaced by one of the new source
+     type `SrcType.View n` (one slot: the block's address). Reads `a[i]`,
+     `let x = a[i]`, writes `a[i] = v` and the length of a `View` are
+     loads and stores at the address, after the bound check `i <u n`, as a
+     raw `[i32]`'s; every other use of a `View` (a copy, a call argument,
+     an array call) is rejected for now.
+   - *Proofs.* `HoldsAt.view`: a `View n` slot holds the block's address
+     and Core's cell an array of n `i32`s; `Corr.viewed`: the state's view
+     list has the view (address, the binding's cell, [], n). `State.Fresh`
+     replaces "no views" by `ViewsHold` (each view's root cell is an array
+     of `i32`s in range whose encoding is its live, borrowed block's bytes;
+     roots and blocks apart), under which Core's `syncI32ViewsToHeap` and
+     `syncI32ViewsFromHeap` are the identity. `Grows` becomes: the view
+     list only grows at its end, `ViewsHold` is kept, and the cursor does
+     not go down. `Keeps` exempts view roots (a callee's raw store into a
+     caller's viewed array changes the caller's cell through
+     `syncI32ViewsFromHeap`); a viewed binding's `Corr` comes back from
+     `ViewsHold` instead. Stages: (a) Core lemmas (`ViewsHold`, the syncs'
+     identity, its preservation by binds, allocation, cell writes followed
+     by a sync, raw stores, host calls); (b) `Fresh`, `Grows`, `Keeps`
+     generalized through the proofs; (c) `View`, `LetView` and the viewed
+     reads and writes in the compiler, with their proofs; (d) the front
+     end's reading; (e) the oracles.
 6. **`str`** is (pointer, length) of read-only bytes in a static region
    above frame memory, a literal's bytes placed by the loader (Core's
    `.string` value names no address, so any region outside Core's heap
