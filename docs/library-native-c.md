@@ -179,9 +179,14 @@ the syntax decision. Tests: `tests/native_c_callback_execution.rs`.
 ## Artifacts and current limits
 
 Semantic interface artifacts use version 17 and x86 object artifacts use
-version 4. Rebuild older cached interfaces and objects. These versions preserve
+version 5. Rebuild older cached interfaces and objects. These versions preserve
 foreign declaration identities and signature metadata through imports and
 native linking; older artifacts are not an accepted compatibility path.
+Version 5 records each object's body range and a Text section-offset
+relocation for every body reference into its native runtime copy. The GPU
+executable linker keeps only the entry object's runtime, CRT bridge and
+`_start` wrapper and points the other objects at it; native linking still
+hands every object's whole text to the system linker.
 
 Native entry/package linking supports source packs above one resident unit.
 The compiler privately spools each original object's opaque text/rodata before

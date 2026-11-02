@@ -124,6 +124,7 @@ impl GpuX86FileObject {
                 library_id: object.library_id,
                 unit_id: object.unit_id,
                 entry_offset: object.entry_offset,
+                body: object.body,
                 text_byte_len: text_len,
                 rodata_byte_len: rodata_len,
                 relocation_count: 0,
@@ -190,6 +191,7 @@ impl GpuX86FileObject {
         validate_link_object_columns(
             self.layout.version,
             self.layout.entry_offset,
+            self.layout.body,
             self.layout.text_byte_len as usize,
             self.layout.rodata_byte_len as usize,
             &self.relocations,
@@ -260,6 +262,7 @@ mod tests {
             library_id: 7,
             unit_id: 11,
             entry_offset: None,
+            body: None,
             text: vec![0, 255, 0x90, 0xc3],
             rodata: vec![0, 128, 255, 0],
             relocations: vec![],
