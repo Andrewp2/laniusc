@@ -705,6 +705,19 @@ verified compiler's locals are 64-bit slots with no address. The design:
    (a 4-byte `i32` field, the 4-byte tag), so the block's remaining bytes
    would need a byte-level account of Core's native layout; such arrays are
    rejected at a `[T]` argument until it is written.
+   **Lent u8 arrays (found 11-02, open).** laniusc does not pack a `[u8; N]`:
+   it lays the array out one 8-byte word per element and lends it in that
+   layout, at stride -8 (`stdlib/core/mem.lani`: a native array passed as a
+   slice keeps its own layout; `std::io_byte::write_byte_view` branches on
+   it), while a raw `[u8]` view has stride 1. Core (`rawSliceStride?`) and
+   the verified compiler give the lent array stride 1. Element reads and
+   writes agree (the oracle's array calls, 2,400 calls alike); `slice_stride`
+   of such a slice, and code that branches on it, differ. An `[i32; N]` is
+   lent at stride 4 by both. Closing it needs Core to give a lent `[u8; N]`
+   laniusc's stride -8 and the verified compiler's `[u8]` slices to carry
+   their stride (laniusc's three-word slice), since one `[u8]` body sees
+   both layouts; until then the oracle generates no `slice_stride` of a
+   `[u8]`.
 3. **The correspondence.** The simulation relation carries the addressed
    cells (cell, type, address); for each, frame memory at the address holds
    the cell's value in that layout (`FrameCorr`, beside `HeapCorr`). A safe

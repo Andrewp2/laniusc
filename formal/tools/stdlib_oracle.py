@@ -1166,7 +1166,7 @@ class Native(oracle.Native):
         private = mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS
         self.code = mmap.mmap(-1, 1 << 22, flags=private, prot=mmap.PROT_READ | mmap.PROT_WRITE | mmap.PROT_EXEC)
         self.base = ctypes.addressof(ctypes.c_char.from_buffer(self.code))
-        self.heap = mmap.mmap(-1, self.HEAP, flags=private, prot=mmap.PROT_READ | mmap.PROT_WRITE)
+        self.heap = mmap.mmap(-1, self.HEAP + self.FRAME, flags=private, prot=mmap.PROT_READ | mmap.PROT_WRITE)
         self.heap_base = ctypes.addressof(ctypes.c_char.from_buffer(self.heap))
 
     def zero_heap(self):
@@ -1178,16 +1178,12 @@ class Native(oracle.Native):
     def load(self, entries, image, arity):
         self.code[0:len(image)] = image
         at = len(image)
-        stub = bytes([0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57])
-        stub += bytes([0x49, 0xBC]) + self.heap_base.to_bytes(8, 'little')
-        stub += bytes([0x49, 0xBD]) + (1).to_bytes(8, 'little')
-        stub += bytes([0x49, 0xBE]) + (self.HEAP - 64).to_bytes(8, 'little')
-        stub += bytes([0x4C, 0x8D, 0xBC, 0x24]) + (-oracle.STACK_ROOM & 0xffffffff).to_bytes(4, 'little')
+        stub = self.stub_head()
         for k in range(arity):
             stub += ARG_STORES[k] + bytes([(256 - (8 * k + 24)) & 0xff])
         rel = entries[0] - (at + len(stub) + 5)
         stub += b'\xe8' + (rel & 0xffffffff).to_bytes(4, 'little')
-        stub += bytes([0x41, 0x5F, 0x41, 0x5E, 0x41, 0x5D, 0x41, 0x5C, 0xC3])
+        stub += self.STUB_TAIL
         self.code[at:at + len(stub)] = stub
         self.fn = ctypes.CFUNCTYPE(ctypes.c_uint64, *([ctypes.c_uint64] * arity))(self.base + at)
 

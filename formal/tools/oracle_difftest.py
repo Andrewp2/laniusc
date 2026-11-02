@@ -121,6 +121,16 @@ EFFECTS = True
 # the front end does not read a store whose value can act, since Core
 # checks the index first and laniusc evaluates the value first).
 INDEX_VALUE_CALLS = True
+# With ARRAYS (and EFFECTS; frontend_difftest.py turns it off) the entry also
+# has array locals [i32; n] and [u8; n] and passes them to [i32] and [u8]
+# parameters (Core's array-to-slice, SEMANTIC_DECISIONS "Addressed locals"):
+# the call is a let's value or a bare call statement, its other arguments
+# pure, its result a scalar, no array passed twice, as the verified compiler
+# lowers it (array_call_code). Some programs end with array functions, whose
+# parameters are such slices, which write their elements and may pass arrays
+# of their own on to a later array function (so frame needs nest).
+ARRAYS = True
+ARRAY_ELEMENTS = ('i32', 'u8')
 # Shifts by an amount Core accepts (below the left type's bits).
 SHIFT = [('shiftLeft', '<<'), ('shiftRight', '>>')]
 ARITH_NAMES = [name for name, _ in ARITH + SHIFT]
@@ -147,6 +157,7 @@ def i32(x):
 
 # ---------------------------------------------------------------- generator
 # Types: 'i32' 'bool' 'u8' 'u16' 'u32' 'u64' 'usize' 'ptr' ('struct', k) ('enum', k) ('slice', element, n),
+# ('array', element, n) (element i32 or u8, a local made by letStruct),
 # struct k's field types TYPES.structs[k], enum k's variants' payload types TYPES.enums[k];
 # n is the slice's length, known statically.
 # Expressions: ('int', k) ('bool', b) ('uint', ty, k) ('local', id) ('field', id, j) ('neg', e)
@@ -156,6 +167,7 @@ def i32(x):
 #              ('eVariant', ty, variant, payload) ('eIndex', slice, x) of a slice local (i32, word struct
 #              or word enum elements) ('eStride', slice) the slice local's slice_stride, an isize
 #              ('eMatch', scrutinee, ety, ty, binders, values): arm k binds variant k's payload
+#              ('arraySlice', element, id): array local id passed as a slice (a call argument only)
 # Statements: ('nop',) ('let', id, ty, e, body) ('call', id, ty, callee, args, body) ('set', id, e)
 #             ('letStruct', id, ty, fields, body) ('letEnum', id, ty, variant, payload, body)
 #             ('letMatch', id, ty, scrutinee, enum, arms, body) with arms [(binders, value)]
@@ -265,6 +277,7 @@ class Gen:
         self.depth = 3  # the block being generated: 3 is the function body
         self.box_nest = 0  # boxes being made around the value being made
         self.boxes_made = 0
+        self.arrays = 0  # array calls made
 
     def may_box(self):
         """Whether a new box may be made here: only the entry's top level
@@ -445,7 +458,8 @@ class Gen:
         descending words with element zero at the top. Every element is
         written before anything reads one."""
         rng = self.rng
-        wanted = [t for params, _ in self.sigs for t in params if isinstance(t, tuple) and t[0] == 'slice']
+        wanted = [t for params, _ in self.sigs for t in params
+                  if isinstance(t, tuple) and t[0] == 'slice' and t[1] in slice_elements()]
         if EFFECTS and wanted and rng.random() < 0.8:
             # Mostly a slice the callees with slice parameters accept.
             element = rng.choice(wanted)[1]
@@ -529,11 +543,14 @@ class Gen:
             return ('ePure', self.pure_arg(ty, env, items))
         if calls and rng.random() < 0.5:
             return self.eff_call(rng.choice(calls), depth, env, items)
-        views = [(i, t[2]) for i, t in env if isinstance(t, tuple) and t[0] == 'slice' and t[1] == 'i32']
-        if ty == 'i32' and views and rng.random() < 0.25:
+        views = [(i, t[2]) for i, t in env if isinstance(t, tuple) and t[0] in ('slice', 'array') and t[1] == ty]
+        if ty in ARRAY_ELEMENTS and views and rng.random() < 0.25:
             view, n = rng.choice(views)
             return ('eIndex', view, self.in_bounds(n, depth, env, items))
-        slices = [i for i, t in env if isinstance(t, tuple) and t[0] == 'slice']
+        # Not of a [u8]: laniusc lays a [u8; n] lent as a slice out a word an
+        # element (stride -8), Core and the verified compiler packed (stride
+        # 1; SEMANTIC_DECISIONS "Addressed locals", point 2, the known gap).
+        slices = [i for i, t in env if isinstance(t, tuple) and t[0] == 'slice' and t[1] != 'u8']
         if ty == 'isize' and slices and rng.random() < 0.25:
             return ('eStride', rng.choice(slices))
         if depth <= 0 or rng.random() < 0.2:
@@ -712,6 +729,14 @@ class Gen:
         if SLICES and depth == 3 and self.index == 0 and rng.random() < (0.85 if EFFECTS else 0.6):
             self.slices += 1
             self.make_slice(env, items)
+        if ARRAYS and EFFECTS and depth == 3 and self.index == 0 and rng.random() < 0.8:
+            # Arrays lent to a later function as slices, and their elements changed.
+            for _ in range(rng.randint(1, 3)):
+                got = self.array_call(env, items, True)
+                if got:
+                    mutable.append(got)
+                if rng.random() < 0.5:
+                    self.array_store(env, items)
         params_slices = [(i, t) for i, t in env if i < 100 and t[0] == 'slice']
         if EFFECTS and depth == 3 and params_slices:
             # A callee writes into the caller's slice: a side effect the caller sees.
@@ -728,6 +753,8 @@ class Gen:
                           if depth > 0 else ['letEval', 'setEval', 'discard', 'setIndexEval', 'setIndexEval',
                                              'setFieldEval', 'assert'])
                 kinds += ['discard', 'discard'] + (['earlyReturn', 'earlyReturn'] if ret == 'unit' else [])
+                if any(isinstance(t, tuple) and t[0] == 'array' for _, t in env):
+                    kinds += ['arrayCall', 'arrayCall', 'arrayStore']
             kind = rng.choice(kinds)
             slices = [(i, t) for i, t in env if t[0] == 'slice']
             if kind == 'let':
@@ -863,6 +890,12 @@ class Gen:
                     items.append(('discard', self.eff_call(callee, 3, env, items)))
             elif kind == 'assert':
                 items.append(('assert', self.true_cond(env, items)))
+            elif kind == 'arrayCall':
+                got = self.array_call(env, items, False)
+                if got:
+                    mutable.append(got)
+            elif kind == 'arrayStore':
+                self.array_store(env, items)
             elif kind == 'earlyReturn':
                 # if c { return; } in a unit function, the rest of the body skipped when c holds.
                 items.append(('ifEval', self.eff('bool', 3, env, items), ('returnUnit',), ('nop',)))
@@ -890,6 +923,130 @@ class Gen:
                 if EFFECTS and depth == 3 and self.index == 0:
                     value = ('op', 'bitXor', '^', value, self.digest(env, items))
                 items.append(('return', value))
+        return nest(items)
+
+    def make_array(self, env, items, element, n):
+        """let a: [element; n] = [..]: an array local, its elements pure."""
+        ident = self.new_id()
+        if n > 1 and self.rng.random() < 0.25:
+            values = [self.expr(element, 2, env)] * n  # printed [x; n]
+        else:
+            values = [self.expr(element, 2, env) for _ in range(n)]
+        items.append(('letStruct', ident, ('array', element, n), values))
+        env.append((ident, ('array', element, n)))
+        return ident
+
+    def array_targets(self):
+        """The later functions an array call may name: scalar or [i32] and
+        [u8] parameters, at least one slice, and a scalar result."""
+        out = []
+        for k in range(self.index + 1, len(self.sigs)):
+            params, cret = self.sigs[k]
+            slices = [t for t in params if isinstance(t, tuple)]
+            if cret in SCALARS and slices and all(t[0] == 'slice' and t[1] in ARRAY_ELEMENTS for t in slices) \
+                    and all(t in SCALARS for t in params if not isinstance(t, tuple)):
+                out.append(k)
+        return out
+
+    def lend(self, params, env):
+        """Distinct array locals of env for params' slices, or None."""
+        used, out = set(), [None] * len(params)
+        # The longest first, so a short array is not taken where a long one fits.
+        for j in sorted((j for j, t in enumerate(params) if isinstance(t, tuple)), key=lambda j: -params[j][2]):
+            t = params[j]
+            fit = [i for i, u in env if isinstance(u, tuple) and u[0] == 'array' and u[1] == t[1]
+                   and u[2] >= t[2] and i not in used]
+            if not fit:
+                return None
+            out[j] = self.rng.choice(fit)
+            used.add(out[j])
+        return out
+
+    def array_call(self, env, items, make):
+        """A call passing array locals as slices, as a statement: (let id, ty)
+        and the statement's head, or None. make: new arrays for the callee
+        when env has too few."""
+        rng = self.rng
+        targets = self.array_targets()
+        if not targets:
+            return None
+        k = rng.choice(targets)
+        params, cret = self.sigs[k]
+        lent = self.lend(params, env)
+        if lent is None:
+            if not make:
+                return None
+            for t in params:
+                if isinstance(t, tuple):
+                    self.make_array(env, items, t[1], t[2] + rng.randint(0, 2))
+            lent = self.lend(params, env)
+        self.arrays += 1
+        args = [('arraySlice', t[1], a) if isinstance(t, tuple) else ('ePure', self.expr(t, 2, env))
+                for t, a in zip(params, lent)]
+        value = ('eCall', k, args)
+        if rng.random() < 0.6:
+            ident = self.new_id()
+            items.append(('letEval', ident, cret, value))
+            env.append((ident, cret))
+            return ident, cret
+        items.append(('discard', value))
+        return None
+
+    def array_store(self, env, items):
+        """a[i] = value on an array local, the index and value effectful or
+        pure literal and value."""
+        rng = self.rng
+        arrays = [(i, t) for i, t in env if isinstance(t, tuple) and t[0] == 'array']
+        if not arrays:
+            return
+        a, (_, element, n) = rng.choice(arrays)
+        if rng.random() < 0.3:
+            items.append(('setIndex', a, rng.randrange(n), self.expr(element, 2, env)))
+        else:
+            items.append(('setIndexEval', a, self.in_bounds(n, 2, env, items), self.eff(element, 2, env, items)))
+
+    def array_body(self, params, ret):
+        """An array function's body: writes into each slice parameter, maybe
+        arrays of its own lent to a later array function, then a result
+        folding in the parameters' elements and the calls' results."""
+        rng = self.rng
+        env = [(j, t) for j, t in enumerate(params)]
+        items = []
+        for j, t in enumerate(params):
+            if isinstance(t, tuple):
+                for _ in range(rng.randint(1, 2)):
+                    items.append(self.set_index_eval(j, t[1], t[2], env, items))
+        results = []
+        for _ in range(rng.randint(0, 2)):
+            got = self.array_call(env, items, True)
+            if got:
+                results.append(got)
+            self.array_store(env, items)
+        h = ('ePure', ('local', 0))
+
+        def mix(h, x):
+            return ('eApply', 'plus', '+', ('eApply', 'times', '*', h, ('ePure', ('int', 31))), x)
+
+        def as_i32(x, ty):
+            if ty == 'bool':
+                return None
+            return x if ty == 'i32' else ('eCast', 'i32', x)
+        for i, t in env:
+            if isinstance(t, tuple) and t[0] in ('slice', 'array'):
+                for k in range(t[2]):
+                    x = ('eIndex', i, ('ePure', ('int', k)))
+                    h = mix(h, x if t[1] == 'i32' else ('eCast', 'i32', x))
+        for ident, ty in results:
+            x = as_i32(('ePure', ('local', ident)), ty)
+            if x:
+                h = mix(h, x)
+        if ret == 'bool':
+            value = ('eApply', 'less', '<', h, ('ePure', ('int', 0)))
+        elif ret == 'i32':
+            value = h
+        else:
+            value = ('eCast', ret, h)
+        items.append(('returnEval', value))
         return nest(items)
 
     def true_cond(self, env, items):
@@ -1033,7 +1190,7 @@ class Gen:
             env.append((flag, 'i32'))
             h = mix(h, ('local', flag))
         for view, t in list(env):
-            if t[0] != 'slice':
+            if t[0] not in ('slice', 'array'):
                 continue
             for i in range(t[2]):
                 element, ident = t[1], self.new_id()
@@ -1041,6 +1198,8 @@ class Gen:
                 env.append((ident, element))
                 if element == 'i32':
                     parts = [('local', ident)]
+                elif element == 'u8':
+                    parts = [('cast', 'i32', ('local', ident))]
                 elif element[0] == 'struct':
                     parts = struct_parts(ident, element[1])
                 else:
@@ -1189,9 +1348,21 @@ def gen_program(rng):
             if is_object(ret) and not boxes_in(ret) <= {t[1] for t in params if is_box(t)}:
                 ret = rng.choice(SCALARS)
         sigs.append((params, ret))
+    array_fns = set()
+    if ARRAYS and EFFECTS and rng.random() < 0.6:
+        # Array functions last: [i32] and [u8] parameters, a scalar result.
+        for _ in range(rng.randint(1, 2)):
+            params = ['i32']
+            for _ in range(rng.randint(1, 2)):
+                params.insert(rng.randint(1, len(params)), ('slice', rng.choice(ARRAY_ELEMENTS), rng.randint(1, 3)))
+            array_fns.add(len(sigs))
+            sigs.append((params, rng.choice(['i32', 'i32', 'u8', 'u32', 'bool'])))
     funcs = []
     for k, (params, ret) in enumerate(sigs):
         g = Gen(rng, sigs, k)
+        if k in array_fns:
+            funcs.append((params, ret, g.array_body(params, ret)))
+            continue
         env = [(j, t) for j, t in enumerate(params)]
         # A unit function may end without a return.
         body = g.block(3, env, ret, ret != 'unit' or rng.random() < 0.5, [])
@@ -1323,6 +1494,8 @@ def eff_ty(e, env):
         return env[e[1]][1][1]
     if kind == 'eStride':
         return 'isize'
+    if kind == 'arraySlice':
+        return ('slice', e[1], env[e[2]][1][2])
     if kind == 'eMatch':
         return e[3]
     if kind == 'eNeg':
@@ -1337,6 +1510,8 @@ def stride_of(element):
     structs and enums run down 8 bytes a word."""
     if element == 'i32':
         return 4
+    if element == 'u8':
+        return 1
     return -8 * element_words(element)
 
 
@@ -1362,6 +1537,8 @@ def ev_eff(e, env, funcs):
         return ev_eff(e[5][variant], env, funcs)
     if kind == 'eStride':
         return stride_of(env[e[1]][1][1])
+    if kind == 'arraySlice':
+        return env[e[2]][0]  # the array's own elements: the callee's writes reach it
     if kind == 'eIndex':
         k, elements = ev_eff(e[2], env, funcs), env[e[1]][0]
         if not 0 <= k < len(elements):
@@ -1511,6 +1688,8 @@ def lean_ty(t):
         return f'(.enum {len(TYPES.structs) + t[1]} [{variants}])'
     if t[0] == 'slice':
         return f'(.slice {lean_ty(t[1])})'
+    if t[0] == 'array':
+        return f'(.array {lean_ty(t[1])} {t[2]})'
     return '.' + t
 
 
@@ -1564,6 +1743,8 @@ def lean_eff(e):
         return f'(.eIndex {e[1]} {lean_eff(e[2])})'
     if kind == 'eStride':
         return f'(.eStride {e[1]})'
+    if kind == 'arraySlice':
+        return f'(.arraySlice {lean_ty(e[1])} {e[2]})'
     if kind == 'eMatch':
         return (f'(.eMatch {lean_eff(e[1])} {lean_ty(e[2])} {lean_ty(e[3])} {e[4]} '
                 f'[{", ".join(lean_eff(v) for v in e[5])}])')
@@ -1670,6 +1851,8 @@ def lani_ty(t):
         return f'{TYPES.name}E{t[1]}'
     if t[0] == 'slice':
         return f'[{lani_ty(t[1])}]'
+    if t[0] == 'array':
+        return f'[{lani_ty(t[1])}; {t[2]}]'
     return t
 
 
@@ -1724,8 +1907,11 @@ def lani_expr(e):
         return f'(!{lani_expr(e[1])})'
     l, r = lani_expr(e[3]), lani_expr(e[4])
     # A small isize literal beside an operand whose type laniusc knows is
-    # written bare, as `x + 5`, so laniusc infers its type.
-    if bare_isize(e[3]) and typed_isize(e[4]):
+    # written bare, as `x + 5`, so laniusc infers its type. Not in a shift,
+    # whose operands' types are apart: a bare `5 >> (n & 63)` is an i32.
+    if e[1] in ('shiftLeft', 'shiftRight'):
+        pass
+    elif bare_isize(e[3]) and typed_isize(e[4]):
         l = lani_expr(('int', e[3][2]))
     elif bare_isize(e[4]) and typed_isize(e[3]):
         r = lani_expr(('int', e[4][2]))
@@ -1761,6 +1947,8 @@ def lani_eff(e, prefix):
         return f'v{e[1]}[{lani_eff(e[2], prefix)}]'
     if kind == 'eStride':
         return f'slice_stride(v{e[1]})'
+    if kind == 'arraySlice':
+        return f'v{e[2]}'
     if kind == 'eMatch':
         arms = ' '.join(f'{lani_variant(e[2][1], v, [f"v{b}" for b in names])} -> {lani_eff(value, prefix)},'
                         for v, (names, value) in enumerate(zip(e[4], e[5])))
@@ -1804,6 +1992,13 @@ def lani_stmt(s, prefix, indent):
     if kind == 'call':
         args = ', '.join(lani_expr(a) for a in s[4])
         return [f'{pad}let v{s[1]}: {lani_ty(s[2])} = {prefix}f{s[3]}({args});'] + lani_stmt(s[5], prefix, indent)
+    if kind == 'letStruct' and s[2][0] == 'array':
+        values = [lani_expr(f) for f in s[3]]
+        if len(values) > 1 and all(v == values[0] for v in values):
+            literal = f'[{values[0]}; {len(values)}]'
+        else:
+            literal = '[' + ', '.join(values) + ']'
+        return [f'{pad}let v{s[1]}: {lani_ty(s[2])} = {literal};'] + lani_stmt(s[4], prefix, indent)
     if kind == 'letStruct':
         fields = ', '.join(f'f{j}: {lani_expr(f)}' for j, f in enumerate(s[3]))
         return ([f'{pad}let v{s[1]}: {lani_ty(s[2])} = {lani_ty(s[2])} {{ {fields} }};'] +
@@ -1907,39 +2102,53 @@ STACK_ROOM = 1 << 20
 
 
 class Native:
-    """The verified compiler's image in executable memory. A stub saves r12-r15,
-    points r12 at a heap, sets the cursor r13 to 1 (the top theorem's premise),
-    the limit r14 and the stack limit r15 (STACK_ROOM below rsp), stores the SysV arguments where the mini calling
+    """The verified compiler's image in executable memory. A stub saves rbx and
+    r12-r15, points r12 at a heap, sets the cursor r13 to 1 (the top theorem's
+    premise), the limit r14, the heap's top r10 and the frame pointer rbx (frame
+    memory, FRAME bytes from the limit up to the top) and the stack limit r15
+    (STACK_ROOM below rsp), stores the SysV arguments where the mini calling
     convention expects them (below the return address) and calls."""
 
     HEAP = 1 << 16
+    FRAME = 1 << 16
 
     def __init__(self):
         self.code = mmap.mmap(-1, 1 << 22, prot=mmap.PROT_READ | mmap.PROT_WRITE | mmap.PROT_EXEC)
         self.base = ctypes.addressof(ctypes.c_char.from_buffer(self.code))
-        self.heap = mmap.mmap(-1, self.HEAP, prot=mmap.PROT_READ | mmap.PROT_WRITE)
+        self.heap = mmap.mmap(-1, self.HEAP + self.FRAME, prot=mmap.PROT_READ | mmap.PROT_WRITE)
         self.heap_base = ctypes.addressof(ctypes.c_char.from_buffer(self.heap))
+
+    def stub_head(self):
+        """push rbx and r12-r15; the heap registers r12, r13, r14, r10, rbx; r15."""
+        limit = self.HEAP - 64
+        stub = bytes([0x53, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57])
+        stub += bytes([0x49, 0xBC]) + self.heap_base.to_bytes(8, 'little')
+        stub += bytes([0x49, 0xBD]) + (1).to_bytes(8, 'little')
+        stub += bytes([0x49, 0xBE]) + limit.to_bytes(8, 'little')
+        stub += bytes([0x49, 0xBA]) + (limit + self.FRAME).to_bytes(8, 'little')
+        stub += bytes([0x48, 0xBB]) + (limit + self.FRAME).to_bytes(8, 'little')
+        stub += bytes([0x4C, 0x8D, 0xBC, 0x24]) + (-STACK_ROOM & 0xffffffff).to_bytes(4, 'little')
+        return stub
+
+    # pop r15-r12 and rbx; ret
+    STUB_TAIL = bytes([0x41, 0x5F, 0x41, 0x5E, 0x41, 0x5D, 0x41, 0x5C, 0x5B, 0xC3])
 
     def load(self, entries, image, arity):
         self.code[0:len(image)] = image
         at = len(image)
-        stub = bytes([0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57])
-        stub += bytes([0x49, 0xBC]) + self.heap_base.to_bytes(8, 'little')
-        stub += bytes([0x49, 0xBD]) + (1).to_bytes(8, 'little')
-        stub += bytes([0x49, 0xBE]) + (self.HEAP - 64).to_bytes(8, 'little')
-        stub += bytes([0x4C, 0x8D, 0xBC, 0x24]) + (-STACK_ROOM & 0xffffffff).to_bytes(4, 'little')
+        stub = self.stub_head()
         for k, reg in zip(range(arity), ARG_REGS):
             stub += bytes([0x48, 0x89, reg, 0x24, (256 - (8 * k + 24)) & 0xff])
         rel = entries[0] - (at + len(stub) + 5)
         stub += b'\xe8' + (rel & 0xffffffff).to_bytes(4, 'little')
-        stub += bytes([0x41, 0x5F, 0x41, 0x5E, 0x41, 0x5D, 0x41, 0x5C, 0xC3])
+        stub += self.STUB_TAIL
         self.code[at:at + len(stub)] = stub
         self.fn = ctypes.CFUNCTYPE(ctypes.c_uint64, *([ctypes.c_uint64] * arity))(self.base + at)
 
     def call(self, args, params=()):
         # An i32 sits zero-extended in its slot, an unsigned value as itself,
         # an isize as its 64 bits.
-        self.heap[0:self.HEAP] = bytes(self.HEAP)
+        self.heap[0:len(self.heap)] = bytes(len(self.heap))
         return i32(self.fn(*[a & (2 ** 64 - 1) if t == 'isize' else a & 0xffffffff if a < 0 else a
                              for a, t in zip(args, list(params) + [None] * len(args))]))
 
@@ -2023,7 +2232,8 @@ def main():
                 disagreements += 1
                 print(f'program {k} args {a}: verified compiler {x}, laniusc {y}, reference {reference}')
     boxed = sum(1 for funcs in programs if funcs.boxes)
-    print(f'{len(programs)} programs ({rejected} rejected, {boxed} with boxes), {total} calls, '
+    lent = sum(1 for funcs in programs if '.arraySlice' in lean_program(funcs))
+    print(f'{len(programs)} programs ({rejected} rejected, {boxed} with boxes, {lent} lending arrays), {total} calls, '
           f'{disagreements} disagreements')
     return 1 if disagreements else 0
 
