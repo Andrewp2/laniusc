@@ -11061,6 +11061,20 @@ fn x86_executes_source_pack_path_rules_separator_helper() {
     let sources = [
         include_str!("../stdlib/core/utf8.lani"),
         include_str!("../stdlib/core/path_rules.lani"),
+        // core::utf8 imports core::slice (its bulk byte ops) and so these.
+        include_str!("../stdlib/core/cmp.lani"),
+        include_str!("../stdlib/core/function.lani"),
+        include_str!("../stdlib/core/mem.lani"),
+        include_str!("../stdlib/core/ops.lani"),
+        include_str!("../stdlib/core/option.lani"),
+        include_str!("../stdlib/core/ordering.lani"),
+        include_str!("../stdlib/core/panic.lani"),
+        include_str!("../stdlib/core/result.lani"),
+        include_str!("../stdlib/core/slice.lani"),
+        include_str!("../stdlib/core/u32.lani"),
+        include_str!("../stdlib/core/u64.lani"),
+        include_str!("../stdlib/core/wide_i64.lani"),
+        include_str!("../stdlib/core/wide_u64.lani"),
         r#"
 module app::main;
 
