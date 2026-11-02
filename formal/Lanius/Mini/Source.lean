@@ -76,7 +76,12 @@ import all Lanius.Mini.Compiler.P.lowerLoadType
 import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.storeArray
-import all Lanius.Mini.Compiler.P.sigs
+import all Lanius.Mini.Compiler.P.bindingBytes
+import all Lanius.Mini.Compiler.P.arrayCallSig
+import all Lanius.Mini.Compiler.P.withBudget
+import all Lanius.Mini.Compiler.P.needRound
+import all Lanius.Mini.Compiler.P.needsAfter
+import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.lowerBody
 import all Lanius.Mini.Compiler.P.declareFuncs
 import all Lanius.Mini.Compiler.P.declareProgram
@@ -116,11 +121,11 @@ public import Lanius.Mini.Compiler.P.compileSource
 public import Lanius.Mini.Compiler.P.declareProgram
 public import Lanius.Mini.Compiler.P.enumVariants
 public import Lanius.Mini.Compiler.P.floatApply
+public import Lanius.Mini.Compiler.P.funcNeeds
 public import Lanius.Mini.Compiler.P.loadAtBytes
 public import Lanius.Mini.Compiler.P.lowerBody
 public import Lanius.Mini.Compiler.P.lowerLoadType
 public import Lanius.Mini.Compiler.P.repeatType
-public import Lanius.Mini.Compiler.P.sigs
 public import Lanius.Mini.Compiler.P.storeArray
 public import Lanius.Mini.Compiler.P.storeEvalWord
 public import Lanius.Mini.Compiler.P.structFields
@@ -158,7 +163,7 @@ def SrcProgram.toCore (prog : SrcProgram) : Core.Program where
 functions. -/
 theorem compileSource_some {sp : SrcProgram} {binary : Binary} (compiled : compileSource sp = some binary) :
     funcsReturn sp.funcs = true ∧ (∃ decls, declareProgram sp = some decls) ∧
-      ∃ funcs, lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some funcs ∧
+      ∃ funcs, lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some funcs ∧
         compileOptimized { funcs := funcs } = some binary := by
   unfold compileSource at compiled
   split at compiled
@@ -284,57 +289,91 @@ def SrcType.Holds : SrcType → Value → BitVec 64 → Prop
   | .float t, value, bits => value = t.value bits ∧ bits.toNat < 2 ^ t.width
   | .sint kind, value, bits => kind.SintHolds value bits
 
+/-- A place a reference or a borrowed slice names, held in frame memory:
+Core's cell `cell` at the projection path `projections` holds a value of
+`ty`, whose representation is in the mini heap from `address` (`FrameCorr`).
+A `sliced` place is an array passed as a slice, laid out as a slice's
+elements (`Addressed.view`); the others take one word per slot. -/
+structure Addressed where
+  cell : Nat
+  projections : List Lanius.Core.ValueProjection
+  ty : SrcType
+  address : Nat
+  sliced : Bool
+
+/-- The pointer of a slice of a sliced place: its lowest byte for packed
+`i32` and `u8` elements, which run up from it, and its top word for the
+others, whose words run down from it (SEMANTIC_DECISIONS "Addressed locals"
+point 2). -/
+def Addressed.pointer (x : Addressed) : Nat :=
+  match x.ty with
+  | .array .i32 _ => x.address
+  | .array (.uint .uint8) _ => x.address
+  | _ => x.address + 8 * (x.ty.size - 1)
+
+variable {places : List Addressed}
+
 mutual
-/-- `ty.HoldsAt value env slot`: the `ty.size` slots of `env` from `slot`
+/-- `ty.HoldsAt places value env slot`: the `ty.size` slots of `env` from `slot`
 represent `value`. A struct's fields follow one another; an enum's tag is its
 variant number, and its payload follows. -/
-inductive SrcType.HoldsAt : SrcType → Value → Env → Nat → Prop where
+inductive SrcType.HoldsAt (places : List Addressed) : SrcType → Value → Env → Nat → Prop where
   | i32 {value : Value} {env : Env} {slot : Nat} :
-      SrcType.i32.Holds value (env slot) → SrcType.HoldsAt .i32 value env slot
+      SrcType.i32.Holds value (env slot) → SrcType.HoldsAt places .i32 value env slot
   | bool {value : Value} {env : Env} {slot : Nat} :
-      SrcType.bool.Holds value (env slot) → SrcType.HoldsAt .bool value env slot
+      SrcType.bool.Holds value (env slot) → SrcType.HoldsAt places .bool value env slot
   | uint {kind : UintTy} {value : Value} {env : Env} {slot : Nat} :
-      (SrcType.uint kind).Holds value (env slot) → SrcType.HoldsAt (.uint kind) value env slot
+      (SrcType.uint kind).Holds value (env slot) → SrcType.HoldsAt places (.uint kind) value env slot
   | struct {id : Nat} {fields : List SrcType} {vs : List Value} {env : Env} {slot : Nat} :
-      FieldsHold fields vs env slot → SrcType.HoldsAt (.struct id fields) (.structure id vs) env slot
+      FieldsHold places fields vs env slot → SrcType.HoldsAt places (.struct id fields) (.structure id vs) env slot
   | enum {id : Nat} {variants : List (List SrcType)} {k : Nat} {fs : List SrcType} {vs : List Value}
       {env : Env} {slot : Nat} :
-      variants[k]? = some fs → env slot = BitVec.ofNat 64 k → FieldsHold fs vs env (slot + 1) →
-      SrcType.HoldsAt (.enum id variants) (.enumeration id k vs) env slot
+      variants[k]? = some fs → env slot = BitVec.ofNat 64 k → FieldsHold places fs vs env (slot + 1) →
+      SrcType.HoldsAt places (.enum id variants) (.enumeration id k vs) env slot
   | ptr {value : Value} {env : Env} {slot : Nat} :
-      SrcType.ptr.Holds value (env slot) → SrcType.HoldsAt .ptr value env slot
+      SrcType.ptr.Holds value (env slot) → SrcType.HoldsAt places .ptr value env slot
   /-- A raw slice is its address, then its length, which is below `2 ^ 31`
   (an `i32`'s bound), so an `i32` index below 0, a word of at least `2 ^ 31`,
   is not below it. -/
   | slice {element : SrcType} {length : Nat} {env : Env} {slot : Nat} :
       (env (slot + 1)).toNat = length → length < 2 ^ 31 →
-      SrcType.HoldsAt (.slice element) (.rawSlice element.toCore (env slot).toNat length) env slot
+      SrcType.HoldsAt places (.slice element) (.rawSlice element.toCore (env slot).toNat length) env slot
+  /-- A slice of a caller's array held in frame memory, a sliced place: the
+  slice's pointer (`Addressed.pointer`), then its length, below `2 ^ 31` as a
+  raw slice's. Core's value is the slice of the whole array in the place's
+  cell (`arrayToSlice` of a local). The elements are `i32` or `u8`, packed in
+  the slice layout. -/
+  | borrowed {element : SrcType} {length : Nat} {x : Addressed} {env : Env} {slot : Nat} :
+      x ∈ places → x.sliced = true → x.projections = [] → x.ty = .array element length →
+      (element = .i32 ∨ element = .uint .uint8) →
+      (env slot).toNat = x.pointer → (env (slot + 1)).toNat = length → length < 2 ^ 31 →
+      SrcType.HoldsAt places (.slice element) (.slice element.toCore x.cell [] 0 length) env slot
   /-- An array is its elements one after another, like a struct of `length`
   fields of the element type. -/
   | array {element : SrcType} {length : Nat} {vs : List Value} {env : Env} {slot : Nat} :
-      FieldsHold (List.replicate length element) vs env slot →
-      SrcType.HoldsAt (.array element length) (.array vs) env slot
+      FieldsHold places (List.replicate length element) vs env slot →
+      SrcType.HoldsAt places (.array element length) (.array vs) env slot
   /-- The unit value's one slot holds any bits. -/
-  | unit {env : Env} {slot : Nat} : SrcType.HoldsAt .unit .unit env slot
+  | unit {env : Env} {slot : Nat} : SrcType.HoldsAt places .unit .unit env slot
   | isize {value : Value} {env : Env} {slot : Nat} :
-      SrcType.isize.Holds value (env slot) → SrcType.HoldsAt .isize value env slot
+      SrcType.isize.Holds value (env slot) → SrcType.HoldsAt places .isize value env slot
   | char {value : Value} {env : Env} {slot : Nat} :
-      SrcType.char.Holds value (env slot) → SrcType.HoldsAt .char value env slot
+      SrcType.char.Holds value (env slot) → SrcType.HoldsAt places .char value env slot
   | float {t : FloatTy} {value : Value} {env : Env} {slot : Nat} :
-      (SrcType.float t).Holds value (env slot) → SrcType.HoldsAt (.float t) value env slot
+      (SrcType.float t).Holds value (env slot) → SrcType.HoldsAt places (.float t) value env slot
   | sint {kind : UintTy} {value : Value} {env : Env} {slot : Nat} :
-      (SrcType.sint kind).Holds value (env slot) → SrcType.HoldsAt (.sint kind) value env slot
+      (SrcType.sint kind).Holds value (env slot) → SrcType.HoldsAt places (.sint kind) value env slot
 
 /-- Values of these types, one after another from `slot`: a struct's fields,
 a payload, or arguments. -/
-inductive FieldsHold : List SrcType → List Value → Env → Nat → Prop where
-  | nil {env : Env} {slot : Nat} : FieldsHold [] [] env slot
+inductive FieldsHold (places : List Addressed) : List SrcType → List Value → Env → Nat → Prop where
+  | nil {env : Env} {slot : Nat} : FieldsHold places [] [] env slot
   | cons {ty : SrcType} {tys : List SrcType} {v : Value} {vs : List Value} {env : Env} {slot : Nat} :
-      ty.HoldsAt v env slot → FieldsHold tys vs env (slot + ty.size) → FieldsHold (ty :: tys) (v :: vs) env slot
+      ty.HoldsAt places v env slot → FieldsHold places tys vs env (slot + ty.size) → FieldsHold places (ty :: tys) (v :: vs) env slot
 end
 
 theorem SrcType.holdsAt_scalar {ty : SrcType} (scalar : ty.isScalar = true) {v : Value} {env : Env}
-    {slot : Nat} : ty.HoldsAt v env slot ↔ ty.Holds v (env slot) := by
+    {slot : Nat} : ty.HoldsAt places v env slot ↔ ty.Holds v (env slot) := by
   cases ty with
   | i32 => exact ⟨fun | .i32 h => h, .i32⟩
   | bool => exact ⟨fun | .bool h => h, .bool⟩
@@ -350,7 +389,7 @@ theorem SrcType.holdsAt_scalar {ty : SrcType} (scalar : ty.isScalar = true) {v :
   | float => exact ⟨fun | .float h => h, .float⟩
   | sint => exact ⟨fun | .sint h => h, .sint⟩
 
-theorem FieldsHold.length : ∀ {fs vs env slot}, FieldsHold fs vs env slot → vs.length = fs.length
+theorem FieldsHold.length : ∀ {fs vs env slot}, FieldsHold places fs vs env slot → vs.length = fs.length
   | [], _, _, _, .nil => rfl
   | _ :: _, _, _, _, .cons _ rest => by simp [rest.length]
 
@@ -384,8 +423,8 @@ theorem repeatType_eq (ty : SrcType) : ∀ n, repeatType ty n = List.replicate n
 
 mutual
 theorem SrcType.HoldsAt.congr : ∀ {ty : SrcType} {v : Value} {env : Env} {slot : Nat},
-    ty.HoldsAt v env slot → ∀ {env' : Env} {slot' : Nat},
-      (∀ i < ty.size, env' (slot' + i) = env (slot + i)) → ty.HoldsAt v env' slot'
+    ty.HoldsAt places v env slot → ∀ {env' : Env} {slot' : Nat},
+      (∀ i < ty.size, env' (slot' + i) = env (slot + i)) → ty.HoldsAt places v env' slot'
   | .i32, _, _, _, .i32 holds, _, _, agree => by
     have := agree 0 (by simp [SrcType.size])
     simp only [Nat.add_zero] at this
@@ -420,6 +459,11 @@ theorem SrcType.HoldsAt.congr : ∀ {ty : SrcType} {v : Value} {env : Env} {slot
     simp only [Nat.add_zero] at this
     rw [← this]
     exact .slice (by rw [second]; exact len) small
+  | .slice _, _, _, _, .borrowed mem sliced root ty packed pointer len small, _, _, agree => by
+    have first := agree 0 (by simp [SrcType.size])
+    have second := agree 1 (by simp [SrcType.size])
+    simp only [Nat.add_zero] at first
+    exact .borrowed mem sliced root ty packed (by rw [first]; exact pointer) (by rw [second]; exact len) small
   | .array _ _, _, _, _, .array holds, _, _, agree =>
     .array (FieldsHold.congr holds fun i below => agree i (by
       simp only [SrcType.size]; rw [sizes_replicate] at below; exact below))
@@ -442,8 +486,8 @@ theorem SrcType.HoldsAt.congr : ∀ {ty : SrcType} {v : Value} {env : Env} {slot
     exact .sint (by rw [this]; exact holds)
 
 theorem FieldsHold.congr : ∀ {fs : List SrcType} {vs : List Value} {env : Env} {slot : Nat},
-    FieldsHold fs vs env slot → ∀ {env' : Env} {slot' : Nat},
-      (∀ i < sizes fs, env' (slot' + i) = env (slot + i)) → FieldsHold fs vs env' slot'
+    FieldsHold places fs vs env slot → ∀ {env' : Env} {slot' : Nat},
+      (∀ i < sizes fs, env' (slot' + i) = env (slot + i)) → FieldsHold places fs vs env' slot'
   | [], _, _, _, .nil, _, _, _ => .nil
   | ty :: tys, _, _, slot, .cons head rest, _, slot', agree => by
     refine .cons (SrcType.HoldsAt.congr head fun i below => agree i (by simp only [sizes]; omega))
@@ -462,8 +506,8 @@ theorem fieldOffset_succ (ty : SrcType) (rest : List SrcType) (k : Nat) :
   simp [fieldOffset]
 
 /-- Field `k`, at its offset. -/
-theorem FieldsHold.get : ∀ {fs vs env slot}, FieldsHold fs vs env slot → ∀ {k : Nat} {f : SrcType},
-    fs[k]? = some f → ∃ v, vs[k]? = some v ∧ f.HoldsAt v env (slot + fieldOffset fs k)
+theorem FieldsHold.get : ∀ {fs vs env slot}, FieldsHold places fs vs env slot → ∀ {k : Nat} {f : SrcType},
+    fs[k]? = some f → ∃ v, vs[k]? = some v ∧ f.HoldsAt places v env (slot + fieldOffset fs k)
   | [], _, _, _, .nil, _, _, found => by simp at found
   | _ :: _, _, _, _, .cons head rest, k, f, found => by
     cases k with
@@ -494,9 +538,9 @@ theorem SrcType.size_scalar {ty : SrcType} (scalar : ty.isScalar = true) : ty.si
   cases ty <;> simp_all [SrcType.isScalar, SrcType.size]
 
 /-- Storing a scalar field `k`. -/
-theorem FieldsHold.set : ∀ {fs vs env slot}, FieldsHold fs vs env slot → ∀ {k : Nat} {f : SrcType},
+theorem FieldsHold.set : ∀ {fs vs env slot}, FieldsHold places fs vs env slot → ∀ {k : Nat} {f : SrcType},
     fs[k]? = some f → f.isScalar = true → ∀ {nv : Value} {x : BitVec 64}, f.Holds nv x →
-      FieldsHold fs (Semantics.setValue vs k nv) (env.set (slot + fieldOffset fs k) x) slot
+      FieldsHold places fs (Semantics.setValue vs k nv) (env.set (slot + fieldOffset fs k) x) slot
   | [], _, _, _, .nil, _, _, found, _, _, _, _ => by simp at found
   | ty :: tys, v :: vs, env, slot, .cons head rest, k, f, found, scalar, nv, x, holdsNew => by
     cases k with

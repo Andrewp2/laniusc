@@ -13,8 +13,11 @@ import random
 import shutil
 import statistics
 import subprocess
+import sys
 import time
 from pathlib import Path
+
+import moonbit_project
 
 
 LANGUAGE_LANES = (
@@ -28,8 +31,19 @@ LANGUAGE_LANES = (
     ("zig", "debug"),
     ("zig", "optimized"),
     ("tcc", "default"),
+    ("moonbit", "debug"),
+    ("moonbit", "optimized"),
+    ("moonbit", "js"),
     ("lanius", "default"),
 )
+# MoonBit lanes: backend and moon build profile.
+MOONBIT_LANES = {
+    "debug": ("native", "debug"),
+    "optimized": ("native", "release"),
+    "js": ("js", "release"),
+}
+# The MoonBit twins read the process arguments through moonbitlang/core/env.
+MOONBIT_IMPORTS = ("moonbitlang/core/env",)
 SCHEMA = "lanius.runtime-comparison.v2"
 SUITE_SCHEMA = "lanius.runtime-suite.v1"
 
@@ -182,6 +196,11 @@ def run_workload(
     expected_stdout = workload.expected_stdout(iterations)
     for language, source in workload.sources(iterations).items():
         (src_dir / source_name(workload.name, language)).write_text(source)
+    moonbit_project.write_single_file_project(
+        bin_dir / "moonbit",
+        (src_dir / source_name(workload.name, "moonbit")).read_text(),
+        MOONBIT_IMPORTS,
+    )
 
     commands = command_map(repo, out, bin_dir, workload.name)
     config = {
@@ -198,9 +217,10 @@ def run_workload(
         "order_seed": args.order_seed,
         "timed_region": "process spawn through process exit; compilation excluded",
         "optimization_policy": {
-            "debug": "C/C++ -O0; Rust opt-level=0 with overflow checks; Zig Debug",
-            "optimized": "C/C++ -O3; Rust opt-level=3; Zig ReleaseFast",
+            "debug": "C/C++ -O0; Rust opt-level=0 with overflow checks; Zig Debug; MoonBit native --debug",
+            "optimized": "C/C++ -O3; Rust opt-level=3; Zig ReleaseFast; MoonBit native --release",
             "o2": "GCC -O2 with debug information disabled",
+            "js": "MoonBit JavaScript backend --release, run with node",
             "default": "compiler defaults for Lanius and TCC",
         },
         "validation_policy": "every warmup and measured execution must exit zero and match expected stdout",
@@ -217,26 +237,27 @@ def run_workload(
         write_json(out / "manifest.json", manifest(out))
         return []
 
-    ensure_tools(commands)
-    for language, lane in LANGUAGE_LANES:
-        run_checked(commands[language][lane]["compile"], repo, None)
+    lanes = available_lanes(commands)
+    ensure_tools(commands, lanes)
+    for language, lane in lanes:
+        compile_lane(commands[language][lane], repo)
 
     affinity = sorted(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else []
     cpu = affinity[0] if affinity else None
     run_commands = {
         (language, lane): pinned(commands[language][lane]["run"], cpu)
-        for language, lane in LANGUAGE_LANES
+        for language, lane in lanes
     }
 
     for _ in range(args.warmups):
-        for language, lane in LANGUAGE_LANES:
+        for language, lane in lanes:
             stdout, _ = timed_run(run_commands[language, lane], repo)
             validate_output(language, stdout, expected_stdout)
 
     tasks = [
         (iteration, language, lane)
         for iteration in range(args.samples)
-        for language, lane in LANGUAGE_LANES
+        for language, lane in lanes
     ]
     random.Random(args.order_seed).shuffle(tasks)
     samples = []
@@ -256,16 +277,16 @@ def run_workload(
             }
         )
 
-    for language, lane in LANGUAGE_LANES:
+    for language, lane in lanes:
         (output_dir / f"{language}-{lane}.stdout").write_text(
             last_stdout[language, lane]
         )
-    rows = summarize(samples)
+    rows = summarize(samples, lanes)
     write_json(out / "machine_info.json", machine_info(cpu))
     write_json(out / "samples.json", {"schema": SCHEMA, "samples": samples})
     write_json(out / "summary.json", {"schema": SCHEMA, "rows": rows})
     write_tsv(out / "results.tsv", rows)
-    write_json(out / "manifest.json", manifest(out))
+    write_json(out / "manifest.json", manifest(out, lanes))
     return rows
 
 
@@ -345,6 +366,34 @@ pub fn main(init: std.process.Init.Minimal) void {{
     _ = c.printf("%d\\n", integerMix({base_iterations} + argc, argc));
 }}
 """
+    moonbit = f"""fn integer_mix(iterations : Int, salt : Int) -> Int {{
+    let mut total = 0
+    let mut index = 0
+    while index < iterations {{
+        let lane = (index + salt) % 1021
+        if lane % 4 < 2 {{
+            total = total + lane
+        }} else {{
+            total = total - lane
+        }}
+        if total > 100000 {{
+            total = total - 200001
+        }}
+        if total < -100000 {{
+            total = total + 200001
+        }}
+        index = index + 1
+    }}
+    total
+}}
+
+fn main {{
+    // C argc is 1 here. @env.args() lists the program on native and may also
+    // list the host runtime on js, so clamp to the C twin's value.
+    let argc = if @env.args().length() > 0 {{ 1 }} else {{ 0 }}
+    println(integer_mix({base_iterations} + argc, argc))
+}}
+"""
     lanius = f"""module app::main;
 
 extern "lanius_std" fn argc() -> i32;
@@ -372,7 +421,14 @@ fn main() -> i32 {{
     return 0;
 }}
 """
-    return {"c": c, "cpp": cpp, "rust": rust, "zig": zig, "lanius": lanius}
+    return {
+        "c": c,
+        "cpp": cpp,
+        "rust": rust,
+        "zig": zig,
+        "moonbit": moonbit,
+        "lanius": lanius,
+    }
 
 
 def grid_checksum(rows: int, salt: int) -> int:
@@ -474,6 +530,39 @@ pub fn main(init: std.process.Init.Minimal) void {{
     _ = c.printf("%d\\n", gridChecksum({base_rows} + argc, argc));
 }}
 """
+    moonbit = f"""fn cell_score(x : Int, y : Int, salt : Int) -> Int {{
+    let distance = if x > y {{ x - y }} else {{ y - x }}
+    let mixed = (x * 17 + y * 31 + salt * 13) % 97
+    distance + mixed
+}}
+
+fn grid_checksum(rows : Int, salt : Int) -> Int {{
+    let mut total = 0
+    let mut y = 0
+    while y < rows {{
+        let mut x = 0
+        while x < 251 {{
+            total = total + cell_score(x, y, salt)
+            if total > 100000 {{
+                total = total - 200001
+            }}
+            if total < -100000 {{
+                total = total + 200001
+            }}
+            x = x + 1
+        }}
+        y = y + 1
+    }}
+    total
+}}
+
+fn main {{
+    // C argc is 1 here. @env.args() lists the program on native and may also
+    // list the host runtime on js, so clamp to the C twin's value.
+    let argc = if @env.args().length() > 0 {{ 1 }} else {{ 0 }}
+    println(grid_checksum({base_rows} + argc, argc))
+}}
+"""
     lanius = f"""module app::main;
 
 extern "lanius_std" fn argc() -> i32;
@@ -507,7 +596,14 @@ fn main() -> i32 {{
     return 0;
 }}
 """
-    return {"c": c, "cpp": cpp, "rust": rust, "zig": zig, "lanius": lanius}
+    return {
+        "c": c,
+        "cpp": cpp,
+        "rust": rust,
+        "zig": zig,
+        "moonbit": moonbit,
+        "lanius": lanius,
+    }
 
 
 def array_walk(rounds: int, salt: int) -> int:
@@ -592,6 +688,30 @@ pub fn main(init: std.process.Init.Minimal) void {{
     _ = c.printf("%d\\n", arrayWalk({base_rounds} + argc, argc));
 }}
 """
+    moonbit = f"""fn array_walk(rounds : Int, salt : Int) -> Int {{
+    let values : FixedArray[Int] = [{initial}]
+    let mut checksum = 0
+    let mut round = 0
+    while round < rounds {{
+        let mut index = 0
+        while index < 64 {{
+            let value = (values[index] * 33 + round + index + salt) % 10007
+            values[index] = value
+            checksum = (checksum + value) % 1000003
+            index = index + 1
+        }}
+        round = round + 1
+    }}
+    checksum
+}}
+
+fn main {{
+    // C argc is 1 here. @env.args() lists the program on native and may also
+    // list the host runtime on js, so clamp to the C twin's value.
+    let argc = if @env.args().length() > 0 {{ 1 }} else {{ 0 }}
+    println(array_walk({base_rounds} + argc, argc))
+}}
+"""
     lanius = f"""module app::main;
 
 extern "lanius_std" fn argc() -> i32;
@@ -619,17 +739,52 @@ fn main() -> i32 {{
     return 0;
 }}
 """
-    return {"c": c, "cpp": cpp, "rust": rust, "zig": zig, "lanius": lanius}
+    return {
+        "c": c,
+        "cpp": cpp,
+        "rust": rust,
+        "zig": zig,
+        "moonbit": moonbit,
+        "lanius": lanius,
+    }
 
 
 def source_name(workload: str, language: str) -> str:
-    suffix = {"cpp": "cpp", "c": "c", "rust": "rs", "zig": "zig", "lanius": "lani"}
+    suffix = {
+        "cpp": "cpp",
+        "c": "c",
+        "rust": "rs",
+        "zig": "zig",
+        "moonbit": "mbt",
+        "lanius": "lani",
+    }
     return f"{workload}.{suffix[language]}"
+
+
+def moonbit_commands(bin_dir: Path) -> dict[str, dict[str, object]]:
+    """moon builds the project materialized in bin_dir/moonbit; the built
+    artifact is then copied next to the other lanes' executables."""
+    project = bin_dir / "moonbit"
+    commands = {}
+    for lane, (backend, profile) in MOONBIT_LANES.items():
+        suffix = ".js" if backend == "js" else ""
+        output = bin_dir / f"moonbit-{lane}{suffix}"
+        commands[lane] = {
+            "compile": moonbit_project.build_command(backend, profile),
+            "cwd": str(project),
+            "artifact": [
+                str(path)
+                for path in moonbit_project.artifact_candidates(project, backend, profile)
+            ],
+            "output": str(output),
+            "run": ["node", str(output)] if backend == "js" else [str(output)],
+        }
+    return commands
 
 
 def command_map(
     repo: Path, out: Path, bin_dir: Path, workload: str
-) -> dict[str, dict[str, dict[str, list[str]]]]:
+) -> dict[str, dict[str, dict[str, object]]]:
     src = portable_path(repo, out / "src")
     bin_dir = portable_path(repo, bin_dir)
     return {
@@ -667,6 +822,7 @@ def command_map(
                 "run": [str(bin_dir / "tcc-default")],
             },
         },
+        "moonbit": moonbit_commands(bin_dir),
         "lanius": {
             "default": {
                 "compile": ["target/release/laniusc", "--stdlib-root", "stdlib", "--emit", "x86_64", "-o", str(bin_dir / "lanius-default"), str(src / source_name(workload, "lanius"))],
@@ -689,11 +845,52 @@ def portable_path(repo: Path, path: Path) -> Path:
         return path
 
 
-def ensure_tools(commands: dict[str, dict[str, dict[str, list[str]]]]) -> None:
-    for language, lane in LANGUAGE_LANES:
-        tool = commands[language][lane]["compile"][0]
-        if shutil.which(tool) is None and not Path(tool).is_file():
+def tool_available(tool: str) -> bool:
+    return shutil.which(tool) is not None or Path(tool).is_file()
+
+
+def available_lanes(
+    commands: dict[str, dict[str, dict[str, object]]],
+) -> tuple[tuple[str, str], ...]:
+    """Every configured lane, minus MoonBit's when its toolchain is missing.
+
+    The other compilers stay required (ensure_tools raises for them); MoonBit
+    is optional so the suite keeps running on machines without it.
+    """
+    lanes = LANGUAGE_LANES
+    if not moonbit_project.moon_available(str(commands["moonbit"]["debug"]["compile"][0])):
+        print(f"run_runtime_comparison: {moonbit_project.MISSING_MESSAGE}", file=sys.stderr)
+        return tuple(lane for lane in lanes if lane[0] != "moonbit")
+    if not tool_available(str(commands["moonbit"]["js"]["run"][0])):
+        print(
+            "run_runtime_comparison: node not found; skipping the MoonBit js lane",
+            file=sys.stderr,
+        )
+        return tuple(lane for lane in lanes if lane != ("moonbit", "js"))
+    return lanes
+
+
+def ensure_tools(
+    commands: dict[str, dict[str, dict[str, object]]],
+    lanes: tuple[tuple[str, str], ...] = LANGUAGE_LANES,
+) -> None:
+    for language, lane in lanes:
+        tool = str(commands[language][lane]["compile"][0])
+        if not tool_available(tool):
             raise RuntimeError(f"required compiler for {language} is unavailable: {tool}")
+
+
+def compile_lane(command: dict[str, object], repo: Path) -> None:
+    """Compile one lane; a lane with an artifact list copies the first artifact
+    that exists (moon writes _build/, older toolchains target/) to its output."""
+    run_checked(command["compile"], resolve(repo, str(command.get("cwd", "."))), None)
+    if "artifact" not in command:
+        return
+    candidates = [resolve(repo, str(path)) for path in command["artifact"]]
+    artifact = next((path for path in candidates if path.is_file()), None)
+    if artifact is None:
+        raise RuntimeError(f"build wrote no artifact; looked for {candidates}")
+    shutil.copy2(artifact, resolve(repo, str(command["output"])))
 
 
 def run_checked(command: list[str], cwd: Path, input_text: str | None) -> str:
@@ -721,14 +918,17 @@ def validate_output(language: str, actual: str, expected: str) -> None:
         raise RuntimeError(f"{language} output mismatch: {actual!r} != {expected!r}")
 
 
-def summarize(samples: list[dict[str, object]]) -> list[dict[str, object]]:
+def summarize(
+    samples: list[dict[str, object]],
+    lanes: tuple[tuple[str, str], ...] = LANGUAGE_LANES,
+) -> list[dict[str, object]]:
     grouped = {
         (language, lane): [
             float(sample["wall_ms"])
             for sample in samples
             if sample["language"] == language and sample["lane"] == lane
         ]
-        for language, lane in LANGUAGE_LANES
+        for language, lane in lanes
     }
     medians = {key: statistics.median(values) for key, values in grouped.items()}
     lanius = medians["lanius", "default"]
@@ -747,7 +947,7 @@ def summarize(samples: list[dict[str, object]]) -> list[dict[str, object]]:
             "max_ms": max(grouped[language, lane]),
             "lanius_speedup": medians[language, lane] / lanius,
         }
-        for language, lane in LANGUAGE_LANES
+        for language, lane in lanes
     ]
 
 
@@ -763,6 +963,8 @@ def machine_info(cpu: int | None) -> dict[str, object]:
         "g++": version(["g++", "--version"]),
         "zig": version(["zig", "version"]),
         "tcc": version(["tcc", "-v"]),
+        "moon": moonbit_project.version(),
+        "node": version(["node", "--version"]),
         "laniusc": version([str(Path("target/release/laniusc").resolve()), "--version"]),
     }
 
@@ -785,7 +987,9 @@ def version(command: list[str]) -> str:
     return run.stdout.splitlines()[0] if run.stdout else f"exit={run.returncode}"
 
 
-def manifest(out: Path) -> dict[str, object]:
+def manifest(
+    out: Path, lanes: tuple[tuple[str, str], ...] = LANGUAGE_LANES
+) -> dict[str, object]:
     files = []
     for path in sorted(out.rglob("*")):
         if path.is_file() and path.name != "manifest.json":
@@ -794,7 +998,7 @@ def manifest(out: Path) -> dict[str, object]:
         "schema": SCHEMA,
         "language_lanes": [
             {"language": language, "lane": lane}
-            for language, lane in LANGUAGE_LANES
+            for language, lane in lanes
         ],
         "files": files,
     }

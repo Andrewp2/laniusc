@@ -8,6 +8,7 @@ import random
 from dataclasses import dataclass
 from pathlib import Path
 
+from moonbit_project import module_manifest, package_manifest
 from typical_project_constructs import (
     archetype_for_module,
     evaluate_archetype,
@@ -22,7 +23,10 @@ from typical_project_constructs import (
 )
 
 
-LANGUAGES = ("c", "cpp", "rust", "zig", "lanius")
+LANGUAGES = ("c", "cpp", "rust", "zig", "moonbit", "lanius")
+# MoonBit module and package names for the generated moon project.
+MOONBIT_MODULE = "lanius/typical"
+MOONBIT_ENTRY_PACKAGE = "main"
 VALUE_MASK = 4095
 AREAS = (
     "accounts",
@@ -408,6 +412,8 @@ def render_project(language: str, project: TypicalProject) -> dict[str, str]:
         return render_rust_project(project)
     if language == "zig":
         return render_zig_project(project)
+    if language == "moonbit":
+        return render_moonbit_project(project)
     return render_lanius_project(project)
 
 
@@ -446,7 +452,14 @@ def render_rule_body(rule: Rule, language: str, prefix: str = "") -> str:
                 ]
             )
     lines.extend(("    return result;", "}", ""))
-    return "\n".join(lines) + "\n"
+    return "\n".join(statement_lines(language, lines)) + "\n"
+
+
+def statement_lines(language: str, lines: list[str]) -> list[str]:
+    """MoonBit separates statements by newlines, not semicolons."""
+    if language != "moonbit":
+        return lines
+    return [line[:-1] if line.endswith(";") else line for line in lines]
 
 
 def condition_start(language: str, expression: str) -> str:
@@ -462,6 +475,8 @@ def function_start(language: str, name: str) -> str:
         return f"fn {name}(value: i32, context: i32) i32 {{"
     if language == "lanius":
         return f"fn {name}(value: i32, context: i32) -> i32 {{"
+    if language == "moonbit":
+        return f"fn {name}(value : Int, context : Int) -> Int {{"
     return f"static int32_t {name}(int32_t value, int32_t context) {{"
 
 
@@ -472,6 +487,8 @@ def mutable_declaration(language: str, name: str, expression: str) -> str:
         return f"    var {name}: i32 = {expression};"
     if language == "lanius":
         return f"    let {name}: i32 = {expression};"
+    if language == "moonbit":
+        return f"    let mut {name} : Int = {expression}"
     return f"    int32_t {name} = {expression};"
 
 
@@ -573,6 +590,8 @@ def qualified_call(language: str, module: str, function: str, argument: str) -> 
         return f"{module}::{function}({argument})"
     if language == "zig":
         return f"{module}.{function}({argument})"
+    if language == "moonbit":
+        return f"@{module}.{function}({argument})"
     return f"{module}_{function}({argument})"
 
 
@@ -718,6 +737,79 @@ def render_zig_module_api(project: TypicalProject, module: Module) -> str:
         lines.append(f"    total = {rule.name}(total, seed);")
     lines.extend(module_dependency_calls(project, module, "zig"))
     lines.extend(("    return total;", "}", ""))
+    return rules + "\n".join(lines)
+
+
+def render_moonbit_project(project: TypicalProject) -> dict[str, str]:
+    """One moon module; each typical module is its own package (directory),
+    so every package keeps the shared function names of the other twins."""
+    files = {
+        "moon.mod": module_manifest(MOONBIT_MODULE),
+    }
+    for module in project.modules:
+        if module.index == project.entry_index:
+            continue
+        imports = [
+            f"{MOONBIT_MODULE}/{project.modules[index].name}"
+            for index in dependency_indices(module)
+        ]
+        files[f"{module.name}/moon.pkg"] = package_manifest(imports)
+        files[f"{module.name}/{module.name}.mbt"] = render_moonbit_module_api(
+            project, module
+        )
+    entry = project.modules[project.entry_index]
+    imported_indices = sorted(
+        (set(project.roots) - {project.entry_index}) | set(dependency_indices(entry))
+    )
+    files[f"{MOONBIT_ENTRY_PACKAGE}/moon.pkg"] = package_manifest(
+        [
+            "moonbitlang/core/env",
+            *(
+                f"{MOONBIT_MODULE}/{project.modules[index].name}"
+                for index in imported_indices
+            ),
+        ],
+        executable=True,
+    )
+    calls = []
+    for index in project.roots:
+        call = (
+            "evaluate(7)"
+            if index == project.entry_index
+            else f"@{project.modules[index].name}.evaluate(7)"
+        )
+        calls.append(f"  total = (total + {call}) & {VALUE_MASK}")
+    files[f"{MOONBIT_ENTRY_PACKAGE}/main.mbt"] = (
+        'extern "C" fn c_exit(status : Int) -> Unit = "exit"\n\n'
+        + render_runtime_probe("moonbit")
+        + render_moonbit_module_api(project, entry)
+        + "\nfn main {\n  let runtime_status = runtime_probe()\n  if runtime_status != 0 {\n    c_exit(runtime_status)\n  }\n  let mut total : Int = 0\n"
+        + "\n".join(calls)
+        + "\n  println(total)\n}\n"
+    )
+    return files
+
+
+def render_moonbit_module_api(project: TypicalProject, module: Module) -> str:
+    rules = render_archetype("moonbit", module.archetype, module.name, module.index)
+    rules += render_rare_patterns("moonbit", module.name, module.index)
+    rules += "".join(render_rule_body(rule, "moonbit") for rule in module.rules)
+    lines = [
+        f"pub fn base_rate(value : Int) -> Int {{ (value + {module.base_rate} + {module.index * 3}) & {VALUE_MASK} }}",
+        "",
+        "pub fn evaluate(seed : Int) -> Int {",
+        "    let mut total : Int = base_rate(seed)",
+        f"    total = (total + {workload_call('moonbit', module.name, 'seed')}) & {VALUE_MASK}",
+    ]
+    rare_call = rare_score_call("moonbit", module.name, module.index, "seed")
+    if rare_call is not None:
+        lines.append(f"    total = (total + {rare_call}) & {VALUE_MASK}")
+    for rule in module.rules:
+        lines.append(f"    total = {rule.name}(total, seed)")
+    lines.extend(
+        statement_lines("moonbit", module_dependency_calls(project, module, "moonbit"))
+    )
+    lines.extend(("    total", "}", ""))
     return rules + "\n".join(lines)
 
 

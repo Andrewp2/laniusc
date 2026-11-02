@@ -215,7 +215,7 @@ theorem step_get_of_mini_selfhost_Rule {prog : SrcProgram} {prims : Prims} {ix_g
   simp only [src_get_of_mini_selfhost_Rule] at h
   faithful []
 
-theorem step_get_of_mini_selfhost_Sig {prog : SrcProgram} {prims : Prims} {ix_get_of_mini_selfhost_Sig ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Sig : Nat} (fn : prog.funcs[ix_get_of_mini_selfhost_Sig]? = some (src_get_of_mini_selfhost_Sig ix_minus ix_get_of_mini_selfhost_Sig ix_unbox_of_mini_selfhost_List_mini_selfhost_Sig)) (np : prims.isPrim ix_get_of_mini_selfhost_Sig = false)
+theorem step_get_of_mini_selfhost_Sig {prog : SrcProgram} {prims : Prims} {ix_get_of_mini_selfhost_Sig ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Sig : Nat} (fn : prog.funcs[ix_get_of_mini_selfhost_Sig]? = some (src_get_of_mini_selfhost_Sig ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Sig ix_get_of_mini_selfhost_Sig)) (np : prims.isPrim ix_get_of_mini_selfhost_Sig = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_Sig : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Sig prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Sig n)) {n : Nat}
     (ih_get_of_mini_selfhost_Sig : Certified (Stmt_get_of_mini_selfhost_Sig prog prims ix_get_of_mini_selfhost_Sig n)) :

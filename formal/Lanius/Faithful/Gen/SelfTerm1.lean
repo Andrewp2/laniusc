@@ -39,10 +39,10 @@ theorem ok_SrcStmt_returns : FnOk prog prims info (58, ⟨0, [0], 0⟩) :=
 theorem ok_compile_lowered : FnOk prog prims info (60, ⟨14, [], 0⟩) :=
   fnOk_of fn_compile_lowered (by decide +kernel)
 
-theorem ok_lower_funcs : FnOk prog prims info (61, ⟨19, [2], 0⟩) :=
+theorem ok_lower_funcs : FnOk prog prims info (61, ⟨19, [1], 0⟩) :=
   fnOk_of fn_lower_funcs (by decide +kernel)
 
-theorem ok_sigs : FnOk prog prims info (62, ⟨2, [0], 0⟩) :=
+theorem ok_sigs : FnOk prog prims info (62, ⟨10, [], 0⟩) :=
   fnOk_of fn_sigs (by decide +kernel)
 
 theorem ok_declare_funcs : FnOk prog prims info (63, ⟨8, [0], 0⟩) :=
@@ -96,14 +96,11 @@ theorem ok_lower_func_cons : FnOk prog prims info (85, ⟨1, [], 0⟩) :=
 theorem ok_lower_func : FnOk prog prims info (86, ⟨18, [], 0⟩) :=
   fnOk_of fn_lower_func (by decide +kernel)
 
-theorem ok_empty_of_mini_selfhost_Sig : FnOk prog prims info (87, ⟨0, [], 0⟩) :=
-  fnOk_of fn_empty_of_mini_selfhost_Sig (by decide +kernel)
+theorem ok_sigs_with : FnOk prog prims info (88, ⟨2, [0], 0⟩) :=
+  fnOk_of fn_sigs_with (by decide +kernel)
 
-theorem ok_cons_of_mini_selfhost_Sig : FnOk prog prims info (88, ⟨0, [], 0⟩) :=
-  fnOk_of fn_cons_of_mini_selfhost_Sig (by decide +kernel)
-
-theorem ok_param_types : FnOk prog prims info (89, ⟨1, [0], 0⟩) :=
-  fnOk_of fn_param_types (by decide +kernel)
+theorem ok_func_needs : FnOk prog prims info (89, ⟨9, [], 0⟩) :=
+  fnOk_of fn_func_needs (by decide +kernel)
 
 theorem ok_declare_funcs_after : FnOk prog prims info (90, ⟨8, [1], 1⟩) :=
   fnOk_of fn_declare_funcs_after (by decide +kernel)
@@ -132,7 +129,10 @@ theorem ok_cons_root : FnOk prog prims info (97, ⟨1, [], 0⟩) :=
 theorem ok_validate_tree : FnOk prog prims info (98, ⟨7, [], 0⟩) :=
   fnOk_of fn_validate_tree (by decide +kernel)
 
+theorem ok_file_decls : FnOk prog prims info (100, ⟨12, [], 0⟩) :=
+  fnOk_of fn_file_decls (by decide +kernel)
+
 theorem chunk1 : AllFns prog prims info part1 :=
-  ⟨ok_concat_of_i32, ok_length_of_usize, ok_usize_words, ok_pack_round, ok_round_join, ok_minus, ok_SrcType_is_unit, ok_SrcStmt_returns, ok_compile_lowered, ok_lower_funcs, ok_sigs, ok_declare_funcs, ok_empty_of_mini_selfhost_SrcStructDecl, ok_empty_of_mini_selfhost_SrcEnumDecl, ok_empty_of_mini_selfhost_FileInput, ok_read_file, ok_files_after, ok_validate_files, ok_build_files, ok_files_fuel, ok_plus, ok_round_end, ok_round_cons, ok_pack_word, ok_compile_optimized, ok_empty_of_mini_selfhost_Func, ok_lower_func_cons, ok_lower_func, ok_empty_of_mini_selfhost_Sig, ok_cons_of_mini_selfhost_Sig, ok_param_types, ok_declare_funcs_after, ok_declare_func, ok_read_counted_bytes, ok_read_file_parents, ok_read_counted_nums, ok_cons_of_mini_selfhost_FileInput, ok_empty_of_mini_selfhost_CTree, ok_cons_root, ok_validate_tree, trivial⟩
+  ⟨ok_concat_of_i32, ok_length_of_usize, ok_usize_words, ok_pack_round, ok_round_join, ok_minus, ok_SrcType_is_unit, ok_SrcStmt_returns, ok_compile_lowered, ok_lower_funcs, ok_sigs, ok_declare_funcs, ok_empty_of_mini_selfhost_SrcStructDecl, ok_empty_of_mini_selfhost_SrcEnumDecl, ok_empty_of_mini_selfhost_FileInput, ok_read_file, ok_files_after, ok_validate_files, ok_build_files, ok_files_fuel, ok_plus, ok_round_end, ok_round_cons, ok_pack_word, ok_compile_optimized, ok_empty_of_mini_selfhost_Func, ok_lower_func_cons, ok_lower_func, ok_sigs_with, ok_func_needs, ok_declare_funcs_after, ok_declare_func, ok_read_counted_bytes, ok_read_file_parents, ok_read_counted_nums, ok_cons_of_mini_selfhost_FileInput, ok_empty_of_mini_selfhost_CTree, ok_cons_root, ok_validate_tree, ok_file_decls, trivial⟩
 
 end Lanius.Faithful.SelfTerm
