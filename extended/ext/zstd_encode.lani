@@ -50,8 +50,11 @@ const MLX: i32 = 135209;
 const TABLES_END: i32 = 135264;
 
 fn wlog(level: i32) -> i32 { if (level == 1) { return 19; } if (level == 2) { return 20; } return 21; }
-fn hlog(level: i32) -> i32 { if (level == 1) { return 16; } return 17; }
-pub fn workspace_len(level: i32) -> i32 { return TABLES_END+(1 << hlog(level))+(1 << wlog(level)); }
+fn hlog(level: i32) -> i32 { return 17; }
+// Level 1 reads its 2^17 head entries as 2^16 eight-byte slots and keeps
+// no chain.
+fn chain_len(level: i32) -> i32 { if (level == 1) { return 0; } return 1 << wlog(level); }
+pub fn workspace_len(level: i32) -> i32 { return TABLES_END+(1 << hlog(level))+chain_len(level); }
 // The window keeps two history spans and 16 bytes for word loads.
 pub fn window_len(level: i32) -> i32 { return (2 << wlog(level))+16; }
 pub fn literals_len() -> i32 { return BLOCK+64; }
@@ -72,7 +75,12 @@ fn copy_disjoint(to: ptr, at: i32, from: ptr, source: i32, count: i32) {
     let tail: [u8] = core::mem::typed_slice_from_raw_parts<u8>(to+(at as usize),count); let head: [u8] = core::mem::typed_slice_from_raw_parts<u8>(from+(source as usize),count);
     let index: i32 = 0; while (index < count) { tail[index] = head[index]; index += 1; }
 }
-fn highbit(value: i32) -> i32 { let bit: i32 = 0; let rest: i32 = value; while (rest > 1) { rest = rest >> 1; bit += 1; } return bit; }
+fn highbit(value: i32) -> i32 {
+    let bit: i32 = 0; let rest: i32 = value;
+    if (rest >= 65536) { rest = rest >> 16; bit = 16; } if (rest >= 256) { rest = rest >> 8; bit += 8; }
+    if (rest >= 16) { rest = rest >> 4; bit += 4; } if (rest >= 4) { rest = rest >> 2; bit += 2; } if (rest >= 2) { bit += 1; }
+    return bit;
+}
 // log2(value) in 1/256 bits, linear between powers of two.
 fn lg256(value: i32) -> i32 { let h: i32 = highbit(value); return (h << 8)+(((value << 8) >> h)-256); }
 // Byte p of the window from its aligned words (whole runs downward).
@@ -85,7 +93,11 @@ fn load(whole: [u64], units: i32, p: i32) -> u64 {
 fn common(whole: [u64], units: i32, a: i32, b: i32, maximum: i32) -> i32 {
     let length: i32 = 0;
     while (length < maximum) {
-        let differ: u64 = load(whole,units,a+length) ^ load(whole,units,b+length);
+        let pa: i32 = a+length; let qa: i32 = pa >> 3; let sa: i32 = (pa & 7) << 3; let va: u64 = whole[units-1-qa];
+        if (sa != 0) { va = (va >> (sa as u64)) | (whole[units-2-qa] << ((64-sa) as u64)); }
+        let pb: i32 = b+length; let qb: i32 = pb >> 3; let sb: i32 = (pb & 7) << 3; let vb: u64 = whole[units-1-qb];
+        if (sb != 0) { vb = (vb >> (sb as u64)) | (whole[units-2-qb] << ((64-sb) as u64)); }
+        let differ: u64 = va ^ vb;
         if (differ != 0) {
             if ((differ & 4294967295) == 0) { differ = differ >> 32; length += 4; }
             if ((differ & 65535) == 0) { differ = differ >> 16; length += 2; }
@@ -121,6 +133,8 @@ pub fn encoder(workspace: core::slice::View<i32>, window: core::slice::View<u8>,
     if (workspace.start < 0 || workspace.length < workspace_len(level) || !packed(window) || window.length < window_len(level) || !packed(literals) || literals.length < literals_len() || !packed(stage) || stage.length < stage_len()) {
         return core::result::Err(Error::Bounds);
     }
+    // Level 1 reads its table as eight-byte words: the workspace must be packed.
+    if (level == 1 && core::mem::slice_stride(workspace.values) != 4) { return core::result::Err(Error::Bounds); }
     let wp: ptr = data_ptr(window); let lp: ptr = data_ptr(literals); let sp: ptr = data_ptr(stage);
     let wl: i32 = wlog(level); let span: i32 = 2 << wl;
     let chain: i32 = 2; let lazy: bool = false; let nice: i32 = 32;
@@ -404,10 +418,20 @@ pub impl Encoder {
         copy_disjoint(self.stage_ptr,self.bw_pos,self.lit_ptr,0,n); self.bw_pos += n;
     }
     // One Huffman stream: literals [from, to), last first.
+    // Codes are at most 11 bits: the accumulator is stored once it holds
+    // more than 52.
     fn huffman_stream(&self, from: i32, to: i32) {
-        self.begin_bits(); let i: i32 = to; let lit: [u8] = self.lit; let t: [i32] = self.ws.values; let s0: i32 = self.ws.start;
-        while (i > from) { i -= 1; let s: i32 = lit[i] as i32; let entry: i32 = t[s0+HCODE+s]; self.bits(entry >> 4,entry & 15); }
-        self.close();
+        let i: i32 = to; let lit: [u8] = self.lit; let t: [i32] = self.ws.values; let codes: i32 = self.ws.start+HCODE;
+        let acc: u64 = 0; let nb: i32 = 0; let pos: i32 = self.bw_pos; let cap: i32 = self.stage_cap-8; let sp: ptr = self.stage_ptr;
+        while (i > from) {
+            i -= 1; let s: i32 = lit[i] as i32; let entry: i32 = t[codes+s];
+            acc = acc | (((entry >> 4) as u64) << (nb as u64)); nb += entry & 15;
+            if (nb > 52) {
+                if (pos > cap) { self.bw_over = true; } else { let x: [u64] = words(sp,pos,1); x[0] = acc; }
+                let k: i32 = nb >> 3; pos += k; acc = acc >> ((k << 3) as u64); nb = nb & 7;
+            }
+        }
+        self.bw_pos = pos; self.bw_acc = acc; self.bw_bits = nb; self.close();
     }
     // Literals section for lit[0..nlit) at bw_pos.
     fn literals(&self) {
@@ -472,33 +496,48 @@ pub impl Encoder {
         if (n < 128) { self.byte(n); } else { if (n < 32512) { self.byte((n >> 8)+128); self.byte(n & 255); } else { self.byte(255); self.byte((n-32512) & 255); self.byte((n-32512) >> 8); } }
         if (n == 0) { return; }
         let t: [i32] = self.ws.values; let s0: i32 = self.ws.start; let i: i32 = 0;
-        while (i < 64) { t[s0+CNT_LL+i] = 0; t[s0+CNT_OF+i] = 0; t[s0+CNT_ML+i] = 0; i += 1; }
-        i = 0;
-        while (i < n) {
-            let at: i32 = s0+SEQ+4*i; let llc: i32 = ll_code(t[at]); let ofc: i32 = highbit(t[at+1]); let mlc: i32 = ml_code(t[at+2]);
-            t[at+3] = llc | (ofc << 8) | (mlc << 16);
-            t[s0+CNT_LL+llc] += 1; t[s0+CNT_OF+ofc] += 1; t[s0+CNT_ML+mlc] += 1; i += 1;
-        }
         let modes_at: i32 = self.bw_pos; self.byte(0);
         let a: i32 = self.choose(0); let b: i32 = self.choose(1); let c: i32 = self.choose(2);
         if (!self.bw_over) { self.poke(modes_at,(a << 6) | (b << 4) | (c << 2)); }
-        self.begin_bits();
+        // The stream is written with a local accumulator, stored when the
+        // next group of fields could pass 63 bits: states (at most 26 bits),
+        // literal and match length extras (32), the offset extra (31).
         let last: i32 = s0+SEQ+4*(n-1); let codes: i32 = t[last+3];
-        let llc: i32 = codes & 255; let ofc: i32 = (codes >> 8) & 255; let mlc: i32 = codes >> 16;
+        let llc: i32 = codes & 63; let ofc: i32 = (codes >> 6) & 31; let mlc: i32 = (codes >> 11) & 63;
         let sml: i32 = 0; let sof: i32 = 0; let sll: i32 = 0;
         if (!self.ml_rle) { sml = self.state_init(CT_ML,TT_ML,mlc); }
         if (!self.of_rle) { sof = self.state_init(CT_OF,TT_OF,ofc); }
         if (!self.ll_rle) { sll = self.state_init(CT_LL,TT_LL,llc); }
-        self.bits(t[last]-t[s0+LLB+llc],t[s0+LLX+llc]); self.bits(t[last+2]-t[s0+MLB+mlc],t[s0+MLX+mlc]); self.bits(t[last+1]-(1 << ofc),ofc);
-        i = n-2;
+        let ll_rle: bool = self.ll_rle; let of_rle: bool = self.of_rle; let ml_rle: bool = self.ml_rle;
+        let acc: u64 = 0; let nb: i32 = 0; let pos: i32 = self.bw_pos; let cap: i32 = self.stage_cap-8; let sp: ptr = self.stage_ptr; let over: bool = false;
+        let ct_of: i32 = s0+CT_OF; let tt_of: i32 = s0+TT_OF; let ct_ml: i32 = s0+CT_ML; let tt_ml: i32 = s0+TT_ML; let ct_ll: i32 = s0+CT_LL; let tt_ll: i32 = s0+TT_LL;
+        i = n-1; let at: i32 = last;
         while (i >= 0) {
-            let at: i32 = s0+SEQ+4*i; codes = t[at+3]; llc = codes & 255; ofc = (codes >> 8) & 255; mlc = codes >> 16;
-            if (!self.of_rle) { sof = self.state_put(CT_OF,TT_OF,sof,ofc); }
-            if (!self.ml_rle) { sml = self.state_put(CT_ML,TT_ML,sml,mlc); }
-            if (!self.ll_rle) { sll = self.state_put(CT_LL,TT_LL,sll,llc); }
-            self.bits(t[at]-t[s0+LLB+llc],t[s0+LLX+llc]); self.bits(t[at+2]-t[s0+MLB+mlc],t[s0+MLX+mlc]); self.bits(t[at+1]-(1 << ofc),ofc);
+            if (i < n-1) {
+                if (nb > 37) {
+                    if (pos > cap) { over = true; } else { let x: [u64] = words(sp,pos,1); x[0] = acc; }
+                    let k: i32 = nb >> 3; pos += k; acc = acc >> ((k << 3) as u64); nb = nb & 7;
+                }
+                at = s0+SEQ+4*i; codes = t[at+3]; llc = codes & 63; ofc = (codes >> 6) & 31; mlc = (codes >> 11) & 63;
+                if (!of_rle) { let d: i32 = 2*ofc; let out: i32 = (sof+t[tt_of+d]) >> 16; acc = acc | (((sof as u64) & ((1 << (out as u64))-1)) << (nb as u64)); nb += out; sof = t[ct_of+(sof >> out)+t[tt_of+d+1]]; }
+                if (!ml_rle) { let d: i32 = 2*mlc; let out: i32 = (sml+t[tt_ml+d]) >> 16; acc = acc | (((sml as u64) & ((1 << (out as u64))-1)) << (nb as u64)); nb += out; sml = t[ct_ml+(sml >> out)+t[tt_ml+d+1]]; }
+                if (!ll_rle) { let d: i32 = 2*llc; let out: i32 = (sll+t[tt_ll+d]) >> 16; acc = acc | (((sll as u64) & ((1 << (out as u64))-1)) << (nb as u64)); nb += out; sll = t[ct_ll+(sll >> out)+t[tt_ll+d+1]]; }
+            }
+            if (nb > 31) {
+                if (pos > cap) { over = true; } else { let x: [u64] = words(sp,pos,1); x[0] = acc; }
+                let k: i32 = nb >> 3; pos += k; acc = acc >> ((k << 3) as u64); nb = nb & 7;
+            }
+            acc = acc | ((t[at] as u64) << (nb as u64)); nb += (codes >> 17) & 31;
+            acc = acc | ((t[at+2] as u64) << (nb as u64)); nb += codes >> 22;
+            if (nb > 32) {
+                if (pos > cap) { over = true; } else { let x: [u64] = words(sp,pos,1); x[0] = acc; }
+                let k: i32 = nb >> 3; pos += k; acc = acc >> ((k << 3) as u64); nb = nb & 7;
+            }
+            acc = acc | ((t[at+1] as u64) << (nb as u64)); nb += ofc;
             i -= 1;
         }
+        if (over) { self.bw_over = true; }
+        self.bw_pos = pos; self.bw_acc = acc; self.bw_bits = nb;
         if (!self.ml_rle) { self.bits(sml,self.ml_log); }
         if (!self.of_rle) { self.bits(sof,self.of_log); }
         if (!self.ll_rle) { self.bits(sll,self.ll_log); }
@@ -517,13 +556,145 @@ pub impl Encoder {
         if (which != 0) { if (which != 1) { self.rep2 = self.rep1; } self.rep1 = self.rep0; self.rep0 = off; }
         return value;
     }
+    // A sequence is stored as its literal length, offset and match length
+    // extra values and one word of codes: LL code (bits 0-5), OF code (6-10),
+    // ML code (11-16), LL extra bits (17-21), ML extra bits (22-26). The
+    // code counts are kept as sequences arrive.
     fn emit(&self, anchor: i32, at: i32, length: i32, distance: i32) {
         let ll: i32 = at-anchor;
         if (ll > 0) { copy_disjoint(self.lit_ptr,self.nlit,self.win_ptr,anchor,ll); self.nlit += ll; }
         let value: i32 = self.offset_value(ll,distance);
-        let s: i32 = self.ws.start+SEQ+4*self.nseq; self.ws.values[s] = ll; self.ws.values[s+1] = value; self.ws.values[s+2] = length;
+        let t: [i32] = self.ws.values; let s0: i32 = self.ws.start;
+        let llc: i32 = ll; let llbits: i32 = 0; let llv: i32 = 0;
+        if (ll >= 16) { llc = ll_code(ll); llbits = t[s0+LLX+llc]; llv = ll-t[s0+LLB+llc]; }
+        let mlc: i32 = length-3; let mlbits: i32 = 0; let mlv: i32 = 0;
+        if (mlc >= 32) { mlc = ml_code(length); mlbits = t[s0+MLX+mlc]; mlv = length-t[s0+MLB+mlc]; }
+        let ofc: i32 = highbit(value);
+        let s: i32 = s0+SEQ+4*self.nseq;
+        t[s] = llv; t[s+1] = value-(1 << ofc); t[s+2] = mlv; t[s+3] = llc | (ofc << 6) | (mlc << 11) | (llbits << 17) | (mlbits << 22);
+        t[s0+CNT_LL+llc] += 1; t[s0+CNT_OF+ofc] += 1; t[s0+CNT_ML+mlc] += 1;
         self.nseq += 1;
     }
+    // Level 1 (zstd's "fast" strategy): one table of 2^16 slots, each the
+    // position (low 32 bits) and first four bytes (high 32) of the last
+    // place whose six bytes hashed there, so a miss needs no window access.
+    // No chain. The repeat offset is probed first; matches extend
+    // backwards; two positions inside each match are hashed; the probe step
+    // grows by one byte per 256 unmatched; after a match the previous
+    // offset is tried again at once. The bytes under the cursor (and at the
+    // repeat offset) roll forward a byte at a time. Calls cost more than
+    // the work around them here, so window loads, sequence recording (emit)
+    // and the repeat history (offset_value) are written out in place.
+    fn parse_fast(&self, begin: i32, end: i32) {
+        let slots: [u64] = self.fast_slots();
+        let whole: [u64] = words(self.win_ptr,0,self.units); let units: i32 = self.units; let bytes: [u8] = self.win; let lit: [u8] = self.lit;
+        let t: [i32] = self.ws.values; let s0: i32 = self.ws.start; let seq: i32 = s0+SEQ;
+        let cnt_ll: i32 = s0+CNT_LL; let cnt_of: i32 = s0+CNT_OF; let cnt_ml: i32 = s0+CNT_ML;
+        let origin: i32 = self.origin; let span: i32 = self.wsize-1;
+        if (!self.cleared) { let k: i32 = 0; while (k < 65536) { slots[k] = 0; k += 1; } self.cleared = true; }
+        let nseq: i32 = 0; let nlit: i32 = 0; let rep0: i32 = self.rep0; let rep1: i32 = self.rep1; let rep2: i32 = self.rep2;
+        let hashing: i32 = end-8; let p: i32 = begin; let anchor: i32 = begin;
+        let v: u64 = 0;
+        if (p < hashing) { let q: i32 = p >> 3; let sh: i32 = (p & 7) << 3; v = whole[units-1-q]; if (sh != 0) { v = (v >> (sh as u64)) | (whole[units-2-q] << ((64-sh) as u64)); } }
+        let rv: u64 = 0; let rolled: bool = false;
+        // The repeat offset is probed from rmin on: it needs rep0 bytes
+        // behind and one literal before (zero literals code offsets
+        // differently).
+        let rmin: i32 = anchor+1; if (rep0 > rmin) { rmin = rep0; } if (rep0 > span) { rmin = end; }
+        while (p < hashing) {
+            let h: i32 = (((v << 16)*227718039650203) >> 48) as i32; let here: i32 = origin+p;
+            let entry: u64 = (v << 32) | (here as u64); let old: u64 = slots[h]; slots[h] = entry;
+            let distance: i32 = 0; let from: i32 = 0;
+            if (p >= rmin) {
+                if (!rolled) {
+                    let rp: i32 = p-rep0; let q: i32 = rp >> 3; let sh: i32 = (rp & 7) << 3; rv = whole[units-1-q];
+                    if (sh != 0) { rv = (rv >> (sh as u64)) | (whole[units-2-q] << ((64-sh) as u64)); }
+                    rolled = true;
+                }
+                if (((rv ^ v) & 4294967295) == 0) { distance = rep0; from = p-rep0; }
+            }
+            if (distance == 0) {
+                if (((old ^ entry) >> 32) == 0) {
+                    let c: i32 = (old & 4294967295) as i32;
+                    if (c > 0) { if (here-c <= span) { distance = here-c; from = c-origin; } }
+                }
+            }
+            if (distance == 0) {
+                let step: i32 = 1+((p-anchor) >> 8);
+                if (step == 1) {
+                    let top: u64 = bytes[p+8] as u64; v = (v >> 8) | (top << 56);
+                    if (rolled) { let rtop: u64 = bytes[p-rep0+8] as u64; rv = (rv >> 8) | (rtop << 56); }
+                    p += 1;
+                } else {
+                    p += step; rolled = false;
+                    if (p < hashing) { let q: i32 = p >> 3; let sh: i32 = (p & 7) << 3; v = whole[units-1-q]; if (sh != 0) { v = (v >> (sh as u64)) | (whole[units-2-q] << ((64-sh) as u64)); } }
+                }
+                continue;
+            }
+            let length: i32 = 4+common(whole,units,from+4,p+4,end-p-4);
+            while (p > anchor) { if (from == 0) { break; } if (bytes[p-1] != bytes[from-1]) { break; } p -= 1; from -= 1; length += 1; }
+            // Record the sequence (see emit).
+            let ll: i32 = p-anchor;
+            if (ll > 16) { copy_disjoint(self.lit_ptr,nlit,self.win_ptr,anchor,ll); }
+            else { let k: i32 = 0; while (k < ll) { let b: u8 = bytes[anchor+k]; lit[nlit+k] = b; k += 1; } }
+            nlit += ll;
+            let value: i32 = distance+3;
+            if (ll > 0) { if (distance == rep2) { value = 3; } if (distance == rep1) { value = 2; } if (distance == rep0) { value = 1; } }
+            else { if (distance == rep0-1) { value = 3; } if (distance == rep2) { value = 2; } if (distance == rep1) { value = 1; } }
+            if (value > 3) { rep2 = rep1; rep1 = rep0; rep0 = distance; }
+            else {
+                let which: i32 = value-1; if (ll == 0) { which += 1; }
+                if (which != 0) { if (which != 1) { rep2 = rep1; } rep1 = rep0; rep0 = distance; }
+            }
+            let llc: i32 = ll; let llbits: i32 = 0; let llv: i32 = 0;
+            if (ll >= 16) { llc = ll_code(ll); llbits = t[s0+LLX+llc]; llv = ll-t[s0+LLB+llc]; }
+            let mlc: i32 = length-3; let mlbits: i32 = 0; let mlv: i32 = 0;
+            if (mlc >= 32) { mlc = ml_code(length); mlbits = t[s0+MLX+mlc]; mlv = length-t[s0+MLB+mlc]; }
+            let ofc: i32 = 0; let hv: i32 = value;
+            if (hv >= 65536) { hv = hv >> 16; ofc = 16; } if (hv >= 256) { hv = hv >> 8; ofc += 8; }
+            if (hv >= 16) { hv = hv >> 4; ofc += 4; } if (hv >= 4) { hv = hv >> 2; ofc += 2; } if (hv >= 2) { ofc += 1; }
+            let at: i32 = seq+4*nseq;
+            t[at] = llv; t[at+1] = value-(1 << ofc); t[at+2] = mlv; t[at+3] = llc | (ofc << 6) | (mlc << 11) | (llbits << 17) | (mlbits << 22);
+            t[cnt_ll+llc] += 1; t[cnt_of+ofc] += 1; t[cnt_ml+mlc] += 1; nseq += 1;
+            let next: i32 = p+length;
+            let a: i32 = p+2;
+            if (a < hashing) {
+                let q: i32 = a >> 3; let sh: i32 = (a & 7) << 3; let va: u64 = whole[units-1-q]; if (sh != 0) { va = (va >> (sh as u64)) | (whole[units-2-q] << ((64-sh) as u64)); }
+                let ha: i32 = (((va << 16)*227718039650203) >> 48) as i32; slots[ha] = (va << 32) | ((origin+a) as u64);
+            }
+            let b2: i32 = next-2;
+            if (b2 > a && b2 < hashing) {
+                let q: i32 = b2 >> 3; let sh: i32 = (b2 & 7) << 3; let vb: u64 = whole[units-1-q]; if (sh != 0) { vb = (vb >> (sh as u64)) | (whole[units-2-q] << ((64-sh) as u64)); }
+                let hb: i32 = (((vb << 16)*227718039650203) >> 48) as i32; slots[hb] = (vb << 32) | ((origin+b2) as u64);
+            }
+            p = next; anchor = next;
+            // The offset before last, straight after the match: no literals,
+            // so it codes as repeat 1 and swaps the two latest offsets.
+            while (p < hashing) {
+                let q: i32 = p >> 3; let sh: i32 = (p & 7) << 3; v = whole[units-1-q]; if (sh != 0) { v = (v >> (sh as u64)) | (whole[units-2-q] << ((64-sh) as u64)); }
+                if (rep1 > p || rep1 > span) { break; }
+                let rp: i32 = p-rep1; let q1: i32 = rp >> 3; let sh1: i32 = (rp & 7) << 3; let v1: u64 = whole[units-1-q1];
+                if (sh1 != 0) { v1 = (v1 >> (sh1 as u64)) | (whole[units-2-q1] << ((64-sh1) as u64)); }
+                if (((v1 ^ v) & 4294967295) != 0) { break; }
+                let rl: i32 = 4+common(whole,units,rp+4,p+4,end-p-4);
+                let hp: i32 = (((v << 16)*227718039650203) >> 48) as i32; slots[hp] = (v << 32) | ((origin+p) as u64);
+                let swap: i32 = rep1; rep1 = rep0; rep0 = swap;
+                let rc: i32 = rl-3; let rbits: i32 = 0; let rvx: i32 = 0;
+                if (rc >= 32) { rc = ml_code(rl); rbits = t[s0+MLX+rc]; rvx = rl-t[s0+MLB+rc]; }
+                let at2: i32 = seq+4*nseq;
+                t[at2] = 0; t[at2+1] = 0; t[at2+2] = rvx; t[at2+3] = (rc << 11) | (rbits << 22);
+                t[cnt_ll] += 1; t[cnt_of] += 1; t[cnt_ml+rc] += 1; nseq += 1;
+                p += rl; anchor = p;
+            }
+            rolled = false;
+            rmin = anchor+1; if (rep0 > rmin) { rmin = rep0; } if (rep0 > span) { rmin = end; }
+        }
+        let rest: i32 = end-anchor;
+        if (rest > 0) { copy_disjoint(self.lit_ptr,nlit,self.win_ptr,anchor,rest); nlit += rest; }
+        self.nseq = nseq; self.nlit = nlit; self.rep0 = rep0; self.rep1 = rep1; self.rep2 = rep2;
+    }
+    // The level 1 table: 2^16 eight-byte slots over the hash region.
+    fn fast_slots(&self) -> [u64] { return words(core::mem::i32_slice_data_ptr(self.ws.values)+(((self.ws.start+self.head_at) << 2) as usize),0,65536); }
     // Parse window[begin..end) into sequences and literals.
     fn parse(&self, begin: i32, end: i32) {
         let w: [i32] = self.ws.values; let s0: i32 = self.ws.start; let head: i32 = s0+self.head_at; let prev: i32 = s0+self.prev_at;
@@ -608,7 +779,10 @@ pub impl Encoder {
             if (same && n > 1) { kind = 1; self.byte(first as i32); }
             else {
                 let r0: i32 = self.rep0; let r1: i32 = self.rep1; let r2: i32 = self.rep2;
-                self.parse(begin,end); self.literals(); self.sequences();
+                let t: [i32] = self.ws.values; let s0: i32 = self.ws.start; let k: i32 = 0;
+                while (k < 64) { t[s0+CNT_LL+k] = 0; t[s0+CNT_OF+k] = 0; t[s0+CNT_ML+k] = 0; k += 1; }
+                if (self.level == 1) { self.parse_fast(begin,end); } else { self.parse(begin,end); }
+                self.literals(); self.sequences();
                 if (!self.bw_over && self.bw_pos-3 < n) { kind = 2; size = self.bw_pos-3; }
                 // Raw blocks leave a decoder's repeat offsets unchanged.
                 else { self.rep0 = r0; self.rep1 = r1; self.rep2 = r2; }
@@ -625,7 +799,16 @@ pub impl Encoder {
         self.origin += span; self.filled = span; self.start = span;
         if (self.origin >= 1073741824) {
             let w: [i32] = self.ws.values; let s0: i32 = self.ws.start+self.head_at; let shift: i32 = self.origin-span; let k: i32 = 0;
-            let count: i32 = (1 << self.hlog)+span;
+            if (self.level == 1) {
+                let slots: [u64] = self.fast_slots(); let j: i32 = 0;
+                while (j < 65536) {
+                    let e: u64 = slots[j]; let at: i32 = (e & 4294967295) as i32; let moved: u64 = 0;
+                    if (at >= shift) { moved = (e & 18446744069414584320) | ((at-shift) as u64); }
+                    slots[j] = moved; j += 1;
+                }
+                self.hashed -= shift; if (self.hashed < 0) { self.hashed = 0; } self.origin = span; return;
+            }
+            let count: i32 = (1 << self.hlog)+chain_len(self.level);
             while (k < count) { let v: i32 = w[s0+k]; if (v < shift) { v = -1; } else { v -= shift; } w[s0+k] = v; k += 1; }
             self.hashed -= shift; if (self.hashed < 0) { self.hashed = 0; } self.origin = span;
         }
