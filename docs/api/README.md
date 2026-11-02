@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **360 modules**, **18900 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **361 modules**, **18964 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -378,6 +378,7 @@ Inventory: **360 modules**, **18900 declaration/member entries**. Counts include
 | [ext::zip](ext/zip.md) | [source](../../extended/ext/zip.lani#L2) | 82 | Source inventory | [extended-zip](../extended-zip.md), [extended-fetch-many](../extended-fetch-many.md) |
 | [ext::zip_stream](ext/zip_stream.md) | [source](../../extended/ext/zip_stream.lani#L8) | 83 | Source inventory | [extended-zip-stream](../extended-zip-stream.md) |
 | [ext::zstd](ext/zstd.md) | [source](../../extended/ext/zstd.lani#L8) | 92 | Source inventory | [extended-zstd](../extended-zstd.md) |
+| [ext::zstd_encode](ext/zstd_encode.md) | [source](../../extended/ext/zstd_encode.lani#L10) | 64 | Source inventory | **Unregistered** |
 
 ## Support and implementation data
 
@@ -462,3 +463,4 @@ These are discovery/contract-link gaps, not claims that their code is missing or
 - [ext::openssl_tls_lifecycle](ext/openssl_tls_lifecycle.md)
 - [ext::sha1](ext/sha1.md)
 - [ext::tls_clients](ext/tls_clients.md)
+- [ext::zstd_encode](ext/zstd_encode.md)

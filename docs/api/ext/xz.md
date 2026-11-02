@@ -1126,7 +1126,7 @@ pub const STAGE: i32 = 65536;
 
 ### constant: STORE_WORKSPACE
 
-[Source line 641](../../../extended/ext/xz.lani#L641)
+[Source line 650](../../../extended/ext/xz.lani#L650)
 
 ```lanius
 pub const STORE_WORKSPACE: i32 = 512;
@@ -1134,7 +1134,7 @@ pub const STORE_WORKSPACE: i32 = 512;
 
 ### constant: ENCODER_STAGE
 
-[Source line 679](../../../extended/ext/xz.lani#L679)
+[Source line 688](../../../extended/ext/xz.lani#L688)
 
 ```lanius
 pub const ENCODER_STAGE: i32 = 65600;
@@ -1168,7 +1168,7 @@ pub fn decoder(probabilities: core::slice::View<i32>, stage: core::slice::View<u
 
 ### function: store_encoder
 
-[Source line 642](../../../extended/ext/xz.lani#L642)
+[Source line 651](../../../extended/ext/xz.lani#L651)
 
 ```lanius
 pub fn store_encoder(workspace: core::slice::View<i32>) -> core::result::Result<StoreEncoder,Error>
@@ -1176,7 +1176,7 @@ pub fn store_encoder(workspace: core::slice::View<i32>) -> core::result::Result<
 
 ### function: encoder_window_len
 
-[Source line 686](../../../extended/ext/xz.lani#L686)
+[Source line 695](../../../extended/ext/xz.lani#L695)
 
 ```lanius
 pub fn encoder_window_len(level: i32) -> i32
@@ -1184,7 +1184,7 @@ pub fn encoder_window_len(level: i32) -> i32
 
 ### function: encoder_workspace_len
 
-[Source line 687](../../../extended/ext/xz.lani#L687)
+[Source line 696](../../../extended/ext/xz.lani#L696)
 
 ```lanius
 pub fn encoder_workspace_len(level: i32) -> i32
@@ -1192,7 +1192,7 @@ pub fn encoder_workspace_len(level: i32) -> i32
 
 ### function: encoder
 
-[Source line 688](../../../extended/ext/xz.lani#L688)
+[Source line 697](../../../extended/ext/xz.lani#L697)
 
 ```lanius
 pub fn encoder(workspace: core::slice::View<i32>, window: core::slice::View<u8>, stage: core::slice::View<u8>, level: i32) -> core::result::Result<Encoder,Error>
@@ -1200,7 +1200,7 @@ pub fn encoder(workspace: core::slice::View<i32>, window: core::slice::View<u8>,
 
 ### function: unused_encoder
 
-[Source line 710](../../../extended/ext/xz.lani#L710)
+[Source line 719](../../../extended/ext/xz.lani#L719)
 
 ```lanius
 pub fn unused_encoder(bytes: core::slice::View<u8>, words: core::slice::View<i32>) -> Encoder
@@ -1208,9 +1208,9 @@ pub fn unused_encoder(bytes: core::slice::View<u8>, words: core::slice::View<i32
 
 ## Implementation blocks and public methods
 
-### impl at line 418
+### impl at line 427
 
-[Source line 418](../../../extended/ext/xz.lani#L418)
+[Source line 427](../../../extended/ext/xz.lani#L427)
 
 ```lanius
 pub impl Decoder
@@ -1218,7 +1218,7 @@ pub impl Decoder
 
 #### method: borrow
 
-[Source line 419](../../../extended/ext/xz.lani#L419)
+[Source line 428](../../../extended/ext/xz.lani#L428)
 
 ```lanius
 pub fn borrow(&self) -> &Decoder
@@ -1226,7 +1226,7 @@ pub fn borrow(&self) -> &Decoder
 
 #### method: dictionary_len
 
-[Source line 421](../../../extended/ext/xz.lani#L421)
+[Source line 430](../../../extended/ext/xz.lani#L430)
 
 ```lanius
 pub fn dictionary_len(&self) -> i32
@@ -1234,7 +1234,7 @@ pub fn dictionary_len(&self) -> i32
 
 #### method: window_len
 
-[Source line 423](../../../extended/ext/xz.lani#L423)
+[Source line 432](../../../extended/ext/xz.lani#L432)
 
 ```lanius
 pub fn window_len(&self) -> i32
@@ -1242,7 +1242,7 @@ pub fn window_len(&self) -> i32
 
 #### method: set_dictionary
 
-[Source line 427](../../../extended/ext/xz.lani#L427)
+[Source line 436](../../../extended/ext/xz.lani#L436)
 
 ```lanius
 pub fn set_dictionary(&self, dictionary: core::slice::View<u8>) -> core::result::Result<bool,Error>
@@ -1250,7 +1250,7 @@ pub fn set_dictionary(&self, dictionary: core::slice::View<u8>) -> core::result:
 
 #### method: total_read
 
-[Source line 432](../../../extended/ext/xz.lani#L432)
+[Source line 441](../../../extended/ext/xz.lani#L441)
 
 ```lanius
 pub fn total_read(&self) -> u64
@@ -1258,7 +1258,7 @@ pub fn total_read(&self) -> u64
 
 #### method: total_written
 
-[Source line 433](../../../extended/ext/xz.lani#L433)
+[Source line 442](../../../extended/ext/xz.lani#L442)
 
 ```lanius
 pub fn total_written(&self) -> u64
@@ -1266,7 +1266,7 @@ pub fn total_written(&self) -> u64
 
 #### method: is_done
 
-[Source line 434](../../../extended/ext/xz.lani#L434)
+[Source line 443](../../../extended/ext/xz.lani#L443)
 
 ```lanius
 pub fn is_done(&self) -> bool
@@ -1274,7 +1274,7 @@ pub fn is_done(&self) -> bool
 
 #### method: is_failed
 
-[Source line 435](../../../extended/ext/xz.lani#L435)
+[Source line 444](../../../extended/ext/xz.lani#L444)
 
 ```lanius
 pub fn is_failed(&self) -> bool
@@ -1282,15 +1282,15 @@ pub fn is_failed(&self) -> bool
 
 #### method: step
 
-[Source line 438](../../../extended/ext/xz.lani#L438)
+[Source line 447](../../../extended/ext/xz.lani#L447)
 
 ```lanius
 pub fn step(&self, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<Step,Error>
 ```
 
-### impl at line 652
+### impl at line 661
 
-[Source line 652](../../../extended/ext/xz.lani#L652)
+[Source line 661](../../../extended/ext/xz.lani#L661)
 
 ```lanius
 pub impl StoreEncoder
@@ -1298,7 +1298,7 @@ pub impl StoreEncoder
 
 #### method: borrow
 
-[Source line 653](../../../extended/ext/xz.lani#L653)
+[Source line 662](../../../extended/ext/xz.lani#L662)
 
 ```lanius
 pub fn borrow(&self) -> &StoreEncoder
@@ -1306,7 +1306,7 @@ pub fn borrow(&self) -> &StoreEncoder
 
 #### method: begin
 
-[Source line 655](../../../extended/ext/xz.lani#L655)
+[Source line 664](../../../extended/ext/xz.lani#L664)
 
 ```lanius
 pub fn begin(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error>
@@ -1314,7 +1314,7 @@ pub fn begin(&self, output: core::slice::View<u8>) -> core::result::Result<i32,E
 
 #### method: chunk
 
-[Source line 660](../../../extended/ext/xz.lani#L660)
+[Source line 669](../../../extended/ext/xz.lani#L669)
 
 ```lanius
 pub fn chunk(&self, data: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<i32,Error>
@@ -1322,15 +1322,15 @@ pub fn chunk(&self, data: core::slice::View<u8>, output: core::slice::View<u8>) 
 
 #### method: finish
 
-[Source line 669](../../../extended/ext/xz.lani#L669)
+[Source line 678](../../../extended/ext/xz.lani#L678)
 
 ```lanius
 pub fn finish(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error>
 ```
 
-### impl at line 934
+### impl at line 943
 
-[Source line 934](../../../extended/ext/xz.lani#L934)
+[Source line 943](../../../extended/ext/xz.lani#L943)
 
 ```lanius
 pub impl Encoder
@@ -1338,7 +1338,7 @@ pub impl Encoder
 
 #### method: borrow
 
-[Source line 935](../../../extended/ext/xz.lani#L935)
+[Source line 944](../../../extended/ext/xz.lani#L944)
 
 ```lanius
 pub fn borrow(&self) -> &Encoder
@@ -1346,7 +1346,7 @@ pub fn borrow(&self) -> &Encoder
 
 #### method: total_read
 
-[Source line 936](../../../extended/ext/xz.lani#L936)
+[Source line 945](../../../extended/ext/xz.lani#L945)
 
 ```lanius
 pub fn total_read(&self) -> u64
@@ -1354,7 +1354,7 @@ pub fn total_read(&self) -> u64
 
 #### method: total_written
 
-[Source line 937](../../../extended/ext/xz.lani#L937)
+[Source line 946](../../../extended/ext/xz.lani#L946)
 
 ```lanius
 pub fn total_written(&self) -> u64
@@ -1362,7 +1362,7 @@ pub fn total_written(&self) -> u64
 
 #### method: is_done
 
-[Source line 938](../../../extended/ext/xz.lani#L938)
+[Source line 947](../../../extended/ext/xz.lani#L947)
 
 ```lanius
 pub fn is_done(&self) -> bool
@@ -1370,7 +1370,7 @@ pub fn is_done(&self) -> bool
 
 #### method: step
 
-[Source line 941](../../../extended/ext/xz.lani#L941)
+[Source line 950](../../../extended/ext/xz.lani#L950)
 
 ```lanius
 pub fn step(&self, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<Step,Error>
