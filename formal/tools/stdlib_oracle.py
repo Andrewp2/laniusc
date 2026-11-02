@@ -20,8 +20,8 @@ they are, never edited.
    error enum with payloads, a struct holding one): the wrapper returns its
    tag or one scalar leaf, through one helper per level. A type named by an
    item import (`import core::result::Result;`) is the imported module's.
-   A parameter may also be a slice or a `core::slice::View` of u8 or i32
-   (SLICE_ELEMS); a target with one may return unit. The wrapper takes the
+   A parameter may also be a slice or a `core::slice::View` of u8, u16,
+   i32, u32, u64, i64 or bool (SLICE_ELEMS); a target with one may return unit. The wrapper takes the
    slice's shape (n, and a view's start and length) in one word and its
    contents in up to SLICE_WORDS u64 words, allocates storage and fills a
    slice of n elements (core::mem::typed_slice_from_storage), and each such
@@ -348,7 +348,7 @@ def resolve(mods, module, t, subst):
         return t
     m = re.match(r'^\[\s*([^;]+?)\s*\]$', t)
     if m:
-        # A slice of u8 or i32 (an argument: the wrapper builds it, SLICES).
+        # A slice of a SLICE_ELEMS type (an argument: the wrapper builds it).
         inner = resolve(mods, module, m.group(1), subst)
         return f'slice:{inner}' if inner in SLICE_ELEMS else None
     m = re.match(r'^\[\s*(.+?)\s*;\s*(\d+)\s*\]$', t)
@@ -565,13 +565,24 @@ def arg_words(ty):
 
 # Slices and views of these are arguments (not results): the wrapper takes a
 # shape word, n | start << 8 | length << 16, and up to SLICE_WORDS u64 words
-# of contents, little-endian (8 u8, 4 u16 or 2 i32 to a word); allocates storage for
+# of contents, little-endian (8 u8 or bool, 4 u16, 2 i32 or u32, or one u64 or
+# i64 to a word; a bool is its byte's low bit); allocates storage for
 # them (core::mem::typed_slice_from_storage), fills the first n elements and,
 # for a view, views start and length of them. The slices' contents after the
 # call are results of their own (part sK: a hash of all n elements).
-SLICE_ELEMS = ('u8', 'u16', 'i32')
+SLICE_ELEMS = ('u8', 'u16', 'i32', 'u32', 'u64', 'i64', 'bool')
 # Elements of each slice element type in one content word.
-SLICE_PER = {'u8': 8, 'u16': 4, 'i32': 2}
+SLICE_PER = {'u8': 8, 'u16': 4, 'i32': 2, 'u32': 2, 'u64': 1, 'i64': 1, 'bool': 8}
+# How the wrapper reads element i{k} from content word w{k} at bit b{k}.
+SLICE_FILL = {
+    'u8': '((w{k} >> b{k}) & 255) as u8',
+    'u16': '((w{k} >> b{k}) & 65535) as u16',
+    'i32': '((w{k} >> b{k}) as i32)',
+    'u32': '((w{k} >> b{k}) & 4294967295) as u32',
+    'u64': '(w{k} >> b{k})',
+    'i64': '((w{k} >> b{k}) as i64)',
+    'bool': '((w{k} >> b{k}) & 1) == 1',
+}
 SLICE_WORDS = 3
 
 
@@ -614,9 +625,7 @@ def slice_setup(k, ty, words):
              f'    let i{k}: i32 = 0;', f'    while (i{k} < n{k}) {{', f'        let w{k}: u64 = a{k}c0;']
     lines += [f'        if (i{k} >= {per * j}) {{ w{k} = a{k}c{j}; }}' for j in range(1, words)]
     lines.append(f'        let b{k}: u64 = ((i{k} % {per}) * {64 // per}) as u64;')
-    lines.append(f'        s{k}[i{k}] = ((w{k} >> b{k}) & 255) as u8;' if elem == 'u8' else
-                 f'        s{k}[i{k}] = ((w{k} >> b{k}) & 65535) as u16;' if elem == 'u16' else
-                 f'        s{k}[i{k}] = ((w{k} >> b{k}) as i32);')
+    lines.append(f'        s{k}[i{k}] = ' + SLICE_FILL[elem].format(k=k) + ';')
     lines += [f'        i{k} += 1;', '    }']
     if ty.startswith('view:'):
         lines.append(f'    let v{k}: core::slice::View<{elem}> = core::slice::View {{ values: s{k}, '
@@ -627,9 +636,13 @@ def slice_setup(k, ty, words):
 def slice_hash_lines(k, ty):
     """The wrapper's statements that return a hash of slice k's n elements."""
     elem = ty.split(':')[1]
-    e = f'(s{k}[j] as u64)' if elem in ('u8', 'u16') else f'(((s{k}[j] as i64) + 2147483648) as u64)'
+    # each element as a u64 below 2^33, so h * 31 + e stays in range
+    e = {'u8': f'(s{k}[j] as u64)', 'u16': f'(s{k}[j] as u64)', 'u32': f'(s{k}[j] as u64)',
+         'i32': f'(((s{k}[j] as i64) + 2147483648) as u64)', 'u64': f'(s{k}[j] % 1000000007)',
+         'i64': f'(((s{k}[j] % 1000000007) + 1000000007) as u64)', 'bool': '1'}[elem]
+    pick = [f'        if (s{k}[j]) {{ e = 2; }}'] if elem == 'bool' else []
     return ['    let h: u64 = 0;', '    let j: i32 = 0;', f'    while (j < n{k}) {{', f'        let e: u64 = {e};',
-            '        h = (h * 31 + e) % 1000000007;', '        j += 1;', '    }', '    let t: i32 = (h as i32);',
+            *pick, '        h = (h * 31 + e) % 1000000007;', '        j += 1;', '    }', '    let t: i32 = (h as i32);',
             '    return t;']
 
 
@@ -656,8 +669,10 @@ def gen_slice(rng, ty, words):
                   else rng.choice([0, 1, 0x7f, 0x80, 0x7ff, 0x800, 0xfffd, 0xffff]) for _ in range(n)]
         bits, mask = 16, 65535
     else:
-        values = [gen_arg(rng, 'i32') for _ in range(n)]
-        bits, mask = 32, 2 ** 32 - 1
+        elem = ty.split(':')[1]
+        values = [gen_arg(rng, elem) for _ in range(n)]
+        bits = 64 // SLICE_PER[elem]
+        mask = 2 ** bits - 1
     per = 64 // bits
     content = [sum(((values[j * per + b] if j * per + b < n else 0) & mask) << (bits * b) for b in range(per))
                for j in range(words)]
