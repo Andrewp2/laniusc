@@ -2669,8 +2669,18 @@ deeper-file and later-line precedence, with components matched by
 stdout, status and binary-file messages match GNU grep 3.11 `-r` on 36
 searches of the repository tree and on 1,200 generated trees, and
 `--gitignore` matches the files `git ls-files -o --exclude-standard` lists in
-730 generated trees. It is about 4x GNU grep's user time on the repository,
-mostly because it validates every byte of each file that holds the literal.
+705 generated trees. Like GNU grep, its file search looks only at the
+records that hold the pattern's literal, and checks UTF-8 only in those. It
+runs `-r the` over the repository in 1.42x GNU grep's user+sys time (0.53 s
+against 0.37 s; it was 2.25x before).
+
+[`ext::sed`](extended-sed.md) runs sed scripts as GNU sed 4.9 does:
+`s///` (leftmost-longest, `g`, `p`, Nth), `y`, `p`, `d`, `n`, `q`, `Q`, `=`,
+blocks and `!` under line, `$`, regex, `first~step` and range addresses
+(`0,/re/`, `+N`, `~N`), with POSIX basic or `-E` regexes translated to
+`ext::regex`. Its `text_sed` sample (`-n`, `-e`, `-E`, `-s`, `-i`) agrees with
+`/usr/bin/sed` on 8,000 generated scripts over UTF-8 files: stdout, status,
+edited files and unreadable-file reports.
 
 The [regex differential oracle](extended-regex-oracle.md) runs the real
 `find_iter`, template-replacement and grep programs against CPython `re` on

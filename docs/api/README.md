@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **359 modules**, **18824 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **360 modules**, **18900 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -314,6 +314,7 @@ Inventory: **359 modules**, **18824 declaration/member entries**. Counts include
 | [ext::regex_text](ext/regex_text.md) | [source](../../extended/ext/regex_text.lani#L3) | 44 | Source inventory | [extended-regex-text](../extended-regex-text.md), [library-regex-workspace-plan](../library-regex-workspace-plan.md) |
 | [ext::response](ext/response.md) | [source](../../extended/ext/response.lani#L5) | 20 | Source inventory | [extended-cli-response](../extended-cli-response.md), [library-response-files-plan](../library-response-files-plan.md) |
 | [ext::schema](ext/schema.md) | [source](../../extended/ext/schema.lani#L3) | 90 | Source inventory | [extended-schema](../extended-schema.md) |
+| [ext::sed](ext/sed.md) | [source](../../extended/ext/sed.lani#L8) | 76 | Source inventory | [extended-sed](../extended-sed.md) |
 | [ext::seqdiff](ext/seqdiff.md) | [source](../../extended/ext/seqdiff.lani#L2) | 110 | Source inventory | [extended-seqdiff](../extended-seqdiff.md) |
 | [ext::server_poll](ext/server_poll.md) | [source](../../extended/ext/server_poll.lani#L2) | 199 | Source inventory | [extended-server-poll](../extended-server-poll.md), [library-server-contract](../library-server-contract.md), [library-server-concurrency-plan](../library-server-concurrency-plan.md) |
 | [ext::settings](ext/settings.md) | [source](../../extended/ext/settings.lani#L3) | 118 | Source inventory | [extended-settings](../extended-settings.md) |

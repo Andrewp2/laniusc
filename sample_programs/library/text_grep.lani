@@ -122,18 +122,36 @@ fn newlines_if_valid(bytes: [u8], from: i32, to: i32) -> i64 {
         }
         while (i < to && bytes[i] < 128) { if (bytes[i] == 10) { total += 1; } i += 1; }
         if (i >= to) { return total as i64; }
-        let width: i32 = core::utf8::sequence_len_or(bytes[i], 0) as i32;
-        if (width == 0 || width > to - i || core::result::is_err(core::text::from_utf8_range(bytes, i, width))) { return -1; }
+        let width: i32 = sequence(bytes,i,to);
+        if (width == 0) { return -1; }
         i += width;
     }
     return -1;
 }
+// Width of the well-formed UTF-8 sequence that starts at bytes[i] (a byte
+// >= 128) and ends before to, or 0: Unicode's table 3-7, so no overlong
+// forms, surrogates or scalars above U+10FFFF.
+fn sequence(bytes: [u8], i: i32, to: i32) -> i32 {
+    let lead: u8 = bytes[i];
+    if (lead < 194 || lead > 244) { return 0; }
+    if (lead < 224) { if (i + 1 < to && (bytes[i + 1] & 192) == 128) { return 2; } return 0; }
+    let low: u8 = 128; let high: u8 = 191;
+    if (lead == 224) { low = 160; } if (lead == 237) { high = 159; } if (lead == 240) { low = 144; } if (lead == 244) { high = 143; }
+    if (i + 2 >= to) { return 0; }
+    let second: u8 = bytes[i + 1]; if (second < low || second > high || (bytes[i + 2] & 192) != 128) { return 0; }
+    if (lead < 240) { return 3; }
+    if (i + 3 < to && (bytes[i + 3] & 192) == 128) { return 4; }
+    return 0;
+}
 fn valid_utf8(bytes: [u8], from: i32, to: i32) -> bool {
     let i: i32 = first_non_ascii(bytes, from, to);
     while (i < to) {
-        let width: i32 = core::utf8::sequence_len_or(bytes[i], 0) as i32;
-        if (width == 0 || width > to - i || core::result::is_err(core::text::from_utf8_range(bytes, i, width))) { return false; }
-        i = first_non_ascii(bytes, i + width, to);
+        let width: i32 = sequence(bytes,i,to);
+        if (width == 0) { return false; }
+        i += width;
+        // Short ASCII runs between scalars go byte by byte.
+        let run: i32 = 0; while (run < 16 && i < to && bytes[i] < 128) { i += 1; run += 1; }
+        if (run == 16) { i = first_non_ascii(bytes, i, to); }
     }
     return true;
 }
@@ -247,7 +265,7 @@ fn record(bytes: [u8], start: i32, end: i32, terminated: bool, regex: &ext::rege
 // so a valid record containing it matches.
 // rare and other are the needle offsets find_pair probes (other's byte
 // differs from rare's whenever the needle has two distinct bytes).
-struct Filter { needle: [u8], length: i32, cost: i64, limit: i64, hit: i32, end: i32, exact: bool, rare: i32, other: i32 }
+struct Filter { needle: [u8], length: i32, cost: i64, limit: i64, hit: i32, end: i32, exact: bool, rare: i32, other: i32, plain: bool, dual: bool }
 impl Filter { fn borrow(&self) -> &Filter { return self; } }
 // The first start of the filter literal in [from, to), or -1: the answer of
 // core::search::find, with its probe bytes. Eight starts per step: a start
@@ -326,7 +344,7 @@ fn search(regex: &ext::regex::Regex, options: Options, pattern: &Pattern, globs:
     if (core::result::is_ok(built)) { matcher.dfa = core::result::unwrap(built); matcher.ready = true; }
     else { let error: ext::regex::Error = core::result::unwrap_err(built); let unsupported: bool = match (error) { ext::regex::Error::Unsupported(at) -> true, _ -> false }; if (!unsupported) { return regex_error(error,diagnostic); } }
     let storage: [i32;64] = [0;64]; let needle: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),256);
-    let filter: Filter = Filter { needle: needle, length: 0, cost: 0, limit: 0, hit: -1, end: 0, exact: false, rare: 0, other: 0 };
+    let filter: Filter = Filter { needle: needle, length: 0, cost: 0, limit: 0, hit: -1, end: 0, exact: false, rare: 0, other: 0, plain: false, dual: false };
     let status: i32 = prepare(regex,needle,filter.borrow(),diagnostic);
     if (status == 0) {
         if (pattern.files.len() == 0 && !options.recursive) { status = scan(regex, matcher.borrow(), filter.borrow(), options, diagnostic); }
@@ -427,8 +445,8 @@ fn text_match(bytes: [u8], start: i32, end: i32, regex: &ext::regex::Regex, matc
 fn valid_prefix(bytes: [u8], from: i32, to: i32) -> i32 {
     let i: i32 = first_non_ascii(bytes,from,to);
     while (i < to) {
-        let width: i32 = core::utf8::sequence_len_or(bytes[i], 0) as i32;
-        if (width == 0 || width > to - i || core::result::is_err(core::text::from_utf8_range(bytes, i, width))) { return i - from; }
+        let width: i32 = sequence(bytes,i,to);
+        if (width == 0) { return i - from; }
         i = first_non_ascii(bytes, i + width, to);
     }
     return to - from;
@@ -487,11 +505,278 @@ fn binary(bytes: [u8], length: i32, nul: bool, regex: &ext::regex::Regex, matche
 }
 // The records of one whole file in bytes[0, length). A clean file goes
 // through block() in windows of about 64 KiB that end at a LF.
+// LF count of bytes[from, to), eight bytes per step: per-byte 0/1 flags for
+// the bytes that are not LF add up in the eight byte lanes of acc, folded
+// every 255 words. ((t & 0x7f..) + 0x7f..) | t marks exactly the nonzero
+// bytes of t, without carries between lanes.
+fn count_lf(bytes: [u8], from: i32, to: i32) -> u64 {
+    let total: u64 = 0; let words: i32 = (to - from) / 8; let low: u64 = 9187201950435737471; let highs: u64 = 9259542123273814144;
+    if (words > 0) {
+        let view: [u64] = core::mem::typed_slice_from_storage<u64>(core::mem::i32_slice_data_ptr(bytes) + (from as usize), words);
+        let k: i32 = 0;
+        while (k < words) {
+            let stop: i32 = k + 255; if (stop > words) { stop = words; }
+            let first: i32 = k; let acc: u64 = 0;
+            while (k + 1 < stop) {
+                let t: u64 = view[k] ^ 723401728380766730; let u: u64 = view[k + 1] ^ 723401728380766730;
+                acc += ((((t & low) + low) | t) & highs) >> 7; acc += ((((u & low) + low) | u) & highs) >> 7; k += 2;
+            }
+            if (k < stop) { let t: u64 = view[k] ^ 723401728380766730; acc += ((((t & low) + low) | t) & highs) >> 7; k += 1; }
+            acc = (acc & 71777214294589695) + ((acc >> 8) & 71777214294589695);
+            acc = acc + (acc >> 16); acc = acc + (acc >> 32);
+            total += ((k - first) as u64) * 8 - (acc & 65535);
+        }
+    }
+    let i: i32 = from + words * 8; while (i < to) { if (bytes[i] == 10) { total += 1; } i += 1; }
+    return total;
+}
+// Selects (for --invert) the records of bytes[from, to), none of which holds
+// the literal; to is a record start or the end of the file. As in GNU grep
+// only selected records that are written are checked for UTF-8: one with
+// encoding errors is counted and hidden.
+fn unhit(bytes: [u8], from: i32, to: i32, options: Options, progress: &Progress, output: &Output, diagnostic: &Diagnostic) -> i32 {
+    if (from >= to) { return 0; }
+    let last: i32 = to; let open: bool = bytes[to - 1] != 10;
+    if (open) { last = core::search::rfind_byte(bytes,from,to,10) + 1; if (last <= 0) { last = from; } }
+    if (last > from) {
+        let n: u64 = count_lf(bytes,from,last);
+        if (options.count) { let status: i32 = tally(progress,n,diagnostic); if (status != 0) { return status; } }
+        else {
+            if (valid_utf8(bytes,from,last)) { let status: i32 = gap(bytes,from,last,n,options,progress,output,diagnostic); if (status != 0) { return status; } }
+            else {
+                let at: i32 = from;
+                while (at < last) {
+                    let end: i32 = core::search::find_byte(bytes,at,last,10);
+                    let status: i32 = chosen(bytes,at,end,true,options,progress,output,diagnostic); if (status != 0) { return status; }
+                    diagnostic.line += 1; at = end + 1;
+                }
+            }
+        }
+    }
+    if (open) { return chosen(bytes,last,to,false,options,progress,output,diagnostic); }
+    return 0;
+}
+// One selected record: written when valid, else counted and hidden.
+fn chosen(bytes: [u8], start: i32, end: i32, terminated: bool, options: Options, progress: &Progress, output: &Output, diagnostic: &Diagnostic) -> i32 {
+    if (options.count || valid_utf8(bytes,start,end)) { return emit(bytes,start,end,terminated,options,progress,output,diagnostic); }
+    if (progress.selected == 18446744073709551615) { return fail(diagnostic,2,5); } progress.selected += 1; progress.hidden = true; return 0;
+}
+// Nonzero exactly when x has a zero byte; the lowest mark is the first.
+fn zeros(x: u64) -> u64 { return (x - 72340172838076673) & (x ^ 18446744073709551615) & 9259542123273814144; }
+// find_pair that also looks for NUL in the bytes it passes: the first start
+// of the literal in [from, to), -1 when there is none, or -2 when a NUL lies
+// in [from, to) before the answer. A hit h >= 0 or -1 means [from, h) or
+// [from, to) has no NUL.
+fn find_clean(bytes: [u8], from: i32, to: i32, filter: &Filter) -> i32 {
+    let length: i32 = filter.length;
+    if (length < 2 || to - from < length + 16) {
+        let found: i32 = core::search::find(bytes,from,to,filter.needle,0,length);
+        let end: i32 = found; if (found < 0) { end = to; }
+        if (core::search::find_byte(bytes,from,end,0) >= 0) { return -2; }
+        return found;
+    }
+    let needle: [u8] = filter.needle; let rare: i32 = filter.rare; let other: i32 = filter.other;
+    let ones: u64 = 72340172838076673; let highs: u64 = 9259542123273814144; let all: u64 = 18446744073709551615;
+    let first: u64 = (needle[rare] as u64) * ones; let second: u64 = (needle[other] as u64) * ones;
+    let last: i32 = to - length; let compares: i32 = 0;
+    let groups: i32 = (last - from + 1) / 8;
+    // The word views start at from + rare: the bytes before go first.
+    if (rare > 0 && core::search::find_byte(bytes,from,from + rare,0) >= 0) { return -2; }
+    let base: ptr = core::mem::i32_slice_data_ptr(bytes) + (from as usize);
+    let one: [u64] = core::mem::typed_slice_from_storage<u64>(base + (rare as usize), groups);
+    let two: [u64] = core::mem::typed_slice_from_storage<u64>(base + (other as usize), groups);
+    let k: i32 = groups - 1;
+    // When the rarer probe byte is common in text (a frequent letter), a
+    // word is skipped only when no lane has both probe bytes: exact byte
+    // compares, so marks are never borrows.
+    if (filter.dual) {
+        let seven: u64 = 9187201950435737471;
+        while (k >= 0) {
+            let w: u64 = one[k];
+            if (zeros(w) != 0) { return -2; }
+            let x: u64 = w ^ first; let y: u64 = two[k] ^ second;
+            let marks: u64 = ((((x & seven) + seven) | x) | (((y & seven) + seven) | y) | seven) ^ all;
+            while (marks != 0) {
+                let lane: i32 = 0; let rest: u64 = marks; while ((rest & 128) == 0) { rest = rest >> 8; lane += 1; }
+                let start: i32 = from + (groups - 1 - k) * 8 + lane;
+                let j: i32 = 0; while (j < length && bytes[start + j] == needle[j]) { j += 1; }
+                if (j == length) { return start; }
+                compares += 1;
+                if ((compares as i64) * (length as i64) > 4 * ((start - from + 1) as i64) + 256) {
+                    if (core::search::find_byte(bytes,start,to,0) >= 0) { return -2; }
+                    return core::search::find(bytes,start + 1,to,needle,0,length);
+                }
+                marks = marks & (marks - 1);
+            }
+            k -= 1;
+        }
+    }
+    while (k >= 0) {
+        let w: u64 = one[k];
+        if (k >= 1) {
+            let v: u64 = one[k - 1]; let x0: u64 = w ^ first; let x1: u64 = v ^ first;
+            if (((((x0 - ones) & (x0 ^ all)) | ((x1 - ones) & (x1 ^ all)) | ((w - ones) & (w ^ all)) | ((v - ones) & (v ^ all))) & highs) == 0) { k -= 2; continue; }
+        }
+        if (zeros(w) != 0) { return -2; }
+        let x: u64 = w ^ first; let y: u64 = two[k] ^ second;
+        let marks: u64 = (x - ones) & (x ^ all) & highs;
+        if (marks != 0) { marks = marks & (y - ones) & (y ^ all); }
+        while (marks != 0) {
+            let lane: i32 = 0; let rest: u64 = marks; while ((rest & 128) == 0) { rest = rest >> 8; lane += 1; }
+            let start: i32 = from + (groups - 1 - k) * 8 + lane;
+            let j: i32 = 0; while (j < length && bytes[start + j] == needle[j]) { j += 1; }
+            if (j == length) { return start; }
+            compares += 1;
+            if ((compares as i64) * (length as i64) > 4 * ((start - from + 1) as i64) + 256) {
+                if (core::search::find_byte(bytes,start,to,0) >= 0) { return -2; }
+                return core::search::find(bytes,start + 1,to,needle,0,length);
+            }
+            marks = marks & (marks - 1);
+        }
+        k -= 1;
+    }
+    // The views covered [from + rare, from + rare + 8 groups).
+    let checked: i32 = from + rare + groups * 8;
+    if (core::search::find_byte(bytes,checked,to,0) >= 0) { return -2; }
+    let s2: i32 = from + groups * 8;
+    while (s2 <= last) {
+        let j: i32 = 0; while (j < length && bytes[s2 + j] == needle[j]) { j += 1; }
+        if (j == length) { return s2; }
+        s2 += 1;
+    }
+    return -1;
+}
+// The record around a hit: start after the last LF in [low, hit), end at
+// the first LF or NUL in [hit, to) (or to); ascii when [start, end) has no
+// byte >= 128; nul when the stop was a NUL.
+struct Bounds { start: i32, end: i32, ascii: bool, nul: bool }
+impl Bounds { fn borrow(&self) -> &Bounds { return self; } }
+fn bounds(bytes: [u8], low: i32, hit: i32, to: i32, out: &Bounds) {
+    let highs: u64 = 9259542123273814144; let lfs: u64 = 723401728380766730; let seven: u64 = 9187201950435737471;
+    let base: ptr = core::mem::i32_slice_data_ptr(bytes); let high: u64 = 0;
+    // Backward, eight bytes per step: element e of the view is the word
+    // that ends 8e bytes below top.
+    let top: i32 = hit; let start: i32 = -1;
+    while (start < 0 && top - low >= 8) {
+        let m: i32 = (top - low) / 8; if (m > 32) { m = 32; }
+        let view: [u64] = core::mem::typed_slice_from_storage<u64>(base + ((top - 8 * m) as usize), m);
+        let e: i32 = 0;
+        while (e < m) {
+            let w: u64 = view[e]; let t: u64 = w ^ lfs;
+            if (zeros(t) != 0) {
+                // Exact marks: a clear high bit is a LF byte.
+                let lf: u64 = ((((t & seven) + seven) | t) & highs) ^ highs;
+                let lane: i32 = 7; while (((lf >> ((lane as u64) * 8 + 7)) & 1) == 0) { lane -= 1; }
+                if (lane < 7) { high = high | (w >> (((lane + 1) as u64) * 8)); }
+                start = top - 8 * (e + 1) + lane + 1; break;
+            }
+            high = high | w; e += 1;
+        }
+        if (start < 0) { top -= 8 * m; }
+    }
+    if (start < 0) {
+        start = top; while (start > low && bytes[start - 1] != 10) { start -= 1; if (bytes[start] >= 128) { high = high | highs; } }
+    }
+    // Forward: the lowest mark of either zero test is the first LF or NUL.
+    let at: i32 = hit; let end: i32 = -1;
+    while (end < 0 && to - at >= 8) {
+        let m: i32 = (to - at) / 8; if (m > 32) { m = 32; }
+        let view: [u64] = core::mem::typed_slice_from_storage<u64>(base + (at as usize), m);
+        let e: i32 = m - 1;
+        while (e >= 0) {
+            let w: u64 = view[e]; let marks: u64 = zeros(w ^ lfs) | zeros(w);
+            if (marks != 0) {
+                let lane: i32 = 0; let rest: u64 = marks; while ((rest & 128) == 0) { rest = rest >> 8; lane += 1; }
+                if (lane > 0) { high = high | (w << (((8 - lane) as u64) * 8)); }
+                end = at + (m - 1 - e) * 8 + lane; break;
+            }
+            high = high | w; e -= 1;
+        }
+        if (end < 0) { at += 8 * m; }
+    }
+    if (end < 0) { end = at; while (end < to && bytes[end] != 10 && bytes[end] != 0) { if (bytes[end] >= 128) { high = high | highs; } end += 1; } }
+    out.start = start; out.end = end; out.ascii = (high & highs) == 0; out.nul = end < to && bytes[end] == 0;
+}
+// hits() asks for this status when it finds a NUL: the file is then binary.
+const BINARY: i32 = 1000;
+// A file whose literal starts first at hit (or -1), in which no record can
+// exceed --max-line or reach WorkLimit, and whose literal has no NUL, CR or
+// LF. Only the records holding the literal are examined, and only they
+// (and, with --invert, the selected ones) are checked for UTF-8. clean: the
+// file is known to have no NUL. Otherwise NULs are looked for on the way,
+// and BINARY is returned on the first one; before output of this file
+// could be flushed, the rest of the file is checked first, so the caller
+// can drop this file's output and start again.
+fn hits(bytes: [u8], length: i32, first: i32, clean: bool, regex: &ext::regex::Regex, matcher: &Matcher, filter: &Filter, options: Options, progress: &Progress, output: &Output, diagnostic: &Diagnostic) -> i32 {
+    let position: i32 = 0; let hit: i32 = first; let lines: bool = options.numbers && !options.count; let known: bool = clean;
+    let record: Bounds = Bounds { start: 0, end: 0, ascii: false, nul: false };
+    while (position < length) {
+        if (hit == -2) { return BINARY; }
+        if (hit < 0) {
+            if (options.invert) { return unhit(bytes,position,length,options,progress,output,diagnostic); }
+            return 0;
+        }
+        bounds(bytes,position,hit,length,record.borrow());
+        if (record.nul) { return BINARY; }
+        let start: i32 = record.start; let end: i32 = record.end;
+        if (options.invert) { let status: i32 = unhit(bytes,position,start,options,progress,output,diagnostic); if (status != 0) { return status; } }
+        else { if (lines && start > position) { diagnostic.line += count_lf(bytes,position,start); } }
+        let terminated: bool = end < length;
+        let text_end: i32 = end; if (terminated && text_end > start && bytes[text_end - 1] == 13) { text_end -= 1; }
+        diagnostic.stage = 3; diagnostic.offset = 0;
+        let valid: bool = record.ascii || valid_utf8(bytes,start,end); let matched: bool = false;
+        if (valid) {
+            if (filter.exact) { matched = true; }
+            else {
+                let found: core::result::Result<bool,ext::regex::Error> = text_match(bytes,start,text_end,regex,matcher);
+                if (core::result::is_err(found)) { return regex_error(core::result::unwrap_err(found),diagnostic); }
+                matched = core::result::unwrap(found);
+            }
+        } else {
+            let found: i32 = pieces_match(bytes,start,text_end,regex,matcher,diagnostic);
+            if (found > 0) { return found; }
+            matched = found < 0;
+        }
+        if (matched != options.invert) {
+            if (valid) {
+                if (!known && !options.count && output.used + output.label_length + (end - start) + 24 > 65536) {
+                    if (core::search::find_byte(bytes,end,length,0) >= 0) { return BINARY; }
+                    known = true;
+                }
+                let status: i32 = emit(bytes,start,end,terminated,options,progress,output,diagnostic); if (status != 0) { return status; }
+            }
+            else { if (progress.selected == 18446744073709551615) { return fail(diagnostic,2,5); } progress.selected += 1; progress.hidden = true; }
+        }
+        diagnostic.line += 1;
+        if (!terminated) { return 0; }
+        position = end + 1;
+        // In a file known to be clean the NUL checks just find nothing.
+        hit = find_clean(bytes,position,length,filter);
+    }
+    return 0;
+}
 fn contents(bytes: [u8], length: i32, regex: &ext::regex::Regex, matcher: &Matcher, filter: &Filter, options: Options, progress: &Progress, output: &Output, diagnostic: &Diagnostic) -> i32 {
-    // No record can match when the required literal is nowhere in the
-    // file and no record can exceed --max-line or reach WorkLimit; the
-    // file is then not validated or split at all.
-    if (!options.invert && filter.length > 0 && length <= options.max_line && ((length as i64) + 2) * filter.cost <= filter.limit && find_pair(bytes,0,length,filter) < 0) { return 0; }
+    // With a required literal, no record that could exceed --max-line and
+    // none that could reach WorkLimit, a record without the literal cannot
+    // match. A file without it then has no match and is not read further.
+    let bounded: bool = filter.length > 0 && length <= options.max_line && ((length as i64) + 2) * filter.cost <= filter.limit;
+    if (bounded && filter.plain) {
+        let first: i32 = find_clean(bytes,0,length,filter);
+        if (first == -1 && !options.invert) { return 0; }
+        if (first != -2) {
+            // --invert writes most of the file, so its NULs are settled first.
+            let clean: bool = first == -1;
+            if (!clean && options.invert) { clean = core::search::find_byte(bytes,first,length,0) < 0; }
+            if (clean || !options.invert) {
+                let used: i32 = output.used;
+                let status: i32 = hits(bytes,length,first,clean,regex,matcher,filter,options,progress,output,diagnostic);
+                if (status != BINARY) { return status; }
+                output.used = used; progress.selected = 0; progress.hidden = false; diagnostic.line = 1;
+            }
+        }
+        return binary(bytes,length,true,regex,matcher,filter,options,progress,output,diagnostic);
+    }
+    if (bounded) { if (find_pair(bytes,0,length,filter) < 0 && !options.invert) { return 0; } }
     let nul: bool = core::search::find_byte(bytes,0,length,0) >= 0;
     if (nul || newlines_if_valid(bytes,0,length) < 0) { return binary(bytes,length,nul,regex,matcher,filter,options,progress,output,diagnostic); }
     let position: i32 = 0; let cursor: Cursor = Cursor { start: 0 };
@@ -508,16 +793,28 @@ fn contents(bytes: [u8], length: i32, regex: &ext::regex::Regex, matcher: &Match
     if (length > position) { filter.hit = -1; filter.end = length; return line(bytes,position,length,false,regex,matcher,filter,options,progress,output,diagnostic); }
     return 0;
 }
+// run.buffer is used through its capacity only (its length stays 0), so
+// growing it neither fills nor copies more than the bytes read so far.
+// Room for a 64 KiB read after length bytes: 0, 4 or (-1) past the limit.
+fn room(run: &Run, length: i32) -> i32 {
+    if (run.buffer.capacity() >= length + 65536) { return 0; }
+    if (length > 2147483647 - 131072) { return -1; }
+    let made: core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> = alloc::vec::with_capacity(grown_size(run.buffer.capacity(),length));
+    if (core::result::is_err(made)) { return 4; }
+    let fresh: alloc::vec::Vec<u8> = core::result::unwrap(made);
+    if (length > 0) { copy(stored(run.buffer),0,stored(fresh),0,length); }
+    run.buffer.destroy(); run.buffer = fresh; return 0;
+}
+// The whole capacity of a byte buffer as a slice.
+fn stored(buffer: alloc::vec::Vec<u8>) -> [u8] { return core::mem::typed_slice_from_storage<u8>(buffer.storage, buffer.capacity()); }
 // Searches the open file fd, shown as path. Returns 0, or a status that
 // ends the whole search.
 fn search_file(run: &Run, fd: i32, path: core::slice::View<u8>, named: bool, regex: &ext::regex::Regex, matcher: &Matcher, filter: &Filter, options: Options, output: &Output, diagnostic: &Diagnostic) -> i32 {
     let length: i32 = 0; let failed: bool = false;
     while (true) {
-        if (run.buffer.len() < length + 65536) {
-            if (length > 2147483647 - 131072) { failed = true; break; }
-            let grown: core::result::Result<i32,alloc::vec::Error> = run.buffer.try_resize(grown_size(run.buffer.len(),length), 0);
-            if (core::result::is_err(grown)) { std::fs::close(fd); return fail(diagnostic,4,8); }
-        }
+        let space: i32 = room(run,length);
+        if (space < 0) { failed = true; break; }
+        if (space > 0) { std::fs::close(fd); return fail(diagnostic,4,8); }
         let count: i32 = std::fs::read(fd, run.buffer.storage + (length as usize), 65536 as usize);
         if (count == -4) { continue; }
         if (count < 0 || count > 65536) { failed = true; break; }
@@ -533,7 +830,7 @@ fn search_file(run: &Run, fd: i32, path: core::slice::View<u8>, named: bool, reg
         output.label_length = path.length + 1;
     }
     let progress: Progress = Progress { selected: 0, hidden: false }; diagnostic.line = 1;
-    let status: i32 = contents(run.buffer.as_slice(),length,regex,matcher,filter,options,progress.borrow(),output,diagnostic);
+    let status: i32 = contents(stored(run.buffer),length,regex,matcher,filter,options,progress.borrow(),output,diagnostic);
     if (status != 0) { diagnostic.line = 0; let ended: i32 = file_failure(run,path,status,diagnostic,output); output.label_length = 0; return ended; }
     if (options.count) { diagnostic.stage = 4; let written: i32 = put_count(output,progress.selected,diagnostic); if (written != 0) { return written; } }
     output.label_length = 0; diagnostic.line = 0;
@@ -563,7 +860,8 @@ fn load_rules(run: &Run, fd: i32, base: i32, diagnostic: &Diagnostic, output: &O
     let file: std::file::File = core::result::unwrap(opened); let handle: i32 = core::option::unwrap(file.raw_handle());
     let length: i32 = 0; let failed: bool = false;
     while (true) {
-        if (run.buffer.len() < length + 65536) { if (core::result::is_err(run.buffer.try_resize(grown_size(run.buffer.len(),length), 0))) { std::fs::close(handle); return fail(diagnostic,4,8); } }
+        // length stays at most 16 MiB, so only allocation can fail.
+        if (room(run,length) != 0) { std::fs::close(handle); return fail(diagnostic,4,8); }
         let count: i32 = std::fs::read(handle, run.buffer.storage + (length as usize), 65536 as usize);
         if (count == -4) { continue; }
         if (count < 0 || count > 65536) { failed = true; break; }
@@ -583,7 +881,7 @@ fn load_rules(run: &Run, fd: i32, base: i32, diagnostic: &Diagnostic, output: &O
         diagnostic.stage = 2; diagnostic.offset = length;
         let status: i32 = file_failure(run,shown.as_view(),fail(diagnostic,3,7),diagnostic,output); shown.destroy(); return status;
     }
-    let added = run.rules.add(core::result::unwrap(run.buffer.as_view().subview(0,length)),base);
+    let added = run.rules.add(core::slice::View { values: stored(run.buffer), start: 0, length: length },base);
     if (core::result::is_err(added)) { return fail(diagnostic,4,8); }
     return 0;
 }
@@ -936,6 +1234,11 @@ fn prepare(regex: &ext::regex::Regex, needle: [u8], filter: &Filter, diagnostic:
         }
         if (filter.other < 0) { filter.other = filter.length - 1; if (filter.other == filter.rare) { filter.other = 0; } }
     }
+    // plain: the literal has no NUL, CR or LF, so a hit lies inside one
+    // record's searched text.
+    filter.dual = filter.length >= 2 && core::search::rank(needle[filter.rare]) >= 140;
+    filter.plain = filter.length > 0; let p: i32 = 0;
+    while (p < filter.length) { if (needle[p] == 0 || needle[p] == 10 || needle[p] == 13) { filter.plain = false; } p += 1; }
     if (filter.length > 0 && regex.literal_length() == filter.length) {
         filter.exact = true; let k: i32 = 0;
         while (k < filter.length) { if (needle[k] == 10 || needle[k] == 13) { filter.exact = false; } k += 1; }

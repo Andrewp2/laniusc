@@ -617,7 +617,7 @@ complete:bool
 
 ### enum: LockMode
 
-[Source line 334](../../../stdlib/std/file_ops.lani#L334)
+[Source line 335](../../../stdlib/std/file_ops.lani#L335)
 
 ```lanius
 pub enum LockMode
@@ -625,7 +625,7 @@ pub enum LockMode
 
 #### variant: Shared
 
-[Source line 334](../../../stdlib/std/file_ops.lani#L334)
+[Source line 335](../../../stdlib/std/file_ops.lani#L335)
 
 ```lanius
 Shared
@@ -633,7 +633,7 @@ Shared
 
 #### variant: Exclusive
 
-[Source line 334](../../../stdlib/std/file_ops.lani#L334)
+[Source line 335](../../../stdlib/std/file_ops.lani#L335)
 
 ```lanius
 Exclusive
@@ -641,7 +641,7 @@ Exclusive
 
 ### enum: LockWait
 
-[Source line 335](../../../stdlib/std/file_ops.lani#L335)
+[Source line 336](../../../stdlib/std/file_ops.lani#L336)
 
 ```lanius
 pub enum LockWait
@@ -649,7 +649,7 @@ pub enum LockWait
 
 #### variant: Blocking
 
-[Source line 335](../../../stdlib/std/file_ops.lani#L335)
+[Source line 336](../../../stdlib/std/file_ops.lani#L336)
 
 ```lanius
 Blocking
@@ -657,7 +657,7 @@ Blocking
 
 #### variant: Nonblocking
 
-[Source line 335](../../../stdlib/std/file_ops.lani#L335)
+[Source line 336](../../../stdlib/std/file_ops.lani#L336)
 
 ```lanius
 Nonblocking
@@ -683,7 +683,7 @@ pub const MAX_PATH_BYTES:i32=4095;
 
 ### constant: POSITIONAL_CHUNK_BYTES
 
-[Source line 205](../../../stdlib/std/file_ops.lani#L205)
+[Source line 206](../../../stdlib/std/file_ops.lani#L206)
 
 ```lanius
 pub const POSITIONAL_CHUNK_BYTES:i32=1024;
@@ -717,7 +717,7 @@ pub fn kind(mode:u32) -> Kind
 
 ### function: open
 
-[Source line 50](../../../stdlib/std/file_ops.lani#L50)
+[Source line 51](../../../stdlib/std/file_ops.lani#L51)
 
 ```lanius
 pub fn open(path:core::path::Path,value:OpenOptions) -> Result<File,Error>
@@ -725,7 +725,7 @@ pub fn open(path:core::path::Path,value:OpenOptions) -> Result<File,Error>
 
 ### function: open_at
 
-[Source line 51](../../../stdlib/std/file_ops.lani#L51)
+[Source line 52](../../../stdlib/std/file_ops.lani#L52)
 
 ```lanius
 pub fn open_at(directory_fd:i32,path:core::path::Path,value:OpenOptions) -> Result<File,Error>
@@ -733,7 +733,7 @@ pub fn open_at(directory_fd:i32,path:core::path::Path,value:OpenOptions) -> Resu
 
 ### function: remove_file_at
 
-[Source line 62](../../../stdlib/std/file_ops.lani#L62)
+[Source line 63](../../../stdlib/std/file_ops.lani#L63)
 
 ```lanius
 pub fn remove_file_at(directory_fd:i32,path:core::path::Path) -> Result<i32,Error>
@@ -741,7 +741,7 @@ pub fn remove_file_at(directory_fd:i32,path:core::path::Path) -> Result<i32,Erro
 
 ### function: create_dir_at
 
-[Source line 70](../../../stdlib/std/file_ops.lani#L70)
+[Source line 71](../../../stdlib/std/file_ops.lani#L71)
 
 ```lanius
 pub fn create_dir_at(directory_fd:i32,path:core::path::Path,mode:u32) -> Result<i32,Error>
@@ -749,7 +749,7 @@ pub fn create_dir_at(directory_fd:i32,path:core::path::Path,mode:u32) -> Result<
 
 ### function: remove_dir_at
 
-[Source line 78](../../../stdlib/std/file_ops.lani#L78)
+[Source line 79](../../../stdlib/std/file_ops.lani#L79)
 
 ```lanius
 pub fn remove_dir_at(directory_fd:i32,path:core::path::Path) -> Result<i32,Error>
@@ -757,7 +757,7 @@ pub fn remove_dir_at(directory_fd:i32,path:core::path::Path) -> Result<i32,Error
 
 ### function: rename_at
 
-[Source line 86](../../../stdlib/std/file_ops.lani#L86)
+[Source line 87](../../../stdlib/std/file_ops.lani#L87)
 
 ```lanius
 pub fn rename_at(old_directory_fd:i32,old_path:core::path::Path,new_directory_fd:i32,new_path:core::path::Path,policy:RenamePolicy) -> Result<i32,Error>
@@ -765,7 +765,7 @@ pub fn rename_at(old_directory_fd:i32,old_path:core::path::Path,new_directory_fd
 
 ### function: hard_link_at
 
-[Source line 97](../../../stdlib/std/file_ops.lani#L97)
+[Source line 98](../../../stdlib/std/file_ops.lani#L98)
 
 ```lanius
 pub fn hard_link_at(old_directory_fd:i32,old_path:core::path::Path,new_directory_fd:i32,new_path:core::path::Path,follow:bool) -> Result<i32,Error>
@@ -773,7 +773,7 @@ pub fn hard_link_at(old_directory_fd:i32,old_path:core::path::Path,new_directory
 
 ### function: hard_link
 
-[Source line 106](../../../stdlib/std/file_ops.lani#L106)
+[Source line 107](../../../stdlib/std/file_ops.lani#L107)
 
 ```lanius
 pub fn hard_link(old_path:core::path::Path,new_path:core::path::Path,follow:bool) -> Result<i32,Error>
@@ -781,7 +781,7 @@ pub fn hard_link(old_path:core::path::Path,new_path:core::path::Path,follow:bool
 
 ### function: symlink_at
 
-[Source line 109](../../../stdlib/std/file_ops.lani#L109)
+[Source line 110](../../../stdlib/std/file_ops.lani#L110)
 
 ```lanius
 pub fn symlink_at(target:core::path::Path,new_directory_fd:i32,new_path:core::path::Path) -> Result<i32,Error>
@@ -789,7 +789,7 @@ pub fn symlink_at(target:core::path::Path,new_directory_fd:i32,new_path:core::pa
 
 ### function: symlink
 
-[Source line 117](../../../stdlib/std/file_ops.lani#L117)
+[Source line 118](../../../stdlib/std/file_ops.lani#L118)
 
 ```lanius
 pub fn symlink(target:core::path::Path,new_path:core::path::Path) -> Result<i32,Error>
@@ -797,7 +797,7 @@ pub fn symlink(target:core::path::Path,new_path:core::path::Path) -> Result<i32,
 
 ### function: read_link_at_into
 
-[Source line 120](../../../stdlib/std/file_ops.lani#L120)
+[Source line 121](../../../stdlib/std/file_ops.lani#L121)
 
 ```lanius
 pub fn read_link_at_into(directory_fd:i32,path:core::path::Path,destination:View<u8>) -> Result<LinkRead,Error>
@@ -805,7 +805,7 @@ pub fn read_link_at_into(directory_fd:i32,path:core::path::Path,destination:View
 
 ### function: read_link_into
 
-[Source line 134](../../../stdlib/std/file_ops.lani#L134)
+[Source line 135](../../../stdlib/std/file_ops.lani#L135)
 
 ```lanius
 pub fn read_link_into(path:core::path::Path,destination:View<u8>) -> Result<LinkRead,Error>
@@ -813,7 +813,7 @@ pub fn read_link_into(path:core::path::Path,destination:View<u8>) -> Result<Link
 
 ### function: seek
 
-[Source line 138](../../../stdlib/std/file_ops.lani#L138)
+[Source line 139](../../../stdlib/std/file_ops.lani#L139)
 
 ```lanius
 pub fn seek(file:&File,offset:i64,origin:Origin) -> Result<i64,Error>
@@ -821,7 +821,7 @@ pub fn seek(file:&File,offset:i64,origin:Origin) -> Result<i64,Error>
 
 ### function: position
 
-[Source line 143](../../../stdlib/std/file_ops.lani#L143)
+[Source line 144](../../../stdlib/std/file_ops.lani#L144)
 
 ```lanius
 pub fn position(file:&File) -> Result<i64,Error>
@@ -829,7 +829,7 @@ pub fn position(file:&File) -> Result<i64,Error>
 
 ### function: set_len
 
-[Source line 146](../../../stdlib/std/file_ops.lani#L146)
+[Source line 147](../../../stdlib/std/file_ops.lani#L147)
 
 ```lanius
 pub fn set_len(file:&File,length:u64) -> Result<i32,Error>
@@ -837,7 +837,7 @@ pub fn set_len(file:&File,length:u64) -> Result<i32,Error>
 
 ### function: set_permissions
 
-[Source line 155](../../../stdlib/std/file_ops.lani#L155)
+[Source line 156](../../../stdlib/std/file_ops.lani#L156)
 
 ```lanius
 pub fn set_permissions(file:&File,mode:u32) -> Result<i32,Error>
@@ -845,7 +845,7 @@ pub fn set_permissions(file:&File,mode:u32) -> Result<i32,Error>
 
 ### function: set_permissions_at
 
-[Source line 163](../../../stdlib/std/file_ops.lani#L163)
+[Source line 164](../../../stdlib/std/file_ops.lani#L164)
 
 ```lanius
 pub fn set_permissions_at(directory_fd:i32,path:core::path::Path,mode:u32) -> Result<i32,Error>
@@ -853,7 +853,7 @@ pub fn set_permissions_at(directory_fd:i32,path:core::path::Path,mode:u32) -> Re
 
 ### function: set_permissions_path
 
-[Source line 170](../../../stdlib/std/file_ops.lani#L170)
+[Source line 171](../../../stdlib/std/file_ops.lani#L171)
 
 ```lanius
 pub fn set_permissions_path(path:core::path::Path,mode:u32) -> Result<i32,Error>
@@ -861,7 +861,7 @@ pub fn set_permissions_path(path:core::path::Path,mode:u32) -> Result<i32,Error>
 
 ### function: sync_all
 
-[Source line 172](../../../stdlib/std/file_ops.lani#L172)
+[Source line 173](../../../stdlib/std/file_ops.lani#L173)
 
 ```lanius
 pub fn sync_all(file:&File) -> Result<i32,Error>
@@ -869,7 +869,7 @@ pub fn sync_all(file:&File) -> Result<i32,Error>
 
 ### function: sync_data
 
-[Source line 173](../../../stdlib/std/file_ops.lani#L173)
+[Source line 174](../../../stdlib/std/file_ops.lani#L174)
 
 ```lanius
 pub fn sync_data(file:&File) -> Result<i32,Error>
@@ -877,7 +877,7 @@ pub fn sync_data(file:&File) -> Result<i32,Error>
 
 ### function: duplicate
 
-[Source line 174](../../../stdlib/std/file_ops.lani#L174)
+[Source line 175](../../../stdlib/std/file_ops.lani#L175)
 
 ```lanius
 pub fn duplicate(file:&File,minimum_fd:i32,close_on_exec:bool) -> Result<File,Error>
@@ -885,7 +885,7 @@ pub fn duplicate(file:&File,minimum_fd:i32,close_on_exec:bool) -> Result<File,Er
 
 ### function: duplicate_to
 
-[Source line 175](../../../stdlib/std/file_ops.lani#L175)
+[Source line 176](../../../stdlib/std/file_ops.lani#L176)
 
 ```lanius
 pub fn duplicate_to(source:&File,target:&File,close_on_exec:bool) -> Result<i32,Error>
@@ -893,7 +893,7 @@ pub fn duplicate_to(source:&File,target:&File,close_on_exec:bool) -> Result<i32,
 
 ### function: close_on_exec
 
-[Source line 179](../../../stdlib/std/file_ops.lani#L179)
+[Source line 180](../../../stdlib/std/file_ops.lani#L180)
 
 ```lanius
 pub fn close_on_exec(file:&File) -> Result<bool,Error>
@@ -901,7 +901,7 @@ pub fn close_on_exec(file:&File) -> Result<bool,Error>
 
 ### function: set_close_on_exec
 
-[Source line 180](../../../stdlib/std/file_ops.lani#L180)
+[Source line 181](../../../stdlib/std/file_ops.lani#L181)
 
 ```lanius
 pub fn set_close_on_exec(file:&File,enabled:bool) -> Result<i32,Error>
@@ -909,7 +909,7 @@ pub fn set_close_on_exec(file:&File,enabled:bool) -> Result<i32,Error>
 
 ### function: status_flags
 
-[Source line 181](../../../stdlib/std/file_ops.lani#L181)
+[Source line 182](../../../stdlib/std/file_ops.lani#L182)
 
 ```lanius
 pub fn status_flags(file:&File) -> Result<i32,Error>
@@ -917,7 +917,7 @@ pub fn status_flags(file:&File) -> Result<i32,Error>
 
 ### function: set_status
 
-[Source line 182](../../../stdlib/std/file_ops.lani#L182)
+[Source line 183](../../../stdlib/std/file_ops.lani#L183)
 
 ```lanius
 pub fn set_status(file:&File,append:bool,nonblocking:bool) -> Result<i32,Error>
@@ -925,7 +925,7 @@ pub fn set_status(file:&File,append:bool,nonblocking:bool) -> Result<i32,Error>
 
 ### function: decode_statx_into
 
-[Source line 185](../../../stdlib/std/file_ops.lani#L185)
+[Source line 186](../../../stdlib/std/file_ops.lani#L186)
 
 ```lanius
 pub fn decode_statx_into(input:View<u8>,output:&Metadata) -> Result<i32,Error>
@@ -933,7 +933,7 @@ pub fn decode_statx_into(input:View<u8>,output:&Metadata) -> Result<i32,Error>
 
 ### function: metadata_into
 
-[Source line 201](../../../stdlib/std/file_ops.lani#L201)
+[Source line 202](../../../stdlib/std/file_ops.lani#L202)
 
 ```lanius
 pub fn metadata_into(path:core::path::Path,follow:bool,output:&Metadata) -> Result<i32,Error>
@@ -941,7 +941,7 @@ pub fn metadata_into(path:core::path::Path,follow:bool,output:&Metadata) -> Resu
 
 ### function: metadata_at_into
 
-[Source line 202](../../../stdlib/std/file_ops.lani#L202)
+[Source line 203](../../../stdlib/std/file_ops.lani#L203)
 
 ```lanius
 pub fn metadata_at_into(directory_fd:i32,path:core::path::Path,follow:bool,output:&Metadata) -> Result<i32,Error>
@@ -949,7 +949,7 @@ pub fn metadata_at_into(directory_fd:i32,path:core::path::Path,follow:bool,outpu
 
 ### function: metadata_file_into
 
-[Source line 203](../../../stdlib/std/file_ops.lani#L203)
+[Source line 204](../../../stdlib/std/file_ops.lani#L204)
 
 ```lanius
 pub fn metadata_file_into(file:&File,output:&Metadata) -> Result<i32,Error>
@@ -957,7 +957,7 @@ pub fn metadata_file_into(file:&File,output:&Metadata) -> Result<i32,Error>
 
 ### function: read_at
 
-[Source line 211](../../../stdlib/std/file_ops.lani#L211)
+[Source line 212](../../../stdlib/std/file_ops.lani#L212)
 
 ```lanius
 pub fn read_at(file:&File,destination:View<u8>,position:u64) -> Result<i32,Error>
@@ -967,7 +967,7 @@ Accepted on the finite native Linux x86_64 profile; see separate fixture/fault/m
 
 ### function: write_at
 
-[Source line 257](../../../stdlib/std/file_ops.lani#L257)
+[Source line 258](../../../stdlib/std/file_ops.lani#L258)
 
 ```lanius
 pub fn write_at(file:&File,source:View<u8>,position:u64) -> Result<i32,Error>
@@ -977,7 +977,7 @@ Accepted on the finite native Linux x86_64 profile; see separate fixture/fault/m
 
 ### function: lock
 
-[Source line 341](../../../stdlib/std/file_ops.lani#L341)
+[Source line 342](../../../stdlib/std/file_ops.lani#L342)
 
 ```lanius
 pub fn lock(file:&File,mode:LockMode,wait:LockWait) -> Result<i32,Error>
@@ -987,7 +987,7 @@ Accepted on the finite native Linux x86_64/local-filesystem profile; native, ind
 
 ### function: unlock
 
-[Source line 351](../../../stdlib/std/file_ops.lani#L351)
+[Source line 352](../../../stdlib/std/file_ops.lani#L352)
 
 ```lanius
 pub fn unlock(file:&File) -> Result<i32,Error>
@@ -1021,9 +1021,9 @@ pub fn borrow(&self) -> &Metadata
 pub fn has(&self,fields:u32) -> bool
 ```
 
-### impl at line 293
+### impl at line 294
 
-[Source line 293](../../../stdlib/std/file_ops.lani#L293)
+[Source line 294](../../../stdlib/std/file_ops.lani#L294)
 
 ```lanius
 pub impl core::io::ReadAt for File
@@ -1031,15 +1031,15 @@ pub impl core::io::ReadAt for File
 
 #### method: read_at
 
-[Source line 294](../../../stdlib/std/file_ops.lani#L294)
+[Source line 295](../../../stdlib/std/file_ops.lani#L295)
 
 ```lanius
 pub fn read_at(&self,destination:[u8],offset:i32,count:i32,position:u64) -> Result<i32,Error>
 ```
 
-### impl at line 299
+### impl at line 300
 
-[Source line 299](../../../stdlib/std/file_ops.lani#L299)
+[Source line 300](../../../stdlib/std/file_ops.lani#L300)
 
 ```lanius
 pub impl core::io::WriteAt for File
@@ -1047,15 +1047,15 @@ pub impl core::io::WriteAt for File
 
 #### method: write_at
 
-[Source line 300](../../../stdlib/std/file_ops.lani#L300)
+[Source line 301](../../../stdlib/std/file_ops.lani#L301)
 
 ```lanius
 pub fn write_at(&self,source:[u8],offset:i32,count:i32,position:u64) -> Result<i32,Error>
 ```
 
-### impl at line 309
+### impl at line 310
 
-[Source line 309](../../../stdlib/std/file_ops.lani#L309)
+[Source line 310](../../../stdlib/std/file_ops.lani#L310)
 
 ```lanius
 pub impl core::io::Seek for File
@@ -1063,7 +1063,7 @@ pub impl core::io::Seek for File
 
 #### method: seek
 
-[Source line 310](../../../stdlib/std/file_ops.lani#L310)
+[Source line 311](../../../stdlib/std/file_ops.lani#L311)
 
 ```lanius
 pub fn seek(&self,from:core::io::SeekFrom) -> Result<u64,Error>
