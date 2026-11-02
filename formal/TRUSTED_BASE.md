@@ -40,11 +40,33 @@ stopping at the computations the theorems are about (`compileSource`,
 `frontEndWords`, the self program `Lanius.Faithful.Self.prog` and
 `funcNeeds`, which are not trusted, section 10), with each one's type and
 body:
-definitions `8884c49974b65a57` (4,490 constants). This covers Core's
+definitions `339ca6217ec1aa8b` (4501 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
-modules keeps its hash. The last change of the hash (11-01, step 3.5a of array-to-slice arguments):
+modules keeps its hash. The last change of the hash (11-01, merge of lang `8884c49974b65a57` into
+review-fixes `5aa62e3705d251c9`): it combines lang's frame-room steps and
+review-fixes' F14 changes, which did not change each other's definitions,
+beside the prim table `prims` (`Faithful/Gen/SelfPureTab.lean`) and `ixTimes`,
+regenerated from the merged front end. Before that (11-01, merge of lang
+`30cfc8a1287e8470` into review-fixes `a3b90bcb2fad7cd0`, giving
+`5aa62e3705d251c9`): lang's array-to-slice steps and review-fixes' F14
+changes, beside `prims`. review-fixes' (11-01, F14):
+`CompileBounded` takes its cost threshold `T` as a parameter in place of
+`2 ^ 62`, and `SelfShortW`'s third reason says the wrapped compile costs
+more than the heap limit, in place of at least `2 ^ 62`; the hash before was
+`e5a4ad804bd2998c`. That one: the
+conditional top theorem `selfCompiler_total_reason_of_bounds` brings in 11
+new constants and changes none: `SelfFaultReasonW`, `SelfShortW`,
+`CompileBounded`, `costW` and `compileG` (`Faithful/SelfTotal.lean`),
+`safeW` and `NoWrap` (`Faithful/SelfAgree.lean`), and `pcallG` with its
+three auxiliary definitions (`Faithful/Sim/Agree.lean`). The hash before it
+was `feb6c15367fe3046`. That one (11-01, F14's type
+weights, SEMANTIC_DECISIONS "Type weights"): only the prim table `prims`
+(`Faithful/Gen/SelfPureTab.lean`) changed, because the front end's new
+weight functions shift the indices of the self program's later
+`boxed` and `unbox` instances. The weight functions themselves (`srcWeight`,
+`typesWeighed`, ...) are the front end's, not trusted. The hash before it was `a784f30fce5c9322`. lang's (11-01, step 3.5a of array-to-slice arguments):
 the top theorems on `compileSource`, `compileText` and processes take the
 frame room their function needs (section 8, "Frame room"), which brings in
 `SrcProgram.need` (`Mini/LowerStmt.lean`, new), whose `funcNeeds` is cut
@@ -346,7 +368,7 @@ statement `00000000370c8fc9`. Under `driver_faithful`'s premises on the
 state and views, with the input and output ranges checked in Core's heap,
 Core's run of `w` never reaches an undefined trap, at any fuel (`SafeE`).
 
-### The self-built verified compiler (`Lanius/Faithful/SelfCompiler.lean`, `SelfHost.lean`, `SelfShort.lean`, `SelfPanics.lean`)
+### The self-built verified compiler (`Lanius/Faithful/SelfCompiler.lean`, `SelfHost.lean`, `SelfShort.lean`, `SelfPanics.lean`, `SelfTotal.lean`)
 
 #### `Lanius.Faithful.SelfCompiler.selfCompiler_outcome`
 
@@ -402,6 +424,29 @@ replaced by `SelfFaultReason`.
 statement `00000000b38b3b9b`. `selfHost_outcome` with `SelfFaults`
 replaced by `SelfFaultReason`.
 
+#### `Lanius.Faithful.SelfTotal.selfCompiler_total_reason_of_bounds`
+
+statement `00000000b986c107`. **Conditional**: it assumes
+`CompileBounded T (filesWords files)`, the open part of F14 (ROADMAP F14),
+for some threshold `T` above the heap limit (`limit < T`), and is not a
+replacement for `selfCompiler_reason` until per-function bounds prove that
+premise for all words. `CompileBounded T W`: whenever
+`progW`'s compile of `W` has a heap cost `k < T` (`costW`, which is
+`selfCost` run on `progW`), the guarded compile `compileG` has a value at
+some fuel. `compileG` is `compileW` run by `pcallG progW prims safeW`, the
+pure semantics in which a call of `plus` or `times` has no value unless both
+arguments are `usize` and the result is below `2 ^ 64` (`safeW`, `NoWrap`).
+Under that premise, the statement is `selfCompiler_reason` with
+`SelfFaultReasonW`, where `SelfShortW` replaces `SelfShort` and has no
+panic reason. A fault because Core's run of `w` fails at every fuel comes
+with one of three reasons:
+- the output room is short;
+- the heap limit is below `selfNext W room + h` for every cost `h` of
+  `selfCost`;
+- the self program's compile has no cost at any fuel, `progW`'s compile has
+  a cost, and every cost it has is more than the heap limit.
+Rests on sections 3, 4, 5, 6 and 8, as `selfCompiler_reason` does.
+
 #### `Lanius.Faithful.SelfPanics.compileW_total`
 
 statement `00000000cb6e99e6`. For any words `W`, the pure compile of the
@@ -455,6 +500,7 @@ the statements, so a reader has to agree that each one says what is intended:
 | `SafeE` | `Faithful/Safe/Run.lean` | no fuel of Core's run reaches an undefined trap |
 | `SelfOutput`, `selfHeap`, `selfBits`, `selfNext` | `Faithful/SelfCompiler.lean` | what the self-built compiler's `w` returned in x86 memory; the heap layout and argument slots its caller sets up (the input words, then the output room, then the bump heap) |
 | `SelfFaultReason`, `SelfShort`, `selfCost`, `qcall`, `boxCost`, `prims` | `Faithful/SelfShort.lean`, `Faithful/SelfLive.lean`, `Faithful/Cost.lean`, `Faithful/Fwd/Prim.lean`, `Faithful/Gen/SelfPureTab.lean` | why the self-built compiler's `w` may fault when Core's run of it fails at every fuel: no pure cost, the output room short, or the heap limit below `selfNext` plus every cost. `selfCost` is `w`'s heap cost by the pure cost semantics `qcall` (the pure semantics of `pcall`, adding `boxCost`, the box's storage and 8 bytes of alignment, at each call of a `prims.boxed` function): one `List<i32>` box per input word, then `grammar()`, `front_end_words` and `compile_words` |
+| `SelfFaultReasonW`, `SelfShortW`, `CompileBounded`, `costW`, `compileG`, `pcallG`, `safeW`, `NoWrap` | `Faithful/SelfTotal.lean`, `Faithful/Sim/Agree.lean`, `Faithful/SelfAgree.lean` | the conditional theorem's reasons and its premise. `SelfShortW` is `SelfShort` with the panic reason replaced: the self program's compile has no cost, and `progW`'s compile costs more than the heap limit at every fuel where it has a cost (`costW` is `selfCost` on `progW`). The premise `CompileBounded T W`: a cost of `progW`'s compile below `T` means the guarded compile `compileG`, `compileW` run by `pcallG`, has a value. `pcallG sp prims safe` is `pcall` where a call ruled out by `safe` has no value. `safeW c vs`: if `c` is `ixPlus` or `ixTimes`, then `vs` is two `usize` values whose sum or product, respectively, is below `2 ^ 64` (`NoWrap`) |
 | `SelfPanics`, `compileW`, `progW`, `wrapAt`, `wrapFunc`, `pcall`, `ixPlus`, `ixTimes` | `Faithful/SelfPanics.lean`, `Faithful/Sim/Wrap.lean`, `Faithful/Pure.lean`, `Faithful/Gen/SelfLiveTab.lean` | `SelfShort`'s first reason: no cost at any fuel, and the pure compile (`pcall` of `grammar()`, `front_end_words` and `compile_words`, as `selfCost` runs them) of `progW` has a value. `progW` is `prog` with functions `ixPlus` and `ixTimes` (the prelude's `plus` and `times`, found by name by `faithful_pure.py`) wrapped: `wrapFunc op f` is `f` with the body `return a op b` of its first two parameters, which wraps, where the prelude's panics when the result overflows |
 
 The computations the theorems are about are not trusted (section 10):

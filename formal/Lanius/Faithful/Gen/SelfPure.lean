@@ -2455,7 +2455,7 @@ theorem chunk22 : FuncsOk prog prims outside 2200 part22 :=
   funcsOk_cons (fok2299 boxElem_self callTy_self) <|
   funcsOk_nil
 
-def part23 : List SrcFunc := [src2300, src2301, src2302, src2303, src2304, src2305, src2306, src2307, src2308, src2309, src2310, src2311, src2312, src2313, src2314, src2315, src2316, src2317, src2318, src2319, src2320, src2321, src2322, src2323, src2324, src2325, src2326, src2327, src2328, src2329, src2330, src2331, src2332, src2333, src2334, src2335, src2336, src2337, src2338, src2339, src2340, src2341, src2342, src2343, src2344, src2345, src2346, src2347, src2348, src2349, src2350, src2351, src2352, src2353, src2354, src2355, src2356, src2357, src2358, src2359, src2360, src2361, src2362, src2363, src2364, src2365, src2366, src2367]
+def part23 : List SrcFunc := [src2300, src2301, src2302, src2303, src2304, src2305, src2306, src2307, src2308, src2309, src2310, src2311, src2312, src2313, src2314, src2315, src2316, src2317, src2318, src2319, src2320, src2321, src2322, src2323, src2324, src2325, src2326, src2327, src2328, src2329, src2330, src2331, src2332, src2333, src2334, src2335, src2336, src2337, src2338, src2339, src2340, src2341, src2342, src2343, src2344, src2345, src2346, src2347, src2348, src2349, src2350, src2351, src2352, src2353, src2354, src2355, src2356, src2357, src2358, src2359, src2360, src2361, src2362, src2363, src2364, src2365, src2366, src2367, src2368, src2369, src2370, src2371, src2372, src2373, src2374, src2375, src2376, src2377, src2378, src2379, src2380, src2381, src2382, src2383, src2384, src2385, src2386, src2387, src2388, src2389, src2390, src2391, src2392, src2393, src2394, src2395, src2396, src2397, src2398, src2399]
 
 theorem chunk23 : FuncsOk prog prims outside 2300 part23 :=
   funcsOk_cons (fok2300 boxElem_self callTy_self) <|
@@ -2526,14 +2526,56 @@ theorem chunk23 : FuncsOk prog prims outside 2300 part23 :=
   funcsOk_cons (fok2365 boxElem_self callTy_self) <|
   funcsOk_cons (fok2366 boxElem_self callTy_self) <|
   funcsOk_cons (fok2367 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2368 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2369 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2370 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2371 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2372 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2373 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2374 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2375 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2376 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2377 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2378 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2379 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2380 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2381 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2382 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2383 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2384 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2385 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2386 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2387 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2388 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2389 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2390 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2391 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2392 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2393 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2394 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2395 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2396 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2397 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2398 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2399 boxElem_self callTy_self) <|
   funcsOk_nil
 
-theorem funcs_parts : prog.funcs = part0 ++ (part1 ++ (part2 ++ (part3 ++ (part4 ++ (part5 ++ (part6 ++ (part7 ++ (part8 ++ (part9 ++ (part10 ++ (part11 ++ (part12 ++ (part13 ++ (part14 ++ (part15 ++ (part16 ++ (part17 ++ (part18 ++ (part19 ++ (part20 ++ (part21 ++ (part22 ++ (part23))))))))))))))))))))))) := rfl
+def part24 : List SrcFunc := [src2400, src2401, src2402, src2403, src2404]
+
+theorem chunk24 : FuncsOk prog prims outside 2400 part24 :=
+  funcsOk_cons (fok2400 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2401 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2402 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2403 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2404 boxElem_self callTy_self) <|
+  funcsOk_nil
+
+theorem funcs_parts : prog.funcs = part0 ++ (part1 ++ (part2 ++ (part3 ++ (part4 ++ (part5 ++ (part6 ++ (part7 ++ (part8 ++ (part9 ++ (part10 ++ (part11 ++ (part12 ++ (part13 ++ (part14 ++ (part15 ++ (part16 ++ (part17 ++ (part18 ++ (part19 ++ (part20 ++ (part21 ++ (part22 ++ (part23 ++ (part24)))))))))))))))))))))))) := rfl
 
 theorem funcsOk : FuncsOk prog prims outside 0 prog.funcs := by
   rw [funcs_parts]
   exact
-    funcsOk_append chunk0 (funcsOk_append chunk1 (funcsOk_append chunk2 (funcsOk_append chunk3 (funcsOk_append chunk4 (funcsOk_append chunk5 (funcsOk_append chunk6 (funcsOk_append chunk7 (funcsOk_append chunk8 (funcsOk_append chunk9 (funcsOk_append chunk10 (funcsOk_append chunk11 (funcsOk_append chunk12 (funcsOk_append chunk13 (funcsOk_append chunk14 (funcsOk_append chunk15 (funcsOk_append chunk16 (funcsOk_append chunk17 (funcsOk_append chunk18 (funcsOk_append chunk19 (funcsOk_append chunk20 (funcsOk_append chunk21 (funcsOk_append chunk22 (chunk23)))))))))))))))))))))))
+    funcsOk_append chunk0 (funcsOk_append chunk1 (funcsOk_append chunk2 (funcsOk_append chunk3 (funcsOk_append chunk4 (funcsOk_append chunk5 (funcsOk_append chunk6 (funcsOk_append chunk7 (funcsOk_append chunk8 (funcsOk_append chunk9 (funcsOk_append chunk10 (funcsOk_append chunk11 (funcsOk_append chunk12 (funcsOk_append chunk13 (funcsOk_append chunk14 (funcsOk_append chunk15 (funcsOk_append chunk16 (funcsOk_append chunk17 (funcsOk_append chunk18 (funcsOk_append chunk19 (funcsOk_append chunk20 (funcsOk_append chunk21 (funcsOk_append chunk22 (funcsOk_append chunk23 (chunk24))))))))))))))))))))))))
 
 theorem prims_eq : SelfRep.prims = prims := rfl
 

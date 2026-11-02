@@ -21,12 +21,12 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_call_let_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.MEff} {x1 : Option Lanius.Mini.Called} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepMEff x0 v0 → (RepOption 297 RepCalled) x1 v1 →
+  ∀ {x0 : Lanius.Mini.MEff} {x1 : Option Lanius.Mini.Called} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepMEff x0 v0 → (RepOption 300 RepCalled) x1 v1 →
     RepLetHead (Lanius.Mini.callLetHead x0 x1) w
 
 abbrev Stmt_eval_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Ty} {x1 : Option Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepTy x0 v0 → (RepOption 250 RepMEff) x1 v1 →
-    (RepOption 281 RepLetHead) (Lanius.Mini.evalHead x0 x1) w
+  ∀ {x0 : Lanius.Mini.Ty} {x1 : Option Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepTy x0 v0 → (RepOption 252 RepMEff) x1 v1 →
+    (RepOption 283 RepLetHead) (Lanius.Mini.evalHead x0 x1) w
 
 abbrev Stmt_eval_let_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Ty} {x1 : Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepTy x0 v0 → RepMEff x1 v1 →
@@ -34,18 +34,18 @@ abbrev Stmt_eval_let_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
 
 abbrev Stmt_if_same_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : List Lanius.Mini.Ty} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepList 141 RepTy) x1 v1 →
-    (RepOption 208 (RepList 141 RepTy)) (Lanius.Mini.ifSameTys x0 x1) w
+    (RepOption 210 (RepList 141 RepTy)) (Lanius.Mini.ifSameTys x0 x1) w
 
 abbrev Stmt_index_let_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.MEff} {x1 : Nat} {x2 : Option Lanius.Mini.SrcExpr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepMEff x0 v0 → RepNat x1 v1 → (RepOption 227 RepSrcExpr) x2 v2 →
+  ∀ {x0 : Lanius.Mini.MEff} {x1 : Nat} {x2 : Option Lanius.Mini.SrcExpr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepMEff x0 v0 → RepNat x1 v1 → (RepOption 229 RepSrcExpr) x2 v2 →
     RepLetHead (Lanius.Mini.indexLetHead x0 x1 x2) w
 
 abbrev Stmt_match_let_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.MEff} {x1 : Option Nat} {x2 : Lanius.Mini.Ty} {x3 : Option (List Lanius.Mini.SrcArm)} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepMEff x0 v0 → (RepOption 205 RepNat) x1 v1 → RepTy x2 v2 → (RepOption 298 (RepList 23 RepSrcArm)) x3 v3 →
+  ∀ {x0 : Lanius.Mini.MEff} {x1 : Option Nat} {x2 : Lanius.Mini.Ty} {x3 : Option (List Lanius.Mini.SrcArm)} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepMEff x0 v0 → (RepOption 205 RepNat) x1 v1 → RepTy x2 v2 → (RepOption 301 (RepList 23 RepSrcArm)) x3 v3 →
     RepLetHead (Lanius.Mini.matchLetHead x0 x1 x2 x3) w
 
 abbrev Stmt_single_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Lanius.Mini.Ty)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 208 (RepList 141 RepTy)) x0 v0 →
-    (RepOption 207 RepTy) (Lanius.Mini.singleTy x0) w
+  ∀ {x0 : Option (List Lanius.Mini.Ty)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 210 (RepList 141 RepTy)) x0 v0 →
+    (RepOption 209 RepTy) (Lanius.Mini.singleTy x0) w
 
 end Lanius.Faithful.SelfCert

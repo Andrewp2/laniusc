@@ -44,25 +44,19 @@ def sliceType (element : Option SrcType) : Option SrcType :=
   | none => none
   | some e => some (SrcType.slice e)
 
-def arrayType (element : Option SrcType) (length : Nat) : Option SrcType :=
-  match element with
-  | none => none
-  | some e => some (SrcType.array e length)
+/-- A type's weight is at least its slot count (`SrcType::size`) and its node count: a scalar weighs 1, a slice 1 more than its element, an array of n elements 1 + max(n, 1) times its element, a struct 1 more than its fields together, an enum 1 more than all its payloads together. The front end rejects a type heavier than weight_limit(): an array type here, a type instance in types_weighed (decided 11-01, F14). So no slot count, offset or frame size the compiler computes from a type overflows a usize, and lowering a type takes time linear in its weight. -/
+def weightLimit : Nat :=
+  4194304
 
-def structSrc (id : Option Nat) (fields : Option (List SrcType)) : Option SrcType :=
-  match id with
-  | none => none
-  | some k =>
-    match fields with
-    | none => none
-    | some fs => some (SrcType.struct k fs)
+def weightSum (x : Nat) (y : Nat) : Option Nat :=
+  if decide (weightLimit < x) || decide (weightLimit - x < y) then
+    none
+  else
+    some (x + y)
 
-def enumSrc (id : Option Nat) (variants : Option (List (List SrcType))) : Option SrcType :=
-  match id with
+def weightAddTo (x : Nat) (b : Option Nat) : Option Nat :=
+  match b with
   | none => none
-  | some k =>
-    match variants with
-    | none => none
-    | some vs => some (SrcType.enum k vs)
+  | some y => weightSum x y
 
 end Lanius.Mini

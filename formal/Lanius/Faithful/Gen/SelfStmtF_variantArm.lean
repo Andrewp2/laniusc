@@ -21,12 +21,12 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_cons_use (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.ArmUse} {x1 : Option Lanius.Mini.ArmsUse} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 306 RepArmUse) x0 v0 → (RepOption 304 RepArmsUse) x1 v1 →
-    (RepOption 304 RepArmsUse) (Lanius.Mini.consUse x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.ArmUse} {x1 : Option Lanius.Mini.ArmsUse} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 309 RepArmUse) x0 v0 → (RepOption 307 RepArmsUse) x1 v1 →
+    (RepOption 307 RepArmsUse) (Lanius.Mini.consUse x0 x1) w
 
 abbrev Stmt_join_use (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.ArmUse} {x1 : Option Lanius.Mini.ArmsUse} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepArmUse x0 v0 → (RepOption 304 RepArmsUse) x1 v1 →
-    (RepOption 304 RepArmsUse) (Lanius.Mini.joinUse x0 x1) w
+  ∀ {x0 : Lanius.Mini.ArmUse} {x1 : Option Lanius.Mini.ArmsUse} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepArmUse x0 v0 → (RepOption 307 RepArmsUse) x1 v1 →
+    (RepOption 307 RepArmsUse) (Lanius.Mini.joinUse x0 x1) w
 
 abbrev Stmt_used_arms (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepList 82 RepCTree) x1 v1 →
@@ -34,11 +34,11 @@ abbrev Stmt_used_arms (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_variant_arm (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.VariantTy} {x3 : Option (List Lanius.Mini.CTree)} {x4 : Option Lanius.Mini.CTree} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → RepVariantTy x2 v2 → (RepOption 81 (RepList 82 RepCTree)) x3 v3 → (RepOption 128 RepCTree) x4 v4 →
-    (RepOption 306 RepArmUse) (Lanius.Mini.variantArm x0 x1 x2 x3 x4) w
+    (RepOption 309 RepArmUse) (Lanius.Mini.variantArm x0 x1 x2 x3 x4) w
 
 abbrev Stmt_variant_arms (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.TypeDecl} {x3 : List Lanius.Mini.VariantTy} {x4 : List Lanius.Mini.CTree} {x5 : Option Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → RepTypeDecl x2 v2 → (RepList 278 RepVariantTy) x3 v3 → (RepList 82 RepCTree) x4 v4 → (RepOption 128 RepCTree) x5 v5 →
-    (RepOption 304 RepArmsUse) (Lanius.Mini.variantArms x0 x1 x2 x3 x4 x5) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.TypeDecl} {x3 : List Lanius.Mini.VariantTy} {x4 : List Lanius.Mini.CTree} {x5 : Option Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → RepTypeDecl x2 v2 → (RepList 280 RepVariantTy) x3 v3 → (RepList 82 RepCTree) x4 v4 → (RepOption 128 RepCTree) x5 v5 →
+    (RepOption 307 RepArmsUse) (Lanius.Mini.variantArms x0 x1 x2 x3 x4 x5) w
 
 abbrev Stmt_wild_used (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.CTree} {x1 : Lanius.Mini.ArmsUse} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 128 RepCTree) x0 v0 → RepArmsUse x1 v1 →

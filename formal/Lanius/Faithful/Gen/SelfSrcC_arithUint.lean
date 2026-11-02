@@ -20,7 +20,7 @@ def src_arith_sint (ix_arith_signed_of : Nat) : SrcFunc := { params := [{ id := 
 def src_arith_uint (ix_arith_of : Nat) : SrcFunc := { params := [{ id := 11, ty := ty52 }, { id := 29, ty := ty173 }, { id := 42, ty := ty173 }, { id := 56, ty := ty233 }], ret := ty174, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 56)) ty233 ty174 [[186], []] [SrcEff.eCall ix_arith_of [SrcEff.ePure (SrcExpr.local 11), SrcEff.ePure (SrcExpr.local 29), SrcEff.ePure (SrcExpr.local 42), SrcEff.ePure (SrcExpr.local 186)], SrcEff.eVariant ty174 1 []]) }
 
 /-- mini::selfhost::float_op -/
-def src_float_op : SrcFunc := { params := [{ id := 9, ty := ty52 }], ret := ty299, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 9)) ty52 ty299 [[], [], [], [], [], [], [], [], []] [SrcEff.eVariant ty299 0 [SrcEff.eVariant ty56 0 []], SrcEff.eVariant ty299 0 [SrcEff.eVariant ty56 1 []], SrcEff.eVariant ty299 0 [SrcEff.eVariant ty56 2 []], SrcEff.eVariant ty299 1 [], SrcEff.eVariant ty299 1 [], SrcEff.eVariant ty299 1 [], SrcEff.eVariant ty299 1 [], SrcEff.eVariant ty299 1 [], SrcEff.eVariant ty299 1 []]) }
+def src_float_op : SrcFunc := { params := [{ id := 9, ty := ty52 }], ret := ty302, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 9)) ty52 ty302 [[], [], [], [], [], [], [], [], []] [SrcEff.eVariant ty302 0 [SrcEff.eVariant ty56 0 []], SrcEff.eVariant ty302 0 [SrcEff.eVariant ty56 1 []], SrcEff.eVariant ty302 0 [SrcEff.eVariant ty56 2 []], SrcEff.eVariant ty302 1 [], SrcEff.eVariant ty302 1 [], SrcEff.eVariant ty302 1 [], SrcEff.eVariant ty302 1 [], SrcEff.eVariant ty302 1 [], SrcEff.eVariant ty302 1 []]) }
 
 end
 

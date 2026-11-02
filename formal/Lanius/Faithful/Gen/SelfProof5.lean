@@ -283,6 +283,10 @@ theorem proof_unbox_of_mini_selfhost_List_core_option_Option_mini_selfhost_SrcTy
     Stmt_unbox_of_mini_selfhost_List_core_option_Option_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_core_option_Option_mini_selfhost_SrcType n :=
   fun h r => prim_cert np h r
 
+theorem proof_unbox_of_mini_selfhost_List_core_option_Option_usize {prog : SrcProgram} {prims : Prims} {ix_unbox_of_mini_selfhost_List_core_option_Option_usize : Nat} (np : prims.isPrim ix_unbox_of_mini_selfhost_List_core_option_Option_usize = true) {n : Nat} :
+    Stmt_unbox_of_mini_selfhost_List_core_option_Option_usize prog prims ix_unbox_of_mini_selfhost_List_core_option_Option_usize n :=
+  fun h r => prim_cert np h r
+
 theorem proof_unbox_of_mini_selfhost_List_mini_selfhost_AliasDecl {prog : SrcProgram} {prims : Prims} {ix_unbox_of_mini_selfhost_List_mini_selfhost_AliasDecl : Nat} (np : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_AliasDecl = true) {n : Nat} :
     Stmt_unbox_of_mini_selfhost_List_mini_selfhost_AliasDecl prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_AliasDecl n :=
   fun h r => prim_cert np h r

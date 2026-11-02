@@ -4,6 +4,7 @@ public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.arithShiftRight
 import Lanius.Mini.Compiler.P.matchVariants
+import Lanius.Mini.Frontend.P.allWeighed
 import Lanius.Mini.Frontend.P.closeFuncs
 import Lanius.Mini.Frontend.P.collect
 import Lanius.Mini.Frontend.P.funcsOnto
@@ -77,7 +78,7 @@ def buildClosed (fuel : Nat) (decls : Decls) (fns : List Inst) (types : Option (
 def buildMono (fuel : Nat) (decls : Decls) (seeds : List Inst) (m : Option Mono) : Option SrcProgram :=
   match m with
   | none => none
-  | some x => buildClosed fuel decls x.table (typeTableMore fuel decls (typeTable fuel decls seeds (seedTys seeds)) (funcsTys x.funcs)) x.funcs
+  | some x => buildClosed fuel decls x.table (typesWeighed fuel decls (typeTableMore fuel decls (typeTable fuel decls seeds (seedTys seeds)) (funcsTys x.funcs))) x.funcs
 
 /-- The roots are the first file's functions without type parameters, in order; they keep their positions as ids. Every other function instance is numbered when it is first called. -/
 def buildChecked (fuel : Nat) (c : Collected) (roots : List Inst) (seeds : List Inst) : Option SrcProgram :=

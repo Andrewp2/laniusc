@@ -73,67 +73,67 @@ theorem ok_field_aliases_Decls_of_mini_selfhost_Decls : FnOk prog prims info (40
 theorem ok_build_closed : FnOk prog prims info (410, ⟨20, [], 0⟩) :=
   fnOk_of fn_build_closed (by decide +kernel)
 
-theorem ok_type_table_more : FnOk prog prims info (411, ⟨16, [3], 0⟩) :=
+theorem ok_types_weighed : FnOk prog prims info (411, ⟨19, [], 0⟩) :=
+  fnOk_of fn_types_weighed (by decide +kernel)
+
+theorem ok_type_table_more : FnOk prog prims info (412, ⟨16, [3], 0⟩) :=
   fnOk_of fn_type_table_more (by decide +kernel)
 
-theorem ok_type_table : FnOk prog prims info (412, ⟨15, [3], 0⟩) :=
+theorem ok_type_table : FnOk prog prims info (413, ⟨15, [3], 0⟩) :=
   fnOk_of fn_type_table (by decide +kernel)
 
-theorem ok_seed_tys : FnOk prog prims info (413, ⟨1, [0], 0⟩) :=
+theorem ok_seed_tys : FnOk prog prims info (414, ⟨1, [0], 0⟩) :=
   fnOk_of fn_seed_tys (by decide +kernel)
 
-theorem ok_funcs_tys : FnOk prog prims info (414, ⟨3, [0], 0⟩) :=
+theorem ok_funcs_tys : FnOk prog prims info (415, ⟨3, [0], 0⟩) :=
   fnOk_of fn_funcs_tys (by decide +kernel)
 
-theorem ok_get_of_mini_selfhost_Inst : FnOk prog prims info (415, ⟨1, [0], 0⟩) :=
+theorem ok_get_of_mini_selfhost_Inst : FnOk prog prims info (416, ⟨1, [0], 0⟩) :=
   fnOk_of fn_get_of_mini_selfhost_Inst (by decide +kernel)
 
-theorem ok_mono_next : FnOk prog prims info (416, ⟨42, [0], 1⟩) :=
+theorem ok_mono_next : FnOk prog prims info (417, ⟨42, [0], 1⟩) :=
   fnOk_of fn_mono_next (by decide +kernel)
 
-theorem ok_read_inst : FnOk prog prims info (417, ⟨41, [], 0⟩) :=
+theorem ok_read_inst : FnOk prog prims info (418, ⟨41, [], 0⟩) :=
   fnOk_of fn_read_inst (by decide +kernel)
 
-theorem ok_funcs_onto : FnOk prog prims info (418, ⟨1, [0], 0⟩) :=
+theorem ok_funcs_onto : FnOk prog prims info (419, ⟨1, [0], 0⟩) :=
   fnOk_of fn_funcs_onto (by decide +kernel)
 
-theorem ok_no_names : FnOk prog prims info (419, ⟨0, [], 0⟩) :=
+theorem ok_no_names : FnOk prog prims info (420, ⟨0, [], 0⟩) :=
   fnOk_of fn_no_names (by decide +kernel)
 
-theorem ok_cons_of_mini_selfhost_Inst : FnOk prog prims info (420, ⟨0, [], 0⟩) :=
+theorem ok_cons_of_mini_selfhost_Inst : FnOk prog prims info (421, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_Inst (by decide +kernel)
 
-theorem ok_empty_of_mini_selfhost_Ty : FnOk prog prims info (421, ⟨0, [], 0⟩) :=
+theorem ok_empty_of_mini_selfhost_Ty : FnOk prog prims info (422, ⟨0, [], 0⟩) :=
   fnOk_of fn_empty_of_mini_selfhost_Ty (by decide +kernel)
 
-theorem ok_concat_of_mini_selfhost_TypeDecl : FnOk prog prims info (424, ⟨0, [0], 0⟩) :=
+theorem ok_concat_of_mini_selfhost_TypeDecl : FnOk prog prims info (425, ⟨0, [0], 0⟩) :=
   fnOk_of fn_concat_of_mini_selfhost_TypeDecl (by decide +kernel)
 
-theorem ok_concat_of_mini_selfhost_FnDecl : FnOk prog prims info (425, ⟨0, [0], 0⟩) :=
+theorem ok_concat_of_mini_selfhost_FnDecl : FnOk prog prims info (426, ⟨0, [0], 0⟩) :=
   fnOk_of fn_concat_of_mini_selfhost_FnDecl (by decide +kernel)
 
-theorem ok_concat_of_mini_selfhost_ConstDecl : FnOk prog prims info (426, ⟨0, [0], 0⟩) :=
+theorem ok_concat_of_mini_selfhost_ConstDecl : FnOk prog prims info (427, ⟨0, [0], 0⟩) :=
   fnOk_of fn_concat_of_mini_selfhost_ConstDecl (by decide +kernel)
 
-theorem ok_field_consts_Decls_of_mini_selfhost_Decls : FnOk prog prims info (427, ⟨0, [], 0⟩) :=
+theorem ok_field_consts_Decls_of_mini_selfhost_Decls : FnOk prog prims info (428, ⟨0, [], 0⟩) :=
   fnOk_of fn_field_consts_Decls_of_mini_selfhost_Decls (by decide +kernel)
 
-theorem ok_concat_of_mini_selfhost_ImportDecl : FnOk prog prims info (428, ⟨0, [0], 0⟩) :=
+theorem ok_concat_of_mini_selfhost_ImportDecl : FnOk prog prims info (429, ⟨0, [0], 0⟩) :=
   fnOk_of fn_concat_of_mini_selfhost_ImportDecl (by decide +kernel)
 
-theorem ok_field_imports_Decls_of_mini_selfhost_Decls : FnOk prog prims info (429, ⟨0, [], 0⟩) :=
+theorem ok_field_imports_Decls_of_mini_selfhost_Decls : FnOk prog prims info (430, ⟨0, [], 0⟩) :=
   fnOk_of fn_field_imports_Decls_of_mini_selfhost_Decls (by decide +kernel)
 
-theorem ok_concat_of_mini_selfhost_AliasDecl : FnOk prog prims info (430, ⟨0, [0], 0⟩) :=
+theorem ok_concat_of_mini_selfhost_AliasDecl : FnOk prog prims info (431, ⟨0, [0], 0⟩) :=
   fnOk_of fn_concat_of_mini_selfhost_AliasDecl (by decide +kernel)
 
-theorem ok_concat_of_mini_selfhost_ImplDecl : FnOk prog prims info (431, ⟨0, [0], 0⟩) :=
+theorem ok_concat_of_mini_selfhost_ImplDecl : FnOk prog prims info (432, ⟨0, [0], 0⟩) :=
   fnOk_of fn_concat_of_mini_selfhost_ImplDecl (by decide +kernel)
 
-theorem ok_field_impls_Decls_of_mini_selfhost_Decls : FnOk prog prims info (432, ⟨0, [], 0⟩) :=
-  fnOk_of fn_field_impls_Decls_of_mini_selfhost_Decls (by decide +kernel)
-
 theorem chunk8 : AllFns prog prims info part8 :=
-  ⟨ok_lx_ranges, ok_lx_filter, ok_lx_keyword_rules, ok_attach_term, ok_attach_nonterm, ok_is_empty_usize, ok_no_tokens, ok_items_cons, ok_no_decls, ok_collect_front, ok_item_decls, ok_p_module, ok_path_spellings, ok_p_item_pub, ok_distinct_modules, ok_modules_distinct_names, ok_no_primitive, ok_no_primitive_alias, ok_field_aliases_Decls_of_mini_selfhost_Decls, ok_build_closed, ok_type_table_more, ok_type_table, ok_seed_tys, ok_funcs_tys, ok_get_of_mini_selfhost_Inst, ok_mono_next, ok_read_inst, ok_funcs_onto, ok_no_names, ok_cons_of_mini_selfhost_Inst, ok_empty_of_mini_selfhost_Ty, ok_concat_of_mini_selfhost_TypeDecl, ok_concat_of_mini_selfhost_FnDecl, ok_concat_of_mini_selfhost_ConstDecl, ok_field_consts_Decls_of_mini_selfhost_Decls, ok_concat_of_mini_selfhost_ImportDecl, ok_field_imports_Decls_of_mini_selfhost_Decls, ok_concat_of_mini_selfhost_AliasDecl, ok_concat_of_mini_selfhost_ImplDecl, ok_field_impls_Decls_of_mini_selfhost_Decls, trivial⟩
+  ⟨ok_lx_ranges, ok_lx_filter, ok_lx_keyword_rules, ok_attach_term, ok_attach_nonterm, ok_is_empty_usize, ok_no_tokens, ok_items_cons, ok_no_decls, ok_collect_front, ok_item_decls, ok_p_module, ok_path_spellings, ok_p_item_pub, ok_distinct_modules, ok_modules_distinct_names, ok_no_primitive, ok_no_primitive_alias, ok_field_aliases_Decls_of_mini_selfhost_Decls, ok_build_closed, ok_types_weighed, ok_type_table_more, ok_type_table, ok_seed_tys, ok_funcs_tys, ok_get_of_mini_selfhost_Inst, ok_mono_next, ok_read_inst, ok_funcs_onto, ok_no_names, ok_cons_of_mini_selfhost_Inst, ok_empty_of_mini_selfhost_Ty, ok_concat_of_mini_selfhost_TypeDecl, ok_concat_of_mini_selfhost_FnDecl, ok_concat_of_mini_selfhost_ConstDecl, ok_field_consts_Decls_of_mini_selfhost_Decls, ok_concat_of_mini_selfhost_ImportDecl, ok_field_imports_Decls_of_mini_selfhost_Decls, ok_concat_of_mini_selfhost_AliasDecl, ok_concat_of_mini_selfhost_ImplDecl, trivial⟩
 
 end Lanius.Faithful.SelfTerm

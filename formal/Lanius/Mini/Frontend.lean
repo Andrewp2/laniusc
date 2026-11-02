@@ -23,6 +23,7 @@ public import Lanius.Mini.Frontend.P.variantIn
 public import Lanius.Mini.Frontend.P.typeDeclAt
 public import Lanius.Mini.Frontend.P.consTys
 public import Lanius.Mini.Frontend.P.flattenTys
+public import Lanius.Mini.Frontend.P.weightAdd
 public import Lanius.Mini.Frontend.P.lowerTy
 public import Lanius.Mini.Frontend.P.joinInsts
 public import Lanius.Mini.Frontend.P.unitTy
@@ -95,6 +96,7 @@ public import Lanius.Mini.Frontend.P.readDeclInst
 public import Lanius.Mini.Frontend.P.readInst
 public import Lanius.Mini.Frontend.P.effNamedTys
 public import Lanius.Mini.Frontend.P.funcsOnto
+public import Lanius.Mini.Frontend.P.allWeighed
 public import Lanius.Mini.Frontend.P.letClosed
 public import Lanius.Mini.Frontend.P.letStructClosed
 public import Lanius.Mini.Frontend.P.allocClosed
@@ -168,6 +170,6 @@ operations become `Lists.name` with a spec theorem). `usize` is `Nat`, `i32` is
 prelude's `plus`/`minus`/`times` panic instead of wrapping, so they are
 `+`/`-`/`*` on `Nat` for every run that returns.
 
-The definitions are in 157 parts, `.P0` on, in source order, whose bodies
+The definitions are in 159 parts, `.P0` on, in source order, whose bodies
 are hidden from other modules: a proof that unfolds one imports its part with
 `import all`, so that it is rebuilt only when that part changes. -/

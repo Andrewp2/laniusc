@@ -7,6 +7,7 @@ import all Lanius.Mini.Frontend.P.distinct
 import all Lanius.Mini.Frontend.P.firstSrc
 import all Lanius.Mini.Frontend.P.flExpFirst
 import all Lanius.Mini.Frontend.P.funcsOnto
+import all Lanius.Mini.Frontend.P.allWeighed
 import all Lanius.Mini.Frontend.P.negWideI32
 import all Lanius.Mini.Frontend.P.shrFirst
 import all Lanius.Mini.Frontend.P.sintAt

@@ -1679,6 +1679,112 @@ and `slice_stride` is -8. The other one-word scalars (`u32`, `u64`, `i64`,
 `bool`, `char`, `ptr`, ...) have the same layout in laniusc and are later
 work.
 
+## Type weights (decided 11-01, F14)
+
+The self-built compiler trapped on a 7-line program. A parameter of type
+`[[[i32; 2000000000]; 2000000000]; 2000000000]` has 8 * 10^27 slots, so
+`SrcType::size`'s `times` overflowed a usize (SIGILL in laniusc's build of
+the verified compiler). Lean computed the size in `Nat` and rejected the
+program only later, at `frame_limit`. Structs whose fields double,
+`S_k { a: S_{k-1}, b: S_{k-1} }`, reach 2^64 slots in 64 links. The front
+end now rejects any type heavier than `weight_limit()` (2^22) before the
+compiler sizes it:
+
+- A type's weight is at least its slot count and its node count. A scalar
+  weighs 1, a slice 1 more than its element, `[T; n]` 1 + max(n, 1) times
+  T's weight, a struct 1 more than its fields together, and an enum 1 more
+  than all its payloads together (`src_weight` on source types, `ty_weight`
+  on the front end's types).
+- `array_type` keeps an array type only within the limit (`weighed`). This
+  covers arrays written at a use site.
+- `types_weighed` checks every instance in the type table before the
+  instances are lowered. It works bottom up in rounds: each round weighs the
+  instances whose parts already have weights, so a doubling chain is
+  rejected at its 21st link, not lowered at exponential cost. An instance
+  that never gets a weight (past the limit, or not lowerable) rejects the
+  program.
+- The arithmetic is guarded (`weight_sum`, `weight_times`), so weighing
+  itself cannot overflow. With every type's size at most 2^22, sums of
+  sizes over a function's lets, offsets (`times(8, ...)`) and frame sizes
+  stay far below 2^64 for inputs under 2^31 words.
+
+laniusc fails both programs too, but not cleanly: `LNC0057 compiler
+execution failed` ("a compiler diagnostic gap"). The cap is 4x the
+compiler's `frame_limit` (2^20 slots), and no checked-in program has a
+type near it (the largest arrays are 262144 elements). A type heavier than
+2^22 that fits no frame, for example one behind a slice that is never
+indexed, or a declared but unused struct, was accepted before and is
+rejected now.
+
+Still open: building the type table (`ty_insts`) expands every occurrence
+of an instance, so a doubling chain takes exponential time there, before
+`types_weighed` runs. The front end takes about 1 s at 18 links and about
+60 s at 24, where it rejects, and hangs at 70 links. This is time, not
+overflow: the pure compile still reaches its result at some fuel. A
+visited set in `ty_insts` would make it linear, but the reading's
+`TyInsts` relation is stated over the full expansion, so that change needs
+its own proof.
+
+## Budget certificates (decided 11-01, F14)
+
+`CompileBounded T` asks that the guarded run of `progW` has a value
+whenever `progW`'s run costs under `T`. It is proved function by function.
+For each self-program function `F` at index `ix`, with the unit cost
+`uc = fun _ => 1` (each boxed call costs 1),
+`formal/tools/budget_certs.py` generates three things into
+`Faithful/GenB/`: two Lean models `Pre_F` and `Cost_F` beside the
+function's Lean meaning `F`, and a budget certificate:
+
+    qcall progW prims uc n ix vs = some (w, k) → Rep x vs → k < b → Pre_F n x b →
+      qcall prog prims uc n ix vs = some (w, k) ∧ Cost_F n x = k ∧ Rep (F x) w
+
+If `F` cannot overflow along any path, it has no `b` and no `Pre_F`.
+
+- The models follow the source function, not the Lean meaning. Inline
+  functions are separate source functions. Values are Lean terms over the
+  parameters, with callee results written as the callee's Lean meaning
+  `G y`. Both models are fuel-indexed like `qcall`: `Pre_F 0 = True` and
+  `Cost_F 0 = 0`. The case `n = 0` is vacuous, because `qcall` at fuel 0
+  is `none`.
+- The Cost_F convention: `Cost_F (n + 1) x` is the sum along the taken path
+  of `Cost_G n y` for each costly callee, plus 1 per boxed prim call.
+  A callee that never reaches a boxed prim is free and adds nothing. Its
+  certificate states `0 = k`. Branches that are equal collapse.
+- The Pre_F generation rule: `Pre_F` is built in evaluation order, in
+  continuation-passing style, with `B` the budget still left. At a call of
+  a guarded `G` it adds `Pre_G n y B`. After a costly call the rest is
+  `∀ b1, Cost_G n y < B → b1 = B - Cost_G n y → REST` at `b1`. After a
+  boxed prim it is `∀ b1, 1 < B → b1 = B - 1 → REST`. The new budget gets
+  a name, so it does not grow along a path: written out as differences,
+  a long branch chain made one model 1.6 MB. A part that is `True` is
+  dropped. A condition that is the literal `true` or `false` is decided
+  by the generator, so a lazy `&&` chain copies its continuation once per
+  operand, not twice.
+  `plus` and `times` are the base cases:
+  `Pre_plus n x y b := x + y < 2 ^ 64`, likewise for `times`, and their
+  certificates are written by hand (`Budget.bcert_plus`, `bcert_times`).
+  Lazy `&&` and `||` and pure arguments follow the semantics: a condition
+  that is not evaluated adds nothing.
+- The premise is stated against the remaining budget, not the cost so far.
+  The run's total cost `k` is below `b`, so every prefix is below `b`, and
+  a callee's certificate gets `k_G < b - prefix`.
+- A function without arguments that reaches neither `plus` nor `times`,
+  through no recursion, for example a table builder such as
+  `grammar_part_0`, which makes hundreds of calls in a line, is not proved
+  step by step. The kernel evaluates its run instead (`decide +kernel`),
+  using `BudgetClosed.qcallB`: a computable `qcall` that has no value at a
+  call of `plus` or `times`, and whose value is the self program's
+  (`qcall_of_okW`). `bclosed` takes four premises: the run has a value at
+  the fuel `D` (its call depth), its cost there is `Cost_F D`, `Cost_F`
+  is the same past `D` (by `rfl`), and there is no run below `D`. From
+  these it gives the certificate at every fuel. 350 of the 2,255 functions
+  take this path.
+- Proofs: the `budget` tactic (`Faithful/BudgetTactic.lean`) runs the two
+  `qcall`s in lockstep. It steps through calls with the callee's
+  certificate, prims, `addC`, condition splits and `Rep` cases, and it
+  closes each path's cost with `omega`. Groups of recursive functions are
+  proved by induction on fuel.
+
 ## laniusc's process exit is `exit_group`; the verified compiler's stays `exit` (decided 11-01)
 
 laniusc's x86 runtime now ends a process with Linux syscall 231,

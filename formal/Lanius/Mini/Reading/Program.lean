@@ -4,6 +4,7 @@ public import Lanius.Mini.Reading.Lits
 import all Lanius.Mini.Compiler.P.arithShiftRight
 import all Lanius.Mini.Frontend.P.collect
 import all Lanius.Mini.Frontend.P.funcsOnto
+import all Lanius.Mini.Frontend.P.allWeighed
 import all Lanius.Mini.Frontend.P.rootInsts
 import all Lanius.Mini.Frontend.P.shrFirst
 import all Lanius.Mini.Frontend.P.wideLeftStmt
@@ -35,6 +36,17 @@ def Reading (roots : List CTree) (p : SrcProgram) : Prop :=
     TypeTableMore (f.decls.append r.decls) seeded (funcsTys mono.funcs) types ∧
     ClosedProgram (f.decls.append r.decls) mono.table types mono.funcs p
 
+/-- The weight check passes the type table on or rejects the program. -/
+theorem typesWeighed_some {fuel : Nat} {decls : Decls} {x : Option (List Inst)} {ts : List Inst}
+    (h : typesWeighed fuel decls x = some ts) : x = some ts := by
+  cases x with
+  | none => simp [typesWeighed] at h
+  | some y =>
+    simp only [typesWeighed, tableWeighed] at h
+    split at h
+    · cases h; rfl
+    · cases h
+
 theorem buildFiles_sound {fuel : Nat} {roots : List CTree} {p : SrcProgram} (h : buildFiles fuel roots = some p) :
     Reading roots p := by
   cases roots with
@@ -60,6 +72,7 @@ theorem buildFiles_sound {fuel : Nat} {roots : List CTree} {p : SrcProgram} (h :
             rw [hm] at h
             simp only [buildMono] at h
             obtain ⟨ts, hts, cp⟩ := buildClosed_sound h
+            have hts := typesWeighed_some hts
             cases ht : typeTable fuel (f.decls.append r.decls) (seedInsts f.decls.types 0)
                 (seedTys (seedInsts f.decls.types 0)) with
             | none => rw [ht, typeTableMore_none] at hts; cases hts

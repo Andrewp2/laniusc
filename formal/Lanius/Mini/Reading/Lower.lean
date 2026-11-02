@@ -6,6 +6,7 @@ import all Lanius.Mini.Frontend.P.consTys
 import all Lanius.Mini.Frontend.P.distinct
 import all Lanius.Mini.Frontend.P.findConst
 import all Lanius.Mini.Frontend.P.flattenTys
+import all Lanius.Mini.Frontend.P.weightAdd
 import all Lanius.Mini.Frontend.P.joinInsts
 import all Lanius.Mini.Frontend.P.lowerTy
 import all Lanius.Mini.Frontend.P.shrFirst
@@ -165,6 +166,13 @@ theorem payloadTys_sound {fuel : Nat} {decls : Decls} {d : Nat} {args : List Ty}
   | none => rw [ht] at h; cases h
   | some t => rw [ht] at h; exact ⟨t, ht, payloadList_sound h⟩
 
+/-- An array type the weight limit keeps is the array type. -/
+theorem weighed_eq {t s : SrcType} (h : weighed t = some s) : s = t := by
+  simp only [weighed] at h
+  split at h
+  · cases h
+  · exact (Option.some.inj h).symm
+
 theorem flattenTys_eq : ∀ (vs : List (List Ty)), flattenTys vs = vs.flatten
   | [] => rfl
   | v :: rest => by simp [flattenTys, flattenTys_eq rest]
@@ -218,8 +226,8 @@ theorem lowerSound : ∀ fuel, LowerSound fuel
         cases he : lowerTy f decls table e with
         | none => rw [he] at h; cases h
         | some se =>
-          rw [he, Option.some.injEq] at h
-          subst h
+          rw [he] at h
+          obtain rfl := weighed_eq h
           exact .array (ty_ih he)
       | tyNamed d args => exact named_ih h
     · intro decls table d args s h

@@ -94,6 +94,22 @@ namespace Lanius.Mini
   else
     typeTableMore mfuel mdecls (typeTable mfuel mdecls mtable [mt]) mrest
 
+@[expose] def Inline.weighRoundAt (afuel : Nat) (adecls : Decls) (atable : List Inst) (aws : List (Option Nat)) (ax : Inst) (arest : List Inst) (aolds : List (Option Nat)) : List (Option Nat) :=
+  match aolds with
+  | [] => []
+  | aold :: amore => weighAgain afuel adecls atable aws ax aold :: weighRound afuel adecls atable aws arest amore
+
+@[expose] def Inline.weighedMoreAt (mold : Option Nat) (mrest : List (Option Nat)) (mnews : List (Option Nat)) : Bool :=
+  match mnews with
+  | [] => false
+  | mfresh :: mmore => isNoneWeight mold && !(isNoneWeight mfresh) || weighedMore mrest mmore
+
+@[expose] def Inline.weighNext (nrounds : Nat) (nfuel : Nat) (ndecls : Decls) (ntable : List Inst) (nws : List (Option Nat)) (nnews : List (Option Nat)) : List (Option Nat) :=
+  if weighedMore nws nnews then
+    weighRounds nrounds nfuel ndecls ntable nnews
+  else
+    nnews
+
 @[expose] def Inline.tyLocalAt (tl : LocalTy) (trest : List LocalTy) (tid : Nat) : Option SrcType :=
   if tl.id = tid then
     some tl.ty

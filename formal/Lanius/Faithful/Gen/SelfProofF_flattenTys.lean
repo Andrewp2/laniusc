@@ -3,6 +3,7 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_flattenTys
+public import Lanius.Faithful.Gen.SelfStmt1
 public import Lanius.Faithful.Gen.SelfStmt2
 public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt4
@@ -28,16 +29,6 @@ open Lanius.Core (Value)
 open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
-
-theorem proof_array_type {prog : SrcProgram} {prims : Prims} {ix_array_type ix_boxed_of_mini_selfhost_SrcType : Nat} (fn : prog.funcs[ix_array_type]? = some (src_array_type ix_boxed_of_mini_selfhost_SrcType)) (np : prims.isPrim ix_array_type = false)
-    (ext_boxed_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcType prog prims ix_boxed_of_mini_selfhost_SrcType n)) {n : Nat} :
-    Stmt_array_type prog prims ix_array_type n := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_array_type] at h
-  faithful [Lanius.Mini.arrayType]
 
 theorem proof_cons_type {prog : SrcProgram} {prims : Prims} {ix_cons_type ix_cons_type_tail : Nat} (fn : prog.funcs[ix_cons_type]? = some (src_cons_type ix_cons_type_tail)) (np : prims.isPrim ix_cons_type = false)
     (ext_cons_type_tail : Certified (∀ {n : Nat}, Stmt_cons_type_tail prog prims ix_cons_type_tail n)) {n : Nat} :
@@ -79,16 +70,6 @@ theorem proof_cons_types_tail {prog : SrcProgram} {prims : Prims} {ix_cons_types
   simp only [src_cons_types_tail] at h
   faithful [Lanius.Mini.consTypesTail]
 
-theorem proof_enum_src {prog : SrcProgram} {prims : Prims} {ix_enum_src ix_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : Nat} (fn : prog.funcs[ix_enum_src]? = some (src_enum_src ix_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType)) (np : prims.isPrim ix_enum_src = false)
-    (ext_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType n)) {n : Nat} :
-    Stmt_enum_src prog prims ix_enum_src n := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_enum_src] at h
-  faithful [Lanius.Mini.enumSrc]
-
 theorem proof_flat_payloads {prog : SrcProgram} {prims : Prims} {ix_flat_payloads ix_flatten_tys : Nat} (fn : prog.funcs[ix_flat_payloads]? = some (src_flat_payloads ix_flatten_tys)) (np : prims.isPrim ix_flat_payloads = false)
     (ext_flatten_tys : Certified (∀ {n : Nat}, Stmt_flatten_tys prog prims ix_flatten_tys n)) {n : Nat} :
     Stmt_flat_payloads prog prims ix_flat_payloads n := by
@@ -120,14 +101,35 @@ theorem proof_slice_type {prog : SrcProgram} {prims : Prims} {ix_slice_type ix_b
   simp only [src_slice_type] at h
   faithful [Lanius.Mini.sliceType]
 
-theorem proof_struct_src {prog : SrcProgram} {prims : Prims} {ix_struct_src ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcType : Nat} (fn : prog.funcs[ix_struct_src]? = some (src_struct_src ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcType)) (np : prims.isPrim ix_struct_src = false)
-    (ext_boxed_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcType n)) {n : Nat} :
-    Stmt_struct_src prog prims ix_struct_src n := by
+theorem proof_weight_add_to {prog : SrcProgram} {prims : Prims} {ix_weight_add_to ix_weight_sum : Nat} (fn : prog.funcs[ix_weight_add_to]? = some (src_weight_add_to ix_weight_sum)) (np : prims.isPrim ix_weight_add_to = false)
+    (ext_weight_sum : Certified (∀ {n : Nat}, Stmt_weight_sum prog prims ix_weight_sum n)) {n : Nat} :
+    Stmt_weight_add_to prog prims ix_weight_add_to n := by
   intro x0 x1 v0 v1 w h r0 r1
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_struct_src] at h
-  faithful [Lanius.Mini.structSrc]
+  simp only [src_weight_add_to] at h
+  faithful [Lanius.Mini.weightAddTo]
+
+theorem proof_weight_limit {prog : SrcProgram} {prims : Prims} {ix_weight_limit : Nat} (fn : prog.funcs[ix_weight_limit]? = some (src_weight_limit)) (np : prims.isPrim ix_weight_limit = false) {n : Nat} :
+    Stmt_weight_limit prog prims ix_weight_limit n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_weight_limit] at h
+  faithful [Lanius.Mini.weightLimit]
+
+theorem proof_weight_sum {prog : SrcProgram} {prims : Prims} {ix_weight_sum ix_minus ix_plus ix_weight_limit : Nat} (fn : prog.funcs[ix_weight_sum]? = some (src_weight_sum ix_minus ix_plus ix_weight_limit)) (np : prims.isPrim ix_weight_sum = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_weight_limit : Certified (∀ {n : Nat}, Stmt_weight_limit prog prims ix_weight_limit n)) {n : Nat} :
+    Stmt_weight_sum prog prims ix_weight_sum n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_weight_sum] at h
+  faithful [Lanius.Mini.weightSum]
 
 end Lanius.Faithful.SelfCert

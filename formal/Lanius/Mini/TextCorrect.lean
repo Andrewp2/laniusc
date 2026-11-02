@@ -128,12 +128,14 @@ import all Lanius.Mini.Frontend.P.flLog2Or0
 import all Lanius.Mini.Frontend.P.flNatHalf
 import all Lanius.Mini.Frontend.P.flRoundUp
 import all Lanius.Mini.Frontend.P.flattenTys
+import all Lanius.Mini.Frontend.P.weightAdd
 import all Lanius.Mini.Frontend.P.floatTyped
 import all Lanius.Mini.Frontend.P.fnInstRet
 import all Lanius.Mini.Frontend.P.forRange
 import all Lanius.Mini.Frontend.P.freshId
 import all Lanius.Mini.Frontend.P.frontEndWords
 import all Lanius.Mini.Frontend.P.funcsOnto
+import all Lanius.Mini.Frontend.P.allWeighed
 import all Lanius.Mini.Frontend.P.genericClose
 import all Lanius.Mini.Frontend.P.genericOpen
 import all Lanius.Mini.Frontend.P.grammarPart13

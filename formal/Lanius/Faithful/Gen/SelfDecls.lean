@@ -25,6 +25,7 @@ public import Lanius.Faithful.Gen.SelfDecl20
 public import Lanius.Faithful.Gen.SelfDecl21
 public import Lanius.Faithful.Gen.SelfDecl22
 public import Lanius.Faithful.Gen.SelfDecl23
+public import Lanius.Faithful.Gen.SelfDecl24
 import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
@@ -60,121 +61,125 @@ open Lanius.Faithful.Self
 -- The tails unfold one function at a time.
 set_option maxRecDepth 100000
 
-theorem dt24 : declareFuncs tail_end (declAt decls 0 0) = some decls := by
+theorem dt25 : declareFuncs tail_end (declAt decls 0 0) = some decls := by
   rw [declAt_zero]; rfl
 
-theorem dt23 : declareFuncs tail_binder_name_ok (declAt decls 0 0) = some decls := by
-  rw [show tail_binder_name_ok = dpart23 ++ tail_end from rfl]
+theorem dt24 : declareFuncs tail_col_quiet (declAt decls 0 0) = some decls := by
+  rw [show tail_col_quiet = dpart24 ++ tail_end from rfl]
+  exact declareFuncs_append (declsStep_eq dchunk24) dt25
+
+theorem dt23 : declareFuncs tail_text_result_ty (declAt decls 1 1) = some decls := by
+  rw [show tail_text_result_ty = dpart23 ++ tail_col_quiet from rfl]
   exact declareFuncs_append (declsStep_eq dchunk23) dt24
 
-theorem dt22 : declareFuncs tail_cons_bound (declAt decls 2 2) = some decls := by
-  rw [show tail_cons_bound = dpart22 ++ tail_binder_name_ok from rfl]
+theorem dt22 : declareFuncs tail_set_field_eff (declAt decls 2 2) = some decls := by
+  rw [show tail_set_field_eff = dpart22 ++ tail_text_result_ty from rfl]
   exact declareFuncs_append (declsStep_eq dchunk22) dt23
 
-theorem dt21 : declareFuncs tail_fl_exp_sign (declAt decls 4 5) = some decls := by
-  rw [show tail_fl_exp_sign = dpart21 ++ tail_cons_bound from rfl]
+theorem dt21 : declareFuncs tail_set_index_eval_of (declAt decls 4 5) = some decls := by
+  rw [show tail_set_index_eval_of = dpart21 ++ tail_set_field_eff from rfl]
   exact declareFuncs_append (declsStep_eq dchunk21) dt22
 
-theorem dt20 : declareFuncs tail_find_fn (declAt decls 4 7) = some decls := by
-  rw [show tail_find_fn = dpart20 ++ tail_fl_exp_sign from rfl]
+theorem dt20 : declareFuncs tail_set_field_or_eval (declAt decls 5 8) = some decls := by
+  rw [show tail_set_field_or_eval = dpart20 ++ tail_set_index_eval_of from rfl]
   exact declareFuncs_append (declsStep_eq dchunk20) dt21
 
-theorem dt19 : declareFuncs tail_stride_of_postfix (declAt decls 8 13) = some decls := by
-  rw [show tail_stride_of_postfix = dpart19 ++ tail_find_fn from rfl]
+theorem dt19 : declareFuncs tail_peel (declAt decls 8 13) = some decls := by
+  rw [show tail_peel = dpart19 ++ tail_set_field_or_eval from rfl]
   exact declareFuncs_append (declsStep_eq dchunk19) dt20
 
-theorem dt18 : declareFuncs tail_fl_int_at (declAt decls 10 15) = some decls := by
-  rw [show tail_fl_int_at = dpart18 ++ tail_stride_of_postfix from rfl]
+theorem dt18 : declareFuncs tail_cons_goal_tail (declAt decls 10 15) = some decls := by
+  rw [show tail_cons_goal_tail = dpart18 ++ tail_peel from rfl]
   exact declareFuncs_append (declsStep_eq dchunk18) dt19
 
-theorem dt17 : declareFuncs tail_pure_part (declAt decls 15 22) = some decls := by
-  rw [show tail_pure_part = dpart17 ++ tail_fl_int_at from rfl]
+theorem dt17 : declareFuncs tail_cons_goal (declAt decls 15 27) = some decls := by
+  rw [show tail_cons_goal = dpart17 ++ tail_cons_goal_tail from rfl]
   exact declareFuncs_append (declsStep_eq dchunk17) dt18
 
-theorem dt16 : declareFuncs tail_starts_with_kind (declAt decls 23 34) = some decls := by
-  rw [show tail_starts_with_kind = dpart16 ++ tail_pure_part from rfl]
+theorem dt16 : declareFuncs tail_decimal_digit (declAt decls 23 35) = some decls := by
+  rw [show tail_decimal_digit = dpart16 ++ tail_cons_goal from rfl]
   exact declareFuncs_append (declsStep_eq dchunk16) dt17
 
-theorem dt15 : declareFuncs tail_cons_type_tail (declAt decls 24 37) = some decls := by
-  rw [show tail_cons_type_tail = dpart15 ++ tail_starts_with_kind from rfl]
+theorem dt15 : declareFuncs tail_float_apply (declAt decls 24 39) = some decls := by
+  rw [show tail_float_apply = dpart15 ++ tail_decimal_digit from rfl]
   exact declareFuncs_append (declsStep_eq dchunk15) dt16
 
-theorem dt14 : declareFuncs tail_generic_close (declAt decls 24 39) = some decls := by
-  rw [show tail_generic_close = dpart14 ++ tail_cons_type_tail from rfl]
+theorem dt14 : declareFuncs tail_FArith_opcode (declAt decls 24 41) = some decls := by
+  rw [show tail_FArith_opcode = dpart14 ++ tail_float_apply from rfl]
   exact declareFuncs_append (declsStep_eq dchunk14) dt15
 
-theorem dt13 : declareFuncs tail_struct_src (declAt decls 27 42) = some decls := by
-  rw [show tail_struct_src = dpart13 ++ tail_generic_close from rfl]
+theorem dt13 : declareFuncs tail_close_effs (declAt decls 28 45) = some decls := by
+  rw [show tail_close_effs = dpart13 ++ tail_FArith_opcode from rfl]
   exact declareFuncs_append (declsStep_eq dchunk13) dt14
 
-theorem dt12 : declareFuncs tail_absorbed (declAt decls 28 46) = some decls := by
-  rw [show tail_absorbed = dpart12 ++ tail_struct_src from rfl]
+theorem dt12 : declareFuncs tail_Expr_is_atom (declAt decls 28 47) = some decls := by
+  rw [show tail_Expr_is_atom = dpart12 ++ tail_close_effs from rfl]
   exact declareFuncs_append (declsStep_eq dchunk12) dt13
 
-theorem dt11 : declareFuncs tail_let_call_closed (declAt decls 31 51) = some decls := by
-  rw [show tail_let_call_closed = dpart11 ++ tail_absorbed from rfl]
+theorem dt11 : declareFuncs tail_fn_name_at (declAt decls 31 52) = some decls := by
+  rw [show tail_fn_name_at = dpart11 ++ tail_Expr_is_atom from rfl]
   exact declareFuncs_append (declsStep_eq dchunk11) dt12
 
-theorem dt10 : declareFuncs tail_frame_memory_bytes (declAt decls 32 54) = some decls := by
-  rw [show tail_frame_memory_bytes = dpart10 ++ tail_let_call_closed from rfl]
+theorem dt10 : declareFuncs tail_fsp_save (declAt decls 32 55) = some decls := by
+  rw [show tail_fsp_save = dpart10 ++ tail_fn_name_at from rfl]
   exact declareFuncs_append (declsStep_eq dchunk10) dt11
 
-theorem dt9 : declareFuncs tail_spelled5 (declAt decls 35 59) = some decls := by
-  rw [show tail_spelled5 = dpart9 ++ tail_frame_memory_bytes from rfl]
+theorem dt9 : declareFuncs tail_alias_names_in (declAt decls 35 60) = some decls := by
+  rw [show tail_alias_names_in = dpart9 ++ tail_fsp_save from rfl]
   exact declareFuncs_append (declsStep_eq dchunk9) dt10
 
-theorem dt8 : declareFuncs tail_p_stmts_end (declAt decls 36 60) = some decls := by
-  rw [show tail_p_stmts_end = dpart8 ++ tail_spelled5 from rfl]
+theorem dt8 : declareFuncs tail_shr_first (declAt decls 36 62) = some decls := by
+  rw [show tail_shr_first = dpart8 ++ tail_alias_names_in from rfl]
   exact declareFuncs_append (declsStep_eq dchunk8) dt9
 
-theorem dt7 : declareFuncs tail_arg_slots (declAt decls 36 62) = some decls := by
-  rw [show tail_arg_slots = dpart7 ++ tail_p_stmts_end from rfl]
+theorem dt7 : declareFuncs tail_compile_expr (declAt decls 36 63) = some decls := by
+  rw [show tail_compile_expr = dpart7 ++ tail_shr_first from rfl]
   exact declareFuncs_append (declsStep_eq dchunk7) dt8
 
-theorem dt6 : declareFuncs tail_alias_decls (declAt decls 36 65) = some decls := by
-  rw [show tail_alias_decls = dpart6 ++ tail_arg_slots from rfl]
+theorem dt6 : declareFuncs tail_p_where_none (declAt decls 37 67) = some decls := by
+  rw [show tail_p_where_none = dpart6 ++ tail_compile_expr from rfl]
   exact declareFuncs_append (declsStep_eq dchunk6) dt7
 
-theorem dt5 : declareFuncs tail_eval_element (declAt decls 36 69) = some decls := by
-  rw [show tail_eval_element = dpart5 ++ tail_alias_decls from rfl]
+theorem dt5 : declareFuncs tail_within_payloads (declAt decls 37 71) = some decls := by
+  rw [show tail_within_payloads = dpart5 ++ tail_p_where_none from rfl]
   exact declareFuncs_append (declsStep_eq dchunk5) dt6
 
-theorem dt4 : declareFuncs tail_collect_front (declAt decls 38 77) = some decls := by
-  rw [show tail_collect_front = dpart4 ++ tail_eval_element from rfl]
+theorem dt4 : declareFuncs tail_collect_front (declAt decls 39 79) = some decls := by
+  rw [show tail_collect_front = dpart4 ++ tail_within_payloads from rfl]
   exact declareFuncs_append (declsStep_eq dchunk4) dt5
 
-theorem dt3 : declareFuncs tail_core_mem_typed_slice_from_storage_of_mini_selfhost_Stmt (declAt decls 41 83) = some decls := by
+theorem dt3 : declareFuncs tail_core_mem_typed_slice_from_storage_of_mini_selfhost_Stmt (declAt decls 42 85) = some decls := by
   rw [show tail_core_mem_typed_slice_from_storage_of_mini_selfhost_Stmt = dpart3 ++ tail_collect_front from rfl]
   exact declareFuncs_append (declsStep_eq dchunk3) dt4
 
-theorem dt2 : declareFuncs tail_lower_set_field (declAt decls 56 99) = some decls := by
+theorem dt2 : declareFuncs tail_lower_set_field (declAt decls 57 101) = some decls := by
   rw [show tail_lower_set_field = dpart2 ++ tail_core_mem_typed_slice_from_storage_of_mini_selfhost_Stmt from rfl]
   exact declareFuncs_append (declsStep_eq dchunk2) dt3
 
-theorem dt1 : declareFuncs tail_file_decls (declAt decls 64 112) = some decls := by
+theorem dt1 : declareFuncs tail_file_decls (declAt decls 65 114) = some decls := by
   rw [show tail_file_decls = dpart1 ++ tail_lower_set_field from rfl]
   exact declareFuncs_append (declsStep_eq dchunk1) dt2
 
-theorem dt0 : declareFuncs tail_app_main_w (declAt decls 131 177) = some decls := by
+theorem dt0 : declareFuncs tail_app_main_w (declAt decls 132 179) = some decls := by
   rw [show tail_app_main_w = dpart0 ++ tail_file_decls from rfl]
   exact declareFuncs_append (declsStep_eq dchunk0) dt1
 
-theorem decls_start : declAt decls 131 177 = ⟨[], []⟩ := by
+theorem decls_start : declAt decls 132 179 = ⟨[], []⟩ := by
   unfold declAt
-  rw [List.drop_eq_nil_of_le (by decide +kernel : decls.structs.length ≤ 131),
-    List.drop_eq_nil_of_le (by decide +kernel : decls.enums.length ≤ 177)]
+  rw [List.drop_eq_nil_of_le (by decide +kernel : decls.structs.length ≤ 132),
+    List.drop_eq_nil_of_le (by decide +kernel : decls.enums.length ≤ 179)]
 
 theorem prog_decls : prog.decls = decls :=
   decls_of_funcs (by rw [← decls_start]; exact dt0)
 
 -- The signatures fit a run of functions at a time.
-theorem funcs_dparts : prog.funcs = dpart0 ++ (dpart1 ++ (dpart2 ++ (dpart3 ++ (dpart4 ++ (dpart5 ++ (dpart6 ++ (dpart7 ++ (dpart8 ++ (dpart9 ++ (dpart10 ++ (dpart11 ++ (dpart12 ++ (dpart13 ++ (dpart14 ++ (dpart15 ++ (dpart16 ++ (dpart17 ++ (dpart18 ++ (dpart19 ++ (dpart20 ++ (dpart21 ++ (dpart22 ++ (dpart23))))))))))))))))))))))) := by rfl
+theorem funcs_dparts : prog.funcs = dpart0 ++ (dpart1 ++ (dpart2 ++ (dpart3 ++ (dpart4 ++ (dpart5 ++ (dpart6 ++ (dpart7 ++ (dpart8 ++ (dpart9 ++ (dpart10 ++ (dpart11 ++ (dpart12 ++ (dpart13 ++ (dpart14 ++ (dpart15 ++ (dpart16 ++ (dpart17 ++ (dpart18 ++ (dpart19 ++ (dpart20 ++ (dpart21 ++ (dpart22 ++ (dpart23 ++ (dpart24)))))))))))))))))))))))) := by rfl
 
-theorem entries_dents : (sigBlocks.map Prod.snd).flatten = dents0 ++ (dents1 ++ (dents2 ++ (dents3 ++ (dents4 ++ (dents5 ++ (dents6 ++ (dents7 ++ (dents8 ++ (dents9 ++ (dents10 ++ (dents11 ++ (dents12 ++ (dents13 ++ (dents14 ++ (dents15 ++ (dents16 ++ (dents17 ++ (dents18 ++ (dents19 ++ (dents20 ++ (dents21 ++ (dents22 ++ (dents23))))))))))))))))))))))) := by rfl
+theorem entries_dents : (sigBlocks.map Prod.snd).flatten = dents0 ++ (dents1 ++ (dents2 ++ (dents3 ++ (dents4 ++ (dents5 ++ (dents6 ++ (dents7 ++ (dents8 ++ (dents9 ++ (dents10 ++ (dents11 ++ (dents12 ++ (dents13 ++ (dents14 ++ (dents15 ++ (dents16 ++ (dents17 ++ (dents18 ++ (dents19 ++ (dents20 ++ (dents21 ++ (dents22 ++ (dents23 ++ (dents24)))))))))))))))))))))))) := by rfl
 
 theorem sigBlocks_fit : entriesFit prog.funcs (sigBlocks.map Prod.snd).flatten = true := by
   rw [funcs_dparts, entries_dents]
-  exact entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (dfit23) dfit22) dfit21) dfit20) dfit19) dfit18) dfit17) dfit16) dfit15) dfit14) dfit13) dfit12) dfit11) dfit10) dfit9) dfit8) dfit7) dfit6) dfit5) dfit4) dfit3) dfit2) dfit1) dfit0
+  exact entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (entriesFit_append (dfit24) dfit23) dfit22) dfit21) dfit20) dfit19) dfit18) dfit17) dfit16) dfit15) dfit14) dfit13) dfit12) dfit11) dfit10) dfit9) dfit8) dfit7) dfit6) dfit5) dfit4) dfit3) dfit2) dfit1) dfit0
 
 theorem callTy_self : callTy prog outside = sigCall (blockGet sigBlocks) :=
   callTy_eq_blocks sigBlocks_len sigBlocks_fit sigBlocks_outside

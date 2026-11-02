@@ -7,11 +7,11 @@ public import Lanius.Faithful.Gen.SelfStmt0
 public import Lanius.Faithful.Gen.SelfStmt2
 public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt7
+public import Lanius.Faithful.Gen.SelfStmtF_allWeighed
 public import Lanius.Faithful.Gen.SelfStmtF_allocClosed
 public import Lanius.Faithful.Gen.SelfStmtF_assertClosed
 public import Lanius.Faithful.Gen.SelfStmtF_eStructClosed
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
-public import Lanius.Faithful.Gen.SelfStmtF_funcsOnto
 public import Lanius.Faithful.Gen.SelfStmtF_letClosed
 public import Lanius.Faithful.Gen.SelfStmtF_letStructClosed
 public import Lanius.Faithful.Gen.SelfStmtF_setEvalClosed
