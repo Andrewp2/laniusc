@@ -545,6 +545,54 @@ bool in_place_read(uint row, uint op, bool across)
         x86_decl_analysis_by_token[declaration].definition == INVALID;
 }
 
+bool reads_declaration(uint value, uint declaration, uint total)
+{
+    return value < total && opt_ir_op(opt_ir_core[value]) == SEMANTIC_LIR_OP_VALUE_GET &&
+        opt_ir_operands[value].a == declaration;
+}
+
+// The local a value is produced straight into: the next row stores it there
+// (VALUE_SET or a plain STORE) and nothing else reads it, so the producer writes the local's
+// home (X86_LOCATION_DECLARATION) and the store is a self-move. Writing the
+// home one row early is safe because no in-place read of the local lives
+// across it (if_convert's alias proof stops at the store) unless it is an
+// operand of the producer itself, which is excluded, as are calls, whose
+// result moves span several rows. INVALID when there is no such local.
+uint store_home(uint row, uint op, uint position, uint last, uint total)
+{
+    if (last != position + 1u || last >= total || semantic_lir_is_call(op))
+        return INVALID;
+    uint consumer = semantic_schedule_order[last];
+    if (consumer >= total || x86_live_by_semantic[consumer] == 0u ||
+        opt_ir_operands[consumer].b != row)
+        return INVALID;
+    // A let (VALUE_SET) or an assignment to the local itself (STORE).
+    OptIrNodeCore store = opt_ir_core[consumer];
+    uint store_op = opt_ir_op(store);
+    if (store_op != SEMANTIC_LIR_OP_VALUE_SET &&
+        (store_op != SEMANTIC_LIR_OP_STORE ||
+         (store.flags & (SEMANTIC_LIR_FLAG_INDEXED | SEMANTIC_LIR_FLAG_FIELD)) != 0u))
+        return INVALID;
+    uint declaration = opt_ir_operands[consumer].a;
+    OptIrNodeOperands operands = opt_ir_operands[row];
+    if (declaration >= gParams.token_capacity || declaration >= X86_LOCATION_PAYLOAD_MASK ||
+        semantic_place_storage_by_token[declaration].x != 0u ||
+        !declaration_register_type(opt_ir_core[consumer].type_id) ||
+        opt_ir_core[consumer].type_id != opt_ir_core[row].type_id ||
+        reads_declaration(operands.b, declaration, total) ||
+        reads_declaration(operands.c, declaration, total))
+        return INVALID;
+    // `x = x op constant`: an immediate binary moves its one register operand
+    // into the result first (plan_binary_immediate), so it may be the local.
+    bool immediate_update = (op == SEMANTIC_LIR_OP_ADD || op == SEMANTIC_LIR_OP_SUB ||
+        op == SEMANTIC_LIR_OP_MUL || (op >= SEMANTIC_LIR_OP_BIT_AND &&
+        op <= SEMANTIC_LIR_OP_SHIFT_RIGHT)) &&
+        operands.b < total && x86_live_by_semantic[operands.b] == 0u;
+    if (reads_declaration(operands.a, declaration, total) && !immediate_update)
+        return INVALID;
+    return declaration;
+}
+
 void walk_function(uint function_id, uint start, uint end, uint total,
                    uint function_total)
 {
@@ -666,6 +714,13 @@ void walk_function(uint function_id, uint start, uint end, uint total,
                 (event_inside(position, pending & NEAR_MASK, last, false) ||
                  event_inside(position, pending >> 16u, last, true));
             in_place = gpr && sound && in_place_read(row, op, across);
+            uint home = gpr && sound && !in_place && !control_label(op)
+                ? store_home(row, op, position, last, total) : INVALID;
+            if (home != INVALID)
+            {
+                location = X86_LOCATION_DECLARATION | home;
+                in_place = true;
+            }
             if (gpr && sound && !control_label(op) && !in_place)
             {
                 uint allowed = across ? callee_free : caller_free | callee_free;
