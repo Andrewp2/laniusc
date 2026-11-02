@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Mini.Frontend.Types
+import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.arithShiftRight
 import Lanius.Mini.Frontend.P.basedDigits
 import Lanius.Mini.Frontend.P.bindsOfTys
@@ -11,6 +12,7 @@ import Lanius.Mini.Frontend.P.floatTyped
 import Lanius.Mini.Frontend.P.forRange
 import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
+import Lanius.Mini.Frontend.P.i32ArrayLength
 import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.isMatchStmt
 import Lanius.Mini.Frontend.P.isUnderscore
@@ -96,7 +98,10 @@ def letFirst (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) (res
         if decide (nodeProd (kid s 2) = (86)) && decide (nodeProd (kid s 3) = (88)) && !(member env.globals tok.text) && freshId scope (tok.start - env.base) then
           match tyOf fuel env (kid (kid s 2) 1) with
           | none => none
-          | some t => letOf (tok.start - env.base) t (letHeadOrEval (fuel - 1) env scope t (kid (kid s 3) 1)) (stmtsOf (fuel - 1) env (({ name := tok.text, id := tok.start - env.base, ty := t } : Local) :: scope) rest)
+          | some t =>
+            match viewRead (fuel - 1) env (({ name := tok.text, id := tok.start - env.base, ty := t } : Local) :: scope) ({ name := tok.text, id := tok.start - env.base, ty := t } : Local) (letHeadOrEval (fuel - 1) env scope t (kid (kid s 3) 1)) rest with
+            | some r => viewStmt (tok.start - env.base) r.length r.fields r.pointer.id (stmtsOf (fuel - 1) env (r.pointer :: ({ name := tok.text, id := tok.start - env.base, ty := t } : Local) :: scope) r.more)
+            | none => letOf (tok.start - env.base) t (letHeadOrEval (fuel - 1) env scope t (kid (kid s 3) 1)) (stmtsOf (fuel - 1) env (({ name := tok.text, id := tok.start - env.base, ty := t } : Local) :: scope) rest)
         else
           if decide (nodeProd (kid s 2) = (87)) && decide (nodeProd (kid s 3) = (88)) && !(member env.globals tok.text) && freshId scope (tok.start - env.base) then
             match untypedHead (fuel - 1) env scope (kid (kid s 3) 1) with

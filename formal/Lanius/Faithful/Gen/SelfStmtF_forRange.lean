@@ -22,11 +22,11 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_array_local (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Local} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepLocal x0 v0 →
-    (RepOption 295 RepArrayLocal) (Lanius.Mini.arrayLocal x0) w
+    (RepOption 298 RepArrayLocal) (Lanius.Mini.arrayLocal x0) w
 
 abbrev Stmt_array_local_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Option Lanius.Mini.ArrayParts} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepOption 260 RepArrayParts) x1 v1 →
-    (RepOption 295 RepArrayLocal) (Lanius.Mini.arrayLocalOf x0 x1) w
+    (RepOption 298 RepArrayLocal) (Lanius.Mini.arrayLocalOf x0 x1) w
 
 abbrev Stmt_for_array (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {x2 : Lanius.Mini.ArrayLocal} {x3 : Option Lanius.Mini.MStmt} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepNat x1 v1 → RepArrayLocal x2 v2 → (RepOption 249 RepMStmt) x3 v3 →

@@ -14,6 +14,11 @@ def allocClosed (id : Nat) (size : SrcExpr) (shift : Nat) (body : Option SrcStmt
   | none => none
   | some b => some (SrcStmt.letAlloc id size shift b)
 
+def letViewClosed (id : Nat) (length : Nat) (es : List SrcExpr) (pointer : Nat) (body : Option SrcStmt) : Option SrcStmt :=
+  match body with
+  | none => none
+  | some b => some (SrcStmt.letView id length es pointer b)
+
 def letSliceClosed (id : Nat) (element : Option SrcType) (p : SrcExpr) (n : SrcExpr) (body : Option SrcStmt) : Option SrcStmt :=
   match element with
   | none => none

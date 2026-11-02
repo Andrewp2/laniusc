@@ -25,8 +25,8 @@ abbrev Stmt_arm_value_trees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : P
     (RepList 82 RepCTree) (Lanius.Mini.armValueTrees x0) w
 
 abbrev Stmt_binds_of_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List (List Nat)} {x1 : Option (List Lanius.Mini.Ty)} {x2 : List Lanius.Mini.Bind} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepOption 210 (RepList 141 RepTy)) x1 v1 → (RepList 269 RepBind) x2 v2 →
-    (RepOption 268 (RepList 269 RepBind)) (Lanius.Mini.bindsOfTys x0 x1 x2) w
+  ∀ {x0 : List (List Nat)} {x1 : Option (List Lanius.Mini.Ty)} {x2 : List Lanius.Mini.Bind} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepOption 210 (RepList 141 RepTy)) x1 v1 → (RepList 271 RepBind) x2 v2 →
+    (RepOption 270 (RepList 271 RepBind)) (Lanius.Mini.bindsOfTys x0 x1 x2) w
 
 abbrev Stmt_is_false_arm (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepCTree x0 v0 →
@@ -41,8 +41,8 @@ abbrev Stmt_lit_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     RepBool (Lanius.Mini.litTy x0) w
 
 abbrev Stmt_method_binds (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.FnDecl} {x3 : List Lanius.Mini.Bind} {x4 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → RepFnDecl x2 v2 → (RepList 269 RepBind) x3 v3 → RepCTree x4 v4 →
-    (RepOption 268 (RepList 269 RepBind)) (Lanius.Mini.methodBinds x0 x1 x2 x3 x4) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.FnDecl} {x3 : List Lanius.Mini.Bind} {x4 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → RepFnDecl x2 v2 → (RepList 271 RepBind) x3 v3 → RepCTree x4 v4 →
+    (RepOption 270 (RepList 271 RepBind)) (Lanius.Mini.methodBinds x0 x1 x2 x3 x4) w
 
 abbrev Stmt_ty_per_arm (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Ty} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepTy x0 v0 → (RepList 82 RepCTree) x1 v1 →

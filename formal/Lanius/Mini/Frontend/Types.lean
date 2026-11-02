@@ -302,6 +302,8 @@ inductive MStmt where
   /-- the element type -/
   | mLetSlice : Nat → Ty → SrcExpr → SrcExpr → MStmt → MStmt
   | mLetIndex : Nat → Ty → Nat → SrcExpr → MStmt → MStmt
+  /-- let array: [i32; length] = [elements]; let pointer: ptr = core::mem::i32_array_data_ptr(array); body -/
+  | mLetView : Nat → Nat → (List SrcExpr) → Nat → MStmt → MStmt
   | mSetIndex : Nat → SrcExpr → SrcExpr → MStmt
   /-- the effectful forms -/
   | mLetEval : Nat → Ty → MEff → MStmt → MStmt
@@ -351,6 +353,8 @@ inductive LetHead where
   | allocOf : SrcExpr → Nat → LetHead
   /-- slice_from_raw_parts(pointer, length) -/
   | sliceOf : SrcExpr → SrcExpr → LetHead
+  /-- core::mem::i32_array_data_ptr(array): read only right after the array's let (stmts_of's LetView), never as a let of its own -/
+  | viewOf : SrcExpr → LetHead
   /-- slice[index], the slice a local -/
   | indexOf : Nat → SrcExpr → LetHead
   | evalOf : MEff → LetHead
@@ -397,6 +401,14 @@ structure ArgsBound where
 structure Untyped where
   ty : Ty
   head : LetHead
+  deriving Repr
+
+/-- `let a: [i32; n] = [elements];` right before `let p: ptr = core::mem::i32_array_data_ptr(a);` (let_first reads the two as a LetView): n, the elements, p's local and the statements after. -/
+structure ViewRead where
+  length : Nat
+  fields : List SrcExpr
+  pointer : Local
+  more : List CTree
   deriving Repr
 
 /-- An array local: its id, element type and length. -/

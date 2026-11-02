@@ -59,6 +59,7 @@ def writesLocal (s : MStmt) (id : Nat) : Bool :=
   | .mFree a b k => false
   | .mLetSlice x t a b rest => writesLocal rest id
   | .mLetIndex x t sl e rest => writesLocal rest id
+  | .mLetView x n es p rest => writesLocal rest id
   | .mSetIndex x i e => false
   | .mLetEval x t e rest => writesLocal rest id
   | .mSetEval x e => decide (x = id)

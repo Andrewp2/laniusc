@@ -2608,6 +2608,24 @@ theorem lchunk24 : LivesOk prims outside liveBad liveWrap 2400 part24 :=
   livesOk_cons (.inr lok2496) <|
   livesOk_cons (.inr lok2497) <|
   livesOk_cons (.inr lok2498) <|
+  livesOk_cons (.inr lok2499) <|
+  livesOk_nil
+
+theorem lchunk25 : LivesOk prims outside liveBad liveWrap 2500 part25 :=
+  livesOk_cons (.inr lok2500) <|
+  livesOk_cons (.inr lok2501) <|
+  livesOk_cons (.inr lok2502) <|
+  livesOk_cons (.inr lok2503) <|
+  livesOk_cons (.inr lok2504) <|
+  livesOk_cons (.inr lok2505) <|
+  livesOk_cons (.inr lok2506) <|
+  livesOk_cons (.inr lok2507) <|
+  livesOk_cons (.inr lok2508) <|
+  livesOk_cons (.inr lok2509) <|
+  livesOk_cons (.inr lok2510) <|
+  livesOk_cons (.inr lok2511) <|
+  livesOk_cons (.inr lok2512) <|
+  livesOk_cons (.inr lok2513) <|
   livesOk_nil
 
 /-- Every function of the self program but the prims, those `outside`, those in
@@ -2615,6 +2633,6 @@ theorem lchunk24 : LivesOk prims outside liveBad liveWrap 2400 part24 :=
 theorem livesOk : LivesOk prims outside liveBad liveWrap 0 prog.funcs := by
   rw [funcs_parts]
   exact
-    livesOk_append lchunk0 (livesOk_append lchunk1 (livesOk_append lchunk2 (livesOk_append lchunk3 (livesOk_append lchunk4 (livesOk_append lchunk5 (livesOk_append lchunk6 (livesOk_append lchunk7 (livesOk_append lchunk8 (livesOk_append lchunk9 (livesOk_append lchunk10 (livesOk_append lchunk11 (livesOk_append lchunk12 (livesOk_append lchunk13 (livesOk_append lchunk14 (livesOk_append lchunk15 (livesOk_append lchunk16 (livesOk_append lchunk17 (livesOk_append lchunk18 (livesOk_append lchunk19 (livesOk_append lchunk20 (livesOk_append lchunk21 (livesOk_append lchunk22 (livesOk_append lchunk23 (lchunk24))))))))))))))))))))))))
+    livesOk_append lchunk0 (livesOk_append lchunk1 (livesOk_append lchunk2 (livesOk_append lchunk3 (livesOk_append lchunk4 (livesOk_append lchunk5 (livesOk_append lchunk6 (livesOk_append lchunk7 (livesOk_append lchunk8 (livesOk_append lchunk9 (livesOk_append lchunk10 (livesOk_append lchunk11 (livesOk_append lchunk12 (livesOk_append lchunk13 (livesOk_append lchunk14 (livesOk_append lchunk15 (livesOk_append lchunk16 (livesOk_append lchunk17 (livesOk_append lchunk18 (livesOk_append lchunk19 (livesOk_append lchunk20 (livesOk_append lchunk21 (livesOk_append lchunk22 (livesOk_append lchunk23 (livesOk_append lchunk24 (lchunk25)))))))))))))))))))))))))
 
 end Lanius.Faithful.SelfPure

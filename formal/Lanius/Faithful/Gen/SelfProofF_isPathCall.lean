@@ -118,6 +118,28 @@ theorem proof_text_err {prog : SrcProgram} {prims : Prims} {ix_text_err ix_singl
   simp only [src_text_err] at h
   faithful [Lanius.Mini.textErr]
 
+theorem proof_text_i32_array_data_ptr {prog : SrcProgram} {prims : Prims} {ix_text_i32_array_data_ptr ix_single_of_usize ix_cons_of_usize : Nat} (fn : prog.funcs[ix_text_i32_array_data_ptr]? = some (src_text_i32_array_data_ptr ix_single_of_usize ix_cons_of_usize)) (np : prims.isPrim ix_text_i32_array_data_ptr = false)
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n)) {n : Nat} :
+    Stmt_text_i32_array_data_ptr prog prims ix_text_i32_array_data_ptr n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_text_i32_array_data_ptr] at h
+  faithful [Lanius.Mini.textI32ArrayDataPtr]
+
+theorem proof_text_mem {prog : SrcProgram} {prims : Prims} {ix_text_mem ix_single_of_usize ix_cons_of_usize : Nat} (fn : prog.funcs[ix_text_mem]? = some (src_text_mem ix_single_of_usize ix_cons_of_usize)) (np : prims.isPrim ix_text_mem = false)
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n)) {n : Nat} :
+    Stmt_text_mem prog prims ix_text_mem n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_text_mem] at h
+  faithful [Lanius.Mini.textMem]
+
 theorem proof_text_none {prog : SrcProgram} {prims : Prims} {ix_text_none ix_single_of_usize ix_cons_of_usize : Nat} (fn : prog.funcs[ix_text_none]? = some (src_text_none ix_single_of_usize ix_cons_of_usize)) (np : prims.isPrim ix_text_none = false)
     (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
     (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n)) {n : Nat} :

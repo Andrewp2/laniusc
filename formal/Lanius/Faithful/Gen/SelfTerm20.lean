@@ -72,64 +72,64 @@ theorem ok_cons_inst : FnOk prog prims info (948, ⟨1, [], 0⟩) :=
 theorem ok_named_insts : FnOk prog prims info (949, ⟨14, [0], 0⟩) :=
   fnOk_of fn_named_insts (by decide +kernel)
 
-theorem ok_eff_named_tys : FnOk prog prims info (954, ⟨1, [0], 0⟩) :=
+theorem ok_eff_named_tys : FnOk prog prims info (955, ⟨1, [0], 0⟩) :=
   fnOk_of fn_eff_named_tys (by decide +kernel)
 
-theorem ok_add_inst : FnOk prog prims info (956, ⟨5, [], 0⟩) :=
+theorem ok_add_inst : FnOk prog prims info (957, ⟨5, [], 0⟩) :=
   fnOk_of fn_add_inst (by decide +kernel)
 
-theorem ok_single_of_mini_selfhost_Inst : FnOk prog prims info (957, ⟨0, [], 0⟩) :=
+theorem ok_single_of_mini_selfhost_Inst : FnOk prog prims info (958, ⟨0, [], 0⟩) :=
   fnOk_of fn_single_of_mini_selfhost_Inst (by decide +kernel)
 
-theorem ok_concat_of_mini_selfhost_Inst : FnOk prog prims info (958, ⟨0, [0], 0⟩) :=
+theorem ok_concat_of_mini_selfhost_Inst : FnOk prog prims info (959, ⟨0, [0], 0⟩) :=
   fnOk_of fn_concat_of_mini_selfhost_Inst (by decide +kernel)
 
-theorem ok_eff_calls : FnOk prog prims info (959, ⟨1, [0], 0⟩) :=
+theorem ok_eff_calls : FnOk prog prims info (960, ⟨1, [0], 0⟩) :=
   fnOk_of fn_eff_calls (by decide +kernel)
 
-theorem ok_extern_func : FnOk prog prims info (961, ⟨12, [], 0⟩) :=
+theorem ok_extern_func : FnOk prog prims info (962, ⟨12, [], 0⟩) :=
   fnOk_of fn_extern_func (by decide +kernel)
 
-theorem ok_diverges : FnOk prog prims info (962, ⟨4, [], 0⟩) :=
+theorem ok_diverges : FnOk prog prims info (963, ⟨4, [], 0⟩) :=
   fnOk_of fn_diverges (by decide +kernel)
 
-theorem ok_diverge_func : FnOk prog prims info (963, ⟨2, [], 0⟩) :=
+theorem ok_diverge_func : FnOk prog prims info (964, ⟨2, [], 0⟩) :=
   fnOk_of fn_diverge_func (by decide +kernel)
 
-theorem ok_read_fn : FnOk prog prims info (964, ⟨39, [], 0⟩) :=
+theorem ok_read_fn : FnOk prog prims info (965, ⟨39, [], 0⟩) :=
   fnOk_of fn_read_fn (by decide +kernel)
 
-theorem ok_init_tys : FnOk prog prims info (965, ⟨1, [0], 0⟩) :=
+theorem ok_init_tys : FnOk prog prims info (966, ⟨1, [0], 0⟩) :=
   fnOk_of fn_init_tys (by decide +kernel)
 
-theorem ok_single_of_mini_selfhost_MParam : FnOk prog prims info (966, ⟨0, [], 0⟩) :=
+theorem ok_single_of_mini_selfhost_MParam : FnOk prog prims info (967, ⟨0, [], 0⟩) :=
   fnOk_of fn_single_of_mini_selfhost_MParam (by decide +kernel)
 
-theorem ok_length_of_mini_selfhost_FnDecl : FnOk prog prims info (967, ⟨2, [0], 0⟩) :=
+theorem ok_length_of_mini_selfhost_FnDecl : FnOk prog prims info (968, ⟨2, [0], 0⟩) :=
   fnOk_of fn_length_of_mini_selfhost_FnDecl (by decide +kernel)
 
-theorem ok_struct_field_tys : FnOk prog prims info (968, ⟨13, [], 0⟩) :=
+theorem ok_struct_field_tys : FnOk prog prims info (969, ⟨13, [], 0⟩) :=
   fnOk_of fn_struct_field_tys (by decide +kernel)
 
-theorem ok_get_of_mini_selfhost_Ty : FnOk prog prims info (969, ⟨1, [0], 0⟩) :=
+theorem ok_get_of_mini_selfhost_Ty : FnOk prog prims info (970, ⟨1, [0], 0⟩) :=
   fnOk_of fn_get_of_mini_selfhost_Ty (by decide +kernel)
 
-theorem ok_low_bits : FnOk prog prims info (980, ⟨0, [], 0⟩) :=
+theorem ok_low_bits : FnOk prog prims info (981, ⟨0, [], 0⟩) :=
   fnOk_of fn_low_bits (by decide +kernel)
 
-theorem ok_optimize_both : FnOk prog prims info (981, ⟨2, [], 0⟩) :=
+theorem ok_optimize_both : FnOk prog prims info (982, ⟨2, [], 0⟩) :=
   fnOk_of fn_optimize_both (by decide +kernel)
 
-theorem ok_optimize_left : FnOk prog prims info (982, ⟨3, [], 0⟩) :=
+theorem ok_optimize_left : FnOk prog prims info (983, ⟨3, [], 0⟩) :=
   fnOk_of fn_optimize_left (by decide +kernel)
 
-theorem ok_optimize_right : FnOk prog prims info (983, ⟨3, [], 0⟩) :=
+theorem ok_optimize_right : FnOk prog prims info (984, ⟨3, [], 0⟩) :=
   fnOk_of fn_optimize_right (by decide +kernel)
 
-theorem ok_Word_test : FnOk prog prims info (984, ⟨2, [], 0⟩) :=
+theorem ok_Word_test : FnOk prog prims info (985, ⟨2, [], 0⟩) :=
   fnOk_of fn_Word_test (by decide +kernel)
 
-theorem ok_fact_or : FnOk prog prims info (985, ⟨0, [2], 1⟩) :=
+theorem ok_fact_or : FnOk prog prims info (986, ⟨0, [2], 1⟩) :=
   fnOk_of fn_fact_or (by decide +kernel)
 
 theorem chunk20 : AllFns prog prims info part20 :=

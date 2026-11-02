@@ -1,0 +1,5 @@
+// The stdlib's spelling: a repeat literal and both lets on one line.
+fn run(n: i32) -> i32 {
+    let words: [i32; 4] = [0;4]; let pointer: ptr = core::mem::i32_array_data_ptr(words);
+    return n;
+}

@@ -1,0 +1,7 @@
+// The data pointer is read only directly after the array's let.
+fn run(n: i32) -> i32 {
+    let a: [i32; 2] = [1, 2];
+    let m: i32 = n;
+    let p: ptr = core::mem::i32_array_data_ptr(a);
+    return m;
+}

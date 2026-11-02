@@ -18,6 +18,16 @@ def isPathCall (pf : CTree) : Bool :=
   let tail : CTree := kid pf 1
   decide (nodeProd primary = (173)) && decide (nodeProd (kid primary 1) = (274)) && decide (nodeProd tail = (161)) && decide (nodeProd (kid tail 3) = (164))
 
+/-- mem -/
+def textMem : List Nat :=
+  let t : List Nat := 109 :: 101 :: [109]
+  t
+
+/-- i32_array_data_ptr -/
+def textI32ArrayDataPtr : List Nat :=
+  let t : List Nat := 105 :: 51 :: 50 :: 95 :: 97 :: 114 :: 114 :: 97 :: 121 :: 95 :: 100 :: 97 :: 116 :: 97 :: 95 :: 112 :: 116 :: [114]
+  t
+
 /-- core -/
 def textCore : List Nat :=
   let t : List Nat := 99 :: 111 :: 114 :: [101]

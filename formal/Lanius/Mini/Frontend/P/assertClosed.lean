@@ -48,6 +48,7 @@ def closeStmt (fuel : Nat) (t : Tables) (m : MStmt) : Option SrcStmt :=
   | .mFree p size shift => some (SrcStmt.free p size shift)
   | .mLetSlice id e p n body => letSliceClosed id (closeTy fuel t e) p n (closeStmt fuel t body)
   | .mLetIndex id ty s i body => letIndexClosed id (closeTy fuel t ty) s i (closeStmt fuel t body)
+  | .mLetView id n es p body => letViewClosed id n es p (closeStmt fuel t body)
   | .mSetIndex s i v => some (SrcStmt.setIndex s i v)
   | .mLetEval id ty x body => letEvalClosed id (closeTy fuel t ty) (closeEff fuel t x) (closeStmt fuel t body)
   | .mSetEval id x => setEvalClosed id (closeEff fuel t x)

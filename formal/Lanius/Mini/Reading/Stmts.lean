@@ -55,6 +55,9 @@ import all Lanius.Mini.Frontend.P.tryLocalOf
 import all Lanius.Mini.Frontend.P.typeDeclAt
 import all Lanius.Mini.Frontend.P.whileEvalOf
 import all Lanius.Mini.Frontend.P.wideOf
+import all Lanius.Mini.Frontend.P.i32ArrayLength
+import all Lanius.Mini.Frontend.P.ifSome
+import all Lanius.Mini.Frontend.P.callParts
 
 @[expose] public section
 /-! # The reading, V8d: statements
@@ -447,6 +450,7 @@ theorem returnOrEval_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {e
             | matchOf _ _ _ => cases hs
             | allocOf _ _ => cases hs
             | indexOf _ _ => cases hs
+            | viewOf _ => cases hs
             | evalOf _ => cases hs
             | tryOf _ => cases hs
   | none =>
@@ -1055,6 +1059,76 @@ theorem someBlockArm_sound {fuel : Nat} : ∀ {arms : List CTree}, someBlockArm 
 def BlockMatch (init : CTree) : Prop :=
   ∃ m arms a list, MatchInit init m ∧ Items (kid m 5) arms ∧ a ∈ arms ∧ ArmBlockR a list
 
+theorem literalHead_some {h : Option LetHead} {fields : List SrcExpr} (e : literalHead h = some fields) :
+    h = some (.literalOf fields) := by
+  cases h with
+  | none => simp [literalHead] at e
+  | some hd => cases hd <;> simp_all [literalHead]
+
+theorem i32ArrayLength_some {t : Ty} {n : Nat} (e : i32ArrayLength t = some n) : t = .tyArray .tyI32 n := by
+  cases t with
+  | tyArray el k =>
+    simp only [i32ArrayLength, arrayParts, ifSome] at e
+    split at e
+    · rename_i same
+      simp only [Option.some.injEq] at e
+      rw [(sameTy_iff _ _).1 same, e]
+    · cases e
+  | tyI32 | tyBool | tyUint _ | tyPtr | tyIsize | tyChar | tyFloat _ | tySlice _ | tyNamed _ _ | tySint _ =>
+    simp [i32ArrayLength, arrayParts] at e
+
+theorem isPtrOf_some {t : Option Ty} (e : isPtrOf t = true) : t = some .tyPtr := by
+  cases t with
+  | none => simp [isPtrOf] at e
+  | some x => cases x <;> simp_all [isPtrOf, isPtrTy]
+
+theorem viewsLocal_some {h : Option LetHead} {id : Nat} (e : viewsLocal h id = true) :
+    h = some (.viewOf (.local id)) := by
+  cases h with
+  | none => simp [viewsLocal] at e
+  | some hd =>
+    cases hd with
+    | viewOf x =>
+      simp only [viewsLocal] at e
+      cases x <;> simp_all [pureLocal, namesLocal]
+    | plain _ | callOf _ | variantOf _ _ | literalOf _ | matchOf _ _ _ | allocOf _ _ | sliceOf _ _ | indexOf _ _
+    | evalOf _ | tryOf _ => simp [viewsLocal] at e
+
+/-- What `viewRead` checks of the statement after an array's let. -/
+theorem viewRead_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {a : Local} {h : Option LetHead}
+    {rest : List CTree} {r : ViewRead} (hv : viewRead fuel env scope a h rest = some r) :
+    ∃ v, h = some (.literalOf r.fields) ∧ a.ty = .tyArray .tyI32 r.length ∧ rest = v :: r.more ∧
+      r.pointer = { name := (kidToken v 1).text, id := (kidToken v 1).start - env.base, ty := .tyPtr } ∧
+      nodeProd v = pLetStmt ∧ nodeProd (kid v 2) = pLetType ∧ nodeProd (kid v 3) = pLetInit ∧
+      (kidToken v 1).text ∉ env.globals ∧ FreshId scope ((kidToken v 1).start - env.base) ∧
+      TyR env (kid (kid v 2) 1) .tyPtr ∧ LetHeadR env scope (kid (kid v 3) 1) (.viewOf (.local a.id)) := by
+  unfold viewRead at hv
+  cases hl : literalHead h with
+  | none => rw [hl] at hv; cases hv
+  | some fields =>
+    rw [hl] at hv
+    simp only at hv
+    cases hn : i32ArrayLength a.ty with
+    | none => rw [hn] at hv; cases hv
+    | some n =>
+      rw [hn] at hv
+      simp only at hv
+      cases rest with
+      | nil => cases hv
+      | cons v more =>
+        simp only [viewPointer] at hv
+        split at hv
+        · rename_i c
+          simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true'] at c
+          obtain ⟨⟨⟨⟨⟨⟨pl, lt⟩, li⟩, ng⟩, fr⟩, pt⟩, vl⟩ := c
+          simp only [Option.some.injEq] at hv
+          subst hv
+          refine ⟨v, literalHead_some hl, i32ArrayLength_some hn, rfl, rfl, pl, lt, li, fun mem => ?_,
+            (freshId_iff _ _).1 fr, tyOf_sound (isPtrOf_some pt), letHead_sound (viewsLocal_some vl)⟩
+          rw [(member_iff _ _).2 mem] at ng
+          cases ng
+        · cases hv
+
 theorem isBlockMatch_sound {fuel : Nat} {init : CTree} (h : isBlockMatch fuel init = true) : BlockMatch init := by
   unfold isBlockMatch at h
   cases hm : matchInit fuel init with
@@ -1150,6 +1224,24 @@ inductive StmtsR (env : FrontEnv) : List Local → List CTree → MStmt → Prop
       LitArmsR env scope h (.litLet { name := (kidToken s 1).text, id := (kidToken s 1).start - env.base, ty := t } body)
         false false arms c →
       litBind h (some c) = some mm → StmtsR env scope (s :: rest) mm
+  /-- `let a: [i32; n] = [elements]; let p: ptr = core::mem::i32_array_data_ptr(a); rest`:
+  Core's view of a (`LetView`; SEMANTIC_DECISIONS "Addressed locals" point 5). -/
+  | letView {scope : List Local} {s v : CTree} {rest : List CTree} {n : Nat} {fields : List SrcExpr} {body : MStmt} :
+      nodeProd s = pLetStmt → nodeProd (kid s 2) = pLetType → nodeProd (kid s 3) = pLetInit →
+      (kidToken s 1).text ∉ env.globals → FreshId scope ((kidToken s 1).start - env.base) →
+      TyR env (kid (kid s 2) 1) (.tyArray .tyI32 n) →
+      LetInitR env scope (.tyArray .tyI32 n) (kid (kid s 3) 1) (.literalOf fields) →
+      nodeProd v = pLetStmt → nodeProd (kid v 2) = pLetType → nodeProd (kid v 3) = pLetInit →
+      (kidToken v 1).text ∉ env.globals →
+      FreshId ({ name := (kidToken s 1).text, id := (kidToken s 1).start - env.base, ty := .tyArray .tyI32 n } :: scope)
+        ((kidToken v 1).start - env.base) →
+      TyR env (kid (kid v 2) 1) .tyPtr →
+      LetHeadR env ({ name := (kidToken s 1).text, id := (kidToken s 1).start - env.base, ty := .tyArray .tyI32 n } :: scope)
+        (kid (kid v 3) 1) (.viewOf (.local ((kidToken s 1).start - env.base))) →
+      StmtsR env ({ name := (kidToken v 1).text, id := (kidToken v 1).start - env.base, ty := .tyPtr } ::
+        { name := (kidToken s 1).text, id := (kidToken s 1).start - env.base, ty := .tyArray .tyI32 n } :: scope) rest body →
+      StmtsR env scope (s :: v :: rest)
+        (.mLetView ((kidToken s 1).start - env.base) n fields ((kidToken v 1).start - env.base) body)
   | last {scope : List Local} {s : CTree} {m : MStmt} : nodeProd s ≠ pLetStmt → StmtR env scope s m →
       StmtsR env scope [s] m
   | seq {scope : List Local} {s next : CTree} {more : List CTree} {a b : MStmt} : nodeProd s ≠ pLetStmt →
@@ -1478,21 +1570,44 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
         | none => rw [ht] at h; cases h
         | some t =>
           rw [ht] at h
-          simp only [letOf] at h
-          cases hh : letHeadOrEval f env scope t (kid (kid s 3) 1) with
-          | none => rw [hh] at h; cases h
-          | some hd =>
-            rw [hh] at h
-            simp only [letBody] at h
-            cases hb : stmtsOf f env ({ name := (kidToken s 1).text, id := (kidToken s 1).start - env.base, ty := t } ::
-                scope) rest with
+          simp only at h
+          cases hv : viewRead f env ({ name := (kidToken s 1).text, id := (kidToken s 1).start - env.base, ty := t } :: scope)
+              { name := (kidToken s 1).text, id := (kidToken s 1).start - env.base, ty := t }
+              (letHeadOrEval f env scope t (kid (kid s 3) 1)) rest with
+          | some r =>
+            rw [hv] at h
+            obtain ⟨v, hd, at', rfl, pe, vl, vt, vi, vg, vf, vty, vh⟩ := viewRead_sound hv
+            simp only at at'
+            subst at'
+            simp only [viewStmt] at h
+            cases hb : stmtsOf f env (r.pointer :: ({ name := (kidToken s 1).text, id := (kidToken s 1).start - env.base, ty := .tyArray .tyI32 r.length } : Local) :: scope) r.more with
             | none => rw [hb] at h; cases h
             | some body =>
               rw [hb] at h
-              refine .let pl lt li (fun mem => ?_) ((freshId_iff _ _).1 fr) (tyOf_sound ht) (letHeadOrEval_sound hh)
-                (ihStmts hb) h
+              simp only [Option.some.injEq] at h
+              subst h
+              rw [pe] at hb ⊢
+              refine .letView pl lt li (fun mem => ?_) ((freshId_iff _ _).1 fr) (tyOf_sound ht) (letHeadOrEval_sound hd)
+                vl vt vi vg vf vty vh (ihStmts hb)
               rw [(member_iff _ _).2 mem] at ng
               cases ng
+          | none =>
+            rw [hv] at h
+            simp only [letOf] at h
+            cases hh : letHeadOrEval f env scope t (kid (kid s 3) 1) with
+            | none => rw [hh] at h; cases h
+            | some hd =>
+              rw [hh] at h
+              simp only [letBody] at h
+              cases hb : stmtsOf f env ({ name := (kidToken s 1).text, id := (kidToken s 1).start - env.base, ty := t } ::
+                  scope) rest with
+              | none => rw [hb] at h; cases h
+              | some body =>
+                rw [hb] at h
+                refine .let pl lt li (fun mem => ?_) ((freshId_iff _ _).1 fr) (tyOf_sound ht) (letHeadOrEval_sound hh)
+                  (ihStmts hb) h
+                rw [(member_iff _ _).2 mem] at ng
+                cases ng
       · split at h
         · rename_i _ _ _ c
           simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true'] at c

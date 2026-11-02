@@ -1,0 +1,6 @@
+// The data pointer's local must be typed ptr.
+fn run(n: i32) -> i32 {
+    let a: [i32; 2] = [1, 2];
+    let p: i32 = core::mem::i32_array_data_ptr(a);
+    return n;
+}

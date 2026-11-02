@@ -4,12 +4,14 @@ public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.distinct
 import Lanius.Mini.Frontend.P.fnInstRet
 import Lanius.Mini.Frontend.P.hasKids
+import Lanius.Mini.Frontend.P.isPathCall
 import Lanius.Mini.Frontend.P.isTryEnum
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.noTrees
 import Lanius.Mini.Frontend.P.textSelf
 import Lanius.Mini.Frontend.P.textSliceLen
 import Lanius.Mini.Frontend.P.typePathSpellings
+import Lanius.Mini.Frontend.P.viewHead
 import Lanius.Mini.Frontend.P.wideOf
 
 public section
@@ -47,9 +49,13 @@ def allocPath : List (List Nat) :=
 def deallocPath : List (List Nat) :=
   textAlloc :: textAllocator :: [textDealloc]
 
-/-- The allocator's calls, raw views, slice strides and `assert` are the language's own: no function or variant is read at these paths. -/
+/-- core::mem::i32_array_data_ptr, Core's view of an i32 array local -/
+def viewPath : List (List Nat) :=
+  textCore :: textMem :: [textI32ArrayDataPtr]
+
+/-- The allocator's calls, raw views, slice strides, `assert` and an i32 array's data pointer are the language's own: no function or variant is read at these paths. -/
 def builtinPath (ss : List (List Nat)) : Bool :=
-  sameSpellings ss allocPath || sameSpellings ss deallocPath || sameSpellings ss [textSliceFromRawParts] || sameSpellings ss [textSliceStride] || sameSpellings ss [textSliceLen] || sameSpellings ss [textAssert]
+  sameSpellings ss allocPath || sameSpellings ss deallocPath || sameSpellings ss [textSliceFromRawParts] || sameSpellings ss [textSliceStride] || sameSpellings ss [textSliceLen] || sameSpellings ss [textAssert] || sameSpellings ss viewPath
 
 /-- A path's module and last name, the path not reserved. -/
 def namedSplit (ss : List (List Nat)) : Option Split :=
@@ -67,7 +73,10 @@ def callPathHead (fuel : Nat) (env : FrontEnv) (scope : List Local) (path : CTre
     if isPath segments [textSliceFromRawParts] then
       sliceHead (argsOf fuel env scope args)
     else
-      none
+      if isPath segments viewPath then
+        viewHead (argsOf fuel env scope args)
+      else
+        none
 
 def fieldValues (fs : List CTree) : List CTree :=
   match fs with

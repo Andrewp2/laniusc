@@ -828,8 +828,24 @@ verified compiler's locals are 64-bit slots with no address. The design:
      are `none`, as `letAlloc`'s. Proved: `stmt_letView` in
      `LowerEval.sound_both` and `stops_letView` (`Mini/ViewLower.lean`,
      `LowerStops.lean`), the Faithful growth of a trapped `LetView`
-     (`view_trap_grows`). LaniusMini and every gate target build; the
-     front end does not read `LetView` yet (stage d).
+     (`view_trap_grows`). LaniusMini and every gate target build.
+     (d), decided while doing it (11-02, f6v): the front end reads the two
+     lets as one statement only when the pointer's let comes directly
+     after the array's (`let a: [i32; n] = [..]; let p: ptr =
+     core::mem::i32_array_data_ptr(a);`, the stdlib's spelling, on one line
+     or two). `core::mem::i32_array_data_ptr` is a reserved path (a seventh
+     entry of `builtinPaths`), so it is never read as a call of a function;
+     its let head is `viewOf x`, which no single let reads, so a pointer
+     let anywhere else (after another statement, typed other than `ptr`,
+     of a local that is not the array just declared) leaves the function
+     unread. The array's literal must have `n` elements (`[v; n]` counts),
+     and `p` must be fresh and not a global. Uniqueness: a list whose first
+     statement is such a pointer let has no reading
+     (`stmtsR_noViewHead`), so the array's let read as a plain `let`
+     cannot overlap the combined reading. The builder reads the pair in
+     `let_first`, inline, since its mutual recursion only calls itself at
+     fuel minus one. Frontend cases `view_array`, `view_repeat` (read and
+     compiled), `reject_view_gap`, `reject_view_type`.
 6. **`str`** is (pointer, length) of read-only bytes in a static region
    above frame memory, a literal's bytes placed by the loader (Core's
    `.string` value names no address, so any region outside Core's heap

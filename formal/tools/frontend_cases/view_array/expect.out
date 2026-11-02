@@ -1,0 +1,1 @@
+{ params := [{ id := 0, ty := .i32 }], ret := .i32, body := (.letView 1 2 [(.int 1), (.int 2)] 2 (.return (.local 0))) }

@@ -77,4 +77,14 @@ theorem proof_let_slice_closed {prog : SrcProgram} {prims : Prims} {ix_let_slice
   simp only [src_let_slice_closed] at h
   faithful [Lanius.Mini.letSliceClosed]
 
+theorem proof_let_view_closed {prog : SrcProgram} {prims : Prims} {ix_let_view_closed ix_boxed_of_mini_selfhost_SrcStmt : Nat} (fn : prog.funcs[ix_let_view_closed]? = some (src_let_view_closed ix_boxed_of_mini_selfhost_SrcStmt)) (np : prims.isPrim ix_let_view_closed = false)
+    (ext_boxed_of_mini_selfhost_SrcStmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcStmt prog prims ix_boxed_of_mini_selfhost_SrcStmt n)) {n : Nat} :
+    Stmt_let_view_closed prog prims ix_let_view_closed n := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_let_view_closed] at h
+  faithful [Lanius.Mini.letViewClosed]
+
 end Lanius.Faithful.SelfCert

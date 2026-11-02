@@ -196,6 +196,15 @@ theorem proof_empty_of_mini_selfhost_RawTok {prog : SrcProgram} {prims : Prims} 
   simp only [src_empty_of_mini_selfhost_RawTok] at h
   faithful []
 
+theorem proof_field_id_Local_of_mini_selfhost_Local {prog : SrcProgram} {prims : Prims} {ix_field_id_Local_of_mini_selfhost_Local : Nat} (fn : prog.funcs[ix_field_id_Local_of_mini_selfhost_Local]? = some (src_field_id_Local_of_mini_selfhost_Local)) (np : prims.isPrim ix_field_id_Local_of_mini_selfhost_Local = false) {n : Nat} :
+    Stmt_field_id_Local_of_mini_selfhost_Local prog prims ix_field_id_Local_of_mini_selfhost_Local n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_field_id_Local_of_mini_selfhost_Local] at h
+  faithful []
+
 theorem step_get_of_core_option_Option_usize {prog : SrcProgram} {prims : Prims} {ix_get_of_core_option_Option_usize ix_minus ix_unbox_of_mini_selfhost_List_core_option_Option_usize : Nat} (fn : prog.funcs[ix_get_of_core_option_Option_usize]? = some (src_get_of_core_option_Option_usize ix_minus ix_unbox_of_mini_selfhost_List_core_option_Option_usize ix_get_of_core_option_Option_usize)) (np : prims.isPrim ix_get_of_core_option_Option_usize = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_unbox_of_mini_selfhost_List_core_option_Option_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_core_option_Option_usize prog prims ix_unbox_of_mini_selfhost_List_core_option_Option_usize n)) {n : Nat}

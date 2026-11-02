@@ -1,0 +1,7 @@
+// An i32 array local whose data pointer is taken right after its let is
+// read as one LetView: the array lives in a heap block from then on.
+fn run(n: i32) -> i32 {
+    let a: [i32; 2] = [1, 2];
+    let p: ptr = core::mem::i32_array_data_ptr(a);
+    return n;
+}

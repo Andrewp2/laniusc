@@ -25,6 +25,7 @@ import all Lanius.Mini.Frontend.P.rootInsts
 import all Lanius.Mini.Frontend.P.scalarOf
 import all Lanius.Mini.Frontend.P.shrFirst
 import all Lanius.Mini.Frontend.P.sliceHead
+import all Lanius.Mini.Frontend.P.viewHead
 import all Lanius.Mini.Frontend.P.textSelf
 import all Lanius.Mini.Frontend.P.typeDeclAt
 import all Lanius.Mini.Frontend.P.typePathSpellings
@@ -194,6 +195,15 @@ theorem sliceHead_sound {es : List SrcExpr} {hd : LetHead} (h : sliceHead (some 
   | [_], h => simp [sliceHead] at h
   | _ :: _ :: _ :: _, h => simp [sliceHead] at h
 
+theorem viewHead_sound {es : List SrcExpr} {hd : LetHead} (h : viewHead (some es) = some hd) :
+    ∃ x, es = [x] ∧ hd = .viewOf x := by
+  match es, h with
+  | [x], h =>
+    simp only [viewHead, Option.some.injEq] at h
+    exact ⟨x, rfl, h.symm⟩
+  | [], h => simp [viewHead] at h
+  | _ :: _ :: _, h => simp [viewHead] at h
+
 /-! ## Variants by path -/
 
 /-- `T::name` with `T` an enum the path's prefix names: variant `name` of `T`. -/
@@ -298,13 +308,15 @@ theorem isFnPath_iff (env : FrontEnv) (s : Split) : isFnPath env s = true ↔ Is
     simp only [isSomeIndex, true_iff]
     exact ⟨d, findFn_sound hf⟩
 
-/-- `path(args)` in a let, read by its spelling: an allocation or a raw
-slice. -/
+/-- `path(args)` in a let, read by its spelling: an allocation, a raw
+slice or an i32 array's data pointer (`core::mem::i32_array_data_ptr`). -/
 inductive CallPathHeadR (env : FrontEnv) (scope : List Local) (path args : CTree) : LetHead → Prop
   | alloc {es : List SrcExpr} {hd : LetHead} : PathSpellings (kid path 0) (kid path 1) allocPath →
       ArgsOfR env scope args es → AllocHeadR es hd → CallPathHeadR env scope path args hd
   | slice {p l : SrcExpr} : PathSpellings (kid path 0) (kid path 1) [textSliceFromRawParts] →
       ArgsOfR env scope args [p, l] → CallPathHeadR env scope path args (.sliceOf p l)
+  | view {x : SrcExpr} : PathSpellings (kid path 0) (kid path 1) viewPath →
+      ArgsOfR env scope args [x] → CallPathHeadR env scope path args (.viewOf x)
 
 theorem callPathHead_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {path args : CTree}
     {hd : LetHead} (h : callPathHead fuel env scope path args = some hd) : CallPathHeadR env scope path args hd := by
@@ -325,7 +337,15 @@ theorem callPathHead_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {p
         rw [ha] at h
         obtain ⟨p, l, rfl, rfl⟩ := sliceHead_sound h
         exact .slice (pathSpellings_sound (isPath_eq isl)) (argsOf_sound ha)
-    · cases h
+    · split at h
+      · rename_i _ _ isv
+        cases ha : argsOf fuel env scope args with
+        | none => rw [ha] at h; simp [viewHead] at h
+        | some es =>
+          rw [ha] at h
+          obtain ⟨x, rfl, rfl⟩ := viewHead_sound h
+          exact .view (pathSpellings_sound (isPath_eq isv)) (argsOf_sound ha)
+      · cases h
 
 /-! ## Struct literals -/
 

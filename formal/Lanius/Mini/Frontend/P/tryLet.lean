@@ -1,15 +1,11 @@
 module
 
 public import Lanius.Mini.Frontend.Types
-import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.fnInstRet
-import Lanius.Mini.Frontend.P.ifEff
 import Lanius.Mini.Frontend.P.litEffMatch
 import Lanius.Mini.Frontend.P.matchLetHead
 import Lanius.Mini.Frontend.P.noBlock
-import Lanius.Mini.Frontend.P.pickTy
 import Lanius.Mini.Frontend.P.shrFirst
-import Lanius.Mini.Frontend.P.treeTokens
 import Lanius.Mini.Frontend.P.tryLetHead
 import Lanius.Mini.Frontend.P.tryLocalOf
 
@@ -126,48 +122,8 @@ def isPtrTy (t : Ty) : Bool :=
   | .tyNamed d args => false
   | .tySint k => false
 
-def allocLet (ok : Bool) (id : Nat) (size : SrcExpr) (shift : Nat) (body : MStmt) : Option MStmt :=
-  if ok then
-    some (MStmt.mLetAlloc id size shift body)
-  else
-    none
-
-def sliceLet (element : Option Ty) (id : Nat) (pointer : SrcExpr) (length : SrcExpr) (body : MStmt) : Option MStmt :=
-  match element with
-  | none => none
-  | some e => some (MStmt.mLetSlice id e pointer length body)
-
-/-- An allocation binds a `ptr`, a raw view a `[T]`. -/
-def letStmt (id : Nat) (ty : Ty) (head : LetHead) (body : MStmt) : Option MStmt :=
-  match head with
-  | .plain e => some (MStmt.mLet id ty e body)
-  | .callOf c => some (MStmt.mLetCall id ty c.inst c.args body)
-  | .variantOf variant payload => some (MStmt.mLetEnum id ty variant payload body)
-  | .literalOf fields => some (MStmt.mLetStruct id ty fields body)
-  | .matchOf scrutinee sty arms => some (MStmt.mLetMatch id ty scrutinee sty arms body)
-  | .allocOf size shift => allocLet (isPtrTy ty) id size shift body
-  | .sliceOf pointer length => sliceLet (sliceElem ty) id pointer length body
-  | .indexOf slice index => some (MStmt.mLetIndex id ty slice index body)
-  | .evalOf x => some (MStmt.mLetEval id ty x body)
-  | .tryOf t => tryLet (sameTy ty t.okTy) id ty t body
-
-def letBody (id : Nat) (ty : Ty) (h : LetHead) (body : Option MStmt) : Option MStmt :=
-  match body with
-  | none => none
-  | some b => letStmt id ty h b
-
-def letOf (id : Nat) (ty : Ty) (head : Option LetHead) (body : Option MStmt) : Option MStmt :=
-  match head with
-  | none => none
-  | some h => letBody id ty h body
-
-def returnEvalOf (x : Option MEff) : Option MStmt :=
-  match x with
-  | none => none
-  | some e => some (returnEff e)
-
-/-- `return e;`, e pure or else effectful (stored at the result type). -/
-def sliceReturned (id : Nat) (el : Ty) (h : Option LetHead) : Option MStmt :=
+/-- A literal head's fields. -/
+def literalHead (h : Option LetHead) : Option (List SrcExpr) :=
   match h with
   | none => none
   | some head =>
@@ -175,44 +131,13 @@ def sliceReturned (id : Nat) (el : Ty) (h : Option LetHead) : Option MStmt :=
     | .plain x => none
     | .callOf c => none
     | .variantOf variant payload => none
-    | .literalOf fields => none
+    | .literalOf fields => some fields
     | .matchOf scrutinee sty arms => none
     | .allocOf size shift => none
-    | .sliceOf pointer length => some (MStmt.mLetSlice id el pointer length (MStmt.mReturn (SrcExpr.local id)))
+    | .sliceOf pointer length => none
+    | .viewOf array => none
     | .indexOf slice index => none
     | .evalOf x => none
     | .tryOf t => none
-
-/-- `return slice_from_raw_parts(pointer, length);` in a function whose result is a slice: a slice local, then its return. The local's id is the offset of the value's first token, which no binding has. -/
-def returnSlice (fuel : Nat) (env : FrontEnv) (scope : List Local) (e : CTree) : Option MStmt :=
-  match env.ret with
-  | none => none
-  | some t =>
-    match sliceElem t with
-    | none => none
-    | some el =>
-      match treeTokens e with
-      | [] => none
-      | first :: rest => sliceReturned (first.start - env.base) el (letHead fuel env scope e)
-
-def returnOrEval (fuel : Nat) (env : FrontEnv) (scope : List Local) (e : CTree) : Option MStmt :=
-  match returnSlice fuel env scope e with
-  | some m => some m
-  | none => returnEvalOf (effOf fuel env scope env.ret e)
-
-def ifEvalOf (c : Option MEff) (a : Option MStmt) (b : Option MStmt) : Option MStmt :=
-  match c with
-  | none => none
-  | some x =>
-    match a with
-    | none => none
-    | some s =>
-      match b with
-      | none => none
-      | some t => some (ifEff x s t)
-
-/-- `if (c) { a } else { b }`, c pure or else effectful. -/
-def ifOrEval (fuel : Nat) (env : FrontEnv) (scope : List Local) (c : CTree) (a : Option MStmt) (b : Option MStmt) : Option MStmt :=
-  ifEvalOf (effOf fuel env scope (some Ty.tyBool) c) a b
 
 end Lanius.Mini

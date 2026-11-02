@@ -22,6 +22,8 @@ import all Lanius.Mini.Frontend.P.shrFirst
 import all Lanius.Mini.Frontend.P.sliceHead
 import all Lanius.Mini.Frontend.P.textSelf
 import all Lanius.Mini.Frontend.P.textSliceLen
+import all Lanius.Mini.Frontend.P.isPathCall
+import all Lanius.Mini.Frontend.P.i32ArrayLength
 
 @[expose] public section
 /-! # The reading is deterministic, F1: statements
@@ -88,9 +90,15 @@ theorem callPathHeadR_unique {env : FrontEnv} {scope : List Local} {path args : 
       cases argsOfR_unique ar ar'
       exact allocHeadR_unique ah ah'
     | slice ps' _ => exact absurd (pathSpellings_unique ps ps') (by decide)
+    | view ps' _ => exact absurd (pathSpellings_unique ps ps') (by decide)
   | slice ps ar => cases h₂ with
     | alloc ps' _ _ => exact absurd (pathSpellings_unique ps ps') (by decide)
     | slice _ ar' => cases argsOfR_unique ar ar'; rfl
+    | view ps' _ => exact absurd (pathSpellings_unique ps ps') (by decide)
+  | view ps ar => cases h₂ with
+    | alloc ps' _ _ => exact absurd (pathSpellings_unique ps ps') (by decide)
+    | slice ps' _ => exact absurd (pathSpellings_unique ps ps') (by decide)
+    | view _ ar' => cases argsOfR_unique ar ar'; rfl
 
 theorem letHeadR_unique {env : FrontEnv} {scope : List Local} {init : CTree} {a b : LetHead}
     (h₁ : LetHeadR env scope init a) (h₂ : LetHeadR env scope init b) : a = b := by
@@ -165,6 +173,7 @@ theorem letHead_noEff {env : FrontEnv} {scope : List Local} {E : Option Ty} {ini
     cases ch with
     | alloc ps _ _ => exact peel_noEff pe ⟨p0, p01, p1, p13⟩ ps (by simp [builtinPaths]) (by decide) k
     | slice ps _ => exact peel_noEff pe ⟨p0, p01, p1, p13⟩ ps (by simp [builtinPaths]) (by decide) k
+    | view ps _ => exact peel_noEff pe ⟨p0, p01, p1, p13⟩ ps (by simp [builtinPaths]) (by decide) k
 
 /-! ## `?` -/
 
@@ -1007,6 +1016,25 @@ theorem returnR_noArmBlock {env : FrontEnv} {scope : List Local} {a list : CTree
   | slice _ _ hh => exact letInitR_noArmBlock (ty := .tyI32) ab (.head hh)
   | eval k => exact armBlockR_noEff ab k
 
+/-- A let whose value is `core::mem::i32_array_data_ptr(x)` is read only as
+the second statement of a `LetView`, never as a statement list's first. -/
+theorem stmtsR_noViewHead {env : FrontEnv} {scope : List Local} {v : CTree} {more : List CTree} {m : MStmt}
+    {x : SrcExpr} (nd : IdsFresh scope) (vn : VariantsNodup env.decls) (vp : nodeProd v = pLetStmt)
+    (vt : nodeProd (kid v 2) = pLetType) (vh : LetHeadR env scope (kid (kid v 3) 1) (.viewOf x))
+    (h : StmtsR env scope (v :: more) m) : False := by
+  cases h with
+  | «let» _ _ _ _ _ _ li _ ls =>
+    cases letInitR_unique nd vn li (.head vh)
+    simp [letStmt] at ls
+  | letUntyped _ lt' _ _ _ _ _ _ => rw [vt] at lt'; exact absurd lt' (by decide)
+  | letMatch _ _ _ _ _ _ bm _ _ _ _ _ _ =>
+    obtain ⟨_, _, _, _, mi, it, ma, ab⟩ := bm
+    exact letInitR_noBlockMatch (ty := .tyPtr) vn mi it ma ab (.head vh)
+  | letLit _ _ _ _ _ _ mi lw mr _ _ _ _ => exact letInitR_noLitMatch (ty := .tyPtr) nd vn mi lw mr (.head vh)
+  | letView _ _ _ _ _ _ li _ _ _ _ _ _ _ _ => cases letInitR_unique nd vn li (.head vh)
+  | last np _ => exact np vp
+  | seq np _ _ => exact np vp
+
 section
 variable {env : FrontEnv}
 
@@ -1038,6 +1066,10 @@ theorem stmtsR_unique : ∀ {scope : List Local} {items : List CTree} {a : MStmt
       obtain ⟨_, _, _, _, mi, it, ma, ab⟩ := bm
       exact (letInitR_noBlockMatch vn mi it ma ab li).elim
     | letLit _ _ _ _ _ _ mi lw mr _ _ _ _ => exact (letInitR_noLitMatch nd vn mi lw mr li).elim
+    | letView _ _ _ _ _ ty' li' vp vt _ _ _ _ vh _ =>
+      cases tyR_unique ty ty'
+      cases letInitR_unique nd vn li li'
+      exact (stmtsR_noViewHead (idsFresh_cons nd fr) vn vp vt vh body).elim
     | last np _ => exact absurd ps np
     | seq np _ _ => exact absurd ps np
   | _, _, _, .letMatch ps lt _ _ fr ty bm mi mr mo body la mv, nd, vn, _, h₂ => by
@@ -1064,6 +1096,9 @@ theorem stmtsR_unique : ∀ {scope : List Local} {items : List CTree} {a : MStmt
     | letLit _ _ _ _ _ _ mi' _ mr' _ _ _ _ =>
       cases matchInit_unique mi mi'
       exact (litMatchR_noMatchStmt nd vn mr' mr).elim
+    | letView _ _ _ _ _ _ li' _ _ _ _ _ _ _ _ =>
+      obtain ⟨_, _, _, _, mi', it, ma, ab⟩ := bm
+      exact (letInitR_noBlockMatch vn mi' it ma ab li').elim
     | last np _ => exact absurd ps np
     | seq np _ _ => exact absurd ps np
   | _, _, _, .letLit ps lt _ _ fr ty mi lw mr it body la mv, nd, vn, _, h₂ => by
@@ -1084,6 +1119,7 @@ theorem stmtsR_unique : ∀ {scope : List Local} {items : List CTree} {a : MStmt
       cases iha la'
       rw [mv'] at mv
       exact (Option.some.inj mv).symm
+    | letView _ _ _ _ _ _ li' _ _ _ _ _ _ _ _ => exact (letInitR_noLitMatch nd vn mi lw mr li').elim
     | last np _ => exact absurd ps np
     | seq np _ _ => exact absurd ps np
   | _, _, _, .letUntyped ps lt _ _ fr un body ls, nd, vn, _, h₂ => by
@@ -1097,7 +1133,26 @@ theorem stmtsR_unique : ∀ {scope : List Local} {items : List CTree} {a : MStmt
       exact (Option.some.inj ls).symm
     | letMatch _ lt' _ _ _ _ _ _ _ _ _ _ _ => prod_clash
     | letLit _ lt' _ _ _ _ _ _ _ _ _ _ _ => prod_clash
+    | letView _ lt' _ _ _ _ _ _ _ _ _ _ _ _ _ => prod_clash
     | last np _ => exact absurd ps np
+    | seq np _ _ => exact absurd ps np
+  | _, _, _, .letView ps lt _ _ fr ty li vp vt _ _ vf _ vh body, nd, vn, _, h₂ => by
+    have ih := fun {y} k' => stmtsR_unique body (idsFresh_cons (idsFresh_cons nd fr) vf) vn (b := y) k'
+    cases h₂ with
+    | «let» _ _ _ _ fr' ty' li' body' _ =>
+      cases tyR_unique ty ty'
+      cases letInitR_unique nd vn li li'
+      exact (stmtsR_noViewHead (idsFresh_cons nd fr') vn vp vt vh body').elim
+    | letUntyped _ lt' _ _ _ _ _ _ => prod_clash
+    | letMatch _ _ _ _ _ _ bm _ _ _ _ _ _ =>
+      obtain ⟨_, _, _, _, mi, it, ma, ab⟩ := bm
+      exact (letInitR_noBlockMatch vn mi it ma ab li).elim
+    | letLit _ _ _ _ _ _ mi lw mr _ _ _ _ => exact (letInitR_noLitMatch nd vn mi lw mr li).elim
+    | letView _ _ _ _ _ ty' li' _ _ _ _ _ _ _ body' =>
+      cases tyR_unique ty ty'
+      cases letInitR_unique nd vn li li'
+      cases ih body'
+      rfl
     | seq np _ _ => exact absurd ps np
   | _, _, _, .last np s, nd, vn, _, h₂ => by
     have ih := fun {y} k' => stmtR_unique s nd vn (b := y) k'
@@ -1115,6 +1170,7 @@ theorem stmtsR_unique : ∀ {scope : List Local} {items : List CTree} {a : MStmt
     | letUntyped ps _ _ _ _ _ _ _ => exact absurd ps np
     | letMatch ps _ _ _ _ _ _ _ _ _ _ _ _ => exact absurd ps np
     | letLit ps _ _ _ _ _ _ _ _ _ _ _ _ => exact absurd ps np
+    | letView ps _ _ _ _ _ _ _ _ _ _ _ _ _ _ => exact absurd ps np
     | seq _ s' rest' => rw [ih1 s', ih2 rest']
 termination_by structural _ _ _ h _ _ _ _ => h
 
