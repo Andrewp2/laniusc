@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Mini.Semantics
+public import Lanius.Mini.FrameCorr
 public import Lanius.Mini.Unsigned
 public import Lanius.Mini.Shifts
 public import Lanius.Mini.Signed
@@ -79,7 +80,12 @@ import all Lanius.Mini.Compiler.P.lowerLoadType
 import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.storeArray
-import all Lanius.Mini.Compiler.P.sigs
+import all Lanius.Mini.Compiler.P.bindingBytes
+import all Lanius.Mini.Compiler.P.arrayCallSig
+import all Lanius.Mini.Compiler.P.withBudget
+import all Lanius.Mini.Compiler.P.needRound
+import all Lanius.Mini.Compiler.P.needsAfter
+import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.lowerBody
 import all Lanius.Mini.Compiler.P.declareFuncs
 import all Lanius.Mini.Compiler.P.declareProgram
@@ -108,12 +114,12 @@ import all Lanius.Mini.Compiler.P.Inline_factOr
 -- end import all
 -- import parts: Lanius.Mini.Compiler SrcExpr.lower SrcOp.lower SrcStmt.lower UintTy.code negateSigned equality order
 public import Lanius.Mini.Compiler.P.arithShiftRight
+public import Lanius.Mini.Compiler.P.arrayCallSig
 public import Lanius.Mini.Compiler.P.conjunction
 public import Lanius.Mini.Compiler.P.equality
 public import Lanius.Mini.Compiler.P.lowerApply
 public import Lanius.Mini.Compiler.P.lowerLocal
 public import Lanius.Mini.Compiler.P.render
-public import Lanius.Mini.Compiler.P.storeArray
 -- end import parts
 
 @[expose] public section
@@ -123,15 +129,19 @@ the state, to a value its lowered mini expression represents. -/
 
 namespace Lanius.Mini
 
+variable {places : List Addressed}
+
 open Lanius.Core (Value)
 open Lanius.Semantics (State evalExpr)
 
 /-- Core's locals are the scope's bindings in the same order, each slot's cell
 given by `frame`, and every binding's cell holds a value its slot represents. -/
-structure Corr (scope : List Binding) (frame : Nat → Nat) (st : State) (env : Env) : Prop where
+structure Corr (places : List Addressed) (scope : List Binding) (frame : Nat → Nat) (st : State) (env : Env) : Prop where
   locals : st.locals = scope.map fun b => (b.id, frame b.slot)
+  /-- The scope's cells are not the places' (the caller's arrays). -/
+  apart : ∀ x ∈ places, ∀ b ∈ scope, x.cell ≠ frame b.slot
   values : ∀ b ∈ scope, ∃ v, st.cellEntry? (frame b.slot) = some ⟨frame b.slot, some v⟩ ∧
-    b.ty.HoldsAt v env b.slot
+    b.ty.HoldsAt places v env b.slot
 
 theorem lookup_mem {scope : List Binding} {id : Nat} {b : Binding}
     (found : lookup scope id = some b) : b ∈ scope ∧ b.id = id := by
@@ -155,14 +165,14 @@ theorem find_locals (scope : List Binding) (frame : Nat → Nat) (id : Nat) :
     · have : (head.id == id) = false := by simpa using h
       simp [h, ih, this]
 
-theorem Corr.cellId {scope frame st env} (corr : Corr scope frame st env) (id : Nat) :
+theorem Corr.cellId {scope frame st env} (corr : Corr places scope frame st env) (id : Nat) :
     st.cellId? id = (lookup scope id).map fun b => frame b.slot := by
   simp only [State.cellId?, corr.locals, find_locals, Option.map_map]
   rfl
 
-theorem Corr.local {scope frame st env} (corr : Corr scope frame st env) {id : Nat} {b : Binding}
+theorem Corr.local {scope frame st env} (corr : Corr places scope frame st env) {id : Nat} {b : Binding}
     (found : lookup scope id = some b) (fuel : Nat) (prog : Core.Program) :
-    ∃ v, evalExpr (fuel + 1) prog st (.local id) = .done v st ∧ b.ty.HoldsAt v env b.slot := by
+    ∃ v, evalExpr (fuel + 1) prog st (.local id) = .done v st ∧ b.ty.HoldsAt places v env b.slot := by
   obtain ⟨v, entry, holds⟩ := corr.values b (lookup_mem found).1
   refine ⟨v, ?_, holds⟩
   simp only [evalExpr, corr.cellId, found, Option.map_some, entry]
@@ -943,7 +953,7 @@ theorem SrcOp.lower_holds {op : SrcOp} {tl tr t : Typed} (lowered : op.lower tl 
   case logicalOr => exact absurd rfl strict.2
 
 theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat → Nat} {st : State}
-    {env : Env} {prog : Core.Program} (corr : Corr scope frame st env) (target : prog.target = .x86_64) :
+    {env : Env} {prog : Core.Program} (corr : Corr places scope frame st env) (target : prog.target = .x86_64) :
     ∀ {t : Typed} {fuel : Nat} {v : Value} {st' : State}, e.lower scope = some t →
       evalExpr fuel prog st e.toCore = .done v st' → st' = st ∧ t.ty.Holds v (t.expr.eval env) := by
   induction e with

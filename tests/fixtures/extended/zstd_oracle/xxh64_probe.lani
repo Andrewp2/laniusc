@@ -1,0 +1,26 @@
+// xxh64_probe SPLIT < DATA (zstd oracle): XXH64 (seed 0) of stdin fed in SPLIT-byte pieces, as 16 hex digits.
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::xxhash;
+import std::args;
+import std::fs;
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,8,4096);
+    let values: std::args::Arguments = core::result::unwrap(captured);
+    let arg: core::slice::View<u8> = core::option::unwrap(values.get(0)); let split: i32 = 0; let k: i32 = 0;
+    while (k < arg.length) { split = split*10+((arg.values[arg.start+k] as i32)-48); k += 1; }
+    let data: alloc::vec::Vec<u8> = alloc::vec::new(); data.try_resize(4194304,0);
+    let base: ptr = core::mem::i32_slice_data_ptr(data.as_view().values); let size: i32 = 0;
+    while (size < 4194304) { let got: i32 = std::fs::read(0,base+(size as usize),(4194304-size) as usize); if (got <= 0) { break; } size += got; }
+    let s: ext::xxhash::State = ext::xxhash::state(0); let at: i32 = 0;
+    while (at < size) { let end: i32 = at+split; if (end > size) { end = size; } s.borrow().update(core::result::unwrap(data.as_view().subview(at,end))); at = end; }
+    let h: u64 = s.borrow().digest();
+    let out: alloc::vec::Vec<u8> = alloc::vec::new(); out.try_resize(17,10); let o: core::slice::View<u8> = out.as_view(); let d: i32 = 0;
+    while (d < 16) { let nib: u64 = (h >> ((60-4*d) as u64)) & 15; let ch: u8 = (nib as u8)+48; if (nib >= 10) { ch = (nib as u8)+87; } o.values[o.start+d] = ch; d += 1; }
+    std::fs::write(1,core::mem::i32_slice_data_ptr(o.values),17);
+    return 0;
+}

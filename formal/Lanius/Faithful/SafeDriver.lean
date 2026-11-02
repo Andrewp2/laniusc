@@ -8,6 +8,12 @@ public import Lanius.Mini.Frontend.P.grammarPart13
 public import Lanius.Mini.Frontend.P.shrFirst
 import all Lanius.Faithful.Gen.SelfSrcRest
 import all Lanius.Mini.Compiler.P.storeArray
+import all Lanius.Mini.Compiler.P.arrayCallSig
+import all Lanius.Mini.Compiler.P.bindingBytes
+import all Lanius.Mini.Compiler.P.funcNeeds
+import all Lanius.Mini.Compiler.P.needRound
+import all Lanius.Mini.Compiler.P.needsAfter
+import all Lanius.Mini.Compiler.P.withBudget
 import all Lanius.Faithful.Gen.SelfSrc2
 import all Lanius.Faithful.Gen.SelfSrc5
 import all Lanius.Faithful.Gen.SelfSrc7

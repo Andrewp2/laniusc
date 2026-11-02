@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **344 modules**, **18214 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **352 modules**, **18594 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -330,6 +330,12 @@ Inventory: **344 modules**, **18214 declaration/member entries**. Counts include
 | [ext::table](ext/table.md) | [source](../../extended/ext/table.lani#L2) | 27 | Source inventory | [extended-table](../extended-table.md) |
 | [ext::tar](ext/tar.md) | [source](../../extended/ext/tar.lani#L3) | 91 | Source inventory | [extended-tar](../extended-tar.md), [extended-pax](../extended-pax.md) |
 | [ext::terminal](ext/terminal.md) | [source](../../extended/ext/terminal.lani#L3) | 15 | Source inventory | [extended-terminal](../extended-terminal.md) |
+| [ext::text_cut](ext/text_cut.md) | [source](../../extended/ext/text_cut.lani#L7) | 38 | Source inventory | [extended-textutils](../extended-textutils.md) |
+| [ext::text_lines](ext/text_lines.md) | [source](../../extended/ext/text_lines.lani#L6) | 87 | Source inventory | [extended-textutils](../extended-textutils.md) |
+| [ext::text_sort](ext/text_sort.md) | [source](../../extended/ext/text_sort.lani#L19) | 43 | Source inventory | [extended-textutils](../extended-textutils.md) |
+| [ext::text_tr](ext/text_tr.md) | [source](../../extended/ext/text_tr.lani#L8) | 47 | Source inventory | [extended-textutils](../extended-textutils.md) |
+| [ext::text_uniq](ext/text_uniq.md) | [source](../../extended/ext/text_uniq.lani#L10) | 33 | Source inventory | [extended-textutils](../extended-textutils.md) |
+| [ext::text_wc](ext/text_wc.md) | [source](../../extended/ext/text_wc.lani#L8) | 22 | Source inventory | [extended-textutils](../extended-textutils.md) |
 | [ext::timezone](ext/timezone.md) | [source](../../extended/ext/timezone.lani#L3) | 80 | Source inventory | [extended-timezone](../extended-timezone.md) |
 | [ext::tls_clients](ext/tls_clients.md) | [source](../../extended/ext/tls_clients.lani#L9) | 20 | Source inventory | **Unregistered** |
 | [ext::tls_stream](ext/tls_stream.md) | [source](../../extended/ext/tls_stream.lani#L3) | 74 | Source inventory | [extended-https-fetch](../extended-https-fetch.md), [extended-openssl-tls](../extended-openssl-tls.md), [extended-https-server](../extended-https-server.md), [extended-openssl-tls-server](../extended-openssl-tls-server.md), [extended-openssl-mutual-tls](../extended-openssl-mutual-tls.md), [extended-https-mutual-tls](../extended-https-mutual-tls.md) |
@@ -357,11 +363,13 @@ Inventory: **344 modules**, **18214 declaration/member entries**. Counts include
 | [ext::weighted_statistics](ext/weighted_statistics.md) | [source](../../extended/ext/weighted_statistics.lani#L4) | 63 | Source inventory | [extended-weighted-statistics](../extended-weighted-statistics.md), [extended-statistics](../extended-statistics.md), [extended-sample-moments](../extended-sample-moments.md) |
 | [ext::wordiff](ext/wordiff.md) | [source](../../extended/ext/wordiff.lani#L3) | 19 | Source inventory | [extended-wordiff](../extended-wordiff.md) |
 | [ext::x509](ext/x509.md) | [source](../../extended/ext/x509.lani#L3) | 141 | Source inventory | [extended-x509](../extended-x509.md), [extended-certificate-info](../extended-certificate-info.md) |
+| [ext::xxhash](ext/xxhash.md) | [source](../../extended/ext/xxhash.lani#L4) | 18 | Source inventory | [extended-zstd](../extended-zstd.md) |
 | [ext::xz](ext/xz.md) | [source](../../extended/ext/xz.lani#L4) | 168 | Source inventory | [extended-xz](../extended-xz.md) |
 | [ext::yaml](ext/yaml.md) | [source](../../extended/ext/yaml.lani#L4) | 29 | Source inventory | [extended-yaml](../extended-yaml.md) |
 | [ext::yaml_writer](ext/yaml_writer.md) | [source](../../extended/ext/yaml_writer.lani#L6) | 3 | Source inventory | [extended-yaml](../extended-yaml.md) |
 | [ext::zip](ext/zip.md) | [source](../../extended/ext/zip.lani#L2) | 82 | Source inventory | [extended-zip](../extended-zip.md), [extended-fetch-many](../extended-fetch-many.md) |
 | [ext::zip_stream](ext/zip_stream.md) | [source](../../extended/ext/zip_stream.lani#L8) | 83 | Source inventory | [extended-zip-stream](../extended-zip-stream.md) |
+| [ext::zstd](ext/zstd.md) | [source](../../extended/ext/zstd.lani#L8) | 92 | Source inventory | [extended-zstd](../extended-zstd.md) |
 
 ## Support and implementation data
 
