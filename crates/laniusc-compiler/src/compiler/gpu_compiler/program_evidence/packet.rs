@@ -298,11 +298,23 @@ impl ProgramPacket {
     }
     fn append_guard<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
         self.ready()?;
-        let result = f(self);
+        let result = f(self).and_then(|value| {
+            self.flush_atoms()?;
+            Ok(value)
+        });
         if result.is_err() {
             self.poisoned = true;
         }
         result
+    }
+    /// Stage every atom interned since the last append in table 1, so a
+    /// suffix row never references an atom that only the interner holds.
+    fn flush_atoms(&mut self) -> Result<()> {
+        let atom_first = self.prefix[1] as usize + self.tables.count(1)? as usize;
+        for key in &self.atoms.keys[atom_first..] {
+            self.tables.push(1, key)?;
+        }
+        Ok(())
     }
     fn combined_row(&self, table: usize, row: u32) -> Result<&[u32]> {
         if row < self.prefix[table] {
@@ -1205,10 +1217,7 @@ impl ProgramPacket {
                 this.original_units.len() == this.catalog.snapshots.len(),
                 "program packet is missing an original unit call inventory"
             );
-            let atom_first = this.prefix[1] as usize + this.tables.count(1)? as usize;
-            for key in &this.atoms.keys[atom_first..] {
-                this.tables.push(1, key)?;
-            }
+            this.flush_atoms()?;
             for table in CATALOG_ONLY {
                 ensure!(
                     this.tables.count(table)? == 0,

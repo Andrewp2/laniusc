@@ -861,6 +861,22 @@ fn assert_source_exit(name: &str, source: &str, expected: i32) {
 }
 
 #[test]
+fn x86_exports_a_pub_fn_whose_where_clause_has_a_scalar_subject() {
+    // The semantic interface exports `bool: Rel<[i32; N]>` with a concrete
+    // scalar subject row; it used to stop with LNC0057 for a pub owner.
+    assert_source_exit(
+        "pub_scalar_where_subject",
+        r#"
+pub trait Rel<A> {}
+pub impl<const N: u8> Rel<[i32; N]> for bool {}
+pub fn require<const N: u8>(a: [i32; N]) -> i32 where bool: Rel<[i32; N]> { return a[1]; }
+fn main() -> i32 { return require([1, 2, 3]); }
+"#,
+        2,
+    );
+}
+
+#[test]
 fn x86_call_and_argument_keep_distinct_dense_hir_rows_after_control_flow() {
     let bytes = compile_source(
         "x86 dense call and argument identity",

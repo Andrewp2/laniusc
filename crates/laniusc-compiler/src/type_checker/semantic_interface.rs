@@ -1284,6 +1284,8 @@ impl GpuTypeChecker {
             "predicate_bound_arg_count", "predicate_status",
             "predicate_method_validation_status", "predicate_method_validation_required_symbol",
             "predicate_method_contract_owner_count", "path_owner_module_id", "module_id_by_file_id",
+            // A concrete predicate subject names a language scalar.
+            "language_type_code_by_name_id",
         ];
         let checked_graph_buffers = checked_graph_names.iter()
             .map(|name| typecheck_graph.u32_buffer(name)).collect::<Result<Vec<_>>>()?;
