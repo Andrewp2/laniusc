@@ -2031,13 +2031,54 @@ If `F` cannot overflow along any path, it has no `b` and no `Pre_F`.
   (`qcall_of_okW`). `bclosed` takes four premises: the run has a value at
   the fuel `D` (its call depth), its cost there is `Cost_F D`, `Cost_F`
   is the same past `D` (by `rfl`), and there is no run below `D`. From
-  these it gives the certificate at every fuel. 350 of the 2,255 functions
-  take this path.
+  these it gives the certificate at every fuel. (11-02: 54 functions, the
+  costly ones; the free ones take `bfree`, below.)
 - Proofs: the `budget` tactic (`Faithful/BudgetTactic.lean`) runs the two
   `qcall`s in lockstep. It steps through calls with the callee's
   certificate, prims, `addC`, condition splits and `Rep` cases, and it
   closes each path's cost with `omega`. Groups of recursive functions are
   proved by induction on fuel.
+
+Decided 11-02 (F14), regenerating against F11b's `qstmt`/`qloop`/`qpop`
+and extending the certificates to every function that `front_end_words`,
+`grammar` and `compile_words` reach:
+
+- A function that reaches neither `boxed`, `plus` nor `times` (and none of
+  its callees do) is not proved step by step either (`BudgetFree.lean`).
+  Its run of `progW` is the self program's at cost 0 for a syntactic
+  reason: its body calls only such functions (`SrcStmt.callsOk`), and
+  `qstmt_z` carries "same value, cost 0" (`ZLe`) through any body whose
+  calls have it. The set is the bits of one number, `GenB.SelfBFree.freeMask`
+  (the functions and the unboxed prims they call), and `freeCheck` checks
+  the whole self program against it once, by `decide +kernel` (11 s). Each
+  such function's certificate is then `bfree` plus its `SelfCert`
+  certificate, with no stepping. The set's soundness does not depend on the
+  generator: a wrong bit fails the kernel's check. 838 of the 2,244
+  functions take this path: 537 that were proved step by step, `is_link` (a
+  70-operand `||` chain, 2m46) among them, and 301 argument-free ones that
+  were evaluated by `bclosed`. 54 costly argument-free builders keep
+  `bclosed`; 1,352 are proved by `budget`.
+- The tactic runs `qpop` (a `let`'s body) by rules that move it inside
+  `qthen`, `addC`, `bind` and `ite`, and looks through it for the call a
+  run waits on.
+- No BitVec literal reductions in the tactic's simp set: they turned
+  `u64`/`i32` literals into forms `Rep` lemmas do not match. A shift by a
+  constant leaves a closed `Nat` comparison (`(8#32).toNat < 32`), which
+  two simprocs decide (`closedNatLt`, and `closedNatEq` for small terms).
+- Budgets are generalized (`B - c` to a fresh `bud`) as each cost is taken
+  off, so terms do not grow along a path. A boxed call `addC m` with
+  `m > 1` steps one block at a time.
+- Before `omega`, duplicate costs of one call made twice are merged
+  (`mergeCosts`), as are duplicate case splits (`mergeCases`); `omega` runs
+  on a goal with only the cost facts (`omegaAlone`), since with ~100
+  hypotheses in context it took minutes on `host_read_code`.
+- The models share an `if`'s branches through `let` when a lazy `&&`/`||`
+  condition would copy them (`Pre_let_first` 199 KB to under 20 KB), and the
+  model modules elaborate with `Elab.async false`: asynchronous elaboration
+  took one part 70 s instead of 10 s. Proof modules stay asynchronous
+  (15.7 s against 30 s).
+- The generator's `/` was written as `%` (it compared against `divide`, the
+  source says `quotient`); `frame_size` and `arg_base` exposed it.
 
 ## One-word scalar views (decided 11-01, F11b)
 
