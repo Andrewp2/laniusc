@@ -299,6 +299,9 @@ fn fixture(device: &wgpu::Device, queue: &wgpu::Queue, case: &Case) -> Resources
         ranges[CALLEE * 2 + 1] = 1;
     }
     put("compact_path_type_arg_ranges", ranges);
+    // HirTypeArg rows (five words). 03a8 reads them only to place an operand
+    // diagnostic; unknown operands fall back to the application anchor.
+    put("compact_type_args", vec![INVALID; TOKENS * 5]);
     put("status", vec![1, INVALID, 0, 0]);
     let mut inference = vec![0; 8];
     inference[0] = u32::from(case.provisional);

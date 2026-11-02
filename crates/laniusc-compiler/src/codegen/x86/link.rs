@@ -58,13 +58,13 @@ pub(super) const X86_LINK_TARGET_OBJECT_SECTION: u32 = 3;
 /// `_start` wrapper. Relocations into a dropped copy move to the kept one;
 /// relocations into a kept copy are already encoded in its object's bytes.
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct X86LinkTextPlan {
+pub(super) struct X86LinkTextPlan {
     /// The object text range copied into the executable.
-    copy: std::ops::Range<u32>,
+    pub(super) copy: std::ops::Range<u32>,
     /// The object's own native runtime (excluding the CRT bridge), if any.
-    runtime: Option<std::ops::Range<u32>>,
+    pub(super) runtime: Option<std::ops::Range<u32>>,
     /// The (entry object, entry runtime start) its runtime references move to.
-    shared_runtime: Option<(u32, u32)>,
+    pub(super) shared_runtime: Option<(u32, u32)>,
 }
 
 impl X86LinkTextPlan {
@@ -90,7 +90,7 @@ fn object_runtime_range(
 
 /// Plans each object's text contribution. `objects` yields (entry offset,
 /// body range, text length); `runtime_bytes` reads one object's text range.
-fn shared_runtime_text_plans<'a>(
+pub(super) fn shared_runtime_text_plans<'a>(
     objects: &[(Option<u32>, Option<GpuX86ObjectBodyRange>, u32)],
     runtime_bytes: impl Fn(usize, std::ops::Range<u32>) -> Result<std::borrow::Cow<'a, [u8]>, String>,
 ) -> Result<Vec<X86LinkTextPlan>, String> {

@@ -3823,6 +3823,18 @@ mod tests {
             "test.empty_type_instances",
             &vec![u32::MAX; (capacities.tokens * 4) as usize],
         );
+        // The constant arenas are writable bindings, so they need their own
+        // allocations rather than the shared read-only empty rows.
+        let empty_constant_projections = storage_ro_from_u32s(
+            &gpu.device,
+            "test.empty_constant_projections",
+            &vec![u32::MAX; (capacities.tokens * 4) as usize],
+        );
+        let empty_constant_atoms = storage_ro_from_u32s(
+            &gpu.device,
+            "test.empty_constant_atoms",
+            &vec![u32::MAX; (capacities.tokens * 4) as usize],
+        );
         let empty_instance_row_count =
             storage_ro_from_u32s(&gpu.device, "test.empty_instance_row_count", &[0]);
         let argument_modes = storage_ro_from_u32s(
@@ -3874,8 +3886,8 @@ mod tests {
             type_instance_arg_row_ref_payload: &empty_type_instances,
             type_generic_param_slot: &empty_type_instances,
             type_const_param_slot: &empty_type_instances,
-            checked_constant_atoms: &empty_type_instances,
-            checked_constant_projections: &empty_type_instances,
+            checked_constant_atoms: &empty_constant_atoms,
+            checked_constant_projections: &empty_constant_projections,
             type_const_param_scalar: &empty_type_instances,
             type_const_param_value: &empty_type_instances,
             array_length_by_hir: &semantic_array_lengths,
@@ -4181,6 +4193,18 @@ mod tests {
             "test.empty_type_instances",
             &vec![u32::MAX; (capacities.tokens * 4) as usize],
         );
+        // The constant arenas are writable bindings, so they need their own
+        // allocations rather than the shared read-only empty rows.
+        let empty_constant_projections = storage_ro_from_u32s(
+            &gpu.device,
+            "test.empty_constant_projections",
+            &vec![u32::MAX; (capacities.tokens * 4) as usize],
+        );
+        let empty_constant_atoms = storage_ro_from_u32s(
+            &gpu.device,
+            "test.empty_constant_atoms",
+            &vec![u32::MAX; (capacities.tokens * 4) as usize],
+        );
         let empty_instance_row_count =
             storage_ro_from_u32s(&gpu.device, "test.empty_instance_row_count", &[0]);
         let argument_modes = storage_ro_from_u32s(
@@ -4232,8 +4256,8 @@ mod tests {
             type_instance_arg_row_ref_payload: &empty_type_instances,
             type_generic_param_slot: &empty_type_instances,
             type_const_param_slot: &empty_type_instances,
-            checked_constant_atoms: &empty_type_instances,
-            checked_constant_projections: &empty_type_instances,
+            checked_constant_atoms: &empty_constant_atoms,
+            checked_constant_projections: &empty_constant_projections,
             type_const_param_scalar: &empty_type_instances,
             type_const_param_value: &empty_type_instances,
             array_length_by_hir: &semantic_array_lengths,
@@ -4468,6 +4492,18 @@ mod tests {
             "test.empty_type_instances",
             &vec![u32::MAX; (capacities.tokens * 4) as usize],
         );
+        // The constant arenas are writable bindings, so they need their own
+        // allocations rather than the shared read-only empty rows.
+        let empty_constant_projections = storage_ro_from_u32s(
+            &gpu.device,
+            "test.empty_constant_projections",
+            &vec![u32::MAX; (capacities.tokens * 4) as usize],
+        );
+        let empty_constant_atoms = storage_ro_from_u32s(
+            &gpu.device,
+            "test.empty_constant_atoms",
+            &vec![u32::MAX; (capacities.tokens * 4) as usize],
+        );
         let empty_instance_row_count =
             storage_ro_from_u32s(&gpu.device, "test.empty_instance_row_count", &[0]);
         let argument_modes = storage_ro_from_u32s(
@@ -4519,8 +4555,8 @@ mod tests {
             type_instance_arg_row_ref_payload: &empty_type_instances,
             type_generic_param_slot: &empty_type_instances,
             type_const_param_slot: &empty_type_instances,
-            checked_constant_atoms: &empty_type_instances,
-            checked_constant_projections: &empty_type_instances,
+            checked_constant_atoms: &empty_constant_atoms,
+            checked_constant_projections: &empty_constant_projections,
             type_const_param_scalar: &empty_type_instances,
             type_const_param_value: &empty_type_instances,
             array_length_by_hir: &semantic_array_lengths,
@@ -4755,6 +4791,18 @@ mod tests {
             "test.empty_type_instances",
             &vec![u32::MAX; (capacities.tokens * 4) as usize],
         );
+        // The constant arenas are writable bindings, so they need their own
+        // allocations rather than the shared read-only empty rows.
+        let empty_constant_projections = storage_ro_from_u32s(
+            &gpu.device,
+            "test.empty_constant_projections",
+            &vec![u32::MAX; (capacities.tokens * 4) as usize],
+        );
+        let empty_constant_atoms = storage_ro_from_u32s(
+            &gpu.device,
+            "test.empty_constant_atoms",
+            &vec![u32::MAX; (capacities.tokens * 4) as usize],
+        );
         let empty_instance_row_count =
             storage_ro_from_u32s(&gpu.device, "test.empty_instance_row_count", &[0]);
         let argument_modes = storage_ro_from_u32s(
@@ -4806,8 +4854,8 @@ mod tests {
             type_instance_arg_row_ref_payload: &empty_type_instances,
             type_generic_param_slot: &empty_type_instances,
             type_const_param_slot: &empty_type_instances,
-            checked_constant_atoms: &empty_type_instances,
-            checked_constant_projections: &empty_type_instances,
+            checked_constant_atoms: &empty_constant_atoms,
+            checked_constant_projections: &empty_constant_projections,
             type_const_param_scalar: &empty_type_instances,
             type_const_param_value: &empty_type_instances,
             array_length_by_hir: &semantic_array_lengths,

@@ -3,7 +3,7 @@
 
 import unittest
 
-from validate_linked_elf import validate_function_instructions
+from validate_linked_elf import RUNTIME_TRAPS, validate_function_instructions
 
 
 class LinkedInstructionValidation(unittest.TestCase):
@@ -59,6 +59,20 @@ class LinkedInstructionValidation(unittest.TestCase):
             self.validate([("function", 0x100, 0x10)], {0x100: ("jmp", ["label"])})
         self.assertEqual(self.validate([("function", 0x100, 0x10)],
                                        {0x100: ("jmp", ["*%rax"])}), 0)
+
+    def test_jump_may_leave_only_to_an_out_of_line_runtime_trap(self):
+        trap = next(iter(RUNTIME_TRAPS))
+        functions = [("function", 0x100, 0x10), ("other", 0x140, 0x10)]
+        instructions = {0x100: ("jae", ["130"]), 0x102: ("ret", []), 0x130: ("mov", []),
+                        0x140: ("jae", ["130"]), 0x142: ("ret", [])}
+        read = lambda address, size: trap if address == 0x130 else b"\0" * size
+        self.assertEqual(validate_function_instructions(functions, instructions, self.executable, read), 2)
+        with self.assertRaisesRegex(ValueError, "leaves its function"):
+            validate_function_instructions(functions, instructions, self.executable,
+                                           lambda address, size: b"\0" * size)
+        with self.assertRaisesRegex(ValueError, "leaves its function"):
+            validate_function_instructions(functions, {**instructions, 0x100: ("jae", ["140"])},
+                                           self.executable, lambda address, size: trap)
 
     def test_many_functions_visit_only_index_and_covered_instructions(self):
         class BudgetedInstructions(dict):
