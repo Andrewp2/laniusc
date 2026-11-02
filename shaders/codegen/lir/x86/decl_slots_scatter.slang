@@ -187,7 +187,7 @@ uint ranked_slot(SemanticLirFunction function, uint index, bool header)
 {
     uint params = min(function.param_count, LOCAL_SLOT_SCAN_LIMIT);
     uint locals = min(function.local_count, LOCAL_SLOT_SCAN_LIMIT);
-    if (function.param_start + function.param_count > semantic_lir_param_total[0u] ||
+    if (x86_parameter_range_outside(function, semantic_lir_param_total[0u]) ||
         function.local_start + function.local_count >
             min(gParams.local_capacity, semantic_lir_local_total[0u]))
         return X86_LOCATION_INVALID;
@@ -222,7 +222,7 @@ uint parameter_register_slot(SemanticLirFunction function, uint ordinal, bool ha
 {
     if (has_call) return ranked_slot(function, ordinal, header);
     uint limit = 6u;
-    if (function.param_start + function.param_count > semantic_lir_param_total[0u] ||
+    if (x86_parameter_range_outside(function, semantic_lir_param_total[0u]) ||
         ordinal >= function.param_count ||
         !scalar_gpr_type(semantic_lir_params[function.param_start + ordinal].type_id))
         return X86_LOCATION_INVALID;
@@ -258,7 +258,7 @@ uint local_register_slot(SemanticLirFunction function, uint index, bool has_call
     uint param_total = semantic_lir_param_total[0u];
     uint local_total = min(gParams.local_capacity, semantic_lir_local_total[0u]);
     if (index >= LOCAL_SLOT_SCAN_LIMIT ||
-        function.param_start + function.param_count > param_total ||
+        x86_parameter_range_outside(function, param_total) ||
         function.local_start + function.local_count > local_total)
         return X86_LOCATION_INVALID;
     uint slots = 0u;
@@ -292,7 +292,7 @@ uint local_register_slot(SemanticLirFunction function, uint index, bool has_call
 // whose header may stay in registers.
 uint header_parameter(SemanticLirFunction function)
 {
-    if (function.param_start + function.param_count > semantic_lir_param_total[0u])
+    if (x86_parameter_range_outside(function, semantic_lir_param_total[0u]))
         return X86_LOCATION_INVALID;
     for (uint ordinal = 0u; ordinal < min(function.param_count, LOCAL_SLOT_SCAN_LIMIT); ordinal += 1u)
     {
