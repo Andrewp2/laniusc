@@ -3,6 +3,7 @@ module
 public import Lanius.Mini.LowerExpr
 public import Lanius.Mini.HeapCorr
 import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.UintTy_half
 
 @[expose] public section
 /-! # Borrowed slices
@@ -69,6 +70,69 @@ theorem fieldsHold_replicate_set {e : SrcType} {v : Value} {env env' : Env} :
             exact held
           · intro j hj
             exact away j (by rw [Nat.succ_mul]; omega)
+
+/-! ## More places -/
+
+mutual
+/-- A representation over some places holds over more: only a borrowed
+slice names a place, and it still names it. -/
+theorem SrcType.HoldsAt.mono {places places' : List Addressed} (sub : ∀ x ∈ places, x ∈ places') :
+    ∀ {ty : SrcType} {v : Value} {env : Env} {slot : Nat},
+      ty.HoldsAt places v env slot → ty.HoldsAt places' v env slot
+  | _, _, _, _, .i32 h => .i32 h
+  | _, _, _, _, .bool h => .bool h
+  | _, _, _, _, .uint h => .uint h
+  | _, _, _, _, .struct h => .struct (FieldsHold.mono sub h)
+  | _, _, _, _, .enum found tag payload => .enum found tag (FieldsHold.mono sub payload)
+  | _, _, _, _, .ptr h => .ptr h
+  | _, _, _, _, .slice len small => .slice len small
+  | _, _, _, _, .borrowed mem sliced root ty packed pointer len small =>
+    .borrowed (sub _ mem) sliced root ty packed pointer len small
+  | _, _, _, _, .array h => .array (FieldsHold.mono sub h)
+  | _, _, _, _, .unit => .unit
+  | _, _, _, _, .isize h => .isize h
+  | _, _, _, _, .char h => .char h
+  | _, _, _, _, .float h => .float h
+  | _, _, _, _, .sint h => .sint h
+
+theorem FieldsHold.mono {places places' : List Addressed} (sub : ∀ x ∈ places, x ∈ places') :
+    ∀ {fs : List SrcType} {vs : List Value} {env : Env} {slot : Nat},
+      FieldsHold places fs vs env slot → FieldsHold places' fs vs env slot
+  | _, _, _, _, .nil => .nil
+  | _, _, _, _, .cons head rest => .cons (SrcType.HoldsAt.mono sub head) (FieldsHold.mono sub rest)
+end
+
+/-- Scalars, one after another, do not depend on the places. -/
+theorem fieldsHold_replicate_scalar {e : SrcType} (scalar : e.isScalar = true) {places' : List Addressed} :
+    ∀ {n : Nat} {vs : List Value} {env : Env} {slot : Nat},
+      FieldsHold places (List.replicate n e) vs env slot → FieldsHold places' (List.replicate n e) vs env slot
+  | 0, _, _, _, h => by
+    cases h
+    exact .nil
+  | n + 1, _, _, _, h => by
+    cases h with
+    | cons head rest =>
+      exact .cons ((SrcType.holdsAt_scalar scalar).mpr ((SrcType.holdsAt_scalar scalar).mp head))
+        (fieldsHold_replicate_scalar scalar rest)
+
+/-- A packed place's value is represented over any places. -/
+theorem Addressed.Packed.holdsAt {x : Addressed} (packed : x.Packed) {places' : List Addressed} {v : Value}
+    {env : Env} {slot : Nat} (h : x.ty.HoldsAt places v env slot) : x.ty.HoldsAt places' v env slot := by
+  obtain ⟨-, -, element, n, ty, el⟩ := packed
+  rw [ty] at h ⊢
+  have scalar : element.isScalar = true := by
+    rcases el with rfl | rfl <;> simp [SrcType.isScalar]
+  cases h with
+  | array h => exact .array (fieldsHold_replicate_scalar scalar h)
+
+/-- The correspondence for more places holds for fewer: a caller's places
+after its callee, which borrowed more, returns. -/
+theorem FrameCorr.restrict {places' : List Addressed} {st : State} {hp : Heap} (fc : FrameCorr places' st hp)
+    (sub : ∀ x ∈ places, x ∈ places') : FrameCorr places st hp := by
+  refine ⟨fun x mem => ?_, fun x mem => fc.inside x (sub x mem), fun x mem => fc.small x (sub x mem),
+    fun x mem y ymem ne => fc.apart x (sub x mem) y (sub y ymem) ne, fun x mem => fc.packed x (sub x mem)⟩
+  obtain ⟨v, read, h⟩ := fc.holds x (sub x mem)
+  exact ⟨v, read, (fc.packed x (sub x mem)).holdsAt h⟩
 
 /-! ## A sliced place's array -/
 
@@ -163,7 +227,7 @@ theorem FrameCorr.borrowed_set {st st' : State} {hp hp' : Heap} (fc : FrameCorr 
     (bytes : ∀ a, ¬ x.Covers a → hp'.bytes a = hp.bytes a)
     (fsp : hp'.fsp = hp.fsp) (limit : hp'.limit = hp.limit) (top : hp'.top = hp.top) :
     FrameCorr places st' hp' := by
-  refine ⟨fun y ymem => ?_, fun y ymem => ?_, fc.small, fc.apart⟩
+  refine ⟨fun y ymem => ?_, fun y ymem => ?_, fc.small, fc.apart, fc.packed⟩
   · by_cases same : y = x
     · subst same
       obtain ⟨vs', read', -, elems⟩ := fc.array mem root ty

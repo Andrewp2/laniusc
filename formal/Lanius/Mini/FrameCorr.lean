@@ -227,6 +227,13 @@ theorem Addressed.view_congr {x : Addressed} {hp hp' : Heap} (same : ∀ a, x.Co
 def Addressed.Holds (places : List Addressed) (st : State) (hp : Heap) (x : Addressed) : Prop :=
   ∃ v, Semantics.readCellProjection st x.cell x.projections = .ok v ∧ x.ty.HoldsAt places v (x.view hp) 0
 
+/-- A caller's `i32` or `u8` array passed as a slice: the only addressed
+places so far (F5's references will add others). Their values hold no
+slice, so whether they are represented does not depend on the places. -/
+def Addressed.Packed (x : Addressed) : Prop :=
+  x.sliced = true ∧ x.projections = [] ∧
+    ∃ element n, x.ty = .array element n ∧ (element = .i32 ∨ element = .uint .uint8)
+
 /-- The addressed places of the activations: each one's value is represented
 by its words, which lie in frame memory, between the frame pointer (and the
 limit) and the heap's top. -/
@@ -238,10 +245,12 @@ structure FrameCorr (places : List Addressed) (st : State) (hp : Heap) : Prop wh
   /-- Two different places name different cells and have blocks apart. -/
   apart : ∀ x ∈ places, ∀ y ∈ places, x ≠ y →
     x.cell ≠ y.cell ∧ (x.address + 8 * x.ty.size ≤ y.address ∨ y.address + 8 * y.ty.size ≤ x.address)
+  /-- Every place is a packed array passed as a slice. -/
+  packed : ∀ x ∈ places, x.Packed
 
 theorem FrameCorr.nil (st : State) (hp : Heap) : FrameCorr [] st hp :=
   ⟨fun _ mem => by simp at mem, fun _ mem => by simp at mem, fun _ mem => by simp at mem,
-    fun _ mem => by simp at mem⟩
+    fun _ mem => by simp at mem, fun _ mem => by simp at mem⟩
 
 /-- Changes to bytes no place covers, to the frame pointer downward, to the
 cursor or the trace, and to Core cells no place names keep the correspondence. -/
@@ -251,7 +260,7 @@ theorem FrameCorr.congr {st st' : State} {hp hp' : Heap}
     (bytes : ∀ x ∈ places, ∀ a, x.Covers a → hp'.bytes a = hp.bytes a)
     (fsp : hp'.fsp ≤ hp.fsp) (limit : hp'.limit = hp.limit) (top : hp'.top = hp.top) :
     FrameCorr places st' hp' := by
-  refine ⟨fun x mem => ?_, fun x mem => ?_, fc.small, fc.apart⟩
+  refine ⟨fun x mem => ?_, fun x mem => ?_, fc.small, fc.apart, fc.packed⟩
   · obtain ⟨v, read, holds⟩ := fc.holds x mem
     refine ⟨v, ?_, holds.congr (Addressed.view_congr (bytes x mem))⟩
     simp only [Semantics.readCellProjection, cells x mem] at read ⊢
@@ -346,7 +355,7 @@ theorem FrameCorr.restore {st : State} {hp : Heap}
   ⟨fun x mem => by
       obtain ⟨v, read, holds⟩ := fc.holds x mem
       exact ⟨v, read, holds.congr (Addressed.view_congr fun _ _ => rfl)⟩,
-    fun x mem => ⟨above x mem, (fc.inside x mem).2⟩, fc.small, fc.apart⟩
+    fun x mem => ⟨above x mem, (fc.inside x mem).2⟩, fc.small, fc.apart, fc.packed⟩
 
 /-- A place's words are below the top, and so below `2 ^ 62` with the heap. -/
 theorem FrameCorr.covers_top {st : State} {hp : Heap}
