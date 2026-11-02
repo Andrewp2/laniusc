@@ -309,10 +309,10 @@ theorem step_param_locals {prog : SrcProgram} {prims : Prims} {ix_param_locals i
   simp only [src_param_locals] at h
   faithful [Lanius.Mini.paramLocals]
 
-theorem step_src_param_tys {prog : SrcProgram} {prims : Prims} {ix_src_param_tys ix_empty_of_mini_selfhost_SrcType ix_cons_of_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam : Nat} (fn : prog.funcs[ix_src_param_tys]? = some (src_src_param_tys ix_empty_of_mini_selfhost_SrcType ix_cons_of_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam ix_src_param_tys)) (np : prims.isPrim ix_src_param_tys = false)
+theorem step_src_param_tys {prog : SrcProgram} {prims : Prims} {ix_src_param_tys ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam ix_empty_of_mini_selfhost_SrcType ix_cons_of_mini_selfhost_SrcType : Nat} (fn : prog.funcs[ix_src_param_tys]? = some (src_src_param_tys ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam ix_empty_of_mini_selfhost_SrcType ix_cons_of_mini_selfhost_SrcType ix_src_param_tys)) (np : prims.isPrim ix_src_param_tys = false)
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam n))
     (ext_empty_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_SrcType prog prims ix_empty_of_mini_selfhost_SrcType n))
-    (ext_cons_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_SrcType prog prims ix_cons_of_mini_selfhost_SrcType n))
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam n)) {n : Nat}
+    (ext_cons_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_SrcType prog prims ix_cons_of_mini_selfhost_SrcType n)) {n : Nat}
     (ih_src_param_tys : Certified (Stmt_src_param_tys prog prims ix_src_param_tys n)) :
     Stmt_src_param_tys prog prims ix_src_param_tys (n + 1) := by
   intro x0 v0 w h r0
