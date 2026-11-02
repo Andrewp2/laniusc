@@ -1622,6 +1622,24 @@ may follow only a value at most `(2^64 - base) / base`, which is exact for
 those bases, so nothing past `2^64 - 1` is formed. An array length is still
 read only as decimal digits. A type suffix (`5u8`) is read by neither.
 
+## Literal patterns (decided 11-01)
+
+The verified front end reads a match on an integer or `bool` value whose
+arms' patterns are integer literals, `true` or `false` (found by the
+fuzzer: `match (x) { 1 -> 10, 3 -> 30, _ -> 0, }`). The arms are tried in
+order: the match becomes `if (x == n) arm else ..` on the scrutinee's local
+(bound first when the scrutinee is not a local), each literal typed at the
+scrutinee's type, so a `u8` match compares `u8` values. `true` and `false`
+test `x` and `!x`. The last arm must be `_`; at `bool` it may instead
+follow arms for both `true` and `false`, and the chain then ends in an
+unreachable statement, which no run reaches. A repeated literal's later
+arm is never run, as in laniusc's first-match lowering. A match that is
+not exhaustive this way (no `_`, an integer match without one) is not
+read. The forms read are a match statement, a typed `let`'s value (each
+value arm followed by the rest of the block) and a returned value; a
+literal match elsewhere in an expression, a negative literal pattern and a
+literal inside a payload pattern are not read.
+
 ## `u16` views (decided 11-01)
 
 Core's raw slices had no `u16` element (`slice_from_raw_parts` of a `u16`

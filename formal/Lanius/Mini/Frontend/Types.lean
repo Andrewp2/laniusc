@@ -404,6 +404,22 @@ structure MatchStmt where
   ret : Ty
   deriving Repr
 
+/-- A match on an integer or bool value whose arms have literal patterns (`1 -> v`, `true -> v`, as laniusc reads them) is read as a chain of ifs on the scrutinee's local: an arm runs when the local equals its literal, else the next arm is tried; a last `_` arm runs otherwise. An integer match needs the `_` arm; a bool match needs it unless both true and false have arms. The scrutinee, if it is not a local, is bound first, as a match statement's is (match_stmt_head). -/
+structure LitMatch where
+  scrutinee : Nat
+  sty : Ty
+  value : Option MEff
+  closer : Nat
+  ret : Ty
+  deriving Repr
+
+/-- What a literal match does with an arm that is not a block: a match statement does not read one, `let x: t = match (s) { .. }; rest` binds x to its value and runs rest, and `return match (s) { .. };` returns it. -/
+inductive LitForm where
+  | litStmt : LitForm
+  | litLet : Local → MStmt → LitForm
+  | litReturn : LitForm
+  deriving Repr
+
 structure MParam where
   id : Nat
   ty : Ty

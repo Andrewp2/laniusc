@@ -4,7 +4,6 @@ public import Lanius.Mini.Frontend.Types
 public import Lanius.Mini.Compiler.P.arithShiftRight
 public import Lanius.Mini.Compiler.P.matchVariants
 public import Lanius.Mini.Frontend.P.basedDigits
-public import Lanius.Mini.Frontend.P.blockArmsOf
 public import Lanius.Mini.Frontend.P.consBinder
 public import Lanius.Mini.Frontend.P.consTreeTail
 public import Lanius.Mini.Frontend.P.effNamedTys
@@ -15,6 +14,7 @@ public import Lanius.Mini.Frontend.P.freshId
 public import Lanius.Mini.Frontend.P.funcsOnto
 public import Lanius.Mini.Frontend.P.hasKids
 public import Lanius.Mini.Frontend.P.isEmptyUsize
+public import Lanius.Mini.Frontend.P.litIf
 public import Lanius.Mini.Frontend.P.lxBlockEnd
 public import Lanius.Mini.Frontend.P.lxSpaceEnd
 public import Lanius.Mini.Frontend.P.lxSymbolStart

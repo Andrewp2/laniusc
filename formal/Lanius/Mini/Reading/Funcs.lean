@@ -4,6 +4,7 @@ public import Lanius.Mini.Reading.Stmts
 public import Lanius.Mini.Reading.Bounds
 import all Lanius.Mini.Compiler.P.arithShiftRight
 import all Lanius.Mini.Frontend.P.blockArmsOf
+import all Lanius.Mini.Frontend.P.litIf
 import all Lanius.Mini.Frontend.P.callParts
 import all Lanius.Mini.Frontend.P.projection
 import all Lanius.Mini.Frontend.P.collect

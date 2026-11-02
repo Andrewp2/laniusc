@@ -9558,6 +9558,184 @@ pub fn is_block_match(fuel: usize, init: CTree) -> bool {
     };
 }
 
+// ---------------------------------------------------------------- literal patterns
+
+// A match on an integer or bool value whose arms have literal patterns
+// (`1 -> v`, `true -> v`, as laniusc reads them) is read as a chain of ifs
+// on the scrutinee's local: an arm runs when the local equals its literal,
+// else the next arm is tried; a last `_` arm runs otherwise. An integer
+// match needs the `_` arm; a bool match needs it unless both true and false
+// have arms. The scrutinee, if it is not a local, is bound first, as a match
+// statement's is (match_stmt_head).
+pub struct LitMatch {
+    scrutinee: usize,
+    sty: Ty,
+    value: core::option::Option<MEff>,
+    closer: usize,
+    ret: Ty,
+}
+
+// What a literal match does with an arm that is not a block: a match
+// statement does not read one, `let x: t = match (s) { .. }; rest` binds x
+// to its value and runs rest, and `return match (s) { .. };` returns it.
+pub enum LitForm {
+    LitStmt,
+    LitLet(Local, MStmt),
+    LitReturn,
+}
+
+// The scrutinee types a literal pattern can match.
+pub fn lit_ty(t: Ty) -> bool {
+    return match (t) {
+        TyI32 -> true,
+        TyBool -> true,
+        TyUint(u) -> true,
+        TyPtr -> false,
+        TyIsize -> true,
+        TyChar -> false,
+        TyFloat(ft) -> false,
+        TySlice(e) -> false,
+        TyNamed(d, args) -> false,
+        TySint(u) -> true,
+        TyArray(e, n) -> false,
+    };
+}
+
+// A literal pattern: `5`, `true` or `false`.
+pub fn lit_pattern(p: CTree) -> bool {
+    let k: usize = node_prod(p);
+    return k == p_pattern_int() || k == p_pattern_true() || k == p_pattern_false();
+}
+
+// A match whose first arm's pattern is a literal.
+pub fn lit_first(m: CTree) -> bool {
+    let arms: CTree = kid(m, 5);
+    return node_prod(arms) == p_match_arms_some() && lit_pattern(kid(kid(arms, 0), 0));
+}
+
+pub fn is_lit_stmt(fuel: usize, e: CTree) -> bool {
+    return match (match_primary(fuel, e)) {
+        None -> false,
+        Some(m) -> lit_first(m),
+    };
+}
+
+pub fn is_lit_init(fuel: usize, init: CTree) -> bool {
+    return match (match_init(fuel, init)) {
+        None -> false,
+        Some(m) -> lit_first(m),
+    };
+}
+
+pub fn lit_head_if(ok: bool, h: LitMatch) -> core::option::Option<LitMatch> {
+    if (ok) {
+        return Some(h);
+    }
+    return None;
+}
+
+pub fn lit_match_head(scope: List<Local>, id: usize, closer: usize, x: MEff, ety: Ty, rt: Ty) -> core::option::Option<LitMatch> {
+    return match (eff_local(x)) {
+        Some(l) -> lit_head_if(fresh_id(scope, closer), LitMatch { scrutinee: l, sty: ety, value: None, closer: closer, ret: rt }),
+        None -> lit_head_if(fresh_id(scope, id) && fresh_id(scope, closer) && id != closer, LitMatch { scrutinee: id, sty: ety, value: Some(x), closer: closer, ret: rt }),
+    };
+}
+
+pub fn lit_match_typed(env: FrontEnv, scope: List<Local>, m: CTree, x: MEff, ety: Ty) -> core::option::Option<LitMatch> {
+    if (lit_ty(ety)) {
+        return match (env.ret) {
+            None -> None,
+            Some(rt) -> lit_match_head(scope, minus(kid_token(m, 0).start, env.base), minus(kid_token(m, 6).start, env.base), x, ety, rt),
+        };
+    }
+    return None;
+}
+
+// The scrutinee, read like a match expression's, of a type lit_ty takes;
+// the function has a result.
+pub fn lit_match_parts(fuel: usize, env: FrontEnv, scope: List<Local>, m: CTree) -> core::option::Option<LitMatch> {
+    return match (eff_of(fuel, env, scope, None, kid(m, 2))) {
+        None -> None,
+        Some(x) -> match (eff_ty(fuel, env, scope, x)) {
+            None -> None,
+            Some(ety) -> lit_match_typed(env, scope, m, x, ety),
+        },
+    };
+}
+
+pub fn eq_lit(id: usize, e: core::option::Option<SrcExpr>) -> core::option::Option<SrcExpr> {
+    return match (e) {
+        None -> None,
+        Some(n) -> Some(Apply(Equal, boxed(Local(id)), boxed(n))),
+    };
+}
+
+// What an arm's literal pattern tests of the scrutinee local id: id == n
+// for an integer literal n at an integer type (the literal pass gives n
+// the local's type), id for true and !id for false at bool.
+pub fn lit_cond(id: usize, sty: Ty, p: CTree) -> core::option::Option<SrcExpr> {
+    let k: usize = node_prod(p);
+    let b: bool = same_ty(sty, TyBool);
+    if (k == p_pattern_int() && !b) {
+        return eq_lit(id, int_literal(kid_token(p, 0).text));
+    }
+    if (k == p_pattern_true() && b) {
+        return Some(Local(id));
+    }
+    if (k == p_pattern_false() && b) {
+        return Some(Not(boxed(Local(id))));
+    }
+    return None;
+}
+
+pub fn is_true_arm(a: CTree) -> bool {
+    return node_prod(kid(a, 0)) == p_pattern_true();
+}
+
+pub fn is_false_arm(a: CTree) -> bool {
+    return node_prod(kid(a, 0)) == p_pattern_false();
+}
+
+// After the last arm: Unreachable, when the arms covered the values.
+pub fn lit_end(covered: bool, h: LitMatch) -> core::option::Option<MStmt> {
+    if (covered) {
+        return Some(MUnreachable(h.closer, h.ret));
+    }
+    return None;
+}
+
+// A `_` arm is the last.
+pub fn lit_last(more: List<CTree>, body: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
+    return match (more) {
+        Nil -> body,
+        Cons(a, rest) -> None,
+    };
+}
+
+pub fn lit_if(c: core::option::Option<SrcExpr>, body: core::option::Option<MStmt>, rest: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
+    return match (c) {
+        None -> None,
+        Some(x) -> match (body) {
+            None -> None,
+            Some(b) -> match (rest) {
+                None -> None,
+                Some(r) -> Some(MIf(x, boxed(b), boxed(r))),
+            },
+        },
+    };
+}
+
+// The scrutinee's value, if it is not a local, is bound first.
+pub fn lit_bind(h: LitMatch, chain: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
+    return match (chain) {
+        None -> None,
+        Some(c) -> match (h.value) {
+            None -> Some(c),
+            Some(x) -> Some(MLetEval(h.scrutinee, h.sty, x, boxed(c))),
+        },
+    };
+}
+
 // extract: mutual begin
 // A statement list: a let scopes over the statements after it.
 pub fn block_of(fuel: usize, env: FrontEnv, scope: List<Local>, list: CTree) -> core::option::Option<MStmt> {
@@ -9600,6 +9778,12 @@ pub fn let_first(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree, rest:
         return None;
     }
     let tok: Token = kid_token(s, 1);
+    if (node_prod(kid(s, 2)) == p_let_type() && node_prod(kid(s, 3)) == p_let_init() && !member(env.globals, tok.text) && fresh_id(scope, minus(tok.start, env.base)) && is_lit_init(fuel, kid(kid(s, 3), 1))) {
+        return match (ty_of(fuel, env, kid(kid(s, 2), 1))) {
+            None -> None,
+            Some(t) -> lit_let_of(minus(fuel, 1), env, scope, Local { name: tok.text, id: minus(tok.start, env.base), ty: t }, kid(kid(s, 3), 1), stmts_of(minus(fuel, 1), env, cons(Local { name: tok.text, id: minus(tok.start, env.base), ty: t }, scope), rest)),
+        };
+    }
     if (node_prod(kid(s, 2)) == p_let_type() && node_prod(kid(s, 3)) == p_let_init() && !member(env.globals, tok.text) && fresh_id(scope, minus(tok.start, env.base)) && is_block_match(fuel, kid(kid(s, 3), 1))) {
         return match (ty_of(fuel, env, kid(kid(s, 2), 1))) {
             None -> None,
@@ -9628,6 +9812,12 @@ pub fn stmt_of(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree) -> core
     }
     let f: usize = minus(fuel, 1);
     let p: usize = node_prod(s);
+    if (p == p_return_stmt() && node_prod(kid(s, 1)) == p_return_value() && is_lit_init(f, kid(kid(s, 1), 0))) {
+        return match (match_init(f, kid(kid(s, 1), 0))) {
+            None -> None,
+            Some(m) -> lit_match_of(f, env, scope, m, LitReturn),
+        };
+    }
     if (p == p_return_stmt() && node_prod(kid(s, 1)) == p_return_value()) {
         return return_or_eval(f, env, scope, kid(kid(s, 1), 0));
     }
@@ -9651,6 +9841,12 @@ pub fn stmt_of(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree) -> core
     }
     if (p == p_for_stmt() || p == p_block_stmt()) {
         return nested_of(f, env, scope, s);
+    }
+    if (p == p_expr_stmt() && is_lit_stmt(f, kid(s, 0))) {
+        return match (match_primary(f, kid(s, 0))) {
+            None -> None,
+            Some(m) -> lit_match_of(f, env, scope, m, LitStmt),
+        };
     }
     if (p == p_expr_stmt() && is_match_stmt(f, kid(s, 0))) {
         return match_stmt_of(f, env, scope, kid(s, 0));
@@ -9828,6 +10024,71 @@ pub fn inner_let_of(fuel: usize, env: FrontEnv, scope: List<Local>, x: Local, re
         Some(h) -> match (stmt_arms(fuel, env, h, m)) {
             None -> None,
             Some(os) -> match_stmt_value(h, let_arms_of(minus(fuel, 1), env, scope, h, x, rest, 0, h.variants, os)),
+        },
+    };
+}
+
+// A literal match (LitMatch) of the given form.
+pub fn lit_match_of(fuel: usize, env: FrontEnv, scope: List<Local>, m: CTree, form: LitForm) -> core::option::Option<MStmt> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (lit_match_parts(fuel, env, scope, m)) {
+        None -> None,
+        Some(h) -> match (list_items(fuel, kid(m, 5))) {
+            None -> None,
+            Some(arms) -> lit_bind(h, lit_arms_of(minus(fuel, 1), env, scope, h, form, false, false, arms)),
+        },
+    };
+}
+
+// A literal match's arms; seen_t and seen_f say whether true and false
+// have had arms.
+pub fn lit_arms_of(fuel: usize, env: FrontEnv, scope: List<Local>, h: LitMatch, form: LitForm, seen_t: bool, seen_f: bool, arms: List<CTree>) -> core::option::Option<MStmt> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (arms) {
+        Nil -> lit_end(seen_t && seen_f, h),
+        Cons(a, more) -> lit_arm_of(minus(fuel, 1), env, scope, h, form, seen_t, seen_f, a, unbox(more)),
+    };
+}
+
+pub fn lit_arm_of(fuel: usize, env: FrontEnv, scope: List<Local>, h: LitMatch, form: LitForm, seen_t: bool, seen_f: bool, a: CTree, more: List<CTree>) -> core::option::Option<MStmt> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (is_wild_arm(a)) {
+        return lit_last(more, lit_body_of(minus(fuel, 1), env, scope, form, a));
+    }
+    return lit_if(lit_cond(h.scrutinee, h.sty, kid(a, 0)), lit_body_of(minus(fuel, 1), env, scope, form, a), lit_arms_of(minus(fuel, 1), env, scope, h, form, seen_t || is_true_arm(a), seen_f || is_false_arm(a), more));
+}
+
+// A literal match arm's body: its block, or its value in the form's way.
+pub fn lit_body_of(fuel: usize, env: FrontEnv, scope: List<Local>, form: LitForm, a: CTree) -> core::option::Option<MStmt> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (arm_block_list(fuel, a)) {
+        Some(list) -> block_of(minus(fuel, 1), env, scope, list),
+        None -> match (form) {
+            LitStmt -> None,
+            LitLet(x, rest) -> let_of(local_id_of(x), local_ty_of(x), let_head_or_eval(minus(fuel, 1), env, scope, local_ty_of(x), kid(a, 2)), Some(rest)),
+            LitReturn -> return_or_eval(minus(fuel, 1), env, scope, kid(a, 2)),
+        },
+    };
+}
+
+// `let x: t = match (s) { .. }; rest` with literal patterns.
+pub fn lit_let_of(fuel: usize, env: FrontEnv, scope: List<Local>, x: Local, init: CTree, body: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (body) {
+        None -> None,
+        Some(b) -> match (match_init(fuel, init)) {
+            None -> None,
+            Some(m) -> lit_match_of(minus(fuel, 1), env, scope, m, LitLet(x, b)),
         },
     };
 }
@@ -13939,6 +14200,21 @@ fn p_path_type_args_more() -> usize {
 // extract: inline
 fn p_pattern_ident() -> usize {
     return 195;
+}
+
+// extract: inline
+fn p_pattern_int() -> usize {
+    return 196;
+}
+
+// extract: inline
+fn p_pattern_true() -> usize {
+    return 197;
+}
+
+// extract: inline
+fn p_pattern_false() -> usize {
+    return 198;
 }
 
 // extract: inline

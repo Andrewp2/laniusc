@@ -1,0 +1,15 @@
+// Integer literals in hexadecimal, octal and binary (prefix letters in
+// either case), with `_` separators, as laniusc reads them.
+const MASK: u64 = 0xFFFF_FFFF_FFFF_FFFF;
+const LOW: i32 = 0x7fff_ffff;
+
+fn run(n: i32) -> i32 {
+    let a: i32 = 0x1F + 0o17 + 0b1010 + 1_000 + 0X10 + 0O7 + 0B1;
+    let b: u32 = 0xdead_beef;
+    let c: u8 = 0b1111_0000;
+    let d: u64 = MASK;
+    if (d == 18_446_744_073_709_551_615 && b == 3735928559 && c == 240) {
+        return a + n + (LOW - 2147483646);
+    }
+    return 0;
+}

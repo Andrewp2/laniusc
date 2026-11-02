@@ -664,6 +664,17 @@ when it is right; a stale cache entry is rejected, never used. Trusted:
     When V's first arm is plain and a later one nested, the plain arm is
     V's arm and the later ones are not read (`VariantArm.shadow`).
     SEMANTIC_DECISIONS "Nested patterns";
+  - (F11b) a match whose first arm's pattern is an integer literal, `true`
+    or `false` (`LitMatchR`, `LitArmsR`, `Reading/Stmts.lean`), as a
+    statement, a `let`'s typed value or a returned value, has a scrutinee
+    of an integer type or `bool` (`litTy`); its value is bound to the
+    match token's local unless it is a local. It is read as a chain of ifs
+    in arm order: `x == n` (n read at x's type) for an integer arm, `x` or
+    `!x` for `true` and `false` arms, the first matching arm's body run.
+    Its last arm is `_`, or at `bool` some earlier arms are `true` and
+    `false` and the chain ends unreachable; a let's rest follows each
+    arm's value (`LitBodyR.letValue`). SEMANTIC_DECISIONS "Literal
+    patterns";
   - (F11b) a payload pattern binds a name only when no enum of the program
     has a variant so spelled (`BindersR`'s `NoVariant`): laniusc reads one
     that resolves to a variant as a check. SEMANTIC_DECISIONS "Payload

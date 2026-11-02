@@ -4,6 +4,7 @@ public import Lanius.Mini.Reading.Effs
 import all Lanius.Mini.Compiler.P.arithShiftRight
 import all Lanius.Mini.Compiler.P.indexOf
 import all Lanius.Mini.Frontend.P.blockArmsOf
+import all Lanius.Mini.Frontend.P.litIf
 import all Lanius.Mini.Frontend.P.compoundEval
 import all Lanius.Mini.Frontend.P.compoundOf
 import all Lanius.Mini.Frontend.P.consBinder
@@ -1025,6 +1026,37 @@ theorem isBlockMatch_sound {fuel : Nat} {init : CTree} (h : isBlockMatch fuel in
 
 /-! ## Statement lists -/
 
+/-! ## Literal patterns -/
+
+/-- A literal match's head (`LitMatch`): the scrutinee read like a match
+expression's, of a type `litTy` takes (an integer type or `bool`); the
+function has a result. -/
+inductive LitMatchR (env : FrontEnv) (scope : List Local) (m : CTree) : LitMatch → Prop
+  | mk {x : MEff} {ety rt : Ty} {h : LitMatch} :
+      EffR env scope none (kid m 2) x → EffTy env.decls scope x ety → litTy ety = true → env.ret = some rt →
+      litMatchHead scope ((kidToken m 0).start - env.base) ((kidToken m 6).start - env.base) x ety rt = some h →
+      LitMatchR env scope m h
+
+theorem litMatchParts_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {m : CTree} {h : LitMatch}
+    (hh : litMatchParts fuel env scope m = some h) : LitMatchR env scope m h := by
+  unfold litMatchParts at hh
+  cases hx : effOf fuel env scope none (kid m 2) with
+  | none => rw [hx] at hh; cases hh
+  | some x =>
+    rw [hx] at hh
+    simp only at hh
+    cases he : effTy fuel env scope x with
+    | none => rw [he] at hh; cases hh
+    | some ety =>
+      rw [he] at hh
+      simp only [litMatchTyped] at hh
+      split at hh
+      · rename_i lt
+        cases hr : env.ret with
+        | none => rw [hr] at hh; cases hh
+        | some rt => rw [hr] at hh; exact .mk (effOf_sound hx) (effTy_sound he) lt hr hh
+      · cases hh
+
 mutual
 /-- A block's statement list. -/
 inductive BlockR (env : FrontEnv) : List Local → CTree → MStmt → Prop
@@ -1060,6 +1092,17 @@ inductive StmtsR (env : FrontEnv) : List Local → List CTree → MStmt → Prop
       LetArmsR env scope h { name := (kidToken s 1).text, id := (kidToken s 1).start - env.base, ty := t } body 0
         h.variants os c →
       matchStmtValue h (some c) = some mm → StmtsR env scope (s :: rest) mm
+  /-- `let x: t = match (s) { arms }; rest` with literal patterns: the chain
+  of ifs (`LitArmsR`), where a value arm binds x to its value and runs rest. -/
+  | letLit {scope : List Local} {s : CTree} {rest : List CTree} {t : Ty} {m : CTree} {h : LitMatch}
+      {arms : List CTree} {body c mm : MStmt} :
+      nodeProd s = pLetStmt → nodeProd (kid s 2) = pLetType → nodeProd (kid s 3) = pLetInit →
+      (kidToken s 1).text ∉ env.globals → FreshId scope ((kidToken s 1).start - env.base) →
+      TyR env (kid (kid s 2) 1) t → MatchInit (kid (kid s 3) 1) m → LitMatchR env scope m h → Items (kid m 5) arms →
+      StmtsR env ({ name := (kidToken s 1).text, id := (kidToken s 1).start - env.base, ty := t } :: scope) rest body →
+      LitArmsR env scope h (.litLet { name := (kidToken s 1).text, id := (kidToken s 1).start - env.base, ty := t } body)
+        false false arms c →
+      litBind h (some c) = some mm → StmtsR env scope (s :: rest) mm
   | last {scope : List Local} {s : CTree} {m : MStmt} : nodeProd s ≠ pLetStmt → StmtR env scope s m →
       StmtsR env scope [s] m
   | seq {scope : List Local} {s next : CTree} {more : List CTree} {a b : MStmt} : nodeProd s ≠ pLetStmt →
@@ -1109,6 +1152,40 @@ inductive StmtR (env : FrontEnv) : List Local → CTree → MStmt → Prop
   | «match» {scope : List Local} {s m : CTree} {h : MatchStmt} {os : List CTree} {c mm : MStmt} :
       nodeProd s = pExprStmt → MatchPrimary (kid s 0) m → MatchStmtR env scope m h → StmtArmsOrder env h m os →
       ArmsStmtR env scope h 0 h.variants os c → matchStmtValue h (some c) = some mm → StmtR env scope s mm
+  /-- `return match (s) { arms };` with literal patterns: each value arm returns its value. -/
+  | retLit {scope : List Local} {s m : CTree} {h : LitMatch} {arms : List CTree} {c mm : MStmt} :
+      nodeProd s = pReturnStmt → nodeProd (kid s 1) = pReturnValue → MatchInit (kid (kid s 1) 0) m →
+      LitMatchR env scope m h → Items (kid m 5) arms → LitArmsR env scope h .litReturn false false arms c →
+      litBind h (some c) = some mm → StmtR env scope s mm
+  /-- `match (s) { arms };` with literal patterns, every arm a block. -/
+  | litMatch {scope : List Local} {s m : CTree} {h : LitMatch} {arms : List CTree} {c mm : MStmt} :
+      nodeProd s = pExprStmt → MatchPrimary (kid s 0) m → LitMatchR env scope m h → Items (kid m 5) arms →
+      LitArmsR env scope h .litStmt false false arms c → litBind h (some c) = some mm → StmtR env scope s mm
+
+/-- A literal match's arms: an arm with a literal pattern runs its body when
+the scrutinee's local is its literal (`litCond`), else the next is tried; a
+last `_` arm runs otherwise; after the last arm, Unreachable, when true and
+false have both had arms (t and f). -/
+inductive LitArmsR (env : FrontEnv) : List Local → LitMatch → LitForm → Bool → Bool → List CTree → MStmt → Prop
+  | nil {scope : List Local} {h : LitMatch} {form : LitForm} :
+      LitArmsR env scope h form true true [] (.mUnreachable h.closer h.ret)
+  | wild {scope : List Local} {h : LitMatch} {form : LitForm} {t f : Bool} {a : CTree} {body : MStmt} :
+      isWildArm a = true → LitBodyR env scope form a body → LitArmsR env scope h form t f [a] body
+  | lit {scope : List Local} {h : LitMatch} {form : LitForm} {t f : Bool} {a : CTree} {as : List CTree} {c : SrcExpr}
+      {body r : MStmt} :
+      isWildArm a = false → litCond h.scrutinee h.sty (kid a 0) = some c → LitBodyR env scope form a body →
+      LitArmsR env scope h form (t || isTrueArm a) (f || isFalseArm a) as r →
+      LitArmsR env scope h form t f (a :: as) (.mIf c body r)
+
+/-- A literal match arm's body: its block, or its value in the form's way. -/
+inductive LitBodyR (env : FrontEnv) : List Local → LitForm → CTree → MStmt → Prop
+  | block {scope : List Local} {form : LitForm} {a list : CTree} {body : MStmt} :
+      ArmBlockR a list → BlockR env scope list body → LitBodyR env scope form a body
+  | letValue {scope : List Local} {x : Local} {rest : MStmt} {a : CTree} {hd : LetHead} {body : MStmt} :
+      LetInitR env scope x.ty (kid a 2) hd → letStmt x.id x.ty hd rest = some body →
+      LitBodyR env scope (.litLet x rest) a body
+  | retValue {scope : List Local} {a : CTree} {body : MStmt} :
+      ReturnR env scope (kid a 2) body → LitBodyR env scope .litReturn a body
 
 /-- A match statement's arms from variant k on. -/
 inductive ArmsStmtR (env : FrontEnv) : List Local → MatchStmt → Nat → List VariantTy → List CTree → MStmt → Prop
@@ -1205,11 +1282,21 @@ def StmtSound (fuel : Nat) : Prop :=
     (∃ b body, ArmBindR env scope h.owner v a b ∧ LetBodyR env b.scope x rest a body ∧
       armBinder h k b.ids v.payload body r = some m))) ∧
   (∀ {env scope x rest a body}, letBodyOf fuel env scope x rest a = some body → LetBodyR env scope x rest a body) ∧
-  (∀ {env scope x rest m body}, innerLetOf fuel env scope x rest m = some body → InnerLetR env scope x rest m body)
+  (∀ {env scope x rest m body}, innerLetOf fuel env scope x rest m = some body → InnerLetR env scope x rest m body) ∧
+  (∀ {env scope m form mm}, litMatchOf fuel env scope m form = some mm → ∃ h arms c, LitMatchR env scope m h ∧
+    Items (kid m 5) arms ∧ LitArmsR env scope h form false false arms c ∧ litBind h (some c) = some mm) ∧
+  (∀ {env scope h form t f arms c}, litArmsOf fuel env scope h form t f arms = some c →
+    LitArmsR env scope h form t f arms c) ∧
+  (∀ {env scope h form t f a more c}, litArmOf fuel env scope h form t f a more = some c →
+    LitArmsR env scope h form t f (a :: more) c) ∧
+  (∀ {env scope form a body}, litBodyOf fuel env scope form a = some body → LitBodyR env scope form a body) ∧
+  (∀ {env scope x init body mm}, litLetOf fuel env scope x init body = some mm → ∃ m h arms b c, MatchInit init m ∧
+    LitMatchR env scope m h ∧ Items (kid m 5) arms ∧ body = some b ∧ LitArmsR env scope h (.litLet x b) false false arms c ∧
+    litBind h (some c) = some mm)
 
 theorem stmtSound : ∀ fuel, StmtSound fuel
   | 0 => by
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     all_goals intros
     all_goals rename_i h
     · rw [blockOf.eq_def] at h; simp at h
@@ -1228,10 +1315,16 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
     · rw [letArmOf.eq_def] at h; simp at h
     · rw [letBodyOf.eq_def] at h; simp at h
     · rw [innerLetOf.eq_def] at h; simp at h
+    · rw [litMatchOf.eq_def] at h; simp at h
+    · rw [litArmsOf.eq_def] at h; simp at h
+    · rw [litArmOf.eq_def] at h; simp at h
+    · rw [litBodyOf.eq_def] at h; simp at h
+    · rw [litLetOf.eq_def] at h; simp at h
   | f + 1 => by
     obtain ⟨ihBlock, ihStmts, ihFirst, ihLet, ihStmt, ihNested, ihMatch, ihArms, ihArm, ihArmBody, ihInner,
-      ihLetMatch, ihLetArms, ihLetArm, ihLetBody, ihInnerLet⟩ := stmtSound f
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      ihLetMatch, ihLetArms, ihLetArm, ihLetBody, ihInnerLet, ihLitMatch, ihLitArms, ihLitArm, ihLitBody,
+      ihLitLet⟩ := stmtSound f
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · intro env scope list m h
       rw [blockOf.eq_def] at h
       simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
@@ -1279,6 +1372,19 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
       split at h
       · rename_i c
         simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true'] at c
+        obtain ⟨⟨⟨⟨lt, li⟩, ng⟩, fr⟩, -⟩ := c
+        cases ht : tyOf (f + 1) env (kid (kid s 2) 1) with
+        | none => rw [ht] at h; cases h
+        | some t =>
+          rw [ht] at h
+          simp only at h
+          obtain ⟨mt, hd, arms, b, c, mi, mr, it, hb, la, mv⟩ := ihLitLet h
+          refine .letLit pl lt li (fun mem => ?_) ((freshId_iff _ _).1 fr) (tyOf_sound ht) mi mr it (ihStmts hb) la mv
+          rw [(member_iff _ _).2 mem] at ng
+          cases ng
+      split at h
+      · rename_i _ c
+        simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true'] at c
         obtain ⟨⟨⟨⟨lt, li⟩, ng⟩, fr⟩, bm⟩ := c
         cases ht : tyOf (f + 1) env (kid (kid s 2) 1) with
         | none => rw [ht] at h; cases h
@@ -1291,7 +1397,7 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
           rw [(member_iff _ _).2 mem] at ng
           cases ng
       split at h
-      · rename_i _ c
+      · rename_i _ _ c
         simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true'] at c
         obtain ⟨⟨⟨lt, li⟩, ng⟩, fr⟩ := c
         cases ht : tyOf (f + 1) env (kid (kid s 2) 1) with
@@ -1314,7 +1420,7 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
               rw [(member_iff _ _).2 mem] at ng
               cases ng
       · split at h
-        · rename_i _ _ c
+        · rename_i _ _ _ c
           simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true'] at c
           obtain ⟨⟨⟨lt, li⟩, ng⟩, fr⟩ := c
           cases hu : untypedHead f env scope (kid (kid s 3) 1) with
@@ -1335,52 +1441,87 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
     · intro env scope s m h
       rw [stmtOf.eq_def] at h
       simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
-      split at h
-      · rename_i c
-        simp only [Bool.and_eq_true, decide_eq_true_eq] at c
-        exact .ret c.1 c.2 (returnOrEval_sound h)
-      split at h
-      · rename_i _ c
-        simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+      generalize isLitInit f (kid (kid s 1) 0) = li at h
+      generalize isLitStmt f (kid s 0) = ls at h
+      by_cases c1 : (decide (nodeProd s = 76) && decide (nodeProd (kid s 1) = 90) && li) = true
+      · rw [if_pos c1] at h
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at c1
+        cases hm : matchInit f (kid (kid s 1) 0) with
+        | none => rw [hm] at h; cases h
+        | some m' =>
+          rw [hm] at h
+          simp only at h
+          obtain ⟨hd, arms, c', mr, it, la, mv⟩ := ihLitMatch h
+          exact .retLit c1.1.1 c1.1.2 (matchInit_sound hm) mr it la mv
+      rw [if_neg c1] at h
+      by_cases c2 : (decide (nodeProd s = 76) && decide (nodeProd (kid s 1) = 90)) = true
+      · rw [if_pos c2] at h
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at c2
+        exact .ret c2.1 c2.2 (returnOrEval_sound h)
+      rw [if_neg c2] at h
+      by_cases c3 : (decide (nodeProd s = 76) && decide (nodeProd (kid s 1) = 91)) = true
+      · rw [if_pos c3] at h
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at c3
         simp only [Option.some.injEq] at h
         subst h
-        exact .retUnit c.1 c.2
-      split at h
-      · rename_i _ _ c
+        exact .retUnit c3.1 c3.2
+      rw [if_neg c3] at h
+      by_cases c4 : nodeProd s = 82
+      · rw [if_pos c4] at h
         simp only [Option.some.injEq] at h
         subst h
-        exact .brk (by simpa using c)
-      split at h
-      · rename_i _ _ _ c
+        exact .brk c4
+      rw [if_neg c4] at h
+      by_cases c5 : nodeProd s = 83
+      · rw [if_pos c5] at h
         simp only [Option.some.injEq] at h
         subst h
-        exact .cont (by simpa using c)
-      split at h
-      · rename_i _ _ _ _ c
-        simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+        exact .cont c5
+      rw [if_neg c5] at h
+      by_cases c6 : (decide (nodeProd s = 77) && decide (nodeProd (kid s 5) = 78)) = true
+      · rw [if_pos c6] at h
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at c6
         obtain ⟨a, b, ha, hb, ir⟩ := ifOrEval_sound h
-        exact .ifElse c.1 c.2 (ihBlock ha) (ihBlock hb) ir
-      split at h
-      · rename_i _ _ _ _ _ c
-        simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+        exact .ifElse c6.1 c6.2 (ihBlock ha) (ihBlock hb) ir
+      rw [if_neg c6] at h
+      by_cases c7 : (decide (nodeProd s = 77) && decide (nodeProd (kid s 5) = 79)) = true
+      · rw [if_pos c7] at h
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at c7
         obtain ⟨a, b, ha, hb, ir⟩ := ifOrEval_sound h
         simp only [Option.some.injEq] at hb
         subst hb
-        exact .ifOnly c.1 c.2 (ihBlock ha) ir
-      split at h
-      · rename_i _ _ _ _ _ _ pw
+        exact .ifOnly c7.1 c7.2 (ihBlock ha) ir
+      rw [if_neg c7] at h
+      by_cases c8 : nodeProd s = 80
+      · rw [if_pos c8] at h
         obtain ⟨body, hb, wr⟩ := whileOrEval_sound h
-        exact .while pw (ihBlock hb) wr
-      split at h
-      · exact ihNested h
-      split at h
-      · rename_i _ _ _ _ _ _ _ _ c
-        simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+        exact .while c8 (ihBlock hb) wr
+      rw [if_neg c8] at h
+      by_cases c9 : (decide (nodeProd s = 81) || decide (nodeProd s = 84)) = true
+      · rw [if_pos c9] at h
+        exact ihNested h
+      rw [if_neg c9] at h
+      by_cases c10 : (decide (nodeProd s = 85) && ls) = true
+      · rw [if_pos c10] at h
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at c10
+        cases hm : matchPrimary f (kid s 0) with
+        | none => rw [hm] at h; cases h
+        | some m' =>
+          rw [hm] at h
+          simp only at h
+          obtain ⟨hd, arms, c', mr, it, la, mv⟩ := ihLitMatch h
+          exact .litMatch c10.1 (matchPrimary_sound hm) mr it la mv
+      rw [if_neg c10] at h
+      by_cases c11 : (decide (nodeProd s = 85) && isMatchStmt f (kid s 0)) = true
+      · rw [if_pos c11] at h
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at c11
         obtain ⟨m, h', os, c', mp, mr, mo, ar, mv⟩ := ihMatch h
-        exact .match c.1 mp mr mo ar mv
-      split at h
-      · rename_i _ _ _ _ _ _ _ _ _ pa
-        exact .assign pa (assignment_sound h)
+        exact .match c11.1 mp mr mo ar mv
+      rw [if_neg c11] at h
+      by_cases c12 : nodeProd s = 85
+      · rw [if_pos c12] at h
+        exact .assign c12 (assignment_sound h)
+      rw [if_neg c12] at h
       cases h
     · intro env scope s m h
       rw [nestedOf.eq_def] at h
@@ -1629,6 +1770,109 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
           | some c =>
             rw [hc] at h
             exact ⟨hd, os, c, matchStmtParts_sound hp, stmtArms_sound ho, ihLetArms hc, h⟩
+    · intro env scope m form mm h
+      rw [litMatchOf.eq_def] at h
+      simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
+      cases hp : litMatchParts (f + 1) env scope m with
+      | none => rw [hp] at h; cases h
+      | some hd =>
+        rw [hp] at h
+        simp only at h
+        cases hi : listItems (f + 1) (kid m 5) with
+        | none => rw [hi] at h; cases h
+        | some arms =>
+          rw [hi] at h
+          simp only at h
+          cases hc : litArmsOf f env scope hd form false false arms with
+          | none => rw [hc] at h; simp [litBind] at h
+          | some c =>
+            rw [hc] at h
+            exact ⟨hd, arms, c, litMatchParts_sound hp, listItems_sound hi, ihLitArms hc, h⟩
+    · intro env scope hd form t fl arms c h
+      rw [litArmsOf.eq_def] at h
+      simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
+      cases arms with
+      | nil =>
+        simp only [litEnd] at h
+        split at h
+        · rename_i cv
+          simp only [Bool.and_eq_true] at cv
+          obtain ⟨rfl, rfl⟩ := cv
+          simp only [Option.some.injEq] at h
+          subst h
+          exact .nil
+        · cases h
+      | cons a more => exact ihLitArm h
+    · intro env scope hd form t fl a more c h
+      rw [litArmOf.eq_def] at h
+      simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
+      split at h
+      · rename_i w
+        cases more with
+        | nil =>
+          simp only [litLast] at h
+          exact .wild w (ihLitBody h)
+        | cons _ _ => simp [litLast] at h
+      · rename_i w
+        simp only [litIf] at h
+        cases hc : litCond hd.scrutinee hd.sty (kid a 0) with
+        | none => rw [hc] at h; cases h
+        | some cd =>
+          rw [hc] at h
+          simp only at h
+          cases hb : litBodyOf f env scope form a with
+          | none => rw [hb] at h; cases h
+          | some body =>
+            rw [hb] at h
+            simp only at h
+            cases hr : litArmsOf f env scope hd form (t || isTrueArm a) (fl || isFalseArm a) more with
+            | none => rw [hr] at h; cases h
+            | some r =>
+              rw [hr] at h
+              simp only [Option.some.injEq] at h
+              subst h
+              exact .lit (by simpa using w) hc (ihLitBody hb) (ihLitArms hr)
+    · intro env scope form a body h
+      rw [litBodyOf.eq_def] at h
+      simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
+      cases hl : armBlockList (f + 1) a with
+      | some list =>
+        rw [hl] at h
+        exact .block (armBlockList_sound hl) (ihBlock h)
+      | none =>
+        rw [hl] at h
+        simp only at h
+        cases form with
+        | litStmt => cases h
+        | litLet x rest =>
+          simp only [localIdOf, localTyOf, letOf] at h
+          cases hh : letHeadOrEval f env scope x.ty (kid a 2) with
+          | none => rw [hh] at h; cases h
+          | some hd' =>
+            rw [hh] at h
+            simp only [letBody] at h
+            cases hs : letStmt x.id x.ty hd' rest with
+            | none => rw [hs] at h; cases h
+            | some body' =>
+              rw [hs] at h
+              simp only [Option.some.injEq] at h
+              subst h
+              exact .letValue (letHeadOrEval_sound hh) hs
+        | litReturn => exact .retValue (returnOrEval_sound h)
+    · intro env scope x init body mm h
+      rw [litLetOf.eq_def] at h
+      simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
+      cases body with
+      | none => cases h
+      | some b =>
+        simp only at h
+        cases hm : matchInit (f + 1) init with
+        | none => rw [hm] at h; cases h
+        | some m =>
+          rw [hm] at h
+          simp only at h
+          obtain ⟨hd, arms, c, mr, it, la, mv⟩ := ihLitMatch h
+          exact ⟨m, hd, arms, b, c, matchInit_sound hm, mr, it, rfl, la, mv⟩
 
 theorem blockOf_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {list : CTree} {m : MStmt}
     (h : blockOf fuel env scope list = some m) : BlockR env scope list m :=

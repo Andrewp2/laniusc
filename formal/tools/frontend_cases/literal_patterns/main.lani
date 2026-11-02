@@ -1,0 +1,28 @@
+// Matches on integer and bool values with literal patterns: arms tried in
+// order, a `_` last or both bool values covered.
+fn pick(x: i32) -> i32 {
+    let r: i32 = match (x) { 1 -> 10, 3 -> 30, _ -> 0, };
+    return r;
+}
+
+fn flag(b: bool) -> i32 {
+    return match (b) { true -> 4, false -> 5, };
+}
+
+fn small(x: u8) -> i32 {
+    return match (x) { 200 -> 1, 0x10 -> 3, _ -> 2, };
+}
+
+fn step(n: i32) -> i32 {
+    match (n + 1) {
+        2 -> { return 7; },
+        2 -> { return 8; },
+        _ -> { let k: i32 = n; },
+    };
+    return 9;
+}
+
+fn run(n: i32) -> i32 {
+    let c: u8 = 200;
+    return pick(n) + pick(3) + flag(n == 1) + flag(false) + small(c) + small(16) + step(n) + step(5);
+}
