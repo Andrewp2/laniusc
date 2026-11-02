@@ -1,0 +1,2 @@
+{ params := [{ id := 0, ty := (.slice .i32) }], ret := (.uint .usize), body := (.returnEval (.eLen 0)) }
+{ params := [{ id := 0, ty := .i32 }], ret := .i32, body := (.letAlloc 1 (.cast (.uint .usize) (.int 64)) 3 (.letSlice 2 .i32 (.local 1) (.int 4) (.letStruct 3 (.array .i32 3) [(.local 0), (.int 2), (.int 3)] (.letEval 4 (.uint .usize) (.eLen 2) (.letEval 5 (.uint .usize) (.eApply .plus (.ePure (.local 4)) (.eCall 0 [(.arraySlice .i32 3)])) (.return (.cast .i32 (.local 5)))))))) }
