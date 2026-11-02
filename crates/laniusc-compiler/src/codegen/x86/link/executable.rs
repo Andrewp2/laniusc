@@ -730,7 +730,9 @@ pub(super) fn relocation_words(
         )?;
         let (target_object, target_section) = match relocation.target_kind {
             1 => (relocation.object_index, relocation.target_index),
-            2 => (relocation.target_index, relocation.target_section),
+            2 | super::X86_LINK_TARGET_OBJECT_SECTION => {
+                (relocation.target_index, relocation.target_section)
+            }
             kind => bail!("x86 relocation has invalid target kind {kind}"),
         };
         let target_file = section_file_offset(

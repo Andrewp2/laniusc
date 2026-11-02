@@ -301,6 +301,7 @@ mod tests {
             library_id: 1,
             unit_id: 0,
             entry_offset: Some(0),
+            body: None,
             text_byte_len: 80,
             rodata_byte_len: 9,
             relocation_count: 2,

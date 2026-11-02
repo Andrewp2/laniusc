@@ -35,7 +35,8 @@ struct X86ArtifactParams {
     target_start: u32,
     page_capacity: u32,
     semantic_capacity: u32,
-    reserved1: u32,
+    /// Rows of `x86_runtime_reference`; zero when no object is projected.
+    runtime_reference_capacity: u32,
 }
 
 #[derive(Clone, Copy)]
@@ -109,6 +110,14 @@ impl GpuX86ArtifactStage {
         let runtime_dispatch_args_buffer = alias_u32("lir.x86.runtime_dispatch_args", 3)?;
         let token_capacity = capacities.declaration_capacity();
         let function_capacity = capacities.hir_nodes.max(1);
+        let runtime_reference_capacity = if graph
+            .resource_id("artifact.x86.object.runtime_relocations")
+            .is_some()
+        {
+            target_capacity
+        } else {
+            0
+        };
         let params = (0..emit_capacity.div_ceil(TARGET_LIR_PAGE_ROWS))
             .map(|page_id| {
                 let target_start = page_id * TARGET_LIR_PAGE_ROWS;
@@ -125,7 +134,7 @@ impl GpuX86ArtifactStage {
                             .saturating_sub(target_start)
                             .min(TARGET_LIR_PAGE_ROWS),
                         semantic_capacity: capacities.semantic_instructions.max(1),
-                        reserved1: 0,
+                        runtime_reference_capacity,
                     },
                 )
             })

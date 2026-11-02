@@ -166,7 +166,7 @@ fn physical_gpu_runtime_dispatch_covers_tail_and_resets_invalid_work() {
             target_start: 0,
             page_capacity: 0,
             semantic_capacity: 0,
-            reserved1: 0,
+            runtime_reference_capacity: 0,
         },
     );
     let mut resources = ResourceMap::new();

@@ -31,6 +31,7 @@ RWStructuredBuffer<uint> link_relocation_status;
 
 static const uint TARGET_SECTION_OFFSET = 1u;
 static const uint TARGET_SYMBOL = 2u;
+static const uint TARGET_OBJECT_SECTION = 3u; // pre-resolved by the host link plan
 static const uint RELOC_REL32 = 1u;
 static const uint RELOC_CALL_REL32 = 2u;
 static const uint RELOC_ABS32 = 3u;
@@ -79,7 +80,7 @@ void main(uint3 tid: SV_DispatchThreadID)
         return;
     }
 
-    if (b.y != TARGET_SECTION_OFFSET && b.y != TARGET_SYMBOL)
+    if (b.y != TARGET_SECTION_OFFSET && b.y != TARGET_SYMBOL && b.y != TARGET_OBJECT_SECTION)
     {
         publish_error(7u, relocation_i);
         return;

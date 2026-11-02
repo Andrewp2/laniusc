@@ -31,8 +31,11 @@ use super::support::{
     workgroup_grid_1d,
 };
 use super::{
+    GPU_X86_CRT_MAIN_BRIDGE_BYTES,
     GpuX86LinkObjectMetadata,
     GpuX86Linker,
+    GpuX86ObjectBodyRange,
+    GpuX86ObjectSection,
     GpuX86RelocatableObject,
     GpuX86RelocatableObjectLayout,
     GpuX86RelocationTargetKind,
@@ -40,6 +43,88 @@ use super::{
 use crate::codegen::{GpuLinkByteSource, retained_column_with_capacity};
 
 pub(super) const X86_LINK_SYMBOL_IDENTITY_BYTES: usize = 12;
+
+/// Link relocation target kind for a target already resolved to
+/// (`target_index` = object, `target_section`, `target_offset`), as symbol
+/// resolution leaves a `Symbol` target. Object containers never carry it.
+pub(super) const X86_LINK_TARGET_OBJECT_SECTION: u32 = 3;
+
+/// How one object's text enters an executable link.
+///
+/// Every object the GPU emits carries its own copy of the native runtime (see
+/// `GpuX86ObjectBodyRange`). The link keeps the entry object's text whole and
+/// copies only the body of every other object whose runtime is byte-identical
+/// to the entry's, so the executable has one runtime, one CRT bridge and one
+/// `_start` wrapper. Relocations into a dropped copy move to the kept one;
+/// relocations into a kept copy are already encoded in its object's bytes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct X86LinkTextPlan {
+    /// The object text range copied into the executable.
+    copy: std::ops::Range<u32>,
+    /// The object's own native runtime (excluding the CRT bridge), if any.
+    runtime: Option<std::ops::Range<u32>>,
+    /// The (entry object, entry runtime start) its runtime references move to.
+    shared_runtime: Option<(u32, u32)>,
+}
+
+impl X86LinkTextPlan {
+    fn whole(text_len: u32) -> Self {
+        Self {
+            copy: 0..text_len,
+            runtime: None,
+            shared_runtime: None,
+        }
+    }
+}
+
+/// The native runtime proper of an object: everything after its body but the
+/// CRT bridge trailer, whose `call main` displacement is per object.
+fn object_runtime_range(
+    body: Option<GpuX86ObjectBodyRange>,
+    text_len: u32,
+) -> Option<std::ops::Range<u32>> {
+    let body = body?;
+    let end = text_len.checked_sub(GPU_X86_CRT_MAIN_BRIDGE_BYTES)?;
+    (body.end < end).then_some(body.end..end)
+}
+
+/// Plans each object's text contribution. `objects` yields (entry offset,
+/// body range, text length); `runtime_bytes` reads one object's text range.
+fn shared_runtime_text_plans<'a>(
+    objects: &[(Option<u32>, Option<GpuX86ObjectBodyRange>, u32)],
+    runtime_bytes: impl Fn(usize, std::ops::Range<u32>) -> Result<std::borrow::Cow<'a, [u8]>, String>,
+) -> Result<Vec<X86LinkTextPlan>, String> {
+    let mut plans = objects
+        .iter()
+        .map(|&(_, body, text_len)| X86LinkTextPlan {
+            runtime: object_runtime_range(body, text_len),
+            ..X86LinkTextPlan::whole(text_len)
+        })
+        .collect::<Vec<_>>();
+    let Some(entry) = objects.iter().position(|(entry, _, _)| entry.is_some()) else {
+        return Ok(plans);
+    };
+    let Some(entry_runtime) = plans[entry].runtime.clone() else {
+        return Ok(plans);
+    };
+    let entry_bytes = runtime_bytes(entry, entry_runtime.clone())?;
+    let entry_object = checked_u32_count("object", entry)?;
+    for (index, &(entry_offset, body, _)) in objects.iter().enumerate() {
+        let (Some(body), Some(runtime)) = (body, plans[index].runtime.clone()) else {
+            continue;
+        };
+        if index == entry
+            || entry_offset.is_some()
+            || runtime.len() != entry_runtime.len()
+            || runtime_bytes(index, runtime)? != entry_bytes
+        {
+            continue;
+        }
+        plans[index].copy = body.start..body.end;
+        plans[index].shared_runtime = Some((entry_object, entry_runtime.start));
+    }
+    Ok(plans)
+}
 
 /// The link-input error for objects none of which defines `main`. Library
 /// objects carry no entry requirement, so the program-level check happens
@@ -131,6 +216,20 @@ impl GpuX86LinkInput {
             return Err("x86 link requires at least one object".to_string());
         }
         checked_u32_count("object", source_objects.len())?;
+        for object in &source_objects {
+            object.validate()?;
+        }
+        let plans = shared_runtime_text_plans(
+            &source_objects
+                .iter()
+                .map(|object| (object.entry_offset, object.body, object.text.len() as u32))
+                .collect::<Vec<_>>(),
+            |index, range| {
+                Ok(std::borrow::Cow::Borrowed(
+                    &source_objects[index].text[range.start as usize..range.end as usize],
+                ))
+            },
+        )?;
 
         // Size every flat column once: growing a multi-megabyte text column
         // object by object reallocates and copies it several times.
@@ -140,7 +239,7 @@ impl GpuX86LinkInput {
         let mut input = Self::empty(
             GpuLinkByteSource::resident(
                 "x86 link text bytes",
-                retained_column_with_capacity(total(|object| object.text.len())),
+                retained_column_with_capacity(plans.iter().map(|plan| plan.copy.len()).sum()),
             ),
             GpuLinkByteSource::resident(
                 "x86 link rodata bytes",
@@ -152,8 +251,11 @@ impl GpuX86LinkInput {
         input.symbols.reserve(total(|object| object.symbols.len()));
 
         for (object_index, object) in source_objects.iter().copied().enumerate() {
-            input.append_object(object_index, object)?;
-            input.text.extend_resident(&object.text);
+            let plan = &plans[object_index];
+            input.append_object(object_index, object, plan)?;
+            input
+                .text
+                .extend_resident(&object.text[plan.copy.start as usize..plan.copy.end as usize]);
             input.rodata.extend_resident(&object.rodata);
             checked_u32_count("flat text byte", input.text_len())?;
             checked_u32_count("flat rodata byte", input.rodata_len())?;
@@ -167,6 +269,23 @@ impl GpuX86LinkInput {
     pub(crate) fn for_executable_files(
         files: impl IntoIterator<Item = (PathBuf, GpuX86RelocatableObjectLayout)>,
     ) -> Result<Self, String> {
+        let files = files.into_iter().collect::<Vec<_>>();
+        let plans = shared_runtime_text_plans(
+            &files
+                .iter()
+                .map(|(_, layout)| (layout.entry_offset, layout.body, layout.text_byte_len))
+                .collect::<Vec<_>>(),
+            |index, range| {
+                let (path, layout) = &files[index];
+                let (text_range, _) = layout.payload_byte_ranges()?;
+                read_file_range(
+                    path,
+                    text_range.start + u64::from(range.start)
+                        ..text_range.start + u64::from(range.end),
+                )
+                .map(std::borrow::Cow::Owned)
+            },
+        )?;
         let mut input = Self::empty(
             GpuLinkByteSource::file_segments("x86 link text bytes"),
             GpuLinkByteSource::file_segments("x86 link rodata bytes"),
@@ -175,16 +294,19 @@ impl GpuX86LinkInput {
         for (object_index, (path, layout)) in files.into_iter().enumerate() {
             let metadata = GpuX86LinkObjectMetadata::from_file(&path, layout)
                 .map_err(|reason| format!("parse x86 link object {}: {reason}", path.display()))?;
+            let plan = &plans[object_index];
             input.append_object_columns(
                 object_index,
                 layout.entry_offset,
-                layout.text_byte_len,
+                plan,
                 layout.rodata_byte_len,
                 &metadata.relocations,
                 &metadata.symbols,
                 &metadata.identity_bytes,
             )?;
             let (text_range, rodata_range) = layout.payload_byte_ranges()?;
+            let text_range = text_range.start + u64::from(plan.copy.start)
+                ..text_range.start + u64::from(plan.copy.end);
             input.text.push_file_segment(path.clone(), text_range)?;
             input.rodata.push_file_segment(path, rodata_range)?;
             checked_u32_count("flat text byte", input.text_len())?;
@@ -213,12 +335,12 @@ impl GpuX86LinkInput {
         &mut self,
         object_index: usize,
         object: &GpuX86RelocatableObject,
+        plan: &X86LinkTextPlan,
     ) -> Result<(), String> {
-        object.validate()?;
         self.append_object_columns(
             object_index,
             object.entry_offset,
-            object.text.len() as u32,
+            plan,
             object.rodata.len() as u32,
             &object.relocations,
             &object.symbols,
@@ -226,11 +348,12 @@ impl GpuX86LinkInput {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn append_object_columns(
         &mut self,
         object_index: usize,
         entry_offset: Option<u32>,
-        text_len: u32,
+        plan: &X86LinkTextPlan,
         rodata_len: u32,
         relocations: &[super::GpuX86RelocationRecord],
         symbols: &[super::GpuX86ObjectSymbolRecord],
@@ -249,24 +372,70 @@ impl GpuX86LinkInput {
                 ));
             }
             self.entry_object_index = object_index;
-            debug_assert!(entry_offset < text_len);
+            debug_assert!(entry_offset < plan.copy.end);
         }
+        let text_len = plan.copy.end - plan.copy.start;
+        // Text offsets of an object copied from `plan.copy.start`.
+        let copied_text_offset = |offset: u32, len: u32, what: &str| {
+            offset
+                .checked_add(len)
+                .filter(|&end| offset >= plan.copy.start && end <= plan.copy.end)
+                .map(|_| offset - plan.copy.start)
+                .ok_or_else(|| {
+                    format!(
+                        "x86 link object {object_index} {what} {offset}..{} lies outside its copied text {}..{}",
+                        offset.saturating_add(len),
+                        plan.copy.start,
+                        plan.copy.end
+                    )
+                })
+        };
+        let relocation_start_len = self.relocations.len();
         for relocation in relocations {
+            let mut target_kind = relocation.target_kind as u32;
+            let mut target_offset = relocation.target_offset;
+            let mut target_section = 0;
             let target_index = match relocation.target_kind {
+                GpuX86RelocationTargetKind::SectionOffset
+                    if relocation.target_index == GpuX86ObjectSection::Text as u32 =>
+                {
+                    match (&plan.runtime, plan.shared_runtime) {
+                        (Some(runtime), shared) if runtime.contains(&target_offset) => {
+                            // The kept runtime's bytes already encode it.
+                            let Some((entry_object, entry_runtime)) = shared else {
+                                continue;
+                            };
+                            target_kind = X86_LINK_TARGET_OBJECT_SECTION;
+                            target_section = GpuX86ObjectSection::Text as u32;
+                            target_offset = entry_runtime + (target_offset - runtime.start);
+                            entry_object
+                        }
+                        _ => {
+                            target_offset =
+                                copied_text_offset(target_offset, 0, "relocation target")?;
+                            relocation.target_index
+                        }
+                    }
+                }
                 GpuX86RelocationTargetKind::SectionOffset => relocation.target_index,
                 GpuX86RelocationTargetKind::Symbol => symbol_start
                     .checked_add(relocation.target_index)
                     .ok_or_else(|| "x86 link global symbol index overflows".to_string())?,
             };
+            let site_offset = if relocation.site_section == GpuX86ObjectSection::Text {
+                copied_text_offset(relocation.site_offset, 4, "relocation site")?
+            } else {
+                relocation.site_offset
+            };
             self.relocations.push(GpuX86LinkRelocationRecord {
                 object_index,
                 kind: relocation.kind as u32,
                 site_section: relocation.site_section as u32,
-                site_offset: relocation.site_offset,
-                target_kind: relocation.target_kind as u32,
+                site_offset,
+                target_kind,
                 target_index,
-                target_offset: relocation.target_offset,
-                target_section: 0,
+                target_offset,
+                target_section,
                 addend_lo: relocation.addend as u64 as u32,
                 addend_hi: ((relocation.addend as u64) >> 32) as u32,
             });
@@ -293,7 +462,11 @@ impl GpuX86LinkInput {
                     u32::from_le_bytes(identity[8..12].try_into().expect("four bytes")),
                 ],
                 section: symbol.section as u32,
-                offset: symbol.offset,
+                offset: if symbol.section == GpuX86ObjectSection::Text {
+                    copied_text_offset(symbol.offset, symbol.size, "symbol")?
+                } else {
+                    symbol.offset
+                },
                 size: symbol.size,
                 flags: symbol.flags,
             });
@@ -306,7 +479,7 @@ impl GpuX86LinkInput {
             rodata_input_start,
             rodata_len,
             relocation_start,
-            relocation_count: relocations.len() as u32,
+            relocation_count: (self.relocations.len() - relocation_start_len) as u32,
             symbol_start,
             symbol_count: symbols.len() as u32,
             entry_offset: entry_offset.unwrap_or(u32::MAX),
@@ -355,6 +528,18 @@ impl GpuX86LinkInput {
     ) -> Result<Vec<u8>, String> {
         self.rodata.read_range(range)
     }
+}
+
+fn read_file_range(path: &std::path::Path, range: std::ops::Range<u64>) -> Result<Vec<u8>, String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(path)
+        .map_err(|err| format!("open x86 link object {}: {err}", path.display()))?;
+    file.seek(SeekFrom::Start(range.start))
+        .map_err(|err| format!("seek x86 link object {}: {err}", path.display()))?;
+    let mut bytes = vec![0; (range.end - range.start) as usize];
+    file.read_exact(&mut bytes)
+        .map_err(|err| format!("read x86 link object {}: {err}", path.display()))?;
+    Ok(bytes)
 }
 
 fn checked_u32_count(label: &str, count: usize) -> Result<u32, String> {
@@ -916,6 +1101,7 @@ mod tests {
             library_id: 6,
             unit_id: 2,
             entry_offset: None,
+            body: None,
             text: vec![0x90, 0xc3],
             rodata: vec![1, 2],
             relocations: Vec::new(),
@@ -927,6 +1113,7 @@ mod tests {
             library_id: 7,
             unit_id: 3,
             entry_offset: Some(0),
+            body: None,
             text: vec![0xe8, 0, 0, 0, 0, 0xc3],
             rodata: vec![3],
             relocations: vec![GpuX86RelocationRecord {
@@ -964,6 +1151,7 @@ mod tests {
                 library_id: 1,
                 unit_id: 0,
                 entry_offset: None,
+                body: None,
                 text: vec![1, 2],
                 rodata: vec![3, 4],
                 relocations: Vec::new(),
@@ -975,6 +1163,7 @@ mod tests {
                 library_id: 1,
                 unit_id: 1,
                 entry_offset: Some(0),
+                body: None,
                 text: vec![5, 6],
                 rodata: vec![7, 8],
                 relocations: Vec::new(),
@@ -1022,6 +1211,7 @@ mod tests {
             library_id: 1,
             unit_id: 0,
             entry_offset: None,
+            body: None,
             text: vec![0xc3],
             rodata: Vec::new(),
             relocations: Vec::new(),
@@ -1047,6 +1237,7 @@ mod tests {
             library_id: 1,
             unit_id: 0,
             entry_offset: None,
+            body: None,
             text: Vec::new(),
             rodata: Vec::new(),
             relocations: Vec::new(),
@@ -1058,6 +1249,7 @@ mod tests {
             library_id: 2,
             unit_id: 0,
             entry_offset: None,
+            body: None,
             text: vec![0x90, 0xc3, 0xcc],
             rodata: vec![1],
             relocations: Vec::new(),
@@ -1069,6 +1261,7 @@ mod tests {
             library_id: 3,
             unit_id: 0,
             entry_offset: Some(1),
+            body: None,
             text: vec![0x90, 0xc3],
             rodata: vec![2, 3, 4],
             relocations: Vec::new(),
@@ -1096,6 +1289,7 @@ mod tests {
             library_id: 8,
             unit_id: 0,
             entry_offset: Some(0),
+            body: None,
             text: vec![0xe8, 0, 0, 0, 0, 0xc3],
             rodata: Vec::new(),
             relocations: vec![GpuX86RelocationRecord {
@@ -1115,6 +1309,7 @@ mod tests {
             library_id: 9,
             unit_id: 0,
             entry_offset: None,
+            body: None,
             text: vec![0xb8, 7, 0, 0, 0, 0xc3],
             rodata: Vec::new(),
             relocations: Vec::new(),
@@ -1161,6 +1356,92 @@ mod tests {
             unresolved
                 .downcast_ref::<GpuX86MissingSymbolDefinition>()
                 .is_some()
+        );
+    }
+
+    /// [2-byte wrapper][5-byte body][6-byte runtime][CRT bridge]: the body
+    /// calls runtime offset 3 at site 3, and defines one function at 2.
+    fn runtime_object(
+        unit_id: u32,
+        entry: bool,
+        runtime: [u8; 6],
+    ) -> GpuX86RelocatableObject {
+        let identity_bytes = identity(1, unit_id, 0);
+        let mut definition = symbol(&identity_bytes, GpuX86ObjectSection::Text);
+        definition.offset = 2;
+        definition.size = 5;
+        GpuX86RelocatableObject {
+            version: GPU_X86_OBJECT_VERSION,
+            library_id: 1,
+            unit_id,
+            entry_offset: entry.then_some(0),
+            body: Some(GpuX86ObjectBodyRange { start: 2, end: 7 }),
+            text: [
+                vec![0xaa; 2],
+                vec![0xe8, 0, 0, 0, 0],
+                runtime.to_vec(),
+                vec![0xbb; GPU_X86_CRT_MAIN_BRIDGE_BYTES as usize],
+            ]
+            .concat(),
+            rodata: vec![],
+            relocations: vec![GpuX86RelocationRecord {
+                kind: GpuX86RelocationKind::CallRel32,
+                site_section: GpuX86ObjectSection::Text,
+                site_offset: 3,
+                target_kind: GpuX86RelocationTargetKind::SectionOffset,
+                target_index: GpuX86ObjectSection::Text as u32,
+                target_offset: 7 + 3,
+                addend: -4,
+            }],
+            symbols: vec![definition],
+            identity_bytes,
+        }
+    }
+
+    #[test]
+    fn executable_link_keeps_one_runtime_copy_and_redirects_the_others() {
+        let runtime = [1, 2, 3, 4, 5, 6];
+        let objects = [
+            runtime_object(0, false, runtime),
+            runtime_object(1, true, runtime),
+            // A runtime that differs from the entry's (another build) stays.
+            runtime_object(2, false, [9; 6]),
+        ];
+        let whole = objects[1].text.len() as u32;
+        let input = GpuX86LinkInput::for_executable(&objects).expect("link input");
+
+        assert_eq!(input.entry_object_index, 1);
+        assert_eq!(
+            input.objects.iter().map(|object| object.text_len).collect::<Vec<_>>(),
+            [5, whole, whole]
+        );
+        assert_eq!(input.text_len() as u32, 5 + 2 * whole);
+        assert_eq!(input.read_text_range(0..5).unwrap(), [0xe8, 0, 0, 0, 0]);
+        // The first object's body moved down by its wrapper, and its runtime
+        // call now targets the entry object's copy.
+        let symbol_offsets = input.symbols.iter().map(|symbol| symbol.offset).collect::<Vec<_>>();
+        assert_eq!(symbol_offsets, [0, 2, 2]);
+        assert_eq!(input.relocations.len(), 1, "kept copies need no relocation");
+        assert_eq!(
+            input.relocations[0],
+            GpuX86LinkRelocationRecord {
+                object_index: 0,
+                kind: GpuX86RelocationKind::CallRel32 as u32,
+                site_section: GpuX86ObjectSection::Text as u32,
+                site_offset: 1,
+                target_kind: X86_LINK_TARGET_OBJECT_SECTION,
+                target_index: 1,
+                target_offset: 7 + 3,
+                target_section: GpuX86ObjectSection::Text as u32,
+                addend_lo: (-4i32) as u32,
+                addend_hi: u32::MAX,
+            }
+        );
+        // The entry object and the third object keep their own runtime, whose
+        // references their bytes already encode.
+        assert_eq!(
+            input.objects.iter().map(|object| object.relocation_count).collect::<Vec<_>>(),
+            [1, 0, 0]
         );
     }
 }

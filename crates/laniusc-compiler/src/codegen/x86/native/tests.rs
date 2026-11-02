@@ -39,7 +39,8 @@ fn executable_object() -> GpuX86FileObject {
         library_id: 1,
         unit_id: 2,
         entry_offset: Some(0),
-        text: [vec![0xb8, 37, 0, 0, 0, 0xc3], vec![0x90; 219]].concat(),
+        body: None,
+        text: [vec![0xb8, 37, 0, 0, 0, 0xc3], vec![0x90; GPU_X86_CRT_MAIN_BRIDGE_BYTES as usize - 6]].concat(),
         rodata: vec![],
         relocations: vec![],
         symbols: vec![],
@@ -59,7 +60,7 @@ fn executable_bridge() -> NativeMainBridge {
 fn bridge() -> NativeMainBridge {
     NativeMainBridge {
         object_index: 0,
-        text_offset: 31,
+        text_offset: 256 - GPU_X86_CRT_MAIN_BRIDGE_BYTES,
         byte_len: GPU_X86_CRT_MAIN_BRIDGE_BYTES,
     }
 }
@@ -109,6 +110,7 @@ fn object() -> GpuX86RelocatableObject {
         library_id: 1,
         unit_id: 2,
         entry_offset: Some(0),
+        body: None,
         text: (0u8..=255).collect(),
         rodata: b"opaque\0bytes".to_vec(),
         relocations: vec![],

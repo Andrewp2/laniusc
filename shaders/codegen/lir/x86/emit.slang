@@ -6,6 +6,7 @@ import codegen.lir.x86.common;
 import codegen.lir.x86.location_common;
 import codegen.lir.x86.frame_layout;
 import codegen.lir.x86.safety;
+import codegen.lir.x86.runtime_abi;
 import codegen.lir.x86.encoding;
 import codegen.lir.x86.instruction_plan;
 import gpu_index;
@@ -13,6 +14,27 @@ import gpu_index;
 // Writes every target row's body and implicit footer (ordinary and
 // specialized alike) from the shared instruction plan, plus the ELF header,
 // entry wrapper and rodata. Prologues and guards are written by safety_emit.
+//
+// Each row also records its one native-runtime reference (a guard's trap jcc
+// or a runtime call): x = text-relative rel32 site + 1 (0 = none), y =
+// relocation kind << 16 | runtime offset. The object stage turns these into
+// relocations so a link can keep a single runtime copy.
+RWStructuredBuffer<uint2> x86_runtime_reference;
+RWStructuredBuffer<uint> x86_runtime_reference_flag;
+
+static const uint X86_RUNTIME_REFERENCE_REL32 = 1u;
+static const uint X86_RUNTIME_REFERENCE_CALL_REL32 = 2u;
+
+// The runtime trap a row's guard branches to, or 0xffffffff. Every trap guard
+// ends in its jcc rel32 (safety_emit.emit_guards).
+uint x86_guard_trap_offset(X86LirCore core, X86LirOperands operands)
+{
+    if ((core.op == X86_LIR_OP_INDEX_LOAD || core.op == X86_LIR_OP_INDEX_STORE ||
+         core.op == X86_LIR_OP_INDEX_ADDRESS) && core.local_ordinal != 0xffffffffu)
+        return X86_RUNTIME_TRAP_BOUNDS_OFFSET;
+    if (x86_safety_shift(core, operands)) return X86_RUNTIME_TRAP_SHIFT_OFFSET;
+    return 0xffffffffu;
+}
 
 uint resolve_plan_word(X86PlanOp op, uint cursor, X86ArtifactLayout layout)
 {
@@ -91,6 +113,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (layout.status != 0u) return;
     emit_rodata_word(row, layout);
     if (row >= total) return;
+    // An executable build binds one-row reference buffers and records none.
+    bool record_runtime_reference = row < gParams.runtime_reference_capacity;
+    uint2 runtime_reference = uint2(0u, 0u);
+    if (record_runtime_reference)
+    {
+        x86_runtime_reference[row] = runtime_reference;
+        x86_runtime_reference_flag[row] = 0u;
+    }
     if (row == 0u) emit_header_and_wrapper(layout);
     X86LirCore core = target_lir_core[page_row];
     uint function_id = semantic_function_id_by_hir[core.source_hir];
@@ -108,6 +138,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (row == function.instruction_start)
         cursor += prologue_bytes(function, semantic_function, saved_mask);
     cursor += x86_safety_guard_bytes(core, operands, locations);
+    uint guard_trap = x86_guard_trap_offset(core, operands);
+    if (guard_trap != 0xffffffffu)
+        runtime_reference = uint2(cursor - 4u - layout.text_offset + 1u,
+            (X86_RUNTIME_REFERENCE_REL32 << 16u) | guard_trap);
 
     X86PlanInput input;
     input.core = core;
@@ -155,10 +189,23 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         X86PlanOp op = x86_plan(input, step);
         if (x86_op_kind(op.head) == X86_OP_END) break;
-        if (x86_op_kind(op.head) == X86_OP_BYTES) op.b = resolve_plan_word(op, cursor, layout);
+        if (x86_op_kind(op.head) == X86_OP_BYTES)
+        {
+            // A runtime target is the op's one trailing rel32 word (plan_jump).
+            if (((op.head >> 13u) & 7u) == X86_RESOLVE_RUNTIME)
+                runtime_reference = uint2(
+                    cursor + x86_bytes_op_length(op.head) - 4u - layout.text_offset + 1u,
+                    (X86_RUNTIME_REFERENCE_CALL_REL32 << 16u) | op.b);
+            op.b = resolve_plan_word(op, cursor, layout);
+        }
         X86Code code = x86_encode(op);
         for (uint i = 0u; i < code.length; i += 1u)
             store_byte(cursor + i, x86_code_byte(code, i));
         cursor += code.length;
+    }
+    if (record_runtime_reference && runtime_reference.x != 0u)
+    {
+        x86_runtime_reference[row] = runtime_reference;
+        x86_runtime_reference_flag[row] = 1u;
     }
 }

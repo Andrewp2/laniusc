@@ -24,6 +24,9 @@ mod object_extent {
     pub(super) fn artifact_bytes(c: LoweringCapacities) -> u32 {
         c.artifact_bytes.max(1)
     }
+    pub(super) fn target_rows(c: LoweringCapacities) -> u32 {
+        c.target_instructions.max(1)
+    }
 }
 
 use super::{
@@ -37,6 +40,7 @@ use super::{
     scan::{GpuResidentExclusiveScan, GraphScanContract},
     x86::{
         GPU_X86_OBJECT_VERSION,
+        GpuX86ObjectBodyRange,
         GpuX86ObjectSection,
         GpuX86ObjectSymbolRecord,
         GpuX86RelocatableObject,
@@ -76,17 +80,20 @@ struct X86ObjectIdentity {
 
 pub(crate) struct GpuX86ObjectStage {
     relocation_capacity: u32,
+    runtime_relocation_capacity: u32,
     function_capacity: u32,
     artifact_capacity: u32,
     normalize_status: ComputeOperation,
     relocation_flags: JobSized,
     definition_flags_op: JobSized,
     relocations_op: JobSized,
+    runtime_relocations_op: JobSized,
     definitions_op: JobSized,
     bytes_op: JobSized,
     relocation_scan: GpuResidentExclusiveScan,
     symbol_scan: GpuResidentExclusiveScan,
     definition_scan: GpuResidentExclusiveScan,
+    runtime_relocation_scan: GpuResidentExclusiveScan,
     _params: LaniusBuffer<X86ObjectParams>,
     identity: LaniusBuffer<X86ObjectIdentity>,
     _relocation_flags: LaniusBuffer<u32>,
@@ -95,7 +102,10 @@ pub(crate) struct GpuX86ObjectStage {
     _symbol_prefix: LaniusBuffer<u32>,
     _definition_flags: LaniusBuffer<u32>,
     _definition_prefix: LaniusBuffer<u32>,
+    _runtime_reference_flags: LaniusBuffer<u32>,
+    _runtime_relocation_prefix: LaniusBuffer<u32>,
     relocations: LaniusBuffer<X86ObjectRelocationRow>,
+    runtime_relocations: LaniusBuffer<X86ObjectRelocationRow>,
     undefined_symbols: LaniusBuffer<X86ObjectUndefinedRow>,
     call_hir_by_symbol: LaniusBuffer<u32>,
     definitions: LaniusBuffer<X86ObjectDefinitionRow>,
@@ -121,6 +131,7 @@ impl GpuX86ObjectStage {
         let metadata = opt.metadata;
         let target_capacity = capacities.target_instructions.max(1);
         let relocation_capacity = capacities.semantic_instructions.max(1);
+        let runtime_relocation_capacity = capacities.target_instructions.max(1);
         let function_capacity = capacities.hir_nodes.max(1);
         let artifact_capacity = capacities.artifact_bytes.max(1);
         let resource = |name: &str| {
@@ -146,6 +157,22 @@ impl GpuX86ObjectStage {
         let definition_prefix =
             alias_u32("artifact.x86.object.definition_prefix", function_capacity)?;
         let definition_total = alias_u32("artifact.x86.object.definition_total", 1)?;
+        let target_total = alias_u32("lir.x86.total", 1)?;
+        let runtime_reference_flags =
+            alias_u32("lir.x86.runtime_reference_flag", runtime_relocation_capacity)?;
+        let runtime_relocation_prefix = alias_u32(
+            "artifact.x86.object.runtime_relocation_prefix",
+            runtime_relocation_capacity,
+        )?;
+        let runtime_relocation_total =
+            alias_u32("artifact.x86.object.runtime_relocation_total", 1)?;
+        let runtime_relocations = workspace
+            .alias(
+                graph,
+                resource("artifact.x86.object.runtime_relocations")?,
+                runtime_relocation_capacity as usize,
+            )
+            .map_err(anyhow::Error::msg)?;
         let relocations = workspace
             .alias(
                 graph,
@@ -180,7 +207,7 @@ impl GpuX86ObjectStage {
             artifact_capacity.div_ceil(4),
         )?;
         let metadata_readback =
-            readback_bytes(device, "artifact.x86.object.metadata.readback", 64, 64);
+            readback_bytes(device, "artifact.x86.object.metadata.readback", 80, 80);
         let payload_readback = PagedReadback::new(
             device,
             "artifact.x86.object.payload.readback",
@@ -227,6 +254,11 @@ impl GpuX86ObjectStage {
             kernels,
             "artifact.x86.object.relocations",
             "codegen/lir/x86/object_relocations",
+        )?;
+        let runtime_relocations_pass = load(
+            kernels,
+            "artifact.x86.object.runtime_relocations",
+            "codegen/lir/x86/object_runtime_relocations",
         )?;
         let definitions_pass = load(
             kernels,
@@ -325,6 +357,33 @@ impl GpuX86ObjectStage {
             relocation_capacity,
         )?;
         let relocations_op = JobSized::new(relocations_op, object_extent::relocations, capacities)?;
+        let runtime_relocation_scan = GpuResidentExclusiveScan::new(
+            device,
+            kernels,
+            graph,
+            workspace,
+            allocations,
+            scan_contract("runtime_relocation", "lir.x86.total"),
+            runtime_relocation_capacity,
+            &target_total,
+            &runtime_reference_flags,
+            &runtime_relocation_prefix,
+            &runtime_relocation_total,
+        )?;
+        let runtime_relocations_op = ComputeOperation::direct_with_uniform(
+            device,
+            &context,
+            &resources,
+            "artifact.x86.object.runtime_relocations",
+            &runtime_relocations_pass,
+            &params,
+            runtime_relocation_capacity,
+        )?;
+        let runtime_relocations_op = JobSized::new(
+            runtime_relocations_op,
+            object_extent::target_rows,
+            capacities,
+        )?;
         let definitions_op = ComputeOperation::direct(
             device,
             &context,
@@ -397,21 +456,35 @@ impl GpuX86ObjectStage {
             16,
             48,
         )))
+        .chain(std::iter::once(CopyBufferOperation::new(
+            &context,
+            "artifact.x86.object.runtime_relocation_total.readback",
+            "runtime_relocation_total",
+            &runtime_relocation_total,
+            0,
+            "metadata_readback",
+            &metadata_readback,
+            64,
+            4,
+        )))
         .collect::<Result<Vec<_>>>()?;
 
         Ok(Self {
             relocation_capacity,
+            runtime_relocation_capacity,
             function_capacity,
             artifact_capacity,
             normalize_status,
             relocation_flags: relocation_flags_op,
             definition_flags_op,
             relocations_op,
+            runtime_relocations_op,
             definitions_op,
             bytes_op,
             relocation_scan,
             symbol_scan,
             definition_scan,
+            runtime_relocation_scan,
             _params: params,
             identity,
             _relocation_flags: relocation_flags,
@@ -420,7 +493,10 @@ impl GpuX86ObjectStage {
             _symbol_prefix: symbol_prefix,
             _definition_flags: definition_flags,
             _definition_prefix: definition_prefix,
+            _runtime_reference_flags: runtime_reference_flags,
+            _runtime_relocation_prefix: runtime_relocation_prefix,
             relocations,
+            runtime_relocations,
             undefined_symbols,
             call_hir_by_symbol,
             definitions,
@@ -470,6 +546,8 @@ impl GpuX86ObjectStage {
         self.definition_flags_op.record_job(encoder, job)?;
         self.definition_scan.record(encoder)?;
         self.relocations_op.record_job(encoder, job)?;
+        self.runtime_relocation_scan.record(encoder)?;
+        self.runtime_relocations_op.record_job(encoder, job)?;
         self.definitions_op.record_job(encoder, job)?;
         self.bytes_op.record_job(encoder, job)?;
         for copy in &self.metadata_readback_copies {
@@ -497,6 +575,7 @@ impl GpuX86ObjectStage {
         let relocation_count = word(1) as usize;
         let symbol_count = word(2) as usize;
         let definition_count = word(3) as usize;
+        let runtime_relocation_count = word(16) as usize;
         if crate::gpu::env::env_bool_truthy("LANIUS_OBJECT_ID_TRACE", false) {
             eprintln!(
                 "[x86_object_identity] counts relocations={relocation_count} symbols={symbol_count} definitions={definition_count}"
@@ -523,14 +602,16 @@ impl GpuX86ObjectStage {
             );
         }
         if relocation_count > self.relocation_capacity as usize
+            || runtime_relocation_count > self.runtime_relocation_capacity as usize
             || symbol_count > relocation_count
             || definition_count > self.function_capacity as usize
             || text_len > self.artifact_capacity as usize
             || rodata_len > self.artifact_capacity as usize
         {
             anyhow::bail!(
-                "GPU x86 object metadata exceeds resident capacity: relocations={relocation_count}/{}, symbols={symbol_count}, definitions={definition_count}/{}, text={text_len}/{}, rodata={rodata_len}/{}",
+                "GPU x86 object metadata exceeds resident capacity: relocations={relocation_count}/{}, runtime relocations={runtime_relocation_count}/{}, symbols={symbol_count}, definitions={definition_count}/{}, text={text_len}/{}, rodata={rodata_len}/{}",
                 self.relocation_capacity,
+                self.runtime_relocation_capacity,
                 self.function_capacity,
                 self.artifact_capacity,
                 self.artifact_capacity,
@@ -539,12 +620,13 @@ impl GpuX86ObjectStage {
 
         let [
             relocation_bytes,
+            runtime_relocation_bytes,
             undefined_bytes,
             definition_bytes,
             text,
             rodata,
             call_hir_bytes,
-        ]: [Vec<u8>; 6] = self
+        ]: [Vec<u8>; 7] = self
             .payload_readback
             .read_regions(
                 device,
@@ -555,6 +637,12 @@ impl GpuX86ObjectStage {
                         0,
                         relocation_count * 32,
                         "x86 object relocations",
+                    )?,
+                    ReadbackRegion::from_buffer(
+                        &self.runtime_relocations,
+                        0,
+                        runtime_relocation_count * 32,
+                        "x86 object runtime relocations",
                     )?,
                     ReadbackRegion::from_buffer(
                         &self.undefined_symbols,
@@ -586,7 +674,10 @@ impl GpuX86ObjectStage {
             )?
             .try_into()
             .map_err(|_| anyhow::anyhow!("x86 object payload readback shape changed"))?;
-        let relocation_words = decode_words(&relocation_bytes);
+        // Semantic rows (calls, string addresses) first, then each target
+        // row's native-runtime reference in row order.
+        let mut relocation_words = decode_words(&relocation_bytes);
+        relocation_words.extend(decode_words(&runtime_relocation_bytes));
         let undefined_words = decode_words(&undefined_bytes);
         let definition_words = decode_words(&definition_bytes);
         if crate::gpu::env::env_bool_truthy("LANIUS_OBJECT_ID_TRACE", false) {
@@ -598,7 +689,7 @@ impl GpuX86ObjectStage {
             eprintln!("[x86_object_identity] relocation_words={relocation_words:?}");
             eprintln!("[x86_object_identity] undefined_words={undefined_words:?}");
         }
-        let mut relocations = Vec::with_capacity(relocation_count);
+        let mut relocations = Vec::with_capacity(relocation_count + runtime_relocation_count);
         for (index, row) in relocation_words.chunks_exact(8).enumerate() {
             let kind = match row[0] {
                 1 => GpuX86RelocationKind::Rel32,
@@ -658,6 +749,11 @@ impl GpuX86ObjectStage {
             library_id,
             unit_id,
             entry_offset: (entrypoint_count == 1).then_some(0),
+            // [entry wrapper][body][native runtime + CRT bridge]
+            body: Some(GpuX86ObjectBodyRange {
+                start: wrapper_len as u32,
+                end: (wrapper_len + body_len) as u32,
+            }),
             text,
             rodata,
             relocations,
@@ -741,6 +837,20 @@ fn scan_contract(kind: &'static str, count: &'static str) -> GraphScanContract {
             hierarchy: "artifact.x86.object.symbol_scan_hierarchy",
             output: "artifact.x86.object.symbol_prefix",
             total: "artifact.x86.object.symbol_total",
+        },
+        "runtime_relocation" => GraphScanContract {
+            local_pass: "artifact.x86.object.runtime_relocation_scan.local",
+            up_pass: "artifact.x86.object.runtime_relocation_scan.hierarchy_up",
+            down_pass: "artifact.x86.object.runtime_relocation_scan.hierarchy_down",
+            apply_pass: "artifact.x86.object.runtime_relocation_scan.apply",
+            count,
+            input: "lir.x86.runtime_reference_flag",
+            local: "artifact.x86.object.runtime_relocation_scan_local",
+            block_sum: "artifact.x86.object.runtime_relocation_scan_block_sum",
+            block_prefix: "artifact.x86.object.runtime_relocation_scan_block_prefix",
+            hierarchy: "artifact.x86.object.runtime_relocation_scan_hierarchy",
+            output: "artifact.x86.object.runtime_relocation_prefix",
+            total: "artifact.x86.object.runtime_relocation_total",
         },
         "definition" => GraphScanContract {
             local_pass: "artifact.x86.object.definition_scan.local",
