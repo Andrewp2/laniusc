@@ -1,0 +1,153 @@
+// alloc::allocator on alloc/free-heavy workloads from 4 KiB to 1 MiB (the
+// mid tier) and growth across 1 MiB into mremap. Every phase writes one word
+// per 4 KiB page of each block it gets, as a real buffer would, so page
+// faults are counted. Phases:
+//   fixed.S    1 GiB of alloc(S), touch, dealloc, for S = 4 KiB .. 1 MiB
+//   mixed      64 slots, 40,000 steps: an empty slot gets a block of a
+//              log-uniform size in 4 KiB .. 1 MiB, a full slot is freed
+//   double     realloc 4 KiB -> 4 MiB by doubling (11 reallocs), touching
+//              each block, then free; 400 rounds
+//   step       realloc by +4 KiB from 4 KiB to 2 MiB (511 reallocs), 40 rounds
+// bench.c runs the same phases on glibc malloc (and calloc, which also
+// returns zeroed memory). stdout: "phase nanoseconds" per line; a checksum
+// over the touched words keeps every phase live.
+module app::main;
+import alloc::allocator;
+import core::mem;
+import core::time;
+import std::clock;
+import std::io;
+
+const PAGE: i64 = 4096;
+const SLOTS: i32 = 64;
+
+fn now() -> core::time::Instant { return std::clock::monotonic_now().unwrap(); }
+fn since(start: core::time::Instant) -> u64 { return now().duration_since(start).unwrap().as_nanos().unwrap(); }
+
+fn emit_number(value: u64) {
+    let storage: [i32; 8] = [0; 8]; let base: ptr = core::mem::i32_array_data_ptr(storage);
+    let digits: [u8] = core::mem::typed_slice_from_raw_parts<u8>(base, 24);
+    let n: i32 = 23; let v: u64 = value; digits[n] = 10;
+    if (v == 0) { n -= 1; digits[n] = 48; }
+    while (v > 0) { n -= 1; digits[n] = ((v % 10) as u8) + 48; v = v / 10; }
+    assert(std::io::write_stdout(base + (n as usize), (24 - n) as usize) == 24 - n);
+    assert(storage[5] == storage[5]);
+}
+fn report(label: str, nanos: u64) {
+    std::io::write_text(1, label); std::io::write_text(1, " ");
+    emit_number(nanos);
+}
+
+fn get(at: ptr, word: i64) -> u64 { let v: [u64] = core::mem::typed_slice_from_raw_parts<u64>(at + (word as usize) * 8, 1); return v[0]; }
+fn set(at: ptr, word: i64, value: u64) { let v: [u64] = core::mem::typed_slice_from_raw_parts<u64>(at + (word as usize) * 8, 1); v[0] = value; }
+fn get_ptr(at: ptr, word: i32) -> ptr { let v: [ptr] = core::mem::typed_slice_from_raw_parts<ptr>(at + (word as usize) * 8, 1); return v[0]; }
+fn set_ptr(at: ptr, word: i32, value: ptr) { let v: [ptr] = core::mem::typed_slice_from_raw_parts<ptr>(at + (word as usize) * 8, 1); v[0] = value; }
+
+// Write one word in each page of [from, to) and return the sum of what was
+// there before (zero for a fresh allocation's new pages).
+fn touch(at: ptr, from: i64, to: i64, value: u64) -> u64 {
+    let sum: u64 = 0;
+    let off: i64 = from;
+    while (off < to) { sum += get(at, off / 8); set(at, off / 8, value); off += PAGE; }
+    return sum;
+}
+
+fn next(seed: u64) -> u64 { return seed * 6364136223846793005 + 1442695040888963407; }
+// Log-uniform in 4 KiB .. 1 MiB: a power of two 2^12..2^20 times 1..2.
+fn pick_size(seed: u64) -> i64 {
+    let shift: u64 = 12 + ((seed >> 33) % 8);
+    let base: i64 = (1 as i64) << (shift as i64);
+    let extra: i64 = ((seed >> 41) as i64) % base;
+    return base + extra;
+}
+
+fn fixed(size: i64) -> u64 {
+    let rounds: i64 = 1073741824 / size;
+    let sum: u64 = 0;
+    let k: i64 = 0;
+    while (k < rounds) {
+        let at: ptr = alloc::allocator::alloc(size as usize, 8);
+        sum += touch(at, 0, size, 1);
+        alloc::allocator::dealloc(at, size as usize, 8);
+        k += 1;
+    }
+    return sum;
+}
+
+fn mixed(table: ptr) -> u64 {
+    let sum: u64 = 0;
+    let seed: u64 = 12345;
+    let k: i64 = 0;
+    let nowhere: ptr = 0;
+    while (k < 40000) {
+        seed = next(seed);
+        let s: i32 = ((seed >> 20) % 64) as i32;
+        let at: ptr = get_ptr(table, s);
+        if (at != nowhere) {
+            let size: i64 = get(table, (SLOTS + s) as i64) as i64;
+            alloc::allocator::dealloc(at, size as usize, 8);
+            set_ptr(table, s, nowhere);
+        } else {
+            let size: i64 = pick_size(seed);
+            let fresh: ptr = alloc::allocator::alloc(size as usize, 8);
+            sum += touch(fresh, 0, size, 1);
+            set_ptr(table, s, fresh); set(table, (SLOTS + s) as i64, size as u64);
+        }
+        k += 1;
+    }
+    let s: i32 = 0;
+    while (s < SLOTS) {
+        let at: ptr = get_ptr(table, s);
+        if (at != nowhere) { alloc::allocator::dealloc(at, get(table, (SLOTS + s) as i64) as usize, 8); set_ptr(table, s, nowhere); }
+        s += 1;
+    }
+    return sum;
+}
+
+fn grow(rounds: i64, step: i64, doubling: bool, limit: i64) -> u64 {
+    let sum: u64 = 0;
+    let r: i64 = 0;
+    while (r < rounds) {
+        let size: i64 = PAGE;
+        let at: ptr = alloc::allocator::alloc(size as usize, 8);
+        sum += touch(at, 0, size, 3);
+        while (size < limit) {
+            let wanted: i64 = size + step;
+            if (doubling) { wanted = size * 2; }
+            at = alloc::allocator::realloc(at, size as usize, wanted as usize, 8);
+            sum += get(at, 0) + get(at, (size - 8) / 8);
+            sum += touch(at, size, wanted, 3);
+            size = wanted;
+        }
+        alloc::allocator::dealloc(at, size as usize, 8);
+        r += 1;
+    }
+    return sum;
+}
+
+fn main() -> i32 {
+    let total: u64 = 0;
+    let size: i64 = 4096;
+    let labels: [str; 5] = ["fixed.4K", "fixed.16K", "fixed.64K", "fixed.256K", "fixed.1M"];
+    let i: i32 = 0;
+    while (i < 5) {
+        let start: core::time::Instant = now();
+        total += fixed(size);
+        report(labels[i], since(start));
+        size = size * 4;
+        i += 1;
+    }
+    let table: ptr = alloc::allocator::alloc(((2 * SLOTS) as usize) * 8, 8);
+    let start: core::time::Instant = now();
+    total += mixed(table);
+    report("mixed", since(start));
+    start = now();
+    total += grow(400, 0, true, 4194304);
+    report("double", since(start));
+    start = now();
+    total += grow(40, PAGE, false, 2097152);
+    report("step", since(start));
+    std::io::write_text(1, "checksum ");
+    emit_number(total);
+    return 0;
+}
