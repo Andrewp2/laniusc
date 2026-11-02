@@ -467,8 +467,7 @@ def main():
     open(manifest_path, 'w').write('\n'.join(manifest) + '\n')
     print(f'time: parse {time.time() - began:.0f} s', file=sys.stderr, flush=True)
     began = time.time()
-    lean = run_cache.run_all(manifest_path, ['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p',
-                                             'MemoryHigh=10G', '-p', 'MemorySwapMax=infinity'])
+    lean = run_cache.run_all(manifest_path, ['systemd-run', '--user', '--scope', '--slice=work.slice', '-q'])
     print(f'time: runAll {time.time() - began:.0f} s', file=sys.stderr, flush=True)
     began = time.time()
     if lean.returncode != 0:
@@ -496,7 +495,7 @@ def main():
     if cases:
         # (cached by the laniusc binary and the sources the build reads)
         exe, build = run_cache.laniusc_build(
-            ['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryHigh=8G', '-p', 'MemorySwapMax=infinity',
+            ['systemd-run', '--user', '--scope', '--slice=work.slice', '-q',
              so.HEAVY, '-t', '30', args.laniusc, '--stdlib-root', 'stdlib', '--source-root', source_root, '-o', exe,
              exe + '.lani'], args.laniusc, exe + '.lani', exe, [source_root, 'stdlib'])
         if build is not None:
@@ -515,8 +514,7 @@ def main():
     runnable = list(range(len(tests)))
     for k, t in enumerate(tests):
         words_file(os.path.join(batch, f'in{k}.words'), layout(t['bases']))
-    subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', f'MemoryHigh={args.memory_max}',
-                    '-p', 'MemorySwapMax=infinity', sys.executable, '-I', os.path.abspath(__file__), batch,
+    subprocess.run(['systemd-run', '--user', '--scope', '--slice=work.slice', '-q', sys.executable, '-I', os.path.abspath(__file__), batch,
                     '--native-batch', '--heap-log2', str(args.heap_log2), '--stack-log2', str(args.stack_log2),
                     '--timeout', str(args.timeout)], check=True)
     selfs = {k: read_out(os.path.join(batch, f'out{j}')) for j, k in enumerate(runnable)}
@@ -590,7 +588,7 @@ def run_laniusc(exe, stdin, timeout, memory_max, stack):
     argv = [exe]
     preexec = None
     if memory_max is not None:
-        argv = ['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', f'MemoryHigh={memory_max}', '-p', 'MemorySwapMax=infinity',
+        argv = ['systemd-run', '--user', '--scope', '--slice=work.slice', '-q',
                 exe]
 
         def preexec():

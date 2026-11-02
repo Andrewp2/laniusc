@@ -42,8 +42,7 @@ def term_modules(out):
     """Write the termination modules term_gen.lean makes of the built program to out."""
     import run_cache
     env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
-    scope = ['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryHigh=4G', '-p',
-             'MemorySwapMax=infinity']
+    scope = ['systemd-run', '--user', '--scope', '--slice=work.slice', '-q']
     with run_cache.lean_lock():
         for argv in (['lake', 'build', 'Lanius.Faithful.Sim.Term', 'Lanius.Faithful.Gen.SelfProg'],
                      ['lake', 'env', 'lean', '--run', 'tools/term_gen.lean', '--out', out] + TERM_ROOTS):

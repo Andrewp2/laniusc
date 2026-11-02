@@ -19,8 +19,9 @@ CACHE = os.path.join(ROOT, 'target/claude-work/cache')
 class lean_lock:
     """Held while Lean builds or runs: this worktree's lock (no two builds of
     one checkout at once) and one of six machine-wide slots in the common git
-    directory, those after the first taken only while 5 GB are available. Every Lean
-    scope runs in lean.slice (SLICE), which caps all of them together.
+    directory. Every Lean scope runs in work.slice (SLICE), and lake runs lean
+    through target/claude-work/leanroot, whose bin/lean waits in
+    target/claude-work/bin/memwait before each process starts.
     With LEAN_LOCK_HELD=1 the caller already holds them
     (`target/claude-work/bin/leanslot gate.py`), so a whole gate run waits
     once rather than at every step."""
@@ -32,6 +33,8 @@ class lean_lock:
         self.held = []
         if os.environ.get('LEAN_LOCK_HELD') == '1':
             return self
+        os.environ.setdefault('LAKE_OVERRIDE_LEAN', '1')
+        os.environ.setdefault('LEAN_SYSROOT', os.path.join(ROOT, 'target/claude-work/leanroot'))
         def git_dir(flag):
             out = subprocess.run(['git', 'rev-parse', flag], cwd=ROOT, capture_output=True, text=True).stdout.strip()
             return os.path.join(ROOT, out or '.git')
@@ -41,8 +44,6 @@ class lean_lock:
         common = git_dir('--git-common-dir')
         while True:
             for i, name in enumerate(('lean.lock', 'lean.lock.2', 'lean.lock.3', 'lean.lock.4', 'lean.lock.5', 'lean.lock.6')):
-                if i and available_gb() < 5:
-                    continue
                 f = open(os.path.join(common, name), 'a')
                 try:
                     fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -58,7 +59,7 @@ class lean_lock:
             f.close()
 
 
-SLICE = '--slice=lean.slice'
+SLICE = '--slice=work.slice'
 
 
 def lake_current(target, env):
@@ -216,8 +217,7 @@ def run_lean(lean_path, memory='6G', outputs=()):
         return types.SimpleNamespace(returncode=0, stdout=hit['stdout'], stderr='')
     env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
     with lean_lock():
-        run = subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', f'MemoryHigh={memory}', '-p',
-                              'MemorySwapMax=infinity', 'lake', 'env', 'lean', os.path.abspath(lean_path)], cwd=FORMAL,
+        run = subprocess.run(['systemd-run', '--user', '--scope', '--slice=work.slice', '-q', 'lake', 'env', 'lean', os.path.abspath(lean_path)], cwd=FORMAL,
                              env=env, capture_output=True, text=True)
     if run.returncode == 0 and digest:
         files = {path: open(path).read() for path in outputs if os.path.exists(path)}

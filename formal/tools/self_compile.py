@@ -313,7 +313,7 @@ def main():
     exe = os.path.join(workdir, 'harness')
     open(exe + '.lani', 'w').write(harness)
     exe, build = run_cache.laniusc_build(
-        ['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryHigh=6G', '-p', 'MemorySwapMax=infinity',
+        ['systemd-run', '--user', '--scope', '--slice=work.slice', '-q',
          so.HEAVY, '-t', '20', args.laniusc, '--stdlib-root', 'stdlib', '--source-root', 'formal/lani',
          '-o', exe, exe + '.lani'], args.laniusc, exe + '.lani', exe, ['formal/lani', 'stdlib'])
     if build is not None:
