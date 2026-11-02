@@ -483,15 +483,16 @@ fn gpu_batch_rejects_changed_retained_witness_before_replay() {
     let previous_serial = packet.completed_serial;
     // accept_submission just retained these GPU outputs on the host. They have
     // not been uploaded as Evidence17 inputs yet. Change only the witness to
-    // another accepted proof root; all origin/obligation backlinks remain
-    // valid. The normal next check must upload this new suffix and reject its
-    // difference from the immutable GPU output, even without a replay context.
+    // another accepted proof root; the origin/obligation backlinks remain
+    // valid, but that root proves the other goal. The normal next check must
+    // upload this new suffix and reject the witness during row admission,
+    // before the exact-copy replay check, even without a replay context.
     packet.packet.tables.row_mut(17, evidence).unwrap()[3] = other_proof_root;
     let error = gpu
         .check(&mut packet)
         .expect_err("changed proof must fail exact GPU provenance");
     let failure = gpu_failure(&error);
-    assert_eq!(&failure.receipt[..4], &[2, 13, evidence, before[6]]);
+    assert_eq!(&failure.receipt[..4], &[2, 13, evidence, other_proof_root]);
     assert_eq!(failure.receipt[6], previous_serial + 1);
     assert!(failure.context.is_none() && failure.call.is_none() && failure.obligation.is_none());
     assert!(
