@@ -65,7 +65,7 @@ abbrev Stmt_lower_value (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
     (RepOption 150 (RepList 92 RepExpr)) (Lanius.Mini.lowerValue x0 x1 x2) w
 
 abbrev Stmt_lower_variant (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Binding} {x1 : Nat} {x2 : Option (List Lanius.Mini.SrcType)} {x3 : List Lanius.Mini.SrcExpr} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 135 RepBinding) x0 v0 → RepNat x1 v1 → (RepOption 187 (RepList 73 RepSrcType)) x2 v2 → (RepList 21 RepSrcExpr) x3 v3 →
+  ∀ {x0 : List Lanius.Mini.Binding} {x1 : Nat} {x2 : Option (List Lanius.Mini.SrcType)} {x3 : List Lanius.Mini.SrcExpr} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 135 RepBinding) x0 v0 → RepNat x1 v1 → (RepOption 188 (RepList 73 RepSrcType)) x2 v2 → (RepList 21 RepSrcExpr) x3 v3 →
     (RepOption 150 (RepList 92 RepExpr)) (Lanius.Mini.lowerVariant x0 x1 x2 x3) w
 
 abbrev Stmt_repeat_type (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

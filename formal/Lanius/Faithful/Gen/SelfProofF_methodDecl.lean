@@ -225,9 +225,9 @@ theorem step_methods_of {prog : SrcProgram} {prims : Prims} {ix_methods_of ix_un
   simp only [src_methods_of] at h
   faithful [Lanius.Mini.methodsOf]
 
-theorem proof_text_fill_secure_bytes {prog : SrcProgram} {prims : Prims} {ix_text_fill_secure_bytes ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_fill_secure_bytes]? = some (src_text_fill_secure_bytes ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_fill_secure_bytes = false)
-    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
-    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+theorem proof_text_fill_secure_bytes {prog : SrcProgram} {prims : Prims} {ix_text_fill_secure_bytes ix_single_of_usize ix_cons_of_usize : Nat} (fn : prog.funcs[ix_text_fill_secure_bytes]? = some (src_text_fill_secure_bytes ix_single_of_usize ix_cons_of_usize)) (np : prims.isPrim ix_text_fill_secure_bytes = false)
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n)) {n : Nat} :
     Stmt_text_fill_secure_bytes prog prims ix_text_fill_secure_bytes n := by
   intro w h
   rcases n with _ | n
@@ -236,9 +236,9 @@ theorem proof_text_fill_secure_bytes {prog : SrcProgram} {prims : Prims} {ix_tex
   simp only [src_text_fill_secure_bytes] at h
   faithful [Lanius.Mini.textFillSecureBytes]
 
-theorem proof_text_lanius_std {prog : SrcProgram} {prims : Prims} {ix_text_lanius_std ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_lanius_std]? = some (src_text_lanius_std ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_lanius_std = false)
-    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
-    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+theorem proof_text_lanius_std {prog : SrcProgram} {prims : Prims} {ix_text_lanius_std ix_single_of_usize ix_cons_of_usize : Nat} (fn : prog.funcs[ix_text_lanius_std]? = some (src_text_lanius_std ix_single_of_usize ix_cons_of_usize)) (np : prims.isPrim ix_text_lanius_std = false)
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n)) {n : Nat} :
     Stmt_text_lanius_std prog prims ix_text_lanius_std n := by
   intro w h
   rcases n with _ | n
@@ -247,9 +247,9 @@ theorem proof_text_lanius_std {prog : SrcProgram} {prims : Prims} {ix_text_laniu
   simp only [src_text_lanius_std] at h
   faithful [Lanius.Mini.textLaniusStd]
 
-theorem proof_text_monotonic_read {prog : SrcProgram} {prims : Prims} {ix_text_monotonic_read ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_monotonic_read]? = some (src_text_monotonic_read ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_monotonic_read = false)
-    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
-    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+theorem proof_text_monotonic_read {prog : SrcProgram} {prims : Prims} {ix_text_monotonic_read ix_single_of_usize ix_cons_of_usize : Nat} (fn : prog.funcs[ix_text_monotonic_read]? = some (src_text_monotonic_read ix_single_of_usize ix_cons_of_usize)) (np : prims.isPrim ix_text_monotonic_read = false)
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n)) {n : Nat} :
     Stmt_text_monotonic_read prog prims ix_text_monotonic_read n := by
   intro w h
   rcases n with _ | n
@@ -258,9 +258,9 @@ theorem proof_text_monotonic_read {prog : SrcProgram} {prims : Prims} {ix_text_m
   simp only [src_text_monotonic_read] at h
   faithful [Lanius.Mini.textMonotonicRead]
 
-theorem proof_text_read_stdin {prog : SrcProgram} {prims : Prims} {ix_text_read_stdin ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_read_stdin]? = some (src_text_read_stdin ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_read_stdin = false)
-    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
-    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+theorem proof_text_read_stdin {prog : SrcProgram} {prims : Prims} {ix_text_read_stdin ix_single_of_usize ix_cons_of_usize : Nat} (fn : prog.funcs[ix_text_read_stdin]? = some (src_text_read_stdin ix_single_of_usize ix_cons_of_usize)) (np : prims.isPrim ix_text_read_stdin = false)
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n)) {n : Nat} :
     Stmt_text_read_stdin prog prims ix_text_read_stdin n := by
   intro w h
   rcases n with _ | n
@@ -269,9 +269,9 @@ theorem proof_text_read_stdin {prog : SrcProgram} {prims : Prims} {ix_text_read_
   simp only [src_text_read_stdin] at h
   faithful [Lanius.Mini.textReadStdin]
 
-theorem proof_text_sleep_ms_i32 {prog : SrcProgram} {prims : Prims} {ix_text_sleep_ms_i32 ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_sleep_ms_i32]? = some (src_text_sleep_ms_i32 ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_sleep_ms_i32 = false)
-    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
-    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+theorem proof_text_sleep_ms_i32 {prog : SrcProgram} {prims : Prims} {ix_text_sleep_ms_i32 ix_single_of_usize ix_cons_of_usize : Nat} (fn : prog.funcs[ix_text_sleep_ms_i32]? = some (src_text_sleep_ms_i32 ix_single_of_usize ix_cons_of_usize)) (np : prims.isPrim ix_text_sleep_ms_i32 = false)
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n)) {n : Nat} :
     Stmt_text_sleep_ms_i32 prog prims ix_text_sleep_ms_i32 n := by
   intro w h
   rcases n with _ | n
@@ -280,9 +280,9 @@ theorem proof_text_sleep_ms_i32 {prog : SrcProgram} {prims : Prims} {ix_text_sle
   simp only [src_text_sleep_ms_i32] at h
   faithful [Lanius.Mini.textSleepMsI32]
 
-theorem proof_text_system_read {prog : SrcProgram} {prims : Prims} {ix_text_system_read ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_system_read]? = some (src_text_system_read ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_system_read = false)
-    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
-    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+theorem proof_text_system_read {prog : SrcProgram} {prims : Prims} {ix_text_system_read ix_single_of_usize ix_cons_of_usize : Nat} (fn : prog.funcs[ix_text_system_read]? = some (src_text_system_read ix_single_of_usize ix_cons_of_usize)) (np : prims.isPrim ix_text_system_read = false)
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n)) {n : Nat} :
     Stmt_text_system_read prog prims ix_text_system_read n := by
   intro w h
   rcases n with _ | n
@@ -291,9 +291,9 @@ theorem proof_text_system_read {prog : SrcProgram} {prims : Prims} {ix_text_syst
   simp only [src_text_system_read] at h
   faithful [Lanius.Mini.textSystemRead]
 
-theorem proof_text_write_byte {prog : SrcProgram} {prims : Prims} {ix_text_write_byte ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_write_byte]? = some (src_text_write_byte ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_write_byte = false)
-    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
-    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+theorem proof_text_write_byte {prog : SrcProgram} {prims : Prims} {ix_text_write_byte ix_single_of_usize ix_cons_of_usize : Nat} (fn : prog.funcs[ix_text_write_byte]? = some (src_text_write_byte ix_single_of_usize ix_cons_of_usize)) (np : prims.isPrim ix_text_write_byte = false)
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n)) {n : Nat} :
     Stmt_text_write_byte prog prims ix_text_write_byte n := by
   intro w h
   rcases n with _ | n
@@ -302,9 +302,9 @@ theorem proof_text_write_byte {prog : SrcProgram} {prims : Prims} {ix_text_write
   simp only [src_text_write_byte] at h
   faithful [Lanius.Mini.textWriteByte]
 
-theorem proof_text_write_stderr {prog : SrcProgram} {prims : Prims} {ix_text_write_stderr ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_write_stderr]? = some (src_text_write_stderr ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_write_stderr = false)
-    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
-    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+theorem proof_text_write_stderr {prog : SrcProgram} {prims : Prims} {ix_text_write_stderr ix_single_of_usize ix_cons_of_usize : Nat} (fn : prog.funcs[ix_text_write_stderr]? = some (src_text_write_stderr ix_single_of_usize ix_cons_of_usize)) (np : prims.isPrim ix_text_write_stderr = false)
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n)) {n : Nat} :
     Stmt_text_write_stderr prog prims ix_text_write_stderr n := by
   intro w h
   rcases n with _ | n
@@ -313,9 +313,9 @@ theorem proof_text_write_stderr {prog : SrcProgram} {prims : Prims} {ix_text_wri
   simp only [src_text_write_stderr] at h
   faithful [Lanius.Mini.textWriteStderr]
 
-theorem proof_text_write_stdout {prog : SrcProgram} {prims : Prims} {ix_text_write_stdout ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_write_stdout]? = some (src_text_write_stdout ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_write_stdout = false)
-    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
-    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+theorem proof_text_write_stdout {prog : SrcProgram} {prims : Prims} {ix_text_write_stdout ix_single_of_usize ix_cons_of_usize : Nat} (fn : prog.funcs[ix_text_write_stdout]? = some (src_text_write_stdout ix_single_of_usize ix_cons_of_usize)) (np : prims.isPrim ix_text_write_stdout = false)
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n)) {n : Nat} :
     Stmt_text_write_stdout prog prims ix_text_write_stdout n := by
   intro w h
   rcases n with _ | n

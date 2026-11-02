@@ -96,6 +96,15 @@ theorem proof_p_fn {prog : SrcProgram} {prims : Prims} {ix_p_fn : Nat} (fn : pro
   simp only [src_p_fn] at h
   faithful [Lanius.Mini.Inline.pFn]
 
+theorem proof_p_for_iter_path {prog : SrcProgram} {prims : Prims} {ix_p_for_iter_path : Nat} (fn : prog.funcs[ix_p_for_iter_path]? = some (src_p_for_iter_path)) (np : prims.isPrim ix_p_for_iter_path = false) {n : Nat} :
+    Stmt_p_for_iter_path prog prims ix_p_for_iter_path n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_p_for_iter_path] at h
+  faithful [Lanius.Mini.Inline.pForIterPath]
+
 theorem proof_p_for_iter_range_from_start {prog : SrcProgram} {prims : Prims} {ix_p_for_iter_range_from_start : Nat} (fn : prog.funcs[ix_p_for_iter_range_from_start]? = some (src_p_for_iter_range_from_start)) (np : prims.isPrim ix_p_for_iter_range_from_start = false) {n : Nat} :
     Stmt_p_for_iter_range_from_start prog prims ix_p_for_iter_range_from_start n := by
   intro w h

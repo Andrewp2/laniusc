@@ -34,12 +34,12 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_arm_payload {prog : SrcProgram} {prims : Prims} {ix_arm_payload ix_plus ix_SrcType_size ix_empty_of_usize ix_cons_of_usize ix_arm_scope ix_unit_payload ix_field_payload ix_lower_arm_value : Nat} (fn : prog.funcs[ix_arm_payload]? = some (src_arm_payload ix_plus ix_SrcType_size ix_empty_of_usize ix_cons_of_usize ix_arm_scope ix_unit_payload ix_field_payload ix_lower_arm_value)) (np : prims.isPrim ix_arm_payload = false)
+theorem proof_arm_payload {prog : SrcProgram} {prims : Prims} {ix_arm_payload ix_plus ix_SrcType_size ix_empty_of_usize ix_arm_scope ix_cons_of_usize ix_unit_payload ix_field_payload ix_lower_arm_value : Nat} (fn : prog.funcs[ix_arm_payload]? = some (src_arm_payload ix_plus ix_SrcType_size ix_empty_of_usize ix_arm_scope ix_cons_of_usize ix_unit_payload ix_field_payload ix_lower_arm_value)) (np : prims.isPrim ix_arm_payload = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_SrcType_size : Certified (∀ {n : Nat}, Stmt_SrcType_size prog prims ix_SrcType_size n))
     (ext_empty_of_usize : Certified (∀ {n : Nat}, Stmt_empty_of_usize prog prims ix_empty_of_usize n))
-    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
     (ext_arm_scope : Certified (∀ {n : Nat}, Stmt_arm_scope prog prims ix_arm_scope n))
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
     (ext_unit_payload : Certified (∀ {n : Nat}, Stmt_unit_payload prog prims ix_unit_payload n))
     (ext_field_payload : Certified (∀ {n : Nat}, Stmt_field_payload prog prims ix_field_payload n))
     (ext_lower_arm_value : Certified (∀ {n : Nat}, Stmt_lower_arm_value prog prims ix_lower_arm_value n)) {n : Nat} :

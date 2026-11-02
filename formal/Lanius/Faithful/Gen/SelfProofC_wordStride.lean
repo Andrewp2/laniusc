@@ -12,6 +12,7 @@ public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtC_Inline_arithOf
+public import Lanius.Faithful.Gen.SelfStmtC_Inline_lowerSetScalar
 public import Lanius.Faithful.Gen.SelfStmtC_SrcExpr_guard
 public import Lanius.Faithful.Gen.SelfStmtC_SrcType_size
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
@@ -47,7 +48,7 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem step_SrcEff_eval {prog : SrcProgram} {prims : Prims} {ix_SrcEff_eval ix_plus ix_get_of_mini_selfhost_Sig ix_eval_index ix_eval_pure ix_eval_call ix_eval_args ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_eval_apply ix_unbox_of_mini_selfhost_SrcEff ix_eval_negate ix_eval_not ix_eval_cast ix_eval_struct ix_eval_variant ix_eval_match ix_eval_arms ix_match_dst ix_match_variants ix_length_of_mini_selfhost_List_usize ix_length_of_mini_selfhost_SrcEff ix_eval_division ix_eval_stride : Nat} (fn : prog.funcs[ix_SrcEff_eval]? = some (src_SrcEff_eval ix_plus ix_SrcEff_eval ix_get_of_mini_selfhost_Sig ix_eval_index ix_eval_pure ix_eval_call ix_eval_args ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_eval_apply ix_unbox_of_mini_selfhost_SrcEff ix_eval_negate ix_eval_not ix_eval_cast ix_eval_struct ix_eval_variant ix_eval_match ix_eval_arms ix_match_dst ix_match_variants ix_length_of_mini_selfhost_List_usize ix_length_of_mini_selfhost_SrcEff ix_eval_division ix_eval_stride)) (np : prims.isPrim ix_SrcEff_eval = false)
+theorem step_SrcEff_eval {prog : SrcProgram} {prims : Prims} {ix_SrcEff_eval ix_plus ix_get_of_mini_selfhost_Sig ix_eval_index ix_eval_pure ix_eval_call ix_eval_args ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_eval_apply ix_unbox_of_mini_selfhost_SrcEff ix_eval_negate ix_eval_not ix_eval_cast ix_eval_struct ix_eval_variant ix_eval_match ix_eval_arms ix_match_dst ix_match_variants ix_length_of_mini_selfhost_List_usize ix_length_of_mini_selfhost_SrcEff ix_eval_division ix_eval_stride ix_eval_if ix_eval_let_in ix_eval_let_body ix_arm_scope ix_single_of_usize ix_single_of_mini_selfhost_SrcType ix_eval_len : Nat} (fn : prog.funcs[ix_SrcEff_eval]? = some (src_SrcEff_eval ix_plus ix_SrcEff_eval ix_get_of_mini_selfhost_Sig ix_eval_index ix_eval_pure ix_eval_call ix_eval_args ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_eval_apply ix_unbox_of_mini_selfhost_SrcEff ix_eval_negate ix_eval_not ix_eval_cast ix_eval_struct ix_eval_variant ix_eval_match ix_eval_arms ix_match_dst ix_match_variants ix_length_of_mini_selfhost_List_usize ix_length_of_mini_selfhost_SrcEff ix_eval_division ix_eval_stride ix_eval_if ix_eval_let_in ix_eval_let_body ix_arm_scope ix_single_of_usize ix_single_of_mini_selfhost_SrcType ix_eval_len)) (np : prims.isPrim ix_SrcEff_eval = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_get_of_mini_selfhost_Sig : Certified (∀ {n : Nat}, Stmt_get_of_mini_selfhost_Sig prog prims ix_get_of_mini_selfhost_Sig n))
     (ext_eval_index : Certified (∀ {n : Nat}, Stmt_eval_index prog prims ix_eval_index n))
@@ -67,10 +68,17 @@ theorem step_SrcEff_eval {prog : SrcProgram} {prims : Prims} {ix_SrcEff_eval ix_
     (ext_length_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_length_of_mini_selfhost_List_usize prog prims ix_length_of_mini_selfhost_List_usize n))
     (ext_length_of_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, Stmt_length_of_mini_selfhost_SrcEff prog prims ix_length_of_mini_selfhost_SrcEff n))
     (ext_eval_division : Certified (∀ {n : Nat}, Stmt_eval_division prog prims ix_eval_division n))
-    (ext_eval_stride : Certified (∀ {n : Nat}, Stmt_eval_stride prog prims ix_eval_stride n)) {n : Nat}
+    (ext_eval_stride : Certified (∀ {n : Nat}, Stmt_eval_stride prog prims ix_eval_stride n))
+    (ext_eval_if : Certified (∀ {n : Nat}, Stmt_eval_if prog prims ix_eval_if n))
+    (ext_eval_let_in : Certified (∀ {n : Nat}, Stmt_eval_let_in prog prims ix_eval_let_in n))
+    (ext_arm_scope : Certified (∀ {n : Nat}, Stmt_arm_scope prog prims ix_arm_scope n))
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
+    (ext_single_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_SrcType prog prims ix_single_of_mini_selfhost_SrcType n))
+    (ext_eval_len : Certified (∀ {n : Nat}, Stmt_eval_len prog prims ix_eval_len n)) {n : Nat}
     (ih_SrcEff_eval : Certified (Stmt_SrcEff_eval prog prims ix_SrcEff_eval n))
     (ih_eval_args : Certified (Stmt_eval_args prog prims ix_eval_args n))
-    (ih_eval_arms : Certified (Stmt_eval_arms prog prims ix_eval_arms n)) :
+    (ih_eval_arms : Certified (Stmt_eval_arms prog prims ix_eval_arms n))
+    (ih_eval_let_body : Certified (Stmt_eval_let_body prog prims ix_eval_let_body n)) :
     Stmt_SrcEff_eval prog prims ix_SrcEff_eval (n + 1) := by
   intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
   rw [pcall_succ np fn] at h
@@ -91,7 +99,7 @@ theorem step_eval_args {prog : SrcProgram} {prims : Prims} {ix_eval_args ix_plus
   simp only [src_eval_args] at h
   faithful [Lanius.Mini.evalArgs]
 
-theorem step_eval_arms {prog : SrcProgram} {prims : Prims} {ix_eval_arms ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_eval_arm_in ix_arm_scope ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize : Nat} (fn : prog.funcs[ix_eval_arms]? = some (src_eval_arms ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_eval_arms ix_eval_arm_in ix_arm_scope ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize)) (np : prims.isPrim ix_eval_arms = false)
+theorem step_eval_arms {prog : SrcProgram} {prims : Prims} {ix_eval_arms ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_arm_scope ix_eval_arm_in ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize : Nat} (fn : prog.funcs[ix_eval_arms]? = some (src_eval_arms ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_eval_arms ix_arm_scope ix_eval_arm_in ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize)) (np : prims.isPrim ix_eval_arms = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff n))
@@ -104,6 +112,28 @@ theorem step_eval_arms {prog : SrcProgram} {prims : Prims} {ix_eval_arms ix_plus
   rw [pcall_succ np fn] at h
   simp only [src_eval_arms] at h
   faithful [Lanius.Mini.evalArms]
+
+theorem proof_eval_len {prog : SrcProgram} {prims : Prims} {ix_eval_len ix_lookup ix_eval_len_of : Nat} (fn : prog.funcs[ix_eval_len]? = some (src_eval_len ix_lookup ix_eval_len_of)) (np : prims.isPrim ix_eval_len = false)
+    (ext_lookup : Certified (∀ {n : Nat}, Stmt_lookup prog prims ix_lookup n))
+    (ext_eval_len_of : Certified (∀ {n : Nat}, Stmt_eval_len_of prog prims ix_eval_len_of n)) {n : Nat} :
+    Stmt_eval_len prog prims ix_eval_len n := by
+  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_eval_len] at h
+  faithful [Lanius.Mini.evalLen]
+
+theorem proof_eval_len_of {prog : SrcProgram} {prims : Prims} {ix_eval_len_of ix_plus ix_element_of : Nat} (fn : prog.funcs[ix_eval_len_of]? = some (src_eval_len_of ix_plus ix_element_of)) (np : prims.isPrim ix_eval_len_of = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_element_of : Certified (∀ {n : Nat}, Stmt_element_of prog prims ix_element_of n)) {n : Nat} :
+    Stmt_eval_len_of prog prims ix_eval_len_of n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_eval_len_of] at h
+  faithful [Lanius.Mini.evalLenOf]
 
 theorem proof_eval_stride {prog : SrcProgram} {prims : Prims} {ix_eval_stride ix_lookup ix_element_of ix_eval_stride_of : Nat} (fn : prog.funcs[ix_eval_stride]? = some (src_eval_stride ix_lookup ix_element_of ix_eval_stride_of)) (np : prims.isPrim ix_eval_stride = false)
     (ext_lookup : Certified (∀ {n : Nat}, Stmt_lookup prog prims ix_lookup n))

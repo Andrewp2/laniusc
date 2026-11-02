@@ -109,8 +109,10 @@ import all Lanius.Faithful.Gen.SelfSrcC_wordStride
 import all Lanius.Faithful.Gen.SelfSrcC_wordWidth
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_attachNode
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_attachParent
+import all Lanius.Faithful.Gen.SelfSrcF_Inline_charEnd
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_charOpen
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_findMethodAt
+import all Lanius.Faithful.Gen.SelfSrcF_Inline_litValueAt
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_lxAfterFractionAt
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_lxFilterAt
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pAddTail
@@ -129,6 +131,7 @@ import all Lanius.Faithful.Gen.SelfSrcF_Inline_pImplMethodsSome
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pLeTail
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pModTail
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pPathMore
+import all Lanius.Faithful.Gen.SelfSrcF_Inline_pRangeStartInt
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pRetVoid
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pSelfParamPlain
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pSelfParamTyped
@@ -149,6 +152,8 @@ import all Lanius.Faithful.Gen.SelfSrcF_argView
 import all Lanius.Faithful.Gen.SelfSrcF_armsNaming
 import all Lanius.Faithful.Gen.SelfSrcF_armsOf
 import all Lanius.Faithful.Gen.SelfSrcF_assertClosed
+import all Lanius.Faithful.Gen.SelfSrcF_basedDigits
+import all Lanius.Faithful.Gen.SelfSrcF_basedLimit
 import all Lanius.Faithful.Gen.SelfSrcF_bindsOfTys
 import all Lanius.Faithful.Gen.SelfSrcF_blockArmsOf
 import all Lanius.Faithful.Gen.SelfSrcF_callParts
@@ -160,6 +165,7 @@ import all Lanius.Faithful.Gen.SelfSrcF_consBinder
 import all Lanius.Faithful.Gen.SelfSrcF_consBound
 import all Lanius.Faithful.Gen.SelfSrcF_consTreeTail
 import all Lanius.Faithful.Gen.SelfSrcF_consTys
+import all Lanius.Faithful.Gen.SelfSrcF_digitBelow
 import all Lanius.Faithful.Gen.SelfSrcF_distinct
 import all Lanius.Faithful.Gen.SelfSrcF_divergeArm
 import all Lanius.Faithful.Gen.SelfSrcF_eDivideClosed
@@ -191,7 +197,6 @@ import all Lanius.Faithful.Gen.SelfSrcF_hasConst
 import all Lanius.Faithful.Gen.SelfSrcF_hasKids
 import all Lanius.Faithful.Gen.SelfSrcF_ifEff
 import all Lanius.Faithful.Gen.SelfSrcF_ifNotWrites
-import all Lanius.Faithful.Gen.SelfSrcF_intLiteral
 import all Lanius.Faithful.Gen.SelfSrcF_isEmptyUsize
 import all Lanius.Faithful.Gen.SelfSrcF_isMatchStmt
 import all Lanius.Faithful.Gen.SelfSrcF_isPathCall
@@ -201,6 +206,11 @@ import all Lanius.Faithful.Gen.SelfSrcF_itemOf
 import all Lanius.Faithful.Gen.SelfSrcF_joinInsts
 import all Lanius.Faithful.Gen.SelfSrcF_letClosed
 import all Lanius.Faithful.Gen.SelfSrcF_letStructClosed
+import all Lanius.Faithful.Gen.SelfSrcF_litBound
+import all Lanius.Faithful.Gen.SelfSrcF_litEffMatch
+import all Lanius.Faithful.Gen.SelfSrcF_litIf
+import all Lanius.Faithful.Gen.SelfSrcF_litWants
+import all Lanius.Faithful.Gen.SelfSrcF_litWildValue
 import all Lanius.Faithful.Gen.SelfSrcF_lowerTy
 import all Lanius.Faithful.Gen.SelfSrcF_lxBlockEnd
 import all Lanius.Faithful.Gen.SelfSrcF_lxCanonicalKind
@@ -246,6 +256,7 @@ import all Lanius.Faithful.Gen.SelfSrcF_sintAt
 import all Lanius.Faithful.Gen.SelfSrcF_sliceHead
 import all Lanius.Faithful.Gen.SelfSrcF_structHead
 import all Lanius.Faithful.Gen.SelfSrcF_textSelf
+import all Lanius.Faithful.Gen.SelfSrcF_textSliceLen
 import all Lanius.Faithful.Gen.SelfSrcF_treeTokens
 import all Lanius.Faithful.Gen.SelfSrcF_triedErr
 import all Lanius.Faithful.Gen.SelfSrcF_triedIf

@@ -5593,6 +5593,9 @@ pub fn arg_bytes(scope: List<Binding>, arg: SrcEff) -> usize {
         EDivide(op, left, right) -> 0,
         EStride(slice) -> 0,
         ArraySlice(element, array) -> binding_bytes(lookup(scope, array)),
+        EIf(condition, ity, then_value, else_value) -> 0,
+        ELet(lid, lty, value, rt, body) -> 0,
+        ELen(slice) -> 0,
     };
 }
 
@@ -5649,6 +5652,9 @@ pub fn array_arg(scope: List<Binding>, arg: SrcEff, ty: SrcType, t: usize, offse
         EDivide(op, left, right) -> None,
         EStride(slice) -> None,
         ArraySlice(element, array) -> array_arg_slice(lookup(scope, array), element, ty, array, t, offset, rest),
+        EIf(condition, ity, then_value, else_value) -> None,
+        ELet(lid, lty, value, rt, body) -> None,
+        ELen(slice) -> None,
     };
 }
 
@@ -5709,6 +5715,9 @@ impl SrcEff {
             EDivide(op, left, right) -> false,
             EStride(slice) -> false,
             ArraySlice(element, array) -> true,
+            EIf(condition, ty, then_value, else_value) -> false,
+            ELet(id, ty, value, rt, body) -> false,
+            ELen(slice) -> false,
         };
     }
 
@@ -5739,6 +5748,9 @@ impl SrcEff {
             EDivide(op, left, right) -> false,
             EStride(slice) -> false,
             ArraySlice(element, array) -> false,
+            EIf(condition, ty, then_value, else_value) -> false,
+            ELet(id, ty, value, rt, body) -> false,
+            ELen(slice) -> false,
         };
     }
 
@@ -5758,6 +5770,9 @@ impl SrcEff {
             EDivide(op, left, right) -> None,
             EStride(slice) -> None,
             ArraySlice(element, array) -> None,
+            EIf(condition, ty, then_value, else_value) -> None,
+            ELet(id, ty, value, rt, body) -> None,
+            ELen(slice) -> None,
         };
     }
 }
@@ -5986,6 +6001,9 @@ impl SrcEff {
             EDivide(op, left, right) -> concat(unbox(left).slice_uses(), unbox(right).slice_uses()),
             EStride(slice) -> empty(),
             ArraySlice(element, array) -> single(array),
+            EIf(condition, ty, then_value, else_value) -> concat(unbox(condition).slice_uses(), concat(unbox(then_value).slice_uses(), unbox(else_value).slice_uses())),
+            ELet(id, ty, value, rt, body) -> concat(unbox(value).slice_uses(), unbox(body).slice_uses()),
+            ELen(slice) -> empty(),
         };
     }
 
@@ -6006,6 +6024,9 @@ impl SrcEff {
             EDivide(op, left, right) -> max_of(unbox(left).callee_need(needs), unbox(right).callee_need(needs)),
             EStride(slice) -> 0,
             ArraySlice(element, array) -> 0,
+            EIf(condition, ty, then_value, else_value) -> max_of(unbox(condition).callee_need(needs), max_of(unbox(then_value).callee_need(needs), unbox(else_value).callee_need(needs))),
+            ELet(id, ty, value, rt, body) -> max_of(unbox(value).callee_need(needs), unbox(body).callee_need(needs)),
+            ELen(slice) -> 0,
         };
     }
 }

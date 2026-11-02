@@ -8,11 +8,11 @@ public import Lanius.Faithful.Gen.SelfStmt2
 public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_charOpen
+public import Lanius.Faithful.Gen.SelfStmtF_basedDigits
 public import Lanius.Faithful.Gen.SelfStmtF_flDecimal
 public import Lanius.Faithful.Gen.SelfStmtF_flExpFirst
 public import Lanius.Faithful.Gen.SelfStmtF_floatTyped
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
-public import Lanius.Faithful.Gen.SelfStmtF_intLiteral
 public import Lanius.Faithful.Gen.SelfStmtF_pickTy
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_charOpen
 import all Lanius.Mini.Frontend.P.Inline_charOpen

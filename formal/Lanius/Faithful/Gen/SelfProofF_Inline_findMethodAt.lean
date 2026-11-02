@@ -12,7 +12,8 @@ public import Lanius.Faithful.Gen.SelfStmtF_Inline_findMethodAt
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pExpr
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pModTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pPathMore
-public import Lanius.Faithful.Gen.SelfStmtF_blockArmsOf
+public import Lanius.Faithful.Gen.SelfStmtF_Inline_pRangeStartInt
+public import Lanius.Faithful.Gen.SelfStmtF_basedDigits
 public import Lanius.Faithful.Gen.SelfStmtF_consBinder
 public import Lanius.Faithful.Gen.SelfStmtF_consTreeTail
 public import Lanius.Faithful.Gen.SelfStmtF_effNamedTys
@@ -22,14 +23,15 @@ public import Lanius.Faithful.Gen.SelfStmtF_forRange
 public import Lanius.Faithful.Gen.SelfStmtF_freshId
 public import Lanius.Faithful.Gen.SelfStmtF_funcsOnto
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
-public import Lanius.Faithful.Gen.SelfStmtF_intLiteral
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
+public import Lanius.Faithful.Gen.SelfStmtF_litIf
 public import Lanius.Faithful.Gen.SelfStmtF_lxBlockEnd
 public import Lanius.Faithful.Gen.SelfStmtF_lxSpaceEnd
 public import Lanius.Faithful.Gen.SelfStmtF_lxSymbolStart
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_noTrees
 public import Lanius.Faithful.Gen.SelfStmtF_paramGoals
+public import Lanius.Faithful.Gen.SelfStmtF_pickTy
 public import Lanius.Faithful.Gen.SelfStmtF_sintAt
 public import Lanius.Faithful.Gen.SelfStmtF_sliceHead
 public import Lanius.Faithful.Gen.SelfStmtF_textSelf
@@ -90,7 +92,7 @@ theorem step_find_method_at {prog : SrcProgram} {prims : Prims} {ix_find_method_
   simp only [src_find_method_at] at h
   faithful [Lanius.Mini.Inline.findMethodAt]
 
-theorem step_for_of {prog : SrcProgram} {prims : Prims} {ix_for_of ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_member ix_field_start_Token_of_mini_selfhost_Token ix_fresh_id ix_cons_of_mini_selfhost_Local ix_block_of ix_int_literal ix_p_postfix_end ix_find_local ix_p_for_iter_range_from_start ix_p_range_start_int ix_p_range_exclusive ix_p_range_bound ix_p_range_bound_name ix_for_range : Nat} (fn : prog.funcs[ix_for_of]? = some (src_for_of ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_member ix_field_start_Token_of_mini_selfhost_Token ix_fresh_id ix_cons_of_mini_selfhost_Local ix_block_of ix_int_literal ix_p_postfix_end ix_find_local ix_p_for_iter_range_from_start ix_p_range_start_int ix_p_range_exclusive ix_p_range_bound ix_p_range_bound_name ix_for_range)) (np : prims.isPrim ix_for_of = false)
+theorem step_for_of {prog : SrcProgram} {prims : Prims} {ix_for_of ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_member ix_field_start_Token_of_mini_selfhost_Token ix_fresh_id ix_cons_of_mini_selfhost_Local ix_block_of ix_int_literal ix_p_postfix_end ix_path_name ix_find_local ix_slice_elem ix_p_for_iter_range_from_start ix_p_range_start_int ix_p_range_exclusive ix_p_range_bound ix_p_range_bound_name ix_for_range ix_p_for_iter_path ix_array_local ix_for_array ix_for_slice : Nat} (fn : prog.funcs[ix_for_of]? = some (src_for_of ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_member ix_field_start_Token_of_mini_selfhost_Token ix_fresh_id ix_cons_of_mini_selfhost_Local ix_block_of ix_int_literal ix_p_postfix_end ix_path_name ix_find_local ix_slice_elem ix_p_for_iter_range_from_start ix_p_range_start_int ix_p_range_exclusive ix_p_range_bound ix_p_range_bound_name ix_for_range ix_p_for_iter_path ix_array_local ix_for_array ix_for_slice)) (np : prims.isPrim ix_for_of = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
@@ -102,13 +104,19 @@ theorem step_for_of {prog : SrcProgram} {prims : Prims} {ix_for_of ix_minus ix_n
     (ext_cons_of_mini_selfhost_Local : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_Local prog prims ix_cons_of_mini_selfhost_Local n))
     (ext_int_literal : Certified (∀ {n : Nat}, Stmt_int_literal prog prims ix_int_literal n))
     (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n))
+    (ext_path_name : Certified (∀ {n : Nat}, Stmt_path_name prog prims ix_path_name n))
     (ext_find_local : Certified (∀ {n : Nat}, Stmt_find_local prog prims ix_find_local n))
+    (ext_slice_elem : Certified (∀ {n : Nat}, Stmt_slice_elem prog prims ix_slice_elem n))
     (ext_p_for_iter_range_from_start : Certified (∀ {n : Nat}, Stmt_p_for_iter_range_from_start prog prims ix_p_for_iter_range_from_start n))
     (ext_p_range_start_int : Certified (∀ {n : Nat}, Stmt_p_range_start_int prog prims ix_p_range_start_int n))
     (ext_p_range_exclusive : Certified (∀ {n : Nat}, Stmt_p_range_exclusive prog prims ix_p_range_exclusive n))
     (ext_p_range_bound : Certified (∀ {n : Nat}, Stmt_p_range_bound prog prims ix_p_range_bound n))
     (ext_p_range_bound_name : Certified (∀ {n : Nat}, Stmt_p_range_bound_name prog prims ix_p_range_bound_name n))
-    (ext_for_range : Certified (∀ {n : Nat}, Stmt_for_range prog prims ix_for_range n)) {n : Nat}
+    (ext_for_range : Certified (∀ {n : Nat}, Stmt_for_range prog prims ix_for_range n))
+    (ext_p_for_iter_path : Certified (∀ {n : Nat}, Stmt_p_for_iter_path prog prims ix_p_for_iter_path n))
+    (ext_array_local : Certified (∀ {n : Nat}, Stmt_array_local prog prims ix_array_local n))
+    (ext_for_array : Certified (∀ {n : Nat}, Stmt_for_array prog prims ix_for_array n))
+    (ext_for_slice : Certified (∀ {n : Nat}, Stmt_for_slice prog prims ix_for_slice n)) {n : Nat}
     (ih_block_of : Certified (Stmt_block_of prog prims ix_block_of n)) :
     Stmt_for_of prog prims ix_for_of (n + 1) := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3

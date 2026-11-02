@@ -52,6 +52,10 @@ abbrev Stmt_p_fn (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pFn) w
 
+abbrev Stmt_p_for_iter_path (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    RepNat (Lanius.Mini.Inline.pForIterPath) w
+
 abbrev Stmt_p_for_iter_range_from_start (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pForIterRangeFromStart) w

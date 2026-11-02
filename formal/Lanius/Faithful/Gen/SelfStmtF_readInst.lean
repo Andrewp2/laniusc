@@ -30,6 +30,6 @@ abbrev Stmt_effs_calls (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
 
 abbrev Stmt_read_inst (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Lanius.Mini.Inst} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepInst x2 v2 →
-    (RepOption 200 RepMFunc) (Lanius.Mini.readInst x0 x1 x2) w
+    (RepOption 201 RepMFunc) (Lanius.Mini.readInst x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

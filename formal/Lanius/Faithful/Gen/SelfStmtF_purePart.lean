@@ -25,8 +25,8 @@ abbrev Stmt_apply_eff (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     RepMEff (Lanius.Mini.applyEff x0 x1 x2) w
 
 abbrev Stmt_cons_eff (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.MEff} {x1 : Option (List Lanius.Mini.MEff)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 250 RepMEff) x0 v0 → (RepOption 275 (RepList 228 RepMEff)) x1 v1 →
-    (RepOption 275 (RepList 228 RepMEff)) (Lanius.Mini.consEff x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.MEff} {x1 : Option (List Lanius.Mini.MEff)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 250 RepMEff) x0 v0 → (RepOption 276 (RepList 228 RepMEff)) x1 v1 →
+    (RepOption 276 (RepList 228 RepMEff)) (Lanius.Mini.consEff x0 x1) w
 
 abbrev Stmt_pure_part (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.MEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepMEff x0 v0 →

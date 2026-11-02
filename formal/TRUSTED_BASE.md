@@ -40,11 +40,29 @@ stopping at the computations the theorems are about (`compileSource`,
 `frontEndWords`, the self program `Lanius.Faithful.Self.prog` and
 `funcNeeds`, which are not trusted, section 10), with each one's type and
 body:
-definitions `8884c49974b65a57` (4,490 constants). This covers Core's
+definitions `7eb93b7916d84bb4` (4,630 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
-modules keeps its hash. The last change of the hash (11-01, step 3.5a of array-to-slice arguments):
+modules keeps its hash. The last change of the hash (11-01, F11b, the
+front end's reading of int bases, literal patterns, `for` and `slice_len`):
+Core has the intrinsic `slice_len` (`Intrinsic.sliceLength`,
+`sliceLength?`, its `evalExpr` case and `ExprHasType.sliceLength`;
+SEMANTIC_DECISIONS "Slice length"), and raw nominal slices take `u32`,
+`u64`, `i64` and `bool` elements (`RawNominalSliceElement`,
+`mapRawNominalSlice`, `rawSliceElementAddress?`, `NativeLayout.words?` and
+`elementStride?`). The reading of source text reads based int literals
+(`basedDigits`, `intLiteral`, `Reading.intValue`), literal patterns in
+`match` (`LitMatch`, `LitMatchR`, `litChain` and their helpers), `for` over
+arrays and slices (`forArray`, `forSlice`, `StmtR.forArray`,
+`StmtR.forSlice`) and `if`, `let` and `slice_len` inside effects
+(`SrcEff.eIf`, `eLet`, `eLen`, `MEff.xIf`, `xLet`, `xLen`, and the cases
+of the functions over them); the float literal pieces were restated with
+the shared digit reader. The pure fragment's statements return an `Out`
+(next, break, continue or return) through `mstmt`, which replaces `Done`
+and `pstmt` and adds local assignment (`Env.set`), and `prims` names the
+self program's functions at their new indices. The hash before it was
+`8884c49974b65a57`. Before that (11-01, step 3.5a of array-to-slice arguments):
 the top theorems on `compileSource`, `compileText` and processes take the
 frame room their function needs (section 8, "Frame room"), which brings in
 `SrcProgram.need` (`Mini/LowerStmt.lean`, new), whose `funcNeeds` is cut

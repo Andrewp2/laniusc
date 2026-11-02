@@ -6,6 +6,7 @@ public import Lanius.Faithful.Gen.SelfSrc2
 public import Lanius.Faithful.Gen.SelfSrc5
 public import Lanius.Faithful.Gen.SelfSrc6
 public import Lanius.Faithful.Gen.SelfSrc7
+public import Lanius.Faithful.Gen.SelfSrcF_Inline_attachNode
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_pAndTail
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_pArgsMore
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_pArrayAfterCommaTrailing
@@ -19,6 +20,7 @@ public import Lanius.Faithful.Gen.SelfSrcF_Inline_pLeTail
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_pModTail
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_pPathMore
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_pSelfValue
+public import Lanius.Faithful.Gen.SelfSrcF_Inline_pStmtsMore
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_pStructFieldsAfterCommaMore
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_pStructFieldsMore
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_pTypeArgsNone
@@ -27,13 +29,14 @@ public import Lanius.Faithful.Gen.SelfSrcF_distinct
 public import Lanius.Faithful.Gen.SelfSrcF_hasKids
 public import Lanius.Faithful.Gen.SelfSrcF_methodDecl
 public import Lanius.Faithful.Gen.SelfSrcF_moduleOr
-public import Lanius.Faithful.Gen.SelfSrcF_textSelf
+public import Lanius.Faithful.Gen.SelfSrcF_shrFirst
 import all Lanius.Faithful.Gen.SelfPureTab
 import all Lanius.Faithful.Gen.SelfSrc1
 import all Lanius.Faithful.Gen.SelfSrc2
 import all Lanius.Faithful.Gen.SelfSrc5
 import all Lanius.Faithful.Gen.SelfSrc6
 import all Lanius.Faithful.Gen.SelfSrc7
+import all Lanius.Faithful.Gen.SelfSrcF_Inline_attachNode
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pAndTail
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pArgsMore
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pArrayAfterCommaTrailing
@@ -47,6 +50,7 @@ import all Lanius.Faithful.Gen.SelfSrcF_Inline_pLeTail
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pModTail
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pPathMore
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pSelfValue
+import all Lanius.Faithful.Gen.SelfSrcF_Inline_pStmtsMore
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pStructFieldsAfterCommaMore
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pStructFieldsMore
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pTypeArgsNone
@@ -55,7 +59,7 @@ import all Lanius.Faithful.Gen.SelfSrcF_distinct
 import all Lanius.Faithful.Gen.SelfSrcF_hasKids
 import all Lanius.Faithful.Gen.SelfSrcF_methodDecl
 import all Lanius.Faithful.Gen.SelfSrcF_moduleOr
-import all Lanius.Faithful.Gen.SelfSrcF_textSelf
+import all Lanius.Faithful.Gen.SelfSrcF_shrFirst
 import all Lanius.Faithful.Gen.SelfTypes
 import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.FArith_opcode
@@ -150,7 +154,7 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 
 /-- `declareFuncs` of functions 800 to 899. -/
-theorem dchunk8 : declsStep [(src_p_stmts_end), (src_p_params_none), (src_p_params_some), (src_p_params_more), (src_p_params_end), (src_p_params_after_comma_more), (src_p_params_after_comma_trailing), (src_p_args_none), (src_p_args_some), (src_p_args_more), (src_p_args_end), (src_p_args_after_comma_more), (src_p_args_after_comma_trailing), (src_p_struct_fields_none), (src_p_struct_fields_some), (src_p_struct_fields_more), (src_p_struct_fields_end), (src_p_struct_fields_after_comma_more), (src_p_struct_fields_after_comma_trailing), (src_p_struct_lit_fields_none), (src_p_struct_lit_fields_some), (src_p_struct_lit_fields_more), (src_p_struct_lit_fields_end), (src_p_struct_lit_fields_after_comma_more), (src_p_struct_lit_fields_after_comma_trailing), (src_p_enum_variants_none), (src_p_enum_variants_some), (src_p_enum_variants_more), (src_p_enum_variants_end), (src_p_enum_variants_after_comma_more), (src_p_enum_variants_after_comma_trailing), (src_p_enum_variant_fields_none), (src_p_enum_variant_fields_some), (src_p_enum_variant_fields_more), (src_p_enum_variant_fields_end), (src_p_enum_variant_fields_after_comma_more), (src_p_enum_variant_fields_after_comma_trailing), (src_p_match_arms_none), (src_p_match_arms_some), (src_p_match_arms_more), (src_p_match_arms_end), (src_p_match_arms_after_comma_more), (src_p_match_arms_after_comma_trailing), (src_p_patterns_none), (src_p_patterns_some), (src_p_patterns_more), (src_p_patterns_end), (src_p_patterns_after_comma_more), (src_p_patterns_after_comma_trailing), (src_p_enum_type_params_some), (src_p_enum_type_params_more), (src_p_enum_type_params_after_comma_more), (src_p_type_args_some), (src_p_type_args_more), (src_p_type_args_after_comma_more), (src_p_path_type_args_more), (src_p_path_type_args_after_comma_more), (src_p_impl_methods_some), (src_p_impl_methods_more), (src_p_type_param_bound_more), (src_p_where_predicates_more), (src_p_where_predicate_more_after_comma), (src_p_bound_type_args_more), (src_p_bound_type_args_after_comma_more), (src_p_array_some), (src_p_array_more), (src_p_array_end), (src_p_array_after_comma_more), (src_p_array_after_comma_trailing), (src_join_second 1067), (src_single_of_mini_selfhost_TypeDecl 642), (src_struct_decl_of 1068 1069), (src_enum_decl_of 96 258), (src_variants_of 103 258 589 590 873 1070 1071 1072), (src_cons_of_mini_selfhost_FnDecl 643), (src_param_spellings 103 258 1073), (src_leaf_token 255), (src_methods_of 103 571 584 877 1074), (src_with_impl_decl 1075), (src_single_of_mini_selfhost_ImportDecl 646), (src_single_of_mini_selfhost_AliasDecl 648), (src_if_unbounded), (src_unbounded 103 152 155 882 1076), (src_p_extern_abi), (src_same_text 76 884), (src_text_lanius_std 377 461), (src_host_id 884 1077 1078 1079 1080 1081 1082 1083 1084), (src_boxed_of_mini_selfhost_List_mini_selfhost_List_usize 50 761 1085), (src_cons_name_tail 1086), (src_same_spellings 526 884 889), (src_distinct 526 890 1087), (src_concat_of_mini_selfhost_List_usize 526 887 891), (src_fn_names_in 258 267 1088), (src_type_only_names_in 258 269 1089), (src_alias_names_in 258 617 1090), (src_const_names_in 258 645 1091), (src_enums_named_ok 269 896 1092), (src_spelled3 76 899), (src_spelled4 76 897), (src_spelled2 76 1093)]
-    decls 36 60 35 59 = true := by decide +kernel
+theorem dchunk8 : declsStep [(src_t_gt), (src_shr_first 363 800), (src_shr_second 75 363 800), (src_attach_prod 1071 1072 1073), (src_p_items_more), (src_p_items_end), (src_p_stmts_more), (src_p_stmts_end), (src_p_params_none), (src_p_params_some), (src_p_params_more), (src_p_params_end), (src_p_params_after_comma_more), (src_p_params_after_comma_trailing), (src_p_args_none), (src_p_args_some), (src_p_args_more), (src_p_args_end), (src_p_args_after_comma_more), (src_p_args_after_comma_trailing), (src_p_struct_fields_none), (src_p_struct_fields_some), (src_p_struct_fields_more), (src_p_struct_fields_end), (src_p_struct_fields_after_comma_more), (src_p_struct_fields_after_comma_trailing), (src_p_struct_lit_fields_none), (src_p_struct_lit_fields_some), (src_p_struct_lit_fields_more), (src_p_struct_lit_fields_end), (src_p_struct_lit_fields_after_comma_more), (src_p_struct_lit_fields_after_comma_trailing), (src_p_enum_variants_none), (src_p_enum_variants_some), (src_p_enum_variants_more), (src_p_enum_variants_end), (src_p_enum_variants_after_comma_more), (src_p_enum_variants_after_comma_trailing), (src_p_enum_variant_fields_none), (src_p_enum_variant_fields_some), (src_p_enum_variant_fields_more), (src_p_enum_variant_fields_end), (src_p_enum_variant_fields_after_comma_more), (src_p_enum_variant_fields_after_comma_trailing), (src_p_match_arms_none), (src_p_match_arms_some), (src_p_match_arms_more), (src_p_match_arms_end), (src_p_match_arms_after_comma_more), (src_p_match_arms_after_comma_trailing), (src_p_patterns_none), (src_p_patterns_some), (src_p_patterns_more), (src_p_patterns_end), (src_p_patterns_after_comma_more), (src_p_patterns_after_comma_trailing), (src_p_enum_type_params_some), (src_p_enum_type_params_more), (src_p_enum_type_params_after_comma_more), (src_p_type_args_some), (src_p_type_args_more), (src_p_type_args_after_comma_more), (src_p_path_type_args_more), (src_p_path_type_args_after_comma_more), (src_p_impl_methods_some), (src_p_impl_methods_more), (src_p_type_param_bound_more), (src_p_where_predicates_more), (src_p_where_predicate_more_after_comma), (src_p_bound_type_args_more), (src_p_bound_type_args_after_comma_more), (src_p_array_some), (src_p_array_more), (src_p_array_end), (src_p_array_after_comma_more), (src_p_array_after_comma_trailing), (src_join_second 1074), (src_single_of_mini_selfhost_TypeDecl 650), (src_struct_decl_of 1075 1076), (src_enum_decl_of 96 258), (src_variants_of 103 258 597 598 880 1077 1078 1079), (src_cons_of_mini_selfhost_FnDecl 651), (src_param_spellings 103 258 1080), (src_leaf_token 255), (src_methods_of 103 579 592 884 1081), (src_with_impl_decl 1082), (src_single_of_mini_selfhost_ImportDecl 654), (src_single_of_mini_selfhost_AliasDecl 656), (src_if_unbounded), (src_unbounded 103 152 155 889 1083), (src_p_extern_abi), (src_same_text 76 891), (src_text_lanius_std 363 384), (src_host_id 891 1084 1085 1086 1087 1088 1089 1090 1091), (src_boxed_of_mini_selfhost_List_mini_selfhost_List_usize 50 768 1092), (src_cons_name_tail 1093), (src_same_spellings 531 891 896), (src_distinct 531 897 1094), (src_concat_of_mini_selfhost_List_usize 531 894 898), (src_fn_names_in 258 267 1095)]
+    decls 38 64 37 62 = true := by decide +kernel
 
 end Lanius.Faithful.SelfPure

@@ -9,11 +9,11 @@ public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt7
-public import Lanius.Faithful.Gen.SelfStmtF_blockArmsOf
 public import Lanius.Faithful.Gen.SelfStmtF_collect
 public import Lanius.Faithful.Gen.SelfStmtF_externBody
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_ifNotWrites
+public import Lanius.Faithful.Gen.SelfStmtF_litIf
 public import Lanius.Faithful.Gen.SelfStmtF_methodDecl
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 import all Lanius.Faithful.Gen.SelfSrcF_externBody
