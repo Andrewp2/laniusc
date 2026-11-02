@@ -20,6 +20,7 @@ import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.isPathCall
 import Lanius.Mini.Frontend.P.itemOf
 import Lanius.Mini.Frontend.P.joinInsts
+import Lanius.Mini.Frontend.P.litBound
 import Lanius.Mini.Frontend.P.litWants
 import Lanius.Mini.Frontend.P.litWildValue
 import Lanius.Mini.Frontend.P.matchTysOrNone
@@ -48,20 +49,17 @@ set_option linter.unusedVariables false
 
 namespace Lanius.Mini
 
-/-- A match on a pure scrutinee x of an integer type or bool, whose arms' values read as values: the chain of its arms. -/
-def litEffMatch (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (x : MEff) (ety : Ty) (arms : List CTree) (values : Option (List MEff)) : Option MEff :=
+/-- A match on a scrutinee x of an integer type or bool, whose arms' values read as values: the chain of its arms, id the local numbered by the match token. -/
+def litEffMatch (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (id : Nat) (x : MEff) (ety : Ty) (arms : List CTree) (values : Option (List MEff)) : Option MEff :=
   if !(litTy ety) then
     none
   else
-    match purePart x with
+    match values with
     | none => none
-    | some s =>
-      match values with
+    | some vs =>
+      match litResult fuel env scope expected vs with
       | none => none
-      | some vs =>
-        match litResult fuel env scope expected vs with
-        | none => none
-        | some rt => litChain s ety rt false false arms vs
+      | some rt => litScrutChain scope id x ety rt arms vs
 
 mutual
 /-- The effectful expression a node of the expression grammar denotes, its value stored at type expected when that is known: the pure expression expr_of reads, or else a call, a variant, a struct literal, a match, a slice element, a division, or an operator, cast or negation of these. -/
@@ -445,7 +443,7 @@ def effMatchOn (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Op
         | none =>
           (match listItems fuel (kid m 5) with
            | none => none
-           | some arms => litEffMatch fuel env scope expected x ety arms (effList (fuel - 1) env scope (litWants expected arms) (armValueTrees arms)))
+           | some arms => litEffMatch fuel env scope expected ((kidToken m 0).start - env.base) x ety arms (effList (fuel - 1) env scope (litWants expected arms) (armValueTrees arms)))
         | some n =>
           match env.decls.types[n.decl]? with
           | none => none

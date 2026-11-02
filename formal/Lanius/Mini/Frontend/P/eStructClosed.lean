@@ -59,6 +59,20 @@ def eIfClosed (c : Option SrcEff) (t : Option SrcType) (a : Option SrcEff) (b : 
         | none => none
         | some z => some (SrcEff.eIf x ty y z)
 
+def eLetClosed (id : Nat) (t : Option SrcType) (v : Option SrcEff) (rt : Option SrcType) (b : Option SrcEff) : Option SrcEff :=
+  match t with
+  | none => none
+  | some ty =>
+    match v with
+    | none => none
+    | some x =>
+      match rt with
+      | none => none
+      | some r =>
+        match b with
+        | none => none
+        | some y => some (SrcEff.eLet id ty x r y)
+
 def consSrcEff (head : Option SrcEff) (tail : Option (List SrcEff)) : Option (List SrcEff) :=
   match head with
   | none => none
@@ -86,6 +100,7 @@ def closeEff (fuel : Nat) (t : Tables) (x : MEff) : Option SrcEff :=
   | .xArraySlice e sl => eArraySliceClosed (closeTy fuel t e) sl
   | .xHost id args => eCallClosed (some id) (closeEffs fuel t args)
   | .xIf c ty a b => eIfClosed (closeEff fuel t c) (closeTy fuel t ty) (closeEff fuel t a) (closeEff fuel t b)
+  | .xLet id ty v rt b => eLetClosed id (closeTy fuel t ty) (closeEff fuel t v) (closeTy fuel t rt) (closeEff fuel t b)
 def closeEffs (fuel : Nat) (t : Tables) (xs : List MEff) : Option (List SrcEff) :=
   match xs with
   | [] => some []

@@ -61,6 +61,24 @@ theorem litResult_unique {decls : Decls} {scope : List Local} {E : Option Ty} {v
   | first t => cases h₂ with
     | first t' => exact effTy_unique t t'
 
+theorem litBound_unique {scope : List Local} {id : Nat} {s : MEff} {ety rt : Ty} {arms : List CTree}
+    {vs : List MEff} {a b : MEff} (h₁ : LitBound scope id s ety rt arms vs a)
+    (h₂ : LitBound scope id s ety rt arms vs b) : a = b := by
+  cases h₁ with
+  | pure p c => cases h₂ with
+    | pure p' c' =>
+      rw [p] at p'
+      cases p'
+      rw [c] at c'
+      exact Option.some.inj c'
+    | bound p' _ _ => rw [p] at p'; cases p'
+  | bound p _ c => cases h₂ with
+    | pure p' _ => rw [p] at p'; cases p'
+    | bound _ _ c' =>
+      rw [c] at c'
+      cases c'
+      rfl
+
 mutual
 theorem effR_unique : ∀ {scope : List Local} {expected : Option Ty} {c : CTree} {x : MEff},
     EffR env scope expected c x → IdsFresh scope → VariantsNodup env.decls →
@@ -260,7 +278,7 @@ theorem effR_unique : ∀ {scope : List Local} {expected : Option Ty} {c : CTree
       subst eo
       have ag := ih2 arms'
       rw [armsAgree_binders ag, armsAgree_values ag, armsAgree_resultTy ag rt rt']
-    | litMatch _ k' et' lt' _ _ _ _ _ =>
+    | litMatch _ k' et' lt' _ _ _ _ =>
       have e := ih1 k'
       subst e
       have e := effTy_unique et et'
@@ -268,11 +286,11 @@ theorem effR_unique : ∀ {scope : List Local} {expected : Option Ty} {c : CTree
       rw [ee] at lt'
       simp [litTy] at lt'
     | _ => eff_clash
-  | _, _, _, _, .litMatch pm k et lt pp it el lr hc, nd, vn, _, h₂ => by
+  | _, _, _, _, .litMatch pm k et lt it el lr hb, nd, vn, _, h₂ => by
     have ih1 := fun {y} k' => effR_unique k nd vn (y := y) k'
     have ih2 := fun {y} k' => effList_unique el nd vn (ys := y) k'
     cases h₂ with
-    | pure p => exact pure_agree p nd (.litMatch pm k et lt pp it el lr hc)
+    | pure p => exact pure_agree p nd (.litMatch pm k et lt it el lr hb)
     | «match» _ k' et' ee' _ _ _ _ _ _ _ =>
       have e := ih1 k'
       subst e
@@ -280,21 +298,18 @@ theorem effR_unique : ∀ {scope : List Local} {expected : Option Ty} {c : CTree
       subst e
       rw [ee'] at lt
       simp [litTy] at lt
-    | litMatch _ k' et' _ pp' it' el' lr' hc' =>
+    | litMatch _ k' et' _ it' el' lr' hb' =>
       have e := ih1 k'
       subst e
       have e := effTy_unique et et'
       subst e
-      rw [pp] at pp'
-      cases pp'
       have e := items_unique it it'
       subst e
       have e := ih2 el'
       subst e
       have e := litResult_unique lr lr'
       subst e
-      rw [hc] at hc'
-      exact Option.some.inj hc'
+      exact litBound_unique hb hb'
     | _ => eff_clash
   | _, _, _, _, .array pa nr he it el len, nd, vn, _, h₂ => by
     have ih1 := fun {y} k' => effList_unique el nd vn (ys := y) k'

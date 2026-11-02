@@ -74,6 +74,7 @@ public import Lanius.Mini.Frontend.P.divergeArm
 public import Lanius.Mini.Frontend.P.bindsOfTys
 public import Lanius.Mini.Frontend.P.litWants
 public import Lanius.Mini.Frontend.P.litWildValue
+public import Lanius.Mini.Frontend.P.litBound
 public import Lanius.Mini.Frontend.P.litEffMatch
 public import Lanius.Mini.Frontend.P.ifEff
 public import Lanius.Mini.Frontend.P.structHead
@@ -93,7 +94,6 @@ public import Lanius.Mini.Frontend.P.forRange
 public import Lanius.Mini.Frontend.P.isMatchStmt
 public import Lanius.Mini.Frontend.P.matchStmtIf
 public import Lanius.Mini.Frontend.P.blockArmsOf
-public import Lanius.Mini.Frontend.P.litWanted
 public import Lanius.Mini.Frontend.P.litIf
 public import Lanius.Mini.Frontend.P.selfRefOf
 public import Lanius.Mini.Frontend.P.ifNotWrites

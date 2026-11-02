@@ -51,6 +51,7 @@ def evalLetHead (ty : Ty) (x : MEff) : LetHead :=
   | .xArraySlice e sl => LetHead.evalOf x
   | .xHost id args => LetHead.evalOf x
   | .xIf c t a b => LetHead.evalOf x
+  | .xLet id t v rt b => LetHead.evalOf x
 
 def evalHead (ty : Ty) (x : Option MEff) : Option LetHead :=
   match x with

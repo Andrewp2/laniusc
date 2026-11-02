@@ -15,7 +15,6 @@ import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.isMatchStmt
 import Lanius.Mini.Frontend.P.isUnderscore
 import Lanius.Mini.Frontend.P.litEffMatch
-import Lanius.Mini.Frontend.P.litWanted
 import Lanius.Mini.Frontend.P.matchStmtIf
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.noTrees

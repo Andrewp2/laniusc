@@ -90,7 +90,7 @@ import all Lanius.Mini.Frontend.P.armsNaming
 import all Lanius.Mini.Frontend.P.armsOf
 import all Lanius.Mini.Frontend.P.assertClosed
 import all Lanius.Mini.Frontend.P.blockArmsOf
-import all Lanius.Mini.Frontend.P.litWanted
+import all Lanius.Mini.Frontend.P.litBound
 import all Lanius.Mini.Frontend.P.litIf
 import all Lanius.Mini.Frontend.P.callParts
 import all Lanius.Mini.Frontend.P.projection

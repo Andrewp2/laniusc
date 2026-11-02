@@ -5,7 +5,7 @@ public import Lanius.Mini.Reading.Stmts
 import all Lanius.Mini.Compiler.P.SrcType_size
 import all Lanius.Mini.Frontend.P.bindsOfTys
 import all Lanius.Mini.Frontend.P.blockArmsOf
-import all Lanius.Mini.Frontend.P.litWanted
+import all Lanius.Mini.Frontend.P.litBound
 import all Lanius.Mini.Frontend.P.callParts
 import all Lanius.Mini.Frontend.P.projection
 import all Lanius.Mini.Frontend.P.repeatEff
@@ -848,7 +848,7 @@ theorem matchR_noBlock {env : FrontEnv} {scope : List Local} {E : Option Ty} {m 
     cases r with
     | unit _ _ _ _ k _ _ => rw [ko] at k; exact armBlockR_noEff ab k
     | payload _ _ _ _ _ _ k _ _ => rw [ko] at k; exact armBlockR_noEff ab k
-  | litMatch _ _ _ _ _ it' el _ _ =>
+  | litMatch _ _ _ _ it' el _ _ =>
     cases items_unique it it'
     obtain ⟨_, _, k⟩ := effList_mem el (armValueTrees_mem ma)
     exact armBlockR_noEff ab k
@@ -950,14 +950,8 @@ theorem matchR_noLit {env : FrontEnv} {scope : List Local} {E : Option Ty} {init
       subst e
       rw [ety] at lt
       simp [litTy] at lt
-  | litMatch _ ks _ _ pp it el _ _ =>
+  | litMatch _ _ _ _ it el _ _ =>
     cases lw with
-    | effect mi' kx px =>
-      cases matchInit_unique mi mi'
-      have e := effR_unique ks nd vn kx
-      subst e
-      rw [pp] at px
-      cases px
     | block mi' it' ma ab =>
       cases matchInit_unique mi mi'
       cases items_unique it it'

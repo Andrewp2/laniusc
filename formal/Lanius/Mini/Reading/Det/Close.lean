@@ -43,6 +43,8 @@ theorem effClosed_unique : ∀ {x : MEff} {a b : SrcEff}, EffClosed decls fns ty
   | _, _, _, .host as, .host as' => by rw [effsClosed_unique as as']
   | _, _, _, .if c lt x y, .if c' lt' x' y' => by
     rw [effClosed_unique c c', lowerR_unique lt lt', effClosed_unique x x', effClosed_unique y y']
+  | _, _, _, .let lt v lr b, .let lt' v' lr' b' => by
+    rw [lowerR_unique lt lt', effClosed_unique v v', lowerR_unique lr lr', effClosed_unique b b']
 termination_by structural _ _ _ h _ => h
 
 theorem effsClosed_unique : ∀ {xs : List MEff} {a b : List SrcEff}, EffsClosed decls fns types xs a →

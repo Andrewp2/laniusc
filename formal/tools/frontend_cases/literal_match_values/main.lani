@@ -1,6 +1,6 @@
 // Literal matches as values anywhere in an expression: an argument, an
-// operand, a nested match, an untyped let; and a let of one whose
-// scrutinee is a call, still read as statements.
+// operand, a nested match, an untyped let; and ones whose scrutinee is a
+// call, evaluated once and bound first.
 fn twice(v: i32) -> i32 {
     return v + v;
 }
@@ -13,9 +13,9 @@ fn code(x: i32, b: bool) -> i32 {
 
 fn called(n: i32) -> i32 {
     let r: i32 = match (twice(n)) { 4 -> 1, _ -> 2, };
-    return r;
+    return r + twice(match (twice(n) + 1) { 5 -> 30, 7 -> 70, _ -> 0, });
 }
 
 fn run(n: i32) -> i32 {
-    return code(n, n == 1) + code(2, true) + code(2, false) + called(n) + called(2);
+    return code(n, n == 1) + code(2, true) + code(2, false) + called(n) + called(2) + called(3);
 }

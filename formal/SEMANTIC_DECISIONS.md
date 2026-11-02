@@ -1667,17 +1667,18 @@ chain of conditional expressions (`EIf`, below) in arm order, each
 literal arm's test on the scrutinee choosing its value, else the rest of
 the chain, and the `_` arm's value (or the last `bool` arm's) at the
 end. Each arm's value is read at the type the match's position expects,
-and the match has that type, or else its first arm's. The scrutinee must
-be pure, since each test reads it again. It is not bound to a local, so
-the chain needs no statement and fits any position. Reading a pure
-expression changes no state, so each read gives the first one's result,
-as laniusc's one evaluation does. A match with an effectful scrutinee, such as a
-call, is still read only in the statement forms, so a nested one is not
-read. A let or return of a literal match has both readings, so the
-statement form is taken only when the value form does not apply (the
-scrutinee is not pure, or some arm's value is a block: `lit_wanted`,
-`LitWanted`). The two readings mean the same, and each source then has
-one reading, as the front end's uniqueness proof needs.
+and the match has that type, or else its first arm's. A pure scrutinee
+is tested as it is: reading a pure expression changes no state, so each
+test gets the first read's result, as laniusc's one evaluation does. An
+effectful scrutinee, such as a call, is evaluated once and bound to the
+local the `match` token numbers, as the statement form binds it; the
+chain then tests that local. The binding is a let in the expression
+(`ELet`, "Lets in expressions"), so the match fits any position. A let or
+return of a literal match has both readings, so the statement form is
+taken only when the value form cannot apply, because some arm's value is a
+block (`lit_wanted`, `LitWanted`). The two readings mean the same, and
+each source then has one reading, as the front end's uniqueness proof
+needs.
 
 ## Conditional expressions (decided 11-01)
 
@@ -1717,7 +1718,7 @@ simulation (`eval_let`, from `armScope_layout`), in failing runs
 Faithful layer) and in Core typing (`armScope_ok`, Core's `bind` pattern).
 The Faithful pure meaning leaves it unmodelled, as it does `EIf`. The front
 end uses it to read a literal match whose scrutinee is effectful ("Literal
-patterns").
+patterns"): the scrutinee bound to the `match` token's local.
 
 ## `u16` views (decided 11-01)
 

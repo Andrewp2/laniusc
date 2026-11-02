@@ -268,6 +268,8 @@ inductive MEff where
   | xHost : Nat → (List MEff) → MEff
   /-- if condition { then } else { otherwise }, of this type: a literal match's arms -/
   | xIf : MEff → Ty → MEff → MEff → MEff
+  /-- let id: ty = value in body, of the body's type: a literal match's effectful scrutinee bound to the match's local -/
+  | xLet : Nat → Ty → MEff → Ty → MEff → MEff
   deriving Repr
 
 /-- An arm of a match expression: its binders, its value and the value's type. -/

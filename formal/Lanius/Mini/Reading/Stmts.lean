@@ -4,7 +4,7 @@ public import Lanius.Mini.Reading.Effs
 import all Lanius.Mini.Compiler.P.arithShiftRight
 import all Lanius.Mini.Compiler.P.indexOf
 import all Lanius.Mini.Frontend.P.blockArmsOf
-import all Lanius.Mini.Frontend.P.litWanted
+import all Lanius.Mini.Frontend.P.litBound
 import all Lanius.Mini.Frontend.P.litIf
 import all Lanius.Mini.Frontend.P.compoundEval
 import all Lanius.Mini.Frontend.P.compoundOf
@@ -997,11 +997,8 @@ theorem matchInit_sound {fuel : Nat} {init m : CTree} (h : matchInit fuel init =
     · cases h
 
 /-- A literal match a let or return reads as statements (`letLit`,
-`retLit`), not as a value (`EffR.litMatch`): its scrutinee is not pure, or
-an arm's value is a block. -/
+`retLit`), not as a value (`EffR.litMatch`): an arm's value is a block. -/
 inductive LitWanted (env : FrontEnv) (scope : List Local) (init : CTree) : Prop
-  | effect {m : CTree} {x : MEff} : MatchInit init m → EffR env scope none (kid m 2) x → purePart x = none →
-      LitWanted env scope init
   | block {m a list : CTree} {arms : List CTree} : MatchInit init m → Items (kid m 5) arms → a ∈ arms →
       ArmBlockR a list → LitWanted env scope init
 
@@ -1027,22 +1024,12 @@ theorem isLitInit_wanted {fuel : Nat} {env : FrontEnv} {scope : List Local} {ini
     simp only [Bool.and_eq_true] at h
     have h := h.2
     unfold litWanted at h
-    cases hx : effOf fuel env scope none (kid m 2) with
-    | none => rw [hx] at h; cases h
-    | some x =>
-      rw [hx] at h
-      simp only at h
-      unfold litStmtNeeded at h
-      cases hp : purePart x with
-      | none => exact .effect (matchInit_sound hm) (effOf_sound hx) hp
-      | some e =>
-        rw [hp] at h
-        cases hl : listItems fuel (kid m 5) with
-        | none => rw [hl] at h; cases h
-        | some xs =>
-          rw [hl] at h
-          obtain ⟨a, ma, list, ab⟩ := anyBlockArm_sound h
-          exact .block (matchInit_sound hm) (listItems_sound hl) ma ab
+    cases hl : listItems fuel (kid m 5) with
+    | none => rw [hl] at h; cases h
+    | some xs =>
+      rw [hl] at h
+      obtain ⟨a, ma, list, ab⟩ := anyBlockArm_sound h
+      exact .block (matchInit_sound hm) (listItems_sound hl) ma ab
 
 theorem someBlockArm_sound {fuel : Nat} : ∀ {arms : List CTree}, someBlockArm fuel arms = true →
     ∃ a ∈ arms, ∃ list, ArmBlockR a list
