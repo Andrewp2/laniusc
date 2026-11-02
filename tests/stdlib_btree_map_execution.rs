@@ -1,6 +1,6 @@
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod common;
-use std::{os::unix::fs::PermissionsExt, process::Command};
+use std::{os::unix::fs::PermissionsExt, process::Command, time::Duration};
 
 fn executable(name: &str) -> common::TempArtifact {
     let path = format!("tests/fixtures/stdlib_btree_map/{name}.lani");
@@ -27,8 +27,13 @@ fn executable(name: &str) -> common::TempArtifact {
 fn btree_map_fixtures_execute() {
     for name in ["model", "types", "failure", "bulk", "set"] {
         let exe = executable(name);
-        let output =
-            common::short_process_output_with_timeout("btree map", &mut Command::new(exe.path()));
+        // model, bulk and failure run for 1-2 s each (hundreds of thousands
+        // of checked edits), past the short-process limit.
+        let output = common::process_output_with_timeout(
+            "btree map",
+            &mut Command::new(exe.path()),
+            Duration::from_secs(30),
+        );
         assert_eq!(output.status.code(), Some(0), "{name}: {output:?}");
         assert!(
             output.stdout.is_empty() && output.stderr.is_empty(),
