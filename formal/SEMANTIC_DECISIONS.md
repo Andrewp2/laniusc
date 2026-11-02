@@ -688,6 +688,23 @@ verified compiler's locals are 64-bit slots with no address. The design:
    slice layout for an array passed as a slice. Element reads and writes of
    an addressed local itself are loads and stores at its address in its
    layout.
+   Core's `slice_stride` follows (decided 11-01, step 3.4): a safe slice
+   `.slice T cell projections start length` answers its element's native
+   stride (`rawSliceStride?`, `NativeLayout.elementStride?`), as a raw slice
+   of `T` does: 4 for `i32`, 1 for `u8`, -8 times the native words for a
+   struct, an enum or `u16`, and no stride (a `typeMismatch` trap) for the
+   element types a raw slice cannot hold. Before, a safe slice had no
+   stride, which disagreed with laniusc, whose one layout gives every slice
+   the same stride, and with the typing rule `ExprHasType.sliceStride`,
+   which accepts any slice.
+   The verified compiler passes only arrays of `i32` and `u8` as slices for
+   now (decided 11-01, step 3.4; `SrcType.HoldsAt.borrowed`): their
+   elements are packed, one 4-byte or 1-byte load or store each, so the
+   frame block holds exactly the bytes the slice's loads read. A struct or
+   enum element's scalar fields take their own widths inside 8-byte words
+   (a 4-byte `i32` field, the 4-byte tag), so the block's remaining bytes
+   would need a byte-level account of Core's native layout; such arrays are
+   rejected at a `[T]` argument until it is written.
 3. **The correspondence.** The simulation relation carries the addressed
    cells (cell, type, address); for each, frame memory at the address holds
    the cell's value in that layout (`FrameCorr`, beside `HeapCorr`). A safe
@@ -1753,3 +1770,29 @@ accepts `u16`): `s[i]` is a bounds check and a 32-bit load at
 and `slice_stride` is -8. The other one-word scalars (`u32`, `u64`, `i64`,
 `bool`, `char`, `ptr`, ...) have the same layout in laniusc and are later
 work.
+
+## laniusc's process exit is `exit_group`; the verified compiler's stays `exit` (decided 11-01)
+
+laniusc's x86 runtime now ends a process with Linux syscall 231,
+`exit_group`, instead of 60, `exit`. This covers the `exit` service
+(`std::process::exit`) and allocation failure
+(`shaders/codegen/lir/x86/runtime_abi.slang`), the inline exits of failed
+safety guards such as bounds checks, status 101 (`emit_exit` in
+`safety_emit.slang`), and the static entry wrapper's exit after `main`
+(`emit.slang`).
+With `std::pthread`, `exit` ended only the calling thread. A worker that
+failed a bounds check vanished, `pthread_join` returned, and `main` went on
+to exit 0 (`tests/fixtures/stdlib_execution/concurrency/thread_exit.lani`).
+The native-link CRT bridge returns into glibc, whose `exit` already uses
+`exit_group`, so it is unchanged.
+
+The verified compiler keeps `mov eax, 60; syscall` (`lani/mini/compiler.lani`'s
+entry, `Lanius/Mini/Process.lean`'s `Exits`, `exit_steps` and the start bytes
+`[72, 137, 199, 184, 60, 0, 0, 0, 15, 5]`). Its programs have one thread:
+it emits no C entries and links no pthread. For a one-thread process, `exit`
+and `exit_group` end the same process with the same status, so `Exits` is
+exact for every program it compiles. Switching it would change the self
+source, the process theorems and the self-hosting fixpoint for no
+observable difference. It should switch when the verified compiler admits
+threads. The change is the byte 60 -> 231 in the entry and the immediate
+in `Exits.number` and `exit_steps`.

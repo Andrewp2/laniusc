@@ -113,6 +113,8 @@ the guard is 1 (`SrcExpr.guard_sound`), so the check passes. -/
 
 namespace Lanius.Mini
 
+variable {places : List Addressed}
+
 open Lanius.Core (Value)
 open Lanius.Semantics (State evalExpr)
 
@@ -276,7 +278,7 @@ theorem shift_amount {op : SrcOp} (shift : op = .shiftLeft ∨ op = .shiftRight)
   rcases both with h | h | h <;> exact core h
 
 theorem SrcExpr.guard_sound (e : SrcExpr) {scope : List Binding} {frame : Nat → Nat} {st : State}
-    {env : Env} {prog : Core.Program} (corr : Corr scope frame st env) (target : prog.target = .x86_64) :
+    {env : Env} {prog : Core.Program} (corr : Corr places scope frame st env) (target : prog.target = .x86_64) :
     ∀ {t : Typed} {fuel : Nat} {v : Value} {st' : State}, e.lower scope = some t →
       evalExpr fuel prog st e.toCore = .done v st' → (e.guard scope).eval env = 1 := by
   induction e with

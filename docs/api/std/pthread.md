@@ -4,7 +4,7 @@
 
 Generated source inventory. Linked guides own runtime and semantic contracts; a listed declaration does not establish executable behavior.
 
-[All modules](../README.md) · [Source](../../../stdlib/std/pthread.lani#L14)
+[All modules](../README.md) · [Source](../../../stdlib/std/pthread.lani#L15)
 
 Layer: `std`. Role: module. Profile: **Source inventory**.
 
@@ -18,10 +18,10 @@ Declaration counts: constant: 1; enum: 1; field: 2; function: 6; impl: 1; method
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::mem](../core/mem.md) · [source](../../../stdlib/std/pthread.lani#L15)
-- [core::result](../core/result.md) · [source](../../../stdlib/std/pthread.lani#L16)
-- [core::slice](../core/slice.md) · [source](../../../stdlib/std/pthread.lani#L17)
-- [std::linux](linux.md) · [source](../../../stdlib/std/pthread.lani#L18)
+- [core::mem](../core/mem.md) · [source](../../../stdlib/std/pthread.lani#L16)
+- [core::result](../core/result.md) · [source](../../../stdlib/std/pthread.lani#L17)
+- [core::slice](../core/slice.md) · [source](../../../stdlib/std/pthread.lani#L18)
+- [std::linux](linux.md) · [source](../../../stdlib/std/pthread.lani#L19)
 
 ## Types, fields and variants
 
@@ -29,7 +29,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 29](../../../stdlib/std/pthread.lani#L29)
+[Source line 30](../../../stdlib/std/pthread.lani#L30)
 
 ```lanius
 pub enum Error
@@ -37,7 +37,7 @@ pub enum Error
 
 #### variant: Host
 
-[Source line 29](../../../stdlib/std/pthread.lani#L29)
+[Source line 30](../../../stdlib/std/pthread.lani#L30)
 
 ```lanius
 Host(i32)
@@ -45,7 +45,7 @@ Host(i32)
 
 #### variant: InvalidInput
 
-[Source line 29](../../../stdlib/std/pthread.lani#L29)
+[Source line 30](../../../stdlib/std/pthread.lani#L30)
 
 ```lanius
 InvalidInput
@@ -53,7 +53,7 @@ InvalidInput
 
 #### variant: Joined
 
-[Source line 29](../../../stdlib/std/pthread.lani#L29)
+[Source line 30](../../../stdlib/std/pthread.lani#L30)
 
 ```lanius
 Joined
@@ -61,7 +61,7 @@ Joined
 
 ### struct: Thread
 
-[Source line 34](../../../stdlib/std/pthread.lani#L34)
+[Source line 35](../../../stdlib/std/pthread.lani#L35)
 
 ```lanius
 pub struct Thread
@@ -69,7 +69,7 @@ pub struct Thread
 
 #### field: id
 
-[Source line 34](../../../stdlib/std/pthread.lani#L34)
+[Source line 35](../../../stdlib/std/pthread.lani#L35)
 
 ```lanius
 id: u64
@@ -77,7 +77,7 @@ id: u64
 
 #### field: joined
 
-[Source line 34](../../../stdlib/std/pthread.lani#L34)
+[Source line 35](../../../stdlib/std/pthread.lani#L35)
 
 ```lanius
 joined: bool
@@ -87,7 +87,7 @@ joined: bool
 
 ### constant: MIN_STACK_BYTES
 
-[Source line 32](../../../stdlib/std/pthread.lani#L32)
+[Source line 33](../../../stdlib/std/pthread.lani#L33)
 
 ```lanius
 pub const MIN_STACK_BYTES: usize = 16384;
@@ -97,7 +97,7 @@ pub const MIN_STACK_BYTES: usize = 16384;
 
 ### function: spawn
 
-[Source line 37](../../../stdlib/std/pthread.lani#L37)
+[Source line 38](../../../stdlib/std/pthread.lani#L38)
 
 ```lanius
 pub fn spawn(entry: ptr, arg: ptr) -> core::result::Result<Thread, Error>
@@ -105,7 +105,7 @@ pub fn spawn(entry: ptr, arg: ptr) -> core::result::Result<Thread, Error>
 
 ### function: spawn_with_stack
 
-[Source line 39](../../../stdlib/std/pthread.lani#L39)
+[Source line 40](../../../stdlib/std/pthread.lani#L40)
 
 ```lanius
 pub fn spawn_with_stack(entry: ptr, arg: ptr, stack_bytes: usize) -> core::result::Result<Thread, Error>
@@ -113,7 +113,7 @@ pub fn spawn_with_stack(entry: ptr, arg: ptr, stack_bytes: usize) -> core::resul
 
 ### function: join_id
 
-[Source line 81](../../../stdlib/std/pthread.lani#L81)
+[Source line 82](../../../stdlib/std/pthread.lani#L82)
 
 ```lanius
 pub fn join_id(id: u64) -> core::result::Result<ptr, Error>
@@ -121,7 +121,7 @@ pub fn join_id(id: u64) -> core::result::Result<ptr, Error>
 
 ### function: current
 
-[Source line 86](../../../stdlib/std/pthread.lani#L86)
+[Source line 87](../../../stdlib/std/pthread.lani#L87)
 
 ```lanius
 pub fn current() -> u64
@@ -129,7 +129,7 @@ pub fn current() -> u64
 
 ### function: yield_now
 
-[Source line 87](../../../stdlib/std/pthread.lani#L87)
+[Source line 88](../../../stdlib/std/pthread.lani#L88)
 
 ```lanius
 pub fn yield_now()
@@ -137,7 +137,7 @@ pub fn yield_now()
 
 ### function: available_parallelism
 
-[Source line 92](../../../stdlib/std/pthread.lani#L92)
+[Source line 93](../../../stdlib/std/pthread.lani#L93)
 
 ```lanius
 pub fn available_parallelism() -> i32
@@ -145,9 +145,9 @@ pub fn available_parallelism() -> i32
 
 ## Implementation blocks and public methods
 
-### impl at line 61
+### impl at line 62
 
-[Source line 61](../../../stdlib/std/pthread.lani#L61)
+[Source line 62](../../../stdlib/std/pthread.lani#L62)
 
 ```lanius
 pub impl Thread
@@ -155,7 +155,7 @@ pub impl Thread
 
 #### method: borrow
 
-[Source line 62](../../../stdlib/std/pthread.lani#L62)
+[Source line 63](../../../stdlib/std/pthread.lani#L63)
 
 ```lanius
 pub fn borrow(&self) -> &Thread
@@ -163,7 +163,7 @@ pub fn borrow(&self) -> &Thread
 
 #### method: id
 
-[Source line 63](../../../stdlib/std/pthread.lani#L63)
+[Source line 64](../../../stdlib/std/pthread.lani#L64)
 
 ```lanius
 pub fn id(&self) -> u64
@@ -171,7 +171,7 @@ pub fn id(&self) -> u64
 
 #### method: is_joined
 
-[Source line 64](../../../stdlib/std/pthread.lani#L64)
+[Source line 65](../../../stdlib/std/pthread.lani#L65)
 
 ```lanius
 pub fn is_joined(&self) -> bool
@@ -179,7 +179,7 @@ pub fn is_joined(&self) -> bool
 
 #### method: join
 
-[Source line 67](../../../stdlib/std/pthread.lani#L67)
+[Source line 68](../../../stdlib/std/pthread.lani#L68)
 
 ```lanius
 pub fn join(&self) -> core::result::Result<ptr, Error>

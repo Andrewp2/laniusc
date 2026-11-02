@@ -1,0 +1,38 @@
+// A failure on a worker thread ends the whole process.
+//   thread_exit exit   the worker calls std::process::exit(7): status 7
+//   thread_exit trap   the worker indexes past a slice's end: status 101
+//   thread_exit none   the worker returns normally: status 0
+// Before the runtime used exit_group, exit (60) ended only the worker, and
+// main then returned 0 in every mode.
+// Build: laniusc --native-link --native-library atomic --stdlib-root stdlib
+module app::main;
+import core::mem;
+import core::result;
+import core::slice;
+import std::args;
+import std::process;
+import std::pthread;
+
+fn worker(arg: ptr) -> ptr {
+    let mode: [u8] = core::mem::typed_slice_from_raw_parts<u8>(arg, 1);
+    if (mode[0] == 101) { std::process::exit(7); }
+    if (mode[0] == 116) {
+        let short: [u8] = core::mem::typed_slice_from_raw_parts<u8>(arg, 2);
+        let at: i32 = mode[0] as i32;
+        short[at] = 1;
+    }
+    return arg;
+}
+
+fn main() -> i32 {
+    let arguments: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1, 1, 64);
+    if (arguments.is_err() || arguments.unwrap().len() != 1) { return 2; }
+    let mode: core::slice::View<u8> = arguments.unwrap().get(0).unwrap();
+    let cell: [i32; 2] = [0; 2];
+    let slot: ptr = core::mem::i32_array_data_ptr(cell);
+    let byte: [u8] = core::mem::typed_slice_from_raw_parts<u8>(slot, 1);
+    byte[0] = mode.values[mode.start];
+    let thread: std::pthread::Thread = std::pthread::spawn(worker, slot).unwrap();
+    thread.join();
+    return 0;
+}

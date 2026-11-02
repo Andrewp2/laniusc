@@ -39,11 +39,33 @@ stopping at the computations the theorems are about (`compileSource`,
 `linkObjects`, `elfFile`, `sourceProgramFiles`, `compileWords`,
 `frontEndWords` and the self program `Lanius.Faithful.Self.prog`, which are
 not trusted, section 10), with each one's type and body:
-definitions `6415d962ec6a970a` (4,475 constants). This covers Core's
+definitions `d230774a2b033659` (4,489 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
-modules keeps its hash. The last change of the hash (11-01, F11b, merged
+modules keeps its hash. The last change of the hash (11-01, steps 3.3 and 3.4 of
+array-to-slice arguments): `SrcType.HoldsAt` has a constructor `borrowed`,
+a slice of a caller's array in `places` (marked `sliced`, a whole array of
+`i32` or `u8` elements), the slot holding `Addressed.pointer` (new, with its
+match and case helpers) and the next slot its length, and Core's value the
+safe slice `.slice element cell [] 0 length` of the array's cell. Core's
+`rawSliceStride?` answers for a safe slice with its element's native stride,
+as it does for a raw slice (SEMANTIC_DECISIONS, "Addressed locals"). The
+top theorems pass `places := []`, where `borrowed` cannot hold, so their
+statements mean what they did. The hash before it was `30cfc8a1287e8470`.
+Before that (11-01, step 3.3 of array-to-slice arguments): `Addressed` (`Mini/Source.lean`) has a field
+`sliced`, which marks an array passed as a slice, laid out as a slice's
+elements in frame memory; no constructor of `SrcType.HoldsAt` reads it yet.
+The hash before it was `c1629d03f01a2c36`. Before that (11-01, merge of lang
+into rfront's step 3.1 of array-to-slice arguments, lang `6415d962ec6a970a`
+and step 3.1 `779c1a8a7e04e0c6`, which did not change each other's
+definitions): `SrcType.HoldsAt` and `FieldsHold` take a list
+`places : List Addressed` (`Mini/Source.lean`) of the caller's arrays held in
+memory, each a cell, its type and its frame address (two new constants,
+`Addressed` and its constructor). It is a uniform parameter that no
+constructor reads yet, and the top theorems pass `[]`, so their statements
+mean what they did; their statement hashes changed with the extra argument.
+Before that (lang, 11-01, F11b, merged
 with the review-fixes restatement and rfront's `u16` views,
 `a784f30fce5c9322`): an array local passed at a `[T]` parameter is
 `SrcEff.arraySlice T x`, whose meaning is Core's `arrayToSlice T (local x)`
@@ -116,7 +138,7 @@ its work directory's `definitions.txt`, to find which one changed.
 
 #### `Lanius.Mini.process_exits`
 
-statement `000000006f650e63`. If `compileSource sp = some binary`,
+statement `00000000d89c9364`. If `compileSource sp = some binary`,
 `elfFile binary entry stack heap = some file`, and function `entry` of `sp`
 has no parameters: whenever Core runs `entry()` from `startState given` to
 a value `v` with the heap ending within `heap` bytes, then Core's final
@@ -131,7 +153,7 @@ small for the call's depth and the process faults. Rests on sections 3, 6,
 
 #### `Lanius.Mini.process_behaviour`
 
-statement `0000000025d83224`. Same premises, for any run from a `Loaded`
+statement `000000001a0407b5`. Same premises, for any run from a `Loaded`
 state to a state with no step that is not a fault: Core's run of `entry()`
 finishes within the heap and the run is at `exit` with the last result
 slot, or Core's run reaches an undefined trap (`undefinedTrap`) within the
@@ -139,21 +161,21 @@ heap. Rests on the same sections.
 
 #### `Lanius.Mini.textProcess_exits`
 
-statement `00000000c0c13d4b`. `process_exits` from source text: if
+statement `000000008f692d85`. `process_exits` from source text: if
 `compileText files = some binary` and `elfFile` gives `file`, the files'
 texts have a reading `sp` (`TextReading`, section 4), the only one, and
 `process_exits`'s conclusion holds of `sp`. Adds section 4.
 
 #### `Lanius.Mini.textProcess_behaviour`
 
-statement `000000002cdd1cd1`. `process_behaviour` from source text, as
+statement `0000000081ca3b05`. `process_behaviour` from source text, as
 `textProcess_exits` is `process_exits`.
 
 ### Source text (`Lanius/Mini/TextCorrect.lean`)
 
 #### `Lanius.Mini.compileText_correct`
 
-statement `0000000023824272`. If `compileText files = some binary`, the
+statement `00000000a0955694`. If `compileText files = some binary`, the
 files' texts have exactly one reading `sp`, and `compileSource_correct`'s
 conclusion holds of `sp` and `binary`, from the start state of the mini
 heap's streams (standard input, the clocks' readings, the secure bytes; the
@@ -161,7 +183,7 @@ read limits are any). Rests on sections 3, 4, 6 and 8.
 
 #### `Lanius.Mini.compileText_behaviour`
 
-statement `000000003d3267c8`. If `compileText files = some binary`, the
+statement `0000000052dbcf68`. If `compileText files = some binary`, the
 texts have one reading `sp`, and `compileSource_behaviour`'s conclusion
 holds of it.
 
@@ -174,7 +196,7 @@ Rests on section 4 only.
 
 #### `Lanius.Mini.compileSource_correct`
 
-statement `000000009c74f811`. If `compileSource sp = some binary`, `f` is a
+statement `000000000cd456fb`. If `compileSource sp = some binary`, `f` is a
 function of `sp`, and `args` are values of its parameter types held in
 slots `bits` (`FieldsHold`), and Core runs `f(args)` from the start state
 (`startState` of the heap's streams: standard input, the clocks' readings
@@ -189,13 +211,13 @@ Rests on sections 3, 6 and 8.
 
 #### `Lanius.Mini.compileSource_correct_from`
 
-statement `00000000e3b16b55`. The same from any Core state `st` with no
+statement `00000000c1db7c21`. The same from any Core state `st` with no
 live cells (`State.Fresh`) whose heap and world the mini heap represents
 (`HeapCorr`); the final heap and world are again represented.
 
 #### `Lanius.Mini.compileSource_stops`
 
-statement `000000006f45523e`. Same premises on the compiler and the
+statement `0000000052be8b5d`. Same premises on the compiler and the
 arguments, a fresh heap of limit at least 1 and the caller's obligations
 (any window up to 2^62): if every fuel of Core's run of `f(args)` fails
 (`Failing`: runs out, traps with a defined trap, or ends past the heap
@@ -203,20 +225,20 @@ limit), then every run of the code that stops, stops at a fault (`Faults`).
 
 #### `Lanius.Mini.compileSource_behaviour`
 
-statement `0000000066f9c1d3`. Same premises: a run to a state with no step
+statement `00000000a11da92d`. Same premises: a run to a state with no step
 that is not a fault comes from a Core run of `f(args)` that finished within
 the heap limit, or reached an undefined trap within it.
 
 #### `Lanius.Mini.compileSource_behaviour_rawFree`
 
-statement `00000000b7e621d9`. `compileSource_behaviour` for a program without raw
+statement `000000007428744f`. `compileSource_behaviour` for a program without raw
 memory (`RawFree`: no `alloc`, `load_byte`, `store_byte`, `dealloc`, raw
 slices or `slice_stride`), from a fresh heap: the undefined trap its second
 case allows is not `typeMismatch` (`Lanius/Mini/ShapeSource.lean`).
 
 #### `Lanius.Mini.compileSource_deterministic`
 
-statement `000000009882455b`. `compileSource_correct` (without the output
+statement `0000000021b0d61d`. `compileSource_correct` (without the output
 conjuncts) with: every run of the same length ends `DataEq` to the
 returning one (registers, `rip` and memory equal; section 7).
 
@@ -392,7 +414,7 @@ the statements, so a reader has to agree that each one says what is intended:
 | definition | file | says |
 |---|---|---|
 | `SrcProgram.toCore` and the `toCore` of each construct | `Mini/Source.lean` | which Core program a source program *is*: each construct is the Core construct of the same name (`Null` is Core's literal `.pointer 0`), and functions are numbered by position, then the host functions (`hostFuncs`, ids 2^32 up). A literal (`EStruct`, `LetStruct`) means `SrcType.literal`: Core's array value `.array T vs` at an array type `[T; N]`, and a struct value otherwise. `ArraySlice(T, x)` is Core's `arrayToSlice T (local x)`. `EIf(c, T, a, b)` is Core's `matchValue c [(literal true, a), (_, b)]`, Core's match on the bool (Core has no conditional expression). `ELet(x, T, v, R, b)` is Core's `matchValue v [(bind x, b)]`, the one arm binding x (Core has no let expression) |
-| `FieldsHold`, `SrcType.HoldsAt` | `Mini/Source.lean` | how a Core value sits in 64-bit slots: an `i32` is zero-extended, a `bool` is 1/0, a struct is its fields in order, an enum is a tag then its payload, a pointer is its address, an array `[T; N]` is its N elements in order, as a struct of N fields of type T, a float is its bits |
+| `FieldsHold`, `SrcType.HoldsAt` | `Mini/Source.lean` | how a Core value sits in 64-bit slots: an `i32` is zero-extended, a `bool` is 1/0, a struct is its fields in order, an enum is a tag then its payload, a pointer is its address, an array `[T; N]` is its N elements in order, as a struct of N fields of type T, a float is its bits. Their first argument, `places`, lists the caller's arrays held in memory (`Addressed`), which no constructor reads yet; the top theorems pass `[]` |
 | `startState`, `State.Fresh`, `HeapCorr`, `outputOf` | `Mini/SourceCorrect.lean`, `Mini/HeapCorr.lean` | Core's start state for a standard input (empty heap, the world with that input); a state with no live cells; the mini heap representing Core's heap and world (standard output and error are `outputOf 1` and `outputOf 2` of the mini heap's trace, the bytes its writes put on fds 1 and 2, no open files, the same standard input) |
 | `Returned`, `HeapAt`, `StackAt`, `Contract`, `Scratch`, `InHeap` | `Mini/Simulation.lean` | the calling convention and what "returns" means (section 8) |
 | `Below`, `Binary.stackNeed`, `Binary.guard` | `Mini/Frame.lean`, `Mini/Bytes.lean` | the stack window |

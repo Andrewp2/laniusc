@@ -1,0 +1,49 @@
+// std::uring Ring::transfer's read-window test, `start && reading >= window`,
+// in its loop shape. Reported as LNC0057 while building uring_copy.lani; the
+// failure came from a laniusc binary running against kernels a concurrent
+// rebuild had replaced, not from this condition (README.md). Starts reads in
+// free slots while at most `window` are in flight, doubling the window after
+// each full block. Exits 0 when every block is read once and in order.
+module app::main;
+
+fn main() -> i32 {
+    let v: [i64; 32] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let depth: i32 = 4;
+    let blocks: i64 = 11;
+    let next: i64 = 0;
+    let reading: i64 = 0;
+    let window: i64 = 1;
+    let ended: bool = false;
+    let failure: i32 = 0;
+    let completed: i64 = 0;
+    let rounds: i32 = 0;
+    while (true) {
+        let s: i32 = 0;
+        while (s < depth) {
+            let f: i32 = s * 8;
+            let start: bool = v[f] == 0 && !ended && failure == 0;
+            if (start && reading >= window) { start = false; }
+            if (start) {
+                v[f] = 1; v[f + 1] = next; next += 1; reading += 1;
+                if (next == blocks) { ended = true; }
+            }
+            s += 1;
+        }
+        if (reading == 0) { break; }
+        // Complete the oldest read in flight.
+        let oldest: i32 = -1;
+        let w: i32 = 0;
+        while (w < depth) {
+            if (v[w * 8] == 1 && (oldest < 0 || v[w * 8 + 1] < v[oldest * 8 + 1])) { oldest = w; }
+            w += 1;
+        }
+        if (v[oldest * 8 + 1] != completed) { return 1; }
+        v[oldest * 8] = 0; completed += 1; reading -= 1;
+        if (window < (depth as i64)) { window = window * 2; }
+        rounds += 1;
+        if (rounds > 100) { return 2; }
+    }
+    if (completed != blocks || window != 4) { return 3; }
+    return 0;
+}

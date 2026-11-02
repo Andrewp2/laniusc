@@ -97,7 +97,7 @@ pub fn hop_by_hop(name: core::slice::View<u8>) -> bool
 
 ### function: drops
 
-[Source line 45](../../../extended/ext/http_rewrite.lani#L45)
+[Source line 44](../../../extended/ext/http_rewrite.lani#L44)
 
 ```lanius
 pub fn drops(head: ext::http::Head, name: core::slice::View<u8>) -> bool
@@ -105,7 +105,7 @@ pub fn drops(head: ext::http::Head, name: core::slice::View<u8>) -> bool
 
 ### function: request_head
 
-[Source line 92](../../../extended/ext/http_rewrite.lani#L92)
+[Source line 152](../../../extended/ext/http_rewrite.lani#L152)
 
 ```lanius
 pub fn request_head(out: &alloc::vec::Vec<u8>, head: ext::http::Head, forward: Forward) -> bool
@@ -113,7 +113,7 @@ pub fn request_head(out: &alloc::vec::Vec<u8>, head: ext::http::Head, forward: F
 
 ### function: response_head
 
-[Source line 111](../../../extended/ext/http_rewrite.lani#L111)
+[Source line 170](../../../extended/ext/http_rewrite.lani#L170)
 
 ```lanius
 pub fn response_head(out: &alloc::vec::Vec<u8>, head: ext::http::Head, keep_alive: bool, forward: Forward) -> bool
@@ -121,7 +121,7 @@ pub fn response_head(out: &alloc::vec::Vec<u8>, head: ext::http::Head, keep_aliv
 
 ### function: h2_request_head
 
-[Source line 130](../../../extended/ext/http_rewrite.lani#L130)
+[Source line 189](../../../extended/ext/http_rewrite.lani#L189)
 
 ```lanius
 pub fn h2_request_head(out: &alloc::vec::Vec<u8>, method: core::slice::View<u8>, path: core::slice::View<u8>, authority: core::slice::View<u8>, fields: core::slice::View<ext::hpack::Header>, length: i64, forward: Forward) -> bool
@@ -129,7 +129,7 @@ pub fn h2_request_head(out: &alloc::vec::Vec<u8>, method: core::slice::View<u8>,
 
 ### function: h2_response_fields
 
-[Source line 170](../../../extended/ext/http_rewrite.lani#L170)
+[Source line 229](../../../extended/ext/http_rewrite.lani#L229)
 
 ```lanius
 pub fn h2_response_fields(head: ext::http::Head, fields: &alloc::vec::Vec<ext::hpack::Header>, scratch: &alloc::vec::Vec<u8>, forward: Forward) -> bool

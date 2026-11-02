@@ -59,6 +59,19 @@ fn main() {
         "cargo:rustc-env=LANIUS_SHADER_ARTIFACT_ROOT={}",
         shader_artifact_root(&workspace_root).display()
     );
+    // The digest of the kernels this binary is built with. laniusc reads its
+    // kernels from disk at run time; shader_artifacts::kernel_pairing_problem
+    // compares the two to explain failures after a rebuild replaced them.
+    let metadata = shader_artifact_root(&workspace_root).join("artifacts.env");
+    println!("cargo:rerun-if-changed={}", metadata.display());
+    let built_digest = fs::read_to_string(&metadata)
+        .ok()
+        .and_then(|text| {
+            text.lines()
+                .find_map(|line| line.strip_prefix("digest=").map(str::to_string))
+        })
+        .unwrap_or_else(|| "unknown".to_string());
+    println!("cargo:rustc-env=LANIUS_SHADER_BUILT_DIGEST={built_digest}");
 }
 
 fn generate_primitive_type_constants(workspace_root: &Path) {
