@@ -269,10 +269,22 @@ def closeCost (cost? : Option Ident) : TacticM Unit := do
 
 /-- One step on the main goal. -/
 def step (cost? : Option Ident) (i : Nat) : TacticM Unit := do
-  let _ ← tryT `(tactic| qsimp at $(mkIdent `h):ident)
-  if (← getGoals).isEmpty then return
-  let _ ← tryT `(tactic| qsimp)
-  if (← getGoals).isEmpty then return
+  -- A run already at a call with its arguments evaluated is left as it is:
+  -- `qsimp` normalized the rest before, and on a big body it costs a pass
+  -- over all of it at every step.
+  let ready ← do
+    let some t ← hypType? `h | pure false
+    let some (_, lhs, _) := t.eq? | pure false
+    let e := (← instantiateMVars lhs).consumeMData.headBeta
+    if e.isAppOfArity ``qthen 4 then
+      let o := e.appFn!.appArg!.consumeMData.headBeta
+      pure (o.isAppOfArity ``qcall 6 && (qblocking o).isEmpty)
+    else pure false
+  unless ready do
+    let _ ← tryT `(tactic| qsimp at $(mkIdent `h):ident)
+    if (← getGoals).isEmpty then return
+    let _ ← tryT `(tactic| qsimp)
+    if (← getGoals).isEmpty then return
   if ← eagerCases i then
     let goals ← getGoals
     let mut out := #[]
@@ -287,7 +299,7 @@ def step (cost? : Option Ident) (i : Nat) : TacticM Unit := do
     setGoals out.toList
     return
   let run ← runOf
-  trace m!"step {i}: {run}"
+  trace m!"step {i} [{(← getMainGoal).name}] pre {← hypType? `pre}: {run}"
   let h := mkIdent `h
   let hb := mkIdent `hb
   let pre := mkIdent `pre
@@ -314,7 +326,7 @@ def step (cost? : Option Ident) (i : Nat) : TacticM Unit := do
     let _ ← tryT `(tactic| clear $hx:ident)
     if let some b := b? then
       let bS ← toStx b
-      let _ ← tryT `(tactic| replace $pre:ident := $pre:ident (by omega))
+      let _ ← tryT `(tactic| replace $pre:ident := $pre:ident ($bS - $c) (by omega) (by omega))
       tac `(tactic| replace $hb:ident : $k < $bS - $c := by omega)
   | .split cond =>
     trace m!"split {cond}"
@@ -325,10 +337,16 @@ def step (cost? : Option Ident) (i : Nat) : TacticM Unit := do
     let mut out := #[]
     for g in goals do
       setGoals [g]
+      -- a condition decided before (a call made twice): one case contradicts it
+      if ← tryT `(tactic| contradiction) then continue
       let _ ← tryT `(tactic| simp only [$hc:ident, budget_cond] at $h:ident)
       let _ ← tryT `(tactic| simp only [$hc:ident, budget_cond, pure_rule] at $pre:ident)
       let _ ← tryT `(tactic| simp only [$hc:ident, budget_cond])
-      out := out ++ (← getGoals)
+      let now ← getGoals
+      for g' in now do
+        setGoals [g']
+        trace m!"split into [{g'.name}] pre {← hypType? `pre}"
+      out := out ++ now
     setGoals out.toList
   | .stuck e =>
     match ← stuckRep? e with
@@ -378,7 +396,7 @@ def step (cost? : Option Ident) (i : Nat) : TacticM Unit := do
         at $h:ident ⊢)
       return
     let some info ← certInfo? key | throwError "budget: no certificate for {key}"
-    trace m!"call {key}"
+    trace m!"call {key}: pre {← hypType? `pre}"
     let nargs := match args[5]!.listLit? with
       | some (_, vs) => vs.length
       | none => 0
@@ -419,7 +437,7 @@ def step (cost? : Option Ident) (i : Nat) : TacticM Unit := do
     else
       if let some b := b? then
         let bS ← toStx b
-        let _ ← tryT `(tactic| (simp only [$hcost:ident] at $pre:ident; replace $pre:ident := $pre:ident (by omega)))
+        let _ ← tryT `(tactic| replace $pre:ident := $pre:ident ($bS - $c1) (by omega) (by omega))
         tac `(tactic| replace $hb:ident : $c2 < $bS - $c1 := by omega)
     tac `(tactic| refine run_step $hq ?_)
     tac `(tactic| replace $h:ident := $he:ident)

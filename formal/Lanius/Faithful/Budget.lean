@@ -174,12 +174,12 @@ attribute [budget_cond] and_true true_and and_false false_and or_true true_or or
 syntax "qsimp" (" at " ident)? : tactic
 macro_rules
   | `(tactic| qsimp at $h:ident) => `(tactic|
-    simp only [budget_rule, pure_rule, reduceCtorEq, qstmt, qeff, qeffs, qapplyOp, qbinary, pexpr, pexprs, paramEnv,
+    simp (maxSteps := 10000000) only [budget_rule, pure_rule, reduceCtorEq, qstmt, qeff, qeffs, qapplyOp, qbinary, pexpr, pexprs, paramEnv,
       paramBindings, applyOp, binary, unary, Lanius.Faithful.cast, SrcOp.toCore, SrcDivOp.toCore, UintTy.toCore,
       SrcType.toScalar, Nat.reduceLT, Nat.reduceEqDiff, Nat.reduceAdd, Nat.reduceSub, Nat.reduceMul, Nat.reduceMod,
       Nat.reducePow, Nat.reduceBEq, Nat.reduceBNe, Nat.zero_add, Nat.add_zero] at $h:ident)
   | `(tactic| qsimp) => `(tactic|
-    simp only [budget_rule, pure_rule, reduceCtorEq, qstmt, qeff, qeffs, qapplyOp, qbinary, pexpr, pexprs, paramEnv,
+    simp (maxSteps := 10000000) only [budget_rule, pure_rule, reduceCtorEq, qstmt, qeff, qeffs, qapplyOp, qbinary, pexpr, pexprs, paramEnv,
       paramBindings, applyOp, binary, unary, Lanius.Faithful.cast, SrcOp.toCore, SrcDivOp.toCore, UintTy.toCore,
       SrcType.toScalar, Nat.reduceLT, Nat.reduceEqDiff, Nat.reduceAdd, Nat.reduceSub, Nat.reduceMul, Nat.reduceMod,
       Nat.reducePow, Nat.reduceBEq, Nat.reduceBNe, Nat.zero_add, Nat.add_zero])

@@ -20,7 +20,14 @@ or indices; by default every function):
               the callees' budget certificates and the function's own
               extraction certificate, by `budget`;
   SelfBCert   the proofs at `progW` and `prog`, recursive groups by
-              induction on the fuel, callees first.
+              induction on the fuel, callees first;
+  SelfBudget  all of them.
+
+Each kind is split into numbered parts of about CHUNK characters
+(SelfBModel0, SelfBModel1, ...). The model, statement and certificate parts
+each import the part before them. Every proof part imports only the last
+statement part, so the proof parts build side by side. Files in OUTDIR that
+the run does not write are removed.
 
 A budget certificate says that a run of `progW` (`plus` and `times`
 wrapping) on values representing Lean arguments `x`, at a cost `k` in
@@ -42,8 +49,9 @@ is its own function there, as in the source), each value the Lean term
   Pre_F (n + 1) x b  along the same path, at each call of a function `G`
               with a precondition, `Pre_G n y B`, `B` the budget left: `b`
               less the costs before the call in `F`'s body. After a call
-              that costs `c`, what follows is under `c < B →` at the budget
-              `B - c`; `Pre_F 0 x b = True`. `Pre_plus n x y b` is
+              that costs `c`, what follows is under
+              `∀ b1, c < B → b1 = B - c →` at the budget `b1` (a name, so the
+              budget does not grow with the path); `Pre_F 0 x b = True`. `Pre_plus n x y b` is
               `x + y < 2 ^ 64`, `Pre_times` likewise (Budget.lean).
 
 A function that reaches no `boxed` has no cost model (its cost is 0), and
@@ -61,6 +69,14 @@ import faithful_pure as fp  # noqa: E402
 SELF = fc.SELF
 POW64 = '18446744073709551616'
 NS = 'Lanius.Faithful.SelfBudget'
+# The characters of Lean in one generated module.
+CHUNK = 400000
+# Proofs take longer per character: a proof module's size.
+PROOF_CHUNK = 40000
+# A proof that runs longer than this is a tactic that lost its way.
+PROOF_HEARTBEATS = 1000000
+# The dump's unsigned kinds, as the signatures write them.
+KIND = {'usize': 'usize', 'uint8': 'u8', 'uint32': 'u32', 'uint64': 'u64'}
 
 
 class Unsupported(Exception):
@@ -174,7 +190,7 @@ class Gen:
             raise Unsupported(f'type {t}')
         c, a = fp.ctor(t)
         if c == 'uint':
-            return {'usize': 'usize', 'u8': 'u8', 'u32': 'u32', 'u64': 'u64'}[fp.ctor(a[0])[0]]
+            return KIND[fp.ctor(a[0])[0]]
         raise Unsupported(f'type {t}')
 
     def lean_ty(self, tok):
@@ -209,7 +225,7 @@ class Gen:
             f = variants[0][k]
             return f'{paren(t)}.{fc.camel(names[k])}', self.prog.element(f) if self.is_box(f) else f
         if c == 'unsigned':
-            kind = fp.ctor(a[0])[0]
+            kind = KIND[fp.ctor(a[0])[0]]
             return self.lit(kind, a[1][1]), kind
         if c == 'int':
             return f'({a[0][1]}#32)', 'i32'
@@ -321,8 +337,9 @@ class Gen:
                 return add('1', rest) if boxed else rest
             if not boxed:
                 return k(ts[0], self.prog.sigs[c]['ret'], B)
-            rest = k(ts[0], self.prog.sigs[c]['ret'], f'({B} - 1)')
-            return 'True' if rest == 'True' else f'(1 < {B} → {rest})'
+            b1 = self.fresh()
+            rest = k(ts[0], self.prog.sigs[c]['ret'], b1)
+            return 'True' if rest == 'True' else f'(∀ {b1} : Nat, 1 < {B} → {b1} = {B} - 1 → {rest})'
         if self.prog.role(c) not in ('fn', 'field'):
             raise Unsupported(f'call of {self.name(c)} ({self.prog.role(c)})')
         term = self.prog.term(c, [paren(t) for t in ts], self.inline)
@@ -337,8 +354,9 @@ class Gen:
             parts.append(f'(Pre_{K} n {args} {B})')
         if c in self.costly:
             cost = f'(Cost_{K} n {args})'
-            rest = k(term, ret, f'({B} - {cost})')
-            parts.append('True' if rest == 'True' else f'({cost} < {B} → {rest})')
+            b1 = self.fresh()
+            rest = k(term, ret, b1)
+            parts.append('True' if rest == 'True' else f'(∀ {b1} : Nat, {cost} < {B} → {b1} = {B} - {cost} → {rest})')
         else:
             parts.append(k(term, ret, B))
         return conj(parts)
@@ -421,8 +439,10 @@ class Gen:
         return tok.startswith('#') and self.prog.kind(tok) == 'box'
 
     def ite(self, mode, cond, yes, no):
-        if yes == no:
+        if yes == no or cond == 'true = true':
             return yes
+        if cond == 'false = true':
+            return no
         return f'(if {cond} then {yes} else {no})'
 
     def match(self, mode, t, pats, bodies):
@@ -498,7 +518,14 @@ class Gen:
         ps = ast[1]['params'][1]
         return [(p[1]['id'][1], tok) for p, tok in zip(ps, self.prog.sigs[i]['params'])]
 
+    def fresh(self):
+        """A name for the budget left after a cost (`∀ b1, c < B → b1 = B - c → ...`, so that
+        the budget is a name, not a growing difference)."""
+        self.names += 1
+        return f'b{self.names}'
+
     def body(self, mode, i):
+        self.names = 0
         env = {pid: (f'x{pid}', tok) for pid, tok in self.params(i)}
         return self.stmt(mode, env, self.ast[i][1]['body'], 'b', lambda B: self.ret(mode))
 
@@ -519,8 +546,8 @@ class Gen:
                 xs = [f'x{pid}' for pid, _ in ps] + (['b'] if mode == 'pre' else [])
                 body = self.body(mode, i)
                 defs.append(f'def {name}_{self.key[i]} : {tys} → {ty}\n'
-                            f'  | 0, {", ".join(xs)} => {zero}\n'
-                            f'  | n + 1, {", ".join(xs)} => {body}\n' +
+                            f'  | {", ".join(["0"] + xs)} => {zero}\n'
+                            f'  | {", ".join(["n + 1"] + xs)} => {body}\n' +
                             ('termination_by structural fuel => fuel\n' if self.recursive(comp) else ''))
             if len(defs) > 1 or self.recursive(comp):
                 out.append('mutual\n' + '\n'.join(defs) + 'end\n')
@@ -674,25 +701,52 @@ class Gen:
             if self.is_fn(comp[0]):
                 models += self.model_defs(comp)
         texts = {}
-        texts['SelfBModel'] = (
-            'import Lanius.Faithful.Gen.SelfCert\nimport Lanius.Faithful.Budget\n\n'
-            '/-! Generated by formal/tools/budget_certs.py: the cost models and preconditions of the\n'
-            'self program\'s functions. Do not edit. -/\n\n' + head + opens + 'noncomputable section\n\n' +
-            '\n'.join(models) + f'\nend\n\nend {NS}\n')
-        texts['SelfBStmt'] = (
-            'import Lanius.Faithful.GenB.SelfBModel\n\n'
-            '/-! Generated by formal/tools/budget_certs.py: the budget certificates\' statements. Do not\n'
-            'edit. -/\n\n' + head + opens + '\n'.join(self.bstmt(i) for i in fns) + f'\nend {NS}\n')
-        texts['SelfBProof'] = (
-            'import Lanius.Faithful.GenB.SelfBStmt\nimport Lanius.Faithful.BudgetTactic\n\n'
-            '/-! Generated by formal/tools/budget_certs.py: the budget certificates, for any programs\n'
-            'that hold the functions. Do not edit. -/\n\n' + head + opens + '\n'.join(self.proof(i) for i in fns) +
-            f'\nend {NS}\n')
-        texts['SelfBCert'] = (
-            'import Lanius.Faithful.GenB.SelfBProof\n\n'
-            '/-! Generated by formal/tools/budget_certs.py: the budget certificates at `progW` and\n'
-            '`prog`. Do not edit. -/\n\n' + head + opens + 'open Lanius.Faithful.SelfPanics\n\n' +
-            '\n'.join(t for t in (self.link(comp) for comp in self.order) if t) + f'\nend {NS}\n')
+
+        def mod(name):
+            return f'Lanius.Faithful.GenB.{name}'
+
+        def chain(base, parts, first_imports, doc, extra_open=''):
+            """`parts` in modules of about CHUNK characters, each importing the one before."""
+            chunks, cur = [], []
+            for t in parts:
+                if cur and sum(map(len, cur)) + len(t) > CHUNK:
+                    chunks.append(cur)
+                    cur = []
+                cur.append(t)
+            chunks.append(cur)
+            names = [f'{base}{k}' for k in range(len(chunks))]
+            for k, chunk in enumerate(chunks):
+                imports = first_imports if k == 0 else [mod(names[k - 1])]
+                texts[names[k]] = (''.join(f'import {m}\n' for m in imports) +
+                                   f'\n/-! Generated by formal/tools/budget_certs.py: {doc} (part {k}). Do not edit. -/\n\n' +
+                                   head + opens + extra_open + '\n'.join(chunk) + f'\nend {NS}\n')
+            return names
+
+        model_names = chain('SelfBModel', [f'noncomputable section\n\n{m}\nend\n' for m in models],
+                            ['Lanius.Faithful.Gen.SelfCert', 'Lanius.Faithful.Budget'],
+                            'the cost models and preconditions of the self program\'s functions')
+        stmt_names = chain('SelfBStmt', [self.bstmt(i) for i in fns], [mod(model_names[-1])],
+                           'the budget certificates\' statements')
+        # The proofs need only the statements, so their modules build side by side.
+        proofs = [self.proof(i) for i in fns]
+        proof_names, cur, k = [], [], 0
+        for t in proofs + [None]:
+            if t is None or (cur and sum(map(len, cur)) + len(t) > PROOF_CHUNK):
+                name = f'SelfBProof{k}'
+                texts[name] = (f'import {mod(stmt_names[-1])}\nimport Lanius.Faithful.BudgetTactic\n\n'
+                               f'/-! Generated by formal/tools/budget_certs.py: the budget certificates, for any\n'
+                               f'programs that hold the functions (part {k}). Do not edit. -/\n\n' +
+                               head.replace('maxHeartbeats 10000000', f'maxHeartbeats {PROOF_HEARTBEATS}') + opens +
+                               '\n'.join(cur) + f'\nend {NS}\n')
+                proof_names.append(name)
+                cur, k = [], k + 1
+            if t is not None:
+                cur.append(t)
+        links = [t for t in (self.link(comp) for comp in self.order) if t]
+        cert_names = chain('SelfBCert', links, [mod(n) for n in proof_names],
+                           'the budget certificates at `progW` and `prog`', 'open Lanius.Faithful.SelfPanics\n\n')
+        texts['SelfBudget'] = (f'import {mod(cert_names[-1])}\n\n'
+                               '/-! Generated by formal/tools/budget_certs.py: every budget certificate. Do not edit. -/\n')
         return texts
 
 
@@ -702,7 +756,11 @@ def main():
     dump, outdir = sys.argv[1:3]
     gen = Gen(dump, sys.argv[3:])
     os.makedirs(outdir, exist_ok=True)
-    for name, text in gen.files().items():
+    texts = gen.files()
+    for name in os.listdir(outdir):
+        if name.endswith('.lean') and name[:-5] not in texts:
+            os.remove(os.path.join(outdir, name))
+    for name, text in texts.items():
         path = os.path.join(outdir, f'{name}.lean')
         if not os.path.exists(path) or open(path).read() != text:
             open(path, 'w').write(text)

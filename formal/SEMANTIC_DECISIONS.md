@@ -1716,8 +1716,13 @@ If `F` cannot overflow along any path, it has no `b` and no `Pre_F`.
 - The Pre_F generation rule: `Pre_F` is built in evaluation order, in
   continuation-passing style, with `B` the budget still left. At a call of
   a guarded `G` it adds `Pre_G n y B`. After a costly call the rest is
-  `Cost_G n y < B → REST` at `B - Cost_G n y`. After a boxed prim the
-  rest is `1 < B → REST` at `B - 1`. A part that is `True` is dropped.
+  `∀ b1, Cost_G n y < B → b1 = B - Cost_G n y → REST` at `b1`. After a
+  boxed prim it is `∀ b1, 1 < B → b1 = B - 1 → REST`. The new budget gets
+  a name, so it does not grow along a path: written out as differences,
+  a long branch chain made one model 1.6 MB. A part that is `True` is
+  dropped. A condition that is the literal `true` or `false` is decided
+  by the generator, so a lazy `&&` chain copies its continuation once per
+  operand, not twice.
   `plus` and `times` are the base cases:
   `Pre_plus n x y b := x + y < 2 ^ 64`, likewise for `times`, and their
   certificates are written by hand (`Budget.bcert_plus`, `bcert_times`).
