@@ -109,6 +109,16 @@ bool x86_scalar_immediate_type(uint type_id)
         type_id == 4u || type_id == 6u;
 }
 
+// A function's parameter rows lie inside the parameter table. A function
+// without parameters has param_start LIR_INVALID (function_scatter), and its
+// empty range is valid.
+bool x86_parameter_range_outside(SemanticLirFunction function, uint param_total)
+{
+    return function.param_count != 0u &&
+        (function.param_start >= param_total ||
+         function.param_count > param_total - function.param_start);
+}
+
 bool x86_declaration_needs_home(X86DeclarationAnalysis analysis,
                                 uint definition_live)
 {

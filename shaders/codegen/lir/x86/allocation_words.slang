@@ -425,7 +425,7 @@ uint declaration_register_mask(SemanticLirFunction function, bool has_call,
     uint limit = has_call ? 4u : 6u;
     uint param_total = semantic_lir_param_total[0u];
     uint local_total = semantic_lir_local_total[0u];
-    if (function.param_start + function.param_count > param_total ||
+    if (x86_parameter_range_outside(function, param_total) ||
         function.local_start + function.local_count > local_total)
         return 0xffffu;
     if (has_call)
@@ -487,7 +487,7 @@ uint declaration_register_mask(SemanticLirFunction function, bool has_call,
 // x86_header_parameter), or INVALID. decl_slots_scatter makes the same choice.
 uint header_parameter(SemanticLirFunction function)
 {
-    if (function.param_start + function.param_count > semantic_lir_param_total[0u])
+    if (x86_parameter_range_outside(function, semantic_lir_param_total[0u]))
         return INVALID;
     for (uint ordinal = 0u; ordinal < min(function.param_count, LOCAL_SLOT_SCAN_LIMIT); ordinal += 1u)
     {
