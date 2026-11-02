@@ -51,7 +51,10 @@ pub struct Client {
     input: alloc::vec::Vec<u8>, start: i32, filled: i32, eof: bool,
     masks: alloc::vec::Vec<u8>, used: i32, protocol: alloc::vec::Vec<u8>, selected: bool,
     peer_code: i32, active: bool, open: bool,
-    codec: core::option::Option<ext::ws_deflate::Codec>, inflated: alloc::vec::Vec<u8>, packed: alloc::vec::Vec<u8>
+    codec: core::option::Option<ext::ws_deflate::Codec>, inflated: alloc::vec::Vec<u8>, packed: alloc::vec::Vec<u8>,
+    // A fragmented send is open (sending: its opcode, 0 when none), and
+    // UTF-8 state for compressed text, checked before compression.
+    sending: i32, text: ext::websocket::TextCheck
 }
 
 const MASK_POOL: i32 = 256;
@@ -201,7 +204,7 @@ fn handshake(conn: ext::http_agent::Connection, u: &ext::http_url::Url, options:
     let w: ext::websocket::Connection = wire.unwrap(); if (codec.is_some()) { w.enable_compression(); }
     return core::result::Ok(Client { conn: conn, wire: w, options: options, input: input, start: head, filled: filled, eof: false,
         masks: masks, used: MASK_POOL, protocol: protocol, selected: selected, peer_code: -1, active: true, open: true,
-        codec: codec, inflated: alloc::vec::new<u8>(), packed: alloc::vec::new<u8>() });
+        codec: codec, inflated: alloc::vec::new<u8>(), packed: alloc::vec::new<u8>(), sending: 0, text: ext::websocket::text_check() });
 }
 
 pub impl Client {
@@ -248,17 +251,16 @@ pub impl Client {
         return core::result::Ok(length);
     }
     // One whole message, in one frame. With permessage-deflate negotiated it
-    // is compressed (RSV1 set) unless the server limited our window below 15
-    // bits.
+    // is compressed (RSV1 set), within the window the server allowed.
     pub fn send_text(&self, data: core::slice::View<u8>) -> core::result::Result<i32,Error> { return self.send_message(1,data); }
     pub fn send_binary(&self, data: core::slice::View<u8>) -> core::result::Result<i32,Error> { return self.send_message(2,data); }
     // Whether permessage-deflate was negotiated.
     pub fn compressed(&self) -> bool { return self.codec.is_some(); }
     fn send_message(&self, opcode: i32, data: core::slice::View<u8>) -> core::result::Result<i32,Error> {
         if (self.codec.is_none()) { return self.transmit(true,opcode,data); }
-        let c: ext::ws_deflate::Codec = self.codec.unwrap();
-        if (!c.compresses()) { return self.transmit(true,opcode,data); }
         if (!self.active || !self.open) { return core::result::Err(Error::Closed); }
+        if (self.sending != 0) { return core::result::Err(Error::InvalidRequest); }
+        let c: ext::ws_deflate::Codec = self.codec.unwrap();
         // Text is checked before it enters the compression context.
         if (opcode == 1 && !ext::websocket::valid_text(data)) { return core::result::Err(Error::InvalidRequest); }
         if (data.len() > self.options.wire.message_bytes) { return core::result::Err(Error::InvalidRequest); }
@@ -290,10 +292,35 @@ pub impl Client {
         return core::result::Ok(self.inflated.as_view());
     }
     // One fragment: opcode 1 or 2 starts a message, 0 continues it; fin ends it.
-    // Controls may be sent between fragments.
+    // Controls may be sent between fragments. With permessage-deflate the
+    // message is compressed as it goes (RSV1 on its first frame): a
+    // fragment carries what the encoder has produced so far, possibly
+    // nothing, and the last one the rest. Text is checked as UTF-8 before
+    // compression, across fragments. A compressed fragment that cannot be
+    // compressed or sent closes the transport.
     pub fn send_fragment(&self, fin: bool, opcode: i32, data: core::slice::View<u8>) -> core::result::Result<i32,Error> {
         if (opcode != 0 && opcode != 1 && opcode != 2) { return core::result::Err(Error::InvalidRequest); }
-        return self.transmit(fin,opcode,data);
+        if ((opcode == 0) == (self.sending == 0)) { return core::result::Err(Error::InvalidRequest); }
+        if (self.codec.is_none()) {
+            let plain: core::result::Result<i32,Error> = self.transmit(fin,opcode,data);
+            if (plain.is_ok()) { if (opcode != 0) { self.sending = opcode; } if (fin) { self.sending = 0; } }
+            return plain;
+        }
+        if (!self.active || !self.open) { return core::result::Err(Error::Closed); }
+        let first: bool = opcode != 0; let kind: i32 = opcode; if (!first) { kind = self.sending; }
+        if (first) { self.text = ext::websocket::text_check(); }
+        if (kind == 1 && (!self.text.feed(data) || (fin && !self.text.complete()))) {
+            if (first) { return core::result::Err(Error::InvalidRequest); }
+            // Earlier fragments are already out; the message cannot end.
+            self.drop_transport(false); return core::result::Err(Error::InvalidRequest);
+        }
+        let c: ext::ws_deflate::Codec = self.codec.unwrap(); self.packed.clear();
+        let packed: core::result::Result<i32,ext::ws_deflate::Error> = c.compress_part(data,self.packed.borrow(),first,fin); self.codec = core::option::Some(c);
+        if (packed.is_err()) { self.drop_transport(false); return core::result::Err(Error::AllocationFailed); }
+        let sent: core::result::Result<i32,Error> = self.transmit_with(fin,opcode,self.packed.as_view(),first);
+        if (sent.is_err()) { self.drop_transport(false); return sent; }
+        self.sending = kind; if (fin) { self.sending = 0; }
+        return sent;
     }
     // At most 125 payload bytes; the reply arrives as a Pong message.
     pub fn ping(&self, data: core::slice::View<u8>) -> core::result::Result<i32,Error> { return self.transmit(true,9,data); }

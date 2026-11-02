@@ -32,7 +32,10 @@ pub struct Message { session: i32, kind: Kind, start: i32, length: i32, code: i3
 // number of open sessions; output_bytes the unsent bytes a session may hold
 // before send fails with Backlog; idle_timeout_ms (0 for none) starts a
 // close after silence; close_timeout_ms bounds the closing handshake.
-pub struct Options { limits: ext::websocket::Limits, deflate: bool, sessions: i32, output_bytes: i32, idle_timeout_ms: i32, close_timeout_ms: i32, compress_min: i32 }
+// deflate accepts permessage-deflate offers (context takeover unless the
+// client asks otherwise); deflate_no_context makes this side reset its
+// context per message (ext::ws_deflate::negotiate_no_context).
+pub struct Options { limits: ext::websocket::Limits, deflate: bool, deflate_no_context: bool, sessions: i32, output_bytes: i32, idle_timeout_ms: i32, close_timeout_ms: i32, compress_min: i32 }
 pub struct Stats { sessions: i32, messages_in: u64, messages_out: u64, bytes_in: u64, bytes_out: u64, failed: i32, compressed: i32 }
 
 // Session states.
@@ -49,7 +52,7 @@ pub struct Hub { events: std::event::Loop, options: Options, sessions: alloc::ve
 
 pub fn default_options() -> Options {
     let limits: ext::websocket::Limits = ext::websocket::default_limits(); limits.frame_bytes = 1048576; limits.message_bytes = 1048576;
-    return Options { limits: limits, deflate: true, sessions: 256, output_bytes: 8388608, idle_timeout_ms: 300000, close_timeout_ms: 5000, compress_min: 64 };
+    return Options { limits: limits, deflate: true, deflate_no_context: false, sessions: 256, output_bytes: 8388608, idle_timeout_ms: 300000, close_timeout_ms: 5000, compress_min: 64 };
 }
 
 fn part(v: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> { return v.subview(start,end).unwrap(); }
@@ -128,7 +131,10 @@ pub impl Hub {
         let accept: [u8;28] = [0;28]; let av: core::slice::View<u8> = core::slice::View { values: accept, start: 0, length: 28 };
         if (ext::websocket::accept_into(wsr.key,av).is_err()) { return core::result::Err(Error::Handshake); }
         let value: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); let params: core::option::Option<ext::ws_deflate::Params> = core::option::None();
-        if (self.options.deflate) { params = ext::ws_deflate::negotiate(wsr.head,value.borrow()); }
+        if (self.options.deflate) {
+            if (self.options.deflate_no_context) { params = ext::ws_deflate::negotiate_no_context(wsr.head,value.borrow()); }
+            else { params = ext::ws_deflate::negotiate(wsr.head,value.borrow()); }
+        }
         let codec: core::option::Option<ext::ws_deflate::Codec> = core::option::None();
         if (params.is_some()) {
             let made: core::result::Result<ext::ws_deflate::Codec,ext::ws_deflate::Error> = ext::ws_deflate::codec(ext::websocket::Role::Server,params.unwrap());
@@ -308,7 +314,9 @@ pub impl Hub {
         let body: core::slice::View<u8> = data; self.scratch.clear();
         if (compress) {
             let c: ext::ws_deflate::Codec = s.codec.unwrap();
-            if (c.compress(data,self.scratch.borrow()).is_err()) { return core::result::Err(Error::AllocationFailed); }
+            // With context takeover a lost message leaves the client's
+            // inflater out of step, so the session fails.
+            if (c.compress(data,self.scratch.borrow()).is_err()) { if (!c.resets()) { self.fail(session,1011); } return core::result::Err(Error::AllocationFailed); }
             s.codec = core::option::Some(c); body = self.scratch.as_view();
         }
         let zero: [u8;4] = [0;4]; let offset: i32 = 0; let first: bool = true;
@@ -318,7 +326,11 @@ pub impl Hub {
             let piece: core::slice::View<u8> = part(body,offset,offset + n);
             let frame: core::result::Result<alloc::vec::Vec<u8>,ext::websocket::Error> = core::result::Err(ext::websocket::Error::Failed);
             if (first && compress) { frame = s.ws.send_compressed(fin,op,piece,zero); } else { frame = s.ws.send(fin,op,piece,zero); }
-            if (frame.is_err()) { self.sessions.set(session,s); return core::result::Err(Error::Wire(frame.unwrap_err())); }
+            if (frame.is_err()) {
+                self.sessions.set(session,s);
+                if (compress) { let c: ext::ws_deflate::Codec = s.codec.unwrap(); if (!c.resets()) { self.fail(session,1011); } }
+                return core::result::Err(Error::Wire(frame.unwrap_err()));
+            }
             let f: alloc::vec::Vec<u8> = frame.unwrap();
             if (s.output.try_extend(f.as_view()).is_err()) { f.destroy(); self.sessions.set(session,s); self.fail(session,1011); return core::result::Err(Error::AllocationFailed); }
             f.destroy(); offset += n; first = false;

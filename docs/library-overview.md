@@ -2470,8 +2470,13 @@ connection with 1002/1007/1009/1011. permessage-deflate (`ext::ws_deflate`)
 compresses with a sync-flushed `ext::deflate` level-1 encoder and inflates
 with `ext::inflate`, with context takeover on or off for each side. The
 `ws_cat` sample passes ws (50 cases: length encodings, control-frame,
-continuation, opcode, close-code and UTF-8 rules), wss (52) and deflate (21,
-against Python `zlib`) groups against a stdlib-only asyncio echo server.
+continuation, opcode, close-code and UTF-8 rules), wss (52) and deflate (24,
+against Python `zlib`, including limited windows and compressed fragmented
+sends) groups against a stdlib-only asyncio echo server. The
+[WebSocket service](extended-websocket-service.md) (`ext::websocket_service`)
+serves many sessions on one epoll loop, upgraded from `ext::http_service`,
+with server context takeover; its `ws_echo_server` sample passes an 89-case
+hand-written-peer oracle.
 
 [Resumable cleartext HTTP exchanges](extended-http-client.md) expose owned
 Prepared request staging and caller-driven Exchange steps. At `480432e8`,

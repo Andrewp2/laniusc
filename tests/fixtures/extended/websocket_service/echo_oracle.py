@@ -209,22 +209,39 @@ def close_cases(port):
 
 def deflate_cases(port):
     cases = 0
-    peer = opened(port, extensions=b"permessage-deflate; client_max_window_bits")
-    ext = peer.headers.get(b"sec-websocket-extensions")
-    check(ext == [b"permessage-deflate; server_no_context_takeover"], ("negotiated", ext))
-    z = zlib.compressobj(6, zlib.DEFLATED, -15)
-    texts = [b"hello " * 50, b"", b"x", "é中\U0001f600".encode() * 300, b"hello " * 50, os.urandom(3000), b"A" * 300000]
-    for i, m in enumerate(texts):
-        op = 1 if i != 5 else 2
-        c = z.compress(m) + z.flush(zlib.Z_SYNC_FLUSH)
-        peer.send(op, c[:-4], rsv=4)
-        gop, rsv, got = peer.message()
-        if rsv == 4:
-            got = zlib.decompressobj(-15).decompress(got + TAIL)
-        check(gop == op and got == m, ("deflate echo", i, gop, rsv, len(got)))
-        check(rsv == 4 or len(m) < 64, ("compressed reply", i, rsv))
-    cases += 1
+    # The server keeps context takeover unless the offer asks otherwise
+    # (one decompressobj for every reply; the repeated message must refer
+    # back), or resets per message (a fresh decompressobj each time).
+    random = os.urandom(3000)
+    texts = [b"hello " * 50, b"", b"x", "é中\U0001f600".encode() * 300, b"hello " * 50, random, random, b"A" * 300000]
+    for offer, reset, bits in [(b"permessage-deflate; client_max_window_bits", False, 15),
+                               (b"permessage-deflate; server_no_context_takeover", True, 15),
+                               (b"permessage-deflate; server_max_window_bits=9", False, 9)]:
+        peer = opened(port, extensions=offer)
+        ext = peer.headers.get(b"sec-websocket-extensions")
+        want = b"permessage-deflate" + (b"; server_no_context_takeover" if reset else b"") + (b"; server_max_window_bits=9" if bits == 9 else b"")
+        check(ext == [want], ("negotiated", offer, ext))
+        z = zlib.compressobj(6, zlib.DEFLATED, -15)
+        d = zlib.decompressobj(-bits)
+        sizes = []
+        for i, m in enumerate(texts):
+            op = 1 if i not in (5, 6) else 2
+            c = z.compress(m) + z.flush(zlib.Z_SYNC_FLUSH)
+            peer.send(op, c[:-4], rsv=4)
+            gop, rsv, got = peer.message()
+            sizes.append(len(got))
+            if rsv == 4:
+                if reset:
+                    d = zlib.decompressobj(-bits)
+                got = d.decompress(got + TAIL)
+            check(gop == op and got == m, ("deflate echo", offer, i, gop, rsv, len(got)))
+            check(rsv == 4 or len(m) < 64, ("compressed reply", i, rsv))
+        # The second 3000 random bytes: tiny only with history in reach.
+        check((sizes[6] < 100) == (not reset and bits == 15), ("takeover", offer, sizes))
+        peer.close()
+        cases += 1
     # A compressed message split into fragments, RSV1 on the first only.
+    peer = opened(port, extensions=b"permessage-deflate")
     c = zlib.compressobj(6, zlib.DEFLATED, -15)
     body = c.compress(b"fragmented compressed " * 100) + c.flush(zlib.Z_FINISH)
     peer.send(1, body[:10], fin=False, rsv=4)
@@ -353,6 +370,22 @@ def main():
         alive = stop(p)
     check(alive, ("server exited", p.stderr.read()[:300]))
     total += limits_cases()
+    # --deflate-no-context: the server resets even when not asked.
+    p, port = start("--deflate-no-context")
+    try:
+        peer = opened(port, extensions=b"permessage-deflate")
+        ext = peer.headers.get(b"sec-websocket-extensions")
+        check(ext == [b"permessage-deflate; server_no_context_takeover"], ("no-context server", ext))
+        for m in [b"repeat " * 40, b"repeat " * 40]:
+            z = zlib.compressobj(6, zlib.DEFLATED, -15)
+            peer.send(1, (z.compress(m) + z.flush(zlib.Z_SYNC_FLUSH))[:-4], rsv=4)
+            gop, rsv, got = peer.message()
+            check(rsv == 4 and zlib.decompressobj(-15).decompress(got + TAIL) == m, ("no-context reply", rsv))
+        peer.close()
+        total += 1
+    finally:
+        alive = stop(p)
+    check(alive, ("no-context server exited", p.stderr.read()[:300]))
     print("ws-service cases=%d" % total)
 
 

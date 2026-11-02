@@ -124,12 +124,19 @@ extension leaves the connection uncompressed (`compressed()` is false).
 `send_text` and `send_binary` compress every message into one frame with
 RSV1 set: raw DEFLATE ended by a sync flush, without the `00 00 FF FF` tail
 (an empty message is the single byte `00`). Text is checked as UTF-8 before
-it enters the compressor. If the server limits `client_max_window_bits`
-below 15, messages go out uncompressed, which the extension allows; the
-encoder always uses a 32 KiB window. `send_fragment` and control frames are
-never compressed. With context takeover, a compressed message that fails to
-compress or to send leaves the two contexts out of step, so the transport is
-closed.
+it enters the compressor. If the server limits `client_max_window_bits` to
+N below 15, the encoder matches no farther back than 2^N bytes
+(`deflate::Encoder.limit_window`).
+
+`send_fragment` compresses a message as it goes (`ws_deflate::compress_part`):
+the first fragment has RSV1, each fragment carries what the encoder has
+produced so far (often nothing until 32 KiB of input or the last fragment),
+and the last one ends with the sync flush. Text is checked as UTF-8 across
+fragments before compression; a bad byte in a later fragment returns
+`InvalidRequest` and closes the transport, since the message cannot be
+ended. Pings and Pongs may go between fragments and are never compressed.
+With context takeover, a compressed message that fails to compress or to
+send leaves the two contexts out of step, so the transport is closed.
 
 A received message with RSV1 on its first frame is assembled, then inflated
 with the tail appended, up to `wire.message_bytes`. RSV1 on a continuation
@@ -209,25 +216,23 @@ compressed sizes, close codes and handshake fields.
 | --- | --- | --- |
 | ws | 50 | text, binary and empty messages; 1 MiB and 70,000-byte messages; lengths 0, 1, 125, 126, 127, 65,535, 65,536 and 65,537 both ways with their 7/16/64-bit encodings; fragmented sends; Pings between fragments; received fragments with an interleaved Ping; a code point split across fragments; server Ping answered; client Ping; server-initiated Close 1001 and 3000 with a UTF-8 reason; client Close 4000 with a reason; Close without a code; a frame in the same read as the 101; subprotocol selection; Origin and Authorization fields; receive timeout then reuse; failures with the server's view of the client's Close: masked server frame, fragmented Ping and Pong, 126-byte Ping, continuation first, new message inside a fragmented one, opcodes 3 and 11, a non-minimal length, RSV bits (all 1002), Close codes 1005 and 999 and a one-byte Close (1002), invalid UTF-8 in a Close reason, in a first fragment before the message ends and across a fragment boundary (1007), oversized message (1009); refused before sending: Close codes 1005, 1006, 1015 and 999, a 124-byte reason, a non-UTF-8 reason, a 126-byte Ping, invalid UTF-8 text, an oversized message; EOF without Close; 403 rejection; wrong Accept; unoffered protocol; URL fragment; http scheme |
 | wss | 52 | the same 50 over TLS, plus an untrusted certificate and the `localhost` DNS identity with SNI |
-| deflate | 21 | negotiation and RSV1 use; context takeover both ways (a repeated 256-byte message shrinks to under a quarter both ways); `client_no_context_takeover` from the server (its fresh inflater accepts every message); `server_no_context_takeover`; the no-context offer; a no-context offer answered without `server_no_context_takeover` (handshake error); `client_max_window_bits=10` (sent uncompressed); `server_max_window_bits=10`; 1 MiB, 70,000, 100,001, 3, 0, 50,000 and twice 256 bytes through one context (the encoder's window slides after unaligned flushes; the empty message is one byte); compressed fragments received; fragments sent uncompressed; Ping/Pong unchanged; a declined offer; an extension that was not offered and an unknown parameter (handshake errors); a 2 MB inflation over a 100,000-byte limit (1009); corrupt data (1007, `Inflate`); inflated invalid UTF-8 (1007); RSV1 on a continuation and on a Ping (1002); invalid text refused before compression |
+| deflate | 24 | negotiation and RSV1 use; context takeover both ways (a repeated 256-byte message shrinks to under a quarter both ways); `client_no_context_takeover` from the server (its fresh inflater accepts every message); `server_no_context_takeover`; the no-context offer; a no-context offer answered without `server_no_context_takeover` (handshake error); `client_max_window_bits` 8, 10 and 12 (the server inflates with that window; a repeat 200 bytes back shrinks in every window, 1,500 bytes back only from 11 bits); `server_max_window_bits=10`; 1 MiB, 70,000, 100,001, 3, 0, 50,000 and twice 256 bytes through one context (the encoder's window slides after unaligned flushes; the empty message is one byte); compressed fragments received; compressed fragmented sends (RSV1 on the first frame only, Pings between fragments, a code point across fragments, a 3,000-byte text in five fragments under 200 bytes) and a later fragment with invalid UTF-8 (refused, nothing more sent); Ping/Pong unchanged; a declined offer; an extension that was not offered and an unknown parameter (handshake errors); a 2 MB inflation over a 100,000-byte limit (1009); corrupt data (1007, `Inflate`); inflated invalid UTF-8 (1007); RSV1 on a continuation and on a Ping (1002); invalid text refused before compression |
 
 ```text
 websocket-client-ws cases=50 frames=65
 websocket-client-wss cases=52 frames=65
-websocket-client-deflate cases=21 frames=49
+websocket-client-deflate cases=24 frames=74
 ```
 
 All three groups take about 8 seconds together. `ext::ws_deflate` itself
-also passes `deflate_oracle.py` against `zlib` (8 cases, including context
-takeover for both roles across 64 KiB window slides), and the server side
-(`ws_echo_server`) still passes its 86-case oracle with the new encoder.
+also passes `deflate_oracle.py` against `zlib` (9 cases, including context
+takeover for both roles across 64 KiB window slides and windows of 8 to 15
+bits), and the server side passes its own oracle (see
+[WebSocket service](extended-websocket-service.md)).
 
 ## Limits of this version
 
 - No redirects of the opening request, no proxies and no cookies.
-- Fragmented sends are never compressed, and the compressor cannot use a
-  window under 15 bits, so a server that limits it gets uncompressed
-  messages.
 - Synchronous: one operation at a time, with no background Ping handling;
   Pings are answered when `receive` reads them.
 - A message is buffered whole, up to `wire.message_bytes` (after

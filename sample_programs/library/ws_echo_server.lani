@@ -109,11 +109,12 @@ fn summary(t: Totals) -> bool {
     ok = ok && write_output(out.as_view()); out.destroy(); return ok;
 }
 fn run(args: std::args::Arguments) -> i32 {
-    if (args.len() < 1) { write_output(literal("Usage: ws-echo-server ADDRESS [--sessions N] [--connections N] [--max-message BYTES] [--idle-timeout MS] [--exit-after N] [--no-deflate]\n",137)); return 2; }
+    if (args.len() < 1) { write_output(literal("Usage: ws-echo-server ADDRESS [--sessions N] [--connections N] [--max-message BYTES] [--idle-timeout MS] [--exit-after N] [--no-deflate] [--deflate-no-context]\n",160)); return 2; }
     let endpoint = core::net::parse_socket(args.get(0).unwrap()); if (endpoint.is_err()) { return 2; }
     let options: ext::websocket_service::Options = ext::websocket_service::default_options(); let width: i32 = 64; let exit_after: i32 = 0; let i: i32 = 1;
     while (i < args.len()) {
         let key = args.get(i).unwrap(); if (eq(key,"--no-deflate",12)) { options.deflate = false; i += 1; continue; }
+        if (eq(key,"--deflate-no-context",20)) { options.deflate_no_context = true; i += 1; continue; }
         if (i + 1 >= args.len()) { return 2; }
         let n: i32 = number(args.get(i+1).unwrap()); i += 2; if (n < 0) { return 2; }
         let known: bool = false;

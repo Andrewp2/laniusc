@@ -83,6 +83,23 @@ pub fn valid_text(data:core::slice::View<u8>) -> bool {
     let zero:[u8;4]=[0;4]; let frame:Frame=Frame { fin:true, opcode:1, masked:false, mask:zero, payload:data, consumed:0 };
     let checked=utf8_from(empty_flow(),frame,0); return core::result::is_ok(checked) && core::result::unwrap(checked).need==0;
 }
+// Incremental UTF-8 for text sent or received in pieces (for example a
+// compressed text message checked before compression): feed each piece in
+// order; complete once the last piece ends a code point.
+pub struct TextCheck { need: i32, low: u8, high: u8, bad: bool }
+pub fn text_check() -> TextCheck { return TextCheck { need: 0, low: 128, high: 191, bad: false }; }
+pub impl TextCheck {
+    pub fn borrow(&self) -> &TextCheck { return self; }
+    // False once any piece was invalid.
+    pub fn feed(&self, data:core::slice::View<u8>) -> bool {
+        if (self.bad || !valid(data)) { self.bad = true; return false; }
+        let flow:Flow=empty_flow(); flow.need=self.need; flow.low=self.low; flow.high=self.high;
+        let zero:[u8;4]=[0;4]; let frame:Frame=Frame { fin:false, opcode:1, masked:false, mask:zero, payload:data, consumed:0 };
+        let checked=utf8_from(flow,frame,0); if (core::result::is_err(checked)) { self.bad = true; return false; }
+        let next:Flow=core::result::unwrap(checked); self.need=next.need; self.low=next.low; self.high=next.high; return true;
+    }
+    pub fn complete(&self) -> bool { return !self.bad && self.need == 0; }
+}
 pub fn valid_close_code(code:i32) -> bool { return (code>=1000 && code<=1014 && code!=1004 && code!=1005 && code!=1006) || (code>=3000 && code<=4999); }
 fn close_code(frame:Frame) -> core::result::Result<i32,Error> {
     if (frame.payload.len()==0) { return core::result::Ok(-1); } if (frame.payload.len()==1) { return core::result::Err(Error::InvalidClose(0)); }

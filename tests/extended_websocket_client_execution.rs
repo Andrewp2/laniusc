@@ -66,5 +66,5 @@ fn wss_verifies_the_server_and_runs_the_same_cases_over_tls() {
 
 #[test]
 fn permessage_deflate_against_zlib_with_and_without_context_takeover() {
-    group("deflate", "cases=21 frames=49");
+    group("deflate", "cases=24 frames=74");
 }

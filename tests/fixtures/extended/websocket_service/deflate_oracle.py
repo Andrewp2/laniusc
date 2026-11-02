@@ -71,6 +71,19 @@ def main():
             check(d.decompress(c + TAIL) == m, ("takeover", role, i, len(m)))
         check(len(out[1]) < 40 and len(out[3]) < len(seq[3]) // 50, ("history used", role, [len(c) for c in out]))
     cases += 1
+    # A limited window (max_window_bits 8..15): a zlib inflater with that
+    # window accepts everything, so no match reaches farther back.
+    near = [os.urandom(200), None, os.urandom(1500), None, bytes(rnd.randrange(8) for _ in range(40000)), None]
+    near = [near[i - 1] if m is None else m for i, m in enumerate(near)]
+    for bits in (8, 9, 10, 12, 15):
+        for role in ("s", "c"):
+            out = unrecords(run(["c", role, "takeover", str(bits)], records(near)))
+            d = zlib.decompressobj(-bits)
+            for i, (m, c) in enumerate(zip(near, out)):
+                check(d.decompress(c + TAIL) == m, ("window", bits, role, i))
+            # 200 bytes back is inside every window; 1500 only from 11 bits.
+            check(len(out[1]) < 30 and (len(out[3]) < 60) == (bits >= 11), ("window reach", bits, role, [len(c) for c in out]))
+    cases += 1
     # zlib with context takeover and sync flush: one compressor across
     # messages, references into earlier messages.
     z = zlib.compressobj(6, zlib.DEFLATED, -15)
@@ -109,13 +122,17 @@ def main():
     def offer(*values):
         head = b"GET / HTTP/1.1\r\nHost: x\r\n" + b"".join(b"Sec-WebSocket-Extensions: " + v + b"\r\n" for v in values) + b"\r\n"
         return run(["n"], head).strip()
-    check(offer(b"permessage-deflate") == b"permessage-deflate; server_no_context_takeover", "plain offer")
-    check(offer(b"permessage-deflate; client_max_window_bits; client_no_context_takeover") == b"permessage-deflate; server_no_context_takeover; client_no_context_takeover", "client params")
-    check(offer(b"permessage-deflate; server_max_window_bits=10, permessage-deflate") == b"permessage-deflate; server_no_context_takeover", "fallback offer")
+    # The server keeps context takeover unless asked, and honors the
+    # client's server_max_window_bits.
+    check(offer(b"permessage-deflate") == b"permessage-deflate", "plain offer")
+    check(offer(b"permessage-deflate; client_max_window_bits; client_no_context_takeover") == b"permessage-deflate; client_no_context_takeover", "client params")
+    check(offer(b"permessage-deflate; server_max_window_bits=10, permessage-deflate") == b"permessage-deflate; server_max_window_bits=10", "window bits")
+    check(offer(b"permessage-deflate; server_max_window_bits=8; server_no_context_takeover") == b"permessage-deflate; server_no_context_takeover; server_max_window_bits=8", "8 bits, reset")
     check(offer(b"x-other, permessage-deflate; server_no_context_takeover") == b"permessage-deflate; server_no_context_takeover", "after unknown extension")
-    check(offer(b"permessage-deflate; server_max_window_bits=\"15\"") == b"permessage-deflate; server_no_context_takeover", "quoted bits")
+    check(offer(b"permessage-deflate; server_max_window_bits=\"15\"") == b"permessage-deflate", "quoted bits")
+    check(offer(b"permessage-deflate; bogus, permessage-deflate; client_no_context_takeover") == b"permessage-deflate; client_no_context_takeover", "fallback offer")
     for bad in [b"permessage-deflate; bogus", b"permessage-deflate; server_no_context_takeover; server_no_context_takeover", b"permessage-deflate; client_max_window_bits=7",
-                b"permessage-deflate; server_max_window_bits", b"permessage-deflate; server_no_context_takeover=1", b"permessage-deflate; server_max_window_bits=10"]:
+                b"permessage-deflate; server_max_window_bits", b"permessage-deflate; server_no_context_takeover=1", b"permessage-deflate; server_max_window_bits=16"]:
         check(offer(bad) == b"-", ("bad offer", bad))
     check(offer() == b"-", "no offer")
     cases += 1
