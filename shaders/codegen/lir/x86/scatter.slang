@@ -465,7 +465,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // call row. Semantic operands name values, so their target projection must
     // point at the producer rather than the beginning of the expansion.
     semantic_to_target_start[semantic_row] = inline_call
-        ? target_start + argument_rows + inline_info.body_row_count
+        ? target_start + argument_rows + x86_inline_body_rows(inline_info)
         : target_start + argument_rows;
     uint local_row = row - target_start;
     if (local_row < argument_rows)
@@ -479,7 +479,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (inline_call)
     {
         uint inline_row = local_row - argument_rows;
-        if (inline_row >= inline_info.body_row_count)
+        if (inline_row >= x86_inline_body_rows(inline_info))
         {
             X86LirCore core;
             core.source_hir = source_hir;
@@ -507,7 +507,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             invalid_core.op = X86_LIR_OP_INLINE_RESULT;
             invalid_core.result_or_target = INVALID;
             X86LirOperands invalid_operands;
-            invalid_operands.a = inline_info.body_row_count;
+            invalid_operands.a = x86_inline_body_rows(inline_info);
             invalid_operands.b = inline_info.schedule_start;
             invalid_operands.c = inline_info.schedule_end;
             invalid_operands.metadata = 0u;
@@ -530,7 +530,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
         argument_rows = 0u;
         call_result_words = 0u;
         inline_clone = true;
-        semantic_to_target_start[semantic_row] = row;
+        // A kept standalone body publishes its own rows; its clones'
+        // operands resolve to them (only their validity is used).
+        if (!x86_inline_keeps_function(inline_info))
+            semantic_to_target_start[semantic_row] = row;
     }
 
     uint operation_row = local_row - argument_rows;

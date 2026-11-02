@@ -1527,9 +1527,15 @@ struct X86FunctionRegisterAnalysis
     uint flags;
 };
 
-// Eligible functions have exactly one private direct call site, so removing
-// their standalone body offsets the cloned rows and preserves the target-
-// stream capacity bound. `return_value == INVALID` rejects inlining.
+// Every direct call site of an eligible function is replaced by a clone of
+// its body. A function with one private call site may branch; one called
+// from several sites, or one with an object symbol (other objects may call
+// it), must be straight-line, because clones share the callee's branch
+// targets. A private function is dropped; one with a symbol keeps its
+// standalone body (X86_INLINE_KEEP_FUNCTION in body_row_count), and its
+// clones leave semantic_to_target_start to it. Extra rows grow the target
+// stream through the measured-capacity retry. `return_value == INVALID`
+// rejects inlining.
 struct X86InlineInfo
 {
     uint return_value;
@@ -1537,6 +1543,15 @@ struct X86InlineInfo
     uint schedule_start;
     uint schedule_end;
 };
+static const uint X86_INLINE_KEEP_FUNCTION = 0x80000000u;
+uint x86_inline_body_rows(X86InlineInfo info)
+{
+    return info.body_row_count & ~X86_INLINE_KEEP_FUNCTION;
+}
+bool x86_inline_keeps_function(X86InlineInfo info)
+{
+    return (info.body_row_count & X86_INLINE_KEEP_FUNCTION) != 0u;
+}
 
 struct X86ValueAnalysis
 {
