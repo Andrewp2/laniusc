@@ -16,10 +16,10 @@ open Lanius.Semantics (State Completion evalExpr evalExprs evalPlace execStmt Re
 
 /-- An empty raw view of a word element type. -/
 theorem map_empty {P : Core.Program} {s : State} {T : Core.Ty} {a w : Nat}
-    (kind : (∃ id, T = .structure id) ∨ (∃ id, T = .enumeration id) ∨ T = .scalar (.unsigned .u16)) (hw : NativeLayout.valueWords? P T = some w)
+    (kind : (∃ id, T = .structure id) ∨ (∃ id, T = .enumeration id) ∨ CoreWordScalar T) (hw : NativeLayout.valueWords? P T = some w)
     (pos : 0 < w) : mapRawNominalSlice P s T a 0 = .done (.rawSlice T a 0) s := by
   have nz : (w == 0) = false := by simp only [beq_eq_false_iff_ne]; omega
-  rcases kind with ⟨id, rfl⟩ | ⟨id, rfl⟩ | rfl <;> simp [mapRawNominalSlice, hw, nz]
+  rcases kind with ⟨id, rfl⟩ | ⟨id, rfl⟩ | (rfl | rfl | rfl | rfl | rfl) <;> simp [mapRawNominalSlice, hw, nz]
 
 section
 variable {sp : SrcProgram} {st : State}
@@ -85,7 +85,7 @@ theorem sizeOf_call_fwd {t : SrcType} {w : Nat} {callee : Nat} (found : sp.funcs
 
 /-- A one-element raw view of a word element type, over a range that checks. -/
 theorem map_single {P : Core.Program} {s : State} {T : Core.Ty} {A w : Nat}
-    (kind : (∃ id, T = .structure id) ∨ (∃ id, T = .enumeration id) ∨ T = .scalar (.unsigned .u16)) (hw : NativeLayout.valueWords? P T = some w)
+    (kind : (∃ id, T = .structure id) ∨ (∃ id, T = .enumeration id) ∨ CoreWordScalar T) (hw : NativeLayout.valueWords? P T = some w)
     (pos : 0 < w) (big : 8 * w ≤ A + 8) (ranged : s.heap.checkRange (A + 8 - 8 * w) (8 * w) 8 = .ok ()) :
     mapRawNominalSlice P s T A 1 = .done (.rawSlice T A 1) s := by
   have nz : (w == 0) = false := by simp only [beq_eq_false_iff_ne]; omega
@@ -94,7 +94,7 @@ theorem map_single {P : Core.Program} {s : State} {T : Core.Ty} {A w : Nat}
   have fits : ¬ (A + NativeLayout.wordBytes < 8 * w) := by simp only [NativeLayout.wordBytes]; omega
   have one : (Int.toNat 1 == 0) = false := rfl
   have ranged' : s.heap.checkRange (A + 8 - 8 * w) (8 * w) NativeLayout.wordBytes = .ok () := ranged
-  rcases kind with ⟨id, rfl⟩ | ⟨id, rfl⟩ | rfl <;>
+  rcases kind with ⟨id, rfl⟩ | ⟨id, rfl⟩ | (rfl | rfl | rfl | rfl | rfl) <;>
   · unfold mapRawNominalSlice
     simp only [show ¬ ((1 : Int) < 0) by decide, if_false, Bool.not_true, Bool.false_eq_true, hw, nz, one,
       bytes, fits, show A + NativeLayout.wordBytes - 8 * w = A + 8 - 8 * w from rfl, ranged']

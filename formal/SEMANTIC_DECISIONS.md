@@ -1831,6 +1831,16 @@ Elements are read and written as the scalar is elsewhere in native layout
 `u32` or `bool` element as 4 bytes where laniusc writes the zero-extended
 word; the upper 4 bytes are never read as part of the element.
 
+The verified compiler takes them on its word path. `word_element` in
+`lani/mini/compiler.lani` accepts `u16`, `u32`, `u64`, `i64` (the source
+type `Sint(Uint64)`) and `bool`, so `slice_from_raw_parts`, `slice[i]`, the
+store `slice[i] = v` and `slice_stride` of such a view lower as they do for
+a struct or `u16` element. `Lanius/Mini/WordScalar.lean` names the five
+(`SrcType.WordScalar`, `CoreWordScalar`). The read, store and stride proofs
+(`ElementLayout`, `LowerStmt`, `LowerStops`, `LowerEval`, `TypeSound` and
+the Faithful raw-view modules) take that predicate where they took `u16`.
+Borrowed slices of a caller's array still hold only `i32` and `u8`.
+
 ## laniusc's process exit is `exit_group`; the verified compiler's stays `exit` (decided 11-01)
 
 laniusc's x86 runtime now ends a process with Linux syscall 231,

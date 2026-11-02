@@ -1,5 +1,6 @@
 module
 
+public import Lanius.Mini.WordScalar
 public import Lanius.Mini.Source
 public import Lanius.Mini.Guard
 public import Lanius.Mini.FloatLower
@@ -1294,23 +1295,19 @@ theorem lowerAddress_some {p o : Option Expr} {a : Expr} (h : lowerAddress p o =
     · exact ⟨_, _, rfl, rfl⟩
 
 theorem wordElement_kind {ds : SrcDecls} {e : SrcType} (h : wordElement ds e = true) :
-    (∃ id fields, e = .struct id fields) ∨ (∃ id variants, e = .enum id variants) ∨ e = .uint .uint16 := by
-  cases e with
-  | struct id fields => exact .inl ⟨id, fields, rfl⟩
-  | enum id variants => exact .inr (.inl ⟨id, variants, rfl⟩)
-  | uint k => exact .inr (.inr (eq_uint h))
-  | i32 | bool | ptr | slice | array | unit | isize | char | float | sint => simp [wordElement] at h
+    (∃ id fields, e = .struct id fields) ∨ (∃ id variants, e = .enum id variants) ∨ e.WordScalar :=
+  wordElement_cases h
 
 theorem lowerSlice_some {ds : SrcDecls} {element : SrcType} {p l : Option Expr} {xs : List Expr}
     (h : lowerSlice ds element p l = some xs) :
     (element = .i32 ∨ element = .uint .uint8 ∨ (∃ id fields, element = .struct id fields) ∨
-        (∃ id variants, element = .enum id variants) ∨ element = .uint .uint16) ∧
+        (∃ id variants, element = .enum id variants) ∨ element.WordScalar) ∧
       ∃ x y, p = some x ∧ l = some y := by
   unfold lowerSlice at h
   split at h
   · rename_i cond
     have kind : element = .i32 ∨ element = .uint .uint8 ∨ (∃ id fields, element = .struct id fields) ∨
-        (∃ id variants, element = .enum id variants) ∨ element = .uint .uint16 := by
+        (∃ id variants, element = .enum id variants) ∨ element.WordScalar := by
       simp only [Bool.and_eq_true, Bool.or_eq_true] at cond
       rcases cond.1 with (c | c) | c
       · exact .inl (eq_i32 c)
@@ -2425,7 +2422,7 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
       · simp at h
       · rename_i b hb
         obtain ⟨kind, x, y, hx, hy⟩ := lowerSlice_some hvs
-        rcases kind with rfl | rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩ | rfl
+        rcases kind with rfl | rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩ | (rfl | rfl | rfl | rfl | rfl)
         · exact .letLocal (.i32SliceFromRawParts (lowerAs_typed target ok hx) (lowerAs_typed target ok hy))
             (SrcStmt.lower_typed target sigsOk body (ok.cons (ty := .slice .i32) (.slice d.1)) d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
         · exact .letLocal (.typedSliceFromRawParts .byte (lowerAs_typed target ok hx) (lowerAs_typed target ok hy))
@@ -2443,6 +2440,18 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
               d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
         · exact .letLocal (.typedSliceFromRawParts .word16 (lowerAs_typed target ok hx) (lowerAs_typed target ok hy))
             (SrcStmt.lower_typed target sigsOk body (ok.cons (ty := .slice (.uint .uint16)) (.slice d.1))
+              d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
+        · exact .letLocal (.typedSliceFromRawParts .word32 (lowerAs_typed target ok hx) (lowerAs_typed target ok hy))
+            (SrcStmt.lower_typed target sigsOk body (ok.cons (ty := .slice (.uint .uint32)) (.slice d.1))
+              d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
+        · exact .letLocal (.typedSliceFromRawParts .word64 (lowerAs_typed target ok hx) (lowerAs_typed target ok hy))
+            (SrcStmt.lower_typed target sigsOk body (ok.cons (ty := .slice (.uint .uint64)) (.slice d.1))
+              d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
+        · exact .letLocal (.typedSliceFromRawParts .signed64 (lowerAs_typed target ok hx) (lowerAs_typed target ok hy))
+            (SrcStmt.lower_typed target sigsOk body (ok.cons (ty := .slice (.sint .uint64)) (.slice d.1))
+              d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
+        · exact .letLocal (.typedSliceFromRawParts .boolean (lowerAs_typed target ok hx) (lowerAs_typed target ok hy))
+            (SrcStmt.lower_typed target sigsOk body (ok.cons (ty := .slice (.bool)) (.slice d.1))
               d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
   | .letIndex id ty slice index body, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.Declared] at d

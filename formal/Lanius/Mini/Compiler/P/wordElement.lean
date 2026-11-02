@@ -12,12 +12,12 @@ set_option linter.unusedVariables false
 
 namespace Lanius.Mini
 
-/-- A raw slice element of words: a struct or an enum of a word type, or a u16 (one word, laniusc's layout of a [u16]). -/
+/-- A raw slice element of words: a struct or an enum of a word type, or a one-word scalar, u16, u32, u64, i64 or bool (laniusc's layout of their slices). -/
 def wordElement (decls : SrcDecls) (element : SrcType) : Bool :=
   match element with
   | .i32 => false
-  | .bool => false
-  | .uint kind => SrcType.isUint element UintTy.uint16
+  | .bool => true
+  | .uint kind => SrcType.isUint element UintTy.uint16 || SrcType.isUint element UintTy.uint32 || SrcType.isUint element UintTy.uint64
   | .struct id fields => wordType decls element
   | .enum id variants => wordType decls element
   | .ptr => false
@@ -27,6 +27,6 @@ def wordElement (decls : SrcDecls) (element : SrcType) : Bool :=
   | .isize => false
   | .char => false
   | .float ft => false
-  | .sint sk => false
+  | .sint sk => SrcType.isSint element UintTy.uint64
 
 end Lanius.Mini

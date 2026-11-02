@@ -1810,7 +1810,7 @@ theorem eval_stride {k slice : Nat} (ok : evalStride sp.decls scope slice slot =
   have wok := wordElement_wordType hel
   have agg := wordElement_core hel
   have agg2 := agg
-  rcases agg2 with ⟨id, e⟩ | ⟨id, e⟩ | e <;>
+  rcases agg2 with ⟨id, e⟩ | ⟨id, e⟩ | (e | e | e | e | e) <;>
     (simp only [Semantics.rawSliceStride?, NativeLayout.elementStride?, e] at strideOk; rw [← e] at strideOk)
   all_goals
     cases hwords : NativeLayout.valueWords? sp.toCore element.toCore with
