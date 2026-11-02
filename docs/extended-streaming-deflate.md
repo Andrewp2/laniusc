@@ -210,6 +210,11 @@ open: later `step` or `sync` calls continue it with the same 32 KiB history,
 and a chunk that starts mid-buffer after a flush ends at the window's end,
 where the window slides as usual. `reset` starts a new stream.
 
+`Encoder.limit_window(bits)` (levels 1-3, bits 8 to 15, before the first
+step; `reset` keeps it) makes matches reach no farther back than 2^bits
+bytes, for a decoder with a smaller window such as permessage-deflate's
+`max_window_bits`. A `zlib` inflater with that window accepts the output.
+
 permessage-deflate uses this for every message (RFC 7692 7.2.1): the
 message is the flushed bytes without the four-byte tail, and with context
 takeover the next message may refer back into earlier ones. The

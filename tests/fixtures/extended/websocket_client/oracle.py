@@ -89,8 +89,8 @@ class Deflate:
     fresh compressobj, and inflates the client's messages with a fresh
     decompressobj, so a client that kept its context fails to inflate."""
 
-    def __init__(self, snct, cnct, server_bits):
-        self.snct, self.cnct, self.bits = snct, cnct, server_bits
+    def __init__(self, snct, cnct, server_bits, client_bits=15):
+        self.snct, self.cnct, self.bits, self.client_bits = snct, cnct, server_bits, client_bits
         self.c = self.d = None
 
     def compress(self, data):
@@ -102,7 +102,8 @@ class Deflate:
 
     def inflate(self, data):
         if self.d is None or self.cnct:
-            self.d = zlib.decompressobj(-15)
+            # The client's window: a match farther back fails to inflate.
+            self.d = zlib.decompressobj(-self.client_bits)
         return self.d.decompress(data + TAIL)
 
 
@@ -340,7 +341,7 @@ class Server:
                     params.append("foo")
                 record["extension"] = "; ".join(params)
                 extra += "Sec-WebSocket-Extensions: %s\r\n" % record["extension"]
-                z = record["z"] = Deflate(snct, cnct, sb)
+                z = record["z"] = Deflate(snct, cnct, sb, int(query.get("cb", "15")))
             if "unoffered" in query:
                 extra += "Sec-WebSocket-Extensions: permessage-deflate\r\n"
             response = ("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
@@ -687,11 +688,20 @@ def deflate_cases(server, extra):
         lines, _ = run("/echo?drop-snct", "", args=["--deflate-no-context"], code=1)
         expect(lines == ["error handshake"], lines)
 
-    @case
-    def client_window_limited_sends_uncompressed():
-        lines, r = run("/echo?cb=10", repeat + "close 1000\n")
-        expect(lines == [opened] + twice + ["closed 1000"], lines)
-        expect([m["compressed"] for m in r["messages"]] == [False, False], r["messages"])
+    # The server limits client_max_window_bits: the client still compresses,
+    # and the server inflates with that window, so a farther match fails.
+    # 200 bytes back is in every window; 1500 bytes back only from 11 bits.
+    noise = [os.urandom(200), os.urandom(1500)]
+    escaped = ["".join("\\x%02x" % b for b in n) for n in noise]
+    window_script = "".join("send binary %s\nrecv\nsend binary %s\nrecv\n" % (e, e) for e in escaped) + "close 1000\n"
+    for cb in (8, 10, 12):
+        def client_window(cb=cb):
+            lines, r = run("/echo?cb=%d" % cb, window_script)
+            expect(lines == [opened] + [line("binary", n) for n in noise for _ in (0, 1)] + ["closed 1000"], (cb, lines))
+            w = wires(r)
+            expect(all(m["compressed"] for m in r["messages"]) and w[1] < 30 and (w[3] < 60) == (cb >= 11), (cb, w))
+        client_window.__name__ = "client_window_bits_%d" % cb
+        case(client_window)
 
     @case
     def server_window_limited():
@@ -715,10 +725,23 @@ def deflate_cases(server, extra):
         expect(lines == [opened, line("text", gen(True, 3000)), line("text", b"abc"), "closed 1000"], lines)
 
     @case
-    def fragments_sent_uncompressed():
-        lines, r = run("/echo", "frag text 4 abcdefghij\nrecv\nclose 1000\n")
-        expect(lines == [opened, line("text", b"abcdefghij"), "closed 1000"], lines)
-        expect([f["rsv"] for f in r["frames"]] == [0, 0, 0, 0, 0] and r["messages"][0]["compressed"] is False, r["frames"])
+    def fragments_sent_compressed():
+        # One message compressed across its fragments, RSV1 on the first;
+        # Pings may go between them; a code point may span two fragments.
+        long = gen(True, 3000).decode()
+        lines, r = run("/echo", "frag text 4 abcdefghij\nrecv\nfrag text 5 %s\nrecv\nfragping 3 abc-def-ghi\nrecv\nrecv\nrecv\nfrag text 2 \\xce\\xba\nrecv\nclose 1000\n" % long)
+        expect(lines == [opened, line("text", b"abcdefghij"), line("text", long.encode()), line("pong", b"between"), line("pong", b"between"),
+                         line("text", b"abc-def-ghi"), line("text", "\u03ba".encode()), "closed 1000"], lines)
+        frames = [(f["opcode"], f["rsv"]) for f in r["frames"]]
+        expect(frames[:4] == [(1, 0x40), (0, 0), (0, 0), (0, 0)] and frames[4] == (1, 0x40), frames)
+        expect([m["compressed"] for m in r["messages"]] == [True] * 4, r["messages"])
+        expect(r["messages"][1]["wire"] < 200, r["messages"][1])
+
+    @case
+    def fragmented_invalid_text_stops_the_message():
+        lines, r = run("/echo", "frag text 2 a\\xff\nrecv\n", code=1)
+        expect(lines == [opened, "error invalid-request"], lines)
+        expect([(f["opcode"], f["fin"]) for f in r["frames"]] == [(1, False)], r["frames"])
 
     @case
     def control_frames_unchanged():

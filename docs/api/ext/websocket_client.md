@@ -8,16 +8,16 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-Synchronous RFC 6455 client for ws:// and verified wss:// URLs over ext::http_agent dial connections and the canonical ext::websocket wire engine in Role::Client. The opening handshake uses a fresh 16-byte OS-random key and validates the 101 (Upgrade, Connection, Accept, no extensions, offered protocol); frame bytes coalesced with the head are kept. Every frame is masked with a key from a 256-byte OS-random pool. Supports single-frame and fragmented sends, assembles fragmented messages with interleaved control frames, answers Pings, echoes peer Close codes, starts the close handshake with a bounded wait, and fails the connection with Close 1002/1007/1009 on protocol violations. Receive timeouts leave plain and TLS connections usable. The ws_cat sample passes ws (24 cases) and wss (26 cases) groups against a minimal asyncio RFC 6455 server.
+Synchronous RFC 6455 client for ws:// and verified wss:// URLs over ext::http_agent dial connections and the canonical ext::websocket wire engine in Role::Client. The opening handshake uses a fresh 16-byte OS-random key and validates the 101 (Upgrade, Connection, Accept, offered protocol, permessage-deflate response); frame bytes coalesced with the head are kept. Every frame is masked with a key from a 256-byte OS-random pool and uses the shortest length encoding. Supports single-frame and fragmented sends, assembles fragmented messages with interleaved control frames, checks text UTF-8 as fragments arrive, answers Pings, echoes peer Close codes, refuses close codes and reasons an endpoint may not send, and fails the connection with Close 1002/1007/1009/1011. permessage-deflate (ext::ws_deflate) compresses whole and fragmented messages with context takeover on or off for each side and the server's window limit. The ws_cat sample passes ws (50 cases), wss (52) and deflate (24, against Python zlib) groups against a stdlib-only asyncio echo server.
 
 ## Contract and evidence guides
 
 - [extended-websocket-client](../../extended-websocket-client.md)
 - [extended-websocket](../../extended-websocket.md)
+- [extended-websocket-service](../../extended-websocket-service.md)
 - [extended-http-agent](../../extended-http-agent.md)
-- [extended-openssl-websocket](../../extended-openssl-websocket.md)
 
-Declaration counts: enum: 2; field: 28; function: 2; impl: 1; method: 14; struct: 3; variant: 21.
+Declaration counts: enum: 2; field: 30; function: 2; impl: 1; method: 14; struct: 3; variant: 21.
 
 ## Declared imports
 
@@ -473,11 +473,27 @@ inflated: alloc::vec::Vec<u8>
 packed: alloc::vec::Vec<u8>
 ```
 
+#### field: sending
+
+[Source line 57](../../../extended/ext/websocket_client.lani#L57)
+
+```lanius
+sending: i32
+```
+
+#### field: text
+
+[Source line 57](../../../extended/ext/websocket_client.lani#L57)
+
+```lanius
+text: ext::websocket::TextCheck
+```
+
 ## Free functions and extern declarations
 
 ### function: default_options
 
-[Source line 75](../../../extended/ext/websocket_client.lani#L75)
+[Source line 78](../../../extended/ext/websocket_client.lani#L78)
 
 ```lanius
 pub fn default_options() -> Options
@@ -485,7 +501,7 @@ pub fn default_options() -> Options
 
 ### function: connect
 
-[Source line 105](../../../extended/ext/websocket_client.lani#L105)
+[Source line 108](../../../extended/ext/websocket_client.lani#L108)
 
 ```lanius
 pub fn connect(url: core::slice::View<u8>, options: Options) -> core::result::Result<Client,Error>
@@ -493,9 +509,9 @@ pub fn connect(url: core::slice::View<u8>, options: Options) -> core::result::Re
 
 ## Implementation blocks and public methods
 
-### impl at line 207
+### impl at line 210
 
-[Source line 207](../../../extended/ext/websocket_client.lani#L207)
+[Source line 210](../../../extended/ext/websocket_client.lani#L210)
 
 ```lanius
 pub impl Client
@@ -503,7 +519,7 @@ pub impl Client
 
 #### method: borrow
 
-[Source line 208](../../../extended/ext/websocket_client.lani#L208)
+[Source line 211](../../../extended/ext/websocket_client.lani#L211)
 
 ```lanius
 pub fn borrow(&self) -> &Client
@@ -511,7 +527,7 @@ pub fn borrow(&self) -> &Client
 
 #### method: protocol
 
-[Source line 210](../../../extended/ext/websocket_client.lani#L210)
+[Source line 213](../../../extended/ext/websocket_client.lani#L213)
 
 ```lanius
 pub fn protocol(&self) -> core::option::Option<core::slice::View<u8>>
@@ -519,7 +535,7 @@ pub fn protocol(&self) -> core::option::Option<core::slice::View<u8>>
 
 #### method: is_open
 
-[Source line 214](../../../extended/ext/websocket_client.lani#L214)
+[Source line 217](../../../extended/ext/websocket_client.lani#L217)
 
 ```lanius
 pub fn is_open(&self) -> bool
@@ -527,7 +543,7 @@ pub fn is_open(&self) -> bool
 
 #### method: is_secure
 
-[Source line 215](../../../extended/ext/websocket_client.lani#L215)
+[Source line 218](../../../extended/ext/websocket_client.lani#L218)
 
 ```lanius
 pub fn is_secure(&self) -> bool
@@ -535,7 +551,7 @@ pub fn is_secure(&self) -> bool
 
 #### method: peer_close_code
 
-[Source line 217](../../../extended/ext/websocket_client.lani#L217)
+[Source line 220](../../../extended/ext/websocket_client.lani#L220)
 
 ```lanius
 pub fn peer_close_code(&self) -> i32
@@ -543,7 +559,7 @@ pub fn peer_close_code(&self) -> i32
 
 #### method: send_text
 
-[Source line 253](../../../extended/ext/websocket_client.lani#L253)
+[Source line 255](../../../extended/ext/websocket_client.lani#L255)
 
 ```lanius
 pub fn send_text(&self, data: core::slice::View<u8>) -> core::result::Result<i32,Error>
@@ -551,7 +567,7 @@ pub fn send_text(&self, data: core::slice::View<u8>) -> core::result::Result<i32
 
 #### method: send_binary
 
-[Source line 254](../../../extended/ext/websocket_client.lani#L254)
+[Source line 256](../../../extended/ext/websocket_client.lani#L256)
 
 ```lanius
 pub fn send_binary(&self, data: core::slice::View<u8>) -> core::result::Result<i32,Error>
@@ -559,7 +575,7 @@ pub fn send_binary(&self, data: core::slice::View<u8>) -> core::result::Result<i
 
 #### method: compressed
 
-[Source line 256](../../../extended/ext/websocket_client.lani#L256)
+[Source line 258](../../../extended/ext/websocket_client.lani#L258)
 
 ```lanius
 pub fn compressed(&self) -> bool
@@ -567,7 +583,7 @@ pub fn compressed(&self) -> bool
 
 #### method: send_fragment
 
-[Source line 294](../../../extended/ext/websocket_client.lani#L294)
+[Source line 301](../../../extended/ext/websocket_client.lani#L301)
 
 ```lanius
 pub fn send_fragment(&self, fin: bool, opcode: i32, data: core::slice::View<u8>) -> core::result::Result<i32,Error>
@@ -575,7 +591,7 @@ pub fn send_fragment(&self, fin: bool, opcode: i32, data: core::slice::View<u8>)
 
 #### method: ping
 
-[Source line 299](../../../extended/ext/websocket_client.lani#L299)
+[Source line 326](../../../extended/ext/websocket_client.lani#L326)
 
 ```lanius
 pub fn ping(&self, data: core::slice::View<u8>) -> core::result::Result<i32,Error>
@@ -583,7 +599,7 @@ pub fn ping(&self, data: core::slice::View<u8>) -> core::result::Result<i32,Erro
 
 #### method: pong
 
-[Source line 300](../../../extended/ext/websocket_client.lani#L300)
+[Source line 327](../../../extended/ext/websocket_client.lani#L327)
 
 ```lanius
 pub fn pong(&self, data: core::slice::View<u8>) -> core::result::Result<i32,Error>
@@ -591,7 +607,7 @@ pub fn pong(&self, data: core::slice::View<u8>) -> core::result::Result<i32,Erro
 
 #### method: receive
 
-[Source line 330](../../../extended/ext/websocket_client.lani#L330)
+[Source line 357](../../../extended/ext/websocket_client.lani#L357)
 
 ```lanius
 pub fn receive(&self, timeout_ms: i32) -> core::result::Result<Message,Error>
@@ -599,7 +615,7 @@ pub fn receive(&self, timeout_ms: i32) -> core::result::Result<Message,Error>
 
 #### method: close
 
-[Source line 406](../../../extended/ext/websocket_client.lani#L406)
+[Source line 433](../../../extended/ext/websocket_client.lani#L433)
 
 ```lanius
 pub fn close(&self, code: i32, reason: core::slice::View<u8>) -> core::result::Result<i32,Error>
@@ -607,7 +623,7 @@ pub fn close(&self, code: i32, reason: core::slice::View<u8>) -> core::result::R
 
 #### method: destroy
 
-[Source line 426](../../../extended/ext/websocket_client.lani#L426)
+[Source line 453](../../../extended/ext/websocket_client.lani#L453)
 
 ```lanius
 pub fn destroy(&self) -> bool
