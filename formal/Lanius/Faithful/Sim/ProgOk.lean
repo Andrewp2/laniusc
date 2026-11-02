@@ -8,11 +8,13 @@ import all Lanius.Mini.Compiler.P.SrcType_size
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.arithShiftRight
+import all Lanius.Mini.Compiler.P.codeSize
 import all Lanius.Mini.Compiler.P.declareFuncs
 import all Lanius.Mini.Compiler.P.declareProgram
 import all Lanius.Mini.Compiler.P.enumVariants
 import all Lanius.Mini.Compiler.P.equality
 import all Lanius.Mini.Compiler.P.floatApply
+import all Lanius.Mini.Compiler.P.loadAtBytes
 import all Lanius.Mini.Compiler.P.lowerBody
 import all Lanius.Mini.Compiler.P.matchVariants
 import all Lanius.Mini.Compiler.P.render

@@ -3,11 +3,10 @@ module
 public import Lanius.Faithful.Gen.SelfPureTab
 public import Lanius.Faithful.Gen.SelfSrc1
 public import Lanius.Faithful.Gen.SelfSrc2
-public import Lanius.Faithful.Gen.SelfSrc3
-public import Lanius.Faithful.Gen.SelfSrc4
 public import Lanius.Faithful.Gen.SelfSrc5
 public import Lanius.Faithful.Gen.SelfSrc6
 public import Lanius.Faithful.Gen.SelfSrc7
+public import Lanius.Faithful.Gen.SelfSrcF_Inline_pAndTail
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_pArgsMore
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_pArrayAfterCommaTrailing
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_pArrayMore
@@ -17,30 +16,25 @@ public import Lanius.Faithful.Gen.SelfSrcF_Inline_pExpr
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_pIdentPlain
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_pImplMethodsSome
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_pLeTail
+public import Lanius.Faithful.Gen.SelfSrcF_Inline_pModTail
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_pPathMore
+public import Lanius.Faithful.Gen.SelfSrcF_Inline_pSelfValue
+public import Lanius.Faithful.Gen.SelfSrcF_Inline_pStructFieldsAfterCommaMore
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_pStructFieldsMore
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_pTypeArgsNone
-public import Lanius.Faithful.Gen.SelfSrcF_assertClosed
 public import Lanius.Faithful.Gen.SelfSrcF_collect
 public import Lanius.Faithful.Gen.SelfSrcF_distinct
-public import Lanius.Faithful.Gen.SelfSrcF_funcsOnto
 public import Lanius.Faithful.Gen.SelfSrcF_hasKids
-public import Lanius.Faithful.Gen.SelfSrcF_joinInsts
-public import Lanius.Faithful.Gen.SelfSrcF_lowerTy
 public import Lanius.Faithful.Gen.SelfSrcF_methodDecl
 public import Lanius.Faithful.Gen.SelfSrcF_moduleOr
-public import Lanius.Faithful.Gen.SelfSrcF_negWideI32
 public import Lanius.Faithful.Gen.SelfSrcF_textSelf
-public import Lanius.Faithful.Gen.SelfSrcF_wideLeftStmt
-public import Lanius.Faithful.Gen.SelfSrcRest
 import all Lanius.Faithful.Gen.SelfPureTab
 import all Lanius.Faithful.Gen.SelfSrc1
 import all Lanius.Faithful.Gen.SelfSrc2
-import all Lanius.Faithful.Gen.SelfSrc3
-import all Lanius.Faithful.Gen.SelfSrc4
 import all Lanius.Faithful.Gen.SelfSrc5
 import all Lanius.Faithful.Gen.SelfSrc6
 import all Lanius.Faithful.Gen.SelfSrc7
+import all Lanius.Faithful.Gen.SelfSrcF_Inline_pAndTail
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pArgsMore
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pArrayAfterCommaTrailing
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pArrayMore
@@ -50,22 +44,18 @@ import all Lanius.Faithful.Gen.SelfSrcF_Inline_pExpr
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pIdentPlain
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pImplMethodsSome
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pLeTail
+import all Lanius.Faithful.Gen.SelfSrcF_Inline_pModTail
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pPathMore
+import all Lanius.Faithful.Gen.SelfSrcF_Inline_pSelfValue
+import all Lanius.Faithful.Gen.SelfSrcF_Inline_pStructFieldsAfterCommaMore
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pStructFieldsMore
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pTypeArgsNone
-import all Lanius.Faithful.Gen.SelfSrcF_assertClosed
 import all Lanius.Faithful.Gen.SelfSrcF_collect
 import all Lanius.Faithful.Gen.SelfSrcF_distinct
-import all Lanius.Faithful.Gen.SelfSrcF_funcsOnto
 import all Lanius.Faithful.Gen.SelfSrcF_hasKids
-import all Lanius.Faithful.Gen.SelfSrcF_joinInsts
-import all Lanius.Faithful.Gen.SelfSrcF_lowerTy
 import all Lanius.Faithful.Gen.SelfSrcF_methodDecl
 import all Lanius.Faithful.Gen.SelfSrcF_moduleOr
-import all Lanius.Faithful.Gen.SelfSrcF_negWideI32
 import all Lanius.Faithful.Gen.SelfSrcF_textSelf
-import all Lanius.Faithful.Gen.SelfSrcF_wideLeftStmt
-import all Lanius.Faithful.Gen.SelfSrcRest
 import all Lanius.Faithful.Gen.SelfTypes
 import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.Lists_empty
@@ -100,12 +90,12 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 
 /-- Functions 800 to 899, and their signature entries. -/
-def dpart8 : List SrcFunc := [(src_p_struct_lit_fields_after_comma_more), (src_p_struct_lit_fields_after_comma_trailing), (src_p_enum_variants_none), (src_p_enum_variants_some), (src_p_enum_variants_more), (src_p_enum_variants_end), (src_p_enum_variants_after_comma_more), (src_p_enum_variants_after_comma_trailing), (src_p_enum_variant_fields_none), (src_p_enum_variant_fields_some), (src_p_enum_variant_fields_more), (src_p_enum_variant_fields_end), (src_p_enum_variant_fields_after_comma_more), (src_p_enum_variant_fields_after_comma_trailing), (src_p_match_arms_none), (src_p_match_arms_some), (src_p_match_arms_more), (src_p_match_arms_end), (src_p_match_arms_after_comma_more), (src_p_match_arms_after_comma_trailing), (src_p_patterns_none), (src_p_patterns_some), (src_p_patterns_more), (src_p_patterns_end), (src_p_patterns_after_comma_more), (src_p_patterns_after_comma_trailing), (src_p_enum_type_params_some), (src_p_enum_type_params_more), (src_p_enum_type_params_after_comma_more), (src_p_type_args_some), (src_p_type_args_more), (src_p_type_args_after_comma_more), (src_p_path_type_args_more), (src_p_path_type_args_after_comma_more), (src_p_impl_methods_some), (src_p_impl_methods_more), (src_p_type_param_bound_more), (src_p_where_predicates_more), (src_p_where_predicate_more_after_comma), (src_p_bound_type_args_more), (src_p_bound_type_args_after_comma_more), (src_p_array_some), (src_p_array_more), (src_p_array_end), (src_p_array_after_comma_more), (src_p_array_after_comma_trailing), (src_join_second 1045), (src_single_of_mini_selfhost_TypeDecl 620), (src_struct_decl_of 1046 1047), (src_enum_decl_of 96 246), (src_variants_of 103 246 567 568 850 1048 1049 1050), (src_cons_of_mini_selfhost_FnDecl 621), (src_param_spellings 103 246 1051), (src_leaf_token 243), (src_methods_of 103 549 562 854 1052), (src_with_impl_decl 1053), (src_single_of_mini_selfhost_ImportDecl 624), (src_single_of_mini_selfhost_AliasDecl 626), (src_if_unbounded), (src_unbounded 103 144 147 859 1054), (src_p_extern_abi), (src_same_text 76 861), (src_text_lanius_std 374 533), (src_host_id 861 1055 1056 1057 1058 1059 1060 1061 1062), (src_boxed_of_mini_selfhost_List_mini_selfhost_List_usize 50 738 1063), (src_cons_name_tail 1064), (src_same_spellings 504 861 866), (src_distinct 504 867 1065), (src_concat_of_mini_selfhost_List_usize 504 864 868), (src_fn_names_in 246 255 1066), (src_type_only_names_in 246 257 1067), (src_alias_names_in 246 595 1068), (src_const_names_in 246 623 1069), (src_enums_named_ok 257 873 1070), (src_spelled3 76 876), (src_spelled4 76 874), (src_spelled2 76 1071), (src_spelled5 76 875), (src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_AliasDecl), (src_empty_of_mini_selfhost_SrcFunc), (src_cons_func 1072), (src_src_func), (src_close_params 882 900 1073 1074 1075), (src_close_ret 1075), (src_close_stmt 884 901 1075 1076 1077 1078 1079 1080 1081 1082 1083 1084 1085 1086 1087 1088 1089 1090 1091 1092 1093 1094 1095 1096 1097 1098 1099 1100 1101 1102), (src_empty_of_core_option_Option_mini_selfhost_SrcType), (src_cons_of_core_option_Option_mini_selfhost_SrcType 1103), (src_lower_named 56 1079 1104 1105), (src_wide_left_funcs 59 888 1106), (src_cons_of_mini_selfhost_SrcFunc 1107), (src_lit_stmt 81 201 890 1108 1109 1110 1111 1112 1113 1114 1115 1116 1117 1118 1119 1120), (src_param_locals 131 891 1121 1122), (src_ty_known 601 892 895 1123), (src_single_of_mini_selfhost_Ty 605), (src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Ty), (src_unbox_of_mini_selfhost_Ty 1124), (src_cons_inst 402), (src_named_insts 56 1104 1125), (src_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Ty), (src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Inst)]
+def dpart8 : List SrcFunc := [(src_p_stmts_end), (src_p_params_none), (src_p_params_some), (src_p_params_more), (src_p_params_end), (src_p_params_after_comma_more), (src_p_params_after_comma_trailing), (src_p_args_none), (src_p_args_some), (src_p_args_more), (src_p_args_end), (src_p_args_after_comma_more), (src_p_args_after_comma_trailing), (src_p_struct_fields_none), (src_p_struct_fields_some), (src_p_struct_fields_more), (src_p_struct_fields_end), (src_p_struct_fields_after_comma_more), (src_p_struct_fields_after_comma_trailing), (src_p_struct_lit_fields_none), (src_p_struct_lit_fields_some), (src_p_struct_lit_fields_more), (src_p_struct_lit_fields_end), (src_p_struct_lit_fields_after_comma_more), (src_p_struct_lit_fields_after_comma_trailing), (src_p_enum_variants_none), (src_p_enum_variants_some), (src_p_enum_variants_more), (src_p_enum_variants_end), (src_p_enum_variants_after_comma_more), (src_p_enum_variants_after_comma_trailing), (src_p_enum_variant_fields_none), (src_p_enum_variant_fields_some), (src_p_enum_variant_fields_more), (src_p_enum_variant_fields_end), (src_p_enum_variant_fields_after_comma_more), (src_p_enum_variant_fields_after_comma_trailing), (src_p_match_arms_none), (src_p_match_arms_some), (src_p_match_arms_more), (src_p_match_arms_end), (src_p_match_arms_after_comma_more), (src_p_match_arms_after_comma_trailing), (src_p_patterns_none), (src_p_patterns_some), (src_p_patterns_more), (src_p_patterns_end), (src_p_patterns_after_comma_more), (src_p_patterns_after_comma_trailing), (src_p_enum_type_params_some), (src_p_enum_type_params_more), (src_p_enum_type_params_after_comma_more), (src_p_type_args_some), (src_p_type_args_more), (src_p_type_args_after_comma_more), (src_p_path_type_args_more), (src_p_path_type_args_after_comma_more), (src_p_impl_methods_some), (src_p_impl_methods_more), (src_p_type_param_bound_more), (src_p_where_predicates_more), (src_p_where_predicate_more_after_comma), (src_p_bound_type_args_more), (src_p_bound_type_args_after_comma_more), (src_p_array_some), (src_p_array_more), (src_p_array_end), (src_p_array_after_comma_more), (src_p_array_after_comma_trailing), (src_join_second 1067), (src_single_of_mini_selfhost_TypeDecl 642), (src_struct_decl_of 1068 1069), (src_enum_decl_of 96 258), (src_variants_of 103 258 589 590 873 1070 1071 1072), (src_cons_of_mini_selfhost_FnDecl 643), (src_param_spellings 103 258 1073), (src_leaf_token 255), (src_methods_of 103 571 584 877 1074), (src_with_impl_decl 1075), (src_single_of_mini_selfhost_ImportDecl 646), (src_single_of_mini_selfhost_AliasDecl 648), (src_if_unbounded), (src_unbounded 103 152 155 882 1076), (src_p_extern_abi), (src_same_text 76 884), (src_text_lanius_std 377 461), (src_host_id 884 1077 1078 1079 1080 1081 1082 1083 1084), (src_boxed_of_mini_selfhost_List_mini_selfhost_List_usize 50 761 1085), (src_cons_name_tail 1086), (src_same_spellings 526 884 889), (src_distinct 526 890 1087), (src_concat_of_mini_selfhost_List_usize 526 887 891), (src_fn_names_in 258 267 1088), (src_type_only_names_in 258 269 1089), (src_alias_names_in 258 617 1090), (src_const_names_in 258 645 1091), (src_enums_named_ok 269 896 1092), (src_spelled3 76 899), (src_spelled4 76 897), (src_spelled2 76 1093)]
 
-def dents8 : List SigEntry := [some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([ty85, ty86], ty86), some ([ty107], ty109), some ([ty27, ty20, ty150, ty86], ty240), some ([ty27, ty20, ty150, ty256], ty240), some ([(.uint .usize), ty85], ty256), some ([ty110, ty112], ty112), some ([ty85], ty150), some ([ty84], ty42), some ([(.uint .usize), ty27, ty27, ty84, ty84, ty85], ty221), some ([ty122, ty127], ty127), some ([ty116], ty118), some ([ty119], ty121), some ([.bool, ty150], ty150), some ([ty85], .bool), some ([], (.uint .usize)), some ([ty20, ty20], .bool), some ([], ty20), some ([ty20], (.uint .usize)), some ([ty27], ty26), some ([ty20, ty150], ty150), some ([ty27, ty27], .bool), some ([ty27], .bool), some ([ty27, ty27], ty27), some ([ty112, ty27], ty27), some ([ty109, ty27], ty27), some ([ty121, ty27], ty27), some ([ty115, ty27], ty27), some ([ty109, ty27, ty27], .bool), some ([ty20, (.uint .usize), (.uint .usize), (.uint .usize)], .bool), some ([ty20, (.uint .usize), (.uint .usize), (.uint .usize), (.uint .usize)], .bool), some ([ty20, (.uint .usize), (.uint .usize)], .bool), some ([ty20, (.uint .usize), (.uint .usize), (.uint .usize), (.uint .usize), (.uint .usize)], .bool), none, some ([], ty33), some ([ty257, ty227], ty227), some ([ty258, ty177, ty259], ty257), some ([(.uint .usize), ty226, ty186], ty258), some ([(.uint .usize), ty226, ty187], ty177), some ([(.uint .usize), ty226, ty192], ty259), some ([], ty225), some ([ty177, ty225], ty225), some ([(.uint .usize), ty127, ty157, (.uint .usize), ty154], ty177), some ([ty33], .bool), some ([ty31, ty33], ty33), some ([ty33, ty9, ty262, ty30], ty30), some ([ty12], ty262), some ([ty157, ty153], .bool), some ([ty153], ty154), none, some ([ty151], ty153), some ([ty155, ty223], ty223), some ([(.uint .usize), ty127, (.uint .usize), ty154], ty223), none, none]
+def dents8 : List SigEntry := [some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([], (.uint .usize)), some ([ty85, ty86], ty86), some ([ty107], ty109), some ([ty27, ty20, ty149, ty86], ty240), some ([ty27, ty20, ty149, ty256], ty240), some ([(.uint .usize), ty85], ty256), some ([ty110, ty112], ty112), some ([ty85], ty149), some ([ty84], ty42), some ([(.uint .usize), ty27, ty27, ty84, ty84, ty85], ty221), some ([ty122, ty127], ty127), some ([ty116], ty118), some ([ty119], ty121), some ([.bool, ty149], ty149), some ([ty85], .bool), some ([], (.uint .usize)), some ([ty20, ty20], .bool), some ([], ty20), some ([ty20], (.uint .usize)), some ([ty27], ty26), some ([ty20, ty149], ty149), some ([ty27, ty27], .bool), some ([ty27], .bool), some ([ty27, ty27], ty27), some ([ty112, ty27], ty27), some ([ty109, ty27], ty27), some ([ty121, ty27], ty27), some ([ty115, ty27], ty27), some ([ty109, ty27, ty27], .bool), some ([ty20, (.uint .usize), (.uint .usize), (.uint .usize)], .bool), some ([ty20, (.uint .usize), (.uint .usize), (.uint .usize), (.uint .usize)], .bool), some ([ty20, (.uint .usize), (.uint .usize)], .bool)]
 
 /-- `declareFuncs` of functions 800 to 899. -/
-theorem dchunk8 : declsStep dpart8 decls 36 60 33 55 = true := by decide +kernel
+theorem dchunk8 : declsStep dpart8 decls 36 60 35 59 = true := by decide +kernel
 
 theorem dfit8 : entriesFit dpart8 dents8 = true := by decide +kernel
 

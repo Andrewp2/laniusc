@@ -20,6 +20,7 @@ import all Lanius.Mini.Compiler.P.arities
 import all Lanius.Mini.Compiler.P.armBodyScope
 import all Lanius.Mini.Compiler.P.armPayload
 import all Lanius.Mini.Compiler.P.armScope
+import all Lanius.Mini.Compiler.P.arrayCallSig
 import all Lanius.Mini.Compiler.P.assignFrom
 import all Lanius.Mini.Compiler.P.codeSize
 import all Lanius.Mini.Compiler.P.compileModules
@@ -34,6 +35,7 @@ import all Lanius.Mini.Compiler.P.evalDivideSint
 import all Lanius.Mini.Compiler.P.evalNot
 import all Lanius.Mini.Compiler.P.evalSame
 import all Lanius.Mini.Compiler.P.floatApply
+import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.hostRandomCode
 import all Lanius.Mini.Compiler.P.indexOf
@@ -53,10 +55,11 @@ import all Lanius.Mini.Compiler.P.lowerSlice
 import all Lanius.Mini.Compiler.P.lowerTagged
 import all Lanius.Mini.Compiler.P.matchDst
 import all Lanius.Mini.Compiler.P.matchVariants
+import all Lanius.Mini.Compiler.P.needRound
+import all Lanius.Mini.Compiler.P.needsAfter
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.repeatType
 import all Lanius.Mini.Compiler.P.shortCircuit
-import all Lanius.Mini.Compiler.P.sigs
 import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.storeArray
 import all Lanius.Mini.Compiler.P.storeEvalWord
@@ -65,6 +68,7 @@ import all Lanius.Mini.Compiler.P.storeWordElement
 import all Lanius.Mini.Compiler.P.structFields
 import all Lanius.Mini.Compiler.P.usizeWidth
 import all Lanius.Mini.Compiler.P.widthOf
+import all Lanius.Mini.Compiler.P.withBudget
 import all Lanius.Mini.Compiler.P.wordElement
 import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.wordWidth

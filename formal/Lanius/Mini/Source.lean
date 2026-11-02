@@ -25,6 +25,7 @@ import all Lanius.Mini.Compiler.P.arities
 import all Lanius.Mini.Compiler.P.armBodyScope
 import all Lanius.Mini.Compiler.P.armPayload
 import all Lanius.Mini.Compiler.P.armScope
+import all Lanius.Mini.Compiler.P.arrayCallSig
 import all Lanius.Mini.Compiler.P.assignAgrees
 import all Lanius.Mini.Compiler.P.assignFrom
 import all Lanius.Mini.Compiler.P.binaryConstant
@@ -48,6 +49,7 @@ import all Lanius.Mini.Compiler.P.evalNot
 import all Lanius.Mini.Compiler.P.evalSame
 import all Lanius.Mini.Compiler.P.extentAfter
 import all Lanius.Mini.Compiler.P.floatApply
+import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.hostRandomCode
 import all Lanius.Mini.Compiler.P.imageLimit
@@ -71,13 +73,14 @@ import all Lanius.Mini.Compiler.P.lowerSlice
 import all Lanius.Mini.Compiler.P.lowerTagged
 import all Lanius.Mini.Compiler.P.matchDst
 import all Lanius.Mini.Compiler.P.matchVariants
+import all Lanius.Mini.Compiler.P.needRound
+import all Lanius.Mini.Compiler.P.needsAfter
 import all Lanius.Mini.Compiler.P.optimizeIte
 import all Lanius.Mini.Compiler.P.optimizeLeft
 import all Lanius.Mini.Compiler.P.optimizeNeg
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.repeatType
 import all Lanius.Mini.Compiler.P.shortCircuit
-import all Lanius.Mini.Compiler.P.sigs
 import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.storeArray
 import all Lanius.Mini.Compiler.P.storeEvalWord
@@ -87,6 +90,7 @@ import all Lanius.Mini.Compiler.P.structFields
 import all Lanius.Mini.Compiler.P.substAll
 import all Lanius.Mini.Compiler.P.usizeWidth
 import all Lanius.Mini.Compiler.P.widthOf
+import all Lanius.Mini.Compiler.P.withBudget
 import all Lanius.Mini.Compiler.P.wordElement
 import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.wordWidth
@@ -104,11 +108,11 @@ public import Lanius.Mini.Compiler.P.compileSource
 public import Lanius.Mini.Compiler.P.declareProgram
 public import Lanius.Mini.Compiler.P.enumVariants
 public import Lanius.Mini.Compiler.P.floatApply
+public import Lanius.Mini.Compiler.P.funcNeeds
 public import Lanius.Mini.Compiler.P.loadAtBytes
 public import Lanius.Mini.Compiler.P.lowerBody
 public import Lanius.Mini.Compiler.P.lowerLoadType
 public import Lanius.Mini.Compiler.P.repeatType
-public import Lanius.Mini.Compiler.P.sigs
 public import Lanius.Mini.Compiler.P.storeArray
 public import Lanius.Mini.Compiler.P.storeEvalWord
 public import Lanius.Mini.Compiler.P.structFields
@@ -146,7 +150,7 @@ def SrcProgram.toCore (prog : SrcProgram) : Core.Program where
 functions. -/
 theorem compileSource_some {sp : SrcProgram} {binary : Binary} (compiled : compileSource sp = some binary) :
     funcsReturn sp.funcs = true ∧ (∃ decls, declareProgram sp = some decls) ∧
-      ∃ funcs, lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some funcs ∧
+      ∃ funcs, lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some funcs ∧
         compileOptimized { funcs := funcs } = some binary := by
   unfold compileSource at compiled
   split at compiled
@@ -274,12 +278,25 @@ def SrcType.Holds : SrcType → Value → BitVec 64 → Prop
 
 /-- A place a reference or a borrowed slice names, held in frame memory:
 Core's cell `cell` at the projection path `projections` holds a value of
-`ty`, whose representation is in the mini heap from `address` (`FrameCorr`). -/
+`ty`, whose representation is in the mini heap from `address` (`FrameCorr`).
+A `sliced` place is an array passed as a slice, laid out as a slice's
+elements (`Addressed.view`); the others take one word per slot. -/
 structure Addressed where
   cell : Nat
   projections : List Lanius.Core.ValueProjection
   ty : SrcType
   address : Nat
+  sliced : Bool
+
+/-- The pointer of a slice of a sliced place: its lowest byte for packed
+`i32` and `u8` elements, which run up from it, and its top word for the
+others, whose words run down from it (SEMANTIC_DECISIONS "Addressed locals"
+point 2). -/
+def Addressed.pointer (x : Addressed) : Nat :=
+  match x.ty with
+  | .array .i32 _ => x.address
+  | .array (.uint .uint8) _ => x.address
+  | _ => x.address + 8 * (x.ty.size - 1)
 
 variable {places : List Addressed}
 
@@ -308,6 +325,16 @@ inductive SrcType.HoldsAt (places : List Addressed) : SrcType → Value → Env 
   | slice {element : SrcType} {length : Nat} {env : Env} {slot : Nat} :
       (env (slot + 1)).toNat = length → length < 2 ^ 31 →
       SrcType.HoldsAt places (.slice element) (.rawSlice element.toCore (env slot).toNat length) env slot
+  /-- A slice of a caller's array held in frame memory, a sliced place: the
+  slice's pointer (`Addressed.pointer`), then its length, below `2 ^ 31` as a
+  raw slice's. Core's value is the slice of the whole array in the place's
+  cell (`arrayToSlice` of a local). The elements are `i32` or `u8`, packed in
+  the slice layout. -/
+  | borrowed {element : SrcType} {length : Nat} {x : Addressed} {env : Env} {slot : Nat} :
+      x ∈ places → x.sliced = true → x.projections = [] → x.ty = .array element length →
+      (element = .i32 ∨ element = .uint .uint8) →
+      (env slot).toNat = x.pointer → (env (slot + 1)).toNat = length → length < 2 ^ 31 →
+      SrcType.HoldsAt places (.slice element) (.slice element.toCore x.cell [] 0 length) env slot
   /-- An array is its elements one after another, like a struct of `length`
   fields of the element type. -/
   | array {element : SrcType} {length : Nat} {vs : List Value} {env : Env} {slot : Nat} :
@@ -419,6 +446,11 @@ theorem SrcType.HoldsAt.congr : ∀ {ty : SrcType} {v : Value} {env : Env} {slot
     simp only [Nat.add_zero] at this
     rw [← this]
     exact .slice (by rw [second]; exact len) small
+  | .slice _, _, _, _, .borrowed mem sliced root ty packed pointer len small, _, _, agree => by
+    have first := agree 0 (by simp [SrcType.size])
+    have second := agree 1 (by simp [SrcType.size])
+    simp only [Nat.add_zero] at first
+    exact .borrowed mem sliced root ty packed (by rw [first]; exact pointer) (by rw [second]; exact len) small
   | .array _ _, _, _, _, .array holds, _, _, agree =>
     .array (FieldsHold.congr holds fun i below => agree i (by
       simp only [SrcType.size]; rw [sizes_replicate] at below; exact below))

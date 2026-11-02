@@ -127,6 +127,10 @@ abbrev Stmt_get_of_mini_selfhost_SrcType (prog : SrcProgram) (prims : Prims) (ix
   ∀ {x0 : List Lanius.Mini.SrcType} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 73 RepSrcType) x0 v0 → RepNat x1 v1 →
     (RepOption 158 RepSrcType) (x0[x1]?) w
 
+abbrev Stmt_length_of_mini_selfhost_SrcFunc (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List Lanius.Mini.SrcFunc} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 5 RepSrcFunc) x0 v0 →
+    RepNat (x0.length) w
+
 abbrev Stmt_single_of_mini_selfhost_CTree (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepCTree x0 v0 →
     (RepList 82 RepCTree) ([x0]) w

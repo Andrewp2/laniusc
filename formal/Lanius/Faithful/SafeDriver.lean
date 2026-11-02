@@ -24,8 +24,8 @@ import all Lanius.Mini.Compiler.P.floatApply
 import all Lanius.Mini.Compiler.P.indexOf
 import all Lanius.Mini.Compiler.P.loadAtBytes
 import all Lanius.Mini.Compiler.P.render
+import all Lanius.Mini.Compiler.P.arrayCallSig
 import all Lanius.Mini.Compiler.Types
-import all Lanius.Mini.Compiler.P.storeArray
 
 @[expose] public section
 /-! # The self-host driver traps only definedly (roadmap V7b)

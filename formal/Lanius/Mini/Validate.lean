@@ -60,9 +60,13 @@ import all Lanius.Mini.Compiler.P.optimizeNeg
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.repeatType
 import all Lanius.Mini.Compiler.P.shortCircuit
-import all Lanius.Mini.Compiler.P.sigs
+import all Lanius.Mini.Compiler.P.withBudget
+import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.storeArray
+import all Lanius.Mini.Compiler.P.arrayCallSig
+import all Lanius.Mini.Compiler.P.needRound
+import all Lanius.Mini.Compiler.P.needsAfter
 import all Lanius.Mini.Compiler.P.structFields
 import all Lanius.Mini.Compiler.P.substAll
 import all Lanius.Mini.Compiler.P.usizeWidth

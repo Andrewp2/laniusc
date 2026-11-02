@@ -26,6 +26,7 @@ import all Lanius.Mini.Compiler.P.arities
 import all Lanius.Mini.Compiler.P.armBodyScope
 import all Lanius.Mini.Compiler.P.armPayload
 import all Lanius.Mini.Compiler.P.armScope
+import all Lanius.Mini.Compiler.P.arrayCallSig
 import all Lanius.Mini.Compiler.P.assignFrom
 import all Lanius.Mini.Compiler.P.codeSize
 import all Lanius.Mini.Compiler.P.compileModules
@@ -40,6 +41,7 @@ import all Lanius.Mini.Compiler.P.evalDivideSint
 import all Lanius.Mini.Compiler.P.evalNot
 import all Lanius.Mini.Compiler.P.evalSame
 import all Lanius.Mini.Compiler.P.floatApply
+import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.hostRandomCode
 import all Lanius.Mini.Compiler.P.indexOf
@@ -59,10 +61,11 @@ import all Lanius.Mini.Compiler.P.lowerSlice
 import all Lanius.Mini.Compiler.P.lowerTagged
 import all Lanius.Mini.Compiler.P.matchDst
 import all Lanius.Mini.Compiler.P.matchVariants
+import all Lanius.Mini.Compiler.P.needRound
+import all Lanius.Mini.Compiler.P.needsAfter
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.repeatType
 import all Lanius.Mini.Compiler.P.shortCircuit
-import all Lanius.Mini.Compiler.P.sigs
 import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.storeArray
 import all Lanius.Mini.Compiler.P.storeEvalWord
@@ -71,18 +74,19 @@ import all Lanius.Mini.Compiler.P.storeWordElement
 import all Lanius.Mini.Compiler.P.structFields
 import all Lanius.Mini.Compiler.P.usizeWidth
 import all Lanius.Mini.Compiler.P.widthOf
+import all Lanius.Mini.Compiler.P.withBudget
 import all Lanius.Mini.Compiler.P.wordElement
 import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.wordWidth
 -- end import all uses
 -- import parts: Lanius.Mini.Compiler SrcExpr.lower SrcOp.lower SrcStmt.lower UintTy.code negateSigned equality order
 public import Lanius.Mini.Compiler.P.arithShiftRight
+public import Lanius.Mini.Compiler.P.arrayCallSig
 public import Lanius.Mini.Compiler.P.conjunction
 public import Lanius.Mini.Compiler.P.equality
 public import Lanius.Mini.Compiler.P.lowerApply
 public import Lanius.Mini.Compiler.P.lowerLocal
 public import Lanius.Mini.Compiler.P.render
-public import Lanius.Mini.Compiler.P.storeArray
 -- end import parts
 
 @[expose] public section
@@ -101,6 +105,8 @@ open Lanius.Semantics (State evalExpr)
 given by `frame`, and every binding's cell holds a value its slot represents. -/
 structure Corr (places : List Addressed) (scope : List Binding) (frame : Nat → Nat) (st : State) (env : Env) : Prop where
   locals : st.locals = scope.map fun b => (b.id, frame b.slot)
+  /-- The scope's cells are not the places' (the caller's arrays). -/
+  apart : ∀ x ∈ places, ∀ b ∈ scope, x.cell ≠ frame b.slot
   values : ∀ b ∈ scope, ∃ v, st.cellEntry? (frame b.slot) = some ⟨frame b.slot, some v⟩ ∧
     b.ty.HoldsAt places v env b.slot
 

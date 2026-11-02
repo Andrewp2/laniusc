@@ -58,9 +58,13 @@ import all Lanius.Mini.Compiler.P.matchVariants
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.repeatType
 import all Lanius.Mini.Compiler.P.shortCircuit
-import all Lanius.Mini.Compiler.P.sigs
+import all Lanius.Mini.Compiler.P.withBudget
+import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.storeArray
+import all Lanius.Mini.Compiler.P.arrayCallSig
+import all Lanius.Mini.Compiler.P.needRound
+import all Lanius.Mini.Compiler.P.needsAfter
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.storeType
 import all Lanius.Mini.Compiler.P.storeWordElement
@@ -96,8 +100,13 @@ public import Lanius.Mini.Compiler.P.lowerTagged
 public import Lanius.Mini.Compiler.P.matchVariants
 public import Lanius.Mini.Compiler.P.repeatType
 public import Lanius.Mini.Compiler.P.shortCircuit
-public import Lanius.Mini.Compiler.P.sigs
+public import Lanius.Mini.Compiler.P.withBudget
+public import Lanius.Mini.Compiler.P.funcNeeds
 public import Lanius.Mini.Compiler.P.storeArray
+public import Lanius.Mini.Compiler.P.arrayCallSig
+public import Lanius.Mini.Compiler.P.bindingBytes
+public import Lanius.Mini.Compiler.P.needRound
+public import Lanius.Mini.Compiler.P.needsAfter
 public import Lanius.Mini.Compiler.P.storeWordElement
 public import Lanius.Mini.Compiler.P.wordStride
 
@@ -116,18 +125,18 @@ allocation completes and cannot fail. -/
 
 namespace Lanius.Mini
 
-variable {places : List Addressed}
+variable {bud : Budget} {places : List Addressed}
 
 open Lanius.Core (Value)
 open Lanius.Semantics (State Cell Completion evalExpr evalExprs execStmt restoreLocals)
 
 /-- A lowered statement whose Core run fails stops within `n` ticks. -/
 def SrcStops (sp : SrcProgram) (mp : Program) (n : Nat) (s : SrcStmt) : Prop :=
-  ∀ {places : List Addressed} {hp : Heap} {ret : SrcType} {scope : List Binding} {next : Nat} {stmt : Stmt}
+  ∀ {bud : Budget} {places : List Addressed} {hp : Heap} {ret : SrcType} {scope : List Binding} {next : Nat} {stmt : Stmt}
     {frame : Nat → Nat} {base : Nat} {st : State} {env : Env},
-    s.lower (sigs sp.funcs) sp.decls ret scope next = some stmt →
+    s.lower (sp.sigsAt bud) sp.decls ret scope next = some stmt →
     Corr places scope frame st env → Layout scope frame base next → st.Fresh → base ≤ st.nextCell →
-    HeapCorr st.heap st.world hp → FrameCorr places st hp → (∀ x ∈ places, x.cell < base) →
+    HeapCorr st.heap st.world hp → FrameCorr bud places st hp → (∀ x ∈ places, x.cell < base) →
     st.heap.nextAddress ≤ hp.limit →
     Fails sp hp.limit st s.toCore → ∃ d, Stops mp d env hp stmt n
 
@@ -570,43 +579,63 @@ theorem EFails.callBody {L : Nat} {st : State} {callee : Nat} {args : List Core.
   | exited => trivial
   | outOfFuel => trivial
 
-/-- A callee's frame: its parameters in correspondence with the mini entry. -/
-theorem callee_frame (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {callee : Nat}
-    {f : SrcFunc} (found : sp.funcs[callee]? = some f) {st : State} (fresh : st.Fresh) {values : List Value}
+theorem Prologue.stops {mp : Program} {env envX : Env} {hp hpX : Heap} {b pre : Stmt}
+    (pro : Prologue mp env hp envX hpX b pre) : ∀ d n, Stops mp d envX hpX b n → Stops mp d env hp pre n := by
+  intro d n s
+  rcases pro with ⟨rfl, rfl, rfl⟩ | ⟨first, rfl, h⟩
+  · exact s
+  · exact .seqSecond (h d) s
+
+/-- A callee's frame: its parameters in correspondence with the mini entry,
+after the prologue takes its block of frame memory. -/
+theorem callee_frame (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {callee : Nat}
+    {f : SrcFunc} (found : sp.funcs[callee]? = some f) {hp : Heap} {st : State} (fresh : st.Fresh)
+    (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp) (fits : sp.need callee ≤ bud.room)
+    {values : List Value}
     {bits : List (BitVec 64)} (holds : FieldsHold places (paramTypes f.params) values (Func.entry bits) 0) :
-    ∃ g b frame, mp.funcs[callee]? = some g ∧ g.params = paramsSize f.params ∧
-      f.body.lower (sigs sp.funcs) sp.decls f.ret (paramScope f.params 0 []) (paramsSize f.params) = some b ∧
-      unitTail f.ret (some b) = some g.body ∧
-      Corr places (paramScope f.params 0 []) frame (calleeState f values st) (Func.entry bits) ∧
+    ∃ g b pre frame s envX hpX, mp.funcs[callee]? = some g ∧ g.params = paramsSize f.params ∧
+      (sigs sp.funcs)[callee]? = some s ∧
+      f.body.lower (sp.sigsAt (funcBudget s f)) sp.decls f.ret (paramScope f.params 0 []) (paramsSize f.params) = some b ∧
+      unitTail f.ret (some pre) = some g.body ∧ Prologue mp (Func.entry bits) hp envX hpX b pre ∧
+      Corr places (paramScope f.params 0 []) frame (calleeState f values st) envX ∧
       Layout (paramScope f.params 0 []) frame st.nextCell (paramsSize f.params) ∧
-      (calleeState f values st).Fresh ∧ Keeps st.nextCell ({ st with locals := [] } : State) (calleeState f values st) := by
-  obtain ⟨g, gFound, gOk⟩ := lowerFuncs_get lowered found
-  obtain ⟨gParams, _, valid, inside, b, bodyOk, tail⟩ := lowerFunc_some gOk
+      (calleeState f values st).Fresh ∧ Keeps [] st.nextCell ({ st with locals := [] } : State) (calleeState f values st) ∧
+      HeapCorr (calleeState f values st).heap (calleeState f values st).world hpX ∧
+      FrameCorr (funcBudget s f) places (calleeState f values st) hpX ∧ hpX.limit = hp.limit := by
+  have under := fc.below fresh
+  obtain ⟨g, own, gFound, ownFound, gOk⟩ := lowerFuncs_get lowered found
+  obtain ⟨gParams, _, valid, inside, b, pre, bodyOk, framed, tail, needs, -⟩ := lowerFunc_some gOk
+  have ownNeed : own.need = sp.need callee := sigs_need ownFound
   obtain ⟨frame, corr, fr, fresh0, keeps0⟩ := entry_corr (Func.entry bits) st.nextCell f.params
     (k := 0) (scope := []) (frame := fun _ => 0) (st := { st with locals := [] }) holds valid
-    (Nat.le_refl _) fresh ⟨rfl, fun _ mem => by simp at mem⟩
+    (Nat.le_refl _) under fresh ⟨rfl, fun _ _ _ mem => by simp at mem, fun _ mem => by simp at mem⟩
     ⟨fun _ mem => by simp at mem, fun _ mem => by simp at mem, fun _ mem => by simp at mem,
       fun _ mem => by simp at mem, fun _ mem => by simp at mem⟩
   rw [Nat.zero_add] at fr
-  exact ⟨g, b, frame, gFound, gParams, bodyOk, tail, corr, fr, fresh0, keeps0⟩
+  have hc0 : HeapCorr (calleeState f values st).heap (calleeState f values st).world hp := by
+    rw [(bindLocals_same _ _).1, bindLocals_world]
+    exact hc
+  have fc0 := fc.congr (st' := calleeState f values st)
+    (fun x mem => keeps0.cells x.cell (under x mem) fun _ m => by simp at m) (fun _ _ _ _ => rfl) rfl rfl rfl
+  obtain ⟨envX, hpX, pro, corrX, hcX, fcX, limitX⟩ :=
+    bodyStart (mp := mp) framed corr fr hc0 fc0 needs (ownNeed ▸ fits)
+  exact ⟨g, b, pre, frame, own, envX, hpX, gFound, gParams, ownFound, bodyOk, tail, pro, corrX, fr, fresh0, keeps0,
+    hcX, fcX, limitX⟩
 
 /-- How a callee's body that completes within the limit completes. -/
-theorem body_shapes (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
+theorem body_shapes (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     (returns : funcsReturn sp.funcs = true) {callee : Nat} {f : SrcFunc} (found : sp.funcs[callee]? = some f)
     {hp : Heap} {st : State} (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp)
-    (fc : FrameCorr places st hp) {values : List Value}
+    (fc : FrameCorr bud places st hp) (fits : sp.need callee ≤ bud.room) {values : List Value}
     {bits : List (BitVec 64)} (holds : FieldsHold places (paramTypes f.params) values (Func.entry bits) 0)
     {j : Nat} {c : Completion} {completed : State}
     (run : execStmt j sp.toCore (calleeState f values st) f.body.toCore = .done c completed)
     (bound : completed.heap.nextAddress ≤ hp.limit) :
     (c = .next ∧ f.ret = .unit) ∨ (∃ v, c = .returned (some v)) ∨ (c = .returned none ∧ f.ret = .unit) := by
-  obtain ⟨g, b, frame, -, -, bodyOk, -, corr, fr, fresh0, keeps0⟩ := callee_frame lowered found fresh holds
-  have hc0 : HeapCorr (calleeState f values st).heap (calleeState f values st).world hp := by
-    rw [(bindLocals_same _ _).1, bindLocals_world]
-    exact hc
-  obtain ⟨-, -, _, _, _, matched⟩ := stmt_sound lowered j (hp := hp) bodyOk corr fr fresh0 keeps0.next hc0
-    (fc.congr (fun x mem => keeps0.cells x.cell (fc.below fresh x mem)) (fun _ _ _ _ => rfl) (Nat.le_refl _) rfl rfl)
-    (fc.below fresh) run bound
+  obtain ⟨g, b, pre, frame, s, envX, hpX, -, -, sFound, bodyOk, -, -, corr, fr, fresh0, keeps0, hcX, fcX, limitX⟩ :=
+    callee_frame lowered found fresh hc fc fits holds
+  obtain ⟨-, -, _, _, _, matched⟩ := stmt_sound lowered j (hp := hpX) bodyOk corr fr fresh0 keeps0.next hcX fcX
+    (fc.below fresh) run (by rw [limitX]; exact bound)
   cases matched with
   | next =>
     refine .inl ⟨rfl, ?_⟩
@@ -622,36 +651,34 @@ theorem body_shapes (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = so
     | some w => exact .inr (.inl ⟨w, rfl⟩)
     | none => exact .inr (.inr ⟨rfl, holdsRet⟩)
   | broke =>
-    obtain ⟨_, _, gOk⟩ := lowerFuncs_get lowered found
+    obtain ⟨_, _, -, -, gOk⟩ := lowerFuncs_get lowered found
     exact absurd rfl (breaksOut_noEscape f.body (lowerFunc_some gOk).2.2.2.1 run).1
   | continued =>
-    obtain ⟨_, _, gOk⟩ := lowerFuncs_get lowered found
+    obtain ⟨_, _, -, -, gOk⟩ := lowerFuncs_get lowered found
     exact absurd rfl (breaksOut_noEscape f.body (lowerFunc_some gOk).2.2.2.1 run).2
 
 /-- The callee of a call that fails stops, one tick fewer. -/
-theorem callee_stops (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
+theorem callee_stops (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     (returns : funcsReturn sp.funcs = true) (prev : StmtStops sp mp n)
     {callee : Nat} {args : List Core.Expr} {st afterArgs : State} {k : Nat} {values : List Value}
     (argsRun : evalExprs k sp.toCore st args = .done values afterArgs) {f : SrcFunc}
     (found : sp.funcs[callee]? = some f) {hp : Heap} (fresh : afterArgs.Fresh) (hc : HeapCorr afterArgs.heap afterArgs.world hp)
-    (fc : FrameCorr places afterArgs hp) (within : afterArgs.heap.nextAddress ≤ hp.limit) {bits : List (BitVec 64)}
+    (fc : FrameCorr bud places afterArgs hp) (fits : sp.need callee ≤ bud.room)
+    (within : afterArgs.heap.nextAddress ≤ hp.limit) {bits : List (BitVec 64)}
     (holds : FieldsHold places (paramTypes f.params) values (Func.entry bits) 0) (bitsLen : bits.length = paramsSize f.params)
     (fails : EFails sp hp.limit st (.call callee args)) :
     ∃ d g, mp.funcs[callee]? = some g ∧ bits.length = g.params ∧ Stops mp d (Func.entry bits) hp g.body n := by
-  obtain ⟨g, b, frame, gFound, gParams, bodyOk, tail, corr, fr, fresh0, keeps0⟩ :=
-    callee_frame lowered found fresh holds
-  have hc0 : HeapCorr (calleeState f values afterArgs).heap (calleeState f values afterArgs).world hp := by
-    rw [(bindLocals_same _ _).1, bindLocals_world]
-    exact hc
+  obtain ⟨g, b, pre, frame, s, envX, hpX, gFound, gParams, sFound, bodyOk, tail, pro, corr, fr, fresh0, keeps0,
+    hcX, fcX, limitX⟩ := callee_frame lowered found fresh hc fc fits holds
   have len : values.length = f.params.length := by rw [holds.length, paramTypes_length]
   have bodyFails := fails.callBody argsRun found len fun run bound =>
-    body_shapes lowered returns found fresh hc fc holds run bound
-  have within0 : (calleeState f values afterArgs).heap.nextAddress ≤ hp.limit := by
-    rw [(bindLocals_same _ _).1]
+    body_shapes lowered returns found fresh hc fc fits holds run bound
+  have within0 : (calleeState f values afterArgs).heap.nextAddress ≤ hpX.limit := by
+    rw [(bindLocals_same _ _).1, limitX]
     exact within
-  obtain ⟨d, stops⟩ := prev f.body bodyOk corr fr fresh0 keeps0.next hc0
-    (fc.congr (fun x mem => keeps0.cells x.cell (fc.below fresh x mem)) (fun _ _ _ _ => rfl) (Nat.le_refl _) rfl rfl)
-    (fc.below fresh) within0 bodyFails
+  obtain ⟨d, stops⟩ := prev f.body bodyOk corr fr fresh0 keeps0.next hcX fcX
+    (fc.below fresh) within0 (by rw [limitX]; exact bodyFails)
+  have stops := pro.stops d n stops
   refine ⟨d, g, gFound, by rw [gParams, bitsLen], ?_⟩
   simp only [unitTail] at tail
   split at tail
@@ -664,30 +691,33 @@ theorem callee_stops (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = s
 
 /-- A call whose arguments are lowered: it stops, or completes within the limit. -/
 theorem lowerCall_found {callee : Nat} {scope : List Binding} {args : List SrcExpr} {ty : SrcType}
-    {es : List Expr} (ok : lowerCall (sigs sp.funcs) scope callee args ty = some es) :
-    ∃ f, sp.funcs[callee]? = some f ∧ lowerArgs scope args (paramTypes f.params) = some es := by
-  simp only [lowerCall, sigs_get] at ok
+    {es : List Expr} (ok : lowerCall (sp.sigsAt bud) scope callee args ty = some es) :
+    ∃ f, sp.funcs[callee]? = some f ∧ lowerArgs scope args (paramTypes f.params) = some es ∧
+      sp.need callee ≤ bud.room := by
+  simp only [lowerCall, sigsAt_get] at ok
   cases found : sp.funcs[callee]? with
   | none => simp [found] at ok
   | some f =>
     simp only [found, Option.map_some, lowerCallSig] at ok
     split at ok
-    · exact ⟨f, rfl, ok⟩
+    · rename_i checks
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+      exact ⟨f, rfl, ok, checks.2⟩
     · simp at ok
 
 /-- A call that fails and whose guard holds stops, one tick more than its callee. -/
-theorem call_stops (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
+theorem call_stops (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     (returns : funcsReturn sp.funcs = true) (prev : StmtStops sp mp n) {scope frame st env}
     (corr : Corr places scope frame st env) (fresh : st.Fresh) {hp : Heap} (hc : HeapCorr st.heap st.world hp)
-    (fc : FrameCorr places st hp) (within : st.heap.nextAddress ≤ hp.limit) {callee : Nat} {args : List SrcExpr} {ty : SrcType}
-    {es : List Expr} (ok : lowerCall (sigs sp.funcs) scope callee args ty = some es)
+    (fc : FrameCorr bud places st hp) (within : st.heap.nextAddress ≤ hp.limit) {callee : Nat} {args : List SrcExpr} {ty : SrcType}
+    {es : List Expr} (ok : lowerCall (sp.sigsAt bud) scope callee args ty = some es)
     (g : (guardAll scope args).eval env ≠ 0)
     (fails : EFails sp hp.limit st (.call callee (args.map SrcExpr.toCore))) (target count : Nat) :
     ∃ d, Stops mp d env hp (.call target count callee es) (n + 1) := by
-  obtain ⟨f, found, argsOk⟩ := lowerCall_found ok
+  obtain ⟨f, found, argsOk, fits⟩ := lowerCall_found ok
   obtain ⟨k, vs, argsRun⟩ := lowerArgs_progress corr (SrcProgram.target_toCore sp) argsOk g
   obtain ⟨-, holds, esLen, -⟩ := lowerArgs_sound corr (SrcProgram.target_toCore sp) argsOk argsRun
-  obtain ⟨d, func, gFound, arity, stops⟩ := callee_stops lowered returns prev argsRun found fresh hc fc within holds
+  obtain ⟨d, func, gFound, arity, stops⟩ := callee_stops lowered returns prev argsRun found fresh hc fc fits within holds
     (by rw [evalAll_length, esLen, paramsSize_eq]) fails
   exact ⟨d + 1, .call gFound (by rw [← arity, evalAll_length]) (Nat.lt_succ_self d) stops⟩
 
@@ -762,14 +792,14 @@ theorem field_assign_progress {P : Core.Program} {scope frame st env} (corr : Co
 
 end Assignments
 
-/-! ## Matches places -/
+/-! ## Matches bud places -/
 
 section Matches
 
 /-- The arm Core picks either stops at its guard or has a value. -/
 theorem lowerArms_progress {P : Core.Program} {mp : Program} {hp : Heap} (target : P.target = .x86_64)
     {scope frame st env} (corr : Corr places scope frame st env) (fresh : st.Fresh)
-    {slot dst eid : Nat} {ty : SrcType} {n : Nat} :
+    (under : ∀ x ∈ places, x.cell < st.nextCell) {slot dst eid : Nat} {ty : SrcType} {n : Nat} :
     ∀ (arms : List SrcArm) {variants : List (List SrcType)} {k kv : Nat} {stmt : Stmt}
       {fs : List SrcType} {vs : List Value},
       lowerArms scope slot dst ty k variants arms = some stmt → arms.length = variants.length →
@@ -813,7 +843,7 @@ theorem lowerArms_progress {P : Core.Program} {mp : Program} {hp : Heap} (target
           · simp at valueOk
           rename_i s' scopeOk
           obtain ⟨frame', corr', -, -, blen⟩ := armScope_corr arm.binders scopeOk payload
-            (clear _ (List.mem_cons_self ..)) corr fresh
+            (clear _ (List.mem_cons_self ..)) corr fresh under
           rw [scopeOk] at g
           obtain ⟨j, w, armRun⟩ := lowerValue_progress corr' target valueOk g
           refine .inr ⟨j, w, Semantics.restoreLocals st (st.bindLocals (arm.binders.zip vs)), ?_⟩
@@ -1113,6 +1143,54 @@ theorem setIndex_outcome {P : Core.Program} {k : Nat} {st : State} {slice : Nat}
       simp only [bind, Except.bind, pure, Except.pure, Semantics.syncI32ViewsFromHeap, views,
         Semantics.syncI32ViewsFromHeapFrom, ite_self] at hout
       exact .inl ⟨_, hout.symm, writeRawNative_next stored⟩
+/-- A safe slice of a whole array, indexed below its length, reads the
+element. -/
+theorem index_outcome_safe {P : Core.Program} {k : Nat} {st : State} {slice : Nat} {idx : Core.Expr}
+    {element : Core.Ty} {cell length : Nat} {iv : Value} {pos : Nat} {elems : List Value}
+    (base : evalExpr (k + 1) P st (.local slice) = .done (.slice element cell [] 0 length) st)
+    (idxRun : evalExpr (k + 1) P st idx = .done iv st) (posOk : Semantics.integerIndex iv = .ok pos)
+    (lt : pos < length) (values : Semantics.sliceValues st cell [] 0 length = .ok elems)
+    (len : elems.length = length) :
+    ∃ v, evalExpr (k + 2) P st (.index (.local slice) idx) = .done v st ∧ elems[pos]? = some v := by
+  have got : elems[pos]? = some elems[pos] := List.getElem?_eq_getElem (by omega)
+  refine ⟨elems[pos], ?_, got⟩
+  rw [evalExpr.eq_def]
+  simp only [base, idxRun, posOk, lt, ↓reduceIte, values, got]
+
+/-- A store into a safe slice of a whole array, below its length, finishes,
+leaving the bump heap as it was. -/
+theorem setIndex_outcome_safe {P : Core.Program} {k : Nat} {st : State} {slice : Nat} {idx e : Core.Expr}
+    {element : Core.Ty} {cell length root : Nat} {iv right : Value} {pos : Nat} {vs : List Value}
+    (views : st.i32ArrayViews = [])
+    (base : Semantics.evalPlace (k + 1) P st .read (.local slice) =
+      .done { root, projections := [], value := some (.slice element cell [] 0 length) } st)
+    (idxRun : evalExpr (k + 1) P st idx = .done iv st) (posOk : Semantics.integerIndex iv = .ok pos)
+    (lt : pos < length) (eRun : evalExpr (k + 2) P st e = .done right st)
+    (read : Semantics.readCellProjection st cell [] = .ok (.array vs)) (len : vs.length = length) :
+    ∃ st', evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = .done .unit st' ∧
+      st'.heap.nextAddress = st.heap.nextAddress := by
+  have values := sliceValues_whole read
+  rw [len] at values
+  have got : vs[pos]? = some vs[pos] := List.getElem?_eq_getElem (by omega)
+  cases entry : st.cellEntry? cell with
+  | none => simp [Semantics.readCellProjection, entry] at read
+  | some en =>
+    obtain ⟨eid, ev⟩ := en
+    cases ev with
+    | none => simp [Semantics.readCellProjection, entry] at read
+    | some rootValue =>
+      simp only [Semantics.readCellProjection, entry, Semantics.projectedValue, Except.ok.injEq] at read
+      subst read
+      refine ⟨{ st with cells := Semantics.replaceCell st.cells cell (.array (Semantics.setValue vs pos right)) }, ?_, rfl⟩
+      rw [evalExpr]
+      rw [Semantics.evalPlace]
+      rw [base]
+      simp only [idxRun, posOk, lt, ↓reduceIte, values, got, eRun, Semantics.evalAssignValue,
+        Semantics.assignOpBinary?, Semantics.writeResolvedPlaceNative, Semantics.writeResolvedPlace,
+        List.nil_append, Nat.zero_add, entry, Semantics.replaceProjectedValue, State.assignCell,
+        Option.isSome_some, if_true, Semantics.ResolvedPlace.viewFreeRootWrite, List.isEmpty_cons,
+        Bool.false_and, Bool.and_false, Bool.false_eq_true, if_false, Semantics.syncI32ViewsToHeap, views,
+        Semantics.syncI32ViewsToHeapFrom]
 
 end Indexing
 
@@ -1123,28 +1201,28 @@ variable {sp : SrcProgram} {mp : Program} {n : Nat}
 /-- The body of a `let`, from the state after its initializer. -/
 theorem let_stops {body : SrcStmt} (ih : SrcStops sp mp n body) {ret : SrcType} {scope : List Binding}
     {next : Nat} {bstmt : Stmt} {id : Nat} {ty : SrcType} {hp : Heap}
-    (bodyOk : body.lower (sigs sp.funcs) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size) = some bstmt)
+    (bodyOk : body.lower (sp.sigsAt bud) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size) = some bstmt)
     {frame base st env} (corr : Corr places scope frame st env) (fr : Layout scope frame base next)
     (fresh : st.Fresh) (le : base ≤ st.nextCell) (sized : 0 < ty.size) {v : Value} {env' : Env}
     (agree : ScopeAgree scope env env') (holds : ty.HoldsAt places v env' next)
-    (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr places st hp) (under : ∀ x ∈ places, x.cell < base)
+    (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp) (under : ∀ x ∈ places, x.cell < base)
     (within : st.heap.nextAddress ≤ hp.limit)
     (fails : Fails sp hp.limit (st.bindLocal id v) body.toCore) :
     ∃ d, Stops mp d env' hp bstmt n :=
-  ih (hp := hp) bodyOk (corr.push fr fresh agree holds) (fr.push (corr.below fresh) le id sized)
+  ih (hp := hp) bodyOk (corr.push fr fresh agree holds fun x mem => Nat.lt_of_lt_of_le (under x mem) le) (fr.push (corr.below fresh) le id sized)
     (bindLocal_fresh fresh id v) (Nat.le_trans le (Nat.le_succ _)) hc (fc.keeps (bindLocal_keeps le id v) under)
     under within fails
 
 theorem stops_nop : SrcStops sp mp n .nop := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   have := fails 1
   simp only [SrcStmt.toCore, execStmt, Failing] at this
   exact absurd within (Nat.not_le.mpr this)
 
-theorem stops_then (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
+theorem stops_then (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     {first second : SrcStmt} (ih1 : SrcStops sp mp n first) (ih2 : SrcStops sp mp n second) :
     SrcStops sp mp n (.then first second) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower, lowerThen] at ok
   split at ok
   · simp at ok
@@ -1172,10 +1250,10 @@ theorem stops_then (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = som
   · obtain ⟨d, stops⟩ := ih1 firstOk corr fr fresh le hc fc under within (fails.seqFirst done)
     exact ⟨d, .seqFirst stops⟩
 
-theorem stops_if (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
+theorem stops_if (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     {condition : SrcExpr} {thenBranch elseBranch : SrcStmt} (ih1 : SrcStops sp mp n thenBranch)
     (ih2 : SrcStops sp mp n elseBranch) : SrcStops sp mp n (.if condition thenBranch elseBranch) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower] at ok
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
@@ -1204,10 +1282,10 @@ theorem stops_if (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some 
     obtain ⟨d, stops⟩ := ih2 elseOk corr fr fresh le hc fc under within branch
     exact ⟨d, .ifFalse (by rw [bits]; decide) stops⟩
 
-theorem stops_while (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
+theorem stops_while (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     {condition : SrcExpr} {body : SrcStmt} (prev : StmtStops sp mp n) (ih : SrcStops sp mp (n + 1) body) :
     SrcStops sp mp (n + 1) (.while condition body) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   have whileOk := ok
   simp only [SrcStmt.lower, lowerWhile] at ok
   split at ok
@@ -1260,7 +1338,7 @@ theorem stops_while (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = so
 
 theorem stops_let {id : Nat} {ty : SrcType} {value : SrcExpr} {body : SrcStmt} (ih : SrcStops sp mp n body) :
     SrcStops sp mp n (.let id ty value body) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower] at ok
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
@@ -1283,7 +1361,7 @@ theorem stops_let {id : Nat} {ty : SrcType} {value : SrcExpr} {body : SrcStmt} (
   exact ⟨d, Stops.assignFrom xs next stops⟩
 
 theorem stops_return {value : SrcExpr} : SrcStops sp mp n (.return value) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower] at ok
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
@@ -1297,11 +1375,11 @@ theorem stops_return {value : SrcExpr} : SrcStops sp mp n (.return value) := by
   simp only [SrcStmt.toCore, execStmt, valueRun, Failing] at this
   exact absurd within (Nat.not_le.mpr this)
 
-theorem stops_letCall (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
+theorem stops_letCall (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     (returns : funcsReturn sp.funcs = true) (prev : StmtStops sp mp n) {id : Nat} {ty : SrcType}
     {callee : Nat} {args : List SrcExpr} {body : SrcStmt} (ih : SrcStops sp mp (n + 1) body) :
     SrcStops sp mp (n + 1) (.letCall id ty callee args body) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower] at ok
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
@@ -1334,7 +1412,7 @@ theorem stops_letCall (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = 
 
 
 theorem stops_set {id : Nat} {value : SrcExpr} : SrcStops sp mp n (.set id value) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower] at ok
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
@@ -1352,10 +1430,10 @@ theorem stops_set {id : Nat} {value : SrcExpr} : SrcStops sp mp n (.set id value
   simp only [SrcStmt.toCore] at fails
   exact (fails.assign_done corr found valueRun fresh.2 (by rw [entry]; rfl) within).elim
 
-theorem stops_setCall (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
+theorem stops_setCall (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     (returns : funcsReturn sp.funcs = true) (prev : StmtStops sp mp n) {id callee : Nat}
     {args : List SrcExpr} : SrcStops sp mp (n + 1) (.setCall id callee args) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower] at ok
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
@@ -1386,7 +1464,7 @@ theorem stops_setCall (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = 
 
 
 theorem stops_setField {id index : Nat} {value : SrcExpr} : SrcStops sp mp n (.setField id index value) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower] at ok
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
@@ -1436,7 +1514,7 @@ theorem stops_setField {id index : Nat} {value : SrcExpr} : SrcStops sp mp n (.s
 
 theorem stops_letStruct {id : Nat} {ty : SrcType} {fields : List SrcExpr} {body : SrcStmt}
     (ih : SrcStops sp mp n body) : SrcStops sp mp n (.letStruct id ty fields body) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower] at ok
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
@@ -1510,7 +1588,7 @@ theorem stops_letStruct {id : Nat} {ty : SrcType} {fields : List SrcExpr} {body 
 
 theorem stops_letEnum {id : Nat} {ty : SrcType} {variant : Nat} {payload : List SrcExpr} {body : SrcStmt}
     (ih : SrcStops sp mp n body) : SrcStops sp mp n (.letEnum id ty variant payload body) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower] at ok
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
@@ -1579,7 +1657,7 @@ theorem stops_letEnum {id : Nat} {ty : SrcType} {variant : Nat} {payload : List 
 
 theorem stops_letMatch {id : Nat} {ty : SrcType} {scrutinee enumId : Nat} {arms : List SrcArm} {body : SrcStmt}
     (ih : SrcStops sp mp n body) : SrcStops sp mp n (.letMatch id ty scrutinee enumId arms body) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower, lowerThen] at ok
   split at ok
   · simp at ok
@@ -1640,7 +1718,7 @@ theorem stops_letMatch {id : Nat} {ty : SrcType} {scrutinee enumId : Nat} {arms 
   | @enum _ _ kv fs vs _ _ fsFound tag payload =>
   have kvLt : kv < variants.length := (List.getElem?_eq_some_iff.mp fsFound).1
   have kvBound : kv < 2 ^ 64 := Nat.lt_trans kvLt (by omega)
-  rcases lowerArms_progress (mp := mp) (hp := hp) (n := n) (eid := eid) (SrcProgram.target_toCore sp) corr fresh arms
+  rcases lowerArms_progress (mp := mp) (hp := hp) (n := n) (eid := eid) (SrcProgram.target_toCore sp) corr fresh (fc.below fresh) arms
       matchOk len clear (Nat.zero_le _) (by simpa using fsFound) kvBound tag payload with
     ⟨d, stops⟩ | ⟨f, v, st1, armsRun⟩
   · exact ⟨d, .seqFirst stops⟩
@@ -1658,9 +1736,9 @@ theorem stops_letMatch {id : Nat} {ty : SrcType} {scrutinee enumId : Nat} {arms 
       simp only [lr]
       exact armsRun
     obtain ⟨fresh1, keeps1, locals1, xs, flat, insens, mexec⟩ :=
-      lowerArms_sound (mp := mp) (hp := hp) (SrcProgram.target_toCore sp) corr fresh fr.slots arms matchOk len
+      lowerArms_sound (mp := mp) (hp := hp) (SrcProgram.target_toCore sp) corr fresh (fc.below fresh) fr.slots arms matchOk len
         clear room (Nat.zero_le _) (by simpa using fsFound) kvBound tag payload armsRun
-    have corr1 := corr.keeps fresh keeps1 locals1
+    have corr1 := corr.keeps fresh keeps1.any locals1
     have heap1 := (matchArms_same arms eid 0 armsRun).1
     have hc1 : HeapCorr st1.heap st1.world hp := by rw [heap1, matchArms_world arms eid 0 armsRun]; exact hc
     simp only [SrcStmt.toCore] at fails
@@ -1672,14 +1750,14 @@ theorem stops_letMatch {id : Nat} {ty : SrcType} {scrutinee enumId : Nat} {arms 
 
 /-- `Unreachable`: `1 / 0`, which has no step. -/
 theorem stops_unreachable {id : Nat} {ty : SrcType} : SrcStops sp mp n (.unreachable id ty) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   obtain ⟨-, rfl⟩ := unreachable_lower_inv ok
   exact ⟨0, .divide (by simp [Expr.eval, Word.divides, DivOp.defined])⟩
 
 theorem stops_matchArm {scrutinee enumId variant binder : Nat} {binds : Bool} {ty : SrcType} {body rest : SrcStmt}
     (ih1 : SrcStops sp mp n body) (ih2 : SrcStops sp mp n rest) :
     SrcStops sp mp n (.matchArm scrutinee enumId variant binds binder ty body rest) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   obtain ⟨b, variants, fields, vs, bstmt, rstmt, found, hty, fieldsFound, few, payloadOk, bodyOk, restOk, rfl⟩ :=
     matchArm_lower_inv ok
   have bmem := (lookup_mem found).1
@@ -1720,7 +1798,7 @@ theorem stops_matchArm {scrutinee enumId variant binder : Nat} {binds : Bool} {t
     rcases shape with ⟨u, rfl, _⟩ | ⟨u, _, s', scopeOk, _⟩
     · cases payload
       simp [u, Semantics.matchPatterns]
-    · obtain ⟨_, _, _, _, blen⟩ := armScope_corr [binder] scopeOk payload clear corr fresh
+    · obtain ⟨_, _, _, _, blen⟩ := armScope_corr [binder] scopeOk payload clear corr fresh (fc.below fresh)
       rcases pvs with _ | ⟨pv, _ | ⟨pv', more⟩⟩
       · simp at blen
       · simp [u, Semantics.matchPatterns, Semantics.matchPattern]
@@ -1757,7 +1835,7 @@ theorem stops_matchArm {scrutinee enumId variant binder : Nat} {binds : Bool} {t
     · simp only [u, ↓reduceIte] at hthen
       subst hthen
       simp only [armBodyScope, u, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at bodyOk
-      obtain ⟨frame', corr', fresh', keeps', blen⟩ := armScope_corr [binder] scopeOk payload clear corr fresh
+      obtain ⟨frame', corr', fresh', keeps', blen⟩ := armScope_corr [binder] scopeOk payload clear corr fresh (fc.below fresh)
       obtain ⟨pv, rfl⟩ : ∃ pv, pvs = [pv] := by
         rcases pvs with _ | ⟨pv, _ | ⟨pv', more⟩⟩
         · simp at blen
@@ -1770,8 +1848,8 @@ theorem stops_matchArm {scrutinee enumId variant binder : Nat} {binds : Bool} {t
       have fails' := branch.letBody initRun
       have slots' := armScope_slots [binder] scopeOk fr.slots room
       have insens : Insens vs next := Insens.below fun x mem => vshape.below slots' x mem
-      have keeps1 := keeps'.trans (restore_keeps st.nextCell st _)
-      have corr1 := corr.keeps fresh keeps1 rfl
+      have keeps1 : Keeps [] st.nextCell st _ := keeps'.trans (restore_keeps st.nextCell st _)
+      have corr1 := corr.keeps fresh keeps1.any rfl
       obtain ⟨d, stops⟩ := let_stops ih1 bodyOk corr1 fr (restore_fresh fresh') (Nat.le_trans le keeps1.next)
         sized (env' := env.setFrom next vs) (fr.agree fun j below => setFrom_outside vs next env j (.inl below))
         (flat.store insens) (by rw [restore_heap, (bindLocals_same _ st).1]; exact hc) (fc.after fresh keeps1) under
@@ -1788,7 +1866,7 @@ theorem stops_matchArm {scrutinee enumId variant binder : Nat} {binds : Bool} {t
 
 theorem stops_letAlloc {id shift : Nat} {size : SrcExpr} {body : SrcStmt} (ih : SrcStops sp mp n body) :
     SrcStops sp mp n (.letAlloc id size shift body) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower] at ok
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
@@ -1835,7 +1913,7 @@ theorem stops_letAlloc {id shift : Nat} {size : SrcExpr} {body : SrcStmt} (ih : 
         (.ptr (by
           simp only [SrcType.Holds, Env.set, if_pos, Value.pointer.injEq, BitVec.toNat_ofNat]
           exact (Nat.mod_eq_of_lt (by omega)).symm))
-        hc' (fc.congr (fun _ _ => rfl) (fun _ _ _ _ => rfl) (Nat.le_refl _) rfl rfl) under fits (fails.letBody valueRun)
+        hc' (fc.congr (fun _ _ => rfl) (fun _ _ _ _ => rfl) rfl rfl rfl) under fits (fails.letBody valueRun)
       have step := Exec.alloc (prog := mp) (depth := 0) (env := env) (target := next) room
       rw [atLeastOne_eval] at step
       exact ⟨_, Stops.after step stops⟩
@@ -1847,7 +1925,7 @@ theorem stops_letAlloc {id shift : Nat} {size : SrcExpr} {body : SrcStmt} (ih : 
 
 theorem stops_letLoad {id : Nat} {pointer offset : SrcExpr} {body : SrcStmt} (ih : SrcStops sp mp n body) :
     SrcStops sp mp n (.letLoad id pointer offset body) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower] at ok
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
@@ -1857,7 +1935,7 @@ theorem stops_letLoad {id : Nat} {pointer offset : SrcExpr} {body : SrcStmt} (ih
   cases oOk : lowerAs scope offset (.uint .usize) with
   | none => simp [pOk, oOk, lowerAddress, lowerLoad] at ok
   | some xo =>
-  cases bodyOk : body.lower (sigs sp.funcs) sp.decls ret (⟨id, next, .uint .uint8⟩ :: scope) (next + 1) with
+  cases bodyOk : body.lower (sp.sigsAt bud) sp.decls ret (⟨id, next, .uint .uint8⟩ :: scope) (next + 1) with
   | none => simp [pOk, oOk, bodyOk, lowerAddress, lowerLoad] at ok
   | some bstmt =>
   simp only [pOk, oOk, bodyOk, lowerAddress, lowerLoad, Option.some.injEq] at ok
@@ -1906,7 +1984,7 @@ theorem stops_letLoad {id : Nat} {pointer offset : SrcExpr} {body : SrcStmt} (ih
     exact ⟨_, Stops.after (.loadByte (depth := 0) (Nat.lt_of_lt_of_le room hc.topped)) stops⟩
 
 theorem stops_setByte {pointer offset value : SrcExpr} : SrcStops sp mp n (.setByte pointer offset value) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower] at ok
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
@@ -1947,7 +2025,7 @@ theorem stops_setByte {pointer offset value : SrcExpr} : SrcStops sp mp n (.setB
     exact absurd within (Nat.not_le.mpr this)
 
 theorem stops_free {pointer size : SrcExpr} {shift : Nat} : SrcStops sp mp n (.free pointer size shift) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower] at ok
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
@@ -1989,7 +2067,7 @@ theorem stops_free {pointer size : SrcExpr} {shift : Nat} : SrcStops sp mp n (.f
 
 theorem stops_letSlice {id : Nat} {element : SrcType} {pointer length : SrcExpr} {body : SrcStmt}
     (ih : SrcStops sp mp n body) : SrcStops sp mp n (.letSlice id element pointer length body) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower] at ok
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
@@ -2076,9 +2154,9 @@ theorem stops_letIndex_i32 {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcE
     (tyI32 : ty.isI32 = true) (ih : SrcStops sp mp n body) {hp : Heap} {ret : SrcType} {scope : List Binding} {next : Nat} {stmt : Stmt}
     {frame : Nat → Nat} {base : Nat} {st : State} {env : Env}
     (ok : lowerLoadWord next (lowerElement (lookup scope slice) ty (lowerIndex scope index))
-      (body.lower (sigs sp.funcs) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size)) = some stmt)
+      (body.lower (sp.sigsAt bud) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size)) = some stmt)
     (corr : Corr places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr places st hp)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
     (under : ∀ x ∈ places, x.cell < base) (within : st.heap.nextAddress ≤ hp.limit)
     (fails : Fails sp hp.limit st (SrcStmt.letIndex id ty slice index body).toCore) :
     ∃ d, Stops mp d env hp (checkThen next (guardAnd (index.guard scope) (indexGuard scope slice index)) stmt) n := by
@@ -2180,6 +2258,52 @@ theorem stops_letIndex_i32 {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcE
   · have := fails (fi + 2 + 1)
     simp only [execStmt, trapRun, Failing] at this
     exact (trap_within this undefined within).elim
+  | @borrowed _ len x _ _ mem sliced root xty _ pointerSlot lenSlot lenSmall =>
+  obtain ⟨fi, iv, indexRun⟩ := index.progress corr (SrcProgram.target_toCore sp) indexLowered gi
+  obtain ⟨-, holdsI⟩ := index.lower_sound corr (SrcProgram.target_toCore sp) indexLowered indexRun
+  have inBounds := indexGuard_ne found (x := t.expr) (by simp [lowerIndex, indexLowered, indexOf, kind]) gb
+  rw [lenSlot] at inBounds
+  have posOk := index_ok kind holdsI (by omega)
+  obtain ⟨w', localRun, -⟩ := corr.local found fi sp.toCore
+  have same' := value_after localRun0 (Nat.le_add_left 1 fi)
+  rw [localRun] at same'
+  simp only [Semantics.Outcome.done.injEq] at same'
+  obtain ⟨rfl, -⟩ := same'
+  have indexRun' := value_after indexRun (Nat.le_succ fi)
+  simp only [SrcStmt.toCore] at fails
+  obtain ⟨elems, values, elemsLen⟩ := fc.borrowed_values mem root xty
+  obtain ⟨v, valueRun, got⟩ := index_outcome_safe localRun indexRun' posOk inBounds values elemsLen
+  obtain ⟨-, elementHolds⟩ := fc.borrowed_get mem root xty values got
+  have blk := fc.block mem
+
+  cases elementHolds with
+  | i32 vHolds =>
+  simp only [SrcType.size, Nat.mul_one] at vHolds
+  rw [Addressed.view_i32 sliced xty, Addressed.pointer_i32 xty] at vHolds
+  have sz := Addressed.size_i32 xty
+  have ptr : (env b.slot).toNat = x.address := by rw [pointerSlot, Addressed.pointer_i32 xty]
+  have address : ((Expr.binary Word.u64 BinOp.add (Expr.var b.slot)
+      (Expr.binary Word.u64 BinOp.mul t.expr (Expr.lit 4))).eval env).toNat =
+      x.address + (t.expr.eval env).toNat * 4 := by
+    have four : (4 : BitVec 64).toNat = 4 := rfl
+    simp only [Expr.eval, Word.apply, BinOp.apply, BitVec.toNat_add, BitVec.toNat_mul, four, ptr]
+    rw [Nat.mod_eq_of_lt (a := (t.expr.eval env).toNat * 4) (by omega), Nat.mod_eq_of_lt (by omega)]
+  have room : ((Expr.binary Word.u64 BinOp.add (Expr.var b.slot)
+      (Expr.binary Word.u64 BinOp.mul t.expr (Expr.lit 4))).eval env).toNat + MemWidth.m32.bytes ≤
+      hp.top := by
+    rw [address]; simp only [MemWidth.bytes]; omega
+  obtain ⟨d, stops⟩ := let_stops ih (ty := .i32)
+      (env' := env.set next (BitVec.ofNat 64 (hp.readLE ((Expr.binary Word.u64 BinOp.add
+        (Expr.var b.slot) (Expr.binary Word.u64 BinOp.mul t.expr (Expr.lit 4))).eval env).toNat
+        MemWidth.m32.bytes)))
+      (hp := hp) (by simpa [SrcType.size] using bodyOk) corr fr fresh le (by simp [SrcType.size])
+      (fr.agree fun j below => by simp only [Env.set]; rw [if_neg (by omega)])
+      (.i32 (by
+        simp only [Env.set, if_pos, address, MemWidth.bytes]
+        rw [Nat.mul_comm _ 4]
+        exact vHolds))
+      hc fc under within (fails.letBody valueRun)
+  exact ⟨_, Stops.after (.loadWord (depth := 0) room) stops⟩
 
 /-- A failing `let x: u8 = slice[index]` of a byte view stops in the body. -/
 theorem stops_letIndex_u8 {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcExpr} {body : SrcStmt}
@@ -2187,9 +2311,9 @@ theorem stops_letIndex_u8 {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcEx
     {scope : List Binding} {next : Nat} {stmt : Stmt}
     {frame : Nat → Nat} {base : Nat} {st : State} {env : Env}
     (ok : lowerLoad next (lowerElement (lookup scope slice) ty (lowerIndex scope index))
-      (body.lower (sigs sp.funcs) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size)) = some stmt)
+      (body.lower (sp.sigsAt bud) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size)) = some stmt)
     (corr : Corr places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr places st hp)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
     (under : ∀ x ∈ places, x.cell < base) (within : st.heap.nextAddress ≤ hp.limit)
     (fails : Fails sp hp.limit st (SrcStmt.letIndex id ty slice index body).toCore) :
     ∃ d, Stops mp d env hp (checkThen next (guardAnd (index.guard scope) (indexGuard scope slice index)) stmt) n := by
@@ -2283,14 +2407,54 @@ theorem stops_letIndex_u8 {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcEx
   · have := fails (fi + 2 + 1)
     simp only [execStmt, trapRun, Failing] at this
     exact (trap_within this undefined within).elim
+  | @borrowed _ len x _ _ mem sliced root xty _ pointerSlot lenSlot lenSmall =>
+  obtain ⟨fi, iv, indexRun⟩ := index.progress corr (SrcProgram.target_toCore sp) indexLowered gi
+  obtain ⟨-, holdsI⟩ := index.lower_sound corr (SrcProgram.target_toCore sp) indexLowered indexRun
+  have inBounds := indexGuard_ne found (x := t.expr) (by simp [lowerIndex, indexLowered, indexOf, kind]) gb
+  rw [lenSlot] at inBounds
+  have posOk := index_ok kind holdsI (by omega)
+  obtain ⟨w', localRun, -⟩ := corr.local found fi sp.toCore
+  have same' := value_after localRun0 (Nat.le_add_left 1 fi)
+  rw [localRun] at same'
+  simp only [Semantics.Outcome.done.injEq] at same'
+  obtain ⟨rfl, -⟩ := same'
+  have indexRun' := value_after indexRun (Nat.le_succ fi)
+  simp only [SrcStmt.toCore] at fails
+  obtain ⟨elems, values, elemsLen⟩ := fc.borrowed_values mem root xty
+  obtain ⟨v, valueRun, got⟩ := index_outcome_safe localRun indexRun' posOk inBounds values elemsLen
+  obtain ⟨-, elementHolds⟩ := fc.borrowed_get mem root xty values got
+  have blk := fc.block mem
+
+  cases elementHolds with
+  | uint vHolds =>
+  simp only [SrcType.size, Nat.mul_one] at vHolds
+  rw [Addressed.view_u8 sliced xty, Addressed.pointer_u8 xty] at vHolds
+  have sz := Addressed.size_u8 xty
+  have ptr : (env b.slot).toNat = x.address := by rw [pointerSlot, Addressed.pointer_u8 xty]
+  have address : ((Expr.binary Word.u64 BinOp.add (Expr.var b.slot) t.expr).eval env).toNat =
+      x.address + (t.expr.eval env).toNat := by
+    simp only [Expr.eval, Word.apply, BinOp.apply, BitVec.toNat_add, ptr]
+    rw [Nat.mod_eq_of_lt (by omega)]
+  have room : ((Expr.binary Word.u64 BinOp.add (Expr.var b.slot) t.expr).eval env).toNat < hp.top := by
+    rw [address]; omega
+  obtain ⟨d, stops⟩ := let_stops ih (ty := .uint .uint8)
+      (env' := env.set next (BitVec.ofNat 64 (hp.bytes
+        ((Expr.binary Word.u64 BinOp.add (Expr.var b.slot) t.expr).eval env).toNat).toNat))
+      (hp := hp) (by simpa [SrcType.size] using bodyOk) corr fr fresh le Nat.one_pos
+      (fr.agree fun j below => by simp only [Env.set]; rw [if_neg (by omega)])
+      (.uint (by
+        simp only [Env.set, ↓reduceIte, address]
+        simpa [Heap.readLE] using vHolds))
+      hc fc under within (fails.letBody valueRun)
+  exact ⟨_, Stops.after (.loadByte (depth := 0) room) stops⟩
 
 theorem stops_letIndex_word {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcExpr} {body : SrcStmt}
     (ih : SrcStops sp mp n body) {hp : Heap} {ret : SrcType} {scope : List Binding} {next : Nat} {stmt : Stmt}
     {frame : Nat → Nat} {base : Nat} {st : State} {env : Env}
     (ok : lowerLoadType sp.decls next (lookup scope slice) ty (lowerIndex scope index)
-      (body.lower (sigs sp.funcs) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size)) = some stmt)
+      (body.lower (sp.sigsAt bud) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size)) = some stmt)
     (corr : Corr places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr places st hp)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
     (under : ∀ x ∈ places, x.cell < base) (within : st.heap.nextAddress ≤ hp.limit)
     (fails : Fails sp hp.limit st (SrcStmt.letIndex id ty slice index body).toCore) :
     ∃ d, Stops mp d env hp (checkThen next (guardAnd (index.guard scope) (indexGuard scope slice index)) stmt) n := by
@@ -2360,11 +2524,13 @@ theorem stops_letIndex_word {id : Nat} {ty : SrcType} {slice : Nat} {index : Src
   · have := fails (fi + 2 + 1)
     simp only [execStmt, trapRun, Failing] at this
     exact (trap_within this undefined within).elim
+  | @borrowed _ _ _ _ _ _ _ _ _ packed _ _ _ =>
+  rcases packed with rfl | rfl <;> simp [wordElement, SrcType.isUint, UintTy.code] at hel
 
 theorem stops_letIndex {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcExpr} {body : SrcStmt}
     (ih : SrcStops sp mp n body) (arrayCase : SrcStops sp mp n (.letEval id ty (.eIndex slice (.ePure index)) body)) :
     SrcStops sp mp n (.letIndex id ty slice index body) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower, lowerLetIndexAny] at ok
   split at ok
   case isTrue =>
@@ -2383,7 +2549,8 @@ theorem stops_letIndex {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcExpr}
 
 /-- A failing `slice[index] = value` whose operands are checked is impossible. -/
 theorem setIndex_fails {scope : List Binding} {frame : Nat → Nat} {st : State} {env : Env} {hp : Heap}
-    (corr : Corr places scope frame st env) (fresh : st.Fresh) (within : st.heap.nextAddress ≤ hp.limit)
+    (corr : Corr places scope frame st env) (fresh : st.Fresh) (fc : FrameCorr bud places st hp)
+    (within : st.heap.nextAddress ≤ hp.limit)
     {slice : Nat} {b : Binding} (found : lookup scope slice = some b) {element : SrcType}
     (bty : b.ty = .slice element) {index value : SrcExpr} {x : Expr} (indexOk : lowerIndex scope index = some x)
     (gi : (index.guard scope).eval env ≠ 0) (gb : (indexGuard scope slice index).eval env ≠ 0)
@@ -2419,11 +2586,22 @@ theorem setIndex_fails {scope : List Binding} {frame : Nat → Nat} {st : State}
   · have := fails (max fi fv + 3 + 1)
     simp only [execStmt, run, Failing] at this
     exact (trap_within this undefined within).elim
+  | @borrowed _ len x _ _ mem sliced root xty _ pointerSlot lenSlot lenSmall =>
+  have inBounds := indexGuard_ne found indexOk' gb
+  rw [lenSlot] at inBounds
+  have posOk := index_ok kind holdsI (by omega)
+  have indexRun' := value_after indexRun (show fi ≤ max fi fv + 1 by omega)
+  have valueRun' := value_after valueRun (show fv ≤ max fi fv + 2 by omega)
+  simp only [SrcStmt.toCore] at fails
+  obtain ⟨vs, read, vsLen, -⟩ := fc.array mem root xty
+  obtain ⟨st', run, keeps⟩ := setIndex_outcome_safe fresh.2 place indexRun' posOk inBounds valueRun' read vsLen
+  exact fails.not_done (k := max fi fv + 3 + 1) (c := .next) (st' := st') (by simp only [execStmt, run])
+    (by rw [keeps]; exact within)
 
 theorem stops_setIndex {slice : Nat} {index value : SrcExpr}
     (arrayCase : SrcStops sp mp n (.setIndexEval slice (.ePure index) (.ePure value))) :
     SrcStops sp mp n (.setIndex slice index value) := by
-  intro places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
   simp only [SrcStmt.lower, lowerSetIndexAny] at ok
   split at ok
   case isTrue =>
@@ -2457,7 +2635,7 @@ theorem stops_setIndex {slice : Nat} {index value : SrcExpr}
     split at addrOk
     · simp at addrOk
     rename_i i indexOk
-    exact setIndex_fails corr fresh within found bty indexOk gi gb
+    exact setIndex_fails corr fresh fc within found bty indexOk gi gb
       (lowerAs_progress corr (SrcProgram.target_toCore sp) vOk gv) fails
   · split at ok
     · unfold storeByteElement at ok
@@ -2471,7 +2649,7 @@ theorem stops_setIndex {slice : Nat} {index value : SrcExpr}
       split at addrOk
       · simp at addrOk
       rename_i i indexOk
-      exact setIndex_fails corr fresh within found bty indexOk gi gb
+      exact setIndex_fails corr fresh fc within found bty indexOk gi gb
         (lowerAs_progress corr (SrcProgram.target_toCore sp) vOk gv) fails
     split at ok
     · unfold storeWordElement at ok
@@ -2481,7 +2659,7 @@ theorem stops_setIndex {slice : Nat} {index value : SrcExpr}
       split at ok
       · simp at ok
       rename_i vs vOk
-      exact setIndex_fails corr fresh within found bty indexOk gi gb
+      exact setIndex_fails corr fresh fc within found bty indexOk gi gb
         (lowerValue_progress corr (SrcProgram.target_toCore sp) vOk gv) fails
     · simp at ok
 
