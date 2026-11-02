@@ -18,72 +18,26 @@ pub fn default_options() -> Options { return Options { lines: true, count: 10, e
 // Status of one input: 0, 1 (read error) or 2 (write error).
 const CHUNK: i32 = 262144;
 
-// Bytes [0, k) of the chunk at p hold `want` more eol bytes at most: the
-// length up to and including the want-th eol, or -1 when there are fewer
-// (then want drops by the number seen; returned in `left`).
-struct Scan { cut: i32, left: u64 }
-fn th_scan(p: ptr, k: i32, eol: u8, want: u64) -> Scan {
-    let view: core::slice::View<u8> = core::slice::View { values: core::mem::typed_slice_from_raw_parts<u8>(p, k), start: 0, length: k };
-    let w: ext::text_lines::Words = core::result::unwrap(ext::text_lines::words(view));
-    let ws: [u64] = w.words; let nw: i32 = w.nw; let low: u64 = ext::text_lines::LOW7; let all: u64 = ext::text_lines::ALL;
-    let ranks: u64 = ext::text_lines::RANKS; let pe: u64 = (eol as u64) * ext::text_lines::ONES;
-    let left: u64 = want; let q: i32 = 0;
-    while (q <= nw) {
-        let x: u64 = w.tail; if (q < nw) { x = ws[nw-1-q]; }
-        let xe: u64 = x ^ pe; let m: u64 = (((xe & low) + low) | xe | low) ^ all;
-        while (m != 0) {
-            let bit: u64 = m & (0 - m); m = m ^ bit;
-            let pos: i32 = q * 8 + ((((bit >> 7) * ranks) >> 56) as i32) - 1;
-            if (pos >= k) { break; }
-            left -= 1;
-            if (left == 0) { w.destroy(); return Scan { cut: pos + 1, left: 0 }; }
-        }
-        q += 1;
-    }
-    w.destroy();
-    return Scan { cut: -1, left: left };
-}
-
-// The number of eol bytes among the k bytes at p.
-fn th_count(p: ptr, k: i32, eol: u8) -> u64 {
-    let view: core::slice::View<u8> = core::slice::View { values: core::mem::typed_slice_from_raw_parts<u8>(p, k), start: 0, length: k };
-    let w: ext::text_lines::Words = core::result::unwrap(ext::text_lines::words(view));
-    let ws: [u64] = w.words; let nw: i32 = w.nw; let low: u64 = ext::text_lines::LOW7; let all: u64 = ext::text_lines::ALL;
-    let ones: u64 = ext::text_lines::ONES; let pe: u64 = (eol as u64) * ones;
-    let total: u64 = 0; let q: i32 = 0;
-    while (q < nw) {
-        let xe: u64 = ws[nw-1-q] ^ pe; let m: u64 = (((xe & low) + low) | xe | low) ^ all;
-        total += ((m >> 7) * ones) >> 56;
-        q += 1;
-    }
-    let j: i32 = nw * 8; let b: [u8] = w.values;
-    while (j < k) { if (b[j] == eol) { total += 1; } j += 1; }
-    w.destroy();
-    return total;
-}
-
 // Copy the first o.count lines or bytes of fd to standard output. Like
 // GNU head, a regular file is left positioned just past the last byte
 // copied (the rest of the last chunk read is given back with lseek), so a
 // later "-" operand on the same standard input continues from there.
 pub fn leading(fd: i32, o: Options) -> i32 {
     if (o.count == 0) { return 0; }
-    return th_copy(fd, o.count, o.lines, o.eol);
+    if (!o.lines) { return ext::text_lines::copy_bytes(fd, o.count); }
+    return th_lines(fd, o.count, o.eol);
 }
-fn th_copy(fd: i32, count: u64, lines: bool, eol: u8) -> i32 {
+fn th_lines(fd: i32, count: u64, eol: u8) -> i32 {
     let mem: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(CHUNK + 16));
     let p: ptr = core::result::unwrap(mem.reserve_raw(CHUNK + 16));
     let left: u64 = count; let status: i32 = 0;
     while (left > 0) {
-        let room: i32 = CHUNK; if (!lines && left < (room as u64)) { room = left as i32; }
-        let got: i32 = ext::text_lines::read_some(fd, p, room);
+        let got: i32 = ext::text_lines::read_some(fd, p, CHUNK);
         if (got < 0) { status = 1; break; }
         if (got == 0) { break; }
         let take: i32 = got;
-        if (lines) {
-            let c: u64 = th_count(p, got, eol);
-            if (c < left) { left -= c; } else { take = th_scan(p, got, eol, left).cut; left = 0; }
-        } else { left -= got as u64; }
+        let c: u64 = ext::text_lines::count_byte(p, got, eol);
+        if (c < left) { left -= c; } else { take = ext::text_lines::nth_byte(p, got, eol, left); left = 0; }
         if (!ext::text_lines::write_all(1, p, take)) { status = 2; break; }
         if (take < got) { let back: i64 = ext::text_lines::seek(fd, (take - got) as i64, 1); }
     }
@@ -106,7 +60,7 @@ pub fn eliding(fd: i32, o: Options) -> i32 {
         let rest: u64 = (st.size - at) as u64;
         if (!o.lines) {
             if (rest <= o.count) { return 0; }
-            return th_copy(fd, rest - o.count, false, o.eol);
+            return ext::text_lines::copy_bytes(fd, rest - o.count);
         }
         return th_elide_seekable(fd, o.count, at, st.size, o.eol);
     }
@@ -148,13 +102,13 @@ fn th_elide_seekable(fd: i32, count: u64, start: i64, size: i64, eol: u8) -> i32
         let k: i32 = -1;
         if (all) { k = got - 1; }
         else {
-            let c: u64 = th_count(p, got, eol);
-            if (c > n) { k = th_scan(p, got, eol, c - n).cut - 1; } else { n -= c; }
+            let c: u64 = ext::text_lines::count_byte(p, got, eol);
+            if (c > n) { k = ext::text_lines::nth_byte(p, got, eol, c - n) - 1; } else { n -= c; }
         }
         if (k >= 0) {
             if (start < pos) {
                 if (ext::text_lines::seek(fd, start, 0) < 0) { mem.destroy(); return 1; }
-                status = th_copy(fd, (pos - start) as u64, false, eol);
+                status = ext::text_lines::copy_bytes(fd, (pos - start) as u64);
                 if (status != 0) { mem.destroy(); return status; }
             }
             if (!ext::text_lines::write_all(1, p, k + 1)) { status = 2; }

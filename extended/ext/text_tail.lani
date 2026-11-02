@@ -1,0 +1,159 @@
+// GNU `tail` without following, under LC_ALL=C: the last N lines or bytes
+// of an input, or everything from line or byte N on (+N). Lines end with
+// `eol` (LF, or NUL for -z), and a final line without one still counts.
+// Regular files are read from the end; other inputs are held in memory.
+// Every path leaves a regular file's offset at its end, as GNU's does.
+// See docs/extended-textutils.md.
+module ext::text_tail;
+import alloc::io;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::text_lines;
+
+// count is as given: with from_start, +0 and +1 both mean the whole input.
+// pipe treats every input as a pipe (GNU's ---presume-input-pipe).
+pub struct Options { lines: bool, count: u64, from_start: bool, eol: u8, pipe: bool }
+pub impl Options { pub fn borrow(&self) -> &Options { return self; } }
+pub fn default_options() -> Options { return Options { lines: true, count: 10, from_start: false, eol: 10, pipe: false }; }
+
+const CHUNK: i32 = 262144;
+const OFF_MAX: u64 = 9223372036854775807;
+
+// Copy the selected part of fd to standard output: 0, 1 (read error),
+// 2 (write error) or 3 (a regular file cannot seek to +N bytes, after which
+// GNU stops).
+pub fn copy(fd: i32, o: Options) -> i32 {
+    if (o.from_start) {
+        let skip: u64 = o.count; if (skip > 0) { skip -= 1; }
+        if (o.lines) { return tt_after_lines(fd, skip, o.eol); }
+        if (!o.pipe && skip <= OFF_MAX) {
+            // GNU gives up when a regular file cannot seek that far.
+            let st: ext::text_lines::Stat = ext::text_lines::stat(fd);
+            if (!st.ok) { return 1; }
+            if (ext::text_lines::seek(fd, skip as i64, 1) >= 0) { return ext::text_lines::copy_bytes(fd, ext::text_lines::ALL); }
+            if (st.regular) { return 3; }
+        }
+        return tt_after_bytes(fd, skip);
+    }
+    if (o.count == 0) { return 0; }
+    let st: ext::text_lines::Stat = ext::text_lines::stat(fd);
+    if (!st.ok) { return 1; }
+    if (!o.lines) {
+        let end: i64 = -1;
+        if (!o.pipe && o.count <= OFF_MAX && st.regular) { end = st.size; }
+        if (end <= st.block) { return tt_held(fd, o); }
+        let at: i64 = ext::text_lines::seek(fd, 0, 1);
+        if (at < 0) { return 1; }
+        if (at < end && o.count < ((end - at) as u64)) {
+            if (ext::text_lines::seek(fd, end - (o.count as i64), 0) < 0) { return 1; }
+        }
+        return ext::text_lines::copy_bytes(fd, o.count);
+    }
+    if (!o.pipe && st.regular) {
+        let at: i64 = ext::text_lines::seek(fd, 0, 1);
+        if (at >= 0) {
+            let end: i64 = ext::text_lines::seek(fd, 0, 2);
+            if (at < end) { return tt_last_lines(fd, o.count, at, end, o.eol); }
+            if (ext::text_lines::seek(fd, at, 0) < 0) { return 1; }
+        }
+    }
+    return tt_held(fd, o);
+}
+
+// Skip `skip` lines, then copy the rest.
+fn tt_after_lines(fd: i32, skip: u64, eol: u8) -> i32 {
+    if (skip == 0) { return ext::text_lines::copy_bytes(fd, ext::text_lines::ALL); }
+    let mem: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(CHUNK + 16));
+    let p: ptr = core::result::unwrap(mem.reserve_raw(CHUNK + 16));
+    let left: u64 = skip;
+    while (true) {
+        let got: i32 = ext::text_lines::read_some(fd, p, CHUNK);
+        if (got < 0) { mem.destroy(); return 1; }
+        if (got == 0) { mem.destroy(); return 0; }
+        let c: u64 = ext::text_lines::count_byte(p, got, eol);
+        if (c >= left) {
+            let from: i32 = ext::text_lines::nth_byte(p, got, eol, left);
+            let ok: bool = ext::text_lines::write_all(1, p + (from as usize), got - from);
+            mem.destroy();
+            if (!ok) { return 2; }
+            return ext::text_lines::copy_bytes(fd, ext::text_lines::ALL);
+        }
+        left -= c;
+    }
+    mem.destroy();
+    return 0;
+}
+
+// Read and drop `skip` bytes, then copy the rest.
+fn tt_after_bytes(fd: i32, skip: u64) -> i32 {
+    let mem: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(CHUNK + 16));
+    let p: ptr = core::result::unwrap(mem.reserve_raw(CHUNK + 16));
+    let left: u64 = skip;
+    while (left > 0) {
+        let got: i32 = ext::text_lines::read_some(fd, p, CHUNK);
+        if (got < 0) { mem.destroy(); return 1; }
+        if (got == 0) { mem.destroy(); return 0; }
+        if ((got as u64) > left) {
+            let from: i32 = left as i32;
+            let ok: bool = ext::text_lines::write_all(1, p + (from as usize), got - from);
+            mem.destroy();
+            if (!ok) { return 2; }
+            return ext::text_lines::copy_bytes(fd, ext::text_lines::ALL);
+        }
+        left -= got as u64;
+    }
+    mem.destroy();
+    return ext::text_lines::copy_bytes(fd, ext::text_lines::ALL);
+}
+
+// The last `count` lines of the regular file region [start, end): scan back
+// from the end a block at a time, counting end bytes, then copy from the
+// line found to the end.
+fn tt_last_lines(fd: i32, count: u64, start: i64, end: i64, eol: u8) -> i32 {
+    let block: i32 = 65536;
+    let mem: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(block + 16));
+    let p: ptr = core::result::unwrap(mem.reserve_raw(block + 16));
+    let b: [u8] = core::mem::typed_slice_from_raw_parts<u8>(p, block);
+    let pos: i64 = end; let n: u64 = count; let first: bool = true; let from: i64 = start;
+    while (pos > start) {
+        let size: i32 = block; if (pos - start < (block as i64)) { size = (pos - start) as i32; }
+        pos -= size as i64;
+        if (ext::text_lines::seek(fd, pos, 0) < 0) { mem.destroy(); return 1; }
+        let got: i32 = ext::text_lines::read_some(fd, p, size);
+        if (got < 0) { mem.destroy(); return 1; }
+        if (got < size) { size = got; }
+        if (first) { first = false; if (size > 0 && b[size-1] != eol) { n -= 1; } }
+        let c: u64 = ext::text_lines::count_byte(p, size, eol);
+        if (c > n) { from = pos + (ext::text_lines::nth_byte(p, size, eol, c - n) as i64); break; }
+        n -= c;
+    }
+    mem.destroy();
+    if (ext::text_lines::seek(fd, from, 0) < 0) { return 1; }
+    return ext::text_lines::copy_bytes(fd, ext::text_lines::ALL);
+}
+
+// Read all of fd and write its last o.count lines or bytes.
+fn tt_held(fd: i32, o: Options) -> i32 {
+    let made: core::result::Result<alloc::io::Buffer, core::io::Error> = alloc::io::with_limit(2000000000);
+    if (core::result::is_err(made)) { return 1; }
+    let mem: alloc::io::Buffer = core::result::unwrap(made);
+    let status: i32 = 0;
+    if (!ext::text_lines::read_all(fd, mem.borrow())) { status = 1; }
+    let n: i32 = mem.len();
+    let p: ptr = core::mem::i32_slice_data_ptr(mem.as_bytes());
+    let from: i32 = 0;
+    if (o.lines) {
+        let ends: u64 = ext::text_lines::count_byte(p, n, o.eol);
+        let lines: u64 = ends;
+        let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(p, n + 1);
+        if (n > 0 && bytes[n-1] != o.eol) { lines += 1; }
+        if (lines > o.count) { from = ext::text_lines::nth_byte(p, n, o.eol, lines - o.count); }
+    } else {
+        if ((n as u64) > o.count) { from = n - (o.count as i32); }
+    }
+    if (n > from && !ext::text_lines::write_all(1, p + (from as usize), n - from)) { status = 2; }
+    mem.destroy();
+    return status;
+}

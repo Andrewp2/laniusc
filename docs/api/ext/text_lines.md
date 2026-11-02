@@ -12,7 +12,7 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 
 - [extended-textutils](../../extended-textutils.md)
 
-Declaration counts: constant: 6; enum: 1; field: 33; function: 25; impl: 4; method: 17; struct: 5; variant: 3.
+Declaration counts: constant: 6; enum: 1; field: 33; function: 28; impl: 4; method: 17; struct: 5; variant: 3.
 
 ## Declared imports
 
@@ -300,7 +300,7 @@ block: i64
 
 ### struct: Lines
 
-[Source line 400](../../../extended/ext/text_lines.lani#L400)
+[Source line 459](../../../extended/ext/text_lines.lani#L459)
 
 ```lanius
 pub struct Lines
@@ -308,7 +308,7 @@ pub struct Lines
 
 #### field: mem
 
-[Source line 400](../../../extended/ext/text_lines.lani#L400)
+[Source line 459](../../../extended/ext/text_lines.lani#L459)
 
 ```lanius
 mem: alloc::io::Buffer
@@ -316,7 +316,7 @@ mem: alloc::io::Buffer
 
 #### field: base
 
-[Source line 400](../../../extended/ext/text_lines.lani#L400)
+[Source line 459](../../../extended/ext/text_lines.lani#L459)
 
 ```lanius
 base: ptr
@@ -324,7 +324,7 @@ base: ptr
 
 #### field: cap
 
-[Source line 400](../../../extended/ext/text_lines.lani#L400)
+[Source line 459](../../../extended/ext/text_lines.lani#L459)
 
 ```lanius
 cap: i32
@@ -332,7 +332,7 @@ cap: i32
 
 #### field: have
 
-[Source line 400](../../../extended/ext/text_lines.lani#L400)
+[Source line 459](../../../extended/ext/text_lines.lani#L459)
 
 ```lanius
 have: i32
@@ -340,7 +340,7 @@ have: i32
 
 #### field: used
 
-[Source line 400](../../../extended/ext/text_lines.lani#L400)
+[Source line 459](../../../extended/ext/text_lines.lani#L459)
 
 ```lanius
 used: i32
@@ -348,7 +348,7 @@ used: i32
 
 #### field: fd
 
-[Source line 400](../../../extended/ext/text_lines.lani#L400)
+[Source line 459](../../../extended/ext/text_lines.lani#L459)
 
 ```lanius
 fd: i32
@@ -356,7 +356,7 @@ fd: i32
 
 #### field: done
 
-[Source line 400](../../../extended/ext/text_lines.lani#L400)
+[Source line 459](../../../extended/ext/text_lines.lani#L459)
 
 ```lanius
 done: bool
@@ -364,7 +364,7 @@ done: bool
 
 #### field: failed
 
-[Source line 400](../../../extended/ext/text_lines.lani#L400)
+[Source line 459](../../../extended/ext/text_lines.lani#L459)
 
 ```lanius
 failed: bool
@@ -590,9 +590,33 @@ pub fn read_all(fd: i32, buf: &alloc::io::Buffer) -> bool
 pub fn read_some(fd: i32, p: ptr, count: i32) -> i32
 ```
 
+### function: count_byte
+
+[Source line 363](../../../extended/ext/text_lines.lani#L363)
+
+```lanius
+pub fn count_byte(p: ptr, k: i32, b: u8) -> u64
+```
+
+### function: nth_byte
+
+[Source line 381](../../../extended/ext/text_lines.lani#L381)
+
+```lanius
+pub fn nth_byte(p: ptr, k: i32, b: u8, want: u64) -> i32
+```
+
+### function: copy_bytes
+
+[Source line 404](../../../extended/ext/text_lines.lani#L404)
+
+```lanius
+pub fn copy_bytes(fd: i32, count: u64) -> i32
+```
+
 ### function: byte_positions
 
-[Source line 365](../../../extended/ext/text_lines.lani#L365)
+[Source line 424](../../../extended/ext/text_lines.lani#L424)
 
 ```lanius
 pub fn byte_positions(w: &Words, a: u8, b: u8) -> core::result::Result<Starts, Error>
@@ -600,7 +624,7 @@ pub fn byte_positions(w: &Words, a: u8, b: u8) -> core::result::Result<Starts, E
 
 ### function: lines
 
-[Source line 416](../../../extended/ext/text_lines.lani#L416)
+[Source line 475](../../../extended/ext/text_lines.lani#L475)
 
 ```lanius
 pub fn lines(fd: i32, cap: i32) -> core::result::Result<Lines, Error>
@@ -608,7 +632,7 @@ pub fn lines(fd: i32, cap: i32) -> core::result::Result<Lines, Error>
 
 ### function: next_lines
 
-[Source line 424](../../../extended/ext/text_lines.lani#L424)
+[Source line 483](../../../extended/ext/text_lines.lani#L483)
 
 ```lanius
 pub fn next_lines(r: &Lines, eol: u8, whole: bool) -> core::slice::View<u8>
@@ -616,7 +640,7 @@ pub fn next_lines(r: &Lines, eol: u8, whole: bool) -> core::slice::View<u8>
 
 ### function: open_output
 
-[Source line 455](../../../extended/ext/text_lines.lani#L455)
+[Source line 514](../../../extended/ext/text_lines.lani#L514)
 
 ```lanius
 pub fn open_output(name: core::slice::View<u8>) -> i32
@@ -760,9 +784,9 @@ pub fn destroy(&self)
 pub fn total(&self) -> i64
 ```
 
-### impl at line 401
+### impl at line 460
 
-[Source line 401](../../../extended/ext/text_lines.lani#L401)
+[Source line 460](../../../extended/ext/text_lines.lani#L460)
 
 ```lanius
 pub impl Lines
@@ -770,7 +794,7 @@ pub impl Lines
 
 #### method: borrow
 
-[Source line 402](../../../extended/ext/text_lines.lani#L402)
+[Source line 461](../../../extended/ext/text_lines.lani#L461)
 
 ```lanius
 pub fn borrow(&self) -> &Lines
@@ -778,7 +802,7 @@ pub fn borrow(&self) -> &Lines
 
 #### method: finished
 
-[Source line 404](../../../extended/ext/text_lines.lani#L404)
+[Source line 463](../../../extended/ext/text_lines.lani#L463)
 
 ```lanius
 pub fn finished(&self) -> bool
@@ -786,7 +810,7 @@ pub fn finished(&self) -> bool
 
 #### method: destroy
 
-[Source line 405](../../../extended/ext/text_lines.lani#L405)
+[Source line 464](../../../extended/ext/text_lines.lani#L464)
 
 ```lanius
 pub fn destroy(&self)

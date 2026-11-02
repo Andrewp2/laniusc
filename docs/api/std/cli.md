@@ -372,7 +372,7 @@ pub fn command(name: core::slice::View<u8>, about: core::slice::View<u8>) -> Com
 
 ### function: kind_name
 
-[Source line 498](../../../stdlib/std/cli.lani#L498)
+[Source line 504](../../../stdlib/std/cli.lani#L504)
 
 ```lanius
 pub fn kind_name(kind: ErrorKind) -> core::slice::View<u8>
@@ -502,7 +502,7 @@ pub fn borrow(&self) -> &Command
 
 #### method: flag
 
-[Source line 136](../../../stdlib/std/cli.lani#L136)
+[Source line 142](../../../stdlib/std/cli.lani#L142)
 
 ```lanius
 pub fn flag(&self, id: i32, short: u8, long: core::slice::View<u8>, help: core::slice::View<u8>)
@@ -510,7 +510,7 @@ pub fn flag(&self, id: i32, short: u8, long: core::slice::View<u8>, help: core::
 
 #### method: option
 
-[Source line 139](../../../stdlib/std/cli.lani#L139)
+[Source line 145](../../../stdlib/std/cli.lani#L145)
 
 ```lanius
 pub fn option(&self, id: i32, short: u8, long: core::slice::View<u8>, value_name: core::slice::View<u8>, help: core::slice::View<u8>)
@@ -518,7 +518,7 @@ pub fn option(&self, id: i32, short: u8, long: core::slice::View<u8>, value_name
 
 #### method: optional
 
-[Source line 143](../../../stdlib/std/cli.lani#L143)
+[Source line 149](../../../stdlib/std/cli.lani#L149)
 
 ```lanius
 pub fn optional(&self, id: i32, short: u8, long: core::slice::View<u8>, value_name: core::slice::View<u8>, help: core::slice::View<u8>)
@@ -526,7 +526,7 @@ pub fn optional(&self, id: i32, short: u8, long: core::slice::View<u8>, value_na
 
 #### method: help
 
-[Source line 149](../../../stdlib/std/cli.lani#L149)
+[Source line 155](../../../stdlib/std/cli.lani#L155)
 
 ```lanius
 pub fn help(&self, id: i32)
@@ -534,7 +534,7 @@ pub fn help(&self, id: i32)
 
 #### method: operands
 
-[Source line 159](../../../stdlib/std/cli.lani#L159)
+[Source line 165](../../../stdlib/std/cli.lani#L165)
 
 ```lanius
 pub fn operands(&self, name: core::slice::View<u8>, minimum: i32, maximum: i32)
@@ -542,7 +542,7 @@ pub fn operands(&self, name: core::slice::View<u8>, minimum: i32, maximum: i32)
 
 #### method: stop_at_operand
 
-[Source line 167](../../../stdlib/std/cli.lani#L167)
+[Source line 173](../../../stdlib/std/cli.lani#L173)
 
 ```lanius
 pub fn stop_at_operand(&self)
@@ -550,7 +550,7 @@ pub fn stop_at_operand(&self)
 
 #### method: subcommand
 
-[Source line 168](../../../stdlib/std/cli.lani#L168)
+[Source line 174](../../../stdlib/std/cli.lani#L174)
 
 ```lanius
 pub fn subcommand(&self, id: i32, name: core::slice::View<u8>, help: core::slice::View<u8>)
@@ -558,7 +558,7 @@ pub fn subcommand(&self, id: i32, name: core::slice::View<u8>, help: core::slice
 
 #### method: destroy
 
-[Source line 175](../../../stdlib/std/cli.lani#L175)
+[Source line 181](../../../stdlib/std/cli.lani#L181)
 
 ```lanius
 pub fn destroy(&self)
@@ -566,7 +566,7 @@ pub fn destroy(&self)
 
 #### method: parse
 
-[Source line 202](../../../stdlib/std/cli.lani#L202)
+[Source line 208](../../../stdlib/std/cli.lani#L208)
 
 ```lanius
 pub fn parse(&self, args: core::slice::View<core::slice::View<u8>>) -> core::result::Result<Matches, Error>
@@ -574,7 +574,7 @@ pub fn parse(&self, args: core::slice::View<core::slice::View<u8>>) -> core::res
 
 #### method: write_error
 
-[Source line 309](../../../stdlib/std/cli.lani#L309)
+[Source line 315](../../../stdlib/std/cli.lani#L315)
 
 ```lanius
 pub fn write_error(&self, error: Error, args: core::slice::View<core::slice::View<u8>>, out: &alloc::vec::Vec<u8>) -> bool
@@ -582,7 +582,7 @@ pub fn write_error(&self, error: Error, args: core::slice::View<core::slice::Vie
 
 #### method: write_help
 
-[Source line 346](../../../stdlib/std/cli.lani#L346)
+[Source line 352](../../../stdlib/std/cli.lani#L352)
 
 ```lanius
 pub fn write_help(&self, sub: i32, out: &alloc::vec::Vec<u8>) -> bool
@@ -590,7 +590,7 @@ pub fn write_help(&self, sub: i32, out: &alloc::vec::Vec<u8>) -> bool
 
 #### method: print_help
 
-[Source line 461](../../../stdlib/std/cli.lani#L461)
+[Source line 467](../../../stdlib/std/cli.lani#L467)
 
 ```lanius
 pub fn print_help(&self, sub: i32) -> bool
@@ -598,7 +598,7 @@ pub fn print_help(&self, sub: i32) -> bool
 
 #### method: print_error
 
-[Source line 467](../../../stdlib/std/cli.lani#L467)
+[Source line 473](../../../stdlib/std/cli.lani#L473)
 
 ```lanius
 pub fn print_error(&self, error: Error, args: core::slice::View<core::slice::View<u8>>) -> bool

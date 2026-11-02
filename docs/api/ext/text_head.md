@@ -81,7 +81,7 @@ pub fn default_options() -> Options
 
 ### function: leading
 
-[Source line 69](../../../extended/ext/text_head.lani#L69)
+[Source line 25](../../../extended/ext/text_head.lani#L25)
 
 ```lanius
 pub fn leading(fd: i32, o: Options) -> i32
@@ -89,7 +89,7 @@ pub fn leading(fd: i32, o: Options) -> i32
 
 ### function: eliding
 
-[Source line 99](../../../extended/ext/text_head.lani#L99)
+[Source line 53](../../../extended/ext/text_head.lani#L53)
 
 ```lanius
 pub fn eliding(fd: i32, o: Options) -> i32

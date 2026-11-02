@@ -1637,6 +1637,11 @@
         "docs/extended-textutils.md"
       ]
     },
+    "ext::text_tail": {
+      "guides": [
+        "docs/extended-textutils.md"
+      ]
+    },
     "ext::text_lines": {
       "guides": [
         "docs/extended-textutils.md"

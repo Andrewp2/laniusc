@@ -85,3 +85,8 @@ fn text_sort_matches_gnu_sort() {
 fn text_head_matches_gnu_head() {
     oracle("head", "600");
 }
+
+#[test]
+fn text_tail_matches_gnu_tail() {
+    oracle("tail", "600");
+}

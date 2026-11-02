@@ -1,9 +1,10 @@
 # Text tools: sort, uniq, cut, tr, wc, head, tail, cat, tee, paste, join and comm
 
 `ext::text_sort`, `ext::text_uniq`, `ext::text_cut`, `ext::text_tr`,
-`ext::text_wc` and `ext::text_head` reimplement the GNU coreutils programs of
-the same names under `LC_ALL=C`. The sample programs `text-sort`,
-`text-uniq`, `text-cut`, `text-tr`, `text-wc` and `text-head`
+`ext::text_wc`, `ext::text_head` and `ext::text_tail` reimplement the GNU
+coreutils programs of the same names under `LC_ALL=C`. The sample programs
+`text-sort`, `text-uniq`, `text-cut`, `text-tr`, `text-wc`, `text-head` and
+`text-tail`
 (`sample_programs/library/text_*.lani`) parse GNU's command lines and write
 GNU's output byte for byte. `ext::text_lines` holds the byte machinery they
 share.
@@ -180,6 +181,32 @@ obsolete first argument `-NUM[bcklmqvz]`.
   GNU's, including when the file has too few lines. Other inputs, such as
   pipes, are read to the end and held in memory.
 
+## tail
+
+`text-tail [-c [+|-]NUM] [-n [+|-]NUM] [-q] [-v] [-z] [FILE...]`, and GNU's
+obsolete form `[-+]NUM[bcl]` as the only option, before at most one file
+operand or after `--`.
+
+- Following is not supported: `-f`, `-F`, `--follow` and an obsolete
+  `NUMf` exit with status 1. `-s`, `--pid`, `--retry`,
+  `--max-unchanged-stats` and `---disable-inotify` are checked as GNU
+  checks them (`-s` as `strtod`, at least 0) and then ignored, as GNU ignores
+  them when not following.
+- `+NUM` starts at line or byte NUM (`+0` is `+1`). Once given, the `+`
+  stays set for a later `-n` or `-c`, as in GNU. `-n 0` and `-c 0` read
+  nothing, so even a missing file is not an error.
+- The obsolete form follows GNU's `parse_obsolete_option`: `b` means 512
+  bytes, `-c` and `-` alone are not obsolete options, and a digit option
+  anywhere else is an error.
+- On a regular file the last NUM lines are found by reading back from the
+  end in 64 KiB blocks and counting end bytes eight at a time. The last NUM
+  bytes are a seek, as is `-c +NUM`. GNU stops when a regular file cannot
+  seek that far. `-n +NUM` skips lines by counting end bytes chunk by chunk.
+- Pipes, and regular files no larger than their block size, are read to the
+  end and held (`---presume-input-pipe` does this for every input).
+- Every path leaves a regular file's offset at its end, as GNU's does, so
+  a repeated `-` operand on the same standard input prints nothing more.
+
 ## Oracles
 
 | Tool | Oracle | Cases | Failures |
@@ -190,6 +217,7 @@ obsolete first argument `-NUM[bcklmqvz]`.
 | uniq | `uniq_oracle.py` | 2,000 | 0 |
 | sort | `sort_oracle.py` | 2,000 | 0 |
 | head | `head_oracle.py` | 2,000 | 0 |
+| tail | `tail_oracle.py` | 2,000 | 0 |
 
 The sort oracle also passed 2,000 cases under each of two other seeds (7
 and 8). Every 25th sort case has 20,000 to 120,000 lines, so the forked
@@ -212,6 +240,11 @@ five runs, alternating with GNU, on the same shared laptop.
 | `text-head -n -1000` | 20 | 53 | 0.37 | 18 | 49 | 0.38 |
 | `text-head -c -1000` | 22 | 76 | 0.28 | 20 | 49 | 0.40 |
 | `text-head -n -1000000` | 66 | 55 | 1.20 | 54 | 50 | 1.07 |
+| `text-tail -n 1000` | 2 | 3 | 0.82 | 2 | 2 | 0.85 |
+| `text-tail -c 1000` | 2 | 3 | 0.67 | 2 | 2 | 0.73 |
+| `text-tail -n +1000` | 13 | 42 | 0.31 | 11 | 40 | 0.27 |
+| `text-tail -n 1000000` | 34 | 31 | 1.12 | 33 | 29 | 1.12 |
+| `text-tail -c +1000` | 14 | 42 | 0.33 | 12 | 40 | 0.29 |
 
 ## Speed
 

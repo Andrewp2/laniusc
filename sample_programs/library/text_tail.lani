@@ -1,0 +1,220 @@
+// GNU tail under LC_ALL=C over ext::text_tail, without following: options
+// are parsed by std::cli (GNU getopt_long rules) after GNU's obsolete form
+// ([-+]NUM[bcl], alone or before one file operand).
+// usage: text-tail [-c [+|-]NUM] [-n [+|-]NUM] [-q] [-v] [-z] [FILE...]
+// -s, --pid, --retry and --max-unchanged-stats are checked and then ignored,
+// as GNU ignores them when not following; -f, -F and --follow are refused.
+// Exit 0, or 1 on a bad option or count, or an input that cannot be read.
+module app::main;
+import alloc::vec;
+import core::option;
+import core::result;
+import core::slice;
+import ext::text_args;
+import ext::text_lines;
+import ext::text_tail;
+import std::args;
+import std::cli;
+
+fn lit(value: str, count: i32) -> core::slice::View<u8> { return ext::text_args::lit(value, count); }
+fn tool() -> core::slice::View<u8> { return lit("text-tail", 9); }
+fn digit(c: u8) -> bool { return c >= 48 && c <= 57; }
+
+// A -c or -n value: '+' counts from the start (and stays set, as in GNU),
+// one leading '-' is dropped. False (after the message) when invalid.
+fn set_count(o: &ext::text_tail::Options, v: core::slice::View<u8>, lines: bool) -> bool {
+    o.lines = lines; let digits: core::slice::View<u8> = v;
+    if (v.length > 0 && ext::text_args::at(v, 0) == 43) { o.from_start = true; }
+    else { if (v.length > 0 && ext::text_args::at(v, 0) == 45) { digits = ext::text_args::tail(v, 1); } }
+    let c: ext::text_args::Count = ext::text_args::count(digits);
+    if (c.status != 0) {
+        let what: core::slice::View<u8> = lit("invalid number of bytes", 23); if (lines) { what = lit("invalid number of lines", 23); }
+        ext::text_args::complain(tool(), what, digits); return false;
+    }
+    o.count = c.value; return true;
+}
+
+fn blank(c: u8) -> bool { return c == 32 || (c >= 9 && c <= 13); }
+fn lower(c: u8) -> u8 { if (c >= 65 && c <= 90) { return c + 32; } return c; }
+fn word_at(v: core::slice::View<u8>, i: i32, w: core::slice::View<u8>) -> bool {
+    if (i + w.length > v.length) { return false; }
+    let j: i32 = 0; while (j < w.length) { if (lower(ext::text_args::at(v, i + j)) != ext::text_args::at(w, j)) { return false; } j += 1; }
+    return true;
+}
+// GNU's -s check: strtod must take the whole value (leading blanks allowed)
+// and the result must be at least 0 (so NaN and negative numbers fail).
+fn seconds_ok(v: core::slice::View<u8>) -> bool {
+    let n: i32 = v.length; let i: i32 = 0;
+    while (i < n && blank(ext::text_args::at(v, i))) { i += 1; }
+    let negative: bool = false;
+    if (i < n && (ext::text_args::at(v, i) == 43 || ext::text_args::at(v, i) == 45)) { negative = ext::text_args::at(v, i) == 45; i += 1; }
+    if (word_at(v, i, lit("infinity", 8))) { return !negative && i + 8 == n; }
+    if (word_at(v, i, lit("inf", 3))) { return !negative && i + 3 == n; }
+    if (word_at(v, i, lit("nan", 3))) { return false; }
+    let nonzero: bool = false; let digits: i32 = 0;
+    if (i + 1 < n && ext::text_args::at(v, i) == 48 && lower(ext::text_args::at(v, i + 1)) == 120) {
+        let j: i32 = i + 2; let hex: i32 = 0;
+        while (j < n && sd_hex(ext::text_args::at(v, j))) { if (ext::text_args::at(v, j) != 48) { nonzero = true; } j += 1; hex += 1; }
+        if (j < n && ext::text_args::at(v, j) == 46) { j += 1; while (j < n && sd_hex(ext::text_args::at(v, j))) { if (ext::text_args::at(v, j) != 48) { nonzero = true; } j += 1; hex += 1; } }
+        if (hex == 0) { return false; }
+        i = j;
+        if (i < n && lower(ext::text_args::at(v, i)) == 112) {
+            let k: i32 = i + 1; if (k < n && (ext::text_args::at(v, k) == 43 || ext::text_args::at(v, k) == 45)) { k += 1; }
+            let e: i32 = k; while (k < n && digit(ext::text_args::at(v, k))) { k += 1; }
+            if (k > e) { i = k; }
+        }
+        return i == n && (!negative || !nonzero);
+    }
+    while (i < n && digit(ext::text_args::at(v, i))) { if (ext::text_args::at(v, i) != 48) { nonzero = true; } i += 1; digits += 1; }
+    if (i < n && ext::text_args::at(v, i) == 46) { i += 1; while (i < n && digit(ext::text_args::at(v, i))) { if (ext::text_args::at(v, i) != 48) { nonzero = true; } i += 1; digits += 1; } }
+    if (digits == 0) { return false; }
+    if (i < n && lower(ext::text_args::at(v, i)) == 101) {
+        let k: i32 = i + 1; if (k < n && (ext::text_args::at(v, k) == 43 || ext::text_args::at(v, k) == 45)) { k += 1; }
+        let e: i32 = k; while (k < n && digit(ext::text_args::at(v, k))) { k += 1; }
+        if (k > e) { i = k; }
+    }
+    return i == n && (!negative || !nonzero);
+}
+fn sd_hex(c: u8) -> bool { return digit(c) || (lower(c) >= 97 && lower(c) <= 102); }
+// GNU xdectoumax/xdectoimax with a lower bound of 0 and no suffixes:
+// blanks, an optional '+', digits, nothing after; at most `max`.
+fn decimal_ok(v: core::slice::View<u8>, max: u64) -> bool {
+    let n: i32 = v.length; let i: i32 = 0;
+    while (i < n && blank(ext::text_args::at(v, i))) { i += 1; }
+    if (i < n && ext::text_args::at(v, i) == 43) { i += 1; }
+    let start: i32 = i; let value: u64 = 0; let over: bool = false;
+    while (i < n && digit(ext::text_args::at(v, i))) {
+        let d: u64 = (ext::text_args::at(v, i) - 48) as u64;
+        if (value > (ext::text_args::MAX - d) / 10) { over = true; } else { value = value * 10 + d; }
+        i += 1;
+    }
+    return i > start && i == n && !over && value <= max;
+}
+
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1, 65536, 16777216);
+    if (core::result::is_err(captured)) { ext::text_args::complain(tool(), lit("bad arguments", 13), lit("", 0)); return 1; }
+    let arguments: std::args::Arguments = core::result::unwrap(captured);
+    let all: core::slice::View<core::slice::View<u8>> = arguments.as_view();
+    let o: ext::text_tail::Options = ext::text_tail::default_options();
+    let headers: i32 = 0; // 0: when several files, 1: never, 2: always
+    // GNU parse_obsolete_option: one option word and at most one file.
+    let argc: i32 = all.length + 1; let obsolete: bool = false;
+    if (argc == 2) { obsolete = true; }
+    if (argc == 3) {
+        let b: core::slice::View<u8> = all.values[all.start + 1];
+        if (!(b.length > 1 && ext::text_args::at(b, 0) == 45)) { obsolete = true; }
+    }
+    if (argc >= 3 && argc <= 4 && ext::text_args::same(all.values[all.start + 1], lit("--", 2))) { obsolete = true; }
+    if (obsolete) {
+        let a: core::slice::View<u8> = all.values[all.start];
+        obsolete = false;
+        if (a.length > 0 && ext::text_args::at(a, 0) == 43) { obsolete = true; }
+        if (a.length > 1 && ext::text_args::at(a, 0) == 45 && !(a.length == 2 && ext::text_args::at(a, 1) == 99)) { obsolete = true; }
+        if (obsolete) {
+            let k: i32 = 1; while (k < a.length && digit(ext::text_args::at(a, k))) { k += 1; }
+            let end: i32 = k; let lines: bool = true; let fallback: u64 = 10; let follow: bool = false;
+            if (k < a.length) {
+                let c: u8 = ext::text_args::at(a, k);
+                if (c == 98) { fallback = 5120; lines = false; k += 1; }
+                else { if (c == 99) { lines = false; k += 1; } else { if (c == 108) { k += 1; } } }
+            }
+            if (k < a.length && ext::text_args::at(a, k) == 102) { follow = true; k += 1; }
+            if (k != a.length) { obsolete = false; }
+            if (obsolete) {
+                let value: u64 = fallback;
+                if (end > 1) {
+                    // xstrtoumax(digits, "b"): a following 'b' multiplies by 512,
+                    // any other letter is ignored.
+                    let c: ext::text_args::Count = ext::text_args::count(core::slice::View { values: a.values, start: a.start + 1, length: end - 1 });
+                    if (c.status == 0 && end < a.length && ext::text_args::at(a, end) == 98) {
+                        if (c.value > ext::text_args::MAX / 512) { c.status = 2; } else { c.value = c.value * 512; }
+                    }
+                    if (c.status != 0) { ext::text_args::complain(tool(), lit("invalid number", 14), a); arguments.destroy(); return 1; }
+                    value = c.value;
+                }
+                if (follow) { ext::text_args::complain(tool(), lit("following is not supported", 26), lit("", 0)); arguments.destroy(); return 1; }
+                o.from_start = ext::text_args::at(a, 0) == 43; o.lines = lines; o.count = value;
+                all = core::slice::View { values: all.values, start: all.start + 1, length: all.length - 1 };
+            }
+        }
+    }
+    let cli: std::cli::Command = std::cli::command(tool(), lit("Print the last 10 lines of each FILE to standard output.", 56));
+    cli.option(1, 99, lit("bytes", 5), lit("[+]NUM", 6), lit("output the last NUM bytes; or +NUM to output starting with byte NUM", 67));
+    cli.option(2, 110, lit("lines", 5), lit("[+]NUM", 6), lit("output the last NUM lines; or +NUM to output starting with line NUM", 67));
+    cli.optional(3, 102, lit("follow", 6), lit("HOW", 3), lit("not supported", 13));
+    cli.flag(3, 70, lit("", 0), lit("not supported", 13));
+    cli.option(4, 0, lit("max-unchanged-stats", 19), lit("N", 1), lit("checked, then ignored (no following)", 36));
+    cli.option(5, 0, lit("pid", 3), lit("PID", 3), lit("checked, then ignored (no following)", 36));
+    cli.flag(6, 113, lit("quiet", 5), lit("never output headers giving file names", 38));
+    cli.flag(6, 0, lit("silent", 6), lit("same as --quiet", 15));
+    cli.flag(7, 0, lit("retry", 5), lit("ignored (no following)", 22));
+    cli.option(8, 115, lit("sleep-interval", 14), lit("N", 1), lit("checked, then ignored (no following)", 36));
+    cli.flag(9, 118, lit("verbose", 7), lit("always output headers giving file names", 39));
+    cli.flag(10, 122, lit("zero-terminated", 15), lit("line delimiter is NUL, not newline", 34));
+    cli.flag(11, 0, lit("-disable-inotify", 16), lit("ignored", 7));
+    cli.flag(12, 0, lit("-presume-input-pipe", 19), lit("treat every input as a pipe", 27));
+    cli.flag(13, 0, lit("version", 7), lit("output version information and exit", 35));
+    cli.help(14);
+    cli.operands(lit("FILE", 4), 0, -1);
+    let parsed: core::result::Result<std::cli::Matches, std::cli::Error> = cli.parse(all);
+    if (core::result::is_err(parsed)) { cli.print_error(core::result::unwrap_err(parsed), all); cli.destroy(); arguments.destroy(); return 1; }
+    let m: std::cli::Matches = core::result::unwrap(parsed);
+    let i: i32 = 0; let ok: bool = true; let help: bool = false; let version: bool = false;
+    while (i < m.occurrences() && ok && !help && !version) {
+        let id: i32 = m.occurrence_id(i);
+        if (id == 1 || id == 2) { ok = set_count(o.borrow(), core::option::unwrap(m.occurrence_value(i)), id == 2); }
+        if (id == 3) { ext::text_args::complain(tool(), lit("following is not supported", 26), lit("", 0)); ok = false; }
+        if (id == 4) {
+            let v: core::slice::View<u8> = core::option::unwrap(m.occurrence_value(i));
+            if (!decimal_ok(v, ext::text_args::MAX)) { ext::text_args::complain(tool(), lit("invalid maximum number of unchanged stats between opens", 55), v); ok = false; }
+        }
+        if (id == 5) {
+            let v: core::slice::View<u8> = core::option::unwrap(m.occurrence_value(i));
+            if (!decimal_ok(v, 2147483647)) { ext::text_args::complain(tool(), lit("invalid PID", 11), v); ok = false; }
+        }
+        if (id == 6) { headers = 1; } if (id == 9) { headers = 2; } if (id == 10) { o.eol = 0; } if (id == 12) { o.pipe = true; }
+        if (id == 8) {
+            let v: core::slice::View<u8> = core::option::unwrap(m.occurrence_value(i));
+            if (!seconds_ok(v)) { ext::text_args::complain(tool(), lit("invalid number of seconds", 25), v); ok = false; }
+        }
+        if (id == 13) { version = true; } if (id == 14) { help = true; }
+        i += 1;
+    }
+    if (!ok || help || version) {
+        let status: i32 = 1;
+        if (ok && help) { status = 0; if (!cli.print_help(-1)) { status = 1; } }
+        if (ok && version) { status = 0; if (!ext::text_args::emit(1, lit("text-tail (Lanius ext::text_tail)\n", 34))) { status = 1; } }
+        m.destroy(); cli.destroy(); arguments.destroy(); return status;
+    }
+    // GNU reads nothing when nothing can be printed.
+    if (o.count == 0 && !o.from_start) { m.destroy(); cli.destroy(); arguments.destroy(); return 0; }
+    let names: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new(); i = 0;
+    while (i < m.operand_count()) { let pushed: core::result::Result<i32, alloc::vec::Error> = names.try_push(m.operand(i)); i += 1; }
+    if (names.len() == 0) { let pushed: core::result::Result<i32, alloc::vec::Error> = names.try_push(lit("-", 1)); }
+    let show: bool = headers == 2 || (headers == 0 && names.len() > 1);
+    let first: bool = true; let status: i32 = 0; i = 0;
+    while (i < names.len()) {
+        let name: core::slice::View<u8> = core::option::unwrap(names.get(i)); i += 1;
+        let fd: i32 = ext::text_lines::open_input(name);
+        if (fd < 0) { ext::text_args::complain(tool(), lit("cannot open for reading", 23), name); status = 1; continue; }
+        if (show) {
+            let shown: core::slice::View<u8> = name; if (ext::text_args::same(name, lit("-", 1))) { shown = lit("standard input", 14); }
+            let h: alloc::vec::Vec<u8> = alloc::vec::new();
+            if (!first) { let a: core::result::Result<i32, alloc::vec::Error> = h.try_push(10); }
+            let b: core::result::Result<i32, alloc::vec::Error> = h.try_extend(lit("==> ", 4));
+            let c: core::result::Result<i32, alloc::vec::Error> = h.try_extend(shown);
+            let d: core::result::Result<i32, alloc::vec::Error> = h.try_extend(lit(" <==\n", 5));
+            let wrote: bool = ext::text_args::emit(1, h.as_view());
+            h.destroy(); first = false;
+            if (!wrote) { status = 1; ext::text_lines::close_input(fd); break; }
+        }
+        let r: i32 = ext::text_tail::copy(fd, o);
+        ext::text_lines::close_input(fd);
+        if (r == 1) { ext::text_args::complain(tool(), lit("error reading", 13), name); status = 1; }
+        if (r == 2) { ext::text_args::complain(tool(), lit("write error", 11), lit("", 0)); status = 1; break; }
+        if (r == 3) { ext::text_args::complain(tool(), lit("cannot seek", 11), name); status = 1; break; }
+    }
+    names.destroy(); m.destroy(); cli.destroy(); arguments.destroy();
+    return status;
+}
