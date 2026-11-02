@@ -188,9 +188,9 @@ theorem Keeps.chain {st st1 st2 : State} (first : Keeps places st.nextCell st st
   first.trans (second.lower first.next)
 
 /-- The cursor after a subexpression is within any bound the end is. -/
-theorem grown_bound {st st' : State} (grown : Grows st st') (fresh : st.Fresh) {L : Nat}
+theorem grown_bound {st st' : State} (grown : Grows st st') {L : Nat}
     (bound : st'.heap.nextAddress ≤ L) : st.heap.nextAddress ≤ L :=
-  Nat.le_trans (grown fresh.2).2 bound
+  Nat.le_trans (grown).next bound
 
 theorem eff_grown {sp : SrcProgram} {k : Nat} {st : State} {e : SrcEff} {v : Value} {st' : State}
     (run : evalExpr k sp.toCore st e.toCore = .done v st') : Grows st st' :=
@@ -558,6 +558,26 @@ abbrev Evaluates (bud : Budget) (places : List Addressed) (mp : Program) (hp : H
     ∃ d env' hp', Exec mp d env hp ev.stmt (.normal env' hp') ∧ (∀ j < slot, env' j = env j) ∧
       ev.ty.HoldsAt places v env' slot ∧ HeapCorr st'.heap st'.world hp' ∧ FrameCorr bud places st' hp'
 
+/-- An evaluation's relations carry over to the state Core's sync from the
+heap leaves: the heap, world, locals and views as they were, and the cells no
+view roots at unchanged. -/
+theorem Evaluates.sync {bud : Budget} {places : List Addressed} {mp : Program} {hp : Heap} {slot : Nat}
+    {st : State} {env : Env} {ev : Evaluated} {v : Value} {s st' : State}
+    (pre : Keeps places st.nextCell st s ∧ s.locals = st.locals ∧ 0 < ev.ty.size ∧
+      ∃ d env' hp', Exec mp d env hp ev.stmt (.normal env' hp') ∧ (∀ j < slot, env' j = env j) ∧
+        ev.ty.HoldsAt places v env' slot ∧ HeapCorr s.heap s.world hp' ∧ FrameCorr bud places s hp')
+    (fresh : st'.Fresh) (heap : st'.heap = s.heap) (world : st'.world = s.world) (locals : st'.locals = s.locals)
+    (next : st'.nextCell = s.nextCell) (views : st'.i32ArrayViews = s.i32ArrayViews)
+    (others : ∀ c, (∀ w ∈ s.i32ArrayViews, w.root ≠ c) → st'.cellEntry? c = s.cellEntry? c) :
+    Evaluates bud places mp hp slot st env ev v st' := by
+  obtain ⟨keeps, locals0, pos, d, env', hp', exec, same, holds, hc, fc⟩ := pre
+  refine ⟨fresh, ⟨fun c below apart unrooted => ?_, Nat.le_trans keeps.next (Nat.le_of_eq next.symm),
+    fun w m => keeps.views w (views ▸ m)⟩, locals.trans locals0, pos, d, env', hp', exec, same, holds,
+    by rw [heap, world]; exact hc,
+    fc.congr (fun x mem => others _ fun w wm => fc.unviewed w wm x mem) (fun _ _ _ _ => rfl) rfl rfl rfl views⟩
+  rw [others c (keeps.unrooted below unrooted)]
+  exact keeps.cells c below apart unrooted
+
 /-- Every effectful expression lowered for `sp` that Core evaluates with
 `fuel`, ending with its heap cursor within the mini heap's limit, has mini
 code leaving a representation of its value from `slot`. -/
@@ -685,10 +705,9 @@ theorem evalArgs_sound : ∀ (args : List SrcEff) {k : Nat}, (∀ m < k, EvalSou
         · rename_i vs' st2 restRun
           simp only [Semantics.Outcome.done.injEq] at run
           obtain ⟨rfl, rfl⟩ := run
-          have views1 := (eff_grown headRun fresh.2).1
           have grown := effs_grows es (eff_grows k (grows sp k)) restRun
           obtain ⟨fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
-            ihe k (Nat.lt_succ_self k) firstOk corr fr fresh hc fc headRun (Nat.le_trans (grown views1).2 bound)
+            ihe k (Nat.lt_succ_self k) firstOk corr fr fresh hc fc headRun (Nat.le_trans (grown).next bound)
           obtain ⟨fresh2, keeps2, locals2, d2, env2, hp2, exec2, same2, holds2, hc2, fc2⟩ :=
             evalArgs_sound es (fun m lt => ihe m (by omega)) restOk (corr.after fr fresh keeps1 locals1 same1)
               (fr.mono (Nat.le_add_right _ _)) fresh1 hc1 fc1 restRun (by rw [exec1.limit_normal]; exact bound)
@@ -1237,11 +1256,14 @@ theorem eval_host {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {callee : Nat} 
     Evaluates bud places mp hp slot st env ev v st' := by
   obtain ⟨values, afterArgs, argsRun, ⟨inside, -⟩ | ⟨-, service, hs, returns⟩⟩ := call_cases run
   · omega
-  have viewsA := (effs_grows args (eff_grows k (grows sp k)) argsRun fresh.2).1
-  obtain ⟨heap, world, called, rfl⟩ := returns viewsA
-  have nextEq := hostCall_next hs called
   obtain ⟨freshA, keepsA, localsA, dA, envA, hpA, execA, sameA, holdsA, hcA, fcA⟩ :=
-    evalArgs_sound args ihe argsOk corr fr fresh hc fc argsRun (by rw [← nextEq]; exact bound)
+    evalArgs_sound args ihe argsOk corr fr fresh hc fc argsRun (Nat.le_trans (host_grows hs returns).next bound)
+  obtain ⟨heap, world, called, back⟩ := returns.held freshA.2
+  have nextEq := hostCall_next hs called
+  obtain ⟨hold3, heap3, views3, others3, next3, locals3, world3, below3⟩ :=
+    freshA.2.afterStores (s := { afterArgs with heap, world }) (hostCall_stores hs called) rfl rfl back
+  have bound : heap.nextAddress ≤ hp.limit := by have b := bound; rw [heap3] at b; exact b
+  refine Evaluates.sync ?_ ⟨below3 freshA.1, hold3⟩ heap3 world3 locals3 next3 views3 others3
   have fcH : ∀ {hp' : Heap}, hpA.LowOnly hp' → FrameCorr bud places { afterArgs with heap, world } hp' :=
     fun low => host_frame fcA low
   have limitA : afterArgs.heap.nextAddress ≤ hpA.limit := by rw [execA.limit_normal, ← nextEq]; exact bound
@@ -1265,7 +1287,7 @@ theorem eval_host {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {callee : Nat} 
       obtain ⟨-, same⟩ := checks
       simp only [Option.some.injEq] at ok
       subst ok
-      exact ⟨freshA, ⟨keepsA.cells, keepsA.next⟩, localsA, (by decide : 0 < SrcType.i32.size), dA,
+      exact ⟨⟨keepsA.cells, keepsA.next, keepsA.views⟩, localsA, (by decide : 0 < SrcType.i32.size), dA,
         host_wrap fcA (host_read (afterArgs := afterArgs) execA sameA holdsA (typesSame_eq _ same) hcA limitA called)⟩
     split at ok
     · rename_i _ _ _ _ checks; simp [hostBase] at checks
@@ -1278,7 +1300,7 @@ theorem eval_host {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {callee : Nat} 
     · simp at ok
   by_cases stores : service = .monotonicRead ∨ service = .systemRead ∨ service = .fillSecureBytes
   · obtain ⟨code, rfl, sim⟩ := eval_host_stores hs stores ok execA sameA holdsA hcA limitA called
-    exact ⟨freshA, ⟨keepsA.cells, keepsA.next⟩, localsA, (by decide : 0 < SrcType.i32.size), dA, host_wrap fcA sim⟩
+    exact ⟨⟨keepsA.cells, keepsA.next, keepsA.views⟩, localsA, (by decide : 0 < SrcType.i32.size), dA, host_wrap fcA sim⟩
   have keeps : service = .writeByte ∨ service = .writeStdout ∨ service = .writeStderr ∨ service = .sleepMsI32 := by
     obtain ⟨service', _, hs', -, shape⟩ := evalHost_some ok
     rw [hs] at hs'
@@ -1302,7 +1324,7 @@ theorem eval_host {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {callee : Nat} 
     obtain ⟨rfl, same⟩ := checks
     simp only [Option.some.injEq] at ok
     subst ok
-    refine ⟨freshA, ⟨keepsA.cells, keepsA.next⟩, localsA, (by decide : 0 < SrcType.i32.size), dA, ?_⟩
+    refine ⟨⟨keepsA.cells, keepsA.next, keepsA.views⟩, localsA, (by decide : 0 < SrcType.i32.size), dA, ?_⟩
     have svc : service = .writeByte := by
       simp [hostService?, hostBase] at hs
       exact hs.symm
@@ -1392,7 +1414,7 @@ theorem eval_host {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {callee : Nat} 
       simp [hostService?, hostBase] at hs
       exact hs.symm
     subst svc
-    exact ⟨freshA, ⟨keepsA.cells, keepsA.next⟩, localsA, (by decide : 0 < SrcType.i32.size), dA,
+    exact ⟨⟨keepsA.cells, keepsA.next, keepsA.views⟩, localsA, (by decide : 0 < SrcType.i32.size), dA,
       host_wrap fcA (host_write (afterArgs := afterArgs) (.inl ⟨rfl, rfl⟩) execA sameA holdsA (typesSame_eq _ same) hcA limitA called)⟩
   split at ok
   · rename_i _ _ checks
@@ -1404,7 +1426,7 @@ theorem eval_host {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {callee : Nat} 
       simp [hostService?, hostBase] at hs
       exact hs.symm
     subst svc
-    exact ⟨freshA, ⟨keepsA.cells, keepsA.next⟩, localsA, (by decide : 0 < SrcType.i32.size), dA,
+    exact ⟨⟨keepsA.cells, keepsA.next, keepsA.views⟩, localsA, (by decide : 0 < SrcType.i32.size), dA,
       host_wrap fcA (host_write (afterArgs := afterArgs) (.inr ⟨rfl, rfl⟩) execA sameA holdsA (typesSame_eq _ same) hcA limitA called)⟩
   split at ok
   · rename_i _ _ _ checks
@@ -1421,7 +1443,7 @@ theorem eval_host {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {callee : Nat} 
       simp [hostService?, hostBase] at hs
       exact hs.symm
     subst svc
-    exact ⟨freshA, ⟨keepsA.cells, keepsA.next⟩, localsA, (by decide : 0 < SrcType.i32.size), dA,
+    exact ⟨⟨keepsA.cells, keepsA.next, keepsA.views⟩, localsA, (by decide : 0 < SrcType.i32.size), dA,
       host_wrap fcA (host_sleep (afterArgs := afterArgs) execA sameA holdsA (typesSame_eq _ same) hcA called)⟩
   split at ok
   · rename_i checks
@@ -1470,11 +1492,10 @@ theorem eval_call (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls
     simp only [Option.some.injEq] at ok
     subst ok
     have bound' : completed.heap.nextAddress ≤ hp.limit := bound
-    have viewsA := (effs_grows args (eff_grows k (grows sp k)) argsRun fresh.2).1
     have entry := bindLocals_same (paramBindings f.params values) { afterArgs with locals := [] }
     have bodyGrown := (Grows.same entry.1 entry.2).trans (grows sp (k + 1) k (Nat.lt_succ_self k) bodyRun)
     obtain ⟨freshA, keepsA, localsA, dA, envA, hpA, execA, sameA, holdsA, hcA, fcA⟩ :=
-      evalArgs_sound args ihe argsOk corr fr fresh hc fc argsRun (Nat.le_trans (bodyGrown viewsA).2 bound')
+      evalArgs_sound args ihe argsOk corr fr fresh hc fc argsRun (Nat.le_trans (bodyGrown).next bound')
     rw [tyEq] at holdsA
     have holdsEntry : FieldsHold places (paramTypes f.params) values
         (Func.entry (Expr.evalAll envA (slotVars slot (sizes (paramTypes f.params))))) 0 :=
@@ -1540,9 +1561,8 @@ theorem eval_apply {k : Nat} (ihe : EvalSound sp mp k) {op : SrcOp} {l r : SrcEf
     have general : op.toCore ≠ .logicalAnd ∧ op.toCore ≠ .logicalOr := by
       cases op <;> simp_all [SrcOp.toCore]
     obtain ⟨vl, st1, vr, lRun, rRun, evaluated⟩ := binary_inv general run
-    have views1 := (eff_grown lRun fresh.2).1
     obtain ⟨fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
-      ihe leOk corr fr fresh hc fc lRun (Nat.le_trans ((eff_grown rRun) views1).2 bound)
+      ihe leOk corr fr fresh hc fc lRun (Nat.le_trans ((eff_grown rRun)).next bound)
     obtain ⟨fresh2, keeps2, locals2, _, d2, env2, hp2, exec2, same2, holds2, hc2, fc2⟩ :=
       ihe reOk (corr.after fr fresh keeps1 locals1 same1) (fr.mono (Nat.le_succ _)) fresh1 hc1 fc1 rRun
         (by rw [exec1.limit_normal]; exact bound)
@@ -1575,9 +1595,8 @@ theorem eval_apply {k : Nat} (ihe : EvalSound sp mp k) {op : SrcOp} {l r : SrcEf
         cases eq
         exact ⟨fresh1, keeps1, locals1, by simp [SrcType.size], d1, env1, hp1,
           .seq exec1 (.ifFalse (by simp [Expr.eval, x, boolBits]) .skip), same1, holds1, hc1, fc1⟩
-      · have views1 := (eff_grown lRun fresh.2).1
-        obtain ⟨fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
-          ihe leOk corr fr fresh hc fc lRun (Nat.le_trans ((eff_grown rRun) views1).2 bound)
+      · obtain ⟨fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
+          ihe leOk corr fr fresh hc fc lRun (Nat.le_trans ((eff_grown rRun)).next bound)
         rw [hl] at holds1
         obtain ⟨_, eq, x⟩ := bool_bits ((SrcType.holdsAt_scalar rfl).mp holds1)
         cases eq
@@ -1610,9 +1629,8 @@ theorem eval_apply {k : Nat} (ihe : EvalSound sp mp k) {op : SrcOp} {l r : SrcEf
           cases eq
           exact ⟨fresh1, keeps1, locals1, by simp [SrcType.size], d1, env1, hp1,
             .seq exec1 (.ifTrue (by simp [Expr.eval, x, boolBits]) .skip), same1, holds1, hc1, fc1⟩
-        · have views1 := (eff_grown lRun fresh.2).1
-          obtain ⟨fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
-            ihe leOk corr fr fresh hc fc lRun (Nat.le_trans ((eff_grown rRun) views1).2 bound)
+        · obtain ⟨fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
+            ihe leOk corr fr fresh hc fc lRun (Nat.le_trans ((eff_grown rRun)).next bound)
           rw [hl] at holds1
           obtain ⟨_, eq, x⟩ := bool_bits ((SrcType.holdsAt_scalar rfl).mp holds1)
           cases eq
@@ -1646,9 +1664,8 @@ theorem eval_divide {k : Nat} (ihe : EvalSound sp mp k) {op : SrcDivOp} {l r : S
   rename_i re reOk
   have general : op.toCore ≠ .logicalAnd ∧ op.toCore ≠ .logicalOr := by cases op <;> simp [SrcDivOp.toCore]
   obtain ⟨vl, st1, vr, lRun, rRun, evaluated⟩ := binary_inv general run
-  have views1 := (eff_grown lRun fresh.2).1
   obtain ⟨fresh1, keeps1, locals1, sized1, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
-    ihe leOk corr fr fresh hc fc lRun (Nat.le_trans ((eff_grown rRun) views1).2 bound)
+    ihe leOk corr fr fresh hc fc lRun (Nat.le_trans ((eff_grown rRun)).next bound)
   obtain ⟨fresh2, keeps2, locals2, _, d2, env2, hp2, exec2, same2, holds2, hc2, fc2⟩ :=
     ihe reOk (corr.after fr fresh keeps1 locals1 same1) (fr.mono (Nat.le_succ _)) fresh1 hc1 fc1 rRun
       (by rw [exec1.limit_normal]; exact bound)
@@ -2570,10 +2587,9 @@ theorem eval_match {k : Nat} (ihe : ∀ m ≤ k, EvalSound sp mp m) {scrutinee :
     simp only [SrcEff.toCore, evalExpr] at run
     split at run
     · rename_i w st1 scrutRun
-      have views1 := (eff_grown scrutRun fresh.2).1
       have grown := effArms_grows binders values ety.typeId 0 (eff_grows k (grows sp k)) run
       obtain ⟨fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
-        ihe k (Nat.le_refl _) scrutOk corr fr fresh hc fc scrutRun (Nat.le_trans (grown views1).2 bound)
+        ihe k (Nat.le_refl _) scrutOk corr fr fresh hc fc scrutRun (Nat.le_trans (grown).next bound)
       rw [SrcType.same_eq same] at holds1
       have fr0 : Layout scope frame 0 slot := ⟨fr.slots, fr.sized, fun _ _ => Nat.zero_le _, fr.inj, fr.apart⟩
       cases ety with
@@ -2648,10 +2664,9 @@ theorem eval_let {k : Nat} (ihe : ∀ m ≤ k, EvalSound sp mp m) {id : Nat} {ty
     simp only [SrcEff.toCore, evalExpr] at run
     split at run
     · rename_i w st1 valueRun
-      have views1 := (eff_grown valueRun fresh.2).1
       have grown := letArm_grows (eff_grows k (grows sp k)) run
       obtain ⟨fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
-        ihe k (Nat.le_refl _) valueOk corr fr fresh hc fc valueRun (Nat.le_trans (grown views1).2 bound)
+        ihe k (Nat.le_refl _) valueOk corr fr fresh hc fc valueRun (Nat.le_trans (grown).next bound)
       rw [SrcType.same_eq sameA] at holds1
       have fr0 : Layout scope frame 0 slot := ⟨fr.slots, fr.sized, fun _ _ => Nat.zero_le _, fr.inj, fr.apart⟩
       obtain ⟨frame', corr', fr', fresh', keeps', -⟩ :=
@@ -2723,10 +2738,9 @@ theorem eval_if {k : Nat} (ihe : ∀ m ≤ k, EvalSound sp mp m) {c a b : SrcEff
     simp only [SrcEff.toCore, evalExpr] at run
     split at run
     · rename_i w st1 condRun
-      have views1 := (eff_grown condRun fresh.2).1
       have grown := ifArms_grows (eff_grows k (grows sp k)) run
       obtain ⟨fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
-        ihe k (Nat.le_refl _) condOk corr fr fresh hc fc condRun (Nat.le_trans (grown views1).2 bound)
+        ihe k (Nat.le_refl _) condOk corr fr fresh hc fc condRun (Nat.le_trans (grown).next bound)
       rw [SrcType.same_eq isB] at holds1
       obtain ⟨bv, eq, bits⟩ := bool_bits ((SrcType.holdsAt_scalar rfl).mp holds1)
       subst eq
@@ -2890,9 +2904,8 @@ theorem stmt_letEval (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.de
     simp only [SrcStmt.toCore, execStmt] at run
     split at run
     · rename_i v st1 valueRun
-      have views1 := (eff_grown valueRun fresh.2).1
       obtain ⟨fresh1, keeps1, locals1, sized, d1, env1, hp1, exec1, corr1, holds1, hc1, fc1⟩ :=
-        stmtEval_sound lowered below ihe valueOk corr fr fresh le hc fc valueRun (tail_bound views1 run bound)
+        stmtEval_sound lowered below ihe valueOk corr fr fresh le hc fc valueRun (tail_bound run bound)
       rw [tyEq] at sized holds1
       obtain ⟨fresh', keeps', d2, out, exec, matched⟩ :=
         let_tail (below fuel (Nat.le_refl _)) bodyOk corr1 fr fresh1 (Nat.le_trans le keeps1.next) sized
@@ -2932,12 +2945,13 @@ theorem stmt_setEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {id : Nat} {value
       cases fuel with
       | zero => simp [evalExpr] at assignRun
       | succ k =>
-        obtain ⟨rv, st2, valueRun, rfl⟩ := assign_step corr found assignRun fun valueRun =>
-          (eff_grown valueRun fresh.2).1
+        obtain ⟨rv, st2, valueRun, grown, written⟩ := assign_step corr found assignRun
         obtain ⟨fresh2, keeps2, locals2, -, d, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
-          ihe k (Nat.le_succ _) valueOk corr fr fresh hc fc valueRun bound
+          ihe k (Nat.le_succ _) valueOk corr fr fresh hc fc valueRun (Nat.le_trans grown.next bound)
+        have apart2 := fun v vm => (corr.after fr fresh keeps2 locals2 same1).unviewed v vm b bmem
+        obtain rfl := written fresh2.2 apart2
         rw [tyEq] at holds1
-        refine ⟨assigned_fresh fresh2 _ _, (keeps2.lower le).trans (assigned_keeps (fr.above b bmem) _ _), d, _,
+        refine ⟨assigned_fresh fresh2 _ _ apart2, (keeps2.lower le).trans (assigned_keeps (fr.above b bmem) _ _), d, _,
           .seq exec1 (assignFrom_exec _ b.slot .skip),
           .next ((corr.after fr fresh keeps2 locals2 same1).assign fr bmem (fun j away => ?_) ?_) hc1
           (fc1.keeps (assigned_keeps (fr.above b bmem) _ _) under)⟩
@@ -2980,10 +2994,10 @@ theorem field_assign_eff {P : Core.Program} {scope frame st env} (corr : Corr pl
     (entry : st.cellEntry? (frame b.slot) = some ⟨frame b.slot, some (.structure sid vs)⟩)
     {index : Nat} {old : Value} (got : vs[index]? = some old)
     {e : Core.Expr} {k : Nat} {u : Value} {st' : State}
-    (run : evalExpr (k + 1) P st (.assign .set (.field (.local id) index) e) = .done u st')
-    (views : ∀ {rv st2}, evalExpr k P st e = .done rv st2 → st2.i32ArrayViews = []) :
-    ∃ rv st2, evalExpr k P st e = .done rv st2 ∧ st'.heap = st2.heap ∧
-      (st2.cellEntry? (frame b.slot) = some ⟨frame b.slot, some (.structure sid vs)⟩ →
+    (run : evalExpr (k + 1) P st (.assign .set (.field (.local id) index) e) = .done u st') :
+    ∃ rv st2, evalExpr k P st e = .done rv st2 ∧ Grows st2 st' ∧
+      (Views.ViewsHold st2 → (∀ v ∈ st2.i32ArrayViews, v.root ≠ frame b.slot) →
+        st2.cellEntry? (frame b.slot) = some ⟨frame b.slot, some (.structure sid vs)⟩ →
         st' = { st2 with
           cells := Semantics.replaceCell st2.cells (frame b.slot) (.structure sid (Semantics.setValue vs index rv)) }) := by
   cases k with
@@ -2998,20 +3012,25 @@ theorem field_assign_eff {P : Core.Program} {scope frame st env} (corr : Corr pl
       simp only [evalExpr, place] at run
       split at run
       · rename_i rv st2 valueRun
-        have views2 := views valueRun
-        refine ⟨rv, st2, valueRun, ?_, fun entry2 => ?_⟩
-        · simp only [Semantics.evalAssignValue, Semantics.assignOpBinary?,
-            Semantics.writeResolvedPlaceNative] at run
-          split at run
+        refine ⟨rv, st2, valueRun, (by
+          have r := run
+          split at r
+          · simp at r
+          rename_i result _
+          split at r
           · rename_i assigned written
-            obtain ⟨cells, rfl⟩ := writeResolvedPlace_cells written
-            rw [sync_ok (st := { st2 with cells }) views2, ite_self] at run
-            simp only [Semantics.Outcome.done.injEq] at run
-            rw [← run.2]
-          · simp at run
+            split at r
+            · rename_i coherent synced
+              simp only [Semantics.Outcome.done.injEq] at r
+              obtain ⟨-, rfl⟩ := r
+              obtain ⟨n3, v3⟩ := synchronized_grows synced
+              obtain ⟨n4, v4⟩ := writeNative_grows written
+              exact Grows.heap (Nat.le_of_eq (n3.trans n4).symm) (v3.trans v4)
+            · simp at r
+          · simp at r), fun hold apart entry2 => ?_⟩
         · have synced := sync_ok
             (st := { st2 with cells := Semantics.replaceCell st2.cells (frame b.slot) (.structure sid (Semantics.setValue vs index rv)) })
-            views2
+            (hold.replace apart)
           simp only [Semantics.evalAssignValue, Semantics.assignOpBinary?,
             Semantics.writeResolvedPlaceNative, Semantics.writeResolvedPlace, entry2,
             Semantics.replaceProjectedValue, got, assignCell_some entry2, synced, ite_self,
@@ -3025,13 +3044,11 @@ theorem index_assign_eff {P : Core.Program} {scope frame st env} (corr : Corr pl
     {id : Nat} {b : Binding} (found : lookup scope id = some b) {vs : List Value}
     (entry : st.cellEntry? (frame b.slot) = some ⟨frame b.slot, some (.array vs)⟩)
     {idx e : Core.Expr} {k : Nat} {u : Value} {st' : State}
-    (views : st.i32ArrayViews = [])
-    (idxGrows : ∀ {v s}, evalExpr (k + 1) P st idx = .done v s → Grows st s)
-    (eGrows : ∀ {s1 v s2}, evalExpr (k + 2) P s1 e = .done v s2 → Grows s1 s2)
     (run : evalExpr (k + 3) P st (.assign .set (.index (.local id) idx) e) = .done u st') :
     ∃ iv st1 pos old rv st2, evalExpr (k + 1) P st idx = .done iv st1 ∧ Semantics.integerIndex iv = .ok pos ∧
-      vs[pos]? = some old ∧ evalExpr (k + 2) P st1 e = .done rv st2 ∧ st'.heap = st2.heap ∧
-      (st2.cellEntry? (frame b.slot) = some ⟨frame b.slot, some (.array vs)⟩ →
+      vs[pos]? = some old ∧ evalExpr (k + 2) P st1 e = .done rv st2 ∧ Grows st2 st' ∧
+      (Views.ViewsHold st2 → (∀ v ∈ st2.i32ArrayViews, v.root ≠ frame b.slot) →
+        st2.cellEntry? (frame b.slot) = some ⟨frame b.slot, some (.array vs)⟩ →
         st' = { st2 with cells := Semantics.replaceCell st2.cells (frame b.slot) (.array (Semantics.setValue vs pos rv)) }) := by
   have base : Semantics.evalPlace (k + 1) P st .read (.local id) =
       .done { root := frame b.slot, projections := [], value := some (.array vs) } st := by
@@ -3042,7 +3059,6 @@ theorem index_assign_eff {P : Core.Program} {scope frame st env} (corr : Corr pl
   · rename_i resolved st1 placeRun
     split at placeRun
     · rename_i iv afterIndex indexRun
-      have views1 := (idxGrows indexRun views).1
       split at placeRun
       · simp at placeRun
       rename_i pos posOk
@@ -3052,20 +3068,25 @@ theorem index_assign_eff {P : Core.Program} {scope frame st env} (corr : Corr pl
         obtain ⟨rfl, rfl⟩ := placeRun
         split at run
         · rename_i rv st2 valueRun
-          have views2 := (eGrows valueRun views1).1
-          refine ⟨iv, afterIndex, pos, old, rv, st2, indexRun, posOk, got, valueRun, ?_, fun entry2 => ?_⟩
-          · simp only [Semantics.evalAssignValue, Semantics.assignOpBinary?,
-              Semantics.writeResolvedPlaceNative] at run
-            split at run
-            · rename_i assigned written
-              obtain ⟨cells, rfl⟩ := writeResolvedPlace_cells written
-              rw [sync_ok (st := { st2 with cells }) views2, ite_self] at run
-              simp only [Semantics.Outcome.done.injEq] at run
-              rw [← run.2]
-            · simp at run
+          refine ⟨iv, afterIndex, pos, old, rv, st2, indexRun, posOk, got, valueRun, (by
+          have r := run
+          split at r
+          · simp at r
+          rename_i result _
+          split at r
+          · rename_i assigned written
+            split at r
+            · rename_i coherent synced
+              simp only [Semantics.Outcome.done.injEq] at r
+              obtain ⟨-, rfl⟩ := r
+              obtain ⟨n3, v3⟩ := synchronized_grows synced
+              obtain ⟨n4, v4⟩ := writeNative_grows written
+              exact Grows.heap (Nat.le_of_eq (n3.trans n4).symm) (v3.trans v4)
+            · simp at r
+          · simp at r), fun hold apart entry2 => ?_⟩
           · have synced := sync_ok
               (st := { st2 with cells := Semantics.replaceCell st2.cells (frame b.slot) (.array (Semantics.setValue vs pos rv)) })
-              views2
+              (hold.replace apart)
             simp only [Semantics.evalAssignValue, Semantics.assignOpBinary?,
               Semantics.writeResolvedPlaceNative, Semantics.writeResolvedPlace, entry2, List.nil_append,
               Semantics.replaceProjectedValue, got, assignCell_some entry2, synced, ite_self,
@@ -3136,13 +3157,14 @@ theorem stmt_setFieldEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {id index : 
     cases fuel with
     | zero => simp [evalExpr] at assignRun
     | succ k =>
-      obtain ⟨rv, st2, valueRun, heapEq, write⟩ := field_assign_eff corr found entry got assignRun
-        fun valueRun => (eff_grown valueRun fresh.2).1
+      obtain ⟨rv, st2, valueRun, grown, write⟩ := field_assign_eff corr found entry got assignRun
       obtain ⟨fresh2, keeps2, locals2, -, d, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
-        ihe k (Nat.le_succ _) valueOk corr fr fresh hc fc valueRun (by rw [← heapEq]; exact bound)
+        ihe k (Nat.le_succ _) valueOk corr fr fresh hc fc valueRun (Nat.le_trans grown.next bound)
+      have apart2 := fun v vm => (corr.after fr fresh keeps2 locals2 same1).unviewed v vm b bmem
       have entry2 : st2.cellEntry? (frame b.slot) = some ⟨frame b.slot, some (.structure sid vs)⟩ := by
-        rw [keeps2.cells _ (corr.below fresh b bmem) fun x xm => corr.apart x xm b bmem]; exact entry
-      rw [write entry2]
+        rw [keeps2.cells _ (corr.below fresh b bmem) (fun x xm => corr.apart x xm b bmem)
+          fun v vm => corr.unviewed v vm b bmem]; exact entry
+      rw [write fresh2.2 apart2 entry2]
       rw [tyEq] at holds1
       have holdsV := holds_var holds1 scalar
       have sizeB := fr.sized b bmem
@@ -3153,7 +3175,7 @@ theorem stmt_setFieldEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {id index : 
       cases holdsS with
       | @struct _ _ _ _ _ fieldsHold1 =>
       have inRange := fieldOffset_lt fieldFound
-      refine ⟨assigned_fresh fresh2 _ _, (keeps2.lower le).trans (assigned_keeps (fr.above b bmem) _ _), d, _,
+      refine ⟨assigned_fresh fresh2 _ _ apart2, (keeps2.lower le).trans (assigned_keeps (fr.above b bmem) _ _), d, _,
         .seq exec1 .assign,
         .next ((corr.after fr fresh keeps2 locals2 same1).assign fr bmem (fun j away => ?_) ?_) hc1
           (fc1.keeps (assigned_keeps (fr.above b bmem) _ _) under)⟩
@@ -3170,9 +3192,6 @@ theorem stmt_setFieldEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {id index : 
 change the state: the index first, then the value, then the write. -/
 theorem eval_setIndex_eff {P : Core.Program} {k : Nat} {st : State} {slice : Nat} {idx e : Core.Expr}
     {element : Core.Ty} {address length : Nat} {root : Nat} {u : Value} {st' : State}
-    (views : st.i32ArrayViews = [])
-    (idxGrows : ∀ {v s}, evalExpr (k + 1) P st idx = .done v s → Grows st s)
-    (eGrows : ∀ {s1 v s2}, evalExpr (k + 2) P s1 e = .done v s2 → Grows s1 s2)
     (base : Semantics.evalPlace (k + 1) P st .read (.local slice) =
       .done { root, projections := [], value := some (.rawSlice element address length) } st)
     (run : evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = .done u st') :
@@ -3182,7 +3201,7 @@ theorem eval_setIndex_eff {P : Core.Program} {k : Nat} {st : State} {slice : Nat
       evalExpr (k + 2) P st1 e = .done right st2 ∧
       Semantics.writeRawNative P st2 { root, projections := [], value := none, rawByte := Semantics.isByte element }
         element at_ right = .ok heap ∧
-      st' = { st2 with heap } := by
+      Semantics.syncI32ViewsFromHeap { st2 with heap } = .ok st' := by
   rw [evalExpr] at run
   rw [Semantics.evalPlace] at run
   rw [base] at run
@@ -3191,7 +3210,6 @@ theorem eval_setIndex_eff {P : Core.Program} {k : Nat} {st : State} {slice : Nat
   · rename_i resolved st1 placeRun
     split at placeRun
     · rename_i iv afterIndex indexRun
-      have views1 := (idxGrows indexRun views).1
       split at placeRun
       · simp at placeRun
       rename_i pos posOk
@@ -3205,7 +3223,6 @@ theorem eval_setIndex_eff {P : Core.Program} {k : Nat} {st : State} {slice : Nat
       obtain ⟨rfl, rfl⟩ := placeRun
       split at run
       · rename_i right st2 valueRun
-        have views2 := (eGrows valueRun views1).1
         simp only [Semantics.evalAssignValue, Semantics.assignOpBinary?,
           Semantics.writeResolvedPlaceNative] at run
         split at run
@@ -3213,11 +3230,13 @@ theorem eval_setIndex_eff {P : Core.Program} {k : Nat} {st : State} {slice : Nat
           obtain ⟨heap, stored, wrapped⟩ := except_bind_ok written
           simp only [pure, Except.pure, Except.ok.injEq] at wrapped
           subst wrapped
-          simp only [Semantics.syncI32ViewsFromHeap, views2, Semantics.syncI32ViewsFromHeapFrom, ite_self,
-            Semantics.Outcome.done.injEq] at run
-          obtain ⟨-, rfl⟩ := run
-          exact ⟨iv, afterIndex, pos, at_, right, st2, heap, indexRun, posOk, inside, located, valueRun,
-            by simpa only [Semantics.writeRawNative] using stored, by rw [views2]⟩
+          split at run
+          · rename_i st3 back
+            simp only [Semantics.Outcome.done.injEq] at run
+            obtain ⟨-, rfl⟩ := run
+            exact ⟨iv, afterIndex, pos, at_, right, st2, heap, indexRun, posOk, inside, located, valueRun,
+              by simpa only [Semantics.writeRawNative] using stored, back⟩
+          · simp at run
         · simp at run
       all_goals simp at run
     all_goals simp at placeRun
@@ -3228,17 +3247,15 @@ the index, the value, then the array in the slice's cell, as the value left
 it, with that element replaced. -/
 theorem eval_setIndex_eff_safe {P : Core.Program} {k : Nat} {st : State} {slice : Nat} {idx e : Core.Expr}
     {element : Core.Ty} {cell length root : Nat} {u : Value} {st' : State}
-    (views : st.i32ArrayViews = [])
-    (idxGrows : ∀ {v s}, evalExpr (k + 1) P st idx = .done v s → Grows st s)
-    (eGrows : ∀ {s1 v s2}, evalExpr (k + 2) P s1 e = .done v s2 → Grows s1 s2)
     (base : Semantics.evalPlace (k + 1) P st .read (.local slice) =
       .done { root, projections := [], value := some (.slice element cell [] 0 length) } st)
     (run : evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = .done u st') :
     ∃ iv st1 pos right st2 entry vs, evalExpr (k + 1) P st idx = .done iv st1 ∧
       Semantics.integerIndex iv = .ok pos ∧ pos < length ∧
-      evalExpr (k + 2) P st1 e = .done right st2 ∧
+      evalExpr (k + 2) P st1 e = .done right st2 ∧ Grows st2 st' ∧
       st2.cellEntry? cell = some entry ∧ entry.value = some (.array vs) ∧ pos < vs.length ∧
-      st' = { st2 with cells := Semantics.replaceCell st2.cells cell (.array (Semantics.setValue vs pos right)) } := by
+      (Views.ViewsHold st2 → (∀ v ∈ st2.i32ArrayViews, v.root ≠ cell) →
+        st' = { st2 with cells := Semantics.replaceCell st2.cells cell (.array (Semantics.setValue vs pos right)) }) := by
   rw [evalExpr] at run
   rw [Semantics.evalPlace] at run
   rw [base] at run
@@ -3247,7 +3264,6 @@ theorem eval_setIndex_eff_safe {P : Core.Program} {k : Nat} {st : State} {slice 
   · rename_i resolved st1 placeRun
     split at placeRun
     · rename_i iv afterIndex indexRun
-      have views1 := (idxGrows indexRun views).1
       split at placeRun
       · simp at placeRun
       rename_i pos posOk
@@ -3264,7 +3280,22 @@ theorem eval_setIndex_eff_safe {P : Core.Program} {k : Nat} {st : State} {slice 
       obtain ⟨rfl, rfl⟩ := placeRun
       split at run
       · rename_i right st2 valueRun
-        have views2 := (eGrows valueRun views1).1
+        have grown : Grows st2 st' := (by
+      have r := run
+      split at r
+      · simp at r
+      rename_i result _
+      split at r
+      · rename_i assigned written
+        split at r
+        · rename_i coherent synced
+          simp only [Semantics.Outcome.done.injEq] at r
+          obtain ⟨-, rfl⟩ := r
+          obtain ⟨n3, v3⟩ := synchronized_grows synced
+          obtain ⟨n4, v4⟩ := writeNative_grows written
+          exact Grows.heap (Nat.le_of_eq (n3.trans n4).symm) (v3.trans v4)
+        · simp at r
+      · simp at r)
         simp only [Semantics.evalAssignValue, Semantics.assignOpBinary?, Semantics.writeResolvedPlaceNative,
           Semantics.writeResolvedPlace, List.nil_append, Nat.zero_add] at run
         cases entry : st2.cellEntry? cell with
@@ -3283,11 +3314,12 @@ theorem eval_setIndex_eff_safe {P : Core.Program} {k : Nat} {st : State} {slice 
             | some old' =>
             simp only [got', State.assignCell, entry, Option.isSome_some, if_true,
               Semantics.ResolvedPlace.viewFreeRootWrite, List.isEmpty_cons, Bool.false_and, Bool.and_false,
-              Bool.false_eq_true, if_false, Semantics.syncI32ViewsToHeap, views2,
-              Semantics.syncI32ViewsToHeapFrom, Semantics.Outcome.done.injEq] at run
-            obtain ⟨-, rfl⟩ := run
-            exact ⟨iv, afterIndex, pos, right, st2, _, vs, indexRun, posOk, lt, valueRun, entry, rfl,
-              (List.getElem?_eq_some_iff.mp got').1, by rw [views2]⟩
+              Bool.false_eq_true, if_false] at run
+            refine ⟨iv, afterIndex, pos, right, st2, _, vs, indexRun, posOk, lt, valueRun, grown, entry, rfl,
+              (List.getElem?_eq_some_iff.mp got').1, fun hold apart => ?_⟩
+            simp only [Views.syncTo_ok (hold.replace (value := .array (Semantics.setValue vs pos right)) apart),
+              Semantics.Outcome.done.injEq] at run
+            exact run.2.symm
       all_goals simp at run
     all_goals simp at placeRun
   all_goals simp at run
@@ -3328,13 +3360,12 @@ theorem stmt_setIndexEval_array (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice
       repeat' split at assignRun
       all_goals simp_all [evalExpr]
     | succ k =>
-    obtain ⟨iv, st1, pos, old, rv, st2, indexRun, posOk, got, valueRun, heapEq, write⟩ :=
-      index_assign_eff corr found entry fresh.2 (fun r => eff_grown r) (fun r => eff_grown r) assignRun
-    have bound2 : st2.heap.nextAddress ≤ hp.limit := by rw [← heapEq]; exact bound
-    have views1 := (eff_grown indexRun fresh.2).1
+    obtain ⟨iv, st1, pos, old, rv, st2, indexRun, posOk, got, valueRun, grown, write⟩ :=
+      index_assign_eff corr found entry assignRun
+    have bound2 : st2.heap.nextAddress ≤ hp.limit := Nat.le_trans grown.next bound
     obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
       ihe (k + 1) (by omega) indexOk corr fr fresh hc fc indexRun
-        (Nat.le_trans ((eff_grown valueRun views1).2) bound2)
+        (Nat.le_trans ((eff_grown valueRun).next) bound2)
     have limit1 := exec1.limit_normal
     obtain ⟨fresh2, keeps2, locals2, -, d2, env2, hp2, exec2, same2, holds2, hc2, fc2⟩ :=
       ihe (k + 2) (by omega) valueOk (corr.after fr fresh keeps1 locals1 same1) (fr.mono (Nat.le_succ _))
@@ -3364,8 +3395,10 @@ theorem stmt_setIndexEval_array (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice
       have small : n < 2 ^ 64 := by omega
       simp [Expr.eval, Word.holds, CmpOp.holdsU, BitVec.ult, posEq1, Nat.mod_eq_of_lt small, lt]
     have entry2 : st2.cellEntry? (frame b.slot) = some ⟨frame b.slot, some (.array vs)⟩ := by
-      rw [(keeps1.chain keeps2).cells _ (corr.below fresh b bmem) fun x xm => corr.apart x xm b bmem]; exact entry
-    rw [write entry2]
+      rw [(keeps1.chain keeps2).cells _ (corr.below fresh b bmem) (fun x xm => corr.apart x xm b bmem)
+        fun v vm => corr.unviewed v vm b bmem]; exact entry
+    have apart2 := (keeps1.chain keeps2).unrooted (corr.below fresh b bmem) fun w wm => corr.unviewed w wm b bmem
+    rw [write fresh2.2 apart2 entry2]
     rw [wty] at holds2
     have putExec : Exec mp 0 env2 hp2 (putElement next b.slot e.size 0 n)
         (.normal (env2.setFrom (b.slot + pos * e.size) (slotVars (next + 1) e.size)) hp2) :=
@@ -3383,7 +3416,7 @@ theorem stmt_setIndexEval_array (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice
         rw [same2 _ (by omega), same1 _ (by omega)]
     cases holdsA with
     | @array _ _ _ _ _ elems2 =>
-    refine ⟨assigned_fresh fresh2 _ _, ((keeps1.chain keeps2).lower le).trans (assigned_keeps (fr.above b bmem) _ _),
+    refine ⟨assigned_fresh fresh2 _ _ apart2, ((keeps1.chain keeps2).lower le).trans (assigned_keeps (fr.above b bmem) _ _),
       max d1 d2, _,
       .seq (exec1.mono (Nat.le_max_left _ _))
         ((Exec.seq (exec2.mono (Nat.le_max_right _ _)) (putExec.mono (Nat.zero_le _))).checkThen pass),
@@ -3458,8 +3491,8 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
         rw [bty] at holdsW
         cases holdsW with
         | @borrowed _ len x _ _ mem sliced root xty _ pointerSlot lenSlot _ =>
-          obtain ⟨iv, st1, pos, right, st2, entry, vs, indexRun, posOk, posLt, valueRun, entryEq, entryVal, -, rfl⟩ :=
-            eval_setIndex_eff_safe fresh.2 (fun r => eff_grown r) (fun r => eff_grown r) place assignRun
+          obtain ⟨iv, st1, pos, right, st2, entry, vs, indexRun, posOk, posLt, valueRun, grown, entryEq, entryVal, -, write⟩ :=
+            eval_setIndex_eff_safe place assignRun
           obtain ⟨eid, ev⟩ := entry
           simp only at entryVal
           subst entryVal
@@ -3469,15 +3502,17 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
               ({ st2 with cells := Semantics.replaceCell st2.cells x.cell (.array (Semantics.setValue vs pos right)) } : State)
               x.cell [] = .ok (.array (Semantics.setValue vs pos right)) := by
             simp [Semantics.readCellProjection, assigned_entry, entryEq, Semantics.projectedValue]
-          have bound2 : st2.heap.nextAddress ≤ hp.limit := bound
-          have views1 := (eff_grown indexRun fresh.2).1
+          have bound2 : st2.heap.nextAddress ≤ hp.limit := Nat.le_trans grown.next bound
           obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
             ihe (k + 1) (by omega) indexOk corr fr fresh hc fc indexRun
-              (Nat.le_trans ((eff_grown valueRun views1).2) bound2)
+              (Nat.le_trans ((eff_grown valueRun).next) bound2)
           have limit1 := exec1.limit_normal
           obtain ⟨fresh2, keeps2, locals2, -, d2, env2, hp2, exec2, same2, holds2, hc2, fc2⟩ :=
             ihe (k + 2) (by omega) valueOk (corr.after fr fresh keeps1 locals1 same1) (fr.mono (Nat.le_succ _))
               fresh1 hc1 fc1 valueRun (by rw [limit1]; exact bound2)
+          have apart2 := (keeps1.chain keeps2).unrooted (Nat.lt_of_lt_of_le (under x mem) le)
+            fun w wm => fc.unviewed w wm x mem
+          obtain rfl := write fresh2.2 apart2
           have limit2 := exec2.limit_normal
           have scalar : i.ty.isScalar = true := by
             simp only [Bool.or_eq_true] at kind
@@ -3525,8 +3560,9 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
             rw [Nat.mod_eq_of_lt bitsV]
           obtain ⟨viewNew, viewOld, outside⟩ :=
             Addressed.view_store_u8 sliced xty hp2 posLt (lowByte ((Expr.var (next + 1)).eval env2))
-          refine ⟨assigned_fresh fresh2 _ _, ((keeps1.chain keeps2).lower le).trans
-              ⟨fun c _ apart => by rw [assigned_entry, if_neg (fun h => apart x mem h.symm)], Nat.le_refl _⟩, max d1 d2, _,
+          refine ⟨assigned_fresh fresh2 _ _ apart2, ((keeps1.chain keeps2).lower le).trans
+              ⟨fun c _ apart _ => by rw [assigned_entry, if_neg (fun h => apart x mem h.symm)], Nat.le_refl _,
+                fun _ m => .inl m⟩, max d1 d2, _,
             .seq (exec1.mono (Nat.le_max_left _ _))
               ((Exec.seq (exec2.mono (Nat.le_max_right _ _)) (Exec.storeByte room)).checkThen pass),
             .next (((corr.after fr fresh (keeps1.chain keeps2) (locals2.trans locals1)
@@ -3549,21 +3585,23 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
             · simp [UInt8.toNat_ofNat, Nat.mod_eq_of_lt bitsV, BitVec.toNat_ofNat, UintTy.width]
               omega
         | @slice _ len _ _ lenSlot _ =>
-        obtain ⟨iv, st1, pos, at_, right, st2, heap, indexRun, posOk, inside, located, valueRun, stored, rfl⟩ :=
-          eval_setIndex_eff fresh.2 (fun r => eff_grown r) (fun r => eff_grown r) place assignRun
+        obtain ⟨iv, st1, pos, at_, right, st2, heap, indexRun, posOk, inside, located, valueRun, stored, back⟩ :=
+          eval_setIndex_eff place assignRun
+        have bound : heap.nextAddress ≤ hp.limit := by have b := bound; rw [(syncFrom_same back).1] at b; exact b
         have bound2 : st2.heap.nextAddress ≤ hp.limit := by
           rw [← writeRawNative_next stored]
           exact bound
         simp only [Semantics.rawSliceElementAddress?, SrcType.toCore, UintTy.toCore, Except.ok.injEq] at located
         subst located
-        have views1 := (eff_grown indexRun fresh.2).1
         obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
           ihe (k + 1) (by omega) indexOk corr fr fresh hc fc indexRun
-            (Nat.le_trans ((eff_grown valueRun views1).2) bound2)
+            (Nat.le_trans ((eff_grown valueRun).next) bound2)
         have limit1 := exec1.limit_normal
         obtain ⟨fresh2, keeps2, locals2, -, d2, env2, hp2, exec2, same2, holds2, hc2, fc2⟩ :=
           ihe (k + 2) (by omega) valueOk (corr.after fr fresh keeps1 locals1 same1) (fr.mono (Nat.le_succ _))
             fresh1 hc1 fc1 valueRun (by rw [limit1]; exact bound2)
+        obtain ⟨hold3, heap3, views3, others3, next3, locals3, world3, below3⟩ :=
+          fresh2.2.afterStores (s := { st2 with heap }) (writeRawNative_stores stored) rfl rfl back
         have limit2 := exec2.limit_normal
         have scalar : i.ty.isScalar = true := by
           simp only [Bool.or_eq_true] at kind
@@ -3609,13 +3647,14 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
         have room : ((Expr.binary Word.u64 BinOp.add (Expr.var b.slot) (Expr.var next)).eval env2).toNat <
             hp2.limit := by
           rw [address]; addr_omega
-        refine ⟨fresh2, ((keeps1.chain keeps2).lower le).trans ⟨fun _ _ _ => rfl, Nat.le_refl _⟩, max d1 d2, _,
-          .seq (exec1.mono (Nat.le_max_left _ _))
+        refine Simulates.syncNext (s := { st2 with heap }) (((keeps1.chain keeps2).lower le).trans ⟨fun _ _ _ _ => rfl, Nat.le_refl _, fun _ m => .inl m⟩)
+          (.seq (exec1.mono (Nat.le_max_left _ _))
             ((Exec.seq (exec2.mono (Nat.le_max_right _ _)) (Exec.storeByte (Nat.lt_of_lt_of_le room hc2.topped))).checkThen
-              pass),
-          .next (((corr.after fr fresh (keeps1.chain keeps2) (locals2.trans locals1)
+              pass))
+          (((corr.after fr fresh (keeps1.chain keeps2) (locals2.trans locals1)
             (fun j lt => (same2 j (by omega)).trans (same1 j lt)))).cells_congr rfl fun _ _ => rfl) ?_
-            ((fc2.write_low room).withHeap _)⟩
+          ((fc2.write_low room).withHeap _)
+          ⟨below3 fresh2.1, hold3⟩ heap3 world3 locals3 next3 views3 others3
         have low : lowByte ((Expr.var (next + 1)).eval env2) = UInt8.ofNat (env2 (next + 1)).toNat := by
           simp only [lowByte, Expr.eval, BitVec.toNat_setWidth]
           rw [Nat.mod_eq_of_lt bitsV]
@@ -3654,19 +3693,21 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
       rw [bty] at holdsW
       cases holdsW with
       | @slice _ len _ _ lenSlot _ =>
-      obtain ⟨iv, st1, pos, at_, right, st2, heap, indexRun, posOk, inside, located, valueRun, stored, rfl⟩ :=
-        eval_setIndex_eff fresh.2 (fun r => eff_grown r) (fun r => eff_grown r) place assignRun
+      obtain ⟨iv, st1, pos, at_, right, st2, heap, indexRun, posOk, inside, located, valueRun, stored, back⟩ :=
+        eval_setIndex_eff place assignRun
+      have bound : heap.nextAddress ≤ hp.limit := by have b := bound; rw [(syncFrom_same back).1] at b; exact b
       have bound2 : st2.heap.nextAddress ≤ hp.limit := by
         rw [← writeRawNative_next stored]
         exact bound
-      have views1 := (eff_grown indexRun fresh.2).1
       obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
         ihe (k + 1) (by omega) indexOk corr fr fresh hc fc indexRun
-          (Nat.le_trans ((eff_grown valueRun views1).2) bound2)
+          (Nat.le_trans ((eff_grown valueRun).next) bound2)
       have limit1 := exec1.limit_normal
       obtain ⟨fresh2, keeps2, locals2, -, d2, env2, hp2, exec2, same2, holds2, hc2, fc2⟩ :=
         ihe (k + 2) (by omega) valueOk (corr.after fr fresh keeps1 locals1 same1) (fr.mono (Nat.le_succ _))
           fresh1 hc1 fc1 valueRun (by rw [limit1]; exact bound2)
+      obtain ⟨hold3, heap3, views3, others3, next3, locals3, world3, below3⟩ :=
+        fresh2.2.afterStores (s := { st2 with heap }) (writeRawNative_stores stored) rfl rfl back
       have limit2 := exec2.limit_normal
       have scalar : i.ty.isScalar = true := by
         simp only [Bool.or_eq_true] at kind
@@ -3699,14 +3740,14 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
           omega)
       have finish : ∀ {s hp'}, Exec mp 0 env2 hp2 s (.normal env2 hp') → HeapCorr heap st2.world hp' →
           hp2.LowOnly hp' → Simulates bud places mp hp ret scope frame base st env
-            (i.stmt.seq (checkThen next (boundsGuard b (.var next)) (w.stmt.seq s))) .next { st2 with heap } :=
+            (i.stmt.seq (checkThen next (boundsGuard b (.var next)) (w.stmt.seq s))) .next st3 :=
         fun exec hc' low =>
-        ⟨fresh2, ((keeps1.chain keeps2).lower le).trans ⟨fun _ _ _ => rfl, Nat.le_refl _⟩, max d1 d2, _,
-          .seq (exec1.mono (Nat.le_max_left _ _))
-            ((Exec.seq (exec2.mono (Nat.le_max_right _ _)) (exec.mono (Nat.zero_le _))).checkThen pass),
-          .next (((corr.after fr fresh (keeps1.chain keeps2) (locals2.trans locals1)
+        Simulates.syncNext (s := { st2 with heap }) (((keeps1.chain keeps2).lower le).trans ⟨fun _ _ _ _ => rfl, Nat.le_refl _, fun _ m => .inl m⟩)
+          (.seq (exec1.mono (Nat.le_max_left _ _))
+            ((Exec.seq (exec2.mono (Nat.le_max_right _ _)) (exec.mono (Nat.zero_le _))).checkThen pass))
+          (((corr.after fr fresh (keeps1.chain keeps2) (locals2.trans locals1)
             (fun j lt => (same2 j (by omega)).trans (same1 j lt)))).cells_congr rfl fun _ _ => rfl) hc'
-            ((fc2.lowOnly low).withHeap _)⟩
+            ((fc2.lowOnly low).withHeap _) ⟨below3 fresh2.1, hold3⟩ heap3 world3 locals3 next3 views3 others3
       simp only [storeEvalWord] at ok
       split at ok
       case isFalse => simp at ok
@@ -3770,8 +3811,8 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
     rw [bty] at holdsW
     cases holdsW with
     | @borrowed _ len x _ _ mem sliced root xty _ pointerSlot lenSlot _ =>
-      obtain ⟨iv, st1, pos, right, st2, entry, vs, indexRun, posOk, posLt, valueRun, entryEq, entryVal, -, rfl⟩ :=
-        eval_setIndex_eff_safe fresh.2 (fun r => eff_grown r) (fun r => eff_grown r) place assignRun
+      obtain ⟨iv, st1, pos, right, st2, entry, vs, indexRun, posOk, posLt, valueRun, grown, entryEq, entryVal, -, write⟩ :=
+        eval_setIndex_eff_safe place assignRun
       obtain ⟨eid, ev⟩ := entry
       simp only at entryVal
       subst entryVal
@@ -3781,15 +3822,17 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
           ({ st2 with cells := Semantics.replaceCell st2.cells x.cell (.array (Semantics.setValue vs pos right)) } : State)
           x.cell [] = .ok (.array (Semantics.setValue vs pos right)) := by
         simp [Semantics.readCellProjection, assigned_entry, entryEq, Semantics.projectedValue]
-      have bound2 : st2.heap.nextAddress ≤ hp.limit := bound
-      have views1 := (eff_grown indexRun fresh.2).1
+      have bound2 : st2.heap.nextAddress ≤ hp.limit := Nat.le_trans grown.next bound
       obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
         ihe (k + 1) (by omega) indexOk corr fr fresh hc fc indexRun
-          (Nat.le_trans ((eff_grown valueRun views1).2) bound2)
+          (Nat.le_trans ((eff_grown valueRun).next) bound2)
       have limit1 := exec1.limit_normal
       obtain ⟨fresh2, keeps2, locals2, -, d2, env2, hp2, exec2, same2, holds2, hc2, fc2⟩ :=
         ihe (k + 2) (by omega) valueOk (corr.after fr fresh keeps1 locals1 same1) (fr.mono (Nat.le_succ _))
           fresh1 hc1 fc1 valueRun (by rw [limit1]; exact bound2)
+      have apart2 := (keeps1.chain keeps2).unrooted (Nat.lt_of_lt_of_le (under x mem) le)
+        fun w wm => fc.unviewed w wm x mem
+      obtain rfl := write fresh2.2 apart2
       have limit2 := exec2.limit_normal
       have scalar : i.ty.isScalar = true := by
         simp only [Bool.or_eq_true] at kind
@@ -3849,8 +3892,9 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
         simp only [BitVec.toNat_ofNat, Nat.reducePow]
         omega
       obtain ⟨viewNew, viewOld, outside⟩ := Addressed.view_store_i32 sliced xty hp2 posLt (env2 (next + 1)).toNat
-      refine ⟨assigned_fresh fresh2 _ _, ((keeps1.chain keeps2).lower le).trans
-          ⟨fun c _ apart => by rw [assigned_entry, if_neg (fun h => apart x mem h.symm)], Nat.le_refl _⟩, max d1 d2, _,
+      refine ⟨assigned_fresh fresh2 _ _ apart2, ((keeps1.chain keeps2).lower le).trans
+          ⟨fun c _ apart _ => by rw [assigned_entry, if_neg (fun h => apart x mem h.symm)], Nat.le_refl _,
+            fun _ m => .inl m⟩, max d1 d2, _,
         .seq (exec1.mono (Nat.le_max_left _ _))
           ((Exec.seq (exec2.mono (Nat.le_max_right _ _)) (Exec.storeWord room)).checkThen pass),
         .next (((corr.after fr fresh (keeps1.chain keeps2) (locals2.trans locals1)
@@ -3872,8 +3916,9 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
         rw [viewNew, same]
         exact ⟨rfl, bitsV⟩
     | @slice _ len _ _ lenSlot _ =>
-    obtain ⟨iv, st1, pos, at_, right, st2, heap, indexRun, posOk, inside, located, valueRun, stored, rfl⟩ :=
-      eval_setIndex_eff fresh.2 (fun r => eff_grown r) (fun r => eff_grown r) place assignRun
+    obtain ⟨iv, st1, pos, at_, right, st2, heap, indexRun, posOk, inside, located, valueRun, stored, back⟩ :=
+      eval_setIndex_eff place assignRun
+    have bound : heap.nextAddress ≤ hp.limit := by have b := bound; rw [(syncFrom_same back).1] at b; exact b
     have bound2 : st2.heap.nextAddress ≤ hp.limit := by
       rw [← writeRawNative_next stored]
       exact bound
@@ -3881,14 +3926,15 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
       at stored
     simp only [Semantics.rawSliceElementAddress?, SrcType.toCore, Except.ok.injEq] at located
     subst located
-    have views1 := (eff_grown indexRun fresh.2).1
     obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
       ihe (k + 1) (by omega) indexOk corr fr fresh hc fc indexRun
-        (Nat.le_trans ((eff_grown valueRun views1).2) bound2)
+        (Nat.le_trans ((eff_grown valueRun).next) bound2)
     have limit1 := exec1.limit_normal
     obtain ⟨fresh2, keeps2, locals2, -, d2, env2, hp2, exec2, same2, holds2, hc2, fc2⟩ :=
       ihe (k + 2) (by omega) valueOk (corr.after fr fresh keeps1 locals1 same1) (fr.mono (Nat.le_succ _))
         fresh1 hc1 fc1 valueRun (by rw [limit1]; exact bound2)
+    obtain ⟨hold3, heap3, views3, others3, next3, locals3, world3, below3⟩ :=
+      fresh2.2.afterStores (s := { st2 with heap }) (writeNativeValue_stores _ stored) rfl rfl back
     have limit2 := exec2.limit_normal
     have scalar : i.ty.isScalar = true := by
       simp only [Bool.or_eq_true] at kind
@@ -3935,13 +3981,14 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
         (Expr.binary Word.u64 BinOp.mul (Expr.var next) (Expr.lit 4))).eval env2).toNat + MemWidth.m32.bytes ≤
         hp2.limit := by
       rw [address]; simp only [MemWidth.bytes]; addr_omega
-    refine ⟨fresh2, ((keeps1.chain keeps2).lower le).trans ⟨fun _ _ _ => rfl, Nat.le_refl _⟩, max d1 d2, _,
-      .seq (exec1.mono (Nat.le_max_left _ _))
+    refine Simulates.syncNext (s := { st2 with heap }) (((keeps1.chain keeps2).lower le).trans ⟨fun _ _ _ _ => rfl, Nat.le_refl _, fun _ m => .inl m⟩)
+      (.seq (exec1.mono (Nat.le_max_left _ _))
         ((Exec.seq (exec2.mono (Nat.le_max_right _ _)) (Exec.storeWord (Nat.le_trans room hc2.topped))).checkThen
-          pass),
-      .next (((corr.after fr fresh (keeps1.chain keeps2) (locals2.trans locals1)
+          pass))
+      (((corr.after fr fresh (keeps1.chain keeps2) (locals2.trans locals1)
         (fun j lt => (same2 j (by omega)).trans (same1 j lt)))).cells_congr rfl fun _ _ => rfl) ?_
-        ((fc2.writeLE_low room).withHeap _)⟩
+      ((fc2.writeLE_low room).withHeap _)
+      ⟨below3 fresh2.1, hold3⟩ heap3 world3 locals3 next3 views3 others3
     rw [address]
     simp only [MemWidth.bytes, Expr.eval]
     rw [writeLE_eq_writeBytes, i32_store_bytes bitsV]
@@ -3978,7 +4025,7 @@ theorem stmt_ifEval (ih : StmtSound sp mp fuel) (ihe : EvalSound sp mp fuel) {co
     split at run
     · rename_i mid condRun
       obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
-        ihe condOk corr fr fresh hc fc condRun (stmt_bound (eff_grown condRun fresh.2).1 run bound)
+        ihe condOk corr fr fresh hc fc condRun (stmt_bound run bound)
       rw [tyEq] at holds1
       obtain ⟨_, eq, bits⟩ := bool_bits ((SrcType.holdsAt_scalar rfl).mp holds1)
       cases eq
@@ -3990,7 +4037,7 @@ theorem stmt_ifEval (ih : StmtSound sp mp fuel) (ihe : EvalSound sp mp fuel) {co
           (.ifTrue (by simp [Expr.eval, bits, boolBits]) (exec.mono (Nat.le_max_right _ _))), matched⟩
     · rename_i mid condRun
       obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
-        ihe condOk corr fr fresh hc fc condRun (stmt_bound (eff_grown condRun fresh.2).1 run bound)
+        ihe condOk corr fr fresh hc fc condRun (stmt_bound run bound)
       rw [tyEq] at holds1
       obtain ⟨_, eq, bits⟩ := bool_bits ((SrcType.holdsAt_scalar rfl).mp holds1)
       cases eq
@@ -4045,12 +4092,11 @@ theorem stmt_whileEval (ih : StmtSound sp mp fuel) (ihe : EvalSound sp mp fuel) 
         .loopBroke (Expr.lit_one_ne env) (.seq exec1 (.ifFalse (by simp [Expr.eval, bits, boolBits]) .brk)),
         .next (corr.after fr fresh keeps1 locals1 same1) hc1 fc1⟩
     · rename_i mid condRun
-      have views1 := (eff_grown condRun fresh.2).1
       split at run
       · rename_i completed bodyRun
         obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
           ihe condOk corr fr fresh hc fc condRun
-            (stmt_bound views1 bodyRun (stmt_bound (execStmt_grows bodyRun views1).1
+            (stmt_bound bodyRun (stmt_bound
               (s := .whileEval condition body) run bound))
         rw [tyEq] at holds1
         obtain ⟨_, eq, bits⟩ := bool_bits ((SrcType.holdsAt_scalar rfl).mp holds1)
@@ -4058,7 +4104,7 @@ theorem stmt_whileEval (ih : StmtSound sp mp fuel) (ihe : EvalSound sp mp fuel) 
         have condTrue : (Expr.var next).eval env1 ≠ 0 := by simp [Expr.eval, bits, boolBits]
         obtain ⟨fresh2, keeps2, d2, out2, exec2, matched2⟩ :=
           ih bodyOk (corr.after fr fresh keeps1 locals1 same1) fr fresh1 (Nat.le_trans le keeps1.next) hc1 fc1 under bodyRun
-            (stmt_bound (execStmt_grows bodyRun views1).1 (s := .whileEval condition body) run
+            (stmt_bound (s := .whileEval condition body) run
               (by rw [exec1.limit_normal]; exact bound))
         cases matched2 with
         | next corr2 hc2 fc2 =>
@@ -4073,7 +4119,7 @@ theorem stmt_whileEval (ih : StmtSound sp mp fuel) (ihe : EvalSound sp mp fuel) 
       · rename_i completed bodyRun
         obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
           ihe condOk corr fr fresh hc fc condRun
-            (stmt_bound views1 bodyRun (stmt_bound (execStmt_grows bodyRun views1).1
+            (stmt_bound bodyRun (stmt_bound
               (s := .whileEval condition body) run bound))
         rw [tyEq] at holds1
         obtain ⟨_, eq, bits⟩ := bool_bits ((SrcType.holdsAt_scalar rfl).mp holds1)
@@ -4081,7 +4127,7 @@ theorem stmt_whileEval (ih : StmtSound sp mp fuel) (ihe : EvalSound sp mp fuel) 
         have condTrue : (Expr.var next).eval env1 ≠ 0 := by simp [Expr.eval, bits, boolBits]
         obtain ⟨fresh2, keeps2, d2, out2, exec2, matched2⟩ :=
           ih bodyOk (corr.after fr fresh keeps1 locals1 same1) fr fresh1 (Nat.le_trans le keeps1.next) hc1 fc1 under bodyRun
-            (stmt_bound (execStmt_grows bodyRun views1).1 (s := .whileEval condition body) run
+            (stmt_bound (s := .whileEval condition body) run
               (by rw [exec1.limit_normal]; exact bound))
         cases matched2 with
         | continued corr2 hc2 fc2 =>
@@ -4097,7 +4143,7 @@ theorem stmt_whileEval (ih : StmtSound sp mp fuel) (ihe : EvalSound sp mp fuel) 
         simp only [Semantics.Outcome.done.injEq] at run
         obtain ⟨rfl, rfl⟩ := run
         obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
-          ihe condOk corr fr fresh hc fc condRun (stmt_bound views1 bodyRun bound)
+          ihe condOk corr fr fresh hc fc condRun (stmt_bound bodyRun bound)
         rw [tyEq] at holds1
         obtain ⟨_, eq, bits⟩ := bool_bits ((SrcType.holdsAt_scalar rfl).mp holds1)
         cases eq
@@ -4115,7 +4161,7 @@ theorem stmt_whileEval (ih : StmtSound sp mp fuel) (ihe : EvalSound sp mp fuel) 
         simp only [Semantics.Outcome.done.injEq] at run
         obtain ⟨rfl, rfl⟩ := run
         obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
-          ihe condOk corr fr fresh hc fc condRun (stmt_bound views1 bodyRun bound)
+          ihe condOk corr fr fresh hc fc condRun (stmt_bound bodyRun bound)
         rw [tyEq] at holds1
         obtain ⟨_, eq, bits⟩ := bool_bits ((SrcType.holdsAt_scalar rfl).mp holds1)
         cases eq

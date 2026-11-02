@@ -686,6 +686,7 @@ block. -/
 theorem FrameCorr.lend {st : State} {hp hpS : Heap} (fc : FrameCorr bud places st hp)
     {scope : List Binding} {frame : Nat → Nat} {base next : Nat} (fr : Layout scope frame base next)
     (apart : ∀ x ∈ places, ∀ b ∈ scope, x.cell ≠ frame b.slot)
+    (unviewed : ∀ v ∈ st.i32ArrayViews, ∀ b ∈ scope, v.root ≠ frame b.slot)
     {args : List SrcEff} {types : List SrcType} {t : Nat} {a : ArrayArgs}
     (ok : arrayArgs scope args types t 0 = some a) (blockPos : 0 < bud.block) (bytesLe : a.bytes ≤ bud.block)
     (lentHold : ∀ x ∈ arrayPlaces scope frame hp.fsp args 0, ∀ places', x.Holds places' st hpS)
@@ -698,7 +699,7 @@ theorem FrameCorr.lend {st : State} {hp hpS : Heap} (fc : FrameCorr bud places s
   have ceiling := fc.ceiling pos
   have bounded := fc.bounded pos
   refine ⟨fun x mem => ?_, fun x mem => ?_, fun x mem => ?_, fun x mem y ymem ne => ?_, fun x mem => ?_,
-    fun _ => by simp only; rw [fsp, limit]; exact room, fun _ => by simp only; rw [fsp, top]; omega,
+    fun v vmem x mem => ?_, fun _ => by simp only; rw [fsp, limit]; exact room, fun _ => by simp only; rw [fsp, top]; omega,
     fun _ => by rw [top]; exact bounded⟩
   · rcases List.mem_append.mp mem with lent | old
     · exact lentHold x lent _
@@ -732,6 +733,10 @@ theorem FrameCorr.lend {st : State} {hp hpS : Heap} (fc : FrameCorr bud places s
   · rcases List.mem_append.mp mem with lent | old
     · exact (shapeAll x lent).1
     · exact fc.packed x old
+  · rcases List.mem_append.mp mem with lent | old
+    · obtain ⟨-, -, ⟨b, bmem, cell, -, -⟩, -⟩ := shapeAll x lent
+      rw [cell]; exact unviewed v vmem b bmem
+    · exact fc.unviewed v vmem x old
 
 
 /-! ## The call -/
@@ -790,7 +795,7 @@ theorem arrayCall_setup {sp : SrcProgram} {mp : Program} {d : Nat} {scope : List
     arrayStores_exec (mp := mp) (d := d) corrC at_ ok (hp := hp) (by omega) (by omega)
   refine ⟨rfl, g, len, _, at_, agree, .frame (by omega), hpS, stores,
     hc.high within (fun c lt => out c (.inl (by omega))) cursorS limitS ioS,
-    fc.lend fr corr.apart ok blockPos bytesLe lent (fun c hi => out c (.inr (by omega))) fspS limitS topS,
+    fc.lend fr corr.apart corr.unviewed ok blockPos bytesLe lent (fun c hi => out c (.inr (by omega))) fspS limitS topS,
     holds at_ (by omega) (fun x mem => List.mem_append_right _ mem) (fun x mem => List.mem_append_left _ mem),
     limitS, fspS, topS⟩
 
@@ -840,7 +845,7 @@ theorem arrayCall_sound {sp : SrcProgram} {mp : Program}
   have entry := bindLocals_same (paramBindings f.params values) { st with locals := [] }
   have bodyGrown := (Grows.same entry.1 entry.2).trans (grows sp (k + 1) k (Nat.lt_succ_self k) bodyRun)
   have bound' : completed.heap.nextAddress ≤ hp.limit := bound
-  have within : st.heap.nextAddress ≤ hp.limit := Nat.le_trans (bodyGrown fresh.2).2 bound'
+  have within : st.heap.nextAddress ≤ hp.limit := Nat.le_trans (bodyGrown).next bound'
   have tAbove : next ≤ next + f.ret.size := Nat.le_add_right _ _
   obtain ⟨-, g, len, EC, atC, sameC, frameExec, hpS, storesExec, hcS, fcS, holdsS, limitS, fspS, topS⟩ :=
     arrayCall_setup (sp := sp) (mp := mp) (d := 0) corr fr hc fc within tAbove argsOk blockPos bytesLe argsRun
@@ -866,10 +871,11 @@ theorem arrayCall_sound {sp : SrcProgram} {mp : Program}
   have shape := (arrayPlaces_shape fr (A := hp.fsp) argsOk).1
   refine ⟨restore_fresh freshDone, ?_, rfl, pos, d + 1, E4, { hp' with fsp := hp.fsp },
     Exec.checkThen g (.seq (frameExec.mono (Nat.zero_le _)) (.seq (storesExec.mono (Nat.zero_le _))
-      (.seq callExec (.seq frame2 loadsExec)))), ⟨corr.locals, corr.apart, fun b bmem => ?_⟩, ?_,
+      (.seq callExec (.seq frame2 loadsExec)))), ⟨corr.locals, corr.apart, fun b bmem => ?_,
+      fun v vmem b bmem => keeps.unrooted (corr.below fresh b bmem) (fun w wm => corr.unviewed w wm b bmem) v vmem⟩, ?_,
     hcDone.withFsp _, ((fcDone.restrict fun x mem => List.mem_append_right _ mem).back fc limit' top').restoreLocals _⟩
-  · refine Keeps.trans ⟨fun c below apart => keeps.cells c (by omega) fun x mem => ?_, keeps.next⟩
-      (restore_keeps _ _ _)
+  · refine Keeps.trans ⟨fun c below apart unrooted => keeps.cells c (by omega) (fun x mem => ?_) unrooted, keeps.next,
+      fun v m => (keeps.views v m).imp_right fun h => by omega⟩ (restore_keeps _ _ _)
     rcases List.mem_append.mp mem with lent | old
     · obtain ⟨-, -, ⟨b, bmem, cell, -, -⟩, -⟩ := shape x lent
       have := fr.above b bmem
@@ -896,7 +902,7 @@ theorem arrayCall_sound {sp : SrcProgram} {mp : Program}
       have slotB := fr.slots b bmem
       refine ⟨v0, ?_, held.congr fun i lt => ?_⟩
       · show completed.cellEntry? (frame b.slot) = _
-        rw [keeps.cells _ (corr.below fresh b bmem) fun x mem => ?_]
+        rw [keeps.cells _ (corr.below fresh b bmem) (fun x mem => ?_) fun v vm => corr.unviewed v vm b bmem]
         · exact entry0
         · rcases List.mem_append.mp mem with lent | old
           · exact apartC x lent

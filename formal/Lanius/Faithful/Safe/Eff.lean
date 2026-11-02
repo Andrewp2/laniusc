@@ -277,7 +277,7 @@ theorem eff_safe_step (calls : ∀ m, FuncSim sp prims outside m) (funcs : FuncS
       subst found'
       have entry := bindLocals_same (paramBindings f.params values) { afterArgs with locals := [] }
       have gBody : Grows afterArgs completed := by
-        refine (Grows.same entry.1 entry.2).trans ?_
+        refine (Grows.same (st := afterArgs) entry.1 entry.2).trans ?_
         rcases body with body | ⟨c, body, -⟩
         · exact execStmt_trap_grows body
         · exact execStmt_grows body
@@ -416,7 +416,7 @@ theorem eff_safe_step (calls : ∀ m, FuncSim sp prims outside m) (funcs : FuncS
     all_goals obtain rfl : k = j := Nat.succ.inj hj
     · exact eff vrun htv inv rel bound
     obtain ⟨j', s2, lt, brun, rfl⟩ := letArm_trap_inv arun
-    have b1 := Grows.bound (effGrows vrun) ((Grows.same rfl rfl).trans (effTrapGrows brun) |>.trans (Grows.same rfl rfl))
+    have b1 := Grows.bound (effGrows vrun) ((Grows.same (st := s1) (st' := s1.bindLocal id sv) rfl rfl).trans (effTrapGrows brun) |>.trans (Grows.same (st' := restoreLocals s1 s2) rfl rfl))
       inv.views bound
     obtain ⟨q, -, rq, ran1⟩ := effD vrun htv inv rel b1
     have rel1 := rel.step ran1.step ran1.locals

@@ -176,7 +176,7 @@ theorem boxed_sim {c : Nat} {t : SrcType} {id sizeOf slice panic : Nat} {values 
   simp only [pure, Except.pure, Except.ok.injEq] at wrapped
   subst wrapped
   simp only [Semantics.ResolvedPlace.viewFreeRootWrite, raw, Option.isNone_some, Bool.false_and,
-    Bool.false_eq_true, if_false, syncFrom_ok (st := { (s10.bindLocal 203 _) with heap := H2 }) inv4.views,
+    Bool.false_eq_true, if_false, syncFrom_ok (st := { (s10.bindLocal 203 _) with heap := H2 }) (Views.ViewsHold.nil inv4.views),
     Except.ok.injEq] at synced
   subst synced
   -- the returned box

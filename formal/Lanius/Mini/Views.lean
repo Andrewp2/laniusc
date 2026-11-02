@@ -38,13 +38,53 @@ theorem replaceBlock_self : ∀ (blocks : List Block) (b : Block),
     · simp [only c (List.mem_cons_self ..) same]
     · simp [same]
 
-/-- A block that holds the address `base + i` for each `i` below its size,
-and is the only one at its base. -/
+/-- A live, borrowed block of the heap, apart from every other block (each
+block takes at least one address, as the bump allocator gives it). -/
 structure Owns (heap : Heap) (b : Block) : Prop where
   mem : b ∈ heap.blocks
   sized : b.bytes.length = b.size
-  holds : ∀ i < b.size, heap.containingBlock? (b.base + i) = some b
-  only : ∀ c ∈ heap.blocks, c.base = b.base → c = b
+  live : b.live = true
+  borrowed : b.owned = false
+  alone : ∀ c ∈ heap.blocks, c ≠ b → c.base + max c.size 1 ≤ b.base ∨ b.base + max b.size 1 ≤ c.base
+
+/-- A block that ends below the next address. -/
+def Before (heap : Heap) (b : Block) : Prop := b.base + max b.size 1 ≤ heap.nextAddress
+
+theorem find?_unique {α : Type} {p : α → Bool} : ∀ {l : List α} {a : α}, a ∈ l → p a = true →
+    (∀ c ∈ l, p c = true → c = a) → l.find? p = some a
+  | [], _, mem, _, _ => by simp at mem
+  | c :: rest, a, mem, pa, only => by
+    by_cases pc : p c = true
+    · rw [List.find?_cons_of_pos pc, only c (List.mem_cons_self ..) pc]
+    · rw [List.find?_cons_of_neg pc]
+      rcases List.mem_cons.mp mem with rfl | mem
+      · exact absurd pa pc
+      · exact find?_unique mem pa fun d dm => only d (List.mem_cons_of_mem _ dm)
+
+/-- The only block at its base. -/
+theorem Owns.only {heap : Heap} {b : Block} (owns : Owns heap b) : ∀ c ∈ heap.blocks, c.base = b.base → c = b := by
+  intro c mem same
+  by_cases eq : c = b
+  · exact eq
+  · have := Nat.le_max_right c.size 1
+    have := Nat.le_max_right b.size 1
+    have al := owns.alone c mem eq
+    simp only [Lanius.Address] at *
+    rcases al with h | h <;> omega
+
+/-- The block holds each address of its own. -/
+theorem Owns.holds {heap : Heap} {b : Block} (owns : Owns heap b) :
+    ∀ i < b.size, heap.containingBlock? (b.base + i) = some b := by
+  intro i lt
+  refine find?_unique owns.mem (by simp [owns.live, lt]) fun c mem pc => ?_
+  by_cases eq : c = b
+  · exact eq
+  · simp only [Bool.and_eq_true, decide_eq_true_eq] at pc
+    have := Nat.le_max_left c.size 1
+    have := Nat.le_max_left b.size 1
+    have al := owns.alone c mem eq
+    simp only [Lanius.Address] at *
+    rcases al with h | h <;> omega
 
 theorem storeByte_self {heap : Heap} {b : Block} (owns : Owns heap b) {i : Nat} (lt : i < b.size) :
     heap.storeByte b.base i (b.bytes[i]'(owns.sized ▸ lt)) = .ok heap := by
@@ -163,24 +203,28 @@ theorem decode_encode : ∀ {vs : List Value} {bytes : List UInt8}, (∀ v ∈ v
 /-- View `v` holds: its root cell is the array `vs` of in-range `i32`s
 (every cell with that id), and its block `b`, at the view's address and the
 only block there, holds their encoding. -/
-structure ViewHolds (st : State) (v : I32ArrayView) (vs : List Value) (b : Block) : Prop where
+structure ViewHolds (cellList : List Cell) (heap : Heap) (v : I32ArrayView) (vs : List Value) (b : Block) :
+    Prop where
   proj : v.projections = []
-  cells : ∀ c ∈ st.cells, c.id = v.root → c.value = some (.array vs)
-  present : ∃ c ∈ st.cells, c.id = v.root
+  cells : ∀ c ∈ cellList, c.id = v.root → c.value = some (.array vs)
+  present : ∃ c ∈ cellList, c.id = v.root
   length : vs.length = v.length
   i32s : ∀ x ∈ vs, IsI32 x
   base : b.base = v.address
-  owns : Owns st.heap b
+  owns : Owns heap b
+  before : Before heap b
   bytes : Semantics.encodeI32Array vs = .ok b.bytes
 
 /-- Every view of `st` holds its cell. -/
-def ViewsHold (st : State) : Prop := ∀ v ∈ st.i32ArrayViews, ∃ vs b, ViewHolds st v vs b
+def ViewsHold (st : State) : Prop :=
+  (∀ v ∈ st.i32ArrayViews, ∃ vs b, ViewHolds st.cells st.heap v vs b) ∧
+    st.i32ArrayViews.Pairwise fun v w => v.root ≠ w.root
 
 theorem ViewsHold.nil {st : State} (views : st.i32ArrayViews = []) : ViewsHold st := by
-  intro v mem; simp [views] at mem
+  exact ⟨fun v mem => by simp [views] at mem, by simp [views]⟩
 
 theorem ViewHolds.cellEntry {st : State} {v : I32ArrayView} {vs : List Value} {b : Block}
-    (h : ViewHolds st v vs b) : st.cellEntry? v.root = some ⟨v.root, some (.array vs)⟩ := by
+    (h : ViewHolds st.cells st.heap v vs b) : st.cellEntry? v.root = some ⟨v.root, some (.array vs)⟩ := by
   obtain ⟨c, mem, id⟩ := h.present
   cases found : st.cellEntry? v.root with
   | none =>
@@ -193,11 +237,11 @@ theorem ViewHolds.cellEntry {st : State} {v : I32ArrayView} {vs : List Value} {b
     cases d; simp_all
 
 theorem ViewHolds.read {st : State} {v : I32ArrayView} {vs : List Value} {b : Block}
-    (h : ViewHolds st v vs b) : Semantics.readCellProjection st v.root v.projections = .ok (.array vs) := by
+    (h : ViewHolds st.cells st.heap v vs b) : Semantics.readCellProjection st v.root v.projections = .ok (.array vs) := by
   simp [Semantics.readCellProjection, h.cellEntry, h.proj, Semantics.projectedValue]
 
 theorem ViewHolds.size {st : State} {v : I32ArrayView} {vs : List Value} {b : Block}
-    (h : ViewHolds st v vs b) : b.size = v.length * 4 := by
+    (h : ViewHolds st.cells st.heap v vs b) : b.size = v.length * 4 := by
   rw [← h.owns.sized, encodeI32Array_length h.bytes, h.length]; omega
 
 theorem syncToFrom_ok {st : State} (hold : ViewsHold st) :
@@ -205,7 +249,7 @@ theorem syncToFrom_ok {st : State} (hold : ViewsHold st) :
       Semantics.syncI32ViewsToHeapFrom views st = .ok st
   | [], _ => rfl
   | v :: rest, sub => by
-    obtain ⟨vs, b, h⟩ := hold v (sub v (List.mem_cons_self ..))
+    obtain ⟨vs, b, h⟩ := hold.1 v (sub v (List.mem_cons_self ..))
     simp only [Semantics.syncI32ViewsToHeapFrom, h.read, h.length, bne_self_eq_false, Bool.false_eq_true,
       ite_false, h.bytes, ← h.base, storeBytes_self h.owns]
     exact syncToFrom_ok hold rest fun w mem => sub w (List.mem_cons_of_mem _ mem)
@@ -226,7 +270,7 @@ theorem replaceCell_self : ∀ (cells : List Cell) (id : Nat) (value : Value),
     · simp [same]
 
 theorem ViewHolds.write {st : State} {v : I32ArrayView} {vs : List Value} {b : Block}
-    (h : ViewHolds st v vs b) :
+    (h : ViewHolds st.cells st.heap v vs b) :
     Semantics.writeResolvedPlace st { root := v.root, projections := v.projections, value := none }
       (.array vs) = .ok st := by
   simp only [Semantics.writeResolvedPlace, h.proj, Semantics.State.assignCell, h.cellEntry, Option.isSome_some,
@@ -237,7 +281,7 @@ theorem syncFromFrom_ok {st : State} (hold : ViewsHold st) :
       Semantics.syncI32ViewsFromHeapFrom views st = .ok st
   | [], _ => rfl
   | v :: rest, sub => by
-    obtain ⟨vs, b, h⟩ := hold v (sub v (List.mem_cons_self ..))
+    obtain ⟨vs, b, h⟩ := hold.1 v (sub v (List.mem_cons_self ..))
     have load : st.heap.loadBytes v.address (v.length * 4) = .ok b.bytes := by
       rw [← h.base, ← h.size]; exact loadBytes_self h.owns
     have decode : Semantics.decodeI32Array v.length b.bytes = .ok vs := by
@@ -259,24 +303,26 @@ owns its bytes in the new heap: the views hold. -/
 theorem ViewsHold.frame {st st' : State} (hold : ViewsHold st) (views : st'.i32ArrayViews = st.i32ArrayViews)
     (cells : ∀ v ∈ st.i32ArrayViews, ∀ c ∈ st'.cells, c.id = v.root → c ∈ st.cells)
     (present : ∀ v ∈ st.i32ArrayViews, ∀ c ∈ st.cells, c.id = v.root → c ∈ st'.cells)
-    (owns : ∀ v ∈ st.i32ArrayViews, ∀ b, Owns st.heap b → b.base = v.address → Owns st'.heap b) :
+    (owns : ∀ v ∈ st.i32ArrayViews, ∀ b, Owns st.heap b → Before st.heap b → b.base = v.address →
+      Owns st'.heap b ∧ Before st'.heap b) :
     ViewsHold st' := by
-  intro v mem
+  refine ⟨fun v mem => ?_, by rw [views]; exact hold.2⟩
   rw [views] at mem
-  obtain ⟨vs, b, h⟩ := hold v mem
+  obtain ⟨vs, b, h⟩ := hold.1 v mem
   obtain ⟨c, cmem, cid⟩ := h.present
+  obtain ⟨o, bf⟩ := owns v mem b h.owns h.before h.base
   exact ⟨vs, b, h.proj, fun d dmem did => h.cells d (cells v mem d dmem did) did,
-    ⟨c, present v mem c cmem cid, cid⟩, h.length, h.i32s, h.base, owns v mem b h.owns h.base, h.bytes⟩
+    ⟨c, present v mem c cmem cid, cid⟩, h.length, h.i32s, h.base, o, bf, h.bytes⟩
 
 /-- A new cell, numbered past every cell, leaves the views holding. -/
 theorem ViewsHold.bindCell {st : State} (hold : ViewsHold st) (below : ∀ c ∈ st.cells, c.id < st.nextCell)
     (id : Nat) (value : Option Value) : ViewsHold (st.bindCell id value) := by
-  refine hold.frame rfl ?_ (fun _ _ c mem _ => by simp [State.bindCell, mem]) fun _ _ _ owns _ => owns
+  refine hold.frame rfl ?_ (fun _ _ c mem _ => by simp [State.bindCell, mem]) fun _ _ _ owns before _ => ⟨owns, before⟩
   intro v mem c cmem cid
   simp only [State.bindCell, List.mem_append, List.mem_singleton] at cmem
   rcases cmem with old | rfl
   · exact old
-  · obtain ⟨vs, b, h⟩ := hold v mem
+  · obtain ⟨vs, b, h⟩ := hold.1 v mem
     obtain ⟨d, dmem, did⟩ := h.present
     have := below d dmem
     simp only [Lanius.CellId] at *
@@ -302,6 +348,26 @@ theorem replaceCell_map : ∀ (cells : List Cell) (c : Nat) (v : Value),
     simp only [Semantics.replaceCell, List.map_cons]
     split <;> simp_all [replaceCell_map rest c v]
 
+/-- Replacing a cell that no view roots at leaves the views holding. -/
+theorem ViewsHold.replace {st : State} (hold : ViewsHold st) {c : Nat} {value : Value}
+    (apart : ∀ v ∈ st.i32ArrayViews, v.root ≠ c) :
+    ViewsHold { st with cells := Semantics.replaceCell st.cells c value } := by
+  refine hold.frame rfl ?_ ?_ fun _ _ _ owns before _ => ⟨owns, before⟩
+  · intro v mem d dmem did
+    simp only [replaceCell_map, List.mem_map] at dmem
+    obtain ⟨e, emem, rfl⟩ := dmem
+    have ne := apart v mem
+    by_cases same : e.id = c
+    · simp only [same, beq_self_eq_true, ite_true] at did
+      exact absurd (by simp only [Lanius.CellId] at *; omega) ne
+    · simpa [same] using emem
+  · intro v mem d dmem did
+    simp only [replaceCell_map, List.mem_map]
+    refine ⟨d, dmem, ?_⟩
+    have ne := apart v mem
+    have : d.id ≠ c := fun h => ne (did ▸ h)
+    simp [this]
+
 /-- A write of a cell that no view roots at leaves the views holding. -/
 theorem ViewsHold.assignCell {st st' : State} (hold : ViewsHold st) {c : Nat} {value : Value}
     (ok : st.assignCell c value = some st') (apart : ∀ v ∈ st.i32ArrayViews, v.root ≠ c) : ViewsHold st' := by
@@ -309,25 +375,17 @@ theorem ViewsHold.assignCell {st st' : State} (hold : ViewsHold st) {c : Nat} {v
   split at ok
   · simp only [Option.some.injEq] at ok
     subst ok
-    refine hold.frame rfl ?_ ?_ fun _ _ _ owns _ => owns
-    · intro v mem d dmem did
-      simp only [replaceCell_map, List.mem_map] at dmem
-      obtain ⟨e, emem, rfl⟩ := dmem
-      have ne := apart v mem
-      by_cases same : e.id = c
-      · simp only [same, beq_self_eq_true, ite_true] at did
-        exact absurd (by simp only [Lanius.CellId] at *; omega) ne
-      · simpa [same] using emem
-    · intro v mem d dmem did
-      simp only [replaceCell_map, List.mem_map]
-      refine ⟨d, dmem, ?_⟩
-      have ne := apart v mem
-      have : d.id ≠ c := fun h => ne (did ▸ h)
-      simp [this]
+    exact hold.replace apart
   · simp at ok
 
-/-- A block that ends below the next address. -/
-def Before (heap : Heap) (b : Block) : Prop := b.base + max b.size 1 ≤ heap.nextAddress
+/-- Every view roots at a cell below the next one. -/
+theorem ViewsHold.root_lt {st : State} (hold : ViewsHold st) (below : ∀ c ∈ st.cells, c.id < st.nextCell) :
+    ∀ v ∈ st.i32ArrayViews, v.root < st.nextCell := by
+  intro v mem
+  obtain ⟨vs, b, h⟩ := hold.1 v mem
+  obtain ⟨c, cmem, cid⟩ := h.present
+  rw [← cid]; exact below c cmem
+
 
 theorem find?_append_some {α : Type} {p : α → Bool} {l : List α} {a : α} (found : l.find? p = some a)
     (more : List α) : (l ++ more).find? p = some a := by
@@ -344,6 +402,28 @@ theorem le_alignUp (x : Nat) {alignment : Nat} (pos : 0 < alignment) : x ≤ ali
   generalize (x + alignment - 1) / alignment * alignment = m at hq ⊢
   omega
 
+/-- A block appended at or above the next address keeps a block that ends
+below it. -/
+theorem Owns.push {heap : Heap} {b : Block} (owns : Owns heap b) (before : Before heap b) (c : Block)
+    (above : heap.nextAddress ≤ c.base) (blocks : List Block) (eq : blocks = heap.blocks ++ [c]) (next : Nat)
+    (le : heap.nextAddress ≤ next) (remaining : Option Nat) :
+    Owns { heap with blocks, nextAddress := next, remaining } b ∧
+      Before { heap with blocks, nextAddress := next, remaining } b := by
+  subst eq
+  unfold Before at before ⊢
+  refine ⟨⟨by simp [owns.mem], owns.sized, owns.live, owns.borrowed, fun d mem ne => ?_⟩, Nat.le_trans before le⟩
+  simp only [List.mem_append, List.mem_singleton] at mem
+  rcases mem with old | rfl
+  · exact owns.alone d old ne
+  · exact .inr (Nat.le_trans before above)
+
+theorem alignUp_above (heap : Heap) {alignment : Nat} (nz : alignment ≠ 0) :
+    heap.nextAddress ≤ alignUp (max heap.nextAddress 1) alignment :=
+  Nat.le_trans (Nat.le_max_left _ _) (le_alignUp _ (Nat.pos_of_ne_zero nz))
+
+theorem validAlignment_ne {alignment : Nat} (valid : ¬(!validAlignment alignment) = true) : alignment ≠ 0 := by
+  intro zero; simp [zero, validAlignment] at valid
+
 /-- An allocation keeps a block that ends below the next address. -/
 theorem Owns.allocate {heap heap' : Heap} {b : Block} (owns : Owns heap b) (before : Before heap b)
     {size alignment : Nat} {p : Nat} (ok : heap.allocate size alignment = .allocated p heap') :
@@ -352,28 +432,480 @@ theorem Owns.allocate {heap heap' : Heap} {b : Block} (owns : Owns heap b) (befo
   split at ok
   · simp at ok
   · rename_i valid
-    have nz : alignment ≠ 0 := by
-      intro zero; simp [zero, validAlignment] at valid
+    have nz := validAlignment_ne valid
     split at ok
     · simp at ok
     · simp only [AllocationResult.allocated.injEq] at ok
       obtain ⟨rfl, rfl⟩ := ok
-      have up : heap.nextAddress ≤ alignUp (max heap.nextAddress 1) alignment := by
-        have := Nat.le_max_left heap.nextAddress 1
-        have : max heap.nextAddress 1 ≤ alignUp (max heap.nextAddress 1) alignment :=
-          le_alignUp _ (Nat.pos_of_ne_zero nz)
-        exact Nat.le_trans (Nat.le_max_left _ _) this
-      unfold Before at before
-      refine ⟨⟨by simp [owns.mem], owns.sized, fun i lt => ?_, fun c mem same => ?_⟩, ?_⟩
-      · simp only [Heap.containingBlock?]
-        exact find?_append_some (owns.holds i lt) _
-      · simp only [List.mem_append, List.mem_singleton] at mem
-        rcases mem with old | rfl
-        · exact owns.only c old same
-        · simp only at same
-          have := Nat.le_max_right b.size 1
-          simp only [Lanius.Address] at *
-          omega
-      · exact Nat.le_trans before (Nat.le_trans up (Nat.le_add_right _ _))
+      have up := alignUp_above heap nz
+      exact owns.push before _ up _ rfl _ (Nat.le_trans up (Nat.le_add_right _ _)) _
+
+/-- A borrowed view's mapping keeps a block that ends below the next address. -/
+theorem Owns.mapBorrowed {heap heap' : Heap} {b : Block} (owns : Owns heap b) (before : Before heap b)
+    {bytes : List UInt8} {alignment : Nat} {p : Nat} (ok : heap.mapBorrowed bytes alignment = .allocated p heap') :
+    Owns heap' b ∧ Before heap' b := by
+  simp only [Heap.mapBorrowed] at ok
+  split at ok
+  · simp at ok
+  · rename_i valid
+    have nz := validAlignment_ne valid
+    simp only [AllocationResult.allocated.injEq] at ok
+    obtain ⟨rfl, rfl⟩ := ok
+    have up := alignUp_above heap nz
+    exact owns.push before _ up _ rfl _ (Nat.le_trans up (Nat.le_add_right _ _)) _
+
+theorem replaceBlock_map : ∀ (blocks : List Block) (r : Block),
+    replaceBlock blocks r = blocks.map fun x => if x.base == r.base then r else x
+  | [], _ => rfl
+  | x :: rest, r => by simp only [replaceBlock, List.map_cons, replaceBlock_map rest r]
+
+/-- Replacing the blocks at another block's base by one with that block's
+range keeps an owned block apart from it. -/
+theorem Owns.replace {heap : Heap} {b : Block} (owns : Owns heap b) {c : Block} (cmem : c ∈ heap.blocks)
+    (ne : c.base ≠ b.base) (r : Block) (base : r.base = c.base) (size : r.size = c.size) {heap' : Heap}
+    (blocks : heap'.blocks = replaceBlock heap.blocks r) : Owns heap' b := by
+  have cb : c ≠ b := fun h => ne (by rw [h])
+  refine ⟨?_, owns.sized, owns.live, owns.borrowed, fun d dmem dne => ?_⟩
+  · rw [blocks]
+    simp only [replaceBlock_map, List.mem_map]
+    exact ⟨b, owns.mem, by simp [base, Ne.symm ne]⟩
+  · rw [blocks] at dmem
+    simp only [replaceBlock_map, List.mem_map] at dmem
+    obtain ⟨d0, d0mem, rfl⟩ := dmem
+    by_cases same : d0.base = r.base
+    · simp only [same, beq_self_eq_true, ite_true] at dne ⊢
+      rw [base, size]; exact owns.alone c cmem cb
+    · have : (d0.base == r.base) = false := by simp [same]
+      simp only [this] at dne ⊢
+      exact owns.alone d0 d0mem dne
+
+/-- A deallocation keeps a borrowed block. -/
+theorem Owns.deallocate {heap heap' : Heap} {b : Block} (owns : Owns heap b) {p s a : Nat}
+    (ok : heap.deallocate p s a = .ok heap') : Owns heap' b ∧ heap'.nextAddress = heap.nextAddress := by
+  simp only [Heap.deallocate] at ok
+  split at ok
+  · simp only [Except.ok.injEq] at ok; subst ok; exact ⟨owns, rfl⟩
+  split at ok
+  · simp at ok
+  rename_i c found
+  split at ok
+  · simp at ok
+  split at ok
+  · simp at ok
+  rename_i owned
+  split at ok
+  · simp at ok
+  simp only [Except.ok.injEq] at ok
+  subst ok
+  have cmem : c ∈ heap.blocks := List.mem_of_find?_eq_some found
+  have ne : c.base ≠ b.base := by
+    intro same
+    have := owns.only c cmem same
+    subst this
+    simp [owns.borrowed] at owned
+  exact ⟨owns.replace cmem ne { c with live := false } rfl rfl rfl, rfl⟩
+
+theorem setByte_len : ∀ (bs : List UInt8) (i : Nat) (v : UInt8), (Memory.setByte bs i v).length = bs.length
+  | [], _, _ => rfl
+  | _ :: _, 0, _ => rfl
+  | _ :: rest, i + 1, v => by simp [Memory.setByte, setByte_len rest i v]
+
+/-- A byte store keeps a block with the same range owned (its bytes may
+change). -/
+theorem Owns.storeByte {heap heap' : Heap} {b : Block} (owns : Owns heap b) {p o : Nat} {x : UInt8}
+    (ok : heap.storeByte p o x = .ok heap') :
+    ∃ b', Owns heap' b' ∧ b'.base = b.base ∧ b'.size = b.size ∧ heap'.nextAddress = heap.nextAddress := by
+  simp only [Heap.storeByte] at ok
+  split at ok
+  · split at ok <;> (try split at ok) <;> simp at ok
+  rename_i c found
+  simp only [Except.ok.injEq] at ok
+  subst ok
+  have cmem : c ∈ heap.blocks := List.mem_of_find?_eq_some found
+  by_cases same : c.base = b.base
+  · have := owns.only c cmem same
+    subst this
+    refine ⟨{ c with bytes := Memory.setByte c.bytes (p + o - c.base) x }, ⟨?_, ?_, owns.live, owns.borrowed, ?_⟩,
+      rfl, rfl, rfl⟩
+    · simp only [replaceBlock_map, List.mem_map]
+      exact ⟨c, cmem, by simp⟩
+    · simp only [setByte_len, owns.sized]
+    · intro d dmem dne
+      simp only [replaceBlock_map, List.mem_map] at dmem
+      obtain ⟨d0, d0mem, rfl⟩ := dmem
+      by_cases eq : d0.base = c.base
+      · simp [eq] at dne
+      · have : (d0.base == c.base) = false := by simp [eq]
+        simp only [this] at dne ⊢
+        exact owns.alone d0 d0mem fun h => eq (by rw [h])
+  · exact ⟨b, owns.replace cmem same { c with bytes := Memory.setByte c.bytes (p + o - c.base) x } rfl rfl rfl,
+      rfl, rfl, rfl⟩
+
+/-- Byte stores keep a block with the same range owned. -/
+theorem Owns.storeBytesFrom : ∀ (bytes : List UInt8) {heap heap' : Heap} {b : Block} {p o : Nat},
+    Owns heap b → storeBytesFrom heap p o bytes = .ok heap' →
+      ∃ b', Owns heap' b' ∧ b'.base = b.base ∧ b'.size = b.size ∧ heap'.nextAddress = heap.nextAddress
+  | [], heap, heap', b, p, o, owns, ok => by
+    simp only [Memory.storeBytesFrom, Except.ok.injEq] at ok
+    subst ok; exact ⟨b, owns, rfl, rfl, rfl⟩
+  | x :: rest, heap, heap', b, p, o, owns, ok => by
+    simp only [Memory.storeBytesFrom] at ok
+    split at ok
+    · simp at ok
+    rename_i mid stored
+    obtain ⟨b1, owns1, base1, size1, next1⟩ := owns.storeByte stored
+    obtain ⟨b2, owns2, base2, size2, next2⟩ := Owns.storeBytesFrom rest owns1 ok
+    exact ⟨b2, owns2, base2.trans base1, size2.trans size1, next2.trans next1⟩
+
+theorem Owns.storeBytes {heap heap' : Heap} {b : Block} (owns : Owns heap b) {p : Nat} {bytes : List UInt8}
+    (ok : heap.storeBytes p bytes = .ok heap') :
+    ∃ b', Owns heap' b' ∧ b'.base = b.base ∧ b'.size = b.size ∧ heap'.nextAddress = heap.nextAddress :=
+  Owns.storeBytesFrom bytes owns ok
+
+/-! ## Reading the views back from the heap -/
+
+theorem decodeI32_range (bs : List UInt8) :
+    -2 ^ 31 ≤ Semantics.decodeI32 bs ∧ Semantics.decodeI32 bs < 2 ^ 31 := by
+  match bs with
+  | b0 :: b1 :: b2 :: b3 :: _ =>
+    have := b0.toNat_lt; have := b1.toNat_lt; have := b2.toNat_lt; have := b3.toNat_lt
+    simp only [Semantics.decodeI32]
+    split <;> simp only [Int.ofNat_eq_natCast] <;> omega
+  | [] | [_] | [_, _] | [_, _, _] => simp [Semantics.decodeI32]
+
+theorem i32Bytes_decode (b0 b1 b2 b3 : UInt8) :
+    Semantics.i32Bytes (Semantics.decodeI32 [b0, b1, b2, b3]) = [b0, b1, b2, b3] := by
+  have h0 := b0.toNat_lt; have h1 := b1.toNat_lt; have h2 := b2.toNat_lt; have h3 := b3.toNat_lt
+  have key : Semantics.decodeI32 [b0, b1, b2, b3] % 2 ^ 32 =
+      ((b0.toNat + b1.toNat * 2 ^ 8 + b2.toNat * 2 ^ 16 + b3.toNat * 2 ^ 24 : Nat) : Int) := by
+    simp only [Semantics.decodeI32]
+    split <;> simp only [Int.ofNat_eq_natCast] <;> omega
+  have byte : ∀ m : Nat, (UInt8.ofNat m).toNat = m % 256 := fun m => by simp
+  simp only [Semantics.i32Bytes, key, Int.toNat_natCast, List.range, List.range.loop, List.map_cons, List.map_nil]
+  refine List.cons_eq_cons.mpr ⟨?_, List.cons_eq_cons.mpr ⟨?_, List.cons_eq_cons.mpr ⟨?_,
+    List.cons_eq_cons.mpr ⟨?_, rfl⟩⟩⟩⟩ <;> apply UInt8.toNat_inj.mp <;>
+    simp only [byte, Nat.reduceMul, Nat.reducePow, Nat.pow_zero, Nat.div_one] <;> omega
+
+/-- What Core's decoder of `n` `i32`s gives: `n` in-range values whose
+encoding is the bytes. -/
+theorem decode_spec : ∀ (n : Nat) {bytes : List UInt8} {vs : List Value},
+    Semantics.decodeI32Array n bytes = .ok vs →
+      vs.length = n ∧ (∀ x ∈ vs, IsI32 x) ∧ Semantics.encodeI32Array vs = .ok bytes
+  | 0, bytes, vs, ok => by
+    simp only [Semantics.decodeI32Array] at ok
+    split at ok
+    · rename_i empty
+      simp only [Except.ok.injEq] at ok
+      subst ok
+      simp only [List.isEmpty_iff] at empty
+      subst empty
+      exact ⟨rfl, by simp, rfl⟩
+    · simp at ok
+  | n + 1, bytes, vs, ok => by
+    simp only [Semantics.decodeI32Array] at ok
+    split at ok
+    · simp at ok
+    rename_i long
+    split at ok
+    · rename_i rest decoded
+      simp only [Except.ok.injEq] at ok
+      subst ok
+      obtain ⟨len, i32s, enc⟩ := decode_spec n decoded
+      refine ⟨by simp [len], ?_, ?_⟩
+      · intro x mem
+        rcases List.mem_cons.mp mem with rfl | mem
+        · exact ⟨_, rfl, decodeI32_range _⟩
+        · exact i32s x mem
+      · simp only [Semantics.encodeI32Array, enc]
+        match bytes, long with
+        | b0 :: b1 :: b2 :: b3 :: tail, _ =>
+          simp only [List.take, List.drop, i32Bytes_decode, List.cons_append, List.nil_append]
+        | [], h | [_], h | [_, _], h | [_, _, _], h => simp at h
+    · simp at ok
+
+/-- A view whose root cell is present and whose block is owned, with room for
+its elements: what Core's sync from the heap needs. -/
+structure ViewLive (cellList : List Cell) (heap : Heap) (v : I32ArrayView) : Prop where
+  proj : v.projections = []
+  present : ∃ c ∈ cellList, c.id = v.root
+  block : ∃ b, Owns heap b ∧ Before heap b ∧ b.base = v.address ∧ b.size = v.length * 4
+
+theorem ViewHolds.live {cellList : List Cell} {heap : Heap} {v : I32ArrayView} {vs : List Value} {b : Block}
+    (h : ViewHolds cellList heap v vs b) : ViewLive cellList heap v := by
+  refine ⟨h.proj, h.present, b, h.owns, h.before, h.base, ?_⟩
+  rw [← h.owns.sized, encodeI32Array_length h.bytes, h.length]; omega
+
+theorem replaceCell_ids {cells : List Cell} {target : Nat} {value : Value} :
+    ∀ c ∈ cells, ∃ d ∈ Semantics.replaceCell cells target value, d.id = c.id := by
+  intro c mem
+  simp only [replaceCell_map, List.mem_map]
+  refine ⟨_, ⟨c, mem, rfl⟩, ?_⟩
+  split <;> rfl
+
+theorem replaceCell_find_other : ∀ (cells : List Cell) {target c : Nat} {value : Value}, target ≠ c →
+    (Semantics.replaceCell cells target value).find? (fun cell => cell.id == c) =
+      cells.find? (fun cell => cell.id == c)
+  | [], _, _, _, _ => rfl
+  | cell :: rest, target, c, value, ne => by
+    simp only [Semantics.replaceCell]
+    by_cases same : cell.id = target
+    · have hc : (cell.id == c) = false := by simp only [beq_eq_false_iff_ne]; intro h; exact ne (same ▸ h)
+      have hc' : ({ cell with value := some value } : Cell).id = cell.id := rfl
+      simp only [same, beq_self_eq_true, ite_true, List.find?_cons]
+      simp only [same] at hc
+      simp only [hc, replaceCell_find_other rest ne]
+    · have : (cell.id == target) = false := by simp [same]
+      simp only [this, Bool.false_eq_true, ite_false, List.find?_cons, replaceCell_find_other rest ne]
+
+theorem cellEntry_replace_other (st : State) {target c : Nat} {value : Value} (ne : target ≠ c) :
+    ({ st with cells := Semantics.replaceCell st.cells target value } : State).cellEntry? c = st.cellEntry? c :=
+  replaceCell_find_other st.cells ne
+
+theorem syncFromFrom_holds : ∀ (l : List I32ArrayView) {st st' : State},
+    (∀ v ∈ l, ViewLive st.cells st.heap v) → l.Pairwise (fun v w => v.root ≠ w.root) →
+    Semantics.syncI32ViewsFromHeapFrom l st = .ok st' →
+      st'.heap = st.heap ∧ st'.i32ArrayViews = st.i32ArrayViews ∧
+      (∀ v ∈ l, ∃ vs b, ViewHolds st'.cells st'.heap v vs b) ∧
+      (∀ c ∈ st'.cells, (∀ v ∈ l, c.id ≠ v.root) → c ∈ st.cells) ∧
+      (∀ c ∈ st.cells, ∃ d ∈ st'.cells, d.id = c.id) ∧
+      (∀ c, (∀ v ∈ l, v.root ≠ c) → st'.cellEntry? c = st.cellEntry? c)
+  | [], st, st', _, _, ok => by
+    simp only [Semantics.syncI32ViewsFromHeapFrom, Except.ok.injEq] at ok
+    subst ok
+    exact ⟨rfl, rfl, by simp, fun c mem _ => mem, fun c mem => ⟨c, mem, rfl⟩, fun _ _ => rfl⟩
+  | v :: rest, st, st', live, apart, ok => by
+    obtain ⟨proj, ⟨c0, c0mem, c0id⟩, b, owns, before, base, size⟩ := live v (List.mem_cons_self ..)
+    have load : st.heap.loadBytes v.address (v.length * 4) = .ok b.bytes := by
+      rw [← base, ← size]; exact loadBytes_self owns
+    simp only [Semantics.syncI32ViewsFromHeapFrom, load] at ok
+    split at ok
+    · simp at ok
+    rename_i vs decoded
+    obtain ⟨len, i32s, enc⟩ := decode_spec v.length decoded
+    have entry : (st.cellEntry? v.root).isSome = true := by
+      cases found : st.cellEntry? v.root with
+      | some _ => rfl
+      | none =>
+        simp only [State.cellEntry?, List.find?_eq_none] at found
+        exact absurd (by simpa using c0id) (found c0 c0mem)
+    simp only [Semantics.writeResolvedPlace, proj, State.assignCell, entry, ite_true] at ok
+    obtain ⟨heapEq, viewsEq, holds, from_, ids, others⟩ := syncFromFrom_holds rest (st := { st with
+      cells := Semantics.replaceCell st.cells v.root (.array vs) })
+      (fun w wmem => by
+        obtain ⟨wproj, ⟨d, dmem, did⟩, wblock⟩ := live w (List.mem_cons_of_mem _ wmem)
+        obtain ⟨d', d'mem, d'id⟩ := replaceCell_ids (target := v.root) (value := .array vs) d dmem
+        exact ⟨wproj, ⟨d', d'mem, d'id.trans did⟩, wblock⟩)
+      (List.pairwise_cons.mp apart).2 ok
+    have vrest := (List.pairwise_cons.mp apart).1
+    refine ⟨heapEq, viewsEq, fun w wmem => ?_, fun c cmem notRoot => ?_, fun c cmem => ?_, fun c notRoot => ?_⟩
+    rotate_left 3
+    · rw [others c fun u umem => notRoot u (List.mem_cons_of_mem _ umem)]
+      exact cellEntry_replace_other st (notRoot v (List.mem_cons_self ..))
+    · rcases List.mem_cons.mp wmem with rfl | wmem
+      · refine ⟨vs, b, proj, fun c cmem cid => ?_, ?_, len, i32s, base, by rw [heapEq]; exact owns,
+          by rw [heapEq]; exact before, enc⟩
+        · have inner := from_ c cmem fun u umem => by rw [cid]; exact vrest u umem
+          simp only [replaceCell_map, List.mem_map] at inner
+          obtain ⟨e, -, rfl⟩ := inner
+          have eid : e.id = w.root := by
+            by_cases same : e.id = w.root
+            · exact same
+            · exfalso; simp [same] at cid
+          simp [eid]
+        · obtain ⟨d, dmem, did⟩ := replaceCell_ids (target := w.root) (value := .array vs) c0 c0mem
+          obtain ⟨e, emem, eid⟩ := ids d dmem
+          exact ⟨e, emem, eid.trans (did.trans c0id)⟩
+      · exact holds w wmem
+    · have inner := from_ c cmem fun u umem => notRoot u (List.mem_cons_of_mem _ umem)
+      simp only [replaceCell_map, List.mem_map] at inner
+      obtain ⟨e, emem, rfl⟩ := inner
+      have ne : e.id ≠ v.root := by
+        intro same
+        apply notRoot v (List.mem_cons_self ..)
+        simp [same]
+      simpa [ne] using emem
+    · obtain ⟨d, dmem, did⟩ := replaceCell_ids (target := v.root) (value := .array vs) c cmem
+      obtain ⟨e, emem, eid⟩ := ids d dmem
+      exact ⟨e, emem, eid.trans did⟩
+
+/-- Core's sync from the heap, from live views, leaves them holding. -/
+theorem syncFrom_holds {st st' : State} (live : ∀ v ∈ st.i32ArrayViews, ViewLive st.cells st.heap v)
+    (apart : st.i32ArrayViews.Pairwise fun v w => v.root ≠ w.root)
+    (ok : Semantics.syncI32ViewsFromHeap st = .ok st') : ViewsHold st' ∧ st'.heap = st.heap ∧
+      st'.i32ArrayViews = st.i32ArrayViews ∧ (∀ c ∈ st'.cells, (∀ v ∈ st.i32ArrayViews, c.id ≠ v.root) → c ∈ st.cells) ∧
+      (∀ c ∈ st.cells, ∃ d ∈ st'.cells, d.id = c.id) ∧
+      (∀ c, (∀ v ∈ st.i32ArrayViews, v.root ≠ c) → st'.cellEntry? c = st.cellEntry? c) := by
+  obtain ⟨heapEq, viewsEq, holds, from_, ids, others⟩ := syncFromFrom_holds _ live apart ok
+  exact ⟨⟨fun v mem => holds v (viewsEq ▸ mem), by rw [viewsEq]; exact apart⟩, heapEq, viewsEq, from_, ids, others⟩
+
+/-! ## Heap changes -/
+
+theorem ViewsHold.live {st : State} (hold : ViewsHold st) : ∀ v ∈ st.i32ArrayViews, ViewLive st.cells st.heap v :=
+  fun v mem => let ⟨_, _, h⟩ := hold.1 v mem; h.live
+
+/-- The cells and views as they were, and each owned block that ended below
+the next address still does: the views hold. -/
+theorem ViewsHold.heapOf {st st' : State} (hold : ViewsHold st) (cells : st'.cells = st.cells)
+    (views : st'.i32ArrayViews = st.i32ArrayViews)
+    (keep : ∀ b, Owns st.heap b → Before st.heap b → Owns st'.heap b ∧ Before st'.heap b) : ViewsHold st' :=
+  hold.frame views (fun _ _ c mem _ => cells ▸ mem) (fun _ _ c mem _ => cells ▸ mem) fun _ _ b o bf _ => keep b o bf
+
+/-- A heap change that keeps each owned block's range owned, below the next
+address (its bytes may change). -/
+def Stores (heap heap' : Heap) : Prop :=
+  ∀ b, Owns heap b → Before heap b → ∃ b', Owns heap' b' ∧ Before heap' b' ∧ b'.base = b.base ∧ b'.size = b.size
+
+theorem Stores.refl (heap : Heap) : Stores heap heap := fun b o bf => ⟨b, o, bf, rfl, rfl⟩
+
+theorem Stores.trans {a b c : Heap} (first : Stores a b) (second : Stores b c) : Stores a c := fun x o bf =>
+  let ⟨y, oy, by_, ey, sy⟩ := first x o bf
+  let ⟨z, oz, bz, ez, sz⟩ := second y oy by_
+  ⟨z, oz, bz, ez.trans ey, sz.trans sy⟩
+
+theorem Stores.storeBytes {heap heap' : Heap} {p : Nat} {bytes : List UInt8}
+    (ok : heap.storeBytes p bytes = .ok heap') : Stores heap heap' := fun b o bf => by
+  obtain ⟨b', o', base, size, next⟩ := o.storeBytes ok
+  refine ⟨b', o', ?_, base, size⟩
+  unfold Before at bf ⊢
+  rw [base, size, next]; exact bf
+
+theorem Stores.storeByte {heap heap' : Heap} {p off : Nat} {x : UInt8}
+    (ok : heap.storeByte p off x = .ok heap') : Stores heap heap' := fun b o bf => by
+  obtain ⟨b', o', base, size, next⟩ := o.storeByte ok
+  refine ⟨b', o', ?_, base, size⟩
+  unfold Before at bf ⊢
+  rw [base, size, next]; exact bf
+
+theorem writeResolved_frame {st st' : State} {r : Semantics.ResolvedPlace} {v : Value}
+    (ok : Semantics.writeResolvedPlace st r v = .ok st') :
+    st'.heap = st.heap ∧ st'.i32ArrayViews = st.i32ArrayViews ∧ st'.locals = st.locals ∧
+      st'.nextCell = st.nextCell ∧ st'.world = st.world := by
+  unfold Semantics.writeResolvedPlace at ok
+  split at ok
+  · split at ok
+    · simp only [Except.ok.injEq] at ok
+      subst ok
+      rename_i assigned h
+      simp only [State.assignCell] at h
+      split at h
+      · simp only [Option.some.injEq] at h; subst h; exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+      · simp at h
+    · simp at ok
+  · split at ok
+    · simp at ok
+    · simp at ok
+    · split at ok
+      · simp at ok
+      · split at ok
+        · simp only [Except.ok.injEq] at ok
+          subst ok
+          rename_i assigned h
+          simp only [State.assignCell] at h
+          split at h
+          · simp only [Option.some.injEq] at h; subst h; exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+          · simp at h
+        · simp at ok
+
+theorem syncFromFrom_frame : ∀ (l : List I32ArrayView) {st st' : State},
+    Semantics.syncI32ViewsFromHeapFrom l st = .ok st' →
+      st'.locals = st.locals ∧ st'.nextCell = st.nextCell ∧ st'.world = st.world
+  | [], st, st', ok => by
+    simp only [Semantics.syncI32ViewsFromHeapFrom, Except.ok.injEq] at ok
+    subst ok; exact ⟨rfl, rfl, rfl⟩
+  | v :: rest, st, st', ok => by
+    simp only [Semantics.syncI32ViewsFromHeapFrom] at ok
+    split at ok
+    · simp at ok
+    · split at ok
+      · simp at ok
+      · split at ok
+        · simp at ok
+        · rename_i next written
+          obtain ⟨l1, n1, w1⟩ := syncFromFrom_frame rest ok
+          obtain ⟨-, -, l2, n2, w2⟩ := writeResolved_frame written
+          exact ⟨l1.trans l2, n1.trans n2, w1.trans w2⟩
+
+/-- After heap stores, Core's sync from the heap leaves the views holding,
+and the cells no view roots at as they were. -/
+theorem ViewsHold.afterStores {st s st' : State} (hold : ViewsHold st) (stores : Stores st.heap s.heap)
+    (cells : s.cells = st.cells) (views : s.i32ArrayViews = st.i32ArrayViews)
+    (ok : Semantics.syncI32ViewsFromHeap s = .ok st') :
+    ViewsHold st' ∧ st'.heap = s.heap ∧ st'.i32ArrayViews = st.i32ArrayViews ∧
+      (∀ c, (∀ v ∈ st.i32ArrayViews, v.root ≠ c) → st'.cellEntry? c = s.cellEntry? c) ∧
+      st'.nextCell = s.nextCell ∧ st'.locals = s.locals ∧ st'.world = s.world ∧
+      ((∀ c ∈ s.cells, c.id < s.nextCell) → ∀ c ∈ st'.cells, c.id < st'.nextCell) := by
+  have live : ∀ v ∈ s.i32ArrayViews, ViewLive s.cells s.heap v := by
+    intro v mem
+    rw [views] at mem
+    obtain ⟨proj, present, b, o, bf, base, size⟩ := hold.live v mem
+    obtain ⟨b', o', bf', base', size'⟩ := stores b o bf
+    exact ⟨proj, cells ▸ present, b', o', bf', base'.trans base, size'.trans size⟩
+  obtain ⟨hold', heapEq, viewsEq, from_, -, others⟩ := syncFrom_holds live (by rw [views]; exact hold.2) ok
+  obtain ⟨locals, next, world⟩ := syncFromFrom_frame _ ok
+  refine ⟨hold', heapEq, viewsEq.trans views, fun c away => others c (views ▸ away), next, locals, world,
+    fun below c mem => ?_⟩
+  rw [next]
+  rcases Classical.em (∃ v ∈ s.i32ArrayViews, c.id = v.root) with ⟨v, vmem, eq⟩ | none
+  · obtain ⟨d, dmem, did⟩ := (live v vmem).present
+    rw [eq, ← did]; exact below d dmem
+  · exact below c (from_ c mem fun v vm h => none ⟨v, vm, h⟩)
+
+theorem decode_ok : ∀ (n : Nat) (bytes : List UInt8), bytes.length = n * 4 →
+    ∃ vs, Semantics.decodeI32Array n bytes = .ok vs
+  | 0, bytes, len => by
+    have : bytes = [] := List.eq_nil_of_length_eq_zero (by simpa using len)
+    subst this
+    exact ⟨[], rfl⟩
+  | n + 1, bytes, len => by
+    obtain ⟨rest, ok⟩ := decode_ok n (bytes.drop 4) (by rw [List.length_drop, len, Nat.succ_mul]; omega)
+    refine ⟨.signed .i32 (Semantics.decodeI32 (bytes.take 4)) :: rest, ?_⟩
+    simp only [Semantics.decodeI32Array]
+    rw [if_neg (by rw [len, Nat.succ_mul]; omega), ok]
+
+theorem syncFromFrom_exists : ∀ (l : List I32ArrayView) (st : State),
+    (∀ v ∈ l, ViewLive st.cells st.heap v) → ∃ st', Semantics.syncI32ViewsFromHeapFrom l st = .ok st'
+  | [], st, _ => ⟨st, rfl⟩
+  | v :: rest, st, live => by
+    obtain ⟨proj, ⟨c0, c0mem, c0id⟩, b, owns, before, base, size⟩ := live v (List.mem_cons_self ..)
+    have load : st.heap.loadBytes v.address (v.length * 4) = .ok b.bytes := by
+      rw [← base, ← size]; exact loadBytes_self owns
+    obtain ⟨vs, decoded⟩ := decode_ok v.length b.bytes (by rw [owns.sized, size])
+    have entry : (st.cellEntry? v.root).isSome = true := by
+      cases found : st.cellEntry? v.root with
+      | some _ => rfl
+      | none =>
+        simp only [State.cellEntry?, List.find?_eq_none] at found
+        exact absurd (by simpa using c0id) (found c0 c0mem)
+    simp only [Semantics.syncI32ViewsFromHeapFrom, load, decoded]
+    simp only [Semantics.writeResolvedPlace, proj, State.assignCell, entry, ite_true]
+    exact syncFromFrom_exists rest _ fun w wmem => by
+      obtain ⟨wproj, ⟨d, dmem, did⟩, wblock⟩ := live w (List.mem_cons_of_mem _ wmem)
+      obtain ⟨d', d'mem, d'id⟩ := replaceCell_ids (target := v.root) (value := .array vs) d dmem
+      exact ⟨wproj, ⟨d', d'mem, d'id.trans did⟩, wblock⟩
+
+/-- After heap stores, Core's sync from the heap succeeds. -/
+theorem ViewsHold.syncAfter {st s : State} (hold : ViewsHold st) (stores : Stores st.heap s.heap)
+    (cells : s.cells = st.cells) (views : s.i32ArrayViews = st.i32ArrayViews) :
+    ∃ st', Semantics.syncI32ViewsFromHeap s = .ok st' :=
+  syncFromFrom_exists _ s fun v mem => by
+    rw [views] at mem
+    obtain ⟨proj, present, b, o, bf, base, size⟩ := hold.live v mem
+    obtain ⟨b', o', bf', base', size'⟩ := stores b o bf
+    exact ⟨proj, cells ▸ present, b', o', bf', base'.trans base, size'.trans size⟩
+
+theorem ViewsHold.allocate {st : State} (hold : ViewsHold st) {size alignment p : Nat} {heap' : Heap}
+    (ok : st.heap.allocate size alignment = .allocated p heap') : ViewsHold { st with heap := heap' } :=
+  hold.heapOf rfl rfl fun _ o bf => o.allocate bf ok
+
+theorem ViewsHold.deallocate {st : State} (hold : ViewsHold st) {p size alignment : Nat} {heap' : Heap}
+    (ok : st.heap.deallocate p size alignment = .ok heap') : ViewsHold { st with heap := heap' } :=
+  hold.heapOf rfl rfl fun _ o bf => by
+    obtain ⟨o', next⟩ := o.deallocate ok
+    refine ⟨o', ?_⟩
+    unfold Before at bf ⊢
+    show _ ≤ heap'.nextAddress
+    rw [next]; exact bf
 
 end Lanius.Mini.Views
+
+

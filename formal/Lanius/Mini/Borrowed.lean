@@ -2,6 +2,7 @@ module
 
 public import Lanius.Mini.LowerExpr
 public import Lanius.Mini.HeapCorr
+public import Lanius.Mini.Views
 import all Lanius.Mini.Compiler.P.SrcType_size
 import all Lanius.Mini.Compiler.P.UintTy_half
 
@@ -131,7 +132,7 @@ theorem FrameCorr.restrict {places' : List Addressed} {st : State} {hp : Heap} (
     (sub : ∀ x ∈ places, x ∈ places') : FrameCorr bud places st hp := by
   refine ⟨fun x mem => ?_, fun x mem => fc.inside x (sub x mem), fun x mem => fc.small x (sub x mem),
     fun x mem y ymem ne => fc.apart x (sub x mem) y (sub y ymem) ne, fun x mem => fc.packed x (sub x mem),
-    fc.room, fc.ceiling, fc.bounded⟩
+    fun v vmem x mem => fc.unviewed v vmem x (sub x mem), fc.room, fc.ceiling, fc.bounded⟩
   obtain ⟨v, read, h⟩ := fc.holds x (sub x mem)
   exact ⟨v, read, (fc.packed x (sub x mem)).holdsAt h⟩
 
@@ -226,9 +227,11 @@ theorem FrameCorr.borrowed_set {st st' : State} {hp hp' : Heap} (fc : FrameCorr 
     (held : element.HoldsAt places v (x.view hp') (pos * element.size))
     (away : ∀ s, s < pos * element.size ∨ pos * element.size + element.size ≤ s → x.view hp' s = x.view hp s)
     (bytes : ∀ a, ¬ x.Covers a → hp'.bytes a = hp.bytes a)
-    (fsp : hp'.fsp = hp.fsp) (limit : hp'.limit = hp.limit) (top : hp'.top = hp.top) :
+    (fsp : hp'.fsp = hp.fsp) (limit : hp'.limit = hp.limit) (top : hp'.top = hp.top)
+    (views : st'.i32ArrayViews = st.i32ArrayViews := by rfl) :
     FrameCorr bud places st' hp' := by
-  refine ⟨fun y ymem => ?_, fun y ymem => ?_, fc.small, fc.apart, fc.packed, by rw [fsp, limit]; exact fc.room,
+  refine ⟨fun y ymem => ?_, fun y ymem => ?_, fc.small, fc.apart, fc.packed, by rw [views]; exact fc.unviewed,
+    by rw [fsp, limit]; exact fc.room,
     by rw [fsp, top]; exact fc.ceiling, by rw [top]; exact fc.bounded⟩
   · by_cases same : y = x
     · subst same
@@ -296,7 +299,7 @@ theorem Addressed.view_store_u8 {x : Addressed} (sliced : x.sliced = true) {n : 
 the value, then the array in the slice's cell with that element replaced. -/
 theorem eval_setIndex_safe {P : Core.Program} {k : Nat} {st : State} {slice : Nat} {idx e : Core.Expr}
     {element : Core.Ty} {cell length root : Nat} {u : Value} {st' : State}
-    (views : st.i32ArrayViews = [])
+    (hold : Views.ViewsHold st) (apart : ∀ v ∈ st.i32ArrayViews, v.root ≠ cell)
     (idxPure : ∀ {f v s}, Semantics.evalExpr f P st idx = .done v s → s = st)
     (ePure : ∀ {f v s}, Semantics.evalExpr f P st e = .done v s → s = st)
     (base : Semantics.evalPlace (k + 1) P st .read (.local slice) =
@@ -354,11 +357,12 @@ theorem eval_setIndex_safe {P : Core.Program} {k : Nat} {st : State} {slice : Na
             | some old' =>
             simp only [got', State.assignCell, entry, Option.isSome_some, if_true,
               Semantics.ResolvedPlace.viewFreeRootWrite, List.isEmpty_cons, Bool.false_and, Bool.and_false,
-              Bool.false_eq_true, if_false, Semantics.syncI32ViewsToHeap, views,
-              Semantics.syncI32ViewsToHeapFrom, Semantics.Outcome.done.injEq] at run
+              Bool.false_eq_true, if_false,
+              Views.syncTo_ok (hold.replace (value := .array (Semantics.setValue vs pos right)) apart),
+              Semantics.Outcome.done.injEq] at run
             obtain ⟨-, rfl⟩ := run
             exact ⟨iv, pos, elems, right, _, vs, indexRun, posOk, lt, values, valueRun, rfl, rfl,
-              (List.getElem?_eq_some_iff.mp got').1, by rw [views]⟩
+              (List.getElem?_eq_some_iff.mp got').1, rfl⟩
       all_goals simp at run
     all_goals simp at placeRun
   all_goals simp at run

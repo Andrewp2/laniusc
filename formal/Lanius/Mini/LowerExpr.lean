@@ -110,6 +110,8 @@ structure Corr (places : List Addressed) (scope : List Binding) (frame : Nat →
   apart : ∀ x ∈ places, ∀ b ∈ scope, x.cell ≠ frame b.slot
   values : ∀ b ∈ scope, ∃ v, st.cellEntry? (frame b.slot) = some ⟨frame b.slot, some v⟩ ∧
     b.ty.HoldsAt places v env b.slot
+  /-- No array view roots at the scope's cells: Core's syncs never write them. -/
+  unviewed : ∀ v ∈ st.i32ArrayViews, ∀ b ∈ scope, v.root ≠ frame b.slot
 
 theorem lookup_mem {scope : List Binding} {id : Nat} {b : Binding}
     (found : lookup scope id = some b) : b ∈ scope ∧ b.id = id := by

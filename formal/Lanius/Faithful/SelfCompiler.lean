@@ -268,7 +268,7 @@ theorem start_range_output (pos : 0 < room) :
   simp [outputBlock, Memory.validAlignment, selfOutput, selfInput]
   rw [if_neg (by rw [show Nat.log2 4 = 2 by decide]; omega), if_neg (by omega)]
 
-theorem start_fresh : (selfStart W room).Fresh := ⟨fun _ mem => by simp [selfStart] at mem, rfl⟩
+theorem start_fresh : (selfStart W room).Fresh := ⟨fun _ mem => by simp [selfStart] at mem, Views.ViewsHold.nil rfl⟩
 
 theorem start_corr (nonempty : 0 < W.length) {limit : Nat} (small : limit < 2 ^ 62) :
     HeapCorr (selfStart W room).heap (selfStart W room).world (selfHeap W room limit) where

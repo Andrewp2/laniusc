@@ -128,7 +128,7 @@ theorem set_raw_trap {view x : Nat} {i : Core.Expr} {iv : Value} {el : Core.Ty} 
         | ok H =>
           simp only [hw, bind, Except.bind, pure, Except.pure, Semantics.ResolvedPlace.viewFreeRootWrite, raw,
             Option.isNone_some, Bool.false_and, Bool.false_eq_true, if_false,
-            syncFrom_ok (st := { st with heap := H }) views] at h
+            syncFrom_ok (st := { st with heap := H }) (Views.ViewsHold.nil views)] at h
           simp at h
         | error e =>
           simp only [hw, bind, Except.bind] at h
@@ -189,7 +189,7 @@ theorem set_raw_done {view x : Nat} {i : Core.Expr} {iv : Value} {el : Core.Ty} 
   subst wrapped
   simp only [Semantics.ResolvedPlace.viewFreeRootWrite, raw, Option.isNone_some, Bool.false_and,
     Bool.false_eq_true, if_false] at synced
-  rw [syncFrom_ok (st := { s14 with heap := H2 }) views, Except.ok.injEq] at synced
+  rw [syncFrom_ok (st := { s14 with heap := H2 }) (Views.ViewsHold.nil views), Except.ok.injEq] at synced
   exact ⟨H2, synced.symm⟩
 
 theorem allocate_not_trapped {h h' : Memory.Heap} {n m : Nat} (valid : Memory.validAlignment m = true)
@@ -234,7 +234,7 @@ end
 where it started, so a safety proof may assume the start's cursor in bounds. -/
 theorem SafeS.of_bound {sp : SrcProgram} {st : State} {s : SrcStmt} (views : st.i32ArrayViews = [])
     (safe : st.heap.nextAddress ≤ 2 ^ 64 → SafeS sp.toCore st s.toCore) : SafeS sp.toCore st s.toCore :=
-  fun k r s' h bound => safe (Nat.le_trans ((execStmt_trap_grows h) views).2 bound) k r s' h bound
+  fun k r s' h bound => safe (Nat.le_trans ((execStmt_trap_grows h).empty views).2 bound) k r s' h bound
 
 theorem valueWords_pos {P : Core.Program} {T : Core.Ty} {w : Nat}
     (kind : (∃ id, T = .structure id) ∨ (∃ id, T = .enumeration id) ∨ CoreWordScalar T) (hw : NativeLayout.valueWords? P T = some w) :
@@ -611,7 +611,7 @@ theorem boxed_safe {t : SrcType} {id sizeOf slice panic : Nat} {values ps : List
     simp only [pure, Except.pure, Except.ok.injEq] at wrapped
     subst wrapped
     simp only [Semantics.ResolvedPlace.viewFreeRootWrite, raw, Option.isNone_some, Bool.false_and,
-      Bool.false_eq_true, if_false, syncFrom_ok (st := { (s10.bindLocal 203 _) with heap := H2 }) inv4.views,
+      Bool.false_eq_true, if_false, syncFrom_ok (st := { (s10.bindLocal 203 _) with heap := H2 }) (Views.ViewsHold.nil inv4.views),
       Except.ok.injEq] at synced
     subst synced
     exact safeS_return (known_struct (knowns_cons (known_local (show ({ (s10.bindLocal 203

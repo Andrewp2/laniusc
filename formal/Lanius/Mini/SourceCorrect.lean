@@ -156,7 +156,7 @@ def startState (io : Lanius.X86.Machine.Io) : Semantics.State :=
         secureByteStream := io.entropy } }
 
 theorem startState_fresh (io : Lanius.X86.Machine.Io) : (startState io).Fresh :=
-  ⟨fun _ mem => by simp [startState] at mem, rfl⟩
+  ⟨fun _ mem => by simp [startState] at mem, Views.ViewsHold.nil rfl⟩
 
 /-- Core's starting state for the mini heap's input, and a mini heap whose
 cursor is 1, whose bytes from 1 up are zero, and whose trace is empty. -/

@@ -332,7 +332,7 @@ theorem write_one_live {outp room : Nat} (roomLt : room < 2 ^ 31) {x : BitVec 32
       | some _ => Semantics.syncI32ViewsFromHeap { R with heap := heap' }) = .ok { R with heap := heap' } := by
     simp only [Semantics.ResolvedPlace.viewFreeRootWrite, rraw, Option.isNone_some, Bool.false_and,
       Bool.false_eq_true, if_false]
-    exact syncFrom_ok (st := { R with heap := heap' }) viewsR
+    exact syncFrom_ok (st := { R with heap := heap' }) (Views.ViewsHold.nil viewsR)
   have assignE := expression_fwd (assign_fwd placeRun (local_fwd (back (by decide) l40)) written synced)
   have l100 : ({ R with heap := heap' } : State).local? 100 = some v1 := by
     show R.local? 100 = some v1

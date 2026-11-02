@@ -164,19 +164,71 @@ theorem readNativeValue_undef : ∀ (fuel : Nat) (P : Core.Program) (heap : Memo
     simp only [Semantics.readNativeValue]
     repeat' undef_step
 
-theorem writeNativeValue_undef : ∀ (fuel : Nat) (P : Core.Program) (st : State) (heap : Memory.Heap) (ty : Core.Ty)
-    (a : Nat) (v : Core.Value), st.i32ArrayViews = [] → UndefErr (Semantics.writeNativeValue fuel P st heap ty a v)
+/-! ## Safe slices inside a value -/
+
+/-- `SliceIn r v`: a safe slice of the cell `r` is inside `v`, itself or in a
+field or payload. -/
+inductive SliceIn (r : Nat) : Lanius.Core.Value → Prop where
+  | here {ty : Lanius.Core.Ty} {projections : List Lanius.Core.ValueProjection} {start length : Nat} :
+      SliceIn r (.slice ty r projections start length)
+  | field {id : Nat} {fields : List Lanius.Core.Value} {v : Lanius.Core.Value} :
+      v ∈ fields → SliceIn r v → SliceIn r (.structure id fields)
+  | payload {id k : Nat} {vs : List Lanius.Core.Value} {v : Lanius.Core.Value} :
+      v ∈ vs → SliceIn r v → SliceIn r (.enumeration id k vs)
+
+/-- No array view roots at a safe slice inside `v`. -/
+def Unhit (views : List Semantics.I32ArrayView) (v : Lanius.Core.Value) : Prop :=
+  ∀ w ∈ views, ∀ r, SliceIn r v → w.root ≠ r
+
+theorem Unhit.nil (v : Lanius.Core.Value) : Unhit [] v := fun _ mem => by simp at mem
+
+theorem Unhit.field {views : List Semantics.I32ArrayView} {id : Nat} {fields : List Lanius.Core.Value}
+    (hit : Unhit views (.structure id fields)) {i : Nat} {fv : Lanius.Core.Value} (got : fields[i]? = some fv) :
+    Unhit views fv :=
+  fun w wm r s => hit w wm r (.field (List.mem_of_getElem? got) s)
+
+theorem Unhit.payload {views : List Semantics.I32ArrayView} {id k : Nat} {vs : List Lanius.Core.Value}
+    (hit : Unhit views (.enumeration id k vs)) {i : Nat} {fv : Lanius.Core.Value} (got : vs[i]? = some fv) :
+    Unhit views fv :=
+  fun w wm r s => hit w wm r (.payload (List.mem_of_getElem? got) s)
+
+theorem Unhit.find {views : List Semantics.I32ArrayView} {ty : Lanius.Core.Ty} {root : Nat}
+    {projections : List Lanius.Core.ValueProjection} {start length : Nat}
+    (hit : Unhit views (.slice ty root projections start length)) {view : Semantics.I32ArrayView}
+    (found : views.find? (fun candidate => decide (candidate.root = root ∧ candidate.projections = projections)) =
+      some view) : False := by
+  have mem := List.mem_of_find?_eq_some found
+  have same := List.find?_some found
+  simp only [decide_eq_true_eq] at same
+  exact hit view mem root .here same.1
+
+theorem writeNativeValue_undefHit : ∀ (fuel : Nat) (P : Core.Program) (st : State) (heap : Memory.Heap)
+    (ty : Core.Ty) (a : Nat) (v : Core.Value), Unhit st.i32ArrayViews v →
+      UndefErr (Semantics.writeNativeValue fuel P st heap ty a v)
   | 0, _, _, _, _, _, _, _ => by simp only [Semantics.writeNativeValue]; exact UndefErr.error rfl
-  | fuel + 1, P, st, heap, ty, a, v, views => by
-    have ih : ∀ heap ty a v, UndefErr (Semantics.writeNativeValue fuel P st heap ty a v) :=
-      fun heap ty a v => writeNativeValue_undef fuel P st heap ty a v views
-    have nofind : ∀ p, st.i32ArrayViews.find? p = none := by simp [views]
+  | fuel + 1, P, st, heap, ty, a, v, hit => by
+    have ih : ∀ heap ty a v, Unhit st.i32ArrayViews v → UndefErr (Semantics.writeNativeValue fuel P st heap ty a v) :=
+      fun heap ty a v h => writeNativeValue_undefHit fuel P st heap ty a v h
+    have nofind : True := trivial
     simp only [Semantics.writeNativeValue]
-    repeat' undef_step
+    split
+    all_goals first
+      | exact storeBytes_undef _ _ _
+      | skip
+    all_goals repeat' (first
+      | exact ih _ _ _ _ (hit.field ‹_›)
+      | exact ih _ _ _ _ (hit.payload ‹_›)
+      | (exfalso; exact hit.find ‹_›)
+      | undef_step)
+
+theorem writeNativeValue_undef (fuel : Nat) (P : Core.Program) (st : State) (heap : Memory.Heap) (ty : Core.Ty)
+    (a : Nat) (v : Core.Value) (views : st.i32ArrayViews = []) :
+    UndefErr (Semantics.writeNativeValue fuel P st heap ty a v) :=
+  writeNativeValue_undefHit fuel P st heap ty a v (by rw [Unhit, views]; exact Unhit.nil v)
 
 /-- A raw store: one byte of a byte view, or a native value's words. -/
 theorem writeRawNative_undef (P : Core.Program) (st : State) (place : Semantics.ResolvedPlace) (ty : Core.Ty)
-    (a : Nat) (v : Core.Value) (views : st.i32ArrayViews = []) :
+    (a : Nat) (v : Core.Value) (hit : Unhit st.i32ArrayViews v) :
     UndefErr (Semantics.writeRawNative P st place ty a v) := by
   simp only [Semantics.writeRawNative]
   split
@@ -184,6 +236,60 @@ theorem writeRawNative_undef (P : Core.Program) (st : State) (place : Semantics.
     split
     · exact storeBytes_undef _ _ _
     · exact UndefErr.error rfl
-  · exact writeNativeValue_undef _ _ _ _ _ _ _ views
+  · exact writeNativeValue_undefHit _ _ _ _ _ _ _ hit
+
+/-- A scalar value has no safe slice inside. -/
+theorem SrcType.Holds.noSlice {ty : SrcType} {v : Core.Value} {bits : BitVec 64} (h : ty.Holds v bits)
+    {r : Nat} (s : SliceIn r v) : False := by
+  cases s <;> cases ty <;> first
+    | (simp [SrcType.Holds] at h; done)
+    | (rename_i k; cases k <;> simp [SrcType.Holds, UintTy.SintHolds, NarrowHolds, FloatTy.value] at h <;> done)
+
+mutual
+/-- A safe slice inside a value that holds is of a place's cell. -/
+theorem SrcType.HoldsAt.sliceIn {places : List Addressed} : ∀ {ty : SrcType} {v : Core.Value} {env : Env} {slot : Nat},
+    ty.HoldsAt places v env slot → ∀ {r : Nat}, SliceIn r v → ∃ x ∈ places, x.cell = r
+  | .i32, _, _, _, .i32 h, _, s => (h.noSlice s).elim
+  | .bool, _, _, _, .bool h, _, s => (h.noSlice s).elim
+  | .uint _, _, _, _, .uint h, _, s => (h.noSlice s).elim
+  | .struct _ _, _, _, _, .struct fields, _, s => by
+    cases s with
+    | field mem inner => exact FieldsHold.sliceIn fields mem inner
+  | .enum _ _, _, _, _, .enum _ _ payload, _, s => by
+    cases s with
+    | payload mem inner => exact FieldsHold.sliceIn payload mem inner
+  | .ptr, _, _, _, .ptr h, _, s => (h.noSlice s).elim
+  | .slice _, _, _, _, .slice _ _, _, s => by cases s
+  | .slice _, _, _, _, .borrowed mem _ _ _ _ _ _ _, _, s => by
+    cases s with
+    | here => exact ⟨_, mem, rfl⟩
+  | .array _ _, _, _, _, .array _, _, s => by cases s
+  | .unit, _, _, _, .unit, _, s => by cases s
+  | .isize, _, _, _, .isize h, _, s => (h.noSlice s).elim
+  | .char, _, _, _, .char h, _, s => (h.noSlice s).elim
+  | .float _, _, _, _, .float h, _, s => (h.noSlice s).elim
+  | .sint _, _, _, _, .sint h, _, s => (h.noSlice s).elim
+  termination_by structural _ _ _ _ h => h
+
+theorem FieldsHold.sliceIn {places : List Addressed} : ∀ {fs : List SrcType} {vs : List Core.Value} {env : Env} {slot : Nat},
+    FieldsHold places fs vs env slot → ∀ {v : Core.Value}, v ∈ vs → ∀ {r : Nat}, SliceIn r v →
+      ∃ x ∈ places, x.cell = r
+  | [], _, _, _, .nil, _, mem, _, _ => by simp at mem
+  | _ :: _, _, _, _, .cons head rest, _, mem, _, s => by
+    cases mem with
+    | head => exact SrcType.HoldsAt.sliceIn head s
+    | tail _ mem => exact FieldsHold.sliceIn rest mem s
+  termination_by structural _ _ _ _ h => h
+end
+
+/-- A value that holds is unhit by views that root at no place. -/
+theorem SrcType.HoldsAt.unhit {places : List Addressed} {ty : SrcType} {v : Core.Value} {env : Env} {slot : Nat}
+    (holds : ty.HoldsAt places v env slot) {views : List Semantics.I32ArrayView}
+    (unviewed : ∀ w ∈ views, ∀ x ∈ places, w.root ≠ x.cell) : Unhit views v := fun w wm r s => by
+  obtain ⟨x, mem, rfl⟩ := holds.sliceIn s
+  exact unviewed w wm x mem
+
+theorem SrcType.Holds.unhit {ty : SrcType} {v : Core.Value} {bits : BitVec 64} (h : ty.Holds v bits)
+    (views : List Semantics.I32ArrayView) : Unhit views v := fun _ _ _ s => (h.noSlice s).elim
 
 end Lanius.Mini

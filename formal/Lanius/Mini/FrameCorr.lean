@@ -257,6 +257,8 @@ structure FrameCorr (bud : Budget) (places : List Addressed) (st : State) (hp : 
     x.cell ≠ y.cell ∧ (x.address + 8 * x.ty.size ≤ y.address ∨ y.address + 8 * y.ty.size ≤ x.address)
   /-- Every place is a packed array passed as a slice. -/
   packed : ∀ x ∈ places, x.Packed
+  /-- No array view roots at the places' cells. -/
+  unviewed : ∀ v ∈ st.i32ArrayViews, ∀ x ∈ places, v.root ≠ x.cell
   /-- The callees' room lies above the limit, for an activation with any
   frame memory at all (one with none needs no frame memory, which a heap
   without any, as the self compiler's, has). -/
@@ -273,7 +275,8 @@ theorem FrameCorr.nil (st : State) {hp : Heap} (room : 0 < bud.room + bud.block 
     (bounded : 0 < bud.room + bud.block → hp.top < 2 ^ 62) :
     FrameCorr bud [] st hp :=
   ⟨fun _ mem => by simp at mem, fun _ mem => by simp at mem, fun _ mem => by simp at mem,
-    fun _ mem => by simp at mem, fun _ mem => by simp at mem, room, ceiling, bounded⟩
+    fun _ mem => by simp at mem, fun _ mem => by simp at mem, fun _ _ _ mem => by simp at mem, room, ceiling,
+    bounded⟩
 
 /-- No places, and `need` bytes of frame memory room when `need` is positive:
 where a program's run starts. -/
@@ -290,13 +293,14 @@ theorem FrameCorr.empty (st : State) (hp : Heap) : FrameCorr ⟨0, 0⟩ [] st hp
     fun pos => absurd pos (by decide)
 
 /-- Changes to bytes no place covers, to the cursor or the trace, and to Core cells no place names keep the correspondence. -/
-theorem FrameCorr.congr {st st' : State} {hp hp' : Heap}
+theorem FrameCorr.congrViews {st st' : State} {hp hp' : Heap}
     (fc : FrameCorr bud places st hp)
     (cells : ∀ x ∈ places, st'.cellEntry? x.cell = st.cellEntry? x.cell)
     (bytes : ∀ x ∈ places, ∀ a, x.Covers a → hp'.bytes a = hp.bytes a)
-    (fsp : hp'.fsp = hp.fsp) (limit : hp'.limit = hp.limit) (top : hp'.top = hp.top) :
+    (fsp : hp'.fsp = hp.fsp) (limit : hp'.limit = hp.limit) (top : hp'.top = hp.top)
+    (unviewed : ∀ v ∈ st'.i32ArrayViews, ∀ x ∈ places, v.root ≠ x.cell) :
     FrameCorr bud places st' hp' := by
-  refine ⟨fun x mem => ?_, fun x mem => ?_, fc.small, fc.apart, fc.packed, by rw [fsp, limit]; exact fc.room,
+  refine ⟨fun x mem => ?_, fun x mem => ?_, fc.small, fc.apart, fc.packed, unviewed, by rw [fsp, limit]; exact fc.room,
     by rw [fsp, top]; exact fc.ceiling, by rw [top]; exact fc.bounded⟩
   · obtain ⟨v, read, holds⟩ := fc.holds x mem
     refine ⟨v, ?_, holds.congr (Addressed.view_congr (bytes x mem))⟩
@@ -305,17 +309,28 @@ theorem FrameCorr.congr {st st' : State} {hp hp' : Heap}
   · have := fc.inside x mem
     exact ⟨fsp ▸ this.1, limit ▸ this.2.1, top ▸ this.2.2⟩
 
+/-- As `congrViews`, with the views as they were. -/
+theorem FrameCorr.congr {st st' : State} {hp hp' : Heap}
+    (fc : FrameCorr bud places st hp)
+    (cells : ∀ x ∈ places, st'.cellEntry? x.cell = st.cellEntry? x.cell)
+    (bytes : ∀ x ∈ places, ∀ a, x.Covers a → hp'.bytes a = hp.bytes a)
+    (fsp : hp'.fsp = hp.fsp) (limit : hp'.limit = hp.limit) (top : hp'.top = hp.top)
+    (views : st'.i32ArrayViews = st.i32ArrayViews := by rfl) :
+    FrameCorr bud places st' hp' :=
+  fc.congrViews cells bytes fsp limit top (by rw [views]; exact fc.unviewed)
+
 /-- A heap that differs only below the limit, with the same limit, top and
 frame pointer, and Core cells no place names, keep the correspondence: the
 bump heap is not frame memory. -/
 theorem FrameCorr.low {st st' : State} {hp hp' : Heap} (fc : FrameCorr bud places st hp)
     (cells : ∀ x ∈ places, st'.cellEntry? x.cell = st.cellEntry? x.cell)
     (bytes : ∀ a, hp.limit ≤ a → hp'.bytes a = hp.bytes a)
-    (fsp : hp'.fsp = hp.fsp) (limit : hp'.limit = hp.limit) (top : hp'.top = hp.top) :
+    (fsp : hp'.fsp = hp.fsp) (limit : hp'.limit = hp.limit) (top : hp'.top = hp.top)
+    (views : st'.i32ArrayViews = st.i32ArrayViews := by rfl) :
     FrameCorr bud places st' hp' :=
   fc.congr cells (fun x mem a covers => bytes a (by
       have := fc.inside x mem; unfold Addressed.Covers at covers; omega))
-    fsp limit top
+    fsp limit top views
 
 /-- A store below the frame pointer misses every place. -/
 theorem FrameCorr.writeLE_below {st : State} {hp : Heap}
@@ -388,7 +403,7 @@ theorem FrameCorr.frame {st : State} {hp : Heap}
   have room' := fc.room
   have ceiling' := fc.ceiling
   have bounded' := fc.bounded
-  refine ⟨fun x mem => ?_, fun x mem => ?_, fc.small, fc.apart, fc.packed, fun pos => ?_, fun pos => ?_,
+  refine ⟨fun x mem => ?_, fun x mem => ?_, fc.small, fc.apart, fc.packed, fc.unviewed, fun pos => ?_, fun pos => ?_,
     fun pos => bounded' (by omega)⟩
   · obtain ⟨v, read, holds⟩ := fc.holds x mem
     exact ⟨v, read, holds.congr (Addressed.view_congr fun _ _ => rfl)⟩
@@ -413,7 +428,8 @@ theorem FrameCorr.restore {bud' : Budget} {st : State} {hp : Heap}
   ⟨fun x mem => by
       obtain ⟨v, read, holds⟩ := fc.holds x mem
       exact ⟨v, read, holds.congr (Addressed.view_congr fun _ _ => rfl)⟩,
-    fun x mem => ⟨above x mem, (fc.inside x mem).2⟩, fc.small, fc.apart, fc.packed, room, ceiling, bounded⟩
+    fun x mem => ⟨above x mem, (fc.inside x mem).2⟩, fc.small, fc.apart, fc.packed, fc.unviewed, room, ceiling,
+    bounded⟩
 
 /-- After a call: the callee's places with the caller's frame pointer and
 budget, given the caller's correspondence before the call. -/
@@ -429,7 +445,7 @@ theorem FrameCorr.callee {st : State} {hp : Heap} (fc : FrameCorr bud places st 
   have room' := fc.room
   have ceiling' := fc.ceiling
   have bounded' := fc.bounded
-  refine ⟨fc.holds, fun x mem => ?_, fc.small, fc.apart, fc.packed, fun pos => ?_, fun pos => ?_,
+  refine ⟨fc.holds, fun x mem => ?_, fc.small, fc.apart, fc.packed, fc.unviewed, fun pos => ?_, fun pos => ?_,
     fun pos => bounded' (by omega)⟩
   · have inside := fc.inside x mem
     exact ⟨by omega, inside.2⟩

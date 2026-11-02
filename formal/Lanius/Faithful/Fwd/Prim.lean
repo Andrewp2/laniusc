@@ -361,7 +361,7 @@ theorem boxed_live {boxes : Boxes} {t : SrcType} {id sizeOf slice panic w : Nat}
       | some _ => Semantics.syncI32ViewsFromHeap { q4 with heap := after }) = .ok { q4 with heap := after } := by
     simp only [Semantics.ResolvedPlace.viewFreeRootWrite, rraw, Option.isNone_some, Bool.false_and,
       Bool.false_eq_true, if_false]
-    exact syncFrom_ok (st := { q4 with heap := after }) inv4.views
+    exact syncFrom_ok (st := { q4 with heap := after }) (Views.ViewsHold.nil inv4.views)
   have assignE := expression_fwd (assign_fwd placeRun (local_fwd x4) written synced)
   -- the returned box
   have retE := return_fwd (P := sp.toCore) (struct_fwd (id := id)

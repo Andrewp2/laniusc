@@ -173,9 +173,9 @@ theorem variantTy_some {ty t : SrcType} {k : Nat} {ts : List SrcType} (h : varia
   | array => simp [variantTy] at h
 
 /-- A state between two that grow is below the later one's cursor. -/
-theorem Grows.bound {a b c : State} (first : Grows a b) (second : Grows b c) (views : a.i32ArrayViews = [])
+theorem Grows.bound {a b c : State} (first : Grows a b) (second : Grows b c) (_views : a.i32ArrayViews = [])
     (bound : c.heap.nextAddress ≤ 2 ^ 64) : b.heap.nextAddress ≤ 2 ^ 64 :=
-  Nat.le_trans (second (first views).1).2 bound
+  Nat.le_trans second.next bound
 
 theorem effGrows {sp : SrcProgram} {k : Nat} {st st' : State} {e : SrcEff} {v : Value}
     (run : evalExpr k sp.toCore st e.toCore = .done v st') : Grows st st' :=

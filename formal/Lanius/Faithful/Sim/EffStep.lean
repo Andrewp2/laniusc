@@ -51,7 +51,7 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
     rw [found, Option.some.injEq] at found'
     subst found'
     have entry := bindLocals_same (paramBindings f.params values) { afterArgs with locals := [] }
-    have gBody : Grows afterArgs completed := (Grows.same entry.1 entry.2).trans (execStmt_grows bodyRun)
+    have gBody : Grows afterArgs completed := (Grows.same (st := afterArgs) entry.1 entry.2).trans (execStmt_grows bodyRun)
     have b1 := Grows.bound (effsGrows argsRun) gBody inv.views bound
     obtain ⟨ps, hps, rs, ran1⟩ := effs argsRun hts inv rel b1
     obtain ⟨w, hw, rw, invc, stepc⟩ := calls found notOut len ran1.inv (show completed.heap.nextAddress ≤ 2 ^ 64 from bound) rs bodyRun result

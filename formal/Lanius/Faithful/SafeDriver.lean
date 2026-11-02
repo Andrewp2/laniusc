@@ -125,7 +125,7 @@ theorem read_safe {inp : Nat} {W : List (BitVec 32)} (len : W.length < 2 ^ 64) :
         · exact m36
         · exact m47) recRun
       simp only [List.map_cons, List.map_nil, read_params] at recBody
-      obtain ⟨views1, -⟩ := execStmt_grows recBody (Same.start inv1 _).views
+      obtain ⟨views1, -⟩ := (execStmt_grows recBody).empty (Same.start inv1 _).views
       refine SafeS.of_bound (sp := prog) (s := SrcStmt.returnEval (SrcEff.eCall 1
         [SrcEff.ePure (SrcExpr.local 12), SrcEff.ePure (SrcExpr.local 25), SrcEff.ePure (SrcExpr.local 146),
           SrcEff.ePure (SrcExpr.local 191)])) views1 fun bound => ?_
@@ -242,7 +242,7 @@ theorem write_one_safe {outp room : Nat} (roomLt : room < 2 ^ 31) {x : BitVec 32
   obtain ⟨rfl, hA⟩ := args.done argsRun
   subst afterArgs
   simp only [write_params] at body3
-  obtain ⟨views3, -⟩ := execStmt_grows body3 (Same.start invE _).views
+  obtain ⟨views3, -⟩ := (execStmt_grows body3).empty (Same.start invE _).views
   refine SafeS.of_bound (sp := prog) (s := SrcStmt.then (SrcStmt.setIndex 17 (SrcExpr.local 29)
     (SrcExpr.local 40)) (SrcStmt.return (SrcExpr.local 100))) views3 fun bound => ?_
   obtain ⟨-, hlen, -, cells3, inv3, readable3⟩ := write_body roomLt rest invE
@@ -365,7 +365,7 @@ theorem write_safe {outp room : Nat} (roomLt : room < 2 ^ 31) : ∀ ws, WriteSaf
     obtain ⟨_, uv, sU, more4, -, r4, n4, rfl⟩ := exprs_cons_inv n3
     obtain ⟨rfl, rfl⟩ := exprs_nil_inv n4
     obtain ⟨jU, doneU, cU, bodyU, resultU, rfl⟩ := call_locals [(137, bv)] fn_unbox (by simpa using m137) r4
-    obtain ⟨viewsU, -⟩ := execStmt_grows bodyU (Same.start inv2 _).views
+    obtain ⟨viewsU, -⟩ := (execStmt_grows bodyU).empty (Same.start inv2 _).views
     refine ⟨rfl, ?_⟩
     simp only [write_one_params]
     refine SafeS.of_bound (sp := prog) (s := (src_app_main_oracle_write_one 3).body) viewsU fun bound => ?_
@@ -613,7 +613,7 @@ theorem driver_safe {st : State} {inp outp room : Nat} {W : List (BitVec 32)}
     rw [fn_empty_of_i32, Option.some.injEq] at foundE
     subst foundE
     obtain ⟨rfl, rfl⟩ := exprs_nil_inv argsE
-    obtain ⟨viewsE, -⟩ := execStmt_grows bodyE (Same.start inv2 _).views
+    obtain ⟨viewsE, -⟩ := (execStmt_grows bodyE).empty (Same.start inv2 _).views
     refine ⟨rfl, ?_⟩
     simp only [read_params, show (0#64).toNat = 0 from rfl]
     refine SafeS.of_bound (sp := prog) (s := (src_app_main_oracle_read 1 9).body) viewsE fun bE => ?_
@@ -638,8 +638,8 @@ theorem driver_safe {st : State} {inp outp room : Nat} {W : List (BitVec 32)}
   subst foundE
   obtain ⟨rfl, rfl⟩ := exprs_nil_inv argsE
   simp only [read_params, show (0#64).toNat = 0 from rfl] at bodyR
-  obtain ⟨viewsE, -⟩ := execStmt_grows bodyE (Same.start inv2 _).views
-  obtain ⟨viewsR, leR⟩ := execStmt_grows bodyR viewsE
+  obtain ⟨viewsE, -⟩ := (execStmt_grows bodyE).empty (Same.start inv2 _).views
+  obtain ⟨viewsR, leR⟩ := (execStmt_grows bodyR).empty viewsE
   refine SafeS.of_bound (sp := prog) (s := SrcStmt.returnEval (SrcEff.eCall 2 [SrcEff.ePure (SrcExpr.local 125),
     SrcEff.eCall 6 [SrcEff.eCall 7 [SrcEff.eCall 8 [], SrcEff.ePure (SrcExpr.local 182)]]])) viewsR fun bR => ?_
   obtain ⟨we, hwe, rwe, invE', stepE'⟩ := func_sim SelfPure.selfPure SelfPure.selfPrims j5 fn_empty_of_i32
@@ -694,9 +694,9 @@ theorem driver_safe {st : State} {inp outp room : Nat} {W : List (BitVec 32)}
   rw [fn_grammar, Option.some.injEq] at foundG
   subst foundG
   obtain ⟨rfl, rfl⟩ := exprs_nil_inv argsG
-  obtain ⟨viewsG, leG⟩ := execStmt_grows bodyG viewsR
-  obtain ⟨viewsF, leF⟩ := execStmt_grows bodyF viewsG
-  obtain ⟨viewsC, leC⟩ := execStmt_grows bodyC viewsF
+  obtain ⟨viewsG, leG⟩ := (execStmt_grows bodyG).empty viewsR
+  obtain ⟨viewsF, leF⟩ := (execStmt_grows bodyF).empty viewsG
+  obtain ⟨viewsC, leC⟩ := (execStmt_grows bodyC).empty viewsF
   refine ⟨rfl, ?_⟩
   simp only [put_params]
   refine SafeS.of_bound (sp := prog) (s := (src_app_main_oracle_put 3).body) viewsC fun bC => ?_

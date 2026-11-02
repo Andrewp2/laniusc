@@ -92,7 +92,7 @@ open Lanius.Core (Value)
 open Lanius.Semantics (State Completion evalExpr evalExprs evalMatchArms execStmt restoreLocals
   restoreOutcomeLocals)
 
-theorem Grows.restore {a b : State} (c : State) (g : Grows a b) : Grows a (restoreLocals c b) := g
+theorem Grows.restore {a b : State} (c : State) (g : Grows a b) : Grows a (restoreLocals c b) := ⟨g.next, g.views⟩
 
 theorem Grows.unbind {a b : State} {bs : List (Nat × Value)} (g : Grows (a.bindLocals bs) b) : Grows a b :=
   (Grows.same (bindLocals_same bs a).1 (bindLocals_same bs a).2).trans g
@@ -260,7 +260,6 @@ theorem alloc_trap_grows {size : SrcExpr} {shift : Nat}
 
 theorem loadByte_trap_grows {pointer offset : SrcExpr}
     (run : evalExpr k P st (.loadByte pointer.toCore offset.toCore) = .trapped r st') : Grows st st' := by
-  intro views
   cases k with
   | zero => simp [evalExpr] at run
   | succ k =>
@@ -269,30 +268,34 @@ theorem loadByte_trap_grows {pointer offset : SrcExpr}
     · rename_i argsRun
       have := evalExprs_state [pointer, offset] argsRun
       subst this
-      simp only [sync_ok views] at run
+      split at run
+      · simp only [Semantics.Outcome.trapped.injEq] at run
+        obtain ⟨-, rfl⟩ := run
+        exact Grows.refl _
+      rename_i synced syncedOk
+      obtain ⟨same, n0⟩ := syncTo_heap syncedOk
       split at run
       · simp at run
       · simp only [Semantics.Outcome.trapped.injEq] at run
         obtain ⟨-, rfl⟩ := run
-        exact ⟨views, Nat.le_refl _⟩
+        exact Grows.heap (Nat.le_of_eq n0.symm) (by rw [same])
     · rename_i argsRun
       have := evalExprs_state [pointer, offset] argsRun
       subst this
       simp only [Semantics.Outcome.trapped.injEq] at run
       obtain ⟨-, rfl⟩ := run
-      exact ⟨views, Nat.le_refl _⟩
+      exact Grows.refl _
     · rename_i argsRun
       have := exprs_trap_state [pointer, offset] argsRun
       subst this
       simp only [Semantics.Outcome.trapped.injEq] at run
       obtain ⟨-, rfl⟩ := run
-      exact ⟨views, Nat.le_refl _⟩
+      exact Grows.refl _
     all_goals simp at run
 
 theorem storeByte_trap_grows {pointer offset value : SrcExpr}
     (run : evalExpr k P st (.storeByte pointer.toCore offset.toCore value.toCore) = .trapped r st') :
     Grows st st' := by
-  intro views
   cases k with
   | zero => simp [evalExpr] at run
   | succ k =>
@@ -301,35 +304,40 @@ theorem storeByte_trap_grows {pointer offset value : SrcExpr}
     · rename_i argsRun
       have := evalExprs_state [pointer, offset, value] argsRun
       subst this
-      simp only [sync_ok views] at run
       split at run
       · simp only [Semantics.Outcome.trapped.injEq] at run
         obtain ⟨-, rfl⟩ := run
-        exact ⟨views, Nat.le_refl _⟩
+        exact Grows.refl _
+      rename_i synced syncedOk
+      obtain ⟨same, n0⟩ := syncTo_heap syncedOk
+      have views0 := congrArg State.i32ArrayViews same
+      split at run
+      · simp only [Semantics.Outcome.trapped.injEq] at run
+        obtain ⟨-, rfl⟩ := run
+        exact Grows.heap (Nat.le_of_eq n0.symm) views0
       · rename_i heap stored
         split at run
         · simp at run
         · simp only [Semantics.Outcome.trapped.injEq] at run
           obtain ⟨-, rfl⟩ := run
-          exact ⟨views, Nat.le_of_eq (storeByte_next stored).symm⟩
+          exact Grows.heap (st' := { synced with heap }) (Nat.le_of_eq ((storeByte_next stored).trans n0).symm) views0
     · rename_i argsRun
       have := evalExprs_state [pointer, offset, value] argsRun
       subst this
       simp only [Semantics.Outcome.trapped.injEq] at run
       obtain ⟨-, rfl⟩ := run
-      exact ⟨views, Nat.le_refl _⟩
+      exact Grows.refl _
     · rename_i argsRun
       have := exprs_trap_state [pointer, offset, value] argsRun
       subst this
       simp only [Semantics.Outcome.trapped.injEq] at run
       obtain ⟨-, rfl⟩ := run
-      exact ⟨views, Nat.le_refl _⟩
+      exact Grows.refl _
     all_goals simp at run
 
 theorem dealloc_trap_grows {pointer size : SrcExpr} {shift : Nat}
     (run : evalExpr k P st (.dealloc pointer.toCore size.toCore (.value (.unsigned .usize (2 ^ shift)))) =
       .trapped r st') : Grows st st' := by
-  intro views
   have pure : ∀ x ∈ [pointer.toCore, size.toCore, Core.Expr.value (.unsigned .usize (2 ^ shift))],
       PureExpr P x ∧ PureT P x := fun x mem => by
     simp only [List.mem_cons, List.not_mem_nil, or_false] at mem
@@ -345,24 +353,29 @@ theorem dealloc_trap_grows {pointer size : SrcExpr} {shift : Nat}
     · rename_i argsRun
       have := evalExprs_pure _ (fun x mem => (pure x mem).1) argsRun
       subst this
-      simp only [sync_ok views] at run
+      split at run
+      · simp only [Semantics.Outcome.trapped.injEq] at run
+        obtain ⟨-, rfl⟩ := run
+        exact Grows.refl _
+      rename_i synced syncedOk
+      obtain ⟨same, n0⟩ := syncTo_heap syncedOk
       split at run
       · simp at run
       · simp only [Semantics.Outcome.trapped.injEq] at run
         obtain ⟨-, rfl⟩ := run
-        exact ⟨views, Nat.le_refl _⟩
+        exact Grows.heap (Nat.le_of_eq n0.symm) (by rw [same])
     · rename_i argsRun
       have := evalExprs_pure _ (fun x mem => (pure x mem).1) argsRun
       subst this
       simp only [Semantics.Outcome.trapped.injEq] at run
       obtain ⟨-, rfl⟩ := run
-      exact ⟨views, Nat.le_refl _⟩
+      exact Grows.refl _
     · rename_i argsRun
       have := exprs_trap_pure _ pure argsRun
       subst this
       simp only [Semantics.Outcome.trapped.injEq] at run
       obtain ⟨-, rfl⟩ := run
-      exact ⟨views, Nat.le_refl _⟩
+      exact Grows.refl _
     all_goals simp at run
 
 theorem structValue_trap_state {id : Nat} {es : List SrcExpr}
@@ -691,33 +704,17 @@ theorem assign_trap_grows {place : Core.Place} {e : Core.Expr}
         obtain ⟨-, rfl⟩ := run
         exact g2
       rename_i result _
-      intro views
-      obtain ⟨views2, next2⟩ := g2 views
-      cases raw : resolved.raw with
-      | none =>
-        simp only [Semantics.writeResolvedPlaceNative, raw] at run
+      split at run
+      · rename_i assigned written
         split at run
-        · rename_i assigned written
-          obtain ⟨heap3, views3⟩ := writeResolved_same written
-          have synced := sync_ok (st := assigned) (views3.trans views2)
-          simp only [synced, ite_self] at run
-          simp at run
+        · simp at run
         · simp only [Semantics.Outcome.trapped.injEq] at run
           obtain ⟨-, rfl⟩ := run
-          exact ⟨views2, next2⟩
-      | some pair =>
-        simp only [Semantics.writeResolvedPlaceNative, raw] at run
-        split at run
-        · rename_i assigned written
-          obtain ⟨heap3, stored, wrapped⟩ := except_bind_ok written
-          simp only [pure, Except.pure, Except.ok.injEq] at wrapped
-          subst wrapped
-          have synced := syncFrom_ok (st := { afterValue with heap := heap3 }) views2
-          simp only [synced, ite_self] at run
-          simp at run
-        · simp only [Semantics.Outcome.trapped.injEq] at run
-          obtain ⟨-, rfl⟩ := run
-          exact ⟨views2, next2⟩
+          obtain ⟨n4, v4⟩ := writeNative_grows written
+          exact g2.trans (Grows.heap (Nat.le_of_eq n4.symm) v4)
+      · simp only [Semantics.Outcome.trapped.injEq] at run
+        obtain ⟨-, rfl⟩ := run
+        exact g2
     · rename_i valueRun
       simp only [Semantics.Outcome.trapped.injEq] at run
       obtain ⟨-, rfl⟩ := run
@@ -790,7 +787,7 @@ theorem call_trap_grows {k : Nat} (ih : GrowsBelow sp k) (ihT : GrowsBelowT sp k
     rw [same]
     have entry := bindLocals_same (paramBindings f.params values) { afterArgs with locals := [] }
     refine (argsDone (Nat.lt_succ_self j) argsRun).trans
-      (Grows.restore afterArgs ((Grows.same entry.1 entry.2).trans ?_))
+      (Grows.restore afterArgs ((Grows.same (st := afterArgs) entry.1 entry.2).trans ?_))
     rcases bodyRun with bodyRun | ⟨c, bodyRun, -⟩
     · exact ihT j (Nat.lt_succ_self j) bodyRun
     · exact ih j (Nat.lt_succ_self j) bodyRun

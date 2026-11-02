@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Mini.LowerExpr
+public import Lanius.Mini.Views
 -- import all uses: Lanius.Mini.Compiler
 import all Lanius.Mini.Compiler.P.BinOp_folds
 import all Lanius.Mini.Compiler.P.DivOp_size
@@ -216,20 +217,30 @@ theorem call_inv {sp : SrcProgram} {fuel : Nat} {st : State} {callee : Nat} {arg
 
 /-! ## Growing -/
 
-/-- From `st` to `st'` the heap cursor did not go down, and no views appeared. -/
-def Grows (st st' : State) : Prop :=
-  st.i32ArrayViews = [] → st'.i32ArrayViews = [] ∧ st.heap.nextAddress ≤ st'.heap.nextAddress
+/-- From `st` to `st'` the heap cursor did not go down, and the views are
+the same: the subset never maps a new one (`mapI32ArrayView`). -/
+structure Grows (st st' : State) : Prop where
+  next : st.heap.nextAddress ≤ st'.heap.nextAddress
+  views : st'.i32ArrayViews = st.i32ArrayViews
 
-theorem Grows.refl (st : State) : Grows st st := fun views => ⟨views, Nat.le_refl _⟩
+theorem Grows.refl (st : State) : Grows st st := ⟨Nat.le_refl _, rfl⟩
 
-theorem Grows.trans {a b c : State} (first : Grows a b) (second : Grows b c) : Grows a c := fun views =>
-  let ⟨v1, n1⟩ := first views
-  let ⟨v2, n2⟩ := second v1
-  ⟨v2, Nat.le_trans n1 n2⟩
+theorem Grows.trans {a b c : State} (first : Grows a b) (second : Grows b c) : Grows a c :=
+  ⟨Nat.le_trans first.next second.next, second.views.trans first.views⟩
 
 theorem Grows.same {st st' : State} (heap : st'.heap = st.heap)
     (views : st'.i32ArrayViews = st.i32ArrayViews) : Grows st st' :=
-  fun v => ⟨views.trans v, by rw [heap]; exact Nat.le_refl _⟩
+  ⟨by rw [heap]; exact Nat.le_refl _, views⟩
+
+/-- The heap's cursor did not go down and the views are the same. -/
+theorem Grows.heap {st st' : State} (next : st.heap.nextAddress ≤ st'.heap.nextAddress)
+    (views : st'.i32ArrayViews = st.i32ArrayViews) : Grows st st' :=
+  ⟨next, views⟩
+
+/-- From no views, none. -/
+theorem Grows.empty {st st' : State} (g : Grows st st') (views : st.i32ArrayViews = []) :
+    st'.i32ArrayViews = [] ∧ st.heap.nextAddress ≤ st'.heap.nextAddress :=
+  ⟨g.views.trans views, g.next⟩
 
 theorem bindLocals_same : ∀ (bs : List (Nat × Value)) (st : State),
     (st.bindLocals bs).heap = st.heap ∧ (st.bindLocals bs).i32ArrayViews = st.i32ArrayViews
@@ -375,6 +386,74 @@ theorem writeNativeValue_next : ∀ (fuel : Nat) {P : Core.Program} {st : State}
                 · split at step
                   · obtain ⟨l, -, w⟩ := except_bind_ok step
                     rw [writeNativeValue_next fuel w, hb]
+                  · simp at step
+                · simp at step
+              · simp at step
+          · simp at ok
+        · simp at ok
+    · simp at ok
+
+theorem writeNativeValue_stores : ∀ (fuel : Nat) {P : Core.Program} {st : State} {h h' : Memory.Heap}
+    {ty : Core.Ty} {a : Nat} {v : Value},
+    Semantics.writeNativeValue fuel P st h ty a v = .ok h' → Views.Stores h h'
+  | 0, _, _, _, _, _, _, _, ok => by simp [Semantics.writeNativeValue] at ok
+  | fuel + 1, P, st, h, h', ty, a, v, ok => by
+    simp only [Semantics.writeNativeValue] at ok
+    split at ok
+    all_goals first
+      | exact Views.Stores.storeBytes ok
+      | skip
+    · split at ok
+      · simp at ok
+      · split at ok
+        · simp at ok
+        · obtain ⟨w1, s1, r1⟩ := except_bind_ok ok
+          obtain ⟨l1, -, r2⟩ := except_bind_ok r1
+          obtain ⟨w2, s2, r3⟩ := except_bind_ok r2
+          obtain ⟨l2, -, s3⟩ := except_bind_ok r3
+          exact ((Views.Stores.storeBytes s1).trans (Views.Stores.storeBytes s2)).trans (Views.Stores.storeBytes s3)
+    · split at ok
+      · split at ok
+        · simp at ok
+        · obtain ⟨w1, s1, r1⟩ := except_bind_ok ok
+          obtain ⟨l1, -, r2⟩ := except_bind_ok r1
+          obtain ⟨w2, s2, r3⟩ := except_bind_ok r2
+          obtain ⟨l2, -, s3⟩ := except_bind_ok r3
+          exact ((Views.Stores.storeBytes s1).trans (Views.Stores.storeBytes s2)).trans (Views.Stores.storeBytes s3)
+      · simp at ok
+    · split at ok
+      · simp at ok
+      · split at ok
+        · split at ok
+          · simp at ok
+          · refine foldlM_inv (fun b => Views.Stores h b) _ ?_ _ h h' (Views.Stores.refl h) ok
+            intro b i b' hb step
+            try simp only at step
+            split at step
+            · split at step
+              · split at step
+                · obtain ⟨l, -, w⟩ := except_bind_ok step
+                  exact hb.trans (writeNativeValue_stores fuel w)
+                · simp at step
+              · simp at step
+            · simp at step
+        · simp at ok
+    · split at ok
+      · simp at ok
+      · split at ok
+        · split at ok
+          · split at ok
+            · simp at ok
+            · obtain ⟨w, first, second⟩ := except_bind_ok ok
+              refine foldlM_inv (fun b => Views.Stores h b) _ ?_ _ w h'
+                (Views.Stores.storeBytes first) second
+              intro b i b' hb step
+              try simp only at step
+              split at step
+              · split at step
+                · split at step
+                  · obtain ⟨l, -, w⟩ := except_bind_ok step
+                    exact hb.trans (writeNativeValue_stores fuel w)
                   · simp at step
                 · simp at step
               · simp at step
@@ -529,73 +608,6 @@ theorem evalExprs_state {P : Core.Program} (es : List SrcExpr) {fuel : Nat} {st 
 
 /-! ## Statements -/
 
-theorem sync_ok {st : State} (views : st.i32ArrayViews = []) : Semantics.syncI32ViewsToHeap st = .ok st := by
-  simp [Semantics.syncI32ViewsToHeap, views, Semantics.syncI32ViewsToHeapFrom]
-
-theorem syncFrom_ok {st : State} (views : st.i32ArrayViews = []) :
-    Semantics.syncI32ViewsFromHeap st = .ok st := by
-  simp [Semantics.syncI32ViewsFromHeap, views, Semantics.syncI32ViewsFromHeapFrom]
-
-/-- A host call from `st` whose arguments left no views: Core's world call
-returned `v`, and the state is `st` with the call's heap and world. -/
-def HostReturns (st : State) (service : Core.HostService) (values : List Value) (v : Value) (st' : State) :
-    Prop :=
-  st.i32ArrayViews = [] → ∃ heap world, World.call st.heap st.world service values = .returned v heap world ∧
-    st' = { st with heap, world }
-
-/-- What a Core call that returned did: one of the program's functions ran,
-or a host function did. -/
-theorem call_cases {sp : SrcProgram} {fuel : Nat} {st : State} {callee : Nat} {args : List Core.Expr}
-    {v : Value} {st' : State}
-    (run : evalExpr (fuel + 1) sp.toCore st (.call callee args) = .done v st') :
-    ∃ values afterArgs, evalExprs fuel sp.toCore st args = .done values afterArgs ∧
-      ((callee < sp.funcs.length ∧ ∃ f completed c, sp.funcs[callee]? = some f ∧ values.length = f.params.length ∧
-        execStmt fuel sp.toCore (({ afterArgs with locals := [] } : State).bindLocals
-          (paramBindings f.params values)) f.body.toCore = .done c completed ∧ CallResult f.ret c v ∧
-        st' = restoreLocals afterArgs completed) ∨
-       (sp.funcs.length ≤ callee ∧ ∃ service, hostService? callee = some service ∧
-        HostReturns afterArgs service values v st')) := by
-  by_cases inside : callee < sp.funcs.length
-  · obtain ⟨f, values, afterArgs, completed, c, a, b, d, e, g, i⟩ := call_inv inside run
-    exact ⟨values, afterArgs, a, .inl ⟨inside, f, completed, c, b, d, e, g, i⟩⟩
-  · simp only [evalExpr] at run
-    split at run
-    · rename_i values afterArgs argsRun
-      refine ⟨values, afterArgs, argsRun, .inr ⟨by omega, ?_⟩⟩
-      rw [SrcProgram.function?_toCore, List.getElem?_eq_none (by omega)] at run
-      cases hs : hostService? callee with
-      | none => simp [hs] at run
-      | some service =>
-        refine ⟨service, rfl, fun views => ?_⟩
-        simp only [hs, Option.map_some, hostFunc] at run
-        split at run
-        · simp at run
-        rotate_left
-        · rename_i same _
-          simp at same
-        · rw [sync_ok views] at run
-          simp only at run
-          cases called : World.call afterArgs.heap afterArgs.world service values with
-          | returned value heap world =>
-            rw [called] at run
-            simp only [Semantics.worldCallOutcome, syncFrom_ok (st := { afterArgs with heap, world }) views,
-              Semantics.Outcome.done.injEq] at run
-            obtain ⟨rfl, rfl⟩ := run
-            exact ⟨heap, world, rfl, rfl⟩
-          | exited => rw [called] at run; simp [Semantics.worldCallOutcome] at run; split at run <;> simp at run
-          | unavailable => rw [called] at run; simp [Semantics.worldCallOutcome] at run
-          | trapped => rw [called] at run; simp [Semantics.worldCallOutcome] at run
-          | typeMismatch => rw [called] at run; simp [Semantics.worldCallOutcome] at run
-    all_goals simp at run
-
-theorem eval_value_state {P : Core.Program} {k : Nat} {st : State} {x v : Value} {st' : State}
-    (run : evalExpr k P st (.value x) = .done v st') : st' = st := by
-  cases k with
-  | zero => simp [evalExpr] at run
-  | succ k =>
-    simp only [evalExpr, Semantics.Outcome.done.injEq] at run
-    exact run.2.symm
-
 theorem assignCell_same {st st' : State} {c : Nat} {v : Value} (ok : st.assignCell c v = some st') :
     st'.heap = st.heap ∧ st'.i32ArrayViews = st.i32ArrayViews := by
   unfold Semantics.State.assignCell at ok
@@ -625,6 +637,139 @@ theorem writeResolved_same {st st' : State} {r : Semantics.ResolvedPlace} {v : V
           subst ok
           exact assignCell_same (by assumption)
         · simp at ok
+
+theorem sync_ok {st : State} (hold : Views.ViewsHold st) : Semantics.syncI32ViewsToHeap st = .ok st :=
+  Views.syncTo_ok hold
+
+theorem syncFrom_ok {st : State} (hold : Views.ViewsHold st) :
+    Semantics.syncI32ViewsFromHeap st = .ok st :=
+  Views.syncFrom_ok hold
+
+/-- Core's sync to the heap stores into blocks: only the heap's bytes change. -/
+theorem syncToFrom_heap : ∀ (views : List Semantics.I32ArrayView) {st st' : State},
+    Semantics.syncI32ViewsToHeapFrom views st = .ok st' →
+      st' = { st with heap := st'.heap } ∧ st'.heap.nextAddress = st.heap.nextAddress
+  | [], st, st', ok => by
+    simp only [Semantics.syncI32ViewsToHeapFrom, Except.ok.injEq] at ok
+    subst ok; exact ⟨rfl, rfl⟩
+  | v :: rest, st, st', ok => by
+    simp only [Semantics.syncI32ViewsToHeapFrom] at ok
+    split at ok
+    · split at ok
+      · simp at ok
+      · split at ok
+        · simp at ok
+        · split at ok
+          · simp at ok
+          · rename_i heap stored
+            obtain ⟨same, next⟩ := syncToFrom_heap rest ok
+            refine ⟨?_, by rw [next, storeBytes_next stored]⟩
+            rw [same]
+    all_goals simp at ok
+
+theorem syncTo_heap {st st' : State} (ok : Semantics.syncI32ViewsToHeap st = .ok st') :
+    st' = { st with heap := st'.heap } ∧ st'.heap.nextAddress = st.heap.nextAddress :=
+  syncToFrom_heap _ ok
+
+/-- Core's sync from the heap writes the views' cells: the heap and the
+views stay. -/
+theorem syncFromFrom_same : ∀ (views : List Semantics.I32ArrayView) {st st' : State},
+    Semantics.syncI32ViewsFromHeapFrom views st = .ok st' →
+      st'.heap = st.heap ∧ st'.i32ArrayViews = st.i32ArrayViews
+  | [], st, st', ok => by
+    simp only [Semantics.syncI32ViewsFromHeapFrom, Except.ok.injEq] at ok
+    subst ok; exact ⟨rfl, rfl⟩
+  | v :: rest, st, st', ok => by
+    simp only [Semantics.syncI32ViewsFromHeapFrom] at ok
+    split at ok
+    · simp at ok
+    · split at ok
+      · simp at ok
+      · split at ok
+        · simp at ok
+        · rename_i next written
+          obtain ⟨h1, v1⟩ := syncFromFrom_same rest ok
+          obtain ⟨h2, v2⟩ := writeResolved_same written
+          exact ⟨h1.trans h2, v1.trans v2⟩
+
+theorem syncFrom_same {st st' : State} (ok : Semantics.syncI32ViewsFromHeap st = .ok st') :
+    st'.heap = st.heap ∧ st'.i32ArrayViews = st.i32ArrayViews :=
+  syncFromFrom_same _ ok
+
+/-- A host call from `st` returned `v`: Core synced the views to the heap,
+the world call returned, and Core read the views' cells back from the heap. -/
+def HostReturns (st : State) (service : Core.HostService) (values : List Value) (v : Value) (st' : State) :
+    Prop :=
+  ∃ synced heap world, Semantics.syncI32ViewsToHeap st = .ok synced ∧
+    World.call synced.heap synced.world service values = .returned v heap world ∧
+    Semantics.syncI32ViewsFromHeap { synced with heap, world } = .ok st'
+
+/-- Under `ViewsHold`, the first sync changes nothing. -/
+theorem HostReturns.held {st : State} {service : Core.HostService} {values : List Value} {v : Value}
+    {st' : State} (returns : HostReturns st service values v st') (hold : Views.ViewsHold st) :
+    ∃ heap world, World.call st.heap st.world service values = .returned v heap world ∧
+      Semantics.syncI32ViewsFromHeap { st with heap, world } = .ok st' := by
+  obtain ⟨synced, heap, world, ok, called, back⟩ := returns
+  rw [sync_ok hold, Except.ok.injEq] at ok
+  subst ok
+  exact ⟨heap, world, called, back⟩
+
+/-- What a Core call that returned did: one of the program's functions ran,
+or a host function did. -/
+theorem call_cases {sp : SrcProgram} {fuel : Nat} {st : State} {callee : Nat} {args : List Core.Expr}
+    {v : Value} {st' : State}
+    (run : evalExpr (fuel + 1) sp.toCore st (.call callee args) = .done v st') :
+    ∃ values afterArgs, evalExprs fuel sp.toCore st args = .done values afterArgs ∧
+      ((callee < sp.funcs.length ∧ ∃ f completed c, sp.funcs[callee]? = some f ∧ values.length = f.params.length ∧
+        execStmt fuel sp.toCore (({ afterArgs with locals := [] } : State).bindLocals
+          (paramBindings f.params values)) f.body.toCore = .done c completed ∧ CallResult f.ret c v ∧
+        st' = restoreLocals afterArgs completed) ∨
+       (sp.funcs.length ≤ callee ∧ ∃ service, hostService? callee = some service ∧
+        HostReturns afterArgs service values v st')) := by
+  by_cases inside : callee < sp.funcs.length
+  · obtain ⟨f, values, afterArgs, completed, c, a, b, d, e, g, i⟩ := call_inv inside run
+    exact ⟨values, afterArgs, a, .inl ⟨inside, f, completed, c, b, d, e, g, i⟩⟩
+  · simp only [evalExpr] at run
+    split at run
+    · rename_i values afterArgs argsRun
+      refine ⟨values, afterArgs, argsRun, .inr ⟨by omega, ?_⟩⟩
+      rw [SrcProgram.function?_toCore, List.getElem?_eq_none (by omega)] at run
+      cases hs : hostService? callee with
+      | none => simp [hs] at run
+      | some service =>
+        refine ⟨service, rfl, ?_⟩
+        simp only [hs, Option.map_some, hostFunc] at run
+        split at run
+        · simp at run
+        rotate_left
+        · rename_i same _
+          simp at same
+        · split at run
+          · simp at run
+          rename_i synced syncedOk
+          cases called : World.call synced.heap synced.world service values with
+          | returned value heap world =>
+            rw [called] at run
+            simp only [Semantics.worldCallOutcome] at run
+            split at run
+            · rename_i next fromOk
+              simp only [Semantics.Outcome.done.injEq] at run
+              obtain ⟨rfl, rfl⟩ := run
+              exact ⟨synced, heap, world, syncedOk, called, fromOk⟩
+            · simp at run
+          | exited => rw [called] at run; simp [Semantics.worldCallOutcome] at run; split at run <;> simp at run
+          | unavailable => rw [called] at run; simp [Semantics.worldCallOutcome] at run
+          | trapped => rw [called] at run; simp [Semantics.worldCallOutcome] at run
+          | typeMismatch => rw [called] at run; simp [Semantics.worldCallOutcome] at run
+    all_goals simp at run
+
+theorem eval_value_state {P : Core.Program} {k : Nat} {st : State} {x v : Value} {st' : State}
+    (run : evalExpr k P st (.value x) = .done v st') : st' = st := by
+  cases k with
+  | zero => simp [evalExpr] at run
+  | succ k =>
+    simp only [evalExpr, Semantics.Outcome.done.injEq] at run
+    exact run.2.symm
 
 theorem evalPlace_local {P : Core.Program} {k : Nat} {st : State} {id : Nat}
     {r : Semantics.ResolvedPlace} {st' : State}
@@ -674,13 +819,55 @@ theorem writeRawNative_next {P : Core.Program} {st : State} {place : Semantics.R
     · simp at stored
   · exact writeNativeValue_next _ stored
 
+/-- A raw store keeps each owned block owned, below the next address. -/
+theorem writeRawNative_stores {P : Core.Program} {st : State} {place : Semantics.ResolvedPlace} {ty : Core.Ty}
+    {a : Nat} {v : Value} {h' : Memory.Heap} (stored : Semantics.writeRawNative P st place ty a v = .ok h') :
+    Views.Stores st.heap h' := by
+  simp only [Semantics.writeRawNative] at stored
+  split at stored
+  · simp only [Semantics.storeRawByte] at stored
+    split at stored
+    · exact Views.Stores.storeBytes stored
+    · simp at stored
+  · exact writeNativeValue_stores _ stored
+
+/-- A write of a resolved place keeps the heap's size and the views. -/
+theorem writeNative_grows {P : Core.Program} {st st' : State} {place : Semantics.ResolvedPlace} {v : Value}
+    (ok : Semantics.writeResolvedPlaceNative P st place v = .ok st') :
+    st'.heap.nextAddress = st.heap.nextAddress ∧ st'.i32ArrayViews = st.i32ArrayViews := by
+  cases raw : place.raw with
+  | none =>
+    simp only [Semantics.writeResolvedPlaceNative, raw] at ok
+    obtain ⟨heap, views⟩ := writeResolved_same ok
+    exact ⟨by rw [heap], views⟩
+  | some pair =>
+    simp only [Semantics.writeResolvedPlaceNative, raw] at ok
+    obtain ⟨heap, stored, wrapped⟩ := except_bind_ok ok
+    simp only [pure, Except.pure, Except.ok.injEq] at wrapped
+    subst wrapped
+    exact ⟨writeRawNative_next stored, rfl⟩
+
+/-- The sync after an assignment keeps the heap's size and the views. -/
+theorem synchronized_grows {resolved : Semantics.ResolvedPlace} {result : Value} {assigned coherent : State}
+    (ok : (if resolved.viewFreeRootWrite result then (Except.ok assigned : Except Lanius.Trap State)
+      else match resolved.raw with
+        | none => Semantics.syncI32ViewsToHeap assigned
+        | some _ => Semantics.syncI32ViewsFromHeap assigned) = .ok coherent) :
+    coherent.heap.nextAddress = assigned.heap.nextAddress ∧ coherent.i32ArrayViews = assigned.i32ArrayViews := by
+  split at ok
+  · simp only [Except.ok.injEq] at ok; subst ok; exact ⟨rfl, rfl⟩
+  · split at ok
+    · obtain ⟨same, next⟩ := syncTo_heap ok
+      exact ⟨next, by rw [same]⟩
+    · obtain ⟨heap, views⟩ := syncFrom_same ok
+      exact ⟨by rw [heap], views⟩
+
 /-- `place = e` on a local or a field of one, where evaluating `e` grows. -/
 theorem assign_grows {P : Core.Program} {k : Nat} {st : State} {place : Core.Place} {e : Core.Expr}
     {u : Value} {st' : State}
     (placeOk : ∀ {r st1}, Semantics.evalPlace k P st .address place = .done r st1 → st1 = st)
     (value : ∀ {rv st2}, evalExpr k P st e = .done rv st2 → Grows st st2)
     (run : evalExpr (k + 1) P st (.assign .set place e) = .done u st') : Grows st st' := by
-  intro views
   simp only [evalExpr] at run
   split at run
   · rename_i resolved afterPlace placeRun
@@ -688,34 +875,21 @@ theorem assign_grows {P : Core.Program} {k : Nat} {st : State} {place : Core.Pla
     subst this
     split at run
     · rename_i rv afterValue valueRun
-      obtain ⟨views2, next2⟩ := value valueRun views
+      have g2 := value valueRun
       split at run
       · simp at run
       rename_i result _
-      cases raw : resolved.raw with
-      | none =>
-        simp only [Semantics.writeResolvedPlaceNative, raw] at run
+      split at run
+      · rename_i assigned written
         split at run
-        · rename_i assigned written
-          obtain ⟨heap3, views3⟩ := writeResolved_same written
-          have synced := sync_ok (st := assigned) (views3.trans views2)
-          simp only [synced, ite_self, Semantics.Outcome.done.injEq] at run
+        · rename_i coherent synced
+          simp only [Semantics.Outcome.done.injEq] at run
           obtain ⟨-, rfl⟩ := run
-          exact ⟨views3.trans views2, by rw [heap3]; exact next2⟩
+          obtain ⟨n3, v3⟩ := synchronized_grows synced
+          obtain ⟨n4, v4⟩ := writeNative_grows written
+          exact g2.trans (Grows.heap (st := afterValue) (st' := coherent) (Nat.le_of_eq (n3.trans n4).symm) (v3.trans v4))
         · simp at run
-      | some pair =>
-        simp only [Semantics.writeResolvedPlaceNative, raw] at run
-        split at run
-        · rename_i assigned written
-          obtain ⟨heap3, stored, wrapped⟩ := except_bind_ok written
-          simp only [pure, Except.pure, Except.ok.injEq] at wrapped
-          subst wrapped
-          have synced := syncFrom_ok (st := { afterValue with heap := heap3 }) views2
-          simp only [synced, ite_self, Semantics.Outcome.done.injEq] at run
-          obtain ⟨-, rfl⟩ := run
-          exact ⟨views2, by rw [show heap3.nextAddress = afterValue.heap.nextAddress from
-            writeRawNative_next stored]; exact next2⟩
-        · simp at run
+      · simp at run
     all_goals simp at run
   all_goals simp at run
 
@@ -725,43 +899,50 @@ theorem assign_grows_eff {P : Core.Program} {k : Nat} {st : State} {place : Core
     (placeOk : ∀ {r st1}, Semantics.evalPlace k P st .address place = .done r st1 → Grows st st1)
     (value : ∀ {st1 rv st2}, evalExpr k P st1 e = .done rv st2 → Grows st1 st2)
     (run : evalExpr (k + 1) P st (.assign .set place e) = .done u st') : Grows st st' := by
-  intro views
   simp only [evalExpr] at run
   split at run
   · rename_i resolved afterPlace placeRun
-    obtain ⟨views1, next1⟩ := placeOk placeRun views
+    have g1 := placeOk placeRun
     split at run
     · rename_i rv afterValue valueRun
-      obtain ⟨views2, next2⟩ := value valueRun views1
+      have g2 := value valueRun
       split at run
       · simp at run
       rename_i result _
-      cases raw : resolved.raw with
-      | none =>
-        simp only [Semantics.writeResolvedPlaceNative, raw] at run
+      split at run
+      · rename_i assigned written
         split at run
-        · rename_i assigned written
-          obtain ⟨heap3, views3⟩ := writeResolved_same written
-          have synced := sync_ok (st := assigned) (views3.trans views2)
-          simp only [synced, ite_self, Semantics.Outcome.done.injEq] at run
+        · rename_i coherent synced
+          simp only [Semantics.Outcome.done.injEq] at run
           obtain ⟨-, rfl⟩ := run
-          exact ⟨views3.trans views2, by rw [heap3]; exact Nat.le_trans next1 next2⟩
+          obtain ⟨n3, v3⟩ := synchronized_grows synced
+          obtain ⟨n4, v4⟩ := writeNative_grows written
+          exact g1.trans (g2.trans (Grows.heap (st := afterValue) (st' := coherent) (Nat.le_of_eq (n3.trans n4).symm) (v3.trans v4)))
         · simp at run
-      | some pair =>
-        simp only [Semantics.writeResolvedPlaceNative, raw] at run
-        split at run
-        · rename_i assigned written
-          obtain ⟨heap3, stored, wrapped⟩ := except_bind_ok written
-          simp only [pure, Except.pure, Except.ok.injEq] at wrapped
-          subst wrapped
-          have synced := syncFrom_ok (st := { afterValue with heap := heap3 }) views2
-          simp only [synced, ite_self, Semantics.Outcome.done.injEq] at run
-          obtain ⟨-, rfl⟩ := run
-          exact ⟨views2, by rw [show heap3.nextAddress = afterValue.heap.nextAddress from
-            writeRawNative_next stored]; exact Nat.le_trans next1 next2⟩
-        · simp at run
+      · simp at run
     all_goals simp at run
   all_goals simp at run
+
+/-- After the place and the value of `place = e`: the write and the sync grow. -/
+theorem assign_after_grows {P : Core.Program} {k : Nat} {st : State} {place : Core.Place} {e : Core.Expr}
+    {u : Value} {st' : State} (run : evalExpr (k + 1) P st (.assign .set place e) = .done u st')
+    {r : Semantics.ResolvedPlace} {st1 : State} (placeRun : Semantics.evalPlace k P st .address place = .done r st1)
+    {rv : Value} {st2 : State} (valueRun : evalExpr k P st1 e = .done rv st2) : Grows st2 st' := by
+  simp only [evalExpr, placeRun, valueRun] at run
+  split at run
+  · simp at run
+  rename_i result _
+  split at run
+  · rename_i assigned written
+    split at run
+    · rename_i coherent synced
+      simp only [Semantics.Outcome.done.injEq] at run
+      obtain ⟨-, rfl⟩ := run
+      obtain ⟨n3, v3⟩ := synchronized_grows synced
+      obtain ⟨n4, v4⟩ := writeNative_grows written
+      exact Grows.heap (st := st2) (st' := coherent) (Nat.le_of_eq (n3.trans n4).symm) (v3.trans v4)
+    · simp at run
+  · simp at run
 
 theorem let_grows {P : Core.Program} {f : Nat} {body : Core.Stmt}
     (ih : ∀ {st c st'}, execStmt f P st body = .done c st' → Grows st st') {st : State} {id : Nat}
@@ -1181,14 +1362,64 @@ theorem hostCall_next {id : Nat} {service : Core.HostService} (hs : hostService?
   · exact call_stores_next (.inr (.inl rfl)) h
   · exact call_stores_next (.inr (.inr rfl)) h
 
+/-- The clock reads and `fill_secure_bytes`, when they return: the heap as
+it was, or after one store. -/
+theorem call_stores_stores {service : Core.HostService}
+    (which : service = .monotonicRead ∨ service = .systemRead ∨ service = .fillSecureBytes)
+    {heap : Memory.Heap} {world : World.State} {values : List Value} {v : Value} {heap' : Memory.Heap}
+    {world' : World.State} (h : World.call heap world service values = .returned v heap' world') :
+    Views.Stores heap heap' := by
+  rcases which with rfl | rfl | rfl <;>
+  · match values, h with
+    | [], h => simp [World.call, World.callSimple] at h
+    | [a], h => cases a <;> simp [World.call, World.callSimple] at h
+    | a :: b :: c :: rest, h => cases a <;> simp [World.call, World.callSimple] at h
+    | [a, b], h =>
+      cases a with
+      | pointer p =>
+        cases b with
+        | unsigned k n =>
+          cases k
+          all_goals simp only [World.call, World.callSimple] at h
+          all_goals first
+            | (repeat' split at h
+               all_goals first
+                 | (simp only [World.EffectResult.returned.injEq] at h
+                    obtain ⟨-, rfl, -⟩ := h
+                    first | exact Views.Stores.refl _ | exact Views.Stores.storeBytes (by assumption))
+                 | simp at h)
+            | simp at h
+        | _ => simp [World.call, World.callSimple] at h
+      | _ => simp [World.call, World.callSimple] at h
+
+/-- The host functions keep each owned block owned, below the next address. -/
+theorem hostCall_stores {id : Nat} {service : Core.HostService} (hs : hostService? id = some service)
+    {heap : Memory.Heap} {world : World.State} {values : List Value} {v : Value} {heap' : Memory.Heap}
+    {world' : World.State} (h : World.call heap world service values = .returned v heap' world') :
+    Views.Stores heap heap' := by
+  rcases hostService?_some hs with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+  · rw [hostCall_heap (.inl rfl) h]; exact Views.Stores.refl _
+  · rw [hostCall_heap (.inr (.inl rfl)) h]; exact Views.Stores.refl _
+  · rw [hostCall_heap (.inr (.inr (.inl rfl))) h]; exact Views.Stores.refl _
+  · obtain ⟨p, n, -, stored, -⟩ := call_readStdin_inv h
+    exact Views.Stores.storeBytes stored
+  · rw [hostCall_heap (.inr (.inr (.inr rfl))) h]; exact Views.Stores.refl _
+  · exact call_stores_stores (.inl rfl) h
+  · exact call_stores_stores (.inr (.inl rfl)) h
+  · exact call_stores_stores (.inr (.inr rfl)) h
+
 theorem host_grows {id : Nat} {service : Core.HostService} (hs : hostService? id = some service)
     {st : State} {values : List Value} {v : Value} {st' : State} (returns : HostReturns st service values v st') :
-    Grows st st' := fun views => by
-  obtain ⟨heap, world, called, rfl⟩ := returns views
-  refine ⟨views, ?_⟩
-  show st.heap.nextAddress ≤ heap.nextAddress
-  rw [hostCall_next hs called]
-  exact Nat.le_refl _
+    Grows st st' := by
+  obtain ⟨synced, heap, world, ok, called, back⟩ := returns
+  obtain ⟨same, next⟩ := syncTo_heap ok
+  obtain ⟨heap', views'⟩ := syncFrom_same back
+  refine Grows.heap ?_ ?_
+  · rw [heap']
+    show st.heap.nextAddress ≤ heap.nextAddress
+    rw [hostCall_next hs called, next]
+    exact Nat.le_refl _
+  · rw [views', same]
 
 theorem numberedParams_length : ∀ (n : Nat) (tys : List Core.Ty), (numberedParams n tys).length = tys.length
   | _, [] => rfl
@@ -1201,7 +1432,7 @@ theorem host_call_eval {sp : SrcProgram} {fuel : Nat} {st : State} {callee : Nat
     {values : List Value} {afterArgs : State} {service : Core.HostService}
     (outside : sp.funcs.length ≤ callee) (hs : hostService? callee = some service)
     (len : values.length = service.parameterTypes.length)
-    (argsRun : evalExprs fuel sp.toCore st args = .done values afterArgs) (views : afterArgs.i32ArrayViews = []) :
+    (argsRun : evalExprs fuel sp.toCore st args = .done values afterArgs) (views : Views.ViewsHold afterArgs) :
     evalExpr (fuel + 1) sp.toCore st (.call callee args) =
       Semantics.worldCallOutcome callee afterArgs (World.call afterArgs.heap afterArgs.world service values) := by
   have bound : Semantics.bindParameters (numberedParams 0 service.parameterTypes) values =
@@ -1213,9 +1444,9 @@ theorem host_call_eval {sp : SrcProgram} {fuel : Nat} {st : State} {callee : Nat
   simp only [Option.map_some, hostFunc, bound, sync_ok views]
 
 theorem worldCall_returned {id : Nat} {st : State} {v : Value} {heap : Memory.Heap} {world : World.State}
-    (views : st.i32ArrayViews = []) :
-    Semantics.worldCallOutcome id st (.returned v heap world) = .done v { st with heap, world } := by
-  simp only [Semantics.worldCallOutcome, syncFrom_ok (st := { st with heap, world }) views]
+    {st' : State} (back : Semantics.syncI32ViewsFromHeap { st with heap, world } = .ok st') :
+    Semantics.worldCallOutcome id st (.returned v heap world) = .done v st' := by
+  simp only [Semantics.worldCallOutcome, back]
 
 /-- `write_byte` on two `i32`s returns. -/
 theorem writeByte_returns (heap : Memory.Heap) (world : World.State) (a b : Int) :
@@ -1282,55 +1513,72 @@ theorem host_trap_grows {sp : SrcProgram} {fuel : Nat} {st : State} {callee : Na
     {values : List Value} {afterArgs : State} {r : Lanius.Trap} {st' : State}
     (outside : sp.funcs.length ≤ callee) (argsRun : evalExprs fuel sp.toCore st args = .done values afterArgs)
     (run : evalExpr (fuel + 1) sp.toCore st (.call callee args) = .trapped r st') : Grows afterArgs st' := by
-  intro views
   simp only [evalExpr, argsRun] at run
   rw [SrcProgram.function?_toCore, List.getElem?_eq_none outside] at run
   cases hs : hostService? callee with
   | none =>
     simp only [hs, Option.map_none, Semantics.Outcome.trapped.injEq] at run
     rw [← run.2]
-    exact ⟨views, Nat.le_refl _⟩
+    exact Grows.refl _
   | some service =>
-    simp only [hs, Option.map_some, hostFunc, sync_ok views] at run
+    simp only [hs, Option.map_some, hostFunc] at run
     split at run
     · simp only [Semantics.Outcome.trapped.injEq] at run
       rw [← run.2]
-      exact ⟨views, Nat.le_refl _⟩
+      exact Grows.refl _
     all_goals try (rename_i same _; simp at same; done)
-    cases called : World.call afterArgs.heap afterArgs.world service values with
+    split at run
+    · simp only [Semantics.Outcome.trapped.injEq] at run
+      rw [← run.2]
+      exact Grows.refl _
+    rename_i synced syncedOk
+    obtain ⟨same, next⟩ := syncTo_heap syncedOk
+    have g0 : Grows afterArgs synced := Grows.heap (Nat.le_of_eq next.symm) (by rw [same])
+    refine g0.trans ?_
+    cases called : World.call synced.heap synced.world service values with
     | returned v h w =>
       rw [called] at run
-      simp [Semantics.worldCallOutcome, syncFrom_ok (st := { afterArgs with heap := h, world := w }) views] at run
+      simp only [Semantics.worldCallOutcome] at run
+      split at run
+      · simp at run
+      · simp only [Semantics.Outcome.trapped.injEq] at run
+        rw [← run.2]
+        exact Grows.heap (Nat.le_of_eq (hostCall_next hs called).symm) rfl
     | exited c h w =>
-      have hh := hostCall_resultHeap hs afterArgs.heap afterArgs.world values (by rw [called]; intro _ _ _ h; cases h)
+      have hh := hostCall_resultHeap hs synced.heap synced.world values (by rw [called]; intro _ _ _ h; cases h)
       rw [called] at run hh
       simp only [resultHeap] at hh
       subst hh
-      simp [Semantics.worldCallOutcome, syncFrom_ok (st := { afterArgs with heap := afterArgs.heap, world := w }) views] at run
+      simp only [Semantics.worldCallOutcome] at run
+      split at run
+      · simp at run
+      · simp only [Semantics.Outcome.trapped.injEq] at run
+        rw [← run.2]
+        exact Grows.heap (Nat.le_refl _) rfl
     | unavailable s h w =>
-      have hh := hostCall_resultHeap hs afterArgs.heap afterArgs.world values (by rw [called]; intro _ _ _ h; cases h)
+      have hh := hostCall_resultHeap hs synced.heap synced.world values (by rw [called]; intro _ _ _ h; cases h)
       rw [called] at run hh
       simp only [resultHeap] at hh
       subst hh
       simp only [Semantics.worldCallOutcome, Semantics.Outcome.trapped.injEq] at run
       rw [← run.2]
-      exact ⟨views, Nat.le_refl _⟩
+      exact Grows.heap (Nat.le_refl _) rfl
     | trapped t h w =>
-      have hh := hostCall_resultHeap hs afterArgs.heap afterArgs.world values (by rw [called]; intro _ _ _ h; cases h)
+      have hh := hostCall_resultHeap hs synced.heap synced.world values (by rw [called]; intro _ _ _ h; cases h)
       rw [called] at run hh
       simp only [resultHeap] at hh
       subst hh
       simp only [Semantics.worldCallOutcome, Semantics.Outcome.trapped.injEq] at run
       rw [← run.2]
-      exact ⟨views, Nat.le_refl _⟩
+      exact Grows.heap (Nat.le_refl _) rfl
     | typeMismatch h w =>
-      have hh := hostCall_resultHeap hs afterArgs.heap afterArgs.world values (by rw [called]; intro _ _ _ h; cases h)
+      have hh := hostCall_resultHeap hs synced.heap synced.world values (by rw [called]; intro _ _ _ h; cases h)
       rw [called] at run hh
       simp only [resultHeap] at hh
       subst hh
       simp only [Semantics.worldCallOutcome, Semantics.Outcome.trapped.injEq] at run
       rw [← run.2]
-      exact ⟨views, Nat.le_refl _⟩
+      exact Grows.heap (Nat.le_refl _) rfl
 
 theorem call_grows {sp : SrcProgram} {k : Nat} (ih : GrowsBelow sp k) {st : State} {callee : Nat}
     {args : List SrcExpr} {v : Value} {st' : State}
@@ -1344,7 +1592,8 @@ theorem call_grows {sp : SrcProgram} {k : Nat} (ih : GrowsBelow sp k) {st : Stat
     · have := evalExprs_state args argsRun
       subst this
       have entry := bindLocals_same (paramBindings f.params values) { afterArgs with locals := [] }
-      exact ((Grows.same entry.1 entry.2).trans (ih k (Nat.lt_succ_self k) bodyRun)).trans (Grows.same rfl rfl)
+      exact (((Grows.same (st := afterArgs) rfl rfl).trans (Grows.same entry.1 entry.2)).trans
+        (ih k (Nat.lt_succ_self k) bodyRun)).trans (Grows.same (st' := restoreLocals afterArgs completed) rfl rfl)
     · have := evalExprs_state args argsRun
       subst this
       exact host_grows hs returns
@@ -1369,7 +1618,7 @@ theorem alloc_grows {P : Core.Program} {k : Nat} {st : State} {size : SrcExpr} {
         · rename_i p heap allocated
           simp only [Semantics.Outcome.done.injEq] at run
           obtain ⟨-, rfl⟩ := run
-          exact fun views => ⟨views, allocate_grows allocated⟩
+          exact Grows.heap (allocate_grows allocated) rfl
         · rename_i heap exhausted
           simp only [Semantics.Outcome.done.injEq] at run
           obtain ⟨-, rfl⟩ := run
@@ -1381,7 +1630,6 @@ theorem alloc_grows {P : Core.Program} {k : Nat} {st : State} {size : SrcExpr} {
 theorem loadByte_grows {P : Core.Program} {k : Nat} {st : State} {pointer offset : SrcExpr}
     {v : Value} {st' : State}
     (run : evalExpr k P st (.loadByte pointer.toCore offset.toCore) = .done v st') : Grows st st' := by
-  intro views
   cases k with
   | zero => simp [evalExpr] at run
   | succ k =>
@@ -1390,11 +1638,14 @@ theorem loadByte_grows {P : Core.Program} {k : Nat} {st : State} {pointer offset
     · rename_i p o next argsRun
       have := evalExprs_state [pointer, offset] argsRun
       subst this
-      simp only [sync_ok views] at run
+      split at run
+      · simp at run
+      rename_i synced syncedOk
+      obtain ⟨same, n0⟩ := syncTo_heap syncedOk
       split at run
       · simp only [Semantics.Outcome.done.injEq] at run
         obtain ⟨-, rfl⟩ := run
-        exact ⟨views, Nat.le_refl _⟩
+        exact Grows.heap (Nat.le_of_eq n0.symm) (by rw [same])
       · simp at run
     all_goals simp at run
 
@@ -1402,7 +1653,6 @@ theorem storeByte_grows {P : Core.Program} {k : Nat} {st : State} {pointer offse
     {v : Value} {st' : State}
     (run : evalExpr k P st (.storeByte pointer.toCore offset.toCore value.toCore) = .done v st') :
     Grows st st' := by
-  intro views
   cases k with
   | zero => simp [evalExpr] at run
   | succ k =>
@@ -1411,20 +1661,28 @@ theorem storeByte_grows {P : Core.Program} {k : Nat} {st : State} {pointer offse
     · rename_i p o b next argsRun
       have := evalExprs_state [pointer, offset, value] argsRun
       subst this
-      simp only [sync_ok views] at run
+      split at run
+      · simp at run
+      rename_i synced syncedOk
+      obtain ⟨same, n0⟩ := syncTo_heap syncedOk
       split at run
       · simp at run
       · rename_i heap stored
-        simp only [syncFrom_ok (st := { next with heap }) views, Semantics.Outcome.done.injEq] at run
-        obtain ⟨-, rfl⟩ := run
-        exact ⟨views, by rw [storeByte_next stored]; exact Nat.le_refl _⟩
+        split at run
+        · rename_i updated back
+          simp only [Semantics.Outcome.done.injEq] at run
+          obtain ⟨-, rfl⟩ := run
+          obtain ⟨h1, v1⟩ := syncFrom_same back
+          refine Grows.heap ?_ ?_
+          · simp only [h1, storeByte_next stored, n0, Nat.le_refl]
+          · rw [v1]; have := congrArg State.i32ArrayViews same; exact this
+        · simp at run
     all_goals simp at run
 
 theorem dealloc_grows {P : Core.Program} {k : Nat} {st : State} {pointer size : SrcExpr} {shift : Nat}
     {v : Value} {st' : State}
     (run : evalExpr k P st (.dealloc pointer.toCore size.toCore (.value (.unsigned .usize (2 ^ shift)))) =
       .done v st') : Grows st st' := by
-  intro views
   cases k with
   | zero => simp [evalExpr] at run
   | succ k =>
@@ -1438,12 +1696,17 @@ theorem dealloc_grows {P : Core.Program} {k : Nat} {st : State} {pointer size : 
         · exact size.eval_state
         · exact eval_value_state) argsRun
       subst this
-      simp only [sync_ok views] at run
+      split at run
+      · simp at run
+      rename_i synced syncedOk
+      obtain ⟨same, n0⟩ := syncTo_heap syncedOk
       split at run
       · rename_i heap freed
         simp only [Semantics.Outcome.done.injEq] at run
         obtain ⟨-, rfl⟩ := run
-        exact ⟨views, by rw [deallocate_next freed]; exact Nat.le_refl _⟩
+        refine Grows.heap ?_ ?_
+        · simp only [deallocate_next freed, n0, Nat.le_refl]
+        · have := congrArg State.i32ArrayViews same; exact this
       · simp at run
     all_goals simp at run
 
@@ -1809,8 +2072,9 @@ theorem eff_grows_step {sp : SrcProgram} {k : Nat} (ih : GrowsBelow sp (k + 1)) 
     obtain ⟨values, afterArgs, argsRun, ⟨-, f, completed, c, found, _, bodyRun, result, rfl⟩ |
       ⟨-, service, hs, returns⟩⟩ := call_cases run
     · have entry := bindLocals_same (paramBindings f.params values) { afterArgs with locals := [] }
-      exact ((effs_grows args ihe argsRun).trans ((Grows.same entry.1 entry.2).trans
-        (ih k (Nat.lt_succ_self k) bodyRun))).trans (Grows.same rfl rfl)
+      exact ((effs_grows args ihe argsRun).trans (((Grows.same (st := afterArgs) rfl rfl).trans
+        (Grows.same entry.1 entry.2)).trans (ih k (Nat.lt_succ_self k) bodyRun))).trans
+        (Grows.same (st' := restoreLocals afterArgs completed) rfl rfl)
     · exact (effs_grows args ihe argsRun).trans (host_grows hs returns)
   | eApply op left right =>
     cases op

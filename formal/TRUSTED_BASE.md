@@ -40,11 +40,11 @@ stopping at the computations the theorems are about (`compileSource`,
 `frontEndWords`, the self program `Lanius.Faithful.Self.prog` and
 `funcNeeds`, which are not trusted, section 10), with each one's type and
 body:
-definitions `f991f205862cd76e` (4649 constants). This covers Core's
+definitions `a593873d90485ed8` (4656 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
-modules keeps its hash. The last change of the hash (11-02, merge of f11b `7eb93b7916d84bb4` and its step D into lang `70d594d3ee80699d`, giving `f991f205862cd76e`): it combines F11b's changes with lang's, which did not change each other's definitions, beside the prim table `prims`, regenerated from the merged self program. Step D (9af4023ad) adds `while`, `break` and `continue` to the pure fragment: `mstmt`, `ploop`, `Out` with `Out.then`, `Out.pop` and `outValue` (`Faithful/Pure.lean`), and the cost semantics' `qstmt` with `qloop` (`Faithful/Cost.lean`), are trusted; lang's F14 cost statements (`qcallG`, `qcallB`, the budget certificates) now run statements with `qstmt`'s loop fuel and end calls with `outValue`. F11b's (11-01, the
+modules keeps its hash. The last change of the hash (11-02, f6v, giving `a593873d90485ed8`): `State.Fresh` no longer asks that Core have no i32 array views; it asks that every view hold its cell (`Views.ViewsHold`: the view has no projections, its root cell holds an array of as many i32s as the view is long, and the view's address is the base of a live, borrowed heap block whose bytes encode those elements, which nothing overlaps (`Views.Owns`) and which ends below the cursor (`Views.Before`); no two views share a root), so Core's syncs change nothing. `Views.Before`, `Views.IsI32`, `Views.Owns`, `Views.ViewHolds` and `Views.ViewsHold` (`Mini/Views.lean`) are trusted. This weakens a premise of `compileSource_correct_from`: a state with no views still satisfies it (`ViewsHold.nil`). The change before (11-02, merge of f11b `7eb93b7916d84bb4` and its step D into lang `70d594d3ee80699d`, giving `f991f205862cd76e`): it combines F11b's changes with lang's, which did not change each other's definitions, beside the prim table `prims`, regenerated from the merged self program. Step D (9af4023ad) adds `while`, `break` and `continue` to the pure fragment: `mstmt`, `ploop`, `Out` with `Out.then`, `Out.pop` and `outValue` (`Faithful/Pure.lean`), and the cost semantics' `qstmt` with `qloop` (`Faithful/Cost.lean`), are trusted; lang's F14 cost statements (`qcallG`, `qcallB`, the budget certificates) now run statements with `qstmt`'s loop fuel and end calls with `outValue`. F11b's (11-01, the
 front end's reading of int bases, literal patterns, `for` and `slice_len`):
 Core has the intrinsic `slice_len` (`Intrinsic.sliceLength`,
 `sliceLength?`, its `evalExpr` case and `ExprHasType.sliceLength`;
@@ -281,7 +281,8 @@ Rests on sections 3, 6 and 8.
 #### `Lanius.Mini.compileSource_correct_from`
 
 statement `000000003b9d90f5`. The same from any Core state `st` with no
-live cells (`State.Fresh`) whose heap and world the mini heap represents
+live cells (`State.Fresh`, which also asks that every i32 array view hold its
+cell) whose heap and world the mini heap represents
 (`HeapCorr`); the final heap and world are again represented.
 
 #### `Lanius.Mini.compileSource_stops`
@@ -507,7 +508,7 @@ the statements, so a reader has to agree that each one says what is intended:
 |---|---|---|
 | `SrcProgram.toCore` and the `toCore` of each construct | `Mini/Source.lean` | which Core program a source program *is*: each construct is the Core construct of the same name (`Null` is Core's literal `.pointer 0`), and functions are numbered by position, then the host functions (`hostFuncs`, ids 2^32 up). A literal (`EStruct`, `LetStruct`) means `SrcType.literal`: Core's array value `.array T vs` at an array type `[T; N]`, and a struct value otherwise. `ArraySlice(T, x)` is Core's `arrayToSlice T (local x)`. `EIf(c, T, a, b)` is Core's `matchValue c [(literal true, a), (_, b)]`, Core's match on the bool (Core has no conditional expression). `ELet(x, T, v, R, b)` is Core's `matchValue v [(bind x, b)]`, the one arm binding x (Core has no let expression). `ELen(x)` is Core's `intrinsic sliceLength (local x)` |
 | `FieldsHold`, `SrcType.HoldsAt` | `Mini/Source.lean` | how a Core value sits in 64-bit slots: an `i32` is zero-extended, a `bool` is 1/0, a struct is its fields in order, an enum is a tag then its payload, a pointer is its address, an array `[T; N]` is its N elements in order, as a struct of N fields of type T, a float is its bits. Their first argument, `places`, lists the caller's arrays held in memory (`Addressed`), which no constructor reads yet; the top theorems pass `[]` |
-| `startState`, `State.Fresh`, `HeapCorr`, `outputOf` | `Mini/SourceCorrect.lean`, `Mini/HeapCorr.lean` | Core's start state for a standard input (empty heap, the world with that input); a state with no live cells; the mini heap representing Core's heap and world (standard output and error are `outputOf 1` and `outputOf 2` of the mini heap's trace, the bytes its writes put on fds 1 and 2, no open files, the same standard input) |
+| `startState`, `State.Fresh`, `HeapCorr`, `outputOf` | `Mini/SourceCorrect.lean`, `Mini/HeapCorr.lean` | Core's start state for a standard input (empty heap, the world with that input); a state with no live cells whose i32 array views each hold their cell (`Views.ViewsHold`, `Mini/Views.lean`); the mini heap representing Core's heap and world (standard output and error are `outputOf 1` and `outputOf 2` of the mini heap's trace, the bytes its writes put on fds 1 and 2, no open files, the same standard input) |
 | `Returned`, `HeapAt`, `StackAt`, `Contract`, `Scratch`, `InHeap` | `Mini/Simulation.lean` | the calling convention and what "returns" means (section 8) |
 | `Below`, `Binary.stackNeed`, `Binary.guard` | `Mini/Frame.lean`, `Mini/Bytes.lean` | the stack window |
 | `Det`, `DataEq`, `Live`, `Faults`, `Fault` | `Mini/StepDet.lean`, `X86/Machine/Scalar.lean` | every run agrees but for flags and does not stop early; a run that stops, stops at an architectural fault (`ud2`, `#DE`) |

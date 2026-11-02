@@ -785,6 +785,19 @@ verified compiler's locals are 64-bit slots with no address. The design:
      generalized through the proofs; (c) `View`, `LetView` and the viewed
      reads and writes in the compiler, with their proofs; (d) the front
      end's reading; (e) the oracles.
+   - *Done so far.* (a) 6fa6c5b1b. (b): `State.Fresh` is "cells below
+     `nextCell` and `ViewsHold`" (a trusted change, TRUSTED_BASE). `Grows`
+     keeps the view list equal for now (`Grows.views`), since no lowered
+     statement maps a view yet; `Grows.empty` gives the Faithful proofs
+     their "no views" from it. Stage (c) relaxes it to "grows at its end"
+     when `LetView` is lowered. Raw stores, `storeByte` and host calls
+     reach the sync after them through `ViewsHold.afterStores` and
+     `ViewsHold.syncAfter`, which keep every view and every cell no view
+     roots at. A raw write into a value that holds a slice is a defined
+     trap only where no view roots at it (`Unhit`, `UndefTraps.lean`),
+     which a slot holding (`HoldsAt.unhit`) gives from `FrameCorr.unviewed`
+     (no view roots at a frame place) and `Corr.unviewed` (nor at a scope
+     binding's cell).
 6. **`str`** is (pointer, length) of read-only bytes in a static region
    above frame memory, a literal's bytes placed by the loader (Core's
    `.string` value names no address, so any region outside Core's heap

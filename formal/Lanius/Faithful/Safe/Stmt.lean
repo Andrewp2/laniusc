@@ -71,7 +71,7 @@ theorem loop_safe {condC : Core.Expr} {body : SrcStmt} {ret : SrcType} {tenv : T
     · have b1 := Grows.bound (tgrows crun) (execStmt_trap_grows brun) inv.views bound
       obtain ⟨-, rel1, ran1⟩ := htest (by omega) crun inv rel b1
       exact bsafe (by omega) brun ran1.inv (ran1.locs locs) rel1 bound
-    · have b2 := Grows.bound (execStmt_grows brun) (lgrows lrun) ((tgrows crun) inv.views).1 bound
+    · have b2 := Grows.bound (execStmt_grows brun) (lgrows lrun) ((tgrows crun).empty inv.views).1 bound
       have b1 := Grows.bound (tgrows crun) (execStmt_grows brun) inv.views b2
       obtain ⟨-, rel1, ran1⟩ := htest (by omega) crun inv rel b1
       obtain ⟨ob, -, orlb, ranb⟩ := hbody (by omega) brun ran1.inv (ran1.locs locs) rel1 b2
@@ -303,7 +303,7 @@ theorem stmt_safe (calls : ∀ m, FuncSim sp prims outside m) (funcs : ∀ i < N
         obtain ⟨j, rfl, arun⟩ := expression_trap_inv run
         obtain ⟨v, -, hv, -, -⟩ := rel id t ht
         obtain ⟨i, rfl, vrun⟩ := assignLocal_trap arun bound hv
-          (fun _ _ _ _ vrun => (effGrows vrun inv.views).1)
+          (fun _ _ _ _ vrun => ((effGrows vrun).empty inv.views).1)
           (fun _ _ _ c _ vrun hc b => by
             obtain ⟨-, -, -, ran1⟩ := effD vrun ht' inv rel b
             exact ran1.step.frame.isSome (locs.alloc id c hc))

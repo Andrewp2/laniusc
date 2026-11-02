@@ -165,7 +165,7 @@ theorem loop_sim {condC : Core.Expr} {body : SrcStmt} {test : Env → Option Boo
         · exact lgrows lrun
         · exact Grows.refl _
         · exact Grows.refl _
-      have b2 := Grows.bound (execStmt_grows brun) g2 ((tgrows crun) inv.views).1 bound
+      have b2 := Grows.bound (execStmt_grows brun) g2 ((tgrows crun).empty inv.views).1 bound
       have b1 := Grows.bound (tgrows crun) (execStmt_grows brun) inv.views b2
       obtain ⟨ht, rel1, ran1⟩ := htest (by omega) crun inv rel b1
       obtain ⟨ob, hob, orlb, ranb⟩ := hbody (by omega) brun ran1.inv (ran1.locs locs) rel1 b2
@@ -431,7 +431,7 @@ theorem stmt_sim (calls : ∀ i < N, FuncSim sp prims outside i) (ret : SrcType)
         simp only [SrcStmt.toCore] at run
         obtain ⟨j, w0, rfl, arun, rfl⟩ := expression_inv run
         obtain ⟨i, cl, w, s1, rfl, hcl, vrun, -, -, hst⟩ := assignLocal_inv arun
-        have v1 := (effGrows vrun inv.views).1
+        have v1 := ((effGrows vrun).empty inv.views).1
         obtain rfl := assigned_eq (s := s1.assigned cl w) v1 hst
         obtain ⟨p, hp, r, ran1⟩ := effOk (by omega) calls vrun ht' inv rel bound
         have rel1 := rel.step ran1.step ran1.locals
