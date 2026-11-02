@@ -538,6 +538,13 @@ the theorems say what it means.
   rule is `ExprHasType.sliceLength`, from `[T]` to `usize`. laniusc reads
   the same length from word 1 of the slice's descriptor, but it has no
   surface intrinsic for it yet (SEMANTIC_DECISIONS "Slice length").
+- **One-word scalar views.** (added 11-01, F11b) A raw slice of `u32`,
+  `u64`, `i64` or `bool` is a word view, as a `[u16]` is: one descending
+  8-byte word per element (`rawSliceElementAddress?` and
+  `mapRawNominalSlice` take them as a struct or an enum,
+  `NativeLayout.elementStride?` is -8 and `words?` of such a slice is 3),
+  typed by `RawNominalSliceElement.word32`, `.word64`, `.signed64` and
+  `.boolean` (SEMANTIC_DECISIONS "One-word scalar views").
 - **Native layout.** Core reads and writes values in memory
   with laniusc's layout (`docs/wasm-memory-layout.md`). A value's address is
   its word 0, its highest word; word k is 8k bytes below it. A struct's field

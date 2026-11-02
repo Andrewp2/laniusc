@@ -216,4 +216,15 @@ example : (match evalExpr 2 pairProgram boundState (.intrinsic .sliceLength (.lo
     | _ => false) = true := by
   decide
 
+-- One-word scalar views (u32, u64, i64, bool) run down 8 bytes an element.
+example : NativeLayout.elementStride? pairProgram (.scalar (.unsigned .u64)) = some (-8) := by
+  decide
+
+example : NativeLayout.elementStride? pairProgram (.scalar .bool) = some (-8) := by
+  decide
+
+example : rawSliceElementAddress? pairProgram (.scalar (.signed .i64)) 32 1 = .ok 24 := rfl
+
+example : rawSliceElementAddress? pairProgram (.scalar (.unsigned .u32)) 32 2 = .ok 16 := rfl
+
 end Lanius.Semantics.RawNominalSliceTests

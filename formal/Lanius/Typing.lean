@@ -27,6 +27,11 @@ inductive RawNominalSliceElement (program : Program) : Ty → Prop where
   | byte : RawNominalSliceElement program (.scalar (.unsigned .u8))
   /-- A `u16` element is one native word, as laniusc lays it out. -/
   | word16 : RawNominalSliceElement program (.scalar (.unsigned .u16))
+  /-- `u32`, `u64`, `i64` and `bool` elements are one native word each too. -/
+  | word32 : RawNominalSliceElement program (.scalar (.unsigned .u32))
+  | word64 : RawNominalSliceElement program (.scalar (.unsigned .u64))
+  | signed64 : RawNominalSliceElement program (.scalar (.signed .i64))
+  | boolean : RawNominalSliceElement program (.scalar .bool)
   | structureType (id : TypeId) (declaration : StructDecl)
       (found : program.structure? id = some declaration) :
       RawNominalSliceElement program (.structure id)

@@ -870,7 +870,8 @@ def rawSliceElementAddress? (program : Program) (element : Ty)
   match element with
   | .scalar (.signed .i32) => .ok (address + index * 4)
   | .scalar (.unsigned .u8) => .ok (address + index)
-  | .structure _ | .enumeration _ | .scalar (.unsigned .u16) => do
+  | .structure _ | .enumeration _ | .scalar (.unsigned .u16) | .scalar (.unsigned .u32)
+  | .scalar (.unsigned .u64) | .scalar (.signed .i64) | .scalar .bool => do
       let some words := NativeLayout.valueWords? program element
         | .error .typeMismatch
       let some base := NativeLayout.elementBase? address index words
@@ -1132,7 +1133,8 @@ def mapRawNominalSlice (program : Program) (state : State)
       | .error reason => .trapped reason state
       | .ok () => .done (.rawSlice element address signedLength.toNat) state
   else if !(match element with
-      | .structure _ | .enumeration _ | .scalar (.unsigned .u16) => true
+      | .structure _ | .enumeration _ | .scalar (.unsigned .u16) | .scalar (.unsigned .u32)
+      | .scalar (.unsigned .u64) | .scalar (.signed .i64) | .scalar .bool => true
       | _ => false) then .trapped .typeMismatch state
   else
     match NativeLayout.valueWords? program element with

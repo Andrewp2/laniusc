@@ -1814,6 +1814,23 @@ and `slice_stride` is -8. The other one-word scalars (`u32`, `u64`, `i64`,
 `bool`, `char`, `ptr`, ...) have the same layout in laniusc and are later
 work.
 
+## One-word scalar views (decided 11-01, F11b)
+
+The other one-word scalars the stdlib oracle passes as slices, `u32`,
+`u64`, `i64` and `bool`, are word views like `u16` ("`u16` views"):
+laniusc's `stdlib/core/mem.lani` packs only `i32` and `u8`, and lays every
+other element out as descending 8-byte words. Core takes them where it takes
+a `u16` view: `rawSliceElementAddress?` puts element `i` at `pointer - 8 *
+i`, `mapRawNominalSlice` checks the view's words in one live block,
+`NativeLayout.elementStride?` is -8 and a slice of one is 3 words.
+Elements are read and written as the scalar is elsewhere in native layout
+(`readNativeValue`, `writeNativeValue`): `u32` and `bool` as the word's low
+4 bytes (a `bool` above 1 is `typeMismatch`), `u64` and `i64` as all 8.
+`typedSliceFromRawParts` types them (`RawNominalSliceElement.word32`,
+`word64`, `signed64`, `boolean`). As for struct fields, Core writes a
+`u32` or `bool` element as 4 bytes where laniusc writes the zero-extended
+word; the upper 4 bytes are never read as part of the element.
+
 ## laniusc's process exit is `exit_group`; the verified compiler's stays `exit` (decided 11-01)
 
 laniusc's x86 runtime now ends a process with Linux syscall 231,
