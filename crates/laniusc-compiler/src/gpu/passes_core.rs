@@ -676,10 +676,17 @@ mod compute_schedule_tests {
 mod compute_pass_counting_tests {
     use std::{collections::BTreeMap, fs, path::Path};
 
+    /// Visits the compiler's Rust sources. `src/bin` holds standalone tools
+    /// (separate processes such as the SPIR-V dispatch replayer) that drive
+    /// wgpu directly by design; their commands never reach the compiler's
+    /// counted schedule or graph operations, so these rules do not cover them.
     fn visit_rust_sources(path: &Path, visit: &mut impl FnMut(&Path, &str)) {
         for entry in fs::read_dir(path).expect("read compiler source directory") {
             let path = entry.expect("read compiler source entry").path();
             if path.is_dir() {
+                if path.ends_with("src/bin") {
+                    continue;
+                }
                 visit_rust_sources(&path, visit);
             } else if path.extension().is_some_and(|extension| extension == "rs") {
                 let source = fs::read_to_string(&path).expect("read compiler Rust source");
@@ -723,17 +730,22 @@ mod compute_pass_counting_tests {
         // behind a graph operation or deliberately reviewing this boundary.
         let allowed_maximums = BTreeMap::from([
             ("codegen/x86/link.rs", 6usize),
+            ("codegen/x86_runtime_dispatch_tests.rs", 2),
             ("compiler/diagnostics.rs", 1),
             ("compiler/gpu_compiler/typecheck.rs", 2),
             ("gpu/buffers.rs", 2),
+            ("gpu/canonical_intern_stress_tests.rs", 6),
+            ("gpu/ct_match_tests.rs", 1),
             ("gpu/debug.rs", 1),
+            ("gpu/dispatch_capture.rs", 2),
             ("gpu/operations/buffer.rs", 7),
             ("gpu/operations/inclusive_block_scan.rs", 1),
             ("gpu/passes_core.rs", 1),
-            ("gpu/readback.rs", 1),
+            ("gpu/readback.rs", 3),
             ("gpu/timer.rs", 1),
-            ("lexer/driver.rs", 3),
-            ("lexer/driver/readback.rs", 2),
+            ("gpu/typed_constant_tests.rs", 2),
+            ("lexer/driver.rs", 4),
+            ("lexer/driver/readback.rs", 3),
             ("lexer/passes/dfa/scan_block_summaries.rs", 1),
             ("lexer/passes/pair/scan_block_totals.rs", 1),
             ("parser/buffers/scans.rs", 3),

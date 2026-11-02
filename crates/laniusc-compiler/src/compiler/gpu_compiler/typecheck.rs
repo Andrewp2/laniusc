@@ -5324,14 +5324,16 @@ mod tests {
     #[test]
     fn qualified_variant_parent_binding_survives_dependency_page_replay() {
         let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
+        let left_source = "module lib::left; pub enum Choice<T> { Left(T), Missing }";
+        let right_source = "module lib::right; pub enum Choice<T> { Right(T), Missing }";
         let left = pollster::block_on(compiler.semantic_interface_for_source_pack(
             10,
-            &["module lib::left; pub enum Choice<T> { Left(T), Missing }"],
+            &[left_source],
         ))
         .expect("left interface");
         let right = pollster::block_on(compiler.semantic_interface_for_source_pack(
             11,
-            &["module lib::right; pub enum Choice<T> { Right(T), Missing }"],
+            &[right_source],
         ))
         .expect("right interface");
         let imports =
@@ -5388,9 +5390,13 @@ mod tests {
                 ),
             )
             .expect_err("a local parent shadows imports on every page");
+            // `Left` is looked up on the local `Choice` only. The method
+            // resolver owns a type-qualified call and reports the missing
+            // associated item as LNC0027 (methods/03 resolve_associated_call),
+            // as it does for any local type in a program with methods.
             assert_eq!(
                 error.to_public_diagnostic().code,
-                "LNC0005",
+                "LNC0027",
                 "{label}: {error:?}"
             );
             let source = r#"
@@ -5417,7 +5423,15 @@ fn main() -> i32 {
             )
             .expect("full qualifiers retain distinct parents after rejected jobs");
             #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-            assert_paged_native_exit(&compiler, source, &pages, label, 42, b"");
+            assert_paged_native_exit(
+                &compiler,
+                source,
+                &[(10, left_source, &[]), (11, right_source, &[])],
+                &pages,
+                label,
+                42,
+                b"",
+            );
         }
         pollster::block_on(compiler.semantic_interface_for_source_pack_unit_with_dependency_pages(
             12, 0, &["module app::main; import lib::left; fn main() -> i32 { let a = Choice<i32>::Left(42); return 0; }"],
@@ -5428,12 +5442,16 @@ fn main() -> i32 {
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     fn imported_alias_targets_survive_nested_substitution_and_dependency_page_order() {
         let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
+        let inner_source = "module lib::inner; pub struct Pair<A, B> { first: A, second: B } pub type Id<T> = T; pub type Fixed<T, const N: usize> = [T; N];";
+        let outer_source = "module lib::outer; import lib::inner; pub type Swap<A, B> = lib::inner::Pair<B, A>; pub type Numbers<const N: usize> = lib::inner::Fixed<i32, N>; pub type Id<T> = lib::inner::Id<T>;";
         let inner = pollster::block_on(compiler.semantic_interface_for_source_pack(10, &[
-            "module lib::inner; pub struct Pair<A, B> { first: A, second: B } pub type Id<T> = T; pub type Fixed<T, const N: usize> = [T; N];",
+            inner_source,
         ])).expect("inner alias interface");
         let outer = pollster::block_on(compiler.semantic_interface_for_source_pack_with_dependencies(11, &[
-            "module lib::outer; import lib::inner; pub type Swap<A, B> = lib::inner::Pair<B, A>; pub type Numbers<const N: usize> = lib::inner::Fixed<i32, N>; pub type Id<T> = lib::inner::Id<T>;",
+            outer_source,
         ], &[inner.clone()])).expect("reexported alias targets");
+        let inner_imports = [inner.clone()];
+        let dependencies = [(10, inner_source, &[][..]), (11, outer_source, &inner_imports[..])];
         let source = r#"
 module app::main;
 import lib::inner;
@@ -5465,7 +5483,7 @@ fn main() -> i32 {
                 vec![vec![outer.clone()], vec![], vec![inner.clone()]],
             ),
         ] {
-            assert_paged_native_exit(&compiler, source, &pages, label, 42, b"");
+            assert_paged_native_exit(&compiler, source, &dependencies, &pages, label, 42, b"");
             let invalid = source.replace("relay<i32>([19, 23])", "relay<i32>([19, 23, 7])");
             let error = pollster::block_on(
                 compiler.semantic_interface_for_source_pack_unit_with_dependency_pages(
@@ -5488,24 +5506,27 @@ fn main() -> i32 {
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     fn imported_alias_members_survive_dependency_page_order_and_preserve_scope() {
         let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
-        let inner = pollster::block_on(compiler.semantic_interface_for_source_pack(
-            10,
-            &[r#"
+        let inner_source = r#"
 module lib::inner;
 pub enum Packet<T, const N: usize, F> { Missing, Data([T; N], F) }
 pub type Swap<F, T, const N: usize> = Packet<T, N, F>;
-"#],
+"#;
+        let outer_source = r#"
+module lib::outer;
+import lib::inner;
+pub type Numbers<const N: usize> = lib::inner::Swap<bool, i32, N>;
+pub type Empty = Numbers<0>;
+"#;
+        let other_source = "module lib::other; import lib::inner; pub type Numbers<const N: usize> = lib::inner::Packet<i32, N, bool>;";
+        let inner = pollster::block_on(compiler.semantic_interface_for_source_pack(
+            10,
+            &[inner_source],
         ))
         .expect("enum and alias interface");
         let outer = pollster::block_on(
             compiler.semantic_interface_for_source_pack_with_dependencies(
                 11,
-                &[r#"
-module lib::outer;
-import lib::inner;
-pub type Numbers<const N: usize> = lib::inner::Swap<bool, i32, N>;
-pub type Empty = Numbers<0>;
-"#],
+                &[outer_source],
                 &[inner.clone()],
             ),
         )
@@ -5527,8 +5548,14 @@ fn main() -> i32 {
 }
 "#;
         let other = pollster::block_on(compiler.semantic_interface_for_source_pack_with_dependencies(13, &[
-            "module lib::other; import lib::inner; pub type Numbers<const N: usize> = lib::inner::Packet<i32, N, bool>;",
+            other_source,
         ], &[inner.clone()])).expect("independently named alias");
+        let inner_imports = [inner.clone()];
+        let dependencies = [
+            (10, inner_source, &[][..]),
+            (11, outer_source, &inner_imports[..]),
+            (13, other_source, &inner_imports[..]),
+        ];
         for (label, pages) in [
             (
                 "flat alias members",
@@ -5560,7 +5587,7 @@ fn main() -> i32 {
                 ],
             ),
         ] {
-            assert_paged_native_exit(&compiler, source, &pages, label, 42, b"");
+            assert_paged_native_exit(&compiler, source, &dependencies, &pages, label, 42, b"");
             let invalid = source.replace(
                 "Local::Data([19, 23], false)",
                 "Local::Data([19, 23, 7], false)",
@@ -5579,9 +5606,13 @@ fn main() -> i32 {
                 "LNC0006",
                 "{label}: {error:?}"
             );
-            for (declaration, imports) in [
-                ("", "import lib::other;"),
-                ("enum Numbers<const N: usize> { Local }", ""),
+            // An ambiguous imported qualifier stays unresolved (LNC0005). A
+            // local declaration shadows the import, so `Data` is looked up on
+            // it and the method resolver reports the missing associated item
+            // (LNC0027).
+            for (declaration, imports, code) in [
+                ("", "import lib::other;", "LNC0005"),
+                ("enum Numbers<const N: usize> { Local }", "", "LNC0027"),
             ] {
                 let invalid = format!(
                     "module app::main; import lib::outer; {imports} {declaration} fn main() -> i32 {{ let value = Numbers<2>::Data([19, 23], false); return 0; }}"
@@ -5597,7 +5628,7 @@ fn main() -> i32 {
                 .expect_err("checked targets do not bypass alias ambiguity or shadowing");
                 assert_eq!(
                     error.to_public_diagnostic().code,
-                    "LNC0005",
+                    code,
                     "{label}: {error:?}"
                 );
             }
@@ -5608,10 +5639,11 @@ fn main() -> i32 {
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     fn body_replay_preserves_qualified_alias_parameter_identity() {
         let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
+        let aliases_source = "module lib::aliases; pub type Id<T> = T;";
         let aliases =
             pollster::block_on(compiler.semantic_interface_for_source_pack(
                 10,
-                &["module lib::aliases; pub type Id<T> = T;"],
+                &[aliases_source],
             ))
             .expect("identity alias interface");
         let source = r#"
@@ -5651,6 +5683,7 @@ fn main() -> i32 {
         assert_paged_native_exit(
             &compiler,
             source,
+            &[(10, aliases_source, &[])],
             &pages,
             "specialized imported identity aliases",
             42,
@@ -5883,16 +5916,27 @@ fn main() -> i32 {
             &compiler,
             source,
             &[],
+            &[],
             "immutable template interface",
             42,
             b"",
         );
     }
 
+    /// A dependency library for a native test program: its library id, its
+    /// source, and the interfaces it imports (one page).
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    type NativeDependency<'a> = (u32, &'a str, &'a [crate::compiler::GpuSemanticInterfaceArtifact]);
+
+    /// Compiles `source` against `pages`, links it with its dependency units
+    /// and runs it. Program admission takes every imported unit's snapshot
+    /// as the authority for its dependency-page artifacts (catalog freeze),
+    /// so the dependencies are compiled as units, not only as interfaces.
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     fn assert_paged_native_exit(
         compiler: &GpuCompiler<'_>,
         source: &str,
+        dependencies: &[NativeDependency<'_>],
         pages: &[Vec<crate::compiler::GpuSemanticInterfaceArtifact>],
         label: &str,
         expected: i32,
@@ -5906,6 +5950,20 @@ fn main() -> i32 {
         use crate::codegen::x86::GpuX86LinkInput;
         static NEXT_EXECUTABLE: AtomicU64 = AtomicU64::new(0);
 
+        let dependency_units = dependencies
+            .iter()
+            .map(|&(library_id, source, imports)| {
+                let pages = if imports.is_empty() { Vec::new() } else { vec![imports.to_vec()] };
+                pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
+                    vec![source.to_owned()].into(),
+                    library_id,
+                    0,
+                    pages.into(),
+                    SourcePackArtifactTarget::X86_64,
+                ))
+                .unwrap_or_else(|error| panic!("{label}: compile dependency {library_id}: {error:?}"))
+            })
+            .collect::<Vec<_>>();
         let unit = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
             vec![source.to_owned()].into(),
             12,
@@ -5914,7 +5972,8 @@ fn main() -> i32 {
             SourcePackArtifactTarget::X86_64,
         ))
         .unwrap_or_else(|error| panic!("{label}: compile paged values: {error:?}"));
-        let objects = pollster::block_on(compiler.specialize_x86_source_pack_objects(&[&unit]))
+        let units = dependency_units.iter().chain([&unit]).collect::<Vec<_>>();
+        let objects = pollster::block_on(compiler.specialize_x86_source_pack_objects(&units))
             .unwrap_or_else(|error| panic!("{label}: specialize paged values: {error:?}"));
         let input =
             GpuX86LinkInput::for_executable_refs(objects.iter().map(|object| object.as_ref()))
@@ -5945,23 +6004,25 @@ fn main() -> i32 {
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     fn dependency_page_native_layouts_retain_composed_values() {
         let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
-        let inner = pollster::block_on(compiler.semantic_interface_for_source_pack(
-            10,
-            &[r#"
+        let inner_source = r#"
 module lib::inner;
 pub struct Boxed<T> { value: T, code: i32 }
 pub enum Packet<T> { Small(T), Wide([str; 2]), Empty }
-"#],
+"#;
+        let outer_source = r#"
+module lib::outer;
+import lib::inner;
+pub enum Outer<T> { Value(lib::inner::Packet<T>), Record(lib::inner::Boxed<T>), Missing }
+"#;
+        let inner = pollster::block_on(compiler.semantic_interface_for_source_pack(
+            10,
+            &[inner_source],
         ))
         .expect("inner interface");
         let outer = pollster::block_on(
             compiler.semantic_interface_for_source_pack_with_dependencies(
                 11,
-                &[r#"
-module lib::outer;
-import lib::inner;
-pub enum Outer<T> { Value(lib::inner::Packet<T>), Record(lib::inner::Boxed<T>), Missing }
-"#],
+                &[outer_source],
                 &[inner.clone()],
             ),
         )
@@ -6000,6 +6061,8 @@ fn main() -> i32 {
     return sum(saved);
 }
 "#;
+        let inner_imports = [inner.clone()];
+        let dependencies = [(10, inner_source, &[][..]), (11, outer_source, &inner_imports[..])];
         for (label, pages) in [
             (
                 "flat composed layout",
@@ -6014,7 +6077,7 @@ fn main() -> i32 {
                 vec![vec![outer], vec![inner]],
             ),
         ] {
-            assert_paged_native_exit(&compiler, source, &pages, label, 42, "αomega".as_bytes());
+            assert_paged_native_exit(&compiler, source, &dependencies, &pages, label, 42, "αomega".as_bytes());
             // Page ownership must preserve rejection as well as successful
             // layouts. Reuse the compiler after each rejected source.
             for invalid in [

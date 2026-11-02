@@ -162,9 +162,20 @@ void admit_dependencies(uint row, uint total)
              op == SEMANTIC_LIR_OP_LOGICAL_AND ||
              op == SEMANTIC_LIR_OP_LOGICAL_OR)
     {
-        uint immediate = immediate_operand(op, core, operands.a, operands.b, total);
-        if (immediate != 1u) admit(operands.a, position, total, function_id);
-        if (immediate != 2u) admit(operands.b, position, total, function_id);
+        // Two constant operands that scatter folds (x86_fold_integer_binary)
+        // lower to one immediate row that reads neither operand.
+        uint folded;
+        bool constant_operands = operands.a < total && operands.b < total &&
+            x86_value_by_semantic[operands.a].known != 0u &&
+            x86_value_by_semantic[operands.b].known != 0u;
+        if (!constant_operands || !x86_fold_integer_binary(op, core.type_id, operands.c,
+                x86_value_by_semantic[operands.a].value,
+                x86_value_by_semantic[operands.b].value, folded))
+        {
+            uint immediate = immediate_operand(op, core, operands.a, operands.b, total);
+            if (immediate != 1u) admit(operands.a, position, total, function_id);
+            if (immediate != 2u) admit(operands.b, position, total, function_id);
+        }
     }
     else if (op == SEMANTIC_LIR_OP_NEGATE ||
              op == SEMANTIC_LIR_OP_LOGICAL_NOT ||
