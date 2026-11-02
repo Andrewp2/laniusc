@@ -1640,6 +1640,28 @@ value arm followed by the rest of the block) and a returned value; a
 literal match elsewhere in an expression, a negative literal pattern and a
 literal inside a payload pattern are not read.
 
+## Conditional expressions (decided 11-01)
+
+The verified compiler's mini syntax has a conditional expression,
+`SrcEff.eIf c T a b` (`EIf` in `compiler.lani`): `a` when the bool `c`
+is true, else `b`, both of type `T`. Core has no conditional expression,
+but its `matchValue` takes literal patterns, so the meaning
+(`SrcEff.toCore`) is Core's match on the condition's value, with an arm
+for the literal `true` and then a wildcard arm. Core needed no change.
+The lowering (`eval_if` in `compiler.lani`) is the smallest that fits the
+mini IR's way of computing a value into a slot. The condition goes into
+the slot, and `Ite` on that slot then runs either branch's code, which
+writes into the same slot. The condition has been tested by then, so
+nothing needs a fresh local. It checks that the condition is a bool and
+that both branches have type `T`. The proofs are its cases in the
+forward simulation (`eval_if`), in the stopping of failing runs
+(`eff_if`), in heap growth (`ifArms_grows`) and in Core typing
+(`SrcEff.eval_typed`). The self-simulation's pure meaning (`peff`) leaves
+it unmodelled, as it does `arraySlice`, so code that uses it is not live
+there. The compiler's own sources don't use it. The front end does not
+produce it yet: reading a literal match in any expression position is
+the next step.
+
 ## `u16` views (decided 11-01)
 
 Core's raw slices had no `u16` element (`slice_from_raw_parts` of a `u16`

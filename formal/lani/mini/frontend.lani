@@ -235,6 +235,7 @@ pub enum SrcEff {
     EDivide(SrcDivOp, Box<SrcEff>, Box<SrcEff>),
     EStride(usize),
     ArraySlice(SrcType, usize),
+    EIf(Box<SrcEff>, SrcType, Box<SrcEff>, Box<SrcEff>),
 }
 
 pub enum SrcStmt {
@@ -11700,6 +11701,7 @@ pub fn known_eff(funcs: List<SrcFunc>, locals: List<LocalTy>, x: SrcEff) -> core
         EDivide(op, a, b) -> either_ty(known_eff(funcs, locals, unbox(a)), known_eff(funcs, locals, unbox(b))),
         EStride(s) -> Some(Isize),
         ArraySlice(e, a) -> Some(Slice(boxed(e))),
+        EIf(c, t, a, b) -> Some(t),
     };
 }
 
@@ -11719,6 +11721,7 @@ pub fn lit_eff(funcs: List<SrcFunc>, locals: List<LocalTy>, want: core::option::
         EDivide(op, a, b) -> EDivide(op, boxed(lit_eff(funcs, locals, operand_want(Plus, want, known_eff(funcs, locals, unbox(a)), known_eff(funcs, locals, unbox(b))), unbox(a))), boxed(lit_eff(funcs, locals, operand_want(Plus, want, known_eff(funcs, locals, unbox(a)), known_eff(funcs, locals, unbox(b))), unbox(b)))),
         EStride(s) -> EStride(s),
         ArraySlice(e, a) -> ArraySlice(e, a),
+        EIf(c, t, a, b) -> EIf(boxed(lit_eff(funcs, locals, Some(Bool), unbox(c))), t, boxed(lit_eff(funcs, locals, Some(t), unbox(a))), boxed(lit_eff(funcs, locals, Some(t), unbox(b)))),
     };
 }
 
@@ -11846,6 +11849,7 @@ pub fn wide_left_eff(x: SrcEff) -> bool {
         EDivide(op, a, b) -> wide_left_eff(unbox(a)) || wide_left_eff(unbox(b)),
         EStride(sl) -> false,
         ArraySlice(e, a) -> false,
+        EIf(c, t, a, b) -> wide_left_eff(unbox(c)) || wide_left_eff(unbox(a)) || wide_left_eff(unbox(b)),
     };
 }
 

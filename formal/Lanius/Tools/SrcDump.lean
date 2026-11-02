@@ -98,6 +98,7 @@ partial def effCalls : SrcEff → List Nat
   | .eDivide _ l r => effCalls l ++ effCalls r
   | .eStride _ => []
   | .arraySlice _ _ => []
+  | .eIf c _ a b => effCalls c ++ effCalls a ++ effCalls b
 
 partial def stmtCalls : SrcStmt → List Nat
   | .let _ _ _ b | .letStruct _ _ _ b | .letEnum _ _ _ _ b | .letMatch _ _ _ _ _ b => stmtCalls b
@@ -241,6 +242,7 @@ partial def markEff : SrcEff → StateM Table SrcEff
   | .eDivide op l r => return .eDivide op (← markEff l) (← markEff r)
   | .eStride s => pure (.eStride s)
   | .arraySlice ty a => return .arraySlice (← mark ty) a
+  | .eIf c ty a b => return .eIf (← markEff c) (← mark ty) (← markEff a) (← markEff b)
 
 partial def markStmt : SrcStmt → StateM Table SrcStmt
   | .let id ty v b => return .let id (← mark ty) (← markExpr v) (← markStmt b)

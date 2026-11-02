@@ -219,6 +219,7 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
     rfl
   | eStride => simp [effTy] at ht
   | arraySlice => simp [effTy] at ht
+  | eIf => simp [effTy] at ht
 
 /-- Every effectful expression Core completes with fuel `k ≤ N` has its pure value. -/
 theorem eff_sim : ∀ k, k ≤ N → (∀ j < k, FuncSim sp prims outside j) →

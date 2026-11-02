@@ -209,6 +209,7 @@ def effTy (tenv : TEnv) : SrcEff → Option SrcType
   | .eDivide _ left right => (effTy tenv left).bind fun l => (effTy tenv right).bind (divTy l)
   | .eStride _ => none
   | .arraySlice _ _ => none
+  | .eIf _ _ _ _ => none
 
 def effTys (tenv : TEnv) : List SrcEff → Option (List SrcType)
   | [] => some []

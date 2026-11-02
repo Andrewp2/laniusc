@@ -152,6 +152,7 @@ def peff (env : Env) : SrcEff → Option Value
   | .eDivide op left right => binary op.toCore (peff env left) (peff env right)
   | .eStride _ => none
   | .arraySlice _ _ => none
+  | .eIf _ _ _ _ => none
 
 def peffs (env : Env) : List SrcEff → Option (List Value)
   | [] => some []

@@ -72,6 +72,7 @@ def SrcEff.eval (self : SrcEff) (sigs : List Sig) (decls : SrcDecls) (scope : Li
   | .eDivide op left right => evalDivision op slot (SrcEff.eval left sigs decls scope slot) (SrcEff.eval right sigs decls scope (slot + 1))
   | .eStride slice => evalStride decls scope slice slot
   | .arraySlice element array => none
+  | .eIf condition ty thenValue elseValue => evalIf slot ty (SrcEff.eval condition sigs decls scope slot) (SrcEff.eval thenValue sigs decls scope slot) (SrcEff.eval elseValue sigs decls scope slot)
 /-- The arguments, each in the slots after the one before. -/
 def evalArgs (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (args : List SrcEff) (slot : Nat) : Option EvaluatedArgs :=
   match args with

@@ -160,6 +160,9 @@ inductive LitEff (funcs : List SrcFunc) : List LocalTy → Option SrcType → Sr
   | stride {locals : List LocalTy} {want : Option SrcType} {sl : Nat} : LitEff funcs locals want (.eStride sl) (.eStride sl)
   | arraySlice {locals : List LocalTy} {want : Option SrcType} {e : SrcType} {a : Nat} :
       LitEff funcs locals want (.arraySlice e a) (.arraySlice e a)
+  | «if» {locals : List LocalTy} {want : Option SrcType} {c c' : SrcEff} {t : SrcType} {a b a' b' : SrcEff} :
+      LitEff funcs locals (some .bool) c c' → LitEff funcs locals (some t) a a' → LitEff funcs locals (some t) b b' →
+      LitEff funcs locals want (.eIf c t a b) (.eIf c' t a' b')
 
 inductive LitEffs (funcs : List SrcFunc) : List LocalTy → Option (List SrcType) → List SrcEff → List SrcEff → Prop
   | nil {locals : List LocalTy} {wants : Option (List SrcType)} : LitEffs funcs locals wants [] []
@@ -196,6 +199,8 @@ theorem litEff_sound (funcs : List SrcFunc) :
     simp only [litEff]; exact .divide (litEff_sound funcs _ _ a) (litEff_sound funcs _ _ b)
   | locals, want, .eStride sl => by simp only [litEff]; exact .stride
   | locals, want, .arraySlice e a => by simp only [litEff]; exact .arraySlice
+  | locals, want, .eIf c t a b => by
+    simp only [litEff]; exact .if (litEff_sound funcs _ _ c) (litEff_sound funcs _ _ a) (litEff_sound funcs _ _ b)
 
 theorem litEffs_sound (funcs : List SrcFunc) :
     ∀ (locals : List LocalTy) (wants : Option (List SrcType)) (xs : List SrcEff),

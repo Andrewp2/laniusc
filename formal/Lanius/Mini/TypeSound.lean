@@ -1994,6 +1994,35 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
               · exact .binary typedL typedR (.remainder (IsInt.sint k).integer)
             · simp at h
   | .arraySlice element array, scope, ctx, slot, ev, ok, dd, h => by simp [SrcEff.eval] at h
+  | .eIf c ty a b, scope, ctx, slot, ev, ok, dd, h => by
+    simp only [SrcEff.eval, evalIf] at h
+    split at h
+    · simp at h
+    · rename_i co hc
+      split at h
+      · simp at h
+      · rename_i ta ha
+        split at h
+        · simp at h
+        · rename_i eb hb
+          simp only [evalIfOf] at h
+          split at h
+          · rename_i cond
+            simp only [Option.some.injEq] at h
+            subst h
+            simp only [Bool.and_eq_true] at cond
+            obtain ⟨⟨isB, sameA⟩, sameB⟩ := cond
+            have typedC := SrcEff.eval_typed target sigsOk c ok
+              (fun t mem => dd t (by simp [SrcEff.types, mem])) hc
+            have typedA := SrcEff.eval_typed target sigsOk a ok
+              (fun t mem => dd t (by simp [SrcEff.types, mem])) ha
+            have typedB := SrcEff.eval_typed target sigsOk b ok
+              (fun t mem => dd t (by simp [SrcEff.types, mem])) hb
+            rw [same_toCore isB] at typedC
+            rw [same_toCore sameA] at typedA
+            rw [same_toCore sameB] at typedB
+            exact .matchValue typedC (.cons (.literal (.boolean true)) typedA (.one .wildcard typedB))
+          · simp at h
   | .eStride slice, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalStride] at h
     split at h

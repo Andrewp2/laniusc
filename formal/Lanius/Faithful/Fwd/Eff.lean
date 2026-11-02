@@ -453,6 +453,7 @@ theorem eff_live (live : FuncLive sp prims outside cost N) : ∀ (e : SrcEff) {t
     exact ⟨_, s2, ev, r', ran, g, f2⟩
   | .eStride _, _, _, _, _, _, _, ht, _, _, _, _, _ => by simp [effTy] at ht
   | .arraySlice _ _, _, _, _, _, _, _, ht, _, _, _, _, _ => by simp [effTy] at ht
+  | .eIf _ _ _ _, _, _, _, _, _, _, ht, _, _, _, _, _ => by simp [effTy] at ht
 
 theorem effs_live (live : FuncLive sp prims outside cost N) : ∀ (es : List SrcEff) {tenv : TEnv} {env : Env} {st : State} {ts : List SrcType}
     {ps : List Value} {h : Nat},

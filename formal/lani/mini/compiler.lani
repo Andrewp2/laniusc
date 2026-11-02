@@ -1742,6 +1742,9 @@ pub enum SrcEff {
     // the array local array as a slice of its elements, of type element:
     // Core's array-to-slice, so a write through it reaches the array
     ArraySlice(SrcType, usize),
+    // if condition { then } else { otherwise } of type ty: Core's match on
+    // the bool, true's arm then the wildcard's
+    EIf(Box<SrcEff>, SrcType, Box<SrcEff>, Box<SrcEff>),
 }
 
 pub enum SrcStmt {
@@ -4178,6 +4181,28 @@ pub fn eval_match(slot: usize, ety: SrcType, ty: SrcType, scrutinee: core::optio
     };
 }
 
+// The condition is a bool and both values have type ty.
+pub fn eval_if_of(slot: usize, ty: SrcType, c: Evaluated, t: Evaluated, e: Evaluated) -> core::option::Option<Evaluated> {
+    if (c.ty.same(Bool) && t.ty.same(ty) && e.ty.same(ty)) {
+        return Some(Evaluated { stmt: Seq(boxed(c.stmt), boxed(Ite(Var(slot), boxed(t.stmt), boxed(e.stmt)))), ty: ty });
+    }
+    return None;
+}
+
+// The condition in slot, then the value its test picks, also from slot.
+pub fn eval_if(slot: usize, ty: SrcType, condition: core::option::Option<Evaluated>, then_value: core::option::Option<Evaluated>, else_value: core::option::Option<Evaluated>) -> core::option::Option<Evaluated> {
+    return match (condition) {
+        None -> None,
+        Some(c) -> match (then_value) {
+            None -> None,
+            Some(t) -> match (else_value) {
+                None -> None,
+                Some(e) -> eval_if_of(slot, ty, c, t, e),
+            },
+        },
+    };
+}
+
 // extract: mutual begin
 impl SrcEff {
     // The struct and enum types of the literals in this expression, which
@@ -4197,6 +4222,7 @@ impl SrcEff {
             EDivide(op, left, right) -> concat(unbox(left).types(), unbox(right).types()),
             EStride(slice) -> empty(),
             ArraySlice(element, array) -> single(element),
+            EIf(condition, ty, then_value, else_value) -> concat(unbox(condition).types(), concat(unbox(then_value).types(), unbox(else_value).types())),
         };
     }
 }
@@ -5160,6 +5186,7 @@ impl SrcEff {
             EDivide(op, left, right) -> eval_division(op, slot, unbox(left).eval(sigs, decls, scope, slot), unbox(right).eval(sigs, decls, scope, plus(slot, 1))),
             EStride(slice) -> eval_stride(decls, scope, slice, slot),
             ArraySlice(element, array) -> None,
+            EIf(condition, ty, then_value, else_value) -> eval_if(slot, ty, unbox(condition).eval(sigs, decls, scope, slot), unbox(then_value).eval(sigs, decls, scope, slot), unbox(else_value).eval(sigs, decls, scope, slot)),
         };
     }
 }

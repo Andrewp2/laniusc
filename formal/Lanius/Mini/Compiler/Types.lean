@@ -365,6 +365,8 @@ inductive SrcEff where
   | eStride : Nat → SrcEff
   /-- the array local array as a slice of its elements, of type element: Core's array-to-slice, so a write through it reaches the array -/
   | arraySlice : SrcType → Nat → SrcEff
+  /-- if condition { then } else { otherwise } of type ty: Core's match on the bool, true's arm then the wildcard's -/
+  | eIf : SrcEff → SrcType → SrcEff → SrcEff → SrcEff
   deriving Repr
 
 inductive SrcStmt where

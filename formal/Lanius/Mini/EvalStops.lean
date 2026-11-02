@@ -1412,6 +1412,63 @@ theorem eff_match (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some
   | float => cases values <;> simp [matchVariants, evalArms] at armsOk
   | sint => cases values <;> simp [matchVariants, evalArms] at armsOk
 
+/-- A conditional: the condition's code stops, or its value picks the arm
+Core runs, and that arm's code stops. -/
+theorem eff_if (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {c a b : SrcEff}
+    {ty : SrcType} (ihc : EffStops sp mp n c) (iha : EffStops sp mp n a) (ihb : EffStops sp mp n b) :
+    EffStops sp mp n (.eIf c ty a b) := by
+  intro hp scope slot ev frame base st env ok corr fr fresh hc within fails
+  simp only [SrcEff.eval, evalIf] at ok
+  split at ok
+  · simp at ok
+  rename_i co condOk
+  split at ok
+  · simp at ok
+  rename_i ta thenOk
+  split at ok
+  · simp at ok
+  rename_i eb elseOk
+  simp only [evalIfOf] at ok
+  split at ok
+  case isFalse => simp at ok
+  rename_i cond
+  simp only [Bool.and_eq_true] at cond
+  obtain ⟨⟨isB, _⟩, _⟩ := cond
+  simp only [Option.some.injEq] at ok
+  subst ok
+  simp only [SrcEff.toCore] at fails
+  rcases eff_split lowered ihc condOk corr fr fresh hc within fails (fun j r s h => ⟨j + 1, s, match_trap h, rfl⟩) with
+    ⟨d, stops⟩ | ⟨k, w, st1, condRun, bound1, fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1⟩
+  · exact ⟨d, .seqFirst stops⟩
+  rw [SrcType.same_eq isB] at holds1
+  obtain ⟨bv, eq, bits⟩ := bool_bits ((SrcType.holdsAt_scalar rfl).mp holds1)
+  subst eq
+  have limit := exec1.limit_normal
+  have armsFails : ∀ j, Failing hp1.limit (Semantics.evalMatchArms j sp.toCore st1 (.boolean bv)
+      [(.literal (.boolean true), a.toCore), (.wildcard, b.toCore)]) := by
+    rw [limit]
+    refine failing_after (fun le => Semantics.evalMatchArms_refines le) (k := k) fun j le => ?_
+    have := fails (j + 1)
+    rw [match_arms condRun le] at this
+    exact this
+  have corr1 := corr.after fr fresh keeps1 locals1 same1
+  have within1 : st1.heap.nextAddress ≤ hp1.limit := by rw [limit]; exact bound1
+  cases bv with
+  | true =>
+    have aFails : EFails sp hp1.limit (st1.bindLocals []) a.toCore := fun j => by
+      have := armsFails (j + 1)
+      simp only [Semantics.evalMatchArms, Semantics.matchPattern, Semantics.scalarEqual] at this
+      exact (failing_restore _ _).mp this
+    obtain ⟨d, stops⟩ := iha thenOk corr1 fr fresh1 hc1 within1 aFails
+    exact ⟨_, Stops.after exec1 (.ifTrue (by simp [Expr.eval, bits, boolBits]) stops)⟩
+  | false =>
+    have bFails : EFails sp hp1.limit (st1.bindLocals []) b.toCore := fun j => by
+      have := armsFails (j + 2)
+      simp only [Semantics.evalMatchArms, Semantics.matchPattern, Semantics.scalarEqual] at this
+      exact (failing_restore _ _).mp this
+    obtain ⟨d, stops⟩ := ihb elseOk corr1 fr fresh1 hc1 within1 bFails
+    exact ⟨_, Stops.after exec1 (.ifFalse (by simp [Expr.eval, bits, boolBits]) stops)⟩
+
 end Cases
 
 /-! ## Statements that evaluate effectful expressions -/
@@ -2105,6 +2162,8 @@ theorem effStops_all {sp : SrcProgram} {mp : Program} {n : Nat}
   | .eDivide _ l r => eff_divide lowered (effStops_all lowered returns prev l) (effStops_all lowered returns prev r)
   | .eStride _ => eff_stride
   | .arraySlice _ _ => eff_arraySlice
+  | .eIf c _ a b => eff_if lowered (effStops_all lowered returns prev c) (effStops_all lowered returns prev a)
+      (effStops_all lowered returns prev b)
 termination_by e => sizeOf e
 
 /-- Every lowered statement whose Core run fails stops within `n + 1` ticks

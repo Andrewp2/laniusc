@@ -828,6 +828,18 @@ theorem effArms_trap_grows {value : Value} :
     · exact effArms_trap_grows rest values id (j + 1) (ihT.lower (Nat.le_succ i)) restRun
     · exact Grows.restore st (Grows.unbind (ihT i (Nat.le_succ i) armRun))
 
+/-- A conditional's arms that trap grow as the arm Core runs does. -/
+theorem ifArms_trap_grows {value : Value} {a b : SrcEff} {k : Nat} (ihT : EffGrowsT sp k)
+    {st : State} {r : Lanius.Trap} {st' : State}
+    (run : evalMatchArms k sp.toCore st value [(.literal (.boolean true), a.toCore), (.wildcard, b.toCore)] =
+      .trapped r st') : Grows st st' := by
+  obtain ⟨i, rfl, ⟨-, restRun⟩ | ⟨bindings, s2, -, armRun, rfl⟩⟩ := arms_cons_trap_inv run
+  · obtain ⟨i', rfl, ⟨-, restRun'⟩ | ⟨bindings', s2', -, armRun', rfl⟩⟩ := arms_cons_trap_inv restRun
+    · obtain ⟨-, rfl⟩ := arms_nil_trap restRun'
+      exact Grows.refl _
+    · exact Grows.restore st (Grows.unbind (ihT i' (by omega) armRun'))
+  · exact Grows.restore st (Grows.unbind (ihT i (Nat.le_succ i) armRun))
+
 theorem eff_trap_step {k : Nat} (ih : GrowsBelow sp (k + 1)) (ihT : GrowsBelowT sp (k + 1))
     (ihe : EffGrows sp k) (iheT : EffGrowsT sp k) {e : SrcEff}
     (run : evalExpr (k + 1) sp.toCore st e.toCore = .trapped r st') : Grows st st' := by
@@ -920,6 +932,12 @@ theorem eff_trap_step {k : Nat} (ih : GrowsBelow sp (k + 1)) (ihT : GrowsBelowT 
     all_goals obtain rfl : k = j := Nat.succ.inj hj
     · exact subT srun
     · exact (sub srun).trans (effArms_trap_grows binders values ety.typeId 0 iheT armsRun)
+  | eIf c ty a b =>
+    simp only [SrcEff.toCore] at run
+    obtain ⟨j, hj, srun | ⟨sv, s1, srun, armsRun⟩⟩ := matchValue_trap_inv run
+    all_goals obtain rfl : k = j := Nat.succ.inj hj
+    · exact subT srun
+    · exact (sub srun).trans (ifArms_trap_grows iheT armsRun)
 
 /-- Every effectful expression Core runs until it traps grows the heap. -/
 theorem eff_trap_grows : ∀ k, GrowsBelow sp k → GrowsBelowT sp k → EffGrowsT sp k

@@ -2478,6 +2478,90 @@ theorem eval_match {k : Nat} (ihe : ∀ m ≤ k, EvalSound sp mp m) {scrutinee :
     all_goals simp at run
   · simp at ok
 
+/-- A conditional: the condition in `slot`, then the value its test picks,
+also from `slot`. -/
+theorem eval_if {k : Nat} (ihe : ∀ m ≤ k, EvalSound sp mp m) {c a b : SrcEff} {ty : SrcType}
+    (ok : evalIf slot ty (c.eval (sigs sp.funcs) sp.decls scope slot) (a.eval (sigs sp.funcs) sp.decls scope slot)
+      (b.eval (sigs sp.funcs) sp.decls scope slot) = some ev)
+    (corr : Corr scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
+    (hc : HeapCorr st.heap st.world hp)
+    (run : evalExpr (k + 1) sp.toCore st (SrcEff.eIf c ty a b).toCore = .done v st')
+    (bound : st'.heap.nextAddress ≤ hp.limit) :
+    Evaluates mp hp slot st env ev v st' := by
+  simp only [evalIf] at ok
+  split at ok
+  · simp at ok
+  rename_i co condOk
+  split at ok
+  · simp at ok
+  rename_i ta thenOk
+  split at ok
+  · simp at ok
+  rename_i eb elseOk
+  simp only [evalIfOf] at ok
+  split at ok
+  · rename_i cond
+    simp only [Bool.and_eq_true] at cond
+    obtain ⟨⟨isB, sameA⟩, sameB⟩ := cond
+    simp only [Option.some.injEq] at ok
+    subst ok
+    simp only [SrcEff.toCore, evalExpr] at run
+    split at run
+    · rename_i w st1 condRun
+      have views1 := (eff_grown condRun fresh.2).1
+      have grown := ifArms_grows (eff_grows k (grows sp k)) run
+      obtain ⟨fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1⟩ :=
+        ihe k (Nat.le_refl _) condOk corr fr fresh hc condRun (Nat.le_trans (grown views1).2 bound)
+      rw [SrcType.same_eq isB] at holds1
+      obtain ⟨bv, eq, bits⟩ := bool_bits ((SrcType.holdsAt_scalar rfl).mp holds1)
+      subst eq
+      have corr1 := corr.after fr fresh keeps1 locals1 same1
+      have arm : ∀ {m : Nat} {e : SrcEff} {o : Evaluated}, m < k → e.eval (sigs sp.funcs) sp.decls scope slot = some o →
+          o.ty.same ty = true →
+          Semantics.restoreOutcomeLocals st1 (evalExpr m sp.toCore (st1.bindLocals []) e.toCore) = .done v st' →
+          0 < ty.size ∧ st'.Fresh ∧ Keeps st1.nextCell st1 st' ∧ st'.locals = st1.locals ∧
+            ∃ d env' hp', Exec mp d env1 hp1 o.stmt (.normal env' hp') ∧ (∀ j < slot, env' j = env1 j) ∧
+              ty.HoldsAt v env' slot ∧ HeapCorr st'.heap st'.world hp' := by
+        intro m e o lt eOk same r
+        cases armRun : evalExpr m sp.toCore (st1.bindLocals []) e.toCore with
+        | done w' st2 =>
+          simp only [armRun, Semantics.restoreOutcomeLocals, Semantics.Outcome.done.injEq] at r
+          obtain ⟨rfl, rfl⟩ := r
+          obtain ⟨fresh2, keeps2, locals2, sized, d, env2, hp2, exec, same2, holds2, hc2⟩ :=
+            ihe m (by omega) eOk corr1 fr fresh1 hc1 armRun (by rw [exec1.limit_normal]; exact bound)
+          rw [SrcType.same_eq same] at holds2 sized
+          exact ⟨sized, restore_fresh fresh2, keeps2.trans (restore_keeps _ _ _), rfl, d, env2, hp2, exec,
+            same2, holds2, hc2⟩
+        | trapped => simp [armRun, Semantics.restoreOutcomeLocals] at r
+        | exited => simp [armRun, Semantics.restoreOutcomeLocals] at r
+        | outOfFuel => simp [armRun, Semantics.restoreOutcomeLocals] at r
+      cases k with
+      | zero => simp [Semantics.evalMatchArms] at run
+      | succ k =>
+        cases bv with
+        | true =>
+          simp only [Semantics.evalMatchArms, Semantics.matchPattern, Semantics.scalarEqual,
+            beq_self_eq_true] at run
+          obtain ⟨sized, fresh', keeps', locals', d, env', hp', exec, same', holds', hc'⟩ :=
+            arm (Nat.lt_succ_self k) thenOk sameA run
+          exact ⟨fresh', keeps1.chain keeps', locals'.trans locals1, sized, max d1 d, env', hp',
+            .seq (exec1.mono (Nat.le_max_left _ _))
+              (.ifTrue (by simp [Expr.eval, bits, boolBits]) (exec.mono (Nat.le_max_right _ _))),
+            fun j lt => by rw [same' j lt, same1 j lt], holds', hc'⟩
+        | false =>
+          cases k with
+          | zero => simp [Semantics.evalMatchArms, Semantics.matchPattern, Semantics.scalarEqual] at run
+          | succ k =>
+            simp only [Semantics.evalMatchArms, Semantics.matchPattern, Semantics.scalarEqual] at run
+            obtain ⟨sized, fresh', keeps', locals', d, env', hp', exec, same', holds', hc'⟩ :=
+              arm (by omega) elseOk sameB run
+            exact ⟨fresh', keeps1.chain keeps', locals'.trans locals1, sized, max d1 d, env', hp',
+              .seq (exec1.mono (Nat.le_max_left _ _))
+                (.ifFalse (by simp [Expr.eval, bits, boolBits]) (exec.mono (Nat.le_max_right _ _))),
+              fun j lt => by rw [same' j lt, same1 j lt], holds', hc'⟩
+    all_goals simp at run
+  · simp at ok
+
 /-- An operator applied in place to its operand's slot. -/
 theorem eval_then {k : Nat} (ihe : EvalSound sp mp k) {operand : SrcEff} {o : Evaluated}
     (operandOk : operand.eval (sigs sp.funcs) sp.decls scope slot = some o) {t : Typed}
@@ -3807,6 +3891,9 @@ theorem sound_both {sp : SrcProgram} {mp : Program}
           simp only [SrcEff.eval] at ok
           exact eval_divide hereE ok corr fr fresh hc run bound
         | arraySlice element array => simp [SrcEff.eval] at ok
+        | eIf c ty a b =>
+          simp only [SrcEff.eval] at ok
+          exact eval_if belowE ok corr fr fresh hc run bound
         | eStride slice =>
           simp only [SrcEff.eval] at ok
           cases fuel with
