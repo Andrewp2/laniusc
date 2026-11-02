@@ -686,7 +686,7 @@ block. -/
 theorem FrameCorr.lend {st : State} {hp hpS : Heap} (fc : FrameCorr bud places st hp)
     {scope : List Binding} {frame : Nat → Nat} {base next : Nat} (fr : Layout scope frame base next)
     (apart : ∀ x ∈ places, ∀ b ∈ scope, x.cell ≠ frame b.slot)
-    (unviewed : ∀ v ∈ st.i32ArrayViews, ∀ b ∈ scope, v.root ≠ frame b.slot)
+    (unviewed : ∀ v ∈ st.i32ArrayViews, ∀ b ∈ scope, viewedType b.ty = false → v.root ≠ frame b.slot)
     {args : List SrcEff} {types : List SrcType} {t : Nat} {a : ArrayArgs}
     (ok : arrayArgs scope args types t 0 = some a) (blockPos : 0 < bud.block) (bytesLe : a.bytes ≤ bud.block)
     (lentHold : ∀ x ∈ arrayPlaces scope frame hp.fsp args 0, ∀ places', x.Holds places' st hpS)
@@ -734,8 +734,9 @@ theorem FrameCorr.lend {st : State} {hp hpS : Heap} (fc : FrameCorr bud places s
     · exact (shapeAll x lent).1
     · exact fc.packed x old
   · rcases List.mem_append.mp mem with lent | old
-    · obtain ⟨-, -, ⟨b, bmem, cell, -, -⟩, -⟩ := shapeAll x lent
-      rw [cell]; exact unviewed v vmem b bmem
+    · obtain ⟨packed, -, ⟨b, bmem, cell, xty, -⟩, -⟩ := shapeAll x lent
+      obtain ⟨-, -, e, n, hx, -⟩ := packed
+      rw [cell]; exact unviewed v vmem b bmem (by rw [← xty, hx]; rfl)
     · exact fc.unviewed v vmem x old
 
 
@@ -869,13 +870,26 @@ theorem arrayCall_sound {sp : SrcProgram} {mp : Program}
   obtain ⟨E4, loadsExec, loaded, same4⟩ :=
     arrayLoads_exec (mp := mp) (d := d + 1) fr tAbove argsOk at3 (by rw [top2]; omega) (by omega)
   have shape := (arrayPlaces_shape fr (A := hp.fsp) argsOk).1
+  have notLent : ∀ b ∈ scope, (¬∃ x ∈ arrayPlaces scope frame hp.fsp args 0, x.cell = frame b.slot) →
+      ∀ i < b.ty.size, E4 (b.slot + i) = env (b.slot + i) := by
+    intro b bmem passed i lt
+    have apartC : ∀ x ∈ arrayPlaces scope frame hp.fsp args 0, x.cell ≠ frame b.slot :=
+      fun x mem e => passed ⟨x, mem, e⟩
+    have slotB := fr.slots b bmem
+    rw [same4 _ fun x xmem b' b'mem cell => ?_]
+    · simp only [Env.set]
+      rw [if_neg (by omega), setMany_eq, if_neg (by omega), sameC _ (by omega)]
+    · have ne : b ≠ b' := fun e => apartC x xmem (by rw [cell, e])
+      rcases fr.apart b bmem b' b'mem ne with h | h <;> omega
   refine ⟨restore_fresh freshDone, ?_, rfl, pos, d + 1, E4, { hp' with fsp := hp.fsp },
     Exec.checkThen g (.seq (frameExec.mono (Nat.zero_le _)) (.seq (storesExec.mono (Nat.zero_le _))
       (.seq callExec (.seq frame2 loadsExec)))), ⟨corr.locals, corr.apart, fun b bmem => ?_,
-      fun v vmem b bmem => keeps.unrooted (corr.below fresh b bmem) (fun w wm => corr.unviewed w wm b bmem) v vmem⟩, ?_,
+      fun v vmem b bmem nv => keeps.unrooted (corr.below fresh b bmem) (fun w wm => corr.unviewed w wm b bmem nv) v vmem,
+      fun b bmem n hty => ?_⟩, ?_,
     hcDone.withFsp _, ((fcDone.restrict fun x mem => List.mem_append_right _ mem).back fc limit' top').restoreLocals _⟩
   · refine Keeps.trans ⟨fun c below apart unrooted => keeps.cells c (by omega) (fun x mem => ?_) unrooted, keeps.next,
-      fun v m => (keeps.views v m).imp_right fun h => by omega⟩ (restore_keeps _ _ _)
+      fun v m => (keeps.views v m).imp_right (fun h => by omega), fun v m => keeps.persist v m,
+      fun v m h => keeps.arrays v m h⟩ (restore_keeps _ _ _)
     rcases List.mem_append.mp mem with lent | old
     · obtain ⟨-, -, ⟨b, bmem, cell, -, -⟩, -⟩ := shape x lent
       have := fr.above b bmem
@@ -896,22 +910,37 @@ theorem arrayCall_sound {sp : SrcProgram} {mp : Program}
         have := Addressed.view_congr (x := x) (hp := hp') (hp' := { hp' with fsp := hp.fsp }) (fun _ _ => rfl) i lt
         simpa using this
       rwa [xty] at this
-    · have apartC : ∀ x ∈ arrayPlaces scope frame hp.fsp args 0, x.cell ≠ frame b.slot :=
-        fun x mem e => passed ⟨x, mem, e⟩
-      obtain ⟨v0, entry0, held⟩ := corr.values b bmem
-      have slotB := fr.slots b bmem
-      refine ⟨v0, ?_, held.congr fun i lt => ?_⟩
-      · show completed.cellEntry? (frame b.slot) = _
-        rw [keeps.cells _ (corr.below fresh b bmem) (fun x mem => ?_) fun v vm => corr.unviewed v vm b bmem]
+    · obtain ⟨v0, entry0, held⟩ := corr.values b bmem
+      cases nv : viewedType b.ty
+      · refine ⟨v0, ?_, held.congr (notLent b bmem passed)⟩
+        show completed.cellEntry? (frame b.slot) = _
+        rw [keeps.cells _ (corr.below fresh b bmem) (fun x mem => ?_) fun v vm => corr.unviewed v vm b bmem nv]
         · exact entry0
         · rcases List.mem_append.mp mem with lent | old
-          · exact apartC x lent
+          · exact fun e => passed ⟨x, lent, e⟩
           · exact corr.apart x old b bmem
-      · rw [same4 _ fun x xmem b' b'mem cell => ?_]
-        · simp only [Env.set]
-          rw [if_neg (by omega), setMany_eq, if_neg (by omega), sameC _ (by omega)]
-        · have ne : b ≠ b' := fun e => apartC x xmem (by rw [cell, e])
-          rcases fr.apart b bmem b' b'mem ne with h | h <;> omega
+      · obtain ⟨n, hty⟩ := viewedType_true nv
+        obtain ⟨w, wm, root, -, wlen, -⟩ := corr.viewed b bmem n hty
+        rw [hty] at held
+        cases held with
+        | view len i32s =>
+        obtain ⟨vs, entry', len', i32s'⟩ := keeps.arrays w wm ⟨_, root ▸ entry0, len.trans wlen.symm, i32s⟩
+        exact ⟨_, root ▸ entry', by rw [hty]; exact .view (len'.trans wlen) i32s'⟩
+  · obtain ⟨w, wm, root, address, length, npos⟩ := corr.viewed b bmem n hty
+    refine ⟨w, keeps.persist w wm, root, ?_, length, npos⟩
+    have passed : ¬∃ x ∈ arrayPlaces scope frame hp.fsp args 0, x.cell = frame b.slot := by
+      rintro ⟨x, xmem, xcell⟩
+      obtain ⟨b', b'mem, cell, xty, -⟩ := loaded x xmem
+      have same : b' = b := fr.inj b' b'mem b bmem (by rw [← cell, xcell])
+      subst same
+      obtain ⟨packed, -⟩ := shape x xmem
+      obtain ⟨-, -, e, m, hx, -⟩ := packed
+      rw [xty, hty] at hx
+      cases hx
+    have := notLent b bmem passed 0 (by rw [hty]; exact npos)
+    simp only [Nat.add_zero] at this
+    rw [this]
+    exact address
   · have h1 := setMany_holds (places := places) ((SrcType.holdsAt_scalar scalar).mpr ((SrcType.holdsAt_scalar scalar).mp holdsRet))
       rsLen EC next
     refine h1.congr fun i lt => ?_

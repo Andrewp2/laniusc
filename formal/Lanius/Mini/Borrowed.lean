@@ -95,6 +95,7 @@ theorem SrcType.HoldsAt.mono {places places' : List Addressed} (sub : ∀ x ∈ 
   | _, _, _, _, .char h => .char h
   | _, _, _, _, .float h => .float h
   | _, _, _, _, .sint h => .sint h
+  | _, _, _, _, .view len h => .view len h
 
 theorem FieldsHold.mono {places places' : List Addressed} (sub : ∀ x ∈ places, x ∈ places') :
     ∀ {fs : List SrcType} {vs : List Value} {env : Env} {slot : Nat},

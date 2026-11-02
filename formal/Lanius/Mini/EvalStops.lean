@@ -1500,6 +1500,7 @@ theorem eff_match (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls
   | char => cases values <;> simp [matchVariants, evalArms] at armsOk
   | float => cases values <;> simp [matchVariants, evalArms] at armsOk
   | sint => cases values <;> simp [matchVariants, evalArms] at armsOk
+  | view => cases values <;> simp [matchVariants, evalArms] at armsOk
 
 /-- A conditional: the condition's code stops, or its value picks the arm
 Core runs, and that arm's code stops. -/
@@ -1791,7 +1792,7 @@ theorem stops_letEval (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.d
           have limit := exec1.limit_normal
           obtain ⟨d2, stops⟩ := let_stops ih bodyOk corr1 fr fresh1 (Nat.le_trans le keeps1.next) sized
             (fun _ _ _ _ => rfl) holds1 hc1 fc1 under (by rw [limit]; exact bound1)
-            (by rw [limit]; exact fails.letBody run1)
+            (by rw [limit]; exact fails.letBody run1) (by first | exact SrcType.same_nv same | exact SrcType.same_nv_left same)
           exact ⟨_, Stops.after exec1 stops⟩
       · obtain ⟨d, stops⟩ := arrayCall_stops lowered returns prev valueOk corr fr fresh hc fc within
           (fails.letInit done)
@@ -1805,6 +1806,7 @@ theorem stops_letEval (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.d
   have limit := exec1.limit_normal
   obtain ⟨d2, stops⟩ := let_stops ih bodyOk (corr.keeps fresh keeps1 locals1) fr fresh1 (Nat.le_trans le keeps1.next)
     sized (fr.agree same1) holds1 hc1 fc1 under (by rw [limit]; exact bound1) (by rw [limit]; exact fails.letBody valueRun)
+    (by first | exact SrcType.same_nv same | exact SrcType.same_nv_left same)
   exact ⟨_, Stops.after exec1 stops⟩
 
 theorem stops_setEval (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {id : Nat}
@@ -1820,6 +1822,7 @@ theorem stops_setEval (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.d
   simp only [evalSame] at ok
   split at ok
   case isFalse => simp at ok
+  rename_i same
   simp only [Option.some.injEq] at ok
   subst ok
   simp only [SrcStmt.toCore] at fails
@@ -1829,7 +1832,8 @@ theorem stops_setEval (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.d
   · exact ⟨d, .seqFirst stops⟩
   obtain ⟨v2, entry2, _⟩ := (corr.keeps fresh keeps2 locals2).values b (lookup_mem found).1
   exact (fails.assign_done corr found valueRun fresh2.2
-    (fun v vm => (corr.keeps fresh keeps2 locals2).unviewed v vm b (lookup_mem found).1) (by rw [entry2]; rfl) bound).elim
+    (fun v vm => (corr.keeps fresh keeps2 locals2).unviewed v vm b (lookup_mem found).1 (by first | exact SrcType.same_nv same | exact SrcType.same_nv_left same)) (by rw [entry2]; rfl)
+    bound).elim
 
 theorem stops_setFieldEval (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     {id index : Nat} {value : SrcEff} (ihe : EffStops sp mp n value) :
@@ -1856,6 +1860,7 @@ theorem stops_setFieldEval (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs)
   case h_11 => simp at ok
   case h_12 => simp at ok
   case h_13 => simp at ok
+  case h_14 => simp at ok
   rename_i sid types hty
   simp only [setFieldEvalAt] at ok
   split at ok
@@ -1881,9 +1886,9 @@ theorem stops_setFieldEval (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs)
   · exact ⟨d, .seqFirst stops⟩
   have entry2 : st2.cellEntry? (frame b.slot) = some ⟨frame b.slot, some (.structure sid vs)⟩ := by
     rw [keeps2.cells _ (corr.below fresh b bmem) (fun x xm => corr.apart x xm b bmem)
-      fun v vm => corr.unviewed v vm b bmem]; exact entry
+      fun v vm => corr.unviewed v vm b bmem (by rw [hty]; rfl)]; exact entry
   obtain ⟨k', st3, run, heap⟩ := field_assign_progress_eff corr found entry got valueRun fresh2.2
-    (keeps2.unrooted (corr.below fresh b bmem) fun w wm => corr.unviewed w wm b bmem) entry2
+    (keeps2.unrooted (corr.below fresh b bmem) fun w wm => corr.unviewed w wm b bmem (by rw [hty]; rfl)) entry2
   exact (fails.not_done (k := k' + 1) (c := .next) (st' := st3) (by simp only [execStmt, run])
     (by rw [heap]; exact bound)).elim
 
@@ -2346,9 +2351,9 @@ theorem stops_setIndexEval_array (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.
   · exact ⟨_, Stops.after exec1 (Stops.check fun _ => .seqFirst stops)⟩
   · have entry2 : st2.cellEntry? (frame b.slot) = some ⟨frame b.slot, some (.array vs)⟩ := by
       rw [(keeps1.chain keeps2).cells _ (corr.below fresh b bmem) (fun x xm => corr.apart x xm b bmem)
-        fun v vm => corr.unviewed v vm b bmem]; exact entry
+        fun v vm => corr.unviewed v vm b bmem (by rw [bty]; rfl)]; exact entry
     have run := arraySet_done fresh2.2
-      ((keeps1.chain keeps2).unrooted (corr.below fresh b bmem) fun w wm => corr.unviewed w wm b bmem) (placeAt (k + j)) (value_after indexRun (by omega)) posOk lt
+      ((keeps1.chain keeps2).unrooted (corr.below fresh b bmem) fun w wm => corr.unviewed w wm b bmem (by rw [bty]; rfl)) (placeAt (k + j)) (value_after indexRun (by omega)) posOk lt
       (value_after valueRun (by omega)) entry2
     exact (efails1.not_done run bound2).elim
 
@@ -2559,6 +2564,7 @@ theorem stmtStops_succ {sp : SrcProgram} {mp : Program} {n : Nat}
   | .nop => stops_nop
   | .let _ _ _ body => stops_let (stmtStops_succ lowered returns prev body)
   | .letStruct _ _ _ body => stops_letStruct (stmtStops_succ lowered returns prev body)
+  | .letView _ _ _ _ body => stops_letView (stmtStops_succ lowered returns prev body)
   | .letCall _ _ _ _ body => stops_letCall lowered returns prev (stmtStops_succ lowered returns prev body)
   | .letEnum _ _ _ _ body => stops_letEnum (stmtStops_succ lowered returns prev body)
   | .letMatch _ _ _ _ _ body => stops_letMatch (stmtStops_succ lowered returns prev body)

@@ -83,7 +83,7 @@ def divisorOk : SrcEff → Bool
 def armsFull : SrcType → List (List Nat) → Bool
   | .enum _ variants, binders => variants.length == binders.length
   | .i32, _ | .bool, _ | .uint _, _ | .struct _ _, _ | .ptr, _ | .slice _, _ | .unit, _ | .isize, _
-  | .char, _ | .float _, _ | .sint _, _ | .array _ _, _ => false
+  | .char, _ | .float _, _ | .sint _, _ | .array _ _, _ | .view _, _ => false
 
 section
 variable (bad : List Nat)
@@ -129,7 +129,7 @@ def liveStmt (ret : SrcType) : SrcStmt → Bool
   | .returnUnit => decide (ret.toCore = .unit)
   | .set _ value => liveExpr value
   | .setEval _ value => liveEff bad value
-  | .letMatch _ _ _ _ _ _ | .setField _ _ _ | .setCall _ _ _ | .while _ _ | .letAlloc _ _ _ _
+  | .letMatch _ _ _ _ _ _ | .setField _ _ _ | .setCall _ _ _ | .while _ _ | .letAlloc _ _ _ _ | .letView _ _ _ _ _
   | .letLoad _ _ _ _ | .setByte _ _ _ | .free _ _ _ | .letSlice _ _ _ _ _ | .letIndex _ _ _ _ _
   | .setIndex _ _ _ | .whileEval _ _ | .setIndexEval _ _ _ | .setFieldEval _ _ _
   | .assert _ | .break | .continue | .matchArm _ _ _ _ _ _ _ _ | .unreachable _ _ => false
@@ -205,6 +205,7 @@ theorem binary_live {op : SrcOp} {tl tr t : SrcType} {lv rv : Value}
       | float => exact hl.elim
       | sint => exact hl.elim
       | array => exact hl.elim
+      | view => exact hl.elim
     · have num : numTy tr = true := by rcases cmp with e | e | e <;> simp_all
       have notEq : op ≠ .equal := fun e => eq (.inl e)
       have notNe : op ≠ .notEqual := fun e => eq (.inr e)
@@ -240,6 +241,7 @@ theorem binary_live {op : SrcOp} {tl tr t : SrcType} {lv rv : Value}
       | float => exact hl.elim
       | sint => exact hl.elim
       | array => exact hl.elim
+      | view => exact hl.elim
 
 theorem PTys.get {boxes : Boxes} : ∀ {ts : List SrcType} {vs : List Value}, PTys boxes ts vs →
     ∀ {i : Nat} {t : SrcType}, ts[i]? = some t → ∃ v, vs[i]? = some v ∧ PTy boxes t v
@@ -747,7 +749,7 @@ theorem structTy_some {boxes : Boxes} {ty t : SrcType} {ts : List SrcType} (h : 
       simp only [Option.some.injEq] at h
       exact ⟨id, fs, rfl, h.symm, ok.1, typesSame_eq _ ok.2⟩
     · simp at h
-  | i32 | bool | uint _ | enum _ _ | ptr | slice _ | unit | isize | char | float _ | sint _ | array _ _ =>
+  | i32 | bool | uint _ | enum _ _ | ptr | slice _ | unit | isize | char | float _ | sint _ | array _ _ | view =>
     simp [structTy] at h
 
 theorem variantTy_some {ty t : SrcType} {k : Nat} {ts : List SrcType} (h : variantTy ty k ts = some t) :
@@ -763,7 +765,7 @@ theorem variantTy_some {ty t : SrcType} {k : Nat} {ts : List SrcType} (h : varia
         exact ⟨id, variants, fs, rfl, h.symm, hfs, typesSame_eq _ same⟩
       · simp at h
     · simp at h
-  | i32 | bool | uint _ | struct _ _ | ptr | slice _ | unit | isize | char | float _ | sint _ | array _ _ =>
+  | i32 | bool | uint _ | struct _ _ | ptr | slice _ | unit | isize | char | float _ | sint _ | array _ _ | view =>
     simp [variantTy] at h
 
 theorem PTy.enum_inv {boxes : Boxes} {id : Nat} {variants : List (List SrcType)} {v : Value}
@@ -1077,7 +1079,7 @@ theorem unit_pty {boxes : Boxes} {ret : SrcType} (h : ret.toCore = .unit) : PTy 
   cases ret with
   | unit => exact .scalar rfl
   | i32 | bool | uint _ | struct _ _ | enum _ _ | ptr | slice _ | array _ _ | isize | char | float _
-  | sint _ => simp [SrcType.toCore] at h
+  | sint _ | view _ => simp [SrcType.toCore] at h
 
 section
 variable {sp : SrcProgram} {prims : Prims} {T : TermInfo} {me : TermAnn} {B : Nat} {outside bad : List Nat}
@@ -1285,7 +1287,7 @@ theorem stmt_live {ret : SrcType} :
         exact EvSome.const (a := .next E') (fun m => by simp only [hE', Option.map_some]) (hE.set hg rv hE')
   | «while» _ _ | whileEval _ _ | «break» | «continue» =>
     intro A W E tenv _ _ _ _ _ hl; simp [liveStmt] at hl
-  | letMatch _ _ _ _ _ _ | setField _ _ _ | setCall _ _ _ | letAlloc _ _ _ _
+  | letMatch _ _ _ _ _ _ | setField _ _ _ | setCall _ _ _ | letAlloc _ _ _ _ | letView _ _ _ _ _
   | letLoad _ _ _ _ | setByte _ _ _ | free _ _ _ | letSlice _ _ _ _ _ | letIndex _ _ _ _ _
   | setIndex _ _ _ | setIndexEval _ _ _ | setFieldEval _ _ _
   | matchArm _ _ _ _ _ _ _ _ | unreachable _ _ =>

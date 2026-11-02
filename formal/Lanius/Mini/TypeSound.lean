@@ -197,6 +197,8 @@ inductive TypeDeclared (P : Core.Program) : SrcType → Prop where
   | char : TypeDeclared P .char
   | float (ft : FloatTy) : TypeDeclared P (.float ft)
   | sint (kind : UintTy) : TypeDeclared P (.sint kind)
+  /-- A viewed array's Core type, `[i32; length]`, needs no declaration. -/
+  | view (length : Nat) : TypeDeclared P (.view length)
 
 /-- The types a statement's bindings name are declared. -/
 def SrcStmt.Declared (P : Core.Program) (s : SrcStmt) : Prop :=
@@ -237,6 +239,7 @@ def SrcStmt.Declared (P : Core.Program) (s : SrcStmt) : Prop :=
   | .continue => True
   | .matchArm _ _ _ _ _ ty body rest => TypeDeclared P ty ∧ SrcStmt.Declared P body ∧ SrcStmt.Declared P rest
   | .unreachable _ ty => TypeDeclared P ty
+  | .letView _ _ _ _ body => SrcStmt.Declared P body
 
 /-- Every parameter type and binding type of every function is declared. -/
 def SrcProgram.Declared (P : Core.Program) (sp : SrcProgram) : Prop :=
@@ -286,6 +289,7 @@ theorem returns_sound : ∀ (s : SrcStmt), s.returns = true → Typing.Definitel
   | .break, h => by simp [SrcStmt.returns] at h
   | .continue, h => by simp [SrcStmt.returns] at h
   | .unreachable _ _, _ => .letUninitialized .returnValue
+  | .letView _ _ _ _ body, h => .letLocal (.letLocal (returns_sound body h))
   | .matchArm _ _ _ _ _ ty body rest, h => by
     simp only [SrcStmt.returns, Bool.and_eq_true] at h
     simp only [SrcStmt.toCore]
@@ -362,6 +366,7 @@ theorem same_toCore : ∀ {a b : SrcType}, a.same b = true → a.toCore = b.toCo
   | .sint k, b, h => by
     have := SrcType.eq_of_isSint (ty := b) (k := k) (by simpa [SrcType.same] using h)
     subst this; rfl
+  | .view n, b, h => by cases b <;> simp [SrcType.same] at h
 
 /-- An integer type of the front pass. -/
 inductive IsInt : SrcType → Prop where
@@ -409,6 +414,7 @@ theorem equalityTy {ty : SrcType} (scalar : ty.isScalar = true) : Typing.Equalit
   | char => exact .character
   | float ft => cases ft <;> first | exact .f32 | exact .f64
   | sint => exact .signed _
+  | view => simp [SrcType.isScalar] at scalar
 
 theorem floatArithTy (ft : FloatTy) : Typing.ArithmeticTy (SrcType.float ft).toCore := by
   cases ft <;> first | exact .f32 | exact .f64
@@ -565,6 +571,7 @@ theorem shiftTy_of {ty : SrcType} (int : ty.isInteger = true) : Typing.ShiftTy t
   | ptr => simp [SrcType.isInteger] at int
   | slice => simp [SrcType.isInteger] at int
   | array => simp [SrcType.isInteger] at int
+  | view => simp [SrcType.isInteger] at int
 
 /-- A shift by an amount of any integer type keeps its left operand's type. -/
 theorem lowerShift_typed {op : BinOp} {cop : Core.BinaryOp} {l r t : Typed}
@@ -978,6 +985,7 @@ theorem SrcExpr.lower_typed {P : Core.Program} (target : P.target = Core.Target.
         refine ⟨castToFloat_typed inner h, ?_⟩
         rw [castToFloat_ty h]
         rfl
+      | view => simp [castTo] at h
 
 theorem lowerAs_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
     {scope : List Binding} {ctx : Typing.Context} (ok : ScopeOk P ctx scope) {e : SrcExpr}
@@ -1141,6 +1149,7 @@ theorem lowerLiteral_typed {P : Core.Program} (target : P.target = Core.Target.x
   | char => simp [lowerLiteral] at h
   | float => simp [lowerLiteral] at h
   | sint => simp [lowerLiteral] at h
+  | view => simp [lowerLiteral] at h
 
 theorem lowerEnumValue_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
     {scope : List Binding} {ctx : Typing.Context} (ok : ScopeOk P ctx scope) {ty : SrcType}
@@ -1174,6 +1183,7 @@ theorem lowerEnumValue_typed {P : Core.Program} (target : P.target = Core.Target
   | char => simp [lowerEnumValue] at h
   | float => simp [lowerEnumValue] at h
   | sint => simp [lowerEnumValue] at h
+  | view => simp [lowerEnumValue] at h
 
 /-! ## Match -/
 
@@ -1260,7 +1270,7 @@ theorem lowerMatch_typed {P : Core.Program} (target : P.target = Core.Target.x86
       split at h
       · rename_i cond
         simp only [Bool.and_eq_true, decide_eq_true_eq] at cond
-        obtain ⟨⟨⟨same, _⟩, _⟩, _⟩ := cond
+        obtain ⟨⟨⟨⟨same, _⟩, _⟩, _⟩, _⟩ := cond
         subst same
         obtain ⟨inCtx, declared⟩ := ok scrutinee b found
         rw [hty] at inCtx declared
@@ -1268,6 +1278,7 @@ theorem lowerMatch_typed {P : Core.Program} (target : P.target = Core.Target.x86
         exact .matchValue (.local inCtx)
           (lowerArms_typed target ok decl 0 variants arms (fun j fs hj => by simp [hj]) inner h)
       · simp at h
+    · simp at h
     · simp at h
     · simp at h
     · simp at h
@@ -1460,6 +1471,7 @@ theorem castTo_typed {P : Core.Program} {ctx : Typing.Context} {ce : Core.Expr} 
   | char => simp [castTo] at h
   | float ft => exact castToFloat_typed inner h
   | unit => simp [castTo] at h
+  | view => simp [castTo] at h
 
 /-- An element read of a word struct or enum slice has the element's type. -/
 theorem evalWordElement_ty {decls : SrcDecls} {b : Binding} {element : SrcType} {slot : Nat}
@@ -1855,6 +1867,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
       | char => simp at h
       | float => simp at h
       | sint => simp at h
+      | view => simp at h
   | .eVariant ty variant payload, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalVariant] at h
     split at h
@@ -1890,6 +1903,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
       | char => simp at h
       | float => simp at h
       | sint => simp at h
+      | view => simp at h
   | .eMatch scrutinee ety ty binders values, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalMatch] at h
     split at h
@@ -1926,6 +1940,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
           | char => cases values <;> simp [matchVariants, evalArms] at ha
           | float => cases values <;> simp [matchVariants, evalArms] at ha
           | sint => cases values <;> simp [matchVariants, evalArms] at ha
+          | view => cases values <;> simp [matchVariants, evalArms] at ha
         · simp at h
   | .eDivide op left right, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalDivision] at h
@@ -2832,6 +2847,14 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
     simp only [SrcStmt.toCore]
     rw [same_toCore same]
     exact .letUninitialized (.returnValue (.local (by simp [Typing.Context.bind])))
+  | .letView id length fields pointer body, scope, ctx, next, inLoop, out, ok, d, bo, h => by
+    simp only [SrcStmt.Declared] at d
+    obtain ⟨vs, bstmt, -, -, hvs, hb, -⟩ := letView_lower_inv h
+    simp only [SrcStmt.toCore]
+    exact .letLocal (lowerLiteral_typed target ok (.array .i32) hvs)
+      (.letLocal (.i32ArrayDataPtr (.local (by simp [Typing.Context.bind]; rfl)))
+        (SrcStmt.lower_typed target sigsOk body ((ok.cons (TypeDeclared.view length)).cons TypeDeclared.ptr) d
+          (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb))
   | .assert condition, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.lower, lowerAssert] at h
     split at h
@@ -3476,6 +3499,10 @@ theorem SrcStmt.declare_sound : ∀ (s : SrcStmt) {d d' : SrcDecls}, s.declare d
     simp only [SrcStmt.declare] at h
     obtain ⟨ext, head⟩ := SrcType.declare_sound ty h
     exact ⟨ext, fun extD agrees => head extD agrees⟩
+  | .letView _ _ _ _ body, d, d', h => by
+    simp only [SrcStmt.declare] at h
+    obtain ⟨ext, rest⟩ := SrcStmt.declare_sound body h
+    exact ⟨ext, fun extD agrees => by simp only [SrcStmt.Declared]; exact rest extD agrees⟩
 
 theorem declareParams_sound : ∀ (params : List SrcParam) {d d' : SrcDecls},
     declareParams params d = some d' →

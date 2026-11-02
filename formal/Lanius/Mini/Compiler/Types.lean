@@ -288,6 +288,8 @@ inductive SrcType where
   | float : FloatTy → SrcType
   /-- the signed integer type as wide as kind (i8, i16, i32, i64, isize). A narrow one sits in its slot as an i32 does, its value's 32-bit two's complement zero-extended; a 64-bit one as an isize does. -/
   | sint : UintTy → SrcType
+  /-- an [i32; length] local the program viewed (LetView): Core keeps its elements in a heap block too, so the verified compiler keeps them only there, and no use of the local by name is lowered. No program names this type (declare rejects it). -/
+  | view : Nat → SrcType
   deriving Repr
 
 inductive SrcOp where
@@ -431,6 +433,8 @@ inductive SrcStmt where
   | matchArm : Nat → Nat → Nat → Bool → Nat → SrcType → SrcStmt → SrcStmt → SrcStmt
   /-- Unreachable(id, ty): Core binds id, uninitialized, at type ty and returns it, so it traps; ty is the function's result type. -/
   | unreachable : Nat → SrcType → SrcStmt
+  /-- LetView(id, length, elements, pointer, body): let id: [i32; length] = [elements]; let pointer: ptr = core::mem::i32_array_data_ptr(id); then body. Core maps the array into a fresh heap block (its view), which pointer addresses; the verified compiler stores the elements there and the body sees id as a View. -/
+  | letView : Nat → Nat → (List SrcExpr) → Nat → SrcStmt → SrcStmt
   deriving Repr
 
 structure SrcParam where

@@ -334,7 +334,7 @@ theorem mstmt_agree (call : Calls) (fuel : Nat) :
     simp only [Out.env?, Option.some.injEq] at he
     subst he
     exact Agree.refl _ _
-  | letMatch | setField | setCall | letAlloc | letLoad | setByte | free | letSlice | letIndex
+  | letMatch | setField | setCall | letAlloc | letView | letLoad | setByte | free | letSlice | letIndex
   | setIndex | setIndexEval | setFieldEval | matchArm | unreachable =>
     intro env o h; simp [mstmt] at h
 
@@ -532,7 +532,7 @@ theorem mstmt_unwritten (call : Calls) (fuel : Nat) :
     simp only [Out.env?, Option.some.injEq] at he
     subst he
     rfl
-  | letMatch | setField | setCall | letAlloc | letLoad | setByte | free | letSlice | letIndex
+  | letMatch | setField | setCall | letAlloc | letView | letLoad | setByte | free | letSlice | letIndex
   | setIndex | setIndexEval | setFieldEval | matchArm | unreachable =>
     intro env o h; simp [mstmt] at h
 

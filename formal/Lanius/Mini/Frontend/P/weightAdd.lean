@@ -44,6 +44,7 @@ def srcWeight (t : SrcType) : Option Nat :=
   | .char => some 1
   | .float ft => some 1
   | .sint sk => some 1
+  | .view viewLength => some 1
 def srcWeights (ts : List SrcType) : Option Nat :=
   match ts with
   | [] => some 0

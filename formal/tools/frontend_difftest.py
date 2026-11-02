@@ -1187,6 +1187,7 @@ partial def serType : SrcType → String
   | .enum n vs => s!"(.enum {n} {bracket (vs.map fun v => bracket (v.map serType))})"
   | .slice t => s!"(.slice {serType t})"
   | .array t n => s!"(.array {serType t} {n})"
+  | .view n => s!"(.view {n})"
   | .unit => ".unit"
   | .isize => ".isize"
   | .char => ".char"
@@ -1251,6 +1252,7 @@ partial def serStmt : SrcStmt → String
   | .while e b => s!"(.while {serExpr e} {serStmt b})"
   | .return e => s!"(.return {serExpr e})"
   | .letAlloc n size shift r => s!"(.letAlloc {n} {serExpr size} {shift} {serStmt r})"
+  | .letView n len es p r => s!"(.letView {n} {len} {serExprs es} {p} {serStmt r})"
   | .letLoad n p o r => s!"(.letLoad {n} {serExpr p} {serExpr o} {serStmt r})"
   | .setByte p o v => s!"(.setByte {serExpr p} {serExpr o} {serExpr v})"
   | .free p size shift => s!"(.free {serExpr p} {serExpr size} {shift})"
@@ -1368,6 +1370,7 @@ partial def bindersOf : SrcStmt → List Nat
   | .let n _ _ r | .letStruct n _ _ r | .letCall n _ _ _ r | .letEnum n _ _ _ r => n :: bindersOf r
   | .letMatch n _ _ _ arms r => n :: arms.flatMap (·.binders) ++ bindersOf r
   | .letAlloc n _ _ r | .letLoad n _ _ r | .letSlice n _ _ _ r | .letIndex n _ _ _ r => n :: bindersOf r
+  | .letView n _ _ p r => n :: p :: bindersOf r
   | .then a b | .if _ a b => bindersOf a ++ bindersOf b
   | .while _ b => bindersOf b
   | .letEval n _ x r => n :: effBinders x ++ bindersOf r
@@ -1422,6 +1425,7 @@ partial def renStmt (f : Nat → Nat) : SrcStmt → SrcStmt
   | .while e b => .while (renExpr f e) (renStmt f b)
   | .return e => .return (renExpr f e)
   | .letAlloc n s k r => .letAlloc (f n) (renExpr f s) k (renStmt f r)
+  | .letView n len es p r => .letView (f n) len (es.map (renExpr f)) (f p) (renStmt f r)
   | .letLoad n p o r => .letLoad (f n) (renExpr f p) (renExpr f o) (renStmt f r)
   | .setByte p o v => .setByte (renExpr f p) (renExpr f o) (renExpr f v)
   | .free p s k => .free (renExpr f p) (renExpr f s) k

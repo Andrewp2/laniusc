@@ -18,6 +18,24 @@ def lowerTagged (scope : List Binding) (variants : List (List SrcType)) (variant
   else
     none
 
+/-- A viewed array (LetView's binding): no value of the language has the type. -/
+def viewedType (ty : SrcType) : Bool :=
+  match ty with
+  | .i32 => false
+  | .bool => false
+  | .uint kind => false
+  | .struct id fields => false
+  | .enum id variants => false
+  | .ptr => false
+  | .slice element => false
+  | .array arrayElement arrayLength => false
+  | .unit => false
+  | .isize => false
+  | .char => false
+  | .float ft => false
+  | .sint sk => false
+  | .view viewLength => true
+
 /-- An enum value: its tag, then the variant's payload. Slots past the payload are left as they are. -/
 def lowerEnumValue (scope : List Binding) (ty : SrcType) (variant : Nat) (payload : List SrcExpr) : Option (List Expr) :=
   match ty with
@@ -34,5 +52,6 @@ def lowerEnumValue (scope : List Binding) (ty : SrcType) (variant : Nat) (payloa
   | .char => none
   | .float ft => none
   | .sint sk => none
+  | .view viewLength => none
 
 end Lanius.Mini

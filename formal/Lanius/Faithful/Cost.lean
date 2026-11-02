@@ -127,6 +127,7 @@ def qstmt (fuel : Nat) (env : Env) : SrcStmt → Option (Out × Nat)
       qloop (fun e => qfree ((pexpr e condition).bind asBool)) (fun e => qstmt fuel e body) fuel env
   | .return value => qfree ((pexpr env value).map fun v => .ret (some v))
   | .letAlloc _ _ _ _ => none
+  | .letView _ _ _ _ _ => none
   | .letLoad _ _ _ _ => none
   | .setByte _ _ _ => none
   | .free _ _ _ => none
@@ -392,7 +393,7 @@ theorem mstmt_eq (hc : ∀ c vs, call c vs = (qc c vs).map Prod.fst) (fuel : Nat
     rw [mstmt, qstmt]
     exact qloop_eq (fun e => fst_qthen (peff_eq hc e condition) fun _ => fst_qfree _) ih fuel env
   | «break» | «continue» => intro env; rfl
-  | letMatch _ _ _ _ _ _ | setField _ _ _ | setCall _ _ _ | letAlloc _ _ _ _
+  | letMatch _ _ _ _ _ _ | setField _ _ _ | setCall _ _ _ | letAlloc _ _ _ _ | letView _ _ _ _ _
   | letLoad _ _ _ _ | setByte _ _ _ | free _ _ _ | letSlice _ _ _ _ _ | letIndex _ _ _ _ _
   | setIndex _ _ _ | setIndexEval _ _ _ | setFieldEval _ _ _
   | matchArm _ _ _ _ _ _ _ _ | unreachable _ _ => intro env; rfl

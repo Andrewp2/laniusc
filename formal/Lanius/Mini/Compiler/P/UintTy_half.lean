@@ -77,6 +77,7 @@ def SrcType.isI32 (self : SrcType) : Bool :=
   | .char => false
   | .float ft => false
   | .sint sk => false
+  | .view viewLength => false
 
 def SrcType.isBool (self : SrcType) : Bool :=
   match self with
@@ -93,6 +94,7 @@ def SrcType.isBool (self : SrcType) : Bool :=
   | .char => false
   | .float ft => false
   | .sint sk => false
+  | .view viewLength => false
 
 def SrcType.isScalar (self : SrcType) : Bool :=
   match self with
@@ -109,6 +111,7 @@ def SrcType.isScalar (self : SrcType) : Bool :=
   | .char => true
   | .float ft => true
   | .sint kind => true
+  | .view viewLength => false
 
 def SrcType.isUint (self : SrcType) (kind : UintTy) : Bool :=
   match self with
@@ -125,6 +128,7 @@ def SrcType.isUint (self : SrcType) (kind : UintTy) : Bool :=
   | .char => false
   | .float ft => false
   | .sint sk => false
+  | .view viewLength => false
 
 def SrcType.isPtr (self : SrcType) : Bool :=
   match self with
@@ -141,6 +145,7 @@ def SrcType.isPtr (self : SrcType) : Bool :=
   | .char => false
   | .float ft => false
   | .sint sk => false
+  | .view viewLength => false
 
 def SrcType.isUnit (self : SrcType) : Bool :=
   match self with
@@ -157,6 +162,7 @@ def SrcType.isUnit (self : SrcType) : Bool :=
   | .char => false
   | .float ft => false
   | .sint sk => false
+  | .view viewLength => false
 
 def SrcType.isIsize (self : SrcType) : Bool :=
   match self with
@@ -173,6 +179,7 @@ def SrcType.isIsize (self : SrcType) : Bool :=
   | .char => false
   | .float ft => false
   | .sint kind => false
+  | .view viewLength => false
 
 def SrcType.isChar (self : SrcType) : Bool :=
   match self with
@@ -189,6 +196,7 @@ def SrcType.isChar (self : SrcType) : Bool :=
   | .char => true
   | .float ft => false
   | .sint kind => false
+  | .view viewLength => false
 
 def SrcType.isFloat (self : SrcType) (t : FloatTy) : Bool :=
   match self with
@@ -205,6 +213,7 @@ def SrcType.isFloat (self : SrcType) (t : FloatTy) : Bool :=
   | .char => false
   | .float ft => decide (FloatTy.number ft = FloatTy.number t)
   | .sint kind => false
+  | .view viewLength => false
 
 def SrcType.floatTy (self : SrcType) : Option FloatTy :=
   match self with
@@ -221,6 +230,7 @@ def SrcType.floatTy (self : SrcType) : Option FloatTy :=
   | .char => none
   | .float ft => some ft
   | .sint kind => none
+  | .view viewLength => none
 
 def SrcType.isFloatAny (self : SrcType) : Bool :=
   match self with
@@ -237,6 +247,7 @@ def SrcType.isFloatAny (self : SrcType) : Bool :=
   | .char => false
   | .float ft => true
   | .sint kind => false
+  | .view viewLength => false
 
 /-- An integer type: a shift takes an amount of any of them. -/
 def SrcType.isInteger (self : SrcType) : Bool :=
@@ -254,6 +265,7 @@ def SrcType.isInteger (self : SrcType) : Bool :=
   | .char => false
   | .float ft => false
   | .sint kind => true
+  | .view viewLength => false
 
 def SrcType.isSintAny (self : SrcType) : Bool :=
   match self with
@@ -270,6 +282,7 @@ def SrcType.isSintAny (self : SrcType) : Bool :=
   | .char => false
   | .float ft => false
   | .sint kind => true
+  | .view viewLength => false
 
 def SrcType.isSint (self : SrcType) (kind : UintTy) : Bool :=
   match self with
@@ -286,6 +299,7 @@ def SrcType.isSint (self : SrcType) (kind : UintTy) : Bool :=
   | .char => false
   | .float ft => false
   | .sint other => decide (UintTy.code other = UintTy.code kind)
+  | .view viewLength => false
 
 /-- The width of the signed type this is, if it is one of Sint. -/
 def SrcType.sintKind (self : SrcType) : Option UintTy :=
@@ -303,6 +317,7 @@ def SrcType.sintKind (self : SrcType) : Option UintTy :=
   | .char => none
   | .float ft => none
   | .sint kind => some kind
+  | .view viewLength => none
 
 /-- The unsigned type this is, if it is one. -/
 def SrcType.uintKind (self : SrcType) : Option UintTy :=
@@ -320,6 +335,7 @@ def SrcType.uintKind (self : SrcType) : Option UintTy :=
   | .char => none
   | .float ft => none
   | .sint sk => none
+  | .view viewLength => none
 
 /-- How a comparison of two values of this type reads their slots. -/
 def SrcType.word (self : SrcType) : Word :=
@@ -337,6 +353,7 @@ def SrcType.word (self : SrcType) : Word :=
   | .char => Word.u64
   | .float ft => Word.u64
   | .sint kind => UintTy.signedWord kind
+  | .view viewLength => Word.u64
 
 mutual
 def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
@@ -358,7 +375,8 @@ def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
      | .isize => false
      | .char => false
      | .float ft => false
-     | .sint otherSk => false)
+     | .sint otherSk => false
+     | .view otherLength => false)
   | .enum id variants =>
     (match other with
      | .i32 => false
@@ -373,7 +391,8 @@ def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
      | .isize => false
      | .char => false
      | .float ft => false
-     | .sint otherSk => false)
+     | .sint otherSk => false
+     | .view otherLength => false)
   | .ptr => SrcType.isPtr other
   | .slice element =>
     (match other with
@@ -389,7 +408,8 @@ def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
      | .isize => false
      | .char => false
      | .float ft => false
-     | .sint otherSk => false)
+     | .sint otherSk => false
+     | .view otherLength => false)
   | .array arrayElement arrayLength =>
     (match other with
      | .i32 => false
@@ -404,12 +424,29 @@ def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
      | .isize => false
      | .char => false
      | .float ft => false
-     | .sint otherSk => false)
+     | .sint otherSk => false
+     | .view otherLength => false)
   | .unit => SrcType.isUnit other
   | .isize => SrcType.isIsize other
   | .char => SrcType.isChar other
   | .float ft => SrcType.isFloat other ft
   | .sint kind => SrcType.isSint other kind
+  | .view viewLength =>
+    match other with
+    | .i32 => false
+    | .bool => false
+    | .uint otherKind => false
+    | .struct otherId otherFields => false
+    | .enum otherId otherVariants => false
+    | .ptr => false
+    | .slice otherElement => false
+    | .array otherElement otherLength => false
+    | .unit => false
+    | .isize => false
+    | .char => false
+    | .float ft => false
+    | .sint otherSk => false
+    | .view otherLength => false
 def typesSame (types : List SrcType) (others : List SrcType) : Bool :=
   match types with
   | [] =>

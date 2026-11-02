@@ -68,6 +68,10 @@ abbrev Stmt_lower_unreachable (prog : SrcProgram) (prims : Prims) (ix n : Nat) :
   ∀ {x0 : Bool} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → RepNat x1 v1 →
     (RepOption 134 RepStmt) (Lanius.Mini.lowerUnreachable x0 x1) w
 
+abbrev Stmt_lower_view (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Nat} {x2 : Option (List Lanius.Mini.Expr)} {x3 : Option Lanius.Mini.Stmt} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepNat x1 v1 → (RepOption 150 (RepList 92 RepExpr)) x2 v2 → (RepOption 134 RepStmt) x3 v3 →
+    (RepOption 134 RepStmt) (Lanius.Mini.lowerView x0 x1 x2 x3) w
+
 abbrev Stmt_packed_width (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcType x0 v0 →
     RepNat (Lanius.Mini.packedWidth x0) w
@@ -83,5 +87,9 @@ abbrev Stmt_set_field_eval_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) :
 abbrev Stmt_store_array (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Binding} {x1 : Nat} {x2 : Option Lanius.Mini.Evaluated} {x3 : Option Lanius.Mini.Evaluated} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepBinding x0 v0 → RepNat x1 v1 → (RepOption 156 RepEvaluated) x2 v2 → (RepOption 156 RepEvaluated) x3 v3 →
     (RepOption 134 RepStmt) (Lanius.Mini.storeArray x0 x1 x2 x3) w
+
+abbrev Stmt_view_stores (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Nat} {x2 : Nat} {x3 : Nat} {x4 : Lanius.Mini.Stmt} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepNat x3 v3 → RepStmt x4 v4 →
+    RepStmt (Lanius.Mini.viewStores x0 x1 x2 x3 x4) w
 
 end Lanius.Faithful.SelfCert

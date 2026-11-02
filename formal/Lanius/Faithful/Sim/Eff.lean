@@ -144,6 +144,7 @@ theorem structTy_some {boxes : Boxes} {ty t : SrcType} {ts : List SrcType} (h : 
   | float => simp [structTy] at h
   | sint => simp [structTy] at h
   | array => simp [structTy] at h
+  | view => simp [structTy] at h
 
 theorem variantTy_some {ty t : SrcType} {k : Nat} {ts : List SrcType} (h : variantTy ty k ts = some t) :
     ∃ id variants, ty = .enum id variants ∧ variants[k]? = some ts ∧ t = ty := by
@@ -171,9 +172,10 @@ theorem variantTy_some {ty t : SrcType} {k : Nat} {ts : List SrcType} (h : varia
   | float => simp [variantTy] at h
   | sint => simp [variantTy] at h
   | array => simp [variantTy] at h
+  | view => simp [variantTy] at h
 
 /-- A state between two that grow is below the later one's cursor. -/
-theorem Grows.bound {a b c : State} (first : Grows a b) (second : Grows b c) (_views : a.i32ArrayViews = [])
+theorem Grows.bound {a b c : State} (first : Grows a b) (second : Grows b c)
     (bound : c.heap.nextAddress ≤ 2 ^ 64) : b.heap.nextAddress ≤ 2 ^ 64 :=
   Nat.le_trans second.next bound
 
@@ -206,7 +208,7 @@ theorem effs_step (eff : EffOk sp prims outside N k) (effs : EffsOk sp prims out
     obtain rfl : j = k := by omega
     simp only [effTys, Option.bind_eq_some_iff, Option.map_eq_some_iff] at ht
     obtain ⟨t, het, ts', hts, rfl⟩ := ht
-    have b1 := Grows.bound (effGrows erun) (effsGrows esrun) inv.views bound
+    have b1 := Grows.bound (effGrows erun) (effsGrows esrun) bound
     obtain ⟨p, hp, r, ran1⟩ := eff erun het inv rel b1
     obtain ⟨ps, hps, rs, ran2⟩ := effs esrun hts ran1.inv (rel.step ran1.step ran1.locals) bound
     exact ⟨p :: ps, by simp [peffs, hp, hps], .cons (r.mono ran2.step.reads ran2.step.ranges) rs, ran1.trans ran2⟩

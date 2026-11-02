@@ -68,11 +68,11 @@ theorem loop_safe {condC : Core.Expr} {body : SrcStmt} {ret : SrcType} {tenv : T
     · exact tsafe (by omega) crun inv rel bound
     · obtain ⟨⟨x, rfl⟩, -, -⟩ := htest (by omega) crun inv rel bound
       exact (notBool x rfl).elim
-    · have b1 := Grows.bound (tgrows crun) (execStmt_trap_grows brun) inv.views bound
+    · have b1 := Grows.bound (tgrows crun) (execStmt_trap_grows brun) bound
       obtain ⟨-, rel1, ran1⟩ := htest (by omega) crun inv rel b1
       exact bsafe (by omega) brun ran1.inv (ran1.locs locs) rel1 bound
-    · have b2 := Grows.bound (execStmt_grows brun) (lgrows lrun) ((tgrows crun).empty inv.views).1 bound
-      have b1 := Grows.bound (tgrows crun) (execStmt_grows brun) inv.views b2
+    · have b2 := Grows.bound (execStmt_grows brun) (lgrows lrun) bound
+      have b1 := Grows.bound (tgrows crun) (execStmt_grows brun) b2
       obtain ⟨-, rel1, ran1⟩ := htest (by omega) crun inv rel b1
       obtain ⟨ob, -, orlb, ranb⟩ := hbody (by omega) brun ran1.inv (ran1.locs locs) rel1 b2
       have locs2 := (ran1.trans ranb).locs locs
@@ -165,7 +165,7 @@ theorem stmt_safe (calls : ∀ m, FuncSim sp prims outside m) (funcs : ∀ i < N
         have g2 : Grows (restoreLocals st completed) s2 :=
           (Grows.same (st := restoreLocals st completed) (st' := (restoreLocals st completed).bindLocal id v) rfl rfl).trans
             (execStmt_trap_grows brun)
-        have b1 := Grows.bound (call_grows (grows sp _) vrun) g2 inv.views bound
+        have b1 := Grows.bound (call_grows (grows sp _) vrun) g2 bound
         obtain ⟨w, -, rw, invc, stepc⟩ := calls i found notOut len inv
           (show completed.heap.nextAddress ≤ 2 ^ 64 from b1) rs bodyRun result
         have inv1 : Inv (restoreLocals st completed) := invc.restore st
@@ -205,7 +205,7 @@ theorem stmt_safe (calls : ∀ m, FuncSim sp prims outside m) (funcs : ∀ i < N
         obtain ⟨j, rfl, arun⟩ := expression_trap_inv run
         obtain ⟨v, -, hv, -, -⟩ := rel id t ht
         obtain ⟨i, -, vrun⟩ := assignLocal_trap arun bound hv
-          (fun _ _ s1 _ vrun => by rw [value.eval_state vrun]; exact inv.views)
+          (fun _ _ s1 _ vrun _ => by rw [value.eval_state vrun]; exact inv.views)
           (fun _ _ s1 c _ vrun hc _ => by rw [value.eval_state vrun]; exact locs.alloc id c hc)
         exact (expr_safe target tenv env value vrun ht' rel).2
       · simp at ok
@@ -218,7 +218,7 @@ theorem stmt_safe (calls : ∀ m, FuncSim sp prims outside m) (funcs : ∀ i < N
     simp only [SrcStmt.toCore] at run
     obtain ⟨j, rfl, frun | ⟨s1, frun, srun⟩⟩ := sequence_trap_inv run
     · exact ih1 (by omega) frun ok.1 inv locs rel bound
-    · have b1 := Grows.bound (execStmt_grows frun) (execStmt_trap_grows srun) inv.views bound
+    · have b1 := Grows.bound (execStmt_grows frun) (execStmt_trap_grows srun) bound
       obtain ⟨o1, -, orl1, ran1⟩ := stmtD ret first (by omega) frun ok.1 inv locs rel b1
       obtain ⟨e1, rfl, rel1⟩ := orl1.next_inv
       exact ih2 (by omega) srun ok.2 ran1.inv (ran1.locs locs) rel1 bound
@@ -270,6 +270,7 @@ theorem stmt_safe (calls : ∀ m, FuncSim sp prims outside m) (funcs : ∀ i < N
       exact (expr_safe target tenv env value vrun ht rel).2
     · simp at ok
   | letAlloc => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
+  | letView => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
   | letLoad => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
   | setByte => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
   | free => intro k tenv env st r st' le run ok; simp [stmtOk] at ok
@@ -285,7 +286,7 @@ theorem stmt_safe (calls : ∀ m, FuncSim sp prims outside m) (funcs : ∀ i < N
       · exact effS (by omega) vrun ht inv rel bound
       · have g2 : Grows s1 s2 :=
           (Grows.same (st := s1) (st' := s1.bindLocal id v) rfl rfl).trans (execStmt_trap_grows brun)
-        have b1 := Grows.bound (effGrows vrun) g2 inv.views bound
+        have b1 := Grows.bound (effGrows vrun) g2 bound
         obtain ⟨p, -, r, ran1⟩ := effD vrun ht inv rel b1
         have rel1 := rel.step ran1.step ran1.locals
         have locs1 := locs.step ran1.step ran1.locals
@@ -303,7 +304,9 @@ theorem stmt_safe (calls : ∀ m, FuncSim sp prims outside m) (funcs : ∀ i < N
         obtain ⟨j, rfl, arun⟩ := expression_trap_inv run
         obtain ⟨v, -, hv, -, -⟩ := rel id t ht
         obtain ⟨i, rfl, vrun⟩ := assignLocal_trap arun bound hv
-          (fun _ _ _ _ vrun => ((effGrows vrun).empty inv.views).1)
+          (fun _ _ _ _ vrun b => by
+            obtain ⟨-, -, -, ran1⟩ := effD vrun ht' inv rel b
+            exact ran1.inv.views)
           (fun _ _ _ c _ vrun hc b => by
             obtain ⟨-, -, -, ran1⟩ := effD vrun ht' inv rel b
             exact ran1.step.frame.isSome (locs.alloc id c hc))
@@ -324,12 +327,12 @@ theorem stmt_safe (calls : ∀ m, FuncSim sp prims outside m) (funcs : ∀ i < N
     · cases x with
       | true =>
         simp only [if_true] at brun
-        have b1 := Grows.bound (effGrows crun) (execStmt_trap_grows brun) inv.views bound
+        have b1 := Grows.bound (effGrows crun) (execStmt_trap_grows brun) bound
         obtain ⟨p, -, r, ran1⟩ := effD crun htc inv rel b1
         exact ih1 (by omega) brun ok1 ran1.inv (locs.step ran1.step ran1.locals) (rel.step ran1.step ran1.locals) bound
       | false =>
         simp only [Bool.false_eq_true, if_false] at brun
-        have b1 := Grows.bound (effGrows crun) (execStmt_trap_grows brun) inv.views bound
+        have b1 := Grows.bound (effGrows crun) (execStmt_trap_grows brun) bound
         obtain ⟨p, -, r, ran1⟩ := effD crun htc inv rel b1
         exact ih2 (by omega) brun ok2 ran1.inv (locs.step ran1.step ran1.locals) (rel.step ran1.step ran1.locals) bound
   | whileEval condition body ih =>

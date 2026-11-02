@@ -10,6 +10,7 @@ import Lanius.Mini.Compiler.P.indexOf
 import Lanius.Mini.Compiler.P.loadAtBytes
 import Lanius.Mini.Compiler.P.lowerCallSig
 import Lanius.Mini.Compiler.P.lowerLoadType
+import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Compiler.P.shortCircuit
 import Lanius.Mini.Compiler.P.storeEvalWord
 
@@ -36,6 +37,7 @@ def storeArray (b : Binding) (slot : Nat) (index : Option Evaluated) (value : Op
   | .char => none
   | .float ft => none
   | .sint sk => none
+  | .view viewLength => none
 
 /-- x.field = value: the value in slot, then copied to the field's slot. -/
 def setFieldEvalAt (target : Nat) (found : Option SrcType) (slot : Nat) (v : Evaluated) : Option Stmt :=
@@ -62,6 +64,7 @@ def setFieldEvalOf (b : Binding) (field : Nat) (slot : Nat) (v : Evaluated) : Op
   | .char => none
   | .float ft => none
   | .sint sk => none
+  | .view viewLength => none
 
 def lowerSetFieldEval (slot : Nat) (binding : Option Binding) (field : Nat) (value : Option Evaluated) : Option Stmt :=
   match binding with
@@ -84,6 +87,22 @@ def lowerUnreachable (same : Bool) (slot : Nat) : Option Stmt :=
     some (Stmt.divide Word.u64 DivOp.uDiv slot (Expr.lit 1) (Expr.lit 0))
   else
     none
+
+/-- Store the length i32 slots from slot to the words at the address in pointer, from offset on, then run rest. -/
+def viewStores (pointer : Nat) (slot : Nat) (offset : Nat) (length : Nat) (rest : Stmt) : Stmt :=
+  if length = 0 then
+    rest
+  else
+    Stmt.seq (Stmt.storeWord MemWidth.m32 (Expr.binary Word.u64 BinOp.add (Expr.var pointer) (Expr.lit (BitVec.ofNat 64 offset))) (Expr.var slot)) (viewStores pointer (slot + 1) (offset + 4) (length - 1) rest)
+
+/-- LetView: the elements into the slots from slot, then a block of 4 length bytes at alignment 4 into the slot after them (Core's mapBorrowed), the elements stored packed into it, then the body. Fewer than 2^31 elements (an i32 index's bound), so the block's size is a word. -/
+def lowerView (slot : Nat) (length : Nat) (values : Option (List Expr)) (body : Option Stmt) : Option Stmt :=
+  if decide (length = 0) || decide (2147483648 ≤ length) then
+    none
+  else
+    match body with
+    | none => none
+    | some b => lowerLet slot values (some (Stmt.seq (Stmt.alloc (slot + length) 2 (Expr.lit (BitVec.ofNat 64 (4 * length)))) (viewStores (slot + length) slot 0 length (Stmt.seq (Stmt.assign slot (Expr.var (slot + length))) b))))
 
 def lowerAssert (condition : Option Evaluated) (slot : Nat) : Option Stmt :=
   match condition with

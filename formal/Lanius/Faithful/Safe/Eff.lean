@@ -75,6 +75,10 @@ theorem stmt_ends (sp : SrcProgram) :
   | letEnum => exact letCase run inside
   | letMatch => exact letCase run inside
   | letAlloc => exact letCase run inside
+  | letView _ _ _ _ body =>
+    obtain ⟨j, v, s1, s2, rfl, -, brun, -⟩ := letLocal_inv run
+    obtain ⟨j', v', s1', s2', rfl, -, brun', -⟩ := letLocal_inv brun
+    exact ih j' (by omega) (by simpa [SrcStmt.breaksOut] using inside) brun'
   | letLoad => exact letCase run inside
   | letSlice => exact letCase run inside
   | letIndex => exact letCase run inside
@@ -281,7 +285,7 @@ theorem eff_safe_step (calls : ∀ m, FuncSim sp prims outside m) (funcs : FuncS
         rcases body with body | ⟨c, body, -⟩
         · exact execStmt_trap_grows body
         · exact execStmt_grows body
-      have b1 := Grows.bound (effsGrows argsRun) gBody inv.views bound
+      have b1 := Grows.bound (effsGrows argsRun) gBody bound
       obtain ⟨ps, -, rs, ran1⟩ := effsD argsRun hts inv rel b1
       exact call_body_safe (completed := completed) funcs notOut found len ran1.inv bound rs body
   | eApply op left right =>
@@ -298,7 +302,7 @@ theorem eff_safe_step (calls : ∀ m, FuncSim sp prims outside m) (funcs : FuncS
       · obtain ⟨q, -, rl, -⟩ := effD lrun htl inv rel bound
         obtain ⟨b, rfl⟩ := rl.bool_inv
         exact (notBool b rfl).elim
-      · have b1 := Grows.bound (effGrows lrun) (effTrapGrows rrun) inv.views bound
+      · have b1 := Grows.bound (effGrows lrun) (effTrapGrows rrun) bound
         obtain ⟨q, -, rl, ran1⟩ := effD lrun htl inv rel b1
         exact eff rrun htr ran1.inv (rel.step ran1.step ran1.locals) bound
     by_cases isOr : op = .logicalOr
@@ -311,17 +315,17 @@ theorem eff_safe_step (calls : ∀ m, FuncSim sp prims outside m) (funcs : FuncS
       · obtain ⟨q, -, rl, -⟩ := effD lrun htl inv rel bound
         obtain ⟨b, rfl⟩ := rl.bool_inv
         exact (notBool b rfl).elim
-      · have b1 := Grows.bound (effGrows lrun) (effTrapGrows rrun) inv.views bound
+      · have b1 := Grows.bound (effGrows lrun) (effTrapGrows rrun) bound
         obtain ⟨q, -, rl, ran1⟩ := effD lrun htl inv rel b1
         exact eff rrun htr ran1.inv (rel.step ran1.step ran1.locals) bound
     obtain ⟨j, hj, lrun | ⟨l, s1, lrun, rrun | ⟨rv, rrun, bad⟩⟩⟩ :=
       binary_trap_inv (SrcOp.toCore_ne_and isAnd) (SrcOp.toCore_ne_or isOr) run
     all_goals obtain rfl : k = j := Nat.succ.inj hj
     · exact eff lrun htl inv rel bound
-    · have b1 := Grows.bound (effGrows lrun) (effTrapGrows rrun) inv.views bound
+    · have b1 := Grows.bound (effGrows lrun) (effTrapGrows rrun) bound
       obtain ⟨q, -, rl, ran1⟩ := effD lrun htl inv rel b1
       exact eff rrun htr ran1.inv (rel.step ran1.step ran1.locals) bound
-    · have b1 := Grows.bound (effGrows lrun) (effGrows rrun) inv.views bound
+    · have b1 := Grows.bound (effGrows lrun) (effGrows rrun) bound
       obtain ⟨ql, -, rl, ran1⟩ := effD lrun htl inv rel b1
       obtain ⟨qr, -, rr, ran2⟩ := effD rrun htr ran1.inv (rel.step ran1.step ran1.locals) bound
       have sl := opTy_scalar ht
@@ -337,10 +341,10 @@ theorem eff_safe_step (calls : ∀ m, FuncSim sp prims outside m) (funcs : FuncS
     obtain ⟨j, hj, lrun | ⟨l, s1, lrun, rrun | ⟨rv, rrun, bad⟩⟩⟩ := binary_trap_inv notAnd notOr run
     all_goals obtain rfl : k = j := Nat.succ.inj hj
     · exact eff lrun htl inv rel bound
-    · have b1 := Grows.bound (effGrows lrun) (effTrapGrows rrun) inv.views bound
+    · have b1 := Grows.bound (effGrows lrun) (effTrapGrows rrun) bound
       obtain ⟨q, -, rl, ran1⟩ := effD lrun htl inv rel b1
       exact eff rrun htr ran1.inv (rel.step ran1.step ran1.locals) bound
-    · have b1 := Grows.bound (effGrows lrun) (effGrows rrun) inv.views bound
+    · have b1 := Grows.bound (effGrows lrun) (effGrows rrun) bound
       obtain ⟨ql, -, rl, ran1⟩ := effD lrun htl inv rel b1
       obtain ⟨qr, -, rr, ran2⟩ := effD rrun htr ran1.inv (rel.step ran1.step ran1.locals) bound
       obtain ⟨rfl, num, rfl⟩ := divTy_some hd
@@ -398,7 +402,7 @@ theorem eff_safe_step (calls : ∀ m, FuncSim sp prims outside m) (funcs : FuncS
           rcases he with rfl | rfl
           · exact (effTrapGrows brun).trans (Grows.same rfl rfl)
           · exact (effTrapGrows brun).trans (Grows.same rfl rfl)
-        exact Grows.bound (effGrows crun) g2 inv.views bound
+        exact Grows.bound (effGrows crun) g2 bound
       obtain ⟨q, -, rq, ran1⟩ := effD crun htc inv rel b1
       obtain ⟨-, x, rfl⟩ := rq.scalar_ty rfl
       obtain ⟨j', s2, lt, brun, rfl⟩ := ifArms_trap_inv arun
@@ -417,7 +421,7 @@ theorem eff_safe_step (calls : ∀ m, FuncSim sp prims outside m) (funcs : FuncS
     · exact eff vrun htv inv rel bound
     obtain ⟨j', s2, lt, brun, rfl⟩ := letArm_trap_inv arun
     have b1 := Grows.bound (effGrows vrun) ((Grows.same (st := s1) (st' := s1.bindLocal id sv) rfl rfl).trans (effTrapGrows brun) |>.trans (Grows.same (st' := restoreLocals s1 s2) rfl rfl))
-      inv.views bound
+      bound
     obtain ⟨q, -, rq, ran1⟩ := effD vrun htv inv rel b1
     have rel1 := rel.step ran1.step ran1.locals
     have brun' := Semantics.evalExpr_of_le brun (by simp) (show j' ≤ k by omega)
@@ -456,7 +460,7 @@ theorem eff_safe_step (calls : ∀ m, FuncSim sp prims outside m) (funcs : FuncS
         have := SrcType.same_eq same
         subst this
         simp only [SrcType.typeId] at arun
-        have b1 := Grows.bound (effGrows srun) (effArmsTrapGrows arun) inv.views bound
+        have b1 := Grows.bound (effGrows srun) (effArmsTrapGrows arun) bound
         obtain ⟨q, -, rq, ran1⟩ := effD srun hts inv rel b1
         obtain ⟨kk, fs, vs, ps, rfl, rfl, hk, rs⟩ := rq.enum_inv
         exact arms arun (Nat.zero_le _) (by simpa using hk) rs aok ran1.inv (rel.step ran1.step ran1.locals) bound
@@ -473,6 +477,7 @@ theorem eff_safe_step (calls : ∀ m, FuncSim sp prims outside m) (funcs : FuncS
     | float => simp at hm
     | sint => simp at hm
     | array => simp at hm
+    | view => simp at hm
 
 theorem effs_safe_step (calls : ∀ m, FuncSim sp prims outside m) (eff : EffSafe sp prims outside k)
     (effs : EffsSafe sp prims outside k) : EffsSafe sp prims outside (k + 1) := by
@@ -487,7 +492,7 @@ theorem effs_safe_step (calls : ∀ m, FuncSim sp prims outside m) (eff : EffSaf
     obtain ⟨j, hj, erun | ⟨v, s1, erun, esrun⟩⟩ := exprs_cons_trap_inv run
     all_goals obtain rfl : k = j := Nat.succ.inj hj
     · exact eff erun het inv rel bound
-    · have b1 := Grows.bound (effGrows erun) (effsTrapGrows esrun) inv.views bound
+    · have b1 := Grows.bound (effGrows erun) (effsTrapGrows esrun) bound
       obtain ⟨p, -, -, ran1⟩ := effD erun het inv rel b1
       exact effs esrun hts ran1.inv (rel.step ran1.step ran1.locals) bound
 

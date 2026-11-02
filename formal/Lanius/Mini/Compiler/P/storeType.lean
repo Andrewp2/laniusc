@@ -38,6 +38,7 @@ def storeType (ty : SrcType) (values : List Expr) (first : Nat) (base : Expr) (o
   | .char => storeOne (widthOf ty) (addressBelow base offset) values[first]?
   | .float ft => storeOne (widthOf ty) (addressBelow base offset) values[first]?
   | .sint kind => storeOne (widthOf ty) (addressBelow base offset) values[first]?
+  | .view viewLength => storeOne (widthOf ty) (addressBelow base offset) values[first]?
 def storeTypes (types : List SrcType) (values : List Expr) (first : Nat) (base : Expr) (offset : Nat) : Option Stmt :=
   match types with
   | [] => some Stmt.skip
@@ -72,6 +73,7 @@ def withinLayout (depth : Nat) (ty : SrcType) : Bool :=
     | .char => false
     | .float ft => false
     | .sint kind => true
+    | .view viewLength => false
 def withinLayouts (depth : Nat) (types : List SrcType) : Bool :=
   match types with
   | [] => true

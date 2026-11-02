@@ -217,30 +217,34 @@ theorem call_inv {sp : SrcProgram} {fuel : Nat} {st : State} {callee : Nat} {arg
 
 /-! ## Growing -/
 
-/-- From `st` to `st'` the heap cursor did not go down, and the views are
-the same: the subset never maps a new one (`mapI32ArrayView`). -/
+/-- From `st` to `st'` the heap cursor did not go down, and the views only
+grew at their end (`mapI32ArrayView` appends one). -/
 structure Grows (st st' : State) : Prop where
   next : st.heap.nextAddress ≤ st'.heap.nextAddress
-  views : st'.i32ArrayViews = st.i32ArrayViews
+  views : ∃ more, st'.i32ArrayViews = st.i32ArrayViews ++ more
 
-theorem Grows.refl (st : State) : Grows st st := ⟨Nat.le_refl _, rfl⟩
+theorem Grows.refl (st : State) : Grows st st := ⟨Nat.le_refl _, [], by simp⟩
 
-theorem Grows.trans {a b c : State} (first : Grows a b) (second : Grows b c) : Grows a c :=
-  ⟨Nat.le_trans first.next second.next, second.views.trans first.views⟩
+theorem Grows.trans {a b c : State} (first : Grows a b) (second : Grows b c) : Grows a c := by
+  obtain ⟨m1, e1⟩ := first.views
+  obtain ⟨m2, e2⟩ := second.views
+  exact ⟨Nat.le_trans first.next second.next, m1 ++ m2, by rw [e2, e1, List.append_assoc]⟩
 
 theorem Grows.same {st st' : State} (heap : st'.heap = st.heap)
     (views : st'.i32ArrayViews = st.i32ArrayViews) : Grows st st' :=
-  ⟨by rw [heap]; exact Nat.le_refl _, views⟩
+  ⟨by rw [heap]; exact Nat.le_refl _, [], by rw [views, List.append_nil]⟩
 
 /-- The heap's cursor did not go down and the views are the same. -/
 theorem Grows.heap {st st' : State} (next : st.heap.nextAddress ≤ st'.heap.nextAddress)
     (views : st'.i32ArrayViews = st.i32ArrayViews) : Grows st st' :=
-  ⟨next, views⟩
+  ⟨next, [], by rw [views, List.append_nil]⟩
 
-/-- From no views, none. -/
-theorem Grows.empty {st st' : State} (g : Grows st st') (views : st.i32ArrayViews = []) :
-    st'.i32ArrayViews = [] ∧ st.heap.nextAddress ≤ st'.heap.nextAddress :=
-  ⟨g.views.trans views, g.next⟩
+/-- A view of `st` is one of `st'`. -/
+theorem Grows.mem {st st' : State} (g : Grows st st') {v : Semantics.I32ArrayView} (mem : v ∈ st.i32ArrayViews) :
+    v ∈ st'.i32ArrayViews := by
+  obtain ⟨more, e⟩ := g.views
+  rw [e]
+  exact List.mem_append_left _ mem
 
 theorem bindLocals_same : ∀ (bs : List (Nat × Value)) (st : State),
     (st.bindLocals bs).heap = st.heap ∧ (st.bindLocals bs).i32ArrayViews = st.i32ArrayViews
@@ -2271,6 +2275,74 @@ theorem unreachable_trapped {P : Core.Program} {fuel : Nat} {st : State} {id : N
       exact run.2.symm
     · simp [Semantics.restoreOutcomeLocals] at run
 
+/-- A local's read place leaves the state as it was. -/
+theorem evalPlace_local_read {P : Core.Program} {k : Nat} {st : State} {id : Nat}
+    {r : Semantics.ResolvedPlace} {st' : State}
+    (run : Semantics.evalPlace k P st .read (.local id) = .done r st') :
+    st' = st ∧ ∃ cell, st.cellId? id = some cell ∧ r.root = cell ∧ r.projections = [] ∧
+      ∃ e, st.cellEntry? cell = some e ∧ r.value = e.value := by
+  cases k with
+  | zero => simp [Semantics.evalPlace] at run
+  | succ k =>
+    simp only [Semantics.evalPlace] at run
+    split at run
+    · simp at run
+    rename_i cell hcell
+    split at run
+    · simp at run
+    rename_i e he
+    split at run
+    · simp at run
+    simp only [Semantics.Outcome.done.injEq] at run
+    obtain ⟨rfl, rfl⟩ := run
+    exact ⟨rfl, cell, hcell, rfl, rfl, e, he, rfl⟩
+
+theorem mapBorrowed_next {heap heap' : Memory.Heap} {bytes : List UInt8} {a : Nat}
+    (mapped : heap.mapBorrowed bytes 4 = Memory.AllocationResult.allocated a heap') : heap.nextAddress ≤ heap'.nextAddress := by
+  simp only [Memory.Heap.mapBorrowed] at mapped
+  split at mapped
+  · simp at mapped
+  simp only [Memory.AllocationResult.allocated.injEq] at mapped
+  obtain ⟨-, rfl⟩ := mapped
+  exact Nat.le_trans (Nat.le_trans (Nat.le_max_left _ 1) (memAlignUp_ge (max heap.nextAddress 1) 4 (by decide)))
+    (Nat.le_add_right _ _)
+
+/-- Core's `mapI32ArrayView` moves the cursor up and adds at most one view. -/
+theorem mapView_grows {st : State} {root : Nat} {projections : List Core.ValueProjection}
+    {elements : List Value} {v : Value} {st' : State}
+    (run : Semantics.mapI32ArrayView st root projections elements = .done v st') : Grows st st' := by
+  simp only [Semantics.mapI32ArrayView] at run
+  split at run
+  · split at run
+    · rename_i synced ok
+      simp only [Semantics.Outcome.done.injEq] at run
+      obtain ⟨-, rfl⟩ := run
+      obtain ⟨same, n0⟩ := syncTo_heap ok
+      exact Grows.heap (Nat.le_of_eq n0.symm) (by rw [same])
+    · simp at run
+  · split at run
+    · simp at run
+    · split at run
+      · rename_i address heap mapped
+        simp only [Semantics.Outcome.done.injEq] at run
+        obtain ⟨-, rfl⟩ := run
+        exact ⟨mapBorrowed_next mapped, _, rfl⟩
+      · simp at run
+      · simp at run
+
+/-- `i32_array_data_ptr` of a local grows the state. -/
+theorem view_grows {P : Core.Program} {k : Nat} {st : State} {id : Nat} {v : Value} {st' : State}
+    (run : evalExpr k P st (.i32ArrayDataPtr (.local id)) = .done v st') : Grows st st' := by
+  cases k with
+  | zero => simp [evalExpr] at run
+  | succ k =>
+    simp only [evalExpr, Semantics.expressionPlace?] at run
+    split at run
+    · rename_i next placeRun
+      obtain ⟨rfl, -⟩ := evalPlace_local_read placeRun
+      exact mapView_grows run
+    all_goals simp at run
+
 theorem grows_step {sp : SrcProgram} {fuel : Nat} (ih : GrowsBelow sp fuel) {st : State} {s : SrcStmt}
     {c : Completion} {st' : State} (run : execStmt fuel sp.toCore st s.toCore = .done c st') :
     Grows st st' := by
@@ -2325,6 +2397,23 @@ theorem grows_step {sp : SrcProgram} {fuel : Nat} (ih : GrowsBelow sp fuel) {st 
     | unreachable id ty =>
       obtain ⟨rfl, -⟩ := unreachable_done run
       exact Grows.same rfl rfl
+    | letView id length fields pointer body =>
+      simp only [SrcStmt.toCore, execStmt] at run
+      split at run
+      · rename_i v next valueRun
+        have := structValue_state valueRun
+        subst this
+        refine let_grows (fun {s0 c0 s1} r => ?_) run
+        cases f with
+        | zero => simp [execStmt] at r
+        | succ g =>
+          simp only [execStmt] at r
+          split at r
+          · rename_i w after ptrRun
+            exact (view_grows ptrRun).trans
+              (let_grows (fun r' => ih g (Nat.lt_succ_of_lt (Nat.lt_succ_self g)) (s := body) r') r)
+          all_goals simp at r
+      all_goals simp at run
     | matchArm scrutinee enumId variant binds binder ty body rest =>
       simp only [SrcStmt.toCore] at run
       generalize hpats : (if binds then [Core.Pattern.wildcard] else []) = pats at run

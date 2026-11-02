@@ -276,6 +276,7 @@ def SrcType.Holds : SrcType → Value → BitVec 64 → Prop
   | .char, value, bits => value = .character (UInt32.ofNat bits.toNat) ∧ bits.toNat < 2 ^ 32
   | .float t, value, bits => value = t.value bits ∧ bits.toNat < 2 ^ t.width
   | .sint kind, value, bits => kind.SintHolds value bits
+  | .view _, _, _ => False
 
 /-- A place a reference or a borrowed slice names, held in frame memory:
 Core's cell `cell` at the projection path `projections` holds a value of
@@ -351,6 +352,12 @@ inductive SrcType.HoldsAt (places : List Addressed) : SrcType → Value → Env 
       (SrcType.float t).Holds value (env slot) → SrcType.HoldsAt places (.float t) value env slot
   | sint {kind : UintTy} {value : Value} {env : Env} {slot : Nat} :
       (SrcType.sint kind).Holds value (env slot) → SrcType.HoldsAt places (.sint kind) value env slot
+  /-- A viewed array: Core's cell holds `length` in-range `i32`s, whose truth
+  is the view's heap block (`Views.ViewsHold`); its slots hold nothing that
+  matters. -/
+  | view {length : Nat} {vs : List Value} {env : Env} {slot : Nat} :
+      vs.length = length → (∀ x ∈ vs, ∃ i : Int, x = .signed .i32 i ∧ -2 ^ 31 ≤ i ∧ i < 2 ^ 31) →
+      SrcType.HoldsAt places (.view length) (.array vs) env slot
 
 /-- Values of these types, one after another from `slot`: a struct's fields,
 a payload, or arguments. -/
@@ -376,6 +383,7 @@ theorem SrcType.holdsAt_scalar {ty : SrcType} (scalar : ty.isScalar = true) {v :
   | char => exact ⟨fun | .char h => h, .char⟩
   | float => exact ⟨fun | .float h => h, .float⟩
   | sint => exact ⟨fun | .sint h => h, .sint⟩
+  | view => simp [SrcType.isScalar] at scalar
 
 theorem FieldsHold.length : ∀ {fs vs env slot}, FieldsHold places fs vs env slot → vs.length = fs.length
   | [], _, _, _, .nil => rfl
@@ -472,6 +480,7 @@ theorem SrcType.HoldsAt.congr : ∀ {ty : SrcType} {v : Value} {env : Env} {slot
     have := agree 0 (by simp [SrcType.size])
     simp only [Nat.add_zero] at this
     exact .sint (by rw [this]; exact holds)
+  | .view _, _, _, _, .view len i32s, _, _, _ => .view len i32s
 
 theorem FieldsHold.congr : ∀ {fs : List SrcType} {vs : List Value} {env : Env} {slot : Nat},
     FieldsHold places fs vs env slot → ∀ {env' : Env} {slot' : Nat},

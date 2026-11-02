@@ -116,6 +116,7 @@ def SrcType.declare (self : SrcType) (decls : SrcDecls) : Option SrcDecls :=
   | .char => some decls
   | .float ft => some decls
   | .sint kind => some decls
+  | .view viewLength => none
 def declareTypes (types : List SrcType) (decls : SrcDecls) : Option SrcDecls :=
   match types with
   | [] => some decls
@@ -229,6 +230,7 @@ def SrcStmt.declare (self : SrcStmt) (decls : SrcDecls) : Option SrcDecls :=
      | none => none
      | some decls => SrcStmt.declare rest decls)
   | .unreachable id ty => SrcType.declare ty decls
+  | .letView id length fields pointer body => SrcStmt.declare body decls
 
 /-- Every path ends in a return, the way Core's DefinitelyReturns counts: a while body never counts. -/
 def SrcStmt.returns (self : SrcStmt) : Bool :=
@@ -267,6 +269,7 @@ def SrcStmt.returns (self : SrcStmt) : Bool :=
   | .continue => false
   | .matchArm scrutinee enumId variant binds binder ty body rest => SrcStmt.returns body && SrcStmt.returns rest
   | .unreachable id ty => true
+  | .letView id length fields pointer body => SrcStmt.returns body
 
 def declareParams (params : List SrcParam) (decls : SrcDecls) : Option SrcDecls :=
   match params with

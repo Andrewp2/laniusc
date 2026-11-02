@@ -2560,7 +2560,7 @@ theorem chunk23 : FuncsOk prog prims outside 2300 part23 :=
   funcsOk_cons (fok2399 boxElem_self callTy_self) <|
   funcsOk_nil
 
-def part24 : List SrcFunc := [src2400, src2401, src2402, src2403, src2404, src2405, src2406, src2407, src2408, src2409, src2410, src2411, src2412, src2413, src2414, src2415, src2416, src2417, src2418, src2419, src2420, src2421, src2422, src2423, src2424, src2425, src2426, src2427, src2428, src2429, src2430, src2431, src2432, src2433, src2434, src2435, src2436, src2437, src2438, src2439, src2440, src2441, src2442, src2443, src2444, src2445, src2446, src2447, src2448, src2449, src2450, src2451, src2452, src2453, src2454, src2455, src2456, src2457, src2458, src2459, src2460, src2461, src2462, src2463, src2464, src2465, src2466, src2467, src2468, src2469, src2470, src2471, src2472, src2473, src2474, src2475, src2476, src2477, src2478, src2479, src2480, src2481, src2482, src2483, src2484, src2485, src2486, src2487, src2488, src2489, src2490, src2491, src2492, src2493, src2494, src2495]
+def part24 : List SrcFunc := [src2400, src2401, src2402, src2403, src2404, src2405, src2406, src2407, src2408, src2409, src2410, src2411, src2412, src2413, src2414, src2415, src2416, src2417, src2418, src2419, src2420, src2421, src2422, src2423, src2424, src2425, src2426, src2427, src2428, src2429, src2430, src2431, src2432, src2433, src2434, src2435, src2436, src2437, src2438, src2439, src2440, src2441, src2442, src2443, src2444, src2445, src2446, src2447, src2448, src2449, src2450, src2451, src2452, src2453, src2454, src2455, src2456, src2457, src2458, src2459, src2460, src2461, src2462, src2463, src2464, src2465, src2466, src2467, src2468, src2469, src2470, src2471, src2472, src2473, src2474, src2475, src2476, src2477, src2478, src2479, src2480, src2481, src2482, src2483, src2484, src2485, src2486, src2487, src2488, src2489, src2490, src2491, src2492, src2493, src2494, src2495, src2496, src2497, src2498]
 
 theorem chunk24 : FuncsOk prog prims outside 2400 part24 :=
   funcsOk_cons (fok2400 boxElem_self callTy_self) <|
@@ -2659,6 +2659,9 @@ theorem chunk24 : FuncsOk prog prims outside 2400 part24 :=
   funcsOk_cons (fok2493 boxElem_self callTy_self) <|
   funcsOk_cons (fok2494 boxElem_self callTy_self) <|
   funcsOk_cons (fok2495 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2496 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2497 boxElem_self callTy_self) <|
+  funcsOk_cons (fok2498 boxElem_self callTy_self) <|
   funcsOk_nil
 
 theorem funcs_parts : prog.funcs = part0 ++ (part1 ++ (part2 ++ (part3 ++ (part4 ++ (part5 ++ (part6 ++ (part7 ++ (part8 ++ (part9 ++ (part10 ++ (part11 ++ (part12 ++ (part13 ++ (part14 ++ (part15 ++ (part16 ++ (part17 ++ (part18 ++ (part19 ++ (part20 ++ (part21 ++ (part22 ++ (part23 ++ (part24)))))))))))))))))))))))) := rfl

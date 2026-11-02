@@ -206,6 +206,7 @@ def neverNext : SrcStmt → Bool
   | .while _ _ => false
   | .return _ => true
   | .letAlloc _ _ _ _ => true
+  | .letView _ _ _ _ _ => true
   | .letLoad _ _ _ _ => true
   | .setByte _ _ _ => true
   | .free _ _ _ => true
@@ -236,7 +237,7 @@ def AEnv.after (A : AEnv) : SrcStmt → AEnv
     | none => A
   | .nop | .let _ _ _ _ | .letStruct _ _ _ _ | .letCall _ _ _ _ _ | .letEnum _ _ _ _ _
   | .letMatch _ _ _ _ _ _ | .set _ _ | .setField _ _ _ | .setCall _ _ _ | .then _ _ | .while _ _
-  | .return _ | .letAlloc _ _ _ _ | .letLoad _ _ _ _ | .setByte _ _ _ | .free _ _ _
+  | .return _ | .letAlloc _ _ _ _ | .letView _ _ _ _ _ | .letLoad _ _ _ _ | .setByte _ _ _ | .free _ _ _
   | .letSlice _ _ _ _ _ | .letIndex _ _ _ _ _ | .setIndex _ _ _ | .letEval _ _ _ _ | .setEval _ _
   | .ifEval _ _ _ | .whileEval _ _ | .returnEval _ | .discard _ | .setIndexEval _ _ _
   | .setFieldEval _ _ _ | .returnUnit | .assert _ | .break | .continue | .matchArm _ _ _ _ _ _ _ _
@@ -380,6 +381,7 @@ def chkStmt (A : AEnv) (W : Wit) : SrcStmt → Bool
   | .while _ _ => true
   | .return _ => true
   | .letAlloc _ _ _ _ => true
+  | .letView _ _ _ _ _ => true
   | .letLoad _ _ _ _ => true
   | .setByte _ _ _ => true
   | .free _ _ _ => true

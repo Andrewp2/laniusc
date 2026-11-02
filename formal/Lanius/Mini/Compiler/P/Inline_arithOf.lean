@@ -16,6 +16,7 @@ public import Lanius.Mini.Compiler.P.floatApply
 public import Lanius.Mini.Compiler.P.funcNeeds
 public import Lanius.Mini.Compiler.P.loadAtBytes
 public import Lanius.Mini.Compiler.P.lowerCallSig
+public import Lanius.Mini.Compiler.P.lowerTagged
 public import Lanius.Mini.Compiler.P.wordStride
 
 public section
@@ -88,7 +89,7 @@ namespace Lanius.Mini
     none
 
 @[expose] def Inline.armBind (binder : Nat) (ty : SrcType) (rest : List Nat) (more : List SrcType) (slot : Nat) (scope : List Binding) : Option (List Binding) :=
-  if 0 < SrcType.size ty then
+  if decide (0 < SrcType.size ty) && !(viewedType ty) then
     armScope rest more (slot + SrcType.size ty) (({ id := binder, slot := slot, ty := ty } : Binding) :: scope)
   else
     none

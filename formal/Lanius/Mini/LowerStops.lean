@@ -3,6 +3,7 @@ module
 public import Lanius.Mini.Progress
 public import Lanius.Mini.TypeSound
 public import Lanius.Mini.UndefTraps
+public import Lanius.Mini.ViewLower
 public import Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.FArith_opcode
@@ -308,6 +309,7 @@ theorem returns_noNext : ∀ (s : SrcStmt), s.returns = true → NoNext P s.toCo
   | .nop, h => by simp [SrcStmt.returns] at h
   | .let _ _ _ body, h => NoNext.letLocal (returns_noNext body h)
   | .letStruct _ _ _ body, h => NoNext.letLocal (returns_noNext body h)
+  | .letView _ _ _ _ body, h => NoNext.letLocal (NoNext.letLocal (returns_noNext body h))
   | .letCall _ _ _ _ body, h => NoNext.letLocal (returns_noNext body h)
   | .letEnum _ _ _ _ body, h => NoNext.letLocal (returns_noNext body h)
   | .letMatch _ _ _ _ _ body, h => NoNext.letLocal (returns_noNext body h)
@@ -484,6 +486,7 @@ theorem breaksOut_noEscape : ∀ (s : SrcStmt), s.breaksOut = false → NoEscape
   | .nop, _ => NoEscape.skip
   | .let _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
   | .letStruct _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
+  | .letView _ _ _ _ body, h => NoEscape.letLocal (NoEscape.letLocal (breaksOut_noEscape body h))
   | .letCall _ _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
   | .letEnum _ _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
   | .letMatch _ _ _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
@@ -609,7 +612,7 @@ theorem callee_frame (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.de
   obtain ⟨frame, corr, fr, fresh0, keeps0⟩ := entry_corr (Func.entry bits) st.nextCell f.params
     (k := 0) (scope := []) (frame := fun _ => 0) (st := { st with locals := [] }) holds valid
     (Nat.le_refl _) under fresh ⟨rfl, fun _ _ _ mem => by simp at mem, fun _ mem => by simp at mem,
-      fun _ _ _ mem => by simp at mem⟩
+      fun _ _ _ mem => by simp at mem, fun _ mem => by simp at mem⟩
     ⟨fun _ mem => by simp at mem, fun _ mem => by simp at mem, fun _ mem => by simp at mem,
       fun _ mem => by simp at mem, fun _ mem => by simp at mem⟩
   rw [Nat.zero_add] at fr
@@ -1057,7 +1060,7 @@ theorem index_ok {t : Typed} {iv : Value} {x : BitVec 64}
     cases UintTy.eq_of_code kind
     obtain ⟨rfl, -⟩ := holds
     simp only [Semantics.integerIndex]
-  | bool | struct | enum | ptr | slice | array | unit | isize | char | float | sint => rw [hty] at kind; simp [SrcType.isI32, SrcType.isUint] at kind
+  | bool | struct | enum | ptr | slice | array | unit | isize | char | float | sint | view => rw [hty] at kind; simp [SrcType.isI32, SrcType.isUint] at kind
 
 /-- Statements one after another, then `body`. -/
 def chain : List Stmt → Stmt → Stmt
@@ -1094,6 +1097,7 @@ theorem loadType_chain : ∀ (t : SrcType) (target : Nat) (base : Expr) (offset 
   | .slice _, _, _, _ => ⟨[_], fun _ => rfl⟩
   | .array _ _, _, _, _ => ⟨[], fun _ => rfl⟩
   | .unit, _, _, _ => ⟨[_], fun _ => rfl⟩
+  | .view _, _, _, _ => ⟨[_], fun _ => rfl⟩
   | .enum _ _, _, _, _ => ⟨[_, _], fun _ => rfl⟩
   | .struct _ fields, target, base, offset => by
     obtain ⟨ps, eq⟩ := loadTypes_chain fields target base offset
@@ -1206,7 +1210,8 @@ theorem let_stops {body : SrcStmt} (ih : SrcStops sp mp n body) {ret : SrcType} 
     (agree : ScopeAgree scope env env') (holds : ty.HoldsAt places v env' next)
     (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp) (under : ∀ x ∈ places, x.cell < base)
     (within : st.heap.nextAddress ≤ hp.limit)
-    (fails : Fails sp hp.limit (st.bindLocal id v) body.toCore) :
+    (fails : Fails sp hp.limit (st.bindLocal id v) body.toCore)
+    (nv : viewedType ty = false := by first | rfl | assumption) :
     ∃ d, Stops mp d env' hp bstmt n :=
   ih (hp := hp) bodyOk (corr.push fr fresh agree holds fun x mem => Nat.lt_of_lt_of_le (under x mem) le) (fr.push (corr.below fresh) le id sized)
     (bindLocal_fresh fresh id v) (Nat.le_trans le (Nat.le_succ _)) hc (fc.keeps (bindLocal_keeps le id v) under)
@@ -1356,7 +1361,7 @@ theorem stops_let {id : Nat} {ty : SrcType} {value : SrcExpr} {body : SrcStmt} (
   simp only [SrcStmt.toCore] at fails
   obtain ⟨d, stops⟩ := let_stops ih bodyOk corr fr fresh le (by rw [← flat.length]; exact shape.sized fr)
     (fr.agree fun j below => setFrom_outside xs next env j (.inl below))
-    (flat.store (shape.insens_next fr)) hc fc under within (fails.letBody valueRun)
+    (flat.store (shape.insens_next fr)) hc fc under within (fails.letBody valueRun) (lowerValue_nv valueOk)
   exact ⟨d, Stops.assignFrom xs next stops⟩
 
 theorem stops_return {value : SrcExpr} : SrcStops sp mp n (.return value) := by
@@ -1405,6 +1410,7 @@ theorem stops_letCall (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.d
       obtain ⟨d2, stops⟩ := let_stops ih bodyOk corr1 fr fresh1 (Nat.le_trans le keeps1.next) sized
         (env' := env.setMany next rs) (fr.agree fun j below => by rw [setMany_eq, if_neg (by omega)])
         (setMany_holds holds len env next) hc1 fc1 under (by rw [limit]; exact bound1) (by rw [limit]; exact fails.letBody run1)
+        (lowerCall_nv argsOk)
       exact ⟨_, Stops.after (callExec next) stops⟩
   · obtain ⟨d, stops⟩ := call_stops lowered returns prev corr fresh hc fc within argsOk g (fails.letInit done) next ty.size
     exact ⟨d, .seqFirst stops⟩
@@ -1428,7 +1434,7 @@ theorem stops_set {id : Nat} {value : SrcExpr} : SrcStops sp mp n (.set id value
   obtain ⟨v0, entry, _⟩ := corr.values b (lookup_mem found).1
   simp only [SrcStmt.toCore] at fails
   exact (fails.assign_done corr found valueRun fresh.2
-    (fun v vm => corr.unviewed v vm b (lookup_mem found).1) (by rw [entry]; rfl) within).elim
+    (fun v vm => corr.unviewed v vm b (lookup_mem found).1 (lowerValue_nv valueOk)) (by rw [entry]; rfl) within).elim
 
 theorem stops_setCall (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     (returns : funcsReturn sp.funcs = true) (prev : StmtStops sp mp n) {id callee : Nat}
@@ -1460,7 +1466,7 @@ theorem stops_setCall (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.d
       have corr1 := corr.keeps fresh keeps1 locals1
       obtain ⟨v1, entry1, _⟩ := corr1.values b (lookup_mem found).1
       exact (fails.assign_done corr found run1 fresh1.2
-        (fun v vm => corr1.unviewed v vm b (lookup_mem found).1) (by rw [entry1]; rfl) bound1).elim
+        (fun v vm => corr1.unviewed v vm b (lookup_mem found).1 (lowerCall_nv argsOk)) (by rw [entry1]; rfl) bound1).elim
   · exact call_stops lowered returns prev corr fresh hc fc within argsOk g (efails.assignValue corr found done) b.slot b.ty.size
 
 
@@ -1487,6 +1493,7 @@ theorem stops_setField {id index : Nat} {value : SrcExpr} : SrcStops sp mp n (.s
   case h_11 => simp at ok
   case h_12 => simp at ok
   case h_13 => simp at ok
+  case h_14 => simp at ok
   rename_i sid types hty
   simp only [lowerSetFieldAt] at ok
   split at ok
@@ -1508,7 +1515,7 @@ theorem stops_setField {id index : Nat} {value : SrcExpr} : SrcStops sp mp n (.s
   refine Stops.checked fun g => ?_
   obtain ⟨k, w, valueRun⟩ := lowerAs_progress corr (SrcProgram.target_toCore sp) valueOk g
   obtain ⟨k', st3, run, heap⟩ := field_assign_progress corr found entry got fresh.2
-    (fun v vm => corr.unviewed v vm b bmem) valueRun
+    (fun v vm => corr.unviewed v vm b bmem (by rw [hty]; rfl)) valueRun
   simp only [SrcStmt.toCore] at fails
   exact (fails.not_done (k := k' + 1) (c := .next) (st' := st3) (by simp only [execStmt, run])
     (by rw [heap]; exact within)).elim
@@ -1530,6 +1537,7 @@ theorem stops_letStruct {id : Nat} {ty : SrcType} {fields : List SrcExpr} {body 
   simp only [Option.some.injEq] at ok
   subst ok
   cases ty with
+  | view => simp [lowerLiteral] at literalOk
   | i32 => simp [lowerLiteral] at literalOk
   | bool => simp [lowerLiteral] at literalOk
   | uint => simp [lowerLiteral] at literalOk
@@ -1588,6 +1596,55 @@ theorem stops_letStruct {id : Nat} {ty : SrcType} {fields : List SrcExpr} {body 
       (fails.letBody valueRun)
     exact ⟨d, Stops.assignFrom xs next stops⟩
 
+theorem stops_letView {id length pointer : Nat} {fields : List SrcExpr} {body : SrcStmt}
+    (ih : SrcStops sp mp n body) : SrcStops sp mp n (.letView id length fields pointer body) := by
+  intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
+  obtain ⟨xs, bstmt, nz, few, literalOk, bodyOk, rfl⟩ := letView_lower_inv ok
+  have pos : 0 < length := Nat.pos_of_ne_zero nz
+  simp only [lowerLiteral, lowerStructFields] at literalOk
+  split at literalOk
+  · simp at literalOk
+  rw [repeatType_eq] at literalOk
+  refine Stops.checked fun g => ?_
+  obtain ⟨k, vs, fieldsRun⟩ := lowerArgs_progress corr (SrcProgram.target_toCore sp) literalOk g
+  obtain ⟨-, fieldsHold, len, shapes⟩ := lowerArgs_sound corr (SrcProgram.target_toCore sp) literalOk fieldsRun
+  rw [sizes_replicate] at len
+  have valueRun : evalExpr (k + 1) sp.toCore st ((SrcType.array .i32 length).literal (fields.map SrcExpr.toCore)) =
+      .done (.array vs) st := by
+    simp only [SrcType.literal, evalExpr, fieldsRun]
+  have flat : FlatValue places (.array .i32 length) (.array vs) env xs :=
+    ⟨by simp only [SrcType.size, len], .array fieldsHold⟩
+  have insens : Insens xs next := Insens.below fun x mem => by
+    obtain ⟨ys, shape, inYs⟩ := shapes x mem
+    exact shape.below fr.slots x inYs
+  have fh : FieldsHold places (List.replicate length .i32) vs (env.setFrom next xs) next := by
+    have stored := flat.store insens
+    cases stored; assumption
+  obtain ⟨-, -, enc⟩ := fields_i32 length fh
+  simp only [SrcStmt.toCore] at fails
+  have fails1 := fails.letBody valueRun
+  obtain ⟨w, st3, ptrRun⟩ := viewPtr_done (P := sp.toCore) fresh id enc 0
+  by_cases room : st3.heap.nextAddress ≤ hp.limit
+  · obtain ⟨p, frame', envB, hp3, rfl, corrB, frB, freshB, leB, hcB, fcB, limit3, -, -, -, stopsT⟩ :=
+      view_entered (mp := mp) (ret := ret) (pointer := pointer) corr fr fresh le hc fc under pos fh ptrRun room
+    obtain ⟨d, stops⟩ := ih bodyOk corrB frB freshB leB hcB fcB under (by rw [limit3]; exact room)
+      (by rw [limit3]; exact fails1.letBody ptrRun)
+    exact ⟨d, stopsT stops⟩
+  · obtain ⟨bytes, p, heap', enc', map, rfl, st3Eq⟩ := viewPtr_run fresh ptrRun
+    rw [enc] at enc'
+    cases enc'
+    obtain ⟨pEq, nextEq, -⟩ := hc.mapView map
+    have past : hp.limit < p + 4 * length := by
+      have : st3.heap.nextAddress = heap'.nextAddress := by subst st3Eq; rfl
+      rw [this, nextEq, slotBytes_length] at room
+      have := Nat.le_max_left (4 * length) 1
+      have : max (4 * length) 1 = 4 * length := by omega
+      addr_omega
+    refine ⟨0, Stops.assignFrom xs next (.seqFirst (.alloc (by rw [hc.cursor]; exact within) ?_))⟩
+    simp only [Expr.eval, BitVec.toNat_ofNat]
+    rw [Nat.mod_eq_of_lt (by omega), ← pEq]
+    exact past
+
 theorem stops_letEnum {id : Nat} {ty : SrcType} {variant : Nat} {payload : List SrcExpr} {body : SrcStmt}
     (ih : SrcStops sp mp n body) : SrcStops sp mp n (.letEnum id ty variant payload body) := by
   intro bud places hp ret scope next stmt frame base st env ok corr fr fresh le hc fc under within fails
@@ -1604,6 +1661,7 @@ theorem stops_letEnum {id : Nat} {ty : SrcType} {variant : Nat} {payload : List 
   simp only [Option.some.injEq] at ok
   subst ok
   cases ty with
+  | view => simp [lowerEnumValue] at valueOk
   | i32 => simp [lowerEnumValue] at valueOk
   | bool => simp [lowerEnumValue] at valueOk
   | uint => simp [lowerEnumValue] at valueOk
@@ -1687,13 +1745,14 @@ theorem stops_letMatch {id : Nat} {ty : SrcType} {scrutinee enumId : Nat} {arms 
   case h_11 => simp at matchOk
   case h_12 => simp at matchOk
   case h_13 => simp at matchOk
+  case h_14 => simp at matchOk
   rename_i eid variants hty
   simp only [lowerMatchArms] at matchOk
   split at matchOk
   case isFalse => simp at matchOk
   rename_i cond
-  simp only [Bool.and_eq_true, decide_eq_true_eq] at cond
-  obtain ⟨⟨⟨rfl, sized⟩, len⟩, few⟩ := cond
+  simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true'] at cond
+  obtain ⟨⟨⟨⟨rfl, sized⟩, len⟩, few⟩, nv⟩ := cond
   have bmem := (lookup_mem found).1
   have room : ∀ fs ∈ variants, b.slot + 1 + sizes fs ≤ next := by
     intro fs mem
@@ -1855,7 +1914,7 @@ theorem stops_matchArm {scrutinee enumId variant binder : Nat} {binds : Bool} {t
       obtain ⟨d, stops⟩ := let_stops ih1 bodyOk corr1 fr (restore_fresh fresh') (Nat.le_trans le keeps1.next)
         sized (env' := env.setFrom next vs) (fr.agree fun j below => setFrom_outside vs next env j (.inl below))
         (flat.store insens) (by rw [restore_heap, (bindLocals_same _ st).1]; exact hc) (fc.after fresh keeps1) under
-        (by rw [restore_heap, (bindLocals_same _ st).1]; exact within) fails'
+        (by rw [restore_heap, (bindLocals_same _ st).1]; exact within) fails' (lowerValue_nv valueOk)
       exact ⟨d, .ifTrue test (Stops.assignFrom vs next stops)⟩
   · have branch := fails.ifBranch testRun
     simp only [Bool.false_eq_true, ↓reduceIte] at branch
@@ -1910,7 +1969,7 @@ theorem stops_letAlloc {id shift : Nat} {size : SrcExpr} {body : SrcStmt} (ih : 
         (v := .pointer (alignUp hp.cursor shift))
         (env' := env.set next (BitVec.ofNat 64 (alignUp hp.cursor shift)))
         (hp := { hp with cursor := alignUp hp.cursor shift + max (x.eval env).toNat 1 }) bodyOk
-        (corr.cells_congr rfl fun _ _ => rfl) fr ⟨fresh.1, fresh.2.allocate alloc⟩ le Nat.one_pos
+        (corr.sameCells rfl fun _ => rfl) fr ⟨fresh.1, fresh.2.allocate alloc⟩ le Nat.one_pos
         (fr.agree fun j below => by simp only [Env.set]; rw [if_neg (by omega)])
         (.ptr (by
           simp only [SrcType.Holds, Env.set, if_pos, Value.pointer.injEq, BitVec.toNat_ofNat]
@@ -2130,7 +2189,7 @@ theorem stops_letSlice {id : Nat} {element : SrcType} {pointer length : SrcExpr}
     obtain ⟨d, stops⟩ := let_stops ih (ty := .slice element)
         (st := st) (v := .rawSlice element.toCore (xp.eval env).toNat len)
         (env' := env.setFrom next [xp, xl]) (hp := hp) (by simpa [SrcType.size] using bodyOk)
-        (corr.cells_congr rfl fun _ _ => rfl) fr fresh le sized
+        (corr.sameCells rfl fun _ => rfl) fr fresh le sized
         (fr.agree fun j below => setFrom_outside [xp, xl] next env j (.inl below))
         (by
           have first : (xp.eval env).toNat = (env.setFrom next [xp, xl] next).toNat := by
@@ -2521,7 +2580,7 @@ theorem stops_letIndex_word {id : Nat} {ty : SrcType} {slice : Nat} {index : Src
       ⟨bslot, SrcExpr.lower_below fr.slots index indexLowered, trivial⟩
     obtain ⟨env2, agree, holds, load⟩ := loadElement_sound (mp := mp) hc within hel rfl below read
     obtain ⟨d, stops⟩ := let_stops ih (ty := ty) (env' := env2) (hp := hp) bodyOk corr fr fresh le tpos
-      (fr.agree fun j lt => agree j (.inl lt)) holds hc fc under within (fails.letBody valueRun)
+      (fr.agree fun j lt => agree j (.inl lt)) holds hc fc under within (fails.letBody valueRun) (wordElement_nv hel)
     obtain ⟨ps, eq⟩ := loadType_chain ty next (elementBase b.slot ty.size t.expr) 0
     have pre := load (d := d) (rest := .skip) .skip
     rw [eq] at pre ⊢

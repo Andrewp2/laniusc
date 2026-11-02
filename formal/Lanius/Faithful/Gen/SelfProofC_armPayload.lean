@@ -14,6 +14,7 @@ public import Lanius.Faithful.Gen.SelfStmtC_armBodyScope
 public import Lanius.Faithful.Gen.SelfStmtC_armPayload
 public import Lanius.Faithful.Gen.SelfStmtC_armScope
 public import Lanius.Faithful.Gen.SelfStmtC_assignFrom
+public import Lanius.Faithful.Gen.SelfStmtC_lowerTagged
 import all Lanius.Faithful.Gen.SelfSrcC_armPayload
 import all Lanius.Mini.Compiler.P.armPayload
 
@@ -97,8 +98,9 @@ theorem proof_lower_match_arm {prog : SrcProgram} {prims : Prims} {ix_lower_matc
   simp only [src_lower_match_arm] at h
   faithful [Lanius.Mini.lowerMatchArm]
 
-theorem proof_lower_match_arms {prog : SrcProgram} {prims : Prims} {ix_lower_match_arms ix_SrcType_size ix_length_of_mini_selfhost_List_mini_selfhost_SrcType ix_length_of_mini_selfhost_SrcArm ix_lower_arms : Nat} (fn : prog.funcs[ix_lower_match_arms]? = some (src_lower_match_arms ix_SrcType_size ix_length_of_mini_selfhost_List_mini_selfhost_SrcType ix_length_of_mini_selfhost_SrcArm ix_lower_arms)) (np : prims.isPrim ix_lower_match_arms = false)
+theorem proof_lower_match_arms {prog : SrcProgram} {prims : Prims} {ix_lower_match_arms ix_SrcType_size ix_viewed_type ix_length_of_mini_selfhost_List_mini_selfhost_SrcType ix_length_of_mini_selfhost_SrcArm ix_lower_arms : Nat} (fn : prog.funcs[ix_lower_match_arms]? = some (src_lower_match_arms ix_SrcType_size ix_viewed_type ix_length_of_mini_selfhost_List_mini_selfhost_SrcType ix_length_of_mini_selfhost_SrcArm ix_lower_arms)) (np : prims.isPrim ix_lower_match_arms = false)
     (ext_SrcType_size : Certified (∀ {n : Nat}, Stmt_SrcType_size prog prims ix_SrcType_size n))
+    (ext_viewed_type : Certified (∀ {n : Nat}, Stmt_viewed_type prog prims ix_viewed_type n))
     (ext_length_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_length_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_length_of_mini_selfhost_List_mini_selfhost_SrcType n))
     (ext_length_of_mini_selfhost_SrcArm : Certified (∀ {n : Nat}, Stmt_length_of_mini_selfhost_SrcArm prog prims ix_length_of_mini_selfhost_SrcArm n))
     (ext_lower_arms : Certified (∀ {n : Nat}, Stmt_lower_arms prog prims ix_lower_arms n)) {n : Nat} :

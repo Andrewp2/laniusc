@@ -52,7 +52,7 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
     subst found'
     have entry := bindLocals_same (paramBindings f.params values) { afterArgs with locals := [] }
     have gBody : Grows afterArgs completed := (Grows.same (st := afterArgs) entry.1 entry.2).trans (execStmt_grows bodyRun)
-    have b1 := Grows.bound (effsGrows argsRun) gBody inv.views bound
+    have b1 := Grows.bound (effsGrows argsRun) gBody bound
     obtain ⟨ps, hps, rs, ran1⟩ := effs argsRun hts inv rel b1
     obtain ⟨w, hw, rw, invc, stepc⟩ := calls found notOut len ran1.inv (show completed.heap.nextAddress ≤ 2 ^ 64 from bound) rs bodyRun result
     refine ⟨w, ?_, rw, ⟨invc.restore afterArgs, (ran1.step.trans stepc).restore afterArgs, ran1.locals⟩⟩
@@ -72,7 +72,7 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
       · obtain ⟨ql, hql, rl, ran⟩ := eff lrun htl inv rel bound
         rw [rl.boolean] at hql
         exact ⟨_, by simp [peff, applyOp, hql, asBool], .scalar ⟨_, rfl⟩, ran⟩
-      · have b1 := Grows.bound (effGrows lrun) (effGrows rrun) inv.views bound
+      · have b1 := Grows.bound (effGrows lrun) (effGrows rrun) bound
         obtain ⟨ql, hql, rl, ran1⟩ := eff lrun htl inv rel b1
         rw [rl.boolean] at hql
         obtain ⟨qr, hqr, rr, ran2⟩ := eff rrun htr ran1.inv (rel.step ran1.step ran1.locals) bound
@@ -87,7 +87,7 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
       · obtain ⟨ql, hql, rl, ran⟩ := eff lrun htl inv rel bound
         rw [rl.boolean] at hql
         exact ⟨_, by simp [peff, applyOp, hql, asBool], .scalar ⟨_, rfl⟩, ran⟩
-      · have b1 := Grows.bound (effGrows lrun) (effGrows rrun) inv.views bound
+      · have b1 := Grows.bound (effGrows lrun) (effGrows rrun) bound
         obtain ⟨ql, hql, rl, ran1⟩ := eff lrun htl inv rel b1
         rw [rl.boolean] at hql
         obtain ⟨qr, hqr, rr, ran2⟩ := eff rrun htr ran1.inv (rel.step ran1.step ran1.locals) bound
@@ -95,7 +95,7 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
     obtain ⟨j, lv, s1, rv, hj, lrun, rrun, hv⟩ :=
       binary_inv (SrcOp.toCore_ne_and isAnd) (SrcOp.toCore_ne_or isOr) run
     obtain rfl : j = k := by omega
-    have b1 := Grows.bound (effGrows lrun) (effGrows rrun) inv.views bound
+    have b1 := Grows.bound (effGrows lrun) (effGrows rrun) bound
     obtain ⟨ql, hql, rl, ran1⟩ := eff lrun htl inv rel b1
     obtain ⟨qr, hqr, rr, ran2⟩ := eff rrun htr ran1.inv (rel.step ran1.step ran1.locals) bound
     rw [toCore_target] at hv
@@ -177,7 +177,7 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
         have := SrcType.same_eq same
         subst this
         simp only [SrcType.typeId] at arun
-        have b1 := Grows.bound (effGrows srun) (effArmsGrows arun) inv.views bound
+        have b1 := Grows.bound (effGrows srun) (effArmsGrows arun) bound
         obtain ⟨q, hq, rq, ran1⟩ := eff srun hts inv rel b1
         obtain ⟨kk, fs, vs, ps, rfl, rfl, hk, rs⟩ := rq.enum_inv
         obtain ⟨p, hp, r, ran2⟩ := arms arun (Nat.zero_le _) (by simpa using hk) rs aok ran1.inv
@@ -198,6 +198,7 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
     | float => simp at hm
     | sint => simp at hm
     | array => simp at hm
+    | view => simp at hm
   | eDivide op l r =>
     simp only [SrcEff.toCore] at run
     have notAnd : op.toCore ≠ .logicalAnd := by cases op <;> simp [SrcDivOp.toCore]
@@ -207,7 +208,7 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
     simp only [effTy, Option.bind_eq_some_iff] at ht
     obtain ⟨tl, htl, tr, htr, hd⟩ := ht
     obtain ⟨rfl, -⟩ := divTy_some hd
-    have b1 := Grows.bound (effGrows lrun) (effGrows rrun) inv.views bound
+    have b1 := Grows.bound (effGrows lrun) (effGrows rrun) bound
     obtain ⟨ql, hql, rl, ran1⟩ := eff lrun htl inv rel b1
     obtain ⟨qr, hqr, rr, ran2⟩ := eff rrun htr ran1.inv (rel.step ran1.step ran1.locals) bound
     rw [toCore_target] at hv
@@ -234,7 +235,7 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
       · rename_i same
         simp only [Option.some.injEq] at hab
         subst hab
-        have b1 := Grows.bound (effGrows crun) (ifArms_grows (eff_grows j (grows sp j)) arun) inv.views bound
+        have b1 := Grows.bound (effGrows crun) (ifArms_grows (eff_grows j (grows sp j)) arun) bound
         obtain ⟨q, hq, rq, ran1⟩ := eff crun htc inv rel b1
         obtain ⟨rfl, x, rfl⟩ := rq.scalar_ty rfl
         obtain ⟨j', s2, lt, brun, rfl⟩ := ifArms_inv arun
@@ -259,7 +260,7 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
     obtain rfl : j = k := by omega
     simp only [effTy, Option.bind_eq_some_iff] at ht
     obtain ⟨tv, htv, hb⟩ := ht
-    have b1 := Grows.bound (effGrows vrun) (letArm_grows (eff_grows j (grows sp j)) arun) inv.views bound
+    have b1 := Grows.bound (effGrows vrun) (letArm_grows (eff_grows j (grows sp j)) arun) bound
     obtain ⟨q, hq, rq, ran1⟩ := eff vrun htv inv rel b1
     obtain ⟨j', s2, lt, brun, rfl⟩ := letArm_inv arun
     have rel1 := rel.step ran1.step ran1.locals

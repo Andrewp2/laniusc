@@ -80,13 +80,14 @@ import all Lanius.Mini.Compiler.P.wordElement
 import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.wordWidth
 -- end import all uses
--- import parts: Lanius.Mini.Compiler SrcExpr.lower SrcOp.lower SrcStmt.lower UintTy.code negateSigned equality order
+-- import parts: Lanius.Mini.Compiler SrcExpr.lower SrcOp.lower SrcStmt.lower UintTy.code negateSigned equality order viewedType
 public import Lanius.Mini.Compiler.P.arithShiftRight
 public import Lanius.Mini.Compiler.P.arrayCallSig
 public import Lanius.Mini.Compiler.P.conjunction
 public import Lanius.Mini.Compiler.P.equality
 public import Lanius.Mini.Compiler.P.lowerApply
 public import Lanius.Mini.Compiler.P.lowerLocal
+public import Lanius.Mini.Compiler.P.lowerTagged
 public import Lanius.Mini.Compiler.P.render
 -- end import parts
 
@@ -102,6 +103,9 @@ variable {places : List Addressed}
 open Lanius.Core (Value)
 open Lanius.Semantics (State evalExpr)
 
+theorem viewedType_true {ty : SrcType} (h : viewedType ty = true) : ∃ n, ty = .view n := by
+  cases ty <;> simp_all [viewedType]
+
 /-- Core's locals are the scope's bindings in the same order, each slot's cell
 given by `frame`, and every binding's cell holds a value its slot represents. -/
 structure Corr (places : List Addressed) (scope : List Binding) (frame : Nat → Nat) (st : State) (env : Env) : Prop where
@@ -110,8 +114,13 @@ structure Corr (places : List Addressed) (scope : List Binding) (frame : Nat →
   apart : ∀ x ∈ places, ∀ b ∈ scope, x.cell ≠ frame b.slot
   values : ∀ b ∈ scope, ∃ v, st.cellEntry? (frame b.slot) = some ⟨frame b.slot, some v⟩ ∧
     b.ty.HoldsAt places v env b.slot
-  /-- No array view roots at the scope's cells: Core's syncs never write them. -/
-  unviewed : ∀ v ∈ st.i32ArrayViews, ∀ b ∈ scope, v.root ≠ frame b.slot
+  /-- No array view roots at the cells of the scope's bindings other than
+  viewed arrays: Core's syncs never write them. -/
+  unviewed : ∀ v ∈ st.i32ArrayViews, ∀ b ∈ scope, viewedType b.ty = false → v.root ≠ frame b.slot
+  /-- A viewed array's cell is the root of a view as long as it, whose
+  address is in the binding's first slot. -/
+  viewed : ∀ b ∈ scope, ∀ n, b.ty = .view n →
+    ∃ w ∈ st.i32ArrayViews, w.root = frame b.slot ∧ w.address = (env b.slot).toNat ∧ w.length = n ∧ 0 < n
 
 theorem lookup_mem {scope : List Binding} {id : Nat} {b : Binding}
     (found : lookup scope id = some b) : b ∈ scope ∧ b.id = id := by
@@ -359,6 +368,7 @@ theorem castToIsize_sound {inner t : Typed} {env : Env} {w result : Value}
     · simp at lowered
     · rename_i _ hty
       simp [hty, SrcType.sintKind] at base
+    · simp at lowered
 
 /-- A lowered cast of an operand of a type other than `SrcType.sint` holds Core's cast of its value. -/
 theorem cast_sound_base {ty : SrcType} {inner t : Typed} {env : Env} {w result : Value}
@@ -416,6 +426,7 @@ theorem cast_sound_base {ty : SrcType} {inner t : Typed} {env : Env} {w result :
     · simp at lowered
     · rename_i _ hty
       simp [hty, SrcType.sintKind] at base
+    · simp at lowered
   | bool => simp [castTo] at lowered
   | uint kind =>
     have positive := Nat.two_pow_pos kind.width
@@ -465,6 +476,7 @@ theorem cast_sound_base {ty : SrcType} {inner t : Typed} {env : Env} {w result :
     · simp at lowered
     · rename_i _ hty
       simp [hty, SrcType.sintKind] at base
+    · simp at lowered
   | struct => simp [castTo] at lowered
   | enum => simp [castTo] at lowered
   | ptr => simp [castTo] at lowered
@@ -512,6 +524,7 @@ theorem cast_sound_base {ty : SrcType} {inner t : Typed} {env : Env} {w result :
         subst lowered
         exact narrow_cast_holds (by simpa using wide) scalar holds casted
       · simp at lowered
+  | view => simp [castTo] at lowered
 
 /-- A lowered cast holds Core's cast of the operand's value. -/
 theorem cast_sound {ty : SrcType} {inner t : Typed} {env : Env} {w result : Value}
@@ -542,7 +555,7 @@ theorem SrcType.same_cases {a b : SrcType} (h : a.same b = true) :
   cases a <;> cases b <;>
     simp [SrcType.same, SrcType.isI32, SrcType.isBool, SrcType.isUint, SrcType.isPtr, SrcType.isUnit,
       SrcType.isIsize, SrcType.isSint, SrcType.isChar, SrcType.isFloat] at h ⊢ <;>
-    first | exact UintTy.eq_of_code h | exact (UintTy.eq_of_code h).symm | exact FloatTy.eq_of_number h | exact (FloatTy.eq_of_number h).symm
+    first | exact UintTy.eq_of_code h | exact (UintTy.eq_of_code h).symm | exact FloatTy.eq_of_number h | exact (FloatTy.eq_of_number h).symm | exact h.symm | exact h
 
 /-- A comparison's lowering, on operands that represent `vl` and `vr`, represents Core's result. -/
 theorem order_holds {op : CmpOp} {cop : Core.BinaryOp}
@@ -696,6 +709,7 @@ theorem equality_holds {op : CmpOp} {cop : Core.BinaryOp} (h : (op = .eq ∧ cop
         subst e
         simp only [Expr.eval, htl, SrcType.word]
         exact holds_compare _
+      · simp [SrcType.Holds] at holdsl
     · simp at lowered
 
 /-- A strict operator's lowering, on operands that represent `vl` and `vr`,

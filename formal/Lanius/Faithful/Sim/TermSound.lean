@@ -472,7 +472,7 @@ theorem neverNext_sound (call : Calls) (fuel : Nat) :
   | whileEval _ _ => intro E e h; simp [neverNext] at h
   | «break» => intro E e _ he; simp [mstmt] at he
   | «continue» => intro E e _ he; simp [mstmt] at he
-  | letMatch _ _ _ _ _ _ | setField _ _ _ | setCall _ _ _ | letAlloc _ _ _ _
+  | letMatch _ _ _ _ _ _ | setField _ _ _ | setCall _ _ _ | letAlloc _ _ _ _ | letView _ _ _ _ _
   | letLoad _ _ _ _ | setByte _ _ _ | free _ _ _ | letSlice _ _ _ _ _ | letIndex _ _ _ _ _
   | setIndex _ _ _ | setIndexEval _ _ _ | setFieldEval _ _ _
   | matchArm _ _ _ _ _ _ _ _ | unreachable _ _ => intro E e _ he; simp [mstmt] at he
@@ -545,7 +545,7 @@ theorem after_ok' {B : Nat} {A : AEnv} {E : Env} (h : EnvOk B A E) (call : Calls
     · exact h
   | nop | «let» _ _ _ _ | letStruct _ _ _ _ | letCall _ _ _ _ _ | letEnum _ _ _ _ _
   | letMatch _ _ _ _ _ _ | set _ _ | setField _ _ _ | setCall _ _ _ | «then» _ _ | «while» _ _
-  | «return» _ | letAlloc _ _ _ _ | letLoad _ _ _ _ | setByte _ _ _ | free _ _ _
+  | «return» _ | letAlloc _ _ _ _ | letView _ _ _ _ _ | letLoad _ _ _ _ | setByte _ _ _ | free _ _ _
   | letSlice _ _ _ _ _ | letIndex _ _ _ _ _ | setIndex _ _ _ | letEval _ _ _ _ | setEval _ _
   | ifEval _ _ _ | whileEval _ _ | returnEval _ | discard _ | setIndexEval _ _ _
   | setFieldEval _ _ _ | returnUnit | assert _ | «break» | «continue» | matchArm _ _ _ _ _ _ _ _

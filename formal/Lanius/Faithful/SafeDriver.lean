@@ -125,10 +125,9 @@ theorem read_safe {inp : Nat} {W : List (BitVec 32)} (len : W.length < 2 ^ 64) :
         · exact m36
         · exact m47) recRun
       simp only [List.map_cons, List.map_nil, read_params] at recBody
-      obtain ⟨views1, -⟩ := (execStmt_grows recBody).empty (Same.start inv1 _).views
       refine SafeS.of_bound (sp := prog) (s := SrcStmt.returnEval (SrcEff.eCall 1
         [SrcEff.ePure (SrcExpr.local 12), SrcEff.ePure (SrcExpr.local 25), SrcEff.ePure (SrcExpr.local 146),
-          SrcEff.ePure (SrcExpr.local 191)])) views1 fun bound => ?_
+          SrcEff.ePure (SrcExpr.local 191)])) fun bound => ?_
       obtain ⟨p1, rel1, rep1, inv1', step1⟩ := read_body (inp := inp) (W := W) len (hi - (lo + (hi - lo) / 2))
         (lo := lo + (hi - lo) / 2) (hi := hi) rfl midHi hle inv1 (reads.step (stepE.trans (Step.bindLocal _ _ _)))
         (show done1.heap.nextAddress ≤ 2 ^ 64 from bound) (heapE ▸ rel) rep recBody recResult
@@ -242,9 +241,8 @@ theorem write_one_safe {outp room : Nat} (roomLt : room < 2 ^ 31) {x : BitVec 32
   obtain ⟨rfl, hA⟩ := args.done argsRun
   subst afterArgs
   simp only [write_params] at body3
-  obtain ⟨views3, -⟩ := (execStmt_grows body3).empty (Same.start invE _).views
   refine SafeS.of_bound (sp := prog) (s := SrcStmt.then (SrcStmt.setIndex 17 (SrcExpr.local 29)
-    (SrcExpr.local 40)) (SrcStmt.return (SrcExpr.local 100))) views3 fun bound => ?_
+    (SrcExpr.local 40)) (SrcStmt.return (SrcExpr.local 100))) fun bound => ?_
   obtain ⟨-, hlen, -, cells3, inv3, readable3⟩ := write_body roomLt rest invE
     (show done3.heap.nextAddress ≤ 2 ^ 64 from bound) (heapE ▸ readable) (heapE ▸ rel) rep body3 result3
   have back {id : Nat} {y : Value} (ne : 100 ≠ id) (h : E.local? id = some y) :
@@ -365,10 +363,9 @@ theorem write_safe {outp room : Nat} (roomLt : room < 2 ^ 31) : ∀ ws, WriteSaf
     obtain ⟨_, uv, sU, more4, -, r4, n4, rfl⟩ := exprs_cons_inv n3
     obtain ⟨rfl, rfl⟩ := exprs_nil_inv n4
     obtain ⟨jU, doneU, cU, bodyU, resultU, rfl⟩ := call_locals [(137, bv)] fn_unbox (by simpa using m137) r4
-    obtain ⟨viewsU, -⟩ := (execStmt_grows bodyU).empty (Same.start inv2 _).views
     refine ⟨rfl, ?_⟩
     simp only [write_one_params]
-    refine SafeS.of_bound (sp := prog) (s := (src_app_main_oracle_write_one 3).body) viewsU fun bound => ?_
+    refine SafeS.of_bound (sp := prog) (s := (src_app_main_oracle_write_one 3).body) fun bound => ?_
     obtain ⟨w, hw, rw, invU, stepU⟩ := func_sim SelfPure.selfPure SelfPure.selfPrims jU fn_unbox
       (by decide +kernel) rfl inv2 (show doneU.heap.nextAddress ≤ 2 ^ 64 from bound)
       (.cons (heapE ▸ rbox) .nil) bodyU resultU
@@ -613,10 +610,9 @@ theorem driver_safe {st : State} {inp outp room : Nat} {W : List (BitVec 32)}
     rw [fn_empty_of_i32, Option.some.injEq] at foundE
     subst foundE
     obtain ⟨rfl, rfl⟩ := exprs_nil_inv argsE
-    obtain ⟨viewsE, -⟩ := (execStmt_grows bodyE).empty (Same.start inv2 _).views
     refine ⟨rfl, ?_⟩
     simp only [read_params, show (0#64).toNat = 0 from rfl]
-    refine SafeS.of_bound (sp := prog) (s := (src_app_main_oracle_read 1 9).body) viewsE fun bE => ?_
+    refine SafeS.of_bound (sp := prog) (s := (src_app_main_oracle_read 1 9).body) fun bE => ?_
     obtain ⟨we, hwe, rwe, invE', stepE'⟩ := func_sim SelfPure.selfPure SelfPure.selfPrims j5 fn_empty_of_i32
       (by decide +kernel) lenE inv2 (show doneE.heap.nextAddress ≤ 2 ^ 64 from bE) .nil bodyE resultE
     exact read_safe (by omega) (W.length - 0) rfl (Nat.zero_le _) (Nat.le_refl _) (invE'.restore _)
@@ -638,10 +634,9 @@ theorem driver_safe {st : State} {inp outp room : Nat} {W : List (BitVec 32)}
   subst foundE
   obtain ⟨rfl, rfl⟩ := exprs_nil_inv argsE
   simp only [read_params, show (0#64).toNat = 0 from rfl] at bodyR
-  obtain ⟨viewsE, -⟩ := (execStmt_grows bodyE).empty (Same.start inv2 _).views
-  obtain ⟨viewsR, leR⟩ := (execStmt_grows bodyR).empty viewsE
+  have leR := (execStmt_grows bodyR).next
   refine SafeS.of_bound (sp := prog) (s := SrcStmt.returnEval (SrcEff.eCall 2 [SrcEff.ePure (SrcExpr.local 125),
-    SrcEff.eCall 6 [SrcEff.eCall 7 [SrcEff.eCall 8 [], SrcEff.ePure (SrcExpr.local 182)]]])) viewsR fun bR => ?_
+    SrcEff.eCall 6 [SrcEff.eCall 7 [SrcEff.eCall 8 [], SrcEff.ePure (SrcExpr.local 182)]]])) fun bR => ?_
   obtain ⟨we, hwe, rwe, invE', stepE'⟩ := func_sim SelfPure.selfPure SelfPure.selfPrims j5 fn_empty_of_i32
     (by decide +kernel) lenE inv2 (show doneE.heap.nextAddress ≤ 2 ^ 64 from Nat.le_trans leR bR) .nil bodyE
     resultE
@@ -694,12 +689,12 @@ theorem driver_safe {st : State} {inp outp room : Nat} {W : List (BitVec 32)}
   rw [fn_grammar, Option.some.injEq] at foundG
   subst foundG
   obtain ⟨rfl, rfl⟩ := exprs_nil_inv argsG
-  obtain ⟨viewsG, leG⟩ := (execStmt_grows bodyG).empty viewsR
-  obtain ⟨viewsF, leF⟩ := (execStmt_grows bodyF).empty viewsG
-  obtain ⟨viewsC, leC⟩ := (execStmt_grows bodyC).empty viewsF
+  have leG := (execStmt_grows bodyG).next
+  have leF := (execStmt_grows bodyF).next
+  have leC := (execStmt_grows bodyC).next
   refine ⟨rfl, ?_⟩
   simp only [put_params]
-  refine SafeS.of_bound (sp := prog) (s := (src_app_main_oracle_put 3).body) viewsC fun bC => ?_
+  refine SafeS.of_bound (sp := prog) (s := (src_app_main_oracle_put 3).body) fun bC => ?_
   have bF : doneF.heap.nextAddress ≤ 2 ^ 64 := Nat.le_trans leC bC
   have bG : doneG.heap.nextAddress ≤ 2 ^ 64 := Nat.le_trans leF bF
   obtain ⟨wg, hwg, rwg, invG, stepG⟩ := func_sim SelfPure.selfPure SelfPure.selfPrims j10 fn_grammar

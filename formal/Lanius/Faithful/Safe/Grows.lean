@@ -549,6 +549,63 @@ theorem evalPlace_readLocal_trap {id : Nat}
       | (simp only [Semantics.Outcome.trapped.injEq] at run; exact run.2.symm)
       | simp at run
 
+/-- Core's `mapI32ArrayView` that traps leaves the state, or a map's untouched heap. -/
+theorem mapView_trap_grows {root : Nat} {projections : List Core.ValueProjection} {elements : List Value}
+    (run : Semantics.mapI32ArrayView st root projections elements = .trapped r st') : Grows st st' := by
+  simp only [Semantics.mapI32ArrayView] at run
+  split at run
+  · split at run
+    · simp at run
+    · simp only [Semantics.Outcome.trapped.injEq] at run
+      obtain ⟨-, rfl⟩ := run
+      exact Grows.refl _
+  · split at run
+    · simp only [Semantics.Outcome.trapped.injEq] at run
+      obtain ⟨-, rfl⟩ := run
+      exact Grows.refl _
+    · split at run
+      · simp at run
+      · rename_i mapped
+        simp only [Memory.Heap.mapBorrowed] at mapped
+        split at mapped <;> simp at mapped
+      · rename_i heap mapped
+        simp only [Semantics.Outcome.trapped.injEq] at run
+        obtain ⟨-, rfl⟩ := run
+        simp only [Memory.Heap.mapBorrowed] at mapped
+        split at mapped
+        · simp only [Memory.AllocationResult.trapped.injEq] at mapped
+          obtain ⟨-, rfl⟩ := mapped
+          exact Grows.same rfl rfl
+        · simp at mapped
+
+/-- `i32_array_data_ptr` of a local that traps grows the state. -/
+theorem view_trap_grows {id : Nat}
+    (run : evalExpr k P st (.i32ArrayDataPtr (.local id)) = .trapped r st') : Grows st st' := by
+  cases k with
+  | zero => simp [evalExpr] at run
+  | succ k =>
+    simp only [evalExpr, Semantics.expressionPlace?] at run
+    split at run
+    · rename_i placeRun
+      obtain ⟨rfl, -⟩ := evalPlace_local_read placeRun
+      exact mapView_trap_grows run
+    · rename_i placeRun
+      simp only [Semantics.Outcome.trapped.injEq] at run
+      obtain ⟨-, rfl⟩ := run
+      obtain ⟨rfl, -⟩ := evalPlace_local_read placeRun
+      exact Grows.refl _
+    · rename_i placeRun
+      simp only [Semantics.Outcome.trapped.injEq] at run
+      obtain ⟨-, rfl⟩ := run
+      obtain ⟨rfl, -⟩ := evalPlace_local_read placeRun
+      exact Grows.refl _
+    · rename_i placeRun
+      simp only [Semantics.Outcome.trapped.injEq] at run
+      obtain ⟨-, rfl⟩ := run
+      rw [evalPlace_readLocal_trap placeRun]
+      exact Grows.refl _
+    all_goals simp at run
+
 /-- Making an array local's slice that traps changes nothing. -/
 theorem arraySlice_trap_state {element : Core.Ty} {array : Nat}
     (run : evalExpr k P st (.arrayToSlice element (.local array)) = .trapped r st') : st' = st := by
@@ -1013,6 +1070,14 @@ theorem grows_trap_step {fuel : Nat} (ih : GrowsBelow sp fuel) (ihT : GrowsBelow
     | letAlloc id size shift body =>
       exact letLocal_trap_grows (fun r => alloc_grows r) (fun r => alloc_trap_grows r)
         (fun r => belowT (s := body) r) run
+    | letView id length fields pointer body =>
+      refine letLocal_trap_grows (fun r => by rw [structValue_state r]; exact Grows.refl _)
+        (fun r => by rw [literal_trap_state r]; exact Grows.refl _) (fun {s0 r0 s1} r => ?_) run
+      cases f with
+      | zero => simp [execStmt] at r
+      | succ g =>
+        exact letLocal_trap_grows (fun r' => view_grows r') (fun r' => view_trap_grows r')
+          (fun r' => ihT g (by omega) (s := body) r') r
     | letLoad id pointer offset body =>
       exact letLocal_trap_grows (fun r => loadByte_grows r) (fun r => loadByte_trap_grows r)
         (fun r => belowT (s := body) r) run

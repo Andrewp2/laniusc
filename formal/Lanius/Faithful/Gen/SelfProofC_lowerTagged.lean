@@ -51,4 +51,13 @@ theorem proof_lower_tagged {prog : SrcProgram} {prims : Prims} {ix_lower_tagged 
   simp only [src_lower_tagged] at h
   faithful [Lanius.Mini.lowerTagged]
 
+theorem proof_viewed_type {prog : SrcProgram} {prims : Prims} {ix_viewed_type : Nat} (fn : prog.funcs[ix_viewed_type]? = some (src_viewed_type)) (np : prims.isPrim ix_viewed_type = false) {n : Nat} :
+    Stmt_viewed_type prog prims ix_viewed_type n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_viewed_type] at h
+  faithful [Lanius.Mini.viewedType]
+
 end Lanius.Faithful.SelfCert

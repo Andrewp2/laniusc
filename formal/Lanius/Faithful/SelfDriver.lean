@@ -169,8 +169,7 @@ theorem read_body {inp : Nat} {W : List (BitVec 32)} (len : W.length < 2 ^ 64) :
       [SrcEff.ePure (SrcExpr.local 12), SrcEff.ePure (SrcExpr.local 25), SrcEff.ePure (SrcExpr.local 146),
         SrcEff.ePure (SrcExpr.local 191)])) ret
     simp only [List.map_cons, List.map_nil, read_params] at recBody
-    obtain ⟨views1, -⟩ := (execStmt_grows recBody).empty (Same.start inv1 _).views
-    obtain ⟨-, le1⟩ := grows.empty views1
+    have le1 := grows.next
     obtain ⟨p1, rel1, rep1, inv1', step1⟩ := ih (hi - (lo + (hi - lo) / 2)) (by omega)
       (lo := lo + (hi - lo) / 2) (hi := hi) rfl midHi hle inv1 (reads.step (stepE.trans (Step.bindLocal _ _ _)))
       (show done1.heap.nextAddress ≤ 2 ^ 64 from Nat.le_trans le1 bound) (heapE ▸ rel) rep recBody recResult
@@ -371,9 +370,8 @@ theorem write_one_body {outp room : Nat} (roomLt : room < 2 ^ 31) {x : BitVec 32
   obtain ⟨rfl, rfl⟩ := local_eval l48 r3
   obtain ⟨rfl, rfl⟩ := exprs_nil_inv m3
   simp only [write_params] at body3
-  obtain ⟨views3, -⟩ := (execStmt_grows body3).empty (Same.start invE _).views
-  obtain ⟨-, le5⟩ := (execStmt_grows (sp := prog) (s := SrcStmt.then (SrcStmt.setIndex 17 (SrcExpr.local 29)
-    (SrcExpr.local 40)) (SrcStmt.return (SrcExpr.local 100))) rest5).empty views3
+  have le5 := (execStmt_grows (sp := prog) (s := SrcStmt.then (SrcStmt.setIndex 17 (SrcExpr.local 29)
+    (SrcExpr.local 40)) (SrcStmt.return (SrcExpr.local 100))) rest5).next
   obtain ⟨hw, hlen, written, cells3, inv3, readable3⟩ := ih invE
     (show done3.heap.nextAddress ≤ 2 ^ 64 from Nat.le_trans le5 bound) (heapE ▸ readable) (heapE ▸ rel) rep
     body3 result3
@@ -559,9 +557,8 @@ theorem write_body {outp room : Nat} (roomLt : room < 2 ^ 31) : ∀ ws, WriteSpe
     obtain ⟨_, uv, sU, more4, -, r4, n4, rfl⟩ := exprs_cons_inv n3
     obtain ⟨rfl, rfl⟩ := exprs_nil_inv n4
     obtain ⟨jU, doneU, cU, bodyU, resultU, rfl⟩ := call_locals [(137, bv)] fn_unbox (by simpa using m137) r4
-    obtain ⟨viewsU, -⟩ := (execStmt_grows bodyU).empty (Same.start inv2 _).views
     simp only [write_one_params] at body4
-    obtain ⟨-, grow4⟩ := (execStmt_grows body4).empty viewsU
+    have grow4 := (execStmt_grows body4).next
     obtain ⟨w, hw, rw, invU, stepU⟩ := func_sim SelfPure.selfPure SelfPure.selfPrims jU fn_unbox
       (by decide +kernel) rfl inv2 (show doneU.heap.nextAddress ≤ 2 ^ 64 from Nat.le_trans grow4 bound)
       (.cons (heapE ▸ rbox) .nil) bodyU resultU
@@ -818,12 +815,11 @@ theorem driver_faithful {fuel : Nat} {st st' : State} {v : Value} {inp outp room
   subst foundG
   obtain ⟨rfl, rfl⟩ := exprs_nil_inv argsG
   -- Each call's heap is below the next's, and the last is in range.
-  obtain ⟨viewsE, -⟩ := (execStmt_grows bodyE).empty (Same.start inv2 _).views
-  obtain ⟨viewsR, leR⟩ := (execStmt_grows bodyR).empty viewsE
-  obtain ⟨viewsG, leG⟩ := (execStmt_grows bodyG).empty viewsR
-  obtain ⟨viewsF, leF⟩ := (execStmt_grows bodyF).empty viewsG
-  obtain ⟨viewsC, leC⟩ := (execStmt_grows bodyC).empty viewsF
-  obtain ⟨-, leP⟩ := (execStmt_grows bodyP).empty viewsC
+  have leR := (execStmt_grows bodyR).next
+  have leG := (execStmt_grows bodyG).next
+  have leF := (execStmt_grows bodyF).next
+  have leC := (execStmt_grows bodyC).next
+  have leP := (execStmt_grows bodyP).next
   have bC : doneC.heap.nextAddress ≤ 2 ^ 64 := Nat.le_trans leP bound
   have bF : doneF.heap.nextAddress ≤ 2 ^ 64 := Nat.le_trans leC bC
   have bG : doneG.heap.nextAddress ≤ 2 ^ 64 := Nat.le_trans leF bF

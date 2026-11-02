@@ -53,6 +53,7 @@ def negWideAt (want : Option SrcType) (n : BitVec 64) (e : SrcExpr) : SrcExpr :=
     | .char => e
     | .float ft => e
     | .sint sk => negWideSint sk n e
+    | .view viewLength => e
 
 def leastCast (u : UintTy) (k : BitVec 32) (d : SrcExpr) : SrcExpr :=
   if !(sintFits u k) && sintFits u (0 - k) then
@@ -94,6 +95,7 @@ def negLeast (want : Option SrcType) (x : SrcExpr) (d : SrcExpr) : SrcExpr :=
     | .char => d
     | .float ft => d
     | .sint sk => negLeastAt sk x d
+    | .view viewLength => d
 
 /-- An expression's type when it does not rest on literals. -/
 def knownExpr (locals : List LocalTy) (e : SrcExpr) : Option SrcType :=
@@ -248,6 +250,7 @@ def litStmt (funcs : List SrcFunc) (ret : SrcType) (locals : List LocalTy) (s : 
   | .continue => SrcStmt.continue
   | .matchArm sc en k bs x ty body rest => SrcStmt.matchArm sc en k bs x ty (litStmt funcs ret (withLocal x ty locals) body) (litStmt funcs ret locals rest)
   | .unreachable id ty => SrcStmt.unreachable id ty
+  | .letView id n es p body => SrcStmt.letView id n (litExprs locals (some (repeatSrc SrcType.i32 n)) es) p (litStmt funcs ret (withLocal p SrcType.ptr (withLocal id (SrcType.array SrcType.i32 n) locals)) body)
 
 def paramLocals (ps : List SrcParam) : List LocalTy :=
   match ps with

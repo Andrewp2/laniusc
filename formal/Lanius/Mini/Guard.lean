@@ -512,6 +512,37 @@ theorem armPayload_shape {scope : List Binding} {slot : Nat} {fields : List SrcT
       exact .inr ⟨cnd'.1, cnd'.2, s', scopeOk, h⟩
     · simp at h
 
+/-- The scope a `LetView` body is lowered in: the pointer after the viewed array. -/
+abbrev viewScope (id length pointer next : Nat) (scope : List Binding) : List Binding :=
+  { id := pointer, slot := next + length, ty := .ptr } :: { id := id, slot := next, ty := .view length } :: scope
+
+/-- What lowering a `LetView` checks, and what it emits: the elements into
+their slots, the block into the slot after them, the stores, the body. -/
+theorem letView_lower_inv {sigs : List Sig} {decls : SrcDecls} {ret : SrcType} {scope : List Binding}
+    {next id length pointer : Nat} {fields : List SrcExpr} {body : SrcStmt} {out : Stmt}
+    (ok : (SrcStmt.letView id length fields pointer body).lower sigs decls ret scope next = some out) :
+    ∃ vs bstmt, length ≠ 0 ∧ length < 2 ^ 31 ∧ lowerLiteral scope (.array .i32 length) fields = some vs ∧
+      body.lower sigs decls ret (viewScope id length pointer next scope) (next + length + 1) = some bstmt ∧
+      out = checkThen next (guardAll scope fields) (assignFrom next vs
+        (.seq (.alloc (next + length) 2 (.lit (BitVec.ofNat 64 (4 * length))))
+          (viewStores (next + length) next 0 length (.seq (.assign next (.var (next + length))) bstmt)))) := by
+  simp only [SrcStmt.lower] at ok
+  obtain ⟨inner, h, rfl⟩ := guarded_some ok
+  simp only [lowerView] at h
+  split at h
+  · simp at h
+  rename_i nz
+  simp only [Bool.or_eq_true, decide_eq_true_eq, not_or] at nz
+  split at h
+  · simp at h
+  rename_i bstmt hb
+  simp only [lowerLet] at h
+  split at h
+  · simp at h
+  rename_i vs hvs
+  simp only [Option.some.injEq] at h
+  exact ⟨vs, bstmt, nz.1, by have := nz.2; omega, hvs, hb, by rw [h]⟩
+
 /-- What lowering a match arm statement checks, and what it emits. -/
 theorem matchArm_lower_inv {sigs : List Sig} {decls : SrcDecls} {ret : SrcType} {scope : List Binding}
     {next scrutinee enumId variant binder : Nat} {binds : Bool} {ty : SrcType} {body rest : SrcStmt}
@@ -541,6 +572,7 @@ theorem matchArm_lower_inv {sigs : List Sig} {decls : SrcDecls} {ret : SrcType} 
   case h_11 => simp at ok
   case h_12 => simp at ok
   case h_13 => simp at ok
+  case h_14 => simp at ok
   rename_i eid variants hty
   simp only [lowerArmFound] at ok
   split at ok

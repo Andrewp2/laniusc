@@ -82,6 +82,7 @@ def srcTyName : SrcType → String
   | .struct id _ => s!"#{id}"
   | .enum id _ => s!"#{id}"
   | .sint k => sintName k
+  | .view n => s!"view{n}"
 
 mutual
 partial def effCalls : SrcEff → List Nat
@@ -105,6 +106,7 @@ partial def effCalls : SrcEff → List Nat
 partial def stmtCalls : SrcStmt → List Nat
   | .let _ _ _ b | .letStruct _ _ _ b | .letEnum _ _ _ _ b | .letMatch _ _ _ _ _ b => stmtCalls b
   | .letAlloc _ _ _ b | .letLoad _ _ _ b | .letSlice _ _ _ _ b | .letIndex _ _ _ _ b => stmtCalls b
+  | .letView _ _ _ _ b => stmtCalls b
   | .letCall _ _ c _ b => c :: stmtCalls b
   | .setCall _ c _ => [c]
   | .then a b => stmtCalls a ++ stmtCalls b
@@ -204,6 +206,7 @@ partial def typeText : SrcType → StateM Table String
   | .float .f32 => pure "(.float .f32)"
   | .float .f64 => pure "(.float .f64)"
   | .sint k => pure s!"(.sint {uintText k})"
+  | .view n => pure s!"(.view {n})"
   | .slice e => do named s!".slice {← typeText e}"
   | .array e n => do named s!"(.array {← typeText e} {n})"
   | .struct id fs => do

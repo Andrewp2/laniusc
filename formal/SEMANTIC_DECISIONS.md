@@ -798,6 +798,38 @@ verified compiler's locals are 64-bit slots with no address. The design:
      which a slot holding (`HoldsAt.unhit`) gives from `FrameCorr.unviewed`
      (no view roots at a frame place) and `Corr.unviewed` (nor at a scope
      binding's cell).
+     (c), decided while doing it (11-02, f6v): the source statement is one
+     combined `LetView(id, n, elements, p, body)` = `let id: [i32; n] =
+     [elements]; let p: ptr = core::mem::i32_array_data_ptr(id); body`
+     (Core: two `letLocal`s), so the view's array is always declared right
+     there and no `loose_views` check is needed: the binding is a `View n`
+     for the whole of its scope. `lower_view` lowers the literal into n
+     slots, allocates `4 n` bytes at alignment 4 (shift 2, Core's
+     `mapBorrowed` base), stores the elements (`StoreWord m32` at +4k), then
+     assigns the pointer into the `View`'s first slot (`slot := pointer`),
+     binding `p` as a `Ptr` in slot `next + n`. It rejects `n = 0` and
+     `n >= 2^31` (the block's size is then a 32-bit word, and Core's
+     `mapBorrowed` gives an n-element block). No value of the language has
+     type `View` (`viewed_type`): `same(View, View)` is false, and
+     parameters, match arms' bindings and match payloads of a viewed type
+     are rejected, so for now the body may only use `p`; reads and writes
+     of a `View` binding are later work. `HoldsAt.view` (trusted) asks
+     that Core's cell hold n in-range i32s; `Corr.viewed`: a `View n`
+     binding's cell is the root of a view whose address is its slot and
+     whose length is n; `Corr.unviewed` only for non-viewed bindings;
+     `Keeps` gains `persist` (old views stay) and `arrays` (a view root's
+     cell still holds an i32 array of the view's length, `HeldArray`).
+     `Grows` is now "the cursor does not go down and the views only grow
+     at their end". The Faithful proofs no longer take "no views" from
+     `Grows` (`Grows.empty` is gone): they use only its cursor (`.next`),
+     and get "no views" after a value's run from the simulation's own
+     invariant (`Ran.inv`, `Inv.views`), since the self program, whose
+     statements pass `stmtOk`, has no `LetView`; its pure and cost meanings
+     are `none`, as `letAlloc`'s. Proved: `stmt_letView` in
+     `LowerEval.sound_both` and `stops_letView` (`Mini/ViewLower.lean`,
+     `LowerStops.lean`), the Faithful growth of a trapped `LetView`
+     (`view_trap_grows`). LaniusMini and every gate target build; the
+     front end does not read `LetView` yet (stage d).
 6. **`str`** is (pointer, length) of read-only bytes in a static region
    above frame memory, a literal's bytes placed by the loader (Core's
    `.string` value names no address, so any region outside Core's heap

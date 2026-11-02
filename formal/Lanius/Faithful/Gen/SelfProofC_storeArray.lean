@@ -19,6 +19,7 @@ public import Lanius.Faithful.Gen.SelfStmtC_guardAnd
 public import Lanius.Faithful.Gen.SelfStmtC_indexOf
 public import Lanius.Faithful.Gen.SelfStmtC_lowerCallSig
 public import Lanius.Faithful.Gen.SelfStmtC_lowerLoadType
+public import Lanius.Faithful.Gen.SelfStmtC_matchVariants
 public import Lanius.Faithful.Gen.SelfStmtC_shortCircuit
 public import Lanius.Faithful.Gen.SelfStmtC_storeArray
 public import Lanius.Faithful.Gen.SelfStmtC_storeEvalWord
@@ -178,6 +179,20 @@ theorem proof_lower_unreachable {prog : SrcProgram} {prims : Prims} {ix_lower_un
   simp only [src_lower_unreachable] at h
   faithful [Lanius.Mini.lowerUnreachable]
 
+theorem proof_lower_view {prog : SrcProgram} {prims : Prims} {ix_lower_view ix_plus ix_times ix_boxed_of_mini_selfhost_Stmt ix_lower_let ix_view_stores : Nat} (fn : prog.funcs[ix_lower_view]? = some (src_lower_view ix_plus ix_times ix_boxed_of_mini_selfhost_Stmt ix_lower_let ix_view_stores)) (np : prims.isPrim ix_lower_view = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_times : Certified (∀ {n : Nat}, Stmt_times prog prims ix_times n))
+    (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
+    (ext_lower_let : Certified (∀ {n : Nat}, Stmt_lower_let prog prims ix_lower_let n))
+    (ext_view_stores : Certified (∀ {n : Nat}, Stmt_view_stores prog prims ix_view_stores n)) {n : Nat} :
+    Stmt_lower_view prog prims ix_lower_view n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_lower_view] at h
+  faithful [Lanius.Mini.lowerView]
+
 theorem proof_packed_width {prog : SrcProgram} {prims : Prims} {ix_packed_width ix_SrcType_same : Nat} (fn : prog.funcs[ix_packed_width]? = some (src_packed_width ix_SrcType_same)) (np : prims.isPrim ix_packed_width = false)
     (ext_SrcType_same : Certified (∀ {n : Nat}, Stmt_SrcType_same prog prims ix_SrcType_same n)) {n : Nat} :
     Stmt_packed_width prog prims ix_packed_width n := by
@@ -222,5 +237,17 @@ theorem proof_store_array {prog : SrcProgram} {prims : Prims} {ix_store_array ix
   rw [pcall_succ np fn] at h
   simp only [src_store_array] at h
   faithful [Lanius.Mini.storeArray]
+
+theorem step_view_stores {prog : SrcProgram} {prims : Prims} {ix_view_stores ix_minus ix_plus ix_boxed_of_mini_selfhost_Stmt ix_boxed_of_mini_selfhost_Expr : Nat} (fn : prog.funcs[ix_view_stores]? = some (src_view_stores ix_minus ix_plus ix_boxed_of_mini_selfhost_Stmt ix_boxed_of_mini_selfhost_Expr ix_view_stores)) (np : prims.isPrim ix_view_stores = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
+    (ext_boxed_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Expr prog prims ix_boxed_of_mini_selfhost_Expr n)) {n : Nat}
+    (ih_view_stores : Certified (Stmt_view_stores prog prims ix_view_stores n)) :
+    Stmt_view_stores prog prims ix_view_stores (n + 1) := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+  rw [pcall_succ np fn] at h
+  simp only [src_view_stores] at h
+  faithful [Lanius.Mini.viewStores]
 
 end Lanius.Faithful.SelfCert

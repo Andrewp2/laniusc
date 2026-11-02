@@ -488,6 +488,7 @@ theorem stmt_live (live : FuncLive sp prims outside cost N) (ret : SrcType) (s :
       exact ⟨_, _, ev, dr, ran, g, fr⟩
     · simp at ok'
   | letAlloc => intro tenv env st d h ok; simp [stmtOk] at ok
+  | letView => intro tenv env st d h ok; simp [stmtOk] at ok
   | letLoad => intro tenv env st d h ok; simp [stmtOk] at ok
   | setByte => intro tenv env st d h ok; simp [stmtOk] at ok
   | free => intro tenv env st d h ok; simp [stmtOk] at ok

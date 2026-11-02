@@ -206,12 +206,6 @@ theorem Stops.check {prog : Program} {d : Nat} {env : Env} {hp : Heap} {s : Stmt
     · exact .ifFalse zero .trap
     · exact .ifTrue zero (pass zero)
 
-theorem Stops.assignFrom {prog : Program} {d : Nat} {hp : Heap} {rest : Stmt} {n : Nat} :
-    ∀ (xs : List Expr) (slot : Nat) {env : Env}, Stops prog d (env.setFrom slot xs) hp rest n →
-      Stops prog d env hp (assignFrom slot xs rest) n
-  | [], _, _, stops => stops
-  | _ :: more, slot, _, stops => .seqSecond .assign (Stops.assignFrom more (slot + 1) stops)
-
 /-- A prefix that ends normally, then a stop. -/
 theorem Stops.after {prog : Program} {d d' : Nat} {env env' : Env} {hp hp' : Heap} {first second : Stmt} {n : Nat}
     (exec : Exec prog d env hp first (.normal env' hp')) (stops : Stops prog d' env' hp' second n) :

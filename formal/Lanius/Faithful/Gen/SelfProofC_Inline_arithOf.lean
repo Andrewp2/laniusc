@@ -17,6 +17,7 @@ public import Lanius.Faithful.Gen.SelfStmtC_armScope
 public import Lanius.Faithful.Gen.SelfStmtC_evalSame
 public import Lanius.Faithful.Gen.SelfStmtC_floatApply
 public import Lanius.Faithful.Gen.SelfStmtC_lowerCallSig
+public import Lanius.Faithful.Gen.SelfStmtC_lowerTagged
 public import Lanius.Faithful.Gen.SelfStmtC_wordStride
 import all Lanius.Faithful.Gen.SelfSrcC_Inline_arithOf
 import all Lanius.Mini.Compiler.P.Inline_arithOf
@@ -63,9 +64,10 @@ theorem proof_arith_signed_of {prog : SrcProgram} {prims : Prims} {ix_arith_sign
   simp only [src_arith_signed_of] at h
   faithful [Lanius.Mini.Inline.arithSignedOf]
 
-theorem step_arm_bind {prog : SrcProgram} {prims : Prims} {ix_arm_bind ix_plus ix_SrcType_size ix_cons_of_mini_selfhost_Binding ix_arm_scope : Nat} (fn : prog.funcs[ix_arm_bind]? = some (src_arm_bind ix_plus ix_SrcType_size ix_cons_of_mini_selfhost_Binding ix_arm_scope)) (np : prims.isPrim ix_arm_bind = false)
+theorem step_arm_bind {prog : SrcProgram} {prims : Prims} {ix_arm_bind ix_plus ix_SrcType_size ix_viewed_type ix_cons_of_mini_selfhost_Binding ix_arm_scope : Nat} (fn : prog.funcs[ix_arm_bind]? = some (src_arm_bind ix_plus ix_SrcType_size ix_viewed_type ix_cons_of_mini_selfhost_Binding ix_arm_scope)) (np : prims.isPrim ix_arm_bind = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_SrcType_size : Certified (∀ {n : Nat}, Stmt_SrcType_size prog prims ix_SrcType_size n))
+    (ext_viewed_type : Certified (∀ {n : Nat}, Stmt_viewed_type prog prims ix_viewed_type n))
     (ext_cons_of_mini_selfhost_Binding : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_Binding prog prims ix_cons_of_mini_selfhost_Binding n)) {n : Nat}
     (ih_arm_scope : Certified (Stmt_arm_scope prog prims ix_arm_scope n)) :
     Stmt_arm_bind prog prims ix_arm_bind (n + 1) := by

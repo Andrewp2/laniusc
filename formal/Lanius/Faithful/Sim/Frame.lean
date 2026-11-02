@@ -471,7 +471,8 @@ whose cell outlives `e` with views gone: in `e`. -/
 theorem assignLocal_trap {P : Core.Program} {k : Nat} {st st' : State} {id : Nat} {e : Core.Expr}
     {r : Lanius.Trap} (h : evalExpr k P st (.assign .set (.local id) e) = .trapped r st')
     (bound : st'.heap.nextAddress ≤ 2 ^ 64) {v : Value} (hv : st.local? id = some v)
-    (views : ∀ j w s1, k = j + 1 → evalExpr j P st e = .done w s1 → s1.i32ArrayViews = [])
+    (views : ∀ j w s1, k = j + 1 → evalExpr j P st e = .done w s1 → s1.heap.nextAddress ≤ 2 ^ 64 →
+      s1.i32ArrayViews = [])
     (cell : ∀ j w s1 c, k = j + 1 → evalExpr j P st e = .done w s1 → st.cellId? id = some c →
       s1.heap.nextAddress ≤ 2 ^ 64 → (s1.cellEntry? c).isSome) :
     ∃ j, k = j + 1 ∧ evalExpr j P st e = .trapped r st' := by
@@ -492,7 +493,6 @@ theorem assignLocal_trap {P : Core.Program} {k : Nat} {st st' : State} {id : Nat
           simp only [hc, he] at h
           cases hrun : evalExpr (i + 1) P st e with
           | done w s1 =>
-            have vs := views (i + 1) w s1 rfl hrun
             simp only [hrun, Semantics.evalAssignValue, Semantics.assignOpBinary?,
               Semantics.writeResolvedPlaceNative, Semantics.writeResolvedPlace, Semantics.State.assignCell] at h
             by_cases hs : (s1.cellEntry? c).isSome = true
@@ -502,7 +502,13 @@ theorem assignLocal_trap {P : Core.Program} {k : Nat} {st st' : State} {id : Nat
               · rw [if_pos hw] at h
                 simp at h
               · rw [if_neg hw] at h
-                simp [Semantics.syncI32ViewsToHeap, Semantics.syncI32ViewsToHeapFrom, vs] at h
+                split at h
+                · simp at h
+                · rename_i reason hsync
+                  simp only [Semantics.Outcome.trapped.injEq] at h
+                  obtain ⟨-, rfl⟩ := h
+                  have vs := views (i + 1) w s1 rfl hrun bound
+                  simp [Semantics.syncI32ViewsToHeap, Semantics.syncI32ViewsToHeapFrom, vs] at hsync
             · rw [if_neg hs] at h
               simp only [Semantics.Outcome.trapped.injEq] at h
               obtain ⟨-, rfl⟩ := h

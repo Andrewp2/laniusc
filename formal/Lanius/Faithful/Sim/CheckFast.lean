@@ -42,7 +42,7 @@ def effTyC (tenv : TEnv) : SrcEff → Option SrcType
     (effTyC tenv scrutinee).bind fun st =>
       match ety with
       | .enum _ variants => if st.same ety && armsOkC tenv rty variants binders values then some rty else none
-      | .i32 | .bool | .uint _ | .struct _ _ | .ptr | .slice _ | .unit | .isize | .char | .float _ | .sint _ | .array _ _ => none
+      | .i32 | .bool | .uint _ | .struct _ _ | .ptr | .slice _ | .unit | .isize | .char | .float _ | .sint _ | .array _ _ | .view _ => none
   | .eDivide _ left right => (effTyC tenv left).bind fun l => (effTyC tenv right).bind (divTy l)
   | .eStride _ => none
   | .arraySlice _ _ => none
@@ -101,6 +101,7 @@ def stmtOkC (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
     | some t => t.same ret
     | none => false
   | .letAlloc _ _ _ _ => false
+  | .letView _ _ _ _ _ => false
   | .letLoad _ _ _ _ => false
   | .setByte _ _ _ => false
   | .free _ _ _ => false
@@ -161,6 +162,7 @@ theorem effTyC_eq (tenv : TEnv) : ∀ e : SrcEff, effTyC (callTy sp outside) box
     | float => rfl
     | sint _ => rfl
     | array _ _ => rfl
+    | view _ => rfl
   | .eDivide _ left right => by rw [effTyC, effTy, effTyC_eq tenv left, effTyC_eq tenv right]
   | .eStride _ => by rw [effTyC, effTy]
   | .arraySlice _ _ => by rw [effTyC, effTy]
@@ -206,6 +208,7 @@ theorem stmtOkC_eq (ret : SrcType) (s : SrcStmt) : ∀ tenv : TEnv,
   | «while» condition body ih => intro tenv; rw [stmtOkC, stmtOk, ih]
   | «return» value => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
   | letAlloc => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
+  | letView => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
   | letLoad => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
   | setByte => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
   | free => intro tenv; rw [stmtOkC, stmtOk] <;> rfl

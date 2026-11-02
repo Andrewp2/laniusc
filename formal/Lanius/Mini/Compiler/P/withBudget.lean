@@ -37,6 +37,7 @@ def arrayBytesOf (ty : SrcType) : Nat :=
   | .char => 0
   | .float ft => 0
   | .sint sk => 0
+  | .view viewLength => 0
 
 /-- The block bytes of a declaration of id at type ty: its array bytes when id is passed as a slice. -/
 def declBytes (uses : List Nat) (id : Nat) (ty : SrcType) : Nat :=
@@ -136,6 +137,7 @@ def SrcStmt.sliceUses (self : SrcStmt) : List Nat :=
   | .continue => []
   | .matchArm scrutinee enumId variant binds binder ty body rest => SrcStmt.sliceUses body ++ SrcStmt.sliceUses rest
   | .unreachable id ty => []
+  | .letView id length fields pointer body => SrcStmt.sliceUses body
 
 /-- The block bytes of the statement's declarations (decl_bytes). -/
 def SrcStmt.arrayBytes (self : SrcStmt) (uses : List Nat) : Nat :=
@@ -174,6 +176,7 @@ def SrcStmt.arrayBytes (self : SrcStmt) (uses : List Nat) : Nat :=
   | .continue => 0
   | .matchArm scrutinee enumId variant binds binder ty body rest => SrcStmt.arrayBytes body uses + SrcStmt.arrayBytes rest uses
   | .unreachable id ty => 0
+  | .letView id length fields pointer body => SrcStmt.arrayBytes body uses
 
 /-- The largest need of a function the statement calls (SrcEff.callee_need). -/
 def SrcStmt.calleeNeed (self : SrcStmt) (needs : List Nat) : Nat :=
@@ -212,6 +215,7 @@ def SrcStmt.calleeNeed (self : SrcStmt) (needs : List Nat) : Nat :=
   | .continue => 0
   | .matchArm scrutinee enumId variant binds binder ty body rest => max (SrcStmt.calleeNeed body needs) (SrcStmt.calleeNeed rest needs)
   | .unreachable id ty => 0
+  | .letView id length fields pointer body => SrcStmt.calleeNeed body needs
 
 /-- A function's own block of frame memory, taken at its entry: 8 bytes per element of each array it declares (a parameter or a let) whose id it passes as a slice somewhere. A call passing arrays places them in it (array_call), at most its bytes. -/
 def frameBlock (func : SrcFunc) : Nat :=

@@ -165,8 +165,8 @@ theorem loop_sim {condC : Core.Expr} {body : SrcStmt} {test : Env → Option Boo
         · exact lgrows lrun
         · exact Grows.refl _
         · exact Grows.refl _
-      have b2 := Grows.bound (execStmt_grows brun) g2 ((tgrows crun).empty inv.views).1 bound
-      have b1 := Grows.bound (tgrows crun) (execStmt_grows brun) inv.views b2
+      have b2 := Grows.bound (execStmt_grows brun) g2 bound
+      have b1 := Grows.bound (tgrows crun) (execStmt_grows brun) b2
       obtain ⟨ht, rel1, ran1⟩ := htest (by omega) crun inv rel b1
       obtain ⟨ob, hob, orlb, ranb⟩ := hbody (by omega) brun ran1.inv (ran1.locs locs) rel1 b2
       rcases more with ⟨hcb, lrun⟩ | ⟨rfl, rfl, rfl⟩ | ⟨r, rfl, rfl, rfl⟩
@@ -272,7 +272,7 @@ theorem stmt_sim (calls : ∀ i < N, FuncSim sp prims outside i) (ret : SrcType)
       have g2 : Grows (restoreLocals st completed) s2 :=
         (Grows.same (st := restoreLocals st completed) (st' := (restoreLocals st completed).bindLocal id v) rfl rfl).trans
           (execStmt_grows brun)
-      have b1 := Grows.bound (call_grows (grows sp _) vrun) g2 inv.views bound
+      have b1 := Grows.bound (call_grows (grows sp _) vrun) g2 bound
       obtain ⟨w, hw, rw, invc, stepc⟩ := calls i (by omega) found notOut len inv
         (show completed.heap.nextAddress ≤ 2 ^ 64 from b1) rs bodyRun result
       have inv1 : Inv (restoreLocals st completed) := invc.restore st
@@ -336,7 +336,7 @@ theorem stmt_sim (calls : ∀ i < N, FuncSim sp prims outside i) (ret : SrcType)
     simp only [SrcStmt.toCore] at run
     obtain ⟨j, s1, c1, rfl, frun, rest⟩ := sequence_inv run
     rcases rest with ⟨rfl, srun⟩ | ⟨ne, rfl, rfl⟩
-    · have b1 := Grows.bound (execStmt_grows frun) (execStmt_grows srun) inv.views bound
+    · have b1 := Grows.bound (execStmt_grows frun) (execStmt_grows srun) bound
       obtain ⟨o1, ho1, orl1, ran1⟩ := ih1 (by omega) frun ok.1 inv locs rel b1
       obtain ⟨e1, rfl, rel1⟩ := orl1.next_inv
       obtain ⟨o, ho, orl, ran2⟩ := ih2 (by omega) srun ok.2 ran1.inv (ran1.locs locs) rel1 bound
@@ -395,6 +395,7 @@ theorem stmt_sim (calls : ∀ i < N, FuncSim sp prims outside i) (ret : SrcType)
       exact ⟨.ret (some p), by simp [mstmt, hp], r, .refl inv⟩
     · simp at ok
   | letAlloc => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
+  | letView => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
   | letLoad => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
   | setByte => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
   | free => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
@@ -409,7 +410,7 @@ theorem stmt_sim (calls : ∀ i < N, FuncSim sp prims outside i) (ret : SrcType)
     · rename_i t ht
       have g2 : Grows s1 s2 :=
         (Grows.same (st := s1) (st' := s1.bindLocal id v) rfl rfl).trans (execStmt_grows brun)
-      have b1 := Grows.bound (effGrows vrun) g2 inv.views bound
+      have b1 := Grows.bound (effGrows vrun) g2 bound
       obtain ⟨p, hp, r, ran1⟩ := effOk (by omega) calls vrun ht inv rel b1
       have rel1 := rel.step ran1.step ran1.locals
       have locs1 := locs.step ran1.step ran1.locals
@@ -431,9 +432,12 @@ theorem stmt_sim (calls : ∀ i < N, FuncSim sp prims outside i) (ret : SrcType)
         simp only [SrcStmt.toCore] at run
         obtain ⟨j, w0, rfl, arun, rfl⟩ := expression_inv run
         obtain ⟨i, cl, w, s1, rfl, hcl, vrun, -, -, hst⟩ := assignLocal_inv arun
-        have v1 := ((effGrows vrun).empty inv.views).1
-        obtain rfl := assigned_eq (s := s1.assigned cl w) v1 hst
-        obtain ⟨p, hp, r, ran1⟩ := effOk (by omega) calls vrun ht' inv rel bound
+        have b1 : s1.heap.nextAddress ≤ 2 ^ 64 := by
+          rcases hst with rfl | hs
+          · exact bound
+          · exact (syncTo_heap hs).2 ▸ bound
+        obtain ⟨p, hp, r, ran1⟩ := effOk (by omega) calls vrun ht' inv rel b1
+        obtain rfl := assigned_eq (s := s1.assigned cl w) ran1.inv.views hst
         have rel1 := rel.step ran1.step ran1.locals
         have locs1 := locs.step ran1.step ran1.locals
         have hcl1 : s1.cellId? id = some cl := by rw [← hcl]; simp [State.cellId?, ran1.locals]
@@ -454,7 +458,7 @@ theorem stmt_sim (calls : ∀ i < N, FuncSim sp prims outside i) (ret : SrcType)
     cases x with
     | true =>
       simp only [if_true] at brun
-      have b1 := Grows.bound (effGrows crun) (execStmt_grows brun) inv.views bound
+      have b1 := Grows.bound (effGrows crun) (execStmt_grows brun) bound
       obtain ⟨p, hp, r, ran1⟩ := effOk (by omega) calls crun htc inv rel b1
       rw [r.boolean] at hp
       obtain ⟨o, ho, orl, ran⟩ :=
@@ -462,7 +466,7 @@ theorem stmt_sim (calls : ∀ i < N, FuncSim sp prims outside i) (ret : SrcType)
       exact ⟨o, by simp only [mstmt, hp, Option.bind_some, asBool, if_true, ho], orl, ran1.toS.trans ran⟩
     | false =>
       simp only [Bool.false_eq_true, if_false] at brun
-      have b1 := Grows.bound (effGrows crun) (execStmt_grows brun) inv.views bound
+      have b1 := Grows.bound (effGrows crun) (execStmt_grows brun) bound
       obtain ⟨p, hp, r, ran1⟩ := effOk (by omega) calls crun htc inv rel b1
       rw [r.boolean] at hp
       obtain ⟨o, ho, orl, ran⟩ :=

@@ -34,6 +34,7 @@ def matchVariants (ty : SrcType) : List (List SrcType) :=
   | .char => []
   | .float ft => []
   | .sint sk => []
+  | .view viewLength => []
 
 /-- The match is exhaustive, its value takes slots, and its tags fit in 32 bits. -/
 def evalMatchOf (slot : Nat) (ety : SrcType) (ty : SrcType) (s : Evaluated) (arms : Stmt) (binders : Nat) (values : Nat) : Option Evaluated :=

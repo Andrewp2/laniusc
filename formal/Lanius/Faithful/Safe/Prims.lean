@@ -232,9 +232,9 @@ end
 
 /-- A trapped run of a statement of `sp` ends with the heap cursor at or past
 where it started, so a safety proof may assume the start's cursor in bounds. -/
-theorem SafeS.of_bound {sp : SrcProgram} {st : State} {s : SrcStmt} (views : st.i32ArrayViews = [])
+theorem SafeS.of_bound {sp : SrcProgram} {st : State} {s : SrcStmt}
     (safe : st.heap.nextAddress ≤ 2 ^ 64 → SafeS sp.toCore st s.toCore) : SafeS sp.toCore st s.toCore :=
-  fun k r s' h bound => safe (Nat.le_trans ((execStmt_trap_grows h).empty views).2 bound) k r s' h bound
+  fun k r s' h bound => safe (Nat.le_trans (execStmt_trap_grows h).next bound) k r s' h bound
 
 theorem valueWords_pos {P : Core.Program} {T : Core.Ty} {w : Nat}
     (kind : (∃ id, T = .structure id) ∨ (∃ id, T = .enumeration id) ∨ CoreWordScalar T) (hw : NativeLayout.valueWords? P T = some w) :
@@ -296,7 +296,7 @@ theorem slice_safe {t : SrcType} (el : wordElement sp.decls t = true) {w a : Nat
     (storage : st.local? 28 = some (.pointer a)) (one : st.local? 42 = some (.signed .i32 1))
     (room : st.heap.nextAddress ≤ 2 ^ 64 → a + 8 * w ≤ 2 ^ 64) (range : st.heap.checkRange a (8 * w) 8 = .ok ()) :
     SafeS sp.toCore st (sliceFunc t).body.toCore := by
-  refine SafeS.of_bound inv.views fun bound => ?_
+  refine SafeS.of_bound fun bound => ?_
   replace room := room bound
   obtain ⟨slice, kind⟩ := sliceFrom_word el
   have most := valueWords_le kind hw
@@ -552,7 +552,7 @@ theorem boxed_safe {t : SrcType} {id sizeOf slice panic : Nat} {values ps : List
   -- the rest runs past the allocation, so its cursor bounds the storage's end
   refine SafeS.of_bound (s := .then (.if (.apply .equal (.local 86) .null) (.discard (.eCall panic [])) .nop)
     (.letCall 203 (.slice t) slice [.local 86, .int 1] (.then (.setIndex 203 (.int 0) (.local 9))
-      (.returnEval (.eStruct (.struct id [.ptr]) [.ePure (.local 86)]))))) inv3.views fun bound => ?_
+      (.returnEval (.eStruct (.struct id [.ptr]) [.ePure (.local 86)]))))) fun bound => ?_
   have room : a + 8 * w ≤ 2 ^ 64 := by
     have : H1.nextAddress ≤ 2 ^ 64 := bound
     rw [next1] at this

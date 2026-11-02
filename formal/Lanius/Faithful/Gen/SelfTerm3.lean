@@ -84,55 +84,55 @@ theorem ok_sizes : FnOk prog prims info (177, ⟨2, [0], 0⟩) :=
 theorem ok_max_size : FnOk prog prims info (179, ⟨2, [0], 0⟩) :=
   fnOk_of fn_max_size (by decide +kernel)
 
-theorem ok_max_of : FnOk prog prims info (182, ⟨0, [], 0⟩) :=
+theorem ok_viewed_type : FnOk prog prims info (182, ⟨0, [], 0⟩) :=
+  fnOk_of fn_viewed_type (by decide +kernel)
+
+theorem ok_max_of : FnOk prog prims info (183, ⟨0, [], 0⟩) :=
   fnOk_of fn_max_of (by decide +kernel)
 
-theorem ok_Stmt_extent : FnOk prog prims info (183, ⟨4, [0], 0⟩) :=
+theorem ok_Stmt_extent : FnOk prog prims info (184, ⟨4, [0], 0⟩) :=
   fnOk_of fn_Stmt_extent (by decide +kernel)
 
-theorem ok_single_of_mini_selfhost_Expr : FnOk prog prims info (185, ⟨0, [], 0⟩) :=
+theorem ok_single_of_mini_selfhost_Expr : FnOk prog prims info (186, ⟨0, [], 0⟩) :=
   fnOk_of fn_single_of_mini_selfhost_Expr (by decide +kernel)
 
-theorem ok_guarded : FnOk prog prims info (186, ⟨2, [], 0⟩) :=
+theorem ok_guarded : FnOk prog prims info (187, ⟨2, [], 0⟩) :=
   fnOk_of fn_guarded (by decide +kernel)
 
-theorem ok_SrcExpr_guard : FnOk prog prims info (187, ⟨10, [0], 0⟩) :=
+theorem ok_SrcExpr_guard : FnOk prog prims info (188, ⟨10, [0], 0⟩) :=
   fnOk_of fn_SrcExpr_guard (by decide +kernel)
 
-theorem ok_lower_let : FnOk prog prims info (188, ⟨3, [], 0⟩) :=
+theorem ok_lower_let : FnOk prog prims info (189, ⟨3, [], 0⟩) :=
   fnOk_of fn_lower_let (by decide +kernel)
 
-theorem ok_lower_value : FnOk prog prims info (189, ⟨11, [], 0⟩) :=
+theorem ok_lower_value : FnOk prog prims info (190, ⟨11, [], 0⟩) :=
   fnOk_of fn_lower_value (by decide +kernel)
 
-theorem ok_cons_of_mini_selfhost_Binding : FnOk prog prims info (190, ⟨0, [], 0⟩) :=
+theorem ok_cons_of_mini_selfhost_Binding : FnOk prog prims info (191, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_Binding (by decide +kernel)
 
-theorem ok_guard_all : FnOk prog prims info (191, ⟨11, [1], 0⟩) :=
+theorem ok_guard_all : FnOk prog prims info (192, ⟨11, [1], 0⟩) :=
   fnOk_of fn_guard_all (by decide +kernel)
 
-theorem ok_lower_literal : FnOk prog prims info (192, ⟨14, [], 0⟩) :=
+theorem ok_lower_literal : FnOk prog prims info (193, ⟨14, [], 0⟩) :=
   fnOk_of fn_lower_literal (by decide +kernel)
 
-theorem ok_lower_let_call : FnOk prog prims info (193, ⟨0, [], 0⟩) :=
+theorem ok_lower_let_call : FnOk prog prims info (194, ⟨0, [], 0⟩) :=
   fnOk_of fn_lower_let_call (by decide +kernel)
 
-theorem ok_lower_call : FnOk prog prims info (194, ⟨14, [], 0⟩) :=
+theorem ok_lower_call : FnOk prog prims info (195, ⟨14, [], 0⟩) :=
   fnOk_of fn_lower_call (by decide +kernel)
 
-theorem ok_lower_enum_value : FnOk prog prims info (195, ⟨15, [], 0⟩) :=
+theorem ok_lower_enum_value : FnOk prog prims info (196, ⟨15, [], 0⟩) :=
   fnOk_of fn_lower_enum_value (by decide +kernel)
 
-theorem ok_lower_then : FnOk prog prims info (196, ⟨0, [], 0⟩) :=
+theorem ok_lower_then : FnOk prog prims info (197, ⟨0, [], 0⟩) :=
   fnOk_of fn_lower_then (by decide +kernel)
 
-theorem ok_lower_match : FnOk prog prims info (197, ⟨16, [], 0⟩) :=
+theorem ok_lower_match : FnOk prog prims info (198, ⟨16, [], 0⟩) :=
   fnOk_of fn_lower_match (by decide +kernel)
 
-theorem ok_lookup : FnOk prog prims info (198, ⟨0, [0], 0⟩) :=
-  fnOk_of fn_lookup (by decide +kernel)
-
 theorem chunk3 : AllFns prog prims info part3 :=
-  ⟨ok_single_of_mini_selfhost_Sym, ok_whole, ok_node_prod, ok_p_file, ok_list_items, ok_kid, ok_file_items, ok_module_path, ok_build_checked, ok_root_insts, ok_field_fns_Decls_of_mini_selfhost_Decls, ok_seed_insts, ok_field_types_Decls_of_mini_selfhost_Decls, ok_collect_file_next, ok_optimize_funcs, ok_funcs_agree, ok_compile_funcs, ok_arities, ok_link, ok_SrcStmt_slice_uses, ok_params_array_bytes, ok_SrcStmt_array_bytes, ok_sizes, ok_max_size, ok_max_of, ok_Stmt_extent, ok_single_of_mini_selfhost_Expr, ok_guarded, ok_SrcExpr_guard, ok_lower_let, ok_lower_value, ok_cons_of_mini_selfhost_Binding, ok_guard_all, ok_lower_literal, ok_lower_let_call, ok_lower_call, ok_lower_enum_value, ok_lower_then, ok_lower_match, ok_lookup, trivial⟩
+  ⟨ok_single_of_mini_selfhost_Sym, ok_whole, ok_node_prod, ok_p_file, ok_list_items, ok_kid, ok_file_items, ok_module_path, ok_build_checked, ok_root_insts, ok_field_fns_Decls_of_mini_selfhost_Decls, ok_seed_insts, ok_field_types_Decls_of_mini_selfhost_Decls, ok_collect_file_next, ok_optimize_funcs, ok_funcs_agree, ok_compile_funcs, ok_arities, ok_link, ok_SrcStmt_slice_uses, ok_params_array_bytes, ok_SrcStmt_array_bytes, ok_sizes, ok_max_size, ok_viewed_type, ok_max_of, ok_Stmt_extent, ok_single_of_mini_selfhost_Expr, ok_guarded, ok_SrcExpr_guard, ok_lower_let, ok_lower_value, ok_cons_of_mini_selfhost_Binding, ok_guard_all, ok_lower_literal, ok_lower_let_call, ok_lower_call, ok_lower_enum_value, ok_lower_then, ok_lower_match, trivial⟩
 
 end Lanius.Faithful.SelfTerm

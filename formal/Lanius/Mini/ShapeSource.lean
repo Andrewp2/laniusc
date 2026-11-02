@@ -71,6 +71,7 @@ def SrcStmt.rawFree : SrcStmt → Bool
   | .while _ body => body.rawFree
   | .return _ => true
   | .letAlloc _ _ _ _ => false
+  | .letView _ _ _ _ _ => false
   | .letLoad _ _ _ _ => false
   | .setByte _ _ _ => false
   | .free _ _ _ => false
@@ -204,7 +205,7 @@ theorem SrcStmt.toCore_frag : ∀ (s : SrcStmt), s.rawFree = true → StmtFrag s
     simp only [SrcStmt.rawFree] at h
     simp [SrcStmt.toCore, StmtFrag, SrcExpr.toCore_frag, SrcStmt.toCore_frag body h]
   | .return v, _ => by simp [SrcStmt.toCore, StmtFrag, SrcExpr.toCore_frag]
-  | .letAlloc _ _ _ _, h | .letLoad _ _ _ _, h | .setByte _ _ _, h | .free _ _ _, h
+  | .letAlloc _ _ _ _, h | .letView _ _ _ _ _, h | .letLoad _ _ _ _, h | .setByte _ _ _, h | .free _ _ _, h
   | .letSlice _ _ _ _ _, h | .letIndex _ _ _ _ _, h | .setIndex _ _ _, h | .setIndexEval _ _ _, h => by
     simp [SrcStmt.rawFree] at h
   | .letEval _ _ v body, h => by
@@ -292,6 +293,8 @@ mutual
         | (cases h; exact .signed _ _)
     | .slice _ _ => exact .rawSlice _ _ _
     | .borrowed .. => exact .slice _ _ _ _ _
+    | .view len i32s =>
+      exact .array _ _ _ len fun x m => by obtain ⟨i, rfl, -⟩ := i32s x m; exact .signed _ _
     | .struct fields =>
       cases declared with
       | «struct» found inner =>

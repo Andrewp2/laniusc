@@ -158,6 +158,7 @@ theorem pstmt_mono (le : CallsLe call call') (s : SrcStmt) :
   | «while» => intro env d h; simp [pstmt] at h
   | «return» => exact fun h => h
   | letAlloc => intro env d h; simp [pstmt] at h
+  | letView => intro env d h; simp [pstmt] at h
   | letLoad => intro env d h; simp [pstmt] at h
   | setByte => intro env d h; simp [pstmt] at h
   | free => intro env d h; simp [pstmt] at h
@@ -275,6 +276,7 @@ theorem mstmt_mono (le : CallsLe call call') {fuel fuel' : Nat} (fle : fuel ≤ 
     exact ploop_mono (fun _ _ hx => hx) (fun _ _ hx => ih hx) fle h
   | «return» => exact fun h => h
   | letAlloc => intro env o h; simp [mstmt] at h
+  | letView => intro env o h; simp [mstmt] at h
   | letLoad => intro env o h; simp [mstmt] at h
   | setByte => intro env o h; simp [mstmt] at h
   | free => intro env o h; simp [mstmt] at h

@@ -1677,6 +1677,11 @@ pub enum SrcType {
     // narrow one sits in its slot as an i32 does, its value's 32-bit two's
     // complement zero-extended; a 64-bit one as an isize does.
     Sint(UintTy),
+    // an [i32; length] local the program viewed (LetView): Core keeps its
+    // elements in a heap block too, so the verified compiler keeps them only
+    // there, and no use of the local by name is lowered. No program names
+    // this type (declare rejects it).
+    View(usize),
 }
 
 pub enum SrcOp {
@@ -1816,6 +1821,12 @@ pub enum SrcStmt {
     // Unreachable(id, ty): Core binds id, uninitialized, at type ty and
     // returns it, so it traps; ty is the function's result type.
     Unreachable(usize, SrcType),
+    // LetView(id, length, elements, pointer, body): let id: [i32; length] =
+    // [elements]; let pointer: ptr = core::mem::i32_array_data_ptr(id); then
+    // body. Core maps the array into a fresh heap block (its view), which
+    // pointer addresses; the verified compiler stores the elements there and
+    // the body sees id as a View.
+    LetView(usize, usize, List<SrcExpr>, usize, Box<SrcStmt>),
 }
 
 pub struct SrcParam {
@@ -1887,6 +1898,7 @@ impl SrcType {
             SrcType::Char -> false,
             SrcType::Float(ft) -> false,
             Sint(sk) -> false,
+            View(view_length) -> false,
         };
     }
 
@@ -1905,6 +1917,7 @@ impl SrcType {
             SrcType::Char -> false,
             SrcType::Float(ft) -> false,
             Sint(sk) -> false,
+            View(view_length) -> false,
         };
     }
 
@@ -1923,6 +1936,7 @@ impl SrcType {
             SrcType::Char -> true,
             SrcType::Float(ft) -> true,
             Sint(kind) -> true,
+            View(view_length) -> false,
         };
     }
 
@@ -1941,6 +1955,7 @@ impl SrcType {
             SrcType::Char -> false,
             SrcType::Float(ft) -> false,
             Sint(sk) -> false,
+            View(view_length) -> false,
         };
     }
 
@@ -1959,6 +1974,7 @@ impl SrcType {
             SrcType::Char -> false,
             SrcType::Float(ft) -> false,
             Sint(sk) -> false,
+            View(view_length) -> false,
         };
     }
 
@@ -1977,6 +1993,7 @@ impl SrcType {
             SrcType::Char -> false,
             SrcType::Float(ft) -> false,
             Sint(sk) -> false,
+            View(view_length) -> false,
         };
     }
 
@@ -1995,6 +2012,7 @@ impl SrcType {
             SrcType::Char -> false,
             SrcType::Float(ft) -> false,
             Sint(kind) -> false,
+            View(view_length) -> false,
         };
     }
 
@@ -2013,6 +2031,7 @@ impl SrcType {
             SrcType::Char -> true,
             SrcType::Float(ft) -> false,
             Sint(kind) -> false,
+            View(view_length) -> false,
         };
     }
 
@@ -2031,6 +2050,7 @@ impl SrcType {
             SrcType::Char -> false,
             SrcType::Float(ft) -> ft.number() == t.number(),
             Sint(kind) -> false,
+            View(view_length) -> false,
         };
     }
 
@@ -2049,6 +2069,7 @@ impl SrcType {
             SrcType::Char -> None,
             SrcType::Float(ft) -> Some(ft),
             Sint(kind) -> None,
+            View(view_length) -> None,
         };
     }
 
@@ -2067,6 +2088,7 @@ impl SrcType {
             SrcType::Char -> false,
             SrcType::Float(ft) -> true,
             Sint(kind) -> false,
+            View(view_length) -> false,
         };
     }
 
@@ -2086,6 +2108,7 @@ impl SrcType {
             SrcType::Char -> false,
             SrcType::Float(ft) -> false,
             Sint(kind) -> true,
+            View(view_length) -> false,
         };
     }
 
@@ -2104,6 +2127,7 @@ impl SrcType {
             SrcType::Char -> false,
             SrcType::Float(ft) -> false,
             Sint(kind) -> true,
+            View(view_length) -> false,
         };
     }
 
@@ -2122,6 +2146,7 @@ impl SrcType {
             SrcType::Char -> false,
             SrcType::Float(ft) -> false,
             Sint(other) -> other.code() == kind.code(),
+            View(view_length) -> false,
         };
     }
 
@@ -2141,6 +2166,7 @@ impl SrcType {
             SrcType::Char -> None,
             SrcType::Float(ft) -> None,
             Sint(kind) -> Some(kind),
+            View(view_length) -> None,
         };
     }
 
@@ -2160,6 +2186,7 @@ impl SrcType {
             SrcType::Char -> None,
             SrcType::Float(ft) -> None,
             Sint(sk) -> None,
+            View(view_length) -> None,
         };
     }
 
@@ -2179,6 +2206,7 @@ impl SrcType {
             SrcType::Char -> U64,
             SrcType::Float(ft) -> U64,
             Sint(kind) -> kind.signed_word(),
+            View(view_length) -> U64,
         };
     }
 }
@@ -2204,6 +2232,7 @@ impl SrcType {
                 SrcType::Char -> false,
                 SrcType::Float(ft) -> false,
                 Sint(other_sk) -> false,
+                View(other_length) -> false,
             },
             Enum(id, variants) -> match (other) {
                 I32 -> false,
@@ -2219,6 +2248,7 @@ impl SrcType {
                 SrcType::Char -> false,
                 SrcType::Float(ft) -> false,
                 Sint(other_sk) -> false,
+                View(other_length) -> false,
             },
             Ptr -> other.is_ptr(),
             Slice(element) -> match (other) {
@@ -2235,6 +2265,7 @@ impl SrcType {
                 SrcType::Char -> false,
                 SrcType::Float(ft) -> false,
                 Sint(other_sk) -> false,
+                View(other_length) -> false,
             },
             SrcType::Array(array_element, array_length) -> match (other) {
                 I32 -> false,
@@ -2250,12 +2281,29 @@ impl SrcType {
                 SrcType::Char -> false,
                 SrcType::Float(ft) -> false,
                 Sint(other_sk) -> false,
+                View(other_length) -> false,
             },
             Unit -> other.is_unit(),
             Isize -> other.is_isize(),
             SrcType::Char -> other.is_char(),
             SrcType::Float(ft) -> other.is_float(ft),
             Sint(kind) -> other.is_sint(kind),
+            View(view_length) -> match (other) {
+                I32 -> false,
+                Bool -> false,
+                Uint(other_kind) -> false,
+                Struct(other_id, other_fields) -> false,
+                Enum(other_id, other_variants) -> false,
+                Ptr -> false,
+                Slice(other_element) -> false,
+                SrcType::Array(other_element, other_length) -> false,
+                Unit -> false,
+                Isize -> false,
+                SrcType::Char -> false,
+                SrcType::Float(ft) -> false,
+                Sint(other_sk) -> false,
+                View(other_length) -> false,
+            },
         };
     }
 }
@@ -2306,6 +2354,7 @@ impl SrcType {
             SrcType::Char -> 1,
             SrcType::Float(ft) -> 1,
             Sint(kind) -> 1,
+            View(view_length) -> view_length,
         };
     }
 }
@@ -2664,6 +2713,7 @@ pub fn lower_field_of(b: Binding, field: usize) -> core::option::Option<Typed> {
         SrcType::Char -> None,
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
+        View(view_length) -> None,
     };
 }
 
@@ -2785,6 +2835,7 @@ pub fn cast_to_i32(e: Typed) -> core::option::Option<Typed> {
         SrcType::Char -> Some(Typed { expr: wrap(Uint32, e.expr), ty: I32 }),
         SrcType::Float(ft) -> None,
         Sint(kind) -> Some(Typed { expr: sint_to_i32(kind, e.expr), ty: I32 }),
+        View(view_length) -> None,
     };
 }
 
@@ -2803,6 +2854,7 @@ pub fn cast_to_uint(kind: UintTy, e: Typed) -> core::option::Option<Typed> {
         SrcType::Char -> Some(Typed { expr: wrap(kind, e.expr), ty: Uint(kind) }),
         SrcType::Float(ft) -> None,
         Sint(source) -> Some(Typed { expr: sint_to_uint(source, kind, e.expr), ty: Uint(kind) }),
+        View(view_length) -> None,
     };
 }
 
@@ -2823,6 +2875,7 @@ pub fn cast_to_isize(e: Typed) -> core::option::Option<Typed> {
         SrcType::Char -> Some(Typed { expr: e.expr, ty: Isize }),
         SrcType::Float(ft) -> None,
         Sint(source) -> Some(Typed { expr: sint_to_wide(source, e.expr), ty: Isize }),
+        View(view_length) -> None,
     };
 }
 
@@ -2888,6 +2941,7 @@ pub fn cast_to_float(t: FloatTy, e: Typed) -> core::option::Option<Typed> {
         SrcType::Char -> int_to_float(t, U64, e.expr),
         SrcType::Float(source) -> float_to_float(t, source, e.expr),
         Sint(kind) -> int_to_float(t, kind.signed_word(), e.expr),
+        View(view_length) -> None,
     };
 }
 
@@ -2906,6 +2960,7 @@ pub fn cast_to(ty: SrcType, e: Typed) -> core::option::Option<Typed> {
         SrcType::Char -> None,
         SrcType::Float(ft) -> cast_to_float(ft, e),
         Sint(kind) -> cast_to_sint(kind, e),
+        View(view_length) -> None,
     };
 }
 
@@ -3019,6 +3074,7 @@ pub fn shift_width(ty: SrcType) -> u64 {
         SrcType::Char -> 32,
         SrcType::Float(ft) -> 64,
         Sint(kind) -> kind.bits(),
+        View(view_length) -> 64,
     };
 }
 
@@ -3244,6 +3300,7 @@ pub fn copy_field_of(b: Binding, index: usize, ty: SrcType) -> core::option::Opt
         SrcType::Char -> None,
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
+        View(view_length) -> None,
     };
 }
 
@@ -3326,6 +3383,7 @@ pub fn lower_literal(scope: List<Binding>, ty: SrcType, fields: List<SrcExpr>) -
         SrcType::Char -> None,
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
+        View(view_length) -> None,
     };
 }
 
@@ -3351,6 +3409,26 @@ pub fn lower_tagged(scope: List<Binding>, variants: List<List<SrcType>>, variant
     return None;
 }
 
+// A viewed array (LetView's binding): no value of the language has the type.
+pub fn viewed_type(ty: SrcType) -> bool {
+    return match (ty) {
+        I32 -> false,
+        Bool -> false,
+        Uint(kind) -> false,
+        Struct(id, fields) -> false,
+        Enum(id, variants) -> false,
+        Ptr -> false,
+        Slice(element) -> false,
+        SrcType::Array(array_element, array_length) -> false,
+        Unit -> false,
+        Isize -> false,
+        SrcType::Char -> false,
+        SrcType::Float(ft) -> false,
+        Sint(sk) -> false,
+        View(view_length) -> true,
+    };
+}
+
 // An enum value: its tag, then the variant's payload. Slots past the payload
 // are left as they are.
 pub fn lower_enum_value(scope: List<Binding>, ty: SrcType, variant: usize, payload: List<SrcExpr>) -> core::option::Option<List<Expr>> {
@@ -3368,6 +3446,7 @@ pub fn lower_enum_value(scope: List<Binding>, ty: SrcType, variant: usize, paylo
         SrcType::Char -> None,
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
+        View(view_length) -> None,
     };
 }
 
@@ -3389,7 +3468,7 @@ pub fn arm_scope(binders: List<usize>, types: List<SrcType>, slot: usize, scope:
 
 // extract: inline
 fn arm_bind(binder: usize, ty: SrcType, rest: List<usize>, more: List<SrcType>, slot: usize, scope: List<Binding>) -> core::option::Option<List<Binding>> {
-    if (ty.size() > 0) {
+    if ((ty.size() > 0) && !viewed_type(ty)) {
         return arm_scope(rest, more, plus(slot, ty.size()), cons(Binding { id: binder, slot: slot, ty: ty }, scope));
     }
     return None;
@@ -3518,13 +3597,14 @@ pub fn lower_match_arm(scope: List<Binding>, binding: core::option::Option<Bindi
             SrcType::Char -> None,
             SrcType::Float(ft) -> None,
             Sint(sk) -> None,
+            View(view_length) -> None,
         },
     };
 }
 
 // The match is exhaustive, its value takes slots, and its tags fit in 32 bits.
 pub fn lower_match_arms(scope: List<Binding>, slot: usize, same: bool, variants: List<List<SrcType>>, arms: List<SrcArm>, ty: SrcType, target: usize) -> core::option::Option<Stmt> {
-    if (same && (ty.size() > 0) && (length(arms) == length(variants)) && (length(variants) < 4294967296)) {
+    if (same && (ty.size() > 0) && (length(arms) == length(variants)) && (length(variants) < 4294967296) && !viewed_type(ty)) {
         return lower_arms(scope, slot, target, ty, 0, variants, arms);
     }
     return None;
@@ -3545,6 +3625,7 @@ pub fn lower_match_on(scope: List<Binding>, b: Binding, enum_id: usize, arms: Li
         SrcType::Char -> None,
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
+        View(view_length) -> None,
     };
 }
 
@@ -3659,6 +3740,7 @@ pub fn eval_field_of(scope: List<Binding>, e: SrcExpr, slot: usize, b: Binding, 
         SrcType::Char -> None,
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
+        View(view_length) -> None,
     };
 }
 
@@ -3924,6 +4006,7 @@ pub fn element_of(ty: SrcType) -> core::option::Option<SrcType> {
         SrcType::Char -> None,
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
+        View(view_length) -> None,
     };
 }
 
@@ -3962,6 +4045,7 @@ pub fn eval_struct(ty: SrcType, args: core::option::Option<EvaluatedArgs>) -> co
             SrcType::Char -> None,
             SrcType::Float(ft) -> None,
             Sint(sk) -> None,
+            View(view_length) -> None,
         },
     };
 }
@@ -4002,6 +4086,7 @@ pub fn eval_variant(ty: SrcType, variant: usize, slot: usize, args: core::option
             SrcType::Char -> None,
             SrcType::Float(ft) -> None,
             Sint(sk) -> None,
+            View(view_length) -> None,
         },
     };
 }
@@ -4170,6 +4255,7 @@ pub fn match_variants(ty: SrcType) -> List<List<SrcType>> {
         SrcType::Char -> empty(),
         SrcType::Float(ft) -> empty(),
         Sint(sk) -> empty(),
+        View(view_length) -> empty(),
     };
 }
 
@@ -4411,6 +4497,7 @@ pub fn lower_set_field_of(b: Binding, field: usize, scope: List<Binding>, value:
         SrcType::Char -> None,
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
+        View(view_length) -> None,
     };
 }
 
@@ -4625,6 +4712,7 @@ pub fn word_width(ty: SrcType) -> core::option::Option<MemWidth> {
         SrcType::Char -> None,
         SrcType::Float(ft) -> None,
         Sint(kind) -> usize_width(kind),
+        View(view_length) -> None,
     };
 }
 
@@ -4666,6 +4754,7 @@ pub fn word_type(decls: SrcDecls, ty: SrcType) -> bool {
         SrcType::Char -> false,
         SrcType::Float(ft) -> false,
         Sint(kind) -> true,
+        View(view_length) -> false,
     };
 }
 
@@ -4702,6 +4791,7 @@ pub fn word_element(decls: SrcDecls, element: SrcType) -> bool {
         SrcType::Char -> false,
         SrcType::Float(ft) -> false,
         Sint(sk) -> element.is_sint(Uint64),
+        View(view_length) -> false,
     };
 }
 
@@ -4744,6 +4834,7 @@ pub fn load_type(ty: SrcType, target: usize, base: Expr, offset: usize, body: St
         SrcType::Char -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
         SrcType::Float(ft) -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
         Sint(kind) -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
+        View(view_length) -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
     };
 }
 
@@ -4807,6 +4898,7 @@ pub fn store_type(ty: SrcType, values: List<Expr>, first: usize, base: Expr, off
         SrcType::Char -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
         SrcType::Float(ft) -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
         Sint(kind) -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
+        View(view_length) -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
     };
 }
 
@@ -4852,6 +4944,7 @@ pub fn within_layout(depth: usize, ty: SrcType) -> bool {
         SrcType::Char -> false,
         SrcType::Float(ft) -> false,
         Sint(kind) -> true,
+        View(view_length) -> false,
     };
 }
 
@@ -5135,6 +5228,7 @@ pub fn eval_array_index(b: Binding, slot: usize, index: core::option::Option<Eva
         SrcType::Char -> None,
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
+        View(view_length) -> None,
     };
 }
 
@@ -5166,6 +5260,7 @@ pub fn is_array_local(binding: core::option::Option<Binding>) -> bool {
             SrcType::Char -> false,
             SrcType::Float(ft) -> false,
             Sint(sk) -> false,
+            View(view_length) -> false,
         },
     };
 }
@@ -5395,6 +5490,7 @@ pub fn store_array(b: Binding, slot: usize, index: core::option::Option<Evaluate
         SrcType::Char -> None,
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
+        View(view_length) -> None,
     };
 }
 
@@ -5429,6 +5525,7 @@ pub fn set_field_eval_of(b: Binding, field: usize, slot: usize, v: Evaluated) ->
         SrcType::Char -> None,
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
+        View(view_length) -> None,
     };
 }
 
@@ -5461,6 +5558,29 @@ pub fn lower_unreachable(same: bool, slot: usize) -> core::option::Option<Stmt> 
         return Some(Stmt::Divide(U64, UDiv, slot, Lit(1), Lit(0)));
     }
     return None;
+}
+
+// Store the length i32 slots from slot to the words at the address in
+// pointer, from offset on, then run rest.
+pub fn view_stores(pointer: usize, slot: usize, offset: usize, length: usize, rest: Stmt) -> Stmt {
+    if (length == 0) {
+        return rest;
+    }
+    return Seq(boxed(StoreWord(M32, Binary(U64, Add, boxed(Var(pointer)), boxed(Lit(offset as u64))), Var(slot))), boxed(view_stores(pointer, plus(slot, 1), plus(offset, 4), minus(length, 1), rest)));
+}
+
+// LetView: the elements into the slots from slot, then a block of 4 length
+// bytes at alignment 4 into the slot after them (Core's mapBorrowed), the
+// elements stored packed into it, then the body. Fewer than 2^31 elements
+// (an i32 index's bound), so the block's size is a word.
+pub fn lower_view(slot: usize, length: usize, values: core::option::Option<List<Expr>>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    if ((length == 0) || (length >= 2147483648)) {
+        return None;
+    }
+    return match (body) {
+        None -> None,
+        Some(b) -> lower_let(slot, values, Some(Seq(boxed(Alloc(plus(slot, length), 2, Lit(times(4, length) as u64))), boxed(view_stores(plus(slot, length), slot, 0, length, Seq(boxed(Assign(slot, Var(plus(slot, length)))), boxed(b))))))),
+    };
 }
 
 pub fn lower_assert(condition: core::option::Option<Evaluated>, slot: usize) -> core::option::Option<Stmt> {
@@ -5827,6 +5947,7 @@ impl SrcStmt {
             Continue -> Some(Cont),
             MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> lower_match_arm(scope, lookup(scope, scrutinee), enum_id, variant, binds, binder, ty, next, unbox(body).lower(sigs, decls, ret, arm_body_scope(binds, binder, ty, next, scope), plus(next, ty.size())), unbox(rest).lower(sigs, decls, ret, scope, next)),
             Unreachable(id, ty) -> lower_unreachable(ty.same(ret), next),
+            LetView(id, length, fields, pointer, body) -> guarded(next, guard_all(scope, fields), lower_view(next, length, lower_literal(scope, SrcType::Array(boxed(I32), length), fields), unbox(body).lower(sigs, decls, ret, cons(Binding { id: pointer, slot: plus(next, length), ty: Ptr }, cons(Binding { id: id, slot: next, ty: View(length) }, scope)), plus(plus(next, length), 1)))),
         };
     }
 
@@ -5868,6 +5989,7 @@ impl SrcStmt {
             Continue -> true,
             MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> unbox(body).breaks_out() || unbox(rest).breaks_out(),
             Unreachable(id, ty) -> false,
+            LetView(id, length, fields, pointer, body) -> unbox(body).breaks_out(),
         };
     }
 
@@ -5908,6 +6030,7 @@ impl SrcStmt {
             Continue -> 0,
             MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> max_of(plus(unbox(body).depth(), ty.size()), unbox(rest).depth()),
             Unreachable(id, ty) -> 1,
+            LetView(id, length, fields, pointer, body) -> plus(unbox(body).depth(), plus(length, 1)),
         };
     }
 }
@@ -5925,7 +6048,7 @@ pub fn param_scope(params: List<SrcParam>, slot: usize, scope: List<Binding>) ->
 pub fn params_valid(params: List<SrcParam>) -> bool {
     return match (params) {
         Nil -> true,
-        Cons(param, rest) -> (param.ty.size() > 0) && params_valid(unbox(rest)),
+        Cons(param, rest) -> (param.ty.size() > 0) && !viewed_type(param.ty) && params_valid(unbox(rest)),
     };
 }
 
@@ -5967,6 +6090,7 @@ pub fn array_bytes_of(ty: SrcType) -> usize {
         SrcType::Char -> 0,
         SrcType::Float(ft) -> 0,
         Sint(sk) -> 0,
+        View(view_length) -> 0,
     };
 }
 
@@ -6087,6 +6211,7 @@ impl SrcStmt {
             Continue -> empty(),
             MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> concat(unbox(body).slice_uses(), unbox(rest).slice_uses()),
             Unreachable(id, ty) -> empty(),
+            LetView(id, length, fields, pointer, body) -> unbox(body).slice_uses(),
         };
     }
 
@@ -6127,6 +6252,7 @@ impl SrcStmt {
             Continue -> 0,
             MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> plus(unbox(body).array_bytes(uses), unbox(rest).array_bytes(uses)),
             Unreachable(id, ty) -> 0,
+            LetView(id, length, fields, pointer, body) -> unbox(body).array_bytes(uses),
         };
     }
 
@@ -6167,6 +6293,7 @@ impl SrcStmt {
             Continue -> 0,
             MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> max_of(unbox(body).callee_need(needs), unbox(rest).callee_need(needs)),
             Unreachable(id, ty) -> 0,
+            LetView(id, length, fields, pointer, body) -> unbox(body).callee_need(needs),
         };
     }
 }
@@ -6441,6 +6568,7 @@ impl SrcType {
             SrcType::Char -> Some(decls),
             SrcType::Float(ft) -> Some(decls),
             Sint(kind) -> Some(decls),
+            View(view_length) -> None,
         };
     }
 }
@@ -6506,6 +6634,7 @@ impl SrcStmt {
             Continue -> Some(decls),
             MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> declare_in(declare_in(ty.declare(decls), unbox(body)), unbox(rest)),
             Unreachable(id, ty) -> ty.declare(decls),
+            LetView(id, length, fields, pointer, body) -> unbox(body).declare(decls),
         };
     }
 
@@ -6547,6 +6676,7 @@ impl SrcStmt {
             Continue -> false,
             MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> unbox(body).returns() && unbox(rest).returns(),
             Unreachable(id, ty) -> true,
+            LetView(id, length, fields, pointer, body) -> unbox(body).returns(),
         };
     }
 }

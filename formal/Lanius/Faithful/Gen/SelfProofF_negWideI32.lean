@@ -214,7 +214,7 @@ theorem step_lit_src_arms {prog : SrcProgram} {prims : Prims} {ix_lit_src_arms i
   simp only [src_lit_src_arms] at h
   faithful [Lanius.Mini.litSrcArms]
 
-theorem step_lit_stmt {prog : SrcProgram} {prims : Prims} {ix_lit_stmt ix_unbox_of_mini_selfhost_SrcStmt ix_boxed_of_mini_selfhost_SrcType ix_lit_expr ix_boxed_of_mini_selfhost_SrcStmt ix_with_local ix_lit_exprs ix_src_fields ix_callee_params ix_payload_at ix_src_variants ix_lit_src_arms ix_ty_local ix_ty_at ix_src_element ix_lit_eff : Nat} (fn : prog.funcs[ix_lit_stmt]? = some (src_lit_stmt ix_unbox_of_mini_selfhost_SrcStmt ix_boxed_of_mini_selfhost_SrcType ix_lit_stmt ix_lit_expr ix_boxed_of_mini_selfhost_SrcStmt ix_with_local ix_lit_exprs ix_src_fields ix_callee_params ix_payload_at ix_src_variants ix_lit_src_arms ix_ty_local ix_ty_at ix_src_element ix_lit_eff)) (np : prims.isPrim ix_lit_stmt = false)
+theorem step_lit_stmt {prog : SrcProgram} {prims : Prims} {ix_lit_stmt ix_unbox_of_mini_selfhost_SrcStmt ix_boxed_of_mini_selfhost_SrcType ix_lit_expr ix_boxed_of_mini_selfhost_SrcStmt ix_with_local ix_lit_exprs ix_src_fields ix_callee_params ix_payload_at ix_src_variants ix_lit_src_arms ix_ty_local ix_ty_at ix_src_element ix_lit_eff ix_repeat_src : Nat} (fn : prog.funcs[ix_lit_stmt]? = some (src_lit_stmt ix_unbox_of_mini_selfhost_SrcStmt ix_boxed_of_mini_selfhost_SrcType ix_lit_stmt ix_lit_expr ix_boxed_of_mini_selfhost_SrcStmt ix_with_local ix_lit_exprs ix_src_fields ix_callee_params ix_payload_at ix_src_variants ix_lit_src_arms ix_ty_local ix_ty_at ix_src_element ix_lit_eff ix_repeat_src)) (np : prims.isPrim ix_lit_stmt = false)
     (ext_unbox_of_mini_selfhost_SrcStmt : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcStmt prog prims ix_unbox_of_mini_selfhost_SrcStmt n))
     (ext_boxed_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcType prog prims ix_boxed_of_mini_selfhost_SrcType n))
     (ext_lit_expr : Certified (∀ {n : Nat}, Stmt_lit_expr prog prims ix_lit_expr n))
@@ -229,7 +229,8 @@ theorem step_lit_stmt {prog : SrcProgram} {prims : Prims} {ix_lit_stmt ix_unbox_
     (ext_ty_local : Certified (∀ {n : Nat}, Stmt_ty_local prog prims ix_ty_local n))
     (ext_ty_at : Certified (∀ {n : Nat}, Stmt_ty_at prog prims ix_ty_at n))
     (ext_src_element : Certified (∀ {n : Nat}, Stmt_src_element prog prims ix_src_element n))
-    (ext_lit_eff : Certified (∀ {n : Nat}, Stmt_lit_eff prog prims ix_lit_eff n)) {n : Nat}
+    (ext_lit_eff : Certified (∀ {n : Nat}, Stmt_lit_eff prog prims ix_lit_eff n))
+    (ext_repeat_src : Certified (∀ {n : Nat}, Stmt_repeat_src prog prims ix_repeat_src n)) {n : Nat}
     (ih_lit_stmt : Certified (Stmt_lit_stmt prog prims ix_lit_stmt n)) :
     Stmt_lit_stmt prog prims ix_lit_stmt (n + 1) := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3

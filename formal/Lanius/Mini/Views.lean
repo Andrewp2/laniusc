@@ -906,6 +906,60 @@ theorem ViewsHold.deallocate {st : State} (hold : ViewsHold st) {p size alignmen
     show _ ≤ heap'.nextAddress
     rw [next]; exact bf
 
+/-! ## A new view (`i32_array_data_ptr` of a fresh array local) -/
+
+theorem mapBorrowed_four {heap heap' : Heap} {bytes : List UInt8} {p : Nat}
+    (map : heap.mapBorrowed bytes 4 = .allocated p heap') :
+    p = alignUp (max heap.nextAddress 1) 4 ∧
+      heap' = { heap with
+        blocks := heap.blocks ++ [{ base := p, size := bytes.length, alignment := 4, bytes := bytes, owned := false }]
+        nextAddress := p + max bytes.length 1 } := by
+  simp only [Heap.mapBorrowed, show validAlignment 4 = true by decide, Bool.not_true, Bool.false_eq_true,
+    ite_false, AllocationResult.allocated.injEq] at map
+  obtain ⟨rfl, rfl⟩ := map
+  exact ⟨rfl, rfl⟩
+
+/-- Binding a new array local of in-range `i32`s and mapping its encoding into
+a borrowed block, viewed at the new cell: the views hold, given every block
+ends below the next address (the heap correspondence's `below`). -/
+theorem ViewsHold.mapView {st : State} (hold : ViewsHold st) (below : ∀ c ∈ st.cells, c.id < st.nextCell)
+    (blocks : ∀ b ∈ st.heap.blocks, b.base + max b.size 1 ≤ st.heap.nextAddress)
+    {vs : List Value} (i32s : ∀ x ∈ vs, IsI32 x) {bytes : List UInt8}
+    (enc : Semantics.encodeI32Array vs = .ok bytes) {p : Nat} {heap' : Heap}
+    (map : st.heap.mapBorrowed bytes 4 = .allocated p heap') (id : Nat) :
+    ViewsHold { (st.bindLocal id (.array vs)) with
+      heap := heap'
+      i32ArrayViews := st.i32ArrayViews ++ [{ address := p, root := st.nextCell, projections := [], length := vs.length }] } := by
+  have roots := hold.root_lt below
+  obtain ⟨hp, rfl⟩ := mapBorrowed_four map
+  have up : st.heap.nextAddress ≤ p := hp ▸ alignUp_above st.heap (by decide)
+  refine ⟨fun v mem => ?_, ?_⟩
+  · simp only [List.mem_append, List.mem_singleton] at mem
+    rcases mem with old | rfl
+    · obtain ⟨ws, b, h⟩ := hold.1 v old
+      obtain ⟨o, bf⟩ := Owns.mapBorrowed h.owns h.before map
+      refine ⟨ws, b, h.proj, fun c cmem cid => ?_, ?_, h.length, h.i32s, h.base, o, bf, h.bytes⟩
+      · simp only [State.bindLocal, State.bindCell, List.mem_append, List.mem_singleton] at cmem
+        rcases cmem with cmem | rfl
+        · exact h.cells c cmem cid
+        · have := roots v old; simp only [Lanius.CellId] at *; omega
+      · obtain ⟨c, cmem, cid⟩ := h.present
+        exact ⟨c, by simp [State.bindLocal, State.bindCell, cmem], cid⟩
+    · refine ⟨vs, { base := p, size := bytes.length, alignment := 4, bytes := bytes, owned := false }, rfl,
+        fun c cmem cid => ?_, ⟨{ id := st.nextCell, value := some (.array vs) }, by simp [State.bindLocal, State.bindCell], rfl⟩, rfl, i32s, rfl,
+        ⟨by simp, rfl, rfl, rfl, fun c cmem ne => ?_⟩, Nat.le_refl _, enc⟩
+      · simp only [State.bindLocal, State.bindCell, List.mem_append, List.mem_singleton] at cmem
+        rcases cmem with cmem | rfl
+        · have := below c cmem; simp only [Lanius.CellId] at *; omega
+        · rfl
+      · simp only [List.mem_append, List.mem_singleton] at cmem
+        rcases cmem with cmem | rfl
+        · exact .inl (Nat.le_trans (blocks c cmem) up)
+        · exact absurd rfl ne
+  · refine List.pairwise_append.mpr ⟨hold.2, by simp, fun a amem b bmem => ?_⟩
+    simp only [List.mem_singleton] at bmem
+    subst bmem
+    have := roots a amem
+    simp only [Lanius.CellId] at *; omega
+
 end Lanius.Mini.Views
-
-

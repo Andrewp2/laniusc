@@ -185,6 +185,9 @@ pub enum SrcType {
     // narrow one sits in its slot as an i32 does, its value's 32-bit two's
     // complement zero-extended; a 64-bit one as an isize does.
     Sint(UintTy),
+    // an [i32; length] local the program viewed (the compiler's; the reading
+    // never makes one)
+    View(usize),
 }
 
 pub enum SrcOp {
@@ -277,6 +280,9 @@ pub enum SrcStmt {
     // Unreachable(id, ty): Core binds id, uninitialized, at type ty and
     // returns it, so it traps; ty is the function's result type.
     Unreachable(usize, SrcType),
+    // LetView(id, length, elements, pointer, body): let id: [i32; length] =
+    // [elements]; let pointer: ptr = core::mem::i32_array_data_ptr(id); body
+    LetView(usize, usize, List<SrcExpr>, usize, Box<SrcStmt>),
 }
 
 pub struct SrcParam {
@@ -2366,6 +2372,7 @@ pub fn src_ty(t: SrcType) -> core::option::Option<Ty> {
         SrcType::Char -> Some(TyChar),
         SrcType::Float(ft) -> Some(TyFloat(ft)),
         Sint(sk) -> Some(TySint(sk)),
+        View(view_length) -> None,
     };
 }
 
@@ -2791,6 +2798,7 @@ pub fn src_weight(t: SrcType) -> core::option::Option<usize> {
         SrcType::Char -> Some(1),
         SrcType::Float(ft) -> Some(1),
         Sint(sk) -> Some(1),
+        View(view_length) -> Some(1),
     };
 }
 
@@ -3101,6 +3109,7 @@ pub fn unit_ty(t: SrcType) -> bool {
         SrcType::Char -> false,
         SrcType::Float(ft) -> false,
         Sint(sk) -> false,
+        View(view_length) -> false,
     };
 }
 
@@ -3819,6 +3828,7 @@ pub fn float_want(want: core::option::Option<SrcType>, t: SrcType, x: SrcExpr) -
             SrcType::Char -> float_pick(F32, t, x),
             SrcType::Float(ft) -> float_pick(ft, t, x),
             Sint(sk) -> float_pick(F32, t, x),
+            View(view_length) -> float_pick(F32, t, x),
         },
     };
 }
@@ -6227,6 +6237,7 @@ pub fn is_usize(t: SrcType) -> bool {
         SrcType::Char -> false,
         SrcType::Float(ft) -> false,
         Sint(sk) -> false,
+        View(view_length) -> false,
     };
 }
 
@@ -11303,6 +11314,7 @@ pub fn src_enum_id(t: core::option::Option<SrcType>) -> core::option::Option<usi
             SrcType::Char -> None,
             SrcType::Float(ft) -> None,
             Sint(sk) -> None,
+            View(view_length) -> None,
         },
     };
 }
@@ -11845,6 +11857,7 @@ pub fn isize_ty(t: SrcType) -> bool {
         SrcType::Char -> false,
         SrcType::Float(ft) -> false,
         Sint(sk) -> false,
+        View(view_length) -> false,
     };
 }
 
@@ -11881,6 +11894,7 @@ pub fn int_literal_at(t: SrcType, k: i32, e: SrcExpr) -> SrcExpr {
         SrcType::Char -> e,
         SrcType::Float(ft) -> e,
         Sint(sk) -> sint_at(sk, k, e),
+        View(view_length) -> e,
     };
 }
 
@@ -11932,6 +11946,7 @@ pub fn src_fields(t: core::option::Option<SrcType>) -> core::option::Option<List
             SrcType::Char -> None,
             SrcType::Float(ft) -> None,
             Sint(sk) -> None,
+            View(view_length) -> None,
         },
     };
 }
@@ -11953,6 +11968,7 @@ pub fn src_variants(t: core::option::Option<SrcType>) -> core::option::Option<Li
             SrcType::Char -> None,
             SrcType::Float(ft) -> None,
             Sint(sk) -> None,
+            View(view_length) -> None,
         },
     };
 }
@@ -11974,6 +11990,7 @@ pub fn src_element(t: core::option::Option<SrcType>) -> core::option::Option<Src
             SrcType::Char -> None,
             SrcType::Float(ft) -> None,
             Sint(sk) -> None,
+            View(view_length) -> None,
         },
     };
 }
@@ -12129,6 +12146,7 @@ pub fn wide_at(want: core::option::Option<SrcType>, n: u64, e: SrcExpr) -> SrcEx
             SrcType::Char -> e,
             SrcType::Float(ft) -> e,
             Sint(sk) -> wide_sint_at(sk, n, e),
+            View(view_length) -> e,
         },
     };
 }
@@ -12175,6 +12193,7 @@ pub fn neg_wide_at(want: core::option::Option<SrcType>, n: u64, e: SrcExpr) -> S
             SrcType::Char -> e,
             SrcType::Float(ft) -> e,
             Sint(sk) -> neg_wide_sint(sk, n, e),
+            View(view_length) -> e,
         },
     };
 }
@@ -12222,6 +12241,7 @@ pub fn neg_least(want: core::option::Option<SrcType>, x: SrcExpr, d: SrcExpr) ->
             SrcType::Char -> d,
             SrcType::Float(ft) -> d,
             Sint(sk) -> neg_least_at(sk, x, d),
+            View(view_length) -> d,
         },
     };
 }
@@ -12405,6 +12425,7 @@ pub fn lit_stmt(funcs: List<SrcFunc>, ret: SrcType, locals: List<LocalTy>, s: Sr
         Continue -> Continue,
         MatchArm(sc, en, k, bs, x, ty, body, rest) -> MatchArm(sc, en, k, bs, x, ty, boxed(lit_stmt(funcs, ret, with_local(x, ty, locals), unbox(body))), boxed(lit_stmt(funcs, ret, locals, unbox(rest)))),
         Unreachable(id, ty) -> Unreachable(id, ty),
+        LetView(id, n, es, p, body) -> LetView(id, n, lit_exprs(locals, Some(repeat_src(I32, n)), es), p, boxed(lit_stmt(funcs, ret, with_local(p, Ptr, with_local(id, SrcType::Array(boxed(I32), n), locals)), unbox(body)))),
     };
 }
 
@@ -12523,6 +12544,7 @@ pub fn wide_left_stmt(s: SrcStmt) -> bool {
         Continue -> false,
         MatchArm(sc, en, k, bs, x, ty, body, rest) -> wide_left_stmt(unbox(body)) || wide_left_stmt(unbox(rest)),
         Unreachable(id, ty) -> false,
+        LetView(id, n, es, p, body) -> wide_left_exprs(es) || wide_left_stmt(unbox(body)),
     };
 }
 

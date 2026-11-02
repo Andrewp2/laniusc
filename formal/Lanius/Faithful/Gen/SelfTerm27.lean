@@ -12,127 +12,127 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Termination
 open Lanius.Faithful.SelfCert
 
-theorem ok_SrcType_is_integer : FnOk prog prims info (1254, ⟨0, [], 0⟩) :=
+theorem ok_float_arith : FnOk prog prims info (1254, ⟨3, [], 0⟩) :=
+  fnOk_of fn_float_arith (by decide +kernel)
+
+theorem ok_SrcType_is_sint_any : FnOk prog prims info (1255, ⟨0, [], 0⟩) :=
+  fnOk_of fn_SrcType_is_sint_any (by decide +kernel)
+
+theorem ok_arith_sint : FnOk prog prims info (1256, ⟨3, [], 0⟩) :=
+  fnOk_of fn_arith_sint (by decide +kernel)
+
+theorem ok_arith_uint : FnOk prog prims info (1257, ⟨3, [], 0⟩) :=
+  fnOk_of fn_arith_uint (by decide +kernel)
+
+theorem ok_SrcType_is_integer : FnOk prog prims info (1258, ⟨0, [], 0⟩) :=
   fnOk_of fn_SrcType_is_integer (by decide +kernel)
 
-theorem ok_float_order : FnOk prog prims info (1255, ⟨3, [], 0⟩) :=
+theorem ok_float_order : FnOk prog prims info (1259, ⟨3, [], 0⟩) :=
   fnOk_of fn_float_order (by decide +kernel)
 
-theorem ok_sign_key : FnOk prog prims info (1256, ⟨0, [], 0⟩) :=
+theorem ok_sign_key : FnOk prog prims info (1260, ⟨0, [], 0⟩) :=
   fnOk_of fn_sign_key (by decide +kernel)
 
-theorem ok_order_sint : FnOk prog prims info (1257, ⟨3, [], 0⟩) :=
+theorem ok_order_sint : FnOk prog prims info (1261, ⟨3, [], 0⟩) :=
   fnOk_of fn_order_sint (by decide +kernel)
 
-theorem ok_order_uint : FnOk prog prims info (1258, ⟨3, [], 0⟩) :=
+theorem ok_order_uint : FnOk prog prims info (1262, ⟨3, [], 0⟩) :=
   fnOk_of fn_order_uint (by decide +kernel)
 
-theorem ok_SrcType_word : FnOk prog prims info (1259, ⟨2, [], 0⟩) :=
+theorem ok_SrcType_word : FnOk prog prims info (1263, ⟨2, [], 0⟩) :=
   fnOk_of fn_SrcType_word (by decide +kernel)
 
-theorem ok_wrap : FnOk prog prims info (1260, ⟨1, [], 0⟩) :=
+theorem ok_wrap : FnOk prog prims info (1264, ⟨1, [], 0⟩) :=
   fnOk_of fn_wrap (by decide +kernel)
 
-theorem ok_sint_to_i32 : FnOk prog prims info (1261, ⟨2, [], 0⟩) :=
+theorem ok_sint_to_i32 : FnOk prog prims info (1265, ⟨2, [], 0⟩) :=
   fnOk_of fn_sint_to_i32 (by decide +kernel)
 
-theorem ok_from_i32 : FnOk prog prims info (1262, ⟨2, [], 0⟩) :=
+theorem ok_from_i32 : FnOk prog prims info (1266, ⟨2, [], 0⟩) :=
   fnOk_of fn_from_i32 (by decide +kernel)
 
-theorem ok_sint_to_uint : FnOk prog prims info (1263, ⟨3, [], 0⟩) :=
+theorem ok_sint_to_uint : FnOk prog prims info (1267, ⟨3, [], 0⟩) :=
   fnOk_of fn_sint_to_uint (by decide +kernel)
 
-theorem ok_sint_to_wide : FnOk prog prims info (1264, ⟨3, [], 0⟩) :=
+theorem ok_sint_to_wide : FnOk prog prims info (1268, ⟨3, [], 0⟩) :=
   fnOk_of fn_sint_to_wide (by decide +kernel)
 
-theorem ok_int_to_float : FnOk prog prims info (1265, ⟨0, [], 0⟩) :=
+theorem ok_int_to_float : FnOk prog prims info (1269, ⟨0, [], 0⟩) :=
   fnOk_of fn_int_to_float (by decide +kernel)
 
-theorem ok_if_narrow : FnOk prog prims info (1266, ⟨1, [], 0⟩) :=
+theorem ok_if_narrow : FnOk prog prims info (1270, ⟨1, [], 0⟩) :=
   fnOk_of fn_if_narrow (by decide +kernel)
 
-theorem ok_float_to_float : FnOk prog prims info (1267, ⟨0, [], 0⟩) :=
+theorem ok_float_to_float : FnOk prog prims info (1271, ⟨0, [], 0⟩) :=
   fnOk_of fn_float_to_float (by decide +kernel)
 
-theorem ok_UintTy_signed_word : FnOk prog prims info (1268, ⟨1, [], 0⟩) :=
+theorem ok_UintTy_signed_word : FnOk prog prims info (1272, ⟨1, [], 0⟩) :=
   fnOk_of fn_UintTy_signed_word (by decide +kernel)
 
-theorem ok_copy_slots : FnOk prog prims info (1269, ⟨3, [], 0⟩) :=
+theorem ok_copy_slots : FnOk prog prims info (1273, ⟨3, [], 0⟩) :=
   fnOk_of fn_copy_slots (by decide +kernel)
 
-theorem ok_load_types : FnOk prog prims info (1271, ⟨3, [0], 0⟩) :=
+theorem ok_load_types : FnOk prog prims info (1275, ⟨3, [0], 0⟩) :=
   fnOk_of fn_load_types (by decide +kernel)
 
-theorem ok_load_cases : FnOk prog prims info (1272, ⟨3, [4], 0⟩) :=
+theorem ok_load_cases : FnOk prog prims info (1276, ⟨3, [4], 0⟩) :=
   fnOk_of fn_load_cases (by decide +kernel)
 
-theorem ok_pick_element : FnOk prog prims info (1273, ⟨3, [4], 0⟩) :=
+theorem ok_pick_element : FnOk prog prims info (1277, ⟨3, [4], 0⟩) :=
   fnOk_of fn_pick_element (by decide +kernel)
 
-theorem ok_eval_sized : FnOk prog prims info (1274, ⟨4, [], 0⟩) :=
+theorem ok_eval_sized : FnOk prog prims info (1278, ⟨4, [], 0⟩) :=
   fnOk_of fn_eval_sized (by decide +kernel)
 
-theorem ok_element_at : FnOk prog prims info (1275, ⟨2, [], 0⟩) :=
+theorem ok_element_at : FnOk prog prims info (1279, ⟨2, [], 0⟩) :=
   fnOk_of fn_element_at (by decide +kernel)
 
-theorem ok_array_arg : FnOk prog prims info (1276, ⟨12, [], 0⟩) :=
+theorem ok_array_arg : FnOk prog prims info (1280, ⟨12, [], 0⟩) :=
   fnOk_of fn_array_arg (by decide +kernel)
 
-theorem ok_arg_bytes : FnOk prog prims info (1277, ⟨4, [], 0⟩) :=
+theorem ok_arg_bytes : FnOk prog prims info (1281, ⟨4, [], 0⟩) :=
   fnOk_of fn_arg_bytes (by decide +kernel)
 
-theorem ok_UintTy_spare : FnOk prog prims info (1278, ⟨0, [], 0⟩) :=
+theorem ok_UintTy_spare : FnOk prog prims info (1282, ⟨0, [], 0⟩) :=
   fnOk_of fn_UintTy_spare (by decide +kernel)
 
-theorem ok_UintTy_least_bits : FnOk prog prims info (1279, ⟨0, [], 0⟩) :=
+theorem ok_UintTy_least_bits : FnOk prog prims info (1283, ⟨0, [], 0⟩) :=
   fnOk_of fn_UintTy_least_bits (by decide +kernel)
 
-theorem ok_word_width : FnOk prog prims info (1280, ⟨1, [], 0⟩) :=
+theorem ok_word_width : FnOk prog prims info (1284, ⟨1, [], 0⟩) :=
   fnOk_of fn_word_width (by decide +kernel)
 
-theorem ok_ite_then : FnOk prog prims info (1281, ⟨0, [], 0⟩) :=
+theorem ok_ite_then : FnOk prog prims info (1285, ⟨0, [], 0⟩) :=
   fnOk_of fn_ite_then (by decide +kernel)
 
-theorem ok_lx_ident_run : FnOk prog prims info (1282, ⟨2, [0], 0⟩) :=
+theorem ok_lx_ident_run : FnOk prog prims info (1286, ⟨2, [0], 0⟩) :=
   fnOk_of fn_lx_ident_run (by decide +kernel)
 
-theorem ok_lx_prefixed_base : FnOk prog prims info (1283, ⟨2, [], 0⟩) :=
+theorem ok_lx_prefixed_base : FnOk prog prims info (1287, ⟨2, [], 0⟩) :=
   fnOk_of fn_lx_prefixed_base (by decide +kernel)
 
-theorem ok_lx_digit_run : FnOk prog prims info (1284, ⟨5, [], 0⟩) :=
+theorem ok_lx_digit_run : FnOk prog prims info (1288, ⟨5, [], 0⟩) :=
   fnOk_of fn_lx_digit_run (by decide +kernel)
 
-theorem ok_lx_finish_decimal : FnOk prog prims info (1285, ⟨13, [], 0⟩) :=
+theorem ok_lx_finish_decimal : FnOk prog prims info (1289, ⟨13, [], 0⟩) :=
   fnOk_of fn_lx_finish_decimal (by decide +kernel)
 
-theorem ok_lx_space_run : FnOk prog prims info (1286, ⟨2, [0], 0⟩) :=
+theorem ok_lx_space_run : FnOk prog prims info (1290, ⟨2, [0], 0⟩) :=
   fnOk_of fn_lx_space_run (by decide +kernel)
 
-theorem ok_lx_quoted_at : FnOk prog prims info (1287, ⟨2, [3], 1⟩) :=
+theorem ok_lx_quoted_at : FnOk prog prims info (1291, ⟨2, [3], 1⟩) :=
   fnOk_of fn_lx_quoted_at (by decide +kernel)
 
-theorem ok_lx_symbol_at : FnOk prog prims info (1288, ⟨12, [], 0⟩) :=
+theorem ok_lx_symbol_at : FnOk prog prims info (1292, ⟨12, [], 0⟩) :=
   fnOk_of fn_lx_symbol_at (by decide +kernel)
 
-theorem ok_lx_as_text : FnOk prog prims info (1291, ⟨1, [], 0⟩) :=
+theorem ok_lx_as_text : FnOk prog prims info (1295, ⟨1, [], 0⟩) :=
   fnOk_of fn_lx_as_text (by decide +kernel)
 
-theorem ok_lx_keyword_at : FnOk prog prims info (1292, ⟨1, [2], 1⟩) :=
+theorem ok_lx_keyword_at : FnOk prog prims info (1296, ⟨1, [2], 1⟩) :=
   fnOk_of fn_lx_keyword_at (by decide +kernel)
 
-theorem ok_p_member_type_args_some : FnOk prog prims info (1294, ⟨0, [], 0⟩) :=
-  fnOk_of fn_p_member_type_args_some (by decide +kernel)
-
-theorem ok_generic_open : FnOk prog prims info (1295, ⟨3, [], 0⟩) :=
-  fnOk_of fn_generic_open (by decide +kernel)
-
-theorem ok_p_member_type_args_none : FnOk prog prims info (1296, ⟨0, [], 0⟩) :=
-  fnOk_of fn_p_member_type_args_none (by decide +kernel)
-
-theorem ok_p_block_stmt : FnOk prog prims info (1297, ⟨0, [], 0⟩) :=
-  fnOk_of fn_p_block_stmt (by decide +kernel)
-
 theorem chunk27 : AllFns prog prims info part27 :=
-  ⟨ok_SrcType_is_integer, ok_float_order, ok_sign_key, ok_order_sint, ok_order_uint, ok_SrcType_word, ok_wrap, ok_sint_to_i32, ok_from_i32, ok_sint_to_uint, ok_sint_to_wide, ok_int_to_float, ok_if_narrow, ok_float_to_float, ok_UintTy_signed_word, ok_copy_slots, ok_load_types, ok_load_cases, ok_pick_element, ok_eval_sized, ok_element_at, ok_array_arg, ok_arg_bytes, ok_UintTy_spare, ok_UintTy_least_bits, ok_word_width, ok_ite_then, ok_lx_ident_run, ok_lx_prefixed_base, ok_lx_digit_run, ok_lx_finish_decimal, ok_lx_space_run, ok_lx_quoted_at, ok_lx_symbol_at, ok_lx_as_text, ok_lx_keyword_at, ok_p_member_type_args_some, ok_generic_open, ok_p_member_type_args_none, ok_p_block_stmt, trivial⟩
+  ⟨ok_float_arith, ok_SrcType_is_sint_any, ok_arith_sint, ok_arith_uint, ok_SrcType_is_integer, ok_float_order, ok_sign_key, ok_order_sint, ok_order_uint, ok_SrcType_word, ok_wrap, ok_sint_to_i32, ok_from_i32, ok_sint_to_uint, ok_sint_to_wide, ok_int_to_float, ok_if_narrow, ok_float_to_float, ok_UintTy_signed_word, ok_copy_slots, ok_load_types, ok_load_cases, ok_pick_element, ok_eval_sized, ok_element_at, ok_array_arg, ok_arg_bytes, ok_UintTy_spare, ok_UintTy_least_bits, ok_word_width, ok_ite_then, ok_lx_ident_run, ok_lx_prefixed_base, ok_lx_digit_run, ok_lx_finish_decimal, ok_lx_space_run, ok_lx_quoted_at, ok_lx_symbol_at, ok_lx_as_text, ok_lx_keyword_at, trivial⟩
 
 end Lanius.Faithful.SelfTerm
