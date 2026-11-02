@@ -39,6 +39,8 @@ static const uint INVALID = 0xffffffffu;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint MAX_SCHEDULE_ROWS = 256u;
 static const uint MAX_TARGET_ROWS = 64u;
+// Straight-line limit for a body cloned at several sites or kept standalone.
+static const uint MAX_SHARED_ROWS = 6u;
 
 bool scalar_gpr_type(uint type_id)
 {
@@ -137,8 +139,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         semantic_lir_function_total[0u]);
     if (function_id >= gParams.function_capacity) return;
     X86InlineInfo info = rejected_info();
-    if (function_id >= function_total ||
-        x86_direct_call_count_by_function[function_id] != 1u)
+    uint call_sites = function_id < function_total
+        ? x86_direct_call_count_by_function[function_id] : 0u;
+    if (function_id >= function_total || call_sites == 0u)
     {
         x86_inline_info_by_function[function_id] = info;
         return;
@@ -147,7 +150,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     SemanticLirFunction function = semantic_lir_functions[function_id];
     if ((function.flags & (SEMANTIC_FUNCTION_FLAG_ENTRYPOINT |
                            SEMANTIC_FUNCTION_FLAG_EXTERN)) != 0u ||
-        (gParams.reserved2 != 0u && function.symbol_local_index != INVALID) ||
         function.result_word_count != 0u ||
         !scalar_gpr_type(function.result_type) ||
         function.param_count > 6u ||
@@ -185,9 +187,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     }
 
+    // An object symbol may be called from other objects: keep the body.
+    bool keep = gParams.reserved2 != 0u &&
+        function.symbol_local_index != INVALID;
+    bool shared = keep || call_sites > 1u;
     uint return_value = INVALID;
     uint return_count = 0u;
     uint body_rows = 0u;
+    bool control = false;
     for (uint position = start; position < end; position += 1u)
     {
         uint row = semantic_schedule_order[position];
@@ -226,7 +233,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
             return;
         }
         body_rows += 1u;
-        if (body_rows > MAX_TARGET_ROWS)
+        if (inline_control_op(op) || select_store) control = true;
+        if (body_rows > MAX_TARGET_ROWS ||
+            (shared && (control || body_rows > MAX_SHARED_ROWS)))
         {
             x86_inline_info_by_function[function_id] = info;
             return;
@@ -244,7 +253,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
 
     info.return_value = return_value;
-    info.body_row_count = body_rows;
+    info.body_row_count = body_rows | (keep ? X86_INLINE_KEEP_FUNCTION : 0u);
     info.schedule_start = start;
     info.schedule_end = end;
     x86_inline_info_by_function[function_id] = info;

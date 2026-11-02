@@ -349,6 +349,15 @@ uint x86_saved_gpr_count(uint mask)
 // CALL and CALL_SYMBOL emit the same result moves after their five-byte call.
 // Object relocations must use this exact width to find the call's rel32 field;
 // a guessed width can patch the preceding prologue instead.
+// An imported scalar call without stack arguments keeps the four-byte NOP
+// 0F 1F 40 00 after its E8 rel32: a nine-byte slot the link fills with the
+// callee's body when that is a few register-only instructions and ret.
+bool x86_symbol_call_padded(uint metadata, uint stack_bytes)
+{
+    return stack_bytes == 0u && (metadata & X86_LIR_METADATA_AGGREGATE) == 0u &&
+        (metadata & 0xffu) != SEMANTIC_LIR_TY_STRING && !x86_scalar_float(metadata);
+}
+
 uint x86_call_result_instruction_bytes(uint metadata, uint result_words,
                                        uint result_location)
 {

@@ -9,6 +9,7 @@ pub(super) use executable::X86ExecutablePageGraph;
 mod layout_chunks;
 pub(super) use layout_chunks::X86LayoutChunkGraph;
 mod paged;
+mod splice;
 mod symbol_partitions;
 mod symbol_resolution;
 use std::path::PathBuf;
@@ -562,6 +563,7 @@ impl GpuX86Linker {
             &input.relocations,
             object_bases,
             &relocation_indices,
+            &[],
         )?;
         let relocation_a =
             storage_input_u32(device, "codegen.x86.link.relocation_a", &relocation_a);

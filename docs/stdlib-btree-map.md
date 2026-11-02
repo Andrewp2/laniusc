@@ -209,21 +209,33 @@ different times, so it gets no such benefit. Its insertion-order time is about
 the same as its scattered time. Scattered lookups are 8–14% faster than AVL.
 
 **The remaining cost is generated code.** A probe with 4,096 keys, which stay
-in cache, takes about 210 ns per `get` for both Lanius maps and 44 ns for
+in cache, took about 210 ns per `get` for both Lanius maps and 44 ns for
 `std::map`. Both trees make about log₂ n key comparisons. Each binary-search
-step in `find` is 46 instructions plus a call to the 4-instruction
+step in `find` was 46 instructions plus a call to the 4-instruction
 `i32::lt`:
 
-- about 27 of them are stack loads and stores;
-- the step re-copies the key view's three-word header (data, length, stride) into fresh stack slots on every `keys[i]`;
-- it does a bounds check and a 64-bit `imul` by the run-time stride;
-- it spills `low`, `high` and `middle` and reloads them;
-- it ends with a jump to a jump.
+- about 27 of them were stack loads and stores;
+- the step re-copied the key view's three-word header (data, length, stride) into fresh stack slots on every `keys[i]`;
+- it did a bounds check and a 64-bit `imul` by the run-time stride;
+- it spilled `low`, `high` and `middle` and reloaded them;
+- it ended with a jump to a jump.
 
 g++ does the same step in about eight register instructions with the
-comparison inlined. A library change can't remove these costs; they belong to
-the backend. The library did build four views per `get`, and each view is a
-call plus two header copies. `find` now builds its key and link views inline
-and reads the counts through the links view, and `get` builds its value view
-inline. That is about 5% faster in cache (1,830 to 1,740 ms for 8M gets) and
-within noise at 1M keys.
+comparison inlined. The library did build four views per `get`, and each view
+was a call plus two header copies. `find` now builds its key and link views
+inline and reads the counts through the links view, and `get` builds its value
+view inline. That is about 5% faster in cache (1,830 to 1,740 ms for 8M gets)
+and within noise at 1M keys.
+
+The x86 backend then removed four of those costs (branch codegen1):
+
+- the link writes a tiny leaf callee such as `i32::lt` or `u64::lt` (register-only, at most nine bytes) over its call slot;
+- a view local written once is read from its own stack home, so there is no header copy;
+- locals get the callee-saved registers by loop-weighted reads, so `low` and `high` live in R13 and R14;
+- a branch to a jump goes straight to that jump's target.
+
+A step is now 37 instructions on one arm and 36 on the other, with 18 or 19
+stack operands. `middle`, `base` and the expression temporaries still spill,
+and the call argument is still staged through the stack. The cached probe
+went from 1,725 to 1,352 ms for 8M gets (161 ns per `get`), and key-order
+lookups at 1M keys from 265 to 200 ns.

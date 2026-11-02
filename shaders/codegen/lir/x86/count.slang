@@ -110,7 +110,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint function_count = min(gParams.semantic_capacity, semantic_lir_function_total[0u]);
     uint owner = semantic_function_id_by_hir[source_hir];
     if (owner < function_count &&
-        x86_inline_info_by_function[owner].return_value != INVALID)
+        x86_inline_info_by_function[owner].return_value != INVALID &&
+        !x86_inline_keeps_function(x86_inline_info_by_function[owner]))
     {
         target_lir_count[scheduled_row] = 0u;
         return;
@@ -295,7 +296,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (inline_info.return_value != INVALID)
         {
             target_lir_count[scheduled_row] = argument_rows +
-                inline_info.body_row_count + 1u;
+                x86_inline_body_rows(inline_info) + 1u;
             return;
         }
     }

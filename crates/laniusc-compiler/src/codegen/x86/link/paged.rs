@@ -5,6 +5,7 @@ use super::GpuX86LinkInput;
 const ELF_HEADER_AND_PROGRAM_HEADER_BYTES: usize = 0x78;
 const SECTION_TEXT: u32 = 1;
 const SECTION_RODATA: u32 = 2;
+const RELOCATION_CALL_REL32: u32 = 2;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct GpuX86OutputPage {
@@ -86,8 +87,18 @@ impl GpuX86PagedExecutablePlan {
                     "x86 relocation {relocation_index} site {site_start}..{site_end} exceeds output {output_len}"
                 ));
             }
-            let first_page = site_start / page_capacity;
-            let last_page = (site_end - 1) / page_capacity;
+            // A call inlined at link time rewrites its whole slot, from the
+            // E8 before the site to the end of the pad after it.
+            let (slot_start, slot_end) = if relocation.kind == RELOCATION_CALL_REL32 {
+                (
+                    site_start.saturating_sub(1),
+                    (site_start + super::splice::SPLICE_SLOT_BYTES - 1).min(output_len),
+                )
+            } else {
+                (site_start, site_end)
+            };
+            let first_page = slot_start / page_capacity;
+            let last_page = (slot_end - 1) / page_capacity;
             for page_index in first_page..=last_page {
                 pages[page_index].relocation_indices.push(relocation_index);
             }
