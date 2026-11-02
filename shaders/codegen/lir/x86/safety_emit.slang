@@ -6,6 +6,7 @@ import codegen.lir.x86.common;
 import codegen.lir.x86.location_common;
 import codegen.lir.x86.safety;
 import codegen.lir.x86.parameter_values;
+import codegen.lir.x86.runtime_abi;
 import gpu_index;
 
 void emit_prologue(inout uint cursor, TargetLirFunction function,
@@ -102,6 +103,24 @@ void emit_prologue(inout uint cursor, TargetLirFunction function,
             copy_slot += storage;
             continue;
         }
+        if (!packed && words <= X86_PARAMETER_MOVE_WORDS)
+        {
+            // A small native value moves word by word through RAX (free
+            // here: every incoming argument has been saved). Words descend
+            // from the first-word addresses in RSI and RDI.
+            for (uint word = 0u; word < words; word++)
+            {
+                uint displacement = 0u - word * 8u;
+                emit_u8(cursor, 0x48u); emit_u8(cursor, 0x8bu);
+                if (word == 0u) emit_u8(cursor, 0x06u); // mov rax, [rsi]
+                else { emit_u8(cursor, 0x46u); emit_u8(cursor, displacement & 0xffu); }
+                emit_u8(cursor, 0x48u); emit_u8(cursor, 0x89u);
+                if (word == 0u) emit_u8(cursor, 0x07u); // mov [rdi], rax
+                else { emit_u8(cursor, 0x47u); emit_u8(cursor, displacement & 0xffu); }
+            }
+            copy_slot += storage;
+            continue;
+        }
         if (!packed && words > 1u)
         {
             // Native values descend by words. Move from each lowest address
@@ -117,7 +136,14 @@ void emit_prologue(inout uint cursor, TargetLirFunction function,
         emit_u8(cursor, 0xa5u); // rep movsd/movsq
         copy_slot += storage;
     }
-
+    // A cached slice header: data pointer in RBX, length in R12, stride in R13.
+    uint header_home = x86_header_home(saved_mask);
+    if (header_home != X86_LOCATION_INVALID)
+    {
+        load_stack64(cursor, header_home, X86_HEADER_BASE_REGISTER);
+        load_stack64(cursor, header_home + 1u, X86_HEADER_LENGTH_REGISTER);
+        load_stack64(cursor, header_home + 2u, X86_HEADER_STRIDE_REGISTER);
+    }
 }
 
 void emit_exit(inout uint cursor, uint code)
@@ -127,9 +153,21 @@ void emit_exit(inout uint cursor, uint code)
     emit_u8(cursor, 0x0fu); emit_u8(cursor, 0x05u);
 }
 
-void emit_guards(inout uint cursor, X86LirCore core, X86LirOperands operands,
-                 X86LirLocations locations, TargetLirFunction function)
+// jcc rel32 to an out-of-line runtime trap (X86_RUNTIME_TRAP_*): the
+// passing path falls through a not-taken branch.
+void emit_trap_jump(inout uint cursor, uint condition, uint target)
 {
+    uint next = cursor + 6u;
+    emit_u8(cursor, 0x0fu); emit_u8(cursor, condition);
+    emit_u32(cursor, target - next);
+}
+
+void emit_guards(inout uint cursor, X86LirCore core, X86LirOperands operands,
+                 X86LirLocations locations, TargetLirFunction function,
+                 uint runtime_offset)
+{
+    uint bounds_trap = runtime_offset + X86_RUNTIME_TRAP_BOUNDS_OFFSET;
+    uint shift_trap = runtime_offset + X86_RUNTIME_TRAP_SHIFT_OFFSET;
     bool rhs_wide = (operands.metadata & X86_LIR_METADATA_RHS_NARROW) == 0u;
     uint type = operands.metadata & 0xffu;
     if ((core.op == X86_LIR_OP_INDEX_LOAD || core.op == X86_LIR_OP_INDEX_STORE ||
@@ -144,6 +182,15 @@ void emit_guards(inout uint cursor, X86LirCore core, X86LirOperands operands,
                 load_value64(cursor, locations.a, 0u, function);
                 emit_u8(cursor, 0x8bu); emit_u8(cursor, 0x40u);
                 emit_u8(cursor, 0xf8u); // mov eax, [rax - 8], zero-extended bound
+            }
+            else if (!rhs_wide && x86_location_is_register(locations.length))
+            {
+                // cmp ecx, r32: a register-resident length (a cached header)
+                uint length = x86_location_payload(locations.length);
+                if (length >= 8u) emit_u8(cursor, 0x44u);
+                emit_u8(cursor, 0x39u); emit_u8(cursor, 0xc1u | ((length & 7u) << 3u));
+                emit_trap_jump(cursor, 0x83u, bounds_trap); // jae
+                return;
             }
             else load_value32(cursor, locations.length, 0u, function);
             if (rhs_wide) emit_u8(cursor, 0x48u);
@@ -161,8 +208,7 @@ void emit_guards(inout uint cursor, X86LirCore core, X86LirOperands operands,
             emit_u8(cursor, 0x81u); emit_u8(cursor, 0xf9u);
             emit_u32(cursor, core.local_ordinal);
         }
-        emit_u8(cursor, 0x72u); emit_u8(cursor, 12u);
-        emit_exit(cursor, 101u);
+        emit_trap_jump(cursor, 0x83u, bounds_trap); // jae
         return;
     }
     if (x86_safety_shift(core, operands))
@@ -172,8 +218,7 @@ void emit_guards(inout uint cursor, X86LirCore core, X86LirOperands operands,
         uint bits = scalar_integer_bits(type);
         if (rhs_wide) emit_u8(cursor, 0x48u);
         emit_u8(cursor, 0x83u); emit_u8(cursor, 0xf9u); emit_u8(cursor, bits == 0u ? 31u : bits - 1u);
-        emit_u8(cursor, 0x76u); emit_u8(cursor, 12u);
-        emit_exit(cursor, 102u);
+        emit_trap_jump(cursor, 0x87u, shift_trap); // ja
         return;
     }
     if (!x86_safety_integer_division(core, operands)) return;
@@ -232,5 +277,5 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint cursor = layout.body_offset + target_byte_offset[row];
     if (row == function.instruction_start)
         emit_prologue(cursor, function, semantic_function, saved_mask);
-    emit_guards(cursor, core, operands, locations, function);
+    emit_guards(cursor, core, operands, locations, function, layout.runtime_offset);
 }
