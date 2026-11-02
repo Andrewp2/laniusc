@@ -234,8 +234,31 @@ The x86 backend then removed four of those costs (branch codegen1):
 - locals get the callee-saved registers by loop-weighted reads, so `low` and `high` live in R13 and R14;
 - a branch to a jump goes straight to that jump's target.
 
-A step is now 37 instructions on one arm and 36 on the other, with 18 or 19
-stack operands. `middle`, `base` and the expression temporaries still spill,
-and the call argument is still staged through the stack. The cached probe
-went from 1,725 to 1,352 ms for 8M gets (161 ns per `get`), and key-order
-lookups at 1M keys from 265 to 200 ns.
+After codegen1 a step was 37 instructions on one arm and 36 on the other,
+with 18 or 19 stack operands. The cached probe went from 1,725 to 1,352 ms
+for 8M gets (161 ns per `get`), and key-order lookups at 1M keys from 265 to
+200 ns.
+
+Branch codegen2 then freed the registers those spills were waiting for:
+
+- a read the backend serves from the declaration's own home (a coalesced alias, or a parameter no call reaches) no longer holds a temporary register;
+- an integer call argument takes a register instead of a stack home;
+- a temporary needs a callee-saved register only when a call lies in its interval or in a loop that holds it;
+- in a function with calls, parameters and locals share the four callee-saved registers by loop-weighted reads, so `low`, `high`, `middle` and `key` all get one;
+- a call result that a branch tests at once stays in RAX.
+
+A step is now 31 instructions on one arm and 34 on the other, with 6 stack
+operands. Three of those operands read the key view's header, one reads `base`
+(five hot declarations compete for four callee-saved registers), and two store
+and reload the element address. Interleaved minimums on a shared machine:
+
+| Probe phase (ms) | lang before codegen1 | codegen1 | codegen2 | `std::map` |
+| --- | ---: | ---: | ---: | ---: |
+| cached, 8M gets | 1,697 | 1,364 | 991 (118 ns per `get`) | 369 |
+| 1M keys, key order | 263 | 199 | 126 | 133 |
+| 1M keys, insertion order | 587 | 413 | 331 | 49 |
+| 1M keys, scattered | 714 | 537 | 413 | 510 |
+
+On the tree-map benchmark at 1M keys, B+ tree i32 hits went from 555 ms
+(before codegen1) to 412 ms, and u64 hits from 681 to 376 ms. AVL i32 hits went
+from 302 to 239 ms, and AVL u64 hits from 318 to 207 ms.

@@ -185,12 +185,16 @@ uint parallel_register_location(uint row, uint position, uint total, out bool gp
         }
     }
 
+    // A value returned, or tested by a branch (test; jcc), at once stays in RAX.
     if (last == position + 1u && last < total)
     {
         uint consumer = semantic_schedule_order[last];
-        if (consumer < total &&
-            opt_ir_op(opt_ir_core[consumer]) == SEMANTIC_LIR_OP_RETURN &&
-            opt_ir_operands[consumer].a == row)
+        uint consumer_op = consumer < total ? opt_ir_op(opt_ir_core[consumer]) : 0u;
+        if (consumer < total && opt_ir_operands[consumer].a == row &&
+            (consumer_op == SEMANTIC_LIR_OP_RETURN ||
+             ((consumer_op == SEMANTIC_LIR_OP_IF_BEGIN ||
+               consumer_op == SEMANTIC_LIR_OP_BRANCH_IF) &&
+              scalar_gpr_result(core) && !scalar_is_float(core.type_id))))
             return X86_LOCATION_REGISTER;
     }
     uint function_id = function_for_node(row);
