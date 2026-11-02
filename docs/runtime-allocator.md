@@ -234,14 +234,35 @@ phases.
   reads as zero, that realloc keeps contents and, in pooled mode, that the
   bytes a realloc gains read as zero. Two mutations are caught: skipping the
   zeroing on reuse, and the wrong class in `dealloc`.
-- Open issue: with the 2..8 MiB classes, 5 of about 215 runs of that raw
-  harness reported one corrupted byte inside a block of a few MiB (at block
-  offsets 441,131, 2,132,459, 4,262,379, 8,878,571 and 13,613,547; three of
-  them at page offset `0x9eb`). All five ran while the machine was swapping
-  under compile jobs (1.9 GB of swap in use). The other runs, including 104
-  in a row after that, the debug build of the harness and the threaded
-  harness passed. The cause is not found: it may be an allocator path that
-  only memory pressure reaches, or the kernel.
+- Five runs of that raw harness, out of about 215, once reported a corrupted
+  byte in a block of a few MiB. Those blocks were at block offsets 441,131,
+  2,132,459, 4,262,379, 8,878,571 and 13,613,547. The cause was outside the
+  allocator: the machine's GPU was failing at the time.
+  - All five ran on 11-01 between 23:01 and 23:15. The NVIDIA driver (open
+    615.71, GSP) had logged bad register reads since 22:56, and the GPU fell
+    off the bus at 23:10 (Xid 119, then 79). The IOMMU flushes its TLB lazily
+    on this machine, and memory was swapping.
+  - Four of the five ran the fixed-seed harness. That makes the same
+    deterministic sequence of allocator calls in every run, and nothing in
+    the allocator depends on time, threads or addresses. Even so, they failed
+    at four different slots and rounds, in 4 of the 32 fixed-seed runs of one
+    stress batch.
+  - Replaying the sequence (no allocator needed) shows each corrupted block
+    lived through exactly one alloc, fill and verify. Three were exact mmaps
+    above 8 MiB and one was an 8 MiB class mapping. The allocator does not
+    touch any of them between the harness's fill and its check.
+  - All four were at the same page offset, `0x9eb`. That points to a fixed
+    physical location being written from outside, such as a device writing
+    into a recycled page frame. A stray allocator store would not do this:
+    the allocator writes only block starts, zeroed ranges and its state page.
+  - With the replacement driver (closed 595.99, GSP off), 128 runs passed, 4
+    in parallel as before. Half ran the fixed-seed sequence with
+    `MADV_PAGEOUT` on a live block of at least 1 MiB every 128 rounds, a
+    quarter ran it without, and a quarter used random seeds with page-outs:
+    about 26,000 forced page-outs per 64 runs. If a mismatch ever recurs, the
+    harness (`tests/fixtures/stdlib_alloc_perf/harness_swap.c`) reports the
+    bad bytes' extent and value, the block's history and the page's pagemap
+    flags.
 - A second harness maps the bytes at the fixed vector `0x100000000000`
   (so the allocator runs in its threaded path) and drives them from real
   pthreads, so each thread's `%fs:0` differs. 1 to 32 threads each run 150,000
