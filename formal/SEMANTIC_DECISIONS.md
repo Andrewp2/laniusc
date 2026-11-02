@@ -846,6 +846,17 @@ verified compiler's locals are 64-bit slots with no address. The design:
      `let_first`, inline, since its mutual recursion only calls itself at
      fuel minus one. Frontend cases `view_array`, `view_repeat` (read and
      compiled), `reject_view_gap`, `reject_view_type`.
+     (e) the stdlib oracle (11-02, f6v; the 14 `std::io*` and
+     `std::random_checked`/`random_wide` modules, `--calls 16 --seed 1`):
+     before, 120 testable, 71 compiled, 39 unread (every one an
+     `i32_array_data_ptr` let), 10 uncompiled, 446 calls agree; after, 120
+     testable, 76 compiled, 3 unread (`i32_slice_data_ptr`, a different
+     view), 41 uncompiled (each calls an extern host function, `read_stdin`,
+     `write_byte`, ..., which the verified compiler does not compile), 593
+     calls agree, 0 disagreements. The 5 newly compiled targets use only
+     the pointer (`write_code_view` and its callers). Left: reads and
+     writes of a `View` binding (`slot[0]` after `read_stdin`), which no
+     testable target reaches until extern calls compile.
 6. **`str`** is (pointer, length) of read-only bytes in a static region
    above frame memory, a literal's bytes placed by the loader (Core's
    `.string` value names no address, so any region outside Core's heap
