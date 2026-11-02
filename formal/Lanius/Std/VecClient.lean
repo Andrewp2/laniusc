@@ -103,7 +103,7 @@ theorem compiled_of_pure {sp : SrcProgram} {binary : Binary} (compiled : compile
     {f : Nat} {func : SrcFunc} (found : sp.funcs[f]? = some func) {args : List Value}
     {bits : List (BitVec 64)} (typed : FieldsHold [] (paramTypes func.params) args (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize func.params) {st : Semantics.State} {heap : Heap}
-    (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap) (fits : st.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp) {w : Value}
+    (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap) (fits : st.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp ∧ heap.fsp ≤ heap.top ∧ heap.top < 2 ^ 62) {w : Value}
     (core : ∃ after, Semantics.RunsExpr sp.toCore st (.call f (args.map Core.Expr.value)) w after ∧
       Semantics.PureFrame st after) :
     ∃ depth results after, func.ret.HoldsAt [] w (Func.entry results) 0 ∧ results.length = func.ret.size ∧
@@ -135,7 +135,7 @@ theorem vec_client_correct {sp : SrcProgram} {binary : Binary} (compiled : compi
     (bitsLen : bits.length = paramsSize (lastOrZeroSrc ids).params)
     {st : Semantics.State} {heap : Heap} (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap)
     {xs : List Value} (rep : VecRep sp.toCore i32Ty 4 ids.vec st.heap v xs)
-    (fits : st.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp) :
+    (fits : st.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp ∧ heap.fsp ≤ heap.top ∧ heap.top < 2 ^ 62) :
     ∃ depth results after, SrcType.i32.HoldsAt [] (xs.getLast?.getD (.signed .i32 0)) (Func.entry results) 0 ∧
       results.length = SrcType.i32.size ∧ HeapCorr st.heap st.world after ∧
       MachineReturns binary depth f bits heap results after := by

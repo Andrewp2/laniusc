@@ -133,7 +133,7 @@ theorem compileSource_contract_from {sp : SrcProgram} {binary : Binary}
     (bitsLen : bits.length = paramsSize func.params) {fuel : Nat} {v : Value}
     {st final : Semantics.State} {heap : Heap} (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap)
     (runs : Semantics.evalExpr fuel sp.toCore st (.call f (args.map Core.Expr.value)) = .done v final)
-    (fits : final.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp) :
+    (fits : final.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp ∧ heap.fsp ≤ heap.top ∧ heap.top < 2 ^ 62) :
     ∃ depth results after, func.ret.HoldsAt [] v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
       HeapCorr final.heap final.world after ∧
       ∀ imageBase window, Contract binary imageBase (binary.stackNeed depth) window f bits heap results after := by
@@ -164,7 +164,7 @@ theorem compileSource_outcome_from {sp : SrcProgram} {binary : Binary}
     (found : sp.funcs[f]? = some func) {args : List Value} {bits : List (BitVec 64)}
     (typed : FieldsHold [] (paramTypes func.params) args (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize func.params) {st : Semantics.State} {heap : Heap}
-    (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap) (within : st.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp)
+    (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap) (within : st.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp ∧ heap.fsp ≤ heap.top ∧ heap.top < 2 ^ 62)
     (s : State) (imageBase : BitVec 64) (window : Nat) (bounded : window ≤ 2 ^ 62)
     (loaded : CodeAt s.memory imageBase binary.image)
     (apart : ∀ index, index < binary.image.length →
@@ -205,7 +205,7 @@ theorem compileSource_outcome_reason {sp : SrcProgram} {binary : Binary}
     (found : sp.funcs[f]? = some func) {args : List Value} {bits : List (BitVec 64)}
     (typed : FieldsHold [] (paramTypes func.params) args (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize func.params) {st : Semantics.State} {heap : Heap}
-    (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap) (within : st.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp)
+    (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap) (within : st.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp ∧ heap.fsp ≤ heap.top ∧ heap.top < 2 ^ 62)
     (s : State) (imageBase : BitVec 64) (window : Nat) (bounded : window ≤ 2 ^ 62)
     (loaded : CodeAt s.memory imageBase binary.image)
     (apart : ∀ index, index < binary.image.length →

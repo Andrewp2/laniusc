@@ -41,6 +41,7 @@ import all Lanius.Faithful.Gen.SelfSrcC_arrayCallSig
 import all Lanius.Faithful.Gen.SelfSrcC_assignAgrees
 import all Lanius.Faithful.Gen.SelfSrcC_assignFrom
 import all Lanius.Faithful.Gen.SelfSrcC_binaryConstant
+import all Lanius.Faithful.Gen.SelfSrcC_bindingBytes
 import all Lanius.Faithful.Gen.SelfSrcC_callAgrees
 import all Lanius.Faithful.Gen.SelfSrcC_codeSize
 import all Lanius.Faithful.Gen.SelfSrcC_compileArgs

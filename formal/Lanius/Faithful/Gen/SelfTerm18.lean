@@ -12,127 +12,127 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Termination
 open Lanius.Faithful.SelfCert
 
-theorem ok_p_patterns_more : FnOk prog prims info (845, ⟨0, [], 0⟩) :=
+theorem ok_p_match_arms_some : FnOk prog prims info (845, ⟨0, [], 0⟩) :=
+  fnOk_of fn_p_match_arms_some (by decide +kernel)
+
+theorem ok_p_match_arms_more : FnOk prog prims info (846, ⟨0, [], 0⟩) :=
+  fnOk_of fn_p_match_arms_more (by decide +kernel)
+
+theorem ok_p_match_arms_end : FnOk prog prims info (847, ⟨0, [], 0⟩) :=
+  fnOk_of fn_p_match_arms_end (by decide +kernel)
+
+theorem ok_p_match_arms_after_comma_more : FnOk prog prims info (848, ⟨0, [], 0⟩) :=
+  fnOk_of fn_p_match_arms_after_comma_more (by decide +kernel)
+
+theorem ok_p_match_arms_after_comma_trailing : FnOk prog prims info (849, ⟨0, [], 0⟩) :=
+  fnOk_of fn_p_match_arms_after_comma_trailing (by decide +kernel)
+
+theorem ok_p_patterns_none : FnOk prog prims info (850, ⟨0, [], 0⟩) :=
+  fnOk_of fn_p_patterns_none (by decide +kernel)
+
+theorem ok_p_patterns_some : FnOk prog prims info (851, ⟨0, [], 0⟩) :=
+  fnOk_of fn_p_patterns_some (by decide +kernel)
+
+theorem ok_p_patterns_more : FnOk prog prims info (852, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_patterns_more (by decide +kernel)
 
-theorem ok_p_patterns_end : FnOk prog prims info (846, ⟨0, [], 0⟩) :=
+theorem ok_p_patterns_end : FnOk prog prims info (853, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_patterns_end (by decide +kernel)
 
-theorem ok_p_patterns_after_comma_more : FnOk prog prims info (847, ⟨0, [], 0⟩) :=
+theorem ok_p_patterns_after_comma_more : FnOk prog prims info (854, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_patterns_after_comma_more (by decide +kernel)
 
-theorem ok_p_patterns_after_comma_trailing : FnOk prog prims info (848, ⟨0, [], 0⟩) :=
+theorem ok_p_patterns_after_comma_trailing : FnOk prog prims info (855, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_patterns_after_comma_trailing (by decide +kernel)
 
-theorem ok_p_enum_type_params_some : FnOk prog prims info (849, ⟨0, [], 0⟩) :=
+theorem ok_p_enum_type_params_some : FnOk prog prims info (856, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_enum_type_params_some (by decide +kernel)
 
-theorem ok_p_enum_type_params_more : FnOk prog prims info (850, ⟨0, [], 0⟩) :=
+theorem ok_p_enum_type_params_more : FnOk prog prims info (857, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_enum_type_params_more (by decide +kernel)
 
-theorem ok_p_enum_type_params_after_comma_more : FnOk prog prims info (851, ⟨0, [], 0⟩) :=
+theorem ok_p_enum_type_params_after_comma_more : FnOk prog prims info (858, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_enum_type_params_after_comma_more (by decide +kernel)
 
-theorem ok_p_type_args_some : FnOk prog prims info (852, ⟨0, [], 0⟩) :=
+theorem ok_p_type_args_some : FnOk prog prims info (859, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_type_args_some (by decide +kernel)
 
-theorem ok_p_type_args_more : FnOk prog prims info (853, ⟨0, [], 0⟩) :=
+theorem ok_p_type_args_more : FnOk prog prims info (860, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_type_args_more (by decide +kernel)
 
-theorem ok_p_type_args_after_comma_more : FnOk prog prims info (854, ⟨0, [], 0⟩) :=
+theorem ok_p_type_args_after_comma_more : FnOk prog prims info (861, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_type_args_after_comma_more (by decide +kernel)
 
-theorem ok_p_path_type_args_more : FnOk prog prims info (855, ⟨0, [], 0⟩) :=
+theorem ok_p_path_type_args_more : FnOk prog prims info (862, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_path_type_args_more (by decide +kernel)
 
-theorem ok_p_path_type_args_after_comma_more : FnOk prog prims info (856, ⟨0, [], 0⟩) :=
+theorem ok_p_path_type_args_after_comma_more : FnOk prog prims info (863, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_path_type_args_after_comma_more (by decide +kernel)
 
-theorem ok_p_impl_methods_some : FnOk prog prims info (857, ⟨0, [], 0⟩) :=
+theorem ok_p_impl_methods_some : FnOk prog prims info (864, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_impl_methods_some (by decide +kernel)
 
-theorem ok_p_impl_methods_more : FnOk prog prims info (858, ⟨0, [], 0⟩) :=
+theorem ok_p_impl_methods_more : FnOk prog prims info (865, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_impl_methods_more (by decide +kernel)
 
-theorem ok_p_type_param_bound_more : FnOk prog prims info (859, ⟨0, [], 0⟩) :=
+theorem ok_p_type_param_bound_more : FnOk prog prims info (866, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_type_param_bound_more (by decide +kernel)
 
-theorem ok_p_where_predicates_more : FnOk prog prims info (860, ⟨0, [], 0⟩) :=
+theorem ok_p_where_predicates_more : FnOk prog prims info (867, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_where_predicates_more (by decide +kernel)
 
-theorem ok_p_where_predicate_more_after_comma : FnOk prog prims info (861, ⟨0, [], 0⟩) :=
+theorem ok_p_where_predicate_more_after_comma : FnOk prog prims info (868, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_where_predicate_more_after_comma (by decide +kernel)
 
-theorem ok_p_bound_type_args_more : FnOk prog prims info (862, ⟨0, [], 0⟩) :=
+theorem ok_p_bound_type_args_more : FnOk prog prims info (869, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_bound_type_args_more (by decide +kernel)
 
-theorem ok_p_bound_type_args_after_comma_more : FnOk prog prims info (863, ⟨0, [], 0⟩) :=
+theorem ok_p_bound_type_args_after_comma_more : FnOk prog prims info (870, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_bound_type_args_after_comma_more (by decide +kernel)
 
-theorem ok_p_array_some : FnOk prog prims info (864, ⟨0, [], 0⟩) :=
+theorem ok_p_array_some : FnOk prog prims info (871, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_array_some (by decide +kernel)
 
-theorem ok_p_array_more : FnOk prog prims info (865, ⟨0, [], 0⟩) :=
+theorem ok_p_array_more : FnOk prog prims info (872, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_array_more (by decide +kernel)
 
-theorem ok_p_array_end : FnOk prog prims info (866, ⟨0, [], 0⟩) :=
+theorem ok_p_array_end : FnOk prog prims info (873, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_array_end (by decide +kernel)
 
-theorem ok_p_array_after_comma_more : FnOk prog prims info (867, ⟨0, [], 0⟩) :=
+theorem ok_p_array_after_comma_more : FnOk prog prims info (874, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_array_after_comma_more (by decide +kernel)
 
-theorem ok_p_array_after_comma_trailing : FnOk prog prims info (868, ⟨0, [], 0⟩) :=
+theorem ok_p_array_after_comma_trailing : FnOk prog prims info (875, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_array_after_comma_trailing (by decide +kernel)
 
-theorem ok_join_second : FnOk prog prims info (869, ⟨1, [], 0⟩) :=
+theorem ok_join_second : FnOk prog prims info (876, ⟨1, [], 0⟩) :=
   fnOk_of fn_join_second (by decide +kernel)
 
-theorem ok_single_of_mini_selfhost_TypeDecl : FnOk prog prims info (870, ⟨0, [], 0⟩) :=
+theorem ok_single_of_mini_selfhost_TypeDecl : FnOk prog prims info (877, ⟨0, [], 0⟩) :=
   fnOk_of fn_single_of_mini_selfhost_TypeDecl (by decide +kernel)
 
-theorem ok_struct_decl_of : FnOk prog prims info (871, ⟨6, [], 0⟩) :=
+theorem ok_struct_decl_of : FnOk prog prims info (878, ⟨6, [], 0⟩) :=
   fnOk_of fn_struct_decl_of (by decide +kernel)
 
-theorem ok_enum_decl_of : FnOk prog prims info (872, ⟨1, [], 0⟩) :=
+theorem ok_enum_decl_of : FnOk prog prims info (879, ⟨1, [], 0⟩) :=
   fnOk_of fn_enum_decl_of (by decide +kernel)
 
-theorem ok_variants_of : FnOk prog prims info (873, ⟨5, [1], 0⟩) :=
+theorem ok_variants_of : FnOk prog prims info (880, ⟨5, [1], 0⟩) :=
   fnOk_of fn_variants_of (by decide +kernel)
 
-theorem ok_cons_of_mini_selfhost_FnDecl : FnOk prog prims info (874, ⟨0, [], 0⟩) :=
+theorem ok_cons_of_mini_selfhost_FnDecl : FnOk prog prims info (881, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_FnDecl (by decide +kernel)
 
-theorem ok_param_spellings : FnOk prog prims info (875, ⟨4, [0], 0⟩) :=
+theorem ok_param_spellings : FnOk prog prims info (882, ⟨4, [0], 0⟩) :=
   fnOk_of fn_param_spellings (by decide +kernel)
 
-theorem ok_leaf_token : FnOk prog prims info (876, ⟨2, [], 0⟩) :=
+theorem ok_leaf_token : FnOk prog prims info (883, ⟨2, [], 0⟩) :=
   fnOk_of fn_leaf_token (by decide +kernel)
 
-theorem ok_methods_of : FnOk prog prims info (877, ⟨7, [5], 0⟩) :=
+theorem ok_methods_of : FnOk prog prims info (884, ⟨7, [5], 0⟩) :=
   fnOk_of fn_methods_of (by decide +kernel)
 
-theorem ok_with_impl_decl : FnOk prog prims info (878, ⟨1, [], 0⟩) :=
-  fnOk_of fn_with_impl_decl (by decide +kernel)
-
-theorem ok_single_of_mini_selfhost_ImportDecl : FnOk prog prims info (879, ⟨0, [], 0⟩) :=
-  fnOk_of fn_single_of_mini_selfhost_ImportDecl (by decide +kernel)
-
-theorem ok_single_of_mini_selfhost_AliasDecl : FnOk prog prims info (880, ⟨0, [], 0⟩) :=
-  fnOk_of fn_single_of_mini_selfhost_AliasDecl (by decide +kernel)
-
-theorem ok_if_unbounded : FnOk prog prims info (881, ⟨0, [], 0⟩) :=
-  fnOk_of fn_if_unbounded (by decide +kernel)
-
-theorem ok_unbounded : FnOk prog prims info (882, ⟨3, [0], 0⟩) :=
-  fnOk_of fn_unbounded (by decide +kernel)
-
-theorem ok_p_extern_abi : FnOk prog prims info (883, ⟨0, [], 0⟩) :=
-  fnOk_of fn_p_extern_abi (by decide +kernel)
-
-theorem ok_same_text : FnOk prog prims info (884, ⟨0, [0], 0⟩) :=
-  fnOk_of fn_same_text (by decide +kernel)
-
 theorem chunk18 : AllFns prog prims info part18 :=
-  ⟨ok_p_patterns_more, ok_p_patterns_end, ok_p_patterns_after_comma_more, ok_p_patterns_after_comma_trailing, ok_p_enum_type_params_some, ok_p_enum_type_params_more, ok_p_enum_type_params_after_comma_more, ok_p_type_args_some, ok_p_type_args_more, ok_p_type_args_after_comma_more, ok_p_path_type_args_more, ok_p_path_type_args_after_comma_more, ok_p_impl_methods_some, ok_p_impl_methods_more, ok_p_type_param_bound_more, ok_p_where_predicates_more, ok_p_where_predicate_more_after_comma, ok_p_bound_type_args_more, ok_p_bound_type_args_after_comma_more, ok_p_array_some, ok_p_array_more, ok_p_array_end, ok_p_array_after_comma_more, ok_p_array_after_comma_trailing, ok_join_second, ok_single_of_mini_selfhost_TypeDecl, ok_struct_decl_of, ok_enum_decl_of, ok_variants_of, ok_cons_of_mini_selfhost_FnDecl, ok_param_spellings, ok_leaf_token, ok_methods_of, ok_with_impl_decl, ok_single_of_mini_selfhost_ImportDecl, ok_single_of_mini_selfhost_AliasDecl, ok_if_unbounded, ok_unbounded, ok_p_extern_abi, ok_same_text, trivial⟩
+  ⟨ok_p_match_arms_some, ok_p_match_arms_more, ok_p_match_arms_end, ok_p_match_arms_after_comma_more, ok_p_match_arms_after_comma_trailing, ok_p_patterns_none, ok_p_patterns_some, ok_p_patterns_more, ok_p_patterns_end, ok_p_patterns_after_comma_more, ok_p_patterns_after_comma_trailing, ok_p_enum_type_params_some, ok_p_enum_type_params_more, ok_p_enum_type_params_after_comma_more, ok_p_type_args_some, ok_p_type_args_more, ok_p_type_args_after_comma_more, ok_p_path_type_args_more, ok_p_path_type_args_after_comma_more, ok_p_impl_methods_some, ok_p_impl_methods_more, ok_p_type_param_bound_more, ok_p_where_predicates_more, ok_p_where_predicate_more_after_comma, ok_p_bound_type_args_more, ok_p_bound_type_args_after_comma_more, ok_p_array_some, ok_p_array_more, ok_p_array_end, ok_p_array_after_comma_more, ok_p_array_after_comma_trailing, ok_join_second, ok_single_of_mini_selfhost_TypeDecl, ok_struct_decl_of, ok_enum_decl_of, ok_variants_of, ok_cons_of_mini_selfhost_FnDecl, ok_param_spellings, ok_leaf_token, ok_methods_of, trivial⟩
 
 end Lanius.Faithful.SelfTerm

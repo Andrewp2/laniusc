@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Mini.LowerStmt
+public import Lanius.Mini.ArrayCall
 public import Lanius.Mini.WorldTrace
 public import Lanius.Mini.Compiler.P.Lists_empty
 import all Lanius.Mini.Compiler.P.BinOp_folds
@@ -1498,7 +1499,7 @@ theorem eval_call (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls
     refine ⟨restore_fresh freshDone, keepsA.chain (keeps.trans (restore_keeps _ _ _)), localsA, sized,
       max dA (d + 1), envA.setMany slot rs, { hp' with fsp := hpA.fsp }, .seq (execA.mono (Nat.le_max_left _ _))
         (Exec.call gFound ?_ len (by omega) exec), fun j below => ?_, setMany_holds holdsRet len envA slot,
-        hcDone.withFsp _, (fcDone.back fcA exec.limit).restoreLocals _⟩
+        hcDone.withFsp _, (fcDone.back fcA exec.limit exec.top).restoreLocals _⟩
     · rw [← arity, evalAll_length]
     · rw [setMany_eq, if_neg (by omega)]
       exact sameA j below
@@ -2638,7 +2639,37 @@ variable {sp : SrcProgram} {mp : Program} {fuel : Nat} {ret : SrcType} {scope : 
   {next : Nat} {stmt : Stmt} {frame : Nat → Nat} {base : Nat} {st : State} {env : Env}
   {c : Completion} {st' : State} {hp : Heap}
 
-theorem stmt_letEval (ih : StmtSound sp mp fuel) (ihe : EvalSound sp mp fuel) {id : Nat} {ty : SrcType}
+/-- The value a statement computes (`stmtEval`): a call passing arrays as
+slices (`arrayCall_sound`), or any other effectful expression, whose code
+leaves the slots below `next` alone. -/
+theorem stmtEval_sound (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
+    (below : ∀ m ≤ fuel, StmtSound sp mp m) (ihe : EvalSound sp mp fuel) {value : SrcEff} {ev : Evaluated}
+    (valueOk : stmtEval value (sp.sigsAt bud) sp.decls scope next = some ev)
+    (corr : Corr places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp)
+    {v : Value} {st1 : State} (valueRun : evalExpr fuel sp.toCore st value.toCore = .done v st1)
+    (bound : st1.heap.nextAddress ≤ hp.limit) :
+    st1.Fresh ∧ Keeps places base st st1 ∧ st1.locals = st.locals ∧ 0 < ev.ty.size ∧
+      ∃ d env' hp', Exec mp d env hp ev.stmt (.normal env' hp') ∧ Corr places scope frame st1 env' ∧
+        ev.ty.HoldsAt places v env' next ∧ HeapCorr st1.heap st1.world hp' ∧ FrameCorr bud places st1 hp' := by
+  unfold stmtEval at valueOk
+  split at valueOk
+  · rename_i slices
+    cases value with
+    | eCall callee args =>
+      simp only [SrcEff.sliceCall] at valueOk
+      simp only [SrcEff.toCore] at valueRun
+      cases fuel with
+      | zero => simp [evalExpr] at valueRun
+      | succ k => exact arrayCall_sound lowered (below k (Nat.le_succ k)) valueOk corr fr fresh le hc fc valueRun bound
+    | _ => simp [SrcEff.passesSlices] at slices
+  · obtain ⟨fresh1, keeps1, locals1, sized, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
+      ihe valueOk corr fr fresh hc fc valueRun bound
+    exact ⟨fresh1, keeps1.lower le, locals1, sized, d1, env1, hp1, exec1, corr.after fr fresh keeps1 locals1 same1,
+      holds1, hc1, fc1⟩
+
+theorem stmt_letEval (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
+    (below : ∀ m ≤ fuel, StmtSound sp mp m) (ihe : EvalSound sp mp fuel) {id : Nat} {ty : SrcType}
     {value : SrcEff} {body : SrcStmt}
     (ok : (SrcStmt.letEval id ty value body).lower (sp.sigsAt bud) sp.decls ret scope next = some stmt)
     (corr : Corr places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
@@ -2664,13 +2695,13 @@ theorem stmt_letEval (ih : StmtSound sp mp fuel) (ihe : EvalSound sp mp fuel) {i
     split at run
     · rename_i v st1 valueRun
       have views1 := (eff_grown valueRun fresh.2).1
-      obtain ⟨fresh1, keeps1, locals1, sized, d1, env1, hp1, exec1, same1, holds1, hc1, fc1⟩ :=
-        ihe valueOk corr fr fresh hc fc valueRun (tail_bound views1 run bound)
+      obtain ⟨fresh1, keeps1, locals1, sized, d1, env1, hp1, exec1, corr1, holds1, hc1, fc1⟩ :=
+        stmtEval_sound lowered below ihe valueOk corr fr fresh le hc fc valueRun (tail_bound views1 run bound)
       rw [tyEq] at sized holds1
       obtain ⟨fresh', keeps', d2, out, exec, matched⟩ :=
-        let_tail ih bodyOk (corr.keeps fresh keeps1 locals1) fr fresh1 (Nat.le_trans le keeps1.next) sized
-          (fr.agree same1) holds1 hc1 fc1 under run (by rw [exec1.limit_normal]; exact bound)
-      exact ⟨fresh', (keeps1.lower le).trans keeps', max d1 d2, out,
+        let_tail (below fuel (Nat.le_refl _)) bodyOk corr1 fr fresh1 (Nat.le_trans le keeps1.next) sized
+          (fun _ _ _ _ => rfl) holds1 hc1 fc1 under run (by rw [exec1.limit_normal]; exact bound)
+      exact ⟨fresh', keeps1.trans keeps', max d1 d2, out,
         .seq (exec1.mono (Nat.le_max_left _ _)) (exec.mono (Nat.le_max_right _ _)), matched⟩
     all_goals simp at run
   · simp at ok
@@ -3939,7 +3970,8 @@ theorem stmt_returnEval (ihe : EvalSound sp mp fuel) {value : SrcEff}
     all_goals simp at run
   · simp at ok
 
-theorem stmt_discard (ihe : EvalSound sp mp fuel) {value : SrcEff}
+theorem stmt_discard (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
+    (below : ∀ m ≤ fuel, StmtSound sp mp m) (ihe : EvalSound sp mp fuel) {value : SrcEff}
     (ok : (SrcStmt.discard value).lower (sp.sigsAt bud) sp.decls ret scope next = some stmt)
     (corr : Corr places scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (le : base ≤ st.nextCell)
@@ -3958,9 +3990,9 @@ theorem stmt_discard (ihe : EvalSound sp mp fuel) {value : SrcEff}
   · rename_i u st1 valueRun
     simp only [Semantics.Outcome.done.injEq] at run
     obtain ⟨rfl, rfl⟩ := run
-    obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, -, hc1, fc1⟩ :=
-      ihe valueOk corr fr fresh hc fc valueRun bound
-    exact ⟨fresh1, keeps1.lower le, d1, _, exec1, .next (corr.after fr fresh keeps1 locals1 same1) hc1 fc1⟩
+    obtain ⟨fresh1, keeps1, -, -, d1, env1, hp1, exec1, corr1, -, hc1, fc1⟩ :=
+      stmtEval_sound lowered below ihe valueOk corr fr fresh le hc fc valueRun bound
+    exact ⟨fresh1, keeps1, d1, _, exec1, .next corr1 hc1 fc1⟩
   all_goals simp at run
 
 /-- `Unreachable`: Core's run never completes from a fresh state (the read
@@ -4113,14 +4145,14 @@ theorem sound_both {sp : SrcProgram} {mp : Program}
         | setByte => exact stmt_setByte ok corr fresh hc fc under run bound
         | free => exact stmt_free ok corr fresh hc fc under run
         | letSlice => exact stmt_letSlice here ok corr fr fresh le hc fc under run bound
-        | letIndex => exact stmt_letIndex here (fun ok' => stmt_letEval here hereE ok' corr fr fresh le hc fc under run bound) ok corr fr fresh le hc fc under run bound
+        | letIndex => exact stmt_letIndex here (fun ok' => stmt_letEval lowered below hereE ok' corr fr fresh le hc fc under run bound) ok corr fr fresh le hc fc under run bound
         | setIndex => exact stmt_setIndex (fun ok' => stmt_setIndexEval belowE ok' corr fr fresh le hc fc under run bound) ok corr fresh hc fc under run bound
-        | letEval => exact stmt_letEval here hereE ok corr fr fresh le hc fc under run bound
+        | letEval => exact stmt_letEval lowered below hereE ok corr fr fresh le hc fc under run bound
         | setEval => exact stmt_setEval belowE ok corr fr fresh le hc fc under run bound
         | ifEval => exact stmt_ifEval here hereE ok corr fr fresh le hc fc under run bound
         | whileEval => exact stmt_whileEval here hereE ok corr fr fresh le hc fc under run bound
         | returnEval => exact stmt_returnEval hereE ok corr fr fresh le hc fc under run bound
-        | discard => exact stmt_discard hereE ok corr fr fresh le hc fc under run bound
+        | discard => exact stmt_discard lowered below hereE ok corr fr fresh le hc fc under run bound
         | assert => exact stmt_assert belowE ok corr fr fresh le hc fc under run bound
         | returnUnit => exact stmt_returnUnit ok fresh hc fc under run
         | «break» => exact stmt_break ok corr fresh hc fc under run

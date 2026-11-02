@@ -89,7 +89,7 @@ theorem set_client_correct {sp : SrcProgram} {binary : Binary} (compiled : compi
     (bitsLen : bits.length = paramsSize (setHasSrc sid ids.vec sc).params)
     {st : Semantics.State} {heap : Heap} (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap)
     {xs : List Value} (rep : VecRep sp.toCore i32Ty 4 ids.vec st.heap v xs) (itemIn : x ∈ vals)
-    (sub : ∀ z ∈ xs, z ∈ vals) (fits : st.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp) :
+    (sub : ∀ z ∈ xs, z ∈ vals) (fits : st.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp ∧ heap.fsp ≤ heap.top ∧ heap.top < 2 ^ 62) :
     ∃ depth results after, SrcType.bool.HoldsAt [] (.boolean (xs.any (eqv · x))) (Func.entry results) 0 ∧
       results.length = SrcType.bool.size ∧ HeapCorr st.heap st.world after ∧
       MachineReturns binary depth f bits heap results after := by
@@ -116,7 +116,7 @@ theorem map_client_correct {sp : SrcProgram} {binary : Binary} (compiled : compi
     (rep : VecRep sp.toCore T size ids.vec st.heap
       (.structure ids.vec [.pointer p, .signed .i32 (kvs.map (entryOf eid)).length, .signed .i32 cap])
       (kvs.map (entryOf eid)))
-    (keyIn : key ∈ vals) (sub : ∀ e ∈ kvs, e.1 ∈ vals) (fits : st.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp) :
+    (keyIn : key ∈ vals) (sub : ∀ e ∈ kvs, e.1 ∈ vals) (fits : st.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp ∧ heap.fsp ≤ heap.top ∧ heap.top < 2 ^ 62) :
     ∃ depth results after,
       SrcType.i32.HoldsAt [] (((kvs.find? (fun e => eqv e.1 key)).map Prod.snd).getD (.signed .i32 0))
         (Func.entry results) 0 ∧

@@ -45,11 +45,11 @@ abbrev Stmt_enum_src (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepOption 158 RepSrcType) (Lanius.Mini.enumSrc x0 x1) w
 
 abbrev Stmt_flat_payloads (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List (List Lanius.Mini.Ty))} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 236 (RepList 237 (RepList 141 RepTy))) x0 v0 →
+  ∀ {x0 : Option (List (List Lanius.Mini.Ty))} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 238 (RepList 239 (RepList 141 RepTy))) x0 v0 →
     (RepOption 208 (RepList 141 RepTy)) (Lanius.Mini.flatPayloads x0) w
 
 abbrev Stmt_flatten_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List (List Lanius.Mini.Ty)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 237 (RepList 141 RepTy)) x0 v0 →
+  ∀ {x0 : List (List Lanius.Mini.Ty)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 239 (RepList 141 RepTy)) x0 v0 →
     (RepList 141 RepTy) (Lanius.Mini.flattenTys x0) w
 
 abbrev Stmt_slice_type (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

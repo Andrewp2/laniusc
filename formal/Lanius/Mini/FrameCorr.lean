@@ -260,21 +260,33 @@ structure FrameCorr (bud : Budget) (places : List Addressed) (st : State) (hp : 
   frame memory at all (one with none needs no frame memory, which a heap
   without any, as the self compiler's, has). -/
   room : 0 < bud.room + bud.block → hp.limit + bud.room ≤ hp.fsp
+  /-- The activation's block lies below the top, for an activation with
+  any frame memory: its loads and stores reach it. -/
+  ceiling : 0 < bud.room + bud.block → hp.fsp + bud.block ≤ hp.top
+  /-- Frame memory ends below `2 ^ 62`, for an activation with any frame
+  memory: a block taken from it is `small`. -/
+  bounded : 0 < bud.room + bud.block → hp.top < 2 ^ 62
 
-theorem FrameCorr.nil (st : State) {hp : Heap} (room : 0 < bud.room + bud.block → hp.limit + bud.room ≤ hp.fsp) :
+theorem FrameCorr.nil (st : State) {hp : Heap} (room : 0 < bud.room + bud.block → hp.limit + bud.room ≤ hp.fsp)
+    (ceiling : 0 < bud.room + bud.block → hp.fsp + bud.block ≤ hp.top)
+    (bounded : 0 < bud.room + bud.block → hp.top < 2 ^ 62) :
     FrameCorr bud [] st hp :=
   ⟨fun _ mem => by simp at mem, fun _ mem => by simp at mem, fun _ mem => by simp at mem,
-    fun _ mem => by simp at mem, fun _ mem => by simp at mem, room⟩
+    fun _ mem => by simp at mem, fun _ mem => by simp at mem, room, ceiling, bounded⟩
 
 /-- No places, and `need` bytes of frame memory room when `need` is positive:
 where a program's run starts. -/
-theorem FrameCorr.start (st : State) {hp : Heap} {need : Nat} (frameRoom : 0 < need → hp.limit + need ≤ hp.fsp) :
+theorem FrameCorr.start (st : State) {hp : Heap} {need : Nat}
+    (frameRoom : 0 < need → hp.limit + need ≤ hp.fsp ∧ hp.fsp ≤ hp.top ∧ hp.top < 2 ^ 62) :
     FrameCorr ⟨need, 0⟩ [] st hp :=
-  FrameCorr.nil st fun pos => frameRoom (by simpa using pos)
+  FrameCorr.nil st (fun pos => (frameRoom (by simpa using pos)).1)
+    (fun pos => by simpa using (frameRoom (by simpa using pos)).2.1)
+    fun pos => (frameRoom (by simpa using pos)).2.2
 
 /-- No places, and no frame memory needed. -/
 theorem FrameCorr.empty (st : State) (hp : Heap) : FrameCorr ⟨0, 0⟩ [] st hp :=
-  FrameCorr.nil st fun pos => absurd pos (by decide)
+  FrameCorr.nil st (fun pos => absurd pos (by decide)) (fun pos => absurd pos (by decide))
+    fun pos => absurd pos (by decide)
 
 /-- Changes to bytes no place covers, to the cursor or the trace, and to Core cells no place names keep the correspondence. -/
 theorem FrameCorr.congr {st st' : State} {hp hp' : Heap}
@@ -283,7 +295,8 @@ theorem FrameCorr.congr {st st' : State} {hp hp' : Heap}
     (bytes : ∀ x ∈ places, ∀ a, x.Covers a → hp'.bytes a = hp.bytes a)
     (fsp : hp'.fsp = hp.fsp) (limit : hp'.limit = hp.limit) (top : hp'.top = hp.top) :
     FrameCorr bud places st' hp' := by
-  refine ⟨fun x mem => ?_, fun x mem => ?_, fc.small, fc.apart, fc.packed, by rw [fsp, limit]; exact fc.room⟩
+  refine ⟨fun x mem => ?_, fun x mem => ?_, fc.small, fc.apart, fc.packed, by rw [fsp, limit]; exact fc.room,
+    by rw [fsp, top]; exact fc.ceiling, by rw [top]; exact fc.bounded⟩
   · obtain ⟨v, read, holds⟩ := fc.holds x mem
     refine ⟨v, ?_, holds.congr (Addressed.view_congr (bytes x mem))⟩
     simp only [Semantics.readCellProjection, cells x mem] at read ⊢
@@ -372,7 +385,10 @@ theorem FrameCorr.frame {st : State} {hp : Heap}
     (block : bud'.block ≤ bytes + bud.block) :
     FrameCorr bud' places st { hp with fsp := hp.fsp - bytes } := by
   have room' := fc.room
-  refine ⟨fun x mem => ?_, fun x mem => ?_, fc.small, fc.apart, fc.packed, fun pos => ?_⟩
+  have ceiling' := fc.ceiling
+  have bounded' := fc.bounded
+  refine ⟨fun x mem => ?_, fun x mem => ?_, fc.small, fc.apart, fc.packed, fun pos => ?_, fun pos => ?_,
+    fun pos => bounded' (by omega)⟩
   · obtain ⟨v, read, holds⟩ := fc.holds x mem
     exact ⟨v, read, holds.congr (Addressed.view_congr fun _ _ => rfl)⟩
   · have inside := fc.inside x mem
@@ -380,33 +396,45 @@ theorem FrameCorr.frame {st : State} {hp : Heap}
   · have := room' (by omega)
     show hp.limit + bud'.room ≤ hp.fsp - bytes
     omega
+  · have := room' (by omega)
+    have := ceiling' (by omega)
+    show hp.fsp - bytes + bud'.block ≤ hp.top
+    omega
 
 /-- A call's return gives the caller's frame pointer back, and with it the
 caller's budget: its block below every place and its room above the limit. -/
 theorem FrameCorr.restore {bud' : Budget} {st : State} {hp : Heap}
     (fc : FrameCorr bud' places st hp) {fsp : Nat} (above : ∀ x ∈ places, fsp + bud.block ≤ x.address)
-    (room : 0 < bud.room + bud.block → hp.limit + bud.room ≤ fsp) :
+    (room : 0 < bud.room + bud.block → hp.limit + bud.room ≤ fsp)
+    (ceiling : 0 < bud.room + bud.block → fsp + bud.block ≤ hp.top)
+    (bounded : 0 < bud.room + bud.block → hp.top < 2 ^ 62) :
     FrameCorr bud places st { hp with fsp := fsp } :=
   ⟨fun x mem => by
       obtain ⟨v, read, holds⟩ := fc.holds x mem
       exact ⟨v, read, holds.congr (Addressed.view_congr fun _ _ => rfl)⟩,
-    fun x mem => ⟨above x mem, (fc.inside x mem).2⟩, fc.small, fc.apart, fc.packed, room⟩
+    fun x mem => ⟨above x mem, (fc.inside x mem).2⟩, fc.small, fc.apart, fc.packed, room, ceiling, bounded⟩
 
 /-- After a call: the callee's places with the caller's frame pointer and
 budget, given the caller's correspondence before the call. -/
 theorem FrameCorr.back {bud' : Budget} {st st0 : State} {hp hp0 : Heap} (fc : FrameCorr bud' places st hp)
-    (caller : FrameCorr bud places st0 hp0) (limit : hp.limit = hp0.limit) :
+    (caller : FrameCorr bud places st0 hp0) (limit : hp.limit = hp0.limit) (top : hp.top = hp0.top) :
     FrameCorr bud places st { hp with fsp := hp0.fsp } :=
   fc.restore (fun x mem => (caller.inside x mem).1) (fun pos => by rw [limit]; exact caller.room pos)
+    (fun pos => by rw [top]; exact caller.ceiling pos) (fun pos => by rw [top]; exact caller.bounded pos)
 
 /-- A callee with no block of its own and room no more than its caller's. -/
 theorem FrameCorr.callee {st : State} {hp : Heap} (fc : FrameCorr bud places st hp) {bud' : Budget}
     (room : bud'.room ≤ bud.room) (block : bud'.block ≤ bud.block) : FrameCorr bud' places st hp := by
   have room' := fc.room
-  refine ⟨fc.holds, fun x mem => ?_, fc.small, fc.apart, fc.packed, fun pos => ?_⟩
+  have ceiling' := fc.ceiling
+  have bounded' := fc.bounded
+  refine ⟨fc.holds, fun x mem => ?_, fc.small, fc.apart, fc.packed, fun pos => ?_, fun pos => ?_,
+    fun pos => bounded' (by omega)⟩
   · have inside := fc.inside x mem
     exact ⟨by omega, inside.2⟩
   · have := room' (by omega)
+    omega
+  · have := ceiling' (by omega)
     omega
 
 /-- A place's words are below the top, and so below `2 ^ 62` with the heap. -/

@@ -101,7 +101,7 @@ def SrcEff.sliceCall (self : SrcEff) (sigs : List Sig) (scope : List Binding) (n
   | .eStride slice => none
   | .arraySlice element array => none
 
-/-- The code of a value a statement computes: a call passing arrays as slices (array_call), or any other expression's code. -/
+/-- The code of a value a statement computes (LetEval, Discard): a call passing arrays as slices (array_call), or any other expression's code. -/
 def stmtEval (value : SrcEff) (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (next : Nat) : Option Evaluated :=
   if SrcEff.passesSlices value then
     SrcEff.sliceCall value sigs scope next
@@ -130,12 +130,12 @@ def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (decls : SrcDecls) (ret : S
   | .letSlice id element pointer length body => guarded next (guardAnd (SrcExpr.guard pointer scope) (SrcExpr.guard length scope)) (lowerLet next (lowerSlice decls element (lowerAs scope pointer SrcType.ptr) (lowerAs scope length SrcType.i32)) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := SrcType.slice element } : Binding) :: scope) (next + 2)))
   | .letIndex id ty slice index body => lowerLetIndexAny decls scope next ty slice index (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
   | .setIndex slice index value => lowerSetIndexAny decls scope next slice index value
-  | .letEval id ty value body => lowerLetEval ty (SrcEff.eval value sigs decls scope next) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
+  | .letEval id ty value body => lowerLetEval ty (stmtEval value sigs decls scope next) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
   | .setEval id value => lowerSetEval next (lookup scope id) (SrcEff.eval value sigs decls scope next)
   | .ifEval condition thenBranch elseBranch => lowerIfEval next (SrcEff.eval condition sigs decls scope next) (SrcStmt.lower thenBranch sigs decls ret scope next) (SrcStmt.lower elseBranch sigs decls ret scope next)
   | .whileEval condition body => lowerWhileEval next (SrcEff.eval condition sigs decls scope next) (SrcStmt.lower body sigs decls ret scope next)
   | .returnEval value => lowerReturnEval next ret (SrcEff.eval value sigs decls scope next)
-  | .discard value => lowerDiscard (SrcEff.eval value sigs decls scope next)
+  | .discard value => lowerDiscard (stmtEval value sigs decls scope next)
   | .setIndexEval slice index value => lowerSetIndexEval decls next (lookup scope slice) (SrcEff.eval index sigs decls scope next) (SrcEff.eval value sigs decls scope (next + 1))
   | .setFieldEval id field value => lowerSetFieldEval next (lookup scope id) field (SrcEff.eval value sigs decls scope next)
   | .returnUnit => lowerReturnUnit ret

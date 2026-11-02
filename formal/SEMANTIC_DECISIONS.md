@@ -715,7 +715,13 @@ verified compiler's locals are 64-bit slots with no address. The design:
    activation returns. The verified compiler therefore coerces a local only
    where the slice cannot outlive the activation: a direct call argument
    whose parameter is `[T]`, to a function whose result type contains no
-   slice. Other coercions are rejected.
+   slice. Other coercions are rejected. The verified compiler is stricter
+   for now (step 3.5b, `array_call_code`): the call is a statement's value
+   (`LetEval` or `Discard`, `stmt_eval`), its result is a scalar, and no
+   array is passed twice (`id_absent`), so the arrays lent are apart and
+   none is read while lent. After the return the caller loads each array's
+   elements back from the block into its slots, so the callee's writes
+   through the slice reach the caller's copy (`arrayCall_sound`).
 5. **`i32_array_data_ptr` uses the heap, not frame memory.** Core maps the
    array into a fresh heap block at `nextAddress` (`mapI32ArrayView`) and
    keeps block and cell equal from then on (`syncI32Views*`), and the
@@ -744,10 +750,16 @@ verified compiler's locals are 64-bit slots with no address. The design:
    never fits and the call is rejected; ROADMAP F15 lifts this with per-call
    blocks released on return and a dynamic premise. The top theorems take
    the need of the function they run as a premise on the heap
-   (`0 < need → limit + need ≤ fsp`; for a process, `need ≤ stack`), which
-   holds for any heap when the need is 0, as it is for every function of
-   the self program (`SelfPure.prog_need`), since it passes no array as a
-   slice.
+   (`0 < need → limit + need ≤ fsp ∧ fsp ≤ top ∧ top < 2 ^ 62`; for a
+   process, `need ≤ stack`), which holds for any heap when the need is 0,
+   as it is for every function of the self program (`SelfPure.prog_need`),
+   since it passes no array as a slice. `FrameCorr` carries the two other
+   parts as its `ceiling` (the block is below the top, so the stores reach
+   it) and `bounded` (the blocks taken are below `2 ^ 62`, the `small` of a
+   place lent) fields. An array call needs a positive block of its caller
+   (`sig.block > 0`), which with the room puts the frame pointer above the
+   limit, so `Frame(t, 0)`, which reads the block's address into slot `t`,
+   runs.
 
 Order: frame memory in the IR and on x86; addressed array locals passed as
 slices; `i32_array_data_ptr`; `str`.

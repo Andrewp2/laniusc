@@ -3,6 +3,7 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_arrayCallSig
+public import Lanius.Faithful.Gen.SelfStmt0
 public import Lanius.Faithful.Gen.SelfStmt1
 public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
@@ -14,6 +15,7 @@ public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_armBodyScope
 public import Lanius.Faithful.Gen.SelfStmtC_armPayload
 public import Lanius.Faithful.Gen.SelfStmtC_arrayCallSig
+public import Lanius.Faithful.Gen.SelfStmtC_bindingBytes
 public import Lanius.Faithful.Gen.SelfStmtC_guardAnd
 public import Lanius.Faithful.Gen.SelfStmtC_lowerAddress
 public import Lanius.Faithful.Gen.SelfStmtC_lowerCallSig
@@ -47,6 +49,37 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
+theorem proof_SrcEff_is_slice {prog : SrcProgram} {prims : Prims} {ix_SrcEff_is_slice : Nat} (fn : prog.funcs[ix_SrcEff_is_slice]? = some (src_SrcEff_is_slice)) (np : prims.isPrim ix_SrcEff_is_slice = false) {n : Nat} :
+    Stmt_SrcEff_is_slice prog prims ix_SrcEff_is_slice n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_SrcEff_is_slice] at h
+  faithful [Lanius.Mini.SrcEff.isSlice]
+
+theorem proof_SrcEff_passes_slices {prog : SrcProgram} {prims : Prims} {ix_SrcEff_passes_slices ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_effs_slice : Nat} (fn : prog.funcs[ix_SrcEff_passes_slices]? = some (src_SrcEff_passes_slices ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_effs_slice)) (np : prims.isPrim ix_SrcEff_passes_slices = false)
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff n))
+    (ext_effs_slice : Certified (∀ {n : Nat}, Stmt_effs_slice prog prims ix_effs_slice n)) {n : Nat} :
+    Stmt_SrcEff_passes_slices prog prims ix_SrcEff_passes_slices n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_SrcEff_passes_slices] at h
+  faithful [Lanius.Mini.SrcEff.passesSlices]
+
+theorem proof_SrcEff_slice_call {prog : SrcProgram} {prims : Prims} {ix_SrcEff_slice_call ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_array_call : Nat} (fn : prog.funcs[ix_SrcEff_slice_call]? = some (src_SrcEff_slice_call ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_array_call)) (np : prims.isPrim ix_SrcEff_slice_call = false)
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff n))
+    (ext_array_call : Certified (∀ {n : Nat}, Stmt_array_call prog prims ix_array_call n)) {n : Nat} :
+    Stmt_SrcEff_slice_call prog prims ix_SrcEff_slice_call n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_SrcEff_slice_call] at h
+  faithful [Lanius.Mini.SrcEff.sliceCall]
+
 theorem step_SrcStmt_breaks_out {prog : SrcProgram} {prims : Prims} {ix_SrcStmt_breaks_out ix_unbox_of_mini_selfhost_SrcStmt : Nat} (fn : prog.funcs[ix_SrcStmt_breaks_out]? = some (src_SrcStmt_breaks_out ix_unbox_of_mini_selfhost_SrcStmt ix_SrcStmt_breaks_out)) (np : prims.isPrim ix_SrcStmt_breaks_out = false)
     (ext_unbox_of_mini_selfhost_SrcStmt : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcStmt prog prims ix_unbox_of_mini_selfhost_SrcStmt n)) {n : Nat}
     (ih_SrcStmt_breaks_out : Certified (Stmt_SrcStmt_breaks_out prog prims ix_SrcStmt_breaks_out n)) :
@@ -68,7 +101,7 @@ theorem step_SrcStmt_depth {prog : SrcProgram} {prims : Prims} {ix_SrcStmt_depth
   simp only [src_SrcStmt_depth] at h
   faithful [Lanius.Mini.SrcStmt.depth]
 
-theorem step_SrcStmt_lower {prog : SrcProgram} {prims : Prims} {ix_SrcStmt_lower ix_plus ix_unbox_of_mini_selfhost_SrcStmt ix_SrcType_size ix_guarded ix_SrcExpr_guard ix_lower_let ix_lower_value ix_cons_of_mini_selfhost_Binding ix_guard_all ix_lower_literal ix_lower_let_call ix_lower_call ix_lower_enum_value ix_lower_then ix_lower_match ix_lookup ix_lower_set ix_lower_set_field ix_lower_set_call ix_lower_if ix_lower_as ix_lower_while ix_lower_return ix_lower_alloc ix_guard_and ix_lower_load ix_lower_address ix_lower_store ix_lower_free ix_lower_slice ix_boxed_of_mini_selfhost_SrcType ix_lower_let_index_any ix_lower_set_index_any ix_lower_let_eval ix_SrcEff_eval ix_lower_set_eval ix_lower_if_eval ix_lower_while_eval ix_lower_return_eval ix_lower_discard ix_lower_set_index_eval ix_lower_set_field_eval ix_lower_return_unit ix_lower_assert ix_lower_match_arm ix_arm_body_scope ix_lower_unreachable ix_SrcType_same : Nat} (fn : prog.funcs[ix_SrcStmt_lower]? = some (src_SrcStmt_lower ix_plus ix_unbox_of_mini_selfhost_SrcStmt ix_SrcType_size ix_SrcStmt_lower ix_guarded ix_SrcExpr_guard ix_lower_let ix_lower_value ix_cons_of_mini_selfhost_Binding ix_guard_all ix_lower_literal ix_lower_let_call ix_lower_call ix_lower_enum_value ix_lower_then ix_lower_match ix_lookup ix_lower_set ix_lower_set_field ix_lower_set_call ix_lower_if ix_lower_as ix_lower_while ix_lower_return ix_lower_alloc ix_guard_and ix_lower_load ix_lower_address ix_lower_store ix_lower_free ix_lower_slice ix_boxed_of_mini_selfhost_SrcType ix_lower_let_index_any ix_lower_set_index_any ix_lower_let_eval ix_SrcEff_eval ix_lower_set_eval ix_lower_if_eval ix_lower_while_eval ix_lower_return_eval ix_lower_discard ix_lower_set_index_eval ix_lower_set_field_eval ix_lower_return_unit ix_lower_assert ix_lower_match_arm ix_arm_body_scope ix_lower_unreachable ix_SrcType_same)) (np : prims.isPrim ix_SrcStmt_lower = false)
+theorem step_SrcStmt_lower {prog : SrcProgram} {prims : Prims} {ix_SrcStmt_lower ix_plus ix_unbox_of_mini_selfhost_SrcStmt ix_SrcType_size ix_guarded ix_SrcExpr_guard ix_lower_let ix_lower_value ix_cons_of_mini_selfhost_Binding ix_guard_all ix_lower_literal ix_lower_let_call ix_lower_call ix_lower_enum_value ix_lower_then ix_lower_match ix_lookup ix_lower_set ix_lower_set_field ix_lower_set_call ix_lower_if ix_lower_as ix_lower_while ix_lower_return ix_lower_alloc ix_guard_and ix_lower_load ix_lower_address ix_lower_store ix_lower_free ix_lower_slice ix_boxed_of_mini_selfhost_SrcType ix_lower_let_index_any ix_lower_set_index_any ix_lower_let_eval ix_stmt_eval ix_lower_set_eval ix_SrcEff_eval ix_lower_if_eval ix_lower_while_eval ix_lower_return_eval ix_lower_discard ix_lower_set_index_eval ix_lower_set_field_eval ix_lower_return_unit ix_lower_assert ix_lower_match_arm ix_arm_body_scope ix_lower_unreachable ix_SrcType_same : Nat} (fn : prog.funcs[ix_SrcStmt_lower]? = some (src_SrcStmt_lower ix_plus ix_unbox_of_mini_selfhost_SrcStmt ix_SrcType_size ix_SrcStmt_lower ix_guarded ix_SrcExpr_guard ix_lower_let ix_lower_value ix_cons_of_mini_selfhost_Binding ix_guard_all ix_lower_literal ix_lower_let_call ix_lower_call ix_lower_enum_value ix_lower_then ix_lower_match ix_lookup ix_lower_set ix_lower_set_field ix_lower_set_call ix_lower_if ix_lower_as ix_lower_while ix_lower_return ix_lower_alloc ix_guard_and ix_lower_load ix_lower_address ix_lower_store ix_lower_free ix_lower_slice ix_boxed_of_mini_selfhost_SrcType ix_lower_let_index_any ix_lower_set_index_any ix_lower_let_eval ix_stmt_eval ix_lower_set_eval ix_SrcEff_eval ix_lower_if_eval ix_lower_while_eval ix_lower_return_eval ix_lower_discard ix_lower_set_index_eval ix_lower_set_field_eval ix_lower_return_unit ix_lower_assert ix_lower_match_arm ix_arm_body_scope ix_lower_unreachable ix_SrcType_same)) (np : prims.isPrim ix_SrcStmt_lower = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_unbox_of_mini_selfhost_SrcStmt : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcStmt prog prims ix_unbox_of_mini_selfhost_SrcStmt n))
     (ext_SrcType_size : Certified (∀ {n : Nat}, Stmt_SrcType_size prog prims ix_SrcType_size n))
@@ -103,8 +136,9 @@ theorem step_SrcStmt_lower {prog : SrcProgram} {prims : Prims} {ix_SrcStmt_lower
     (ext_lower_let_index_any : Certified (∀ {n : Nat}, Stmt_lower_let_index_any prog prims ix_lower_let_index_any n))
     (ext_lower_set_index_any : Certified (∀ {n : Nat}, Stmt_lower_set_index_any prog prims ix_lower_set_index_any n))
     (ext_lower_let_eval : Certified (∀ {n : Nat}, Stmt_lower_let_eval prog prims ix_lower_let_eval n))
-    (ext_SrcEff_eval : Certified (∀ {n : Nat}, Stmt_SrcEff_eval prog prims ix_SrcEff_eval n))
+    (ext_stmt_eval : Certified (∀ {n : Nat}, Stmt_stmt_eval prog prims ix_stmt_eval n))
     (ext_lower_set_eval : Certified (∀ {n : Nat}, Stmt_lower_set_eval prog prims ix_lower_set_eval n))
+    (ext_SrcEff_eval : Certified (∀ {n : Nat}, Stmt_SrcEff_eval prog prims ix_SrcEff_eval n))
     (ext_lower_if_eval : Certified (∀ {n : Nat}, Stmt_lower_if_eval prog prims ix_lower_if_eval n))
     (ext_lower_while_eval : Certified (∀ {n : Nat}, Stmt_lower_while_eval prog prims ix_lower_while_eval n))
     (ext_lower_return_eval : Certified (∀ {n : Nat}, Stmt_lower_return_eval prog prims ix_lower_return_eval n))
@@ -123,6 +157,40 @@ theorem step_SrcStmt_lower {prog : SrcProgram} {prims : Prims} {ix_SrcStmt_lower
   rw [pcall_succ np fn] at h
   simp only [src_SrcStmt_lower] at h
   faithful [Lanius.Mini.SrcStmt.lower]
+
+theorem proof_array_call {prog : SrcProgram} {prims : Prims} {ix_array_call ix_get_of_mini_selfhost_Sig ix_array_call_sig : Nat} (fn : prog.funcs[ix_array_call]? = some (src_array_call ix_get_of_mini_selfhost_Sig ix_array_call_sig)) (np : prims.isPrim ix_array_call = false)
+    (ext_get_of_mini_selfhost_Sig : Certified (∀ {n : Nat}, Stmt_get_of_mini_selfhost_Sig prog prims ix_get_of_mini_selfhost_Sig n))
+    (ext_array_call_sig : Certified (∀ {n : Nat}, Stmt_array_call_sig prog prims ix_array_call_sig n)) {n : Nat} :
+    Stmt_array_call prog prims ix_array_call n := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_array_call] at h
+  faithful [Lanius.Mini.arrayCall]
+
+theorem proof_array_call_sig {prog : SrcProgram} {prims : Prims} {ix_array_call_sig ix_plus ix_SrcType_size ix_array_args ix_array_call_code : Nat} (fn : prog.funcs[ix_array_call_sig]? = some (src_array_call_sig ix_plus ix_SrcType_size ix_array_args ix_array_call_code)) (np : prims.isPrim ix_array_call_sig = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_SrcType_size : Certified (∀ {n : Nat}, Stmt_SrcType_size prog prims ix_SrcType_size n))
+    (ext_array_args : Certified (∀ {n : Nat}, Stmt_array_args prog prims ix_array_args n))
+    (ext_array_call_code : Certified (∀ {n : Nat}, Stmt_array_call_code prog prims ix_array_call_code n)) {n : Nat} :
+    Stmt_array_call_sig prog prims ix_array_call_sig n := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_array_call_sig] at h
+  faithful [Lanius.Mini.arrayCallSig]
+
+theorem step_effs_slice {prog : SrcProgram} {prims : Prims} {ix_effs_slice ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_SrcEff_is_slice : Nat} (fn : prog.funcs[ix_effs_slice]? = some (src_effs_slice ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_effs_slice ix_SrcEff_is_slice)) (np : prims.isPrim ix_effs_slice = false)
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff n))
+    (ext_SrcEff_is_slice : Certified (∀ {n : Nat}, Stmt_SrcEff_is_slice prog prims ix_SrcEff_is_slice n)) {n : Nat}
+    (ih_effs_slice : Certified (Stmt_effs_slice prog prims ix_effs_slice n)) :
+    Stmt_effs_slice prog prims ix_effs_slice (n + 1) := by
+  intro x0 v0 w h r0
+  rw [pcall_succ np fn] at h
+  simp only [src_effs_slice] at h
+  faithful [Lanius.Mini.effsSlice]
 
 theorem step_param_scope {prog : SrcProgram} {prims : Prims} {ix_param_scope ix_plus ix_SrcType_size ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam ix_cons_of_mini_selfhost_Binding : Nat} (fn : prog.funcs[ix_param_scope]? = some (src_param_scope ix_plus ix_SrcType_size ix_param_scope ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam ix_cons_of_mini_selfhost_Binding)) (np : prims.isPrim ix_param_scope = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
@@ -167,5 +235,17 @@ theorem step_params_valid {prog : SrcProgram} {prims : Prims} {ix_params_valid i
   rw [pcall_succ np fn] at h
   simp only [src_params_valid] at h
   faithful [Lanius.Mini.paramsValid]
+
+theorem proof_stmt_eval {prog : SrcProgram} {prims : Prims} {ix_stmt_eval ix_SrcEff_eval ix_SrcEff_passes_slices ix_SrcEff_slice_call : Nat} (fn : prog.funcs[ix_stmt_eval]? = some (src_stmt_eval ix_SrcEff_eval ix_SrcEff_passes_slices ix_SrcEff_slice_call)) (np : prims.isPrim ix_stmt_eval = false)
+    (ext_SrcEff_eval : Certified (∀ {n : Nat}, Stmt_SrcEff_eval prog prims ix_SrcEff_eval n))
+    (ext_SrcEff_passes_slices : Certified (∀ {n : Nat}, Stmt_SrcEff_passes_slices prog prims ix_SrcEff_passes_slices n))
+    (ext_SrcEff_slice_call : Certified (∀ {n : Nat}, Stmt_SrcEff_slice_call prog prims ix_SrcEff_slice_call n)) {n : Nat} :
+    Stmt_stmt_eval prog prims ix_stmt_eval n := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_stmt_eval] at h
+  faithful [Lanius.Mini.stmtEval]
 
 end Lanius.Faithful.SelfCert

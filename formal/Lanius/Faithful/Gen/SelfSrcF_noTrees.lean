@@ -14,10 +14,10 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::args_segment -/
-def src_args_segment (ix_single_of_mini_selfhost_List_usize : Nat) : SrcFunc := { params := [{ id := 13, ty := ty20 }, { id := 29, ty := ty86 }], ret := ty328, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 29)) ty86 ty328 [[168], []] [SrcEff.eVariant ty328 0 [SrcEff.eStruct ty327 [SrcEff.eCall ix_single_of_mini_selfhost_List_usize [SrcEff.ePure (SrcExpr.local 13)], SrcEff.ePure (SrcExpr.local 168)]], SrcEff.eVariant ty328 1 []]) }
+def src_args_segment (ix_single_of_mini_selfhost_List_usize : Nat) : SrcFunc := { params := [{ id := 13, ty := ty20 }, { id := 29, ty := ty86 }], ret := ty330, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 29)) ty86 ty330 [[168], []] [SrcEff.eVariant ty330 0 [SrcEff.eStruct ty329 [SrcEff.eCall ix_single_of_mini_selfhost_List_usize [SrcEff.ePure (SrcExpr.local 13)], SrcEff.ePure (SrcExpr.local 168)]], SrcEff.eVariant ty330 1 []]) }
 
 /-- mini::selfhost::cons_segment -/
-def src_cons_segment (ix_cons_of_mini_selfhost_List_usize : Nat) : SrcFunc := { params := [{ id := 13, ty := ty20 }, { id := 29, ty := ty328 }], ret := ty328, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 29)) ty328 ty328 [[162], []] [SrcEff.eVariant ty328 0 [SrcEff.eStruct ty327 [SrcEff.eCall ix_cons_of_mini_selfhost_List_usize [SrcEff.ePure (SrcExpr.local 13), SrcEff.ePure (SrcExpr.field 162 0)], SrcEff.ePure (SrcExpr.field 162 1)]], SrcEff.eVariant ty328 1 []]) }
+def src_cons_segment (ix_cons_of_mini_selfhost_List_usize : Nat) : SrcFunc := { params := [{ id := 13, ty := ty20 }, { id := 29, ty := ty330 }], ret := ty330, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 29)) ty330 ty330 [[162], []] [SrcEff.eVariant ty330 0 [SrcEff.eStruct ty329 [SrcEff.eCall ix_cons_of_mini_selfhost_List_usize [SrcEff.ePure (SrcExpr.local 13), SrcEff.ePure (SrcExpr.field 162 0)], SrcEff.ePure (SrcExpr.field 162 1)]], SrcEff.eVariant ty330 1 []]) }
 
 /-- mini::selfhost::no_trees -/
 def src_no_trees : SrcFunc := { params := [{ id := 9, ty := ty85 }], ret := SrcType.bool, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 9)) ty85 (SrcType.bool) [[], [100, 103]] [SrcEff.ePure (SrcExpr.boolean true), SrcEff.ePure (SrcExpr.boolean false)]) }

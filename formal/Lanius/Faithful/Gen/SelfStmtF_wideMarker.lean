@@ -22,6 +22,6 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_wide_marker (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 205 RepNat) x0 v0 →
-    (RepOption 227 RepSrcExpr) (Lanius.Mini.wideMarker x0) w
+    (RepOption 229 RepSrcExpr) (Lanius.Mini.wideMarker x0) w
 
 end Lanius.Faithful.SelfCert
