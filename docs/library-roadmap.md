@@ -2797,6 +2797,14 @@ borrowed point lookup has the current increment above.
   versus 1,966,082 comparisons and 312 ms for repeated insertion. The old
   insertion-ordered linear map has since been removed with its consumers
   migrated. Ordered sets now share this tree engine.
+- B-tree ordered map: [`alloc::btree_map`](stdlib-btree-map.md) is a B+ tree
+  with 16 entries per leaf and linked leaves, with the tree map's insert, get,
+  remove, bounds, endpoints, pops, ranges and both-ended cursors. A model
+  against `alloc::tree_map`, a generic type fixture and an `RLIMIT_AS`
+  allocation-failure fixture pass on x86_64 Linux. At 1,048,576 keys it
+  iterates about 2.2x faster than the AVL map and does scattered lookups 6-23%
+  faster; lookups in insertion order are about 2x slower. Set, clone, sorted
+  construction and the iterator sinks are not yet provided.
 - CLI and host arguments: [`ext::cli` and `std::args`](extended-cli.md) execute
   borrowed option parsing and owned raw-byte argument snapshots. Eight test
   groups cover schema errors, 96 generated command lines, allocation failures,
