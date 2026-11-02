@@ -481,8 +481,9 @@ mod tests {
         assert!(array_note.contains("found unknown type"));
         assert!(!array_note.contains("type code"));
 
+        // Code 5 is SCALAR_F32; notes name primitives as written in source.
         let float_note = type_mismatch_note(5);
-        assert!(float_note.contains("found float"));
+        assert!(float_note.contains("found f32"));
         assert!(float_note.contains("requires another type"));
         assert!(!float_note.contains("type code"));
     }
