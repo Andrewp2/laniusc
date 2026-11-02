@@ -5490,6 +5490,288 @@ pub fn lower_set_index_any(decls: SrcDecls, scope: List<Binding>, next: usize, s
     return guarded(next, guard_and(guard_and(index.guard(scope), index_guard(scope, slice, index)), value.guard(scope)), lower_set_index(decls, lookup(scope, slice), lower_index(scope, index), scope, value));
 }
 
+// A call passing arrays as slices (SEMANTIC_DECISIONS "Addressed locals",
+// step 3.5 of array-to-slice arguments), lowered at statement level only,
+// since it writes the arrays' own slots: each array local passed at a [T]
+// parameter is stored into the caller's block of frame memory, whose
+// address slot t gets from the frame pointer (Frame(t, 0)); the callee gets
+// the array's pointer there and its length; after the return the elements
+// are loaded back into the local's slots. Only arrays of i32 and u8, which
+// the slice layout packs, are passed, each at most once per call.
+pub struct ArrayArgs {
+    // the arrays' stores into the block, before the call
+    stores: Stmt,
+    // the call's arguments
+    args: List<Expr>,
+    // the arrays' loads from the block, after the return
+    loads: Stmt,
+    // the check of the other arguments
+    guard: Expr,
+    // the block's bytes the arrays take: 8 per element
+    bytes: usize,
+    // the arrays' ids
+    ids: List<usize>,
+}
+
+// id is not one of ids.
+pub fn id_absent(ids: List<usize>, id: usize) -> bool {
+    return match (ids) {
+        Nil -> true,
+        Cons(other, rest) -> (other != id) && id_absent(unbox(rest), id),
+    };
+}
+
+// The address offset bytes into the block whose address is in slot t.
+pub fn block_at(t: usize, offset: usize) -> Expr {
+    return Binary(U64, Add, boxed(Var(t)), boxed(Lit(offset as u64)));
+}
+
+// The bytes an element of an array passed as a slice takes in the slice
+// layout: 4 for an i32, 1 for a u8, and 0 for an element type not passed.
+pub fn packed_width(element: SrcType) -> usize {
+    if (element.same(I32)) {
+        return 4;
+    }
+    if (element.same(Uint(Uint8))) {
+        return 1;
+    }
+    return 0;
+}
+
+// The store of the element in slot into the block at offset pos.
+pub fn block_store(width: usize, t: usize, pos: usize, slot: usize) -> Stmt {
+    if (width == 4) {
+        return StoreWord(M32, block_at(t, pos), Var(slot));
+    }
+    return StoreByte(block_at(t, pos), Var(slot));
+}
+
+// The load of the element at offset pos in the block into slot.
+pub fn block_load(width: usize, t: usize, pos: usize, slot: usize) -> Stmt {
+    if (width == 4) {
+        return LoadWord(M32, slot, block_at(t, pos));
+    }
+    return LoadByte(slot, block_at(t, pos));
+}
+
+// The stores of count elements from slot on, width bytes apart from pos.
+pub fn element_stores(width: usize, t: usize, pos: usize, slot: usize, count: usize) -> Stmt {
+    if (count == 0) {
+        return Stmt::Skip;
+    }
+    return Seq(boxed(block_store(width, t, pos, slot)), boxed(element_stores(width, t, plus(pos, width), plus(slot, 1), minus(count, 1))));
+}
+
+// The loads of count elements into slot on, width bytes apart from pos.
+pub fn element_loads(width: usize, t: usize, pos: usize, slot: usize, count: usize) -> Stmt {
+    if (count == 0) {
+        return Stmt::Skip;
+    }
+    return Seq(boxed(block_load(width, t, pos, slot)), boxed(element_loads(width, t, plus(pos, width), plus(slot, 1), minus(count, 1))));
+}
+
+pub fn binding_bytes(binding: core::option::Option<Binding>) -> usize {
+    return match (binding) {
+        None -> 0,
+        Some(b) -> times(8, b.ty.size()),
+    };
+}
+
+// The block bytes an argument takes: 8 per element of an array passed.
+pub fn arg_bytes(scope: List<Binding>, arg: SrcEff) -> usize {
+    return match (arg) {
+        EPure(e) -> 0,
+        ECall(callee, args) -> 0,
+        EApply(op, left, right) -> 0,
+        ENeg(operand) -> 0,
+        ENot(operand) -> 0,
+        ECast(ty, operand) -> 0,
+        EIndex(slice, index) -> 0,
+        EStruct(ty, fields) -> 0,
+        EVariant(ty, variant, payload) -> 0,
+        EMatch(scrutinee, ety, ty, binders, values) -> 0,
+        EDivide(op, left, right) -> 0,
+        EStride(slice) -> 0,
+        ArraySlice(element, array) -> binding_bytes(lookup(scope, array)),
+    };
+}
+
+// A pure argument before the rest.
+pub fn array_arg_pure(values: core::option::Option<List<Expr>>, g: Expr, rest: core::option::Option<ArrayArgs>) -> core::option::Option<ArrayArgs> {
+    return match (values) {
+        None -> None,
+        Some(vs) -> match (rest) {
+            None -> None,
+            Some(r) -> Some(ArrayArgs { stores: r.stores, args: concat(vs, r.args), loads: r.loads, guard: guard_and(g, r.guard), bytes: r.bytes, ids: r.ids }),
+        },
+    };
+}
+
+pub fn array_arg_checked(ok: bool, a: ArrayArgs) -> core::option::Option<ArrayArgs> {
+    if (ok) {
+        return Some(a);
+    }
+    return None;
+}
+
+// The array local b passed at a parameter of type ty, at offset in the
+// block, before the rest.
+pub fn array_arg_local(b: Binding, element: SrcType, ty: SrcType, id: usize, t: usize, offset: usize, rest: core::option::Option<ArrayArgs>) -> core::option::Option<ArrayArgs> {
+    let width: usize = packed_width(element);
+    let count: usize = b.ty.size();
+    return match (rest) {
+        None -> None,
+        Some(r) -> array_arg_checked((width > 0) && b.ty.same(SrcType::Array(boxed(element), count)) && ty.same(Slice(boxed(element))) && (2147483648 > count) && id_absent(r.ids, id), ArrayArgs { stores: Seq(boxed(element_stores(width, t, offset, b.slot, count)), boxed(r.stores)), args: cons(block_at(t, offset), cons(Lit(count as u64), r.args)), loads: Seq(boxed(element_loads(width, t, offset, b.slot, count)), boxed(r.loads)), guard: r.guard, bytes: plus(times(8, count), r.bytes), ids: cons(id, r.ids) }),
+    };
+}
+
+pub fn array_arg_slice(binding: core::option::Option<Binding>, element: SrcType, ty: SrcType, id: usize, t: usize, offset: usize, rest: core::option::Option<ArrayArgs>) -> core::option::Option<ArrayArgs> {
+    return match (binding) {
+        None -> None,
+        Some(b) -> array_arg_local(b, element, ty, id, t, offset, rest),
+    };
+}
+
+// One argument of type ty, at offset in the block, before the rest: a pure
+// value, or an array local passed as a slice.
+pub fn array_arg(scope: List<Binding>, arg: SrcEff, ty: SrcType, t: usize, offset: usize, rest: core::option::Option<ArrayArgs>) -> core::option::Option<ArrayArgs> {
+    return match (arg) {
+        EPure(e) -> array_arg_pure(lower_value(scope, e, ty), e.guard(scope), rest),
+        ECall(callee, args) -> None,
+        EApply(op, left, right) -> None,
+        ENeg(operand) -> None,
+        ENot(operand) -> None,
+        ECast(cty, operand) -> None,
+        EIndex(slice, index) -> None,
+        EStruct(sty, fields) -> None,
+        EVariant(vty, variant, payload) -> None,
+        EMatch(scrutinee, ety, mty, binders, values) -> None,
+        EDivide(op, left, right) -> None,
+        EStride(slice) -> None,
+        ArraySlice(element, array) -> array_arg_slice(lookup(scope, array), element, ty, array, t, offset, rest),
+    };
+}
+
+// The arguments, one of each parameter type, the arrays from offset in the
+// block on.
+pub fn array_args(scope: List<Binding>, args: List<SrcEff>, types: List<SrcType>, t: usize, offset: usize) -> core::option::Option<ArrayArgs> {
+    return match (args) {
+        Nil -> match (types) {
+            Nil -> Some(ArrayArgs { stores: Skip, args: empty(), loads: Skip, guard: Lit(1), bytes: 0, ids: empty() }),
+            Cons(ty, more) -> None,
+        },
+        Cons(arg, rest) -> match (types) {
+            Nil -> None,
+            Cons(ty, more) -> array_arg(scope, arg, ty, t, offset, array_args(scope, unbox(rest), unbox(more), t, plus(offset, arg_bytes(scope, arg)))),
+        },
+    };
+}
+
+// The call's code: the check of the other arguments, the block's address
+// into t, the stores, the call (its result from slot next), the block's
+// address again and the loads.
+pub fn array_call_code(next: usize, callee: usize, sig: Sig, a: ArrayArgs) -> core::option::Option<Evaluated> {
+    let count: usize = sig.ret.size();
+    let t: usize = plus(next, count);
+    if ((count > 0) && (sig.need <= sig.room) && (a.bytes <= sig.block)) {
+        return Some(Evaluated { stmt: check_then(next, a.guard, Seq(boxed(Stmt::Frame(t, 0)), boxed(Seq(boxed(a.stores), boxed(Seq(boxed(Stmt::Call(next, count, callee, a.args)), boxed(Seq(boxed(Stmt::Frame(t, 0)), boxed(a.loads))))))))), ty: sig.ret });
+    }
+    return None;
+}
+
+pub fn array_call_sig(next: usize, callee: usize, sig: Sig, scope: List<Binding>, args: List<SrcEff>) -> core::option::Option<Evaluated> {
+    return match (array_args(scope, args, sig.params, plus(next, sig.ret.size()), 0)) {
+        None -> None,
+        Some(a) -> array_call_code(next, callee, sig, a),
+    };
+}
+
+pub fn array_call(sigs: List<Sig>, scope: List<Binding>, next: usize, callee: usize, args: List<SrcEff>) -> core::option::Option<Evaluated> {
+    return match (get(sigs, callee)) {
+        None -> None,
+        Some(sig) -> array_call_sig(next, callee, sig, scope, args),
+    };
+}
+
+impl SrcEff {
+    pub fn is_slice(self) -> bool {
+        return match (self) {
+            EPure(e) -> false,
+            ECall(callee, args) -> false,
+            EApply(op, left, right) -> false,
+            ENeg(operand) -> false,
+            ENot(operand) -> false,
+            ECast(ty, operand) -> false,
+            EIndex(slice, index) -> false,
+            EStruct(ty, fields) -> false,
+            EVariant(ty, variant, payload) -> false,
+            EMatch(scrutinee, ety, ty, binders, values) -> false,
+            EDivide(op, left, right) -> false,
+            EStride(slice) -> false,
+            ArraySlice(element, array) -> true,
+        };
+    }
+
+}
+
+// Some argument is an array passed as a slice.
+pub fn effs_slice(es: List<SrcEff>) -> bool {
+    return match (es) {
+        Nil -> false,
+        Cons(e, rest) -> e.is_slice() || effs_slice(unbox(rest)),
+    };
+}
+
+impl SrcEff {
+    // A call passing an array as a slice.
+    pub fn passes_slices(self) -> bool {
+        return match (self) {
+            EPure(e) -> false,
+            ECall(callee, args) -> effs_slice(unbox(args)),
+            EApply(op, left, right) -> false,
+            ENeg(operand) -> false,
+            ENot(operand) -> false,
+            ECast(ty, operand) -> false,
+            EIndex(slice, index) -> false,
+            EStruct(ty, fields) -> false,
+            EVariant(ty, variant, payload) -> false,
+            EMatch(scrutinee, ety, ty, binders, values) -> false,
+            EDivide(op, left, right) -> false,
+            EStride(slice) -> false,
+            ArraySlice(element, array) -> false,
+        };
+    }
+
+    // Its code as such a call.
+    pub fn slice_call(self, sigs: List<Sig>, scope: List<Binding>, next: usize) -> core::option::Option<Evaluated> {
+        return match (self) {
+            EPure(e) -> None,
+            ECall(callee, args) -> array_call(sigs, scope, next, callee, unbox(args)),
+            EApply(op, left, right) -> None,
+            ENeg(operand) -> None,
+            ENot(operand) -> None,
+            ECast(ty, operand) -> None,
+            EIndex(slice, index) -> None,
+            EStruct(ty, fields) -> None,
+            EVariant(ty, variant, payload) -> None,
+            EMatch(scrutinee, ety, ty, binders, values) -> None,
+            EDivide(op, left, right) -> None,
+            EStride(slice) -> None,
+            ArraySlice(element, array) -> None,
+        };
+    }
+}
+
+
+// The code of a value a statement computes: a call passing arrays as slices
+// (array_call), or any other expression's code.
+pub fn stmt_eval(value: SrcEff, sigs: List<Sig>, decls: SrcDecls, scope: List<Binding>, next: usize) -> core::option::Option<Evaluated> {
+    if (value.passes_slices()) {
+        return value.slice_call(sigs, scope, next);
+    }
+    return value.eval(sigs, decls, scope, next);
+}
+
 impl SrcStmt {
     pub fn lower(self, sigs: List<Sig>, decls: SrcDecls, ret: SrcType, scope: List<Binding>, next: usize) -> core::option::Option<Stmt> {
         return match (self) {
@@ -5643,13 +5925,6 @@ pub fn param_types(params: List<SrcParam>) -> List<SrcType> {
     };
 }
 
-pub fn sigs(funcs: List<SrcFunc>) -> List<Sig> {
-    return match (funcs) {
-        Nil -> empty(),
-        Cons(func, rest) -> cons(Sig { params: param_types(func.params), ret: func.ret, need: 0, room: 0, block: 0 }, sigs(unbox(rest))),
-    };
-}
-
 // The signatures with the budget of the function lowered against them.
 pub fn with_budget(sigs: List<Sig>, room: usize, block: usize) -> List<Sig> {
     return match (sigs) {
@@ -5658,10 +5933,289 @@ pub fn with_budget(sigs: List<Sig>, room: usize, block: usize) -> List<Sig> {
     };
 }
 
-// A function's own block of frame memory, taken at its entry (none yet: the
-// caller lowering of arrays passed as slices, step 3.5, sizes it).
+// 8 bytes per element of an array type, 0 for any other.
+pub fn array_bytes_of(ty: SrcType) -> usize {
+    return match (ty) {
+        I32 -> 0,
+        Bool -> 0,
+        Uint(kind) -> 0,
+        Struct(id, fields) -> 0,
+        Enum(id, variants) -> 0,
+        Ptr -> 0,
+        Slice(element) -> 0,
+        SrcType::Array(array_element, array_length) -> times(8, times(array_length, unbox(array_element).size())),
+        Unit -> 0,
+        Isize -> 0,
+        SrcType::Char -> 0,
+        SrcType::Float(ft) -> 0,
+        Sint(sk) -> 0,
+    };
+}
+
+// The block bytes of a declaration of id at type ty: its array bytes when
+// id is passed as a slice.
+pub fn decl_bytes(uses: List<usize>, id: usize, ty: SrcType) -> usize {
+    if (id_absent(uses, id)) {
+        return 0;
+    }
+    return array_bytes_of(ty);
+}
+
+pub fn params_array_bytes(params: List<SrcParam>, uses: List<usize>) -> usize {
+    return match (params) {
+        Nil -> 0,
+        Cons(p, rest) -> plus(decl_bytes(uses, p.id, p.ty), params_array_bytes(unbox(rest), uses)),
+    };
+}
+
+// extract: mutual begin
+impl SrcEff {
+    // The ids of the arrays the expression passes as slices.
+    pub fn slice_uses(self) -> List<usize> {
+        return match (self) {
+            EPure(e) -> empty(),
+            ECall(callee, args) -> effs_slice_uses(unbox(args)),
+            EApply(op, left, right) -> concat(unbox(left).slice_uses(), unbox(right).slice_uses()),
+            ENeg(operand) -> unbox(operand).slice_uses(),
+            ENot(operand) -> unbox(operand).slice_uses(),
+            ECast(ty, operand) -> unbox(operand).slice_uses(),
+            EIndex(slice, index) -> unbox(index).slice_uses(),
+            EStruct(ty, fields) -> effs_slice_uses(unbox(fields)),
+            EVariant(ty, variant, payload) -> effs_slice_uses(unbox(payload)),
+            EMatch(scrutinee, ety, ty, binders, values) -> concat(unbox(scrutinee).slice_uses(), effs_slice_uses(unbox(values))),
+            EDivide(op, left, right) -> concat(unbox(left).slice_uses(), unbox(right).slice_uses()),
+            EStride(slice) -> empty(),
+            ArraySlice(element, array) -> single(array),
+        };
+    }
+
+    // The largest need of a function the expression calls, by needs (each
+    // function's, by index; 0 for a host service).
+    pub fn callee_need(self, needs: List<usize>) -> usize {
+        return match (self) {
+            EPure(e) -> 0,
+            ECall(callee, args) -> max_of(get_or(needs, callee, 0), effs_callee_need(unbox(args), needs)),
+            EApply(op, left, right) -> max_of(unbox(left).callee_need(needs), unbox(right).callee_need(needs)),
+            ENeg(operand) -> unbox(operand).callee_need(needs),
+            ENot(operand) -> unbox(operand).callee_need(needs),
+            ECast(ty, operand) -> unbox(operand).callee_need(needs),
+            EIndex(slice, index) -> unbox(index).callee_need(needs),
+            EStruct(ty, fields) -> effs_callee_need(unbox(fields), needs),
+            EVariant(ty, variant, payload) -> effs_callee_need(unbox(payload), needs),
+            EMatch(scrutinee, ety, ty, binders, values) -> max_of(unbox(scrutinee).callee_need(needs), effs_callee_need(unbox(values), needs)),
+            EDivide(op, left, right) -> max_of(unbox(left).callee_need(needs), unbox(right).callee_need(needs)),
+            EStride(slice) -> 0,
+            ArraySlice(element, array) -> 0,
+        };
+    }
+}
+
+pub fn effs_slice_uses(es: List<SrcEff>) -> List<usize> {
+    return match (es) {
+        Nil -> empty(),
+        Cons(e, rest) -> concat(e.slice_uses(), effs_slice_uses(unbox(rest))),
+    };
+}
+
+pub fn effs_callee_need(es: List<SrcEff>, needs: List<usize>) -> usize {
+    return match (es) {
+        Nil -> 0,
+        Cons(e, rest) -> max_of(e.callee_need(needs), effs_callee_need(unbox(rest), needs)),
+    };
+}
+// extract: mutual end
+
+impl SrcStmt {
+    // The ids of the arrays the statement passes as slices.
+    pub fn slice_uses(self) -> List<usize> {
+        return match (self) {
+            Nop -> empty(),
+            Let(id, ty, value, body) -> unbox(body).slice_uses(),
+            LetStruct(id, ty, fields, body) -> unbox(body).slice_uses(),
+            LetCall(id, ty, callee, args, body) -> unbox(body).slice_uses(),
+            LetEnum(id, ty, variant, payload, body) -> unbox(body).slice_uses(),
+            LetMatch(id, ty, scrutinee, enum_id, arms, body) -> unbox(body).slice_uses(),
+            Set(id, value) -> empty(),
+            SetField(id, index, value) -> empty(),
+            SetCall(id, callee, args) -> empty(),
+            Then(first, second) -> concat(unbox(first).slice_uses(), unbox(second).slice_uses()),
+            If(condition, then_branch, else_branch) -> concat(unbox(then_branch).slice_uses(), unbox(else_branch).slice_uses()),
+            While(condition, body) -> unbox(body).slice_uses(),
+            Return(value) -> empty(),
+            LetAlloc(id, size, shift, body) -> unbox(body).slice_uses(),
+            LetLoad(id, pointer, offset, body) -> unbox(body).slice_uses(),
+            SetByte(pointer, offset, value) -> empty(),
+            Free(pointer, size, shift) -> empty(),
+            LetSlice(id, element, pointer, length, body) -> unbox(body).slice_uses(),
+            LetIndex(id, ty, slice, index, body) -> unbox(body).slice_uses(),
+            SetIndex(slice, index, value) -> empty(),
+            LetEval(id, ty, value, body) -> concat(value.slice_uses(), unbox(body).slice_uses()),
+            SetEval(id, value) -> value.slice_uses(),
+            IfEval(condition, then_branch, else_branch) -> concat(condition.slice_uses(), concat(unbox(then_branch).slice_uses(), unbox(else_branch).slice_uses())),
+            WhileEval(condition, body) -> concat(condition.slice_uses(), unbox(body).slice_uses()),
+            ReturnEval(value) -> value.slice_uses(),
+            Discard(value) -> value.slice_uses(),
+            SetIndexEval(slice, index, value) -> concat(index.slice_uses(), value.slice_uses()),
+            SetFieldEval(id, field, value) -> value.slice_uses(),
+            ReturnUnit -> empty(),
+            Assert(condition) -> condition.slice_uses(),
+            Break -> empty(),
+            Continue -> empty(),
+            MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> concat(unbox(body).slice_uses(), unbox(rest).slice_uses()),
+            Unreachable(id, ty) -> empty(),
+        };
+    }
+
+    // The block bytes of the statement's declarations (decl_bytes).
+    pub fn array_bytes(self, uses: List<usize>) -> usize {
+        return match (self) {
+            Nop -> 0,
+            Let(id, ty, value, body) -> plus(decl_bytes(uses, id, ty), unbox(body).array_bytes(uses)),
+            LetStruct(id, ty, fields, body) -> plus(decl_bytes(uses, id, ty), unbox(body).array_bytes(uses)),
+            LetCall(id, ty, callee, args, body) -> plus(decl_bytes(uses, id, ty), unbox(body).array_bytes(uses)),
+            LetEnum(id, ty, variant, payload, body) -> plus(decl_bytes(uses, id, ty), unbox(body).array_bytes(uses)),
+            LetMatch(id, ty, scrutinee, enum_id, arms, body) -> plus(decl_bytes(uses, id, ty), unbox(body).array_bytes(uses)),
+            Set(id, value) -> 0,
+            SetField(id, index, value) -> 0,
+            SetCall(id, callee, args) -> 0,
+            Then(first, second) -> plus(unbox(first).array_bytes(uses), unbox(second).array_bytes(uses)),
+            If(condition, then_branch, else_branch) -> plus(unbox(then_branch).array_bytes(uses), unbox(else_branch).array_bytes(uses)),
+            While(condition, body) -> unbox(body).array_bytes(uses),
+            Return(value) -> 0,
+            LetAlloc(id, size, shift, body) -> unbox(body).array_bytes(uses),
+            LetLoad(id, pointer, offset, body) -> unbox(body).array_bytes(uses),
+            SetByte(pointer, offset, value) -> 0,
+            Free(pointer, size, shift) -> 0,
+            LetSlice(id, element, pointer, length, body) -> unbox(body).array_bytes(uses),
+            LetIndex(id, ty, slice, index, body) -> plus(decl_bytes(uses, id, ty), unbox(body).array_bytes(uses)),
+            SetIndex(slice, index, value) -> 0,
+            LetEval(id, ty, value, body) -> plus(decl_bytes(uses, id, ty), unbox(body).array_bytes(uses)),
+            SetEval(id, value) -> 0,
+            IfEval(condition, then_branch, else_branch) -> plus(unbox(then_branch).array_bytes(uses), unbox(else_branch).array_bytes(uses)),
+            WhileEval(condition, body) -> unbox(body).array_bytes(uses),
+            ReturnEval(value) -> 0,
+            Discard(value) -> 0,
+            SetIndexEval(slice, index, value) -> 0,
+            SetFieldEval(id, field, value) -> 0,
+            ReturnUnit -> 0,
+            Assert(condition) -> 0,
+            Break -> 0,
+            Continue -> 0,
+            MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> plus(unbox(body).array_bytes(uses), unbox(rest).array_bytes(uses)),
+            Unreachable(id, ty) -> 0,
+        };
+    }
+
+    // The largest need of a function the statement calls (SrcEff.callee_need).
+    pub fn callee_need(self, needs: List<usize>) -> usize {
+        return match (self) {
+            Nop -> 0,
+            Let(id, ty, value, body) -> unbox(body).callee_need(needs),
+            LetStruct(id, ty, fields, body) -> unbox(body).callee_need(needs),
+            LetCall(id, ty, callee, args, body) -> max_of(get_or(needs, callee, 0), unbox(body).callee_need(needs)),
+            LetEnum(id, ty, variant, payload, body) -> unbox(body).callee_need(needs),
+            LetMatch(id, ty, scrutinee, enum_id, arms, body) -> unbox(body).callee_need(needs),
+            Set(id, value) -> 0,
+            SetField(id, index, value) -> 0,
+            SetCall(id, callee, args) -> get_or(needs, callee, 0),
+            Then(first, second) -> max_of(unbox(first).callee_need(needs), unbox(second).callee_need(needs)),
+            If(condition, then_branch, else_branch) -> max_of(unbox(then_branch).callee_need(needs), unbox(else_branch).callee_need(needs)),
+            While(condition, body) -> unbox(body).callee_need(needs),
+            Return(value) -> 0,
+            LetAlloc(id, size, shift, body) -> unbox(body).callee_need(needs),
+            LetLoad(id, pointer, offset, body) -> unbox(body).callee_need(needs),
+            SetByte(pointer, offset, value) -> 0,
+            Free(pointer, size, shift) -> 0,
+            LetSlice(id, element, pointer, length, body) -> unbox(body).callee_need(needs),
+            LetIndex(id, ty, slice, index, body) -> unbox(body).callee_need(needs),
+            SetIndex(slice, index, value) -> 0,
+            LetEval(id, ty, value, body) -> max_of(value.callee_need(needs), unbox(body).callee_need(needs)),
+            SetEval(id, value) -> value.callee_need(needs),
+            IfEval(condition, then_branch, else_branch) -> max_of(condition.callee_need(needs), max_of(unbox(then_branch).callee_need(needs), unbox(else_branch).callee_need(needs))),
+            WhileEval(condition, body) -> max_of(condition.callee_need(needs), unbox(body).callee_need(needs)),
+            ReturnEval(value) -> value.callee_need(needs),
+            Discard(value) -> value.callee_need(needs),
+            SetIndexEval(slice, index, value) -> max_of(index.callee_need(needs), value.callee_need(needs)),
+            SetFieldEval(id, field, value) -> value.callee_need(needs),
+            ReturnUnit -> 0,
+            Assert(condition) -> condition.callee_need(needs),
+            Break -> 0,
+            Continue -> 0,
+            MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> max_of(unbox(body).callee_need(needs), unbox(rest).callee_need(needs)),
+            Unreachable(id, ty) -> 0,
+        };
+    }
+}
+
+// A function's own block of frame memory, taken at its entry: 8 bytes per
+// element of each array it declares (a parameter or a let) whose id it
+// passes as a slice somewhere. A call passing arrays places them in it
+// (array_call), at most its bytes.
 pub fn frame_block(func: SrcFunc) -> usize {
-    return 0;
+    let uses: List<usize> = func.body.slice_uses();
+    return plus(params_array_bytes(func.params, uses), func.body.array_bytes(uses));
+}
+
+// One round of needs: each function's block and the largest need, by
+// prev, of a function it calls.
+pub fn need_round(funcs: List<SrcFunc>, prev: List<usize>) -> List<usize> {
+    return match (funcs) {
+        Nil -> empty(),
+        Cons(f, rest) -> cons(plus(frame_block(f), f.body.callee_need(prev)), need_round(unbox(rest), prev)),
+    };
+}
+
+pub fn same_needs(a: List<usize>, b: List<usize>) -> bool {
+    return match (a) {
+        Nil -> match (b) {
+            Nil -> true,
+            Cons(y, ys) -> false,
+        },
+        Cons(x, xs) -> match (b) {
+            Nil -> false,
+            Cons(y, ys) -> (x == y) && same_needs(unbox(xs), unbox(ys)),
+        },
+    };
+}
+
+// Rounds of needs from prev until they repeat, at most rounds more. Calls
+// that pass arrays round a recursive cycle never repeat; a call is lowered
+// only when the callee's need fits the caller's room, so such a cycle is
+// rejected (ROADMAP F15 lifts this).
+pub fn needs_after(funcs: List<SrcFunc>, prev: List<usize>, rounds: usize) -> List<usize> {
+    let next: List<usize> = need_round(funcs, prev);
+    if (rounds == 0) {
+        return next;
+    }
+    if (same_needs(next, prev)) {
+        return next;
+    }
+    return needs_after(funcs, next, minus(rounds, 1));
+}
+
+// Each function's need: the frame memory a call to it takes, its block and
+// its callees' (TRUSTED_BASE "Frame room").
+pub fn func_needs(funcs: List<SrcFunc>) -> List<usize> {
+    return needs_after(funcs, empty(), length(funcs));
+}
+
+pub fn rest_needs(needs: List<usize>) -> List<usize> {
+    return match (needs) {
+        Nil -> empty(),
+        Cons(n, rest) -> unbox(rest),
+    };
+}
+
+// The signatures with these needs (0 past their end).
+pub fn sigs_with(funcs: List<SrcFunc>, needs: List<usize>) -> List<Sig> {
+    return match (funcs) {
+        Nil -> empty(),
+        Cons(func, rest) -> cons(Sig { params: param_types(func.params), ret: func.ret, need: get_or(needs, 0, 0), room: 0, block: 0 }, sigs_with(unbox(rest), rest_needs(needs))),
+    };
+}
+
+pub fn sigs(funcs: List<SrcFunc>) -> List<Sig> {
+    return sigs_with(funcs, func_needs(funcs));
 }
 
 // One more than the largest slot an expression reads.
@@ -5729,17 +6283,31 @@ pub fn unit_tail(ret: SrcType, body: core::option::Option<Stmt>) -> core::option
     return body;
 }
 
+// The body after the function's block is taken (its address into slot,
+// which the body's first let overwrites), when it has one.
+pub fn with_frame(slot: usize, block: usize, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    if (block == 0) {
+        return body;
+    }
+    return match (body) {
+        None -> None,
+        Some(b) -> Some(Seq(boxed(Stmt::Frame(slot, block)), boxed(b))),
+    };
+}
+
 // Results and struct parameters have slots; a function returns its result
 // type's slots, so it has at least that many locals.
 // own is the function's signature: its body is lowered with its need less
 // its block as the room for its callees.
 pub fn lower_func(sigs: List<Sig>, own: Sig, decls: SrcDecls, func: SrcFunc) -> core::option::Option<Func> {
     let count: usize = params_size(func.params);
-    if ((func.ret.size() > 0) && params_valid(func.params) && !func.body.breaks_out()) {
-        return lower_body(count, func.ret.size(), func.body.depth(), unit_tail(func.ret, func.body.lower(with_budget(sigs, minus(own.need, frame_block(func)), frame_block(func)), decls, func.ret, param_scope(func.params, 0, empty()), count)));
+    let block: usize = frame_block(func);
+    if ((func.ret.size() > 0) && params_valid(func.params) && !func.body.breaks_out() && (own.need >= block) && (2147483648 > block)) {
+        return lower_body(count, func.ret.size(), func.body.depth(), unit_tail(func.ret, with_frame(count, block, func.body.lower(with_budget(sigs, minus(own.need, block), block), decls, func.ret, param_scope(func.params, 0, empty()), count))));
     }
     return None;
 }
+
 
 pub fn lower_func_cons(first: core::option::Option<Func>, rest: core::option::Option<List<Func>>) -> core::option::Option<List<Func>> {
     return match (first) {

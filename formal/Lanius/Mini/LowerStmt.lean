@@ -78,9 +78,14 @@ import all Lanius.Mini.Compiler.P.modulesOk
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.repeatType
 import all Lanius.Mini.Compiler.P.shortCircuit
-import all Lanius.Mini.Compiler.P.sigs
+import all Lanius.Mini.Compiler.P.withBudget
+import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.storeArray
+import all Lanius.Mini.Compiler.P.arrayCallSig
+import all Lanius.Mini.Compiler.P.bindingBytes
+import all Lanius.Mini.Compiler.P.needRound
+import all Lanius.Mini.Compiler.P.needsAfter
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.storeType
 import all Lanius.Mini.Compiler.P.storeWordElement
@@ -125,9 +130,14 @@ public import Lanius.Mini.Compiler.P.lowerTagged
 public import Lanius.Mini.Compiler.P.matchVariants
 public import Lanius.Mini.Compiler.P.repeatType
 public import Lanius.Mini.Compiler.P.shortCircuit
-public import Lanius.Mini.Compiler.P.sigs
+public import Lanius.Mini.Compiler.P.withBudget
+public import Lanius.Mini.Compiler.P.funcNeeds
 public import Lanius.Mini.Compiler.P.sintToUint
 public import Lanius.Mini.Compiler.P.storeArray
+public import Lanius.Mini.Compiler.P.arrayCallSig
+public import Lanius.Mini.Compiler.P.bindingBytes
+public import Lanius.Mini.Compiler.P.needRound
+public import Lanius.Mini.Compiler.P.needsAfter
 public import Lanius.Mini.Compiler.P.storeType
 public import Lanius.Mini.Compiler.P.storeWordElement
 public import Lanius.Mini.Compiler.P.usizeWidth
@@ -480,24 +490,36 @@ theorem Exec.mono {prog : Program} {d : Nat} {env : Env} {heap : Heap} {s : Stmt
 
 /-! ## Programs -/
 
+theorem sigsWith_get (funcs : List SrcFunc) (needs : List Nat) (i : Nat) :
+    (sigsWith funcs needs)[i]? = (funcs[i]?).map fun f =>
+      ({ params := paramTypes f.params, ret := f.ret, need := needs.getD i 0, room := 0, block := 0 } : Sig) := by
+  induction funcs generalizing i needs with
+  | nil => simp [sigsWith]
+  | cons head rest ih =>
+    cases i with
+    | zero => simp [sigsWith]
+    | succ i =>
+      simp only [sigsWith, List.getElem?_cons_succ, ih]
+      cases needs <;> rfl
+
+/-- The frame memory a call to function `f` takes (`funcNeeds`): its block
+and its callees' (TRUSTED_BASE "Frame room"). -/
+def SrcProgram.need (sp : SrcProgram) (f : Nat) : Nat := (funcNeeds sp.funcs).getD f 0
+
 theorem sigs_get (funcs : List SrcFunc) (i : Nat) :
     (sigs funcs)[i]? = (funcs[i]?).map fun f =>
-      ({ params := paramTypes f.params, ret := f.ret, need := 0, room := 0, block := 0 } : Sig) := by
-  induction funcs generalizing i with
-  | nil => simp [sigs]
-  | cons head rest ih => cases i <;> simp [sigs, ih]
+      ({ params := paramTypes f.params, ret := f.ret, need := (funcNeeds funcs).getD i 0, room := 0, block := 0 } : Sig) :=
+  sigsWith_get funcs _ i
 
-/-- No function needs frame memory yet: no lowering takes a block (step 3.5
-sizes them). -/
-theorem sigs_need_le {funcs : List SrcFunc} {i : Nat} {s : Sig} (found : (sigs funcs)[i]? = some s) (room : Nat) :
-    s.need ≤ room := by
+theorem sigs_need {sp : SrcProgram} {i : Nat} {s : Sig} (found : (sigs sp.funcs)[i]? = some s) :
+    s.need = sp.need i := by
   rw [sigs_get] at found
-  cases f : funcs[i]? with
+  cases f : sp.funcs[i]? with
   | none => simp [f] at found
   | some _ =>
     simp only [f, Option.map_some, Option.some.injEq] at found
     subst found
-    exact Nat.zero_le _
+    rfl
 
 /-- The signatures a body is lowered against under the budget `bud`: the
 program's, with the budget's room and block. -/
@@ -512,7 +534,7 @@ theorem withBudget_get (ss : List Sig) (room block : Nat) (i : Nat) :
 
 theorem sigsAt_get (sp : SrcProgram) (bud : Budget) (i : Nat) :
     (sp.sigsAt bud)[i]? = (sp.funcs[i]?).map fun f =>
-      ({ params := paramTypes f.params, ret := f.ret, need := 0, room := bud.room, block := bud.block } : Sig) := by
+      ({ params := paramTypes f.params, ret := f.ret, need := sp.need i, room := bud.room, block := bud.block } : Sig) := by
   simp only [SrcProgram.sigsAt, withBudget_get, sigs_get, Option.map_map]
   rfl
 
@@ -567,27 +589,45 @@ def funcBudget (s : Sig) (f : SrcFunc) : Budget := ⟨s.need - frameBlock f, fra
 theorem lowerFunc_some {sg : List Sig} {s : Sig} {ds : SrcDecls} {f : SrcFunc} {g : Func}
     (ok : lowerFunc sg s ds f = some g) :
     g.params = paramsSize f.params ∧ 0 < f.ret.size ∧ paramsValid f.params = true ∧ f.body.breaksOut = false ∧
-      ∃ b, f.body.lower (withBudget sg (funcBudget s f).room (funcBudget s f).block) ds f.ret
+      ∃ b pre, f.body.lower (withBudget sg (funcBudget s f).room (funcBudget s f).block) ds f.ret
           (paramScope f.params 0 []) (paramsSize f.params) = some b ∧
-        unitTail f.ret (some b) = some g.body := by
+        withFrame (paramsSize f.params) (frameBlock f) (some b) = some pre ∧
+        unitTail f.ret (some pre) = some g.body ∧ frameBlock f ≤ s.need ∧ frameBlock f < 2147483648 := by
   simp only [lowerFunc] at ok
   split at ok
   · rename_i checks
-    simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+    simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_eq_eq_not, Bool.not_true] at checks
+    obtain ⟨⟨⟨⟨sized, valid⟩, breaks⟩, needs⟩, small⟩ := checks
     simp only [lowerBody] at ok
     split at ok
     · simp at ok
     rename_i body bodyOk
     simp only [Option.some.injEq] at ok
     subst ok
-    simp only [unitTail] at bodyOk
-    split at bodyOk
-    · split at bodyOk
-      · simp at bodyOk
-      rename_i b lowered
-      exact ⟨rfl, checks.1.1, checks.1.2, by simpa using checks.2, b, lowered, by simp only [unitTail, bodyOk, ‹f.ret.isUnit = true›, if_true]⟩
-    · exact ⟨rfl, checks.1.1, checks.1.2, by simpa using checks.2, body, bodyOk, by simp only [unitTail, if_neg (by assumption)]⟩
+    cases lowered : f.body.lower (withBudget sg (s.need - frameBlock f) (frameBlock f)) ds f.ret
+        (paramScope f.params 0 []) (paramsSize f.params) with
+    | none =>
+      rw [lowered] at bodyOk
+      simp only [withFrame] at bodyOk
+      split at bodyOk <;> simp [unitTail] at bodyOk
+    | some b =>
+      rw [lowered] at bodyOk
+      cases framed : withFrame (paramsSize f.params) (frameBlock f) (some b) with
+      | none => rw [framed] at bodyOk; simp [unitTail] at bodyOk
+      | some pre =>
+        rw [framed] at bodyOk
+        exact ⟨rfl, sized, valid, breaks, b, pre, lowered, framed, bodyOk, needs, small⟩
   · simp at ok
+
+/-- The code a function body is lowered to, after its block is taken. -/
+theorem withFrame_cases {slot block : Nat} {b pre : Stmt} (h : withFrame slot block (some b) = some pre) :
+    (block = 0 ∧ pre = b) ∨ (0 < block ∧ pre = .seq (.frame slot block) b) := by
+  simp only [withFrame] at h
+  split at h
+  · simp only [Option.some.injEq] at h
+    exact .inl ⟨by assumption, h.symm⟩
+  · simp only [Option.some.injEq] at h
+    exact .inr ⟨by omega, h.symm⟩
 
 theorem paramTypes_length (params : List SrcParam) : (paramTypes params).length = params.length := by
   induction params with
@@ -1034,12 +1074,46 @@ def StmtSound (sp : SrcProgram) (mp : Program) (fuel : Nat) : Prop :=
 
 theorem SrcProgram.target_toCore (sp : SrcProgram) : sp.toCore.target = .x86_64 := rfl
 
+/-- How a function body starts: with the code taking its block of frame
+memory, when it has one (`withFrame`), then the body from `envX` and `hpX`. -/
+def Prologue (mp : Program) (env : Env) (hp : Heap) (envX : Env) (hpX : Heap) (b pre : Stmt) : Prop :=
+  (pre = b ∧ envX = env ∧ hpX = hp) ∨ ∃ first, pre = .seq first b ∧ ∀ d, Exec mp d env hp first (.normal envX hpX)
+
+theorem Prologue.exec {mp : Program} {env envX : Env} {hp hpX : Heap} {b pre : Stmt}
+    (pro : Prologue mp env hp envX hpX b pre) : ∀ d o, Exec mp d envX hpX b o → Exec mp d env hp pre o := by
+  intro d o e
+  rcases pro with ⟨rfl, rfl, rfl⟩ | ⟨first, rfl, h⟩
+  · exact e
+  · exact .seq (h d) e
+
+/-- A body whose block of `block ≤ need` bytes is taken, under a budget whose
+room holds `need`: the callee's budget is its need less its block as room,
+and its block. -/
+theorem bodyStart {mp : Program} {count block need : Nat} {b pre : Stmt}
+    (framed : withFrame count block (some b) = some pre) {scope frame base st env} {hp : Heap}
+    (corr : Corr places scope frame st env) (fr : Layout scope frame base count)
+    (hc : HeapCorr st.heap st.world hp) (fc : FrameCorr bud places st hp) (within : block ≤ need)
+    (fits : need ≤ bud.room) :
+    ∃ envX hpX, Prologue mp env hp envX hpX b pre ∧ Corr places scope frame st envX ∧
+      HeapCorr st.heap st.world hpX ∧ FrameCorr ⟨need - block, block⟩ places st hpX ∧ hpX.limit = hp.limit := by
+  rcases withFrame_cases framed with ⟨zero, rfl⟩ | ⟨pos, rfl⟩
+  · subst zero
+    exact ⟨env, hp, .inl ⟨rfl, rfl, rfl⟩, corr, hc, fc.callee (by simp only [Nat.sub_zero]; exact fits)
+      (Nat.zero_le _), rfl⟩
+  · have room : hp.limit + block ≤ hp.fsp := by
+      have r := fc.room (by omega)
+      omega
+    refine ⟨env.set count (BitVec.ofNat 64 (hp.fsp - block)), { hp with fsp := hp.fsp - block },
+      .inr ⟨_, rfl, fun _ => .frame room⟩, corr.env_congr (fr.agree fun j lt => ?_), hc.withFsp _,
+      fc.frame block (by simp only; omega) (by simp only; omega), rfl⟩
+    simp [Env.set, Nat.ne_of_lt lt]
+
 /-- A function body Core runs to a return is a mini `Returns`. -/
 theorem body_sound {sp : SrcProgram} {mp : Program}
     (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {fuel : Nat}
     (ih : StmtSound sp mp fuel) {callee : Nat} {f : SrcFunc} (found : sp.funcs[callee]? = some f)
     {hp : Heap} {st : State} (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp)
-    (fc : FrameCorr bud places st hp) (fits : ∀ s, (sigs sp.funcs)[callee]? = some s → s.need ≤ bud.room)
+    (fc : FrameCorr bud places st hp) (fits : sp.need callee ≤ bud.room)
     (under : ∀ x ∈ places, x.cell < st.nextCell) {values : List Value}
     {bits : List (BitVec 64)} (holds : FieldsHold places (paramTypes f.params) values (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize f.params) {v : Value} {c : Completion} {completed : State}
@@ -1051,10 +1125,8 @@ theorem body_sound {sp : SrcProgram} {mp : Program}
       ∃ d rs hp' bud', mp.Returns d callee bits hp rs hp' ∧ f.ret.HoldsAt places v (Func.entry rs) 0 ∧
         rs.length = f.ret.size ∧ HeapCorr completed.heap completed.world hp' ∧ FrameCorr bud' places completed hp' := by
   obtain ⟨g, own, gFound, ownFound, gOk⟩ := lowerFuncs_get lowered found
-  obtain ⟨gParams, _, valid, inside, b, bodyOk, tail⟩ := lowerFunc_some gOk
-  -- The callee's budget: no block of its own yet, and its need as room.
-  have fcCallee : FrameCorr (funcBudget own f) places st hp :=
-    fc.callee (Nat.le_trans (Nat.sub_le _ _) (fits own ownFound)) (by simp [funcBudget, frameBlock])
+  obtain ⟨gParams, _, valid, inside, b, pre, bodyOk, framed, tail, needs, -⟩ := lowerFunc_some gOk
+  have ownNeed : own.need = sp.need callee := sigs_need ownFound
   obtain ⟨frame, corr, fr, fresh0, keeps0⟩ := entry_corr (Func.entry bits) st.nextCell f.params
     (k := 0) (scope := []) (frame := fun _ => 0) (st := { st with locals := [] }) holds valid
     (Nat.le_refl _) under fresh ⟨rfl, fun _ _ _ mem => by simp at mem, fun _ mem => by simp at mem⟩
@@ -1064,17 +1136,22 @@ theorem body_sound {sp : SrcProgram} {mp : Program}
   have hc0 : HeapCorr (({ st with locals := [] } : State).bindLocals (paramBindings f.params values)).heap (({ st with locals := [] } : State).bindLocals (paramBindings f.params values)).world hp := by
     rw [(bindLocals_same _ _).1, bindLocals_world]
     exact hc
+  have fc0 := fc.congr (st' := ({ st with locals := [] } : State).bindLocals (paramBindings f.params values))
+    (fun x mem => keeps0.cells x.cell (under x mem) fun _ m => by simp at m) (fun _ _ _ _ => rfl) rfl rfl rfl
+  obtain ⟨envX, hpX, pro, corrX, hcX, fcX, limitX⟩ :=
+    bodyStart (mp := mp) framed corr fr hc0 fc0 needs (ownNeed ▸ fits)
+  have start := pro.exec
   obtain ⟨freshDone, keepsDone, d, out, exec, agree⟩ :=
-    ih (bud := funcBudget own f) (hp := hp) bodyOk corr fr fresh0 keeps0.next hc0
-      (fcCallee.congr (fun x mem => keeps0.cells x.cell (under x mem) fun _ m => by simp at m) (fun _ _ _ _ => rfl)
-        rfl rfl rfl) under run bound
+    ih (bud := funcBudget own f) (hp := hpX) bodyOk corrX fr fresh0 keeps0.next hcX fcX under run
+      (by rw [limitX]; exact bound)
   have keeps : Keeps places st.nextCell st completed :=
     ⟨fun c below apart => (keepsDone.cells c below apart).trans (keeps0.cells c below fun _ mem => by simp at mem),
       Nat.le_trans keeps0.next keepsDone.next⟩
   have arity : bits.length = g.params := by rw [gParams, bitsLen]
-  have returns : ∀ {rs hp'}, Exec mp d (Func.entry bits) hp b (.returned rs hp') →
+  have returns : ∀ {rs hp'}, Exec mp d envX hpX b (.returned rs hp') →
       Exec mp d (Func.entry bits) hp g.body (.returned rs hp') := by
-    intro rs hp' e
+    intro rs hp' e'
+    have e := start _ _ e'
     simp only [unitTail] at tail
     split at tail
     · simp only [Option.some.injEq] at tail
@@ -1104,7 +1181,7 @@ theorem body_sound {sp : SrcProgram} {mp : Program}
       have exec' : Exec mp d (Func.entry bits) hp g.body
           (.returned (Expr.evalAll envDone [.lit 0]) hpDone) := by
         rw [← tail]
-        exact .seq exec .ret
+        exact .seq (start _ _ exec) .ret
       rw [unit]
       exact ⟨freshDone, keeps, d, _, _, _, ⟨g, gFound, arity, exec'⟩, .unit, rfl, hcDone, fcDone⟩
   | breakLoop => simp [CallResult] at result
@@ -1123,15 +1200,16 @@ theorem call_sound {sp : SrcProgram} {mp : Program}
       ∃ d rs hp', ty.HoldsAt places v (Func.entry rs) 0 ∧ rs.length = ty.size ∧ HeapCorr st'.heap st'.world hp' ∧
         FrameCorr bud places st' hp' ∧ ∀ target, Exec mp d env hp (.call target ty.size callee es) (.normal (env.setMany target rs) hp') := by
   obtain ⟨f, values, afterArgs, completed, c, argsRun, found, _, bodyRun, result, rfl⟩ := call_inv (lowerCall_inside ok) run
-  simp only [lowerCall, sigsAt_get, found, Option.map_some, lowerCallSig, Nat.zero_le, decide_true,
-    Bool.and_true] at ok
+  simp only [lowerCall, sigsAt_get, found, Option.map_some, lowerCallSig] at ok
   split at ok
-  · rename_i same
+  · rename_i checks
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+    obtain ⟨same, fits⟩ := checks
     have tyEq := SrcType.same_eq same
     subst tyEq
     obtain ⟨rfl, holds, esLen, -⟩ := lowerArgs_sound corr (SrcProgram.target_toCore sp) ok argsRun
     obtain ⟨freshDone, keeps, d, rs, hp', bud', ⟨g, gFound, arity, exec⟩, holdsRet, len, hcDone, fcDone⟩ :=
-      body_sound lowered ih found (hp := hp) fresh hc fc (fun _ h => sigs_need_le h _) (fc.below fresh) holds
+      body_sound lowered ih found (hp := hp) fresh hc fc fits (fc.below fresh) holds
         (by rw [evalAll_length, esLen, paramsSize_eq]) bodyRun result bound
     obtain ⟨g', s', -, -, gOk⟩ := lowerFuncs_get lowered found
     refine ⟨restore_fresh freshDone, keeps.trans (restore_keeps _ _ _), rfl, (lowerFunc_some gOk).2.1, d + 1, rs,
@@ -1148,8 +1226,7 @@ theorem lowerCall_guard {sp : SrcProgram} {scope frame st env} (corr : Corr plac
     (run : evalExpr (fuel + 1) sp.toCore st (.call callee (args.map SrcExpr.toCore)) = .done v st') :
     (guardAll scope args).eval env = 1 := by
   obtain ⟨f, values, afterArgs, completed, c, argsRun, found, _, bodyRun, result, rfl⟩ := call_inv (lowerCall_inside ok) run
-  simp only [lowerCall, sigsAt_get, found, Option.map_some, lowerCallSig, Nat.zero_le, decide_true,
-    Bool.and_true] at ok
+  simp only [lowerCall, sigsAt_get, found, Option.map_some, lowerCallSig] at ok
   split at ok
   · exact lowerArgs_guard corr (SrcProgram.target_toCore sp) ok argsRun
   · simp at ok

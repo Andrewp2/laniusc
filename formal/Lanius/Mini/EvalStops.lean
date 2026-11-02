@@ -65,9 +65,14 @@ import all Lanius.Mini.Compiler.P.modulesOk
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.repeatType
 import all Lanius.Mini.Compiler.P.shortCircuit
-import all Lanius.Mini.Compiler.P.sigs
+import all Lanius.Mini.Compiler.P.withBudget
+import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.storeArray
+import all Lanius.Mini.Compiler.P.arrayCallSig
+import all Lanius.Mini.Compiler.P.bindingBytes
+import all Lanius.Mini.Compiler.P.needRound
+import all Lanius.Mini.Compiler.P.needsAfter
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.storeType
 import all Lanius.Mini.Compiler.P.storeWordElement
@@ -95,8 +100,13 @@ public import Lanius.Mini.Compiler.P.lowerLocal
 public import Lanius.Mini.Compiler.P.matchDst
 public import Lanius.Mini.Compiler.P.matchVariants
 public import Lanius.Mini.Compiler.P.shortCircuit
-public import Lanius.Mini.Compiler.P.sigs
+public import Lanius.Mini.Compiler.P.withBudget
+public import Lanius.Mini.Compiler.P.funcNeeds
 public import Lanius.Mini.Compiler.P.storeArray
+public import Lanius.Mini.Compiler.P.arrayCallSig
+public import Lanius.Mini.Compiler.P.bindingBytes
+public import Lanius.Mini.Compiler.P.needRound
+public import Lanius.Mini.Compiler.P.needsAfter
 public import Lanius.Mini.Compiler.P.storeEvalWord
 public import Lanius.Mini.Compiler.P.wordStride
 
@@ -1295,12 +1305,12 @@ theorem eff_call (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls 
   split at ok
   · simp at ok
   rename_i ea argsOk
-  simp only [evalCallSig, Nat.zero_le, decide_true, Bool.and_true] at ok
+  simp only [evalCallSig] at ok
   split at ok
   case isFalse => simp at ok
   rename_i checks
   simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
-  obtain ⟨same, sized⟩ := checks
+  obtain ⟨⟨same, sized⟩, fits⟩ := checks
   have tyEq := typesSame_eq _ same
   simp only [Option.some.injEq] at ok
   subst ok
@@ -1313,7 +1323,7 @@ theorem eff_call (lowered : lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls 
       (Func.entry (Expr.evalAll env1 (slotVars slot (sizes (paramTypes f.params))))) 0 :=
     holdsA.congr fun i below => by rw [Nat.zero_add, entry_slotVars env1 slot _ below]
   have limit := exec1.limit_normal
-  obtain ⟨d, g, gFound, arity, stops⟩ := callee_stops lowered returns prev argsRun found fresh1 hc1 fc1
+  obtain ⟨d, g, gFound, arity, stops⟩ := callee_stops lowered returns prev argsRun found fresh1 hc1 fc1 fits
     (by rw [limit]; exact bound) holdsEntry (by rw [evalAll_length, slotVars_length, paramsSize_eq])
     (by rw [limit]; exact fails)
   exact ⟨_, Stops.after exec1 (.call gFound (by rw [← arity, evalAll_length]) (Nat.lt_succ_self d) stops)⟩

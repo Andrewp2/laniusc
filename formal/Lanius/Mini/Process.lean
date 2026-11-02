@@ -91,7 +91,7 @@ theorem compileSource_contract {sp : SrcProgram} {binary : Binary}
     (zero : ∀ a, 1 ≤ a → heap.bytes a = 0) (small : heap.limit < 2 ^ 62) (silent : heap.io.trace = [])
     (runs : Semantics.evalExpr fuel sp.toCore (startState heap.io) (.call f (args.map Core.Expr.value)) =
       .done v final)
-    (fits : final.heap.nextAddress ≤ heap.limit) :
+    (fits : final.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp) :
     ∃ depth results, ∃ after : Heap, func.ret.HoldsAt [] v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
       final.world.standardOutput = outputOf 1 after.io.trace ∧ final.world.standardError = outputOf 2 after.io.trace ∧
       ∀ imageBase window, Contract binary imageBase (binary.stackNeed depth) window f bits heap results after := by
@@ -107,7 +107,7 @@ theorem compileSource_contract {sp : SrcProgram} {binary : Binary}
     obtain ⟨_, _, depth, results, after, _, returns, holds, len, hc, -⟩ :=
       body_sound (mp := { funcs := funcs }) (hp := heap) lowered (stmt_sound lowered k) found
         (startState_fresh _) (HeapCorr.empty start zero small silent)
-        (FrameCorr.empty _ _) (fun _ h => sigs_need_le h _) (fun _ mem => by simp at mem) typed bitsLen bodyRun result fits
+        (FrameCorr.start _ frameRoom) (Nat.le_refl _) (fun _ mem => by simp at mem) typed bitsLen bodyRun result fits
     refine ⟨depth, results, after, holds, len, hc.out, hc.err, fun imageBase window => ?_⟩
     rcases compileOptimized_some compiledProgram with original | ⟨q, accepted, optimized⟩
     · exact compiled_contract original imageBase depth f bits heap results after returns window
@@ -593,7 +593,7 @@ theorem process_exits {sp : SrcProgram} {binary : Binary} {entry stack heap : Na
     {func : SrcFunc} (found : sp.funcs[entry]? = some func) (noParams : func.params = [])
     {given : Io} (silent : given.trace = []) {fuel : Nat} {v : Value} {final : Semantics.State}
     (runs : Semantics.evalExpr fuel sp.toCore (startState given) (.call entry []) = .done v final)
-    (fits : final.heap.nextAddress ≤ heap) :
+    (fits : final.heap.nextAddress ≤ heap) (frameRoom : sp.need entry ≤ stack) :
     ∃ depth results, ∃ after : Heap, func.ret.HoldsAt [] v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
       final.world.standardOutput = outputOf 1 after.io.trace ∧ final.world.standardError = outputOf 2 after.io.trace ∧
       ∀ s, Loaded file s → s.io = given →
@@ -605,6 +605,7 @@ theorem process_exits {sp : SrcProgram} {binary : Binary} {entry stack heap : Na
   have bitsLen : ([] : List (BitVec 64)).length = paramsSize func.params := by rw [noParams]; rfl
   obtain ⟨depth, results, after, holds, len, out, err, contract⟩ := compileSource_contract compiled found typed bitsLen
     (heap := elfHeap heap stack given) rfl (fun _ _ => rfl) (by show heap < 2 ^ 62; have := sz.heap; omega) silent runs fits
+    (fun _ => by show heap + _ ≤ heap + stack; omega)
   refine ⟨depth, results, after, holds, len, out, err, fun s loaded same => ?_⟩
   obtain ⟨c, steps, det, at_⟩ := startup h loaded
   rw [same] at at_
@@ -623,7 +624,7 @@ reaches an undefined trap. -/
 theorem process_behaviour {sp : SrcProgram} {binary : Binary} {entry stack heap : Nat} {file : List UInt8}
     (compiled : compileSource sp = some binary) (h : elfFile binary entry stack heap = some file)
     {func : SrcFunc} (found : sp.funcs[entry]? = some func) (noParams : func.params = [])
-    {s : State} (loaded : Loaded file s) {m : Nat} {u : State} (run : Steps m s u)
+    (frameRoom : sp.need entry ≤ stack) {s : State} (loaded : Loaded file s) {m : Nat} {u : State} (run : Steps m s u)
     (stuck : ∀ v, ¬Lanius.X86.Machine.Step u v) (clean : ¬Lanius.X86.Machine.Fault u) :
     (∃ fuel v final, Semantics.evalExpr fuel sp.toCore (startState s.io) (.call entry []) = .done v final ∧
       final.heap.nextAddress ≤ heap ∧ ∃ results, func.ret.HoldsAt [] v (Func.entry results) 0 ∧
@@ -643,10 +644,11 @@ theorem process_behaviour {sp : SrcProgram} {binary : Binary} {entry stack heap 
   obtain ⟨c', first, rest⟩ := Steps.split (show Steps (8 + (m - 8)) s u by rw [Nat.add_sub_cancel' past]; exact run)
   obtain ⟨bounded, code, apart, imageHeap, rip, heapAt, stackAt⟩ := atEntry_premises h (at_.congr (det.final first))
   rcases compileSource_behaviour compiled found typed bitsLen (heap := elfHeap heap stack s.io) rfl (fun _ _ => rfl)
-      (by show heap < 2 ^ 62; have := sz.heap; omega) loaded.io sz.room c' _ _ bounded code apart imageHeap rip
+      (by show heap < 2 ^ 62; have := sz.heap; omega) loaded.io sz.room
+      (fun _ => by show heap + _ ≤ heap + stack; omega) c' _ _ bounded code apart imageHeap rip
       (fun k bound => absurd bound (Nat.not_lt_zero k)) heapAt stackAt rest stuck clean with
     ⟨fuel, v, final, runs, fits⟩ | trap
-  · obtain ⟨depth, results, _after, holds, len, -, -, cases⟩ := process_exits compiled h found noParams loaded.io runs fits
+  · obtain ⟨depth, results, _after, holds, len, -, -, cases⟩ := process_exits compiled h found noParams loaded.io runs fits frameRoom
     refine .inl ⟨fuel, v, final, runs, fits, results, holds, len, ?_⟩
     rcases cases s loaded rfl with ⟨n, e, -, detE, -, code, exits, value⟩ | ⟨-, faults⟩
     · exact ⟨code, exits.congr (Det.stops detE exits.stuck.1 run stuck), value⟩
@@ -666,7 +668,7 @@ theorem textProcess_exits {files : List SourceFile} {binary : Binary} {entry sta
       ∀ {func : SrcFunc}, sp.funcs[entry]? = some func → func.params = [] →
       ∀ {given : Io}, given.trace = [] → ∀ {fuel : Nat} {v : Value} {final : Semantics.State},
         Semantics.evalExpr fuel sp.toCore (startState given) (.call entry []) = .done v final →
-        final.heap.nextAddress ≤ heap →
+        final.heap.nextAddress ≤ heap → sp.need entry ≤ stack →
         ∃ depth results, ∃ after : Heap, func.ret.HoldsAt [] v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
           final.world.standardOutput = outputOf 1 after.io.trace ∧
           final.world.standardError = outputOf 2 after.io.trace ∧
@@ -676,8 +678,8 @@ theorem textProcess_exits {files : List SourceFile} {binary : Binary} {entry sta
             (stack - 8 < binary.stackNeed depth ∧ Faults s) := by
   obtain ⟨sp, reading, unique, compiledSource⟩ := compileText_reading compiled
   refine ⟨sp, reading, unique, ?_⟩
-  intro func found noParams given silent fuel v final runs fits
-  exact process_exits compiledSource h found noParams silent runs fits
+  intro func found noParams given silent fuel v final runs fits frameRoom
+  exact process_exits compiledSource h found noParams silent runs fits frameRoom
 
 /-- `process_behaviour` from source text: every run of the process that
 stops other than at a fault exits with the last slot of a completed Core run
@@ -686,7 +688,7 @@ theorem textProcess_behaviour {files : List SourceFile} {binary : Binary} {entry
     {file : List UInt8} (compiled : compileText files = some binary) (h : elfFile binary entry stack heap = some file) :
     ∃ sp, TextReading (files.map SourceFile.source) sp ∧
       (∀ sp', TextReading (files.map SourceFile.source) sp' → sp' = sp) ∧
-      ∀ {func : SrcFunc}, sp.funcs[entry]? = some func → func.params = [] →
+      ∀ {func : SrcFunc}, sp.funcs[entry]? = some func → func.params = [] → sp.need entry ≤ stack →
       ∀ {s : State}, Loaded file s → ∀ {m : Nat} {u : State}, Steps m s u →
         (∀ v, ¬Lanius.X86.Machine.Step u v) → ¬Lanius.X86.Machine.Fault u →
         (∃ fuel v final, Semantics.evalExpr fuel sp.toCore (startState s.io) (.call entry []) = .done v final ∧
@@ -696,7 +698,7 @@ theorem textProcess_behaviour {files : List SourceFile} {binary : Binary} {entry
           undefinedTrap r = true ∧ st.heap.nextAddress ≤ heap := by
   obtain ⟨sp, reading, unique, compiledSource⟩ := compileText_reading compiled
   refine ⟨sp, reading, unique, ?_⟩
-  intro func found noParams s loaded m u run stuck clean
-  exact process_behaviour compiledSource h found noParams loaded run stuck clean
+  intro func found noParams frameRoom s loaded m u run stuck clean
+  exact process_behaviour compiledSource h found noParams frameRoom loaded run stuck clean
 
 end Lanius.Mini

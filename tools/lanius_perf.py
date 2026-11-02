@@ -844,6 +844,7 @@ STRESS_SOURCE_SUFFIX = {
     "vx": "vx",
     "tsc": "ts",
     "tsrs": "ts",
+    "moonbit": "mbt",
 }
 STRESS_TYPESCRIPT_COMPILERS = ("tsc", "tsrs")
 STRESS_MEASUREMENT_NOTES = {
@@ -853,6 +854,7 @@ STRESS_MEASUREMENT_NOTES = {
     "v": "o0 is V's default development build (generated C compiled by V's bundled TCC), optimized is -prod (generated C compiled by the system cc at -O3 -flto); -w -n silence warnings and notices; V's module cache (builtin modules, third-party C objects) is private to the run and warmed by the unmeasured warm seed; every measured sample wrote a new whole-program cache entry, i.e. was not served from V's executable cache",
     "vx": "vxc v0.0.3 has no action that writes a linked executable, so each sample is `vxc -O<n> -c` (object emission) followed by the link vxc's own run action performs with its bundled clang; wall time covers both steps",
     "tsc": "TypeScript does not produce native code: full type check plus ES2022 JavaScript emit of one file (tsconfig files: [the .ts], strict, skipLibCheck), run with node to check the output; the measured binary is the native tsgo executable from @typescript/typescript-linux-x64, not the node launcher",
+    "moonbit": "moon build of a one-package project around the single source file (the project files are written before the timed interval, in a fresh directory per sample); o0 is the native backend with --debug, optimized the native backend with --release (generated C compiled by the system cc), js the JavaScript backend with --release, run with node to check the output",
     "tsrs": "TypeScript does not produce native code: full type check plus ES2022 JavaScript emit of one file (tsconfig files: [the .ts], strict, skipLibCheck), run with node to check the output; the measured binary is the native tsrs executable from @tsrs/linux-x64-gnu, not the node launcher",
 }
 
@@ -1050,6 +1052,8 @@ def import_stress(args: argparse.Namespace) -> None:
                     if language == "pareas"
                     else "javascript-es2022"
                     if language in STRESS_TYPESCRIPT_COMPILERS
+                    else "javascript"
+                    if language == "moonbit" and lane == "js"
                     else "x86_64"
                 ),
                 "configuration": configuration,

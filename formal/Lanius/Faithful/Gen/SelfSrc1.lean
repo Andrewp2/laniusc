@@ -101,7 +101,7 @@ def src_unbox_of_mini_selfhost_List_mini_selfhost_RawTok (ix_core_mem_typed_slic
 def src_unbox_of_mini_selfhost_List_mini_selfhost_Rule (ix_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Rule : Nat) : SrcFunc := { params := [{ id := 9, ty := ty40 }], ret := ty41, body := SrcStmt.letCall 39 ty87 ix_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Rule [SrcExpr.field 9 0, SrcExpr.int 0x00000001#32] (SrcStmt.returnEval (SrcEff.eIndex 39 (SrcEff.ePure (SrcExpr.int 0x00000000#32)))) }
 
 /-- mini::selfhost::unbox -/
-def src_unbox_of_mini_selfhost_Ty (ix_core_mem_typed_slice_from_storage_of_mini_selfhost_Ty : Nat) : SrcFunc := { params := [{ id := 9, ty := ty151 }], ret := ty153, body := SrcStmt.letCall 39 ty263 ix_core_mem_typed_slice_from_storage_of_mini_selfhost_Ty [SrcExpr.field 9 0, SrcExpr.int 0x00000001#32] (SrcStmt.returnEval (SrcEff.eIndex 39 (SrcEff.ePure (SrcExpr.int 0x00000000#32)))) }
+def src_unbox_of_mini_selfhost_Ty (ix_core_mem_typed_slice_from_storage_of_mini_selfhost_Ty : Nat) : SrcFunc := { params := [{ id := 9, ty := ty150 }], ret := ty152, body := SrcStmt.letCall 39 ty263 ix_core_mem_typed_slice_from_storage_of_mini_selfhost_Ty [SrcExpr.field 9 0, SrcExpr.int 0x00000001#32] (SrcStmt.returnEval (SrcEff.eIndex 39 (SrcEff.ePure (SrcExpr.int 0x00000000#32)))) }
 
 end
 

@@ -2,11 +2,18 @@ module
 
 public import Lanius.Faithful.SafeDriver
 public import Lanius.Mini.SourceOutcome
+public import Lanius.Faithful.Gen.SelfNeeds
 public import Lanius.Mini.Compiler.P.SrcExpr_guard
 public import Lanius.Mini.Compiler.P.SrcType_size
 public import Lanius.Mini.Compiler.P.compileSource
 public import Lanius.Mini.Compiler.P.packRound
 public import Lanius.Mini.Compiler.P.storeArray
+public import Lanius.Mini.Compiler.P.arrayCallSig
+public import Lanius.Mini.Compiler.P.bindingBytes
+public import Lanius.Mini.Compiler.P.funcNeeds
+public import Lanius.Mini.Compiler.P.needRound
+public import Lanius.Mini.Compiler.P.needsAfter
+public import Lanius.Mini.Compiler.P.withBudget
 public import Lanius.Mini.Frontend.P.moduleOr
 public import Lanius.Mini.Frontend.P.projectionRet
 public import Lanius.Mini.Frontend.P.shrFirst
@@ -15,6 +22,12 @@ import all Lanius.Faithful.Gen.SelfSrc2
 import all Lanius.Faithful.Gen.SelfSrc5
 import all Lanius.Faithful.Gen.SelfSrc7
 import all Lanius.Mini.Compiler.P.storeArray
+import all Lanius.Mini.Compiler.P.arrayCallSig
+import all Lanius.Mini.Compiler.P.bindingBytes
+import all Lanius.Mini.Compiler.P.funcNeeds
+import all Lanius.Mini.Compiler.P.needRound
+import all Lanius.Mini.Compiler.P.needsAfter
+import all Lanius.Mini.Compiler.P.withBudget
 import all Lanius.Faithful.Gen.SelfSrcC_packRound
 import all Lanius.Faithful.Gen.SelfSrcF_grammarPart13
 import all Lanius.Faithful.Gen.SelfSrcF_frontEndWords
@@ -410,7 +423,8 @@ theorem selfCompiler_outcome {B : Binary} (compiled : compileSource prog = some 
       SelfOutput (compileText files) (filesWords files) s s' := by
   have nonempty := filesWords_pos files
   rcases compileSource_outcome_reason compiled fn_w (args_hold wordsLt roomLt) rfl start_fresh
-      (start_corr nonempty small) enough s imageBase window bounded loaded apart imageHeap entry params heapAt stack with
+      (start_corr nonempty small) enough (fun pos => absurd pos (by rw [SelfPure.prog_need]; exact Nat.lt_irrefl 0))
+      s imageBase window bounded loaded apart imageHeap entry params heapAt stack with
     ⟨fails, faults⟩ | ⟨fuel, v, final, depth, runs, fits, short, faults⟩ |
       ⟨fuel, v, final, runs, fits, results, after, holds, len, corr, n, s', run, det, ret⟩ | undefined
   · exact .inl (.inl ⟨fails, faults⟩)

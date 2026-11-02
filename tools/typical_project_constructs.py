@@ -551,9 +551,47 @@ def _render_rare_score(language: str, module_name: str, index: int) -> str:
                         "    if (observed_process < 0) return 1;",
                     )
                 )
+        elif language == "moonbit":
+            if pattern == "contracts":
+                statements.append(
+                    f"  total = (total + preserve_scored(seed)) & {VALUE_MASK}"
+                )
+            elif pattern == "const_generic":
+                statements.append(
+                    f"  total = (total + first_const_generic(seed, [seed, {index}, 3, 7])) & {VALUE_MASK}"
+                )
+            elif pattern == "borrowed_views":
+                statements.extend(
+                    (
+                        "  let borrowed = BorrowedValue::{ value: seed }",
+                        f"  total = (total + borrowed.borrowed_marker()) & {VALUE_MASK}",
+                        f"  total = (total + first_slice([seed, {index}, 3, 7])) & {VALUE_MASK}",
+                    )
+                )
+            elif pattern == "foreign_api":
+                statements.extend(
+                    (
+                        "  let observed_process = getpid()",
+                        "  if observed_process < 0 {",
+                        "    return 1",
+                        "  }",
+                    )
+                )
         else:
             raise ValueError(language)
 
+    if language == "moonbit":
+        # The score-function statements are shared with the semicolon
+        # languages; MoonBit separates statements by newlines.
+        body = [
+            line[:-1] if line.endswith(";") else line for line in statements
+        ]
+        return (
+            "fn rare_construct_score(seed : Int) -> Int {\n"
+            "  let mut total : Int = 0\n"
+            + "\n".join(body)
+            + "\n  total\n}\n\n"
+        )
     if language == "rust":
         return (
             "fn rare_construct_score(seed: i32) -> i32 {\n"
@@ -1670,7 +1708,315 @@ fn empty_aggregates(seed: i32) i32 {
 }
 
 """
+    if language == "moonbit":
+        return _render_moonbit_rare_pattern(pattern, index)
     raise ValueError((language, pattern))
+
+
+def _render_moonbit_rare_pattern(pattern: str, index: int) -> str:
+    """MoonBit twins of the rare patterns.
+
+    MoonBit has no const generics, borrowed references, trait type parameters,
+    or pointer types, so those patterns keep their observable values while
+    using the nearest MoonBit form (FixedArray parameters, by-value structs,
+    Self-typed traits). Constructors are always qualified because one package
+    may hold several enums.
+    """
+    if pattern == "contracts":
+        return """trait ScorePolicy {
+  score_policy(Self) -> Int
+}
+
+impl ScorePolicy for Int with score_policy(self) { self & 4095 }
+
+fn[T : ScorePolicy] preserve_scored(value : T) -> T { value }
+
+"""
+    if pattern == "const_generic":
+        return """fn first_const_generic(first : Int, _values : FixedArray[Int]) -> Int { first }
+
+"""
+    if pattern == "borrowed_views":
+        return """struct BorrowedValue {
+  value : Int
+}
+
+fn BorrowedValue::borrowed_marker(self : BorrowedValue) -> Int { self.value }
+
+fn first_slice(values : FixedArray[Int]) -> Int { values[0] }
+
+"""
+    if pattern == "foreign_api":
+        return """extern "C" fn getpid() -> Int = "getpid"
+
+"""
+    if pattern == "literal_data":
+        return f"""fn literal_metadata() -> Int {{
+  let _label : String = "module-{index}"
+  let _delimiter : Char = ':'
+  let _ratio : Float = 1.25
+  0
+}}
+
+"""
+    if pattern == "language_forms":
+        return """fn zero_value() -> Int { 0 }
+
+fn record_positive(value : Int) -> Unit {
+  if value > 0 {
+    return
+  }
+}
+
+fn language_forms(seed : Int) -> Int {
+  let inferred = seed
+  let grouped = ((inferred))
+  record_positive(grouped)
+  grouped + zero_value()
+}
+
+"""
+    if pattern == "operator_forms":
+        return f"""fn operator_forms(seed : Int) -> Int {{
+  let mut value = seed
+  value = value + 3
+  value = value - 3
+  value = value * 2
+  value = value / 2
+  value = value % {VALUE_MASK + 1}
+  value = value ^ 0
+  value = value << 1
+  value = value >> 1
+  value = value & {VALUE_MASK}
+  value = value | 0
+  value
+}}
+
+"""
+    if pattern == "primitive_forms":
+        return """fn primitive_forms() -> Int {
+  let _tiny : Byte = b'x'
+  let _unsigned : UInt = 2U
+  let _count : UInt64 = 3UL
+  let _wide : Int64 = 4L
+  let _decimal : Float = 1.5
+  let _truth : Bool = true
+  let _letter : Char = 'x'
+  let _text : String = "types"
+  0
+}
+
+"""
+    if pattern == "range_forms":
+        return f"""fn range_forms(seed : Int) -> Int {{
+  let mut total = seed
+  for value in 1..<=3 {{
+    total = (total + value) & {VALUE_MASK}
+  }}
+  for value in 0..<3 {{
+    total = (total + value) & {VALUE_MASK}
+  }}
+  for value in 0..<=2 {{
+    total = (total + value) & {VALUE_MASK}
+  }}
+  for value = 2; ; value = value + 1 {{
+    total = (total + value) & {VALUE_MASK}
+    if value == 4 {{
+      break
+    }}
+  }}
+  for value = 0; ; value = value + 1 {{
+    total = (total + value) & {VALUE_MASK}
+    if value == 2 {{
+      break
+    }}
+  }}
+  (total - 24) & {VALUE_MASK}
+}}
+
+"""
+    if pattern == "match_forms":
+        return """fn integer_pattern_score(value : Int) -> Int {
+  match value {
+    0 => 5
+    1 => 7
+    _ => 9
+  }
+}
+
+fn boolean_pattern_score(value : Bool) -> Int {
+  match value {
+    true => 3
+    false => 4
+  }
+}
+
+fn match_forms(seed : Int) -> Int {
+  integer_pattern_score(seed % 3) + boolean_pattern_score((seed & 1) == 0)
+}
+
+"""
+    if pattern == "enum_tuple_patterns":
+        return """enum CoordinateEvent {
+  Moved(Int, Int)
+  Idle
+}
+
+fn coordinate_event_score(event : CoordinateEvent) -> Int {
+  match event {
+    Moved(x, y) => x * 3 + y
+    Idle => 1
+  }
+}
+
+fn enum_tuple_patterns(seed : Int) -> Int {
+  coordinate_event_score(CoordinateEvent::Moved(seed % 7, (seed / 7) % 7)) + coordinate_event_score(CoordinateEvent::Idle)
+}
+
+"""
+    if pattern == "iterable_forms":
+        return f"""fn iterable_forms(seed : Int) -> Int {{
+  let values = [seed, 2, 3, 4]
+  let mut total = 0
+  for value in values {{
+    total = (total + value) & {VALUE_MASK}
+  }}
+  (total - 9) & {VALUE_MASK}
+}}
+
+"""
+    if pattern == "trailing_lists":
+        return """struct TrailingRecord {
+  left : Int
+  right : Int
+}
+
+fn trailing_sum(left : Int, right : Int) -> Int {
+  let values = [left, right]
+  let record = TrailingRecord::{ left: values[0], right: values[1] }
+  record.left + record.right
+}
+
+fn trailing_lists(seed : Int) -> Int { trailing_sum(seed, 0) }
+
+"""
+    if pattern == "generic_arity":
+        return """struct GenericPair[Left, Right] {
+  left : Left
+  right : Right
+}
+
+type GenericScore = Int
+
+fn generic_pair_left(value : GenericPair[Int, Bool]) -> Int {
+  let left : GenericScore = value.left
+  left
+}
+
+fn generic_arity(seed : Int) -> Int {
+  generic_pair_left(GenericPair::{ left: seed, right: true })
+}
+
+"""
+    if pattern == "pattern_list_forms":
+        return """enum PatternListEvent {
+  Empty
+  Value(Int)
+}
+
+fn pattern_list_score(value : PatternListEvent) -> Int {
+  match value {
+    Empty => 0
+    Value(inner) => inner
+  }
+}
+
+fn pattern_list_forms(seed : Int) -> Int {
+  pattern_list_score(PatternListEvent::Empty) + pattern_list_score(PatternListEvent::Value(seed))
+}
+
+"""
+    if pattern == "bound_list_forms":
+        return """trait BoundScorePolicy {
+  bound_score_policy(Self) -> Int
+}
+
+trait StableBoundPolicy {
+  stable_bound_policy(Self) -> Int
+}
+
+impl BoundScorePolicy for Int with bound_score_policy(self) { self }
+
+impl StableBoundPolicy for Int with stable_bound_policy(self) { self }
+
+impl BoundScorePolicy for Bool with bound_score_policy(self) { if self { 1 } else { 0 } }
+
+fn[Left : BoundScorePolicy + StableBoundPolicy, Right : BoundScorePolicy] preserve_bound_pair(left : Left, _right : Right) -> Left {
+  left
+}
+
+fn bound_list_forms(seed : Int) -> Int { preserve_bound_pair(seed, true) }
+
+"""
+    if pattern == "statement_postfix_forms":
+        return """struct StatementRecord {
+  value : Int
+}
+
+fn StatementRecord::statement_value(self : StatementRecord) -> Int { self.value }
+
+fn observe_statement(_value : Int) -> Unit { () }
+
+fn make_statement_record(value : Int) -> StatementRecord { StatementRecord::{ value: value } }
+
+fn statement_postfix_forms(seed : Int) -> Int {
+  observe_statement(0)
+  let record = StatementRecord::{ value: seed }
+  record.statement_value() + make_statement_record(0).value
+}
+
+"""
+    if pattern == "public_items":
+        return """pub const PUBLIC_ZERO : Int = 0
+
+pub type PublicScore = Int
+
+pub(all) struct PublicRecord {
+  value : PublicScore
+}
+
+pub(all) enum PublicChoice {
+  Selected(Int)
+  Empty
+}
+
+pub(open) trait PublicPolicy {
+  public_policy(Self) -> Int
+}
+
+pub fn PublicRecord::read(self : PublicRecord) -> Int { self.value }
+
+fn public_items(seed : Int) -> Int {
+  let record = PublicRecord::{ value: seed }
+  let choice = PublicChoice::Selected(0)
+  let adjustment = match choice {
+    Selected(inner) => inner
+    Empty => 0
+  }
+  record.read() + adjustment + PUBLIC_ZERO
+}
+
+"""
+    if pattern == "empty_aggregates":
+        return """struct EmptyRecord {}
+
+fn empty_aggregates(seed : Int) -> Int {
+  let _empty_values : FixedArray[Int] = []
+  seed
+}
+
+"""
+    raise ValueError(("moonbit", pattern))
 
 
 def render_runtime_probe(language: str) -> str:
@@ -1756,6 +2102,34 @@ def render_runtime_probe(language: str) -> str:
 }
 
 """
+    if language == "moonbit":
+        # moonbitlang/core has no file API, so the probe covers allocation,
+        # arguments, working directory, time and randomness through
+        # moonbitlang/core/env; the main package imports that package.
+        return """fn runtime_probe() -> Int {
+  let memory : FixedArray[Byte] = FixedArray::make(32, b'a')
+  memory[0] = b'b'
+  if @env.args().length() < 1 {
+    return 1
+  }
+  match @env.current_dir() {
+    None => return 2
+    Some(_) => ()
+  }
+  if @env.now() == 0UL {
+    return 3
+  }
+  match @env.rand(4) {
+    None => return 4
+    Some(_) => ()
+  }
+  if memory[0] != b'b' {
+    return 5
+  }
+  0
+}
+
+"""
     raise ValueError(language)
 
 
@@ -1817,6 +2191,7 @@ def render_archetype(
         "zig": render_zig,
         "c": render_c,
         "cpp": render_cpp,
+        "moonbit": render_moonbit,
     }.get(language)
     if renderer is None:
         raise ValueError(language)
@@ -2376,6 +2751,136 @@ fn unwrap(envelope: anytype) @TypeOf(envelope.value) {{ return envelope.value; }
 fn workloadScore(seed: i32) i32 {{
     const envelope = Envelope(i32){{ .value = seed + summary_offset }};
     return unwrap(envelope) & {VALUE_MASK};
+}}
+
+"""
+
+
+def render_moonbit(archetype: str, _module_name: str, index: int) -> str:
+    if archetype == "policy":
+        return f"""enum Adjustment {{
+  Add(Int)
+  Hold
+}}
+
+fn choose_adjustment(seed : Int) -> Adjustment {{
+  if (seed & 1) == 0 {{
+    Adjustment::Add(seed % 7 + 1)
+  }} else {{
+    Adjustment::Hold
+  }}
+}}
+
+fn workload_score(seed : Int) -> Int {{
+  match choose_adjustment(seed) {{
+    Add(amount) => (seed + amount) & {VALUE_MASK}
+    Hold => (seed - 1) & {VALUE_MASK}
+  }}
+}}
+
+"""
+    if archetype == "processor":
+        return f"""fn workload_score(seed : Int) -> Int {{
+  let values : FixedArray[Int] = [seed, {index & 31}, 3, 7, 11, 13]
+  let mut cursor = 0
+  let mut total = 0
+  while cursor < values.length() {{
+    if cursor == 1 {{
+      cursor = cursor + 1
+      continue
+    }}
+    if cursor == 5 {{
+      break
+    }}
+    total = (total + values[cursor]) & {VALUE_MASK}
+    cursor = cursor + 1
+  }}
+  total
+}}
+
+"""
+    if archetype == "service":
+        return f"""struct ServiceState {{
+  left : Int
+  right : Int
+}}
+
+fn ServiceState::make(seed : Int) -> ServiceState {{
+  ServiceState::{{ left: (seed + {index}) & {VALUE_MASK}, right: (seed * 2 + 3) & {VALUE_MASK} }}
+}}
+
+fn ServiceState::adjusted(self : ServiceState, amount : Int) -> ServiceState {{
+  ServiceState::{{ left: self.left + amount, right: self.right - amount }}
+}}
+
+fn ServiceState::score(self : ServiceState) -> Int {{
+  (self.left * 3 + self.right) & {VALUE_MASK}
+}}
+
+fn workload_score(seed : Int) -> Int {{
+  ServiceState::make(seed).adjusted({index % 7 + 1}).score()
+}}
+
+"""
+    if archetype == "planner":
+        return f"""fn first_eligible(seed : Int) -> Int {{
+  for candidate in 0..<6 {{
+    if (seed + candidate) % 4 == 0 {{
+      return candidate
+    }}
+  }}
+  6
+}}
+
+fn workload_score(seed : Int) -> Int {{
+  let mut total = 0
+  let limit = {3 + index % 4}
+  for outer in 0..<limit {{
+    for inner in 0..<3 {{
+      if inner == 1 && outer % 2 == 0 {{
+        continue
+      }}
+      total = (total + seed + outer * 3 + inner) & {VALUE_MASK}
+    }}
+  }}
+  (total + first_eligible(seed)) & {VALUE_MASK}
+}}
+
+"""
+    if archetype == "tracker":
+        return f"""fn decay(value : Int, remaining : Int) -> Int {{
+  if remaining <= 0 {{
+    return value
+  }}
+  let mixed = ((value << 1) ^ (value >> 1) ^ {index}) & {VALUE_MASK}
+  decay(mixed, remaining - 1)
+}}
+
+fn workload_score(seed : Int) -> Int {{
+  let delta = -{index % 5 + 1}
+  let enabled = !false
+  if enabled {{
+    (decay(seed, 3) - delta) & {VALUE_MASK}
+  }} else {{
+    0
+  }}
+}}
+
+"""
+    return f"""type SummaryScore = Int
+
+const SUMMARY_OFFSET : Int = {index}
+
+struct Envelope[T] {{
+  value : T
+}}
+
+fn[T] unwrap_envelope(envelope : Envelope[T]) -> T {{ envelope.value }}
+
+fn workload_score(seed : Int) -> Int {{
+  let offset : SummaryScore = SUMMARY_OFFSET
+  let envelope : Envelope[Int] = Envelope::{{ value: seed + offset }}
+  unwrap_envelope(envelope) & {VALUE_MASK}
 }}
 
 """

@@ -24,6 +24,8 @@ the prims). OUTDIR (default: DUMP's directory) gets
                      Sim/DeclStep.lean), in one kernel check;
   SelfPureBase.lean  that the self program has the tables' boxes and
                      signatures (`boxElem_self`, `callTy_self`);
+  SelfNeeds.lean     that no function takes a block of frame memory, so
+                     the program needs none (`prog_need`);
   SelfDecls.lean     `prog.decls = decls`, the SelfDecl steps chained along
                      SelfProg's tails;
   SelfPrimTab.lean   the facts about the prims' types that only the tables
@@ -1006,6 +1008,20 @@ def main(argv):
             '  callTy_eq_blocks sigBlocks_len sigBlocks_fit sigBlocks_outside\n\n'
             f'end {NS}\n')
     write(os.path.join(outdir, 'SelfPureBase.lean'), base)
+
+    # No function of the self program takes a block of frame memory (it passes
+    # no array as a slice), so it needs none (TRUSTED_BASE "Frame room"): one
+    # kernel check over every body.
+    needs = ('module\n\npublic import Lanius.Faithful.Gen.SelfProg\npublic import Lanius.Mini.Needs\n' +
+             ''.join(f'import all {m}\n' for m in gen_closure(['Lanius.Faithful.Gen.SelfProg'])) +
+             ''.join(f'import all Lanius.Mini.Compiler.P.{m}\n' for m in ('withBudget', 'storeArray', 'SrcType_size')) +
+             f'\n{HEADER}\n@[expose] public section\n\nnamespace {NS}\n\n{open_lines}'
+             '/-- No function of the self program takes a block of frame memory. -/\n'
+             'theorem frameBlocks_zero : (prog.funcs.all fun f => frameBlock f == 0) = true := by decide +kernel\n\n'
+             '/-- The self program needs no frame memory at any function. -/\n'
+             'theorem prog_need (i : Nat) : prog.need i = 0 := SrcProgram.need_zero_of_all frameBlocks_zero i\n\n'
+             f'end {NS}\n')
+    write(os.path.join(outdir, 'SelfNeeds.lean'), needs)
 
     # One file per group of SelfSrc modules: each function's `FuncOk`, for any
     # program with the tables' prims and signatures.

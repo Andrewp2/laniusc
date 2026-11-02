@@ -13,9 +13,9 @@ public import Lanius.Mini.Compiler.P.armScope
 public import Lanius.Mini.Compiler.P.compileModules
 public import Lanius.Mini.Compiler.P.evalSame
 public import Lanius.Mini.Compiler.P.floatApply
+public import Lanius.Mini.Compiler.P.funcNeeds
 public import Lanius.Mini.Compiler.P.loadAtBytes
 public import Lanius.Mini.Compiler.P.lowerCallSig
-public import Lanius.Mini.Compiler.P.sigs
 public import Lanius.Mini.Compiler.P.wordStride
 
 public section
