@@ -1,0 +1,83 @@
+// GNU cat under LC_ALL=C over ext::text_cat, with options parsed by
+// std::cli (GNU getopt_long rules).
+// usage: text-cat [-AbeEnstTuv] [FILE...]
+// Exit 0, or 1 on a bad option or an input that cannot be read.
+module app::main;
+import alloc::vec;
+import core::option;
+import core::result;
+import core::slice;
+import ext::text_args;
+import ext::text_cat;
+import ext::text_lines;
+import std::args;
+import std::cli;
+
+fn lit(value: str, count: i32) -> core::slice::View<u8> { return ext::text_args::lit(value, count); }
+fn tool() -> core::slice::View<u8> { return lit("text-cat", 8); }
+
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1, 65536, 16777216);
+    if (core::result::is_err(captured)) { ext::text_args::complain(tool(), lit("bad arguments", 13), lit("", 0)); return 1; }
+    let arguments: std::args::Arguments = core::result::unwrap(captured);
+    let all: core::slice::View<core::slice::View<u8>> = arguments.as_view();
+    let cli: std::cli::Command = std::cli::command(tool(), lit("Concatenate FILE(s) to standard output.", 39));
+    cli.flag(1, 65, lit("show-all", 8), lit("equivalent to -vET", 18));
+    cli.flag(2, 98, lit("number-nonblank", 15), lit("number nonempty output lines, overrides -n", 42));
+    cli.flag(3, 101, lit("", 0), lit("equivalent to -vE", 17));
+    cli.flag(4, 69, lit("show-ends", 9), lit("display $ at end of each line", 29));
+    cli.flag(5, 110, lit("number", 6), lit("number all output lines", 23));
+    cli.flag(6, 115, lit("squeeze-blank", 13), lit("suppress repeated empty output lines", 36));
+    cli.flag(7, 116, lit("", 0), lit("equivalent to -vT", 17));
+    cli.flag(8, 84, lit("show-tabs", 9), lit("display TAB characters as ^I", 28));
+    cli.flag(9, 117, lit("", 0), lit("(ignored)", 9));
+    cli.flag(10, 118, lit("show-nonprinting", 16), lit("use ^ and M- notation, except for LFD and TAB", 45));
+    cli.flag(11, 0, lit("version", 7), lit("output version information and exit", 35));
+    cli.help(12);
+    cli.operands(lit("FILE", 4), 0, -1);
+    let parsed: core::result::Result<std::cli::Matches, std::cli::Error> = cli.parse(all);
+    if (core::result::is_err(parsed)) { cli.print_error(core::result::unwrap_err(parsed), all); cli.destroy(); arguments.destroy(); return 1; }
+    let m: std::cli::Matches = core::result::unwrap(parsed);
+    let o: ext::text_cat::Options = ext::text_cat::default_options();
+    let i: i32 = 0; let help: bool = false; let version: bool = false;
+    while (i < m.occurrences()) {
+        let id: i32 = m.occurrence_id(i); i += 1;
+        if (id == 1) { o.nonprinting = true; o.ends = true; o.tabs = true; }
+        if (id == 2) { o.number = true; o.nonblank = true; }
+        if (id == 3) { o.nonprinting = true; o.ends = true; }
+        if (id == 4) { o.ends = true; }
+        if (id == 5) { o.number = true; }
+        if (id == 6) { o.squeeze = true; }
+        if (id == 7) { o.nonprinting = true; o.tabs = true; }
+        if (id == 8) { o.tabs = true; }
+        if (id == 10) { o.nonprinting = true; }
+        if (id == 11) { version = true; }
+        if (id == 12) { help = true; }
+    }
+    if (help || version) {
+        let status: i32 = 0;
+        if (help) { if (!cli.print_help(-1)) { status = 1; } }
+        else { if (!ext::text_args::emit(1, lit("text-cat (Lanius ext::text_cat)\n", 32))) { status = 1; } }
+        m.destroy(); cli.destroy(); arguments.destroy(); return status;
+    }
+    let names: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new(); i = 0;
+    while (i < m.operand_count()) { let pushed: core::result::Result<i32, alloc::vec::Error> = names.try_push(m.operand(i)); i += 1; }
+    if (names.len() == 0) { let pushed: core::result::Result<i32, alloc::vec::Error> = names.try_push(lit("-", 1)); }
+    let plain: bool = ext::text_cat::plain(o);
+    let st: ext::text_cat::State = ext::text_cat::start();
+    let out: ext::text_lines::Out = core::result::unwrap(ext::text_lines::out(1, 65536));
+    let status: i32 = 0; i = 0;
+    while (i < names.len()) {
+        let name: core::slice::View<u8> = core::option::unwrap(names.get(i)); i += 1;
+        let fd: i32 = ext::text_lines::open_input(name);
+        if (fd < 0) { ext::text_args::complain(tool(), name, lit("cannot open", 11)); status = 1; continue; }
+        let r: i32 = 0;
+        if (plain) { r = ext::text_cat::copy_plain(fd); } else { r = ext::text_cat::copy(fd, o.borrow(), st.borrow(), out.borrow()); }
+        ext::text_lines::close_input(fd);
+        if (r == 1) { ext::text_args::complain(tool(), name, lit("read error", 10)); status = 1; }
+        if (r == 2) { ext::text_args::complain(tool(), lit("write error", 11), lit("", 0)); status = 1; break; }
+    }
+    if (!ext::text_cat::finish(st.borrow(), out.borrow())) { ext::text_args::complain(tool(), lit("write error", 11), lit("", 0)); status = 1; }
+    out.destroy(); names.destroy(); m.destroy(); cli.destroy(); arguments.destroy();
+    return status;
+}

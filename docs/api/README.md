@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **356 modules**, **18658 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **357 modules**, **18679 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -331,6 +331,7 @@ Inventory: **356 modules**, **18658 declaration/member entries**. Counts include
 | [ext::tar](ext/tar.md) | [source](../../extended/ext/tar.lani#L3) | 91 | Source inventory | [extended-tar](../extended-tar.md), [extended-pax](../extended-pax.md) |
 | [ext::terminal](ext/terminal.md) | [source](../../extended/ext/terminal.lani#L3) | 15 | Source inventory | [extended-terminal](../extended-terminal.md) |
 | [ext::text_args](ext/text_args.md) | [source](../../extended/ext/text_args.lani#L4) | 14 | Source inventory | [extended-textutils](../extended-textutils.md) |
+| [ext::text_cat](ext/text_cat.md) | [source](../../extended/ext/text_cat.lani#L6) | 21 | Source inventory | [extended-textutils](../extended-textutils.md) |
 | [ext::text_cut](ext/text_cut.md) | [source](../../extended/ext/text_cut.lani#L7) | 38 | Source inventory | [extended-textutils](../extended-textutils.md) |
 | [ext::text_head](ext/text_head.md) | [source](../../extended/ext/text_head.lani#L6) | 10 | Source inventory | [extended-textutils](../extended-textutils.md) |
 | [ext::text_lines](ext/text_lines.md) | [source](../../extended/ext/text_lines.lani#L6) | 97 | Source inventory | [extended-textutils](../extended-textutils.md) |

@@ -1,0 +1,129 @@
+// GNU `cat` under LC_ALL=C: inputs copied in order, or run through GNU's
+// formatting state machine for -n, -b, -s, -E, -T and -v (-A, -e, -t). The
+// machine's state (blank-line run, line number, a CR held at a chunk end
+// for -E) carries from one input to the next, as in GNU, so a line split
+// across two files is numbered once. See docs/extended-textutils.md.
+module ext::text_cat;
+import alloc::io;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::text_lines;
+
+pub struct Options { number: bool, nonblank: bool, squeeze: bool, ends: bool, tabs: bool, nonprinting: bool }
+pub impl Options { pub fn borrow(&self) -> &Options { return self; } }
+pub fn default_options() -> Options { return Options { number: false, nonblank: false, squeeze: false, ends: false, tabs: false, nonprinting: false }; }
+// True when no option changes the bytes (GNU's simple_cat).
+pub fn plain(o: Options) -> bool { return !(o.number || o.nonblank || o.squeeze || o.ends || o.tabs || o.nonprinting); }
+
+// newlines is GNU's counter: -1 inside a line, otherwise the number of
+// line ends since the last non-empty line (at most 2).
+pub struct State { newlines: i32, line: i64, pending: bool }
+pub impl State { pub fn borrow(&self) -> &State { return self; } }
+pub fn start() -> State { return State { newlines: 0, line: 0, pending: false }; }
+
+const CHUNK: i32 = 262144;
+
+// Copy fd unchanged: 0, 1 (read error) or 2 (write error).
+pub fn copy_plain(fd: i32) -> i32 { return ext::text_lines::copy_bytes(fd, ext::text_lines::ALL); }
+
+// Run fd through the formatter: 0, 1 (read error) or 2 (write error).
+pub fn copy(fd: i32, o: &Options, st: &State, out: &ext::text_lines::Out) -> i32 {
+    let mem: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(CHUNK + 16));
+    let p: ptr = core::result::unwrap(mem.reserve_raw(CHUNK + 16));
+    let status: i32 = 0;
+    while (true) {
+        let got: i32 = ext::text_lines::read_some(fd, p, CHUNK);
+        if (got < 0) { status = 1; break; }
+        if (got == 0) { break; }
+        let view: core::slice::View<u8> = core::slice::View { values: core::mem::typed_slice_from_raw_parts<u8>(p, got), start: 0, length: got };
+        let w: ext::text_lines::Words = core::result::unwrap(ext::text_lines::words(view));
+        tc_chunk(w.borrow(), got, o, st, out);
+        w.destroy();
+        if (out.failed) { status = 2; break; }
+    }
+    mem.destroy();
+    return status;
+}
+
+// Write what is still held (a CR at the very end) and flush; false when a
+// write failed.
+pub fn finish(st: &State, out: &ext::text_lines::Out) -> bool {
+    if (st.pending) { ext::text_lines::put_byte(out, 13); st.pending = false; }
+    return ext::text_lines::finish(out);
+}
+
+fn tc_chunk(w: &ext::text_lines::Words, k: i32, o: &Options, st: &State, out: &ext::text_lines::Out) {
+    let ws: [u64] = w.words; let nw: i32 = w.nw; let low: u64 = ext::text_lines::LOW7; let all: u64 = ext::text_lines::ALL;
+    let ranks: u64 = ext::text_lines::RANKS; let pe: u64 = ext::text_lines::NL;
+    let from: i32 = 0; let q: i32 = 0;
+    while (q <= nw) {
+        let x: u64 = w.tail; if (q < nw) { x = ws[nw-1-q]; }
+        let xe: u64 = x ^ pe; let m: u64 = (((xe & low) + low) | xe | low) ^ all;
+        while (m != 0) {
+            let bit: u64 = m & (0 - m); m = m ^ bit;
+            let pos: i32 = q * 8 + ((((bit >> 7) * ranks) >> 56) as i32) - 1;
+            if (pos >= k) { break; }
+            tc_segment(w, from, pos, true, o, st, out);
+            from = pos + 1;
+        }
+        q += 1;
+    }
+    if (from < k) { tc_segment(w, from, k, false, o, st, out); }
+}
+
+fn tc_number(st: &State, out: &ext::text_lines::Out) {
+    st.line += 1;
+    ext::text_lines::put_number(out, st.line, 6);
+    ext::text_lines::put_byte(out, 9);
+}
+
+// Bytes [s, e) of a line, then its line end when `ended`.
+fn tc_segment(w: &ext::text_lines::Words, s: i32, e: i32, ended: bool, o: &Options, st: &State, out: &ext::text_lines::Out) {
+    if (e > s) {
+        if (st.pending) { ext::text_lines::put_byte(out, 13); st.pending = false; }
+        if (st.newlines >= 0) { if (o.number || o.nonblank) { tc_number(st, out); } st.newlines = -1; }
+        let stop: i32 = e;
+        // -E shows a CR just before a line end as ^M; one at a chunk's end
+        // waits for the next byte.
+        if (o.ends && !o.nonprinting && w.byte(e - 1) == 13) { stop = e - 1; st.pending = true; }
+        if (o.nonprinting || o.tabs) { tc_shown(w, s, stop, o, out); }
+        else { ext::text_lines::put_span(out, w, s, stop - s); }
+    }
+    if (!ended) { return; }
+    st.newlines += 1;
+    if (st.newlines > 0) {
+        if (st.newlines >= 2) { st.newlines = 2; if (o.squeeze) { return; } }
+        if (o.number && !o.nonblank) { tc_number(st, out); }
+    }
+    if (o.ends) {
+        if (st.pending) { ext::text_lines::put_byte(out, 94); ext::text_lines::put_byte(out, 77); st.pending = false; }
+        ext::text_lines::put_byte(out, 36);
+    }
+    ext::text_lines::put_byte(out, 10);
+}
+
+// -v and -T: ^X for control bytes, ^? for DEL, M- before bytes from 128.
+fn tc_shown(w: &ext::text_lines::Words, s: i32, e: i32, o: &Options, out: &ext::text_lines::Out) {
+    let i: i32 = s;
+    while (i < e) {
+        let c: u8 = w.byte(i); i += 1;
+        if (!o.nonprinting) {
+            if (c == 9 && o.tabs) { ext::text_lines::put_byte(out, 94); ext::text_lines::put_byte(out, 73); }
+            else { ext::text_lines::put_byte(out, c); }
+            continue;
+        }
+        if (c >= 32) {
+            if (c < 127) { ext::text_lines::put_byte(out, c); continue; }
+            if (c == 127) { ext::text_lines::put_byte(out, 94); ext::text_lines::put_byte(out, 63); continue; }
+            ext::text_lines::put_byte(out, 77); ext::text_lines::put_byte(out, 45);
+            if (c >= 160) {
+                if (c < 255) { ext::text_lines::put_byte(out, c - 128); }
+                else { ext::text_lines::put_byte(out, 94); ext::text_lines::put_byte(out, 63); }
+            } else { ext::text_lines::put_byte(out, 94); ext::text_lines::put_byte(out, c - 64); }
+            continue;
+        }
+        if (c == 9 && !o.tabs) { ext::text_lines::put_byte(out, 9); continue; }
+        ext::text_lines::put_byte(out, 94); ext::text_lines::put_byte(out, c + 64);
+    }
+}
