@@ -5390,9 +5390,13 @@ mod tests {
                 ),
             )
             .expect_err("a local parent shadows imports on every page");
+            // `Left` is looked up on the local `Choice` only. The method
+            // resolver owns a type-qualified call and reports the missing
+            // associated item as LNC0027 (methods/03 resolve_associated_call),
+            // as it does for any local type in a program with methods.
             assert_eq!(
                 error.to_public_diagnostic().code,
-                "LNC0005",
+                "LNC0027",
                 "{label}: {error:?}"
             );
             let source = r#"
@@ -5602,9 +5606,13 @@ fn main() -> i32 {
                 "LNC0006",
                 "{label}: {error:?}"
             );
-            for (declaration, imports) in [
-                ("", "import lib::other;"),
-                ("enum Numbers<const N: usize> { Local }", ""),
+            // An ambiguous imported qualifier stays unresolved (LNC0005). A
+            // local declaration shadows the import, so `Data` is looked up on
+            // it and the method resolver reports the missing associated item
+            // (LNC0027).
+            for (declaration, imports, code) in [
+                ("", "import lib::other;", "LNC0005"),
+                ("enum Numbers<const N: usize> { Local }", "", "LNC0027"),
             ] {
                 let invalid = format!(
                     "module app::main; import lib::outer; {imports} {declaration} fn main() -> i32 {{ let value = Numbers<2>::Data([19, 23], false); return 0; }}"
@@ -5620,7 +5628,7 @@ fn main() -> i32 {
                 .expect_err("checked targets do not bypass alias ambiguity or shadowing");
                 assert_eq!(
                     error.to_public_diagnostic().code,
-                    "LNC0005",
+                    code,
                     "{label}: {error:?}"
                 );
             }
