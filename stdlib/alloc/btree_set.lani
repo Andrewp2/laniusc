@@ -1,0 +1,177 @@
+// Ordered set on alloc::btree_map's B+ tree: the keys of a map whose value
+// is zero-sized, so value slots take no memory. Same representative rules as
+// alloc::tree_set. See docs/stdlib-btree-map.md. Copies borrow nested
+// resources; keep one active owner of the allocation.
+module alloc::btree_set;
+import alloc::btree_map;
+import core::cmp;
+import core::iter;
+import core::option;
+import core::result;
+import core::slice;
+
+struct Nothing {}
+pub struct BTreeSet<T> { map: alloc::btree_map::BTreeMap<T, Nothing> }
+// Any set edit invalidates its cursors.
+pub struct Cursor<T> { inner: alloc::btree_map::Cursor<T, Nothing> }
+
+pub fn new<T>() -> BTreeSet<T> { return BTreeSet { map: alloc::btree_map::new<T, Nothing>() }; }
+// Strictly increasing input; equal or descending neighbors are InvalidOrder.
+// O(n), exactly sized.
+pub fn from_sorted<T>(input: core::slice::View<T>) -> core::result::Result<BTreeSet<T>, alloc::btree_map::Error> where T: core::cmp::Ord<T> {
+    if (input.start < 0 || input.length < 0 || input.start > 2147483647 - input.length) { return core::result::Err(alloc::btree_map::Error::InvalidRange); }
+    let count: i32 = input.len(); let index: i32 = 1;
+    while (index < count) {
+        if (!T::lt(core::option::unwrap(input.get(index - 1)), core::option::unwrap(input.get(index)))) { return core::result::Err(alloc::btree_map::Error::InvalidOrder); }
+        index += 1;
+    }
+    let started: core::result::Result<alloc::btree_map::Builder<T, Nothing>, alloc::btree_map::Error> = alloc::btree_map::builder<T, Nothing>(count);
+    if (started.is_err()) { return core::result::Err(started.unwrap_err()); }
+    let build: alloc::btree_map::Builder<T, Nothing> = started.unwrap(); index = 0;
+    while (index < count) { build.push(core::option::unwrap(input.get(index)), Nothing {}); index += 1; }
+    return core::result::Ok(BTreeSet { map: build.finish() });
+}
+fn key_of<T>(item: core::option::Option<alloc::btree_map::Entry<T, Nothing>>) -> core::option::Option<T> {
+    if (item.is_none()) { return core::option::None(); }
+    let entry: alloc::btree_map::Entry<T, Nothing> = item.unwrap();
+    return core::option::Some(entry.key);
+}
+
+pub impl<T> BTreeSet<T> {
+    pub fn borrow(&self) -> &BTreeSet<T> { return self; }
+    pub fn len(&self) -> i32 { return self.map.len(); }
+    pub fn is_empty(&self) -> bool { return self.map.is_empty(); }
+    pub fn node_capacity(&self) -> i32 { return self.map.node_capacity(); }
+    pub fn contains(&self, key: T) -> bool where T: core::cmp::Ord<T> { return self.map.contains_key(key); }
+    // The stored representative, a borrowed copy.
+    pub fn get(&self, key: T) -> core::option::Option<T> where T: core::cmp::Ord<T> { return key_of(self.map.get_entry(key)); }
+    // None stores the supplied key. Some(supplied) keeps the stored equal
+    // representative and hands the supplied key back. Err keeps the set.
+    pub fn try_insert(&self, key: T) -> core::result::Result<core::option::Option<T>, alloc::btree_map::Error> where T: core::cmp::Ord<T> {
+        if (self.map.contains_key(key)) { return core::result::Ok(core::option::Some(key)); }
+        let inserted: core::result::Result<core::option::Option<alloc::btree_map::Entry<T, Nothing>>, alloc::btree_map::Error> = self.map.try_insert(key, Nothing {});
+        if (inserted.is_err()) { return core::result::Err(inserted.unwrap_err()); }
+        return core::result::Ok(core::option::None());
+    }
+    // Store the supplied representative; Some(old) returns the displaced one.
+    pub fn try_replace(&self, key: T) -> core::result::Result<core::option::Option<T>, alloc::btree_map::Error> where T: core::cmp::Ord<T> {
+        let inserted: core::result::Result<core::option::Option<alloc::btree_map::Entry<T, Nothing>>, alloc::btree_map::Error> = self.map.try_insert(key, Nothing {});
+        if (inserted.is_err()) { return core::result::Err(inserted.unwrap_err()); }
+        return core::result::Ok(key_of(inserted.unwrap()));
+    }
+    // The stored representative moves to the caller.
+    pub fn remove(&self, key: T) -> core::option::Option<T> where T: core::cmp::Ord<T> { return key_of(self.map.remove(key)); }
+    pub fn first(&self) -> core::option::Option<T> { return key_of(self.map.first()); }
+    pub fn last(&self) -> core::option::Option<T> { return key_of(self.map.last()); }
+    pub fn pop_first(&self) -> core::option::Option<T> where T: core::cmp::Ord<T> { return key_of(self.map.pop_first()); }
+    pub fn pop_last(&self) -> core::option::Option<T> where T: core::cmp::Ord<T> { return key_of(self.map.pop_last()); }
+    // First key at least `key`, or strictly above it.
+    pub fn lower_bound(&self, key: T) -> core::option::Option<T> where T: core::cmp::Ord<T> { return key_of(self.map.lower_bound(key)); }
+    pub fn upper_bound(&self, key: T) -> core::option::Option<T> where T: core::cmp::Ord<T> { return key_of(self.map.upper_bound(key)); }
+    pub fn iter(&self) -> Cursor<T> { return Cursor { inner: self.map.iter() }; }
+    // Half-open [lower, upper); upper below lower is InvalidRange.
+    pub fn range(&self, lower: T, upper: T) -> core::result::Result<Cursor<T>, alloc::btree_map::Error> where T: core::cmp::Ord<T> {
+        let found: core::result::Result<alloc::btree_map::Cursor<T, Nothing>, alloc::btree_map::Error> = self.map.range(lower, upper);
+        if (found.is_err()) { return core::result::Err(found.unwrap_err()); }
+        return core::result::Ok(Cursor { inner: found.unwrap() });
+    }
+    // Independent exactly sized storage; keys copy shallowly.
+    pub fn try_clone(&self) -> core::result::Result<BTreeSet<T>, alloc::btree_map::Error> {
+        let cloned: core::result::Result<alloc::btree_map::BTreeMap<T, Nothing>, alloc::btree_map::Error> = self.map.try_clone();
+        if (cloned.is_err()) { return core::result::Err(cloned.unwrap_err()); }
+        return core::result::Ok(BTreeSet { map: cloned.unwrap() });
+    }
+    // Neither destroys resources nested in keys; drain them first.
+    pub fn clear(&self) { self.map.clear(); }
+    pub fn destroy(&self) { self.map.destroy(); }
+    // Linear merges over both sets in key order.
+    pub fn is_subset(&self, other: &BTreeSet<T>) -> bool where T: core::cmp::Ord<T> {
+        if (self.len() > other.len()) { return false; }
+        return self.merge(other, 3, true, 1) == 0;
+    }
+    pub fn is_disjoint(&self, other: &BTreeSet<T>) -> bool where T: core::cmp::Ord<T> { return self.merge(other, 2, true, 1) == 0; }
+    pub fn equals(&self, other: &BTreeSet<T>) -> bool where T: core::cmp::Ord<T> { return self.len() == other.len() && self.is_subset(other); }
+    // Union, intersection, difference, symmetric difference: one counting
+    // merge, one exactly sized build, O(n + m) comparisons each. Left
+    // representatives win equal keys. Err allocates nothing and leaves both
+    // sources unchanged; aliasing self as other is allowed.
+    pub fn try_union(&self, other: &BTreeSet<T>) -> core::result::Result<BTreeSet<T>, alloc::btree_map::Error> where T: core::cmp::Ord<T> { return self.combine(other, 1); }
+    pub fn try_intersection(&self, other: &BTreeSet<T>) -> core::result::Result<BTreeSet<T>, alloc::btree_map::Error> where T: core::cmp::Ord<T> { return self.combine(other, 2); }
+    pub fn try_difference(&self, other: &BTreeSet<T>) -> core::result::Result<BTreeSet<T>, alloc::btree_map::Error> where T: core::cmp::Ord<T> { return self.combine(other, 3); }
+    pub fn try_symmetric_difference(&self, other: &BTreeSet<T>) -> core::result::Result<BTreeSet<T>, alloc::btree_map::Error> where T: core::cmp::Ord<T> { return self.combine(other, 4); }
+    fn combine(&self, other: &BTreeSet<T>, mode: i32) -> core::result::Result<BTreeSet<T>, alloc::btree_map::Error> where T: core::cmp::Ord<T> {
+        let count: i32 = self.merge(other, mode, false, 0);
+        let started: core::result::Result<alloc::btree_map::Builder<T, Nothing>, alloc::btree_map::Error> = alloc::btree_map::builder<T, Nothing>(count);
+        if (started.is_err()) { return core::result::Err(started.unwrap_err()); }
+        let build: alloc::btree_map::Builder<T, Nothing> = started.unwrap();
+        self.merge_into(other, mode, build.borrow());
+        return core::result::Ok(BTreeSet { map: build.finish() });
+    }
+    // Keys kept by `mode` (1 union, 2 intersection, 3 difference, 4
+    // symmetric difference), counted; with `stop`, returns once `limit` is met.
+    fn merge(&self, other: &BTreeSet<T>, mode: i32, stop: bool, limit: i32) -> i32 where T: core::cmp::Ord<T> {
+        let left: alloc::btree_map::Cursor<T, Nothing> = self.map.iter(); let right: alloc::btree_map::Cursor<T, Nothing> = other.map.iter();
+        let x: core::option::Option<T> = key_of(left.next()); let y: core::option::Option<T> = key_of(right.next()); let count: i32 = 0;
+        while (x.is_some() || y.is_some()) {
+            let side: i32 = 2;
+            if (y.is_none()) { side = 0; } else {
+                if (x.is_none()) { side = 1; } else {
+                    if (T::lt(x.unwrap(), y.unwrap())) { side = 0; } else { if (T::lt(y.unwrap(), x.unwrap())) { side = 1; } }
+                }
+            }
+            if (keeps(mode, side)) { count += 1; if (stop && count >= limit) { return count; } }
+            if (side != 1) { x = key_of(left.next()); }
+            if (side != 0) { y = key_of(right.next()); }
+        }
+        return count;
+    }
+    fn merge_into(&self, other: &BTreeSet<T>, mode: i32, build: &alloc::btree_map::Builder<T, Nothing>) where T: core::cmp::Ord<T> {
+        let left: alloc::btree_map::Cursor<T, Nothing> = self.map.iter(); let right: alloc::btree_map::Cursor<T, Nothing> = other.map.iter();
+        let x: core::option::Option<T> = key_of(left.next()); let y: core::option::Option<T> = key_of(right.next());
+        while (x.is_some() || y.is_some()) {
+            let side: i32 = 2;
+            if (y.is_none()) { side = 0; } else {
+                if (x.is_none()) { side = 1; } else {
+                    if (T::lt(x.unwrap(), y.unwrap())) { side = 0; } else { if (T::lt(y.unwrap(), x.unwrap())) { side = 1; } }
+                }
+            }
+            if (keeps(mode, side)) { if (side == 1) { build.push(y.unwrap(), Nothing {}); } else { build.push(x.unwrap(), Nothing {}); } }
+            if (side != 1) { x = key_of(left.next()); }
+            if (side != 0) { y = key_of(right.next()); }
+        }
+    }
+}
+// side: 0 only in the left set, 1 only in the right, 2 in both.
+fn keeps(mode: i32, side: i32) -> bool {
+    if (mode == 1) { return true; }
+    if (mode == 2) { return side == 2; }
+    if (mode == 3) { return side == 0; }
+    return side != 2;
+}
+
+// Duplicate keeps the stored representative; the item stays with the caller.
+pub impl<T> core::iter::TrySink<T, alloc::btree_map::SinkError> for BTreeSet<T>
+    where T: core::cmp::Ord<T> {
+    pub fn try_accept(&self, item: T) -> core::option::Option<alloc::btree_map::SinkError> {
+        let inserted: core::result::Result<core::option::Option<T>, alloc::btree_map::Error> = self.try_insert(item);
+        if (inserted.is_err()) { return core::option::Some(alloc::btree_map::SinkError::Storage(inserted.unwrap_err())); }
+        if (inserted.unwrap().is_some()) { return core::option::Some(alloc::btree_map::SinkError::Duplicate()); }
+        return core::option::None();
+    }
+}
+// Replacement returns the displaced stored representative.
+pub impl<T> core::iter::TryReplaceSink<T, alloc::btree_map::Error> for BTreeSet<T>
+    where T: core::cmp::Ord<T> {
+    pub fn try_replace_item(&self, item: T) -> core::result::Result<core::option::Option<T>, alloc::btree_map::Error> { return self.try_replace(item); }
+}
+
+pub impl<T> Cursor<T> {
+    pub fn borrow(&self) -> &Cursor<T> { return self; }
+    pub fn is_empty(&self) -> bool { return self.inner.is_empty(); }
+}
+pub impl<T> core::iter::Iterator<T> for Cursor<T> {
+    pub fn next(&self) -> core::option::Option<T> { return key_of(self.inner.next()); }
+}
+pub impl<T> core::iter::DoubleEndedIterator<T> for Cursor<T> {
+    pub fn next_back(&self) -> core::option::Option<T> { return key_of(self.inner.next_back()); }
+}

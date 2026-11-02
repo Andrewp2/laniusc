@@ -27,6 +27,12 @@ static void phases(const char *label, Key key, Miss miss) {
     for (int i = 0; i < N; i++) sum += (uint64_t)table.at(key((int)(((uint64_t)i * 40503u) % N)));
     printf("%s scattered %llu\n", label, (unsigned long long)(now() - t));
     if (sum != (uint64_t)N * (N - 1) / 2) abort();
+    if (sizeof(K) == 4) {
+        t = now(); sum = 0;
+        for (int i = 0; i < N; i++) sum += (uint64_t)table.at((K)i);
+        printf("%s sorted %llu\n", label, (unsigned long long)(now() - t));
+        if (sum != (uint64_t)N * (N - 1) / 2) abort();
+    }
     t = now(); int found = 0;
     for (int i = 0; i < N; i++) found += table.count(miss(i));
     printf("%s miss %llu\n", label, (unsigned long long)(now() - t));

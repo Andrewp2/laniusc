@@ -9,8 +9,14 @@ import core::iter;
 import core::mem;
 import core::option;
 import core::result;
+import core::slice;
 
-pub enum Error { CapacityOverflow, AllocationFailed, InvalidRange }
+// InvalidRange: a reversed range, a negative builder count or a malformed
+// view. InvalidOrder: from_sorted input that is not strictly increasing.
+pub enum Error { CapacityOverflow, AllocationFailed, InvalidRange, InvalidOrder }
+// TrySink rejection: Duplicate keeps the stored entry; Storage is an insert
+// error. Either way the item stays with the caller.
+pub enum SinkError { Duplicate, Storage(Error) }
 pub struct Entry<K, V> { key: K, value: V }
 // Node n owns key slots keys[16n .. 16n + 16], value slots values[16n ..]
 // (leaves only), its key count counts[n] and the words links[24n .. 24n + 24]:
@@ -28,6 +34,12 @@ pub struct BTreeMap<K, V> {
     key_storage: ptr, keys: ptr, value_storage: ptr, values: ptr, links: ptr, counts: ptr,
     nodes: i32, used: i32, free: i32, spare: i32, root: i32, height: i32, head: i32, tail: i32, length: i32,
 }
+// Fills an exactly sized tree from strictly increasing entries. builder(n)
+// reserves every node; push stores entries left to right into leaves of 8 to
+// 16 entries (spread evenly); finish adds inner levels of 9 to 17 children,
+// the bounds that edits keep, and returns the map. Ordering is the caller's
+// contract (from_sorted checks it first).
+pub struct Builder<K, V> { map: BTreeMap<K, V>, total: i32, leaves: i32, leaf: i32, filled: i32, pushed: i32 }
 // Front and back positions (node, slot), both inclusive; front node -1 once
 // the cursor is exhausted. Any map edit invalidates its cursors.
 pub struct Cursor<K, V> { keys: ptr, values: ptr, links: ptr, counts: ptr, nodes: i32, front: i32, front_at: i32, back: i32, back_at: i32 }
@@ -37,6 +49,47 @@ pub fn new<K, V>() -> BTreeMap<K, V> {
     let empty: ptr = 0;
     return BTreeMap { key_storage: empty, keys: empty, value_storage: empty, values: empty, links: empty, counts: empty,
         nodes: 0, used: 0, free: -1, spare: 0, root: -1, height: 0, head: -1, tail: -1, length: 0 };
+}
+// ceil(count / fan) without overflow.
+fn level_nodes(count: i32, fan: i32) -> i32 {
+    let nodes: i32 = count / fan;
+    if (count % fan != 0) { nodes += 1; }
+    return nodes;
+}
+pub fn builder<K, V>(count: i32) -> core::result::Result<Builder<K, V>, Error> {
+    let map: BTreeMap<K, V> = new();
+    if (count < 0) { return core::result::Err(Error::InvalidRange); }
+    let leaves: i32 = level_nodes(count, 16); let total: i32 = leaves; let level: i32 = leaves;
+    while (level > 1) { level = level_nodes(level, 17); total += level; }
+    if (count > 0) {
+        let reserved: core::result::Result<i32, Error> = map.reserve_nodes(total);
+        if (reserved.is_err()) { return core::result::Err(reserved.unwrap_err()); }
+        let links: [i32] = map.link_view(); let index: i32 = 0;
+        while (index < leaves) {
+            let node: i32 = map.take_node(); let next: i32 = node + 1;
+            if (next == leaves) { next = -1; }
+            links[24 * node + 1] = next; links[24 * node + 2] = node - 1; index += 1;
+        }
+    }
+    return core::result::Ok(Builder { map: map, total: count, leaves: leaves, leaf: 0, filled: 0, pushed: 0 });
+}
+// Strictly increasing input: equivalent or descending adjacent keys are
+// InvalidOrder. O(n) comparisons and stores; the tree is built exactly sized.
+pub fn from_sorted<K, V>(input: core::slice::View<Entry<K, V>>) -> core::result::Result<BTreeMap<K, V>, Error>
+    where K: core::cmp::Ord<K> {
+    if (input.start < 0 || input.length < 0 || input.start > 2147483647 - input.length) { return core::result::Err(Error::InvalidRange); }
+    let count: i32 = input.len(); let index: i32 = 1;
+    while (index < count) {
+        let left: Entry<K, V> = core::option::unwrap(input.get(index - 1));
+        let right: Entry<K, V> = core::option::unwrap(input.get(index));
+        if (!K::lt(left.key, right.key)) { return core::result::Err(Error::InvalidOrder); }
+        index += 1;
+    }
+    let started: core::result::Result<Builder<K, V>, Error> = builder<K, V>(count);
+    if (started.is_err()) { return core::result::Err(started.unwrap_err()); }
+    let build: Builder<K, V> = started.unwrap(); index = 0;
+    while (index < count) { let item: Entry<K, V> = core::option::unwrap(input.get(index)); build.push(item.key, item.value); index += 1; }
+    return core::result::Ok(build.finish());
 }
 // Bytes of one array of `nodes` nodes (at least one word, for zero sizes).
 fn cell_bytes(size: usize, nodes: i32) -> usize {
@@ -184,21 +237,24 @@ pub impl<K, V> BTreeMap<K, V> {
         return node;
     }
     // Slot index (16 * node + slot) holding `key`, or -1. One loop over the
-    // levels, so a lookup makes no calls besides K::lt.
+    // levels, so a lookup makes no calls besides K::lt. Views are built
+    // inline and the counts read through the links view (they follow the
+    // 24 * nodes link words): each view costs a call and two header copies.
     fn find(&self, key: K) -> i32 where K: core::cmp::Ord<K> {
         let node: i32 = self.root;
         if (node < 0) { return -1; }
-        let keys: [KeyCell<K>] = self.key_view(); let links: [i32] = self.link_view(); let counts: [i32] = self.count_view();
-        let level: i32 = self.height;
+        let keys: [KeyCell<K>] = slice_from_raw_parts(self.keys, self.nodes * 16);
+        let links: [i32] = slice_from_raw_parts(self.links, self.nodes * 25);
+        let counted: i32 = self.nodes * 24; let level: i32 = self.height;
         while (true) {
-            let base: i32 = 16 * node; let low: i32 = 0; let high: i32 = counts[node];
+            let base: i32 = 16 * node; let low: i32 = 0; let count: i32 = links[counted + node]; let high: i32 = count;
             level -= 1;
             if (level == 0) {
                 while (low < high) {
                     let middle: i32 = (low + high) >> 1;
                     if (K::lt(keys[base + middle].key, key)) { low = middle + 1; } else { high = middle; }
                 }
-                if (low == counts[node]) { return -1; }
+                if (low == count) { return -1; }
                 if (K::lt(key, keys[base + low].key)) { return -1; }
                 return base + low;
             }
@@ -214,7 +270,7 @@ pub impl<K, V> BTreeMap<K, V> {
     pub fn get(&self, key: K) -> core::option::Option<V> where K: core::cmp::Ord<K> {
         let index: i32 = self.find(key);
         if (index < 0) { return core::option::None(); }
-        let values: [ValueCell<V>] = self.value_view(); let cell: ValueCell<V> = values[index];
+        let values: [ValueCell<V>] = slice_from_raw_parts(self.values, self.nodes * 16); let cell: ValueCell<V> = values[index];
         return core::option::Some(cell.value);
     }
     pub fn get_entry(&self, key: K) -> core::option::Option<Entry<K, V>> where K: core::cmp::Ord<K> {
@@ -505,6 +561,15 @@ pub impl<K, V> BTreeMap<K, V> {
         let item: Entry<K, V> = found.unwrap();
         return self.remove(item.key);
     }
+    // Independent, exactly sized node storage; keys and values copy shallowly.
+    // Err leaves this map unchanged and allocates nothing.
+    pub fn try_clone(&self) -> core::result::Result<BTreeMap<K, V>, Error> {
+        let started: core::result::Result<Builder<K, V>, Error> = builder<K, V>(self.length);
+        if (started.is_err()) { return core::result::Err(started.unwrap_err()); }
+        let build: Builder<K, V> = started.unwrap(); let cursor: Cursor<K, V> = self.iter();
+        while (!cursor.is_empty()) { let item: Entry<K, V> = core::option::unwrap(cursor.next()); build.push(item.key, item.value); }
+        return core::result::Ok(build.finish());
+    }
     // Keep the allocation; drop every entry without destroying it.
     pub fn clear(&self) {
         self.used = 0; self.free = -1; self.spare = 0; self.root = -1; self.height = 0;
@@ -515,6 +580,80 @@ pub impl<K, V> BTreeMap<K, V> {
         let empty: ptr = 0;
         self.key_storage = empty; self.keys = empty; self.value_storage = empty; self.values = empty; self.links = empty; self.counts = empty;
         self.nodes = 0; self.clear();
+    }
+}
+
+pub impl<K, V> Builder<K, V> {
+    pub fn borrow(&self) -> &Builder<K, V> { return self; }
+    pub fn remaining(&self) -> i32 { return self.total - self.pushed; }
+    // Store the next entry; its key must be above every key pushed so far.
+    // Pushing more than the reserved count is a contract violation.
+    pub fn push(&self, key: K, value: V) {
+        assert(self.pushed < self.total);
+        let target: i32 = self.total / self.leaves;
+        if (self.leaf < self.total % self.leaves) { target += 1; }
+        if (self.filled == target) { self.leaf += 1; self.filled = 0; }
+        let keys: [KeyCell<K>] = self.map.key_view(); let values: [ValueCell<V>] = self.map.value_view(); let counts: [i32] = self.map.count_view();
+        let slot: i32 = 16 * self.leaf + self.filled;
+        let key_cell: KeyCell<K> = KeyCell { key: key }; keys[slot] = key_cell;
+        let value_cell: ValueCell<V> = ValueCell { value: value }; values[slot] = value_cell;
+        self.filled += 1; counts[self.leaf] = self.filled; self.pushed += 1;
+    }
+    // After every reserved entry is pushed: link the inner levels and hand
+    // the map over. The builder is left empty.
+    pub fn finish(&self) -> BTreeMap<K, V> {
+        assert(self.pushed == self.total);
+        let map: BTreeMap<K, V> = self.map; let leaves: i32 = self.leaves; let total: i32 = self.total;
+        let empty: BTreeMap<K, V> = new(); self.map = empty; self.total = 0; self.leaves = 0; self.leaf = 0; self.filled = 0; self.pushed = 0;
+        if (total == 0) { return map; }
+        let keys: [KeyCell<K>] = map.key_view(); let links: [i32] = map.link_view(); let counts: [i32] = map.count_view();
+        let first: i32 = 0; let count: i32 = leaves; let height: i32 = 1;
+        while (count > 1) {
+            let parents: i32 = level_nodes(count, 17); let start: i32 = map.used; let child: i32 = first; let parent: i32 = 0;
+            while (parent < parents) {
+                let node: i32 = map.take_node(); let children: i32 = count / parents;
+                if (parent < count % parents) { children += 1; }
+                let slot: i32 = 0;
+                while (slot < children) {
+                    links[24 * node + 3 + slot] = child;
+                    if (slot > 0) {
+                        // Separator: the smallest key under this child.
+                        let low: i32 = child; let depth: i32 = 1;
+                        while (depth < height) { low = links[24 * low + 3]; depth += 1; }
+                        let cell: KeyCell<K> = keys[16 * low]; keys[16 * node + slot - 1] = cell;
+                    }
+                    child += 1; slot += 1;
+                }
+                counts[node] = children - 1; parent += 1;
+            }
+            first = start; count = parents; height += 1;
+        }
+        map.root = first; map.height = height; map.head = 0; map.tail = leaves - 1; map.length = total;
+        return map;
+    }
+    // Abandon a partial build, releasing its nodes (entries are not destroyed).
+    pub fn destroy(&self) {
+        self.map.destroy(); self.total = 0; self.leaves = 0; self.leaf = 0; self.filled = 0; self.pushed = 0;
+    }
+}
+
+// Reject an equivalent key before inserting, keeping the stored entry.
+pub impl<K, V> core::iter::TrySink<Entry<K, V>, SinkError> for BTreeMap<K, V>
+    where K: core::cmp::Ord<K> {
+    pub fn try_accept(&self, item: Entry<K, V>) -> core::option::Option<SinkError> {
+        if (self.contains_key(item.key)) { return core::option::Some(SinkError::Duplicate()); }
+        let inserted: core::result::Result<core::option::Option<Entry<K, V>>, Error> = self.try_insert(item.key, item.value);
+        if (core::result::is_err(inserted)) { return core::option::Some(SinkError::Storage(core::result::unwrap_err(inserted))); }
+        return core::option::None();
+    }
+}
+
+// Canonical replacement: an equivalent key replaces key and value and the
+// old entry comes back, as try_insert does.
+pub impl<K, V> core::iter::TryReplaceSink<Entry<K, V>, Error> for BTreeMap<K, V>
+    where K: core::cmp::Ord<K> {
+    pub fn try_replace_item(&self, item: Entry<K, V>) -> core::result::Result<core::option::Option<Entry<K, V>>, Error> {
+        return self.try_insert(item.key, item.value);
     }
 }
 
