@@ -12,127 +12,127 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Termination
 open Lanius.Faithful.SelfCert
 
-theorem ok_spelled0 : FnOk prog prims info (1255, ⟨0, [], 0⟩) :=
+theorem ok_lx_space_run : FnOk prog prims info (1252, ⟨2, [0], 0⟩) :=
+  fnOk_of fn_lx_space_run (by decide +kernel)
+
+theorem ok_lx_quoted_at : FnOk prog prims info (1253, ⟨2, [3], 1⟩) :=
+  fnOk_of fn_lx_quoted_at (by decide +kernel)
+
+theorem ok_lx_symbol_at : FnOk prog prims info (1254, ⟨12, [], 0⟩) :=
+  fnOk_of fn_lx_symbol_at (by decide +kernel)
+
+theorem ok_lx_as_text : FnOk prog prims info (1257, ⟨1, [], 0⟩) :=
+  fnOk_of fn_lx_as_text (by decide +kernel)
+
+theorem ok_lx_keyword_at : FnOk prog prims info (1258, ⟨1, [2], 1⟩) :=
+  fnOk_of fn_lx_keyword_at (by decide +kernel)
+
+theorem ok_p_member_type_args_some : FnOk prog prims info (1260, ⟨0, [], 0⟩) :=
+  fnOk_of fn_p_member_type_args_some (by decide +kernel)
+
+theorem ok_generic_open : FnOk prog prims info (1261, ⟨3, [], 0⟩) :=
+  fnOk_of fn_generic_open (by decide +kernel)
+
+theorem ok_p_member_type_args_none : FnOk prog prims info (1262, ⟨0, [], 0⟩) :=
+  fnOk_of fn_p_member_type_args_none (by decide +kernel)
+
+theorem ok_p_block_stmt : FnOk prog prims info (1263, ⟨0, [], 0⟩) :=
+  fnOk_of fn_p_block_stmt (by decide +kernel)
+
+theorem ok_opens_block : FnOk prog prims info (1264, ⟨1, [], 0⟩) :=
+  fnOk_of fn_opens_block (by decide +kernel)
+
+theorem ok_p_expr_stmt : FnOk prog prims info (1265, ⟨0, [], 0⟩) :=
+  fnOk_of fn_p_expr_stmt (by decide +kernel)
+
+theorem ok_generic_path_at : FnOk prog prims info (1266, ⟨4, [], 0⟩) :=
+  fnOk_of fn_generic_path_at (by decide +kernel)
+
+theorem ok_p_path_ident_args : FnOk prog prims info (1267, ⟨0, [], 0⟩) :=
+  fnOk_of fn_p_path_ident_args (by decide +kernel)
+
+theorem ok_attach_after : FnOk prog prims info (1268, ⟨6, [1], 1⟩) :=
+  fnOk_of fn_attach_after (by decide +kernel)
+
+theorem ok_cons_field : FnOk prog prims info (1269, ⟨4, [], 0⟩) :=
+  fnOk_of fn_cons_field (by decide +kernel)
+
+theorem ok_cons_variant_tail : FnOk prog prims info (1270, ⟨1, [], 0⟩) :=
+  fnOk_of fn_cons_variant_tail (by decide +kernel)
+
+theorem ok_p_enum_variant_unit : FnOk prog prims info (1271, ⟨0, [], 0⟩) :=
+  fnOk_of fn_p_enum_variant_unit (by decide +kernel)
+
+theorem ok_p_enum_type_param : FnOk prog prims info (1272, ⟨0, [], 0⟩) :=
+  fnOk_of fn_p_enum_type_param (by decide +kernel)
+
+theorem ok_p_impl_method : FnOk prog prims info (1273, ⟨0, [], 0⟩) :=
+  fnOk_of fn_p_impl_method (by decide +kernel)
+
+theorem ok_p_impl_fn : FnOk prog prims info (1274, ⟨0, [], 0⟩) :=
+  fnOk_of fn_p_impl_fn (by decide +kernel)
+
+theorem ok_p_impl_method_pub : FnOk prog prims info (1275, ⟨0, [], 0⟩) :=
+  fnOk_of fn_p_impl_method_pub (by decide +kernel)
+
+theorem ok_none_member : FnOk prog prims info (1276, ⟨2, [0], 0⟩) :=
+  fnOk_of fn_none_member (by decide +kernel)
+
+theorem ok_spelled0 : FnOk prog prims info (1277, ⟨0, [], 0⟩) :=
   fnOk_of fn_spelled0 (by decide +kernel)
 
-theorem ok_cons_of_mini_selfhost_SrcParam : FnOk prog prims info (1256, ⟨0, [], 0⟩) :=
+theorem ok_cons_of_mini_selfhost_SrcParam : FnOk prog prims info (1278, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_SrcParam (by decide +kernel)
 
-theorem ok_slice_type : FnOk prog prims info (1257, ⟨0, [], 0⟩) :=
+theorem ok_slice_type : FnOk prog prims info (1279, ⟨0, [], 0⟩) :=
   fnOk_of fn_slice_type (by decide +kernel)
 
-theorem ok_close_named : FnOk prog prims info (1258, ⟨15, [], 0⟩) :=
+theorem ok_close_named : FnOk prog prims info (1280, ⟨15, [], 0⟩) :=
   fnOk_of fn_close_named (by decide +kernel)
 
-theorem ok_array_type : FnOk prog prims info (1259, ⟨0, [], 0⟩) :=
+theorem ok_array_type : FnOk prog prims info (1281, ⟨0, [], 0⟩) :=
   fnOk_of fn_array_type (by decide +kernel)
 
-theorem ok_inst_index_at : FnOk prog prims info (1260, ⟨4, [1], 1⟩) :=
+theorem ok_inst_index_at : FnOk prog prims info (1282, ⟨4, [1], 1⟩) :=
   fnOk_of fn_inst_index_at (by decide +kernel)
 
-theorem ok_e_call_closed : FnOk prog prims info (1261, ⟨0, [], 0⟩) :=
+theorem ok_e_call_closed : FnOk prog prims info (1283, ⟨0, [], 0⟩) :=
   fnOk_of fn_e_call_closed (by decide +kernel)
 
-theorem ok_close_effs : FnOk prog prims info (1262, ⟨17, [2], 0⟩) :=
+theorem ok_close_effs : FnOk prog prims info (1284, ⟨17, [2], 0⟩) :=
   fnOk_of fn_close_effs (by decide +kernel)
 
-theorem ok_e_apply_closed : FnOk prog prims info (1263, ⟨0, [], 0⟩) :=
+theorem ok_e_apply_closed : FnOk prog prims info (1285, ⟨0, [], 0⟩) :=
   fnOk_of fn_e_apply_closed (by decide +kernel)
 
-theorem ok_e_neg_closed : FnOk prog prims info (1264, ⟨0, [], 0⟩) :=
+theorem ok_e_neg_closed : FnOk prog prims info (1286, ⟨0, [], 0⟩) :=
   fnOk_of fn_e_neg_closed (by decide +kernel)
 
-theorem ok_e_not_closed : FnOk prog prims info (1265, ⟨0, [], 0⟩) :=
+theorem ok_e_not_closed : FnOk prog prims info (1287, ⟨0, [], 0⟩) :=
   fnOk_of fn_e_not_closed (by decide +kernel)
 
-theorem ok_e_cast_closed : FnOk prog prims info (1266, ⟨0, [], 0⟩) :=
+theorem ok_e_cast_closed : FnOk prog prims info (1288, ⟨0, [], 0⟩) :=
   fnOk_of fn_e_cast_closed (by decide +kernel)
 
-theorem ok_e_index_closed : FnOk prog prims info (1267, ⟨0, [], 0⟩) :=
+theorem ok_e_index_closed : FnOk prog prims info (1289, ⟨0, [], 0⟩) :=
   fnOk_of fn_e_index_closed (by decide +kernel)
 
-theorem ok_e_struct_closed : FnOk prog prims info (1268, ⟨0, [], 0⟩) :=
+theorem ok_e_struct_closed : FnOk prog prims info (1290, ⟨0, [], 0⟩) :=
   fnOk_of fn_e_struct_closed (by decide +kernel)
 
-theorem ok_e_variant_closed : FnOk prog prims info (1269, ⟨0, [], 0⟩) :=
+theorem ok_e_variant_closed : FnOk prog prims info (1291, ⟨0, [], 0⟩) :=
   fnOk_of fn_e_variant_closed (by decide +kernel)
 
-theorem ok_e_match_closed : FnOk prog prims info (1270, ⟨0, [], 0⟩) :=
+theorem ok_e_match_closed : FnOk prog prims info (1292, ⟨0, [], 0⟩) :=
   fnOk_of fn_e_match_closed (by decide +kernel)
 
-theorem ok_e_divide_closed : FnOk prog prims info (1271, ⟨0, [], 0⟩) :=
+theorem ok_e_divide_closed : FnOk prog prims info (1293, ⟨0, [], 0⟩) :=
   fnOk_of fn_e_divide_closed (by decide +kernel)
 
-theorem ok_e_array_slice_closed : FnOk prog prims info (1272, ⟨0, [], 0⟩) :=
+theorem ok_e_array_slice_closed : FnOk prog prims info (1294, ⟨0, [], 0⟩) :=
   fnOk_of fn_e_array_slice_closed (by decide +kernel)
 
-theorem ok_enum_src : FnOk prog prims info (1275, ⟨0, [], 0⟩) :=
-  fnOk_of fn_enum_src (by decide +kernel)
-
-theorem ok_lower_variants : FnOk prog prims info (1276, ⟨14, [0], 0⟩) :=
-  fnOk_of fn_lower_variants (by decide +kernel)
-
-theorem ok_payload_tys : FnOk prog prims info (1277, ⟨13, [], 0⟩) :=
-  fnOk_of fn_payload_tys (by decide +kernel)
-
-theorem ok_struct_src : FnOk prog prims info (1278, ⟨0, [], 0⟩) :=
-  fnOk_of fn_struct_src (by decide +kernel)
-
-theorem ok_lower_tys : FnOk prog prims info (1279, ⟨14, [0], 0⟩) :=
-  fnOk_of fn_lower_tys (by decide +kernel)
-
-theorem ok_wide_left : FnOk prog prims info (1280, ⟨1, [0], 0⟩) :=
-  fnOk_of fn_wide_left (by decide +kernel)
-
-theorem ok_wide_left_exprs : FnOk prog prims info (1281, ⟨2, [0], 0⟩) :=
-  fnOk_of fn_wide_left_exprs (by decide +kernel)
-
-theorem ok_wide_left_arms : FnOk prog prims info (1282, ⟨2, [0], 0⟩) :=
-  fnOk_of fn_wide_left_arms (by decide +kernel)
-
-theorem ok_wide_left_eff : FnOk prog prims info (1283, ⟨2, [0], 0⟩) :=
-  fnOk_of fn_wide_left_eff (by decide +kernel)
-
-theorem ok_int_at : FnOk prog prims info (1285, ⟨3, [], 0⟩) :=
-  fnOk_of fn_int_at (by decide +kernel)
-
-theorem ok_wide_value : FnOk prog prims info (1286, ⟨2, [], 0⟩) :=
-  fnOk_of fn_wide_value (by decide +kernel)
-
-theorem ok_neg_wide_at : FnOk prog prims info (1287, ⟨2, [], 0⟩) :=
-  fnOk_of fn_neg_wide_at (by decide +kernel)
-
-theorem ok_neg_least : FnOk prog prims info (1288, ⟨3, [], 0⟩) :=
-  fnOk_of fn_neg_least (by decide +kernel)
-
-theorem ok_operand_want : FnOk prog prims info (1290, ⟨1, [], 0⟩) :=
-  fnOk_of fn_operand_want (by decide +kernel)
-
-theorem ok_known_expr : FnOk prog prims info (1291, ⟨3, [1], 0⟩) :=
-  fnOk_of fn_known_expr (by decide +kernel)
-
-theorem ok_amount_want : FnOk prog prims info (1292, ⟨2, [], 0⟩) :=
-  fnOk_of fn_amount_want (by decide +kernel)
-
-theorem ok_wide_at : FnOk prog prims info (1293, ⟨2, [], 0⟩) :=
-  fnOk_of fn_wide_at (by decide +kernel)
-
-theorem ok_float_want : FnOk prog prims info (1294, ⟨2, [], 0⟩) :=
-  fnOk_of fn_float_want (by decide +kernel)
-
-theorem ok_empty_of_mini_selfhost_SrcExpr : FnOk prog prims info (1296, ⟨0, [], 0⟩) :=
-  fnOk_of fn_empty_of_mini_selfhost_SrcExpr (by decide +kernel)
-
-theorem ok_cons_of_mini_selfhost_SrcExpr : FnOk prog prims info (1297, ⟨0, [], 0⟩) :=
-  fnOk_of fn_cons_of_mini_selfhost_SrcExpr (by decide +kernel)
-
-theorem ok_first_src : FnOk prog prims info (1298, ⟨3, [], 0⟩) :=
-  fnOk_of fn_first_src (by decide +kernel)
-
-theorem ok_rest_src : FnOk prog prims info (1299, ⟨0, [], 0⟩) :=
-  fnOk_of fn_rest_src (by decide +kernel)
-
 theorem chunk27 : AllFns prog prims info part27 :=
-  ⟨ok_spelled0, ok_cons_of_mini_selfhost_SrcParam, ok_slice_type, ok_close_named, ok_array_type, ok_inst_index_at, ok_e_call_closed, ok_close_effs, ok_e_apply_closed, ok_e_neg_closed, ok_e_not_closed, ok_e_cast_closed, ok_e_index_closed, ok_e_struct_closed, ok_e_variant_closed, ok_e_match_closed, ok_e_divide_closed, ok_e_array_slice_closed, ok_enum_src, ok_lower_variants, ok_payload_tys, ok_struct_src, ok_lower_tys, ok_wide_left, ok_wide_left_exprs, ok_wide_left_arms, ok_wide_left_eff, ok_int_at, ok_wide_value, ok_neg_wide_at, ok_neg_least, ok_operand_want, ok_known_expr, ok_amount_want, ok_wide_at, ok_float_want, ok_empty_of_mini_selfhost_SrcExpr, ok_cons_of_mini_selfhost_SrcExpr, ok_first_src, ok_rest_src, trivial⟩
+  ⟨ok_lx_space_run, ok_lx_quoted_at, ok_lx_symbol_at, ok_lx_as_text, ok_lx_keyword_at, ok_p_member_type_args_some, ok_generic_open, ok_p_member_type_args_none, ok_p_block_stmt, ok_opens_block, ok_p_expr_stmt, ok_generic_path_at, ok_p_path_ident_args, ok_attach_after, ok_cons_field, ok_cons_variant_tail, ok_p_enum_variant_unit, ok_p_enum_type_param, ok_p_impl_method, ok_p_impl_fn, ok_p_impl_method_pub, ok_none_member, ok_spelled0, ok_cons_of_mini_selfhost_SrcParam, ok_slice_type, ok_close_named, ok_array_type, ok_inst_index_at, ok_e_call_closed, ok_close_effs, ok_e_apply_closed, ok_e_neg_closed, ok_e_not_closed, ok_e_cast_closed, ok_e_index_closed, ok_e_struct_closed, ok_e_variant_closed, ok_e_match_closed, ok_e_divide_closed, ok_e_array_slice_closed, trivial⟩
 
 end Lanius.Faithful.SelfTerm

@@ -25,9 +25,9 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_cons_args {prog : SrcProgram} {prims : Prims} {ix_cons_args ix_cons_of_mini_selfhost_SrcType ix_boxed_of_mini_selfhost_Stmt : Nat} (fn : prog.funcs[ix_cons_args]? = some (src_cons_args ix_cons_of_mini_selfhost_SrcType ix_boxed_of_mini_selfhost_Stmt)) (np : prims.isPrim ix_cons_args = false)
-    (ext_cons_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_SrcType prog prims ix_cons_of_mini_selfhost_SrcType n))
-    (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n)) {n : Nat} :
+theorem proof_cons_args {prog : SrcProgram} {prims : Prims} {ix_cons_args ix_boxed_of_mini_selfhost_Stmt ix_cons_of_mini_selfhost_SrcType : Nat} (fn : prog.funcs[ix_cons_args]? = some (src_cons_args ix_boxed_of_mini_selfhost_Stmt ix_cons_of_mini_selfhost_SrcType)) (np : prims.isPrim ix_cons_args = false)
+    (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
+    (ext_cons_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_SrcType prog prims ix_cons_of_mini_selfhost_SrcType n)) {n : Nat} :
     Stmt_cons_args prog prims ix_cons_args n := by
   intro x0 x1 v0 v1 w h r0 r1
   rcases n with _ | n

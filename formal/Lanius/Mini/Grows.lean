@@ -74,7 +74,12 @@ import all Lanius.Mini.Compiler.P.lowerLoadType
 import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.storeArray
-import all Lanius.Mini.Compiler.P.sigs
+import all Lanius.Mini.Compiler.P.bindingBytes
+import all Lanius.Mini.Compiler.P.arrayCallSig
+import all Lanius.Mini.Compiler.P.withBudget
+import all Lanius.Mini.Compiler.P.needRound
+import all Lanius.Mini.Compiler.P.needsAfter
+import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.lowerBody
 import all Lanius.Mini.Compiler.P.declareFuncs
 import all Lanius.Mini.Compiler.P.declareProgram
@@ -1287,6 +1292,7 @@ def resultHeap : World.EffectResult → Memory.Heap
   | .trapped _ h _ => h
   | .typeMismatch h _ => h
 
+set_option maxHeartbeats 400000 in
 /-- A host call that did not return leaves the heap as it was. -/
 theorem hostCall_resultHeap {id : Nat} {service : Core.HostService} (hs : hostService? id = some service)
     (heap : Memory.Heap) (world : World.State) (values : List Value)
