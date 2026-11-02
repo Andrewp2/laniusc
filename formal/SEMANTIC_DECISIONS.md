@@ -1700,6 +1700,25 @@ it unmodelled, as it does `arraySlice`, so code that uses it is not live
 there. The compiler's own sources don't use it. The front end produces it
 for a literal match in an expression ("Literal patterns" above).
 
+## Lets in expressions (decided 11-01)
+
+The mini syntax has a let in an expression, `SrcEff.eLet x T v R b`
+(`ELet` in `compiler.lani`): `v`, of type `T`, is bound to the local `x`,
+then `b`, of type `R`, is the value. Core has no let expression, so the
+meaning (`SrcEff.toCore`) is Core's match of `v` with one arm, the pattern
+`bind x`: Core binds `x` for the arm and drops it after, as it does a match
+arm's payload binders. Core needed no change. The lowering (`eval_let_in`)
+is a match with one arm and no tag test. `v` goes into the slot, and `x`'s
+binding names that slot (`arm_scope`, as for a payload binder). `b` is
+evaluated from `match_dst(slot, T, R)`, above both values, and its value
+is then copied down to the slot. The proofs are its cases in the forward
+simulation (`eval_let`, from `armScope_layout`), in failing runs
+(`eff_let`), in heap growth (`letArm_grows`, and `letArm_trap_grows` in the
+Faithful layer) and in Core typing (`armScope_ok`, Core's `bind` pattern).
+The Faithful pure meaning leaves it unmodelled, as it does `EIf`. The front
+end uses it to read a literal match whose scrutinee is effectful ("Literal
+patterns").
+
 ## `u16` views (decided 11-01)
 
 Core's raw slices had no `u16` element (`slice_from_raw_parts` of a `u16`

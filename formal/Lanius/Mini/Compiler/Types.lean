@@ -367,6 +367,8 @@ inductive SrcEff where
   | arraySlice : SrcType → Nat → SrcEff
   /-- if condition { then } else { otherwise } of type ty: Core's match on the bool, true's arm then the wildcard's -/
   | eIf : SrcEff → SrcType → SrcEff → SrcEff → SrcEff
+  /-- let id: ty = value in body, of type rt: Core's match of value with the one arm binding id -/
+  | eLet : Nat → SrcType → SrcEff → SrcType → SrcEff → SrcEff
   deriving Repr
 
 inductive SrcStmt where

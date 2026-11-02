@@ -58,6 +58,22 @@ def evalIfOf (slot : Nat) (ty : SrcType) (c : Evaluated) (t : Evaluated) (e : Ev
   else
     none
 
+/-- The value has type ty and the body type rt: the value in slot, then the body from match_dst, then its value copied down to slot. -/
+def evalLetInOf (slot : Nat) (ty : SrcType) (rt : SrcType) (v : Evaluated) (b : Evaluated) : Option Evaluated :=
+  if SrcType.same v.ty ty && SrcType.same b.ty rt then
+    some ({ stmt := Stmt.seq v.stmt (Stmt.seq b.stmt (assignFrom slot (slotVars (matchDst slot ty rt) (SrcType.size rt)) Stmt.skip)), ty := rt } : Evaluated)
+  else
+    none
+
+/-- let id: ty = value in body: the value in slot, id bound to it there, and the body evaluated from match_dst, above the value and the result. -/
+def evalLetIn (slot : Nat) (ty : SrcType) (rt : SrcType) (value : Option Evaluated) (body : Option Evaluated) : Option Evaluated :=
+  match value with
+  | none => none
+  | some v =>
+    match body with
+    | none => none
+    | some b => evalLetInOf slot ty rt v b
+
 /-- The condition in slot, then the value its test picks, also from slot. -/
 def evalIf (slot : Nat) (ty : SrcType) (condition : Option Evaluated) (thenValue : Option Evaluated) (elseValue : Option Evaluated) : Option Evaluated :=
   match condition with
@@ -88,6 +104,7 @@ def SrcEff.types (self : SrcEff) : List SrcType :=
   | .eStride slice => []
   | .arraySlice element array => [element]
   | .eIf condition ty thenValue elseValue => SrcEff.types condition ++ (SrcEff.types thenValue ++ SrcEff.types elseValue)
+  | .eLet id ty value rt body => ty :: (SrcEff.types value ++ SrcEff.types body)
 def effsTypes (es : List SrcEff) : List SrcType :=
   match es with
   | [] => []

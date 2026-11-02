@@ -1745,6 +1745,9 @@ pub enum SrcEff {
     // if condition { then } else { otherwise } of type ty: Core's match on
     // the bool, true's arm then the wildcard's
     EIf(Box<SrcEff>, SrcType, Box<SrcEff>, Box<SrcEff>),
+    // let id: ty = value in body, of type rt: Core's match of value with
+    // the one arm binding id
+    ELet(usize, SrcType, Box<SrcEff>, SrcType, Box<SrcEff>),
 }
 
 pub enum SrcStmt {
@@ -4189,6 +4192,27 @@ pub fn eval_if_of(slot: usize, ty: SrcType, c: Evaluated, t: Evaluated, e: Evalu
     return None;
 }
 
+// The value has type ty and the body type rt: the value in slot, then the
+// body from match_dst, then its value copied down to slot.
+pub fn eval_let_in_of(slot: usize, ty: SrcType, rt: SrcType, v: Evaluated, b: Evaluated) -> core::option::Option<Evaluated> {
+    if (v.ty.same(ty) && b.ty.same(rt)) {
+        return Some(Evaluated { stmt: Seq(boxed(v.stmt), boxed(Seq(boxed(b.stmt), boxed(assign_from(slot, slot_vars(match_dst(slot, ty, rt), rt.size()), Skip))))), ty: rt });
+    }
+    return None;
+}
+
+// let id: ty = value in body: the value in slot, id bound to it there, and
+// the body evaluated from match_dst, above the value and the result.
+pub fn eval_let_in(slot: usize, ty: SrcType, rt: SrcType, value: core::option::Option<Evaluated>, body: core::option::Option<Evaluated>) -> core::option::Option<Evaluated> {
+    return match (value) {
+        None -> None,
+        Some(v) -> match (body) {
+            None -> None,
+            Some(b) -> eval_let_in_of(slot, ty, rt, v, b),
+        },
+    };
+}
+
 // The condition in slot, then the value its test picks, also from slot.
 pub fn eval_if(slot: usize, ty: SrcType, condition: core::option::Option<Evaluated>, then_value: core::option::Option<Evaluated>, else_value: core::option::Option<Evaluated>) -> core::option::Option<Evaluated> {
     return match (condition) {
@@ -4223,6 +4247,7 @@ impl SrcEff {
             EStride(slice) -> empty(),
             ArraySlice(element, array) -> single(element),
             EIf(condition, ty, then_value, else_value) -> concat(unbox(condition).types(), concat(unbox(then_value).types(), unbox(else_value).types())),
+            ELet(id, ty, value, rt, body) -> cons(ty, concat(unbox(value).types(), unbox(body).types())),
         };
     }
 }
@@ -4350,6 +4375,15 @@ fn lower_set_scalar(slot: usize, ty: SrcType, scope: List<Binding>, value: SrcEx
         return lower_set_value(slot, lower_as(scope, value, ty));
     }
     return None;
+}
+
+// The body of a let in an expression, under its binding.
+// extract: inline
+fn eval_let_body(sigs: List<Sig>, decls: SrcDecls, bound: core::option::Option<List<Binding>>, dst: usize, body: SrcEff) -> core::option::Option<Evaluated> {
+    return match (bound) {
+        None -> None,
+        Some(s) -> body.eval(sigs, decls, s, dst),
+    };
 }
 
 pub fn lower_set_field_of(b: Binding, field: usize, scope: List<Binding>, value: SrcExpr) -> core::option::Option<Stmt> {
@@ -5187,6 +5221,7 @@ impl SrcEff {
             EStride(slice) -> eval_stride(decls, scope, slice, slot),
             ArraySlice(element, array) -> None,
             EIf(condition, ty, then_value, else_value) -> eval_if(slot, ty, unbox(condition).eval(sigs, decls, scope, slot), unbox(then_value).eval(sigs, decls, scope, slot), unbox(else_value).eval(sigs, decls, scope, slot)),
+            ELet(id, ty, value, rt, body) -> eval_let_in(slot, ty, rt, unbox(value).eval(sigs, decls, scope, slot), eval_let_body(sigs, decls, arm_scope(single(id), single(ty), slot, scope), match_dst(slot, ty, rt), unbox(body))),
         };
     }
 }

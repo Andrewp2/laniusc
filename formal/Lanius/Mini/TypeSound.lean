@@ -2023,6 +2023,37 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
             rw [same_toCore sameB] at typedB
             exact .matchValue typedC (.cons (.literal (.boolean true)) typedA (.one .wildcard typedB))
           · simp at h
+  | .eLet id ty a rt b, scope, ctx, slot, ev, ok, dd, h => by
+    simp only [SrcEff.eval, evalLetIn] at h
+    split at h
+    · simp at h
+    · rename_i va hva
+      cases hs : armScope [id] [ty] slot scope with
+      | none => simp [hs] at h
+      | some s' =>
+        simp only [hs] at h
+        split at h
+        · simp at h
+        · rename_i bb hbb
+          simp only [evalLetInOf] at h
+          split at h
+          · rename_i cond
+            simp only [Option.some.injEq] at h
+            subst h
+            simp only [Bool.and_eq_true] at cond
+            obtain ⟨sameA, sameB⟩ := cond
+            have typedA := SrcEff.eval_typed target sigsOk a ok
+              (fun t mem => dd t (by simp [SrcEff.types, mem])) hva
+            rw [same_toCore sameA] at typedA
+            obtain ⟨ok', _⟩ := armScope_ok [id] [ty] ok (fun f hf => by
+              simp only [List.mem_singleton] at hf
+              subst hf
+              exact dd _ (by simp [SrcEff.types])) hs
+            have typedB := SrcEff.eval_typed target sigsOk b ok'
+              (fun t mem => dd t (by simp [SrcEff.types, mem])) hbb
+            rw [same_toCore sameB] at typedB
+            exact .matchValue typedA (.one (.bind id) typedB)
+          · simp at h
   | .eStride slice, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalStride] at h
     split at h

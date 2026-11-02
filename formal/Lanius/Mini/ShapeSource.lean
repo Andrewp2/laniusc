@@ -43,6 +43,7 @@ mutual
     | .eStride _ => false
     | .arraySlice _ _ => false
     | .eIf c _ a b => c.rawFree && a.rawFree && b.rawFree
+    | .eLet _ _ a _ b => a.rawFree && b.rawFree
   termination_by structural e
 
   def SrcEff.rawFreeList (es : List SrcEff) : Bool :=
@@ -131,6 +132,9 @@ mutual
       simp only [SrcEff.rawFree, Bool.and_eq_true] at h
       simp only [SrcEff.toCore, ExprFrag, ArmsFrag, SrcEff.toCore_frag c h.1.1, SrcEff.toCore_frag a h.1.2,
         SrcEff.toCore_frag b h.2, Bool.and_self]
+    | .eLet _ _ a _ b =>
+      simp only [SrcEff.rawFree, Bool.and_eq_true] at h
+      simp only [SrcEff.toCore, ExprFrag, ArmsFrag, SrcEff.toCore_frag a h.1, SrcEff.toCore_frag b h.2, Bool.and_self]
     | .eStruct ty fields =>
       simp only [SrcEff.rawFree] at h
       simp only [SrcEff.toCore]; exact literal_frag ty (SrcEff.toCoreList_frag fields h)

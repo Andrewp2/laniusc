@@ -435,6 +435,7 @@ theorem eff_safe_step (calls : ∀ m, FuncSim sp prims outside m) (funcs : FuncS
   | eStride => simp [effTy] at ht
   | arraySlice => simp [effTy] at ht
   | eIf => simp [effTy] at ht
+  | eLet => simp [effTy] at ht
   | eStruct ty fields =>
     simp only [SrcEff.toCore] at run
     simp only [effTy, Option.bind_eq_some_iff] at ht

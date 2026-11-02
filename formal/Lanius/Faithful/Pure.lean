@@ -153,6 +153,7 @@ def peff (env : Env) : SrcEff → Option Value
   | .eStride _ => none
   | .arraySlice _ _ => none
   | .eIf _ _ _ _ => none
+  | .eLet _ _ _ _ _ => none
 
 def peffs (env : Env) : List SrcEff → Option (List Value)
   | [] => some []

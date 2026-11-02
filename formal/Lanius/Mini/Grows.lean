@@ -1742,6 +1742,24 @@ theorem effArms_grows {sp : SrcProgram} {value : Value} :
         | exited => simp [armRun, Semantics.restoreOutcomeLocals] at run
         | outOfFuel => simp [armRun, Semantics.restoreOutcomeLocals] at run
 
+/-- A let in an expression grows as its body does. -/
+theorem letArm_grows {sp : SrcProgram} {w : Value} {id : Nat} {b : SrcEff} {k : Nat} (ih : EffGrows sp k)
+    {st : State} {v : Value} {st' : State}
+    (run : Semantics.evalMatchArms k sp.toCore st w [(.bind id, b.toCore)] = .done v st') : Grows st st' := by
+  cases k with
+  | zero => simp [Semantics.evalMatchArms] at run
+  | succ k =>
+    simp only [Semantics.evalMatchArms, Semantics.matchPattern] at run
+    cases armRun : evalExpr k sp.toCore (st.bindLocals [(id, w)]) b.toCore with
+    | done w' completed =>
+      simp only [armRun, Semantics.restoreOutcomeLocals, Semantics.Outcome.done.injEq] at run
+      obtain ⟨-, rfl⟩ := run
+      have entry := bindLocals_same [(id, w)] st
+      exact ((Grows.same entry.1 entry.2).trans (ih k (Nat.le_succ k) armRun)).trans (Grows.same rfl rfl)
+    | trapped => simp [armRun, Semantics.restoreOutcomeLocals] at run
+    | exited => simp [armRun, Semantics.restoreOutcomeLocals] at run
+    | outOfFuel => simp [armRun, Semantics.restoreOutcomeLocals] at run
+
 /-- A conditional's arms grow as the arm Core runs does. -/
 theorem ifArms_grows {sp : SrcProgram} {w : Value} {a b : SrcEff} {k : Nat} (ih : EffGrows sp k)
     {st : State} {v : Value} {st' : State}
@@ -1914,6 +1932,12 @@ theorem eff_grows_step {sp : SrcProgram} {k : Nat} (ih : GrowsBelow sp (k + 1)) 
     split at run
     · rename_i w next condRun
       exact (sub condRun).trans (ifArms_grows ihe run)
+    all_goals simp at run
+  | eLet id ty a rt b =>
+    simp only [SrcEff.toCore, evalExpr] at run
+    split at run
+    · rename_i w next valueRun
+      exact (sub valueRun).trans (letArm_grows ihe run)
     all_goals simp at run
 
 /-- Every effectful expression Core completes grows the heap. -/

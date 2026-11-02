@@ -191,6 +191,7 @@ def SrcEff.toCore : SrcEff → Core.Expr
   | .arraySlice element array => .arrayToSlice element.toCore (.local array)
   | .eIf condition _ thenValue elseValue =>
       .matchValue condition.toCore [(.literal (.boolean true), thenValue.toCore), (.wildcard, elseValue.toCore)]
+  | .eLet id _ value _ body => .matchValue value.toCore [(.bind id, body.toCore)]
 
 def SrcEff.toCoreList : List SrcEff → List Core.Expr
   | [] => []

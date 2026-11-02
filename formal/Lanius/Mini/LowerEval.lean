@@ -2478,6 +2478,80 @@ theorem eval_match {k : Nat} (ihe : ∀ m ≤ k, EvalSound sp mp m) {scrutinee :
     all_goals simp at run
   · simp at ok
 
+/-- A let in an expression: the value in `slot`, bound to the let's local
+there, the body from `matchDst` above both, then its value copied down to
+`slot`. -/
+theorem eval_let {k : Nat} (ihe : ∀ m ≤ k, EvalSound sp mp m) {id : Nat} {ty rt : SrcType} {a b : SrcEff}
+    (ok : (SrcEff.eLet id ty a rt b).eval (sigs sp.funcs) sp.decls scope slot = some ev)
+    (corr : Corr scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
+    (hc : HeapCorr st.heap st.world hp)
+    (run : evalExpr (k + 1) sp.toCore st (SrcEff.eLet id ty a rt b).toCore = .done v st')
+    (bound : st'.heap.nextAddress ≤ hp.limit) :
+    Evaluates mp hp slot st env ev v st' := by
+  simp only [SrcEff.eval, evalLetIn] at ok
+  split at ok
+  · simp at ok
+  rename_i va valueOk
+  cases hs : armScope [id] [ty] slot scope with
+  | none => simp [hs] at ok
+  | some s' =>
+  simp only [hs] at ok
+  split at ok
+  · simp at ok
+  rename_i bb bodyOk
+  simp only [evalLetInOf] at ok
+  split at ok
+  · rename_i cond
+    simp only [Bool.and_eq_true] at cond
+    obtain ⟨sameA, sameB⟩ := cond
+    simp only [Option.some.injEq] at ok
+    subst ok
+    simp only [SrcEff.toCore, evalExpr] at run
+    split at run
+    · rename_i w st1 valueRun
+      have views1 := (eff_grown valueRun fresh.2).1
+      have grown := letArm_grows (eff_grows k (grows sp k)) run
+      obtain ⟨fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1⟩ :=
+        ihe k (Nat.le_refl _) valueOk corr fr fresh hc valueRun (Nat.le_trans (grown views1).2 bound)
+      rw [SrcType.same_eq sameA] at holds1
+      have fr0 : Layout scope frame 0 slot := ⟨fr.slots, fr.sized, fun _ _ => Nat.zero_le _, fr.inj, fr.apart⟩
+      obtain ⟨frame', corr', fr', fresh', keeps', -⟩ :=
+        armScope_layout [id] hs (.cons holds1 .nil) fr0 (corr.after fr fresh keeps1 locals1 same1) fresh1
+      have hvd : slot + ty.size ≤ matchDst slot ty rt := by
+        have := Nat.le_max_left ty.size rt.size
+        simp only [matchDst]
+        omega
+      have hdst : slot + rt.size ≤ matchDst slot ty rt := by
+        have := Nat.le_max_right ty.size rt.size
+        simp only [matchDst]
+        omega
+      cases k with
+      | zero => simp [Semantics.evalMatchArms] at run
+      | succ k =>
+      simp only [Semantics.evalMatchArms, Semantics.matchPattern] at run
+      cases bodyRun : evalExpr k sp.toCore (st1.bindLocals [(id, w)]) b.toCore with
+      | done w' st2 =>
+        simp only [bodyRun, Semantics.restoreOutcomeLocals, Semantics.Outcome.done.injEq] at run
+        obtain ⟨rfl, rfl⟩ := run
+        have hc' : HeapCorr (st1.bindLocals [(id, w)]).heap (st1.bindLocals [(id, w)]).world hp1 := by
+          rw [(bindLocals_same _ st1).1, bindLocals_world]
+          exact hc1
+        obtain ⟨fresh2, keeps2, locals2, sized2, d2, env2, hp2, exec2, same2, holds2, hc2⟩ :=
+          ihe k (Nat.le_succ k) bodyOk corr' (fr'.mono (by simp only [sizes]; omega)) fresh' hc' bodyRun
+            (by rw [exec1.limit_normal]; exact bound)
+        rw [SrcType.same_eq sameB] at holds2 sized2
+        refine ⟨restore_fresh fresh2, keeps1.chain ((keeps'.chain keeps2).trans (restore_keeps _ _ _)), locals1,
+          sized2, max d1 d2, env2.setFrom slot (slotVars (matchDst slot ty rt) rt.size), hp2,
+          .seq (exec1.mono (Nat.le_max_left _ _)) (.seq (exec2.mono (Nat.le_max_right _ _))
+            (assignFrom_exec _ slot .skip)), fun j lt => ?_, ?_, hc2⟩
+        · rw [setFrom_outside _ slot env2 j (.inl lt), same2 j (by omega), same1 j lt]
+        · exact holds2.congr fun i below => setFrom_slotVars env2 (.inr hdst) below
+      | trapped => simp [bodyRun, Semantics.restoreOutcomeLocals] at run
+      | exited => simp [bodyRun, Semantics.restoreOutcomeLocals] at run
+      | outOfFuel => simp [bodyRun, Semantics.restoreOutcomeLocals] at run
+    all_goals simp at run
+  · simp at ok
+
 /-- A conditional: the condition in `slot`, then the value its test picks,
 also from `slot`. -/
 theorem eval_if {k : Nat} (ihe : ∀ m ≤ k, EvalSound sp mp m) {c a b : SrcEff} {ty : SrcType}
@@ -3894,6 +3968,7 @@ theorem sound_both {sp : SrcProgram} {mp : Program}
         | eIf c ty a b =>
           simp only [SrcEff.eval] at ok
           exact eval_if belowE ok corr fr fresh hc run bound
+        | eLet id ty a rt b => exact eval_let belowE ok corr fr fresh hc run bound
         | eStride slice =>
           simp only [SrcEff.eval] at ok
           cases fuel with

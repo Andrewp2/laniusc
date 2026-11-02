@@ -210,6 +210,7 @@ def effTy (tenv : TEnv) : SrcEff → Option SrcType
   | .eStride _ => none
   | .arraySlice _ _ => none
   | .eIf _ _ _ _ => none
+  | .eLet _ _ _ _ _ => none
 
 def effTys (tenv : TEnv) : List SrcEff → Option (List SrcType)
   | [] => some []

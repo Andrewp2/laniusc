@@ -1469,6 +1469,63 @@ theorem eff_if (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp
     obtain ⟨d, stops⟩ := ihb elseOk corr1 fr fresh1 hc1 within1 bFails
     exact ⟨_, Stops.after exec1 (.ifFalse (by simp [Expr.eval, bits, boolBits]) stops)⟩
 
+/-- A let in an expression: the value's code stops, or its value is bound
+and the body's code stops. -/
+theorem eff_let (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {id : Nat}
+    {ty rt : SrcType} {a b : SrcEff} (iha : EffStops sp mp n a) (ihb : EffStops sp mp n b) :
+    EffStops sp mp n (.eLet id ty a rt b) := by
+  intro hp scope slot ev frame base st env ok corr fr fresh hc within fails
+  simp only [SrcEff.eval, evalLetIn] at ok
+  split at ok
+  · simp at ok
+  rename_i va valueOk
+  cases hs : armScope [id] [ty] slot scope with
+  | none => simp [hs] at ok
+  | some s' =>
+  simp only [hs] at ok
+  split at ok
+  · simp at ok
+  rename_i bb bodyOk
+  simp only [evalLetInOf] at ok
+  split at ok
+  case isFalse => simp at ok
+  rename_i cond
+  simp only [Bool.and_eq_true] at cond
+  obtain ⟨sameA, _⟩ := cond
+  simp only [Option.some.injEq] at ok
+  subst ok
+  simp only [SrcEff.toCore] at fails
+  rcases eff_split lowered iha valueOk corr fr fresh hc within fails (fun j r s h => ⟨j + 1, s, match_trap h, rfl⟩) with
+    ⟨d, stops⟩ | ⟨k, w, st1, valueRun, bound1, fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1⟩
+  · exact ⟨d, .seqFirst stops⟩
+  rw [SrcType.same_eq sameA] at holds1
+  have limit := exec1.limit_normal
+  have armsFails : ∀ j, Failing hp1.limit (Semantics.evalMatchArms j sp.toCore st1 w [(.bind id, b.toCore)]) := by
+    rw [limit]
+    refine failing_after (fun le => Semantics.evalMatchArms_refines le) (k := k) fun j le => ?_
+    have := fails (j + 1)
+    rw [match_arms valueRun le] at this
+    exact this
+  have fr0 : Layout scope frame 0 slot := ⟨fr.slots, fr.sized, fun _ _ => Nat.zero_le _, fr.inj, fr.apart⟩
+  obtain ⟨frame', corr', fr', fresh', keeps', -⟩ :=
+    armScope_layout [id] hs (.cons holds1 .nil) fr0 (corr.after fr fresh keeps1 locals1 same1) fresh1
+  have bFails : EFails sp hp1.limit (st1.bindLocals [(id, w)]) b.toCore := fun j => by
+    have := armsFails (j + 1)
+    simp only [Semantics.evalMatchArms, Semantics.matchPattern] at this
+    exact (failing_restore _ _).mp this
+  have hc' : HeapCorr (st1.bindLocals [(id, w)]).heap (st1.bindLocals [(id, w)]).world hp1 := by
+    rw [(bindLocals_same _ st1).1, bindLocals_world]
+    exact hc1
+  have within' : (st1.bindLocals [(id, w)]).heap.nextAddress ≤ hp1.limit := by
+    rw [(bindLocals_same _ st1).1, limit]
+    exact bound1
+  have hvd : slot + ty.size ≤ matchDst slot ty rt := by
+    have := Nat.le_max_left ty.size rt.size
+    simp only [matchDst]
+    omega
+  obtain ⟨d, stops⟩ := ihb bodyOk corr' (fr'.mono (by simp only [sizes]; omega)) fresh' hc' within' bFails
+  exact ⟨_, Stops.after exec1 (.seqFirst stops)⟩
+
 end Cases
 
 /-! ## Statements that evaluate effectful expressions -/
@@ -2164,6 +2221,7 @@ theorem effStops_all {sp : SrcProgram} {mp : Program} {n : Nat}
   | .arraySlice _ _ => eff_arraySlice
   | .eIf c _ a b => eff_if lowered (effStops_all lowered returns prev c) (effStops_all lowered returns prev a)
       (effStops_all lowered returns prev b)
+  | .eLet _ _ a _ b => eff_let lowered (effStops_all lowered returns prev a) (effStops_all lowered returns prev b)
 termination_by e => sizeOf e
 
 /-- Every lowered statement whose Core run fails stops within `n + 1` ticks

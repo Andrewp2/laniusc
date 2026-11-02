@@ -84,6 +84,7 @@ theorem peff_mono (le : CallsLe call call') :
   | _, .eStride _, _, h => by simp [peff] at h
   | _, .arraySlice _ _, _, h => by simp [peff] at h
   | _, .eIf _ _ _ _, _, h => by simp [peff] at h
+  | _, .eLet _ _ _ _ _, _, h => by simp [peff] at h
 
 theorem peffs_mono (le : CallsLe call call') :
     ∀ {env : Env} {es : List SrcEff} {vs : List Value}, peffs call env es = some vs → peffs call' env es = some vs
