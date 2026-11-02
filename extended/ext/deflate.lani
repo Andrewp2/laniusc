@@ -20,7 +20,9 @@ pub struct Encoder {
     // window's fill and chunk start, the absolute position of window byte 0,
     // the next position still to hash, and output bits not yet a whole byte.
     level: i32, chain: i32, lazy: i32, nice: i32, good: i32,
-    filled: i32, start: i32, origin: i32, hashed: i32, carry: u64, carry_bits: i32, cleared: bool
+    filled: i32, start: i32, origin: i32, hashed: i32, carry: u64, carry_bits: i32, cleared: bool,
+    // A sync flush (see Encoder.sync) is queued in pending.
+    synced: bool
 }
 
 pub fn input_buffer_len() -> i32 { return 32768; }
@@ -489,7 +491,7 @@ pub fn encoder(block: core::slice::View<u8>, pending: core::slice::View<u8>, scr
         scratch: core::slice::View { values: scratch.values, start: scratch.start, length: scratch_len() },
         buffered: 0, front: 0, back: 0, final_block: false, done: false,
         level: 0, chain: 0, lazy: 0, nice: 0, good: 0,
-        filled: 0, start: 0, origin: 0, hashed: 0, carry: 0, carry_bits: 0, cleared: false
+        filled: 0, start: 0, origin: 0, hashed: 0, carry: 0, carry_bits: 0, cleared: false, synced: false
     });
 }
 
@@ -500,7 +502,7 @@ pub impl Encoder {
     pub fn reset(&self) {
         self.buffered = 0; self.front = 0; self.back = 0;
         self.final_block = false; self.done = false;
-        self.filled = 0; self.start = 0; self.origin = 32768; self.hashed = 0; self.carry = 0; self.carry_bits = 0; self.cleared = false;
+        self.filled = 0; self.start = 0; self.origin = 32768; self.hashed = 0; self.carry = 0; self.carry_bits = 0; self.cleared = false; self.synced = false;
     }
 
     // Called only with no pending bytes. Every block starts with fresh match
@@ -525,7 +527,7 @@ pub impl Encoder {
             return core::result::Err(Failure { error: Error::Bounds, read: 0, written: 0 });
         }
         if (self.done) { return core::result::Ok(Step { read: 0, written: 0, status: Status::Done }); }
-        if (self.level > 0) { return level_step(self,input,output,final_input); }
+        if (self.level > 0) { return level_step(self,input,output,final_input,false); }
         let read: i32 = 0; let written: i32 = 0;
         while (true) {
             // Publish confirmed pending bytes before admitting any new input.
@@ -553,6 +555,21 @@ pub impl Encoder {
             }
         }
         return core::result::Ok(Step { read: read, written: written, status: Status::NeedInput });
+    }
+
+    // Levels 1-3 only: compress all of input, then end the output so far on
+    // a byte boundary with an empty nonfinal stored block (00 00 FF FF), as
+    // zlib's Z_SYNC_FLUSH does. Everything written so far then inflates
+    // completely, and later input continues the same stream with the same
+    // 32 KiB history (permessage-deflate context takeover, RFC 7692 7.2.1).
+    // Done once the flush is published; NeedOutput asks for more output with
+    // the rest of input. The next step or sync continues the stream.
+    pub fn sync(&self, input: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<Step,Failure> {
+        if (!valid_bytes(input) || !valid_bytes(output) || self.level == 0) {
+            return core::result::Err(Failure { error: Error::Bounds, read: 0, written: 0 });
+        }
+        if (self.done) { return core::result::Ok(Step { read: 0, written: 0, status: Status::Done }); }
+        return level_step(self,input,output,false,true);
     }
 }
 
@@ -604,11 +621,11 @@ pub fn level_encoder(window: core::slice::View<u8>, pending: core::slice::View<u
         scratch: core::slice::View { values: scratch.values, start: scratch.start, length: level_scratch_len() },
         buffered: 0, front: 0, back: 0, final_block: false, done: false,
         level: level, chain: chain, lazy: lazy, nice: nice, good: good,
-        filled: 0, start: 0, origin: 32768, hashed: 0, carry: 0, carry_bits: 0, cleared: false
+        filled: 0, start: 0, origin: 32768, hashed: 0, carry: 0, carry_bits: 0, cleared: false, synced: false
     });
 }
 
-fn level_step(e: &Encoder, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<Step,Failure> {
+fn level_step(e: &Encoder, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool, sync: bool) -> core::result::Result<Step,Failure> {
     let read: i32 = 0; let written: i32 = 0;
     while (true) {
         let publish: i32 = e.back-e.front; if (publish > output.length-written) { publish = output.length-written; }
@@ -616,7 +633,10 @@ fn level_step(e: &Encoder, input: core::slice::View<u8>, output: core::slice::Vi
         if (e.front < e.back) { return core::result::Ok(Step { read: read, written: written, status: Status::NeedOutput }); }
         e.front = 0; e.back = 0;
         if (e.final_block) { e.done = true; return core::result::Ok(Step { read: read, written: written, status: Status::Done }); }
-        let chunk_end: i32 = e.start+32768;
+        if (e.synced) { e.synced = false; return core::result::Ok(Step { read: read, written: written, status: Status::Done }); }
+        // After a sync flush a chunk may start anywhere; it still ends by
+        // the window's end, where the window slides.
+        let chunk_end: i32 = e.start+32768; if (chunk_end > 65536) { chunk_end = 65536; }
         let count: i32 = input.length-read; if (count > chunk_end-e.filled) { count = chunk_end-e.filled; }
         copy_bytes(e.block,e.filled,input,read,count); e.filled += count; read += count;
         if (e.filled == chunk_end) {
@@ -626,10 +646,23 @@ fn level_step(e: &Encoder, input: core::slice::View<u8>, output: core::slice::Vi
             if (chunk_end == 65536) { level_slide(e); } else { e.start = chunk_end; }
         } else {
             if (final_input) { level_block(e,e.start,e.filled,true); }
-            else { return core::result::Ok(Step { read: read, written: written, status: Status::NeedInput }); }
+            else {
+                if (!sync) { return core::result::Ok(Step { read: read, written: written, status: Status::NeedInput }); }
+                if (e.filled > e.start) { level_block(e,e.start,e.filled,false); e.start = e.filled; }
+                level_sync(e);
+            }
         }
     }
     return core::result::Ok(Step { read: read, written: written, status: Status::NeedInput });
+}
+
+// Queue an empty nonfinal stored block after any pending bits: three
+// header bits, padding to the byte boundary, then LEN 0 and NLEN FFFF.
+fn level_sync(e: &Encoder) {
+    let writer: Bits = Bits { out: core::mem::typed_slice_from_raw_parts<u8>(data(e.pending),e.pending.length), at: e.back, acc: e.carry, count: e.carry_bits };
+    writer.put(0,3); writer.put(0,(8-writer.count) & 7);
+    writer.put(0,16); writer.put(65535,16);
+    e.carry = 0; e.carry_bits = 0; e.back = writer.at; e.synced = true;
 }
 
 // Keep the newest 32 KiB as history. Positions are absolute; far from the

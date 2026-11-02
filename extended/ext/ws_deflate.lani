@@ -3,11 +3,12 @@
 // RSV1 bit) stays in ext::websocket; enable it there with
 // Connection.enable_compression once negotiation succeeds.
 //
-// Sending: every compressed message is one complete raw DEFLATE stream
-// whose last block has BFINAL set (RFC 7692 7.2.3.4), so this side never
-// uses context takeover. Outgoing messages are compressed only when the
-// agreement says the peer resets its context too (server_no_context_takeover
-// for a server, client_no_context_takeover for a client) and our window is
+// Sending: messages go through one ext::deflate level-1 encoder, each ended
+// with a sync flush whose 00 00 FF FF tail is removed (RFC 7692 7.2.1). With
+// context takeover the encoder's 32 KiB history carries across messages;
+// when the agreement says this side resets (server_no_context_takeover for a
+// server, client_no_context_takeover for a client) the encoder restarts per
+// message. Outgoing messages are compressed only when this side's window is
 // not limited below 15 bits; otherwise they go out uncompressed, which the
 // extension always permits. Receiving: the peer may use context takeover
 // and any window size; a 32 KiB history is kept per codec.
@@ -26,8 +27,9 @@ pub enum Error { Bounds, Offer, Corrupt, TooLarge, AllocationFailed }
 // The agreed parameters. bits are 8..15; 15 when absent.
 pub struct Params { server_no_context: bool, client_no_context: bool, server_bits: i32, client_bits: i32 }
 // One endpoint's compression state. compress_out: whether outgoing
-// messages are compressed (see the module comment).
-pub struct Codec { server: bool, params: Params, compress_out: bool, history: alloc::vec::Vec<u8>, tables: alloc::vec::Vec<i32>, decoder: ext::inflate::Decoder,
+// messages are compressed; reset_out: whether each starts without history
+// (see the module comment).
+pub struct Codec { server: bool, params: Params, compress_out: bool, reset_out: bool, history: alloc::vec::Vec<u8>, tables: alloc::vec::Vec<i32>, decoder: ext::inflate::Decoder,
     block: alloc::vec::Vec<u8>, pending: alloc::vec::Vec<u8>, scratch: alloc::vec::Vec<i32>, encoder_ready: bool, encoder: core::option::Option<ext::deflate::Encoder>, active: bool }
 
 fn literal(s: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(s),n); return core::slice::View { values: raw, start: 0, length: n }; }
@@ -93,10 +95,15 @@ fn parse_params(p: core::slice::View<u8>, server_side: bool) -> core::option::Op
     return core::option::None();
 }
 
-// The client's offer: permessage-deflate with client_no_context_takeover
-// (this side never uses context) and client_max_window_bits (the server
-// may limit our window; we then send uncompressed).
-pub fn offer() -> core::slice::View<u8> { return literal("permessage-deflate; client_no_context_takeover; client_max_window_bits",70); }
+// The client's offer: permessage-deflate with client_max_window_bits (the
+// server may limit our window; we then send uncompressed). Both sides may
+// use context takeover unless the server's response says otherwise.
+pub fn offer() -> core::slice::View<u8> { return literal("permessage-deflate; client_max_window_bits",42); }
+// An offer that asks both sides to reset their context after every message
+// (client_no_context_takeover and server_no_context_takeover): less memory
+// held between messages, less compression. A response that accepts it must
+// carry server_no_context_takeover; check Params.server_no_context.
+pub fn offer_no_context() -> core::slice::View<u8> { return literal("permessage-deflate; client_no_context_takeover; server_no_context_takeover; client_max_window_bits",98); }
 
 // Server side: the first permessage-deflate offer in the request's
 // Sec-WebSocket-Extensions fields that this side can accept, with the
@@ -158,8 +165,9 @@ pub fn codec(role: ext::websocket::Role, params: Params) -> core::result::Result
     let h: alloc::vec::Vec<u8> = history.unwrap(); let t: alloc::vec::Vec<i32> = tables.unwrap();
     let made: core::result::Result<ext::inflate::Decoder,ext::inflate::Error> = ext::inflate::decoder(h.as_view(),t.as_view(),32768);
     if (made.is_err()) { h.destroy(); t.destroy(); return core::result::Err(Error::Bounds); }
-    let out: bool = (server && params.server_no_context) || (!server && params.client_no_context && params.client_bits == 15);
-    return core::result::Ok(Codec { server: server, params: params, compress_out: out, history: h, tables: t, decoder: made.unwrap(),
+    let out: bool = (server && params.server_bits == 15) || (!server && params.client_bits == 15);
+    let reset: bool = (server && params.server_no_context) || (!server && params.client_no_context);
+    return core::result::Ok(Codec { server: server, params: params, compress_out: out, reset_out: reset, history: h, tables: t, decoder: made.unwrap(),
         block: alloc::vec::new<u8>(), pending: alloc::vec::new<u8>(), scratch: alloc::vec::new<i32>(), encoder_ready: false, encoder: core::option::None(), active: true });
 }
 
@@ -170,40 +178,48 @@ pub impl Codec {
     pub fn compresses(&self) -> bool { return self.compress_out; }
     // Whether the peer resets its context after every message.
     fn peer_resets(&self) -> bool { if (self.server) { return self.params.client_no_context; } return self.params.server_no_context; }
+    // Whether this side restarts its compression context per message.
+    pub fn resets(&self) -> bool { return self.reset_out; }
     fn ready_encoder(&self) -> bool {
         if (self.encoder_ready) { return true; }
-        let b: core::result::Result<alloc::vec::Vec<u8>,Error> = bytes(ext::deflate::input_buffer_len());
-        let p: core::result::Result<alloc::vec::Vec<u8>,Error> = bytes(ext::deflate::output_buffer_len());
-        let s: core::result::Result<alloc::vec::Vec<i32>,Error> = words(ext::deflate::scratch_len());
+        let b: core::result::Result<alloc::vec::Vec<u8>,Error> = bytes(ext::deflate::level_window_len());
+        let p: core::result::Result<alloc::vec::Vec<u8>,Error> = bytes(ext::deflate::level_pending_len());
+        let s: core::result::Result<alloc::vec::Vec<i32>,Error> = words(ext::deflate::level_scratch_len());
         if (b.is_err() || p.is_err() || s.is_err()) {
             if (b.is_ok()) { let x: alloc::vec::Vec<u8> = b.unwrap(); x.destroy(); } if (p.is_ok()) { let x: alloc::vec::Vec<u8> = p.unwrap(); x.destroy(); }
             if (s.is_ok()) { let x: alloc::vec::Vec<i32> = s.unwrap(); x.destroy(); } return false;
         }
         self.block = b.unwrap(); self.pending = p.unwrap(); self.scratch = s.unwrap();
-        let e: core::result::Result<ext::deflate::Encoder,ext::deflate::Error> = ext::deflate::encoder(self.block.as_view(),self.pending.as_view(),self.scratch.as_view());
+        let e: core::result::Result<ext::deflate::Encoder,ext::deflate::Error> = ext::deflate::level_encoder(self.block.as_view(),self.pending.as_view(),self.scratch.as_view(),1);
         if (e.is_err()) { return false; }
         self.encoder = core::option::Some(e.unwrap()); self.encoder_ready = true; return true;
     }
-    // Append the compressed form of message to out (a complete raw DEFLATE
-    // stream).
+    // Append the compressed payload of message to out: raw DEFLATE ended
+    // with a sync flush, without its 00 00 FF FF tail. With context takeover
+    // it may refer to earlier messages, so send every compressed message, in
+    // order. A failure leaves out as it was and restarts the context; the
+    // peer then cannot inflate later messages that used it, so fail the
+    // connection.
     pub fn compress(&self, message: core::slice::View<u8>, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32,Error> {
         if (!self.active || message.start < 0 || message.length < 0) { return core::result::Err(Error::Bounds); }
         if (!self.ready_encoder()) { return core::result::Err(Error::AllocationFailed); }
-        let e: ext::deflate::Encoder = self.encoder.unwrap(); e.reset();
-        let base: i32 = out.len(); let read: i32 = 0; let written: i32 = 0;
+        let e: ext::deflate::Encoder = self.encoder.unwrap(); if (self.reset_out) { e.reset(); }
+        let base: i32 = out.len(); let read: i32 = 0;
         while (true) {
             let room: i32 = message.len() / 2 + 64; if (room < 4096) { room = 4096; }
-            if (out.try_reserve(room).is_err()) { self.encoder = core::option::Some(e); out.length = base; return core::result::Err(Error::AllocationFailed); }
+            if (out.try_reserve(room).is_err()) { e.reset(); self.encoder = core::option::Some(e); out.length = base; return core::result::Err(Error::AllocationFailed); }
             let at: i32 = out.len(); out.length = at + room;
             let space: core::slice::View<u8> = part(out.as_view(),at,at + room);
-            let stepped: core::result::Result<ext::deflate::Step,ext::deflate::Failure> = e.step(part(message,read,message.len()),space,true);
-            if (stepped.is_err()) { self.encoder = core::option::Some(e); out.length = base; return core::result::Err(Error::Corrupt); }
-            let st: ext::deflate::Step = stepped.unwrap(); read += st.read; written += st.written; out.length = at + st.written;
+            let stepped: core::result::Result<ext::deflate::Step,ext::deflate::Failure> = e.sync(part(message,read,message.len()),space);
+            if (stepped.is_err()) { e.reset(); self.encoder = core::option::Some(e); out.length = base; return core::result::Err(Error::Corrupt); }
+            let st: ext::deflate::Step = stepped.unwrap(); read += st.read; out.length = at + st.written;
             let done: bool = match (st.status) { ext::deflate::Status::Done -> true, _ -> false };
             if (done) { break; }
         }
         self.encoder = core::option::Some(e);
-        return core::result::Ok(written);
+        // Every sync flush ends with the empty stored block's four bytes.
+        out.length = out.length - 4;
+        return core::result::Ok(out.length - base);
     }
     // Inflate one received compressed message into out (appended), at most
     // limit bytes; a text message must also be UTF-8 (check it with

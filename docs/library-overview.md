@@ -2466,8 +2466,12 @@ uses `dial` for `ws://` and verified `wss://` URLs and the canonical
 `ext::websocket` frame engine in the client role. It validates the opening
 handshake against a fresh key, masks every frame, sends and assembles
 fragmented messages, answers Pings, runs both close handshakes and fails the
-connection with 1002/1007/1009. The `ws_cat` sample passes ws (24 cases) and
-wss (26 cases) groups against a minimal asyncio RFC 6455 server.
+connection with 1002/1007/1009/1011. permessage-deflate (`ext::ws_deflate`)
+compresses with a sync-flushed `ext::deflate` level-1 encoder and inflates
+with `ext::inflate`, with context takeover on or off for each side. The
+`ws_cat` sample passes ws (50 cases: length encodings, control-frame,
+continuation, opcode, close-code and UTF-8 rules), wss (52) and deflate (21,
+against Python `zlib`) groups against a stdlib-only asyncio echo server.
 
 [Resumable cleartext HTTP exchanges](extended-http-client.md) expose owned
 Prepared request staging and caller-driven Exchange steps. At `480432e8`,

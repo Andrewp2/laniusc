@@ -47,13 +47,29 @@ def corpus():
 def main():
     cases = 0
     msgs = corpus()
-    # Our compressed messages inflate with zlib after appending the tail;
-    # each is independent (a fresh decompressobj per message).
-    out = unrecords(run(["c", "s"], records(msgs)))
-    for m, c in zip(msgs, out):
+    # Our compressed messages inflate with zlib after appending the tail.
+    # Without context takeover each is independent (a fresh decompressobj
+    # per message).
+    out = unrecords(run(["c", "s", "reset"], records(msgs + msgs)))
+    for m, c in zip(msgs + msgs, out):
         d = zlib.decompressobj(-15)
         check(d.decompress(c + TAIL) == m, ("compress", len(m)))
     check(len(out[3]) < len(msgs[3]) // 10, ("ratio", len(out[3])))
+    check(out[:len(msgs)] == out[len(msgs):], "reset: equal messages compress equally")
+    cases += 1
+    # With context takeover one decompressobj inflates the whole sequence,
+    # and a repeated message refers back into the previous one. Sizes past
+    # the 64 KiB window exercise the encoder's window slide after a flush.
+    rnd = random.Random(7)
+    seq = [os.urandom(1000), None, os.urandom(20000), None, b"x", None, os.urandom(70001), None, b"", None,
+           bytes(rnd.randrange(16) for _ in range(150000)), None, "é中\U0001f600".encode() * 9000, None]
+    seq = [seq[i - 1] if m is None else m for i, m in enumerate(seq)]
+    for role in ("s", "c"):
+        out = unrecords(run(["c", role], records(seq)))
+        d = zlib.decompressobj(-15)
+        for i, (m, c) in enumerate(zip(seq, out)):
+            check(d.decompress(c + TAIL) == m, ("takeover", role, i, len(m)))
+        check(len(out[1]) < 40 and len(out[3]) < len(seq[3]) // 50, ("history used", role, [len(c) for c in out]))
     cases += 1
     # zlib with context takeover and sync flush: one compressor across
     # messages, references into earlier messages.
