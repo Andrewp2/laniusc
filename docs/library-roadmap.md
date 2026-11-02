@@ -340,13 +340,17 @@ default output (git's xdiff with the indent heuristic and hunk-header function
 names), `--histogram` and `-W`/`--function-context` (`ext::seqdiff::function_hunks`)
 match plain `git diff --no-index` on all 4,000 generated pairs in each mode.
 The [text tools](extended-textutils.md) add GNU-compatible `sort`, `uniq`,
-`cut`, `tr` and `wc` under `LC_ALL=C`. Each agrees with coreutils 9.4 on
-2,000 generated oracle cases. `sort` reproduces GNU's key, numeric (including
-its byte-0x80 thousands-separator quirk), stable, unique and last-resort
-rules. It sorts 1.2 million lines with up to eight forked workers. Remaining:
-`sort` ordering options `d g h i M R V`, `-c`, `-m`; `uniq -D`/`--group`;
-locales other than C; `wc -l` and `uniq -f1`, which run at 2.0 to 2.3
-times GNU's time (every other measured mode is within 2x).
+`cut`, `tr`, `wc`, `head`, `tail` (without following), `cat` and `tee` under
+`LC_ALL=C`. Each agrees with coreutils 9.4 on 2,000 generated oracle cases.
+`sort` reproduces GNU's key, numeric (including its byte-0x80
+thousands-separator quirk), stable, unique and last-resort rules. It sorts
+1.2 million lines with up to eight forked workers. `head` and `tail` work
+on regular files in place and leave the file offsets where GNU leaves
+them. Remaining: `paste`, `join` and `comm`; `sort` ordering options
+`d g h i M R V`, `-c`, `-m`; `uniq -D`/`--group`; `tail -f`; locales other
+than C; `wc -l` and `uniq -f1`, which run at 2.0 to 2.3 times GNU's time;
+and `cat -n`/`-b` (5 to 6 times) and `cat -A`/`-v` (12 to 16 times) on
+100 MB.
 
 [Runtime format strings and owned formatting](stdlib-format-strings.md) add
 typed positional/named arguments, scalar fill/alignment/truncation, signed radix

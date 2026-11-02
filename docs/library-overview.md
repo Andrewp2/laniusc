@@ -634,13 +634,18 @@ all 2,040 generated pairs for word diffs, character diffs and `--stat`, on
 1,500 `git diff --stat` reports over generated repositories and on 282
 `diff -ruN` patches.
 [Text tools](extended-textutils.md) (`ext::text_sort`, `ext::text_uniq`,
-`ext::text_cut`, `ext::text_tr`, `ext::text_wc`, `ext::text_lines`;
-`text-sort`, `text-uniq`, `text-cut`, `text-tr`, `text-wc`) reimplement GNU
-coreutils 9.4 `sort` (`-bfnrsuz`, `-k`, `-t`, `-o`), `uniq` (`-c -d -u -i
--f -s -w -z`), `cut` (`-b -c -f -d -s --complement --output-delimiter`),
-`tr` (sets, ranges, classes, `-c -d -s -t`) and `wc` under `LC_ALL=C`. Each
-matches GNU byte for byte, with the same exit status, on 2,000 generated
-cases from its own oracle. `sort` is a multikey MSD radix sort with forked
+`ext::text_cut`, `ext::text_tr`, `ext::text_wc`, `ext::text_head`,
+`ext::text_tail`, `ext::text_cat`, `ext::text_tee`, `ext::text_lines`,
+`ext::text_args`, `ext::text_source`; `text-sort`, `text-uniq`, `text-cut`,
+`text-tr`, `text-wc`, `text-head`, `text-tail`, `text-cat`, `text-tee`)
+reimplement GNU coreutils 9.4 `sort` (`-bfnrsuz`, `-k`, `-t`, `-o`), `uniq`
+(`-c -d -u -i -f -s -w -z`), `cut` (`-b -c -f -d -s --complement
+--output-delimiter`), `tr` (sets, ranges, classes, `-c -d -s -t`), `wc`,
+`head` (`-n -c`, negative counts, GNU's file offsets), `tail` (`-n -c`,
+`+N`, the obsolete form; no following), `cat` (`-AbeEnstTuv`) and `tee`
+(`-a -i -p --output-error`) under `LC_ALL=C`. Each matches GNU byte for
+byte, with the same exit status, on 2,000 generated cases from its own
+oracle. `sort` is a multikey MSD radix sort with forked
 workers from 50,000 lines up. Speeds are in the guide.
 [Multi-file patches](extended-patchset.md) (`ext::patchset`, `seq-patch -i`)
 read git extended headers (renames, copies, modes, creation, deletion,
