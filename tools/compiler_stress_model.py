@@ -8,13 +8,13 @@ from collections import Counter
 from dataclasses import dataclass
 
 
-LANGUAGES = ("rust", "c", "cpp", "zig", "lanius")
+LANGUAGES = ("rust", "c", "cpp", "zig", "moonbit", "lanius")
 PAREAS_LANGUAGE = "pareas"
 # Languages rendered only for the scalar pareas-common-subset profile (no
 # arrays or structs). "d" serves both dmd and LDC, "ts" both tsc and tsrs.
 COMMON_SUBSET_LANGUAGES = ("go", "d", "v", "vx", "ts")
 # Languages whose statements are written without trailing semicolons.
-SEMICOLON_FREE_LANGUAGES = ("go", "v")
+SEMICOLON_FREE_LANGUAGES = ("go", "v", "moonbit")
 VALUE_MASK = 4095
 
 
@@ -399,6 +399,7 @@ def header(language: str, common_subset: bool = False) -> str:
             "cpp": "#include <cstdio>\n\n",
             "zig": "const c = @cImport({ @cInclude(\"stdio.h\"); });\n\n",
             "lanius": "module bench::scaling;\n\n",
+            "moonbit": "",
             "pareas": "",
             "go": "package main\n\nimport \"fmt\"\n\n",
             "d": "import core.stdc.stdio : printf;\n\n",
@@ -412,6 +413,7 @@ def header(language: str, common_subset: bool = False) -> str:
         "cpp": "#include <cstdio>\n\nstruct Pair { int left; int right; };\n\n",
         "zig": "const c = @cImport({ @cInclude(\"stdio.h\"); });\n\nconst Pair = struct { left: i32, right: i32 };\n\n",
         "lanius": "module bench::scaling;\n\nstruct Pair {\n    left: i32,\n    right: i32,\n}\n\n",
+        "moonbit": "struct Pair {\n    left : Int\n    right : Int\n}\n\n",
         "pareas": "",
     }[language]
 
@@ -565,6 +567,8 @@ def function_start(language: str, name: str) -> str:
         return f"fn {name}(x i32) i32 {{"
     if language == "ts":
         return f"function {name}(x: number): number {{"
+    if language == "moonbit":
+        return f"fn {name}(x : Int) -> Int {{"
     return f"fn {name}(x: i32) -> i32 {{"
 
 
@@ -589,6 +593,8 @@ def declare(language: str, name: str, expression: str) -> str:
         return f"    let mut {name}: i32 = {expression};"
     if language == "ts":
         return f"    let {name}: number = {expression};"
+    if language == "moonbit":
+        return f"    let mut {name} : Int = {expression};"
     return f"    let {name}: i32 = {expression};"
 
 
@@ -609,6 +615,8 @@ def declare_readonly(language: str, name: str, expression: str) -> str:
         return f"    {name} := {expression};"
     if language == "ts":
         return f"    const {name}: number = {expression};"
+    if language == "moonbit":
+        return f"    let {name} : Int = {expression};"
     return f"    let {name}: i32 = {expression};"
 
 
@@ -620,6 +628,8 @@ def array_declare(language: str, expressions: list[str]) -> str:
         return f"    int values[4] = {{{values}}};"
     if language == "zig":
         return f"    const values = [_]i32{{{values}}};"
+    if language == "moonbit":
+        return f"    let values : FixedArray[Int] = [{values}];"
     return f"    let values: [i32; 4] = [{values}];"
 
 
@@ -628,6 +638,8 @@ def index_declare(language: str) -> str:
         return "    var i: usize = 0;" if language == "zig" else "    let mut i: usize = 0;"
     if language in ("c", "cpp"):
         return "    int i = 0;"
+    if language == "moonbit":
+        return "    let mut i : Int = 0;"
     return "    let i: i32 = 0;"
 
 
@@ -640,7 +652,7 @@ def index_expr(language: str, name: str) -> str:
 
 
 def increment(language: str, name: str) -> str:
-    if language == "pareas":
+    if language in ("pareas", "moonbit"):
         return f"        {name} = {name} + 1;"
     return f"        {name} += 1;"
 
@@ -652,6 +664,8 @@ def pair_declare(language: str, left: str, right: str) -> str:
         return f"    Pair pair = {{{left}, {right}}};"
     if language == "zig":
         return f"    const pair = Pair{{ .left = {left}, .right = {right} }};"
+    if language == "moonbit":
+        return f"    let pair : Pair = Pair::{{ left: {left}, right: {right} }};"
     return f"    let pair: Pair = Pair {{ left: {left}, right: {right} }};"
 
 
@@ -670,6 +684,7 @@ def main_function(language: str, root: str) -> str:
         "go": f"func main() {{ fmt.Println({root}(7)) }}\n",
         "d": f'int main() {{ printf("%d\\n", {root}(7)); return 0; }}\n',
         "v": f"fn main() {{ println({root}(7)) }}\n",
+        "moonbit": f"fn main {{\n    println({root}(7))\n}}\n",
         # Vx's print(i32) writes the digits without a newline.
         "vx": f"""fn main() -> i32 {{
     print({root}(7));

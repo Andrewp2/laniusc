@@ -1,6 +1,7 @@
 import Lanius.Faithful.Gen.SelfPureTab
 import Lanius.Faithful.Gen.SelfLiveTab
 import Lanius.Faithful.Gen.SelfSrc7
+import Lanius.Faithful.Gen.SelfSrcC_needRound
 import Lanius.Faithful.Gen.SelfSrcC_storeWordElement
 import Lanius.Faithful.Gen.SelfSrcC_wordElement
 import Lanius.Faithful.Gen.SelfSrcF_Inline_attachNode
@@ -37,453 +38,459 @@ theorem lok56 : LiveOk prims outside liveBad 56 (src_minus) := by decide +kernel
 theorem lok78 : LiveOk prims outside liveBad 78 (src_unbox_of_mini_selfhost_List_u8 111) := by decide +kernel
 
 /-- mini::selfhost::cons<mini::selfhost::Func> -/
-theorem lok117 : LiveOk prims outside liveBad 117 (src_cons_of_mini_selfhost_Func 164) := by decide +kernel
-
-/-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::SrcParam>> -/
-theorem lok131 : LiveOk prims outside liveBad 131 (src_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam 222) := by decide +kernel
+theorem lok117 : LiveOk prims outside liveBad 117 (src_cons_of_mini_selfhost_Func 172) := by decide +kernel
 
 /-- mini::selfhost::kid -/
-theorem lok147 : LiveOk prims outside liveBad 147 (src_kid 241 242 243) := by decide +kernel
+theorem lok155 : LiveOk prims outside liveBad 155 (src_kid 253 254 255) := by decide +kernel
 
 /-- mini::selfhost::module_path -/
-theorem lok149 : LiveOk prims outside liveBad 149 (src_module_path 103 246 247 248) := by decide +kernel
+theorem lok157 : LiveOk prims outside liveBad 157 (src_module_path 103 258 259 260) := by decide +kernel
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Token>> -/
-theorem lok158 : LiveOk prims outside liveBad 158 (src_unbox_of_mini_selfhost_List_mini_selfhost_Token 261) := by decide +kernel
+theorem lok166 : LiveOk prims outside liveBad 166 (src_unbox_of_mini_selfhost_List_mini_selfhost_Token 273) := by decide +kernel
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Func>> -/
-theorem lok164 : LiveOk prims outside liveBad 164 (src_boxed_of_mini_selfhost_List_mini_selfhost_Func 50 275 276) := by decide +kernel
+theorem lok172 : LiveOk prims outside liveBad 172 (src_boxed_of_mini_selfhost_List_mini_selfhost_Func 50 287 288) := by decide +kernel
+
+/-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::SrcParam>> -/
+theorem lok173 : LiveOk prims outside liveBad 173 (src_unbox_of_mini_selfhost_List_mini_selfhost_SrcParam 289) := by decide +kernel
+
+/-- mini::selfhost::need_round -/
+theorem lok234 : LiveOk prims outside liveBad 234 (src_need_round 59 75 119 138 234 377 378) := by decide +kernel
+
+/-- mini::selfhost::same_needs -/
+theorem lok235 : LiveOk prims outside liveBad 235 (src_same_needs 76 235) := by decide +kernel
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Sym>> -/
-theorem lok237 : LiveOk prims outside liveBad 237 (src_unbox_of_mini_selfhost_List_mini_selfhost_Sym 108) := by decide +kernel
+theorem lok249 : LiveOk prims outside liveBad 249 (src_unbox_of_mini_selfhost_List_mini_selfhost_Sym 108) := by decide +kernel
 
 /-- mini::selfhost::kids_of -/
-theorem lok241 : LiveOk prims outside liveBad 241 (src_kids_of 96 103) := by decide +kernel
+theorem lok253 : LiveOk prims outside liveBad 253 (src_kids_of 96 103) := by decide +kernel
 
 /-- mini::selfhost::no_token -/
-theorem lok243 : LiveOk prims outside liveBad 243 (src_no_token 229) := by decide +kernel
+theorem lok255 : LiveOk prims outside liveBad 255 (src_no_token 138) := by decide +kernel
 
 /-- mini::selfhost::item_body -/
-theorem lok248 : LiveOk prims outside liveBad 248 (src_item_body 144 147 386) := by decide +kernel
+theorem lok260 : LiveOk prims outside liveBad 260 (src_item_body 152 155 404) := by decide +kernel
 
 /-- mini::selfhost::empty<mini::selfhost::Arity> -/
-theorem lok269 : LiveOk prims outside liveBad 269 (src_empty_of_mini_selfhost_Arity) := by decide +kernel
+theorem lok281 : LiveOk prims outside liveBad 281 (src_empty_of_mini_selfhost_Arity) := by decide +kernel
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Expr>> -/
-theorem lok285 : LiveOk prims outside liveBad 285 (src_boxed_of_mini_selfhost_List_mini_selfhost_Expr 50 444 445) := by decide +kernel
+theorem lok301 : LiveOk prims outside liveBad 301 (src_boxed_of_mini_selfhost_List_mini_selfhost_Expr 50 467 468) := by decide +kernel
 
 /-- mini::selfhost::word_element -/
-theorem lok314 : LiveOk prims outside liveBad 314 (src_word_element 313 476) := by decide +kernel
+theorem lok330 : LiveOk prims outside liveBad 330 (src_word_element 329 498) := by decide +kernel
 
 /-- mini::selfhost::no_decls -/
-theorem lok381 : LiveOk prims outside liveBad 381 (src_no_decls 549 550 551 552 553 554 555) := by decide +kernel
+theorem lok399 : LiveOk prims outside liveBad 399 (src_no_decls 571 572 573 574 575 576 577) := by decide +kernel
 
 /-- ?<mini::selfhost::Decls> -/
-theorem lok391 : LiveOk prims outside liveBad 391 (src_field_aliases_Decls_of_mini_selfhost_Decls) := by decide +kernel
+theorem lok409 : LiveOk prims outside liveBad 409 (src_field_aliases_Decls_of_mini_selfhost_Decls) := by decide +kernel
 
 /-- ?<mini::selfhost::Decls> -/
-theorem lok415 : LiveOk prims outside liveBad 415 (src_field_impls_Decls_of_mini_selfhost_Decls) := by decide +kernel
+theorem lok433 : LiveOk prims outside liveBad 433 (src_field_impls_Decls_of_mini_selfhost_Decls) := by decide +kernel
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Arity>> -/
-theorem lok436 : LiveOk prims outside liveBad 436 (src_boxed_of_mini_selfhost_List_mini_selfhost_Arity 50 688 689) := by decide +kernel
+theorem lok454 : LiveOk prims outside liveBad 454 (src_boxed_of_mini_selfhost_List_mini_selfhost_Arity 50 710 711) := by decide +kernel
 
 /-- mini::selfhost::concat<u8> -/
-theorem lok439 : LiveOk prims outside liveBad 439 (src_concat_of_u8 78 439 690) := by decide +kernel
+theorem lok457 : LiveOk prims outside liveBad 457 (src_concat_of_u8 78 457 712) := by decide +kernel
 
 /-- mini::selfhost::lower_set_index_of -/
-theorem lok489 : LiveOk prims outside liveBad 489 (src_lower_set_index_of 344 725) := by decide +kernel
+theorem lok511 : LiveOk prims outside liveBad 511 (src_lower_set_index_of 360 748) := by decide +kernel
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::List<usize>>> -/
-theorem lok505 : LiveOk prims outside liveBad 505 (src_unbox_of_mini_selfhost_List_mini_selfhost_List_usize 744) := by decide +kernel
+theorem lok527 : LiveOk prims outside liveBad 527 (src_unbox_of_mini_selfhost_List_mini_selfhost_List_usize 767) := by decide +kernel
 
 /-- mini::selfhost::cons<mini::selfhost::Expr> -/
-theorem lok510 : LiveOk prims outside liveBad 510 (src_cons_of_mini_selfhost_Expr 285) := by decide +kernel
+theorem lok532 : LiveOk prims outside liveBad 532 (src_cons_of_mini_selfhost_Expr 301) := by decide +kernel
 
 /-- mini::selfhost::join_decls -/
-theorem lok556 : LiveOk prims outside liveBad 556 (src_join_decls 407 408 409 411 413 414 416) := by decide +kernel
+theorem lok578 : LiveOk prims outside liveBad 578 (src_join_decls 425 426 427 429 431 432 434) := by decide +kernel
 
 /-- mini::selfhost::type_decl -/
-theorem lok560 : LiveOk prims outside liveBad 560 (src_type_decl 144 146 147 557 558 568 569 578 580 854 855 856) := by decide +kernel
+theorem lok582 : LiveOk prims outside liveBad 582 (src_type_decl 152 154 155 579 580 590 591 600 602 877 878 879) := by decide +kernel
 
 /-- mini::selfhost::cons_fn_decl -/
-theorem lok563 : LiveOk prims outside liveBad 563 (src_cons_fn_decl 857) := by decide +kernel
+theorem lok585 : LiveOk prims outside liveBad 585 (src_cons_fn_decl 880) := by decide +kernel
 
 /-- mini::selfhost::fn_decl_of -/
-theorem lok564 : LiveOk prims outside liveBad 564 (src_fn_decl_of 568 569) := by decide +kernel
+theorem lok586 : LiveOk prims outside liveBad 586 (src_fn_decl_of 590 591) := by decide +kernel
 
 /-- mini::selfhost::type_params -/
-theorem lok565 : LiveOk prims outside liveBad 565 (src_type_params 146 858) := by decide +kernel
+theorem lok587 : LiveOk prims outside liveBad 587 (src_type_params 154 881) := by decide +kernel
 
 /-- mini::selfhost::p_const -/
-theorem lok566 : LiveOk prims outside liveBad 566 (src_p_const) := by decide +kernel
+theorem lok588 : LiveOk prims outside liveBad 588 (src_p_const) := by decide +kernel
 
 /-- mini::selfhost::import_decls -/
-theorem lok576 : LiveOk prims outside liveBad 576 (src_import_decls 549 550 551 553 554 555 862) := by decide +kernel
+theorem lok598 : LiveOk prims outside liveBad 598 (src_import_decls 571 572 573 575 576 577 885) := by decide +kernel
 
 /-- mini::selfhost::free_params -/
-theorem lok580 : LiveOk prims outside liveBad 580 (src_free_params 146 858 864 865) := by decide +kernel
+theorem lok602 : LiveOk prims outside liveBad 602 (src_free_params 154 881 887 888) := by decide +kernel
 
 /-- mini::selfhost::module_decls -/
-theorem lok584 : LiveOk prims outside liveBad 584 (src_module_decls 104 549 550 551 552 553 554) := by decide +kernel
+theorem lok606 : LiveOk prims outside liveBad 606 (src_module_decls 104 571 572 573 574 575 576) := by decide +kernel
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::List<mini::selfhost::List<usize>>>> -/
-theorem lok592 : LiveOk prims outside liveBad 592 (src_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_List_usize 260) := by decide +kernel
+theorem lok614 : LiveOk prims outside liveBad 614 (src_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_List_usize 272) := by decide +kernel
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Ty>> -/
-theorem lok611 : LiveOk prims outside liveBad 611 (src_boxed_of_mini_selfhost_List_mini_selfhost_Ty 50 906 910) := by decide +kernel
+theorem lok633 : LiveOk prims outside liveBad 633 (src_boxed_of_mini_selfhost_List_mini_selfhost_Ty 50 929 933) := by decide +kernel
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::ImplDecl>> -/
-theorem lok633 : LiveOk prims outside liveBad 633 (src_boxed_of_mini_selfhost_List_mini_selfhost_ImplDecl 50 938 939) := by decide +kernel
+theorem lok655 : LiveOk prims outside liveBad 655 (src_boxed_of_mini_selfhost_List_mini_selfhost_ImplDecl 50 961 962) := by decide +kernel
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Instr>> -/
-theorem lok675 : LiveOk prims outside liveBad 675 (src_boxed_of_mini_selfhost_List_mini_selfhost_Instr 50 961 962) := by decide +kernel
+theorem lok697 : LiveOk prims outside liveBad 697 (src_boxed_of_mini_selfhost_List_mini_selfhost_Instr 50 984 985) := by decide +kernel
 
 /-- mini::selfhost::empty<mini::selfhost::Instr> -/
-theorem lok676 : LiveOk prims outside liveBad 676 (src_empty_of_mini_selfhost_Instr) := by decide +kernel
+theorem lok698 : LiveOk prims outside liveBad 698 (src_empty_of_mini_selfhost_Instr) := by decide +kernel
 
 /-- mini::selfhost::single<u8> -/
-theorem lok692 : LiveOk prims outside liveBad 692 (src_single_of_u8 690) := by decide +kernel
+theorem lok714 : LiveOk prims outside liveBad 714 (src_single_of_u8 712) := by decide +kernel
 
 /-- mini::selfhost::length<mini::selfhost::SrcArm> -/
-theorem lok709 : LiveOk prims outside liveBad 709 (src_length_of_mini_selfhost_SrcArm 75 709 1009) := by decide +kernel
+theorem lok732 : LiveOk prims outside liveBad 732 (src_length_of_mini_selfhost_SrcArm 75 732 1031) := by decide +kernel
 
 /-- mini::selfhost::store_any -/
-theorem lok725 : LiveOk prims outside liveBad 725 (src_store_any 312 313 314 1017 1018 1019) := by decide +kernel
+theorem lok748 : LiveOk prims outside liveBad 748 (src_store_any 328 329 330 1039 1040 1041) := by decide +kernel
 
 /-- mini::selfhost::cons<mini::selfhost::Token> -/
-theorem lok766 : LiveOk prims outside liveBad 766 (src_cons_of_mini_selfhost_Token 1050) := by decide +kernel
+theorem lok790 : LiveOk prims outside liveBad 790 (src_cons_of_mini_selfhost_Token 1072) := by decide +kernel
 
 /-- mini::selfhost::with_kid -/
-theorem lok774 : LiveOk prims outside liveBad 774 (src_with_kid 139) := by decide +kernel
+theorem lok797 : LiveOk prims outside liveBad 797 (src_with_kid 147) := by decide +kernel
 
 /-- mini::selfhost::t_gt -/
-theorem lok776 : LiveOk prims outside liveBad 776 (src_t_gt) := by decide +kernel
+theorem lok799 : LiveOk prims outside liveBad 799 (src_t_gt) := by decide +kernel
 
 /-- mini::selfhost::attach_prod -/
-theorem lok779 : LiveOk prims outside liveBad 779 (src_attach_prod 1054 1055 1056) := by decide +kernel
+theorem lok802 : LiveOk prims outside liveBad 802 (src_attach_prod 1076 1077 1078) := by decide +kernel
 
 /-- mini::selfhost::p_type_param_bound_more -/
-theorem lok842 : LiveOk prims outside liveBad 842 (src_p_type_param_bound_more) := by decide +kernel
+theorem lok865 : LiveOk prims outside liveBad 865 (src_p_type_param_bound_more) := by decide +kernel
 
 /-- mini::selfhost::p_where_predicates_more -/
-theorem lok843 : LiveOk prims outside liveBad 843 (src_p_where_predicates_more) := by decide +kernel
+theorem lok866 : LiveOk prims outside liveBad 866 (src_p_where_predicates_more) := by decide +kernel
 
 /-- mini::selfhost::p_where_predicate_more_after_comma -/
-theorem lok844 : LiveOk prims outside liveBad 844 (src_p_where_predicate_more_after_comma) := by decide +kernel
+theorem lok867 : LiveOk prims outside liveBad 867 (src_p_where_predicate_more_after_comma) := by decide +kernel
 
 /-- mini::selfhost::p_bound_type_args_more -/
-theorem lok845 : LiveOk prims outside liveBad 845 (src_p_bound_type_args_more) := by decide +kernel
+theorem lok868 : LiveOk prims outside liveBad 868 (src_p_bound_type_args_more) := by decide +kernel
 
 /-- mini::selfhost::p_bound_type_args_after_comma_more -/
-theorem lok846 : LiveOk prims outside liveBad 846 (src_p_bound_type_args_after_comma_more) := by decide +kernel
+theorem lok869 : LiveOk prims outside liveBad 869 (src_p_bound_type_args_after_comma_more) := by decide +kernel
 
 /-- mini::selfhost::struct_decl_of -/
-theorem lok854 : LiveOk prims outside liveBad 854 (src_struct_decl_of 1058 1059) := by decide +kernel
+theorem lok877 : LiveOk prims outside liveBad 877 (src_struct_decl_of 1080 1081) := by decide +kernel
 
 /-- mini::selfhost::enum_decl_of -/
-theorem lok855 : LiveOk prims outside liveBad 855 (src_enum_decl_of 96 246) := by decide +kernel
+theorem lok878 : LiveOk prims outside liveBad 878 (src_enum_decl_of 96 258) := by decide +kernel
 
 /-- mini::selfhost::variants_of -/
-theorem lok856 : LiveOk prims outside liveBad 856 (src_variants_of 103 246 568 569 856 1060 1061 1062) := by decide +kernel
+theorem lok879 : LiveOk prims outside liveBad 879 (src_variants_of 103 258 590 591 879 1082 1083 1084) := by decide +kernel
 
 /-- mini::selfhost::param_spellings -/
-theorem lok858 : LiveOk prims outside liveBad 858 (src_param_spellings 103 246 1063) := by decide +kernel
+theorem lok881 : LiveOk prims outside liveBad 881 (src_param_spellings 103 258 1085) := by decide +kernel
 
 /-- mini::selfhost::if_unbounded -/
-theorem lok864 : LiveOk prims outside liveBad 864 (src_if_unbounded) := by decide +kernel
+theorem lok887 : LiveOk prims outside liveBad 887 (src_if_unbounded) := by decide +kernel
 
 /-- mini::selfhost::unbounded -/
-theorem lok865 : LiveOk prims outside liveBad 865 (src_unbounded 103 144 147 865 1066) := by decide +kernel
+theorem lok888 : LiveOk prims outside liveBad 888 (src_unbounded 103 152 155 888 1088) := by decide +kernel
 
 /-- mini::selfhost::concat<mini::selfhost::List<usize>> -/
-theorem lok874 : LiveOk prims outside liveBad 874 (src_concat_of_mini_selfhost_List_usize 505 870 874) := by decide +kernel
+theorem lok897 : LiveOk prims outside liveBad 897 (src_concat_of_mini_selfhost_List_usize 527 893 897) := by decide +kernel
 
 /-- mini::selfhost::empty<mini::selfhost::SrcFunc> -/
-theorem lok885 : LiveOk prims outside liveBad 885 (src_empty_of_mini_selfhost_SrcFunc) := by decide +kernel
+theorem lok908 : LiveOk prims outside liveBad 908 (src_empty_of_mini_selfhost_SrcFunc) := by decide +kernel
 
 /-- mini::selfhost::cons<mini::selfhost::SrcFunc> -/
-theorem lok895 : LiveOk prims outside liveBad 895 (src_cons_of_mini_selfhost_SrcFunc 1119) := by decide +kernel
+theorem lok918 : LiveOk prims outside liveBad 918 (src_cons_of_mini_selfhost_SrcFunc 1141) := by decide +kernel
 
 /-- mini::selfhost::get<mini::selfhost::Ty> -/
-theorem lok929 : LiveOk prims outside liveBad 929 (src_get_of_mini_selfhost_Ty 56 607 929) := by decide +kernel
+theorem lok952 : LiveOk prims outside liveBad 952 (src_get_of_mini_selfhost_Ty 56 629 952) := by decide +kernel
 
 /-- mini::selfhost::store_word_element -/
-theorem lok1019 : LiveOk prims outside liveBad 1019 (src_store_word_element 119 177 751 752) := by decide +kernel
+theorem lok1041 : LiveOk prims outside liveBad 1041 (src_store_word_element 120 189 774 775) := by decide +kernel
 
 /-- mini::selfhost::get<mini::selfhost::Expr> -/
-theorem lok1030 : LiveOk prims outside liveBad 1030 (src_get_of_mini_selfhost_Expr 56 443 1030) := by decide +kernel
+theorem lok1052 : LiveOk prims outside liveBad 1052 (src_get_of_mini_selfhost_Expr 56 466 1052) := by decide +kernel
 
 /-- mini::selfhost::lx_space_end -/
-theorem lok1042 : LiveOk prims outside liveBad 1042 (src_lx_space_end 75 532 1246) := by decide +kernel
+theorem lok1064 : LiveOk prims outside liveBad 1064 (src_lx_space_end 75 556 1268) := by decide +kernel
 
 /-- mini::selfhost::lx_quoted -/
-theorem lok1044 : LiveOk prims outside liveBad 1044 (src_lx_quoted 76 1247) := by decide +kernel
+theorem lok1066 : LiveOk prims outside liveBad 1066 (src_lx_quoted 76 1269) := by decide +kernel
 
 /-- mini::selfhost::attach_node -/
-theorem lok1056 : LiveOk prims outside liveBad 1056 (src_attach_node 75 140 1262) := by decide +kernel
+theorem lok1078 : LiveOk prims outside liveBad 1078 (src_attach_node 75 148 1284) := by decide +kernel
 
 /-- mini::selfhost::struct_decl_fields -/
-theorem lok1058 : LiveOk prims outside liveBad 1058 (src_struct_decl_fields 246 873 1060) := by decide +kernel
+theorem lok1080 : LiveOk prims outside liveBad 1080 (src_struct_decl_fields 258 896 1082) := by decide +kernel
 
 /-- mini::selfhost::fields_of -/
-theorem lok1059 : LiveOk prims outside liveBad 1059 (src_fields_of 96 103 246 1059 1263) := by decide +kernel
+theorem lok1081 : LiveOk prims outside liveBad 1081 (src_fields_of 96 103 258 1081 1285) := by decide +kernel
 
 /-- mini::selfhost::cons_variant -/
-theorem lok1061 : LiveOk prims outside liveBad 1061 (src_cons_variant 1264) := by decide +kernel
+theorem lok1083 : LiveOk prims outside liveBad 1083 (src_cons_variant 1286) := by decide +kernel
 
 /-- mini::selfhost::variant_payload -/
-theorem lok1062 : LiveOk prims outside liveBad 1062 (src_variant_payload 96 144 146 147 1265) := by decide +kernel
+theorem lok1084 : LiveOk prims outside liveBad 1084 (src_variant_payload 96 152 154 155 1287) := by decide +kernel
 
 /-- mini::selfhost::p_type_param_bound_none -/
-theorem lok1066 : LiveOk prims outside liveBad 1066 (src_p_type_param_bound_none) := by decide +kernel
+theorem lok1088 : LiveOk prims outside liveBad 1088 (src_p_type_param_bound_none) := by decide +kernel
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::SrcFunc>> -/
-theorem lok1119 : LiveOk prims outside liveBad 1119 (src_boxed_of_mini_selfhost_List_mini_selfhost_SrcFunc 50 82 1300) := by decide +kernel
+theorem lok1141 : LiveOk prims outside liveBad 1141 (src_boxed_of_mini_selfhost_List_mini_selfhost_SrcFunc 50 82 1322) := by decide +kernel
 
 /-- mini::selfhost::p_block_stmt -/
-theorem lok1257 : LiveOk prims outside liveBad 1257 (src_p_block_stmt) := by decide +kernel
+theorem lok1279 : LiveOk prims outside liveBad 1279 (src_p_block_stmt) := by decide +kernel
 
 /-- mini::selfhost::cons_field -/
-theorem lok1263 : LiveOk prims outside liveBad 1263 (src_cons_field 139 147 568 569 1076) := by decide +kernel
+theorem lok1285 : LiveOk prims outside liveBad 1285 (src_cons_field 147 155 590 591 1098) := by decide +kernel
 
 /-- mini::selfhost::cons_variant_tail -/
-theorem lok1264 : LiveOk prims outside liveBad 1264 (src_cons_variant_tail 1076 1399) := by decide +kernel
+theorem lok1286 : LiveOk prims outside liveBad 1286 (src_cons_variant_tail 1098 1421) := by decide +kernel
 
 /-- mini::selfhost::slice_type -/
-theorem lok1273 : LiveOk prims outside liveBad 1273 (src_slice_type 201) := by decide +kernel
+theorem lok1295 : LiveOk prims outside liveBad 1295 (src_slice_type 213) := by decide +kernel
 
 /-- mini::selfhost::empty<mini::selfhost::SrcExpr> -/
-theorem lok1312 : LiveOk prims outside liveBad 1312 (src_empty_of_mini_selfhost_SrcExpr) := by decide +kernel
+theorem lok1334 : LiveOk prims outside liveBad 1334 (src_empty_of_mini_selfhost_SrcExpr) := by decide +kernel
 
 /-- mini::selfhost::cons<mini::selfhost::SrcExpr> -/
-theorem lok1313 : LiveOk prims outside liveBad 1313 (src_cons_of_mini_selfhost_SrcExpr 1429) := by decide +kernel
+theorem lok1335 : LiveOk prims outside liveBad 1335 (src_cons_of_mini_selfhost_SrcExpr 1451) := by decide +kernel
 
 /-- mini::selfhost::get<mini::selfhost::SrcFunc> -/
-theorem lok1317 : LiveOk prims outside liveBad 1317 (src_get_of_mini_selfhost_SrcFunc 56 59 1317) := by decide +kernel
+theorem lok1339 : LiveOk prims outside liveBad 1339 (src_get_of_mini_selfhost_SrcFunc 56 59 1339) := by decide +kernel
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::LocalTy>> -/
-theorem lok1324 : LiveOk prims outside liveBad 1324 (src_unbox_of_mini_selfhost_List_mini_selfhost_LocalTy 1431) := by decide +kernel
+theorem lok1346 : LiveOk prims outside liveBad 1346 (src_unbox_of_mini_selfhost_List_mini_selfhost_LocalTy 1453) := by decide +kernel
 
 /-- mini::selfhost::flat_payloads -/
-theorem lok1336 : LiveOk prims outside liveBad 1336 (src_flat_payloads 1442) := by decide +kernel
+theorem lok1358 : LiveOk prims outside liveBad 1358 (src_flat_payloads 1464) := by decide +kernel
 
 /-- mini::selfhost::t_lbrace -/
-theorem lok1398 : LiveOk prims outside liveBad 1398 (src_t_lbrace) := by decide +kernel
+theorem lok1420 : LiveOk prims outside liveBad 1420 (src_t_lbrace) := by decide +kernel
 
 /-- mini::selfhost::cons<mini::selfhost::List<mini::selfhost::CTree>> -/
-theorem lok1399 : LiveOk prims outside liveBad 1399 (src_cons_of_mini_selfhost_List_mini_selfhost_CTree 1490) := by decide +kernel
+theorem lok1421 : LiveOk prims outside liveBad 1421 (src_cons_of_mini_selfhost_List_mini_selfhost_CTree 1512) := by decide +kernel
 
 /-- mini::selfhost::cons_types -/
-theorem lok1406 : LiveOk prims outside liveBad 1406 (src_cons_types 1495) := by decide +kernel
+theorem lok1428 : LiveOk prims outside liveBad 1428 (src_cons_types 1517) := by decide +kernel
 
 /-- mini::selfhost::cons_type -/
-theorem lok1409 : LiveOk prims outside liveBad 1409 (src_cons_type 1500) := by decide +kernel
+theorem lok1431 : LiveOk prims outside liveBad 1431 (src_cons_type 1522) := by decide +kernel
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::SrcExpr>> -/
-theorem lok1429 : LiveOk prims outside liveBad 1429 (src_boxed_of_mini_selfhost_List_mini_selfhost_SrcExpr 50 465 1507) := by decide +kernel
+theorem lok1451 : LiveOk prims outside liveBad 1451 (src_boxed_of_mini_selfhost_List_mini_selfhost_SrcExpr 50 488 1529) := by decide +kernel
 
 /-- mini::selfhost::flatten_tys -/
-theorem lok1442 : LiveOk prims outside liveBad 1442 (src_flatten_tys 404 613 1407 1442) := by decide +kernel
+theorem lok1464 : LiveOk prims outside liveBad 1464 (src_flatten_tys 422 635 1429 1464) := by decide +kernel
 
 /-- mini::selfhost::cons_types_tail -/
-theorem lok1495 : LiveOk prims outside liveBad 1495 (src_cons_types_tail 1568) := by decide +kernel
+theorem lok1517 : LiveOk prims outside liveBad 1517 (src_cons_types_tail 1590) := by decide +kernel
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::List<mini::selfhost::CTree>>> -/
-theorem lok1499 : LiveOk prims outside liveBad 1499 (src_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_CTree 1563) := by decide +kernel
+theorem lok1521 : LiveOk prims outside liveBad 1521 (src_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_CTree 1585) := by decide +kernel
 
 /-- mini::selfhost::cons_type_tail -/
-theorem lok1500 : LiveOk prims outside liveBad 1500 (src_cons_type_tail 130) := by decide +kernel
+theorem lok1522 : LiveOk prims outside liveBad 1522 (src_cons_type_tail 233) := by decide +kernel
 
 /-- mini::selfhost::null_at -/
-theorem lok1501 : LiveOk prims outside liveBad 1501 (src_null_at) := by decide +kernel
+theorem lok1523 : LiveOk prims outside liveBad 1523 (src_null_at) := by decide +kernel
 
 /-- mini::selfhost::p_where_some -/
-theorem lok1533 : LiveOk prims outside liveBad 1533 (src_p_where_some) := by decide +kernel
+theorem lok1555 : LiveOk prims outside liveBad 1555 (src_p_where_some) := by decide +kernel
 
 /-- mini::selfhost::lx_line_end -/
-theorem lok1548 : LiveOk prims outside liveBad 1548 (src_lx_line_end 75 532 1604) := by decide +kernel
+theorem lok1570 : LiveOk prims outside liveBad 1570 (src_lx_line_end 75 556 1626) := by decide +kernel
 
 /-- mini::selfhost::t_eqeq -/
-theorem lok1551 : LiveOk prims outside liveBad 1551 (src_t_eqeq) := by decide +kernel
+theorem lok1573 : LiveOk prims outside liveBad 1573 (src_t_eqeq) := by decide +kernel
 
 /-- mini::selfhost::t_le -/
-theorem lok1553 : LiveOk prims outside liveBad 1553 (src_t_le) := by decide +kernel
+theorem lok1575 : LiveOk prims outside liveBad 1575 (src_t_le) := by decide +kernel
 
 /-- mini::selfhost::t_ge -/
-theorem lok1554 : LiveOk prims outside liveBad 1554 (src_t_ge) := by decide +kernel
+theorem lok1576 : LiveOk prims outside liveBad 1576 (src_t_ge) := by decide +kernel
 
 /-- mini::selfhost::t_lbracket -/
-theorem lok1556 : LiveOk prims outside liveBad 1556 (src_t_lbracket) := by decide +kernel
+theorem lok1578 : LiveOk prims outside liveBad 1578 (src_t_lbracket) := by decide +kernel
 
 /-- mini::selfhost::generic_tail -/
-theorem lok1561 : LiveOk prims outside liveBad 1561 (src_generic_tail 158 1398 1555 1606 1607) := by decide +kernel
+theorem lok1583 : LiveOk prims outside liveBad 1583 (src_generic_tail 166 1420 1577 1628 1629) := by decide +kernel
 
 /-- mini::selfhost::weight_add_to -/
-theorem lok1564 : LiveOk prims outside liveBad 1564 (src_weight_add_to 1608) := by decide +kernel
+theorem lok1586 : LiveOk prims outside liveBad 1586 (src_weight_add_to 1630) := by decide +kernel
 
 /-- mini::selfhost::cons<mini::selfhost::List<mini::selfhost::SrcType>> -/
-theorem lok1568 : LiveOk prims outside liveBad 1568 (src_cons_of_mini_selfhost_List_mini_selfhost_SrcType 1405) := by decide +kernel
+theorem lok1590 : LiveOk prims outside liveBad 1590 (src_cons_of_mini_selfhost_List_mini_selfhost_SrcType 1427) := by decide +kernel
 
 /-- mini::selfhost::p_type_param_bound -/
-theorem lok1594 : LiveOk prims outside liveBad 1594 (src_p_type_param_bound) := by decide +kernel
+theorem lok1616 : LiveOk prims outside liveBad 1616 (src_p_type_param_bound) := by decide +kernel
 
 /-- mini::selfhost::lx_block -/
-theorem lok1605 : LiveOk prims outside liveBad 1605 (src_lx_block 76 1668) := by decide +kernel
+theorem lok1627 : LiveOk prims outside liveBad 1627 (src_lx_block 76 1690) := by decide +kernel
 
 /-- mini::selfhost::t_colon -/
-theorem lok1606 : LiveOk prims outside liveBad 1606 (src_t_colon) := by decide +kernel
+theorem lok1628 : LiveOk prims outside liveBad 1628 (src_t_colon) := by decide +kernel
 
 /-- mini::selfhost::starts_with_kind -/
-theorem lok1607 : LiveOk prims outside liveBad 1607 (src_starts_with_kind) := by decide +kernel
+theorem lok1629 : LiveOk prims outside liveBad 1629 (src_starts_with_kind) := by decide +kernel
 
 /-- mini::selfhost::weight_sum -/
-theorem lok1608 : LiveOk prims outside liveBad 1608 (src_weight_sum 56 75 1669) := by decide +kernel
+theorem lok1630 : LiveOk prims outside liveBad 1630 (src_weight_sum 56 75 1691) := by decide +kernel
 
 /-- mini::selfhost::p_cast -/
-theorem lok1630 : LiveOk prims outside liveBad 1630 (src_p_cast) := by decide +kernel
+theorem lok1652 : LiveOk prims outside liveBad 1652 (src_p_cast) := by decide +kernel
 
 /-- mini::selfhost::p_char -/
-theorem lok1648 : LiveOk prims outside liveBad 1648 (src_p_char) := by decide +kernel
+theorem lok1670 : LiveOk prims outside liveBad 1670 (src_p_char) := by decide +kernel
 
 /-- mini::selfhost::weight_limit -/
-theorem lok1669 : LiveOk prims outside liveBad 1669 (src_weight_limit) := by decide +kernel
+theorem lok1691 : LiveOk prims outside liveBad 1691 (src_weight_limit) := by decide +kernel
 
 /-- mini::selfhost::p_bit_or -/
-theorem lok1684 : LiveOk prims outside liveBad 1684 (src_p_bit_or) := by decide +kernel
+theorem lok1706 : LiveOk prims outside liveBad 1706 (src_p_bit_or) := by decide +kernel
 
 /-- mini::selfhost::p_bit_xor -/
-theorem lok1685 : LiveOk prims outside liveBad 1685 (src_p_bit_xor) := by decide +kernel
+theorem lok1707 : LiveOk prims outside liveBad 1707 (src_p_bit_xor) := by decide +kernel
 
 /-- mini::selfhost::p_bit_and -/
-theorem lok1686 : LiveOk prims outside liveBad 1686 (src_p_bit_and) := by decide +kernel
+theorem lok1708 : LiveOk prims outside liveBad 1708 (src_p_bit_and) := by decide +kernel
 
 /-- mini::selfhost::p_compare -/
-theorem lok1688 : LiveOk prims outside liveBad 1688 (src_p_compare) := by decide +kernel
+theorem lok1710 : LiveOk prims outside liveBad 1710 (src_p_compare) := by decide +kernel
 
 /-- mini::selfhost::p_break_stmt -/
-theorem lok1752 : LiveOk prims outside liveBad 1752 (src_p_break_stmt) := by decide +kernel
+theorem lok1774 : LiveOk prims outside liveBad 1774 (src_p_break_stmt) := by decide +kernel
 
 /-- mini::selfhost::p_continue_stmt -/
-theorem lok1753 : LiveOk prims outside liveBad 1753 (src_p_continue_stmt) := by decide +kernel
+theorem lok1775 : LiveOk prims outside liveBad 1775 (src_p_continue_stmt) := by decide +kernel
 
 /-- mini::selfhost::p_while_stmt -/
-theorem lok1758 : LiveOk prims outside liveBad 1758 (src_p_while_stmt) := by decide +kernel
+theorem lok1780 : LiveOk prims outside liveBad 1780 (src_p_while_stmt) := by decide +kernel
 
 /-- ?<mini::selfhost::TraitRef> -/
-theorem lok1774 : LiveOk prims outside liveBad 1774 (src_field_args_TraitRef_of_mini_selfhost_TraitRef) := by decide +kernel
+theorem lok1796 : LiveOk prims outside liveBad 1796 (src_field_args_TraitRef_of_mini_selfhost_TraitRef) := by decide +kernel
 
 /-- mini::selfhost::p_bound_type_ident -/
-theorem lok1779 : LiveOk prims outside liveBad 1779 (src_p_bound_type_ident) := by decide +kernel
+theorem lok1801 : LiveOk prims outside liveBad 1801 (src_p_bound_type_ident) := by decide +kernel
 
 /-- mini::selfhost::p_bor_tail -/
-theorem lok1786 : LiveOk prims outside liveBad 1786 (src_p_bor_tail) := by decide +kernel
+theorem lok1808 : LiveOk prims outside liveBad 1808 (src_p_bor_tail) := by decide +kernel
 
 /-- mini::selfhost::p_xor_tail -/
-theorem lok1787 : LiveOk prims outside liveBad 1787 (src_p_xor_tail) := by decide +kernel
+theorem lok1809 : LiveOk prims outside liveBad 1809 (src_p_xor_tail) := by decide +kernel
 
 /-- mini::selfhost::p_cast_type_name -/
-theorem lok1801 : LiveOk prims outside liveBad 1801 (src_p_cast_type_name) := by decide +kernel
+theorem lok1823 : LiveOk prims outside liveBad 1823 (src_p_cast_type_name) := by decide +kernel
 
 /-- mini::selfhost::p_cast_type_path -/
-theorem lok1802 : LiveOk prims outside liveBad 1802 (src_p_cast_type_path) := by decide +kernel
+theorem lok1824 : LiveOk prims outside liveBad 1824 (src_p_cast_type_path) := by decide +kernel
 
 /-- mini::selfhost::p_cast_type_path_ident -/
-theorem lok1803 : LiveOk prims outside liveBad 1803 (src_p_cast_type_path_ident) := by decide +kernel
+theorem lok1825 : LiveOk prims outside liveBad 1825 (src_p_cast_type_path_ident) := by decide +kernel
 
 /-- mini::selfhost::p_cast_type_path_end -/
-theorem lok1804 : LiveOk prims outside liveBad 1804 (src_p_cast_type_path_end) := by decide +kernel
+theorem lok1826 : LiveOk prims outside liveBad 1826 (src_p_cast_type_path_end) := by decide +kernel
 
 /-- mini::selfhost::match_init -/
-theorem lok1857 : LiveOk prims outside liveBad 1857 (src_match_init 1878 1949) := by decide +kernel
+theorem lok1879 : LiveOk prims outside liveBad 1879 (src_match_init 1900 1971) := by decide +kernel
 
 /-- mini::selfhost::match_stmt_parts -/
-theorem lok1859 : LiveOk prims outside liveBad 1859 (src_match_stmt_parts 147 1539 1952) := by decide +kernel
+theorem lok1881 : LiveOk prims outside liveBad 1881 (src_match_stmt_parts 155 1561 1974) := by decide +kernel
 
 /-- mini::selfhost::stmt_arms -/
-theorem lok1860 : LiveOk prims outside liveBad 1860 (src_stmt_arms 146 147 1953) := by decide +kernel
+theorem lok1882 : LiveOk prims outside liveBad 1882 (src_stmt_arms 154 155 1975) := by decide +kernel
 
 /-- mini::selfhost::match_stmt_value -/
-theorem lok1861 : LiveOk prims outside liveBad 1861 (src_match_stmt_value 1158) := by decide +kernel
+theorem lok1883 : LiveOk prims outside liveBad 1883 (src_match_stmt_value 1180) := by decide +kernel
 
 /-- mini::selfhost::p_bound_type_path_ident -/
-theorem lok1893 : LiveOk prims outside liveBad 1893 (src_p_bound_type_path_ident) := by decide +kernel
+theorem lok1915 : LiveOk prims outside liveBad 1915 (src_p_bound_type_path_ident) := by decide +kernel
 
 /-- mini::selfhost::p_bound_type_path_end -/
-theorem lok1894 : LiveOk prims outside liveBad 1894 (src_p_bound_type_path_end) := by decide +kernel
+theorem lok1916 : LiveOk prims outside liveBad 1916 (src_p_bound_type_path_end) := by decide +kernel
 
 /-- mini::selfhost::p_bound_type_path_more -/
-theorem lok1895 : LiveOk prims outside liveBad 1895 (src_p_bound_type_path_more) := by decide +kernel
+theorem lok1917 : LiveOk prims outside liveBad 1917 (src_p_bound_type_path_more) := by decide +kernel
 
 /-- mini::selfhost::get<mini::selfhost::List<mini::selfhost::Ty>> -/
-theorem lok1930 : LiveOk prims outside liveBad 1930 (src_get_of_mini_selfhost_List_mini_selfhost_Ty 56 1407 1930) := by decide +kernel
+theorem lok1952 : LiveOk prims outside liveBad 1952 (src_get_of_mini_selfhost_List_mini_selfhost_Ty 56 1429 1952) := by decide +kernel
 
 /-- mini::selfhost::get<mini::selfhost::List<mini::selfhost::CTree>> -/
-theorem lok1932 : LiveOk prims outside liveBad 1932 (src_get_of_mini_selfhost_List_mini_selfhost_CTree 56 1499 1932) := by decide +kernel
+theorem lok1954 : LiveOk prims outside liveBad 1954 (src_get_of_mini_selfhost_List_mini_selfhost_CTree 56 1521 1954) := by decide +kernel
 
 /-- mini::selfhost::some_block_arm -/
-theorem lok1950 : LiveOk prims outside liveBad 1950 (src_some_block_arm 103 1950 2045) := by decide +kernel
+theorem lok1972 : LiveOk prims outside liveBad 1972 (src_some_block_arm 103 1972 2067) := by decide +kernel
 
 /-- mini::selfhost::value_arms -/
-theorem lok1951 : LiveOk prims outside liveBad 1951 (src_value_arms 75 103 1951 2045 2046) := by decide +kernel
+theorem lok1973 : LiveOk prims outside liveBad 1973 (src_value_arms 75 103 1973 2067 2068) := by decide +kernel
 
 /-- mini::selfhost::match_stmt_on -/
-theorem lok1952 : LiveOk prims outside liveBad 1952 (src_match_stmt_on 154 1116 1293 1848 1849 2047) := by decide +kernel
+theorem lok1974 : LiveOk prims outside liveBad 1974 (src_match_stmt_on 162 1138 1315 1870 1871 2069) := by decide +kernel
 
 /-- mini::selfhost::is_block_arm -/
-theorem lok2045 : LiveOk prims outside liveBad 2045 (src_is_block_arm 2051) := by decide +kernel
+theorem lok2067 : LiveOk prims outside liveBad 2067 (src_is_block_arm 2073) := by decide +kernel
 
 /-- mini::selfhost::if_one -/
-theorem lok2046 : LiveOk prims outside liveBad 2046 (src_if_one) := by decide +kernel
+theorem lok2068 : LiveOk prims outside liveBad 2068 (src_if_one) := by decide +kernel
 
 /-- mini::selfhost::match_stmt_enum -/
-theorem lok2047 : LiveOk prims outside liveBad 2047 (src_match_stmt_enum 56 569 1150 1948 2158) := by decide +kernel
+theorem lok2069 : LiveOk prims outside liveBad 2069 (src_match_stmt_enum 56 591 1172 1970 2180) := by decide +kernel
 
 /-- mini::selfhost::arm_binding -/
-theorem lok2050 : LiveOk prims outside liveBad 2050 (src_arm_binding 144 146 147 229 385 2163 2164 2165 2166) := by decide +kernel
+theorem lok2072 : LiveOk prims outside liveBad 2072 (src_arm_binding 138 152 154 155 403 2185 2186 2187 2188) := by decide +kernel
 
 /-- mini::selfhost::arm_block_list -/
-theorem lok2051 : LiveOk prims outside liveBad 2051 (src_arm_block_list 147 1878 2167) := by decide +kernel
+theorem lok2073 : LiveOk prims outside liveBad 2073 (src_arm_block_list 155 1900 2189) := by decide +kernel
 
 /-- mini::selfhost::arm_stmt -/
-theorem lok2052 : LiveOk prims outside liveBad 2052 (src_arm_stmt 2168) := by decide +kernel
+theorem lok2074 : LiveOk prims outside liveBad 2074 (src_arm_stmt 2190) := by decide +kernel
 
 /-- mini::selfhost::bound_scope -/
-theorem lok2053 : LiveOk prims outside liveBad 2053 (src_bound_scope) := by decide +kernel
+theorem lok2075 : LiveOk prims outside liveBad 2075 (src_bound_scope) := by decide +kernel
 
 /-- mini::selfhost::cons<bool> -/
-theorem lok2110 : LiveOk prims outside liveBad 2110 (src_cons_of_bool 2128) := by decide +kernel
+theorem lok2132 : LiveOk prims outside liveBad 2132 (src_cons_of_bool 2150) := by decide +kernel
 
 /-- mini::selfhost::ret_binds -/
-theorem lok2141 : LiveOk prims outside liveBad 2141 (src_ret_binds 1770 2144 2151) := by decide +kernel
+theorem lok2163 : LiveOk prims outside liveBad 2163 (src_ret_binds 1792 2166 2173) := by decide +kernel
 
 /-- mini::selfhost::match_stmt_head -/
-theorem lok2158 : LiveOk prims outside liveBad 2158 (src_match_stmt_head 1448 2024 2223) := by decide +kernel
+theorem lok2180 : LiveOk prims outside liveBad 2180 (src_match_stmt_head 1470 2046 2245) := by decide +kernel
 
 /-- mini::selfhost::arm_block_of -/
-theorem lok2167 : LiveOk prims outside liveBad 2167 (src_arm_block_of 144 147 1696 2231) := by decide +kernel
+theorem lok2189 : LiveOk prims outside liveBad 2189 (src_arm_block_of 152 155 1718 2253) := by decide +kernel
 
 /-- mini::selfhost::arm_binder -/
-theorem lok2168 : LiveOk prims outside liveBad 2168 (src_arm_binder 76 1158) := by decide +kernel
+theorem lok2190 : LiveOk prims outside liveBad 2190 (src_arm_binder 76 1180) := by decide +kernel
 
 /-- mini::selfhost::local_id_of -/
-theorem lok2170 : LiveOk prims outside liveBad 2170 (src_local_id_of) := by decide +kernel
+theorem lok2192 : LiveOk prims outside liveBad 2192 (src_local_id_of) := by decide +kernel
 
 /-- mini::selfhost::local_ty_of -/
-theorem lok2171 : LiveOk prims outside liveBad 2171 (src_local_ty_of) := by decide +kernel
+theorem lok2193 : LiveOk prims outside liveBad 2193 (src_local_ty_of) := by decide +kernel
 
 /-- mini::selfhost::cons<mini::selfhost::Bind> -/
-theorem lok2191 : LiveOk prims outside liveBad 2191 (src_cons_of_mini_selfhost_Bind 2247) := by decide +kernel
+theorem lok2213 : LiveOk prims outside liveBad 2213 (src_cons_of_mini_selfhost_Bind 2269) := by decide +kernel
 
 /-- mini::selfhost::arg_expected -/
-theorem lok2212 : LiveOk prims outside liveBad 2212 (src_arg_expected 1346 1360 1887) := by decide +kernel
+theorem lok2234 : LiveOk prims outside liveBad 2234 (src_arg_expected 1368 1382 1909) := by decide +kernel
 
 /-- mini::selfhost::bind_arg -/
-theorem lok2216 : LiveOk prims outside liveBad 2216 (src_bind_arg 1770 1848 1943 2144) := by decide +kernel
+theorem lok2238 : LiveOk prims outside liveBad 2238 (src_bind_arg 1792 1870 1965 2166) := by decide +kernel
 
 /-- mini::selfhost::match_stmt_if -/
-theorem lok2223 : LiveOk prims outside liveBad 2223 (src_match_stmt_if) := by decide +kernel
+theorem lok2245 : LiveOk prims outside liveBad 2245 (src_match_stmt_if) := by decide +kernel
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Bind>> -/
-theorem lok2247 : LiveOk prims outside liveBad 2247 (src_boxed_of_mini_selfhost_List_mini_selfhost_Bind 50 2194 2285) := by decide +kernel
+theorem lok2269 : LiveOk prims outside liveBad 2269 (src_boxed_of_mini_selfhost_List_mini_selfhost_Bind 50 2216 2307) := by decide +kernel
 
 end Lanius.Faithful.SelfPure

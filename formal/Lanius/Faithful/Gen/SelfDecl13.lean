@@ -10,7 +10,6 @@ public import Lanius.Faithful.Gen.SelfSrc7
 public import Lanius.Faithful.Gen.SelfSrcC_BinOp_folds
 public import Lanius.Faithful.Gen.SelfSrcC_FArith_opcode
 public import Lanius.Faithful.Gen.SelfSrcC_FloatTy_rex
-public import Lanius.Faithful.Gen.SelfSrcC_Inline_arithOf
 public import Lanius.Faithful.Gen.SelfSrcC_Word_narrows
 public import Lanius.Faithful.Gen.SelfSrcC_arities
 public import Lanius.Faithful.Gen.SelfSrcC_binaryConstant
@@ -19,34 +18,32 @@ public import Lanius.Faithful.Gen.SelfSrcC_extentAfter
 public import Lanius.Faithful.Gen.SelfSrcC_killShared
 public import Lanius.Faithful.Gen.SelfSrcC_longer
 public import Lanius.Faithful.Gen.SelfSrcC_substAll
-public import Lanius.Faithful.Gen.SelfSrcC_usizeWidth
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_findMethodAt
-public import Lanius.Faithful.Gen.SelfSrcF_Inline_lxAfterFractionAt
-public import Lanius.Faithful.Gen.SelfSrcF_Inline_pBoundTypeArgsAfterCommaMore
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_pPathMore
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_pRetVoid
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_pTypeArgsNone
-public import Lanius.Faithful.Gen.SelfSrcF_Inline_tLparen
+public import Lanius.Faithful.Gen.SelfSrcF_allocClosed
 public import Lanius.Faithful.Gen.SelfSrcF_blockArmsOf
 public import Lanius.Faithful.Gen.SelfSrcF_collect
 public import Lanius.Faithful.Gen.SelfSrcF_compoundOf
+public import Lanius.Faithful.Gen.SelfSrcF_consTys
+public import Lanius.Faithful.Gen.SelfSrcF_eDivideClosed
+public import Lanius.Faithful.Gen.SelfSrcF_eIndexClosed
+public import Lanius.Faithful.Gen.SelfSrcF_eStructClosed
 public import Lanius.Faithful.Gen.SelfSrcF_findConst
 public import Lanius.Faithful.Gen.SelfSrcF_firstSrc
 public import Lanius.Faithful.Gen.SelfSrcF_flExpFirst
 public import Lanius.Faithful.Gen.SelfSrcF_flattenTys
 public import Lanius.Faithful.Gen.SelfSrcF_funcsOnto
-public import Lanius.Faithful.Gen.SelfSrcF_genericClose
 public import Lanius.Faithful.Gen.SelfSrcF_ifNotWrites
 public import Lanius.Faithful.Gen.SelfSrcF_joinInsts
-public import Lanius.Faithful.Gen.SelfSrcF_lxDotAt
-public import Lanius.Faithful.Gen.SelfSrcF_lxExponent
-public import Lanius.Faithful.Gen.SelfSrcF_lxFixed
-public import Lanius.Faithful.Gen.SelfSrcF_lxSymbolStart
+public import Lanius.Faithful.Gen.SelfSrcF_lowerTy
 public import Lanius.Faithful.Gen.SelfSrcF_negWideI32
 public import Lanius.Faithful.Gen.SelfSrcF_paramGoals
 public import Lanius.Faithful.Gen.SelfSrcF_selfRefOf
 public import Lanius.Faithful.Gen.SelfSrcF_sintAt
 public import Lanius.Faithful.Gen.SelfSrcF_typeDeclAt
+public import Lanius.Faithful.Gen.SelfSrcF_weightAdd
 public import Lanius.Faithful.Gen.SelfSrcF_wideOf
 public import Lanius.Faithful.Gen.SelfSrcRest
 import all Lanius.Faithful.Gen.SelfPureTab
@@ -59,7 +56,6 @@ import all Lanius.Faithful.Gen.SelfSrc7
 import all Lanius.Faithful.Gen.SelfSrcC_BinOp_folds
 import all Lanius.Faithful.Gen.SelfSrcC_FArith_opcode
 import all Lanius.Faithful.Gen.SelfSrcC_FloatTy_rex
-import all Lanius.Faithful.Gen.SelfSrcC_Inline_arithOf
 import all Lanius.Faithful.Gen.SelfSrcC_Word_narrows
 import all Lanius.Faithful.Gen.SelfSrcC_arities
 import all Lanius.Faithful.Gen.SelfSrcC_binaryConstant
@@ -68,34 +64,32 @@ import all Lanius.Faithful.Gen.SelfSrcC_extentAfter
 import all Lanius.Faithful.Gen.SelfSrcC_killShared
 import all Lanius.Faithful.Gen.SelfSrcC_longer
 import all Lanius.Faithful.Gen.SelfSrcC_substAll
-import all Lanius.Faithful.Gen.SelfSrcC_usizeWidth
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_findMethodAt
-import all Lanius.Faithful.Gen.SelfSrcF_Inline_lxAfterFractionAt
-import all Lanius.Faithful.Gen.SelfSrcF_Inline_pBoundTypeArgsAfterCommaMore
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pPathMore
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pRetVoid
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_pTypeArgsNone
-import all Lanius.Faithful.Gen.SelfSrcF_Inline_tLparen
+import all Lanius.Faithful.Gen.SelfSrcF_allocClosed
 import all Lanius.Faithful.Gen.SelfSrcF_blockArmsOf
 import all Lanius.Faithful.Gen.SelfSrcF_collect
 import all Lanius.Faithful.Gen.SelfSrcF_compoundOf
+import all Lanius.Faithful.Gen.SelfSrcF_consTys
+import all Lanius.Faithful.Gen.SelfSrcF_eDivideClosed
+import all Lanius.Faithful.Gen.SelfSrcF_eIndexClosed
+import all Lanius.Faithful.Gen.SelfSrcF_eStructClosed
 import all Lanius.Faithful.Gen.SelfSrcF_findConst
 import all Lanius.Faithful.Gen.SelfSrcF_firstSrc
 import all Lanius.Faithful.Gen.SelfSrcF_flExpFirst
 import all Lanius.Faithful.Gen.SelfSrcF_flattenTys
 import all Lanius.Faithful.Gen.SelfSrcF_funcsOnto
-import all Lanius.Faithful.Gen.SelfSrcF_genericClose
 import all Lanius.Faithful.Gen.SelfSrcF_ifNotWrites
 import all Lanius.Faithful.Gen.SelfSrcF_joinInsts
-import all Lanius.Faithful.Gen.SelfSrcF_lxDotAt
-import all Lanius.Faithful.Gen.SelfSrcF_lxExponent
-import all Lanius.Faithful.Gen.SelfSrcF_lxFixed
-import all Lanius.Faithful.Gen.SelfSrcF_lxSymbolStart
+import all Lanius.Faithful.Gen.SelfSrcF_lowerTy
 import all Lanius.Faithful.Gen.SelfSrcF_negWideI32
 import all Lanius.Faithful.Gen.SelfSrcF_paramGoals
 import all Lanius.Faithful.Gen.SelfSrcF_selfRefOf
 import all Lanius.Faithful.Gen.SelfSrcF_sintAt
 import all Lanius.Faithful.Gen.SelfSrcF_typeDeclAt
+import all Lanius.Faithful.Gen.SelfSrcF_weightAdd
 import all Lanius.Faithful.Gen.SelfSrcF_wideOf
 import all Lanius.Faithful.Gen.SelfSrcRest
 import all Lanius.Faithful.Gen.SelfTypes
@@ -116,7 +110,9 @@ import all Lanius.Mini.Compiler.P.arities
 import all Lanius.Mini.Compiler.P.armBodyScope
 import all Lanius.Mini.Compiler.P.armPayload
 import all Lanius.Mini.Compiler.P.armScope
+import all Lanius.Mini.Compiler.P.arrayCallSig
 import all Lanius.Mini.Compiler.P.assignFrom
+import all Lanius.Mini.Compiler.P.bindingBytes
 import all Lanius.Mini.Compiler.P.codeSize
 import all Lanius.Mini.Compiler.P.compileArgs
 import all Lanius.Mini.Compiler.P.compileModules
@@ -133,6 +129,7 @@ import all Lanius.Mini.Compiler.P.evalDivideSint
 import all Lanius.Mini.Compiler.P.evalNot
 import all Lanius.Mini.Compiler.P.evalSame
 import all Lanius.Mini.Compiler.P.floatApply
+import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.hostRandomCode
 import all Lanius.Mini.Compiler.P.imageLimit
@@ -159,10 +156,11 @@ import all Lanius.Mini.Compiler.P.matchVariants
 import all Lanius.Mini.Compiler.P.moduleExports
 import all Lanius.Mini.Compiler.P.moduleFirsts
 import all Lanius.Mini.Compiler.P.modulesOk
+import all Lanius.Mini.Compiler.P.needRound
+import all Lanius.Mini.Compiler.P.needsAfter
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.repeatType
 import all Lanius.Mini.Compiler.P.shortCircuit
-import all Lanius.Mini.Compiler.P.sigs
 import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.storeArray
 import all Lanius.Mini.Compiler.P.storeEvalWord
@@ -171,6 +169,7 @@ import all Lanius.Mini.Compiler.P.storeWordElement
 import all Lanius.Mini.Compiler.P.structFields
 import all Lanius.Mini.Compiler.P.usizeWidth
 import all Lanius.Mini.Compiler.P.widthOf
+import all Lanius.Mini.Compiler.P.withBudget
 import all Lanius.Mini.Compiler.P.wordElement
 import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.wordWidth
@@ -187,7 +186,7 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 
 /-- `declareFuncs` of functions 1300 to 1399. -/
-theorem dchunk13 : declsStep [(src_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_SrcFunc), (src_int_at 1413), (src_wide_value 287 1414), (src_neg_wide_at 1415 1416 1417), (src_neg_least 1418), (src_boxed_of_mini_selfhost_SrcExpr 50 447 1419), (src_operand_want 1420 1421 1422), (src_known_expr 287 1124 1129 1130 1307 1423 1424), (src_amount_want 1306 1421 1422), (src_wide_at 1425 1426 1427), (src_float_want 1428), (src_core_mem_size_of_of_mini_selfhost_SrcStmt), (src_empty_of_mini_selfhost_SrcExpr), (src_cons_of_mini_selfhost_SrcExpr 1429), (src_first_src 1130), (src_rest_src 166), (src_repeat_src 56 129 130 1316), (src_get_of_mini_selfhost_SrcFunc 56 59 1317), (src_src_param_tys 129 130 131 1318), (src_empty_of_mini_selfhost_SrcArm), (src_cons_of_mini_selfhost_SrcArm 1430), (src_bound_tys 76 1134 1314 1315 1321), (src_rest_payloads 168), (src_ty_local_at 1129), (src_unbox_of_mini_selfhost_List_mini_selfhost_LocalTy 1431), (src_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff 50 493 1432), (src_lit_effs 327 1132 1314 1315 1326 1403 1433), (src_boxed_of_mini_selfhost_SrcEff 50 495 1434), (src_known_eff 201 329 1129 1131 1307 1328 1421 1423 1435), (src_lit_arm_effs 327 1126 1132 1321 1322 1329 1403 1433 1436 1437), (src_boxed_of_mini_selfhost_List_mini_selfhost_LocalTy 50 1431 1438), (src_weighed_more_at 898 899 1136), (src_weigh_again 1439), (src_core_mem_size_of_of_mini_selfhost_List_core_option_Option_usize), (src_same_inst 1440), (src_tys_insts 56 253 607 609 1335 1441), (src_flat_payloads 1442), (src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_MEff), (src_core_mem_typed_slice_from_storage_of_mini_selfhost_MEff), (src_type_names_in 246 257 1443), (src_empty_of_mini_selfhost_MParam), (src_param_of 56 144 1077 1153 1346 1444 1445 1446 1447 1448 1449 1450 1451), (src_p_ret_void), (src_p_ret_type), (src_p_type_never), (src_ret_of_ty), (src_ty_of 56 144 146 147 835 1346 1452 1453 1454 1455 1456 1457 1458 1459 1460 1461 1462), (src_core_mem_size_of_of_mini_selfhost_MStmt), (src_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_MEff), (src_empty_of_mini_selfhost_MEff), (src_cons_of_mini_selfhost_MEff 1159), (src_goals_hold 56 1463), (src_item_goals 146 1464 1465 1466), (src_impl_where 144 147 572), (src_if_not_writes), (src_writes_local 913 1355), (src_func_ret 1467 1468 1469), (src_self_ref_of 56 144 569 1150 1447), (src_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_MParam), (src_ty_list 56 103 404 1346 1359 1470), (src_decl_env 246), (src_BinOp_compute), (src_Expr_narrow 1471), (src_boxed_of_mini_selfhost_List_mini_selfhost_Fact 50 1177 1472), (src_longer 56 946 1364), (src_first_facts 56 263 946 1180 1365), (src_kill_tail 1473 1474), (src_kill_prefix_at 1180 1369), (src_extent_after), (src_fact_dies 1179), (src_BinOp_number), (src_Expr_unit_of 653 1172 1173), (src_CmpOp_number), (src_FOp_number 75 105 518 957 1475 1476), (src_CmpOp_setcc_signed), (src_CmpOp_setcc_unsigned), (src_float_operands 439 691 692 1477), (src_FloatTy_scalar_prefix), (src_FArith_opcode), (src_float_result 439 691 692 1477), (src_FCmp_predicate), (src_float_arith_of 357 1478 1479), (src_arith_signed_of 311 358 1022 1023), (src_arith_of 311 313 1222), (src_float_order_of 357 1480), (src_order_signed_of 311 358 1022 1218), (src_order_of 311 313), (src_usize_width), (src_lx_ident_run_at 75 1242 1481), (src_lx_is_byte), (src_lx_base_of), (src_lx_digit_run_at 75 1482 1483), (src_lx_decimal_next 75 762 1389 1484 1485), (src_lx_space_run_at 75 1041 1246), (src_lx_dot_at 1038 1039 1395 1486), (src_lx_fixed 532 1052 1487 1488), (src_t_lt), (src_generic_close 158 1489), (src_t_lbrace), (src_cons_of_mini_selfhost_List_mini_selfhost_CTree 1490)]
-    decls 27 43 24 40 = true := by decide +kernel
+theorem dchunk13 : declsStep [(src_close_effs 1125 1167 1300 1425 1426), (src_e_apply_closed 1349), (src_e_neg_closed 1349), (src_e_not_closed 1349), (src_e_cast_closed 1349), (src_e_index_closed 1349), (src_e_struct_closed 1347), (src_e_variant_closed 1347), (src_e_match_closed 1347 1349), (src_e_divide_closed 1349), (src_e_array_slice_closed), (src_core_mem_size_of_of_mini_selfhost_List_core_option_Option_mini_selfhost_SrcType), (src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_core_option_Option_mini_selfhost_SrcType), (src_enum_src 1427), (src_lower_variants 56 528 1314 1317 1428 1429), (src_payload_tys 1138 1382 1430), (src_struct_src 376), (src_lower_tys 56 232 629 1317 1431 1432), (src_wide_left 303 1318 1433), (src_wide_left_exprs 311 1318 1319), (src_wide_left_arms 1031 1318 1320), (src_wide_left_eff 343 345 1318 1321 1434), (src_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_SrcFunc), (src_int_at 1435), (src_wide_value 303 1436), (src_neg_wide_at 1437 1438 1439), (src_neg_least 1440), (src_boxed_of_mini_selfhost_SrcExpr 50 470 1441), (src_operand_want 1442 1443 1444), (src_known_expr 303 1146 1151 1152 1329 1445 1446), (src_amount_want 1328 1443 1444), (src_wide_at 1447 1448 1449), (src_float_want 1450), (src_core_mem_size_of_of_mini_selfhost_SrcStmt), (src_empty_of_mini_selfhost_SrcExpr), (src_cons_of_mini_selfhost_SrcExpr 1451), (src_first_src 1152), (src_rest_src 178), (src_repeat_src 56 232 233 1338), (src_get_of_mini_selfhost_SrcFunc 56 59 1339), (src_src_param_tys 173 232 233 1340), (src_empty_of_mini_selfhost_SrcArm), (src_cons_of_mini_selfhost_SrcArm 1452), (src_bound_tys 76 1156 1336 1337 1343), (src_rest_payloads 180), (src_ty_local_at 1151), (src_unbox_of_mini_selfhost_List_mini_selfhost_LocalTy 1453), (src_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff 50 515 1454), (src_lit_effs 343 1154 1336 1337 1348 1425 1455), (src_boxed_of_mini_selfhost_SrcEff 50 517 1456), (src_known_eff 213 345 1151 1153 1329 1350 1443 1445 1457), (src_lit_arm_effs 343 1148 1154 1343 1344 1351 1425 1455 1458 1459), (src_boxed_of_mini_selfhost_List_mini_selfhost_LocalTy 50 1453 1460), (src_weighed_more_at 921 922 1158), (src_weigh_again 1461), (src_core_mem_size_of_of_mini_selfhost_List_core_option_Option_usize), (src_same_inst 1462), (src_tys_insts 56 265 629 631 1357 1463), (src_flat_payloads 1464), (src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_MEff), (src_core_mem_typed_slice_from_storage_of_mini_selfhost_MEff), (src_type_names_in 258 269 1465), (src_empty_of_mini_selfhost_MParam), (src_param_of 56 152 1099 1175 1368 1466 1467 1468 1469 1470 1471 1472 1473), (src_p_ret_void), (src_p_ret_type), (src_p_type_never), (src_ret_of_ty), (src_ty_of 56 152 154 155 858 1368 1474 1475 1476 1477 1478 1479 1480 1481 1482 1483 1484), (src_core_mem_size_of_of_mini_selfhost_MStmt), (src_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_MEff), (src_empty_of_mini_selfhost_MEff), (src_cons_of_mini_selfhost_MEff 1181), (src_goals_hold 56 1485), (src_item_goals 154 1486 1487 1488), (src_impl_where 152 155 594), (src_if_not_writes), (src_writes_local 936 1377), (src_func_ret 1489 1490 1491), (src_self_ref_of 56 152 591 1172 1469), (src_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_MParam), (src_ty_list 56 103 422 1368 1381 1492), (src_decl_env 258), (src_BinOp_compute), (src_Expr_narrow 1493), (src_boxed_of_mini_selfhost_List_mini_selfhost_Fact 50 1199 1494), (src_longer 56 969 1386), (src_first_facts 56 275 969 1202 1387), (src_kill_tail 1495 1496), (src_kill_prefix_at 1202 1391), (src_extent_after), (src_fact_dies 1201), (src_BinOp_number), (src_Expr_unit_of 675 1194 1195), (src_CmpOp_number), (src_FOp_number 75 105 540 980 1497 1498), (src_CmpOp_setcc_signed), (src_CmpOp_setcc_unsigned), (src_float_operands 457 713 714 1499), (src_FloatTy_scalar_prefix)]
+    decls 28 45 24 41 = true := by decide +kernel
 
 end Lanius.Faithful.SelfPure

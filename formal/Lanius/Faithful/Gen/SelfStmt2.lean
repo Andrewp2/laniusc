@@ -55,6 +55,10 @@ abbrev Stmt_concat_of_mini_selfhost_Inst (prog : SrcProgram) (prims : Prims) (ix
   ∀ {x0 : List Lanius.Mini.Inst} {x1 : List Lanius.Mini.Inst} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 139 RepInst) x0 v0 → (RepList 139 RepInst) x1 v1 →
     (RepList 139 RepInst) (x0 ++ x1) w
 
+abbrev Stmt_concat_of_usize (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List Nat} {x1 : List Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 25 RepNat) x0 v0 → (RepList 25 RepNat) x1 v1 →
+    (RepList 25 RepNat) (x0 ++ x1) w
+
 abbrev Stmt_cons_of_i32 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : BitVec 32} {x1 : List (BitVec 32)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepI32 x0 v0 → (RepList 0 RepI32) x1 v1 →
     (RepList 0 RepI32) (x0 :: x1) w

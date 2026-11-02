@@ -54,6 +54,14 @@ end
 
 noncomputable section
 
+def Cost_cons_of_usize : Nat → Nat → List Nat → Nat
+  | 0, x8, x17 => 0
+  | n + 1, x8, x17 => 1
+
+end
+
+noncomputable section
+
 mutual
 def Pre_lx_ident_run : Nat → List Nat → Nat → Prop
   | 0, x13, b => True
@@ -254,14 +262,6 @@ def Pre_lx_quoted_at : Nat → Nat → Bool → Nat → List Nat → Nat → Nat
   | n + 1, x13, x28, x45, x56, x76, b => (if x28 = true then ((Pre_plus n x76 1 b) ∧ (Pre_lx_quoted n x13 false x56 (x76 + 1) b)) else (if (decide (x45 = 10)) = true then True else (if (decide (x45 = x13)) = true then (Pre_plus n x76 1 b) else (if (decide (x45 = 92)) = true then ((Pre_plus n x76 1 b) ∧ (Pre_lx_quoted n x13 true x56 (x76 + 1) b)) else ((Pre_plus n x76 1 b) ∧ (Pre_lx_quoted n x13 false x56 (x76 + 1) b))))))
 termination_by structural fuel => fuel
 end
-
-end
-
-noncomputable section
-
-def Cost_cons_of_usize : Nat → Nat → List Nat → Nat
-  | 0, x8, x17 => 0
-  | n + 1, x8, x17 => 1
 
 end
 

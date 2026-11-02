@@ -21,7 +21,7 @@ set_option linter.unusedVariables false
 namespace Lanius.Mini
 
 def lowerCallSig (scope : List Binding) (sig : Sig) (args : List SrcExpr) (ty : SrcType) : Option (List Expr) :=
-  if SrcType.same sig.ret ty then
+  if SrcType.same sig.ret ty && decide (sig.need ≤ sig.room) then
     lowerArgs scope args sig.params
   else
     none
@@ -107,7 +107,7 @@ def evalPure (scope : List Binding) (e : SrcExpr) (slot : Nat) : Option Evaluate
     | .float ft bits => none
 
 def evalCallSig (sig : Sig) (callee : Nat) (slot : Nat) (args : EvaluatedArgs) : Option Evaluated :=
-  if typesSame args.types sig.params && decide (0 < SrcType.size sig.ret) then
+  if typesSame args.types sig.params && decide (0 < SrcType.size sig.ret) && decide (sig.need ≤ sig.room) then
     some ({ stmt := Stmt.seq args.stmt (Stmt.call slot (SrcType.size sig.ret) callee (slotVars slot (sizes sig.params))), ty := sig.ret } : Evaluated)
   else
     none

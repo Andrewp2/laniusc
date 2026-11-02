@@ -12,127 +12,127 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Termination
 open Lanius.Faithful.SelfCert
 
-theorem ok_let_stmt : FnOk prog prims info (1869, ⟨4, [], 0⟩) :=
+theorem ok_field_values : FnOk prog prims info (1869, ⟨3, [0], 0⟩) :=
+  fnOk_of fn_field_values (by decide +kernel)
+
+theorem ok_eff_ty : FnOk prog prims info (1870, ⟨16, [0], 0⟩) :=
+  fnOk_of fn_eff_ty (by decide +kernel)
+
+theorem ok_named_parts : FnOk prog prims info (1871, ⟨0, [], 0⟩) :=
+  fnOk_of fn_named_parts (by decide +kernel)
+
+theorem ok_eff_match_enum : FnOk prog prims info (1872, ⟨29, [0], 0⟩) :=
+  fnOk_of fn_eff_match_enum (by decide +kernel)
+
+theorem ok_array_parts : FnOk prog prims info (1873, ⟨0, [], 0⟩) :=
+  fnOk_of fn_array_parts (by decide +kernel)
+
+theorem ok_repeat_eff : FnOk prog prims info (1874, ⟨1, [1], 0⟩) :=
+  fnOk_of fn_repeat_eff (by decide +kernel)
+
+theorem ok_length_of_mini_selfhost_MEff : FnOk prog prims info (1875, ⟨2, [0], 0⟩) :=
+  fnOk_of fn_length_of_mini_selfhost_MEff (by decide +kernel)
+
+theorem ok_cons_eff : FnOk prog prims info (1876, ⟨1, [], 0⟩) :=
+  fnOk_of fn_cons_eff (by decide +kernel)
+
+theorem ok_head_ty : FnOk prog prims info (1877, ⟨0, [], 0⟩) :=
+  fnOk_of fn_head_ty (by decide +kernel)
+
+theorem ok_tail_tys : FnOk prog prims info (1878, ⟨0, [], 0⟩) :=
+  fnOk_of fn_tail_tys (by decide +kernel)
+
+theorem ok_match_init : FnOk prog prims info (1879, ⟨4, [], 0⟩) :=
+  fnOk_of fn_match_init (by decide +kernel)
+
+theorem ok_block_arms_of : FnOk prog prims info (1880, ⟨7, [], 0⟩) :=
+  fnOk_of fn_block_arms_of (by decide +kernel)
+
+theorem ok_match_stmt_parts : FnOk prog prims info (1881, ⟨30, [], 0⟩) :=
+  fnOk_of fn_match_stmt_parts (by decide +kernel)
+
+theorem ok_stmt_arms : FnOk prog prims info (1882, ⟨28, [], 0⟩) :=
+  fnOk_of fn_stmt_arms (by decide +kernel)
+
+theorem ok_match_stmt_value : FnOk prog prims info (1883, ⟨0, [], 0⟩) :=
+  fnOk_of fn_match_stmt_value (by decide +kernel)
+
+theorem ok_let_arms_of : FnOk prog prims info (1884, ⟨36, [0], 0⟩) :=
+  fnOk_of fn_let_arms_of (by decide +kernel)
+
+theorem ok_let_head : FnOk prog prims info (1885, ⟨19, [], 0⟩) :=
+  fnOk_of fn_let_head (by decide +kernel)
+
+theorem ok_try_let_head : FnOk prog prims info (1886, ⟨33, [], 0⟩) :=
+  fnOk_of fn_try_let_head (by decide +kernel)
+
+theorem ok_eval_head : FnOk prog prims info (1887, ⟨4, [], 0⟩) :=
+  fnOk_of fn_eval_head (by decide +kernel)
+
+theorem ok_try_of_init : FnOk prog prims info (1888, ⟨32, [], 0⟩) :=
+  fnOk_of fn_try_of_init (by decide +kernel)
+
+theorem ok_untyped_try : FnOk prog prims info (1889, ⟨0, [], 0⟩) :=
+  fnOk_of fn_untyped_try (by decide +kernel)
+
+theorem ok_untyped_eval : FnOk prog prims info (1890, ⟨17, [], 0⟩) :=
+  fnOk_of fn_untyped_eval (by decide +kernel)
+
+theorem ok_let_stmt : FnOk prog prims info (1891, ⟨4, [], 0⟩) :=
   fnOk_of fn_let_stmt (by decide +kernel)
 
-theorem ok_return_slice : FnOk prog prims info (1870, ⟨20, [], 0⟩) :=
+theorem ok_return_slice : FnOk prog prims info (1892, ⟨20, [], 0⟩) :=
   fnOk_of fn_return_slice (by decide +kernel)
 
-theorem ok_return_eval_of : FnOk prog prims info (1871, ⟨2, [], 0⟩) :=
+theorem ok_return_eval_of : FnOk prog prims info (1893, ⟨2, [], 0⟩) :=
   fnOk_of fn_return_eval_of (by decide +kernel)
 
-theorem ok_if_eval_of : FnOk prog prims info (1872, ⟨2, [], 0⟩) :=
+theorem ok_if_eval_of : FnOk prog prims info (1894, ⟨2, [], 0⟩) :=
   fnOk_of fn_if_eval_of (by decide +kernel)
 
-theorem ok_while_eval_of : FnOk prog prims info (1873, ⟨2, [], 0⟩) :=
+theorem ok_while_eval_of : FnOk prog prims info (1895, ⟨2, [], 0⟩) :=
   fnOk_of fn_while_eval_of (by decide +kernel)
 
-theorem ok_for_of : FnOk prog prims info (1874, ⟨36, [0], 1⟩) :=
+theorem ok_for_of : FnOk prog prims info (1896, ⟨36, [0], 1⟩) :=
   fnOk_of fn_for_of (by decide +kernel)
 
-theorem ok_match_primary : FnOk prog prims info (1875, ⟨4, [], 0⟩) :=
+theorem ok_match_primary : FnOk prog prims info (1897, ⟨4, [], 0⟩) :=
   fnOk_of fn_match_primary (by decide +kernel)
 
-theorem ok_match_arms_of : FnOk prog prims info (1876, ⟨36, [0], 0⟩) :=
+theorem ok_match_arms_of : FnOk prog prims info (1898, ⟨36, [0], 0⟩) :=
   fnOk_of fn_match_arms_of (by decide +kernel)
 
-theorem ok_p_assign_set : FnOk prog prims info (1877, ⟨0, [], 0⟩) :=
+theorem ok_p_assign_set : FnOk prog prims info (1899, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_assign_set (by decide +kernel)
 
-theorem ok_peel : FnOk prog prims info (1878, ⟨3, [0], 0⟩) :=
+theorem ok_peel : FnOk prog prims info (1900, ⟨3, [0], 0⟩) :=
   fnOk_of fn_peel (by decide +kernel)
 
-theorem ok_assign_target : FnOk prog prims info (1879, ⟨34, [], 0⟩) :=
+theorem ok_assign_target : FnOk prog prims info (1901, ⟨34, [], 0⟩) :=
   fnOk_of fn_assign_target (by decide +kernel)
 
-theorem ok_compound_of : FnOk prog prims info (1880, ⟨32, [], 0⟩) :=
+theorem ok_compound_of : FnOk prog prims info (1902, ⟨32, [], 0⟩) :=
   fnOk_of fn_compound_of (by decide +kernel)
 
-theorem ok_call_stmt : FnOk prog prims info (1881, ⟨31, [], 0⟩) :=
+theorem ok_call_stmt : FnOk prog prims info (1903, ⟨31, [], 0⟩) :=
   fnOk_of fn_call_stmt (by decide +kernel)
 
-theorem ok_get_of_core_option_Option_usize : FnOk prog prims info (1882, ⟨1, [0], 0⟩) :=
+theorem ok_get_of_core_option_Option_usize : FnOk prog prims info (1904, ⟨1, [0], 0⟩) :=
   fnOk_of fn_get_of_core_option_Option_usize (by decide +kernel)
 
-theorem ok_if_item : FnOk prog prims info (1883, ⟨0, [], 0⟩) :=
+theorem ok_if_item : FnOk prog prims info (1905, ⟨0, [], 0⟩) :=
   fnOk_of fn_if_item (by decide +kernel)
 
-theorem ok_is_module : FnOk prog prims info (1884, ⟨3, [], 0⟩) :=
+theorem ok_is_module : FnOk prog prims info (1906, ⟨3, [], 0⟩) :=
   fnOk_of fn_is_module (by decide +kernel)
 
-theorem ok_slice_elem : FnOk prog prims info (1885, ⟨0, [], 0⟩) :=
+theorem ok_slice_elem : FnOk prog prims info (1907, ⟨0, [], 0⟩) :=
   fnOk_of fn_slice_elem (by decide +kernel)
 
-theorem ok_match_path : FnOk prog prims info (1886, ⟨10, [0], 0⟩) :=
+theorem ok_match_path : FnOk prog prims info (1908, ⟨10, [0], 0⟩) :=
   fnOk_of fn_match_path (by decide +kernel)
 
-theorem ok_bound_args : FnOk prog prims info (1887, ⟨3, [0], 0⟩) :=
-  fnOk_of fn_bound_args (by decide +kernel)
-
-theorem ok_match_args_next : FnOk prog prims info (1888, ⟨10, [0], 0⟩) :=
-  fnOk_of fn_match_args_next (by decide +kernel)
-
-theorem ok_match_arg : FnOk prog prims info (1889, ⟨10, [0], 0⟩) :=
-  fnOk_of fn_match_arg (by decide +kernel)
-
-theorem ok_same_trait : FnOk prog prims info (1890, ⟨3, [], 0⟩) :=
-  fnOk_of fn_same_trait (by decide +kernel)
-
-theorem ok_cons_of_mini_selfhost_BoundGoal : FnOk prog prims info (1891, ⟨0, [], 0⟩) :=
-  fnOk_of fn_cons_of_mini_selfhost_BoundGoal (by decide +kernel)
-
-theorem ok_trait_split : FnOk prog prims info (1892, ⟨7, [], 0⟩) :=
-  fnOk_of fn_trait_split (by decide +kernel)
-
-theorem ok_p_bound_type_path_ident : FnOk prog prims info (1893, ⟨0, [], 0⟩) :=
-  fnOk_of fn_p_bound_type_path_ident (by decide +kernel)
-
-theorem ok_p_bound_type_path_end : FnOk prog prims info (1894, ⟨0, [], 0⟩) :=
-  fnOk_of fn_p_bound_type_path_end (by decide +kernel)
-
-theorem ok_p_bound_type_path_more : FnOk prog prims info (1895, ⟨0, [], 0⟩) :=
-  fnOk_of fn_p_bound_type_path_more (by decide +kernel)
-
-theorem ok_apply_of : FnOk prog prims info (1896, ⟨0, [], 0⟩) :=
-  fnOk_of fn_apply_of (by decide +kernel)
-
-theorem ok_scalar_src : FnOk prog prims info (1897, ⟨0, [], 0⟩) :=
-  fnOk_of fn_scalar_src (by decide +kernel)
-
-theorem ok_scalar_of : FnOk prog prims info (1898, ⟨1, [], 0⟩) :=
-  fnOk_of fn_scalar_of (by decide +kernel)
-
-theorem ok_field_in : FnOk prog prims info (1899, ⟨3, [], 0⟩) :=
-  fnOk_of fn_field_in (by decide +kernel)
-
-theorem ok_wide_read_of : FnOk prog prims info (1900, ⟨4, [], 0⟩) :=
-  fnOk_of fn_wide_read_of (by decide +kernel)
-
-theorem ok_wide_const : FnOk prog prims info (1901, ⟨6, [], 0⟩) :=
-  fnOk_of fn_wide_const (by decide +kernel)
-
-theorem ok_tree_tokens : FnOk prog prims info (1902, ⟨1, [0], 0⟩) :=
-  fnOk_of fn_tree_tokens (by decide +kernel)
-
-theorem ok_literal_as : FnOk prog prims info (1903, ⟨4, [], 0⟩) :=
-  fnOk_of fn_literal_as (by decide +kernel)
-
-theorem ok_char_first : FnOk prog prims info (1904, ⟨4, [], 0⟩) :=
-  fnOk_of fn_char_first (by decide +kernel)
-
-theorem ok_fl_digit : FnOk prog prims info (1905, ⟨0, [], 0⟩) :=
-  fnOk_of fn_fl_digit (by decide +kernel)
-
-theorem ok_fl_push : FnOk prog prims info (1906, ⟨4, [], 0⟩) :=
-  fnOk_of fn_fl_push (by decide +kernel)
-
-theorem ok_fl_frac_part : FnOk prog prims info (1907, ⟨10, [0], 0⟩) :=
-  fnOk_of fn_fl_frac_part (by decide +kernel)
-
-theorem ok_fl_exp_part : FnOk prog prims info (1908, ⟨9, [], 0⟩) :=
-  fnOk_of fn_fl_exp_part (by decide +kernel)
-
 theorem chunk41 : AllFns prog prims info part41 :=
-  ⟨ok_let_stmt, ok_return_slice, ok_return_eval_of, ok_if_eval_of, ok_while_eval_of, ok_for_of, ok_match_primary, ok_match_arms_of, ok_p_assign_set, ok_peel, ok_assign_target, ok_compound_of, ok_call_stmt, ok_get_of_core_option_Option_usize, ok_if_item, ok_is_module, ok_slice_elem, ok_match_path, ok_bound_args, ok_match_args_next, ok_match_arg, ok_same_trait, ok_cons_of_mini_selfhost_BoundGoal, ok_trait_split, ok_p_bound_type_path_ident, ok_p_bound_type_path_end, ok_p_bound_type_path_more, ok_apply_of, ok_scalar_src, ok_scalar_of, ok_field_in, ok_wide_read_of, ok_wide_const, ok_tree_tokens, ok_literal_as, ok_char_first, ok_fl_digit, ok_fl_push, ok_fl_frac_part, ok_fl_exp_part, trivial⟩
+  ⟨ok_field_values, ok_eff_ty, ok_named_parts, ok_eff_match_enum, ok_array_parts, ok_repeat_eff, ok_length_of_mini_selfhost_MEff, ok_cons_eff, ok_head_ty, ok_tail_tys, ok_match_init, ok_block_arms_of, ok_match_stmt_parts, ok_stmt_arms, ok_match_stmt_value, ok_let_arms_of, ok_let_head, ok_try_let_head, ok_eval_head, ok_try_of_init, ok_untyped_try, ok_untyped_eval, ok_let_stmt, ok_return_slice, ok_return_eval_of, ok_if_eval_of, ok_while_eval_of, ok_for_of, ok_match_primary, ok_match_arms_of, ok_p_assign_set, ok_peel, ok_assign_target, ok_compound_of, ok_call_stmt, ok_get_of_core_option_Option_usize, ok_if_item, ok_is_module, ok_slice_elem, ok_match_path, trivial⟩
 
 end Lanius.Faithful.SelfTerm

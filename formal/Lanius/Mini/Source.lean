@@ -76,7 +76,12 @@ import all Lanius.Mini.Compiler.P.lowerLoadType
 import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.storeArray
-import all Lanius.Mini.Compiler.P.sigs
+import all Lanius.Mini.Compiler.P.bindingBytes
+import all Lanius.Mini.Compiler.P.arrayCallSig
+import all Lanius.Mini.Compiler.P.withBudget
+import all Lanius.Mini.Compiler.P.needRound
+import all Lanius.Mini.Compiler.P.needsAfter
+import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.lowerBody
 import all Lanius.Mini.Compiler.P.declareFuncs
 import all Lanius.Mini.Compiler.P.declareProgram
@@ -116,11 +121,11 @@ public import Lanius.Mini.Compiler.P.compileSource
 public import Lanius.Mini.Compiler.P.declareProgram
 public import Lanius.Mini.Compiler.P.enumVariants
 public import Lanius.Mini.Compiler.P.floatApply
+public import Lanius.Mini.Compiler.P.funcNeeds
 public import Lanius.Mini.Compiler.P.loadAtBytes
 public import Lanius.Mini.Compiler.P.lowerBody
 public import Lanius.Mini.Compiler.P.lowerLoadType
 public import Lanius.Mini.Compiler.P.repeatType
-public import Lanius.Mini.Compiler.P.sigs
 public import Lanius.Mini.Compiler.P.storeArray
 public import Lanius.Mini.Compiler.P.storeEvalWord
 public import Lanius.Mini.Compiler.P.structFields
@@ -158,7 +163,7 @@ def SrcProgram.toCore (prog : SrcProgram) : Core.Program where
 functions. -/
 theorem compileSource_some {sp : SrcProgram} {binary : Binary} (compiled : compileSource sp = some binary) :
     funcsReturn sp.funcs = true ∧ (∃ decls, declareProgram sp = some decls) ∧
-      ∃ funcs, lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some funcs ∧
+      ∃ funcs, lowerFuncs (sigs sp.funcs) (sigs sp.funcs) sp.decls sp.funcs = some funcs ∧
         compileOptimized { funcs := funcs } = some binary := by
   unfold compileSource at compiled
   split at compiled
@@ -333,6 +338,16 @@ inductive SrcType.HoldsAt (places : List Addressed) : SrcType → Value → Env 
   | slice {element : SrcType} {length : Nat} {env : Env} {slot : Nat} :
       (env (slot + 1)).toNat = length → length < 2 ^ 31 →
       SrcType.HoldsAt places (.slice element) (.rawSlice element.toCore (env slot).toNat length) env slot
+  /-- A slice of a caller's array held in frame memory, a sliced place: the
+  slice's pointer (`Addressed.pointer`), then its length, below `2 ^ 31` as a
+  raw slice's. Core's value is the slice of the whole array in the place's
+  cell (`arrayToSlice` of a local). The elements are `i32` or `u8`, packed in
+  the slice layout. -/
+  | borrowed {element : SrcType} {length : Nat} {x : Addressed} {env : Env} {slot : Nat} :
+      x ∈ places → x.sliced = true → x.projections = [] → x.ty = .array element length →
+      (element = .i32 ∨ element = .uint .uint8) →
+      (env slot).toNat = x.pointer → (env (slot + 1)).toNat = length → length < 2 ^ 31 →
+      SrcType.HoldsAt places (.slice element) (.slice element.toCore x.cell [] 0 length) env slot
   /-- An array is its elements one after another, like a struct of `length`
   fields of the element type. -/
   | array {element : SrcType} {length : Nat} {vs : List Value} {env : Env} {slot : Nat} :
@@ -444,6 +459,11 @@ theorem SrcType.HoldsAt.congr : ∀ {ty : SrcType} {v : Value} {env : Env} {slot
     simp only [Nat.add_zero] at this
     rw [← this]
     exact .slice (by rw [second]; exact len) small
+  | .slice _, _, _, _, .borrowed mem sliced root ty packed pointer len small, _, _, agree => by
+    have first := agree 0 (by simp [SrcType.size])
+    have second := agree 1 (by simp [SrcType.size])
+    simp only [Nat.add_zero] at first
+    exact .borrowed mem sliced root ty packed (by rw [first]; exact pointer) (by rw [second]; exact len) small
   | .array _ _, _, _, _, .array holds, _, _, agree =>
     .array (FieldsHold.congr holds fun i below => agree i (by
       simp only [SrcType.size]; rw [sizes_replicate] at below; exact below))

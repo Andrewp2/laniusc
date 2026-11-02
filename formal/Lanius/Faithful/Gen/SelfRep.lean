@@ -495,8 +495,8 @@ inductive RepProgram : Lanius.Mini.Program → Value → Prop where
       (RepList 86 RepFunc) x0 v0 → RepProgram (Lanius.Mini.Program.mk x0) (.structure 95 [v0])
 
 inductive RepSig : Lanius.Mini.Sig → Value → Prop where
-  | c0 {x0 : List Lanius.Mini.SrcType} {x1 : Lanius.Mini.SrcType} {v0 v1 : Value} :
-      (RepList 73 RepSrcType) x0 v0 → RepSrcType x1 v1 → RepSig (Lanius.Mini.Sig.mk x0 x1) (.structure 97 [v0, v1])
+  | c0 {x0 : List Lanius.Mini.SrcType} {x1 : Lanius.Mini.SrcType} {x2 : Nat} {x3 : Nat} {x4 : Nat} {v0 v1 v2 v3 v4 : Value} :
+      (RepList 73 RepSrcType) x0 v0 → RepSrcType x1 v1 → RepNat x2 v2 → RepNat x3 v3 → RepNat x4 v4 → RepSig (Lanius.Mini.Sig.mk x0 x1 x2 x3 x4) (.structure 97 [v0, v1, v2, v3, v4])
 
 inductive RepNumsRead : Lanius.Mini.NumsRead → Value → Prop where
   | c0 {x0 : List Nat} {x1 : List (BitVec 32)} {v0 v1 : Value} :
@@ -1055,28 +1055,28 @@ attribute [rep_rule] RepArgsBound.c0 RepWildSplit.c0 RepArmsUse.c0 RepArmUse.c0
 @[pure_rule] theorem ty129_typeId : ty129.typeId = 101 := rfl
 @[pure_rule] theorem ty130_typeId : ty130.typeId = 126 := rfl
 @[pure_rule] theorem ty135_typeId : ty135.typeId = 127 := rfl
-@[pure_rule] theorem ty136_typeId : ty136.typeId = 128 := rfl
-@[pure_rule] theorem ty137_typeId : ty137.typeId = 129 := rfl
-@[pure_rule] theorem ty138_typeId : ty138.typeId = 131 := rfl
-@[pure_rule] theorem ty139_typeId : ty139.typeId = 130 := rfl
-@[pure_rule] theorem ty141_typeId : ty141.typeId = 132 := rfl
-@[pure_rule] theorem ty143_typeId : ty143.typeId = 133 := rfl
-@[pure_rule] theorem ty144_typeId : ty144.typeId = 134 := rfl
-@[pure_rule] theorem ty145_typeId : ty145.typeId = 136 := rfl
-@[pure_rule] theorem ty146_typeId : ty146.typeId = 137 := rfl
-@[pure_rule] theorem ty147_typeId : ty147.typeId = 135 := rfl
-@[pure_rule] theorem ty150_typeId : ty150.typeId = 138 := rfl
-@[pure_rule] theorem ty151_typeId : ty151.typeId = 143 := rfl
-@[pure_rule] theorem ty152_typeId : ty152.typeId = 144 := rfl
-@[pure_rule] theorem ty153_typeId : ty153.typeId = 142 := rfl
-@[pure_rule] theorem ty154_typeId : ty154.typeId = 141 := rfl
-@[pure_rule] theorem ty155_typeId : ty155.typeId = 140 := rfl
-@[pure_rule] theorem ty156_typeId : ty156.typeId = 145 := rfl
-@[pure_rule] theorem ty157_typeId : ty157.typeId = 139 := rfl
-@[pure_rule] theorem ty160_typeId : ty160.typeId = 147 := rfl
-@[pure_rule] theorem ty161_typeId : ty161.typeId = 148 := rfl
-@[pure_rule] theorem ty162_typeId : ty162.typeId = 146 := rfl
-@[pure_rule] theorem ty163_typeId : ty163.typeId = 149 := rfl
+@[pure_rule] theorem ty137_typeId : ty137.typeId = 128 := rfl
+@[pure_rule] theorem ty138_typeId : ty138.typeId = 129 := rfl
+@[pure_rule] theorem ty139_typeId : ty139.typeId = 131 := rfl
+@[pure_rule] theorem ty140_typeId : ty140.typeId = 130 := rfl
+@[pure_rule] theorem ty142_typeId : ty142.typeId = 132 := rfl
+@[pure_rule] theorem ty144_typeId : ty144.typeId = 133 := rfl
+@[pure_rule] theorem ty145_typeId : ty145.typeId = 134 := rfl
+@[pure_rule] theorem ty146_typeId : ty146.typeId = 136 := rfl
+@[pure_rule] theorem ty147_typeId : ty147.typeId = 137 := rfl
+@[pure_rule] theorem ty148_typeId : ty148.typeId = 135 := rfl
+@[pure_rule] theorem ty149_typeId : ty149.typeId = 138 := rfl
+@[pure_rule] theorem ty150_typeId : ty150.typeId = 143 := rfl
+@[pure_rule] theorem ty151_typeId : ty151.typeId = 144 := rfl
+@[pure_rule] theorem ty152_typeId : ty152.typeId = 142 := rfl
+@[pure_rule] theorem ty153_typeId : ty153.typeId = 141 := rfl
+@[pure_rule] theorem ty154_typeId : ty154.typeId = 140 := rfl
+@[pure_rule] theorem ty155_typeId : ty155.typeId = 145 := rfl
+@[pure_rule] theorem ty156_typeId : ty156.typeId = 139 := rfl
+@[pure_rule] theorem ty159_typeId : ty159.typeId = 147 := rfl
+@[pure_rule] theorem ty160_typeId : ty160.typeId = 148 := rfl
+@[pure_rule] theorem ty161_typeId : ty161.typeId = 146 := rfl
+@[pure_rule] theorem ty162_typeId : ty162.typeId = 149 := rfl
 @[pure_rule] theorem ty169_typeId : ty169.typeId = 150 := rfl
 @[pure_rule] theorem ty170_typeId : ty170.typeId = 151 := rfl
 @[pure_rule] theorem ty171_typeId : ty171.typeId = 152 := rfl

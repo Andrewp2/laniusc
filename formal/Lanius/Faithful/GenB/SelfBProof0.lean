@@ -83,6 +83,22 @@ theorem bproof_minus {spW sp : SrcProgram} {prims : Prims} {ix_minus : Nat}
     budget
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
 
+theorem bproof_cons_of_usize {spW sp : SrcProgram} {prims : Prims} {ix_cons_of_usize ix_boxed_of_mini_selfhost_List_usize : Nat}
+    (fnW : spW.funcs[ix_cons_of_usize]? = some (src_cons_of_usize ix_boxed_of_mini_selfhost_List_usize)) (fn : sp.funcs[ix_cons_of_usize]? = some (src_cons_of_usize ix_boxed_of_mini_selfhost_List_usize))
+    (np : prims.isPrim ix_cons_of_usize = false)
+    (back : Certified (∀ {n : Nat}, Stmt_cons_of_usize sp prims ix_cons_of_usize n))
+    (pp_boxed_of_mini_selfhost_List_usize : prims.isPrim ix_boxed_of_mini_selfhost_List_usize = true) (bx_boxed_of_mini_selfhost_List_usize : prims.boxed.contains ix_boxed_of_mini_selfhost_List_usize = true) {n : Nat} :
+    BStmt_cons_of_usize spW sp prims ix_cons_of_usize n := by
+  intro x0 x1 v0 v1 w k h r0 r1
+  rcases n with _ | n
+  · simp only [qcall_zero, reduceCtorEq] at h
+  have key : qcall sp prims uc (n + 1) ix_cons_of_usize [v0, v1] = some (w, k) ∧ Cost_cons_of_usize (n + 1) x0 x1 = k := by
+    rw [qcall_succ np fnW] at h
+    rw [qcall_succ np fn]
+    simp only [src_cons_of_usize, List.length_cons, List.length_nil, if_true] at h ⊢
+    budget Cost_cons_of_usize
+  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
+
 theorem bstep_get_of_usize {spW sp : SrcProgram} {prims : Prims} {ix_get_of_usize ix_minus ix_unbox_of_mini_selfhost_List_usize : Nat}
     (fnW : spW.funcs[ix_get_of_usize]? = some (src_get_of_usize ix_minus ix_unbox_of_mini_selfhost_List_usize ix_get_of_usize)) (fn : sp.funcs[ix_get_of_usize]? = some (src_get_of_usize ix_minus ix_unbox_of_mini_selfhost_List_usize ix_get_of_usize))
     (np : prims.isPrim ix_get_of_usize = false)
@@ -570,24 +586,5 @@ theorem bproof_lx_decimal_next {spW sp : SrcProgram} {prims : Prims} {ix_lx_deci
     simp only at pre
     budget
   exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1 r2⟩
-
-theorem bproof_lx_finish_decimal {spW sp : SrcProgram} {prims : Prims} {ix_lx_finish_decimal ix_get_of_usize ix_lx_decimal_next : Nat}
-    (fnW : spW.funcs[ix_lx_finish_decimal]? = some (src_lx_finish_decimal ix_get_of_usize ix_lx_decimal_next)) (fn : sp.funcs[ix_lx_finish_decimal]? = some (src_lx_finish_decimal ix_get_of_usize ix_lx_decimal_next))
-    (np : prims.isPrim ix_lx_finish_decimal = false)
-    (back : Certified (∀ {n : Nat}, Stmt_lx_finish_decimal sp prims ix_lx_finish_decimal n))
-    (b_get_of_usize : Certified (∀ {n : Nat}, BStmt_get_of_usize spW sp prims ix_get_of_usize n))
-    (b_lx_decimal_next : Certified (∀ {n : Nat}, BStmt_lx_decimal_next spW sp prims ix_lx_decimal_next n)) {n : Nat} :
-    BStmt_lx_finish_decimal spW sp prims ix_lx_finish_decimal n := by
-  intro x0 x1 v0 v1 w k b h r0 r1 hb pre
-  rcases n with _ | n
-  · simp only [qcall_zero, reduceCtorEq] at h
-  have key : qcall sp prims uc (n + 1) ix_lx_finish_decimal [v0, v1] = some (w, k) ∧ 0 = k := by
-    rw [qcall_succ np fnW] at h
-    rw [qcall_succ np fn]
-    simp only [src_lx_finish_decimal, List.length_cons, List.length_nil, if_true] at h ⊢
-    rw [Pre_lx_finish_decimal.eq_def] at pre
-    simp only at pre
-    budget
-  exact ⟨key.1, key.2, back.out (pcall_of_q key.1) r0 r1⟩
 
 end Lanius.Faithful.SelfBudget

@@ -78,6 +78,16 @@ theorem step_concat_of_mini_selfhost_Inst {prog : SrcProgram} {prims : Prims} {i
   simp only [src_concat_of_mini_selfhost_Inst] at h
   faithful []
 
+theorem step_concat_of_usize {prog : SrcProgram} {prims : Prims} {ix_concat_of_usize ix_unbox_of_mini_selfhost_List_usize ix_boxed_of_mini_selfhost_List_usize : Nat} (fn : prog.funcs[ix_concat_of_usize]? = some (src_concat_of_usize ix_unbox_of_mini_selfhost_List_usize ix_concat_of_usize ix_boxed_of_mini_selfhost_List_usize)) (np : prims.isPrim ix_concat_of_usize = false)
+    (ext_unbox_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_usize n))
+    (ext_boxed_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_usize prog prims ix_boxed_of_mini_selfhost_List_usize n)) {n : Nat}
+    (ih_concat_of_usize : Certified (Stmt_concat_of_usize prog prims ix_concat_of_usize n)) :
+    Stmt_concat_of_usize prog prims ix_concat_of_usize (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_concat_of_usize] at h
+  faithful []
+
 theorem proof_cons_of_i32 {prog : SrcProgram} {prims : Prims} {ix_cons_of_i32 ix_boxed_of_mini_selfhost_List_i32 : Nat} (fn : prog.funcs[ix_cons_of_i32]? = some (src_cons_of_i32 ix_boxed_of_mini_selfhost_List_i32)) (np : prims.isPrim ix_cons_of_i32 = false)
     (ext_boxed_of_mini_selfhost_List_i32 : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_i32 prog prims ix_boxed_of_mini_selfhost_List_i32 n)) {n : Nat} :
     Stmt_cons_of_i32 prog prims ix_cons_of_i32 n := by

@@ -81,9 +81,14 @@ import all Lanius.Mini.Compiler.P.optimizeNeg
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.repeatType
 import all Lanius.Mini.Compiler.P.shortCircuit
-import all Lanius.Mini.Compiler.P.sigs
+import all Lanius.Mini.Compiler.P.withBudget
+import all Lanius.Mini.Compiler.P.funcNeeds
 import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.storeArray
+import all Lanius.Mini.Compiler.P.arrayCallSig
+import all Lanius.Mini.Compiler.P.bindingBytes
+import all Lanius.Mini.Compiler.P.needRound
+import all Lanius.Mini.Compiler.P.needsAfter
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.storeType
 import all Lanius.Mini.Compiler.P.storeWordElement
@@ -97,6 +102,12 @@ import all Lanius.Mini.Compiler.P.wordWidth
 import all Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Compiler.P.compileSource
 public import Lanius.Mini.Compiler.P.storeArray
+public import Lanius.Mini.Compiler.P.arrayCallSig
+public import Lanius.Mini.Compiler.P.bindingBytes
+public import Lanius.Mini.Compiler.P.funcNeeds
+public import Lanius.Mini.Compiler.P.needRound
+public import Lanius.Mini.Compiler.P.needsAfter
+public import Lanius.Mini.Compiler.P.withBudget
 
 @[expose] public section
 /-! # Every outcome of a compiled call, from any Core state
@@ -122,7 +133,7 @@ theorem compileSource_contract_from {sp : SrcProgram} {binary : Binary}
     (bitsLen : bits.length = paramsSize func.params) {fuel : Nat} {v : Value}
     {st final : Semantics.State} {heap : Heap} (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap)
     (runs : Semantics.evalExpr fuel sp.toCore st (.call f (args.map Core.Expr.value)) = .done v final)
-    (fits : final.heap.nextAddress ≤ heap.limit) :
+    (fits : final.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp) :
     ∃ depth results after, func.ret.HoldsAt [] v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
       HeapCorr final.heap final.world after ∧
       ∀ imageBase window, Contract binary imageBase (binary.stackNeed depth) window f bits heap results after := by
@@ -135,9 +146,9 @@ theorem compileSource_contract_from {sp : SrcProgram} {binary : Binary}
     rw [found] at found'
     cases found'
     obtain ⟨rfl, rfl⟩ := evalExprs_values argsRun
-    obtain ⟨_, _, depth, results, after, returns, holds, len, hc', -⟩ :=
+    obtain ⟨_, _, depth, results, after, _, returns, holds, len, hc', -⟩ :=
       body_sound (mp := { funcs := funcs }) (hp := heap) lowered (stmt_sound lowered k) found
-        fresh hc (FrameCorr.nil _ _) (fun _ mem => by simp at mem) typed bitsLen bodyRun result fits
+        fresh hc (FrameCorr.start _ frameRoom) (Nat.le_refl _) (fun _ mem => by simp at mem) typed bitsLen bodyRun result fits
     refine ⟨depth, results, after, holds, len, hc', fun imageBase window => ?_⟩
     rcases compileOptimized_some compiledProgram with original | ⟨q, accepted, optimized⟩
     · exact compiled_contract original imageBase depth f bits heap results after returns window
@@ -153,7 +164,7 @@ theorem compileSource_outcome_from {sp : SrcProgram} {binary : Binary}
     (found : sp.funcs[f]? = some func) {args : List Value} {bits : List (BitVec 64)}
     (typed : FieldsHold [] (paramTypes func.params) args (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize func.params) {st : Semantics.State} {heap : Heap}
-    (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap) (within : st.heap.nextAddress ≤ heap.limit)
+    (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap) (within : st.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp)
     (s : State) (imageBase : BitVec 64) (window : Nat) (bounded : window ≤ 2 ^ 62)
     (loaded : CodeAt s.memory imageBase binary.image)
     (apart : ∀ index, index < binary.image.length →
@@ -171,12 +182,12 @@ theorem compileSource_outcome_from {sp : SrcProgram} {binary : Binary}
     ∃ fuel r st', Semantics.evalExpr fuel sp.toCore st (.call f (args.map Core.Expr.value)) = .trapped r st' ∧
       undefinedTrap r = true ∧ st'.heap.nextAddress ≤ heap.limit := by
   by_cases fails : ∀ fuel, Failing heap.limit (Semantics.evalExpr fuel sp.toCore st (.call f (args.map Core.Expr.value)))
-  · exact .inl (compileSource_stops_from compiled found typed bitsLen fresh hc within fails s imageBase window bounded
+  · exact .inl (compileSource_stops_from compiled found typed bitsLen fresh hc within frameRoom fails s imageBase window bounded
       loaded apart imageHeap entry params heapAt stack)
   · obtain ⟨fuel, notFailing⟩ := Classical.not_forall.mp fails
     rcases not_failing notFailing with ⟨v, final, done, fits⟩ | ⟨r, st', trapped, undefined, bound⟩
     · obtain ⟨depth, results, after, holds, len, hc', contract⟩ :=
-        compileSource_contract_from compiled found typed bitsLen fresh hc done fits
+        compileSource_contract_from compiled found typed bitsLen fresh hc done fits frameRoom
       rcases contract imageBase window s bounded loaded apart imageHeap entry params heapAt stack with
         ⟨n, s', run, det, ret⟩ | ⟨-, faults⟩
       · exact .inr (.inl ⟨fuel, v, final, done, fits, results, after, holds, len, hc', n, s', run, det, ret⟩)
@@ -194,7 +205,7 @@ theorem compileSource_outcome_reason {sp : SrcProgram} {binary : Binary}
     (found : sp.funcs[f]? = some func) {args : List Value} {bits : List (BitVec 64)}
     (typed : FieldsHold [] (paramTypes func.params) args (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize func.params) {st : Semantics.State} {heap : Heap}
-    (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap) (within : st.heap.nextAddress ≤ heap.limit)
+    (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap) (within : st.heap.nextAddress ≤ heap.limit) (frameRoom : 0 < sp.need f → heap.limit + sp.need f ≤ heap.fsp)
     (s : State) (imageBase : BitVec 64) (window : Nat) (bounded : window ≤ 2 ^ 62)
     (loaded : CodeAt s.memory imageBase binary.image)
     (apart : ∀ index, index < binary.image.length →
@@ -215,12 +226,12 @@ theorem compileSource_outcome_reason {sp : SrcProgram} {binary : Binary}
     ∃ fuel r st', Semantics.evalExpr fuel sp.toCore st (.call f (args.map Core.Expr.value)) = .trapped r st' ∧
       undefinedTrap r = true ∧ st'.heap.nextAddress ≤ heap.limit := by
   by_cases fails : ∀ fuel, Failing heap.limit (Semantics.evalExpr fuel sp.toCore st (.call f (args.map Core.Expr.value)))
-  · exact .inl ⟨fails, compileSource_stops_from compiled found typed bitsLen fresh hc within fails s imageBase window
+  · exact .inl ⟨fails, compileSource_stops_from compiled found typed bitsLen fresh hc within frameRoom fails s imageBase window
       bounded loaded apart imageHeap entry params heapAt stack⟩
   · obtain ⟨fuel, notFailing⟩ := Classical.not_forall.mp fails
     rcases not_failing notFailing with ⟨v, final, done, fits⟩ | ⟨r, st', trapped, undefined, bound⟩
     · obtain ⟨depth, results, after, holds, len, hc', contract⟩ :=
-        compileSource_contract_from compiled found typed bitsLen fresh hc done fits
+        compileSource_contract_from compiled found typed bitsLen fresh hc done fits frameRoom
       rcases contract imageBase window s bounded loaded apart imageHeap entry params heapAt stack with
         ⟨n, s', run, det, ret⟩ | ⟨short, faults⟩
       · exact .inr (.inr (.inl ⟨fuel, v, final, done, fits, results, after, holds, len, hc', n, s', run, det, ret⟩))

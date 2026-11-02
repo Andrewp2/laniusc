@@ -56,6 +56,11 @@ abbrev BStmt_empty_of_usize (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) :
     qcall spW prims uc n ix [] = some (w, k) →
     qcall sp prims uc n ix [] = some (w, k) ∧ 0 = k ∧ (RepList 25 RepNat) (([] : List Nat)) w
 
+abbrev BStmt_cons_of_usize (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : List Nat} {v0 v1 w : Value} {k : Nat},
+    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → (RepList 25 RepNat) x1 v1 →
+    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_of_usize n x0 x1 = k ∧ (RepList 25 RepNat) (x0 :: x1) w
+
 abbrev BStmt_empty_of_mini_selfhost_RawTok (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value} {k : Nat},
     qcall spW prims uc n ix [] = some (w, k) →
@@ -245,11 +250,6 @@ abbrev BStmt_lx_symbol_start (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) 
   ∀ {x0 : Nat} {v0 w : Value} {k : Nat},
     qcall spW prims uc n ix [v0] = some (w, k) → RepNat x0 v0 →
     qcall sp prims uc n ix [v0] = some (w, k) ∧ 0 = k ∧ RepBool (Lanius.Mini.lxSymbolStart x0) w
-
-abbrev BStmt_cons_of_usize (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : List Nat} {v0 v1 w : Value} {k : Nat},
-    qcall spW prims uc n ix [v0, v1] = some (w, k) → RepNat x0 v0 → (RepList 25 RepNat) x1 v1 →
-    qcall sp prims uc n ix [v0, v1] = some (w, k) ∧ Cost_cons_of_usize n x0 x1 = k ∧ (RepList 25 RepNat) (x0 :: x1) w
 
 abbrev BStmt_lx_take (spW sp : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value} {k : Nat},

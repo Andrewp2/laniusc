@@ -12,127 +12,127 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Termination
 open Lanius.Faithful.SelfCert
 
-theorem ok_lower_load_type : FnOk prog prims info (487, ⟨7, [], 0⟩) :=
+theorem ok_lower_cast : FnOk prog prims info (482, ⟨7, [], 0⟩) :=
+  fnOk_of fn_lower_cast (by decide +kernel)
+
+theorem ok_lower_float : FnOk prog prims info (483, ⟨1, [], 0⟩) :=
+  fnOk_of fn_lower_float (by decide +kernel)
+
+theorem ok_copy_binding : FnOk prog prims info (484, ⟨4, [], 0⟩) :=
+  fnOk_of fn_copy_binding (by decide +kernel)
+
+theorem ok_copy_field : FnOk prog prims info (485, ⟨6, [], 0⟩) :=
+  fnOk_of fn_copy_field (by decide +kernel)
+
+theorem ok_lower_args : FnOk prog prims info (489, ⟨12, [1], 0⟩) :=
+  fnOk_of fn_lower_args (by decide +kernel)
+
+theorem ok_lower_variant : FnOk prog prims info (490, ⟨13, [], 0⟩) :=
+  fnOk_of fn_lower_variant (by decide +kernel)
+
+theorem ok_lower_match_arms : FnOk prog prims info (491, ⟨14, [], 0⟩) :=
+  fnOk_of fn_lower_match_arms (by decide +kernel)
+
+theorem ok_lower_set_field_at : FnOk prog prims info (492, ⟨12, [], 0⟩) :=
+  fnOk_of fn_lower_set_field_at (by decide +kernel)
+
+theorem ok_field_offset : FnOk prog prims info (493, ⟨3, [0], 0⟩) :=
+  fnOk_of fn_field_offset (by decide +kernel)
+
+theorem ok_get_of_mini_selfhost_SrcType : FnOk prog prims info (494, ⟨1, [0], 0⟩) :=
+  fnOk_of fn_get_of_mini_selfhost_SrcType (by decide +kernel)
+
+theorem ok_UintTy_code : FnOk prog prims info (497, ⟨0, [], 0⟩) :=
+  fnOk_of fn_UintTy_code (by decide +kernel)
+
+theorem ok_word_type : FnOk prog prims info (498, ⟨4, [1], 0⟩) :=
+  fnOk_of fn_word_type (by decide +kernel)
+
+theorem ok_within_layouts : FnOk prog prims info (499, ⟨3, [1], 0⟩) :=
+  fnOk_of fn_within_layouts (by decide +kernel)
+
+theorem ok_within_payloads : FnOk prog prims info (500, ⟨3, [1], 0⟩) :=
+  fnOk_of fn_within_payloads (by decide +kernel)
+
+theorem ok_eval_element : FnOk prog prims info (501, ⟨7, [], 0⟩) :=
+  fnOk_of fn_eval_element (by decide +kernel)
+
+theorem ok_eval_array_index : FnOk prog prims info (502, ⟨6, [], 0⟩) :=
+  fnOk_of fn_eval_array_index (by decide +kernel)
+
+theorem ok_eval_checked : FnOk prog prims info (503, ⟨2, [], 0⟩) :=
+  fnOk_of fn_eval_checked (by decide +kernel)
+
+theorem ok_eval_copy : FnOk prog prims info (504, ⟨12, [], 0⟩) :=
+  fnOk_of fn_eval_copy (by decide +kernel)
+
+theorem ok_eval_field_copy : FnOk prog prims info (505, ⟨14, [], 0⟩) :=
+  fnOk_of fn_eval_field_copy (by decide +kernel)
+
+theorem ok_bounds_guard : FnOk prog prims info (506, ⟨2, [], 0⟩) :=
+  fnOk_of fn_bounds_guard (by decide +kernel)
+
+theorem ok_lower_load_word : FnOk prog prims info (507, ⟨0, [], 0⟩) :=
+  fnOk_of fn_lower_load_word (by decide +kernel)
+
+theorem ok_lower_element : FnOk prog prims info (508, ⟨5, [], 0⟩) :=
+  fnOk_of fn_lower_element (by decide +kernel)
+
+theorem ok_lower_load_type : FnOk prog prims info (509, ⟨7, [], 0⟩) :=
   fnOk_of fn_lower_load_type (by decide +kernel)
 
-theorem ok_index_of : FnOk prog prims info (488, ⟨2, [], 0⟩) :=
+theorem ok_index_of : FnOk prog prims info (510, ⟨2, [], 0⟩) :=
   fnOk_of fn_index_of (by decide +kernel)
 
-theorem ok_lower_set_index_of : FnOk prog prims info (489, ⟨14, [], 0⟩) :=
+theorem ok_lower_set_index_of : FnOk prog prims info (511, ⟨14, [], 0⟩) :=
   fnOk_of fn_lower_set_index_of (by decide +kernel)
 
-theorem ok_eval_call_sig : FnOk prog prims info (490, ⟨3, [], 0⟩) :=
+theorem ok_eval_call_sig : FnOk prog prims info (512, ⟨3, [], 0⟩) :=
   fnOk_of fn_eval_call_sig (by decide +kernel)
 
-theorem ok_eval_host : FnOk prog prims info (491, ⟨3, [], 0⟩) :=
+theorem ok_eval_host : FnOk prog prims info (513, ⟨3, [], 0⟩) :=
   fnOk_of fn_eval_host (by decide +kernel)
 
-theorem ok_cons_args : FnOk prog prims info (492, ⟨1, [], 0⟩) :=
+theorem ok_cons_args : FnOk prog prims info (514, ⟨1, [], 0⟩) :=
   fnOk_of fn_cons_args (by decide +kernel)
 
-theorem ok_eval_operands : FnOk prog prims info (494, ⟨8, [], 0⟩) :=
+theorem ok_eval_operands : FnOk prog prims info (516, ⟨8, [], 0⟩) :=
   fnOk_of fn_eval_operands (by decide +kernel)
 
-theorem ok_eval_then : FnOk prog prims info (496, ⟨0, [], 0⟩) :=
+theorem ok_eval_then : FnOk prog prims info (518, ⟨0, [], 0⟩) :=
   fnOk_of fn_eval_then (by decide +kernel)
 
-theorem ok_lower_negate_typed : FnOk prog prims info (497, ⟨3, [], 0⟩) :=
+theorem ok_lower_negate_typed : FnOk prog prims info (519, ⟨3, [], 0⟩) :=
   fnOk_of fn_lower_negate_typed (by decide +kernel)
 
-theorem ok_lower_not_typed : FnOk prog prims info (498, ⟨1, [], 0⟩) :=
+theorem ok_lower_not_typed : FnOk prog prims info (520, ⟨1, [], 0⟩) :=
   fnOk_of fn_lower_not_typed (by decide +kernel)
 
-theorem ok_scalar_cast : FnOk prog prims info (499, ⟨7, [], 0⟩) :=
+theorem ok_scalar_cast : FnOk prog prims info (521, ⟨7, [], 0⟩) :=
   fnOk_of fn_scalar_cast (by decide +kernel)
 
-theorem ok_eval_struct_of : FnOk prog prims info (500, ⟨3, [], 0⟩) :=
+theorem ok_eval_struct_of : FnOk prog prims info (522, ⟨3, [], 0⟩) :=
   fnOk_of fn_eval_struct_of (by decide +kernel)
 
-theorem ok_eval_tagged : FnOk prog prims info (501, ⟨4, [], 0⟩) :=
+theorem ok_eval_tagged : FnOk prog prims info (523, ⟨4, [], 0⟩) :=
   fnOk_of fn_eval_tagged (by decide +kernel)
 
-theorem ok_eval_match_of : FnOk prog prims info (502, ⟨4, [], 0⟩) :=
+theorem ok_eval_match_of : FnOk prog prims info (524, ⟨4, [], 0⟩) :=
   fnOk_of fn_eval_match_of (by decide +kernel)
 
-theorem ok_eval_arm_in : FnOk prog prims info (503, ⟨16, [7], 1⟩) :=
+theorem ok_eval_arm_in : FnOk prog prims info (525, ⟨16, [7], 1⟩) :=
   fnOk_of fn_eval_arm_in (by decide +kernel)
 
-theorem ok_arm_scope : FnOk prog prims info (504, ⟨3, [0], 0⟩) :=
+theorem ok_arm_scope : FnOk prog prims info (526, ⟨3, [0], 0⟩) :=
   fnOk_of fn_arm_scope (by decide +kernel)
 
-theorem ok_empty_of_mini_selfhost_List_mini_selfhost_SrcType : FnOk prog prims info (506, ⟨0, [], 0⟩) :=
+theorem ok_empty_of_mini_selfhost_List_mini_selfhost_SrcType : FnOk prog prims info (528, ⟨0, [], 0⟩) :=
   fnOk_of fn_empty_of_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel)
 
-theorem ok_eval_divide : FnOk prog prims info (507, ⟨4, [], 0⟩) :=
+theorem ok_eval_divide : FnOk prog prims info (529, ⟨4, [], 0⟩) :=
   fnOk_of fn_eval_divide (by decide +kernel)
 
-theorem ok_eval_stride_of : FnOk prog prims info (508, ⟨7, [], 0⟩) :=
-  fnOk_of fn_eval_stride_of (by decide +kernel)
-
-theorem ok_empty_of_mini_selfhost_Expr : FnOk prog prims info (509, ⟨0, [], 0⟩) :=
-  fnOk_of fn_empty_of_mini_selfhost_Expr (by decide +kernel)
-
-theorem ok_cons_of_mini_selfhost_Expr : FnOk prog prims info (510, ⟨0, [], 0⟩) :=
-  fnOk_of fn_cons_of_mini_selfhost_Expr (by decide +kernel)
-
-theorem ok_store_eval : FnOk prog prims info (511, ⟨3, [], 0⟩) :=
-  fnOk_of fn_store_eval (by decide +kernel)
-
-theorem ok_store_eval_byte : FnOk prog prims info (512, ⟨3, [], 0⟩) :=
-  fnOk_of fn_store_eval_byte (by decide +kernel)
-
-theorem ok_store_eval_word : FnOk prog prims info (513, ⟨6, [], 0⟩) :=
-  fnOk_of fn_store_eval_word (by decide +kernel)
-
-theorem ok_store_array_element : FnOk prog prims info (514, ⟨5, [], 0⟩) :=
-  fnOk_of fn_store_array_element (by decide +kernel)
-
-theorem ok_set_field_eval_at : FnOk prog prims info (515, ⟨5, [], 0⟩) :=
-  fnOk_of fn_set_field_eval_at (by decide +kernel)
-
-theorem ok_lower_arm_stmt : FnOk prog prims info (516, ⟨3, [], 0⟩) :=
-  fnOk_of fn_lower_arm_stmt (by decide +kernel)
-
-theorem ok_arm_payload : FnOk prog prims info (517, ⟨13, [], 0⟩) :=
-  fnOk_of fn_arm_payload (by decide +kernel)
-
-theorem ok_FloatTy_number : FnOk prog prims info (518, ⟨0, [], 0⟩) :=
-  fnOk_of fn_FloatTy_number (by decide +kernel)
-
-theorem ok_effs_types : FnOk prog prims info (519, ⟨1, [0], 0⟩) :=
-  fnOk_of fn_effs_types (by decide +kernel)
-
-theorem ok_single_of_mini_selfhost_SrcType : FnOk prog prims info (520, ⟨0, [], 0⟩) :=
-  fnOk_of fn_single_of_mini_selfhost_SrcType (by decide +kernel)
-
-theorem ok_keep_if : FnOk prog prims info (521, ⟨0, [], 0⟩) :=
-  fnOk_of fn_keep_if (by decide +kernel)
-
-theorem ok_cons_of_mini_selfhost_SrcStructDecl : FnOk prog prims info (522, ⟨0, [], 0⟩) :=
-  fnOk_of fn_cons_of_mini_selfhost_SrcStructDecl (by decide +kernel)
-
-theorem ok_struct_fields_at : FnOk prog prims info (523, ⟨0, [1], 1⟩) :=
-  fnOk_of fn_struct_fields_at (by decide +kernel)
-
-theorem ok_cons_of_mini_selfhost_SrcEnumDecl : FnOk prog prims info (525, ⟨0, [], 0⟩) :=
-  fnOk_of fn_cons_of_mini_selfhost_SrcEnumDecl (by decide +kernel)
-
-theorem ok_enum_variants_at : FnOk prog prims info (526, ⟨0, [1], 1⟩) :=
-  fnOk_of fn_enum_variants_at (by decide +kernel)
-
-theorem ok_empty_of_mini_selfhost_RawTok : FnOk prog prims info (528, ⟨0, [], 0⟩) :=
-  fnOk_of fn_empty_of_mini_selfhost_RawTok (by decide +kernel)
-
-theorem ok_lx_one_at : FnOk prog prims info (529, ⟨16, [], 0⟩) :=
-  fnOk_of fn_lx_one_at (by decide +kernel)
-
-theorem ok_lx_prepend : FnOk prog prims info (530, ⟨1, [], 0⟩) :=
-  fnOk_of fn_lx_prepend (by decide +kernel)
-
-theorem ok_lx_shift : FnOk prog prims info (531, ⟨2, [], 0⟩) :=
-  fnOk_of fn_lx_shift (by decide +kernel)
-
 theorem chunk10 : AllFns prog prims info part10 :=
-  ⟨ok_lower_load_type, ok_index_of, ok_lower_set_index_of, ok_eval_call_sig, ok_eval_host, ok_cons_args, ok_eval_operands, ok_eval_then, ok_lower_negate_typed, ok_lower_not_typed, ok_scalar_cast, ok_eval_struct_of, ok_eval_tagged, ok_eval_match_of, ok_eval_arm_in, ok_arm_scope, ok_empty_of_mini_selfhost_List_mini_selfhost_SrcType, ok_eval_divide, ok_eval_stride_of, ok_empty_of_mini_selfhost_Expr, ok_cons_of_mini_selfhost_Expr, ok_store_eval, ok_store_eval_byte, ok_store_eval_word, ok_store_array_element, ok_set_field_eval_at, ok_lower_arm_stmt, ok_arm_payload, ok_FloatTy_number, ok_effs_types, ok_single_of_mini_selfhost_SrcType, ok_keep_if, ok_cons_of_mini_selfhost_SrcStructDecl, ok_struct_fields_at, ok_cons_of_mini_selfhost_SrcEnumDecl, ok_enum_variants_at, ok_empty_of_mini_selfhost_RawTok, ok_lx_one_at, ok_lx_prepend, ok_lx_shift, trivial⟩
+  ⟨ok_lower_cast, ok_lower_float, ok_copy_binding, ok_copy_field, ok_lower_args, ok_lower_variant, ok_lower_match_arms, ok_lower_set_field_at, ok_field_offset, ok_get_of_mini_selfhost_SrcType, ok_UintTy_code, ok_word_type, ok_within_layouts, ok_within_payloads, ok_eval_element, ok_eval_array_index, ok_eval_checked, ok_eval_copy, ok_eval_field_copy, ok_bounds_guard, ok_lower_load_word, ok_lower_element, ok_lower_load_type, ok_index_of, ok_lower_set_index_of, ok_eval_call_sig, ok_eval_host, ok_cons_args, ok_eval_operands, ok_eval_then, ok_lower_negate_typed, ok_lower_not_typed, ok_scalar_cast, ok_eval_struct_of, ok_eval_tagged, ok_eval_match_of, ok_eval_arm_in, ok_arm_scope, ok_empty_of_mini_selfhost_List_mini_selfhost_SrcType, ok_eval_divide, trivial⟩
 
 end Lanius.Faithful.SelfTerm
