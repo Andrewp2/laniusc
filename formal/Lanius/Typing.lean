@@ -18,8 +18,9 @@ def Context.bindAll (context : Context) (bindings : List (VarId × Ty)) : Contex
 def parameterContext (parameters : List (VarId × Ty)) : Context :=
   parameters.foldl (fun context parameter => context.bind parameter.1 parameter.2) Context.empty
 
-/-- A declared nominal element can be viewed through the native raw-slice
-    intrinsic. Packed i32 slices use their separate constructor. -/
+/-- A declared nominal element, or a scalar other than i32, can be viewed
+    through the typed raw-slice intrinsic. Packed i32 slices use their
+    separate constructor. -/
 inductive RawNominalSliceElement (program : Program) : Ty → Prop where
   | structureType (id : TypeId) (declaration : StructDecl)
       (found : program.structure? id = some declaration) :
@@ -27,6 +28,10 @@ inductive RawNominalSliceElement (program : Program) : Ty → Prop where
   | enumerationType (id : TypeId) (declaration : EnumDecl)
       (found : program.enumeration? id = some declaration) :
       RawNominalSliceElement program (.enumeration id)
+  /-- Packed bytes for `u8`, one word per element for the other scalars
+      (`NativeLayout.elementStride?`). -/
+  | scalarType (scalar : ScalarTy) (unpacked : scalar ≠ .signed .i32) :
+      RawNominalSliceElement program (.scalar scalar)
 
 inductive RawSliceElement (program : Program) : Ty → Prop where
   | i32 : RawSliceElement program (.scalar (.signed .i32))

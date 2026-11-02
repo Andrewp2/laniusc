@@ -114,6 +114,26 @@ theorem RunsExpr.allocatedI32Slice {words : Nat}
   simp only [mapRawI32Slice, Int.not_lt_of_ge (Int.natCast_nonneg words), ↓reduceIte,
     show (words : Int) ≠ 0 by omega, Int.toNat_natCast, allocated, Heap.allocatedI32_checkRange below positive]
 
+/-- A nominal view that `mapRawNominalSlice` makes is what the typed
+    intrinsic makes: only struct and enum elements get past its check. -/
+theorem mapRawTypedSlice_of_nominal
+    (construct : mapRawNominalSlice program state element address count = .done value after) :
+    mapRawTypedSlice program state element address count = .done value after := by
+  cases element with
+  | «structure» _ => exact construct
+  | enumeration _ => exact construct
+  | unit => exact construct
+  | array _ _ => exact construct
+  | reference _ => exact construct
+  | slice _ =>
+    exfalso
+    unfold mapRawNominalSlice at construct
+    split at construct <;> simp at construct
+  | scalar _ =>
+    exfalso
+    unfold mapRawNominalSlice at construct
+    split at construct <;> simp at construct
+
 theorem RunsExpr.nominalSliceFromParts
     (pointerRun : RunsExpr program before pointer (.pointer address) middle)
     (lengthRun : RunsExpr program middle length (.signed .i32 count) afterLength)
@@ -125,7 +145,8 @@ theorem RunsExpr.nominalSliceFromParts
   refine ⟨max pointerFuel lengthFuel + 1, ?_, locals.trans (lengthLocals.trans pointerLocals)⟩
   intro fuel enough
   rw [show fuel = (fuel - 1).succ by omega, evalExpr.eq_def]
-  simp only [pointerRun (fuel - 1) (by omega), lengthRun (fuel - 1) (by omega), construct]
+  simp only [pointerRun (fuel - 1) (by omega), lengthRun (fuel - 1) (by omega),
+    mapRawTypedSlice_of_nominal construct]
 
 #print axioms RunsExpr.allocatedI32Slice
 

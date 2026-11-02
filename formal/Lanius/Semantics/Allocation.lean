@@ -162,6 +162,18 @@ private theorem nominalSliceInventory (program : Program) (state : State)
   unfold mapRawNominalSlice
   inventory_result []
 
+private theorem typedSliceInventory (program : Program) (state : State)
+    (element : Ty) (address : Address) (length : Int) :
+    (mapRawTypedSlice program state element address length).PreservesInventory state.cellInventory := by
+  unfold mapRawTypedSlice
+  split
+  · exact rawSliceInventory state address length
+  · unfold mapRawByteSlice
+    inventory_result []
+  all_goals first
+    | exact nominalSliceInventory program state _ address length
+    | (unfold mapRawWordSlice; inventory_result [])
+
 private theorem slicePointerInventory (state : State) (cell : CellId)
     (projections : List ValueProjection) (start length : Nat) :
     (mapI32SliceDataPtr state cell projections start length).PreservesInventory state.cellInventory := by
@@ -216,7 +228,7 @@ private theorem allocationInvariant (fuel : Nat) : AllocationInvariant fuel := b
       | rw [execStmt.eq_def]
     all_goals inventory_result [ih.expression, ih.expressions, ih.matching, ih.place,
       ih.valuesLoop, ih.rangeLoop, ih.statement, writeNativePlaceInventory, syncTo,
-      syncFrom, arrayViewInventory, rawSliceInventory, nominalSliceInventory,
+      syncFrom, arrayViewInventory, rawSliceInventory, nominalSliceInventory, typedSliceInventory,
       slicePointerInventory, stringPointerInventory, worldOutcomeInventory, opaqueOutcomeInventory]
 
 theorem evalExpr_preservesInventory :

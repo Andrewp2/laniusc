@@ -3039,26 +3039,23 @@ theorem mapRawNominalSlice_inv {P : Core.Program} {st : State} {element : Core.T
     obtain ⟨rfl, rfl⟩ := run
     exact ⟨_, st.heap, rfl, rfl, fun _ h => h, rfl, by omega⟩
 
-/-- The element types the slice lowering accepts. -/
-theorem slice_kind {ds : SrcDecls} {element : SrcType}
-    (cond : (element.isI32 || wordElement ds element) = true) :
-    element = .i32 ∨ (∃ sid fields, element = .struct sid fields) ∨ ∃ eid variants, element = .enum eid variants := by
-  cases element with
-  | i32 => exact .inl rfl
-  | struct sid fields => exact .inr (.inl ⟨sid, fields, rfl⟩)
-  | enum eid variants => exact .inr (.inr ⟨eid, variants, rfl⟩)
-  | bool | uint | ptr | slice | array | unit | isize | char | float | sint => simp [SrcType.isI32, wordElement] at cond
+/-- What Core's typed `slice_from_raw_parts` did, at any element type. -/
+theorem mapRawTypedSlice_inv {P : Core.Program} {st : State} {element : Core.Ty} {a : Nat} {n : Int}
+    {v : Value} {st1 : State}
+    (run : Semantics.mapRawTypedSlice P st element a n = .done v st1) :
+    ∃ len heap, v = .rawSlice element a len ∧ st1 = { st with heap } ∧
+      (∀ hp, HeapCorr st.heap st.world hp → HeapCorr heap st.world hp) ∧ len = n.toNat ∧ 0 ≤ n := by
+  obtain ⟨rfl, rfl, nonneg⟩ := mapRawTypedSlice_done run
+  exact ⟨_, _, rfl, rfl, fun _ h => h, rfl, nonneg⟩
 
-/-- What Core's `slice_from_raw_parts` of an accepted element type did. -/
-theorem sliceFrom_inv {P : Core.Program} {k : Nat} {st : State} {element : SrcType}
-    (kind : element = .i32 ∨ (∃ sid fields, element = .struct sid fields) ∨
-      ∃ eid variants, element = .enum eid variants) {p l : Core.Expr}
+/-- What Core's `slice_from_raw_parts` did. -/
+theorem sliceFrom_inv {P : Core.Program} {k : Nat} {st : State} {element : SrcType} {p l : Core.Expr}
     {v : Value} {st1 : State} (run : evalExpr (k + 1) P st (element.sliceFrom p l) = .done v st1) :
     ∃ a afterPointer n afterLength len heap, evalExpr k P st p = .done (.pointer a) afterPointer ∧
       evalExpr k P afterPointer l = .done (.signed .i32 n) afterLength ∧
       v = .rawSlice element.toCore a len ∧ st1 = { afterLength with heap } ∧
       (∀ hp, HeapCorr afterLength.heap afterLength.world hp → HeapCorr heap afterLength.world hp) ∧ len = n.toNat ∧ 0 ≤ n := by
-  rcases kind with rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩
+  cases element
   all_goals
     simp only [SrcType.sliceFrom, evalExpr] at run
     split at run
@@ -3068,7 +3065,7 @@ theorem sliceFrom_inv {P : Core.Program} {k : Nat} {st : State} {element : SrcTy
         first
         | obtain ⟨len, heap, rfl, rfl, hcOf, lenEq, nonneg⟩ := mapRawI32Slice_inv run
           exact ⟨a, afterPointer, n, afterLength, len, heap, pointerRun, lengthRun, rfl, rfl, hcOf, lenEq, nonneg⟩
-        | obtain ⟨len, heap, rfl, rfl, hcOf, lenEq, nonneg⟩ := mapRawNominalSlice_inv run
+        | obtain ⟨len, heap, rfl, rfl, hcOf, lenEq, nonneg⟩ := mapRawTypedSlice_inv run
           exact ⟨a, afterPointer, n, afterLength, len, heap, pointerRun, lengthRun, rfl, rfl, hcOf, lenEq, nonneg⟩
       all_goals simp at run
     all_goals simp at run
@@ -3097,8 +3094,6 @@ theorem stmt_letSlice (ih : StmtSound sp mp fuel) {id : Nat} {element : SrcType}
   simp only [lowerSlice] at sliceOk
   split at sliceOk
   case isFalse => simp at sliceOk
-  rename_i cond
-  have kind := slice_kind (by simp only [Bool.and_eq_true] at cond; exact cond.1)
   cases pOk : lowerAs scope pointer .ptr with
   | none => simp [pOk] at sliceOk
   | some xp =>
@@ -3114,7 +3109,7 @@ theorem stmt_letSlice (ih : StmtSound sp mp fuel) {id : Nat} {element : SrcType}
     | zero => simp [evalExpr] at valueRun
     | succ k =>
       obtain ⟨a, afterPointer, n, afterLength, len, heap, pointerRun, lengthRun, rfl, rfl, hcOf, lenEq, nonneg⟩ :=
-        sliceFrom_inv kind valueRun
+        sliceFrom_inv valueRun
       obtain ⟨rfl, holdsP⟩ := lowerAs_sound corr (SrcProgram.target_toCore sp) pOk pointerRun
       simp only [SrcType.Holds, Value.pointer.injEq] at holdsP
       refine Simulates.checked (guardAnd_one (lowerAs_guard corr (SrcProgram.target_toCore sp) pOk pointerRun)
@@ -3305,7 +3300,7 @@ theorem stmt_letIndex_i32 (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} 
         obtain ⟨elt, eltOk, read⟩ := except_bind_ok read
         simp only [pure, Except.pure, Except.ok.injEq] at eltOk
         subst eltOk
-        simp only [NativeLayout.maxDepth, Semantics.readNativeValue] at read
+        simp only [Semantics.readRawElement, NativeLayout.maxDepth, Semantics.readNativeValue] at read
         obtain ⟨bits, loaded, wrapped⟩ := except_bind_ok read
         simp only [pure, Except.pure, Except.ok.injEq] at wrapped
         subst wrapped
@@ -3359,7 +3354,7 @@ theorem eval_setIndex_raw {P : Core.Program} {k : Nat} {st : State} {slice : Nat
       Semantics.integerIndex iv = .ok pos ∧ pos < length ∧
       Semantics.rawSliceElementAddress? P element address pos = .ok at_ ∧
       evalExpr (k + 2) P st e = .done right st ∧
-      Semantics.writeNativeValue NativeLayout.maxDepth P st st.heap element at_ right = .ok heap ∧
+      Semantics.writeRawElement P st st.heap element at_ right = .ok heap ∧
       st' = { st with heap } := by
   rw [evalExpr] at run
   rw [Semantics.evalPlace] at run
@@ -3493,7 +3488,7 @@ theorem stmt_setIndex_i32 {slice : Nat} {index value : SrcExpr} {b : Binding} {e
     obtain ⟨rfl, bitsV⟩ := holdsV
     simp only [Semantics.rawSliceElementAddress?, SrcType.toCore, Except.ok.injEq] at located
     subst located
-    simp only [NativeLayout.maxDepth, Semantics.writeNativeValue, SrcType.toCore] at stored
+    simp only [SrcType.toCore, Semantics.writeRawElement, NativeLayout.maxDepth, Semantics.writeNativeValue] at stored
     obtain ⟨hc', inside⟩ := HeapCorr.storeBytesFrom _ 0 hc stored
     have inside := inside (by simp [Semantics.i32Bytes])
     have same := storeBytes_next stored
@@ -3719,6 +3714,11 @@ theorem loadElement_sound {sp : SrcProgram} {mp : Program} {hp : Heap} {st : Sta
   split at read
   all_goals try (simp at read; done)
   obtain ⟨at_, located, read⟩ := except_bind_ok read
+  have plain : ∀ a, Semantics.readRawElement sp.toCore st.heap element.toCore a =
+      Semantics.readNativeValue NativeLayout.maxDepth sp.toCore st.heap element.toCore a := by
+    intro a
+    cases element <;> first | rfl | (simp [wordElement] at hel)
+  rw [plain] at read
   obtain ⟨rfl, fits, small⟩ := rawSliceElementAddress_word hel located
   have baseEval : ((elementBase bslot element.size i).eval env).toNat =
       (env bslot).toNat - pos * (8 * element.size) :=
@@ -4031,11 +4031,14 @@ theorem storeElement_sound {sp : SrcProgram} {mp : Program} {hp : Heap} {st : St
     {env : Env} {bslot : Nat} {i : Expr} {pos at_ : Nat} {right : Value} {vs : List Expr} {s : Stmt}
     {heap : Memory.Heap} (posEq : (i.eval env).toNat = pos)
     (located : Semantics.rawSliceElementAddress? sp.toCore element.toCore (env bslot).toNat pos = .ok at_)
-    (stored : Semantics.writeNativeValue NativeLayout.maxDepth sp.toCore st st.heap element.toCore at_ right =
-      .ok heap)
+    (stored : Semantics.writeRawElement sp.toCore st st.heap element.toCore at_ right = .ok heap)
     (flat : FlatValue element right env vs) (ok : storeType element vs 0 (elementBase bslot element.size i) 0 = some s)
     (bound : heap.nextAddress ≤ hp.limit) :
     ∃ hp', Exec mp 0 env hp s (.normal env hp') ∧ HeapCorr heap st.world hp' := by
+  have plain : Semantics.writeRawElement sp.toCore st st.heap element.toCore at_ right =
+      Semantics.writeNativeValue NativeLayout.maxDepth sp.toCore st st.heap element.toCore at_ right := by
+    cases element <;> first | rfl | (simp [wordElement] at hel)
+  rw [plain] at stored
   obtain ⟨rfl, fits, small⟩ := rawSliceElementAddress_word hel located
   have baseEval : ((elementBase bslot element.size i).eval env).toNat =
       (env bslot).toNat - pos * (8 * element.size) :=

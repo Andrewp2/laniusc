@@ -1590,6 +1590,20 @@ theorem stride_inv {P : Core.Program} {k : Nat} {st : State} {slice : Nat}
     exact ⟨rfl, stride, found, rfl⟩
   · simp at run
 
+/-- A raw view of a word scalar runs down by one word. -/
+theorem scalarView_stride {P : Core.Program} {e : SrcType} (h : scalarViewElement e = true)
+    (notU8 : ¬e.isUint .uint8 = true) : NativeLayout.elementStride? P e.toCore = some (-((8 * 1 : Nat) : Int)) := by
+  cases e with
+  | i32 | struct | enum | slice | array | unit => simp [scalarViewElement] at h
+  | bool | ptr | isize | char => rfl
+  | uint k =>
+    cases k
+    all_goals first
+      | (simp [SrcType.isUint, UintTy.code] at notU8; done)
+      | rfl
+  | float t => cases t <;> rfl
+  | sint k => cases k <;> first | rfl | (simp [scalarViewElement, sintWord] at h; done)
+
 /-- `slice_stride(slice)` of a slice local: Core's stride of the view, as
 `isize` bits in `slot`. -/
 theorem eval_stride {k slice : Nat} (ok : evalStride sp.decls scope slice slot = some ev)
@@ -1624,6 +1638,27 @@ theorem eval_stride {k slice : Nat} (ok : evalStride sp.decls scope slice slot =
     simp [Semantics.rawSliceStride?, NativeLayout.elementStride?, SrcType.toCore] at strideOk
     subst strideOk
     exact ⟨_, rfl, by simp only [SrcType.Holds, Expr.eval]; rfl⟩
+  split at ok
+  · rename_i isU8
+    have := eq_of_isUint isU8
+    subst this
+    simp only [Option.some.injEq] at ok
+    subst ok
+    simp [Semantics.rawSliceStride?, NativeLayout.elementStride?, SrcType.toCore, UintTy.toCore] at strideOk
+    subst strideOk
+    exact ⟨_, rfl, by simp only [SrcType.Holds, Expr.eval]; rfl⟩
+  split at ok
+  · rename_i notU8 sv
+    simp only [wordStride, Option.some.injEq] at ok
+    subst ok
+    simp only [Semantics.rawSliceStride?, scalarView_stride sv notU8, Option.some.injEq] at strideOk
+    subst strideOk
+    refine ⟨_, rfl, ?_⟩
+    simp only [SrcType.Holds, Expr.eval, Word.apply, BinOp.apply]
+    first
+      | (rw [stride_word_bits (w := 1) (by omega)]; rfl)
+      | rfl
+      | decide
   simp only [evalWordStride] at ok
   split at ok
   case isFalse => simp at ok
@@ -1924,7 +1959,7 @@ theorem eval_index {k : Nat} (ihe : EvalSound sp mp (k + 1)) {slice : Nat} {inde
   obtain ⟨elt, eltOk, read⟩ := except_bind_ok read
   simp only [pure, Except.pure, Except.ok.injEq] at eltOk
   subst eltOk
-  simp only [NativeLayout.maxDepth, Semantics.readNativeValue] at read
+  simp only [Semantics.readRawElement, NativeLayout.maxDepth, Semantics.readNativeValue] at read
   obtain ⟨bits, loaded, wrapped⟩ := except_bind_ok read
   simp only [pure, Except.pure, Except.ok.injEq] at wrapped
   subst wrapped
@@ -2658,7 +2693,7 @@ theorem eval_setIndex_eff {P : Core.Program} {k : Nat} {st : State} {slice : Nat
       Semantics.integerIndex iv = .ok pos ∧ pos < length ∧
       Semantics.rawSliceElementAddress? P element address pos = .ok at_ ∧
       evalExpr (k + 2) P st1 e = .done right st2 ∧
-      Semantics.writeNativeValue NativeLayout.maxDepth P st2 st2.heap element at_ right = .ok heap ∧
+      Semantics.writeRawElement P st2 st2.heap element at_ right = .ok heap ∧
       st' = { st2 with heap } := by
   rw [evalExpr] at run
   rw [Semantics.evalPlace] at run
@@ -2858,7 +2893,7 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
       obtain ⟨iv, st1, pos, at_, right, st2, heap, indexRun, posOk, inside, located, valueRun, stored, rfl⟩ :=
         eval_setIndex_eff fresh.2 (fun r => eff_grown r) (fun r => eff_grown r) place assignRun
       have bound2 : st2.heap.nextAddress ≤ hp.limit := by
-        rw [← writeNativeValue_next _ stored]
+        rw [← writeRawElement_next stored]
         exact bound
       have views1 := (eff_grown indexRun fresh.2).1
       obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, holds1, hc1⟩ :=
@@ -2964,7 +2999,7 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
     obtain ⟨iv, st1, pos, at_, right, st2, heap, indexRun, posOk, inside, located, valueRun, stored, rfl⟩ :=
       eval_setIndex_eff fresh.2 (fun r => eff_grown r) (fun r => eff_grown r) place assignRun
     have bound2 : st2.heap.nextAddress ≤ hp.limit := by
-      rw [← writeNativeValue_next _ stored]
+      rw [← writeRawElement_next stored]
       exact bound
     simp only [Semantics.rawSliceElementAddress?, SrcType.toCore, Except.ok.injEq] at located
     subst located
@@ -2989,7 +3024,7 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
     cases holds2 with
     | i32 holdsV =>
     obtain ⟨rfl, bitsV⟩ := holdsV
-    simp only [NativeLayout.maxDepth, Semantics.writeNativeValue, SrcType.toCore] at stored
+    simp only [SrcType.toCore, Semantics.writeRawElement, NativeLayout.maxDepth, Semantics.writeNativeValue] at stored
     have sameNext := storeBytes_next stored
     have bslot : env2 b.slot = env b.slot := by
       have := fr.slots b bmem

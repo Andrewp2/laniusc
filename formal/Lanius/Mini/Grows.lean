@@ -62,7 +62,7 @@ import all Lanius.Mini.Compiler.P.enumVariants
 import all Lanius.Mini.Compiler.P.usizeWidth
 import all Lanius.Mini.Compiler.P.wordWidth
 import all Lanius.Mini.Compiler.P.wordElement
-import all Lanius.Mini.Compiler.P.widthOf
+import all Lanius.Mini.Compiler.P.sintWord
 import all Lanius.Mini.Compiler.P.elementBase
 import all Lanius.Mini.Compiler.P.iteThen
 import all Lanius.Mini.Compiler.P.storeType
@@ -402,6 +402,22 @@ theorem writeNativeValue_next : ∀ (fuel : Nat) {P : Core.Program} {st : State}
         · simp at ok
     · simp at ok
 
+
+/-- A raw view element store leaves the bump cursor where it was. -/
+theorem writeRawElement_next {P : Core.Program} {st : State} {h h' : Memory.Heap}
+    {ty : Core.Ty} {a : Nat} {v : Value}
+    (ok : Semantics.writeRawElement P st h ty a v = .ok h') : h'.nextAddress = h.nextAddress := by
+  unfold Semantics.writeRawElement at ok
+  split at ok
+  · split at ok
+    · exact storeBytes_next ok
+    · simp at ok
+  all_goals first
+    | exact writeNativeValue_next _ ok
+    | (obtain ⟨cleared, s1, s2⟩ := except_bind_ok ok
+       rw [writeNativeValue_next _ s2, storeBytes_next s1])
+
+
 theorem deallocate_next {h h' : Memory.Heap} {p s a : Nat}
     (ok : h.deallocate p s a = .ok h') : h'.nextAddress = h.nextAddress := by
   simp only [Memory.Heap.deallocate] at ok
@@ -715,14 +731,19 @@ theorem assign_grows {P : Core.Program} {k : Nat} {st : State} {place : Core.Pla
         simp only [Semantics.writeResolvedPlaceNative, raw] at run
         split at run
         · rename_i assigned written
-          obtain ⟨heap3, stored, wrapped⟩ := except_bind_ok written
-          simp only [pure, Except.pure, Except.ok.injEq] at wrapped
-          subst wrapped
-          have synced := syncFrom_ok (st := { afterValue with heap := heap3 }) views2
-          simp only [synced, ite_self, Semantics.Outcome.done.injEq] at run
-          obtain ⟨-, rfl⟩ := run
-          exact ⟨views2, by rw [show heap3.nextAddress = afterValue.heap.nextAddress from
-            writeNativeValue_next _ stored]; exact next2⟩
+          split at written
+          all_goals
+            obtain ⟨heap3, stored, wrapped⟩ := except_bind_ok written
+            simp only [pure, Except.pure, Except.ok.injEq] at wrapped
+            subst wrapped
+            have synced := syncFrom_ok (st := { afterValue with heap := heap3 }) views2
+            simp only [synced, ite_self, Semantics.Outcome.done.injEq] at run
+            obtain ⟨-, rfl⟩ := run
+            have kept : heap3.nextAddress = afterValue.heap.nextAddress := by
+              first
+                | exact writeRawElement_next stored
+                | exact writeNativeValue_next _ stored
+            exact ⟨views2, by rw [kept]; exact next2⟩
         · simp at run
     all_goals simp at run
   all_goals simp at run
@@ -759,14 +780,19 @@ theorem assign_grows_eff {P : Core.Program} {k : Nat} {st : State} {place : Core
         simp only [Semantics.writeResolvedPlaceNative, raw] at run
         split at run
         · rename_i assigned written
-          obtain ⟨heap3, stored, wrapped⟩ := except_bind_ok written
-          simp only [pure, Except.pure, Except.ok.injEq] at wrapped
-          subst wrapped
-          have synced := syncFrom_ok (st := { afterValue with heap := heap3 }) views2
-          simp only [synced, ite_self, Semantics.Outcome.done.injEq] at run
-          obtain ⟨-, rfl⟩ := run
-          exact ⟨views2, by rw [show heap3.nextAddress = afterValue.heap.nextAddress from
-            writeNativeValue_next _ stored]; exact Nat.le_trans next1 next2⟩
+          split at written
+          all_goals
+            obtain ⟨heap3, stored, wrapped⟩ := except_bind_ok written
+            simp only [pure, Except.pure, Except.ok.injEq] at wrapped
+            subst wrapped
+            have synced := syncFrom_ok (st := { afterValue with heap := heap3 }) views2
+            simp only [synced, ite_self, Semantics.Outcome.done.injEq] at run
+            obtain ⟨-, rfl⟩ := run
+            have kept : heap3.nextAddress = afterValue.heap.nextAddress := by
+              first
+                | exact writeRawElement_next stored
+                | exact writeNativeValue_next _ stored
+            exact ⟨views2, by rw [kept]; exact Nat.le_trans next1 next2⟩
         · simp at run
     all_goals simp at run
   all_goals simp at run
@@ -1546,6 +1572,49 @@ theorem value_state {P : Core.Program} (x : Value) {k : Nat} {st : State} {v : V
   cases k <;> simp [evalExpr] at run
   exact run.2.symm
 
+/-- What Core's typed `slice_from_raw_parts` did when it returned, at any
+element type: a view of the pointer, the state as it was. -/
+theorem mapRawTypedSlice_done {P : Core.Program} {st : State} {element : Core.Ty} {a : Nat} {n : Int}
+    {v : Value} {st1 : State}
+    (run : Semantics.mapRawTypedSlice P st element a n = .done v st1) :
+    v = .rawSlice element a n.toNat ∧ st1 = st ∧ 0 ≤ n := by
+  unfold Semantics.mapRawTypedSlice at run
+  split at run
+  all_goals
+    first
+      | unfold Semantics.mapRawI32Slice at run
+      | unfold Semantics.mapRawByteSlice at run
+      | unfold Semantics.mapRawNominalSlice at run
+      | unfold Semantics.mapRawWordSlice at run
+    repeat' (first | split at run | (dsimp only at run; split at run))
+    all_goals first
+      | (simp at run; done)
+      | (simp only [Semantics.Outcome.done.injEq] at run
+         obtain ⟨rfl, rfl⟩ := run
+         refine ⟨?_, rfl, by omega⟩
+         congr 1
+         all_goals
+           try simp only [beq_iff_eq] at *
+           omega)
+
+/-- Core's typed `slice_from_raw_parts` traps in the state it was given. -/
+theorem mapRawTypedSlice_trapped {P : Core.Program} {st : State} {element : Core.Ty} {a : Nat} {n : Int}
+    {r : Lanius.Trap} {st1 : State}
+    (run : Semantics.mapRawTypedSlice P st element a n = .trapped r st1) : st1 = st := by
+  unfold Semantics.mapRawTypedSlice at run
+  split at run
+  all_goals
+    first
+      | unfold Semantics.mapRawI32Slice at run
+      | unfold Semantics.mapRawByteSlice at run
+      | unfold Semantics.mapRawNominalSlice at run
+      | unfold Semantics.mapRawWordSlice at run
+    repeat' (first | split at run | (dsimp only at run; split at run))
+    all_goals first
+      | (simp only [Semantics.Outcome.trapped.injEq] at run
+         exact run.2.symm)
+      | simp at run
+
 /-- Making a raw slice leaves the state as it was. -/
 theorem sliceFrom_grows {P : Core.Program} {k : Nat} {st : State} {element : SrcType}
     {pointer length : SrcExpr} {v : Value} {st' : State}
@@ -1564,13 +1633,16 @@ theorem sliceFrom_grows {P : Core.Program} {k : Nat} {st : State} {element : Src
         · rename_i n afterLength lengthRun
           have := length.eval_state lengthRun
           subst this
-          simp only [Semantics.mapRawI32Slice, Semantics.mapRawNominalSlice] at run
-          repeat' split at run
-          all_goals first
-            | simp only [Semantics.Outcome.done.injEq] at run
-              obtain ⟨-, rfl⟩ := run
-              exact Grows.refl _
-            | simp at run
+          first
+            | (obtain ⟨-, rfl, -⟩ := mapRawTypedSlice_done run
+               exact Grows.refl _)
+            | (simp only [Semantics.mapRawI32Slice] at run
+               repeat' split at run
+               all_goals first
+                 | simp only [Semantics.Outcome.done.injEq] at run
+                   obtain ⟨-, rfl⟩ := run
+                   exact Grows.refl _
+                 | simp at run)
         all_goals simp at run
       all_goals simp at run
 

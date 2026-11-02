@@ -479,9 +479,11 @@ def targets(mods, wanted):
             if any(p[1] is None for p in fn['params']):
                 continue
             out.append(Target(f'{name}::<{ty} as {trait}>::{fn["name"]}', name, fn, trait, ty))
-    # core::mem::size_of at more than i32: a struct of the wrapper's and u8.
+    # core::mem::size_of at more than i32: a struct of the wrapper's, u8 and
+    # the word scalars (laniusc's raw view layout, as mem.lani documents it).
     if 'core::mem' in mods and 'size_of' in mods['core::mem'].fns and (not wanted or 'core::mem' in wanted):
-        for ty, decls in (('OracleSizeW', ['struct OracleSizeW { a: i32, b: bool }']), ('u8', []), ('bool', [])):
+        scalars = ('u8', 'bool', 'u16', 'u32', 'u64', 'usize', 'i8', 'i16', 'i64', 'isize', 'char', 'f32', 'f64', 'ptr')
+        for ty, decls in (('OracleSizeW', ['struct OracleSizeW { a: i32, b: bool }']),) + tuple((t, []) for t in scalars):
             t = Target(f'core::mem::size_of<{ty}>', 'core::mem', mods['core::mem'].fns['size_of'])
             t.targs, t.decls, t.params, t.ret = ty, decls, [], 'usize'
             out.append(t)

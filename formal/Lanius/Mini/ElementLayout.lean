@@ -580,6 +580,19 @@ theorem FieldWrites.rebase {P : Core.Program} {st : Semantics.State} {a c : Nat}
 theorem wordElement_wordType {ds : SrcDecls} {e : SrcType} (h : wordElement ds e = true) : wordType ds e = true := by
   cases e <;> simp_all [wordElement]
 
+/-- A raw view element of a word struct or enum is read and written as its
+native value. -/
+theorem readRawElement_wordElement {ds : SrcDecls} {e : SrcType} (h : wordElement ds e = true)
+    {P : Core.Program} {heap : Memory.Heap} {a : Nat} :
+    Semantics.readRawElement P heap e.toCore a = Semantics.readNativeValue NativeLayout.maxDepth P heap e.toCore a := by
+  cases e <;> first | rfl | (simp [wordElement] at h)
+
+theorem writeRawElement_wordElement {ds : SrcDecls} {e : SrcType} (h : wordElement ds e = true)
+    {P : Core.Program} {st : Semantics.State} {heap : Memory.Heap} {a : Nat} {v : Value} :
+    Semantics.writeRawElement P st heap e.toCore a v =
+      Semantics.writeNativeValue NativeLayout.maxDepth P st heap e.toCore a v := by
+  cases e <;> first | rfl | (simp [wordElement] at h)
+
 theorem wordElement_size {ds : SrcDecls} {e : SrcType} (h : wordElement ds e = true) : 0 < e.size := by
   cases e with
   | struct sid fields => exact (wordType_struct (wordElement_wordType h)).2.2
@@ -715,6 +728,17 @@ theorem wordVariants_layout {sp : SrcProgram} : ∀ (vs : List (List SrcType)) {
 termination_by structural vs => vs
 end
 
+/-- A scalar raw view element is one native word (or byte) in Core, one slot
+in the mini compiler. -/
+theorem scalarView_words {P : Core.Program} {e : SrcType} (h : scalarViewElement e = true) :
+    NativeLayout.valueWords? P e.toCore = some e.size := by
+  cases e with
+  | i32 | struct | enum | slice | array | unit => simp [scalarViewElement] at h
+  | bool | ptr | isize | char => rfl
+  | uint k => cases k <;> rfl
+  | float t => cases t <;> rfl
+  | sint k => cases k <;> rfl
+
 /-- A raw slice the front pass lowers has an element type Core lays out, at
 its mini size. -/
 theorem lowerSlice_layout {sp : SrcProgram} {element : SrcType} {p l : Option Expr} {xs : List Expr}
@@ -724,6 +748,8 @@ theorem lowerSlice_layout {sp : SrcProgram} {element : SrcType} {p l : Option Ex
   split at h
   · rename_i cond
     simp only [Bool.and_eq_true, Bool.or_eq_true] at cond
+    rcases cond with sc | cond
+    · exact scalarView_words sc
     have ok : wordType sp.decls element = true := by
       rcases cond.1 with c | c
       · cases element <;> simp_all [SrcType.isI32, wordType]

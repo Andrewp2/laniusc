@@ -68,7 +68,7 @@ theorem set_raw_trap {view x : Nat} {i : Core.Expr} {iv : Value} {el : Core.Ty} 
     (hb : pos < len → Semantics.rawSliceElementAddress? P el a pos = .ok base)
     (h : evalExpr k P st (.assign .set (.index (.local view) i) (.local x)) = .trapped r s) :
     s = st ∧ ((len ≤ pos ∧ r = .arrayBounds) ∨
-      pos < len ∧ Semantics.writeNativeValue NativeLayout.maxDepth P st st.heap el base v = .error r) := by
+      pos < len ∧ Semantics.writeRawElement P st st.heap el base v = .error r) := by
   cases k with
   | zero => simp [evalExpr] at h
   | succ j =>
@@ -92,8 +92,8 @@ theorem set_raw_trap {view x : Nat} {i : Core.Expr} {iv : Value} {el : Core.Ty} 
         obtain ⟨rfl, hs2⟩ := local_eval hx hv
         subst s2
         rw [hv] at h
-        simp only [Semantics.evalAssignValue, Semantics.assignOpBinary?, Semantics.writeResolvedPlaceNative, raw] at h
-        cases hw : Semantics.writeNativeValue NativeLayout.maxDepth P st st.heap el base u with
+        simp only [Semantics.evalAssignValue, Semantics.assignOpBinary?, Semantics.writeResolvedPlaceNative, raw, if_true] at h
+        cases hw : Semantics.writeRawElement P st st.heap el base u with
         | ok H =>
           simp only [hw, bind, Except.bind, pure, Except.pure, Semantics.ResolvedPlace.viewFreeRootWrite, raw,
             Option.isNone_some, Bool.false_and, Bool.false_eq_true, if_false,
@@ -152,7 +152,7 @@ theorem set_raw_done {view x : Nat} {i : Core.Expr} {iv : Value} {el : Core.Ty} 
   obtain ⟨iv', posn, base, ir, hi, -, hb, raw⟩ := idx _ _ _ hrb
   obtain ⟨rfl, rfl⟩ := ki.done ir
   obtain ⟨rfl, rfl⟩ := local_eval hx valueRun
-  simp only [Semantics.writeResolvedPlaceNative, raw] at written
+  simp only [Semantics.writeResolvedPlaceNative, raw, if_true] at written
   obtain ⟨H2, -, wrapped⟩ := except_bind_ok written
   simp only [pure, Except.pure, Except.ok.injEq] at wrapped
   subst wrapped
@@ -383,7 +383,7 @@ theorem raw_read_of {P : Core.Program} {s : State} {T : Core.Ty} {a w : Nat} {v 
     Semantics.readRawSliceIndex P s T (a + 8 * w - 8) 1 0 = .ok v := by
   simp only [Semantics.readRawSliceIndex, show ¬ (0 ≥ 1) by decide, if_false,
     elementAddress_zero kind words pos]
-  exact h
+  rcases kind with ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> exact h
 
 theorem unbox_safe {t : SrcType} {id slice : Nat} {values ps : List Value} {st : State}
     (sliceFound : sp.funcs[slice]? = some (sliceFunc t)) (el : wordElement sp.decls t = true)
@@ -555,6 +555,7 @@ theorem boxed_safe {t : SrcType} {id sizeOf slice panic : Nat} {values ps : List
       (known_value (.signed .i32 0)) x4 (by simp [Semantics.integerIndex]) (fun _ => elementAddress_zero kind hw pos) h
     · exact absurd bad (by decide)
     replace write := write.2
+    rw [writeRawElement_wordElement el] at write
     have spec : Semantics.NativeStoreSpec NativeLayout.maxDepth sp.toCore t.toCore x (8 * w) :=
       store_spec NativeLayout.maxDepth rx (wordElement_wordType el) hw (Nat.le_refl _)
     have readable : (s10.bindLocal 203 (.rawSlice t.toCore (a + 8 * w - 8) 1)).heap.Readable
@@ -572,7 +573,7 @@ theorem boxed_safe {t : SrcType} {id sizeOf slice panic : Nat} {values ps : List
     obtain ⟨iv, posn, base, ir, hi, -, hb, raw⟩ := idx _ _ _ hrb
     obtain ⟨rfl, rfl⟩ := value_inv ir
     obtain ⟨rfl, rfl⟩ := local_eval x4 valueRun
-    simp only [Semantics.writeResolvedPlaceNative, raw] at written
+    simp only [Semantics.writeResolvedPlaceNative, raw, if_true] at written
     obtain ⟨H2, -, wrapped⟩ := except_bind_ok written
     simp only [pure, Except.pure, Except.ok.injEq] at wrapped
     subst wrapped

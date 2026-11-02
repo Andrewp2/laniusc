@@ -60,7 +60,7 @@ public import Lanius.Mini.Compiler.P.enumVariants
 public import Lanius.Mini.Compiler.P.usizeWidth
 public import Lanius.Mini.Compiler.P.wordWidth
 public import Lanius.Mini.Compiler.P.wordElement
-public import Lanius.Mini.Compiler.P.widthOf
+public import Lanius.Mini.Compiler.P.sintWord
 public import Lanius.Mini.Compiler.P.elementBase
 public import Lanius.Mini.Compiler.P.iteThen
 public import Lanius.Mini.Compiler.P.storeType

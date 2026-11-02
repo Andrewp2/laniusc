@@ -71,10 +71,10 @@ theorem signed_subtract (ty : Core.SignedIntTy) (a b : Int) :
 
 /-- A raw view of a struct or enum element type that Core made. -/
 theorem map_inv {P : Core.Program} {s s' : State} {T : Core.Ty} {a : Nat} {n : Int} {v : Value}
-    (kind : (∃ id, T = .structure id) ∨ ∃ id, T = .enumeration id) (h : mapRawNominalSlice P s T a n = .done v s') :
+    (kind : (∃ id, T = .structure id) ∨ ∃ id, T = .enumeration id) (h : Semantics.mapRawTypedSlice P s T a n = .done v s') :
     ∃ w, NativeLayout.valueWords? P T = some w ∧ 0 < w ∧ 0 ≤ n ∧ v = .rawSlice T a n.toNat ∧ s' = s := by
   rcases kind with ⟨id, rfl⟩ | ⟨id, rfl⟩ <;>
-  · unfold mapRawNominalSlice at h
+  · unfold Semantics.mapRawTypedSlice mapRawNominalSlice at h
     dsimp only at h
     split at h
     · simp at h

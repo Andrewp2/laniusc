@@ -1155,19 +1155,40 @@ theorem wordElement_kind {ds : SrcDecls} {e : SrcType} (h : wordElement ds e = t
   | enum id variants => exact .inr ⟨id, variants, rfl⟩
   | i32 | bool | uint | ptr | slice | array | unit | isize | char | float | sint => simp [wordElement] at h
 
+/-- A scalar raw view element is a Core scalar other than i32, made by the
+typed form of `slice_from_raw_parts`. -/
+theorem scalarView_sliceFrom {e : SrcType} (h : scalarViewElement e = true) (p l : Core.Expr) :
+    ∃ s, e.toCore = .scalar s ∧ s ≠ .signed .i32 ∧
+      e.sliceFrom p l = .typedSliceFromRawParts (.scalar s) p l := by
+  cases e with
+  | i32 | struct | enum | slice | array | unit => simp [scalarViewElement] at h
+  | bool | ptr | isize | char => exact ⟨_, rfl, by decide, rfl⟩
+  | uint k => cases k <;> exact ⟨_, rfl, by decide, rfl⟩
+  | float t => cases t <;> exact ⟨_, rfl, by decide, rfl⟩
+  | sint k =>
+    cases k
+    all_goals first
+      | (simp [scalarViewElement, sintWord] at h; done)
+      | exact ⟨_, rfl, by decide, rfl⟩
+
 theorem lowerSlice_some {ds : SrcDecls} {element : SrcType} {p l : Option Expr} {xs : List Expr}
     (h : lowerSlice ds element p l = some xs) :
-    (element = .i32 ∨ (∃ id fields, element = .struct id fields) ∨ ∃ id variants, element = .enum id variants) ∧
+    (element = .i32 ∨ (∃ id fields, element = .struct id fields) ∨ (∃ id variants, element = .enum id variants) ∨
+      scalarViewElement element = true) ∧
       ∃ x y, p = some x ∧ l = some y := by
   unfold lowerSlice at h
   split at h
   · rename_i cond
     have kind : element = .i32 ∨ (∃ id fields, element = .struct id fields) ∨
-        ∃ id variants, element = .enum id variants := by
+        (∃ id variants, element = .enum id variants) ∨ scalarViewElement element = true := by
       simp only [Bool.and_eq_true, Bool.or_eq_true] at cond
-      rcases cond.1 with c | c
+      rcases cond with c | c
+      · exact .inr (.inr (.inr c))
+      rcases c.1 with c | c
       · exact .inl (eq_i32 c)
-      · exact .inr (wordElement_kind c)
+      · rcases wordElement_kind c with k | k
+        · exact .inr (.inl k)
+        · exact .inr (.inr (.inl k))
     split at h
     · simp at h
     · split at h
@@ -1838,11 +1859,10 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
         rw [bty] at inCtx
         have tyEq : ev.ty = .isize := by
           simp only [evalStrideOf, evalWordStride, wordStride] at h
-          split at h
-          · simp only [Option.some.injEq] at h; subst h; rfl
-          · split at h
-            · simp only [Option.some.injEq] at h; subst h; rfl
-            · simp at h
+          repeat' split at h
+          all_goals first
+            | (simp only [Option.some.injEq] at h; subst h; rfl)
+            | simp at h
         rw [tyEq]
         exact .sliceStride (.local inCtx)
 
@@ -2178,7 +2198,7 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
       · simp at h
       · rename_i b hb
         obtain ⟨kind, x, y, hx, hy⟩ := lowerSlice_some hvs
-        rcases kind with rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩
+        rcases kind with rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩ | sc
         · exact .letLocal (.i32SliceFromRawParts (lowerAs_typed target ok hx) (lowerAs_typed target ok hy))
             (SrcStmt.lower_typed target sigsOk body (ok.cons (ty := .slice .i32) (.slice d.1)) d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
         · obtain ⟨found, -⟩ := declared_struct d.1
@@ -2190,6 +2210,14 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
           exact .letLocal (.typedSliceFromRawParts (.enumerationType eid _ found) (lowerAs_typed target ok hx)
               (lowerAs_typed target ok hy))
             (SrcStmt.lower_typed target sigsOk body (ok.cons (ty := .slice (.enum eid variants)) (.slice d.1))
+              d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
+        · obtain ⟨s, hc, hne, hsf⟩ := scalarView_sliceFrom sc pointer.toCore length.toCore
+          have valueTyped : ExprHasType P ctx (element.sliceFrom pointer.toCore length.toCore)
+              (.slice element.toCore) := by
+            rw [hsf, hc]
+            exact .typedSliceFromRawParts (.scalarType s hne) (lowerAs_typed target ok hx) (lowerAs_typed target ok hy)
+          exact .letLocal valueTyped
+            (SrcStmt.lower_typed target sigsOk body (ok.cons (ty := .slice element) (.slice d.1))
               d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
   | .letIndex id ty slice index body, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.Declared] at d

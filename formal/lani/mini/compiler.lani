@@ -4625,6 +4625,37 @@ pub fn word_element(decls: SrcDecls, element: SrcType) -> bool {
     };
 }
 
+// A signed kind other than i32 (Sint(Uint32) is Core's i32, packed).
+pub fn sint_word(kind: UintTy) -> bool {
+    return match (kind) {
+        Uint8 -> true,
+        Uint32 -> false,
+        Uint64 -> true,
+        Usize -> true,
+        Uint16 -> true,
+    };
+}
+
+// A raw slice element scalar laniusc lays out as packed bytes (u8, stride
+// +1) or one 8-byte word (stride -8): every scalar but i32.
+pub fn scalar_view_element(element: SrcType) -> bool {
+    return match (element) {
+        I32 -> false,
+        Bool -> true,
+        Uint(kind) -> true,
+        Struct(id, fields) -> false,
+        Enum(id, variants) -> false,
+        Ptr -> true,
+        Slice(inner) -> false,
+        SrcType::Array(array_element, array_length) -> false,
+        Unit -> false,
+        Isize -> true,
+        SrcType::Char -> true,
+        SrcType::Float(ft) -> true,
+        Sint(sk) -> sint_word(sk),
+    };
+}
+
 // The width a word scalar is loaded and stored with.
 pub fn width_of(ty: SrcType) -> MemWidth {
     return match (word_width(ty)) {
@@ -4790,11 +4821,11 @@ pub fn within_payloads(depth: usize, variants: List<List<SrcType>>) -> bool {
 }
 // extract: mutual end
 
-// A raw slice's one slot: its address. Elements are i32, word structs or
-// word enums within Core's layout limits; Core checks the length when the
+// A raw slice's one slot: its address. Elements are scalars, word structs
+// or word enums within Core's layout limits; Core checks the length when the
 // slice is made and each index against it.
 pub fn lower_slice(decls: SrcDecls, element: SrcType, pointer: core::option::Option<Expr>, length: core::option::Option<Expr>) -> core::option::Option<List<Expr>> {
-    if ((element.is_i32() || word_element(decls, element)) && within_layout(0, element)) {
+    if (scalar_view_element(element) || ((element.is_i32() || word_element(decls, element)) && within_layout(0, element))) {
         return match (pointer) {
             None -> None,
             Some(p) -> match (length) {
@@ -5081,6 +5112,12 @@ pub fn eval_word_stride(decls: SrcDecls, element: SrcType, slot: usize) -> core:
 pub fn eval_stride_of(decls: SrcDecls, element: SrcType, slot: usize) -> core::option::Option<Evaluated> {
     if (element.is_i32()) {
         return Some(Evaluated { stmt: Assign(slot, Lit(4)), ty: Isize });
+    }
+    if (element.is_uint(Uint8)) {
+        return Some(Evaluated { stmt: Assign(slot, Lit(1)), ty: Isize });
+    }
+    if (scalar_view_element(element)) {
+        return Some(word_stride(slot, 1));
     }
     return eval_word_stride(decls, element, slot);
 }

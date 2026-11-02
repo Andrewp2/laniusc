@@ -123,7 +123,9 @@ theorem HeapReads.nativeValue (reads : HeapReads before after)
               apply Refines.bind (.refl _); intro below
               apply Refines.bind reads.natLE; intro length
               exact Refines.bind (fun _ loaded => reads.loadBytes loaded) (fun _ => .refl _)
-          | _ => exact .refl _
+          | f32 => exact Refines.bind reads.natLE (fun _ => .refl _)
+          | f64 => exact Refines.bind reads.natLE (fun _ => .refl _)
+          | char => exact Refines.bind reads.natLE (fun _ => .refl _)
       | slice element =>
           simp only [readNativeValue]
           split
@@ -151,6 +153,14 @@ theorem HeapReads.nativeValue (reads : HeapReads before after)
           · intro fields; exact .refl _
       | _ => exact .refl _
 
+theorem readRawElement_eq (program : Program) (heap : Heap) (element : Ty) (address : Address) :
+    readRawElement program heap element address =
+      if element = .scalar (.unsigned .u8) then
+        (do pure (Value.unsigned .u8 (← loadNatLE heap address 1)))
+      else readNativeValue NativeLayout.maxDepth program heap element address := by
+  unfold readRawElement
+  split <;> simp
+
 theorem HeapReads.rawSlice (reads : HeapReads before.heap after.heap)
     (loaded : readRawSliceIndex program before element address length index = .ok value) :
     readRawSliceIndex program after element address length index = .ok value := by
@@ -161,9 +171,14 @@ theorem HeapReads.rawSlice (reads : HeapReads before.heap after.heap)
     | error reason => rw [location] at loaded; contradiction
     | ok base =>
         rw [location] at loaded
-        change readNativeValue NativeLayout.maxDepth program before.heap element base = .ok value at loaded
-        change readNativeValue NativeLayout.maxDepth program after.heap element base = .ok value
-        exact reads.nativeValue loaded
+        change readRawElement program before.heap element base = .ok value at loaded
+        change readRawElement program after.heap element base = .ok value
+        rw [readRawElement_eq] at loaded ⊢
+        by_cases byte : element = .scalar (.unsigned .u8)
+        · rw [if_pos byte] at loaded ⊢
+          exact (Refines.bind reads.natLE (fun _ => .refl _)) _ loaded
+        · rw [if_neg byte] at loaded ⊢
+          exact reads.nativeValue loaded
 
 /-- A native i32 read survives writes confined to a disjoint region. -/
 theorem readRawSliceIndex_i32_afterRegionWrite (write : HeapRegionWrite before.heap after.heap address size)

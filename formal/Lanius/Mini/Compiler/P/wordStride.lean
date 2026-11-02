@@ -19,6 +19,7 @@ import Lanius.Mini.Compiler.P.lowerLoadType
 import Lanius.Mini.Compiler.P.matchDst
 import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Compiler.P.shortCircuit
+import Lanius.Mini.Compiler.P.sintWord
 import Lanius.Mini.Compiler.P.wordElement
 
 public section
@@ -42,7 +43,13 @@ def evalStrideOf (decls : SrcDecls) (element : SrcType) (slot : Nat) : Option Ev
   if SrcType.isI32 element then
     some ({ stmt := Stmt.assign slot (Expr.lit 4), ty := SrcType.isize } : Evaluated)
   else
-    evalWordStride decls element slot
+    if SrcType.isUint element UintTy.uint8 then
+      some ({ stmt := Stmt.assign slot (Expr.lit 1), ty := SrcType.isize } : Evaluated)
+    else
+      if scalarViewElement element then
+        some (wordStride slot 1)
+      else
+        evalWordStride decls element slot
 
 def evalStride (decls : SrcDecls) (scope : List Binding) (slice : Nat) (slot : Nat) : Option Evaluated :=
   match lookup scope slice with

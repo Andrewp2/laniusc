@@ -151,7 +151,7 @@ theorem boxed_sim {c : Nat} {t : SrcType} {id sizeOf slice panic : Nat} {values 
   subst hi
   obtain ⟨hrv, hs14⟩ := local_eval x4 valueRun
   subst rv s14
-  simp only [Semantics.writeResolvedPlaceNative, raw] at written
+  simp only [Semantics.writeResolvedPlaceNative, raw, if_true, writeRawElement_wordElement el] at written
   obtain ⟨H2, stored, wrapped⟩ := except_bind_ok written
   simp only [pure, Except.pure, Except.ok.injEq] at wrapped
   subst wrapped

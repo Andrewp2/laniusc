@@ -26,8 +26,9 @@ def words? : Nat → Program → Ty → Option Nat
       match type with
       | .scalar (.signed _) | .scalar (.unsigned _) | .scalar .bool
       | .scalar .rawPtr => some 1
+      | .scalar .f32 | .scalar .f64 | .scalar .char => some 1
       | .scalar .string => some 2
-      | .slice (.scalar (.signed .i32)) => some 3
+      | .slice (.scalar _) => some 3
       | .slice (.structure id) =>
           if (program.structure? id).isSome then some 3 else none
       | .slice (.enumeration id) =>
@@ -69,15 +70,26 @@ def elementBase? (highWordPointer index words : Nat) : Option Nat :=
   else some (highWordPointer - index * words * wordBytes)
 
 /-- A raw view's signed byte stride: element i + 1 starts this many bytes
-    after element i. i32 views are packed and run forward; views of structs
-    and enums run down by their native size. -/
+    after element i. As laniusc's `stdlib/core/mem.lani` documents it: i32
+    views are packed and run forward (+4), u8 views are packed bytes (+1),
+    and views of every other type with a native layout (the other scalars,
+    `str`, slices, structs and enums) run down by its native size, -8 times
+    its words. -/
 def elementStride? (program : Program) (element : Ty) : Option Int :=
   match element with
   | .scalar (.signed .i32) => some 4
+  | .scalar (.unsigned .u8) => some 1
   | .structure _ | .enumeration _ =>
       match valueWords? program element with
       | some words => some (-((wordBytes * words : Nat) : Int))
       | none => none
-  | _ => none
+  | .scalar (.signed .i8) | .scalar (.signed .i16) | .scalar (.signed .i64)
+  | .scalar (.signed .isize) | .scalar (.unsigned .u16) | .scalar (.unsigned .u32)
+  | .scalar (.unsigned .u64) | .scalar (.unsigned .usize) | .scalar .bool | .scalar .f32
+  | .scalar .f64 | .scalar .char | .scalar .string | .scalar .rawPtr | .slice _ =>
+      match valueWords? program element with
+      | some words => some (-((wordBytes * words : Nat) : Int))
+      | none => none
+  | .unit | .array _ _ | .reference _ => none
 
 end Lanius.NativeLayout

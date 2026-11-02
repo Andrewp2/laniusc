@@ -165,4 +165,23 @@ theorem writeNativeValue_undef : ∀ (fuel : Nat) (P : Core.Program) (st : State
     simp only [Semantics.writeNativeValue]
     repeat' undef_step
 
+theorem readRawElement_undef (P : Core.Program) (heap : Memory.Heap) (ty : Core.Ty) (a : Nat) :
+    UndefErr (Semantics.readRawElement P heap ty a) := by
+  unfold Semantics.readRawElement
+  split
+  · exact UndefErr.bind (loadNatLE_undef _ _ _) fun _ => UndefErr.pure _
+  all_goals exact readNativeValue_undef _ _ _ _ _
+
+theorem writeRawElement_undef (P : Core.Program) (st : State) (heap : Memory.Heap) (ty : Core.Ty)
+    (a : Nat) (v : Core.Value) (views : st.i32ArrayViews = []) :
+    UndefErr (Semantics.writeRawElement P st heap ty a v) := by
+  unfold Semantics.writeRawElement
+  split
+  · split
+    · exact storeBytes_undef _ _ _
+    · exact UndefErr.error rfl
+  all_goals first
+    | exact writeNativeValue_undef _ _ _ _ _ _ _ views
+    | exact UndefErr.bind (storeBytes_undef _ _ _) fun _ => writeNativeValue_undef _ _ _ _ _ _ _ views
+
 end Lanius.Mini

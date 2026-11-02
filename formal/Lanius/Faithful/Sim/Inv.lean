@@ -373,7 +373,7 @@ theorem stride_inv {e : Core.Expr} {v : Value} (h : evalExpr k P st (.intrinsic 
 theorem typedSlice_inv {el : Core.Ty} {p n : Core.Expr} {v : Value}
     (h : evalExpr k P st (.typedSliceFromRawParts el p n) = .done v st') :
     ∃ j a s1 c s2, k = j + 1 ∧ evalExpr j P st p = .done (.pointer a) s1 ∧
-      evalExpr j P s1 n = .done (.signed .i32 c) s2 ∧ Semantics.mapRawNominalSlice P s2 el a c = .done v st' := by
+      evalExpr j P s1 n = .done (.signed .i32 c) s2 ∧ Semantics.mapRawTypedSlice P s2 el a c = .done v st' := by
   cases k with
   | zero => simp [evalExpr] at h
   | succ j =>
