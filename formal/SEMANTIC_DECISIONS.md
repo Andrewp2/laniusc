@@ -1754,6 +1754,71 @@ class (`effCls`), as `letEval` does. The front
 end uses it to read a literal match whose scrutinee is effectful ("Literal
 patterns"): the scrutinee bound to the `match` token's local.
 
+## Loops and assignment in the pure fragment (decided 11-01, F11b)
+
+The Faithful pure meaning (`Faithful/Pure.lean`) gave loops, assignment,
+`break` and `continue` no meaning, so a function with a `for` or a `while`
+had no certificate. They get one as follows. Neither `mut_pilot` nor the
+TLS lifecycle machine has a loop today: `extract.py` reads `+=`, `-=` and
+`&mut` writes as a rebinding (`let x := x + e`), and the machines' runs
+are Lean recursion on a fuel at least the number of steps
+(`Machine.lowered`, `lowered_eq_run` in `Machines/RunLowering.lean`). The
+pure meaning takes the same two shapes: an assignment rebinds the local in
+the environment, and a loop is recursion on fuel.
+
+- **The meaning of a statement** is `mstmt call fuel env s : Option Out`.
+  `Out` is how the statement ended and, unless it returned, the environment
+  it left: `next env`, `brk env`, `cont env` or `ret value`. `fuel` is the
+  loop fuel; `call` is still the meaning of calls.
+- **Assignment.** `x = e` (`set`, and `setEval` for an effectful value)
+  evaluates `e` and replaces the value of `x`'s newest binding
+  (`Env.set`), as Core's `assign` writes the cell `x`'s newest binding
+  names. It is `none` when `x` is not bound. `x += e` is read as
+  `x = x + e` by the front end already, so it needs nothing more.
+- **Scopes.** A `let` runs its body with the new binding first, then drops
+  it from the environment the body left (`Out.pop`), as Core's
+  `restoreLocals` drops the local and keeps the cells the body wrote. `a;
+  b` runs `b` in the environment `a` left. A `break`, `continue` or
+  `return` skips the rest.
+- **Loops.** `while c { b }` (and `whileEval`) is `ploop`, recursion on the
+  fuel: with fuel `n + 1` it tests `c`; on `false` it ends `next` in the
+  current environment; on `true` it runs `b`, then loops with fuel `n` in
+  the environment `b` left if `b` ended `next` or `cont`, ends `next` if it
+  ended `brk`, and returns if it returned. With fuel 0 it is `none`. Core's
+  `whileLoop` with fuel `k` runs fewer than `k` steps, so the loop fuel of a
+  body is its call's fuel: `pcall (n + 1)` runs the body with calls of
+  fuel `n` and loop fuel `n`. Both only grow the answer (`mstmt_mono`): a
+  value at some fuel is the value at every larger fuel.
+- **Function results.** A body that ends `brk` or `cont` has no value
+  (`outValue`), as Core traps (`typeMismatch`) on a body that ends so.
+- **Certificates.** The certificates go on with the loop-free meaning
+  `pstmt` they use now. `pcall_succ` unfolds a call to `pstmt` for a body
+  with no loop, assignment, `break` or `continue` (`SrcStmt.loopFree`,
+  checked by `rfl` in an `autoParam`), by `mstmt_loopFree`: such a body
+  leaves the environment it got, so `mstmt` is `pstmt` with that
+  environment. The generated certificates do not change while no self
+  function has a loop or an assignment.
+- **The checks.** `stmtOk` takes `x = e` when `x` is bound and `e` has its
+  type, `while c { b }` when `c` is a `bool` and `b` passes, and `break`
+  and `continue` anywhere, since a body that ends with one has no value.
+  The termination check (`chkStmt`) forgets the size class of every local a
+  statement may write (`SrcStmt.writes`) for the statements after it and,
+  for a loop, in its condition and body. A loop needs no measure for
+  `pcall_complete`: a loop whose body settles settles too, to its value
+  when it stops and to `none` when it does not, because a value at some
+  fuel is the value at every larger fuel. The liveness check (`liveStmt`)
+  needs a measure, since a live call must have a value; it accepts the
+  front end's counted loop, `while c < e { let x = c; c = c + 1; b }` with
+  `b` writing neither `c` nor `e`, which runs `e - c` steps.
+- **The proofs** relate Core's state after a statement to the environment
+  it left. `Inv` gains that the cells of the locals are distinct and
+  allocated, so an assignment to `x` changes no other visible local.
+  Statements keep `Frame st st'` (in place of `Step`): every cell that no
+  visible local names keeps its value, the others may change, and new
+  cells come after. So a local a `let` shadowed keeps its value, and a
+  call's body, whose visible locals are its own new cells, leaves the
+  caller's cells as `Step` says.
+
 ## Slice length (decided 11-01, F11b)
 
 Core gets `Intrinsic.sliceLength`, written `slice_len(s)` beside
