@@ -232,6 +232,7 @@ theorem write_one_safe {outp room : Nat} (roomLt : room < 2 ^ 31) {x : BitVec 32
       viewsQ k17 (known_local k29) k40 (by simp [Semantics.integerIndex])
       (fun _ => by simp [Semantics.rawSliceElementAddress?]) h
     · rfl
+    simp only [Semantics.writeRawElement] at write
     rw [writeNative_i32] at write
     have room : done3.heap.Readable (outp + ofs * 4) (Semantics.i32Bytes x.toInt).length := by
       rw [i32Bytes_length]; exact readable3.subrange (start := ofs * 4) (length := 4) (by omega)

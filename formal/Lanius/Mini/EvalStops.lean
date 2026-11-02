@@ -1722,14 +1722,14 @@ theorem setIndex_value_done {iv : Value} {st1 : State} {pos at_ : Nat} {right : 
   rw [base] at hout
   simp only [idxRun, posOk, lt, if_true, decide_true, located, eRun, Semantics.evalAssignValue,
     Semantics.assignOpBinary?, Semantics.writeResolvedPlaceNative] at hout
-  cases stored : Semantics.writeNativeValue NativeLayout.maxDepth P st2 st2.heap element at_ right with
+  cases stored : Semantics.writeRawElement P st2 st2.heap element at_ right with
   | error r =>
     simp only [stored, bind, Except.bind] at hout
-    exact .inr ⟨r, hout.symm, writeNativeValue_undef _ _ _ _ _ _ _ views r stored⟩
+    exact .inr ⟨r, hout.symm, writeRawElement_undef _ _ _ _ _ _ views r stored⟩
   | ok heap =>
     simp only [stored, bind, Except.bind, pure, Except.pure, Semantics.syncI32ViewsFromHeap, views,
       Semantics.syncI32ViewsFromHeapFrom, ite_self] at hout
-    exact .inl ⟨_, hout.symm, writeNativeValue_next _ stored⟩
+    exact .inl ⟨_, hout.symm, writeRawElement_next stored⟩
 
 /-- Core's `array[idx] = e` on an array local whose index traps traps. -/
 theorem arraySet_idx_trap {vs : List Value} {r : Lanius.Trap} {s : State}

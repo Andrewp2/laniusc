@@ -382,7 +382,7 @@ theorem write_one_body {outp room : Nat} (roomLt : room < 2 ^ 31) {x : BitVec 32
   subst baseOk
   obtain ⟨rfl, rfl⟩ := local_eval (back (by decide) l40) valRun
   have small : (ofs + 1) % 2 ^ 64 = ofs + 1 := Nat.mod_eq_of_lt (by omega)
-  simp only [Semantics.writeResolvedPlaceNative, rraw, writeNative_i32] at writtenRun
+  simp only [Semantics.writeResolvedPlaceNative, rraw, if_true, Semantics.writeRawElement, writeNative_i32] at writtenRun
   have hheap : ((restoreLocals afterArgs done3).bindLocal 100
       (.unsigned .usize ((ofs + 1) % 2 ^ 64 + rest.length))).heap = done3.heap := rfl
   have hviews : ((restoreLocals afterArgs done3).bindLocal 100

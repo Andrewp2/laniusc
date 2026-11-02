@@ -31,7 +31,7 @@ theorem raw_read_zero {P : Core.Program} {s : State} {T : Core.Ty} {a w : Nat} {
     readNativeValue NativeLayout.maxDepth P s.heap T (a + 8 * w - 8) = .ok v := by
   simp only [Semantics.readRawSliceIndex, show ¬ (0 ≥ 1) by decide, if_false,
     elementAddress_zero kind words pos] at h
-  exact h
+  rcases kind with ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> exact h
 
 section
 variable {sp : SrcProgram} {prims : Prims} {m : Nat}

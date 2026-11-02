@@ -34,6 +34,16 @@ example :
 
 example :
     (checkExprAny program Context.empty
+      (.typedSliceFromRawParts (.scalar (.unsigned .u8)) pointer length)).isSome = true := by
+  decide
+
+example :
+    (checkExprAny program Context.empty
+      (.typedSliceFromRawParts (.scalar .f32) pointer length)).isSome = true := by
+  decide
+
+example :
+    (checkExprAny program Context.empty
       (.typedSliceFromRawParts (.structure 3) length length)).isSome = false := by
   decide
 

@@ -121,7 +121,7 @@ theorem extend_loop_spec (target : P.target = Target.x86_64) (kind : ElemKind P 
       rw [slotEq] at written
       have assign := StableExpr.assignRaw (before := st h k) (indexed := st h k)
         (ready := st h k) (heap := h'') (sourceId := dst) (dstAt h k) indexStable km (elementAddress kind km)
-        (show (st h k).i32ArrayViews = [] from noViews) right stored
+        (show (st h k).i32ArrayViews = [] from noViews) right stored (kind.plain _ _ _ _)
       have bodyRun : RunsStmt P (st h k)
           (.sequence (.expression (.assign .set (.index (.local dst) (.binary .add (.field (.local vec) 1) (.local idx)))
             (.index (.local src) (.local idx)))) (increment idx))

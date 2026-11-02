@@ -280,7 +280,7 @@ theorem trySet_spec (inst : VecInstance P T ids) (kind : ElemKind P T size) {cal
   rw [slotEq, hB] at effect
   have nv : B.i32ArrayViews = [] := frame.views.trans noViews
   have assign := StableExpr.assignRaw (before := B) (indexed := B) (ready := B) (heap := h')
-    (sourceId := 3) src (StableExpr.local idx) hcap (elementAddress kind hcap) nv (StableExpr.local xv) stored
+    (sourceId := 3) src (StableExpr.local idx) hcap (elementAddress kind hcap) nv (StableExpr.local xv) stored (kind.plain _ _ _ _)
   let C : State := { B with heap := h' }
   have body : RunsStmt P B (.sequence (.expression (.assign .set (.index (.local 3) (.local 1)) (.local 2)))
       (.returnValue (some (.local 0)))) (.returned (some vv)) C :=

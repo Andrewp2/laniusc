@@ -95,7 +95,7 @@ theorem fill_loop_spec (target : P.target = Target.x86_64) (kind : ElemKind P T 
       have assign := StableExpr.assignRaw (before := st h (start + k)) (indexed := st h (start + k))
         (ready := st h (start + k)) (heap := h'') (sourceId := dst) (dstAt h (start + k))
         (StableExpr.local (idxAt h (start + k))) km (elementAddress kind km)
-        (show (st h (start + k)).i32ArrayViews = [] from noViews) (StableExpr.local (fillAt h (start + k))) stored
+        (show (st h (start + k)).i32ArrayViews = [] from noViews) (StableExpr.local (fillAt h (start + k))) stored (kind.plain _ _ _ _)
       have bodyRun : RunsStmt P (st h (start + k))
           (.sequence (.expression (.assign .set (.index (.local dst) (.local idx)) (.local fill))) (increment idx))
           .next (st h'' (start + k + 1)) :=

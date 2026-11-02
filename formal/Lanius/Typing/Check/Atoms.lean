@@ -19,6 +19,8 @@ def checkRawNominalSliceElement (program : Program) (element : Ty) :
       match found : program.enumeration? id with
       | some declaration => some ⟨.enumerationType id declaration found⟩
       | none => none
+  | .scalar scalar =>
+      if unpacked : scalar = .signed .i32 then none else some ⟨.scalarType scalar unpacked⟩
   | _ => none
 
 def checkRawSliceElement (program : Program) (element : Ty) :
@@ -35,6 +37,8 @@ def checkRawSliceElement (program : Program) (element : Ty) :
       | some declaration =>
           some ⟨.nominal (.enumerationType id declaration found)⟩
       | none => none
+  | .scalar scalar =>
+      if unpacked : scalar = .signed .i32 then none else some ⟨.nominal (.scalarType scalar unpacked)⟩
   | _ => none
 
 def checkArithmetic (type : Ty) : Option (ProofOf (ArithmeticTy type)) :=

@@ -199,7 +199,7 @@ theorem StableExpr.emptyRawNominalSlice
     intro fuel enough
     rw [show fuel = (fuel - 1).succ by omega, evalExpr.eq_def]
     simp [pointer (fuel - 1) (by omega), length (fuel - 1) (by omega),
-      mapRawNominalSlice, layout, Nat.ne_of_gt positive]
+      mapRawTypedSlice, mapRawNominalSlice, layout, Nat.ne_of_gt positive]
 
 /-- A raw-slice read follows from local bindings and a readable heap element,
     not from an assumed successful evaluation of the source expression. -/

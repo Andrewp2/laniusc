@@ -138,7 +138,7 @@ theorem shift_up_loop_spec (target : P.target = Target.x86_64) (kind : ElemKind 
       rw [slotEq] at written
       have assign := StableExpr.assignRaw (before := st h cur) (indexed := st h cur) (ready := st h cur)
         (heap := h'') (sourceId := items) (itemsAt h cur) (StableExpr.local (idxAt h cur)) curCap
-        (elementAddress kind curCap) (show (st h cur).i32ArrayViews = [] from noViews) right stored
+        (elementAddress kind curCap) (show (st h cur).i32ArrayViews = [] from noViews) right stored (kind.plain _ _ _ _)
       have bodyRun : RunsStmt P (st h cur)
           (.sequence (.expression (.assign .set (.index (.local items) (.local idx))
               (.index (.local items) (.binary .subtract (.local idx) (int 1)))))
@@ -281,7 +281,7 @@ theorem insertTail_spec (inst : VecInstance P T ids) (kind : ElemKind P T size) 
   rw [slotEq] at written
   have assign := StableExpr.assignRaw (before := W) (indexed := W) (ready := W) (heap := h2) (sourceId := 5)
     w5 (StableExpr.local w1) hcap (elementAddress kind hcap) (show W.i32ArrayViews = [] from frame.views.trans noViews)
-    (StableExpr.local w2) stored
+    (StableExpr.local w2) stored (kind.plain _ _ _ _)
   let C : State := { W with heap := h2 }
   have c3 : C.local? 3 = some vv := w3
   have bump := RunsExpr.binary (operation := .add) (RunsExpr.field' (j := 1) (RunsExpr.local' c3) rfl)

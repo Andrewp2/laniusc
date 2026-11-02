@@ -173,12 +173,19 @@ theorem elementAddress {P : Program} {T : Ty} {size p cap i : Nat} (kind : ElemK
       · simpa only [viewAddr, elemBase, slotLo, slotIndex, i32Ty, ne, reduceCtorEq, false_or,
           if_false] using address
 
+/-- A storage element's raw store is its native store: `ElemKind`'s types
+    are none of `u8` and the word scalars, which `writeRawElement` treats apart. -/
+theorem ElemKind.plain {P : Program} {T : Ty} {size : Nat} (kind : ElemKind P T size)
+    (st : State) (h : Heap) (a : Address) (v : Value) :
+    writeRawElement P st h T a v = writeNativeValue NativeLayout.maxDepth P st h T a v := by
+  cases kind <;> rfl
+
 theorem readRawSliceIndex_elem {P : Program} {T : Ty} {size p cap i : Nat} (st : State)
     (kind : ElemKind P T size) (inside : i < cap) :
     readRawSliceIndex P st T (viewAddr T size p cap) cap i =
       readNativeValue NativeLayout.maxDepth P st.heap T (elemBase T size p cap i) := by
   simp only [readRawSliceIndex, Nat.not_le_of_lt inside, if_false, elementAddress kind inside]
-  rfl
+  cases kind <;> rfl
 
 theorem ReadsWithin.refl (h : Heap) (lo n : Nat) : ReadsWithin h h lo n :=
   fun _ _ _ _ _ read => read

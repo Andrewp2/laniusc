@@ -237,7 +237,7 @@ theorem reverse_spec (inst : VecInstance P T ids) (kind : ElemKind P T size)
         (sourceId := 1) s1_1 (StableExpr.local s1_2) loCap (elementAddress kind loCap)
         (show s1.i32ArrayViews = [] from sV)
         (StableExpr.rawSliceIndex s1_1 s1_3 (show readRawSliceIndex P s1 T _ cap hi = _ from hiRead))
-        (by rw [show s1.heap = h from sH]; exact stored1)
+        (by rw [show s1.heap = h from sH]; exact stored1) (kind.plain _ _ _ _)
       let s2 : State := { s1 with heap := h1 }
       have effect1 : HeapRegionWrite caller.heap h1 p (size * cap) := by
         have sl := slot_inside (T := T) (size := size) (p := p) loCap
@@ -250,7 +250,7 @@ theorem reverse_spec (inst : VecInstance P T ids) (kind : ElemKind P T size)
         (sourceId := 1) (show s2.local? 1 = some view from s1_1)
         (StableExpr.local (show s2.local? 3 = some (.signed .i32 (Int.ofNat hi)) from s1_3)) hiCap
         (elementAddress kind hiCap) (show s2.i32ArrayViews = [] from sV)
-        (StableExpr.local (show s2.local? 4 = some a from s1_4)) stored2
+        (StableExpr.local (show s2.local? 4 = some a from s1_4)) stored2 (kind.plain _ _ _ _)
       let s3 : State := { s2 with heap := h2 }
       have effect2 : HeapRegionWrite caller.heap h2 p (size * cap) := by
         have sl := slot_inside (T := T) (size := size) (p := p) hiCap

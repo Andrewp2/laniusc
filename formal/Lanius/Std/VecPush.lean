@@ -81,7 +81,7 @@ theorem pushStore_spec (inst : VecInstance P T ids) (kind : ElemKind P T size) {
   have nv : B.i32ArrayViews = [] := frame.views.trans noViews
   have assign := StableExpr.assignRaw (before := B) (indexed := B) (ready := B) (heap := h')
     (sourceId := 4) (position := xs.length) src (StableExpr.field (fieldId := 1) (StableExpr.local v2) rfl)
-    room (elementAddress kind room) nv (StableExpr.local xv) stored
+    room (elementAddress kind room) nv (StableExpr.local xv) stored (kind.plain _ _ _ _)
   let C : State := { B with heap := h' }
   have c2 : C.local? 2 = some vv := v2
   have bump := RunsExpr.binary (operation := .add) (RunsExpr.field' (j := 1) (RunsExpr.local' c2) rfl)

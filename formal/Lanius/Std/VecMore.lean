@@ -373,7 +373,7 @@ theorem trySwapRemove_spec (inst : MoreInstance P T ids g mo) (kind : ElemKind P
   rw [slotEq, hB] at effect
   have nv : B.i32ArrayViews = [] := frame.views.trans noViews
   have assign := StableExpr.assignRaw (before := B) (indexed := B) (ready := B) (heap := h')
-    (sourceId := 2) src (StableExpr.local idx) hcap (elementAddress kind hcap) nv right stored
+    (sourceId := 2) src (StableExpr.local idx) hcap (elementAddress kind hcap) nv right stored (kind.plain _ _ _ _)
   let C : State := { B with heap := h' }
   have c0 : C.local? 0 = some vv := v0
   have shorter := RunsExpr.binary (operation := .subtract) (RunsExpr.field' (j := 1) (RunsExpr.local' c0) rfl)

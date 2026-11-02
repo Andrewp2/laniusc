@@ -381,8 +381,10 @@ the theorems say what it means.
   x86 model (section 6), under Linux's default MXCSR (section 6).
 - **`slice_stride`.** `Intrinsic.sliceStride` gives a raw
   view's signed byte stride as an `isize` (`rawSliceStride?`): 4 for `i32`
-  views, and `-8 × words` for views of structs and enums. On these views
-  laniusc gives the same values. Core gives
+  views, 1 for `u8` views, and `-8 × words` for views of the other types
+  with a native layout (structs and enums, and also the other
+  scalars, `str` and slices). On these views
+  laniusc gives the same values; the oracle difftest checks them. Core gives
   a view of a language array no stride (it traps), while laniusc gives that
   array's own layout. Programs that ask for one are outside the theorem.
 - **Native layout.** Core reads and writes values in memory
@@ -405,6 +407,50 @@ the theorems say what it means.
   of such a word, which only an aliasing 8-byte read sees. Core traps when a
   4-byte `u8`, `u16`, `i8` or `i16` read is out of the type's range; laniusc
   does not mask.
+- **Raw views of every scalar.** Core's raw views now
+  have the element layout laniusc's `stdlib/core/mem.lani` documents for
+  `slice_from_raw_parts`, `slice_stride` and `size_of` (laniusc's
+  `docs/array-view-storage-decision.md`): `i32` packed at stride +4, `u8`
+  packed bytes at stride +1, and every other type with a native layout at
+  stride -8 times its words, element 0's word 0 at the pointer
+  (`NativeLayout.elementStride?`, `rawSliceElementAddress?`). Before 10-31
+  only `i32`, struct and enum elements had a stride; a view of any other
+  scalar trapped `typeMismatch`, so `core::f32::to_bits`, which writes an
+  `f32` view and reads a `u32` view of the same word, trapped in Core and
+  ran in laniusc. What changed:
+  - `typedSliceFromRawParts` at `i32` is
+    `i32_slice_from_raw_parts` (`mapRawI32Slice`); at `u8` it checks `length`
+    bytes forward from the pointer inside one live block (`mapRawByteSlice`,
+    alignment 1); at the other scalars, `str` and slices it checks the words
+    below the pointer as it does for structs and enums (`mapRawWordSlice`;
+    `mapRawTypedSlice` chooses).
+  - A `u8` view's element is one byte: an index read loads it, an element
+    store writes it (`readRawElement`, `writeRawElement`), as laniusc's
+    `movzx eax, byte [rax]` and `mov [rax], dl` do for a stride-1 view. A
+    place that is a raw view's element (not a field of one) says so
+    (`ResolvedPlace.rawElement`), because a `u8` field of a struct in memory
+    is still 4 bytes.
+  - An element store of a word scalar (every scalar but `i32`, `u8` and
+    `str`; `writeRawElement`) writes the whole 8-byte word, the
+    value's native bytes and zeros above them, as laniusc's 8-byte
+    `mov [rax], rdx` of a zero-extended value does. Reads are the native
+    reads as before (4 bytes for the 32-bit kinds and `f32`, 8 for the
+    64-bit ones); laniusc loads an `f32` element with 4 bytes and the other
+    word scalars with 8, which is the same value for a word an element
+    store wrote.
+  - `f32`, `f64` and `char` have a native layout: one word, read and written
+    as 4, 8 and 4 bytes (`NativeLayout.words?`, `readNativeValue`,
+    `writeNativeValue`), as laniusc's 32-bit `movd`/`mov` and 64-bit `movq`
+    place stores do. A slice of any scalar element is 3 words.
+  - Core's typing judgment types the typed intrinsic at every scalar but
+    `i32` too (`RawNominalSliceElement.scalarType`; `i32` keeps
+    `i32SliceFromRawParts`), and the checker accepts them
+    (`checkRawNominalSliceElement`).
+  Not modelled yet: views of arrays (`[E; N]` has no native layout in Core,
+  laniusc's is `8 * N * words(E)`), zero-sized elements (laniusc's stride
+  0), and `str` element stores. A negative `i8` or `i16` element is stored
+  as its 32-bit two's complement and four zero bytes, which only a view of
+  another type over the same word sees.
 
 ## 4. Source text: the reading
 

@@ -825,20 +825,34 @@ theorem mapRawNominalSlice_cases {P : Core.Program} {st : State} {element : Core
     | exact .inr ⟨_, run.symm, rfl⟩
     | (rename_i bad; exact .inr ⟨_, run.symm, checkRange_undefined bad⟩)
 
+theorem mapRawTypedSlice_cases {P : Core.Program} {st : State} {element : Core.Ty} {a : Nat} {n : Int}
+    {out : Semantics.Outcome Value} (run : Semantics.mapRawTypedSlice P st element a n = out) :
+    (∃ v st1, out = .done v st1) ∨ ∃ r, out = .trapped r st ∧ undefinedTrap r = true := by
+  unfold Semantics.mapRawTypedSlice at run
+  split at run
+  · exact mapRawI32Slice_cases run
+  all_goals first
+    | exact mapRawNominalSlice_cases run
+    | (first
+        | unfold Semantics.mapRawByteSlice at run
+        | unfold Semantics.mapRawWordSlice at run
+       repeat' (first | split at run | (dsimp only at run; split at run))
+       all_goals first
+         | exact .inl ⟨_, _, run.symm⟩
+         | exact .inr ⟨_, run.symm, rfl⟩
+         | (rename_i bad; exact .inr ⟨_, run.symm, checkRange_undefined bad⟩))
+
 /-- Core's `slice_from_raw_parts` of evaluated operands completes or traps undefined. -/
 theorem sliceFrom_cases {P : Core.Program} {k : Nat} {st : State} {element : SrcType}
-    (kind : element = .i32 ∨ (∃ sid fields, element = .struct sid fields) ∨
-      ∃ eid variants, element = .enum eid variants) {p l : Core.Expr} {a : Nat} {n : Int}
+    {p l : Core.Expr} {a : Nat} {n : Int}
     (pRun : evalExpr k P st p = .done (.pointer a) st) (lRun : evalExpr k P st l = .done (.signed .i32 n) st) :
     (∃ v st1, evalExpr (k + 1) P st (element.sliceFrom p l) = .done v st1) ∨
       ∃ r, evalExpr (k + 1) P st (element.sliceFrom p l) = .trapped r st ∧ undefinedTrap r = true := by
-  rcases kind with rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩
-  · simp only [SrcType.sliceFrom, evalExpr, pRun, lRun]
-    exact mapRawI32Slice_cases rfl
-  · simp only [SrcType.sliceFrom, evalExpr, pRun, lRun]
-    exact mapRawNominalSlice_cases rfl
-  · simp only [SrcType.sliceFrom, evalExpr, pRun, lRun]
-    exact mapRawNominalSlice_cases rfl
+  cases element
+  all_goals simp only [SrcType.sliceFrom, evalExpr, pRun, lRun]
+  all_goals first
+    | exact mapRawI32Slice_cases rfl
+    | exact mapRawTypedSlice_cases rfl
 
 end RawMemory
 
@@ -855,7 +869,7 @@ theorem rawSliceElementAddress_undef (P : Core.Program) (element : Core.Ty) (a i
 theorem readRawSliceIndex_undef {P : Core.Program} {st : State} {element : Core.Ty} {a len pos : Nat}
     (lt : pos < len) : UndefErr (Semantics.readRawSliceIndex P st element a len pos) := by
   simp only [Semantics.readRawSliceIndex, if_neg (Nat.not_le.mpr lt)]
-  exact UndefErr.bind (rawSliceElementAddress_undef P element a pos) fun _ => readNativeValue_undef _ _ _ _ _
+  exact UndefErr.bind (rawSliceElementAddress_undef P element a pos) fun _ => readRawElement_undef _ _ _ _
 
 /-- Core's read of `slice[idx]` from a raw slice local, the index in bounds:
 the element, or an undefined trap. -/
@@ -988,14 +1002,14 @@ theorem setIndex_outcome {P : Core.Program} {k : Nat} {st : State} {slice : Nat}
   | ok at_ =>
     simp only [located, eRun, Semantics.evalAssignValue, Semantics.assignOpBinary?,
       Semantics.writeResolvedPlaceNative] at hout
-    cases stored : Semantics.writeNativeValue NativeLayout.maxDepth P st st.heap element at_ right with
+    cases stored : Semantics.writeRawElement P st st.heap element at_ right with
     | error r =>
       simp only [stored, bind, Except.bind] at hout
-      exact .inr ⟨r, hout.symm, writeNativeValue_undef _ _ _ _ _ _ _ views r stored⟩
+      exact .inr ⟨r, hout.symm, writeRawElement_undef _ _ _ _ _ _ views r stored⟩
     | ok heap =>
       simp only [stored, bind, Except.bind, pure, Except.pure, Semantics.syncI32ViewsFromHeap, views,
         Semantics.syncI32ViewsFromHeapFrom, ite_self] at hout
-      exact .inl ⟨_, hout.symm, writeNativeValue_next _ stored⟩
+      exact .inl ⟨_, hout.symm, writeRawElement_next stored⟩
 
 end Indexing
 
@@ -1886,8 +1900,6 @@ theorem stops_letSlice {id : Nat} {element : SrcType} {pointer length : SrcExpr}
   simp only [lowerSlice] at sliceOk
   split at sliceOk
   case isFalse => simp at sliceOk
-  rename_i cond
-  have kind := slice_kind (by simp only [Bool.and_eq_true] at cond; exact cond.1)
   cases pOk : lowerAs scope pointer .ptr with
   | none => simp [pOk] at sliceOk
   | some xp =>
@@ -1908,9 +1920,9 @@ theorem stops_letSlice {id : Nat} {element : SrcType} {pointer length : SrcExpr}
   have pRun' := value_after pRun (Nat.le_max_left fp fl)
   have lRun' := value_after lRun (Nat.le_max_right fp fl)
   simp only [SrcStmt.toCore] at fails
-  rcases sliceFrom_cases kind pRun' lRun' with ⟨v, st1, valueRun⟩ | ⟨r, trapRun, undefined⟩
+  rcases sliceFrom_cases (element := element) pRun' lRun' with ⟨v, st1, valueRun⟩ | ⟨r, trapRun, undefined⟩
   · obtain ⟨a, afterPointer, n, afterLength, len, heap, pointerRun, lengthRun, rfl, rfl, hcOf, lenEq, nonneg⟩ :=
-      sliceFrom_inv kind valueRun
+      sliceFrom_inv valueRun
     rw [pRun'] at pointerRun
     simp only [Semantics.Outcome.done.injEq, Value.pointer.injEq] at pointerRun
     obtain ⟨rfl, rfl⟩ := pointerRun
@@ -2026,7 +2038,7 @@ theorem stops_letIndex_i32 {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcE
     obtain ⟨elt, eltOk, read⟩ := except_bind_ok read
     simp only [pure, Except.pure, Except.ok.injEq] at eltOk
     subst eltOk
-    simp only [NativeLayout.maxDepth, Semantics.readNativeValue] at read
+    simp only [Semantics.readRawElement, NativeLayout.maxDepth, Semantics.readNativeValue] at read
     obtain ⟨bits, loaded, wrapped⟩ := except_bind_ok read
     simp only [pure, Except.pure, Except.ok.injEq] at wrapped
     subst wrapped

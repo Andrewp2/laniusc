@@ -375,13 +375,17 @@ theorem sliceFrom_trap_grows {element : SrcType} {pointer length : SrcExpr}
         · rename_i lengthRun
           have := length.eval_state lengthRun
           subst this
-          simp only [Semantics.mapRawI32Slice, Semantics.mapRawNominalSlice] at run
-          repeat' split at run
-          all_goals first
-            | (simp only [Semantics.Outcome.trapped.injEq] at run
-               obtain ⟨-, rfl⟩ := run
+          first
+            | (have := mapRawTypedSlice_trapped run
+               subst this
                exact Grows.refl _)
-            | simp at run
+            | (simp only [Semantics.mapRawI32Slice] at run
+               repeat' split at run
+               all_goals first
+                 | (simp only [Semantics.Outcome.trapped.injEq] at run
+                    obtain ⟨-, rfl⟩ := run
+                    exact Grows.refl _)
+                 | simp at run)
         · rename_i lengthRun
           have := length.eval_state lengthRun
           subst this
@@ -585,12 +589,14 @@ theorem assign_trap_grows {place : Core.Place} {e : Core.Expr}
         simp only [Semantics.writeResolvedPlaceNative, raw] at run
         split at run
         · rename_i assigned written
-          obtain ⟨heap3, stored, wrapped⟩ := except_bind_ok written
-          simp only [pure, Except.pure, Except.ok.injEq] at wrapped
-          subst wrapped
-          have synced := syncFrom_ok (st := { afterValue with heap := heap3 }) views2
-          simp only [synced, ite_self] at run
-          simp at run
+          split at written
+          all_goals
+            obtain ⟨heap3, stored, wrapped⟩ := except_bind_ok written
+            simp only [pure, Except.pure, Except.ok.injEq] at wrapped
+            subst wrapped
+            have synced := syncFrom_ok (st := { afterValue with heap := heap3 }) views2
+            simp only [synced, ite_self] at run
+            simp at run
         · simp only [Semantics.Outcome.trapped.injEq] at run
           obtain ⟨-, rfl⟩ := run
           exact ⟨views2, next2⟩

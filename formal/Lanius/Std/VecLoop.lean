@@ -200,7 +200,7 @@ theorem copy_loop_spec (target : P.target = Target.x86_64) (kind : ElemKind P T 
       rw [slotEq] at written
       have assign := StableExpr.assignRaw (before := st h k) (indexed := st h k) (ready := st h k)
         (heap := h'') (sourceId := dst) (dstAt h k) (StableExpr.local (idxAt h k)) km
-        (elementAddress kind km) (show (st h k).i32ArrayViews = [] from noViews) readStable stored
+        (elementAddress kind km) (show (st h k).i32ArrayViews = [] from noViews) readStable stored (kind.plain _ _ _ _)
       have bodyRun : RunsStmt P (st h k)
           (.sequence (.expression (.assign .set (.index (.local dst) (.local idx)) (.index (.local src) (.local idx))))
             (increment idx)) .next (st h'' (k + 1)) :=

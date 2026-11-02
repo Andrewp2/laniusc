@@ -16,7 +16,8 @@ private theorem rawPlace {before indexed : State}
         .done { root := root
                 projections := []
                 value := none
-                raw := some (element, base) } indexed := by
+                raw := some (element, base)
+                rawElement := true } indexed := by
   cases cell : before.cellId? sourceId with
   | none => simp [State.local?, cell] at source
   | some root =>
@@ -40,7 +41,9 @@ theorem StableExpr.assignRaw {before indexed ready : State} {value : Value}
     (location : rawSliceElementAddress? program element address position = .ok base)
     (noViews : ready.i32ArrayViews = [])
     (right : StableExpr threshold program indexed expression value ready)
-    (stored : writeNativeValue NativeLayout.maxDepth program ready ready.heap element base value = .ok heap) :
+    (stored : writeNativeValue NativeLayout.maxDepth program ready ready.heap element base value = .ok heap)
+    (plain : writeRawElement program ready ready.heap element base value =
+      writeNativeValue NativeLayout.maxDepth program ready ready.heap element base value := by rfl) :
     StableExpr (max (max 1 indexFuel + 1) threshold + 1) program before
       (.assign .set (.index (.local sourceId) indexExpression) expression)
       .unit { ready with heap } := by
@@ -53,7 +56,7 @@ theorem StableExpr.assignRaw {before indexed ready : State} {value : Value}
   rw [placeRun]
   dsimp only
   rw [rightRun]
-  simp [evalAssignValue, assignOpBinary?, writeResolvedPlaceNative, stored,
+  simp [evalAssignValue, assignOpBinary?, writeResolvedPlaceNative, plain, stored,
     ResolvedPlace.viewFreeRootWrite, syncI32ViewsFromHeap, noViews]
   rfl
 
@@ -80,13 +83,15 @@ theorem RunsExpr.assignRawNative {before indexed ready : State} {value : Value}
     (codec : NativeStoreSpec NativeLayout.maxDepth program element value size)
     (room : size ≤ base + 8) (readable : ready.heap.Readable (base + 8 - size) size)
     (unique : HeapBlockBasesUnique ready.heap)
-    (noViews : ready.i32ArrayViews = []) (right : RunsExpr program indexed expression value ready) :
+    (noViews : ready.i32ArrayViews = []) (right : RunsExpr program indexed expression value ready)
+    (plain : ∀ heap, writeRawElement program ready heap element base value =
+      writeNativeValue NativeLayout.maxDepth program ready heap element base value) :
     ∃ heap, RunsExpr program before (.assign .set (.index (.local sourceId) indexExpression) expression)
       .unit { ready with heap } ∧ NativeSnapshot NativeLayout.maxDepth program heap element base value size ∧
       HeapRegionWrite ready.heap heap (base + 8 - size) size := by
   obtain ⟨heap, stored, read, effect⟩ := codec ready ready.heap base room readable unique
   exact ⟨heap, .ofStable (StableExpr.assignRaw source index.choose_spec.1 bound location noViews
-    right.choose_spec.1 stored) (right.choose_spec.2.trans index.choose_spec.2), read, effect⟩
+    right.choose_spec.1 stored (plain _)) (right.choose_spec.2.trans index.choose_spec.2), read, effect⟩
 
 /-- The final scalar write preserves every nonheap field of the RHS state,
     while preceding index/RHS effects remain part of the full execution. -/

@@ -120,7 +120,7 @@ theorem shift_down_loop_spec (target : P.target = Target.x86_64) (kind : ElemKin
       rw [slotEq] at written
       have assign := StableExpr.assignRaw (before := st h cur) (indexed := st h cur) (ready := st h cur)
         (heap := h'') (sourceId := items) (itemsAt h cur) (StableExpr.local (idxAt h cur)) curCap
-        (elementAddress kind curCap) (show (st h cur).i32ArrayViews = [] from noViews) right stored
+        (elementAddress kind curCap) (show (st h cur).i32ArrayViews = [] from noViews) right stored (kind.plain _ _ _ _)
       have bodyRun : RunsStmt P (st h cur)
           (.sequence (.expression (.assign .set (.index (.local items) (.local idx))
               (.index (.local items) (.binary .add (.local idx) (int 1)))))

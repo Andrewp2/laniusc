@@ -1,5 +1,6 @@
 import Lanius.Faithful.Safe.Eff
 import Lanius.Faithful.Sim.PrimInv
+import Lanius.Semantics.RawSlice
 
 /-! # Runs that trap only definedly, built along a body
 
@@ -178,7 +179,7 @@ theorem typedSlice_trap_inv {el : Core.Ty} {p n : Core.Expr} {k : Nat} {r : Lani
       ∃ a s1, evalExpr j P st p = .done (.pointer a) s1 ∧ (evalExpr j P s1 n = .trapped r st' ∨
         (∃ w, evalExpr j P s1 n = .done w st' ∧ (∀ c, w ≠ .signed .i32 c) ∧ r = .typeMismatch) ∨
         ∃ c s2, evalExpr j P s1 n = .done (.signed .i32 c) s2 ∧
-          Semantics.mapRawNominalSlice P s2 el a c = .trapped r st')) := by
+          Semantics.mapRawTypedSlice P s2 el a c = .trapped r st')) := by
   cases k with
   | zero => simp [evalExpr] at h
   | succ j =>
@@ -211,6 +212,7 @@ theorem known_typedSlice {el : Core.Ty} {p n : Core.Expr} {a : Nat} {c : Int} {v
     (kp : Known P st p (.pointer a)) (kn : Known P st n (.signed .i32 c))
     (m : Semantics.mapRawNominalSlice P st el a c = .done v st) :
     Known P st (.typedSliceFromRawParts el p n) v := by
+  replace m := Semantics.mapRawTypedSlice_of_nominal m
   constructor
   · intro k r s h
     obtain ⟨j, -, hp' | ⟨w, hw, notP, -⟩ | ⟨a', s1, hp, hn' | ⟨w, hw, notI, -⟩ | ⟨c', s2, hn, bad⟩⟩⟩ :=

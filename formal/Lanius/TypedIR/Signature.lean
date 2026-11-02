@@ -79,6 +79,7 @@ theorem Signature.Realizes.nominal {signature : Signature} {program : Core.Progr
   cases element with
   | structureType id declaration found => exact .structureType id declaration (linked.structure found)
   | enumerationType id declaration found => exact .enumerationType id declaration (linked.enumeration found)
+  | scalarType scalar unpacked => exact .scalarType scalar unpacked
 
 theorem Signature.Realizes.sliceElement {signature : Signature} {program : Core.Program}
     (linked : signature.Realizes program)

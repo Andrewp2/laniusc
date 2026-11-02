@@ -108,6 +108,18 @@ private theorem nominalSliceLocals (program : Program) (state : State)
   unfold mapRawNominalSlice
   locals_result []
 
+private theorem typedSliceLocals (program : Program) (state : State)
+    (element : Ty) (address : Address) (length : Int) :
+    (mapRawTypedSlice program state element address length).PreservesLocals state.locals := by
+  unfold mapRawTypedSlice
+  split
+  · exact rawSliceLocals state address length
+  · unfold mapRawByteSlice
+    locals_result []
+  all_goals first
+    | exact nominalSliceLocals program state _ address length
+    | (unfold mapRawWordSlice; locals_result [])
+
 private theorem slicePointerLocals (state : State) (cell : CellId)
     (projections : List ValueProjection) (start length : Nat) :
     (mapI32SliceDataPtr state cell projections start length).PreservesLocals state.locals := by
@@ -162,7 +174,7 @@ private theorem lexicalInvariant (fuel : Nat) : LexicalInvariant fuel := by
       | rw [execStmt.eq_def]
     all_goals locals_result [ih.expression, ih.expressions, ih.matching, ih.place,
       ih.valuesLoop, ih.rangeLoop, ih.statement, writeNativePlaceLocals, syncTo,
-      syncFrom, arrayViewLocals, rawSliceLocals, nominalSliceLocals,
+      syncFrom, arrayViewLocals, rawSliceLocals, nominalSliceLocals, typedSliceLocals,
       slicePointerLocals, stringPointerLocals, worldOutcomeLocals, opaqueOutcomeLocals]
 
 theorem evalExpr_preservesLocals :
