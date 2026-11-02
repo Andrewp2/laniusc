@@ -12,7 +12,7 @@ Layer: `std`. Role: module. Profile: **Source inventory**.
 
 - [stdlib-concurrency](../../stdlib-concurrency.md)
 
-Declaration counts: constant: 1; enum: 1; field: 6; function: 7; impl: 1; method: 3; struct: 2; trait: 1; trait member: 1; variant: 6.
+Declaration counts: constant: 1; enum: 1; field: 6; function: 7; impl: 1; method: 4; struct: 2; trait: 1; trait member: 1; variant: 6.
 
 ## Declared imports
 
@@ -113,7 +113,7 @@ length: i32
 
 ### struct: Plan
 
-[Source line 43](../../../stdlib/std/parallel.lani#L43)
+[Source line 45](../../../stdlib/std/parallel.lani#L45)
 
 ```lanius
 pub struct Plan
@@ -121,7 +121,7 @@ pub struct Plan
 
 #### field: workers
 
-[Source line 43](../../../stdlib/std/parallel.lani#L43)
+[Source line 45](../../../stdlib/std/parallel.lani#L45)
 
 ```lanius
 workers: i32
@@ -129,7 +129,7 @@ workers: i32
 
 #### field: chunk
 
-[Source line 43](../../../stdlib/std/parallel.lani#L43)
+[Source line 45](../../../stdlib/std/parallel.lani#L45)
 
 ```lanius
 chunk: i32
@@ -137,7 +137,7 @@ chunk: i32
 
 #### field: token
 
-[Source line 43](../../../stdlib/std/parallel.lani#L43)
+[Source line 45](../../../stdlib/std/parallel.lani#L45)
 
 ```lanius
 token: std::sync::Token
@@ -145,7 +145,7 @@ token: std::sync::Token
 
 #### field: scratch
 
-[Source line 43](../../../stdlib/std/parallel.lani#L43)
+[Source line 45](../../../stdlib/std/parallel.lani#L45)
 
 ```lanius
 scratch: ptr
@@ -173,7 +173,7 @@ pub fn shared<T>(region: &std::sync::Region, length: i32) -> core::result::Resul
 
 ### function: plan
 
-[Source line 44](../../../stdlib/std/parallel.lani#L44)
+[Source line 46](../../../stdlib/std/parallel.lani#L46)
 
 ```lanius
 pub fn plan(region: &std::sync::Region, workers: i32, chunk: i32, token: std::sync::Token) -> core::result::Result<Plan, Error>
@@ -181,7 +181,7 @@ pub fn plan(region: &std::sync::Region, workers: i32, chunk: i32, token: std::sy
 
 ### function: for_each
 
-[Source line 106](../../../stdlib/std/parallel.lani#L106)
+[Source line 108](../../../stdlib/std/parallel.lani#L108)
 
 ```lanius
 pub fn for_each<B>(plan: Plan, length: i32, body: &B) -> core::result::Result<i32, Error> where B: ChunkBody
@@ -189,7 +189,7 @@ pub fn for_each<B>(plan: Plan, length: i32, body: &B) -> core::result::Result<i3
 
 ### function: map
 
-[Source line 133](../../../stdlib/std/parallel.lani#L133)
+[Source line 135](../../../stdlib/std/parallel.lani#L135)
 
 ```lanius
 pub fn map<T, U, M>(plan: Plan, input: Shared<T>, output: Shared<U>, mapper: &M) -> core::result::Result<i32, Error> where M: core::function::Mapper<T, U>
@@ -197,7 +197,7 @@ pub fn map<T, U, M>(plan: Plan, input: Shared<T>, output: Shared<U>, mapper: &M)
 
 ### function: reduce
 
-[Source line 162](../../../stdlib/std/parallel.lani#L162)
+[Source line 164](../../../stdlib/std/parallel.lani#L164)
 
 ```lanius
 pub fn reduce<T, A, F, C>(plan: Plan, input: Shared<T>, partials: Shared<A>, identity: A, fold: &F, combine: &C) -> core::result::Result<A, Error>
@@ -206,7 +206,7 @@ pub fn reduce<T, A, F, C>(plan: Plan, input: Shared<T>, partials: Shared<A>, ide
 
 ### function: scan
 
-[Source line 199](../../../stdlib/std/parallel.lani#L199)
+[Source line 201](../../../stdlib/std/parallel.lani#L201)
 
 ```lanius
 pub fn scan<T, C>(plan: Plan, data: Shared<T>, partials: Shared<T>, identity: T, combine: &C) -> core::result::Result<i32, Error>
@@ -215,7 +215,7 @@ pub fn scan<T, C>(plan: Plan, data: Shared<T>, partials: Shared<T>, identity: T,
 
 ### function: merge_sort
 
-[Source line 274](../../../stdlib/std/parallel.lani#L274)
+[Source line 276](../../../stdlib/std/parallel.lani#L276)
 
 ```lanius
 pub fn merge_sort<T>(plan: Plan, data: Shared<T>, scratch: Shared<T>) -> core::result::Result<i32, Error> where T: core::cmp::Ord<T>
@@ -225,7 +225,7 @@ pub fn merge_sort<T>(plan: Plan, data: Shared<T>, scratch: Shared<T>) -> core::r
 
 ### trait: ChunkBody
 
-[Source line 53](../../../stdlib/std/parallel.lani#L53)
+[Source line 55](../../../stdlib/std/parallel.lani#L55)
 
 ```lanius
 pub trait ChunkBody
@@ -233,7 +233,7 @@ pub trait ChunkBody
 
 #### trait member: run
 
-[Source line 54](../../../stdlib/std/parallel.lani#L54)
+[Source line 56](../../../stdlib/std/parallel.lani#L56)
 
 ```lanius
 pub fn run(&self, start: i32, end: i32) -> i32;
@@ -265,9 +265,17 @@ pub fn borrow(&self) -> &Shared<T>
 pub fn len(&self) -> i32
 ```
 
-#### method: view
+#### method: storage
 
 [Source line 38](../../../stdlib/std/parallel.lani#L38)
+
+```lanius
+pub fn storage(&self) -> ptr
+```
+
+#### method: view
+
+[Source line 40](../../../stdlib/std/parallel.lani#L40)
 
 ```lanius
 pub fn view(&self) -> [T]

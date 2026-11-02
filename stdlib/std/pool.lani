@@ -148,6 +148,17 @@ pub impl<T> Pool<T> {
         }
         return core::result::Ok(0);
     }
+    // Queue one task without blocking: Ok(false) when the queue is full (the
+    // caller still holds its copy of the task).
+    pub fn try_submit(&self, task: T) -> core::result::Result<bool, Error> {
+        cell(self.block + 64).fetch_add(1, std::atomic::Ordering::SeqCst);
+        let sent: core::result::Result<i32, std::channel::SendError<T>> = self.ring().try_send(task);
+        if (sent.is_ok()) { return core::result::Ok(true); }
+        cell(self.block + 64).fetch_sub(1, std::atomic::Ordering::SeqCst);
+        let full: bool = match (sent.unwrap_err()) { std::channel::SendError::Full(t) -> true, _ -> false };
+        if (full) { return core::result::Ok(false); }
+        return core::result::Err(Error::Channel(std::channel::Error::NoEndpoint));
+    }
     pub fn submitted(&self) -> i64 { return get(self.block + 64) as i64; }
     pub fn completed(&self) -> i64 { return get(self.block + 128) as i64; }
     // The sum of every finished task's run() result.
@@ -166,6 +177,27 @@ pub impl<T> Pool<T> {
             cell(self.block + 200).fetch_sub(1, std::atomic::Ordering::SeqCst);
         }
         return core::result::Ok(0);
+    }
+    // wait with a limit: Ok(true) once every submitted task has finished,
+    // Ok(false) if `milliseconds` (0 ..= 86,400,000) pass first.
+    pub fn wait_timeout_ms(&self, milliseconds: i64) -> core::result::Result<bool, Error> {
+        let limit: core::result::Result<std::sync::Deadline, std::sync::Error> = std::sync::deadline_after_ms(milliseconds);
+        if (limit.is_err()) { return core::result::Err(Error::InvalidInput); }
+        let deadline: std::sync::Deadline = limit.unwrap();
+        while (true) {
+            if (get(self.block + 128) == get(self.block + 64)) { return core::result::Ok(true); }
+            let seen: u32 = std::atomic::at32(self.block + 192).load(std::atomic::Load::Acquire);
+            cell(self.block + 200).fetch_add(1, std::atomic::Ordering::SeqCst);
+            if (get(self.block + 128) == get(self.block + 64)) {
+                cell(self.block + 200).fetch_sub(1, std::atomic::Ordering::SeqCst);
+                return core::result::Ok(true);
+            }
+            std::sync::futex_wait_until_private(self.block + 192, seen, deadline);
+            cell(self.block + 200).fetch_sub(1, std::atomic::Ordering::SeqCst);
+            let past: core::result::Result<bool, std::sync::Error> = std::sync::is_past(deadline);
+            if (past.is_ok() && past.unwrap() && get(self.block + 128) != get(self.block + 64)) { return core::result::Ok(false); }
+        }
+        return core::result::Ok(true);
     }
     // Finish the queued tasks, stop and join the workers, free the pool.
     pub fn shutdown(&self) {

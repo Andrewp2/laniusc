@@ -6,7 +6,8 @@
 // (std::pthread). They use process-private futexes, so they must not be
 // shared with forked workers. Ring<T> is a lock-free bounded
 // multi-producer multi-consumer ring, and Mpsc<T> an unbounded
-// multi-producer single-consumer queue on the heap.
+// multi-producer single-consumer queue on the heap. `select` receives from
+// whichever of two thread channels is ready (see the end of this file).
 //
 // Channel<T> in detail: a bounded multi-producer multi-consumer FIFO in a
 // shared Region. T is copied by value into Region storage: it must be a plain value
@@ -446,6 +447,20 @@ pub impl<T> Ring<T> {
     // Returns the senders (receivers) still open. Err(NoEndpoint) if none were.
     pub fn close_sender(&self) -> core::result::Result<i32, Error> { return close_count(self.block + 256, self.block + 128); }
     pub fn close_receiver(&self) -> core::result::Result<i32, Error> { return close_count(self.block + 264, self.block + 192); }
+    // Take up to `limit` queued messages without blocking, in FIFO order,
+    // into out[0 .. limit); returns how many. Blocked senders are woken.
+    pub fn drain(&self, out: [T], limit: i32) -> i32 {
+        let taken: i32 = 0;
+        while (taken < limit) {
+            let got: core::option::Option<T> = self.pop();
+            if (core::option::is_none(got)) { break; }
+            let value: T = core::option::unwrap(got);
+            out[taken] = value;
+            taken += 1;
+            wake_one(self.block + 192, self.block + 200);
+        }
+        return taken;
+    }
     // Free the ring. Messages still in it are dropped.
     pub fn destroy(&self) {
         let capacity: usize = get(self.block + 272) as usize;
@@ -561,6 +576,18 @@ pub impl<T> Mpsc<T> {
         if (deadline.is_err()) { return core::result::Err(RecvError::Sync(deadline.unwrap_err())); }
         return self.recv_mode(2, deadline.unwrap());
     }
+    // Take up to `limit` queued messages without blocking (receiver only).
+    pub fn drain(&self, out: [T], limit: i32) -> i32 {
+        let taken: i32 = 0;
+        while (taken < limit) {
+            let got: core::option::Option<T> = self.pop();
+            if (core::option::is_none(got)) { break; }
+            let value: T = core::option::unwrap(got);
+            out[taken] = value;
+            taken += 1;
+        }
+        return taken;
+    }
     pub fn close_sender(&self) -> core::result::Result<i32, Error> { return close_count(self.block + 192, self.block + 128); }
     // After this, sends return Disconnected(value). Queued messages stay until destroy.
     pub fn close_receiver(&self) -> core::result::Result<i32, Error> {
@@ -580,4 +607,128 @@ pub impl<T> Mpsc<T> {
         }
         alloc::allocator::dealloc(self.block, MPSC_BLOCK, 8);
     }
+}
+
+// ---- Select over two thread channels ----
+//
+// Receive<T> is the receiving side of Ring<T> and Mpsc<T>. Both blocks keep
+// the receive epoch at +128 and its waiter count at +136, so one select can
+// sleep on both epochs with one futex_waitv (std::sync::
+// futex_wait_either_private). A select registers as a waiter on both
+// channels before its final recheck, the same protocol as recv.
+//
+// When both channels are ready, `first` wins: the order is fixed, not
+// random. A loop that must not starve `second` can alternate the argument
+// order. Disconnected is returned only when both channels are drained and
+// all of their senders have closed; while one side is still open, select
+// keeps waiting on it.
+//
+// A select that slept may have taken the wake meant for another receiver of
+// the other channel, so after it receives it passes a wake on to that
+// channel's waiters (a no-op when it has none).
+pub trait Receive<T> {
+    // One nonblocking attempt.
+    pub fn take_one(&self) -> core::option::Option<T>;
+    // Every sender has closed.
+    pub fn senders_closed(&self) -> bool;
+    // The control block (receive epoch at +128, waiters at +136).
+    pub fn signal_block(&self) -> ptr;
+}
+pub impl<T> Receive<T> for Ring<T> {
+    pub fn take_one(&self) -> core::option::Option<T> {
+        let got: core::option::Option<T> = self.pop();
+        if (core::option::is_some(got)) { wake_one(self.block + 192, self.block + 200); }
+        return got;
+    }
+    pub fn senders_closed(&self) -> bool { return cell(self.block + 256).load(std::atomic::Load::Acquire) == 0; }
+    pub fn signal_block(&self) -> ptr { return self.block; }
+}
+pub impl<T> Receive<T> for Mpsc<T> {
+    pub fn take_one(&self) -> core::option::Option<T> { return self.pop(); }
+    pub fn senders_closed(&self) -> bool { return cell(self.block + 192).load(std::atomic::Load::Acquire) == 0; }
+    pub fn signal_block(&self) -> ptr { return self.block; }
+}
+
+pub enum Selected<A, B> { First(A), Second(B) }
+
+fn pass_wake(block: ptr) { wake_one(block + 128, block + 136); }
+// One attempt on both channels, first then second. `woken` passes a wake to
+// the channel that was not taken from.
+fn select_once<A, B, P, Q>(first: &P, second: &Q, woken: bool) -> core::option::Option<Selected<A, B>> where P: Receive<A>, Q: Receive<B> {
+    let a: core::option::Option<A> = first.take_one();
+    if (core::option::is_some(a)) {
+        if (woken) { pass_wake(second.signal_block()); }
+        return core::option::Some(Selected::First(core::option::unwrap(a)));
+    }
+    let b: core::option::Option<B> = second.take_one();
+    if (core::option::is_some(b)) {
+        if (woken) { pass_wake(first.signal_block()); }
+        return core::option::Some(Selected::Second(core::option::unwrap(b)));
+    }
+    return core::option::None();
+}
+fn select_mode<A, B, P, Q>(first: &P, second: &Q, mode: i32, deadline: std::sync::Deadline) -> core::result::Result<Selected<A, B>, RecvError> where P: Receive<A>, Q: Receive<B> {
+    let tries: i32 = 0;
+    let woken: bool = false;
+    while (true) {
+        let got: core::option::Option<Selected<A, B>> = select_once<A, B, P, Q>(first, second, woken);
+        if (core::option::is_some(got)) { return core::result::Ok(core::option::unwrap(got)); }
+        if (first.senders_closed() && second.senders_closed()) {
+            // Both closed: what was sent before the closes is still delivered.
+            let last: core::option::Option<Selected<A, B>> = select_once<A, B, P, Q>(first, second, woken);
+            if (core::option::is_some(last)) { return core::result::Ok(core::option::unwrap(last)); }
+            return core::result::Err(RecvError::Disconnected);
+        }
+        if (mode == 0) { return core::result::Err(RecvError::Empty); }
+        if (tries < SPINS) { tries += 1; continue; }
+        let one: ptr = first.signal_block();
+        let two: ptr = second.signal_block();
+        let one_seen: u32 = epoch(one + 128);
+        let two_seen: u32 = epoch(two + 128);
+        cell(one + 136).fetch_add(1, std::atomic::Ordering::SeqCst);
+        cell(two + 136).fetch_add(1, std::atomic::Ordering::SeqCst);
+        let again: core::option::Option<Selected<A, B>> = select_once<A, B, P, Q>(first, second, woken);
+        let slept: core::result::Result<bool, std::sync::Error> = core::result::Ok(false);
+        if (core::option::is_none(again) && !(first.senders_closed() && second.senders_closed())) {
+            if (mode == 1) {
+                let waited: core::result::Result<std::sync::Wait, std::sync::Error> = std::sync::futex_wait_either_private(one + 128, one_seen, two + 128, two_seen);
+                if (waited.is_err()) { slept = core::result::Err(waited.unwrap_err()); }
+            } else {
+                let waited: core::result::Result<std::sync::Wait, std::sync::Error> = std::sync::futex_wait_either_until_private(one + 128, one_seen, two + 128, two_seen, deadline);
+                if (waited.is_err()) { slept = core::result::Err(waited.unwrap_err()); }
+                else { slept = std::sync::is_past(deadline); }
+            }
+        }
+        cell(one + 136).fetch_sub(1, std::atomic::Ordering::SeqCst);
+        cell(two + 136).fetch_sub(1, std::atomic::Ordering::SeqCst);
+        if (core::option::is_some(again)) { return core::result::Ok(core::option::unwrap(again)); }
+        if (slept.is_err()) { return core::result::Err(RecvError::Sync(slept.unwrap_err())); }
+        woken = true;
+        if (slept.unwrap()) {
+            let late: core::option::Option<Selected<A, B>> = select_once<A, B, P, Q>(first, second, true);
+            if (core::option::is_some(late)) { return core::result::Ok(core::option::unwrap(late)); }
+            if (first.senders_closed() && second.senders_closed()) { return core::result::Err(RecvError::Disconnected); }
+            return core::result::Err(RecvError::TimedOut);
+        }
+    }
+    return core::result::Err(RecvError::Disconnected);
+}
+// Receive from whichever of two thread channels has a message, blocking
+// while both are empty. Call with explicit types:
+// `select<i64, Item, Ring<i64>, Mpsc<Item>>(ring.borrow(), queue.borrow())`.
+// Only a receiver of each channel may select on it (for an Mpsc, its one
+// receiver).
+pub fn select<A, B, P, Q>(first: &P, second: &Q) -> core::result::Result<Selected<A, B>, RecvError> where P: Receive<A>, Q: Receive<B> {
+    return select_mode<A, B, P, Q>(first, second, 1, never());
+}
+pub fn try_select<A, B, P, Q>(first: &P, second: &Q) -> core::result::Result<Selected<A, B>, RecvError> where P: Receive<A>, Q: Receive<B> {
+    return select_mode<A, B, P, Q>(first, second, 0, never());
+}
+pub fn select_until<A, B, P, Q>(first: &P, second: &Q, deadline: std::sync::Deadline) -> core::result::Result<Selected<A, B>, RecvError> where P: Receive<A>, Q: Receive<B> {
+    return select_mode<A, B, P, Q>(first, second, 2, deadline);
+}
+pub fn select_timeout_ms<A, B, P, Q>(first: &P, second: &Q, milliseconds: i64) -> core::result::Result<Selected<A, B>, RecvError> where P: Receive<A>, Q: Receive<B> {
+    let deadline: core::result::Result<std::sync::Deadline, std::sync::Error> = deadline_in(milliseconds);
+    if (deadline.is_err()) { return core::result::Err(RecvError::Sync(deadline.unwrap_err())); }
+    return select_mode<A, B, P, Q>(first, second, 2, deadline.unwrap());
 }

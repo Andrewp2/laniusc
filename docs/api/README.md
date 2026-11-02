@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **352 modules**, **18594 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **353 modules**, **18689 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -140,7 +140,7 @@ Inventory: **352 modules**, **18594 declaration/member entries**. Counts include
 | [std::args_checked](std/args_checked.md) | [source](../../stdlib/std/args_checked.lani#L7) | 3 | Source inventory | [stdlib-process-context](../stdlib-process-context.md) |
 | [std::atomic](std/atomic.md) | [source](../../stdlib/std/atomic.lani#L4) | 50 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
 | [std::atomic_file](std/atomic_file.md) | [source](../../stdlib/std/atomic_file.lani#L4) | 104 | Source inventory | [stdlib-atomic-files](../stdlib-atomic-files.md), [stdlib-temp-files](../stdlib-temp-files.md), [extended-kv](../extended-kv.md) |
-| [std::channel](std/channel.md) | [source](../../stdlib/std/channel.lani#L8) | 49 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
+| [std::channel](std/channel.md) | [source](../../stdlib/std/channel.lani#L19) | 110 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md), [stdlib-threads](../stdlib-threads.md) |
 | [std::cli](std/cli.md) | [source](../../stdlib/std/cli.lani#L6) | 71 | Source inventory | [stdlib-cli](../stdlib-cli.md) |
 | [std::clock](std/clock.md) | [source](../../stdlib/std/clock.lani#L2) | 21 | Source inventory | [stdlib-time](../stdlib-time.md) |
 | [std::command](std/command.md) | [source](../../stdlib/std/command.lani#L3) | 150 | Source inventory | [stdlib-command](../stdlib-command.md), [stdlib-command-groups](../stdlib-command-groups.md), [stdlib-run-group](../stdlib-run-group.md), [stdlib-host-clocks](../stdlib-host-clocks.md), [stdlib-child-usage](../stdlib-child-usage.md) |
@@ -179,8 +179,9 @@ Inventory: **352 modules**, **18594 declaration/member entries**. Counts include
 | [std::linux](std/linux.md) | [source](../../stdlib/std/linux.lani#L4) | 15 | Source inventory | [stdlib-linux](../stdlib-linux.md) |
 | [std::net](std/net.md) | [source](../../stdlib/std/net.lani#L5) | 85 | Unbound host declarations | [library-remaining-api-audit](../library-remaining-api-audit.md), [library-host-prerequisites](../library-host-prerequisites.md) |
 | [std::par](std/par.md) | [source](../../stdlib/std/par.lani#L11) | 34 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
-| [std::parallel](std/parallel.md) | [source](../../stdlib/std/parallel.lani#L10) | 29 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
+| [std::parallel](std/parallel.md) | [source](../../stdlib/std/parallel.lani#L10) | 30 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
 | [std::poll](std/poll.md) | [source](../../stdlib/std/poll.lani#L4) | 45 | Source inventory | [stdlib-poll](../stdlib-poll.md) |
+| [std::pool](std/pool.md) | [source](../../stdlib/std/pool.lani#L23) | 28 | Source inventory | [stdlib-threads](../stdlib-threads.md) |
 | [std::process](std/process.md) | [source](../../stdlib/std/process.lani#L3) | 66 | Source inventory | [stdlib-process-context](../stdlib-process-context.md) |
 | [std::pthread](std/pthread.md) | [source](../../stdlib/std/pthread.lani#L15) | 19 | Source inventory | [stdlib-threads](../stdlib-threads.md) |
 | [std::random](std/random.md) | [source](../../stdlib/std/random.lani#L3) | 43 | Source inventory | [stdlib-randomness](../stdlib-randomness.md) |
@@ -194,7 +195,7 @@ Inventory: **352 modules**, **18594 declaration/member entries**. Counts include
 | [std::socket](std/socket.md) | [source](../../stdlib/std/socket.lani#L3) | 124 | Source inventory | [stdlib-sockets](../stdlib-sockets.md), [stdlib-unix-streams](../stdlib-unix-streams.md), [stdlib-unix-request](../stdlib-unix-request.md) |
 | [std::steal](std/steal.md) | [source](../../stdlib/std/steal.lani#L9) | 41 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
 | [std::stream](std/stream.md) | [source](../../stdlib/std/stream.lani#L3) | 16 | Source inventory | [stdlib-streams](../stdlib-streams.md) |
-| [std::sync](std/sync.md) | [source](../../stdlib/std/sync.lani#L7) | 103 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
+| [std::sync](std/sync.md) | [source](../../stdlib/std/sync.lani#L7) | 108 | Source inventory | [stdlib-concurrency](../stdlib-concurrency.md) |
 | [std::temp_dir](std/temp_dir.md) | [source](../../stdlib/std/temp_dir.lani#L3) | 88 | Source inventory | [stdlib-temp-directories](../stdlib-temp-directories.md), [stdlib-mktemp-dir](../stdlib-mktemp-dir.md) |
 | [std::temp_file](std/temp_file.md) | [source](../../stdlib/std/temp_file.lani#L4) | 90 | Source inventory | [stdlib-temp-files](../stdlib-temp-files.md), [stdlib-file-operations](../stdlib-file-operations.md) |
 | [std::thread](std/thread.md) | [source](../../stdlib/std/thread.lani#L5) | 47 | Unbound host declarations | [library-remaining-api-audit](../library-remaining-api-audit.md), [library-host-prerequisites](../library-host-prerequisites.md) |

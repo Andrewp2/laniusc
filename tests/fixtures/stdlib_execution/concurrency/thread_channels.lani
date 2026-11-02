@@ -12,6 +12,13 @@
 //                   each producer's values in send order
 //   mpsc.unbounded  100,000 sends with no receiver running, then a full drain
 //   mpsc.*          timeout, Disconnected and receiver close
+//   drain.*         drain takes what is queued without blocking and wakes a
+//                   sender blocked on the full ring
+//   select.*        select over two channels: order, Empty, TimedOut, a
+//                   sleeping select woken by a late send, one side closed
+//                   while the other runs, Ring + Mpsc fan-in with every
+//                   value once, and 2 selecting consumers sharing a ring with
+//                   a plain receiver (no lost wake)
 // Build: laniusc --native-link --native-library atomic --stdlib-root stdlib
 module app::main;
 import core::mem;
@@ -256,6 +263,228 @@ fn mpsc_checks(score: &Score, region: &std::sync::Region) {
     shut.destroy();
 }
 
+fn pause_ms(milliseconds: i64) {
+    let idle: std::channel::Ring<i64> = std::channel::ring<i64>(2, 1, 1).unwrap();
+    idle.recv_timeout_ms(milliseconds);
+    idle.destroy();
+}
+// 0 First, 1 Second, then 10 + recv_kind of the error.
+fn select_kind(r: core::result::Result<std::channel::Selected<i64, Item>, std::channel::RecvError>) -> i64 {
+    if (r.is_ok()) { return match (r.unwrap()) { std::channel::Selected::First(v) -> 0, std::channel::Selected::Second(item) -> 1 }; }
+    return match (r.unwrap_err()) { std::channel::RecvError::Empty -> 11, std::channel::RecvError::Disconnected -> 12,
+        std::channel::RecvError::TimedOut -> 13, std::channel::RecvError::Sync(e) -> 14 };
+}
+fn first_value(r: core::result::Result<std::channel::Selected<i64, Item>, std::channel::RecvError>) -> i64 {
+    if (r.is_err()) { return -1; }
+    return match (r.unwrap()) { std::channel::Selected::First(v) -> v, std::channel::Selected::Second(item) -> -2 };
+}
+fn second_key(r: core::result::Result<std::channel::Selected<i64, Item>, std::channel::RecvError>) -> i64 {
+    if (r.is_err()) { return -1; }
+    return match (r.unwrap()) { std::channel::Selected::First(v) -> -2, std::channel::Selected::Second(item) -> item.key };
+}
+fn select_pair(ring: &std::channel::Ring<i64>, queue: &std::channel::Mpsc<Item>) -> core::result::Result<std::channel::Selected<i64, Item>, std::channel::RecvError> {
+    return std::channel::select<i64, Item, std::channel::Ring<i64>, std::channel::Mpsc<Item>>(ring, queue);
+}
+
+// Task words: 0 handle, 1 count, 2 delay ms.
+fn late_item(task: ptr) -> ptr {
+    let queue: std::channel::Mpsc<Item> = std::channel::mpsc_at<Item>(get_ptr(task, 0));
+    pause_ms(get(task, 2));
+    queue.send(Item { key: 4242, tag: 1 }).unwrap();
+    return task;
+}
+fn item_producer(task: ptr) -> ptr {
+    let queue: std::channel::Mpsc<Item> = std::channel::mpsc_at<Item>(get_ptr(task, 0));
+    let i: i64 = 0;
+    while (i < get(task, 1)) { queue.send(Item { key: i, tag: (i % 7) as i32 }).unwrap(); i += 1; }
+    queue.close_sender().unwrap();
+    return task;
+}
+fn value_producer(task: ptr) -> ptr {
+    let ring: std::channel::Ring<i64> = std::channel::ring_at<i64>(get_ptr(task, 0));
+    let i: i64 = 0;
+    while (i < get(task, 1)) { ring.send(i).unwrap(); i += 1; }
+    ring.close_sender().unwrap();
+    return task;
+}
+fn blocked_sender(task: ptr) -> ptr {
+    let ring: std::channel::Ring<i64> = std::channel::ring_at<i64>(get_ptr(task, 0));
+    ring.send(99).unwrap();
+    set(task, 1, 1);
+    return task;
+}
+// Task words: 0 ring X, 1 ring Y, 2 count, 3 sum, 4 mode (0 select, 1 recv X).
+fn shared_consumer(task: ptr) -> ptr {
+    let x: std::channel::Ring<i64> = std::channel::ring_at<i64>(get_ptr(task, 0));
+    let y: std::channel::Ring<i64> = std::channel::ring_at<i64>(get_ptr(task, 1));
+    if (get(task, 4) == 1) {
+        while (true) {
+            let got: core::result::Result<i64, std::channel::RecvError> = x.recv();
+            if (got.is_err()) { break; }
+            set(task, 2, get(task, 2) + 1); set(task, 3, get(task, 3) + got.unwrap());
+        }
+        x.close_receiver().unwrap();
+        return task;
+    }
+    while (true) {
+        let got: core::result::Result<std::channel::Selected<i64, i64>, std::channel::RecvError> =
+            std::channel::select<i64, i64, std::channel::Ring<i64>, std::channel::Ring<i64>>(x.borrow(), y.borrow());
+        if (got.is_err()) { break; }
+        let v: i64 = match (got.unwrap()) { std::channel::Selected::First(a) -> a, std::channel::Selected::Second(b) -> b };
+        set(task, 2, get(task, 2) + 1); set(task, 3, get(task, 3) + v);
+    }
+    x.close_receiver().unwrap(); y.close_receiver().unwrap();
+    return task;
+}
+fn spread_producer(task: ptr) -> ptr {
+    let ring: std::channel::Ring<i64> = std::channel::ring_at<i64>(get_ptr(task, 0));
+    let i: i64 = 0;
+    while (i < get(task, 1)) {
+        ring.send(i).unwrap();
+        // Bursts with pauses, so consumers sleep and wake many times.
+        if (i % 2000 == 1999) { pause_ms(1); }
+        i += 1;
+    }
+    ring.close_sender().unwrap();
+    return task;
+}
+
+fn drain_checks(score: &Score, region: &std::sync::Region) {
+    let ring: std::channel::Ring<i64> = std::channel::ring<i64>(8, 1, 1).unwrap();
+    let i: i64 = 0;
+    while (i < 8) { ring.send(i * 3).unwrap(); i += 1; }
+    let task: ptr = region.allocate(64).unwrap();
+    set_ptr(task, 0, ring.handle()); set(task, 1, 0);
+    let thread: std::pthread::Thread = std::pthread::spawn(blocked_sender, task).unwrap();
+    pause_ms(20);
+    report(score, "drain.sender_blocked", get(task, 1), 0);
+    let out: [i64; 5] = [0; 5];
+    let first: i32 = ring.drain(out, 5);
+    report(score, "drain.first", first as i64, 5);
+    report(score, "drain.first_order", flag(out[0] == 0 && out[4] == 12), 1);
+    thread.join();
+    report(score, "drain.sender_woken", get(task, 1), 1);
+    let second: i32 = ring.drain(out, 5);
+    report(score, "drain.second", second as i64, 4);
+    report(score, "drain.second_order", flag(out[0] == 15 && out[2] == 21 && out[3] == 99), 1);
+    report(score, "drain.empty", ring.drain(out, 5) as i64, 0);
+    ring.destroy();
+
+    let queue: std::channel::Mpsc<i64> = std::channel::mpsc<i64>(1).unwrap();
+    i = 0;
+    while (i < 7) { queue.send(i).unwrap(); i += 1; }
+    queue.close_sender().unwrap();
+    let a: i32 = queue.drain(out, 5);
+    let b: i32 = queue.drain(out, 5);
+    report(score, "drain.mpsc", (a * 10 + b) as i64, 52);
+    report(score, "drain.mpsc_then_disconnected", recv_kind(queue.try_recv()), 2);
+    queue.destroy();
+}
+
+fn select_checks(score: &Score, region: &std::sync::Region) {
+    let ring: std::channel::Ring<i64> = std::channel::ring<i64>(64, 1, 1).unwrap();
+    let queue: std::channel::Mpsc<Item> = std::channel::mpsc<Item>(1).unwrap();
+    let r: &std::channel::Ring<i64> = ring.borrow();
+    let q: &std::channel::Mpsc<Item> = queue.borrow();
+    report(score, "select.empty", select_kind(std::channel::try_select<i64, Item, std::channel::Ring<i64>, std::channel::Mpsc<Item>>(r, q)), 11);
+    queue.send(Item { key: 5, tag: 0 }).unwrap();
+    report(score, "select.second", second_key(select_pair(r, q)), 5);
+    ring.send(8).unwrap(); queue.send(Item { key: 6, tag: 0 }).unwrap();
+    report(score, "select.first_wins", first_value(select_pair(r, q)), 8);
+    report(score, "select.then_second", second_key(select_pair(r, q)), 6);
+    let start: i64 = now_ms();
+    report(score, "select.timeout", select_kind(std::channel::select_timeout_ms<i64, Item, std::channel::Ring<i64>, std::channel::Mpsc<Item>>(r, q, 30)), 13);
+    report(score, "select.timeout_waited", flag(now_ms() - start >= 29), 1);
+
+    // A select asleep on both epochs, woken by a send 40 ms later.
+    let task: ptr = region.allocate(64).unwrap();
+    set_ptr(task, 0, queue.handle()); set(task, 2, 40);
+    start = now_ms();
+    let late: std::pthread::Thread = std::pthread::spawn(late_item, task).unwrap();
+    report(score, "select.woken", second_key(select_pair(r, q)), 4242);
+    report(score, "select.woken_waited", flag(now_ms() - start >= 39), 1);
+    late.join();
+
+    // One side closes while the other still runs; then both are closed.
+    queue.send(Item { key: 1, tag: 0 }).unwrap();
+    queue.close_sender().unwrap();
+    ring.send(2).unwrap();
+    // Both ready: the first channel wins, then the closed side still drains.
+    report(score, "select.open_side", first_value(select_pair(r, q)), 2);
+    report(score, "select.closed_side_drains", second_key(select_pair(r, q)), 1);
+    ring.send(3).unwrap();
+    report(score, "select.after_one_closed", first_value(select_pair(r, q)), 3);
+    report(score, "select.one_closed_timeout", select_kind(std::channel::select_timeout_ms<i64, Item, std::channel::Ring<i64>, std::channel::Mpsc<Item>>(r, q, 10)), 13);
+    ring.send(4).unwrap();
+    ring.close_sender().unwrap();
+    report(score, "select.both_closed_drains", first_value(select_pair(r, q)), 4);
+    report(score, "select.disconnected", select_kind(select_pair(r, q)), 12);
+    ring.destroy(); queue.destroy();
+
+    // Fan-in from a Ring producer and an Mpsc producer.
+    let values: std::channel::Ring<i64> = std::channel::ring<i64>(64, 1, 1).unwrap();
+    let items: std::channel::Mpsc<Item> = std::channel::mpsc<Item>(1).unwrap();
+    let tasks: ptr = region.allocate(128).unwrap();
+    set_ptr(tasks, 0, values.handle()); set(tasks, 1, ITEMS);
+    set_ptr(tasks + 64, 0, items.handle()); set(tasks + 64, 1, ITEMS);
+    let one: std::pthread::Thread = std::pthread::spawn(value_producer, tasks).unwrap();
+    let two: std::pthread::Thread = std::pthread::spawn(item_producer, tasks + 64).unwrap();
+    let firsts: i64 = 0; let seconds: i64 = 0; let sum: i64 = 0; let order: i64 = 0;
+    let next_value: i64 = 0; let next_key: i64 = 0;
+    while (true) {
+        let got: core::result::Result<std::channel::Selected<i64, Item>, std::channel::RecvError> = select_pair(values.borrow(), items.borrow());
+        if (got.is_err()) { break; }
+        let picked: std::channel::Selected<i64, Item> = got.unwrap();
+        let is_first: bool = match (picked) { std::channel::Selected::First(v) -> true, _ -> false };
+        if (is_first) {
+            let v: i64 = match (picked) { std::channel::Selected::First(a) -> a, _ -> -1 };
+            if (v != next_value) { order += 1; }
+            next_value = v + 1; firsts += 1; sum += v;
+        } else {
+            let item: Item = match (picked) { std::channel::Selected::Second(b) -> b, _ -> Item { key: -1, tag: -1 } };
+            if (item.key != next_key || item.tag != (item.key % 7) as i32) { order += 1; }
+            next_key = item.key + 1; seconds += 1; sum += item.key;
+        }
+    }
+    one.join(); two.join();
+    report(score, "select.fanin.first", firsts, ITEMS);
+    report(score, "select.fanin.second", seconds, ITEMS);
+    report(score, "select.fanin.sum_ok", flag(sum == ITEMS * (ITEMS - 1)), 1);
+    report(score, "select.fanin.order_failures", order, 0);
+    values.destroy(); items.destroy();
+
+    // Two selecting consumers over X and Y, and a plain receiver on X.
+    let x: std::channel::Ring<i64> = std::channel::ring<i64>(16, 2, 3).unwrap();
+    let y: std::channel::Ring<i64> = std::channel::ring<i64>(16, 2, 2).unwrap();
+    let crew: ptr = region.allocate(7 * 64).unwrap();
+    let ids: ptr = region.allocate(7 * 8).unwrap();
+    let t: i32 = 0;
+    while (t < 7) {
+        let at: ptr = crew + (t as usize) * 64;
+        let w: i32 = 0; while (w < 8) { set(at, w, 0); w += 1; }
+        let entry: ptr = shared_consumer;
+        if (t < 4) {
+            entry = spread_producer;
+            if (t < 2) { set_ptr(at, 0, x.handle()); } else { set_ptr(at, 0, y.handle()); }
+            set(at, 1, ITEMS / 2);
+        } else {
+            set_ptr(at, 0, x.handle()); set_ptr(at, 1, y.handle());
+            if (t == 6) { set(at, 4, 1); }
+        }
+        let thread: std::pthread::Thread = std::pthread::spawn(entry, at).unwrap();
+        set(ids, t, thread.id() as i64);
+        t += 1;
+    }
+    t = 0;
+    while (t < 7) { std::pthread::join_id(get(ids, t) as u64).unwrap(); t += 1; }
+    let count: i64 = 0; let total: i64 = 0;
+    t = 4;
+    while (t < 7) { count += get(crew + (t as usize) * 64, 2); total += get(crew + (t as usize) * 64, 3); t += 1; }
+    report(score, "select.shared.count", count, ITEMS * 2);
+    report(score, "select.shared.sum_ok", flag(total == 4 * ((ITEMS / 2) * (ITEMS / 2 - 1) / 2)), 1);
+    x.destroy(); y.destroy();
+}
+
 fn main() -> i32 {
     let score: Score = Score { failed: 0 };
     let region: std::sync::Region = std::sync::map_shared(1048576).unwrap();
@@ -263,6 +492,8 @@ fn main() -> i32 {
     ring_mpmc(score.borrow(), region.borrow());
     ring_records(score.borrow(), region.borrow());
     mpsc_checks(score.borrow(), region.borrow());
+    drain_checks(score.borrow(), region.borrow());
+    select_checks(score.borrow(), region.borrow());
     if (score.failed != 0) { return 1; }
     return 0;
 }

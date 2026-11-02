@@ -4,6 +4,9 @@
 //   pool.*     10,000 tasks through a 4-worker Pool: every task runs once
 //              (completed, the run() total and an atomic side counter), a
 //              second batch after wait(), then shutdown
+//   pool.try_* try_submit refuses a full queue; wait_timeout_ms times out
+//              while a task is still running, then succeeds
+//   pool.replies 1,000 tasks send results back through an Mpsc
 //   map.*      x -> 3x + 1 over 1,000,003 i64 equals the serial map
 //   reduce.*   a sum, and an order-sensitive polynomial hash (associative,
 //              not commutative), equal the serial folds
@@ -16,9 +19,11 @@ import core::iter;
 import core::mem;
 import core::result;
 import std::atomic;
+import std::channel;
 import std::io;
 import std::parallel;
 import std::pool;
+import std::pthread;
 import std::sync;
 
 const N: i32 = 1000003;
@@ -74,6 +79,26 @@ pub impl std::pool::Task for Job {
     }
 }
 
+// Blocks its worker until the word at `gate` is nonzero.
+struct Hold { gate: ptr }
+fn hold_worker(arg: ptr) -> ptr { return std::pool::serve<Hold>(arg); }
+pub impl std::pool::Task for Hold {
+    pub fn run(&self) -> i64 {
+        while (std::atomic::at64(self.gate).load(std::atomic::Load::Acquire) == 0) { std::pthread::yield_now(); }
+        return 1;
+    }
+}
+// Sends key * key to the Mpsc at `replies`.
+struct Square { replies: ptr, key: i64 }
+fn square_worker(arg: ptr) -> ptr { return std::pool::serve<Square>(arg); }
+pub impl std::pool::Task for Square {
+    pub fn run(&self) -> i64 {
+        let back: std::channel::Mpsc<i64> = std::channel::mpsc_at<i64>(self.replies);
+        back.send(self.key * self.key).unwrap();
+        return 0;
+    }
+}
+
 // Scoped task words: 0 data, 1 lo, 2 hi, 3 result (8 words per task).
 fn range_sum(task: ptr) -> ptr {
     let data: [i64] = core::mem::typed_slice_from_storage<i64>(get_ptr(task, 0), N);
@@ -123,6 +148,35 @@ fn main() -> i32 {
     report(score.borrow(), "pool.second_batch", pool.completed(), TASKS + 1000);
     report(score.borrow(), "pool.counter_after_ok", flag(get(counter, 0) == want_counter + 1000), 1);
     pool.shutdown();
+
+    // try_submit and wait_timeout_ms: one worker held on a gate, queue of 2.
+    let gate: ptr = region.allocate(64).unwrap();
+    set(gate, 0, 0);
+    let held: std::pool::Pool<Hold> = std::pool::pool<Hold>(1, 2, hold_worker).unwrap();
+    let accepted: i64 = 0; k = 0;
+    while (k < 6) { if (held.try_submit(Hold { gate: gate }).unwrap()) { accepted += 1; } k += 1; }
+    // The worker takes at most one task off the queue, so 2 or 3 fit.
+    report(score.borrow(), "pool.try_refused", flag(accepted >= 2 && accepted <= 3), 1);
+    report(score.borrow(), "pool.try_submitted", flag(held.submitted() == accepted), 1);
+    report(score.borrow(), "pool.wait_timeout", flag(!held.wait_timeout_ms(20).unwrap()), 1);
+    std::atomic::at64(gate).store(1, std::atomic::Store::Release);
+    report(score.borrow(), "pool.wait_done", flag(held.wait_timeout_ms(10000).unwrap()), 1);
+    report(score.borrow(), "pool.try_completed", flag(held.completed() == accepted), 1);
+    held.shutdown();
+
+    // Results back through an Mpsc.
+    let replies: std::channel::Mpsc<i64> = std::channel::mpsc<i64>(1).unwrap();
+    let squares: std::pool::Pool<Square> = std::pool::pool<Square>(4, 64, square_worker).unwrap();
+    k = 0;
+    while (k < 1000) { squares.submit(Square { replies: replies.handle(), key: k }).unwrap(); k += 1; }
+    let got: i64 = 0; let square_sum: i64 = 0;
+    while (got < 1000) { square_sum += replies.recv().unwrap(); got += 1; }
+    squares.wait().unwrap();
+    report(score.borrow(), "pool.replies", got, 1000);
+    report(score.borrow(), "pool.replies_sum_ok", flag(square_sum == 332833500), 1);
+    report(score.borrow(), "pool.replies_extra", flag(replies.try_recv().is_err()), 1);
+    squares.shutdown();
+    replies.destroy();
 
     // map
     report(score.borrow(), "map.chunks_ok", flag(std::pool::map<i64, i64, Affine3>(8, input, output, Affine3 { bias: 1 }, 0, map_affine).unwrap() > 1), 1);

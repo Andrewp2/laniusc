@@ -131,6 +131,113 @@ copies every handle, so the counts are what carry ownership:
 
 A channel with no registered sender reports `Disconnected` at once.
 
+## Thread channels: Ring, Mpsc and select
+
+`Channel<T>` above serves forked workers. The threads of one process
+([`std::pthread`](stdlib-threads.md)) have two faster channels, which use
+process-private futexes and so must not cross a fork:
+
+| Channel | Shape | Blocking |
+| --- | --- | --- |
+| `ring<T>(capacity, senders, receivers)` | Bounded multi-producer multi-consumer; a power-of-two ring of 2 to 1,048,576 slots with a sequence word per slot (Vyukov's bounded queue) | `send` waits while full, `recv` while empty |
+| `mpsc<T>(senders)` | Unbounded multi-producer single-consumer; a linked list of heap nodes, one per message, freed by the receiver | `send` never waits; `recv` waits while empty |
+
+Both are one heap control block reached through a `ptr`, so a thread entry
+rebuilds the channel with `ring_at<T>(handle)` or `mpsc_at<T>(handle)`.
+`send`, `recv` and the `try_`, `_until` and `_timeout_ms` forms return the
+same `SendError<T>` and `RecvError` values as `Channel<T>`.
+
+Blocking: an operation retries for `SPINS` (200) attempts, then sleeps on a
+futex epoch word. A waiter adds itself to a waiter count before its last
+recheck, and a successful operation reads that count after publishing, so a
+wake cannot be lost: either the recheck sees the message, or the publisher
+sees the waiter and wakes it.
+
+### Close and drain
+
+Endpoint counts are fixed at creation. Each sender calls `close_sender()`
+once and each receiver `close_receiver()` once; the result is how many of
+that side are still open, and `Err(NoEndpoint)` when none were.
+
+- After the last sender closes, receivers still get every message sent
+  before the close, then `Disconnected`.
+- After the last receiver closes, `send` returns `Disconnected(value)`.
+  Messages already queued stay in the channel until `destroy` frees it.
+- `drain(out, limit)` takes up to `limit` queued messages into
+  `out[0 .. limit)` without blocking, in FIFO order, and returns how many.
+  On a Ring each taken slot wakes a sender blocked on the full ring.
+- `destroy()` frees the channel once every thread using it has been joined.
+
+### Select over two channels
+
+`select<A, B, P, Q>(first, second)` receives from whichever of two thread
+channels has a message. `P` and `Q` are any mix of `Ring` and `Mpsc`
+through the `Receive<T>` trait, and the result is `Selected::First(a)` or
+`Selected::Second(b)`:
+
+```lani
+let got: core::result::Result<std::channel::Selected<i64, Item>, std::channel::RecvError> =
+    std::channel::select<i64, Item, std::channel::Ring<i64>, std::channel::Mpsc<Item>>(ring.borrow(), queue.borrow());
+```
+
+`try_select`, `select_until` and `select_timeout_ms` are the nonblocking
+and deadline forms. Only a receiver of each channel may select on it; for an
+Mpsc that is its one receiver.
+
+- **Sleeping on two words.** Both control blocks keep the receive epoch at
+  the same offset, so a select registers as a waiter on both channels and
+  sleeps in one `futex_waitv` (syscall 449, Linux 5.16+) over both epochs.
+  `std::sync::futex_wait_either_private` and `_until_private` expose it.
+- **Order is fixed.** When both channels are ready, `first` wins. A loop
+  that must not starve `second` can alternate the argument order.
+- **One side closed.** `Disconnected` comes only when both channels are
+  drained and all of their senders have closed. While one side is open,
+  select keeps delivering from it.
+- **No stolen wakes.** A send wakes one waiter. If that waiter is a select
+  that then takes from the other channel, a plain receiver of the first
+  channel could stay asleep with a message waiting. So after a select that
+  slept receives, it passes a wake on to the other channel's waiters (a
+  no-op when there are none).
+
+The [fixture](#thread-channel-checks) checks these cases.
+
+### Thread channel checks
+
+`tests/fixtures/stdlib_execution/concurrency/thread_channels.lani` prints one
+line per check and exits 0 when all pass; five runs passed in about 0.9 s
+each. `tests/stdlib_concurrency_execution.rs` runs it.
+
+| Check | Invariant |
+| --- | --- |
+| `ring.fifo.*`, `ring.timeout.*` | FIFO order, `Full`/`Empty` at the bounds, and timed send and receive that wait at least 29 of 30 ms |
+| `ring.close.*`, `mpsc.close.*` | 8 queued values are delivered after the last sender closes, then `Disconnected`; a send after the receivers close returns its value |
+| `ring.mpmc.*` | 4 producers × 50,000 values through a 64-slot ring to 4 consumers: 200,000 received once each, exact sum, 0 per-producer order violations |
+| `ring.records`, `mpsc.fanin.*`, `mpsc.unbounded` | Two-word records cross intact; 4 producers × 50,000 to one Mpsc receiver in order; 100,000 sends with no receiver running, then a full drain |
+| `drain.*` | A sender blocked on a full 8-slot ring is woken by `drain(out, 5)`; the next drain gets the remaining 3 plus its value; an Mpsc drains 5 then 2 |
+| `select.empty` … `select.woken` | Empty, first-wins order, a 30 ms timeout, and a select asleep on both epochs woken by a send 40 ms later |
+| `select.open_side` … `select.disconnected` | With one side closed the other keeps delivering; the closed side drains; `Disconnected` only after both close |
+| `select.fanin.*` | A Ring producer and an Mpsc producer, 50,000 each, to one selecting receiver: all values once, each stream in order |
+| `select.shared.*` | 4 producers over two 16-slot rings; 2 selecting consumers and 1 plain receiver of the first ring take 100,000 values with exact sum and no hang |
+
+### Thread channel performance
+
+`tests/fixtures/stdlib_execution/concurrency/channel_bench.lani` against
+`channel_bench_ref.c`, a pthread mutex/condvar queue built with `gcc -O2`.
+Times in ms on the laptop (Ryzen 9 5900HX, 8 cores / 16 threads), load
+average 20 to 30, compiled with the [mov-based small copies](stdlib-threads.md#small-copies):
+
+| Test | C mutex/condvar | Ring | Mpsc |
+| --- | ---: | ---: | ---: |
+| fan-in, 1 producer × 1,000,000 | 92 | 309 | 371 |
+| fan-in, 4 producers × 500,000 | 234 | 726 | 491 |
+| ping-pong, 100,000 round trips | 1,639 | 104 | 116 |
+
+Ping-pong is 14x faster than the condvar queue: a hand-off finds its
+partner spinning instead of asleep. Fan-in still trails C because each
+operation costs more in Lanius code (stack temporaries and libatomic calls
+through the PLT), and 4 producers contend on the Ring's tail CAS. Spinning
+less (`SPINS` 0 or 20) made fan-in slower, with more system time.
+
 ## Work-stealing queues
 
 `std::steal::queues<T>(region, workers, capacity)` gives each of up to 1,024
@@ -583,6 +690,7 @@ fixture uses that form.
 - Robust or owner-checked locks, and fairness or starvation bounds.
 - Channel or task payloads that own private memory; payloads are copied by
   value.
+- Select over more than two channels, or over the forked `Channel<T>`.
 - Lock-free deques, and task priorities or affinity.
 - Sharing heap owners, files or sockets between workers. These are private
   snapshots after `spawn`, and closing a descriptor in one worker leaves the
