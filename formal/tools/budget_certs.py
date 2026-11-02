@@ -429,11 +429,25 @@ class Gen:
                     if tyl != 'usize':
                         raise Unsupported(f'division on {tyl}')
                     op = fp.ctor(a[0])[0]
-                    sym = '/' if op == 'divide' else '%'
+                    sym = '/' if op == 'quotient' else '%'
                     return k(f'({paren(tl)} {sym} {paren(tr)} % {POW64})', 'usize', B2)
                 return self.eff(mode, env, a[2], B1, right)
             return self.eff(mode, env, a[1], B, div)
         raise Unsupported(f'effect {c}')
+
+    def lazy_calls(self, e):
+        """Whether a lazy `&&` or `||` in `e` has a right side that is not pure (so that
+        what follows `e` is reached from more than one place)."""
+        c, a = fp.ctor(e)
+        if c == 'eApply' and fp.ctor(a[0])[0] in ('logicalAnd', 'logicalOr') and fp.ctor(a[2])[0] != 'ePure':
+            return True
+        def effs(x):
+            if isinstance(x, tuple) and x and x[0] == 'app' and str(x[1]).startswith('SrcEff.'):
+                return [x]
+            if isinstance(x, tuple) and x and x[0] == 'list':
+                return [y for z in x[1] for y in effs(z)]
+            return []
+        return any(self.lazy_calls(y) for x in a for y in effs(x))
 
     def is_box(self, tok):
         return tok.startswith('#') and self.prog.kind(tok) == 'box'
@@ -473,6 +487,23 @@ class Gen:
             return self.ite(mode, f'{paren(cond)} = true', self.stmt(mode, env, a[1], B, nxt),
                             self.stmt(mode, env, a[2], B, nxt))
         if c == 'ifEval':
+            if self.lazy_calls(a[0]):
+                # A lazy `&&` chain reaches the branches once per operand, at as many
+                # budgets: they are written once, as functions of the budget (one
+                # chain of tests after another made a model of 200 KB).
+                bx = self.fresh()
+                yes, no = self.stmt(mode, env, a[1], bx, nxt), self.stmt(mode, env, a[2], bx, nxt)
+                if yes != no:
+                    ky, kn = f'k{self.fresh()[1:]}', f'k{self.fresh()[1:]}'
+                    if mode == 'cost':
+                        # a cost does not depend on the budget
+                        test = self.eff(mode, env, a[0], B, lambda t, ty, B1: self.ite(
+                            mode, f'{paren(t)} = true', ky, kn))
+                        return f'(let {ky} := {yes}; let {kn} := {no}; {test})'
+                    test = self.eff(mode, env, a[0], B, lambda t, ty, B1: self.ite(
+                        mode, f'{paren(t)} = true', f'({ky} {B1})', f'({kn} {B1})'))
+                    return (f'(let {ky} := fun ({bx} : Nat) => {yes}; let {kn} := fun ({bx} : Nat) => {no}; '
+                            f'{test})')
             return self.eff(mode, env, a[0], B, lambda t, ty, B1: self.ite(
                 mode, f'{paren(t)} = true', self.stmt(mode, env, a[1], B1, nxt), self.stmt(mode, env, a[2], B1, nxt)))
         if c == 'let':
@@ -566,6 +597,33 @@ class Gen:
         if any(d is None for d in ds):
             return None
         return 1 + max(ds, default=0)
+
+    def free(self, i):
+        """A function that reaches neither `boxed`, `plus` nor `times`: its certificate is
+        `bfree`'s, from the kernel's one check of the whole set (`freeCheck`)."""
+        return self.is_fn(i) and i not in self.costly and i not in self.guarded
+
+    def free_mask(self):
+        """The functions `bfree` covers and the prims they call, as the bits of a number."""
+        mask = 0
+        for i in self.wanted:
+            role = self.prog.role(i)
+            if self.special(i) or i in self.costly or i in self.guarded:
+                continue
+            if role in ('fn', 'field', 'panic', 'prim'):
+                mask |= 1 << i
+        return mask
+
+    def free_link(self, i):
+        K = self.key[i]
+        k = len(self.prog.sigs[i]['params'])
+        ref = self.bstmt_ref(i, 'progW', 'prog', str(i), 'n')
+        rs = ''.join(f' r{j}' for j in range(k))
+        return (f'theorem bcert_{K} {{n : Nat}} :\n    {ref} := by\n'
+                f'  {self.intro(i)}{rs}\n'
+                f'  have key := bfree (ix := {i}) (by decide +kernel) h\n'
+                f'  exact ⟨key.1, key.2, (show Certified (∀ {{n : Nat}}, Stmt_{K} prog prims {i} n) from ⟨@cert_{K}⟩).out\n'
+                f'    (pcall_of_q key.1){rs}⟩\n')
 
     def closed(self, i):
         """A function without arguments that reaches neither `plus` nor `times` and no
@@ -705,6 +763,8 @@ class Gen:
         if self.special(comp[0]) or self.prog.role(comp[0]) == 'prim':
             return ''
         ref = lambda i, n: self.bstmt_ref(i, 'progW', 'prog', str(i), n)  # noqa: E731
+        if self.free(comp[0]):
+            return '\n'.join(self.free_link(i) for i in comp)
         if not self.recursive(comp) and self.closed(comp[0]):
             return self.closed_link(comp[0])
         if not self.recursive(comp):
@@ -744,7 +804,7 @@ class Gen:
         def mod(name):
             return f'Lanius.Faithful.GenB.{name}'
 
-        def chain(base, parts, first_imports, doc, extra_open=''):
+        def chain(base, parts, first_imports, doc, extra_open='', extra_head=''):
             """`parts` in modules of about CHUNK characters, each importing the one before."""
             chunks, cur = [], []
             for t in parts:
@@ -758,16 +818,19 @@ class Gen:
                 imports = first_imports if k == 0 else [mod(names[k - 1])]
                 texts[names[k]] = (''.join(f'import {m}\n' for m in imports) +
                                    f'\n/-! Generated by formal/tools/budget_certs.py: {doc} (part {k}). Do not edit. -/\n\n' +
-                                   head + opens + extra_open + '\n'.join(chunk) + f'\nend {NS}\n')
+                                   head + extra_head + opens + extra_open + '\n'.join(chunk) + f'\nend {NS}\n')
             return names
 
         model_names = chain('SelfBModel', [f'noncomputable section\n\n{m}\nend\n' for m in models],
                             ['Lanius.Faithful.Gen.SelfCert', 'Lanius.Faithful.Budget'],
-                            'the cost models and preconditions of the self program\'s functions')
+                            'the cost models and preconditions of the self program\'s functions',
+                            # Elaborated in order: the asynchronous elaboration of these
+                            # definitions took one part 70 s instead of 10 s (11-02).
+                            extra_head='set_option Elab.async false\n\n')
         stmt_names = chain('SelfBStmt', [self.bstmt(i) for i in fns], [mod(model_names[-1])],
                            'the budget certificates\' statements')
         # The proofs need only the statements, so their modules build side by side.
-        proofs = [self.proof(i) for i in fns if not self.closed(i)]
+        proofs = [self.proof(i) for i in fns if not self.closed(i) and not self.free(i)]
         proof_names, cur, k = [], [], 0
         for t in proofs + [None]:
             if t is None or (cur and sum(map(len, cur)) + len(t) > PROOF_CHUNK):
@@ -781,8 +844,23 @@ class Gen:
                 cur, k = [], k + 1
             if t is not None:
                 cur.append(t)
+        texts['SelfBFree'] = (
+            'import Lanius.Faithful.BudgetFree\n\n'
+            '/-! Generated by formal/tools/budget_certs.py: the functions that reach neither `boxed`,\n'
+            '`plus` nor `times`, and the prims they call, as the bits of `freeMask`, and the kernel\'s\n'
+            'check that they call only each other (`freeCheck`). Do not edit. -/\n\n'
+            f'namespace {NS}\n\nopen Lanius.Mini\nopen Lanius.Core (Value)\nopen Lanius.Faithful\n'
+            'open Lanius.Faithful.Budget\nopen Lanius.Faithful.SelfPanics\n\n'
+            f'def freeMask : Nat := 0x{self.free_mask():x}\n\n'
+            'theorem freeMask_check : freeCheck freeMask SelfPure.prims okW 0 Self.prog.funcs = true := by\n'
+            '  decide +kernel\n\n'
+            'theorem bfree {ix n : Nat} {vs : List Value} {w : Value} {k : Nat} (bit : freeMask.testBit ix = true)\n'
+            '    (h : qcall progW SelfPure.prims uc n ix vs = some (w, k)) :\n'
+            '    qcall Self.prog SelfPure.prims uc n ix vs = some (w, k) ∧ 0 = k :=\n'
+            '  bfree_of freeMask_check bit h\n\n'
+            f'end {NS}\n')
         links = [t for t in (self.link(comp) for comp in self.order) if t]
-        cert_names = chain('SelfBCert', links, [mod(n) for n in proof_names] + ['Lanius.Faithful.BudgetClosed'],
+        cert_names = chain('SelfBCert', links, [mod(n) for n in proof_names] + ['Lanius.Faithful.BudgetClosed', mod('SelfBFree')],
                            'the budget certificates at `progW` and `prog`', 'open Lanius.Faithful.SelfPanics\n\n')
         texts['SelfBudget'] = (f'import {mod(cert_names[-1])}\n\n'
                                '/-! Generated by formal/tools/budget_certs.py: every budget certificate. Do not edit. -/\n')
