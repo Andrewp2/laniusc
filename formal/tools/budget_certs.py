@@ -45,7 +45,12 @@ is its own function there, as in the source), each value the Lean term
   Cost_F (n + 1) x  the sum along the path the arguments take of the costs
               `Cost_G n y` of the calls of functions that can reach `boxed`
               and 1 per `boxed` call (the cost semantics counts nothing
-              else); `Cost_F 0 x = 0`;
+              else); `Cost_F 0 x = 2 ^ 64` (written as its numeral, which
+              Lean does not unfold), so that a model whose fuel runs
+              out costs more than any budget (11-02: what follows such a
+              call in `Pre_F` is then vacuous, and a result's size is at
+              most its arguments' and its cost wherever the cost is under
+              `2 ^ 64`);
   Pre_F (n + 1) x b  along the same path, at each call of a function `G`
               with a precondition, `Pre_G n y B`, `B` the budget left: `b`
               less the costs before the call in `F`'s body. After a call
@@ -567,7 +572,7 @@ class Gen:
     def model_defs(self, comp):
         """`Cost_F` and `Pre_F` of a recursive group (or one function)."""
         out = []
-        for mode, have, name, ty, zero in [('cost', self.costly, 'Cost', 'Nat', '0'),
+        for mode, have, name, ty, zero in [('cost', self.costly, 'Cost', 'Nat', '18446744073709551616'),
                                            ('pre', self.guarded, 'Pre', 'Prop', 'True')]:
             fns = [i for i in comp if i in have and self.is_fn(i)]
             if not fns:
@@ -722,7 +727,7 @@ class Gen:
         body = [f'  have key : qcall sp prims uc (n + 1) ix_{K} [{vs}] = some (w, k) ∧ {cost} = k := by',
                 f'    rw [qcall_succ np fnW] at h',
                 f'    rw [qcall_succ np fn]',
-                f'    simp only [src_{K}, List.length_cons, List.length_nil, if_true] at h ⊢']
+                f'    simp only [src_{K},{" List.length_cons," if k else ""} List.length_nil, if_true] at h ⊢']
         if self.has_pre(i):
             body.append(f'    rw [Pre_{K}.eq_def] at pre')
             body.append(f'    simp only at pre')

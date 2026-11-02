@@ -2103,6 +2103,27 @@ and extending the certificates to every function that `front_end_words`,
   `stmt_of`) about alone. A module takes 15-20 s alone (`SelfBProof3`:
   16 s on 11-02, with other agents loading the machine).
 
+Decided 11-02 (F14, proving the roots' preconditions): a cost model whose
+fuel runs out costs `2 ^ 64`, not 0 (`Cost_F 0 x = 18446744073709551616`,
+the numeral, since Lean unfolds `2 ^ 64` one step at a time).
+- Why: `Pre_F n` follows a call of `G` with its cost at fuel `n`. Where a
+  list is bounded only by the blocks that built it (the monomorphizer's
+  instances, the compiler's code), the bound a later `plus` needs is "`G`'s
+  result is at most its arguments and `Cost_G n y`". With `Cost_G 0 = 0`
+  that fails wherever fuel `n` is too small for `G`: the Lean value is
+  whole and the cost cut short, so `Pre_F N` need not follow from Lean
+  facts at all. With `2 ^ 64`, a cut-short cost is above any budget, so
+  what follows the call in `Pre_F` is vacuous, and the bound only has to
+  hold where `Cost_G n y < 2 ^ 64`.
+- The certificates do not change: a run at fuel 0 has no value, so they
+  never use `Cost_F 0`. `bfree`'s functions have no cost model (their cost
+  is 0 at every fuel), and `bclosed` evaluates its model at the fuel `D`
+  the run needs, where no model is at fuel 0; both still hold as they were.
+- Proofs about the preconditions should not `match` on a fuel while a
+  hypothesis mentions a cost at it (Lean then reduces `Cost_G 0 ..` with
+  the numeral and runs out of recursion depth): the guards' hypotheses are
+  cleared first (`SelfPre/Validate.lean`).
+
 ## One-word scalar views (decided 11-01, F11b)
 
 The other one-word scalars the stdlib oracle passes as slices, `u32`,
