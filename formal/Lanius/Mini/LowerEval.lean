@@ -1827,6 +1827,56 @@ theorem eval_stride {k slice : Nat} (ok : evalStride sp.decls scope slice slot =
     rw [stride_word_bits (by simpa [NativeLayout.maxWords] using small)]
     rfl
 
+theorem len_inv {P : Core.Program} {k : Nat} {st : State} {slice : Nat}
+    {w : Value} {v : Value} {st1 : State}
+    (base : evalExpr (k + 1) P st (.local slice) = .done w st)
+    (run : evalExpr (k + 2) P st (.intrinsic .sliceLength (.local slice)) = .done v st1) :
+    st1 = st ∧ ∃ length, Semantics.sliceLength? w = some length ∧ v = .unsigned .usize length := by
+  simp only [evalExpr] at run base
+  rw [base] at run
+  simp only at run
+  split at run
+  · rename_i length found
+    simp only [Semantics.Outcome.done.injEq] at run
+    obtain ⟨rfl, rfl⟩ := run
+    exact ⟨rfl, length, found, rfl⟩
+  · simp at run
+
+/-- `slice_len(slice)` of a slice local: the length in the slot after its
+pointer, a raw slice's and a borrowed slice's alike, copied to `slot` as a
+`usize`. -/
+theorem eval_len {k slice : Nat} (ok : evalLen scope slice slot = some ev)
+    (corr : Corr places scope frame st env) (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp)
+    (fc : FrameCorr bud places st hp)
+    (run : evalExpr (k + 2) sp.toCore st (.intrinsic .sliceLength (.local slice)) = .done v st') :
+    Evaluates bud places mp hp slot st env ev v st' := by
+  simp only [evalLen] at ok
+  split at ok
+  · simp at ok
+  rename_i b found
+  simp only [evalLenOf] at ok
+  split at ok
+  · simp at ok
+  rename_i element elementOk
+  simp only [Option.some.injEq] at ok
+  subst ok
+  obtain ⟨w, localRun, holdsW⟩ := corr.local found k sp.toCore
+  rw [eq_of_elementOf elementOk] at holdsW
+  obtain ⟨rfl, length, lengthOk, rfl⟩ := len_inv localRun run
+  have word : (env (b.slot + 1)).toNat = length := by
+    cases holdsW with
+    | slice read _ =>
+      simp only [Semantics.sliceLength?, Option.some.injEq] at lengthOk
+      omega
+    | borrowed _ _ _ _ _ _ read _ =>
+      simp only [Semantics.sliceLength?, Option.some.injEq] at lengthOk
+      omega
+  have holds : (SrcType.uint .usize).Holds (.unsigned .usize length) ((Expr.var (b.slot + 1)).eval env) := by
+    simp only [SrcType.Holds, Expr.eval, UintTy.toCore, UintTy.width]
+    exact ⟨by rw [word], (env (b.slot + 1)).isLt⟩
+  exact ⟨fresh, Keeps.refl _ _, rfl, by simp [SrcType.size], 0, _, hp, .assign,
+    fun j below => set_below below, holdsAt_set holds env slot, hc, fc⟩
+
 theorem pickElement_exec {mp : Program} {d : Nat} {hp : Heap} {out : Outcome} {slot base size pos : Nat} {env : Env}
     (at_ : (env slot).toNat = pos)
     (exec : Exec mp d (env.setFrom slot (slotVars (base + pos * size) size)) hp .skip out) :
@@ -4355,6 +4405,11 @@ theorem sound_both {sp : SrcProgram} {mp : Program}
           cases fuel with
           | zero => simp [SrcEff.toCore, evalExpr] at run
           | succ k => exact eval_stride ok corr fresh hc fc run
+        | eLen slice =>
+          simp only [SrcEff.eval] at ok
+          cases fuel with
+          | zero => simp [SrcEff.toCore, evalExpr] at run
+          | succ k => exact eval_len ok corr fresh hc fc run
 
 /-- The simulation, by induction on Core's fuel. -/
 theorem stmt_sound {sp : SrcProgram} {mp : Program}

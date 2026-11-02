@@ -1755,6 +1755,18 @@ surface intrinsic for it yet. Adding `slice_len` to laniusc's intrinsics
 (`shaders/type_checker/calls/intrinsic_result.slang`, `stdlib/core/mem.lani`)
 is a laniusc step, not yet run.
 
+The mini syntax reads it as `SrcEff.eLen x` (`ELen` in `compiler.lani`), for
+a slice local `x`; its meaning is Core's `intrinsic sliceLength (local x)`.
+The lowering (`eval_len`) copies the slot after the slice's pointer, where
+the slice keeps its length, to the result slot: a raw slice is its address
+then its length, and a borrowed slice of a caller's array (`HoldsAt`'s
+`borrowed`) its pointer then its length, so one read covers both. The
+proofs are its cases in the forward simulation (`eval_len`, from
+`len_inv`), in failing runs (`eff_len`: Core does not fail on a slice
+local), in heap growth (and `len_trap_state` in the Faithful layer) and in
+Core typing (`ExprHasType.sliceLength`). The Faithful pure meaning leaves it
+unmodelled, as it does `ELet`.
+
 ## `u16` views (decided 11-01)
 
 Core's raw slices had no `u16` element (`slice_from_raw_parts` of a `u16`

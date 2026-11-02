@@ -1748,6 +1748,8 @@ pub enum SrcEff {
     // let id: ty = value in body, of type rt: Core's match of value with
     // the one arm binding id
     ELet(usize, SrcType, Box<SrcEff>, SrcType, Box<SrcEff>),
+    // slice_len(slice) of a slice local, a usize: the slot after its pointer
+    ELen(usize),
 }
 
 pub enum SrcStmt {
@@ -4248,6 +4250,7 @@ impl SrcEff {
             ArraySlice(element, array) -> single(element),
             EIf(condition, ty, then_value, else_value) -> concat(unbox(condition).types(), concat(unbox(then_value).types(), unbox(else_value).types())),
             ELet(id, ty, value, rt, body) -> cons(ty, concat(unbox(value).types(), unbox(body).types())),
+            ELen(slice) -> empty(),
         };
     }
 }
@@ -5202,6 +5205,22 @@ pub fn eval_stride(decls: SrcDecls, scope: List<Binding>, slice: usize, slot: us
     };
 }
 
+// slice_len(slice) of a slice local: its length, the slot after its
+// pointer, as a usize.
+pub fn eval_len_of(b: Binding, slot: usize) -> core::option::Option<Evaluated> {
+    return match (element_of(b.ty)) {
+        None -> None,
+        Some(element) -> Some(Evaluated { stmt: Assign(slot, Var(plus(b.slot, 1))), ty: Uint(Usize) }),
+    };
+}
+
+pub fn eval_len(scope: List<Binding>, slice: usize, slot: usize) -> core::option::Option<Evaluated> {
+    return match (lookup(scope, slice)) {
+        None -> None,
+        Some(b) -> eval_len_of(b, slot),
+    };
+}
+
 // extract: mutual begin
 impl SrcEff {
     // The code computing this expression into slot, slot + 1, ..., and its type.
@@ -5222,6 +5241,7 @@ impl SrcEff {
             ArraySlice(element, array) -> None,
             EIf(condition, ty, then_value, else_value) -> eval_if(slot, ty, unbox(condition).eval(sigs, decls, scope, slot), unbox(then_value).eval(sigs, decls, scope, slot), unbox(else_value).eval(sigs, decls, scope, slot)),
             ELet(id, ty, value, rt, body) -> eval_let_in(slot, ty, rt, unbox(value).eval(sigs, decls, scope, slot), eval_let_body(sigs, decls, arm_scope(single(id), single(ty), slot, scope), match_dst(slot, ty, rt), unbox(body))),
+            ELen(slice) -> eval_len(scope, slice, slot),
         };
     }
 }

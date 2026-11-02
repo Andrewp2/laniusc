@@ -190,6 +190,7 @@ theorem litEff_eq : ∀ {locals : List LocalTy} {want : Option SrcType} {x x' : 
   | _, _, _, _, .arraySlice => by simp only [litEff]
   | _, _, _, _, .if hc ha hb => by rw [litEff_eq hc, litEff_eq ha, litEff_eq hb]; simp only [litEff]
   | _, _, _, _, .let ha hb => by rw [litEff_eq ha, litEff_eq hb]; simp only [litEff]
+  | _, _, _, _, .len => by simp only [litEff]
 termination_by structural _ _ _ _ h => h
 
 theorem litEffs_eq : ∀ {locals : List LocalTy} {wants : Option (List SrcType)} {xs xs' : List SrcEff},

@@ -588,6 +588,26 @@ theorem stride_trap_state {slice : Nat}
       exact local_trap_state localRun
     all_goals simp at run
 
+theorem len_trap_state {slice : Nat}
+    (run : evalExpr k P st (.intrinsic .sliceLength (.local slice)) = .trapped r st') : st' = st := by
+  cases k with
+  | zero => simp [evalExpr] at run
+  | succ k =>
+    simp only [evalExpr] at run
+    split at run
+    · rename_i localRun
+      have := eval_local_state localRun
+      subst this
+      repeat' split at run
+      all_goals first
+        | (simp only [Semantics.Outcome.trapped.injEq] at run; exact run.2.symm)
+        | simp at run
+    · rename_i localRun
+      simp only [Semantics.Outcome.trapped.injEq] at run
+      rw [← run.2]
+      exact local_trap_state localRun
+    all_goals simp at run
+
 theorem assert_trap_grows {e : Core.Expr}
     (hd : ∀ {j v st2}, j < k → evalExpr j P st e = .done v st2 → Grows st st2)
     (ht : ∀ {j r1 st2}, j < k → evalExpr j P st e = .trapped r1 st2 → Grows st st2)
@@ -953,6 +973,10 @@ theorem eff_trap_step {k : Nat} (ih : GrowsBelow sp (k + 1)) (ihT : GrowsBelowT 
     all_goals obtain rfl : k = j := Nat.succ.inj hj
     · exact subT srun
     · exact (sub srun).trans (letArm_trap_grows iheT armsRun)
+  | eLen slice =>
+    simp only [SrcEff.toCore] at run
+    rw [len_trap_state run]
+    exact Grows.refl _
 
 /-- Every effectful expression Core runs until it traps grows the heap. -/
 theorem eff_trap_grows : ∀ k, GrowsBelow sp k → GrowsBelowT sp k → EffGrowsT sp k

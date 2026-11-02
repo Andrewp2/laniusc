@@ -369,6 +369,8 @@ inductive SrcEff where
   | eIf : SrcEff → SrcType → SrcEff → SrcEff → SrcEff
   /-- let id: ty = value in body, of type rt: Core's match of value with the one arm binding id -/
   | eLet : Nat → SrcType → SrcEff → SrcType → SrcEff → SrcEff
+  /-- slice_len(slice) of a slice local, a usize: the slot after its pointer -/
+  | eLen : Nat → SrcEff
   deriving Repr
 
 inductive SrcStmt where

@@ -62,6 +62,7 @@ def effTyC (tenv : TEnv) : SrcEff → Option SrcType
   | .arraySlice _ _ => none
   | .eIf _ _ _ _ => none
   | .eLet _ _ _ _ _ => none
+  | .eLen _ => none
 
 def effTysC (tenv : TEnv) : List SrcEff → Option (List SrcType)
   | [] => some []
@@ -176,6 +177,7 @@ theorem effTyC_eq (tenv : TEnv) : ∀ e : SrcEff, effTyC (callTy sp outside) box
   | .arraySlice _ _ => by rw [effTyC, effTy]
   | .eIf _ _ _ _ => by rw [effTyC, effTy]
   | .eLet _ _ _ _ _ => by rw [effTyC, effTy]
+  | .eLen _ => by rw [effTyC, effTy]
 
 theorem effTysC_eq (tenv : TEnv) : ∀ es : List SrcEff,
     effTysC (callTy sp outside) boxes tenv es = effTys sp outside boxes tenv es

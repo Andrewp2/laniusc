@@ -105,6 +105,7 @@ def SrcEff.types (self : SrcEff) : List SrcType :=
   | .arraySlice element array => [element]
   | .eIf condition ty thenValue elseValue => SrcEff.types condition ++ (SrcEff.types thenValue ++ SrcEff.types elseValue)
   | .eLet id ty value rt body => ty :: (SrcEff.types value ++ SrcEff.types body)
+  | .eLen slice => []
 def effsTypes (es : List SrcEff) : List SrcType :=
   match es with
   | [] => []

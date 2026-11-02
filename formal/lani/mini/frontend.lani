@@ -237,6 +237,7 @@ pub enum SrcEff {
     ArraySlice(SrcType, usize),
     EIf(Box<SrcEff>, SrcType, Box<SrcEff>, Box<SrcEff>),
     ELet(usize, SrcType, Box<SrcEff>, SrcType, Box<SrcEff>),
+    ELen(usize),
 }
 
 pub enum SrcStmt {
@@ -11990,6 +11991,7 @@ pub fn known_eff(funcs: List<SrcFunc>, locals: List<LocalTy>, x: SrcEff) -> core
         ArraySlice(e, a) -> Some(Slice(boxed(e))),
         EIf(c, t, a, b) -> Some(t),
         ELet(id, t, v, rt, b) -> Some(rt),
+        ELen(s) -> Some(Uint(Usize)),
     };
 }
 
@@ -12011,6 +12013,7 @@ pub fn lit_eff(funcs: List<SrcFunc>, locals: List<LocalTy>, want: core::option::
         ArraySlice(e, a) -> ArraySlice(e, a),
         EIf(c, t, a, b) -> EIf(boxed(lit_eff(funcs, locals, Some(Bool), unbox(c))), t, boxed(lit_eff(funcs, locals, Some(t), unbox(a))), boxed(lit_eff(funcs, locals, Some(t), unbox(b)))),
         ELet(id, t, v, rt, b) -> ELet(id, t, boxed(lit_eff(funcs, locals, Some(t), unbox(v))), rt, boxed(lit_eff(funcs, cons(LocalTy { id: id, ty: t }, locals), Some(rt), unbox(b)))),
+        ELen(s) -> ELen(s),
     };
 }
 
@@ -12140,6 +12143,7 @@ pub fn wide_left_eff(x: SrcEff) -> bool {
         ArraySlice(e, a) -> false,
         EIf(c, t, a, b) -> wide_left_eff(unbox(c)) || wide_left_eff(unbox(a)) || wide_left_eff(unbox(b)),
         ELet(id, t, v, rt, b) -> wide_left_eff(unbox(v)) || wide_left_eff(unbox(b)),
+        ELen(sl) -> false,
     };
 }
 

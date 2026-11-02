@@ -731,6 +731,29 @@ theorem eff_stride {slice : Nat} : EffStops sp mp n (.eStride slice) := by
     · cases h
     · exact absurd within (Nat.not_le.mpr h)
 
+/-- `slice_len(slice)` of a slice local: Core reads the length and does not
+fail. -/
+theorem eff_len {slice : Nat} : EffStops sp mp n (.eLen slice) := by
+  intro bud places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
+  simp only [SrcEff.eval, evalLen] at ok
+  split at ok
+  · simp at ok
+  rename_i b found
+  simp only [evalLenOf] at ok
+  split at ok
+  · simp at ok
+  rename_i element elementOk
+  obtain ⟨w, localRun, holdsW⟩ := corr.local found 0 sp.toCore
+  rw [eq_of_elementOf elementOk] at holdsW
+  have := fails 2
+  simp only [SrcEff.toCore] at this
+  rw [evalExpr.eq_def] at this
+  simp only [localRun] at this
+  cases holdsW with
+  | slice | borrowed =>
+    simp only [Semantics.sliceLength?, Failing] at this
+    exact absurd within (Nat.not_le.mpr this)
+
 theorem eff_apply (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {op : SrcOp}
     {l r : SrcEff} (ihl : EffStops sp mp n l) (ihr : EffStops sp mp n r) : EffStops sp mp n (.eApply op l r) := by
   intro bud places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
@@ -2376,6 +2399,7 @@ theorem effStops_all {sp : SrcProgram} {mp : Program} {n : Nat}
   | .eIf c _ a b => eff_if lowered (effStops_all lowered returns prev c) (effStops_all lowered returns prev a)
       (effStops_all lowered returns prev b)
   | .eLet _ _ a _ b => eff_let lowered (effStops_all lowered returns prev a) (effStops_all lowered returns prev b)
+  | .eLen _ => eff_len
 termination_by e => sizeOf e
 
 /-- Every lowered statement whose Core run fails stops within `n + 1` ticks

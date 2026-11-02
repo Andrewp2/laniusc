@@ -395,6 +395,8 @@ class Checker:
             raise Impure('conditional')
         if c == 'eLet':
             raise Impure('let in an expression')
+        if c == 'eLen':
+            raise Impure('slice length')
         raise ValueError(c)
 
     def stmt(self, ret, tenv, s):
@@ -515,7 +517,7 @@ class LiveChecker:
             self.eff(a[0])
         elif c == 'eCast':
             self.eff(a[1])
-        elif c in ('eIndex', 'eStride', 'arraySlice', 'eIf', 'eLet'):
+        elif c in ('eIndex', 'eStride', 'arraySlice', 'eIf', 'eLet', 'eLen'):
             raise Dead(c)
         elif c == 'eStruct':
             for x in a[1][1]:
@@ -663,7 +665,7 @@ class Declarer:
 
     def eff_types(self, e):
         c, a = ctor(e)
-        if c in ('ePure', 'eStride', 'arraySlice'):
+        if c in ('ePure', 'eStride', 'arraySlice', 'eLen'):
             return []
         if c == 'eIf':
             return self.eff_types(a[0]) + self.eff_types(a[2]) + self.eff_types(a[3])

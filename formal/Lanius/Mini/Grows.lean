@@ -1939,6 +1939,17 @@ theorem eff_grows_step {sp : SrcProgram} {k : Nat} (ih : GrowsBelow sp (k + 1)) 
     · rename_i w next valueRun
       exact (sub valueRun).trans (letArm_grows ihe run)
     all_goals simp at run
+  | eLen slice =>
+    simp only [SrcEff.toCore, evalExpr] at run
+    split at run
+    · rename_i w next localRun
+      have := eval_local_state localRun
+      subst this
+      repeat' split at run
+      all_goals first
+        | (simp only [Semantics.Outcome.done.injEq] at run; rw [← run.2]; exact Grows.refl _)
+        | simp at run
+    all_goals simp at run
 
 /-- Every effectful expression Core completes grows the heap. -/
 theorem eff_grows {sp : SrcProgram} : ∀ k, GrowsBelow sp k → EffGrows sp k

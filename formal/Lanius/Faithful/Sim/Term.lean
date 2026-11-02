@@ -308,6 +308,7 @@ def effCls (A : AEnv) : SrcEff → SizeCls
   | .arraySlice _ _ => .unk
   | .eIf _ _ _ _ => .unk
   | .eLet _ _ _ _ _ => .unk
+  | .eLen _ => .unk
 
 def effsCls (A : AEnv) : List SrcEff → List SizeCls
   | [] => []
@@ -332,6 +333,7 @@ def chkEff (A : AEnv) (W : Wit) : SrcEff → Bool
   | .arraySlice _ _ => true
   | .eIf _ _ _ _ => true
   | .eLet _ _ _ _ _ => true
+  | .eLen _ => true
 
 def chkEffs (A : AEnv) (W : Wit) : List SrcEff → Bool
   | [] => true

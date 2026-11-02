@@ -64,6 +64,7 @@ def qeff (env : Env) : SrcEff → Option (Value × Nat)
   | .arraySlice _ _ => none
   | .eIf _ _ _ _ => none
   | .eLet _ _ _ _ _ => none
+  | .eLen _ => none
 
 def qeffs (env : Env) : List SrcEff → Option (List Value × Nat)
   | [] => some ([], 0)
@@ -218,6 +219,7 @@ theorem peff_eq (hc : ∀ c vs, call c vs = (qc c vs).map Prod.fst) : ∀ (env :
   | env, .arraySlice _ _ => rfl
   | env, .eIf _ _ _ _ => rfl
   | env, .eLet _ _ _ _ _ => rfl
+  | env, .eLen _ => rfl
 
 theorem peffs_eq (hc : ∀ c vs, call c vs = (qc c vs).map Prod.fst) : ∀ (env : Env) (es : List SrcEff), peffs call env es = (qeffs qc env es).map Prod.fst
   | env, [] => rfl
