@@ -141,14 +141,20 @@ parses so) reassociated to the right leaves the rest of the chain in the
       pexpr env (.apply .logicalAnd a (.apply .logicalAnd b c)) := by
   simp only [pexpr, applyOp_and_assoc]
 
-/-- How a certificate unfolds a call of a function that is not a prim. -/
+/-- How a certificate unfolds a call of a function that is not a prim, and
+whose body has no loop or assignment (`free`, by `rfl` on the body). -/
 theorem pcall_succ {sp : SrcProgram} {prims : Prims} {n c : Nat} {vs : List Value} {f : SrcFunc}
-    (np : prims.isPrim c = false) (found : sp.funcs[c]? = some f) :
+    (np : prims.isPrim c = false) (found : sp.funcs[c]? = some f) (free : f.body.loopFree = true := by rfl) :
     pcall sp prims (n + 1) c vs =
       if vs.length = f.params.length then
         (pstmt (pcall sp prims n) (paramEnv f.params vs) f.body).bind (doneValue f.ret)
       else none := by
-  simp [pcall, np, found]
+  simp only [pcall, np, found, Bool.false_eq_true, if_false, mstmt_loopFree _ _ _ _ free, Option.bind_map]
+  split
+  · congr 1
+    funext d
+    exact outValue_ofDone f.ret _ d
+  · rfl
 
 @[pure_rule] theorem ex_ex_eq_and {α β : Type} {p : α → Prop} {f : α → β} {q : β → Prop} :
     (∃ b, (∃ a, p a ∧ f a = b) ∧ q b) ↔ ∃ a, p a ∧ q (f a) :=

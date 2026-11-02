@@ -129,6 +129,87 @@ def Done.then (rest : Option Done) : Done → Option Done
 def paramEnv (params : List SrcParam) (values : List Value) : Env :=
   Env.bindAll [] (paramBindings params values)
 
+/-- How a statement ended, with the environment it left unless it returned:
+on to the next one, a `break`, a `continue`, or a `return`. -/
+inductive Out where
+  | next (env : Env)
+  | brk (env : Env)
+  | cont (env : Env)
+  | ret (value : Option Value)
+
+/-- The newest binding of `id` given the value `v`, as Core's assignment
+writes the cell that binding names; `none` when `id` is not bound. -/
+def Env.set : Env → Nat → Value → Option Env
+  | [], _, _ => none
+  | (x, w) :: rest, id, v => if x = id then some ((x, v) :: rest) else (Env.set rest id v).map ((x, w) :: ·)
+
+/-- After a `let`'s body: the body's binding dropped, as Core's `restoreLocals`. -/
+def Out.pop : Out → Out
+  | .next env => .next env.tail
+  | .brk env => .brk env.tail
+  | .cont env => .cont env.tail
+  | .ret value => .ret value
+
+/-- After a statement that ended so, the next one, `rest`, in the
+environment it left. -/
+def Out.then (rest : Env → Option Out) : Out → Option Out
+  | .next env => rest env
+  | .brk env => some (.brk env)
+  | .cont env => some (.cont env)
+  | .ret value => some (.ret value)
+
+/-- A call's value from how its body ended, as Core's call does it: a body
+that ends with `break` or `continue` traps. -/
+def outValue (ret : SrcType) : Out → Option Value
+  | .ret (some value) => some value
+  | .ret none => if ret.toCore = .unit then some .unit else none
+  | .next _ => if ret.toCore = .unit then some .unit else none
+  | .brk _ => none
+  | .cont _ => none
+
+/-- A loop-free ending in the environment `env`. -/
+def Out.ofDone (env : Env) : Done → Out
+  | .next => .next env
+  | .ret value => .ret value
+
+/-- A statement with no loop, assignment, `break` or `continue`: `pstmt`
+gives its meaning. -/
+def _root_.Lanius.Mini.SrcStmt.loopFree : SrcStmt → Bool
+  | .nop => true
+  | .let _ _ _ body => body.loopFree
+  | .letStruct _ _ _ body => body.loopFree
+  | .letCall _ _ _ _ body => body.loopFree
+  | .letEnum _ _ _ _ body => body.loopFree
+  | .letMatch _ _ _ _ _ _ => true
+  | .set _ _ => false
+  | .setField _ _ _ => true
+  | .setCall _ _ _ => true
+  | .then first second => first.loopFree && second.loopFree
+  | .if _ a b => a.loopFree && b.loopFree
+  | .while _ _ => false
+  | .return _ => true
+  | .letAlloc _ _ _ _ => true
+  | .letLoad _ _ _ _ => true
+  | .setByte _ _ _ => true
+  | .free _ _ _ => true
+  | .letSlice _ _ _ _ _ => true
+  | .letIndex _ _ _ _ _ => true
+  | .setIndex _ _ _ => true
+  | .letEval _ _ _ body => body.loopFree
+  | .setEval _ _ => false
+  | .ifEval _ a b => a.loopFree && b.loopFree
+  | .whileEval _ _ => false
+  | .returnEval _ => true
+  | .discard _ => true
+  | .setIndexEval _ _ _ => true
+  | .setFieldEval _ _ _ => true
+  | .returnUnit => true
+  | .assert _ => true
+  | .break => false
+  | .continue => false
+  | .matchArm _ _ _ _ _ _ _ _ => true
+  | .unreachable _ _ => true
+
 /-- A call's meaning: the callee and the argument values to the value returned. -/
 abbrev Calls := Nat → List Value → Option Value
 
@@ -218,6 +299,54 @@ def pstmt (env : Env) : SrcStmt → Option Done
   | .assert condition =>
       ((peff call env condition).bind asBool).bind fun b => if b then some .next else none
 
+/-- A statement, with `call` the meaning of its calls and `fuel` the steps
+its loops may take: how it ends and the environment it leaves. -/
+def mstmt (fuel : Nat) (env : Env) : SrcStmt → Option Out
+  | .nop => some (.next env)
+  | .let id _ value body => (pexpr env value).bind fun v => (mstmt fuel ((id, v) :: env) body).map Out.pop
+  | .letStruct id ty fields body =>
+      (pexprs env fields).bind fun vs => (mstmt fuel ((id, .structure ty.typeId vs) :: env) body).map Out.pop
+  | .letCall id _ callee args body =>
+      ((pexprs env args).bind (call callee)).bind fun v => (mstmt fuel ((id, v) :: env) body).map Out.pop
+  | .letEnum id ty variant payload body =>
+      (pexprs env payload).bind fun vs =>
+        (mstmt fuel ((id, .enumeration ty.typeId variant vs) :: env) body).map Out.pop
+  | .letMatch _ _ _ _ _ _ => none
+  | .set _ _ => none
+  | .setField _ _ _ => none
+  | .setCall _ _ _ => none
+  | .then first second => (mstmt fuel env first).bind (Out.then fun e => mstmt fuel e second)
+  | .if condition thenBranch elseBranch =>
+      ((pexpr env condition).bind asBool).bind fun b =>
+        if b then mstmt fuel env thenBranch else mstmt fuel env elseBranch
+  | .while _ _ => none
+  | .return value => (pexpr env value).map fun v => .ret (some v)
+  | .letAlloc _ _ _ _ => none
+  | .letLoad _ _ _ _ => none
+  | .setByte _ _ _ => none
+  | .free _ _ _ => none
+  | .letSlice _ _ _ _ _ => none
+  | .letIndex _ _ _ _ _ => none
+  | .setIndex _ _ _ => none
+  | .letEval id _ value body =>
+      (peff call env value).bind fun v => (mstmt fuel ((id, v) :: env) body).map Out.pop
+  | .setEval _ _ => none
+  | .ifEval condition thenBranch elseBranch =>
+      ((peff call env condition).bind asBool).bind fun b =>
+        if b then mstmt fuel env thenBranch else mstmt fuel env elseBranch
+  | .whileEval _ _ => none
+  | .returnEval value => (peff call env value).map fun v => .ret (some v)
+  | .discard value => (peff call env value).map fun _ => .next env
+  | .setIndexEval _ _ _ => none
+  | .setFieldEval _ _ _ => none
+  | .returnUnit => some (.ret none)
+  | .break => none
+  | .continue => none
+  | .matchArm _ _ _ _ _ _ _ _ => none
+  | .unreachable _ _ => none
+  | .assert condition =>
+      ((peff call env condition).bind asBool).bind fun b => if b then some (.next env) else none
+
 end
 
 /-- Function `callee` of `sp` called on `values`, with `fuel` calls deep at
@@ -231,7 +360,201 @@ def pcall (sp : SrcProgram) (prims : Prims) : Nat → Calls
       | none => none
       | some f =>
         if values.length = f.params.length then
-          (pstmt (pcall sp prims fuel) (paramEnv f.params values) f.body).bind (doneValue f.ret)
+          (mstmt (pcall sp prims fuel) fuel (paramEnv f.params values) f.body).bind (outValue f.ret)
         else none
+
+theorem pop_ofDone (id : Nat) (v : Value) (env : Env) :
+    (fun d => Out.pop (Out.ofDone ((id, v) :: env) d)) = Out.ofDone env := by
+  funext d
+  cases d <;> rfl
+
+theorem map_pop_ofDone (id : Nat) (v : Value) (env : Env) (o : Option Done) :
+    (o.map (Out.ofDone ((id, v) :: env))).map Out.pop = o.map (Out.ofDone env) := by
+  rw [Option.map_map]
+  exact congrArg (Option.map · o) (pop_ofDone id v env)
+
+/-- A loop-free statement leaves the environment it got: `mstmt` is `pstmt`. -/
+theorem mstmt_loopFree (call : Calls) (fuel : Nat) :
+    ∀ (s : SrcStmt) (env : Env), s.loopFree = true →
+      mstmt call fuel env s = (pstmt call env s).map (Out.ofDone env) := by
+  intro s
+  induction s with
+  | nop => intro env _; rfl
+  | «let» id _ value body ih =>
+    intro env h
+    simp only [SrcStmt.loopFree] at h
+    simp only [mstmt, pstmt]
+    cases pexpr env value with
+    | none => rfl
+    | some v => simp only [Option.bind_some]; rw [ih _ h, map_pop_ofDone]
+  | letStruct id ty fields body ih =>
+    intro env h
+    simp only [SrcStmt.loopFree] at h
+    simp only [mstmt, pstmt]
+    cases pexprs env fields with
+    | none => rfl
+    | some vs => simp only [Option.bind_some]; rw [ih _ h, map_pop_ofDone]
+  | letCall id _ callee args body ih =>
+    intro env h
+    simp only [SrcStmt.loopFree] at h
+    simp only [mstmt, pstmt]
+    cases (pexprs env args).bind (call callee) with
+    | none => rfl
+    | some v => simp only [Option.bind_some]; rw [ih _ h, map_pop_ofDone]
+  | letEnum id ty k payload body ih =>
+    intro env h
+    simp only [SrcStmt.loopFree] at h
+    simp only [mstmt, pstmt]
+    cases pexprs env payload with
+    | none => rfl
+    | some vs => simp only [Option.bind_some]; rw [ih _ h, map_pop_ofDone]
+  | «then» first second ih1 ih2 =>
+    intro env h
+    simp only [SrcStmt.loopFree, Bool.and_eq_true] at h
+    simp only [mstmt, pstmt]
+    rw [ih1 _ h.1]
+    cases pstmt call env first with
+    | none => rfl
+    | some d =>
+      cases d with
+      | next => exact ih2 _ h.2
+      | ret _ => rfl
+  | «if» condition a b iha ihb =>
+    intro env h
+    simp only [SrcStmt.loopFree, Bool.and_eq_true] at h
+    simp only [mstmt, pstmt]
+    cases (pexpr env condition).bind asBool with
+    | none => rfl
+    | some bv => cases bv with
+      | true => exact iha _ h.1
+      | false => exact ihb _ h.2
+  | «return» value => intro env _; simp only [mstmt, pstmt]; cases pexpr env value <;> rfl
+  | letEval id _ value body ih =>
+    intro env h
+    simp only [SrcStmt.loopFree] at h
+    simp only [mstmt, pstmt]
+    cases peff call env value with
+    | none => rfl
+    | some v => simp only [Option.bind_some]; rw [ih _ h, map_pop_ofDone]
+  | ifEval condition a b iha ihb =>
+    intro env h
+    simp only [SrcStmt.loopFree, Bool.and_eq_true] at h
+    simp only [mstmt, pstmt]
+    cases (peff call env condition).bind asBool with
+    | none => rfl
+    | some bv => cases bv with
+      | true => exact iha _ h.1
+      | false => exact ihb _ h.2
+  | returnEval value => intro env _; simp only [mstmt, pstmt]; cases peff call env value <;> rfl
+  | discard value => intro env _; simp only [mstmt, pstmt]; cases peff call env value <;> rfl
+  | assert condition =>
+    intro env _
+    simp only [mstmt, pstmt]
+    cases (peff call env condition).bind asBool with
+    | none => rfl
+    | some bv => cases bv <;> rfl
+  | returnUnit => intro env _; rfl
+  | set _ _ | «while» _ _ | setEval _ _ | whileEval _ _ | «break» | «continue» =>
+    intro env h; simp [SrcStmt.loopFree] at h
+  | letMatch _ _ _ _ _ _ | setField _ _ _ | setCall _ _ _ | letAlloc _ _ _ _ | letLoad _ _ _ _ | setByte _ _ _
+  | free _ _ _ | letSlice _ _ _ _ _ | letIndex _ _ _ _ _ | setIndex _ _ _ | setIndexEval _ _ _
+  | setFieldEval _ _ _ | matchArm _ _ _ _ _ _ _ _ | unreachable _ _ => intro env _; rfl
+
+/-- Until loops and assignment have a meaning, `mstmt` is `pstmt`. -/
+theorem mstmt_pstmt (call : Calls) (fuel : Nat) :
+    ∀ (s : SrcStmt) (env : Env),
+      mstmt call fuel env s = (pstmt call env s).map (Out.ofDone env) := by
+  intro s
+  induction s with
+  | nop => intro env; rfl
+  | «let» id _ value body ih =>
+    intro env
+    simp only [mstmt, pstmt]
+    cases pexpr env value with
+    | none => rfl
+    | some v => simp only [Option.bind_some]; rw [ih _, map_pop_ofDone]
+  | letStruct id ty fields body ih =>
+    intro env
+    simp only [mstmt, pstmt]
+    cases pexprs env fields with
+    | none => rfl
+    | some vs => simp only [Option.bind_some]; rw [ih _, map_pop_ofDone]
+  | letCall id _ callee args body ih =>
+    intro env
+    simp only [mstmt, pstmt]
+    cases (pexprs env args).bind (call callee) with
+    | none => rfl
+    | some v => simp only [Option.bind_some]; rw [ih _, map_pop_ofDone]
+  | letEnum id ty k payload body ih =>
+    intro env
+    simp only [mstmt, pstmt]
+    cases pexprs env payload with
+    | none => rfl
+    | some vs => simp only [Option.bind_some]; rw [ih _, map_pop_ofDone]
+  | «then» first second ih1 ih2 =>
+    intro env
+    simp only [mstmt, pstmt]
+    rw [ih1 _]
+    cases pstmt call env first with
+    | none => rfl
+    | some d =>
+      cases d with
+      | next => exact ih2 _
+      | ret _ => rfl
+  | «if» condition a b iha ihb =>
+    intro env
+    simp only [mstmt, pstmt]
+    cases (pexpr env condition).bind asBool with
+    | none => rfl
+    | some bv => cases bv with
+      | true => exact iha _
+      | false => exact ihb _
+  | «return» value => intro env; simp only [mstmt, pstmt]; cases pexpr env value <;> rfl
+  | letEval id _ value body ih =>
+    intro env
+    simp only [mstmt, pstmt]
+    cases peff call env value with
+    | none => rfl
+    | some v => simp only [Option.bind_some]; rw [ih _, map_pop_ofDone]
+  | ifEval condition a b iha ihb =>
+    intro env
+    simp only [mstmt, pstmt]
+    cases (peff call env condition).bind asBool with
+    | none => rfl
+    | some bv => cases bv with
+      | true => exact iha _
+      | false => exact ihb _
+  | returnEval value => intro env; simp only [mstmt, pstmt]; cases peff call env value <;> rfl
+  | discard value => intro env; simp only [mstmt, pstmt]; cases peff call env value <;> rfl
+  | assert condition =>
+    intro env
+    simp only [mstmt, pstmt]
+    cases (peff call env condition).bind asBool with
+    | none => rfl
+    | some bv => cases bv <;> rfl
+  | returnUnit => intro env; rfl
+  | set _ _ | «while» _ _ | setEval _ _ | whileEval _ _ | «break» | «continue»
+  | letMatch _ _ _ _ _ _ | setField _ _ _ | setCall _ _ _ | letAlloc _ _ _ _ | letLoad _ _ _ _ | setByte _ _ _
+  | free _ _ _ | letSlice _ _ _ _ _ | letIndex _ _ _ _ _ | setIndex _ _ _ | setIndexEval _ _ _
+  | setFieldEval _ _ _ | matchArm _ _ _ _ _ _ _ _ | unreachable _ _ => intro env; rfl
+
+theorem outValue_ofDone (ret : SrcType) (env : Env) (d : Done) :
+    outValue ret (Out.ofDone env d) = doneValue ret d := by
+  cases d with
+  | next => rfl
+  | ret v => cases v <;> rfl
+
+/-- `pcall` as `pstmt` says, until loops and assignment have a meaning. -/
+theorem pcall_pstmt (sp : SrcProgram) (prims : Prims) (n c : Nat) (vs : List Value) :
+    pcall sp prims (n + 1) c vs =
+      if prims.isPrim c then single vs
+      else
+        match sp.funcs[c]? with
+        | none => none
+        | some f =>
+          if vs.length = f.params.length then
+            (pstmt (pcall sp prims n) (paramEnv f.params vs) f.body).bind (doneValue f.ret)
+          else none := by
+  simp only [pcall, mstmt_pstmt, Option.bind_map, Function.comp_def, outValue_ofDone]
 
 end Lanius.Faithful

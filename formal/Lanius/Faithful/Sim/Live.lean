@@ -1261,7 +1261,7 @@ theorem pcall_live {sp : SrcProgram} {prims : Prims} {T : TermInfo} {outside bad
   obtain ⟨v, hv, rv⟩ := hdv
   refine ⟨N + 1, v, rv, fun m hm => ?_⟩
   obtain ⟨m, rfl⟩ : ∃ m', m = m' + 1 := ⟨m - 1, by omega⟩
-  simp only [pcall, hp, hf, hl, Bool.false_eq_true, ↓reduceIte, hN m (by omega), Option.bind_some, hv]
+  simp only [pcall_pstmt, hp, hf, hl, Bool.false_eq_true, ↓reduceIte, hN m (by omega), Option.bind_some, hv]
 
 end Lanius.Faithful.Termination
 

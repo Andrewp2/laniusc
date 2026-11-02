@@ -571,7 +571,7 @@ theorem dec_lt {sp : SrcProgram} {prims : Prims} {c : Nat} (hd : DecOk sp prims 
     have hlen : f.params.length = 2 := by
       have := congrArg List.length hids
       simpa [paramIds] using this
-    simp only [pcall, np, hf, hlen] at h
+    simp only [pcall_pstmt, np, hf, hlen] at h
     simp only [Bool.false_eq_true, ↓reduceIte, List.length_cons, List.length_nil] at h
     rw [paramEnv, paramBindings_ids, hids, hbody] at h
     have hba : (b == a) = false := by simp [Ne.symm hab]
@@ -613,7 +613,7 @@ theorem const_val {sp : SrcProgram} {prims : Prims} {c id j : Nat} (hc : ConstOk
   cases m with
   | zero => simp [pcall] at h
   | succ m =>
-    simp only [pcall, np, hf, Bool.false_eq_true, ↓reduceIte] at h
+    simp only [pcall_pstmt, np, hf, Bool.false_eq_true, ↓reduceIte] at h
     split at h
     · rw [hbody] at h
       simp [pstmt, peff, peffs, Option.bind, doneValue] at h
@@ -1160,7 +1160,7 @@ theorem pcall_complete {sp : SrcProgram} {prims : Prims} {T : TermInfo} (hT : Te
         obtain ⟨N, hN⟩ := stmt_evConst (oracleOk_pcall hT.decs hT.consts) IH f.body henv (WitOk.nil _) hchk
         refine ⟨N + 1, fun m hm => ?_⟩
         obtain ⟨m, rfl⟩ : ∃ m', m = m' + 1 := ⟨m - 1, by omega⟩
-        simp only [pcall, hp', hf, hl, Bool.false_eq_true, ↓reduceIte]
+        simp only [pcall_pstmt, hp', hf, hl, Bool.false_eq_true, ↓reduceIte]
         have e := hN m (by omega)
         simp only at e
         rw [e]

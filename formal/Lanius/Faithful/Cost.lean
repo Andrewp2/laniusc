@@ -340,7 +340,7 @@ theorem pcall_eq_qcall (sp : SrcProgram) (prims : Prims) (cost : Nat → Nat) :
     ∀ (fuel c : Nat) (vs : List Value), pcall sp prims fuel c vs = (qcall sp prims cost fuel c vs).map Prod.fst
   | 0, _, _ => rfl
   | fuel + 1, c, vs => by
-    rw [pcall, qcall]
+    rw [pcall_pstmt, qcall]
     split
     · cases single vs <;> rfl
     · cases sp.funcs[c]? with

@@ -310,7 +310,7 @@ theorem body_sim {m : Nat} (calls : ∀ i < m, FuncSim sp prims outside i) {c : 
   have plen : ps.length = f.params.length := by simpa using args.length.2
   have unfold : pcall sp prims (m + 1) c ps = (pstmt (pcall sp prims m) (paramEnv f.params ps) f.body).bind
       (doneValue f.ret) := by
-    simp only [pcall, notPrim, Bool.false_eq_true, if_false, found, plen, if_true]
+    simp only [pcall_pstmt, notPrim, Bool.false_eq_true, if_false, found, plen, if_true]
   rw [unfold, hd, Option.bind_some]
   cases compl with
   | next =>
