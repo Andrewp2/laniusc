@@ -184,21 +184,24 @@ pub impl<K, V> BTreeMap<K, V> {
         return node;
     }
     // Slot index (16 * node + slot) holding `key`, or -1. One loop over the
-    // levels, so a lookup makes no calls besides K::lt.
+    // levels, so a lookup makes no calls besides K::lt. Views are built
+    // inline and the counts read through the links view (they follow the
+    // 24 * nodes link words): each view costs a call and two header copies.
     fn find(&self, key: K) -> i32 where K: core::cmp::Ord<K> {
         let node: i32 = self.root;
         if (node < 0) { return -1; }
-        let keys: [KeyCell<K>] = self.key_view(); let links: [i32] = self.link_view(); let counts: [i32] = self.count_view();
-        let level: i32 = self.height;
+        let keys: [KeyCell<K>] = slice_from_raw_parts(self.keys, self.nodes * 16);
+        let links: [i32] = slice_from_raw_parts(self.links, self.nodes * 25);
+        let counted: i32 = self.nodes * 24; let level: i32 = self.height;
         while (true) {
-            let base: i32 = 16 * node; let low: i32 = 0; let high: i32 = counts[node];
+            let base: i32 = 16 * node; let low: i32 = 0; let count: i32 = links[counted + node]; let high: i32 = count;
             level -= 1;
             if (level == 0) {
                 while (low < high) {
                     let middle: i32 = (low + high) >> 1;
                     if (K::lt(keys[base + middle].key, key)) { low = middle + 1; } else { high = middle; }
                 }
-                if (low == counts[node]) { return -1; }
+                if (low == count) { return -1; }
                 if (K::lt(key, keys[base + low].key)) { return -1; }
                 return base + low;
             }
@@ -214,7 +217,7 @@ pub impl<K, V> BTreeMap<K, V> {
     pub fn get(&self, key: K) -> core::option::Option<V> where K: core::cmp::Ord<K> {
         let index: i32 = self.find(key);
         if (index < 0) { return core::option::None(); }
-        let values: [ValueCell<V>] = self.value_view(); let cell: ValueCell<V> = values[index];
+        let values: [ValueCell<V>] = slice_from_raw_parts(self.values, self.nodes * 16); let cell: ValueCell<V> = values[index];
         return core::option::Some(cell.value);
     }
     pub fn get_entry(&self, key: K) -> core::option::Option<Entry<K, V>> where K: core::cmp::Ord<K> {

@@ -3,8 +3,9 @@
 The full library goal remains open. The current increment adds
 [`alloc::btree_map`](stdlib-btree-map.md), a B+ tree ordered map with the
 tree map's API and atomic allocation failure. It iterates about 2.2x faster
-than the AVL `alloc::tree_map` and does scattered lookups up to 23% faster;
-lookups in insertion order are still about 2x slower.
+than the AVL `alloc::tree_map` and does key-order lookups 23% faster. Lookups
+in insertion order are about 2x slower, an allocation-locality effect that the
+guide explains.
 The preceding increment makes the runtime
 allocator [thread-safe](runtime-allocator.md#threads), so `std::pthread`
 bodies may allocate and free. Each thread, keyed by its `%fs:0` thread

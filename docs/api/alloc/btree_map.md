@@ -8,7 +8,7 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `alloc`. Role: module. Profile: **Source inventory**.
 
-B+ tree ordered map: 16 entries per leaf, linked leaves, parallel node arrays grown by doubling. Same Ord/Entry/Cursor conventions as alloc::tree_map. Inserts reserve height+1 nodes before editing, so AllocationFailed leaves the map unchanged; replacement, removal, lookup and iteration never allocate. Model (against alloc::tree_map), type and RLIMIT_AS failure fixtures exit 0 on native Linux x86_64; at 1,048,576 keys iteration is about 2.2x faster than the AVL map and scattered lookups 6-23% faster, insertion-order lookups about 2x slower.
+B+ tree ordered map: 16 entries per leaf, linked leaves, parallel node arrays grown by doubling. Same Ord/Entry/Cursor conventions as alloc::tree_map. Inserts reserve height+1 nodes before editing, so AllocationFailed leaves the map unchanged; replacement, removal, lookup and iteration never allocate. Model (against alloc::tree_map), type and RLIMIT_AS failure fixtures exit 0 on native Linux x86_64; at 1,048,576 keys iteration is about 2.2x faster than the AVL map, key-order lookups 23% and scattered lookups 8-14% faster, insertion-order lookups about 2x slower (allocation-order locality favors one-node-per-key trees).
 
 ## Contract and evidence guides
 
@@ -350,7 +350,7 @@ pub fn node_capacity(&self) -> i32
 
 #### method: contains_key
 
-[Source line 213](../../../stdlib/alloc/btree_map.lani#L213)
+[Source line 216](../../../stdlib/alloc/btree_map.lani#L216)
 
 ```lanius
 pub fn contains_key(&self, key: K) -> bool where K: core::cmp::Ord<K>
@@ -358,7 +358,7 @@ pub fn contains_key(&self, key: K) -> bool where K: core::cmp::Ord<K>
 
 #### method: get
 
-[Source line 214](../../../stdlib/alloc/btree_map.lani#L214)
+[Source line 217](../../../stdlib/alloc/btree_map.lani#L217)
 
 ```lanius
 pub fn get(&self, key: K) -> core::option::Option<V> where K: core::cmp::Ord<K>
@@ -366,7 +366,7 @@ pub fn get(&self, key: K) -> core::option::Option<V> where K: core::cmp::Ord<K>
 
 #### method: get_entry
 
-[Source line 220](../../../stdlib/alloc/btree_map.lani#L220)
+[Source line 223](../../../stdlib/alloc/btree_map.lani#L223)
 
 ```lanius
 pub fn get_entry(&self, key: K) -> core::option::Option<Entry<K, V>> where K: core::cmp::Ord<K>
@@ -374,7 +374,7 @@ pub fn get_entry(&self, key: K) -> core::option::Option<Entry<K, V>> where K: co
 
 #### method: first
 
-[Source line 229](../../../stdlib/alloc/btree_map.lani#L229)
+[Source line 232](../../../stdlib/alloc/btree_map.lani#L232)
 
 ```lanius
 pub fn first(&self) -> core::option::Option<Entry<K, V>>
@@ -382,7 +382,7 @@ pub fn first(&self) -> core::option::Option<Entry<K, V>>
 
 #### method: last
 
-[Source line 233](../../../stdlib/alloc/btree_map.lani#L233)
+[Source line 236](../../../stdlib/alloc/btree_map.lani#L236)
 
 ```lanius
 pub fn last(&self) -> core::option::Option<Entry<K, V>>
@@ -390,7 +390,7 @@ pub fn last(&self) -> core::option::Option<Entry<K, V>>
 
 #### method: lower_bound
 
-[Source line 239](../../../stdlib/alloc/btree_map.lani#L239)
+[Source line 242](../../../stdlib/alloc/btree_map.lani#L242)
 
 ```lanius
 pub fn lower_bound(&self, key: K) -> core::option::Option<Entry<K, V>> where K: core::cmp::Ord<K>
@@ -398,7 +398,7 @@ pub fn lower_bound(&self, key: K) -> core::option::Option<Entry<K, V>> where K: 
 
 #### method: upper_bound
 
-[Source line 242](../../../stdlib/alloc/btree_map.lani#L242)
+[Source line 245](../../../stdlib/alloc/btree_map.lani#L245)
 
 ```lanius
 pub fn upper_bound(&self, key: K) -> core::option::Option<Entry<K, V>> where K: core::cmp::Ord<K>
@@ -406,7 +406,7 @@ pub fn upper_bound(&self, key: K) -> core::option::Option<Entry<K, V>> where K: 
 
 #### method: iter
 
-[Source line 263](../../../stdlib/alloc/btree_map.lani#L263)
+[Source line 266](../../../stdlib/alloc/btree_map.lani#L266)
 
 ```lanius
 pub fn iter(&self) -> Cursor<K, V>
@@ -414,7 +414,7 @@ pub fn iter(&self) -> Cursor<K, V>
 
 #### method: range
 
-[Source line 269](../../../stdlib/alloc/btree_map.lani#L269)
+[Source line 272](../../../stdlib/alloc/btree_map.lani#L272)
 
 ```lanius
 pub fn range(&self, lower: K, upper: K) -> core::result::Result<Cursor<K, V>, Error> where K: core::cmp::Ord<K>
@@ -422,7 +422,7 @@ pub fn range(&self, lower: K, upper: K) -> core::result::Result<Cursor<K, V>, Er
 
 #### method: try_insert
 
-[Source line 287](../../../stdlib/alloc/btree_map.lani#L287)
+[Source line 290](../../../stdlib/alloc/btree_map.lani#L290)
 
 ```lanius
 pub fn try_insert(&self, key: K, value: V) -> core::result::Result<core::option::Option<Entry<K, V>>, Error> where K: core::cmp::Ord<K>
@@ -430,7 +430,7 @@ pub fn try_insert(&self, key: K, value: V) -> core::result::Result<core::option:
 
 #### method: remove
 
-[Source line 389](../../../stdlib/alloc/btree_map.lani#L389)
+[Source line 392](../../../stdlib/alloc/btree_map.lani#L392)
 
 ```lanius
 pub fn remove(&self, key: K) -> core::option::Option<Entry<K, V>> where K: core::cmp::Ord<K>
@@ -438,7 +438,7 @@ pub fn remove(&self, key: K) -> core::option::Option<Entry<K, V>> where K: core:
 
 #### method: pop_first
 
-[Source line 496](../../../stdlib/alloc/btree_map.lani#L496)
+[Source line 499](../../../stdlib/alloc/btree_map.lani#L499)
 
 ```lanius
 pub fn pop_first(&self) -> core::option::Option<Entry<K, V>> where K: core::cmp::Ord<K>
@@ -446,7 +446,7 @@ pub fn pop_first(&self) -> core::option::Option<Entry<K, V>> where K: core::cmp:
 
 #### method: pop_last
 
-[Source line 502](../../../stdlib/alloc/btree_map.lani#L502)
+[Source line 505](../../../stdlib/alloc/btree_map.lani#L505)
 
 ```lanius
 pub fn pop_last(&self) -> core::option::Option<Entry<K, V>> where K: core::cmp::Ord<K>
@@ -454,7 +454,7 @@ pub fn pop_last(&self) -> core::option::Option<Entry<K, V>> where K: core::cmp::
 
 #### method: clear
 
-[Source line 509](../../../stdlib/alloc/btree_map.lani#L509)
+[Source line 512](../../../stdlib/alloc/btree_map.lani#L512)
 
 ```lanius
 pub fn clear(&self)
@@ -462,15 +462,15 @@ pub fn clear(&self)
 
 #### method: destroy
 
-[Source line 513](../../../stdlib/alloc/btree_map.lani#L513)
+[Source line 516](../../../stdlib/alloc/btree_map.lani#L516)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 521
+### impl at line 524
 
-[Source line 521](../../../stdlib/alloc/btree_map.lani#L521)
+[Source line 524](../../../stdlib/alloc/btree_map.lani#L524)
 
 ```lanius
 pub impl<K, V> Cursor<K, V>
@@ -478,7 +478,7 @@ pub impl<K, V> Cursor<K, V>
 
 #### method: borrow
 
-[Source line 522](../../../stdlib/alloc/btree_map.lani#L522)
+[Source line 525](../../../stdlib/alloc/btree_map.lani#L525)
 
 ```lanius
 pub fn borrow(&self) -> &Cursor<K, V>
@@ -486,15 +486,15 @@ pub fn borrow(&self) -> &Cursor<K, V>
 
 #### method: is_empty
 
-[Source line 523](../../../stdlib/alloc/btree_map.lani#L523)
+[Source line 526](../../../stdlib/alloc/btree_map.lani#L526)
 
 ```lanius
 pub fn is_empty(&self) -> bool
 ```
 
-### impl at line 536
+### impl at line 539
 
-[Source line 536](../../../stdlib/alloc/btree_map.lani#L536)
+[Source line 539](../../../stdlib/alloc/btree_map.lani#L539)
 
 ```lanius
 pub impl<K, V> core::iter::Iterator<Entry<K, V>> for Cursor<K, V>
@@ -502,15 +502,15 @@ pub impl<K, V> core::iter::Iterator<Entry<K, V>> for Cursor<K, V>
 
 #### method: next
 
-[Source line 537](../../../stdlib/alloc/btree_map.lani#L537)
+[Source line 540](../../../stdlib/alloc/btree_map.lani#L540)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<Entry<K, V>>
 ```
 
-### impl at line 550
+### impl at line 553
 
-[Source line 550](../../../stdlib/alloc/btree_map.lani#L550)
+[Source line 553](../../../stdlib/alloc/btree_map.lani#L553)
 
 ```lanius
 pub impl<K, V> core::iter::DoubleEndedIterator<Entry<K, V>> for Cursor<K, V>
@@ -518,7 +518,7 @@ pub impl<K, V> core::iter::DoubleEndedIterator<Entry<K, V>> for Cursor<K, V>
 
 #### method: next_back
 
-[Source line 551](../../../stdlib/alloc/btree_map.lani#L551)
+[Source line 554](../../../stdlib/alloc/btree_map.lani#L554)
 
 ```lanius
 pub fn next_back(&self) -> core::option::Option<Entry<K, V>>

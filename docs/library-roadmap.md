@@ -2802,8 +2802,10 @@ borrowed point lookup has the current increment above.
   remove, bounds, endpoints, pops, ranges and both-ended cursors. A model
   against `alloc::tree_map`, a generic type fixture and an `RLIMIT_AS`
   allocation-failure fixture pass on x86_64 Linux. At 1,048,576 keys it
-  iterates about 2.2x faster than the AVL map and does scattered lookups 6-23%
-  faster; lookups in insertion order are about 2x slower. Set, clone, sorted
+  iterates about 2.2x faster than the AVL map and does key-order lookups 23%
+  and scattered lookups 8-14% faster. Lookups in insertion order are about 2x
+  slower, because one-node-per-key trees get locality from their allocation
+  order. Set, clone, sorted
   construction and the iterator sinks are not yet provided.
 - CLI and host arguments: [`ext::cli` and `std::args`](extended-cli.md) execute
   borrowed option parsing and owned raw-byte argument snapshots. Eight test

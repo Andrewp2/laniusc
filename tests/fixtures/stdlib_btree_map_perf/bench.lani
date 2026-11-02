@@ -1,10 +1,14 @@
 // alloc::btree_map at 1,048,576 keys, on the tree map benchmark's keys and
-// phases (tests/fixtures/stdlib_tree_map_perf) plus two more. Two key sets:
-// u64 keys spread by an odd multiplier (distinct, high bits vary) and dense
-// i32 keys 0..N in a shuffled order. Each set times: insert all, look up all
-// in insertion order (hits), look up all in a scattered order (scattered),
-// look up N absent keys (misses), iterate every entry in key order (iterate),
-// remove every other key, look up all again (half hits), and remove the rest.
+// phases (tests/fixtures/stdlib_tree_map_perf) plus three more. Two key
+// sets: u64 keys spread by an odd multiplier (distinct, high bits vary) and
+// dense i32 keys 0..N in a shuffled order. Each set times: insert all, look
+// up all in insertion order (hits), look up all in a scattered order
+// (scattered), for i32 only look up all in key order (sorted), look up N
+// absent keys (misses), iterate every entry in key order (iterate), remove
+// every other key, look up all again (half hits), and remove the rest.
+// Insertion order is Fibonacci hashing of the index, so it is not key order:
+// trees with one node per key, allocated in that order, get memory locality
+// from it that a B+ tree does not.
 // stdout: a "keyset phase" line, then its nanoseconds; results are checked
 // so no phase can be optimized into nothing.
 module app::main;
@@ -94,6 +98,10 @@ fn run_dense() {
     start = now(); sum = 0; i = 0;
     while (i < N) { sum += map.get(dense_key(scatter(i))).unwrap() as u64; i += 1; }
     report("i32 scattered", since(start));
+    assert(sum == (N as u64) * ((N as u64) - 1) / 2);
+    start = now(); sum = 0; i = 0;
+    while (i < N) { sum += map.get(i).unwrap() as u64; i += 1; }
+    report("i32 sorted", since(start));
     assert(sum == (N as u64) * ((N as u64) - 1) / 2);
     start = now(); let found: i32 = 0; i = 0;
     while (i < N) { if (map.get(i + N).is_some()) { found += 1; } i += 1; }
