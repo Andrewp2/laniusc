@@ -1,0 +1,77 @@
+// SHA-1 (FIPS 180-4) over borrowed bytes, for protocol uses that require
+// it, such as the WebSocket opening handshake (RFC 6455 section 4.2.2).
+// SHA-1 is broken for collision resistance; do not use it for signatures or
+// integrity. No allocation, no host calls.
+module ext::sha1;
+import core::result;
+import core::slice;
+
+pub enum Error { Bounds, Capacity }
+// An unfinished digest: chaining values, a partial block and the total
+// length in bytes.
+pub struct Hasher { h0: u32, h1: u32, h2: u32, h3: u32, h4: u32, block: [u8;64], filled: i32, total: u64 }
+
+pub fn hasher() -> Hasher {
+    return Hasher { h0: 1732584193, h1: 4023233417, h2: 2562383102, h3: 271733878, h4: 3285377520, block: [0;64], filled: 0, total: 0 };
+}
+fn rotl(x: u32, n: u32) -> u32 { return (x << n) | (x >> (32 - n)); }
+fn valid(v: core::slice::View<u8>) -> bool { return v.start >= 0 && v.length >= 0 && v.start <= 2147483647 - v.length; }
+
+pub impl Hasher {
+    pub fn borrow(&self) -> &Hasher { return self; }
+    fn compress(&self) {
+        let w: [u32;80] = [0;80]; let t: i32 = 0;
+        while (t < 16) {
+            let b0: u32 = self.block[t*4] as u32; let b1: u32 = self.block[t*4+1] as u32; let b2: u32 = self.block[t*4+2] as u32; let b3: u32 = self.block[t*4+3] as u32;
+            w[t] = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3; t += 1;
+        }
+        while (t < 80) { let x: u32 = w[t-3] ^ w[t-8] ^ w[t-14] ^ w[t-16]; let r: u32 = rotl(x,1); w[t] = r; t += 1; }
+        let a: u32 = self.h0; let b: u32 = self.h1; let c: u32 = self.h2; let d: u32 = self.h3; let e: u32 = self.h4;
+        t = 0;
+        while (t < 80) {
+            let f: u32 = 0; let k: u32 = 0;
+            if (t < 20) { f = (b & c) | ((b ^ 4294967295) & d); k = 1518500249; }
+            if (t >= 20 && t < 40) { f = b ^ c ^ d; k = 1859775393; }
+            if (t >= 40 && t < 60) { f = (b & c) | (b & d) | (c & d); k = 2400959708; }
+            if (t >= 60) { f = b ^ c ^ d; k = 3395469782; }
+            let temp: u32 = rotl(a,5) + f + e + k + w[t];
+            e = d; d = c; c = rotl(b,30); b = a; a = temp; t += 1;
+        }
+        self.h0 = self.h0 + a; self.h1 = self.h1 + b; self.h2 = self.h2 + c; self.h3 = self.h3 + d; self.h4 = self.h4 + e;
+    }
+    // Absorb data.
+    pub fn update(&self, data: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        if (!valid(data)) { return core::result::Err(Error::Bounds); }
+        let i: i32 = 0;
+        while (i < data.length) {
+            self.block[self.filled] = data.values[data.start + i]; self.filled += 1; i += 1;
+            if (self.filled == 64) { self.compress(); self.filled = 0; }
+        }
+        self.total += data.length as u64;
+        return core::result::Ok(data.length);
+    }
+    // Write the 20-byte digest to destination's first bytes. The hasher is
+    // spent afterwards.
+    pub fn finish_into(&self, destination: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        if (!valid(destination)) { return core::result::Err(Error::Bounds); }
+        if (destination.length < 20) { return core::result::Err(Error::Capacity); }
+        let bits: u64 = self.total * 8;
+        self.block[self.filled] = 128; self.filled += 1;
+        if (self.filled > 56) { while (self.filled < 64) { self.block[self.filled] = 0; self.filled += 1; } self.compress(); self.filled = 0; }
+        while (self.filled < 56) { self.block[self.filled] = 0; self.filled += 1; }
+        let j: i32 = 0;
+        while (j < 8) { self.block[56 + j] = ((bits >> ((56 - 8 * j) as u64)) & 255) as u8; j += 1; }
+        self.compress(); self.filled = 0;
+        let words: [u32;5] = [self.h0, self.h1, self.h2, self.h3, self.h4]; let n: i32 = 0;
+        while (n < 20) { let word: u32 = words[n / 4]; let shift: u32 = (24 - 8 * (n % 4)) as u32; destination.values[destination.start + n] = ((word >> shift) & 255) as u8; n += 1; }
+        return core::result::Ok(20);
+    }
+}
+
+// The SHA-1 digest of data, written to destination's first 20 bytes.
+pub fn digest_into(data: core::slice::View<u8>, destination: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    let h: Hasher = hasher();
+    let fed: core::result::Result<i32,Error> = h.update(data);
+    if (fed.is_err()) { return fed; }
+    return h.finish_into(destination);
+}
