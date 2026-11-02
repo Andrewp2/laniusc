@@ -345,8 +345,8 @@ The [text tools](extended-textutils.md) add GNU-compatible `sort`, `uniq`,
 its byte-0x80 thousands-separator quirk), stable, unique and last-resort
 rules. It sorts 1.2 million lines with up to eight forked workers. Remaining:
 `sort` ordering options `d g h i M R V`, `-c`, `-m`; `uniq -D`/`--group`;
-locales other than C; `tr -d`/`-cd`, `wc -l` and `uniq -f1`, which run at
-2.0 to 2.4 times GNU's time (every other measured mode is within 2x).
+locales other than C; `wc -l` and `uniq -f1`, which run at 2.0 to 2.3
+times GNU's time (every other measured mode is within 2x).
 
 [Runtime format strings and owned formatting](stdlib-format-strings.md) add
 typed positional/named arguments, scalar fill/alignment/truncation, signed radix

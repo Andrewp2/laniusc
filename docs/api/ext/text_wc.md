@@ -161,7 +161,7 @@ pub fn selected(s: Select) -> i32
 
 ### function: feed
 
-[Source line 69](../../../extended/ext/text_wc.lani#L69)
+[Source line 74](../../../extended/ext/text_wc.lani#L74)
 
 ```lanius
 pub fn feed(c: &Counter, chunk: core::slice::View<u8>, words: bool, longest: bool) -> core::result::Result<i32, ext::text_lines::Error>
@@ -169,7 +169,7 @@ pub fn feed(c: &Counter, chunk: core::slice::View<u8>, words: bool, longest: boo
 
 ### function: done
 
-[Source line 122](../../../extended/ext/text_wc.lani#L122)
+[Source line 127](../../../extended/ext/text_wc.lani#L127)
 
 ```lanius
 pub fn done(c: &Counter)
@@ -177,7 +177,7 @@ pub fn done(c: &Counter)
 
 ### function: write_row
 
-[Source line 126](../../../extended/ext/text_wc.lani#L126)
+[Source line 131](../../../extended/ext/text_wc.lani#L131)
 
 ```lanius
 pub fn write_row(o: &ext::text_lines::Out, c: Counter, s: Select, width: i32, name: core::slice::View<u8>, named: bool)
@@ -185,7 +185,7 @@ pub fn write_row(o: &ext::text_lines::Out, c: Counter, s: Select, width: i32, na
 
 ### function: width
 
-[Source line 139](../../../extended/ext/text_wc.lani#L139)
+[Source line 144](../../../extended/ext/text_wc.lani#L144)
 
 ```lanius
 pub fn width(sizes: [i64], count: i32, counts: i32) -> i32

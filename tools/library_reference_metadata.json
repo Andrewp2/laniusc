@@ -1622,7 +1622,22 @@
       "role": "support",
       "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
     },
+    "ext::text_args": {
+      "guides": [
+        "docs/extended-textutils.md"
+      ]
+    },
     "ext::text_cut": {
+      "guides": [
+        "docs/extended-textutils.md"
+      ]
+    },
+    "ext::text_head": {
+      "guides": [
+        "docs/extended-textutils.md"
+      ]
+    },
+    "ext::text_tail": {
       "guides": [
         "docs/extended-textutils.md"
       ]
@@ -1633,6 +1648,11 @@
       ]
     },
     "ext::text_sort": {
+      "guides": [
+        "docs/extended-textutils.md"
+      ]
+    },
+    "ext::text_source": {
       "guides": [
         "docs/extended-textutils.md"
       ]

@@ -309,6 +309,36 @@ pub fn input_size(fd: i32) -> i64 {
     if (!regular) { return -1; }
     return m.length.bytes as i64;
 }
+// What fstat tells about fd: a regular file (size and preferred block size
+// are then set), something else, or a descriptor that cannot be examined
+// (ok false).
+pub struct Stat { ok: bool, regular: bool, size: i64, block: i64 }
+pub fn stat(fd: i32) -> Stat {
+    let none: Stat = Stat { ok: false, regular: false, size: 0, block: 0 };
+    let owned: core::result::Result<std::file::File, core::io::Error> = std::file::from_owned_handle(fd);
+    if (core::result::is_err(owned)) { return none; }
+    let f: std::file::File = core::result::unwrap(owned);
+    let m: std::file_ops::Metadata = std::file_ops::empty_metadata();
+    let got: core::result::Result<i32, core::io::Error> = std::file_ops::metadata_file_into(f.borrow(), m.borrow());
+    let kept: core::option::Option<i32> = f.take_handle();
+    if (core::result::is_err(got)) { return none; }
+    let regular: bool = match (std::file_ops::kind(m.mode)) { std::file_ops::Kind::Regular -> true, _ -> false };
+    return Stat { ok: true, regular: regular, size: m.length.bytes as i64, block: m.length.block_size as i64 };
+}
+// lseek(fd, offset, whence) with whence 0 (from the start), 1 (from the
+// current offset) or 2 (from the end): the new offset, or -1.
+pub fn seek(fd: i32, offset: i64, whence: i32) -> i64 {
+    let owned: core::result::Result<std::file::File, core::io::Error> = std::file::from_owned_handle(fd);
+    if (core::result::is_err(owned)) { return -1; }
+    let f: std::file::File = core::result::unwrap(owned);
+    let origin: std::file_ops::Origin = std::file_ops::Origin::Start;
+    if (whence == 1) { origin = std::file_ops::Origin::Current; }
+    if (whence == 2) { origin = std::file_ops::Origin::End; }
+    let moved: core::result::Result<i64, core::io::Error> = std::file_ops::seek(f.borrow(), offset, origin);
+    let kept: core::option::Option<i32> = f.take_handle();
+    if (core::result::is_err(moved)) { return -1; }
+    return core::result::unwrap(moved);
+}
 // Append everything readable from fd to buf, sized up front from the file
 // length so the buffer does not regrow (growth copies byte by byte).
 pub fn read_all(fd: i32, buf: &alloc::io::Buffer) -> bool {
@@ -327,6 +357,65 @@ pub fn read_some(fd: i32, p: ptr, count: i32) -> i32 {
         return got;
     }
     return -1;
+}
+
+// The number of bytes equal to b among the k bytes at p, eight at a time.
+pub fn count_byte(p: ptr, k: i32, b: u8) -> u64 {
+    let view: core::slice::View<u8> = core::slice::View { values: core::mem::typed_slice_from_raw_parts<u8>(p, k), start: 0, length: k };
+    let w: Words = core::result::unwrap(words(view));
+    let ws: [u64] = w.words; let nw: i32 = w.nw; let low: u64 = LOW7; let all: u64 = ALL;
+    let pe: u64 = (b as u64) * ONES;
+    let total: u64 = 0; let q: i32 = 0;
+    while (q < nw) {
+        let xe: u64 = ws[nw-1-q] ^ pe; let m: u64 = (((xe & low) + low) | xe | low) ^ all;
+        total += ((m >> 7) * ONES) >> 56;
+        q += 1;
+    }
+    let j: i32 = nw * 8; let bytes: [u8] = w.values;
+    while (j < k) { if (bytes[j] == b) { total += 1; } j += 1; }
+    w.destroy();
+    return total;
+}
+// The length of the k bytes at p up to and including the want-th byte equal
+// to b (want >= 1), or -1 when fewer than want are there.
+pub fn nth_byte(p: ptr, k: i32, b: u8, want: u64) -> i32 {
+    let view: core::slice::View<u8> = core::slice::View { values: core::mem::typed_slice_from_raw_parts<u8>(p, k), start: 0, length: k };
+    let w: Words = core::result::unwrap(words(view));
+    let ws: [u64] = w.words; let nw: i32 = w.nw; let low: u64 = LOW7; let all: u64 = ALL;
+    let pe: u64 = (b as u64) * ONES;
+    let left: u64 = want; let q: i32 = 0;
+    while (q <= nw) {
+        let x: u64 = w.tail; if (q < nw) { x = ws[nw-1-q]; }
+        let xe: u64 = x ^ pe; let m: u64 = (((xe & low) + low) | xe | low) ^ all;
+        while (m != 0) {
+            let bit: u64 = m & (0 - m); m = m ^ bit;
+            let pos: i32 = q * 8 + ((((bit >> 7) * RANKS) >> 56) as i32) - 1;
+            if (pos >= k) { break; }
+            left -= 1;
+            if (left == 0) { w.destroy(); return pos + 1; }
+        }
+        q += 1;
+    }
+    w.destroy();
+    return -1;
+}
+// Copy up to `count` bytes of fd (all of it for MAX) to standard output,
+// reading no further: 0, 1 (read error) or 2 (write error).
+pub fn copy_bytes(fd: i32, count: u64) -> i32 {
+    let chunk: i32 = 262144;
+    let mem: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(chunk + 16));
+    let p: ptr = core::result::unwrap(mem.reserve_raw(chunk + 16));
+    let left: u64 = count; let status: i32 = 0;
+    while (left > 0) {
+        let room: i32 = chunk; if (left < (room as u64)) { room = left as i32; }
+        let got: i32 = read_some(fd, p, room);
+        if (got < 0) { status = 1; break; }
+        if (got == 0) { break; }
+        left -= got as u64;
+        if (!write_all(1, p, got)) { status = 2; break; }
+    }
+    mem.destroy();
+    return status;
 }
 
 // Positions of the bytes equal to `a` or `b`, eight bytes at a time. Entry

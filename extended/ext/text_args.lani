@@ -1,0 +1,96 @@
+// Shared pieces of the text tools' command lines: GNU's xstrtoumax number
+// syntax with size suffixes (head and tail counts), literal views and
+// standard-error messages. See docs/extended-textutils.md.
+module ext::text_args;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import std::stream;
+
+pub const MAX: u64 = 18446744073709551615;
+
+pub fn lit(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), count);
+    return core::slice::View { values: bytes, start: 0, length: count };
+}
+pub fn same(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.length != right.length) { return false; }
+    let i: i32 = 0;
+    while (i < left.length) { if (left.values[left.start+i] != right.values[right.start+i]) { return false; } i += 1; }
+    return true;
+}
+pub fn at(v: core::slice::View<u8>, i: i32) -> u8 { return v.values[v.start+i]; }
+pub fn tail(v: core::slice::View<u8>, from: i32) -> core::slice::View<u8> {
+    return core::slice::View { values: v.values, start: v.start + from, length: v.length - from };
+}
+// Write v to standard error.
+pub fn say(v: core::slice::View<u8>) {
+    let sink: std::stream::Descriptor = std::stream::stderr();
+    let written: core::result::Result<i32, core::io::Failure> = core::io::write_all(sink.borrow(), v.values, v.start, v.length);
+}
+// Write v to descriptor fd; false when the write fails.
+pub fn emit(fd: i32, v: core::slice::View<u8>) -> bool {
+    let sink: std::stream::Descriptor = std::stream::from_handle(fd);
+    return core::result::is_ok(core::io::write_all(sink.borrow(), v.values, v.start, v.length));
+}
+// "TOOL: WHAT: NAME\n" (what and name may be empty).
+pub fn complain(tool: core::slice::View<u8>, what: core::slice::View<u8>, name: core::slice::View<u8>) {
+    say(tool); say(lit(": ", 2)); say(what);
+    if (name.length > 0) { if (what.length > 0) { say(lit(": ", 2)); } say(name); }
+    say(lit("\n", 1));
+}
+
+// A parsed count: status 0 (value is set), 1 (not a number) or 2 (too
+// large for 64 bits).
+pub struct Count { status: i32, value: u64 }
+
+fn ta_mul(c: &Count, by: u64) {
+    if (c.value != 0 && by > MAX / c.value) { c.status = 2; c.value = MAX; return; }
+    c.value = c.value * by;
+}
+fn ta_power(c: &Count, base: u64, n: i32) { let i: i32 = 0; while (i < n) { ta_mul(c, base); i += 1; } }
+
+// GNU xstrtoumax(s, base 10, suffixes "bkKmMGTPEZYRQ0"): leading white
+// space, an optional '+', digits (or none before a suffix, meaning 1), then
+// at most one suffix: b (512), k or K, m or M, G, T, P, E, Z, Y, R, Q, each
+// a power of 1024, or of 1000 when followed by B or D ("iB" keeps 1024).
+pub fn count(v: core::slice::View<u8>) -> Count {
+    let c: Count = Count { status: 0, value: 0 };
+    let n: i32 = v.length; let i: i32 = 0;
+    while (i < n && (at(v, i) == 32 || (at(v, i) >= 9 && at(v, i) <= 13))) { i += 1; }
+    if (i < n && at(v, i) == 45) { c.status = 1; return c; }
+    if (i < n && at(v, i) == 43) { i += 1; }
+    let digits: i32 = i;
+    while (i < n && at(v, i) >= 48 && at(v, i) <= 57) {
+        let d: u64 = (at(v, i) - 48) as u64;
+        if (c.status == 0) {
+            if (c.value > (MAX - d) / 10) { c.status = 2; c.value = MAX; } else { c.value = c.value * 10 + d; }
+        }
+        i += 1;
+    }
+    if (i == digits) {
+        if (i < n && ta_suffix(at(v, i))) { c.value = 1; } else { c.status = 1; return c; }
+    }
+    if (i == n) { return c; }
+    let s: u8 = at(v, i);
+    if (!ta_suffix(s)) { c.status = 1; return c; }
+    let base: u64 = 1024; let used: i32 = 1;
+    if (i + 2 < n && at(v, i+1) == 105 && at(v, i+2) == 66) { used = 3; }
+    else { if (i + 1 < n && (at(v, i+1) == 66 || at(v, i+1) == 68)) { base = 1000; used = 2; } }
+    let over: i32 = c.status;
+    let p: i32 = 0;
+    if (s == 98) { ta_mul(c.borrow(), 512); }
+    else {
+        if (s == 107 || s == 75) { p = 1; } if (s == 109 || s == 77) { p = 2; } if (s == 71) { p = 3; } if (s == 84) { p = 4; }
+        if (s == 80) { p = 5; } if (s == 69) { p = 6; } if (s == 90) { p = 7; } if (s == 89) { p = 8; } if (s == 82) { p = 9; } if (s == 81) { p = 10; }
+        ta_power(c.borrow(), base, p);
+    }
+    if (over == 2) { c.status = 2; }
+    if (i + used != n) { c.status = 1; }
+    return c;
+}
+fn ta_suffix(s: u8) -> bool {
+    return s == 98 || s == 107 || s == 75 || s == 109 || s == 77 || s == 71 || s == 84 || s == 80 || s == 69 || s == 90 || s == 89 || s == 82 || s == 81;
+}
+pub impl Count { pub fn borrow(&self) -> &Count { return self; } }
