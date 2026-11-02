@@ -1737,6 +1737,24 @@ The Faithful pure meaning leaves it unmodelled, as it does `EIf`. The front
 end uses it to read a literal match whose scrutinee is effectful ("Literal
 patterns"): the scrutinee bound to the `match` token's local.
 
+## Slice length (decided 11-01, F11b)
+
+Core gets `Intrinsic.sliceLength`, written `slice_len(s)` beside
+`slice_stride(s)`: the length of a slice as a `usize` (`sliceLength?`).
+It is the same for a slice of a language array (`Value.slice`, its
+`length`) and for a raw view (`Value.rawSlice`, its `length`). Any other
+value traps (`typeMismatch`), as `slice_stride` does. The typing rule is
+`ExprHasType.sliceLength`, from any `[T]` to `usize`, with its checker arm.
+It is spelled `slice_len`, not `len`, because `std::vec::len` and
+`core::set::len` already name free functions `len`, and `slice_stride` is
+the intrinsic it sits beside. It is a `usize` because Core's slice length is
+a natural number. The mini syntax's lengths are below 2^31, so the value
+also fits laniusc's `i32` lengths. laniusc keeps a slice's length in word 1
+of its descriptor (`NATIVE_SLICE_LENGTH`) and reads it there. It has no
+surface intrinsic for it yet. Adding `slice_len` to laniusc's intrinsics
+(`shaders/type_checker/calls/intrinsic_result.slang`, `stdlib/core/mem.lani`)
+is a laniusc step, not yet run.
+
 ## `u16` views (decided 11-01)
 
 Core's raw slices had no `u16` element (`slice_from_raw_parts` of a `u16`

@@ -31,6 +31,7 @@ def IntrinsicFrag : Core.Intrinsic → Bool
   | .printI32 => true
   | .assert => true
   | .sliceStride => false
+  | .sliceLength => false
 
 mutual
   def ExprFrag (e : Expr) : Bool :=

@@ -523,6 +523,12 @@ the theorems say what it means.
   laniusc gives the same values. Core gives
   a view of a language array no stride (it traps), while laniusc gives that
   array's own layout. Programs that ask for one are outside the theorem.
+- **`slice_len`.** (added 11-01, F11b) `Intrinsic.sliceLength` gives a
+  slice's length as a `usize` (`sliceLength?`): the `length` of a slice of a
+  language array and of a raw view alike. Any other value traps. Its typing
+  rule is `ExprHasType.sliceLength`, from `[T]` to `usize`. laniusc reads
+  the same length from word 1 of the slice's descriptor, but it has no
+  surface intrinsic for it yet (SEMANTIC_DECISIONS "Slice length").
 - **Native layout.** Core reads and writes values in memory
   with laniusc's layout (`docs/wasm-memory-layout.md`). A value's address is
   its word 0, its highest word; word k is 8k bytes below it. A struct's field

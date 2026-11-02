@@ -1152,6 +1152,27 @@ def mapRawNominalSlice (program : Program) (state : State)
             | .error reason => .trapped reason state
             | .ok () => .done (.rawSlice element address length) state
 
+/-- `slice_len(view)`: the length of a slice, a language array's slice and a
+    raw view alike (SEMANTIC_DECISIONS "Slice length"). Other values have
+    none. -/
+def sliceLength? (value : Value) : Option Nat :=
+  match value with
+  | .unit => none
+  | .boolean _ => none
+  | .signed _ _ => none
+  | .unsigned _ _ => none
+  | .f32Bits _ => none
+  | .f64Bits _ => none
+  | .character _ => none
+  | .string _ => none
+  | .pointer _ => none
+  | .array _ => none
+  | .slice _ _ _ _ length => some length
+  | .rawSlice _ _ length => some length
+  | .structure _ _ => none
+  | .enumeration _ _ _ => none
+  | .reference _ _ _ => none
+
 /-- `slice_stride(view)`: element i + 1 of a view starts this many bytes
     after element i. i32 and u8 views run forward; nominal views run down by
     their native size. A slice of a language array has its element's stride
@@ -1537,6 +1558,10 @@ mutual
                 | .sliceStride, view =>
                     match rawSliceStride? program view with
                     | some stride => .done (.signed .isize stride) next
+                    | none => .trapped .typeMismatch next
+                | .sliceLength, view =>
+                    match sliceLength? view with
+                    | some length => .done (.unsigned .usize length) next
                     | none => .trapped .typeMismatch next
                 | _, _ => .trapped .typeMismatch next
             | .trapped reason next => .trapped reason next

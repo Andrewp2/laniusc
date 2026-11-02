@@ -379,6 +379,10 @@ mutual
         (view : ExprHasType program context expression (.slice element)) :
         ExprHasType program context (.intrinsic .sliceStride expression)
           (.scalar (.signed .isize))
+    | sliceLength
+        (view : ExprHasType program context expression (.slice element)) :
+        ExprHasType program context (.intrinsic .sliceLength expression)
+          (.scalar (.unsigned .usize))
     | i32ArrayDataPtr
         (array : ExprHasType program context expression
           (.array (.scalar (.signed .i32)) length)) :

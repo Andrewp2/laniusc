@@ -201,4 +201,19 @@ example : (match evalExpr 2 pairProgram boundState (.intrinsic .sliceStride (.lo
     | _ => false) = true := by
   decide
 
+-- slice_len: a raw view's length and a language slice's, as usize.
+example : sliceLength? (.rawSlice (.structure 3) 32 2) = some 2 := by
+  decide
+
+example : sliceLength? (.slice (.scalar (.signed .i32)) 4 [] 1 3) = some 3 := by
+  decide
+
+example : sliceLength? (.array []) = none := by
+  decide
+
+example : (match evalExpr 2 pairProgram boundState (.intrinsic .sliceLength (.local 0)) with
+    | .done (.unsigned .usize length) _ => length == 2
+    | _ => false) = true := by
+  decide
+
 end Lanius.Semantics.RawNominalSliceTests
